@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="E-shop Fusion Academy – Herbalife produkty, doplnky výživy, wellness produkty. Doručenie po Slovensku.">
+<meta name="keywords" content="herbalife, doplnky výživy, proteín, wellness produkty, fusion academy shop">
+<meta property="og:title" content="Shop – Fusion Academy">
+<meta property="og:description" content="E-shop Fusion Academy – Herbalife produkty, doplnky výživy, wellness produkty. Doručenie po Slovensku.">
+<meta property="og:image" content="https://latindancefusion.art/og-image.svg">
+<meta property="og:type" content="website">
+<link rel="canonical" href="https://latindancefusion.art/shop">
+<title>Fusion Academy – Shop</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/fa-theme.css">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<style>
+:root{
+  --brand1:var(--gold);--brand2:var(--gold-light);--dark:#0f0f0f;
+  --gold:#C9A84C;--gold-light:#F0C060;
+  --dark-1:#0f0f0f;--dark-2:#141414;--dark-3:#1a1a1a;--dark-4:#222;
+  --cream:#F5EDD6;--text-muted:rgba(245,237,214,0.50);
+  --gold-border:rgba(201,168,76,0.22);--grad-gold:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);
+}
+*{box-sizing:border-box;}
+body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',system-ui,sans-serif;padding-top:70px;}
+.navbar{background:rgba(8,8,8,0.97)!important;border-bottom:1px solid var(--gold-border);}
+.brand-text{font-weight:900;font-size:1.2rem;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.hero{background:radial-gradient(ellipse at 60% 50%,rgba(201,168,76,0.08) 0%,transparent 70%),linear-gradient(135deg,#0a0a0a 0%,#111 60%,#0f0f0f 100%);color:#fff;padding:4rem 0 3rem;border-bottom:1px solid var(--gold-border);}
+.hero h1{font-size:clamp(1.8rem,4vw,3rem);font-weight:900;}
+.hero .sub{color:rgba(255,255,255,.7);font-size:1.1rem;}
+.badge-free{background:var(--grad-gold);color:#0f0f0f;font-size:.75rem;padding:4px 12px;border-radius:20px;font-weight:700;}
+.cat-pills{background:var(--dark-2);border-bottom:1px solid var(--gold-border);position:sticky;top:70px;z-index:50;padding:.6rem 0;}
+.cat-btn{border:1px solid var(--gold-border);background:var(--dark-3);color:var(--text-muted);padding:.35rem 1rem;border-radius:2rem;font-size:.85rem;cursor:pointer;transition:all .2s;white-space:nowrap;}
+.cat-btn.active,.cat-btn:hover{border-color:var(--gold);background:rgba(201,168,76,0.15);color:var(--gold);}
+.product-card{border:1px solid var(--gold-border)!important;border-radius:1.1rem;background:var(--dark-3)!important;transition:transform .2s,box-shadow .2s;overflow:hidden;height:100%;}
+.product-card:hover{transform:translateY(-3px);box-shadow:0 8px 30px rgba(201,168,76,0.12);}
+.prod-emoji{font-size:3rem;display:block;margin-bottom:.5rem;}
+.prod-cat{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);font-weight:600;}
+.prod-name{font-weight:700;font-size:1rem;margin:.3rem 0;color:var(--cream);}
+.prod-desc{font-size:.82rem;color:var(--text-muted);line-height:1.4;min-height:3em;}
+.prod-price{font-size:1.4rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.prod-type{font-size:.7rem;color:var(--text-muted);}
+.btn-add{background:var(--grad-gold);border:none;color:#0f0f0f;font-weight:700;border-radius:.6rem;width:100%;padding:.5rem;transition:opacity .2s;}
+.btn-add:hover{opacity:.88;color:#0f0f0f;}
+.btn-add.added{background:linear-gradient(90deg,#28a745,#20c997);color:#fff;}
+.cart-btn{position:fixed;bottom:2rem;right:2rem;width:60px;height:60px;border-radius:50%;background:var(--grad-gold);border:none;color:#0f0f0f;font-size:1.4rem;box-shadow:0 4px 20px rgba(201,168,76,0.4);z-index:200;transition:transform .2s;}
+.cart-btn:hover{transform:scale(1.1);}
+.cart-count{position:absolute;top:-4px;right:-4px;background:var(--dark-1);color:var(--gold);border:1px solid var(--gold-border);width:22px;height:22px;border-radius:50%;font-size:.7rem;display:flex;align-items:center;justify-content:center;font-weight:700;}
+.offcanvas-end{width:420px!important;background:var(--dark-2)!important;border-left:1px solid var(--gold-border)!important;}
+.offcanvas-header{border-bottom:1px solid var(--gold-border)!important;color:var(--cream)!important;}
+.offcanvas-title{color:var(--cream)!important;}
+.cart-item{border-bottom:1px solid var(--gold-border);padding:.8rem 0;color:var(--cream);}
+.qty-btn{width:28px;height:28px;border:1px solid var(--gold-border);background:var(--dark-3);color:var(--cream);border-radius:6px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.qty-btn:hover{background:rgba(201,168,76,0.15);border-color:var(--gold);}
+.cart-total{font-size:1.3rem;font-weight:800;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.step{display:none;} .step.active{display:block;}
+.success-screen{text-align:center;padding:2rem 1rem;}
+.success-icon{font-size:4rem;margin-bottom:1rem;}
+.order-num{background:var(--dark-3);border:1px solid var(--gold-border);border-radius:.8rem;padding:.8rem 1.2rem;font-size:1.1rem;font-weight:700;letter-spacing:.05em;color:var(--gold);}
+.location-badge{display:inline-block;background:var(--dark-3);border:1px solid var(--gold-border);border-radius:1rem;padding:4px 12px;font-size:.8rem;margin:3px;color:var(--cream);}
+.stat-badge{background:rgba(201,168,76,0.12);border:1px solid var(--gold-border);border-radius:1rem;padding:.4rem 1rem;font-size:.85rem;color:var(--cream);}
+.form-control,.form-select{background:var(--dark-3)!important;border:1px solid var(--gold-border)!important;color:var(--cream)!important;}
+.form-control::placeholder{color:var(--text-muted)!important;}
+.form-control:focus,.form-select:focus{border-color:var(--gold)!important;box-shadow:0 0 0 2px rgba(201,168,76,0.15)!important;}
+.form-label{color:var(--cream);}
+.form-text{color:var(--text-muted)!important;}
+.form-select option{background:var(--dark-3);color:var(--cream);}
+@media(max-width:576px){.offcanvas-end{width:100vw!important;}}
+</style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar fa-nav navbar-dark fixed-top px-3">
+  <a class="navbar-brand fa-brand" href="/shop">
+    <span class="brand-text">FUSION ACADEMY</span>
+  </a>
+  <div class="d-flex align-items-center gap-3">
+    <a href="tel:+421904315151" class="fa-nav-link small d-none d-md-block text-decoration-none"><i class="bi bi-telephone me-1"></i>+421 904 315 151</a>
+    <a href="/" class="fa-btn fa-btn-outline btn btn-sm">Partner login</a>
+    <button class="fa-btn fa-btn-gold btn btn-sm" onclick="openCart()">
+      <i class="bi bi-bag"></i> <span id="navCartCount" class="fw-bold">0</span>
+    </button>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="container">
+    <div class="row align-items-center">
+      <div class="col-lg-7">
+        <div class="d-flex gap-2 flex-wrap mb-3">
+          <span class="stat-badge">⭐ 5.0 Google (36 recenzií)</span>
+          <span class="stat-badge">💃 1 500+ spokojných klientov</span>
+          <span class="stat-badge">🏙️ 4 mestá</span>
+        </div>
+        <h1>Pohyb, ktorý ti<br>zmení život.</h1>
+        <p class="sub mb-3">Tanec · Fitness · Výživa · Osobný rozvoj<br>
+          <span class="small">Detva · Zvolen · Banská Bystrica · Brezno</span>
+        </p>
+        <span class="badge-free">🎉 Prvá lekcia ZADARMO</span>
+        <div class="mt-3">
+          <button class="fa-btn fa-btn-gold btn fw-bold me-2" onclick="scrollToShop()">🛍️ Nakupovať</button>
+          <a href="tel:+421904315151" class="fa-btn fa-btn-outline btn">📞 Zavolať</a>
+        </div>
+      </div>
+      <div class="col-lg-5 text-center d-none d-lg-block">
+        <div style="font-size:8rem;line-height:1">💃</div>
+        <div class="text-white-50 small mt-2">fusionacademysk@gmail.com</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Category Pills -->
+<div class="cat-pills" id="catPills">
+  <div class="container">
+    <div class="d-flex gap-2 overflow-auto pb-1" style="scrollbar-width:none;">
+      <button class="cat-btn active" onclick="filterCat('all',this)">🏷️ Všetko</button>
+      <button class="cat-btn" onclick="filterCat('Členstvá',this)">💃 Členstvá</button>
+      <button class="cat-btn" onclick="filterCat('Kurzy',this)">🎓 Kurzy</button>
+      <button class="cat-btn" onclick="filterCat('Analýzy',this)">📊 Analýzy</button>
+      <button class="cat-btn" onclick="filterCat('Výživa',this)">🥤 Výživa</button>
+      <button class="cat-btn" onclick="filterCat('Oblečenie',this)">👕 Oblečenie</button>
+      <button class="cat-btn" onclick="filterCat('Eventy',this)">🎉 Eventy</button>
+    </div>
+  </div>
+</div>
+
+<!-- Products -->
+<div class="container py-4" id="shopSection">
+  <div id="productsGrid" class="row g-3"></div>
+  <div id="emptyState" class="text-center py-5 d-none">
+    <div class="fs-1">🔍</div>
+    <div class="text-muted">Žiadne produkty v tejto kategórii</div>
+  </div>
+</div>
+
+<!-- Footer -->
+<footer class="bg-dark text-white-50 py-4 mt-4">
+  <div class="container text-center small">
+    <div class="mb-2">📍 Záhradná 7, Detva &nbsp;|&nbsp; 📞 +421 904 315 151 &nbsp;|&nbsp; ✉️ fusionacademysk@gmail.com</div>
+    <div>© 2026 Fusion Academy · <a href="/" class="text-white-50">Partner program</a></div>
+  </div>
+</footer>
+
+<!-- Floating Cart Button -->
+<button class="cart-btn" onclick="openCart()">
+  <i class="bi bi-bag"></i>
+  <span class="cart-count" id="cartCount" style="display:none">0</span>
+</button>
+
+<!-- Cart Offcanvas -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="cartPanel">
+  <div class="offcanvas-header border-bottom">
+    <h5 class="offcanvas-title fw-bold"><i class="bi bi-bag me-2"></i>Košík</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <div class="offcanvas-body d-flex flex-column" style="overflow-y:auto;">
+
+    <!-- Step 1: Cart items -->
+    <div id="step-cart" class="step active flex-grow-1 d-flex flex-column">
+      <div id="cartItems" class="flex-grow-1"></div>
+      <div class="mt-auto pt-3 border-top">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <span class="fw-semibold">Celková suma:</span>
+          <span class="cart-total" id="cartTotal">0,00 €</span>
+        </div>
+        <button class="fa-btn fa-btn-gold btn w-100 py-2 fw-bold" onclick="goCheckout()" id="checkoutBtn">
+          Pokračovať k objednávke →
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 2: Checkout form -->
+    <div id="step-checkout" class="step">
+      <button class="fa-btn fa-btn-outline btn btn-sm mb-3" onclick="goBack()"><i class="bi bi-arrow-left me-1"></i>Späť do košíka</button>
+      <h6 class="fw-bold mb-3">Vaše údaje</h6>
+      <div id="checkoutError" class="alert alert-danger d-none py-2 small"></div>
+      <div class="mb-2">
+        <label class="form-label small fw-semibold">Celé meno *</label>
+        <input type="text" class="form-control" id="co-name" placeholder="Jana Nováková">
+      </div>
+      <div class="mb-2">
+        <label class="form-label small fw-semibold">Email *</label>
+        <input type="email" class="form-control" id="co-email" placeholder="jana@email.sk">
+      </div>
+      <div class="mb-2">
+        <label class="form-label small fw-semibold">Telefón</label>
+        <input type="tel" class="form-control" id="co-phone" placeholder="+421 9XX XXX XXX">
+      </div>
+      <div class="mb-2">
+        <label class="form-label small fw-semibold">Mesto / prevádzka</label>
+        <select class="form-select" id="co-city">
+          <option value="">— Vyberte —</option>
+          <option>Detva</option><option>Zvolen</option>
+          <option>Banská Bystrica</option><option>Brezno</option><option>Online</option>
+        </select>
+      </div>
+      <div class="mb-2">
+        <label class="form-label small fw-semibold">Referral kód (ak máte)</label>
+        <input type="text" class="form-control" id="co-ref" placeholder="Napr. MARIA10">
+        <div class="form-text small" id="refStatus"></div>
+      </div>
+      <div class="mb-2">
+        <label class="form-label small fw-semibold">Spôsob platby</label>
+        <select class="form-select" id="co-payment">
+          <option value="cash">Hotovosť / na recepcii</option>
+          <option value="transfer">Bankový prevod</option>
+          <option value="card">Kartou na mieste</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label small fw-semibold">Poznámka</label>
+        <textarea class="form-control" id="co-notes" rows="2" placeholder="Napr. preferovaný termín..."></textarea>
+      </div>
+      <div class="border-top pt-3 mb-3">
+        <div class="d-flex justify-content-between fw-bold">
+          <span>Celková suma:</span>
+          <span class="cart-total" id="checkoutTotal">0,00 €</span>
+        </div>
+      </div>
+      <button class="fa-btn fa-btn-gold btn w-100 py-2 fw-bold" onclick="submitOrder()">
+        <i class="bi bi-check-circle me-2"></i>Odoslať objednávku
+      </button>
+    </div>
+
+    <!-- Step 3: Success -->
+    <div id="step-success" class="step">
+      <div class="success-screen">
+        <div class="success-icon">🎉</div>
+        <h5 class="fw-bold">Objednávka prijatá!</h5>
+        <p class="text-muted small">Číslo objednávky:</p>
+        <div class="order-num mb-3" id="successOrderNum">—</div>
+        <p class="small text-muted">Budeme vás kontaktovať na zadaný email/telefón na potvrdenie termínu a platby.</p>
+        <div class="d-grid gap-2 mt-3">
+          <button class="fa-btn fa-btn-gold btn" onclick="resetCart()">🛍️ Pokračovať v nákupe</button>
+          <a href="tel:+421904315151" class="fa-btn fa-btn-outline btn"><i class="bi bi-telephone me-1"></i>Zavolať nám</a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+let allProducts = [], cart = [], cartOffcanvas = null;
+
+// Read referral from URL
+const urlParams = new URLSearchParams(window.location.search);
+const urlRef = urlParams.get('ref') || '';
+
+async function loadProducts() {
+  const res = await fetch('/api/shop/products');
+  allProducts = await res.json();
+  renderProducts(allProducts);
+}
+
+function eur(v) { return (+v).toFixed(2).replace('.', ',') + ' €'; }
+function typeLabel(t) { return { subscription:'mesačne', course:'kurz', service:'služba', event:'event', bundle:'balíček', single:'jednorazovo', product:'produkt' }[t] || ''; }
+
+function renderProducts(prods) {
+  const grid = document.getElementById('productsGrid');
+  const empty = document.getElementById('emptyState');
+  if (!prods.length) { grid.innerHTML=''; empty.classList.remove('d-none'); return; }
+  empty.classList.add('d-none');
+  grid.innerHTML = prods.map(p => `
+    <div class="col-6 col-md-4 col-lg-3" data-cat="${p.cat}">
+      <div class="product-card card p-3 text-center">
+        <span class="prod-emoji">${p.emoji||'📦'}</span>
+        <div class="prod-cat">${p.cat||''}</div>
+        <div class="prod-name">${p.name}</div>
+        <div class="prod-desc mb-2">${p.desc||''}</div>
+        <div class="prod-price mb-1">${eur(p.price)}</div>
+        <div class="prod-type mb-2">${typeLabel(p.type)}</div>
+        <button class="btn-add" id="btn-${p._id}" onclick='addToCart(${JSON.stringify(p)})'>
+          <i class="bi bi-bag-plus me-1"></i>Do košíka
+        </button>
+      </div>
+    </div>`).join('');
+}
+
+function filterCat(cat, btn) {
+  document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (cat === 'all') renderProducts(allProducts);
+  else renderProducts(allProducts.filter(p => p.cat === cat));
+}
+
+function scrollToShop() {
+  document.getElementById('shopSection').scrollIntoView({ behavior:'smooth' });
+}
+
+function addToCart(prod) {
+  const existing = cart.find(c => c._id === prod._id);
+  if (existing) existing.qty++;
+  else cart.push({ ...prod, qty:1 });
+  updateCartUI();
+  // Visual feedback on button
+  const btn = document.getElementById('btn-' + prod._id);
+  if (btn) {
+    btn.textContent = '✓ Pridané!';
+    btn.classList.add('added');
+    setTimeout(() => { btn.innerHTML = '<i class="bi bi-bag-plus me-1"></i>Do košíka'; btn.classList.remove('added'); }, 1500);
+  }
+  openCart();
+}
+
+function removeFromCart(id) {
+  cart = cart.filter(c => c._id !== id);
+  updateCartUI();
+}
+
+function changeQty(id, delta) {
+  const item = cart.find(c => c._id === id);
+  if (!item) return;
+  item.qty += delta;
+  if (item.qty <= 0) cart = cart.filter(c => c._id !== id);
+  updateCartUI();
+}
+
+function updateCartUI() {
+  const totalItems = cart.reduce((s, c) => s + c.qty, 0);
+  const total = cart.reduce((s, c) => s + c.price * c.qty, 0);
+
+  document.getElementById('cartCount').textContent = totalItems;
+  document.getElementById('cartCount').style.display = totalItems > 0 ? 'flex' : 'none';
+  document.getElementById('navCartCount').textContent = totalItems;
+
+  const el = document.getElementById('cartItems');
+  if (!cart.length) {
+    el.innerHTML = '<div class="text-center text-muted py-5"><div class="fs-2 mb-2">🛍️</div><div>Košík je prázdny</div><div class="small mt-1">Pridajte produkty z katalogu</div></div>';
+    document.getElementById('checkoutBtn').disabled = true;
+  } else {
+    el.innerHTML = cart.map(item => `
+      <div class="cart-item">
+        <div class="d-flex justify-content-between align-items-start">
+          <div class="flex-grow-1">
+            <div class="fw-semibold small">${item.emoji||'📦'} ${item.name}</div>
+            <div class="text-muted" style="font-size:.75rem">${eur(item.price)} / ks</div>
+          </div>
+          <button class="btn-close btn-close-sm ms-2" onclick="removeFromCart('${item._id}')" style="font-size:.6rem"></button>
+        </div>
+        <div class="d-flex align-items-center justify-content-between mt-2">
+          <div class="d-flex align-items-center gap-2">
+            <button class="qty-btn" onclick="changeQty('${item._id}',-1)">−</button>
+            <span class="fw-bold">${item.qty}</span>
+            <button class="qty-btn" onclick="changeQty('${item._id}',1)">+</button>
+          </div>
+          <span class="fw-bold">${eur(item.price * item.qty)}</span>
+        </div>
+      </div>`).join('');
+    document.getElementById('checkoutBtn').disabled = false;
+  }
+
+  document.getElementById('cartTotal').textContent = eur(total);
+  document.getElementById('checkoutTotal').textContent = eur(total);
+}
+
+function openCart() {
+  if (!cartOffcanvas) cartOffcanvas = new bootstrap.Offcanvas(document.getElementById('cartPanel'));
+  cartOffcanvas.show();
+}
+
+function goCheckout() {
+  if (!cart.length) return;
+  showStep('checkout');
+  // Pre-fill referral from URL
+  if (urlRef && !document.getElementById('co-ref').value) {
+    document.getElementById('co-ref').value = urlRef;
+    document.getElementById('refStatus').innerHTML = '<span class="text-success">✓ Referral kód predvyplnený z odkazu</span>';
+  }
+}
+
+function goBack() { showStep('cart'); }
+
+function showStep(s) {
+  document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+  document.getElementById('step-'+s).classList.add('active');
+}
+
+async function submitOrder() {
+  const name   = document.getElementById('co-name').value.trim();
+  const email  = document.getElementById('co-email').value.trim();
+  const phone  = document.getElementById('co-phone').value.trim();
+  const city   = document.getElementById('co-city').value;
+  const ref    = document.getElementById('co-ref').value.trim();
+  const pay    = document.getElementById('co-payment').value;
+  const notes  = document.getElementById('co-notes').value.trim();
+  const errEl  = document.getElementById('checkoutError');
+  errEl.classList.add('d-none');
+
+  if (!name || !email) { errEl.textContent = 'Meno a email sú povinné'; errEl.classList.remove('d-none'); return; }
+  if (!cart.length) { errEl.textContent = 'Košík je prázdny'; errEl.classList.remove('d-none'); return; }
+
+  const items = cart.map(c => ({ product_id: c._id, qty: c.qty }));
+  try {
+    const r = await fetch('/api/shop/order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_name:name, client_email:email, client_phone:phone, referral_code:ref, city, items, notes, payment_method:pay })
+    });
+    const d = await r.json();
+    if (!r.ok) { errEl.textContent = d.error || 'Chyba'; errEl.classList.remove('d-none'); return; }
+    document.getElementById('successOrderNum').textContent = d.order_number;
+    showStep('success');
+  } catch(e) { errEl.textContent = 'Chyba pripojenia k serveru'; errEl.classList.remove('d-none'); }
+}
+
+function resetCart() {
+  cart = [];
+  updateCartUI();
+  showStep('cart');
+  cartOffcanvas?.hide();
+}
+
+// Init
+loadProducts();
+updateCartUI();
+
+// Pre-fill referral if in URL
+if (urlRef) {
+  setTimeout(() => {
+    document.getElementById('co-ref').value = urlRef;
+    document.getElementById('refStatus').innerHTML = '<span class="text-success small">✓ Referral kód z odkazu: ' + urlRef + '</span>';
+  }, 100);
+}
+</script>
+</body>
+</html>

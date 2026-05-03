@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stránka nenájdená – Fusion Academy</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/fa-theme.css">
+<style>
+:root{--gold:#C9A84C;--dark-1:#0f0f0f;--dark-2:#141414;--cream:#F5EDD6;--text-muted:rgba(245,237,214,0.50);--gold-border:rgba(201,168,76,0.22);--grad-gold:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);}
+body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;display:flex;flex-direction:column;}
+.top-nav{background:rgba(8,8,8,0.97);border-bottom:1px solid var(--gold-border);padding:.75rem 1.5rem;display:flex;align-items:center;justify-content:space-between;}
+.brand{font-size:1.3rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none;}
+.main{flex:1;display:flex;align-items:center;justify-content:center;padding:3rem 1rem;text-align:center;}
+.code{font-size:clamp(5rem,20vw,10rem);font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1;}
+.btn-home{background:var(--grad-gold);border:none;color:#0f0f0f;font-weight:700;padding:.7rem 2rem;border-radius:50px;text-decoration:none;font-size:.95rem;display:inline-block;transition:opacity .2s;}
+.btn-home:hover{opacity:.85;color:#0f0f0f;}
+.btn-outline{background:transparent;border:1px solid var(--gold-border);color:var(--cream);font-weight:600;padding:.65rem 1.8rem;border-radius:50px;text-decoration:none;font-size:.9rem;transition:.2s;}
+.btn-outline:hover{border-color:var(--gold);color:var(--gold);}
+</style>
+</head>
+<body>
+<nav class="top-nav">
+  <a href="/" class="brand">FUSION ACADEMY</a>
+  <a href="/" class="btn-outline" style="font-size:.85rem">← Domov</a>
+</nav>
+<div class="main">
+  <div>
+    <div class="code">404</div>
+    <h1 style="font-size:clamp(1.4rem,4vw,2rem);font-weight:800;margin:.8rem 0 .5rem">Stránka nenájdená</h1>
+    <p style="color:var(--text-muted);max-width:440px;margin:0 auto 2rem;font-size:.95rem;line-height:1.6">Stránka, ktorú hľadáte, neexistuje alebo bola presunutá. Vráťte sa domov alebo použite navigáciu.</p>
+    <div style="display:flex;gap:1rem;justify-content:center;flex-wrap:wrap">
+      <a href="/" class="btn-home">🏠 Domov</a>
+      <a href="/programs" class="btn-outline">Programy</a>
+      <a href="/schedule" class="btn-outline">Rozvrh</a>
+      <a href="/contact" class="btn-outline">Kontakt</a>
+    </div>
+    <div style="margin-top:2.5rem;font-size:.82rem;color:var(--text-muted)">
+      Hľadáte niečo konkrétne? Napíšte nám na
+      <a href="/contact" style="color:var(--gold);text-decoration:none">kontaktnom formulári</a>.
+    </div>
+  </div>
+</div>
+</body>
+</html>

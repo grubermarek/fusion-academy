@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Podcast Fusion Academy – rozhovory o pohybe, zdraví a životnom štýle. Spotify, Apple Podcasts.">
+<meta name="keywords" content="podcast tanec, fitness podcast, zdravý životný štýl, fusion academy podcast">
+<meta property="og:title" content="Podcast – Fusion Academy">
+<meta property="og:description" content="Podcast Fusion Academy – rozhovory o pohybe, zdraví a životnom štýle. Spotify, Apple Podcasts.">
+<meta property="og:image" content="https://latindancefusion.art/og-image.svg">
+<meta property="og:type" content="website">
+<link rel="canonical" href="https://latindancefusion.art/podcast">
+<title>Podcast – Fusion Academy</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/fa-theme.css">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<style>
+:root{--gold:#C9A84C;--gold-light:#F0C060;--dark-1:#0f0f0f;--dark-2:#141414;--dark-3:#1a1a1a;--dark-4:#222;--cream:#F5EDD6;--text-muted:rgba(245,237,214,0.50);--gold-border:rgba(201,168,76,0.22);--grad-gold:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);}
+body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',system-ui,sans-serif;}
+.top-nav{background:rgba(8,8,8,0.97);border-bottom:1px solid var(--gold-border);padding:.75rem 1.5rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
+.brand{font-size:1.3rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none;}
+.nav-links{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;}
+.nav-links a{color:rgba(255,255,255,.6);text-decoration:none;font-size:.85rem;padding:.3rem .7rem;border-radius:20px;transition:.2s;}
+.nav-links a:hover,.nav-links a.active{color:var(--gold);background:rgba(201,168,76,0.12);}
+.hero{background:radial-gradient(ellipse at 30% 50%,rgba(201,168,76,.1) 0%,transparent 60%),linear-gradient(135deg,#0a0a0a,#111);padding:4rem 1rem 3rem;border-bottom:1px solid var(--gold-border);}
+.hero h1 span{background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.episode-card{background:var(--dark-2);border:1px solid var(--gold-border);border-radius:1rem;padding:1.3rem 1.5rem;margin-bottom:1rem;display:flex;gap:1.2rem;align-items:flex-start;transition:.2s;}
+.episode-card:hover{border-color:var(--gold);background:rgba(201,168,76,.04);}
+.ep-num{background:var(--grad-gold);color:#0f0f0f;font-weight:900;font-size:.85rem;min-width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.ep-title{font-size:1rem;font-weight:700;color:var(--cream);margin-bottom:.25rem;}
+.ep-meta{font-size:.78rem;color:var(--text-muted);margin-bottom:.4rem;}
+.ep-desc{font-size:.85rem;color:rgba(245,237,214,.7);}
+.play-btn{background:rgba(201,168,76,.12);border:1px solid var(--gold-border);color:var(--gold);padding:.35rem .9rem;border-radius:50px;font-size:.8rem;font-weight:600;cursor:pointer;transition:.2s;text-decoration:none;display:inline-flex;align-items:center;gap:.4rem;margin-top:.6rem;}
+.play-btn:hover{background:rgba(201,168,76,.2);}
+.platform-btn{display:inline-flex;align-items:center;gap:.5rem;padding:.5rem 1.2rem;border-radius:50px;font-size:.85rem;font-weight:600;text-decoration:none;transition:.2s;}
+.featured-ep{background:linear-gradient(135deg,rgba(201,168,76,.08),rgba(201,168,76,.03));border:1px solid var(--gold);border-radius:1.4rem;padding:2rem;}
+</style>
+</head>
+<body>
+
+<nav class="top-nav">
+  <a href="/" class="brand">FUSION ACADEMY</a>
+  <div class="nav-links">
+    <a href="/">Domov</a>
+    <a href="/blog">Blog</a>
+    <a href="/community">Komunita</a>
+    <a href="/podcast" class="active">Podcast</a>
+    <a href="/contact">Kontakt</a>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="container">
+    <div class="row align-items-center g-4">
+      <div class="col-lg-7">
+        <div style="font-size:.85rem;font-weight:700;color:var(--gold);margin-bottom:.7rem;letter-spacing:.08em">🎙️ FUSION ACADEMY PODCAST</div>
+        <h1 style="font-size:clamp(2rem,5vw,3rem);font-weight:900;line-height:1.15">Pohyb, <span>zdravie</span><br>& životný štýl</h1>
+        <p style="color:rgba(255,255,255,.6);max-width:520px;margin:1rem 0 1.5rem;font-size:1rem;line-height:1.65">Rozhovory s trénermi, výživovými poradcami, tanečníkmi a inšpirujúcimi ľuďmi, ktorí si zvolili aktívny životný štýl. Nové epizódy každý mesiac.</p>
+        <div class="d-flex gap-2 flex-wrap">
+          <a href="https://spotify.com" target="_blank" rel="noopener" class="platform-btn" style="background:rgba(30,215,96,.1);border:1px solid rgba(30,215,96,.3);color:#1ED760">
+            <i class="bi bi-spotify"></i> Spotify
+          </a>
+          <a href="https://podcasts.apple.com" target="_blank" rel="noopener" class="platform-btn" style="background:rgba(175,82,222,.1);border:1px solid rgba(175,82,222,.3);color:#af52de">
+            <i class="bi bi-apple"></i> Apple Podcasts
+          </a>
+          <a href="https://youtube.com" target="_blank" rel="noopener" class="platform-btn" style="background:rgba(255,0,0,.1);border:1px solid rgba(255,0,0,.3);color:#FF4444">
+            <i class="bi bi-youtube"></i> YouTube
+          </a>
+        </div>
+      </div>
+      <div class="col-lg-5 text-center">
+        <div style="font-size:9rem;line-height:1">🎙️</div>
+        <div style="font-size:.85rem;color:var(--text-muted);margin-top:.5rem">Nová epizóda každý mesiac</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="container py-5">
+
+  <!-- Latest episode featured -->
+  <div class="featured-ep mb-5">
+    <div style="font-size:.78rem;font-weight:700;color:var(--gold);letter-spacing:.07em;margin-bottom:.5rem">NAJNOVŠIA EPIZÓDA</div>
+    <h2 style="font-size:1.4rem;font-weight:800;color:var(--cream);margin-bottom:.4rem">Ep. 12 – Ako začať s tancom v dospelosti</h2>
+    <div style="font-size:.82rem;color:var(--text-muted);margin-bottom:.7rem">Beáta Baranová &amp; hosť Marek Kováč · 48 min · Apríl 2025</div>
+    <p style="color:rgba(245,237,214,.7);max-width:680px;font-size:.9rem;line-height:1.6">V tejto epizóde sa rozprávame o tom, prečo nikdy nie je neskoro začať tancovať. Marek začal s latin tancami vo veku 38 rokov a dnes súťaží na medzinárodnej úrovni. Čo ho motivovalo? Aké prekážky musel prekonať?</p>
+    <a href="#" class="play-btn"><i class="bi bi-play-circle-fill"></i> Prehrať epizódu</a>
+  </div>
+
+  <!-- Episodes list -->
+  <h3 style="font-size:1.1rem;font-weight:800;color:var(--cream);margin-bottom:1.2rem">Všetky epizódy</h3>
+
+  <div id="episodesList"></div>
+
+  <!-- Newsletter CTA -->
+  <div style="background:var(--dark-2);border:1px solid var(--gold-border);border-radius:1.2rem;padding:2rem;text-align:center;margin-top:3rem">
+    <div style="font-size:2rem;margin-bottom:.6rem">📬</div>
+    <h3 style="font-size:1.1rem;font-weight:800;color:var(--cream)">Nové epizódy priamo do emailu</h3>
+    <p style="color:var(--text-muted);font-size:.88rem;max-width:420px;margin:.5rem auto 1.2rem">Dostávajte upozornenie na každú novú epizódu + exkluzívne tipy od našich trénerov.</p>
+    <div style="display:flex;gap:.7rem;max-width:400px;margin:0 auto;flex-wrap:wrap">
+      <input type="email" placeholder="Váš email" id="podEmail"
+        style="flex:1;background:var(--dark-3);border:1px solid var(--gold-border);color:var(--cream);padding:.55rem 1rem;border-radius:50px;font-size:.88rem;min-width:200px;outline:none">
+      <button onclick="subscribeNewsletter()" style="background:var(--grad-gold);border:none;color:#0f0f0f;font-weight:700;padding:.55rem 1.4rem;border-radius:50px;cursor:pointer;white-space:nowrap">Odoberať</button>
+    </div>
+    <div id="subMsg" style="margin-top:.7rem;display:none"></div>
+  </div>
+</div>
+
+<script>
+const episodes = [
+  {num:12,title:'Ako začať s tancom v dospelosti',guest:'Marek Kováč',duration:'48 min',date:'Apríl 2025',desc:'Nikdy nie je neskoro – príbeh muža, ktorý začal tancovať pri 38 a súťaží medzinárodne.'},
+  {num:11,title:'Výživa pre aktívnych – mýty a fakty',guest:'Mgr. Jana Horáčková',duration:'42 min',date:'Marec 2025',desc:'Dietetička Jana rozobiera najčastejšie mýty o výžive a čo skutočne funguje pre aktívnych ľudí.'},
+  {num:10,title:'Psychológia zmeny – prečo vzdávame a ako to prekonať',guest:'PhDr. Tomáš Novák',duration:'55 min',date:'Február 2025',desc:'Psychológ Tomáš o motivácii, prokrastinácii a psychológii za úspešnou premenou.'},
+  {num:9,title:'Bachata – história a vývoj do dnešných dní',guest:'Andrés Reyes',duration:'38 min',date:'Január 2025',desc:'Tanečný lektor z Kolumbie rozpráva o histórii bachaty a jej transformácii v Európe.'},
+  {num:8,title:'Fitday – zákulisie organizácie wellness eventu',guest:'Beáta Baranová',duration:'35 min',date:'December 2024',desc:'Ako vznikol FitDay, čo všetko treba zorganizovať a prečo je wellness event viac ako len cvičenie.'},
+  {num:7,title:'Herbalife a šport – áno alebo nie?',guest:'Mgr. Peter Lukáč',duration:'44 min',date:'November 2024',desc:'Výživový poradca Peter o doplnkoch výživy, Herbalife produktoch a ich mieste v aktívnom živote.'},
+  {num:6,title:'Tréning po pôrode – kedy a ako začať',guest:'Zuzana Kováčová',duration:'40 min',date:'Október 2024',desc:'Fyzioterapeutka Zuzana o bezpečnom návrate k pohybu po pôrode.'},
+  {num:5,title:'Mentálna odolnosť v športe',guest:'Mgr. Lucia Blaho',duration:'47 min',date:'September 2024',desc:'Športová psychologička o flow stave, strese pred súťažou a budovaní mentálnej sily.'},
+];
+
+function renderEpisodes(){
+  const el = document.getElementById('episodesList');
+  el.innerHTML = episodes.slice(1).map(ep=>`
+    <div class="episode-card">
+      <div class="ep-num">${ep.num}</div>
+      <div style="flex:1">
+        <div class="ep-title">${ep.title}</div>
+        <div class="ep-meta">Hosť: ${ep.guest} &nbsp;·&nbsp; ${ep.duration} &nbsp;·&nbsp; ${ep.date}</div>
+        <div class="ep-desc">${ep.desc}</div>
+        <a href="#" class="play-btn"><i class="bi bi-play-fill"></i> Prehrať</a>
+      </div>
+    </div>`).join('');
+}
+
+async function subscribeNewsletter(){
+  const email = document.getElementById('podEmail').value.trim();
+  if(!email||!email.includes('@')){alert('Zadajte platný email');return;}
+  const msg = document.getElementById('subMsg');
+  msg.style.display='block';
+  msg.innerHTML='<div style="color:#4CAF50;font-size:.85rem">✅ Ďakujeme! Budeme vás informovať o nových epizódach.</div>';
+  document.getElementById('podEmail').value='';
+}
+
+renderEpisodes();
+</script>
+<footer style="background:#0a0a0a;border-top:1px solid rgba(201,168,76,0.18);padding:2.5rem 1rem 1.5rem;margin-top:3rem">
+  <div class="container">
+    <div class="row g-4 mb-3">
+      <div class="col-lg-4">
+        <div style="font-size:1.2rem;font-weight:900;background:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:.5rem">FUSION ACADEMY</div>
+        <p style="color:rgba(245,237,214,.5);font-size:.83rem;line-height:1.6;max-width:280px">Tanečné a fitness štúdio na Slovensku. 4 mestá · 1500+ klientov · 6+ rokov</p>
+        <div style="display:flex;gap:.6rem;margin-top:.8rem">
+          <a href="https://instagram.com/fusionacademy.sk" target="_blank" rel="noopener" style="color:rgba(245,237,214,.4);font-size:1.2rem;transition:.2s" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.4)'">📸</a>
+          <a href="https://facebook.com/fusionacademy.sk" target="_blank" rel="noopener" style="color:rgba(245,237,214,.4);font-size:1.2rem;transition:.2s" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.4)'">📘</a>
+          <a href="https://youtube.com/@fusionacademy" target="_blank" rel="noopener" style="color:rgba(245,237,214,.4);font-size:1.2rem;transition:.2s" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.4)'">▶️</a>
+        </div>
+      </div>
+      <div class="col-6 col-lg-2">
+        <div style="font-size:.78rem;font-weight:700;color:rgba(201,168,76,.7);letter-spacing:.06em;margin-bottom:.7rem">KURZY</div>
+        <div style="display:flex;flex-direction:column;gap:.35rem">
+          <a href="/programs" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Programy</a>
+          <a href="/schedule" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Rozvrh hodín</a>
+          <a href="/online" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Online hodiny</a>
+          <a href="/fitdays" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">FitDays</a>
+          <a href="/trainers" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Tréneri</a>
+        </div>
+      </div>
+      <div class="col-6 col-lg-2">
+        <div style="font-size:.78rem;font-weight:700;color:rgba(201,168,76,.7);letter-spacing:.06em;margin-bottom:.7rem">KOMUNITA</div>
+        <div style="display:flex;flex-direction:column;gap:.35rem">
+          <a href="/community" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Komunita</a>
+          <a href="/blog" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Blog</a>
+          <a href="/podcast" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Podcast</a>
+          <a href="/gallery" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Galéria</a>
+          <a href="/shop" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">E-shop</a>
+        </div>
+      </div>
+      <div class="col-6 col-lg-2">
+        <div style="font-size:.78rem;font-weight:700;color:rgba(201,168,76,.7);letter-spacing:.06em;margin-bottom:.7rem">INFO</div>
+        <div style="display:flex;flex-direction:column;gap:.35rem">
+          <a href="/about" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">O nás</a>
+          <a href="/pricing" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Cenník</a>
+          <a href="/cities" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Mestá</a>
+          <a href="/rental" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Prenájom</a>
+          <a href="/collaborate" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Spolupráca</a>
+          <a href="/contact" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Kontakt</a>
+        </div>
+      </div>
+      <div class="col-6 col-lg-2">
+        <div style="font-size:.78rem;font-weight:700;color:rgba(201,168,76,.7);letter-spacing:.06em;margin-bottom:.7rem">KONTAKT</div>
+        <div style="display:flex;flex-direction:column;gap:.4rem;font-size:.82rem;color:rgba(245,237,214,.5)">
+          <div>📍 Banská Bystrica</div>
+          <div>📍 Brezno</div>
+          <div>📍 Detva</div>
+          <div>📍 Zvolen</div>
+          <a href="mailto:fusionacademysk@gmail.com" style="color:rgba(201,168,76,.7);text-decoration:none;font-size:.8rem;margin-top:.3rem">fusionacademysk@gmail.com</a>
+          <a href="tel:+421904315151" style="color:rgba(201,168,76,.7);text-decoration:none;font-size:.8rem">+421 904 315 151</a>
+        </div>
+      </div>
+    </div>
+    <div style="border-top:1px solid rgba(201,168,76,.1);padding-top:1rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
+      <div style="font-size:.78rem;color:rgba(245,237,214,.35)">© 2026 Fusion Academy · <a href="https://latindancefusion.art" style="color:rgba(201,168,76,.5);text-decoration:none">latindancefusion.art</a></div>
+      <div style="display:flex;gap:1rem">
+        <a href="/dashboard" style="font-size:.78rem;color:rgba(245,237,214,.35);text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.35)'">Partner login</a>
+        <a href="/admin" style="font-size:.78rem;color:rgba(245,237,214,.35);text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.35)'">Admin</a>
+      </div>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

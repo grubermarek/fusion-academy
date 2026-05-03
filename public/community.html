@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Komunita Fusion Academy – real-time chat, blog kanály, zdieľanie skúseností s tancovaním a fitnessom.">
+<meta name="keywords" content="komunita, tanečná komunita, fitness fórum, fusion academy">
+<meta property="og:title" content="Komunita – Fusion Academy">
+<meta property="og:description" content="Komunita Fusion Academy – real-time chat, blog kanály, zdieľanie skúseností s tancovaním a fitnessom.">
+<meta property="og:image" content="https://latindancefusion.art/og-image.svg">
+<meta property="og:type" content="website">
+<link rel="canonical" href="https://latindancefusion.art/community">
+<title>Komunita – Fusion Academy</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/fa-theme.css">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<script src="/socket.io/socket.io.js"></script>
+<style>
+:root{--red:#C9A84C;--orange:#F0C060;--dark:#0f0f0f;--sidebar:#141414;--sidebar2:#1a1a1a;--msg-bg:#111111;
+  --gold:#C9A84C;--gold-light:#F0C060;
+  --dark-1:#0f0f0f;--dark-2:#141414;--dark-3:#1a1a1a;--dark-4:#222;
+  --cream:#F5EDD6;--text-muted:rgba(245,237,214,0.50);
+  --gold-border:rgba(201,168,76,0.22);--grad-gold:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,sans-serif;}
+
+/* ── Layout ── */
+.app{display:flex;flex-direction:column;height:100vh;}
+.top-bar{background:rgba(8,8,8,0.97);padding:.65rem 1.2rem;display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-shrink:0;border-bottom:1px solid var(--gold-border);}
+.brand{font-size:1.1rem;font-weight:900;background:linear-gradient(90deg,var(--red),var(--orange));-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none;}
+.top-links{display:flex;gap:.4rem;}
+.top-links a{color:rgba(255,255,255,.6);text-decoration:none;font-size:.8rem;padding:.3rem .65rem;border-radius:20px;}
+.top-links a:hover,.top-links a.active{color:#fff;background:rgba(255,255,255,.1);}
+
+.main-area{display:flex;flex:1;overflow:hidden;}
+
+/* ── Left: Channels ── */
+.sidebar-left{width:220px;background:var(--sidebar);display:flex;flex-direction:column;flex-shrink:0;border-right:1px solid rgba(255,255,255,.06);}
+@media(max-width:700px){.sidebar-left{width:52px;}.channel-label{display:none;}.sidebar-header{display:none;}}
+.sidebar-header{padding:1rem 1rem .5rem;color:rgba(255,255,255,.35);font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;}
+.channel-item{display:flex;align-items:center;gap:.65rem;padding:.6rem 1rem;cursor:pointer;color:rgba(255,255,255,.55);font-size:.88rem;border-left:3px solid transparent;transition:.15s;}
+.channel-item:hover{background:rgba(255,255,255,.05);color:rgba(255,255,255,.85);}
+.channel-item.active{background:rgba(201,168,76,0.12);color:var(--gold);border-left-color:var(--gold);}
+.channel-emoji{font-size:1.1rem;flex-shrink:0;}
+.channel-label{font-weight:600;}
+.sidebar-footer{margin-top:auto;padding:1rem;border-top:1px solid rgba(255,255,255,.07);}
+.me-info{display:flex;align-items:center;gap:.6rem;}
+.me-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--red),var(--orange));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.8rem;color:#fff;flex-shrink:0;}
+.me-name{color:rgba(255,255,255,.8);font-size:.82rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* ── Centre: Chat ── */
+.chat-area{flex:1;display:flex;flex-direction:column;background:var(--msg-bg);min-width:0;}
+.chat-header{background:var(--dark-2);padding:.75rem 1.2rem;border-bottom:1px solid var(--gold-border);display:flex;align-items:center;gap:.75rem;flex-shrink:0;}
+.chat-channel-name{font-size:1rem;font-weight:800;color:var(--cream);}
+.chat-channel-desc{font-size:.78rem;color:var(--text-muted);}
+.online-pill{margin-left:auto;background:rgba(201,168,76,0.12);color:var(--gold);font-size:.72rem;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;border:1px solid var(--gold-border);}
+
+.messages{flex:1;overflow-y:auto;padding:1rem 1.2rem;display:flex;flex-direction:column;gap:.5rem;}
+.messages::-webkit-scrollbar{width:4px;}
+.messages::-webkit-scrollbar-thumb{background:var(--gold-border);border-radius:2px;}
+
+/* Message */
+.msg{display:flex;gap:.75rem;padding:.5rem .6rem;border-radius:.7rem;transition:.15s;}
+.msg:hover{background:rgba(201,168,76,0.04);}
+.msg-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.85rem;color:#fff;flex-shrink:0;margin-top:2px;}
+.msg-body{flex:1;min-width:0;}
+.msg-header{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;margin-bottom:.2rem;}
+.msg-name{font-weight:700;font-size:.88rem;color:var(--cream);}
+.msg-time{font-size:.7rem;color:var(--text-muted);margin-left:.15rem;}
+
+/* Twitch-style member badge */
+.member-badge{display:inline-flex;align-items:center;gap:.2rem;font-size:.68rem;font-weight:700;padding:2px 7px;border-radius:20px;color:#fff;white-space:nowrap;}
+.rank-badge{font-size:.8rem;}
+.msg-text{font-size:.88rem;color:var(--cream);line-height:1.5;word-break:break-word;}
+.msg-text .mention{color:var(--gold);font-weight:600;}
+
+/* Blog article card */
+.article-card{background:var(--dark-3);border:1px solid var(--gold-border);border-left:3px solid var(--gold);border-radius:.85rem;padding:1.1rem 1.25rem;margin:.6rem 0;position:relative;}
+.article-cat-badge{display:inline-block;background:rgba(201,168,76,.15);color:var(--gold);border:1px solid var(--gold-border);font-size:.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:.15rem .65rem;border-radius:2rem;margin-bottom:.5rem;}
+.article-title{font-size:1rem;font-weight:800;color:var(--cream);margin-bottom:.4rem;line-height:1.3;}
+.article-meta{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;margin-bottom:.75rem;padding-bottom:.65rem;border-bottom:1px solid var(--gold-border);}
+.article-body{font-size:.86rem;color:rgba(245,237,214,.75);line-height:1.7;white-space:pre-wrap;word-break:break-word;}
+
+/* Date separator */
+.date-sep{text-align:center;font-size:.72rem;color:var(--text-muted);margin:.75rem 0 .25rem;position:relative;}
+.date-sep::before{content:'';position:absolute;left:0;right:0;top:50%;height:1px;background:var(--gold-border);}
+.date-sep span{background:var(--msg-bg);padding:0 .75rem;position:relative;}
+
+/* Own message */
+.msg.own .msg-avatar{order:2;}
+.msg.own .msg-body{order:1;text-align:right;}
+.msg.own .msg-header{justify-content:flex-end;}
+.msg.own .msg-text{background:linear-gradient(135deg,var(--red),var(--orange));color:#fff;display:inline-block;padding:.4rem .8rem;border-radius:.8rem .8rem .1rem .8rem;text-align:left;}
+
+/* Input */
+.chat-input-area{background:var(--dark-2);border-top:1px solid var(--gold-border);padding:.75rem 1rem;flex-shrink:0;}
+.input-box{display:flex;gap:.5rem;align-items:flex-end;background:var(--dark-3);border-radius:1.2rem;padding:.5rem .5rem .5rem 1rem;border:1px solid var(--gold-border);transition:.2s;}
+.input-box:focus-within{border-color:var(--gold);background:var(--dark-3);}
+#msgInput{flex:1;border:none;background:none;outline:none;font-size:.9rem;resize:none;max-height:120px;min-height:22px;font-family:inherit;line-height:1.45;color:var(--cream);}
+#msgInput::placeholder{color:var(--text-muted);}
+.send-btn{background:linear-gradient(135deg,var(--red),var(--orange));border:none;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:.2s;}
+.send-btn:hover{opacity:.85;transform:scale(1.08);}
+.send-btn:disabled{background:#ddd;transform:none;cursor:not-allowed;}
+.char-count{font-size:.68rem;color:#bbb;text-align:right;margin-top:.2rem;padding-right:.5rem;}
+
+/* ── Right: Members ── */
+.sidebar-right{width:220px;background:var(--dark-2);border-left:1px solid var(--gold-border);overflow-y:auto;flex-shrink:0;}
+@media(max-width:960px){.sidebar-right{display:none;}}
+.sidebar-right::-webkit-scrollbar{width:3px;}
+.sidebar-right::-webkit-scrollbar-thumb{background:var(--gold-border);}
+.members-header{padding:.9rem 1rem .4rem;font-size:.7rem;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:1.5px;border-bottom:1px solid var(--gold-border);}
+.member-item{display:flex;align-items:center;gap:.6rem;padding:.5rem 1rem;transition:.15s;}
+.member-item:hover{background:rgba(201,168,76,0.05);}
+.m-avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:800;color:#fff;flex-shrink:0;}
+.m-name{font-size:.78rem;font-weight:600;color:var(--cream);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.m-badge-inline{font-size:.65rem;}
+
+/* Auth gate */
+.auth-gate{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.5rem;padding:2rem;background:var(--msg-bg);}
+.auth-gate h3{font-weight:800;color:var(--cream);}
+.auth-gate p{color:var(--text-muted);text-align:center;max-width:360px;}
+.btn-join{background:var(--grad-gold);border:none;color:#0f0f0f;font-weight:700;padding:.7rem 2rem;border-radius:50px;font-size:1rem;cursor:pointer;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Top bar -->
+  <div class="top-bar fa-nav">
+    <a class="brand fa-brand" href="/">FUSION ACADEMY</a>
+    <div class="top-links">
+      <a href="/shop"><i class="bi bi-bag me-1"></i>E-shop</a>
+      <a href="/schedule"><i class="bi bi-calendar3 me-1"></i>Rozvrh</a>
+      <a href="/community" class="active"><i class="bi bi-chat-dots me-1"></i>Komunita</a>
+      <a href="#" id="dashLink" style="display:none"><i class="bi bi-grid me-1"></i>Dashboard</a>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main-area" id="mainArea">
+
+    <!-- Auth gate (shown when not logged in) -->
+    <div class="auth-gate" id="authGate">
+      <div style="font-size:4rem">💬</div>
+      <h3>Fusion Academy Komunita</h3>
+      <p>Pripojte sa k našej komunite. Zdieľajte výsledky, pýtajte sa otázky, motivujte ostatných!</p>
+      <button class="btn-join" onclick="showLoginForm()">Prihlásiť sa / Registrovať</button>
+    </div>
+
+    <!-- Chat layout (hidden until logged in) -->
+    <div style="display:contents" id="chatLayout" class="d-none">
+      <!-- Left sidebar -->
+      <div class="sidebar-left">
+        <div class="sidebar-header">Kanály</div>
+        <div id="channelList"></div>
+        <div class="sidebar-footer">
+          <div class="me-info">
+            <div class="me-avatar" id="meAvatar">?</div>
+            <div class="me-name" id="meName">–</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chat area -->
+      <div class="chat-area">
+        <div class="chat-header">
+          <div>
+            <div class="chat-channel-name" id="chatChannelName">#všeobecné</div>
+            <div class="chat-channel-desc" id="chatChannelDesc">Komunita Fusion Academy</div>
+          </div>
+          <div class="online-pill" id="onlinePill">🟢 0 online</div>
+        </div>
+        <div class="messages" id="messages"></div>
+        <div class="chat-input-area">
+          <div class="input-box">
+            <textarea id="msgInput" rows="1" placeholder="Napíšte správu… (Enter = odoslať)"></textarea>
+            <button class="send-btn" id="sendBtn" onclick="sendMessage()"><i class="bi bi-send-fill"></i></button>
+          </div>
+          <div class="char-count"><span id="charCount">0</span>/500</div>
+        </div>
+      </div>
+
+      <!-- Right sidebar: members -->
+      <div class="sidebar-right">
+        <div class="members-header">Členovia</div>
+        <div id="memberList"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Mini login form (appears over auth gate) -->
+<div id="loginOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);z-index:300;align-items:center;justify-content:center;padding:1rem;">
+  <div style="background:#141414;border:1px solid rgba(201,168,76,0.22);border-radius:1.2rem;padding:2rem;max-width:400px;width:100%;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.6);">
+    <button onclick="hideLoginForm()" style="position:absolute;top:1rem;right:1rem;background:none;border:none;font-size:1.3rem;color:rgba(245,237,214,0.5);cursor:pointer;"><i class="bi bi-x-lg"></i></button>
+    <div style="font-size:1.2rem;font-weight:800;color:#F5EDD6;margin-bottom:.25rem;">Pripojiť sa ku komunite</div>
+    <div style="font-size:.85rem;color:rgba(245,237,214,0.50);margin-bottom:1.2rem;">Prihláste sa alebo vytvorte bezplatný účet</div>
+    <ul class="nav nav-pills nav-fill mb-3" id="authTabC">
+      <li class="nav-item"><button class="nav-link active" data-tabc="loginC">Prihlásenie</button></li>
+      <li class="nav-item"><button class="nav-link" data-tabc="regC">Registrácia</button></li>
+    </ul>
+    <div id="loginC">
+      <div id="loginErrC" class="alert alert-danger d-none py-2 small mb-2"></div>
+      <div class="mb-2"><input type="email" id="lEmailC" class="form-control fa-input" placeholder="Email"></div>
+      <div class="mb-3"><input type="password" id="lPwdC" class="form-control fa-input" placeholder="Heslo"></div>
+      <button onclick="doLoginC()" style="background:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);border:none;color:#0f0f0f;font-weight:700;padding:.65rem;border-radius:50px;width:100%;cursor:pointer;">Prihlásiť sa</button>
+    </div>
+    <div id="regC" class="d-none">
+      <div id="regErrC" class="alert alert-danger d-none py-2 small mb-2"></div>
+      <div class="mb-2"><input type="text"  id="rNameC"  class="form-control fa-input" placeholder="Meno a priezvisko"></div>
+      <div class="mb-2"><input type="email" id="rEmailC" class="form-control fa-input" placeholder="Email"></div>
+      <div class="mb-2"><input type="password" id="rPwdC" class="form-control fa-input" placeholder="Heslo (min. 6 znakov)"></div>
+      <div class="mb-3"><input type="tel"   id="rPhoneC" class="form-control fa-input" placeholder="Telefón"></div>
+      <button onclick="doRegisterC()" style="background:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);border:none;color:#0f0f0f;font-weight:700;padding:.65rem;border-radius:50px;width:100%;cursor:pointer;">Registrovať sa zadarmo</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let socket = null;
+let me = null;
+let currentChannel = 'general';
+let allMembers = [];
+const channels = [];
+
+const CHANNEL_INFO = {
+  general: { name:'Všeobecné', emoji:'💬', desc:'Všetko o Fusion Academy – novinky, zdieľanie, komunita' },
+  tanec:   { name:'Tanec',     emoji:'💃', desc:'Tipy, techniky, videjá z tanečného sveta' },
+  vyziva:  { name:'Výživa',    emoji:'🥗', desc:'Recepty, výživa, proteíny, zdravý životný štýl' },
+  fitness: { name:'Fitness',   emoji:'💪', desc:'Tréningy, výsledky, motivácia' },
+  eventy:  { name:'Eventy',    emoji:'🎉', desc:'Workshopy, výlety, spoločné akcie' },
+};
+
+// ── Auth check on load ──────────────────────────────────────────────────────
+async function init() {
+  try {
+    const r = await fetch('/api/me');
+    if (r.ok) {
+      me = await r.json();
+      initChat();
+    }
+  } catch {}
+}
+
+function initChat() {
+  document.getElementById('authGate').style.display = 'none';
+  document.getElementById('chatLayout').classList.remove('d-none');
+  document.getElementById('dashLink').style.display = '';
+
+  // Set me info in sidebar
+  document.getElementById('meAvatar').textContent = me.name.charAt(0).toUpperCase();
+  document.getElementById('meName').textContent = me.name;
+
+  // Build channel list
+  buildChannelList();
+
+  // Connect socket
+  socket = io();
+
+  socket.on('welcome', data => {
+    joinChannel('general');
+  });
+
+  socket.on('message_history', msgs => {
+    const container = document.getElementById('messages');
+    container.innerHTML = '';
+    let lastDate = '';
+    msgs.forEach(m => {
+      const d = m.created_at?.slice(0,10);
+      if (d && d !== lastDate) { appendDateSep(d); lastDate = d; }
+      appendMessage(m);
+    });
+    scrollBottom();
+  });
+
+  socket.on('new_message', msg => {
+    if (msg.channel !== currentChannel) return;
+    const today = new Date().toISOString().slice(0,10);
+    const container = document.getElementById('messages');
+    // Add date sep if needed
+    const lastSep = container.querySelector('.date-sep:last-of-type');
+    if (!lastSep || lastSep.dataset.date !== today) appendDateSep(today);
+    appendMessage(msg);
+    scrollBottom();
+  });
+
+  socket.on('online_users', users => {
+    const inChannel = users.filter(u => u.channel === currentChannel);
+    document.getElementById('onlinePill').textContent = '🟢 ' + inChannel.length + ' online';
+    renderOnlineRight(users);
+  });
+
+  socket.on('auth_required', () => {
+    window.location.href = '/';
+  });
+}
+
+function buildChannelList() {
+  const list = document.getElementById('channelList');
+  list.innerHTML = Object.entries(CHANNEL_INFO).map(([id, ch]) =>
+    `<div class="channel-item ${id==='general'?'active':''}" data-ch="${id}" onclick="joinChannel('${id}')">
+      <span class="channel-emoji">${ch.emoji}</span>
+      <span class="channel-label">#${ch.name}</span>
+    </div>`
+  ).join('');
+}
+
+function joinChannel(channelId) {
+  currentChannel = channelId;
+  // Update sidebar
+  document.querySelectorAll('.channel-item').forEach(el => el.classList.toggle('active', el.dataset.ch === channelId));
+  // Update header
+  const ch = CHANNEL_INFO[channelId] || {};
+  document.getElementById('chatChannelName').textContent = ch.emoji + ' #' + (ch.name||channelId);
+  document.getElementById('chatChannelDesc').textContent = ch.desc||'';
+  // Clear messages
+  document.getElementById('messages').innerHTML = '<div style="text-align:center;color:#ccc;padding:2rem;font-size:.85rem;">Načítavam správy…</div>';
+  // Tell server
+  if (socket) socket.emit('join_channel', channelId);
+}
+
+// ── Messages ────────────────────────────────────────────────────────────────
+function appendMessage(msg) {
+  const container = document.getElementById('messages');
+  const isOwn = msg.user_id === me?.id;
+  const initials = (msg.user_name||'?').charAt(0).toUpperCase();
+  const avatarColor = stringToColor(msg.user_id||'x');
+  const timeStr = new Date(msg.created_at).toLocaleTimeString('sk-SK', {hour:'2-digit',minute:'2-digit'});
+  const badge = msg.memberBadge || {};
+  const badgeStyle = `background:${badge.color||'#8bc34a'}`;
+  const div = document.createElement('div');
+
+  if (msg.is_article) {
+    // Blog article — render as an article card
+    const lines = (msg.text||'').split('\n');
+    const titleLine = lines[0].replace(/^📰 \*(.+)\*$/, '$1').replace(/^\*(.+)\*$/, '$1');
+    const bodyLines = lines.slice(2).join('\n');
+    const formattedBody = escHtml(bodyLines)
+      .replace(/\n/g,'<br>')
+      .replace(/\*(.+?)\*/g,'<strong>$1</strong>')
+      .replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" style="color:var(--gold)">$1</a>');
+    div.className = 'article-card';
+    div.innerHTML = `
+      <div class="article-cat-badge">${escHtml(msg.article_cat||'Blog')}</div>
+      <div class="article-title">${escHtml(titleLine)}</div>
+      <div class="article-meta">
+        <span class="msg-name">${escHtml(msg.user_name||'Fusion Academy')}</span>
+        <span class="member-badge" style="${badgeStyle}" title="${badge.label||''}">${badge.emoji||'🌱'}</span>
+        <span class="msg-time">${msg.article_date||timeStr}</span>
+      </div>
+      <div class="article-body">${formattedBody}</div>`;
+  } else {
+    div.className = 'msg' + (isOwn ? ' own' : '');
+    div.innerHTML = `
+      <div class="msg-avatar" style="background:${avatarColor}">${initials}</div>
+      <div class="msg-body">
+        <div class="msg-header">
+          <span class="msg-name">${escHtml(msg.user_name||'?')}</span>
+          <span class="member-badge" style="${badgeStyle}" title="${badge.label||'Nováčik'}">${badge.emoji||'🌱'} ${badge.label||'Nováčik'}</span>
+          <span class="rank-badge">${msg.rankBadge||''}</span>
+          <span class="msg-time">${timeStr}</span>
+        </div>
+        <div class="msg-text">${escHtml(msg.text||'').replace(/\n/g,'<br>')}</div>
+      </div>`;
+  }
+  container.appendChild(div);
+}
+
+function appendDateSep(dateStr) {
+  const container = document.getElementById('messages');
+  const today = new Date().toISOString().slice(0,10);
+  const yesterday = new Date(Date.now()-86400000).toISOString().slice(0,10);
+  let label = dateStr;
+  if (dateStr === today) label = 'Dnes';
+  else if (dateStr === yesterday) label = 'Včera';
+  else label = new Date(dateStr).toLocaleDateString('sk-SK',{weekday:'long',day:'numeric',month:'long'});
+  const el = document.createElement('div');
+  el.className = 'date-sep';
+  el.dataset.date = dateStr;
+  el.innerHTML = `<span>${label}</span>`;
+  container.appendChild(el);
+}
+
+function renderOnlineRight(users) {
+  const list = document.getElementById('memberList');
+  if (!list) return;
+  list.innerHTML = users.map(u => {
+    const b = u.memberBadge||{};
+    const avatarColor = stringToColor(u.id||'x');
+    return `<div class="member-item">
+      <div class="m-avatar" style="background:${avatarColor}">${(u.name||'?').charAt(0).toUpperCase()}</div>
+      <div class="m-name">${escHtml(u.name||'?')}</div>
+      <span class="m-badge-inline" title="${b.label||''}">${b.emoji||'🌱'}</span>
+    </div>`;
+  }).join('');
+}
+
+// ── Send ────────────────────────────────────────────────────────────────────
+function sendMessage() {
+  const input = document.getElementById('msgInput');
+  const text = input.value.trim();
+  if (!text || !socket) return;
+  socket.emit('send_message', { channel: currentChannel, text });
+  input.value = '';
+  input.style.height = 'auto';
+  document.getElementById('charCount').textContent = '0';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const input = document.getElementById('msgInput');
+  if (!input) return;
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+    document.getElementById('charCount').textContent = input.value.length;
+    document.getElementById('sendBtn').disabled = !input.value.trim();
+  });
+});
+
+function scrollBottom() {
+  const c = document.getElementById('messages');
+  c.scrollTop = c.scrollHeight;
+}
+
+// ── Auth flow ────────────────────────────────────────────────────────────────
+function showLoginForm() {
+  const el = document.getElementById('loginOverlay');
+  el.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+function hideLoginForm() {
+  document.getElementById('loginOverlay').style.display = 'none';
+  document.body.style.overflow = '';
+}
+document.querySelectorAll('#authTabC .nav-link').forEach(b => {
+  b.addEventListener('click', () => {
+    const tab = b.dataset.tabc;
+    document.getElementById('loginC').classList.toggle('d-none', tab !== 'loginC');
+    document.getElementById('regC').classList.toggle('d-none', tab !== 'regC');
+    document.querySelectorAll('#authTabC .nav-link').forEach(x => x.classList.toggle('active', x === b));
+  });
+});
+async function doLoginC() {
+  const email = document.getElementById('lEmailC').value.trim();
+  const password = document.getElementById('lPwdC').value;
+  const err = document.getElementById('loginErrC');
+  err.classList.add('d-none');
+  const r = await fetch('/api/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
+  const d = await r.json();
+  if (!r.ok) { err.textContent = d.error; err.classList.remove('d-none'); return; }
+  window.location.reload();
+}
+async function doRegisterC() {
+  const name = document.getElementById('rNameC').value.trim();
+  const email = document.getElementById('rEmailC').value.trim();
+  const password = document.getElementById('rPwdC').value;
+  const phone = document.getElementById('rPhoneC').value.trim();
+  const err = document.getElementById('regErrC');
+  err.classList.add('d-none');
+  const r = await fetch('/api/register', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password,phone,user_type:'client'})});
+  const d = await r.json();
+  if (!r.ok) { err.textContent = d.error; err.classList.remove('d-none'); return; }
+  window.location.reload();
+}
+
+// ── Utilities ────────────────────────────────────────────────────────────────
+function escHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function stringToColor(str) {
+  const colors = ['#e94560','#f5a623','#9c27b0','#2196f3','#4caf50','#00bcd4','#ff5722','#673ab7','#795548','#607d8b'];
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = str.charCodeAt(i) + ((h << 5) - h);
+  return colors[Math.abs(h) % colors.length];
+}
+
+document.addEventListener('keydown', e => { if(e.key==='Escape') hideLoginForm(); });
+
+init();
+</script>
+</body>
+</html>

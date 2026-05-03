@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Rozvrh hodín Fusion Academy – rezervujte si hodinu online. Tanec, fitness a wellness v Banskej Bystrici, Brezne, Detva, Zvolene.">
+<meta name="keywords" content="rozvrh hodín, rezervácia hodiny, tanečné štúdio, fitness rozvrh">
+<meta property="og:title" content="Rozvrh hodín – Fusion Academy">
+<meta property="og:description" content="Rozvrh hodín Fusion Academy – rezervujte si hodinu online. Tanec, fitness a wellness v Banskej Bystrici, Brezne, Detva, Zvolene.">
+<meta property="og:image" content="https://latindancefusion.art/og-image.svg">
+<meta property="og:type" content="website">
+<link rel="canonical" href="https://latindancefusion.art/schedule">
+<title>Rozvrh hodín – Fusion Academy</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/fa-theme.css">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<style>
+:root{
+  --red:#C9A84C;--orange:#F0C060;
+  --gold:#C9A84C;--gold-light:#F0C060;
+  --dark-1:#0f0f0f;--dark-2:#141414;--dark-3:#1a1a1a;--dark-4:#222;
+  --cream:#F5EDD6;--text-muted:rgba(245,237,214,0.50);
+  --gold-border:rgba(201,168,76,0.22);--grad-gold:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);
+}
+body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',system-ui,sans-serif;}
+
+/* Nav */
+.top-nav{background:rgba(8,8,8,0.97);border-bottom:1px solid var(--gold-border);padding:.75rem 1.5rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
+.brand{font-size:1.3rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none;}
+.nav-links{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;}
+.nav-links a{color:rgba(255,255,255,.6);text-decoration:none;font-size:.85rem;padding:.3rem .7rem;border-radius:20px;transition:.2s;}
+.nav-links a:hover,.nav-links a.active{color:var(--gold);background:rgba(201,168,76,0.12);}
+
+/* Hero */
+.hero{background:radial-gradient(ellipse at 50% 50%,rgba(201,168,76,0.07) 0%,transparent 70%),linear-gradient(135deg,#0a0a0a,#111);color:#fff;padding:2.5rem 1rem 2rem;text-align:center;border-bottom:1px solid var(--gold-border);}
+.hero h1{font-size:clamp(1.6rem,4vw,2.5rem);font-weight:900;margin-bottom:.4rem;}
+.hero h1 span{background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:rgba(255,255,255,.6);margin:0;}
+
+/* Day tabs */
+.day-tabs{background:var(--dark-2);border-bottom:1px solid var(--gold-border);position:sticky;top:0;z-index:100;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch;}
+.day-tabs::-webkit-scrollbar{height:3px;}
+.day-tabs::-webkit-scrollbar-thumb{background:var(--gold);border-radius:2px;}
+.day-btn{display:inline-flex;flex-direction:column;align-items:center;padding:.6rem 1.2rem;border:none;background:none;cursor:pointer;color:var(--text-muted);font-size:.8rem;border-bottom:2px solid transparent;margin-bottom:-1px;transition:.2s;gap:.15rem;}
+.day-btn .day-name{font-weight:700;font-size:.9rem;}
+.day-btn:hover{color:var(--cream);}
+.day-btn.active{color:var(--gold);border-bottom-color:var(--gold);}
+.day-btn .count{background:var(--dark-3);border-radius:10px;padding:1px 7px;font-size:.7rem;color:var(--text-muted);}
+.day-btn.active .count{background:rgba(201,168,76,0.15);color:var(--gold);}
+
+/* Class cards */
+.classes-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1.2rem;padding:1.5rem;}
+@media(max-width:600px){.classes-grid{grid-template-columns:1fr;padding:1rem .75rem;}}
+
+.class-card{background:var(--dark-3);border-radius:1rem;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.3);transition:transform .2s,box-shadow .2s;border:1px solid var(--gold-border);}
+.class-card:hover{transform:translateY(-3px);box-shadow:0 8px 30px rgba(201,168,76,0.1);}
+.class-card-top{padding:1.2rem 1.2rem .8rem;border-left:4px solid var(--gold);}
+.class-header{display:flex;align-items:flex-start;gap:.75rem;margin-bottom:.5rem;}
+.class-emoji{font-size:2rem;line-height:1;flex-shrink:0;}
+.class-title{font-size:1rem;font-weight:800;color:var(--cream);line-height:1.25;margin-bottom:.2rem;}
+.class-level{font-size:.72rem;background:var(--dark-4);color:var(--text-muted);padding:2px 8px;border-radius:10px;display:inline-block;border:1px solid var(--gold-border);}
+.class-desc{font-size:.82rem;color:var(--text-muted);line-height:1.5;margin:.4rem 0 .6rem;}
+.class-meta{display:flex;flex-wrap:wrap;gap:.4rem;font-size:.78rem;color:var(--text-muted);}
+.meta-chip{display:inline-flex;align-items:center;gap:.3rem;background:var(--dark-4);border:1px solid var(--gold-border);padding:3px 10px;border-radius:20px;color:var(--cream);}
+.class-footer{background:var(--dark-2);padding:.8rem 1.2rem;display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--gold-border);}
+.price-tag{font-size:1.1rem;font-weight:800;color:var(--gold);}
+.spots{font-size:.75rem;color:var(--text-muted);}
+.spots.low{color:#f5a623;font-weight:700;}
+.spots.full{color:#f44336;font-weight:700;}
+.btn-book{background:var(--grad-gold);border:none;color:#0f0f0f;font-weight:700;font-size:.82rem;padding:.45rem 1.1rem;border-radius:50px;cursor:pointer;transition:.2s;white-space:nowrap;}
+.btn-book:hover{opacity:.88;transform:scale(1.04);}
+.btn-book:disabled{background:var(--dark-4);color:var(--text-muted);cursor:not-allowed;transform:none;border:1px solid var(--gold-border);}
+
+/* Empty state */
+.empty-day{text-align:center;padding:4rem 1rem;color:var(--text-muted);}
+.empty-day .emoji{font-size:3rem;margin-bottom:1rem;}
+
+/* Login prompt */
+.login-banner{background:rgba(201,168,76,0.12);border-bottom:1px solid var(--gold-border);color:var(--cream);padding:.8rem 1.5rem;text-align:center;font-size:.9rem;display:flex;align-items:center;justify-content:center;gap:.75rem;flex-wrap:wrap;}
+.login-banner a{color:var(--gold);font-weight:700;border:1px solid var(--gold-border);padding:.2rem .8rem;border-radius:20px;text-decoration:none;}
+.login-banner a:hover{background:rgba(201,168,76,0.15);}
+
+/* Modal */
+.modal-backdrop-custom{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:200;align-items:center;justify-content:center;padding:1rem;}
+.modal-backdrop-custom.show{display:flex;}
+.modal-box{background:var(--dark-2);border:1px solid var(--gold-border);border-radius:1.2rem;padding:2rem;max-width:440px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.6);animation:slideUp .25s;}
+@keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.modal-title{font-size:1.2rem;font-weight:800;color:var(--cream);margin-bottom:.25rem;}
+.modal-sub{font-size:.85rem;color:var(--text-muted);margin-bottom:1.2rem;}
+.booking-summary{background:var(--dark-3);border:1px solid var(--gold-border);border-radius:.8rem;padding:1rem;margin-bottom:1.2rem;font-size:.88rem;color:var(--cream);}
+.booking-summary .row-item{display:flex;justify-content:space-between;padding:.2rem 0;border-bottom:1px solid var(--gold-border);color:var(--cream);}
+.booking-summary .row-item:last-child{border:none;}
+.btn-confirm{background:var(--grad-gold);border:none;color:#0f0f0f;font-weight:700;padding:.7rem 1.5rem;border-radius:50px;width:100%;cursor:pointer;font-size:.95rem;}
+.btn-confirm:hover{opacity:.9;}
+.form-control,.form-select{background:var(--dark-3)!important;border:1px solid var(--gold-border)!important;color:var(--cream)!important;}
+.form-control::placeholder{color:var(--text-muted)!important;}
+.form-control:focus,.form-select:focus{border-color:var(--gold)!important;box-shadow:0 0 0 2px rgba(201,168,76,0.15)!important;}
+.form-label{color:var(--cream);}
+.form-select option{background:var(--dark-3);color:var(--cream);}
+.nav-pills .nav-link{color:var(--text-muted);}
+.nav-pills .nav-link.active{background:rgba(201,168,76,0.2);color:var(--gold);}
+
+/* Success */
+.success-card{background:var(--dark-2);border:1px solid var(--gold-border);border-radius:1rem;padding:2rem;text-align:center;margin:2rem auto;max-width:400px;box-shadow:0 4px 20px rgba(0,0,0,.4);color:var(--cream);}
+.success-icon{font-size:3.5rem;margin-bottom:.75rem;}
+</style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav class="top-nav fa-nav">
+  <a class="brand fa-brand" href="/">FUSION ACADEMY</a>
+  <div class="nav-links">
+    <a href="/shop"><i class="bi bi-bag me-1"></i>E-shop</a>
+    <a href="/schedule" class="active"><i class="bi bi-calendar3 me-1"></i>Rozvrh</a>
+    <a href="/community"><i class="bi bi-chat-dots me-1"></i>Komunita</a>
+    <a href="#" class="fa-nav-link" id="navAuthBtn" onclick="handleAuthNav(event)"><i class="bi bi-person me-1"></i><span id="navAuthLabel">Prihlásiť</span></a>
+  </div>
+</nav>
+
+<!-- Login banner (shown when not logged in) -->
+<div class="login-banner d-none" id="loginBanner">
+  <span>💡 Prihláste sa pre rezerváciu hodín</span>
+  <a href="#" onclick="openLoginModal(event)">Prihlásiť sa</a>
+  <a href="#" onclick="openLoginModal(event,'register')">Registrovať zadarmo</a>
+</div>
+
+<!-- Hero -->
+<div class="hero">
+  <h1>Rozvrh <span>hodín</span></h1>
+  <p>Vyberte hodinu, miesto a prihláste sa online</p>
+</div>
+
+<!-- Day tabs -->
+<div class="day-tabs" id="dayTabs"></div>
+
+<!-- Classes grid -->
+<div class="classes-grid" id="classesGrid">
+  <div class="text-center py-5 text-muted w-100">Načítavam rozvrh…</div>
+</div>
+
+<!-- ── Book Modal ── -->
+<div class="modal-backdrop-custom" id="bookModal" onclick="closeModal(event)">
+  <div class="modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.5rem;">
+      <div>
+        <div class="modal-title" id="modalTitle">Rezervácia</div>
+        <div class="modal-sub" id="modalSub"></div>
+      </div>
+      <button onclick="closeBookModal()" style="background:none;border:none;font-size:1.3rem;color:#aaa;cursor:pointer;"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="booking-summary" id="bookingSummary"></div>
+    <div id="bookError" class="alert alert-danger d-none py-2 small mb-3"></div>
+    <button class="btn-confirm" onclick="confirmBooking()">
+      <i class="bi bi-check2-circle me-2"></i>Potvrdiť rezerváciu
+    </button>
+    <p class="text-center mt-2 mb-0 small text-muted">Bezplatné zrušenie 2 hodiny pred hodinou</p>
+  </div>
+</div>
+
+<!-- ── Login Modal ── -->
+<div class="modal-backdrop-custom" id="loginModal" onclick="closeLoginOnBackdrop(event)">
+  <div class="modal-box">
+    <button onclick="closeLoginModal()" style="position:absolute;top:1rem;right:1rem;background:none;border:none;font-size:1.3rem;color:#aaa;cursor:pointer;"><i class="bi bi-x-lg"></i></button>
+    <div class="modal-title">Prihlásenie / Registrácia</div>
+    <div class="modal-sub">Pre rezerváciu hodiny potrebujete účet</div>
+    <ul class="nav nav-pills nav-fill mb-3" id="authTab2">
+      <li class="nav-item"><button class="nav-link active" data-tab2="login">Prihlásenie</button></li>
+      <li class="nav-item"><button class="nav-link" data-tab2="register">Registrácia</button></li>
+    </ul>
+    <div id="loginF2">
+      <div id="loginErr2" class="alert alert-danger d-none py-2 small mb-3"></div>
+      <div class="mb-2"><label class="form-label small fw-semibold">Email</label><input type="email" id="lEmail2" class="form-control"></div>
+      <div class="mb-3"><label class="form-label small fw-semibold">Heslo</label><input type="password" id="lPwd2" class="form-control"></div>
+      <button class="btn-confirm" onclick="doLogin2()"><i class="bi bi-box-arrow-in-right me-2"></i>Prihlásiť sa</button>
+    </div>
+    <div id="regF2" class="d-none">
+      <div id="regErr2" class="alert alert-danger d-none py-2 small mb-3"></div>
+      <div class="mb-2"><label class="form-label small fw-semibold">Meno *</label><input type="text" id="rName2" class="form-control"></div>
+      <div class="mb-2"><label class="form-label small fw-semibold">Email *</label><input type="email" id="rEmail2" class="form-control"></div>
+      <div class="mb-2"><label class="form-label small fw-semibold">Heslo *</label><input type="password" id="rPwd2" class="form-control"></div>
+      <div class="mb-3"><label class="form-label small fw-semibold">Telefón</label><input type="tel" id="rPhone2" class="form-control"></div>
+      <button class="btn-confirm" onclick="doRegister2()"><i class="bi bi-person-plus me-2"></i>Zaregistrovať sa</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let allClasses = [];
+let currentDay = null;
+let selectedClass = null;
+let currentUser = null;
+
+const DAYS = ['Nedeľa','Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota'];
+const DAYS_SHORT = ['Ned','Pon','Uto','Str','Štv','Pia','Sob'];
+
+async function init() {
+  // Check auth
+  try {
+    const r = await fetch('/api/me');
+    if (r.ok) {
+      currentUser = await r.json();
+      document.getElementById('navAuthLabel').textContent = currentUser.name.split(' ')[0];
+    }
+  } catch {}
+
+  if (!currentUser) document.getElementById('loginBanner').classList.remove('d-none');
+
+  // Load classes
+  const r = await fetch('/api/classes');
+  allClasses = await r.json();
+
+  // Build day tabs
+  buildDayTabs();
+
+  // Show today or nearest day with classes
+  const today = new Date().getDay();
+  const daysWithClasses = [...new Set(allClasses.map(c => c.day_of_week))].sort();
+  let startDay = daysWithClasses.find(d => d >= today) ?? daysWithClasses[0];
+  showDay(startDay ?? 1);
+}
+
+function buildDayTabs() {
+  const tabs = document.getElementById('dayTabs');
+  const countPerDay = {};
+  allClasses.forEach(c => { countPerDay[c.day_of_week] = (countPerDay[c.day_of_week]||0)+1; });
+
+  // Order: Mon–Sun (1,2,3,4,5,6,0)
+  const order = [1,2,3,4,5,6,0];
+  tabs.innerHTML = order.map(d => {
+    const cnt = countPerDay[d] || 0;
+    if (!cnt) return '';
+    return `<button class="day-btn" data-day="${d}" onclick="showDay(${d})">
+      <span class="day-name">${DAYS_SHORT[d]}</span>
+      <span class="count">${cnt}</span>
+    </button>`;
+  }).join('');
+}
+
+function showDay(dow) {
+  currentDay = dow;
+  document.querySelectorAll('.day-btn').forEach(b => b.classList.toggle('active', +b.dataset.day === dow));
+  const filtered = allClasses.filter(c => c.day_of_week === dow);
+  renderClasses(filtered);
+}
+
+function renderClasses(classes) {
+  const grid = document.getElementById('classesGrid');
+  if (!classes.length) {
+    grid.innerHTML = `<div class="empty-day w-100"><div class="emoji">🗓️</div><p>Tento deň nie sú naplánované hodiny</p></div>`;
+    return;
+  }
+
+  grid.innerHTML = classes.map(c => {
+    const full = c.spotsLeft <= 0;
+    const low  = !full && c.spotsLeft <= 3;
+    const spotsText = full ? '🔴 Plne obsadené' : low ? `⚠️ Zostáva ${c.spotsLeft} miest` : `✅ ${c.spotsLeft} voľných miest`;
+    const spotsClass = full ? 'full' : low ? 'low' : '';
+    return `
+    <div class="class-card" style="--color:${c.color||'#e94560'}">
+      <div class="class-card-top">
+        <div class="class-header">
+          <span class="class-emoji">${c.emoji}</span>
+          <div>
+            <div class="class-title">${c.name}</div>
+            <span class="class-level">${c.level}</span>
+          </div>
+        </div>
+        <div class="class-desc">${c.description||''}</div>
+        <div class="class-meta">
+          <span class="meta-chip"><i class="bi bi-clock"></i>${c.time_start}${c.time_end?' – '+c.time_end:''}</span>
+          <span class="meta-chip"><i class="bi bi-geo-alt"></i>${c.location}</span>
+          <span class="meta-chip"><i class="bi bi-person"></i>${c.instructor}</span>
+        </div>
+      </div>
+      <div class="class-footer">
+        <div>
+          <div class="price-tag">${c.price}€</div>
+          <div class="spots ${spotsClass}">${spotsText}</div>
+        </div>
+        ${full
+          ? `<button class="btn-book" style="background:rgba(255,152,0,.15);border:1px solid rgba(255,152,0,.4);color:#FF9800" onclick="joinWaitlist('${c._id}')">⏳ Čakací zoznam</button>`
+          : `<button class="btn-book" onclick="bookClass('${c._id}')"><i class="bi bi-calendar-check me-1"></i>Prihlásiť sa</button>`
+        }
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function joinWaitlist(classId) {
+  if (!currentUser) { openLoginModal(); return; }
+  const cls = allClasses.find(c => c._id === classId);
+  if (!cls) return;
+  const nextDate = getNextDate(cls.day_of_week);
+  try {
+    const r = await fetch('/api/bookings', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ class_id: classId, booking_date: nextDate, waitlist: true })
+    });
+    const d = await r.json();
+    if (r.ok || d?.ok) {
+      showToast('⏳ Pridaní do čakacieho zoznamu pre ' + cls.name + '. Upozorníme vás, ak sa uvoľní miesto.', 'warning');
+    } else {
+      showToast('❌ ' + (d.error || 'Chyba'), 'error');
+    }
+  } catch { showToast('❌ Chyba pripojenia', 'error'); }
+}
+
+function showToast(msg, type='info') {
+  const colors = { info:'#C9A84C', warning:'#FF9800', error:'#f44336', success:'#4CAF50' };
+  const t = document.createElement('div');
+  t.style.cssText = `position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;background:#141414;border:1px solid ${colors[type]||colors.info};border-left-width:4px;color:#F5EDD6;padding:.85rem 1.2rem;border-radius:.7rem;font-size:.88rem;max-width:340px;box-shadow:0 4px 20px rgba(0,0,0,.5);animation:fadeIn .3s`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 5000);
+}
+
+function bookClass(classId) {
+  if (!currentUser) { openLoginModal(); return; }
+  selectedClass = allClasses.find(c => c._id === classId);
+  if (!selectedClass) return;
+
+  const nextDate = getNextDate(selectedClass.day_of_week);
+  const formatted = formatDate(nextDate);
+
+  document.getElementById('modalTitle').textContent = selectedClass.name + ' ' + selectedClass.emoji;
+  document.getElementById('modalSub').textContent = 'Potvrďte svoju rezerváciu';
+  document.getElementById('bookingSummary').innerHTML = `
+    <div class="row-item"><span>Hodina</span><span><strong>${selectedClass.name}</strong></span></div>
+    <div class="row-item"><span>Deň</span><span>${DAYS[selectedClass.day_of_week]}</span></div>
+    <div class="row-item"><span>Dátum</span><span>${formatted}</span></div>
+    <div class="row-item"><span>Čas</span><span>${selectedClass.time_start}${selectedClass.time_end?' – '+selectedClass.time_end:''}</span></div>
+    <div class="row-item"><span>Miesto</span><span>${selectedClass.location}</span></div>
+    <div class="row-item"><span>Cena</span><span><strong>${selectedClass.price}€</strong></span></div>
+    <div class="row-item"><span>Prihlásený</span><span>${currentUser.name}</span></div>
+  `;
+  document.getElementById('bookError').classList.add('d-none');
+  document.getElementById('bookModal').classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+
+async function confirmBooking() {
+  if (!selectedClass) return;
+  const btn = document.querySelector('.btn-confirm');
+  btn.disabled = true; btn.textContent = 'Rezervujem…';
+  const nextDate = getNextDate(selectedClass.day_of_week);
+  try {
+    const r = await fetch('/api/bookings', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ class_id: selectedClass._id, booking_date: nextDate })
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      document.getElementById('bookError').textContent = d.error;
+      document.getElementById('bookError').classList.remove('d-none');
+      btn.disabled = false; btn.innerHTML = '<i class="bi bi-check2-circle me-2"></i>Potvrdiť rezerváciu';
+      return;
+    }
+    // Success
+    closeBookModal();
+    showToast('✅ Rezervácia potvrdená pre ' + selectedClass.name, 'success');
+    showSuccess(selectedClass.name, formatDate(nextDate));
+    // Refresh class list
+    const resp = await fetch('/api/classes');
+    allClasses = await resp.json();
+    if (currentDay !== null) showDay(currentDay);
+  } catch {
+    document.getElementById('bookError').textContent = 'Chyba pripojenia';
+    document.getElementById('bookError').classList.remove('d-none');
+    btn.disabled = false; btn.innerHTML = '<i class="bi bi-check2-circle me-2"></i>Potvrdiť rezerváciu';
+  }
+}
+
+function showSuccess(className, dateStr) {
+  const grid = document.getElementById('classesGrid');
+  const card = document.createElement('div');
+  card.className = 'success-card';
+  card.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:300;';
+  card.innerHTML = `
+    <div class="success-icon">🎉</div>
+    <h5 style="font-weight:800;color:var(--gold)">Rezervácia potvrdená!</h5>
+    <p class="text-muted">${className}<br>${dateStr}</p>
+    <button class="btn-confirm" style="max-width:200px;margin:0 auto;" onclick="this.closest('div').remove()">OK</button>
+  `;
+  document.body.appendChild(card);
+  setTimeout(() => card.remove(), 5000);
+}
+
+function closeBookModal() {
+  document.getElementById('bookModal').classList.remove('show');
+  document.body.style.overflow = '';
+  selectedClass = null;
+}
+
+function closeModal(e) { if (e.target.id === 'bookModal') closeBookModal(); }
+
+// ── Login Modal ──
+function openLoginModal(e, tab='login') {
+  if (e) e.preventDefault();
+  switchTab2(tab);
+  document.getElementById('loginModal').classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+function closeLoginModal() {
+  document.getElementById('loginModal').classList.remove('show');
+  document.body.style.overflow = '';
+}
+function closeLoginOnBackdrop(e) { if(e.target.id==='loginModal') closeLoginModal(); }
+
+function switchTab2(tab) {
+  document.getElementById('loginF2').classList.toggle('d-none', tab !== 'login');
+  document.getElementById('regF2').classList.toggle('d-none', tab !== 'register');
+  document.querySelectorAll('#authTab2 .nav-link').forEach(b => b.classList.toggle('active', b.dataset.tab2 === tab));
+}
+document.querySelectorAll('#authTab2 .nav-link').forEach(b => b.onclick = () => switchTab2(b.dataset.tab2));
+
+async function doLogin2() {
+  const email = document.getElementById('lEmail2').value.trim();
+  const password = document.getElementById('lPwd2').value;
+  const err = document.getElementById('loginErr2');
+  err.classList.add('d-none');
+  const r = await fetch('/api/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
+  const d = await r.json();
+  if (!r.ok) { err.textContent = d.error; err.classList.remove('d-none'); return; }
+  currentUser = d;
+  closeLoginModal();
+  document.getElementById('loginBanner').classList.add('d-none');
+  const me = await fetch('/api/me');
+  if (me.ok) currentUser = await me.json();
+  document.getElementById('navAuthLabel').textContent = currentUser.name.split(' ')[0];
+}
+
+async function doRegister2() {
+  const name = document.getElementById('rName2').value.trim();
+  const email = document.getElementById('rEmail2').value.trim();
+  const password = document.getElementById('rPwd2').value;
+  const phone = document.getElementById('rPhone2').value.trim();
+  const err = document.getElementById('regErr2');
+  err.classList.add('d-none');
+  if (password.length < 6) { err.textContent = 'Heslo musí mať aspoň 6 znakov'; err.classList.remove('d-none'); return; }
+  const r = await fetch('/api/register', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password,phone,user_type:'client'})});
+  const d = await r.json();
+  if (!r.ok) { err.textContent = d.error; err.classList.remove('d-none'); return; }
+  closeLoginModal();
+  document.getElementById('loginBanner').classList.add('d-none');
+  const me = await fetch('/api/me');
+  if (me.ok) { currentUser = await me.json(); document.getElementById('navAuthLabel').textContent = currentUser.name.split(' ')[0]; }
+}
+
+function handleAuthNav(e) {
+  e.preventDefault();
+  if (currentUser) window.location.href = currentUser.is_admin ? '/admin' : '/dashboard';
+  else openLoginModal();
+}
+
+// ── Utilities ──
+function getNextDate(dow) {
+  const d = new Date();
+  const diff = (dow - d.getDay() + 7) % 7;
+  d.setDate(d.getDate() + (diff === 0 ? 7 : diff));
+  return d.toISOString().slice(0,10);
+}
+
+function formatDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('sk-SK', {weekday:'long', day:'numeric', month:'long'});
+}
+
+document.addEventListener('keydown', e => { if(e.key==='Escape'){closeBookModal();closeLoginModal();} });
+
+init();
+</script>
+<footer style="background:#0a0a0a;border-top:1px solid rgba(201,168,76,0.18);padding:2.5rem 1rem 1.5rem;margin-top:3rem">
+  <div class="container">
+    <div class="row g-4 mb-3">
+      <div class="col-lg-4">
+        <div style="font-size:1.2rem;font-weight:900;background:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:.5rem">FUSION ACADEMY</div>
+        <p style="color:rgba(245,237,214,.5);font-size:.83rem;line-height:1.6;max-width:280px">Tanečné a fitness štúdio na Slovensku. 4 mestá · 1500+ klientov · 6+ rokov</p>
+        <div style="display:flex;gap:.6rem;margin-top:.8rem">
+          <a href="https://instagram.com/fusionacademy.sk" target="_blank" rel="noopener" style="color:rgba(245,237,214,.4);font-size:1.2rem;transition:.2s" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.4)'">📸</a>
+          <a href="https://facebook.com/fusionacademy.sk" target="_blank" rel="noopener" style="color:rgba(245,237,214,.4);font-size:1.2rem;transition:.2s" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.4)'">📘</a>
+          <a href="https://youtube.com/@fusionacademy" target="_blank" rel="noopener" style="color:rgba(245,237,214,.4);font-size:1.2rem;transition:.2s" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.4)'">▶️</a>
+        </div>
+      </div>
+      <div class="col-6 col-lg-2">
+        <div style="font-size:.78rem;font-weight:700;color:rgba(201,168,76,.7);letter-spacing:.06em;margin-bottom:.7rem">KURZY</div>
+        <div style="display:flex;flex-direction:column;gap:.35rem">
+          <a href="/programs" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Programy</a>
+          <a href="/schedule" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Rozvrh hodín</a>
+          <a href="/online" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Online hodiny</a>
+          <a href="/fitdays" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">FitDays</a>
+          <a href="/trainers" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Tréneri</a>
+        </div>
+      </div>
+      <div class="col-6 col-lg-2">
+        <div style="font-size:.78rem;font-weight:700;color:rgba(201,168,76,.7);letter-spacing:.06em;margin-bottom:.7rem">KOMUNITA</div>
+        <div style="display:flex;flex-direction:column;gap:.35rem">
+          <a href="/community" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Komunita</a>
+          <a href="/blog" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Blog</a>
+          <a href="/podcast" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Podcast</a>
+          <a href="/gallery" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Galéria</a>
+          <a href="/shop" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">E-shop</a>
+        </div>
+      </div>
+      <div class="col-6 col-lg-2">
+        <div style="font-size:.78rem;font-weight:700;color:rgba(201,168,76,.7);letter-spacing:.06em;margin-bottom:.7rem">INFO</div>
+        <div style="display:flex;flex-direction:column;gap:.35rem">
+          <a href="/about" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">O nás</a>
+          <a href="/pricing" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Cenník</a>
+          <a href="/cities" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Mestá</a>
+          <a href="/rental" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Prenájom</a>
+          <a href="/collaborate" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Spolupráca</a>
+          <a href="/contact" style="color:rgba(245,237,214,.55);font-size:.83rem;text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.55)'">Kontakt</a>
+        </div>
+      </div>
+      <div class="col-6 col-lg-2">
+        <div style="font-size:.78rem;font-weight:700;color:rgba(201,168,76,.7);letter-spacing:.06em;margin-bottom:.7rem">KONTAKT</div>
+        <div style="display:flex;flex-direction:column;gap:.4rem;font-size:.82rem;color:rgba(245,237,214,.5)">
+          <div>📍 Banská Bystrica</div>
+          <div>📍 Brezno</div>
+          <div>📍 Detva</div>
+          <div>📍 Zvolen</div>
+          <a href="mailto:fusionacademysk@gmail.com" style="color:rgba(201,168,76,.7);text-decoration:none;font-size:.8rem;margin-top:.3rem">fusionacademysk@gmail.com</a>
+          <a href="tel:+421904315151" style="color:rgba(201,168,76,.7);text-decoration:none;font-size:.8rem">+421 904 315 151</a>
+        </div>
+      </div>
+    </div>
+    <div style="border-top:1px solid rgba(201,168,76,.1);padding-top:1rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
+      <div style="font-size:.78rem;color:rgba(245,237,214,.35)">© 2026 Fusion Academy · <a href="https://latindancefusion.art" style="color:rgba(201,168,76,.5);text-decoration:none">latindancefusion.art</a></div>
+      <div style="display:flex;gap:1rem">
+        <a href="/dashboard" style="font-size:.78rem;color:rgba(245,237,214,.35);text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.35)'">Partner login</a>
+        <a href="/admin" style="font-size:.78rem;color:rgba(245,237,214,.35);text-decoration:none" onmouseover="this.style.color='#C9A84C'" onmouseout="this.style.color='rgba(245,237,214,.35)'">Admin</a>
+      </div>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,50 @@
+/* Fusion Academy MLM – Shared styles */
+:root {
+  --brand1: #e94560;
+  --brand2: #f5a623;
+  --dark: #1a1a2e;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f1f1f1; }
+::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #aaa; }
+
+/* Utility */
+.text-brand { color: var(--brand1); }
+.bg-brand { background: linear-gradient(90deg, var(--brand1), var(--brand2)); }
+
+/* Mobile sidebar */
+@media (max-width: 768px) {
+  .sidebar { width: 100% !important; min-height: auto !important; position: static !important; }
+  .main { margin-left: 0 !important; }
+}
+
+/* Card hover */
+.stat-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.08); transform: translateY(-1px); transition: all .2s; }
+
+/* Smooth transitions */
+.section { animation: fadeIn .2s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* Table */
+.table > :not(caption) > * > * { padding: .6rem .75rem; }
+
+/* Form controls focus */
+.form-control:focus, .form-select:focus {
+  border-color: var(--brand1);
+  box-shadow: 0 0 0 .2rem rgba(233, 69, 96, 0.15);
+}
+
+/* Print */
+@media print {
+  .sidebar, .btn, nav { display: none !important; }
+  .main { margin-left: 0 !important; }
+}

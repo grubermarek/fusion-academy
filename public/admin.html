@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fusion Academy – Admin Panel</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/fa-theme.css">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --brand1:#C9A84C;--brand2:#F0C060;
+  --gold:#C9A84C;--gold-light:#F0C060;
+  --dark-1:#0f0f0f;--dark-2:#141414;--dark-3:#1a1a1a;--dark-4:#222;--dark-5:#2c2c2c;
+  --cream:#F5EDD6;--text-muted:rgba(245,237,214,0.50);
+  --gold-border:rgba(201,168,76,0.22);--grad-gold:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);
+}
+body{background:var(--dark-1);color:var(--cream);font-size:.92rem;}
+.sidebar{width:240px;min-height:100vh;background:var(--dark-2);position:fixed;left:0;top:0;z-index:100;border-right:1px solid var(--gold-border);}
+.main{margin-left:240px;min-height:100vh;background:var(--dark-1);}
+.brand{font-size:1.2rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.nav-link{color:rgba(245,237,214,.6)!important;border-radius:.5rem;margin:2px 0;transition:all .2s;}
+.nav-link:hover,.nav-link.active{background:rgba(201,168,76,.12)!important;color:var(--gold)!important;}
+.section{display:none;} .section.active{display:block;}
+.stat-card{border:1px solid var(--gold-border)!important;border-radius:1rem;background:var(--dark-3)!important;position:relative;overflow:hidden;}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--grad-gold);}
+.stat-icon{width:48px;height:48px;border-radius:.75rem;display:flex;align-items:center;justify-content:center;font-size:1.4rem;}
+.table{--bs-table-bg:transparent;--bs-table-color:var(--cream);--bs-table-border-color:var(--gold-border);--bs-table-hover-bg:rgba(201,168,76,.05);}
+.table th{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--gold);font-weight:700;border-bottom:1px solid var(--gold-border)!important;}
+.table td{border-color:var(--gold-border)!important;color:var(--cream);}
+.table-light{--bs-table-bg:var(--dark-4);--bs-table-color:var(--gold);}
+.rank-badge{background:var(--grad-gold);color:#0f0f0f;font-size:.68rem;padding:2px 10px;border-radius:20px;font-weight:700;}
+.btn-brand{background:var(--grad-gold);border:none;color:#0f0f0f;font-weight:700;}
+.btn-brand:hover{opacity:.9;color:#0f0f0f;}
+.progress{height:6px;border-radius:3px;background:var(--dark-5);}
+.progress-bar-brand{background:var(--grad-gold);}
+.order-badge-pending  {background:rgba(201,168,76,.15);color:var(--gold);border:1px solid var(--gold-border);}
+.order-badge-confirmed{background:rgba(33,150,243,.15);color:#60a5fa;}
+.order-badge-paid     {background:rgba(39,174,96,.15);color:#4ade80;}
+.order-badge-cancelled{background:rgba(192,57,43,.15);color:#f87171;}
+.booking-badge-confirmed{background:rgba(39,174,96,.15);color:#4ade80;}
+.booking-badge-cancelled{background:rgba(192,57,43,.15);color:#f87171;}
+.card{background:var(--dark-3)!important;border:1px solid var(--gold-border)!important;color:var(--cream);}
+.card .fw-semibold,.card .fw-bold{color:var(--cream);}
+.text-muted{color:var(--text-muted)!important;}
+.fs-3.fw-bold,.fs-4.fw-bold{background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;display:inline-block;}
+.form-control,.form-select{background:var(--dark-3)!important;border:1px solid var(--gold-border)!important;color:var(--cream)!important;}
+.form-control::placeholder{color:var(--text-muted)!important;}
+.form-control:focus,.form-select:focus{border-color:var(--gold)!important;box-shadow:0 0 0 2px rgba(201,168,76,.15)!important;}
+.form-label{color:var(--cream);}
+.form-select option{background:var(--dark-3);color:var(--cream);}
+code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gold-border);padding:2px 6px;border-radius:4px;}
+.modal-content{background:var(--dark-3)!important;border:1px solid var(--gold-border)!important;color:var(--cream);}
+.modal-header,.modal-footer{border-color:var(--gold-border)!important;}
+.modal-title{color:var(--cream);}
+.btn-close{filter:invert(1) sepia(1) saturate(2) hue-rotate(10deg);}
+.bg-light{background:var(--dark-4)!important;}
+.border-bottom{border-color:var(--gold-border)!important;}
+.input-group-text{background:var(--dark-4);border-color:var(--gold-border);color:var(--text-muted);}
+@media(max-width:768px){.sidebar{width:100%;min-height:auto;position:static;}.main{margin-left:0;}}
+</style>
+</head>
+<body>
+
+<div class="sidebar p-3 d-flex flex-column">
+  <div class="brand mb-1 mt-1">FUSION ACADEMY</div>
+  <div class="text-white-50" style="font-size:.72rem" class="mb-3">Admin Panel</div>
+  <nav class="nav flex-column gap-1 mt-2">
+    <a class="nav-link active" href="#" onclick="show('overview')"><i class="bi bi-speedometer2 me-2"></i>Prehľad</a>
+    <a class="nav-link" href="#" onclick="show('orders')"><i class="bi bi-bag-check me-2"></i>Objednávky <span id="pendingBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
+    <a class="nav-link" href="#" onclick="show('sale')"><i class="bi bi-plus-circle me-2"></i>Zaznamenať predaj</a>
+    <a class="nav-link" href="#" onclick="show('partners')"><i class="bi bi-people me-2"></i>Partneri</a>
+    <a class="nav-link" href="#" onclick="show('commissions')"><i class="bi bi-cash-stack me-2"></i>Výplaty provízií</a>
+    <a class="nav-link" href="#" onclick="show('transactions')"><i class="bi bi-receipt me-2"></i>Všetky predaje</a>
+    <a class="nav-link" href="#" onclick="show('products')"><i class="bi bi-box-seam me-2"></i>Produkty</a>
+    <a class="nav-link" href="#" onclick="show('addpartner')"><i class="bi bi-person-plus me-2"></i>Pridať partnera</a>
+    <a class="nav-link" href="#" onclick="show('classes')"><i class="bi bi-calendar3 me-2"></i>Hodiny / Stream</a>
+    <a class="nav-link" href="#" onclick="show('bookings')"><i class="bi bi-calendar-check me-2"></i>Rezervácie</a>
+    <a class="nav-link" href="#" onclick="show('memberships')"><i class="bi bi-patch-check me-2"></i>Členstvá</a>
+    <a class="nav-link" href="#" onclick="show('articles')"><i class="bi bi-newspaper me-2"></i>Blog / Články</a>
+    <a class="nav-link" href="#" onclick="show('rentals')"><i class="bi bi-building me-2"></i>Prenájmy</a>
+    <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby PayPal</a>
+  </nav>
+  <div class="mt-auto pt-3 border-top border-secondary">
+    <div class="d-flex gap-2 mb-2">
+      <a href="/shop" target="_blank" class="btn btn-sm btn-outline-light flex-grow-1"><i class="bi bi-shop me-1"></i>E-shop</a>
+    </div>
+    <button class="btn btn-sm btn-outline-light w-100" onclick="logout()"><i class="bi bi-box-arrow-left me-1"></i>Odhlásiť</button>
+  </div>
+</div>
+
+<div class="main p-4">
+
+  <!-- OVERVIEW -->
+  <div id="s-overview" class="section active">
+    <h4 class="fw-bold mb-4">Prehľad systému</h4>
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-3"><div class="stat-card card p-3">
+        <div class="stat-icon bg-primary bg-opacity-10 text-primary mb-2"><i class="bi bi-people"></i></div>
+        <div class="text-muted small">Partneri</div><div class="fs-3 fw-bold" id="ov-partners">—</div>
+      </div></div>
+      <div class="col-6 col-md-3"><div class="stat-card card p-3">
+        <div class="stat-icon bg-success bg-opacity-10 text-success mb-2"><i class="bi bi-graph-up"></i></div>
+        <div class="text-muted small">Tržby tento mesiac</div><div class="fs-3 fw-bold" id="ov-revenue">—</div>
+      </div></div>
+      <div class="col-6 col-md-3"><div class="stat-card card p-3">
+        <div class="stat-icon bg-warning bg-opacity-10 text-warning mb-2"><i class="bi bi-bag"></i></div>
+        <div class="text-muted small">Nové objednávky</div><div class="fs-3 fw-bold" id="ov-orders">—</div>
+      </div></div>
+      <div class="col-6 col-md-3"><div class="stat-card card p-3">
+        <div class="stat-icon bg-danger bg-opacity-10 text-danger mb-2"><i class="bi bi-cash-coin"></i></div>
+        <div class="text-muted small">Čakajúce provízie</div><div class="fs-3 fw-bold" id="ov-comm">—</div>
+      </div></div>
+    </div>
+    <div class="row g-3">
+      <div class="col-md-7"><div class="card border-0 rounded-3 p-4 h-100">
+        <div class="fw-semibold mb-3">Tržby posledných 6 mesiacov</div>
+        <canvas id="revenueChart" height="160"></canvas>
+      </div></div>
+      <div class="col-md-5"><div class="card border-0 rounded-3 p-4 h-100">
+        <div class="fw-semibold mb-3">Top produkty</div>
+        <div id="topProducts" class="small"></div>
+      </div></div>
+    </div>
+    <div class="card border-0 rounded-3 p-4 mt-3">
+      <div class="fw-semibold mb-2">Rozloženie rankov partnerov</div>
+      <div id="rankDist" class="d-flex flex-wrap gap-2 mt-2"></div>
+    </div>
+  </div>
+
+  <!-- ORDERS -->
+  <div id="s-orders" class="section">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h4 class="fw-bold mb-0">Objednávky z e-shopu</h4>
+      <div class="d-flex gap-2">
+        <select class="form-select form-select-sm" id="orderFilter" onchange="loadOrders()" style="width:160px">
+          <option value="">Všetky</option>
+          <option value="pending">Čakajúce</option>
+          <option value="confirmed">Potvrdené</option>
+          <option value="paid">Zaplatené</option>
+          <option value="cancelled">Zrušené</option>
+        </select>
+        <button class="btn btn-sm btn-brand" onclick="loadOrders()"><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
+    </div>
+    <div class="card border-0 rounded-3 p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light"><tr>
+            <th class="ps-3">Č. objednávky</th><th>Klient</th><th>Položky</th>
+            <th>Suma</th><th>Partner</th><th>Mesto</th><th>Platba</th><th>Stav</th><th>Dátum</th><th></th>
+          </tr></thead>
+          <tbody id="ordersTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- SALE -->
+  <div id="s-sale" class="section">
+    <h4 class="fw-bold mb-4">➕ Zaznamenať predaj (manuálne)</h4>
+    <div class="row">
+      <div class="col-md-6"><div class="card border-0 rounded-3 p-4">
+        <div id="saleMsg" class="alert d-none py-2 small"></div>
+        <div class="mb-3"><label class="form-label fw-semibold small">Partner (predajca) *</label>
+          <select class="form-select" id="salePartner"><option value="">— Vyberte —</option></select></div>
+        <div class="mb-3"><label class="form-label fw-semibold small">Klient *</label>
+          <input type="text" class="form-control" id="saleClient" placeholder="Jana Kováčová"></div>
+        <div class="mb-3"><label class="form-label fw-semibold small">Produkt</label>
+          <select class="form-select" id="saleProd" onchange="fillPrice()"><option value="">— Iný predaj —</option></select></div>
+        <div class="mb-3"><label class="form-label fw-semibold small">Suma (€) *</label>
+          <input type="number" class="form-control" id="saleAmt" placeholder="45.00" step="0.01"></div>
+        <div class="mb-3"><label class="form-label fw-semibold small">Dátum</label>
+          <input type="date" class="form-control" id="saleDate"></div>
+        <div class="mb-3"><label class="form-label fw-semibold small">Poznámka</label>
+          <input type="text" class="form-control" id="saleNote"></div>
+        <button class="btn btn-brand w-100 py-2" onclick="recordSale()"><i class="bi bi-check-circle me-2"></i>Zaznamenať a vypočítať provízie</button>
+      </div></div>
+      <div class="col-md-6">
+        <div class="card border-0 rounded-3 p-4 bg-light mb-3">
+          <div class="fw-semibold mb-2">💡 Tip</div>
+          <div class="small text-muted">
+            Objednávky z e-shopu sa spracúvajú automaticky v sekcii <strong>Objednávky</strong>.<br><br>
+            Tu zadávajte len predaje, ktoré prebehli mimo e-shop (osobne, telefonicky).
+          </div>
+        </div>
+        <div class="card border-0 rounded-3 p-4">
+          <div class="fw-semibold mb-3">Posledné predaje</div>
+          <div id="recentSales" class="small"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PARTNERS -->
+  <div id="s-partners" class="section">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h4 class="fw-bold mb-0">Partneri</h4>
+      <div class="d-flex gap-2">
+        <input type="text" class="form-control form-control-sm" id="partnerSearch" placeholder="Hľadať..." oninput="filterPartners()" style="width:200px">
+        <button class="btn btn-sm btn-brand" onclick="show('addpartner')"><i class="bi bi-person-plus me-1"></i>Pridať</button>
+      </div>
+    </div>
+    <div class="card border-0 rounded-3 p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light"><tr><th class="ps-3">Meno</th><th>Kód</th><th>Rank</th><th>Sponzor</th><th>Obrat/30d</th><th>Tím</th><th>Stav</th><th></th></tr></thead>
+          <tbody id="partnerTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- COMMISSIONS -->
+  <div id="s-commissions" class="section">
+    <h4 class="fw-bold mb-4">Výplaty provízií</h4>
+    <div class="card border-0 rounded-3 p-4 mb-3">
+      <div class="d-flex gap-3 align-items-end flex-wrap">
+        <div><label class="form-label small fw-semibold">Mesiac</label>
+          <input type="month" class="form-control" id="commMonth"></div>
+        <button class="btn btn-brand" onclick="loadCommissions()">Načítať</button>
+        <div class="ms-auto text-muted small fw-semibold" id="commSummaryTotal"></div>
+      </div>
+    </div>
+    <div class="card border-0 rounded-3 p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light"><tr><th class="ps-3">Partner</th><th>IBAN</th><th>Rank</th><th>Na výplatu</th><th>Vyplatené</th><th></th></tr></thead>
+          <tbody id="commTable"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal fade" id="commDetailModal" tabindex="-1">
+      <div class="modal-dialog modal-lg"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">Detail provízií</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body"><div id="commDetailContent"></div></div>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- TRANSACTIONS -->
+  <div id="s-transactions" class="section">
+    <h4 class="fw-bold mb-4">Všetky predaje</h4>
+    <div class="card border-0 rounded-3 p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light"><tr><th class="ps-3">Dátum</th><th>Partner</th><th>Klient</th><th>Produkt</th><th>Suma</th><th></th></tr></thead>
+          <tbody id="allTxTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRODUCTS -->
+  <div id="s-products" class="section">
+    <h4 class="fw-bold mb-4">Produkty a cenník</h4>
+    <div class="row">
+      <div class="col-md-8"><div class="card border-0 rounded-3 p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light"><tr><th class="ps-3">Produkt</th><th>Kategória</th><th>Cena</th><th>Prov. %</th><th>Aktívny</th></tr></thead>
+            <tbody id="prodTable"></tbody>
+          </table>
+        </div>
+      </div></div>
+      <div class="col-md-4"><div class="card border-0 rounded-3 p-4">
+        <div class="fw-semibold mb-3">Pridať produkt</div>
+        <div id="prodMsg" class="alert d-none py-2 small"></div>
+        <div class="mb-2"><label class="form-label small fw-semibold">Emoji</label>
+          <input type="text" class="form-control form-control-sm" id="np-emoji" placeholder="💃" maxlength="4"></div>
+        <div class="mb-2"><label class="form-label small fw-semibold">Názov *</label>
+          <input type="text" class="form-control form-control-sm" id="np-name"></div>
+        <div class="mb-2"><label class="form-label small fw-semibold">Kategória *</label>
+          <select class="form-select form-select-sm" id="np-cat">
+            <option>Členstvá</option><option>Kurzy</option><option>Analýzy</option>
+            <option>Výživa</option><option>Oblečenie</option><option>Eventy</option><option>Iné</option>
+          </select></div>
+        <div class="mb-2"><label class="form-label small fw-semibold">Popis</label>
+          <textarea class="form-control form-control-sm" id="np-desc" rows="2"></textarea></div>
+        <div class="mb-2"><label class="form-label small fw-semibold">Cena (€) *</label>
+          <input type="number" class="form-control form-control-sm" id="np-price" step="0.01"></div>
+        <div class="mb-3"><label class="form-label small fw-semibold">Provízia (%)</label>
+          <input type="number" class="form-control form-control-sm" id="np-comm" value="12" step="1"></div>
+        <button class="btn btn-brand btn-sm w-100" onclick="addProduct()">Pridať produkt</button>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- ADD PARTNER -->
+  <div id="s-addpartner" class="section">
+    <h4 class="fw-bold mb-4">Pridať nového partnera</h4>
+    <div class="row">
+      <div class="col-md-6"><div class="card border-0 rounded-3 p-4">
+        <div id="apMsg" class="alert d-none py-2 small"></div>
+        <div class="mb-3"><label class="form-label fw-semibold small">Celé meno *</label><input type="text" class="form-control" id="apName"></div>
+        <div class="mb-3"><label class="form-label fw-semibold small">Email *</label><input type="email" class="form-control" id="apEmail"></div>
+        <div class="mb-3"><label class="form-label fw-semibold small">Heslo *</label><input type="password" class="form-control" id="apPwd" placeholder="Min. 6 znakov"></div>
+        <div class="mb-3"><label class="form-label fw-semibold small">Telefón</label><input type="tel" class="form-control" id="apPhone"></div>
+        <div class="mb-3"><label class="form-label fw-semibold small">Sponzor</label>
+          <select class="form-select" id="apSponsor"><option value="">— Bez sponzora —</option></select></div>
+        <div class="mb-3"><label class="form-label fw-semibold small">IBAN</label><input type="text" class="form-control" id="apBank" placeholder="SK..."></div>
+        <button class="btn btn-brand w-100 py-2" onclick="addPartner()"><i class="bi bi-person-plus me-2"></i>Vytvoriť konto</button>
+      </div></div>
+      <div class="col-md-6"><div class="card border-0 rounded-3 p-4 bg-light">
+        <div class="fw-semibold mb-3">ℹ️ Registračný link pre partnerov</div>
+        <div class="small text-muted mb-2">Zdieľajte tento odkaz — partner sa zaregistruje sám:</div>
+        <div class="d-flex gap-2">
+          <code class="bg-white rounded p-2 small flex-grow-1" id="regLink"></code>
+          <button class="btn btn-sm btn-outline-secondary" onclick="copyRegLink()"><i class="bi bi-copy"></i></button>
+        </div>
+        <hr>
+        <div class="fw-semibold mb-2 mt-2">🛍️ E-shop link s referralom</div>
+        <div class="small text-muted mb-2">Partner zdieľa tento link na e-shop s jeho kódom:</div>
+        <code class="bg-white rounded p-2 small d-block" id="shopRefLink" style="word-break:break-all"></code>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- BOOKINGS -->
+  <!-- CLASSES / STREAM URL -->
+  <div id="s-classes" class="section">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h4 class="fw-bold mb-0">Hodiny &amp; Stream URL</h4>
+      <button class="btn btn-sm btn-brand" onclick="loadAdminClasses()"><i class="bi bi-arrow-clockwise"></i></button>
+    </div>
+    <div class="card border-0 rounded-3">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead><tr>
+            <th class="ps-3">Hodina</th>
+            <th>Deň / Čas</th>
+            <th>Mesto</th>
+            <th>Kapacita</th>
+            <th>Stream URL</th>
+            <th>Akcia</th>
+          </tr></thead>
+          <tbody id="adminClassesTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="s-bookings" class="section">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h4 class="fw-bold mb-0">Rezervácie hodín</h4>
+      <div class="d-flex gap-2">
+        <select class="form-select form-select-sm" id="bookingFilter" onchange="loadAdminBookings()" style="width:160px">
+          <option value="">Všetky</option>
+          <option value="confirmed">Potvrdené</option>
+          <option value="cancelled">Zrušené</option>
+        </select>
+        <button class="btn btn-sm btn-brand" onclick="loadAdminBookings()"><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
+    </div>
+    <div class="card border-0 rounded-3">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead><tr>
+            <th class="ps-3">Klient</th>
+            <th>Hodina</th>
+            <th>Deň / Čas</th>
+            <th>Dátum rezervácie</th>
+            <th>Stav</th>
+            <th>Zaregistrovaný</th>
+          </tr></thead>
+          <tbody id="bookingTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- MEMBERSHIPS -->
+  <div id="s-memberships" class="section">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h4 class="fw-bold mb-0">Členstvá</h4>
+      <button class="btn btn-sm btn-brand" onclick="loadMemberships()"><i class="bi bi-arrow-clockwise"></i></button>
+    </div>
+    <div class="card border-0 rounded-3">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead><tr><th class="ps-3">Člen</th><th>Plán</th><th>Platné do</th><th>Stav</th><th>Akcia</th></tr></thead>
+          <tbody id="membershipsTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ARTICLES / BLOG -->
+  <div id="s-articles" class="section">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h4 class="fw-bold mb-0">Blog &amp; Články</h4>
+      <button class="btn btn-sm btn-brand" onclick="loadArticles()"><i class="bi bi-arrow-clockwise"></i></button>
+    </div>
+    <div class="row g-4">
+      <div class="col-lg-5">
+        <div class="card border-0 rounded-3 p-3">
+          <h5 class="fw-semibold mb-3" id="artFormTitle">Nový článok</h5>
+          <div class="mb-2"><label class="form-label small fw-semibold">Titul *</label><input type="text" class="form-control" id="artTitle" placeholder="Názov článku"></div>
+          <div class="mb-2"><label class="form-label small fw-semibold">Kategória</label>
+            <select class="form-select" id="artCat">
+              <option>Blog</option><option>Tanec</option><option>Výživa</option><option>Fitness</option><option>Eventy</option><option>Novinky</option>
+            </select>
+          </div>
+          <div class="mb-2"><label class="form-label small fw-semibold">Kanál</label>
+            <select class="form-select" id="artChannel">
+              <option value="blog">Blog & Novinky</option>
+              <option value="tanec">Tanec</option>
+              <option value="vyziva">Výživa</option>
+              <option value="fitness">Fitness</option>
+              <option value="eventy">Eventy</option>
+            </select>
+          </div>
+          <div class="mb-3"><label class="form-label small fw-semibold">Obsah *</label><textarea class="form-control" id="artBody" rows="8" placeholder="Text článku..."></textarea></div>
+          <button class="btn btn-brand btn-sm" id="artSaveBtn" onclick="saveArticle()">Publikovať článok</button>
+        </div>
+      </div>
+      <div class="col-lg-7">
+        <div class="card border-0 rounded-3">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead><tr><th class="ps-3">Titul</th><th>Kategória</th><th>Dátum</th><th>Akcie</th></tr></thead>
+              <tbody id="articlesTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RENTALS -->
+  <div id="s-rentals" class="section">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h4 class="fw-bold mb-0">Dopyty o prenájom</h4>
+      <button class="btn btn-sm btn-brand" onclick="loadRentals()"><i class="bi bi-arrow-clockwise"></i></button>
+    </div>
+    <div class="card border-0 rounded-3">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead><tr><th class="ps-3">Žiadateľ</th><th>Mesto</th><th>Typ akcie</th><th>Dátum</th><th>Stav</th><th>Správa</th></tr></thead>
+          <tbody id="rentalsTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAYMENTS -->
+  <div id="s-payments" class="section">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h4 class="fw-bold mb-0">PayPal platby</h4>
+      <button class="btn btn-sm btn-brand" onclick="loadPayments()"><i class="bi bi-arrow-clockwise"></i></button>
+    </div>
+    <div class="card border-0 rounded-3">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead><tr><th class="ps-3">PayPal Order ID</th><th>Suma</th><th>Popis</th><th>Typ</th><th>Stav</th><th>Dátum</th></tr></thead>
+          <tbody id="paymentsTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<!-- Edit Partner Modal -->
+<div class="modal fade" id="editPartnerModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">Upraviť partnera</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <input type="hidden" id="editId">
+      <div class="mb-3"><label class="form-label small fw-semibold">Meno</label><input type="text" class="form-control" id="editName"></div>
+      <div class="mb-3"><label class="form-label small fw-semibold">Telefón</label><input type="text" class="form-control" id="editPhone"></div>
+      <div class="mb-3"><label class="form-label small fw-semibold">IBAN</label><input type="text" class="form-control" id="editBank"></div>
+      <div class="mb-3"><label class="form-label small fw-semibold">Sponzor</label>
+        <select class="form-select" id="editSponsor"><option value="">— Žiadny —</option></select></div>
+      <div class="mb-3"><label class="form-label small fw-semibold">Stav</label>
+        <select class="form-select" id="editActive"><option value="1">Aktívny</option><option value="0">Neaktívny</option></select></div>
+      <div class="mb-3"><label class="form-label small fw-semibold">Poznámka</label><input type="text" class="form-control" id="editNotes"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Zrušiť</button>
+      <button type="button" class="btn btn-brand btn-sm" onclick="savePartner()">Uložiť</button>
+    </div>
+  </div></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+const RANKS=[
+  {id:1,name:'Starter',badge:'🌱'},{id:2,name:'Partner',badge:'🤝'},{id:3,name:'Senior Partner',badge:'⭐'},
+  {id:4,name:'Leader',badge:'🏅'},{id:5,name:'Team Leader',badge:'🥇'},{id:6,name:'Regional Leader',badge:'💎'},
+  {id:7,name:'Director',badge:'👑'},{id:8,name:'Elite Director',badge:'🏆'},
+];
+const STATUS_LABELS={pending:'Čaká',confirmed:'Potvrdená',paid:'Zaplatená',cancelled:'Zrušená'};
+const STATUS_CLASSES={pending:'order-badge-pending',confirmed:'order-badge-confirmed',paid:'order-badge-paid',cancelled:'order-badge-cancelled'};
+let partnersCache=[], productsCache=[], revenueChart=null;
+
+async function api(url,opts={}){
+  const r=await fetch(url,{headers:{'Content-Type':'application/json'},...opts});
+  if(r.status===401){window.location.href='/';return null;}
+  if(r.status===403){alert('Nemáte oprávnenie.');window.location.href='/';return null;}
+  return r.json();
+}
+function eur(v){return (+v).toFixed(2)+' €';}
+function dateStr(d){return d?d.slice(0,10):'—';}
+
+function show(sec){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.getElementById('s-'+sec).classList.add('active');
+  document.querySelectorAll('.nav-link').forEach(a=>a.classList.remove('active'));
+  document.querySelector(`.nav-link[onclick*="${sec}"]`)?.classList.add('active');
+  if(sec==='orders')loadOrders();
+  if(sec==='partners')loadPartners();
+  if(sec==='commissions')loadCommissions();
+  if(sec==='transactions')loadAllTx();
+  if(sec==='products')loadProducts();
+  if(sec==='sale')loadSaleForm();
+  if(sec==='addpartner')loadAddPartner();
+  if(sec==='classes')loadAdminClasses();
+  if(sec==='bookings')loadAdminBookings();
+  if(sec==='memberships')loadMemberships();
+  if(sec==='articles')loadArticles();
+  if(sec==='rentals')loadRentals();
+  if(sec==='payments')loadPayments();
+}
+
+async function loadOverview(){
+  const d=await api('/api/admin/stats');if(!d)return;
+  document.getElementById('ov-partners').textContent=d.totalPartners;
+  document.getElementById('ov-revenue').textContent=eur(d.monthRevenue);
+  document.getElementById('ov-orders').textContent=d.pendingOrders;
+  document.getElementById('ov-comm').textContent=eur(d.pendingComm);
+  if(d.pendingOrders>0){const b=document.getElementById('pendingBadge');b.textContent=d.pendingOrders;b.style.display='inline';}
+  if(revenueChart)revenueChart.destroy();
+  revenueChart=new Chart(document.getElementById('revenueChart'),{type:'bar',data:{labels:d.monthlyRevenue.map(x=>x.m),datasets:[{label:'Tržby (€)',data:d.monthlyRevenue.map(x=>x.total),backgroundColor:'rgba(233,69,96,0.7)',borderColor:'#e94560',borderWidth:1,borderRadius:6}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+  document.getElementById('topProducts').innerHTML=d.topProducts.map(p=>`<div class="d-flex justify-content-between py-1 border-bottom"><span>${p.product_name}</span><span class="fw-semibold">${eur(p.total)} <span class="text-muted">(${p.cnt}x)</span></span></div>`).join('');
+  document.getElementById('rankDist').innerHTML=d.rankDist.map(r=>`<span class="badge bg-light text-dark border">${RANKS[r.rank-1]?.badge||''} ${r.rankName}: <strong>${r.cnt}</strong></span>`).join('');
+}
+
+// ── ORDERS ──
+async function loadOrders(){
+  const status=document.getElementById('orderFilter').value;
+  const rows=await api('/api/admin/orders'+(status?'?status='+status:''));
+  if(!rows)return;
+  document.getElementById('ordersTable').innerHTML=rows.map(o=>`
+    <tr>
+      <td class="ps-3"><code class="small">${o.order_number}</code></td>
+      <td>
+        <div class="fw-semibold">${o.client_name}</div>
+        <div class="text-muted" style="font-size:.72rem">${o.client_email}</div>
+        ${o.client_phone?`<div class="text-muted" style="font-size:.72rem">${o.client_phone}</div>`:''}
+      </td>
+      <td class="small">${o.items.map(i=>`${i.qty}× ${i.product_name}`).join('<br>')}</td>
+      <td class="fw-bold">${eur(o.total)}</td>
+      <td class="small">${o.partner_name||'<span class="text-muted">Bez partnera</span>'}</td>
+      <td class="small">${o.city||'—'}</td>
+      <td><span class="badge bg-light text-dark border">${{cash:'Hotovosť',transfer:'Prevod',card:'Karta'}[o.payment_method]||o.payment_method}</span></td>
+      <td><span class="badge ${STATUS_CLASSES[o.status]||'bg-secondary'} rounded-pill">${STATUS_LABELS[o.status]||o.status}</span></td>
+      <td class="text-muted small">${o.created_at.slice(0,10)}</td>
+      <td>
+        <div class="d-flex gap-1 flex-wrap">
+          ${o.status==='pending'?`<button class="btn btn-xs btn-outline-primary" style="font-size:.7rem;padding:2px 8px" onclick="updateOrder('${o._id}','confirmed')">Potvrdiť</button>`:''}
+          ${o.status==='confirmed'||o.status==='pending'?`<button class="btn btn-xs btn-success" style="font-size:.7rem;padding:2px 8px;color:#fff;background:#28a745;border:none;border-radius:4px" onclick="updateOrder('${o._id}','paid')">✓ Zaplatená</button>`:''}
+          ${o.status!=='cancelled'&&o.status!=='paid'?`<button class="btn btn-xs btn-outline-danger" style="font-size:.7rem;padding:2px 8px" onclick="updateOrder('${o._id}','cancelled')">Zrušiť</button>`:''}
+        </div>
+        ${o.notes?`<div class="text-muted mt-1" style="font-size:.7rem">📝 ${o.notes}</div>`:''}
+      </td>
+    </tr>`).join('')||'<tr><td colspan="10" class="text-center text-muted py-4">Žiadne objednávky</td></tr>';
+}
+
+async function updateOrder(id,status){
+  const labels={confirmed:'Potvrdiť objednávku?',paid:'Označiť ako ZAPLATENÁ? Automaticky sa vypočítajú provízie.',cancelled:'Zrušiť objednávku?'};
+  if(!confirm(labels[status]||'Zmeniť stav?'))return;
+  const r=await api('/api/admin/orders/'+id,{method:'PUT',body:JSON.stringify({status})});
+  if(r?.ok){loadOrders();loadOverview();}else alert(r?.error||'Chyba');
+}
+
+// ── SALE ──
+async function loadSaleForm(){
+  const [partners,prods,recent]=await Promise.all([api('/api/admin/partners'),api('/api/products'),api('/api/transactions')]);
+  if(!partners||!prods)return;
+  partnersCache=partners;productsCache=prods;
+  document.getElementById('salePartner').innerHTML='<option value="">— Vyberte partnera —</option>'+partners.filter(p=>p.active).map(p=>`<option value="${p.id}">${p.name} [${p.referral_code}]</option>`).join('');
+  document.getElementById('saleProd').innerHTML='<option value="">— Iný predaj —</option>'+prods.map(p=>`<option value="${p._id}" data-price="${p.price}">${p.cat}: ${p.name} (${eur(p.price)})</option>`).join('');
+  document.getElementById('saleDate').value=new Date().toISOString().slice(0,10);
+  if(recent) document.getElementById('recentSales').innerHTML=recent.slice(0,6).map(t=>`<div class="d-flex justify-content-between py-1 border-bottom"><div><span class="fw-semibold">${t.partner_name||'—'}</span> → ${t.client_name}</div><div>${eur(t.amount)} <span class="text-muted">${dateStr(t.date)}</span></div></div>`).join('');
+}
+function fillPrice(){const sel=document.getElementById('saleProd');const opt=sel.options[sel.selectedIndex];if(opt?.dataset.price)document.getElementById('saleAmt').value=opt.dataset.price;}
+async function recordSale(){
+  const partner_id=document.getElementById('salePartner').value,client_name=document.getElementById('saleClient').value.trim(),product_id=document.getElementById('saleProd').value,amount=document.getElementById('saleAmt').value,notes=document.getElementById('saleNote').value.trim(),date=document.getElementById('saleDate').value;
+  const msg=document.getElementById('saleMsg');msg.className='alert d-none py-2 small';
+  if(!partner_id||!client_name||!amount){msg.textContent='Vyplňte: partner, klient a suma';msg.className='alert alert-danger py-2 small';return;}
+  const r=await api('/api/admin/transactions',{method:'POST',body:JSON.stringify({partner_id,client_name,product_id,amount,notes,date})});
+  if(!r)return;
+  if(r.ok){msg.textContent='✅ Predaj zaznamenaný! ID: '+r.id;msg.className='alert alert-success py-2 small';document.getElementById('saleClient').value='';document.getElementById('saleAmt').value='';loadSaleForm();}
+  else{msg.textContent=r.error||'Chyba';msg.className='alert alert-danger py-2 small';}
+}
+
+// ── PARTNERS ──
+async function loadPartners(){
+  const rows=await api('/api/admin/partners');if(!rows)return;
+  partnersCache=rows;renderPartners(rows);
+}
+function renderPartners(rows){
+  document.getElementById('partnerTable').innerHTML=rows.map(p=>`<tr>
+    <td class="ps-3"><div class="fw-semibold">${p.name}</div><div class="text-muted" style="font-size:.72rem">${p.email}</div></td>
+    <td><code class="small">${p.referral_code}</code></td>
+    <td><span class="rank-badge">${p.rankBadge||''} ${p.rankName}</span></td>
+    <td class="small">${p.sponsor_name||'—'}</td>
+    <td>${eur(p.personal30)}</td><td>${p.teamSize}</td>
+    <td><span class="badge ${p.active?'bg-success':'bg-secondary'}">${p.active?'Aktívny':'Neaktívny'}</span></td>
+    <td class="d-flex gap-1 flex-wrap">
+      <button class="btn btn-sm btn-outline-secondary" onclick='openEditPartner(${JSON.stringify(p)})' title="Upraviť"><i class="bi bi-pencil"></i></button>
+      <button class="btn btn-sm ${p.active?'btn-outline-warning':'btn-outline-success'}" onclick='blockUser("${p._id||p.id}",${p.active})'>
+        <i class="bi bi-${p.active?'lock':'unlock'}"></i>${p.active?' Blokovať':' Aktivovať'}
+      </button>
+      <button class="btn btn-sm btn-outline-danger" onclick='deleteUser("${p._id||p.id}","${p.name}")' title="Zmazať"><i class="bi bi-trash"></i> Zmazať</button>
+    </td>
+  </tr>`).join('')||'<tr><td colspan="8" class="text-center text-muted py-4">Žiadni partneri</td></tr>';
+}
+async function blockUser(id, isActive){
+  const action=isActive?'blokovať':'odblokovať';
+  if(!confirm(`Naozaj chcete ${action} tohto používateľa?`))return;
+  const endpoint=isActive?`/api/admin/users/${id}/block`:`/api/admin/users/${id}/unblock`;
+  const r=await api(endpoint,{method:'POST'});
+  if(r?.ok){loadPartners();}else alert(r?.error||'Chyba');
+}
+async function deleteUser(id, name){
+  if(!confirm(`⚠️ POZOR: Naozaj chcete NATRVALO zmazať účet "${name}"?\n\nTáto akcia je nezvratná!`))return;
+  if(!confirm(`Posledné potvrdenie: Zmazať účet "${name}"?`))return;
+  const r=await api(`/api/admin/users/${id}`,{method:'DELETE'});
+  if(r?.ok){loadPartners();loadOverview();}else alert(r?.error||'Chyba');
+}
+function filterPartners(){const q=document.getElementById('partnerSearch').value.toLowerCase();renderPartners(partnersCache.filter(p=>p.name.toLowerCase().includes(q)||p.email.toLowerCase().includes(q)||p.referral_code.toLowerCase().includes(q)));}
+function openEditPartner(p){
+  document.getElementById('editId').value=p.id;document.getElementById('editName').value=p.name;document.getElementById('editPhone').value=p.phone||'';document.getElementById('editBank').value=p.bank_account||'';document.getElementById('editActive').value=p.active?'1':'0';document.getElementById('editNotes').value=p.notes||'';
+  document.getElementById('editSponsor').innerHTML='<option value="">— Žiadny —</option>'+partnersCache.filter(x=>x.id!==p.id).map(x=>`<option value="${x.id}" ${p.sponsor_id===x.id?'selected':''}>${x.name}</option>`).join('');
+  new bootstrap.Modal(document.getElementById('editPartnerModal')).show();
+}
+async function savePartner(){
+  const id=document.getElementById('editId').value;
+  const r=await api('/api/admin/partners/'+id,{method:'PUT',body:JSON.stringify({name:document.getElementById('editName').value,phone:document.getElementById('editPhone').value,bank_account:document.getElementById('editBank').value,active:document.getElementById('editActive').value==='1',sponsor_id:document.getElementById('editSponsor').value||null,notes:document.getElementById('editNotes').value})});
+  if(r?.ok){bootstrap.Modal.getInstance(document.getElementById('editPartnerModal')).hide();loadPartners();}
+}
+
+// ── COMMISSIONS ──
+async function loadCommissions(){
+  const month=document.getElementById('commMonth').value||new Date().toISOString().slice(0,7);
+  document.getElementById('commMonth').value=month;
+  const rows=await api('/api/admin/commissions/summary?month='+month);if(!rows)return;
+  const total=rows.reduce((s,r)=>s+r.pending,0);
+  document.getElementById('commSummaryTotal').textContent='Celkom na výplatu: '+eur(total);
+  document.getElementById('commTable').innerHTML=rows.map(r=>`<tr>
+    <td class="ps-3"><div class="fw-semibold">${r.name}</div><div class="text-muted" style="font-size:.72rem">${r.email}</div></td>
+    <td><code class="small">${r.bank_account||'—'}</code></td>
+    <td><span class="rank-badge">${RANKS[r.rank-1]?.badge||''} ${r.rankName}</span></td>
+    <td class="fw-bold text-warning">${eur(r.pending)}</td><td class="text-success">${eur(r.paid)}</td>
+    <td class="d-flex gap-1">
+      <button class="btn btn-sm btn-outline-primary" onclick="showCommDetail('${r.id}','${month}')">Detail</button>
+      ${r.pending>0?`<button class="btn btn-sm btn-success text-white" onclick="payComm('${r.id}','${month}','${r.name}',${r.pending})">Vyplatiť ${eur(r.pending)}</button>`:''}
+    </td>
+  </tr>`).join('')||'<tr><td colspan="6" class="text-center text-muted py-4">Žiadne čakajúce provízie</td></tr>';
+}
+async function showCommDetail(pid,month){
+  const rows=await api(`/api/admin/commissions/detail?partner_id=${pid}&month=${month}`);if(!rows)return;
+  const LVLNAMES=['Priamy predaj','Úroveň 1','Úroveň 2','Úroveň 3','Úroveň 4','Úroveň 5','Úroveň 6','Úroveň 7'];
+  document.getElementById('commDetailContent').innerHTML=`<div class="table-responsive"><table class="table table-sm"><thead><tr><th>Klient</th><th>Produkt</th><th>Predaj</th><th>Zdroj</th><th>Typ</th><th>%</th><th>Provízia</th><th>Stav</th></tr></thead><tbody>${rows.map(c=>`<tr><td>${c.client_name}</td><td class="small">${c.product_name}</td><td>${eur(c.tx_amount)}</td><td class="small">${c.source_name}</td><td class="small">${LVLNAMES[c.level]||'L'+c.level}</td><td>${(c.percentage*100).toFixed(1)}%</td><td class="fw-bold">${eur(c.amount)}</td><td><span class="badge ${c.status==='paid'?'bg-success':'bg-warning text-dark'}">${c.status==='paid'?'Vyplatené':'Čaká'}</span></td></tr>`).join('')}</tbody></table></div>`;
+  new bootstrap.Modal(document.getElementById('commDetailModal')).show();
+}
+async function payComm(pid,month,name,amt){
+  if(!confirm(`Potvrdiť výplatu ${eur(amt)} pre ${name}?`))return;
+  const r=await api('/api/admin/commissions/pay',{method:'POST',body:JSON.stringify({partner_id:pid,month})});
+  if(r?.ok)loadCommissions();
+}
+
+// ── TRANSACTIONS ──
+async function loadAllTx(){
+  const rows=await api('/api/transactions');if(!rows)return;
+  document.getElementById('allTxTable').innerHTML=rows.map(t=>`<tr><td class="ps-3 text-muted">${dateStr(t.date)}</td><td>${t.partner_name||'—'}</td><td>${t.client_name}</td><td>${t.product_name}</td><td class="fw-bold">${eur(t.amount)}</td><td><button class="btn btn-sm btn-outline-danger" onclick="deleteTx('${t._id}')"><i class="bi bi-trash"></i></button></td></tr>`).join('')||'<tr><td colspan="6" class="text-center text-muted py-4">Žiadne predaje</td></tr>';
+}
+async function deleteTx(id){if(!confirm('Zmazať predaj a jeho provízie?'))return;const r=await api('/api/admin/transactions/'+id,{method:'DELETE'});if(r?.ok)loadAllTx();}
+
+// ── PRODUCTS ──
+async function loadProducts(){
+  const rows=await api('/api/products');if(!rows)return;
+  document.getElementById('prodTable').innerHTML=rows.map(p=>`<tr><td class="ps-3 fw-semibold">${p.emoji||''} ${p.name}</td><td><span class="badge bg-light text-dark border">${p.cat}</span></td><td>${eur(p.price)}</td><td>${(p.commission_rate*100).toFixed(0)}%</td><td><span class="badge ${p.active?'bg-success':'bg-secondary'}">${p.active?'Áno':'Nie'}</span></td></tr>`).join('');
+}
+async function addProduct(){
+  const msg=document.getElementById('prodMsg');msg.className='alert d-none py-2 small';
+  const r=await api('/api/admin/products',{method:'POST',body:JSON.stringify({name:document.getElementById('np-name').value.trim(),cat:document.getElementById('np-cat').value,desc:document.getElementById('np-desc').value.trim(),emoji:document.getElementById('np-emoji').value.trim()||'📦',price:document.getElementById('np-price').value,commission_rate:(+document.getElementById('np-comm').value/100).toFixed(2)})});
+  if(r?.ok){msg.textContent='Produkt pridaný ✓';msg.className='alert alert-success py-2 small';loadProducts();}
+  else{msg.textContent=r?.error||'Chyba';msg.className='alert alert-danger py-2 small';}
+}
+
+// ── ADD PARTNER ──
+async function loadAddPartner(){
+  const rows=await api('/api/admin/partners');if(!rows)return;
+  partnersCache=rows;
+  document.getElementById('apSponsor').innerHTML='<option value="">— Bez sponzora —</option>'+rows.map(p=>`<option value="${p.id}">${p.name} [${p.referral_code}]</option>`).join('');
+  document.getElementById('regLink').textContent=window.location.origin+'/';
+  document.getElementById('shopRefLink').textContent=window.location.origin+'/shop?ref=KOD_PARTNERA';
+}
+function copyRegLink(){navigator.clipboard.writeText(document.getElementById('regLink').textContent);event.target.innerHTML='✓';setTimeout(()=>event.target.innerHTML='<i class="bi bi-copy"></i>',2000);}
+async function addPartner(){
+  const msg=document.getElementById('apMsg');msg.className='alert d-none py-2 small';
+  const pwd=document.getElementById('apPwd').value;
+  if(pwd.length<6){msg.textContent='Heslo min. 6 znakov';msg.className='alert alert-danger py-2 small';return;}
+  const r=await api('/api/admin/partners',{method:'POST',body:JSON.stringify({name:document.getElementById('apName').value.trim(),email:document.getElementById('apEmail').value.trim(),password:pwd,phone:document.getElementById('apPhone').value.trim(),sponsor_id:document.getElementById('apSponsor').value||null,bank_account:document.getElementById('apBank').value.trim()})});
+  if(!r)return;
+  if(r.ok){msg.textContent=`✅ Partner vytvorený! Referral kód: ${r.referral_code}`;msg.className='alert alert-success py-2 small';['apName','apEmail','apPwd','apPhone','apBank'].forEach(id=>document.getElementById(id).value='');}
+  else{msg.textContent=r.error||'Chyba';msg.className='alert alert-danger py-2 small';}
+}
+
+async function logout(){await fetch('/api/logout',{method:'POST'});window.location.href='/';}
+
+// ── Memberships ──────────────────────────────────────────────
+async function loadMemberships(){
+  const rows=await api('/api/admin/memberships');if(!rows)return;
+  const el=document.getElementById('membershipsTable');
+  if(!el)return;
+  el.innerHTML=rows.map(m=>{
+    const exp=m.expires_at?new Date(m.expires_at).toLocaleDateString('sk-SK'):'—';
+    const active=m.status==='active'&&new Date(m.expires_at)>new Date();
+    return `<tr>
+      <td>${m.user_name||'—'}<div class="text-muted small">${m.user_email||''}</div></td>
+      <td><span class="badge" style="background:rgba(201,168,76,.2);color:var(--gold)">${m.plan_name||m.plan_id||'—'}</span></td>
+      <td>${exp}</td>
+      <td><span class="badge ${active?'bg-success':'bg-secondary'}">${active?'Aktívne':'Expirované'}</span></td>
+      <td>
+        <select class="form-select form-select-sm w-auto d-inline" id="mplan_${m._id}">
+          <option value="bronze">Bronze (€50)</option>
+          <option value="silver">Silver (€65)</option>
+          <option value="gold">Gold (€125)</option>
+          <option value="online_basic">Online Basic (€12.90)</option>
+          <option value="online_premium">Online Premium (€67.90)</option>
+        </select>
+        <button class="btn btn-sm btn-outline-warning ms-1" onclick="activateMembership('${m.user_id}')">Aktivovať</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+async function activateMembership(userId){
+  const sel=document.querySelector(`[id^='mplan_']`);
+  if(!sel)return;
+  const planId=sel.value;
+  const r=await api('/api/admin/membership/activate',{method:'POST',body:JSON.stringify({user_id:userId,plan_id:planId,duration_days:30})});
+  if(r?.ok)loadMemberships(); else alert(r?.error||'Chyba');
+}
+
+// ── Blog / Articles ───────────────────────────────────────────
+let editingArticleId=null;
+async function loadArticles(){
+  const rows=await api('/api/admin/articles');if(!rows)return;
+  const el=document.getElementById('articlesTable');if(!el)return;
+  el.innerHTML=rows.map(a=>{
+    const lines=a.text?.split('\n')||[];
+    const title=lines[0]||'Bez názvu';
+    const date=a.article_date||a.created_at?.slice(0,10)||'';
+    return `<tr>
+      <td class="fw-semibold" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${title}</td>
+      <td><span class="badge" style="background:rgba(201,168,76,.15);color:var(--gold)">${a.article_cat||'Blog'}</span></td>
+      <td>${date}</td>
+      <td>
+        <button class="btn btn-sm btn-outline-secondary me-1" onclick="editArticle(${JSON.stringify(JSON.stringify(a))})"><i class="bi bi-pencil"></i></button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteArticle('${a._id}')"><i class="bi bi-trash"></i></button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+async function saveArticle(){
+  const title=document.getElementById('artTitle').value.trim();
+  const body=document.getElementById('artBody').value.trim();
+  const cat=document.getElementById('artCat').value;
+  const channel=document.getElementById('artChannel').value;
+  if(!title||!body){alert('Titul a obsah sú povinné');return;}
+  const payload={title,body,article_cat:cat,channel,perex:''};
+  let r;
+  if(editingArticleId){
+    r=await api(`/api/admin/articles/${editingArticleId}`,{method:'PUT',body:JSON.stringify(payload)});
+  } else {
+    r=await api('/api/admin/articles',{method:'POST',body:JSON.stringify(payload)});
+  }
+  if(r?.ok){
+    document.getElementById('artTitle').value='';
+    document.getElementById('artBody').value='';
+    editingArticleId=null;
+    document.getElementById('artSaveBtn').textContent='Publikovať článok';
+    loadArticles();
+  } else alert(r?.error||'Chyba');
+}
+function editArticle(jsonStr){
+  const a=JSON.parse(jsonStr);
+  const lines=a.text?.split('\n')||[];
+  editingArticleId=a._id;
+  document.getElementById('artTitle').value=lines[0]||'';
+  document.getElementById('artBody').value=lines.slice(2).join('\n');
+  document.getElementById('artCat').value=a.article_cat||'Blog';
+  document.getElementById('artChannel').value=a.channel||'blog';
+  document.getElementById('artSaveBtn').textContent='Uložiť zmeny';
+}
+async function deleteArticle(id){
+  if(!confirm('Naozaj zmazať artikel?'))return;
+  const r=await api(`/api/admin/articles/${id}`,{method:'DELETE'});
+  if(r?.ok)loadArticles(); else alert(r?.error||'Chyba');
+}
+
+// ── Rentals ───────────────────────────────────────────────────
+async function loadRentals(){
+  const rows=await api('/api/admin/rentals');if(!rows)return;
+  const el=document.getElementById('rentalsTable');if(!el)return;
+  el.innerHTML=rows.map(r=>`<tr>
+    <td><div class="fw-semibold">${r.name}</div><div class="text-muted small">${r.email} · ${r.phone}</div></td>
+    <td>${r.city||'—'}</td>
+    <td>${r.event_type||'—'}</td>
+    <td>${r.date_from||'—'}</td>
+    <td>
+      <select class="form-select form-select-sm w-auto" onchange="updateRental('${r._id}',this.value)">
+        <option value="new" ${r.status==='new'?'selected':''}>Nový</option>
+        <option value="contacted" ${r.status==='contacted'?'selected':''}>Kontaktovaný</option>
+        <option value="confirmed" ${r.status==='confirmed'?'selected':''}>Potvrdený</option>
+        <option value="rejected" ${r.status==='rejected'?'selected':''}>Zamietnutý</option>
+      </select>
+    </td>
+    <td class="text-muted small">${r.message?.slice(0,60)||'—'}</td>
+  </tr>`).join('');
+}
+async function updateRental(id,status){
+  await api(`/api/admin/rentals/${id}`,{method:'PUT',body:JSON.stringify({status})});
+}
+
+// ── Payments ──────────────────────────────────────────────────
+async function loadPayments(){
+  const rows=await api('/api/payments');if(!rows)return;
+  const el=document.getElementById('paymentsTable');if(!el)return;
+  el.innerHTML=rows.map(p=>`<tr>
+    <td class="small text-muted">${p.paypal_order_id||'—'}</td>
+    <td>${p.amount}€</td>
+    <td>${p.description||'—'}</td>
+    <td>${p.ref_type||'—'}</td>
+    <td><span class="badge ${p.status==='completed'?'bg-success':p.status==='pending'?'bg-warning text-dark':'bg-secondary'}">${p.status}</span></td>
+    <td class="small text-muted">${p.created_at?.slice(0,10)||'—'}</td>
+  </tr>`).join('');
+}
+
+async function loadAdminClasses(){
+  const rows=await api('/api/classes');if(!Array.isArray(rows))return;
+  const tb=document.getElementById('adminClassesTable');if(!tb)return;
+  if(!rows.length){tb.innerHTML='<tr><td colspan="6" class="text-center text-muted py-3">Žiadne hodiny</td></tr>';return;}
+  tb.innerHTML=rows.map(c=>`<tr>
+    <td class="ps-3 fw-semibold">${c.emoji||''} ${c.name}</td>
+    <td class="small text-muted">${c.day||''} ${c.time_start||''}</td>
+    <td class="small">${c.city||'—'}</td>
+    <td class="small">${c.capacity||20}</td>
+    <td>
+      <input type="text" class="form-control form-control-sm" id="stream_${c._id}" value="${c.stream_url||''}" placeholder="https://..." style="min-width:200px">
+    </td>
+    <td>
+      <button class="btn btn-sm btn-brand" onclick="saveStreamUrl('${c._id}')">Uložiť</button>
+    </td>
+  </tr>`).join('');
+}
+
+async function saveStreamUrl(classId){
+  const url=document.getElementById('stream_'+classId)?.value||'';
+  const r=await api('/api/admin/classes/'+classId+'/stream',{method:'PUT',body:{stream_url:url}});
+  if(r?.ok){
+    const btn=event.target;
+    btn.textContent='✓';btn.classList.add('btn-success');btn.classList.remove('btn-brand');
+    setTimeout(()=>{btn.textContent='Uložiť';btn.classList.remove('btn-success');btn.classList.add('btn-brand');},2000);
+  }else{alert('Chyba: '+(r?.error||'neznáma'));}
+}
+
+// Init
+document.getElementById('commMonth').value=new Date().toISOString().slice(0,7);
+loadOverview();
+</script>
+</body>
+</html>

@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fusion Academy – Môj Dashboard</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/fa-theme.css">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --brand1:#C9A84C; --brand2:#F0C060;
+    --gold:#C9A84C; --gold-light:#F0C060;
+    --dark-1:#0f0f0f; --dark-2:#141414; --dark-3:#1a1a1a; --dark-4:#222;
+    --cream:#F5EDD6; --text-muted:rgba(245,237,214,0.50);
+    --gold-border:rgba(201,168,76,0.22); --grad-gold:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);
+  }
+  body { background:var(--dark-1); color:var(--cream); font-size:0.92rem; }
+  .sidebar { width:240px; min-height:100vh; background:var(--dark-2); position:fixed; left:0; top:0; z-index:100; border-right:1px solid var(--gold-border); }
+  .main { margin-left:240px; min-height:100vh; background:var(--dark-1); }
+  .brand { font-size:1.3rem; font-weight:900; background:var(--grad-gold); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  .nav-link { color:rgba(245,237,214,0.6)!important; border-radius:0.5rem; margin:2px 0; transition:all .2s; }
+  .nav-link:hover, .nav-link.active { background:rgba(201,168,76,0.12)!important; color:var(--gold)!important; }
+  .nav-link i { width:22px; }
+  .stat-card { border:1px solid var(--gold-border)!important; border-radius:1rem; background:var(--dark-3)!important; color:var(--cream); }
+  .stat-icon { width:48px; height:48px; border-radius:0.75rem; display:flex; align-items:center; justify-content:center; font-size:1.4rem; }
+  .rank-badge { background:var(--grad-gold); color:#0f0f0f; font-size:0.75rem; padding:3px 12px; border-radius:20px; display:inline-block; font-weight:700; }
+  .progress-thin { height:6px; border-radius:3px; background:var(--dark-4); }
+  .progress-bar-brand { background:var(--grad-gold); }
+  .table { --bs-table-bg:transparent; --bs-table-color:var(--cream); --bs-table-border-color:var(--gold-border); --bs-table-hover-bg:rgba(201,168,76,0.05); }
+  .table th { font-size:0.8rem; text-transform:uppercase; letter-spacing:.05em; color:var(--gold); font-weight:600; border-bottom:1px solid var(--gold-border)!important; }
+  .table td { border-color:var(--gold-border)!important; color:var(--cream); }
+  .tree-item { border-left:2px solid var(--gold-border); padding-left:1rem; margin-left:0.5rem; }
+  .tree-item:last-child { border-left-color:transparent; }
+  .section { display:none; }
+  .section.active { display:block; }
+  @media(max-width:768px){ .sidebar{width:100%;min-height:auto;position:static;} .main{margin-left:0;} }
+  .referral-box { background:rgba(201,168,76,0.08); border:1px solid var(--gold-border); border-radius:1rem; color:var(--cream); }
+  .referral-box .fs-2 { background:var(--grad-gold); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  .level-pill { font-size:0.7rem; padding:2px 8px; border-radius:20px; }
+  .card { background:var(--dark-3)!important; border:1px solid var(--gold-border)!important; color:var(--cream); }
+  .card .fw-semibold, .card .fw-bold { color:var(--cream); }
+  .text-muted { color:var(--text-muted)!important; }
+  .fs-4.fw-bold, .fs-3.fw-bold { background:var(--grad-gold); -webkit-background-clip:text; -webkit-text-fill-color:transparent; display:inline-block; }
+  .border-bottom { border-bottom-color:var(--gold-border)!important; }
+  .bg-light { background:var(--dark-4)!important; border:1px solid var(--gold-border); }
+  .form-control { background:var(--dark-3)!important; border:1px solid var(--gold-border)!important; color:var(--cream)!important; }
+  .form-control:focus { border-color:var(--gold)!important; box-shadow:0 0 0 2px rgba(201,168,76,0.15)!important; }
+  .form-control:disabled { background:var(--dark-4)!important; color:var(--text-muted)!important; }
+  .form-label { color:var(--cream); }
+  code { background:rgba(201,168,76,0.1); color:var(--gold); border:1px solid var(--gold-border); padding:2px 6px; border-radius:4px; }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<div class="sidebar p-3 d-flex flex-column">
+  <div class="brand fa-brand mb-1 mt-1">FUSION ACADEMY</div>
+  <div class="small mb-4" style="color:var(--text-muted)">Partner Program</div>
+  <nav class="nav flex-column gap-1">
+    <a class="nav-link active" href="#" onclick="show('overview')"><i class="bi bi-house me-2"></i>Prehľad</a>
+    <a class="nav-link" href="#" onclick="show('earnings')"><i class="bi bi-cash-coin me-2"></i>Zárobky</a>
+    <a class="nav-link" href="#" onclick="show('transactions')"><i class="bi bi-receipt me-2"></i>Predaje</a>
+    <a class="nav-link" href="#" onclick="show('downline')"><i class="bi bi-diagram-3 me-2"></i>Môj tím</a>
+    <a class="nav-link" href="#" onclick="show('leaderboard')"><i class="bi bi-trophy me-2"></i>Rebríček</a>
+    <a class="nav-link" href="#" onclick="show('referral')"><i class="bi bi-share me-2"></i>Referral</a>
+    <a class="nav-link" href="#" onclick="show('bookings')"><i class="bi bi-calendar-check me-2"></i>Rezervácie</a>
+    <a class="nav-link" href="#" onclick="show('membership')"><i class="bi bi-star me-2"></i>Členstvo</a>
+    <a class="nav-link" href="#" onclick="show('notifications')"><i class="bi bi-bell me-2"></i>Notifikácie <span id="notifBadge" style="display:none;background:#f44336;color:#fff;font-size:.65rem;padding:1px 6px;border-radius:20px;margin-left:4px" id="notifBadge">0</span></a>
+    <a class="nav-link" href="#" onclick="show('profile')"><i class="bi bi-person-gear me-2"></i>Profil</a>
+    <hr class="my-2 opacity-25">
+    <a class="nav-link" href="/schedule" target="_blank"><i class="bi bi-calendar3 me-2"></i>Rozvrh hodín</a>
+    <a class="nav-link" href="/body-analysis" target="_blank"><i class="bi bi-activity me-2"></i>Analýza tela</a>
+    <a class="nav-link" href="/fit-premena" target="_blank"><i class="bi bi-graph-up me-2"></i>Fit Premena</a>
+    <a class="nav-link" href="/community" target="_blank"><i class="bi bi-chat-dots me-2"></i>Komunita</a>
+    <a class="nav-link" href="/shop" target="_blank"><i class="bi bi-bag me-2"></i>E-shop</a>
+  </nav>
+  <div class="mt-auto pt-3" style="border-top:1px solid var(--gold-border)">
+    <div id="sideUser" class="text-white small mb-2"></div>
+    <button class="fa-btn fa-btn-outline btn btn-sm w-100" onclick="logout()"><i class="bi bi-box-arrow-left me-1"></i>Odhlásiť</button>
+  </div>
+</div>
+
+<!-- Main -->
+<div class="main p-4">
+
+  <!-- OVERVIEW -->
+  <div id="s-overview" class="section active">
+    <h4 class="fw-bold mb-1">Môj Dashboard <span id="ovBadge" class="rank-badge ms-2"></span></h4>
+    <p class="text-muted small mb-4" id="ovWelcome"></p>
+
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-3">
+        <div class="stat-card card p-3 h-100">
+          <div class="stat-icon mb-2" style="background:rgba(201,168,76,0.12);color:var(--gold)"><i class="bi bi-currency-euro"></i></div>
+          <div class="text-muted small">Tento mesiac</div>
+          <div class="fs-4 fw-bold" id="st-month">—</div>
+          <div class="text-muted" style="font-size:.75rem">zárobky (čakajúce)</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="stat-card card p-3 h-100">
+          <div class="stat-icon mb-2" style="background:rgba(201,168,76,0.12);color:var(--gold)"><i class="bi bi-graph-up-arrow"></i></div>
+          <div class="text-muted small">Osobný obrat / 30 dní</div>
+          <div class="fs-4 fw-bold" id="st-personal">—</div>
+          <div class="text-muted" style="font-size:.75rem">min. 100€ pre downline</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="stat-card card p-3 h-100">
+          <div class="stat-icon mb-2" style="background:rgba(201,168,76,0.12);color:var(--gold)"><i class="bi bi-people"></i></div>
+          <div class="text-muted small">Veľkosť tímu</div>
+          <div class="fs-4 fw-bold" id="st-team">—</div>
+          <div class="text-muted" style="font-size:.75rem" id="st-direct"></div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="stat-card card p-3 h-100">
+          <div class="stat-icon mb-2" style="background:rgba(201,168,76,0.12);color:var(--gold)"><i class="bi bi-wallet2"></i></div>
+          <div class="text-muted small">Celkom vyplatené</div>
+          <div class="fs-4 fw-bold" id="st-paid">—</div>
+          <div class="text-muted" style="font-size:.75rem">od začiatku</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rank progress -->
+    <div class="card border-0 rounded-3 mb-4 p-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+          <div class="fw-bold fs-5" id="rankTitle">— Rank —</div>
+          <div class="text-muted small" id="rankSub"></div>
+        </div>
+        <div class="text-end">
+          <div class="small text-muted">Ďalší rank</div>
+          <div class="fw-semibold" id="rankNext">—</div>
+        </div>
+      </div>
+      <div class="mb-2">
+        <div class="d-flex justify-content-between small mb-1">
+          <span>Osobný obrat</span><span id="rankPersLabel"></span>
+        </div>
+        <div class="progress progress-thin"><div class="progress-bar progress-bar-brand" id="rankPersBar" style="width:0%"></div></div>
+      </div>
+      <div>
+        <div class="d-flex justify-content-between small mb-1">
+          <span>Tímový obrat</span><span id="rankTeamLabel"></span>
+        </div>
+        <div class="progress progress-thin"><div class="progress-bar progress-bar-brand" id="rankTeamBar" style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <!-- Chart + Recent -->
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="card border-0 rounded-3 p-4 h-100">
+          <div class="fw-semibold mb-3">Predaje posledných 6 mesiacov</div>
+          <canvas id="salesChart" height="180"></canvas>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card border-0 rounded-3 p-4 h-100">
+          <div class="fw-semibold mb-3">Posledné predaje</div>
+          <div id="recentTxList" class="small"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EARNINGS -->
+  <div id="s-earnings" class="section">
+    <h4 class="fw-bold mb-4">Moje zárobky</h4>
+    <div class="row g-3 mb-4">
+      <div class="col-md-4">
+        <div class="card border-0 rounded-3 p-3 text-center">
+          <div class="text-muted small">Čakajúce (nevyplatené)</div>
+          <div class="fs-3 fw-bold" style="background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;display:inline-block" id="earn-pending">—</div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card border-0 rounded-3 p-3 text-center">
+          <div class="text-muted small">Vyplatené celkom</div>
+          <div class="fs-3 fw-bold" style="background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;display:inline-block" id="earn-paid">—</div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card border-0 rounded-3 p-3 text-center">
+          <div class="text-muted small">Tímový obrat / 30 dní</div>
+          <div class="fs-3 fw-bold" style="background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;display:inline-block" id="earn-team">—</div>
+        </div>
+      </div>
+    </div>
+    <div class="card border-0 rounded-3 p-4">
+      <div class="fw-semibold mb-3">História provízií</div>
+      <div class="table-responsive">
+        <table class="table fa-table table-hover align-middle">
+          <thead><tr>
+            <th>Dátum</th><th>Klient</th><th>Produkt</th><th>Úroveň</th><th>%</th><th>Suma</th><th>Stav</th>
+          </tr></thead>
+          <tbody id="commTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRANSACTIONS -->
+  <div id="s-transactions" class="section">
+    <h4 class="fw-bold mb-4">Moje predaje</h4>
+    <div class="card border-0 rounded-3 p-4">
+      <div class="table-responsive">
+        <table class="table fa-table table-hover align-middle">
+          <thead><tr><th>Dátum</th><th>Klient</th><th>Produkt</th><th>Suma</th></tr></thead>
+          <tbody id="txTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- DOWNLINE -->
+  <div id="s-downline" class="section">
+    <h4 class="fw-bold mb-1">Môj tím</h4>
+    <p class="text-muted small mb-4">Vaša sieť partnerov – kliknutím rozbaľte vetvu.</p>
+    <div class="card border-0 rounded-3 p-4">
+      <div id="downlineTree">Načítavam...</div>
+    </div>
+  </div>
+
+  <!-- LEADERBOARD -->
+  <div id="s-leaderboard" class="section">
+    <h4 class="fw-bold mb-4">🏆 Rebríček – tento mesiac</h4>
+    <div class="card border-0 rounded-3 p-4">
+      <div id="leaderboardContent"></div>
+    </div>
+  </div>
+
+  <!-- REFERRAL -->
+  <div id="s-referral" class="section">
+    <h4 class="fw-bold mb-4">Môj Referral</h4>
+    <div class="referral-box p-4 mb-4">
+      <div class="small mb-1 opacity-75">Váš referral kód</div>
+      <div class="fs-2 fw-bold mb-2" id="refCode">—</div>
+      <div class="small opacity-75 mb-1">Referral odkaz</div>
+      <div class="d-flex gap-2 align-items-center">
+        <code class="bg-white bg-opacity-20 rounded px-2 py-1 text-white small flex-grow-1" id="refLink">—</code>
+        <button class="fa-btn fa-btn-gold btn btn-sm" onclick="copyRef()"><i class="bi bi-copy"></i> Kopírovať</button>
+      </div>
+    </div>
+    <div class="card border-0 rounded-3 p-4">
+      <div class="fw-semibold mb-3">Ako zdieľať?</div>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <div class="bg-light rounded p-3 small">
+            <div class="fw-semibold mb-2">📱 DM na Instagrame</div>
+            <div id="scriptDM" class="text-muted fst-italic"></div>
+            <button class="fa-btn fa-btn-outline btn btn-sm mt-2" onclick="copyScript('scriptDM')">Kopírovať text</button>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="bg-light rounded p-3 small">
+            <div class="fw-semibold mb-2">📣 Facebook skupina</div>
+            <div id="scriptFB" class="text-muted fst-italic"></div>
+            <button class="fa-btn fa-btn-outline btn btn-sm mt-2" onclick="copyScript('scriptFB')">Kopírovať text</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROFILE -->
+  <div id="s-profile" class="section">
+    <h4 class="fw-bold mb-4">Môj profil</h4>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="card border-0 rounded-3 p-4">
+          <div class="fw-semibold mb-3">Kontaktné údaje</div>
+          <div id="profError" class="alert alert-danger d-none py-2 small"></div>
+          <div id="profOk" class="alert alert-success d-none py-2 small">Uložené ✓</div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Meno</label>
+            <input type="text" class="form-control" id="profName" disabled>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Email</label>
+            <input type="email" class="form-control" id="profEmail" disabled>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Telefón</label>
+            <input type="tel" class="form-control" id="profPhone">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">IBAN / číslo účtu</label>
+            <input type="text" class="form-control" id="profBank" placeholder="SK...">
+          </div>
+          <button class="fa-btn fa-btn-gold btn btn-sm" onclick="saveProfile()">Uložiť zmeny</button>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card border-0 rounded-3 p-4">
+          <div class="fw-semibold mb-3">Zmena hesla</div>
+          <div id="pwdError" class="alert alert-danger d-none py-2 small"></div>
+          <div id="pwdOk" class="alert alert-success d-none py-2 small">Heslo zmenené ✓</div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Aktuálne heslo</label>
+            <input type="password" class="form-control" id="pwdCurrent">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Nové heslo</label>
+            <input type="password" class="form-control" id="pwdNew">
+          </div>
+          <button class="fa-btn fa-btn-gold btn btn-sm" onclick="changePassword()">Zmeniť heslo</button>
+        </div>
+        <div class="card border-0 rounded-3 p-4 mt-3">
+          <div class="fw-semibold mb-2">Provízny plán</div>
+          <div class="small text-muted mb-3">Sadzby podľa vášho aktuálneho ranku</div>
+          <div id="commPlan" class="small"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MEMBERSHIP -->
+  <div id="s-membership" class="section">
+    <h4 class="fw-bold mb-4">⭐ Moje členstvo</h4>
+    <div class="row g-3">
+      <div class="col-md-5">
+        <div class="card border-0 rounded-3 p-4">
+          <div class="fw-semibold mb-3">Aktuálny stav členstva</div>
+          <div id="membershipStatus">
+            <div class="text-muted">Načítavam...</div>
+          </div>
+          <hr style="border-color:var(--gold-border)">
+          <div class="fw-semibold mb-2">Rýchle odkazy</div>
+          <div class="d-flex flex-column gap-2">
+            <a href="/body-analysis" class="fa-btn fa-btn-outline btn btn-sm rounded-pill text-start"><i class="bi bi-activity me-2"></i>Analýza tela &amp; váha</a>
+            <a href="/fit-premena" class="fa-btn fa-btn-outline btn btn-sm rounded-pill text-start"><i class="bi bi-graph-up me-2"></i>Fit Premena 90 dní</a>
+            <a href="/meal-plan" class="fa-btn fa-btn-outline btn btn-sm rounded-pill text-start"><i class="bi bi-egg-fried me-2"></i>Jedálniček &amp; BMR</a>
+            <a href="/online" class="fa-btn fa-btn-outline btn btn-sm rounded-pill text-start"><i class="bi bi-camera-video me-2"></i>Online hodiny</a>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-7">
+        <div class="card border-0 rounded-3 p-4">
+          <div class="fw-semibold mb-3">Plány členstva</div>
+          <div class="row g-2">
+            <div class="col-6">
+              <div style="background:var(--dark-4);border:1px solid var(--gold-border);border-radius:.8rem;padding:1rem;text-align:center">
+                <div style="font-size:1.5rem;margin-bottom:.3rem">🥉</div>
+                <div style="font-weight:700;color:var(--cream)">Bronze</div>
+                <div style="font-size:1.1rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent">50 €/mes</div>
+                <div style="font-size:.75rem;color:var(--text-muted);margin:.3rem 0">Neobmedzené hodiny v štúdiu</div>
+                <button class="fa-btn fa-btn-gold btn btn-sm rounded-pill w-100 mt-1" onclick="buyMembership('bronze')">Aktivovať</button>
+              </div>
+            </div>
+            <div class="col-6">
+              <div style="background:var(--dark-4);border:1px solid var(--gold-border);border-radius:.8rem;padding:1rem;text-align:center">
+                <div style="font-size:1.5rem;margin-bottom:.3rem">🥈</div>
+                <div style="font-weight:700;color:var(--cream)">Silver</div>
+                <div style="font-size:1.1rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent">65 €/mes</div>
+                <div style="font-size:.75rem;color:var(--text-muted);margin:.3rem 0">Štúdio + online hodiny</div>
+                <button class="fa-btn fa-btn-gold btn btn-sm rounded-pill w-100 mt-1" onclick="buyMembership('silver')">Aktivovať</button>
+              </div>
+            </div>
+            <div class="col-6">
+              <div style="background:var(--dark-4);border:1px solid var(--gold);border-radius:.8rem;padding:1rem;text-align:center">
+                <div style="font-size:1.5rem;margin-bottom:.3rem">🥇</div>
+                <div style="font-weight:700;color:var(--gold)">Gold</div>
+                <div style="font-size:1.1rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent">125 €/mes</div>
+                <div style="font-size:.75rem;color:var(--text-muted);margin:.3rem 0">Všetko + osobný tréner</div>
+                <button class="fa-btn fa-btn-gold btn btn-sm rounded-pill w-100 mt-1" onclick="buyMembership('gold')">Aktivovať</button>
+              </div>
+            </div>
+            <div class="col-6">
+              <div style="background:var(--dark-4);border:1px solid var(--gold-border);border-radius:.8rem;padding:1rem;text-align:center">
+                <div style="font-size:1.5rem;margin-bottom:.3rem">💻</div>
+                <div style="font-weight:700;color:var(--cream)">Online Basic</div>
+                <div style="font-size:1.1rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent">12,90 €/mes</div>
+                <div style="font-size:.75rem;color:var(--text-muted);margin:.3rem 0">Online hodiny z domu</div>
+                <button class="fa-btn fa-btn-gold btn btn-sm rounded-pill w-100 mt-1" onclick="buyMembership('online_basic')">Aktivovať</button>
+              </div>
+            </div>
+          </div>
+          <div id="membershipMsg" class="mt-3" style="display:none"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NOTIFICATIONS -->
+  <div id="s-notifications" class="section">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h4 class="fw-bold mb-0">🔔 Notifikácie</h4>
+      <button class="fa-btn fa-btn-outline btn btn-sm rounded-pill" onclick="markAllRead()">Označiť všetky ako prečítané</button>
+    </div>
+    <div class="card border-0 rounded-3 p-4">
+      <div id="notifList"><div class="text-center text-muted py-4">Načítavam...</div></div>
+    </div>
+  </div>
+
+  <!-- BOOKINGS -->
+  <div id="s-bookings" class="section">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h4 class="fw-bold mb-0">Moje rezervácie</h4>
+      <a href="/schedule" class="fa-btn fa-btn-gold btn btn-sm rounded-pill">
+        <i class="bi bi-plus-lg me-1"></i>Rezervovať hodinu
+      </a>
+    </div>
+    <div id="bookingsList">
+      <div class="text-center py-4 text-muted">Načítavam…</div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<script>
+const RANKS = [
+  {id:1,name:'Starter',directRate:0.08,levels:1,badge:'🌱',personalMin:0,teamMin:0},
+  {id:2,name:'Partner',directRate:0.10,levels:2,badge:'🤝',personalMin:300,teamMin:500},
+  {id:3,name:'Senior Partner',directRate:0.12,levels:3,badge:'⭐',personalMin:500,teamMin:1500},
+  {id:4,name:'Leader',directRate:0.14,levels:4,badge:'🏅',personalMin:750,teamMin:5000},
+  {id:5,name:'Team Leader',directRate:0.16,levels:5,badge:'🥇',personalMin:1000,teamMin:15000},
+  {id:6,name:'Regional Leader',directRate:0.18,levels:6,badge:'💎',personalMin:1000,teamMin:40000},
+  {id:7,name:'Director',directRate:0.20,levels:7,badge:'👑',personalMin:1500,teamMin:100000},
+  {id:8,name:'Elite Director',directRate:0.22,levels:7,badge:'🏆',personalMin:1500,teamMin:250000},
+];
+const LEVEL_RATES = [0.08,0.05,0.04,0.03,0.02,0.015,0.01];
+const LEVEL_COLORS = ['#e94560','#f5a623','#28a745','#17a2b8','#6f42c1','#fd7e14','#20c997'];
+let userData = {}, chartInst = null;
+
+async function api(url, opts={}) {
+  const r = await fetch(url, { headers:{'Content-Type':'application/json'}, ...opts });
+  if (r.status === 401) { window.location.href = '/'; return null; }
+  return r.json();
+}
+
+function show(sec) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById('s-' + sec).classList.add('active');
+  document.querySelectorAll('.nav-link').forEach(a => a.classList.remove('active'));
+  document.querySelector(`.nav-link[onclick*="${sec}"]`)?.classList.add('active');
+  if (sec === 'earnings') loadEarnings();
+  if (sec === 'transactions') loadTransactions();
+  if (sec === 'downline') loadDownline();
+  if (sec === 'leaderboard') loadLeaderboard();
+  if (sec === 'bookings') loadBookings();
+  if (sec === 'membership') loadMembershipStatus();
+  if (sec === 'notifications') loadNotifications();
+}
+
+function eur(v) { return (+v).toFixed(2) + ' €'; }
+function dateStr(d) { return d ? d.slice(0,10) : '—'; }
+
+async function loadDashboard() {
+  const d = await api('/api/dashboard');
+  if (!d) return;
+  userData = d.user;
+
+  document.getElementById('sideUser').textContent = d.user.name;
+  document.getElementById('ovBadge').textContent = d.user.rankBadge + ' ' + d.user.rankName;
+  document.getElementById('ovWelcome').textContent = 'Vitajte, ' + d.user.name + '! Váš referral kód: ' + d.user.referral_code;
+
+  document.getElementById('st-month').textContent = eur(d.stats.thisMonthEarnings);
+  document.getElementById('st-personal').textContent = eur(d.stats.personal30);
+  document.getElementById('st-team').textContent = d.stats.totalTeam;
+  document.getElementById('st-direct').textContent = d.stats.directCount + ' priamych partnerov';
+  document.getElementById('st-paid').textContent = eur(d.stats.paidEarnings);
+  document.getElementById('earn-pending').textContent = eur(d.stats.pendingEarnings);
+  document.getElementById('earn-paid').textContent = eur(d.stats.paidEarnings);
+  document.getElementById('earn-team').textContent = eur(d.stats.team30);
+
+  // Rank
+  const r = d.rank;
+  document.getElementById('rankTitle').textContent = r.current.badge + ' ' + r.current.name;
+  if (r.next) {
+    document.getElementById('rankSub').textContent = 'Na postup potrebujete: ' + r.next.personalMin + '€ osobný, ' + r.next.teamMin.toLocaleString() + '€ tímový obrat';
+    document.getElementById('rankNext').textContent = r.next.badge + ' ' + r.next.name;
+    document.getElementById('rankPersLabel').textContent = eur(d.stats.personal30) + ' / ' + r.next.personalMin + '€';
+    document.getElementById('rankTeamLabel').textContent = eur(d.stats.team30) + ' / ' + r.next.teamMin.toLocaleString() + '€';
+    document.getElementById('rankPersBar').style.width = Math.min(100, r.progressPersonal) + '%';
+    document.getElementById('rankTeamBar').style.width = Math.min(100, r.progressTeam) + '%';
+  } else {
+    document.getElementById('rankSub').textContent = '🎉 Dosiahli ste najvyšší rank!';
+    document.getElementById('rankNext').textContent = 'Elite Director';
+    document.getElementById('rankPersBar').style.width = '100%';
+    document.getElementById('rankTeamBar').style.width = '100%';
+  }
+
+  // Chart
+  const labels = d.chartData.map(x => x.m);
+  const values = d.chartData.map(x => x.total);
+  if (chartInst) chartInst.destroy();
+  chartInst = new Chart(document.getElementById('salesChart'), {
+    type: 'bar',
+    data: { labels, datasets: [{ label: 'Predaje (€)', data: values,
+      backgroundColor: 'rgba(201,168,76,0.5)', borderColor: '#C9A84C', borderWidth:1, borderRadius:6 }] },
+    options: { responsive:true, plugins:{legend:{display:false}}, scales:{ y:{beginAtZero:true,ticks:{color:'rgba(245,237,214,0.6)'},grid:{color:'rgba(201,168,76,0.08)'}}, x:{ticks:{color:'rgba(245,237,214,0.6)'},grid:{color:'rgba(201,168,76,0.08)'}} } }
+  });
+
+  // Recent transactions
+  const el = document.getElementById('recentTxList');
+  if (!d.recentTx.length) { el.innerHTML = '<div class="text-muted">Zatiaľ žiadne predaje</div>'; return; }
+  el.innerHTML = d.recentTx.map(t => `
+    <div class="d-flex justify-content-between py-2 border-bottom">
+      <div><div class="fw-semibold">${t.client_name}</div><div class="text-muted">${t.product_name}</div></div>
+      <div class="text-end"><div class="fw-bold">${eur(t.amount)}</div><div class="text-muted">${dateStr(t.date)}</div></div>
+    </div>`).join('');
+
+  // Referral
+  document.getElementById('refCode').textContent = d.user.referral_code;
+  const link = window.location.origin + '/r/' + d.user.referral_code;
+  document.getElementById('refLink').textContent = link;
+  document.getElementById('scriptDM').textContent = `Ahoj! Viem, že rozmýšľaš nad pohybom 😊 Hodím ti link na Fusion Academy – prvá lekcia cez môj kód ${d.user.referral_code} je zadarmo! Ideme spolu? 🎶`;
+  document.getElementById('scriptFB').textContent = `Dievčatá, kto by chcel vyskúšať Zumbu alebo tanec? Fusion Academy dáva prvý tréning zadarmo – stačí napísať do správy alebo použiť kód ${d.user.referral_code}. Začiatočníčky vítané! 💃`;
+
+  // Profile
+  document.getElementById('profName').value = d.user.name;
+  document.getElementById('profEmail').value = d.user.email;
+  document.getElementById('profPhone').value = d.user.phone || '';
+  document.getElementById('profBank').value = d.user.bank_account || '';
+
+  // Comm plan
+  const rank = RANKS[d.user.rank - 1];
+  let plan = `<div class="mb-2"><strong>Priama provízia:</strong> ${(rank.directRate*100).toFixed(0)}%</div><div class="mb-1"><strong>Sieťové úrovne (odomknuté: ${rank.levels}):</strong></div>`;
+  for (let i=0; i<rank.levels; i++) {
+    plan += `<div class="d-flex justify-content-between"><span>Úroveň ${i+1}</span><span class="fw-semibold">${(LEVEL_RATES[i]*100).toFixed(1)}%</span></div>`;
+  }
+  document.getElementById('commPlan').innerHTML = plan;
+}
+
+async function loadEarnings() {
+  const rows = await api('/api/commissions');
+  if (!rows) return;
+  const LVLNAMES = ['Priamy','L1','L2','L3','L4','L5','L6','L7'];
+  const colors = ['bg-danger','bg-warning','bg-success','bg-info','bg-primary','bg-secondary','bg-dark','bg-dark'];
+  document.getElementById('commTable').innerHTML = rows.map(c => `
+    <tr>
+      <td class="text-muted">${dateStr(c.created_at)}</td>
+      <td>${c.client_name}</td>
+      <td class="text-muted">${c.product_name}</td>
+      <td><span class="badge ${colors[c.level]} level-pill">${LVLNAMES[c.level]}</span></td>
+      <td>${(c.percentage*100).toFixed(1)}%</td>
+      <td class="fw-bold">${eur(c.amount)}</td>
+      <td><span class="badge ${c.status==='paid'?'bg-success':'bg-warning text-dark'}">${c.status==='paid'?'Vyplatené':'Čaká'}</span></td>
+    </tr>`).join('') || '<tr><td colspan="7" class="text-center text-muted">Zatiaľ žiadne provízie</td></tr>';
+}
+
+async function loadTransactions() {
+  const rows = await api('/api/transactions');
+  if (!rows) return;
+  document.getElementById('txTable').innerHTML = rows.map(t => `
+    <tr>
+      <td class="text-muted">${dateStr(t.date)}</td>
+      <td>${t.client_name}</td>
+      <td>${t.product_name}</td>
+      <td class="fw-bold">${eur(t.amount)}</td>
+    </tr>`).join('') || '<tr><td colspan="4" class="text-center text-muted">Zatiaľ žiadne predaje</td></tr>';
+}
+
+async function loadDownline() {
+  const tree = await api('/api/downline');
+  if (!tree) return;
+  const el = document.getElementById('downlineTree');
+  if (!tree.length) { el.innerHTML = '<div class="text-muted">Zatiaľ nemáte žiadnych partnerov vo vašej sieti.</div>'; return; }
+
+  function renderNode(node, lvl) {
+    const color = LEVEL_COLORS[lvl] || '#888';
+    const childrenHtml = node.children?.length ? node.children.map(c => renderNode(c, lvl+1)).join('') : '';
+    return `<div class="tree-item py-2">
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge rounded-pill" style="background:${color};font-size:.7rem">L${lvl+1}</span>
+        <span class="fw-semibold">${node.name}</span>
+        <span class="text-muted small">${node.rankBadge} ${node.rankName}</span>
+        <span class="ms-auto text-muted small">${eur(node.personal30)} / 30 dní</span>
+        <span class="badge ${node.active?'bg-success':'bg-secondary'} ms-1" style="font-size:.65rem">${node.active?'Aktívny':'Neaktívny'}</span>
+      </div>
+      ${childrenHtml}
+    </div>`;
+  }
+
+  el.innerHTML = tree.map(n => renderNode(n, 0)).join('');
+}
+
+async function loadLeaderboard() {
+  const rows = await api('/api/leaderboard');
+  if (!rows) return;
+  const medals = ['🥇','🥈','🥉'];
+  document.getElementById('leaderboardContent').innerHTML = `<div class="table-responsive"><table class="table fa-table table-hover align-middle">
+    <thead><tr><th>#</th><th>Partner</th><th>Rank</th><th>Predaje</th><th>Zárobky</th></tr></thead>
+    <tbody>${rows.map(r => `<tr style="${r.id===userData.id?'background:rgba(201,168,76,0.1);':''}">
+      <td class="fw-bold">${medals[r.position-1]||r.position}</td>
+      <td>${r.name}${r.id===userData.id?' <span class="badge" style="background:var(--grad-gold);color:#0f0f0f;font-size:.7rem">Vy</span>':''}</td>
+      <td>${r.rankBadge} ${r.rankName}</td>
+      <td>${r.sales_count}</td>
+      <td class="fw-bold">${eur(r.earnings)}</td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+function copyRef() {
+  navigator.clipboard.writeText(document.getElementById('refLink').textContent);
+  event.target.textContent = '✓ Skopírované!';
+  setTimeout(() => event.target.innerHTML = '<i class="bi bi-copy"></i> Kopírovať', 2000);
+}
+
+function copyScript(id) {
+  navigator.clipboard.writeText(document.getElementById(id).textContent);
+  event.target.textContent = '✓ Skopírované!';
+  setTimeout(() => event.target.textContent = 'Kopírovať text', 2000);
+}
+
+async function saveProfile() {
+  const phone = document.getElementById('profPhone').value;
+  const bank_account = document.getElementById('profBank').value;
+  const errEl = document.getElementById('profError');
+  const okEl = document.getElementById('profOk');
+  errEl.classList.add('d-none'); okEl.classList.add('d-none');
+  const r = await api('/api/profile', { method:'PUT', body: JSON.stringify({phone, bank_account}) });
+  if (r?.ok) okEl.classList.remove('d-none'); else { errEl.textContent = r?.error||'Chyba'; errEl.classList.remove('d-none'); }
+}
+
+async function changePassword() {
+  const current = document.getElementById('pwdCurrent').value;
+  const newPass = document.getElementById('pwdNew').value;
+  const errEl = document.getElementById('pwdError');
+  const okEl = document.getElementById('pwdOk');
+  errEl.classList.add('d-none'); okEl.classList.add('d-none');
+  if (newPass.length < 6) { errEl.textContent = 'Nové heslo musí mať aspoň 6 znakov'; errEl.classList.remove('d-none'); return; }
+  const r = await api('/api/profile/password', { method:'POST', body: JSON.stringify({current, newPass}) });
+  if (r?.ok) { okEl.classList.remove('d-none'); document.getElementById('pwdCurrent').value=''; document.getElementById('pwdNew').value=''; }
+  else { errEl.textContent = r?.error||'Chyba'; errEl.classList.remove('d-none'); }
+}
+
+async function logout() {
+  await fetch('/api/logout', { method:'POST' });
+  window.location.href = '/';
+}
+
+// ── Bookings ────────────────────────────────────────────────────────────────
+async function loadBookings() {
+  const el = document.getElementById('bookingsList');
+  el.innerHTML = '<div class="text-center py-4 text-muted">Načítavam…</div>';
+  const data = await api('/api/my-bookings');
+  if (!data || !data.length) {
+    el.innerHTML = `<div class="text-center py-5">
+      <div style="font-size:3rem">🗓️</div>
+      <p class="text-muted mt-2">Zatiaľ nemáte žiadne rezervácie.</p>
+      <a href="/schedule" class="fa-btn fa-btn-gold btn btn-sm rounded-pill mt-1">
+        <i class="bi bi-calendar3 me-1"></i>Zobraziť rozvrh
+      </a>
+    </div>`;
+    return;
+  }
+  const now = new Date().toISOString().slice(0,10);
+  const upcoming = data.filter(b => b.booking_date >= now && b.status !== 'cancelled');
+  const past     = data.filter(b => b.booking_date < now  || b.status === 'cancelled');
+
+  let html = '';
+  if (upcoming.length) {
+    html += '<div class="fw-semibold mb-2 text-muted small text-uppercase" style="letter-spacing:1px">Nadchádzajúce</div>';
+    html += '<div class="row g-2 mb-4">' + upcoming.map(b => bookingCard(b, false)).join('') + '</div>';
+  }
+  if (past.length) {
+    html += '<div class="fw-semibold mb-2 text-muted small text-uppercase" style="letter-spacing:1px">Absolvované / Zrušené</div>';
+    html += '<div class="row g-2">' + past.map(b => bookingCard(b, true)).join('') + '</div>';
+  }
+  el.innerHTML = html;
+}
+
+function bookingCard(b, isPast) {
+  const statusColors = { confirmed:'#4caf50', cancelled:'#f44336', pending:'#ff9800' };
+  const statusLabels = { confirmed:'Potvrdená', cancelled:'Zrušená', pending:'Čaká' };
+  const color = statusColors[b.status] || '#999';
+  const label = statusLabels[b.status] || b.status;
+  const opacity = isPast ? '0.6' : '1';
+  return `<div class="col-md-6 col-lg-4">
+    <div class="card rounded-3 p-3" style="opacity:${opacity};border-left:3px solid ${color}!important;">
+      <div class="d-flex justify-content-between align-items-start mb-1">
+        <div class="fw-bold">${b.class_emoji||'💃'} ${b.class_name}</div>
+        <span class="badge rounded-pill" style="background:${color};font-size:.65rem">${label}</span>
+      </div>
+      <div class="small text-muted">
+        <div><i class="bi bi-calendar3 me-1"></i>${b.day_name}, ${b.booking_date}</div>
+        <div><i class="bi bi-clock me-1"></i>${b.class_time_start}${b.class_time_end?' – '+b.class_time_end:''}</div>
+        <div><i class="bi bi-geo-alt me-1"></i>${b.class_location}</div>
+      </div>
+      ${b.status==='confirmed'&&b.booking_date>=new Date().toISOString().slice(0,10) ? `<button class="fa-btn fa-btn-outline btn btn-sm rounded-pill mt-2" style="font-size:.75rem" onclick="cancelBooking('${b._id}')">Zrušiť rezerváciu</button>` : ''}
+    </div>
+  </div>`;
+}
+
+async function cancelBooking(id) {
+  if (!confirm('Zrušiť túto rezerváciu?')) return;
+  const r = await fetch('/api/bookings/'+id, {method:'DELETE'});
+  if (r.ok) loadBookings();
+  else alert('Chyba pri rušení rezervácie');
+}
+
+// ── Membership ──────────────────────────────────────────────────────────────
+async function loadMembershipStatus() {
+  const me = await api('/api/me');
+  if (!me) return;
+  const el = document.getElementById('membershipStatus');
+  if (me.membership) {
+    const exp = new Date(me.membership.expires_at);
+    const now = new Date();
+    const daysLeft = Math.ceil((exp - now) / 86400000);
+    const color = daysLeft > 7 ? '#4CAF50' : daysLeft > 0 ? '#FF9800' : '#f44336';
+    el.innerHTML = `
+      <div style="background:rgba(201,168,76,.08);border:1px solid var(--gold-border);border-radius:.8rem;padding:1rem;margin-bottom:.8rem">
+        <div style="font-size:.75rem;color:var(--text-muted)">Aktívny plán</div>
+        <div style="font-size:1.2rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent">${me.membership.plan_name}</div>
+        <div style="font-size:.82rem;margin-top:.3rem">Platný do: <strong style="color:${color}">${me.membership.expires_at ? me.membership.expires_at.slice(0,10) : '—'}</strong></div>
+        ${daysLeft > 0 ? `<div style="font-size:.78rem;color:${color}">Zostatok: ${daysLeft} dní</div>` : '<div style="font-size:.78rem;color:#f44336">⚠️ Členstvo vypršalo</div>'}
+      </div>`;
+  } else {
+    el.innerHTML = `<div style="background:rgba(244,67,54,.08);border:1px solid rgba(244,67,54,.3);border-radius:.8rem;padding:1rem;margin-bottom:.8rem;color:rgba(245,237,214,.7);font-size:.88rem">
+      <div style="font-weight:700;color:#f44336;margin-bottom:.3rem">❌ Žiadne aktívne členstvo</div>
+      Vyberte plán nižšie a aktivujte členstvo.
+    </div>`;
+  }
+  // Update notif badge
+  if (me.notif_count > 0) {
+    document.getElementById('notifBadge').style.display = 'inline';
+    document.getElementById('notifBadge').textContent = me.notif_count;
+  }
+}
+
+async function buyMembership(planId) {
+  const r = await api('/api/membership/buy', { method:'POST', body: JSON.stringify({plan_id: planId}) });
+  const msg = document.getElementById('membershipMsg');
+  msg.style.display = 'block';
+  if (r?.ok) {
+    msg.innerHTML = '<div style="background:rgba(76,175,80,.15);border:1px solid #4CAF50;color:#4CAF50;border-radius:.5rem;padding:.6rem .9rem;font-size:.88rem">✅ ' + (r.message || 'Členstvo aktivované!') + '</div>';
+    await loadMembershipStatus();
+  } else {
+    msg.innerHTML = `<div style="background:rgba(244,67,54,.15);border:1px solid #f44336;color:#f44336;border-radius:.5rem;padding:.6rem .9rem;font-size:.88rem">❌ ${r?.error || 'Chyba'}</div>`;
+  }
+  setTimeout(() => msg.style.display = 'none', 5000);
+}
+
+// ── Notifications ────────────────────────────────────────────────────────────
+async function loadNotifications() {
+  const data = await api('/api/notifications');
+  const el = document.getElementById('notifList');
+  if (!data || !data.length) {
+    el.innerHTML = '<div class="text-center text-muted py-4">Žiadne notifikácie</div>';
+    return;
+  }
+  const icons = { booking:'📅', waitlist:'⏳', payment:'💳', membership:'⭐', general:'🔔' };
+  el.innerHTML = data.map(n => `
+    <div style="background:${n.read ? 'transparent' : 'rgba(201,168,76,.06)'};border-bottom:1px solid var(--gold-border);padding:.75rem 0;display:flex;gap:.8rem;align-items:flex-start">
+      <div style="font-size:1.3rem;min-width:28px">${icons[n.type] || '🔔'}</div>
+      <div style="flex:1">
+        <div style="font-size:.88rem;color:var(--cream)${n.read ? ';opacity:.7' : ''}">${n.message}</div>
+        <div style="font-size:.75rem;color:var(--text-muted);margin-top:.15rem">${n.created_at ? n.created_at.slice(0,16).replace('T',' ') : ''}</div>
+      </div>
+      ${!n.read ? '<div style="width:8px;height:8px;background:var(--gold);border-radius:50%;margin-top:4px;flex-shrink:0"></div>' : ''}
+    </div>`).join('');
+  // Clear badge
+  document.getElementById('notifBadge').style.display = 'none';
+}
+
+async function markAllRead() {
+  await api('/api/notifications/read-all', { method:'POST' });
+  loadNotifications();
+}
+
+// Init
+loadDashboard();
+loadMembershipStatus();
+</script>
+</body>
+</html>

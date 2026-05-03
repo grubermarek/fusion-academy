@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Fit Premena – 90-dňový transformačný program Fusion Academy. Týždenné check-iny, grafy pokroku.">
+<meta name="keywords" content="fit premena, 90 dní, transformácia, fitness challenge">
+<meta property="og:title" content="Fit Premena – Fusion Academy">
+<meta property="og:description" content="Fit Premena – 90-dňový transformačný program Fusion Academy. Týždenné check-iny, grafy pokroku.">
+<meta property="og:image" content="https://latindancefusion.art/og-image.svg">
+<meta property="og:type" content="website">
+<link rel="canonical" href="https://latindancefusion.art/fit-premena">
+<title>Fit Premena – Fusion Academy</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/fa-theme.css">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<style>
+:root{--gold:#C9A84C;--gold-light:#F0C060;--dark-1:#0f0f0f;--dark-2:#141414;--dark-3:#1a1a1a;--dark-4:#222;--cream:#F5EDD6;--text-muted:rgba(245,237,214,0.50);--gold-border:rgba(201,168,76,0.22);--grad-gold:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);}
+body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',system-ui,sans-serif;}
+.top-nav{background:rgba(8,8,8,0.97);border-bottom:1px solid var(--gold-border);padding:.75rem 1.5rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
+.brand{font-size:1.3rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none;}
+.nav-links{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;}
+.nav-links a{color:rgba(255,255,255,.6);text-decoration:none;font-size:.85rem;padding:.3rem .7rem;border-radius:20px;transition:.2s;}
+.nav-links a:hover,.nav-links a.active{color:var(--gold);background:rgba(201,168,76,0.12);}
+.hero{background:radial-gradient(ellipse at 50% 50%,rgba(201,168,76,.08) 0%,transparent 70%),linear-gradient(135deg,#0a0a0a,#111);padding:2.5rem 1rem 2rem;text-align:center;border-bottom:1px solid var(--gold-border);}
+.hero h1 span{background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.card-dark{background:var(--dark-2);border:1px solid var(--gold-border);border-radius:1.2rem;padding:1.5rem;}
+.form-control,.form-select{background:var(--dark-3)!important;border:1px solid var(--gold-border)!important;color:var(--cream)!important;}
+.form-control::placeholder{color:var(--text-muted)!important;}
+.form-control:focus,.form-select:focus{border-color:var(--gold)!important;box-shadow:0 0 0 2px rgba(201,168,76,.15)!important;}
+.form-label{color:var(--cream);font-size:.88rem;font-weight:600;}
+.btn-gold{background:var(--grad-gold);border:none;color:#0f0f0f;font-weight:700;padding:.55rem 1.4rem;border-radius:50px;cursor:pointer;transition:opacity .2s;}
+.btn-gold:hover{opacity:.85;}
+.week-card{background:var(--dark-3);border:1px solid var(--gold-border);border-radius:.9rem;padding:1rem 1.2rem;margin-bottom:.6rem;cursor:pointer;transition:.2s;}
+.week-card:hover{border-color:var(--gold);background:rgba(201,168,76,0.05);}
+.week-card.current-week{border-color:var(--gold);background:rgba(201,168,76,0.08);}
+.week-num{font-size:1rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.progress-ring{display:inline-flex;align-items:center;justify-content:center;width:80px;height:80px;border-radius:50%;background:conic-gradient(var(--gold) var(--pct), var(--dark-3) 0);position:relative;}
+.progress-ring::before{content:'';position:absolute;inset:8px;background:var(--dark-2);border-radius:50%;}
+.progress-ring span{position:relative;z-index:1;font-size:.85rem;font-weight:900;color:var(--gold);}
+.metric-row{display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:.4rem;}
+.metric-item{flex:1;min-width:80px;background:var(--dark-4);border:1px solid var(--gold-border);border-radius:.6rem;padding:.5rem .7rem;text-align:center;}
+.metric-item .mv{font-size:1.1rem;font-weight:900;color:var(--gold);}
+.metric-item .ml{font-size:.7rem;color:var(--text-muted);}
+.star-rating{display:flex;gap:.3rem;}
+.star-rating span{font-size:1.4rem;cursor:pointer;color:var(--text-muted);transition:.15s;}
+.star-rating span.active,.star-rating span:hover{color:var(--gold);}
+.phase-badge{display:inline-block;font-size:.72rem;font-weight:700;padding:2px 9px;border-radius:20px;}
+.phase-1{background:rgba(76,175,80,.15);color:#4CAF50;border:1px solid #4CAF50;}
+.phase-2{background:rgba(33,150,243,.15);color:#2196F3;border:1px solid #2196F3;}
+.phase-3{background:rgba(201,168,76,.15);color:var(--gold);border:1px solid var(--gold);}
+.login-required{text-align:center;padding:3rem 1rem;color:var(--text-muted);}
+.checkin-done{opacity:.7;}
+.checkin-done .week-num::after{content:' ✅';}
+</style>
+</head>
+<body>
+
+<nav class="top-nav">
+  <a href="/" class="brand">FUSION ACADEMY</a>
+  <div class="nav-links">
+    <a href="/dashboard">Dashboard</a>
+    <a href="/body-analysis">Analýza tela</a>
+    <a href="/fit-premena" class="active">Fit Premena</a>
+    <a href="/meal-plan">Jedálniček</a>
+    <a href="/schedule">Rozvrh</a>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="container">
+    <h1 style="font-size:clamp(1.6rem,4vw,2.4rem);font-weight:900">Fit <span>Premena</span></h1>
+    <p style="color:rgba(255,255,255,.6);margin:.4rem 0 0;font-size:.95rem">90-dňová transformácia – týždenný tracking vášho pokroku</p>
+  </div>
+</section>
+
+<div id="loginRequired" class="login-required" style="display:none">
+  <div style="font-size:3rem;margin-bottom:1rem">🔒</div>
+  <h3 style="color:var(--cream)">Prihláste sa</h3>
+  <p>Pre sledovanie Fit Premeny je potrebné prihlásenie.</p>
+  <a href="/" style="background:var(--grad-gold);border:none;color:#0f0f0f;font-weight:700;padding:.6rem 1.5rem;border-radius:50px;text-decoration:none">Prihlásiť sa</a>
+</div>
+
+<div id="appContent" style="display:none">
+<div class="container py-4">
+  <div class="row g-4">
+
+    <!-- Left: Current week check-in -->
+    <div class="col-lg-4">
+      <div class="card-dark mb-3">
+        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.2rem">
+          <div id="overallProgress" class="progress-ring" style="--pct:0%">
+            <span id="progressPct">0%</span>
+          </div>
+          <div>
+            <div style="font-size:1rem;font-weight:800;color:var(--cream)">Celkový pokrok</div>
+            <div style="font-size:.8rem;color:var(--text-muted)" id="progressLabel">0 z 13 týždňov</div>
+          </div>
+        </div>
+
+        <h4 style="font-size:1rem;font-weight:800;color:var(--cream);margin-bottom:1rem">📝 Týždenný check-in</h4>
+        <div id="checkinMsg" class="mb-2" style="display:none"></div>
+
+        <div class="mb-2">
+          <label class="form-label">Týždeň číslo *</label>
+          <input type="number" class="form-control" id="iWeek" min="1" max="13" placeholder="1–13">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Váha (kg)</label>
+          <input type="number" class="form-control" id="iWeight" step="0.1" placeholder="65.5">
+        </div>
+        <div class="row g-2 mb-2">
+          <div class="col-6">
+            <label class="form-label">Tuk (%)</label>
+            <input type="number" class="form-control" id="iFat" step="0.1" placeholder="25.0">
+          </div>
+          <div class="col-6">
+            <label class="form-label">Obvod pása (cm)</label>
+            <input type="number" class="form-control" id="iWaist" step="0.5" placeholder="72">
+          </div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Energia (1–5 ⭐)</label>
+          <div class="star-rating" id="energyStars">
+            <span onclick="setStar('energy',1)" data-v="1">★</span>
+            <span onclick="setStar('energy',2)" data-v="2">★</span>
+            <span onclick="setStar('energy',3)" data-v="3">★</span>
+            <span onclick="setStar('energy',4)" data-v="4">★</span>
+            <span onclick="setStar('energy',5)" data-v="5">★</span>
+          </div>
+          <input type="hidden" id="iEnergy" value="0">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Nálada (1–5 ⭐)</label>
+          <div class="star-rating" id="moodStars">
+            <span onclick="setStar('mood',1)" data-v="1">★</span>
+            <span onclick="setStar('mood',2)" data-v="2">★</span>
+            <span onclick="setStar('mood',3)" data-v="3">★</span>
+            <span onclick="setStar('mood',4)" data-v="4">★</span>
+            <span onclick="setStar('mood',5)" data-v="5">★</span>
+          </div>
+          <input type="hidden" id="iMood" value="0">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Splnené tréningy (z 3/týždeň)</label>
+          <input type="number" class="form-control" id="iWorkouts" min="0" max="7" placeholder="3">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Poznámka</label>
+          <textarea class="form-control" id="iNotes" rows="2" placeholder="Ako prebiehal týždeň..."></textarea>
+        </div>
+        <button class="btn-gold w-100 mt-1" onclick="saveCheckin()">Uložiť check-in</button>
+      </div>
+
+      <!-- Phase guide -->
+      <div class="card-dark">
+        <h5 style="font-size:.9rem;font-weight:800;color:var(--cream);margin-bottom:.8rem">🗓️ Fázy programu</h5>
+        <div style="margin-bottom:.5rem">
+          <span class="phase-badge phase-1">Fáza 1: Týždeň 1–4</span>
+          <div style="font-size:.8rem;color:var(--text-muted);margin-top:.2rem">Základ – adaptácia, jedálniček, tréning 3×</div>
+        </div>
+        <div style="margin-bottom:.5rem">
+          <span class="phase-badge phase-2">Fáza 2: Týždeň 5–9</span>
+          <div style="font-size:.8rem;color:var(--text-muted);margin-top:.2rem">Intenzifikácia – zvýšenie záťaže, detox</div>
+        </div>
+        <div>
+          <span class="phase-badge phase-3">Fáza 3: Týždeň 10–13</span>
+          <div style="font-size:.8rem;color:var(--text-muted);margin-top:.2rem">Finále – maximálny výkon, udržanie</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Charts + history -->
+    <div class="col-lg-8">
+      <!-- Stats row -->
+      <div class="row g-2 mb-3" id="statsRow" style="display:none!important">
+        <div class="col-6 col-md-3"><div class="metric-item"><div class="mv" id="statStartW">—</div><div class="ml">Štart. váha</div></div></div>
+        <div class="col-6 col-md-3"><div class="metric-item"><div class="mv" id="statCurrW">—</div><div class="ml">Aktuálna váha</div></div></div>
+        <div class="col-6 col-md-3"><div class="metric-item"><div class="mv" id="statDiff">—</div><div class="ml">Zmena</div></div></div>
+        <div class="col-6 col-md-3"><div class="metric-item"><div class="mv" id="statWeeks">0</div><div class="ml">Týždňov</div></div></div>
+      </div>
+
+      <div class="card-dark mb-3">
+        <h4 style="font-size:1rem;font-weight:800;color:var(--cream);margin-bottom:1rem">📈 Graf pokroku</h4>
+        <canvas id="progressChart" height="150"></canvas>
+      </div>
+
+      <div class="card-dark">
+        <h4 style="font-size:1rem;font-weight:800;color:var(--cream);margin-bottom:1rem">📋 História check-inov</h4>
+        <div id="historyList">
+          <div style="text-align:center;padding:2rem;color:var(--text-muted)">Zatiaľ žiadne check-iny</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<script>
+let checkins = [];
+let chart = null;
+let energyVal = 0, moodVal = 0;
+
+async function api(url, opts={}){
+  const r = await fetch(url,{headers:{'Content-Type':'application/json'},...opts,body:opts.body?JSON.stringify(opts.body):undefined});
+  return r.json();
+}
+
+async function init(){
+  const me = await api('/api/me');
+  if(!me?.id){ document.getElementById('loginRequired').style.display='block'; return; }
+  document.getElementById('appContent').style.display='block';
+  await loadData();
+  // auto-set week number
+  if(checkins.length < 13){
+    document.getElementById('iWeek').value = Math.min(checkins.length + 1, 13);
+  }
+}
+
+async function loadData(){
+  const data = await api('/api/fit-premena');
+  if(!Array.isArray(data)){ console.error(data); return; }
+  checkins = data.sort((a,b)=>a.week_number - b.week_number);
+  renderHistory();
+  renderChart();
+  renderStats();
+}
+
+function getPhase(week){
+  if(week<=4) return {label:'Fáza 1', cls:'phase-1'};
+  if(week<=9) return {label:'Fáza 2', cls:'phase-2'};
+  return {label:'Fáza 3', cls:'phase-3'};
+}
+
+function renderStats(){
+  const total = checkins.length;
+  const pct = Math.round((total/13)*100);
+  document.getElementById('progressPct').textContent = pct+'%';
+  document.getElementById('progressLabel').textContent = total+' z 13 týždňov';
+  document.getElementById('overallProgress').style.setProperty('--pct', pct+'%');
+
+  if(!total) return;
+  document.getElementById('statsRow').style.cssText = '';
+  const first = checkins[0];
+  const last = checkins[total-1];
+  const sw = first.weight ? first.weight+'kg' : '—';
+  const cw = last.weight ? last.weight+'kg' : '—';
+  let diff = '—';
+  if(first.weight && last.weight){
+    const d = (last.weight - first.weight).toFixed(1);
+    diff = (d>0?'+':'')+d+'kg';
+  }
+  document.getElementById('statStartW').textContent = sw;
+  document.getElementById('statCurrW').textContent = cw;
+  document.getElementById('statDiff').textContent = diff;
+  document.getElementById('statWeeks').textContent = total;
+}
+
+function renderHistory(){
+  const el = document.getElementById('historyList');
+  if(!checkins.length){
+    el.innerHTML='<div style="text-align:center;padding:2rem;color:var(--text-muted)">Zatiaľ žiadne check-iny</div>';
+    return;
+  }
+  el.innerHTML = [...checkins].reverse().map(c=>{
+    const ph = getPhase(c.week_number);
+    const stars = v => v ? '★'.repeat(v)+'☆'.repeat(5-v) : '—';
+    return `<div class="week-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+        <span class="week-num">Týždeň ${c.week_number}</span>
+        <span class="phase-badge ${ph.cls}">${ph.label}</span>
+      </div>
+      <div class="metric-row">
+        ${c.weight?`<div class="metric-item"><div class="mv">⚖️ ${c.weight}kg</div><div class="ml">Váha</div></div>`:''}
+        ${c.body_fat?`<div class="metric-item"><div class="mv">💧 ${c.body_fat}%</div><div class="ml">Tuk</div></div>`:''}
+        ${c.waist?`<div class="metric-item"><div class="mv">📏 ${c.waist}cm</div><div class="ml">Pás</div></div>`:''}
+        ${c.workouts_done!=null?`<div class="metric-item"><div class="mv">🏋️ ${c.workouts_done}/3</div><div class="ml">Tréningy</div></div>`:''}
+      </div>
+      ${(c.energy_level||c.mood_score)?`<div style="font-size:.8rem;color:var(--text-muted);margin-top:.3rem">⚡ Energia: <span style="color:var(--gold)">${stars(c.energy_level)}</span> &nbsp; 😊 Nálada: <span style="color:var(--gold)">${stars(c.mood_score)}</span></div>`:''}
+      ${c.notes?`<div style="font-size:.8rem;color:var(--text-muted);margin-top:.3rem;font-style:italic">"${c.notes}"</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function renderChart(){
+  const ctx = document.getElementById('progressChart');
+  const labels = checkins.map(c=>'T'+c.week_number);
+  const weights = checkins.map(c=>c.weight||null);
+  const fats = checkins.map(c=>c.body_fat||null);
+  if(chart) chart.destroy();
+  chart = new Chart(ctx,{
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        {label:'Váha (kg)',data:weights,borderColor:'#C9A84C',backgroundColor:'rgba(201,168,76,0.07)',borderWidth:2,pointBackgroundColor:'#C9A84C',pointRadius:4,tension:0.3,fill:true,yAxisID:'y'},
+        {label:'Tuk (%)',data:fats,borderColor:'#2196F3',backgroundColor:'rgba(33,150,243,0.05)',borderWidth:2,pointBackgroundColor:'#2196F3',pointRadius:4,tension:0.3,fill:false,yAxisID:'y1'},
+      ]
+    },
+    options:{
+      responsive:true,
+      interaction:{mode:'index',intersect:false},
+      plugins:{legend:{labels:{color:'rgba(245,237,214,0.6)',font:{size:11}}}},
+      scales:{
+        y:{position:'left',beginAtZero:false,grid:{color:'rgba(201,168,76,0.08)'},ticks:{color:'rgba(245,237,214,0.5)'}},
+        y1:{position:'right',beginAtZero:false,grid:{display:false},ticks:{color:'rgba(33,150,243,0.5)'}},
+        x:{grid:{color:'rgba(201,168,76,0.08)'},ticks:{color:'rgba(245,237,214,0.5)'}}
+      }
+    }
+  });
+}
+
+function setStar(type, val){
+  if(type==='energy'){
+    energyVal = val;
+    document.getElementById('iEnergy').value = val;
+    document.querySelectorAll('#energyStars span').forEach(s=>s.classList.toggle('active', +s.dataset.v<=val));
+  } else {
+    moodVal = val;
+    document.getElementById('iMood').value = val;
+    document.querySelectorAll('#moodStars span').forEach(s=>s.classList.toggle('active', +s.dataset.v<=val));
+  }
+}
+
+async function saveCheckin(){
+  const week = parseInt(document.getElementById('iWeek').value);
+  if(!week||week<1||week>13){ showMsg('checkinMsg','Zadajte platné číslo týždňa (1–13)','error'); return; }
+  const body = {
+    week_number: week,
+    weight: document.getElementById('iWeight').value||null,
+    body_fat: document.getElementById('iFat').value||null,
+    waist: document.getElementById('iWaist').value||null,
+    energy_level: energyVal||null,
+    mood_score: moodVal||null,
+    workouts_done: document.getElementById('iWorkouts').value||null,
+    notes: document.getElementById('iNotes').value||null
+  };
+  const r = await api('/api/fit-premena/checkin',{method:'POST',body});
+  if(r?.ok){
+    showMsg('checkinMsg','✅ Check-in uložený!','success');
+    ['iWeight','iFat','iWaist','iWorkouts','iNotes'].forEach(id=>document.getElementById(id).value='');
+    setStar('energy',0); setStar('mood',0);
+    energyVal=0; moodVal=0;
+    await loadData();
+    const next = Math.min(checkins.length+1,13);
+    document.getElementById('iWeek').value = next;
+  } else {
+    showMsg('checkinMsg','❌ '+(r?.error||'Chyba'),'error');
+  }
+}
+
+function showMsg(id,text,type){
+  const el = document.getElementById(id);
+  const color = type==='success'?'#4CAF50':'#f44336';
+  const bg = type==='success'?'rgba(76,175,80,.15)':'rgba(244,67,54,.15)';
+  el.style.display='block';
+  el.innerHTML=`<div style="background:${bg};border:1px solid ${color};color:${color};border-radius:.5rem;padding:.5rem .75rem;font-size:.85rem">${text}</div>`;
+  setTimeout(()=>el.style.display='none',4000);
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tréner Dashboard – Fusion Academy</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/fa-theme.css">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<style>
+:root{--gold:#C9A84C;--gold-light:#F0C060;--dark-1:#0f0f0f;--dark-2:#141414;--dark-3:#1a1a1a;--dark-4:#222;--cream:#F5EDD6;--text-muted:rgba(245,237,214,0.50);--gold-border:rgba(201,168,76,0.22);--grad-gold:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);}
+body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',system-ui,sans-serif;}
+.top-nav{background:rgba(8,8,8,0.97);border-bottom:1px solid var(--gold-border);padding:.75rem 1.5rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
+.brand{font-size:1.3rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none;}
+.nav-links{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;}
+.nav-links a{color:rgba(255,255,255,.6);text-decoration:none;font-size:.85rem;padding:.3rem .7rem;border-radius:20px;transition:.2s;}
+.nav-links a:hover,.nav-links a.active{color:var(--gold);background:rgba(201,168,76,0.12);}
+.hero{background:radial-gradient(ellipse at 50% 50%,rgba(201,168,76,.07) 0%,transparent 70%),linear-gradient(135deg,#0a0a0a,#111);padding:2rem 1rem 1.5rem;text-align:center;border-bottom:1px solid var(--gold-border);}
+.hero h1 span{background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.sidebar{background:var(--dark-2);border-right:1px solid var(--gold-border);min-height:calc(100vh - 120px);padding:1.5rem 0;}
+.sidebar-link{display:flex;align-items:center;gap:.7rem;padding:.65rem 1.5rem;color:rgba(245,237,214,.6);text-decoration:none;font-size:.88rem;transition:.2s;cursor:pointer;border:none;background:none;width:100%;}
+.sidebar-link:hover,.sidebar-link.active{color:var(--gold);background:rgba(201,168,76,0.08);}
+.sidebar-link i{font-size:1rem;}
+.panel{display:none;padding:1.5rem;}
+.panel.active{display:block;}
+.card-dark{background:var(--dark-2);border:1px solid var(--gold-border);border-radius:1rem;padding:1.4rem;}
+.form-control,.form-select{background:var(--dark-3)!important;border:1px solid var(--gold-border)!important;color:var(--cream)!important;}
+.form-control::placeholder{color:var(--text-muted)!important;}
+.form-control:focus,.form-select:focus{border-color:var(--gold)!important;box-shadow:0 0 0 2px rgba(201,168,76,.15)!important;}
+.form-label{color:var(--cream);font-size:.85rem;font-weight:600;}
+.btn-gold{background:var(--grad-gold);border:none;color:#0f0f0f;font-weight:700;padding:.5rem 1.2rem;border-radius:50px;cursor:pointer;transition:opacity .2s;font-size:.85rem;}
+.btn-gold:hover{opacity:.85;}
+.btn-outline-gold{background:transparent;border:1px solid var(--gold);color:var(--gold);font-weight:600;padding:.4rem 1rem;border-radius:50px;cursor:pointer;transition:.2s;font-size:.82rem;}
+.btn-outline-gold:hover{background:rgba(201,168,76,.1);}
+.table-dark-custom{width:100%;border-collapse:collapse;}
+.table-dark-custom th{color:var(--gold);font-size:.8rem;font-weight:700;padding:.6rem .8rem;border-bottom:1px solid var(--gold-border);text-align:left;}
+.table-dark-custom td{color:var(--cream);font-size:.83rem;padding:.55rem .8rem;border-bottom:1px solid rgba(201,168,76,.08);}
+.table-dark-custom tr:last-child td{border-bottom:none;}
+.table-dark-custom tr:hover td{background:rgba(201,168,76,.04);}
+.class-pill{background:var(--dark-3);border:1px solid var(--gold-border);border-radius:.8rem;padding:.9rem 1.1rem;margin-bottom:.6rem;cursor:pointer;transition:.2s;}
+.class-pill:hover{border-color:var(--gold);background:rgba(201,168,76,.06);}
+.badge-pill{display:inline-block;font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:20px;}
+.badge-confirmed{background:rgba(76,175,80,.15);color:#4CAF50;border:1px solid rgba(76,175,80,.3);}
+.badge-waitlist{background:rgba(255,152,0,.15);color:#FF9800;border:1px solid rgba(255,152,0,.3);}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:var(--dark-2);border:1px solid var(--gold-border);border-radius:1.2rem;padding:2rem;width:100%;max-width:600px;max-height:85vh;overflow-y:auto;}
+.login-required{text-align:center;padding:4rem 1rem;color:var(--text-muted);}
+</style>
+</head>
+<body>
+
+<nav class="top-nav">
+  <a href="/" class="brand">FUSION ACADEMY</a>
+  <div class="nav-links">
+    <a href="/dashboard">Partner Dashboard</a>
+    <a href="/trainer" class="active">Tréner</a>
+    <a href="/schedule">Rozvrh</a>
+    <a href="/body-analysis">Analýza tela</a>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="container">
+    <h1 style="font-size:clamp(1.4rem,3.5vw,2rem);font-weight:900">Tréner <span>Dashboard</span></h1>
+    <p style="color:rgba(255,255,255,.6);margin:.3rem 0 0;font-size:.9rem">Správa hodín, klientov a poznámok</p>
+  </div>
+</section>
+
+<div id="loginRequired" class="login-required" style="display:none">
+  <div style="font-size:3rem;margin-bottom:1rem">🔒</div>
+  <h3 style="color:var(--cream)">Prístup len pre trénerov</h3>
+  <p>Tento panel je dostupný len pre akreditovaných trénerov Fusion Academy.</p>
+  <a href="/" style="background:var(--grad-gold);border:none;color:#0f0f0f;font-weight:700;padding:.6rem 1.5rem;border-radius:50px;text-decoration:none">Prihlásiť sa</a>
+</div>
+
+<div id="appContent" style="display:none">
+<div class="row g-0" style="min-height:calc(100vh - 130px)">
+  <!-- Sidebar -->
+  <div class="col-lg-2 col-md-3 sidebar">
+    <button class="sidebar-link active" onclick="showPanel('classes')"><i class="bi bi-calendar3"></i>Moje hodiny</button>
+    <button class="sidebar-link" onclick="showPanel('students')"><i class="bi bi-people"></i>Klienti</button>
+    <button class="sidebar-link" onclick="showPanel('bodyanalysis')"><i class="bi bi-activity"></i>Analýza tela</button>
+    <button class="sidebar-link" onclick="showPanel('notes')"><i class="bi bi-journal-text"></i>Poznámky</button>
+  </div>
+
+  <!-- Main content -->
+  <div class="col-lg-10 col-md-9">
+
+    <!-- CLASSES PANEL -->
+    <div id="panel-classes" class="panel active">
+      <h4 style="font-size:1.1rem;font-weight:800;margin-bottom:1.2rem;color:var(--cream)">📅 Moje hodiny</h4>
+      <div id="classesList">
+        <div style="text-align:center;padding:2rem;color:var(--text-muted)">Načítavam hodiny...</div>
+      </div>
+    </div>
+
+    <!-- STUDENTS PANEL -->
+    <div id="panel-students" class="panel">
+      <h4 style="font-size:1.1rem;font-weight:800;margin-bottom:1.2rem;color:var(--cream)">👥 Klienti</h4>
+      <div class="card-dark">
+        <div style="overflow-x:auto">
+          <table class="table-dark-custom">
+            <thead><tr><th>Meno</th><th>Email</th><th>Členstvo</th><th>Registrovaný</th><th>Akcia</th></tr></thead>
+            <tbody id="studentsTbody">
+              <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:2rem">Načítavam...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- BODY ANALYSIS PANEL -->
+    <div id="panel-bodyanalysis" class="panel">
+      <h4 style="font-size:1.1rem;font-weight:800;margin-bottom:1.2rem;color:var(--cream)">📊 Analýza tela klientov</h4>
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="card-dark">
+            <label class="form-label">Vyhľadať klienta</label>
+            <input type="text" class="form-control mb-2" id="baSearch" placeholder="Meno alebo email..." oninput="filterBAStudents()">
+            <div id="baStudentList" style="max-height:300px;overflow-y:auto"></div>
+          </div>
+        </div>
+        <div class="col-md-8">
+          <div class="card-dark">
+            <h5 style="font-size:.9rem;font-weight:700;color:var(--cream);margin-bottom:1rem" id="baClientName">Vyberte klienta</h5>
+            <div id="baAddForm" style="display:none">
+              <div class="row g-2 mb-3">
+                <div class="col-6"><label class="form-label">Váha (kg)</label><input type="number" class="form-control" id="baWeight" step="0.1"></div>
+                <div class="col-6"><label class="form-label">Tuk (%)</label><input type="number" class="form-control" id="baFat" step="0.1"></div>
+                <div class="col-6"><label class="form-label">Svaly (kg)</label><input type="number" class="form-control" id="baMuscle" step="0.1"></div>
+                <div class="col-6"><label class="form-label">BMI</label><input type="number" class="form-control" id="baBmi" step="0.1"></div>
+                <div class="col-6"><label class="form-label">Pás (cm)</label><input type="number" class="form-control" id="baWaist" step="0.5"></div>
+                <div class="col-6"><label class="form-label">Boky (cm)</label><input type="number" class="form-control" id="baHips" step="0.5"></div>
+                <div class="col-12"><label class="form-label">Poznámka</label><textarea class="form-control" id="baNotes" rows="2"></textarea></div>
+              </div>
+              <button class="btn-gold" onclick="addBAMeasurement()">Pridať meranie</button>
+              <div id="baMsg" class="mt-2" style="display:none"></div>
+            </div>
+            <div id="baHistory" style="margin-top:1rem"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NOTES PANEL -->
+    <div id="panel-notes" class="panel">
+      <h4 style="font-size:1.1rem;font-weight:800;margin-bottom:1.2rem;color:var(--cream)">📝 Poznámky k hodinám</h4>
+      <div class="row g-3">
+        <div class="col-md-5">
+          <div class="card-dark">
+            <label class="form-label">Hodina</label>
+            <select class="form-select mb-2" id="noteClassSelect"></select>
+            <label class="form-label">Poznámka</label>
+            <textarea class="form-control mb-2" id="noteText" rows="5" placeholder="Poznámky k hodine, spätnä väzba, odporúčania..."></textarea>
+            <button class="btn-gold w-100" onclick="saveNote()">Uložiť poznámku</button>
+            <div id="noteMsg" class="mt-2" style="display:none"></div>
+          </div>
+        </div>
+        <div class="col-md-7">
+          <div class="card-dark">
+            <h5 style="font-size:.9rem;font-weight:700;color:var(--cream);margin-bottom:.8rem">Existujúce poznámky</h5>
+            <div id="notesList" style="max-height:400px;overflow-y:auto">
+              <div style="text-align:center;padding:2rem;color:var(--text-muted)">Zatiaľ žiadne poznámky</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- Attendees Modal -->
+<div class="modal-overlay" id="attendeesModal" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem">
+      <h5 style="font-size:1rem;font-weight:800;color:var(--cream);margin:0" id="attendeesTitle">Účastníci hodiny</h5>
+      <button onclick="closeModal()" style="background:none;border:none;color:var(--text-muted);font-size:1.4rem;cursor:pointer">✕</button>
+    </div>
+    <div id="attendeesList"></div>
+  </div>
+</div>
+
+<script>
+let allStudents = [];
+let myClasses = [];
+let baSelectedUserId = null;
+
+async function api(url, opts={}){
+  const r = await fetch(url,{headers:{'Content-Type':'application/json'},...opts,body:opts.body?JSON.stringify(opts.body):undefined});
+  return r.json();
+}
+
+async function init(){
+  const me = await api('/api/me');
+  if(!me?.id){ document.getElementById('loginRequired').style.display='block'; return; }
+  document.getElementById('appContent').style.display='block';
+  await Promise.all([loadClasses(), loadStudents()]);
+}
+
+function showPanel(id){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.sidebar-link').forEach(l=>l.classList.remove('active'));
+  document.getElementById('panel-'+id).classList.add('active');
+  event.currentTarget.classList.add('active');
+  if(id==='bodyanalysis') renderBAStudentList();
+  if(id==='notes') populateNoteClasses();
+}
+
+async function loadClasses(){
+  const data = await api('/api/trainer/my-classes');
+  if(!Array.isArray(data)){ document.getElementById('classesList').innerHTML='<div style="text-align:center;padding:2rem;color:var(--text-muted)">Nemáte priradené hodiny</div>'; return; }
+  myClasses = data;
+  const el = document.getElementById('classesList');
+  if(!data.length){el.innerHTML='<div style="text-align:center;padding:2rem;color:var(--text-muted)">Nemáte priradené hodiny</div>';return;}
+  el.innerHTML = data.map(c=>`
+    <div class="class-pill" onclick="loadAttendees('${c._id}','${escHtml(c.name)}')">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
+        <div>
+          <div style="font-weight:700;color:var(--cream)">${c.name}</div>
+          <div style="font-size:.8rem;color:var(--text-muted)">${c.day||''} ${c.time||''} · ${c.duration_min||60} min · ${c.city||''}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:.7rem">
+          <span style="font-size:.8rem;color:var(--gold)">👥 ${c.capacity||20} miest</span>
+          <span class="badge-pill badge-confirmed">Zobraziť účastníkov</span>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+async function loadAttendees(classId, className){
+  document.getElementById('attendeesTitle').textContent = 'Účastníci: '+className;
+  document.getElementById('attendeesList').innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--text-muted)">Načítavam...</div>';
+  document.getElementById('attendeesModal').classList.add('open');
+  const data = await api('/api/trainer/class-attendees/'+classId);
+  if(!Array.isArray(data)||!data.length){
+    document.getElementById('attendeesList').innerHTML='<div style="text-align:center;padding:1.5rem;color:var(--text-muted)">Žiadni prihlásení účastníci</div>';
+    return;
+  }
+  document.getElementById('attendeesList').innerHTML = `<div style="overflow-x:auto"><table class="table-dark-custom">
+    <thead><tr><th>Meno</th><th>Email</th><th>Dátum rez.</th><th>Stav</th></tr></thead>
+    <tbody>${data.map(b=>`<tr>
+      <td>${escHtml(b.user_name||'—')}</td>
+      <td style="color:var(--text-muted)">${escHtml(b.user_email||'—')}</td>
+      <td style="color:var(--text-muted)">${b.booking_date||''}</td>
+      <td><span class="badge-pill ${b.status==='waitlist'?'badge-waitlist':'badge-confirmed'}">${b.status==='waitlist'?'Čakací zoznam':'Potvrdená'}</span></td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+function closeModal(){ document.getElementById('attendeesModal').classList.remove('open'); }
+
+async function loadStudents(){
+  const data = await api('/api/trainer/students');
+  if(!Array.isArray(data)) return;
+  allStudents = data;
+  renderStudentsTable(data);
+}
+
+function renderStudentsTable(students){
+  const tb = document.getElementById('studentsTbody');
+  if(!students.length){tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:2rem">Žiadni klienti</td></tr>';return;}
+  tb.innerHTML = students.map(s=>`<tr>
+    <td style="font-weight:600">${escHtml(s.name||'—')}</td>
+    <td style="color:var(--text-muted)">${escHtml(s.email||'—')}</td>
+    <td><span style="color:var(--gold)">${s.membership_plan||'Žiadne'}</span></td>
+    <td style="color:var(--text-muted)">${s.created_at?s.created_at.substring(0,10):'—'}</td>
+    <td><button class="btn-outline-gold" onclick="selectBAClient('${s._id}','${escHtml(s.name||'')}')">Analýza</button></td>
+  </tr>`).join('');
+}
+
+// Body analysis
+function renderBAStudentList(){
+  filterBAStudents();
+}
+function filterBAStudents(){
+  const q = document.getElementById('baSearch').value.toLowerCase();
+  const filtered = allStudents.filter(s=>(s.name||'').toLowerCase().includes(q)||(s.email||'').toLowerCase().includes(q));
+  const el = document.getElementById('baStudentList');
+  if(!filtered.length){el.innerHTML='<div style="color:var(--text-muted);font-size:.85rem;padding:.5rem">Žiadni klienti</div>';return;}
+  el.innerHTML = filtered.map(s=>`
+    <div onclick="selectBAClient('${s._id}','${escHtml(s.name||'')}')" style="padding:.5rem .7rem;border-radius:.5rem;cursor:pointer;font-size:.85rem;transition:.15s;color:var(--cream)" onmouseover="this.style.background='rgba(201,168,76,.08)'" onmouseout="this.style.background=''">${escHtml(s.name||'—')} <span style="color:var(--text-muted)">${escHtml(s.email||'')}</span></div>`).join('');
+}
+async function selectBAClient(userId, name){
+  baSelectedUserId = userId;
+  document.getElementById('baClientName').textContent = '📊 '+name;
+  document.getElementById('baAddForm').style.display='block';
+  const data = await api('/api/admin/body-analysis/'+userId);
+  const el = document.getElementById('baHistory');
+  if(!Array.isArray(data)||!data.length){el.innerHTML='<div style="color:var(--text-muted);font-size:.85rem">Žiadne záznamy</div>';return;}
+  el.innerHTML = '<h6 style="font-size:.85rem;font-weight:700;color:var(--cream);margin-bottom:.5rem">História meraní</h6>'+
+    data.slice().reverse().map(m=>`<div style="background:var(--dark-3);border:1px solid var(--gold-border);border-radius:.6rem;padding:.6rem .8rem;margin-bottom:.4rem;font-size:.82rem">
+      <span style="color:var(--gold);font-weight:700">${m.date||''}</span> &nbsp;
+      ⚖️ ${m.weight||'—'}kg &nbsp;
+      ${m.body_fat?'💧 '+m.body_fat+'%':''} &nbsp;
+      ${m.muscle_mass?'💪 '+m.muscle_mass+'kg':''}
+    </div>`).join('');
+}
+async function addBAMeasurement(){
+  if(!baSelectedUserId){return;}
+  const weight = document.getElementById('baWeight').value;
+  if(!weight){alert('Zadajte váhu');return;}
+  const body={user_id:baSelectedUserId,weight,body_fat:document.getElementById('baFat').value||null,muscle_mass:document.getElementById('baMuscle').value||null,bmi:document.getElementById('baBmi').value||null,waist:document.getElementById('baWaist').value||null,hips:document.getElementById('baHips').value||null,notes:document.getElementById('baNotes').value};
+  const r = await api('/api/admin/body-analysis',{method:'POST',body});
+  const msg = document.getElementById('baMsg');
+  msg.style.display='block';
+  if(r?.ok){
+    msg.innerHTML='<div style="background:rgba(76,175,80,.15);border:1px solid #4CAF50;color:#4CAF50;border-radius:.4rem;padding:.4rem .7rem;font-size:.82rem">✅ Meranie pridané</div>';
+    ['baWeight','baFat','baMuscle','baBmi','baWaist','baHips','baNotes'].forEach(id=>document.getElementById(id).value='');
+    setTimeout(()=>{msg.style.display='none';selectBAClient(baSelectedUserId,document.getElementById('baClientName').textContent.replace('📊 ',''));},1500);
+  } else {
+    msg.innerHTML=`<div style="background:rgba(244,67,54,.15);border:1px solid #f44336;color:#f44336;border-radius:.4rem;padding:.4rem .7rem;font-size:.82rem">❌ ${r?.error||'Chyba'}</div>`;
+    setTimeout(()=>msg.style.display='none',3000);
+  }
+}
+
+// Notes
+function populateNoteClasses(){
+  const sel = document.getElementById('noteClassSelect');
+  sel.innerHTML = myClasses.map(c=>`<option value="${c._id}">${c.name} (${c.day||''} ${c.time||''})</option>`).join('');
+}
+async function saveNote(){
+  const class_id = document.getElementById('noteClassSelect').value;
+  const notes = document.getElementById('noteText').value.trim();
+  if(!notes){alert('Zadajte poznámku');return;}
+  const r = await api('/api/trainer/class-notes',{method:'POST',body:{class_id,notes}});
+  const msg = document.getElementById('noteMsg');
+  msg.style.display='block';
+  if(r?.ok){
+    msg.innerHTML='<div style="background:rgba(76,175,80,.15);border:1px solid #4CAF50;color:#4CAF50;border-radius:.4rem;padding:.4rem .7rem;font-size:.82rem">✅ Poznámka uložená</div>';
+    document.getElementById('noteText').value='';
+    await loadNotes();
+  } else {
+    msg.innerHTML=`<div style="background:rgba(244,67,54,.15);border:1px solid #f44336;color:#f44336;border-radius:.4rem;padding:.4rem .7rem;font-size:.82rem">❌ ${r?.error||'Chyba'}</div>`;
+  }
+  setTimeout(()=>msg.style.display='none',3000);
+}
+async function loadNotes(){
+  // Notes are stored on class objects; we read from my-classes which may have notes field
+  const el = document.getElementById('notesList');
+  const notesClasses = myClasses.filter(c=>c.trainer_notes);
+  if(!notesClasses.length){el.innerHTML='<div style="text-align:center;padding:1.5rem;color:var(--text-muted)">Zatiaľ žiadne poznámky</div>';return;}
+  el.innerHTML = notesClasses.map(c=>`
+    <div style="background:var(--dark-3);border:1px solid var(--gold-border);border-radius:.7rem;padding:.8rem 1rem;margin-bottom:.5rem">
+      <div style="font-weight:700;color:var(--gold);font-size:.88rem">${escHtml(c.name)}</div>
+      <div style="font-size:.83rem;color:var(--cream);margin-top:.3rem">${escHtml(c.trainer_notes)}</div>
+    </div>`).join('');
+}
+
+function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+init();
+</script>
+</body>
+</html>

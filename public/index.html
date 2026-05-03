@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Fusion Academy – tanečné a fitness štúdio na Slovensku. Latin tanec, Zumba, Pilates, online hodiny. 4 mestá: Banská Bystrica, Brezno, Detva, Zvolen.">
+<meta name="keywords" content="fusion academy, latin tanec, zumba, fitness, pilates, tancovanie slovensko, tanečné štúdio">
+<meta property="og:title" content="Fusion Academy – Pohyb, ktorý ti zmení život – Fusion Academy">
+<meta property="og:description" content="Fusion Academy – tanečné a fitness štúdio na Slovensku. Latin tanec, Zumba, Pilates, online hodiny. 4 mestá: Banská Bystrica, Brezno, Detva, Zvolen.">
+<meta property="og:image" content="https://latindancefusion.art/og-image.svg">
+<meta property="og:type" content="website">
+<link rel="canonical" href="https://latindancefusion.art/">
+<title>Fusion Academy – Pohyb, ktorý ti zmení život</title>
+<link rel="stylesheet" href="/fa-theme.css">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<style>
+body { background: var(--dark-1); overflow-x: hidden; }
+
+/* ── Top contact bar ── */
+.contact-bar {
+  background: var(--dark-2);
+  border-bottom: 1px solid var(--gold-border);
+  padding: .4rem 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: .75rem;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+.contact-bar a { color: var(--text-muted); text-decoration: none; transition: color .2s; }
+.contact-bar a:hover { color: var(--gold); }
+.contact-bar-right { display: flex; gap: 1.2rem; }
+
+/* ── Hero ── */
+.hero {
+  min-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 4rem 1.5rem 3rem;
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(201,168,76,0.13) 0%, transparent 65%), var(--dark-1);
+}
+.hero::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  opacity: .3;
+}
+.hero-logo {
+  font-size: clamp(2.5rem, 8vw, 5rem);
+  font-weight: 900;
+  letter-spacing: 2px;
+  background: var(--grad-gold);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: .4rem;
+  line-height: 1;
+}
+.hero-tagline {
+  font-size: clamp(1rem, 3vw, 1.4rem);
+  color: var(--cream-soft);
+  font-weight: 300;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  margin-bottom: 2.5rem;
+}
+.hero-desc {
+  color: var(--text-muted);
+  max-width: 520px;
+  line-height: 1.7;
+  margin-bottom: 2.5rem;
+  font-size: .95rem;
+}
+
+/* ── Choice grid ── */
+.choices {
+  padding: 3rem 1.5rem 4rem;
+  background: var(--dark-2);
+}
+.choices-inner { max-width: 1000px; margin: 0 auto; }
+.choices-title {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+.choices-title h2 { font-size: 1.6rem; font-weight: 900; }
+.choices-title h2 span { background: var(--grad-gold); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+.grid-4 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.2rem;
+}
+@media (max-width: 700px) { .grid-4 { grid-template-columns: 1fr; } }
+@media (min-width: 900px) { .grid-4 { grid-template-columns: repeat(4, 1fr); } }
+
+.entry-card {
+  background: var(--dark-3);
+  border: 1px solid var(--gold-border);
+  border-radius: 1.2rem;
+  padding: 1.8rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform .22s, box-shadow .22s, border-color .22s;
+  position: relative;
+  overflow: hidden;
+}
+.entry-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 2px;
+  background: var(--grad-gold);
+  opacity: 0;
+  transition: opacity .22s;
+}
+.entry-card:hover {
+  transform: translateY(-6px);
+  box-shadow: var(--gold-glow);
+  border-color: var(--gold-border-h);
+}
+.entry-card:hover::before { opacity: 1; }
+
+.entry-icon { font-size: 2.8rem; margin-bottom: 1rem; }
+.entry-title { font-size: 1.05rem; font-weight: 800; color: var(--cream); margin-bottom: .5rem; }
+.entry-desc  { font-size: .8rem; color: var(--text-muted); line-height: 1.55; margin-bottom: 1.2rem; flex: 1; }
+.entry-tag-row { display: flex; flex-wrap: wrap; gap: .3rem; justify-content: center; margin-bottom: 1.2rem; }
+.entry-tag { font-size: .68rem; background: var(--gold-faint); color: var(--gold); border: 1px solid var(--gold-border); padding: 2px 8px; border-radius: 20px; font-weight: 600; }
+
+/* ── Stats ── */
+.stats-bar {
+  padding: 3rem 1.5rem;
+  display: flex;
+  justify-content: center;
+  gap: 3rem;
+  flex-wrap: wrap;
+}
+.stat-item { text-align: center; }
+.stat-num {
+  font-size: 2.2rem;
+  font-weight: 900;
+  background: var(--grad-gold);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.stat-lbl { font-size: .72rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px; margin-top: .15rem; }
+
+/* ── Footer ── */
+footer {
+  background: var(--dark-2);
+  border-top: 1px solid var(--gold-border);
+  padding: 1.5rem;
+  text-align: center;
+  font-size: .75rem;
+  color: var(--text-dim);
+}
+footer a { color: var(--text-muted); text-decoration: none; }
+footer a:hover { color: var(--gold); }
+
+/* ── Partner modal ── */
+.auth-tabs { display: flex; margin-bottom: 1.2rem; border-bottom: 1px solid var(--gold-border); }
+.auth-tab {
+  flex: 1; text-align: center;
+  padding: .6rem; font-size: .85rem; font-weight: 700;
+  color: var(--text-muted); background: none; border: none;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  cursor: pointer; transition: all .2s; color: var(--text-muted);
+}
+.auth-tab.active { color: var(--gold); border-bottom-color: var(--gold); }
+.fa-modal { max-width: 420px; }
+.feature-row { display: flex; align-items: center; gap: .5rem; font-size: .82rem; color: var(--text-muted); margin-bottom: .4rem; }
+</style>
+</head>
+<body>
+
+<!-- Contact bar -->
+<div class="contact-bar">
+  <a href="https://www.latindancefusion.art" target="_blank">🌐 latindancefusion.art</a>
+  <div class="contact-bar-right">
+    <a href="tel:+421904315151"><i class="bi bi-telephone"></i> +421 904 315 151</a>
+    <a href="mailto:fusionacademysk@gmail.com" class="fa-hide-mobile"><i class="bi bi-envelope"></i> fusionacademysk@gmail.com</a>
+  </div>
+</div>
+
+<!-- Nav -->
+<nav class="fa-nav">
+  <a class="fa-brand" href="/">FUSION ACADEMY</a>
+  <div class="fa-nav-links">
+    <a class="fa-nav-link" href="/programs"><i class="bi bi-grid me-1"></i>Programy</a>
+    <a class="fa-nav-link" href="/schedule"><i class="bi bi-calendar3 me-1"></i>Rozvrh</a>
+    <a class="fa-nav-link" href="/pricing"><i class="bi bi-tag me-1"></i>Cenník</a>
+    <a class="fa-nav-link" href="/online"><i class="bi bi-camera-video me-1"></i>Online</a>
+    <a class="fa-nav-link" href="/fitdays"><i class="bi bi-trophy me-1"></i>FitDays</a>
+    <a class="fa-nav-link" href="/shop"><i class="bi bi-bag me-1"></i>Shop</a>
+    <a class="fa-nav-link" href="/blog"><i class="bi bi-newspaper me-1"></i>Blog</a>
+    <a class="fa-nav-link" href="/community"><i class="bi bi-chat-dots me-1"></i>Komunita</a>
+    <a class="fa-nav-link" href="/about"><i class="bi bi-info-circle me-1"></i>O nás</a>
+    <a class="fa-nav-link" href="/cities"><i class="bi bi-geo-alt me-1"></i>Mestá</a>
+    <a class="fa-nav-link" href="/contact"><i class="bi bi-envelope me-1"></i>Kontakt</a>
+    <a class="fa-nav-link" href="/rental"><i class="bi bi-building me-1"></i>Prenájom</a>
+    <a class="fa-nav-link" href="/meal-plan"><i class="bi bi-egg-fried me-1"></i>Jedálniček</a>
+    <a class="fa-nav-link" href="/gallery"><i class="bi bi-images me-1"></i>Galéria</a>
+    <a class="fa-nav-link" href="/podcast"><i class="bi bi-mic me-1"></i>Podcast</a>
+    <a class="fa-nav-link" href="/collaborate"><i class="bi bi-handshake me-1"></i>Spolupráca</a>
+    <a class="fa-nav-link" href="#" onclick="openPartner(event)"><i class="bi bi-person me-1"></i>Partner login</a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-logo">FUSION ACADEMY</div>
+  <div class="hero-tagline">Pohyb · Výživa · Komunita</div>
+  <p class="hero-desc">Latinské tance, fitness a wellness pre každého. Pridajte sa k stovkám členov v Banskej Bystrici, Zvolene, Detve, Brezne aj online.</p>
+  <div style="display:flex;gap:.75rem;flex-wrap:wrap;justify-content:center;">
+    <a href="/shop" class="fa-btn fa-btn-gold fa-btn-lg"><i class="bi bi-bag-heart"></i> Otvoriť e-shop</a>
+    <a href="/schedule" class="fa-btn fa-btn-outline fa-btn-lg"><i class="bi bi-calendar3"></i> Zobraziť rozvrh</a>
+  </div>
+</section>
+
+<!-- Entry choices -->
+<section class="choices">
+  <div class="choices-inner">
+    <div class="choices-title">
+      <p style="color:var(--gold);font-size:.75rem;letter-spacing:2px;text-transform:uppercase;font-weight:700;margin-bottom:.5rem;">Čo hľadáte?</p>
+      <h2>Vyberte svoju <span>cestu</span></h2>
+    </div>
+    <div class="grid-4">
+
+      <!-- E-shop -->
+      <a class="entry-card" href="/shop">
+        <div class="entry-icon">🛍️</div>
+        <div class="entry-title">E-shop</div>
+        <div class="entry-desc">Členstvá, kurzy, výživa, oblečenie a analýzy na jednom mieste.</div>
+        <div class="entry-tag-row">
+          <span class="entry-tag">Členstvá</span>
+          <span class="entry-tag">Výživa</span>
+          <span class="entry-tag">Oblečenie</span>
+        </div>
+        <span class="fa-btn fa-btn-gold fa-btn-sm" style="width:100%;justify-content:center;">Nakupovať</span>
+      </a>
+
+      <!-- Rozvrh -->
+      <a class="entry-card" href="/schedule">
+        <div class="entry-icon">🗓️</div>
+        <div class="entry-title">Rozvrh hodín</div>
+        <div class="entry-desc">Prihláste sa online na salsu, bachatu, zumbu alebo detské kurzy.</div>
+        <div class="entry-tag-row">
+          <span class="entry-tag">Salsa</span>
+          <span class="entry-tag">Bachata</span>
+          <span class="entry-tag">Zumba</span>
+          <span class="entry-tag">Deti</span>
+        </div>
+        <span class="fa-btn fa-btn-outline fa-btn-sm" style="width:100%;justify-content:center;">Zobraziť hodiny</span>
+      </a>
+
+      <!-- Komunita -->
+      <a class="entry-card" href="/community">
+        <div class="entry-icon">💬</div>
+        <div class="entry-title">Komunita</div>
+        <div class="entry-desc">Chat, zdieľanie výsledkov, motivácia a odznaky členstva ako na Twitchi.</div>
+        <div class="entry-tag-row">
+          <span class="entry-tag">🏅 Odznaky</span>
+          <span class="entry-tag">5 kanálov</span>
+          <span class="entry-tag">Live chat</span>
+        </div>
+        <span class="fa-btn fa-btn-outline fa-btn-sm" style="width:100%;justify-content:center;">Vstúpiť</span>
+      </a>
+
+      <!-- Partner -->
+      <div class="entry-card" onclick="openPartner()">
+        <div class="entry-icon">🤝</div>
+        <div class="entry-title">Partner Program</div>
+        <div class="entry-desc">Zarábajte odporúčaním. Budujte tím až 7 úrovní, sledujte zárobky live.</div>
+        <div class="entry-tag-row">
+          <span class="entry-tag">💰 8% provízia</span>
+          <span class="entry-tag">7 úrovní</span>
+          <span class="entry-tag">8 hodností</span>
+        </div>
+        <span class="fa-btn fa-btn-gold fa-btn-sm" style="width:100%;justify-content:center;">Prihlásiť / Registrovať</span>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- Stats -->
+<section class="stats-bar">
+  <div class="stat-item"><div class="stat-num">8%</div><div class="stat-lbl">Osobná provízia</div></div>
+  <div class="stat-item"><div class="stat-num">7</div><div class="stat-lbl">Úrovní downline</div></div>
+  <div class="stat-item"><div class="stat-num">16</div><div class="stat-lbl">Hodín týždenne</div></div>
+  <div class="stat-item"><div class="stat-num">4</div><div class="stat-lbl">Mestá + Online</div></div>
+  <div class="stat-item"><div class="stat-num">30+</div><div class="stat-lbl">Produktov</div></div>
+</section>
+
+<!-- Footer -->
+<footer>
+  © 2026 Fusion Academy ·
+  <a href="https://www.latindancefusion.art" target="_blank">latindancefusion.art</a> ·
+  <a href="mailto:fusionacademysk@gmail.com">fusionacademysk@gmail.com</a> ·
+  <a href="tel:+421904315151">+421 904 315 151</a>
+  &nbsp;|&nbsp; <a href="/admin">Admin</a>
+</footer>
+
+<!-- ══ PARTNER MODAL ══════════════════════════════════════ -->
+<div class="fa-overlay" id="partnerModal" onclick="closeOnBg(event,'partnerModal')">
+  <div class="fa-modal">
+    <button class="fa-modal-close" onclick="closeModal('partnerModal')"><i class="bi bi-x-lg"></i></button>
+    <div style="text-align:center;margin-bottom:1.2rem;">
+      <div style="font-size:1.6rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">FUSION ACADEMY</div>
+      <div style="font-size:.82rem;color:var(--text-muted);">Partner Program</div>
+    </div>
+
+    <div class="auth-tabs" id="authTabs">
+      <button class="auth-tab active" data-t="login">Prihlásenie</button>
+      <button class="auth-tab" data-t="register">Registrácia</button>
+    </div>
+
+    <!-- Login -->
+    <div id="tLogin">
+      <div id="loginErr" class="fa-alert-danger d-none mb-3"></div>
+      <div class="mb-3">
+        <label class="fa-label">Email</label>
+        <input type="email" id="lEmail" class="fa-input form-control" placeholder="vas@email.sk">
+      </div>
+      <div class="mb-3">
+        <label class="fa-label">Heslo</label>
+        <input type="password" id="lPwd" class="fa-input form-control" placeholder="••••••••">
+      </div>
+      <button class="fa-btn fa-btn-gold" style="width:100%;justify-content:center;" onclick="doLogin()">
+        <i class="bi bi-box-arrow-in-right"></i> Prihlásiť sa
+      </button>
+    </div>
+
+    <!-- Register -->
+    <div id="tRegister" style="display:none">
+      <div style="background:var(--dark-4);border:1px solid var(--gold-border);border-radius:.8rem;padding:1rem;margin-bottom:1rem;">
+        <div class="feature-row">✅ Registrácia je <strong style="color:var(--cream)">bezplatná</strong></div>
+        <div class="feature-row">💰 Zarábajte z predaja – až 8 % z každej objednávky</div>
+        <div class="feature-row">👥 Budujte tím do 7 úrovní hĺbky</div>
+      </div>
+      <div id="regErr" class="fa-alert-danger d-none mb-3"></div>
+      <div class="mb-2">
+        <label class="fa-label">Celé meno *</label>
+        <input type="text" id="rName" class="fa-input form-control" placeholder="Mária Nováková">
+      </div>
+      <div class="mb-2">
+        <label class="fa-label">Email *</label>
+        <input type="email" id="rEmail" class="fa-input form-control" placeholder="maria@email.sk">
+      </div>
+      <div class="mb-2">
+        <label class="fa-label">Heslo *</label>
+        <input type="password" id="rPwd" class="fa-input form-control" placeholder="Minimálne 6 znakov">
+      </div>
+      <div class="mb-2">
+        <label class="fa-label">Telefón</label>
+        <input type="tel" id="rPhone" class="fa-input form-control" placeholder="+421 9XX XXX XXX">
+      </div>
+      <div class="mb-3">
+        <label class="fa-label">Referral kód sponzora</label>
+        <input type="text" id="rCode" class="fa-input form-control" placeholder="Napr. MAREK42 (ak máte)">
+      </div>
+      <button class="fa-btn fa-btn-gold" style="width:100%;justify-content:center;" onclick="doRegister()">
+        <i class="bi bi-person-plus"></i> Zaregistrovať sa zadarmo
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Tabs
+document.querySelectorAll('.auth-tab').forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll('.auth-tab').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    document.getElementById('tLogin').style.display    = b.dataset.t === 'login' ? '' : 'none';
+    document.getElementById('tRegister').style.display = b.dataset.t === 'register' ? '' : 'none';
+  };
+});
+
+function openPartner(e) {
+  if (e) e.preventDefault();
+  const ref = new URLSearchParams(window.location.search).get('ref');
+  if (ref) { document.getElementById('rCode').value = ref; switchToReg(); }
+  document.getElementById('partnerModal').classList.add('show');
+  document.body.style.overflow = 'hidden';
+  setTimeout(() => document.getElementById('lEmail').focus(), 50);
+}
+function closeModal(id) { document.getElementById(id).classList.remove('show'); document.body.style.overflow = ''; }
+function closeOnBg(e, id) { if (e.target.id === id) closeModal(id); }
+function switchToReg() { document.querySelectorAll('.auth-tab')[1].click(); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal('partnerModal'); });
+
+// Auto-open if ?partner or ?ref
+(function(){ const p = new URLSearchParams(location.search); if(p.has('partner')||p.has('ref')) openPartner(); })();
+
+document.getElementById('lPwd').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+document.getElementById('rPwd').addEventListener('keydown', e => { if(e.key==='Enter') doRegister(); });
+
+async function doLogin() {
+  const email = document.getElementById('lEmail').value.trim();
+  const password = document.getElementById('lPwd').value;
+  const err = document.getElementById('loginErr');
+  err.className = 'fa-alert-danger d-none mb-3';
+  if (!email || !password) { err.textContent='Vyplňte email a heslo'; err.classList.remove('d-none'); return; }
+  try {
+    const r = await fetch('/api/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
+    const d = await r.json();
+    if (!r.ok) { err.textContent = d.error||'Nesprávne údaje'; err.classList.remove('d-none'); return; }
+    window.location.href = d.isAdmin ? '/admin' : '/dashboard';
+  } catch { err.textContent='Chyba pripojenia'; err.classList.remove('d-none'); }
+}
+
+async function doRegister() {
+  const name=document.getElementById('rName').value.trim();
+  const email=document.getElementById('rEmail').value.trim();
+  const password=document.getElementById('rPwd').value;
+  const phone=document.getElementById('rPhone').value.trim();
+  const sponsorCode=document.getElementById('rCode').value.trim().toUpperCase();
+  const err=document.getElementById('regErr');
+  err.className='fa-alert-danger d-none mb-3';
+  if(!name||!email||!password){err.textContent='Vyplňte povinné polia';err.classList.remove('d-none');return;}
+  if(password.length<6){err.textContent='Heslo musí mať aspoň 6 znakov';err.classList.remove('d-none');return;}
+  try {
+    const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password,phone,sponsorCode})});
+    const d=await r.json();
+    if(!r.ok){err.textContent=d.error||'Chyba registrácie';err.classList.remove('d-none');return;}
+    window.location.href='/dashboard';
+  } catch{err.textContent='Chyba pripojenia';err.classList.remove('d-none');}
+}
+</script>
+</body>
+</html>

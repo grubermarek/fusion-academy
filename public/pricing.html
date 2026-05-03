@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Cenník Fusion Academy – Bronze, Silver, Gold, Online Basic, Online Premium. Od €12,90/mesiac. Neobmedzené hodiny, online prístup.">
+<meta name="keywords" content="cenník, členstvo, bronze silver gold, fusion academy cena, mesačné predplatné">
+<meta property="og:title" content="Cenník – Fusion Academy">
+<meta property="og:description" content="Cenník Fusion Academy – Bronze, Silver, Gold, Online Basic, Online Premium. Od €12,90/mesiac. Neobmedzené hodiny, online prístup.">
+<meta property="og:image" content="https://latindancefusion.art/og-image.svg">
+<meta property="og:type" content="website">
+<link rel="canonical" href="https://latindancefusion.art/pricing">
+<title>Cenník – Fusion Academy</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/fa-theme.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',sans-serif;}
+.hero{background:linear-gradient(160deg,#0f0f0f 0%,#1a1400 50%,#0f0f0f 100%);padding:5rem 0 3rem;text-align:center;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(201,168,76,.18) 0%,transparent 70%);}
+.hero-label{font-size:.75rem;letter-spacing:.25em;text-transform:uppercase;color:var(--gold);margin-bottom:.75rem;}
+.hero h1{font-size:clamp(2.2rem,6vw,4rem);font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1.1;}
+.hero p{color:rgba(245,237,214,.65);font-size:1.05rem;max-width:520px;margin:.8rem auto 0;}
+
+/* Nav */
+.top-nav{background:rgba(15,15,15,.97);backdrop-filter:blur(12px);border-bottom:1px solid var(--gold-border);position:sticky;top:0;z-index:100;padding:.7rem 0;}
+.nav-brand{font-weight:900;font-size:1.1rem;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.nav-links a{color:rgba(245,237,214,.6);text-decoration:none;font-size:.85rem;margin:0 .75rem;transition:color .2s;}
+.nav-links a:hover{color:var(--gold);}
+
+/* Section tabs */
+.cat-tabs{display:flex;gap:.5rem;flex-wrap:wrap;justify-content:center;margin-bottom:2.5rem;}
+.cat-tab{padding:.5rem 1.25rem;border-radius:2rem;border:1px solid var(--gold-border);background:transparent;color:rgba(245,237,214,.55);font-size:.82rem;cursor:pointer;transition:all .2s;}
+.cat-tab.active,.cat-tab:hover{background:rgba(201,168,76,.12);border-color:var(--gold);color:var(--gold);}
+
+/* Membership cards */
+.plan-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.5rem;margin-bottom:2rem;}
+.plan-card{background:var(--dark-3);border:1px solid var(--gold-border);border-radius:1.25rem;padding:2rem 1.75rem;position:relative;transition:transform .2s,box-shadow .2s;}
+.plan-card:hover{transform:translateY(-4px);box-shadow:0 8px 32px rgba(201,168,76,.12);}
+.plan-card.featured{border-color:var(--gold);box-shadow:0 0 0 1px rgba(201,168,76,.3);}
+.plan-card.featured::before{content:'Najpopulárnejší';position:absolute;top:-1px;left:50%;transform:translateX(-50%);background:var(--grad-gold);color:#0f0f0f;font-size:.65rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:.3rem 1.1rem;border-radius:0 0 .75rem .75rem;}
+.plan-emoji{font-size:2.5rem;margin-bottom:.75rem;}
+.plan-name{font-size:1.25rem;font-weight:800;color:var(--cream);margin-bottom:.25rem;}
+.plan-price{font-size:2.6rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1;margin:.4rem 0;}
+.plan-period{font-size:.78rem;color:var(--text-muted);margin-bottom:1.25rem;}
+.plan-features{list-style:none;padding:0;margin:0 0 1.5rem;}
+.plan-features li{padding:.35rem 0;font-size:.88rem;color:rgba(245,237,214,.75);display:flex;align-items:flex-start;gap:.6rem;border-bottom:1px solid rgba(201,168,76,.06);}
+.plan-features li:last-child{border:none;}
+.plan-features li .check{color:var(--gold);flex-shrink:0;margin-top:.1rem;}
+.plan-features li .cross{color:rgba(245,237,214,.25);flex-shrink:0;}
+.btn-plan{width:100%;padding:.7rem;border-radius:.75rem;font-weight:700;font-size:.9rem;cursor:pointer;transition:all .2s;border:none;}
+.btn-plan-gold{background:var(--grad-gold);color:#0f0f0f;}
+.btn-plan-gold:hover{opacity:.9;}
+.btn-plan-outline{background:transparent;border:1px solid var(--gold-border);color:var(--cream);}
+.btn-plan-outline:hover{border-color:var(--gold);color:var(--gold);}
+
+/* Price table */
+.price-table{background:var(--dark-3);border:1px solid var(--gold-border);border-radius:1rem;overflow:hidden;margin-bottom:2rem;}
+.price-table table{width:100%;border-collapse:collapse;}
+.price-table th{background:rgba(201,168,76,.08);color:var(--gold);font-size:.75rem;text-transform:uppercase;letter-spacing:.07em;padding:.85rem 1.25rem;border-bottom:1px solid var(--gold-border);}
+.price-table td{padding:.75rem 1.25rem;border-bottom:1px solid rgba(201,168,76,.07);color:var(--cream);font-size:.88rem;}
+.price-table tr:last-child td{border-bottom:none;}
+.price-table tr:hover td{background:rgba(201,168,76,.04);}
+.price-num{font-weight:800;color:var(--gold-light);white-space:nowrap;}
+.price-badge{display:inline-block;padding:.2rem .6rem;border-radius:.4rem;font-size:.7rem;font-weight:700;}
+.badge-new{background:rgba(39,174,96,.15);color:#4ade80;border:1px solid rgba(39,174,96,.2);}
+.badge-best{background:rgba(201,168,76,.15);color:var(--gold);border:1px solid var(--gold-border);}
+.badge-online{background:rgba(33,150,243,.15);color:#60a5fa;border:1px solid rgba(33,150,243,.2);}
+
+/* Section headers */
+.section-header{text-align:center;margin-bottom:2.5rem;}
+.section-header h2{font-size:clamp(1.6rem,4vw,2.4rem);font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:.4rem;}
+.section-header p{color:rgba(245,237,214,.55);font-size:.95rem;max-width:480px;margin:0 auto;}
+.section-divider{height:1px;background:var(--gold-border);margin:3rem 0;}
+
+/* FAQ */
+.faq-item{background:var(--dark-3);border:1px solid var(--gold-border);border-radius:.85rem;margin-bottom:.75rem;overflow:hidden;}
+.faq-q{padding:1rem 1.25rem;cursor:pointer;font-weight:600;font-size:.92rem;display:flex;justify-content:space-between;align-items:center;color:var(--cream);}
+.faq-q:hover{background:rgba(201,168,76,.04);}
+.faq-q .icon{color:var(--gold);transition:transform .2s;font-size:.85rem;}
+.faq-a{display:none;padding:.25rem 1.25rem 1rem;color:rgba(245,237,214,.65);font-size:.88rem;line-height:1.65;}
+.faq-item.open .faq-a{display:block;}
+.faq-item.open .icon{transform:rotate(45deg);}
+
+/* CTA */
+.cta-block{background:linear-gradient(135deg,#1a1400,#0f0f0f);border:1px solid var(--gold-border);border-radius:1.5rem;padding:3rem 2rem;text-align:center;position:relative;overflow:hidden;}
+.cta-block::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(201,168,76,.1) 0%,transparent 60%);}
+.cta-block h3{font-size:1.8rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:.5rem;}
+.cta-block p{color:rgba(245,237,214,.6);margin-bottom:1.5rem;}
+.btn-cta{display:inline-block;padding:.85rem 2rem;background:var(--grad-gold);color:#0f0f0f;font-weight:800;border-radius:.75rem;text-decoration:none;font-size:.95rem;transition:opacity .2s;}
+.btn-cta:hover{opacity:.88;color:#0f0f0f;}
+.btn-cta-outline{display:inline-block;padding:.85rem 2rem;border:1px solid var(--gold-border);color:var(--cream);font-weight:700;border-radius:.75rem;text-decoration:none;font-size:.95rem;transition:all .2s;margin-left:1rem;}
+.btn-cta-outline:hover{border-color:var(--gold);color:var(--gold);}
+
+/* Comparison highlight */
+.savings-pill{display:inline-block;background:rgba(39,174,96,.15);color:#4ade80;border:1px solid rgba(39,174,96,.2);padding:.15rem .7rem;border-radius:2rem;font-size:.72rem;font-weight:700;margin-left:.5rem;}
+@media(max-width:576px){.btn-cta-outline{margin-left:0;margin-top:.75rem;display:block;text-align:center;}}
+</style>
+</head>
+<body>
+
+<!-- TOP NAV -->
+<nav class="top-nav">
+  <div class="container d-flex align-items-center justify-content-between">
+    <a href="/" class="nav-brand text-decoration-none">FUSION ACADEMY</a>
+    <div class="nav-links d-none d-md-flex align-items-center">
+      <a href="/">Domov</a>
+      <a href="/schedule">Rozvrh</a>
+      <a href="/shop">E-shop</a>
+      <a href="/community">Komunita</a>
+      <a href="/pricing" style="color:var(--gold)">Cenník</a>
+    </div>
+    <a href="/" onclick="openPartnerLogin()" class="btn-cta" style="padding:.45rem 1.1rem;font-size:.82rem;">Prihlásiť sa</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container position-relative">
+    <div class="hero-label">Transparentné ceny · Žiadne skryté poplatky</div>
+    <h1>Cenník služieb</h1>
+    <p>Vyberte si plán, ktorý sedí vám. Prvá hodina je vždy <strong style="color:var(--gold)">zadarmo</strong>.</p>
+  </div>
+</section>
+
+<div class="container py-5">
+
+  <!-- CATEGORY TABS -->
+  <div class="cat-tabs">
+    <button class="cat-tab active" onclick="showCat('memberships',this)">🏅 Členstvá</button>
+    <button class="cat-tab" onclick="showCat('courses',this)">💃 Kurzy & Lekcie</button>
+    <button class="cat-tab" onclick="showCat('wellness',this)">📊 Wellness & Výživa</button>
+    <button class="cat-tab" onclick="showCat('online',this)">🌐 Online</button>
+    <button class="cat-tab" onclick="showCat('events',this)">🎉 Eventy</button>
+  </div>
+
+  <!-- ══════════════════ MEMBERSHIPS ══════════════════ -->
+  <div id="cat-memberships">
+    <div class="section-header">
+      <h2>Mesačné členstvá</h2>
+      <p>Neobmedzený prístup k hodinám vo všetkých 4 mestách. Zrušiť môžete kedykoľvek.</p>
+    </div>
+    <div class="plan-cards">
+
+      <!-- BRONZE -->
+      <div class="plan-card">
+        <div class="plan-emoji">🥉</div>
+        <div class="plan-name">Bronze</div>
+        <div class="plan-price">50<span style="font-size:1.2rem">€</span></div>
+        <div class="plan-period">/ mesiac</div>
+        <ul class="plan-features">
+          <li><i class="fas fa-check check"></i>Neobmedzené Zumba hodiny</li>
+          <li><i class="fas fa-check check"></i>Všetky 4 mestá (Detva, Zvolen, BB, Brezno)</li>
+          <li><i class="fas fa-check check"></i>Komunita Fusion Academy</li>
+          <li><i class="fas fa-check check"></i>Aplikácia & rezervácia hodín</li>
+          <li><i class="fas fa-times cross"></i>Metabolická analýza</li>
+          <li><i class="fas fa-times cross"></i>Jedálniček na mieru</li>
+          <li><i class="fas fa-times cross"></i>F1 kokteil zahrnutý</li>
+        </ul>
+        <button class="btn-plan btn-plan-outline" onclick="window.location='/'">Začať zadarmo</button>
+      </div>
+
+      <!-- SILVER (featured) -->
+      <div class="plan-card featured">
+        <div class="plan-emoji">🥈</div>
+        <div class="plan-name">Silver</div>
+        <div class="plan-price">65<span style="font-size:1.2rem">€</span></div>
+        <div class="plan-period">/ mesiac</div>
+        <ul class="plan-features">
+          <li><i class="fas fa-check check"></i>Všetko z Bronze</li>
+          <li><i class="fas fa-check check"></i>Metabolická analýza (InBody) mesačne</li>
+          <li><i class="fas fa-check check"></i>Online program & tréningový plán</li>
+          <li><i class="fas fa-check check"></i>Podpora trénera</li>
+          <li><i class="fas fa-check check"></i>10 % zľava na súkromné hodiny</li>
+          <li><i class="fas fa-times cross"></i>F1 kokteil zahrnutý</li>
+          <li><i class="fas fa-times cross"></i>Jedálniček s porciami na mieru</li>
+        </ul>
+        <button class="btn-plan btn-plan-gold" onclick="window.location='/'">Vybrať Silver</button>
+      </div>
+
+      <!-- GOLD -->
+      <div class="plan-card">
+        <div class="plan-emoji">🥇</div>
+        <div class="plan-name">Gold</div>
+        <div class="plan-price">125<span style="font-size:1.2rem">€</span></div>
+        <div class="plan-period">/ mesiac · najlepšia hodnota</div>
+        <ul class="plan-features">
+          <li><i class="fas fa-check check"></i>Všetko zo Silver</li>
+          <li><i class="fas fa-check check"></i>Herbalife F1 kokteil zahrnutý (celý mesiac)</li>
+          <li><i class="fas fa-check check"></i>Jedálniček s porciami na mieru</li>
+          <li><i class="fas fa-check check"></i>Pravidelné check-iny s trénerom</li>
+          <li><i class="fas fa-check check"></i>20 % zľava na súkromné hodiny & eventy</li>
+          <li><i class="fas fa-check check"></i>Prioritné miesta na FitDays</li>
+        </ul>
+        <button class="btn-plan btn-plan-gold" onclick="window.location='/'">Vybrať Gold</button>
+      </div>
+
+    </div>
+
+    <!-- Jednorazové vstupy -->
+    <div class="section-header mt-5">
+      <h2>Jednorazové vstupy</h2>
+      <p>Pre tých, čo nechcú záväzok. Platné na všetky hodiny a mestá.</p>
+    </div>
+    <div class="price-table">
+      <table>
+        <thead><tr>
+          <th>Typ vstupenky</th>
+          <th>Platnosť</th>
+          <th>Cena</th>
+          <th></th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td>🎫 Jednorazový vstup — akákoľvek hodina</td>
+            <td>1 deň</td>
+            <td><span class="price-num">10 €</span></td>
+            <td><span class="price-badge badge-new">Skús zadarmo!</span></td>
+          </tr>
+          <tr>
+            <td>🎟️ 10-vstupová permanentka</td>
+            <td>3 mesiace</td>
+            <td><span class="price-num">80 €</span></td>
+            <td><span class="savings-pill">Úspora 20 %</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:.82rem;color:var(--text-muted);text-align:center;margin-top:-1rem;">
+      ✨ <strong style="color:var(--gold)">Prvá hodina zadarmo</strong> pre nových záujemcov — žiadny záväzok, bez registrácie.
+    </p>
+  </div>
+
+  <!-- ══════════════════ COURSES ══════════════════ -->
+  <div id="cat-courses" style="display:none">
+    <div class="section-header">
+      <h2>Kurzy & Lekcie</h2>
+      <p>Skupinové kurzy, súkromné hodiny, svadobné tance a špeciálne programy.</p>
+    </div>
+    <div class="price-table">
+      <table>
+        <thead><tr>
+          <th>Služba</th>
+          <th>Popis</th>
+          <th>Cena</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td>👤 Súkromná lekcia (60 min)</td>
+            <td>Individuálna hodina s inštruktorom, váš vlastný program</td>
+            <td><span class="price-num">70 €</span> / hod<br><small style="color:var(--text-muted)">Silver: 63 € · Gold: 56 €</small></td>
+          </tr>
+          <tr>
+            <td>💍 Svadobný prvý tanec</td>
+            <td>Choreografia na mieru + hudba + nácvik. 5 lekcií pre pár</td>
+            <td><span class="price-num">149 €</span> / balíček</td>
+          </tr>
+          <tr>
+            <td>🧒 Kurz pre deti 5–17 rokov (10 lekcií)</td>
+            <td>Spoločenské tance, rytmus a sebavedomie</td>
+            <td><span class="price-num">90 €</span> / kurz</td>
+          </tr>
+          <tr>
+            <td>💃 Kurz pre dospelých (12 týždňov)</td>
+            <td>Latino, Hip-Hop, Choreo. Začiatočníci vítaní!</td>
+            <td><span class="price-num">150 €</span> / kurz</td>
+          </tr>
+          <tr>
+            <td>🎓 Posledný tanec — maturantský ples</td>
+            <td>13 lekcií + finálne vystúpenie. Komplexná príprava</td>
+            <td><span class="price-num">49.90 €</span> / osoba</td>
+          </tr>
+          <tr>
+            <td>🎭 Pro-Am tanec s profesionálom</td>
+            <td>Choreografia na mieru, príprava na vystúpenie alebo súťaž</td>
+            <td><span class="price-num">70 €</span> / hod<br><small style="color:var(--text-muted)">Silver: 63 € · Gold: 56 €</small></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="background:rgba(201,168,76,.06);border:1px solid var(--gold-border);border-radius:.85rem;padding:1.25rem 1.5rem;font-size:.85rem;color:rgba(245,237,214,.7);">
+      <strong style="color:var(--gold)">📞 Rezervácie:</strong> Zavolajte alebo napíšte WhatsApp na <strong>+421 904 315 151</strong>. Hodiny prebiehajú v Detve, Zvolene, Banskej Bystrici a Brezne.
+    </div>
+  </div>
+
+  <!-- ══════════════════ WELLNESS ══════════════════ -->
+  <div id="cat-wellness" style="display:none">
+    <div class="section-header">
+      <h2>Wellness & Výživa</h2>
+      <p>Metabolická analýza, výživové poradenstvo a Herbalife produkty.</p>
+    </div>
+    <div class="price-table mb-4">
+      <table>
+        <thead><tr>
+          <th>Služba</th>
+          <th>Čo obsahuje</th>
+          <th>Cena</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td>📊 Metabolická analýza (InBody)</td>
+            <td>Telesná kompozícia, bazálny metabolizmus, % tuku, biologický vek</td>
+            <td><span class="price-num">35 €</span><br><small style="color:var(--text-muted)">Zahrnuté v Silver & Gold</small></td>
+          </tr>
+          <tr>
+            <td>🥗 Nutričné poradenstvo (60 min)</td>
+            <td>Individuálna konzultácia s výživovým poradcom, odporúčania</td>
+            <td><span class="price-num">45 €</span> / hodina</td>
+          </tr>
+          <tr>
+            <td>🔬 Fit Premena – Základný</td>
+            <td>Analýza + cvičebný plán + výživové odporúčania na 1 mesiac</td>
+            <td><span class="price-num">65 €</span> / mes</td>
+          </tr>
+          <tr>
+            <td>📈 Fit Premena – Premium</td>
+            <td>4× analýza + tréning + jedálniček + koučing (3 mesiace)</td>
+            <td><span class="price-num">199 €</span> / 3 mes</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section-header">
+      <h2>Herbalife produkty</h2>
+      <p>Originálne produkty od svetového lídra v oblasti výživy. Distribúcia v 90+ krajinách od roku 1980.</p>
+    </div>
+    <div class="price-table">
+      <table>
+        <thead><tr>
+          <th>Produkt</th>
+          <th>Popis</th>
+          <th>Cena</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>🥤 Formula 1 shake (500g)</td><td>220 kcal, 18g bielkovín, 25 vitamínov. Vanilka / Čokoláda / Jahoda / Café Latte</td><td><span class="price-num">38.90 €</span></td></tr>
+          <tr><td>🥤 Formula 1 shake XXL (780g)</td><td>Veľké balenie, úspora ~18 %</td><td><span class="price-num">55.50 €</span></td></tr>
+          <tr><td>🎁 Formula 1 – balíček 3 príchute</td><td>3× Formula 1 podľa výberu. Ideálny štartovací set</td><td><span class="price-num">114.70 €</span></td></tr>
+          <tr><td>🍑 Bylinný čaj Broskyňa (50g)</td><td>Podporuje metabolizmus, 50 dávok</td><td><span class="price-num">26.90 €</span></td></tr>
+          <tr><td>🍵 Bylinný čaj XXL (100g)</td><td>Dvojbalenie bylinného čaju</td><td><span class="price-num">45.90 €</span></td></tr>
+          <tr><td>🌿 Aloe Vera nápoj – Originál</td><td>Pre trávenie a hydratáciu, 473 ml</td><td><span class="price-num">34.90 €</span></td></tr>
+          <tr><td>🌾 Multivlákninový nápoj (Fiber)</td><td>Vláknina pre zdravé trávenie</td><td><span class="price-num">29.90 €</span></td></tr>
+          <tr><td>💪 H24 Rebuild Strength proteín (1 kg)</td><td>24g bielkovín/dávku, podpora svalov po tréningu</td><td><span class="price-num">63.40 €</span></td></tr>
+          <tr><td>⚡ H24 Hydrate elektrolyty (20 sáč.)</td><td>Rýchla hydratácia, elektrolyty + B-vitamíny</td><td><span class="price-num">35.50 €</span></td></tr>
+          <tr><td>⚽ H24 CR7 Drive Acai (10 sáčkov)</td><td>Šport. nápoj Cristiana Ronalda, acai + elektrolyty</td><td><span class="price-num">17.90 €</span></td></tr>
+          <tr><td>🏋️ Creatine+ Herbalife24</td><td>Kreatín monohydrát pre silu a výkon</td><td><span class="price-num">29.90 €</span></td></tr>
+          <tr><td>🍫 H24 Proteínové tyčinky Brusnica (6ks)</td><td>12g bielkovín/kus, brusnica & biela čokoláda</td><td><span class="price-num">20.50 €</span></td></tr>
+          <tr><td>🌱 Phyto Complete (60 kapsúl)</td><td>Rastlinný komplex antioxidantov, bunková ochrana</td><td><span class="price-num">57.90 €</span></td></tr>
+          <tr><td>🌙 Night Mode – spánok & regenerácia</td><td>Harmanček a broskyňa, prirodzený spánok</td><td><span class="price-num">45.90 €</span></td></tr>
+          <tr><td>🛡️ Immune Booster</td><td>Vitamín C, D, zinok, echinacea</td><td><span class="price-num">44.00 €</span></td></tr>
+          <tr><td>🧠 Active Mind Complex (60 kap.)</td><td>Koncentrácia a pamäť, ginko + ginseng</td><td><span class="price-num">46.50 €</span></td></tr>
+          <tr><td>✨ Collagen Skin Booster (171g)</td><td>Morský kolagén + vitamín C + biotin</td><td><span class="price-num">65.00 €</span></td></tr>
+          <tr><td>🎯 Štartovací set: F1 + Čaj</td><td>Formula 1 + Bylinný čaj. Ideálny štart</td><td><span class="price-num">64.80 €</span> <span class="savings-pill">Úspora 22%</span></td></tr>
+          <tr><td>🌿 Štartovací set: F1 + Aloe</td><td>Formula 1 + Aloe vera nápoj</td><td><span class="price-num">72.30 €</span> <span class="savings-pill">Úspora 24%</span></td></tr>
+          <tr><td>📦 Program chudnutia – Štandard</td><td>F1 + Čaj + Aloe + Vláknina na 1 mesiac</td><td><span class="price-num">162.00 €</span></td></tr>
+          <tr><td>🏆 Program chudnutia – Štandard Plus</td><td>Rozšírený program + proteínové tyčinky + vitamíny</td><td><span class="price-num">250.00 €</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:.8rem;color:var(--text-muted);text-align:center;margin-top:.75rem;">
+      Produkty objednajte cez náš <a href="/shop" style="color:var(--gold)">e-shop</a> alebo priamo u trénera. Doručenie do 2–3 pracovných dní.
+    </p>
+  </div>
+
+  <!-- ══════════════════ ONLINE ══════════════════ -->
+  <div id="cat-online" style="display:none">
+    <div class="section-header">
+      <h2>Online členstvá</h2>
+      <p>Tancujte odkiaľkoľvek. Živé hodiny, nahrávky, nutričné plány.</p>
+    </div>
+    <div class="plan-cards" style="max-width:750px;margin:0 auto 2rem;">
+
+      <div class="plan-card">
+        <div class="plan-emoji">🌐</div>
+        <div class="plan-name">Online Basic</div>
+        <div class="plan-price">12.<span style="font-size:1.6rem">90</span><span style="font-size:1.2rem">€</span></div>
+        <div class="plan-period">/ mesiac · zakladacia cena pre prvých 25 členov</div>
+        <ul class="plan-features">
+          <li><i class="fas fa-check check"></i>Živé online Zumba hodiny (LIVE)</li>
+          <li><i class="fas fa-check check"></i>Fit Premena online hodiny</li>
+          <li><i class="fas fa-check check"></i>Prístup k nahrávkam</li>
+          <li><i class="fas fa-times cross"></i>Nutričný plán na mieru</li>
+          <li><i class="fas fa-times cross"></i>Osobný koučing</li>
+        </ul>
+        <button class="btn-plan btn-plan-outline" onclick="window.location='/'">Pripojiť sa online</button>
+      </div>
+
+      <div class="plan-card featured">
+        <div class="plan-emoji">⭐</div>
+        <div class="plan-name">Online Premium</div>
+        <div class="plan-price">67.<span style="font-size:1.6rem">90</span><span style="font-size:1.2rem">€</span></div>
+        <div class="plan-period">/ mesiac · limitované na prvých 25 členov</div>
+        <ul class="plan-features">
+          <li><i class="fas fa-check check"></i>Všetko z Online Basic</li>
+          <li><i class="fas fa-check check"></i>Nutričný plán na mieru + F1 kokteil</li>
+          <li><i class="fas fa-check check"></i>Podpora osobného trénera</li>
+          <li><i class="fas fa-check check"></i>Mesačná metabolická analýza (online vyhodnotenie)</li>
+          <li><i class="fas fa-check check"></i>Prístup do celej komunity</li>
+        </ul>
+        <button class="btn-plan btn-plan-gold" onclick="window.location='/'">Vybrať Online Premium</button>
+      </div>
+
+    </div>
+    <div style="background:rgba(201,168,76,.06);border:1px solid var(--gold-border);border-radius:.85rem;padding:1.25rem;text-align:center;font-size:.85rem;color:rgba(245,237,214,.65);">
+      Online hodiny prebiehajú LIVE zo Zvolena. Rozvrh: <strong style="color:var(--cream)">Utorok 19:00 & Nedeľa 11:00</strong>
+    </div>
+  </div>
+
+  <!-- ══════════════════ EVENTS ══════════════════ -->
+  <div id="cat-events" style="display:none">
+    <div class="section-header">
+      <h2>Eventy & Špeciálne akcie</h2>
+      <p>Workshopy, FitDays, retreaty a špeciálne podujatia Fusion Academy.</p>
+    </div>
+    <div class="price-table">
+      <table>
+        <thead><tr>
+          <th>Podujatie</th>
+          <th>Popis</th>
+          <th>Cena</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td>🎭 Masterclass / Workshop</td>
+            <td>Špeciálny workshop s hosťujúcim inštruktorom. Rôzne štýly</td>
+            <td><span class="price-num">35 €</span> / osoba</td>
+          </tr>
+          <tr>
+            <td>💪 FitDays</td>
+            <td>Celodenná akcia: vstup + refreshments + afterparty. Tréning, výživa, motivácia</td>
+            <td><span class="price-num">25 €</span> / osoba</td>
+          </tr>
+          <tr>
+            <td>🏔️ Víkendový retreat</td>
+            <td>Tanečno-wellness pobyt. Ubytovanie + strava + tréningy + prednášky</td>
+            <td><span class="price-num">280 €</span> / osoba</td>
+          </tr>
+          <tr>
+            <td>🎓 FitDays školenia</td>
+            <td>Dvojtýždenné stretnutia: výživa, motivácia, osobný rozvoj, kariéra</td>
+            <td><span class="price-num">Zadarmo</span> pre členov</td>
+          </tr>
+          <tr>
+            <td>🎉 Tanečná párty</td>
+            <td>Voľná tanečná zábava. Každý piatok od 20:00, BB</td>
+            <td><span class="price-num">5 €</span> vstupné</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:.82rem;color:var(--text-muted);text-align:center;margin-top:.75rem;">
+      Gold členovia majú 20 % zľavu na všetky eventy a prioritné miesta na FitDays.
+    </p>
+  </div>
+
+  <div class="section-divider"></div>
+
+  <!-- FAQ -->
+  <div class="section-header">
+    <h2>Časté otázky</h2>
+  </div>
+  <div style="max-width:700px;margin:0 auto 3rem;">
+    <div class="faq-item" onclick="toggleFaq(this)">
+      <div class="faq-q">Je prvá hodina naozaj zadarmo? <i class="fas fa-plus icon"></i></div>
+      <div class="faq-a">Áno, úplne. Príďte na akúkoľvek hodinu do ktoréhokoľvek mesta bez poplatku a bez registrácie. Chceme, aby ste si nás vyskúšali bez akéhokoľvek rizika.</div>
+    </div>
+    <div class="faq-item" onclick="toggleFaq(this)">
+      <div class="faq-q">Môžem zrušiť členstvo kedykoľvek? <i class="fas fa-plus icon"></i></div>
+      <div class="faq-a">Áno. Mesačné členstvá nemajú viazanosť. Zrušiť môžete kedykoľvek písomne alebo telefonicky, platí do konca aktuálneho mesiaca.</div>
+    </div>
+    <div class="faq-item" onclick="toggleFaq(this)">
+      <div class="faq-q">Platí permanentka a členstvo vo všetkých mestách? <i class="fas fa-plus icon"></i></div>
+      <div class="faq-a">Áno. 10-vstupová permanentka aj všetky mesačné členstvá (Bronze, Silver, Gold) sú platné v Detve, Zvolene, Banskej Bystrici aj Brezne. Navyše zahŕňajú aj online hodiny.</div>
+    </div>
+    <div class="faq-item" onclick="toggleFaq(this)">
+      <div class="faq-q">Čo je zahrnuté v Gold členstve za 125 €? <i class="fas fa-plus icon"></i></div>
+      <div class="faq-a">Gold zahŕňa: neobmedzené hodiny vo všetkých 4 mestách, Herbalife Formula 1 kokteil na celý mesiac, metabolickú analýzu (InBody), jedálniček s porciami na mieru, pravidelné check-iny s trénerom, online program a 20 % zľavu na súkromné hodiny a eventy. Odporúčame ho pre ľudí, ktorí chcú viditeľné výsledky.</div>
+    </div>
+    <div class="faq-item" onclick="toggleFaq(this)">
+      <div class="faq-q">Musím mať predchádzajúce skúsenosti s tancovaním? <i class="fas fa-plus icon"></i></div>
+      <div class="faq-a">Vôbec nie. Väčšina našich členov začínala bez akýchkoľvek skúseností. Každú hodinu začíname od základov a tempo prispôsobujeme skupi. Vítame ľudí od 5 do 70+ rokov.</div>
+    </div>
+    <div class="faq-item" onclick="toggleFaq(this)">
+      <div class="faq-q">Kde si môžem kúpiť Herbalife produkty? <i class="fas fa-plus icon"></i></div>
+      <div class="faq-a">Produkty si môžete objednať priamo cez náš e-shop na tejto stránke, alebo osobne u trénera na hodine. Doručujeme do 2–3 pracovných dní. Gold členovia majú produkty zahrnuté v cene členstva.</div>
+    </div>
+  </div>
+
+  <!-- CTA -->
+  <div class="cta-block">
+    <div class="position-relative">
+      <h3>Začnite dnes — prvá hodina zadarmo</h3>
+      <p>Žiadna registrácia, žiadny záväzok. Stačí prísť.</p>
+      <a href="/schedule" class="btn-cta">Pozrieť rozvrh hodín</a>
+      <a href="/shop" class="btn-cta-outline">Nakúpiť produkty</a>
+      <div style="margin-top:1.5rem;font-size:.82rem;color:var(--text-muted);">
+        📞 <a href="tel:+421904315151" style="color:var(--gold);text-decoration:none;">+421 904 315 151</a> &nbsp;|&nbsp;
+        📍 Detva · Zvolen · Banská Bystrica · Brezno
+      </div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<footer style="border-top:1px solid var(--gold-border);padding:2rem 0;margin-top:2rem;text-align:center;color:var(--text-muted);font-size:.82rem;">
+  <div class="container">
+    <div class="nav-brand" style="font-size:1rem;margin-bottom:.5rem;">FUSION ACADEMY</div>
+    © 2026 Fusion Academy · <a href="/" style="color:var(--gold);text-decoration:none;">latindancefusion.art</a> ·
+    <a href="/schedule" style="color:var(--gold);text-decoration:none;">Rozvrh</a> ·
+    <a href="/shop" style="color:var(--gold);text-decoration:none;">E-shop</a> ·
+    <a href="/community" style="color:var(--gold);text-decoration:none;">Komunita</a>
+  </div>
+</footer>
+
+<script>
+function showCat(id, btn){
+  document.querySelectorAll('[id^="cat-"]').forEach(el=>el.style.display='none');
+  document.getElementById('cat-'+id).style.display='block';
+  document.querySelectorAll('.cat-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+function toggleFaq(el){
+  el.classList.toggle('open');
+}
+</script>
+</body>
+</html>
