@@ -93,6 +93,44 @@ const RANKS = [
 ];
 const LEVEL_RATES = [0.08, 0.05, 0.04, 0.03, 0.02, 0.015, 0.01];
 const LOCATIONS   = ['Detva', 'Zvolen', 'Banská Bystrica', 'Brezno', 'Online'];
+
+// ─── User Role Hierarchy ──────────────────────────────────────────────────────
+// lead → client → (trainer | partner | manager) → admin
+const USER_ROLES = {
+  lead:    { label:'Lead',          icon:'🔵', access:'public',  dashUrl:'/client-dashboard' },
+  client:  { label:'Klient',        icon:'🟢', access:'client',  dashUrl:'/client-dashboard' },
+  trainer: { label:'Tréner',        icon:'🟡', access:'trainer', dashUrl:'/trainer'          },
+  partner: { label:'Partner',       icon:'🟠', access:'partner', dashUrl:'/dashboard'        },
+  manager: { label:'Manager',       icon:'🔴', access:'manager', dashUrl:'/dashboard'        },
+  admin:   { label:'Admin',         icon:'⚫', access:'admin',   dashUrl:'/admin'            },
+};
+
+// ─── Loyalty Milestones ───────────────────────────────────────────────────────
+const LOYALTY_MILESTONES = [
+  { visits:5,   badge:'🌟', label:'Prvých 5 hodín',  color:'#8bc34a', reward:null },
+  { visits:10,  badge:'⭐', label:'Pravidelný člen',  color:'#ffc107', reward:'Zľava 10 % na ďalší nákup' },
+  { visits:20,  badge:'🥉', label:'Bronzový člen',   color:'#cd7f32', reward:'Fusion fľaša zadarmo' },
+  { visits:30,  badge:'🥈', label:'Strieborný člen', color:'#9e9e9e', reward:'Zľava 15 % na mesačné členstvo' },
+  { visits:50,  badge:'🥇', label:'Zlatý člen',      color:'#C9A84C', reward:'Fusion tričko zadarmo' },
+  { visits:75,  badge:'💎', label:'Diamantový člen', color:'#2196f3', reward:'Mesiac zdarma' },
+  { visits:100, badge:'👑', label:'Legenda',          color:'#C9A84C', reward:'VIP odmena – zistíš pri odovzdaní 😊' },
+];
+
+function getLoyaltyStatus(visitCount) {
+  const count = visitCount || 0;
+  // Find current badge (highest milestone reached)
+  let current = null;
+  for (const m of LOYALTY_MILESTONES) {
+    if (count >= m.visits) current = m;
+    else break;
+  }
+  // Find next milestone
+  const next = LOYALTY_MILESTONES.find(m => count < m.visits) || null;
+  const progressPct = next ? Math.min(100, Math.round(
+    ((count - (current?.visits || 0)) / (next.visits - (current?.visits || 0))) * 100
+  )) : 100;
+  return { count, current, next, progressPct };
+}
 const DAYS_SK     = ['Nedeľa','Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota'];
 const CHANNELS    = [
   { id:'general', name:'Všeobecné',   emoji:'💬' },
@@ -121,14 +159,28 @@ function getMemberBadge(createdAt) {
 function userPublic(u) {
   if (!u) return null;
   const badge = getMemberBadge(u.created_at);
+  const loyalty = getLoyaltyStatus(u.visit_count || 0);
+  const role = USER_ROLES[u.user_type] || USER_ROLES.client;
   return {
     id: u._id, name: u.name, email: u.email, phone: u.phone||'',
     referral_code: u.referral_code, rank: u.rank||1,
     rankName: RANKS[(u.rank||1)-1].name, rankBadge: RANKS[(u.rank||1)-1].badge,
     is_admin: !!u.is_admin, user_type: u.user_type||'partner',
     bank_account: u.bank_account||'', created_at: u.created_at,
-    memberBadge: badge,
+    memberBadge: badge, loyalty,
+    role_label: role.label, role_icon: role.icon, dash_url: role.dashUrl,
+    visit_count: u.visit_count || 0,
+    notes: u.notes || '',
+    sponsor_id: u.sponsor_id || null,
   };
+}
+
+// Resolve dash URL from user object
+function dashUrlFor(u) {
+  if (!u) return '/';
+  if (u.is_admin) return '/admin';
+  const role = USER_ROLES[u.user_type];
+  return role ? role.dashUrl : '/client-dashboard';
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
@@ -420,8 +472,10 @@ app.post('/api/login', async(req,res)=>{
     const {email,password}=req.body;
     const u=await q.one(db.users,{email:(email||'').toLowerCase().trim()});
     if(!u||!(await bcrypt.compare(password,u.password))) return res.status(401).json({error:'Nesprávny email alebo heslo'});
+    if(u.active===false) return res.status(403).json({error:'Váš účet je zablokovaný. Kontaktujte správcu.'});
     req.session.uid=u._id;
-    res.json({ok:true, isAdmin:!!u.is_admin, userType:u.user_type||'partner'});
+    const redirect_to = dashUrlFor(u);
+    res.json({ok:true, isAdmin:!!u.is_admin, userType:u.user_type||'partner', redirect_to});
   } catch(e){res.status(500).json({error:e.message});}
 });
 
@@ -440,10 +494,13 @@ app.post('/api/register', async(req,res)=>{
     const base=name.split(' ')[0].toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8);
     let code=base+Math.floor(10+Math.random()*90);
     while(await q.one(db.users,{referral_code:code})) code=base+Math.floor(100+Math.random()*900);
-    const utype=user_type||'partner';
-    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',created_at:today()});
+    // Default: partner registration if sponsorCode provided, else lead
+    const utype = user_type || (sponsorCode && sponsorCode.toUpperCase()!=='ADMIN' ? 'partner' : 'lead');
+    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,created_at:today()});
     req.session.uid=u._id;
-    res.json({ok:true, userType:utype});
+    // Send welcome email to new lead/client
+    sendMail(email, 'Vitaj vo Fusion Academy! 🎉', `<h2>Vitaj, ${name}! 🎉</h2><p>Registrácia prebehla úspešne. Tešíme sa, že si súčasťou Fusion Academy!</p><p>👉 <a href="https://latindancefusion.art/schedule">Pozri rozvrh hodín</a> a zarezervuj si prvú lekciu – prvá hodina je <b>ZADARMO</b>!</p><p>Ak máš otázky, napíš nám: <a href="mailto:info@fusionacademy.sk">info@fusionacademy.sk</a></p><p><i>Fusion Academy tím 💃</i></p>`).catch(()=>{});
+    res.json({ok:true, userType:utype, redirect_to: dashUrlFor(u)});
   } catch(e){
     if(e.message?.includes('unique')) return res.status(400).json({error:'Email je už zaregistrovaný'});
     res.status(500).json({error:e.message});
@@ -718,6 +775,140 @@ app.put('/api/admin/partners/:id', adminAuth, async(req,res)=>{
   const{name,phone,bank_account,active,sponsor_id,notes}=req.body;
   await q.update(db.users,{_id:req.params.id},{$set:{name,phone:phone||'',bank_account:bank_account||'',active:!!active,sponsor_id:sponsor_id||null,notes:notes||''}});
   res.json({ok:true});
+});
+
+// ── List all users (CRM) ──────────────────────────────────────────────────────
+app.get('/api/admin/users', adminAuth, async(req,res)=>{
+  try {
+    const {role, search, page=1, limit=50} = req.query;
+    let query = {};
+    if (role && role !== 'all') {
+      if (role === 'admin') query = {is_admin:true};
+      else query = {user_type:role, is_admin:{$ne:true}};
+    }
+    let users = await q.find(db.users, query, {created_at:-1});
+    if (search) {
+      const s = search.toLowerCase();
+      users = users.filter(u => u.name?.toLowerCase().includes(s) || u.email?.toLowerCase().includes(s) || u.phone?.includes(s));
+    }
+    const total = users.length;
+    const offset = (parseInt(page)-1)*parseInt(limit);
+    const paged = users.slice(offset, offset+parseInt(limit));
+    // Attach membership status for each user
+    const result = await Promise.all(paged.map(async u => {
+      const m = await checkMembership(u._id);
+      const loyalty = getLoyaltyStatus(u.visit_count||0);
+      return {
+        id:u._id, name:u.name, email:u.email, phone:u.phone||'',
+        user_type:u.user_type||'lead', is_admin:!!u.is_admin,
+        active:u.active!==false, created_at:u.created_at,
+        visit_count:u.visit_count||0, loyalty_badge:loyalty.current?.badge||'🔵',
+        loyalty_label:loyalty.current?.label||'Nováčik',
+        membership: m ? {plan_name:m.plan_name,expires_at:m.expires_at,status:m.status||'active'} : null,
+        sponsor_id:u.sponsor_id||null, rank:u.rank||1,
+        last_booking: null,
+      };
+    }));
+    res.json({users:result, total, page:parseInt(page), limit:parseInt(limit)});
+  } catch(e){res.status(500).json({error:e.message});}
+});
+
+// ── Set user role ─────────────────────────────────────────────────────────────
+app.put('/api/admin/users/:id/role', adminAuth, async(req,res)=>{
+  const {user_type} = req.body;
+  const validRoles = Object.keys(USER_ROLES);
+  if (!validRoles.includes(user_type)) return res.status(400).json({error:'Neplatná rola'});
+  const u = await q.one(db.users,{_id:req.params.id});
+  if (!u) return res.status(404).json({error:'Nenájdený'});
+  const isAdmin = user_type === 'admin';
+  await q.update(db.users,{_id:req.params.id},{$set:{user_type, is_admin:isAdmin}});
+  // Notify user about role change
+  await q.insert(db.notifications,{user_id:req.params.id,type:'role_change',title:`Vaša rola bola zmenená`,body:`Nová rola: ${USER_ROLES[user_type]?.label||user_type}`,read:false,created_at:nowISO()});
+  res.json({ok:true, user_type});
+});
+
+// ── Update user profile (admin) ───────────────────────────────────────────────
+app.put('/api/admin/users/:id', adminAuth, async(req,res)=>{
+  const {name, phone, notes, bank_account, sponsor_id} = req.body;
+  const upd = {};
+  if(name !== undefined) upd.name = name;
+  if(phone !== undefined) upd.phone = phone;
+  if(notes !== undefined) upd.notes = notes;
+  if(bank_account !== undefined) upd.bank_account = bank_account;
+  if(sponsor_id !== undefined) upd.sponsor_id = sponsor_id || null;
+  await q.update(db.users,{_id:req.params.id},{$set:upd});
+  res.json({ok:true});
+});
+
+// ── CRM stats ─────────────────────────────────────────────────────────────────
+app.get('/api/admin/crm/stats', adminAuth, async(req,res)=>{
+  try {
+    const allUsers = await q.find(db.users,{is_admin:{$ne:true}});
+    const stats = {
+      total: allUsers.length,
+      leads: allUsers.filter(u=>u.user_type==='lead'||!u.user_type).length,
+      clients: allUsers.filter(u=>u.user_type==='client').length,
+      trainers: allUsers.filter(u=>u.user_type==='trainer').length,
+      partners: allUsers.filter(u=>u.user_type==='partner'||u.user_type==='manager').length,
+      active: allUsers.filter(u=>u.active!==false).length,
+      blocked: allUsers.filter(u=>u.active===false).length,
+    };
+    // New registrations this month
+    const monthStart = currentMonth()+'-01';
+    stats.new_this_month = allUsers.filter(u=>u.created_at>=monthStart).length;
+    res.json(stats);
+  } catch(e){res.status(500).json({error:e.message});}
+});
+
+// ── CRM automation – send email to a category ─────────────────────────────────
+app.post('/api/admin/crm/email', adminAuth, async(req,res)=>{
+  try {
+    const {category, subject, html_body} = req.body;
+    if(!category||!subject||!html_body) return res.status(400).json({error:'Kategória, predmet a text sú povinné'});
+    let query = {};
+    if(category==='leads')           query={user_type:'lead',active:{$ne:false}};
+    else if(category==='clients')    query={user_type:'client',active:{$ne:false}};
+    else if(category==='partners')   query={user_type:{$in:['partner','manager']},active:{$ne:false}};
+    else if(category==='trainers')   query={user_type:'trainer',active:{$ne:false}};
+    else if(category==='all')        query={is_admin:{$ne:true},active:{$ne:false}};
+    else return res.status(400).json({error:'Neznáma kategória'});
+    const users = await q.find(db.users,query);
+    let sent = 0;
+    for(const u of users){
+      if(u.email){
+        await sendMail(u.email, subject, html_body).catch(()=>{});
+        sent++;
+      }
+    }
+    res.json({ok:true, sent});
+  } catch(e){res.status(500).json({error:e.message});}
+});
+
+// ── CRM automation – expiry warnings (call manually or via cron) ───────────────
+app.post('/api/admin/crm/send-expiry-warnings', adminAuth, async(req,res)=>{
+  try {
+    const in7days = new Date(); in7days.setDate(in7days.getDate()+7);
+    const d7 = in7days.toISOString().slice(0,10);
+    const expiring = await q.find(db.memberships,{expires_at:{$lte:d7},expires_at:{$gte:today()},status:'active'});
+    let sent = 0;
+    for(const m of expiring){
+      const u = await q.one(db.users,{_id:m.user_id});
+      if(u?.email){
+        await sendMail(u.email,'⚠️ Tvoje členstvo čoskoro vyprší',`<h2>Ahoj ${u.name}!</h2><p>Tvoje členstvo <b>${m.plan_name}</b> vyprší <b>${m.expires_at}</b>.</p><p>👉 <a href="https://latindancefusion.art/pricing">Obnov si členstvo</a> a neprerušuj svoju cestu!</p><p><i>Fusion Academy tím 💃</i></p>`).catch(()=>{});
+        await q.insert(db.notifications,{user_id:u._id,type:'expiry_warning',title:'⚠️ Členstvo čoskoro vyprší',body:`${m.plan_name} vyprší ${m.expires_at}`,read:false,created_at:nowISO()});
+        sent++;
+      }
+    }
+    res.json({ok:true, sent});
+  } catch(e){res.status(500).json({error:e.message});}
+});
+
+// ── Admin manual visit count adjust ──────────────────────────────────────────
+app.put('/api/admin/users/:id/visits', adminAuth, async(req,res)=>{
+  const {visit_count} = req.body;
+  if(typeof visit_count !== 'number') return res.status(400).json({error:'Neplatné číslo'});
+  await q.update(db.users,{_id:req.params.id},{$set:{visit_count}});
+  res.json({ok:true, visit_count});
 });
 
 // ── Block / Unblock user
@@ -1492,10 +1683,19 @@ app.post('/api/bookings', auth, async(req,res)=>{
       user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||'',
       booking_date:bdate, status:'confirmed', notes:notes||'', created_at:nowISO()
     });
+    // Increment visit count and check loyalty milestone
+    const newCount = (u.visit_count || 0) + 1;
+    await q.update(db.users,{_id:u._id},{$set:{visit_count: newCount}});
     await q.insert(db.notifications,{user_id:u._id,type:'booking',title:`Rezervácia potvrdená ✅`,body:`${cls.name} – ${bdate} o ${cls.time_start}`,read:false,created_at:nowISO()});
+    // Check if a loyalty milestone was just crossed
+    const milestone = LOYALTY_MILESTONES.find(m => m.visits === newCount);
+    if (milestone) {
+      await q.insert(db.notifications,{user_id:u._id,type:'loyalty',title:`🏆 Nový odznak: ${milestone.label}`,body:`Gratulujeme! ${newCount} návštev. ${milestone.reward ? 'Odmena: '+milestone.reward : ''}`,read:false,created_at:nowISO()});
+      if(u.email) sendMail(u.email,`🏆 Nový odznak: ${milestone.label}`,`<h2>${milestone.badge} Gratulujeme, ${u.name}!</h2><p>Práve si dosiahol míľnik: <b>${newCount} návštev</b> – ${milestone.label}!</p>${milestone.reward?`<p>🎁 Odmena: <b>${milestone.reward}</b></p>`:''}<p>Ďakujeme, že si súčasťou Fusion Academy!</p><p><i>Fusion Academy tím 💃</i></p>`).catch(()=>{});
+    }
     // Send confirmation email
-    if(u.email) sendMail(u.email,`Rezervácia potvrdená – ${cls.name}`,`<h2>Rezervácia potvrdená ✅</h2><p>Ahoj <b>${u.name}</b>,</p><p>Vaša rezervácia na hodinu <b>${cls.name}</b> bola úspešne zaznamenaná.</p><ul><li>Dátum: <b>${bdate}</b></li><li>Čas: <b>${cls.time_start}–${cls.time_end||''}</b></li><li>Miesto: <b>${cls.location}</b></li></ul><p>Tešíme sa na vás!</p><p><i>Fusion Academy</i></p>`);
-    res.json({ok:true, id:booking._id, class_name:cls.name, booking_date:bdate});
+    if(u.email) sendMail(u.email,`Rezervácia potvrdená – ${cls.name}`,`<h2>Rezervácia potvrdená ✅</h2><p>Ahoj <b>${u.name}</b>,</p><p>Vaša rezervácia na hodinu <b>${cls.name}</b> bola úspešne zaznamenaná.</p><ul><li>Dátum: <b>${bdate}</b></li><li>Čas: <b>${cls.time_start}–${cls.time_end||''}</b></li><li>Miesto: <b>${cls.location}</b></li></ul><p>Celkový počet návštev: <b>${newCount}</b> 🎯</p><p>Tešíme sa na vás!</p><p><i>Fusion Academy</i></p>`).catch(()=>{});
+    res.json({ok:true, id:booking._id, class_name:cls.name, booking_date:bdate, visit_count:newCount});
   } catch(e){res.status(500).json({error:e.message});}
 });
 
@@ -1508,12 +1708,47 @@ app.get('/api/me', async(req,res)=>{
   if(!u) return res.json({});
   const m = await checkMembership(req.session.uid);
   const notifCount = await q.count(db.notifications,{user_id:req.session.uid,read:false});
+  const loyalty = getLoyaltyStatus(u.visit_count || 0);
+  const role = USER_ROLES[u.user_type] || USER_ROLES.client;
   res.json({
-    id:u._id, name:u.name, email:u.email, is_admin:u.is_admin,
+    id:u._id, name:u.name, email:u.email, phone:u.phone||'', is_admin:u.is_admin,
     user_type:u.user_type||'partner', referral_code:u.referral_code,
-    membership: m ? {plan_id:m.plan_id,plan_name:m.plan_name,expires_at:m.expires_at} : null,
-    notif_count: notifCount
+    membership: m ? {plan_id:m.plan_id,plan_name:m.plan_name,expires_at:m.expires_at,status:m.status||'active'} : null,
+    notif_count: notifCount, loyalty, visit_count: u.visit_count||0,
+    role_label: role.label, role_icon: role.icon, dash_url: role.dashUrl,
+    created_at: u.created_at,
   });
+});
+
+// ─── Client profile (detailed) ────────────────────────────────────────────────
+app.get('/api/client/profile', auth, async(req,res)=>{
+  try {
+    const u = await q.one(db.users,{_id:req.session.uid});
+    if(!u) return res.status(404).json({error:'Nenájdený'});
+    const m = await checkMembership(req.session.uid);
+    const loyalty = getLoyaltyStatus(u.visit_count || 0);
+    const upcoming = await q.find(db.bookings,{user_id:u._id,status:'confirmed',booking_date:{$gte:today()}},{booking_date:1});
+    const notifCount = await q.count(db.notifications,{user_id:u._id,read:false});
+    res.json({
+      id:u._id, name:u.name, email:u.email, phone:u.phone||'',
+      user_type:u.user_type||'lead', created_at:u.created_at,
+      membership: m ? {plan_id:m.plan_id,plan_name:m.plan_name,expires_at:m.expires_at,status:m.status||'active'} : null,
+      loyalty, visit_count: u.visit_count||0,
+      upcoming_bookings: upcoming.slice(0,5),
+      notif_count: notifCount,
+      milestones: LOYALTY_MILESTONES,
+    });
+  } catch(e){res.status(500).json({error:e.message});}
+});
+
+// ─── Client notifications ─────────────────────────────────────────────────────
+app.get('/api/client/notifications', auth, async(req,res)=>{
+  const notifs = await q.find(db.notifications,{user_id:req.session.uid},{created_at:-1});
+  res.json(notifs.slice(0,30));
+});
+app.post('/api/client/notifications/read-all', auth, async(req,res)=>{
+  await q.update(db.notifications,{user_id:req.session.uid,read:false},{$set:{read:true}},{multi:true});
+  res.json({ok:true});
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1543,6 +1778,7 @@ app.get('/trainer',    (req,res)=>res.sendFile(path.join(__dirname,'public','tra
 app.get('/gallery',    (req,res)=>res.sendFile(path.join(__dirname,'public','gallery.html')));
 app.get('/podcast',    (req,res)=>res.sendFile(path.join(__dirname,'public','podcast.html')));
 app.get('/collaborate',(req,res)=>res.sendFile(path.join(__dirname,'public','collaborate.html')));
+app.get('/client-dashboard',(req,res)=>res.sendFile(path.join(__dirname,'public','client-dashboard.html')));
 // ── Referral redirect ─────────────────────────────────────────────────────────
 app.get('/r/:code', async(req,res)=>{
   const code = req.params.code?.toUpperCase();

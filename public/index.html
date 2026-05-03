@@ -322,6 +322,18 @@ footer a:hover { color: var(--gold); }
       <div style="font-size:.82rem;color:var(--text-muted);">Partner Program</div>
     </div>
 
+    <!-- Role selector (Client vs Partner) -->
+    <div style="display:flex;gap:8px;margin-bottom:14px" id="roleSelector">
+      <button onclick="setLoginRole('client')" id="roleBtn-client"
+        style="flex:1;padding:9px;border-radius:8px;font-size:.82rem;font-weight:700;cursor:pointer;transition:all .2s;background:rgba(201,168,76,.18);border:1px solid var(--gold-light);color:#C9A84C">
+        🏃 Som klient
+      </button>
+      <button onclick="setLoginRole('partner')" id="roleBtn-partner"
+        style="flex:1;padding:9px;border-radius:8px;font-size:.82rem;font-weight:700;cursor:pointer;transition:all .2s;background:none;border:1px solid #333;color:#888">
+        🤝 Som partner
+      </button>
+    </div>
+
     <div class="auth-tabs" id="authTabs">
       <button class="auth-tab active" data-t="login">Prihlásenie</button>
       <button class="auth-tab" data-t="register">Registrácia</button>
@@ -367,8 +379,8 @@ footer a:hover { color: var(--gold); }
         <label class="fa-label">Telefón</label>
         <input type="tel" id="rPhone" class="fa-input form-control" placeholder="+421 9XX XXX XXX">
       </div>
-      <div class="mb-3">
-        <label class="fa-label">Referral kód sponzora</label>
+      <div class="mb-3" id="sponsorRow">
+        <label class="fa-label">Referral kód sponzora <span style="color:#888;font-size:.78rem">(len pre partnerov)</span></label>
         <input type="text" id="rCode" class="fa-input form-control" placeholder="Napr. MAREK42 (ak máte)">
       </div>
       <button class="fa-btn fa-btn-gold" style="width:100%;justify-content:center;" onclick="doRegister()">
@@ -408,6 +420,26 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal('
 document.getElementById('lPwd').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
 document.getElementById('rPwd').addEventListener('keydown', e => { if(e.key==='Enter') doRegister(); });
 
+// Role selector
+let _loginRole = 'client';
+function setLoginRole(role) {
+  _loginRole = role;
+  const cBtn = document.getElementById('roleBtn-client');
+  const pBtn = document.getElementById('roleBtn-partner');
+  const sRow = document.getElementById('sponsorRow');
+  if(role === 'client') {
+    cBtn.style.cssText = 'flex:1;padding:9px;border-radius:8px;font-size:.82rem;font-weight:700;cursor:pointer;transition:all .2s;background:rgba(201,168,76,.18);border:1px solid var(--gold-light);color:#C9A84C';
+    pBtn.style.cssText = 'flex:1;padding:9px;border-radius:8px;font-size:.82rem;font-weight:700;cursor:pointer;transition:all .2s;background:none;border:1px solid #333;color:#888';
+    if(sRow) sRow.style.display='none';
+  } else {
+    pBtn.style.cssText = 'flex:1;padding:9px;border-radius:8px;font-size:.82rem;font-weight:700;cursor:pointer;transition:all .2s;background:rgba(201,168,76,.18);border:1px solid var(--gold-light);color:#C9A84C';
+    cBtn.style.cssText = 'flex:1;padding:9px;border-radius:8px;font-size:.82rem;font-weight:700;cursor:pointer;transition:all .2s;background:none;border:1px solid #333;color:#888';
+    if(sRow) sRow.style.display='block';
+  }
+}
+// Init: hide sponsor row for default (client)
+(function(){ const s=document.getElementById('sponsorRow'); if(s) s.style.display='none'; })();
+
 async function doLogin() {
   const email = document.getElementById('lEmail').value.trim();
   const password = document.getElementById('lPwd').value;
@@ -418,7 +450,8 @@ async function doLogin() {
     const r = await fetch('/api/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
     const d = await r.json();
     if (!r.ok) { err.textContent = d.error||'Nesprávne údaje'; err.classList.remove('d-none'); return; }
-    window.location.href = d.isAdmin ? '/admin' : '/dashboard';
+    // Use server-provided redirect, fallback by role hint
+    window.location.href = d.redirect_to || (d.isAdmin ? '/admin' : (_loginRole==='client' ? '/client-dashboard' : '/dashboard'));
   } catch { err.textContent='Chyba pripojenia'; err.classList.remove('d-none'); }
 }
 
@@ -432,11 +465,13 @@ async function doRegister() {
   err.className='fa-alert-danger d-none mb-3';
   if(!name||!email||!password){err.textContent='Vyplňte povinné polia';err.classList.remove('d-none');return;}
   if(password.length<6){err.textContent='Heslo musí mať aspoň 6 znakov';err.classList.remove('d-none');return;}
+  // Pass user_type based on role selection
+  const user_type = _loginRole === 'partner' ? 'partner' : 'lead';
   try {
-    const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password,phone,sponsorCode})});
+    const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password,phone,sponsorCode,user_type})});
     const d=await r.json();
     if(!r.ok){err.textContent=d.error||'Chyba registrácie';err.classList.remove('d-none');return;}
-    window.location.href='/dashboard';
+    window.location.href = d.redirect_to || (_loginRole==='client' ? '/client-dashboard' : '/dashboard');
   } catch{err.textContent='Chyba pripojenia';err.classList.remove('d-none');}
 }
 </script>

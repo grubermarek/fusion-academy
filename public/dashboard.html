@@ -89,7 +89,44 @@
   <!-- OVERVIEW -->
   <div id="s-overview" class="section active">
     <h4 class="fw-bold mb-1">Môj Dashboard <span id="ovBadge" class="rank-badge ms-2"></span></h4>
-    <p class="text-muted small mb-4" id="ovWelcome"></p>
+    <p class="text-muted small mb-3" id="ovWelcome"></p>
+
+    <!-- 🏆 Rank Progression Card — always visible -->
+    <div id="rankProgressCard" style="background:linear-gradient(135deg,#1e1e1e,#252525);border:1px solid #333;border-radius:14px;padding:18px 20px;margin-bottom:20px;display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div id="rpCurrentBadge" style="font-size:2rem;line-height:1">🌱</div>
+          <div>
+            <div style="font-size:.75rem;color:#888;text-transform:uppercase;letter-spacing:.05em">Aktuálna pozícia</div>
+            <div id="rpCurrentName" style="font-size:1.1rem;font-weight:700;color:#C9A84C">Starter</div>
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:.75rem;color:#888">Nasledujúca úroveň</div>
+          <div id="rpNextName" style="font-size:.95rem;font-weight:600;color:#e8e8e8">Partner <span id="rpNextBadge">🤝</span></div>
+        </div>
+      </div>
+      <!-- Two progress bars: personal + team volume -->
+      <div style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;font-size:.75rem;color:#888;margin-bottom:4px">
+          <span>Osobný obrat</span><span id="rpPersonalLabel">0 / 300 €</span>
+        </div>
+        <div style="background:#333;border-radius:4px;height:7px;overflow:hidden">
+          <div id="rpPersonalBar" style="height:100%;background:linear-gradient(90deg,#C9A84C,#e8c060);border-radius:4px;width:0%;transition:width .5s"></div>
+        </div>
+      </div>
+      <div style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;font-size:.75rem;color:#888;margin-bottom:4px">
+          <span>Tímový obrat</span><span id="rpTeamLabel">0 / 500 €</span>
+        </div>
+        <div style="background:#333;border-radius:4px;height:7px;overflow:hidden">
+          <div id="rpTeamBar" style="height:100%;background:linear-gradient(90deg,#2196f3,#64b5f6);border-radius:4px;width:0%;transition:width .5s"></div>
+        </div>
+      </div>
+      <div id="rpGoalBox" style="background:rgba(201,168,76,.07);border:1px solid rgba(201,168,76,.2);border-radius:8px;padding:10px 14px;font-size:.82rem;color:#e8e8e8">
+        🎯 <strong style="color:#C9A84C">Ďalší cieľ:</strong> <span id="rpGoalText">—</span>
+      </div>
+    </div>
 
     <div class="row g-3 mb-4">
       <div class="col-6 col-md-3">
@@ -469,7 +506,7 @@ async function loadDashboard() {
   document.getElementById('earn-paid').textContent = eur(d.stats.paidEarnings);
   document.getElementById('earn-team').textContent = eur(d.stats.team30);
 
-  // Rank
+  // Rank — existing rank card
   const r = d.rank;
   document.getElementById('rankTitle').textContent = r.current.badge + ' ' + r.current.name;
   if (r.next) {
@@ -484,6 +521,39 @@ async function loadDashboard() {
     document.getElementById('rankNext').textContent = 'Elite Director';
     document.getElementById('rankPersBar').style.width = '100%';
     document.getElementById('rankTeamBar').style.width = '100%';
+  }
+
+  // ── Rank progression card (top of overview) ──────────────────────────────
+  const rpCard = document.getElementById('rankProgressCard');
+  if(rpCard && r) {
+    rpCard.style.display = 'block';
+    document.getElementById('rpCurrentBadge').textContent = r.current.badge;
+    document.getElementById('rpCurrentName').textContent = r.current.name;
+    if(r.next) {
+      document.getElementById('rpNextName').innerHTML = r.next.name + ' <span id="rpNextBadge">' + r.next.badge + '</span>';
+      const persTarget = r.next.personalMin; const teamTarget = r.next.teamMin;
+      const persVal = d.stats.personal30; const teamVal = d.stats.team30;
+      const persPct = persTarget>0 ? Math.min(100, Math.round(persVal/persTarget*100)) : 100;
+      const teamPct = teamTarget>0 ? Math.min(100, Math.round(teamVal/teamTarget*100)) : 100;
+      document.getElementById('rpPersonalLabel').textContent = eur(persVal) + ' / ' + persTarget + '€';
+      document.getElementById('rpTeamLabel').textContent = eur(teamVal) + ' / ' + teamTarget.toLocaleString() + '€';
+      document.getElementById('rpPersonalBar').style.width = persPct + '%';
+      document.getElementById('rpTeamBar').style.width = teamPct + '%';
+      // Goal text
+      const persLeft = Math.max(0, persTarget - persVal).toFixed(0);
+      const teamLeft = Math.max(0, teamTarget - teamVal).toFixed(0);
+      let goalParts = [];
+      if(+persLeft > 0) goalParts.push(`+${persLeft}€ osobný obrat`);
+      if(+teamLeft > 0) goalParts.push(`+${teamLeft}€ tímový obrat`);
+      document.getElementById('rpGoalText').textContent = goalParts.length ? goalParts.join(' a ') + ' do ranku ' + r.next.name : 'Splnené! Počkaj na prepočet.';
+    } else {
+      document.getElementById('rpNextName').textContent = '🏆 Najvyšší rank!';
+      document.getElementById('rpPersonalLabel').textContent = 'MAX';
+      document.getElementById('rpTeamLabel').textContent = 'MAX';
+      document.getElementById('rpPersonalBar').style.width = '100%';
+      document.getElementById('rpTeamBar').style.width = '100%';
+      document.getElementById('rpGoalBox').innerHTML = '🏆 <strong style="color:#C9A84C">Gratulujeme!</strong> Dosiahli ste najvyšší rank – Elite Director!';
+    }
   }
 
   // Chart
