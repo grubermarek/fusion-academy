@@ -829,15 +829,25 @@ app.put('/api/admin/users/:id/role', adminAuth, async(req,res)=>{
 
 // ── Update user profile (admin) ───────────────────────────────────────────────
 app.put('/api/admin/users/:id', adminAuth, async(req,res)=>{
-  const {name, phone, notes, bank_account, sponsor_id} = req.body;
-  const upd = {};
-  if(name !== undefined) upd.name = name;
-  if(phone !== undefined) upd.phone = phone;
-  if(notes !== undefined) upd.notes = notes;
-  if(bank_account !== undefined) upd.bank_account = bank_account;
-  if(sponsor_id !== undefined) upd.sponsor_id = sponsor_id || null;
-  await q.update(db.users,{_id:req.params.id},{$set:upd});
-  res.json({ok:true});
+  try {
+    const {name, email, phone, notes, bank_account, sponsor_id, visit_count} = req.body;
+    const upd = {};
+    if(name !== undefined) upd.name = name.trim();
+    if(email !== undefined){
+      const newEmail = email.toLowerCase().trim();
+      // Check email not taken by another user
+      const existing = await q.one(db.users,{email:newEmail});
+      if(existing && existing._id !== req.params.id) return res.status(400).json({error:'Tento email už používa iný účet'});
+      upd.email = newEmail;
+    }
+    if(phone !== undefined) upd.phone = phone;
+    if(notes !== undefined) upd.notes = notes;
+    if(bank_account !== undefined) upd.bank_account = bank_account;
+    if(sponsor_id !== undefined) upd.sponsor_id = sponsor_id || null;
+    if(visit_count !== undefined) upd.visit_count = Math.max(0,parseInt(visit_count)||0);
+    await q.update(db.users,{_id:req.params.id},{$set:upd});
+    res.json({ok:true});
+  } catch(e){res.status(500).json({error:e.message});}
 });
 
 // ── CRM stats ─────────────────────────────────────────────────────────────────

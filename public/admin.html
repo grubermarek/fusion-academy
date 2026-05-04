@@ -670,14 +670,18 @@ async function loadCrm(){
       <td class="text-muted small">${(u.created_at||'').slice(0,10)}</td>
       <td>
         <div class="d-flex gap-1 flex-wrap">
-          <button class="btn btn-xs" style="font-size:.7rem;padding:2px 8px;background:#333;border:1px solid #555;color:#ccc;border-radius:4px"
-            onclick="editCrmUser('${u.id}','${escHtml(u.name)}','${escHtml(u.email)}','${u.visit_count||0}')">
-            <i class="bi bi-pencil"></i>
+          <button title="Upraviť" style="font-size:.72rem;padding:3px 9px;background:#1a2a3a;border:1px solid #2a5a8a;color:#60a5fa;border-radius:5px;cursor:pointer"
+            onclick="openEditModal('${u.id}','${escJs(u.name)}','${escJs(u.email)}','${escJs(u.phone||'')}','${escJs(u.notes||'')}','${u.visit_count||0}','${u.user_type||'client'}')">
+            <i class="bi bi-pencil-fill"></i> Upraviť
           </button>
           ${u.active!==false
-            ?`<button class="btn btn-xs" style="font-size:.7rem;padding:2px 8px;background:#3a1a1a;border:1px solid #8b3232;color:#ef9a9a;border-radius:4px" onclick="blockUser('${u.id}')"><i class="bi bi-slash-circle"></i></button>`
-            :`<button class="btn btn-xs" style="font-size:.7rem;padding:2px 8px;background:#1a3a1a;border:1px solid #328b32;color:#81c784;border-radius:4px" onclick="unblockUser('${u.id}')"><i class="bi bi-check-circle"></i></button>`
+            ?`<button title="Zablokovať" style="font-size:.72rem;padding:3px 9px;background:#3a1a1a;border:1px solid #8b3232;color:#ef9a9a;border-radius:5px;cursor:pointer" onclick="blockUser('${u.id}')"><i class="bi bi-slash-circle"></i></button>`
+            :`<button title="Odblokovať" style="font-size:.72rem;padding:3px 9px;background:#1a3a1a;border:1px solid #328b32;color:#81c784;border-radius:5px;cursor:pointer" onclick="unblockUser('${u.id}')"><i class="bi bi-check-circle"></i></button>`
           }
+          <button title="Zmazať účet" style="font-size:.72rem;padding:3px 9px;background:#3a0f0f;border:1px solid #c62828;color:#f48fb1;border-radius:5px;cursor:pointer"
+            onclick="deleteUser('${u.id}','${escJs(u.name)}')">
+            <i class="bi bi-trash3-fill"></i>
+          </button>
         </div>
       </td>
     </tr>`;
@@ -690,14 +694,6 @@ async function setUserRole(userId,role){
   else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 
-function editCrmUser(id,name,email,visits){
-  const nv=prompt(`Upraviť počet návštev pre ${name} (aktuálne: ${visits}):`, visits);
-  if(nv===null)return;
-  const n=parseInt(nv);
-  if(isNaN(n)||n<0){alert('Neplatné číslo');return;}
-  api(`/api/admin/users/${id}/visits`,{method:'PUT',body:JSON.stringify({visit_count:n})})
-    .then(d=>{if(d?.ok){showToast('Návštevy aktualizované ✓');loadCrm();}});
-}
 
 async function blockUser(id){
   if(!confirm('Zablokovat tohto používateľa?'))return;
@@ -1092,6 +1088,122 @@ async function saveStreamUrl(classId){
 // Init
 document.getElementById('commMonth').value=new Date().toISOString().slice(0,7);
 loadOverview();
+
+// ── EDIT USER MODAL ───────────────────────────────────────────────────────────
+let _editUserId = null;
+
+function escJs(s){ return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+
+function openEditModal(id, name, email, phone, notes, visits, role){
+  _editUserId = id;
+  document.getElementById('euName').value    = name;
+  document.getElementById('euEmail').value   = email;
+  document.getElementById('euPhone').value   = phone;
+  document.getElementById('euNotes').value   = notes;
+  document.getElementById('euVisits').value  = visits;
+  document.getElementById('euRole').value    = role;
+  document.getElementById('euErr').style.display='none';
+  document.getElementById('euErr').textContent='';
+  const modal = new bootstrap.Modal(document.getElementById('editUserModal'));
+  modal.show();
+}
+
+async function saveEditUser(){
+  if(!_editUserId) return;
+  const body = {
+    name:   document.getElementById('euName').value.trim(),
+    email:  document.getElementById('euEmail').value.trim(),
+    phone:  document.getElementById('euPhone').value.trim(),
+    notes:  document.getElementById('euNotes').value.trim(),
+    visit_count: document.getElementById('euVisits').value,
+  };
+  const newRole = document.getElementById('euRole').value;
+  const errEl = document.getElementById('euErr');
+  errEl.style.display='none';
+  if(!body.name || !body.email){ errEl.textContent='Meno a email sú povinné'; errEl.style.display='block'; return; }
+  const btn = document.getElementById('euSaveBtn');
+  btn.disabled=true; btn.textContent='Ukladám...';
+  try {
+    const [r1, r2] = await Promise.all([
+      api(`/api/admin/users/${_editUserId}`, {method:'PUT', body:JSON.stringify(body)}),
+      api(`/api/admin/users/${_editUserId}/role`, {method:'PUT', body:JSON.stringify({user_type:newRole})}),
+    ]);
+    if(!r1?.ok){ errEl.textContent = r1?.error||'Chyba ukladania'; errEl.style.display='block'; btn.disabled=false; btn.textContent='Uložiť zmeny'; return; }
+    bootstrap.Modal.getInstance(document.getElementById('editUserModal')).hide();
+    showToast('Používateľ aktualizovaný ✓');
+    loadCrm();
+  } catch(e){ errEl.textContent='Chyba pripojenia'; errEl.style.display='block'; }
+  btn.disabled=false; btn.textContent='Uložiť zmeny';
+}
+
+// ── DELETE USER ───────────────────────────────────────────────────────────────
+async function deleteUser(id, name){
+  const confirmed = confirm(`⚠️ Zmazať účet?\n\nMeno: ${name}\n\nTáto akcia je nevratná — zmažú sa všetky rezervácie, komisie a dáta tohto používateľa.\n\nPokračovať?`);
+  if(!confirmed) return;
+  const check = prompt(`Pre potvrdenie napíš meno používateľa:\n"${name}"`);
+  if(check === null) return;
+  if(check.trim() !== name.trim()){
+    alert('Meno sa nezhoduje — účet nebol zmazaný.');
+    return;
+  }
+  const d = await api(`/api/admin/users/${id}`, {method:'DELETE'});
+  if(d?.ok){ showToast('Účet zmazaný', 'success'); loadCrm(); }
+  else showToast('Chyba: '+(d?.error||'?'), 'error');
+}
 </script>
+
+<!-- ── EDIT USER MODAL ── -->
+<div class="modal fade" id="editUserModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-person-gear me-2" style="color:var(--gold)"></i>Upraviť používateľa</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="euErr" style="display:none;background:rgba(244,67,54,.12);border:1px solid rgba(244,67,54,.3);color:#ef9a9a;padding:10px 14px;border-radius:8px;font-size:.85rem;margin-bottom:14px"></div>
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label fw-semibold">Meno a priezvisko</label>
+            <input type="text" class="form-control" id="euName" placeholder="Jana Nováková">
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">E-mail</label>
+            <input type="email" class="form-control" id="euEmail" placeholder="jana@email.sk">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Telefón</label>
+            <input type="tel" class="form-control" id="euPhone" placeholder="+421 900 000 000">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Počet návštev</label>
+            <input type="number" class="form-control" id="euVisits" min="0" placeholder="0">
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Rola</label>
+            <select class="form-select" id="euRole">
+              <option value="lead">🔵 Lead</option>
+              <option value="client">🟢 Klient</option>
+              <option value="trainer">🟡 Tréner</option>
+              <option value="partner">🟠 Partner</option>
+              <option value="manager">🔴 Manager</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Interné poznámky <span style="color:var(--text-muted);font-weight:400">(vidí len admin)</span></label>
+            <textarea class="form-control" id="euNotes" rows="3" placeholder="Poznámky, história, špeciálne požiadavky..."></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Zrušiť</button>
+        <button type="button" class="btn btn-brand" id="euSaveBtn" onclick="saveEditUser()">
+          <i class="bi bi-check2-circle me-1"></i>Uložiť zmeny
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
