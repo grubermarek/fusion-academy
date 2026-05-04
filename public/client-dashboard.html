@@ -164,6 +164,9 @@
       <h1 id="welcomeName">Načítavam...</h1>
       <p id="welcomeEmail">—</p>
       <div class="role-tag" id="roleTag">🔵 Lead</div>
+      <a id="partnerDashLink" href="/dashboard" style="display:none;margin-top:8px;font-size:.8rem;color:var(--gold);text-decoration:none;opacity:.8">
+        <i class="bi bi-graph-up"></i> Partnerský prehľad →
+      </a>
     </div>
   </div>
 
@@ -218,6 +221,54 @@
     </div>
     <!-- Milestones row -->
     <div class="milestones" id="milestonesRow"></div>
+  </div>
+
+  <!-- Referral & Rewards -->
+  <div class="loyalty-section" id="referralSection">
+    <div class="loyalty-header" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="font-size:1.6rem">🤝</div>
+        <div class="loyalty-info">
+          <h3>Odmeny za odporúčanie</h3>
+          <p>Pozvi priateľa a zarob odmeny</p>
+        </div>
+      </div>
+      <div class="loyalty-visits">
+        <span id="refCount">0</span>
+        <small>pozvaní</small>
+      </div>
+    </div>
+    <!-- Referral link -->
+    <div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.72rem;color:var(--muted);margin-bottom:3px">TVOJ OSOBNÝ LINK</div>
+        <div id="refLinkText" style="font-size:.82rem;color:var(--gold);word-break:break-all;font-family:monospace">—</div>
+      </div>
+      <button onclick="copyRefLink()" style="background:rgba(201,168,76,.15);border:1px solid rgba(201,168,76,.3);color:#C9A84C;padding:8px 14px;border-radius:7px;cursor:pointer;font-size:.8rem;white-space:nowrap;flex-shrink:0">
+        <i class="bi bi-copy"></i> Kopírovať
+      </button>
+    </div>
+    <!-- Earnings summary -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+      <div style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:12px;text-align:center">
+        <div style="font-size:1.3rem;font-weight:700;color:var(--gold)" id="refEarned">0 €</div>
+        <div style="font-size:.72rem;color:var(--muted)">Celkové zárobky</div>
+      </div>
+      <div style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:12px;text-align:center">
+        <div style="font-size:1.3rem;font-weight:700;color:#ff9800" id="refPending">0 €</div>
+        <div style="font-size:.72rem;color:var(--muted)">Čakajúce na výplatu</div>
+      </div>
+    </div>
+    <!-- Next referral reward -->
+    <div id="refNextReward" style="display:none" class="next-reward">
+      <p>🎁 Pri <strong id="refNextCount">3</strong> odporúčaniach získaš: <strong id="refNextText">—</strong></p>
+    </div>
+    <!-- Reward tiers -->
+    <div class="milestones" id="refMilestones"></div>
+    <!-- Share hint -->
+    <div style="margin-top:12px;padding:10px 14px;background:rgba(33,150,243,.07);border:1px solid rgba(33,150,243,.15);border-radius:8px;font-size:.8rem;color:#90caf9">
+      💬 <strong>Tip:</strong> Zdieľaj link na Instagrame, vo WhatsApp alebo pošli kamarátom — každý, kto sa zaregistruje cez tvoj link, sa počíta ako tvoje odporúčanie.
+    </div>
   </div>
 
   <!-- Quick actions -->
@@ -278,41 +329,6 @@ function escHtml(s){
 async function logout(){
   await api('/api/logout',{method:'POST'});
   window.location.href='/';
-}
-
-// ── Load profile ──────────────────────────────────────────────────────────────
-async function init(){
-  const me = await api('/api/me');
-  if(!me?.id){
-    document.getElementById('loginGate').style.display='flex';
-    return;
-  }
-  document.getElementById('dashMain').style.display='block';
-
-  // Welcome
-  const initials = (me.name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
-  document.getElementById('avatarEl').textContent = initials;
-  document.getElementById('welcomeName').textContent = 'Ahoj, ' + (me.name||'') + '!';
-  document.getElementById('welcomeEmail').textContent = me.email||'';
-  document.getElementById('roleTag').innerHTML = (me.role_icon||'🔵') + ' ' + (me.role_label||'Klient');
-
-  // Membership
-  renderMembership(me);
-
-  // Notifications badge
-  if(me.notif_count > 0){
-    const b = document.getElementById('notifBadge');
-    b.textContent = me.notif_count > 9 ? '9+' : me.notif_count;
-    b.style.display = 'flex';
-  }
-
-  // Load full profile for loyalty + bookings
-  const profile = await api('/api/client/profile');
-  if(profile?.loyalty) renderLoyalty(profile.loyalty, profile.milestones||[]);
-  if(profile?.visit_count !== undefined) {
-    document.getElementById('mcVisits').textContent = profile.visit_count + ' 🎯';
-  }
-  renderBookings(profile?.upcoming_bookings||[]);
 }
 
 function renderMembership(me){
@@ -438,6 +454,70 @@ document.addEventListener('click', e=>{
     notifOpen=false;
   }
 });
+
+// ── Referral ──────────────────────────────────────────────────────────────────
+let _refLink = '';
+async function loadReferral(){
+  const d = await api('/api/client/referral');
+  if(!d||d.error) return;
+  _refLink = d.ref_link||'';
+  document.getElementById('refCount').textContent = d.ref_count||0;
+  document.getElementById('refLinkText').textContent = _refLink||'—';
+  document.getElementById('refEarned').textContent = (d.earned_total||0).toFixed(2)+' €';
+  document.getElementById('refPending').textContent = (d.earned_pending||0).toFixed(2)+' €';
+  // Next reward
+  if(d.next_tier){
+    document.getElementById('refNextReward').style.display='block';
+    document.getElementById('refNextCount').textContent = d.next_tier.referrals;
+    document.getElementById('refNextText').textContent = d.next_tier.reward;
+  }
+  // Milestones
+  const tiers = d.all_tiers||[];
+  const count = d.ref_count||0;
+  document.getElementById('refMilestones').innerHTML = tiers.map(t=>{
+    const reached = count >= t.referrals;
+    const isCurrent = d.current_tier?.referrals === t.referrals;
+    const isNext = d.next_tier?.referrals === t.referrals;
+    const cls = isCurrent ? 'milestone current' : reached ? 'milestone reached' : isNext ? 'milestone next' : 'milestone';
+    return `<div class="${cls}" title="${t.reward||''}">
+      <span class="milestone-emoji">${reached||isNext?t.badge:'🔒'}</span>
+      <div class="milestone-visits">${t.referrals} ľudí</div>
+      <div class="milestone-label">${t.reward||''}</div>
+    </div>`;
+  }).join('');
+}
+
+function copyRefLink(){
+  if(!_refLink) return;
+  navigator.clipboard.writeText(_refLink).then(()=>showToast('🔗 Link skopírovaný!')).catch(()=>{
+    const inp=document.createElement('input'); inp.value=_refLink; document.body.appendChild(inp); inp.select(); document.execCommand('copy'); document.body.removeChild(inp); showToast('🔗 Link skopírovaný!');
+  });
+}
+
+async function init(){
+  const me = await api('/api/me');
+  if(!me?.id){
+    document.getElementById('loginGate').style.display='flex';
+    return;
+  }
+  document.getElementById('dashMain').style.display='block';
+  const initials=(me.name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+  document.getElementById('avatarEl').textContent=initials;
+  document.getElementById('welcomeName').textContent='Ahoj, '+(me.name||'')+'!';
+  document.getElementById('welcomeEmail').textContent=me.email||'';
+  document.getElementById('roleTag').innerHTML=(me.role_icon||'🟢')+' '+(me.role_label||'Člen');
+  renderMembership(me);
+  if(me.notif_count>0){const b=document.getElementById('notifBadge');b.textContent=me.notif_count>9?'9+':me.notif_count;b.style.display='flex';}
+  const profile=await api('/api/client/profile');
+  if(profile?.loyalty) renderLoyalty(profile.loyalty,profile.milestones||[]);
+  if(profile?.visit_count!==undefined) document.getElementById('mcVisits').textContent=profile.visit_count+' 🎯';
+  renderBookings(profile?.upcoming_bookings||[]);
+  loadReferral();
+  // Show partner dashboard link if user has earnings
+  if(me.user_type==='partner'||me.user_type==='manager'){
+    document.getElementById('partnerDashLink').style.display='block';
+  }
+}
 
 init();
 </script>

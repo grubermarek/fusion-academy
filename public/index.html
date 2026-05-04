@@ -36,16 +36,13 @@ body { background: var(--dark-1); overflow-x: hidden; }
 
 /* ── Hero ── */
 .hero {
-  min-height: 80vh;
+  min-height: 90vh;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 4rem 1.5rem 3rem;
+  padding: 5rem 1.5rem 4rem;
   position: relative;
   overflow: hidden;
-  background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(201,168,76,0.13) 0%, transparent 65%), var(--dark-1);
+  background: radial-gradient(ellipse 80% 60% at 30% 50%, rgba(201,168,76,0.1) 0%, transparent 60%), var(--dark-1);
 }
 .hero::after {
   content: '';
@@ -55,8 +52,21 @@ body { background: var(--dark-1); overflow-x: hidden; }
   background: linear-gradient(90deg, transparent, var(--gold), transparent);
   opacity: .3;
 }
+.hero-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  gap: 3rem;
+  align-items: center;
+}
+@media(max-width: 860px) {
+  .hero-inner { grid-template-columns: 1fr; gap: 2rem; }
+  .hero { padding: 5rem 1.2rem 3rem; min-height: auto; }
+}
 .hero-logo {
-  font-size: clamp(2.5rem, 8vw, 5rem);
+  font-size: clamp(2.2rem, 6vw, 4rem);
   font-weight: 900;
   letter-spacing: 2px;
   background: var(--grad-gold);
@@ -64,23 +74,69 @@ body { background: var(--dark-1); overflow-x: hidden; }
   -webkit-text-fill-color: transparent;
   background-clip: text;
   margin-bottom: .4rem;
-  line-height: 1;
+  line-height: 1.1;
 }
 .hero-tagline {
-  font-size: clamp(1rem, 3vw, 1.4rem);
+  font-size: clamp(.85rem, 2vw, 1.1rem);
   color: var(--cream-soft);
   font-weight: 300;
   letter-spacing: 3px;
   text-transform: uppercase;
-  margin-bottom: 2.5rem;
+  margin-bottom: 1.4rem;
 }
 .hero-desc {
   color: var(--text-muted);
-  max-width: 520px;
+  max-width: 480px;
   line-height: 1.7;
-  margin-bottom: 2.5rem;
-  font-size: .95rem;
+  margin-bottom: 1.8rem;
+  font-size: .92rem;
 }
+
+/* ── Auth card (inline hero) ── */
+.auth-card-hero {
+  background: rgba(18,18,18,.96);
+  border: 1px solid rgba(201,168,76,.25);
+  border-radius: 18px;
+  padding: 28px 28px 24px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5), 0 0 0 1px rgba(201,168,76,.08);
+  backdrop-filter: blur(12px);
+  position: relative;
+}
+.auth-card-hero::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 20px; right: 20px;
+  height: 2px;
+  background: var(--grad-gold);
+  border-radius: 0 0 2px 2px;
+}
+.auth-card-title {
+  text-align: center;
+  margin-bottom: 18px;
+}
+.auth-card-title .logo-text {
+  font-size: 1.15rem;
+  font-weight: 900;
+  background: var(--grad-gold);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.auth-card-title p { font-size: .78rem; color: var(--text-muted); margin-top: 2px; }
+.auth-form-label { font-size: .78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; display: block; }
+.auth-form-input {
+  width: 100%; padding: 10px 13px; background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.1); border-radius: 8px; color: var(--cream);
+  font-size: .9rem; outline: none; transition: border-color .2s;
+}
+.auth-form-input:focus { border-color: rgba(201,168,76,.5); }
+.auth-form-input::placeholder { color: #555; }
+.auth-divider { text-align: center; font-size: .75rem; color: #555; margin: 10px 0; position: relative; }
+.auth-divider::before, .auth-divider::after { content:''; position:absolute; top:50%; width:40%; height:1px; background:#333; }
+.auth-divider::before { left:0; } .auth-divider::after { right:0; }
+.auth-switch { text-align: center; font-size: .78rem; color: var(--text-muted); margin-top: 12px; }
+.auth-switch a { color: var(--gold); cursor: pointer; text-decoration: none; }
+.auth-error { background: rgba(244,67,54,.12); border: 1px solid rgba(244,67,54,.3); color: #ef9a9a; border-radius: 6px; padding: 8px 12px; font-size: .8rem; margin-bottom: 10px; display: none; }
+.auth-success { background: rgba(76,175,80,.12); border: 1px solid rgba(76,175,80,.3); color: #81c784; border-radius: 6px; padding: 8px 12px; font-size: .8rem; margin-bottom: 10px; display: none; }
 
 /* ── Choice grid ── */
 .choices {
@@ -214,18 +270,88 @@ footer a:hover { color: var(--gold); }
     <a class="fa-nav-link" href="/gallery"><i class="bi bi-images me-1"></i>Galéria</a>
     <a class="fa-nav-link" href="/podcast"><i class="bi bi-mic me-1"></i>Podcast</a>
     <a class="fa-nav-link" href="/collaborate"><i class="bi bi-handshake me-1"></i>Spolupráca</a>
-    <a class="fa-nav-link" href="#" onclick="openPartner(event)"><i class="bi bi-person me-1"></i>Partner login</a>
+    <a class="fa-nav-link" href="/client-dashboard" id="navMyAccount" style="display:none"><i class="bi bi-person-circle me-1"></i>Môj účet</a>
+    <a class="fa-nav-link" href="#" onclick="scrollToAuth(event)" id="navLogin"><i class="bi bi-box-arrow-in-right me-1"></i>Prihlásiť sa</a>
   </div>
 </nav>
 
 <!-- Hero -->
 <section class="hero">
-  <div class="hero-logo">FUSION ACADEMY</div>
-  <div class="hero-tagline">Pohyb · Výživa · Komunita</div>
-  <p class="hero-desc">Latinské tance, fitness a wellness pre každého. Pridajte sa k stovkám členov v Banskej Bystrici, Zvolene, Detve, Brezne aj online.</p>
-  <div style="display:flex;gap:.75rem;flex-wrap:wrap;justify-content:center;">
-    <a href="/shop" class="fa-btn fa-btn-gold fa-btn-lg"><i class="bi bi-bag-heart"></i> Otvoriť e-shop</a>
-    <a href="/schedule" class="fa-btn fa-btn-outline fa-btn-lg"><i class="bi bi-calendar3"></i> Zobraziť rozvrh</a>
+  <div class="hero-inner">
+
+    <!-- Left: Branding -->
+    <div>
+      <div class="hero-logo">FUSION<br>ACADEMY</div>
+      <div class="hero-tagline">Pohyb · Výživa · Komunita</div>
+      <p class="hero-desc">Latinské tance, Zumba a fitness pre každého. 4 mestá: Detva, Zvolen, Banská Bystrica, Brezno. Aj online. Prvá hodina <strong style="color:var(--gold)">zadarmo</strong>.</p>
+      <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
+        <a href="/schedule" class="fa-btn fa-btn-gold"><i class="bi bi-calendar3"></i> Rozvrh hodín</a>
+        <a href="/pricing" class="fa-btn fa-btn-outline"><i class="bi bi-tag"></i> Členstvá</a>
+      </div>
+      <div style="display:flex;gap:1.5rem;margin-top:1.8rem;flex-wrap:wrap;">
+        <div style="font-size:.75rem;color:var(--text-muted)"><span style="font-size:1.2rem;font-weight:700;color:var(--gold)">500+</span><br>Spokojných členov</div>
+        <div style="font-size:.75rem;color:var(--text-muted)"><span style="font-size:1.2rem;font-weight:700;color:var(--gold)">4</span><br>Mestá + Online</div>
+        <div style="font-size:.75rem;color:var(--text-muted)"><span style="font-size:1.2rem;font-weight:700;color:var(--gold)">36+</span><br>⭐ recenzií</div>
+      </div>
+    </div>
+
+    <!-- Right: Auth card -->
+    <div class="auth-card-hero" id="heroAuthCard">
+      <div class="auth-card-title">
+        <div class="logo-text">FUSION ACADEMY</div>
+        <p id="authCardSub">Prihlás sa alebo si vytvor účet</p>
+      </div>
+
+      <!-- Login form -->
+      <div id="heroLoginForm">
+        <div class="auth-error" id="heroLoginErr"></div>
+        <div style="margin-bottom:10px">
+          <label class="auth-form-label">Email</label>
+          <input type="email" id="heroEmail" class="auth-form-input" placeholder="vas@email.sk" autocomplete="email">
+        </div>
+        <div style="margin-bottom:14px">
+          <label class="auth-form-label">Heslo</label>
+          <input type="password" id="heroPwd" class="auth-form-input" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <button onclick="heroLogin()" class="fa-btn fa-btn-gold" style="width:100%;justify-content:center;font-size:.95rem;padding:11px">
+          <i class="bi bi-box-arrow-in-right"></i> Prihlásiť sa
+        </button>
+        <div class="auth-divider">alebo</div>
+        <div class="auth-switch">Nemáš účet? <a onclick="showHeroReg()">Zaregistruj sa zadarmo →</a></div>
+      </div>
+
+      <!-- Register form -->
+      <div id="heroRegForm" style="display:none">
+        <div class="auth-error" id="heroRegErr"></div>
+        <div class="auth-success" id="heroRegOk"></div>
+        <div style="margin-bottom:10px">
+          <label class="auth-form-label">Meno a priezvisko</label>
+          <input type="text" id="heroName" class="auth-form-input" placeholder="Jana Nováková" autocomplete="name">
+        </div>
+        <div style="margin-bottom:10px">
+          <label class="auth-form-label">Email</label>
+          <input type="email" id="heroRegEmail" class="auth-form-input" placeholder="vas@email.sk" autocomplete="email">
+        </div>
+        <div style="margin-bottom:10px">
+          <label class="auth-form-label">Heslo <span style="color:#555">(min. 6 znakov)</span></label>
+          <input type="password" id="heroRegPwd" class="auth-form-input" placeholder="••••••••" autocomplete="new-password">
+        </div>
+        <div style="margin-bottom:10px">
+          <label class="auth-form-label">Telefón <span style="color:#555">(nepovinné)</span></label>
+          <input type="tel" id="heroRegPhone" class="auth-form-input" placeholder="+421 9XX XXX XXX">
+        </div>
+        <div style="margin-bottom:14px">
+          <label class="auth-form-label">Kód priateľa <span style="color:#555">(ak ťa niekto pozval)</span></label>
+          <input type="text" id="heroRegCode" class="auth-form-input" placeholder="Napr. JANA42" autocomplete="off" style="text-transform:uppercase">
+        </div>
+        <button onclick="heroRegister()" class="fa-btn fa-btn-gold" style="width:100%;justify-content:center;font-size:.95rem;padding:11px">
+          <i class="bi bi-person-plus"></i> Vytvoriť účet zadarmo
+        </button>
+        <div class="auth-divider">alebo</div>
+        <div class="auth-switch">Už máš účet? <a onclick="showHeroLogin()">Prihlásiť sa →</a></div>
+      </div>
+    </div>
+
   </div>
 </section>
 
@@ -313,167 +439,103 @@ footer a:hover { color: var(--gold); }
   &nbsp;|&nbsp; <a href="/admin">Admin</a>
 </footer>
 
-<!-- ══ PARTNER MODAL ══════════════════════════════════════ -->
-<div class="fa-overlay" id="partnerModal" onclick="closeOnBg(event,'partnerModal')">
-  <div class="fa-modal">
-    <button class="fa-modal-close" onclick="closeModal('partnerModal')"><i class="bi bi-x-lg"></i></button>
-    <div style="text-align:center;margin-bottom:1.2rem;">
-      <div style="font-size:1.6rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">FUSION ACADEMY</div>
-      <div style="font-size:.82rem;color:var(--text-muted);">Partner Program</div>
-    </div>
-
-    <!-- Role selector (Client vs Partner) -->
-    <div style="display:flex;gap:8px;margin-bottom:14px" id="roleSelector">
-      <button onclick="setLoginRole('client')" id="roleBtn-client"
-        style="flex:1;padding:9px;border-radius:8px;font-size:.82rem;font-weight:700;cursor:pointer;transition:all .2s;background:rgba(201,168,76,.18);border:1px solid var(--gold-light);color:#C9A84C">
-        🏃 Som klient
-      </button>
-      <button onclick="setLoginRole('partner')" id="roleBtn-partner"
-        style="flex:1;padding:9px;border-radius:8px;font-size:.82rem;font-weight:700;cursor:pointer;transition:all .2s;background:none;border:1px solid #333;color:#888">
-        🤝 Som partner
-      </button>
-    </div>
-
-    <div class="auth-tabs" id="authTabs">
-      <button class="auth-tab active" data-t="login">Prihlásenie</button>
-      <button class="auth-tab" data-t="register">Registrácia</button>
-    </div>
-
-    <!-- Login -->
-    <div id="tLogin">
-      <div id="loginErr" class="fa-alert-danger d-none mb-3"></div>
-      <div class="mb-3">
-        <label class="fa-label">Email</label>
-        <input type="email" id="lEmail" class="fa-input form-control" placeholder="vas@email.sk">
-      </div>
-      <div class="mb-3">
-        <label class="fa-label">Heslo</label>
-        <input type="password" id="lPwd" class="fa-input form-control" placeholder="••••••••">
-      </div>
-      <button class="fa-btn fa-btn-gold" style="width:100%;justify-content:center;" onclick="doLogin()">
-        <i class="bi bi-box-arrow-in-right"></i> Prihlásiť sa
-      </button>
-    </div>
-
-    <!-- Register -->
-    <div id="tRegister" style="display:none">
-      <div style="background:var(--dark-4);border:1px solid var(--gold-border);border-radius:.8rem;padding:1rem;margin-bottom:1rem;">
-        <div class="feature-row">✅ Registrácia je <strong style="color:var(--cream)">bezplatná</strong></div>
-        <div class="feature-row">💰 Zarábajte z predaja – až 8 % z každej objednávky</div>
-        <div class="feature-row">👥 Budujte tím do 7 úrovní hĺbky</div>
-      </div>
-      <div id="regErr" class="fa-alert-danger d-none mb-3"></div>
-      <div class="mb-2">
-        <label class="fa-label">Celé meno *</label>
-        <input type="text" id="rName" class="fa-input form-control" placeholder="Mária Nováková">
-      </div>
-      <div class="mb-2">
-        <label class="fa-label">Email *</label>
-        <input type="email" id="rEmail" class="fa-input form-control" placeholder="maria@email.sk">
-      </div>
-      <div class="mb-2">
-        <label class="fa-label">Heslo *</label>
-        <input type="password" id="rPwd" class="fa-input form-control" placeholder="Minimálne 6 znakov">
-      </div>
-      <div class="mb-2">
-        <label class="fa-label">Telefón</label>
-        <input type="tel" id="rPhone" class="fa-input form-control" placeholder="+421 9XX XXX XXX">
-      </div>
-      <div class="mb-3" id="sponsorRow">
-        <label class="fa-label">Referral kód sponzora <span style="color:#888;font-size:.78rem">(len pre partnerov)</span></label>
-        <input type="text" id="rCode" class="fa-input form-control" placeholder="Napr. MAREK42 (ak máte)">
-      </div>
-      <button class="fa-btn fa-btn-gold" style="width:100%;justify-content:center;" onclick="doRegister()">
-        <i class="bi bi-person-plus"></i> Zaregistrovať sa zadarmo
-      </button>
-    </div>
-  </div>
-</div>
-
 <script>
-// Tabs
-document.querySelectorAll('.auth-tab').forEach(b => {
-  b.onclick = () => {
-    document.querySelectorAll('.auth-tab').forEach(x => x.classList.remove('active'));
-    b.classList.add('active');
-    document.getElementById('tLogin').style.display    = b.dataset.t === 'login' ? '' : 'none';
-    document.getElementById('tRegister').style.display = b.dataset.t === 'register' ? '' : 'none';
-  };
+// ── Check if already logged in ───────────────────────────────────────────────
+(async function(){
+  try {
+    const me = await fetch('/api/me',{credentials:'include'}).then(r=>r.json());
+    if(me?.id){
+      // Already logged in — show "Môj účet" in nav, swap hero card to logged-in state
+      document.getElementById('navLogin').style.display='none';
+      document.getElementById('navMyAccount').style.display='';
+      const card=document.getElementById('heroAuthCard');
+      const dashUrl = me.is_admin?'/admin':me.user_type==='trainer'?'/trainer':'/client-dashboard';
+      card.innerHTML=`
+        <div style="text-align:center;padding:8px 0 4px">
+          <div style="font-size:2rem;margin-bottom:8px">👋</div>
+          <div style="font-size:1.05rem;font-weight:700;color:#C9A84C;margin-bottom:4px">Vitaj späť, ${me.name?.split(' ')[0]}!</div>
+          <div style="font-size:.8rem;color:#888;margin-bottom:18px">${me.email}</div>
+          <a href="${dashUrl}" class="fa-btn fa-btn-gold" style="width:100%;justify-content:center;margin-bottom:10px;font-size:.95rem;display:flex">
+            <i class="bi bi-speedometer2 me-2"></i> Otvoriť môj účet
+          </a>
+          <button onclick="doLogout()" style="width:100%;background:none;border:1px solid #333;color:#888;padding:9px;border-radius:8px;cursor:pointer;font-size:.82rem;transition:all .2s"
+            onmouseover="this.style.borderColor='#f44336';this.style.color='#ef9a9a'" onmouseout="this.style.borderColor='#333';this.style.color='#888'">
+            <i class="bi bi-box-arrow-right me-1"></i> Odhlásiť sa
+          </button>
+        </div>`;
+    }
+  } catch(e){}
+})();
+
+async function doLogout(){
+  await fetch('/api/logout',{method:'POST',credentials:'include'});
+  window.location.reload();
+}
+
+function scrollToAuth(e){
+  e&&e.preventDefault();
+  document.getElementById('heroAuthCard')?.scrollIntoView({behavior:'smooth',block:'center'});
+  setTimeout(()=>document.getElementById('heroEmail')?.focus(),400);
+}
+
+function showHeroLogin(){
+  document.getElementById('heroLoginForm').style.display='';
+  document.getElementById('heroRegForm').style.display='none';
+  document.getElementById('authCardSub').textContent='Prihlás sa do svojho účtu';
+  setTimeout(()=>document.getElementById('heroEmail')?.focus(),100);
+}
+function showHeroReg(){
+  document.getElementById('heroLoginForm').style.display='none';
+  document.getElementById('heroRegForm').style.display='';
+  document.getElementById('authCardSub').textContent='Vytvor si účet zadarmo';
+  setTimeout(()=>document.getElementById('heroName')?.focus(),100);
+}
+
+function showErr(id, msg){ const e=document.getElementById(id); e.textContent=msg; e.style.display=msg?'block':'none'; }
+
+async function heroLogin(){
+  const email=document.getElementById('heroEmail').value.trim();
+  const password=document.getElementById('heroPwd').value;
+  showErr('heroLoginErr','');
+  if(!email||!password){showErr('heroLoginErr','Vyplňte email a heslo');return;}
+  try{
+    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password}),credentials:'include'});
+    const d=await r.json();
+    if(!r.ok){showErr('heroLoginErr',d.error||'Nesprávne údaje');return;}
+    window.location.href=d.redirect_to||'/client-dashboard';
+  }catch{showErr('heroLoginErr','Chyba pripojenia');}
+}
+
+async function heroRegister(){
+  const name=document.getElementById('heroName').value.trim();
+  const email=document.getElementById('heroRegEmail').value.trim();
+  const password=document.getElementById('heroRegPwd').value;
+  const phone=document.getElementById('heroRegPhone').value.trim();
+  const sponsorCode=document.getElementById('heroRegCode').value.trim().toUpperCase();
+  showErr('heroRegErr','');
+  if(!name||!email||!password){showErr('heroRegErr','Vyplňte meno, email a heslo');return;}
+  if(password.length<6){showErr('heroRegErr','Heslo musí mať aspoň 6 znakov');return;}
+  try{
+    const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password,phone,sponsorCode,user_type:'client'}),credentials:'include'});
+    const d=await r.json();
+    if(!r.ok){showErr('heroRegErr',d.error||'Chyba registrácie');return;}
+    window.location.href=d.redirect_to||'/client-dashboard';
+  }catch{showErr('heroRegErr','Chyba pripojenia');}
+}
+
+// Enter key shortcuts
+document.addEventListener('keydown',e=>{
+  if(e.key==='Enter'){
+    if(document.getElementById('heroLoginForm').style.display!=='none'&&document.activeElement?.closest('#heroLoginForm')) heroLogin();
+    else if(document.getElementById('heroRegForm').style.display!=='none'&&document.activeElement?.closest('#heroRegForm')) heroRegister();
+  }
 });
 
-function openPartner(e) {
-  if (e) e.preventDefault();
-  const ref = new URLSearchParams(window.location.search).get('ref');
-  if (ref) { document.getElementById('rCode').value = ref; switchToReg(); }
-  document.getElementById('partnerModal').classList.add('show');
-  document.body.style.overflow = 'hidden';
-  setTimeout(() => document.getElementById('lEmail').focus(), 50);
-}
-function closeModal(id) { document.getElementById(id).classList.remove('show'); document.body.style.overflow = ''; }
-function closeOnBg(e, id) { if (e.target.id === id) closeModal(id); }
-function switchToReg() { document.querySelectorAll('.auth-tab')[1].click(); }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal('partnerModal'); });
-
-// Auto-open if ?partner or ?ref
-(function(){ const p = new URLSearchParams(location.search); if(p.has('partner')||p.has('ref')) openPartner(); })();
-
-document.getElementById('lPwd').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
-document.getElementById('rPwd').addEventListener('keydown', e => { if(e.key==='Enter') doRegister(); });
-
-// Role selector
-let _loginRole = 'client';
-function setLoginRole(role) {
-  _loginRole = role;
-  const cBtn = document.getElementById('roleBtn-client');
-  const pBtn = document.getElementById('roleBtn-partner');
-  const sRow = document.getElementById('sponsorRow');
-  if(role === 'client') {
-    cBtn.style.cssText = 'flex:1;padding:9px;border-radius:8px;font-size:.82rem;font-weight:700;cursor:pointer;transition:all .2s;background:rgba(201,168,76,.18);border:1px solid var(--gold-light);color:#C9A84C';
-    pBtn.style.cssText = 'flex:1;padding:9px;border-radius:8px;font-size:.82rem;font-weight:700;cursor:pointer;transition:all .2s;background:none;border:1px solid #333;color:#888';
-    if(sRow) sRow.style.display='none';
-  } else {
-    pBtn.style.cssText = 'flex:1;padding:9px;border-radius:8px;font-size:.82rem;font-weight:700;cursor:pointer;transition:all .2s;background:rgba(201,168,76,.18);border:1px solid var(--gold-light);color:#C9A84C';
-    cBtn.style.cssText = 'flex:1;padding:9px;border-radius:8px;font-size:.82rem;font-weight:700;cursor:pointer;transition:all .2s;background:none;border:1px solid #333;color:#888';
-    if(sRow) sRow.style.display='block';
-  }
-}
-// Init: hide sponsor row for default (client)
-(function(){ const s=document.getElementById('sponsorRow'); if(s) s.style.display='none'; })();
-
-async function doLogin() {
-  const email = document.getElementById('lEmail').value.trim();
-  const password = document.getElementById('lPwd').value;
-  const err = document.getElementById('loginErr');
-  err.className = 'fa-alert-danger d-none mb-3';
-  if (!email || !password) { err.textContent='Vyplňte email a heslo'; err.classList.remove('d-none'); return; }
-  try {
-    const r = await fetch('/api/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
-    const d = await r.json();
-    if (!r.ok) { err.textContent = d.error||'Nesprávne údaje'; err.classList.remove('d-none'); return; }
-    // Use server-provided redirect, fallback by role hint
-    window.location.href = d.redirect_to || (d.isAdmin ? '/admin' : (_loginRole==='client' ? '/client-dashboard' : '/dashboard'));
-  } catch { err.textContent='Chyba pripojenia'; err.classList.remove('d-none'); }
-}
-
-async function doRegister() {
-  const name=document.getElementById('rName').value.trim();
-  const email=document.getElementById('rEmail').value.trim();
-  const password=document.getElementById('rPwd').value;
-  const phone=document.getElementById('rPhone').value.trim();
-  const sponsorCode=document.getElementById('rCode').value.trim().toUpperCase();
-  const err=document.getElementById('regErr');
-  err.className='fa-alert-danger d-none mb-3';
-  if(!name||!email||!password){err.textContent='Vyplňte povinné polia';err.classList.remove('d-none');return;}
-  if(password.length<6){err.textContent='Heslo musí mať aspoň 6 znakov';err.classList.remove('d-none');return;}
-  // Pass user_type based on role selection
-  const user_type = _loginRole === 'partner' ? 'partner' : 'lead';
-  try {
-    const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password,phone,sponsorCode,user_type})});
-    const d=await r.json();
-    if(!r.ok){err.textContent=d.error||'Chyba registrácie';err.classList.remove('d-none');return;}
-    window.location.href = d.redirect_to || (_loginRole==='client' ? '/client-dashboard' : '/dashboard');
-  } catch{err.textContent='Chyba pripojenia';err.classList.remove('d-none');}
-}
+// Auto-fill referral code from URL
+(function(){
+  const ref=new URLSearchParams(location.search).get('ref');
+  if(ref){ const el=document.getElementById('heroRegCode'); if(el){el.value=ref; showHeroReg();} }
+})();
 </script>
 </body>
 </html>

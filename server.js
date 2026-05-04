@@ -175,12 +175,12 @@ function userPublic(u) {
   };
 }
 
-// Resolve dash URL from user object
+// Resolve dash URL from user object — one portal for everyone except trainer/admin
 function dashUrlFor(u) {
   if (!u) return '/';
-  if (u.is_admin) return '/admin';
-  const role = USER_ROLES[u.user_type];
-  return role ? role.dashUrl : '/client-dashboard';
+  if (u.is_admin || u.user_type === 'admin') return '/admin';
+  if (u.user_type === 'trainer') return '/trainer';
+  return '/client-dashboard'; // client, lead, partner, manager → all get unified portal
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
@@ -494,8 +494,8 @@ app.post('/api/register', async(req,res)=>{
     const base=name.split(' ')[0].toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8);
     let code=base+Math.floor(10+Math.random()*90);
     while(await q.one(db.users,{referral_code:code})) code=base+Math.floor(100+Math.random()*900);
-    // Default: partner registration if sponsorCode provided, else lead
-    const utype = user_type || (sponsorCode && sponsorCode.toUpperCase()!=='ADMIN' ? 'partner' : 'lead');
+    // All new users are 'client' — they can earn referral rewards right away
+    const utype = user_type || 'client';
     const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,created_at:today()});
     req.session.uid=u._id;
     // Send welcome email to new lead/client
@@ -1720,6 +1720,15 @@ app.get('/api/me', async(req,res)=>{
   });
 });
 
+// ─── Referral reward tiers (configurable) ────────────────────────────────────
+const REFERRAL_REWARDS = [
+  { referrals:1,  reward:'Zľava 10 % na ďalší nákup',       badge:'🌱' },
+  { referrals:3,  reward:'Mesiac Bronze zadarmo',             badge:'🥉' },
+  { referrals:5,  reward:'Fusion tričko + 15 % zľava',       badge:'🥈' },
+  { referrals:10, reward:'2 mesiace Silver zadarmo',          badge:'🥇' },
+  { referrals:20, reward:'Ročné Gold členstvo zadarmo',       badge:'💎' },
+];
+
 // ─── Client profile (detailed) ────────────────────────────────────────────────
 app.get('/api/client/profile', auth, async(req,res)=>{
   try {
@@ -1737,6 +1746,40 @@ app.get('/api/client/profile', auth, async(req,res)=>{
       upcoming_bookings: upcoming.slice(0,5),
       notif_count: notifCount,
       milestones: LOYALTY_MILESTONES,
+    });
+  } catch(e){res.status(500).json({error:e.message});}
+});
+
+// ─── Referral stats ───────────────────────────────────────────────────────────
+app.get('/api/client/referral', auth, async(req,res)=>{
+  try {
+    const u = await q.one(db.users,{_id:req.session.uid});
+    if(!u) return res.status(404).json({error:'Nenájdený'});
+    // How many people registered using my code
+    const referrals = await q.find(db.users,{sponsor_id:u._id});
+    const refCount = referrals.length;
+    // How much earned from referral commissions
+    const comms = await q.find(db.commissions,{partner_id:u._id});
+    const earned = comms.reduce((s,c)=>s+(c.amount||0),0);
+    const pendingEarned = comms.filter(c=>c.status==='pending').reduce((s,c)=>s+(c.amount||0),0);
+    const paidEarned = comms.filter(c=>c.status==='paid').reduce((s,c)=>s+(c.amount||0),0);
+    // Find current + next referral reward tier
+    let currentTier = null, nextTier = null;
+    for(const t of REFERRAL_REWARDS) {
+      if(refCount >= t.referrals) currentTier = t;
+      else { nextTier = t; break; }
+    }
+    const refLink = 'https://latindancefusion.art/r/' + (u.referral_code||'');
+    res.json({
+      referral_code: u.referral_code,
+      ref_link: refLink,
+      ref_count: refCount,
+      earned_total: +earned.toFixed(2),
+      earned_pending: +pendingEarned.toFixed(2),
+      earned_paid: +paidEarned.toFixed(2),
+      current_tier: currentTier,
+      next_tier: nextTier,
+      all_tiers: REFERRAL_REWARDS,
     });
   } catch(e){res.status(500).json({error:e.message});}
 });
