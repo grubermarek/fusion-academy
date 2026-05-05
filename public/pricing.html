@@ -125,6 +125,20 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',sans-ser
   </div>
 </section>
 
+<!-- REFERRAL CREDIT BANNER (shown when logged in with credit) -->
+<div id="creditBanner" style="display:none;background:linear-gradient(135deg,rgba(201,168,76,.15),rgba(201,168,76,.05));border-bottom:1px solid rgba(201,168,76,.25);padding:12px 0">
+  <div class="container d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="font-size:1.5rem">💳</span>
+      <div>
+        <div style="font-size:.9rem;font-weight:700;color:var(--gold)">Máš <span id="bannerCredit">0 €</span> referral kredit!</div>
+        <div style="font-size:.78rem;color:rgba(245,237,214,.6)">Použiješ ho ako zľavu pri kúpe členstva kliknutím na plán.</div>
+      </div>
+    </div>
+    <a href="/client-dashboard" style="font-size:.8rem;color:var(--gold);text-decoration:none;opacity:.8">Spravovať kredit →</a>
+  </div>
+</div>
+
 <div class="container py-5">
 
   <!-- CATEGORY TABS -->
@@ -159,7 +173,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',sans-ser
           <li><i class="fas fa-times cross"></i>Jedálniček na mieru</li>
           <li><i class="fas fa-times cross"></i>F1 kokteil zahrnutý</li>
         </ul>
-        <button class="btn-plan btn-plan-outline" onclick="window.location='/'">Začať zadarmo</button>
+        <button class="btn-plan btn-plan-outline" onclick="openBuyModal('bronze','🥉 Bronze','50')">Vybrať Bronze</button>
       </div>
 
       <!-- SILVER (featured) -->
@@ -177,7 +191,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',sans-ser
           <li><i class="fas fa-times cross"></i>F1 kokteil zahrnutý</li>
           <li><i class="fas fa-times cross"></i>Jedálniček s porciami na mieru</li>
         </ul>
-        <button class="btn-plan btn-plan-gold" onclick="window.location='/'">Vybrať Silver</button>
+        <button class="btn-plan btn-plan-gold" onclick="openBuyModal('silver','🥈 Silver','65')">Vybrať Silver</button>
       </div>
 
       <!-- GOLD -->
@@ -194,7 +208,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',sans-ser
           <li><i class="fas fa-check check"></i>20 % zľava na súkromné hodiny & eventy</li>
           <li><i class="fas fa-check check"></i>Prioritné miesta na FitDays</li>
         </ul>
-        <button class="btn-plan btn-plan-gold" onclick="window.location='/'">Vybrať Gold</button>
+        <button class="btn-plan btn-plan-gold" onclick="openBuyModal('gold','🥇 Gold','125')">Vybrať Gold</button>
       </div>
 
     </div>
@@ -545,19 +559,125 @@ function showCat(id, btn){
 function toggleFaq(el){
   el.classList.toggle('open');
 }
-// ── Nav login state ───────────────────────────────────────────────────────────
+
+// ── Session + credit ──────────────────────────────────────────────────────────
+let _pricingMe = null;
 (async function(){
   try {
     const me = await fetch('/api/me',{credentials:'include'}).then(r=>r.json());
+    _pricingMe = me?.id ? me : null;
     if(me?.id){
       document.getElementById('navLoginBtn').style.display='none';
       document.getElementById('navDashBtn').style.display='inline-block';
       const dashUrl = me.is_admin?'/admin':me.user_type==='trainer'?'/trainer':'/client-dashboard';
       document.getElementById('navDashBtn').href = dashUrl;
       document.getElementById('navDashBtn').textContent = '👤 '+me.name.split(' ')[0];
+      // Show credit banner if user has credit
+      if((me.referral_credit||0) > 0){
+        document.getElementById('creditBanner').style.display='block';
+        document.getElementById('bannerCredit').textContent = me.referral_credit.toFixed(2)+' €';
+      }
     }
   } catch(e){}
 })();
+
+// ── Buy modal ─────────────────────────────────────────────────────────────────
+let _buyPlanId = null, _buyPrice = 0;
+
+function openBuyModal(planId, planName, price){
+  if(!_pricingMe){
+    window.location.href = '/?buy='+planId;
+    return;
+  }
+  _buyPlanId = planId;
+  _buyPrice = parseFloat(price);
+  const credit = _pricingMe.referral_credit||0;
+  const creditApply = Math.min(credit, _buyPrice);
+  const finalPrice = Math.max(0, +(_buyPrice - creditApply).toFixed(2));
+
+  document.getElementById('buyModalTitle').textContent = planName;
+  document.getElementById('buyOrigPrice').textContent = _buyPrice.toFixed(2)+' €';
+  document.getElementById('buyCreditRow').style.display = credit > 0 ? 'flex' : 'none';
+  document.getElementById('buyCreditAmount').textContent = '-'+creditApply.toFixed(2)+' €';
+  document.getElementById('buyFinalPrice').textContent = finalPrice.toFixed(2)+' €';
+  document.getElementById('buyCreditCheckbox').checked = credit > 0;
+  document.getElementById('buyCreditAvail').textContent = credit.toFixed(2)+' €';
+  updateBuyTotal();
+  document.getElementById('buyModal').style.display='flex';
+}
+
+function updateBuyTotal(){
+  const credit = _pricingMe?.referral_credit||0;
+  const useCredit = document.getElementById('buyCreditCheckbox').checked;
+  const creditApply = useCredit ? Math.min(credit, _buyPrice) : 0;
+  const final = Math.max(0, +(_buyPrice - creditApply).toFixed(2));
+  document.getElementById('buyCreditAmount').textContent = '-'+creditApply.toFixed(2)+' €';
+  document.getElementById('buyFinalPrice').textContent = final.toFixed(2)+' €';
+  document.getElementById('buyBtnLabel').textContent = final === 0 ? 'Aktivovať pomocou kreditu' : `Pokračovať k platbe (${final.toFixed(2)} €)`;
+}
+
+async function confirmBuy(){
+  if(!_buyPlanId) return;
+  const useCredit = document.getElementById('buyCreditCheckbox').checked;
+  const btn = document.getElementById('buyConfirmBtn');
+  btn.disabled = true; btn.textContent = '⏳ Spracúvam...';
+  try {
+    const r = await fetch('/api/membership/buy',{
+      method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({plan_id:_buyPlanId, payment_method:'manual', use_referral_credit:useCredit})
+    }).then(r=>r.json());
+    document.getElementById('buyModal').style.display='none';
+    if(r.ok){
+      const msg = r.final_price===0
+        ? `✅ Členstvo aktivované pomocou referral kreditu!`
+        : `✅ Žiadosť odoslaná! ${r.credit_used>0?`Kredit ${r.credit_used.toFixed(2)} € uplatnený. `:''} Zostatok na úhradu: ${r.final_price?.toFixed(2)} €`;
+      alert(msg);
+      // Refresh credit in nav
+      const me2 = await fetch('/api/me',{credentials:'include'}).then(r=>r.json());
+      _pricingMe = me2;
+      if((me2.referral_credit||0) > 0){
+        document.getElementById('creditBanner').style.display='block';
+        document.getElementById('bannerCredit').textContent = me2.referral_credit.toFixed(2)+' €';
+      } else {
+        document.getElementById('creditBanner').style.display='none';
+      }
+    } else {
+      alert('Chyba: '+(r.error||'?'));
+    }
+  } catch(e){ alert('Chyba pripojenia'); }
+  btn.disabled=false;
+}
 </script>
+
+<!-- BUY MODAL -->
+<div id="buyModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:#1a1a1a;border:1px solid rgba(201,168,76,.3);border-radius:1.2rem;padding:2rem;max-width:400px;width:92%;position:relative">
+    <button onclick="document.getElementById('buyModal').style.display='none'" style="position:absolute;top:14px;right:14px;background:none;border:none;color:#888;font-size:1.3rem;cursor:pointer">✕</button>
+    <div style="font-size:1.1rem;font-weight:800;color:#F5EDD6;margin-bottom:20px" id="buyModalTitle">Členstvo</div>
+    <!-- Price breakdown -->
+    <div style="background:#111;border-radius:.75rem;padding:14px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:.88rem">
+        <span style="color:rgba(245,237,214,.6)">Cena plánu</span>
+        <span id="buyOrigPrice" style="color:#F5EDD6">—</span>
+      </div>
+      <div id="buyCreditRow" style="display:none;justify-content:space-between;margin-bottom:8px;font-size:.88rem;align-items:center">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:rgba(201,168,76,.9)">
+          <input type="checkbox" id="buyCreditCheckbox" onchange="updateBuyTotal()" style="accent-color:#C9A84C">
+          💳 Referral kredit (<span id="buyCreditAvail">0</span> k dispozícii)
+        </label>
+        <span id="buyCreditAmount" style="color:#4ade80">-0 €</span>
+      </div>
+      <div style="border-top:1px solid #333;padding-top:8px;display:flex;justify-content:space-between;font-weight:700">
+        <span style="color:#F5EDD6">Celkom</span>
+        <span id="buyFinalPrice" style="color:#C9A84C;font-size:1.1rem">—</span>
+      </div>
+    </div>
+    <p style="font-size:.78rem;color:rgba(245,237,214,.45);margin-bottom:14px">Platba prevodom na účet alebo v hotovosti na mieste. Členstvo aktivujeme po prijatí platby.</p>
+    <button id="buyConfirmBtn" onclick="confirmBuy()" style="width:100%;padding:.8rem;background:linear-gradient(135deg,#C9A84C,#F0C060);border:none;border-radius:.75rem;font-weight:800;color:#0f0f0f;cursor:pointer;font-size:.95rem">
+      <span id="buyBtnLabel">Pokračovať k platbe</span>
+    </button>
+  </div>
+</div>
 </body>
 </html>

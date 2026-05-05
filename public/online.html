@@ -173,7 +173,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',system-u
 </div>
 
 <!-- Login modal -->
-<div id="loginModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:500;align-items:center;justify-content:center;" class="d-flex">
+<div id="loginModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:500;align-items:center;justify-content:center;">
   <div style="background:var(--dark-2);border:1px solid var(--gold-border);border-radius:1.2rem;padding:2rem;max-width:380px;width:90%">
     <h4 style="color:var(--cream);margin-bottom:1.2rem">Prihlásiť sa</h4>
     <input type="email" id="lEmail" placeholder="Email" class="form-control mb-2"><br>
@@ -201,7 +201,7 @@ function toast(msg, type='info'){
 
 async function api(url, opts={}){
   try {
-    const r = await fetch(url, {headers:{'Content-Type':'application/json'},...opts, body:opts.body?JSON.stringify(opts.body):undefined});
+    const r = await fetch(url, {credentials:'include', headers:{'Content-Type':'application/json'},...opts, body:opts.body?JSON.stringify(opts.body):undefined});
     return r.json();
   } catch(e){ return {error:e.message}; }
 }
@@ -328,7 +328,7 @@ function renderPayPalButtons(orderId, planId){
   }).render('#paypalButtonContainer');
 }
 
-function openLogin(){ document.getElementById('loginModal').style.display='flex'; }
+function openLogin(){ const m=document.getElementById('loginModal'); m.style.display='flex'; m.style.alignItems='center'; m.style.justifyContent='center'; }
 function closeModal(){ document.getElementById('loginModal').style.display='none'; }
 
 async function doLogin(){

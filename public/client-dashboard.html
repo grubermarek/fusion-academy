@@ -258,7 +258,7 @@
       </button>
     </div>
     <!-- Earnings summary -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
       <div style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:12px;text-align:center">
         <div style="font-size:1.3rem;font-weight:700;color:var(--gold)" id="refEarned">0 €</div>
         <div style="font-size:.72rem;color:var(--muted)">Celkové zárobky</div>
@@ -266,6 +266,37 @@
       <div style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:12px;text-align:center">
         <div style="font-size:1.3rem;font-weight:700;color:#ff9800" id="refPending">0 €</div>
         <div style="font-size:.72rem;color:var(--muted)">Čakajúce na výplatu</div>
+      </div>
+      <div style="background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.3);border-radius:8px;padding:12px;text-align:center;cursor:pointer" onclick="toggleCreditPanel()">
+        <div style="font-size:1.3rem;font-weight:700;color:var(--gold)" id="refCreditBalance">0 €</div>
+        <div style="font-size:.72rem;color:var(--muted)">💳 Referral kredit</div>
+      </div>
+    </div>
+    <!-- Credit action panel -->
+    <div id="creditPanel" style="display:none;background:rgba(201,168,76,.06);border:1px solid rgba(201,168,76,.2);border-radius:12px;padding:16px;margin-bottom:14px">
+      <div style="font-size:.85rem;font-weight:700;color:var(--gold);margin-bottom:10px">💳 Referral kredit – čo s ním?</div>
+      <div style="display:grid;gap:8px">
+        <a href="/pricing" style="display:flex;align-items:center;gap:10px;background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:11px 14px;text-decoration:none;color:var(--text);transition:border-color .2s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='#333'">
+          <span style="font-size:1.4rem">🏷️</span>
+          <div>
+            <div style="font-size:.85rem;font-weight:600">Zľava na členstvo</div>
+            <div style="font-size:.75rem;color:var(--muted)">Použiť kredit pri kúpe Bronze / Silver / Gold</div>
+          </div>
+        </a>
+        <a href="/shop" style="display:flex;align-items:center;gap:10px;background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:11px 14px;text-decoration:none;color:var(--text);transition:border-color .2s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='#333'">
+          <span style="font-size:1.4rem">🛍️</span>
+          <div>
+            <div style="font-size:.85rem;font-weight:600">Nákup v e-shope</div>
+            <div style="font-size:.75rem;color:var(--muted)">Merch, Herbalife produkty – zaplatiť kreditom</div>
+          </div>
+        </a>
+        <button onclick="requestCreditPayout()" style="display:flex;align-items:center;gap:10px;background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:11px 14px;cursor:pointer;width:100%;text-align:left;color:var(--text);transition:border-color .2s" onmouseover="this.style.borderColor='#4caf50'" onmouseout="this.style.borderColor='#333'">
+          <span style="font-size:1.4rem">💸</span>
+          <div>
+            <div style="font-size:.85rem;font-weight:600">Vyplatiť na bankový účet</div>
+            <div style="font-size:.75rem;color:var(--muted)">Minimálna výplata 5 € · Spracovanie do 3 dní</div>
+          </div>
+        </button>
       </div>
     </div>
     <!-- Next referral reward -->
@@ -524,6 +555,18 @@ document.addEventListener('click', e=>{
 
 // ── Referral ──────────────────────────────────────────────────────────────────
 let _refLink = '';
+let _creditPanelOpen = false;
+function toggleCreditPanel(){
+  _creditPanelOpen = !_creditPanelOpen;
+  document.getElementById('creditPanel').style.display = _creditPanelOpen ? 'block' : 'none';
+}
+
+async function requestCreditPayout(){
+  const d = await api('/api/client/referral-credit/payout',{method:'POST'});
+  if(d?.ok){ showToast('Žiadosť odoslaná! Výplata do 3 dní 💸','success'); loadReferral(); }
+  else showToast(d?.error||'Chyba','error');
+}
+
 async function loadReferral(){
   const d = await api('/api/client/referral');
   if(!d||d.error) return;
@@ -532,6 +575,7 @@ async function loadReferral(){
   document.getElementById('refLinkText').textContent = _refLink||'—';
   document.getElementById('refEarned').textContent = (d.earned_total||0).toFixed(2)+' €';
   document.getElementById('refPending').textContent = (d.earned_pending||0).toFixed(2)+' €';
+  document.getElementById('refCreditBalance').textContent = (d.referral_credit||0).toFixed(2)+' €';
   // Next reward
   if(d.next_tier){
     document.getElementById('refNextReward').style.display='block';

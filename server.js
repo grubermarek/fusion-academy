@@ -496,8 +496,18 @@ app.post('/api/register', async(req,res)=>{
     while(await q.one(db.users,{referral_code:code})) code=base+Math.floor(100+Math.random()*900);
     // All new users are 'client' — they can earn referral rewards right away
     const utype = user_type || 'client';
-    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,created_at:today()});
+    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,referral_credit:0,created_at:today()});
     req.session.uid=u._id;
+    // ── Give sponzor referral credit (5€ za každého nového člena) ─────────────
+    if(sponsor_id){
+      const REFERRAL_SIGNUP_CREDIT = 5; // € za registráciu
+      const sp = await q.one(db.users,{_id:sponsor_id});
+      if(sp){
+        const newCredit = +((sp.referral_credit||0) + REFERRAL_SIGNUP_CREDIT).toFixed(2);
+        await q.update(db.users,{_id:sponsor_id},{$set:{referral_credit: newCredit}});
+        await q.insert(db.notifications,{user_id:sponsor_id,type:'referral_credit',title:`+${REFERRAL_SIGNUP_CREDIT} € referral kredit! 🎉`,body:`${name} sa zaregistroval/a cez tvoj link. Zostatok: ${newCredit} €`,read:false,created_at:nowISO()});
+      }
+    }
     // Send welcome email to new lead/client
     sendMail(email, 'Vitaj vo Fusion Academy! 🎉', `<h2>Vitaj, ${name}! 🎉</h2><p>Registrácia prebehla úspešne. Tešíme sa, že si súčasťou Fusion Academy!</p><p>👉 <a href="https://latindancefusion.art/schedule">Pozri rozvrh hodín</a> a zarezervuj si prvú lekciu – prvá hodina je <b>ZADARMO</b>!</p><p>Ak máš otázky, napíš nám: <a href="mailto:info@fusionacademy.sk">info@fusionacademy.sk</a></p><p><i>Fusion Academy tím 💃</i></p>`).catch(()=>{});
     res.json({ok:true, userType:utype, redirect_to: dashUrlFor(u)});
@@ -525,7 +535,7 @@ app.get('/api/shop/products', async(req,res)=>{
 
 app.post('/api/shop/order', async(req,res)=>{
   try {
-    const {client_name,client_email,client_phone,referral_code,city,items,notes,payment_method}=req.body;
+    const {client_name,client_email,client_phone,referral_code,city,items,notes,payment_method,use_referral_credit}=req.body;
     if(!client_name||!client_email||!items?.length) return res.status(400).json({error:'Meno, email a košík sú povinné'});
     let partner_id=null, partner_name=null;
     if(referral_code?.trim()){
@@ -541,9 +551,21 @@ app.post('/api/shop/order', async(req,res)=>{
       enriched.push({product_id:prod._id,product_name:prod.name,price:prod.price,qty:item.qty,subtotal,commission_rate:prod.commission_rate});
     }
     total=+total.toFixed(2);
+    // ── Apply referral credit ─────────────────────────────────────────────────
+    let creditUsed = 0;
+    let finalTotal = total;
+    if(use_referral_credit && req.session?.uid){
+      const buyer = await q.one(db.users,{_id:req.session.uid});
+      if(buyer && (buyer.referral_credit||0) > 0){
+        creditUsed = Math.min(buyer.referral_credit, total);
+        finalTotal = Math.max(0, +(total - creditUsed).toFixed(2));
+        await q.update(db.users,{_id:buyer._id},{$set:{referral_credit:+((buyer.referral_credit)-creditUsed).toFixed(2)}});
+        await q.insert(db.notifications,{user_id:buyer._id,type:'credit',title:`Referral kredit použitý v e-shope 🛍`,body:`Zľava ${creditUsed.toFixed(2)} € na objednávku. Nový zostatok: ${((buyer.referral_credit)-creditUsed).toFixed(2)} €`,read:false,created_at:nowISO()});
+      }
+    }
     const order_number='FA-'+new Date().getFullYear()+'-'+oid();
-    const order=await q.insert(db.orders,{order_number,client_name,client_email:client_email.toLowerCase().trim(),client_phone:client_phone||'',referral_code:referral_code?.trim()||'',partner_id,partner_name,city:city||'',items:enriched,total,notes:notes||'',payment_method:payment_method||'cash',status:'pending',created_at:nowISO(),paid_at:null});
-    res.json({ok:true,order_number,id:order._id,total});
+    const order=await q.insert(db.orders,{order_number,client_name,client_email:client_email.toLowerCase().trim(),client_phone:client_phone||'',referral_code:referral_code?.trim()||'',partner_id,partner_name,city:city||'',items:enriched,total:finalTotal,original_total:total,credit_used:creditUsed,notes:notes||'',payment_method:payment_method||'cash',status:'pending',created_at:nowISO(),paid_at:null});
+    res.json({ok:true,order_number,id:order._id,total:finalTotal,original_total:total,credit_used:creditUsed});
   } catch(e){res.status(500).json({error:e.message});}
 });
 
@@ -1248,6 +1270,17 @@ async function activateMembership(userId, planId, durationDays){
   await q.update(db.users,{_id:userId},{$set:{membership_plan:planId,membership_expires:expiresAt.toISOString()}});
   // Notification
   await q.insert(db.notifications,{user_id:userId,type:'membership',title:'Členstvo aktivované 🎉',body:`Váš plán ${plan.name} je aktívny do ${expiresAt.toLocaleDateString('sk-SK')}.`,read:false,created_at:nowISO()});
+  // ── Give sponsor 10% referral credit on membership purchase ─────────────────
+  const u = await q.one(db.users,{_id:userId});
+  if(u?.sponsor_id){
+    const bonus = +(plan.price * 0.10).toFixed(2);
+    const sponsor = await q.one(db.users,{_id:u.sponsor_id});
+    if(sponsor){
+      const newCredit = +((sponsor.referral_credit||0) + bonus).toFixed(2);
+      await q.update(db.users,{_id:u.sponsor_id},{$set:{referral_credit:newCredit}});
+      await q.insert(db.notifications,{user_id:u.sponsor_id,type:'referral_credit',title:`+${bonus} € referral kredit! 💰`,body:`${u.name} zakúpil/a ${plan.name}. Zostatok: ${newCredit} €`,read:false,created_at:nowISO()});
+    }
+  }
 }
 
 async function checkMembership(userId){
@@ -1272,23 +1305,42 @@ app.get('/api/membership/plans', (req,res)=>res.json(MEMBERSHIP_PLANS));
 
 app.post('/api/membership/buy', auth, async(req,res)=>{
   try {
-    const {plan_id, payment_method} = req.body;
+    const {plan_id, payment_method, use_referral_credit} = req.body;
     const plan = MEMBERSHIP_PLANS[plan_id];
     if(!plan) return res.status(400).json({error:'Neplatný plán'});
+    const u = await q.one(db.users,{_id:req.session.uid});
+
+    // ── Referral credit discount ──────────────────────────────────────────────
+    let creditUsed = 0;
+    let finalPrice = plan.price;
+    if(use_referral_credit && (u.referral_credit||0) > 0){
+      creditUsed = Math.min(u.referral_credit, plan.price);
+      finalPrice = Math.max(0, +(plan.price - creditUsed).toFixed(2));
+      await q.update(db.users,{_id:u._id},{$set:{referral_credit: +(u.referral_credit - creditUsed).toFixed(2)}});
+      await q.insert(db.notifications,{user_id:u._id,type:'credit',title:`Referral kredit použitý 💳`,body:`${creditUsed.toFixed(2)} € zľava na ${plan.name}. Nový zostatok: ${(u.referral_credit-creditUsed).toFixed(2)} €`,read:false,created_at:nowISO()});
+    }
+
+    if(finalPrice === 0){
+      // Fully covered by credit – activate immediately
+      await activateMembership(u._id, plan_id, plan.duration_days||30);
+      await q.insert(db.transactions,{type:'membership',user_id:u._id,user_name:u.name,amount:0,payment_method:'referral_credit',note:`${plan.name} – 100% hradené kreditom`,plan_id,created_at:nowISO(),month:today().slice(0,7)});
+      return res.json({ok:true, credit_used:creditUsed, final_price:0, message:`Členstvo ${plan.name} aktivované pomocou referral kreditu!`});
+    }
+
     if(payment_method==='paypal'){
       if(!PAYPAL_CLIENT_ID) {
         // Demo mode – activate immediately
-        await activateMembership(req.session.uid, plan_id, plan.duration_days);
-        return res.json({ok:true, demo:true, message:'Demo: členstvo aktivované bez PayPal'});
+        await activateMembership(req.session.uid, plan_id, plan.duration_days||30);
+        return res.json({ok:true, demo:true, credit_used:creditUsed, final_price:finalPrice, message:'Demo: členstvo aktivované bez PayPal'});
       }
-      const result = await ppCreateOrder(plan.price,'EUR',`Fusion Academy – ${plan.name}`);
+      const result = await ppCreateOrder(finalPrice,'EUR',`Fusion Academy – ${plan.name}`);
       if(result.status!==201) return res.status(400).json({error:'PayPal chyba'});
-      const payment = await q.insert(db.payments,{paypal_order_id:result.body.id,user_id:req.session.uid,amount:plan.price,currency:'EUR',description:`Členstvo ${plan.name}`,ref_id:plan_id,ref_type:'membership',status:'pending',created_at:nowISO()});
-      return res.json({ok:true, paypalOrderId:result.body.id, paymentId:payment._id});
+      const payment = await q.insert(db.payments,{paypal_order_id:result.body.id,user_id:req.session.uid,amount:finalPrice,currency:'EUR',description:`Členstvo ${plan.name}`,ref_id:plan_id,ref_type:'membership',status:'pending',created_at:nowISO(),credit_used:creditUsed});
+      return res.json({ok:true, paypalOrderId:result.body.id, paymentId:payment._id, credit_used:creditUsed, final_price:finalPrice});
     }
     // Bank transfer / cash – admin will confirm
-    await q.insert(db.payments,{user_id:req.session.uid,amount:plan.price,currency:'EUR',description:`Členstvo ${plan.name}`,ref_id:plan_id,ref_type:'membership',status:'pending_manual',payment_method:'manual',created_at:nowISO()});
-    res.json({ok:true, message:'Žiadosť o členstvo bola odoslaná. Admin ju potvrdí po prijatí platby.'});
+    await q.insert(db.payments,{user_id:req.session.uid,amount:finalPrice,currency:'EUR',description:`Členstvo ${plan.name}${creditUsed?` (kredit: -${creditUsed}€)`:''}`,ref_id:plan_id,ref_type:'membership',status:'pending_manual',payment_method:'manual',created_at:nowISO(),credit_used:creditUsed});
+    res.json({ok:true, credit_used:creditUsed, final_price:finalPrice, message:'Žiadosť o členstvo bola odoslaná. Admin ju potvrdí po prijatí platby.'});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -1925,6 +1977,7 @@ app.get('/api/me', async(req,res)=>{
     free_class_used: u.free_class_used||false,
     single_entries: u.single_entries||0,
     free_credits: u.free_credits||0,
+    referral_credit: u.referral_credit||0,
     role_label: role.label, role_icon: role.icon, dash_url: role.dashUrl,
     created_at: u.created_at,
   });
@@ -1987,11 +2040,47 @@ app.get('/api/client/referral', auth, async(req,res)=>{
       earned_total: +earned.toFixed(2),
       earned_pending: +pendingEarned.toFixed(2),
       earned_paid: +paidEarned.toFixed(2),
+      referral_credit: u.referral_credit||0,
       current_tier: currentTier,
       next_tier: nextTier,
       all_tiers: REFERRAL_REWARDS,
     });
   } catch(e){res.status(500).json({error:e.message});}
+});
+
+// ─── Referral credit: request payout ─────────────────────────────────────────
+app.post('/api/client/referral-credit/payout', auth, async(req,res)=>{
+  try {
+    const u = await q.one(db.users,{_id:req.session.uid});
+    if(!u) return res.status(404).json({error:'Nenájdený'});
+    const credit = u.referral_credit||0;
+    if(credit < 5) return res.status(400).json({error:`Minimálna výplata je 5 €. Aktuálny zostatok: ${credit.toFixed(2)} €`});
+    // Create payout request record
+    await q.insert(db.transactions,{
+      type:'referral_payout_request', user_id:u._id, user_name:u.name,
+      amount:credit, payment_method:'payout', note:`Žiadosť o výplatu referral kreditu: ${credit.toFixed(2)} €`,
+      status:'pending', bank_account:u.bank_account||'', created_at:nowISO(), month:today().slice(0,7)
+    });
+    // Reserve the credit (don't deduct yet – admin confirms)
+    await q.update(db.users,{_id:u._id},{$set:{referral_credit_pending:(u.referral_credit_pending||0)+credit, referral_credit:0}});
+    await q.insert(db.notifications,{user_id:u._id,type:'payout',title:'Žiadosť o výplatu odoslaná 💸',body:`${credit.toFixed(2)} € bude prevedených na váš účet po potvrdení adminom.`,read:false,created_at:nowISO()});
+    // Notify admin
+    const admins = await q.find(db.users,{is_admin:true});
+    for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'payout_request',title:`💸 Žiadosť o výplatu: ${u.name}`,body:`${credit.toFixed(2)} € referral kredit. Bankový účet: ${u.bank_account||'—'}`,read:false,created_at:nowISO()});
+    res.json({ok:true, requested:credit, message:`Žiadosť o výplatu ${credit.toFixed(2)} € bola odoslaná.`});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ─── Referral credit: use in shop order ──────────────────────────────────────
+// (handled inside /api/shop/order – see shop section)
+// This endpoint returns current credit balance
+app.get('/api/client/referral-credit', auth, async(req,res)=>{
+  const u = await q.one(db.users,{_id:req.session.uid});
+  if(!u) return res.status(404).json({error:'Nenájdený'});
+  res.json({
+    referral_credit: u.referral_credit||0,
+    referral_credit_pending: u.referral_credit_pending||0
+  });
 });
 
 // ─── Client notifications ─────────────────────────────────────────────────────
