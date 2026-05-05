@@ -88,11 +88,20 @@
     /* ── Upcoming bookings ── */
     .booking-item{display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--border)}
     .booking-item:last-child{border-bottom:none}
-    .booking-emoji{font-size:1.3rem;width:36px;text-align:center}
+    .booking-emoji{font-size:1.3rem;width:36px;text-align:center;flex-shrink:0}
+    .booking-info{flex:1;min-width:0}
     .booking-info strong{display:block;font-size:.9rem}
     .booking-info span{font-size:.8rem;color:var(--muted)}
+    .booking-cancel{background:none;border:1px solid var(--border);color:var(--muted);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.75rem;transition:all .2s;white-space:nowrap;flex-shrink:0}
+    .booking-cancel:hover{border-color:var(--red);color:var(--red)}
     .empty-state{text-align:center;padding:24px;color:var(--muted);font-size:.9rem}
     .empty-state i{font-size:2rem;display:block;margin-bottom:8px;opacity:.4}
+    /* ── Access status bar ── */
+    .access-bar{border-radius:12px;padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:12px;font-size:.88rem}
+    .access-bar.free{background:rgba(76,175,80,.1);border:1px solid rgba(76,175,80,.25);color:#81c784}
+    .access-bar.warn{background:rgba(255,152,0,.1);border:1px solid rgba(255,152,0,.3);color:#ffb74d}
+    .access-bar.ok{background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.25);color:var(--gold)}
+    .access-bar i{font-size:1.3rem;flex-shrink:0}
 
     /* ── Notifications panel ── */
     .notif-panel{position:fixed;top:60px;right:16px;width:320px;background:#1e1e1e;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.5);z-index:200;display:none;max-height:420px;overflow-y:auto}
@@ -299,9 +308,18 @@
     </a>
   </div>
 
-  <!-- Upcoming bookings -->
+  <!-- Access status bar -->
+  <div id="accessBar" class="access-bar free" style="display:none">
+    <i class="bi bi-gift-fill" id="accessBarIcon"></i>
+    <div id="accessBarText">—</div>
+  </div>
+
+  <!-- Active bookings -->
   <div class="card">
-    <div class="card-title"><i class="bi bi-calendar-check"></i> Nadchádzajúce rezervácie</div>
+    <div class="card-title" style="justify-content:space-between">
+      <span><i class="bi bi-calendar-check"></i> Moje aktívne rezervácie</span>
+      <a href="/" style="font-size:.78rem;color:var(--gold);text-decoration:none;opacity:.8"><i class="bi bi-plus"></i> Pridať</a>
+    </div>
     <div id="bookingsList"><div class="empty-state"><i class="bi bi-calendar-x"></i>Žiadne rezervácie</div></div>
   </div>
 
@@ -402,18 +420,67 @@ function renderLoyalty(loyalty, milestones){
 
 function renderBookings(bookings){
   const el = document.getElementById('bookingsList');
-  if(!bookings?.length){
-    el.innerHTML = `<div class="empty-state"><i class="bi bi-calendar-x"></i>Zatiaľ žiadne rezervácie – <a href="/schedule" style="color:var(--gold)">zarezervuj si hodinu</a>!</div>`;
+  const active = (bookings||[]).filter(b=>b.status==='confirmed');
+  if(!active.length){
+    el.innerHTML = `<div class="empty-state"><i class="bi bi-calendar-x"></i>Zatiaľ žiadne rezervácie – <a href="/" style="color:var(--gold)">zarezervuj si hodinu</a>!</div>`;
     return;
   }
-  el.innerHTML = bookings.map(b => `
+  el.innerHTML = active.map(b => `
     <div class="booking-item">
       <div class="booking-emoji">${b.class_emoji||'💃'}</div>
       <div class="booking-info">
         <strong>${escHtml(b.class_name)}</strong>
-        <span>${b.booking_date} • ${b.class_time_start||''} • ${escHtml(b.class_location||'')}</span>
+        <span>${b.booking_date||''} ${b.class_time_start ? '• '+b.class_time_start : ''} ${b.class_location ? '• '+escHtml(b.class_location) : ''}</span>
       </div>
+      <button class="booking-cancel" onclick="cancelBooking('${b._id}','${escHtml(b.class_name).replace(/'/g,"&#39;")}')">
+        <i class="bi bi-x"></i> Zrušiť
+      </button>
     </div>`).join('');
+}
+
+async function cancelBooking(id, name){
+  if(!confirm(`Zrušiť rezerváciu:\n${name}?`)) return;
+  const d = await api('/api/bookings/'+id, {method:'DELETE'});
+  if(d?.ok){
+    showToast('Rezervácia zrušená','success');
+    loadMyBookings();
+  } else {
+    showToast('Chyba: '+(d?.error||'?'),'error');
+  }
+}
+
+async function loadMyBookings(){
+  const bookings = await api('/api/my-bookings');
+  renderBookings(Array.isArray(bookings) ? bookings : []);
+}
+
+function renderAccessBar(me){
+  const bar = document.getElementById('accessBar');
+  const icon = document.getElementById('accessBarIcon');
+  const text = document.getElementById('accessBarText');
+  const hasMembership = me.membership && me.membership.status === 'active';
+  if(hasMembership){
+    bar.className = 'access-bar ok';
+    icon.className = 'bi bi-patch-check-fill';
+    text.innerHTML = `<strong>${escHtml(me.membership.plan_name)}</strong> — aktívne členstvo platné do <strong>${me.membership.expires_at||'—'}</strong>. Hodiny sú zahrnuté v členstve.`;
+    bar.style.display = 'flex';
+  } else if(!me.free_class_used){
+    bar.className = 'access-bar free';
+    icon.className = 'bi bi-gift-fill';
+    text.innerHTML = `<strong>🎁 Prvá hodina ZADARMO!</strong> Môžeš si zarezervovať svoju prvú hodinu bezplatne.`;
+    bar.style.display = 'flex';
+  } else if((me.single_entries||0) > 0 || (me.free_credits||0) > 0){
+    const credits = (me.single_entries||0) + (me.free_credits||0);
+    bar.className = 'access-bar ok';
+    icon.className = 'bi bi-ticket-perforated-fill';
+    text.innerHTML = `Máš <strong>${credits} vstup(ov)</strong> k dispozícii. <a href="/pricing" style="color:var(--gold)">Kúpiť členstvo →</a>`;
+    bar.style.display = 'flex';
+  } else {
+    bar.className = 'access-bar warn';
+    icon.className = 'bi bi-exclamation-triangle-fill';
+    text.innerHTML = `Prvá hodina zadarmo bola využitá. Na ďalšiu hodinu <a href="/pricing" style="color:var(--gold);font-weight:700">kúp členstvo</a> alebo <strong>jednorazový vstup (10 €)</strong>.`;
+    bar.style.display = 'flex';
+  }
 }
 
 // ── Notifications ─────────────────────────────────────────────────────────────
@@ -507,13 +574,14 @@ async function init(){
   document.getElementById('welcomeEmail').textContent=me.email||'';
   document.getElementById('roleTag').innerHTML=(me.role_icon||'🟢')+' '+(me.role_label||'Člen');
   renderMembership(me);
+  renderAccessBar(me);
   if(me.notif_count>0){const b=document.getElementById('notifBadge');b.textContent=me.notif_count>9?'9+':me.notif_count;b.style.display='flex';}
   const profile=await api('/api/client/profile');
   if(profile?.loyalty) renderLoyalty(profile.loyalty,profile.milestones||[]);
   if(profile?.visit_count!==undefined) document.getElementById('mcVisits').textContent=profile.visit_count+' 🎯';
-  renderBookings(profile?.upcoming_bookings||[]);
+  // Load real bookings from API
+  loadMyBookings();
   loadReferral();
-  // Show partner dashboard link if user has earnings
   if(me.user_type==='partner'||me.user_type==='manager'){
     document.getElementById('partnerDashLink').style.display='block';
   }

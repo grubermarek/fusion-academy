@@ -111,7 +111,8 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',sans-ser
       <a href="/community">Komunita</a>
       <a href="/pricing" style="color:var(--gold)">Cenník</a>
     </div>
-    <a href="/" onclick="openPartnerLogin()" class="btn-cta" style="padding:.45rem 1.1rem;font-size:.82rem;">Prihlásiť sa</a>
+    <a href="/" id="navLoginBtn" class="btn-cta" style="padding:.45rem 1.1rem;font-size:.82rem;">Prihlásiť sa</a>
+    <a href="/client-dashboard" id="navDashBtn" class="btn-cta" style="padding:.45rem 1.1rem;font-size:.82rem;display:none">👤 Môj účet</a>
   </div>
 </nav>
 
@@ -544,6 +545,19 @@ function showCat(id, btn){
 function toggleFaq(el){
   el.classList.toggle('open');
 }
+// ── Nav login state ───────────────────────────────────────────────────────────
+(async function(){
+  try {
+    const me = await fetch('/api/me',{credentials:'include'}).then(r=>r.json());
+    if(me?.id){
+      document.getElementById('navLoginBtn').style.display='none';
+      document.getElementById('navDashBtn').style.display='inline-block';
+      const dashUrl = me.is_admin?'/admin':me.user_type==='trainer'?'/trainer':'/client-dashboard';
+      document.getElementById('navDashBtn').href = dashUrl;
+      document.getElementById('navDashBtn').textContent = '👤 '+me.name.split(' ')[0];
+    }
+  } catch(e){}
+})();
 </script>
 </body>
 </html>

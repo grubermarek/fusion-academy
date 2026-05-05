@@ -76,6 +76,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <a class="nav-link" href="#" onclick="show('transactions')"><i class="bi bi-receipt me-2"></i>Všetky predaje</a>
     <a class="nav-link" href="#" onclick="show('products')"><i class="bi bi-box-seam me-2"></i>Produkty</a>
     <a class="nav-link" href="#" onclick="show('addpartner')"><i class="bi bi-person-plus me-2"></i>Pridať partnera</a>
+    <a class="nav-link" href="#" onclick="show('attendance')"><i class="bi bi-people-fill me-2"></i><span style="color:#4ade80;font-weight:700">Dochádzka</span></a>
     <a class="nav-link" href="#" onclick="show('classes')"><i class="bi bi-calendar3 me-2"></i>Hodiny / Stream</a>
     <a class="nav-link" href="#" onclick="show('bookings')"><i class="bi bi-calendar-check me-2"></i>Rezervácie</a>
     <a class="nav-link" href="#" onclick="show('memberships')"><i class="bi bi-patch-check me-2"></i>Členstvá</a>
@@ -323,6 +324,129 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- BOOKINGS -->
   <!-- CLASSES / STREAM URL -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- ATTENDANCE DASHBOARD                                                    -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <div id="s-attendance" class="section">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+      <h4 class="fw-bold mb-0"><i class="bi bi-people-fill me-2" style="color:#4ade80"></i>Dochádzka – Prehľad hodín</h4>
+      <button class="btn btn-sm btn-brand" onclick="loadAttendance()"><i class="bi bi-arrow-clockwise me-1"></i>Obnoviť</button>
+    </div>
+
+    <!-- Class cards grid -->
+    <div id="attClassGrid" class="row g-3 mb-4"></div>
+
+    <!-- Attendees panel (opens when class is clicked) -->
+    <div id="attDetailPanel" style="display:none">
+      <div class="card border-0 rounded-3 p-4">
+        <!-- Header -->
+        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+          <div>
+            <h5 class="fw-bold mb-1" id="attDetailTitle">—</h5>
+            <div class="text-muted small" id="attDetailMeta">—</div>
+          </div>
+          <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-sm" style="background:rgba(74,222,128,.15);color:#4ade80;border:1px solid rgba(74,222,128,.3)" onclick="openManualBooking()">
+              <i class="bi bi-person-plus me-1"></i>Pridať ručne
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="closeAttDetail()">
+              <i class="bi bi-x me-1"></i>Zavrieť
+            </button>
+          </div>
+        </div>
+
+        <!-- Attendee table -->
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead>
+              <tr>
+                <th class="ps-2">Klient</th>
+                <th>Kontakt</th>
+                <th>Členstvo</th>
+                <th>Návštevy</th>
+                <th>Dátum</th>
+                <th>Akcia</th>
+              </tr>
+            </thead>
+            <tbody id="attAttendeesTable"></tbody>
+          </table>
+        </div>
+
+        <!-- Quick actions row -->
+        <div class="mt-4 pt-3 border-top" style="border-color:var(--gold-border)!important">
+          <div class="row g-3">
+            <!-- Manual booking -->
+            <div class="col-md-4" id="manualBookingPanel" style="display:none">
+              <div style="background:rgba(74,222,128,.07);border:1px solid rgba(74,222,128,.2);border-radius:.75rem;padding:16px">
+                <div class="fw-semibold mb-2 small" style="color:#4ade80"><i class="bi bi-person-plus me-1"></i>Pridať klienta na hodinu</div>
+                <div class="mb-2 position-relative">
+                  <input type="text" class="form-control form-control-sm" id="mbUserSearch" placeholder="Hľadať klienta..." oninput="searchUsersAtt(this.value)" autocomplete="off">
+                  <div id="mbUserDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#1a1a1a;border:1px solid var(--gold-border);border-radius:.5rem;z-index:50;max-height:180px;overflow-y:auto"></div>
+                </div>
+                <div id="mbSelectedUser" style="display:none;background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.2);border-radius:.5rem;padding:8px 10px;margin-bottom:8px;font-size:.82rem">
+                  <span id="mbSelectedName">—</span>
+                  <button onclick="clearMbUser()" style="float:right;background:none;border:none;color:#888;cursor:pointer;font-size:.85rem">✕</button>
+                </div>
+                <div class="mb-2">
+                  <input type="date" class="form-control form-control-sm" id="mbDate" placeholder="Dátum">
+                </div>
+                <div class="form-check mb-2">
+                  <input class="form-check-input" type="checkbox" id="mbIsFree">
+                  <label class="form-check-label small" for="mbIsFree">🎁 Hodina zadarmo</label>
+                </div>
+                <div class="mb-2">
+                  <input type="text" class="form-control form-control-sm" id="mbNote" placeholder="Poznámka (nepovinné)">
+                </div>
+                <button class="btn btn-sm w-100" style="background:#4ade80;color:#111;font-weight:700" onclick="doManualBooking()">Potvrdiť rezerváciu</button>
+              </div>
+            </div>
+
+            <!-- Single entry -->
+            <div class="col-md-4">
+              <div style="background:rgba(96,165,250,.07);border:1px solid rgba(96,165,250,.2);border-radius:.75rem;padding:16px">
+                <div class="fw-semibold mb-2 small" style="color:#60a5fa"><i class="bi bi-ticket-perforated me-1"></i>Jednorazový vstup (10 €)</div>
+                <div class="mb-2 position-relative">
+                  <input type="text" class="form-control form-control-sm" id="seUserSearch" placeholder="Hľadať klienta..." oninput="searchUsersSe(this.value)" autocomplete="off">
+                  <div id="seUserDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#1a1a1a;border:1px solid var(--gold-border);border-radius:.5rem;z-index:50;max-height:180px;overflow-y:auto"></div>
+                </div>
+                <div id="seSelectedUser" style="display:none;background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.2);border-radius:.5rem;padding:8px 10px;margin-bottom:8px;font-size:.82rem">
+                  <span id="seSelectedName">—</span>
+                  <button onclick="clearSeUser()" style="float:right;background:none;border:none;color:#888;cursor:pointer;font-size:.85rem">✕</button>
+                </div>
+                <select class="form-select form-select-sm mb-2" id="sePayMethod">
+                  <option value="cash">Hotovosť</option>
+                  <option value="transfer">Prevod</option>
+                  <option value="card">Karta</option>
+                </select>
+                <button class="btn btn-sm w-100" style="background:#60a5fa;color:#111;font-weight:700" onclick="doSingleEntry()">Zaznamenať (10 €)</button>
+              </div>
+            </div>
+
+            <!-- Give free class -->
+            <div class="col-md-4">
+              <div style="background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2);border-radius:.75rem;padding:16px">
+                <div class="fw-semibold mb-2 small" style="color:#fbbf24"><i class="bi bi-gift me-1"></i>Dať hodinu zadarmo</div>
+                <div class="mb-2 position-relative">
+                  <input type="text" class="form-control form-control-sm" id="gfUserSearch" placeholder="Hľadať klienta..." oninput="searchUsersGf(this.value)" autocomplete="off">
+                  <div id="gfUserDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#1a1a1a;border:1px solid var(--gold-border);border-radius:.5rem;z-index:50;max-height:180px;overflow-y:auto"></div>
+                </div>
+                <div id="gfSelectedUser" style="display:none;background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.2);border-radius:.5rem;padding:8px 10px;margin-bottom:8px;font-size:.82rem">
+                  <span id="gfSelectedName">—</span>
+                  <button onclick="clearGfUser()" style="float:right;background:none;border:none;color:#888;cursor:pointer;font-size:.85rem">✕</button>
+                </div>
+                <div class="mb-2">
+                  <input type="text" class="form-control form-control-sm" id="gfNote" placeholder="Dôvod (nepovinné)">
+                </div>
+                <button class="btn btn-sm w-100" style="background:#fbbf24;color:#111;font-weight:700" onclick="doGiveFree()">Udeliť 🎁</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- /ATTENDANCE -->
+
   <div id="s-classes" class="section">
     <div class="d-flex justify-content-between align-items-center mb-4">
       <h4 class="fw-bold mb-0">Hodiny &amp; Stream URL</h4>
@@ -464,8 +588,6 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </div>
   </div>
 
-</div><!-- /main -->
-
   <!-- CRM – Users -->
   <div id="s-crm" class="section">
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
@@ -553,6 +675,8 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </div>
   </div>
 
+</div><!-- /main -->
+
 <!-- Edit Partner Modal -->
 <div class="modal fade" id="editPartnerModal" tabindex="-1">
   <div class="modal-dialog"><div class="modal-content">
@@ -614,6 +738,7 @@ function show(sec){
   if(sec==='products')loadProducts();
   if(sec==='sale')loadSaleForm();
   if(sec==='addpartner')loadAddPartner();
+  if(sec==='attendance')loadAttendance();
   if(sec==='classes')loadAdminClasses();
   if(sec==='bookings')loadAdminBookings();
   if(sec==='memberships')loadMemberships();
@@ -1150,6 +1275,175 @@ async function deleteUser(id, name){
   if(d?.ok){ showToast('Účet zmazaný', 'success'); loadCrm(); }
   else showToast('Chyba: '+(d?.error||'?'), 'error');
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ATTENDANCE DASHBOARD
+// ══════════════════════════════════════════════════════════════════════════════
+const DAYS_SK_ATT = ['Ned','Pon','Uto','Str','Štv','Pia','Sob'];
+const DAYS_FULL   = ['Nedeľa','Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota'];
+let _attClasses = [];
+let _attSelectedClass = null;
+let _mbUserId = null, _seUserId = null, _gfUserId = null;
+
+async function loadAttendance(){
+  const classes = await api('/api/attendance/schedule');
+  _attClasses = Array.isArray(classes) ? classes : [];
+  const grid = document.getElementById('attClassGrid');
+  if(!_attClasses.length){
+    grid.innerHTML = '<div class="col-12"><div class="text-muted text-center py-4">Žiadne hodiny</div></div>';
+    return;
+  }
+  grid.innerHTML = _attClasses.map(c => {
+    const pct = c.capacity > 0 ? Math.round(c.confirmed / c.capacity * 100) : 0;
+    const colorBar = pct >= 90 ? '#f87171' : pct >= 60 ? '#fbbf24' : '#4ade80';
+    return `
+    <div class="col-6 col-md-4 col-lg-3">
+      <div class="card border-0 rounded-3 p-3 h-100" style="cursor:pointer;transition:all .2s;border:1px solid rgba(74,222,128,.1)!important"
+           onclick="openAttClass('${c._id}')"
+           onmouseover="this.style.borderColor='rgba(74,222,128,.5)'"
+           onmouseout="this.style.borderColor='rgba(74,222,128,.1)'">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <div style="font-size:1.3rem">${c.emoji||'💃'}</div>
+          <div class="badge" style="background:rgba(74,222,128,.15);color:#4ade80;font-size:.7rem">${DAYS_SK_ATT[c.day_of_week]} ${c.time_start}</div>
+        </div>
+        <div class="fw-semibold mb-1" style="font-size:.87rem;color:var(--cream)">${escHtml(c.name)}</div>
+        <div class="text-muted" style="font-size:.75rem;margin-bottom:8px">${escHtml(c.location)}</div>
+        <div style="background:#222;border-radius:4px;height:6px;overflow:hidden;margin-bottom:6px">
+          <div style="height:100%;width:${pct}%;background:${colorBar};border-radius:4px;transition:width .4s"></div>
+        </div>
+        <div class="d-flex justify-content-between" style="font-size:.75rem">
+          <span style="color:${colorBar};font-weight:700">${c.confirmed} / ${c.capacity}</span>
+          <span class="text-muted">${c.waitlist > 0 ? `⏳ ${c.waitlist}` : `${c.spotsLeft} voľných`}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  closeAttDetail();
+}
+
+async function openAttClass(classId){
+  _attSelectedClass = _attClasses.find(c => c._id === classId);
+  if(!_attSelectedClass) return;
+  const c = _attSelectedClass;
+  document.getElementById('attDetailTitle').textContent = (c.emoji||'💃') + ' ' + c.name;
+  document.getElementById('attDetailMeta').textContent =
+    `${DAYS_FULL[c.day_of_week]} ${c.time_start} – ${c.location} · ${c.confirmed}/${c.capacity} prihlásených`;
+  document.getElementById('attDetailPanel').style.display = 'block';
+  document.getElementById('manualBookingPanel').style.display = 'none';
+  // Load attendees
+  const attendees = await api(`/api/attendance/class/${classId}`);
+  const tbody = document.getElementById('attAttendeesTable');
+  if(!attendees?.length){
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Žiadni prihlásení</td></tr>';
+    return;
+  }
+  tbody.innerHTML = attendees.map(a => {
+    const mTag = a.membership
+      ? `<span class="badge" style="background:rgba(201,168,76,.2);color:#C9A84C;font-size:.7rem">${escHtml(a.membership)}</span>`
+      : (a.free_credits > 0
+          ? `<span class="badge" style="background:rgba(251,191,36,.15);color:#fbbf24;font-size:.7rem">🎁 Free x${a.free_credits}</span>`
+          : (a.single_entries > 0
+              ? `<span class="badge" style="background:rgba(96,165,250,.15);color:#60a5fa;font-size:.7rem">🎟 x${a.single_entries}</span>`
+              : `<span class="badge" style="background:rgba(244,67,54,.15);color:#f87171;font-size:.7rem">⚠ Bez členstva</span>`));
+    return `<tr>
+      <td class="ps-2"><strong>${escHtml(a.name)}</strong></td>
+      <td><small class="text-muted">${escHtml(a.email)}<br>${escHtml(a.phone)}</small></td>
+      <td>${mTag}</td>
+      <td><span style="color:var(--gold);font-weight:700">${a.visit_count}</span></td>
+      <td><small class="text-muted">${a.booking_date||'—'}</small></td>
+      <td>
+        <button class="btn btn-sm" style="background:rgba(244,67,54,.12);color:#f87171;border:1px solid rgba(244,67,54,.25);font-size:.75rem;padding:2px 8px"
+                onclick="cancelAttBooking('${a.booking_id}','${escJs(a.name)}')">Zrušiť</button>
+      </td>
+    </tr>`;
+  }).join('');
+  // Scroll to panel
+  document.getElementById('attDetailPanel').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function closeAttDetail(){
+  document.getElementById('attDetailPanel').style.display = 'none';
+  _attSelectedClass = null;
+}
+
+function openManualBooking(){
+  const p = document.getElementById('manualBookingPanel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+  clearMbUser();
+}
+
+async function cancelAttBooking(bookingId, name){
+  if(!confirm(`Zrušiť rezerváciu pre ${name}?`)) return;
+  const d = await api(`/api/attendance/booking/${bookingId}`,{method:'DELETE'});
+  if(d?.ok){ showToast('Rezervácia zrušená','success'); openAttClass(_attSelectedClass._id); }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
+}
+
+// ── User search helpers ────────────────────────────────────────────────────────
+function makeUserDropdown(results, prefix, onSelect){
+  const dd = document.getElementById(prefix+'UserDropdown');
+  if(!results.length){ dd.style.display='none'; return; }
+  dd.style.display = 'block';
+  dd.innerHTML = results.map(u =>
+    `<div onclick="selectAttUser('${prefix}','${u.id}','${escJs(u.name)}','${escJs(u.email)}')"
+          style="padding:8px 12px;cursor:pointer;font-size:.82rem;border-bottom:1px solid #2a2a2a"
+          onmouseover="this.style.background='rgba(201,168,76,.1)'" onmouseout="this.style.background=''">
+      <strong>${escHtml(u.name)}</strong><br>
+      <span style="color:#888">${escHtml(u.email)} · ${u.visit_count} návštev · 🎟 ${u.single_entries} · 🎁 ${u.free_credits}</span>
+    </div>`).join('');
+}
+
+async function searchUsersAtt(val){ const r = val.length>1 ? await api('/api/attendance/search-users?q='+encodeURIComponent(val)) : []; makeUserDropdown(Array.isArray(r)?r:[],'mb'); }
+async function searchUsersSe(val){ const r = val.length>1 ? await api('/api/attendance/search-users?q='+encodeURIComponent(val)) : []; makeUserDropdown(Array.isArray(r)?r:[],'se'); }
+async function searchUsersGf(val){ const r = val.length>1 ? await api('/api/attendance/search-users?q='+encodeURIComponent(val)) : []; makeUserDropdown(Array.isArray(r)?r:[],'gf'); }
+
+function selectAttUser(prefix, id, name, email){
+  if(prefix==='mb'){ _mbUserId=id; document.getElementById('mbSelectedName').textContent=name+' ('+email+')'; document.getElementById('mbSelectedUser').style.display='block'; document.getElementById('mbUserSearch').value=''; }
+  if(prefix==='se'){ _seUserId=id; document.getElementById('seSelectedName').textContent=name+' ('+email+')'; document.getElementById('seSelectedUser').style.display='block'; document.getElementById('seUserSearch').value=''; }
+  if(prefix==='gf'){ _gfUserId=id; document.getElementById('gfSelectedName').textContent=name+' ('+email+')'; document.getElementById('gfSelectedUser').style.display='block'; document.getElementById('gfUserSearch').value=''; }
+  document.getElementById(prefix+'UserDropdown').style.display='none';
+}
+function clearMbUser(){ _mbUserId=null; document.getElementById('mbSelectedUser').style.display='none'; document.getElementById('mbUserSearch').value=''; document.getElementById('mbUserDropdown').style.display='none'; }
+function clearSeUser(){ _seUserId=null; document.getElementById('seSelectedUser').style.display='none'; document.getElementById('seUserSearch').value=''; document.getElementById('seUserDropdown').style.display='none'; }
+function clearGfUser(){ _gfUserId=null; document.getElementById('gfSelectedUser').style.display='none'; document.getElementById('gfUserSearch').value=''; document.getElementById('gfUserDropdown').style.display='none'; }
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+async function doManualBooking(){
+  if(!_mbUserId){ showToast('Vyber klienta','error'); return; }
+  if(!_attSelectedClass){ showToast('Vyber hodinu (klikni na kartu)','error'); return; }
+  const date = document.getElementById('mbDate').value;
+  const isFree = document.getElementById('mbIsFree').checked;
+  const note = document.getElementById('mbNote').value;
+  const d = await api('/api/attendance/manual-booking',{method:'POST',body:{user_id:_mbUserId,class_id:_attSelectedClass._id,booking_date:date||undefined,is_free:isFree,note}});
+  if(d?.ok){ showToast('Rezervácia vytvorená ✓','success'); clearMbUser(); document.getElementById('mbNote').value=''; document.getElementById('mbDate').value=''; document.getElementById('mbIsFree').checked=false; openAttClass(_attSelectedClass._id); loadAttendance(); }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
+}
+
+async function doSingleEntry(){
+  if(!_seUserId){ showToast('Vyber klienta','error'); return; }
+  const method = document.getElementById('sePayMethod').value;
+  const d = await api('/api/attendance/single-entry',{method:'POST',body:{user_id:_seUserId,amount:10,payment_method:method}});
+  if(d?.ok){ showToast(`Vstup zaznamenaný ✓ (zostatok: ${d.single_entries})`, 'success'); clearSeUser(); }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
+}
+
+async function doGiveFree(){
+  if(!_gfUserId){ showToast('Vyber klienta','error'); return; }
+  const note = document.getElementById('gfNote').value;
+  const d = await api('/api/attendance/give-free',{method:'POST',body:{user_id:_gfUserId,note}});
+  if(d?.ok){ showToast('Hodina zadarmo udelená 🎁','success'); clearGfUser(); document.getElementById('gfNote').value=''; }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
+}
+
+// Close dropdowns on outside click
+document.addEventListener('click', e => {
+  ['mb','se','gf'].forEach(p => {
+    if(!e.target.closest('#'+p+'UserSearch') && !e.target.closest('#'+p+'UserDropdown')){
+      const dd = document.getElementById(p+'UserDropdown');
+      if(dd) dd.style.display='none';
+    }
+  });
+});
 </script>
 
 <!-- ── EDIT USER MODAL ── -->
