@@ -2282,8 +2282,15 @@ app.get('/api/me/qr', auth, async(req,res)=>{
 // EMAIL NOTIFICATIONS (Nodemailer – optional, falls back gracefully)
 // ═══════════════════════════════════════════════════════════════════════════════
 let mailer = null;
+let resendApiKey = null;
 (async()=>{
   try {
+    // Prefer Resend HTTP API if RESEND_API_KEY is set
+    if(process.env.RESEND_API_KEY){
+      resendApiKey = process.env.RESEND_API_KEY;
+      console.log('✉️  Resend API nakonfigurovaný');
+      return;
+    }
     const nodemailer = require('nodemailer');
     if(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS){
       mailer = nodemailer.createTransport({
@@ -2298,9 +2305,24 @@ let mailer = null;
 })();
 
 async function sendMail(to, subject, html){
+  // Resend HTTP API (preferred on Railway)
+  if(resendApiKey){
+    try {
+      const fromAddr = process.env.SMTP_FROM || 'onboarding@resend.dev';
+      const r = await fetch('https://api.resend.com/emails', {
+        method:'POST',
+        headers:{'Authorization':`Bearer ${resendApiKey}`,'Content-Type':'application/json'},
+        body: JSON.stringify({ from:`Fusion Academy <${fromAddr}>`, to:[to], subject, html })
+      });
+      const j = await r.json();
+      if(j.id){ return true; }
+      console.error('Resend error:', JSON.stringify(j));
+      return false;
+    } catch(e){ console.error('Resend error:', e.message); return false; }
+  }
   if(!mailer) return false;
   try {
-    const fromAddr = process.env.SMTP_FROM || (process.env.SMTP_HOST==='smtp.resend.com' ? 'onboarding@resend.dev' : process.env.SMTP_USER);
+    const fromAddr = process.env.SMTP_FROM || process.env.SMTP_USER;
     await mailer.sendMail({ from:`"Fusion Academy" <${fromAddr}>`, to, subject, html });
     return true;
   } catch(e){ console.error('Mail error:', e.message); return false; }
