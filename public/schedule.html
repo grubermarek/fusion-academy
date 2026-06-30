@@ -105,19 +105,17 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',system-u
 .success-card{background:var(--dark-2);border:1px solid var(--gold-border);border-radius:1rem;padding:2rem;text-align:center;margin:2rem auto;max-width:400px;box-shadow:0 4px 20px rgba(0,0,0,.4);color:var(--cream);}
 .success-icon{font-size:3.5rem;margin-bottom:.75rem;}
 </style>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#C9A84C">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script>if("serviceWorker" in navigator)navigator.serviceWorker.register("/sw.js");</script>
 </head>
 <body>
 
-<!-- Nav -->
-<nav class="top-nav fa-nav">
-  <a class="brand fa-brand" href="/">FUSION ACADEMY</a>
-  <div class="nav-links">
-    <a href="/shop"><i class="bi bi-bag me-1"></i>E-shop</a>
-    <a href="/schedule" class="active"><i class="bi bi-calendar3 me-1"></i>Rozvrh</a>
-    <a href="/community"><i class="bi bi-chat-dots me-1"></i>Komunita</a>
-    <a href="#" class="fa-nav-link" id="navAuthBtn" onclick="handleAuthNav(event)"><i class="bi bi-person me-1"></i><span id="navAuthLabel">Prihlásiť</span></a>
-  </div>
-</nav>
+<!-- Nav provided by nav-bar.js -->
+<span id="navAuthBtn" style="display:none" onclick="handleAuthNav(event)"></span>
 
 <!-- Login banner (shown when not logged in) -->
 <div class="login-banner d-none" id="loginBanner">
@@ -537,5 +535,6 @@ init();
     </div>
   </div>
 </footer>
+<script src="/nav-bar.js"></script>
 </body>
 </html>

@@ -16,7 +16,7 @@
 <link rel="stylesheet" href="/fa-theme.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <style>
-body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',sans-serif;}
+body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',sans-serif;padding-top:56px;}
 .hero{background:linear-gradient(160deg,#0f0f0f 0%,#1a1400 50%,#0f0f0f 100%);padding:5rem 0 3rem;text-align:center;position:relative;overflow:hidden;}
 .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(201,168,76,.18) 0%,transparent 70%);}
 .hero-label{font-size:.75rem;letter-spacing:.25em;text-transform:uppercase;color:var(--gold);margin-bottom:.75rem;}
@@ -97,24 +97,18 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',sans-ser
 .savings-pill{display:inline-block;background:rgba(39,174,96,.15);color:#4ade80;border:1px solid rgba(39,174,96,.2);padding:.15rem .7rem;border-radius:2rem;font-size:.72rem;font-weight:700;margin-left:.5rem;}
 @media(max-width:576px){.btn-cta-outline{margin-left:0;margin-top:.75rem;display:block;text-align:center;}}
 </style>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#C9A84C">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script>if("serviceWorker" in navigator)navigator.serviceWorker.register("/sw.js");</script>
 </head>
 <body>
 
-<!-- TOP NAV -->
-<nav class="top-nav">
-  <div class="container d-flex align-items-center justify-content-between">
-    <a href="/" class="nav-brand text-decoration-none">FUSION ACADEMY</a>
-    <div class="nav-links d-none d-md-flex align-items-center">
-      <a href="/">Domov</a>
-      <a href="/schedule">Rozvrh</a>
-      <a href="/shop">E-shop</a>
-      <a href="/community">Komunita</a>
-      <a href="/pricing" style="color:var(--gold)">Cenník</a>
-    </div>
-    <a href="/" id="navLoginBtn" class="btn-cta" style="padding:.45rem 1.1rem;font-size:.82rem;">Prihlásiť sa</a>
-    <a href="/client-dashboard" id="navDashBtn" class="btn-cta" style="padding:.45rem 1.1rem;font-size:.82rem;display:none">👤 Môj účet</a>
-  </div>
-</nav>
+<!-- Nav provided by nav-bar.js -->
+<a href="/client-dashboard" id="navDashBtn" style="display:none"></a>
+<a href="/" id="navLoginBtn" style="display:none"></a>
 
 <!-- HERO -->
 <section class="hero">
@@ -173,7 +167,10 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',sans-ser
           <li><i class="fas fa-times cross"></i>Jedálniček na mieru</li>
           <li><i class="fas fa-times cross"></i>F1 kokteil zahrnutý</li>
         </ul>
-        <button class="btn-plan btn-plan-outline" onclick="openBuyModal('bronze','🥉 Bronze','50')">Vybrať Bronze</button>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button class="btn-plan btn-plan-outline" onclick="openSubscribeModal('bronze','🥉 Bronze','50')">🔄 Prihlásiť na odber</button>
+          <button style="background:none;border:none;color:#888;font-size:.8rem;cursor:pointer;padding:4px" onclick="openBuyModal('bronze','🥉 Bronze','50')">Jednorazová platba</button>
+        </div>
       </div>
 
       <!-- SILVER (featured) -->
@@ -191,7 +188,10 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',sans-ser
           <li><i class="fas fa-times cross"></i>F1 kokteil zahrnutý</li>
           <li><i class="fas fa-times cross"></i>Jedálniček s porciami na mieru</li>
         </ul>
-        <button class="btn-plan btn-plan-gold" onclick="openBuyModal('silver','🥈 Silver','65')">Vybrať Silver</button>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button class="btn-plan btn-plan-gold" onclick="openSubscribeModal('silver','🥈 Silver','65')">🔄 Prihlásiť na odber</button>
+          <button style="background:none;border:none;color:#888;font-size:.8rem;cursor:pointer;padding:4px" onclick="openBuyModal('silver','🥈 Silver','65')">Jednorazová platba</button>
+        </div>
       </div>
 
       <!-- GOLD -->
@@ -208,7 +208,10 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',sans-ser
           <li><i class="fas fa-check check"></i>20 % zľava na súkromné hodiny & eventy</li>
           <li><i class="fas fa-check check"></i>Prioritné miesta na FitDays</li>
         </ul>
-        <button class="btn-plan btn-plan-gold" onclick="openBuyModal('gold','🥇 Gold','125')">Vybrať Gold</button>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button class="btn-plan btn-plan-gold" onclick="openSubscribeModal('gold','🥇 Gold','125')">🔄 Prihlásiť na odber</button>
+          <button style="background:none;border:none;color:#888;font-size:.8rem;cursor:pointer;padding:4px" onclick="openBuyModal('gold','🥇 Gold','125')">Jednorazová platba</button>
+        </div>
       </div>
 
     </div>
@@ -237,7 +240,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',sans-ser
             <td>🎟️ 10-vstupová permanentka</td>
             <td>3 mesiace</td>
             <td><span class="price-num">80 €</span></td>
-            <td><span class="savings-pill">Úspora 20 %</span></td>
+            <td><button onclick="openBuyModal('permanentka10','🎟️ 10-vstupová permanentka','80')" style="background:linear-gradient(135deg,#ff9800,#e65100);border:none;color:#fff;padding:7px 16px;border-radius:8px;cursor:pointer;font-weight:700;font-size:.82rem">Kúpiť</button> <span class="savings-pill">Úspora 20 %</span></td>
           </tr>
         </tbody>
       </table>
@@ -581,6 +584,48 @@ let _pricingMe = null;
   } catch(e){}
 })();
 
+// ── Subscribe modal ───────────────────────────────────────────────────────────
+let _subPlanId = null;
+
+function openSubscribeModal(planId, planName, price){
+  if(!_pricingMe){ window.location.href='/?buy='+planId; return; }
+  _subPlanId = planId;
+  document.getElementById('subModalTitle').textContent = planName + ' – ' + price + ' €/mes';
+  document.getElementById('subModal').style.display='flex';
+}
+
+async function confirmSubscribe(){
+  if(!_subPlanId) return;
+  const btn = document.getElementById('subConfirmBtn');
+  btn.disabled=true; btn.textContent='Presmerovávam na PayPal...';
+  try {
+    const r = await fetch('/api/membership/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan_id:_subPlanId}),credentials:'include'});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error||'Chyba');
+    if(d.demo){ location.href='/client-dashboard?sub=success'; return; }
+    if(d.approve_url){ window.location.href = d.approve_url; return; }
+    throw new Error('Chýba PayPal URL');
+  } catch(e){
+    btn.disabled=false; btn.textContent='Potvrdiť a prejsť na PayPal';
+    alert('Chyba: '+e.message);
+  }
+}
+
+// ── Handle return from PayPal ─────────────────────────────────────────────────
+(async()=>{
+  const params = new URLSearchParams(location.search);
+  const subStatus = params.get('sub');
+  const subId = params.get('subscription_id');
+  const planId = params.get('plan');
+  if(subStatus==='success' && subId && planId){
+    const r = await fetch('/api/membership/subscribe/activate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscription_id:subId,plan_id:planId}),credentials:'include'});
+    const d = await r.json();
+    if(d.ok) { alert('✅ Subscription aktivovaná! Členstvo '+d.plan_name+' je aktívne.'); location.href='/client-dashboard'; }
+    else alert('Chyba aktivácie: '+(d.error||'?'));
+  }
+  if(subStatus==='cancel') alert('Subscription bola zrušená. Môžeš skúsiť znova.');
+})();
+
 // ── Buy modal ─────────────────────────────────────────────────────────────────
 let _buyPlanId = null, _buyPrice = 0;
 
@@ -650,6 +695,34 @@ async function confirmBuy(){
 }
 </script>
 
+<!-- SUBSCRIBE MODAL -->
+<div id="subModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1001;align-items:center;justify-content:center">
+  <div style="background:#1a1a1a;border:1px solid rgba(201,168,76,.5);border-radius:1.2rem;padding:2rem;max-width:420px;width:92%;position:relative">
+    <button onclick="document.getElementById('subModal').style.display='none'" style="position:absolute;top:14px;right:14px;background:none;border:none;color:#888;font-size:1.3rem;cursor:pointer">✕</button>
+    <div style="text-align:center;margin-bottom:1.5rem">
+      <div style="font-size:2rem;margin-bottom:.5rem">🔄</div>
+      <div style="font-size:1.1rem;font-weight:800;color:#C9A84C" id="subModalTitle">Subscription</div>
+      <div style="color:#aaa;font-size:.85rem;margin-top:.5rem">Automatická mesačná platba cez PayPal</div>
+    </div>
+    <div style="background:#111;border-radius:.8rem;padding:1rem;margin-bottom:1.2rem;font-size:.85rem;color:#ccc">
+      <div style="margin-bottom:.5rem">✅ <b>Žiadny záväzok</b> — zruš kedykoľvek</div>
+      <div style="margin-bottom:.5rem">✅ Platba automaticky každý <b>mesiac</b></div>
+      <div style="margin-bottom:.5rem">✅ Členstvo sa <b>automaticky predĺži</b></div>
+      <div>✅ Spravovať cez tvoj PayPal účet</div>
+    </div>
+    <div style="background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.2);border-radius:.8rem;padding:.9rem;margin-bottom:1.4rem;font-size:.82rem;color:#aaa">
+      <i class="bi bi-info-circle me-1" style="color:#C9A84C"></i>
+      Po kliknutí ťa presmerujeme na PayPal, kde schváliš subscription. Potom ťa vrátime späť a aktivujeme členstvo.
+    </div>
+    <button id="subConfirmBtn" onclick="confirmSubscribe()" style="width:100%;padding:.9rem;background:linear-gradient(135deg,#0070ba,#003087);border:none;border-radius:.75rem;font-weight:800;color:#fff;cursor:pointer;font-size:.95rem;display:flex;align-items:center;justify-content:center;gap:8px">
+      <img src="https://www.paypalobjects.com/webstatic/en_US/i/buttons/PP_logo_h_150x38.png" style="height:18px;filter:brightness(10)"> Potvrdiť a prejsť na PayPal
+    </button>
+    <button onclick="openBuyModal(_subPlanId, document.getElementById('subModalTitle').textContent.split('–')[0].trim(), document.getElementById('subModalTitle').textContent.match(/\d+/)?.[0]||'');document.getElementById('subModal').style.display='none'" style="width:100%;margin-top:.6rem;padding:.6rem;background:none;border:1px solid #333;border-radius:.75rem;color:#888;cursor:pointer;font-size:.82rem">
+      Radšej jednorazová platba
+    </button>
+  </div>
+</div>
+
 <!-- BUY MODAL -->
 <div id="buyModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center">
   <div style="background:#1a1a1a;border:1px solid rgba(201,168,76,.3);border-radius:1.2rem;padding:2rem;max-width:400px;width:92%;position:relative">
@@ -679,5 +752,6 @@ async function confirmBuy(){
     </button>
   </div>
 </div>
+<script src="/nav-bar.js"></script>
 </body>
 </html>

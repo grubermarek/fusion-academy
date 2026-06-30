@@ -57,20 +57,8 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',system-u
 </head>
 <body>
 
-<nav class="top-nav">
-  <a href="/" class="brand">FUSION ACADEMY</a>
-  <div class="nav-links">
-    <a href="/">Domov</a>
-    <a href="/schedule">Rozvrh</a>
-    <a href="/pricing">Cenník</a>
-    <a href="/community">Komunita</a>
-    <a href="/online" class="active">Online</a>
-    <a href="/shop">Shop</a>
-    <a href="/dashboard" id="navDash" style="display:none">Dashboard</a>
-    <a href="#" id="navLogin" onclick="openLogin()" class="fa-btn fa-btn-gold btn btn-sm">Prihlásiť sa</a>
-    <a href="#" id="navLogout" onclick="logout()" class="fa-btn fa-btn-outline btn btn-sm" style="display:none">Odhlásiť</a>
-  </div>
-</nav>
+<!-- Nav provided by nav-bar.js -->
+<span id="navDash" style="display:none"></span>
 
 <section class="hero">
   <div class="container">
@@ -346,5 +334,6 @@ async function logout(){
 
 init();
 </script>
+<script src="/nav-bar.js"></script>
 </body>
 </html>

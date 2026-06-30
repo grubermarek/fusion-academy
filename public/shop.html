@@ -24,14 +24,12 @@
   --gold-border:rgba(201,168,76,0.22);--grad-gold:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);
 }
 *{box-sizing:border-box;}
-body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',system-ui,sans-serif;padding-top:70px;}
-.navbar{background:rgba(8,8,8,0.97)!important;border-bottom:1px solid var(--gold-border);}
-.brand-text{font-weight:900;font-size:1.2rem;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',system-ui,sans-serif;padding-top:56px;}
 .hero{background:radial-gradient(ellipse at 60% 50%,rgba(201,168,76,0.08) 0%,transparent 70%),linear-gradient(135deg,#0a0a0a 0%,#111 60%,#0f0f0f 100%);color:#fff;padding:4rem 0 3rem;border-bottom:1px solid var(--gold-border);}
 .hero h1{font-size:clamp(1.8rem,4vw,3rem);font-weight:900;}
 .hero .sub{color:rgba(255,255,255,.7);font-size:1.1rem;}
 .badge-free{background:var(--grad-gold);color:#0f0f0f;font-size:.75rem;padding:4px 12px;border-radius:20px;font-weight:700;}
-.cat-pills{background:var(--dark-2);border-bottom:1px solid var(--gold-border);position:sticky;top:70px;z-index:50;padding:.6rem 0;}
+.cat-pills{background:var(--dark-2);border-bottom:1px solid var(--gold-border);position:sticky;top:56px;z-index:50;padding:.6rem 0;}
 .cat-btn{border:1px solid var(--gold-border);background:var(--dark-3);color:var(--text-muted);padding:.35rem 1rem;border-radius:2rem;font-size:.85rem;cursor:pointer;transition:all .2s;white-space:nowrap;}
 .cat-btn.active,.cat-btn:hover{border-color:var(--gold);background:rgba(201,168,76,0.15);color:var(--gold);}
 .product-card{border:1px solid var(--gold-border)!important;border-radius:1.1rem;background:var(--dark-3)!important;transition:transform .2s,box-shadow .2s;overflow:hidden;height:100%;}
@@ -72,19 +70,12 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',system-u
 </head>
 <body>
 
-<!-- Navbar -->
-<nav class="navbar fa-nav navbar-dark fixed-top px-3">
-  <a class="navbar-brand fa-brand" href="/shop">
-    <span class="brand-text">FUSION ACADEMY</span>
-  </a>
-  <div class="d-flex align-items-center gap-3">
-    <a href="tel:+421904315151" class="fa-nav-link small d-none d-md-block text-decoration-none"><i class="bi bi-telephone me-1"></i>+421 904 315 151</a>
-    <a href="/" class="fa-btn fa-btn-outline btn btn-sm">Partner login</a>
-    <button class="fa-btn fa-btn-gold btn btn-sm" onclick="openCart()">
-      <i class="bi bi-bag"></i> <span id="navCartCount" class="fw-bold">0</span>
-    </button>
-  </div>
-</nav>
+<!-- Shared navigation (injected by nav-bar.js) -->
+<!-- Cart button (floating) -->
+<button class="cart-btn" onclick="openCart()" style="z-index:450" id="shopCartFloatBtn">
+  <i class="bi bi-bag"></i>
+  <span class="cart-count" id="navCartCount">0</span>
+</button>
 
 <!-- Hero -->
 <section class="hero">
@@ -429,5 +420,6 @@ if (urlRef) {
   }, 100);
 }
 </script>
+<script src="/nav-bar.js"></script>
 </body>
 </html>

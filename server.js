@@ -1,4 +1,13 @@
 'use strict';
+// Load .env file if present (local dev)
+const fs0 = require('fs'), path0 = require('path');
+const envPath = path0.join(__dirname, '.env');
+if(fs0.existsSync(envPath)){
+  fs0.readFileSync(envPath,'utf8').split('\n').forEach(line=>{
+    const [k,...v]=line.trim().split('=');
+    if(k && !k.startsWith('#') && !process.env[k]) process.env[k]=v.join('=');
+  });
+}
 const express   = require('express');
 const http      = require('http');
 const https     = require('https');
@@ -60,6 +69,8 @@ const db = {
   rentals:      new Datastore({ filename: path.join(DATA_DIR, 'rentals.db'),      autoload: true }),
   notifications:new Datastore({ filename: path.join(DATA_DIR, 'notifications.db'),autoload: true }),
   payments:     new Datastore({ filename: path.join(DATA_DIR, 'payments.db'),     autoload: true }),
+  email_steps:  new Datastore({ filename: path.join(DATA_DIR, 'email_steps.db'), autoload: true }),
+  email_queue:  new Datastore({ filename: path.join(DATA_DIR, 'email_queue.db'), autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true });
@@ -462,6 +473,94 @@ async function seedData() {
     }
     console.log('✅  Blog články naplnené v komunite');
   }
+
+  // ── Seed email sequences ─────────────────────────────────────────────────────
+  if(await q.count(db.email_steps,{})===0){
+    const APP = process.env.APP_URL||'https://latindancefusion.art';
+    const steps = [
+      // ── WELCOME (po registrácii) ─────────────────────────────────────────────
+      { sequence:'welcome', day:0, label:'Uvítací email', active:true,
+        subject:'Vitaj vo Fusion Academy! 🎉',
+        body:`<p>Sme nadšení, že si tu!</p><p>Vo Fusion Academy ťa čaká:</p><ul><li>💃 Zumba, spoločenské tance, Fit Premena</li><li>📍 4 mestá: Detva, Zvolen, BB, Brezno</li><li>👥 Komunita stoviek spokojných klientok</li></ul><p>Ako začať? <b>Prvá hodina je ZADARMO</b> — bez záväzku, bez platby.</p>`,
+        cta:'🗓️ Rezervovať prvú hodinu zadarmo', cta_url:`${APP}/schedule` },
+      { sequence:'welcome', day:3, label:'Tip po 3 dňoch', active:true,
+        subject:'Tip pre teba: ako vybrať správnu hodinu 💃',
+        body:`<p>Nevieš, čia hodina je pre teba? Poradíme!</p><ul><li><b>Zumba</b> – chudnutie, energia, zábava. Ideálne pre začiatočníkov.</li><li><b>Spoločenské tance</b> – elegancia, plesová príprava, páry aj jednotlivci.</li><li><b>Fit Premena</b> – komplexný program s výživou a coachingom.</li></ul><p>Zapíš sa na tú, čo ťa zaujíma – <b>prvá je zadarmo</b>.</p>`,
+        cta:'📋 Pozrieť rozvrh', cta_url:`${APP}/schedule` },
+      { sequence:'welcome', day:7, label:'Inšpirácia po týždni', active:true,
+        subject:'Beátka schudla 17 kg. Ako? 💪',
+        body:`<p>Beátka prišla do Fusion Academy pred rokom. Dnes je o <b>17 kg ľahšia</b>.</p><p>"Prišla som schudnúť. Odchádzam so svojou rodinou a sama so sebou tak, ako som sa nevidela 15 rokov."</p><p>Jej recept? 3× týždenne Zumba + výživa. Nič viac.</p><p>Tvoja premena môže začať <b>tento týždeň</b>.</p>`,
+        cta:'💃 Začať teraz', cta_url:`${APP}/schedule` },
+
+      // ── LEAD NURTURE (registrovaný, bez členstva) ────────────────────────────
+      { sequence:'lead_nurture', day:3, label:'Lead – 3 dni bez nákupu', active:true,
+        subject:'Ešte si neprišla? Tvoja hodina ťa čaká 🎯',
+        body:`<p>Zaregistrovala si sa, ale zatiaľ sme ťa nevideli.</p><p>Vieme, že prvý krok je najtažší. Preto je prvá hodina <b>ZADARMO</b> – bez rizika, bez záväzku.</p><p>Jednoducho príď, vyskúšaj a uvidíš sama.</p>`,
+        cta:'🎁 Rezervovať zadarmo', cta_url:`${APP}/schedule` },
+      { sequence:'lead_nurture', day:7, label:'Lead – 7 dní bez nákupu', active:true,
+        subject:'Čo hovorí naša komunita? 👥',
+        body:`<p>36+ hodnotení ⭐⭐⭐⭐⭐ na Google. Tu je jeden z nich:</p><p><i>"Prišla som na jednu hodinu. Zostala som rok. Najlepšie rozhodnutie za dlho."</i></p><p>Zapoj sa aj ty. Prvá hodina je vždy zadarmo.</p>`,
+        cta:'📍 Nájsť hodinu blízko mňa', cta_url:`${APP}/schedule` },
+      { sequence:'lead_nurture', day:14, label:'Lead – 14 dní bez nákupu', active:true,
+        subject:'Posledná šanca: 10% zľava na prvé členstvo 🎟️',
+        body:`<p>Ako špeciálne poďakovanie za registráciu, ponúkame ti <b>10% zľavu na Bronze členstvo</b> (neobmedzene hodín).</p><p>Platí do konca týždňa. Stačí sa prihlásiť a vybrať plán.</p>`,
+        cta:'💳 Aktivovať zľavu', cta_url:`${APP}/pricing` },
+      { sequence:'lead_nurture', day:30, label:'Lead – 30 dní bez nákupu', active:true,
+        subject:'Zdravíme sa! Stále tu sme 💛',
+        body:`<p>Uplynul mesiac od registrácie. Ak sa okolnosti zmenili a chceš začať tancovať – sme stále tu.</p><p>Kedykoľvek prídeš, prvá hodina je zadarmo.</p>`,
+        cta:'🗓️ Pozrieť rozvrh', cta_url:`${APP}/schedule` },
+
+      // ── MEMBERSHIP WELCOME (po kúpe členstva) ────────────────────────────────
+      { sequence:'membership_welcome', day:0, label:'Členstvo aktivované', active:true,
+        subject:'Členstvo aktivované – vitaj v klube! 🏆',
+        body:`<p>Tvoje členstvo je aktívne. Od teraz môžeš chodiť na <b>neobmedzene hodín</b> vo všetkých mestách.</p><p><b>Čo ďalej?</b></p><ul><li>📱 Prihlás sa do klient dashboardu a rezervuj si hodinu</li><li>💬 Zapoj sa do komunity – chat, novinky, výzvy</li><li>🎟️ Ukáž svoj QR kód trénerovi pri vstupe</li></ul>`,
+        cta:'📱 Otvoriť môj profil', cta_url:`${APP}/client-dashboard` },
+      { sequence:'membership_welcome', day:1, label:'Tipy pre nových členov', active:true,
+        subject:'5 tipov pre nových členov Fusion Academy 💡',
+        body:`<p>Vitaj v klube! Tu je 5 vecí, ktoré by si mala vedieť:</p><ol><li>Rezervuj hodinu vopred – miesta sú limitované</li><li>Ukáž QR kód na telefóne pri vstupe</li><li>Vyskúšaj aspoň 3 rôzne typy hodín</li><li>Zapoj sa do komunity – chat je plný inšpirácie</li><li>Ak niečo nevieš, napíš trénerovi priamo</li></ol>`,
+        cta:'🗓️ Rezervovať hodinu', cta_url:`${APP}/schedule` },
+      { sequence:'membership_welcome', day:7, label:'Check-in po týždni', active:true,
+        subject:'Ako ti ide prvý týždeň? 🌟',
+        body:`<p>Uplynul týždeň od aktivácie tvojho členstva. Ako sa ti darí?</p><p>Ak si ešte nebola na hodine, nevadí – teraz je správny čas. Máš neobmedzene vstupov celý mesiac.</p><p>Ak máš akékoľvek otázky, odpíš na tento email – radi pomôžeme.</p>`,
+        cta:'💃 Rezervovať hodinu', cta_url:`${APP}/schedule` },
+
+      // ── EXPIRY WARNING ───────────────────────────────────────────────────────
+      { sequence:'expiry_warning', day:-7, label:'Upozornenie 7 dní', active:true,
+        subject:'⚠️ Tvoje členstvo vyprší o 7 dní',
+        body:`<p>Tvoje členstvo vyprší o <b>7 dní</b>.</p><p>Obnov si ho teraz a neprerušuj svoju tanečnú cestu. Ak obnovíš pred expiráciou, členstvo sa predĺži – nestratíš ani deň.</p>`,
+        cta:'🔄 Obnoviť členstvo', cta_url:`${APP}/pricing` },
+      { sequence:'expiry_warning', day:-3, label:'Upozornenie 3 dni', active:true,
+        subject:'⚠️ Tvoje členstvo vyprší o 3 dni – konaj teraz',
+        body:`<p>Zostávajú <b>3 dni</b> platnosti tvojho členstva.</p><p>Po expirácii stratíš prístup na hodiny. Obnov si ho jedným kliknutím.</p>`,
+        cta:'⚡ Obnoviť teraz', cta_url:`${APP}/pricing` },
+      { sequence:'expiry_warning', day:-1, label:'Upozornenie posledný deň', active:true,
+        subject:'🚨 Tvoje členstvo vyprší ZAJTRA',
+        body:`<p>Toto je posledné upozornenie – tvoje členstvo vyprší <b>zajtra</b>.</p><p>Ak nechceš prísť o prístup na hodiny, obnov si ho ešte dnes.</p>`,
+        cta:'🔐 Obnoviť ihneď', cta_url:`${APP}/pricing` },
+
+      // ── POST FIRST CLASS ─────────────────────────────────────────────────────
+      { sequence:'post_first_class', day:0, label:'Follow-up po prvej hodine', active:true,
+        subject:'Ako sa ti páčila prvá hodina? 🥰',
+        body:`<p>Bola si u nás prvýkrát – ďakujeme!</p><p>Ako to šlo? Dúfame, že sa ti páčilo.</p><p>Ak máš otázky alebo chceš vedieť viac o členstvách, jednoducho odpíš na tento email.</p><p>Budeme radi, ak prídeš aj nabudúce 💃</p>`,
+        cta:'🗓️ Rezervovať ďalšiu hodinu', cta_url:`${APP}/schedule` },
+      { sequence:'post_first_class', day:3, label:'Ponuka po prvej hodine', active:true,
+        subject:'Špeciálna ponuka len pre teba 🎁',
+        body:`<p>Videli sme ťa na hodine – a vieme, že to mal byť len začiatok!</p><p>Pre nových klientov ponúkame Bronze členstvo (neobmedzene hodín) za <b>50 €/mesiac</b>.</p><p>To vychádza na <b>menej ako 2 € za hodinu</b> – pri 3 hodinách týždenne.</p>`,
+        cta:'💳 Aktivovať členstvo', cta_url:`${APP}/pricing` },
+
+      // ── RE-ENGAGEMENT (neaktívni 14+ dní) ───────────────────────────────────
+      { sequence:'reengagement', day:0, label:'Chýbaš nám – 14 dní', active:true,
+        subject:'Chýbaš nám! 🥺 Vráť sa na hodiny',
+        body:`<p>Všimli sme si, že si u nás dlhší čas nebola.</p><p>Vráť sa – tvoje miesto na parkete stále čaká. A ak máš aktívne členstvo, využi ho!</p>`,
+        cta:'🗓️ Pozrieť rozvrh', cta_url:`${APP}/schedule` },
+      { sequence:'reengagement', day:7, label:'Re-engagement – 2. pokus', active:true,
+        subject:'Špeciálna ponuka pre teba 💛',
+        body:`<p>Vieme, že život je niekedy hektický. Preto chceme uľahčiť návrat.</p><p>Ak chceš obnoviť alebo kúpiť členstvo, napíš nám a dohodneme sa na podmienkach.</p>`,
+        cta:'💌 Kontaktovať nás', cta_url:`${APP}/contact` },
+    ];
+    for(const s of steps) await q.insert(db.email_steps, {...s, created_at:nowISO()});
+    console.log('✅  Email sekvencie naplnené ('+steps.length+' krokov)');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -496,7 +595,8 @@ app.post('/api/register', async(req,res)=>{
     while(await q.one(db.users,{referral_code:code})) code=base+Math.floor(100+Math.random()*900);
     // All new users are 'client' — they can earn referral rewards right away
     const utype = user_type || 'client';
-    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,referral_credit:0,created_at:today()});
+    const lead_source = req.body.lead_source||'';
+    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,referral_credit:0,lead_source,created_at:today()});
     req.session.uid=u._id;
     // ── Give sponzor referral credit (5€ za každého nového člena) ─────────────
     if(sponsor_id){
@@ -508,8 +608,9 @@ app.post('/api/register', async(req,res)=>{
         await q.insert(db.notifications,{user_id:sponsor_id,type:'referral_credit',title:`+${REFERRAL_SIGNUP_CREDIT} € referral kredit! 🎉`,body:`${name} sa zaregistroval/a cez tvoj link. Zostatok: ${newCredit} €`,read:false,created_at:nowISO()});
       }
     }
-    // Send welcome email to new lead/client
-    sendMail(email, 'Vitaj vo Fusion Academy! 🎉', `<h2>Vitaj, ${name}! 🎉</h2><p>Registrácia prebehla úspešne. Tešíme sa, že si súčasťou Fusion Academy!</p><p>👉 <a href="https://latindancefusion.art/schedule">Pozri rozvrh hodín</a> a zarezervuj si prvú lekciu – prvá hodina je <b>ZADARMO</b>!</p><p>Ak máš otázky, napíš nám: <a href="mailto:info@fusionacademy.sk">info@fusionacademy.sk</a></p><p><i>Fusion Academy tím 💃</i></p>`).catch(()=>{});
+    // Email automation: enqueue welcome + lead_nurture sequences
+    enqueueSequence(u._id, 'welcome').catch(()=>{});
+    enqueueSequence(u._id, 'lead_nurture').catch(()=>{});
     res.json({ok:true, userType:utype, redirect_to: dashUrlFor(u)});
   } catch(e){
     if(e.message?.includes('unique')) return res.status(400).json({error:'Email je už zaregistrovaný'});
@@ -701,7 +802,7 @@ app.get('/api/downline', auth, async(req,res)=>{
   res.json(await tree(uid,0));
 });
 
-app.get('/api/leaderboard', auth, async(req,res)=>{
+app.get('/api/partner/leaderboard', auth, async(req,res)=>{
   const month=currentMonth();
   const allU=await q.find(db.users,{is_admin:{$ne:true},active:true});
   const allC=await q.find(db.commissions,{month});
@@ -916,6 +1017,19 @@ app.post('/api/admin/crm/email', adminAuth, async(req,res)=>{
   } catch(e){res.status(500).json({error:e.message});}
 });
 
+// ── Test email ────────────────────────────────────────────────────────────────
+app.post('/api/admin/crm/test-email', adminAuth, async(req,res)=>{
+  try {
+    const recipient = req.body.to || process.env.SMTP_USER;
+    if(!recipient) return res.status(400).json({error:'SMTP_USER nie je nastavený'});
+    await sendMail(recipient, '✅ Testovací email – Fusion Academy',
+      emailTemplate('Email funguje! ✅',
+        `<p>Tento email potvrdzuje, že emailové notifikácie sú správne nakonfigurované.</p><p>Odosielateľ: <b>${process.env.SMTP_USER}</b></p><p>Automatické emaily (expiry warning, reminder pred hodinou, follow-up) budú chodiť odteraz automaticky každý deň o 8:00.</p>`,
+        '💃 Otvoriť aplikáciu', process.env.APP_URL||'http://localhost:3000'));
+    res.json({ok:true, sent_to: recipient});
+  } catch(e){ res.status(500).json({error: e.message}); }
+});
+
 // ── CRM automation – expiry warnings (call manually or via cron) ───────────────
 app.post('/api/admin/crm/send-expiry-warnings', adminAuth, async(req,res)=>{
   try {
@@ -1128,6 +1242,69 @@ function ppRequest(method, endpoint, body){
     req.end();
   });
 }
+// ── PayPal helper: generic API call ───────────────────────────────────────────
+async function ppApi(method, path, body){
+  const token = await ppGetToken();
+  const url = new URL(PAYPAL_BASE + path);
+  const postData = body ? JSON.stringify(body) : null;
+  return new Promise((resolve,reject)=>{
+    const headers = {'Authorization':`Bearer ${token}`,'Content-Type':'application/json','Accept':'application/json'};
+    if(postData) headers['Content-Length'] = Buffer.byteLength(postData);
+    const req = https.request({hostname:url.hostname,path:url.pathname+url.search,method,headers},res=>{
+      let d=''; res.on('data',c=>d+=c); res.on('end',()=>{ try{ resolve({status:res.statusCode,body:d?JSON.parse(d):null}); }catch(e){ resolve({status:res.statusCode,body:d}); }});
+    });
+    req.on('error',reject);
+    if(postData) req.write(postData);
+    req.end();
+  });
+}
+
+// ── PayPal Subscriptions: create or fetch product & plan IDs ─────────────────
+async function ppEnsureSubscriptionPlan(planKey){
+  const plan = MEMBERSHIP_PLANS[planKey];
+  if(!plan || plan.type==='bundle') return null;
+  if(!PAYPAL_CLIENT_ID) return null;
+
+  // Check if we already have a stored plan_id
+  const stored = await q.one(db.email_steps, {_type:'paypal_plan', plan_key:planKey}).catch(()=>null);
+  if(stored?.paypal_plan_id) return stored.paypal_plan_id;
+
+  // 1. Create product
+  const prodRes = await ppApi('POST','/v1/catalogs/products',{
+    name:`Fusion Academy – ${plan.name}`,
+    description:`Mesačné tančné členstvo ${plan.name}`,
+    type:'SERVICE', category:'EDUCATIONAL_AND_TEXTBOOKS'
+  });
+  if(prodRes.status!==201) throw new Error('PayPal product error: '+JSON.stringify(prodRes.body));
+  const productId = prodRes.body.id;
+
+  // 2. Create billing plan
+  const planRes = await ppApi('POST','/v1/billing/plans',{
+    product_id: productId,
+    name: `Fusion Academy ${plan.name} – mesačné`,
+    description: `Neobmedzené hodiny ${plan.name}`,
+    status:'ACTIVE',
+    billing_cycles:[{
+      frequency:{ interval_unit:'MONTH', interval_count:1 },
+      tenure_type:'REGULAR', sequence:1,
+      total_cycles:0, // 0 = infinite
+      pricing_scheme:{ fixed_price:{ value: plan.price.toFixed(2), currency_code:'EUR' } }
+    }],
+    payment_preferences:{
+      auto_bill_outstanding:true,
+      setup_fee:{ value:'0', currency_code:'EUR' },
+      setup_fee_failure_action:'CONTINUE',
+      payment_failure_threshold:3
+    }
+  });
+  if(planRes.status!==201) throw new Error('PayPal plan error: '+JSON.stringify(planRes.body));
+  const paypalPlanId = planRes.body.id;
+
+  // Store for reuse (using email_steps table as a kv store hack)
+  await q.insert(db.email_steps,{_type:'paypal_plan', plan_key:planKey, paypal_plan_id:paypalPlanId, created_at:nowISO()});
+  return paypalPlanId;
+}
+
 async function ppGetToken(){
   const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`).toString('base64');
   const postData = 'grant_type=client_credentials';
@@ -1249,12 +1426,36 @@ const MEMBERSHIP_PLANS = {
   'gold':           { name:'Gold',           price:125,  duration_days:30,  online:true,  color:'#C9A84C' },
   'online_basic':   { name:'Online Basic',   price:12.9, duration_days:30,  online:true,  color:'#4CAF50' },
   'online_premium': { name:'Online Premium', price:67.9, duration_days:30,  online:true,  color:'#9C27B0' },
+  'permanentka10':  { name:'10-vstupová permanentka', price:80, duration_days:90, online:false, color:'#FF9800', type:'bundle', entries:10 },
 };
 
 async function activateMembership(userId, planId, durationDays){
   const plan = MEMBERSHIP_PLANS[planId];
   if(!plan) return;
   const now = new Date();
+
+  // ── Bundle type: add single_entries instead of membership subscription ───────
+  if(plan.type === 'bundle'){
+    const entries = plan.entries || 10;
+    const u0 = await q.one(db.users,{_id:userId});
+    const newEntries = (u0.single_entries||0) + entries;
+    const expiresAt = new Date(now.getTime() + (plan.duration_days||90)*24*60*60*1000);
+    await q.update(db.users,{_id:userId},{$set:{single_entries:newEntries}});
+    await q.insert(db.memberships,{user_id:userId,plan_id:planId,plan_name:plan.name,price:plan.price,status:'bundle',started_at:now.toISOString(),expires_at:expiresAt.toISOString(),created_at:nowISO()});
+    await q.insert(db.notifications,{user_id:userId,type:'membership',title:'Permanentka aktivovaná 🎟️',body:`Máš ${newEntries} vstupov na 90 dní.`,read:false,created_at:nowISO()});
+    const u0b = await q.one(db.users,{_id:userId});
+    if(u0b?.sponsor_id){
+      const bonus = +(plan.price * 0.10).toFixed(2);
+      const sponsor = await q.one(db.users,{_id:u0b.sponsor_id});
+      if(sponsor){
+        const newCredit = +((sponsor.referral_credit||0)+bonus).toFixed(2);
+        await q.update(db.users,{_id:u0b.sponsor_id},{$set:{referral_credit:newCredit}});
+        await q.insert(db.notifications,{user_id:u0b.sponsor_id,type:'referral_credit',title:`+${bonus} € referral kredit! 💰`,body:`${u0b.name} kúpil/a permanentku. Zostatok: ${newCredit} €`,read:false,created_at:nowISO()});
+      }
+    }
+    return;
+  }
+
   // Check existing active membership
   const existing = await q.one(db.memberships,{user_id:userId,status:'active'});
   const startDate = existing && new Date(existing.expires_at) > now
@@ -1270,6 +1471,11 @@ async function activateMembership(userId, planId, durationDays){
   await q.update(db.users,{_id:userId},{$set:{membership_plan:planId,membership_expires:expiresAt.toISOString()}});
   // Notification
   await q.insert(db.notifications,{user_id:userId,type:'membership',title:'Členstvo aktivované 🎉',body:`Váš plán ${plan.name} je aktívny do ${expiresAt.toLocaleDateString('sk-SK')}.`,read:false,created_at:nowISO()});
+  // ── Email automation: cancel lead_nurture, enqueue membership_welcome ────────
+  cancelSequence(userId,'lead_nurture').catch(()=>{});
+  enqueueSequence(userId,'membership_welcome').catch(()=>{});
+  // ── Expiry warning sequence anchored from expiry date ───────────────────────
+  enqueueSequence(userId,'expiry_warning', expiresAt).catch(()=>{});
   // ── Give sponsor 10% referral credit on membership purchase ─────────────────
   const u = await q.one(db.users,{_id:userId});
   if(u?.sponsor_id){
@@ -1302,6 +1508,151 @@ app.get('/api/membership', auth, async(req,res)=>{
 });
 
 app.get('/api/membership/plans', (req,res)=>res.json(MEMBERSHIP_PLANS));
+
+// ── Create PayPal Subscription ─────────────────────────────────────────────────
+app.post('/api/membership/subscribe', auth, async(req,res)=>{
+  try {
+    const {plan_id} = req.body;
+    const plan = MEMBERSHIP_PLANS[plan_id];
+    if(!plan || plan.type==='bundle') return res.status(400).json({error:'Neplatný plán pre subscription'});
+    if(!PAYPAL_CLIENT_ID) {
+      // Demo mode – activate immediately
+      await activateMembership(req.session.uid, plan_id);
+      return res.json({ok:true, demo:true, message:'Demo: subscription aktivovaná'});
+    }
+    const u = await q.one(db.users,{_id:req.session.uid});
+    const paypalPlanId = await ppEnsureSubscriptionPlan(plan_id);
+    const subRes = await ppApi('POST','/v1/billing/subscriptions',{
+      plan_id: paypalPlanId,
+      subscriber: { name:{ given_name: u.name.split(' ')[0], surname: u.name.split(' ').slice(1).join(' ')||'-' }, email_address: u.email },
+      application_context: {
+        brand_name:'Fusion Academy',
+        locale:'sk-SK',
+        shipping_preference:'NO_SHIPPING',
+        user_action:'SUBSCRIBE_NOW',
+        return_url:`${APP_URL}/client-dashboard?sub=success&plan=${plan_id}`,
+        cancel_url:`${APP_URL}/pricing?sub=cancel`
+      }
+    });
+    if(subRes.status!==201) return res.status(400).json({error:'PayPal subscription chyba', detail: subRes.body});
+    const approveLink = subRes.body.links?.find(l=>l.rel==='approve')?.href;
+    // Store pending subscription
+    await q.insert(db.payments,{
+      paypal_subscription_id: subRes.body.id, user_id:u._id, amount:plan.price,
+      currency:'EUR', description:`Subscription ${plan.name}`, ref_id:plan_id,
+      ref_type:'subscription', status:'pending', created_at:nowISO()
+    });
+    res.json({ok:true, subscription_id: subRes.body.id, approve_url: approveLink});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Activate subscription after PayPal approval ────────────────────────────────
+app.post('/api/membership/subscribe/activate', auth, async(req,res)=>{
+  try {
+    const {subscription_id, plan_id} = req.body;
+    if(!subscription_id || !plan_id) return res.status(400).json({error:'Chýba subscription_id alebo plan_id'});
+    // Verify with PayPal
+    const subRes = await ppApi('GET',`/v1/billing/subscriptions/${subscription_id}`);
+    if(subRes.status!==200) return res.status(400).json({error:'Subscription nenájdená'});
+    const sub = subRes.body;
+    if(!['ACTIVE','APPROVED'].includes(sub.status)) return res.status(400).json({error:'Subscription nie je aktívna: '+sub.status});
+    // Activate membership
+    await activateMembership(req.session.uid, plan_id);
+    // Save subscription_id on user
+    await q.update(db.users,{_id:req.session.uid},{$set:{paypal_subscription_id: subscription_id, subscription_plan: plan_id}});
+    await q.update(db.payments,{paypal_subscription_id:subscription_id},{$set:{status:'active', activated_at:nowISO()}});
+    res.json({ok:true, plan_name: MEMBERSHIP_PLANS[plan_id]?.name});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Cancel subscription ────────────────────────────────────────────────────────
+app.post('/api/membership/subscribe/cancel', auth, async(req,res)=>{
+  try {
+    const u = await q.one(db.users,{_id:req.session.uid});
+    if(!u.paypal_subscription_id) return res.status(400).json({error:'Nemáš aktívnu subscription'});
+    const cancelRes = await ppApi('POST',`/v1/billing/subscriptions/${u.paypal_subscription_id}/cancel`,{reason:'Zrušenie na žiadosť klienta'});
+    if(cancelRes.status!==204) return res.status(400).json({error:'Chyba zrušenia PayPal'});
+    await q.update(db.users,{_id:u._id},{$set:{paypal_subscription_id:null, subscription_plan:null}});
+    await q.insert(db.notifications,{user_id:u._id,type:'membership',title:'Subscription zrušená',body:'Automatické obnovenie bolo zrušené. Členstvo zostáva aktívne do konca obdobia.',read:false,created_at:nowISO()});
+    res.json({ok:true});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Admin: cancel subscription for user ───────────────────────────────────────
+app.post('/api/admin/membership/cancel-subscription', adminAuth, async(req,res)=>{
+  try {
+    const u = await q.one(db.users,{_id:req.body.user_id});
+    if(!u?.paypal_subscription_id) return res.status(400).json({error:'Užívateľ nemá subscription'});
+    await ppApi('POST',`/v1/billing/subscriptions/${u.paypal_subscription_id}/cancel`,{reason:'Admin zrušenie'});
+    await q.update(db.users,{_id:u._id},{$set:{paypal_subscription_id:null,subscription_plan:null}});
+    res.json({ok:true});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── PayPal Webhook: subscription events ───────────────────────────────────────
+// Raw body needed for webhook signature verification
+app.post('/api/paypal/webhook', express.raw({type:'application/json'}), async(req,res)=>{
+  try {
+    const event = JSON.parse(req.body.toString());
+    const {event_type, resource} = event;
+    console.log('📦 PayPal webhook:', event_type);
+
+    if(event_type === 'BILLING.SUBSCRIPTION.RENEWED' || event_type === 'PAYMENT.SALE.COMPLETED'){
+      // Find user by subscription_id
+      const subId = resource.billing_agreement_id || resource.id;
+      if(!subId) return res.sendStatus(200);
+      const u = await q.one(db.users,{paypal_subscription_id:subId});
+      if(!u) return res.sendStatus(200);
+      const planId = u.subscription_plan;
+      const plan = MEMBERSHIP_PLANS[planId];
+      if(!plan) return res.sendStatus(200);
+
+      // Extend membership by 30 days from current expiry
+      const existing = await q.one(db.memberships,{user_id:u._id,status:'active'});
+      const now = new Date();
+      const base = existing && new Date(existing.expires_at) > now ? new Date(existing.expires_at) : now;
+      const newExpiry = new Date(base.getTime() + 30*86400000);
+      if(existing){
+        await q.update(db.memberships,{_id:existing._id},{$set:{expires_at:newExpiry.toISOString(),updated_at:nowISO()}});
+      } else {
+        await q.insert(db.memberships,{user_id:u._id,plan_id:planId,plan_name:plan.name,price:plan.price,status:'active',started_at:now.toISOString(),expires_at:newExpiry.toISOString(),created_at:nowISO()});
+      }
+      await q.update(db.users,{_id:u._id},{$set:{membership_plan:planId,membership_expires:newExpiry.toISOString()}});
+      const amount = resource.amount?.total || plan.price;
+      await q.insert(db.transactions,{type:'subscription_renewal',user_id:u._id,user_name:u.name,amount:parseFloat(amount),payment_method:'paypal_subscription',note:`Auto-renewal ${plan.name}`,plan_id:planId,created_at:nowISO(),month:today().slice(0,7)});
+      await q.insert(db.notifications,{user_id:u._id,type:'membership',title:'Členstvo obnovené 🔄',body:`${plan.name} automaticky obnovené do ${newExpiry.toLocaleDateString('sk-SK')}.`,read:false,created_at:nowISO()});
+      if(u.email) sendMail(u.email,`🔄 Členstvo obnovené – ${plan.name}`,
+        emailTemplate('Členstvo automaticky obnovené 🔄',
+          `<p>Ahoj <b>${u.name}</b>,</p><p>Tvoje členstvo <b>${plan.name}</b> bolo automaticky obnovené a platí do <b>${newExpiry.toLocaleDateString('sk-SK')}</b>.</p><p>Ďakujeme, že si s nami! 💃</p>`,
+          '📱 Môj profil',`${APP_URL}/client-dashboard`)).catch(()=>{});
+    }
+
+    if(event_type === 'BILLING.SUBSCRIPTION.PAYMENT.FAILED'){
+      const subId = resource.id;
+      const u = await q.one(db.users,{paypal_subscription_id:subId});
+      if(!u?.email) return res.sendStatus(200);
+      await q.insert(db.notifications,{user_id:u._id,type:'payment',title:'⚠️ Platba zlyhala',body:'Automatické obnovenie členstva sa nepodarilo. Skontroluj platobnú metódu.',read:false,created_at:nowISO()});
+      sendMail(u.email,'⚠️ Platba za členstvo zlyhala',
+        emailTemplate('Platba zlyhala ⚠️',
+          `<p>Ahoj <b>${u.name}</b>,</p><p>Automatická platba za tvoje členstvo <b>zlyhala</b>.</p><p>PayPal sa pokúsi o platbu znova. Ak problém pretrváva, skontroluj svoju platobnú metódu v PayPal účte.</p>`,
+          '💳 Spravovať platbu',`https://www.paypal.com/myaccount/autopay/`)).catch(()=>{});
+    }
+
+    if(event_type === 'BILLING.SUBSCRIPTION.CANCELLED'){
+      const subId = resource.id;
+      const u = await q.one(db.users,{paypal_subscription_id:subId});
+      if(u){
+        await q.update(db.users,{_id:u._id},{$set:{paypal_subscription_id:null,subscription_plan:null}});
+        await q.insert(db.notifications,{user_id:u._id,type:'membership',title:'Subscription zrušená',body:'Automatické obnovenie členstva bolo zrušené.',read:false,created_at:nowISO()});
+      }
+    }
+
+    res.sendStatus(200);
+  } catch(e){
+    console.error('Webhook error:', e.message);
+    res.sendStatus(200); // always 200 to prevent PayPal retries
+  }
+});
 
 app.post('/api/membership/buy', auth, async(req,res)=>{
   try {
@@ -1862,6 +2213,71 @@ app.delete('/api/attendance/booking/:id', trainerAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ─── QR CHECK-IN ─────────────────────────────────────────────────────────────
+// POST /api/attendance/qr-checkin  { qr_data: "FA:userId", class_id }
+// Returns member info + books them into the class
+app.post('/api/attendance/qr-checkin', trainerAuth, async(req,res)=>{
+  try {
+    const {qr_data, class_id} = req.body;
+    if(!qr_data) return res.status(400).json({error:'Chýba QR kód'});
+    // Parse userId from "FA:userId" format
+    const userId = qr_data.startsWith('FA:') ? qr_data.slice(3) : qr_data;
+    const u = await q.one(db.users,{_id:userId});
+    if(!u) return res.status(404).json({error:'Člen nenájdený – neplatný QR kód'});
+    const mem = u ? await checkMembership(u._id) : null;
+    const userData = {
+      id: u._id, name: u.name, email: u.email, phone: u.phone||'',
+      visit_count: u.visit_count||0, free_class_used: u.free_class_used||false,
+      single_entries: u.single_entries||0, free_credits: u.free_credits||0,
+      membership: mem ? {plan:mem.plan_name, expires:mem.expires_at} : null,
+    };
+    // If class_id provided, book them in
+    if(class_id){
+      const cls = await q.one(db.classes,{_id:class_id});
+      if(!cls) return res.json({ok:true, user:userData, booking:null, note:'Hodina nenájdená'});
+      const bdate = nextDateForDay(cls.day_of_week);
+      const exists = await q.one(db.bookings,{class_id,user_id:u._id,booking_date:bdate,status:{$ne:'cancelled'}});
+      if(exists) return res.json({ok:true, user:userData, booking:{existing:true, booking_date:bdate, class_name:cls.name}});
+      // Determine access type
+      const hasMem = mem && mem.status === 'active';
+      const hasFree = !u.free_class_used && (u.visit_count||0) === 0;
+      const hasSingle = (u.single_entries||0) > 0;
+      const hasCredit = (u.free_credits||0) > 0;
+      if(!hasMem && !hasFree && !hasSingle && !hasCredit){
+        return res.json({ok:false, user:userData, error:'membership_required', note:'Žiadne platné členstvo ani vstup'});
+      }
+      await q.insert(db.bookings,{
+        class_id, class_name:cls.name, class_emoji:cls.emoji||'💃',
+        class_location:cls.location, class_time_start:cls.time_start,
+        day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
+        user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||'',
+        booking_date:bdate, status:'confirmed',
+        notes:'📱 QR check-in', manual:true, manual_by:req.trainerUser._id, created_at:nowISO()
+      });
+      const upd = {visit_count:(u.visit_count||0)+1};
+      if(hasFree && !u.free_class_used) upd.free_class_used = true;
+      else if(hasCredit && !hasMem) upd.free_credits = (u.free_credits||0) - 1;
+      else if(hasSingle && !hasMem && !hasFree) upd.single_entries = (u.single_entries||0) - 1;
+      await q.update(db.users,{_id:u._id},{$set:upd});
+      await q.insert(db.notifications,{user_id:u._id,type:'checkin',title:'✅ Check-in potvrdený',
+        body:`${cls.name} – ${bdate} o ${cls.time_start}`,read:false,created_at:nowISO()});
+      return res.json({ok:true, user:{...userData, visit_count:upd.visit_count},
+        booking:{booking_date:bdate, class_name:cls.name, access_type: hasMem?'membership':hasFree?'free':hasCredit?'credit':'single'}});
+    }
+    // No class_id – just member lookup
+    res.json({ok:true, user:userData});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// GET /api/me/qr – return QR payload for the logged-in user
+app.get('/api/me/qr', auth, async(req,res)=>{
+  try {
+    const u = await q.one(db.users,{_id:req.session.uid});
+    if(!u) return res.status(401).json({error:'Not logged in'});
+    res.json({qr_data:'FA:'+u._id, name:u.name});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // EMAIL NOTIFICATIONS (Nodemailer – optional, falls back gracefully)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1952,6 +2368,8 @@ app.post('/api/bookings', auth, async(req,res)=>{
       await q.insert(db.notifications,{user_id:u._id,type:'loyalty',title:`🏆 Nový odznak: ${milestone.label}`,body:`Gratulujeme! ${newCount} návštev. ${milestone.reward ? 'Odmena: '+milestone.reward : ''}`,read:false,created_at:nowISO()});
       if(u.email) sendMail(u.email,`🏆 Nový odznak: ${milestone.label}`,`<h2>${milestone.badge} Gratulujeme, ${u.name}!</h2><p>Práve si dosiahol míľnik: <b>${newCount} návštev</b> – ${milestone.label}!</p>${milestone.reward?`<p>🎁 Odmena: <b>${milestone.reward}</b></p>`:''}<p>Ďakujeme, že si súčasťou Fusion Academy!</p><p><i>Fusion Academy tím 💃</i></p>`).catch(()=>{});
     }
+    // Email automation: post-first-class sequence
+    if(newCount === 1) enqueueSequence(u._id, 'post_first_class').catch(()=>{});
     // Send confirmation email
     if(u.email) sendMail(u.email,`Rezervácia potvrdená – ${cls.name}`,`<h2>Rezervácia potvrdená ✅</h2><p>Ahoj <b>${u.name}</b>,</p><p>Vaša rezervácia na hodinu <b>${cls.name}</b> bola úspešne zaznamenaná.</p><ul><li>Dátum: <b>${bdate}</b></li><li>Čas: <b>${cls.time_start}–${cls.time_end||''}</b></li><li>Miesto: <b>${cls.location}</b></li></ul><p>Celkový počet návštev: <b>${newCount}</b> 🎯</p><p>Tešíme sa na vás!</p><p><i>Fusion Academy</i></p>`).catch(()=>{});
     res.json({ok:true, id:booking._id, class_name:cls.name, booking_date:bdate, visit_count:newCount});
@@ -2157,15 +2575,6 @@ app.get('/sitemap.xml',(req,res)=>{
   res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>`);
 });
 
-// ── 404 page ──────────────────────────────────────────────────────────────────
-app.use((req,res,next)=>{
-  if(req.path.startsWith('/api')) return next();
-  res.status(404).sendFile(path.join(__dirname,'public','404.html'));
-});
-
-// ── API 404 ───────────────────────────────────────────────────────────────────
-app.use('/api',(req,res)=>res.status(404).json({error:'Endpoint nenájdený'}));
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // SOCKET.IO – Real-time community chat
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2233,6 +2642,368 @@ io.on('connection', async(socket)=>{
   });
 });
 
+// ── Manual re-engagement email ────────────────────────────────────────────────
+app.post('/api/admin/crm/send-reengagement', adminAuth, async(req,res)=>{
+  try {
+    const u = await q.one(db.users,{_id:req.body.user_id});
+    if(!u) return res.status(404).json({error:'Používateľ nenájdený'});
+    await sendMail(u.email,'Chýbaš nám! 🥺',
+      emailTemplate('Chýbaš nám!',
+        `<p>Ahoj <b>${u.name}</b>,</p><p>Chceli sme sa opýtať, ako sa máš. Dlho sme ťa nevideli na hodine a chýbaš nám! 💃</p><p>Vráť sa – tvoje miesto na parkete stále čaká.</p>`,
+        '🗓️ Pozrieť rozvrh',`${APP_URL}/schedule`));
+    res.json({ok:true});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MEMBERSHIP FREEZE
+// ═══════════════════════════════════════════════════════════════════════════════
+app.post('/api/membership/freeze', auth, async(req,res)=>{
+  try {
+    const m = await q.one(db.memberships,{user_id:req.session.uid,status:'active'});
+    if(!m) return res.status(400).json({error:'Žiadne aktívne členstvo'});
+    const freeze_start = today();
+    await q.update(db.memberships,{_id:m._id},{$set:{status:'frozen',freeze_start,frozen_by:'user'}});
+    await q.update(db.users,{_id:req.session.uid},{$set:{membership_plan:null}});
+    await q.insert(db.notifications,{user_id:req.session.uid,type:'membership',title:'Členstvo pozastavené ❄️',body:`Tvoje členstvo ${m.plan_name} bolo zmrazené od ${freeze_start}.`,read:false,created_at:nowISO()});
+    res.json({ok:true, message:'Členstvo pozastavené.'});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.post('/api/membership/unfreeze', auth, async(req,res)=>{
+  try {
+    const m = await q.one(db.memberships,{user_id:req.session.uid,status:'frozen'});
+    if(!m) return res.status(400).json({error:'Žiadne zmrazené členstvo'});
+    // Extend expiry by frozen days
+    const frozenDays = Math.round((Date.now() - new Date(m.freeze_start).getTime())/(86400000));
+    const newExpiry = new Date(new Date(m.expires_at).getTime() + frozenDays*86400000);
+    await q.update(db.memberships,{_id:m._id},{$set:{status:'active',freeze_start:null,frozen_by:null,expires_at:newExpiry.toISOString()}});
+    await q.update(db.users,{_id:req.session.uid},{$set:{membership_plan:m.plan_id,membership_expires:newExpiry.toISOString()}});
+    await q.insert(db.notifications,{user_id:req.session.uid,type:'membership',title:'Členstvo obnovené ✅',body:`Platnosť predĺžená o ${frozenDays} dní. Nová expirácia: ${newExpiry.toLocaleDateString('sk-SK')}.`,read:false,created_at:nowISO()});
+    res.json({ok:true, new_expires:newExpiry.toISOString()});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.post('/api/admin/membership/freeze', adminAuth, async(req,res)=>{
+  try {
+    const {user_id, action} = req.body;
+    if(action==='freeze'){
+      const m = await q.one(db.memberships,{user_id,status:'active'});
+      if(!m) return res.status(400).json({error:'Žiadne aktívne členstvo'});
+      await q.update(db.memberships,{_id:m._id},{$set:{status:'frozen',freeze_start:today(),frozen_by:'admin'}});
+      await q.update(db.users,{_id:user_id},{$set:{membership_plan:null}});
+      res.json({ok:true});
+    } else {
+      const m = await q.one(db.memberships,{user_id,status:'frozen'});
+      if(!m) return res.status(400).json({error:'Žiadne zmrazené členstvo'});
+      const frozenDays = Math.round((Date.now()-new Date(m.freeze_start).getTime())/86400000);
+      const newExpiry = new Date(new Date(m.expires_at).getTime()+frozenDays*86400000);
+      await q.update(db.memberships,{_id:m._id},{$set:{status:'active',freeze_start:null,frozen_by:null,expires_at:newExpiry.toISOString()}});
+      await q.update(db.users,{_id:user_id},{$set:{membership_plan:m.plan_id,membership_expires:newExpiry.toISOString()}});
+      res.json({ok:true, new_expires:newExpiry.toISOString()});
+    }
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LEADERBOARD
+// ═══════════════════════════════════════════════════════════════════════════════
+app.get('/api/leaderboard', async(req,res)=>{
+  const period = req.query.period||'alltime'; // alltime | month
+  let users;
+  if(period==='month'){
+    const monthStart = today().slice(0,7)+'-01';
+    const bkgs = await q.find(db.bookings,{created_at:{$gte:monthStart}});
+    const counts = {};
+    bkgs.forEach(b=>{ counts[b.user_id]=(counts[b.user_id]||0)+1; });
+    const allU = await q.find(db.users,{active:true});
+    users = allU
+      .filter(u=>counts[u._id])
+      .map(u=>({id:u._id,name:u.name,visits:counts[u._id]||0,total:u.visit_count||0}))
+      .sort((a,b)=>b.visits-a.visits).slice(0,20);
+  } else {
+    const allU = await q.find(db.users,{active:true});
+    users = allU.filter(u=>(u.visit_count||0)>0)
+      .sort((a,b)=>(b.visit_count||0)-(a.visit_count||0)).slice(0,20)
+      .map(u=>({id:u._id,name:u.name,visits:u.visit_count||0}));
+  }
+  res.json(users);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CHURN RISK
+// ═══════════════════════════════════════════════════════════════════════════════
+app.get('/api/admin/churn-risk', adminAuth, async(req,res)=>{
+  const days = parseInt(req.query.days||'14');
+  const cutoff = new Date(Date.now()-days*86400000).toISOString().slice(0,10);
+  const allU = await q.find(db.users,{active:true});
+  const risk = [];
+  for(const u of allU){
+    if((u.visit_count||0)===0) continue;
+    const lastBk = await q.find(db.bookings,{user_id:u._id});
+    if(!lastBk.length) continue;
+    lastBk.sort((a,b)=>b.created_at.localeCompare(a.created_at));
+    const lastDate = lastBk[0].created_at.slice(0,10);
+    if(lastDate < cutoff){
+      const daysSince = Math.round((Date.now()-new Date(lastDate).getTime())/86400000);
+      const mem = await q.one(db.memberships,{user_id:u._id,status:'active'});
+      risk.push({id:u._id,name:u.name,email:u.email,phone:u.phone||'',visits:u.visit_count||0,last_visit:lastDate,days_since:daysSince,has_membership:!!mem,membership:mem?.plan_name||null});
+    }
+  }
+  risk.sort((a,b)=>b.days_since-a.days_since);
+  res.json(risk);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EMAIL AUTOMATION ENGINE
+// ═══════════════════════════════════════════════════════════════════════════════
+const APP_URL = process.env.APP_URL || 'https://latindancefusion.art';
+
+// Enqueue all steps of a sequence for a user, starting from today + step.day
+async function enqueueSequence(userId, sequenceName, anchorDate){
+  const anchor = anchorDate ? new Date(anchorDate) : new Date();
+  const steps = await q.find(db.email_steps, {sequence: sequenceName, active: true});
+  for(const step of steps){
+    const sendDate = new Date(anchor.getTime() + step.day * 86400000);
+    const scheduled_for = sendDate.toISOString().slice(0,10);
+    // Don't duplicate
+    const exists = await q.one(db.email_queue, {user_id: userId, step_id: step._id, status:'pending'});
+    if(!exists){
+      await q.insert(db.email_queue, {
+        user_id: userId, sequence: sequenceName, step_id: step._id,
+        scheduled_for, status:'pending', created_at: nowISO()
+      });
+    }
+  }
+}
+
+// Cancel all pending steps of a sequence for a user (e.g. lead_nurture when user buys)
+async function cancelSequence(userId, sequenceName){
+  await q.remove(db.email_queue, {user_id: userId, sequence: sequenceName, status:'pending'}, {multi:true});
+}
+
+// Process queue: send all emails due today or earlier
+async function processEmailQueue(){
+  const todayStr = today();
+  const due = await q.find(db.email_queue, {scheduled_for: {$lte: todayStr}, status:'pending'});
+  let sent = 0;
+  for(const item of due){
+    try {
+      const step = await q.one(db.email_steps, {_id: item.step_id});
+      if(!step || !step.active){ await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped'}}); continue; }
+      const u = await q.one(db.users, {_id: item.user_id});
+      if(!u?.email){ await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped'}}); continue; }
+
+      // Conditional checks per sequence
+      if(step.sequence === 'lead_nurture'){
+        const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
+        if(mem){ await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'has_membership'}}); continue; }
+      }
+      if(step.sequence === 'expiry_warning'){
+        const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
+        if(!mem){ await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'no_membership'}}); continue; }
+      }
+      if(step.sequence === 'reengagement'){
+        // Skip if visited recently (last 7 days)
+        const recent = await q.find(db.bookings,{user_id:u._id,created_at:{$gte:new Date(Date.now()-7*86400000).toISOString().slice(0,10)}});
+        if(recent.length){ await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'active_user'}}); continue; }
+      }
+
+      await sendMail(u.email, step.subject,
+        emailTemplate(step.subject.replace(/^[^\w]*/,''), step.body, step.cta||null, step.cta_url||APP_URL));
+      await q.update(db.email_queue,{_id:item._id},{$set:{status:'sent', sent_at: nowISO()}});
+      sent++;
+    } catch(e){
+      await q.update(db.email_queue,{_id:item._id},{$set:{status:'error', error: e.message}});
+    }
+  }
+  if(sent) console.log(`📧 Email queue: odoslaných ${sent} emailov`);
+}
+
+// ── Email automation API ──────────────────────────────────────────────────────
+// GET all sequences with their steps
+app.get('/api/admin/email-sequences', adminAuth, async(req,res)=>{
+  const steps = await q.find(db.email_steps, {});
+  steps.sort((a,b)=>a.sequence.localeCompare(b.sequence)||(a.day-b.day));
+  res.json(steps);
+});
+
+// Update a step (subject, body, cta, active, day)
+app.put('/api/admin/email-sequences/:id', adminAuth, async(req,res)=>{
+  try {
+    const {subject, body, cta, cta_url, active, day} = req.body;
+    const upd = {};
+    if(subject!==undefined) upd.subject = subject;
+    if(body!==undefined) upd.body = body;
+    if(cta!==undefined) upd.cta = cta;
+    if(cta_url!==undefined) upd.cta_url = cta_url;
+    if(active!==undefined) upd.active = active;
+    if(day!==undefined) upd.day = parseInt(day);
+    await q.update(db.email_steps, {_id:req.params.id}, {$set: upd});
+    res.json({ok:true});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Toggle active
+app.post('/api/admin/email-sequences/:id/toggle', adminAuth, async(req,res)=>{
+  const step = await q.one(db.email_steps, {_id:req.params.id});
+  if(!step) return res.status(404).json({error:'Nenájdený'});
+  await q.update(db.email_steps, {_id:step._id}, {$set:{active:!step.active}});
+  res.json({ok:true, active:!step.active});
+});
+
+// Preview email step (send test to admin)
+app.post('/api/admin/email-sequences/:id/test', adminAuth, async(req,res)=>{
+  try {
+    const step = await q.one(db.email_steps, {_id:req.params.id});
+    if(!step) return res.status(404).json({error:'Nenájdený'});
+    const to = req.body.to || process.env.SMTP_USER;
+    await sendMail(to, '[TEST] '+step.subject,
+      emailTemplate(step.subject.replace(/^[^\w]*/,''), step.body, step.cta||null, step.cta_url||APP_URL));
+    res.json({ok:true, sent_to:to});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Queue stats
+app.get('/api/admin/email-queue/stats', adminAuth, async(req,res)=>{
+  const all = await q.find(db.email_queue,{});
+  const today_due = all.filter(i=>i.scheduled_for<=today()&&i.status==='pending').length;
+  const sent = all.filter(i=>i.status==='sent').length;
+  const pending = all.filter(i=>i.status==='pending').length;
+  const errors = all.filter(i=>i.status==='error').length;
+  res.json({total:all.length, pending, sent, errors, today_due});
+});
+
+// Queue list
+app.get('/api/admin/email-queue', adminAuth, async(req,res)=>{
+  const items = await q.find(db.email_queue, {});
+  items.sort((a,b)=>a.scheduled_for.localeCompare(b.scheduled_for));
+  const allU = await q.find(db.users,{});
+  const uMap = Object.fromEntries(allU.map(u=>[u._id,{name:u.name,email:u.email}]));
+  const allS = await q.find(db.email_steps,{});
+  const sMap = Object.fromEntries(allS.map(s=>[s._id,{label:s.label,subject:s.subject}]));
+  const result = items.map(i=>({
+    ...i,
+    user_name: uMap[i.user_id]?.name||'—',
+    user_email: uMap[i.user_id]?.email||'—',
+    step_label: sMap[i.step_id]?.label||'—',
+    step_subject: sMap[i.step_id]?.subject||'—',
+  }));
+  res.json(result.slice(0,200));
+});
+
+// Manual run queue now
+app.post('/api/admin/email-queue/run', adminAuth, async(req,res)=>{
+  try { await processEmailQueue(); res.json({ok:true}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AUTOMATED CRON JOBS (run on server, no external cron needed)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function emailTemplate(title, body, ctaText, ctaUrl){
+  return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#1a1a1a;font-family:'Segoe UI',Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:30px 16px">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#242424;border-radius:16px;overflow:hidden;max-width:600px">
+<tr><td style="background:linear-gradient(135deg,#C9A84C,#a07030);padding:28px 32px;text-align:center">
+  <h1 style="color:#fff;margin:0;font-size:1.6rem">💃 Fusion Academy</h1></td></tr>
+<tr><td style="padding:32px">
+  <h2 style="color:#C9A84C;margin:0 0 16px">${title}</h2>
+  <div style="color:#ccc;font-size:0.95rem;line-height:1.7">${body}</div>
+  ${ctaText?`<div style="text-align:center;margin:28px 0"><a href="${ctaUrl}" style="background:#C9A84C;color:#111;padding:14px 32px;border-radius:10px;text-decoration:none;font-weight:800;font-size:1rem">${ctaText}</a></div>`:''}
+</td></tr>
+<tr><td style="padding:20px 32px;border-top:1px solid #333;text-align:center">
+  <p style="color:#666;font-size:.8rem;margin:0">Fusion Academy · info@fusionacademy.sk · <a href="${APP_URL}/unsubscribe" style="color:#888">Odhlásiť</a></p>
+</td></tr></table></td></tr></table></body></html>`;
+}
+
+async function runDailyJobs(){
+  const d3 = new Date(Date.now()+3*86400000).toISOString().slice(0,10);
+  const d7 = new Date(Date.now()+7*86400000).toISOString().slice(0,10);
+  const todayStr = today();
+
+  // ── 1. Expiry warnings ─────────────────────────────────────────────────────
+  const expiring = await q.find(db.memberships,{status:'active',expires_at:{$lte:d7+'T23:59:59',$gte:todayStr+'T00:00:00'}});
+  for(const m of expiring){
+    const u = await q.one(db.users,{_id:m.user_id});
+    if(!u?.email) continue;
+    const alreadySent = await q.one(db.notifications,{user_id:u._id,type:'expiry_warning',created_at:{$gte:todayStr}});
+    if(alreadySent) continue;
+    const daysLeft = Math.ceil((new Date(m.expires_at)-Date.now())/86400000);
+    await sendMail(u.email,`⚠️ Členstvo vyprší o ${daysLeft} ${daysLeft===1?'deň':'dní'}`,
+      emailTemplate(`Členstvo vyprší o ${daysLeft} ${daysLeft===1?'deň':'dní'}`,
+        `<p>Ahoj <b>${u.name}</b>,</p><p>Tvoje členstvo <b>${m.plan_name}</b> vyprší <b>${m.expires_at.slice(0,10)}</b>.</p><p>Obnov si ho teraz a neprerušuj svoju tanečnú cestu! 💃</p>`,
+        '🔄 Obnoviť členstvo',`${APP_URL}/pricing`)).catch(()=>{});
+    await q.insert(db.notifications,{user_id:u._id,type:'expiry_warning',title:`⚠️ Členstvo vyprší o ${daysLeft} dní`,body:`${m.plan_name} – expirácia ${m.expires_at.slice(0,10)}`,read:false,created_at:nowISO()});
+  }
+
+  // ── 2. Day-before class reminders ─────────────────────────────────────────
+  const tomorrow = new Date(Date.now()+86400000);
+  const tomorrowDow = tomorrow.getDay();
+  const allClasses = await q.find(db.classes,{day_of_week:tomorrowDow,active:true});
+  for(const cls of allClasses){
+    const bookings = await q.find(db.bookings,{class_id:cls._id,status:{$ne:'cancelled'}});
+    for(const bk of bookings){
+      const u = await q.one(db.users,{_id:bk.user_id});
+      if(!u?.email) continue;
+      const alreadySent = await q.one(db.notifications,{user_id:u._id,type:'class_reminder',ref_id:cls._id,created_at:{$gte:todayStr}});
+      if(alreadySent) continue;
+      await sendMail(u.email,`🗓️ Zajtra máš hodinu – ${cls.name}`,
+        emailTemplate(`Zajtra: ${cls.name}`,
+          `<p>Ahoj <b>${u.name}</b>,</p><p>Pripomíname, že zajtra máš hodinu:</p><ul style="color:#ccc"><li><b>${cls.name}</b></li><li>🕐 ${cls.time_start||''}–${cls.time_end||''}</li><li>📍 ${cls.location||''}</li></ul><p>Tešíme sa na teba! 💃</p>`,
+          '📍 Zobraziť rozvrh',`${APP_URL}/schedule`)).catch(()=>{});
+      await q.insert(db.notifications,{user_id:u._id,type:'class_reminder',ref_id:cls._id,title:`🗓️ Zajtra: ${cls.name}`,body:`${cls.time_start} · ${cls.location}`,read:false,created_at:nowISO()});
+    }
+  }
+
+  // ── 3. Post-first-class follow-up ─────────────────────────────────────────
+  const yesterday = new Date(Date.now()-86400000).toISOString().slice(0,10);
+  const firstTimers = await q.find(db.bookings,{status:'attended',created_at:{$gte:yesterday+'T00:00:00',$lte:yesterday+'T23:59:59'}});
+  for(const bk of firstTimers){
+    const u = await q.one(db.users,{_id:bk.user_id});
+    if(!u?.email) continue;
+    if((u.visit_count||0) !== 1) continue; // only after their very first class
+    const alreadySent = await q.one(db.notifications,{user_id:u._id,type:'first_class_followup'});
+    if(alreadySent) continue;
+    await sendMail(u.email,'Ako sa ti páčila prvá hodina? 🥰',
+      emailTemplate('Ako sa ti páčila prvá hodina?',
+        `<p>Ahoj <b>${u.name}</b>,</p><p>Včera si bol/a na prvej hodine vo Fusion Academy – to je super krok! 🎉</p><p>Ako to šlo? Ak máš akékoľvek otázky alebo sa chceš zapísať na ďalšiu hodinu, sme tu pre teba.</p><p>Prvý mesiac Bronze členstva je k dispozícii za <b>50 €</b> – neobmedzene hodín.</p>`,
+        '💃 Rezervovať ďalšiu hodinu',`${APP_URL}/schedule`)).catch(()=>{});
+    await q.insert(db.notifications,{user_id:u._id,type:'first_class_followup',title:'Ako sa ti páčila prvá hodina? 🥰',body:'Ďakujeme za návštevu!',read:false,created_at:nowISO()});
+  }
+
+  // ── 4. Churn re-engagement (14 days no visit) ────────────────────────────
+  const cutoff14 = new Date(Date.now()-14*86400000).toISOString().slice(0,10);
+  const cutoff15 = new Date(Date.now()-15*86400000).toISOString().slice(0,10);
+  const allBkYesterday = await q.find(db.bookings,{created_at:{$gte:cutoff15+'T00:00:00',$lte:cutoff14+'T23:59:59'}});
+  const checkedUsers = new Set();
+  for(const bk of allBkYesterday){
+    if(checkedUsers.has(bk.user_id)) continue;
+    checkedUsers.add(bk.user_id);
+    const laterBk = await q.find(db.bookings,{user_id:bk.user_id,created_at:{$gte:cutoff14+'T00:00:00'}});
+    if(laterBk.length > 0) continue; // visited recently
+    const alreadySent = await q.one(db.notifications,{user_id:bk.user_id,type:'churn_reengagement',created_at:{$gte:cutoff14}});
+    if(alreadySent) continue;
+    const u = await q.one(db.users,{_id:bk.user_id});
+    if(!u?.email) continue;
+    await sendMail(u.email,'Chýbaš nám! 🥺 Vráť sa na hodiny',
+      emailTemplate('Chýbaš nám!',
+        `<p>Ahoj <b>${u.name}</b>,</p><p>Všimli sme si, že si bol/a naposledy u nás pred 2 týždňami.</p><p>Vráť sa – tvoje miesto na parkete čaká! 💃</p>`,
+        '🗓️ Pozrieť rozvrh',`${APP_URL}/schedule`)).catch(()=>{});
+    await q.insert(db.notifications,{user_id:bk.user_id,type:'churn_reengagement',title:'Chýbaš nám! 🥺',body:'Vráť sa na hodiny.',read:false,created_at:nowISO()});
+  }
+}
+
+// Run daily at ~08:00 server time (check every hour)
+setInterval(async()=>{
+  const h = new Date().getHours();
+  if(h === 8){
+    try{ await runDailyJobs(); }catch(e){ console.error('Cron error:',e); }
+    try{ await processEmailQueue(); }catch(e){ console.error('Email queue error:',e); }
+  }
+}, 3600000);
+
 // ─── Start ────────────────────────────────────────────────────────────────────
 seedData().then(()=>{
   server.listen(PORT, ()=>{
@@ -2247,3 +3018,11 @@ seedData().then(()=>{
     console.log('👤  Admin login: admin@fusionacademy.sk / admin123\n');
   });
 }).catch(e=>{console.error('Chyba pri spustení:', e); process.exit(1);});
+
+// ── 404 page ──────────────────────────────────────────────────────────────────
+app.use((req,res,next)=>{
+  if(req.path.startsWith('/api')) return next();
+  res.status(404).sendFile(path.join(__dirname,'public','404.html'));
+});
+// ── API 404 ───────────────────────────────────────────────────────────────────
+app.use('/api',(req,res)=>res.status(404).json({error:'Endpoint nenájdený'}));

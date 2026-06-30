@@ -85,6 +85,8 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby PayPal</a>
     <hr style="border-color:#333;margin:8px 0">
     <a class="nav-link" href="#" onclick="show('crm')"><i class="bi bi-person-lines-fill me-2"></i>CRM – Používatelia <span id="crmLeadsBadge" class="badge ms-1" style="background:#C9A84C;color:#111;display:none"></span></a>
+    <a class="nav-link" href="#" onclick="show('churn')"><i class="bi bi-person-dash me-2"></i>Churn Risk <span id="churnBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
+    <a class="nav-link" href="#" onclick="show('leaderboard')"><i class="bi bi-trophy me-2"></i>Leaderboard</a>
     <a class="nav-link" href="#" onclick="show('automation')"><i class="bi bi-envelope-check me-2"></i>Automatizácia</a>
   </nav>
   <div class="mt-auto pt-3 border-top border-secondary">
@@ -622,52 +624,97 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   </div>
 
   <!-- Automation -->
+  <!-- ─── CHURN RISK ─── -->
+  <div id="s-churn" class="section">
+    <h4 class="fw-bold mb-1"><i class="bi bi-person-dash me-2 text-danger"></i>Churn Risk – Neaktívni klienti</h4>
+    <p class="text-muted small mb-3">Klienti, ktorí neprišli na hodinu dlhšie ako N dní.</p>
+    <div class="d-flex align-items-center gap-3 mb-3">
+      <label class="text-muted small mb-0">Dni bez návštevy:</label>
+      <select id="churnDays" class="form-select form-select-sm" style="width:90px;background:#1e1e1e;border-color:#333;color:#e8e8e8" onchange="loadChurn()">
+        <option value="7">7</option><option value="14" selected>14</option><option value="21">21</option><option value="30">30</option>
+      </select>
+      <button class="btn btn-sm btn-warning" onclick="loadChurn()"><i class="bi bi-arrow-clockwise"></i> Obnoviť</button>
+    </div>
+    <div id="churnTable"></div>
+  </div>
+
+  <!-- ─── LEADERBOARD ─── -->
+  <div id="s-leaderboard" class="section">
+    <h4 class="fw-bold mb-1"><i class="bi bi-trophy me-2 text-warning"></i>Leaderboard – Dochádzka</h4>
+    <div class="d-flex gap-2 mb-3">
+      <button class="btn btn-sm btn-outline-warning active" id="lbBtnAll" onclick="loadLeaderboard('alltime')">Celkovo</button>
+      <button class="btn btn-sm btn-outline-secondary" id="lbBtnMonth" onclick="loadLeaderboard('month')">Tento mesiac</button>
+    </div>
+    <div id="leaderboardTable"></div>
+  </div>
+
   <div id="s-automation" class="section">
-    <h4 class="fw-bold mb-4"><i class="bi bi-envelope-check me-2 text-warning"></i>Automatizácia & Komunikácia</h4>
-    <div class="row g-4">
-      <!-- Expiry warnings -->
-      <div class="col-md-6">
-        <div class="card bg-dark border-secondary">
-          <div class="card-body">
-            <h6 class="card-title"><i class="bi bi-clock-history me-2 text-warning"></i>Upozornenia na vypršanie členstva</h6>
-            <p class="card-text text-muted small">Pošli email všetkým klientom, ktorým vyprší členstvo do 7 dní.</p>
-            <button class="btn btn-sm btn-warning text-dark fw-bold" onclick="sendExpiryWarnings()">
-              <i class="bi bi-send me-1"></i>Odoslať upozornenia
-            </button>
-            <div id="expiryResult" class="mt-2 small text-muted"></div>
-          </div>
-        </div>
+    <h4 class="fw-bold mb-1"><i class="bi bi-envelope-check me-2 text-warning"></i>Email Automatizácia</h4>
+    <p class="text-muted small mb-3">Sekvencie sa spúšťajú automaticky pri registrácii, kúpe členstva a prvej hodine. Každý deň o 8:00 sa odošlú naplánované emaily.</p>
+
+    <!-- Top bar -->
+    <div class="d-flex flex-wrap gap-2 mb-4 align-items-center">
+      <button class="btn btn-sm btn-warning fw-bold" onclick="testEmail()"><i class="bi bi-envelope-at me-1"></i>Otestovať email</button>
+      <button class="btn btn-sm btn-success fw-bold" onclick="runQueueNow()"><i class="bi bi-play-fill me-1"></i>Spustiť queue teraz</button>
+      <div id="queueStats" class="ms-auto d-flex gap-3 flex-wrap"></div>
+    </div>
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs mb-3" style="border-color:#333">
+      <li class="nav-item"><a class="nav-link active text-warning" href="#" onclick="showAutoTab('sequences',this);return false">📋 Sekvencie</a></li>
+      <li class="nav-item"><a class="nav-link text-muted" href="#" onclick="showAutoTab('queue',this);return false">📬 Queue</a></li>
+      <li class="nav-item"><a class="nav-link text-muted" href="#" onclick="showAutoTab('bulk',this);return false">📢 Hromadný email</a></li>
+    </ul>
+
+    <!-- Sequences tab -->
+    <div id="autoTab-sequences">
+      <div id="sequencesContainer"></div>
+    </div>
+
+    <!-- Queue tab -->
+    <div id="autoTab-queue" style="display:none">
+      <div class="d-flex gap-2 mb-2">
+        <select id="queueFilter" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:150px" onchange="loadQueue()">
+          <option value="">Všetky</option>
+          <option value="pending">Čakajúce</option>
+          <option value="sent">Odoslané</option>
+          <option value="skipped">Preskočené</option>
+          <option value="error">Chyby</option>
+        </select>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadQueue()"><i class="bi bi-arrow-clockwise"></i></button>
       </div>
-      <!-- Bulk email -->
-      <div class="col-md-6">
-        <div class="card bg-dark border-secondary">
-          <div class="card-body">
-            <h6 class="card-title"><i class="bi bi-megaphone me-2 text-info"></i>Hromadný email</h6>
-            <div class="mb-2">
-              <select class="form-select form-select-sm bg-dark text-light border-secondary" id="bulkCategory">
-                <option value="all">Všetci aktívni používatelia</option>
-                <option value="leads">Len leads (neplatiaci)</option>
-                <option value="clients">Len klienti (platiaci)</option>
-                <option value="partners">Len partneri</option>
-                <option value="trainers">Len tréneri</option>
-              </select>
+      <div id="queueTable"></div>
+    </div>
+
+    <!-- Bulk tab -->
+    <div id="autoTab-bulk" style="display:none">
+      <div class="row g-3">
+        <div class="col-md-8">
+          <div class="card bg-dark border-secondary">
+            <div class="card-body">
+              <h6 class="fw-bold mb-3"><i class="bi bi-megaphone me-2 text-info"></i>Hromadný email</h6>
+              <div class="mb-2">
+                <label class="small text-muted mb-1">Komu</label>
+                <select class="form-select form-select-sm bg-dark text-light border-secondary" id="bulkCategory">
+                  <option value="all">Všetci aktívni používatelia</option>
+                  <option value="leads">Leads (bez členstva)</option>
+                  <option value="clients">Klienti (s členstvom)</option>
+                  <option value="partners">Partneri</option>
+                  <option value="trainers">Tréneri</option>
+                </select>
+              </div>
+              <div class="mb-2"><label class="small text-muted mb-1">Predmet</label><input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" id="bulkSubject" placeholder="Predmet emailu"></div>
+              <div class="mb-3"><label class="small text-muted mb-1">Obsah (HTML)</label><textarea class="form-control form-control-sm bg-dark text-light border-secondary" id="bulkBody" rows="6" placeholder="&lt;p&gt;Ahoj!&lt;/p&gt;&lt;p&gt;Text správy...&lt;/p&gt;"></textarea></div>
+              <button class="btn btn-info text-dark fw-bold" onclick="sendBulkEmail()"><i class="bi bi-send me-1"></i>Odoslať hromadný email</button>
+              <div id="bulkResult" class="mt-2 small text-muted"></div>
             </div>
-            <div class="mb-2"><input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" id="bulkSubject" placeholder="Predmet emailu"></div>
-            <div class="mb-2"><textarea class="form-control form-control-sm bg-dark text-light border-secondary" id="bulkBody" rows="4" placeholder="HTML obsah emailu...&#10;&#10;Príklad:&#10;&lt;h2&gt;Ahoj!&lt;/h2&gt;&lt;p&gt;Text správy...&lt;/p&gt;"></textarea></div>
-            <button class="btn btn-sm btn-info text-dark fw-bold" onclick="sendBulkEmail()">
-              <i class="bi bi-send me-1"></i>Odoslať hromadný email
-            </button>
-            <div id="bulkResult" class="mt-2 small text-muted"></div>
           </div>
         </div>
-      </div>
-      <!-- Category overview -->
-      <div class="col-12">
-        <div class="card bg-dark border-secondary">
-          <div class="card-body">
-            <h6 class="card-title mb-3"><i class="bi bi-bar-chart me-2 text-success"></i>Prehľad kategórií používateľov</h6>
-            <div id="automationStats" class="d-flex gap-3 flex-wrap">
-              <span class="text-muted small">Načítavam...</span>
+        <div class="col-md-4">
+          <div class="card bg-dark border-secondary h-100">
+            <div class="card-body">
+              <h6 class="fw-bold mb-3"><i class="bi bi-bar-chart me-2 text-success"></i>Používatelia</h6>
+              <div id="automationStats" class="d-flex flex-column gap-2"><span class="text-muted small">Načítavam...</span></div>
             </div>
           </div>
         </div>
@@ -676,6 +723,39 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   </div>
 
 </div><!-- /main -->
+
+<!-- Edit Email Step Modal -->
+<div id="editStepModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:#1e1e1e;border:1px solid #333;border-radius:14px;padding:28px;width:min(640px,95vw);max-height:90vh;overflow-y:auto">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="mb-0 fw-bold" style="color:#C9A84C">✏️ Upraviť email: <span id="editStepLabel"></span></h5>
+      <button onclick="document.getElementById('editStepModal').style.display='none'" style="background:none;border:none;color:#888;font-size:1.3rem;cursor:pointer">✕</button>
+    </div>
+    <div class="mb-3">
+      <label class="small text-muted mb-1">Predmet emailu</label>
+      <input type="text" id="editStepSubject" class="form-control bg-dark text-light border-secondary">
+    </div>
+    <div class="mb-3">
+      <label class="small text-muted mb-1">Obsah (HTML) — môžeš použiť <code style="color:#C9A84C">&lt;b&gt;</code>, <code style="color:#C9A84C">&lt;ul&gt;&lt;li&gt;</code>, <code style="color:#C9A84C">&lt;a href=...&gt;</code></label>
+      <textarea id="editStepBody" class="form-control bg-dark text-light border-secondary" rows="8" style="font-family:monospace;font-size:.82rem"></textarea>
+    </div>
+    <div class="row g-2 mb-3">
+      <div class="col-6">
+        <label class="small text-muted mb-1">Text tlačidla (CTA)</label>
+        <input type="text" id="editStepCta" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="napr. 💃 Rezervovať hodinu">
+      </div>
+      <div class="col-6">
+        <label class="small text-muted mb-1">URL tlačidla</label>
+        <input type="text" id="editStepCtaUrl" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="https://...">
+      </div>
+    </div>
+    <div class="d-flex gap-2">
+      <button class="btn btn-warning fw-bold" onclick="saveStep()">💾 Uložiť</button>
+      <button class="btn btn-outline-info" onclick="testStep(_editStepId)">📧 Odoslať test</button>
+      <button class="btn btn-outline-secondary ms-auto" onclick="document.getElementById('editStepModal').style.display='none'">Zrušiť</button>
+    </div>
+  </div>
+</div>
 
 <!-- Edit Partner Modal -->
 <div class="modal fade" id="editPartnerModal" tabindex="-1">
@@ -746,7 +826,53 @@ function show(sec){
   if(sec==='rentals')loadRentals();
   if(sec==='payments')loadPayments();
   if(sec==='crm')loadCrm();
+  if(sec==='churn')loadChurn();
+  if(sec==='leaderboard')loadLeaderboard('alltime');
   if(sec==='automation')loadAutomation();
+}
+
+// ── CHURN RISK ────────────────────────────────────────────────────────────────
+async function loadChurn(){
+  const days=document.getElementById('churnDays').value;
+  const el=document.getElementById('churnTable');
+  el.innerHTML='<p class="text-muted">Načítavam...</p>';
+  const d=await api('/api/admin/churn-risk?days='+days);
+  document.getElementById('churnBadge').textContent=d.length;
+  document.getElementById('churnBadge').style.display=d.length?'inline':'none';
+  if(!d.length){el.innerHTML='<div class="alert alert-success">Žiadni rizikoví klienti za posledných '+days+' dní 🎉</div>';return;}
+  el.innerHTML=`<div class="table-responsive"><table class="table table-dark table-hover table-sm align-middle">
+    <thead><tr><th>Klient</th><th>Email</th><th>Posledná návšteva</th><th>Dní</th><th>Návštevy</th><th>Členstvo</th><th>Akcia</th></tr></thead>
+    <tbody>${d.map(u=>`<tr>
+      <td><b>${escHtml(u.name)}</b></td>
+      <td><span class="text-muted small">${escHtml(u.email)}</span></td>
+      <td>${u.last_visit}</td>
+      <td><span class="badge ${u.days_since>21?'bg-danger':'bg-warning text-dark'}">${u.days_since}d</span></td>
+      <td>${u.visits}</td>
+      <td>${u.membership?`<span class="badge" style="background:#C9A84C;color:#111">${escHtml(u.membership)}</span>`:'<span class="text-muted">—</span>'}</td>
+      <td><button class="btn btn-sm btn-outline-warning" onclick="sendReengagement('${u.id}','${escHtml(u.name)}')">📧 Oslovi</button></td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+async function sendReengagement(uid,name){
+  if(!confirm('Odoslať reengagement email pre '+escHtml(name)+'?'))return;
+  const r=await api('/api/admin/crm/send-reengagement',{method:'POST',body:{user_id:uid}});
+  showToast(r.ok?'Email odoslaný ✓':'Chyba: '+r.error, r.ok?'success':'error');
+}
+
+// ── LEADERBOARD ───────────────────────────────────────────────────────────────
+async function loadLeaderboard(period){
+  document.getElementById('lbBtnAll').classList.toggle('active',period==='alltime');
+  document.getElementById('lbBtnAll').classList.toggle('btn-outline-warning',period==='alltime');
+  document.getElementById('lbBtnMonth').classList.toggle('active',period==='month');
+  document.getElementById('lbBtnMonth').classList.toggle('btn-outline-warning',period==='month');
+  const el=document.getElementById('leaderboardTable');
+  el.innerHTML='<p class="text-muted">Načítavam...</p>';
+  const d=await api('/api/leaderboard?period='+period);
+  if(!d.length){el.innerHTML='<p class="text-muted">Žiadne dáta.</p>';return;}
+  const medals=['🥇','🥈','🥉'];
+  el.innerHTML=`<div class="table-responsive"><table class="table table-dark table-hover table-sm align-middle">
+    <thead><tr><th>#</th><th>Klient</th><th>${period==='month'?'Návštevy tento mesiac':'Celkovo návštev'}</th></tr></thead>
+    <tbody>${d.map((u,i)=>`<tr ${i<3?`style="background:rgba(201,168,76,${0.12-i*0.03})"`:''}><td>${medals[i]||i+1}</td><td><b>${escHtml(u.name)}</b></td><td>${u.visits}</td></tr>`).join('')}</tbody>
+  </table></div>`;
 }
 
 // ── CRM ──────────────────────────────────────────────────────────────────────
@@ -831,25 +957,167 @@ async function unblockUser(id){
 }
 
 // ── AUTOMATION ───────────────────────────────────────────────────────────────
-async function loadAutomation(){
-  const d=await api('/api/admin/crm/stats');
-  if(!d)return;
-  document.getElementById('automationStats').innerHTML=[
-    {k:'leads',l:'🔵 Leads (nezaplatili)',bg:'rgba(33,150,243,.15)',bc:'#2196f3'},
-    {k:'clients',l:'🟢 Klienti (platia)',bg:'rgba(76,175,80,.15)',bc:'#4caf50'},
-    {k:'trainers',l:'🟡 Tréneri',bg:'rgba(255,193,7,.15)',bc:'#ffc107'},
-    {k:'partners',l:'🟠 Partneri',bg:'rgba(255,152,0,.15)',bc:'#ff9800'},
-    {k:'new_this_month',l:'🆕 Nový tento mesiac',bg:'rgba(0,188,212,.15)',bc:'#00bcd4'},
-  ].map(x=>`<div style="padding:12px 18px;border-radius:10px;border:1px solid ${x.bc};background:${x.bg};font-size:.9rem">
-    ${x.l}: <strong style="color:${x.bc}">${d[x.k]||0}</strong>
-  </div>`).join('');
+const SEQ_META = {
+  welcome:            {label:'👋 Uvítacia séria',      color:'#4CAF50', desc:'Spúšťa sa pri registrácii každého nového používateľa'},
+  lead_nurture:       {label:'🎯 Lead nurture',         color:'#2196F3', desc:'Spúšťa sa pri registrácii – stopne sa ak si kúpi členstvo'},
+  membership_welcome: {label:'🏆 Nový člen',            color:'#C9A84C', desc:'Spúšťa sa po kúpe akéhokoľvek členstva'},
+  expiry_warning:     {label:'⚠️ Upozornenie expiry',  color:'#FF5722', desc:'Spúšťa sa pri kúpe – dni sú záporné (pred expiráciou)'},
+  post_first_class:   {label:'💃 Po prvej hodine',      color:'#9C27B0', desc:'Spúšťa sa automaticky po prvej zaznamenanej hodine'},
+  reengagement:       {label:'😴 Re-engagement',        color:'#FF9800', desc:'Manuálne alebo cez churn panel'},
+};
+
+function showAutoTab(tab, el){
+  document.querySelectorAll('[id^="autoTab-"]').forEach(d=>d.style.display='none');
+  document.getElementById('autoTab-'+tab).style.display='';
+  document.querySelectorAll('.nav-tabs .nav-link').forEach(a=>{a.classList.remove('active','text-warning');a.classList.add('text-muted');});
+  el.classList.remove('text-muted'); el.classList.add('active','text-warning');
+  if(tab==='queue') loadQueue();
+  if(tab==='bulk') loadAutomationStats();
 }
 
-async function sendExpiryWarnings(){
+async function loadAutomation(){
+  loadQueueStats();
+  const steps = await api('/api/admin/email-sequences');
+  if(!steps) return;
+  // Group by sequence
+  const groups = {};
+  steps.forEach(s=>{ if(!groups[s.sequence]) groups[s.sequence]=[]; groups[s.sequence].push(s); });
+  const container = document.getElementById('sequencesContainer');
+  container.innerHTML = Object.entries(groups).map(([seq,sSteps])=>{
+    const meta = SEQ_META[seq]||{label:seq, color:'#888', desc:''};
+    const activeCount = sSteps.filter(s=>s.active).length;
+    return `<div class="card bg-dark border-secondary mb-3">
+      <div class="card-header d-flex align-items-center justify-content-between" style="border-bottom:1px solid #333;background:rgba(0,0,0,.2)">
+        <div>
+          <span class="fw-bold" style="color:${meta.color}">${meta.label}</span>
+          <span class="text-muted small ms-2">${meta.desc}</span>
+        </div>
+        <span class="badge" style="background:${meta.color}20;color:${meta.color};border:1px solid ${meta.color}40">${activeCount}/${sSteps.length} aktívnych</span>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-dark table-hover mb-0 align-middle" style="font-size:.85rem">
+          <thead><tr style="border-color:#333">
+            <th style="width:60px">Deň</th><th>Názov kroku</th><th>Predmet</th>
+            <th style="width:100px">Stav</th><th style="width:120px">Akcie</th>
+          </tr></thead>
+          <tbody>
+          ${sSteps.sort((a,b)=>a.day-b.day).map(s=>`<tr style="border-color:#2a2a2a">
+            <td><span class="badge" style="background:#1e1e1e;color:#ccc;font-size:.8rem">${s.day>=0?'+'+s.day:s.day}d</span></td>
+            <td>${escHtml(s.label||'')}</td>
+            <td class="text-muted">${escHtml(s.subject||'')}</td>
+            <td>
+              <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" ${s.active?'checked':''} onchange="toggleStep('${s._id}',this)" style="cursor:pointer">
+                <label class="form-check-label small ${s.active?'text-success':'text-muted'}">${s.active?'Aktívny':'Vypnutý'}</label>
+              </div>
+            </td>
+            <td class="d-flex gap-1">
+              <button class="btn btn-xs btn-outline-secondary py-0 px-1" style="font-size:.75rem" onclick="editStep('${s._id}')">✏️</button>
+              <button class="btn btn-xs btn-outline-info py-0 px-1" style="font-size:.75rem" onclick="testStep('${s._id}')">📧</button>
+            </td>
+          </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function loadQueueStats(){
+  const d = await api('/api/admin/email-queue/stats');
+  if(!d) return;
+  document.getElementById('queueStats').innerHTML = `
+    <span class="badge bg-warning text-dark">📬 Čakajúce: ${d.pending}</span>
+    <span class="badge bg-success">✅ Odoslané: ${d.sent}</span>
+    <span class="badge bg-danger">❌ Chyby: ${d.errors}</span>
+    ${d.today_due?`<span class="badge bg-info text-dark">⚡ Na dnes: ${d.today_due}</span>`:''}
+  `;
+}
+
+async function loadQueue(){
+  const filter = document.getElementById('queueFilter')?.value||'';
+  const el = document.getElementById('queueTable');
+  el.innerHTML = '<p class="text-muted">Načítavam...</p>';
+  const items = await api('/api/admin/email-queue');
+  const filtered = filter ? items.filter(i=>i.status===filter) : items;
+  if(!filtered.length){ el.innerHTML='<p class="text-muted">Žiadne záznamy.</p>'; return; }
+  const statusBadge = {pending:'<span class="badge bg-warning text-dark">čaká</span>',sent:'<span class="badge bg-success">odoslané</span>',skipped:'<span class="badge bg-secondary">preskočené</span>',error:'<span class="badge bg-danger">chyba</span>'};
+  el.innerHTML = `<div class="table-responsive"><table class="table table-dark table-hover table-sm align-middle" style="font-size:.82rem">
+    <thead><tr><th>Klient</th><th>Sekvencia / Krok</th><th>Naplánované</th><th>Stav</th></tr></thead>
+    <tbody>${filtered.slice(0,100).map(i=>`<tr>
+      <td><b>${escHtml(i.user_name)}</b><br><span class="text-muted">${escHtml(i.user_email)}</span></td>
+      <td><span style="color:${SEQ_META[i.sequence]?.color||'#888'}">${SEQ_META[i.sequence]?.label||i.sequence}</span><br><span class="text-muted">${escHtml(i.step_label)}</span></td>
+      <td>${i.scheduled_for}</td>
+      <td>${statusBadge[i.status]||i.status}${i.reason?`<br><span class="text-muted" style="font-size:.75rem">${i.reason}</span>`:''}</td>
+    </tr>`).join('')}</tbody>
+  </table></div><p class="text-muted small">Zobrazujem ${Math.min(filtered.length,100)} z ${filtered.length} záznamov.</p>`;
+}
+
+async function runQueueNow(){
+  const btn=event.target; btn.disabled=true; btn.textContent='Spúšťam...';
+  const d = await api('/api/admin/email-queue/run',{method:'POST',body:{}});
+  btn.disabled=false; btn.innerHTML='<i class="bi bi-play-fill me-1"></i>Spustiť queue teraz';
+  showToast(d?.ok?'Queue spustená ✓':'Chyba','success');
+  loadQueueStats();
+}
+
+async function toggleStep(id, checkbox){
+  const d = await api('/api/admin/email-sequences/'+id+'/toggle',{method:'POST',body:{}});
+  if(!d?.ok){ checkbox.checked=!checkbox.checked; showToast('Chyba','error'); return; }
+  checkbox.nextElementSibling.textContent = d.active?'Aktívny':'Vypnutý';
+  checkbox.nextElementSibling.className = 'form-check-label small '+(d.active?'text-success':'text-muted');
+  loadAutomation();
+}
+
+async function testStep(id){
+  const d = await api('/api/admin/email-sequences/'+id+'/test',{method:'POST',body:{}});
+  showToast(d?.ok?`Test odoslaný na ${d.sent_to} ✓`:'Chyba: '+(d?.error||'?'), d?.ok?'success':'error');
+}
+
+let _editStepId = null;
+async function editStep(id){
+  const steps = await api('/api/admin/email-sequences');
+  const step = steps.find(s=>s._id===id);
+  if(!step) return;
+  _editStepId = id;
+  document.getElementById('editStepSubject').value = step.subject||'';
+  document.getElementById('editStepBody').value = step.body||'';
+  document.getElementById('editStepCta').value = step.cta||'';
+  document.getElementById('editStepCtaUrl').value = step.cta_url||'';
+  document.getElementById('editStepLabel').textContent = step.label||step.sequence;
+  document.getElementById('editStepModal').style.display='flex';
+}
+async function saveStep(){
+  if(!_editStepId) return;
+  const d = await api('/api/admin/email-sequences/'+_editStepId,{method:'PUT',body:{
+    subject: document.getElementById('editStepSubject').value,
+    body: document.getElementById('editStepBody').value,
+    cta: document.getElementById('editStepCta').value,
+    cta_url: document.getElementById('editStepCtaUrl').value,
+  }});
+  showToast(d?.ok?'Uložené ✓':'Chyba', d?.ok?'success':'error');
+  document.getElementById('editStepModal').style.display='none';
+  loadAutomation();
+}
+
+async function testEmail(){
   const btn=event.target; btn.disabled=true; btn.textContent='Odosielam...';
-  const d=await api('/api/admin/crm/send-expiry-warnings',{method:'POST',body:JSON.stringify({})});
-  btn.disabled=false; btn.innerHTML='<i class="bi bi-send me-1"></i>Odoslať upozornenia';
-  document.getElementById('expiryResult').textContent=d?.ok?`✅ Odoslané ${d.sent||0} emailov`:'❌ Chyba';
+  const d=await api('/api/admin/crm/test-email',{method:'POST',body:{}});
+  btn.disabled=false; btn.textContent='📧 Odoslať test';
+  showToast(d.ok?`✅ Email odoslaný na ${d.sent_to}`:`❌ Chyba: ${d.error}`, d.ok?'success':'error');
+}
+
+function loadAutomationStats(){
+  api('/api/admin/crm/stats').then(d=>{
+    if(!d) return;
+    document.getElementById('automationStats').innerHTML=[
+      {k:'leads',l:'🔵 Leads',c:'#2196f3'},{k:'clients',l:'🟢 Klienti',c:'#4caf50'},
+      {k:'trainers',l:'🟡 Tréneri',c:'#ffc107'},{k:'partners',l:'🟠 Partneri',c:'#ff9800'},
+      {k:'new_this_month',l:'🆕 Noví tento mesiac',c:'#00bcd4'},
+    ].map(x=>`<div class="d-flex justify-content-between align-items-center py-1 border-bottom border-secondary">
+      <span class="text-muted small">${x.l}</span><strong style="color:${x.c}">${d[x.k]||0}</strong>
+    </div>`).join('');
+  });
 }
 
 async function sendBulkEmail(){
