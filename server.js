@@ -2308,7 +2308,7 @@ async function sendMail(to, subject, html){
   // Resend HTTP API (preferred on Railway)
   if(resendApiKey){
     try {
-      const fromAddr = process.env.SMTP_FROM || 'onboarding@resend.dev';
+      const fromAddr = process.env.SMTP_FROM || 'noreply@latindancefusion.art';
       const r = await fetch('https://api.resend.com/emails', {
         method:'POST',
         headers:{'Authorization':`Bearer ${resendApiKey}`,'Content-Type':'application/json'},
