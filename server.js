@@ -609,7 +609,7 @@ app.post('/api/register', async(req,res)=>{
       }
     }
     // Email automation: enqueue welcome + lead_nurture sequences
-    enqueueSequence(u._id, 'welcome').catch(()=>{});
+    enqueueSequence(u._id, 'welcome').then(()=>processEmailQueue()).catch(()=>{});
     enqueueSequence(u._id, 'lead_nurture').catch(()=>{});
     res.json({ok:true, userType:utype, redirect_to: dashUrlFor(u)});
   } catch(e){
