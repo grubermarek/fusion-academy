@@ -2300,7 +2300,8 @@ let mailer = null;
 async function sendMail(to, subject, html){
   if(!mailer) return false;
   try {
-    await mailer.sendMail({ from:`"Fusion Academy" <${process.env.SMTP_USER}>`, to, subject, html });
+    const fromAddr = process.env.SMTP_FROM || (process.env.SMTP_HOST==='smtp.resend.com' ? 'onboarding@resend.dev' : process.env.SMTP_USER);
+    await mailer.sendMail({ from:`"Fusion Academy" <${fromAddr}>`, to, subject, html });
     return true;
   } catch(e){ console.error('Mail error:', e.message); return false; }
 }
