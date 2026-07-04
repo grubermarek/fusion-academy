@@ -2283,9 +2283,16 @@ app.get('/api/me/qr', auth, async(req,res)=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 let mailer = null;
 let resendApiKey = null;
+let brevoApiKey = null;
 (async()=>{
   try {
-    // Prefer Resend HTTP API if RESEND_API_KEY is set
+    // Prefer Brevo HTTP API if BREVO_API_KEY is set (works on Railway – HTTPS, no SMTP)
+    if(process.env.BREVO_API_KEY){
+      brevoApiKey = process.env.BREVO_API_KEY;
+      console.log('✉️  Brevo API nakonfigurovaný');
+      return;
+    }
+    // Resend HTTP API if RESEND_API_KEY is set
     if(process.env.RESEND_API_KEY){
       resendApiKey = process.env.RESEND_API_KEY;
       console.log('✉️  Resend API nakonfigurovaný');
@@ -2305,6 +2312,25 @@ let resendApiKey = null;
 })();
 
 async function sendMail(to, subject, html){
+  // Brevo HTTP API (preferred on Railway – HTTPS, no blocked SMTP ports)
+  if(brevoApiKey){
+    try {
+      const fromAddr = process.env.SMTP_FROM || process.env.SMTP_USER || 'gruber.marek@gmail.com';
+      const r = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method:'POST',
+        headers:{'api-key':brevoApiKey,'Content-Type':'application/json'},
+        body: JSON.stringify({
+          sender:{ name:'Fusion Academy', email:fromAddr },
+          to:[{ email:to }],
+          subject, htmlContent:html
+        })
+      });
+      const j = await r.json().catch(()=>({}));
+      if(r.ok){ return true; }
+      console.error('Brevo error:', JSON.stringify(j));
+      return false;
+    } catch(e){ console.error('Brevo error:', e.message); return false; }
+  }
   // Resend HTTP API (preferred on Railway)
   if(resendApiKey){
     try {
