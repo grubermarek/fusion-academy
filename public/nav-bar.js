@@ -349,8 +349,16 @@ function wireEvents(){
   });
 }
 
+/* ─── Marketing tracking (attribution + pixels) ────────────── */
+function loadTracking(){
+  if(!window.faTrack){
+    const s=document.createElement('script'); s.src='/fa-track.js'; document.head.appendChild(s);
+  }
+}
+
 /* ─── Init ─────────────────────────────────────────────────── */
 function init(){
+  loadTracking();
   injectStyles();
   const overlayOnly = document.body.getAttribute('data-fa-nav') === 'overlay-only';
   if(!overlayOnly){

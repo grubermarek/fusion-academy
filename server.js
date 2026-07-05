@@ -71,6 +71,7 @@ const db = {
   payments:     new Datastore({ filename: path.join(DATA_DIR, 'payments.db'),     autoload: true }),
   email_steps:  new Datastore({ filename: path.join(DATA_DIR, 'email_steps.db'), autoload: true }),
   email_queue:  new Datastore({ filename: path.join(DATA_DIR, 'email_queue.db'), autoload: true }),
+  adspend:      new Datastore({ filename: path.join(DATA_DIR, 'adspend.db'),     autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true });
@@ -595,8 +596,19 @@ app.post('/api/register', async(req,res)=>{
     while(await q.one(db.users,{referral_code:code})) code=base+Math.floor(100+Math.random()*900);
     // All new users are 'client' — they can earn referral rewards right away
     const utype = user_type || 'client';
-    const lead_source = req.body.lead_source||'';
-    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,referral_credit:0,lead_source,created_at:today()});
+    // ── Marketing attribution (first-touch, captured client-side) ─────────────
+    const attr = req.body.attribution||{};
+    const clean = v => String(v||'').slice(0,200);
+    const utm_source=clean(attr.utm_source), utm_medium=clean(attr.utm_medium), utm_campaign=clean(attr.utm_campaign);
+    const fbclid=clean(attr.fbclid), gclid=clean(attr.gclid);
+    let lead_source = req.body.lead_source||'';
+    if(!lead_source){
+      if(gclid) lead_source='google';
+      else if(fbclid) lead_source='meta';
+      else if(utm_source) lead_source=utm_source.toLowerCase();
+      else if(sponsor_id) lead_source='referral';
+    }
+    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,referral_credit:0,lead_source,utm_source,utm_medium,utm_campaign,fbclid,gclid,landing_page:clean(attr.landing),referrer:clean(attr.referrer),created_at:today()});
     req.session.uid=u._id;
     // ── Give sponzor referral credit (5€ za každého nového člena) ─────────────
     if(sponsor_id){
@@ -611,6 +623,8 @@ app.post('/api/register', async(req,res)=>{
     // Email automation: enqueue welcome + lead_nurture sequences
     enqueueSequence(u._id, 'welcome').then(()=>processEmailQueue()).catch(()=>{});
     enqueueSequence(u._id, 'lead_nurture').catch(()=>{});
+    // Server-side conversion tracking
+    metaCapi('CompleteRegistration',{email:u.email, fbclid, fbp:clean(attr.fbp)}).catch(()=>{});
     res.json({ok:true, userType:utype, redirect_to: dashUrlFor(u)});
   } catch(e){
     if(e.message?.includes('unique')) return res.status(400).json({error:'Email je už zaregistrovaný'});
@@ -620,8 +634,41 @@ app.post('/api/register', async(req,res)=>{
 
 // Public config (safe to expose)
 app.get('/api/config', (req,res)=>{
-  res.json({ paypal_client_id: PAYPAL_CLIENT_ID||'sb', paypal_env: PAYPAL_ENV });
+  res.json({
+    paypal_client_id: PAYPAL_CLIENT_ID||'sb', paypal_env: PAYPAL_ENV,
+    meta_pixel_id: process.env.META_PIXEL_ID||'',
+    google_ads_id: process.env.GOOGLE_ADS_ID||''
+  });
 });
+
+// ─── Meta Conversions API (server-side events; needs META_PIXEL_ID + META_CAPI_TOKEN) ───
+async function metaCapi(eventName, {email, value, currency='EUR', fbclid, fbp}={}){
+  const pixel=process.env.META_PIXEL_ID, token=process.env.META_CAPI_TOKEN;
+  if(!pixel||!token) return;
+  try {
+    const crypto=require('crypto');
+    const h=s=>crypto.createHash('sha256').update(String(s).trim().toLowerCase()).digest('hex');
+    const user_data={};
+    if(email) user_data.em=[h(email)];
+    if(fbclid) user_data.fbc=`fb.1.${Date.now()}.${fbclid}`;
+    if(fbp) user_data.fbp=fbp;
+    const r=await fetch(`https://graph.facebook.com/v21.0/${pixel}/events?access_token=${token}`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({data:[{
+        event_name:eventName, event_time:Math.floor(Date.now()/1000),
+        action_source:'website', user_data,
+        ...(value?{custom_data:{value:+value, currency}}:{})
+      }]})
+    });
+    if(!r.ok) console.error('Meta CAPI error:', (await r.text()).slice(0,300));
+  } catch(e){ console.error('Meta CAPI error:', e.message); }
+}
+async function trackPurchase(userId, amount){
+  try {
+    const u = userId ? await q.one(db.users,{_id:userId}) : null;
+    await metaCapi('Purchase',{email:u?.email, value:amount, fbclid:u?.fbclid, currency:'EUR'});
+  } catch(e){}
+}
 
 // /api/me — full version with membership + notif_count is defined later in the file (line ~1501)
 
@@ -1371,6 +1418,7 @@ app.post('/api/paypal/capture-order', async(req,res)=>{
     const payment = paymentId ? await q.one(db.payments,{_id:paymentId}) : null;
     if(captured && payment){
       await q.update(db.payments,{_id:paymentId},{$set:{status:'completed',captured_at:nowISO(),paypal_capture_id:result.body?.purchase_units?.[0]?.payments?.captures?.[0]?.id||''}});
+      trackPurchase(payment.user_id, payment.amount);
       // If it's a membership payment, activate membership
       if(payment.ref_type==='membership' && payment.user_id){
         await activateMembership(payment.user_id, payment.ref_id, 30);
@@ -1561,6 +1609,7 @@ app.post('/api/membership/subscribe/activate', auth, async(req,res)=>{
     // Save subscription_id on user
     await q.update(db.users,{_id:req.session.uid},{$set:{paypal_subscription_id: subscription_id, subscription_plan: plan_id}});
     await q.update(db.payments,{paypal_subscription_id:subscription_id},{$set:{status:'active', activated_at:nowISO()}});
+    trackPurchase(req.session.uid, MEMBERSHIP_PLANS[plan_id]?.price);
     res.json({ok:true, plan_name: MEMBERSHIP_PLANS[plan_id]?.name});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -2557,6 +2606,134 @@ app.get('/api/client/notifications', auth, async(req,res)=>{
 });
 app.post('/api/client/notifications/read-all', auth, async(req,res)=>{
   await q.update(db.notifications,{user_id:req.session.uid,read:false},{$set:{read:true}},{multi:true});
+  res.json({ok:true});
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MARKETING ANALYTICS (CAC, LTV, funnel — admin)
+// ═══════════════════════════════════════════════════════════════════════════════
+function acqSourceOf(u){
+  if(u.gclid) return 'google';
+  if(u.fbclid) return 'meta';
+  const s=(u.utm_source||u.lead_source||'').toLowerCase();
+  if(/face|insta|meta|^fb$|^ig$/.test(s)) return 'meta';
+  if(/google|adwords|youtube/.test(s)) return 'google';
+  if(/tik/.test(s)) return 'tiktok';
+  if(s==='referral'||(!s&&u.sponsor_id)) return 'referral';
+  return s||'organic';
+}
+
+app.get('/api/admin/marketing/stats', adminAuth, async(req,res)=>{
+  try {
+    const users=(await q.find(db.users,{is_admin:{$ne:true}})).filter(u=>u.user_type!=='trainer');
+    const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status)&&p.user_id);
+    const orders=(await q.find(db.orders,{})).filter(o=>o.status==='paid');
+    const bookings=await q.find(db.bookings,{});
+    const membs=(await q.find(db.memberships,{})).filter(m=>!m._type);
+    const spend=await q.find(db.adspend,{});
+
+    // ── Revenue per client ──────────────────────────────────────────────────
+    const rev={};
+    payments.forEach(p=>{ rev[p.user_id]=(rev[p.user_id]||0)+(+p.amount||0); });
+    // cash memberships recorded by trainer/admin (have payment_method)
+    membs.filter(m=>m.payment_method).forEach(m=>{ rev[m.user_id]=(rev[m.user_id]||0)+(+m.price||0); });
+    const emailToUid={}; users.forEach(u=>{ emailToUid[u.email]=u._id; });
+    orders.forEach(o=>{ const uid=emailToUid[(o.client_email||'').toLowerCase()]; if(uid) rev[uid]=(rev[uid]||0)+(+o.total||0); });
+
+    const bookedUids=new Set(bookings.map(b=>b.user_id));
+    const memberUids=new Set(membs.map(m=>m.user_id));
+
+    // ── Per-source aggregates ───────────────────────────────────────────────
+    const bySource={};
+    users.forEach(u=>{
+      const s=acqSourceOf(u);
+      if(!bySource[s]) bySource[s]={source:s,clients:0,revenue:0,paying:0,withBooking:0,withMembership:0};
+      const b=bySource[s]; b.clients++;
+      const r=rev[u._id]||0; b.revenue+=r; if(r>0) b.paying++;
+      if(bookedUids.has(u._id)) b.withBooking++;
+      if(memberUids.has(u._id)) b.withMembership++;
+    });
+    const spendBySource={};
+    spend.forEach(s=>{ spendBySource[s.source]=(spendBySource[s.source]||0)+(+s.amount||0); });
+    const sources=Object.values(bySource).map(b=>{
+      const sp=spendBySource[b.source]||0;
+      const ltv=b.clients? b.revenue/b.clients : 0;
+      const cac=sp>0&&b.clients? sp/b.clients : null;
+      return {...b, revenue:+b.revenue.toFixed(2), ltv:+ltv.toFixed(2), spend:+sp.toFixed(2),
+        cac:cac!==null?+cac.toFixed(2):null,
+        ltv_cac:cac?+(ltv/cac).toFixed(2):null,
+        conv_booking:b.clients?+(100*b.withBooking/b.clients).toFixed(1):0,
+        conv_membership:b.clients?+(100*b.withMembership/b.clients).toFixed(1):0};
+    }).sort((a,b)=>b.revenue-a.revenue);
+
+    // ── Totals + retention ──────────────────────────────────────────────────
+    const totalRevenue=Object.values(rev).reduce((s,v)=>s+v,0);
+    const totalSpend=spend.reduce((s,v)=>s+(+v.amount||0),0);
+    const membCountByUser={};
+    membs.forEach(m=>{ membCountByUser[m.user_id]=(membCountByUser[m.user_id]||0)+1; });
+    const everMembers=Object.keys(membCountByUser).length;
+    const renewed=Object.values(membCountByUser).filter(c=>c>1).length;
+    const now=new Date().toISOString();
+    const activeMembers=membs.filter(m=>(m.expires_at||'')>now).length;
+
+    // ── Monthly series (12 months): new clients by source + revenue ────────
+    const months=[]; const d=new Date();
+    for(let i=11;i>=0;i--){ const m=new Date(d.getFullYear(),d.getMonth()-i,1); months.push(m.getFullYear()+'-'+String(m.getMonth()+1).padStart(2,'0')); }
+    const monthly=months.map(m=>{
+      const news=users.filter(u=>(u.created_at||'').startsWith(m));
+      const perSrc={};
+      news.forEach(u=>{ const s=acqSourceOf(u); perSrc[s]=(perSrc[s]||0)+1; });
+      const mRev=payments.filter(p=>(p.captured_at||p.activated_at||p.created_at||'').startsWith(m)).reduce((s,p)=>s+(+p.amount||0),0)
+        + orders.filter(o=>(o.paid_at||o.created_at||'').startsWith(m)).reduce((s,o)=>s+(+o.total||0),0)
+        + membs.filter(mm=>mm.payment_method&&(mm.created_at||'').startsWith(m)).reduce((s,mm)=>s+(+mm.price||0),0);
+      const mSpend=spend.filter(s=>s.month===m).reduce((s2,v)=>s2+(+v.amount||0),0);
+      return {month:m, newClients:news.length, bySource:perSrc, revenue:+mRev.toFixed(2), spend:+mSpend.toFixed(2)};
+    });
+
+    res.json({
+      sources, monthly,
+      totals:{
+        clients:users.length,
+        payingClients:Object.values(rev).filter(v=>v>0).length,
+        revenue:+totalRevenue.toFixed(2),
+        spend:+totalSpend.toFixed(2),
+        avgLtv:users.length?+(totalRevenue/users.length).toFixed(2):0,
+        avgLtvPaying:0,
+        cac:totalSpend>0&&users.length?+(totalSpend/users.length).toFixed(2):null,
+        activeMembers, everMembers,
+        renewalRate:everMembers?+(100*renewed/everMembers).toFixed(1):0
+      },
+      funnel:{
+        registered:users.length,
+        firstBooking:users.filter(u=>bookedUids.has(u._id)).length,
+        membership:users.filter(u=>memberUids.has(u._id)).length
+      }
+    });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Ad spend CRUD (month + source + amount) ───────────────────────────────────
+app.get('/api/admin/adspend', adminAuth, async(req,res)=>{
+  const rows=await q.find(db.adspend,{});
+  res.json(rows.sort((a,b)=>(b.month||'').localeCompare(a.month||'')));
+});
+app.post('/api/admin/adspend', adminAuth, async(req,res)=>{
+  try {
+    const {month, source, amount, note} = req.body;
+    if(!/^\d{4}-\d{2}$/.test(month||'')) return res.status(400).json({error:'Mesiac vo formáte RRRR-MM'});
+    if(!source) return res.status(400).json({error:'Chýba zdroj (meta/google/...)'});
+    if(!(+amount>0)) return res.status(400).json({error:'Suma musí byť > 0'});
+    const existing=await q.one(db.adspend,{month,source:source.toLowerCase()});
+    if(existing){
+      await q.update(db.adspend,{_id:existing._id},{$set:{amount:+amount,note:note||'',updated_at:nowISO()}});
+      return res.json({ok:true,updated:true});
+    }
+    await q.insert(db.adspend,{month,source:source.toLowerCase(),amount:+amount,note:note||'',created_at:nowISO()});
+    res.json({ok:true});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+app.delete('/api/admin/adspend/:id', adminAuth, async(req,res)=>{
+  await q.remove(db.adspend,{_id:req.params.id});
   res.json({ok:true});
 });
 

@@ -1048,8 +1048,8 @@ async function loadQR(){
   const p=new URLSearchParams(window.location.search);
   if(p.get('sub')==='success' && p.get('subscription_id')){
     try{
-      const r=await api('/api/membership/subscribe/activate',{method:'POST',body:{subscription_id:p.get('subscription_id'),plan:p.get('plan')}});
-      if(r.ok) showToast('🎉 Subscription aktivovaná! Členstvo je aktívne.','success');
+      const r=await api('/api/membership/subscribe/activate',{method:'POST',body:{subscription_id:p.get('subscription_id'),plan_id:p.get('plan')}});
+      if(r.ok){ showToast('🎉 Subscription aktivovaná! Členstvo je aktívne.','success'); if(window.faTrack) window.faTrack('Purchase',{value:+(p.get('value')||0)}); }
       else showToast('Chyba pri aktivácii: '+(r.error||'skúste znova'),'error');
     }catch(e){ showToast('Chyba pri aktivácii subscription','error'); }
     window.history.replaceState({},'','/client-dashboard');

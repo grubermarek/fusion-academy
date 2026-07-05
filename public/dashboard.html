@@ -466,6 +466,7 @@ const LEVEL_COLORS = ['#e94560','#f5a623','#28a745','#17a2b8','#6f42c1','#fd7e14
 let userData = {}, chartInst = null;
 
 async function api(url, opts={}) {
+  if(opts.body && typeof opts.body==='object') opts={...opts, body:JSON.stringify(opts.body)};
   const r = await fetch(url, { headers:{'Content-Type':'application/json'}, ...opts });
   if (r.status === 401) { window.location.href = '/'; return null; }
   return r.json();

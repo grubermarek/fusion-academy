@@ -439,9 +439,10 @@ async function doRegister2() {
   const err = document.getElementById('regErr2');
   err.classList.add('d-none');
   if (password.length < 6) { err.textContent = 'Heslo musí mať aspoň 6 znakov'; err.classList.remove('d-none'); return; }
-  const r = await fetch('/api/register', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password,phone,user_type:'client'})});
+  const r = await fetch('/api/register', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password,phone,user_type:'client',attribution:window.faGetAttribution?window.faGetAttribution():{}})});
   const d = await r.json();
   if (!r.ok) { err.textContent = d.error; err.classList.remove('d-none'); return; }
+  if(window.faTrack) window.faTrack('CompleteRegistration');
   closeLoginModal();
   document.getElementById('loginBanner').classList.add('d-none');
   const me = await fetch('/api/me');

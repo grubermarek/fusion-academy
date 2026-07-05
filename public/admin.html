@@ -88,6 +88,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <a class="nav-link" href="#" onclick="show('churn')"><i class="bi bi-person-dash me-2"></i>Churn Risk <span id="churnBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
     <a class="nav-link" href="#" onclick="show('leaderboard')"><i class="bi bi-trophy me-2"></i>Leaderboard</a>
     <a class="nav-link" href="#" onclick="show('automation')"><i class="bi bi-envelope-check me-2"></i>Automatizácia</a>
+    <a class="nav-link" href="#" onclick="show('marketing')"><i class="bi bi-graph-up-arrow me-2"></i><span style="color:#C9A84C;font-weight:700">Marketing</span></a>
   </nav>
   <div class="mt-auto pt-3 border-top border-secondary">
     <div class="d-flex gap-2 mb-2">
@@ -722,6 +723,70 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </div>
   </div>
 
+  <!-- MARKETING -->
+  <div class="section" id="s-marketing">
+    <h4 class="fw-bold mb-1">📈 Marketing — CAC &amp; LTV</h4>
+    <p class="text-muted small mb-3">Odkiaľ prichádzajú klienti, koľko stoja a koľko prinesú. Výdavky na reklamu zadávaj nižšie — CAC sa počíta automaticky.</p>
+
+    <!-- KPI cards -->
+    <div class="row g-2 mb-3" id="mkKpis"></div>
+
+    <!-- Funnel -->
+    <div class="card bg-dark border-secondary mb-3">
+      <div class="card-body">
+        <h6 class="fw-bold mb-3"><i class="bi bi-funnel me-2 text-info"></i>Funnel klienta</h6>
+        <div id="mkFunnel" class="d-flex gap-2 flex-wrap"></div>
+      </div>
+    </div>
+
+    <!-- Sources table -->
+    <div class="card bg-dark border-secondary mb-3">
+      <div class="card-body p-0">
+        <div class="p-3 pb-0"><h6 class="fw-bold"><i class="bi bi-diagram-3 me-2 text-warning"></i>Výkon podľa zdroja</h6></div>
+        <div class="table-responsive"><table class="table table-dark table-hover mb-0 align-middle" style="font-size:.85rem">
+          <thead><tr>
+            <th>Zdroj</th><th>Klienti</th><th>Tržby</th><th>LTV</th><th>Výdavky</th><th>CAC</th><th>LTV:CAC</th><th>% 1. hodina</th><th>% členstvo</th>
+          </tr></thead>
+          <tbody id="mkSourcesBody"></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <!-- Ad spend form -->
+      <div class="col-md-5">
+        <div class="card bg-dark border-secondary h-100">
+          <div class="card-body">
+            <h6 class="fw-bold mb-3"><i class="bi bi-cash-coin me-2 text-success"></i>Výdavky na reklamu</h6>
+            <div class="row g-2 mb-2">
+              <div class="col-5"><input type="month" id="asMonth" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+              <div class="col-4">
+                <select id="asSource" class="form-select form-select-sm bg-dark text-light border-secondary">
+                  <option value="meta">Meta</option><option value="google">Google</option><option value="tiktok">TikTok</option><option value="other">Iné</option>
+                </select>
+              </div>
+              <div class="col-3"><input type="number" id="asAmount" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="€" min="0" step="0.01"></div>
+            </div>
+            <button class="btn btn-sm btn-warning fw-bold" onclick="saveAdspend()">💾 Uložiť výdavok</button>
+            <div class="mt-3" id="asList"></div>
+          </div>
+        </div>
+      </div>
+      <!-- Monthly chart-ish table -->
+      <div class="col-md-7">
+        <div class="card bg-dark border-secondary h-100">
+          <div class="card-body">
+            <h6 class="fw-bold mb-3"><i class="bi bi-calendar3 me-2 text-info"></i>Mesačný vývoj (12 mes.)</h6>
+            <div class="table-responsive"><table class="table table-dark table-sm mb-0 align-middle" style="font-size:.8rem">
+              <thead><tr><th>Mesiac</th><th>Noví klienti</th><th>Zdroje</th><th>Tržby</th><th>Výdavky</th><th>CAC</th></tr></thead>
+              <tbody id="mkMonthlyBody"></tbody>
+            </table></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /main -->
 
 <!-- Edit Email Step Modal -->
@@ -830,6 +895,68 @@ function show(sec){
   if(sec==='churn')loadChurn();
   if(sec==='leaderboard')loadLeaderboard('alltime');
   if(sec==='automation')loadAutomation();
+  if(sec==='marketing')loadMarketing();
+}
+
+/* ─── MARKETING ─────────────────────────────────────────────── */
+const SRC_LABEL={meta:'📘 Meta (FB/IG)',google:'🔎 Google',tiktok:'🎵 TikTok',referral:'🤝 Referral',organic:'🌱 Organika',other:'Iné'};
+function srcLabel(s){return SRC_LABEL[s]||s;}
+async function loadMarketing(){
+  const d = await api('/api/admin/marketing/stats');
+  if(!d||d.error){ showToast('Chyba: '+(d?.error||'?'),'error'); return; }
+  const t=d.totals;
+  const kpi=(label,val,sub,color)=>`<div class="col-6 col-md-3"><div class="card bg-dark border-secondary"><div class="card-body py-2 px-3">
+    <div class="small text-muted">${label}</div><div class="fs-5 fw-bold" style="color:${color}">${val}</div><div class="small text-muted">${sub||''}</div></div></div></div>`;
+  document.getElementById('mkKpis').innerHTML =
+    kpi('Priem. LTV', t.avgLtv.toFixed(2)+' €', t.payingClients+' platiacich / '+t.clients+' klientov', '#C9A84C')
+    + kpi('CAC (celkovo)', t.cac!==null?t.cac.toFixed(2)+' €':'— zadaj výdavky', 'výdavky '+t.spend.toFixed(2)+' €', '#2196f3')
+    + kpi('Obnovenie členstva', t.renewalRate+' %', t.activeMembers+' aktívnych členov', '#4caf50')
+    + kpi('Celkové tržby', t.revenue.toFixed(2)+' €', 'od klientov (all-time)', '#9c27b0');
+  const f=d.funnel;
+  const step=(label,n,base)=>`<div style="flex:1;min-width:130px;background:rgba(201,168,76,.07);border:1px solid rgba(201,168,76,.25);border-radius:10px;padding:10px 14px;text-align:center">
+    <div class="fs-5 fw-bold" style="color:#C9A84C">${n}</div><div class="small text-muted">${label}</div>
+    ${base?`<div class="small" style="color:#4caf50">${(100*n/base).toFixed(0)} %</div>`:''}</div>`;
+  document.getElementById('mkFunnel').innerHTML =
+    step('Registrácia',f.registered,0)
+    + '<div class="align-self-center text-muted">→</div>' + step('Prvá hodina',f.firstBooking,f.registered)
+    + '<div class="align-self-center text-muted">→</div>' + step('Členstvo',f.membership,f.registered);
+  document.getElementById('mkSourcesBody').innerHTML = d.sources.map(s=>`<tr>
+    <td class="fw-bold">${srcLabel(s.source)}</td>
+    <td>${s.clients}</td>
+    <td>${s.revenue.toFixed(2)} €</td>
+    <td style="color:#C9A84C;font-weight:700">${s.ltv.toFixed(2)} €</td>
+    <td>${s.spend?s.spend.toFixed(2)+' €':'—'}</td>
+    <td>${s.cac!==null?s.cac.toFixed(2)+' €':'—'}</td>
+    <td>${s.ltv_cac!==null?`<span class="badge ${s.ltv_cac>=3?'bg-success':s.ltv_cac>=1?'bg-warning text-dark':'bg-danger'}">${s.ltv_cac}×</span>`:'—'}</td>
+    <td>${s.conv_booking} %</td>
+    <td>${s.conv_membership} %</td>
+  </tr>`).join('') || '<tr><td colspan="9" class="text-muted">Zatiaľ žiadni klienti.</td></tr>';
+  document.getElementById('mkMonthlyBody').innerHTML = d.monthly.map(m=>{
+    const srcs=Object.entries(m.bySource).map(([k,v])=>`${srcLabel(k).replace(/^\S+ /,'')}: ${v}`).join(', ');
+    const cac=m.spend>0&&m.newClients>0?(m.spend/m.newClients).toFixed(2)+' €':'—';
+    return `<tr><td>${m.month}</td><td>${m.newClients}</td><td class="text-muted">${srcs||'—'}</td><td>${m.revenue.toFixed(2)} €</td><td>${m.spend?m.spend.toFixed(2)+' €':'—'}</td><td>${cac}</td></tr>`;
+  }).join('');
+  loadAdspendList();
+  if(!document.getElementById('asMonth').value) document.getElementById('asMonth').value=new Date().toISOString().slice(0,7);
+}
+async function loadAdspendList(){
+  const rows = await api('/api/admin/adspend');
+  document.getElementById('asList').innerHTML = (rows||[]).slice(0,12).map(r=>`
+    <div class="d-flex justify-content-between align-items-center py-1" style="border-bottom:1px solid #2a2a2a;font-size:.83rem">
+      <span>${r.month} · <b>${srcLabel(r.source)}</b></span>
+      <span>${(+r.amount).toFixed(2)} € <button class="btn btn-xs btn-outline-danger py-0 px-1 ms-2" style="font-size:.7rem" onclick="delAdspend('${r._id}')">✕</button></span>
+    </div>`).join('') || '<span class="text-muted small">Žiadne výdavky. Zadaj prvý mesiac vyššie.</span>';
+}
+async function saveAdspend(){
+  const month=document.getElementById('asMonth').value, source=document.getElementById('asSource').value, amount=+document.getElementById('asAmount').value;
+  if(!month||!(amount>0)){ showToast('Zadaj mesiac a sumu','error'); return; }
+  const d=await api('/api/admin/adspend',{method:'POST',body:{month,source,amount}});
+  showToast(d?.ok?'Výdavok uložený ✓':'Chyba: '+(d?.error||'?'), d?.ok?'success':'error');
+  if(d?.ok){ document.getElementById('asAmount').value=''; loadMarketing(); }
+}
+async function delAdspend(id){
+  await api('/api/admin/adspend/'+id,{method:'DELETE'});
+  loadMarketing();
 }
 
 // ── CHURN RISK ────────────────────────────────────────────────────────────────

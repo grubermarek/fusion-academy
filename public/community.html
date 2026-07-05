@@ -468,9 +468,10 @@ async function doRegisterC() {
   const phone = document.getElementById('rPhoneC').value.trim();
   const err = document.getElementById('regErrC');
   err.classList.add('d-none');
-  const r = await fetch('/api/register', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password,phone,user_type:'client'})});
+  const r = await fetch('/api/register', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password,phone,user_type:'client',attribution:window.faGetAttribution?window.faGetAttribution():{}})});
   const d = await r.json();
   if (!r.ok) { err.textContent = d.error; err.classList.remove('d-none'); return; }
+  if(window.faTrack) window.faTrack('CompleteRegistration');
   window.location.reload();
 }
 

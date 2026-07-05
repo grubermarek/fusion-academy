@@ -1,5 +1,5 @@
-const CACHE = 'fa-v2';
-const STATIC = ['/fa-theme.css','/nav-bar.js','/favicon.svg'];
+const CACHE = 'fa-v3';
+const STATIC = ['/fa-theme.css','/favicon.svg'];
 
 self.addEventListener('install', e=>{
   e.waitUntil(caches.open(CACHE).then(c=>c.addAll(STATIC)).then(()=>self.skipWaiting()));
@@ -13,7 +13,8 @@ self.addEventListener('fetch', e=>{
   if(e.request.method!=='GET') return;
   if(e.request.url.includes('/api/')) return; // never cache API
   const isHTML = e.request.mode==='navigate' || (e.request.headers.get('accept')||'').includes('text/html');
-  if(isHTML){
+  const isCode = /\.(js|css)(\?|$)/.test(e.request.url);
+  if(isHTML || isCode){
     // network-first for pages so deploys show up immediately
     e.respondWith(
       fetch(e.request).then(r=>{ if(r.ok){ const c=r.clone(); caches.open(CACHE).then(cache=>cache.put(e.request,c)); } return r; })

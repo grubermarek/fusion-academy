@@ -407,6 +407,7 @@ body{background:var(--dark);color:var(--text);font-family:'Segoe UI',system-ui,s
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <script>if("serviceWorker" in navigator)navigator.serviceWorker.register("/sw.js");</script>
+<script src="/fa-track.js"></script>
 </head>
 <body>
 
@@ -857,13 +858,14 @@ async function doRegister(){
   try{
     const lead_source=document.getElementById('rLeadSource')?.value||'';
     const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name,email,password:pass,phone,sponsorCode:code,user_type:'client',lead_source}),credentials:'include'});
+      body:JSON.stringify({name,email,password:pass,phone,sponsorCode:code,user_type:'client',lead_source,attribution:window.faGetAttribution?window.faGetAttribution():{}}),credentials:'include'});
     const d=await r.json();
     if(!r.ok){
       showErr('regErr',d.error||'Chyba registrácie');
       btn.disabled=false;btn.innerHTML='Pokračovať &nbsp;<i class="bi bi-arrow-right"></i>';
       return;
     }
+    if(window.faTrack) window.faTrack('CompleteRegistration');
     // Load classes then go to step 2
     await loadClasses();
     goTo(2);
