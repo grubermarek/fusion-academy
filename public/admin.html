@@ -791,10 +791,11 @@ const STATUS_CLASSES={pending:'order-badge-pending',confirmed:'order-badge-confi
 let partnersCache=[], productsCache=[], revenueChart=null;
 
 async function api(url,opts={}){
+  if(opts.body && typeof opts.body==='object') opts={...opts, body:JSON.stringify(opts.body)};
   const r=await fetch(url,{headers:{'Content-Type':'application/json'},...opts});
   if(r.status===401){window.location.href='/';return null;}
   if(r.status===403){alert('Nemáte oprávnenie.');window.location.href='/';return null;}
-  return r.json();
+  try{ return await r.json(); }catch(e){ return {ok:false,error:'Server error '+r.status}; }
 }
 function eur(v){return (+v).toFixed(2)+' €';}
 function dateStr(d){return d?d.slice(0,10):'—';}

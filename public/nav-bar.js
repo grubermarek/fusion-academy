@@ -165,9 +165,9 @@ const NAV_ITEMS = [
   },
   {
     id:'community', label:'Komunita', href:'/community',
-    icon:'👥', desc:'Výzvy, blog, sieťovanie',
+    icon:'👥', desc:'Výzvy, sieťovanie',
     color:'#ff5722', rgb:'255,87,34',
-    paths:['/community','/blog']
+    paths:['/community']
   }
 ];
 

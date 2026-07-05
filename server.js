@@ -2571,22 +2571,15 @@ app.get('/cennik',     (req,res)=>res.redirect(301,'/pricing'));
 app.get('/pricing',    (req,res)=>res.sendFile(path.join(__dirname,'public','pricing.html')));
 app.get('/dashboard',  (req,res)=>res.sendFile(path.join(__dirname,'public','dashboard.html')));
 app.get('/admin',      (req,res)=>res.sendFile(path.join(__dirname,'public','admin.html')));
-app.get('/programs',   (req,res)=>res.sendFile(path.join(__dirname,'public','programs.html')));
-app.get('/about',      (req,res)=>res.sendFile(path.join(__dirname,'public','about.html')));
-app.get('/trainers',   (req,res)=>res.sendFile(path.join(__dirname,'public','trainers.html')));
-app.get('/cities',     (req,res)=>res.sendFile(path.join(__dirname,'public','cities.html')));
 app.get('/online',     (req,res)=>res.sendFile(path.join(__dirname,'public','online.html')));
-app.get('/rental',     (req,res)=>res.sendFile(path.join(__dirname,'public','rental.html')));
-app.get('/contact',    (req,res)=>res.sendFile(path.join(__dirname,'public','contact.html')));
-app.get('/meal-plan',  (req,res)=>res.sendFile(path.join(__dirname,'public','meal-plan.html')));
-app.get('/fitdays',    (req,res)=>res.sendFile(path.join(__dirname,'public','fitdays.html')));
-app.get('/blog',       (req,res)=>res.sendFile(path.join(__dirname,'public','blog.html')));
 app.get('/body-analysis',(req,res)=>res.sendFile(path.join(__dirname,'public','body-analysis.html')));
 app.get('/fit-premena',(req,res)=>res.sendFile(path.join(__dirname,'public','fit-premena.html')));
 app.get('/trainer',    (req,res)=>res.sendFile(path.join(__dirname,'public','trainer.html')));
-app.get('/gallery',    (req,res)=>res.sendFile(path.join(__dirname,'public','gallery.html')));
-app.get('/podcast',    (req,res)=>res.sendFile(path.join(__dirname,'public','podcast.html')));
-app.get('/collaborate',(req,res)=>res.sendFile(path.join(__dirname,'public','collaborate.html')));
+// ── Marketing pages moved to the public website ───────────────────────────────
+const WEB_URL = 'https://latindancefusion.art';
+['/programs','/about','/trainers','/cities','/rental','/contact','/meal-plan','/fitdays','/blog','/gallery','/podcast','/collaborate'].forEach(p=>{
+  app.get(p,(req,res)=>res.redirect(301, WEB_URL));
+});
 app.get('/client-dashboard',(req,res)=>res.sendFile(path.join(__dirname,'public','client-dashboard.html')));
 // ── Referral redirect ─────────────────────────────────────────────────────────
 app.get('/r/:code', async(req,res)=>{
