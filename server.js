@@ -1475,6 +1475,7 @@ const MEMBERSHIP_PLANS = {
   'bronze':         { name:'Bronze',         price:50,   duration_days:30,  online:false, color:'#cd7f32' },
   'silver':         { name:'Silver',         price:65,   duration_days:30,  online:true,  color:'#a8a9ad' },
   'gold':           { name:'Gold',           price:125,  duration_days:30,  online:true,  color:'#C9A84C' },
+  'kids':           { name:'Zumba Kids',     price:49.9, duration_days:30,  online:false, color:'#FF6B9D', kids:true },
   'online_basic':   { name:'Online Basic',   price:12.9, duration_days:30,  online:true,  color:'#4CAF50' },
   'online_premium': { name:'Online Premium', price:67.9, duration_days:30,  online:true,  color:'#9C27B0' },
   'permanentka10':  { name:'10-vstupová permanentka', price:80, duration_days:90, online:false, color:'#FF9800', type:'bundle', entries:10 },
