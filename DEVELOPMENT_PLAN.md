@@ -184,6 +184,61 @@
 
 ---
 
+## FÁZA 7 — Najžiadanejšie funkcie z konkurencie (Mindbody, WellnessLiving, Momence, TeamUp)
+
+Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
+
+### 7.1 Míľniky a gamifikácia (retencia — "50. hodina" efekt)
+- V daily jobs: keď `visit_count` klienta dosiahne míľnik (5, 10, 25, 50, 100),
+  pošli gratulačný email + notifikáciu (dedup: flag `milestone_<n>` na userovi).
+- V client-dashboarde: progress bar k ďalšiemu míľniku + odznaky (emoji badge
+  🥉10 · 🥈25 · 🥇50 · 💎100). Čisto frontend z `visit_count`, žiadna nová kolekcia.
+
+### 7.2 "Kto príde na hodinu" (social proof pri rezervácii)
+- `GET /api/classes/:id` doplň `attendees_preview`: počet potvrdených na najbližší termín
+  + prvé mená max 5 klientov, KTORÍ SÚHLASILI (nové pole `show_in_attendees:true`
+  default true, vypínateľné v profile).
+- V schedule.html pri hodine: "💃 Ide 8 ľudí: Katka, Mirka, +6".
+
+### 7.3 Zmena/zrušenie hodiny → automatické upozornenie rezervovaným
+- `PUT /api/admin/classes/:id`: ak sa zmení `time_start`, `location` alebo `active:false`,
+  nájdi všetky budúce confirmed bookings tej hodiny a pošli email + notifikáciu
+  ("Hodina X sa presúva / ruší"). Pri zrušení hodiny vráť klientom vstup
+  (`single_entries + 1`, ak platili vstupom).
+
+### 7.4 Intro ponuka pre nováčikov
+- Do `MEMBERSHIP_PLANS` pridaj `intro` plán (napr. "Prvý mesiac za 29 €", `intro_only:true`).
+- `POST /api/membership/buy|subscribe`: `intro_only` plán povoľ len userom bez
+  predchádzajúceho členstva (check v `db.memberships` s `!m._type`).
+- Na pricing.html zvýrazni intro kartu len neprihláseným/novým (podľa `/api/me`).
+
+### 7.5 Záchrana zlyhaných platieb (dunning — Momence/Mindbody killer feature)
+- PayPal webhook: spracuj `BILLING.SUBSCRIPTION.PAYMENT.FAILED` a `BILLING.SUBSCRIPTION.SUSPENDED`
+  → email klientovi "platba neprešla, aktualizuj kartu" (link na PayPal) + notifikácia
+  adminovi + flag `payment_failed_at` na userovi.
+- Denný job: ak `payment_failed_at` > 3 dni a stále bez platby → druhý email;
+  > 7 dní → označ membership `suspended` + admin notifikácia.
+
+### 7.6 Darčekové poukazy
+- Kolekcia `db.vouchers`: `{code (8 znakov), type:'entries'|'amount', value, buyer_email,
+  recipient_name, redeemed_by, redeemed_at, paid, created_at}`.
+- `POST /api/vouchers/buy` (verejné, PayPal `ref_type:'voucher'`): po zaplatení email
+  s kódom kupujúcemu.
+- `POST /api/vouchers/redeem` (auth): pripíše vstupy (`single_entries += value`)
+  alebo kredit (`referral_credit += value`). Admin zoznam v sekcii Členstvá.
+
+### 7.7 Kiosk režim check-inu (tablet na recepcii)
+- Nová stránka `/kiosk` (trainerAuth cez PIN v URL alebo prihlásený tréner):
+  celoobrazovkový QR skener (použi existujúcu logiku z trainer.html
+  `/api/attendance/qr-checkin`) + veľké potvrdenie "✅ Vitaj, Katka!".
+- Klientom sa tak netreba hlásiť u trénera — self-service ako Mindbody.
+
+### Zámerne vynechané (nepomer hodnota/prácnosť pre malú školu)
+- Consumer marketplace (Mindbody ClassPass štýl) — nemáme objem.
+- Dynamic pricing — zbytočná komplexita pri cenách 9–10 €.
+- Natívna iOS/Android appka — PWA stačí; nerob.
+- SMS brána — drž email + push notifikácie, SMS až keď užívateľ vyslovene požiada.
+
 ## Čo NEROBIŤ
 
 - Neprepisuj architektúru (žiadny framework, žiadna migrácia z NeDB) — funguje to.
