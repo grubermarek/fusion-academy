@@ -2143,10 +2143,12 @@ app.get('/api/attendance/schedule', trainerAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
-// Attendees for a specific class
+// Attendees for a specific class (optionally filtered to ?date=YYYY-MM-DD)
 app.get('/api/attendance/class/:classId', trainerAuth, async(req,res)=>{
   try {
-    const bookings = await q.find(db.bookings,{class_id:req.params.classId, status:'confirmed'},{booking_date:-1});
+    const query = {class_id:req.params.classId, status:{$in:['confirmed','attended']}};
+    if(req.query.date) query.booking_date = req.query.date;
+    const bookings = await q.find(db.bookings, query, {booking_date:-1});
     const result = [];
     for(const b of bookings){
       const u = await q.one(db.users,{_id:b.user_id});
@@ -2154,6 +2156,9 @@ app.get('/api/attendance/class/:classId', trainerAuth, async(req,res)=>{
       result.push({
         booking_id: b._id,
         booking_date: b.booking_date,
+        status: b.status,
+        is_child_booking: !!b.is_child_booking,
+        child_name: b.child_name||null,
         user_id: b.user_id,
         name: b.user_name||u?.name||'—',
         email: b.user_email||u?.email||'—',
@@ -2911,6 +2916,7 @@ app.get('/online',     (req,res)=>res.sendFile(path.join(__dirname,'public','onl
 app.get('/body-analysis',(req,res)=>res.sendFile(path.join(__dirname,'public','body-analysis.html')));
 app.get('/fit-premena',(req,res)=>res.sendFile(path.join(__dirname,'public','fit-premena.html')));
 app.get('/trainer',    (req,res)=>res.sendFile(path.join(__dirname,'public','trainer.html')));
+app.get('/booking-calendar',(req,res)=>res.sendFile(path.join(__dirname,'public','booking-calendar.html')));
 // ── Marketing pages moved to the public website ───────────────────────────────
 const WEB_URL = 'https://latindancefusion.art';
 ['/programs','/about','/trainers','/cities','/rental','/contact','/meal-plan','/fitdays','/blog','/gallery','/podcast','/collaborate'].forEach(p=>{

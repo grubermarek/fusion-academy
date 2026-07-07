@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kalendár rezervácií – Fusion Academy</title>
+<link rel="stylesheet" href="/fa-theme.css">
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<style>
+  :root{--gold:#C9A84C;--gold-dim:rgba(201,168,76,.15);--gold-border:rgba(201,168,76,.35);
+    --bg:#0f0f0f;--card:#1a1a1a;--border:#2a2a2a;--cream:#f5edd6;--muted:#8a8a8a;--green:#4ade80;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--cream);font-family:'Segoe UI',system-ui,sans-serif;padding-bottom:40px}
+  a{color:inherit}
+  .topbar{position:sticky;top:0;z-index:50;background:rgba(15,15,15,.97);backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--gold-border);display:flex;align-items:center;gap:12px;padding:12px 16px}
+  .topbar .brand{font-weight:800;color:var(--gold);font-size:1rem;display:flex;align-items:center;gap:8px;text-decoration:none}
+  .topbar .back{margin-left:auto;color:var(--muted);text-decoration:none;font-size:.85rem;display:inline-flex;align-items:center;gap:5px}
+  .topbar .back:hover{color:var(--gold)}
+  .wrap{max-width:900px;margin:0 auto;padding:18px 16px}
+
+  /* Day navigator */
+  .daynav{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .daynav button{background:var(--card);border:1px solid var(--border);color:var(--cream);
+    width:44px;height:44px;border-radius:12px;cursor:pointer;font-size:1.1rem;transition:.2s;flex-shrink:0}
+  .daynav button:hover{border-color:var(--gold-border);color:var(--gold)}
+  .daynav .daylabel{flex:1;text-align:center}
+  .daynav .dl-main{font-size:1.15rem;font-weight:800;text-transform:capitalize}
+  .daynav .dl-sub{font-size:.78rem;color:var(--muted)}
+  .todaybtn{display:block;margin:0 auto 14px;background:var(--gold-dim);border:1px solid var(--gold-border);
+    color:var(--gold);padding:5px 16px;border-radius:20px;font-size:.78rem;font-weight:700;cursor:pointer}
+  .todaybtn.hidden{display:none}
+  input[type=date]{background:var(--card);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:8px 10px;font-size:.85rem;color-scheme:dark}
+
+  /* Class list */
+  .cls{background:var(--card);border:1px solid var(--border);border-radius:16px;margin-bottom:12px;overflow:hidden;
+    animation:fade .35s ease both}
+  @keyframes fade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+  .cls-head{display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer}
+  .cls-head:hover{background:rgba(201,168,76,.04)}
+  .cls-emoji{font-size:1.7rem;width:40px;text-align:center;flex-shrink:0}
+  .cls-info{flex:1;min-width:0}
+  .cls-name{font-weight:700;font-size:.98rem}
+  .cls-meta{font-size:.77rem;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;margin-top:3px}
+  .cls-count{flex-shrink:0;text-align:right}
+  .cls-count .num{font-weight:800;font-size:1.05rem}
+  .cls-count .cap{font-size:.72rem;color:var(--muted)}
+  .cls-chevron{color:var(--muted);transition:transform .25s;flex-shrink:0}
+  .cls.open .cls-chevron{transform:rotate(180deg)}
+  .cls-body{display:none;border-top:1px solid var(--border);padding:14px 16px;background:rgba(0,0,0,.15)}
+  .cls.open .cls-body{display:block;animation:fade .3s ease both}
+
+  .att-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:#151515;margin-bottom:6px}
+  .att-row .a-name{flex:1;font-size:.88rem;font-weight:600}
+  .att-row .a-badge{font-size:.68rem;padding:2px 8px;border-radius:20px;white-space:nowrap}
+  .att-row .a-del{background:rgba(244,67,54,.12);color:#f87171;border:1px solid rgba(244,67,54,.25);
+    border-radius:8px;padding:3px 9px;cursor:pointer;font-size:.72rem}
+  .att-empty{color:var(--muted);font-size:.83rem;text-align:center;padding:8px 0 14px}
+
+  .add-wrap{margin-top:12px;border-top:2px solid var(--gold-border);padding-top:12px}
+  .add-title{font-size:.8rem;color:var(--gold);font-weight:700;margin-bottom:8px}
+  .search-box{position:relative}
+  .search-box i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:.9rem}
+  .search-box input{width:100%;background:#151515;border:1px solid var(--border);color:var(--cream);
+    padding:10px 12px 10px 34px;border-radius:10px;font-size:.88rem;outline:none}
+  .search-box input:focus{border-color:var(--gold-border)}
+  .results{margin-top:6px;background:#151515;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  .res-item{display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.04)}
+  .res-item:last-child{border-bottom:none}
+  .res-item:hover{background:rgba(201,168,76,.08)}
+  .res-item .r-name{flex:1;font-size:.86rem;font-weight:600}
+  .res-item .r-sub{font-size:.72rem;color:var(--muted)}
+  .freechk{display:flex;align-items:center;gap:7px;margin-top:10px;font-size:.82rem;color:var(--muted);cursor:pointer;user-select:none}
+  .freechk input{width:16px;height:16px;accent-color:var(--gold)}
+  .empty-day{text-align:center;padding:50px 20px;color:var(--muted)}
+  .empty-day .e-emoji{font-size:2.6rem;margin-bottom:10px}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9999;
+    background:#2e7d32;color:#fff;padding:11px 20px;border-radius:10px;font-size:.88rem;opacity:0;
+    transition:.3s;pointer-events:none;max-width:90%}
+  .toast.show{opacity:1}
+  .toast.err{background:#c62828}
+  .spin{animation:sp .7s linear infinite;display:inline-block}@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a class="brand" href="/"><i class="bi bi-calendar-heart"></i> Kalendár rezervácií</a>
+  <a class="back" id="backLink" href="/admin"><i class="bi bi-arrow-left"></i> Späť</a>
+</div>
+
+<div class="wrap">
+  <div class="daynav">
+    <button onclick="moveDay(-1)" title="Predošlý deň"><i class="bi bi-chevron-left"></i></button>
+    <div class="daylabel">
+      <div class="dl-main" id="dlMain">—</div>
+      <div class="dl-sub"><input type="date" id="datePick" onchange="pickDate(this.value)"></div>
+    </div>
+    <button onclick="moveDay(1)" title="Ďalší deň"><i class="bi bi-chevron-right"></i></button>
+  </div>
+  <button class="todaybtn" id="todayBtn" onclick="goToday()">↩︎ Dnes</button>
+
+  <div id="dayClasses">
+    <div class="empty-day"><span class="spin"><i class="bi bi-arrow-repeat"></i></span><br><br>Načítavam…</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const DAYS_FULL=['Nedeľa','Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota'];
+const MONTHS=['januára','februára','marca','apríla','mája','júna','júla','augusta','septembra','októbra','novembra','decembra'];
+let _sel = new Date(); _sel.setHours(0,0,0,0);
+let _schedule = [];
+let _addFor = null; // class id currently adding to
+
+async function api(url,opts={}){
+  const r=await fetch(url,{headers:{'Content-Type':'application/json'},credentials:'include',...opts,
+    body:opts.body?JSON.stringify(opts.body):undefined});
+  if(r.status===401){location.href='/';return null;}
+  if(r.status===403){location.href='/';return null;}
+  try{return await r.json();}catch(e){return null;}
+}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function escJs(s){return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
+function toast(msg,err){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show'+(err?' err':'');setTimeout(()=>t.className='toast',2600);}
+function fmtDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function isToday(d){const t=new Date();return d.getFullYear()===t.getFullYear()&&d.getMonth()===t.getMonth()&&d.getDate()===t.getDate();}
+
+async function init(){
+  const me = await api('/api/me');
+  if(!me || (!me.is_admin && me.user_type!=='trainer')){ location.href='/'; return; }
+  document.getElementById('backLink').href = me.is_admin ? '/admin' : '/trainer';
+  _schedule = await api('/api/attendance/schedule') || [];
+  renderDay();
+}
+function moveDay(delta){ _sel.setDate(_sel.getDate()+delta); renderDay(); }
+function pickDate(val){ if(!val) return; const [y,m,d]=val.split('-').map(Number); _sel=new Date(y,m-1,d); _sel.setHours(0,0,0,0); renderDay(); }
+function goToday(){ _sel=new Date(); _sel.setHours(0,0,0,0); renderDay(); }
+
+async function renderDay(){
+  document.getElementById('dlMain').textContent = DAYS_FULL[_sel.getDay()];
+  document.querySelector('.dl-sub input').value = fmtDate(_sel);
+  document.getElementById('todayBtn').classList.toggle('hidden', isToday(_sel));
+  const dow = _sel.getDay();
+  const dateStr = fmtDate(_sel);
+  const classes = _schedule.filter(c=>c.day_of_week===dow && c.active!==false)
+    .sort((a,b)=>(a.time_start||'').localeCompare(b.time_start||''));
+  const host = document.getElementById('dayClasses');
+  if(!classes.length){
+    host.innerHTML = `<div class="empty-day"><div class="e-emoji">🌙</div>V tento deň (${DAYS_FULL[dow].toLowerCase()}) nie sú naplánované žiadne hodiny.</div>`;
+    return;
+  }
+  // Load date-specific attendees for each class in parallel
+  const lists = await Promise.all(classes.map(c=>api(`/api/attendance/class/${c._id}?date=${dateStr}`)));
+  host.innerHTML = classes.map((c,i)=>{
+    const att = Array.isArray(lists[i])?lists[i]:[];
+    const cap = c.capacity||0;
+    const pct = cap? Math.round(att.length/cap*100):0;
+    const col = pct>=90?'#f87171':pct>=60?'#fbbf24':'#4ade80';
+    return `<div class="cls" id="cls-${c._id}" style="animation-delay:${i*40}ms">
+      <div class="cls-head" onclick="toggleCls('${c._id}')">
+        <div class="cls-emoji">${c.emoji||'💃'}</div>
+        <div class="cls-info">
+          <div class="cls-name">${esc(c.name)}</div>
+          <div class="cls-meta"><span>⏰ ${c.time_start||''}${c.time_end?'–'+c.time_end:''}</span><span>📍 ${esc(c.location||'')}</span></div>
+        </div>
+        <div class="cls-count"><div class="num" style="color:${col}">${att.length}${cap?'/'+cap:''}</div><div class="cap">prihlásených</div></div>
+        <i class="bi bi-chevron-down cls-chevron"></i>
+      </div>
+      <div class="cls-body" id="body-${c._id}">${renderAtt(att, c._id, dateStr)}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderAtt(att, classId, dateStr){
+  const rows = att.length ? att.map(a=>{
+    const badge = a.status==='attended'
+      ? '<span class="a-badge" style="background:rgba(74,222,128,.15);color:#4ade80">✓ prišiel</span>'
+      : (a.membership
+        ? `<span class="a-badge" style="background:rgba(201,168,76,.2);color:#C9A84C">${esc(a.membership)}</span>`
+        : (a.single_entries>0?'<span class="a-badge" style="background:rgba(96,165,250,.15);color:#60a5fa">🎟 vstup</span>'
+          : (a.free_credits>0?'<span class="a-badge" style="background:rgba(251,191,36,.15);color:#fbbf24">🎁 free</span>'
+            :'<span class="a-badge" style="background:rgba(244,67,54,.15);color:#f87171">⚠ bez členstva</span>')));
+    const who = a.is_child_booking ? `${esc(a.child_name||'dieťa')} <span style="color:#8a8a8a;font-weight:400">(dieťa)</span>` : esc(a.name);
+    return `<div class="att-row">
+      <span class="a-name">${who}</span>${badge}
+      <button class="a-del" onclick="cancelBk('${a.booking_id}','${escJs(a.name)}')">Zrušiť</button>
+    </div>`;
+  }).join('') : '<div class="att-empty">Zatiaľ nikto — pridaj prvého klienta nižšie 👇</div>';
+  return rows + `
+    <div class="add-wrap">
+      <div class="add-title"><i class="bi bi-person-plus"></i> Pridať klienta na túto hodinu</div>
+      <div class="search-box"><i class="bi bi-search"></i>
+        <input type="text" placeholder="Hľadať meno alebo email…" oninput="searchUsers('${classId}','${dateStr}',this.value)" id="search-${classId}">
+      </div>
+      <div id="results-${classId}"></div>
+      <label class="freechk"><input type="checkbox" id="free-${classId}"> Označiť ako hodinu zadarmo (prvá zdarma)</label>
+    </div>`;
+}
+
+function toggleCls(id){ document.getElementById('cls-'+id).classList.toggle('open'); }
+
+let _searchTimer=null;
+function searchUsers(classId, dateStr, val){
+  clearTimeout(_searchTimer);
+  const host = document.getElementById('results-'+classId);
+  if(!val || val.length<2){ host.innerHTML=''; return; }
+  _searchTimer = setTimeout(async()=>{
+    const res = await api('/api/attendance/search-users?q='+encodeURIComponent(val));
+    if(!Array.isArray(res) || !res.length){ host.innerHTML='<div class="results"><div class="res-item"><span class="r-name" style="color:#8a8a8a">Nič sa nenašlo</span></div></div>'; return; }
+    host.innerHTML = '<div class="results">'+res.map(u=>`
+      <div class="res-item" onclick="addClient('${classId}','${dateStr}','${u.id}','${escJs(u.name)}')">
+        <div style="flex:1">
+          <div class="r-name">${esc(u.name)}${u.is_child?' <span style="color:#8a8a8a;font-weight:400">(dieťa)</span>':''}</div>
+          <div class="r-sub">${u.is_child?('rodič: '+esc(u.parent_name||'—')):esc(u.email||'')} · ${u.visit_count} návštev</div>
+        </div>
+        <i class="bi bi-plus-circle" style="color:var(--gold)"></i>
+      </div>`).join('')+'</div>';
+  },250);
+}
+
+async function addClient(classId, dateStr, userId, name){
+  const isFree = document.getElementById('free-'+classId)?.checked || false;
+  const d = await api('/api/attendance/manual-booking',{method:'POST',
+    body:{user_id:userId, class_id:classId, booking_date:dateStr, is_free:isFree}});
+  if(d && d.ok){
+    toast('✅ '+name+' pridaný/á na hodinu');
+    // refresh this class body
+    const wasOpen = document.getElementById('cls-'+classId)?.classList.contains('open');
+    await refreshClass(classId, dateStr);
+    if(wasOpen) document.getElementById('cls-'+classId)?.classList.add('open');
+  } else {
+    toast(d?.error||'Chyba pri pridávaní', true);
+  }
+}
+
+async function refreshClass(classId, dateStr){
+  const att = await api(`/api/attendance/class/${classId}?date=${dateStr}`) || [];
+  const body = document.getElementById('body-'+classId);
+  if(body) body.innerHTML = renderAtt(att, classId, dateStr);
+  // update count in header
+  const c = _schedule.find(x=>x._id===classId);
+  const cap = c?.capacity||0;
+  const numEl = document.querySelector('#cls-'+classId+' .cls-count .num');
+  if(numEl){ const pct=cap?Math.round(att.length/cap*100):0; const col=pct>=90?'#f87171':pct>=60?'#fbbf24':'#4ade80';
+    numEl.textContent = att.length+(cap?'/'+cap:''); numEl.style.color=col; }
+}
+
+async function cancelBk(bookingId, name){
+  if(!confirm('Zrušiť rezerváciu: '+name+'?')) return;
+  const d = await api('/api/attendance/booking/'+bookingId,{method:'DELETE'});
+  if(d && d.ok){ toast('Rezervácia zrušená'); const dateStr=fmtDate(_sel);
+    // find which class this belonged to — simplest: re-render the whole day
+    renderDay();
+  } else toast('Chyba pri rušení', true);
+}
+
+init();
+</script>
+</body>
+</html>
