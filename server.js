@@ -2611,6 +2611,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
     const newCount = (u.visit_count || 0) + 1;
     const userUpd = {visit_count: newCount};
     if(!u.free_class_used) userUpd.free_class_used = true;
+    if(u.winback_sent) userUpd.winback_sent = false; // came back → allow a future win-back
     await q.update(db.users,{_id:u._id},{$set: userUpd});
     // Notifications + emails go to the parent (child has no login of its own)
     const notifUid = parent._id;
@@ -3300,6 +3301,12 @@ app.post('/api/admin/email-queue/run', adminAuth, async(req,res)=>{
   catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Generate the weekly admin report on demand (also runs automatically on Mondays)
+app.post('/api/admin/weekly-report/run', adminAuth, async(req,res)=>{
+  try { await sendWeeklyAdminReport(); res.json({ok:true}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // AUTOMATED CRON JOBS (run on server, no external cron needed)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -3444,6 +3451,75 @@ async function runDailyJobs(){
         `<p>Ahoj <b>${u.name}</b>,</p><p>Všimli sme si, že si bol/a naposledy u nás pred 2 týždňami.</p><p>Vráť sa – tvoje miesto na parkete čaká! 💃</p>`,
         '🗓️ Pozrieť rozvrh',`${APP_URL}/schedule`)).catch(()=>{});
     await q.insert(db.notifications,{user_id:bk.user_id,type:'churn_reengagement',title:'Chýbaš nám! 🥺',body:'Vráť sa na hodiny.',read:false,created_at:nowISO()});
+  }
+
+  // ── 5. Win-back coupon (30 days no visit) – 1 free class credit, once ──────
+  const cutoff30 = new Date(Date.now()-30*86400000).toISOString().slice(0,10);
+  const cutoff31 = new Date(Date.now()-31*86400000).toISOString().slice(0,10);
+  const wbCand = await q.find(db.bookings,{created_at:{$gte:cutoff31+'T00:00:00',$lte:cutoff30+'T23:59:59'}});
+  const wbSeen = new Set();
+  for(const bk of wbCand){
+    if(wbSeen.has(bk.user_id)) continue; wbSeen.add(bk.user_id);
+    const laterBk = await q.find(db.bookings,{user_id:bk.user_id,created_at:{$gte:cutoff30+'T00:00:00'}});
+    if(laterBk.length>0) continue; // came back
+    const u = await q.one(db.users,{_id:bk.user_id});
+    if(!u || u.is_admin || u.user_type==='trainer' || u.is_child || u.winback_sent) continue;
+    const m = await checkMembership(u._id);
+    if(m && m.status==='active') continue; // still has access
+    await q.update(db.users,{_id:u._id},{$set:{winback_sent:true, free_credits:(u.free_credits||0)+1}});
+    if(u.email) await sendMail(u.email,'Darček pre teba: 1 hodina zadarmo 🎁',
+      emailTemplate('Vráť sa – hodina je na nás! 🎁',
+        `<p>Ahoj <b>${u.name}</b>,</p><p>Už mesiac sme ťa nevideli a na parkete nám chýbaš!</p><p>Pripravili sme pre teba <b>1 hodinu úplne zadarmo</b> – kredit už máš pripísaný v účte. Stačí prísť. 💃</p>`,
+        '🗓️ Rezervovať hodinu zdarma',`${APP_URL}/schedule`)).catch(()=>{});
+    await q.insert(db.notifications,{user_id:u._id,type:'winback',title:'🎁 Máš hodinu zadarmo!',body:'Vráť sa na parket – 1 hodina je na nás.',read:false,created_at:nowISO()});
+  }
+
+  // ── 6. Weekly admin report (Mondays) ──────────────────────────────────────
+  if(new Date().getDay() === 1){
+    try { await sendWeeklyAdminReport(); } catch(e){ console.error('Weekly report error:', e.message); }
+  }
+}
+
+// Weekly summary for admins: revenue, new clients, attendance, class fill, expiries.
+// Emailed to each admin + posted as an in-app notification (works without email too).
+async function sendWeeklyAdminReport(){
+  const now = new Date();
+  const wa = new Date(now.getTime()-7*86400000).toISOString();
+  const waDate = wa.slice(0,10);
+  const users = (await q.find(db.users,{is_admin:{$ne:true}})).filter(u=>u.user_type!=='trainer' && !u.is_child);
+  const newClients = users.filter(u=>(u.created_at||'')>=waDate).length;
+  const payments = (await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status) && (p.captured_at||p.activated_at||p.created_at||'')>=wa);
+  const membsCash = (await q.find(db.memberships,{})).filter(m=>!m._type && m.payment_method && (m.created_at||'')>=wa);
+  const ordersPaid = (await q.find(db.orders,{})).filter(o=>o.status==='paid' && (o.paid_at||o.created_at||'')>=wa);
+  const revenue = payments.reduce((s,p)=>s+(+p.amount||0),0) + membsCash.reduce((s,m)=>s+(+m.price||0),0) + ordersPaid.reduce((s,o)=>s+(+o.total||0),0);
+  const attended = (await q.find(db.bookings,{status:'attended',attended_at:{$gte:wa}})).length;
+  const noShows = (await q.find(db.bookings,{no_show_at:{$gte:wa}})).length;
+  const classes = (await q.find(db.classes,{active:true})).filter(c=>c.category!=='Online' && (c.location||'').toLowerCase()!=='online');
+  const recentBk = await q.find(db.bookings,{booking_date:{$gte:waDate}});
+  const perClass = classes.map(c=>{
+    const bks = recentBk.filter(b=>b.class_id===c._id && b.status!=='cancelled');
+    return {name:c.name, location:c.location, day:c.day_of_week, count:bks.length, cap:c.capacity||0};
+  }).sort((a,b)=>b.count-a.count);
+  const top = perClass.slice(0,3);
+  const flop = perClass.filter(c=>c.cap? c.count < c.cap*0.4 : c.count<4).slice(-3).reverse();
+  const in7 = new Date(now.getTime()+7*86400000).toISOString();
+  const expiring = (await q.find(db.memberships,{status:'active'})).filter(m=>!m._type && m.expires_at && m.expires_at>=now.toISOString() && m.expires_at<=in7).length;
+  const dayN=['Ne','Po','Ut','St','Št','Pi','So'];
+  const rows = arr => arr.length ? arr.map(c=>`<li>${c.name} — ${dayN[c.day]} · ${c.location||''}: <b>${c.count}</b> rezervácií${c.cap?` / ${c.cap}`:''}</li>`).join('') : '<li>—</li>';
+  const body = `
+    <p>Prehľad za posledných 7 dní:</p>
+    <div style="background:#1c1c1c;border-radius:12px;padding:16px 18px;margin:12px 0">
+      <div style="font-size:15px;margin-bottom:6px">💶 Tržby: <b style="color:#C9A84C">${revenue.toFixed(2)} €</b></div>
+      <div style="font-size:15px;margin-bottom:6px">🆕 Noví klienti: <b>${newClients}</b></div>
+      <div style="font-size:15px;margin-bottom:6px">✅ Absolvované: <b>${attended}</b> · ❌ No-shows: <b>${noShows}</b></div>
+      <div style="font-size:15px">⏳ Členstvá expirujúce do 7 dní: <b>${expiring}</b></div>
+    </div>
+    <p style="margin:14px 0 4px"><b>🔥 Najvyťaženejšie hodiny</b></p><ul style="color:#ccc;line-height:1.7">${rows(top)}</ul>
+    <p style="margin:14px 0 4px"><b>🧊 Najslabšie hodiny</b> (treba doplniť)</p><ul style="color:#ccc;line-height:1.7">${rows(flop)}</ul>`;
+  const admins = await q.find(db.users,{is_admin:true});
+  for(const a of admins){
+    if(a.email) await sendMail(a.email,'📊 Týždenný prehľad Fusion Academy', emailTemplate('Týždenný prehľad 📊', body, '🔎 Otvoriť admin panel', `${APP_URL}/admin`)).catch(()=>{});
+    await q.insert(db.notifications,{user_id:a._id,type:'weekly_report',title:'📊 Týždenný prehľad',body:`Tržby ${revenue.toFixed(2)} €, ${newClients} nových, ${attended} hodín, ${noShows} no-shows.`,read:false,created_at:nowISO()});
   }
 }
 

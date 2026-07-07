@@ -173,7 +173,17 @@
 
 ---
 
-## FÁZA 5 — Reporty a retencia navyše
+## FÁZA 5 — Reporty a retencia navyše ✅ HOTOVO (2026-07-07)
+
+> Implementované v `runDailyJobs()`: (5) win-back kupón po 30 dňoch bez návštevy –
+> pripíše 1 free kredit + email + notifikácia, raz (flag `winback_sent`, resetuje sa
+> pri ďalšej rezervácii); (6) týždenný admin report po pondelkoch – tržby, noví klienti,
+> absolvované/no-shows, top/flop hodiny, expirujúce členstvá; email adminom + in-app
+> notifikácia (funguje aj bez emailu). Manuálny trigger: `POST /api/admin/weekly-report/run`.
+> Narodeninový benefit odložený (dospelí zatiaľ nemajú `birth_date`). Overené naživo.
+
+### PÔVODNÁ ŠPECIFIKÁCIA
+## FÁZA 5 (pôvodne) — Reporty a retencia navyše
 
 - **Týždenný email adminovi** (pondelok 8:00, v `runDailyJobs` + kontrola dňa):
   tržby týždňa, noví klienti, obsadenosť top/flop 3 hodiny, no-shows, expirujúce členstvá.

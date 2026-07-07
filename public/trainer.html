@@ -654,16 +654,18 @@ select.form-control option{background:var(--dark3)}
     </div>
     <div class="form-group">
       <label class="form-label">Plán</label>
-      <select class="form-control" id="sm-plan">
-        <option value="bronze">🥉 Bronze – 19,90€ / mesiac</option>
-        <option value="silver" selected>🥈 Silver – 29,90€ / mesiac</option>
-        <option value="gold">🥇 Gold – 39,90€ / mesiac</option>
+      <select class="form-control" id="sm-plan" onchange="document.getElementById('sm-amount').value=this.selectedOptions[0].dataset.price">
+        <option value="bronze" data-price="50" selected>🥉 Bronze – 50€ / mesiac</option>
+        <option value="silver" data-price="65">🥈 Silver – 65€ / mesiac</option>
+        <option value="gold" data-price="125">🥇 Gold – 125€ / mesiac</option>
+        <option value="kids" data-price="49.90">🧒 Zumba Kids – 49,90€ / mesiac</option>
+        <option value="permanentka10" data-price="80">🎟️ Permanentka 10 vstupov – 80€</option>
       </select>
     </div>
     <div class="modal-row">
       <div class="form-group">
         <label class="form-label">Suma (€)</label>
-        <input type="number" class="form-control" id="sm-amount" value="29.90" step="0.5">
+        <input type="number" class="form-control" id="sm-amount" value="50" step="0.5">
       </div>
       <div class="form-group">
         <label class="form-label">Platba</label>
