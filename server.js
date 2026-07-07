@@ -74,7 +74,7 @@ const db = {
   adspend:      new Datastore({ filename: path.join(DATA_DIR, 'adspend.db'),     autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
-db.users.ensureIndex({ fieldName: 'referral_code', unique: true });
+db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
 db.bookings.ensureIndex({ fieldName: 'created_at' });
 db.messages.ensureIndex({ fieldName: 'created_at' });
 
@@ -751,8 +751,11 @@ app.get('/api/classes/:id', async(req,res)=>{
 // (Full booking route with email confirmation is below in EMAIL NOTIFICATIONS section)
 
 app.get('/api/my-bookings', auth, async(req,res)=>{
-  const bookings=await q.find(db.bookings,{user_id:req.session.uid},{booking_date:-1});
-  res.json(bookings.slice(0,50));
+  // Own bookings + bookings for my children
+  const children = await q.find(db.users,{parent_id:req.session.uid});
+  const ids = [req.session.uid, ...children.map(c=>c._id)];
+  const bookings=await q.find(db.bookings,{user_id:{$in:ids}},{booking_date:-1});
+  res.json(bookings.slice(0,80));
 });
 
 // (booking cancel with waitlist promotion is handled below in WAITLIST section)
@@ -770,7 +773,7 @@ app.get('/api/community/messages/:channel', auth, async(req,res)=>{
 });
 
 app.get('/api/community/members', auth, async(req,res)=>{
-  const users=await q.find(db.users,{is_admin:{$ne:true},active:true});
+  const users=await q.find(db.users,{is_admin:{$ne:true},active:true,is_child:{$ne:true}});
   const result=users.map(u=>({
     id:u._id, name:u.name,
     user_type:u.user_type||'partner',
@@ -1419,9 +1422,9 @@ app.post('/api/paypal/capture-order', async(req,res)=>{
     if(captured && payment){
       await q.update(db.payments,{_id:paymentId},{$set:{status:'completed',captured_at:nowISO(),paypal_capture_id:result.body?.purchase_units?.[0]?.payments?.captures?.[0]?.id||''}});
       trackPurchase(payment.user_id, payment.amount);
-      // If it's a membership payment, activate membership
+      // If it's a membership payment, activate membership (member_id = child if family purchase)
       if(payment.ref_type==='membership' && payment.user_id){
-        await activateMembership(payment.user_id, payment.ref_id, 30);
+        await activateMembership(payment.member_id || payment.user_id, payment.ref_id, 30);
       }
       // If it's a booking payment, confirm booking
       if(payment.ref_type==='booking' && payment.ref_id){
@@ -1705,41 +1708,51 @@ app.post('/api/paypal/webhook', express.raw({type:'application/json'}), async(re
 
 app.post('/api/membership/buy', auth, async(req,res)=>{
   try {
-    const {plan_id, payment_method, use_referral_credit} = req.body;
+    const {plan_id, payment_method, use_referral_credit, for_child_id} = req.body;
     const plan = MEMBERSHIP_PLANS[plan_id];
     if(!plan) return res.status(400).json({error:'Neplatný plán'});
-    const u = await q.one(db.users,{_id:req.session.uid});
+    const u = await q.one(db.users,{_id:req.session.uid}); // parent = payer
+    // ── Membership for a child? ────────────────────────────────────────────────
+    let memberId = req.session.uid;
+    let childName = null;
+    if(for_child_id){
+      const child = await q.one(db.users,{_id:for_child_id});
+      if(!child || child.parent_id !== req.session.uid || child.active===false)
+        return res.status(403).json({error:'Neplatný detský profil'});
+      memberId = child._id; childName = child.name;
+    }
+    const forWhom = childName ? ` (${childName})` : '';
 
-    // ── Referral credit discount ──────────────────────────────────────────────
+    // ── Referral credit discount (always from parent's balance) ────────────────
     let creditUsed = 0;
     let finalPrice = plan.price;
     if(use_referral_credit && (u.referral_credit||0) > 0){
       creditUsed = Math.min(u.referral_credit, plan.price);
       finalPrice = Math.max(0, +(plan.price - creditUsed).toFixed(2));
       await q.update(db.users,{_id:u._id},{$set:{referral_credit: +(u.referral_credit - creditUsed).toFixed(2)}});
-      await q.insert(db.notifications,{user_id:u._id,type:'credit',title:`Referral kredit použitý 💳`,body:`${creditUsed.toFixed(2)} € zľava na ${plan.name}. Nový zostatok: ${(u.referral_credit-creditUsed).toFixed(2)} €`,read:false,created_at:nowISO()});
+      await q.insert(db.notifications,{user_id:u._id,type:'credit',title:`Referral kredit použitý 💳`,body:`${creditUsed.toFixed(2)} € zľava na ${plan.name}${forWhom}. Nový zostatok: ${(u.referral_credit-creditUsed).toFixed(2)} €`,read:false,created_at:nowISO()});
     }
 
     if(finalPrice === 0){
       // Fully covered by credit – activate immediately
-      await activateMembership(u._id, plan_id, plan.duration_days||30);
-      await q.insert(db.transactions,{type:'membership',user_id:u._id,user_name:u.name,amount:0,payment_method:'referral_credit',note:`${plan.name} – 100% hradené kreditom`,plan_id,created_at:nowISO(),month:today().slice(0,7)});
-      return res.json({ok:true, credit_used:creditUsed, final_price:0, message:`Členstvo ${plan.name} aktivované pomocou referral kreditu!`});
+      await activateMembership(memberId, plan_id, plan.duration_days||30);
+      await q.insert(db.transactions,{type:'membership',user_id:memberId,user_name:childName||u.name,amount:0,payment_method:'referral_credit',note:`${plan.name}${forWhom} – 100% hradené kreditom`,plan_id,created_at:nowISO(),month:today().slice(0,7)});
+      return res.json({ok:true, credit_used:creditUsed, final_price:0, message:`Členstvo ${plan.name}${forWhom} aktivované pomocou referral kreditu!`});
     }
 
     if(payment_method==='paypal'){
       if(!PAYPAL_CLIENT_ID) {
         // Demo mode – activate immediately
-        await activateMembership(req.session.uid, plan_id, plan.duration_days||30);
+        await activateMembership(memberId, plan_id, plan.duration_days||30);
         return res.json({ok:true, demo:true, credit_used:creditUsed, final_price:finalPrice, message:'Demo: členstvo aktivované bez PayPal'});
       }
-      const result = await ppCreateOrder(finalPrice,'EUR',`Fusion Academy – ${plan.name}`);
+      const result = await ppCreateOrder(finalPrice,'EUR',`Fusion Academy – ${plan.name}${forWhom}`);
       if(result.status!==201) return res.status(400).json({error:'PayPal chyba'});
-      const payment = await q.insert(db.payments,{paypal_order_id:result.body.id,user_id:req.session.uid,amount:finalPrice,currency:'EUR',description:`Členstvo ${plan.name}`,ref_id:plan_id,ref_type:'membership',status:'pending',created_at:nowISO(),credit_used:creditUsed});
+      const payment = await q.insert(db.payments,{paypal_order_id:result.body.id,user_id:req.session.uid,member_id:memberId,amount:finalPrice,currency:'EUR',description:`Členstvo ${plan.name}${forWhom}`,ref_id:plan_id,ref_type:'membership',status:'pending',created_at:nowISO(),credit_used:creditUsed});
       return res.json({ok:true, paypalOrderId:result.body.id, paymentId:payment._id, credit_used:creditUsed, final_price:finalPrice});
     }
     // Bank transfer / cash – admin will confirm
-    await q.insert(db.payments,{user_id:req.session.uid,amount:finalPrice,currency:'EUR',description:`Členstvo ${plan.name}${creditUsed?` (kredit: -${creditUsed}€)`:''}`,ref_id:plan_id,ref_type:'membership',status:'pending_manual',payment_method:'manual',created_at:nowISO(),credit_used:creditUsed});
+    await q.insert(db.payments,{user_id:req.session.uid,member_id:memberId,amount:finalPrice,currency:'EUR',description:`Členstvo ${plan.name}${forWhom}${creditUsed?` (kredit: -${creditUsed}€)`:''}`,ref_id:plan_id,ref_type:'membership',status:'pending_manual',payment_method:'manual',created_at:nowISO(),credit_used:creditUsed});
     res.json({ok:true, credit_used:creditUsed, final_price:finalPrice, message:'Žiadosť o členstvo bola odoslaná. Admin ju potvrdí po prijatí platby.'});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -2257,7 +2270,17 @@ app.get('/api/attendance/search-users', trainerAuth, async(req,res)=>{
     if(!query||query.length<2) return res.json([]);
     const regex = new RegExp(query,'i');
     const users = await q.find(db.users,{active:{$ne:false},$or:[{name:regex},{email:regex}]});
-    res.json(users.slice(0,10).map(u=>({id:u._id,name:u.name,email:u.email,phone:u.phone||'',visit_count:u.visit_count||0,single_entries:u.single_entries||0,free_credits:u.free_credits||0})));
+    const parentNames = {};
+    const out = [];
+    for(const u of users.slice(0,10)){
+      let parentName = null;
+      if(u.is_child && u.parent_id){
+        if(!(u.parent_id in parentNames)){ const p=await q.one(db.users,{_id:u.parent_id}); parentNames[u.parent_id]=p?p.name:null; }
+        parentName = parentNames[u.parent_id];
+      }
+      out.push({id:u._id,name:u.name,email:u.is_child?'(dieťa)':u.email,phone:u.phone||'',visit_count:u.visit_count||0,single_entries:u.single_entries||0,free_credits:u.free_credits||0,is_child:!!u.is_child,parent_name:parentName});
+    }
+    res.json(out);
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -2328,12 +2351,89 @@ app.post('/api/attendance/qr-checkin', trainerAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
-// GET /api/me/qr – return QR payload for the logged-in user
+// GET /api/me/qr – return QR payload for the logged-in user (or ?child_id= for a child)
 app.get('/api/me/qr', auth, async(req,res)=>{
   try {
+    if(req.query.child_id){
+      const child = await q.one(db.users,{_id:req.query.child_id});
+      if(!child || child.parent_id !== req.session.uid) return res.status(403).json({error:'Neplatný detský profil'});
+      return res.json({qr_data:'FA:'+child._id, name:child.name});
+    }
     const u = await q.one(db.users,{_id:req.session.uid});
     if(!u) return res.status(401).json({error:'Not logged in'});
     res.json({qr_data:'FA:'+u._id, name:u.name});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FAMILY ACCOUNTS – parent manages child profiles (no own login)
+// ═══════════════════════════════════════════════════════════════════════════════
+const MAX_CHILDREN = 6;
+
+app.get('/api/family/children', auth, async(req,res)=>{
+  try {
+    const children = await q.find(db.users,{parent_id:req.session.uid, active:{$ne:false}},{created_at:1});
+    const out = [];
+    for(const c of children){
+      const m = await checkMembership(c._id);
+      const upcoming = await q.find(db.bookings,{user_id:c._id,status:'confirmed',booking_date:{$gte:today()}},{booking_date:1});
+      out.push({
+        id:c._id, name:c.name, birth_year:c.birth_year||null,
+        visit_count:c.visit_count||0, single_entries:c.single_entries||0, free_credits:c.free_credits||0,
+        free_class_used:c.free_class_used||false,
+        membership: m ? {plan_name:m.plan_name, expires_at:m.expires_at, status:m.status||'active'} : null,
+        upcoming: upcoming.slice(0,3),
+      });
+    }
+    res.json(out);
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.post('/api/family/children', auth, async(req,res)=>{
+  try {
+    const name = (req.body.name||'').trim();
+    const birth_year = +req.body.birth_year || null;
+    if(!name) return res.status(400).json({error:'Chýba meno dieťaťa'});
+    if(birth_year && (birth_year < 1990 || birth_year > new Date().getFullYear()))
+      return res.status(400).json({error:'Neplatný rok narodenia'});
+    const count = await q.count(db.users,{parent_id:req.session.uid, active:{$ne:false}});
+    if(count >= MAX_CHILDREN) return res.status(400).json({error:`Maximálne ${MAX_CHILDREN} detí na účet`});
+    const token = Math.random().toString(36).slice(2,10);
+    const internalEmail = 'child-'+token+'@internal.local';
+    // Children get a unique (unused) referral_code to satisfy the unique index
+    let childCode = 'CHILD-'+token.toUpperCase();
+    while(await q.one(db.users,{referral_code:childCode})) childCode = 'CHILD-'+Math.random().toString(36).slice(2,10).toUpperCase();
+    const child = await q.insert(db.users,{
+      name, email:internalEmail, referral_code:childCode, parent_id:req.session.uid, is_child:true, birth_year,
+      user_type:'client', is_admin:false, active:true,
+      visit_count:0, free_class_used:false, single_entries:0, free_credits:0, referral_credit:0,
+      created_at:today()
+    });
+    res.json({ok:true, id:child._id, name:child.name});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.put('/api/family/children/:id', auth, async(req,res)=>{
+  try {
+    const child = await q.one(db.users,{_id:req.params.id});
+    if(!child || child.parent_id !== req.session.uid) return res.status(403).json({error:'Neplatný detský profil'});
+    const upd = {};
+    if(req.body.name!==undefined){ const n=(req.body.name||'').trim(); if(!n) return res.status(400).json({error:'Chýba meno'}); upd.name=n; }
+    if(req.body.birth_year!==undefined) upd.birth_year = +req.body.birth_year || null;
+    await q.update(db.users,{_id:child._id},{$set:upd});
+    res.json({ok:true});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.delete('/api/family/children/:id', auth, async(req,res)=>{
+  try {
+    const child = await q.one(db.users,{_id:req.params.id});
+    if(!child || child.parent_id !== req.session.uid) return res.status(403).json({error:'Neplatný detský profil'});
+    // Soft-delete + cancel future bookings
+    await q.update(db.users,{_id:child._id},{$set:{active:false}});
+    const future = await q.find(db.bookings,{user_id:child._id,status:'confirmed',booking_date:{$gte:today()}});
+    for(const b of future) await q.update(db.bookings,{_id:b._id},{$set:{status:'cancelled',cancelled_at:nowISO()}});
+    res.json({ok:true});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -2416,11 +2516,21 @@ async function sendMail(to, subject, html){
 // Send booking confirmation email
 app.post('/api/bookings', auth, async(req,res)=>{
   try {
-    const {class_id, booking_date, notes, override_free}=req.body;
+    const {class_id, booking_date, notes, override_free, for_child_id}=req.body;
     if(!class_id) return res.status(400).json({error:'Chýba trieda'});
     const cls=await q.one(db.classes,{_id:class_id});
     if(!cls||!cls.active) return res.status(404).json({error:'Hodina nenájdená'});
-    const u=await q.one(db.users,{_id:req.session.uid});
+    const parent=await q.one(db.users,{_id:req.session.uid});
+    // ── Booking for a child profile? ────────────────────────────────────────────
+    let target = parent;
+    if(for_child_id){
+      const child = await q.one(db.users,{_id:for_child_id});
+      if(!child || child.parent_id !== req.session.uid || child.active===false)
+        return res.status(403).json({error:'Neplatný detský profil'});
+      target = child;
+    }
+    const isChild = target !== parent;
+    const u = target; // gate + visit-count apply to the target (self or child)
 
     // ── Free-class / membership gate ───────────────────────────────────────────
     // Private lessons are never free (category check)
@@ -2436,7 +2546,9 @@ app.post('/api/bookings', auth, async(req,res)=>{
         if(!hasMembership && singleEntries <= 0 && freeCredits <= 0){
           return res.status(402).json({
             error:'membership_required',
-            message:'Prvá hodina zadarmo bola využitá. Na ďalšiu hodinu potrebuješ členstvo alebo jednorazový vstup (10 €).',
+            message: isChild
+              ? `Prvá hodina zadarmo pre ${u.name} bola využitá. Na ďalšiu potrebuje členstvo alebo jednorazový vstup (10 €).`
+              : 'Prvá hodina zadarmo bola využitá. Na ďalšiu hodinu potrebuješ členstvo alebo jednorazový vstup (10 €).',
             visit_count: visitCount,
             free_class_used: !!u.free_class_used
           });
@@ -2456,12 +2568,13 @@ app.post('/api/bookings', auth, async(req,res)=>{
     if(booked>=cls.capacity) return res.status(400).json({error:'Hodina je plne obsadená – skúste čakací zoznam'});
     const bdate=booking_date||nextDateForDay(cls.day_of_week);
     const exists=await q.one(db.bookings,{class_id,user_id:u._id,booking_date:bdate,status:{$ne:'cancelled'}});
-    if(exists) return res.status(400).json({error:'Na túto hodinu ste sa už prihlásili'});
+    if(exists) return res.status(400).json({error:isChild?`${u.name} je už na túto hodinu prihlásené`:'Na túto hodinu ste sa už prihlásili'});
     const booking=await q.insert(db.bookings,{
       class_id, class_name:cls.name, class_emoji:cls.emoji||'💃',
       class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
       day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
-      user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||'',
+      user_id:u._id, user_name:u.name, user_email:isChild?parent.email:u.email, user_phone:u.phone||parent.phone||'',
+      booked_by:parent._id, booked_by_name:parent.name, is_child_booking:isChild, child_name:isChild?u.name:null,
       booking_date:bdate, status:'confirmed', notes:notes||'', created_at:nowISO()
     });
     // Increment visit count, mark free class used after first booking
@@ -2469,18 +2582,21 @@ app.post('/api/bookings', auth, async(req,res)=>{
     const userUpd = {visit_count: newCount};
     if(!u.free_class_used) userUpd.free_class_used = true;
     await q.update(db.users,{_id:u._id},{$set: userUpd});
-    await q.insert(db.notifications,{user_id:u._id,type:'booking',title:`Rezervácia potvrdená ✅`,body:`${cls.name} – ${bdate} o ${cls.time_start}`,read:false,created_at:nowISO()});
+    // Notifications + emails go to the parent (child has no login of its own)
+    const notifUid = parent._id;
+    const who = isChild ? `${u.name}: ` : '';
+    await q.insert(db.notifications,{user_id:notifUid,type:'booking',title:`Rezervácia potvrdená ✅`,body:`${who}${cls.name} – ${bdate} o ${cls.time_start}`,read:false,created_at:nowISO()});
     // Check if a loyalty milestone was just crossed
     const milestone = LOYALTY_MILESTONES.find(m => m.visits === newCount);
     if (milestone) {
-      await q.insert(db.notifications,{user_id:u._id,type:'loyalty',title:`🏆 Nový odznak: ${milestone.label}`,body:`Gratulujeme! ${newCount} návštev. ${milestone.reward ? 'Odmena: '+milestone.reward : ''}`,read:false,created_at:nowISO()});
-      if(u.email) sendMail(u.email,`🏆 Nový odznak: ${milestone.label}`,`<h2>${milestone.badge} Gratulujeme, ${u.name}!</h2><p>Práve si dosiahol míľnik: <b>${newCount} návštev</b> – ${milestone.label}!</p>${milestone.reward?`<p>🎁 Odmena: <b>${milestone.reward}</b></p>`:''}<p>Ďakujeme, že si súčasťou Fusion Academy!</p><p><i>Fusion Academy tím 💃</i></p>`).catch(()=>{});
+      await q.insert(db.notifications,{user_id:notifUid,type:'loyalty',title:`🏆 Nový odznak: ${milestone.label}`,body:`${who}Gratulujeme! ${newCount} návštev. ${milestone.reward ? 'Odmena: '+milestone.reward : ''}`,read:false,created_at:nowISO()});
+      if(parent.email) sendMail(parent.email,`🏆 Nový odznak: ${milestone.label}`,`<h2>${milestone.badge} Gratulujeme, ${u.name}!</h2><p>Práve ${isChild?'dosiahlo dieťa':'si dosiahol'} míľnik: <b>${newCount} návštev</b> – ${milestone.label}!</p>${milestone.reward?`<p>🎁 Odmena: <b>${milestone.reward}</b></p>`:''}<p>Ďakujeme, že ste súčasťou Fusion Academy!</p><p><i>Fusion Academy tím 💃</i></p>`).catch(()=>{});
     }
-    // Email automation: post-first-class sequence
-    if(newCount === 1) enqueueSequence(u._id, 'post_first_class').catch(()=>{});
+    // Email automation: post-first-class sequence (own account only)
+    if(newCount === 1 && !isChild) enqueueSequence(u._id, 'post_first_class').catch(()=>{});
     // Send confirmation email
-    if(u.email) sendMail(u.email,`Rezervácia potvrdená – ${cls.name}`,`<h2>Rezervácia potvrdená ✅</h2><p>Ahoj <b>${u.name}</b>,</p><p>Vaša rezervácia na hodinu <b>${cls.name}</b> bola úspešne zaznamenaná.</p><ul><li>Dátum: <b>${bdate}</b></li><li>Čas: <b>${cls.time_start}–${cls.time_end||''}</b></li><li>Miesto: <b>${cls.location}</b></li></ul><p>Celkový počet návštev: <b>${newCount}</b> 🎯</p><p>Tešíme sa na vás!</p><p><i>Fusion Academy</i></p>`).catch(()=>{});
-    res.json({ok:true, id:booking._id, class_name:cls.name, booking_date:bdate, visit_count:newCount});
+    if(parent.email) sendMail(parent.email,`Rezervácia potvrdená – ${cls.name}`,`<h2>Rezervácia potvrdená ✅</h2><p>Ahoj <b>${parent.name}</b>,</p><p>Rezervácia ${isChild?`pre <b>${u.name}</b> `:''}na hodinu <b>${cls.name}</b> bola úspešne zaznamenaná.</p><ul><li>Dátum: <b>${bdate}</b></li><li>Čas: <b>${cls.time_start}–${cls.time_end||''}</b></li><li>Miesto: <b>${cls.location}</b></li></ul><p>Tešíme sa na vás!</p><p><i>Fusion Academy</i></p>`).catch(()=>{});
+    res.json({ok:true, id:booking._id, class_name:cls.name, booking_date:bdate, visit_count:newCount, for_child:isChild?u.name:null});
   } catch(e){res.status(500).json({error:e.message});}
 });
 
@@ -2635,7 +2751,7 @@ function acqSourceOf(u){
 
 app.get('/api/admin/marketing/stats', adminAuth, async(req,res)=>{
   try {
-    const users=(await q.find(db.users,{is_admin:{$ne:true}})).filter(u=>u.user_type!=='trainer');
+    const users=(await q.find(db.users,{is_admin:{$ne:true}})).filter(u=>u.user_type!=='trainer' && !u.is_child);
     const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status)&&p.user_id);
     const orders=(await q.find(db.orders,{})).filter(o=>o.status==='paid');
     const bookings=await q.find(db.bookings,{});

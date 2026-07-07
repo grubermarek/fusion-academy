@@ -412,6 +412,17 @@
   </div>
 
   <!-- ═══════════════════════════════════════════════════════
+       FAMILY (children)
+  ════════════════════════════════════════════════════════ -->
+  <div class="card anim anim-d5" style="margin-bottom:20px">
+    <div class="card-title" style="justify-content:space-between">
+      <span>👨‍👩‍👧 Moja rodina</span>
+      <a onclick="openChildModal()" style="font-size:.78rem;color:var(--gold);text-decoration:none;opacity:.9;cursor:pointer"><i class="bi bi-plus"></i> Pridať dieťa</a>
+    </div>
+    <div id="familyList"><div class="empty-state" style="padding:12px"><i class="bi bi-people"></i>Zatiaľ žiadne detské profily. Pridaj dieťa a rezervuj zaň hodiny.</div></div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
        LOYALTY
   ════════════════════════════════════════════════════════ -->
   <div class="loyalty-section anim anim-d5">
@@ -531,7 +542,7 @@
         <div style="font-size:1.1rem;font-weight:800;color:var(--gold);margin-bottom:6px" id="qrName">—</div>
         <div style="font-size:.82rem;color:var(--muted);margin-bottom:12px">Tento QR kód je tvoj osobný vstupný lístok na hodiny Fusion Academy.</div>
         <div id="qrAccessInfo" style="font-size:.8rem;color:var(--muted)"></div>
-        <button onclick="document.getElementById('qrModal').style.display='flex'"
+        <button onclick="showMyQR()"
           style="margin-top:12px;background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.3);color:var(--gold);padding:8px 18px;border-radius:8px;cursor:pointer;font-size:.82rem;font-weight:600">
           <i class="bi bi-fullscreen"></i> Zobraziť väčší
         </button>
@@ -581,6 +592,20 @@
     style="background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;padding:10px 24px;border-radius:10px;cursor:pointer;font-size:.9rem">
     ✕ Zatvoriť
   </button>
+</div>
+
+<!-- Add child modal -->
+<div class="modal-overlay" id="childModal">
+  <div class="modal-box">
+    <h3>👧 Pridať dieťa</h3>
+    <p style="opacity:.7;font-size:.85rem;margin-bottom:14px">Dieťa nemá vlastné prihlásenie – rezervuješ a platíš zaň ty.</p>
+    <input id="childName" placeholder="Meno dieťaťa" style="width:100%;padding:11px 14px;margin-bottom:10px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:.95rem">
+    <input id="childYear" type="number" placeholder="Rok narodenia (nepovinné)" min="1990" max="2026" style="width:100%;padding:11px 14px;margin-bottom:4px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:.95rem">
+    <div class="modal-actions">
+      <button class="btn-cancel-modal" onclick="closeChildModal()">Zrušiť</button>
+      <button class="btn-confirm-modal" onclick="saveChild()">✓ Pridať</button>
+    </div>
+  </div>
 </div>
 
 <!-- Toast -->
@@ -697,13 +722,61 @@ function renderBookings(bookings){
     <div class="booking-item">
       <div class="booking-emoji">${b.class_emoji||'💃'}</div>
       <div class="booking-info">
-        <strong>${escHtml(b.class_name)}</strong>
+        <strong>${escHtml(b.class_name)}${b.is_child_booking?` <span style="font-size:.7rem;background:rgba(201,168,76,.18);color:var(--gold);padding:1px 7px;border-radius:20px;vertical-align:middle">👧 ${escHtml(b.child_name||'dieťa')}</span>`:''}</strong>
         <span>${b.booking_date||''} ${b.class_time_start?'• '+b.class_time_start:''} ${b.class_location?'• '+escHtml(b.class_location):''}</span>
       </div>
       <button class="booking-cancel" onclick="cancelBooking('${b._id}','${escHtml(b.class_name).replace(/'/g,"&#39;")}')">
         <i class="bi bi-x"></i> Zrušiť
       </button>
     </div>`).join('');
+}
+
+/* ─── Family (children) ─── */
+let _children=[];
+async function loadFamily(){
+  _children=await api('/api/family/children');
+  if(!Array.isArray(_children)) _children=[];
+  const el=document.getElementById('familyList');
+  if(!_children.length){ el.innerHTML=`<div class="empty-state" style="padding:12px"><i class="bi bi-people"></i>Zatiaľ žiadne detské profily. Pridaj dieťa a rezervuj zaň hodiny.</div>`; return; }
+  el.innerHTML=_children.map(c=>{
+    const mem=c.membership?`<span style="color:#4caf50">🏅 ${escHtml(c.membership.plan_name)}</span>`:(c.free_class_used?'<span style="opacity:.6">bez členstva</span>':'<span style="color:var(--gold)">🎁 1. hodina zdarma</span>');
+    return `<div class="booking-item">
+      <div class="booking-emoji">🧒</div>
+      <div class="booking-info">
+        <strong>${escHtml(c.name)}${c.birth_year?` <span style="opacity:.5;font-weight:400">• ${c.birth_year}</span>`:''}</strong>
+        <span>${c.visit_count} návštev • ${mem}${c.upcoming?.length?` • najbližšie ${c.upcoming[0].booking_date}`:''}</span>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="qa-btn" style="padding:7px 10px" title="QR kód" onclick="showChildQR('${c.id}','${escHtml(c.name).replace(/'/g,"&#39;")}')"><i class="bi bi-qr-code" style="margin:0"></i></button>
+        <button class="qa-btn" style="padding:7px 10px" title="Rezervovať" onclick="location.href='/schedule?child=${c.id}'"><i class="bi bi-calendar-plus" style="margin:0"></i></button>
+        <button class="qa-btn" style="padding:7px 10px" title="Zmazať" onclick="deleteChild('${c.id}','${escHtml(c.name).replace(/'/g,"&#39;")}')"><i class="bi bi-trash" style="margin:0;color:#e57373"></i></button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function openChildModal(){ document.getElementById('childName').value=''; document.getElementById('childYear').value=''; document.getElementById('childModal').style.display='flex'; }
+function closeChildModal(){ document.getElementById('childModal').style.display='none'; }
+async function saveChild(){
+  const name=document.getElementById('childName').value.trim();
+  const birth_year=document.getElementById('childYear').value;
+  if(!name){ showToast('Zadaj meno dieťaťa','error'); return; }
+  const d=await api('/api/family/children',{method:'POST',body:{name,birth_year}});
+  if(d?.ok){ showToast('Dieťa pridané ✓','success'); closeChildModal(); loadFamily(); }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
+}
+async function deleteChild(id,name){
+  if(!confirm(`Zmazať profil dieťaťa "${name}"? Budúce rezervácie sa zrušia.`)) return;
+  const d=await api('/api/family/children/'+id,{method:'DELETE'});
+  if(d?.ok){ showToast('Profil zmazaný','success'); loadFamily(); loadMyBookings(); }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
+}
+async function showChildQR(id,name){
+  const data=await api('/api/me/qr?child_id='+id);
+  if(!data?.qr_data){ showToast('Chyba QR','error'); return; }
+  document.getElementById('qrModalName').textContent=data.name||name;
+  document.getElementById('qrModalCanvas').innerHTML='';
+  new QRCode(document.getElementById('qrModalCanvas'),{text:data.qr_data,width:260,height:260,colorDark:'#111111',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.H});
+  document.getElementById('qrModal').style.display='flex';
 }
 async function cancelBooking(id,name){
   if(!confirm(`Zrušiť rezerváciu:\n${name}?`)) return;
@@ -1014,15 +1087,27 @@ async function init(){
   // Load bookings + referral
   loadMyBookings();
   loadReferral();
+  // Load family (children)
+  loadFamily();
   // Load QR code
   loadQR();
 }
 
 /* ─── QR Check-in ─── */
+let _myQrData=null;
+function showMyQR(){
+  if(_myQrData){
+    document.getElementById('qrModalName').textContent=_myQrData.name||'';
+    document.getElementById('qrModalCanvas').innerHTML='';
+    new QRCode(document.getElementById('qrModalCanvas'),{text:_myQrData.qr_data,width:260,height:260,colorDark:'#111111',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.H});
+  }
+  document.getElementById('qrModal').style.display='flex';
+}
 async function loadQR(){
   try {
     const data = await api('/api/me/qr');
     if(!data?.qr_data) return;
+    _myQrData = data;
     document.getElementById('qrCard').style.display='block';
     document.getElementById('qrName').textContent = data.name||'';
     document.getElementById('qrModalName').textContent = data.name||'';

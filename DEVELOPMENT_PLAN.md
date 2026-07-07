@@ -59,7 +59,19 @@
 
 ---
 
-## FÁZA 1 — Rodinné účty (rodič + deti) 🔥 NAJVYŠŠIA PRIORITA
+## FÁZA 1 — Rodinné účty (rodič + deti) ✅ HOTOVO (2026-07-07)
+
+> Implementované: kolekcia detí v `db.users` (`parent_id`, `is_child`, unikátny
+> `CHILD-` referral_code kvôli unique indexu). Endpointy `/api/family/children`
+> (GET/POST/PUT/DELETE), booking + membership buy podporujú `for_child_id`,
+> `/api/me/qr?child_id=`, `/api/my-bookings` vracia aj deti, QR check-in funguje
+> (deti sa nájdu podľa mena). Deti vylúčené z komunity a marketing štatistík.
+> Frontend: sekcia "Moja rodina" v client-dashboard (pridať/zmazať/QR/rezervovať),
+> selektor "Pre koho" v schedule.html (`?child=<id>` predvýber). Overené naživo.
+> POZN: milestones (Fáza 7.1) už existovali v kóde (`LOYALTY_MILESTONES`).
+
+### PÔVODNÁ ŠPECIFIKÁCIA (referencia)
+## FÁZA 1 (pôvodne) — Rodinné účty (rodič + deti)
 
 **Prečo:** tanečná škola má detské kurzy; rodičia potrebujú spravovať deti pod jedným účtom.
 

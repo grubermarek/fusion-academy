@@ -189,6 +189,8 @@ let allClasses = [];
 let currentDay = null;
 let selectedClass = null;
 let currentUser = null;
+let myChildren = [];
+let preselectChild = new URLSearchParams(location.search).get('child') || '';
 
 const DAYS = ['Nedeľa','Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota'];
 const DAYS_SHORT = ['Ned','Pon','Uto','Str','Štv','Pia','Sob'];
@@ -200,6 +202,9 @@ async function init() {
     if (r.ok) {
       currentUser = await r.json();
       document.getElementById('navAuthLabel').textContent = currentUser.name.split(' ')[0];
+      if (currentUser.id) {
+        try { const cr = await fetch('/api/family/children'); if (cr.ok) myChildren = await cr.json(); } catch {}
+      }
     }
   } catch {}
 
@@ -332,7 +337,10 @@ function bookClass(classId) {
     <div class="row-item"><span>Čas</span><span>${selectedClass.time_start}${selectedClass.time_end?' – '+selectedClass.time_end:''}</span></div>
     <div class="row-item"><span>Miesto</span><span>${selectedClass.location}</span></div>
     <div class="row-item"><span>Cena</span><span><strong>${selectedClass.price}€</strong></span></div>
-    <div class="row-item"><span>Prihlásený</span><span>${currentUser.name}</span></div>
+    ${myChildren.length ? `<div class="row-item"><span>Pre koho</span><span><select id="bookForWhom" style="background:var(--card,#1a1a1a);color:var(--text,#eee);border:1px solid var(--border,#333);border-radius:8px;padding:5px 8px;font-size:.9rem">
+        <option value="">${currentUser.name} (ja)</option>
+        ${myChildren.map(c=>`<option value="${c.id}" ${c.id===preselectChild?'selected':''}>👧 ${c.name}</option>`).join('')}
+      </select></span></div>` : `<div class="row-item"><span>Prihlásený</span><span>${currentUser.name}</span></div>`}
   `;
   document.getElementById('bookError').classList.add('d-none');
   document.getElementById('bookModal').classList.add('show');
@@ -344,22 +352,23 @@ async function confirmBooking() {
   const btn = document.querySelector('.btn-confirm');
   btn.disabled = true; btn.textContent = 'Rezervujem…';
   const nextDate = getNextDate(selectedClass.day_of_week);
+  const forChild = document.getElementById('bookForWhom')?.value || '';
   try {
     const r = await fetch('/api/bookings', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ class_id: selectedClass._id, booking_date: nextDate })
+      body: JSON.stringify({ class_id: selectedClass._id, booking_date: nextDate, for_child_id: forChild || undefined })
     });
     const d = await r.json();
     if (!r.ok) {
-      document.getElementById('bookError').textContent = d.error;
+      document.getElementById('bookError').textContent = d.error || d.message;
       document.getElementById('bookError').classList.remove('d-none');
       btn.disabled = false; btn.innerHTML = '<i class="bi bi-check2-circle me-2"></i>Potvrdiť rezerváciu';
       return;
     }
     // Success
     closeBookModal();
-    showToast('✅ Rezervácia potvrdená pre ' + selectedClass.name, 'success');
+    showToast('✅ Rezervácia potvrdená' + (d.for_child?' pre '+d.for_child:'') + ' – ' + selectedClass.name, 'success');
     showSuccess(selectedClass.name, formatDate(nextDate));
     // Refresh class list
     const resp = await fetch('/api/classes');
