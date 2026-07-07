@@ -1803,9 +1803,19 @@ async function promoteWaitlist(class_id, booking_date){
 }
 
 // Override the delete booking to trigger waitlist promotion
+// Storno policy (Glofox-style): cancellation only up to N hours before class start
+const CANCEL_DEADLINE_HOURS = +process.env.CANCEL_DEADLINE_HOURS || 3;
 app.delete('/api/bookings/:id', auth, async(req,res)=>{
   const b = await q.one(db.bookings,{_id:req.params.id,user_id:req.session.uid});
   if(!b) return res.status(404).json({error:'Rezervácia nenájdená'});
+  if(b.status==='confirmed' && b.booking_date){
+    const cls = await q.one(db.classes,{_id:b.class_id});
+    const start = new Date(`${b.booking_date}T${cls?.time_start||'00:00'}:00`);
+    const hoursLeft = (start - Date.now())/3600000;
+    if(hoursLeft > 0 && hoursLeft < CANCEL_DEADLINE_HOURS){
+      return res.status(400).json({error:`Storno je možné najneskôr ${CANCEL_DEADLINE_HOURS} hod. pred začiatkom hodiny. Ak nemôžeš prísť, kontaktuj nás.`});
+    }
+  }
   await q.update(db.bookings,{_id:req.params.id},{$set:{status:'cancelled',cancelled_at:nowISO()}});
   if(b.status==='confirmed') await promoteWaitlist(b.class_id, b.booking_date);
   res.json({ok:true});
@@ -2712,6 +2722,31 @@ app.get('/api/admin/marketing/stats', adminAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ── Class occupancy report (fill-rate, last 4 weeks) ──────────────────────────
+app.get('/api/admin/marketing/occupancy', adminAuth, async(req,res)=>{
+  try {
+    const cutoff = new Date(Date.now()-28*86400000).toISOString().slice(0,10);
+    const classes = (await q.find(db.classes,{active:true})).filter(c=>c.category!=='Online');
+    const bookings = await q.find(db.bookings,{booking_date:{$gte:cutoff}});
+    const rows = classes.map(c=>{
+      const bks = bookings.filter(b=>b.class_id===c._id && !['cancelled','waitlist'].includes(b.status));
+      const dates = [...new Set(bks.map(b=>b.booking_date))];
+      const sessions = Math.max(dates.length, 1);
+      const attended = bks.filter(b=>b.status==='attended').length;
+      const noShows = bks.filter(b=>b.status==='no_show').length;
+      const avgPerSession = bks.length/sessions;
+      return {
+        class_id:c._id, name:c.name, instructor:c.instructor, location:c.location,
+        day_of_week:c.day_of_week, time_start:c.time_start, capacity:c.capacity||0,
+        bookings4w:bks.length, sessions, attended, noShows,
+        avgPerSession:+avgPerSession.toFixed(1),
+        fillRate:c.capacity?+(100*avgPerSession/c.capacity).toFixed(0):null
+      };
+    }).sort((a,b)=>(a.fillRate??-1)-(b.fillRate??-1));
+    res.json(rows);
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ── Ad spend CRUD (month + source + amount) ───────────────────────────────────
 app.get('/api/admin/adspend', adminAuth, async(req,res)=>{
   const rows=await q.find(db.adspend,{});
@@ -3190,6 +3225,29 @@ async function runDailyJobs(){
         `<p>Ahoj <b>${u.name}</b>,</p><p>Včera si bol/a na prvej hodine vo Fusion Academy – to je super krok! 🎉</p><p>Ako to šlo? Ak máš akékoľvek otázky alebo sa chceš zapísať na ďalšiu hodinu, sme tu pre teba.</p><p>Prvý mesiac Bronze členstva je k dispozícii za <b>50 €</b> – neobmedzene hodín.</p>`,
         '💃 Rezervovať ďalšiu hodinu',`${APP_URL}/schedule`)).catch(()=>{});
     await q.insert(db.notifications,{user_id:u._id,type:'first_class_followup',title:'Ako sa ti páčila prvá hodina? 🥰',body:'Ďakujeme za návštevu!',read:false,created_at:nowISO()});
+  }
+
+  // ── 3b. No-show detection: confirmed bookings whose date passed, never attended ──
+  const pastConfirmed = await q.find(db.bookings,{status:'confirmed',booking_date:{$lt:todayStr}});
+  for(const bk of pastConfirmed){
+    await q.update(db.bookings,{_id:bk._id},{$set:{status:'no_show',no_show_at:nowISO()}});
+    const u = await q.one(db.users,{_id:bk.user_id});
+    if(u) await q.update(db.users,{_id:u._id},{$set:{no_show_count:(u.no_show_count||0)+1}});
+  }
+
+  // ── 3c. Review ask: after 5th visit, once ─────────────────────────────────
+  const reviewUrl = process.env.GOOGLE_REVIEW_URL || '';
+  if(reviewUrl){
+    const loyal = await q.find(db.users,{visit_count:{$gte:5},is_admin:{$ne:true}});
+    for(const u of loyal){
+      if(u.review_asked || !u.email) continue;
+      await q.update(db.users,{_id:u._id},{$set:{review_asked:true}});
+      await sendMail(u.email,'Pomôž nám rásť – ohodnoť nás ⭐',
+        emailTemplate('Páči sa ti u nás?',
+          `<p>Ahoj <b>${u.name}</b>,</p><p>Už si u nás absolvoval/a <b>${u.visit_count} hodín</b> – ďakujeme! 🙏</p><p>Ak sa ti u nás páči, veľmi nám pomôže krátka recenzia na Google. Zaberie to minútu a pomôže ďalším tanečníkom nás nájsť.</p>`,
+          '⭐ Napísať recenziu', reviewUrl)).catch(()=>{});
+      await q.insert(db.notifications,{user_id:u._id,type:'review_ask',title:'Ohodnoť nás ⭐',body:'Pomôž nám recenziou na Google.',read:false,created_at:nowISO()});
+    }
   }
 
   // ── 4. Churn re-engagement (14 days no visit) ────────────────────────────

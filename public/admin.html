@@ -752,6 +752,17 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       </div>
     </div>
 
+    <!-- Occupancy -->
+    <div class="card bg-dark border-secondary mb-3">
+      <div class="card-body p-0">
+        <div class="p-3 pb-0 d-flex justify-content-between"><h6 class="fw-bold"><i class="bi bi-bar-chart-steps me-2 text-success"></i>Obsadenosť hodín (posledné 4 týždne)</h6></div>
+        <div class="table-responsive"><table class="table table-dark table-hover mb-0 align-middle" style="font-size:.83rem">
+          <thead><tr><th>Hodina</th><th>Tréner</th><th>Miesto</th><th>Kapacita</th><th>Ø rezervácií</th><th>Obsadenosť</th><th>No-shows</th></tr></thead>
+          <tbody id="mkOccBody"></tbody>
+        </table></div>
+      </div>
+    </div>
+
     <div class="row g-3">
       <!-- Ad spend form -->
       <div class="col-md-5">
@@ -937,7 +948,26 @@ async function loadMarketing(){
     return `<tr><td>${m.month}</td><td>${m.newClients}</td><td class="text-muted">${srcs||'—'}</td><td>${m.revenue.toFixed(2)} €</td><td>${m.spend?m.spend.toFixed(2)+' €':'—'}</td><td>${cac}</td></tr>`;
   }).join('');
   loadAdspendList();
+  loadOccupancy();
   if(!document.getElementById('asMonth').value) document.getElementById('asMonth').value=new Date().toISOString().slice(0,7);
+}
+const DOW=['Ne','Po','Ut','St','Št','Pi','So'];
+async function loadOccupancy(){
+  const rows = await api('/api/admin/marketing/occupancy');
+  if(!rows||rows.error) return;
+  document.getElementById('mkOccBody').innerHTML = rows.map(r=>{
+    const fr=r.fillRate;
+    const badge = fr===null?'—':`<span class="badge ${fr>=70?'bg-success':fr>=40?'bg-warning text-dark':'bg-danger'}">${fr} %</span>`;
+    return `<tr>
+      <td><b>${escHtml(r.name)}</b><br><span class="text-muted small">${DOW[r.day_of_week]} ${r.time_start||''}</span></td>
+      <td>${escHtml(r.instructor||'')}</td>
+      <td>${escHtml(r.location||'')}</td>
+      <td>${r.capacity||'—'}</td>
+      <td>${r.avgPerSession}</td>
+      <td>${badge}</td>
+      <td>${r.noShows?`<span class="text-danger">${r.noShows}</span>`:'0'}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7" class="text-muted">Žiadne aktívne hodiny.</td></tr>';
 }
 async function loadAdspendList(){
   const rows = await api('/api/admin/adspend');
