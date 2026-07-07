@@ -2331,9 +2331,9 @@ app.post('/api/attendance/qr-checkin', trainerAuth, async(req,res)=>{
         if(!u.is_child) sendFirstClassEmail(u._id).catch(()=>{});
         return res.json({ok:true, user:userData, booking:{existing:true, attended:true, booking_date:bdate, class_name:cls.name}});
       }
-      // Determine access type
+      // Determine access type (first free class governed by free_class_used only)
       const hasMem = mem && mem.status === 'active';
-      const hasFree = !u.free_class_used && (u.visit_count||0) === 0;
+      const hasFree = !u.free_class_used;
       const hasSingle = (u.single_entries||0) > 0;
       const hasCredit = (u.free_credits||0) > 0;
       if(!hasMem && !hasFree && !hasSingle && !hasCredit){
@@ -2390,7 +2390,7 @@ app.get('/api/family/children', auth, async(req,res)=>{
       const m = await checkMembership(c._id);
       const upcoming = await q.find(db.bookings,{user_id:c._id,status:'confirmed',booking_date:{$gte:today()}},{booking_date:1});
       out.push({
-        id:c._id, name:c.name, birth_year:c.birth_year||null,
+        id:c._id, name:c.name, birth_date:c.birth_date||null, birth_year:c.birth_year||null,
         visit_count:c.visit_count||0, single_entries:c.single_entries||0, free_credits:c.free_credits||0,
         free_class_used:c.free_class_used||false,
         membership: m ? {plan_name:m.plan_name, expires_at:m.expires_at, status:m.status||'active'} : null,
@@ -2404,10 +2404,20 @@ app.get('/api/family/children', auth, async(req,res)=>{
 app.post('/api/family/children', auth, async(req,res)=>{
   try {
     const name = (req.body.name||'').trim();
-    const birth_year = +req.body.birth_year || null;
     if(!name) return res.status(400).json({error:'Chýba meno dieťaťa'});
-    if(birth_year && (birth_year < 1990 || birth_year > new Date().getFullYear()))
-      return res.status(400).json({error:'Neplatný rok narodenia'});
+    // Full date of birth (YYYY-MM-DD); birth_year derived for display
+    let birth_date = null, birth_year = null;
+    if(req.body.birth_date){
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(req.body.birth_date)) return res.status(400).json({error:'Neplatný dátum narodenia'});
+      const dt = new Date(req.body.birth_date);
+      const y = dt.getFullYear();
+      if(isNaN(dt.getTime()) || y < 1990 || dt > new Date()) return res.status(400).json({error:'Neplatný dátum narodenia'});
+      birth_date = req.body.birth_date; birth_year = y;
+    } else if(req.body.birth_year){
+      const y = +req.body.birth_year;
+      if(y < 1990 || y > new Date().getFullYear()) return res.status(400).json({error:'Neplatný rok narodenia'});
+      birth_year = y;
+    }
     const count = await q.count(db.users,{parent_id:req.session.uid, active:{$ne:false}});
     if(count >= MAX_CHILDREN) return res.status(400).json({error:`Maximálne ${MAX_CHILDREN} detí na účet`});
     const token = Math.random().toString(36).slice(2,10);
@@ -2416,7 +2426,7 @@ app.post('/api/family/children', auth, async(req,res)=>{
     let childCode = 'CHILD-'+token.toUpperCase();
     while(await q.one(db.users,{referral_code:childCode})) childCode = 'CHILD-'+Math.random().toString(36).slice(2,10).toUpperCase();
     const child = await q.insert(db.users,{
-      name, email:internalEmail, referral_code:childCode, parent_id:req.session.uid, is_child:true, birth_year,
+      name, email:internalEmail, referral_code:childCode, parent_id:req.session.uid, is_child:true, birth_date, birth_year,
       user_type:'client', is_admin:false, active:true,
       visit_count:0, free_class_used:false, single_entries:0, free_credits:0, referral_credit:0,
       created_at:today()
@@ -2431,7 +2441,11 @@ app.put('/api/family/children/:id', auth, async(req,res)=>{
     if(!child || child.parent_id !== req.session.uid) return res.status(403).json({error:'Neplatný detský profil'});
     const upd = {};
     if(req.body.name!==undefined){ const n=(req.body.name||'').trim(); if(!n) return res.status(400).json({error:'Chýba meno'}); upd.name=n; }
-    if(req.body.birth_year!==undefined) upd.birth_year = +req.body.birth_year || null;
+    if(req.body.birth_date!==undefined){
+      if(req.body.birth_date && !/^\d{4}-\d{2}-\d{2}$/.test(req.body.birth_date)) return res.status(400).json({error:'Neplatný dátum narodenia'});
+      upd.birth_date = req.body.birth_date || null;
+      upd.birth_year = req.body.birth_date ? new Date(req.body.birth_date).getFullYear() : null;
+    } else if(req.body.birth_year!==undefined) upd.birth_year = +req.body.birth_year || null;
     await q.update(db.users,{_id:child._id},{$set:upd});
     res.json({ok:true});
   } catch(e){ res.status(500).json({error:e.message}); }
@@ -2548,8 +2562,12 @@ app.post('/api/bookings', auth, async(req,res)=>{
     // Private lessons are never free (category check)
     const isPrivate = /súkromn/i.test(cls.name) || /súkromn/i.test(cls.category||'');
     const visitCount = u.visit_count || 0;
+    // "First class free" is governed solely by free_class_used — the same flag the
+    // client profile shows. Do NOT also gate on visit_count, or a client whose free
+    // class is still available (flag false) but has visits from other paths gets
+    // wrongly redirected to buy membership.
     if(!u.is_admin && u.user_type !== 'trainer'){
-      if(visitCount > 0 || u.free_class_used){
+      if(u.free_class_used){
         // Not first visit – need membership or single entry credit
         const m = await checkMembership(u._id);
         const hasMembership = m && (m.status==='active') && (!m.expires_at || m.expires_at >= today());

@@ -600,7 +600,8 @@
     <h3>👧 Pridať dieťa</h3>
     <p style="opacity:.7;font-size:.85rem;margin-bottom:14px">Dieťa nemá vlastné prihlásenie – rezervuješ a platíš zaň ty.</p>
     <input id="childName" placeholder="Meno dieťaťa" style="width:100%;padding:11px 14px;margin-bottom:10px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:.95rem">
-    <input id="childYear" type="number" placeholder="Rok narodenia (nepovinné)" min="1990" max="2026" style="width:100%;padding:11px 14px;margin-bottom:4px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:.95rem">
+    <label style="display:block;font-size:.78rem;color:var(--muted);margin-bottom:5px">Dátum narodenia <span style="opacity:.7">(nepovinné)</span></label>
+    <input id="childBirthDate" type="date" min="1990-01-01" style="width:100%;padding:11px 14px;margin-bottom:4px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:.95rem;color-scheme:dark">
     <div class="modal-actions">
       <button class="btn-cancel-modal" onclick="closeChildModal()">Zrušiť</button>
       <button class="btn-confirm-modal" onclick="saveChild()">✓ Pridať</button>
@@ -754,13 +755,13 @@ async function loadFamily(){
     </div>`;
   }).join('');
 }
-function openChildModal(){ document.getElementById('childName').value=''; document.getElementById('childYear').value=''; document.getElementById('childModal').style.display='flex'; }
+function openChildModal(){ document.getElementById('childName').value=''; document.getElementById('childBirthDate').value=''; document.getElementById('childBirthDate').max=new Date().toISOString().slice(0,10); document.getElementById('childModal').style.display='flex'; }
 function closeChildModal(){ document.getElementById('childModal').style.display='none'; }
 async function saveChild(){
   const name=document.getElementById('childName').value.trim();
-  const birth_year=document.getElementById('childYear').value;
+  const birth_date=document.getElementById('childBirthDate').value;
   if(!name){ showToast('Zadaj meno dieťaťa','error'); return; }
-  const d=await api('/api/family/children',{method:'POST',body:{name,birth_year}});
+  const d=await api('/api/family/children',{method:'POST',body:{name,birth_date}});
   if(d?.ok){ showToast('Dieťa pridané ✓','success'); closeChildModal(); loadFamily(); }
   else showToast('Chyba: '+(d?.error||'?'),'error');
 }
