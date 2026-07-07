@@ -126,8 +126,17 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',system-u
 
 <!-- Hero -->
 <div class="hero">
-  <h1>Rozvrh <span>hodín</span></h1>
-  <p>Vyberte hodinu, miesto a prihláste sa online</p>
+  <h1>Rozvrh <span>živých hodín</span></h1>
+  <p>Vyberte deň, mesto a prihláste sa na Zumbu</p>
+</div>
+
+<!-- Online separation banner (shown only if online classes exist) -->
+<div id="onlineBanner" style="display:none;max-width:900px;margin:0 auto 4px;padding:0 16px">
+  <a href="/online" style="display:flex;align-items:center;gap:12px;text-decoration:none;background:linear-gradient(135deg,rgba(156,39,176,.14),rgba(156,39,176,.05));border:1px solid rgba(156,39,176,.35);border-radius:14px;padding:12px 16px;color:#eee">
+    <span style="font-size:1.6rem">💻</span>
+    <span style="flex:1"><b style="color:#ce93d8">Online hodiny</b><br><span style="font-size:.82rem;color:rgba(255,255,255,.6)">Cvič z domu — sú oddelene v sekcii Online</span></span>
+    <span style="color:#ce93d8;font-size:1.2rem">→</span>
+  </a>
 </div>
 
 <!-- Day tabs -->
@@ -192,6 +201,14 @@ let currentUser = null;
 let myChildren = [];
 let preselectChild = new URLSearchParams(location.search).get('child') || '';
 
+// ── Schedule shows only live classes of one focus program (Zumba). ──────────────
+// Online classes are separated to the /online page. Set FOCUS_CATEGORY='' for all.
+const FOCUS_CATEGORY = 'zumba';
+const isOnline = c => (c.location||'').toLowerCase()==='online' || (c.category||'').toLowerCase()==='online';
+function filterSchedule(list){
+  return list.filter(c => !isOnline(c) && (!FOCUS_CATEGORY || (c.category||'').toLowerCase()===FOCUS_CATEGORY));
+}
+
 const DAYS = ['Nedeľa','Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota'];
 const DAYS_SHORT = ['Ned','Pon','Uto','Str','Štv','Pia','Sob'];
 
@@ -212,7 +229,10 @@ async function init() {
 
   // Load classes
   const r = await fetch('/api/classes');
-  allClasses = await r.json();
+  const all = await r.json();
+
+  if (all.some(isOnline)) document.getElementById('onlineBanner').style.display = 'block';
+  allClasses = filterSchedule(all);
 
   // Build day tabs
   buildDayTabs();
@@ -372,7 +392,7 @@ async function confirmBooking() {
     showSuccess(selectedClass.name, formatDate(nextDate));
     // Refresh class list
     const resp = await fetch('/api/classes');
-    allClasses = await resp.json();
+    allClasses = filterSchedule(await resp.json());
     if (currentDay !== null) showDay(currentDay);
   } catch {
     document.getElementById('bookError').textContent = 'Chyba pripojenia';

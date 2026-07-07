@@ -629,12 +629,12 @@ body{background:var(--dark);color:var(--text);font-family:'Segoe UI',system-ui,s
       <!-- SUB-STEP B: choose the city -->
       <div class="wiz-panel" id="wizCity">
         <div class="wiz-head">
-          <button class="wiz-back" onclick="wizGoType()" title="Späť"><i class="bi bi-arrow-left"></i></button>
+          <button class="wiz-back" id="cityBackBtn" onclick="wizGoType()" title="Späť"><i class="bi bi-arrow-left"></i></button>
           <div>
             <h2 class="step-title" style="margin:0">Kde chceš tancovať?</h2>
           </div>
         </div>
-        <p class="step-sub">Vyber si mesto, ktoré ti je najbližšie.</p>
+        <p class="step-sub" id="citySub">Vyber si mesto, ktoré ti je najbližšie.</p>
         <div class="pick-grid" id="cityGrid"></div>
       </div>
 
@@ -1007,12 +1007,14 @@ const DAYS=['Nedeľa','Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota']
 async function loadClasses(){
   try{
     const data=await fetch('/api/classes').then(r=>r.json());
-    // Filter out private/individual lessons + online (first free class is in-person)
+    // FULL FOCUS: onboarding shows only Zumba live classes (no online, no other programs)
+    // Ostatné programy (Spoločenské tance, Fit, FitDay, Wellness) sú dočasne mimo –
+    // sústredíme sa na Zumbu, kým sa stabilne nenaplní. Online je oddelené (/online).
     _allClasses=data.filter(c=>{
-      const txt=((c.category||'')+(c.name||'')).toLowerCase();
+      const cat=(c.category||'').toLowerCase();
       const loc=(c.location||'').toLowerCase();
-      if(loc==='online'||(c.category||'').toLowerCase()==='online') return false;
-      return !txt.includes('súkromn')&&!txt.includes('sukromn')&&!txt.includes('privát')&&!txt.includes('privat')&&!txt.includes('individual');
+      if(loc==='online'||cat==='online') return false;
+      return cat==='zumba';
     });
     renderTypeStep();
   }catch(e){
@@ -1039,11 +1041,8 @@ function renderCrumbs(){
   el.innerHTML=parts.join('');
 }
 
-// STEP A — choose the program/dance type (grouped by category)
-function renderTypeStep(){
-  _wizType=null; _wizCity=null;
-  const grid=document.getElementById('typeGrid');
-  // Group classes by category
+// Group available classes by program/category
+function availableTypes(){
   const groups={};
   _allClasses.forEach(c=>{
     const key=(c.category||'Ostatné').trim();
@@ -1051,8 +1050,21 @@ function renderTypeStep(){
     groups[key].cities.add(c.location||'');
     groups[key].count++;
   });
-  const types=Object.values(groups).sort((a,b)=>b.count-a.count);
-  if(!types.length){ grid.innerHTML='<div class="empty-state">Momentálne nie sú vypísané žiadne hodiny.</div>'; return; }
+  return Object.values(groups).sort((a,b)=>b.count-a.count);
+}
+
+// STEP A — choose the program/dance type (auto-skipped when only one program runs)
+function renderTypeStep(){
+  _wizType=null; _wizCity=null;
+  const grid=document.getElementById('typeGrid');
+  const types=availableTypes();
+  if(!types.length){ wizShow('wizType'); grid.innerHTML='<div class="empty-state">Momentálne nie sú vypísané žiadne hodiny.</div>'; return; }
+  // Only one program → skip this step, go straight to city selection
+  if(types.length===1){
+    _wizType={name:types[0].name, emoji:types[0].emoji};
+    renderCityStep();
+    return;
+  }
   grid.innerHTML=types.map((t,i)=>`
     <div class="pick-card" style="animation-delay:${i*70}ms" onclick='pickType(${JSON.stringify(t.name)})'>
       <i class="bi bi-arrow-right-circle-fill pick-arrow"></i>
@@ -1071,6 +1083,14 @@ function pickType(name){
 // STEP B — choose the city for the chosen type
 function renderCityStep(){
   _wizCity=null;
+  const singleType = availableTypes().length<=1;
+  // When only one program runs, this is the first real step → hide the Back button
+  const backBtn=document.getElementById('cityBackBtn');
+  if(backBtn) backBtn.style.display = singleType ? 'none' : '';
+  const sub=document.getElementById('citySub');
+  if(sub) sub.innerHTML = singleType
+    ? `Vyber si mesto, kde chceš prísť na <b class="gold">${escHtml(_wizType.emoji+' '+_wizType.name)}</b>. Prvá hodina je zadarmo.`
+    : 'Vyber si mesto, ktoré ti je najbližšie.';
   const grid=document.getElementById('cityGrid');
   const inType=_allClasses.filter(c=>(c.category||'Ostatné').trim()===_wizType.name);
   const cityMap={};
