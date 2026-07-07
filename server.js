@@ -2320,7 +2320,12 @@ app.post('/api/attendance/qr-checkin', trainerAuth, async(req,res)=>{
       if(!cls) return res.json({ok:true, user:userData, booking:null, note:'Hodina nenájdená'});
       const bdate = nextDateForDay(cls.day_of_week);
       const exists = await q.one(db.bookings,{class_id,user_id:u._id,booking_date:bdate,status:{$ne:'cancelled'}});
-      if(exists) return res.json({ok:true, user:userData, booking:{existing:true, booking_date:bdate, class_name:cls.name}});
+      if(exists){
+        // Mark physical attendance on the pre-existing booking
+        await q.update(db.bookings,{_id:exists._id},{$set:{status:'attended',attended_at:nowISO(),attended_by:req.trainerUser._id}});
+        if(!u.is_child) sendFirstClassEmail(u._id).catch(()=>{});
+        return res.json({ok:true, user:userData, booking:{existing:true, attended:true, booking_date:bdate, class_name:cls.name}});
+      }
       // Determine access type
       const hasMem = mem && mem.status === 'active';
       const hasFree = !u.free_class_used && (u.visit_count||0) === 0;
@@ -2334,7 +2339,7 @@ app.post('/api/attendance/qr-checkin', trainerAuth, async(req,res)=>{
         class_location:cls.location, class_time_start:cls.time_start,
         day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
         user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||'',
-        booking_date:bdate, status:'confirmed',
+        booking_date:bdate, status:'attended', attended_at:nowISO(), attended_by:req.trainerUser._id,
         notes:'📱 QR check-in', manual:true, manual_by:req.trainerUser._id, created_at:nowISO()
       });
       const upd = {visit_count:(u.visit_count||0)+1};
@@ -2342,6 +2347,7 @@ app.post('/api/attendance/qr-checkin', trainerAuth, async(req,res)=>{
       else if(hasCredit && !hasMem) upd.free_credits = (u.free_credits||0) - 1;
       else if(hasSingle && !hasMem && !hasFree) upd.single_entries = (u.single_entries||0) - 1;
       await q.update(db.users,{_id:u._id},{$set:upd});
+      if(!u.is_child) sendFirstClassEmail(u._id).catch(()=>{});
       await q.insert(db.notifications,{user_id:u._id,type:'checkin',title:'✅ Check-in potvrdený',
         body:`${cls.name} – ${bdate} o ${cls.time_start}`,read:false,created_at:nowISO()});
       return res.json({ok:true, user:{...userData, visit_count:upd.visit_count},
@@ -2593,8 +2599,9 @@ app.post('/api/bookings', auth, async(req,res)=>{
       await q.insert(db.notifications,{user_id:notifUid,type:'loyalty',title:`🏆 Nový odznak: ${milestone.label}`,body:`${who}Gratulujeme! ${newCount} návštev. ${milestone.reward ? 'Odmena: '+milestone.reward : ''}`,read:false,created_at:nowISO()});
       if(parent.email) sendMail(parent.email,`🏆 Nový odznak: ${milestone.label}`,`<h2>${milestone.badge} Gratulujeme, ${u.name}!</h2><p>Práve ${isChild?'dosiahlo dieťa':'si dosiahol'} míľnik: <b>${newCount} návštev</b> – ${milestone.label}!</p>${milestone.reward?`<p>🎁 Odmena: <b>${milestone.reward}</b></p>`:''}<p>Ďakujeme, že ste súčasťou Fusion Academy!</p><p><i>Fusion Academy tím 💃</i></p>`).catch(()=>{});
     }
-    // Email automation: post-first-class sequence (own account only)
-    if(newCount === 1 && !isChild) enqueueSequence(u._id, 'post_first_class').catch(()=>{});
+    // NOTE: the thank-you + membership offer email is sent AFTER the client actually
+    // attends their first class (see runDailyJobs → "Post-first-class follow-up"),
+    // not here at booking time, so we don't thank them before they've been.
     // Send confirmation email
     if(parent.email) sendMail(parent.email,`Rezervácia potvrdená – ${cls.name}`,`<h2>Rezervácia potvrdená ✅</h2><p>Ahoj <b>${parent.name}</b>,</p><p>Rezervácia ${isChild?`pre <b>${u.name}</b> `:''}na hodinu <b>${cls.name}</b> bola úspešne zaznamenaná.</p><ul><li>Dátum: <b>${bdate}</b></li><li>Čas: <b>${cls.time_start}–${cls.time_end||''}</b></li><li>Miesto: <b>${cls.location}</b></li></ul><p>Tešíme sa na vás!</p><p><i>Fusion Academy</i></p>`).catch(()=>{});
     res.json({ok:true, id:booking._id, class_name:cls.name, booking_date:bdate, visit_count:newCount, for_child:isChild?u.name:null});
@@ -3289,6 +3296,41 @@ function emailTemplate(title, body, ctaText, ctaUrl){
 </td></tr></table></td></tr></table></body></html>`;
 }
 
+// Thank-you + membership/permanentka offer, sent once after the client's first class.
+// Idempotent: guarded by user.first_class_email_sent. Call from QR check-in and daily job.
+async function sendFirstClassEmail(userId){
+  const u = await q.one(db.users,{_id:userId});
+  if(!u || !u.email || u.is_child || u.first_class_email_sent) return;
+  // mark as handled so it never fires again for this user
+  await q.update(db.users,{_id:u._id},{$set:{first_class_email_sent:true}});
+  // don't pitch membership to someone who already has an active one
+  const mem = await checkMembership(u._id);
+  if(mem && mem.status==='active') return;
+  const body =
+    `<p>Ahoj <b>${u.name}</b>,</p>
+     <p>Máme z teba obrovskú radosť – zvládol/zvládla si <b>prvú hodinu zadarmo</b> a to je ten najťažší krok! 🎉 Dúfame, že si sa cítil/a skvele a odchádzal/a s úsmevom.</p>
+     <p>Ak chceš pokračovať a naplno si tanec užiť, tu je naša <b>najvýhodnejšia</b> možnosť:</p>
+     <div style="background:linear-gradient(135deg,#C9A84C,#a07030);border-radius:16px;padding:2px;margin:18px 0">
+       <div style="background:#1c1c1c;border-radius:14px;padding:20px 22px;text-align:center">
+         <div style="display:inline-block;background:#C9A84C;color:#111;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:4px 12px;border-radius:20px;margin-bottom:10px">⭐ Najvýhodnejšie</div>
+         <div style="font-size:20px;font-weight:800;color:#C9A84C;margin-bottom:4px">Mesačné členstvo</div>
+         <div style="color:#ccc;font-size:14px;margin-bottom:14px">Choď na <b style="color:#fff">neobmedzený počet hodín</b> každý mesiac, vo všetkých mestách. Najlepšia hodnota pre pravidelný tanec.</div>
+         <div style="font-size:26px;font-weight:900;color:#fff;margin-bottom:2px">už od 50 € / mesiac</div>
+         <a href="${APP_URL}/pricing" style="display:inline-block;margin-top:14px;background:#C9A84C;color:#111;font-weight:800;text-decoration:none;padding:13px 30px;border-radius:10px;font-size:15px">Chcem členstvo 💃</a>
+       </div>
+     </div>
+     <div style="border:1px solid #333;border-radius:12px;padding:16px 18px;margin:10px 0;text-align:center">
+       <div style="color:#aaa;font-size:13px;margin-bottom:6px">Nechceš záväzok každý mesiac?</div>
+       <div style="font-size:15px;font-weight:700;color:#ddd">🎟️ Permanentka na 10 vstupov – <b>80 €</b></div>
+       <div style="color:#888;font-size:12px;margin-top:4px">Platná 90 dní · vhodná, ak chodíš občas · <a href="${APP_URL}/pricing" style="color:#C9A84C;text-decoration:none">viac info</a></div>
+     </div>
+     <p style="color:#999;font-size:13px;margin-top:16px">Ak máš akékoľvek otázky, stačí odpovedať na tento email. Tešíme sa na teba na ďalšej hodine! 🌟</p>`;
+  await sendMail(u.email,'Ďakujeme za tvoju prvú hodinu! 🥰 A čo ďalej?',
+    emailTemplate('Ďakujeme, že si prišiel/prišla! 💛', body, '💃 Vybrať si členstvo', `${APP_URL}/pricing`)).catch(()=>{});
+  await q.insert(db.notifications,{user_id:u._id,type:'first_class_followup',title:'Ďakujeme za prvú hodinu! 🥰',body:'Pozri si možnosti členstva a permanentky.',read:false,created_at:nowISO()});
+  processEmailQueue().catch(()=>{});
+}
+
 async function runDailyJobs(){
   const d3 = new Date(Date.now()+3*86400000).toISOString().slice(0,10);
   const d7 = new Date(Date.now()+7*86400000).toISOString().slice(0,10);
@@ -3328,20 +3370,12 @@ async function runDailyJobs(){
     }
   }
 
-  // ── 3. Post-first-class follow-up ─────────────────────────────────────────
+  // ── 3. Post-first-class follow-up (fallback for anyone marked attended) ────
   const yesterday = new Date(Date.now()-86400000).toISOString().slice(0,10);
-  const firstTimers = await q.find(db.bookings,{status:'attended',created_at:{$gte:yesterday+'T00:00:00',$lte:yesterday+'T23:59:59'}});
+  const firstTimers = await q.find(db.bookings,{status:'attended',attended_at:{$gte:yesterday+'T00:00:00'}});
   for(const bk of firstTimers){
-    const u = await q.one(db.users,{_id:bk.user_id});
-    if(!u?.email) continue;
-    if((u.visit_count||0) !== 1) continue; // only after their very first class
-    const alreadySent = await q.one(db.notifications,{user_id:u._id,type:'first_class_followup'});
-    if(alreadySent) continue;
-    await sendMail(u.email,'Ako sa ti páčila prvá hodina? 🥰',
-      emailTemplate('Ako sa ti páčila prvá hodina?',
-        `<p>Ahoj <b>${u.name}</b>,</p><p>Včera si bol/a na prvej hodine vo Fusion Academy – to je super krok! 🎉</p><p>Ako to šlo? Ak máš akékoľvek otázky alebo sa chceš zapísať na ďalšiu hodinu, sme tu pre teba.</p><p>Prvý mesiac Bronze členstva je k dispozícii za <b>50 €</b> – neobmedzene hodín.</p>`,
-        '💃 Rezervovať ďalšiu hodinu',`${APP_URL}/schedule`)).catch(()=>{});
-    await q.insert(db.notifications,{user_id:u._id,type:'first_class_followup',title:'Ako sa ti páčila prvá hodina? 🥰',body:'Ďakujeme za návštevu!',read:false,created_at:nowISO()});
+    if(bk.is_child_booking) continue;
+    await sendFirstClassEmail(bk.user_id);
   }
 
   // ── 3b. No-show detection: confirmed bookings whose date passed, never attended ──

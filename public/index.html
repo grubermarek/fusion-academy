@@ -236,6 +236,83 @@ body{background:var(--dark);color:var(--text);font-family:'Segoe UI',system-ui,s
 }
 .loading-spinner{text-align:center;padding:48px;color:var(--muted);font-size:.9rem}
 
+/* ── STEP-BY-STEP BOOKING WIZARD (kid-friendly) ── */
+.wiz-panel{display:none}
+.wiz-panel.active{display:block;animation:wizIn .4s ease both}
+@keyframes wizIn{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:translateX(0)}}
+.wiz-head{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.wiz-back{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  background:var(--card);border:1px solid var(--border);color:var(--muted);
+  width:42px;height:42px;border-radius:12px;cursor:pointer;font-size:1.1rem;transition:all .2s;flex-shrink:0;
+}
+.wiz-back:hover{border-color:var(--gold-border);color:var(--gold);transform:translateX(-2px)}
+.wiz-crumbs{display:flex;gap:6px;flex-wrap:wrap;font-size:.72rem;color:var(--muted);margin-bottom:18px;min-height:1rem}
+.wiz-crumb{background:var(--card);border:1px solid var(--gold-border);color:var(--gold);padding:3px 11px;border-radius:20px;font-weight:600}
+.pick-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
+.pick-card{
+  background:var(--card);border:2px solid var(--border);border-radius:20px;
+  padding:26px 16px;text-align:center;cursor:pointer;position:relative;overflow:hidden;
+  transition:transform .18s,border-color .18s,box-shadow .18s;
+  animation:pickIn .45s cubic-bezier(.2,.8,.3,1.2) both;opacity:0;
+}
+@keyframes pickIn{from{opacity:0;transform:translateY(22px) scale(.94)}to{opacity:1;transform:translateY(0) scale(1)}}
+.pick-card:hover{transform:translateY(-4px) scale(1.02);border-color:var(--gold);box-shadow:0 10px 30px rgba(201,168,76,.2)}
+.pick-card:active{transform:scale(.97)}
+.pick-emoji{font-size:3rem;line-height:1;margin-bottom:12px;display:block;filter:drop-shadow(0 3px 6px rgba(0,0,0,.4));transition:transform .2s}
+.pick-card:hover .pick-emoji{transform:scale(1.12) rotate(-4deg)}
+.pick-name{font-size:1.08rem;font-weight:800;margin-bottom:4px}
+.pick-meta{font-size:.78rem;color:var(--muted)}
+.pick-arrow{position:absolute;top:14px;right:14px;color:var(--gold);opacity:0;transition:opacity .2s;font-size:1rem}
+.pick-card:hover .pick-arrow{opacity:1}
+
+/* first-class-free banner */
+.free-banner{
+  display:flex;align-items:center;gap:14px;
+  background:linear-gradient(135deg,rgba(76,175,80,.16),rgba(76,175,80,.05));
+  border:1px solid rgba(76,175,80,.35);border-radius:16px;padding:16px 18px;margin-bottom:20px;
+  animation:pickIn .5s ease both;
+}
+.free-banner .fb-emoji{font-size:2rem;animation:wiggle 2s ease-in-out infinite}
+@keyframes wiggle{0%,100%{transform:rotate(0)}25%{transform:rotate(-10deg)}75%{transform:rotate(10deg)}}
+.free-banner .fb-text{font-size:.92rem;line-height:1.4}
+.free-banner .fb-text b{color:#81c784}
+
+/* calendar */
+.cal-wrap{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:18px 16px}
+.cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.cal-title{font-size:1.05rem;font-weight:800;text-transform:capitalize}
+.cal-nav{background:#1a1a1a;border:1px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:10px;cursor:pointer;transition:all .2s;font-size:1rem}
+.cal-nav:hover:not(:disabled){border-color:var(--gold-border);color:var(--gold)}
+.cal-nav:disabled{opacity:.3;cursor:default}
+.cal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px}
+.cal-dow span{text-align:center;font-size:.7rem;color:var(--muted);font-weight:700;text-transform:uppercase}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.cal-cell{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:12px;font-size:.9rem;position:relative}
+.cal-cell.empty{background:transparent}
+.cal-cell.off{color:#3a3a3a}
+.cal-day{
+  background:linear-gradient(135deg,var(--gold),#a07830);color:#111;font-weight:800;cursor:pointer;
+  border:none;transition:transform .15s,box-shadow .15s;animation:pickIn .4s ease both;
+}
+.cal-day:hover{transform:scale(1.1);box-shadow:0 4px 14px rgba(201,168,76,.4);z-index:2}
+.cal-day:active{transform:scale(.95)}
+.cal-day .cal-dot{width:5px;height:5px;border-radius:50%;background:#111;opacity:.5;margin-top:2px}
+.cal-legend{display:flex;align-items:center;gap:8px;justify-content:center;margin-top:14px;font-size:.76rem;color:var(--muted)}
+.cal-legend .lg-dot{width:14px;height:14px;border-radius:5px;background:linear-gradient(135deg,var(--gold),#a07830)}
+.cal-empty-msg{text-align:center;padding:30px 16px;color:var(--muted);font-size:.86rem;line-height:1.6}
+
+/* time picker (when a day has several sessions) */
+.time-list{display:flex;flex-direction:column;gap:10px;margin-top:8px}
+.time-item{
+  display:flex;align-items:center;gap:12px;background:#1a1a1a;border:1px solid var(--border);
+  border-radius:12px;padding:12px 14px;cursor:pointer;transition:all .2s;
+}
+.time-item:hover{border-color:var(--gold);transform:translateX(3px)}
+.time-item .ti-time{font-weight:800;color:var(--gold);font-size:1rem}
+.time-item .ti-name{flex:1;font-size:.88rem}
+.time-item .ti-spots{font-size:.74rem;color:var(--green)}
+
 /* ── CONFIRMATION ── */
 #s3{
   background:
@@ -532,21 +609,59 @@ body{background:var(--dark);color:var(--text);font-family:'Segoe UI',system-ui,s
     </div>
   </div>
 
-  <!-- ── SCREEN 2: PICK A CLASS ── -->
+  <!-- ── SCREEN 2: PICK A CLASS (step-by-step wizard) ── -->
   <div class="screen" id="s2">
     <div class="step-content wide">
-      <div class="step-icon">🗓</div>
-      <h2 class="step-title">Vyber si prvú hodinu</h2>
-      <p class="step-sub">Tvoja prvá hodina je <span class="gold">zadarmo</span> — vyber si, čo ťa baví. Súkromné hodiny nie sú v tejto akcii.</p>
-      <div class="cat-filter">
-        <button class="cat-btn active" onclick="filterCat(this,'all')"><i class="bi bi-grid-3x3-gap"></i> Všetky</button>
-        <button class="cat-btn" onclick="filterCat(this,'fit')">🏋️ Fit program</button>
-        <button class="cat-btn" onclick="filterCat(this,'zumba')">🎵 Zumba</button>
-        <button class="cat-btn" onclick="filterCat(this,'social')">💃 Spoločenské tance</button>
+
+      <!-- crumbs (filled by JS) -->
+      <div class="wiz-crumbs" id="wizCrumbs"></div>
+
+      <!-- SUB-STEP A: choose the dance/program -->
+      <div class="wiz-panel active" id="wizType">
+        <div class="step-icon show">💃</div>
+        <h2 class="step-title">Čo ťa baví?</h2>
+        <p class="step-sub">Vyber si, aký tanec alebo cvičenie chceš skúsiť. Prvá hodina je <span class="gold">zadarmo</span>.</p>
+        <div class="pick-grid" id="typeGrid">
+          <div class="loading-spinner"><i class="bi bi-arrow-repeat spin"></i>&nbsp; Načítavam...</div>
+        </div>
       </div>
-      <div class="classes-grid" id="classesGrid">
-        <div class="loading-spinner"><i class="bi bi-arrow-repeat spin"></i>&nbsp; Načítavam hodiny...</div>
+
+      <!-- SUB-STEP B: choose the city -->
+      <div class="wiz-panel" id="wizCity">
+        <div class="wiz-head">
+          <button class="wiz-back" onclick="wizGoType()" title="Späť"><i class="bi bi-arrow-left"></i></button>
+          <div>
+            <h2 class="step-title" style="margin:0">Kde chceš tancovať?</h2>
+          </div>
+        </div>
+        <p class="step-sub">Vyber si mesto, ktoré ti je najbližšie.</p>
+        <div class="pick-grid" id="cityGrid"></div>
       </div>
+
+      <!-- SUB-STEP C: pick a date from calendar -->
+      <div class="wiz-panel" id="wizDate">
+        <div class="wiz-head">
+          <button class="wiz-back" onclick="wizGoCity()" title="Späť"><i class="bi bi-arrow-left"></i></button>
+          <div>
+            <h2 class="step-title" style="margin:0">Vyber si termín</h2>
+          </div>
+        </div>
+        <div class="free-banner">
+          <div class="fb-emoji">🎁</div>
+          <div class="fb-text">Tvoja <b>prvá hodina je úplne zadarmo!</b><br>Ťukni na deň označený zlatou farbou a máš rezervované.</div>
+        </div>
+        <div class="cal-wrap">
+          <div class="cal-head">
+            <button class="cal-nav" id="calPrev" onclick="calMove(-1)"><i class="bi bi-chevron-left"></i></button>
+            <div class="cal-title" id="calTitle">—</div>
+            <button class="cal-nav" id="calNext" onclick="calMove(1)"><i class="bi bi-chevron-right"></i></button>
+          </div>
+          <div class="cal-dow"><span>Po</span><span>Ut</span><span>St</span><span>Št</span><span>Pi</span><span>So</span><span>Ne</span></div>
+          <div class="cal-grid" id="calGrid"></div>
+          <div class="cal-legend"><span class="lg-dot"></span> = voľná hodina, na ktorú sa môžeš prihlásiť</div>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -707,6 +822,16 @@ body{background:var(--dark);color:var(--text);font-family:'Segoe UI',system-ui,s
         <i class="bi bi-check2-circle"></i> Áno, rezervovať!
       </button>
     </div>
+  </div>
+</div>
+
+<!-- ── DAY / TIME PICKER MODAL (when a day has several sessions) ── -->
+<div class="modal-bg" id="dayModal" onclick="if(event.target===this)closeDayModal()">
+  <div class="modal-card">
+    <button class="modal-close" onclick="closeDayModal()"><i class="bi bi-x-lg"></i></button>
+    <h3 class="modal-title" id="dayModalTitle">Vyber si čas</h3>
+    <p class="modal-sub">V tento deň je viac hodín — vyber si, ktorá ti vyhovuje.</p>
+    <div class="time-list" id="dayModalList"></div>
   </div>
 </div>
 
@@ -882,77 +1007,179 @@ const DAYS=['Nedeľa','Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota']
 async function loadClasses(){
   try{
     const data=await fetch('/api/classes').then(r=>r.json());
-    // Filter out private/individual lessons
+    // Filter out private/individual lessons + online (first free class is in-person)
     _allClasses=data.filter(c=>{
       const txt=((c.category||'')+(c.name||'')).toLowerCase();
+      const loc=(c.location||'').toLowerCase();
+      if(loc==='online'||(c.category||'').toLowerCase()==='online') return false;
       return !txt.includes('súkromn')&&!txt.includes('sukromn')&&!txt.includes('privát')&&!txt.includes('privat')&&!txt.includes('individual');
     });
-    renderClasses(_allClasses);
+    renderTypeStep();
   }catch(e){
-    document.getElementById('classesGrid').innerHTML=
+    document.getElementById('typeGrid').innerHTML=
       '<div class="empty-state"><i class="bi bi-wifi-off" style="font-size:2rem;display:block;margin-bottom:8px"></i>Hodiny sa nepodarilo načítať.<br><small>Skúste obnoviť stránku.</small></div>';
   }
 }
 
-function filterCat(btn,cat){
-  document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  let list=_allClasses;
-  if(cat!=='all'){
-    list=_allClasses.filter(c=>{
-      const cat_lower=(c.category||'').toLowerCase();
-      if(cat==='fit') return cat_lower==='fit program'||cat_lower.includes('fit');
-      if(cat==='zumba') return cat_lower==='zumba';
-      if(cat==='social') return cat_lower.includes('spoločenské')||cat_lower.includes('spolocenské')||cat_lower.includes('spolocenske')||cat_lower==='deti';
-      return true;
-    });
-  }
-  renderClasses(list);
+// ── STEP-BY-STEP BOOKING WIZARD ──────────────────────────────────────────────
+const DOW_MON=['Po','Ut','St','Št','Pi','So','Ne']; // Monday-first labels
+let _wizType=null, _wizCity=null, _calRef=null; // _calRef = Date of month being shown
+
+function wizShow(panelId){
+  document.querySelectorAll('#s2 .wiz-panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById(panelId).classList.add('active');
+  renderCrumbs();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function renderCrumbs(){
+  const el=document.getElementById('wizCrumbs'); if(!el) return;
+  const parts=[];
+  if(_wizType) parts.push(`<span class="wiz-crumb">${_wizType.emoji} ${escHtml(_wizType.name)}</span>`);
+  if(_wizCity) parts.push(`<span class="wiz-crumb">📍 ${escHtml(_wizCity)}</span>`);
+  el.innerHTML=parts.join('');
 }
 
-function renderClasses(list){
-  const grid=document.getElementById('classesGrid');
-  if(!list.length){
-    grid.innerHTML='<div class="empty-state"><i class="bi bi-calendar-x" style="font-size:2rem;display:block;margin-bottom:10px;color:#555"></i>V tejto kategórii zatiaľ nie sú hodiny.<br><small>Vyber iný filter alebo <a href="#" style="color:var(--gold)" onclick="filterCat(document.querySelector(\'.cat-btn\'),\'all\');return false">zobraz všetky</a>.</small></div>';
-    return;
+// STEP A — choose the program/dance type (grouped by category)
+function renderTypeStep(){
+  _wizType=null; _wizCity=null;
+  const grid=document.getElementById('typeGrid');
+  // Group classes by category
+  const groups={};
+  _allClasses.forEach(c=>{
+    const key=(c.category||'Ostatné').trim();
+    if(!groups[key]) groups[key]={name:key, emoji:c.emoji||'💃', cities:new Set(), count:0};
+    groups[key].cities.add(c.location||'');
+    groups[key].count++;
+  });
+  const types=Object.values(groups).sort((a,b)=>b.count-a.count);
+  if(!types.length){ grid.innerHTML='<div class="empty-state">Momentálne nie sú vypísané žiadne hodiny.</div>'; return; }
+  grid.innerHTML=types.map((t,i)=>`
+    <div class="pick-card" style="animation-delay:${i*70}ms" onclick='pickType(${JSON.stringify(t.name)})'>
+      <i class="bi bi-arrow-right-circle-fill pick-arrow"></i>
+      <span class="pick-emoji">${t.emoji}</span>
+      <div class="pick-name">${escHtml(t.name)}</div>
+      <div class="pick-meta">${t.cities.size} ${t.cities.size===1?'mesto':t.cities.size<5?'mestá':'miest'}</div>
+    </div>`).join('');
+  wizShow('wizType');
+}
+function pickType(name){
+  const first=_allClasses.find(c=>(c.category||'Ostatné').trim()===name);
+  _wizType={name, emoji:first?.emoji||'💃'};
+  renderCityStep();
+}
+
+// STEP B — choose the city for the chosen type
+function renderCityStep(){
+  _wizCity=null;
+  const grid=document.getElementById('cityGrid');
+  const inType=_allClasses.filter(c=>(c.category||'Ostatné').trim()===_wizType.name);
+  const cityMap={};
+  inType.forEach(c=>{ const loc=c.location||'—'; if(!cityMap[loc]) cityMap[loc]={name:loc,count:0}; cityMap[loc].count++; });
+  const cities=Object.values(cityMap).sort((a,b)=>a.name.localeCompare(b.name));
+  grid.innerHTML=cities.map((c,i)=>`
+    <div class="pick-card" style="animation-delay:${i*70}ms" onclick='pickCity(${JSON.stringify(c.name)})'>
+      <i class="bi bi-arrow-right-circle-fill pick-arrow"></i>
+      <span class="pick-emoji">📍</span>
+      <div class="pick-name">${escHtml(c.name)}</div>
+      <div class="pick-meta">${c.count} ${c.count===1?'hodina':c.count<5?'hodiny':'hodín'} týždenne</div>
+    </div>`).join('');
+  wizShow('wizCity');
+}
+function pickCity(name){
+  _wizCity=name;
+  _calRef=new Date(); _calRef.setDate(1);
+  renderCalendar();
+  wizShow('wizDate');
+}
+function wizGoType(){ renderTypeStep(); }
+function wizGoCity(){ renderCityStep(); }
+
+// STEP C — calendar of available session dates for the chosen type+city
+function matchingClasses(){
+  return _allClasses.filter(c=>
+    (c.category||'Ostatné').trim()===_wizType.name &&
+    (c.location||'—')===_wizCity && c.spotsLeft>0);
+}
+function calMove(delta){
+  _calRef.setMonth(_calRef.getMonth()+delta);
+  renderCalendar();
+}
+function renderCalendar(){
+  const cls=matchingClasses();
+  const daysOfWeek=new Set(cls.map(c=>c.day_of_week)); // 0=Sun..6=Sat
+  const year=_calRef.getFullYear(), month=_calRef.getMonth();
+  const monthNames=['Január','Február','Marec','Apríl','Máj','Jún','Júl','August','September','Október','November','December'];
+  document.getElementById('calTitle').textContent=`${monthNames[month]} ${year}`;
+  // Disable prev nav if showing current month or earlier
+  const now=new Date(); const curM=new Date(now.getFullYear(),now.getMonth(),1);
+  document.getElementById('calPrev').disabled = (new Date(year,month,1) <= curM);
+  const firstDow=(new Date(year,month,1).getDay()+6)%7; // Monday-first index
+  const daysInMonth=new Date(year,month+1,0).getDate();
+  const todayStr=fmtDate(now);
+  let cells='';
+  for(let i=0;i<firstDow;i++) cells+='<div class="cal-cell empty"></div>';
+  for(let d=1;d<=daysInMonth;d++){
+    const dateObj=new Date(year,month,d);
+    const ds=fmtDate(dateObj);
+    const dow=dateObj.getDay();
+    const isPast = ds < todayStr;
+    const hasSession = daysOfWeek.has(dow) && !isPast;
+    if(hasSession){
+      cells+=`<button class="cal-day cal-cell" style="animation-delay:${d*12}ms" onclick='pickDate(${JSON.stringify(ds)},${dow})'>${d}<span class="cal-dot"></span></button>`;
+    } else {
+      cells+=`<div class="cal-cell off">${d}</div>`;
+    }
   }
-  grid.innerHTML=list.map(c=>{
-    const isFull=c.spotsLeft===0;
-    const isLow=c.spotsLeft>0&&c.spotsLeft<=3;
-    return `<div class="class-card${isFull?' full':''}" onclick="${!isFull?`bookClass('${c._id}','${escJs(c.name)}',this)`:''}">
-      <div class="cc-emoji">${c.emoji||'💃'}</div>
-      <div class="cc-info">
-        <div class="cc-name">${escHtml(c.name)}</div>
-        <div class="cc-meta">
-          <span>📅 ${DAYS[c.day_of_week]||''}</span>
-          <span>⏰ ${c.time_start}${c.time_end?'–'+c.time_end:''}</span>
-          ${c.location?`<span>📍 ${escHtml(c.location)}</span>`:''}
-        </div>
-        <div class="cc-level">${escHtml(c.level||'Všetky úrovne')}</div>
-      </div>
-      <div class="cc-right">
-        <div class="cc-spots${isLow?' low':''}${isFull?' full':''}">
-          ${isFull?'Obsadené':isLow?`⚡ ${c.spotsLeft} miest`:`${c.spotsLeft} miest`}
-        </div>
-        <div class="cc-cta">
-          ${isFull?'<i class="bi bi-x-circle"></i>':'<i class="bi bi-check2-circle"></i> Rezervovať'}
-        </div>
-      </div>
-    </div>`;
-  }).join('');
+  const grid=document.getElementById('calGrid');
+  grid.innerHTML=cells;
+  if(!daysOfWeek.size){
+    grid.innerHTML='<div class="cal-empty-msg" style="grid-column:1/-1">Pre toto mesto zatiaľ nie sú voľné termíny.<br>Skús iné mesto alebo nás kontaktuj.</div>';
+  }
+}
+function fmtDate(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+
+// Pick a calendar day → if one session book it, else let user pick the time
+function pickDate(dateStr, dow){
+  const sessions=matchingClasses().filter(c=>c.day_of_week===dow);
+  if(sessions.length===1){
+    openBookConfirm(sessions[0], dateStr);
+  } else {
+    showTimePicker(sessions, dateStr);
+  }
+}
+function showTimePicker(sessions, dateStr){
+  const list=sessions.sort((a,b)=>(a.time_start||'').localeCompare(b.time_start||''))
+    .map(c=>`<div class="time-item" onclick='openBookConfirm(${JSON.stringify(c._id)},${JSON.stringify(dateStr)})'>
+      <span class="ti-time">${c.time_start||''}</span>
+      <span class="ti-name">${escHtml(c.name)}</span>
+      <span class="ti-spots">${c.spotsLeft} voľných</span>
+    </div>`).join('');
+  const pretty=prettyDate(dateStr);
+  document.getElementById('dayModalTitle').textContent=pretty;
+  document.getElementById('dayModalList').innerHTML=list;
+  document.getElementById('dayModal').style.display='flex';
+}
+function closeDayModal(){ document.getElementById('dayModal').style.display='none'; }
+function prettyDate(ds){
+  const [y,m,d]=ds.split('-').map(Number);
+  const dt=new Date(y,m-1,d);
+  return DAYS[dt.getDay()]+', '+d+'. '+['januára','februára','marca','apríla','mája','júna','júla','augusta','septembra','októbra','novembra','decembra'][m-1];
 }
 
 // _pending holds the class data until user confirms in the modal
 let _pending = null;
 let _me = null; // cached session user
 
-function bookClass(classId, className, el){
-  // Find the class data from _allClasses
-  const cls = _allClasses.find(c=>c._id===classId) || {};
-  _pending = {classId, className, el, cls};
+// Open the confirm modal for a chosen class + specific date
+// clsOrId: a class object or its _id; dateStr: 'YYYY-MM-DD'
+function openBookConfirm(clsOrId, dateStr){
+  closeDayModal();
+  const cls = (typeof clsOrId==='object') ? clsOrId : (_allClasses.find(c=>c._id===clsOrId) || {});
+  const className = cls.name || '';
+  _pending = {classId:cls._id, className, el:null, cls, date:dateStr};
   // Fill confirm modal
   document.getElementById('bcName').textContent = cls.emoji ? cls.emoji+' '+className : className;
-  document.getElementById('bcDay').textContent = (DAYS[cls.day_of_week]||'') + ', každý týždeň';
+  document.getElementById('bcDay').textContent = dateStr ? prettyDate(dateStr) : ((DAYS[cls.day_of_week]||'') + ', každý týždeň');
   document.getElementById('bcTime').textContent = cls.time_start + (cls.time_end?'–'+cls.time_end:'');
   document.getElementById('bcLocation').textContent = cls.location + (cls.address ? ' · '+cls.address : '');
   document.getElementById('bcLevel').textContent = cls.level||'Všetky úrovne';
@@ -984,7 +1211,7 @@ function closeBookConfirm(){
 
 async function doConfirmBook(){
   if(!_pending) return;
-  const {classId, className, el} = _pending;
+  const {classId, className, el, date} = _pending;
   const btn = document.getElementById('bcConfirmBtn');
   btn.disabled=true;
   btn.innerHTML='<i class="bi bi-arrow-repeat spin"></i>&nbsp; Rezervujem...';
@@ -992,7 +1219,7 @@ async function doConfirmBook(){
   if(el){ el.classList.add('booking'); el.querySelector('.cc-cta').innerHTML='<i class="bi bi-arrow-repeat spin"></i>'; }
   try{
     const r=await fetch('/api/bookings',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({class_id:classId}),credentials:'include'});
+      body:JSON.stringify({class_id:classId, booking_date:date||undefined}),credentials:'include'});
     const d=await r.json();
     btn.disabled=false;
     btn.innerHTML='<i class="bi bi-check2-circle"></i> Áno, rezervovať!';
