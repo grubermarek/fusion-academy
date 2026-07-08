@@ -18,13 +18,24 @@
   --gold-border:rgba(201,168,76,0.22);--grad-gold:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);
 }
 body{background:var(--dark-1);color:var(--cream);font-size:.92rem;}
-.sidebar{width:240px;min-height:100vh;background:var(--dark-2);position:fixed;left:0;top:0;z-index:100;border-right:1px solid var(--gold-border);}
-.main{margin-left:240px;min-height:100vh;background:var(--dark-1);}
+/* ── Two-tier sidebar (Glofox-style): icon rail + group panel ── */
+.sidebar{min-height:100vh;position:fixed;left:0;top:0;z-index:100;display:flex;}
+.icon-rail{width:62px;background:#131313;border-right:1px solid #2a2a2a;display:flex;flex-direction:column;align-items:center;padding:12px 0;gap:4px;}
+.rail-logo{width:40px;height:40px;border-radius:11px;background:var(--grad-gold);display:flex;align-items:center;justify-content:center;color:#111;font-weight:900;font-size:.95rem;margin-bottom:12px;}
+.rail-btn{width:46px;height:46px;border-radius:13px;border:none;background:transparent;color:rgba(245,237,214,.5);font-size:1.25rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.18s;position:relative;}
+.rail-btn:hover{background:rgba(201,168,76,.1);color:var(--gold);}
+.rail-btn.active{background:rgba(201,168,76,.16);color:var(--gold);}
+.rail-btn.active::before{content:'';position:absolute;left:-12px;top:9px;bottom:9px;width:3px;border-radius:0 3px 3px 0;background:var(--gold);}
+.rail-btn .rail-dot{position:absolute;top:7px;right:8px;width:8px;height:8px;border-radius:50%;background:#f87171;display:none;}
+.group-panel{width:200px;background:var(--dark-2);border-right:1px solid var(--gold-border);padding:16px 12px;display:flex;flex-direction:column;overflow-y:auto;}
+.group-title{font-size:1.05rem;font-weight:800;color:var(--cream);margin:2px 6px 14px;}
+.group-links{display:none;flex-direction:column;gap:2px;}
+.group-links.active{display:flex;animation:grpIn .22s ease both;}
+@keyframes grpIn{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:translateX(0)}}
+.main{margin-left:262px;min-height:100vh;background:var(--dark-1);}
 .brand{font-size:1.2rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
-.nav-link{color:rgba(245,237,214,.6)!important;border-radius:.5rem;margin:2px 0;transition:all .2s;font-size:.9rem;}
+.nav-link{color:rgba(245,237,214,.6)!important;border-radius:.5rem;margin:1px 0;transition:all .2s;font-size:.88rem;padding:.5rem .7rem!important;}
 .nav-link:hover,.nav-link.active{background:rgba(201,168,76,.12)!important;color:var(--gold)!important;}
-.nav-group-label{font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:#5f5f5f;font-weight:800;margin:14px 10px 3px;user-select:none;}
-.nav-group-label:first-child{margin-top:4px;}
 .section{display:none;} .section.active{display:block;}
 .stat-card{border:1px solid var(--gold-border)!important;border-radius:1rem;background:var(--dark-3)!important;position:relative;overflow:hidden;}
 .stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--grad-gold);}
@@ -61,50 +72,71 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 .bg-light{background:var(--dark-4)!important;}
 .border-bottom{border-color:var(--gold-border)!important;}
 .input-group-text{background:var(--dark-4);border-color:var(--gold-border);color:var(--text-muted);}
-@media(max-width:768px){.sidebar{width:100%;min-height:auto;position:static;}.main{margin-left:0;}}
+@media(max-width:768px){
+  .sidebar{position:static;min-height:auto;width:100%;flex-direction:column;}
+  .icon-rail{flex-direction:row;width:100%;justify-content:flex-start;gap:2px;padding:8px;overflow-x:auto;}
+  .rail-logo{margin-bottom:0;margin-right:6px;}
+  .rail-btn.active::before{left:9px;right:9px;top:auto;bottom:-8px;width:auto;height:3px;}
+  .group-panel{width:100%;border-right:none;border-bottom:1px solid var(--gold-border);}
+  .main{margin-left:0;}
+}
 </style>
 </head>
 <body>
 
-<div class="sidebar p-3 d-flex flex-column">
-  <div class="brand mb-1 mt-1">FUSION ACADEMY</div>
-  <div class="text-white-50" style="font-size:.72rem" class="mb-3">Admin Panel</div>
-  <nav class="nav flex-column gap-1 mt-2">
-    <div class="nav-group-label">Domov</div>
-    <a class="nav-link active" href="#" onclick="show('overview')"><i class="bi bi-speedometer2 me-2"></i>Prehľad</a>
-    <a class="nav-link" href="#" onclick="show('attendance')"><i class="bi bi-calendar-heart me-2"></i><span style="color:#4ade80;font-weight:700">Kalendár rezervácií</span></a>
-    <a class="nav-link" href="#" onclick="show('sale')"><i class="bi bi-plus-circle me-2"></i>Zaznamenať predaj</a>
-
-    <div class="nav-group-label">Správa</div>
-    <a class="nav-link" href="#" onclick="show('crm')"><i class="bi bi-person-lines-fill me-2"></i>Klienti &amp; leady <span id="crmLeadsBadge" class="badge ms-1" style="background:#C9A84C;color:#111;display:none"></span></a>
-    <a class="nav-link" href="#" onclick="show('memberships')"><i class="bi bi-patch-check me-2"></i>Členstvá</a>
-    <a class="nav-link" href="#" onclick="show('classes')"><i class="bi bi-calendar3 me-2"></i>Hodiny / Stream</a>
-    <a class="nav-link" href="#" onclick="show('bookings')"><i class="bi bi-calendar-check me-2"></i>Rezervácie</a>
-    <a class="nav-link" href="#" onclick="show('orders')"><i class="bi bi-bag-check me-2"></i>Objednávky <span id="pendingBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
-    <a class="nav-link" href="#" onclick="show('products')"><i class="bi bi-box-seam me-2"></i>Produkty</a>
-    <a class="nav-link" href="#" onclick="show('rentals')"><i class="bi bi-building me-2"></i>Prenájmy</a>
-    <a class="nav-link" href="#" onclick="show('articles')"><i class="bi bi-newspaper me-2"></i>Blog / Články</a>
-
-    <div class="nav-group-label">Marketing</div>
-    <a class="nav-link" href="#" onclick="show('marketing')"><i class="bi bi-graph-up-arrow me-2"></i><span style="color:#C9A84C;font-weight:700">Marketing (CAC/LTV)</span></a>
-    <a class="nav-link" href="#" onclick="show('automation')"><i class="bi bi-envelope-check me-2"></i>Automatizácia</a>
-    <a class="nav-link" href="#" onclick="show('churn')"><i class="bi bi-person-dash me-2"></i>Churn Risk <span id="churnBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
-
-    <div class="nav-group-label">Financie &amp; reporty</div>
-    <a class="nav-link" href="#" onclick="show('transactions')"><i class="bi bi-receipt me-2"></i>Všetky predaje</a>
-    <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby PayPal</a>
-
-    <div class="nav-group-label">Partneri (MLM)</div>
-    <a class="nav-link" href="#" onclick="show('partners')"><i class="bi bi-people me-2"></i>Partneri</a>
-    <a class="nav-link" href="#" onclick="show('addpartner')"><i class="bi bi-person-plus me-2"></i>Pridať partnera</a>
-    <a class="nav-link" href="#" onclick="show('commissions')"><i class="bi bi-cash-stack me-2"></i>Výplaty provízií</a>
-    <a class="nav-link" href="#" onclick="show('leaderboard')"><i class="bi bi-trophy me-2"></i>Leaderboard</a>
-  </nav>
-  <div class="mt-auto pt-3 border-top border-secondary">
-    <div class="d-flex gap-2 mb-2">
-      <a href="/shop" target="_blank" class="btn btn-sm btn-outline-light flex-grow-1"><i class="bi bi-shop me-1"></i>E-shop</a>
+<div class="sidebar">
+  <!-- Icon rail -->
+  <div class="icon-rail">
+    <div class="rail-logo">FA</div>
+    <button class="rail-btn active" id="rail-home" onclick="selectGroup('home')" title="Domov"><i class="bi bi-house-door"></i></button>
+    <button class="rail-btn" id="rail-manage" onclick="selectGroup('manage')" title="Správa"><i class="bi bi-grid-1x2"></i><span class="rail-dot" id="railDotManage"></span></button>
+    <button class="rail-btn" id="rail-marketing" onclick="selectGroup('marketing')" title="Marketing"><i class="bi bi-megaphone"></i></button>
+    <button class="rail-btn" id="rail-reports" onclick="selectGroup('reports')" title="Financie a reporty"><i class="bi bi-bar-chart"></i></button>
+    <button class="rail-btn" id="rail-partners" onclick="selectGroup('partners')" title="Partneri (MLM)"><i class="bi bi-people"></i></button>
+    <div class="mt-auto d-flex flex-column gap-1">
+      <a class="rail-btn" href="/shop" target="_blank" title="E-shop"><i class="bi bi-shop"></i></a>
+      <button class="rail-btn" onclick="logout()" title="Odhlásiť"><i class="bi bi-box-arrow-left"></i></button>
     </div>
-    <button class="btn btn-sm btn-outline-light w-100" onclick="logout()"><i class="bi bi-box-arrow-left me-1"></i>Odhlásiť</button>
+  </div>
+
+  <!-- Group panel (links for the active rail group) -->
+  <div class="group-panel">
+    <div class="group-title" id="groupTitle">Domov</div>
+
+    <div class="group-links active" data-group="home">
+      <a class="nav-link active" href="#" onclick="show('overview')"><i class="bi bi-speedometer2 me-2"></i>Prehľad</a>
+      <a class="nav-link" href="#" onclick="show('attendance')"><i class="bi bi-calendar-heart me-2"></i><span style="color:#4ade80;font-weight:700">Kalendár rezervácií</span></a>
+      <a class="nav-link" href="#" onclick="show('sale')"><i class="bi bi-plus-circle me-2"></i>Zaznamenať predaj</a>
+    </div>
+
+    <div class="group-links" data-group="manage">
+      <a class="nav-link" href="#" onclick="show('crm')"><i class="bi bi-person-lines-fill me-2"></i>Klienti &amp; leady <span id="crmLeadsBadge" class="badge ms-1" style="background:#C9A84C;color:#111;display:none"></span></a>
+      <a class="nav-link" href="#" onclick="show('memberships')"><i class="bi bi-patch-check me-2"></i>Členstvá</a>
+      <a class="nav-link" href="#" onclick="show('classes')"><i class="bi bi-calendar3 me-2"></i>Hodiny / Stream</a>
+      <a class="nav-link" href="#" onclick="show('bookings')"><i class="bi bi-calendar-check me-2"></i>Rezervácie</a>
+      <a class="nav-link" href="#" onclick="show('orders')"><i class="bi bi-bag-check me-2"></i>Objednávky <span id="pendingBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
+      <a class="nav-link" href="#" onclick="show('products')"><i class="bi bi-box-seam me-2"></i>Produkty</a>
+      <a class="nav-link" href="#" onclick="show('rentals')"><i class="bi bi-building me-2"></i>Prenájmy</a>
+      <a class="nav-link" href="#" onclick="show('articles')"><i class="bi bi-newspaper me-2"></i>Blog / Články</a>
+    </div>
+
+    <div class="group-links" data-group="marketing">
+      <a class="nav-link" href="#" onclick="show('marketing')"><i class="bi bi-graph-up-arrow me-2"></i><span style="color:#C9A84C;font-weight:700">Marketing (CAC/LTV)</span></a>
+      <a class="nav-link" href="#" onclick="show('automation')"><i class="bi bi-envelope-check me-2"></i>Automatizácia</a>
+      <a class="nav-link" href="#" onclick="show('churn')"><i class="bi bi-person-dash me-2"></i>Churn Risk <span id="churnBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
+    </div>
+
+    <div class="group-links" data-group="reports">
+      <a class="nav-link" href="#" onclick="show('transactions')"><i class="bi bi-receipt me-2"></i>Všetky predaje</a>
+      <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby PayPal</a>
+    </div>
+
+    <div class="group-links" data-group="partners">
+      <a class="nav-link" href="#" onclick="show('partners')"><i class="bi bi-people me-2"></i>Partneri</a>
+      <a class="nav-link" href="#" onclick="show('addpartner')"><i class="bi bi-person-plus me-2"></i>Pridať partnera</a>
+      <a class="nav-link" href="#" onclick="show('commissions')"><i class="bi bi-cash-stack me-2"></i>Výplaty provízií</a>
+      <a class="nav-link" href="#" onclick="show('leaderboard')"><i class="bi bi-trophy me-2"></i>Leaderboard</a>
+    </div>
   </div>
 </div>
 
@@ -904,11 +936,20 @@ function showToast(msg,type='success'){
   setTimeout(()=>{t.style.display='none'},3500);
 }
 
+const GROUP_TITLES={home:'Domov',manage:'Správa',marketing:'Marketing',reports:'Financie & reporty',partners:'Partneri (MLM)'};
+const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',automation:'marketing',churn:'marketing',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
+function selectGroup(g){
+  document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('rail-'+g)?.classList.add('active');
+  document.querySelectorAll('.group-links').forEach(el=>el.classList.toggle('active', el.dataset.group===g));
+  document.getElementById('groupTitle').textContent=GROUP_TITLES[g]||'';
+}
 function show(sec){
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   document.getElementById('s-'+sec).classList.add('active');
   document.querySelectorAll('.nav-link').forEach(a=>a.classList.remove('active'));
-  document.querySelector(`.nav-link[onclick*="${sec}"]`)?.classList.add('active');
+  document.querySelector(`.nav-link[onclick*="'${sec}'"]`)?.classList.add('active');
+  if(SECTION_GROUP[sec]) selectGroup(SECTION_GROUP[sec]);
   if(sec==='orders')loadOrders();
   if(sec==='partners')loadPartners();
   if(sec==='commissions')loadCommissions();
@@ -1317,7 +1358,7 @@ async function loadOverview(){
   document.getElementById('ov-revenue').textContent=eur(d.monthRevenue);
   document.getElementById('ov-orders').textContent=d.pendingOrders;
   document.getElementById('ov-comm').textContent=eur(d.pendingComm);
-  if(d.pendingOrders>0){const b=document.getElementById('pendingBadge');b.textContent=d.pendingOrders;b.style.display='inline';}
+  if(d.pendingOrders>0){const b=document.getElementById('pendingBadge');b.textContent=d.pendingOrders;b.style.display='inline';const dot=document.getElementById('railDotManage');if(dot)dot.style.display='block';}
   if(revenueChart)revenueChart.destroy();
   revenueChart=new Chart(document.getElementById('revenueChart'),{type:'bar',data:{labels:d.monthlyRevenue.map(x=>x.m),datasets:[{label:'Tržby (€)',data:d.monthlyRevenue.map(x=>x.total),backgroundColor:'rgba(233,69,96,0.7)',borderColor:'#e94560',borderWidth:1,borderRadius:6}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
   document.getElementById('topProducts').innerHTML=d.topProducts.map(p=>`<div class="d-flex justify-content-between py-1 border-bottom"><span>${p.product_name}</span><span class="fw-semibold">${eur(p.total)} <span class="text-muted">(${p.cnt}x)</span></span></div>`).join('');
