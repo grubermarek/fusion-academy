@@ -1112,6 +1112,14 @@ async function loadQR(){
   } else if(p.get('sub')==='cancel'){
     showToast('Platba bola zrušená.','error');
     window.history.replaceState({},'','/client-dashboard');
+  } else if(p.get('stripe')==='success' && p.get('session_id')){
+    try{
+      const r=await api('/api/stripe/verify',{method:'POST',body:{session_id:p.get('session_id')}});
+      if(r.ok){ showToast('🎉 Platba prijatá! Členstvo '+(r.plan_name||'')+' je aktívne.','success'); if(window.faTrack) window.faTrack('Purchase'); }
+      else showToast('Platbu sa nepodarilo overiť: '+(r.error||'kontaktuj nás'),'error');
+    }catch(e){ showToast('Chyba pri overovaní platby','error'); }
+    window.history.replaceState({},'','/client-dashboard');
+    setTimeout(()=>location.reload(), 1600);
   }
 })();
 

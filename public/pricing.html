@@ -588,7 +588,11 @@ function toggleFaq(el){
 // ── Session + credit ──────────────────────────────────────────────────────────
 let _pricingMe = null;
 let _pricingChildren = [];
+let _stripeEnabled = false;
 (async function(){
+  try { _stripeEnabled = !!(await fetch('/api/config').then(r=>r.json())).stripe_enabled; } catch(e){}
+  // Stripe cancel return
+  if(new URLSearchParams(location.search).get('stripe')==='cancel'){ history.replaceState({},'','/pricing'); }
   try {
     const me = await fetch('/api/me',{credentials:'include'}).then(r=>r.json());
     _pricingMe = me?.id ? me : null;
@@ -696,8 +700,25 @@ function openBuyModal(planId, planName, price, childId){
   document.getElementById('buyFinalPrice').textContent = finalPrice.toFixed(2)+' €';
   document.getElementById('buyCreditCheckbox').checked = credit > 0;
   document.getElementById('buyCreditAvail').textContent = credit.toFixed(2)+' €';
+  // Show Apple/Google Pay / card only when Stripe is live and no full credit cover
+  const showStripe = _stripeEnabled && finalPrice > 0;
+  document.getElementById('buyStripeBtn').style.display = showStripe ? 'flex' : 'none';
+  document.getElementById('buyStripeDivider').style.display = showStripe ? 'block' : 'none';
   updateBuyTotal();
   document.getElementById('buyModal').style.display='flex';
+}
+
+async function payWithStripe(){
+  if(!_buyPlanId) return;
+  const btn = document.getElementById('buyStripeBtn');
+  btn.disabled = true; btn.innerHTML = '⏳ Presmerovávam na bezpečnú platbu…';
+  try {
+    const r = await fetch('/api/stripe/checkout',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({plan_id:_buyPlanId, for_child_id:_buyChildId||undefined})}).then(r=>r.json());
+    if(r.ok && r.url){ window.location.href = r.url; return; }
+    alert('Chyba: '+(r.error||'nepodarilo sa spustiť platbu'));
+  } catch(e){ alert('Chyba pripojenia'); }
+  btn.disabled = false; btn.innerHTML = 'Zaplatiť kartou · Apple Pay · Google Pay';
 }
 
 function updateBuyTotal(){
@@ -707,7 +728,7 @@ function updateBuyTotal(){
   const final = Math.max(0, +(_buyPrice - creditApply).toFixed(2));
   document.getElementById('buyCreditAmount').textContent = '-'+creditApply.toFixed(2)+' €';
   document.getElementById('buyFinalPrice').textContent = final.toFixed(2)+' €';
-  document.getElementById('buyBtnLabel').textContent = final === 0 ? 'Aktivovať pomocou kreditu' : `Pokračovať k platbe (${final.toFixed(2)} €)`;
+  document.getElementById('buyBtnLabel').textContent = final === 0 ? 'Aktivovať pomocou kreditu' : ((_stripeEnabled ? 'Prevod / hotovosť' : 'Pokračovať k platbe') + ` (${final.toFixed(2)} €)`);
 }
 
 async function confirmBuy(){
@@ -795,9 +816,14 @@ async function confirmBuy(){
         <span id="buyFinalPrice" style="color:#C9A84C;font-size:1.1rem">—</span>
       </div>
     </div>
-    <p style="font-size:.78rem;color:rgba(245,237,214,.45);margin-bottom:14px">Platba prevodom na účet alebo v hotovosti na mieste. Členstvo aktivujeme po prijatí platby.</p>
-    <button id="buyConfirmBtn" onclick="confirmBuy()" style="width:100%;padding:.8rem;background:linear-gradient(135deg,#C9A84C,#F0C060);border:none;border-radius:.75rem;font-weight:800;color:#0f0f0f;cursor:pointer;font-size:.95rem">
-      <span id="buyBtnLabel">Pokračovať k platbe</span>
+    <!-- Stripe: Apple Pay / Google Pay / card (shown only when Stripe is configured) -->
+    <button id="buyStripeBtn" onclick="payWithStripe()" style="display:none;width:100%;padding:.85rem;background:var(--foil,linear-gradient(102deg,#B98F3E,#F7E7B8 36%,#E7C878 58%,#B98F3E));background-size:180% auto;border:none;border-radius:.75rem;font-weight:800;color:#231A08;cursor:pointer;font-size:.95rem;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:8px">
+       Zaplatiť kartou &nbsp;·&nbsp; Apple Pay &nbsp;·&nbsp; Google Pay
+    </button>
+    <div id="buyStripeDivider" style="display:none;text-align:center;font-size:.72rem;color:rgba(234,227,213,.4);margin-bottom:10px;letter-spacing:.1em;text-transform:uppercase">alebo</div>
+    <p style="font-size:.78rem;color:rgba(234,227,213,.45);margin-bottom:14px">Platba prevodom na účet alebo v hotovosti na mieste. Členstvo aktivujeme po prijatí platby.</p>
+    <button id="buyConfirmBtn" onclick="confirmBuy()" style="width:100%;padding:.8rem;background:var(--dark-4,#221E19);border:1px solid var(--gold-border,rgba(201,162,76,.28));border-radius:.75rem;font-weight:700;color:var(--cream,#EAE3D5);cursor:pointer;font-size:.95rem">
+      <span id="buyBtnLabel">Prevod / hotovosť</span>
     </button>
   </div>
 </div>

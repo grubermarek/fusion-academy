@@ -643,6 +643,7 @@ app.post('/api/register', async(req,res)=>{
 app.get('/api/config', (req,res)=>{
   res.json({
     paypal_client_id: PAYPAL_CLIENT_ID||'sb', paypal_env: PAYPAL_ENV,
+    stripe_enabled: !!process.env.STRIPE_SECRET_KEY,
     meta_pixel_id: process.env.META_PIXEL_ID||'',
     google_ads_id: process.env.GOOGLE_ADS_ID||''
   });
@@ -1762,6 +1763,82 @@ app.post('/api/membership/buy', auth, async(req,res)=>{
     // Bank transfer / cash – admin will confirm
     await q.insert(db.payments,{user_id:req.session.uid,member_id:memberId,amount:finalPrice,currency:'EUR',description:`Členstvo ${plan.name}${forWhom}${creditUsed?` (kredit: -${creditUsed}€)`:''}`,ref_id:plan_id,ref_type:'membership',status:'pending_manual',payment_method:'manual',created_at:nowISO(),credit_used:creditUsed});
     res.json({ok:true, credit_used:creditUsed, final_price:finalPrice, message:'Žiadosť o členstvo bola odoslaná. Admin ju potvrdí po prijatí platby.'});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STRIPE — Apple Pay / Google Pay / card via Stripe Checkout (no card data on our server)
+// ═══════════════════════════════════════════════════════════════════════════════
+const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || '';
+async function stripeApi(path, params, method='POST'){
+  const opts = { method, headers:{ 'Authorization':`Bearer ${STRIPE_SECRET}` } };
+  if(method==='POST'){
+    const body = new URLSearchParams();
+    Object.entries(params||{}).forEach(([k,v])=>{ if(v!==undefined && v!==null) body.append(k, String(v)); });
+    opts.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    opts.body = body;
+  }
+  const r = await fetch('https://api.stripe.com/v1/'+path, opts);
+  return { status:r.status, body: await r.json().catch(()=>({})) };
+}
+
+// Create a Checkout Session (one-time membership) → returns hosted URL with Apple/Google Pay + card
+app.post('/api/stripe/checkout', auth, async(req,res)=>{
+  try {
+    if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
+    const { plan_id, for_child_id } = req.body;
+    const plan = MEMBERSHIP_PLANS[plan_id];
+    if(!plan) return res.status(400).json({error:'Neplatný plán'});
+    const u = await q.one(db.users,{_id:req.session.uid});
+    let memberId = req.session.uid, childName = null;
+    if(for_child_id){
+      const child = await q.one(db.users,{_id:for_child_id});
+      if(!child || child.parent_id !== req.session.uid || child.active===false) return res.status(403).json({error:'Neplatný detský profil'});
+      memberId = child._id; childName = child.name;
+    }
+    const base = APP_URL;
+    const params = {
+      'mode':'payment',
+      'line_items[0][quantity]':1,
+      'line_items[0][price_data][currency]':'eur',
+      'line_items[0][price_data][unit_amount]':Math.round(plan.price*100),
+      'line_items[0][price_data][product_data][name]':`Členstvo ${plan.name}${childName?' – '+childName:''}`,
+      'success_url':`${base}/client-dashboard?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
+      'cancel_url':`${base}/pricing?stripe=cancel`,
+      'customer_email':u.email,
+      'metadata[user_id]':req.session.uid,
+      'metadata[member_id]':memberId,
+      'metadata[plan_id]':plan_id,
+      'metadata[type]':'membership'
+    };
+    const r = await stripeApi('checkout/sessions', params, 'POST');
+    if(r.status>=400 || !r.body?.url) return res.status(400).json({error:r.body?.error?.message||'Stripe chyba pri vytváraní platby'});
+    await q.insert(db.payments,{stripe_session_id:r.body.id, user_id:req.session.uid, member_id:memberId, amount:plan.price, currency:'EUR', description:`Členstvo ${plan.name}${childName?' – '+childName:''}`, ref_id:plan_id, ref_type:'membership', provider:'stripe', status:'pending', created_at:nowISO()});
+    res.json({ok:true, url:r.body.url});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Verify a returned Checkout Session and activate membership (idempotent)
+app.post('/api/stripe/verify', auth, async(req,res)=>{
+  try {
+    if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
+    const { session_id } = req.body;
+    if(!session_id) return res.status(400).json({error:'Chýba session_id'});
+    const r = await stripeApi('checkout/sessions/'+encodeURIComponent(session_id), null, 'GET');
+    const s = r.body;
+    if(s?.payment_status !== 'paid') return res.status(400).json({error:'Platba nebola dokončená'});
+    const meta = s.metadata || {};
+    const pay = await q.one(db.payments,{stripe_session_id:session_id});
+    if(pay && pay.status==='completed') return res.json({ok:true, already:true, plan_name:MEMBERSHIP_PLANS[meta.plan_id]?.name});
+    const plan = MEMBERSHIP_PLANS[meta.plan_id];
+    if(!plan) return res.status(400).json({error:'Neznámy plán'});
+    const memberId = meta.member_id || meta.user_id;
+    await activateMembership(memberId, meta.plan_id, plan.duration_days||30);
+    if(pay) await q.update(db.payments,{_id:pay._id},{$set:{status:'completed',captured_at:nowISO(),stripe_payment_intent:s.payment_intent||''}});
+    const buyer = await q.one(db.users,{_id:meta.user_id});
+    await q.insert(db.transactions,{type:'membership',user_id:memberId,user_name:buyer?.name||'—',amount:plan.price,payment_method:'stripe',note:`${plan.name} (Stripe · karta/Apple/Google Pay)`,plan_id:meta.plan_id,created_at:nowISO(),month:today().slice(0,7)});
+    trackPurchase(meta.user_id, plan.price);
+    res.json({ok:true, plan_name:plan.name});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
