@@ -17,13 +17,16 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <style>
 :root{
-  --red:#C9A84C;--orange:#F0C060;
-  --gold:#C9A84C;--gold-light:#F0C060;
-  --dark-1:#0f0f0f;--dark-2:#141414;--dark-3:#1a1a1a;--dark-4:#222;
-  --cream:#F5EDD6;--text-muted:rgba(245,237,214,0.50);
-  --gold-border:rgba(201,168,76,0.22);--grad-gold:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);
+  --red:#C9A24C;--orange:#F3DFA8;
+  --gold:#C9A24C;--gold-light:#F3DFA8;
+  --dark-1:#0A0908;--dark-2:#12100E;--dark-3:#1A1714;--dark-4:#221E19;
+  --cream:#EAE3D5;--text-muted:rgba(234,227,213,0.52);
+  --gold-border:rgba(201,162,76,0.22);
+  --grad-gold:linear-gradient(102deg,#B98F3E,#F7E7B8 36%,#E7C878 58%,#B98F3E);
+  --foil:var(--grad-gold);--serif:'Cormorant Garamond',Georgia,serif;--sans:'Manrope',system-ui,sans-serif;
 }
-body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',system-ui,sans-serif;}
+body{background:var(--dark-1);color:var(--cream);font-family:var(--sans);-webkit-font-smoothing:antialiased;}
+.hero h1{font-family:var(--serif);font-weight:400;letter-spacing:-.01em;}
 
 /* Nav */
 .top-nav{background:rgba(8,8,8,0.97);border-bottom:1px solid var(--gold-border);padding:.75rem 1.5rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;}

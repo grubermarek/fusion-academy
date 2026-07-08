@@ -16,8 +16,9 @@
 <link rel="stylesheet" href="/fa-theme.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <style>
-body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',sans-serif;padding-top:56px;}
-.hero{background:linear-gradient(160deg,#0f0f0f 0%,#1a1400 50%,#0f0f0f 100%);padding:5rem 0 3rem;text-align:center;position:relative;overflow:hidden;}
+body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope',system-ui,sans-serif);padding-top:56px;-webkit-font-smoothing:antialiased;}
+.hero{background:var(--grad-dark,linear-gradient(165deg,#0A0908,#12100E 55%,#161310));padding:5rem 0 3rem;text-align:center;position:relative;overflow:hidden;}
+.hero h1{font-family:var(--serif,'Cormorant Garamond',serif)!important;font-weight:400!important;letter-spacing:-.01em;}
 .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(201,168,76,.18) 0%,transparent 70%);}
 .hero-label{font-size:.75rem;letter-spacing:.25em;text-transform:uppercase;color:var(--gold);margin-bottom:.75rem;}
 .hero h1{font-size:clamp(2.2rem,6vw,4rem);font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1.1;}

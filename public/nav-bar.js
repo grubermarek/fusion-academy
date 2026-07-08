@@ -10,17 +10,17 @@
 const css = `
 #fa-nav-bar{
   position:fixed;top:0;left:0;right:0;height:56px;z-index:500;
-  background:rgba(15,15,15,.97);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  border-bottom:1px solid rgba(201,168,76,.18);
+  background:rgba(10,9,8,.9);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  border-bottom:1px solid rgba(201,162,76,.2);
   display:flex;align-items:center;justify-content:space-between;
   padding:0 16px;gap:12px;
-  font-family:'Segoe UI',system-ui,sans-serif;
+  font-family:'Manrope',system-ui,sans-serif;
 }
 #fa-nav-bar * { box-sizing:border-box; }
 
 .fa-nb-logo{
-  display:flex;align-items:center;gap:9px;text-decoration:none;
-  color:#C9A84C;font-weight:800;font-size:1rem;letter-spacing:-.01em;
+  display:flex;align-items:center;gap:10px;text-decoration:none;
+  color:#EAE3D5;font-weight:700;font-size:.78rem;letter-spacing:.2em;text-transform:uppercase;
   flex-shrink:0;
 }
 .fa-nb-logo svg{flex-shrink:0}
@@ -33,26 +33,26 @@ const css = `
   padding:5px 10px;border-radius:20px;transition:all .18s;white-space:nowrap;
   border:1px solid transparent;
 }
-.fa-nb-link:hover{color:#C9A84C;border-color:rgba(201,168,76,.3)}
-.fa-nb-link.fa-nb-active{color:#C9A84C;border-color:rgba(201,168,76,.35);background:rgba(201,168,76,.1)}
+.fa-nb-link:hover{color:#C9A24C;border-color:rgba(201,162,76,.3)}
+.fa-nb-link.fa-nb-active{color:#C9A24C;border-color:rgba(201,162,76,.35);background:rgba(201,162,76,.1)}
 @media(max-width:600px){.fa-nb-center{display:none}}
 
 .fa-nb-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .fa-nb-auth{
-  background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.3);
-  color:#C9A84C;padding:5px 13px;border-radius:20px;font-size:.78rem;
+  background:rgba(201,162,76,.12);border:1px solid rgba(201,162,76,.3);
+  color:#C9A24C;padding:5px 13px;border-radius:20px;font-size:.78rem;
   font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;
   transition:all .2s;font-family:inherit;
 }
-.fa-nb-auth:hover{background:rgba(201,168,76,.22)}
+.fa-nb-auth:hover{background:rgba(201,162,76,.22)}
 .fa-nb-menu{
   background:none;border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.7);
   width:36px;height:36px;border-radius:10px;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
   transition:all .2s;flex-shrink:0;font-size:1.1rem;
 }
-.fa-nb-menu:hover{border-color:rgba(201,168,76,.5);color:#C9A84C}
-.fa-nb-menu.open{border-color:#C9A84C;color:#C9A84C;background:rgba(201,168,76,.1)}
+.fa-nb-menu:hover{border-color:rgba(201,162,76,.5);color:#C9A24C}
+.fa-nb-menu.open{border-color:#C9A24C;color:#C9A24C;background:rgba(201,162,76,.1)}
 
 /* ── Menu overlay (compact) ── */
 #fa-menu-overlay{
@@ -79,19 +79,19 @@ const css = `
 .fa-mo-user{
   display:flex;align-items:center;gap:10px;
   margin-bottom:24px;padding:8px 16px 8px 8px;
-  background:rgba(201,168,76,.07);border:1px solid rgba(201,168,76,.18);
+  background:rgba(201,162,76,.07);border:1px solid rgba(201,162,76,.18);
   border-radius:30px;
   animation:faMoItemIn .3s ease both;
 }
 .fa-mo-avatar{
   width:32px;height:32px;border-radius:50%;
-  background:linear-gradient(135deg,#C9A84C,#8a6020);
+  background:linear-gradient(135deg,#C9A24C,#8a6020);
   display:flex;align-items:center;justify-content:center;
   font-size:.78rem;font-weight:700;color:#111;font-family:monospace;flex-shrink:0;
 }
 .fa-mo-user-name{font-size:.82rem;font-weight:600;color:#e8e8e8}
 .fa-mo-login-hint{font-size:.82rem;color:#aaa;padding:0 6px}
-.fa-mo-login-hint a{color:#C9A84C;text-decoration:none;font-weight:600}
+.fa-mo-login-hint a{color:#C9A24C;text-decoration:none;font-weight:600}
 
 .fa-mo-grid{
   display:grid;
@@ -148,7 +148,7 @@ const NAV_ITEMS = [
   {
     id:'pricing', label:'Členstvo', href:'/pricing',
     icon:'🏅', desc:'Bronze, Silver, Gold plány',
-    color:'#C9A84C', rgb:'201,168,76',
+    color:'#C9A24C', rgb:'201,162,76',
     paths:['/pricing']
   },
   {
@@ -193,7 +193,7 @@ function buildNavBar(){
   // Logo
   nav.innerHTML = `
     <a class="fa-nb-logo" href="/">
-      <svg width="26" height="26" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#111"/><text x="32" y="44" text-anchor="middle" font-family="serif" font-size="30" font-weight="700" fill="#C9A84C">FA</text></svg>
+      <svg width="26" height="26" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#111"/><text x="32" y="44" text-anchor="middle" font-family="serif" font-size="30" font-weight="700" fill="#C9A24C">FA</text></svg>
       Fusion Academy
     </a>
     <div class="fa-nb-center" id="fa-nb-links">

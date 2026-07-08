@@ -17,21 +17,21 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 <style>
-:root{--gold:#C9A84C;--gold-light:#F0C060;--dark-1:#0f0f0f;--dark-2:#141414;--dark-3:#1a1a1a;--dark-4:#222;--cream:#F5EDD6;--text-muted:rgba(245,237,214,0.50);--gold-border:rgba(201,168,76,0.22);--grad-gold:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);}
-body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',system-ui,sans-serif;}
+:root{--gold:#C9A24C;--gold-light:#F3DFA8;--dark-1:#0A0908;--dark-2:#12100E;--dark-3:#1A1714;--dark-4:#222;--cream:#EAE3D5;--text-muted:rgba(234,227,213,0.50);--gold-border:rgba(201,162,76,0.22);--grad-gold:linear-gradient(135deg,#C9A24C,#F3DFA8,#C9A24C);}
+body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui,sans-serif;}
 .top-nav{background:rgba(8,8,8,0.97);border-bottom:1px solid var(--gold-border);padding:.75rem 1.5rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
 .brand{font-size:1.3rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none;}
 .nav-links{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;}
 .nav-links a{color:rgba(255,255,255,.6);text-decoration:none;font-size:.85rem;padding:.3rem .7rem;border-radius:20px;transition:.2s;}
-.nav-links a:hover,.nav-links a.active{color:var(--gold);background:rgba(201,168,76,0.12);}
-.hero{background:radial-gradient(ellipse at 50% 50%,rgba(201,168,76,.07) 0%,transparent 70%),linear-gradient(135deg,#0a0a0a,#111);padding:2.5rem 1rem 2rem;text-align:center;border-bottom:1px solid var(--gold-border);}
+.nav-links a:hover,.nav-links a.active{color:var(--gold);background:rgba(201,162,76,0.12);}
+.hero{background:radial-gradient(ellipse at 50% 50%,rgba(201,162,76,.07) 0%,transparent 70%),linear-gradient(135deg,#0a0a0a,#111);padding:2.5rem 1rem 2rem;text-align:center;border-bottom:1px solid var(--gold-border);}
 .hero h1 span{background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
 .form-card{background:var(--dark-2);border:1px solid var(--gold-border);border-radius:1.2rem;padding:1.8rem;}
 .form-control,.form-select{background:var(--dark-3)!important;border:1px solid var(--gold-border)!important;color:var(--cream)!important;}
 .form-control::placeholder{color:var(--text-muted)!important;}
-.form-control:focus,.form-select:focus{border-color:var(--gold)!important;box-shadow:0 0 0 2px rgba(201,168,76,.15)!important;}
+.form-control:focus,.form-select:focus{border-color:var(--gold)!important;box-shadow:0 0 0 2px rgba(201,162,76,.15)!important;}
 .form-label{color:var(--cream);font-size:.88rem;font-weight:600;}
-.btn-save{background:var(--grad-gold);border:none;color:#0f0f0f;font-weight:700;padding:.6rem 1.5rem;border-radius:50px;cursor:pointer;transition:opacity .2s;}
+.btn-save{background:var(--grad-gold);border:none;color:#0A0908;font-weight:700;padding:.6rem 1.5rem;border-radius:50px;cursor:pointer;transition:opacity .2s;}
 .btn-save:hover{opacity:.85;}
 .stat-pill{background:var(--dark-3);border:1px solid var(--gold-border);border-radius:.75rem;padding:.8rem 1rem;text-align:center;}
 .stat-pill .val{font-size:1.4rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
@@ -66,7 +66,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',system-u
   <div style="font-size:3rem;margin-bottom:1rem">🔒</div>
   <h3 style="color:var(--cream)">Prihláste sa</h3>
   <p>Pre sledovanie analýzy tela je potrebné prihlásenie.</p>
-  <a href="/" style="background:var(--grad-gold);border:none;color:#0f0f0f;font-weight:700;padding:.6rem 1.5rem;border-radius:50px;text-decoration:none">Prihlásiť sa</a>
+  <a href="/" style="background:var(--grad-gold);border:none;color:#0A0908;font-weight:700;padding:.6rem 1.5rem;border-radius:50px;text-decoration:none">Prihlásiť sa</a>
 </div>
 
 <div id="appContent" style="display:none">
@@ -201,10 +201,10 @@ function renderChart(){
       datasets:[{
         label:'Váha (kg)',
         data:weights,
-        borderColor:'#C9A84C',
-        backgroundColor:'rgba(201,168,76,0.08)',
+        borderColor:'#C9A24C',
+        backgroundColor:'rgba(201,162,76,0.08)',
         borderWidth:2,
-        pointBackgroundColor:'#C9A84C',
+        pointBackgroundColor:'#C9A24C',
         pointRadius:4,
         tension:0.3,
         fill:true,
@@ -214,8 +214,8 @@ function renderChart(){
       responsive:true,
       plugins:{legend:{display:false}},
       scales:{
-        y:{beginAtZero:false,grid:{color:'rgba(201,168,76,0.08)'},ticks:{color:'rgba(245,237,214,0.5)'}},
-        x:{grid:{color:'rgba(201,168,76,0.08)'},ticks:{color:'rgba(245,237,214,0.5)'}}
+        y:{beginAtZero:false,grid:{color:'rgba(201,162,76,0.08)'},ticks:{color:'rgba(234,227,213,0.5)'}},
+        x:{grid:{color:'rgba(201,162,76,0.08)'},ticks:{color:'rgba(234,227,213,0.5)'}}
       }
     }
   });

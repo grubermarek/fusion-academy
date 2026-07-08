@@ -11,25 +11,25 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 <style>
   :root {
-    --brand1:#C9A84C; --brand2:#F0C060;
-    --gold:#C9A84C; --gold-light:#F0C060;
-    --dark-1:#0f0f0f; --dark-2:#141414; --dark-3:#1a1a1a; --dark-4:#222;
-    --cream:#F5EDD6; --text-muted:rgba(245,237,214,0.50);
-    --gold-border:rgba(201,168,76,0.22); --grad-gold:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);
+    --brand1:#C9A24C; --brand2:#F3DFA8;
+    --gold:#C9A24C; --gold-light:#F3DFA8;
+    --dark-1:#0A0908; --dark-2:#12100E; --dark-3:#1A1714; --dark-4:#222;
+    --cream:#EAE3D5; --text-muted:rgba(234,227,213,0.50);
+    --gold-border:rgba(201,162,76,0.22); --grad-gold:linear-gradient(135deg,#C9A24C,#F3DFA8,#C9A24C);
   }
   body { background:var(--dark-1); color:var(--cream); font-size:0.92rem; }
   .sidebar { width:240px; min-height:100vh; background:var(--dark-2); position:fixed; left:0; top:0; z-index:100; border-right:1px solid var(--gold-border); }
   .main { margin-left:240px; min-height:100vh; background:var(--dark-1); }
   .brand { font-size:1.3rem; font-weight:900; background:var(--grad-gold); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
-  .nav-link { color:rgba(245,237,214,0.6)!important; border-radius:0.5rem; margin:2px 0; transition:all .2s; }
-  .nav-link:hover, .nav-link.active { background:rgba(201,168,76,0.12)!important; color:var(--gold)!important; }
+  .nav-link { color:rgba(234,227,213,0.6)!important; border-radius:0.5rem; margin:2px 0; transition:all .2s; }
+  .nav-link:hover, .nav-link.active { background:rgba(201,162,76,0.12)!important; color:var(--gold)!important; }
   .nav-link i { width:22px; }
   .stat-card { border:1px solid var(--gold-border)!important; border-radius:1rem; background:var(--dark-3)!important; color:var(--cream); }
   .stat-icon { width:48px; height:48px; border-radius:0.75rem; display:flex; align-items:center; justify-content:center; font-size:1.4rem; }
-  .rank-badge { background:var(--grad-gold); color:#0f0f0f; font-size:0.75rem; padding:3px 12px; border-radius:20px; display:inline-block; font-weight:700; }
+  .rank-badge { background:var(--grad-gold); color:#0A0908; font-size:0.75rem; padding:3px 12px; border-radius:20px; display:inline-block; font-weight:700; }
   .progress-thin { height:6px; border-radius:3px; background:var(--dark-4); }
   .progress-bar-brand { background:var(--grad-gold); }
-  .table { --bs-table-bg:transparent; --bs-table-color:var(--cream); --bs-table-border-color:var(--gold-border); --bs-table-hover-bg:rgba(201,168,76,0.05); }
+  .table { --bs-table-bg:transparent; --bs-table-color:var(--cream); --bs-table-border-color:var(--gold-border); --bs-table-hover-bg:rgba(201,162,76,0.05); }
   .table th { font-size:0.8rem; text-transform:uppercase; letter-spacing:.05em; color:var(--gold); font-weight:600; border-bottom:1px solid var(--gold-border)!important; }
   .table td { border-color:var(--gold-border)!important; color:var(--cream); }
   .tree-item { border-left:2px solid var(--gold-border); padding-left:1rem; margin-left:0.5rem; }
@@ -37,7 +37,7 @@
   .section { display:none; }
   .section.active { display:block; }
   @media(max-width:768px){ .sidebar{width:100%;min-height:auto;position:static;} .main{margin-left:0;} }
-  .referral-box { background:rgba(201,168,76,0.08); border:1px solid var(--gold-border); border-radius:1rem; color:var(--cream); }
+  .referral-box { background:rgba(201,162,76,0.08); border:1px solid var(--gold-border); border-radius:1rem; color:var(--cream); }
   .referral-box .fs-2 { background:var(--grad-gold); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
   .level-pill { font-size:0.7rem; padding:2px 8px; border-radius:20px; }
   .card { background:var(--dark-3)!important; border:1px solid var(--gold-border)!important; color:var(--cream); }
@@ -47,10 +47,10 @@
   .border-bottom { border-bottom-color:var(--gold-border)!important; }
   .bg-light { background:var(--dark-4)!important; border:1px solid var(--gold-border); }
   .form-control { background:var(--dark-3)!important; border:1px solid var(--gold-border)!important; color:var(--cream)!important; }
-  .form-control:focus { border-color:var(--gold)!important; box-shadow:0 0 0 2px rgba(201,168,76,0.15)!important; }
+  .form-control:focus { border-color:var(--gold)!important; box-shadow:0 0 0 2px rgba(201,162,76,0.15)!important; }
   .form-control:disabled { background:var(--dark-4)!important; color:var(--text-muted)!important; }
   .form-label { color:var(--cream); }
-  code { background:rgba(201,168,76,0.1); color:var(--gold); border:1px solid var(--gold-border); padding:2px 6px; border-radius:4px; }
+  code { background:rgba(201,162,76,0.1); color:var(--gold); border:1px solid var(--gold-border); padding:2px 6px; border-radius:4px; }
 </style>
 </head>
 <body>
@@ -98,7 +98,7 @@
           <div id="rpCurrentBadge" style="font-size:2rem;line-height:1">🌱</div>
           <div>
             <div style="font-size:.75rem;color:#888;text-transform:uppercase;letter-spacing:.05em">Aktuálna pozícia</div>
-            <div id="rpCurrentName" style="font-size:1.1rem;font-weight:700;color:#C9A84C">Starter</div>
+            <div id="rpCurrentName" style="font-size:1.1rem;font-weight:700;color:#C9A24C">Starter</div>
           </div>
         </div>
         <div style="text-align:right">
@@ -112,7 +112,7 @@
           <span>Osobný obrat</span><span id="rpPersonalLabel">0 / 300 €</span>
         </div>
         <div style="background:#333;border-radius:4px;height:7px;overflow:hidden">
-          <div id="rpPersonalBar" style="height:100%;background:linear-gradient(90deg,#C9A84C,#e8c060);border-radius:4px;width:0%;transition:width .5s"></div>
+          <div id="rpPersonalBar" style="height:100%;background:linear-gradient(90deg,#C9A24C,#e8c060);border-radius:4px;width:0%;transition:width .5s"></div>
         </div>
       </div>
       <div style="margin-bottom:12px">
@@ -123,15 +123,15 @@
           <div id="rpTeamBar" style="height:100%;background:linear-gradient(90deg,#2196f3,#64b5f6);border-radius:4px;width:0%;transition:width .5s"></div>
         </div>
       </div>
-      <div id="rpGoalBox" style="background:rgba(201,168,76,.07);border:1px solid rgba(201,168,76,.2);border-radius:8px;padding:10px 14px;font-size:.82rem;color:#e8e8e8">
-        🎯 <strong style="color:#C9A84C">Ďalší cieľ:</strong> <span id="rpGoalText">—</span>
+      <div id="rpGoalBox" style="background:rgba(201,162,76,.07);border:1px solid rgba(201,162,76,.2);border-radius:8px;padding:10px 14px;font-size:.82rem;color:#e8e8e8">
+        🎯 <strong style="color:#C9A24C">Ďalší cieľ:</strong> <span id="rpGoalText">—</span>
       </div>
     </div>
 
     <div class="row g-3 mb-4">
       <div class="col-6 col-md-3">
         <div class="stat-card card p-3 h-100">
-          <div class="stat-icon mb-2" style="background:rgba(201,168,76,0.12);color:var(--gold)"><i class="bi bi-currency-euro"></i></div>
+          <div class="stat-icon mb-2" style="background:rgba(201,162,76,0.12);color:var(--gold)"><i class="bi bi-currency-euro"></i></div>
           <div class="text-muted small">Tento mesiac</div>
           <div class="fs-4 fw-bold" id="st-month">—</div>
           <div class="text-muted" style="font-size:.75rem">zárobky (čakajúce)</div>
@@ -139,7 +139,7 @@
       </div>
       <div class="col-6 col-md-3">
         <div class="stat-card card p-3 h-100">
-          <div class="stat-icon mb-2" style="background:rgba(201,168,76,0.12);color:var(--gold)"><i class="bi bi-graph-up-arrow"></i></div>
+          <div class="stat-icon mb-2" style="background:rgba(201,162,76,0.12);color:var(--gold)"><i class="bi bi-graph-up-arrow"></i></div>
           <div class="text-muted small">Osobný obrat / 30 dní</div>
           <div class="fs-4 fw-bold" id="st-personal">—</div>
           <div class="text-muted" style="font-size:.75rem">min. 100€ pre downline</div>
@@ -147,7 +147,7 @@
       </div>
       <div class="col-6 col-md-3">
         <div class="stat-card card p-3 h-100">
-          <div class="stat-icon mb-2" style="background:rgba(201,168,76,0.12);color:var(--gold)"><i class="bi bi-people"></i></div>
+          <div class="stat-icon mb-2" style="background:rgba(201,162,76,0.12);color:var(--gold)"><i class="bi bi-people"></i></div>
           <div class="text-muted small">Veľkosť tímu</div>
           <div class="fs-4 fw-bold" id="st-team">—</div>
           <div class="text-muted" style="font-size:.75rem" id="st-direct"></div>
@@ -155,7 +155,7 @@
       </div>
       <div class="col-6 col-md-3">
         <div class="stat-card card p-3 h-100">
-          <div class="stat-icon mb-2" style="background:rgba(201,168,76,0.12);color:var(--gold)"><i class="bi bi-wallet2"></i></div>
+          <div class="stat-icon mb-2" style="background:rgba(201,162,76,0.12);color:var(--gold)"><i class="bi bi-wallet2"></i></div>
           <div class="text-muted small">Celkom vyplatené</div>
           <div class="fs-4 fw-bold" id="st-paid">—</div>
           <div class="text-muted" style="font-size:.75rem">od začiatku</div>
@@ -553,7 +553,7 @@ async function loadDashboard() {
       document.getElementById('rpTeamLabel').textContent = 'MAX';
       document.getElementById('rpPersonalBar').style.width = '100%';
       document.getElementById('rpTeamBar').style.width = '100%';
-      document.getElementById('rpGoalBox').innerHTML = '🏆 <strong style="color:#C9A84C">Gratulujeme!</strong> Dosiahli ste najvyšší rank – Elite Director!';
+      document.getElementById('rpGoalBox').innerHTML = '🏆 <strong style="color:#C9A24C">Gratulujeme!</strong> Dosiahli ste najvyšší rank – Elite Director!';
     }
   }
 
@@ -564,8 +564,8 @@ async function loadDashboard() {
   chartInst = new Chart(document.getElementById('salesChart'), {
     type: 'bar',
     data: { labels, datasets: [{ label: 'Predaje (€)', data: values,
-      backgroundColor: 'rgba(201,168,76,0.5)', borderColor: '#C9A84C', borderWidth:1, borderRadius:6 }] },
-    options: { responsive:true, plugins:{legend:{display:false}}, scales:{ y:{beginAtZero:true,ticks:{color:'rgba(245,237,214,0.6)'},grid:{color:'rgba(201,168,76,0.08)'}}, x:{ticks:{color:'rgba(245,237,214,0.6)'},grid:{color:'rgba(201,168,76,0.08)'}} } }
+      backgroundColor: 'rgba(201,162,76,0.5)', borderColor: '#C9A24C', borderWidth:1, borderRadius:6 }] },
+    options: { responsive:true, plugins:{legend:{display:false}}, scales:{ y:{beginAtZero:true,ticks:{color:'rgba(234,227,213,0.6)'},grid:{color:'rgba(201,162,76,0.08)'}}, x:{ticks:{color:'rgba(234,227,213,0.6)'},grid:{color:'rgba(201,162,76,0.08)'}} } }
   });
 
   // Recent transactions
@@ -658,9 +658,9 @@ async function loadLeaderboard() {
   const medals = ['🥇','🥈','🥉'];
   document.getElementById('leaderboardContent').innerHTML = `<div class="table-responsive"><table class="table fa-table table-hover align-middle">
     <thead><tr><th>#</th><th>Partner</th><th>Rank</th><th>Predaje</th><th>Zárobky</th></tr></thead>
-    <tbody>${rows.map(r => `<tr style="${r.id===userData.id?'background:rgba(201,168,76,0.1);':''}">
+    <tbody>${rows.map(r => `<tr style="${r.id===userData.id?'background:rgba(201,162,76,0.1);':''}">
       <td class="fw-bold">${medals[r.position-1]||r.position}</td>
-      <td>${r.name}${r.id===userData.id?' <span class="badge" style="background:var(--grad-gold);color:#0f0f0f;font-size:.7rem">Vy</span>':''}</td>
+      <td>${r.name}${r.id===userData.id?' <span class="badge" style="background:var(--grad-gold);color:#0A0908;font-size:.7rem">Vy</span>':''}</td>
       <td>${r.rankBadge} ${r.rankName}</td>
       <td>${r.sales_count}</td>
       <td class="fw-bold">${eur(r.earnings)}</td>
@@ -778,14 +778,14 @@ async function loadMembershipStatus() {
     const daysLeft = Math.ceil((exp - now) / 86400000);
     const color = daysLeft > 7 ? '#4CAF50' : daysLeft > 0 ? '#FF9800' : '#f44336';
     el.innerHTML = `
-      <div style="background:rgba(201,168,76,.08);border:1px solid var(--gold-border);border-radius:.8rem;padding:1rem;margin-bottom:.8rem">
+      <div style="background:rgba(201,162,76,.08);border:1px solid var(--gold-border);border-radius:.8rem;padding:1rem;margin-bottom:.8rem">
         <div style="font-size:.75rem;color:var(--text-muted)">Aktívny plán</div>
         <div style="font-size:1.2rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent">${me.membership.plan_name}</div>
         <div style="font-size:.82rem;margin-top:.3rem">Platný do: <strong style="color:${color}">${me.membership.expires_at ? me.membership.expires_at.slice(0,10) : '—'}</strong></div>
         ${daysLeft > 0 ? `<div style="font-size:.78rem;color:${color}">Zostatok: ${daysLeft} dní</div>` : '<div style="font-size:.78rem;color:#f44336">⚠️ Členstvo vypršalo</div>'}
       </div>`;
   } else {
-    el.innerHTML = `<div style="background:rgba(244,67,54,.08);border:1px solid rgba(244,67,54,.3);border-radius:.8rem;padding:1rem;margin-bottom:.8rem;color:rgba(245,237,214,.7);font-size:.88rem">
+    el.innerHTML = `<div style="background:rgba(244,67,54,.08);border:1px solid rgba(244,67,54,.3);border-radius:.8rem;padding:1rem;margin-bottom:.8rem;color:rgba(234,227,213,.7);font-size:.88rem">
       <div style="font-weight:700;color:#f44336;margin-bottom:.3rem">❌ Žiadne aktívne členstvo</div>
       Vyberte plán nižšie a aktivujte členstvo.
     </div>`;
@@ -820,7 +820,7 @@ async function loadNotifications() {
   }
   const icons = { booking:'📅', waitlist:'⏳', payment:'💳', membership:'⭐', general:'🔔' };
   el.innerHTML = data.map(n => `
-    <div style="background:${n.read ? 'transparent' : 'rgba(201,168,76,.06)'};border-bottom:1px solid var(--gold-border);padding:.75rem 0;display:flex;gap:.8rem;align-items:flex-start">
+    <div style="background:${n.read ? 'transparent' : 'rgba(201,162,76,.06)'};border-bottom:1px solid var(--gold-border);padding:.75rem 0;display:flex;gap:.8rem;align-items:flex-start">
       <div style="font-size:1.3rem;min-width:28px">${icons[n.type] || '🔔'}</div>
       <div style="flex:1">
         <div style="font-size:.88rem;color:var(--cream)${n.read ? ';opacity:.7' : ''}">${n.message}</div>
