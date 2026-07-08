@@ -38,7 +38,11 @@
 
     /* ── Welcome header ── */
     .welcome{background:linear-gradient(135deg,#1e1e1e,#2a2a2a);border:1px solid var(--border);border-radius:16px;padding:24px;margin-bottom:20px;display:flex;align-items:center;gap:20px}
-    .avatar{width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,var(--gold),#a07830);display:flex;align-items:center;justify-content:center;font-size:1.5rem;font-weight:700;color:#111;flex-shrink:0;font-family:monospace}
+    .avatar{width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,var(--gold),#a07830);display:flex;align-items:center;justify-content:center;font-size:1.5rem;font-weight:700;color:#111;flex-shrink:0;font-family:monospace;overflow:hidden}
+    .avatar img{width:100%;height:100%;object-fit:cover}
+    .avatar-wrap{position:relative;cursor:pointer;flex-shrink:0}
+    .avatar-cam{position:absolute;bottom:-2px;right:-2px;width:24px;height:24px;border-radius:50%;background:var(--card,#1a1a1a);border:1px solid var(--gold,#C9A84C);color:var(--gold,#C9A84C);display:flex;align-items:center;justify-content:center;font-size:.7rem;transition:.2s}
+    .avatar-wrap:hover .avatar-cam{background:var(--gold,#C9A84C);color:#111;transform:scale(1.1)}
     .welcome-info h1{font-size:1.3rem;color:var(--gold);margin-bottom:4px}
     .welcome-info p{font-size:.9rem;color:var(--muted)}
     .role-tag{display:inline-flex;align-items:center;gap:4px;background:rgba(201,168,76,.15);border:1px solid rgba(201,168,76,.3);color:var(--gold);padding:2px 10px;border-radius:20px;font-size:.8rem;margin-top:6px}
@@ -274,7 +278,11 @@
 
   <!-- Welcome -->
   <div class="welcome anim anim-d1" id="welcomeBox">
-    <div class="avatar" id="avatarEl">?</div>
+    <div class="avatar-wrap" onclick="document.getElementById('avatarInput').click()" title="Nahrať profilovú fotku">
+      <div class="avatar" id="avatarEl">?</div>
+      <div class="avatar-cam"><i class="bi bi-camera-fill"></i></div>
+    </div>
+    <input type="file" id="avatarInput" accept="image/*" style="display:none" onchange="uploadAvatar(this)">
     <div class="welcome-info">
       <h1 id="welcomeName">Načítavam...</h1>
       <p id="welcomeEmail">—</p>
@@ -334,30 +342,18 @@
       <h2>Zarezervovať hodinu</h2>
     </div>
 
-    <!-- Type filter -->
+    <!-- City filter (Zumba only – online má vlastnú sekciu) -->
     <div class="filter-group">
-      <div class="filter-label">Typ hodiny</div>
-      <div class="chips" id="typeChips">
-        <button class="chip active" data-type="">Všetky</button>
-        <button class="chip" data-type="Zumba">💃 Zumba</button>
-        <button class="chip" data-type="Fitnes">💪 Fitnes</button>
-        <button class="chip" data-type="Spolocenske">🕺 Spoločenské</button>
-        <button class="chip" data-type="Online">🌐 Online</button>
-      </div>
-    </div>
-
-    <!-- City filter -->
-    <div class="filter-group">
-      <div class="filter-label">Mesto / lokalita</div>
+      <div class="filter-label">Mesto</div>
       <div class="chips" id="cityChips">
         <button class="chip active" data-city="">Všetky</button>
         <button class="chip" data-city="Detva">Detva</button>
         <button class="chip" data-city="Zvolen">Zvolen</button>
         <button class="chip" data-city="Banská Bystrica">B. Bystrica</button>
         <button class="chip" data-city="Brezno">Brezno</button>
-        <button class="chip" data-city="Online">Online</button>
       </div>
     </div>
+    <div id="typeChips" style="display:none"></div>
 
     <!-- Class cards -->
     <div id="classGrid" class="class-grid">
@@ -365,36 +361,6 @@
       <div class="class-skeleton"></div>
       <div class="class-skeleton"></div>
     </div>
-  </div>
-
-  <!-- ═══════════════════════════════════════════════════════
-       FITDAY EVENT
-  ════════════════════════════════════════════════════════ -->
-  <div class="fitday-card anim anim-d4" id="fitdayCard">
-    <div class="fitday-top">
-      <div class="fitday-icon">🏋️</div>
-      <div class="fitday-info">
-        <h2>FitDay Workshop 2025</h2>
-        <p>Špeciálny event plný tréningu, zábavy a komunity. Príď sa stretnúť s inštruktormi a členmi Fusion Academy v Detve!</p>
-      </div>
-    </div>
-    <div class="fitday-pills">
-      <span class="fitday-pill"><i class="bi bi-calendar-event"></i> Piatok 23. mája 2025</span>
-      <span class="fitday-pill"><i class="bi bi-geo-alt"></i> Detva</span>
-      <span class="fitday-pill"><i class="bi bi-clock"></i> 09:00 – 17:00</span>
-    </div>
-    <!-- Countdown -->
-    <div class="countdown" id="fitdayCountdown">
-      <div class="cd-unit"><span class="cd-num" id="cdDays">—</span><span class="cd-lbl">Dni</span></div>
-      <div class="cd-unit"><span class="cd-num" id="cdHours">—</span><span class="cd-lbl">Hodiny</span></div>
-      <div class="cd-unit"><span class="cd-num" id="cdMins">—</span><span class="cd-lbl">Min</span></div>
-    </div>
-    <div id="fitdayBookedBanner" style="display:none" class="fitday-booked">
-      <i class="bi bi-check-circle-fill"></i> Si prihlásený/á na FitDay! Tešíme sa na teba 🎉
-    </div>
-    <button class="fitday-book-btn" id="fitdayBookBtn" onclick="bookFitDay()">
-      <i class="bi bi-lightning-charge-fill"></i> Prihlásiť sa na FitDay
-    </button>
   </div>
 
   <!-- Divider -->
@@ -959,10 +925,14 @@ function resetFilter(){
 async function loadClasses(){
   try{
     const classes=await api('/api/classes');
-    _allClasses=Array.isArray(classes)?classes.filter(c=>!c.deleted):[];
+    // Focus: only Zumba live classes (online má vlastnú /online sekciu)
+    _allClasses=(Array.isArray(classes)?classes:[]).filter(c=>{
+      if(c.deleted) return false;
+      const cat=(c.category||'').toLowerCase(), loc=(c.location||'').toLowerCase();
+      if(loc==='online'||cat==='online') return false;
+      return cat==='zumba';
+    });
     renderClassCards();
-    // Also pass to FitDay
-    initFitDay(_allClasses);
   } catch(e){
     document.getElementById('classGrid').innerHTML=`<div class="class-empty" style="grid-column:1/-1"><i class="bi bi-wifi-off"></i>Nepodarilo sa načítať hodiny</div>`;
   }
@@ -1009,55 +979,6 @@ async function confirmBooking(){
 }
 
 /* ═══════════════════════════════════════════════════════════
-   FITDAY EVENT
-══════════════════════════════════════════════════════════ */
-const FITDAY_DATE = new Date('2025-05-23T09:00:00');
-let _fitdayClassId = null;
-
-function updateCountdown(){
-  const now=new Date();const diff=FITDAY_DATE-now;
-  if(diff<=0){
-    document.getElementById('cdDays').textContent='0';
-    document.getElementById('cdHours').textContent='0';
-    document.getElementById('cdMins').textContent='0';
-    return;
-  }
-  document.getElementById('cdDays').textContent=Math.floor(diff/86400000);
-  document.getElementById('cdHours').textContent=Math.floor((diff%86400000)/3600000);
-  document.getElementById('cdMins').textContent=Math.floor((diff%3600000)/60000);
-}
-
-function initFitDay(classes){
-  // Find FitDay class by name
-  const fd=classes.find(c=>(c.name||'').toLowerCase().includes('fitday')||(c.name||'').toLowerCase().includes('fit day'));
-  if(fd) _fitdayClassId=fd._id;
-  checkFitDayBooked();
-}
-
-async function checkFitDayBooked(){
-  if(!_fitdayClassId) return;
-  const bookings=await api('/api/my-bookings');
-  if(!Array.isArray(bookings)) return;
-  const isBooked=bookings.some(b=>b.class_id===_fitdayClassId&&b.status==='confirmed');
-  document.getElementById('fitdayBookedBanner').style.display=isBooked?'flex':'none';
-  document.getElementById('fitdayBookBtn').style.display=isBooked?'none':'block';
-  if(isBooked) document.getElementById('fitdayBookBtn').disabled=true;
-}
-
-function bookFitDay(){
-  if(_fitdayClassId){
-    openBookModal(_fitdayClassId,'FitDay Workshop 2025','23. mája 2025 · 09:00','fitday');
-  } else {
-    // No class in DB yet — show contact message
-    showToast('FitDay registrácia čoskoro k dispozícii. Kontaktuj nás!','success');
-  }
-}
-
-/* ─── Countdown ticker ─── */
-updateCountdown();
-setInterval(updateCountdown,60000);
-
-/* ═══════════════════════════════════════════════════════════
    INIT
 ══════════════════════════════════════════════════════════ */
 async function init(){
@@ -1069,7 +990,8 @@ async function init(){
   }
   document.getElementById('dashMain').style.display='block';
   const initials=(me.name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
-  document.getElementById('avatarEl').textContent=initials;
+  _avatarInitials=initials;
+  renderAvatar(me.avatar);
   document.getElementById('welcomeName').textContent='Ahoj, '+(me.name||'')+'!';
   document.getElementById('welcomeEmail').textContent=me.email||'';
   document.getElementById('roleTag').innerHTML=(me.role_icon||'🟢')+' '+(me.role_label||'Člen');
@@ -1092,6 +1014,45 @@ async function init(){
   loadFamily();
   // Load QR code
   loadQR();
+}
+
+/* ─── Profile photo ─── */
+let _avatarInitials='?';
+function renderAvatar(url){
+  const el=document.getElementById('avatarEl');
+  if(url){ el.innerHTML=`<img src="${url}" alt="">`; }
+  else { el.textContent=_avatarInitials; }
+}
+async function uploadAvatar(input){
+  const file=input.files&&input.files[0];
+  input.value='';
+  if(!file) return;
+  if(!file.type.startsWith('image/')){ showToast('Vyber obrázok','error'); return; }
+  try{
+    const dataUrl=await resizeImage(file, 256);
+    const d=await api('/api/client/avatar',{method:'POST',body:{avatar:dataUrl}});
+    if(d?.ok){ renderAvatar(dataUrl); showToast('Profilová fotka uložená ✓','success'); }
+    else showToast('Chyba: '+(d?.error||'?'),'error');
+  }catch(e){ showToast('Nepodarilo sa spracovať obrázok','error'); }
+}
+// Resize + crop to square, return JPEG data URL
+function resizeImage(file, size){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const s=Math.min(img.width,img.height);
+      const sx=(img.width-s)/2, sy=(img.height-s)/2;
+      const cv=document.createElement('canvas'); cv.width=size; cv.height=size;
+      const ctx=cv.getContext('2d');
+      ctx.drawImage(img, sx,sy,s,s, 0,0,size,size);
+      resolve(cv.toDataURL('image/jpeg',0.82));
+    };
+    img.onerror=reject;
+    const fr=new FileReader();
+    fr.onload=()=>{ img.src=fr.result; };
+    fr.onerror=reject;
+    fr.readAsDataURL(file);
+  });
 }
 
 /* ─── QR Check-in ─── */

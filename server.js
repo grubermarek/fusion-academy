@@ -2715,8 +2715,20 @@ app.get('/api/me', async(req,res)=>{
     free_credits: u.free_credits||0,
     referral_credit: u.referral_credit||0,
     role_label: role.label, role_icon: role.icon, dash_url: role.dashUrl,
-    created_at: u.created_at,
+    created_at: u.created_at, avatar: u.avatar||null,
   });
+});
+
+// Upload / update profile photo (client-resized JPEG data URL, ~256px)
+app.post('/api/client/avatar', auth, async(req,res)=>{
+  try {
+    const { avatar } = req.body;
+    if(!avatar || typeof avatar!=='string' || !/^data:image\/(png|jpeg|jpg|webp);base64,/.test(avatar))
+      return res.status(400).json({error:'Neplatný obrázok'});
+    if(avatar.length > 600000) return res.status(400).json({error:'Obrázok je príliš veľký'});
+    await q.update(db.users,{_id:req.session.uid},{$set:{avatar}});
+    res.json({ok:true});
+  } catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // ─── Referral reward tiers (configurable) ────────────────────────────────────

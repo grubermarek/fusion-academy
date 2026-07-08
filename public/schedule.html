@@ -39,7 +39,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',system-u
 .hero p{color:rgba(255,255,255,.6);margin:0;}
 
 /* Day tabs */
-.day-tabs{background:var(--dark-2);border-bottom:1px solid var(--gold-border);position:sticky;top:0;z-index:100;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch;}
+.day-tabs{background:var(--dark-2);border-bottom:1px solid var(--gold-border);position:sticky;top:0;z-index:100;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch;text-align:center;}
 .day-tabs::-webkit-scrollbar{height:3px;}
 .day-tabs::-webkit-scrollbar-thumb{background:var(--gold);border-radius:2px;}
 .day-btn{display:inline-flex;flex-direction:column;align-items:center;padding:.6rem 1.2rem;border:none;background:none;cursor:pointer;color:var(--text-muted);font-size:.8rem;border-bottom:2px solid transparent;margin-bottom:-1px;transition:.2s;gap:.15rem;}
@@ -50,7 +50,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Segoe UI',system-u
 .day-btn.active .count{background:rgba(201,168,76,0.15);color:var(--gold);}
 
 /* Class cards */
-.classes-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1.2rem;padding:1.5rem;}
+.classes-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,360px));gap:1.2rem;padding:1.5rem;max-width:1160px;margin:0 auto;justify-content:center;}
 @media(max-width:600px){.classes-grid{grid-template-columns:1fr;padding:1rem .75rem;}}
 
 .class-card{background:var(--dark-3);border-radius:1rem;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.3);transition:transform .2s,box-shadow .2s;border:1px solid var(--gold-border);}
