@@ -386,6 +386,13 @@ async function seedData() {
     console.log('✅  Rozvrh naplnený');
   }
 
+  // Ensure the Friday Detva Zumba 19:00 exists (added to schedule after some DBs were seeded).
+  // Idempotent: only inserts if missing, so it self-heals on production without duplicating.
+  if(!(await q.one(db.classes,{day_of_week:5, location:'Detva', category:'Zumba', time_start:'19:00'}))){
+    await q.insert(db.classes,{name:'Zumba Fitness', emoji:'🎵', category:'Zumba', instructor:'Marek Gruber', location:'Detva', address:'Fusion Academy, Záhradná 7, Detva', day_of_week:5, time_start:'19:00', time_end:'20:00', capacity:20, level:'Všetky úrovne', description:'Piatok patrí Zumbe v Detve! Latino rytmy a komunita. Prvá hodina ZADARMO!', price:10, color:'#C9A84C', active:true});
+    console.log('✅  Doplnená piatková Zumba v Detve 19:00');
+  }
+
   // Herbalife products (add even if other products already exist)
   if(await q.count(db.products,{cat:'Herbalife'})===0){
     const herba=[
