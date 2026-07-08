@@ -2182,10 +2182,14 @@ app.get('/api/attendance/class/:classId', trainerAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
-// Manual booking by admin/trainer
+// Manual booking by admin/trainer.
+// method: 'membership' (covered by active membership) | 'single_entry' (deduct 1 pass) |
+//         'free' (comp / first-free) | undefined (backward-compat, uses is_free)
 app.post('/api/attendance/manual-booking', trainerAuth, async(req,res)=>{
   try {
     const {user_id, class_id, booking_date, is_free, note} = req.body;
+    let method = req.body.method;
+    if(!method) method = is_free ? 'free' : 'membership';
     if(!user_id||!class_id) return res.status(400).json({error:'Chýba user_id alebo class_id'});
     const cls = await q.one(db.classes,{_id:class_id});
     if(!cls) return res.status(404).json({error:'Hodina nenájdená'});
@@ -2194,21 +2198,72 @@ app.post('/api/attendance/manual-booking', trainerAuth, async(req,res)=>{
     const bdate = booking_date || nextDateForDay(cls.day_of_week);
     const exists = await q.one(db.bookings,{class_id,user_id,booking_date:bdate,status:{$ne:'cancelled'}});
     if(exists) return res.status(400).json({error:'Tento klient je už prihlásený na túto hodinu'});
+
+    // ── Apply the chosen booking method ─────────────────────────────────────────
+    const upd = {};
+    let methodNote = '';
+    if(method==='single_entry'){
+      if((u.single_entries||0) <= 0) return res.status(400).json({error:`${u.name} nemá žiadny jednorazový vstup ani permanentku.`});
+      upd.single_entries = (u.single_entries||0) - 1;
+      methodNote = '🎟️ Jednorazový vstup';
+    } else if(method==='free'){
+      if((u.free_credits||0) > 0){ upd.free_credits = (u.free_credits||0) - 1; methodNote='🎁 Hodina zadarmo (kredit)'; }
+      else { if(!u.free_class_used) upd.free_class_used = true; methodNote = u.free_class_used ? '🎁 Hodina zadarmo (tréner)' : '🎁 Prvá hodina zdarma'; }
+    } else { // membership
+      methodNote = '🏅 Členstvo';
+    }
+    upd.visit_count = (u.visit_count||0) + 1;
+    if(u.winback_sent) upd.winback_sent = false;
+
     await q.insert(db.bookings,{
       class_id, class_name:cls.name, class_emoji:cls.emoji||'💃',
       class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
       day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
       user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||'',
-      booking_date:bdate, status:'confirmed',
-      notes: note || (is_free ? '🎁 Zadarmo (admin)' : ''),
+      booking_date:bdate, status:'confirmed', access_method:method,
+      notes: note || methodNote,
       manual: true, manual_by: req.trainerUser._id, created_at:nowISO()
     });
-    const newCount = (u.visit_count||0) + 1;
-    const upd = {visit_count: newCount};
-    if(is_free && !u.free_class_used) upd.free_class_used = true;
     await q.update(db.users,{_id:u._id},{$set:upd});
-    await q.insert(db.notifications,{user_id:u._id,type:'booking',title:'Rezervácia potvrdená ✅',body:`${cls.name} – ${bdate} o ${cls.time_start}${is_free?' (zadarmo)':''}`,read:false,created_at:nowISO()});
-    res.json({ok:true, booking_date:bdate, visit_count:newCount});
+    await q.insert(db.notifications,{user_id:u._id,type:'booking',title:'Rezervácia potvrdená ✅',body:`${cls.name} – ${bdate} o ${cls.time_start} · ${methodNote}`,read:false,created_at:nowISO()});
+    res.json({ok:true, booking_date:bdate, visit_count:upd.visit_count, method, method_note:methodNote, single_entries:upd.single_entries!==undefined?upd.single_entries:(u.single_entries||0)});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Rich client list for the trainer booking picker: name, city, membership/pass status.
+// Filters: ?q= (name/email), ?city=, ?filter=membership|pass|free|none
+app.get('/api/attendance/clients', trainerAuth, async(req,res)=>{
+  try {
+    const { q:query, city, filter } = req.query;
+    let users = await q.find(db.users,{active:{$ne:false}, is_admin:{$ne:true}, is_child:{$ne:true}});
+    users = users.filter(u=>(u.user_type||'client')!=='trainer');
+    if(query && query.trim().length>=1){ const rx=new RegExp(query.trim(),'i'); users = users.filter(u=>rx.test(u.name)||rx.test(u.email||'')); }
+    const out = [];
+    for(const u of users.slice(0,250)){
+      const m = await checkMembership(u._id);
+      const active = m && (m.status==='active');
+      let uCity = u.city || null;
+      if(!uCity){
+        const last = (await q.find(db.bookings,{user_id:u._id},{booking_date:-1}))[0];
+        uCity = last?.class_location || null;
+      }
+      out.push({
+        id:u._id, name:u.name, phone:u.phone||'', city:uCity||null,
+        visit_count:u.visit_count||0,
+        membership: active ? m.plan_name : null,
+        single_entries: u.single_entries||0,
+        free_credits: u.free_credits||0,
+        free_class_used: !!u.free_class_used
+      });
+    }
+    let list = out;
+    if(filter==='membership') list = list.filter(u=>u.membership);
+    else if(filter==='pass') list = list.filter(u=>u.single_entries>0);
+    else if(filter==='free') list = list.filter(u=>u.free_credits>0 || !u.free_class_used);
+    else if(filter==='none') list = list.filter(u=>!u.membership && u.single_entries<=0 && u.free_credits<=0 && u.free_class_used);
+    if(city && city!=='all') list = list.filter(u=>(u.city||'').toLowerCase()===city.toLowerCase());
+    list.sort((a,b)=>a.name.localeCompare(b.name));
+    res.json(list.slice(0,80));
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 

@@ -81,6 +81,25 @@
   .toast.show{opacity:1}
   .toast.err{background:#c62828}
   .spin{animation:sp .7s linear infinite;display:inline-block}@keyframes sp{to{transform:rotate(360deg)}}
+
+  /* client picker */
+  .picker-controls{display:flex;flex-direction:column;gap:8px;margin-bottom:8px}
+  .pk-city{background:#151515;border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:9px 12px;font-size:.86rem;outline:none;color-scheme:dark}
+  .pk-city:focus{border-color:var(--gold-border)}
+  .pk-chips{display:flex;gap:6px;flex-wrap:wrap}
+  .pk-chip{background:#151515;border:1px solid var(--border);color:var(--muted);border-radius:20px;padding:5px 12px;font-size:.78rem;font-weight:600;cursor:pointer;transition:.15s}
+  .pk-chip:hover{border-color:var(--gold-border);color:var(--cream)}
+  .pk-chip.active{background:var(--gold-dim);border-color:var(--gold-border);color:var(--gold)}
+  .pk-row{display:flex;align-items:center;gap:10px;background:#151515;border:1px solid var(--border);border-radius:12px;padding:9px 12px;margin-bottom:6px;animation:fade .25s ease both}
+  .pk-info{flex:1;min-width:0}
+  .pk-name{font-size:.9rem;font-weight:700}
+  .pk-sub{font-size:.75rem;color:var(--muted);margin-top:1px}
+  .pk-actions{display:flex;gap:5px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end}
+  .pk-book{border:1px solid transparent;border-radius:8px;padding:5px 10px;font-size:.76rem;font-weight:700;cursor:pointer;white-space:nowrap;transition:.15s}
+  .pk-book:hover{transform:translateY(-1px)}
+  .pk-mem{background:rgba(201,168,76,.16);color:var(--gold);border-color:rgba(201,168,76,.35)}
+  .pk-pass{background:rgba(96,165,250,.14);color:#60a5fa;border-color:rgba(96,165,250,.3)}
+  .pk-free{background:rgba(74,222,128,.13);color:#4ade80;border-color:rgba(74,222,128,.3)}
 </style>
 </head>
 <body>
@@ -193,48 +212,95 @@ function renderAtt(att, classId, dateStr){
       <button class="a-del" onclick="cancelBk('${a.booking_id}','${escJs(a.name)}')">Zrušiť</button>
     </div>`;
   }).join('') : '<div class="att-empty">Zatiaľ nikto — pridaj prvého klienta nižšie 👇</div>';
+  const cls = _schedule.find(x=>x._id===classId);
+  const defCity = cls?.location || 'all';
   return rows + `
     <div class="add-wrap">
-      <div class="add-title"><i class="bi bi-person-plus"></i> Pridať klienta na túto hodinu</div>
-      <div class="search-box"><i class="bi bi-search"></i>
-        <input type="text" placeholder="Hľadať meno alebo email…" oninput="searchUsers('${classId}','${dateStr}',this.value)" id="search-${classId}">
+      <div class="add-title"><i class="bi bi-person-plus"></i> Prihlásiť klientku na túto hodinu</div>
+      <div class="picker-controls">
+        <select class="pk-city" id="city-${classId}" onchange="loadClientPicker('${classId}','${dateStr}')">
+          <option value="all">🌍 Všetky mestá</option>
+          <option value="Detva" ${defCity==='Detva'?'selected':''}>📍 Detva</option>
+          <option value="Zvolen" ${defCity==='Zvolen'?'selected':''}>📍 Zvolen</option>
+          <option value="Banská Bystrica" ${defCity==='Banská Bystrica'?'selected':''}>📍 Banská Bystrica</option>
+          <option value="Brezno" ${defCity==='Brezno'?'selected':''}>📍 Brezno</option>
+        </select>
+        <div class="pk-chips" id="chips-${classId}">
+          <button class="pk-chip active" data-f="" onclick="setFilter('${classId}','${dateStr}',this,'')">Všetky</button>
+          <button class="pk-chip" data-f="membership" onclick="setFilter('${classId}','${dateStr}',this,'membership')">🏅 Členstvo</button>
+          <button class="pk-chip" data-f="pass" onclick="setFilter('${classId}','${dateStr}',this,'pass')">🎟️ Permanentka</button>
+          <button class="pk-chip" data-f="none" onclick="setFilter('${classId}','${dateStr}',this,'none')">⚠ Bez</button>
+        </div>
       </div>
-      <div id="results-${classId}"></div>
-      <label class="freechk"><input type="checkbox" id="free-${classId}"> Označiť ako hodinu zadarmo (prvá zdarma)</label>
+      <div class="search-box"><i class="bi bi-search"></i>
+        <input type="text" placeholder="Hľadať podľa mena…" oninput="onPickerSearch('${classId}','${dateStr}')" id="search-${classId}">
+      </div>
+      <div id="results-${classId}"><div class="att-empty" style="padding:12px">Načítavam klientky…</div></div>
     </div>`;
 }
 
-function toggleCls(id){ document.getElementById('cls-'+id).classList.toggle('open'); }
-
-let _searchTimer=null;
-function searchUsers(classId, dateStr, val){
-  clearTimeout(_searchTimer);
-  const host = document.getElementById('results-'+classId);
-  if(!val || val.length<2){ host.innerHTML=''; return; }
-  _searchTimer = setTimeout(async()=>{
-    const res = await api('/api/attendance/search-users?q='+encodeURIComponent(val));
-    if(!Array.isArray(res) || !res.length){ host.innerHTML='<div class="results"><div class="res-item"><span class="r-name" style="color:#8a8a8a">Nič sa nenašlo</span></div></div>'; return; }
-    host.innerHTML = '<div class="results">'+res.map(u=>`
-      <div class="res-item" onclick="addClient('${classId}','${dateStr}','${u.id}','${escJs(u.name)}')">
-        <div style="flex:1">
-          <div class="r-name">${esc(u.name)}${u.is_child?' <span style="color:#8a8a8a;font-weight:400">(dieťa)</span>':''}</div>
-          <div class="r-sub">${u.is_child?('rodič: '+esc(u.parent_name||'—')):esc(u.email||'')} · ${u.visit_count} návštev</div>
-        </div>
-        <i class="bi bi-plus-circle" style="color:var(--gold)"></i>
-      </div>`).join('')+'</div>';
-  },250);
+function toggleCls(id){
+  const el=document.getElementById('cls-'+id);
+  const opening = !el.classList.contains('open');
+  el.classList.toggle('open');
+  if(opening){ const cid=id, dateStr=fmtDate(_sel); loadClientPicker(cid, dateStr); }
 }
 
-async function addClient(classId, dateStr, userId, name){
-  const isFree = document.getElementById('free-'+classId)?.checked || false;
+const _pkFilter = {};   // classId -> active status filter
+let _pkTimer=null;
+function setFilter(classId, dateStr, btn, f){
+  _pkFilter[classId]=f;
+  document.querySelectorAll(`#chips-${classId} .pk-chip`).forEach(c=>c.classList.toggle('active', c===btn));
+  loadClientPicker(classId, dateStr);
+}
+function onPickerSearch(classId, dateStr){ clearTimeout(_pkTimer); _pkTimer=setTimeout(()=>loadClientPicker(classId,dateStr), 250); }
+
+async function loadClientPicker(classId, dateStr){
+  const host = document.getElementById('results-'+classId);
+  if(!host) return;
+  const city = document.getElementById('city-'+classId)?.value || 'all';
+  const filter = _pkFilter[classId] || '';
+  const term = document.getElementById('search-'+classId)?.value || '';
+  const qs = new URLSearchParams({ city, filter, q:term });
+  const res = await api('/api/attendance/clients?'+qs.toString());
+  if(!Array.isArray(res) || !res.length){
+    host.innerHTML = '<div class="att-empty" style="padding:14px">Nikto nevyhovuje filtru. Skús iné mesto alebo meno.</div>';
+    return;
+  }
+  host.innerHTML = res.map(u=>{
+    const hasMem = !!u.membership;
+    const hasPass = u.single_entries>0;
+    const hasFreeCredit = u.free_credits>0;
+    const firstFree = !u.free_class_used;
+    let statusBadge, statusColor;
+    if(hasMem){ statusBadge='🏅 '+esc(u.membership); statusColor='#C9A84C'; }
+    else if(hasPass){ statusBadge='🎟️ '+u.single_entries+' vstup'+(u.single_entries>1?'ov':''); statusColor='#60a5fa'; }
+    else if(hasFreeCredit){ statusBadge='🎁 '+u.free_credits+'× zdarma'; statusColor='#fbbf24'; }
+    else if(firstFree){ statusBadge='🎁 1. hodina zdarma'; statusColor='#4ade80'; }
+    else { statusBadge='⚠ bez členstva'; statusColor='#f87171'; }
+    // action buttons per available method
+    const btns = [];
+    if(hasMem) btns.push(`<button class="pk-book pk-mem" onclick="bookClient('${classId}','${dateStr}','${u.id}','${escJs(u.name)}','membership')">Členstvom</button>`);
+    if(hasPass) btns.push(`<button class="pk-book pk-pass" onclick="bookClient('${classId}','${dateStr}','${u.id}','${escJs(u.name)}','single_entry')">🎟️ Vstup</button>`);
+    btns.push(`<button class="pk-book pk-free" onclick="bookClient('${classId}','${dateStr}','${u.id}','${escJs(u.name)}','free')">🎁 Zdarma</button>`);
+    return `<div class="pk-row">
+      <div class="pk-info">
+        <div class="pk-name">${esc(u.name)}</div>
+        <div class="pk-sub">${u.city?('📍 '+esc(u.city)+' · '):''}<span style="color:${statusColor}">${statusBadge}</span></div>
+      </div>
+      <div class="pk-actions">${btns.join('')}</div>
+    </div>`;
+  }).join('');
+}
+
+async function bookClient(classId, dateStr, userId, name, method){
   const d = await api('/api/attendance/manual-booking',{method:'POST',
-    body:{user_id:userId, class_id:classId, booking_date:dateStr, is_free:isFree}});
+    body:{user_id:userId, class_id:classId, booking_date:dateStr, method}});
   if(d && d.ok){
-    toast('✅ '+name+' pridaný/á na hodinu');
-    // refresh this class body
+    toast('✅ '+name+' prihlásená · '+(d.method_note||''));
     const wasOpen = document.getElementById('cls-'+classId)?.classList.contains('open');
     await refreshClass(classId, dateStr);
-    if(wasOpen) document.getElementById('cls-'+classId)?.classList.add('open');
+    if(wasOpen){ document.getElementById('cls-'+classId)?.classList.add('open'); loadClientPicker(classId, dateStr); }
   } else {
     toast(d?.error||'Chyba pri pridávaní', true);
   }
