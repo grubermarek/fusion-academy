@@ -21,8 +21,10 @@ body{background:var(--dark-1);color:var(--cream);font-size:.92rem;}
 .sidebar{width:240px;min-height:100vh;background:var(--dark-2);position:fixed;left:0;top:0;z-index:100;border-right:1px solid var(--gold-border);}
 .main{margin-left:240px;min-height:100vh;background:var(--dark-1);}
 .brand{font-size:1.2rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
-.nav-link{color:rgba(245,237,214,.6)!important;border-radius:.5rem;margin:2px 0;transition:all .2s;}
+.nav-link{color:rgba(245,237,214,.6)!important;border-radius:.5rem;margin:2px 0;transition:all .2s;font-size:.9rem;}
 .nav-link:hover,.nav-link.active{background:rgba(201,168,76,.12)!important;color:var(--gold)!important;}
+.nav-group-label{font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:#5f5f5f;font-weight:800;margin:14px 10px 3px;user-select:none;}
+.nav-group-label:first-child{margin-top:4px;}
 .section{display:none;} .section.active{display:block;}
 .stat-card{border:1px solid var(--gold-border)!important;border-radius:1rem;background:var(--dark-3)!important;position:relative;overflow:hidden;}
 .stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--grad-gold);}
@@ -68,27 +70,35 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   <div class="brand mb-1 mt-1">FUSION ACADEMY</div>
   <div class="text-white-50" style="font-size:.72rem" class="mb-3">Admin Panel</div>
   <nav class="nav flex-column gap-1 mt-2">
+    <div class="nav-group-label">Domov</div>
     <a class="nav-link active" href="#" onclick="show('overview')"><i class="bi bi-speedometer2 me-2"></i>Prehľad</a>
-    <a class="nav-link" href="#" onclick="show('orders')"><i class="bi bi-bag-check me-2"></i>Objednávky <span id="pendingBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
+    <a class="nav-link" href="#" onclick="show('attendance')"><i class="bi bi-calendar-heart me-2"></i><span style="color:#4ade80;font-weight:700">Kalendár rezervácií</span></a>
     <a class="nav-link" href="#" onclick="show('sale')"><i class="bi bi-plus-circle me-2"></i>Zaznamenať predaj</a>
-    <a class="nav-link" href="#" onclick="show('partners')"><i class="bi bi-people me-2"></i>Partneri</a>
-    <a class="nav-link" href="#" onclick="show('commissions')"><i class="bi bi-cash-stack me-2"></i>Výplaty provízií</a>
-    <a class="nav-link" href="#" onclick="show('transactions')"><i class="bi bi-receipt me-2"></i>Všetky predaje</a>
-    <a class="nav-link" href="#" onclick="show('products')"><i class="bi bi-box-seam me-2"></i>Produkty</a>
-    <a class="nav-link" href="#" onclick="show('addpartner')"><i class="bi bi-person-plus me-2"></i>Pridať partnera</a>
-    <a class="nav-link" href="#" onclick="show('attendance')"><i class="bi bi-people-fill me-2"></i><span style="color:#4ade80;font-weight:700">Dochádzka</span></a>
+
+    <div class="nav-group-label">Správa</div>
+    <a class="nav-link" href="#" onclick="show('crm')"><i class="bi bi-person-lines-fill me-2"></i>Klienti &amp; leady <span id="crmLeadsBadge" class="badge ms-1" style="background:#C9A84C;color:#111;display:none"></span></a>
+    <a class="nav-link" href="#" onclick="show('memberships')"><i class="bi bi-patch-check me-2"></i>Členstvá</a>
     <a class="nav-link" href="#" onclick="show('classes')"><i class="bi bi-calendar3 me-2"></i>Hodiny / Stream</a>
     <a class="nav-link" href="#" onclick="show('bookings')"><i class="bi bi-calendar-check me-2"></i>Rezervácie</a>
-    <a class="nav-link" href="#" onclick="show('memberships')"><i class="bi bi-patch-check me-2"></i>Členstvá</a>
-    <a class="nav-link" href="#" onclick="show('articles')"><i class="bi bi-newspaper me-2"></i>Blog / Články</a>
+    <a class="nav-link" href="#" onclick="show('orders')"><i class="bi bi-bag-check me-2"></i>Objednávky <span id="pendingBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
+    <a class="nav-link" href="#" onclick="show('products')"><i class="bi bi-box-seam me-2"></i>Produkty</a>
     <a class="nav-link" href="#" onclick="show('rentals')"><i class="bi bi-building me-2"></i>Prenájmy</a>
-    <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby PayPal</a>
-    <hr style="border-color:#333;margin:8px 0">
-    <a class="nav-link" href="#" onclick="show('crm')"><i class="bi bi-person-lines-fill me-2"></i>CRM – Používatelia <span id="crmLeadsBadge" class="badge ms-1" style="background:#C9A84C;color:#111;display:none"></span></a>
-    <a class="nav-link" href="#" onclick="show('churn')"><i class="bi bi-person-dash me-2"></i>Churn Risk <span id="churnBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
-    <a class="nav-link" href="#" onclick="show('leaderboard')"><i class="bi bi-trophy me-2"></i>Leaderboard</a>
+    <a class="nav-link" href="#" onclick="show('articles')"><i class="bi bi-newspaper me-2"></i>Blog / Články</a>
+
+    <div class="nav-group-label">Marketing</div>
+    <a class="nav-link" href="#" onclick="show('marketing')"><i class="bi bi-graph-up-arrow me-2"></i><span style="color:#C9A84C;font-weight:700">Marketing (CAC/LTV)</span></a>
     <a class="nav-link" href="#" onclick="show('automation')"><i class="bi bi-envelope-check me-2"></i>Automatizácia</a>
-    <a class="nav-link" href="#" onclick="show('marketing')"><i class="bi bi-graph-up-arrow me-2"></i><span style="color:#C9A84C;font-weight:700">Marketing</span></a>
+    <a class="nav-link" href="#" onclick="show('churn')"><i class="bi bi-person-dash me-2"></i>Churn Risk <span id="churnBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
+
+    <div class="nav-group-label">Financie &amp; reporty</div>
+    <a class="nav-link" href="#" onclick="show('transactions')"><i class="bi bi-receipt me-2"></i>Všetky predaje</a>
+    <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby PayPal</a>
+
+    <div class="nav-group-label">Partneri (MLM)</div>
+    <a class="nav-link" href="#" onclick="show('partners')"><i class="bi bi-people me-2"></i>Partneri</a>
+    <a class="nav-link" href="#" onclick="show('addpartner')"><i class="bi bi-person-plus me-2"></i>Pridať partnera</a>
+    <a class="nav-link" href="#" onclick="show('commissions')"><i class="bi bi-cash-stack me-2"></i>Výplaty provízií</a>
+    <a class="nav-link" href="#" onclick="show('leaderboard')"><i class="bi bi-trophy me-2"></i>Leaderboard</a>
   </nav>
   <div class="mt-auto pt-3 border-top border-secondary">
     <div class="d-flex gap-2 mb-2">
@@ -331,13 +341,21 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   <!-- ATTENDANCE DASHBOARD                                                    -->
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
   <div id="s-attendance" class="section">
-    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-      <h4 class="fw-bold mb-0"><i class="bi bi-people-fill me-2" style="color:#4ade80"></i>Dochádzka – Prehľad hodín</h4>
-      <div class="d-flex gap-2">
-        <a class="btn btn-sm" href="/booking-calendar" style="background:var(--grad-gold,linear-gradient(135deg,#C9A84C,#a07830));color:#111;font-weight:700"><i class="bi bi-calendar-heart me-1"></i>Denný kalendár rezervácií</a>
-        <button class="btn btn-sm btn-brand" onclick="loadAttendance()"><i class="bi bi-arrow-clockwise me-1"></i>Obnoviť</button>
-      </div>
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <h4 class="fw-bold mb-0"><i class="bi bi-calendar-heart me-2" style="color:#4ade80"></i>Kalendár rezervácií</h4>
+      <a class="btn btn-sm" href="/booking-calendar" style="background:var(--grad-gold,linear-gradient(135deg,#C9A84C,#a07830));color:#111;font-weight:700"><i class="bi bi-arrows-fullscreen me-1"></i>Celoobrazovkový režim</a>
     </div>
+
+    <!-- Day navigation -->
+    <div class="d-flex align-items-center justify-content-center gap-2 mb-3">
+      <button class="btn btn-outline-secondary btn-sm" onclick="attMoveDay(-1)"><i class="bi bi-chevron-left"></i></button>
+      <div class="text-center" style="min-width:200px">
+        <div class="fw-bold" id="attDayLabel" style="font-size:1.05rem;text-transform:capitalize">—</div>
+        <input type="date" id="attDatePick" onchange="attPickDate(this.value)" class="form-control form-control-sm bg-dark text-light border-secondary mt-1" style="max-width:170px;margin:0 auto;color-scheme:dark">
+      </div>
+      <button class="btn btn-outline-secondary btn-sm" onclick="attMoveDay(1)"><i class="bi bi-chevron-right"></i></button>
+    </div>
+    <div class="text-center mb-3"><button class="btn btn-sm btn-brand" id="attTodayBtn" onclick="attGoToday()" style="display:none">↩︎ Dnes</button></div>
 
     <!-- Class cards grid -->
     <div id="attClassGrid" class="row g-3 mb-4"></div>
@@ -1711,20 +1729,49 @@ async function deleteUser(id, name){
 // ══════════════════════════════════════════════════════════════════════════════
 const DAYS_SK_ATT = ['Ned','Pon','Uto','Str','Štv','Pia','Sob'];
 const DAYS_FULL   = ['Nedeľa','Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota'];
-let _attClasses = [];
+let _attClasses = [];          // full schedule
 let _attSelectedClass = null;
+let _attDate = new Date();      // selected day (default today)
+_attDate.setHours(0,0,0,0);
 let _mbUserId = null, _seUserId = null, _gfUserId = null;
 
+function _attDateStr(){ const d=_attDate; return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function _attIsToday(){ const t=new Date(); return _attDate.getFullYear()===t.getFullYear()&&_attDate.getMonth()===t.getMonth()&&_attDate.getDate()===t.getDate(); }
+function attMoveDay(delta){ _attDate.setDate(_attDate.getDate()+delta); loadAttendance(); }
+function attPickDate(val){ if(!val) return; const [y,m,d]=val.split('-').map(Number); _attDate=new Date(y,m-1,d); _attDate.setHours(0,0,0,0); loadAttendance(); }
+function attGoToday(){ _attDate=new Date(); _attDate.setHours(0,0,0,0); loadAttendance(); }
+// Only Zumba live classes (no online, no other programs) — matches the client focus
+function _attVisibleClasses(){
+  const dow=_attDate.getDay();
+  return _attClasses.filter(c=>{
+    const cat=(c.category||'').toLowerCase(), loc=(c.location||'').toLowerCase();
+    if(loc==='online'||cat==='online') return false;
+    if(cat!=='zumba') return false;
+    return c.day_of_week===dow && c.active!==false;
+  }).sort((a,b)=>(a.time_start||'').localeCompare(b.time_start||''));
+}
+
 async function loadAttendance(){
-  const classes = await api('/api/attendance/schedule');
-  _attClasses = Array.isArray(classes) ? classes : [];
-  const grid = document.getElementById('attClassGrid');
   if(!_attClasses.length){
-    grid.innerHTML = '<div class="col-12"><div class="text-muted text-center py-4">Žiadne hodiny</div></div>';
+    const classes = await api('/api/attendance/schedule');
+    _attClasses = Array.isArray(classes) ? classes : [];
+  }
+  document.getElementById('attDayLabel').textContent = DAYS_FULL[_attDate.getDay()];
+  document.getElementById('attDatePick').value = _attDateStr();
+  document.getElementById('attTodayBtn').style.display = _attIsToday() ? 'none' : 'inline-block';
+  const grid = document.getElementById('attClassGrid');
+  const dateStr = _attDateStr();
+  const list = _attVisibleClasses();
+  if(!list.length){
+    grid.innerHTML = `<div class="col-12"><div class="text-muted text-center py-5">🌙 V ${DAYS_FULL[_attDate.getDay()].toLowerCase()} nie sú naplánované žiadne Zumba hodiny.</div></div>`;
+    closeAttDetail();
     return;
   }
-  grid.innerHTML = _attClasses.map(c => {
-    const pct = c.capacity > 0 ? Math.round(c.confirmed / c.capacity * 100) : 0;
+  // date-specific attendee counts
+  const counts = await Promise.all(list.map(c=>api(`/api/attendance/class/${c._id}?date=${dateStr}`)));
+  grid.innerHTML = list.map((c,i) => {
+    const n = Array.isArray(counts[i]) ? counts[i].length : 0;
+    const pct = c.capacity > 0 ? Math.round(n / c.capacity * 100) : 0;
     const colorBar = pct >= 90 ? '#f87171' : pct >= 60 ? '#fbbf24' : '#4ade80';
     return `
     <div class="col-6 col-md-4 col-lg-3">
@@ -1734,7 +1781,7 @@ async function loadAttendance(){
            onmouseout="this.style.borderColor='rgba(74,222,128,.1)'">
         <div class="d-flex align-items-center justify-content-between mb-2">
           <div style="font-size:1.3rem">${c.emoji||'💃'}</div>
-          <div class="badge" style="background:rgba(74,222,128,.15);color:#4ade80;font-size:.7rem">${DAYS_SK_ATT[c.day_of_week]} ${c.time_start}</div>
+          <div class="badge" style="background:rgba(74,222,128,.15);color:#4ade80;font-size:.7rem">${c.time_start}</div>
         </div>
         <div class="fw-semibold mb-1" style="font-size:.87rem;color:var(--cream)">${escHtml(c.name)}</div>
         <div class="text-muted" style="font-size:.75rem;margin-bottom:8px">${escHtml(c.location)}</div>
@@ -1742,8 +1789,8 @@ async function loadAttendance(){
           <div style="height:100%;width:${pct}%;background:${colorBar};border-radius:4px;transition:width .4s"></div>
         </div>
         <div class="d-flex justify-content-between" style="font-size:.75rem">
-          <span style="color:${colorBar};font-weight:700">${c.confirmed} / ${c.capacity}</span>
-          <span class="text-muted">${c.waitlist > 0 ? `⏳ ${c.waitlist}` : `${c.spotsLeft} voľných`}</span>
+          <span style="color:${colorBar};font-weight:700">${n} / ${c.capacity}</span>
+          <span class="text-muted">${Math.max(0,c.capacity-n)} voľných</span>
         </div>
       </div>
     </div>`;
@@ -1757,11 +1804,11 @@ async function openAttClass(classId){
   const c = _attSelectedClass;
   document.getElementById('attDetailTitle').textContent = (c.emoji||'💃') + ' ' + c.name;
   document.getElementById('attDetailMeta').textContent =
-    `${DAYS_FULL[c.day_of_week]} ${c.time_start} – ${c.location} · ${c.confirmed}/${c.capacity} prihlásených`;
+    `${DAYS_FULL[_attDate.getDay()]} ${_attDateStr()} · ${c.time_start} – ${c.location}`;
   document.getElementById('attDetailPanel').style.display = 'block';
   document.getElementById('manualBookingPanel').style.display = 'none';
-  // Load attendees
-  const attendees = await api(`/api/attendance/class/${classId}`);
+  // Load attendees for the selected date
+  const attendees = await api(`/api/attendance/class/${classId}?date=${_attDateStr()}`);
   const tbody = document.getElementById('attAttendeesTable');
   if(!attendees?.length){
     tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Žiadni prihlásení</td></tr>';
@@ -1841,10 +1888,11 @@ function clearGfUser(){ _gfUserId=null; document.getElementById('gfSelectedUser'
 async function doManualBooking(){
   if(!_mbUserId){ showToast('Vyber klienta','error'); return; }
   if(!_attSelectedClass){ showToast('Vyber hodinu (klikni na kartu)','error'); return; }
-  const date = document.getElementById('mbDate').value;
+  // Default the booking to the currently selected calendar day
+  const date = document.getElementById('mbDate').value || _attDateStr();
   const isFree = document.getElementById('mbIsFree').checked;
   const note = document.getElementById('mbNote').value;
-  const d = await api('/api/attendance/manual-booking',{method:'POST',body:{user_id:_mbUserId,class_id:_attSelectedClass._id,booking_date:date||undefined,is_free:isFree,note}});
+  const d = await api('/api/attendance/manual-booking',{method:'POST',body:{user_id:_mbUserId,class_id:_attSelectedClass._id,booking_date:date,is_free:isFree,note}});
   if(d?.ok){ showToast('Rezervácia vytvorená ✓','success'); clearMbUser(); document.getElementById('mbNote').value=''; document.getElementById('mbDate').value=''; document.getElementById('mbIsFree').checked=false; openAttClass(_attSelectedClass._id); loadAttendance(); }
   else showToast('Chyba: '+(d?.error||'?'),'error');
 }

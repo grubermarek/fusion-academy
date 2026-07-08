@@ -145,11 +145,15 @@ async function renderDay(){
   document.getElementById('todayBtn').classList.toggle('hidden', isToday(_sel));
   const dow = _sel.getDay();
   const dateStr = fmtDate(_sel);
-  const classes = _schedule.filter(c=>c.day_of_week===dow && c.active!==false)
-    .sort((a,b)=>(a.time_start||'').localeCompare(b.time_start||''));
+  const classes = _schedule.filter(c=>{
+    const cat=(c.category||'').toLowerCase(), loc=(c.location||'').toLowerCase();
+    if(loc==='online'||cat==='online') return false;  // online is separate
+    if(cat!=='zumba') return false;                    // focus: only Zumba
+    return c.day_of_week===dow && c.active!==false;
+  }).sort((a,b)=>(a.time_start||'').localeCompare(b.time_start||''));
   const host = document.getElementById('dayClasses');
   if(!classes.length){
-    host.innerHTML = `<div class="empty-day"><div class="e-emoji">🌙</div>V tento deň (${DAYS_FULL[dow].toLowerCase()}) nie sú naplánované žiadne hodiny.</div>`;
+    host.innerHTML = `<div class="empty-day"><div class="e-emoji">🌙</div>V ${DAYS_FULL[dow].toLowerCase()} nie sú naplánované žiadne Zumba hodiny.</div>`;
     return;
   }
   // Load date-specific attendees for each class in parallel
