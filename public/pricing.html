@@ -620,7 +620,21 @@ function openSubscribeModal(planId, planName, price){
   if(!_pricingMe){ window.location.href='/?buy='+planId; return; }
   _subPlanId = planId;
   document.getElementById('subModalTitle').textContent = planName + ' – ' + price + ' €/mes';
+  document.getElementById('subStripeBtn').style.display = _stripeEnabled ? 'block' : 'none';
   document.getElementById('subModal').style.display='flex';
+}
+
+async function payWithStripeSub(){
+  if(!_subPlanId) return;
+  const btn = document.getElementById('subStripeBtn');
+  btn.disabled = true; btn.textContent = '⏳ Presmerovávam na bezpečnú platbu…';
+  try {
+    const r = await fetch('/api/stripe/subscribe',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({plan_id:_subPlanId})}).then(r=>r.json());
+    if(r.ok && r.url){ window.location.href = r.url; return; }
+    alert('Chyba: '+(r.error||'nepodarilo sa spustiť odber'));
+  } catch(e){ alert('Chyba pripojenia'); }
+  btn.disabled = false; btn.textContent = 'Odoberať kartou · Apple Pay · Google Pay';
 }
 
 async function confirmSubscribe(){
@@ -772,22 +786,22 @@ async function confirmBuy(){
     <div style="text-align:center;margin-bottom:1.5rem">
       <div style="font-size:2rem;margin-bottom:.5rem">🔄</div>
       <div style="font-size:1.1rem;font-weight:800;color:#C9A84C" id="subModalTitle">Subscription</div>
-      <div style="color:#aaa;font-size:.85rem;margin-top:.5rem">Automatická mesačná platba cez PayPal</div>
+      <div style="color:#aaa;font-size:.85rem;margin-top:.5rem">Automatický mesačný odber — zruš kedykoľvek</div>
     </div>
     <div style="background:#111;border-radius:.8rem;padding:1rem;margin-bottom:1.2rem;font-size:.85rem;color:#ccc">
-      <div style="margin-bottom:.5rem">✅ <b>Žiadny záväzok</b> — zruš kedykoľvek</div>
       <div style="margin-bottom:.5rem">✅ Platba automaticky každý <b>mesiac</b></div>
       <div style="margin-bottom:.5rem">✅ Členstvo sa <b>automaticky predĺži</b></div>
-      <div>✅ Spravovať cez tvoj PayPal účet</div>
+      <div>✅ <b>Žiadny záväzok</b> — zrušíš jedným klikom v profile</div>
     </div>
-    <div style="background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.2);border-radius:.8rem;padding:.9rem;margin-bottom:1.4rem;font-size:.82rem;color:#aaa">
-      <i class="bi bi-info-circle me-1" style="color:#C9A84C"></i>
-      Po kliknutí ťa presmerujeme na PayPal, kde schváliš subscription. Potom ťa vrátime späť a aktivujeme členstvo.
-    </div>
-    <button id="subConfirmBtn" onclick="confirmSubscribe()" style="width:100%;padding:.9rem;background:linear-gradient(135deg,#0070ba,#003087);border:none;border-radius:.75rem;font-weight:800;color:#fff;cursor:pointer;font-size:.95rem;display:flex;align-items:center;justify-content:center;gap:8px">
-      <img src="https://www.paypalobjects.com/webstatic/en_US/i/buttons/PP_logo_h_150x38.png" style="height:18px;filter:brightness(10)"> Potvrdiť a prejsť na PayPal
+    <!-- PRIMARY: Stripe monthly (Apple/Google Pay/card) -->
+    <button id="subStripeBtn" onclick="payWithStripeSub()" style="display:none;width:100%;padding:.9rem;background:var(--foil,linear-gradient(102deg,#B98F3E,#F7E7B8 36%,#E7C878 58%,#B98F3E));background-size:180% auto;border:none;border-radius:.75rem;font-weight:800;color:#231A08;cursor:pointer;font-size:.95rem;margin-bottom:.7rem">
+      Odoberať kartou · Apple Pay · Google Pay
     </button>
-    <button onclick="openBuyModal(_subPlanId, document.getElementById('subModalTitle').textContent.split('–')[0].trim(), document.getElementById('subModalTitle').textContent.match(/\d+/)?.[0]||'');document.getElementById('subModal').style.display='none'" style="width:100%;margin-top:.6rem;padding:.6rem;background:none;border:1px solid #333;border-radius:.75rem;color:#888;cursor:pointer;font-size:.82rem">
+    <!-- Secondary: PayPal -->
+    <button id="subConfirmBtn" onclick="confirmSubscribe()" style="width:100%;padding:.8rem;background:#12100E;border:1px solid #2C333A;border-radius:.75rem;font-weight:700;color:#cbd5e0;cursor:pointer;font-size:.9rem;display:flex;align-items:center;justify-content:center;gap:8px">
+      <img src="https://www.paypalobjects.com/webstatic/en_US/i/buttons/PP_logo_h_150x38.png" style="height:16px;filter:brightness(9)"> Odoberať cez PayPal
+    </button>
+    <button onclick="openBuyModal(_subPlanId, document.getElementById('subModalTitle').textContent.split('–')[0].trim(), document.getElementById('subModalTitle').textContent.match(/\d+/)?.[0]||'');document.getElementById('subModal').style.display='none'" style="width:100%;margin-top:.6rem;padding:.55rem;background:none;border:none;color:#888;cursor:pointer;font-size:.8rem;text-decoration:underline">
       Radšej jednorazová platba
     </button>
   </div>

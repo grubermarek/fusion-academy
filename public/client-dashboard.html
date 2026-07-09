@@ -340,6 +340,7 @@
     <button class="mc-buy-btn" id="mcBuyBtn" onclick="window.location.href='/pricing'">
       <i class="bi bi-cart-plus"></i> Kúpiť / obnoviť členstvo
     </button>
+    <a id="mcCancelSub" onclick="cancelStripeSub()" style="display:none;margin-top:10px;font-size:.78rem;color:var(--muted);text-decoration:underline;cursor:pointer;text-align:center">Zrušiť automatický mesačný odber</a>
   </div>
 
   <!-- ═══════════════════════════════════════════════════════
@@ -612,6 +613,12 @@ function showToast(msg,type='success'){
 }
 function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 async function logout(){await api('/api/logout',{method:'POST'});window.location.href='/';}
+async function cancelStripeSub(){
+  if(!confirm('Zrušiť automatický mesačný odber? Členstvo ti zostane aktívne do konca zaplateného obdobia.')) return;
+  const d=await api('/api/stripe/subscribe/cancel',{method:'POST'});
+  if(d?.ok){ showToast('Odber zrušený. Členstvo platí do konca obdobia.','success'); document.getElementById('mcCancelSub').style.display='none'; }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
+}
 
 /* ─── Membership ─── */
 function renderMembership(me){
@@ -1005,6 +1012,7 @@ async function init(){
   document.getElementById('welcomeEmail').textContent=me.email||'';
   document.getElementById('roleTag').innerHTML=(me.role_icon||'🟢')+' '+(me.role_label||'Člen');
   renderMembership(me);
+  document.getElementById('mcCancelSub').style.display = me.stripe_subscription ? 'block' : 'none';
   renderAccessBar(me);
   if(me.notif_count>0){const b=document.getElementById('notifBadge');b.textContent=me.notif_count>9?'9+':me.notif_count;b.style.display='flex';}
   if(me.user_type==='partner'||me.user_type==='manager'){document.getElementById('partnerDashLink').style.display='block';}

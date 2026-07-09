@@ -198,6 +198,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
       <div class="mb-2">
         <label class="form-label small fw-semibold">Spôsob platby</label>
         <select class="form-select" id="co-payment">
+          <option value="online" id="co-pay-online" style="display:none">💳 Kartou · Apple Pay · Google Pay (online)</option>
           <option value="cash">Hotovosť / na recepcii</option>
           <option value="transfer">Bankový prevod</option>
           <option value="card">Kartou na mieste</option>
@@ -396,10 +397,37 @@ async function submitOrder() {
     });
     const d = await r.json();
     if (!r.ok) { errEl.textContent = d.error || 'Chyba'; errEl.classList.remove('d-none'); return; }
+    // Online card / Apple Pay / Google Pay → redirect to Stripe
+    if (pay === 'online') {
+      const s = await fetch('/api/stripe/checkout-order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({order_number:d.order_number})}).then(r=>r.json());
+      if (s.ok && s.url) { window.location.href = s.url; return; }
+      errEl.textContent = 'Nepodarilo sa spustiť platbu: ' + (s.error||'skús iný spôsob'); errEl.classList.remove('d-none'); return;
+    }
     document.getElementById('successOrderNum').textContent = d.order_number;
     showStep('success');
   } catch(e) { errEl.textContent = 'Chyba pripojenia k serveru'; errEl.classList.remove('d-none'); }
 }
+
+// Show the online-payment option only when Stripe is live + handle return
+(async()=>{
+  try {
+    const cfg = await fetch('/api/config').then(r=>r.json());
+    if (cfg.stripe_enabled) {
+      const opt = document.getElementById('co-pay-online');
+      if (opt) { opt.style.display=''; document.getElementById('co-payment').value='online'; }
+    }
+  } catch(e){}
+  const p = new URLSearchParams(location.search);
+  if (p.get('stripe')==='order_success' && p.get('session_id')) {
+    try {
+      const v = await fetch('/api/stripe/verify-order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:p.get('session_id')})}).then(r=>r.json());
+      if (v.ok) { document.getElementById('successOrderNum').textContent = v.order_number||''; showStep('success'); cart=[]; updateCartUI(); }
+    } catch(e){}
+    history.replaceState({},'','/shop');
+  } else if (p.get('stripe')==='cancel') {
+    history.replaceState({},'','/shop');
+  }
+})();
 
 function resetCart() {
   cart = [];

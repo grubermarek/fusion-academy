@@ -34,7 +34,8 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
-app.use(express.json());
+// Capture raw body so webhook signatures (Stripe) can be verified against exact bytes
+app.use(express.json({ verify:(req,res,buf)=>{ req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 // Trust Railway / reverse-proxy HTTPS headers
@@ -1834,11 +1835,154 @@ app.post('/api/stripe/verify', auth, async(req,res)=>{
     if(!plan) return res.status(400).json({error:'Neznámy plán'});
     const memberId = meta.member_id || meta.user_id;
     await activateMembership(memberId, meta.plan_id, plan.duration_days||30);
-    if(pay) await q.update(db.payments,{_id:pay._id},{$set:{status:'completed',captured_at:nowISO(),stripe_payment_intent:s.payment_intent||''}});
+    if(pay) await q.update(db.payments,{_id:pay._id},{$set:{status:'completed',captured_at:nowISO(),stripe_payment_intent:s.payment_intent||'',stripe_subscription_id:s.subscription||null}});
+    // Recurring subscription → remember it on the buyer so renewals extend the right member
+    if(meta.type==='subscription' && s.subscription){
+      await q.update(db.users,{_id:meta.user_id},{$set:{stripe_subscription_id:s.subscription, stripe_sub_plan:meta.plan_id, stripe_sub_member:memberId}});
+    }
     const buyer = await q.one(db.users,{_id:meta.user_id});
-    await q.insert(db.transactions,{type:'membership',user_id:memberId,user_name:buyer?.name||'—',amount:plan.price,payment_method:'stripe',note:`${plan.name} (Stripe · karta/Apple/Google Pay)`,plan_id:meta.plan_id,created_at:nowISO(),month:today().slice(0,7)});
+    const via = meta.type==='subscription' ? 'Stripe mesačný odber' : 'Stripe · karta/Apple/Google Pay';
+    await q.insert(db.transactions,{type:meta.type==='subscription'?'subscription':'membership',user_id:memberId,user_name:buyer?.name||'—',amount:plan.price,payment_method:'stripe',note:`${plan.name} (${via})`,plan_id:meta.plan_id,created_at:nowISO(),month:today().slice(0,7)});
     trackPurchase(meta.user_id, plan.price);
-    res.json({ok:true, plan_name:plan.name});
+    res.json({ok:true, plan_name:plan.name, subscription:meta.type==='subscription'});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Create a recurring monthly subscription Checkout Session (Apple/Google Pay/card)
+app.post('/api/stripe/subscribe', auth, async(req,res)=>{
+  try {
+    if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
+    const { plan_id, for_child_id } = req.body;
+    const plan = MEMBERSHIP_PLANS[plan_id];
+    if(!plan) return res.status(400).json({error:'Neplatný plán'});
+    if(plan.type==='bundle') return res.status(400).json({error:'Permanentku nemožno kúpiť ako odber'});
+    const u = await q.one(db.users,{_id:req.session.uid});
+    let memberId = req.session.uid, childName = null;
+    if(for_child_id){
+      const child = await q.one(db.users,{_id:for_child_id});
+      if(!child || child.parent_id !== req.session.uid || child.active===false) return res.status(403).json({error:'Neplatný detský profil'});
+      memberId = child._id; childName = child.name;
+    }
+    const base = APP_URL;
+    const params = {
+      'mode':'subscription',
+      'line_items[0][quantity]':1,
+      'line_items[0][price_data][currency]':'eur',
+      'line_items[0][price_data][unit_amount]':Math.round(plan.price*100),
+      'line_items[0][price_data][recurring][interval]':'month',
+      'line_items[0][price_data][product_data][name]':`Členstvo ${plan.name}${childName?' – '+childName:''} (mesačne)`,
+      'success_url':`${base}/client-dashboard?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
+      'cancel_url':`${base}/pricing?stripe=cancel`,
+      'customer_email':u.email,
+      'metadata[user_id]':req.session.uid,
+      'metadata[member_id]':memberId,
+      'metadata[plan_id]':plan_id,
+      'metadata[type]':'subscription',
+      'subscription_data[metadata][user_id]':req.session.uid,
+      'subscription_data[metadata][member_id]':memberId,
+      'subscription_data[metadata][plan_id]':plan_id
+    };
+    const r = await stripeApi('checkout/sessions', params, 'POST');
+    if(r.status>=400 || !r.body?.url) return res.status(400).json({error:r.body?.error?.message||'Stripe chyba pri vytváraní odberu'});
+    await q.insert(db.payments,{stripe_session_id:r.body.id, user_id:req.session.uid, member_id:memberId, amount:plan.price, currency:'EUR', description:`Odber ${plan.name}`, ref_id:plan_id, ref_type:'subscription', provider:'stripe', status:'pending', created_at:nowISO()});
+    res.json({ok:true, url:r.body.url});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Cancel the client's active Stripe subscription (membership stays until period end)
+app.post('/api/stripe/subscribe/cancel', auth, async(req,res)=>{
+  try {
+    if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
+    const u = await q.one(db.users,{_id:req.session.uid});
+    if(!u.stripe_subscription_id) return res.status(400).json({error:'Nemáš aktívny mesačný odber'});
+    await stripeApi('subscriptions/'+encodeURIComponent(u.stripe_subscription_id), null, 'DELETE');
+    await q.update(db.users,{_id:u._id},{$set:{stripe_subscription_id:null}});
+    await q.insert(db.notifications,{user_id:u._id,type:'membership',title:'Odber zrušený',body:'Automatické obnovenie bolo zrušené. Členstvo platí do konca obdobia.',read:false,created_at:nowISO()});
+    res.json({ok:true});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Stripe webhook — subscription renewals + cancellations (raw body for signature verify)
+app.post('/api/stripe/webhook', async(req,res)=>{
+  try {
+    const secret = process.env.STRIPE_WEBHOOK_SECRET;
+    if(secret){
+      const crypto = require('crypto');
+      const sig = req.headers['stripe-signature']||'';
+      const parts = Object.fromEntries(sig.split(',').map(p=>p.split('=')));
+      const raw = req.rawBody ? req.rawBody.toString() : JSON.stringify(req.body);
+      const expected = crypto.createHmac('sha256', secret).update(`${parts.t}.${raw}`).digest('hex');
+      if(!parts.v1 || expected !== parts.v1){ console.error('Stripe webhook: bad signature'); return res.status(400).send('bad signature'); }
+    }
+    const event = req.body;
+    if(event.type==='invoice.paid'){
+      const inv = event.data.object;
+      // Only extend on real renewals; first payment is handled by /verify
+      if(inv.billing_reason==='subscription_cycle' && inv.subscription){
+        const u = await q.one(db.users,{stripe_subscription_id:inv.subscription});
+        if(u){
+          const planId = u.stripe_sub_plan; const plan = MEMBERSHIP_PLANS[planId];
+          if(plan){
+            await activateMembership(u.stripe_sub_member||u._id, planId, plan.duration_days||30);
+            await q.insert(db.transactions,{type:'subscription_renewal',user_id:u.stripe_sub_member||u._id,user_name:u.name,amount:plan.price,payment_method:'stripe',note:`Auto-obnova ${plan.name} (Stripe)`,plan_id:planId,created_at:nowISO(),month:today().slice(0,7)});
+          }
+        }
+      }
+    } else if(event.type==='customer.subscription.deleted'){
+      const sub = event.data.object;
+      const u = await q.one(db.users,{stripe_subscription_id:sub.id});
+      if(u) await q.update(db.users,{_id:u._id},{$set:{stripe_subscription_id:null}});
+    } else if(event.type==='checkout.session.completed'){
+      const s = event.data.object;
+      if(s.metadata?.type==='order' && s.metadata.order_number && s.payment_status==='paid'){
+        await q.update(db.orders,{order_number:s.metadata.order_number,status:{$ne:'paid'}},{$set:{status:'paid',paid_at:nowISO(),payment_method:'stripe'}});
+      }
+    }
+    res.json({received:true});
+  } catch(e){ console.error('Stripe webhook error:', e.message); res.status(200).json({received:true}); }
+});
+
+// ── Stripe for shop orders (public: shop checkout has no login) ──────────────────
+app.post('/api/stripe/checkout-order', async(req,res)=>{
+  try {
+    if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
+    const { order_number } = req.body;
+    const order = await q.one(db.orders,{order_number});
+    if(!order) return res.status(404).json({error:'Objednávka nenájdená'});
+    if(order.status==='paid') return res.json({ok:true, already:true});
+    if(!(order.total>0)) return res.status(400).json({error:'Nulová suma'});
+    const base = APP_URL;
+    const params = {
+      'mode':'payment',
+      'line_items[0][quantity]':1,
+      'line_items[0][price_data][currency]':'eur',
+      'line_items[0][price_data][unit_amount]':Math.round(order.total*100),
+      'line_items[0][price_data][product_data][name]':`Objednávka ${order.order_number} · Fusion Academy`,
+      'success_url':`${base}/shop?stripe=order_success&session_id={CHECKOUT_SESSION_ID}`,
+      'cancel_url':`${base}/shop?stripe=cancel`,
+      'customer_email':order.client_email||'',
+      'metadata[type]':'order',
+      'metadata[order_number]':order.order_number
+    };
+    const r = await stripeApi('checkout/sessions', params, 'POST');
+    if(r.status>=400 || !r.body?.url) return res.status(400).json({error:r.body?.error?.message||'Stripe chyba'});
+    await q.update(db.orders,{_id:order._id},{$set:{stripe_session_id:r.body.id}});
+    res.json({ok:true, url:r.body.url});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Verify a shop order payment on return (retrieves from Stripe → cannot be faked)
+app.post('/api/stripe/verify-order', async(req,res)=>{
+  try {
+    if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
+    const { session_id } = req.body;
+    if(!session_id) return res.status(400).json({error:'Chýba session_id'});
+    const r = await stripeApi('checkout/sessions/'+encodeURIComponent(session_id), null, 'GET');
+    const s = r.body;
+    if(s?.payment_status !== 'paid' || s?.metadata?.type!=='order') return res.status(400).json({error:'Platba nebola dokončená'});
+    const order = await q.one(db.orders,{order_number:s.metadata.order_number});
+    if(order && order.status!=='paid') await q.update(db.orders,{_id:order._id},{$set:{status:'paid',paid_at:nowISO(),payment_method:'stripe'}});
+    res.json({ok:true, order_number:s.metadata.order_number});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -2793,6 +2937,7 @@ app.get('/api/me', async(req,res)=>{
     referral_credit: u.referral_credit||0,
     role_label: role.label, role_icon: role.icon, dash_url: role.dashUrl,
     created_at: u.created_at, avatar: u.avatar||null,
+    stripe_subscription: !!u.stripe_subscription_id, paypal_subscription: !!u.paypal_subscription_id,
   });
 });
 
