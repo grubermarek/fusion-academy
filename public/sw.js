@@ -1,4 +1,4 @@
-const CACHE = 'fa-v21';
+const CACHE = 'fa-v22';
 const STATIC = ['/fa-theme.css','/favicon.svg'];
 
 self.addEventListener('install', e=>{
