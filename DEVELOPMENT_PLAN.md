@@ -300,10 +300,10 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
   (aktivita=booking v okne od registrácie), LTV podľa členstva/mesta, payback=CAC/priem.
   mesačná útrata. Admin sekcia „Retencia & LTV" (KPI + kohortná tabuľka + LTV bary).
 
-### F) CRM detail klienta (TODO)
-- endpoint /api/admin/crm/client/:id: total paid, návštevy, priem. návštevnosť/mes.,
-  posledná návšteva, top štúdio, top inštruktor, LTV, história platieb/členstiev/rezervácií.
-- UI: klik na klienta v CRM otvorí detail panel.
+### F) CRM detail klienta — ✅ HOTOVO
+- /api/admin/crm/client/:id: total paid/LTV, návštevy + priem./mes., prvá/posledná návšteva,
+  top štúdio, top inštruktor, aktívne členstvo, akvizícia, história platieb/členstiev/
+  rezervácií/faktúr. UI: klik na meno v CRM otvorí 360° modal s KPI + tabmi.
 
 ### G) Účtovníctvo (TODO)
 - exporty: CSV/Excel(xlsx cez SheetJS CDN v admin)/XML/ISDOC (ISDOC = CZ/SK e-faktúra XML

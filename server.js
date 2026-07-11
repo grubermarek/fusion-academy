@@ -2118,6 +2118,57 @@ app.get('/api/admin/analytics/retention', adminAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ─── PHASE F: CRM detail klienta (360° pohľad) ──────────────────────────────────
+app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
+  try {
+    const u=await q.one(db.users,{_id:req.params.id});
+    if(!u) return res.status(404).json({error:'Klient nenájdený'});
+    const payments=(await q.find(db.payments,{user_id:u._id})).filter(p=>['completed','active'].includes(p.status));
+    const membs=(await q.find(db.memberships,{user_id:u._id})).filter(m=>!m._type);
+    const bookings=(await q.find(db.bookings,{user_id:u._id}));
+    const invoices=(await q.find(db.invoices,{user_id:u._id})).filter(i=>i.type!=='credit_note');
+
+    const totalPaid = +([
+      ...payments.map(p=>+p.amount||0),
+      ...membs.filter(m=>m.payment_method).map(m=>+m.price||0)
+    ].reduce((s,x)=>s+x,0)).toFixed(2);
+
+    // visit stats
+    const attended = bookings.filter(b=>b.status!=='cancelled');
+    const visitDates = attended.map(b=>b.booking_date||b.created_at).filter(Boolean).sort();
+    const lastVisit = visitDates.length? visitDates[visitDates.length-1] : null;
+    const firstVisit = visitDates.length? visitDates[0] : null;
+    let avgPerMonth=0;
+    if(firstVisit){
+      const months=Math.max(1, Math.round((Date.now()-new Date(firstVisit).getTime())/(30*86400000)));
+      avgPerMonth=+(attended.length/months).toFixed(1);
+    }
+    const topBy=(field)=>{
+      const c={}; attended.forEach(b=>{ const k=b[field]||'—'; c[k]=(c[k]||0)+1; });
+      const e=Object.entries(c).sort((a,b)=>b[1]-a[1]); return e.length?e[0][0]:'—';
+    };
+    const activeMemb = membs.find(m=>(m.expires_at||'')> new Date().toISOString());
+
+    res.json({
+      profile:{ id:u._id, name:u.name, email:u.email, phone:u.phone||'', created_at:u.created_at,
+        user_type:u.user_type||'client', active:u.active!==false,
+        acq:{ utm_source:u.utm_source||'', utm_campaign:u.utm_campaign||'', lead_source:u.lead_source||'' },
+        referral_credit:+u.referral_credit||0, notes:u.notes||'' },
+      kpis:{ totalPaid, ltv:totalPaid, visits:attended.length, avgPerMonth,
+        firstVisit, lastVisit, topStudio:topBy('class_location'), topInstructor:topBy('instructor'),
+        activeMembership: activeMemb? {plan_name:activeMemb.plan_name, expires_at:activeMemb.expires_at} : null },
+      payments: payments.map(p=>({date:p.captured_at||p.activated_at||p.created_at, amount:+p.amount||0, method:p.provider||p.method||'—', note:p.note||p.plan_name||'', status:p.status}))
+        .sort((a,b)=>(b.date||'').localeCompare(a.date||'')),
+      memberships: membs.map(m=>({plan_name:m.plan_name, price:+m.price||0, status:m.status, started_at:m.started_at, expires_at:m.expires_at, method:m.payment_method||'—'}))
+        .sort((a,b)=>(b.started_at||'').localeCompare(a.started_at||'')),
+      bookings: attended.map(b=>({date:b.booking_date||b.created_at, class_name:b.class_name, location:b.class_location, status:b.status}))
+        .sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,50),
+      invoices: invoices.map(i=>({number:i.number, total:+i.total||0, status:i.status, issued_at:i.issued_at}))
+        .sort((a,b)=>(b.issued_at||'').localeCompare(a.issued_at||''))
+    });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // STRIPE — Apple Pay / Google Pay / card via Stripe Checkout (no card data on our server)
 // ═══════════════════════════════════════════════════════════════════════════════
