@@ -127,8 +127,11 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </div>
 
     <div class="group-links" data-group="reports">
+      <a class="nav-link" href="#" onclick="show('finance')"><i class="bi bi-graph-up me-2"></i><span style="color:#C9A24C;font-weight:700">Financie</span></a>
+      <a class="nav-link" href="#" onclick="show('invoices')"><i class="bi bi-file-earmark-text me-2"></i>Faktúry</a>
       <a class="nav-link" href="#" onclick="show('transactions')"><i class="bi bi-receipt me-2"></i>Všetky predaje</a>
       <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby PayPal</a>
+      <a class="nav-link" href="#" onclick="show('audit')"><i class="bi bi-shield-lock me-2"></i>Audit log</a>
     </div>
 
     <div class="group-links" data-group="partners">
@@ -851,6 +854,64 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </div>
   </div>
 
+  <!-- FINANCE -->
+  <div class="section" id="s-finance">
+    <h4 class="fw-bold mb-1">💶 Financie</h4>
+    <p class="text-muted small mb-3">Obraty, MRR/ARR a vývoj príjmov. Vyber obdobie:</p>
+    <div class="d-flex gap-2 flex-wrap mb-3" id="finChips">
+      <button class="btn btn-sm btn-outline-secondary" data-p="today" onclick="finPeriod(this)">Dnes</button>
+      <button class="btn btn-sm btn-outline-secondary" data-p="yesterday" onclick="finPeriod(this)">Včera</button>
+      <button class="btn btn-sm btn-outline-secondary" data-p="week" onclick="finPeriod(this)">Tento týždeň</button>
+      <button class="btn btn-sm btn-outline-secondary" data-p="lastweek" onclick="finPeriod(this)">Minulý týždeň</button>
+      <button class="btn btn-sm btn-warning" data-p="month" onclick="finPeriod(this)">Tento mesiac</button>
+      <button class="btn btn-sm btn-outline-secondary" data-p="lastmonth" onclick="finPeriod(this)">Minulý mesiac</button>
+      <span class="d-inline-flex align-items-center gap-1">
+        <input type="date" id="finFrom" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:150px;color-scheme:dark">
+        <span class="text-muted">–</span>
+        <input type="date" id="finTo" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:150px;color-scheme:dark">
+        <button class="btn btn-sm btn-brand" onclick="finCustom()">Zobraziť</button>
+      </span>
+    </div>
+    <div class="row g-2 mb-3" id="finKpis"></div>
+    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
+      <h6 class="fw-bold mb-3"><i class="bi bi-graph-up me-2 text-warning"></i>Príjmy za obdobie</h6>
+      <canvas id="finChart" height="90"></canvas>
+    </div></div>
+  </div>
+
+  <!-- INVOICES -->
+  <div class="section" id="s-invoices">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <h4 class="fw-bold mb-0">🧾 Faktúry</h4>
+      <a class="btn btn-sm btn-brand" href="/api/admin/invoices/export.csv"><i class="bi bi-download me-1"></i>Export CSV (účtovníctvo)</a>
+    </div>
+    <div class="d-flex gap-2 flex-wrap mb-3">
+      <select id="invYear" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:110px" onchange="loadInvoices()"></select>
+      <select id="invMonth" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:130px" onchange="loadInvoices()">
+        <option value="">Celý rok</option>
+        <option value="1">Január</option><option value="2">Február</option><option value="3">Marec</option><option value="4">Apríl</option><option value="5">Máj</option><option value="6">Jún</option><option value="7">Júl</option><option value="8">August</option><option value="9">September</option><option value="10">Október</option><option value="11">November</option><option value="12">December</option>
+      </select>
+      <select id="invStatus" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:140px" onchange="loadInvoices()">
+        <option value="">Všetky stavy</option><option value="paid">Uhradené</option><option value="cancelled">Stornované</option><option value="credited">Dobropisy</option>
+      </select>
+      <input id="invQ" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:220px" placeholder="Hľadať klienta / číslo…" oninput="clearTimeout(window.__invT);window.__invT=setTimeout(loadInvoices,300)">
+    </div>
+    <div class="table-responsive"><table class="table table-dark table-hover align-middle" style="font-size:.85rem">
+      <thead><tr><th>Číslo</th><th>Klient</th><th>Popis</th><th>Suma</th><th>Uhradená</th><th>Spôsob</th><th>Stav</th><th>Akcie</th></tr></thead>
+      <tbody id="invBody"><tr><td colspan="8" class="text-muted text-center py-4">Načítavam…</td></tr></tbody>
+    </table></div>
+  </div>
+
+  <!-- AUDIT LOG -->
+  <div class="section" id="s-audit">
+    <h4 class="fw-bold mb-1">🛡️ Audit log</h4>
+    <p class="text-muted small mb-3">Nemenný záznam všetkých finančných akcií — kto, kedy, čo a prečo.</p>
+    <div class="table-responsive"><table class="table table-dark table-hover align-middle" style="font-size:.82rem">
+      <thead><tr><th>Kedy</th><th>Akcia</th><th>Cieľ</th><th>Pred</th><th>Po</th><th>Dôvod</th><th>IP</th></tr></thead>
+      <tbody id="auditBody"><tr><td colspan="7" class="text-muted text-center py-4">Načítavam…</td></tr></tbody>
+    </table></div>
+  </div>
+
 </div><!-- /main -->
 
 <!-- Edit Email Step Modal -->
@@ -937,7 +998,7 @@ function showToast(msg,type='success'){
 }
 
 const GROUP_TITLES={home:'Domov',manage:'Správa',marketing:'Marketing',reports:'Financie & reporty',partners:'Partneri (MLM)'};
-const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',automation:'marketing',churn:'marketing',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
+const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('rail-'+g)?.classList.add('active');
@@ -969,6 +1030,109 @@ function show(sec){
   if(sec==='leaderboard')loadLeaderboard('alltime');
   if(sec==='automation')loadAutomation();
   if(sec==='marketing')loadMarketing();
+  if(sec==='finance')loadFinance();
+  if(sec==='invoices')initInvoices();
+  if(sec==='audit')loadAudit();
+}
+
+/* ─── FINANCE ───────────────────────────────────────────── */
+let _finChart=null, _finRange=null;
+function _fmtD(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function finPeriod(btn){
+  document.querySelectorAll('#finChips [data-p]').forEach(b=>{b.classList.remove('btn-warning');b.classList.add('btn-outline-secondary');});
+  btn.classList.add('btn-warning');btn.classList.remove('btn-outline-secondary');
+  const p=btn.dataset.p, now=new Date(); let from,to;
+  const day=86400000, dow=(now.getDay()+6)%7; // Monday-first
+  if(p==='today'){from=to=now;}
+  else if(p==='yesterday'){from=to=new Date(now-day);}
+  else if(p==='week'){from=new Date(now-dow*day);to=now;}
+  else if(p==='lastweek'){from=new Date(now-(dow+7)*day);to=new Date(now-(dow+1)*day);}
+  else if(p==='month'){from=new Date(now.getFullYear(),now.getMonth(),1);to=now;}
+  else if(p==='lastmonth'){from=new Date(now.getFullYear(),now.getMonth()-1,1);to=new Date(now.getFullYear(),now.getMonth(),0);}
+  _finRange={from:_fmtD(from),to:_fmtD(to)};
+  loadFinance();
+}
+function finCustom(){
+  const f=document.getElementById('finFrom').value, t=document.getElementById('finTo').value;
+  if(!f||!t){showToast('Vyber oba dátumy','error');return;}
+  document.querySelectorAll('#finChips [data-p]').forEach(b=>{b.classList.remove('btn-warning');b.classList.add('btn-outline-secondary');});
+  _finRange={from:f,to:t}; loadFinance();
+}
+async function loadFinance(){
+  if(!_finRange){ const now=new Date(); _finRange={from:_fmtD(new Date(now.getFullYear(),now.getMonth(),1)),to:_fmtD(now)}; }
+  const d=await api(`/api/admin/finance/stats?from=${_finRange.from}&to=${_finRange.to}`);
+  if(!d||d.error){showToast('Chyba: '+(d?.error||'?'),'error');return;}
+  const kpi=(l,v,s,c)=>`<div class="col-6 col-md-3"><div class="card bg-dark border-secondary"><div class="card-body py-2 px-3">
+    <div class="small text-muted">${l}</div><div class="fs-5 fw-bold" style="color:${c||'#EAE3D5'}">${v}</div><div class="small text-muted">${s||''}</div></div></div></div>`;
+  document.getElementById('finKpis').innerHTML =
+    kpi('Obdobie', d.revenue.period.toFixed(2)+' €', `${_finRange.from} – ${_finRange.to} · ${d.txCount} platieb`, '#C9A24C')
+    + kpi('Dnes', d.revenue.today.toFixed(2)+' €','', '#4ade80')
+    + kpi('Tento mesiac', d.revenue.month.toFixed(2)+' €','')
+    + kpi('Tento rok', d.revenue.year.toFixed(2)+' €', 'celkovo '+d.revenue.total.toFixed(2)+' €')
+    + kpi('MRR', d.mrr.toFixed(2)+' €', 'ARR '+d.arr.toFixed(2)+' €', '#C9A24C')
+    + kpi('Priem. objednávka', d.aov.toFixed(2)+' €', 'v období')
+    + kpi('Priem. hodnota klienta', d.avgClientValue.toFixed(2)+' €', 'all-time')
+    + kpi('Členstvá', d.activeMembers+' aktívnych', `+${d.newMemberships} nových · ${d.expiredNotRenewed} neobnovených`, '#4ade80');
+  const ctx=document.getElementById('finChart');
+  if(_finChart)_finChart.destroy();
+  _finChart=new Chart(ctx,{type:'bar',data:{labels:d.series.map(x=>x.d.slice(5)),datasets:[{label:'€',data:d.series.map(x=>x.v),backgroundColor:'rgba(201,162,76,.55)',borderColor:'#C9A24C',borderWidth:1,borderRadius:5}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{color:'#8B8271'}},x:{ticks:{color:'#8B8271'}}}}});
+}
+
+/* ─── INVOICES ──────────────────────────────────────────── */
+let _invInit=false;
+function initInvoices(){
+  if(!_invInit){
+    const y=new Date().getFullYear(), sel=document.getElementById('invYear');
+    sel.innerHTML=[y,y-1,y-2].map(v=>`<option value="${v}">${v}</option>`).join('');
+    _invInit=true;
+  }
+  loadInvoices();
+}
+async function loadInvoices(){
+  const qs=new URLSearchParams({year:document.getElementById('invYear').value,month:document.getElementById('invMonth').value,status:document.getElementById('invStatus').value,q:document.getElementById('invQ').value});
+  const list=await api('/api/admin/invoices?'+qs.toString());
+  const body=document.getElementById('invBody');
+  if(!Array.isArray(list)||!list.length){body.innerHTML='<tr><td colspan="8" class="text-muted text-center py-4">Žiadne faktúry pre zvolený filter.</td></tr>';return;}
+  const st={paid:'<span class="badge bg-success">Uhradená</span>',cancelled:'<span class="badge bg-danger">Storno</span>',credited:'<span class="badge bg-warning text-dark">Dobropis</span>'};
+  body.innerHTML=list.map(i=>`<tr>
+    <td><a href="/invoice/${i.number}" target="_blank" style="color:#C9A24C;font-weight:700;text-decoration:none">${i.number}</a>${i.type==='credit_note'?' <span class="badge bg-warning text-dark" style="font-size:.6rem">DOBROPIS</span>':''}</td>
+    <td>${escHtml(i.client_name)}<br><small class="text-muted">${escHtml(i.client_email||'')}</small></td>
+    <td class="text-muted" style="max-width:260px">${escHtml((i.items||[]).map(x=>x.desc).join(', ')).slice(0,90)}</td>
+    <td style="font-weight:700;color:${i.total<0?'#f87171':'#EAE3D5'}">${(+i.total).toFixed(2)} €</td>
+    <td><small>${i.paid_at}</small></td>
+    <td><small class="text-muted">${escHtml(i.payment_method)}</small></td>
+    <td>${st[i.status]||i.status}</td>
+    <td>${i.type!=='credit_note'&&i.status==='paid'?`
+      <button class="btn btn-sm btn-outline-warning py-0 px-1" style="font-size:.72rem" onclick="invCreditNote('${i.number}')">Dobropis</button>
+      <button class="btn btn-sm btn-outline-danger py-0 px-1" style="font-size:.72rem" onclick="invCancel('${i.number}')">Storno</button>`:''}</td>
+  </tr>`).join('');
+}
+async function invCancel(num){
+  const reason=prompt('Dôvod storna faktúry '+num+':'); if(reason===null)return;
+  const d=await api('/api/admin/invoices/'+num+'/cancel',{method:'POST',body:{reason}});
+  showToast(d?.ok?'Faktúra stornovaná':'Chyba: '+(d?.error||'?'),d?.ok?'success':'error'); loadInvoices();
+}
+async function invCreditNote(num){
+  const amount=prompt('Suma dobropisu (€) k faktúre '+num+' (prázdne = celá suma):');
+  if(amount===null)return;
+  const reason=prompt('Dôvod dobropisu:')||'';
+  const d=await api('/api/admin/invoices/'+num+'/credit-note',{method:'POST',body:{amount:amount||undefined,reason}});
+  showToast(d?.ok?'Dobropis '+d.credit_note+' vystavený':'Chyba: '+(d?.error||'?'),d?.ok?'success':'error'); loadInvoices();
+}
+
+/* ─── AUDIT ─────────────────────────────────────────────── */
+async function loadAudit(){
+  const list=await api('/api/admin/audit');
+  const body=document.getElementById('auditBody');
+  if(!Array.isArray(list)||!list.length){body.innerHTML='<tr><td colspan="7" class="text-muted text-center py-4">Zatiaľ žiadne záznamy.</td></tr>';return;}
+  const j=v=>v==null?'—':escHtml(typeof v==='object'?JSON.stringify(v):String(v));
+  body.innerHTML=list.map(a=>`<tr>
+    <td><small>${(a.created_at||'').replace('T',' ').slice(0,19)}</small></td>
+    <td><span class="badge" style="background:rgba(201,162,76,.15);color:#C9A24C">${escHtml(a.action)}</span></td>
+    <td>${j(a.target)}</td><td class="text-muted"><small>${j(a.before)}</small></td>
+    <td class="text-muted"><small>${j(a.after)}</small></td>
+    <td>${j(a.reason)}</td><td class="text-muted"><small>${j(a.ip)}</small></td>
+  </tr>`).join('');
 }
 
 /* ─── MARKETING ─────────────────────────────────────────────── */

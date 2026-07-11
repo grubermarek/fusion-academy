@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Faktúra – Fusion Academy</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--gold:#C9A24C;--ink:#1a1712;--muted:#6b6357;--line:#e5ded0;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Manrope',system-ui,sans-serif;background:#f4f0e8;color:var(--ink);padding:32px 16px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .sheet{max-width:760px;margin:0 auto;background:#fff;border:1px solid var(--line);border-radius:14px;padding:44px 48px;box-shadow:0 20px 50px -30px rgba(0,0,0,.25)}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;border-bottom:2px solid var(--gold);padding-bottom:22px;margin-bottom:26px}
+  .brand{font-family:'Cormorant Garamond',serif;font-size:1.7rem;font-weight:600;letter-spacing:.02em}
+  .brand small{display:block;font-family:'Manrope';font-size:.62rem;letter-spacing:.28em;text-transform:uppercase;color:var(--gold);margin-top:2px}
+  .docno{text-align:right}
+  .docno .t{font-size:.66rem;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+  .docno .n{font-family:'Cormorant Garamond',serif;font-size:1.9rem;font-weight:600}
+  .badge{display:inline-block;font-size:.62rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;padding:4px 12px;border-radius:20px;margin-top:6px}
+  .b-paid{background:#e8f5e9;color:#2e7d32}.b-cancelled{background:#fdecea;color:#c62828}.b-credited{background:#fff8e1;color:#9c6f0f}
+  .parties{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:26px}
+  .party .h{font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);font-weight:800;margin-bottom:7px}
+  .party .n{font-weight:700;margin-bottom:3px}
+  .party div{font-size:.86rem;line-height:1.55;color:var(--ink)}
+  .party .m{color:var(--muted);font-size:.8rem}
+  .meta{display:flex;gap:26px;flex-wrap:wrap;background:#faf7f0;border:1px solid var(--line);border-radius:10px;padding:13px 18px;margin-bottom:26px}
+  .meta div{font-size:.78rem;color:var(--muted)}
+  .meta b{display:block;color:var(--ink);font-size:.9rem;margin-top:1px}
+  table{width:100%;border-collapse:collapse;margin-bottom:8px}
+  th{font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);text-align:left;padding:9px 6px;border-bottom:1.5px solid var(--ink)}
+  th:last-child,td:last-child{text-align:right;white-space:nowrap}
+  td{padding:11px 6px;border-bottom:1px solid var(--line);font-size:.92rem}
+  .total-row{display:flex;justify-content:flex-end;margin-top:8px}
+  .total{min-width:250px;display:flex;justify-content:space-between;align-items:baseline;border-top:2px solid var(--gold);padding-top:12px}
+  .total .l{font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;font-weight:800}
+  .total .v{font-family:'Cormorant Garamond',serif;font-size:2rem;font-weight:600}
+  .foot{margin-top:30px;padding-top:16px;border-top:1px solid var(--line);font-size:.74rem;color:var(--muted);line-height:1.7}
+  .actions{max-width:760px;margin:18px auto 0;display:flex;gap:10px;justify-content:center}
+  .actions button,.actions a{font-family:'Manrope';font-weight:700;font-size:.85rem;padding:11px 24px;border-radius:8px;cursor:pointer;text-decoration:none;border:1px solid var(--line);background:#fff;color:var(--ink)}
+  .actions .gold{background:linear-gradient(102deg,#B98F3E,#F7E7B8 36%,#E7C878 58%,#B98F3E);border:none;color:#231A08}
+  .err{max-width:760px;margin:60px auto;text-align:center;color:#c62828;font-size:1rem}
+  @media print{ body{background:#fff;padding:0} .sheet{border:none;box-shadow:none;border-radius:0;max-width:none;padding:20px 8mm} .actions{display:none} }
+  @media(max-width:560px){ .sheet{padding:26px 20px} .parties{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div id="host"><div class="err" id="loading" style="color:#6b6357">Načítavam faktúru…</div></div>
+<div class="actions" id="actions" style="display:none">
+  <button class="gold" onclick="window.print()">🖨️ Tlačiť / uložiť ako PDF</button>
+  <a href="/client-dashboard">← Späť do profilu</a>
+</div>
+<script>
+(async()=>{
+  const number = location.pathname.split('/').pop();
+  let inv;
+  try { const r = await fetch('/api/invoice/'+encodeURIComponent(number),{credentials:'include'});
+    if(r.status===401){ location.href='/?next='+encodeURIComponent(location.pathname); return; }
+    inv = await r.json(); if(!r.ok) throw new Error(inv.error||'Chyba');
+  } catch(e){ document.getElementById('host').innerHTML = '<div class="err">'+ (e.message||'Faktúru sa nepodarilo načítať') +'</div>'; return; }
+  const s = inv.supplier||{};
+  const esc = t=>String(t??'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const isCN = inv.type==='credit_note';
+  const badge = inv.status==='cancelled' ? '<span class="badge b-cancelled">Stornovaná</span>'
+    : inv.status==='credited' ? '<span class="badge b-credited">'+(isCN?'Dobropis':'Dobropisovaná')+'</span>'
+    : '<span class="badge b-paid">Uhradená</span>';
+  document.title = (isCN?'Dobropis ':'Faktúra ')+inv.number+' – Fusion Academy';
+  document.getElementById('host').innerHTML = `
+  <div class="sheet">
+    <div class="top">
+      <div class="brand">Fusion Academy<small>Latin Dance Fusion</small></div>
+      <div class="docno"><div class="t">${isCN?'Dobropis':'Faktúra'}</div><div class="n">${esc(inv.number)}</div>${badge}</div>
+    </div>
+    <div class="parties">
+      <div class="party">
+        <div class="h">Dodávateľ</div>
+        <div class="n">${esc(s.name)}</div>
+        <div>${esc(s.address)}</div>
+        <div class="m">IČO: ${esc(s.ico)} · DIČ: ${esc(s.dic)}${s.icdph?' · IČ DPH: '+esc(s.icdph):''}</div>
+        ${s.iban?`<div class="m">IBAN: ${esc(s.iban)}</div>`:''}
+        ${!s.icdph?'<div class="m">Nie sme platiteľom DPH.</div>':''}
+      </div>
+      <div class="party">
+        <div class="h">Odberateľ</div>
+        <div class="n">${esc(inv.client_name)}</div>
+        ${inv.client_email && !inv.client_email.includes('@internal.local')?`<div class="m">${esc(inv.client_email)}</div>`:''}
+      </div>
+    </div>
+    <div class="meta">
+      <div>Dátum vystavenia<b>${esc(inv.issued_at)}</b></div>
+      <div>Dátum úhrady<b>${esc(inv.paid_at)}</b></div>
+      <div>Variabilný symbol<b>${esc(inv.vs)}</b></div>
+      <div>Spôsob platby<b>${esc(inv.payment_method)}</b></div>
+      ${inv.related_invoice?`<div>K faktúre<b>${esc(inv.related_invoice)}</b></div>`:''}
+    </div>
+    <table>
+      <thead><tr><th>Položka</th><th>Suma</th></tr></thead>
+      <tbody>${(inv.items||[]).map(it=>`<tr><td>${esc(it.desc)}</td><td>${(+it.total).toFixed(2)} €</td></tr>`).join('')}</tbody>
+    </table>
+    <div class="total-row"><div class="total"><span class="l">Spolu k úhrade</span><span class="v">${(+inv.total).toFixed(2)} €</span></div></div>
+    <div class="foot">
+      Faktúra slúži zároveň ako potvrdenie o prijatí platby.${!s.icdph?' Cena je konečná — dodávateľ nie je platiteľom DPH podľa §4 zákona č. 222/2004 Z. z.':''}<br>
+      Fusion Academy · latindancefusion.art
+    </div>
+  </div>`;
+  document.getElementById('actions').style.display='flex';
+})();
+</script>
+</body>
+</html>

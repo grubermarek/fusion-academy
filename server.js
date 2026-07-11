@@ -73,11 +73,14 @@ const db = {
   email_steps:  new Datastore({ filename: path.join(DATA_DIR, 'email_steps.db'), autoload: true }),
   email_queue:  new Datastore({ filename: path.join(DATA_DIR, 'email_queue.db'), autoload: true }),
   adspend:      new Datastore({ filename: path.join(DATA_DIR, 'adspend.db'),     autoload: true }),
+  invoices:     new Datastore({ filename: path.join(DATA_DIR, 'invoices.db'),    autoload: true }),
+  audit:        new Datastore({ filename: path.join(DATA_DIR, 'audit.db'),       autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
 db.bookings.ensureIndex({ fieldName: 'created_at' });
 db.messages.ensureIndex({ fieldName: 'created_at' });
+db.invoices.ensureIndex({ fieldName: 'number', unique: true });
 
 // ─── DB helpers ───────────────────────────────────────────────────────────────
 const q = {
@@ -904,16 +907,18 @@ app.get('/api/admin/stats', adminAuth, async(req,res)=>{
   const allO=await q.find(db.orders,{});
   const allB=await q.find(db.bookings,{});
   const sixAgo=new Date(); sixAgo.setMonth(sixAgo.getMonth()-6);
+  // Transactions may carry `date` (legacy MLM sales) or only `created_at` (attendance/membership)
+  const txDate = t => t.date || (t.created_at||'').slice(0,10) || (t.month? t.month+'-01' : '');
   const monthMap={};
-  for(const t of allTx){const m=t.date.slice(0,7);if(m>=sixAgo.toISOString().slice(0,7)){if(!monthMap[m])monthMap[m]={total:0,cnt:0};monthMap[m].total+=t.amount;monthMap[m].cnt++;}}
+  for(const t of allTx){const m=txDate(t).slice(0,7);if(m && m>=sixAgo.toISOString().slice(0,7)){if(!monthMap[m])monthMap[m]={total:0,cnt:0};monthMap[m].total+=(+t.amount||0);monthMap[m].cnt++;}}
   const prodMap={};
-  for(const t of allTx){if(!prodMap[t.product_name])prodMap[t.product_name]={cnt:0,total:0};prodMap[t.product_name].cnt++;prodMap[t.product_name].total+=t.amount;}
+  for(const t of allTx){const key=t.product_name||t.note||t.type||'—';if(!prodMap[key])prodMap[key]={cnt:0,total:0};prodMap[key].cnt++;prodMap[key].total+=(+t.amount||0);}
   const rankMap={};
   for(const u of allU){const r=u.rank||1;rankMap[r]=(rankMap[r]||0)+1;}
   res.json({
     totalPartners:allU.length, activePartners:allU.filter(u=>u.active).length,
-    monthRevenue:+allTx.filter(t=>t.date.startsWith(month)).reduce((s,t)=>s+t.amount,0).toFixed(2),
-    totalRevenue:+allTx.reduce((s,t)=>s+t.amount,0).toFixed(2),
+    monthRevenue:+allTx.filter(t=>txDate(t).startsWith(month)).reduce((s,t)=>s+(+t.amount||0),0).toFixed(2),
+    totalRevenue:+allTx.reduce((s,t)=>s+(+t.amount||0),0).toFixed(2),
     pendingComm:+allC.filter(c=>c.status==='pending'&&c.month===month).reduce((s,c)=>s+c.amount,0).toFixed(2),
     pendingOrders:allO.filter(o=>o.status==='pending').length,
     paidOrders:allO.filter(o=>o.status==='paid').length,
@@ -1431,6 +1436,10 @@ app.post('/api/paypal/capture-order', async(req,res)=>{
     if(captured && payment){
       await q.update(db.payments,{_id:paymentId},{$set:{status:'completed',captured_at:nowISO(),paypal_capture_id:result.body?.purchase_units?.[0]?.payments?.captures?.[0]?.id||''}});
       trackPurchase(payment.user_id, payment.amount);
+      { const pu = payment.user_id ? await q.one(db.users,{_id:payment.user_id}) : null;
+        createInvoice({user_id:payment.user_id, client_name:pu?.name, client_email:pu?.email,
+          items:[{desc:payment.description||'Platba Fusion Academy', qty:1, total:payment.amount}],
+          total:payment.amount, method:'PayPal'}); }
       // If it's a membership payment, activate membership (member_id = child if family purchase)
       if(payment.ref_type==='membership' && payment.user_id){
         await activateMembership(payment.member_id || payment.user_id, payment.ref_id, 30);
@@ -1623,6 +1632,10 @@ app.post('/api/membership/subscribe/activate', auth, async(req,res)=>{
     await q.update(db.users,{_id:req.session.uid},{$set:{paypal_subscription_id: subscription_id, subscription_plan: plan_id}});
     await q.update(db.payments,{paypal_subscription_id:subscription_id},{$set:{status:'active', activated_at:nowISO()}});
     trackPurchase(req.session.uid, MEMBERSHIP_PLANS[plan_id]?.price);
+    { const pu = await q.one(db.users,{_id:req.session.uid});
+      createInvoice({user_id:req.session.uid, client_name:pu?.name, client_email:pu?.email,
+        items:[{desc:`Členstvo ${MEMBERSHIP_PLANS[plan_id]?.name} (mesačný odber)`, qty:1, total:MEMBERSHIP_PLANS[plan_id]?.price||0}],
+        total:MEMBERSHIP_PLANS[plan_id]?.price||0, method:'PayPal (automatický odber)'}); }
     res.json({ok:true, plan_name: MEMBERSHIP_PLANS[plan_id]?.name});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -1682,6 +1695,9 @@ app.post('/api/paypal/webhook', express.raw({type:'application/json'}), async(re
       await q.update(db.users,{_id:u._id},{$set:{membership_plan:planId,membership_expires:newExpiry.toISOString()}});
       const amount = resource.amount?.total || plan.price;
       await q.insert(db.transactions,{type:'subscription_renewal',user_id:u._id,user_name:u.name,amount:parseFloat(amount),payment_method:'paypal_subscription',note:`Auto-renewal ${plan.name}`,plan_id:planId,created_at:nowISO(),month:today().slice(0,7)});
+      createInvoice({user_id:u._id, client_name:u.name, client_email:u.email,
+        items:[{desc:`Členstvo ${plan.name} — mesačná obnova`, qty:1, total:parseFloat(amount)}],
+        total:parseFloat(amount), method:'PayPal (automatický odber)'});
       await q.insert(db.notifications,{user_id:u._id,type:'membership',title:'Členstvo obnovené 🔄',body:`${plan.name} automaticky obnovené do ${newExpiry.toLocaleDateString('sk-SK')}.`,read:false,created_at:nowISO()});
       if(u.email) sendMail(u.email,`🔄 Členstvo obnovené – ${plan.name}`,
         emailTemplate('Členstvo automaticky obnovené 🔄',
@@ -1768,6 +1784,233 @@ app.post('/api/membership/buy', auth, async(req,res)=>{
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// INVOICING — SK-compliant invoices, auto-issued on every successful payment
+// Supplier data from env (fill on Railway): COMPANY_NAME, COMPANY_ADDRESS,
+// COMPANY_ICO, COMPANY_DIC, COMPANY_ICDPH (empty = neplatiteľ DPH), COMPANY_IBAN
+// ═══════════════════════════════════════════════════════════════════════════════
+function invoiceSupplier(){
+  return {
+    name:    process.env.COMPANY_NAME    || 'Fusion Academy s.r.o.',
+    address: process.env.COMPANY_ADDRESS || 'Záhradná 7, 962 12 Detva',
+    ico:     process.env.COMPANY_ICO     || '00000000',
+    dic:     process.env.COMPANY_DIC     || '0000000000',
+    icdph:   process.env.COMPANY_ICDPH   || '',       // empty ⇒ not a VAT payer
+    iban:    process.env.COMPANY_IBAN    || ''
+  };
+}
+
+// Immutable audit trail for financial actions (insert-only, never edited)
+async function auditLog(req, action, target, before, after, reason){
+  try {
+    await q.insert(db.audit, {
+      action, target: target||null,
+      before: before===undefined?null:before,
+      after:  after===undefined?null:after,
+      reason: reason||'',
+      actor_id: req?.session?.uid||null,
+      actor_name: req?._auditActor||null,
+      ip: (req?.headers?.['x-forwarded-for']||'').split(',')[0] || req?.socket?.remoteAddress || null,
+      created_at: nowISO()
+    });
+  } catch(e){ console.error('Audit error:', e.message); }
+}
+
+// Sequential yearly numbering: 2026 0001 … (number doubles as variabilný symbol)
+async function nextInvoiceNumber(){
+  const year = String(new Date().getFullYear());
+  const existing = await q.find(db.invoices, {});
+  const inYear = existing.filter(i=>String(i.number).startsWith(year));
+  let seq = inYear.length + 1;
+  for(let attempt=0; attempt<20; attempt++, seq++){
+    const num = year + String(seq).padStart(4,'0');
+    if(!inYear.some(i=>String(i.number)===num)) return num;
+  }
+  return year + String(Date.now()).slice(-4);
+}
+
+// Create + archive an invoice, then email the payment confirmation. Never throws.
+async function createInvoice({user_id, client_name, client_email, items, total, method, type, related_invoice, paid_at}){
+  try {
+    const number = await nextInvoiceNumber();
+    const inv = await q.insert(db.invoices, {
+      number, vs: number,
+      type: type||'invoice',                       // 'invoice' | 'credit_note'
+      related_invoice: related_invoice||null,
+      user_id: user_id||null,
+      client_name: client_name||'—', client_email: client_email||'',
+      items: items||[], total: +(+total).toFixed(2), currency:'EUR',
+      payment_method: method||'—',
+      issued_at: today(), paid_at: paid_at||today(),
+      status: type==='credit_note' ? 'credited' : 'paid',
+      supplier: invoiceSupplier(),
+      created_at: nowISO()
+    });
+    if(inv.type==='invoice' && inv.client_email && !inv.client_email.includes('@internal.local')){
+      const rows = (inv.items||[]).map(it=>`<tr><td style="padding:6px 0;color:#ccc">${it.desc}</td><td style="padding:6px 0;text-align:right;color:#fff;white-space:nowrap">${(+it.total).toFixed(2)} €</td></tr>`).join('');
+      sendMail(inv.client_email, `Ďakujeme za platbu · faktúra ${inv.number} — Fusion Academy`,
+        emailTemplate('Platba prijatá ✅',
+          `<p>Ahoj <b>${inv.client_name}</b>,</p>
+           <p>ďakujeme! Tvoju platbu sme v poriadku prijali${(inv.items||[]).some(i=>/Členstvo|Odber/i.test(i.desc))?' a <b>členstvo je aktívne</b>':''}.</p>
+           <div style="background:#1c1c1c;border-radius:12px;padding:16px 18px;margin:14px 0">
+             <table width="100%" style="border-collapse:collapse;font-size:14px">${rows}
+               <tr><td style="padding:10px 0 0;border-top:1px solid #333;color:#C9A84C;font-weight:800">Spolu</td>
+                   <td style="padding:10px 0 0;border-top:1px solid #333;text-align:right;color:#C9A84C;font-weight:800">${inv.total.toFixed(2)} €</td></tr>
+             </table>
+             <div style="color:#888;font-size:12px;margin-top:10px">Faktúra č. <b style="color:#ccc">${inv.number}</b> · VS ${inv.vs} · ${inv.paid_at} · ${inv.payment_method}</div>
+           </div>
+           <p style="color:#999;font-size:13px">Faktúru si môžeš kedykoľvek zobraziť a stiahnuť (tlač → PDF) vo svojom profile.</p>`,
+          '🧾 Zobraziť faktúru', `${APP_URL}/invoice/${inv.number}`)).catch(()=>{});
+    }
+    return inv;
+  } catch(e){ console.error('Invoice error:', e.message); return null; }
+}
+
+// ── Invoice API ────────────────────────────────────────────────────────────────
+// Owner or admin can read a single invoice
+app.get('/api/invoice/:number', auth, async(req,res)=>{
+  const inv = await q.one(db.invoices,{number:req.params.number});
+  if(!inv) return res.status(404).json({error:'Faktúra nenájdená'});
+  const me = await q.one(db.users,{_id:req.session.uid});
+  if(inv.user_id!==req.session.uid && !me?.is_admin) return res.status(403).json({error:'Prístup zamietnutý'});
+  res.json(inv);
+});
+
+// My invoices (client)
+app.get('/api/my-invoices', auth, async(req,res)=>{
+  const list = await q.find(db.invoices,{user_id:req.session.uid});
+  res.json(list.sort((a,b)=>b.number.localeCompare(a.number)).slice(0,100));
+});
+
+// Admin list with filters: ?year=&month=&q=&status=
+app.get('/api/admin/invoices', adminAuth, async(req,res)=>{
+  let list = await q.find(db.invoices,{});
+  const {year, month, q:term, status} = req.query;
+  if(year)  list = list.filter(i=>String(i.number).startsWith(String(year)));
+  if(month) list = list.filter(i=>(i.issued_at||'').slice(5,7)===String(month).padStart(2,'0'));
+  if(status)list = list.filter(i=>i.status===status);
+  if(term){ const rx=new RegExp(term,'i'); list=list.filter(i=>rx.test(i.client_name)||rx.test(i.client_email||'')||rx.test(i.number)); }
+  res.json(list.sort((a,b)=>b.number.localeCompare(a.number)).slice(0,500));
+});
+
+// CSV export (accounting-friendly)
+app.get('/api/admin/invoices/export.csv', adminAuth, async(req,res)=>{
+  const list = (await q.find(db.invoices,{})).sort((a,b)=>a.number.localeCompare(b.number));
+  const esc = v=>`"${String(v??'').replace(/"/g,'""')}"`;
+  const rows = [['Cislo','VS','Typ','Stav','Vystavena','Uhradena','Klient','Email','Popis','Suma EUR','Sposob platby'].join(';')];
+  for(const i of list) rows.push([i.number,i.vs,i.type,i.status,i.issued_at,i.paid_at,i.client_name,i.client_email,(i.items||[]).map(x=>x.desc).join(' | '),i.total.toFixed(2).replace('.',','),i.payment_method].map(esc).join(';'));
+  res.setHeader('Content-Type','text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition','attachment; filename=faktury.csv');
+  res.send('﻿'+rows.join('\r\n'));
+});
+
+// Storno (invoice stays archived, status changes; audited)
+app.post('/api/admin/invoices/:number/cancel', adminAuth, async(req,res)=>{
+  const inv = await q.one(db.invoices,{number:req.params.number});
+  if(!inv) return res.status(404).json({error:'Faktúra nenájdená'});
+  if(inv.status==='cancelled') return res.status(400).json({error:'Už stornovaná'});
+  await q.update(db.invoices,{_id:inv._id},{$set:{status:'cancelled',cancelled_at:nowISO()}});
+  await auditLog(req,'invoice_cancel',inv.number,{status:inv.status},{status:'cancelled'},req.body.reason||'');
+  res.json({ok:true});
+});
+
+// Dobropis (credit note referencing the original invoice; audited)
+app.post('/api/admin/invoices/:number/credit-note', adminAuth, async(req,res)=>{
+  const inv = await q.one(db.invoices,{number:req.params.number});
+  if(!inv) return res.status(404).json({error:'Faktúra nenájdená'});
+  const amount = +(req.body.amount ?? inv.total);
+  if(!(amount>0) || amount>inv.total) return res.status(400).json({error:'Neplatná suma dobropisu'});
+  const cn = await createInvoice({
+    user_id:inv.user_id, client_name:inv.client_name, client_email:inv.client_email,
+    items:[{desc:`Dobropis k faktúre ${inv.number}${req.body.reason?` — ${req.body.reason}`:''}`, qty:1, total:-amount}],
+    total:-amount, method:inv.payment_method, type:'credit_note', related_invoice:inv.number
+  });
+  await q.update(db.invoices,{_id:inv._id},{$set:{status:'credited',credit_note:cn?.number||null}});
+  await auditLog(req,'invoice_credit_note',inv.number,{status:inv.status},{status:'credited',credit_note:cn?.number,amount},req.body.reason||'');
+  res.json({ok:true, credit_note:cn?.number});
+});
+
+// Audit log (main admin only, read-only)
+app.get('/api/admin/audit', adminAuth, async(req,res)=>{
+  const list = await q.find(db.audit,{});
+  res.json(list.sort((a,b)=>b.created_at.localeCompare(a.created_at)).slice(0,300));
+});
+
+// ── Finance stats with period filter ──────────────────────────────────────────
+app.get('/api/admin/finance/stats', adminAuth, async(req,res)=>{
+  try {
+    const {from, to} = req.query; // YYYY-MM-DD inclusive
+    const fromISO = from ? from+'T00:00:00' : '0000';
+    const toISO   = to   ? to+'T23:59:59'   : '9999';
+    const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status));
+    const membs=(await q.find(db.memberships,{})).filter(m=>!m._type);
+    const cashMembs=membs.filter(m=>m.payment_method);
+    const orders=(await q.find(db.orders,{})).filter(o=>o.status==='paid');
+    const users=(await q.find(db.users,{is_admin:{$ne:true}})).filter(u=>u.user_type!=='trainer' && !u.is_child);
+
+    const payDate = p=>p.captured_at||p.activated_at||p.created_at||'';
+    const rev = list => +list.reduce((s,x)=>s+(+x.amount||+x.total||+x.price||0),0).toFixed(2);
+    const inRange = (d)=> d>=fromISO && d<=toISO;
+    const singleEntries = (await q.find(db.transactions,{type:'single_entry'}));
+    const allEvents = [
+      ...payments.map(p=>({d:payDate(p), a:+p.amount||0})),
+      ...cashMembs.map(m=>({d:m.created_at||'', a:+m.price||0})),
+      ...orders.map(o=>({d:o.paid_at||o.created_at||'', a:+o.total||0})),
+      ...singleEntries.map(t=>({d:t.created_at||'', a:+t.amount||0}))
+    ];
+    const period = allEvents.filter(e=>inRange(e.d));
+    const revenuePeriod = +period.reduce((s,e)=>s+e.a,0).toFixed(2);
+
+    const now = new Date();
+    const dayStr = today();
+    const monthStr = dayStr.slice(0,7);
+    const yearStr  = dayStr.slice(0,4);
+    const revToday = +allEvents.filter(e=>e.d.startsWith(dayStr)).reduce((s,e)=>s+e.a,0).toFixed(2);
+    const revMonth = +allEvents.filter(e=>e.d.startsWith(monthStr)).reduce((s,e)=>s+e.a,0).toFixed(2);
+    const revYear  = +allEvents.filter(e=>e.d.startsWith(yearStr)).reduce((s,e)=>s+e.a,0).toFixed(2);
+    const revTotal = +allEvents.reduce((s,e)=>s+e.a,0).toFixed(2);
+
+    // MRR = recurring subscriptions only (Stripe + PayPal)
+    let mrr = 0;
+    for(const u of users){
+      if(u.stripe_subscription_id){ mrr += MEMBERSHIP_PLANS[u.stripe_sub_plan]?.price||0; }
+      if(u.paypal_subscription_id){ mrr += MEMBERSHIP_PLANS[u.subscription_plan]?.price||0; }
+    }
+    mrr = +mrr.toFixed(2);
+
+    const nowISOs = now.toISOString();
+    const activeMemberIds = new Set(membs.filter(m=>(m.expires_at||'')>nowISOs).map(m=>m.user_id));
+    const newMembers = users.filter(u=>(u.created_at||'')>=String(from||'0000') && (u.created_at||'')<=String(to||'9999')).length;
+    const newMemberships = membs.filter(m=>inRange(m.created_at||'')).length;
+    const expiredNotRenewed = membs.filter(m=>{
+      const exp=m.expires_at||''; if(!(exp>=fromISO && exp<=toISO && exp<nowISOs)) return false;
+      return !membs.some(m2=>m2.user_id===m.user_id && (m2.started_at||'')>exp);
+    }).length;
+
+    const payingByUser = {};
+    allEvents.length; // noop
+    for(const p of payments){ if(p.user_id) payingByUser[p.user_id]=(payingByUser[p.user_id]||0)+(+p.amount||0); }
+    for(const m of cashMembs){ payingByUser[m.user_id]=(payingByUser[m.user_id]||0)+(+m.price||0); }
+    const payers = Object.keys(payingByUser).length;
+    const avgClientValue = payers? +(Object.values(payingByUser).reduce((s,v)=>s+v,0)/payers).toFixed(2) : 0;
+    const aov = period.length ? +(revenuePeriod/period.length).toFixed(2) : 0;
+
+    // daily series for the chart
+    const series = {};
+    period.forEach(e=>{ const d=e.d.slice(0,10); series[d]=+( (series[d]||0)+e.a ).toFixed(2); });
+
+    res.json({
+      revenue:{ today:revToday, month:revMonth, year:revYear, total:revTotal, period:revenuePeriod },
+      mrr, arr:+(mrr*12).toFixed(2),
+      avgMonthly:+(revYear/Math.max(1,now.getMonth()+1)).toFixed(2),
+      aov, avgClientValue,
+      activeMembers:activeMemberIds.size, newMembers, newMemberships, expiredNotRenewed,
+      txCount:period.length,
+      series:Object.entries(series).sort((a,b)=>a[0].localeCompare(b[0])).map(([d,v])=>({d,v}))
+    });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // STRIPE — Apple Pay / Google Pay / card via Stripe Checkout (no card data on our server)
 // ═══════════════════════════════════════════════════════════════════════════════
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || '';
@@ -1844,6 +2087,9 @@ app.post('/api/stripe/verify', auth, async(req,res)=>{
     const via = meta.type==='subscription' ? 'Stripe mesačný odber' : 'Stripe · karta/Apple/Google Pay';
     await q.insert(db.transactions,{type:meta.type==='subscription'?'subscription':'membership',user_id:memberId,user_name:buyer?.name||'—',amount:plan.price,payment_method:'stripe',note:`${plan.name} (${via})`,plan_id:meta.plan_id,created_at:nowISO(),month:today().slice(0,7)});
     trackPurchase(meta.user_id, plan.price);
+    createInvoice({user_id:meta.user_id, client_name:buyer?.name, client_email:buyer?.email,
+      items:[{desc:`Členstvo ${plan.name}${meta.type==='subscription'?' (mesačný odber)':''}`, qty:1, total:plan.price}],
+      total:plan.price, method:'Stripe (karta / Apple Pay / Google Pay)'});
     res.json({ok:true, plan_name:plan.name, subscription:meta.type==='subscription'});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -1925,6 +2171,9 @@ app.post('/api/stripe/webhook', async(req,res)=>{
           if(plan){
             await activateMembership(u.stripe_sub_member||u._id, planId, plan.duration_days||30);
             await q.insert(db.transactions,{type:'subscription_renewal',user_id:u.stripe_sub_member||u._id,user_name:u.name,amount:plan.price,payment_method:'stripe',note:`Auto-obnova ${plan.name} (Stripe)`,plan_id:planId,created_at:nowISO(),month:today().slice(0,7)});
+            createInvoice({user_id:u._id, client_name:u.name, client_email:u.email,
+              items:[{desc:`Členstvo ${plan.name} — mesačná obnova`, qty:1, total:plan.price}],
+              total:plan.price, method:'Stripe (automatický odber)'});
           }
         }
       }
@@ -1981,7 +2230,12 @@ app.post('/api/stripe/verify-order', async(req,res)=>{
     const s = r.body;
     if(s?.payment_status !== 'paid' || s?.metadata?.type!=='order') return res.status(400).json({error:'Platba nebola dokončená'});
     const order = await q.one(db.orders,{order_number:s.metadata.order_number});
-    if(order && order.status!=='paid') await q.update(db.orders,{_id:order._id},{$set:{status:'paid',paid_at:nowISO(),payment_method:'stripe'}});
+    if(order && order.status!=='paid'){
+      await q.update(db.orders,{_id:order._id},{$set:{status:'paid',paid_at:nowISO(),payment_method:'stripe'}});
+      createInvoice({user_id:null, client_name:order.client_name, client_email:order.client_email,
+        items:(order.items||[]).map(it=>({desc:`${it.name||it.product_name||'Položka'} ×${it.qty||1}`, qty:it.qty||1, total:+((it.price||0)*(it.qty||1)).toFixed(2)})),
+        total:order.total, method:'Stripe (karta / Apple Pay / Google Pay)'});
+    }
     res.json({ok:true, order_number:s.metadata.order_number});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -2504,6 +2758,9 @@ app.post('/api/attendance/single-entry', trainerAuth, async(req,res)=>{
       recorded_by:req.trainerUser._id, created_at:nowISO(), month:today().slice(0,7)
     });
     await q.insert(db.notifications,{user_id,type:'payment',title:'Jednorazový vstup zakúpený ✅',body:`Zostatok: ${entries} vstup(ov)`,read:false,created_at:nowISO()});
+    createInvoice({user_id, client_name:u.name, client_email:u.email,
+      items:[{desc:'Jednorazový vstup', qty:1, total:+(amount||10)}], total:+(amount||10),
+      method:payment_method==='card'?'Karta na mieste':(payment_method||'Hotovosť')});
     res.json({ok:true, single_entries:entries});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -2548,6 +2805,9 @@ app.post('/api/attendance/record-membership', trainerAuth, async(req,res)=>{
       plan_id, recorded_by:req.trainerUser._id, created_at:nowISO(), month:today().slice(0,7)
     });
     await q.insert(db.notifications,{user_id,type:'membership',title:`Členstvo ${plan.name} aktivované ✅`,body:`Platné do ${expiresDate}`,read:false,created_at:nowISO()});
+    createInvoice({user_id, client_name:u.name, client_email:u.email,
+      items:[{desc:`Členstvo ${plan.name}`, qty:1, total:+(amount||plan.price)}], total:+(amount||plan.price),
+      method:payment_method==='card'?'Karta na mieste':(payment_method||'Hotovosť')});
     res.json({ok:true, plan_name:plan.name, expires_at:expiresDate});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -3205,9 +3465,11 @@ app.post('/api/admin/adspend', adminAuth, async(req,res)=>{
     const existing=await q.one(db.adspend,{month,source:source.toLowerCase()});
     if(existing){
       await q.update(db.adspend,{_id:existing._id},{$set:{amount:+amount,note:note||'',updated_at:nowISO()}});
+      await auditLog(req,'adspend_update',`${month}/${source}`,{amount:existing.amount},{amount:+amount},note||'');
       return res.json({ok:true,updated:true});
     }
     await q.insert(db.adspend,{month,source:source.toLowerCase(),amount:+amount,note:note||'',created_at:nowISO()});
+    await auditLog(req,'adspend_create',`${month}/${source}`,null,{amount:+amount},note||'');
     res.json({ok:true});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -3232,6 +3494,7 @@ app.get('/body-analysis',(req,res)=>res.sendFile(path.join(__dirname,'public','b
 app.get('/fit-premena',(req,res)=>res.sendFile(path.join(__dirname,'public','fit-premena.html')));
 app.get('/trainer',    (req,res)=>res.sendFile(path.join(__dirname,'public','trainer.html')));
 app.get('/booking-calendar',(req,res)=>res.sendFile(path.join(__dirname,'public','booking-calendar.html')));
+app.get('/invoice/:number',(req,res)=>res.sendFile(path.join(__dirname,'public','invoice.html')));
 // ── Marketing pages moved to the public website ───────────────────────────────
 const WEB_URL = 'https://latindancefusion.art';
 ['/programs','/about','/trainers','/cities','/rental','/contact','/meal-plan','/fitdays','/blog','/gallery','/podcast','/collaborate'].forEach(p=>{

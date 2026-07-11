@@ -261,6 +261,97 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
 - Natívna iOS/Android appka — PWA stačí; nerob.
 - SMS brána — drž email + push notifikácie, SMS až keď užívateľ vyslovene požiada.
 
+## FÁZA 8 — Marketing & Finance modul (ERP/CRM) — zadanie používateľa 2026-07-09
+
+> Cieľ: modul na úrovni Stripe Dashboard + HubSpot + Glofox. Implementuj po častiach,
+> každú časť otestuj a commitni samostatne. Časti A–C sú HOTOVÉ ✅ (2026-07-09), pokračuj D+.
+
+### A) Fakturácia ✅ HOTOVO
+> `db.invoices` (unikátne číslo RRRRNNNN = VS, SK náležitosti, dodávateľ z env
+> COMPANY_NAME/ADDRESS/ICO/DIC/ICDPH/IBAN), auto-vystavenie pri každej úspešnej platbe
+> (Stripe one-time/sub/obnova/shop, PayPal capture/sub/obnova, cash membership, vstup),
+> tlačiteľná stránka /invoice/:number (print→PDF), admin sekcia Faktúry (filtre rok/mesiac/
+> klient/stav, CSV export, storno, dobropis), email potvrdenie o zaplatení s linkom.
+
+### B) Finančný dashboard ✅ HOTOVO
+> /api/admin/finance/stats?from&to + admin sekcia Financie: obraty (deň/mesiac/rok/celkovo),
+> MRR/ARR (aktívne subscriptions), AOV, priem. hodnota klienta, noví členovia, nové členstvá,
+> expirované bez obnovy, graf príjmov (Chart.js), filtre dnes/včera/týždeň/min.týždeň/
+> mesiac/min.mesiac/vlastný interval.
+
+### C) Audit log ✅ HOTOVO
+> `db.audit` insert-only: kto/kedy/čo/pred/po/dôvod/IP. Hooky: storno, dobropis, adspend,
+> úprava platby. GET /api/admin/audit + tabuľka v admin sekcii Audit.
+
+### D) Kampane rozšírené (TODO)
+- db.campaigns: {name, platform(FB/IG/Google/TikTok/Email/SMS/Referral/Organic/Iné),
+  date_from/to, budget, goal, note, spend, clicks, registrations, first_visits, memberships}
+- admin CRUD UI v Marketing skupine; auto-metriky: CTR, ConvRate, RegRate, VisitRate,
+  MembershipConv, CPC, CPR, CPV, CPM(membership), ROAS=rev/cost, ROI=(profit/cost)*100,
+  CAC per kampaň. Revenue kampane = tržby klientov s utm_campaign == kampaň (atribúcia
+  už existuje na useroch). LTV podľa kampane do /api/admin/marketing/stats.
+
+### E) Rozšírené metriky (TODO)
+- LTV podľa mesta / typu členstva (rozšíriť marketing/stats)
+- Churn = zrušené členstvá / všetci členovia; Retention po 30/60/90/180/365 dňoch
+  (kohorty podľa created_at, aktivita = booking v okne); Payback period = CAC / priem.
+  mesačná útrata.
+
+### F) CRM detail klienta (TODO)
+- endpoint /api/admin/crm/client/:id: total paid, návštevy, priem. návštevnosť/mes.,
+  posledná návšteva, top štúdio, top inštruktor, LTV, história platieb/členstiev/rezervácií.
+- UI: klik na klienta v CRM otvorí detail panel.
+
+### G) Účtovníctvo (TODO)
+- exporty: CSV/Excel(xlsx cez SheetJS CDN v admin)/XML/ISDOC (ISDOC = CZ/SK e-faktúra XML
+  schéma — generuj minimálny validný doklad); mesačné/ročné uzávierky (agregácie);
+  príjmy podľa štúdia/mesta/inštruktora/typu členstva; DPH prehľad (ak COMPANY_ICDPH).
+- QR platba (PAY by square) pre neuhradené faktúry — lib "bysquare" alebo vlastný encoder.
+
+### H) Automatické emaily — doplniť chýbajúce (TODO)
+- existujú: registrácia, po kúpe členstva (potvrdenie+faktúra), pred koncom, po prvej
+  hodine, win-back, rezervácia potvrdená.
+- doplniť: po skončení členstva, po neúspešnej platbe (Stripe invoice.payment_failed
+  webhook), po storne/refunde, po zrušenej rezervácii.
+
+### I) Reporty výkonu trénerov (TODO — spec užívateľa sekcia 13)
+- /api/admin/trainers/performance?from&to&city&trainer: odučené hodiny (bookings
+  attended zoskupené podľa class+date), klienti, priem. obsadenosť, tržby z hodín
+  (transactions/payments cez bookings), noví vs opakovaní klienti, no-shows, storná,
+  priem. príjem/hodina, porovnanie s minulým obdobím; odporúčania (top/flop hodiny).
+- admin sekcia Tréneri s filtrami.
+
+### J) Výplaty trénerov (TODO — sekcia 14)
+- db.payout_rules per tréner: {trainer_id, fixed_per_class, pct_of_revenue, per_client,
+  bonus_full_class, bonus_new_member}; db.payouts: {trainer_id, month, base, bonuses,
+  deductions, total, status: draft/approved/paid/held/cancelled, history:[]}.
+- auto-výpočet z dochádzky; admin úprava s poznámkou (zapíš do history + audit);
+  exporty PDF(print)/CSV.
+
+### K) Refundácie (TODO — sekcia 15)
+- db.refunds: {payment_id, type: full/partial/storno/credit_note/app_credit/transfer,
+  amount, reason(enum), note, created_by}; Stripe refund cez API (POST /v1/refunds),
+  PayPal cez /v2/payments/captures/{id}/refund; app_credit → user.referral_credit.
+- každý refund: audit + dobropis + email klientovi + záznam v CRM histórii.
+- štatistiky: refund rate, podľa dôvodu/trénera/mesta/kampane; admin notifikácie
+  (vysoký počet, nad sumu, opakované u klienta).
+
+### L) Admin notifikácie & alerty (TODO — sekcia 11)
+- denný job: zlyhané platby, končiace členstvá (existuje), prekročený rozpočet kampane,
+  CAC ↑ / ROAS ↓ / LTV ↓ medzimesačne, churn spike, X dní bez platby → notifikácia adminom.
+
+### M) Exporty jedným klikom (TODO — sekcia 10)
+- admin sekcia Exporty: účtovníctvo/faktúry/platby/členovia/marketing/CRM/finance/
+  manažérsky report — CSV + XLSX (SheetJS).
+
+### Architektúra (drž sa!)
+- Všetky platobné záznamy v db.payments s poľom `provider` ('stripe'|'paypal'|'manual'|
+  'cash') — nové brány (GoPay, GP WebPay…) = nový provider, rovnaká schéma.
+- Ad platformy: db.campaigns.platform + budúce API importy plnia rovnaké polia
+  (spend/clicks/…): Meta Ads API, Google Ads API len nahradia ručné zadávanie.
+- Faktúry NIKDY nemazať, len status (paid/cancelled/credited) + dobropisy.
+- Audit log je insert-only.
+
 ## Čo NEROBIŤ
 
 - Neprepisuj architektúru (žiadny framework, žiadna migrácia z NeDB) — funguje to.
