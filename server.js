@@ -1135,7 +1135,7 @@ app.post('/api/admin/crm/send-expiry-warnings', adminAuth, async(req,res)=>{
     for(const m of expiring){
       const u = await q.one(db.users,{_id:m.user_id});
       if(u?.email){
-        await sendMail(u.email,'⚠️ Tvoje členstvo čoskoro vyprší',`<h2>Ahoj ${u.name}!</h2><p>Tvoje členstvo <b>${m.plan_name}</b> vyprší <b>${m.expires_at}</b>.</p><p>👉 <a href="https://latindancefusion.art/pricing">Obnov si členstvo</a> a neprerušuj svoju cestu!</p><p><i>Fusion Academy tím 💃</i></p>`).catch(()=>{});
+        await sendMail(u.email,'⚠️ Tvoje členstvo čoskoro vyprší',`<h2>Ahoj ${u.name}!</h2><p>Tvoje členstvo <b>${m.plan_name}</b> vyprší <b>${m.expires_at}</b>.</p><p>👉 <a href="${APP_URL}/pricing">Obnov si členstvo</a> a neprerušuj svoju cestu!</p><p><i>Fusion Academy tím 💃</i></p>`).catch(()=>{});
         await q.insert(db.notifications,{user_id:u._id,type:'expiry_warning',title:'⚠️ Členstvo čoskoro vyprší',body:`${m.plan_name} vyprší ${m.expires_at}`,read:false,created_at:nowISO()});
         sent++;
       }
@@ -4116,7 +4116,7 @@ app.get('/api/client/referral', auth, async(req,res)=>{
       if(refCount >= t.referrals) currentTier = t;
       else { nextTier = t; break; }
     }
-    const refLink = 'https://latindancefusion.art/r/' + (u.referral_code||'');
+    const refLink = APP_URL + '/r/' + (u.referral_code||'');
     res.json({
       referral_code: u.referral_code,
       ref_link: refLink,
@@ -4665,7 +4665,7 @@ app.get('/api/admin/churn-risk', adminAuth, async(req,res)=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 // EMAIL AUTOMATION ENGINE
 // ═══════════════════════════════════════════════════════════════════════════════
-const APP_URL = process.env.APP_URL || 'https://latindancefusion.art';
+const APP_URL = process.env.APP_URL || 'https://app.latindancefusion.art';
 
 // Enqueue all steps of a sequence for a user, starting from today + step.day
 async function enqueueSequence(userId, sequenceName, anchorDate){
