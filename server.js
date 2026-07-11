@@ -76,6 +76,9 @@ const db = {
   invoices:     new Datastore({ filename: path.join(DATA_DIR, 'invoices.db'),    autoload: true }),
   audit:        new Datastore({ filename: path.join(DATA_DIR, 'audit.db'),       autoload: true }),
   campaigns:    new Datastore({ filename: path.join(DATA_DIR, 'campaigns.db'),   autoload: true }),
+  payout_rules: new Datastore({ filename: path.join(DATA_DIR, 'payout_rules.db'),autoload: true }),
+  payouts:      new Datastore({ filename: path.join(DATA_DIR, 'payouts.db'),     autoload: true }),
+  refunds:      new Datastore({ filename: path.join(DATA_DIR, 'refunds.db'),     autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -2363,6 +2366,136 @@ app.get('/api/admin/trainers/performance', adminAuth, async(req,res)=>{
       totals:{ sessions:rows.reduce((s,r)=>s+r.sessions,0), attendances:rows.reduce((s,r)=>s+r.attendances,0),
         revenue:+rows.reduce((s,r)=>s+r.revenue,0).toFixed(2), avgOccupancy: rows.length?+(rows.reduce((s,r)=>s+r.occupancy,0)/rows.length).toFixed(1):0 } });
   } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ─── PHASE J: Výplaty trénerov ──────────────────────────────────────────────────
+// Per-trainer stats for a month (YYYY-MM): sessions, attendances, revenue, new clients, full classes
+async function trainerMonthStats(month){
+  const classes=await q.find(db.classes,{});
+  const clsMap=Object.fromEntries(classes.map(c=>[c._id,c]));
+  const bookings=await q.find(db.bookings,{});
+  const bDate=b=>b.booking_date||(b.created_at||'').slice(0,10)||'';
+  const firstBookingOf={};
+  for(const b of bookings){ if(!b.user_id||b.status==='cancelled') continue; const d=bDate(b); if(!firstBookingOf[b.user_id]||d<firstBookingOf[b.user_id]) firstBookingOf[b.user_id]=d; }
+  const stats={};
+  const sessionAtt={}; // instructor|sessKey → attendance count
+  for(const b of bookings){
+    const d=bDate(b); if(!d.startsWith(month)) continue;
+    const cls=clsMap[b.class_id]; const ins=cls?.instructor||'—';
+    const s=stats[ins]=stats[ins]||{instructor:ins, sessions:new Set(), attendances:0, revenue:0, newClients:new Set(), fullClasses:0};
+    if(b.status==='cancelled'||b.status==='no_show') continue;
+    if(['attended','confirmed'].includes(b.status)){
+      const sk=ins+'|'+b.class_id+'|'+d; s.sessions.add(sk.split('|').slice(1).join('|'));
+      sessionAtt[sk]=(sessionAtt[sk]||0)+1;
+      s.attendances++; s.revenue+=(+cls?.price||10);
+      if(b.user_id){ if(firstBookingOf[b.user_id]===d) s.newClients.add(b.user_id); }
+    }
+  }
+  // full classes: sessions where attendance >= capacity
+  for(const [sk,att] of Object.entries(sessionAtt)){
+    const [ins,cid]=sk.split('|'); const cap=clsMap[cid]?.capacity||20;
+    if(att>=cap && stats[ins]) stats[ins].fullClasses++;
+  }
+  return Object.values(stats).map(s=>({instructor:s.instructor, sessions:s.sessions.size, attendances:s.attendances, revenue:+s.revenue.toFixed(2), newClients:s.newClients.size, fullClasses:s.fullClasses}));
+}
+
+const DEFAULT_PAYOUT_RULE={fixed_per_class:0, pct_of_revenue:0, per_client:0, bonus_full_class:0, bonus_new_member:0};
+function computePayout(rule, st){
+  const r={...DEFAULT_PAYOUT_RULE, ...(rule||{})};
+  const base=+(r.fixed_per_class*st.sessions + r.pct_of_revenue/100*st.revenue + r.per_client*st.attendances).toFixed(2);
+  const bonuses=+(r.bonus_full_class*st.fullClasses + r.bonus_new_member*st.newClients).toFixed(2);
+  return {base, bonuses};
+}
+
+app.get('/api/admin/payout-rules', adminAuth, async(req,res)=>{
+  res.json(await q.find(db.payout_rules,{}));
+});
+app.put('/api/admin/payout-rules/:trainer', adminAuth, async(req,res)=>{
+  const trainer=req.params.trainer;
+  const fields={};
+  for(const k of Object.keys(DEFAULT_PAYOUT_RULE)) fields[k]=+req.body[k]||0;
+  const existing=await q.one(db.payout_rules,{trainer});
+  if(existing){ await q.update(db.payout_rules,{_id:existing._id},{$set:{...fields,updated_at:nowISO()}}); }
+  else { await q.insert(db.payout_rules,{trainer,...fields,created_at:nowISO()}); }
+  await auditLog(req,'payout_rule_update',trainer,existing||null,fields,'');
+  res.json({ok:true});
+});
+
+// Draft payouts for a month = computed stats × rules, merged with any saved payout records
+app.get('/api/admin/payouts', adminAuth, async(req,res)=>{
+  try {
+    const month=req.query.month||today().slice(0,7);
+    const stats=await trainerMonthStats(month);
+    const rules=Object.fromEntries((await q.find(db.payout_rules,{})).map(r=>[r.trainer,r]));
+    const saved=Object.fromEntries((await q.find(db.payouts,{month})).map(p=>[p.trainer,p]));
+    const rows=stats.map(st=>{
+      const {base,bonuses}=computePayout(rules[st.instructor],st);
+      const sv=saved[st.instructor];
+      const deductions=sv?.deductions||0;
+      return { trainer:st.instructor, month, ...st,
+        base:sv?sv.base:base, bonuses:sv?sv.bonuses:bonuses, deductions,
+        total:+(((sv?sv.base:base)+(sv?sv.bonuses:bonuses)-deductions)).toFixed(2),
+        status:sv?.status||'draft', saved:!!sv, id:sv?._id||null, note:sv?.note||'', history:sv?.history||[] };
+    });
+    res.json({month, rows, rules});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Save/generate a payout record (locks the computed numbers)
+app.post('/api/admin/payouts', adminAuth, async(req,res)=>{
+  try {
+    const {trainer, month}=req.body;
+    if(!trainer||!month) return res.status(400).json({error:'Chýba trainer/month'});
+    const stats=(await trainerMonthStats(month)).find(s=>s.instructor===trainer)||{sessions:0,attendances:0,revenue:0,newClients:0,fullClasses:0};
+    const rule=await q.one(db.payout_rules,{trainer});
+    const {base,bonuses}=computePayout(rule,stats);
+    const existing=await q.one(db.payouts,{trainer,month});
+    const rec={trainer,month,base,bonuses,deductions:existing?.deductions||0,
+      total:+(base+bonuses-(existing?.deductions||0)).toFixed(2),
+      stats,status:existing?.status||'draft',note:existing?.note||'',updated_at:nowISO()};
+    let saved;
+    if(existing){ await q.update(db.payouts,{_id:existing._id},{$set:rec}); saved={...existing,...rec}; }
+    else { saved=await q.insert(db.payouts,{...rec,history:[],created_at:nowISO()}); }
+    await auditLog(req,'payout_generate',`${trainer} ${month}`,existing||null,rec,'');
+    res.json({ok:true, id:saved._id});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Update status / deductions / note (append to history + audit)
+const PAYOUT_STATUSES=['draft','approved','paid','held','cancelled'];
+app.put('/api/admin/payouts/:id', adminAuth, async(req,res)=>{
+  try {
+    const p=await q.one(db.payouts,{_id:req.params.id});
+    if(!p) return res.status(404).json({error:'Výplata nenájdená'});
+    const patch={};
+    if(req.body.status!==undefined){ if(!PAYOUT_STATUSES.includes(req.body.status)) return res.status(400).json({error:'Neplatný stav'}); patch.status=req.body.status; }
+    if(req.body.deductions!==undefined) patch.deductions=+req.body.deductions||0;
+    if(req.body.note!==undefined) patch.note=String(req.body.note);
+    const deductions=patch.deductions!==undefined?patch.deductions:p.deductions;
+    patch.total=+(p.base+p.bonuses-deductions).toFixed(2);
+    patch.updated_at=nowISO();
+    const histEntry={at:nowISO(), actor:req._auditActor||null, change:{...patch}, reason:req.body.reason||''};
+    await q.update(db.payouts,{_id:p._id},{$set:patch, $push:{history:histEntry}});
+    await auditLog(req,'payout_update',`${p.trainer} ${p.month}`,{status:p.status,deductions:p.deductions,total:p.total},patch,req.body.reason||'');
+    res.json({ok:true});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.get('/api/admin/payouts/export.csv', adminAuth, async(req,res)=>{
+  const month=req.query.month||today().slice(0,7);
+  const stats=await trainerMonthStats(month);
+  const rules=Object.fromEntries((await q.find(db.payout_rules,{})).map(r=>[r.trainer,r]));
+  const saved=Object.fromEntries((await q.find(db.payouts,{month})).map(p=>[p.trainer,p]));
+  const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`; const num=n=>(+n).toFixed(2).replace('.',',');
+  const rows=[['Tréner','Mesiac','Hodiny','Účasti','Tržby','Základ','Bonusy','Zrážky','Spolu','Stav'].join(';')];
+  for(const st of stats){
+    const {base,bonuses}=computePayout(rules[st.instructor],st); const sv=saved[st.instructor];
+    const b=sv?sv.base:base, bo=sv?sv.bonuses:bonuses, ded=sv?.deductions||0;
+    rows.push([st.instructor,month,st.sessions,st.attendances,num(st.revenue),num(b),num(bo),num(ded),num(b+bo-ded),sv?.status||'draft'].map(esc).join(';'));
+  }
+  res.setHeader('Content-Type','text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition',`attachment; filename=vyplaty_${month}.csv`);
+  res.send('﻿'+rows.join('\r\n'));
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

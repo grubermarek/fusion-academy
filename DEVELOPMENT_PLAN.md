@@ -323,12 +323,11 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
   tržby z hodín (účasti×cena), €/hodina, trend vs predošlé obdobie, odporúčania.
   Admin sekcia „Výkon trénerov" s filtrami mesto/tréner + KPI + tabuľka.
 
-### J) Výplaty trénerov (TODO — sekcia 14)
-- db.payout_rules per tréner: {trainer_id, fixed_per_class, pct_of_revenue, per_client,
-  bonus_full_class, bonus_new_member}; db.payouts: {trainer_id, month, base, bonuses,
-  deductions, total, status: draft/approved/paid/held/cancelled, history:[]}.
-- auto-výpočet z dochádzky; admin úprava s poznámkou (zapíš do history + audit);
-  exporty PDF(print)/CSV.
+### J) Výplaty trénerov — ✅ HOTOVO
+- db.payout_rules (fixed_per_class/pct_of_revenue/per_client/bonus_full_class/
+  bonus_new_member) + db.payouts (base/bonuses/deductions/total/status draft→approved→
+  paid→held→cancelled/history). Auto-výpočet z dochádzky (trainerMonthStats+computePayout),
+  admin úprava zrážok/stavu s dôvodom → history + audit. CSV export. Sekcia „Výplaty".
 
 ### K) Refundácie (TODO — sekcia 15)
 - db.refunds: {payment_id, type: full/partial/storno/credit_note/app_credit/transfer,

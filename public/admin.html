@@ -133,6 +133,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('retention')"><i class="bi bi-people-fill me-2"></i>Retencia & LTV</a>
       <a class="nav-link" href="#" onclick="show('accounting')"><i class="bi bi-calculator me-2"></i>Účtovníctvo</a>
       <a class="nav-link" href="#" onclick="show('trainers')"><i class="bi bi-person-badge me-2"></i>Výkon trénerov</a>
+      <a class="nav-link" href="#" onclick="show('payouts')"><i class="bi bi-cash-stack me-2"></i>Výplaty trénerov</a>
       <a class="nav-link" href="#" onclick="show('transactions')"><i class="bi bi-receipt me-2"></i>Všetky predaje</a>
       <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby PayPal</a>
       <a class="nav-link" href="#" onclick="show('audit')"><i class="bi bi-shield-lock me-2"></i>Audit log</a>
@@ -962,6 +963,30 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </table></div>
   </div>
 
+  <!-- VÝPLATY TRÉNEROV -->
+  <div class="section" id="s-payouts">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
+      <h4 class="fw-bold mb-0">💵 Výplaty trénerov</h4>
+      <div class="d-flex gap-2 align-items-center">
+        <input type="month" id="poMonth" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:150px" onchange="loadPayouts()">
+        <button class="btn btn-sm btn-outline-light" onclick="window.open('/api/admin/payouts/export.csv?month='+document.getElementById('poMonth').value,'_blank')"><i class="bi bi-filetype-csv"></i> CSV</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('poRules').classList.toggle('d-none')"><i class="bi bi-sliders"></i> Odmeny</button>
+      </div>
+    </div>
+    <p class="text-muted small mb-3">Automatický výpočet z dochádzky podľa pravidiel odmien. Zrážky a stav uprav ručne — každá zmena sa loguje do auditu.</p>
+    <div id="poRules" class="card bg-dark border-secondary mb-3 d-none"><div class="card-body">
+      <h6 class="fw-bold mb-2">Pravidlá odmien (€)</h6>
+      <div class="table-responsive"><table class="table table-dark table-sm align-middle mb-0" style="font-size:.78rem">
+        <thead><tr><th>Tréner</th><th>Fixne/hodina</th><th>% z tržieb</th><th>€/klient</th><th>Bonus plná hodina</th><th>Bonus nový člen</th><th></th></tr></thead>
+        <tbody id="poRulesBody"></tbody>
+      </table></div>
+    </div></div>
+    <div class="table-responsive"><table class="table table-dark table-hover align-middle" style="font-size:.82rem">
+      <thead><tr><th>Tréner</th><th>Hodiny</th><th>Účasti</th><th>Tržby</th><th>Základ</th><th>Bonusy</th><th>Zrážky</th><th>Spolu</th><th>Stav</th><th>Akcie</th></tr></thead>
+      <tbody id="poBody"><tr><td colspan="10" class="text-muted text-center py-4">Načítavam…</td></tr></tbody>
+    </table></div>
+  </div>
+
   <!-- VÝKON TRÉNEROV -->
   <div class="section" id="s-trainers">
     <h4 class="fw-bold mb-1">🏅 Výkon trénerov</h4>
@@ -1136,7 +1161,7 @@ function showToast(msg,type='success'){
 }
 
 const GROUP_TITLES={home:'Domov',manage:'Správa',marketing:'Marketing',reports:'Financie & reporty',partners:'Partneri (MLM)'};
-const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',campaigns:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',retention:'reports',accounting:'reports',trainers:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
+const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',campaigns:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',retention:'reports',accounting:'reports',trainers:'reports',payouts:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('rail-'+g)?.classList.add('active');
@@ -1175,6 +1200,63 @@ function show(sec){
   if(sec==='retention')loadRetention();
   if(sec==='accounting')initAccounting();
   if(sec==='trainers')initTrainers();
+  if(sec==='payouts')initPayouts();
+}
+
+/* ─── VÝPLATY TRÉNEROV ────────────────────────────────────── */
+const PO_STATUS={draft:'Návrh',approved:'Schválené',paid:'Vyplatené',held:'Pozdržané',cancelled:'Zrušené'};
+const PO_STATUS_C={draft:'secondary',approved:'info',paid:'success',held:'warning',cancelled:'danger'};
+let _poInit=false;
+function initPayouts(){ if(!_poInit){ _poInit=true; document.getElementById('poMonth').value=new Date().toISOString().slice(0,7); } loadPayouts(); }
+async function loadPayouts(){
+  const month=document.getElementById('poMonth').value;
+  const d=await api('/api/admin/payouts?month='+month);
+  if(!d||d.error){ document.getElementById('poBody').innerHTML='<tr><td colspan="10" class="text-danger py-3">Chyba.</td></tr>'; return; }
+  // rules editor
+  const rb=document.getElementById('poRulesBody');
+  const inp=(tr,f,v)=>`<input type="number" step="0.01" value="${v||0}" id="rule_${btoa(unescape(encodeURIComponent(tr))).replace(/=/g,'')}_${f}" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:82px">`;
+  rb.innerHTML=d.rows.map(r=>{ const rule=d.rules[r.trainer]||{};
+    return `<tr><td class="fw-semibold">${escHtml(r.trainer)}</td>
+      <td>${inp(r.trainer,'fixed_per_class',rule.fixed_per_class)}</td>
+      <td>${inp(r.trainer,'pct_of_revenue',rule.pct_of_revenue)}</td>
+      <td>${inp(r.trainer,'per_client',rule.per_client)}</td>
+      <td>${inp(r.trainer,'bonus_full_class',rule.bonus_full_class)}</td>
+      <td>${inp(r.trainer,'bonus_new_member',rule.bonus_new_member)}</td>
+      <td><button class="btn btn-sm btn-warning py-0 px-2" onclick='savePayoutRule(${JSON.stringify(r.trainer)})'>Uložiť</button></td></tr>`;
+  }).join('')||'<tr><td colspan="7" class="text-muted text-center py-2">Žiadni tréneri s dochádzkou.</td></tr>';
+  // payout rows
+  document.getElementById('poBody').innerHTML=d.rows.length? d.rows.map(r=>`<tr>
+    <td class="fw-semibold">${escHtml(r.trainer)}</td><td>${r.sessions}</td><td>${r.attendances}</td><td>${r.revenue.toFixed(2)} €</td>
+    <td>${r.base.toFixed(2)} €</td><td>${r.bonuses.toFixed(2)} €</td>
+    <td><input type="number" step="0.01" value="${r.deductions||0}" id="ded_${r.id||''}" data-trainer='${escHtml(r.trainer)}' style="width:78px" class="form-control form-control-sm bg-dark text-light border-secondary" ${r.saved?'':'disabled title="Najprv vygeneruj"'}></td>
+    <td class="fw-bold" style="color:#C9A24C">${r.total.toFixed(2)} €</td>
+    <td>${r.saved?`<select class="form-select form-select-sm bg-dark text-light border-secondary" style="width:120px" onchange="payoutStatus('${r.id}',this.value)">${Object.entries(PO_STATUS).map(([k,v])=>`<option value="${k}"${r.status===k?' selected':''}>${v}</option>`).join('')}</select>`:`<span class="badge bg-${PO_STATUS_C[r.status]}">${PO_STATUS[r.status]}</span>`}</td>
+    <td>${r.saved
+      ? `<button class="btn btn-sm btn-outline-warning py-0 px-2" onclick="savePayoutDeduction('${r.id}')">Uložiť zrážku</button>`
+      : `<button class="btn btn-sm btn-success py-0 px-2" onclick='generatePayout(${JSON.stringify(r.trainer)})'>Vygenerovať</button>`}</td>
+  </tr>`).join('') : '<tr><td colspan="10" class="text-muted text-center py-4">Žiadne dáta pre tento mesiac.</td></tr>';
+}
+async function savePayoutRule(trainer){
+  const key=btoa(unescape(encodeURIComponent(trainer))).replace(/=/g,'');
+  const g=f=>+document.getElementById(`rule_${key}_${f}`).value||0;
+  const body={fixed_per_class:g('fixed_per_class'),pct_of_revenue:g('pct_of_revenue'),per_client:g('per_client'),bonus_full_class:g('bonus_full_class'),bonus_new_member:g('bonus_new_member')};
+  const d=await api('/api/admin/payout-rules/'+encodeURIComponent(trainer),{method:'PUT',body:JSON.stringify(body)});
+  if(d?.ok){ showToast('Pravidlo uložené ✓','success'); loadPayouts(); }
+}
+async function generatePayout(trainer){
+  const month=document.getElementById('poMonth').value;
+  const d=await api('/api/admin/payouts',{method:'POST',body:JSON.stringify({trainer,month})});
+  if(d?.ok){ showToast('Výplata vygenerovaná ✓','success'); loadPayouts(); }
+}
+async function payoutStatus(id,status){
+  const d=await api('/api/admin/payouts/'+id,{method:'PUT',body:JSON.stringify({status})});
+  if(d?.ok){ showToast('Stav zmenený ✓','success'); loadPayouts(); }
+}
+async function savePayoutDeduction(id){
+  const val=+document.getElementById('ded_'+id).value||0;
+  const reason=prompt('Dôvod zrážky (zapíše sa do auditu):','')||'';
+  const d=await api('/api/admin/payouts/'+id,{method:'PUT',body:JSON.stringify({deductions:val,reason})});
+  if(d?.ok){ showToast('Zrážka uložená ✓','success'); loadPayouts(); }
 }
 
 /* ─── VÝKON TRÉNEROV ─────────────────────────────────────── */
