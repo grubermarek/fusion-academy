@@ -329,13 +329,12 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
   paid→held→cancelled/history). Auto-výpočet z dochádzky (trainerMonthStats+computePayout),
   admin úprava zrážok/stavu s dôvodom → history + audit. CSV export. Sekcia „Výplaty".
 
-### K) Refundácie (TODO — sekcia 15)
-- db.refunds: {payment_id, type: full/partial/storno/credit_note/app_credit/transfer,
-  amount, reason(enum), note, created_by}; Stripe refund cez API (POST /v1/refunds),
-  PayPal cez /v2/payments/captures/{id}/refund; app_credit → user.referral_credit.
-- každý refund: audit + dobropis + email klientovi + záznam v CRM histórii.
-- štatistiky: refund rate, podľa dôvodu/trénera/mesta/kampane; admin notifikácie
-  (vysoký počet, nad sumu, opakované u klienta).
+### K) Refundácie — ✅ HOTOVO
+- db.refunds (type full/partial/storno/credit_note/app_credit/transfer, reason enum).
+  Stripe refund (POST /v1/refunds cez stripeApi), PayPal (/v2/payments/captures/{id}/
+  refund cez ppRefundCapture), app_credit → referral_credit. Každý refund: gateway call +
+  dobropis + audit + email + notifikácia. Štatistiky: refund rate, podľa dôvodu/typu.
+  Sekcia „Refundácie" s modálom (výber platby) + stats. TODO: alerty (rieši fáza L).
 
 ### L) Admin notifikácie & alerty (TODO — sekcia 11)
 - denný job: zlyhané platby, končiace členstvá (existuje), prekročený rozpočet kampane,

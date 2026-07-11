@@ -134,6 +134,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('accounting')"><i class="bi bi-calculator me-2"></i>Účtovníctvo</a>
       <a class="nav-link" href="#" onclick="show('trainers')"><i class="bi bi-person-badge me-2"></i>Výkon trénerov</a>
       <a class="nav-link" href="#" onclick="show('payouts')"><i class="bi bi-cash-stack me-2"></i>Výplaty trénerov</a>
+      <a class="nav-link" href="#" onclick="show('refunds')"><i class="bi bi-arrow-counterclockwise me-2"></i>Refundácie</a>
       <a class="nav-link" href="#" onclick="show('transactions')"><i class="bi bi-receipt me-2"></i>Všetky predaje</a>
       <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby PayPal</a>
       <a class="nav-link" href="#" onclick="show('audit')"><i class="bi bi-shield-lock me-2"></i>Audit log</a>
@@ -963,6 +964,21 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </table></div>
   </div>
 
+  <!-- REFUNDÁCIE -->
+  <div class="section" id="s-refunds">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
+      <h4 class="fw-bold mb-0">↩️ Refundácie</h4>
+      <button class="btn btn-sm btn-warning" onclick="openRefund()"><i class="bi bi-plus-lg"></i> Nová refundácia</button>
+    </div>
+    <p class="text-muted small mb-3">Vrátenie platieb cez Stripe/PayPal, storná, dobropisy a kredit do aplikácie. Každá refundácia = audit + dobropis + email klientovi.</p>
+    <div id="refStats" class="row g-3 mb-3"></div>
+    <div class="row g-3 mb-3"><div class="col-lg-5"><div class="card bg-dark border-secondary h-100"><div class="card-body"><h6 class="fw-bold mb-2">Podľa dôvodu</h6><div id="refByReason"></div></div></div></div></div>
+    <div class="table-responsive"><table class="table table-dark table-hover align-middle" style="font-size:.82rem">
+      <thead><tr><th>Dátum</th><th>Klient</th><th>Typ</th><th>Suma</th><th>Dôvod</th><th>Brána</th><th>Dobropis</th><th>Poznámka</th></tr></thead>
+      <tbody id="refBody"><tr><td colspan="8" class="text-muted text-center py-4">Načítavam…</td></tr></tbody>
+    </table></div>
+  </div>
+
   <!-- VÝPLATY TRÉNEROV -->
   <div class="section" id="s-payouts">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
@@ -1066,6 +1082,30 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
 </div><!-- /main -->
 
+<!-- Refund Modal -->
+<div id="refundModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#161616;border:1px solid #333;border-radius:16px;padding:26px;width:min(620px,96vw);max-height:92vh;overflow-y:auto">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="mb-0 fw-bold" style="color:#C9A84C">↩️ Nová refundácia</h5>
+      <button onclick="document.getElementById('refundModal').style.display='none'" style="background:none;border:none;color:#888;font-size:1.3rem;cursor:pointer">✕</button>
+    </div>
+    <label class="text-muted small">Platba na refundáciu</label>
+    <input id="refSearch" class="form-control form-control-sm bg-dark text-light border-secondary mb-1" placeholder="Hľadať klienta / platbu…" oninput="clearTimeout(window.__rfT);window.__rfT=setTimeout(refLoadPayments,300)">
+    <div id="refPayList" style="max-height:180px;overflow-y:auto;border:1px solid #2a2a2a;border-radius:8px;margin-bottom:12px"></div>
+    <div id="refSelected" class="text-muted small mb-2"></div>
+    <div class="row g-2">
+      <div class="col-6"><label class="text-muted small">Typ</label><select id="refType" class="form-select form-select-sm bg-dark text-light border-secondary"></select></div>
+      <div class="col-6"><label class="text-muted small">Suma (€)</label><input id="refAmount" type="number" step="0.01" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+      <div class="col-12"><label class="text-muted small">Dôvod</label><select id="refReason" class="form-select form-select-sm bg-dark text-light border-secondary"></select></div>
+      <div class="col-12"><label class="text-muted small">Poznámka</label><input id="refNote" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+    </div>
+    <div class="d-flex justify-content-end gap-2 mt-3">
+      <button class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('refundModal').style.display='none'">Zrušiť</button>
+      <button class="btn btn-sm btn-warning" onclick="submitRefund()">Refundovať</button>
+    </div>
+  </div>
+</div>
+
 <!-- Client 360 Detail Modal -->
 <div id="clientDetailModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:flex-start;justify-content:center;overflow-y:auto;padding:24px">
   <div style="background:#161616;border:1px solid #333;border-radius:16px;padding:26px;width:min(880px,96vw);margin:auto">
@@ -1161,7 +1201,7 @@ function showToast(msg,type='success'){
 }
 
 const GROUP_TITLES={home:'Domov',manage:'Správa',marketing:'Marketing',reports:'Financie & reporty',partners:'Partneri (MLM)'};
-const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',campaigns:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',retention:'reports',accounting:'reports',trainers:'reports',payouts:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
+const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',campaigns:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',retention:'reports',accounting:'reports',trainers:'reports',payouts:'reports',refunds:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('rail-'+g)?.classList.add('active');
@@ -1201,6 +1241,64 @@ function show(sec){
   if(sec==='accounting')initAccounting();
   if(sec==='trainers')initTrainers();
   if(sec==='payouts')initPayouts();
+  if(sec==='refunds')loadRefunds();
+}
+
+/* ─── REFUNDÁCIE ─────────────────────────────────────────── */
+const REF_TYPE_LABEL={full:'Plná',partial:'Čiastočná',storno:'Storno',credit_note:'Dobropis',app_credit:'Kredit do appky',transfer:'Prevod'};
+let _refMeta=null, _refSelPay=null;
+async function loadRefunds(){
+  const d=await api('/api/admin/refunds');
+  if(!d||d.error){ document.getElementById('refBody').innerHTML='<tr><td colspan="8" class="text-danger py-3">Chyba.</td></tr>'; return; }
+  const kpi=(l,v,c)=>`<div class="col-6 col-md-3"><div class="card bg-dark border-secondary"><div class="card-body py-3"><div class="text-muted" style="font-size:.66rem;text-transform:uppercase">${l}</div><div class="fw-bold" style="font-size:1.35rem;color:${c||'#fff'}">${v}</div></div></div></div>`;
+  document.getElementById('refStats').innerHTML=
+    kpi('Refundované spolu',d.total.toFixed(2)+' €','#e0a656')+kpi('Počet',d.count)+kpi('Refund rate',d.refundRate+'%',d.refundRate>5?'#e05656':'#fff');
+  const max=Math.max(...(d.byReason.map(r=>r.amount)),1);
+  document.getElementById('refByReason').innerHTML= d.byReason.length? d.byReason.map(r=>`
+    <div class="d-flex align-items-center justify-content-between mb-2" style="gap:10px">
+      <div style="min-width:120px;font-size:.8rem">${escHtml(r.reason)}</div>
+      <div class="flex-grow-1" style="background:#151515;border-radius:6px;height:16px;overflow:hidden"><div style="width:${Math.max(5,r.amount/max*100)}%;height:100%;background:linear-gradient(90deg,#8a5a2e,#e0a656)"></div></div>
+      <div style="min-width:70px;text-align:right;font-size:.8rem" class="fw-bold">${r.amount.toFixed(2)} €</div></div>`).join('') : '<div class="text-muted small">Žiadne refundácie.</div>';
+  document.getElementById('refBody').innerHTML= d.refunds.length? d.refunds.map(r=>`<tr>
+    <td>${(r.created_at||'').slice(0,10)}</td><td>${escHtml(r.client_name||'—')}</td>
+    <td><span class="badge bg-secondary">${REF_TYPE_LABEL[r.type]||r.type}</span></td>
+    <td class="fw-bold" style="color:#e0a656">${(+r.amount).toFixed(2)} €</td>
+    <td>${escHtml(d.reasons[r.reason]||r.reason)}</td><td>${escHtml(r.gateway||'—')}</td>
+    <td>${r.credit_note?`<a href="/invoice/${r.credit_note}" target="_blank" style="color:#C9A24C">${r.credit_note}</a>`:'—'}</td>
+    <td class="text-muted small">${escHtml(r.note||'')}</td></tr>`).join('') : '<tr><td colspan="8" class="text-muted text-center py-4">Zatiaľ žiadne refundácie.</td></tr>';
+}
+async function openRefund(){
+  _refSelPay=null; document.getElementById('refSelected').innerHTML=''; document.getElementById('refSearch').value=''; document.getElementById('refNote').value=''; document.getElementById('refAmount').value='';
+  if(!_refMeta) _refMeta=await api('/api/admin/refund-reasons');
+  document.getElementById('refType').innerHTML=Object.entries(REF_TYPE_LABEL).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');
+  document.getElementById('refReason').innerHTML=Object.entries(_refMeta.reasons).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');
+  document.getElementById('refundModal').style.display='flex';
+  refLoadPayments();
+}
+async function refLoadPayments(){
+  const q=document.getElementById('refSearch').value;
+  const list=await api('/api/admin/refundable-payments?q='+encodeURIComponent(q));
+  document.getElementById('refPayList').innerHTML= (list&&list.length)? list.map(p=>`
+    <div onclick='refPick(${JSON.stringify(p)})' style="padding:8px 10px;border-bottom:1px solid #222;cursor:pointer;font-size:.8rem" onmouseover="this.style.background='#1e1e1e'" onmouseout="this.style.background=''">
+      <b>${escHtml(p.client)}</b> · ${p.amount.toFixed(2)} € · <span class="text-muted">${escHtml(p.description)} · ${p.date} · ${p.gateway}</span></div>`).join('')
+    : '<div class="text-muted small p-2">Žiadne refundovateľné platby.</div>';
+}
+function refPick(p){
+  _refSelPay=p;
+  document.getElementById('refAmount').value=p.amount.toFixed(2);
+  document.getElementById('refSelected').innerHTML=`✔️ Vybraté: <b>${escHtml(p.client)}</b> — ${p.amount.toFixed(2)} € (${escHtml(p.gateway)})`;
+}
+async function submitRefund(){
+  const type=document.getElementById('refType').value;
+  const needsPay=!['app_credit','transfer'].includes(type);
+  if(!_refSelPay && needsPay){ showToast('Vyber platbu na refundáciu','error'); return; }
+  const body={ payment_id:_refSelPay?.id||null, type, amount:+document.getElementById('refAmount').value||0,
+    reason:document.getElementById('refReason').value, note:document.getElementById('refNote').value };
+  if(!(body.amount>0)){ showToast('Zadaj sumu','error'); return; }
+  if(!confirm(`Refundovať ${body.amount.toFixed(2)} €?`)) return;
+  const d=await api('/api/admin/refunds',{method:'POST',body:JSON.stringify(body)});
+  if(d?.ok){ showToast('Refundácia spracovaná ✓'+(d.credit_note?' · dobropis '+d.credit_note:''),'success'); document.getElementById('refundModal').style.display='none'; loadRefunds(); }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 
 /* ─── VÝPLATY TRÉNEROV ────────────────────────────────────── */

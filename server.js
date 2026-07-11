@@ -2498,6 +2498,110 @@ app.get('/api/admin/payouts/export.csv', adminAuth, async(req,res)=>{
   res.send('﻿'+rows.join('\r\n'));
 });
 
+// ─── PHASE K: Refundácie ────────────────────────────────────────────────────────
+const REFUND_REASONS={ requested:'Na žiadosť klienta', duplicate:'Duplicitná platba', service_issue:'Problém so službou', cancelled_class:'Zrušená hodina', goodwill:'Ústretovosť', error:'Chyba účtovania', other:'Iné' };
+const REFUND_TYPES=['full','partial','storno','credit_note','app_credit','transfer'];
+
+async function ppRefundCapture(captureId, amount){
+  const token=await ppGetToken();
+  const r=await fetch(`${PAYPAL_BASE}/v2/payments/captures/${captureId}/refund`,{
+    method:'POST', headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'},
+    body: JSON.stringify(amount?{amount:{value:(+amount).toFixed(2),currency_code:'EUR'}}:{})
+  });
+  return { status:r.status, body: await r.json().catch(()=>({})) };
+}
+
+app.get('/api/admin/refund-reasons', adminAuth, (req,res)=>res.json({reasons:REFUND_REASONS,types:REFUND_TYPES}));
+
+app.post('/api/admin/refunds', adminAuth, async(req,res)=>{
+  try {
+    const {payment_id, type, amount, reason, note}=req.body;
+    if(!REFUND_TYPES.includes(type)) return res.status(400).json({error:'Neplatný typ refundu'});
+    const pay = payment_id ? await q.one(db.payments,{_id:payment_id}) : null;
+    const user = pay?.user_id ? await q.one(db.users,{_id:pay.user_id}) : null;
+    const amt = +amount || (pay? +pay.amount : 0);
+    if(!(amt>0)) return res.status(400).json({error:'Neplatná suma'});
+    if(pay && amt> (+pay.amount||0)+0.001) return res.status(400).json({error:'Suma prevyšuje platbu'});
+
+    let gateway={method:'manual', ref:null, ok:true};
+    // Actual gateway refund (skip for app_credit / manual transfer)
+    if(type!=='app_credit' && type!=='transfer' && pay){
+      if(pay.stripe_payment_intent && STRIPE_SECRET){
+        const r=await stripeApi('refunds',{payment_intent:pay.stripe_payment_intent, amount:Math.round(amt*100)});
+        gateway={method:'stripe', ref:r.body?.id||null, ok:r.status<300};
+        if(!gateway.ok) return res.status(400).json({error:'Stripe refund zlyhal: '+(r.body?.error?.message||r.status)});
+      } else if(pay.paypal_capture_id && PAYPAL_CLIENT_ID){
+        const r=await ppRefundCapture(pay.paypal_capture_id, type==='partial'?amt:null);
+        gateway={method:'paypal', ref:r.body?.id||null, ok:r.status<300};
+        if(!gateway.ok) return res.status(400).json({error:'PayPal refund zlyhal: '+(r.body?.message||r.status)});
+      }
+    }
+    // App credit → bump referral_credit
+    if(type==='app_credit' && user){
+      await q.update(db.users,{_id:user._id},{$set:{referral_credit:+((+user.referral_credit||0)+amt).toFixed(2)}});
+    }
+    // Credit note for the original invoice, if we can find it
+    let creditNote=null;
+    if(pay && user){
+      const inv=(await q.find(db.invoices,{user_id:user._id})).filter(i=>i.type!=='credit_note' && i.status==='paid')
+        .sort((a,b)=>(b.issued_at||'').localeCompare(a.issued_at||''))[0];
+      if(inv){
+        const cn=await createInvoice({user_id:user._id, client_name:inv.client_name, client_email:inv.client_email,
+          items:[{desc:`Refundácia k faktúre ${inv.number}${reason?` — ${REFUND_REASONS[reason]||reason}`:''}`, qty:1, total:-amt}],
+          total:-amt, method:inv.payment_method, type:'credit_note', related_invoice:inv.number});
+        if(cn){ creditNote=cn.number; await q.update(db.invoices,{_id:inv._id},{$set:{status:'credited',credit_note:cn.number}}); }
+      }
+    }
+    const refund=await q.insert(db.refunds,{
+      payment_id:payment_id||null, user_id:user?._id||null, client_name:user?.name||pay?.description||'—',
+      type, amount:amt, reason:reason||'other', note:note||'',
+      gateway:gateway.method, gateway_ref:gateway.ref, credit_note:creditNote,
+      created_by:req.session?.uid||null, created_at:nowISO(), month:today().slice(0,7)
+    });
+    await auditLog(req,'refund_create',payment_id||'—',{amount:pay?.amount},{type,amount:amt,gateway:gateway.method,credit_note:creditNote},reason||'');
+    if(user?.email){
+      await sendMail(user.email,`Refundácia ${amt.toFixed(2)} € — Fusion Academy`,
+        emailTemplate('Spracovali sme refundáciu',
+          `<p>Ahoj <b>${user.name}</b>,</p><p>Vrátili sme ti <b>${amt.toFixed(2)} €</b>${reason?` (${REFUND_REASONS[reason]||reason})`:''}${type==='app_credit'?' vo forme kreditu do aplikácie':''}.</p>${gateway.method!=='manual'?`<p>Suma sa zvyčajne pripíše do 5–10 dní podľa banky.</p>`:''}<p>Ak máš otázky, stačí odpovedať na tento email.</p>`,
+          creditNote?'🧾 Zobraziť dobropis':null, creditNote?`${APP_URL}/invoice/${creditNote}`:null)).catch(()=>{});
+      await q.insert(db.notifications,{user_id:user._id,type:'refund',title:`Refundácia ${amt.toFixed(2)} €`,body:REFUND_REASONS[reason]||'Refundácia spracovaná',read:false,created_at:nowISO()});
+    }
+    res.json({ok:true, id:refund._id, credit_note:creditNote, gateway:gateway.method});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.get('/api/admin/refundable-payments', adminAuth, async(req,res)=>{
+  const term=(req.query.q||'').toLowerCase();
+  const users=Object.fromEntries((await q.find(db.users,{})).map(u=>[u._id,u]));
+  const refunded=new Set((await q.find(db.refunds,{})).map(r=>r.payment_id).filter(Boolean));
+  let list=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status) && !refunded.has(p._id) && (+p.amount||0)>0);
+  list=list.map(p=>({ id:p._id, amount:+p.amount||0, description:p.description||p.ref_type||'Platba',
+    client:users[p.user_id]?.name||'—', email:users[p.user_id]?.email||'',
+    date:(p.captured_at||p.activated_at||p.created_at||'').slice(0,10),
+    gateway: p.stripe_payment_intent?'stripe': p.paypal_capture_id?'paypal':(p.provider||p.payment_method||'manual') }));
+  if(term) list=list.filter(p=>p.client.toLowerCase().includes(term)||p.email.toLowerCase().includes(term)||p.description.toLowerCase().includes(term));
+  res.json(list.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,100));
+});
+
+app.get('/api/admin/refunds', adminAuth, async(req,res)=>{
+  try {
+    const {from,to}=req.query;
+    let list=await q.find(db.refunds,{});
+    if(from) list=list.filter(r=>(r.created_at||'')>=from);
+    if(to) list=list.filter(r=>(r.created_at||'')<=to+'T23:59:59');
+    list.sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+    const total=+list.reduce((s,r)=>s+(+r.amount||0),0).toFixed(2);
+    const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status));
+    const revenue=payments.reduce((s,p)=>s+(+p.amount||0),0);
+    const byReason={}, byType={};
+    for(const r of list){ byReason[r.reason]=(byReason[r.reason]||0)+(+r.amount||0); byType[r.type]=(byType[r.type]||0)+1; }
+    res.json({ refunds:list.slice(0,300), total, count:list.length,
+      refundRate: revenue>0? +(total/revenue*100).toFixed(1):0,
+      byReason:Object.entries(byReason).map(([k,v])=>({reason:REFUND_REASONS[k]||k,amount:+v.toFixed(2)})).sort((a,b)=>b.amount-a.amount),
+      byType, reasons:REFUND_REASONS });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // STRIPE — Apple Pay / Google Pay / card via Stripe Checkout (no card data on our server)
 // ═══════════════════════════════════════════════════════════════════════════════
