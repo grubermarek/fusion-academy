@@ -305,11 +305,12 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
   top štúdio, top inštruktor, aktívne členstvo, akvizícia, história platieb/členstiev/
   rezervácií/faktúr. UI: klik na meno v CRM otvorí 360° modal s KPI + tabmi.
 
-### G) Účtovníctvo (TODO)
-- exporty: CSV/Excel(xlsx cez SheetJS CDN v admin)/XML/ISDOC (ISDOC = CZ/SK e-faktúra XML
-  schéma — generuj minimálny validný doklad); mesačné/ročné uzávierky (agregácie);
-  príjmy podľa štúdia/mesta/inštruktora/typu členstva; DPH prehľad (ak COMPANY_ICDPH).
-- QR platba (PAY by square) pre neuhradené faktúry — lib "bysquare" alebo vlastný encoder.
+### G) Účtovníctvo — ✅ HOTOVO (okrem QR pay-by-square)
+- /api/admin/accounting/summary + export.csv; príjmy podľa členstva/mesta/inštruktora/
+  platby/mesiaca; mesačná uzávierka; DPH prehľad (ak COMPANY_ICDPH). Excel export cez
+  SheetJS (client-side, viacero hárkov). ISDOC 6.0.1 e-faktúra per faktúra
+  (/api/admin/invoices/:number/isdoc). Admin sekcia „Účtovníctvo".
+- TODO zvyšok: QR platba (PAY by square) pre neuhradené faktúry.
 
 ### H) Automatické emaily — doplniť chýbajúce (TODO)
 - existujú: registrácia, po kúpe členstva (potvrdenie+faktúra), pred koncom, po prvej

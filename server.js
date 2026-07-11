@@ -2169,6 +2169,112 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ─── PHASE G: Účtovníctvo — uzávierky, príjmy podľa rozmerov, exporty ───────────
+async function accountingData(from, to){
+  const fromISO=from?from+'T00:00:00':'0000';
+  const toISO=to?to+'T23:59:59':'9999';
+  const inRange=d=>d>=fromISO && d<=toISO;
+  const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status));
+  const membs=(await q.find(db.memberships,{})).filter(m=>!m._type);
+  const orders=(await q.find(db.orders,{})).filter(o=>o.status==='paid');
+  const singleEntries=await q.find(db.transactions,{type:'single_entry'});
+  const bookings=await q.find(db.bookings,{});
+  const invoices=(await q.find(db.invoices,{}));
+
+  // per-user primary studio/instructor from bookings
+  const uBook={};
+  for(const b of bookings){ if(b.user_id) (uBook[b.user_id]=uBook[b.user_id]||[]).push(b); }
+  const topOf=(uid,field)=>{ const bs=uBook[uid]||[]; if(!bs.length) return '—'; const c={}; bs.forEach(b=>{const k=b[field]||'—';c[k]=(c[k]||0)+1;}); return Object.entries(c).sort((a,b)=>b[1]-a[1])[0][0]; };
+
+  const events=[
+    ...payments.map(p=>({date:(p.captured_at||p.activated_at||p.created_at||''),amount:+p.amount||0,plan:p.plan_name||MEMBERSHIP_PLANS[p.stripe_sub_plan]?.name||MEMBERSHIP_PLANS[p.subscription_plan]?.name||'Platba',user_id:p.user_id,method:p.provider||p.method||'card'})),
+    ...membs.filter(m=>m.payment_method).map(m=>({date:m.created_at||'',amount:+m.price||0,plan:m.plan_name||'Členstvo',user_id:m.user_id,method:m.payment_method})),
+    ...orders.map(o=>({date:o.paid_at||o.created_at||'',amount:+o.total||0,plan:'E-shop',user_id:o.partner_id,method:o.payment_method||'cash'})),
+    ...singleEntries.map(t=>({date:t.created_at||'',amount:+t.amount||0,plan:'Jednorazový vstup',user_id:t.user_id,method:t.method||'cash'}))
+  ].filter(e=>inRange(e.date));
+
+  const bucket=(keyFn)=>{ const m={}; for(const e of events){ const k=keyFn(e)||'—'; m[k]=(m[k]||0)+e.amount; } return Object.entries(m).map(([key,v])=>({key,revenue:+v.toFixed(2)})).sort((a,b)=>b.revenue-a.revenue); };
+
+  const total=+events.reduce((s,e)=>s+e.amount,0).toFixed(2);
+  const invPeriod=invoices.filter(i=>inRange(i.issued_at||'') && i.type!=='credit_note' && i.status!=='cancelled');
+  const supplier=invoiceSupplier();
+  const vatPayer=!!supplier.icdph;
+
+  return {
+    events,
+    byPlan: bucket(e=>e.plan),
+    byCity: bucket(e=>topOf(e.user_id,'class_location')),
+    byInstructor: bucket(e=>topOf(e.user_id,'instructor')),
+    byMethod: bucket(e=>e.method),
+    byMonth: bucket(e=>(e.date||'').slice(0,7)).sort((a,b)=>a.key.localeCompare(b.key)),
+    totals:{ revenue:total, txCount:events.length, invoiceCount:invPeriod.length,
+      vatPayer, vatBase: vatPayer?+(total/1.2).toFixed(2):total, vat: vatPayer?+(total-total/1.2).toFixed(2):0 },
+    supplier
+  };
+}
+
+app.get('/api/admin/accounting/summary', adminAuth, async(req,res)=>{
+  try { const d=await accountingData(req.query.from, req.query.to); delete d.events; res.json(d); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.get('/api/admin/accounting/export.csv', adminAuth, async(req,res)=>{
+  const d=await accountingData(req.query.from, req.query.to);
+  const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
+  const num=n=>n.toFixed(2).replace('.',',');
+  const rows=[['Dátum','Popis','Spôsob','Suma EUR'].join(';')];
+  d.events.sort((a,b)=>(a.date||'').localeCompare(b.date||''))
+    .forEach(e=>rows.push([(e.date||'').slice(0,10),e.plan,e.method,num(e.amount)].map(esc).join(';')));
+  rows.push('');
+  rows.push([esc('SPOLU'),'','',esc(num(d.totals.revenue))].join(';'));
+  res.setHeader('Content-Type','text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition',`attachment; filename=uctovnictvo_${req.query.from||'vse'}_${req.query.to||''}.csv`);
+  res.send('﻿'+rows.join('\r\n'));
+});
+
+// ISDOC 6.0.1 minimálny doklad pre jednu faktúru (SK/CZ e-faktúra XML schéma)
+app.get('/api/admin/invoices/:number/isdoc', adminAuth, async(req,res)=>{
+  const inv=await q.one(db.invoices,{number:req.params.number});
+  if(!inv) return res.status(404).send('Faktúra nenájdená');
+  const s=invoiceSupplier();
+  const x=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const total=(+inv.total).toFixed(2);
+  const lines=(inv.items||[]).map((it,i)=>`    <InvoiceLine>
+      <ID>${i+1}</ID>
+      <InvoicedQuantity unitCode="ks">1</InvoicedQuantity>
+      <LineExtensionAmount currencyID="EUR">${(+it.total).toFixed(2)}</LineExtensionAmount>
+      <Item><Description>${x(it.desc)}</Description></Item>
+    </InvoiceLine>`).join('\n');
+  const xml=`<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="http://isdoc.cz/namespace/2013" version="6.0.1">
+  <DocumentType>1</DocumentType>
+  <ID>${x(inv.number)}</ID>
+  <UUID>${x(inv._id)}</UUID>
+  <IssueDate>${x((inv.issued_at||'').slice(0,10))}</IssueDate>
+  <VATApplicable>${s.icdph?'true':'false'}</VATApplicable>
+  <LocalCurrencyCode>EUR</LocalCurrencyCode>
+  <AccountingSupplierParty><Party>
+    <PartyName><Name>${x(s.name)}</Name></PartyName>
+    <PostalAddress><StreetName>${x(s.address)}</StreetName></PostalAddress>
+    <PartyIdentification><ID>${x(s.ico)}</ID></PartyIdentification>
+    <PartyTaxScheme><CompanyID>${x(s.dic)}</CompanyID></PartyTaxScheme>
+  </Party></AccountingSupplierParty>
+  <AccountingCustomerParty><Party>
+    <PartyName><Name>${x(inv.client_name)}</Name></PartyName>
+  </Party></AccountingCustomerParty>
+  <InvoiceLines>
+${lines}
+  </InvoiceLines>
+  <LegalMonetaryTotal>
+    <TaxExclusiveAmount currencyID="EUR">${total}</TaxExclusiveAmount>
+    <PayableAmount currencyID="EUR">${total}</PayableAmount>
+  </LegalMonetaryTotal>
+</Invoice>`;
+  res.setHeader('Content-Type','application/xml; charset=utf-8');
+  res.setHeader('Content-Disposition',`attachment; filename=${inv.number}.isdoc`);
+  res.send(xml);
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // STRIPE — Apple Pay / Google Pay / card via Stripe Checkout (no card data on our server)
 // ═══════════════════════════════════════════════════════════════════════════════

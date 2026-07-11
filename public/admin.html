@@ -131,6 +131,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('finance')"><i class="bi bi-graph-up me-2"></i><span style="color:#C9A24C;font-weight:700">Financie</span></a>
       <a class="nav-link" href="#" onclick="show('invoices')"><i class="bi bi-file-earmark-text me-2"></i>Faktúry</a>
       <a class="nav-link" href="#" onclick="show('retention')"><i class="bi bi-people-fill me-2"></i>Retencia & LTV</a>
+      <a class="nav-link" href="#" onclick="show('accounting')"><i class="bi bi-calculator me-2"></i>Účtovníctvo</a>
       <a class="nav-link" href="#" onclick="show('transactions')"><i class="bi bi-receipt me-2"></i>Všetky predaje</a>
       <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby PayPal</a>
       <a class="nav-link" href="#" onclick="show('audit')"><i class="bi bi-shield-lock me-2"></i>Audit log</a>
@@ -960,6 +961,36 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </table></div>
   </div>
 
+  <!-- ÚČTOVNÍCTVO -->
+  <div class="section" id="s-accounting">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
+      <h4 class="fw-bold mb-0">🧮 Účtovníctvo & uzávierky</h4>
+      <div class="d-flex gap-2 flex-wrap">
+        <button class="btn btn-sm btn-outline-light" onclick="accExport('csv')"><i class="bi bi-filetype-csv"></i> CSV</button>
+        <button class="btn btn-sm btn-outline-light" onclick="accExportXlsx()"><i class="bi bi-file-earmark-excel"></i> Excel</button>
+      </div>
+    </div>
+    <p class="text-muted small mb-3">Príjmy podľa členstva, mesta, inštruktora a spôsobu platby. Exporty pre účtovníka (CSV / Excel), ISDOC e-faktúry v sekcii Faktúry.</p>
+    <div class="d-flex gap-2 align-items-end flex-wrap mb-3">
+      <div><label class="text-muted small">Od</label><input type="date" id="accFrom" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+      <div><label class="text-muted small">Do</label><input type="date" id="accTo" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+      <button class="btn btn-sm btn-warning" onclick="loadAccounting()">Zobraziť</button>
+      <div class="btn-group btn-group-sm ms-1">
+        <button class="btn btn-outline-secondary" onclick="accQuick('month')">Mesiac</button>
+        <button class="btn btn-outline-secondary" onclick="accQuick('year')">Rok</button>
+        <button class="btn btn-outline-secondary" onclick="accQuick('all')">Celé</button>
+      </div>
+    </div>
+    <div id="accTotals" class="row g-3 mb-4"></div>
+    <div class="row g-4">
+      <div class="col-lg-6"><div class="card bg-dark border-secondary h-100"><div class="card-body"><h6 class="fw-bold mb-3">Podľa členstva / produktu</h6><div id="accByPlan"></div></div></div></div>
+      <div class="col-lg-6"><div class="card bg-dark border-secondary h-100"><div class="card-body"><h6 class="fw-bold mb-3">Podľa spôsobu platby</h6><div id="accByMethod"></div></div></div></div>
+      <div class="col-lg-6"><div class="card bg-dark border-secondary h-100"><div class="card-body"><h6 class="fw-bold mb-3">Podľa mesta / štúdia</h6><div id="accByCity"></div></div></div></div>
+      <div class="col-lg-6"><div class="card bg-dark border-secondary h-100"><div class="card-body"><h6 class="fw-bold mb-3">Podľa inštruktora</h6><div id="accByInstructor"></div></div></div></div>
+      <div class="col-12"><div class="card bg-dark border-secondary"><div class="card-body"><h6 class="fw-bold mb-3">Mesačná uzávierka</h6><div id="accByMonth"></div></div></div></div>
+    </div>
+  </div>
+
   <!-- RETENTION & LTV -->
   <div class="section" id="s-retention">
     <h4 class="fw-bold mb-1">📈 Retencia, Churn & LTV</h4>
@@ -1085,7 +1116,7 @@ function showToast(msg,type='success'){
 }
 
 const GROUP_TITLES={home:'Domov',manage:'Správa',marketing:'Marketing',reports:'Financie & reporty',partners:'Partneri (MLM)'};
-const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',campaigns:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',retention:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
+const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',campaigns:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',retention:'reports',accounting:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('rail-'+g)?.classList.add('active');
@@ -1122,6 +1153,69 @@ function show(sec){
   if(sec==='audit')loadAudit();
   if(sec==='campaigns')loadCampaigns();
   if(sec==='retention')loadRetention();
+  if(sec==='accounting')initAccounting();
+}
+
+/* ─── ÚČTOVNÍCTVO ─────────────────────────────────────────── */
+function accQuick(p){
+  const now=new Date(), to=now.toISOString().slice(0,10);
+  let from='';
+  if(p==='month') from=to.slice(0,7)+'-01';
+  else if(p==='year') from=to.slice(0,4)+'-01-01';
+  else { from=''; }
+  document.getElementById('accFrom').value=from;
+  document.getElementById('accTo').value= p==='all'?'':to;
+  loadAccounting();
+}
+let _accInit=false;
+function initAccounting(){ if(_accInit){loadAccounting();return;} _accInit=true; accQuick('month'); }
+function accRange(){ return {from:document.getElementById('accFrom').value, to:document.getElementById('accTo').value}; }
+async function loadAccounting(){
+  const {from,to}=accRange();
+  const d=await api(`/api/admin/accounting/summary?from=${from}&to=${to}`);
+  if(!d||d.error){ document.getElementById('accTotals').innerHTML='<div class="text-muted">Chyba.</div>'; return; }
+  const t=d.totals;
+  const kpi=(l,v,c)=>`<div class="col-6 col-md-3"><div class="card bg-dark border-secondary"><div class="card-body py-3">
+    <div class="text-muted" style="font-size:.66rem;text-transform:uppercase">${l}</div>
+    <div class="fw-bold" style="font-size:1.4rem;color:${c||'#fff'}">${v}</div></div></div>`;
+  document.getElementById('accTotals').innerHTML=
+    kpi('Tržby spolu', t.revenue.toFixed(2)+' €', '#C9A24C')+
+    kpi('Transakcie', t.txCount)+
+    kpi('Faktúry', t.invoiceCount)+
+    kpi(t.vatPayer?'Základ DPH / DPH':'DPH', t.vatPayer? t.vatBase.toFixed(2)+' / '+t.vat.toFixed(2)+' €' : 'Neplatiteľ');
+  const bars=(list,el)=>{
+    const max=Math.max(...list.map(x=>x.revenue),1);
+    document.getElementById(el).innerHTML= list.length? list.map(e=>`
+      <div class="d-flex align-items-center justify-content-between mb-2" style="gap:10px">
+        <div style="min-width:110px;font-size:.82rem" class="text-truncate">${escHtml(e.key)}</div>
+        <div class="flex-grow-1" style="background:#151515;border-radius:6px;height:18px;overflow:hidden"><div style="width:${Math.max(5,e.revenue/max*100)}%;height:100%;background:linear-gradient(90deg,#8a6d2e,#C9A24C)"></div></div>
+        <div style="min-width:80px;text-align:right;font-size:.82rem" class="fw-bold">${e.revenue.toFixed(2)} €</div>
+      </div>`).join('') : '<div class="text-muted small">Žiadne dáta.</div>';
+  };
+  bars(d.byPlan,'accByPlan'); bars(d.byMethod,'accByMethod');
+  bars(d.byCity,'accByCity'); bars(d.byInstructor,'accByInstructor'); bars(d.byMonth,'accByMonth');
+}
+function accExport(fmt){
+  const {from,to}=accRange();
+  window.open(`/api/admin/accounting/export.${fmt}?from=${from}&to=${to}`,'_blank');
+}
+function loadScript(src){ return new Promise((ok,err)=>{ if(window.XLSX) return ok(); const s=document.createElement('script'); s.src=src; s.onload=ok; s.onerror=err; document.head.appendChild(s); }); }
+async function accExportXlsx(){
+  const {from,to}=accRange();
+  const d=await api(`/api/admin/accounting/summary?from=${from}&to=${to}`);
+  if(!d) return;
+  try { await loadScript('https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js'); }
+  catch(e){ showToast('Excel knižnicu sa nepodarilo načítať — použi CSV','error'); return; }
+  const wb=XLSX.utils.book_new();
+  const sheet=(name,rows)=>XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), name);
+  sheet('Uzávierka', [['Ukazovateľ','Hodnota'],['Tržby spolu (€)',d.totals.revenue],['Transakcie',d.totals.txCount],['Faktúry',d.totals.invoiceCount],['DPH platiteľ',d.totals.vatPayer?'Áno':'Nie'],['Základ DPH (€)',d.totals.vatBase],['DPH (€)',d.totals.vat]]);
+  const dim=(rows)=>[['Kategória','Tržby (€)'],...rows.map(r=>[r.key,r.revenue])];
+  sheet('Podľa členstva', dim(d.byPlan));
+  sheet('Podľa mesta', dim(d.byCity));
+  sheet('Podľa inštruktora', dim(d.byInstructor));
+  sheet('Podľa platby', dim(d.byMethod));
+  sheet('Po mesiacoch', dim(d.byMonth));
+  XLSX.writeFile(wb, `uctovnictvo_${from||'vse'}_${to||''}.xlsx`);
 }
 
 /* ─── CAMPAIGNS ─────────────────────────────────────────── */
@@ -1270,7 +1364,8 @@ async function loadInvoices(){
     <td><small>${i.paid_at}</small></td>
     <td><small class="text-muted">${escHtml(i.payment_method)}</small></td>
     <td>${st[i.status]||i.status}</td>
-    <td>${i.type!=='credit_note'&&i.status==='paid'?`
+    <td><a class="btn btn-sm btn-outline-secondary py-0 px-1" style="font-size:.72rem" href="/api/admin/invoices/${i.number}/isdoc" title="Stiahnuť ISDOC e-faktúru">ISDOC</a>
+      ${i.type!=='credit_note'&&i.status==='paid'?`
       <button class="btn btn-sm btn-outline-warning py-0 px-1" style="font-size:.72rem" onclick="invCreditNote('${i.number}')">Dobropis</button>
       <button class="btn btn-sm btn-outline-danger py-0 px-1" style="font-size:.72rem" onclick="invCancel('${i.number}')">Storno</button>`:''}</td>
   </tr>`).join('');
