@@ -122,6 +122,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
     <div class="group-links" data-group="marketing">
       <a class="nav-link" href="#" onclick="show('marketing')"><i class="bi bi-graph-up-arrow me-2"></i><span style="color:#C9A84C;font-weight:700">Marketing (CAC/LTV)</span></a>
+      <a class="nav-link" href="#" onclick="show('campaigns')"><i class="bi bi-megaphone me-2"></i>Kampane</a>
       <a class="nav-link" href="#" onclick="show('automation')"><i class="bi bi-envelope-check me-2"></i>Automatizácia</a>
       <a class="nav-link" href="#" onclick="show('churn')"><i class="bi bi-person-dash me-2"></i>Churn Risk <span id="churnBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
     </div>
@@ -854,6 +855,52 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </div>
   </div>
 
+  <!-- CAMPAIGNS -->
+  <div class="section" id="s-campaigns">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <div><h4 class="fw-bold mb-0">📣 Marketingové kampane</h4>
+        <p class="text-muted small mb-0">Zadaj investíciu a čísla — metriky (CTR, CPC, ROAS, ROI, CAC…) sa počítajú automaticky. Tržby sa priradia podľa <code>utm_campaign</code>.</p></div>
+      <button class="btn btn-sm btn-brand" onclick="openCampaign()"><i class="bi bi-plus-lg me-1"></i>Nová kampaň</button>
+    </div>
+    <div id="campaignsList"><div class="text-muted py-4 text-center">Načítavam…</div></div>
+  </div>
+
+  <!-- Campaign modal -->
+  <div id="campaignModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center;padding:16px">
+    <div style="background:#1e1e1e;border:1px solid #333;border-radius:14px;padding:24px;width:min(560px,96vw);max-height:92vh;overflow-y:auto">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold mb-0" style="color:#C9A24C" id="campaignModalTitle">Nová kampaň</h5>
+        <button onclick="document.getElementById('campaignModal').style.display='none'" style="background:none;border:none;color:#888;font-size:1.3rem;cursor:pointer">✕</button>
+      </div>
+      <input type="hidden" id="cmpId">
+      <div class="row g-2">
+        <div class="col-md-7"><label class="small text-muted">Názov kampane *</label><input id="cmpName" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="napr. Leto 2026 – Zumba Zvolen"></div>
+        <div class="col-md-5"><label class="small text-muted">Platforma</label>
+          <select id="cmpPlatform" class="form-select form-select-sm bg-dark text-light border-secondary">
+            <option value="facebook">📘 Facebook</option><option value="instagram">📸 Instagram</option><option value="google">🔎 Google Ads</option><option value="tiktok">🎵 TikTok</option><option value="email">✉️ Email</option><option value="sms">💬 SMS</option><option value="referral">🤝 Referral</option><option value="organic">🌱 Organický dosah</option><option value="other">Iné</option>
+          </select></div>
+        <div class="col-6 col-md-3"><label class="small text-muted">Od</label><input type="date" id="cmpFrom" class="form-control form-control-sm bg-dark text-light border-secondary" style="color-scheme:dark"></div>
+        <div class="col-6 col-md-3"><label class="small text-muted">Do</label><input type="date" id="cmpTo" class="form-control form-control-sm bg-dark text-light border-secondary" style="color-scheme:dark"></div>
+        <div class="col-6 col-md-3"><label class="small text-muted">Rozpočet (€)</label><input type="number" id="cmpBudget" class="form-control form-control-sm bg-dark text-light border-secondary" min="0" step="0.01"></div>
+        <div class="col-6 col-md-3"><label class="small text-muted">Cieľ</label><input id="cmpGoal" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="napr. 30 registrácií"></div>
+        <div class="col-12"><label class="small text-muted">Poznámka</label><input id="cmpNote" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+      </div>
+      <div class="mt-3 mb-2 small fw-bold" style="color:#C9A24C">Výsledky kampane</div>
+      <div class="row g-2">
+        <div class="col-6 col-md-4"><label class="small text-muted">Investícia (€)</label><input type="number" id="cmpSpend" class="form-control form-control-sm bg-dark text-light border-secondary" min="0" step="0.01"></div>
+        <div class="col-6 col-md-4"><label class="small text-muted">Zobrazenia</label><input type="number" id="cmpImpr" class="form-control form-control-sm bg-dark text-light border-secondary" min="0"></div>
+        <div class="col-6 col-md-4"><label class="small text-muted">Kliknutia</label><input type="number" id="cmpClicks" class="form-control form-control-sm bg-dark text-light border-secondary" min="0"></div>
+        <div class="col-6 col-md-4"><label class="small text-muted">Registrácie</label><input type="number" id="cmpRegs" class="form-control form-control-sm bg-dark text-light border-secondary" min="0"></div>
+        <div class="col-6 col-md-4"><label class="small text-muted">Prvé návštevy</label><input type="number" id="cmpVisits" class="form-control form-control-sm bg-dark text-light border-secondary" min="0"></div>
+        <div class="col-6 col-md-4"><label class="small text-muted">Zakúpené členstvá</label><input type="number" id="cmpMems" class="form-control form-control-sm bg-dark text-light border-secondary" min="0"></div>
+      </div>
+      <div class="d-flex gap-2 mt-4">
+        <button class="btn btn-warning fw-bold flex-grow-1" onclick="saveCampaign()">💾 Uložiť</button>
+        <button class="btn btn-outline-danger" id="cmpDelBtn" onclick="deleteCampaign()" style="display:none">🗑️</button>
+      </div>
+    </div>
+  </div>
+
   <!-- FINANCE -->
   <div class="section" id="s-finance">
     <h4 class="fw-bold mb-1">💶 Financie</h4>
@@ -998,7 +1045,7 @@ function showToast(msg,type='success'){
 }
 
 const GROUP_TITLES={home:'Domov',manage:'Správa',marketing:'Marketing',reports:'Financie & reporty',partners:'Partneri (MLM)'};
-const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
+const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',campaigns:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('rail-'+g)?.classList.add('active');
@@ -1033,6 +1080,86 @@ function show(sec){
   if(sec==='finance')loadFinance();
   if(sec==='invoices')initInvoices();
   if(sec==='audit')loadAudit();
+  if(sec==='campaigns')loadCampaigns();
+}
+
+/* ─── CAMPAIGNS ─────────────────────────────────────────── */
+const PLAT_LABEL={facebook:'📘 Facebook',instagram:'📸 Instagram',google:'🔎 Google',tiktok:'🎵 TikTok',email:'✉️ Email',sms:'💬 SMS',referral:'🤝 Referral',organic:'🌱 Organika',other:'Iné'};
+async function loadCampaigns(){
+  const list=await api('/api/admin/campaigns');
+  const host=document.getElementById('campaignsList');
+  if(!Array.isArray(list)||!list.length){ host.innerHTML='<div class="text-muted text-center py-5">Zatiaľ žiadne kampane. Klikni „Nová kampaň" a začni merať návratnosť.</div>'; return; }
+  host.innerHTML=list.map(c=>{
+    const m=c.metrics||{};
+    const roasBadge = m.roas!=null ? `<span class="badge ${m.roas>=3?'bg-success':m.roas>=1?'bg-warning text-dark':'bg-danger'}">ROAS ${m.roas}×</span>` : '';
+    const met=(l,v,suf='')=>`<div class="col-6 col-md-3 col-lg-2"><div style="background:#151515;border:1px solid #2a2a2a;border-radius:8px;padding:8px 10px"><div class="text-muted" style="font-size:.62rem;text-transform:uppercase;letter-spacing:.04em">${l}</div><div class="fw-bold" style="font-size:.92rem">${v==null?'—':v}${suf}</div></div></div>`;
+    return `<div class="card bg-dark border-secondary mb-3"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+        <div><span class="fw-bold" style="font-size:1.02rem">${escHtml(c.name)}</span>
+          <span class="badge ms-2" style="background:rgba(201,162,76,.15);color:#C9A24C">${PLAT_LABEL[c.platform]||c.platform}</span>
+          ${roasBadge}
+          <div class="text-muted small mt-1">${c.date_from||''}${c.date_to?' – '+c.date_to:''} · rozpočet ${(+c.budget).toFixed(2)} € · investované <b style="color:#ccc">${(+c.spend).toFixed(2)} €</b>${c.goal?' · cieľ: '+escHtml(c.goal):''}</div>
+        </div>
+        <button class="btn btn-sm btn-outline-secondary" onclick='openCampaign(${JSON.stringify(c._id)})'>✏️ Upraviť</button>
+      </div>
+      <div class="row g-2 mt-1">
+        ${met('Tržby', c.attributed_revenue!=null?c.attributed_revenue.toFixed(2):'—','€')}
+        ${met('ROI', m.roi, '%')}
+        ${met('CAC', m.cac, '€')}
+        ${met('CPC', m.cpc, '€')}
+        ${met('CPR', m.cpr, '€')}
+        ${met('Cena/členstvo', m.cpm, '€')}
+        ${met('Konverzia', m.conversionRate, '%')}
+        ${met('Reg. rate', m.registrationRate, '%')}
+        ${met('Visit rate', m.visitRate, '%')}
+        ${met('Členstvo konv.', m.membershipConv, '%')}
+        ${met('CTR', m.ctr, '%')}
+        ${met('Kliky', c.clicks)}
+      </div>
+      <div class="text-muted small mt-2">Reg: ${c.registrations} · Prvé návštevy: ${c.first_visits} · Členstvá: ${c.memberships} · Platiaci klienti z kampane: ${c.attributed_payers||0}</div>
+    </div></div>`;
+  }).join('');
+}
+function openCampaign(id){
+  const set=(k,v)=>document.getElementById(k).value=v??'';
+  if(!id){
+    document.getElementById('campaignModalTitle').textContent='Nová kampaň';
+    document.getElementById('cmpDelBtn').style.display='none';
+    ['cmpId','cmpName','cmpGoal','cmpNote','cmpBudget','cmpSpend','cmpImpr','cmpClicks','cmpRegs','cmpVisits','cmpMems'].forEach(k=>set(k,''));
+    set('cmpFrom', new Date().toISOString().slice(0,10)); set('cmpTo','');
+    document.getElementById('cmpPlatform').value='facebook';
+    document.getElementById('campaignModal').style.display='flex'; return;
+  }
+  api('/api/admin/campaigns').then(list=>{
+    const c=(list||[]).find(x=>x._id===id); if(!c) return;
+    document.getElementById('campaignModalTitle').textContent='Upraviť kampaň';
+    document.getElementById('cmpDelBtn').style.display='inline-block';
+    set('cmpId',c._id); set('cmpName',c.name); set('cmpGoal',c.goal); set('cmpNote',c.note);
+    set('cmpFrom',c.date_from); set('cmpTo',c.date_to); set('cmpBudget',c.budget);
+    set('cmpSpend',c.spend); set('cmpImpr',c.impressions); set('cmpClicks',c.clicks);
+    set('cmpRegs',c.registrations); set('cmpVisits',c.first_visits); set('cmpMems',c.memberships);
+    document.getElementById('cmpPlatform').value=c.platform||'other';
+    document.getElementById('campaignModal').style.display='flex';
+  });
+}
+async function saveCampaign(){
+  const g=k=>document.getElementById(k).value;
+  const body={name:g('cmpName'),platform:g('cmpPlatform'),date_from:g('cmpFrom'),date_to:g('cmpTo'),
+    budget:g('cmpBudget'),goal:g('cmpGoal'),note:g('cmpNote'),
+    spend:g('cmpSpend'),impressions:g('cmpImpr'),clicks:g('cmpClicks'),
+    registrations:g('cmpRegs'),first_visits:g('cmpVisits'),memberships:g('cmpMems')};
+  if(!body.name.trim()){ showToast('Zadaj názov kampane','error'); return; }
+  const id=g('cmpId');
+  const d=id ? await api('/api/admin/campaigns/'+id,{method:'PUT',body})
+             : await api('/api/admin/campaigns',{method:'POST',body});
+  if(d?.ok){ showToast('Kampaň uložená ✓','success'); document.getElementById('campaignModal').style.display='none'; loadCampaigns(); }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
+}
+async function deleteCampaign(){
+  const id=document.getElementById('cmpId').value; if(!id) return;
+  if(!confirm('Zmazať túto kampaň?')) return;
+  const d=await api('/api/admin/campaigns/'+id,{method:'DELETE'});
+  if(d?.ok){ showToast('Kampaň zmazaná','success'); document.getElementById('campaignModal').style.display='none'; loadCampaigns(); }
 }
 
 /* ─── FINANCE ───────────────────────────────────────────── */

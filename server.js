@@ -75,6 +75,7 @@ const db = {
   adspend:      new Datastore({ filename: path.join(DATA_DIR, 'adspend.db'),     autoload: true }),
   invoices:     new Datastore({ filename: path.join(DATA_DIR, 'invoices.db'),    autoload: true }),
   audit:        new Datastore({ filename: path.join(DATA_DIR, 'audit.db'),       autoload: true }),
+  campaigns:    new Datastore({ filename: path.join(DATA_DIR, 'campaigns.db'),   autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -3475,6 +3476,98 @@ app.post('/api/admin/adspend', adminAuth, async(req,res)=>{
 });
 app.delete('/api/admin/adspend/:id', adminAuth, async(req,res)=>{
   await q.remove(db.adspend,{_id:req.params.id});
+  res.json({ok:true});
+});
+
+// ── Marketing campaigns (with auto-computed metrics + real revenue attribution) ──
+const CAMPAIGN_PLATFORMS = ['facebook','instagram','google','tiktok','email','sms','referral','organic','other'];
+function campaignMetrics(c, revenue, payingCustomers){
+  const num = (a,b)=> b>0 ? a/b : 0;
+  const spend = +c.spend||0, clicks=+c.clicks||0, regs=+c.registrations||0,
+        visits=+c.first_visits||0, mems=+c.memberships||0, impr=+c.impressions||0;
+  const rev = +revenue||0, pay=+payingCustomers||0;
+  return {
+    ctr:            impr? +(num(clicks,impr)*100).toFixed(2) : null,   // needs impressions
+    conversionRate: +(num(mems,clicks)*100).toFixed(2),
+    registrationRate:+(num(regs,clicks)*100).toFixed(2),
+    visitRate:      +(num(visits,regs)*100).toFixed(2),
+    membershipConv: +(num(mems,visits)*100).toFixed(2),
+    cpc:            +num(spend,clicks).toFixed(2),
+    cpr:            +num(spend,regs).toFixed(2),
+    cpv:            +num(spend,visits).toFixed(2),
+    cpm:            +num(spend,mems).toFixed(2),   // cost per membership
+    roas:           spend? +num(rev,spend).toFixed(2) : null,
+    roi:            spend? +(((rev-spend)/spend)*100).toFixed(1) : null,
+    cac:            pay? +num(spend,pay).toFixed(2) : null,
+    revenue:        +rev.toFixed(2)
+  };
+}
+// Revenue attributed to a campaign = total spend of clients whose utm_campaign matches
+async function campaignRevenueMap(){
+  const users=await q.find(db.users,{is_admin:{$ne:true}});
+  const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status)&&p.user_id);
+  const membs=(await q.find(db.memberships,{})).filter(m=>!m._type && m.payment_method);
+  const rev={}; payments.forEach(p=>{ rev[p.user_id]=(rev[p.user_id]||0)+(+p.amount||0); });
+  membs.forEach(m=>{ rev[m.user_id]=(rev[m.user_id]||0)+(+m.price||0); });
+  const byCampaign={}; // campaignName(lower) -> {revenue, payers}
+  users.forEach(u=>{
+    const key=(u.utm_campaign||'').toLowerCase().trim(); if(!key) return;
+    if(!byCampaign[key]) byCampaign[key]={revenue:0, payers:0};
+    const r=rev[u._id]||0; byCampaign[key].revenue+=r; if(r>0) byCampaign[key].payers++;
+  });
+  return byCampaign;
+}
+
+app.get('/api/admin/campaigns', adminAuth, async(req,res)=>{
+  try {
+    const list=await q.find(db.campaigns,{});
+    const revMap=await campaignRevenueMap();
+    const out=list.map(c=>{
+      const key=(c.name||'').toLowerCase().trim();
+      const attr=revMap[key]||{revenue:0,payers:0};
+      return {...c, metrics:campaignMetrics(c, attr.revenue, attr.payers), attributed_revenue:+attr.revenue.toFixed(2), attributed_payers:attr.payers};
+    }).sort((a,b)=>(b.date_from||'').localeCompare(a.date_from||''));
+    res.json(out);
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.post('/api/admin/campaigns', adminAuth, async(req,res)=>{
+  try {
+    const b=req.body;
+    if(!(b.name||'').trim()) return res.status(400).json({error:'Chýba názov kampane'});
+    const platform=(b.platform||'other').toLowerCase();
+    const doc={
+      name:b.name.trim(), platform:CAMPAIGN_PLATFORMS.includes(platform)?platform:'other',
+      date_from:b.date_from||today(), date_to:b.date_to||'', budget:+b.budget||0,
+      goal:b.goal||'', note:b.note||'',
+      spend:+b.spend||0, impressions:+b.impressions||0, clicks:+b.clicks||0,
+      registrations:+b.registrations||0, first_visits:+b.first_visits||0, memberships:+b.memberships||0,
+      created_at:nowISO()
+    };
+    const c=await q.insert(db.campaigns, doc);
+    await auditLog(req,'campaign_create',c.name,null,{budget:doc.budget,spend:doc.spend},'');
+    res.json({ok:true, id:c._id});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.put('/api/admin/campaigns/:id', adminAuth, async(req,res)=>{
+  try {
+    const c=await q.one(db.campaigns,{_id:req.params.id});
+    if(!c) return res.status(404).json({error:'Kampaň nenájdená'});
+    const b=req.body; const upd={};
+    ['name','goal','note','date_from','date_to'].forEach(k=>{ if(b[k]!==undefined) upd[k]=b[k]; });
+    ['budget','spend','impressions','clicks','registrations','first_visits','memberships'].forEach(k=>{ if(b[k]!==undefined) upd[k]=+b[k]||0; });
+    if(b.platform!==undefined){ const p=(b.platform||'other').toLowerCase(); upd.platform=CAMPAIGN_PLATFORMS.includes(p)?p:'other'; }
+    await q.update(db.campaigns,{_id:c._id},{$set:upd});
+    await auditLog(req,'campaign_update',c.name,{spend:c.spend},{spend:upd.spend??c.spend},'');
+    res.json({ok:true});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.delete('/api/admin/campaigns/:id', adminAuth, async(req,res)=>{
+  const c=await q.one(db.campaigns,{_id:req.params.id});
+  await q.remove(db.campaigns,{_id:req.params.id});
+  if(c) await auditLog(req,'campaign_delete',c.name,{budget:c.budget},null,'');
   res.json({ok:true});
 });
 
