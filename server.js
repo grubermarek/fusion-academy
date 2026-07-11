@@ -2513,6 +2513,22 @@ async function ppRefundCapture(captureId, amount){
 
 app.get('/api/admin/refund-reasons', adminAuth, (req,res)=>res.json({reasons:REFUND_REASONS,types:REFUND_TYPES}));
 
+// ─── PHASE L: Admin alerty ──────────────────────────────────────────────────────
+app.get('/api/admin/alerts', adminAuth, async(req,res)=>{
+  const list=(await q.find(db.notifications,{type:'admin_alert',user_id:req.session.uid}))
+    .sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,100);
+  const unread=list.filter(a=>!a.read).length;
+  res.json({alerts:list, unread});
+});
+app.post('/api/admin/alerts/run', adminAuth, async(req,res)=>{
+  try { const raised=await runAdminAlerts(); res.json({ok:true, raised:raised.length}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/alerts/read', adminAuth, async(req,res)=>{
+  await q.update(db.notifications,{type:'admin_alert',user_id:req.session.uid,read:{$ne:true}},{$set:{read:true}},{multi:true});
+  res.json({ok:true});
+});
+
 app.post('/api/admin/refunds', adminAuth, async(req,res)=>{
   try {
     const {payment_id, type, amount, reason, note}=req.body;
@@ -4768,6 +4784,55 @@ async function runDailyJobs(){
   if(new Date().getDay() === 1){
     try { await sendWeeklyAdminReport(); } catch(e){ console.error('Weekly report error:', e.message); }
   }
+
+  // ── 7. Admin alerts (anomaly detection) ───────────────────────────────────
+  try { await runAdminAlerts(); } catch(e){ console.error('Admin alerts error:', e.message); }
+}
+
+// Detect operational/financial anomalies → post admin_alert notifications (deduped per day)
+async function runAdminAlerts(){
+  const admins = await q.find(db.users,{is_admin:true});
+  if(!admins.length) return [];
+  const todayStr = today();
+  const raised=[];
+  const raise = async(key, severity, title, body)=>{
+    // dedupe: same key already raised today?
+    const existing = await q.one(db.notifications,{type:'admin_alert', alert_key:key, created_at:{$gte:todayStr+'T00:00:00'}});
+    if(existing) return;
+    for(const a of admins){
+      await q.insert(db.notifications,{user_id:a._id, type:'admin_alert', alert_key:key, severity, title, body, read:false, created_at:nowISO()});
+    }
+    raised.push({key,severity,title,body});
+  };
+
+  // a) Campaigns over budget or poor ROAS
+  const campaigns = await q.find(db.campaigns,{});
+  const revMap = await campaignRevenueMap();
+  for(const c of campaigns){
+    const spend=+c.spend||0, budget=+c.budget||0;
+    if(budget>0 && spend>budget) await raise('camp_budget_'+c._id,'warning',`💸 Prekročený rozpočet kampane`,`„${c.name}" — minuté ${spend.toFixed(2)} € z ${budget.toFixed(2)} €.`);
+    const rev=revMap[(c.name||'').toLowerCase().trim()]?.revenue||0;
+    if(spend>=50 && rev/Math.max(spend,1) < 1) await raise('camp_roas_'+c._id,'warning',`📉 Nízke ROAS kampane`,`„${c.name}" — ROAS ${(rev/Math.max(spend,1)).toFixed(2)}× (tržby ${rev.toFixed(2)} €, náklad ${spend.toFixed(2)} €).`);
+  }
+
+  // b) Refund rate spike (>5% of revenue this month)
+  const monthStr=todayStr.slice(0,7);
+  const refundsM=(await q.find(db.refunds,{month:monthStr}));
+  const refTotal=refundsM.reduce((s,r)=>s+(+r.amount||0),0);
+  const paymentsM=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status) && (p.captured_at||p.created_at||'').startsWith(monthStr));
+  const revM=paymentsM.reduce((s,p)=>s+(+p.amount||0),0);
+  if(revM>0 && refTotal/revM>0.05) await raise('refund_spike_'+monthStr,'warning',`↩️ Vysoká miera refundácií`,`Tento mesiac ${((refTotal/revM)*100).toFixed(1)} % tržieb (${refTotal.toFixed(2)} €) refundované.`);
+
+  // c) Failed payments today
+  const failsToday=await q.count(db.notifications,{type:'payment_failed',created_at:{$gte:todayStr+'T00:00:00'}});
+  if(failsToday>=1) await raise('fails_'+todayStr,'info',`💳 Zlyhané platby dnes`,`${failsToday} neúspešná/é platba/y členstva dnes — skontroluj klientov.`);
+
+  // d) Memberships ending in next 3 days
+  const d3=new Date(Date.now()+3*86400000).toISOString();
+  const ending=await q.count(db.memberships,{status:'active',expires_at:{$lte:d3,$gte:todayStr+'T00:00:00'}});
+  if(ending>=3) await raise('ending_'+todayStr,'info',`⏳ Končiace členstvá`,`${ending} členstiev vyprší do 3 dní — vhodný čas na pripomienku.`);
+
+  return raised;
 }
 
 // Weekly summary for admins: revenue, new clients, attendance, class fill, expiries.

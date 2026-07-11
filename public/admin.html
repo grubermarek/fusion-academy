@@ -135,6 +135,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('trainers')"><i class="bi bi-person-badge me-2"></i>Výkon trénerov</a>
       <a class="nav-link" href="#" onclick="show('payouts')"><i class="bi bi-cash-stack me-2"></i>Výplaty trénerov</a>
       <a class="nav-link" href="#" onclick="show('refunds')"><i class="bi bi-arrow-counterclockwise me-2"></i>Refundácie</a>
+      <a class="nav-link" href="#" onclick="show('alerts')"><i class="bi bi-bell me-2"></i>Alerty <span id="alertsBadge" class="badge bg-danger" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('transactions')"><i class="bi bi-receipt me-2"></i>Všetky predaje</a>
       <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby PayPal</a>
       <a class="nav-link" href="#" onclick="show('audit')"><i class="bi bi-shield-lock me-2"></i>Audit log</a>
@@ -964,6 +965,19 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </table></div>
   </div>
 
+  <!-- ADMIN ALERTY -->
+  <div class="section" id="s-alerts">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
+      <h4 class="fw-bold mb-0">🔔 Alerty</h4>
+      <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-outline-warning" onclick="runAlerts()"><i class="bi bi-arrow-repeat"></i> Skontrolovať teraz</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="markAlertsRead()">Označiť prečítané</button>
+      </div>
+    </div>
+    <p class="text-muted small mb-3">Automatická detekcia anomálií: prekročený rozpočet, nízke ROAS, vysoká miera refundácií, zlyhané platby, končiace členstvá. Beží denne + kedykoľvek manuálne.</p>
+    <div id="alertsList"><div class="text-muted text-center py-4">Načítavam…</div></div>
+  </div>
+
   <!-- REFUNDÁCIE -->
   <div class="section" id="s-refunds">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
@@ -1201,7 +1215,7 @@ function showToast(msg,type='success'){
 }
 
 const GROUP_TITLES={home:'Domov',manage:'Správa',marketing:'Marketing',reports:'Financie & reporty',partners:'Partneri (MLM)'};
-const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',campaigns:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',retention:'reports',accounting:'reports',trainers:'reports',payouts:'reports',refunds:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
+const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',campaigns:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',retention:'reports',accounting:'reports',trainers:'reports',payouts:'reports',refunds:'reports',alerts:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('rail-'+g)?.classList.add('active');
@@ -1242,7 +1256,25 @@ function show(sec){
   if(sec==='trainers')initTrainers();
   if(sec==='payouts')initPayouts();
   if(sec==='refunds')loadRefunds();
+  if(sec==='alerts')loadAlerts();
 }
+
+/* ─── ADMIN ALERTY ───────────────────────────────────────── */
+const ALERT_C={warning:'#e0a656',info:'#5a9fd4',critical:'#e05656'};
+async function loadAlerts(){
+  const d=await api('/api/admin/alerts');
+  if(!d){ return; }
+  updateAlertsBadge(d.unread);
+  const host=document.getElementById('alertsList');
+  host.innerHTML= d.alerts.length? d.alerts.map(a=>`
+    <div class="d-flex align-items-start gap-3 p-3 mb-2" style="background:${a.read?'#161616':'#1c1a14'};border:1px solid ${a.read?'#252525':'#3a2f18'};border-left:3px solid ${ALERT_C[a.severity]||'#888'};border-radius:10px">
+      <div class="flex-grow-1"><div class="fw-semibold">${escHtml(a.title)}</div><div class="text-muted small">${escHtml(a.body)}</div></div>
+      <div class="text-muted" style="font-size:.7rem;white-space:nowrap">${(a.created_at||'').replace('T',' ').slice(5,16)}</div>
+    </div>`).join('') : '<div class="text-muted text-center py-5">Žiadne alerty — všetko v poriadku ✅</div>';
+}
+function updateAlertsBadge(n){ const b=document.getElementById('alertsBadge'); if(b){ if(n>0){b.textContent=n;b.style.display='inline';}else b.style.display='none'; } }
+async function runAlerts(){ const d=await api('/api/admin/alerts/run',{method:'POST',body:JSON.stringify({})}); if(d?.ok){ showToast(`Kontrola hotová — ${d.raised} nových alertov`,'success'); loadAlerts(); } }
+async function markAlertsRead(){ await api('/api/admin/alerts/read',{method:'POST',body:JSON.stringify({})}); loadAlerts(); }
 
 /* ─── REFUNDÁCIE ─────────────────────────────────────────── */
 const REF_TYPE_LABEL={full:'Plná',partial:'Čiastočná',storno:'Storno',credit_note:'Dobropis',app_credit:'Kredit do appky',transfer:'Prevod'};

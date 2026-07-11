@@ -336,9 +336,10 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
   dobropis + audit + email + notifikácia. Štatistiky: refund rate, podľa dôvodu/typu.
   Sekcia „Refundácie" s modálom (výber platby) + stats. TODO: alerty (rieši fáza L).
 
-### L) Admin notifikácie & alerty (TODO — sekcia 11)
-- denný job: zlyhané platby, končiace členstvá (existuje), prekročený rozpočet kampane,
-  CAC ↑ / ROAS ↓ / LTV ↓ medzimesačne, churn spike, X dní bez platby → notifikácia adminom.
+### L) Admin notifikácie & alerty — ✅ HOTOVO
+- runAdminAlerts() v dennom jobe + manuálne /api/admin/alerts/run: prekročený rozpočet
+  kampane, nízke ROAS, vysoká miera refundácií, zlyhané platby dnes, končiace členstvá.
+  Deduplikované per deň (alert_key). Sekcia „Alerty" s badge + „Skontrolovať teraz".
 
 ### M) Exporty jedným klikom (TODO — sekcia 10)
 - admin sekcia Exporty: účtovníctvo/faktúry/platby/členovia/marketing/CRM/finance/
