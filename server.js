@@ -41,15 +41,43 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Trust Railway / reverse-proxy HTTPS headers
 if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
 
+// Persistent session store backed by NeDB on the Railway volume.
+// Without this, express-session defaults to in-memory storage, so every
+// container restart/redeploy logs everyone out. This keeps clients signed in.
+const sessionsDb = new Datastore({ filename: path.join(DATA_DIR, 'sessions.db'), autoload: true });
+sessionsDb.ensureIndex({ fieldName: 'sid', unique: true }, ()=>{});
+const SESSION_TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
+class NedbSessionStore extends session.Store {
+  _expiry(sess){ const e = sess?.cookie?.expires; return e ? new Date(e).getTime() : Date.now() + SESSION_TTL; }
+  get(sid, cb){
+    sessionsDb.findOne({ sid }, (err, doc)=>{
+      if(err) return cb(err);
+      if(!doc) return cb();
+      if(doc.expire && Date.now() > doc.expire){ return sessionsDb.remove({ sid }, {}, ()=>cb()); }
+      try { cb(null, JSON.parse(doc.data)); } catch(e){ cb(e); }
+    });
+  }
+  set(sid, sess, cb){
+    const doc = { sid, data: JSON.stringify(sess), expire: this._expiry(sess) };
+    sessionsDb.update({ sid }, doc, { upsert: true }, err=>cb && cb(err));
+  }
+  destroy(sid, cb){ sessionsDb.remove({ sid }, {}, err=>cb && cb(err)); }
+  touch(sid, sess, cb){ sessionsDb.update({ sid }, { $set: { expire: this._expiry(sess) } }, {}, err=>cb && cb(err)); }
+}
+// Sweep expired sessions hourly
+setInterval(()=>sessionsDb.remove({ expire: { $lt: Date.now() } }, { multi: true }, ()=>{}), 60*60*1000).unref?.();
+
 const sessionMiddleware = session({
+  store: new NedbSessionStore(),
   secret: process.env.SESSION_SECRET || 'fusion-dev-secret-change-in-production-2026',
   resave: false,
   saveUninitialized: false,
+  rolling: true,   // refresh the 30-day window on every request → active clients stay logged in
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
     sameSite: 'lax',
-    maxAge: 30 * 24 * 60 * 60 * 1000  // 30 days – stays logged in until browser closed/explicit logout
+    maxAge: SESSION_TTL  // 30 days, renewed on activity
   }
 });
 app.use(sessionMiddleware);
