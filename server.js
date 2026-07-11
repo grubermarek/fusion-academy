@@ -2284,6 +2284,87 @@ ${lines}
   res.send(xml);
 });
 
+// ─── PHASE I: Reporty výkonu trénerov ───────────────────────────────────────────
+app.get('/api/admin/trainers/performance', adminAuth, async(req,res)=>{
+  try {
+    const {from, to, city, trainer} = req.query;
+    const fromISO=from?from+'T00:00:00':'0000';
+    const toISO=to?to+'T23:59:59':'9999';
+    // previous period of equal length for comparison
+    let prevFromISO=null, prevToISO=null;
+    if(from && to){
+      const span=new Date(to).getTime()-new Date(from).getTime();
+      prevToISO=new Date(new Date(from).getTime()-86400000).toISOString();
+      prevFromISO=new Date(new Date(from).getTime()-86400000-span).toISOString();
+    }
+    const classes=await q.find(db.classes,{});
+    const clsMap=Object.fromEntries(classes.map(c=>[c._id,c]));
+    const bookings=await q.find(db.bookings,{});
+
+    const bDate=b=>b.booking_date||(b.created_at||'').slice(0,10)||'';
+    const instructorOf=b=>clsMap[b.class_id]?.instructor||'—';
+    const cityOf=b=>b.class_location||clsMap[b.class_id]?.location||'—';
+
+    const compute=(f,t)=>{
+      const stats={}; // instructor → metrics
+      for(const b of bookings){
+        const d=bDate(b); if(!(d>=f.slice(0,10) && d<=t.slice(0,10))) continue;
+        const ins=instructorOf(b);
+        if(trainer && ins!==trainer) continue;
+        if(city && cityOf(b)!==city) continue;
+        const s=stats[ins]=stats[ins]||{instructor:ins, sessions:new Set(), attendances:0, noShows:0, cancels:0, clients:new Set(), revenue:0, capSum:0};
+        const cls=clsMap[b.class_id];
+        const sessKey=b.class_id+'|'+d;
+        if(b.status==='cancelled'){ s.cancels++; continue; }
+        if(b.status==='no_show'){ s.noShows++; }
+        // attended or confirmed count as a held-seat
+        if(['attended','confirmed','no_show'].includes(b.status)){
+          if(!s.sessions.has(sessKey)){ s.sessions.add(sessKey); s.capSum+=(cls?.capacity||20); }
+          if(b.status!=='no_show'){ s.attendances++; s.revenue+=(+cls?.price||10); }
+          if(b.user_id) s.clients.add(b.user_id);
+        }
+      }
+      return stats;
+    };
+
+    const cur=compute(fromISO,toISO);
+    const prev=(prevFromISO)?compute(prevFromISO,prevToISO):{};
+
+    // new vs returning: client's first-ever booking date
+    const firstBookingOf={};
+    for(const b of bookings){ if(!b.user_id||b.status==='cancelled') continue; const d=bDate(b); if(!firstBookingOf[b.user_id]||d<firstBookingOf[b.user_id]) firstBookingOf[b.user_id]=d; }
+
+    const rows=Object.values(cur).map(s=>{
+      const sessions=s.sessions.size;
+      const occupancy = s.capSum? +(s.attendances/s.capSum*100).toFixed(1) : 0;
+      const revPerSession = sessions? +(s.revenue/sessions).toFixed(2) : 0;
+      let newC=0, retC=0;
+      for(const uid of s.clients){ (firstBookingOf[uid]>=fromISO.slice(0,10)?newC++:retC++); }
+      const prevRev = prev[s.instructor]?.revenue||0;
+      const trend = prevRev>0 ? +(((s.revenue-prevRev)/prevRev)*100).toFixed(0) : null;
+      return { instructor:s.instructor, sessions, attendances:s.attendances, occupancy,
+        clients:s.clients.size, newClients:newC, returningClients:retC,
+        noShows:s.noShows, cancels:s.cancels, revenue:+s.revenue.toFixed(2), revPerSession, trend };
+    }).sort((a,b)=>b.revenue-a.revenue);
+
+    // recommendations
+    const recs=[];
+    if(rows.length){
+      const top=rows[0], flop=[...rows].sort((a,b)=>a.occupancy-b.occupancy)[0];
+      if(top) recs.push(`🏆 Najvýkonnejší: ${top.instructor} — ${top.revenue.toFixed(2)} € z ${top.sessions} hodín.`);
+      if(flop && flop.occupancy<40) recs.push(`⚠️ Nízka obsadenosť: ${flop.instructor} (${flop.occupancy}%) — zváž zmenu času/marketing.`);
+      const bigNoShow=rows.find(r=>r.attendances>0 && r.noShows/(r.attendances+r.noShows)>0.2);
+      if(bigNoShow) recs.push(`🔔 Vysoká absencia u ${bigNoShow.instructor} (${bigNoShow.noShows} no-show) — zapni pripomienky/potvrdenia.`);
+    }
+
+    const cities=[...new Set(classes.map(c=>c.location).filter(Boolean))].sort();
+    const trainers=[...new Set(classes.map(c=>c.instructor).filter(Boolean))].sort();
+    res.json({ rows, recommendations:recs, filters:{cities, trainers},
+      totals:{ sessions:rows.reduce((s,r)=>s+r.sessions,0), attendances:rows.reduce((s,r)=>s+r.attendances,0),
+        revenue:+rows.reduce((s,r)=>s+r.revenue,0).toFixed(2), avgOccupancy: rows.length?+(rows.reduce((s,r)=>s+r.occupancy,0)/rows.length).toFixed(1):0 } });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // STRIPE — Apple Pay / Google Pay / card via Stripe Checkout (no card data on our server)
 // ═══════════════════════════════════════════════════════════════════════════════

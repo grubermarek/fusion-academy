@@ -317,12 +317,11 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
   platbe (Stripe invoice.payment_failed webhook), po storne/dobropise/refunde (credit-note
   endpoint), po zrušenej rezervácii (klient aj tréner cancel → sendBookingCancelEmail).
 
-### I) Reporty výkonu trénerov (TODO — spec užívateľa sekcia 13)
-- /api/admin/trainers/performance?from&to&city&trainer: odučené hodiny (bookings
-  attended zoskupené podľa class+date), klienti, priem. obsadenosť, tržby z hodín
-  (transactions/payments cez bookings), noví vs opakovaní klienti, no-shows, storná,
-  priem. príjem/hodina, porovnanie s minulým obdobím; odporúčania (top/flop hodiny).
-- admin sekcia Tréneri s filtrami.
+### I) Reporty výkonu trénerov — ✅ HOTOVO
+- /api/admin/trainers/performance?from&to&city&trainer: odučené hodiny (class+date),
+  účasti, obsadenosť (účasti/kapacita), klienti, noví vs vrátení, no-show, storná,
+  tržby z hodín (účasti×cena), €/hodina, trend vs predošlé obdobie, odporúčania.
+  Admin sekcia „Výkon trénerov" s filtrami mesto/tréner + KPI + tabuľka.
 
 ### J) Výplaty trénerov (TODO — sekcia 14)
 - db.payout_rules per tréner: {trainer_id, fixed_per_class, pct_of_revenue, per_client,
