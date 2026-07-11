@@ -332,6 +332,26 @@ async function seedData() {
     console.log('✅  Marek Gruber povýšený na admina');
   }
 
+  // Beáta Gruber Buňová – admin
+  const beataEmail = 'beatabunova22@gmail.com';
+  const existingBeata = await q.one(db.users, {email: beataEmail});
+  if (!existingBeata) {
+    const hash = await bcrypt.hash('T15935750', 10);
+    let code = 'BEATA' + Math.floor(10+Math.random()*90);
+    while(await q.one(db.users,{referral_code:code})) code='BEATA'+Math.floor(100+Math.random()*900);
+    await q.insert(db.users, {
+      name:'Beáta Gruber Buňová', email:beataEmail, password:hash,
+      referral_code:code, is_admin:true, rank:8, active:true,
+      user_type:'admin', phone:'',
+      bank_account:'', sponsor_id:null, notes:'Spoluzakladateľka Fusion Academy',
+      created_at:today()
+    });
+    console.log('✅  Admin Beáta: beatabunova22@gmail.com');
+  } else if (!existingBeata.is_admin) {
+    await q.update(db.users, {email:beataEmail}, {$set:{is_admin:true, rank:8, user_type:'admin'}});
+    console.log('✅  Beáta Gruber Buňová povýšená na admina');
+  }
+
   // Products
   if(await q.count(db.products,{})===0){
     const prods=[
