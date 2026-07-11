@@ -2513,6 +2513,58 @@ async function ppRefundCapture(captureId, amount){
 
 app.get('/api/admin/refund-reasons', adminAuth, (req,res)=>res.json({reasons:REFUND_REASONS,types:REFUND_TYPES}));
 
+// ─── PHASE M: Exporty jedným klikom ─────────────────────────────────────────────
+function toCsv(header, rows){
+  const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
+  const out=[header.join(';')];
+  for(const r of rows) out.push(r.map(esc).join(';'));
+  return '﻿'+out.join('\r\n');
+}
+async function exportDataset(name){
+  const num=n=>(+n||0).toFixed(2).replace('.',',');
+  if(name==='members'){
+    const users=(await q.find(db.users,{is_admin:{$ne:true}})).filter(u=>!u.is_child);
+    const membs=await q.find(db.memberships,{});
+    const active=Object.fromEntries(membs.filter(m=>(m.expires_at||'')>new Date().toISOString()).map(m=>[m.user_id,m]));
+    return {file:'clenovia.csv', csv:toCsv(['Meno','Email','Telefon','Rola','Aktivne clenstvo','Expirace','Navstevy','Registracia'],
+      users.map(u=>[u.name,u.email,u.phone||'',u.user_type||'client',active[u._id]?.plan_name||'—',(active[u._id]?.expires_at||'').slice(0,10),u.visit_count||0,(u.created_at||'').slice(0,10)]))};
+  }
+  if(name==='campaigns'){
+    const list=await q.find(db.campaigns,{}); const revMap=await campaignRevenueMap();
+    return {file:'kampane.csv', csv:toCsv(['Nazov','Platforma','Od','Do','Rozpocet','Naklad','Imprese','Kliky','Registracie','Clenstva','Trzby','ROAS'],
+      list.map(c=>{ const rev=revMap[(c.name||'').toLowerCase().trim()]?.revenue||0; return [c.name,c.platform,c.date_from||'',c.date_to||'',num(c.budget),num(c.spend),c.impressions||0,c.clicks||0,c.registrations||0,c.memberships||0,num(rev),(rev/Math.max(+c.spend||1,1)).toFixed(2)];}))};
+  }
+  if(name==='payments'){
+    const users=Object.fromEntries((await q.find(db.users,{})).map(u=>[u._id,u.name]));
+    const list=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status));
+    return {file:'platby.csv', csv:toCsv(['Datum','Klient','Popis','Suma','Brana','Stav'],
+      list.map(p=>[(p.captured_at||p.created_at||'').slice(0,10),users[p.user_id]||'—',p.description||'',num(p.amount),p.provider||p.payment_method||'—',p.status]))};
+  }
+  if(name==='refunds'){
+    const list=await q.find(db.refunds,{});
+    return {file:'refundacie.csv', csv:toCsv(['Datum','Klient','Typ','Suma','Dovod','Brana','Dobropis'],
+      list.map(r=>[(r.created_at||'').slice(0,10),r.client_name||'—',r.type,num(r.amount),REFUND_REASONS[r.reason]||r.reason,r.gateway||'—',r.credit_note||'']))};
+  }
+  if(name==='crm'){
+    const users=(await q.find(db.users,{is_admin:{$ne:true}})).filter(u=>!u.is_child);
+    const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status));
+    const membs=(await q.find(db.memberships,{})).filter(m=>m.payment_method);
+    const paid={}; payments.forEach(p=>paid[p.user_id]=(paid[p.user_id]||0)+(+p.amount||0)); membs.forEach(m=>paid[m.user_id]=(paid[m.user_id]||0)+(+m.price||0));
+    return {file:'crm.csv', csv:toCsv(['Meno','Email','Telefon','LTV','Navstevy','Zdroj','Kampan','Registracia'],
+      users.map(u=>[u.name,u.email,u.phone||'',num(paid[u._id]||0),u.visit_count||0,u.utm_source||u.lead_source||'',u.utm_campaign||'',(u.created_at||'').slice(0,10)]))};
+  }
+  return null;
+}
+app.get('/api/admin/export/:dataset.csv', adminAuth, async(req,res)=>{
+  try {
+    const d=await exportDataset(req.params.dataset);
+    if(!d) return res.status(404).send('Neznámy export');
+    res.setHeader('Content-Type','text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition',`attachment; filename=${d.file}`);
+    res.send(d.csv);
+  } catch(e){ res.status(500).send(e.message); }
+});
+
 // ─── PHASE L: Admin alerty ──────────────────────────────────────────────────────
 app.get('/api/admin/alerts', adminAuth, async(req,res)=>{
   const list=(await q.find(db.notifications,{type:'admin_alert',user_id:req.session.uid}))

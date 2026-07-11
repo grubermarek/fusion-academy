@@ -136,6 +136,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('payouts')"><i class="bi bi-cash-stack me-2"></i>Výplaty trénerov</a>
       <a class="nav-link" href="#" onclick="show('refunds')"><i class="bi bi-arrow-counterclockwise me-2"></i>Refundácie</a>
       <a class="nav-link" href="#" onclick="show('alerts')"><i class="bi bi-bell me-2"></i>Alerty <span id="alertsBadge" class="badge bg-danger" style="display:none"></span></a>
+      <a class="nav-link" href="#" onclick="show('exports')"><i class="bi bi-download me-2"></i>Exporty</a>
       <a class="nav-link" href="#" onclick="show('transactions')"><i class="bi bi-receipt me-2"></i>Všetky predaje</a>
       <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby PayPal</a>
       <a class="nav-link" href="#" onclick="show('audit')"><i class="bi bi-shield-lock me-2"></i>Audit log</a>
@@ -965,6 +966,13 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </table></div>
   </div>
 
+  <!-- EXPORTY JEDNÝM KLIKOM -->
+  <div class="section" id="s-exports">
+    <h4 class="fw-bold mb-1">📤 Exporty jedným klikom</h4>
+    <p class="text-muted small mb-3">Stiahni dáta pre účtovníka alebo analýzu — CSV (Excel-friendly) alebo XLSX. Účtovníctvo a výplaty majú vlastné filtre v príslušných sekciách.</p>
+    <div id="exportGrid" class="row g-3"></div>
+  </div>
+
   <!-- ADMIN ALERTY -->
   <div class="section" id="s-alerts">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
@@ -1215,7 +1223,7 @@ function showToast(msg,type='success'){
 }
 
 const GROUP_TITLES={home:'Domov',manage:'Správa',marketing:'Marketing',reports:'Financie & reporty',partners:'Partneri (MLM)'};
-const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',campaigns:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',retention:'reports',accounting:'reports',trainers:'reports',payouts:'reports',refunds:'reports',alerts:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
+const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',campaigns:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',retention:'reports',accounting:'reports',trainers:'reports',payouts:'reports',refunds:'reports',alerts:'reports',exports:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('rail-'+g)?.classList.add('active');
@@ -1257,6 +1265,48 @@ function show(sec){
   if(sec==='payouts')initPayouts();
   if(sec==='refunds')loadRefunds();
   if(sec==='alerts')loadAlerts();
+  if(sec==='exports')loadExports();
+}
+
+/* ─── EXPORTY JEDNÝM KLIKOM ──────────────────────────────── */
+const EXPORTS=[
+  {k:'members',   icon:'👥', title:'Členovia',      desc:'Kontakty, členstvá, návštevy'},
+  {k:'crm',       icon:'🧭', title:'CRM / LTV',      desc:'LTV, zdroj, kampaň per klient'},
+  {k:'campaigns', icon:'📣', title:'Kampane',        desc:'Náklady, tržby, ROAS'},
+  {k:'payments',  icon:'💳', title:'Platby',         desc:'Všetky prijaté platby'},
+  {k:'refunds',   icon:'↩️', title:'Refundácie',    desc:'Vrátené platby a dobropisy'},
+];
+const EXTRA_EXPORTS=[
+  {icon:'🧾', title:'Faktúry', desc:'Všetky vydané faktúry', csv:'/api/admin/invoices/export.csv'},
+  {icon:'🧮', title:'Účtovníctvo (celé)', desc:'Príjmy + uzávierka', csv:'/api/admin/accounting/export.csv?from=&to='},
+  {icon:'💵', title:'Výplaty (tento mesiac)', desc:'Odmeny trénerov', csv:()=>'/api/admin/payouts/export.csv?month='+new Date().toISOString().slice(0,7)},
+];
+function loadExports(){
+  const grid=document.getElementById('exportGrid');
+  const card=(icon,title,desc,csvBtn,xlsxKey)=>`<div class="col-md-6 col-lg-4"><div class="card bg-dark border-secondary h-100"><div class="card-body">
+    <div style="font-size:1.7rem">${icon}</div>
+    <div class="fw-bold mt-1">${title}</div><div class="text-muted small mb-3">${desc}</div>
+    <div class="d-flex gap-2">${csvBtn}${xlsxKey?`<button class="btn btn-sm btn-outline-success" onclick="exportXlsx('${xlsxKey}','${title}')"><i class="bi bi-file-earmark-excel"></i> XLSX</button>`:''}</div>
+  </div></div></div>`;
+  grid.innerHTML =
+    EXPORTS.map(e=>card(e.icon,e.title,e.desc,`<a class="btn btn-sm btn-outline-light" href="/api/admin/export/${e.k}.csv"><i class="bi bi-filetype-csv"></i> CSV</a>`, e.k)).join('')
+    + EXTRA_EXPORTS.map(e=>card(e.icon,e.title,e.desc,`<a class="btn btn-sm btn-outline-light" href="${typeof e.csv==='function'?e.csv():e.csv}"><i class="bi bi-filetype-csv"></i> CSV</a>`, null)).join('');
+}
+async function exportXlsx(dataset,title){
+  try { await loadScript('https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js'); }
+  catch(e){ showToast('Excel knižnicu sa nepodarilo načítať — použi CSV','error'); return; }
+  const txt=await (await fetch(`/api/admin/export/${dataset}.csv`)).text();
+  const rows=txt.replace(/^﻿/,'').split('\r\n').map(line=>{
+    const out=[]; let cur='',q=false;
+    for(let i=0;i<line.length;i++){ const c=line[i];
+      if(c==='"'){ if(q&&line[i+1]==='"'){cur+='"';i++;} else q=!q; }
+      else if(c===';'&&!q){ out.push(cur); cur=''; }
+      else cur+=c; }
+    out.push(cur); return out;
+  });
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), title.slice(0,28));
+  XLSX.writeFile(wb, `${dataset}.xlsx`);
 }
 
 /* ─── ADMIN ALERTY ───────────────────────────────────────── */

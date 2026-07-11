@@ -341,9 +341,10 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
   kampane, nízke ROAS, vysoká miera refundácií, zlyhané platby dnes, končiace členstvá.
   Deduplikované per deň (alert_key). Sekcia „Alerty" s badge + „Skontrolovať teraz".
 
-### M) Exporty jedným klikom (TODO — sekcia 10)
-- admin sekcia Exporty: účtovníctvo/faktúry/platby/členovia/marketing/CRM/finance/
-  manažérsky report — CSV + XLSX (SheetJS).
+### M) Exporty jedným klikom — ✅ HOTOVO
+- /api/admin/export/:dataset.csv (members/crm/campaigns/payments/refunds) + reuse
+  faktúry/účtovníctvo/výplaty CSV. Sekcia „Exporty" — dlaždice s CSV + XLSX (SheetJS,
+  client-side parse CSV→XLSX). Účtovníctvo a výplaty majú vlastné filtre v sekciách.
 
 ### Architektúra (drž sa!)
 - Všetky platobné záznamy v db.payments s poľom `provider` ('stripe'|'paypal'|'manual'|
