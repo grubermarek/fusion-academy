@@ -1927,6 +1927,15 @@ app.post('/api/admin/invoices/:number/credit-note', adminAuth, async(req,res)=>{
   });
   await q.update(db.invoices,{_id:inv._id},{$set:{status:'credited',credit_note:cn?.number||null}});
   await auditLog(req,'invoice_credit_note',inv.number,{status:inv.status},{status:'credited',credit_note:cn?.number,amount},req.body.reason||'');
+  // Notify client about the credit note / refund
+  if(inv.client_email && !inv.client_email.includes('@internal.local') && cn){
+    sendMail(inv.client_email, `Dobropis ${cn.number} k faktúre ${inv.number} — Fusion Academy`,
+      emailTemplate('Vystavili sme dobropis',
+        `<p>Ahoj <b>${inv.client_name}</b>,</p>
+         <p>K faktúre <b>${inv.number}</b> sme vystavili dobropis na sumu <b>${amount.toFixed(2)} €</b>${req.body.reason?` (${req.body.reason})`:''}.</p>
+         <p>Vrátenú sumu ti pošleme rovnakým spôsobom, akým prebehla pôvodná platba. Ak máš otázky, stačí odpovedať na tento email.</p>`,
+        '🧾 Zobraziť dobropis', `${APP_URL}/invoice/${cn.number}`)).catch(()=>{});
+  }
   res.json({ok:true, credit_note:cn?.number});
 });
 
@@ -2442,6 +2451,18 @@ app.post('/api/stripe/webhook', async(req,res)=>{
           }
         }
       }
+    } else if(event.type==='invoice.payment_failed'){
+      const inv = event.data.object;
+      if(inv.subscription){
+        const u = await q.one(db.users,{stripe_subscription_id:inv.subscription});
+        if(u?.email){
+          await sendMail(u.email,'⚠️ Platba členstva zlyhala',
+            emailTemplate('Platba sa nepodarila',
+              `<p>Ahoj <b>${u.name}</b>,</p><p>Automatická platba za tvoje členstvo <b>bohužiaľ neprešla</b> 😟. Zvyčajne stačí skontrolovať platnosť karty alebo zostatok.</p><p>Aktualizuj si platobné údaje, aby ti členstvo nevypršalo. Ak potrebuješ pomôcť, stačí odpovedať na tento email.</p>`,
+              '💳 Aktualizovať platbu',`${APP_URL}/pricing`)).catch(()=>{});
+          await q.insert(db.notifications,{user_id:u._id,type:'payment_failed',title:'⚠️ Platba členstva zlyhala',body:'Skontroluj platobné údaje, aby ti členstvo nevypršalo.',read:false,created_at:nowISO()});
+        }
+      }
     } else if(event.type==='customer.subscription.deleted'){
       const sub = event.data.object;
       const u = await q.one(db.users,{stripe_subscription_id:sub.id});
@@ -2579,6 +2600,7 @@ app.delete('/api/bookings/:id', auth, async(req,res)=>{
   }
   await q.update(db.bookings,{_id:req.params.id},{$set:{status:'cancelled',cancelled_at:nowISO()}});
   if(b.status==='confirmed') await promoteWaitlist(b.class_id, b.booking_date);
+  sendBookingCancelEmail(b).catch(()=>{});
   res.json({ok:true});
 });
 
@@ -3105,6 +3127,7 @@ app.delete('/api/attendance/booking/:id', trainerAuth, async(req,res)=>{
     if(!b) return res.status(404).json({error:'Rezervácia nenájdená'});
     await q.update(db.bookings,{_id:req.params.id},{$set:{status:'cancelled',cancelled_at:nowISO(),cancelled_by:req.trainerUser._id}});
     if(b.status==='confirmed') await promoteWaitlist(b.class_id, b.booking_date);
+    sendBookingCancelEmail(b, true).catch(()=>{});
     res.json({ok:true});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -4278,6 +4301,20 @@ async function sendFirstClassEmail(userId){
   processEmailQueue().catch(()=>{});
 }
 
+// Booking cancellation confirmation email
+async function sendBookingCancelEmail(b, byStaff){
+  if(!b?.user_id) return;
+  const u = await q.one(db.users,{_id:b.user_id});
+  if(!u?.email) return;
+  await sendMail(u.email,`Rezervácia zrušená – ${b.class_name||'hodina'}`,
+    emailTemplate('Rezervácia zrušená',
+      `<p>Ahoj <b>${u.name}</b>,</p><p>Tvoja rezervácia bola zrušená${byStaff?' zo strany štúdia':''}:</p>
+       <ul style="color:#ccc"><li><b>${b.class_name||''}</b> ${b.class_emoji||''}</li><li>🗓️ ${b.booking_date||''}</li>${b.class_location?`<li>📍 ${b.class_location}</li>`:''}</ul>
+       <p>${byStaff?'Ospravedlňujeme sa za komplikáciu. ':''}Kedykoľvek si môžeš rezervovať novú hodinu v rozvrhu. 💃</p>`,
+      '🗓️ Rezervovať novú hodinu',`${APP_URL}/schedule`)).catch(()=>{});
+  await q.insert(db.notifications,{user_id:u._id,type:'booking_cancelled',title:'Rezervácia zrušená',body:`${b.class_name||''} – ${b.booking_date||''}`,read:false,created_at:nowISO()}).catch(()=>{});
+}
+
 async function runDailyJobs(){
   const d3 = new Date(Date.now()+3*86400000).toISOString().slice(0,10);
   const d7 = new Date(Date.now()+7*86400000).toISOString().slice(0,10);
@@ -4296,6 +4333,25 @@ async function runDailyJobs(){
         `<p>Ahoj <b>${u.name}</b>,</p><p>Tvoje členstvo <b>${m.plan_name}</b> vyprší <b>${m.expires_at.slice(0,10)}</b>.</p><p>Obnov si ho teraz a neprerušuj svoju tanečnú cestu! 💃</p>`,
         '🔄 Obnoviť členstvo',`${APP_URL}/pricing`)).catch(()=>{});
     await q.insert(db.notifications,{user_id:u._id,type:'expiry_warning',title:`⚠️ Členstvo vyprší o ${daysLeft} dní`,body:`${m.plan_name} – expirácia ${m.expires_at.slice(0,10)}`,read:false,created_at:nowISO()});
+  }
+
+  // ── 1b. Membership just ended (yesterday), not renewed → win-back email ────
+  const yStart = new Date(Date.now()-86400000).toISOString().slice(0,10);
+  const endedYesterday = await q.find(db.memberships,{status:'active',expires_at:{$gte:yStart+'T00:00:00',$lt:todayStr+'T00:00:00'}});
+  for(const m of endedYesterday){
+    const u = await q.one(db.users,{_id:m.user_id});
+    if(!u?.email) continue;
+    // skip if a newer active membership exists (renewed)
+    const renewed = await q.one(db.memberships,{user_id:m.user_id,expires_at:{$gt:todayStr+'T00:00:00'}});
+    if(renewed) continue;
+    await q.update(db.memberships,{_id:m._id},{$set:{status:'expired'}});
+    const already = await q.one(db.notifications,{user_id:u._id,type:'membership_ended',created_at:{$gte:yStart}});
+    if(already) continue;
+    await sendMail(u.email,'Tvoje členstvo skončilo – vráť sa na parket 💃',
+      emailTemplate('Členstvo skončilo',
+        `<p>Ahoj <b>${u.name}</b>,</p><p>Tvoje členstvo <b>${m.plan_name}</b> práve skončilo. Dúfame, že si si tanec užil/a naplno! 🌟</p><p>Obnov si ho jedným klikom a pokračuj tam, kde si prestal/a – tvoje miesto na parkete čaká.</p>`,
+        '🔄 Obnoviť členstvo',`${APP_URL}/pricing`)).catch(()=>{});
+    await q.insert(db.notifications,{user_id:u._id,type:'membership_ended',title:'Členstvo skončilo',body:`${m.plan_name} vypršalo ${m.expires_at.slice(0,10)}`,read:false,created_at:nowISO()});
   }
 
   // ── 2. Day-before class reminders ─────────────────────────────────────────

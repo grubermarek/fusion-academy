@@ -312,11 +312,10 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
   (/api/admin/invoices/:number/isdoc). Admin sekcia „Účtovníctvo".
 - TODO zvyšok: QR platba (PAY by square) pre neuhradené faktúry.
 
-### H) Automatické emaily — doplniť chýbajúce (TODO)
-- existujú: registrácia, po kúpe členstva (potvrdenie+faktúra), pred koncom, po prvej
-  hodine, win-back, rezervácia potvrdená.
-- doplniť: po skončení členstva, po neúspešnej platbe (Stripe invoice.payment_failed
-  webhook), po storne/refunde, po zrušenej rezervácii.
+### H) Automatické emaily — ✅ HOTOVO
+- doplnené: po skončení členstva (daily job 1b, win-back + status→expired), po neúspešnej
+  platbe (Stripe invoice.payment_failed webhook), po storne/dobropise/refunde (credit-note
+  endpoint), po zrušenej rezervácii (klient aj tréner cancel → sendBookingCancelEmail).
 
 ### I) Reporty výkonu trénerov (TODO — spec užívateľa sekcia 13)
 - /api/admin/trainers/performance?from&to&city&trainer: odučené hodiny (bookings
