@@ -2609,6 +2609,80 @@ app.post('/api/admin/alerts/read', adminAuth, async(req,res)=>{
   res.json({ok:true});
 });
 
+// ─── DATA RESET (clean slate for testing / before go-live) ──────────────────────
+// Wipes ALL transactional + client data. PRESERVES: admin & trainer accounts,
+// the class schedule, email sequences and payout rules (configuration).
+const RESET_CONFIRM_PHRASE = 'VYMAZAT VSETKO';
+// Preview counts of what a reset would delete (no changes made)
+app.get('/api/admin/reset-data/preview', adminAuth, async(req,res)=>{
+  try {
+    const users=await q.find(db.users,{});
+    const clientUsers=users.filter(u=>!u.is_admin && u.user_type!=='trainer');
+    res.json({
+      willDelete:{
+        klienti_a_clenovia: clientUsers.length,
+        rezervacie: await q.count(db.bookings,{}),
+        clenstva: await q.count(db.memberships,{}),
+        platby: await q.count(db.payments,{}),
+        objednavky: await q.count(db.orders,{}),
+        faktury: await q.count(db.invoices,{}),
+        predaje_transakcie: await q.count(db.transactions,{}),
+        provizie: await q.count(db.commissions,{}),
+        refundacie: await q.count(db.refunds,{}),
+        vyplaty: await q.count(db.payouts,{}),
+        kampane: await q.count(db.campaigns,{}),
+        notifikacie: await q.count(db.notifications,{}),
+        audit_zaznamy: await q.count(db.audit,{}),
+        spravy_chat: await q.count(db.messages,{}),
+        prenajmy: await q.count(db.rentals,{})
+      },
+      willKeep:{
+        admin_ucty: users.filter(u=>u.is_admin).length,
+        trener_ucty: users.filter(u=>u.user_type==='trainer').length,
+        rozvrh_hodin: await q.count(db.classes,{}),
+        email_sekvencie: await q.count(db.email_steps,{}),
+        pravidla_odmien: await q.count(db.payout_rules,{})
+      },
+      confirmPhrase: RESET_CONFIRM_PHRASE
+    });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.post('/api/admin/reset-data', adminAuth, async(req,res)=>{
+  try {
+    if(req.body.confirm !== RESET_CONFIRM_PHRASE)
+      return res.status(400).json({error:`Na potvrdenie zadaj presne: ${RESET_CONFIRM_PHRASE}`});
+
+    const me = await q.one(db.users,{_id:req.session.uid});
+    // Delete client/member accounts (keep admins + trainers)
+    const delUsers = await q.remove(db.users,{ is_admin:{$ne:true}, user_type:{$ne:'trainer'} }, {multi:true});
+    // Wipe all transactional stores
+    const wipe = async d => q.remove(d,{},{multi:true});
+    const [bk,mb,pm,or,iv,tx,cm,rf,po,cp,nt,au,ms,rn,eq,ad] = await Promise.all([
+      wipe(db.bookings), wipe(db.memberships), wipe(db.payments), wipe(db.orders),
+      wipe(db.invoices), wipe(db.transactions), wipe(db.commissions), wipe(db.refunds),
+      wipe(db.payouts), wipe(db.campaigns), wipe(db.notifications), wipe(db.audit),
+      wipe(db.messages), wipe(db.rentals), wipe(db.email_queue), wipe(db.adspend)
+    ]);
+    // Reset per-user counters on the kept staff accounts (fresh test stats)
+    await q.update(db.users,{},{$set:{visit_count:0, no_show_count:0, referral_credit:0,
+      first_class_email_sent:false, winback_sent:false, review_asked:false, free_credits:0,
+      single_entries:0, stripe_subscription_id:null, paypal_subscription_id:null,
+      membership_plan:null, membership_expires:null}},{multi:true});
+
+    // Fresh audit entry documenting the reset (audit was just wiped)
+    await auditLog(req,'data_reset','ALL', null,
+      {deleted_users:delUsers, bookings:bk, memberships:mb, payments:pm, orders:or, invoices:iv,
+       transactions:tx, commissions:cm, refunds:rf, payouts:po, campaigns:cp, notifications:nt,
+       messages:ms, rentals:rn}, req.body.reason||'Clean slate reset');
+
+    console.log(`🧹 DATA RESET by ${me?.email}: deleted ${delUsers} users + all transactional data`);
+    res.json({ ok:true, deleted:{ users:delUsers, bookings:bk, memberships:mb, payments:pm, orders:or,
+      invoices:iv, transactions:tx, commissions:cm, refunds:rf, payouts:po, campaigns:cp,
+      notifications:nt, messages:ms, rentals:rn } });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.post('/api/admin/refunds', adminAuth, async(req,res)=>{
   try {
     const {payment_id, type, amount, reason, note}=req.body;

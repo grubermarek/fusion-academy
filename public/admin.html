@@ -137,6 +137,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('refunds')"><i class="bi bi-arrow-counterclockwise me-2"></i>Refundácie</a>
       <a class="nav-link" href="#" onclick="show('alerts')"><i class="bi bi-bell me-2"></i>Alerty <span id="alertsBadge" class="badge bg-danger" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('exports')"><i class="bi bi-download me-2"></i>Exporty</a>
+      <a class="nav-link" href="#" onclick="show('reset')" style="color:#e57373"><i class="bi bi-exclamation-octagon me-2"></i>Reset dát</a>
       <a class="nav-link" href="#" onclick="show('transactions')"><i class="bi bi-receipt me-2"></i>Všetky predaje</a>
       <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby PayPal</a>
       <a class="nav-link" href="#" onclick="show('audit')"><i class="bi bi-shield-lock me-2"></i>Audit log</a>
@@ -966,6 +967,34 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </table></div>
   </div>
 
+  <!-- RESET DÁT (DANGER ZONE) -->
+  <div class="section" id="s-reset">
+    <h4 class="fw-bold mb-1" style="color:#e57373">⚠️ Reset dát — čistý štart</h4>
+    <p class="text-muted small mb-3">Vymaže všetkých klientov/členov a všetky transakcie (rezervácie, platby, faktúry, členstvá…). <b>Zachová</b> tvoj admin účet, účty trénerov, rozvrh hodín a nastavenia. Použi pred testovaním a znovu pred ostrým spustením.</p>
+    <div class="card mb-3" style="background:#2a1414;border:1px solid #5a2020">
+      <div class="card-body">
+        <div class="row g-4">
+          <div class="col-md-6">
+            <h6 class="fw-bold" style="color:#ef9a9a">🗑️ Vymaže sa</h6>
+            <div id="resetDelete" class="small text-muted">Načítavam…</div>
+          </div>
+          <div class="col-md-6">
+            <h6 class="fw-bold" style="color:#a5d6a7">✅ Zostane zachované</h6>
+            <div id="resetKeep" class="small text-muted">Načítavam…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="background:#1e1e1e;border:1px solid #5a2020;max-width:560px">
+      <div class="card-body">
+        <label class="small text-muted d-block mb-1">Na potvrdenie napíš presne: <b style="color:#e57373" id="resetPhrase">…</b></label>
+        <input id="resetConfirm" class="form-control form-control-sm bg-dark text-light border-secondary mb-2" placeholder="Potvrdzovacia fráza" autocomplete="off">
+        <button class="btn btn-danger btn-sm w-100" onclick="doReset()"><i class="bi bi-trash3-fill"></i> Nenávratne vymazať dáta</button>
+        <div class="text-muted mt-2" style="font-size:.72rem">Túto akciu nie je možné vrátiť späť. Odporúčam najprv stiahnuť exporty (sekcia Exporty).</div>
+      </div>
+    </div>
+  </div>
+
   <!-- EXPORTY JEDNÝM KLIKOM -->
   <div class="section" id="s-exports">
     <h4 class="fw-bold mb-1">📤 Exporty jedným klikom</h4>
@@ -1223,7 +1252,7 @@ function showToast(msg,type='success'){
 }
 
 const GROUP_TITLES={home:'Domov',manage:'Správa',marketing:'Marketing',reports:'Financie & reporty',partners:'Partneri (MLM)'};
-const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',campaigns:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',retention:'reports',accounting:'reports',trainers:'reports',payouts:'reports',refunds:'reports',alerts:'reports',exports:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
+const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',campaigns:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',retention:'reports',accounting:'reports',trainers:'reports',payouts:'reports',refunds:'reports',alerts:'reports',exports:'reports',reset:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('rail-'+g)?.classList.add('active');
@@ -1266,6 +1295,29 @@ function show(sec){
   if(sec==='refunds')loadRefunds();
   if(sec==='alerts')loadAlerts();
   if(sec==='exports')loadExports();
+  if(sec==='reset')loadResetPreview();
+}
+
+/* ─── RESET DÁT ──────────────────────────────────────────── */
+let _resetPhrase='VYMAZAT VSETKO';
+async function loadResetPreview(){
+  const d=await api('/api/admin/reset-data/preview');
+  if(!d||d.error){ document.getElementById('resetDelete').textContent='Chyba.'; return; }
+  _resetPhrase=d.confirmPhrase; document.getElementById('resetPhrase').textContent=d.confirmPhrase;
+  const fmt=obj=>Object.entries(obj).map(([k,v])=>`<div class="d-flex justify-content-between"><span>${k.replace(/_/g,' ')}</span><b>${v}</b></div>`).join('');
+  document.getElementById('resetDelete').innerHTML=fmt(d.willDelete);
+  document.getElementById('resetKeep').innerHTML=fmt(d.willKeep);
+}
+async function doReset(){
+  const phrase=document.getElementById('resetConfirm').value.trim();
+  if(phrase!==_resetPhrase){ showToast('Zadaj presnú potvrdzovaciu frázu','error'); return; }
+  if(!confirm('Naozaj nenávratne vymazať všetkých klientov a všetky transakcie? Tvoj admin účet, tréneri a rozvrh zostanú.')) return;
+  const d=await api('/api/admin/reset-data',{method:'POST',body:JSON.stringify({confirm:phrase})});
+  if(d?.ok){
+    showToast('Dáta vymazané — čistý štart ✓','success');
+    document.getElementById('resetConfirm').value='';
+    loadResetPreview();
+  } else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 
 /* ─── EXPORTY JEDNÝM KLIKOM ──────────────────────────────── */
