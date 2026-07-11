@@ -291,11 +291,14 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
   CAC per kampaň. Revenue kampane = tržby klientov s utm_campaign == kampaň (atribúcia
   už existuje na useroch). LTV podľa kampane do /api/admin/marketing/stats.
 
-### E) Rozšírené metriky (TODO)
-- LTV podľa mesta / typu členstva (rozšíriť marketing/stats)
-- Churn = zrušené členstvá / všetci členovia; Retention po 30/60/90/180/365 dňoch
-  (kohorty podľa created_at, aktivita = booking v okne); Payback period = CAC / priem.
-  mesačná útrata.
+### D) Kampane — ✅ HOTOVO
+- db.campaigns + CRUD API (audited), auto-metriky CTR/CPC/CPR/CPV/CPM/ROAS/ROI/CAC +
+  konverzie, atribúcia tržieb cez utm_campaign, admin sekcia Kampane s modálom.
+
+### E) Rozšírené metriky — ✅ HOTOVO
+- /api/admin/analytics/retention: churn/retention rate, kohorty 30/60/90/180/365
+  (aktivita=booking v okne od registrácie), LTV podľa členstva/mesta, payback=CAC/priem.
+  mesačná útrata. Admin sekcia „Retencia & LTV" (KPI + kohortná tabuľka + LTV bary).
 
 ### F) CRM detail klienta (TODO)
 - endpoint /api/admin/crm/client/:id: total paid, návštevy, priem. návštevnosť/mes.,

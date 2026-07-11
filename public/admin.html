@@ -130,6 +130,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div class="group-links" data-group="reports">
       <a class="nav-link" href="#" onclick="show('finance')"><i class="bi bi-graph-up me-2"></i><span style="color:#C9A24C;font-weight:700">Financie</span></a>
       <a class="nav-link" href="#" onclick="show('invoices')"><i class="bi bi-file-earmark-text me-2"></i>Faktúry</a>
+      <a class="nav-link" href="#" onclick="show('retention')"><i class="bi bi-people-fill me-2"></i>Retencia & LTV</a>
       <a class="nav-link" href="#" onclick="show('transactions')"><i class="bi bi-receipt me-2"></i>Všetky predaje</a>
       <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby PayPal</a>
       <a class="nav-link" href="#" onclick="show('audit')"><i class="bi bi-shield-lock me-2"></i>Audit log</a>
@@ -959,6 +960,34 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </table></div>
   </div>
 
+  <!-- RETENTION & LTV -->
+  <div class="section" id="s-retention">
+    <h4 class="fw-bold mb-1">📈 Retencia, Churn & LTV</h4>
+    <p class="text-muted small mb-3">Kohortná analýza udržateľnosti klientov, celoživotná hodnota a doba návratnosti akvizície.</p>
+    <div id="retKpis" class="row g-3 mb-4"></div>
+    <div class="row g-4">
+      <div class="col-lg-7">
+        <div class="card bg-dark border-secondary h-100"><div class="card-body">
+          <h6 class="fw-bold mb-3">Retencia kohort — % klientov s návštevou do N dní od registrácie</h6>
+          <div class="table-responsive"><table class="table table-dark table-sm align-middle mb-0" style="font-size:.8rem">
+            <thead><tr><th>Kohorta</th><th>Klienti</th><th>30d</th><th>60d</th><th>90d</th><th>180d</th><th>365d</th></tr></thead>
+            <tbody id="cohortBody"><tr><td colspan="7" class="text-muted text-center py-3">Načítavam…</td></tr></tbody>
+          </table></div>
+        </div></div>
+      </div>
+      <div class="col-lg-5">
+        <div class="card bg-dark border-secondary mb-3"><div class="card-body">
+          <h6 class="fw-bold mb-3">LTV podľa členstva</h6>
+          <div id="ltvPlan"></div>
+        </div></div>
+        <div class="card bg-dark border-secondary"><div class="card-body">
+          <h6 class="fw-bold mb-3">LTV podľa mesta</h6>
+          <div id="ltvCity"></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /main -->
 
 <!-- Edit Email Step Modal -->
@@ -1045,7 +1074,7 @@ function showToast(msg,type='success'){
 }
 
 const GROUP_TITLES={home:'Domov',manage:'Správa',marketing:'Marketing',reports:'Financie & reporty',partners:'Partneri (MLM)'};
-const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',campaigns:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
+const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',campaigns:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',retention:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('rail-'+g)?.classList.add('active');
@@ -1081,6 +1110,7 @@ function show(sec){
   if(sec==='invoices')initInvoices();
   if(sec==='audit')loadAudit();
   if(sec==='campaigns')loadCampaigns();
+  if(sec==='retention')loadRetention();
 }
 
 /* ─── CAMPAIGNS ─────────────────────────────────────────── */
@@ -1260,6 +1290,41 @@ async function loadAudit(){
     <td class="text-muted"><small>${j(a.after)}</small></td>
     <td>${j(a.reason)}</td><td class="text-muted"><small>${j(a.ip)}</small></td>
   </tr>`).join('');
+}
+
+/* ─── RETENCIA & LTV ─────────────────────────────────────── */
+async function loadRetention(){
+  const d=await api('/api/admin/analytics/retention');
+  if(!d||d.error){ document.getElementById('retKpis').innerHTML='<div class="text-muted">Chyba pri načítaní.</div>'; return; }
+  const kpi=(l,v,sub,color)=>`<div class="col-6 col-md-3"><div class="card bg-dark border-secondary h-100"><div class="card-body py-3">
+    <div class="text-muted" style="font-size:.68rem;text-transform:uppercase;letter-spacing:.05em">${l}</div>
+    <div class="fw-bold" style="font-size:1.5rem;color:${color||'#fff'}">${v}</div>
+    <div class="text-muted" style="font-size:.72rem">${sub||''}</div></div></div>`;
+  const c=d.churn, p=d.payback;
+  document.getElementById('retKpis').innerHTML=
+    kpi('Churn rate', c.churnRate+'%', c.churned+' z '+c.everMembers+' členov', c.churnRate>40?'#e05656':'#C9A24C')+
+    kpi('Retencia', c.retentionRate+'%', c.activeNow+' aktívnych', '#4caf50')+
+    kpi('CAC', p.cac.toFixed(2)+' €', p.totalPayers+' platiacich', '#fff')+
+    kpi('Payback', p.paybackMonths!=null? p.paybackMonths+' mes.':'—', 'priem. '+p.avgMonthlySpend.toFixed(2)+' €/mes.', '#fff');
+
+  const cell=(v)=>`<td><span class="badge ${v>=60?'bg-success':v>=30?'bg-warning text-dark':'bg-secondary'}">${v}%</span></td>`;
+  const cb=document.getElementById('cohortBody');
+  cb.innerHTML = d.cohorts.length? d.cohorts.map(co=>`<tr>
+    <td class="fw-semibold">${co.month}</td><td>${co.size}</td>
+    ${cell(co.retention[30])}${cell(co.retention[60])}${cell(co.retention[90])}${cell(co.retention[180])}${cell(co.retention[365])}
+  </tr>`).join('') : '<tr><td colspan="7" class="text-muted text-center py-3">Žiadne kohorty.</td></tr>';
+
+  const ltvRows=(list)=> list.length? list.map(e=>{
+    const max=Math.max(...list.map(x=>x.ltv),1);
+    return `<div class="d-flex align-items-center justify-content-between mb-2" style="gap:10px">
+      <div style="min-width:90px;font-size:.82rem" class="text-truncate">${escHtml(e.key)}</div>
+      <div class="flex-grow-1" style="background:#151515;border-radius:6px;height:20px;position:relative;overflow:hidden">
+        <div style="width:${Math.max(6,e.ltv/max*100)}%;height:100%;background:linear-gradient(90deg,#8a6d2e,#C9A24C)"></div></div>
+      <div style="min-width:70px;text-align:right;font-size:.82rem" class="fw-bold">${e.ltv.toFixed(2)} €</div>
+      <div style="min-width:34px;text-align:right;font-size:.72rem" class="text-muted">${e.payers}×</div>
+    </div>`; }).join('') : '<div class="text-muted small">Žiadne dáta.</div>';
+  document.getElementById('ltvPlan').innerHTML=ltvRows(d.ltvByPlan);
+  document.getElementById('ltvCity').innerHTML=ltvRows(d.ltvByCity);
 }
 
 /* ─── MARKETING ─────────────────────────────────────────────── */

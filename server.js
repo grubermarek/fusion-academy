@@ -2011,6 +2011,113 @@ app.get('/api/admin/finance/stats', adminAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ─── PHASE E: Retention / Churn / Payback / LTV kohorty ─────────────────────────
+app.get('/api/admin/analytics/retention', adminAuth, async(req,res)=>{
+  try {
+    const users=(await q.find(db.users,{is_admin:{$ne:true}})).filter(u=>u.user_type!=='trainer' && !u.is_child);
+    const membs=(await q.find(db.memberships,{})).filter(m=>!m._type);
+    const bookings=await q.find(db.bookings,{});
+    const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status));
+
+    // paid total per user (payments + cash memberships)
+    const paidByUser={};
+    for(const p of payments){ if(p.user_id) paidByUser[p.user_id]=(paidByUser[p.user_id]||0)+(+p.amount||0); }
+    for(const m of membs){ if(m.payment_method) paidByUser[m.user_id]=(paidByUser[m.user_id]||0)+(+m.price||0); }
+
+    // bookings grouped per user (with dates + primary city)
+    const bookByUser={};
+    for(const b of bookings){
+      if(!b.user_id) continue;
+      (bookByUser[b.user_id]=bookByUser[b.user_id]||[]).push(b);
+    }
+    const primaryCity=uid=>{
+      const bs=bookByUser[uid]||[]; if(!bs.length) return '—';
+      const c={}; bs.forEach(b=>{ const l=b.class_location||'—'; c[l]=(c[l]||0)+1; });
+      return Object.entries(c).sort((a,b)=>b[1]-a[1])[0][0];
+    };
+    // primary plan per user = latest membership plan
+    const primaryPlan=uid=>{
+      const ms=membs.filter(m=>m.user_id===uid).sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+      return ms.length? (ms[0].plan_name||ms[0].plan_id||'—') : '—';
+    };
+
+    const nowMs=Date.now();
+    // ── CHURN: members whose latest membership expired & not renewed vs all who ever had a membership
+    const memberIds=[...new Set(membs.map(m=>m.user_id))];
+    let churned=0, activeNow=0;
+    for(const uid of memberIds){
+      const ms=membs.filter(m=>m.user_id===uid);
+      const latestExp=ms.reduce((mx,m)=>{ const e=m.expires_at||''; return e>mx?e:mx; },'');
+      if(latestExp && new Date(latestExp).getTime()>=nowMs) activeNow++; else churned++;
+    }
+    const churnRate = memberIds.length? +(churned/memberIds.length*100).toFixed(1) : 0;
+    const retentionRate = memberIds.length? +(activeNow/memberIds.length*100).toFixed(1) : 0;
+
+    // ── RETENTION cohorts by signup month: % who booked within N days of signup
+    const windows=[30,60,90,180,365];
+    const cohortMap={};
+    for(const u of users){
+      const signup=u.created_at||''; if(!signup) continue;
+      const month=signup.slice(0,7);
+      const signupMs=new Date(signup).getTime();
+      const co=cohortMap[month]=cohortMap[month]||{month, size:0, ret:Object.fromEntries(windows.map(w=>[w,0]))};
+      co.size++;
+      const bs=bookByUser[u._id]||[];
+      for(const w of windows){
+        const cutoff=signupMs + w*86400000;
+        if(bs.some(b=>{ const t=new Date(b.booking_date||b.created_at||0).getTime(); return t>=signupMs && t<=cutoff; })) co.ret[w]++;
+      }
+    }
+    const cohorts=Object.values(cohortMap).sort((a,b)=>a.month.localeCompare(b.month)).map(c=>({
+      month:c.month, size:c.size,
+      retention:Object.fromEntries(windows.map(w=>[w, c.size? +(c.ret[w]/c.size*100).toFixed(0):0]))
+    }));
+
+    // ── LTV by plan / by city
+    const agg=(keyFn)=>{
+      const m={};
+      for(const u of users){
+        const paid=paidByUser[u._id]||0; if(paid<=0) continue;
+        const k=keyFn(u._id)||'—';
+        const e=m[k]=m[k]||{key:k, payers:0, revenue:0};
+        e.payers++; e.revenue+=paid;
+      }
+      return Object.values(m).map(e=>({...e, revenue:+e.revenue.toFixed(2), ltv:+(e.revenue/e.payers).toFixed(2)}))
+        .sort((a,b)=>b.ltv-a.ltv);
+    };
+    const ltvByPlan=agg(primaryPlan);
+    const ltvByCity=agg(primaryCity);
+
+    // ── PAYBACK: avg CAC / avg monthly revenue per paying customer
+    const campaigns=await q.find(db.campaigns,{});
+    const totalSpend=campaigns.reduce((s,c)=>s+(+c.spend||0),0);
+    const totalPayers=Object.keys(paidByUser).filter(uid=>paidByUser[uid]>0).length;
+    const cac= totalPayers && totalSpend ? +(totalSpend/totalPayers).toFixed(2) : 0;
+    // avg monthly spend per paying customer = avg(paid / months active), months from first->last activity min 1
+    let mspendSum=0, mspendN=0;
+    for(const uid of Object.keys(paidByUser)){
+      const paid=paidByUser[uid]; if(paid<=0) continue;
+      const ms=membs.filter(m=>m.user_id===uid);
+      let months=1;
+      if(ms.length){
+        const starts=ms.map(m=>new Date(m.started_at||m.created_at||0).getTime()).filter(Boolean);
+        const first=Math.min(...starts);
+        months=Math.max(1, Math.round((nowMs-first)/(30*86400000)));
+      }
+      mspendSum+=paid/months; mspendN++;
+    }
+    const avgMonthlySpend= mspendN? +(mspendSum/mspendN).toFixed(2) : 0;
+    const paybackMonths= avgMonthlySpend>0 && cac>0 ? +(cac/avgMonthlySpend).toFixed(1) : null;
+
+    res.json({
+      churn:{ churnRate, retentionRate, everMembers:memberIds.length, activeNow, churned },
+      cohorts, windows,
+      ltvByPlan, ltvByCity,
+      payback:{ cac, avgMonthlySpend, paybackMonths, totalSpend:+totalSpend.toFixed(2), totalPayers }
+    });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // STRIPE — Apple Pay / Google Pay / card via Stripe Checkout (no card data on our server)
 // ═══════════════════════════════════════════════════════════════════════════════
