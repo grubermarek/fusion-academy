@@ -398,7 +398,6 @@ async function seedData() {
     const classes=[
       // Nedeľa (0)
       {name:'Zumba Fitness',               emoji:'🎵', category:'Zumba',    instructor:'Marek Gruber',              location:'Detva',                       address:'Fusion Academy, Záhradná 7, Detva',                   day_of_week:0, time_start:'19:00', time_end:'20:00', capacity:20,  level:'Všetky úrovne',  description:'Zumba v Detve! Latino rytmy, energia a komunita. Spáliš 400–600 kcal. Prvá hodina ZADARMO!',                         price:10, color:'#C9A84C', active:true},
-      {name:'Detské spoločenské tance',     emoji:'🧒', category:'Deti',     instructor:'Marek Gruber',              location:'Detva',                       address:'Fusion Academy, Záhradná 7, Detva',                   day_of_week:0, time_start:'15:00', time_end:'16:00', capacity:12,  level:'Deti 5–17 rokov', description:'Spoločenské tance pre deti. Držanie tela, rytmus, sebavedomý pohyb. Vhodné pre vek 5–17 rokov.',                   price:9,  color:'#F0C060', active:true},
       // Pondelok (1)
       {name:'Zumba Fitness',               emoji:'🎵', category:'Zumba',    instructor:'Beáta Gruber Buňová',       location:'Zvolen',                      address:'Fitko Gymkova, M.R. Štefánika 805, Zvolen',            day_of_week:1, time_start:'19:00', time_end:'20:00', capacity:25,  level:'Všetky úrovne',  description:'Zumba vo Zvolene! Energetická hodina latinského fitnes tanca. Spáliš 400–600 kcal. Prvá hodina ZADARMO!',           price:10, color:'#C9A84C', active:true},
       {name:'Zumba Fitness',               emoji:'🎵', category:'Zumba',    instructor:'Fusion Team',               location:'Banská Bystrica',             address:'R2N Business centrum, Sládkovičova 29, Banská Bystrica',day_of_week:1, time_start:'17:00', time_end:'18:00', capacity:25,  level:'Všetky úrovne',  description:'Zumba v Banskej Bystrici! Latínske rytmy, energia a komunita. Prvá hodina ZADARMO!',                                 price:10, color:'#C9A84C', active:true},
@@ -412,11 +411,6 @@ async function seedData() {
       {name:'Zumba Fitness',               emoji:'🎵', category:'Zumba',    instructor:'Fusion Team',               location:'Brezno',                      address:'Fitko LÉGIA, Fraňa Kráľa 1/A, Brezno',                day_of_week:4, time_start:'19:00', time_end:'20:00', capacity:20,  level:'Všetky úrovne',  description:'Štvrtok = Zumba v Brezne! Latínsky rytmus a dobrá nálada.',                                                          price:10, color:'#C9A84C', active:true},
       // Piatok (5)
       {name:'Zumba Fitness',               emoji:'🎵', category:'Zumba',    instructor:'Marek Gruber',              location:'Detva',                       address:'Fusion Academy, Záhradná 7, Detva',                   day_of_week:5, time_start:'19:00', time_end:'20:00', capacity:20,  level:'Všetky úrovne',  description:'Piatok patrí Zumbe v Detve! Latino rytmy a komunita. Prvá hodina ZADARMO!',                                          price:10, color:'#C9A84C', active:true},
-      {name:'Detské spoločenské tance',     emoji:'🧒', category:'Deti',     instructor:'Marek Gruber',              location:'Detva',                       address:'Fusion Academy, Záhradná 7, Detva',                   day_of_week:5, time_start:'15:00', time_end:'16:00', capacity:12,  level:'Deti 5–17 rokov', description:'Spoločenské tance pre deti. Držanie tela, rytmus, sebavedomý pohyb. Vhodné pre vek 5–17 rokov.',                   price:9,  color:'#F0C060', active:true},
-      // Sobota (6)
-      {name:'FitDays Workshop',            emoji:'🏆', category:'FitDays',  instructor:'Marek Gruber & Beáta Gruber Buňová', location:'Detva',              address:'Fusion Academy, Záhradná 7, Detva',                   day_of_week:6, time_start:'10:00', time_end:'16:00', capacity:30,  level:'Všetky úrovne',  description:'FitDays – celodenný workshop každé 2 týždne. Program: výživa, motivácia, kariérny rozvoj, osobný rast, Zumba párty, refreshments a afterparty. Hostia: Zuzana Duong Záp., Daniel Duong, Beáta & Marek Gruber. Cena: 25 €.', price:25, color:'#C9A84C', active:true},
-      {name:'Súkromná lekcia – rezervácia',emoji:'👤', category:'Súkromné', instructor:'Marek Gruber',              location:'Detva / Zvolen / BB / Brezno', address:'Podľa dohody – všetky mestá',                        day_of_week:6, time_start:'09:00', time_end:'18:00', capacity:1,   level:'Individuálne',   description:'Súkromná 60-min. lekcia s Marekom Gruberom. Choreografia na mieru, spoločenské tance, Pro-Am, svadobný tanec. Rezervácia: +421 904 315 151.',                                                                           price:70, color:'#9c27b0', active:true},
-      {name:'Metabolická analýza (InBody)', emoji:'📊', category:'Wellness', instructor:'Marek Gruber',             location:'Detva',                       address:'Fusion Academy, Záhradná 7, Detva',                   day_of_week:6, time_start:'09:00', time_end:'17:00', capacity:15,  level:'Všetky úrovne',  description:'Rezervujte si termín InBody analýzy. Bazálny metabolizmus, % tuku, svalová hmota, biologický vek. Zahrnuté v Silver a Gold členstve.',                                                                                  price:35, color:'#00bcd4', active:true},
     ];
     for(const c of classes) await q.insert(db.classes, c);
     console.log('✅  Rozvrh naplnený');
@@ -1297,6 +1291,20 @@ app.put('/api/admin/classes/:id', adminAuth, async(req,res)=>{
 app.delete('/api/admin/classes/:id', adminAuth, async(req,res)=>{
   await q.update(db.classes,{_id:req.params.id},{$set:{active:false}});
   res.json({ok:true});
+});
+
+// Keep only Zumba / Zumba ONLINE classes — deactivates everything else. Audited & reversible.
+app.post('/api/admin/classes/keep-zumba-only', adminAuth, async(req,res)=>{
+  try {
+    const isZumba = c => /zumba/i.test(c.name||'') || /zumba|online/i.test(c.category||'');
+    const active = (await q.find(db.classes,{active:true}));
+    const toRemove = active.filter(c=>!isZumba(c));
+    for(const c of toRemove) await q.update(db.classes,{_id:c._id},{$set:{active:false}});
+    await auditLog(req,'classes_keep_zumba_only','classes',{removed_count:toRemove.length},
+      {removed:toRemove.map(c=>c.name)}, req.body.reason||'');
+    res.json({ ok:true, removed:toRemove.length, kept:active.length-toRemove.length,
+      removedNames:[...new Set(toRemove.map(c=>c.name))] });
+  } catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // Admin: Bookings
