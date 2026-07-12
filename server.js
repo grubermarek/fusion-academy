@@ -931,6 +931,41 @@ app.get('/api/community/members', auth, async(req,res)=>{
   res.json(result);
 });
 
+// ── Private messages (1-on-1 DMs between members) ─────────────────────────────
+const dmKey = (a,b) => 'dm_' + [String(a),String(b)].sort().join('_');
+
+// List my conversations (other participant, last message, unread count)
+app.get('/api/dm/conversations', auth, async(req,res)=>{
+  const me = req.session.uid;
+  const msgs = await q.find(db.messages, {is_dm:true, participants:me});
+  const convs = {};
+  for(const m of msgs){
+    const other = m.from_id===me ? m.to_id : m.from_id;
+    const c = convs[other] = convs[other] || {other_id:other, last_text:'', last_at:'', last_from:'', unread:0};
+    if(!c.last_at || m.created_at>c.last_at){ c.last_at=m.created_at; c.last_text=m.text; c.last_from=m.from_id; }
+    if(m.to_id===me && !m.read) c.unread++;
+  }
+  const users = Object.fromEntries((await q.find(db.users,{})).map(u=>[u._id,u]));
+  const list = Object.values(convs).map(c=>({
+    ...c, other_name: users[c.other_id]?.name||'Neznámy užívateľ',
+    other_badge: getMemberBadge(users[c.other_id]?.created_at)
+  })).sort((a,b)=>(b.last_at||'').localeCompare(a.last_at||''));
+  res.json({conversations:list, unread_total:list.reduce((s,c)=>s+c.unread,0)});
+});
+
+// Message history with one user (marks incoming as read)
+app.get('/api/dm/history/:userId', auth, async(req,res)=>{
+  const me = req.session.uid, other = req.params.userId;
+  if(other===me) return res.status(400).json({error:'Nemôžeš písať sám sebe'});
+  const other_u = await q.one(db.users,{_id:other});
+  if(!other_u) return res.status(404).json({error:'Užívateľ nenájdený'});
+  const key = dmKey(me,other);
+  const msgs = await q.find(db.messages,{is_dm:true, dm_key:key},{created_at:1});
+  await q.update(db.messages,{is_dm:true,dm_key:key,to_id:me,read:{$ne:true}},{$set:{read:true}},{multi:true});
+  res.json({ messages: msgs.slice(-100),
+    other:{ id:other, name:other_u.name, badge:getMemberBadge(other_u.created_at) } });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // PARTNER DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -4649,6 +4684,9 @@ io.on('connection', async(socket)=>{
   };
   onlineUsers.set(socket.id, userInfo);
 
+  // Personal room for private messages (reaches the user on any open view)
+  socket.join('user:'+u._id);
+
   // Send user their info + channels
   socket.emit('welcome', { user: userInfo, channels: CHANNELS });
 
@@ -4683,6 +4721,30 @@ io.on('connection', async(socket)=>{
       created_at: nowISO(),
     });
     io.to(channel||'general').emit('new_message', msg);
+  });
+
+  // Private message (1-on-1)
+  socket.on('send_dm', async(data)=>{
+    try {
+      const to = String(data?.to||''); const text = (data?.text||'').trim();
+      if(!to || to===u._id || !text || text.length>1000) return;
+      const recipient = await q.one(db.users,{_id:to});
+      if(!recipient) return;
+      const msg = await q.insert(db.messages, {
+        is_dm:true, dm_key: dmKey(u._id,to), participants:[u._id,to],
+        from_id:u._id, from_name:u.name, to_id:to,
+        memberBadge:getMemberBadge(u.created_at),
+        text: text.slice(0,1000), read:false, created_at: nowISO(),
+      });
+      // Deliver live to both participants (any open view)
+      io.to('user:'+to).emit('new_dm', msg);
+      io.to('user:'+u._id).emit('new_dm', msg);
+      // Persistent notification for the recipient (shows in bell / dashboard)
+      await q.insert(db.notifications,{user_id:to, type:'dm', from_id:u._id,
+        title:`💬 Nová správa od ${u.name}`,
+        body: text.length>80 ? text.slice(0,80)+'…' : text,
+        read:false, created_at:nowISO()});
+    } catch(e){ console.error('send_dm:', e.message); }
   });
 
   // Disconnect
