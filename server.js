@@ -329,7 +329,13 @@ async function awardPurchaseCommission({buyer_id, amount, product_name}){
   try {
     if(!buyer_id || !(amount>0)) return;
     const buyer = await q.one(db.users,{_id:buyer_id});
-    if(!buyer || !buyer.sponsor_id) return;
+    if(!buyer) return;
+    // First paid purchase promotes a lead → client
+    if(buyer.user_type==='lead'){
+      await q.update(db.users,{_id:buyer._id},{$set:{user_type:'client'}});
+      await q.insert(db.notifications,{user_id:buyer._id,type:'role_change',title:'Vitaj medzi klientmi! 🎉',body:'Tvoja prvá platba prebehla – si náš klient.',read:false,created_at:nowISO()}).catch(()=>{});
+    }
+    if(!buyer.sponsor_id) return;
     const amt = +(+amount).toFixed(2);
     const tx = await q.insert(db.transactions,{
       partner_id: buyer.sponsor_id, client_id: buyer._id, client_name: buyer.name,
@@ -707,8 +713,10 @@ app.post('/api/register', async(req,res)=>{
     const base=name.split(' ')[0].toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8);
     let code=base+Math.floor(10+Math.random()*90);
     while(await q.one(db.users,{referral_code:code})) code=base+Math.floor(100+Math.random()*900);
-    // All new users are 'client' — they can earn referral rewards right away
-    const utype = user_type || 'client';
+    // New self-registrations start as a LEAD (admins call/nurture them) and are
+    // auto-promoted to 'client' on their first paid purchase. Explicit staff
+    // roles (trainer/partner/manager/admin) passed via API are kept as given.
+    const utype = (user_type && !['client','lead'].includes(user_type)) ? user_type : 'lead';
     // ── Marketing attribution (first-touch, captured client-side) ─────────────
     const attr = req.body.attribution||{};
     const clean = v => String(v||'').slice(0,200);
@@ -731,6 +739,31 @@ app.post('/api/register', async(req,res)=>{
         const newCredit = +((sp.referral_credit||0) + REFERRAL_SIGNUP_CREDIT).toFixed(2);
         await q.update(db.users,{_id:sponsor_id},{$set:{referral_credit: newCredit}});
         await q.insert(db.notifications,{user_id:sponsor_id,type:'referral_credit',title:`+${REFERRAL_SIGNUP_CREDIT} € referral kredit! 🎉`,body:`${name} sa zaregistroval/a cez tvoj link. Zostatok: ${newCredit} €`,read:false,created_at:nowISO()});
+      }
+    }
+    // Notify all admins about the new lead (in-app + email) so they can call/nurture
+    if(utype==='lead'){
+      const sponsorName = sponsor_id ? (await q.one(db.users,{_id:sponsor_id}))?.name : null;
+      const src = lead_source ? ` · zdroj: ${lead_source}` : '';
+      const admins = await q.find(db.users,{is_admin:true});
+      for(const a of admins){
+        await q.insert(db.notifications,{user_id:a._id, type:'new_lead',
+          title:'🆕 Nová registrácia – lead',
+          body:`${name} · ${email}${phone?' · '+phone:''}${sponsorName?' · sponzor: '+sponsorName:''}${src}`,
+          read:false, created_at:nowISO()});
+        if(a.email && !a.email.includes('@internal.local'))
+          sendMail(a.email, `🆕 Nový lead: ${name}`,
+            emailTemplate('Nová registrácia – lead 📞',
+              `<p>Práve sa zaregistroval nový lead:</p>
+               <ul style="color:#ccc">
+                 <li><b>${name}</b></li>
+                 <li>✉️ ${email}</li>
+                 ${phone?`<li>📞 ${phone}</li>`:''}
+                 ${sponsorName?`<li>👤 Sponzor: ${sponsorName}</li>`:''}
+                 ${lead_source?`<li>📍 Zdroj: ${lead_source}</li>`:''}
+               </ul>
+               <p>Ozvi sa mu čo najskôr a zapíš si poznámky v CRM. 💪</p>`,
+              '📋 Otvoriť CRM', `${APP_URL}/admin`)).catch(()=>{});
       }
     }
     // Email automation: enqueue welcome + lead_nurture sequences
@@ -1171,6 +1204,9 @@ app.get('/api/admin/crm/stats', adminAuth, async(req,res)=>{
     // New registrations this month
     const monthStart = currentMonth()+'-01';
     stats.new_this_month = allUsers.filter(u=>u.created_at>=monthStart).length;
+    // Lead → client conversion: how many of all (leads+clients) became paying clients
+    const funnel = stats.leads + stats.clients;
+    stats.conversion_rate = funnel ? +((stats.clients/funnel)*100).toFixed(1) : 0;
     res.json(stats);
   } catch(e){res.status(500).json({error:e.message});}
 });

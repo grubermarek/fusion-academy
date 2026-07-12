@@ -1952,7 +1952,8 @@ async function loadCrm(){
       {k:'total',l:'Celkom',c:'secondary'},{k:'leads',l:'Leads',c:'primary'},
       {k:'clients',l:'Klienti',c:'success'},{k:'trainers',l:'Tréneri',c:'warning'},
       {k:'partners',l:'Partneri',c:'danger'},{k:'new_this_month',l:'Nový tento mesiac',c:'info'}
-    ].map(x=>`<span class="badge rounded-pill bg-${x.c}" style="padding:8px 14px;font-size:.82rem">${x.l}: <b>${stats[x.k]||0}</b></span>`).join('');
+    ].map(x=>`<span class="badge rounded-pill bg-${x.c}" style="padding:8px 14px;font-size:.82rem">${x.l}: <b>${stats[x.k]||0}</b></span>`).join('')
+     +`<span class="badge rounded-pill" style="padding:8px 14px;font-size:.82rem;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08" title="Podiel klientov z (leadov + klientov)">Konverzia lead→klient: <b>${stats.conversion_rate||0}%</b></span>`;
     const leads=stats.leads||0;
     if(leads>0){const b=document.getElementById('crmLeadsBadge');b.textContent=leads;b.style.display='inline';}
   }
