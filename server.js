@@ -698,6 +698,12 @@ app.post('/api/register', async(req,res)=>{
       if(!sp) return res.status(400).json({error:'Referral kód neexistuje'});
       sponsor_id=sp._id;
     }
+    // No sponsor → assign the founder (Marek Gruber) as default sponsor,
+    // so every member always sits under someone in the structure.
+    if(!sponsor_id){
+      const founder=await q.one(db.users,{email:'gruber.marek@gmail.com'});
+      if(founder && founder.email!==email.toLowerCase().trim()) sponsor_id=founder._id;
+    }
     const base=name.split(' ')[0].toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8);
     let code=base+Math.floor(10+Math.random()*90);
     while(await q.one(db.users,{referral_code:code})) code=base+Math.floor(100+Math.random()*900);
@@ -1140,11 +1146,11 @@ app.put('/api/admin/users/:id', adminAuth, async(req,res)=>{
 
 // ── Lite user list for pickers (client & sponsor selectors) ───────────────────
 app.get('/api/admin/users-lite', adminAuth, async(req,res)=>{
-  const all = await q.find(db.users,{is_admin:{$ne:true}});
-  const nameMap = Object.fromEntries(all.map(u=>[u._id,u.name]));
+  const all = await q.find(db.users,{});
+  const nameMap = Object.fromEntries(all.map(u=>[u._id,u.name])); // resolve sponsor names incl. admins (Marek)
   res.json(all.filter(u=>!u.is_child).map(u=>({
     id:u._id, name:u.name, email:u.email, referral_code:u.referral_code||'',
-    user_type:u.user_type||'client',
+    user_type:u.is_admin?'admin':(u.user_type||'client'),
     sponsor_id:u.sponsor_id||null, sponsor_name:u.sponsor_id?(nameMap[u.sponsor_id]||'—'):null
   })).sort((a,b)=>a.name.localeCompare(b.name)));
 });
