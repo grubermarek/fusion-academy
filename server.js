@@ -277,7 +277,10 @@ async function saveCommissions(txId,partnerId,amount){
   const partner=await q.one(db.users,{_id:partnerId});
   const rank=RANKS[(partner?.rank||1)-1];
   const month=currentMonth();
-  await q.insert(db.commissions,{transaction_id:txId,partner_id:partnerId,source_partner_id:partnerId,level:0,percentage:rank.directRate,amount:+(amount*rank.directRate).toFixed(2),status:'pending',month,created_at:nowISO()});
+  const awarded=[]; // {user_id, amount, level}
+  const directAmt=+(amount*rank.directRate).toFixed(2);
+  await q.insert(db.commissions,{transaction_id:txId,partner_id:partnerId,source_partner_id:partnerId,level:0,percentage:rank.directRate,amount:directAmt,status:'pending',month,created_at:nowISO()});
+  awarded.push({user_id:partnerId, amount:directAmt, level:0});
   let curId=partnerId;
   for(let lvl=1;lvl<=7;lvl++){
     const cur=await q.one(db.users,{_id:curId});
@@ -287,10 +290,57 @@ async function saveCommissions(txId,partnerId,amount){
     const upRank=RANKS[(up.rank||1)-1];
     if(lvl<=upRank.levels && await getPersonal30(up._id)>=100){
       const rate=LEVEL_RATES[lvl-1];
-      await q.insert(db.commissions,{transaction_id:txId,partner_id:up._id,source_partner_id:partnerId,level:lvl,percentage:rate,amount:+(amount*rate).toFixed(2),status:'pending',month,created_at:nowISO()});
+      const amt=+(amount*rate).toFixed(2);
+      await q.insert(db.commissions,{transaction_id:txId,partner_id:up._id,source_partner_id:partnerId,level:lvl,percentage:rate,amount:amt,status:'pending',month,created_at:nowISO()});
+      awarded.push({user_id:up._id, amount:amt, level:lvl});
     }
     curId=up._id;
   }
+  // Notify every commission recipient (in-app + email)
+  notifyCommissionRecipients(txId, awarded).catch(e=>console.error('Commission notify:',e.message));
+}
+
+// In-app + email notification to each person who earned a commission from a sale
+async function notifyCommissionRecipients(txId, awarded){
+  const tx = await q.one(db.transactions,{_id:txId});
+  const client = tx?.client_name || '';
+  const product = tx?.product_name || 'predaj';
+  for(const a of awarded){
+    if(!(a.amount>0)) continue;
+    const u = await q.one(db.users,{_id:a.user_id});
+    if(!u) continue;
+    const kind = a.level===0 ? 'Priama provízia' : `Provízia z tímu (úroveň ${a.level})`;
+    await q.insert(db.notifications,{user_id:u._id, type:'commission',
+      title:`💰 Nová provízia +${a.amount.toFixed(2)} €`,
+      body:`${kind} z predaja „${product}"${client?` – ${client}`:''}.`,
+      read:false, created_at:nowISO()});
+    if(u.email && !u.email.includes('@internal.local')){
+      sendMail(u.email, `💰 Nová provízia +${a.amount.toFixed(2)} € — Fusion Academy`,
+        emailTemplate('Máš novú províziu! 🎉',
+          `<p>Ahoj <b>${u.name}</b>,</p><p>Práve ti pribudla <b>${kind.toLowerCase()}</b> <b style="color:#C9A84C">+${a.amount.toFixed(2)} €</b> z predaja <b>${product}</b>${client?` (klient ${client})`:''}.</p><p>Zostatok a výplatu si pozri vo svojom profile.</p>`,
+          '📊 Moje provízie', `${APP_URL}/dashboard`)).catch(()=>{});
+    }
+  }
+}
+
+// Auto-award MLM commission for an automatic purchase (Stripe/PayPal/cash membership).
+// Recipient = the buyer's sponsor (who referred them). No-op if the buyer has no sponsor.
+async function awardPurchaseCommission({buyer_id, amount, product_name}){
+  try {
+    if(!buyer_id || !(amount>0)) return;
+    const buyer = await q.one(db.users,{_id:buyer_id});
+    if(!buyer || !buyer.sponsor_id) return;
+    const amt = +(+amount).toFixed(2);
+    const tx = await q.insert(db.transactions,{
+      partner_id: buyer.sponsor_id, client_id: buyer._id, client_name: buyer.name,
+      product_id:null, product_name: product_name||'Členstvo', amount: amt,
+      date: today(), notes:'Automatická provízia z online predaja', auto:true,
+      commission_only:true, // excluded from revenue totals (revenue counted via payment/membership record)
+      created_at:nowISO()
+    });
+    await saveCommissions(tx._id, buyer.sponsor_id, amt);
+    await calcRank(buyer.sponsor_id);
+  } catch(e){ console.error('awardPurchaseCommission:', e.message); }
 }
 
 // ─── Auth middleware ──────────────────────────────────────────────────────────
@@ -953,7 +1003,7 @@ app.post('/api/profile/password', auth, async(req,res)=>{
 app.get('/api/admin/stats', adminAuth, async(req,res)=>{
   const month=currentMonth();
   const allU=await q.find(db.users,{is_admin:{$ne:true}});
-  const allTx=await q.find(db.transactions,{});
+  const allTx=(await q.find(db.transactions,{})).filter(t=>!t.commission_only); // exclude commission-anchor rows from revenue
   const allC=await q.find(db.commissions,{});
   const allO=await q.find(db.orders,{});
   const allB=await q.find(db.bookings,{});
@@ -1528,6 +1578,7 @@ app.post('/api/paypal/capture-order', async(req,res)=>{
         createInvoice({user_id:payment.user_id, client_name:pu?.name, client_email:pu?.email,
           items:[{desc:payment.description||'Platba Fusion Academy', qty:1, total:payment.amount}],
           total:payment.amount, method:'PayPal'}); }
+      if(payment.status!=='completed') awardPurchaseCommission({buyer_id:payment.user_id, amount:payment.amount, product_name:payment.description||'Členstvo'});
       // If it's a membership payment, activate membership (member_id = child if family purchase)
       if(payment.ref_type==='membership' && payment.user_id){
         await activateMembership(payment.member_id || payment.user_id, payment.ref_id, 30);
@@ -1724,6 +1775,7 @@ app.post('/api/membership/subscribe/activate', auth, async(req,res)=>{
       createInvoice({user_id:req.session.uid, client_name:pu?.name, client_email:pu?.email,
         items:[{desc:`Členstvo ${MEMBERSHIP_PLANS[plan_id]?.name} (mesačný odber)`, qty:1, total:MEMBERSHIP_PLANS[plan_id]?.price||0}],
         total:MEMBERSHIP_PLANS[plan_id]?.price||0, method:'PayPal (automatický odber)'}); }
+    awardPurchaseCommission({buyer_id:req.session.uid, amount:MEMBERSHIP_PLANS[plan_id]?.price, product_name:`Členstvo ${MEMBERSHIP_PLANS[plan_id]?.name}`});
     res.json({ok:true, plan_name: MEMBERSHIP_PLANS[plan_id]?.name});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -1786,6 +1838,7 @@ app.post('/api/paypal/webhook', express.raw({type:'application/json'}), async(re
       createInvoice({user_id:u._id, client_name:u.name, client_email:u.email,
         items:[{desc:`Členstvo ${plan.name} — mesačná obnova`, qty:1, total:parseFloat(amount)}],
         total:parseFloat(amount), method:'PayPal (automatický odber)'});
+      awardPurchaseCommission({buyer_id:u._id, amount:parseFloat(amount), product_name:`Členstvo ${plan.name} (obnova)`});
       await q.insert(db.notifications,{user_id:u._id,type:'membership',title:'Členstvo obnovené 🔄',body:`${plan.name} automaticky obnovené do ${newExpiry.toLocaleDateString('sk-SK')}.`,read:false,created_at:nowISO()});
       if(u.email) sendMail(u.email,`🔄 Členstvo obnovené – ${plan.name}`,
         emailTemplate('Členstvo automaticky obnovené 🔄',
@@ -2908,6 +2961,7 @@ app.post('/api/stripe/verify', auth, async(req,res)=>{
     createInvoice({user_id:meta.user_id, client_name:buyer?.name, client_email:buyer?.email,
       items:[{desc:`Členstvo ${plan.name}${meta.type==='subscription'?' (mesačný odber)':''}`, qty:1, total:plan.price}],
       total:plan.price, method:'Stripe (karta / Apple Pay / Google Pay)'});
+    awardPurchaseCommission({buyer_id:meta.user_id, amount:plan.price, product_name:`Členstvo ${plan.name}`});
     res.json({ok:true, plan_name:plan.name, subscription:meta.type==='subscription'});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -2992,6 +3046,7 @@ app.post('/api/stripe/webhook', async(req,res)=>{
             createInvoice({user_id:u._id, client_name:u.name, client_email:u.email,
               items:[{desc:`Členstvo ${plan.name} — mesačná obnova`, qty:1, total:plan.price}],
               total:plan.price, method:'Stripe (automatický odber)'});
+            awardPurchaseCommission({buyer_id:u._id, amount:plan.price, product_name:`Členstvo ${plan.name} (obnova)`});
           }
         }
       }
@@ -3592,6 +3647,7 @@ app.post('/api/attendance/single-entry', trainerAuth, async(req,res)=>{
     createInvoice({user_id, client_name:u.name, client_email:u.email,
       items:[{desc:'Jednorazový vstup', qty:1, total:+(amount||10)}], total:+(amount||10),
       method:payment_method==='card'?'Karta na mieste':(payment_method||'Hotovosť')});
+    awardPurchaseCommission({buyer_id:user_id, amount:+(amount||10), product_name:'Jednorazový vstup'});
     res.json({ok:true, single_entries:entries});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -3639,6 +3695,7 @@ app.post('/api/attendance/record-membership', trainerAuth, async(req,res)=>{
     createInvoice({user_id, client_name:u.name, client_email:u.email,
       items:[{desc:`Členstvo ${plan.name}`, qty:1, total:+(amount||plan.price)}], total:+(amount||plan.price),
       method:payment_method==='card'?'Karta na mieste':(payment_method||'Hotovosť')});
+    awardPurchaseCommission({buyer_id:user_id, amount:+(amount||plan.price), product_name:`Členstvo ${plan.name}`});
     res.json({ok:true, plan_name:plan.name, expires_at:expiresDate});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
