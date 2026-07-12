@@ -225,10 +225,16 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div class="row">
       <div class="col-md-6"><div class="card border-0 rounded-3 p-4">
         <div id="saleMsg" class="alert d-none py-2 small"></div>
-        <div class="mb-3"><label class="form-label fw-semibold small">Partner (predajca) *</label>
-          <select class="form-select" id="salePartner"><option value="">— Vyberte —</option></select></div>
-        <div class="mb-3"><label class="form-label fw-semibold small">Klient *</label>
-          <input type="text" class="form-control" id="saleClient" placeholder="Jana Kováčová"></div>
+        <div class="mb-2"><label class="form-label fw-semibold small">Klient *</label>
+          <input list="saleClientList" class="form-control" id="saleClientPick" placeholder="Začni písať meno alebo email…" oninput="onSaleClientPick()" autocomplete="off">
+          <datalist id="saleClientList"></datalist>
+          <input type="hidden" id="saleClientId">
+        </div>
+        <div id="saleSponsorInfo" class="mb-3 small" style="display:none"></div>
+        <div class="mb-3" id="salePartnerWrap" style="display:none">
+          <label class="form-label fw-semibold small">Partner, ktorý dostane províziu (ručne)</label>
+          <select class="form-select" id="salePartner"><option value="">— bez provízie —</option></select>
+        </div>
         <div class="mb-3"><label class="form-label fw-semibold small">Produkt</label>
           <select class="form-select" id="saleProd" onchange="fillPrice()"><option value="">— Iný predaj —</option></select></div>
         <div class="mb-3"><label class="form-label fw-semibold small">Suma (€) *</label>
@@ -1975,7 +1981,7 @@ async function loadCrm(){
       <td>
         <div class="d-flex gap-1 flex-wrap">
           <button title="Upraviť" style="font-size:.72rem;padding:3px 9px;background:#1a2a3a;border:1px solid #2a5a8a;color:#60a5fa;border-radius:5px;cursor:pointer"
-            onclick="openEditModal('${u.id}','${escJs(u.name)}','${escJs(u.email)}','${escJs(u.phone||'')}','${escJs(u.notes||'')}','${u.visit_count||0}','${u.user_type||'client'}')">
+            onclick="openEditModal('${u.id}','${escJs(u.name)}','${escJs(u.email)}','${escJs(u.phone||'')}','${escJs(u.notes||'')}','${u.visit_count||0}','${u.user_type||'client'}','${u.sponsor_id||''}')">
             <i class="bi bi-pencil-fill"></i> Upraviť
           </button>
           ${u.active!==false
@@ -2280,24 +2286,65 @@ async function updateOrder(id,status){
 }
 
 // ── SALE ──
+let _usersLite=null, _usersLiteMap={};
+async function loadUsersLite(force){
+  if(_usersLite && !force) return _usersLite;
+  _usersLite = await api('/api/admin/users-lite') || [];
+  _usersLiteMap = Object.fromEntries(_usersLite.map(u=>[u.id,u]));
+  return _usersLite;
+}
 async function loadSaleForm(){
-  const [partners,prods,recent]=await Promise.all([api('/api/admin/partners'),api('/api/products'),api('/api/transactions')]);
-  if(!partners||!prods)return;
-  partnersCache=partners;productsCache=prods;
-  document.getElementById('salePartner').innerHTML='<option value="">— Vyberte partnera —</option>'+partners.filter(p=>p.active).map(p=>`<option value="${p.id}">${p.name} [${p.referral_code}]</option>`).join('');
+  const [partners,prods,recent,users]=await Promise.all([api('/api/admin/partners'),api('/api/products'),api('/api/transactions'),loadUsersLite(true)]);
+  if(!prods)return;
+  partnersCache=partners||[];productsCache=prods;
+  // client picker options (all non-admin users)
+  document.getElementById('saleClientList').innerHTML=(users||[]).map(u=>`<option value="${escHtml(u.name)} · ${escHtml(u.email)}" data-id="${u.id}"></option>`).join('');
+  // fallback manual partner select
+  document.getElementById('salePartner').innerHTML='<option value="">— bez provízie —</option>'+(partners||[]).filter(p=>p.active).map(p=>`<option value="${p.id}">${p.name} [${p.referral_code}]</option>`).join('');
   document.getElementById('saleProd').innerHTML='<option value="">— Iný predaj —</option>'+prods.map(p=>`<option value="${p._id}" data-price="${p.price}">${p.cat}: ${p.name} (${eur(p.price)})</option>`).join('');
   document.getElementById('saleDate').value=new Date().toISOString().slice(0,10);
-  if(recent) document.getElementById('recentSales').innerHTML=recent.slice(0,6).map(t=>`<div class="d-flex justify-content-between py-1 border-bottom"><div><span class="fw-semibold">${t.partner_name||'—'}</span> → ${t.client_name}</div><div>${eur(t.amount)} <span class="text-muted">${dateStr(t.date)}</span></div></div>`).join('');
+  document.getElementById('saleClientId').value='';document.getElementById('saleClientPick').value='';
+  document.getElementById('saleSponsorInfo').style.display='none';document.getElementById('salePartnerWrap').style.display='none';
+  if(recent) document.getElementById('recentSales').innerHTML=recent.slice(0,6).map(t=>`<div class="d-flex justify-content-between py-1 border-bottom"><div><span class="fw-semibold">${t.partner_name||'— (bez provízie)'}</span> → ${t.client_name}</div><div>${eur(t.amount)} <span class="text-muted">${dateStr(t.date)}</span></div></div>`).join('');
+}
+// When a client is picked, resolve their sponsor and show who gets the commission
+function onSaleClientPick(){
+  const val=document.getElementById('saleClientPick').value;
+  const opt=[...document.getElementById('saleClientList').options].find(o=>o.value===val);
+  const info=document.getElementById('saleSponsorInfo');
+  const partnerWrap=document.getElementById('salePartnerWrap');
+  const id=opt?.dataset.id||'';
+  document.getElementById('saleClientId').value=id;
+  if(!id){ info.style.display='none'; partnerWrap.style.display='none'; return; }
+  const u=_usersLiteMap[id];
+  if(u && u.sponsor_id){
+    info.style.display='block'; info.className='mb-3 small';
+    info.innerHTML=`✅ Províziu dostane sponzor: <b style="color:var(--gold,#C9A24C)">${escHtml(u.sponsor_name||'—')}</b> <span class="text-muted">(automaticky)</span>`;
+    partnerWrap.style.display='none';
+    document.getElementById('salePartner').value='';
+  } else {
+    info.style.display='block'; info.className='mb-2 small';
+    info.innerHTML=`⚠️ <span style="color:#e0a656">Tento klient nemá sponzora.</span> Priraď mu ho v profile (CRM), alebo vyber partnera ručne:`;
+    partnerWrap.style.display='block';
+  }
 }
 function fillPrice(){const sel=document.getElementById('saleProd');const opt=sel.options[sel.selectedIndex];if(opt?.dataset.price)document.getElementById('saleAmt').value=opt.dataset.price;}
 async function recordSale(){
-  const partner_id=document.getElementById('salePartner').value,client_name=document.getElementById('saleClient').value.trim(),product_id=document.getElementById('saleProd').value,amount=document.getElementById('saleAmt').value,notes=document.getElementById('saleNote').value.trim(),date=document.getElementById('saleDate').value;
+  const client_id=document.getElementById('saleClientId').value;
+  const pickTxt=document.getElementById('saleClientPick').value.trim();
+  const partner_id=document.getElementById('salePartner').value||undefined;
+  const product_id=document.getElementById('saleProd').value,amount=document.getElementById('saleAmt').value,notes=document.getElementById('saleNote').value.trim(),date=document.getElementById('saleDate').value;
   const msg=document.getElementById('saleMsg');msg.className='alert d-none py-2 small';
-  if(!partner_id||!client_name||!amount){msg.textContent='Vyplňte: partner, klient a suma';msg.className='alert alert-danger py-2 small';return;}
-  const r=await api('/api/admin/transactions',{method:'POST',body:JSON.stringify({partner_id,client_name,product_id,amount,notes,date})});
+  if(!client_id && !pickTxt){msg.textContent='Vyberte klienta zo zoznamu';msg.className='alert alert-danger py-2 small';return;}
+  if(!amount){msg.textContent='Zadajte sumu';msg.className='alert alert-danger py-2 small';return;}
+  const body={client_id:client_id||undefined, client_name: client_id?undefined:pickTxt, partner_id, product_id, amount, notes, date};
+  const r=await api('/api/admin/transactions',{method:'POST',body:JSON.stringify(body)});
   if(!r)return;
-  if(r.ok){msg.textContent='✅ Predaj zaznamenaný! ID: '+r.id;msg.className='alert alert-success py-2 small';document.getElementById('saleClient').value='';document.getElementById('saleAmt').value='';loadSaleForm();}
-  else{msg.textContent=r.error||'Chyba';msg.className='alert alert-danger py-2 small';}
+  if(r.ok){
+    msg.textContent = r.commission ? '✅ Predaj zaznamenaný, provízia priradená sponzorovi.' : '✅ Predaj zaznamenaný (bez provízie — klient nemá sponzora).';
+    msg.className='alert alert-success py-2 small';
+    document.getElementById('saleAmt').value='';loadSaleForm();
+  } else {msg.textContent=r.error||'Chyba';msg.className='alert alert-danger py-2 small';}
 }
 
 // ── PARTNERS ──
@@ -2598,7 +2645,7 @@ let _editUserId = null;
 
 function escJs(s){ return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
 
-function openEditModal(id, name, email, phone, notes, visits, role){
+async function openEditModal(id, name, email, phone, notes, visits, role, sponsorId){
   _editUserId = id;
   document.getElementById('euName').value    = name;
   document.getElementById('euEmail').value   = email;
@@ -2608,18 +2655,33 @@ function openEditModal(id, name, email, phone, notes, visits, role){
   document.getElementById('euRole').value    = role;
   document.getElementById('euErr').style.display='none';
   document.getElementById('euErr').textContent='';
+  // Sponsor picker — populate options (excluding the user themselves) + prefill current
+  const users = await loadUsersLite();
+  document.getElementById('euSponsorList').innerHTML = users.filter(u=>u.id!==id)
+    .map(u=>`<option value="${escHtml(u.name)} · ${escHtml(u.email)}" data-id="${u.id}"></option>`).join('');
+  document.getElementById('euSponsorId').value = sponsorId||'';
+  const sp = sponsorId ? _usersLiteMap[sponsorId] : null;
+  document.getElementById('euSponsorPick').value = sp ? `${sp.name} · ${sp.email}` : '';
   const modal = new bootstrap.Modal(document.getElementById('editUserModal'));
   modal.show();
+}
+function onEuSponsorPick(){
+  const val=document.getElementById('euSponsorPick').value;
+  const opt=[...document.getElementById('euSponsorList').options].find(o=>o.value===val);
+  document.getElementById('euSponsorId').value = opt?.dataset.id || '';
 }
 
 async function saveEditUser(){
   if(!_editUserId) return;
+  // If picker text was cleared, treat sponsor as removed
+  if(!document.getElementById('euSponsorPick').value.trim()) document.getElementById('euSponsorId').value='';
   const body = {
     name:   document.getElementById('euName').value.trim(),
     email:  document.getElementById('euEmail').value.trim(),
     phone:  document.getElementById('euPhone').value.trim(),
     notes:  document.getElementById('euNotes').value.trim(),
     visit_count: document.getElementById('euVisits').value,
+    sponsor_id: document.getElementById('euSponsorId').value || null,
   };
   const newRole = document.getElementById('euRole').value;
   const errEl = document.getElementById('euErr');
@@ -2891,6 +2953,13 @@ document.addEventListener('click', e => {
               <option value="partner">🟠 Partner</option>
               <option value="manager">🔴 Manager</option>
             </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Sponzor <span style="color:var(--text-muted);font-weight:400">(kto klienta priviedol → dostáva provízie)</span></label>
+            <input list="euSponsorList" class="form-control" id="euSponsorPick" placeholder="Začni písať meno/email sponzora…" oninput="onEuSponsorPick()" autocomplete="off">
+            <datalist id="euSponsorList"></datalist>
+            <input type="hidden" id="euSponsorId">
+            <div class="form-text">Prázdne = bez sponzora. Zmena ovplyvní komu idú provízie z jeho nákupov.</div>
           </div>
           <div class="col-12">
             <label class="form-label fw-semibold">Interné poznámky <span style="color:var(--text-muted);font-weight:400">(vidí len admin)</span></label>

@@ -1088,6 +1088,17 @@ app.put('/api/admin/users/:id', adminAuth, async(req,res)=>{
   } catch(e){res.status(500).json({error:e.message});}
 });
 
+// ── Lite user list for pickers (client & sponsor selectors) ───────────────────
+app.get('/api/admin/users-lite', adminAuth, async(req,res)=>{
+  const all = await q.find(db.users,{is_admin:{$ne:true}});
+  const nameMap = Object.fromEntries(all.map(u=>[u._id,u.name]));
+  res.json(all.filter(u=>!u.is_child).map(u=>({
+    id:u._id, name:u.name, email:u.email, referral_code:u.referral_code||'',
+    user_type:u.user_type||'client',
+    sponsor_id:u.sponsor_id||null, sponsor_name:u.sponsor_id?(nameMap[u.sponsor_id]||'—'):null
+  })).sort((a,b)=>a.name.localeCompare(b.name)));
+});
+
 // ── CRM stats ─────────────────────────────────────────────────────────────────
 app.get('/api/admin/crm/stats', adminAuth, async(req,res)=>{
   try {
@@ -1203,15 +1214,27 @@ app.delete('/api/admin/users/:id', adminAuth, async(req,res)=>{
 
 app.post('/api/admin/transactions', adminAuth, async(req,res)=>{
   try {
-    const{partner_id,client_name,product_id,amount,notes,date}=req.body;
-    if(!partner_id||!client_name||!amount) return res.status(400).json({error:'Partner, klient a suma sú povinné'});
+    const{client_id,product_id,amount,notes,date}=req.body;
+    let {partner_id,client_name}=req.body;
+    // If a real client account is chosen, use its name and auto-derive the sponsor
+    // (the person who registered them) as the commission recipient — unless an
+    // explicit partner_id override was provided.
+    let client=null;
+    if(client_id){
+      client=await q.one(db.users,{_id:client_id});
+      if(client){
+        client_name = client_name || client.name;
+        if(!partner_id) partner_id = client.sponsor_id || null;
+      }
+    }
+    if(!client_name||!amount) return res.status(400).json({error:'Klient a suma sú povinné'});
     const prod=product_id?await q.one(db.products,{_id:product_id}):null;
     const product_name=prod?prod.name:(req.body.product_name||'Iný predaj');
     const finalAmt=+parseFloat(amount).toFixed(2);
-    const tx=await q.insert(db.transactions,{partner_id,client_name,product_id:product_id||null,product_name,amount:finalAmt,date:date||today(),notes:notes||''});
-    await saveCommissions(tx._id,partner_id,finalAmt);
-    await calcRank(partner_id);
-    res.json({ok:true,id:tx._id});
+    const tx=await q.insert(db.transactions,{partner_id:partner_id||null,client_id:client_id||null,client_name,product_id:product_id||null,product_name,amount:finalAmt,date:date||today(),notes:notes||''});
+    // Commission only when we have a recipient (sponsor or explicit partner)
+    if(partner_id){ await saveCommissions(tx._id,partner_id,finalAmt); await calcRank(partner_id); }
+    res.json({ok:true,id:tx._id,commission:!!partner_id,partner_id:partner_id||null});
   } catch(e){res.status(500).json({error:e.message});}
 });
 
