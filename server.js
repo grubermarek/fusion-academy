@@ -156,13 +156,13 @@ const USER_ROLES = {
 
 // ─── Loyalty Milestones ───────────────────────────────────────────────────────
 const LOYALTY_MILESTONES = [
-  { visits:5,   badge:'🌟', label:'Prvých 5 hodín',  color:'#8bc34a', reward:null },
-  { visits:10,  badge:'⭐', label:'Pravidelný člen',  color:'#ffc107', reward:'Zľava 10 % na ďalší nákup' },
-  { visits:20,  badge:'🥉', label:'Bronzový člen',   color:'#cd7f32', reward:'Fusion fľaša zadarmo' },
-  { visits:30,  badge:'🥈', label:'Strieborný člen', color:'#9e9e9e', reward:'Zľava 15 % na mesačné členstvo' },
-  { visits:50,  badge:'🥇', label:'Zlatý člen',      color:'#C9A84C', reward:'Fusion tričko zadarmo' },
-  { visits:75,  badge:'💎', label:'Diamantový člen', color:'#2196f3', reward:'Mesiac zdarma' },
-  { visits:100, badge:'👑', label:'Legenda',          color:'#C9A84C', reward:'VIP odmena – zistíš pri odovzdaní 😊' },
+  { visits:5,    badge:'👟', label:'Prvé kroky', color:'#8bc34a', reward:null },
+  { visits:25,   badge:'💃', label:'Tanečník',   color:'#ffc107', reward:'Zľava 10 % na ďalší nákup' },
+  { visits:75,   badge:'⭐', label:'Stálica',     color:'#ff9800', reward:'Fusion fľaša zadarmo' },
+  { visits:150,  badge:'🔥', label:'Vášeň',       color:'#e91e63', reward:'Zľava 15 % na mesačné členstvo' },
+  { visits:350,  badge:'🏆', label:'Šampión',     color:'#9c27b0', reward:'Fusion tričko zadarmo' },
+  { visits:600,  badge:'🦋', label:'Ikona',       color:'#2196f3', reward:'Mesiac zdarma' },
+  { visits:1000, badge:'🌟', label:'Legenda',     color:'#C9A84C', reward:'VIP odmena – zistíš pri odovzdaní 😊' },
 ];
 
 function getLoyaltyStatus(visitCount) {
@@ -420,7 +420,7 @@ async function seedData() {
       {cat:'Členstvá',  name:'Jednorazový vstup',             emoji:'🎫', desc:'Vstup na akúkoľvek lekciu v ktoromkoľvek meste.',                         price:10,    commission_rate:0.10, type:'single',       active:true},
       {cat:'Členstvá',  name:'10-vstupová permanentka',       emoji:'🎟️', desc:'10 vstupov, platnosť 3 mesiace. Úspora 20 %.',                            price:80,    commission_rate:0.12, type:'bundle',       active:true},
       {cat:'Členstvá',  name:'Členstvo BRONZE',               emoji:'🥉', desc:'Neobmedzené Zumba lekcie vo všetkých 4 mestách. Mesačne.',                 price:50,    commission_rate:0.15, type:'subscription', active:true},
-      {cat:'Členstvá',  name:'Členstvo SILVER',               emoji:'🥈', desc:'Bronze + metabolická analýza mesačne + online prístup.',                   price:65,    commission_rate:0.15, type:'subscription', active:true},
+      {cat:'Členstvá',  name:'Členstvo SILVER',               emoji:'🥈', desc:'Bronze + metabolická analýza mesačne + online prístup.',                   price:75,    commission_rate:0.15, type:'subscription', active:true},
       {cat:'Členstvá',  name:'Členstvo GOLD',                 emoji:'🥇', desc:'Silver + Fusion kokteil + individuálny jedálny plán.',                     price:125,   commission_rate:0.18, type:'subscription', active:true},
       {cat:'Členstvá',  name:'Online Zumba (mesačne)',        emoji:'🌐', desc:'Živé online hodiny Zumby odkiaľkoľvek.',                                   price:12.90, commission_rate:0.25, type:'subscription', active:true},
       {cat:'Kurzy',     name:'Svadobný tanec',                emoji:'💍', desc:'Prvý tanec na svadbu. 5 lekcií pre pár.',                                  price:149,   commission_rate:0.12, type:'course',       active:true},
@@ -508,6 +508,8 @@ async function seedData() {
   // Migration: rename "Zumba Fitness" → "Zumba" on existing DBs (idempotent)
   { const renamed = await q.update(db.classes,{name:'Zumba Fitness'},{$set:{name:'Zumba'}},{multi:true});
     if(renamed) console.log(`✅  Premenovaných ${renamed} hodín „Zumba Fitness" → „Zumba"`); }
+  // Migration: Silver membership product price 65 → 75 (idempotent)
+  await q.update(db.products,{name:'Členstvo SILVER',price:65},{$set:{price:75}},{multi:true});
 
   // Herbalife products (add even if other products already exist)
   if(await q.count(db.products,{cat:'Herbalife'})===0){
@@ -1803,7 +1805,7 @@ app.get('/api/payments/:id', auth, async(req,res)=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 const MEMBERSHIP_PLANS = {
   'bronze':         { name:'Bronze',         price:50,   duration_days:30,  online:false, color:'#cd7f32' },
-  'silver':         { name:'Silver',         price:65,   duration_days:30,  online:true,  color:'#a8a9ad' },
+  'silver':         { name:'Silver',         price:75,   duration_days:30,  online:true,  color:'#a8a9ad' },
   'gold':           { name:'Gold',           price:125,  duration_days:30,  online:true,  color:'#C9A84C' },
   'kids':           { name:'Zumba Kids',     price:49.9, duration_days:30,  online:false, color:'#FF6B9D', kids:true },
   'online_basic':   { name:'Online Basic',   price:12.9, duration_days:30,  online:true,  color:'#4CAF50' },
