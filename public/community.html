@@ -59,6 +59,33 @@ html,body{height:100%;overflow:hidden;font-family:var(--sans);-webkit-font-smoot
 .member-item:hover{background:rgba(255,255,255,.05);}
 .mp-item{display:flex;align-items:center;gap:.6rem;padding:.6rem 10px;cursor:pointer;border-radius:8px;color:#ddd;}
 .mp-item:hover{background:rgba(201,168,76,.12);}
+/* Feed */
+.feed-wrap{max-width:640px;margin:0 auto;padding:8px 4px 40px;}
+.feed-composer{background:#161616;border:1px solid var(--gold-border,#332a18);border-radius:14px;padding:14px;margin-bottom:18px;}
+.feed-composer textarea{width:100%;background:#1e1e1e;border:1px solid #333;border-radius:10px;color:#eee;padding:10px 12px;font-size:.9rem;resize:vertical;min-height:56px;}
+.fc-actions{display:flex;justify-content:space-between;align-items:center;margin-top:10px;gap:8px;}
+.fc-btn{background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;border:none;font-weight:800;padding:8px 20px;border-radius:9px;cursor:pointer;font-size:.85rem;}
+.fc-img{color:var(--gold);cursor:pointer;font-size:.85rem;display:inline-flex;gap:5px;align-items:center;}
+.feed-preview{position:relative;margin-top:10px;}
+.feed-preview img{max-width:100%;border-radius:10px;max-height:220px;}
+.feed-preview .rm{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.7);color:#fff;border:none;border-radius:50%;width:26px;height:26px;cursor:pointer;}
+.post{background:#161616;border:1px solid #2a2a2a;border-radius:14px;padding:14px 16px;margin-bottom:14px;}
+.post-head{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+.post-av{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#111;flex-shrink:0;}
+.post-name{font-weight:700;color:var(--cream,#eee);font-size:.9rem;}
+.post-time{font-size:.72rem;color:var(--text-muted,#888);}
+.post-text{color:#ddd;font-size:.92rem;line-height:1.5;white-space:pre-wrap;word-break:break-word;}
+.post-img{margin-top:10px;border-radius:10px;max-width:100%;max-height:420px;}
+.post-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;}
+.react-btn{background:#1e1e1e;border:1px solid #333;border-radius:20px;padding:4px 11px;cursor:pointer;font-size:.85rem;color:#ccc;transition:.15s;}
+.react-btn:hover{border-color:var(--gold);}
+.react-btn.mine{background:rgba(201,168,76,.18);border-color:var(--gold);color:var(--gold);}
+.post-comments{margin-top:12px;border-top:1px solid #262626;padding-top:10px;}
+.pcomment{font-size:.83rem;color:#ccc;margin-bottom:6px;}
+.pcomment b{color:var(--gold);}
+.pc-input{display:flex;gap:6px;margin-top:8px;}
+.pc-input input{flex:1;background:#1e1e1e;border:1px solid #333;border-radius:18px;color:#eee;padding:6px 12px;font-size:.83rem;}
+.post-del{margin-left:auto;background:none;border:none;color:#a55;cursor:pointer;font-size:.85rem;}
 .sidebar-footer{margin-top:auto;padding:1rem;border-top:1px solid rgba(255,255,255,.07);}
 .me-info{display:flex;align-items:center;gap:.6rem;}
 .me-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--red),var(--orange));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.8rem;color:#fff;flex-shrink:0;}
@@ -173,6 +200,9 @@ html,body{height:100%;overflow:hidden;font-family:var(--sans);-webkit-font-smoot
     <div style="display:contents" id="chatLayout" class="d-none">
       <!-- Left sidebar -->
       <div class="sidebar-left">
+        <div class="channel-item" id="feedBtn" onclick="openFeed()" style="margin-bottom:4px">
+          <span class="channel-emoji">📣</span><span class="channel-label">Nástenka</span>
+        </div>
         <div class="sidebar-header">Kanály</div>
         <div id="channelList"></div>
         <div class="sidebar-header" style="display:flex;align-items:center;justify-content:space-between">
@@ -263,6 +293,8 @@ let allMembers = [];
 let dmMode = false;      // true when viewing a private conversation
 let dmWith = null;       // other user's id
 let dmWithName = '';
+let feedMode = false;    // true when viewing the community feed (nástenka)
+let feedImage = null;    // pending composer image (data URL)
 const channels = [];
 
 const CHANNEL_INFO = {
@@ -303,6 +335,11 @@ function initChat() {
     joinChannel('general');
     loadConversations();
   });
+
+  // Feed live updates
+  socket.on('feed_new', () => { if (feedMode) loadFeed(); });
+  socket.on('feed_update', () => { if (feedMode) loadFeed(); });
+  socket.on('feed_delete', () => { if (feedMode) loadFeed(); });
 
   // Incoming private message
   socket.on('new_dm', msg => {
@@ -360,9 +397,14 @@ function buildChannelList() {
   ).join('');
 }
 
+function exitFeed() {
+  feedMode = false;
+  document.getElementById('feedBtn').classList.remove('active');
+  document.querySelector('.chat-input-area').style.display = '';
+}
 function joinChannel(channelId) {
   currentChannel = channelId;
-  dmMode = false; dmWith = null;
+  dmMode = false; dmWith = null; exitFeed();
   document.querySelectorAll('.dm-item').forEach(el => el.classList.remove('active'));
   // Update sidebar
   document.querySelectorAll('.channel-item').forEach(el => el.classList.toggle('active', el.dataset.ch === channelId));
@@ -486,7 +528,7 @@ async function loadConversations() {
 }
 
 async function openDM(userId, name) {
-  dmMode = true; dmWith = userId; dmWithName = name;
+  dmMode = true; dmWith = userId; dmWithName = name; exitFeed();
   document.querySelectorAll('.channel-item').forEach(el => el.classList.remove('active'));
   document.getElementById('chatChannelName').textContent = '🔒 ' + name;
   document.getElementById('chatChannelDesc').textContent = 'Súkromná konverzácia';
@@ -521,6 +563,94 @@ function renderMemberPicker() {
       <div class="dm-av" style="background:${stringToColor(m.id)}">${m.name.charAt(0).toUpperCase()}</div>
       <div><div style="font-weight:600">${m.memberBadge?.emoji||''} ${escHtml(m.name)}</div></div>
     </div>`).join('') || '<div style="padding:12px;color:#888;font-size:.85rem">Nikto sa nenašiel.</div>';
+}
+
+// ── Community feed (nástenka) ────────────────────────────────────────────────
+function openFeed() {
+  feedMode = true; dmMode = false; dmWith = null;
+  document.querySelectorAll('.channel-item,.dm-item').forEach(el => el.classList.remove('active'));
+  document.getElementById('feedBtn').classList.add('active');
+  document.getElementById('chatChannelName').textContent = '📣 Nástenka';
+  document.getElementById('chatChannelDesc').textContent = 'Zdieľaj zážitky s komunitou Fusion Academy';
+  document.getElementById('onlinePill').style.visibility = 'hidden';
+  document.querySelector('.chat-input-area').style.display = 'none';
+  loadFeed();
+}
+async function loadFeed() {
+  const container = document.getElementById('messages');
+  let posts = [];
+  try { posts = await (await fetch('/api/feed')).json(); } catch {}
+  const composer = `
+    <div class="feed-composer">
+      <textarea id="feedText" placeholder="Čo máš na srdci, ${escHtml((me.name||'').split(' ')[0])}? 💃"></textarea>
+      <div id="feedPreview"></div>
+      <div class="fc-actions">
+        <label class="fc-img"><i class="bi bi-image"></i> Pridať fotku<input type="file" accept="image/*" style="display:none" onchange="feedPickImage(this)"></label>
+        <button class="fc-btn" onclick="createPost()">Uverejniť</button>
+      </div>
+    </div>`;
+  container.innerHTML = `<div class="feed-wrap">${composer}<div id="feedPosts">${
+    posts.length ? posts.map(renderPost).join('') : '<div style="text-align:center;color:#888;padding:2rem">Zatiaľ žiadne príspevky. Buď prvá! 🌟</div>'
+  }</div></div>`;
+  container.scrollTop = 0;
+}
+function renderPost(p) {
+  const av = stringToColor(p.author_id);
+  const time = new Date(p.created_at).toLocaleString('sk-SK',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+  const reacts = p.reactions.map(r => `<button class="react-btn ${r.mine?'mine':''}" onclick="reactPost('${p.id}','${r.emoji}')">${r.emoji} ${r.count||''}</button>`).join('');
+  const comments = (p.comments||[]).map(c => `<div class="pcomment"><b>${escHtml(c.name)}</b> ${escHtml(c.text)}</div>`).join('');
+  return `<div class="post" data-id="${p.id}">
+    <div class="post-head">
+      <div class="post-av" style="background:${av}">${(p.author_name||'?').charAt(0).toUpperCase()}</div>
+      <div><div class="post-name">${p.author_badge?.emoji||''} ${escHtml(p.author_name)}</div><div class="post-time">${time}</div></div>
+      ${p.can_delete?`<button class="post-del" onclick="deletePost('${p.id}')"><i class="bi bi-trash"></i></button>`:''}
+    </div>
+    ${p.text?`<div class="post-text">${escHtml(p.text)}</div>`:''}
+    ${p.image?`<img class="post-img" src="${p.image}" loading="lazy">`:''}
+    <div class="post-actions">${reacts}</div>
+    <div class="post-comments">
+      ${comments}
+      <div class="pc-input"><input placeholder="Napíš komentár…" onkeydown="if(event.key==='Enter')commentPost('${p.id}',this)"><button class="react-btn" onclick="commentPost('${p.id}',this.previousElementSibling)">➤</button></div>
+    </div>
+  </div>`;
+}
+function feedPickImage(input) {
+  const file = input.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 1000, scale = Math.min(1, max/Math.max(img.width,img.height));
+      const c = document.createElement('canvas'); c.width = img.width*scale; c.height = img.height*scale;
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      feedImage = c.toDataURL('image/jpeg', 0.82);
+      document.getElementById('feedPreview').innerHTML = `<div class="feed-preview"><img src="${feedImage}"><button class="rm" onclick="feedImage=null;document.getElementById('feedPreview').innerHTML=''">✕</button></div>`;
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+async function createPost() {
+  const text = document.getElementById('feedText').value.trim();
+  if(!text && !feedImage) return;
+  const r = await (await fetch('/api/feed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text, image:feedImage})})).json();
+  if(r.ok){ feedImage=null; loadFeed(); }
+  else alert(r.error||'Chyba');
+}
+async function reactPost(id, emoji) {
+  await fetch('/api/feed/'+id+'/react',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emoji})});
+  loadFeed();
+}
+async function commentPost(id, input) {
+  const text = input.value.trim(); if(!text) return;
+  input.value='';
+  await fetch('/api/feed/'+id+'/comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+  loadFeed();
+}
+async function deletePost(id) {
+  if(!confirm('Zmazať príspevok?')) return;
+  await fetch('/api/feed/'+id,{method:'DELETE'});
+  loadFeed();
 }
 
 document.addEventListener('DOMContentLoaded', () => {

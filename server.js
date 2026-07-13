@@ -107,6 +107,7 @@ const db = {
   payout_rules: new Datastore({ filename: path.join(DATA_DIR, 'payout_rules.db'),autoload: true }),
   payouts:      new Datastore({ filename: path.join(DATA_DIR, 'payouts.db'),     autoload: true }),
   refunds:      new Datastore({ filename: path.join(DATA_DIR, 'refunds.db'),     autoload: true }),
+  feed:         new Datastore({ filename: path.join(DATA_DIR, 'feed.db'),        autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -964,6 +965,90 @@ app.get('/api/dm/history/:userId', auth, async(req,res)=>{
   await q.update(db.messages,{is_dm:true,dm_key:key,to_id:me,read:{$ne:true}},{$set:{read:true}},{multi:true});
   res.json({ messages: msgs.slice(-100),
     other:{ id:other, name:other_u.name, badge:getMemberBadge(other_u.created_at) } });
+});
+
+// ── Community feed (nástenka): posts + reactions + comments ───────────────────
+const FEED_EMOJIS = ['❤️','👏','🔥','💪','🎉'];
+function feedView(p, meId){
+  const reactions = p.reactions||{};
+  const summary = FEED_EMOJIS.map(e=>({emoji:e, count:(reactions[e]||[]).length, mine:(reactions[e]||[]).includes(meId)}))
+    .filter(r=>r.count>0 || true); // keep all for buttons
+  return {
+    id:p._id, author_id:p.author_id, author_name:p.author_name, author_badge:p.author_badge||null,
+    text:p.text||'', image:p.image||null, created_at:p.created_at,
+    reactions:summary,
+    comments:(p.comments||[]).slice(-20),
+    comment_count:(p.comments||[]).length,
+    can_delete: p.author_id===meId
+  };
+}
+app.get('/api/feed', auth, async(req,res)=>{
+  const posts = (await q.find(db.feed,{})).sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,50);
+  res.json(posts.map(p=>feedView(p, req.session.uid)));
+});
+app.post('/api/feed', auth, async(req,res)=>{
+  try {
+    const text=(req.body.text||'').trim();
+    let image=req.body.image||null;
+    if(image){
+      if(typeof image!=='string' || !/^data:image\/(png|jpeg|jpg|webp);base64,/.test(image) || image.length>900000)
+        return res.status(400).json({error:'Neplatný alebo príliš veľký obrázok'});
+    }
+    if(!text && !image) return res.status(400).json({error:'Prázdny príspevok'});
+    if(text.length>2000) return res.status(400).json({error:'Text je príliš dlhý'});
+    const u=await q.one(db.users,{_id:req.session.uid});
+    const post=await q.insert(db.feed,{
+      author_id:u._id, author_name:u.name, author_badge:getMemberBadge(u.created_at),
+      text:text.slice(0,2000), image:image||null, reactions:{}, comments:[], created_at:nowISO()
+    });
+    const view=feedView(post, req.session.uid);
+    io.emit('feed_new', view);
+    res.json({ok:true, post:view});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/feed/:id/react', auth, async(req,res)=>{
+  try {
+    const emoji=req.body.emoji;
+    if(!FEED_EMOJIS.includes(emoji)) return res.status(400).json({error:'Neplatná reakcia'});
+    const post=await q.one(db.feed,{_id:req.params.id});
+    if(!post) return res.status(404).json({error:'Príspevok nenájdený'});
+    const reactions=post.reactions||{};
+    const arr=reactions[emoji]||[];
+    const uid=req.session.uid;
+    reactions[emoji] = arr.includes(uid) ? arr.filter(x=>x!==uid) : [...arr, uid];
+    await q.update(db.feed,{_id:post._id},{$set:{reactions}});
+    const updated=await q.one(db.feed,{_id:post._id});
+    io.emit('feed_update', {id:post._id});
+    res.json({ok:true, post:feedView(updated, uid)});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/feed/:id/comment', auth, async(req,res)=>{
+  try {
+    const text=(req.body.text||'').trim();
+    if(!text || text.length>500) return res.status(400).json({error:'Komentár je prázdny alebo pridlhý'});
+    const post=await q.one(db.feed,{_id:req.params.id});
+    if(!post) return res.status(404).json({error:'Príspevok nenájdený'});
+    const u=await q.one(db.users,{_id:req.session.uid});
+    const comment={user_id:u._id, name:u.name, text:text.slice(0,500), at:nowISO()};
+    await q.update(db.feed,{_id:post._id},{$push:{comments:comment}});
+    // notify post author about the comment (if someone else commented)
+    if(post.author_id!==u._id){
+      await q.insert(db.notifications,{user_id:post.author_id, type:'feed_comment',
+        title:`💬 ${u.name} komentoval tvoj príspevok`, body:text.slice(0,80), read:false, created_at:nowISO()});
+    }
+    const updated=await q.one(db.feed,{_id:post._id});
+    io.emit('feed_update', {id:post._id});
+    res.json({ok:true, post:feedView(updated, u._id)});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+app.delete('/api/feed/:id', auth, async(req,res)=>{
+  const post=await q.one(db.feed,{_id:req.params.id});
+  if(!post) return res.status(404).json({error:'Nenájdené'});
+  const me=await q.one(db.users,{_id:req.session.uid});
+  if(post.author_id!==req.session.uid && !me?.is_admin) return res.status(403).json({error:'Nemáš oprávnenie'});
+  await q.remove(db.feed,{_id:post._id});
+  io.emit('feed_delete', {id:post._id});
+  res.json({ok:true});
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
