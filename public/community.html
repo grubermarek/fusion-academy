@@ -205,6 +205,8 @@ html,body{height:100%;overflow:hidden;font-family:var(--sans);-webkit-font-smoot
         </div>
         <div class="sidebar-header">Kanály</div>
         <div id="channelList"></div>
+        <div class="sidebar-header">🏙️ Mestá</div>
+        <div id="cityList"></div>
         <div class="sidebar-header" style="display:flex;align-items:center;justify-content:space-between">
           <span>Súkromné <span id="dmUnread" class="dm-badge" style="display:none">0</span></span>
           <span onclick="openMemberPicker()" title="Napísať niekomu" style="cursor:pointer;color:var(--gold);font-size:1rem">＋</span>
@@ -303,7 +305,12 @@ const CHANNEL_INFO = {
   vyziva:  { name:'Výživa',    emoji:'🥗', desc:'Recepty, výživa, proteíny, zdravý životný štýl' },
   fitness: { name:'Fitness',   emoji:'💪', desc:'Tréningy, výsledky, motivácia' },
   eventy:  { name:'Eventy',    emoji:'🎉', desc:'Workshopy, výlety, spoločné akcie' },
+  mesto_detva:  { name:'Detva',           emoji:'📍', desc:'Informácie k hodinám v Detve' },
+  mesto_zvolen: { name:'Zvolen',          emoji:'📍', desc:'Informácie k hodinám vo Zvolene' },
+  mesto_bb:     { name:'Banská Bystrica', emoji:'📍', desc:'Informácie k hodinám v Banskej Bystrici' },
+  mesto_brezno: { name:'Brezno',          emoji:'📍', desc:'Informácie k hodinám v Brezne' },
 };
+const CITY_CHANNELS = ['mesto_detva','mesto_zvolen','mesto_bb','mesto_brezno'];
 
 // ── Auth check on load ──────────────────────────────────────────────────────
 async function init() {
@@ -389,12 +396,20 @@ function initChat() {
 
 function buildChannelList() {
   const list = document.getElementById('channelList');
-  list.innerHTML = Object.entries(CHANNEL_INFO).map(([id, ch]) =>
+  list.innerHTML = Object.entries(CHANNEL_INFO).filter(([id])=>!CITY_CHANNELS.includes(id)).map(([id, ch]) =>
     `<div class="channel-item ${id==='general'?'active':''}" data-ch="${id}" onclick="joinChannel('${id}')">
       <span class="channel-emoji">${ch.emoji}</span>
       <span class="channel-label">#${ch.name}</span>
     </div>`
   ).join('');
+  const cities = document.getElementById('cityList');
+  if (cities) cities.innerHTML = CITY_CHANNELS.map(id => {
+    const ch = CHANNEL_INFO[id];
+    return `<div class="channel-item" data-ch="${id}" onclick="joinChannel('${id}')">
+      <span class="channel-emoji">${ch.emoji}</span>
+      <span class="channel-label">${ch.name}</span>
+    </div>`;
+  }).join('');
 }
 
 function exitFeed() {

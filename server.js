@@ -188,6 +188,11 @@ const CHANNELS    = [
   { id:'vyziva',  name:'Výživa',      emoji:'🥗' },
   { id:'fitness', name:'Fitness',     emoji:'💪' },
   { id:'eventy',  name:'Eventy',      emoji:'🎉' },
+  // Mestské miestnosti – informácie k hodinám pre dané mesto
+  { id:'mesto_detva',  name:'Detva',           emoji:'📍', city:true },
+  { id:'mesto_zvolen', name:'Zvolen',          emoji:'📍', city:true },
+  { id:'mesto_bb',     name:'Banská Bystrica', emoji:'📍', city:true },
+  { id:'mesto_brezno', name:'Brezno',          emoji:'📍', city:true },
 ];
 
 // ─── Member Badge (Twitch-style) ──────────────────────────────────────────────
@@ -474,20 +479,20 @@ async function seedData() {
   if(await q.count(db.classes,{})===0){
     const classes=[
       // Nedeľa (0)
-      {name:'Zumba Fitness',               emoji:'🎵', category:'Zumba',    instructor:'Marek Gruber',              location:'Detva',                       address:'Fusion Academy, Záhradná 7, Detva',                   day_of_week:0, time_start:'19:00', time_end:'20:00', capacity:20,  level:'Všetky úrovne',  description:'Zumba v Detve! Latino rytmy, energia a komunita. Spáliš 400–600 kcal. Prvá hodina ZADARMO!',                         price:10, color:'#C9A84C', active:true},
+      {name:'Zumba',               emoji:'🎵', category:'Zumba',    instructor:'Marek Gruber',              location:'Detva',                       address:'Fusion Academy, Záhradná 7, Detva',                   day_of_week:0, time_start:'19:00', time_end:'20:00', capacity:20,  level:'Všetky úrovne',  description:'Zumba v Detve! Latino rytmy, energia a komunita. Spáliš 400–600 kcal. Prvá hodina ZADARMO!',                         price:10, color:'#C9A84C', active:true},
       // Pondelok (1)
-      {name:'Zumba Fitness',               emoji:'🎵', category:'Zumba',    instructor:'Beáta Gruber Buňová',       location:'Zvolen',                      address:'Fitko Gymkova, M.R. Štefánika 805, Zvolen',            day_of_week:1, time_start:'19:00', time_end:'20:00', capacity:25,  level:'Všetky úrovne',  description:'Zumba vo Zvolene! Energetická hodina latinského fitnes tanca. Spáliš 400–600 kcal. Prvá hodina ZADARMO!',           price:10, color:'#C9A84C', active:true},
-      {name:'Zumba Fitness',               emoji:'🎵', category:'Zumba',    instructor:'Fusion Team',               location:'Banská Bystrica',             address:'R2N Business centrum, Sládkovičova 29, Banská Bystrica',day_of_week:1, time_start:'17:00', time_end:'18:00', capacity:25,  level:'Všetky úrovne',  description:'Zumba v Banskej Bystrici! Latínske rytmy, energia a komunita. Prvá hodina ZADARMO!',                                 price:10, color:'#C9A84C', active:true},
+      {name:'Zumba',               emoji:'🎵', category:'Zumba',    instructor:'Beáta Gruber Buňová',       location:'Zvolen',                      address:'Fitko Gymkova, M.R. Štefánika 805, Zvolen',            day_of_week:1, time_start:'19:00', time_end:'20:00', capacity:25,  level:'Všetky úrovne',  description:'Zumba vo Zvolene! Energetická hodina latinského fitnes tanca. Spáliš 400–600 kcal. Prvá hodina ZADARMO!',           price:10, color:'#C9A84C', active:true},
+      {name:'Zumba',               emoji:'🎵', category:'Zumba',    instructor:'Fusion Team',               location:'Banská Bystrica',             address:'R2N Business centrum, Sládkovičova 29, Banská Bystrica',day_of_week:1, time_start:'17:00', time_end:'18:00', capacity:25,  level:'Všetky úrovne',  description:'Zumba v Banskej Bystrici! Latínske rytmy, energia a komunita. Prvá hodina ZADARMO!',                                 price:10, color:'#C9A84C', active:true},
       // Utorok (2)
-      {name:'Zumba Fitness',               emoji:'🎵', category:'Zumba',    instructor:'Fusion Team',               location:'Brezno',                      address:'Fitko LÉGIA, Fraňa Kráľa 1/A, Brezno',                day_of_week:2, time_start:'19:00', time_end:'20:00', capacity:20,  level:'Všetky úrovne',  description:'Zumba v Brezne! Latino fitness pre každého. Spáliš 400–600 kcal za hodinu.',                                         price:10, color:'#C9A84C', active:true},
+      {name:'Zumba',               emoji:'🎵', category:'Zumba',    instructor:'Fusion Team',               location:'Brezno',                      address:'Fitko LÉGIA, Fraňa Kráľa 1/A, Brezno',                day_of_week:2, time_start:'19:00', time_end:'20:00', capacity:20,  level:'Všetky úrovne',  description:'Zumba v Brezne! Latino fitness pre každého. Spáliš 400–600 kcal za hodinu.',                                         price:10, color:'#C9A84C', active:true},
       {name:'Zumba ONLINE – LIVE',         emoji:'🌐', category:'Online',   instructor:'Beáta Gruber Buňová',       location:'Online',                      address:'Živé vysielanie zo Zvolena – link po registrácii',     day_of_week:2, time_start:'19:00', time_end:'20:00', capacity:100, level:'Všetky úrovne',  description:'Živé online Zumba hodiny z pohodlia domova. Odkiaľkoľvek na Slovensku aj v zahraničí. Online členstvo od 12.90 €/mes.', price:6, color:'#2196f3', active:true},
       // Streda (3)
-      {name:'Zumba Fitness',               emoji:'🎵', category:'Zumba',    instructor:'Beáta Gruber Buňová',       location:'Zvolen',                      address:'Fitko Gymkova, M.R. Štefánika 805, Zvolen',            day_of_week:3, time_start:'17:00', time_end:'18:00', capacity:25,  level:'Všetky úrovne',  description:'Stredajšia Zumba vo Zvolene! Skvelý stred týždňa s latinskými rytmami.',                                            price:10, color:'#C9A84C', active:true},
-      {name:'Zumba Fitness',               emoji:'🎵', category:'Zumba',    instructor:'Fusion Team',               location:'Banská Bystrica',             address:'R2N Business centrum, Sládkovičova 29, Banská Bystrica',day_of_week:3, time_start:'19:00', time_end:'20:00', capacity:25,  level:'Všetky úrovne',  description:'Streda patrí Zumbe v BB! Energetická hodina latinského tanca.',                                                      price:10, color:'#C9A84C', active:true},
+      {name:'Zumba',               emoji:'🎵', category:'Zumba',    instructor:'Beáta Gruber Buňová',       location:'Zvolen',                      address:'Fitko Gymkova, M.R. Štefánika 805, Zvolen',            day_of_week:3, time_start:'17:00', time_end:'18:00', capacity:25,  level:'Všetky úrovne',  description:'Stredajšia Zumba vo Zvolene! Skvelý stred týždňa s latinskými rytmami.',                                            price:10, color:'#C9A84C', active:true},
+      {name:'Zumba',               emoji:'🎵', category:'Zumba',    instructor:'Fusion Team',               location:'Banská Bystrica',             address:'R2N Business centrum, Sládkovičova 29, Banská Bystrica',day_of_week:3, time_start:'19:00', time_end:'20:00', capacity:25,  level:'Všetky úrovne',  description:'Streda patrí Zumbe v BB! Energetická hodina latinského tanca.',                                                      price:10, color:'#C9A84C', active:true},
       // Štvrtok (4)
-      {name:'Zumba Fitness',               emoji:'🎵', category:'Zumba',    instructor:'Fusion Team',               location:'Brezno',                      address:'Fitko LÉGIA, Fraňa Kráľa 1/A, Brezno',                day_of_week:4, time_start:'19:00', time_end:'20:00', capacity:20,  level:'Všetky úrovne',  description:'Štvrtok = Zumba v Brezne! Latínsky rytmus a dobrá nálada.',                                                          price:10, color:'#C9A84C', active:true},
+      {name:'Zumba',               emoji:'🎵', category:'Zumba',    instructor:'Fusion Team',               location:'Brezno',                      address:'Fitko LÉGIA, Fraňa Kráľa 1/A, Brezno',                day_of_week:4, time_start:'19:00', time_end:'20:00', capacity:20,  level:'Všetky úrovne',  description:'Štvrtok = Zumba v Brezne! Latínsky rytmus a dobrá nálada.',                                                          price:10, color:'#C9A84C', active:true},
       // Piatok (5)
-      {name:'Zumba Fitness',               emoji:'🎵', category:'Zumba',    instructor:'Marek Gruber',              location:'Detva',                       address:'Fusion Academy, Záhradná 7, Detva',                   day_of_week:5, time_start:'19:00', time_end:'20:00', capacity:20,  level:'Všetky úrovne',  description:'Piatok patrí Zumbe v Detve! Latino rytmy a komunita. Prvá hodina ZADARMO!',                                          price:10, color:'#C9A84C', active:true},
+      {name:'Zumba',               emoji:'🎵', category:'Zumba',    instructor:'Marek Gruber',              location:'Detva',                       address:'Fusion Academy, Záhradná 7, Detva',                   day_of_week:5, time_start:'19:00', time_end:'20:00', capacity:20,  level:'Všetky úrovne',  description:'Piatok patrí Zumbe v Detve! Latino rytmy a komunita. Prvá hodina ZADARMO!',                                          price:10, color:'#C9A84C', active:true},
     ];
     for(const c of classes) await q.insert(db.classes, c);
     console.log('✅  Rozvrh naplnený');
@@ -496,9 +501,13 @@ async function seedData() {
   // Ensure the Friday Detva Zumba 19:00 exists (added to schedule after some DBs were seeded).
   // Idempotent: only inserts if missing, so it self-heals on production without duplicating.
   if(!(await q.one(db.classes,{day_of_week:5, location:'Detva', category:'Zumba', time_start:'19:00'}))){
-    await q.insert(db.classes,{name:'Zumba Fitness', emoji:'🎵', category:'Zumba', instructor:'Marek Gruber', location:'Detva', address:'Fusion Academy, Záhradná 7, Detva', day_of_week:5, time_start:'19:00', time_end:'20:00', capacity:20, level:'Všetky úrovne', description:'Piatok patrí Zumbe v Detve! Latino rytmy a komunita. Prvá hodina ZADARMO!', price:10, color:'#C9A84C', active:true});
+    await q.insert(db.classes,{name:'Zumba', emoji:'🎵', category:'Zumba', instructor:'Marek Gruber', location:'Detva', address:'Fusion Academy, Záhradná 7, Detva', day_of_week:5, time_start:'19:00', time_end:'20:00', capacity:20, level:'Všetky úrovne', description:'Piatok patrí Zumbe v Detve! Latino rytmy a komunita. Prvá hodina ZADARMO!', price:10, color:'#C9A84C', active:true});
     console.log('✅  Doplnená piatková Zumba v Detve 19:00');
   }
+
+  // Migration: rename "Zumba Fitness" → "Zumba" on existing DBs (idempotent)
+  { const renamed = await q.update(db.classes,{name:'Zumba Fitness'},{$set:{name:'Zumba'}},{multi:true});
+    if(renamed) console.log(`✅  Premenovaných ${renamed} hodín „Zumba Fitness" → „Zumba"`); }
 
   // Herbalife products (add even if other products already exist)
   if(await q.count(db.products,{cat:'Herbalife'})===0){
@@ -780,12 +789,14 @@ app.post('/api/register', async(req,res)=>{
 });
 
 // Public config (safe to expose)
-app.get('/api/config', (req,res)=>{
+app.get('/api/config', async(req,res)=>{
+  const founder = await q.one(db.users,{email:'gruber.marek@gmail.com'});
   res.json({
     paypal_client_id: PAYPAL_CLIENT_ID||'sb', paypal_env: PAYPAL_ENV,
     stripe_enabled: !!process.env.STRIPE_SECRET_KEY,
     meta_pixel_id: process.env.META_PIXEL_ID||'',
-    google_ads_id: process.env.GOOGLE_ADS_ID||''
+    google_ads_id: process.env.GOOGLE_ADS_ID||'',
+    default_sponsor_code: founder?.referral_code || ''
   });
 });
 
