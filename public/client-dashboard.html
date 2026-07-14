@@ -31,6 +31,8 @@
     .anim-d1{animation-delay:.05s}.anim-d2{animation-delay:.12s}.anim-d3{animation-delay:.2s}
     .anim-d4{animation-delay:.28s}.anim-d5{animation-delay:.36s}.anim-d6{animation-delay:.44s}
     .anim-d7{animation-delay:.52s}
+    /* Safety: never leave content permanently hidden if animations don't run */
+    @media (prefers-reduced-motion:reduce){ .anim{opacity:1;animation:none} }
 
     /* ── Top bar ── */
     .topbar{background:#111;border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
@@ -334,7 +336,7 @@
   </div>
 
   <!-- Membership card -->
-  <div class="membership-card anim anim-d2" id="membershipCard">
+  <div class="membership-card" id="membershipCard">
     <div class="mc-top">
       <div class="mc-plan" id="mcPlan">Žiadne členstvo</div>
       <div class="mc-status none" id="mcStatus">Neaktívne</div>
@@ -1114,6 +1116,8 @@ async function init(){
   // Friends & public profile
   document.getElementById('myProfileLink').href='/u/'+me.id;
   loadFriends();
+  // Safety net: force any card that failed to fade in to become visible
+  setTimeout(()=>document.querySelectorAll('.anim').forEach(e=>{ if(getComputedStyle(e).opacity==='0') e.style.opacity='1'; }), 1000);
 }
 
 async function loadFriends(){
