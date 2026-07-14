@@ -83,6 +83,12 @@
     .membership-card{background:linear-gradient(135deg,#1a1a1a,#252520);border-radius:16px;padding:22px;margin-bottom:20px;border:1px solid #3a3520;position:relative;overflow:hidden}
     .membership-card::before{content:'';position:absolute;top:-50px;right:-50px;width:150px;height:150px;border-radius:50%;background:radial-gradient(circle,rgba(201,168,76,.12),transparent 70%)}
     .membership-card::after{content:'';position:absolute;bottom:-60px;left:-40px;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,rgba(201,168,76,.06),transparent 70%)}
+    /* Tier-based aura glow (colored by membership level) */
+    .membership-card.mc-tiered{border-color:color-mix(in srgb,var(--tier,#C9A84C) 55%,#3a3520);animation:mcGlow 3.6s ease-in-out infinite}
+    .membership-card.mc-tiered::before{background:radial-gradient(circle,color-mix(in srgb,var(--tier,#C9A84C) 42%,transparent),transparent 70%)}
+    .membership-card.mc-tiered::after{background:radial-gradient(circle,color-mix(in srgb,var(--tier,#C9A84C) 24%,transparent),transparent 70%)}
+    .membership-card.mc-tiered .mc-plan{color:var(--tier,#C9A84C);text-shadow:0 0 14px color-mix(in srgb,var(--tier,#C9A84C) 55%,transparent)}
+    @keyframes mcGlow{0%,100%{box-shadow:0 0 0 1px color-mix(in srgb,var(--tier,#C9A84C) 22%,transparent),0 6px 22px -12px var(--tier,#C9A84C)}50%{box-shadow:0 0 0 1px color-mix(in srgb,var(--tier,#C9A84C) 46%,transparent),0 12px 42px -6px var(--tier,#C9A84C)}}
     .mc-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
     .mc-plan{font-size:1.5rem;font-weight:700;color:var(--gold)}
     .mc-status{padding:4px 12px;border-radius:20px;font-size:.78rem;font-weight:600}
@@ -354,6 +360,10 @@
       <div class="mc-info-item">
         <label>Počet návštev</label>
         <span id="mcVisits">0 🎯</span>
+      </div>
+      <div class="mc-info-item">
+        <label>Automatický odber</label>
+        <span id="mcAutoRenew">—</span>
       </div>
     </div>
     <button class="mc-buy-btn" id="mcBuyBtn" onclick="window.location.href='/pricing'">
@@ -689,6 +699,18 @@ function renderMembership(me){
       document.getElementById('mcExpiry').textContent=fmtDate(m.expires_at)+(days>=0&&days<=7?` ⚠️ (${days} dní)`:'');
       if(days>=0&&days<=7) document.getElementById('mcExpiry').style.color='#ffb74d';
     } else {document.getElementById('mcExpiry').textContent='Neobmedzené';}
+    // Auto-renew (subscription) status
+    const autoRenew = !!(me.stripe_subscription || me.paypal_subscription);
+    const ar=document.getElementById('mcAutoRenew');
+    ar.innerHTML = autoRenew
+      ? '<span style="color:#81c784;font-weight:700">🔄 Áno</span>'
+      : '<span style="color:#9e9e9e">Nie</span> <a href="/pricing" style="color:var(--gold);font-size:.78rem">zapnúť →</a>';
+    // Tier-based glow on the card
+    const TIER_COLORS={bronze:'#cd7f32',silver:'#c0c6d0',gold:'#C9A84C',kids:'#FF6B9D',online_basic:'#4CAF50',online_premium:'#9C27B0',permanentka10:'#FF9800'};
+    const card=document.getElementById('membershipCard');
+    const tc=TIER_COLORS[planKey]||'#C9A84C';
+    card.style.setProperty('--tier', tc);
+    card.classList.toggle('mc-tiered', isActive);
     buyBtn.innerHTML=isActive?'<i class="bi bi-arrow-repeat"></i> Obnoviť / Upgradovať':'<i class="bi bi-cart-plus"></i> 🛒 Obnoviť členstvo';
   }
 }
@@ -700,9 +722,8 @@ function renderAccessBar(me){
   const text=document.getElementById('accessBarText');
   const hasMembership=me.membership&&me.membership.status==='active';
   if(hasMembership){
-    bar.className='access-bar ok anim anim-d2';icon.className='bi bi-patch-check-fill';
-    text.innerHTML=`<strong>${escHtml(me.membership.plan_name)}</strong> — aktívne do <strong>${fmtDate(me.membership.expires_at)}</strong>. Hodiny sú zahrnuté.`;
-    bar.style.display='flex';
+    // Card below already shows the full membership detail — avoid duplicating it here
+    bar.style.display='none';
   } else if(!me.free_class_used){
     bar.className='access-bar free anim anim-d2';icon.className='bi bi-gift-fill';
     text.innerHTML='<strong>🎁 Prvá hodina ZADARMO!</strong> Zarezervuj si svoju prvú hodinu bezplatne.';
