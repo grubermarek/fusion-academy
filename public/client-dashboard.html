@@ -653,6 +653,7 @@ function showToast(msg,type='success'){
   setTimeout(()=>{t.style.display='none'},3500);
 }
 function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function fmtDate(iso){ if(!iso) return '—'; const d=new Date(iso); if(isNaN(d)) return String(iso); return d.toLocaleDateString('sk-SK',{day:'numeric',month:'long',year:'numeric'}); }
 async function logout(){await api('/api/logout',{method:'POST'});window.location.href='/';}
 async function cancelStripeSub(){
   if(!confirm('Zrušiť automatický mesačný odber? Členstvo ti zostane aktívne do konca zaplateného obdobia.')) return;
@@ -685,7 +686,7 @@ function renderMembership(me){
     document.getElementById('mcStatusText').textContent=isActive?'Aktívne':'Vypršalo';
     if(m.expires_at){
       const d=new Date(m.expires_at);const days=Math.round((d-new Date())/86400000);
-      document.getElementById('mcExpiry').textContent=m.expires_at+(days>=0&&days<=7?` ⚠️ (${days}d)`:'');
+      document.getElementById('mcExpiry').textContent=fmtDate(m.expires_at)+(days>=0&&days<=7?` ⚠️ (${days} dní)`:'');
       if(days>=0&&days<=7) document.getElementById('mcExpiry').style.color='#ffb74d';
     } else {document.getElementById('mcExpiry').textContent='Neobmedzené';}
     buyBtn.innerHTML=isActive?'<i class="bi bi-arrow-repeat"></i> Obnoviť / Upgradovať':'<i class="bi bi-cart-plus"></i> 🛒 Obnoviť členstvo';
@@ -700,7 +701,7 @@ function renderAccessBar(me){
   const hasMembership=me.membership&&me.membership.status==='active';
   if(hasMembership){
     bar.className='access-bar ok anim anim-d2';icon.className='bi bi-patch-check-fill';
-    text.innerHTML=`<strong>${escHtml(me.membership.plan_name)}</strong> — aktívne do <strong>${me.membership.expires_at||'—'}</strong>. Hodiny sú zahrnuté.`;
+    text.innerHTML=`<strong>${escHtml(me.membership.plan_name)}</strong> — aktívne do <strong>${fmtDate(me.membership.expires_at)}</strong>. Hodiny sú zahrnuté.`;
     bar.style.display='flex';
   } else if(!me.free_class_used){
     bar.className='access-bar free anim anim-d2';icon.className='bi bi-gift-fill';
