@@ -742,7 +742,7 @@ app.post('/api/register', async(req,res)=>{
       else if(utm_source) lead_source=utm_source.toLowerCase();
       else if(sponsor_id) lead_source='referral';
     }
-    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,referral_credit:0,lead_source,utm_source,utm_medium,utm_campaign,fbclid,gclid,landing_page:clean(attr.landing),referrer:clean(attr.referrer),created_at:today()});
+    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,referral_credit:0,lead_source,utm_source,utm_medium,utm_campaign,fbclid,gclid,landing_page:clean(attr.landing),referrer:clean(attr.referrer),consent_at: req.body.consent ? nowISO() : null,created_at:today()});
     req.session.uid=u._id;
     // ── Give sponzor referral credit (5€ za každého nového člena) ─────────────
     if(sponsor_id){
@@ -4844,6 +4844,7 @@ app.get('/community',  (req,res)=>res.sendFile(path.join(__dirname,'public','com
 app.get('/cennik',     (req,res)=>res.redirect(301,'/pricing'));
 app.get('/pricing',    (req,res)=>res.sendFile(path.join(__dirname,'public','pricing.html')));
 app.get('/u/:id',      (req,res)=>res.sendFile(path.join(__dirname,'public','profile.html')));
+app.get('/terms',      (req,res)=>res.sendFile(path.join(__dirname,'public','terms.html')));
 app.get('/dashboard',  (req,res)=>res.sendFile(path.join(__dirname,'public','dashboard.html')));
 app.get('/admin',      (req,res)=>res.sendFile(path.join(__dirname,'public','admin.html')));
 app.get('/online',     (req,res)=>res.sendFile(path.join(__dirname,'public','online.html')));

@@ -281,7 +281,11 @@ html,body{height:100%;overflow:hidden;font-family:var(--sans);-webkit-font-smoot
       <div class="mb-2"><input type="text"  id="rNameC"  class="form-control fa-input" placeholder="Meno a priezvisko"></div>
       <div class="mb-2"><input type="email" id="rEmailC" class="form-control fa-input" placeholder="Email"></div>
       <div class="mb-2"><input type="password" id="rPwdC" class="form-control fa-input" placeholder="Heslo (min. 6 znakov)"></div>
-      <div class="mb-3"><input type="tel"   id="rPhoneC" class="form-control fa-input" placeholder="Telefón"></div>
+      <div class="mb-2"><input type="tel"   id="rPhoneC" class="form-control fa-input" placeholder="Telefón"></div>
+      <label style="display:flex;gap:8px;align-items:flex-start;margin-bottom:12px;cursor:pointer;font-size:.78rem;color:#b8b0a0;line-height:1.45;text-align:left">
+        <input type="checkbox" id="rConsentC" style="margin-top:2px;width:16px;height:16px;flex-shrink:0;accent-color:#C9A84C">
+        <span>Súhlasím so <a href="/terms" target="_blank" style="color:#C9A84C">spracovaním údajov a podmienkami</a>; refund je možný len do 48 h od uplatnenia členstva.</span>
+      </label>
       <button onclick="doRegisterC()" style="background:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);border:none;color:#0f0f0f;font-weight:700;padding:.65rem;border-radius:50px;width:100%;cursor:pointer;">Registrovať sa zadarmo</button>
     </div>
   </div>
@@ -722,7 +726,8 @@ async function doRegisterC() {
   const phone = document.getElementById('rPhoneC').value.trim();
   const err = document.getElementById('regErrC');
   err.classList.add('d-none');
-  const r = await fetch('/api/register', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password,phone,user_type:'client',attribution:window.faGetAttribution?window.faGetAttribution():{}})});
+  if(!document.getElementById('rConsentC').checked){ err.textContent='Musíš súhlasiť so spracovaním údajov a podmienkami.'; err.classList.remove('d-none'); return; }
+  const r = await fetch('/api/register', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password,phone,user_type:'client',consent:true,attribution:window.faGetAttribution?window.faGetAttribution():{}})});
   const d = await r.json();
   if (!r.ok) { err.textContent = d.error; err.classList.remove('d-none'); return; }
   if(window.faTrack) window.faTrack('CompleteRegistration');
