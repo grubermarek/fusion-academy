@@ -1117,6 +1117,11 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     const earned=ach.filter(a=>a.earned);
     const badge=getMemberBadge(u.created_at);
     const loyalty=getLoyaltyStatus(u.visit_count||0);
+    // Unlockable profile background — the more achievements, the fancier
+    const ec=earned.length;
+    const bgTier = ec>=14?'legend' : ec>=10?'gold' : ec>=6?'silver' : ec>=3?'bronze' : 'basic';
+    const bgUnlocks=[{tier:'bronze',need:3},{tier:'silver',need:6},{tier:'gold',need:10},{tier:'legend',need:14}];
+    const nextBg=bgUnlocks.find(b=>ec<b.need)||null;
     res.json({
       id:u._id, name: u.anonymous&&!isSelf ? 'Anonymný člen' : u.name,
       anonymous: !!u.anonymous, is_self:isSelf,
@@ -1125,6 +1130,7 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
       visits: u.visit_count||0, referrals: refCount,
       months_member: monthsSince(u.created_at), joined: (u.created_at||'').slice(0,10),
       achievements: ach, earned_count: earned.length, total_count: ach.length,
+      bg_tier: bgTier, next_bg: nextBg,
       friend_state: isSelf ? 'self' : await friendState(me, u._id)
     });
   } catch(e){ res.status(500).json({error:e.message}); }

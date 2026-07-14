@@ -342,9 +342,16 @@ function initChat() {
   // Connect socket
   socket = io();
 
-  socket.on('welcome', data => {
+  socket.on('welcome', async data => {
     joinChannel('general');
     loadConversations();
+    // Deep-link: /community?dm=<userId> opens a private conversation
+    const dmTarget = new URLSearchParams(location.search).get('dm');
+    if (dmTarget && dmTarget !== me.id) {
+      let nm = 'Správa';
+      try { const p = await (await fetch('/api/profile/'+dmTarget)).json(); if(p && p.name) nm = p.name; } catch {}
+      openDM(dmTarget, nm);
+    }
   });
 
   // Feed live updates

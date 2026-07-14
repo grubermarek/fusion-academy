@@ -17,6 +17,19 @@
   .back:hover{color:var(--gold)}
   .hero{background:linear-gradient(150deg,#211d16,#15130f);border:1px solid var(--border);border-radius:20px;padding:30px 26px;text-align:center;position:relative;overflow:hidden}
   .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 50% -10%,rgba(201,162,76,.18),transparent 60%);pointer-events:none}
+  /* Unlockable backgrounds (by achievement count) */
+  .hero.bg-bronze{background:linear-gradient(150deg,#2a2016,#171009);border-color:rgba(205,127,50,.4)}
+  .hero.bg-bronze::before{background:radial-gradient(circle at 50% -10%,rgba(205,127,50,.28),transparent 62%)}
+  .hero.bg-silver{background:linear-gradient(150deg,#232630,#12141a);border-color:rgba(192,198,208,.4)}
+  .hero.bg-silver::before{background:radial-gradient(circle at 30% -10%,rgba(192,198,208,.25),transparent 60%),radial-gradient(circle at 80% 10%,rgba(120,140,180,.18),transparent 55%)}
+  .hero.bg-gold{background:linear-gradient(150deg,#2e2611,#1a1408);border-color:rgba(201,162,76,.55)}
+  .hero.bg-gold::before{background:radial-gradient(circle at 50% -15%,rgba(247,231,184,.30),transparent 60%),radial-gradient(circle at 15% 90%,rgba(201,162,76,.22),transparent 55%)}
+  .hero.bg-legend{background:linear-gradient(150deg,#2a1830,#0f0a14);border-color:rgba(180,120,220,.5);box-shadow:0 0 40px -12px rgba(180,120,220,.5)}
+  .hero.bg-legend::before{background:radial-gradient(circle at 20% -10%,rgba(233,69,96,.22),transparent 55%),radial-gradient(circle at 80% 0%,rgba(120,140,255,.22),transparent 55%),radial-gradient(circle at 50% 110%,rgba(201,162,76,.25),transparent 55%);animation:auroraShift 8s ease-in-out infinite alternate}
+  @keyframes auroraShift{from{opacity:.7;transform:scale(1)}to{opacity:1;transform:scale(1.15)}}
+  .bg-hint{text-align:center;color:var(--muted);font-size:.78rem;margin-top:10px}
+  .msg-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:10px;background:#241f17;border:1px solid var(--border);color:var(--cream);border-radius:12px;padding:12px;font-weight:700;font-size:.9rem;text-decoration:none;font-family:'Manrope'}
+  .msg-btn:hover{border-color:var(--gold);color:var(--gold)}
   .avatar{width:104px;height:104px;border-radius:50%;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;font-family:'Cormorant Garamond',serif;font-size:2.6rem;font-weight:600;color:#1a1710;background:linear-gradient(135deg,var(--gold),#a07830);overflow:hidden;border:3px solid rgba(201,162,76,.4);box-shadow:0 0 30px -6px rgba(201,162,76,.5)}
   .avatar img{width:100%;height:100%;object-fit:cover}
   .pname{font-family:'Cormorant Garamond',serif;font-size:2rem;font-weight:600;line-height:1.1}
@@ -82,8 +95,9 @@ function render(){
      <div class="ico">${a.icon}</div><div class="an">${esc(a.name)}</div><div class="ad">${esc(a.desc)}</div>
      ${a.earned?'':`<div class="prog"><i style="width:${a.progress}%"></i></div>`}
    </div>`;
+  const bgNames={bronze:'Bronzové',silver:'Strieborné',gold:'Zlaté',legend:'Legendárne'};
   document.getElementById('host').innerHTML=`
-    <div class="hero">
+    <div class="hero bg-${esc(P.bg_tier||'basic')}">
       <div class="avatar">${av}</div>
       <div class="pname ${flex}">${esc(P.name)}</div>
       <div class="ptags">
@@ -92,6 +106,7 @@ function render(){
         <span class="tag">🏆 ${P.earned_count}/${P.total_count} odznakov</span>
       </div>
     </div>
+    ${P.is_self && P.next_bg ? `<div class="bg-hint">🎨 Odomkni <b style="color:var(--gold)">${bgNames[P.next_bg.tier]||''} pozadie</b> pri ${P.next_bg.need} odznakoch (máš ${P.earned_count})</div>` : ''}
     ${P.anonymous && !P.is_self ? '<div class="anon-note">🔒 Tento člen má profil nastavený ako anonymný.</div>' : `
     <div class="stats">
       <div class="stat"><div class="n">${P.visits}</div><div class="l">Návštev</div></div>
@@ -99,6 +114,7 @@ function render(){
       <div class="stat"><div class="n">${P.months_member}</div><div class="l">Mesiacov</div></div>
     </div>
     ${friendBtn()}
+    ${(!P.is_self && !P.anonymous) ? `<a class="msg-btn" href="/community?dm=${P.id}"><i class="bi bi-chat-dots-fill"></i> Napísať správu</a>` : ''}
     <div class="sec-title">🏆 Získané odznaky (${earned.length})</div>
     <div class="ach-grid">${earned.length?earned.map(achCard).join(''):'<div class="empty">Zatiaľ žiadne — poď na hodinu! 💃</div>'}</div>
     ${locked.length?`<div class="sec-title">🔒 Ešte odomknúť</div><div class="ach-grid">${locked.map(achCard).join('')}</div>`:''}
