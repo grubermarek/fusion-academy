@@ -502,7 +502,7 @@ function renderOnlineRight(users) {
   list.innerHTML = users.map(u => {
     const b = u.memberBadge||{};
     const avatarColor = stringToColor(u.id||'x');
-    const clickable = u.id!==me?.id ? `onclick="openDM('${u.id}','${escHtml(u.name||'').replace(/'/g,'')}')" title="Napísať súkromne"` : '';
+    const clickable = u.id!==me?.id ? `onclick="location.href='/u/'+'${u.id}'" style="cursor:pointer" title="Zobraziť profil"` : '';
     return `<div class="member-item" ${clickable}>
       <div class="m-avatar" style="background:${avatarColor}">${(u.name||'?').charAt(0).toUpperCase()}</div>
       <div class="m-name">${escHtml(u.name||'?')}</div>

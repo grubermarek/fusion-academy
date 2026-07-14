@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Profil – Fusion Academy</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/fa-theme.css">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--gold:#C9A24C;--cream:#EAE3D5;--muted:#8a8272;--bg:#141210;--card:#1b1916;--border:#2e2a20}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Manrope',system-ui,sans-serif;background:var(--bg);color:var(--cream);min-height:100vh;padding:24px 16px 60px}
+  .wrap{max-width:720px;margin:0 auto}
+  .back{display:inline-flex;align-items:center;gap:6px;color:var(--muted);text-decoration:none;font-size:.85rem;margin-bottom:16px}
+  .back:hover{color:var(--gold)}
+  .hero{background:linear-gradient(150deg,#211d16,#15130f);border:1px solid var(--border);border-radius:20px;padding:30px 26px;text-align:center;position:relative;overflow:hidden}
+  .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 50% -10%,rgba(201,162,76,.18),transparent 60%);pointer-events:none}
+  .avatar{width:104px;height:104px;border-radius:50%;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;font-family:'Cormorant Garamond',serif;font-size:2.6rem;font-weight:600;color:#1a1710;background:linear-gradient(135deg,var(--gold),#a07830);overflow:hidden;border:3px solid rgba(201,162,76,.4);box-shadow:0 0 30px -6px rgba(201,162,76,.5)}
+  .avatar img{width:100%;height:100%;object-fit:cover}
+  .pname{font-family:'Cormorant Garamond',serif;font-size:2rem;font-weight:600;line-height:1.1}
+  .pname.glow{text-shadow:0 0 18px rgba(201,162,76,.65),0 0 4px rgba(201,162,76,.9)}
+  .ptags{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px}
+  .tag{background:rgba(201,162,76,.12);border:1px solid rgba(201,162,76,.3);color:var(--gold);padding:4px 12px;border-radius:20px;font-size:.78rem;font-weight:600}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0}
+  .stat{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 10px;text-align:center}
+  .stat .n{font-family:'Cormorant Garamond',serif;font-size:1.9rem;font-weight:600;color:var(--gold)}
+  .stat .l{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
+  .fbtn{width:100%;margin-top:6px;border:none;border-radius:12px;padding:13px;font-weight:800;font-size:.92rem;cursor:pointer;font-family:'Manrope'}
+  .fbtn.add{background:linear-gradient(102deg,#B98F3E,#F7E7B8 36%,#E7C878 58%,#B98F3E);color:#231A08}
+  .fbtn.sec{background:#241f17;border:1px solid var(--border);color:var(--cream)}
+  .fbtn.ok{background:#1e2a1e;border:1px solid #35502f;color:#9fd894}
+  .sec-title{font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);font-weight:800;margin:26px 0 12px}
+  .ach-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:12px}
+  .ach{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 8px;text-align:center;position:relative;transition:.2s}
+  .ach.earned{border-color:rgba(201,162,76,.5);background:linear-gradient(160deg,#221d14,#191612)}
+  .ach.earned .ico{filter:none}
+  .ach .ico{font-size:1.9rem;filter:grayscale(1) opacity(.32)}
+  .ach.earned .ico{text-shadow:0 0 14px rgba(201,162,76,.6)}
+  .ach .an{font-size:.72rem;font-weight:700;margin-top:6px;color:var(--cream)}
+  .ach:not(.earned) .an{color:var(--muted)}
+  .ach .ad{font-size:.64rem;color:var(--muted);margin-top:2px;line-height:1.2}
+  .ach .lock{position:absolute;top:6px;right:8px;font-size:.7rem;color:var(--muted)}
+  .prog{height:4px;background:#0f0d0b;border-radius:3px;margin-top:7px;overflow:hidden}
+  .prog>i{display:block;height:100%;background:var(--gold)}
+  .empty{color:var(--muted);text-align:center;padding:20px;font-size:.9rem}
+  .anon-note{background:#221d14;border:1px solid var(--border);border-radius:12px;padding:14px;color:var(--muted);font-size:.85rem;text-align:center;margin-top:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a href="/community" class="back"><i class="bi bi-arrow-left"></i> Späť do komunity</a>
+  <div id="host"><div class="empty">Načítavam profil…</div></div>
+</div>
+<script>
+const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const uid=location.pathname.split('/').pop();
+let P=null;
+async function load(){
+  const r=await fetch('/api/profile/'+encodeURIComponent(uid),{credentials:'include'});
+  if(r.status===401){ location.href='/?next='+encodeURIComponent(location.pathname); return; }
+  if(!r.ok){ document.getElementById('host').innerHTML='<div class="empty">Profil sa nepodarilo načítať.</div>'; return; }
+  P=await r.json(); render();
+}
+function friendBtn(){
+  if(P.friend_state==='self') return '';
+  if(P.anonymous) return '';
+  if(P.friend_state==='friends') return `<button class="fbtn ok" onclick="rmFriend()"><i class="bi bi-check-circle-fill"></i> Priatelia · odobrať</button>`;
+  if(P.friend_state==='requested') return `<button class="fbtn sec" onclick="rmFriend()"><i class="bi bi-hourglass-split"></i> Žiadosť odoslaná · zrušiť</button>`;
+  if(P.friend_state==='incoming') return `<button class="fbtn add" onclick="accept()"><i class="bi bi-person-check-fill"></i> Prijať žiadosť</button>`;
+  return `<button class="fbtn add" onclick="addFriend()"><i class="bi bi-person-plus-fill"></i> Pridať do priateľov</button>`;
+}
+function render(){
+  const initials=(P.name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+  const av=P.avatar?`<img src="${P.avatar}" alt="">`:esc(initials);
+  const flex=P.earned_count>=5?'glow':'';
+  const cats={visits:'Návštevy',refs:'Privedení členovia',tenure:'Vernosť'};
+  const earned=P.achievements.filter(a=>a.earned), locked=P.achievements.filter(a=>!a.earned);
+  const achCard=a=>`<div class="ach ${a.earned?'earned':''}">
+     ${a.earned?'':'<span class="lock"><i class="bi bi-lock-fill"></i></span>'}
+     <div class="ico">${a.icon}</div><div class="an">${esc(a.name)}</div><div class="ad">${esc(a.desc)}</div>
+     ${a.earned?'':`<div class="prog"><i style="width:${a.progress}%"></i></div>`}
+   </div>`;
+  document.getElementById('host').innerHTML=`
+    <div class="hero">
+      <div class="avatar">${av}</div>
+      <div class="pname ${flex}">${esc(P.name)}</div>
+      <div class="ptags">
+        <span class="tag">${P.member_badge?.emoji||'🌱'} ${esc(P.member_badge?.label||'Nováčik')}</span>
+        <span class="tag">🏅 ${esc(P.loyalty_label)}</span>
+        <span class="tag">🏆 ${P.earned_count}/${P.total_count} odznakov</span>
+      </div>
+    </div>
+    ${P.anonymous && !P.is_self ? '<div class="anon-note">🔒 Tento člen má profil nastavený ako anonymný.</div>' : `
+    <div class="stats">
+      <div class="stat"><div class="n">${P.visits}</div><div class="l">Návštev</div></div>
+      <div class="stat"><div class="n">${P.referrals}</div><div class="l">Privedených</div></div>
+      <div class="stat"><div class="n">${P.months_member}</div><div class="l">Mesiacov</div></div>
+    </div>
+    ${friendBtn()}
+    <div class="sec-title">🏆 Získané odznaky (${earned.length})</div>
+    <div class="ach-grid">${earned.length?earned.map(achCard).join(''):'<div class="empty">Zatiaľ žiadne — poď na hodinu! 💃</div>'}</div>
+    ${locked.length?`<div class="sec-title">🔒 Ešte odomknúť</div><div class="ach-grid">${locked.map(achCard).join('')}</div>`:''}
+    `}
+  `;
+}
+async function post(url,body){ const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)}); return r.json(); }
+async function addFriend(){ const d=await post('/api/friends/request',{to:uid}); if(d.ok){P.friend_state=d.state;render();} }
+async function accept(){ const d=await post('/api/friends/accept',{from:uid}); if(d.ok){P.friend_state=d.state;render();} }
+async function rmFriend(){ const d=await post('/api/friends/remove',{user:uid}); if(d.ok){P.friend_state='none';render();} }
+load();
+</script>
+</body>
+</html>

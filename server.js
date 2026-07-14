@@ -108,6 +108,7 @@ const db = {
   payouts:      new Datastore({ filename: path.join(DATA_DIR, 'payouts.db'),     autoload: true }),
   refunds:      new Datastore({ filename: path.join(DATA_DIR, 'refunds.db'),     autoload: true }),
   feed:         new Datastore({ filename: path.join(DATA_DIR, 'feed.db'),        autoload: true }),
+  friends:      new Datastore({ filename: path.join(DATA_DIR, 'friends.db'),      autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -1062,6 +1063,126 @@ app.delete('/api/feed/:id', auth, async(req,res)=>{
   await q.remove(db.feed,{_id:post._id});
   io.emit('feed_delete', {id:post._id});
   res.json({ok:true});
+});
+
+// ── Achievements + public profiles + friends ──────────────────────────────────
+// Achievement definitions: unlocked by visits, referrals or membership tenure.
+const ACHIEVEMENTS = [
+  // Návštevy
+  {id:'v5',   cat:'visits', need:5,    icon:'👟', name:'Prvé kroky',    desc:'5 odchodených hodín'},
+  {id:'v25',  cat:'visits', need:25,   icon:'💃', name:'Tanečník',      desc:'25 hodín'},
+  {id:'v75',  cat:'visits', need:75,   icon:'⭐', name:'Stálica',       desc:'75 hodín'},
+  {id:'v150', cat:'visits', need:150,  icon:'🔥', name:'Vášeň',         desc:'150 hodín'},
+  {id:'v350', cat:'visits', need:350,  icon:'🏆', name:'Šampión',       desc:'350 hodín'},
+  {id:'v600', cat:'visits', need:600,  icon:'🦋', name:'Ikona',         desc:'600 hodín'},
+  {id:'v1000',cat:'visits', need:1000, icon:'🌟', name:'Legenda',       desc:'1000 hodín'},
+  // Privedení noví ľudia (referral)
+  {id:'r1',   cat:'refs', need:1,   icon:'🤝', name:'Ambasádor',       desc:'1 privedený člen'},
+  {id:'r3',   cat:'refs', need:3,   icon:'📣', name:'Motivátor',       desc:'3 privedení členovia'},
+  {id:'r5',   cat:'refs', need:5,   icon:'🌱', name:'Rozsievač',       desc:'5 privedených členov'},
+  {id:'r10',  cat:'refs', need:10,  icon:'🚀', name:'Líder komunity',  desc:'10 privedených členov'},
+  {id:'r25',  cat:'refs', need:25,  icon:'👑', name:'Kráľ náboru',     desc:'25 privedených členov'},
+  // Vernosť (mesiace členstva)
+  {id:'m3',   cat:'tenure', need:3,  icon:'📅', name:'Verný',          desc:'3 mesiace s nami'},
+  {id:'m6',   cat:'tenure', need:6,  icon:'💛', name:'Srdcom Fusion',  desc:'6 mesiacov'},
+  {id:'m12',  cat:'tenure', need:12, icon:'🎖️', name:'Rok na parkete', desc:'1 rok'},
+  {id:'m24',  cat:'tenure', need:24, icon:'💎', name:'Diamantová éra', desc:'2 roky'},
+];
+async function referralCountOf(uid){ return q.count(db.users,{sponsor_id:uid,is_admin:{$ne:true}}); }
+function monthsSince(iso){ if(!iso) return 0; return Math.max(0, Math.floor((Date.now()-new Date(iso).getTime())/(30*86400000))); }
+function computeAchievements(u, refCount){
+  const visits=u.visit_count||0, months=monthsSince(u.created_at);
+  const val={visits, refs:refCount, tenure:months};
+  return ACHIEVEMENTS.map(a=>({...a, earned: (val[a.cat]||0) >= a.need, progress: Math.min(100, Math.round((val[a.cat]||0)/a.need*100))}));
+}
+
+// Friend relationship helpers (single row per pair, sorted key)
+const pairKey=(a,b)=>[String(a),String(b)].sort().join('_');
+async function friendState(meId, otherId){
+  const f=await q.one(db.friends,{pair:pairKey(meId,otherId)});
+  if(!f) return 'none';
+  if(f.status==='accepted') return 'friends';
+  return f.requested_by===meId ? 'requested' : 'incoming'; // pending
+}
+
+// Public profile (respects anonymity: anonymous users show a minimal card)
+app.get('/api/profile/:id', auth, async(req,res)=>{
+  try {
+    const u=await q.one(db.users,{_id:req.params.id});
+    if(!u) return res.status(404).json({error:'Profil nenájdený'});
+    const me=req.session.uid;
+    const isSelf = u._id===me;
+    const refCount=await referralCountOf(u._id);
+    const ach=computeAchievements(u, refCount);
+    const earned=ach.filter(a=>a.earned);
+    const badge=getMemberBadge(u.created_at);
+    const loyalty=getLoyaltyStatus(u.visit_count||0);
+    res.json({
+      id:u._id, name: u.anonymous&&!isSelf ? 'Anonymný člen' : u.name,
+      anonymous: !!u.anonymous, is_self:isSelf,
+      avatar: u.anonymous&&!isSelf ? null : (u.avatar||null),
+      member_badge:badge, loyalty_label: loyalty.current?.label||'Nováčik',
+      visits: u.visit_count||0, referrals: refCount,
+      months_member: monthsSince(u.created_at), joined: (u.created_at||'').slice(0,10),
+      achievements: ach, earned_count: earned.length, total_count: ach.length,
+      friend_state: isSelf ? 'self' : await friendState(me, u._id)
+    });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Friends: send request
+app.post('/api/friends/request', auth, async(req,res)=>{
+  const to=String(req.body.to||''); const me=req.session.uid;
+  if(!to||to===me) return res.status(400).json({error:'Neplatný používateľ'});
+  const other=await q.one(db.users,{_id:to});
+  if(!other) return res.status(404).json({error:'Používateľ nenájdený'});
+  const key=pairKey(me,to);
+  const existing=await q.one(db.friends,{pair:key});
+  if(existing){
+    // If the other person already requested me, accept it
+    if(existing.status==='pending' && existing.requested_by===to){
+      await q.update(db.friends,{pair:key},{$set:{status:'accepted',accepted_at:nowISO()}});
+      return res.json({ok:true, state:'friends'});
+    }
+    return res.json({ok:true, state: existing.status==='accepted'?'friends':'requested'});
+  }
+  await q.insert(db.friends,{pair:key, users:[me,to], requested_by:me, status:'pending', created_at:nowISO()});
+  await q.insert(db.notifications,{user_id:to, type:'friend_request', from_id:me,
+    title:'👋 Nová žiadosť o priateľstvo', body:`${(await q.one(db.users,{_id:me}))?.name||'Niekto'} ti chce byť priateľom.`, read:false, created_at:nowISO()});
+  res.json({ok:true, state:'requested'});
+});
+// Accept a request
+app.post('/api/friends/accept', auth, async(req,res)=>{
+  const from=String(req.body.from||''); const me=req.session.uid;
+  const key=pairKey(me,from);
+  const f=await q.one(db.friends,{pair:key, status:'pending'});
+  if(!f || f.requested_by!==from) return res.status(400).json({error:'Žiadna čakajúca žiadosť'});
+  await q.update(db.friends,{pair:key},{$set:{status:'accepted',accepted_at:nowISO()}});
+  await q.insert(db.notifications,{user_id:from, type:'friend_accepted', from_id:me,
+    title:'🎉 Žiadosť prijatá', body:`${(await q.one(db.users,{_id:me}))?.name||'Niekto'} prijal/a tvoju žiadosť o priateľstvo.`, read:false, created_at:nowISO()});
+  res.json({ok:true, state:'friends'});
+});
+// Remove friend / cancel request / decline
+app.post('/api/friends/remove', auth, async(req,res)=>{
+  const other=String(req.body.user||''); const me=req.session.uid;
+  await q.remove(db.friends,{pair:pairKey(me,other)},{multi:true});
+  res.json({ok:true, state:'none'});
+});
+// My friends + incoming requests
+app.get('/api/friends', auth, async(req,res)=>{
+  const me=req.session.uid;
+  const rows=await q.find(db.friends,{users:me});
+  const uMap=Object.fromEntries((await q.find(db.users,{})).map(u=>[u._id,u]));
+  const mkCard=oid=>{ const u=uMap[oid]; if(!u) return null; return {id:oid, name:u.anonymous?'Anonymný člen':u.name, avatar:u.anonymous?null:(u.avatar||null), badge:getMemberBadge(u.created_at), visits:u.visit_count||0}; };
+  const friends=[], incoming=[], outgoing=[];
+  for(const f of rows){
+    const other=f.users.find(x=>x!==me);
+    const card=mkCard(other); if(!card) continue;
+    if(f.status==='accepted') friends.push(card);
+    else if(f.requested_by===me) outgoing.push(card);
+    else incoming.push(card);
+  }
+  res.json({friends, incoming, outgoing});
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -4722,6 +4843,7 @@ app.get('/schedule',   (req,res)=>res.sendFile(path.join(__dirname,'public','sch
 app.get('/community',  (req,res)=>res.sendFile(path.join(__dirname,'public','community.html')));
 app.get('/cennik',     (req,res)=>res.redirect(301,'/pricing'));
 app.get('/pricing',    (req,res)=>res.sendFile(path.join(__dirname,'public','pricing.html')));
+app.get('/u/:id',      (req,res)=>res.sendFile(path.join(__dirname,'public','profile.html')));
 app.get('/dashboard',  (req,res)=>res.sendFile(path.join(__dirname,'public','dashboard.html')));
 app.get('/admin',      (req,res)=>res.sendFile(path.join(__dirname,'public','admin.html')));
 app.get('/online',     (req,res)=>res.sendFile(path.join(__dirname,'public','online.html')));
