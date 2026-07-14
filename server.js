@@ -3109,35 +3109,45 @@ app.post('/api/stripe/checkout', auth, async(req,res)=>{
 });
 
 // Verify a returned Checkout Session and activate membership (idempotent)
+// Fulfill a paid Stripe Checkout session (membership/subscription): activate membership,
+// link subscription, invoice, commission. Idempotent + atomic via the payment record lock,
+// so it's safe to call from BOTH /verify (browser redirect) and the webhook (reliable).
+async function fulfillStripeCheckout(s){
+  if(!s || s.payment_status!=='paid') return {ok:false, error:'Platba nebola dokončená'};
+  const meta = s.metadata || {};
+  if(meta.type==='order') return {ok:false, skip:true}; // e-shop handled separately
+  const plan = MEMBERSHIP_PLANS[meta.plan_id];
+  if(!plan) return {ok:false, error:'Neznámy plán'};
+  // Atomic claim: only the first caller flips pending→completed and proceeds
+  const claimed = await q.update(db.payments,
+    {stripe_session_id:s.id, status:{$ne:'completed'}},
+    {$set:{status:'completed', captured_at:nowISO(), stripe_payment_intent:s.payment_intent||'', stripe_subscription_id:s.subscription||null}});
+  if(!claimed) return {ok:true, already:true, plan_name:plan.name}; // someone already fulfilled it
+  const memberId = meta.member_id || meta.user_id;
+  await activateMembership(memberId, meta.plan_id, plan.duration_days||30);
+  if(meta.type==='subscription' && s.subscription){
+    await q.update(db.users,{_id:meta.user_id},{$set:{stripe_subscription_id:s.subscription, stripe_sub_plan:meta.plan_id, stripe_sub_member:memberId}});
+  }
+  const buyer = await q.one(db.users,{_id:meta.user_id});
+  const via = meta.type==='subscription' ? 'Stripe mesačný odber' : 'Stripe · karta/Apple/Google Pay';
+  await q.insert(db.transactions,{type:meta.type==='subscription'?'subscription':'membership',user_id:memberId,user_name:buyer?.name||'—',amount:plan.price,payment_method:'stripe',note:`${plan.name} (${via})`,plan_id:meta.plan_id,created_at:nowISO(),month:today().slice(0,7)});
+  trackPurchase(meta.user_id, plan.price);
+  createInvoice({user_id:meta.user_id, client_name:buyer?.name, client_email:buyer?.email,
+    items:[{desc:`Členstvo ${plan.name}${meta.type==='subscription'?' (mesačný odber)':''}`, qty:1, total:plan.price}],
+    total:plan.price, method:'Stripe (karta / Apple Pay / Google Pay)'});
+  awardPurchaseCommission({buyer_id:meta.user_id, amount:plan.price, product_name:`Členstvo ${plan.name}`});
+  return {ok:true, plan_name:plan.name, subscription:meta.type==='subscription'};
+}
+
 app.post('/api/stripe/verify', auth, async(req,res)=>{
   try {
     if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
     const { session_id } = req.body;
     if(!session_id) return res.status(400).json({error:'Chýba session_id'});
     const r = await stripeApi('checkout/sessions/'+encodeURIComponent(session_id), null, 'GET');
-    const s = r.body;
-    if(s?.payment_status !== 'paid') return res.status(400).json({error:'Platba nebola dokončená'});
-    const meta = s.metadata || {};
-    const pay = await q.one(db.payments,{stripe_session_id:session_id});
-    if(pay && pay.status==='completed') return res.json({ok:true, already:true, plan_name:MEMBERSHIP_PLANS[meta.plan_id]?.name});
-    const plan = MEMBERSHIP_PLANS[meta.plan_id];
-    if(!plan) return res.status(400).json({error:'Neznámy plán'});
-    const memberId = meta.member_id || meta.user_id;
-    await activateMembership(memberId, meta.plan_id, plan.duration_days||30);
-    if(pay) await q.update(db.payments,{_id:pay._id},{$set:{status:'completed',captured_at:nowISO(),stripe_payment_intent:s.payment_intent||'',stripe_subscription_id:s.subscription||null}});
-    // Recurring subscription → remember it on the buyer so renewals extend the right member
-    if(meta.type==='subscription' && s.subscription){
-      await q.update(db.users,{_id:meta.user_id},{$set:{stripe_subscription_id:s.subscription, stripe_sub_plan:meta.plan_id, stripe_sub_member:memberId}});
-    }
-    const buyer = await q.one(db.users,{_id:meta.user_id});
-    const via = meta.type==='subscription' ? 'Stripe mesačný odber' : 'Stripe · karta/Apple/Google Pay';
-    await q.insert(db.transactions,{type:meta.type==='subscription'?'subscription':'membership',user_id:memberId,user_name:buyer?.name||'—',amount:plan.price,payment_method:'stripe',note:`${plan.name} (${via})`,plan_id:meta.plan_id,created_at:nowISO(),month:today().slice(0,7)});
-    trackPurchase(meta.user_id, plan.price);
-    createInvoice({user_id:meta.user_id, client_name:buyer?.name, client_email:buyer?.email,
-      items:[{desc:`Členstvo ${plan.name}${meta.type==='subscription'?' (mesačný odber)':''}`, qty:1, total:plan.price}],
-      total:plan.price, method:'Stripe (karta / Apple Pay / Google Pay)'});
-    awardPurchaseCommission({buyer_id:meta.user_id, amount:plan.price, product_name:`Členstvo ${plan.name}`});
-    res.json({ok:true, plan_name:plan.name, subscription:meta.type==='subscription'});
+    const out = await fulfillStripeCheckout(r.body);
+    if(!out.ok) return res.status(400).json({error:out.error||'Platbu sa nepodarilo overiť'});
+    res.json(out);
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -3245,6 +3255,10 @@ app.post('/api/stripe/webhook', async(req,res)=>{
       const s = event.data.object;
       if(s.metadata?.type==='order' && s.metadata.order_number && s.payment_status==='paid'){
         await q.update(db.orders,{order_number:s.metadata.order_number,status:{$ne:'paid'}},{$set:{status:'paid',paid_at:nowISO(),payment_method:'stripe'}});
+      } else {
+        // Membership / subscription first payment — reliable fulfilment via webhook
+        // (idempotent with the browser /verify path)
+        await fulfillStripeCheckout(s).catch(e=>console.error('Fulfil error:',e.message));
       }
     }
     res.json({received:true});
