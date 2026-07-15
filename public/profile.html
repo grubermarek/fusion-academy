@@ -34,6 +34,9 @@
   .avatar img{width:100%;height:100%;object-fit:cover}
   .name-badge{display:inline-block;background:linear-gradient(102deg,#B98F3E,#F7E7B8 40%,#E7C878 60%,#B98F3E);color:#231A08;font-weight:800;font-size:.72rem;letter-spacing:.03em;text-transform:uppercase;padding:3px 12px;border-radius:20px;margin-bottom:8px;box-shadow:0 4px 14px -6px rgba(201,162,76,.7)}
   .pname{font-family:'Cormorant Garamond',serif;font-size:2rem;font-weight:600;line-height:1.1}
+  .pnick{color:var(--gold);font-size:.92rem;font-weight:700;margin-top:3px}
+  .nick-edit{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;text-decoration:underline;margin-top:4px}
+  .nick-edit:hover{color:var(--gold)}
   .pname.glow{text-shadow:0 0 18px rgba(201,162,76,.65),0 0 4px rgba(201,162,76,.9)}
   .ptags{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px}
   .joined-date{margin-top:10px;font-size:.78rem;color:var(--muted)}
@@ -125,6 +128,8 @@ function render(){
       <div class="avatar">${av}</div>
       ${P.name_badge?`<div class="name-badge">${P.name_badge.emoji} ${esc(P.name_badge.title)}</div>`:''}
       <div class="pname ${flex}">${P.name_badge?P.name_badge.emoji+' ':''}${esc(P.name)}</div>
+      ${P.nickname?`<div class="pnick">„${esc(P.nickname)}"</div>`:''}
+      ${P.is_self?`<button class="nick-edit" onclick="editNick()"><i class="bi bi-pencil"></i> ${P.nickname?'Zmeniť prezývku':'Pridať prezývku'}</button>`:''}
       <div class="ptags">
         <span class="tag">${P.member_badge?.emoji||'🌱'} ${esc(P.member_badge?.label||'Nováčik')}</span>
         <span class="tag">🏅 ${esc(P.loyalty_label)}</span>
@@ -203,6 +208,14 @@ async function delComment(cid){
   if(r.ok) loadComments();
 }
 async function post(url,body){ const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)}); return r.json(); }
+async function editNick(){
+  const cur=P.nickname||'';
+  const val=prompt('Tvoja prezývka (zobrazí sa pod menom aj v komunitnom chate, max 30 znakov):',cur);
+  if(val===null) return;
+  const nickname=val.trim().slice(0,30);
+  const r=await fetch('/api/profile',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({nickname})});
+  if(r.ok){ P.nickname=nickname; render(); }
+}
 async function addFriend(){ const d=await post('/api/friends/request',{to:uid}); if(d.ok){P.friend_state=d.state;render();} }
 async function accept(){ const d=await post('/api/friends/accept',{from:uid}); if(d.ok){P.friend_state=d.state;render();} }
 async function rmFriend(){ const d=await post('/api/friends/remove',{user:uid}); if(d.ok){P.friend_state='none';render();} }

@@ -1244,6 +1244,7 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     const likedByMe=isSelf?false:!!(await q.one(db.profile_likes,{profile_id:u._id,liker_id:me}));
     res.json({
       id:u._id, name: u.anonymous&&!isSelf ? 'Anonymný člen' : u.name,
+      nickname: u.anonymous&&!isSelf ? '' : (u.nickname||''),
       likes: likeCount, liked_by_me: likedByMe,
       anonymous: !!u.anonymous, is_self:isSelf,
       avatar: u.anonymous&&!isSelf ? null : (u.avatar||null),
@@ -1499,12 +1500,13 @@ app.get('/api/products', auth, async(req,res)=>{
 });
 
 app.put('/api/profile', auth, async(req,res)=>{
-  const{phone,bank_account,birthday,anonymous}=req.body;
+  const{phone,bank_account,birthday,anonymous,nickname}=req.body;
   const set={};
   if(phone!==undefined) set.phone = phone||'';
   if(bank_account!==undefined) set.bank_account = bank_account||'';
   if(birthday!==undefined) set.birthday = /^\d{4}-\d{2}-\d{2}$/.test(birthday) ? birthday : '';
   if(anonymous!==undefined) set.anonymous = !!anonymous;
+  if(nickname!==undefined) set.nickname = String(nickname||'').trim().slice(0,30);
   if(Object.keys(set).length) await q.update(db.users,{_id:req.session.uid},{$set:set});
   res.json({ok:true});
 });
@@ -5208,7 +5210,7 @@ io.on('connection', async(socket)=>{
   if(!u){ socket.disconnect(); return; }
 
   const userInfo = {
-    id: u._id, name: u.name,
+    id: u._id, name: u.name, nickname: u.nickname||'',
     memberBadge: getMemberBadge(u.created_at),
     rankBadge: RANKS[(u.rank||1)-1].badge,
     user_type: u.user_type||'partner',
@@ -5247,7 +5249,7 @@ io.on('connection', async(socket)=>{
     const info = onlineUsers.get(socket.id);
     const msg = await q.insert(db.messages, {
       channel: channel||'general',
-      user_id: u._id, user_name: u.name,
+      user_id: u._id, user_name: u.name, nickname: u.nickname||'',
       memberBadge: getMemberBadge(u.created_at),
       rankBadge: RANKS[(u.rank||1)-1].badge,
       text: text.trim().slice(0,500),

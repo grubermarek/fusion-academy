@@ -109,6 +109,7 @@ html,body{height:100%;overflow:hidden;font-family:var(--sans);-webkit-font-smoot
 .msg-body{flex:1;min-width:0;}
 .msg-header{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;margin-bottom:.2rem;}
 .msg-name{font-weight:700;font-size:.88rem;color:var(--cream);}
+.msg-realname{font-size:.72rem;color:rgba(255,255,255,.4);font-weight:500;}
 .msg-time{font-size:.7rem;color:var(--text-muted);margin-left:.15rem;}
 
 /* Twitch-style member badge */
@@ -449,7 +450,7 @@ function joinChannel(channelId) {
 function appendMessage(msg) {
   const container = document.getElementById('messages');
   const isOwn = msg.user_id === me?.id;
-  const initials = (msg.user_name||'?').charAt(0).toUpperCase();
+  const initials = (msg.nickname||msg.user_name||'?').charAt(0).toUpperCase();
   const avatarColor = stringToColor(msg.user_id||'x');
   const timeStr = new Date(msg.created_at).toLocaleTimeString('sk-SK', {hour:'2-digit',minute:'2-digit'});
   const badge = msg.memberBadge || {};
@@ -481,7 +482,8 @@ function appendMessage(msg) {
       <div class="msg-avatar" style="background:${avatarColor}">${initials}</div>
       <div class="msg-body">
         <div class="msg-header">
-          <span class="msg-name">${escHtml(msg.user_name||'?')}</span>
+          <span class="msg-name">${escHtml(msg.nickname||msg.user_name||'?')}</span>
+          ${msg.nickname?`<span class="msg-realname">${escHtml(msg.user_name||'')}</span>`:''}
           <span class="member-badge" style="${badgeStyle}" title="${badge.label||'Nováčik'}">${badge.emoji||'🌱'} ${badge.label||'Nováčik'}</span>
           <span class="rank-badge">${msg.rankBadge||''}</span>
           <span class="msg-time">${timeStr}</span>
@@ -515,8 +517,8 @@ function renderOnlineRight(users) {
     const avatarColor = stringToColor(u.id||'x');
     const clickable = u.id!==me?.id ? `onclick="location.href='/u/'+'${u.id}'" style="cursor:pointer" title="Zobraziť profil"` : '';
     return `<div class="member-item" ${clickable}>
-      <div class="m-avatar" style="background:${avatarColor}">${(u.name||'?').charAt(0).toUpperCase()}</div>
-      <div class="m-name">${escHtml(u.name||'?')}</div>
+      <div class="m-avatar" style="background:${avatarColor}">${((u.nickname||u.name)||'?').charAt(0).toUpperCase()}</div>
+      <div class="m-name">${escHtml(u.nickname||u.name||'?')}</div>
       <span class="m-badge-inline" title="${b.label||''}">${b.emoji||'🌱'}</span>
     </div>`;
   }).join('');
