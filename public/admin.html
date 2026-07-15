@@ -1094,6 +1094,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <div class="d-flex gap-2 align-items-center">
         <input type="month" id="poMonth" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:150px" onchange="loadPayouts()">
         <button class="btn btn-sm btn-outline-light" onclick="window.open('/api/admin/payouts/export.csv?month='+document.getElementById('poMonth').value,'_blank')"><i class="bi bi-filetype-csv"></i> CSV</button>
+        <button class="btn btn-sm btn-outline-success" onclick="sendPayslips()" title="Poslať výplatné pásky trénerom aj sebe na e-mail"><i class="bi bi-envelope-paper"></i> Poslať pásky</button>
         <button class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('poRules').classList.toggle('d-none')"><i class="bi bi-sliders"></i> Odmeny</button>
       </div>
     </div>
@@ -1161,6 +1162,10 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <div class="col-lg-6"><div class="card bg-dark border-secondary h-100"><div class="card-body"><h6 class="fw-bold mb-3">Podľa mesta / štúdia</h6><div id="accByCity"></div></div></div></div>
       <div class="col-lg-6"><div class="card bg-dark border-secondary h-100"><div class="card-body"><h6 class="fw-bold mb-3">Podľa inštruktora</h6><div id="accByInstructor"></div></div></div></div>
       <div class="col-12"><div class="card bg-dark border-secondary"><div class="card-body"><h6 class="fw-bold mb-3">Mesačná uzávierka</h6><div id="accByMonth"></div></div></div></div>
+      <div class="col-12"><div class="card bg-dark border-secondary"><div class="card-body">
+        <h6 class="fw-bold mb-3">🏆 Body klientov za obdobie <span class="text-muted small fw-normal">(kto, koľko a za čo)</span></h6>
+        <div id="accPoints"><div class="text-muted small">Načítavam…</div></div>
+      </div></div></div>
     </div>
   </div>
 
@@ -1539,6 +1544,14 @@ async function savePayoutRule(trainer){
   const d=await api('/api/admin/payout-rules/'+encodeURIComponent(trainer),{method:'PUT',body:JSON.stringify(body)});
   if(d?.ok){ showToast('Pravidlo uložené ✓','success'); loadPayouts(); }
 }
+async function sendPayslips(){
+  const month=document.getElementById('poMonth').value;
+  if(!confirm('Poslať výplatné pásky za '+month+' e-mailom všetkým trénerom + súhrn tebe?')) return;
+  showToast('Posielam pásky…','info');
+  const d=await api('/api/admin/send-payslips',{method:'POST',body:JSON.stringify({month})});
+  if(d?.ok){ showToast(`Odoslaných pások: ${d.sent} · spolu výplaty ${(d.grand||0).toFixed(2)} €`,'success'); }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
+}
 async function applyStandardModel(){
   if(!confirm('Nastaviť všetkým trénerom model 10 € základ + 1 € za každého klienta nad 10 na hodine?\n\nPrepíše ich súčasné pravidlá odmien.')) return;
   const d=await api('/api/admin/payout-rules/apply-standard',{method:'POST'});
@@ -1632,6 +1645,33 @@ async function loadAccounting(){
   };
   bars(d.byPlan,'accByPlan'); bars(d.byMethod,'accByMethod');
   bars(d.byCity,'accByCity'); bars(d.byInstructor,'accByInstructor'); bars(d.byMonth,'accByMonth');
+  loadPointsSummary();
+}
+async function loadPointsSummary(){
+  const {from,to}=accRange();
+  const box=document.getElementById('accPoints');
+  const d=await api(`/api/admin/points-summary?from=${from}&to=${to}`);
+  if(!d||d.error){ box.innerHTML='<div class="text-muted small">Chyba.</div>'; return; }
+  if(!d.rows.length){ box.innerHTML='<div class="text-muted small">Za toto obdobie nikto nezískal body.</div>'; return; }
+  const ct=d.catTotals||{};
+  const chips=`<div class="d-flex flex-wrap gap-2 mb-3">
+    <span class="badge bg-secondary">🔥 Hodiny: ${ct.hours||0} b.</span>
+    <span class="badge bg-secondary">💻 Online: ${ct.online||0} b.</span>
+    <span class="badge bg-secondary">🤝 Odporúčania: ${ct.refs||0} b.</span>
+    <span class="badge bg-secondary">💛 Členstvá: ${ct.membership||0} b.</span>
+    <span class="badge bg-warning text-dark">Σ ${d.grandPoints||0} b. · ${d.count} klientov</span>
+  </div>`;
+  const rows=d.rows.map((r,i)=>{
+    const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1)+'.';
+    const detail=r.items.map(it=>`${it.label} ${it.count>0?'('+it.count+')':''} ${it.points}b`).join(' · ');
+    return `<tr onclick="window.open('/u/${r.id}','_blank')" style="cursor:pointer">
+      <td class="text-center" style="width:36px">${medal}</td>
+      <td class="fw-semibold">${escHtml(r.name)}</td>
+      <td class="small text-muted">${escHtml(detail)}</td>
+      <td class="text-end fw-bold" style="color:#C9A24C">${r.total} b.</td></tr>`;
+  }).join('');
+  box.innerHTML=chips+`<div class="table-responsive"><table class="table table-dark table-hover table-sm align-middle mb-0" style="font-size:.82rem">
+    <thead><tr><th></th><th>Klient</th><th>Za čo</th><th class="text-end">Body</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 function accExport(fmt){
   const {from,to}=accRange();

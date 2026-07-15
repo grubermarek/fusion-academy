@@ -3852,6 +3852,102 @@ app.post('/api/admin/payout-rules/apply-standard', adminAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ── Výplatné pásky (e-mail trénerom aj adminom) ───────────────────────────────
+function prevMonthStr(){ const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-1); return d.toISOString().slice(0,7); }
+function fmtMonthSk(m){ const MN=['','január','február','marec','apríl','máj','jún','júl','august','september','október','november','december']; const [y,mo]=m.split('-'); return MN[+mo]+' '+y; }
+async function trainerMonthPayslip(trainerUser, month){
+  const tName=trainerUser.name;
+  const rule = await q.one(db.payout_rules,{trainer:tName}) || {...DEFAULT_PAYOUT_RULE};
+  const thr = rule.per_client_threshold||0;
+  const st=(await trainerMonthStats(month)).find(s=>s.instructor===tName || (tName&&s.instructor&&s.instructor.includes(tName.split(' ')[0]))) || {sessions:0,attendances:0,revenue:0,newClients:0,fullClasses:0,session_atts:[]};
+  const {base,bonuses,billable}=computePayout(rule,st);
+  const affiliate=await affiliateCommissionFor(trainerUser._id, month);
+  const rec=await q.one(db.payouts,{trainer:tName,month});
+  const ded=rec?.deductions||0;
+  const total=+(base+bonuses+affiliate-ded).toFixed(2);
+  const lines=[
+    ['Základ za hodinu', `${st.sessions}× ${rule.fixed_per_class||0} €`, +((rule.fixed_per_class||0)*st.sessions).toFixed(2)],
+    [thr>0?`Klienti nad ${thr} na hodine`:'Odmena za účastníka', `${billable}× ${rule.per_client||0} €`, +((rule.per_client||0)*billable).toFixed(2)],
+    ['% z tržby hodín', `${rule.pct_of_revenue||0} %`, +((rule.pct_of_revenue||0)/100*st.revenue).toFixed(2)],
+    ['Bonus za plnú hodinu', `${st.fullClasses}×`, +((rule.bonus_full_class||0)*st.fullClasses).toFixed(2)],
+    ['Bonus za nového klienta', `${st.newClients}×`, +((rule.bonus_new_member||0)*st.newClients).toFixed(2)],
+    ['Affiliate provízie (moja línia)', '', affiliate],
+  ].filter(l=>l[2]>0);
+  if(ded>0) lines.push(['Zrážky', '', -ded]);
+  return {tName, email:trainerUser.email, month, st, base, bonuses, billable, affiliate, ded, total, lines};
+}
+function payslipHtml(ps){
+  const rows=ps.lines.map(l=>`<tr><td style="padding:7px 0;border-bottom:1px solid #333">${l[0]}${l[1]?` <span style="color:#888;font-size:.85em">· ${l[1]}</span>`:''}</td><td style="padding:7px 0;border-bottom:1px solid #333;text-align:right;color:#C9A84C;font-weight:700">${l[2].toFixed(2)} €</td></tr>`).join('');
+  const body=`<p>Ahoj <b>${ps.tName}</b>,</p>
+    <p>tvoja výplatná páska za <b>${fmtMonthSk(ps.month)}</b>:</p>
+    <p style="color:#999;font-size:.85em">${ps.st.sessions} odučených hodín · ${ps.st.attendances} účastí · tržba hodín ${ps.st.revenue.toFixed(2)} €</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:8px">${rows}
+      <tr><td style="padding:12px 0 0;font-weight:800;font-size:1.05em">SPOLU</td><td style="padding:12px 0 0;text-align:right;font-weight:800;font-size:1.15em;color:#81c784">${ps.total.toFixed(2)} €</td></tr>
+    </table>`;
+  return emailTemplate(`Výplatná páska – ${fmtMonthSk(ps.month)}`, body, 'Pozrieť v appke', `${APP_URL}/trainer`);
+}
+async function sendAllPayslips(month){
+  const trainers = await q.find(db.users,{$or:[{user_type:'trainer'},{user_type:'manager'}]});
+  const summary=[]; let sent=0;
+  for(const t of trainers){
+    const ps=await trainerMonthPayslip(t, month);
+    if(ps.st.sessions===0 && ps.total===0) continue; // bez aktivity preskoč
+    if(t.email){ const ok=await sendMail(t.email, `Výplatná páska – ${fmtMonthSk(month)}`, payslipHtml(ps)); if(ok) sent++; }
+    await q.insert(db.notifications,{user_id:t._id,type:'payslip',title:'💶 Výplatná páska',body:`${fmtMonthSk(month)}: ${ps.total.toFixed(2)} €`,read:false,created_at:nowISO()}).catch(()=>{});
+    summary.push({trainer:t.name, sessions:ps.st.sessions, base:ps.base, bonuses:ps.bonuses, affiliate:ps.affiliate, total:ps.total});
+  }
+  // Adminom súhrn všetkých pások
+  summary.sort((a,b)=>b.total-a.total);
+  const grand=+summary.reduce((s,r)=>s+r.total,0).toFixed(2);
+  const rows=summary.map(r=>`<tr><td style="padding:6px 0;border-bottom:1px solid #333">${r.trainer} <span style="color:#888;font-size:.85em">· ${r.sessions} hod.${r.affiliate>0?` · aff ${r.affiliate.toFixed(2)} €`:''}</span></td><td style="padding:6px 0;border-bottom:1px solid #333;text-align:right;color:#C9A84C;font-weight:700">${r.total.toFixed(2)} €</td></tr>`).join('');
+  const adminBody=`<p>Prehľad výplat trénerov za <b>${fmtMonthSk(month)}</b>:</p><table width="100%" style="border-collapse:collapse">${rows||'<tr><td>Žiadna aktivita</td></tr>'}<tr><td style="padding:10px 0 0;font-weight:800">SPOLU výplaty</td><td style="padding:10px 0 0;text-align:right;font-weight:800;color:#81c784">${grand.toFixed(2)} €</td></tr></table>`;
+  const admins=await q.find(db.users,{is_admin:true});
+  for(const a of admins){ if(a.email) await sendMail(a.email, `Prehľad výplat trénerov – ${fmtMonthSk(month)}`, emailTemplate(`Výplaty trénerov – ${fmtMonthSk(month)}`, adminBody, 'Otvoriť výplaty', `${APP_URL}/admin`)).catch(()=>{}); }
+  return {sent, trainers:summary.length, grand, summary};
+}
+app.post('/api/admin/send-payslips', adminAuth, async(req,res)=>{
+  try {
+    const month = req.body.month || req.query.month || prevMonthStr();
+    const r = await sendAllPayslips(month);
+    await auditLog(req,'send_payslips',month,{},{sent:r.sent,trainers:r.trainers,grand:r.grand},'');
+    res.json({ ok:true, month, ...r });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Súhrn bodov klientov za obdobie (kto, koľko a za čo) ───────────────────────
+app.get('/api/admin/points-summary', adminAuth, async(req,res)=>{
+  try {
+    const {from, to} = req.query;
+    const fromD=(from||'0000').slice(0,10), toD=(to||'9999').slice(0,10);
+    const inRange=d=>{ d=(d||'').slice(0,10); return d>=fromD && d<=toD; };
+    const users=(await q.find(db.users,{is_admin:{$ne:true}, is_child:{$ne:true}})).filter(u=>!(u.imported&&!u.claimed)&&!u.anonymous);
+    const bookings=await q.find(db.bookings,{});
+    const isOnline=b=>/online/i.test(b.class_name||'')||/online/i.test(b.class_location||'')||b.online===true;
+    const byUser={};
+    for(const b of bookings){ if(b.user_id && ['attended','confirmed'].includes(b.status) && inRange(b.booking_date||b.created_at)) (byUser[b.user_id]=byUser[b.user_id]||[]).push(b); }
+    const refByUser={};
+    for(const u of users){ if(u.sponsor_id && inRange(u.created_at)) refByUser[u.sponsor_id]=(refByUser[u.sponsor_id]||0)+1; }
+    const rows=[]; const catTotals={hours:0, online:0, refs:0, membership:0};
+    for(const u of users){
+      const bks=byUser[u._id]||[];
+      const online=bks.filter(isOnline).length;
+      const hours=bks.length-online;
+      const refs=refByUser[u._id]||0;
+      const m=await checkMembership(u._id);
+      const hasMem=!!m;
+      const pi=buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null});
+      if(pi.total<=0) continue;
+      catTotals.hours+=hours*MP_WEIGHTS.hour; catTotals.online+=online*MP_WEIGHTS.hour;
+      catTotals.refs+=refs*MP_WEIGHTS.referral; catTotals.membership+=hasMem?MP_WEIGHTS.membership:0;
+      rows.push({ id:u._id, name:u.name, total:pi.total, hours, online, refs, hasMem,
+        items:pi.items.filter(i=>i.points>0).map(i=>({label:i.label, count:i.count, points:i.points})) });
+    }
+    rows.sort((a,b)=>b.total-a.total);
+    res.json({ from:fromD, to:toD, count:rows.length, rows, catTotals,
+      grandPoints: rows.reduce((s,r)=>s+r.total,0) });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Draft payouts for a month = computed stats × rules, merged with any saved payout records
 app.get('/api/admin/payouts', adminAuth, async(req,res)=>{
   try {
@@ -6816,6 +6912,16 @@ async function runDailyJobs(){
   // ── 6. Weekly admin report (Mondays) ──────────────────────────────────────
   if(new Date().getDay() === 1){
     try { await sendWeeklyAdminReport(); } catch(e){ console.error('Weekly report error:', e.message); }
+  }
+
+  // ── 6b. Mesačné výplatné pásky (1. deň v mesiaci, za predošlý mesiac, raz) ──
+  if(new Date().getDate() === 1){
+    const pm = prevMonthStr();
+    const already = await q.one(db.audit,{action:'send_payslips_auto', target:pm});
+    if(!already){
+      try { const r=await sendAllPayslips(pm); await q.insert(db.audit,{action:'send_payslips_auto',target:pm,after:{sent:r.sent,grand:r.grand},created_at:nowISO()}); }
+      catch(e){ console.error('Payslip auto error:', e.message); }
+    }
   }
 
   // ── 7. Admin alerts (anomaly detection) ───────────────────────────────────
