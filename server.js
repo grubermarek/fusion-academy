@@ -5108,6 +5108,8 @@ app.get('/api/client/referral', auth, async(req,res)=>{
       earned_pending: +pendingEarned.toFixed(2),
       earned_paid: +paidEarned.toFixed(2),
       referral_credit: u.referral_credit||0,
+      // Jeden spoločný „dostupný kredit" = referral kredit + čakajúce provízie
+      available_credit: +((u.referral_credit||0) + pendingEarned).toFixed(2),
       current_tier: currentTier,
       next_tier: nextTier,
       all_tiers: REFERRAL_REWARDS,
@@ -5143,15 +5145,19 @@ app.post('/api/client/referral-credit/payout', auth, async(req,res)=>{
   try {
     const u = await q.one(db.users,{_id:req.session.uid});
     if(!u) return res.status(404).json({error:'Nenájdený'});
-    const credit = u.referral_credit||0;
-    if(credit < 100) return res.status(400).json({error:`Minimálna výplata je 100 €. Aktuálny zostatok: ${credit.toFixed(2)} €. Kredit môžeš použiť aj na členstvá, merch, vstupenky na eventy či súkromné hodiny.`});
+    // Dostupný kredit = referral kredit + čakajúce provízie (jeden pohár)
+    const pendComms = await q.find(db.commissions,{partner_id:u._id,status:'pending'});
+    const pendSum = +pendComms.reduce((s,c)=>s+(c.amount||0),0).toFixed(2);
+    const credit = +((u.referral_credit||0) + pendSum).toFixed(2);
+    if(credit < 100) return res.status(400).json({error:`Minimálna výplata je 100 €. Aktuálny dostupný kredit: ${credit.toFixed(2)} €. Kredit môžeš použiť aj na členstvá, merch, vstupenky na eventy či súkromné hodiny.`});
     // Create payout request record
     await q.insert(db.transactions,{
       type:'referral_payout_request', user_id:u._id, user_name:u.name,
-      amount:credit, payment_method:'payout', note:`Žiadosť o výplatu referral kreditu: ${credit.toFixed(2)} €`,
+      amount:credit, payment_method:'payout', note:`Žiadosť o výplatu kreditu: ${credit.toFixed(2)} € (kredit ${(u.referral_credit||0).toFixed(2)} + provízie ${pendSum.toFixed(2)})`,
       status:'pending', bank_account:u.bank_account||'', created_at:nowISO(), month:today().slice(0,7)
     });
-    // Reserve the credit (don't deduct yet – admin confirms)
+    // Reserve: čakajúce provízie označ ako vyplatené a vynuluj referral kredit
+    await q.update(db.commissions,{partner_id:u._id,status:'pending'},{$set:{status:'paid',paid_at:nowISO()}},{multi:true});
     await q.update(db.users,{_id:u._id},{$set:{referral_credit_pending:(u.referral_credit_pending||0)+credit, referral_credit:0}});
     await q.insert(db.notifications,{user_id:u._id,type:'payout',title:'Žiadosť o výplatu odoslaná 💸',body:`${credit.toFixed(2)} € bude prevedených na váš účet po potvrdení adminom.`,read:false,created_at:nowISO()});
     // Notify admin

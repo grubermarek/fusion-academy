@@ -487,23 +487,20 @@
       </button>
     </div>
     <!-- Tiles -->
-    <div class="ref-grid">
+    <div class="ref-grid" style="grid-template-columns:1fr 1fr">
       <div class="ref-tile clickable" onclick="refExplain('earned')" title="Čo to znamená?">
         <div class="ref-tile-val" id="refEarned">0 €</div>
         <div class="ref-tile-lbl">Celkové zárobky <i class="bi bi-info-circle" style="opacity:.5;font-size:.72rem"></i></div>
       </div>
-      <div class="ref-tile clickable" onclick="refExplain('pending')" title="Čo to znamená?">
-        <div class="ref-tile-val" style="color:#ff9800" id="refPending">0 €</div>
-        <div class="ref-tile-lbl">Čakajúce na výplatu <i class="bi bi-info-circle" style="opacity:.5;font-size:.72rem"></i></div>
-      </div>
-      <div class="ref-tile clickable" onclick="toggleCreditPanel()" title="Čo to znamená?">
+      <div class="ref-tile clickable" onclick="toggleCreditPanel()" title="Čo s ním?">
         <div class="ref-tile-val" id="refCreditBalance">0 €</div>
-        <div class="ref-tile-lbl">💳 Referral kredit <i class="bi bi-info-circle" style="opacity:.5;font-size:.72rem"></i></div>
+        <div class="ref-tile-lbl">💳 Dostupný kredit <i class="bi bi-info-circle" style="opacity:.5;font-size:.72rem"></i></div>
       </div>
     </div>
     <!-- Credit action panel -->
     <div id="creditPanel" style="display:none;background:rgba(201,168,76,.06);border:1px solid rgba(201,168,76,.2);border-radius:12px;padding:16px;margin-bottom:14px">
-      <div style="font-size:.85rem;font-weight:700;color:var(--gold);margin-bottom:10px">💳 Referral kredit – čo s ním?</div>
+      <div style="font-size:.85rem;font-weight:700;color:var(--gold);margin-bottom:4px">💳 Dostupný kredit – čo s ním?</div>
+      <div style="font-size:.75rem;color:var(--muted);margin-bottom:10px">Tvoje provízie zo štruktúry + referral kredit v jednom. Použi ho na nákupy v appke, alebo si ho nad 100 € nechaj vyplatiť na účet.</div>
       <div style="display:grid;gap:8px">
         <a href="/pricing" style="display:flex;align-items:center;gap:10px;background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:11px 14px;text-decoration:none;color:var(--text);transition:border-color .2s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='#333'">
           <span style="font-size:1.4rem">🏷️</span>
@@ -927,8 +924,7 @@ async function loadReferral(){
   { const lbl=document.getElementById('refCountLabel'); if(lbl) lbl.textContent=(d.direct_count!==undefined?d.direct_count+' priamych · ':'')+'v štruktúre'; }
   document.getElementById('refLinkText').textContent=_refLink||'—';
   document.getElementById('refEarned').textContent=(d.earned_total||0).toFixed(2)+' €';
-  document.getElementById('refPending').textContent=(d.earned_pending||0).toFixed(2)+' €';
-  document.getElementById('refCreditBalance').textContent=(d.referral_credit||0).toFixed(2)+' €';
+  document.getElementById('refCreditBalance').textContent=(d.available_credit!==undefined?d.available_credit:(d.referral_credit||0)).toFixed(2)+' €';
   if(d.next_tier){document.getElementById('refNextReward').style.display='block';document.getElementById('refNextCount').textContent=d.next_tier.referrals;document.getElementById('refNextText').textContent=d.next_tier.reward;}
   const tiers=d.all_tiers||[];const count=d.ref_count||0;
   document.getElementById('refMilestones').innerHTML=tiers.map(t=>{
@@ -1250,8 +1246,8 @@ function stringToColorFriend(str){const c=['#e94560','#f5a623','#9c27b0','#2196f
 // Krátke vysvetlenie dlaždíc (interaktívne – klient vie za čo je kredit a zárobok)
 function refExplain(key){
   const info={
-    earned:{t:'💰 Celkové zárobky',b:'Provízie, ktoré si zarobil/a z predaja členstiev vo svojej štruktúre — až do 5. línie pod tebou (10 % / 5 % / 3 % / 2 % / 1 %). Toto je súčet všetkých tvojich provízií (vyplatených aj čakajúcich).'},
-    pending:{t:'⏳ Čakajúce na výplatu',b:'Provízie, ktoré si už zarobil/a, ale ešte neboli vyplatené. Vyplácame ich po dosiahnutí minimálnej sumy 100 € — požiadaš o výplatu a pošleme ti ich na účet.'}
+    earned:{t:'💰 Celkové zárobky',b:'Súčet všetkých provízií, ktoré si kedy zarobil/a z predaja členstiev vo svojej štruktúre — až do 5. línie pod tebou (10 % / 5 % / 3 % / 2 % / 1 %). Je to celkový historický prehľad (vrátane už vyplatených).'},
+    credit:{t:'💳 Dostupný kredit',b:'Peniaze, ktoré máš práve k dispozícii — tvoje čakajúce provízie zo štruktúry + referral kredit v jednom. Môžeš ich použiť na nákupy v appke (členstvá, merch, vstupenky, súkromné hodiny), alebo si ich nad 100 € nechať vyplatiť na bankový účet.'}
   }[key];
   if(!info) return;
   let ov=document.getElementById('refMiniInfo');
