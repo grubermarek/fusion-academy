@@ -1054,6 +1054,7 @@ async function checkPreRegistered(){
     } else if(d.entries>0){
       waiting=`<br>Máš pripravených <b>${d.entries} vstupov</b> 🎟️`;
     }
+    waiting+=`<br>➕ a <b>1 hodinu zdarma</b> za vytvorenie účtu 🎁`;
     banner.innerHTML=`<b>Ahoj${first?' '+first:''}! 👋 Už ťa u nás evidujeme.</b><br>Stačí si nižšie nastaviť heslo a máš všetko pripravené.${waiting}`;
     banner.style.display='block';
     if(first && !document.getElementById('rName').value.trim()) document.getElementById('rName').value=d.name;

@@ -2145,6 +2145,9 @@ app.post('/api/admin/import-members', adminAuth, async(req,res)=>{
         last_contacted_at: (iLastC>=0 && parseFlexDate(row[iLastC])) ? row[iLastC] : null,
         consent_at: consent?nowISO():null, email_consent:consent,
         visit_count:attendances, single_entries:credits, referral_credit:0,
+        // Prvú hodinu zdarma už mali v Glofoxe → tá jedna zdarma sa im pridá až pri
+        // registrácii do novej appky (+1 free_credit v claime), nedvojí sa.
+        free_class_used:true,
         notes:'Importované z Glofox (člen)', glofox_membership:memName||memPlan||'',
         created_at
       });
