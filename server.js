@@ -1089,6 +1089,18 @@ const ACHIEVEMENTS = [
   {id:'m24',  cat:'tenure', need:24, icon:'💎', name:'Diamantová éra', desc:'2 roky'},
 ];
 async function referralCountOf(uid){ return q.count(db.users,{sponsor_id:uid,is_admin:{$ne:true}}); }
+// Visual reward for bringing new people: an emoji title shown before the name
+const REFERRAL_BADGES = [
+  {need:25, emoji:'👑', title:'Kráľ náboru'},
+  {need:10, emoji:'🚀', title:'Líder komunity'},
+  {need:5,  emoji:'🌱', title:'Rozsievač'},
+  {need:3,  emoji:'📣', title:'Motivátor'},
+  {need:1,  emoji:'🤝', title:'Ambasádor'},
+];
+function referralBadge(refCount){ return REFERRAL_BADGES.find(b=>refCount>=b.need)||null; }
+// Referral count also unlocks fancier profile backgrounds (harder than visits)
+function refBgTier(refCount){ return refCount>=20?'legend' : refCount>=10?'gold' : refCount>=5?'silver' : refCount>=2?'bronze' : 'basic'; }
+const BG_RANK={basic:0,bronze:1,silver:2,gold:3,legend:4};
 function monthsSince(iso){ if(!iso) return 0; return Math.max(0, Math.floor((Date.now()-new Date(iso).getTime())/(30*86400000))); }
 function computeAchievements(u, refCount){
   const visits=u.visit_count||0, months=monthsSince(u.created_at);
@@ -1117,11 +1129,14 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     const earned=ach.filter(a=>a.earned);
     const badge=getMemberBadge(u.created_at);
     const loyalty=getLoyaltyStatus(u.visit_count||0);
-    // Unlockable profile background — the more achievements, the fancier
+    // Unlockable profile background — from achievements OR referrals (take the fancier)
     const ec=earned.length;
-    const bgTier = ec>=14?'legend' : ec>=10?'gold' : ec>=6?'silver' : ec>=3?'bronze' : 'basic';
+    const achTier = ec>=14?'legend' : ec>=10?'gold' : ec>=6?'silver' : ec>=3?'bronze' : 'basic';
+    const rTier = refBgTier(refCount);
+    const bgTier = BG_RANK[rTier] > BG_RANK[achTier] ? rTier : achTier;
     const bgUnlocks=[{tier:'bronze',need:3},{tier:'silver',need:6},{tier:'gold',need:10},{tier:'legend',need:14}];
     const nextBg=bgUnlocks.find(b=>ec<b.need)||null;
+    const nameBadge=referralBadge(refCount);
     res.json({
       id:u._id, name: u.anonymous&&!isSelf ? 'Anonymný člen' : u.name,
       anonymous: !!u.anonymous, is_self:isSelf,
@@ -1130,7 +1145,7 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
       visits: u.visit_count||0, referrals: refCount,
       months_member: monthsSince(u.created_at), joined: (u.created_at||'').slice(0,10),
       achievements: ach, earned_count: earned.length, total_count: ach.length,
-      bg_tier: bgTier, next_bg: nextBg,
+      bg_tier: bgTier, next_bg: nextBg, name_badge: nameBadge,
       friend_state: isSelf ? 'self' : await friendState(me, u._id)
     });
   } catch(e){ res.status(500).json({error:e.message}); }
@@ -4554,7 +4569,7 @@ app.post('/api/client/referral-credit/payout', auth, async(req,res)=>{
     const u = await q.one(db.users,{_id:req.session.uid});
     if(!u) return res.status(404).json({error:'Nenájdený'});
     const credit = u.referral_credit||0;
-    if(credit < 5) return res.status(400).json({error:`Minimálna výplata je 5 €. Aktuálny zostatok: ${credit.toFixed(2)} €`});
+    if(credit < 100) return res.status(400).json({error:`Minimálna výplata je 100 €. Aktuálny zostatok: ${credit.toFixed(2)} €. Kredit môžeš použiť aj na členstvá, merch, vstupenky na eventy či súkromné hodiny.`});
     // Create payout request record
     await q.insert(db.transactions,{
       type:'referral_payout_request', user_id:u._id, user_name:u.name,

@@ -32,6 +32,7 @@
   .msg-btn:hover{border-color:var(--gold);color:var(--gold)}
   .avatar{width:104px;height:104px;border-radius:50%;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;font-family:'Cormorant Garamond',serif;font-size:2.6rem;font-weight:600;color:#1a1710;background:linear-gradient(135deg,var(--gold),#a07830);overflow:hidden;border:3px solid rgba(201,162,76,.4);box-shadow:0 0 30px -6px rgba(201,162,76,.5)}
   .avatar img{width:100%;height:100%;object-fit:cover}
+  .name-badge{display:inline-block;background:linear-gradient(102deg,#B98F3E,#F7E7B8 40%,#E7C878 60%,#B98F3E);color:#231A08;font-weight:800;font-size:.72rem;letter-spacing:.03em;text-transform:uppercase;padding:3px 12px;border-radius:20px;margin-bottom:8px;box-shadow:0 4px 14px -6px rgba(201,162,76,.7)}
   .pname{font-family:'Cormorant Garamond',serif;font-size:2rem;font-weight:600;line-height:1.1}
   .pname.glow{text-shadow:0 0 18px rgba(201,162,76,.65),0 0 4px rgba(201,162,76,.9)}
   .ptags{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px}
@@ -99,7 +100,8 @@ function render(){
   document.getElementById('host').innerHTML=`
     <div class="hero bg-${esc(P.bg_tier||'basic')}">
       <div class="avatar">${av}</div>
-      <div class="pname ${flex}">${esc(P.name)}</div>
+      ${P.name_badge?`<div class="name-badge">${P.name_badge.emoji} ${esc(P.name_badge.title)}</div>`:''}
+      <div class="pname ${flex}">${P.name_badge?P.name_badge.emoji+' ':''}${esc(P.name)}</div>
       <div class="ptags">
         <span class="tag">${P.member_badge?.emoji||'🌱'} ${esc(P.member_badge?.label||'Nováčik')}</span>
         <span class="tag">🏅 ${esc(P.loyalty_label)}</span>
