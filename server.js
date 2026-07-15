@@ -1176,6 +1176,8 @@ const ACHIEVEMENTS = [
   {id:'p250',  cat:'private', need:250,  icon:'🏆', name:'Elitná trénovaná', name_m:'Elitne trénovaný', desc:'250 súkromných hodín'},
   {id:'p500',  cat:'private', need:500,  icon:'🌟', name:'Legenda parketu',  desc:'500 súkromných hodín'},
   {id:'p1000', cat:'private', need:1000, icon:'♾️', name:'Nekonečná oddanosť', desc:'1000 súkromných hodín'},
+  // Špeciálne roly
+  {id:'assistant', cat:'special', flag:'is_assistant', icon:'🤝', name:'Asistent trénera', desc:'Pomáha trénerovi ako asistent'},
   // Merch — odomkne sa pri kúpe daného kúsku
   {id:'merch_tielko', cat:'merch', item:'tielko', icon:'🎽', name:'Tielko FA', desc:'Kúpené tielko Fusion Academy'},
   {id:'merch_tricko', cat:'merch', item:'tricko', icon:'👕', name:'Tričko FA', desc:'Kúpené tričko Fusion Academy'},
@@ -1268,6 +1270,7 @@ function computeAchievements(u, refCount, tenureMonths, gender){
   return ACHIEVEMENTS.map(a=>{
     let earned, progress;
     if(a.cat==='merch'){ earned = merch.includes(a.item); progress = earned?100:0; }
+    else if(a.cat==='special'){ earned = !!u[a.flag]; progress = earned?100:0; }
     else { earned = (val[a.cat]||0) >= a.need; progress = Math.min(100, Math.round((val[a.cat]||0)/a.need*100)); }
     if(manual.includes(a.id)) { earned = true; if(progress<100) progress=100; }
     const name = (g==='male' && a.name_m) ? a.name_m : a.name;
@@ -4259,13 +4262,16 @@ app.get('/api/admin/fit-premena/:userId', adminAuth, async(req,res)=>{
 const trainerAuth = async(req,res,next)=>{
   if(!req.session?.uid) return res.status(401).json({error:'Nie ste prihlásený'});
   const u = await q.one(db.users,{_id:req.session.uid});
-  if(!u||(!u.is_admin && u.user_type!=='trainer')) return res.status(403).json({error:'Prístup len pre trénerov'});
+  const allowed = u && (u.is_admin || u.user_type==='trainer' || u.user_type==='manager' || u.is_assistant);
+  if(!allowed) return res.status(403).json({error:'Prístup len pre trénerov'});
   req.trainerUser = u;
+  // Asistent koná za svojho trénera (filtrovanie hodín podľa trénera)
+  req.effectiveTrainer = (u.is_assistant && u.assistant_of) ? (await q.one(db.users,{_id:u.assistant_of})||u) : u;
   next();
 };
 
 app.get('/api/trainer/my-classes', trainerAuth, async(req,res)=>{
-  const u = req.trainerUser;
+  const u = req.effectiveTrainer||req.trainerUser;
   const filter = u.is_admin ? {} : {instructor:{$regex:new RegExp(u.name.split(' ')[0],'i')}};
   const classes = await q.find(db.classes,{...filter,active:true});
   const result = [];
@@ -4287,6 +4293,72 @@ app.post('/api/trainer/class-notes', trainerAuth, async(req,res)=>{
   const {class_id,notes,date} = req.body;
   await q.update(db.classes,{_id:class_id},{$set:{trainer_notes:notes||'',notes_date:date||today()}});
   res.json({ok:true});
+});
+
+// Prehľad zárobkov trénera (vlastných) — s filtrom obdobia + rozpis za čo koľko
+app.get('/api/trainer/earnings', trainerAuth, async(req,res)=>{
+  try {
+    const t = req.effectiveTrainer||req.trainerUser;
+    const tName = t.name;
+    const rule = await q.one(db.payout_rules,{trainer:tName}) || {...DEFAULT_PAYOUT_RULE};
+    // Posledných 12 mesiacov
+    const months=[]; const now=new Date();
+    for(let i=0;i<12;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); months.push(d.toISOString().slice(0,7)); }
+    const rows=[];
+    for(const m of months){
+      const st=(await trainerMonthStats(m)).find(s=>s.instructor===tName || (tName&&s.instructor&&s.instructor.includes(tName.split(' ')[0]))) || {sessions:0,attendances:0,revenue:0,newClients:0,fullClasses:0};
+      const {base,bonuses}=computePayout(rule,st);
+      const rec=await q.one(db.payouts,{trainer:tName,month:m});
+      const ded=rec?.deductions||0;
+      const total=+(base+bonuses-ded).toFixed(2);
+      const items=[
+        {label:'Fixná odmena za hodinu', count:st.sessions, per:rule.fixed_per_class||0, amount:+((rule.fixed_per_class||0)*st.sessions).toFixed(2)},
+        {label:'% z tržby hodín', count:st.revenue, per:(rule.pct_of_revenue||0)+' %', amount:+((rule.pct_of_revenue||0)/100*st.revenue).toFixed(2)},
+        {label:'Odmena za účastníka', count:st.attendances, per:rule.per_client||0, amount:+((rule.per_client||0)*st.attendances).toFixed(2)},
+        {label:'Bonus za plnú hodinu', count:st.fullClasses, per:rule.bonus_full_class||0, amount:+((rule.bonus_full_class||0)*st.fullClasses).toFixed(2)},
+        {label:'Bonus za nového klienta', count:st.newClients, per:rule.bonus_new_member||0, amount:+((rule.bonus_new_member||0)*st.newClients).toFixed(2)},
+      ].filter(x=>x.per||x.amount);
+      rows.push({month:m, sessions:st.sessions, attendances:st.attendances, revenue:+st.revenue.toFixed(2),
+        base:+base.toFixed(2), bonuses:+bonuses.toFixed(2), deductions:ded, total,
+        status: rec?.status||'draft', paid: rec?.status==='paid', items});
+    }
+    const grand=rows.reduce((s,r)=>s+r.total,0);
+    res.json({ trainer:tName, months:rows, grand_total:+grand.toFixed(2) });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Asistent trénera ──────────────────────────────────────────────────────────
+function canManageAssistant(u){ return u && (u.is_admin || u.user_type==='trainer' || u.user_type==='manager'); }
+app.get('/api/trainer/assistant', trainerAuth, async(req,res)=>{
+  const t=req.trainerUser;
+  const a = await q.one(db.users,{assistant_of:t._id, is_assistant:true});
+  res.json({ assistant: a?{id:a._id,name:a.name,email:a.email,avatar:a.avatar||null}:null, can_manage: canManageAssistant(t) });
+});
+app.post('/api/trainer/assistant', trainerAuth, async(req,res)=>{
+  try {
+    const t=req.trainerUser;
+    if(!canManageAssistant(t)) return res.status(403).json({error:'Len tréner môže priradiť asistenta'});
+    const uid=String(req.body.user_id||''); if(!uid) return res.status(400).json({error:'Chýba user_id'});
+    const target=await q.one(db.users,{_id:uid}); if(!target) return res.status(404).json({error:'Používateľ nenájdený'});
+    if(target._id===t._id) return res.status(400).json({error:'Nemôžeš byť svoj asistent'});
+    // jeden asistent na trénera — odober predošlého
+    const prev=await q.find(db.users,{assistant_of:t._id,is_assistant:true});
+    for(const p of prev){ if(p._id!==uid) await q.update(db.users,{_id:p._id},{$set:{is_assistant:false,assistant_of:null}}); }
+    await q.update(db.users,{_id:uid},{$set:{is_assistant:true, assistant_of:t._id}});
+    await q.insert(db.notifications,{user_id:uid,type:'assistant',title:'🤝 Stal si sa asistentom!',
+      body:`${t.name} ťa určil za svojho asistenta. V appke máš teraz prístup do trénerského panela (bookovanie, QR) a nový odznak. 💛`,read:false,created_at:nowISO()}).catch(()=>{});
+    await auditLog(req,'set_assistant',uid,{},{trainer:t._id},'');
+    res.json({ ok:true });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+app.delete('/api/trainer/assistant/:id', trainerAuth, async(req,res)=>{
+  try {
+    const t=req.trainerUser;
+    if(!canManageAssistant(t)) return res.status(403).json({error:'Nemáš oprávnenie'});
+    const target=await q.one(db.users,{_id:req.params.id});
+    if(target && target.assistant_of===t._id){ await q.update(db.users,{_id:target._id},{$set:{is_assistant:false,assistant_of:null}}); }
+    res.json({ ok:true });
+  } catch(e){ res.status(500).json({error:e.message}); }
 });
 
 app.get('/api/trainer/students', trainerAuth, async(req,res)=>{
@@ -4995,6 +5067,7 @@ app.get('/api/me', async(req,res)=>{
   res.json({
     id:u._id, name:u.name, email:u.email, phone:u.phone||'', is_admin:u.is_admin,
     user_type:u.user_type||'partner', referral_code:u.referral_code,
+    is_assistant: !!u.is_assistant, assistant_of: u.assistant_of||null,
     membership: m ? {plan_id:m.plan_id,plan_name:m.plan_name,expires_at:m.expires_at,status:m.status||'active'} : null,
     notif_count: notifCount, loyalty, visit_count: u.visit_count||0,
     free_class_used: u.free_class_used||false,
