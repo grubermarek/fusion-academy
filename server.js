@@ -619,7 +619,7 @@ async function seedData() {
 
   // ── Seed email sequences ─────────────────────────────────────────────────────
   if(await q.count(db.email_steps,{})===0){
-    const APP = process.env.APP_URL||'https://latindancefusion.art';
+    const APP = APP_URL;
     const steps = [
       // ── WELCOME (po registrácii) ─────────────────────────────────────────────
       { sequence:'welcome', day:0, label:'Uvítací email', active:true,
@@ -705,7 +705,7 @@ async function seedData() {
     console.log('✅  Email sekvencie naplnené ('+steps.length+' krokov)');
   }
   // Idempotentne zabezpeč „app_launch" krok (oznam o novej appke + hodina zdarma navyše)
-  const APP2 = process.env.APP_URL||'https://latindancefusion.art';
+  const APP2 = APP_URL;
   if(await q.count(db.email_steps,{sequence:'app_launch'})===0){
     await q.insert(db.email_steps, { sequence:'app_launch', day:0, label:'Nová appka – hodina zdarma navyše', active:true,
       subject:'🎉 Máme novú aplikáciu – a pre teba hodina zdarma navyše!',
@@ -6612,7 +6612,10 @@ app.get('/api/admin/churn-risk', adminAuth, async(req,res)=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 // EMAIL AUTOMATION ENGINE
 // ═══════════════════════════════════════════════════════════════════════════════
-const APP_URL = process.env.APP_URL || 'https://app.latindancefusion.art';
+let APP_URL = process.env.APP_URL || 'https://app.latindancefusion.art';
+// Appka žije na app. subdoméne (Railway); apex latindancefusion.art je Netlify web (404 na /admin, /trainer…).
+// Ak je APP_URL omylom nastavená na apex, oprav ju na app. subdoménu, nech maily nevedú na 404.
+if(/^https?:\/\/(www\.)?latindancefusion\.art/i.test(APP_URL)) APP_URL = 'https://app.latindancefusion.art';
 
 // Enqueue all steps of a sequence for a user, starting from today + step.day
 async function enqueueSequence(userId, sequenceName, anchorDate){
