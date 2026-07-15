@@ -618,10 +618,11 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
         </div>
         <div class="form-group">
           <label>E-mail</label>
-          <input type="email" id="rEmail" placeholder="jana@email.sk" autocomplete="email">
+          <input type="email" id="rEmail" placeholder="jana@email.sk" autocomplete="email" onblur="checkPreRegistered()">
         </div>
+        <div id="preRegBanner" style="display:none;background:rgba(129,199,132,.12);border:1px solid rgba(129,199,132,.4);border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:.86rem;color:#c7e8c9;line-height:1.5"></div>
         <div class="form-group">
-          <label>Heslo</label>
+          <label id="rPassLabel">Heslo</label>
           <input type="password" id="rPass" placeholder="Minimálne 6 znakov">
         </div>
         <div class="form-group">
@@ -1037,6 +1038,29 @@ function startOnboarding(){
 }
 
 // ── REGISTRATION ─────────────────────────────────────────────────────────────
+async function checkPreRegistered(){
+  const email=document.getElementById('rEmail').value.trim();
+  const banner=document.getElementById('preRegBanner');
+  if(!/\S+@\S+\.\S+/.test(email)){ banner.style.display='none'; return; }
+  try{
+    const r=await fetch('/api/check-registration?email='+encodeURIComponent(email));
+    const d=await r.json();
+    if(!d.pending){ banner.style.display='none'; return; }
+    const first=(d.name||'').split(' ')[0];
+    let waiting='';
+    if(d.membership){
+      const exp=d.membership.expires_at?new Date(d.membership.expires_at).toLocaleDateString('sk-SK'):'';
+      waiting=`<br>Máš pripravené členstvo <b>${d.membership.plan_name}</b>${exp?' platné do '+exp:''}.`;
+    } else if(d.entries>0){
+      waiting=`<br>Máš pripravených <b>${d.entries} vstupov</b> 🎟️`;
+    }
+    banner.innerHTML=`<b>Ahoj${first?' '+first:''}! 👋 Už ťa u nás evidujeme.</b><br>Stačí si nižšie nastaviť heslo a máš všetko pripravené.${waiting}`;
+    banner.style.display='block';
+    if(first && !document.getElementById('rName').value.trim()) document.getElementById('rName').value=d.name;
+    const lbl=document.getElementById('rPassLabel'); if(lbl) lbl.textContent='Vytvor si heslo';
+    const btn=document.getElementById('regBtn'); if(btn) btn.innerHTML='Nastaviť heslo a pokračovať &nbsp;<i class="bi bi-arrow-right"></i>';
+  }catch{ banner.style.display='none'; }
+}
 async function doRegister(){
   const name=document.getElementById('rName').value.trim();
   const email=document.getElementById('rEmail').value.trim();

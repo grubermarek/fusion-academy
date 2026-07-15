@@ -753,6 +753,27 @@ app.post('/api/set-new-password', async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Pri registrácii: zisti, či daný email už evidujeme (importovaný z Glofoxu, ešte bez hesla),
+// aby sme jej ukázali „už ťa máme, stačí nastaviť heslo" + čo na ňu čaká (vstupy / členstvo).
+app.get('/api/check-registration', async(req,res)=>{
+  try {
+    const email=(req.query.email||'').toLowerCase().trim();
+    if(!email || !/@/.test(email)) return res.json({pending:false});
+    const u=await q.one(db.users,{email});
+    // Účet, ktorý si ešte nenastavil heslo (importovaný lead/člen alebo po admin resete)
+    const pending = u && !u.password && (u.imported || u.pw_reset);
+    if(!pending) return res.json({pending:false});
+    const m = await checkMembership(u._id);
+    res.json({
+      pending:true,
+      name:u.name||'',
+      entries: u.single_entries||0,
+      membership: m ? {plan_name:m.plan_name||'Členstvo', expires_at:m.expires_at} : null,
+      reset: !!u.pw_reset && !u.imported
+    });
+  } catch(e){ res.json({pending:false}); }
+});
+
 app.post('/api/register', async(req,res)=>{
   try {
     const {name,email,password,phone,sponsorCode,user_type}=req.body;
@@ -761,8 +782,8 @@ app.post('/api/register', async(req,res)=>{
     // ── Existujúci e-mail? Ak je to importovaný lead bez účtu, „claimni" ho ───────
     const existing=await q.one(db.users,{email:emailNorm});
     if(existing){
-      if(existing.imported && !existing.claimed && !existing.password){
-        const set={ password:await bcrypt.hash(password,10), claimed:true,
+      if(!existing.password && ((existing.imported && !existing.claimed) || existing.pw_reset)){
+        const set={ password:await bcrypt.hash(password,10), claimed:true, pw_reset:false,
           name: (name||existing.name), phone: (phone||existing.phone||''),
           consent_at: req.body.consent ? nowISO() : existing.consent_at,
           free_credits: (existing.free_credits||0)+1 }; // hodina zdarma navyše za vytvorenie účtu
