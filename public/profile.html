@@ -27,6 +27,16 @@
   .hero.bg-legend{background:linear-gradient(150deg,#2a1830,#0f0a14);border-color:rgba(180,120,220,.5);box-shadow:0 0 40px -12px rgba(180,120,220,.5)}
   .hero.bg-legend::before{background:radial-gradient(circle at 20% -10%,rgba(233,69,96,.22),transparent 55%),radial-gradient(circle at 80% 0%,rgba(120,140,255,.22),transparent 55%),radial-gradient(circle at 50% 110%,rgba(201,162,76,.25),transparent 55%);animation:auroraShift 8s ease-in-out infinite alternate}
   @keyframes auroraShift{from{opacity:.7;transform:scale(1)}to{opacity:1;transform:scale(1.15)}}
+  /* Membership-level glow — everyone sees the client's tier shine */
+  .hero.mem-bronze{box-shadow:0 0 34px -8px rgba(205,127,50,.65);border-color:rgba(205,127,50,.7)}
+  .hero.mem-silver{box-shadow:0 0 38px -8px rgba(196,201,214,.7);border-color:rgba(196,201,214,.8)}
+  .hero.mem-gold{box-shadow:0 0 46px -6px rgba(201,168,76,.85);border-color:rgba(247,231,184,.9);animation:memGoldPulse 3.2s ease-in-out infinite}
+  @keyframes memGoldPulse{0%,100%{box-shadow:0 0 40px -8px rgba(201,168,76,.7)}50%{box-shadow:0 0 58px -4px rgba(247,231,184,.95)}}
+  .mem-badge{display:inline-flex;align-items:center;gap:6px;font-weight:800;font-size:.74rem;letter-spacing:.04em;text-transform:uppercase;padding:4px 14px;border-radius:20px;margin-bottom:8px}
+  .mem-badge.mem-bronze{background:linear-gradient(102deg,#8a5320,#cd7f32 50%,#e0a86a);color:#231607;box-shadow:0 4px 14px -6px rgba(205,127,50,.8)}
+  .mem-badge.mem-silver{background:linear-gradient(102deg,#8f939c,#e8ecf4 50%,#b9bfcb);color:#1a1c22;box-shadow:0 4px 14px -6px rgba(196,201,214,.8)}
+  .mem-badge.mem-gold{background:linear-gradient(102deg,#B98F3E,#F7E7B8 45%,#E7C878 65%,#B98F3E);color:#231A08;box-shadow:0 4px 16px -5px rgba(201,168,76,.9)}
+  @media(prefers-reduced-motion:reduce){.hero.mem-gold{animation:none}}
   .bg-hint{text-align:center;color:var(--muted);font-size:.78rem;margin-top:10px}
   .msg-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:10px;background:#241f17;border:1px solid var(--border);color:var(--cream);border-radius:12px;padding:12px;font-weight:700;font-size:.9rem;text-decoration:none;font-family:'Manrope'}
   .msg-btn:hover{border-color:var(--gold);color:var(--gold)}
@@ -124,8 +134,9 @@ function render(){
    </div>`;
   const bgNames={bronze:'Bronzové',silver:'Strieborné',gold:'Zlaté',legend:'Legendárne'};
   document.getElementById('host').innerHTML=`
-    <div class="hero bg-${esc(P.bg_tier||'basic')}">
+    <div class="hero bg-${esc(P.bg_tier||'basic')} ${P.membership_tier?'mem-'+esc(P.membership_tier):''}">
       <div class="avatar">${av}</div>
+      ${P.membership_tier?`<div class="mem-badge mem-${esc(P.membership_tier)}">${P.membership_tier==='gold'?'👑':P.membership_tier==='silver'?'⭐':'🥉'} ${esc(P.membership_name||P.membership_tier)} členka</div>`:''}
       ${P.name_badge?`<div class="name-badge">${P.name_badge.emoji} ${esc(P.name_badge.title)}</div>`:''}
       <div class="pname ${flex}">${P.name_badge?P.name_badge.emoji+' ':''}${esc(P.name)}</div>
       ${P.nickname?`<div class="pnick">„${esc(P.nickname)}"</div>`:''}

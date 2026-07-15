@@ -1240,11 +1240,16 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     const bgUnlocks=[{tier:'bronze',need:3},{tier:'silver',need:6},{tier:'gold',need:10},{tier:'legend',need:14}];
     const nextBg=bgUnlocks.find(b=>ec<b.need)||null;
     const nameBadge=referralBadge(refCount);
+    // Membership-level glow — visible to everyone on the public profile
+    const mem=await checkMembership(u._id);
+    const memTier=(mem && ['bronze','silver','gold'].includes(mem.plan_id)) ? mem.plan_id : null;
+    const memName=mem ? (MEMBERSHIP_PLANS[mem.plan_id]?.name||mem.plan_name||null) : null;
     const likeCount=await q.count(db.profile_likes,{profile_id:u._id});
     const likedByMe=isSelf?false:!!(await q.one(db.profile_likes,{profile_id:u._id,liker_id:me}));
     res.json({
       id:u._id, name: u.anonymous&&!isSelf ? 'Anonymný člen' : u.name,
       nickname: u.anonymous&&!isSelf ? '' : (u.nickname||''),
+      membership_tier: memTier, membership_name: memName,
       likes: likeCount, liked_by_me: likedByMe,
       anonymous: !!u.anonymous, is_self:isSelf,
       avatar: u.anonymous&&!isSelf ? null : (u.avatar||null),
