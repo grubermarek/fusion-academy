@@ -18,20 +18,39 @@
   .back:hover{color:var(--gold)}
   .hero{background:linear-gradient(150deg,#211d16,#15130f);border:1px solid var(--border);border-radius:20px;padding:30px 26px;text-align:center;position:relative;overflow:hidden}
   .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 50% -10%,rgba(201,162,76,.18),transparent 60%);pointer-events:none}
-  /* Unlockable backgrounds (by achievement count) */
-  .hero.bg-bronze{background:linear-gradient(150deg,#2a2016,#171009);border-color:rgba(205,127,50,.4)}
-  .hero.bg-bronze::before{background:radial-gradient(circle at 50% -10%,rgba(205,127,50,.28),transparent 62%)}
-  .hero.bg-silver{background:linear-gradient(150deg,#232630,#12141a);border-color:rgba(192,198,208,.4)}
-  .hero.bg-silver::before{background:radial-gradient(circle at 30% -10%,rgba(192,198,208,.25),transparent 60%),radial-gradient(circle at 80% 10%,rgba(120,140,180,.18),transparent 55%)}
-  .hero.bg-gold{background:linear-gradient(150deg,#2e2611,#1a1408);border-color:rgba(201,162,76,.55)}
-  .hero.bg-gold::before{background:radial-gradient(circle at 50% -15%,rgba(247,231,184,.30),transparent 60%),radial-gradient(circle at 15% 90%,rgba(201,162,76,.22),transparent 55%)}
-  .hero.bg-legend{background:linear-gradient(150deg,#2a1830,#0f0a14);border-color:rgba(180,120,220,.5);box-shadow:0 0 40px -12px rgba(180,120,220,.5)}
-  .hero.bg-legend::before{background:radial-gradient(circle at 20% -10%,rgba(233,69,96,.22),transparent 55%),radial-gradient(circle at 80% 0%,rgba(120,140,255,.22),transparent 55%),radial-gradient(circle at 50% 110%,rgba(201,162,76,.25),transparent 55%);animation:auroraShift 8s ease-in-out infinite alternate}
   @keyframes auroraShift{from{opacity:.7;transform:scale(1)}to{opacity:1;transform:scale(1.15)}}
-  /* Membership-level glow — everyone sees the client's tier shine */
-  .hero.mem-bronze{box-shadow:0 0 34px -8px rgba(205,127,50,.65);border-color:rgba(205,127,50,.7)}
-  .hero.mem-silver{box-shadow:0 0 38px -8px rgba(196,201,214,.7);border-color:rgba(196,201,214,.8)}
-  .hero.mem-gold{box-shadow:0 0 46px -6px rgba(201,168,76,.85);border-color:rgba(247,231,184,.9);animation:memGoldPulse 3.2s ease-in-out infinite}
+  /* ─── Pozadie CELÉHO profilu = odmena za privedených ľudí (1 → 10000) ─── */
+  body[class*="pbg-"]{transition:background .6s ease}
+  body.pbg-spark{background:radial-gradient(circle at 50% -5%,#241f14,#141210 55%)}
+  body.pbg-dawn{background:linear-gradient(180deg,#241a12,#141210 60%)}
+  body.pbg-dawn::after,body.pbg-bloom::after,body.pbg-sunset::after,body.pbg-ocean::after,body.pbg-emerald::after,body.pbg-royal::after,body.pbg-nebula::after,body.pbg-aurora::after,body.pbg-galaxy::after,body.pbg-cosmos::after,body.pbg-nova::after,body.pbg-infinity::after{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none}
+  body.pbg-dawn::after{background:radial-gradient(circle at 15% 0%,rgba(255,150,80,.10),transparent 45%)}
+  body.pbg-bloom{background:linear-gradient(180deg,#231525,#141210 60%)}
+  body.pbg-bloom::after{background:radial-gradient(circle at 85% 5%,rgba(233,120,180,.12),transparent 45%),radial-gradient(circle at 10% 30%,rgba(120,200,150,.08),transparent 40%)}
+  body.pbg-sunset{background:linear-gradient(180deg,#2a1810,#141210 55%)}
+  body.pbg-sunset::after{background:radial-gradient(circle at 50% -5%,rgba(255,120,60,.18),transparent 50%),radial-gradient(circle at 80% 20%,rgba(233,69,96,.12),transparent 45%)}
+  body.pbg-ocean{background:linear-gradient(180deg,#0f1c2a,#0d1114 60%)}
+  body.pbg-ocean::after{background:radial-gradient(circle at 20% 0%,rgba(60,160,220,.18),transparent 50%),radial-gradient(circle at 90% 40%,rgba(80,200,200,.12),transparent 45%)}
+  body.pbg-emerald{background:linear-gradient(180deg,#0f241a,#0d1310 60%)}
+  body.pbg-emerald::after{background:radial-gradient(circle at 30% 0%,rgba(46,204,113,.20),transparent 50%),radial-gradient(circle at 85% 30%,rgba(201,168,76,.12),transparent 45%)}
+  body.pbg-royal{background:linear-gradient(180deg,#1c1230,#100c18 60%)}
+  body.pbg-royal::after{background:radial-gradient(circle at 25% 0%,rgba(150,90,230,.22),transparent 50%),radial-gradient(circle at 80% 25%,rgba(247,231,184,.14),transparent 45%)}
+  body.pbg-nebula{background:linear-gradient(160deg,#241035,#0e0a16 60%)}
+  body.pbg-nebula::after{background:radial-gradient(circle at 15% 5%,rgba(233,69,140,.20),transparent 45%),radial-gradient(circle at 85% 15%,rgba(90,120,255,.18),transparent 45%),radial-gradient(circle at 50% 90%,rgba(201,168,76,.12),transparent 45%);animation:auroraShift 10s ease-in-out infinite alternate}
+  body.pbg-aurora{background:linear-gradient(160deg,#0c2028,#0a0e14 60%)}
+  body.pbg-aurora::after{background:radial-gradient(circle at 20% 0%,rgba(46,204,150,.22),transparent 45%),radial-gradient(circle at 75% 10%,rgba(90,140,255,.20),transparent 45%),radial-gradient(circle at 50% 100%,rgba(180,120,220,.16),transparent 50%);animation:auroraShift 8s ease-in-out infinite alternate}
+  body.pbg-galaxy{background:radial-gradient(circle at 50% 30%,#1a1440,#0a0812 65%)}
+  body.pbg-galaxy::after{background:radial-gradient(circle at 15% 10%,rgba(120,90,255,.25),transparent 45%),radial-gradient(circle at 85% 20%,rgba(233,69,140,.20),transparent 45%),radial-gradient(circle at 50% 95%,rgba(90,200,255,.16),transparent 50%);animation:auroraShift 9s ease-in-out infinite alternate}
+  body.pbg-cosmos{background:radial-gradient(circle at 50% 20%,#221046,#08060f 65%)}
+  body.pbg-cosmos::after{background:radial-gradient(circle at 10% 5%,rgba(255,120,200,.26),transparent 42%),radial-gradient(circle at 90% 10%,rgba(120,100,255,.24),transparent 42%),radial-gradient(circle at 30% 95%,rgba(80,220,220,.18),transparent 48%),radial-gradient(circle at 70% 85%,rgba(247,231,184,.14),transparent 45%);animation:auroraShift 8s ease-in-out infinite alternate}
+  body.pbg-nova{background:radial-gradient(circle at 50% 15%,#3a0f30,#08060f 62%)}
+  body.pbg-nova::after{background:radial-gradient(circle at 50% 8%,rgba(255,180,80,.30),transparent 40%),radial-gradient(circle at 12% 25%,rgba(233,69,96,.26),transparent 45%),radial-gradient(circle at 88% 30%,rgba(150,90,255,.24),transparent 45%),radial-gradient(circle at 50% 100%,rgba(90,200,255,.18),transparent 50%);animation:auroraShift 6s ease-in-out infinite alternate}
+  body.pbg-infinity{background:radial-gradient(circle at 50% 20%,#2a0a4a,#050409 62%)}
+  body.pbg-infinity::after{background:radial-gradient(circle at 50% 5%,rgba(247,231,184,.30),transparent 38%),radial-gradient(circle at 8% 15%,rgba(120,90,255,.28),transparent 42%),radial-gradient(circle at 92% 20%,rgba(233,69,140,.28),transparent 42%),radial-gradient(circle at 25% 95%,rgba(46,204,180,.22),transparent 46%),radial-gradient(circle at 78% 90%,rgba(255,140,60,.20),transparent 44%);animation:auroraShift 5s ease-in-out infinite alternate}
+  /* Membership-level glow + karta profilu — everyone sees the client's tier shine */
+  .hero.mem-bronze{background:linear-gradient(150deg,#2a2016,#171009);box-shadow:0 0 34px -8px rgba(205,127,50,.65);border-color:rgba(205,127,50,.7)}
+  .hero.mem-silver{background:linear-gradient(150deg,#232630,#12141a);box-shadow:0 0 38px -8px rgba(196,201,214,.7);border-color:rgba(196,201,214,.8)}
+  .hero.mem-gold{background:linear-gradient(150deg,#2e2611,#1a1408);box-shadow:0 0 46px -6px rgba(201,168,76,.85);border-color:rgba(247,231,184,.9);animation:memGoldPulse 3.2s ease-in-out infinite}
   @keyframes memGoldPulse{0%,100%{box-shadow:0 0 40px -8px rgba(201,168,76,.7)}50%{box-shadow:0 0 58px -4px rgba(247,231,184,.95)}}
   .mem-badge{display:inline-flex;align-items:center;gap:6px;font-weight:800;font-size:.74rem;letter-spacing:.04em;text-transform:uppercase;padding:4px 14px;border-radius:20px;margin-bottom:8px}
   .mem-badge.mem-bronze{background:linear-gradient(102deg,#8a5320,#cd7f32 50%,#e0a86a);color:#231607;box-shadow:0 4px 14px -6px rgba(205,127,50,.8)}
@@ -39,6 +58,27 @@
   .mem-badge.mem-gold{background:linear-gradient(102deg,#B98F3E,#F7E7B8 45%,#E7C878 65%,#B98F3E);color:#231A08;box-shadow:0 4px 16px -5px rgba(201,168,76,.9)}
   @media(prefers-reduced-motion:reduce){.hero.mem-gold{animation:none}}
   .bg-hint{text-align:center;color:var(--muted);font-size:.78rem;margin-top:10px}
+  .bgg{margin-top:16px;background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .bgg summary{list-style:none;cursor:pointer;padding:13px 16px;font-weight:700;color:var(--gold);display:flex;justify-content:space-between;align-items:center}
+  .bgg summary::-webkit-details-marker{display:none}
+  .bgg[open] summary .chev{transform:rotate(180deg)}
+  .bgg .chev{transition:.2s;color:var(--muted)}
+  .bgg-body{padding:6px 14px 16px}
+  .bgg-hint{font-size:.76rem;color:var(--muted);line-height:1.45;margin-bottom:12px}
+  .bgg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px}
+  .bgsw{border:1px solid var(--border);border-radius:12px;overflow:hidden;cursor:pointer;position:relative;transition:.15s}
+  .bgsw:hover{transform:translateY(-2px);border-color:var(--gold)}
+  .bgsw.cur{border-color:var(--gold);box-shadow:0 0 0 2px rgba(201,162,76,.5)}
+  .bgsw .prev{height:56px;position:relative}
+  .bgsw.locked .prev{filter:grayscale(.7) brightness(.55)}
+  .bgsw .lock{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.1rem;color:#fff;text-shadow:0 1px 4px #000}
+  .bgsw .meta{padding:6px 7px;background:#141210}
+  .bgsw .nm{font-size:.72rem;font-weight:700;color:var(--cream);line-height:1.1}
+  .bgsw .nd{font-size:.64rem;color:var(--muted);margin-top:1px}
+  .bgsw.unlocked .nd{color:#81c784}
+  .bgg-preview-bar{display:none;position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:700;background:#161512;border:1px solid var(--gold);border-radius:24px;padding:8px 8px 8px 16px;align-items:center;gap:10px;box-shadow:0 12px 34px rgba(0,0,0,.6);font-size:.82rem}
+  .bgg-preview-bar.on{display:flex}
+  .bgg-preview-bar button{background:#241f17;border:1px solid var(--border);color:var(--cream);border-radius:16px;padding:6px 12px;cursor:pointer;font-family:'Manrope';font-size:.8rem}
   .msg-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:10px;background:#241f17;border:1px solid var(--border);color:var(--cream);border-radius:12px;padding:12px;font-weight:700;font-size:.9rem;text-decoration:none;font-family:'Manrope'}
   .msg-btn:hover{border-color:var(--gold);color:var(--gold)}
   .avatar{width:104px;height:104px;border-radius:50%;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;font-family:'Cormorant Garamond',serif;font-size:2.6rem;font-weight:600;color:#1a1710;background:linear-gradient(135deg,var(--gold),#a07830);overflow:hidden;border:3px solid rgba(201,162,76,.4);box-shadow:0 0 30px -6px rgba(201,162,76,.5)}
@@ -158,6 +198,55 @@ const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>
 const uid=location.pathname.split('/').pop();
 let P=null;
 const T=(k,v)=>window.FA_T(k,v);
+
+// ─── Pozadia profilu (odmena za privedených ľudí) ───
+const BG_KEYS=['basic','spark','dawn','bloom','sunset','ocean','emerald','royal','nebula','aurora','galaxy','cosmos','nova','infinity'];
+// Kompaktné gradienty pre náhľadové štvorčeky (bez duplikovania celého CSS)
+const SW_BG={
+  basic:'linear-gradient(150deg,#211d16,#141210)',
+  spark:'radial-gradient(circle at 50% 0%,#2a2416,#141210)',
+  dawn:'linear-gradient(160deg,#3a2410,#141210)',
+  bloom:'linear-gradient(150deg,#3a1a3a,#141210)',
+  sunset:'linear-gradient(150deg,#4a2010,#e94560 130%)',
+  ocean:'linear-gradient(150deg,#0f3a5a,#0d1114)',
+  emerald:'linear-gradient(150deg,#0f5a3a,#0d1310)',
+  royal:'linear-gradient(150deg,#4a2a90,#100c18)',
+  nebula:'radial-gradient(circle at 30% 20%,#e9458c,#3a2078 60%,#0e0a16)',
+  aurora:'linear-gradient(150deg,#2ecc96,#5a8cff 60%,#b478dc)',
+  galaxy:'radial-gradient(circle at 40% 30%,#785aff,#e9458c 70%,#0a0812)',
+  cosmos:'radial-gradient(circle at 40% 30%,#ff78c8,#7864ff 60%,#08060f)',
+  nova:'radial-gradient(circle at 50% 20%,#ffb450,#e94560 50%,#5a5aff 90%)',
+  infinity:'radial-gradient(circle at 50% 15%,#f7e7b8,#785aff 45%,#e9458c 75%,#050409)'
+};
+function applyProfileBg(tier){
+  document.body.className=document.body.className.replace(/\bpbg-\w+/g,'').trim();
+  if(tier && tier!=='basic') document.body.classList.add('pbg-'+tier);
+}
+function bgGalleryHtml(){
+  const tiers=P.bg_tiers||[]; const total=P.referrals||0;
+  const cells=tiers.map(t=>{
+    const cls=(t.unlocked?'unlocked':'locked')+(t.current?' cur':'');
+    const need=t.need===0?'základné':(t.need+' ľudí');
+    return `<div class="bgsw ${cls}" onclick="clickBg('${t.key}',${t.unlocked},${t.need},'${esc(t.name)}')">
+      <div class="prev" style="background:${SW_BG[t.key]||SW_BG.basic}">${t.unlocked?'':'<span class="lock">🔒</span>'}${t.current?'<span class="lock">✓</span>':''}</div>
+      <div class="meta"><div class="nm">${esc(t.name)}</div><div class="nd">${need}</div></div>
+    </div>`;
+  }).join('');
+  return `<details class="bgg">
+    <summary><span>🎨 Pozadia profilu <span style="color:var(--muted);font-weight:400;font-size:.8rem">· za privedených ľudí</span></span><i class="bi bi-chevron-down chev"></i></summary>
+    <div class="bgg-body">
+      <div class="bgg-hint">Pozadie celého profilu je odmena za ľudí, ktorých privedieš do svojej štruktúry. Čím viac ľudí, tým krajšie pozadie. Máš <b style="color:var(--gold)">${total}</b> ${total===1?'človeka':'ľudí'}. Klikni na náhľad — odomknuté si vyskúšaš, pri zamknutom uvidíš, koľko ešte treba. 💛</div>
+      <div class="bgg-grid">${cells}</div>
+    </div>
+  </details>
+  <div class="bgg-preview-bar" id="bgPrevBar"><span id="bgPrevTxt"></span><button onclick="endPreview()">Späť</button></div>`;
+}
+function clickBg(key,unlocked,need,name){
+  if(unlocked){ applyProfileBg(key); showPreviewBar('Náhľad: '+name+(key===P.bg_tier?' (tvoje aktuálne)':' — takto by to vyzeralo')); }
+  else { applyProfileBg(key); showPreviewBar('🔒 „'+name+'" odomkneš, keď privedieš '+need+' ľudí do štruktúry.'); }
+}
+function showPreviewBar(txt){ const b=document.getElementById('bgPrevBar'); if(b){ document.getElementById('bgPrevTxt').textContent=txt; b.classList.add('on'); } }
+function endPreview(){ applyProfileBg(P.bg_tier); const b=document.getElementById('bgPrevBar'); if(b) b.classList.remove('on'); }
 async function load(){
   const r=await fetch('/api/profile/'+encodeURIComponent(uid),{credentials:'include'});
   if(r.status===401){ location.href='/?next='+encodeURIComponent(location.pathname); return; }
@@ -191,9 +280,9 @@ function render(){
      <div class="ico">${a.icon}</div><div class="an">${esc(a.name)}</div><div class="ad">${esc(a.desc)}</div>
      ${a.earned?'':`<div class="prog"><i style="width:${a.progress}%"></i></div>`}
    </div>`;
-  const bgNames={bronze:T('bg.bronze'),silver:T('bg.silver'),gold:T('bg.gold'),legend:T('bg.legend')};
+  applyProfileBg(P.bg_tier); // pozadie celej stránky podľa štruktúry
   document.getElementById('host').innerHTML=`
-    <div class="hero bg-${esc(P.bg_tier||'basic')} ${P.membership_tier?'mem-'+esc(P.membership_tier):''}">
+    <div class="hero ${P.membership_tier?'mem-'+esc(P.membership_tier):''}">
       <div class="avatar">${av}</div>
       ${P.membership_tier?`<div class="mem-badge mem-${esc(P.membership_tier)}">${P.membership_tier==='gold'?'👑':P.membership_tier==='silver'?'⭐':'🥉'} ${esc(P.membership_name||P.membership_tier)} ${memberWord}</div>`:''}
       ${P.name_badge?`<div class="name-badge">${P.name_badge.emoji} ${esc(P.name_badge.title)}</div>`:''}
@@ -210,28 +299,24 @@ function render(){
         ? `<button class="like-btn" disabled style="opacity:.75;cursor:default"><i class="bi bi-heart-fill"></i> ${T('profile.likes',{n:P.likes||0})}</button>`
         : `<button id="likeBtn" class="like-btn ${P.liked_by_me?'liked':''}" onclick="toggleLike()"><i class="bi ${P.liked_by_me?'bi-heart-fill':'bi-heart'}"></i> <span id="likeCount">${P.likes||0}</span></button>`}</div>
     </div>
-    ${P.is_self && P.next_bg ? `<div class="bg-hint">${T('profile.bg_hint',{tier:'<b style="color:var(--gold)">'+(bgNames[P.next_bg.tier]||'')+'</b>',need:P.next_bg.need,have:P.earned_count})}</div>` : ''}
+    ${(P.is_self||P.viewer_is_admin) && P.bg_tiers ? bgGalleryHtml() : ''}
     ${P.is_self ? `<details class="settings">
       <summary>${T('settings.title')} <i class="bi bi-chevron-down chev"></i></summary>
       <div class="settings-body">
         <div class="set-row">
           <span class="set-label">${T('settings.nickname')}</span>
-          <div class="set-nick">
-            <input id="nickInput" maxlength="30" value="${esc(P.nickname||'')}" placeholder="${T('settings.nick_ph')}">
-            <button onclick="saveNick()">${T('settings.save')}</button>
-          </div>
+          <input id="nickInput" maxlength="30" value="${esc(P.nickname||'')}" placeholder="${T('settings.nick_ph')}" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:10px 12px;font-family:'Manrope';font-size:.9rem">
         </div>
         <div class="set-row set-status">
           <span class="set-label">${T('settings.status')}</span>
           <textarea id="statusInput" maxlength="120" placeholder="${T('settings.status_ph')}">${esc(P.status||'')}</textarea>
           <span class="set-hint">${T('settings.status_hint')}</span>
-          <div class="set-nick"><span style="flex:1"></span><button onclick="saveStatus()">${T('settings.save')}</button></div>
         </div>
         <div class="set-row">
           <span class="set-label">${T('settings.gender')}</span>
           <div class="gender-switch">
-            <button class="gseg ${!isM?'on':''}" onclick="setGender('female')">${T('profile.gender_f')}</button>
-            <button class="gseg ${isM?'on':''}" onclick="setGender('male')">${T('profile.gender_m')}</button>
+            <button type="button" class="gseg ${!isM?'on':''}" id="gF" onclick="pickGender('female')">${T('profile.gender_f')}</button>
+            <button type="button" class="gseg ${isM?'on':''}" id="gM" onclick="pickGender('male')">${T('profile.gender_m')}</button>
           </div>
         </div>
         <div class="set-row">
@@ -240,18 +325,15 @@ function render(){
         </div>
         <div class="set-row">
           <span class="set-label">${T('settings.birthday')}</span>
-          <div class="set-inline">
-            <input type="date" id="bdayInput" value="${esc(P.birthday||'')}">
-            <button class="gseg on" style="border:none;border-radius:10px;padding:9px 16px" onclick="saveBday()">${T('settings.save')}</button>
-          </div>
+          <input type="date" id="bdayInput" value="${esc(P.birthday||'')}">
         </div>
         <div class="set-row">
-          <span class="set-label">${T('settings.anonymous')}</span>
           <label class="set-check">
-            <input type="checkbox" id="anonInput" ${P.anonymous?'checked':''} onchange="saveAnon()">
-            <span class="set-hint">${T('settings.anon_hint')}</span>
+            <input type="checkbox" id="anonInput" ${P.anonymous?'checked':''}>
+            <span><b style="font-size:.86rem">${T('settings.anonymous')}</b><span class="set-hint" style="display:block">${T('settings.anon_hint')}</span></span>
           </label>
         </div>
+        <button class="adm-save" id="saveAllBtn" style="margin-top:4px;justify-self:start" onclick="saveAllSettings()"><i class="bi bi-check-lg"></i> ${T('settings.save_all')}</button>
       </div>
     </details>` : ''}
     ${P.viewer_is_admin ? `<details class="admin-box" id="adminBox" ontoggle="if(this.open)loadAdminAwards()">
@@ -334,29 +416,29 @@ async function delComment(cid){
 }
 async function post(url,body){ const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)}); return r.json(); }
 function redraw(keepOpen){ render(); FA_I18N.mount('langMount'); if(keepOpen){ const d=document.querySelector('.settings'); if(d) d.open=true; } }
-function flashSaved(btn, then){ if(!btn){ then&&then(); return; } btn.textContent=T('settings.saved'); setTimeout(()=>then&&then(),900); }
 async function putProfile(body){ const r=await fetch('/api/profile',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)}); return r.ok; }
-async function saveNick(){
-  const inp=document.getElementById('nickInput'); if(!inp) return;
-  const nickname=(inp.value||'').trim().slice(0,30);
-  if(await putProfile({nickname})){ P.nickname=nickname; flashSaved(inp.nextElementSibling, ()=>redraw(true)); }
-}
-async function saveStatus(){
-  const inp=document.getElementById('statusInput'); if(!inp) return;
-  const status=(inp.value||'').trim().slice(0,120);
-  const btn=inp.parentElement.querySelector('button');
-  if(await putProfile({status})){ P.status=status; flashSaved(btn, ()=>redraw(true)); }
-}
-async function saveBday(){
-  const inp=document.getElementById('bdayInput'); if(!inp) return;
-  const birthday=inp.value||'';
-  const btn=inp.nextElementSibling;
-  if(await putProfile({birthday})){ P.birthday=birthday; flashSaved(btn, ()=>{ if(btn) btn.textContent=T('settings.save'); }); }
-}
-async function saveAnon(){
-  const inp=document.getElementById('anonInput'); if(!inp) return;
-  const anonymous=inp.checked;
-  if(await putProfile({anonymous})){ P.anonymous=anonymous; }
+let _pendingGender=null;
+function pickGender(g){ _pendingGender=g; const f=document.getElementById('gF'), m=document.getElementById('gM'); if(f&&m){ f.classList.toggle('on',g==='female'); m.classList.toggle('on',g==='male'); } }
+// Jedno tlačidlo uloží všetko naraz — panel sa nezatvorí
+async function saveAllSettings(){
+  const btn=document.getElementById('saveAllBtn'); const orig=btn?btn.innerHTML:'';
+  if(btn){ btn.disabled=true; btn.textContent='…'; }
+  const body={
+    nickname:(document.getElementById('nickInput').value||'').trim().slice(0,30),
+    status:(document.getElementById('statusInput').value||'').trim().slice(0,120),
+    birthday:document.getElementById('bdayInput').value||'',
+    anonymous:document.getElementById('anonInput').checked,
+    gender:_pendingGender||P.gender||'female'
+  };
+  const ok=await putProfile(body);
+  if(ok){
+    Object.assign(P, body); _pendingGender=null;
+    // Znovu načítaj (kvôli skloňovaniu odznakov podľa pohlavia) a nechaj panel otvorený
+    const r=await fetch('/api/profile/'+encodeURIComponent(uid),{credentials:'include'});
+    if(r.ok){ P=await r.json(); }
+    redraw(true);
+    const b2=document.getElementById('saveAllBtn'); if(b2){ b2.innerHTML='<i class="bi bi-check-lg"></i> '+T('settings.saved'); setTimeout(()=>{ if(document.getElementById('saveAllBtn')) document.getElementById('saveAllBtn').innerHTML='<i class="bi bi-check-lg"></i> '+T('settings.save_all'); },1400); }
+  } else { if(btn){ btn.disabled=false; btn.innerHTML=orig; } alert('Chyba pri ukladaní'); }
 }
 // ── ADMIN: správa odznakov, merchu a odchodených hodín ─────────────────────────
 let _awards=null;
@@ -455,11 +537,6 @@ async function toggleAch(id){
   s.has(id)?s.delete(id):s.add(id);
   _awards.manual_achievements=[...s];
   if(await putAwards({manual_achievements:_awards.manual_achievements})) renderAdmin();
-}
-async function setGender(g){
-  if(P.gender===g) return;
-  const r=await fetch('/api/profile',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({gender:g})});
-  if(r.ok){ location.reload(); } // reload so achievements re-render with correct declension
 }
 async function addFriend(){ const d=await post('/api/friends/request',{to:uid}); if(d.ok){P.friend_state=d.state;render();} }
 async function accept(){ const d=await post('/api/friends/accept',{from:uid}); if(d.ok){P.friend_state=d.state;render();} }

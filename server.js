@@ -1222,8 +1222,25 @@ function referralBadge(refCount, gender){
   return { ...b, title: (gender==='male' && b.title_m) ? b.title_m : b.title };
 }
 // Referral count also unlocks fancier profile backgrounds (harder than visits)
-function refBgTier(refCount){ return refCount>=20?'legend' : refCount>=10?'gold' : refCount>=5?'silver' : refCount>=2?'bronze' : 'basic'; }
-const BG_RANK={basic:0,bronze:1,silver:2,gold:3,legend:4};
+// Pozadie CELÉHO profilu — odmena za počet privedených ľudí do štruktúry (1 → 10000)
+const PROFILE_BG_TIERS = [
+  {need:0,     key:'basic',    name:'Základné'},
+  {need:1,     key:'spark',    name:'Iskra'},
+  {need:3,     key:'dawn',     name:'Úsvit'},
+  {need:5,     key:'bloom',    name:'Rozkvet'},
+  {need:10,    key:'sunset',   name:'Západ slnka'},
+  {need:20,    key:'ocean',    name:'Oceán'},
+  {need:50,    key:'emerald',  name:'Smaragd'},
+  {need:100,   key:'royal',    name:'Kráľovská'},
+  {need:250,   key:'nebula',   name:'Hmlovina'},
+  {need:500,   key:'aurora',   name:'Polárna žiara'},
+  {need:1000,  key:'galaxy',   name:'Galaxia'},
+  {need:2500,  key:'cosmos',   name:'Kozmos'},
+  {need:5000,  key:'nova',     name:'Supernova'},
+  {need:10000, key:'infinity', name:'Nekonečno'},
+];
+function refBgTier(refCount){ let t='basic'; for(const x of PROFILE_BG_TIERS){ if(refCount>=x.need) t=x.key; } return t; }
+function nextBgTier(refCount){ return PROFILE_BG_TIERS.find(x=>refCount<x.need)||null; }
 function monthsSince(iso){ if(!iso) return 0; return Math.max(0, Math.floor((Date.now()-new Date(iso).getTime())/(30*86400000))); }
 // Count distinct calendar months in which the user held an active membership
 async function activeMembershipMonths(userId){
@@ -1303,13 +1320,10 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     const earned=ach.filter(a=>a.earned);
     const badge=getMemberBadge(u.created_at);
     const loyalty=getLoyaltyStatus(u.visit_count||0);
-    // Unlockable profile background — from achievements OR referrals (take the fancier)
-    const ec=earned.length;
-    const achTier = ec>=14?'legend' : ec>=10?'gold' : ec>=6?'silver' : ec>=3?'bronze' : 'basic';
-    const rTier = refBgTier(refCount);
-    const bgTier = BG_RANK[rTier] > BG_RANK[achTier] ? rTier : achTier;
-    const bgUnlocks=[{tier:'bronze',need:3},{tier:'silver',need:6},{tier:'gold',need:10},{tier:'legend',need:14}];
-    const nextBg=bgUnlocks.find(b=>ec<b.need)||null;
+    // Pozadie celého profilu = odmena za počet privedených ľudí do štruktúry (1→10000).
+    // (Odznaky samotné sú odmena — už žiadne extra pozadie za ich počet.)
+    const bgTier = refBgTier(refCount);
+    const nextBg = nextBgTier(refCount);
     const nameBadge=referralBadge(refCount, gender);
     // Membership-level glow — visible to everyone on the public profile
     const mem=await checkMembership(u._id);
@@ -1337,6 +1351,7 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
       months_member: memberMonths, joined: (u.created_at||'').slice(0,10),
       achievements: ach, earned_count: earned.length, total_count: ach.length,
       bg_tier: bgTier, next_bg: nextBg, name_badge: nameBadge,
+      bg_tiers: PROFILE_BG_TIERS.map(t=>({need:t.need,key:t.key,name:t.name,unlocked: refCount>=t.need, current: t.key===bgTier})),
       friend_state: isSelf ? 'self' : await friendState(me, u._id)
     });
   } catch(e){ res.status(500).json({error:e.message}); }
