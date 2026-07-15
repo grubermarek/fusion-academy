@@ -488,17 +488,17 @@
     </div>
     <!-- Tiles -->
     <div class="ref-grid">
-      <div class="ref-tile">
+      <div class="ref-tile clickable" onclick="refExplain('earned')" title="Čo to znamená?">
         <div class="ref-tile-val" id="refEarned">0 €</div>
-        <div class="ref-tile-lbl">Celkové zárobky</div>
+        <div class="ref-tile-lbl">Celkové zárobky <i class="bi bi-info-circle" style="opacity:.5;font-size:.72rem"></i></div>
       </div>
-      <div class="ref-tile">
+      <div class="ref-tile clickable" onclick="refExplain('pending')" title="Čo to znamená?">
         <div class="ref-tile-val" style="color:#ff9800" id="refPending">0 €</div>
-        <div class="ref-tile-lbl">Čakajúce na výplatu</div>
+        <div class="ref-tile-lbl">Čakajúce na výplatu <i class="bi bi-info-circle" style="opacity:.5;font-size:.72rem"></i></div>
       </div>
-      <div class="ref-tile clickable" onclick="toggleCreditPanel()">
+      <div class="ref-tile clickable" onclick="toggleCreditPanel()" title="Čo to znamená?">
         <div class="ref-tile-val" id="refCreditBalance">0 €</div>
-        <div class="ref-tile-lbl">💳 Referral kredit</div>
+        <div class="ref-tile-lbl">💳 Referral kredit <i class="bi bi-info-circle" style="opacity:.5;font-size:.72rem"></i></div>
       </div>
     </div>
     <!-- Credit action panel -->
@@ -954,11 +954,13 @@ async function loadNetwork(){
   if(!d||d.error){ p.innerHTML='<div style="color:#e57373;font-size:.85rem">Chyba pri načítaní.</div>'; return; }
   if(!d.total_people){ p.innerHTML='<div style="color:var(--muted);font-size:.85rem">Zatiaľ nemáš nikoho pod sebou. Pošli svoj link a začni budovať štruktúru! 🌱</div>'; return; }
   p.innerHTML=d.lines.map(L=>{
-    const membersHtml=L.members.length? L.members.map(m=>`
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-bottom:1px solid #222;font-size:.82rem">
-        <span>${escHtml(m.name)} <span style="color:var(--muted);font-size:.72rem">· od ${m.joined||'—'}</span></span>
+    const membersHtml=L.members.length? L.members.map(m=>{
+      const clickable = m.id && !m.anonymous;
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-bottom:1px solid #222;font-size:.82rem">
+        <span ${clickable?`onclick="openMemberMenu(event,'${m.id}','${escHtml(m.name).replace(/'/g,'')}')" style="cursor:pointer;color:var(--gold)" title="Možnosti"`:''}>${escHtml(m.name)}${clickable?' <i class="bi bi-three-dots" style="font-size:.7rem;opacity:.6"></i>':''} <span style="color:var(--muted);font-size:.72rem">· od ${m.joined||'—'}</span></span>
         <span>${m.membership?`<span style="color:#81c784;font-weight:600">🏅 ${escHtml(m.membership)}</span>`:'<span style="color:var(--muted);font-size:.75rem">bez členstva</span>'}</span>
-      </div>`).join('') : '<div style="color:var(--muted);font-size:.78rem;padding:6px 10px">Zatiaľ nikto</div>';
+      </div>`;
+    }).join('') : '<div style="color:var(--muted);font-size:.78rem;padding:6px 10px">Zatiaľ nikto</div>';
     return `<details style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;margin-bottom:8px">
       <summary style="list-style:none;cursor:pointer;padding:10px 12px;display:flex;justify-content:space-between;align-items:center">
         <span style="font-weight:700">Línia ${L.line} <span style="background:rgba(201,168,76,.15);color:var(--gold);padding:1px 8px;border-radius:20px;font-size:.72rem;margin-left:6px">${(L.rate*100).toFixed(0)} %</span></span>
@@ -1243,6 +1245,24 @@ async function loadFriends(){
     </a>`).join('') : '<div style="color:var(--muted);font-size:.85rem">Zatiaľ žiadni priatelia. Nájdi ľudí v komunite a pridaj si ich! 👋</div>';
 }
 function stringToColorFriend(str){const c=['#e94560','#f5a623','#9c27b0','#2196f3','#4caf50','#00bcd4','#ff5722','#673ab7'];let h=0;for(let i=0;i<str.length;i++)h=str.charCodeAt(i)+((h<<5)-h);return c[Math.abs(h)%c.length];}
+// Krátke vysvetlenie dlaždíc (interaktívne – klient vie za čo je kredit a zárobok)
+function refExplain(key){
+  const info={
+    earned:{t:'💰 Celkové zárobky',b:'Provízie, ktoré si zarobil/a z predaja členstiev vo svojej štruktúre — až do 5. línie pod tebou (10 % / 5 % / 3 % / 2 % / 1 %). Toto je súčet všetkých tvojich provízií (vyplatených aj čakajúcich).'},
+    pending:{t:'⏳ Čakajúce na výplatu',b:'Provízie, ktoré si už zarobil/a, ale ešte neboli vyplatené. Vyplácame ich po dosiahnutí minimálnej sumy 100 € — požiadaš o výplatu a pošleme ti ich na účet.'}
+  }[key];
+  if(!info) return;
+  let ov=document.getElementById('refMiniInfo');
+  if(!ov){ ov=document.createElement('div'); ov.id='refMiniInfo';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px';
+    ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML=`<div style="background:#161310;border:1px solid #3a2f18;border-radius:16px;max-width:400px;width:100%;padding:22px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="color:var(--gold)">${info.t}</b><button onclick="document.getElementById('refMiniInfo').remove()" style="background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer">×</button></div>
+    <div style="font-size:.9rem;color:#d8d2c4;line-height:1.5">${info.b}</div>
+  </div>`;
+}
 function showRefInfo(){
   let ov=document.getElementById('refInfoOverlay');
   if(!ov){
@@ -1298,12 +1318,28 @@ async function runPeopleSearch(){
   }).join('');
   box.style.display='block';
 }
+// Klik na člena v štruktúre → menu (profil / správa / priateľ)
+function openMemberMenu(ev, id, name){
+  ev.stopPropagation();
+  document.getElementById('faMemberMenu')?.remove();
+  const m=document.createElement('div'); m.id='faMemberMenu';
+  m.style.cssText='position:fixed;z-index:9999;background:#161512;border:1px solid rgba(201,168,76,.3);border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.6);min-width:210px;overflow:hidden;font-size:.9rem';
+  const it=(icon,label,fn,color)=>`<div onclick="${fn}" style="display:flex;align-items:center;gap:10px;padding:12px 15px;cursor:pointer;color:${color||'#eee'}" onmouseenter="this.style.background='#222'" onmouseleave="this.style.background=''"><i class="bi ${icon}"></i> ${label}</div>`;
+  m.innerHTML=`<div style="padding:11px 15px;border-bottom:1px solid #2a2a2a;color:var(--gold);font-weight:700">${escHtml(name||'Člen')}</div>`
+    + it('bi-person-circle','Zobraziť profil',`location.href='/u/${id}'`)
+    + it('bi-chat-dots','Napísať správu',`location.href='/community?dm=${id}'`)
+    + it('bi-person-plus','Pridať do priateľov',`memberFriend('${id}')`);
+  document.body.appendChild(m);
+  m.style.left=Math.min(ev.clientX,innerWidth-230)+'px'; m.style.top=Math.min(ev.clientY,innerHeight-170)+'px';
+  setTimeout(()=>document.addEventListener('click',()=>document.getElementById('faMemberMenu')?.remove(),{once:true}),0);
+}
+async function memberFriend(id){ document.getElementById('faMemberMenu')?.remove(); const d=await api('/api/friends/request',{method:'POST',body:{to:id}}); showToast(d?.ok?(d.state==='friends'?'Ste priatelia! 💛':'Žiadosť odoslaná ✓'):(d?.error||'Chyba'),d?.ok?'success':'error'); }
 async function addFriendS(id){ const d=await api('/api/friends/request',{method:'POST',body:{to:id}}); if(d?.ok){ runPeopleSearch(); loadFriends(); } }
 async function acceptFriendS(id){ const d=await api('/api/friends/accept',{method:'POST',body:{from:id}}); if(d?.ok){ runPeopleSearch(); loadFriends(); } }
 document.addEventListener('click',e=>{ const b=document.getElementById('peopleResults'); const s=document.getElementById('peopleSearch'); if(b&&s&&!b.contains(e.target)&&e.target!==s) b.style.display='none'; });
 
 function showColmInfo(){
-  alert('🏆 Klient mesiaca\n\nKaždý mesiac vyzdvihujeme člena s najviac bodmi za aktivitu v komunite Fusion Academy. Body sa počítajú z:\n\n🔥 Odchodené hodiny — 1 bod za hodinu\n🤝 Privedení noví členovia — 5 bodov za člena\n💬 Príspevky v komunite — 3 body za príspevok\n💛 Úroveň členstva — Bronze 2 / Silver 4 / Gold 6\n\nKlikni na „bodov · rozpis" pre detail. 💛');
+  alert('🏆 Klient mesiaca\n\nKaždý mesiac vyzdvihujeme člena s najviac bodmi za aktivitu vo Fusion Academy. Body sa počítajú z:\n\n🔥 Odchodené hodiny — 5 bodov za hodinu\n💻 Online hodiny — 5 bodov za hodinu\n🤝 Privedení noví členovia — 5 bodov za člena\n💬 Príspevky v komunite — 1 bod za príspevok\n💛 Aktívne členstvo — 10 bodov\n\nKlikni na „bodov · rozpis" pre detail. 💛');
 }
 let _colmWinner=null;
 // Univerzálny modal s rozpisom bodov

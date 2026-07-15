@@ -1416,10 +1416,39 @@ app.get('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
   const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
   const refCount=await referralCountOf(u._id);
   const memberMonths=await activeMembershipMonths(u._id);
+  const sponsor = u.sponsor_id ? await q.one(db.users,{_id:u.sponsor_id}) : null;
   res.json({ name:u.name, visit_count:u.visit_count||0, referrals:refCount, joined:(u.created_at||'').slice(0,10),
     achievements: computeAchievements(u, refCount, memberMonths),
     merch_owned: u.merch_owned||[], manual_achievements: u.manual_achievements||[],
-    merch_list: Object.keys(MERCH_KEYWORDS) });
+    merch_list: Object.keys(MERCH_KEYWORDS),
+    sponsor_id: u.sponsor_id||null, sponsor_name: sponsor?.name||null, sponsor_code: sponsor?.referral_code||null });
+});
+
+// Admin: vyhľadať používateľa ako potenciálneho sponzora (meno/email/kód)
+app.get('/api/admin/user-search', adminAuth, async(req,res)=>{
+  const s=(req.query.q||'').trim().toLowerCase();
+  if(s.length<2) return res.json({people:[]});
+  let users=await q.find(db.users,{is_child:{$ne:true}});
+  users=users.filter(u=>!u.imported||u.claimed).filter(u=>(u.name||'').toLowerCase().includes(s)||(u.email||'').toLowerCase().includes(s)||(u.referral_code||'').toLowerCase().includes(s)).slice(0,12);
+  res.json({people:users.map(u=>({id:u._id,name:u.name,email:u.email,code:u.referral_code||'',type:u.user_type||''}))});
+});
+
+// Admin: priradiť/zmeniť sponzora klienta (napr. keď sa zaregistroval bez kódu)
+app.put('/api/admin/users/:id/sponsor', adminAuth, async(req,res)=>{
+  try {
+    const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
+    const sponsorId=req.body.sponsor_id||null;
+    if(sponsorId){
+      if(sponsorId===u._id) return res.status(400).json({error:'Nemôže byť sám sebe sponzorom'});
+      const sp=await q.one(db.users,{_id:sponsorId}); if(!sp) return res.status(404).json({error:'Sponzor nenájdený'});
+      // zabráň cyklu (nový sponzor nesmie byť pod týmto používateľom)
+      const desc=await getAllDescendants(u._id);
+      if(desc.includes(sponsorId)) return res.status(400).json({error:'Tento človek je v tvojej štruktúre – vznikol by cyklus'});
+    }
+    await q.update(db.users,{_id:u._id},{$set:{sponsor_id:sponsorId}});
+    await auditLog(req,'set_sponsor',u._id,{old:u.sponsor_id},{new:sponsorId},'');
+    res.json({ok:true});
+  } catch(e){ res.status(500).json({error:e.message}); }
 });
 app.put('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
   const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
@@ -4848,25 +4877,32 @@ const firstName = full => (full||'').trim().split(/\s+/)[0];
 const stripDia = s => (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
 
 // ── Bodový systém „Klient mesiaca" ────────────────────────────────────────────
-const MP_WEIGHTS = { hour:1, referral:5, post:3, membership:{ bronze:2, silver:4, gold:6 } };
+// 5 b za odchodenú hodinu (aj online), 1 b za príspevok v komunite,
+// 5 b za privedeného člena, 10 b keď má aktívne členstvo.
+const MP_WEIGHTS = { hour:5, referral:5, post:1, membership:10 };
 // Rozpis bodov jedného používateľa za daný mesiac (YYYY-MM)
 async function monthlyPointsFor(userId, month){
   month = month || today().slice(0,7);
   const bks = await q.find(db.bookings,{user_id:userId});
-  const hours = bks.filter(b=>{ const d=b.booking_date||(b.created_at||'').slice(0,10); return (d||'').startsWith(month) && ['attended','confirmed'].includes(b.status); }).length;
+  const inMonth = b => { const d=b.booking_date||(b.created_at||'').slice(0,10); return (d||'').startsWith(month) && ['attended','confirmed'].includes(b.status); };
+  const attended = bks.filter(inMonth);
+  const isOnline = b => /online/i.test(b.class_name||'') || /online/i.test(b.class_location||'') || b.online===true;
+  const online = attended.filter(isOnline).length;
+  const hours = attended.length - online;
   const refs = (await q.find(db.users,{sponsor_id:userId})).filter(u=>(u.created_at||'').startsWith(month)).length;
   const posts = (await q.find(db.feed,{author_id:userId})).filter(p=>(p.created_at||'').startsWith(month)).length;
   const m = await checkMembership(userId);
-  const lvl = m && ['bronze','silver','gold'].includes(m.plan_id) ? m.plan_id : null;
-  return buildPointItems({hours, refs, posts, lvl}, month);
+  const hasMem = !!(m && (m.status==='active') && (!m.expires_at || m.expires_at>=today()));
+  return buildPointItems({hours, online, refs, posts, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null}, month);
 }
-function buildPointItems({hours, refs, posts, lvl}, month){
-  const memPts = lvl ? MP_WEIGHTS.membership[lvl] : 0;
+function buildPointItems({hours, online, refs, posts, hasMem, memName}, month){
+  online = online||0;
   const items = [
-    { icon:'🔥', label:'Odchodené hodiny',        count:hours, per:MP_WEIGHTS.hour,     points:hours*MP_WEIGHTS.hour },
-    { icon:'🤝', label:'Privedení noví členovia',  count:refs,  per:MP_WEIGHTS.referral, points:refs*MP_WEIGHTS.referral },
-    { icon:'💬', label:'Príspevky v komunite',     count:posts, per:MP_WEIGHTS.post,     points:posts*MP_WEIGHTS.post },
-    { icon:'💛', label: lvl?('Členstvo '+(MEMBERSHIP_PLANS[lvl]?.name||lvl)):'Členstvo', count: lvl?1:0, per:memPts, points:memPts },
+    { icon:'🔥', label:'Odchodené hodiny',        count:hours,  per:MP_WEIGHTS.hour,     points:hours*MP_WEIGHTS.hour },
+    { icon:'💻', label:'Online hodiny',            count:online, per:MP_WEIGHTS.hour,     points:online*MP_WEIGHTS.hour },
+    { icon:'🤝', label:'Privedení noví členovia',  count:refs,   per:MP_WEIGHTS.referral, points:refs*MP_WEIGHTS.referral },
+    { icon:'💬', label:'Príspevky v komunite',     count:posts,  per:MP_WEIGHTS.post,     points:posts*MP_WEIGHTS.post },
+    { icon:'💛', label: hasMem?('Aktívne členstvo'+(memName?' ('+memName+')':'')):'Aktívne členstvo', count: hasMem?1:0, per:MP_WEIGHTS.membership, points: hasMem?MP_WEIGHTS.membership:0 },
   ];
   const total = items.reduce((s,i)=>s+i.points,0);
   return { month, total, items };
@@ -4888,25 +4924,28 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
 
     // attended hours this month per user
     const bookings = await q.find(db.bookings,{});
-    const attCount = {};
+    const attCount = {}, onlineCount = {};
     bookings.forEach(b=>{
       const d=b.booking_date||(b.created_at||'').slice(0,10);
-      if((d||'').startsWith(monthStr) && ['attended','confirmed'].includes(b.status) && b.user_id)
-        attCount[b.user_id]=(attCount[b.user_id]||0)+1;
+      if((d||'').startsWith(monthStr) && ['attended','confirmed'].includes(b.status) && b.user_id){
+        const on = /online/i.test(b.class_name||'')||/online/i.test(b.class_location||'')||b.online===true;
+        if(on) onlineCount[b.user_id]=(onlineCount[b.user_id]||0)+1;
+        else attCount[b.user_id]=(attCount[b.user_id]||0)+1;
+      }
     });
     // community posts this month per user
     const feedPosts = await q.find(db.feed,{});
     const postCount = {};
     feedPosts.forEach(p=>{ if((p.created_at||'').startsWith(monthStr) && p.author_id) postCount[p.author_id]=(postCount[p.author_id]||0)+1; });
-    // active membership level per user
+    // active membership per user (akékoľvek aktívne členstvo)
     const activeMems = await q.find(db.memberships,{status:'active'});
-    const memLvl = {};
-    activeMems.forEach(m=>{ if(['bronze','silver','gold'].includes(m.plan_id)) memLvl[m.user_id]=m.plan_id; });
+    const memActive = {}, memName = {};
+    activeMems.forEach(m=>{ if(!m.expires_at || m.expires_at>=today()){ memActive[m.user_id]=true; memName[m.user_id]=MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'; } });
 
     // Full points score — highest total wins
     let winner=null, best=-1;
     for(const u of users){
-      const bd = buildPointItems({ hours:attCount[u._id]||0, refs:refCount[u._id]||0, posts:postCount[u._id]||0, lvl:memLvl[u._id]||null }, monthStr);
+      const bd = buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, posts:postCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null }, monthStr);
       if(bd.total>0 && bd.total>best){ best=bd.total; winner={ id:u._id, name:u.name, avatar:u.avatar||null, refs:refCount[u._id]||0, hours:attCount[u._id]||0, score:bd.total, points:bd.total, breakdown:bd.items, badge:getMemberBadge(u.created_at) }; }
     }
 
