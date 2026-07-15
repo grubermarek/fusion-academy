@@ -91,6 +91,7 @@
     .membership-card.mc-tiered::after{background:radial-gradient(circle,color-mix(in srgb,var(--tier,#C9A84C) 24%,transparent),transparent 70%)}
     .membership-card.mc-tiered .mc-plan{color:var(--tier,#C9A84C);text-shadow:0 0 14px color-mix(in srgb,var(--tier,#C9A84C) 55%,transparent)}
     @keyframes mcGlow{0%,100%{box-shadow:0 0 0 1px color-mix(in srgb,var(--tier,#C9A84C) 22%,transparent),0 6px 22px -12px var(--tier,#C9A84C)}50%{box-shadow:0 0 0 1px color-mix(in srgb,var(--tier,#C9A84C) 46%,transparent),0 12px 42px -6px var(--tier,#C9A84C)}}
+    .mc-greeting{display:flex;align-items:center;gap:15px;padding-bottom:15px;margin-bottom:16px;border-bottom:1px solid rgba(255,255,255,.07);position:relative;z-index:1}
     .mc-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
     .mc-plan{font-size:1.5rem;font-weight:700;color:var(--gold)}
     .mc-status{padding:4px 12px;border-radius:20px;font-size:.78rem;font-weight:600}
@@ -145,6 +146,13 @@
 
     /* Day name helper */
     .cc-day-badge{display:inline-block;background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.2);border-radius:6px;padding:1px 7px;font-size:.68rem;color:var(--gold);margin-right:4px}
+    .cc-day-line{display:flex;align-items:center;gap:8px;margin-top:5px;flex-wrap:wrap}
+    .cc-day{background:linear-gradient(102deg,#B98F3E,#F7E7B8 45%,#E7C878 60%,#B98F3E);color:#231A08;font-weight:800;font-size:.82rem;letter-spacing:.02em;padding:3px 12px;border-radius:8px;box-shadow:0 3px 10px -4px rgba(201,162,76,.6)}
+    .cc-date{font-size:.82rem;color:var(--text,#e8e8e8);font-weight:600}
+    /* Booked state — button lights up so she knows she's booked that day */
+    .cc-book-btn.cc-booked{background:linear-gradient(135deg,#2e7d32,#43a047);color:#fff;border:none;box-shadow:0 0 16px -2px rgba(76,175,80,.7);animation:bookedPulse 2.4s ease-in-out infinite}
+    @keyframes bookedPulse{0%,100%{box-shadow:0 0 12px -3px rgba(76,175,80,.6)}50%{box-shadow:0 0 22px 0 rgba(76,175,80,.85)}}
+    .cc-booked-card{border-color:rgba(76,175,80,.45)!important;background:linear-gradient(160deg,#1c241c,#1a1e1a)}
 
     /* ── FitDay event card ── */
     .fitday-card{background:linear-gradient(135deg,#1a1f1a,#1f2a1a);border:1px solid rgba(76,175,80,.3);border-radius:16px;padding:22px;margin-bottom:20px;position:relative;overflow:hidden}
@@ -309,34 +317,22 @@
 <!-- Main dashboard -->
 <div class="container" id="dashMain" style="display:none">
 
-  <!-- Welcome -->
-  <div class="welcome anim anim-d1" id="welcomeBox">
-    <div class="avatar-wrap" onclick="document.getElementById('avatarInput').click()" title="Nahrať profilovú fotku">
-      <div class="avatar" id="avatarEl">?</div>
-      <div class="avatar-cam"><i class="bi bi-camera-fill"></i></div>
-    </div>
-    <input type="file" id="avatarInput" accept="image/*" style="display:none" onchange="uploadAvatar(this)">
-    <div class="welcome-info">
-      <h1 id="welcomeName">Načítavam...</h1>
-      <p id="welcomeEmail">—</p>
-      <div class="role-tag" id="roleTag">🔵 Lead</div>
-      <a id="partnerDashLink" href="/dashboard" style="display:none;margin-top:8px;font-size:.8rem;color:var(--gold);text-decoration:none;opacity:.8">
-        <i class="bi bi-graph-up"></i> Partnerský prehľad →
-      </a>
-    </div>
-  </div>
-
-  <!-- Community spotlight: klient mesiaca + narodeniny + meniny -->
-  <div id="spotlight" class="spotlight anim anim-d2" style="display:none"></div>
-
-  <!-- Access bar -->
-  <div id="accessBar" class="access-bar free anim anim-d2" style="display:none">
-    <i class="bi bi-gift-fill" id="accessBarIcon"></i>
-    <div id="accessBarText">—</div>
-  </div>
-
-  <!-- Membership card -->
+  <!-- Greeting + membership (merged) -->
   <div class="membership-card" id="membershipCard">
+    <div class="mc-greeting">
+      <div class="avatar-wrap" onclick="document.getElementById('avatarInput').click()" title="Nahrať profilovú fotku">
+        <div class="avatar" id="avatarEl">?</div>
+        <div class="avatar-cam"><i class="bi bi-camera-fill"></i></div>
+      </div>
+      <input type="file" id="avatarInput" accept="image/*" style="display:none" onchange="uploadAvatar(this)">
+      <div class="welcome-info">
+        <h1 id="welcomeName">Načítavam...</h1>
+        <p id="welcomeEmail">—</p>
+        <a id="partnerDashLink" href="/dashboard" style="display:none;margin-top:6px;font-size:.8rem;color:var(--gold);text-decoration:none;opacity:.8">
+          <i class="bi bi-graph-up"></i> Partnerský prehľad →
+        </a>
+      </div>
+    </div>
     <div class="mc-top">
       <div class="mc-plan" id="mcPlan">Žiadne členstvo</div>
       <div class="mc-status none" id="mcStatus">Neaktívne</div>
@@ -372,6 +368,15 @@
       <i class="bi bi-cart-plus"></i> Kúpiť / obnoviť členstvo
     </button>
     <a id="mcCancelSub" onclick="cancelStripeSub()" style="display:none;margin-top:10px;font-size:.78rem;color:var(--muted);text-decoration:underline;cursor:pointer;text-align:center">Zrušiť automatický mesačný odber</a>
+  </div>
+
+  <!-- Community spotlight: klient mesiaca + narodeniny + meniny -->
+  <div id="spotlight" class="spotlight anim anim-d2" style="display:none"></div>
+
+  <!-- Access bar -->
+  <div id="accessBar" class="access-bar free anim anim-d2" style="display:none">
+    <i class="bi bi-gift-fill" id="accessBarIcon"></i>
+    <div id="accessBarText">—</div>
   </div>
 
   <!-- ═══════════════════════════════════════════════════════
@@ -773,9 +778,14 @@ function renderLoyalty(loyalty,milestones){
 }
 
 /* ─── Bookings ─── */
+let _bookedMap={}; // "class_id|booking_date" -> booking _id
 function renderBookings(bookings){
   const el=document.getElementById('bookingsList');
   const active=(bookings||[]).filter(b=>b.status==='confirmed');
+  // Track which classes/dates are booked so the schedule button can light up
+  _bookedMap={};
+  active.forEach(b=>{ if(b.class_id&&b.booking_date) _bookedMap[b.class_id+'|'+b.booking_date]=b._id; });
+  if(typeof _allClasses!=='undefined' && _allClasses.length) renderClassCards();
   if(!active.length){el.innerHTML=`<div class="empty-state"><i class="bi bi-calendar-x"></i>Zatiaľ žiadne rezervácie – zarezervuj si hodinu hore!</div>`;return;}
   el.innerHTML=active.map(b=>`
     <div class="booking-item">
@@ -941,6 +951,12 @@ function getNextDate(dayOfWeek){
   const d=new Date(now);d.setDate(d.getDate()+diff);
   return d.toLocaleDateString('sk',{day:'numeric',month:'short'});
 }
+function getNextDateISO(dayOfWeek){
+  const now=new Date();const today=now.getDay();
+  let diff=dayOfWeek-today;if(diff<0||(diff===0&&now.getHours()>=22))diff+=7;
+  const d=new Date(now);d.setDate(d.getDate()+diff);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 
 function classMatchesFilter(cls){
   const {type,city}=_activeFilter;
@@ -981,17 +997,18 @@ function renderClassCards(){
     const full=filled>=cap;
     const pct=Math.min(100,Math.round(filled/cap*100));
     const color=capColor(filled,cap);
-    const dayName=DAY_NAMES[cls.day_of_week??0]||'';
-    const nextDate=getNextDate(cls.day_of_week??0);
-    return `<div class="class-card">
+    const dow=cls.day_of_week??0;
+    const dayFull=DAY_FULL[dow]||'';
+    const nextDate=getNextDate(dow);
+    const nextISO=getNextDateISO(dow);
+    const bookedId=_bookedMap[cls._id+'|'+nextISO];
+    return `<div class="class-card${bookedId?' cc-booked-card':''}">
       <div class="cc-top">
         <div class="cc-emoji">${cls.emoji||'🏃'}</div>
-        <div>
+        <div style="flex:1;min-width:0">
           <div class="cc-name">${escHtml(cls.name)}</div>
-          <div class="cc-meta">
-            <span class="cc-day-badge">${dayName}</span>${nextDate} · ${cls.time_start||'—'}
-          </div>
-          <div class="cc-meta" style="margin-top:3px"><i class="bi bi-geo-alt" style="font-size:.7rem"></i> ${escHtml(cls.location||'—')}</div>
+          <div class="cc-day-line"><span class="cc-day">${dayFull}</span><span class="cc-date">${nextDate} · ${cls.time_start||'—'}</span></div>
+          <div class="cc-meta" style="margin-top:4px"><i class="bi bi-geo-alt" style="font-size:.7rem"></i> ${escHtml(cls.location||'—')}</div>
         </div>
       </div>
       <div class="cc-bottom">
@@ -999,9 +1016,9 @@ function renderClassCards(){
           ${filled}/${cap} miest
           <div class="cc-cap-bar"><div class="cc-cap-fill" style="width:${pct}%;background:${color}"></div></div>
         </div>
-        <button class="cc-book-btn" ${full?'disabled':''} onclick="openBookModal('${cls._id}','${escHtml(cls.name).replace(/'/g,"&#39;")}','${nextDate} ${cls.time_start||''}','fitday-no')">
-          ${full?'Plné':'Rezervovať'}
-        </button>
+        ${bookedId
+          ? `<button class="cc-book-btn cc-booked" onclick="cancelBooking('${bookedId}','${escHtml(cls.name).replace(/'/g,"&#39;")}')" title="Klikni pre zrušenie rezervácie">✓ Rezervované</button>`
+          : `<button class="cc-book-btn" ${full?'disabled':''} onclick="openBookModal('${cls._id}','${escHtml(cls.name).replace(/'/g,"&#39;")}','${nextDate} ${cls.time_start||''}','fitday-no')">${full?'Plné':'Rezervovať'}</button>`}
       </div>
     </div>`;
   }).join('');
@@ -1086,7 +1103,6 @@ async function init(){
   renderAvatar(me.avatar);
   document.getElementById('welcomeName').textContent='Ahoj, '+(me.name||'')+'!';
   document.getElementById('welcomeEmail').textContent=me.email||'';
-  document.getElementById('roleTag').innerHTML=(me.role_icon||'🟢')+' '+(me.role_label||'Člen');
   renderMembership(me);
   document.getElementById('mcCancelSub').style.display = me.stripe_subscription ? 'block' : 'none';
   renderAccessBar(me);
