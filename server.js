@@ -142,6 +142,8 @@ const RANKS = [
   { id:8, name:'Elite Director',  personalMin:1500, teamMin:250000, directRate:0.22, levels:7, badge:'🏆' },
 ];
 const LEVEL_RATES = [0.08, 0.05, 0.04, 0.03, 0.02, 0.015, 0.01];
+// Referral commission — everyone earns from 5 lines (line 1 = direct referrals … line 5)
+const LINE_RATES = [0.10, 0.05, 0.03, 0.02, 0.01];
 const LOCATIONS   = ['Detva', 'Zvolen', 'Banská Bystrica', 'Brezno', 'Online'];
 
 // ─── User Role Hierarchy ──────────────────────────────────────────────────────
@@ -281,27 +283,21 @@ async function calcRank(uid){
   return rank;
 }
 async function saveCommissions(txId,partnerId,amount){
-  const partner=await q.one(db.users,{_id:partnerId});
-  const rank=RANKS[(partner?.rank||1)-1];
   const month=currentMonth();
   const awarded=[]; // {user_id, amount, level}
-  const directAmt=+(amount*rank.directRate).toFixed(2);
-  await q.insert(db.commissions,{transaction_id:txId,partner_id:partnerId,source_partner_id:partnerId,level:0,percentage:rank.directRate,amount:directAmt,status:'pending',month,created_at:nowISO()});
-  awarded.push({user_id:partnerId, amount:directAmt, level:0});
+  // Distribute up to 5 lines: partnerId = line 1 (direct), then each sponsor above.
   let curId=partnerId;
-  for(let lvl=1;lvl<=7;lvl++){
+  for(let line=0; line<LINE_RATES.length; line++){
     const cur=await q.one(db.users,{_id:curId});
-    if(!cur?.sponsor_id) break;
-    const up=await q.one(db.users,{_id:cur.sponsor_id});
-    if(!up) break;
-    const upRank=RANKS[(up.rank||1)-1];
-    if(lvl<=upRank.levels && await getPersonal30(up._id)>=100){
-      const rate=LEVEL_RATES[lvl-1];
-      const amt=+(amount*rate).toFixed(2);
-      await q.insert(db.commissions,{transaction_id:txId,partner_id:up._id,source_partner_id:partnerId,level:lvl,percentage:rate,amount:amt,status:'pending',month,created_at:nowISO()});
-      awarded.push({user_id:up._id, amount:amt, level:lvl});
+    if(!cur) break;
+    const rate=LINE_RATES[line];
+    const amt=+(amount*rate).toFixed(2);
+    if(amt>0){
+      await q.insert(db.commissions,{transaction_id:txId,partner_id:cur._id,source_partner_id:partnerId,level:line,percentage:rate,amount:amt,status:'pending',month,created_at:nowISO()});
+      awarded.push({user_id:cur._id, amount:amt, level:line});
     }
-    curId=up._id;
+    if(!cur.sponsor_id) break;
+    curId=cur.sponsor_id;
   }
   // Notify every commission recipient (in-app + email)
   notifyCommissionRecipients(txId, awarded).catch(e=>console.error('Commission notify:',e.message));
@@ -316,7 +312,7 @@ async function notifyCommissionRecipients(txId, awarded){
     if(!(a.amount>0)) continue;
     const u = await q.one(db.users,{_id:a.user_id});
     if(!u) continue;
-    const kind = a.level===0 ? 'Priama provízia' : `Provízia z tímu (úroveň ${a.level})`;
+    const kind = a.level===0 ? 'Priama provízia (línia 1)' : `Provízia z línie ${a.level+1}`;
     await q.insert(db.notifications,{user_id:u._id, type:'commission',
       title:`💰 Nová provízia +${a.amount.toFixed(2)} €`,
       body:`${kind} z predaja „${product}"${client?` – ${client}`:''}.`,
@@ -1081,7 +1077,11 @@ const ACHIEVEMENTS = [
   {id:'r3',   cat:'refs', need:3,   icon:'🌱', name:'Rozsievačka radosti', desc:'3 privedení členovia'},
   {id:'r5',   cat:'refs', need:5,   icon:'🌸', name:'Inšpirácia',          desc:'5 privedených členov'},
   {id:'r10',  cat:'refs', need:10,  icon:'💫', name:'Duša komunity',       desc:'10 privedených členov'},
-  {id:'r25',  cat:'refs', need:25,  icon:'👑', name:'Srdce komunity',      desc:'25 privedených členov'},
+  {id:'r20',  cat:'refs', need:20,  icon:'👑', name:'Srdce komunity',      desc:'20 privedených členov'},
+  {id:'r30',  cat:'refs', need:30,  icon:'🌟', name:'Žiarivá hviezda',     desc:'30 privedených členov'},
+  {id:'r50',  cat:'refs', need:50,  icon:'💎', name:'Klenot komunity',     desc:'50 privedených členov'},
+  {id:'r75',  cat:'refs', need:75,  icon:'🕊️', name:'Anjel komunity',      desc:'75 privedených členov'},
+  {id:'r100', cat:'refs', need:100, icon:'👸', name:'Kráľovná Fusion',     desc:'100 privedených členov'},
   // Vernosť — počíta sa len z mesiacov, v ktorých mala platné členstvo (až po 99 rokov)
   {id:'m3',    cat:'tenure', need:3,    icon:'📅', name:'Verná',           desc:'3 mesiace s členstvom'},
   {id:'m6',    cat:'tenure', need:6,    icon:'💛', name:'Srdcom Fusion',   desc:'6 mesiacov s členstvom'},
@@ -1105,11 +1105,15 @@ const MERCH_KEYWORDS={tielko:/tielk/i, tricko:/tri[čc]k/i, taska:/ta[šs]k/i, m
 async function referralCountOf(uid){ return q.count(db.users,{sponsor_id:uid,is_admin:{$ne:true}}); }
 // Visual reward for bringing new people: an emoji title shown before the name
 const REFERRAL_BADGES = [
-  {need:25, emoji:'👑', title:'Srdce komunity'},
-  {need:10, emoji:'💫', title:'Duša komunity'},
-  {need:5,  emoji:'🌸', title:'Inšpirácia'},
-  {need:3,  emoji:'🌱', title:'Rozsievačka radosti'},
-  {need:1,  emoji:'🤝', title:'Ambasádorka'},
+  {need:100, emoji:'👸', title:'Kráľovná Fusion'},
+  {need:75,  emoji:'🕊️', title:'Anjel komunity'},
+  {need:50,  emoji:'💎', title:'Klenot komunity'},
+  {need:30,  emoji:'🌟', title:'Žiarivá hviezda'},
+  {need:20,  emoji:'👑', title:'Srdce komunity'},
+  {need:10,  emoji:'💫', title:'Duša komunity'},
+  {need:5,   emoji:'🌸', title:'Inšpirácia'},
+  {need:3,   emoji:'🌱', title:'Rozsievačka radosti'},
+  {need:1,   emoji:'🤝', title:'Ambasádorka'},
 ];
 function referralBadge(refCount){ return REFERRAL_BADGES.find(b=>refCount>=b.need)||null; }
 // Referral count also unlocks fancier profile backgrounds (harder than visits)
@@ -4585,11 +4589,15 @@ app.post('/api/client/avatar', auth, async(req,res)=>{
 
 // ─── Referral reward tiers (configurable) ────────────────────────────────────
 const REFERRAL_REWARDS = [
-  { referrals:1,  reward:'Titul „Ambasádorka" pri mene',                    badge:'🤝' },
-  { referrals:3,  reward:'Titul „Rozsievačka radosti" + bronzové pozadie',  badge:'🌱' },
-  { referrals:5,  reward:'Titul „Inšpirácia" + strieborné pozadie profilu', badge:'🌸' },
-  { referrals:10, reward:'Titul „Duša komunity" + zlaté pozadie profilu',   badge:'💫' },
-  { referrals:20, reward:'Titul „Srdce komunity" + legendárne pozadie',     badge:'👑' },
+  { referrals:1,   reward:'Titul „Ambasádorka" pri mene',                    badge:'🤝' },
+  { referrals:3,   reward:'Titul „Rozsievačka radosti" + bronzové pozadie',  badge:'🌱' },
+  { referrals:5,   reward:'Titul „Inšpirácia" + strieborné pozadie profilu', badge:'🌸' },
+  { referrals:10,  reward:'Titul „Duša komunity" + zlaté pozadie profilu',   badge:'💫' },
+  { referrals:20,  reward:'Titul „Srdce komunity" + legendárne pozadie',     badge:'👑' },
+  { referrals:30,  reward:'Titul „Žiarivá hviezda" + žiariace meno',         badge:'🌟' },
+  { referrals:50,  reward:'Titul „Klenot komunity" + exkluzívny odznak',     badge:'💎' },
+  { referrals:75,  reward:'Titul „Anjel komunity"',                          badge:'🕊️' },
+  { referrals:100, reward:'Titul „Kráľovná Fusion" — najvyššia pocta',       badge:'👸' },
 ];
 
 // ─── Client profile (detailed) ────────────────────────────────────────────────
@@ -4614,6 +4622,40 @@ app.get('/api/client/profile', auth, async(req,res)=>{
 });
 
 // ─── Referral stats ───────────────────────────────────────────────────────────
+// Client's downline network: 5 lines with each member's membership + earnings & rate per line
+app.get('/api/client/network', auth, async(req,res)=>{
+  try {
+    const me=req.session.uid;
+    const allU=await q.find(db.users,{});
+    const membs=(await q.find(db.memberships,{})).filter(m=>!m._type);
+    const now=new Date().toISOString();
+    const activeMemb={};
+    membs.forEach(m=>{ if((m.expires_at||'')>now) activeMemb[m.user_id]=m.plan_name; });
+    const lines=[[],[],[],[],[]];
+    let frontier=[me]; const seen=new Set([me]);
+    for(let line=0; line<5; line++){
+      const next=[];
+      for(const pid of frontier){
+        for(const k of allU.filter(u=>u.sponsor_id===pid && !u.is_admin && u.user_type!=='trainer' && !u.is_child)){
+          if(seen.has(k._id)) continue; seen.add(k._id);
+          lines[line].push({ id:k._id, name:k.anonymous?'Člen (skrytý)':k.name, anonymous:!!k.anonymous,
+            joined:(k.created_at||'').slice(0,10), membership:activeMemb[k._id]||null });
+          next.push(k._id);
+        }
+      }
+      frontier=next;
+    }
+    const myComms=await q.find(db.commissions,{partner_id:me});
+    const earned=[0,0,0,0,0], pending=[0,0,0,0,0];
+    myComms.forEach(c=>{ const l=c.level||0; if(l<5){ if(c.status==='paid') earned[l]+=(+c.amount||0); else pending[l]+=(+c.amount||0); } });
+    res.json({
+      lines: lines.map((members,i)=>({ line:i+1, rate:LINE_RATES[i], count:members.length,
+        earned:+earned[i].toFixed(2), pending:+pending[i].toFixed(2), members })),
+      total_people: lines.reduce((s,l)=>s+l.length,0)
+    });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/client/referral', auth, async(req,res)=>{
   try {
     const u = await q.one(db.users,{_id:req.session.uid});

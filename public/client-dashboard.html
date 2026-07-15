@@ -534,6 +534,15 @@
     <div style="margin-top:12px;padding:10px 14px;background:rgba(33,150,243,.07);border:1px solid rgba(33,150,243,.15);border-radius:8px;font-size:.8rem;color:#90caf9">
       💬 <strong>Tip:</strong> Zdieľaj link na Instagrame, vo WhatsApp alebo pošli kamarátom — každý, kto sa zaregistruje cez tvoj link, sa počíta ako tvoje odporúčanie.
     </div>
+    <!-- Moja štruktúra (5 línií) -->
+    <div style="margin-top:14px;border-top:1px solid #2a2a2a;padding-top:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleNetwork()">
+        <div style="font-weight:700;color:var(--gold)"><i class="bi bi-diagram-3"></i> Moja štruktúra & provízie z línií</div>
+        <i class="bi bi-chevron-down" id="netChevron" style="color:var(--muted)"></i>
+      </div>
+      <div style="font-size:.78rem;color:var(--muted);margin-top:4px">Zarábaš z 5 línií pod sebou — čím väčšia štruktúra, tým väčší pasívny príjem.</div>
+      <div id="networkPanel" style="display:none;margin-top:12px"></div>
+    </div>
   </div>
 
   <!-- ═══════════════════════════════════════════════════════
@@ -904,6 +913,35 @@ async function loadReferral(){
 function copyRefLink(){
   if(!_refLink) return;
   navigator.clipboard.writeText(_refLink).then(()=>showToast('🔗 Link skopírovaný!')).catch(()=>{const inp=document.createElement('input');inp.value=_refLink;document.body.appendChild(inp);inp.select();document.execCommand('copy');document.body.removeChild(inp);showToast('🔗 Link skopírovaný!');});
+}
+let _netLoaded=false;
+function toggleNetwork(){
+  const p=document.getElementById('networkPanel');
+  const open=p.style.display==='none';
+  p.style.display=open?'block':'none';
+  document.getElementById('netChevron').className='bi bi-chevron-'+(open?'up':'down');
+  if(open && !_netLoaded){ _netLoaded=true; loadNetwork(); }
+}
+async function loadNetwork(){
+  const p=document.getElementById('networkPanel');
+  p.innerHTML='<div class="text-muted small">Načítavam štruktúru…</div>';
+  const d=await api('/api/client/network');
+  if(!d||d.error){ p.innerHTML='<div style="color:#e57373;font-size:.85rem">Chyba pri načítaní.</div>'; return; }
+  if(!d.total_people){ p.innerHTML='<div style="color:var(--muted);font-size:.85rem">Zatiaľ nemáš nikoho pod sebou. Pošli svoj link a začni budovať štruktúru! 🌱</div>'; return; }
+  p.innerHTML=d.lines.map(L=>{
+    const membersHtml=L.members.length? L.members.map(m=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-bottom:1px solid #222;font-size:.82rem">
+        <span>${escHtml(m.name)} <span style="color:var(--muted);font-size:.72rem">· od ${m.joined||'—'}</span></span>
+        <span>${m.membership?`<span style="color:#81c784;font-weight:600">🏅 ${escHtml(m.membership)}</span>`:'<span style="color:var(--muted);font-size:.75rem">bez členstva</span>'}</span>
+      </div>`).join('') : '<div style="color:var(--muted);font-size:.78rem;padding:6px 10px">Zatiaľ nikto</div>';
+    return `<details style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;margin-bottom:8px">
+      <summary style="list-style:none;cursor:pointer;padding:10px 12px;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:700">Línia ${L.line} <span style="background:rgba(201,168,76,.15);color:var(--gold);padding:1px 8px;border-radius:20px;font-size:.72rem;margin-left:6px">${(L.rate*100).toFixed(0)} %</span></span>
+        <span style="font-size:.8rem;color:var(--muted)">${L.count} ${L.count===1?'člen':'ľudí'} · <span style="color:#81c784">${L.earned.toFixed(2)} €</span>${L.pending>0?` <span style="color:#ff9800">(+${L.pending.toFixed(2)} čaká)</span>`:''}</span>
+      </summary>
+      <div>${membersHtml}</div>
+    </details>`;
+  }).join('') + `<div style="font-size:.75rem;color:var(--muted);margin-top:6px">Spolu <b>${d.total_people}</b> ľudí v tvojej štruktúre. Provízie: L1 ${(d.lines[0].rate*100).toFixed(0)}% · L2 ${(d.lines[1].rate*100).toFixed(0)}% · L3 ${(d.lines[2].rate*100).toFixed(0)}% · L4 ${(d.lines[3].rate*100).toFixed(0)}% · L5 ${(d.lines[4].rate*100).toFixed(0)}%</div>`;
 }
 
 /* ═══════════════════════════════════════════════════════════
