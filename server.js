@@ -2035,6 +2035,36 @@ app.post('/api/admin/leads/purge-duplicates', adminAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Oprava už naimportovaných Glofox dát: premapuj členstvá (na správny plán) a presuň
+// Glofox členov, ktorí ostali ako leady, medzi klientov.
+app.post('/api/admin/glofox-repair', adminAuth, async(req,res)=>{
+  try {
+    let remappedMemberships=0, promoted=0;
+    // 1. Premapuj plan_id Glofox členstiev podľa uloženého názvu (napr. Zumba → bronze)
+    const gmembs = await q.find(db.memberships,{glofox:true});
+    for(const m of gmembs){
+      const newPlan = mapGlofoxPlan(m.plan_name,'');
+      if(newPlan!==m.plan_id){
+        await q.update(db.memberships,{_id:m._id},{$set:{plan_id:newPlan}});
+        if(m.status==='active') await q.update(db.users,{_id:m.user_id},{$set:{membership_plan:newPlan}});
+        remappedMemberships++;
+      }
+    }
+    // 2. Glofox členovia (v members.csv → glofox_synced) alebo s aktívnym členstvom/vstupmi,
+    //    ktorí ostali ako lead → presuň medzi klientov
+    const leads = await q.find(db.users,{user_type:'lead', is_admin:{$ne:true}});
+    for(const u of leads){
+      const hasMem = await q.one(db.memberships,{user_id:u._id,status:'active'});
+      if(u.glofox_synced || hasMem || (u.single_entries||0)>0){
+        await q.update(db.users,{_id:u._id},{$set:{user_type:'client'}});
+        promoted++;
+      }
+    }
+    await auditLog(req,'glofox_repair',null,{},{remappedMemberships,promoted},'');
+    res.json({ ok:true, remappedMemberships, promoted });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Mark a lead as contacted now (CRM follow-up tracking)
 app.post('/api/admin/leads/:id/contacted', adminAuth, async(req,res)=>{
   try {
@@ -2132,7 +2162,7 @@ function mapGlofoxPlan(name,plan){
   if(n.includes('premium')) return 'gold';
   if(n.includes('permanentka')) return 'permanentka10';
   if(n.includes('jednor')) return 'vstup1';
-  return 'silver'; // generické opakované členstvo (Zumba, Basic, Fit Premena, Spoločenské tance…)
+  return 'bronze'; // generické opakované in-studio členstvo (Zumba, Basic, Fit Premena, Spoločenské tance…)
 }
 app.post('/api/admin/import-members', adminAuth, async(req,res)=>{
   try {
@@ -2184,6 +2214,8 @@ app.post('/api/admin/import-members', adminAuth, async(req,res)=>{
       if(existing){
         if(existing.glofox_synced){ skipped++; continue; } // Glofox dáta už boli priradené
         const upd={ glofox_synced:true };
+        // Glofox člen → patrí medzi klientov (nie leady), aj keď sa už registroval
+        if(existing.user_type==='lead') upd.user_type='client';
         if(credits>0){ upd.single_entries=(existing.single_entries||0)+credits; withEntries++; }
         if(!existing.glofox_membership) upd.glofox_membership=memName||memPlan||'';
         await q.update(db.users,{_id:existing._id},{$set:upd});

@@ -720,6 +720,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
         <input type="text" id="clientsSearch" class="form-control form-control-sm" style="width:220px" placeholder="🔍 Meno / email / telefón..." oninput="loadClients()">
         <input type="file" id="membersCsvInput" accept=".csv,text/csv" style="display:none" onchange="importMembersCsv(this)">
         <button class="btn btn-sm btn-outline-warning" onclick="document.getElementById('membersCsvInput').click()" title="Importovať členov/klientov z Glofox CSV (s členstvom a permanentkami)"><i class="bi bi-upload"></i> Import členov</button>
+        <button class="btn btn-sm btn-outline-info" onclick="glofoxRepair()" title="Presunúť Glofox členov medzi klientov + opraviť názvy členstiev"><i class="bi bi-wrench-adjustable"></i> Opraviť Glofox</button>
         <button class="btn btn-sm btn-outline-danger" onclick="purgeTestAccounts()" title="Zmazať testovacie účty pred ostrým spustením"><i class="bi bi-trash3"></i> Vyčistiť testy</button>
         <button class="btn btn-sm btn-outline-secondary" onclick="loadClients()"><i class="bi bi-arrow-clockwise"></i></button>
       </div>
@@ -2047,6 +2048,12 @@ async function importLeadsCsv(input){
   const r=await api('/api/admin/import-leads',{method:'POST',body:{csv:text}});
   if(r&&r.ok){ showToast(`Hotovo ✓ Pridaných ${r.inserted}, preskočených ${r.skipped}, do sekvencie ${r.enrolled}`,'success'); loadLeads(); }
   else showToast('Chyba pri importe: '+(r?.error||'?'),'error');
+}
+async function glofoxRepair(){
+  if(!confirm('Opraviť Glofox dáta?\n\n• Glofox členovia, ktorí ostali medzi leadmi, sa presunú medzi Klientov\n• názvy členstiev sa premapujú na správny plán (Zumba → Bronze, online → Online…)\n\nBezpečné spustiť aj opakovane.')) return;
+  const r=await api('/api/admin/glofox-repair',{method:'POST'});
+  if(r&&r.ok){ showToast('Hotovo ✓ Presunutých medzi klientov: '+r.promoted+', opravených členstiev: '+r.remappedMemberships,'success'); loadClients(); if(typeof loadLeads==='function') loadLeads(); }
+  else showToast('Chyba: '+(r?.error||'?'),'error');
 }
 async function importMembersCsv(input){
   const file=input.files&&input.files[0]; input.value='';
