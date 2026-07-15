@@ -406,5 +406,6 @@ async function accept(){ const d=await post('/api/friends/accept',{from:uid}); i
 async function rmFriend(){ const d=await post('/api/friends/remove',{user:uid}); if(d.ok){P.friend_state='none';render();} }
 load();
 </script>
+<script src="/dock.js"></script>
 </body>
 </html>

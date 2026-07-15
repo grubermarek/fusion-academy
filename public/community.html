@@ -29,7 +29,7 @@
 html,body{height:100%;overflow:hidden;font-family:var(--sans);-webkit-font-smoothing:antialiased;}
 
 /* ── Layout ── */
-.app{display:flex;flex-direction:column;height:100vh;}
+.app{display:flex;flex-direction:column;height:100vh;height:100dvh;}
 .top-bar{background:rgba(8,8,8,0.97);padding:.65rem 1.2rem;display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-shrink:0;border-bottom:1px solid var(--gold-border);}
 .brand{font-size:1.1rem;font-weight:900;background:linear-gradient(90deg,var(--red),var(--orange));-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none;}
 .top-links{display:flex;gap:.4rem;}
@@ -802,6 +802,5 @@ document.addEventListener('keydown', e => { if(e.key==='Escape') hideLoginForm()
 
 init();
 </script>
-<script src="/nav-bar.js"></script>
 </body>
 </html>
