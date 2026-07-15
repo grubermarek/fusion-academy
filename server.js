@@ -1565,6 +1565,7 @@ app.get('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
   const sponsor = u.sponsor_id ? await q.one(db.users,{_id:u.sponsor_id}) : null;
   res.json({ name:u.name, visit_count:u.visit_count||0, private_hours:u.private_hours||0,
     referral_credit:+(u.referral_credit||0), referral_credit_pending:+(u.referral_credit_pending||0),
+    single_entries:+(u.single_entries||0), free_credits:+(u.free_credits||0),
     is_trainer:(u.user_type==='trainer')||!!u.is_admin, taught_group_hours:u.taught_group_hours||0, taught_private_hours:u.taught_private_hours||0,
     referrals:refCount, joined:(u.created_at||'').slice(0,10),
     achievements: computeAchievements(u, refCount, memberMonths),
@@ -1627,6 +1628,22 @@ app.post('/api/admin/users/:id/credit', adminAuth, async(req,res)=>{
     await q.insert(db.notifications,{user_id:u._id,type:'credit',title:'💳 Úprava kreditu adminom',body:`Nový zostatok kreditu: ${nc.toFixed(2)} €`,read:false,created_at:nowISO()}).catch(()=>{});
     await auditLog(req,'credit_adjust',u._id,{old:cur},{op,val,new:nc},'');
     res.json({ ok:true, referral_credit:nc });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Admin: úprava jednorázových vstupov (permanentky) — nastaviť/pridať/odobrať (aj oprava chýb z importu)
+app.post('/api/admin/users/:id/entries', adminAuth, async(req,res)=>{
+  try {
+    const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
+    const op=req.body.op; const val=parseInt(req.body.amount);
+    if(isNaN(val)) return res.status(400).json({error:'Neplatný počet'});
+    let cur=parseInt(u.single_entries||0);
+    let ne = op==='set' ? val : op==='add' ? cur+val : op==='sub' ? cur-val : cur;
+    ne=Math.max(0,ne);
+    await q.update(db.users,{_id:u._id},{$set:{single_entries:ne}});
+    await q.insert(db.notifications,{user_id:u._id,type:'entries',title:'🎟️ Úprava vstupov',body:`Aktuálny počet jednorázových vstupov: ${ne}`,read:false,created_at:nowISO()}).catch(()=>{});
+    await auditLog(req,'entries_adjust',u._id,{old:cur},{op,val,new:ne},'');
+    res.json({ ok:true, single_entries:ne });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 

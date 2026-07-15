@@ -633,6 +633,17 @@ function renderAdmin(){
       ${a.referral_credit_pending>0?`<button class="adm-save" style="margin-top:10px;justify-self:start;background:linear-gradient(102deg,#2e7d32,#66bb6a)" onclick="markPayoutPaid()"><i class="bi bi-check2-circle"></i> Označiť výplatu ${(a.referral_credit_pending).toFixed(2)} € ako VYPLATENÉ</button>`:''}
       <span class="set-hint" style="margin-top:6px">„Nastaviť" prepíše hodnotu, „Pridať/Odobrať" upraví o zadanú sumu. Klient dostane notifikáciu.</span>
     </div>
+    <div class="set-row" style="background:rgba(201,168,76,.06);border:1px solid rgba(201,168,76,.25);border-radius:12px;padding:12px">
+      <span class="set-label">🎟️ Jednorázové vstupy (permanentka)</span>
+      <div style="font-size:.9rem;margin:4px 0 8px">Aktuálne vstupy: <b style="color:var(--gold)">${a.single_entries||0}</b>${a.free_credits>0?` · <span style="color:#9fd894">${a.free_credits} hod. zdarma 🎁</span>`:''}</div>
+      <div class="adm-hours" style="flex-wrap:wrap">
+        <input type="number" id="admEntriesN" step="1" min="0" placeholder="počet" style="width:100px">
+        <button onclick="entriesOp('set')" title="Nastaviť na túto hodnotu">= Nastaviť</button>
+        <button class="gseg" style="border:1px solid #35502f;background:#1e2a1e;color:#9fd894;border-radius:10px;padding:9px 12px;cursor:pointer" onclick="entriesOp('add')">+ Pridať</button>
+        <button class="gseg" style="border:1px solid #8b3232;background:#3a1a1a;color:#ef9a9a;border-radius:10px;padding:9px 12px;cursor:pointer" onclick="entriesOp('sub')">− Odobrať</button>
+      </div>
+      <span class="set-hint" style="margin-top:6px">Oprav chyby z importu — napr. nastav presný počet vstupov, alebo pridaj/odober. Klient dostane notifikáciu.</span>
+    </div>
     ${(!P.is_admin_profile && !P.is_self) ? `<div class="set-row" style="background:rgba(239,154,154,.06);border:1px solid rgba(239,154,154,.22);border-radius:12px;padding:12px">
       <span class="set-label">🔑 Reset hesla</span>
       <div style="font-size:.86rem;margin:4px 0 8px;color:var(--text-muted)">Odhlási klienta a pri ďalšom prihlásení si musí vytvoriť nové heslo (na to isté meno/email). Použi, keď klient zabudol heslo.</div>
@@ -653,6 +664,14 @@ async function creditOp(op){
   const r=await fetch('/api/admin/users/'+encodeURIComponent(uid)+'/credit',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({op,amount})});
   const d=await r.json();
   if(d.ok){ _awards.referral_credit=d.referral_credit; alert('Kredit upravený ✓ Nový zostatok: '+d.referral_credit.toFixed(2)+' €'); renderAdmin(); }
+  else alert(d.error||'Chyba');
+}
+async function entriesOp(op){
+  const amount=parseInt(document.getElementById('admEntriesN').value);
+  if(isNaN(amount)){ alert('Zadaj počet vstupov.'); return; }
+  const r=await fetch('/api/admin/users/'+encodeURIComponent(uid)+'/entries',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({op,amount})});
+  const d=await r.json();
+  if(d.ok){ _awards.single_entries=d.single_entries; alert('Vstupy upravené ✓ Aktuálny počet: '+d.single_entries); renderAdmin(); }
   else alert(d.error||'Chyba');
 }
 async function markPayoutPaid(){
