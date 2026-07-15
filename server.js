@@ -1990,8 +1990,24 @@ app.get('/api/admin/users', adminAuth, async(req,res)=>{
 // ── Detailed LEADS list (Glofox-style) — only not-yet-paying users ────────────
 // A lead becomes a client automatically on first paid purchase (see line ~340),
 // so filtering user_type==='lead' naturally moves payers into the clients list.
+// Samoopravné: Glofox člen s aktívnym členstvom / vstupmi / glofox_synced patrí medzi
+// klientov, nie leady. Spustí sa pri načítaní oboch zoznamov, idempotentne.
+async function autoPromoteMembers(){
+  const activeMemUserIds = new Set((await q.find(db.memberships,{status:'active'})).map(m=>m.user_id));
+  const leads = await q.find(db.users,{user_type:'lead', is_admin:{$ne:true}});
+  let n=0;
+  for(const u of leads){
+    if(u.glofox_synced || (u.single_entries||0)>0 || activeMemUserIds.has(u._id)){
+      await q.update(db.users,{_id:u._id},{$set:{user_type:'client'}});
+      n++;
+    }
+  }
+  return n;
+}
+
 app.get('/api/admin/leads', adminAuth, async(req,res)=>{
   try {
+    await autoPromoteMembers();
     const {search} = req.query;
     let leads = await q.find(db.users, {user_type:'lead', is_admin:{$ne:true}}, {created_at:-1});
     // Skry leady, ktorých email je už medzi klientmi (duplicitné záznamy)
@@ -2300,6 +2316,7 @@ app.post('/api/admin/test-accounts/purge', adminAuth, async(req,res)=>{
 
 app.get('/api/admin/clients', adminAuth, async(req,res)=>{
   try {
+    await autoPromoteMembers();
     const {search} = req.query;
     let clients = await q.find(db.users, {user_type:'client', is_admin:{$ne:true}}, {created_at:-1});
     if(search){ const s=search.toLowerCase(); clients = clients.filter(u=>u.name?.toLowerCase().includes(s)||u.email?.toLowerCase().includes(s)||(u.phone||'').includes(s)); }
