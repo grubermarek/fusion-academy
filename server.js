@@ -686,6 +686,19 @@ async function seedData() {
     for(const s of steps) await q.insert(db.email_steps, {...s, created_at:nowISO()});
     console.log('✅  Email sekvencie naplnené ('+steps.length+' krokov)');
   }
+  // Idempotentne zabezpeč „app_launch" krok (oznam o novej appke + hodina zdarma navyše)
+  const APP2 = process.env.APP_URL||'https://latindancefusion.art';
+  if(await q.count(db.email_steps,{sequence:'app_launch'})===0){
+    await q.insert(db.email_steps, { sequence:'app_launch', day:0, label:'Nová appka – hodina zdarma navyše', active:true,
+      subject:'🎉 Máme novú aplikáciu – a pre teba hodina zdarma navyše!',
+      body:`<p>Ahoj,</p>
+        <p>vo Fusion Academy sme spustili <b>úplne novú aplikáciu</b> 💃 – rezervácie hodín, členstvá, komunita aj tvoj osobný profil, všetko na jednom mieste.</p>
+        <p>A pretože ťa máme radi: keď si <b>vytvoríš vlastný účet</b>, dostaneš <b>ďalšiu hodinu úplne ZADARMO</b> 🎁 (navyše k tvojej prvej hodine zdarma).</p>
+        <p>Stačí sa zaregistrovať e-mailom, ktorý už poznáme – a hneď môžeš rezervovať.</p>
+        <p>Tešíme sa na teba na parkete! 💛<br><i>Tím Fusion Academy</i></p>`,
+      cta:'✨ Vytvoriť účet a získať hodinu zdarma', cta_url:`${APP2}/`, created_at:nowISO() });
+    console.log('✅  app_launch email krok pridaný');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -709,6 +722,27 @@ app.post('/api/register', async(req,res)=>{
   try {
     const {name,email,password,phone,sponsorCode,user_type}=req.body;
     if(!name||!email||!password) return res.status(400).json({error:'Meno, email a heslo sú povinné'});
+    const emailNorm=(email||'').toLowerCase().trim();
+    // ── Existujúci e-mail? Ak je to importovaný lead bez účtu, „claimni" ho ───────
+    const existing=await q.one(db.users,{email:emailNorm});
+    if(existing){
+      if(existing.imported && !existing.claimed && !existing.password){
+        const set={ password:await bcrypt.hash(password,10), claimed:true,
+          name: (name||existing.name), phone: (phone||existing.phone||''),
+          consent_at: req.body.consent ? nowISO() : existing.consent_at,
+          free_credits: (existing.free_credits||0)+1 }; // hodina zdarma navyše za vytvorenie účtu
+        await q.update(db.users,{_id:existing._id},{$set:set});
+        req.session.uid=existing._id;
+        cancelSequence(existing._id,'app_launch').catch(()=>{});
+        // upozorni adminov o novej registrácii
+        try { const admins=await q.find(db.users,{is_admin:true});
+          for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'new_lead',
+            title:'🆕 Importovaný lead si vytvoril účet',
+            body:`${set.name} · ${emailNorm}`, read:false, created_at:nowISO()}); } catch(e){}
+        return res.json({ ok:true, id:existing._id, claimed:true, free_bonus:true, redirect_to:'/client-dashboard' });
+      }
+      return res.status(400).json({error:'Tento e-mail je už zaregistrovaný. Skús sa prihlásiť.'});
+    }
     let sponsor_id=null;
     if(sponsorCode&&sponsorCode.toUpperCase()!=='ADMIN'){
       const sp=await q.one(db.users,{referral_code:new RegExp('^'+sponsorCode+'$','i')});
@@ -942,7 +976,7 @@ app.get('/api/community/messages/:channel', auth, async(req,res)=>{
 });
 
 app.get('/api/community/members', auth, async(req,res)=>{
-  const users=await q.find(db.users,{is_admin:{$ne:true},active:true,is_child:{$ne:true}});
+  const users=await q.find(db.users,{is_admin:{$ne:true},active:true,is_child:{$ne:true},$or:[{imported:{$ne:true}},{claimed:true}]});
   const result=users.map(u=>({
     id:u._id, name:u.name,
     user_type:u.user_type||'partner',
@@ -959,7 +993,7 @@ app.get('/api/community/search', auth, async(req,res)=>{
     const me=req.session.uid;
     const s=(req.query.q||'').trim().toLowerCase();
     if(s.length<2) return res.json({people:[]});
-    let users=await q.find(db.users,{is_admin:{$ne:true},active:true,is_child:{$ne:true},anonymous:{$ne:true}});
+    let users=await q.find(db.users,{is_admin:{$ne:true},active:true,is_child:{$ne:true},anonymous:{$ne:true},$or:[{imported:{$ne:true}},{claimed:true}]});
     users=users.filter(u=>u._id!==me && ((u.nickname||'').toLowerCase().includes(s) || (u.name||'').toLowerCase().includes(s)));
     users=users.slice(0,20);
     const people=await Promise.all(users.map(async u=>{
@@ -1692,6 +1726,7 @@ app.get('/api/admin/leads', adminAuth, async(req,res)=>{
         bookings: active.length, last_booking: lastB, last_booking_days: daysAgo(lastB),
         status, attendances, sponsor,
         consent: !!u.consent_at,
+        imported: !!u.imported, claimed: !!u.claimed,
       };
     }));
     res.json({ leads: result, total: result.length });
@@ -1705,6 +1740,78 @@ app.post('/api/admin/leads/:id/contacted', adminAuth, async(req,res)=>{
     if(!u) return res.status(404).json({error:'Nenájdený'});
     await q.update(db.users,{_id:u._id},{$set:{last_contacted_at:nowISO()}});
     res.json({ ok:true, last_contacted_at:nowISO() });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Import starých leadov (napr. z Glofox CSV) — len admin ────────────────────
+// Naparsuje CSV, vloží ako skryté leady (imported:true, claimed:false, bez hesla),
+// spustí im app_launch + lead_nurture sekvenciu. Ľudia si stále vytvoria účet sami
+// (register „claimne" existujúci lead záznam).
+function parseCsv(text){
+  const rows=[]; let i=0, field='', row=[], inQ=false;
+  const pushF=()=>{ row.push(field); field=''; };
+  const pushR=()=>{ pushF(); rows.push(row); row=[]; };
+  text=text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  while(i<text.length){
+    const c=text[i];
+    if(inQ){
+      if(c==='"'){ if(text[i+1]==='"'){ field+='"'; i++; } else inQ=false; }
+      else field+=c;
+    } else {
+      if(c==='"') inQ=true;
+      else if(c===',') pushF();
+      else if(c==='\n'){ pushR(); }
+      else field+=c;
+    }
+    i++;
+  }
+  if(field.length||row.length) pushR();
+  return rows.filter(r=>r.length>1);
+}
+app.post('/api/admin/import-leads', adminAuth, async(req,res)=>{
+  try {
+    const csv = req.body.csv||'';
+    if(!csv || csv.length<10) return res.status(400).json({error:'Prázdny CSV'});
+    const rows = parseCsv(csv);
+    if(rows.length<2) return res.status(400).json({error:'CSV nemá dáta'});
+    const head = rows[0].map(h=>h.trim().toLowerCase());
+    const col = name => head.indexOf(name);
+    const iFirst=col('first name'), iLast=col('last name'), iEmail=col('email'), iPhone=col('phone'),
+      iGender=col('gender'), iDob=col('date of birth'), iAdded=col('added'), iSource=col('source'),
+      iConsent=col('email consent'), iLastC=col('last contacted');
+    if(iEmail<0) return res.status(400).json({error:'CSV nemá stĺpec Email'});
+    let inserted=0, skipped=0, enrolled=0;
+    for(let r=1;r<rows.length;r++){
+      const row=rows[r];
+      const email=(row[iEmail]||'').toLowerCase().trim();
+      if(!email || !/@/.test(email)){ skipped++; continue; }
+      if(await q.one(db.users,{email})){ skipped++; continue; }
+      const name=[(iFirst>=0?row[iFirst]:''),(iLast>=0?row[iLast]:'')].map(x=>(x||'').trim()).filter(Boolean).join(' ')||email.split('@')[0];
+      const g=(iGender>=0?row[iGender]:'').toUpperCase();
+      const gender = g==='MALE'?'male':'female';
+      const dobRaw=iDob>=0?(row[iDob]||''):''; const birthday=/^\d{4}-\d{2}-\d{2}/.test(dobRaw)?dobRaw.slice(0,10):'';
+      const addedRaw=iAdded>=0?(row[iAdded]||''):''; const created_at=/^\d{4}-\d{2}-\d{2}/.test(addedRaw)?addedRaw.slice(0,10):today();
+      const consent=iConsent>=0 && String(row[iConsent]).trim().toLowerCase()==='true';
+      const src=(iSource>=0?row[iSource]:'').trim();
+      let code=(name.replace(/[^a-zA-Z]/g,'').toUpperCase().slice(0,5)||'LEAD')+Math.floor(100+Math.random()*900);
+      while(await q.one(db.users,{referral_code:code})) code='LEAD'+Math.floor(1000+Math.random()*9000);
+      const u=await q.insert(db.users,{
+        name, email, phone:(iPhone>=0?row[iPhone]:'')||'', referral_code:code,
+        sponsor_id:null, rank:1, is_admin:false, active:true, user_type:'lead',
+        password:null, imported:true, claimed:false, glofox_source:src,
+        lead_source:'glofox', gender, birthday,
+        last_contacted_at: (iLastC>=0 && /^\d{4}-\d{2}-\d{2}/.test(row[iLastC]||'')) ? row[iLastC] : null,
+        consent_at: consent?nowISO():null, email_consent:consent,
+        visit_count:0, referral_credit:0, notes:'Importované z Glofox',
+        created_at
+      });
+      inserted++;
+      if(consent){ // maily len ak dal súhlas
+        try { await enqueueSequence(u._id,'app_launch'); await enqueueSequence(u._id,'lead_nurture'); enrolled++; } catch(e){}
+      }
+    }
+    await auditLog(req,'import_leads',null,{},{inserted,skipped,enrolled},'');
+    res.json({ ok:true, inserted, skipped, enrolled, total: rows.length-1 });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -4772,7 +4879,7 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
     const monthStr = today().slice(0,7);
     const mmdd = today().slice(5); // MM-DD
     const users = (await q.find(db.users,{is_admin:{$ne:true}}))
-      .filter(u=>u.user_type!=='trainer' && !u.is_child && !u.anonymous);
+      .filter(u=>u.user_type!=='trainer' && !u.is_child && !u.anonymous && !(u.imported && !u.claimed));
     const uName = Object.fromEntries(users.map(u=>[u._id,u]));
 
     // referrals this month per sponsor

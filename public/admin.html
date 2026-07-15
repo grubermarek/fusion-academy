@@ -74,9 +74,13 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 .input-group-text{background:var(--dark-4);border-color:var(--gold-border);color:var(--text-muted);}
 @media(max-width:768px){
   .sidebar{position:static;min-height:auto;width:100%;flex-direction:column;}
-  .icon-rail{flex-direction:row;width:100%;justify-content:flex-start;gap:2px;padding:8px;overflow-x:auto;}
-  .rail-logo{margin-bottom:0;margin-right:6px;}
-  .rail-btn.active::before{left:9px;right:9px;top:auto;bottom:-8px;width:auto;height:3px;}
+  .icon-rail{flex-direction:row;align-items:center;width:100%;gap:2px;padding:8px 10px;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .icon-rail::-webkit-scrollbar{display:none;}
+  .rail-logo{margin-bottom:0;margin-right:8px;flex-shrink:0;}
+  .rail-btn{flex-shrink:0;width:44px;height:44px;}
+  /* Spodná skupina (osobný/profil/shop/odhlásiť) → v riadku, zarovnaná doprava */
+  .icon-rail>.mt-auto{margin-top:0!important;margin-left:auto;flex-direction:row!important;gap:2px;flex-shrink:0;}
+  .rail-btn.active::before{left:9px;right:9px;top:auto;bottom:-6px;width:auto;height:3px;}
   .group-panel{width:100%;border-right:none;border-bottom:1px solid var(--gold-border);}
   .main{margin-left:0;}
 }
@@ -674,10 +678,12 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <h4 class="fw-bold mb-0"><i class="bi bi-person-plus me-2 text-warning"></i><span id="leadsCount">0</span> Leady</h4>
       <div class="d-flex gap-2 flex-wrap">
         <input type="text" id="leadsSearch" class="form-control form-control-sm" style="width:200px" placeholder="🔍 Meno / email / telefón..." oninput="loadLeads()">
+        <input type="file" id="leadsCsvInput" accept=".csv,text/csv" style="display:none" onchange="importLeadsCsv(this)">
+        <button class="btn btn-sm btn-outline-warning" onclick="document.getElementById('leadsCsvInput').click()" title="Importovať leady z CSV (napr. Glofox)"><i class="bi bi-upload"></i> Import CSV</button>
         <button class="btn btn-sm btn-outline-secondary" onclick="loadLeads()"><i class="bi bi-arrow-clockwise"></i></button>
       </div>
     </div>
-    <p class="text-muted small mb-3">Registrovaní, ktorí ešte nezaplatili. Po prvej platbe automaticky prejdú medzi <b>Klientov</b>.</p>
+    <p class="text-muted small mb-3">Registrovaní, ktorí ešte nezaplatili. Po prvej platbe automaticky prejdú medzi <b>Klientov</b>. Importované staré leady (🗂️) vidíte len vy — ľudia si stále vytvoria účet sami.</p>
     <div class="card border-0 rounded-3">
       <div class="table-responsive">
         <table class="table table-hover align-middle mb-0" style="font-size:.85rem">
@@ -1968,7 +1974,7 @@ async function loadLeads(){
   const fmtD=iso=>iso?new Date(iso).toLocaleDateString('sk-SK',{day:'numeric',month:'short'}):'—';
   body.innerHTML=d.leads.map(l=>`<tr>
     <td class="ps-3 text-nowrap"><i class="bi bi-clock text-muted me-1"></i>${agoTxt(l.added_days)}</td>
-    <td><b>${escHtml(l.name||'—')}</b>${l.sponsor?`<div class="small text-muted">👤 ${escHtml(l.sponsor)}</div>`:''}</td>
+    <td><b>${escHtml(l.name||'—')}</b>${l.imported?`<span class="badge bg-secondary ms-1" title="Importované z Glofox${l.claimed?' · účet vytvorený':''}">🗂️${l.claimed?'✓':''}</span>`:''}${l.sponsor?`<div class="small text-muted">👤 ${escHtml(l.sponsor)}</div>`:''}</td>
     <td class="small">${escHtml(l.email||'—')}</td>
     <td class="text-nowrap">${l.phone?`<a href="tel:${escHtml(l.phone)}" class="text-decoration-none">${escHtml(l.phone)}</a>`:'—'}</td>
     <td>${regBadge(l.reg_point)}</td>
@@ -1988,6 +1994,16 @@ async function markContacted(id){
   const r=await api('/api/admin/leads/'+id+'/contacted',{method:'POST'});
   if(r.ok){ showToast('Označené ako kontaktované ✓','success'); loadLeads(); }
   else showToast('Chyba: '+(r.error||''),'error');
+}
+async function importLeadsCsv(input){
+  const file=input.files&&input.files[0]; input.value='';
+  if(!file) return;
+  if(!confirm('Importovať leady zo súboru „'+file.name+'"?\n\nVložia sa ako skryté leady (vidíte len vy). Existujúce e-maily sa preskočia. Kto dal súhlas, dostane mailovú sekvenciu.')) return;
+  const text=await file.text();
+  showToast('Importujem… ('+Math.round(text.length/1024)+' kB)','info');
+  const r=await api('/api/admin/import-leads',{method:'POST',body:{csv:text}});
+  if(r&&r.ok){ showToast(`Hotovo ✓ Pridaných ${r.inserted}, preskočených ${r.skipped}, do sekvencie ${r.enrolled}`,'success'); loadLeads(); }
+  else showToast('Chyba pri importe: '+(r?.error||'?'),'error');
 }
 
 // ── CRM ──────────────────────────────────────────────────────────────────────
