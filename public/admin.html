@@ -2012,11 +2012,11 @@ async function importLeadsCsv(input){
 async function importMembersCsv(input){
   const file=input.files&&input.files[0]; input.value='';
   if(!file) return;
-  if(!confirm('Importovať členov/klientov zo súboru „'+file.name+'"?\n\nVložia sa ako skrytí importovaní klienti (ako pri leadoch — vidíte ich len vy, kým sa sami nezaregistrujú). Prenesie sa členstvo (platnosť), permanentky (kredity) a počet návštev. Existujúce e-maily sa preskočia.')) return;
+  if(!confirm('Importovať členov/klientov zo súboru „'+file.name+'"?\n\nNoví sa vložia ako skrytí importovaní klienti (vidíte ich len vy, kým sa sami nezaregistrujú). Tým, čo už účet majú, sa DOPLNÍ členstvo (platnosť) a permanentky (kredity). Bezpečné spustiť aj opakovane — kto už Glofox dáta dostal, sa preskočí.')) return;
   const text=await file.text();
   showToast('Importujem členov… ('+Math.round(text.length/1024)+' kB)','info');
   const r=await api('/api/admin/import-members',{method:'POST',body:{csv:text}});
-  if(r&&r.ok){ showToast(`Hotovo ✓ Pridaných ${r.inserted}, s členstvom ${r.withMembership}, s permanentkou ${r.withEntries}, preskočených ${r.skipped}`,'success'); loadClients(); }
+  if(r&&r.ok){ showToast(`Hotovo ✓ Nových ${r.inserted}, doplnených existujúcich ${r.merged||0}, s členstvom ${r.withMembership}, s permanentkou ${r.withEntries}, preskočených ${r.skipped}`,'success'); loadClients(); }
   else showToast('Chyba pri importe: '+(r?.error||'?'),'error');
 }
 

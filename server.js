@@ -2117,12 +2117,23 @@ app.post('/api/admin/import-members', adminAuth, async(req,res)=>{
       iMemExp=col('membership expiry date'), iCredits=col('credits remaining');
     if(iEmail<0) return res.status(400).json({error:'CSV nemá stĺpec Email'});
     const todayStr = today();
-    let inserted=0, skipped=0, withMembership=0, withEntries=0, enrolled=0;
+    // Vytvor Glofox členstvo pre daného usera (ak má platnosť do budúcna a ešte nemá aktívne)
+    async function applyGlofoxMembership(userId, memName, memPlan, memExp, started){
+      if(!(memExp && memExp>=todayStr)) return false;
+      const hasActive = await q.one(db.memberships,{user_id:userId,status:'active'});
+      if(hasActive) return false;
+      const planId=mapGlofoxPlan(memName,memPlan);
+      const expiresISO=memExp+'T23:59:59.000Z';
+      await q.insert(db.memberships,{user_id:userId, plan_id:planId, plan_name:(memName||memPlan||'Členstvo'),
+        status:'active', started_at:started||todayStr, expires_at:expiresISO, migrated:true, glofox:true, created_at:nowISO()});
+      await q.update(db.users,{_id:userId},{$set:{membership_plan:planId, membership_expires:expiresISO}});
+      return true;
+    }
+    let inserted=0, merged=0, skipped=0, withMembership=0, withEntries=0, enrolled=0;
     for(let r=1;r<rows.length;r++){
       const row=rows[r];
       const email=(row[iEmail]||'').toLowerCase().trim();
       if(!email || !/@/.test(email)){ skipped++; continue; }
-      if(await q.one(db.users,{email})){ skipped++; continue; }
       const name=[(iFirst>=0?row[iFirst]:''),(iLast>=0?row[iLast]:'')].map(x=>(x||'').trim()).filter(Boolean).join(' ')||email.split('@')[0];
       const g=(iGender>=0?row[iGender]:'').toUpperCase();
       const gender = g==='MALE'?'male':'female';
@@ -2135,12 +2146,26 @@ app.post('/api/admin/import-members', adminAuth, async(req,res)=>{
       const memName=(iMemName>=0?row[iMemName]:'').trim();
       const memPlan=(iMemPlan>=0?row[iMemPlan]:'').trim();
       const memExp=parseFlexDate(iMemExp>=0?row[iMemExp]:'');
+
+      // ── Účet už existuje → doplň mu vstupy/členstvo (idempotentne cez glofox_synced) ──
+      const existing=await q.one(db.users,{email});
+      if(existing){
+        if(existing.glofox_synced){ skipped++; continue; } // Glofox dáta už boli priradené
+        const upd={ glofox_synced:true };
+        if(credits>0){ upd.single_entries=(existing.single_entries||0)+credits; withEntries++; }
+        if(!existing.glofox_membership) upd.glofox_membership=memName||memPlan||'';
+        await q.update(db.users,{_id:existing._id},{$set:upd});
+        if(await applyGlofoxMembership(existing._id, memName, memPlan, memExp, created_at)) withMembership++;
+        merged++;
+        continue;
+      }
+
       let code=(name.replace(/[^a-zA-Z]/g,'').toUpperCase().slice(0,5)||'CLNT')+Math.floor(100+Math.random()*900);
       while(await q.one(db.users,{referral_code:code})) code='CLNT'+Math.floor(1000+Math.random()*9000);
       const u=await q.insert(db.users,{
         name, email, phone:(iPhone>=0?row[iPhone]:'')||'', referral_code:code,
         sponsor_id:null, rank:1, is_admin:false, active:true, user_type:'client',
-        password:null, imported:true, claimed:false, glofox_source:src,
+        password:null, imported:true, claimed:false, glofox_source:src, glofox_synced:true,
         lead_source:'glofox', gender, birthday,
         last_contacted_at: (iLastC>=0 && parseFlexDate(row[iLastC])) ? row[iLastC] : null,
         consent_at: consent?nowISO():null, email_consent:consent,
@@ -2153,19 +2178,11 @@ app.post('/api/admin/import-members', adminAuth, async(req,res)=>{
       });
       inserted++;
       if(credits>0) withEntries++;
-      // Aktívne členstvo s platnosťou do budúcna → vytvor membership záznam
-      if(memExp && memExp>=todayStr){
-        const planId=mapGlofoxPlan(memName,memPlan);
-        const expiresISO=memExp+'T23:59:59.000Z';
-        await q.insert(db.memberships,{user_id:u._id, plan_id:planId, plan_name:(memName||memPlan||'Členstvo'),
-          status:'active', started_at:created_at, expires_at:expiresISO, migrated:true, glofox:true, created_at:nowISO()});
-        await q.update(db.users,{_id:u._id},{$set:{membership_plan:planId, membership_expires:expiresISO}});
-        withMembership++;
-      }
+      if(await applyGlofoxMembership(u._id, memName, memPlan, memExp, created_at)) withMembership++;
       if(consent){ try { await enqueueSequence(u._id,'app_launch'); enrolled++; } catch(e){} }
     }
-    await auditLog(req,'import_members',null,{},{inserted,skipped,withMembership,withEntries,enrolled},'');
-    res.json({ ok:true, inserted, skipped, withMembership, withEntries, enrolled, total: rows.length-1 });
+    await auditLog(req,'import_members',null,{},{inserted,merged,skipped,withMembership,withEntries,enrolled},'');
+    res.json({ ok:true, inserted, merged, skipped, withMembership, withEntries, enrolled, total: rows.length-1 });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
