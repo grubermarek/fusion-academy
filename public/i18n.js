@@ -49,6 +49,8 @@
       'profile.nick_prompt':'Tvoja prezývka (zobrazí sa pod menom aj v komunitnom chate, max 30 znakov):',
       'profile.gender_f':'♀ Žena','profile.gender_m':'♂ Muž',
       'profile.membercard':'{tier} {word}',
+      'settings.title':'⚙️ Nastavenia profilu','settings.nickname':'Prezývka','settings.gender':'Pohlavie',
+      'settings.nick_ph':'Napr. ZumbaKráľovná','settings.save':'Uložiť','settings.saved':'Uložené ✓',
       'bg.bronze':'Bronzové','bg.silver':'Strieborné','bg.gold':'Zlaté','bg.legend':'Legendárne',
     },
     cs:{
@@ -83,6 +85,8 @@
       'profile.nick_prompt':'Tvoje přezdívka (zobrazí se pod jménem i v komunitním chatu, max 30 znaků):',
       'profile.gender_f':'♀ Žena','profile.gender_m':'♂ Muž',
       'profile.membercard':'{tier} {word}',
+      'settings.title':'⚙️ Nastavení profilu','settings.nickname':'Přezdívka','settings.gender':'Pohlaví',
+      'settings.nick_ph':'Např. ZumbaKrálovna','settings.save':'Uložit','settings.saved':'Uloženo ✓',
       'bg.bronze':'Bronzové','bg.silver':'Stříbrné','bg.gold':'Zlaté','bg.legend':'Legendární',
     },
     en:{
@@ -117,6 +121,8 @@
       'profile.nick_prompt':'Your nickname (shown under your name and in the community chat, max 30 chars):',
       'profile.gender_f':'♀ Female','profile.gender_m':'♂ Male',
       'profile.membercard':'{tier} {word}',
+      'settings.title':'⚙️ Profile settings','settings.nickname':'Nickname','settings.gender':'Gender',
+      'settings.nick_ph':'e.g. ZumbaQueen','settings.save':'Save','settings.saved':'Saved ✓',
       'bg.bronze':'Bronze','bg.silver':'Silver','bg.gold':'Gold','bg.legend':'Legendary',
     },
     uk:{
@@ -151,6 +157,8 @@
       'profile.nick_prompt':'Твій псевдонім (показується під іменем і в чаті спільноти, макс. 30 символів):',
       'profile.gender_f':'♀ Жінка','profile.gender_m':'♂ Чоловік',
       'profile.membercard':'{tier} {word}',
+      'settings.title':'⚙️ Налаштування профілю','settings.nickname':'Псевдонім','settings.gender':'Стать',
+      'settings.nick_ph':'Напр. ЗумбаКоролева','settings.save':'Зберегти','settings.saved':'Збережено ✓',
       'bg.bronze':'Бронзовий','bg.silver':'Срібний','bg.gold':'Золотий','bg.legend':'Легендарний',
     },
     hu:{
@@ -185,6 +193,8 @@
       'profile.nick_prompt':'A beceneved (a neved alatt és a közösségi chatben jelenik meg, max. 30 karakter):',
       'profile.gender_f':'♀ Nő','profile.gender_m':'♂ Férfi',
       'profile.membercard':'{tier} {word}',
+      'settings.title':'⚙️ Profilbeállítások','settings.nickname':'Becenév','settings.gender':'Nem',
+      'settings.nick_ph':'Pl. ZumbaKirálynő','settings.save':'Mentés','settings.saved':'Mentve ✓',
       'bg.bronze':'Bronz','bg.silver':'Ezüst','bg.gold':'Arany','bg.legend':'Legendás',
     },
     de:{
@@ -219,6 +229,8 @@
       'profile.nick_prompt':'Dein Spitzname (erscheint unter deinem Namen und im Community-Chat, max. 30 Zeichen):',
       'profile.gender_f':'♀ Frau','profile.gender_m':'♂ Mann',
       'profile.membercard':'{tier} {word}',
+      'settings.title':'⚙️ Profileinstellungen','settings.nickname':'Spitzname','settings.gender':'Geschlecht',
+      'settings.nick_ph':'z. B. ZumbaKönigin','settings.save':'Speichern','settings.saved':'Gespeichert ✓',
       'bg.bronze':'Bronze','bg.silver':'Silber','bg.gold':'Gold','bg.legend':'Legendär',
     },
   };

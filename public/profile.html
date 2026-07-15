@@ -51,6 +51,18 @@
   .gender-switch{display:inline-flex;gap:0;margin-top:10px;border:1px solid var(--border);border-radius:20px;overflow:hidden}
   .gseg{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;font-weight:700;padding:6px 14px;font-family:'Manrope';transition:.15s}
   .gseg.on{background:linear-gradient(102deg,#B98F3E,#F7E7B8 45%,#E7C878 65%,#B98F3E);color:#231A08}
+  .settings{background:var(--card);border:1px solid var(--border);border-radius:14px;margin-top:16px;overflow:hidden}
+  .settings summary{list-style:none;cursor:pointer;padding:14px 16px;font-weight:700;color:var(--gold);display:flex;justify-content:space-between;align-items:center}
+  .settings summary::-webkit-details-marker{display:none}
+  .settings summary .chev{color:var(--muted);transition:.2s}
+  .settings[open] summary .chev{transform:rotate(180deg)}
+  .settings-body{padding:4px 16px 18px;display:flex;flex-direction:column;gap:16px}
+  .set-row{display:flex;flex-direction:column;gap:7px}
+  .set-label{font-size:.76rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+  .set-nick{display:flex;gap:8px}
+  .set-nick input{flex:1;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:10px 12px;font-family:'Manrope';font-size:.9rem}
+  .set-nick input:focus{outline:none;border-color:var(--gold)}
+  .set-nick button{background:linear-gradient(102deg,#B98F3E,#F7E7B8 45%,#E7C878 65%,#B98F3E);color:#231A08;border:none;border-radius:10px;padding:0 16px;font-weight:800;cursor:pointer;font-family:'Manrope';white-space:nowrap}
   .pname.glow{text-shadow:0 0 18px rgba(201,162,76,.65),0 0 4px rgba(201,162,76,.9)}
   .ptags{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px}
   .joined-date{margin-top:10px;font-size:.78rem;color:var(--muted)}
@@ -157,11 +169,6 @@ function render(){
       ${P.name_badge?`<div class="name-badge">${P.name_badge.emoji} ${esc(P.name_badge.title)}</div>`:''}
       <div class="pname ${flex}">${P.name_badge?P.name_badge.emoji+' ':''}${esc(P.name)}</div>
       ${P.nickname?`<div class="pnick">„${esc(P.nickname)}"</div>`:''}
-      ${P.is_self?`<button class="nick-edit" onclick="editNick()"><i class="bi bi-pencil"></i> ${T(P.nickname?'profile.nick_edit':'profile.nick_add')}</button>`:''}
-      ${P.is_self?`<div class="gender-switch">
-        <button class="gseg ${!isM?'on':''}" onclick="setGender('female')">${T('profile.gender_f')}</button>
-        <button class="gseg ${isM?'on':''}" onclick="setGender('male')">${T('profile.gender_m')}</button>
-      </div>`:''}
       <div class="ptags">
         <span class="tag">${P.member_badge?.emoji||'🌱'} ${esc(P.member_badge?.label||'Nováčik')}</span>
         <span class="tag">🏅 ${esc(P.loyalty_label)}</span>
@@ -173,6 +180,25 @@ function render(){
         : `<button id="likeBtn" class="like-btn ${P.liked_by_me?'liked':''}" onclick="toggleLike()"><i class="bi ${P.liked_by_me?'bi-heart-fill':'bi-heart'}"></i> <span id="likeCount">${P.likes||0}</span></button>`}</div>
     </div>
     ${P.is_self && P.next_bg ? `<div class="bg-hint">${T('profile.bg_hint',{tier:'<b style="color:var(--gold)">'+(bgNames[P.next_bg.tier]||'')+'</b>',need:P.next_bg.need,have:P.earned_count})}</div>` : ''}
+    ${P.is_self ? `<details class="settings">
+      <summary>${T('settings.title')} <i class="bi bi-chevron-down chev"></i></summary>
+      <div class="settings-body">
+        <div class="set-row">
+          <span class="set-label">${T('settings.nickname')}</span>
+          <div class="set-nick">
+            <input id="nickInput" maxlength="30" value="${esc(P.nickname||'')}" placeholder="${T('settings.nick_ph')}">
+            <button onclick="saveNick()">${T('settings.save')}</button>
+          </div>
+        </div>
+        <div class="set-row">
+          <span class="set-label">${T('settings.gender')}</span>
+          <div class="gender-switch">
+            <button class="gseg ${!isM?'on':''}" onclick="setGender('female')">${T('profile.gender_f')}</button>
+            <button class="gseg ${isM?'on':''}" onclick="setGender('male')">${T('profile.gender_m')}</button>
+          </div>
+        </div>
+      </div>
+    </details>` : ''}
     ${P.anonymous && !P.is_self ? `<div class="anon-note">${T('profile.anon')}</div>` : `
     <div class="stats">
       <div class="stat"><div class="n">${P.visits}</div><div class="l">${T('profile.stat_visits')}</div></div>
@@ -241,13 +267,15 @@ async function delComment(cid){
   if(r.ok) loadComments();
 }
 async function post(url,body){ const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)}); return r.json(); }
-async function editNick(){
-  const cur=P.nickname||'';
-  const val=prompt(T('profile.nick_prompt'),cur);
-  if(val===null) return;
-  const nickname=val.trim().slice(0,30);
+async function saveNick(){
+  const inp=document.getElementById('nickInput'); if(!inp) return;
+  const nickname=(inp.value||'').trim().slice(0,30);
+  const btn=inp.nextElementSibling;
   const r=await fetch('/api/profile',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({nickname})});
-  if(r.ok){ P.nickname=nickname; render(); }
+  if(r.ok){ P.nickname=nickname;
+    if(btn){ const o=btn.textContent; btn.textContent=T('settings.saved'); setTimeout(()=>{ render(); const d=document.querySelector('.settings'); if(d) d.open=true; },900); }
+    else render();
+  }
 }
 async function setGender(g){
   if(P.gender===g) return;
