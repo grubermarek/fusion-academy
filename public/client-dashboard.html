@@ -872,6 +872,7 @@ function notifDest(n){
     case 'profile_like': case 'profile_comment': return my?('/u/'+my):null;
     case 'achievement': return my?('/u/'+my):null;
     case 'commission': case 'referral_credit': case 'structure_growth': return '/client-dashboard#struktura';
+    case 'support': return n.ticket_id ? ('/support?t='+n.ticket_id) : '/support';
     case 'new_lead': return '/admin';
     case 'expiry_warning': case 'credit': case 'role_change': return '/pricing';
     default: return null;

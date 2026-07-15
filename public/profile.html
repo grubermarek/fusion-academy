@@ -238,7 +238,8 @@ const SW_BG={
   galaxy:'radial-gradient(circle at 40% 30%,#785aff,#e9458c 70%,#0a0812)',
   cosmos:'radial-gradient(circle at 40% 30%,#ff78c8,#7864ff 60%,#08060f)',
   nova:'radial-gradient(circle at 50% 20%,#ffb450,#e94560 50%,#5a5aff 90%)',
-  infinity:'radial-gradient(circle at 50% 15%,#f7e7b8,#785aff 45%,#e9458c 75%,#050409)'
+  infinity:'radial-gradient(circle at 50% 15%,#f7e7b8,#785aff 45%,#e9458c 75%,#050409)',
+  founder:'radial-gradient(circle at 50% 12%,#F7E7B8,#C9A24C 45%,#8a6a1e 75%,#0d0b06)'
 };
 function applyProfileBg(tier){
   document.body.className=document.body.className.replace(/\bpbg-\w+/g,'').trim();
@@ -257,15 +258,24 @@ function bgGalleryHtml(){
   return `<details class="bgg">
     <summary><span>🎨 Pozadia profilu <span style="color:var(--muted);font-weight:400;font-size:.8rem">· za privedených ľudí</span></span><i class="bi bi-chevron-down chev"></i></summary>
     <div class="bgg-body">
-      <div class="bgg-hint">Pozadie celého profilu je odmena za ľudí, ktorých privedieš do svojej štruktúry. Čím viac ľudí, tým krajšie pozadie. Máš <b style="color:var(--gold)">${total}</b> ${total===1?'človeka':'ľudí'}. Klikni na náhľad — odomknuté si vyskúšaš, pri zamknutom uvidíš, koľko ešte treba. 💛</div>
+      <div class="bgg-hint">${P.can_custom_bg&&P.is_self
+        ? 'Ako admin/zakladateľ máš odomknuté <b style="color:var(--gold)">všetky pozadia</b> vrátane exkluzívneho 👑 Zakladateľ. Klikni na ktorékoľvek a hneď sa nastaví ako tvoje.'
+        : `Pozadie celého profilu je odmena za ľudí, ktorých privedieš do svojej štruktúry. Čím viac ľudí, tým krajšie pozadie. Máš <b style="color:var(--gold)">${total}</b> ${total===1?'človeka':'ľudí'}. Klikni na náhľad — odomknuté si vyskúšaš, pri zamknutom uvidíš, koľko ešte treba. 💛`}</div>
       <div class="bgg-grid">${cells}</div>
     </div>
   </details>
   <div class="bgg-preview-bar" id="bgPrevBar"><span id="bgPrevTxt"></span><button onclick="endPreview()">Späť</button></div>`;
 }
 function clickBg(key,unlocked,need,name){
+  if(P.can_custom_bg && P.is_self){ setCustomBg(key,name); return; } // admin/zakladateľ nastaví natrvalo
   if(unlocked){ applyProfileBg(key); showPreviewBar('Náhľad: '+name+(key===P.bg_tier?' (tvoje aktuálne)':' — takto by to vyzeralo')); }
   else { applyProfileBg(key); showPreviewBar('🔒 „'+name+'" odomkneš, keď privedieš '+need+' ľudí do štruktúry.'); }
+}
+async function setCustomBg(key,name){
+  applyProfileBg(key);
+  const ok=await putProfile({custom_bg:key});
+  if(ok){ P.bg_tier=key; P.custom_bg=key; showPreviewBar('✓ Nastavené ako tvoje pozadie: '+name); redraw(true); }
+  else applyProfileBg(P.bg_tier);
 }
 function showPreviewBar(txt){ const b=document.getElementById('bgPrevBar'); if(b){ document.getElementById('bgPrevTxt').textContent=txt; b.classList.add('on'); } }
 function endPreview(){ applyProfileBg(P.bg_tier); const b=document.getElementById('bgPrevBar'); if(b) b.classList.remove('on'); }

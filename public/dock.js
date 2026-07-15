@@ -14,6 +14,7 @@ const ICON = {
   users:'<circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c0-3.6 3-6 6.5-6s6.5 2.4 6.5 6"/><path d="M17 5.2a3.2 3.2 0 0 1 0 5.9M22 20c0-2.6-1.4-4.6-3.6-5.5"/>',
   user:'<circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c0-3.9 3.3-6.5 7.5-6.5s7.5 2.6 7.5 6.5"/>',
   swap:'<path d="M7 4 3 8l4 4"/><path d="M3 8h13a4 4 0 0 1 4 4"/><path d="M17 20l4-4-4-4"/><path d="M21 16H8a4 4 0 0 1-4-4"/>',
+  help:'<path d="M4 12a8 8 0 0 1 16 0v5a2 2 0 0 1-2 2h-1v-6h3"/><path d="M4 12v5a2 2 0 0 0 2 2h1v-6H4"/>',
 };
 function svg(name){
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" width="24" height="24">${ICON[name]}</svg>`;
@@ -24,6 +25,7 @@ const items = [
   { key:'book',  label:'Rezervovať', icon:'calendar', href:'/client-dashboard#bookSection', match:['#book'] },
   { key:'comm',  label:'Komunita',   icon:'users',    href:'/community', match:['/community'] },
   { key:'prof',  label:'Profil',     icon:'user',     href:'/u/', match:['/u/'] },
+  { key:'help',  label:'Podpora',    icon:'help',     href:'/support', match:['/support'] },
 ];
 
 const css = `
@@ -64,6 +66,7 @@ function currentKey(){
   const p = location.pathname;
   if (p.startsWith('/u/')) return 'prof';
   if (p.startsWith('/community')) return 'comm';
+  if (p.startsWith('/support')) return 'help';
   if (p.startsWith('/client-dashboard')||p.startsWith('/dashboard')) return 'home';
   return '';
 }
@@ -95,6 +98,19 @@ async function build(){
   dock.innerHTML = navHtml + switchHtml;
   document.body.appendChild(dock);
   document.body.classList.add('fa-has-dock');
+
+  // Badge otvorených support ticketov pre staff
+  const isStaff = me.is_admin || me.user_type==='trainer' || me.user_type==='manager';
+  if (isStaff){
+    fetch('/api/admin/support/tickets?status=open',{credentials:'include'}).then(r=>r.json()).then(d=>{
+      const n = d && d.open_count || 0;
+      if(!n) return;
+      const help = [...dock.querySelectorAll('a')].find(a=>(a.getAttribute('href')||'')==='/support');
+      if(help){ const b=document.createElement('span'); b.textContent=n>9?'9+':n;
+        b.style.cssText='position:absolute;top:4px;right:8px;background:#e0577b;color:#fff;font-size:.58rem;font-weight:800;min-width:15px;height:15px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px';
+        help.appendChild(b); }
+    }).catch(()=>{});
+  }
 
   if (showSwitch){
     const menu = document.createElement('div'); menu.id='fa-role-menu';

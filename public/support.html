@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Podpora – Fusion Academy</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--gold:#C9A24C;--cream:#EAE3D5;--muted:#8a8272;--bg:#141210;--card:#1b1916;--border:#2e2a20}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Manrope',system-ui,sans-serif;background:var(--bg);color:var(--cream);min-height:100vh;padding:20px 14px 60px}
+  .wrap{max-width:760px;margin:0 auto}
+  .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;gap:10px}
+  h1{font-size:1.4rem;font-weight:800}
+  .sub{color:var(--muted);font-size:.85rem}
+  .btn{background:linear-gradient(102deg,#B98F3E,#F7E7B8 45%,#E7C878 65%,#B98F3E);color:#231A08;border:none;border-radius:12px;padding:10px 16px;font-weight:800;cursor:pointer;font-family:'Manrope';font-size:.9rem;text-decoration:none;display:inline-flex;align-items:center;gap:7px}
+  .btn.sec{background:#241f17;border:1px solid var(--border);color:var(--cream)}
+  .btn.danger{background:#3a1a1a;border:1px solid #8b3232;color:#ef9a9a}
+  .btn.green{background:#1e2a1e;border:1px solid #35502f;color:#9fd894}
+  .filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+  .chip{background:#1a1a1a;border:1px solid var(--border);color:var(--muted);border-radius:20px;padding:6px 14px;font-size:.8rem;cursor:pointer;font-weight:600}
+  .chip.on{background:rgba(201,162,76,.16);border-color:var(--gold);color:var(--gold)}
+  .ticket{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:10px;cursor:pointer;transition:.15s}
+  .ticket:hover{border-color:var(--gold)}
+  .ticket-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .ticket-subj{font-weight:700;font-size:.95rem}
+  .ticket-meta{font-size:.75rem;color:var(--muted);margin-top:4px}
+  .st{font-size:.68rem;font-weight:800;padding:3px 10px;border-radius:20px;white-space:nowrap}
+  .st-open{background:#2a1a10;border:1px solid #5a3520;color:#ff9800}
+  .st-progress{background:#10202a;border:1px solid #2a5a8a;color:#60a5fa}
+  .st-closed{background:#1e2a1e;border:1px solid #35502f;color:#81c784}
+  .empty{color:var(--muted);text-align:center;padding:26px;font-size:.9rem}
+  /* Thread */
+  .thread-head{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:12px}
+  .thread-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .msgs{display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
+  .msg{max-width:82%;padding:10px 13px;border-radius:14px;font-size:.9rem;line-height:1.4;word-wrap:break-word}
+  .msg.mine{align-self:flex-end;background:linear-gradient(135deg,#B98F3E,#E7C878);color:#231A08;border-bottom-right-radius:4px}
+  .msg.theirs{align-self:flex-start;background:#211d16;border:1px solid var(--border);border-bottom-left-radius:4px}
+  .msg.system{align-self:center;background:none;border:none;color:var(--muted);font-size:.78rem;font-style:italic;text-align:center}
+  .msg .who{font-size:.68rem;opacity:.7;font-weight:700;margin-bottom:2px}
+  .msg .tm{font-size:.62rem;opacity:.6;margin-top:3px}
+  .composer{display:flex;gap:8px;position:sticky;bottom:0;background:var(--bg);padding:8px 0}
+  .composer textarea{flex:1;background:var(--card);border:1px solid var(--border);color:var(--cream);border-radius:12px;padding:11px 13px;font-family:'Manrope';font-size:.9rem;resize:none;min-height:44px;max-height:120px}
+  .composer textarea:focus{outline:none;border-color:var(--gold)}
+  .composer button{background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;border:none;border-radius:50%;width:44px;height:44px;cursor:pointer;flex-shrink:0}
+  /* New ticket form */
+  .form label{display:block;font-size:.78rem;color:var(--muted);font-weight:700;margin:12px 0 5px}
+  .form input,.form select,.form textarea{width:100%;background:var(--card);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:11px 13px;font-family:'Manrope';font-size:.9rem}
+  .form textarea{min-height:120px;resize:vertical}
+  .form input:focus,.form select:focus,.form textarea:focus{outline:none;border-color:var(--gold)}
+  a.back{color:var(--muted);text-decoration:none;font-size:.85rem;display:inline-flex;align-items:center;gap:5px}
+  a.back:hover{color:var(--gold)}
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap"><div class="empty">Načítavam…</div></div>
+<script>
+const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+let ME=null, STAFF=false, _filter='open';
+const CATS={problem:'⚠️ Problém',question:'❓ Otázka',bug:'🐞 Chyba v appke',billing:'💳 Platby/faktúry',other:'📋 Iné'};
+const q=(u,o)=>fetch(u,Object.assign({credentials:'include'},o)).then(r=>r.json());
+function stBadge(s){ return s==='closed'?'<span class="st st-closed">Uzavretý</span>':s==='in_progress'?'<span class="st st-progress">V riešení</span>':'<span class="st st-open">Otvorený</span>'; }
+function fmt(iso){ return iso?new Date(iso).toLocaleString('sk-SK',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):''; }
+
+async function init(){
+  const me=await q('/api/me'); if(!me||!me.id){ location.href='/?next=/support'; return; }
+  ME=me; STAFF=!!(me.is_admin||me.user_type==='trainer'||me.user_type==='manager');
+  const t=new URLSearchParams(location.search).get('t');
+  if(t) return openThread(t);
+  STAFF?renderStaffList():renderClientList();
+}
+
+/* ─── CLIENT ─── */
+async function renderClientList(){
+  const d=await q('/api/support/my-tickets'); const list=d.tickets||[];
+  document.getElementById('wrap').innerHTML=`
+    <div class="top"><div><h1>🎫 Podpora</h1><div class="sub">Máš problém alebo otázku? Napíš nám — pomôžeme ti. 💛</div></div>
+      <a class="back" href="/client-dashboard"><i class="bi bi-arrow-left"></i> Späť</a></div>
+    <button class="btn" onclick="newTicketForm()" style="margin-bottom:16px"><i class="bi bi-plus-lg"></i> Nový ticket</button>
+    ${list.length?list.map(ticketCard).join(''):'<div class="empty">Zatiaľ žiadne tickety. Ak niečo potrebuješ, otvor nový. 💛</div>'}`;
+}
+function ticketCard(t){ return `<div class="ticket" onclick="openThread('${t.id}')">
+  <div class="ticket-head"><span class="ticket-subj">${esc(t.subject)}</span>${stBadge(t.status)}</div>
+  <div class="ticket-meta">${CATS[t.category]||''} · ${fmt(t.updated_at)}${STAFF?` · 👤 ${esc(t.user_name)}`:''}${t.assigned_name?` · rieši ${esc(t.assigned_name)}`:''}</div>
+</div>`; }
+function newTicketForm(){
+  document.getElementById('wrap').innerHTML=`
+    <div class="top"><h1>Nový ticket</h1><a class="back" href="#" onclick="init();return false"><i class="bi bi-arrow-left"></i> Späť</a></div>
+    <div class="form">
+      <label>Čoho sa to týka?</label>
+      <select id="tCat">${Object.entries(CATS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>
+      <label>Predmet *</label>
+      <input id="tSubj" maxlength="120" placeholder="Krátko o čom to je">
+      <label>Popíš svoj problém čo najpodrobnejšie *</label>
+      <textarea id="tDesc" maxlength="3000" placeholder="Čo sa stalo, kedy, čo si robil/a, čo očakávaš…"></textarea>
+      <button class="btn" style="margin-top:14px;width:100%" onclick="submitTicket()"><i class="bi bi-send"></i> Odoslať ticket</button>
+    </div>`;
+}
+async function submitTicket(){
+  const subject=document.getElementById('tSubj').value.trim();
+  const description=document.getElementById('tDesc').value.trim();
+  const category=document.getElementById('tCat').value;
+  if(!subject||!description){ alert('Vyplň predmet aj popis problému.'); return; }
+  const r=await q('/api/support/tickets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subject,description,category})});
+  if(r.ok){ openThread(r.ticket.id); } else alert(r.error||'Chyba');
+}
+
+/* ─── STAFF ─── */
+async function renderStaffList(){
+  const d=await q('/api/admin/support/tickets?status='+_filter); const list=d.tickets||[];
+  const fs=[['open','Aktívne'],['in_progress','V riešení'],['closed','Uzavreté'],['all','Všetky']];
+  document.getElementById('wrap').innerHTML=`
+    <div class="top"><div><h1>🎫 Support – tickety</h1><div class="sub">${d.open_count||0} aktívnych requestov</div></div>
+      <a class="back" href="/client-dashboard"><i class="bi bi-arrow-left"></i> Späť</a></div>
+    <div class="filters">${fs.map(([k,l])=>`<span class="chip ${_filter===k?'on':''}" onclick="setFilter('${k}')">${l}</span>`).join('')}</div>
+    ${list.length?list.map(ticketCard).join(''):'<div class="empty">Žiadne tickety v tejto kategórii.</div>'}`;
+}
+function setFilter(f){ _filter=f; renderStaffList(); }
+
+/* ─── THREAD ─── */
+async function openThread(id){
+  history.replaceState(null,'','/support?t='+id);
+  const d=await q('/api/support/tickets/'+id);
+  if(d.error){ document.getElementById('wrap').innerHTML='<div class="empty">'+d.error+'</div>'; return; }
+  const t=d.ticket; const staff=d.is_staff; const closed=t.status==='closed';
+  const canCall = staff && t.user_phone;
+  const actions=[];
+  if(staff && t.status==='open') actions.push(`<button class="btn green" onclick="claim('${t.id}')"><i class="bi bi-hand-index"></i> Prevziať ticket</button>`);
+  if(canCall) actions.push(`<a class="btn sec" href="tel:${esc(t.user_phone)}"><i class="bi bi-telephone-fill"></i> Zavolať</a>`);
+  if(!closed) actions.push(`<button class="btn danger" onclick="closeTicket('${t.id}')"><i class="bi bi-check2-circle"></i> Zavrieť ticket</button>`);
+  document.getElementById('wrap').innerHTML=`
+    <div class="top"><a class="back" href="#" onclick="init();return false"><i class="bi bi-arrow-left"></i> Všetky tickety</a>${stBadge(t.status)}</div>
+    <div class="thread-head">
+      <div style="font-weight:800;font-size:1.05rem">${esc(t.subject)}</div>
+      <div class="ticket-meta">${CATS[t.category]||''} · ${staff?`👤 ${esc(t.user_name)}${t.user_phone?' · 📞 '+esc(t.user_phone):''}`:'Tvoj ticket'} · ${fmt(t.created_at)}${t.assigned_name?` · rieši ${esc(t.assigned_name)}`:''}</div>
+      ${actions.length?`<div class="thread-actions">${actions.join('')}</div>`:''}
+    </div>
+    <div class="msgs" id="msgs">${d.messages.map(m=>msgHtml(m)).join('')}</div>
+    ${closed?'<div class="empty">Ticket je uzavretý. Ak potrebuješ, otvor nový.</div>':`<div class="composer"><textarea id="msgInput" rows="1" placeholder="Napíš správu…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg('${t.id}')}"></textarea><button onclick="sendMsg('${t.id}')"><i class="bi bi-send-fill"></i></button></div>`}`;
+  const box=document.getElementById('msgs'); if(box) box.scrollIntoView(false);
+  window.scrollTo(0,document.body.scrollHeight);
+}
+function msgHtml(m){
+  if(m.system) return `<div class="msg system">${esc(m.text)}</div>`;
+  const mine=m.from_id===ME.id;
+  return `<div class="msg ${mine?'mine':'theirs'}">${!mine?`<div class="who">${esc(m.from_name)}${m.is_staff?' · tím':''}</div>`:''}${esc(m.text).replace(/\n/g,'<br>')}<div class="tm">${fmt(m.created_at)}</div></div>`;
+}
+async function sendMsg(id){
+  const inp=document.getElementById('msgInput'); const text=inp.value.trim(); if(!text) return;
+  inp.value='';
+  const r=await q('/api/support/tickets/'+id+'/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+  if(r.ok) openThread(id); else alert(r.error||'Chyba');
+}
+async function claim(id){ const r=await q('/api/support/tickets/'+id+'/claim',{method:'POST'}); if(r.ok) openThread(id); else alert(r.error||'Chyba'); }
+async function closeTicket(id){ if(!confirm('Označiť ticket ako vyriešený a zavrieť?')) return; const r=await q('/api/support/tickets/'+id+'/close',{method:'POST'}); if(r.ok) openThread(id); else alert(r.error||'Chyba'); }
+
+init();
+</script>
+<script src="/dock.js"></script>
+</body>
+</html>

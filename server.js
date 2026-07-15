@@ -111,6 +111,8 @@ const db = {
   friends:      new Datastore({ filename: path.join(DATA_DIR, 'friends.db'),      autoload: true }),
   profile_likes:new Datastore({ filename: path.join(DATA_DIR, 'profile_likes.db'),autoload: true }),
   profile_comments:new Datastore({ filename: path.join(DATA_DIR, 'profile_comments.db'),autoload: true }),
+  tickets:      new Datastore({ filename: path.join(DATA_DIR, 'tickets.db'),      autoload: true }),
+  ticket_msgs:  new Datastore({ filename: path.join(DATA_DIR, 'ticket_msgs.db'),  autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -1351,8 +1353,9 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     const badge=getMemberBadge(u.created_at);
     const loyalty=getLoyaltyStatus(u.visit_count||0);
     // Pozadie celého profilu = odmena za počet privedených ľudí do štruktúry (1→10000).
-    // Zakladateľ má úplne unikátne pozadie.
-    const bgTier = u.is_founder ? 'founder' : refBgTier(refCount);
+    // Admin/zakladateľ si môže nastaviť vlastné (custom_bg), inak zakladateľ = founder.
+    const canCustomBg = !!(u.is_admin || u.is_founder);
+    const bgTier = (canCustomBg && u.custom_bg) ? u.custom_bg : (u.is_founder ? 'founder' : refBgTier(refCount));
     const nextBg = u.is_founder ? null : nextBgTier(refCount);
     const nameBadge=referralBadge(refCount, gender);
     // Membership-level glow — visible to everyone on the public profile
@@ -1384,7 +1387,9 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
       months_member: memberMonths, joined: (u.created_at||'').slice(0,10),
       achievements: ach, earned_count: earned.length, total_count: ach.length,
       bg_tier: bgTier, next_bg: nextBg, name_badge: nameBadge,
-      bg_tiers: PROFILE_BG_TIERS.map(t=>({need:t.need,key:t.key,name:t.name,unlocked: refCount>=t.need, current: t.key===bgTier})),
+      can_custom_bg: canCustomBg, custom_bg: u.custom_bg||'',
+      bg_tiers: (canCustomBg ? [...PROFILE_BG_TIERS, {need:0,key:'founder',name:'👑 Zakladateľ'}] : PROFILE_BG_TIERS)
+        .map(t=>({need:t.need,key:t.key,name:t.name,unlocked: canCustomBg?true:(refCount>=t.need), current: t.key===bgTier})),
       friend_state: isSelf ? 'self' : await friendState(me, u._id)
     });
   } catch(e){ res.status(500).json({error:e.message}); }
@@ -1676,6 +1681,15 @@ app.put('/api/profile', auth, async(req,res)=>{
   if(req.body.gender!==undefined) set.gender = req.body.gender==='male' ? 'male' : 'female';
   if(req.body.lang!==undefined){ const L=String(req.body.lang||'').slice(0,2).toLowerCase(); if(['sk','cs','en','uk','hu','de'].includes(L)) set.lang = L; }
   if(req.body.status!==undefined) set.status = String(req.body.status||'').trim().slice(0,120);
+  // Admin/zakladateľ si môže nastaviť ľubovoľné pozadie profilu
+  if(req.body.custom_bg!==undefined){
+    const meU=await q.one(db.users,{_id:req.session.uid});
+    if(meU && (meU.is_admin || meU.is_founder)){
+      const bg=String(req.body.custom_bg||'');
+      const valid = bg==='' || bg==='founder' || PROFILE_BG_TIERS.some(t=>t.key===bg);
+      if(valid) set.custom_bg = bg;
+    }
+  }
   if(Object.keys(set).length) await q.update(db.users,{_id:req.session.uid},{$set:set});
   res.json({ok:true});
 });
@@ -5373,6 +5387,117 @@ app.post('/api/report', auth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// SUPPORT TICKETY — klient opíše problém, admin/tréner prevezme, rieši, zavrie
+// ═══════════════════════════════════════════════════════════════════════════════
+const isStaff = u => !!(u && (u.is_admin || u.user_type==='trainer' || u.user_type==='manager'));
+function ticketView(t){ return { id:t._id, subject:t.subject, category:t.category, status:t.status,
+  user_id:t.user_id, user_name:t.user_name, user_phone:t.user_phone||'', assigned_to:t.assigned_to||null,
+  assigned_name:t.assigned_name||null, created_at:t.created_at, updated_at:t.updated_at, closed_at:t.closed_at||null }; }
+
+// Klient vytvorí ticket (opíše problém)
+app.post('/api/support/tickets', auth, async(req,res)=>{
+  try {
+    const u=await q.one(db.users,{_id:req.session.uid});
+    const subject=String(req.body.subject||'').trim().slice(0,120);
+    const description=String(req.body.description||'').trim().slice(0,3000);
+    const category=['problem','question','bug','billing','other'].includes(req.body.category)?req.body.category:'question';
+    if(!subject||!description) return res.status(400).json({error:'Vyplň predmet aj popis problému'});
+    const t=await q.insert(db.tickets,{ user_id:u._id, user_name:u.name, user_phone:u.phone||'',
+      subject, category, status:'open', assigned_to:null, assigned_name:null,
+      created_at:nowISO(), updated_at:nowISO() });
+    await q.insert(db.ticket_msgs,{ ticket_id:t._id, from_id:u._id, from_name:u.name, is_staff:false, text:description, created_at:nowISO() });
+    // Upozorni všetkých adminov
+    const admins=await q.find(db.users,{is_admin:true});
+    for(const a of admins) await q.insert(db.notifications,{user_id:a._id, type:'support', ticket_id:t._id,
+      title:`🎫 Nový support ticket – ${u.name}`, body:subject, read:false, created_at:nowISO()});
+    res.json({ ok:true, ticket:ticketView(t) });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Moje tickety (klient)
+app.get('/api/support/my-tickets', auth, async(req,res)=>{
+  const list=await q.find(db.tickets,{user_id:req.session.uid});
+  list.sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||''));
+  res.json({ tickets:list.map(ticketView) });
+});
+
+// Detail ticketu + správy (vlastník alebo staff)
+app.get('/api/support/tickets/:id', auth, async(req,res)=>{
+  try {
+    const u=await q.one(db.users,{_id:req.session.uid});
+    const t=await q.one(db.tickets,{_id:req.params.id});
+    if(!t) return res.status(404).json({error:'Ticket nenájdený'});
+    if(t.user_id!==u._id && !isStaff(u)) return res.status(403).json({error:'Nemáš prístup'});
+    const msgs=(await q.find(db.ticket_msgs,{ticket_id:t._id})).sort((a,b)=>(a.created_at||'').localeCompare(b.created_at||''));
+    res.json({ ticket:ticketView(t), is_staff:isStaff(u), me:u._id,
+      messages:msgs.map(m=>({ id:m._id, from_id:m.from_id, from_name:m.from_name, is_staff:!!m.is_staff, text:m.text, created_at:m.created_at })) });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Pridať správu do ticketu (obojsmerná komunikácia)
+app.post('/api/support/tickets/:id/messages', auth, async(req,res)=>{
+  try {
+    const u=await q.one(db.users,{_id:req.session.uid});
+    const t=await q.one(db.tickets,{_id:req.params.id});
+    if(!t) return res.status(404).json({error:'Ticket nenájdený'});
+    const staff=isStaff(u);
+    if(t.user_id!==u._id && !staff) return res.status(403).json({error:'Nemáš prístup'});
+    if(t.status==='closed') return res.status(400).json({error:'Ticket je uzavretý'});
+    const text=String(req.body.text||'').trim().slice(0,3000);
+    if(!text) return res.status(400).json({error:'Prázdna správa'});
+    await q.insert(db.ticket_msgs,{ ticket_id:t._id, from_id:u._id, from_name:u.name, is_staff:staff, text, created_at:nowISO() });
+    await q.update(db.tickets,{_id:t._id},{$set:{updated_at:nowISO()}});
+    // Notifikuj druhú stranu
+    const notifyId = staff ? t.user_id : (t.assigned_to||null);
+    if(notifyId) await q.insert(db.notifications,{user_id:notifyId, type:'support', ticket_id:t._id,
+      title:`💬 Odpoveď na ticket: ${t.subject}`, body:text.slice(0,80), read:false, created_at:nowISO()});
+    res.json({ ok:true });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Staff prevezme ticket
+app.post('/api/support/tickets/:id/claim', auth, async(req,res)=>{
+  try {
+    const u=await q.one(db.users,{_id:req.session.uid});
+    if(!isStaff(u)) return res.status(403).json({error:'Len pre admina/trénera'});
+    const t=await q.one(db.tickets,{_id:req.params.id});
+    if(!t) return res.status(404).json({error:'Ticket nenájdený'});
+    await q.update(db.tickets,{_id:t._id},{$set:{status:'in_progress', assigned_to:u._id, assigned_name:u.name, updated_at:nowISO()}});
+    await q.insert(db.ticket_msgs,{ ticket_id:t._id, from_id:u._id, from_name:u.name, is_staff:true, system:true, text:`${u.name} prevzal/a tvoj ticket a rieši ho. 💛`, created_at:nowISO() });
+    await q.insert(db.notifications,{user_id:t.user_id, type:'support', ticket_id:t._id, title:`🙋 Tvoj ticket rieši ${u.name}`, body:t.subject, read:false, created_at:nowISO()});
+    res.json({ ok:true });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Zavrieť ticket (staff alebo vlastník)
+app.post('/api/support/tickets/:id/close', auth, async(req,res)=>{
+  try {
+    const u=await q.one(db.users,{_id:req.session.uid});
+    const t=await q.one(db.tickets,{_id:req.params.id});
+    if(!t) return res.status(404).json({error:'Ticket nenájdený'});
+    if(t.user_id!==u._id && !isStaff(u)) return res.status(403).json({error:'Nemáš prístup'});
+    await q.update(db.tickets,{_id:t._id},{$set:{status:'closed', closed_at:nowISO(), updated_at:nowISO()}});
+    const other = (u._id===t.user_id) ? t.assigned_to : t.user_id;
+    if(other) await q.insert(db.notifications,{user_id:other, type:'support', ticket_id:t._id, title:`✅ Ticket uzavretý: ${t.subject}`, body:'Ticket bol označený ako vyriešený.', read:false, created_at:nowISO()});
+    res.json({ ok:true });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Staff: zoznam ticketov (+ počet otvorených)
+app.get('/api/admin/support/tickets', auth, async(req,res)=>{
+  try {
+    const u=await q.one(db.users,{_id:req.session.uid});
+    if(!isStaff(u)) return res.status(403).json({error:'Len pre admina/trénera'});
+    const status=req.query.status;
+    let list=await q.find(db.tickets,{});
+    if(status && status!=='all') list=list.filter(t=>status==='open'?(t.status!=='closed'):t.status===status);
+    list.sort((a,b)=>{ const order={open:0,in_progress:1,closed:2}; const d=(order[a.status]||0)-(order[b.status]||0); return d!==0?d:(b.updated_at||'').localeCompare(a.updated_at||''); });
+    const open=(await q.find(db.tickets,{})).filter(t=>t.status!=='closed').length;
+    res.json({ tickets:list.map(ticketView), open_count:open });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ─── Client notifications ─────────────────────────────────────────────────────
 app.get('/api/client/notifications', auth, async(req,res)=>{
   const notifs = await q.find(db.notifications,{user_id:req.session.uid},{created_at:-1});
@@ -5637,6 +5762,7 @@ app.get('/',           (req,res)=>res.sendFile(path.join(__dirname,'public','ind
 app.get('/shop',       (req,res)=>res.sendFile(path.join(__dirname,'public','shop.html')));
 app.get('/schedule',   (req,res)=>res.sendFile(path.join(__dirname,'public','schedule.html')));
 app.get('/community',  (req,res)=>res.sendFile(path.join(__dirname,'public','community.html')));
+app.get('/support',    (req,res)=>res.sendFile(path.join(__dirname,'public','support.html')));
 app.get('/cennik',     (req,res)=>res.redirect(301,'/pricing'));
 app.get('/pricing',    (req,res)=>res.sendFile(path.join(__dirname,'public','pricing.html')));
 app.get('/u/:id',      (req,res)=>res.sendFile(path.join(__dirname,'public','profile.html')));
