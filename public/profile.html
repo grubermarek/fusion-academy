@@ -61,6 +61,28 @@
   .prog>i{display:block;height:100%;background:var(--gold)}
   .empty{color:var(--muted);text-align:center;padding:20px;font-size:.9rem}
   .anon-note{background:#221d14;border:1px solid var(--border);border-radius:12px;padding:14px;color:var(--muted);font-size:.85rem;text-align:center;margin-top:16px}
+  .like-btn{display:inline-flex;align-items:center;gap:8px;margin-top:14px;background:#241f17;border:1px solid var(--border);color:var(--cream);border-radius:24px;padding:9px 20px;font-weight:700;font-size:.92rem;cursor:pointer;font-family:'Manrope';transition:.15s}
+  .like-btn:hover{border-color:#e0577b;color:#f2889f}
+  .like-btn.liked{background:linear-gradient(102deg,#7a2438,#b0324f);border-color:#e0577b;color:#ffd7e0}
+  .like-btn .bi{font-size:1.05rem}
+  .like-btn.pop{animation:likePop .35s ease}
+  @keyframes likePop{0%{transform:scale(1)}40%{transform:scale(1.18)}100%{transform:scale(1)}}
+  .cmt-form{display:flex;gap:8px;margin-bottom:16px}
+  .cmt-form textarea{flex:1;background:var(--card);border:1px solid var(--border);color:var(--cream);border-radius:12px;padding:11px 13px;font-family:'Manrope';font-size:.9rem;resize:vertical;min-height:44px}
+  .cmt-form textarea:focus{outline:none;border-color:var(--gold)}
+  .cmt-form button{align-self:flex-end;background:linear-gradient(102deg,#B98F3E,#F7E7B8 40%,#E7C878 60%,#B98F3E);color:#231A08;border:none;border-radius:12px;padding:11px 18px;font-weight:800;cursor:pointer;font-family:'Manrope'}
+  .cmt{display:flex;gap:12px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:13px 15px;margin-bottom:10px;position:relative}
+  .cmt-av{width:40px;height:40px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700;color:#1a1710;background:linear-gradient(135deg,var(--gold),#a07830);overflow:hidden;font-size:.9rem}
+  .cmt-av img{width:100%;height:100%;object-fit:cover}
+  .cmt-body{flex:1;min-width:0}
+  .cmt-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .cmt-name{font-weight:700;font-size:.86rem;color:var(--cream)}
+  .cmt-name a{color:var(--cream);text-decoration:none}
+  .cmt-name a:hover{color:var(--gold)}
+  .cmt-time{font-size:.7rem;color:var(--muted)}
+  .cmt-text{font-size:.9rem;color:#d8d2c4;margin-top:3px;word-wrap:break-word;white-space:pre-wrap}
+  .cmt-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.85rem;padding:0 2px}
+  .cmt-del:hover{color:#e0577b}
 </style>
 </head>
 <body>
@@ -109,12 +131,15 @@ function render(){
         <span class="tag">🏆 ${P.earned_count}/${P.total_count} odznakov</span>
       </div>
       ${P.joined?`<div class="joined-date">💛 Členka od ${new Date(P.joined).toLocaleDateString('sk-SK',{month:'long',year:'numeric'})}</div>`:''}
+      <div>${P.is_self
+        ? `<button class="like-btn" disabled style="opacity:.75;cursor:default"><i class="bi bi-heart-fill"></i> ${P.likes||0} lajkov</button>`
+        : `<button id="likeBtn" class="like-btn ${P.liked_by_me?'liked':''}" onclick="toggleLike()"><i class="bi ${P.liked_by_me?'bi-heart-fill':'bi-heart'}"></i> <span id="likeCount">${P.likes||0}</span></button>`}</div>
     </div>
     ${P.is_self && P.next_bg ? `<div class="bg-hint">🎨 Odomkni <b style="color:var(--gold)">${bgNames[P.next_bg.tier]||''} pozadie</b> pri ${P.next_bg.need} odznakoch (máš ${P.earned_count})</div>` : ''}
     ${P.anonymous && !P.is_self ? '<div class="anon-note">🔒 Tento člen má profil nastavený ako anonymný.</div>' : `
     <div class="stats">
       <div class="stat"><div class="n">${P.visits}</div><div class="l">Návštev</div></div>
-      <div class="stat"><div class="n">${P.referrals}</div><div class="l">Privedených</div></div>
+      <div class="stat"><div class="n">${P.referrals}</div><div class="l">V štruktúre</div></div>
       <div class="stat"><div class="n">${P.months_member}</div><div class="l">Mesiacov</div></div>
     </div>
     ${friendBtn()}
@@ -123,7 +148,59 @@ function render(){
     <div class="ach-grid">${earned.length?earned.map(achCard).join(''):'<div class="empty">Zatiaľ žiadne — poď na hodinu! 💃</div>'}</div>
     ${locked.length?`<div class="sec-title">🔒 Ešte odomknúť</div><div class="ach-grid">${locked.map(achCard).join('')}</div>`:''}
     `}
+    <div class="sec-title">💬 Odkazy na profile</div>
+    ${P.anonymous && !P.is_self ? '' : `<div class="cmt-form">
+      <textarea id="cmtText" maxlength="500" placeholder="${P.is_self?'Napíš niečo na svoj profil…':'Zanechaj milý odkaz…'}"></textarea>
+      <button onclick="sendComment()">Pridať</button>
+    </div>`}
+    <div id="cmtList"><div class="empty">Načítavam odkazy…</div></div>
   `;
+  loadComments();
+}
+async function loadComments(){
+  const box=document.getElementById('cmtList'); if(!box) return;
+  try{
+    const r=await fetch('/api/profile/'+encodeURIComponent(uid)+'/comments',{credentials:'include'});
+    const d=await r.json();
+    if(!d.comments||!d.comments.length){ box.innerHTML='<div class="empty">Zatiaľ žiadne odkazy. Buď prvá! 💛</div>'; return; }
+    box.innerHTML=d.comments.map(c=>{
+      const ini=(c.author_name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+      const av=c.author_avatar?`<img src="${c.author_avatar}" alt="">`:esc(ini);
+      const t=new Date(c.created_at).toLocaleDateString('sk-SK',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+      return `<div class="cmt">
+        <div class="cmt-av">${av}</div>
+        <div class="cmt-body">
+          <div class="cmt-head">
+            <span class="cmt-name"><a href="/u/${c.author_id}">${esc(c.author_name)}</a></span>
+            <span class="cmt-time">${t}${c.can_delete?` · <button class="cmt-del" onclick="delComment('${c.id}')" title="Zmazať"><i class="bi bi-trash"></i></button>`:''}</span>
+          </div>
+          <div class="cmt-text">${esc(c.text)}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }catch(e){ box.innerHTML='<div class="empty">Odkazy sa nepodarilo načítať.</div>'; }
+}
+async function toggleLike(){
+  const btn=document.getElementById('likeBtn');
+  const d=await post('/api/profile/'+encodeURIComponent(uid)+'/like',{});
+  if(d.error) return;
+  P.liked_by_me=d.liked; P.likes=d.likes;
+  document.getElementById('likeCount').textContent=d.likes;
+  btn.classList.toggle('liked',d.liked);
+  btn.querySelector('.bi').className='bi '+(d.liked?'bi-heart-fill':'bi-heart');
+  btn.classList.remove('pop'); void btn.offsetWidth; btn.classList.add('pop');
+}
+async function sendComment(){
+  const ta=document.getElementById('cmtText'); const text=(ta.value||'').trim();
+  if(!text) return;
+  const d=await post('/api/profile/'+encodeURIComponent(uid)+'/comments',{text});
+  if(d.error){ alert(d.error); return; }
+  ta.value=''; loadComments();
+}
+async function delComment(cid){
+  if(!confirm('Zmazať tento odkaz?')) return;
+  const r=await fetch('/api/profile/'+encodeURIComponent(uid)+'/comments/'+cid,{method:'DELETE',credentials:'include'});
+  if(r.ok) loadComments();
 }
 async function post(url,body){ const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)}); return r.json(); }
 async function addFriend(){ const d=await post('/api/friends/request',{to:uid}); if(d.ok){P.friend_state=d.state;render();} }

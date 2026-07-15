@@ -109,6 +109,8 @@ const db = {
   refunds:      new Datastore({ filename: path.join(DATA_DIR, 'refunds.db'),     autoload: true }),
   feed:         new Datastore({ filename: path.join(DATA_DIR, 'feed.db'),        autoload: true }),
   friends:      new Datastore({ filename: path.join(DATA_DIR, 'friends.db'),      autoload: true }),
+  profile_likes:new Datastore({ filename: path.join(DATA_DIR, 'profile_likes.db'),autoload: true }),
+  profile_comments:new Datastore({ filename: path.join(DATA_DIR, 'profile_comments.db'),autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -749,6 +751,15 @@ app.post('/api/register', async(req,res)=>{
         await q.update(db.users,{_id:sponsor_id},{$set:{referral_credit: newCredit}});
         await q.insert(db.notifications,{user_id:sponsor_id,type:'referral_credit',title:`+${REFERRAL_SIGNUP_CREDIT} € referral kredit! 🎉`,body:`${name} sa zaregistroval/a cez tvoj link. Zostatok: ${newCredit} €`,read:false,created_at:nowISO()});
       }
+      // Structure-growth notification for everyone higher up the chain (beyond the direct sponsor)
+      const ancestors = await getAllAncestors(sponsor_id); // sponsor's own upline
+      for(const aid of ancestors){
+        const total = await downlineCountOf(aid);
+        await q.insert(db.notifications,{user_id:aid, type:'structure_growth',
+          title:'📈 Tvoja štruktúra narástla!',
+          body:`${name} sa pridal/a do tvojej štruktúry. Spolu máš už ${total} ľudí pod sebou.`,
+          read:false, created_at:nowISO()}).catch(()=>{});
+      }
     }
     // Notify all admins about the new lead (in-app + email) so they can call/nurture
     if(utype==='lead'){
@@ -1080,8 +1091,14 @@ const ACHIEVEMENTS = [
   {id:'r20',  cat:'refs', need:20,  icon:'👑', name:'Srdce komunity',      desc:'20 privedených členov'},
   {id:'r30',  cat:'refs', need:30,  icon:'🌟', name:'Žiarivá hviezda',     desc:'30 privedených členov'},
   {id:'r50',  cat:'refs', need:50,  icon:'💎', name:'Klenot komunity',     desc:'50 privedených členov'},
-  {id:'r75',  cat:'refs', need:75,  icon:'🕊️', name:'Anjel komunity',      desc:'75 privedených členov'},
-  {id:'r100', cat:'refs', need:100, icon:'👸', name:'Kráľovná Fusion',     desc:'100 privedených členov'},
+  {id:'r75',  cat:'refs', need:75,  icon:'🕊️', name:'Anjel komunity',      desc:'75 ľudí v štruktúre'},
+  {id:'r100', cat:'refs', need:100, icon:'👸', name:'Kráľovná Fusion',     desc:'100 ľudí v štruktúre'},
+  {id:'r250', cat:'refs', need:250, icon:'🦋', name:'Motýľ premeny',       desc:'250 ľudí v štruktúre'},
+  {id:'r500', cat:'refs', need:500, icon:'🌟', name:'Superhviezda',        desc:'500 ľudí v štruktúre'},
+  {id:'r1000',cat:'refs', need:1000, icon:'💠', name:'Diamantová kráľovná', desc:'1000 ľudí v štruktúre'},
+  {id:'r2500',cat:'refs', need:2500, icon:'🏆', name:'Šampiónka sŕdc',      desc:'2500 ľudí v štruktúre'},
+  {id:'r5000',cat:'refs', need:5000, icon:'🌈', name:'Živel radosti',       desc:'5000 ľudí v štruktúre'},
+  {id:'r10000',cat:'refs',need:10000,icon:'🚀', name:'SKY IS THE LIMIT',    desc:'10 000+ ľudí v štruktúre'},
   // Vernosť — počíta sa len z mesiacov, v ktorých mala platné členstvo (až po 99 rokov)
   {id:'m3',    cat:'tenure', need:3,    icon:'📅', name:'Verná',           desc:'3 mesiace s členstvom'},
   {id:'m6',    cat:'tenure', need:6,    icon:'💛', name:'Srdcom Fusion',   desc:'6 mesiacov s členstvom'},
@@ -1103,8 +1120,28 @@ const ACHIEVEMENTS = [
 ];
 const MERCH_KEYWORDS={tielko:/tielk/i, tricko:/tri[čc]k/i, taska:/ta[šs]k/i, mikina:/mikin/i};
 async function referralCountOf(uid){ return q.count(db.users,{sponsor_id:uid,is_admin:{$ne:true}}); }
+// Total people anywhere in the downline (all lines) — drives referral rewards/achievements
+async function downlineCountOf(uid){ return (await getAllDescendants(uid)).length; }
+// Walk up the sponsor chain: everyone above `uid` whose structure just grew
+async function getAllAncestors(uid){
+  const out=[]; let curId=uid; const seen=new Set();
+  while(curId){
+    const cur=await q.one(db.users,{_id:curId});
+    if(!cur || !cur.sponsor_id || seen.has(cur.sponsor_id)) break;
+    seen.add(cur.sponsor_id);
+    out.push(cur.sponsor_id);
+    curId=cur.sponsor_id;
+  }
+  return out;
+}
 // Visual reward for bringing new people: an emoji title shown before the name
 const REFERRAL_BADGES = [
+  {need:10000,emoji:'🚀', title:'SKY IS THE LIMIT'},
+  {need:5000, emoji:'🌈', title:'Živel radosti'},
+  {need:2500, emoji:'🏆', title:'Šampiónka sŕdc'},
+  {need:1000, emoji:'💠', title:'Diamantová kráľovná'},
+  {need:500,  emoji:'🌟', title:'Superhviezda'},
+  {need:250,  emoji:'🦋', title:'Motýľ premeny'},
   {need:100, emoji:'👸', title:'Kráľovná Fusion'},
   {need:75,  emoji:'🕊️', title:'Anjel komunity'},
   {need:50,  emoji:'💎', title:'Klenot komunity'},
@@ -1188,7 +1225,8 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     if(!u) return res.status(404).json({error:'Profil nenájdený'});
     const me=req.session.uid;
     const isSelf = u._id===me;
-    const refCount=await referralCountOf(u._id);
+    const directRefs=await referralCountOf(u._id);
+    const refCount=await downlineCountOf(u._id); // whole structure drives rewards
     const memberMonths=await activeMembershipMonths(u._id);
     const ach=computeAchievements(u, refCount, memberMonths);
     const earned=ach.filter(a=>a.earned);
@@ -1202,17 +1240,99 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     const bgUnlocks=[{tier:'bronze',need:3},{tier:'silver',need:6},{tier:'gold',need:10},{tier:'legend',need:14}];
     const nextBg=bgUnlocks.find(b=>ec<b.need)||null;
     const nameBadge=referralBadge(refCount);
+    const likeCount=await q.count(db.profile_likes,{profile_id:u._id});
+    const likedByMe=isSelf?false:!!(await q.one(db.profile_likes,{profile_id:u._id,liker_id:me}));
     res.json({
       id:u._id, name: u.anonymous&&!isSelf ? 'Anonymný člen' : u.name,
+      likes: likeCount, liked_by_me: likedByMe,
       anonymous: !!u.anonymous, is_self:isSelf,
       avatar: u.anonymous&&!isSelf ? null : (u.avatar||null),
       member_badge:badge, loyalty_label: loyalty.current?.label||'Nováčik',
-      visits: u.visit_count||0, referrals: refCount,
+      visits: u.visit_count||0, referrals: refCount, direct_refs: directRefs,
       months_member: memberMonths, joined: (u.created_at||'').slice(0,10),
       achievements: ach, earned_count: earned.length, total_count: ach.length,
       bg_tier: bgTier, next_bg: nextBg, name_badge: nameBadge,
       friend_state: isSelf ? 'self' : await friendState(me, u._id)
     });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Like / unlike a profile (toggle) — works for any member, trainer or admin
+app.post('/api/profile/:id/like', auth, async(req,res)=>{
+  try {
+    const target=await q.one(db.users,{_id:req.params.id});
+    if(!target) return res.status(404).json({error:'Profil nenájdený'});
+    const me=req.session.uid;
+    if(target._id===me) return res.status(400).json({error:'Vlastný profil nemôžeš lajknúť'});
+    const existing=await q.one(db.profile_likes,{profile_id:target._id,liker_id:me});
+    let liked;
+    if(existing){ await q.remove(db.profile_likes,{_id:existing._id}); liked=false; }
+    else {
+      await q.insert(db.profile_likes,{profile_id:target._id,liker_id:me,created_at:nowISO()});
+      liked=true;
+      const meU=await q.one(db.users,{_id:me});
+      await q.insert(db.notifications,{user_id:target._id,type:'profile_like',from_id:me,
+        title:'❤️ Niekomu sa páči tvoj profil!',
+        body:`${meU?.name||'Niekto'} dal/a like tvojmu profilu.`,
+        read:false,created_at:nowISO()}).catch(()=>{});
+    }
+    const likes=await q.count(db.profile_likes,{profile_id:target._id});
+    res.json({ liked, likes });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// List comments on a profile
+app.get('/api/profile/:id/comments', auth, async(req,res)=>{
+  try {
+    const rows=await q.find(db.profile_comments,{profile_id:req.params.id});
+    rows.sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+    const me=req.session.uid;
+    const meU=await q.one(db.users,{_id:me});
+    const isAdmin=!!(meU&&meU.is_admin);
+    const out=[];
+    for(const c of rows){
+      const author=await q.one(db.users,{_id:c.author_id});
+      out.push({ id:c._id, text:c.text, created_at:c.created_at,
+        author_id:c.author_id, author_name:author?.name||'Člen',
+        author_avatar:author?.avatar||null,
+        can_delete: isAdmin || c.author_id===me || req.params.id===me });
+    }
+    res.json({ comments:out });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Post a comment on someone's profile (any member/trainer/admin profile)
+app.post('/api/profile/:id/comments', auth, async(req,res)=>{
+  try {
+    const target=await q.one(db.users,{_id:req.params.id});
+    if(!target) return res.status(404).json({error:'Profil nenájdený'});
+    const text=(req.body.text||'').trim();
+    if(!text) return res.status(400).json({error:'Prázdny komentár'});
+    if(text.length>500) return res.status(400).json({error:'Komentár je príliš dlhý (max 500)'});
+    const me=req.session.uid;
+    const meU=await q.one(db.users,{_id:me});
+    const c=await q.insert(db.profile_comments,{profile_id:target._id,author_id:me,text,created_at:nowISO()});
+    if(target._id!==me){
+      await q.insert(db.notifications,{user_id:target._id,type:'profile_comment',from_id:me,
+        title:'💬 Nový komentár na tvojom profile',
+        body:`${meU?.name||'Niekto'}: ${text.slice(0,80)}`,
+        read:false,created_at:nowISO()}).catch(()=>{});
+    }
+    res.json({ ok:true, id:c._id, author_name:meU?.name||'Člen', author_avatar:meU?.avatar||null, text, created_at:c.created_at });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Delete a profile comment (author, profile owner, or admin)
+app.delete('/api/profile/:id/comments/:cid', auth, async(req,res)=>{
+  try {
+    const c=await q.one(db.profile_comments,{_id:req.params.cid});
+    if(!c) return res.status(404).json({error:'Nenájdené'});
+    const me=req.session.uid;
+    const meU=await q.one(db.users,{_id:me});
+    const allowed=(meU&&meU.is_admin)||c.author_id===me||c.profile_id===me;
+    if(!allowed) return res.status(403).json({error:'Nemáš oprávnenie'});
+    await q.remove(db.profile_comments,{_id:c._id});
+    res.json({ ok:true });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -4596,8 +4716,14 @@ const REFERRAL_REWARDS = [
   { referrals:20,  reward:'Titul „Srdce komunity" + legendárne pozadie',     badge:'👑' },
   { referrals:30,  reward:'Titul „Žiarivá hviezda" + žiariace meno',         badge:'🌟' },
   { referrals:50,  reward:'Titul „Klenot komunity" + exkluzívny odznak',     badge:'💎' },
-  { referrals:75,  reward:'Titul „Anjel komunity"',                          badge:'🕊️' },
-  { referrals:100, reward:'Titul „Kráľovná Fusion" — najvyššia pocta',       badge:'👸' },
+  { referrals:75,   reward:'Titul „Anjel komunity"',                          badge:'🕊️' },
+  { referrals:100,  reward:'Titul „Kráľovná Fusion"',                          badge:'👸' },
+  { referrals:250,  reward:'Titul „Motýľ premeny"',                            badge:'🦋' },
+  { referrals:500,  reward:'Titul „Superhviezda"',                             badge:'🌟' },
+  { referrals:1000, reward:'Titul „Diamantová kráľovná"',                      badge:'💠' },
+  { referrals:2500, reward:'Titul „Šampiónka sŕdc"',                           badge:'🏆' },
+  { referrals:5000, reward:'Titul „Živel radosti"',                           badge:'🌈' },
+  { referrals:10000,reward:'Titul „SKY IS THE LIMIT" — absolútna méta',        badge:'🚀' },
 ];
 
 // ─── Client profile (detailed) ────────────────────────────────────────────────
@@ -4660,9 +4786,9 @@ app.get('/api/client/referral', auth, async(req,res)=>{
   try {
     const u = await q.one(db.users,{_id:req.session.uid});
     if(!u) return res.status(404).json({error:'Nenájdený'});
-    // How many people registered using my code
-    const referrals = await q.find(db.users,{sponsor_id:u._id});
-    const refCount = referrals.length;
+    // Direct invites + total structure (rewards count everyone in the downline)
+    const directCount = await referralCountOf(u._id);
+    const refCount = await downlineCountOf(u._id);
     // How much earned from referral commissions
     const comms = await q.find(db.commissions,{partner_id:u._id});
     const earned = comms.reduce((s,c)=>s+(c.amount||0),0);
@@ -4679,6 +4805,7 @@ app.get('/api/client/referral', auth, async(req,res)=>{
       referral_code: u.referral_code,
       ref_link: refLink,
       ref_count: refCount,
+      direct_count: directCount,
       earned_total: +earned.toFixed(2),
       earned_pending: +pendingEarned.toFixed(2),
       earned_paid: +paidEarned.toFixed(2),
@@ -4687,6 +4814,29 @@ app.get('/api/client/referral', auth, async(req,res)=>{
       next_tier: nextTier,
       all_tiers: REFERRAL_REWARDS,
     });
+  } catch(e){res.status(500).json({error:e.message});}
+});
+
+// ─── Monthly income history from the whole structure ─────────────────────────
+app.get('/api/client/earnings-history', auth, async(req,res)=>{
+  try {
+    const comms = await q.find(db.commissions,{partner_id:req.session.uid});
+    const byMonth = {}; // month -> { total, paid, pending, lines:{0..4} }
+    for(const c of comms){
+      const m = c.month || (c.created_at||'').slice(0,7);
+      if(!m) continue;
+      if(!byMonth[m]) byMonth[m] = { month:m, total:0, paid:0, pending:0, lines:[0,0,0,0,0], count:0 };
+      const b = byMonth[m];
+      const amt = c.amount||0;
+      b.total += amt; b.count++;
+      if(c.status==='paid') b.paid += amt; else b.pending += amt;
+      const lv = (typeof c.level==='number' && c.level>=0 && c.level<5) ? c.level : 0;
+      b.lines[lv] += amt;
+    }
+    const months = Object.values(byMonth)
+      .map(b=>({ ...b, total:+b.total.toFixed(2), paid:+b.paid.toFixed(2), pending:+b.pending.toFixed(2), lines:b.lines.map(x=>+x.toFixed(2)) }))
+      .sort((a,b)=>b.month.localeCompare(a.month)); // newest first
+    res.json({ months, line_rates: LINE_RATES });
   } catch(e){res.status(500).json({error:e.message});}
 });
 

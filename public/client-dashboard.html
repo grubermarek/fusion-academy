@@ -472,7 +472,7 @@
       </div>
       <div class="loyalty-visits">
         <span id="refCount">0</span>
-        <small>pozvaní</small>
+        <small id="refCountLabel">v štruktúre</small>
       </div>
     </div>
     <!-- Referral link -->
@@ -542,6 +542,15 @@
       </div>
       <div style="font-size:.78rem;color:var(--muted);margin-top:4px">Zarábaš z 5 línií pod sebou — čím väčšia štruktúra, tým väčší pasívny príjem.</div>
       <div id="networkPanel" style="display:none;margin-top:12px"></div>
+    </div>
+    <!-- História príjmov po mesiacoch -->
+    <div style="margin-top:14px;border-top:1px solid #2a2a2a;padding-top:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleEarnings()">
+        <div style="font-weight:700;color:var(--gold)"><i class="bi bi-graph-up-arrow"></i> Prehľad príjmov po mesiacoch</div>
+        <i class="bi bi-chevron-down" id="earnChevron" style="color:var(--muted)"></i>
+      </div>
+      <div style="font-size:.78rem;color:var(--muted);margin-top:4px">Pozri sa aj dozadu — koľko ti zarobila tvoja štruktúra v jednotlivých mesiacoch.</div>
+      <div id="earningsPanel" style="display:none;margin-top:12px"></div>
     </div>
   </div>
 
@@ -898,6 +907,7 @@ async function loadReferral(){
   const d=await api('/api/client/referral');if(!d||d.error) return;
   _refLink=d.ref_link||'';
   document.getElementById('refCount').textContent=d.ref_count||0;
+  { const lbl=document.getElementById('refCountLabel'); if(lbl) lbl.textContent=(d.direct_count!==undefined?d.direct_count+' priamych · ':'')+'v štruktúre'; }
   document.getElementById('refLinkText').textContent=_refLink||'—';
   document.getElementById('refEarned').textContent=(d.earned_total||0).toFixed(2)+' €';
   document.getElementById('refPending').textContent=(d.earned_pending||0).toFixed(2)+' €';
@@ -942,6 +952,37 @@ async function loadNetwork(){
       <div>${membersHtml}</div>
     </details>`;
   }).join('') + `<div style="font-size:.75rem;color:var(--muted);margin-top:6px">Spolu <b>${d.total_people}</b> ľudí v tvojej štruktúre. Provízie: L1 ${(d.lines[0].rate*100).toFixed(0)}% · L2 ${(d.lines[1].rate*100).toFixed(0)}% · L3 ${(d.lines[2].rate*100).toFixed(0)}% · L4 ${(d.lines[3].rate*100).toFixed(0)}% · L5 ${(d.lines[4].rate*100).toFixed(0)}%</div>`;
+}
+
+let _earnLoaded=false;
+function toggleEarnings(){
+  const p=document.getElementById('earningsPanel');
+  const open=p.style.display==='none';
+  p.style.display=open?'block':'none';
+  document.getElementById('earnChevron').className='bi bi-chevron-'+(open?'up':'down');
+  if(open && !_earnLoaded){ _earnLoaded=true; loadEarnings(); }
+}
+async function loadEarnings(){
+  const p=document.getElementById('earningsPanel');
+  p.innerHTML='<div class="text-muted small">Načítavam históriu…</div>';
+  const d=await api('/api/client/earnings-history');
+  if(!d||d.error){ p.innerHTML='<div style="color:#e57373;font-size:.85rem">Chyba pri načítaní.</div>'; return; }
+  if(!d.months||!d.months.length){ p.innerHTML='<div style="color:var(--muted);font-size:.85rem">Zatiaľ žiadne príjmy zo štruktúry. Pošli svoj link a začni budovať! 🌱</div>'; return; }
+  const MONTHS=['','Január','Február','Marec','Apríl','Máj','Jún','Júl','August','September','Október','November','December'];
+  const fmtM=m=>{const[y,mo]=m.split('-');return (MONTHS[+mo]||mo)+' '+y;};
+  p.innerHTML=d.months.map(M=>{
+    const lineChips=M.lines.map((v,i)=>v>0?`<span style="background:rgba(201,168,76,.12);color:var(--gold);padding:1px 7px;border-radius:20px;font-size:.68rem;margin-right:4px">L${i+1}: ${v.toFixed(2)} €</span>`:'').join('');
+    return `<details style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;margin-bottom:8px">
+      <summary style="list-style:none;cursor:pointer;padding:10px 12px;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:700">${fmtM(M.month)}</span>
+        <span style="font-size:.82rem"><span style="color:#81c784;font-weight:700">${M.total.toFixed(2)} €</span>${M.pending>0?` <span style="color:#ff9800;font-size:.75rem">(${M.pending.toFixed(2)} čaká)</span>`:''}</span>
+      </summary>
+      <div style="padding:8px 12px 12px">
+        <div style="font-size:.75rem;color:var(--muted);margin-bottom:6px">${M.count} provízií · vyplatené <span style="color:#81c784">${M.paid.toFixed(2)} €</span> · čaká <span style="color:#ff9800">${M.pending.toFixed(2)} €</span></div>
+        <div>${lineChips||'<span style="color:var(--muted);font-size:.75rem">—</span>'}</div>
+      </div>
+    </details>`;
+  }).join('');
 }
 
 /* ═══════════════════════════════════════════════════════════
