@@ -1908,6 +1908,52 @@ app.post('/api/admin/import-leads', adminAuth, async(req,res)=>{
 });
 
 // ── Detailed CLIENTS list (paying members only — leads have their own tab) ────
+// ── Testovacie účty: detekcia + kaskádové zmazanie (pred ostrým spustením) ────
+function isTestAccount(u){
+  if(!u) return false;
+  if(u.is_admin || u.is_founder || u.user_type==='trainer' || u.user_type==='manager') return false;
+  if(u.imported) return false; // importované Glofox leady sú reálne
+  const email=(u.email||'').toLowerCase();
+  const name=(u.name||'').toLowerCase();
+  if(/@ex\.com$|@example\.com$|@example\.org$|@test\.|@mailinator\./.test(email)) return true;
+  if(/\d{10,}@/.test(email)) return true; // timestamp e-maily z testov
+  if(/\b(test|bot|webhook|stripe|payout|demo)\b/.test(name)) return true;
+  if(/^novy \d/.test(name) || /mesacna sponzorka|bea mid|sp test|cierny test|alica dm|cyntia/.test(name)) return true;
+  return false;
+}
+async function detectTestUsers(){ return (await q.find(db.users,{})).filter(isTestAccount); }
+app.get('/api/admin/test-accounts', adminAuth, async(req,res)=>{
+  const list=await detectTestUsers();
+  res.json({ total:list.length, accounts:list.map(u=>({id:u._id,name:u.name,email:u.email,user_type:u.user_type||'lead',created_at:u.created_at})) });
+});
+app.post('/api/admin/test-accounts/purge', adminAuth, async(req,res)=>{
+  try {
+    const list = await detectTestUsers();
+    const ids = list.map(u=>u._id);
+    const emails = list.map(u=>(u.email||'').toLowerCase()).filter(Boolean);
+    let removed = { users:0, bookings:0, memberships:0, commissions:0, transactions:0, notifications:0, feed:0, friends:0, likes:0, comments:0, orders:0, payments:0 };
+    for(const id of ids){
+      removed.bookings     += await q.remove(db.bookings,{user_id:id},{multi:true});
+      removed.memberships  += await q.remove(db.memberships,{user_id:id},{multi:true});
+      removed.commissions  += await q.remove(db.commissions,{$or:[{partner_id:id},{source_partner_id:id}]},{multi:true});
+      removed.transactions += await q.remove(db.transactions,{$or:[{user_id:id},{partner_id:id},{client_id:id}]},{multi:true});
+      removed.notifications+= await q.remove(db.notifications,{$or:[{user_id:id},{from_id:id}]},{multi:true});
+      removed.feed         += await q.remove(db.feed,{author_id:id},{multi:true});
+      removed.friends      += await q.remove(db.friends,{pair:new RegExp(id)},{multi:true});
+      removed.likes        += await q.remove(db.profile_likes,{$or:[{profile_id:id},{liker_id:id}]},{multi:true});
+      removed.comments     += await q.remove(db.profile_comments,{$or:[{profile_id:id},{author_id:id}]},{multi:true});
+      removed.payments     += await q.remove(db.payments,{user_id:id},{multi:true});
+      // odpoj referencie u ostatných reálnych používateľov
+      await q.update(db.users,{sponsor_id:id},{$set:{sponsor_id:null}},{multi:true});
+      await q.update(db.users,{assistant_of:id},{$set:{assistant_of:null,is_assistant:false}},{multi:true});
+    }
+    for(const em of emails){ removed.orders += await q.remove(db.orders,{client_email:em},{multi:true}); }
+    removed.users += await q.remove(db.users,{_id:{$in:ids}},{multi:true});
+    await auditLog(req,'purge_test_accounts',null,{},{count:ids.length,removed},'');
+    res.json({ ok:true, removed });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/admin/clients', adminAuth, async(req,res)=>{
   try {
     const {search} = req.query;

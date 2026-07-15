@@ -1045,19 +1045,22 @@ function renderStudents(list){
     const initials=(s.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
     return `<tr>
       <td>
-        <div style="display:flex;align-items:center;gap:10px">
+        <a href="/u/${s._id}" title="Zobraziť profil klienta" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit">
           <div style="width:32px;height:32px;border-radius:50%;background:var(--grad-gold);color:#111;font-weight:800;font-size:.75rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">${initials}</div>
-          <span style="font-weight:600">${esc(s.name||'—')}</span>
-        </div>
+          <span style="font-weight:600;color:var(--gold)">${esc(s.name||'—')} <i class="bi bi-box-arrow-up-right" style="font-size:.68rem;opacity:.6"></i></span>
+        </a>
       </td>
       <td><div style="color:var(--muted)">${esc(s.email||'—')}</div>${s.phone?`<div style="font-size:.74rem;color:#666">${esc(s.phone)}</div>`:''}</td>
       <td>${s.membership_plan?`<span style="color:var(--gold);font-weight:600">${esc(s.membership_plan)}</span>`:'<span style="color:var(--muted)">Žiadne</span>'}</td>
       <td style="font-weight:700;color:var(--blue)">${s.single_entries||0}</td>
       <td style="font-weight:700;color:var(--green)">${s.visit_count||0}</td>
       <td>
-        <button class="btn-sm" onclick="selectBAClient('${s._id}','${escJs(s.name||'')}');switchTab('bodyanalysis',document.getElementById('tab-ba'))">
-          <i class="bi bi-activity"></i> Analýza
-        </button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <a class="btn-sm" href="/u/${s._id}" style="text-decoration:none"><i class="bi bi-person"></i> Profil</a>
+          <button class="btn-sm" onclick="selectBAClient('${s._id}','${escJs(s.name||'')}');switchTab('bodyanalysis',document.getElementById('tab-ba'))">
+            <i class="bi bi-activity"></i> Analýza
+          </button>
+        </div>
       </td>
     </tr>`;
   }).join('');
@@ -1549,5 +1552,7 @@ function renderScanLog(){
     </div>`).join('');
 }
 </script>
+<style>body.fa-has-dock .main{padding-bottom:96px}@media(max-width:600px){body.fa-has-dock .main{padding-bottom:150px}}</style>
+<script src="/dock.js"></script>
 </body>
 </html>
