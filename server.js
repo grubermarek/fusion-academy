@@ -5132,26 +5132,34 @@ app.get('/api/client/referral', auth, async(req,res)=>{
   } catch(e){res.status(500).json({error:e.message});}
 });
 
-// ─── Monthly income history from the whole structure ─────────────────────────
+// ─── Income history from the whole structure — zoskupenie deň/mesiac/rok/celkovo ─
 app.get('/api/client/earnings-history', auth, async(req,res)=>{
   try {
+    const group = ['day','month','year','all'].includes(req.query.group) ? req.query.group : 'month';
     const comms = await q.find(db.commissions,{partner_id:req.session.uid});
-    const byMonth = {}; // month -> { total, paid, pending, lines:{0..4} }
+    const keyOf = c => {
+      const iso = c.created_at || (c.month?c.month+'-01':'');
+      const d = (iso||'').slice(0,10);
+      if(group==='day') return d;                       // YYYY-MM-DD
+      if(group==='year') return d.slice(0,4);           // YYYY
+      if(group==='all') return 'all';
+      return c.month || d.slice(0,7);                    // YYYY-MM
+    };
+    const buckets = {};
     for(const c of comms){
-      const m = c.month || (c.created_at||'').slice(0,7);
-      if(!m) continue;
-      if(!byMonth[m]) byMonth[m] = { month:m, total:0, paid:0, pending:0, lines:[0,0,0,0,0], count:0 };
-      const b = byMonth[m];
-      const amt = c.amount||0;
+      const k = keyOf(c); if(!k) continue;
+      if(!buckets[k]) buckets[k] = { period:k, total:0, paid:0, pending:0, lines:[0,0,0,0,0], count:0 };
+      const b = buckets[k]; const amt = c.amount||0;
       b.total += amt; b.count++;
       if(c.status==='paid') b.paid += amt; else b.pending += amt;
       const lv = (typeof c.level==='number' && c.level>=0 && c.level<5) ? c.level : 0;
       b.lines[lv] += amt;
     }
-    const months = Object.values(byMonth)
-      .map(b=>({ ...b, total:+b.total.toFixed(2), paid:+b.paid.toFixed(2), pending:+b.pending.toFixed(2), lines:b.lines.map(x=>+x.toFixed(2)) }))
-      .sort((a,b)=>b.month.localeCompare(a.month)); // newest first
-    res.json({ months, line_rates: LINE_RATES });
+    const rows = Object.values(buckets)
+      .map(b=>({ ...b, month:b.period, total:+b.total.toFixed(2), paid:+b.paid.toFixed(2), pending:+b.pending.toFixed(2), lines:b.lines.map(x=>+x.toFixed(2)) }))
+      .sort((a,b)=>String(b.period).localeCompare(String(a.period))); // newest first
+    const grand = rows.reduce((s,r)=>s+r.total,0);
+    res.json({ group, months: rows, rows, grand_total:+grand.toFixed(2), line_rates: LINE_RATES });
   } catch(e){res.status(500).json({error:e.message});}
 });
 

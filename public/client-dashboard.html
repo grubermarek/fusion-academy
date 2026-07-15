@@ -486,17 +486,19 @@
         <i class="bi bi-copy"></i> Kopírovať
       </button>
     </div>
-    <!-- Tiles -->
-    <div class="ref-grid" style="grid-template-columns:1fr 1fr">
-      <div class="ref-tile clickable" onclick="refExplain('earned')" title="Čo to znamená?">
-        <div class="ref-tile-val" id="refEarned">0 €</div>
-        <div class="ref-tile-lbl">Celkové zárobky <i class="bi bi-info-circle" style="opacity:.5;font-size:.72rem"></i></div>
-      </div>
+    <!-- JEDNA peňažná hodnota — kredit = peniaze na výplatu = to isté -->
+    <div class="ref-grid" style="grid-template-columns:1fr">
       <div class="ref-tile clickable" onclick="toggleCreditPanel()" title="Čo s ním?">
         <div class="ref-tile-val" id="refCreditBalance">0 €</div>
-        <div class="ref-tile-lbl">💳 Dostupný kredit <i class="bi bi-info-circle" style="opacity:.5;font-size:.72rem"></i></div>
+        <div class="ref-tile-lbl">💳 Môj kredit — na nákup alebo výplatu <i class="bi bi-info-circle" style="opacity:.5;font-size:.72rem"></i></div>
       </div>
     </div>
+    <!-- Celkové zárobky = štatistika (nie druhá peňaženka), klikni pre filter období -->
+    <div onclick="toggleEarnings()" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:#161616;border:1px solid #2a2a2a;border-radius:12px;padding:11px 14px;margin-bottom:14px;cursor:pointer">
+      <span style="font-size:.85rem;color:var(--muted)"><i class="bi bi-graph-up-arrow" style="color:var(--gold)"></i> Celkové zárobky <span style="font-size:.72rem;opacity:.7">(história)</span></span>
+      <span style="display:flex;align-items:center;gap:8px"><b id="refEarned" style="color:var(--gold);font-size:1.05rem">0 €</b><i class="bi bi-chevron-down" id="earnChevron2" style="color:var(--muted);font-size:.8rem"></i></span>
+    </div>
+    <div id="earningsPanel" style="display:none;margin-bottom:14px"></div>
     <!-- Credit action panel -->
     <div id="creditPanel" style="display:none;background:rgba(201,168,76,.06);border:1px solid rgba(201,168,76,.2);border-radius:12px;padding:16px;margin-bottom:14px">
       <div style="font-size:.85rem;font-weight:700;color:var(--gold);margin-bottom:4px">💳 Dostupný kredit – čo s ním?</div>
@@ -540,15 +542,6 @@
       </div>
       <div style="font-size:.78rem;color:var(--muted);margin-top:4px">Zarábaš z 5 línií pod sebou — čím väčšia štruktúra, tým väčší pasívny príjem.</div>
       <div id="networkPanel" style="display:none;margin-top:12px"></div>
-    </div>
-    <!-- História príjmov po mesiacoch -->
-    <div style="margin-top:14px;border-top:1px solid #2a2a2a;padding-top:14px">
-      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleEarnings()">
-        <div style="font-weight:700;color:var(--gold)"><i class="bi bi-graph-up-arrow"></i> Prehľad príjmov po mesiacoch</div>
-        <i class="bi bi-chevron-down" id="earnChevron" style="color:var(--muted)"></i>
-      </div>
-      <div style="font-size:.78rem;color:var(--muted);margin-top:4px">Pozri sa aj dozadu — koľko ti zarobila tvoja štruktúra v jednotlivých mesiacoch.</div>
-      <div id="earningsPanel" style="display:none;margin-top:12px"></div>
     </div>
   </div>
 
@@ -976,27 +969,37 @@ async function loadNetwork(){
   }).join('') + `<div style="font-size:.75rem;color:var(--muted);margin-top:6px">Spolu <b>${d.total_people}</b> ľudí v tvojej štruktúre. Provízie: L1 ${(d.lines[0].rate*100).toFixed(0)}% · L2 ${(d.lines[1].rate*100).toFixed(0)}% · L3 ${(d.lines[2].rate*100).toFixed(0)}% · L4 ${(d.lines[3].rate*100).toFixed(0)}% · L5 ${(d.lines[4].rate*100).toFixed(0)}%</div>`;
 }
 
-let _earnLoaded=false;
+let _earnLoaded=false, _earnGroup='month';
 function toggleEarnings(){
   const p=document.getElementById('earningsPanel');
   const open=p.style.display==='none';
   p.style.display=open?'block':'none';
-  document.getElementById('earnChevron').className='bi bi-chevron-'+(open?'up':'down');
+  const ch=document.getElementById('earnChevron2'); if(ch) ch.className='bi bi-chevron-'+(open?'up':'down');
   if(open && !_earnLoaded){ _earnLoaded=true; loadEarnings(); }
+}
+function setEarnGroup(g){ _earnGroup=g; loadEarnings(); }
+const MONTHS_SK=['','Január','Február','Marec','Apríl','Máj','Jún','Júl','August','September','Október','November','December'];
+function earnLabel(period,group){
+  if(group==='all') return 'Celkovo';
+  if(group==='year') return period; // YYYY
+  if(group==='day'){ const d=new Date(period); return isNaN(d)?period:d.toLocaleDateString('sk-SK'); } // 20. 7. 2026
+  const [y,mo]=period.split('-'); return (MONTHS_SK[+mo]||mo)+' '+y; // Júl 2026
 }
 async function loadEarnings(){
   const p=document.getElementById('earningsPanel');
-  p.innerHTML='<div class="text-muted small">Načítavam históriu…</div>';
-  const d=await api('/api/client/earnings-history');
-  if(!d||d.error){ p.innerHTML='<div style="color:#e57373;font-size:.85rem">Chyba pri načítaní.</div>'; return; }
-  if(!d.months||!d.months.length){ p.innerHTML='<div style="color:var(--muted);font-size:.85rem">Zatiaľ žiadne príjmy zo štruktúry. Pošli svoj link a začni budovať! 🌱</div>'; return; }
-  const MONTHS=['','Január','Február','Marec','Apríl','Máj','Jún','Júl','August','September','Október','November','December'];
-  const fmtM=m=>{const[y,mo]=m.split('-');return (MONTHS[+mo]||mo)+' '+y;};
-  p.innerHTML=d.months.map(M=>{
+  const groups=[['day','Dni'],['month','Mesiace'],['year','Roky'],['all','Celkovo']];
+  const filterBar=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${groups.map(([g,l])=>`<button onclick="setEarnGroup('${g}')" style="background:${_earnGroup===g?'rgba(201,168,76,.2)':'#1a1a1a'};border:1px solid ${_earnGroup===g?'var(--gold)':'#333'};color:${_earnGroup===g?'var(--gold)':'var(--muted)'};border-radius:20px;padding:5px 13px;font-size:.78rem;cursor:pointer;font-weight:600">${l}</button>`).join('')}</div>`;
+  p.innerHTML=filterBar+'<div class="text-muted small">Načítavam…</div>';
+  const d=await api('/api/client/earnings-history?group='+_earnGroup);
+  if(!d||d.error){ p.innerHTML=filterBar+'<div style="color:#e57373;font-size:.85rem">Chyba pri načítaní.</div>'; return; }
+  const rows=d.rows||d.months||[];
+  if(!rows.length){ p.innerHTML=filterBar+'<div style="color:var(--muted);font-size:.85rem">Zatiaľ žiadne príjmy zo štruktúry. Pošli svoj link a začni budovať! 🌱</div>'; return; }
+  const grand=`<div style="display:flex;justify-content:space-between;align-items:center;background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.25);border-radius:10px;padding:10px 13px;margin-bottom:10px"><span style="font-size:.82rem;color:var(--muted)">Spolu za zobrazené obdobie</span><b style="color:var(--gold)">${(d.grand_total||0).toFixed(2)} €</b></div>`;
+  const list=rows.map(M=>{
     const lineChips=M.lines.map((v,i)=>v>0?`<span style="background:rgba(201,168,76,.12);color:var(--gold);padding:1px 7px;border-radius:20px;font-size:.68rem;margin-right:4px">L${i+1}: ${v.toFixed(2)} €</span>`:'').join('');
     return `<details style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;margin-bottom:8px">
       <summary style="list-style:none;cursor:pointer;padding:10px 12px;display:flex;justify-content:space-between;align-items:center">
-        <span style="font-weight:700">${fmtM(M.month)}</span>
+        <span style="font-weight:700">${earnLabel(M.period||M.month,_earnGroup)}</span>
         <span style="font-size:.82rem"><span style="color:#81c784;font-weight:700">${M.total.toFixed(2)} €</span>${M.pending>0?` <span style="color:#ff9800;font-size:.75rem">(${M.pending.toFixed(2)} čaká)</span>`:''}</span>
       </summary>
       <div style="padding:8px 12px 12px">
@@ -1005,6 +1008,7 @@ async function loadEarnings(){
       </div>
     </details>`;
   }).join('');
+  p.innerHTML=filterBar+grand+list;
 }
 
 /* ═══════════════════════════════════════════════════════════
