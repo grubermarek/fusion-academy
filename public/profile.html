@@ -632,8 +632,20 @@ function renderAdmin(){
       </div>
       ${a.referral_credit_pending>0?`<button class="adm-save" style="margin-top:10px;justify-self:start;background:linear-gradient(102deg,#2e7d32,#66bb6a)" onclick="markPayoutPaid()"><i class="bi bi-check2-circle"></i> Označiť výplatu ${(a.referral_credit_pending).toFixed(2)} € ako VYPLATENÉ</button>`:''}
       <span class="set-hint" style="margin-top:6px">„Nastaviť" prepíše hodnotu, „Pridať/Odobrať" upraví o zadanú sumu. Klient dostane notifikáciu.</span>
-    </div>`;
+    </div>
+    ${(!P.is_admin_profile && !P.is_self) ? `<div class="set-row" style="background:rgba(239,154,154,.06);border:1px solid rgba(239,154,154,.22);border-radius:12px;padding:12px">
+      <span class="set-label">🔑 Reset hesla</span>
+      <div style="font-size:.86rem;margin:4px 0 8px;color:var(--text-muted)">Odhlási klienta a pri ďalšom prihlásení si musí vytvoriť nové heslo (na to isté meno/email). Použi, keď klient zabudol heslo.</div>
+      <button class="adm-save" style="justify-self:start;background:linear-gradient(102deg,#8b3232,#ef5350)" onclick="resetClientPassword()"><i class="bi bi-key"></i> Resetovať heslo</button>
+    </div>` : ''}`;
   admPlanChange(); // nastav počiatočnú cenu podľa vybraného plánu
+}
+async function resetClientPassword(){
+  if(!confirm('Resetovať heslo tohto klienta?\n\nKlient bude odhlásený a pri prihlásení si vytvorí nové heslo. Typicky mu potom napíš, nech si na prihlasovacej obrazovke klikne „Zabudli ste heslo?" a zadá nové.')) return;
+  const r=await fetch('/api/admin/users/'+encodeURIComponent(uid)+'/reset-password',{method:'POST',credentials:'include'});
+  const d=await r.json();
+  if(d.ok){ alert('✅ Heslo resetované. '+(d.name||'Klient')+' si pri ďalšom prihlásení vytvorí nové heslo.'); }
+  else alert(d.error||'Chyba');
 }
 async function creditOp(op){
   const amount=parseFloat(document.getElementById('admCredit').value);

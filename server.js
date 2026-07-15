@@ -357,7 +357,18 @@ async function awardPurchaseCommission({buyer_id, amount, product_name}){
 }
 
 // ─── Auth middleware ──────────────────────────────────────────────────────────
-const auth      = (req,res,next) => req.session.uid ? next() : res.status(401).json({error:'Nie ste prihlásený'});
+const auth      = async(req,res,next) => {
+  if(!req.session.uid) return res.status(401).json({error:'Nie ste prihlásený'});
+  // Vynútené odhlásenie po admin resete hesla: session verzia < aktuálna user verzia
+  if(req.session.sv !== undefined){
+    const u = await q.one(db.users,{_id:req.session.uid});
+    if(u && (u.sess_ver||0) > req.session.sv){
+      req.session.destroy(()=>{});
+      return res.status(401).json({error:'Boli ste odhlásený. Vytvorte si nové heslo.', pw_reset:true});
+    }
+  }
+  next();
+};
 const adminAuth = async(req,res,next) => {
   if(!req.session.uid) return res.status(401).json({error:'Nie ste prihlásený'});
   const u=await q.one(db.users,{_id:req.session.uid});
@@ -715,15 +726,32 @@ app.post('/api/login', async(req,res)=>{
   try {
     const {email,password}=req.body;
     const u=await q.one(db.users,{email:(email||'').toLowerCase().trim()});
-    if(!u||!(await bcrypt.compare(password,u.password))) return res.status(401).json({error:'Nesprávny email alebo heslo'});
+    if(u && !u.password && u.pw_reset) return res.status(401).json({error:'Vaše heslo bolo resetované správcom. Vytvorte si nové heslo nižšie.', pw_reset:true});
+    if(!u||!u.password||!(await bcrypt.compare(password,u.password))) return res.status(401).json({error:'Nesprávny email alebo heslo'});
     if(u.active===false) return res.status(403).json({error:'Váš účet je zablokovaný. Kontaktujte správcu.'});
     req.session.uid=u._id;
+    req.session.sv=u.sess_ver||0;
     const redirect_to = dashUrlFor(u);
     res.json({ok:true, isAdmin:!!u.is_admin, userType:u.user_type||'partner', redirect_to});
   } catch(e){res.status(500).json({error:e.message});}
 });
 
 app.post('/api/logout',(req,res)=>{ req.session.destroy(); res.json({ok:true}); });
+
+// Klient si po admin resete vytvorí nové heslo (bez starého). Funguje len ak má nastavený pw_reset.
+app.post('/api/set-new-password', async(req,res)=>{
+  try {
+    const {email,password}=req.body;
+    if(!password || password.length<6) return res.status(400).json({error:'Heslo musí mať aspoň 6 znakov'});
+    const u=await q.one(db.users,{email:(email||'').toLowerCase().trim()});
+    if(!u || !u.pw_reset) return res.status(400).json({error:'Pre tento email nie je vyžiadaný reset hesla. Skús sa prihlásiť alebo zaregistrovať.'});
+    if(u.active===false) return res.status(403).json({error:'Váš účet je zablokovaný. Kontaktujte správcu.'});
+    await q.update(db.users,{_id:u._id},{$set:{password:await bcrypt.hash(password,10), pw_reset:false}});
+    req.session.uid=u._id;
+    req.session.sv=(u.sess_ver||0);
+    res.json({ok:true, redirect_to:dashUrlFor(u)});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
 
 app.post('/api/register', async(req,res)=>{
   try {
@@ -740,6 +768,7 @@ app.post('/api/register', async(req,res)=>{
           free_credits: (existing.free_credits||0)+1 }; // hodina zdarma navyše za vytvorenie účtu
         await q.update(db.users,{_id:existing._id},{$set:set});
         req.session.uid=existing._id;
+        req.session.sv=existing.sess_ver||0;
         cancelSequence(existing._id,'app_launch').catch(()=>{});
         // upozorni adminov o novej registrácii
         try { const admins=await q.find(db.users,{is_admin:true});
@@ -783,6 +812,7 @@ app.post('/api/register', async(req,res)=>{
     }
     const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,referral_credit:0,lead_source,utm_source,utm_medium,utm_campaign,fbclid,gclid,landing_page:clean(attr.landing),referrer:clean(attr.referrer),consent_at: req.body.consent ? nowISO() : null,created_at:today()});
     req.session.uid=u._id;
+    req.session.sv=0;
     // ── Give sponzor referral credit (5€ za každého nového člena) ─────────────
     if(sponsor_id){
       const REFERRAL_SIGNUP_CREDIT = 5; // € za registráciu
@@ -1630,6 +1660,18 @@ app.post('/api/admin/users/:id/mark-payout-paid', adminAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Admin: reset klientovho hesla — odhlási ho a pri ďalšom prihlásení si musí vytvoriť nové heslo
+app.post('/api/admin/users/:id/reset-password', adminAuth, async(req,res)=>{
+  try {
+    const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
+    if(u.is_admin) return res.status(400).json({error:'Heslo admina nemožno takto resetovať'});
+    await q.update(db.users,{_id:u._id},{$set:{password:null, pw_reset:true}, $inc:{sess_ver:1}});
+    await q.insert(db.notifications,{user_id:u._id,type:'account',title:'🔑 Heslo bolo resetované',body:'Správca resetoval tvoje heslo. Pri prihlásení si vytvor nové.',read:false,created_at:nowISO()}).catch(()=>{});
+    await auditLog(req,'password_reset',u._id,{email:u.email},{pw_reset:true},'');
+    res.json({ ok:true, name:u.name, email:u.email });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Friends: send request
 app.post('/api/friends/request', auth, async(req,res)=>{
   const to=String(req.body.to||''); const me=req.session.uid;
@@ -2019,6 +2061,87 @@ app.post('/api/admin/import-leads', adminAuth, async(req,res)=>{
     }
     await auditLog(req,'import_leads',null,{},{inserted,skipped,enrolled},'');
     res.json({ ok:true, inserted, skipped, enrolled, total: rows.length-1 });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Import CLIENTOV/členov z Glofoxu — ako leady (skrytí, imported, bez hesla, claim pri registrácii),
+// ale s aktívnym členstvom (Membership Expiry Date), permanentkou (Credits Remaining) a históriou návštev.
+function parseFlexDate(s){
+  s=(s||'').trim(); if(!s) return null;
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);          // ISO 2026-08-12...
+  const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);              // DD/MM/YYYY 12/08/2026
+  if(m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  return null;
+}
+function mapGlofoxPlan(name,plan){
+  const n=((name||'')+' '+(plan||'')).toLowerCase();
+  if(n.includes('online')) return 'online_basic';
+  if(n.includes('premium')) return 'gold';
+  if(n.includes('permanentka')) return 'permanentka10';
+  if(n.includes('jednor')) return 'vstup1';
+  return 'silver'; // generické opakované členstvo (Zumba, Basic, Fit Premena, Spoločenské tance…)
+}
+app.post('/api/admin/import-members', adminAuth, async(req,res)=>{
+  try {
+    const csv = req.body.csv||'';
+    if(!csv || csv.length<10) return res.status(400).json({error:'Prázdny CSV'});
+    const rows = parseCsv(csv);
+    if(rows.length<2) return res.status(400).json({error:'CSV nemá dáta'});
+    const head = rows[0].map(h=>h.trim().toLowerCase());
+    const col = name => head.indexOf(name);
+    const iFirst=col('first name'), iLast=col('last name'), iEmail=col('email'), iPhone=col('phone'),
+      iGender=col('gender'), iDob=col('date of birth'), iAdded=col('added'), iSource=col('source'),
+      iConsent=col('email consent'), iLastC=col('last contacted'),
+      iAtt=col('total attendances'), iMemName=col('membership name'), iMemPlan=col('membership plan'),
+      iMemExp=col('membership expiry date'), iCredits=col('credits remaining');
+    if(iEmail<0) return res.status(400).json({error:'CSV nemá stĺpec Email'});
+    const todayStr = today();
+    let inserted=0, skipped=0, withMembership=0, withEntries=0, enrolled=0;
+    for(let r=1;r<rows.length;r++){
+      const row=rows[r];
+      const email=(row[iEmail]||'').toLowerCase().trim();
+      if(!email || !/@/.test(email)){ skipped++; continue; }
+      if(await q.one(db.users,{email})){ skipped++; continue; }
+      const name=[(iFirst>=0?row[iFirst]:''),(iLast>=0?row[iLast]:'')].map(x=>(x||'').trim()).filter(Boolean).join(' ')||email.split('@')[0];
+      const g=(iGender>=0?row[iGender]:'').toUpperCase();
+      const gender = g==='MALE'?'male':'female';
+      const birthday=parseFlexDate(iDob>=0?row[iDob]:'')||'';
+      const created_at=parseFlexDate(iAdded>=0?row[iAdded]:'')||todayStr;
+      const consent=iConsent>=0 && String(row[iConsent]).trim().toLowerCase()==='true';
+      const src=(iSource>=0?row[iSource]:'').trim();
+      const attendances=Math.max(0, parseInt(iAtt>=0?row[iAtt]:'0',10)||0);
+      const credits=Math.max(0, parseInt(iCredits>=0?row[iCredits]:'0',10)||0);
+      const memName=(iMemName>=0?row[iMemName]:'').trim();
+      const memPlan=(iMemPlan>=0?row[iMemPlan]:'').trim();
+      const memExp=parseFlexDate(iMemExp>=0?row[iMemExp]:'');
+      let code=(name.replace(/[^a-zA-Z]/g,'').toUpperCase().slice(0,5)||'CLNT')+Math.floor(100+Math.random()*900);
+      while(await q.one(db.users,{referral_code:code})) code='CLNT'+Math.floor(1000+Math.random()*9000);
+      const u=await q.insert(db.users,{
+        name, email, phone:(iPhone>=0?row[iPhone]:'')||'', referral_code:code,
+        sponsor_id:null, rank:1, is_admin:false, active:true, user_type:'client',
+        password:null, imported:true, claimed:false, glofox_source:src,
+        lead_source:'glofox', gender, birthday,
+        last_contacted_at: (iLastC>=0 && parseFlexDate(row[iLastC])) ? row[iLastC] : null,
+        consent_at: consent?nowISO():null, email_consent:consent,
+        visit_count:attendances, single_entries:credits, referral_credit:0,
+        notes:'Importované z Glofox (člen)', glofox_membership:memName||memPlan||'',
+        created_at
+      });
+      inserted++;
+      if(credits>0) withEntries++;
+      // Aktívne členstvo s platnosťou do budúcna → vytvor membership záznam
+      if(memExp && memExp>=todayStr){
+        const planId=mapGlofoxPlan(memName,memPlan);
+        const expiresISO=memExp+'T23:59:59.000Z';
+        await q.insert(db.memberships,{user_id:u._id, plan_id:planId, plan_name:(memName||memPlan||'Členstvo'),
+          status:'active', started_at:created_at, expires_at:expiresISO, migrated:true, glofox:true, created_at:nowISO()});
+        await q.update(db.users,{_id:u._id},{$set:{membership_plan:planId, membership_expires:expiresISO}});
+        withMembership++;
+      }
+      if(consent){ try { await enqueueSequence(u._id,'app_launch'); enrolled++; } catch(e){} }
+    }
+    await auditLog(req,'import_members',null,{},{inserted,skipped,withMembership,withEntries,enrolled},'');
+    res.json({ ok:true, inserted, skipped, withMembership, withEntries, enrolled, total: rows.length-1 });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 

@@ -942,6 +942,16 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
     <button class="btn-primary" onclick="doLogin()">
       <i class="bi bi-box-arrow-in-right"></i>&nbsp; Prihlásiť sa
     </button>
+    <div id="lResetBox" style="display:none;margin-top:14px;border-top:1px solid rgba(255,255,255,.1);padding-top:14px">
+      <div class="form-group">
+        <label>Nové heslo</label>
+        <input type="password" id="lNewPass" placeholder="Aspoň 6 znakov">
+      </div>
+      <button class="btn-primary" onclick="doSetNewPassword()" style="background:linear-gradient(102deg,#2e7d32,#66bb6a)">
+        <i class="bi bi-key"></i>&nbsp; Vytvoriť nové heslo
+      </button>
+    </div>
+    <p style="text-align:center;margin-top:14px;font-size:.86rem"><a href="#" id="lForgot" onclick="showResetBox();return false" style="color:var(--gold)">Zabudli ste heslo?</a></p>
   </div>
 </div>
 
@@ -1422,9 +1432,32 @@ async function doLogin(){
     const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({email,password:pass}),credentials:'include'});
     const d=await r.json();
-    if(!r.ok){showErr('loginErr',d.error||'Nesprávne údaje');return;}
+    if(!r.ok){
+      showErr('loginErr',d.error||'Nesprávne údaje');
+      if(d.pw_reset) showResetBox();
+      return;
+    }
     // Refresh _me so booking modal shows correct state
     _me = await fetch('/api/me',{credentials:'include'}).then(r=>r.json()).catch(()=>null);
+    window.location.href=d.redirect_to||'/client-dashboard';
+  }catch{showErr('loginErr','Chyba pripojenia');}
+}
+function showResetBox(){
+  document.getElementById('lResetBox').style.display='block';
+  const f=document.getElementById('lForgot'); if(f) f.style.display='none';
+  document.getElementById('lNewPass').focus();
+}
+async function doSetNewPassword(){
+  const email=document.getElementById('lEmail').value.trim();
+  const np=document.getElementById('lNewPass').value;
+  showErr('loginErr','');
+  if(!email){showErr('loginErr','Zadajte váš email vyššie');return;}
+  if(!np||np.length<6){showErr('loginErr','Nové heslo musí mať aspoň 6 znakov');return;}
+  try{
+    const r=await fetch('/api/set-new-password',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email,password:np}),credentials:'include'});
+    const d=await r.json();
+    if(!r.ok){showErr('loginErr',d.error||'Nepodarilo sa vytvoriť heslo');return;}
     window.location.href=d.redirect_to||'/client-dashboard';
   }catch{showErr('loginErr','Chyba pripojenia');}
 }
