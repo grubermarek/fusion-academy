@@ -412,6 +412,11 @@ async function seedData() {
     await q.update(db.users, {email:beataEmail}, {$set:{is_admin:true, rank:8, user_type:'admin'}});
     console.log('✅  Beáta Gruber Buňová povýšená na admina');
   }
+  // Zakladatelia — is_founder flag (idempotentne)
+  for(const fe of [marekEmail, beataEmail]){
+    const f=await q.one(db.users,{email:fe});
+    if(f && !f.is_founder){ await q.update(db.users,{email:fe},{$set:{is_founder:true}}); }
+  }
 
   // Products
   if(await q.count(db.products,{})===0){
@@ -1177,14 +1182,17 @@ const ACHIEVEMENTS = [
   {id:'p500',  cat:'private', need:500,  icon:'🌟', name:'Legenda parketu',  desc:'500 súkromných hodín'},
   {id:'p1000', cat:'private', need:1000, icon:'♾️', name:'Nekonečná oddanosť', desc:'1000 súkromných hodín'},
   // Špeciálne roly
+  {id:'founder',   cat:'special', flag:'is_founder', icon:'👑', name:'Zakladateľ', desc:'Zakladateľ Fusion Academy'},
+  {id:'admin_role',cat:'special', flag:'is_admin', icon:'🛡️', name:'Admin Fusion Academy', desc:'Správca aplikácie'},
   {id:'assistant', cat:'special', flag:'is_assistant', icon:'🤝', name:'Asistent trénera', desc:'Pomáha trénerovi ako asistent'},
   {id:'trainer',   cat:'special', role:'trainer', icon:'🎓', name:'Tréner Fusion Academy', desc:'Akreditovaný tréner FA'},
-  // Odučené SKUPINOVÉ hodiny (len tréneri)
-  {id:'tg10',   cat:'tgroup', need:10,   icon:'🎵', name:'Prvé hodiny',       desc:'10 odučených skupinových hodín'},
-  {id:'tg50',   cat:'tgroup', need:50,   icon:'💃', name:'Skúsený tréner',    name_m:'Skúsený tréner', desc:'50 odučených skupinových hodín'},
-  {id:'tg150',  cat:'tgroup', need:150,  icon:'🔥', name:'Majster parketu',   desc:'150 odučených skupinových hodín'},
-  {id:'tg500',  cat:'tgroup', need:500,  icon:'🏆', name:'Legenda tréningov', desc:'500 odučených skupinových hodín'},
-  {id:'tg1000', cat:'tgroup', need:1000, icon:'🌟', name:'Ikona tréningov',   desc:'1000 odučených skupinových hodín'},
+  // Odučené SKUPINOVÉ hodiny (len tréneri) — prvých 100 hodín je zácvik
+  {id:'tg10',   cat:'tgroup', need:10,   icon:'🌱', name:'Prvé kroky v zácviku', desc:'10 odučených hodín (zácvik)'},
+  {id:'tg50',   cat:'tgroup', need:50,   icon:'📚', name:'Polovica zácviku',     desc:'50 odučených hodín (zácvik)'},
+  {id:'tg100',  cat:'tgroup', need:100,  icon:'🎓', name:'Vyškolený tréner',     desc:'Dokončil zácvik — 100 odučených hodín'},
+  {id:'tg150',  cat:'tgroup', need:150,  icon:'🔥', name:'Majster parketu',      desc:'150 odučených skupinových hodín'},
+  {id:'tg500',  cat:'tgroup', need:500,  icon:'🏆', name:'Legenda tréningov',    desc:'500 odučených skupinových hodín'},
+  {id:'tg1000', cat:'tgroup', need:1000, icon:'🌟', name:'Ikona tréningov',      desc:'1000 odučených skupinových hodín'},
   // Odučené SÚKROMNÉ hodiny (len tréneri)
   {id:'tp5',    cat:'tprivate', need:5,    icon:'🔑', name:'Osobný tréner',      desc:'5 odučených súkromných hodín'},
   {id:'tp25',   cat:'tprivate', need:25,   icon:'⚜️', name:'VIP tréner',         desc:'25 odučených súkromných hodín'},
@@ -1282,8 +1290,10 @@ function computeAchievements(u, refCount, tenureMonths, gender){
     tgroup:u.taught_group_hours||0, tprivate:u.taught_private_hours||0};
   const merch=u.merch_owned||[]; const manual=u.manual_achievements||[];
   return ACHIEVEMENTS
-    // Trénerske odznaky (rola + odučené hodiny) ukáž len na profile trénera/admina
+    // Trénerske odznaky (rola + odučené hodiny) len na profile trénera/admina
     .filter(a=> (a.cat==='tgroup'||a.cat==='tprivate'||(a.cat==='special'&&a.role==='trainer')) ? isTrainer : true)
+    // Zakladateľ / Admin odznak sa ukáže len tomu, kto ním je (nie zamknutý u všetkých)
+    .filter(a=> a.id==='founder' ? !!u.is_founder : (a.id==='admin_role' ? !!u.is_admin : true))
     .map(a=>{
     let earned, progress;
     if(a.cat==='merch'){ earned = merch.includes(a.item); progress = earned?100:0; }
@@ -1341,9 +1351,9 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     const badge=getMemberBadge(u.created_at);
     const loyalty=getLoyaltyStatus(u.visit_count||0);
     // Pozadie celého profilu = odmena za počet privedených ľudí do štruktúry (1→10000).
-    // (Odznaky samotné sú odmena — už žiadne extra pozadie za ich počet.)
-    const bgTier = refBgTier(refCount);
-    const nextBg = nextBgTier(refCount);
+    // Zakladateľ má úplne unikátne pozadie.
+    const bgTier = u.is_founder ? 'founder' : refBgTier(refCount);
+    const nextBg = u.is_founder ? null : nextBgTier(refCount);
     const nameBadge=referralBadge(refCount, gender);
     // Membership-level glow — visible to everyone on the public profile
     const mem=await checkMembership(u._id);
@@ -1369,6 +1379,7 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
       member_badge:badge, loyalty_label: loyalty.current?.label||'Nováčik',
       visits: u.visit_count||0, referrals: refCount, direct_refs: directRefs,
       is_trainer: (u.user_type==='trainer')||!!u.is_admin,
+      is_founder: !!u.is_founder, is_admin_profile: !!u.is_admin,
       taught_group_hours: u.taught_group_hours||0, taught_private_hours: u.taught_private_hours||0,
       months_member: memberMonths, joined: (u.created_at||'').slice(0,10),
       achievements: ach, earned_count: earned.length, total_count: ach.length,
@@ -5296,6 +5307,24 @@ app.get('/api/client/referral-credit', auth, async(req,res)=>{
     referral_credit: u.referral_credit||0,
     referral_credit_pending: u.referral_credit_pending||0
   });
+});
+
+// ─── Otázka / nahlásenie chyby adminom ────────────────────────────────────────
+app.post('/api/report', auth, async(req,res)=>{
+  try {
+    const u=await q.one(db.users,{_id:req.session.uid});
+    const type=(req.body.type==='bug')?'bug':'question';
+    const text=String(req.body.text||'').trim().slice(0,1000);
+    if(!text) return res.status(400).json({error:'Prázdna správa'});
+    const title=type==='bug'?'🐞 Nahlásená chyba':'❓ Otázka od člena';
+    const admins=await q.find(db.users,{is_admin:true});
+    for(const a of admins){
+      await q.insert(db.notifications,{user_id:a._id, type:'report', from_id:u._id,
+        title:`${title} – ${u.name}`, body:text, read:false, created_at:nowISO()});
+    }
+    // Zároveň otvor DM konverzáciu s prvým adminom, nech vie klient dostať odpoveď
+    res.json({ ok:true });
+  } catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // ─── Client notifications ─────────────────────────────────────────────────────

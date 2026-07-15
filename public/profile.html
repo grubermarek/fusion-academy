@@ -47,6 +47,28 @@
   body.pbg-nova::after{background:radial-gradient(circle at 50% 8%,rgba(255,180,80,.30),transparent 40%),radial-gradient(circle at 12% 25%,rgba(233,69,96,.26),transparent 45%),radial-gradient(circle at 88% 30%,rgba(150,90,255,.24),transparent 45%),radial-gradient(circle at 50% 100%,rgba(90,200,255,.18),transparent 50%);animation:auroraShift 6s ease-in-out infinite alternate}
   body.pbg-infinity{background:radial-gradient(circle at 50% 20%,#2a0a4a,#050409 62%)}
   body.pbg-infinity::after{background:radial-gradient(circle at 50% 5%,rgba(247,231,184,.30),transparent 38%),radial-gradient(circle at 8% 15%,rgba(120,90,255,.28),transparent 42%),radial-gradient(circle at 92% 20%,rgba(233,69,140,.28),transparent 42%),radial-gradient(circle at 25% 95%,rgba(46,204,180,.22),transparent 46%),radial-gradient(circle at 78% 90%,rgba(255,140,60,.20),transparent 44%);animation:auroraShift 5s ease-in-out infinite alternate}
+  /* ─── ZAKLADATEĽ — úplne unikátny vzhľad ─── */
+  body.pbg-founder{background:radial-gradient(circle at 50% 0%,#2a2008,#0d0b06 55%)}
+  body.pbg-founder::after{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
+    background:
+      radial-gradient(circle at 50% -5%,rgba(247,231,184,.35),transparent 42%),
+      radial-gradient(circle at 12% 20%,rgba(201,162,76,.28),transparent 40%),
+      radial-gradient(circle at 88% 24%,rgba(201,162,76,.24),transparent 40%),
+      radial-gradient(circle at 30% 95%,rgba(180,120,60,.20),transparent 46%),
+      radial-gradient(circle at 75% 90%,rgba(247,231,184,.16),transparent 44%);
+    animation:founderShine 7s ease-in-out infinite alternate}
+  @keyframes founderShine{from{opacity:.8;transform:scale(1)}to{opacity:1;transform:scale(1.1)}}
+  .hero.founder{background:linear-gradient(150deg,#2a2109,#171206)!important;border:1px solid rgba(247,231,184,.7)!important;
+    box-shadow:0 0 60px -10px rgba(247,231,184,.6),inset 0 0 40px -20px rgba(247,231,184,.4)!important;
+    animation:founderCard 4s ease-in-out infinite!important}
+  @keyframes founderCard{0%,100%{box-shadow:0 0 55px -12px rgba(201,162,76,.55),inset 0 0 40px -22px rgba(247,231,184,.35)}50%{box-shadow:0 0 75px -6px rgba(247,231,184,.8),inset 0 0 46px -16px rgba(247,231,184,.5)}}
+  .hero.founder .avatar{border:3px solid rgba(247,231,184,.85);box-shadow:0 0 34px -4px rgba(247,231,184,.8)}
+  .hero.founder .pname{background:linear-gradient(92deg,#F7E7B8,#E7C878,#F7E7B8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-shadow:none}
+  .founder-crown{display:inline-block;background:linear-gradient(102deg,#8a6a1e,#F7E7B8 45%,#E7C878 65%,#8a6a1e);color:#1a1305;font-weight:900;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;padding:4px 16px;border-radius:20px;margin-bottom:8px;box-shadow:0 4px 18px -4px rgba(247,231,184,.9)}
+  .admin-tag{background:linear-gradient(102deg,#3a3f52,#8b93a8 50%,#5a627a);color:#fff;border:none!important;font-weight:800}
+  @media(prefers-reduced-motion:reduce){body.pbg-founder::after,.hero.founder{animation:none!important}}
+  .report-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:10px;background:#1c1a2a;border:1px solid #3a3f66;color:#c9cff0;border-radius:12px;padding:11px;font-weight:700;font-size:.88rem;cursor:pointer;font-family:'Manrope'}
+  .report-btn:hover{border-color:#7a83c0;color:#fff}
   /* Membership-level glow + karta profilu — everyone sees the client's tier shine */
   .hero.mem-bronze{background:linear-gradient(150deg,#2a2016,#171009);box-shadow:0 0 34px -8px rgba(205,127,50,.65);border-color:rgba(205,127,50,.7)}
   .hero.mem-silver{background:linear-gradient(150deg,#232630,#12141a);box-shadow:0 0 38px -8px rgba(196,201,214,.7);border-color:rgba(196,201,214,.8)}
@@ -282,21 +304,25 @@ function render(){
    </div>`;
   applyProfileBg(P.bg_tier); // pozadie celej stránky podľa štruktúry
   document.getElementById('host').innerHTML=`
-    <div class="hero ${P.membership_tier?'mem-'+esc(P.membership_tier):''}">
+    <div class="hero ${P.is_founder?'founder':''} ${P.membership_tier?'mem-'+esc(P.membership_tier):''}">
       <div class="avatar">${av}</div>
+      ${P.is_founder?'<div class="founder-crown">👑 Zakladateľ Fusion Academy</div>':''}
       ${P.membership_tier?`<div class="mem-badge mem-${esc(P.membership_tier)}">${P.membership_tier==='gold'?'👑':P.membership_tier==='silver'?'⭐':'🥉'} ${esc(P.membership_name||P.membership_tier)} ${memberWord}</div>`:''}
       ${P.name_badge?`<div class="name-badge">${P.name_badge.emoji} ${esc(P.name_badge.title)}</div>`:''}
       <div class="pname ${flex}">${P.name_badge?P.name_badge.emoji+' ':''}${esc(P.name)}</div>
       ${P.nickname?`<div class="pnick">„${esc(P.nickname)}"</div>`:''}
       ${P.status?`<div class="pstatus">„${esc(P.status)}"</div>`:''}
       <div class="ptags">
-        ${P.is_trainer?'<span class="tag" style="background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;border:none;font-weight:800">🎓 Tréner</span>':''}
+        ${P.is_admin_profile&&!P.is_founder?'<span class="tag admin-tag">🛡️ Admin</span>':''}
+        ${P.is_trainer?(( (P.taught_group_hours||0)<100 )
+          ? '<span class="tag" style="background:linear-gradient(102deg,#5a7a3a,#8bc34a);color:#0d1a05;border:none;font-weight:800">🎓 Tréner v zácviku</span>'
+          : '<span class="tag" style="background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;border:none;font-weight:800">🎓 Tréner</span>'):''}
         <span class="tag">${P.member_badge?.emoji||'🌱'} ${esc(P.member_badge?.label||'Nováčik')}</span>
         <span class="tag">🏅 ${esc(P.loyalty_label)}</span>
         <span class="tag">🏆 ${T('profile.badges_of',{n:P.earned_count,m:P.total_count})}</span>
       </div>
       ${P.is_trainer?`<div class="ptags" style="margin-top:8px">
-        <span class="tag">🎵 ${P.taught_group_hours||0} skupinových hodín</span>
+        <span class="tag">🎵 ${P.taught_group_hours||0} skupinových hodín${(P.taught_group_hours||0)<100?` <span style="opacity:.7">/ 100 zácvik</span>`:''}</span>
         <span class="tag">🔑 ${P.taught_private_hours||0} súkromných hodín</span>
       </div>`:''}
       ${P.joined?`<div class="joined-date">💛 ${T('profile.member_since',{who:T(isM?'profile.member_m':'profile.member_f'),date:new Date(P.joined).toLocaleDateString(LOC,{month:'long',year:'numeric'})})}</div>`:''}
@@ -353,6 +379,7 @@ function render(){
     </div>
     ${friendBtn()}
     ${(!P.is_self && !P.anonymous) ? `<a class="msg-btn" href="/community?dm=${P.id}"><i class="bi bi-chat-dots-fill"></i> ${T('profile.msg')}</a>` : ''}
+    ${(P.is_admin_profile && !P.is_self) ? `<button class="report-btn" onclick="openReport()"><i class="bi bi-question-circle"></i> Napísať otázku / nahlásiť chybu</button>` : ''}
     ${P.points ? `<details class="pts-box">
       <summary><span>⭐ ${T('profile.points_title')} <b style="color:var(--gold)">${P.points.total}</b></span><i class="bi bi-chevron-down"></i></summary>
       <div class="pts-body">
@@ -396,6 +423,35 @@ async function loadComments(){
       </div>`;
     }).join('');
   }catch(e){ box.innerHTML='<div class="empty">'+T('profile.cmt_fail')+'</div>'; }
+}
+let _reportType='question';
+function openReport(){
+  let ov=document.getElementById('reportOv');
+  if(!ov){ ov=document.createElement('div'); ov.id='reportOv';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px';
+    ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+    document.body.appendChild(ov);
+  }
+  _reportType='question';
+  ov.innerHTML=`<div style="background:#161512;border:1px solid var(--border);border-radius:16px;max-width:420px;width:100%;padding:20px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="color:var(--gold)">✉️ Napíš adminom</b><button onclick="document.getElementById('reportOv').remove()" style="background:none;border:none;color:var(--muted);font-size:1.4rem;cursor:pointer">×</button></div>
+    <div class="gender-switch" style="margin-bottom:10px">
+      <button type="button" class="gseg on" id="rtQ" onclick="setReportType('question')">❓ Otázka</button>
+      <button type="button" class="gseg" id="rtB" onclick="setReportType('bug')">🐞 Chyba v appke</button>
+    </div>
+    <textarea id="reportText" maxlength="1000" placeholder="Napíš svoju otázku alebo popíš chybu…" style="width:100%;min-height:110px;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:11px 13px;font-family:'Manrope';font-size:.9rem;resize:vertical"></textarea>
+    <button class="adm-save" style="margin-top:12px;width:100%" onclick="sendReport()"><i class="bi bi-send"></i> Odoslať adminom</button>
+    <div class="set-hint" style="margin-top:8px">Správa príde všetkým adminom Fusion Academy. Ozvú sa ti čo najskôr. 💛</div>
+  </div>`;
+}
+function setReportType(t){ _reportType=t; document.getElementById('rtQ').classList.toggle('on',t==='question'); document.getElementById('rtB').classList.toggle('on',t==='bug'); }
+async function sendReport(){
+  const text=(document.getElementById('reportText').value||'').trim();
+  if(!text) return;
+  const r=await fetch('/api/report',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({type:_reportType,text})});
+  const d=await r.json();
+  if(d.ok){ document.getElementById('reportOv').remove(); alert('Odoslané adminom ✓ Ďakujeme! 💛'); }
+  else alert(d.error||'Chyba');
 }
 async function toggleLike(){
   const btn=document.getElementById('likeBtn');
