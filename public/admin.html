@@ -44,6 +44,9 @@ body{background:var(--dark-1);color:var(--cream);font-size:.92rem;}
 .table th{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--gold);font-weight:700;border-bottom:1px solid var(--gold-border)!important;}
 .table td{border-color:var(--gold-border)!important;color:var(--cream);}
 .table-light{--bs-table-bg:var(--dark-4);--bs-table-color:var(--gold);}
+th.sortable{cursor:pointer;user-select:none;white-space:nowrap;}
+th.sortable:hover{color:#fff;}
+.sort-ind{font-size:.7rem;opacity:.85;margin-left:2px;}
 .rank-badge{background:var(--grad-gold);color:#0f0f0f;font-size:.68rem;padding:2px 10px;border-radius:20px;font-weight:700;}
 .btn-brand{background:var(--grad-gold);border:none;color:#0f0f0f;font-weight:700;}
 .btn-brand:hover{opacity:.9;color:#0f0f0f;}
@@ -689,9 +692,18 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <div class="table-responsive">
         <table class="table table-hover align-middle mb-0" style="font-size:.85rem">
           <thead class="table-light"><tr>
-            <th class="ps-3">Pridaný</th><th>Meno</th><th>Email</th><th>Telefón</th>
-            <th>Registrácia</th><th>Zdroj</th><th>Posl. kontakt</th><th>Rezervácie</th>
-            <th>Posl. rezervácia</th><th>Stav</th><th>Účasti</th><th>Akcia</th>
+            <th class="ps-3 sortable" onclick="sortLeads('added_days')">Pridaný <span class="sort-ind" data-k="added_days"></span></th>
+            <th class="sortable" onclick="sortLeads('name')">Meno <span class="sort-ind" data-k="name"></span></th>
+            <th class="sortable" onclick="sortLeads('email')">Email <span class="sort-ind" data-k="email"></span></th>
+            <th>Telefón</th>
+            <th>Registrácia</th>
+            <th class="sortable" onclick="sortLeads('lead_source')">Zdroj <span class="sort-ind" data-k="lead_source"></span></th>
+            <th class="sortable" onclick="sortLeads('last_contacted_days')">Posl. kontakt <span class="sort-ind" data-k="last_contacted_days"></span></th>
+            <th class="text-center sortable" onclick="sortLeads('bookings')">Rezervácie <span class="sort-ind" data-k="bookings"></span></th>
+            <th class="sortable" onclick="sortLeads('last_booking')">Posl. rezervácia <span class="sort-ind" data-k="last_booking"></span></th>
+            <th class="sortable" onclick="sortLeads('status')">Stav <span class="sort-ind" data-k="status"></span></th>
+            <th class="text-center sortable" onclick="sortLeads('attendances')">Účasti <span class="sort-ind" data-k="attendances"></span></th>
+            <th>Akcia</th>
           </tr></thead>
           <tbody id="leadsTableBody"><tr><td colspan="12" class="text-center py-4 text-muted">Načítavam...</td></tr></tbody>
         </table>
@@ -716,8 +728,14 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <div class="table-responsive">
         <table class="table table-hover align-middle mb-0" style="font-size:.85rem">
           <thead class="table-light"><tr>
-            <th class="ps-3">Meno</th><th>Email</th><th>Telefón</th><th>Členstvo</th>
-            <th>Platnosť do</th><th class="text-center">Kredit</th><th class="text-center">Rezervácie</th><th class="text-center">Účasti</th>
+            <th class="ps-3 sortable" onclick="sortClients('name')">Meno <span class="sort-ind" data-k="name"></span></th>
+            <th class="sortable" onclick="sortClients('email')">Email <span class="sort-ind" data-k="email"></span></th>
+            <th>Telefón</th>
+            <th class="sortable" onclick="sortClients('membership')">Členstvo <span class="sort-ind" data-k="membership"></span></th>
+            <th class="sortable" onclick="sortClients('expires_at')">Platnosť do <span class="sort-ind" data-k="expires_at"></span></th>
+            <th class="text-center sortable" onclick="sortClients('credits')">Kredit <span class="sort-ind" data-k="credits"></span></th>
+            <th class="text-center sortable" onclick="sortClients('bookings')">Rezervácie <span class="sort-ind" data-k="bookings"></span></th>
+            <th class="text-center sortable" onclick="sortClients('attendances')">Účasti <span class="sort-ind" data-k="attendances"></span></th>
           </tr></thead>
           <tbody id="clientsTableBody"><tr><td colspan="8" class="text-center py-4 text-muted">Načítavam...</td></tr></tbody>
         </table>
@@ -1964,6 +1982,12 @@ async function loadLeaderboard(period){
 
 // ── LEADS (detailný zoznam) ───────────────────────────────────────────────────
 function agoTxt(d){ if(d===null||d===undefined) return '—'; if(d===0) return 'dnes'; if(d===1) return '1 deň'; if(d<5) return d+' dni'; return d+' dní'; }
+let _leadsData=[], _leadSort={key:'added_days',dir:1};
+function sortLeads(key){
+  const asc=['name','email','lead_source','status','added_days','last_contacted_days'].includes(key);
+  _leadSort = { key, dir: _leadSort.key===key ? -_leadSort.dir : (asc?1:-1) };
+  renderLeads();
+}
 async function loadLeads(){
   const body=document.getElementById('leadsTableBody');
   body.innerHTML='<tr><td colspan="12" class="text-center py-4 text-muted">Načítavam...</td></tr>';
@@ -1972,11 +1996,18 @@ async function loadLeads(){
   if(!d||d.error){ body.innerHTML='<tr><td colspan="12" class="text-center text-danger py-4">Chyba pri načítaní.</td></tr>'; return; }
   document.getElementById('leadsCount').textContent=d.total;
   const nav=document.getElementById('leadsNavBadge'); if(d.total>0){ nav.textContent=d.total; nav.style.display='inline'; } else nav.style.display='none';
-  if(!d.leads.length){ body.innerHTML='<tr><td colspan="12" class="text-center py-4 text-muted">Žiadne leady 🎉</td></tr>'; return; }
+  _leadsData=d.leads||[];
+  if(!_leadsData.length){ body.innerHTML='<tr><td colspan="12" class="text-center py-4 text-muted">Žiadne leady 🎉</td></tr>'; return; }
+  renderLeads();
+}
+function renderLeads(){
+  const body=document.getElementById('leadsTableBody');
+  const rows=applySort(_leadsData,_leadSort.key,_leadSort.dir);
+  updSortInd('#s-leads',_leadSort.key,_leadSort.dir);
   const regBadge=p=>p==='web'?'<span class="text-nowrap">🌐 Web</span>':'<span class="text-nowrap">📱 App</span>';
   const statusBadge=st=>st==='trial'?'<span class="badge bg-info text-dark">Skúša</span>':'<span class="badge bg-secondary">Lead</span>';
   const fmtD=iso=>iso?new Date(iso).toLocaleDateString('sk-SK',{day:'numeric',month:'short'}):'—';
-  body.innerHTML=d.leads.map(l=>`<tr>
+  body.innerHTML=rows.map(l=>`<tr>
     <td class="ps-3 text-nowrap"><i class="bi bi-clock text-muted me-1"></i>${agoTxt(l.added_days)}</td>
     <td><a href="/u/${l.id}" target="_blank" style="color:#C9A84C;text-decoration:none;font-weight:700" title="Zobraziť profil">${escHtml(l.name||'—')} <i class="bi bi-box-arrow-up-right" style="font-size:.68rem;opacity:.6"></i></a>${l.imported?`<span class="badge bg-secondary ms-1" title="Importované z Glofox${l.claimed?' · účet vytvorený':''}">🗂️${l.claimed?'✓':''}</span>`:''}${l.sponsor?`<div class="small text-muted">👤 ${escHtml(l.sponsor)}</div>`:''}</td>
     <td class="small">${escHtml(l.email||'—')}</td>
@@ -2024,17 +2055,30 @@ async function importMembersCsv(input){
 const ROLE_ICONS={lead:'🔵',client:'🟢',trainer:'🟡',partner:'🟠',manager:'🔴',admin:'⚫'};
 const ROLE_LABELS={lead:'Lead',client:'Klient',trainer:'Tréner',partner:'Partner',manager:'Manager',admin:'Admin'};
 
-async function loadClients(){
+let _clientsData=[], _clientSort={key:'name',dir:1};
+function applySort(arr,key,dir){
+  return arr.slice().sort((a,b)=>{
+    let va=a[key], vb=b[key];
+    const na=(va===null||va===undefined||va===''), nb=(vb===null||vb===undefined||vb==='');
+    if(na&&nb) return 0; if(na) return 1; if(nb) return -1; // prázdne vždy dole
+    if(typeof va==='number'&&typeof vb==='number') return (va-vb)*dir;
+    va=String(va).toLowerCase(); vb=String(vb).toLowerCase();
+    return va<vb?-dir:va>vb?dir:0;
+  });
+}
+function updSortInd(scope,key,dir){
+  document.querySelectorAll(scope+' .sort-ind').forEach(s=>{ s.textContent = s.dataset.k===key ? (dir>0?'▲':'▼') : ''; });
+}
+function sortClients(key){
+  _clientSort = { key, dir: _clientSort.key===key ? -_clientSort.dir : (key==='name'||key==='email'||key==='membership'?1:-1) };
+  renderClients();
+}
+function renderClients(){
   const tbody=document.getElementById('clientsTableBody');
-  tbody.innerHTML='<tr><td colspan="8" class="text-center py-3 text-muted">Načítavam...</td></tr>';
-  const s=document.getElementById('clientsSearch').value.trim();
-  const d=await api('/api/admin/clients'+(s?('?search='+encodeURIComponent(s)):''));
-  if(!d||d.error){ tbody.innerHTML='<tr><td colspan="8" class="text-center text-danger py-4">Chyba pri načítaní.</td></tr>'; return; }
-  document.getElementById('clientsCount').textContent=d.total;
-  const b=document.getElementById('crmClientsBadge'); if(d.total>0){ b.textContent=d.total; b.style.display='inline'; }
-  if(!d.clients.length){ tbody.innerHTML='<tr><td colspan="8" class="text-center py-4 text-muted">Žiadni klienti</td></tr>'; return; }
+  const rows=applySort(_clientsData,_clientSort.key,_clientSort.dir);
+  updSortInd('#s-crm',_clientSort.key,_clientSort.dir);
   const ini=n=>(n||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
-  tbody.innerHTML=d.clients.map(c=>{
+  tbody.innerHTML=rows.map(c=>{
     const av=c.avatar?`<img src="${c.avatar}" style="width:32px;height:32px;border-radius:50%;object-fit:cover">`:`<span style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#C9A84C,#a07830);color:#111;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.72rem">${escHtml(ini(c.name))}</span>`;
     const mem=c.membership?`<span class="badge" style="background:rgba(201,168,76,.15);color:#C9A84C;border:1px solid rgba(201,168,76,.3)">${escHtml(c.membership)}</span>`:'<span class="text-muted">–</span>';
     return `<tr style="cursor:pointer" onclick="window.open('/u/${c.id}','_blank')" title="Otvoriť profil klienta">
@@ -2048,6 +2092,18 @@ async function loadClients(){
       <td class="text-center">${c.attendances}</td>
     </tr>`;
   }).join('');
+}
+async function loadClients(){
+  const tbody=document.getElementById('clientsTableBody');
+  tbody.innerHTML='<tr><td colspan="8" class="text-center py-3 text-muted">Načítavam...</td></tr>';
+  const s=document.getElementById('clientsSearch').value.trim();
+  const d=await api('/api/admin/clients'+(s?('?search='+encodeURIComponent(s)):''));
+  if(!d||d.error){ tbody.innerHTML='<tr><td colspan="8" class="text-center text-danger py-4">Chyba pri načítaní.</td></tr>'; return; }
+  document.getElementById('clientsCount').textContent=d.total;
+  const b=document.getElementById('crmClientsBadge'); if(d.total>0){ b.textContent=d.total; b.style.display='inline'; }
+  _clientsData=d.clients||[];
+  if(!_clientsData.length){ tbody.innerHTML='<tr><td colspan="8" class="text-center py-4 text-muted">Žiadni klienti</td></tr>'; return; }
+  renderClients();
 }
 const loadCrm = loadClients; // spätná kompatibilita s refresh volaniami
 async function purgeTestAccounts(){
