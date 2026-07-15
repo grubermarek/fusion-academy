@@ -36,6 +36,7 @@
   .pname{font-family:'Cormorant Garamond',serif;font-size:2rem;font-weight:600;line-height:1.1}
   .pname.glow{text-shadow:0 0 18px rgba(201,162,76,.65),0 0 4px rgba(201,162,76,.9)}
   .ptags{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px}
+  .joined-date{margin-top:10px;font-size:.78rem;color:var(--muted)}
   .tag{background:rgba(201,162,76,.12);border:1px solid rgba(201,162,76,.3);color:var(--gold);padding:4px 12px;border-radius:20px;font-size:.78rem;font-weight:600}
   .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0}
   .stat{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 10px;text-align:center}
@@ -107,6 +108,7 @@ function render(){
         <span class="tag">🏅 ${esc(P.loyalty_label)}</span>
         <span class="tag">🏆 ${P.earned_count}/${P.total_count} odznakov</span>
       </div>
+      ${P.joined?`<div class="joined-date">💛 Členka od ${new Date(P.joined).toLocaleDateString('sk-SK',{month:'long',year:'numeric'})}</div>`:''}
     </div>
     ${P.is_self && P.next_bg ? `<div class="bg-hint">🎨 Odomkni <b style="color:var(--gold)">${bgNames[P.next_bg.tier]||''} pozadie</b> pri ${P.next_bg.need} odznakoch (máš ${P.earned_count})</div>` : ''}
     ${P.anonymous && !P.is_self ? '<div class="anon-note">🔒 Tento člen má profil nastavený ako anonymný.</div>' : `

@@ -1083,11 +1083,17 @@ const ACHIEVEMENTS = [
   {id:'r10',  cat:'refs', need:10,  icon:'💫', name:'Duša komunity',       desc:'10 privedených členov'},
   {id:'r25',  cat:'refs', need:25,  icon:'👑', name:'Srdce komunity',      desc:'25 privedených členov'},
   // Vernosť (mesiace členstva)
-  {id:'m3',   cat:'tenure', need:3,  icon:'📅', name:'Verný',          desc:'3 mesiace s nami'},
+  {id:'m3',   cat:'tenure', need:3,  icon:'📅', name:'Verná',          desc:'3 mesiace s nami'},
   {id:'m6',   cat:'tenure', need:6,  icon:'💛', name:'Srdcom Fusion',  desc:'6 mesiacov'},
   {id:'m12',  cat:'tenure', need:12, icon:'🎖️', name:'Rok na parkete', desc:'1 rok'},
   {id:'m24',  cat:'tenure', need:24, icon:'💎', name:'Diamantová éra', desc:'2 roky'},
+  // Merch — odomkne sa pri kúpe daného kúsku
+  {id:'merch_tielko', cat:'merch', item:'tielko', icon:'🎽', name:'Tielko FA', desc:'Kúpené tielko Fusion Academy'},
+  {id:'merch_tricko', cat:'merch', item:'tricko', icon:'👕', name:'Tričko FA', desc:'Kúpené tričko Fusion Academy'},
+  {id:'merch_taska',  cat:'merch', item:'taska',  icon:'👜', name:'Taška FA',  desc:'Kúpená taška Fusion Academy'},
+  {id:'merch_mikina', cat:'merch', item:'mikina', icon:'🧥', name:'Mikina FA', desc:'Kúpená mikina Fusion Academy'},
 ];
+const MERCH_KEYWORDS={tielko:/tielk/i, tricko:/tri[čc]k/i, taska:/ta[šs]k/i, mikina:/mikin/i};
 async function referralCountOf(uid){ return q.count(db.users,{sponsor_id:uid,is_admin:{$ne:true}}); }
 // Visual reward for bringing new people: an emoji title shown before the name
 const REFERRAL_BADGES = [
@@ -1105,7 +1111,35 @@ function monthsSince(iso){ if(!iso) return 0; return Math.max(0, Math.floor((Dat
 function computeAchievements(u, refCount){
   const visits=u.visit_count||0, months=monthsSince(u.created_at);
   const val={visits, refs:refCount, tenure:months};
-  return ACHIEVEMENTS.map(a=>({...a, earned: (val[a.cat]||0) >= a.need, progress: Math.min(100, Math.round((val[a.cat]||0)/a.need*100))}));
+  const merch=u.merch_owned||[]; const manual=u.manual_achievements||[];
+  return ACHIEVEMENTS.map(a=>{
+    let earned, progress;
+    if(a.cat==='merch'){ earned = merch.includes(a.item); progress = earned?100:0; }
+    else { earned = (val[a.cat]||0) >= a.need; progress = Math.min(100, Math.round((val[a.cat]||0)/a.need*100)); }
+    if(manual.includes(a.id)) { earned = true; if(progress<100) progress=100; }
+    return {...a, earned, progress};
+  });
+}
+
+// Grant merch achievements to the buyer of an order (matched by product name)
+async function grantMerchFromOrder(order){
+  try {
+    if(!order?.client_email) return;
+    const buyer=await q.one(db.users,{email:(order.client_email||'').toLowerCase().trim()});
+    if(!buyer) return;
+    const owned=new Set(buyer.merch_owned||[]);
+    let added=false;
+    for(const item of (order.items||[])){
+      const nm=item.product_name||item.name||'';
+      for(const [key,rx] of Object.entries(MERCH_KEYWORDS)){
+        if(rx.test(nm) && !owned.has(key)){ owned.add(key); added=true; }
+      }
+    }
+    if(added){
+      await q.update(db.users,{_id:buyer._id},{$set:{merch_owned:[...owned]}});
+      await q.insert(db.notifications,{user_id:buyer._id,type:'achievement',title:'🏅 Nový odznak za merch!',body:'Odomkla si nový odznak vo svojom profile. Pozri sa! ✨',read:false,created_at:nowISO()}).catch(()=>{});
+    }
+  } catch(e){ console.error('grantMerchFromOrder:',e.message); }
 }
 
 // Friend relationship helpers (single row per pair, sorted key)
@@ -1149,6 +1183,26 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
       friend_state: isSelf ? 'self' : await friendState(me, u._id)
     });
   } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Admin: view/grant a user's achievements, merch and attended hours (for showcase profiles)
+app.get('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
+  const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
+  const refCount=await referralCountOf(u._id);
+  res.json({ name:u.name, visit_count:u.visit_count||0, referrals:refCount, joined:(u.created_at||'').slice(0,10),
+    achievements: computeAchievements(u, refCount),
+    merch_owned: u.merch_owned||[], manual_achievements: u.manual_achievements||[],
+    merch_list: Object.keys(MERCH_KEYWORDS) });
+});
+app.put('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
+  const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
+  const set={};
+  if(req.body.visit_count!==undefined) set.visit_count=Math.max(0,parseInt(req.body.visit_count)||0);
+  if(Array.isArray(req.body.merch_owned)) set.merch_owned=req.body.merch_owned.filter(x=>MERCH_KEYWORDS[x]);
+  if(Array.isArray(req.body.manual_achievements)) set.manual_achievements=req.body.manual_achievements.filter(id=>ACHIEVEMENTS.some(a=>a.id===id));
+  if(Object.keys(set).length) await q.update(db.users,{_id:u._id},{$set:set});
+  await auditLog(req,'user_awards_update',u._id,{visit_count:u.visit_count,merch:u.merch_owned,manual:u.manual_achievements},set,'');
+  res.json({ok:true});
 });
 
 // Friends: send request
@@ -1632,6 +1686,7 @@ app.put('/api/admin/orders/:id', adminAuth, async(req,res)=>{
       }
       await calcRank(order.partner_id);
     }
+    if(status==='paid' && order.status!=='paid') grantMerchFromOrder(order);
     res.json({ok:true});
   } catch(e){res.status(500).json({error:e.message});}
 });
@@ -3397,6 +3452,7 @@ app.post('/api/stripe/webhook', async(req,res)=>{
       const s = event.data.object;
       if(s.metadata?.type==='order' && s.metadata.order_number && s.payment_status==='paid'){
         await q.update(db.orders,{order_number:s.metadata.order_number,status:{$ne:'paid'}},{$set:{status:'paid',paid_at:nowISO(),payment_method:'stripe'}});
+        const ord=await q.one(db.orders,{order_number:s.metadata.order_number}); if(ord) grantMerchFromOrder(ord);
       } else {
         // Membership / subscription first payment — reliable fulfilment via webhook
         // (idempotent with the browser /verify path)
@@ -3448,6 +3504,7 @@ app.post('/api/stripe/verify-order', async(req,res)=>{
     const order = await q.one(db.orders,{order_number:s.metadata.order_number});
     if(order && order.status!=='paid'){
       await q.update(db.orders,{_id:order._id},{$set:{status:'paid',paid_at:nowISO(),payment_method:'stripe'}});
+      grantMerchFromOrder(order);
       createInvoice({user_id:null, client_name:order.client_name, client_email:order.client_email,
         items:(order.items||[]).map(it=>({desc:`${it.name||it.product_name||'Položka'} ×${it.qty||1}`, qty:it.qty||1, total:+((it.price||0)*(it.qty||1)).toFixed(2)})),
         total:order.total, method:'Stripe (karta / Apple Pay / Google Pay)'});
@@ -4500,11 +4557,11 @@ app.post('/api/client/avatar', auth, async(req,res)=>{
 
 // ─── Referral reward tiers (configurable) ────────────────────────────────────
 const REFERRAL_REWARDS = [
-  { referrals:1,  reward:'Zľava 10 % na ďalší nákup',       badge:'🌱' },
-  { referrals:3,  reward:'Mesiac Bronze zadarmo',             badge:'🥉' },
-  { referrals:5,  reward:'Fusion tričko + 15 % zľava',       badge:'🥈' },
-  { referrals:10, reward:'2 mesiace Silver zadarmo',          badge:'🥇' },
-  { referrals:20, reward:'Ročné Gold členstvo zadarmo',       badge:'💎' },
+  { referrals:1,  reward:'Titul „Ambasádorka" pri mene',                    badge:'🤝' },
+  { referrals:3,  reward:'Titul „Rozsievačka radosti" + bronzové pozadie',  badge:'🌱' },
+  { referrals:5,  reward:'Titul „Inšpirácia" + strieborné pozadie profilu', badge:'🌸' },
+  { referrals:10, reward:'Titul „Duša komunity" + zlaté pozadie profilu',   badge:'💫' },
+  { referrals:20, reward:'Titul „Srdce komunity" + legendárne pozadie',     badge:'👑' },
 ];
 
 // ─── Client profile (detailed) ────────────────────────────────────────────────
