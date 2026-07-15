@@ -576,37 +576,20 @@
     </div>
   </div>
 
-  <!-- ═══════════════════════════════════════════════════════
-       NASTAVENIA PROFILU (narodeniny, súkromie)
-  ════════════════════════════════════════════════════════ -->
   <!-- Friends & public profile -->
   <div class="card anim anim-d6" id="friendsCard" style="margin-bottom:20px">
     <div class="card-title" style="margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
       <span><i class="bi bi-people-fill"></i> Priatelia & profil</span>
       <a id="myProfileLink" href="#" style="font-size:.82rem;color:var(--gold);text-decoration:none">Môj verejný profil →</a>
     </div>
+    <!-- Vyhľadať ľudí a pridať do priateľov -->
+    <div style="position:relative;margin-bottom:14px">
+      <input type="text" id="peopleSearch" oninput="searchPeople()" autocomplete="off" placeholder="🔍 Nájdi človeka podľa mena..."
+        style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:10px 14px;color:var(--text);font-size:.9rem">
+      <div id="peopleResults" style="display:none;position:absolute;z-index:30;left:0;right:0;top:calc(100% + 4px);background:#161616;border:1px solid #333;border-radius:12px;max-height:320px;overflow-y:auto;box-shadow:0 12px 30px rgba(0,0,0,.5)"></div>
+    </div>
     <div id="friendRequests"></div>
     <div id="friendsList" style="display:flex;flex-wrap:wrap;gap:10px"></div>
-    <div style="margin-top:12px"><a href="/community" style="font-size:.82rem;color:var(--muted);text-decoration:none"><i class="bi bi-search"></i> Nájsť ľudí v komunite →</a></div>
-  </div>
-
-  <div class="card anim anim-d6" id="settingsCard" style="margin-bottom:20px">
-    <div class="card-title" style="margin-bottom:14px"><i class="bi bi-person-gear"></i> Nastavenia profilu</div>
-    <div style="display:grid;gap:14px;max-width:460px">
-      <div>
-        <label style="font-size:.82rem;color:var(--muted);display:block;margin-bottom:5px">🎂 Dátum narodenia</label>
-        <input type="date" id="setBirthday" style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:9px 12px;color:var(--text);font-size:.9rem">
-        <div style="font-size:.72rem;color:var(--muted);margin-top:4px">Nech ťa na narodeniny oslávime v komunite. 🎉</div>
-      </div>
-      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:12px 14px">
-        <input type="checkbox" id="setAnonymous" style="margin-top:3px;width:18px;height:18px;flex-shrink:0;accent-color:var(--gold)">
-        <span><span style="font-size:.88rem;font-weight:600">Zobrazovať ma anonymne</span>
-          <span style="display:block;font-size:.75rem;color:var(--muted);margin-top:2px">Nebudeš sa objavovať v „klient mesiaca", narodeninách ani meninách.</span></span>
-      </label>
-      <button onclick="saveSettings()" style="background:linear-gradient(135deg,var(--gold),#a07830);border:none;color:#111;font-weight:700;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:.88rem;justify-self:start">
-        <i class="bi bi-check-lg"></i> Uložiť nastavenia
-      </button>
-    </div>
   </div>
 
   <!-- Quick actions -->
@@ -1199,10 +1182,7 @@ async function init(){
   loadQR();
   // Community spotlight (klient mesiaca, narodeniny, meniny)
   loadSpotlight();
-  // Profile settings prefill
   _me=me;
-  document.getElementById('setBirthday').value=me.birthday||'';
-  document.getElementById('setAnonymous').checked=!!me.anonymous;
   // Friends & public profile
   document.getElementById('myProfileLink').href='/u/'+me.id;
   loadFriends();
@@ -1253,14 +1233,43 @@ function showRefInfo(){
 async function acceptFriend(id){ const d=await api('/api/friends/accept',{method:'POST',body:{from:id}}); if(d?.ok) loadFriends(); }
 async function removeFriend(id){ const d=await api('/api/friends/remove',{method:'POST',body:{user:id}}); if(d?.ok) loadFriends(); }
 
-async function saveSettings(){
-  const birthday=document.getElementById('setBirthday').value||'';
-  const anonymous=document.getElementById('setAnonymous').checked;
-  const d=await api('/api/profile',{method:'PUT',body:{ birthday, anonymous }});
-  if(d?.ok){ showToast('Nastavenia uložené ✓','success'); if(_me){_me.birthday=birthday;_me.anonymous=anonymous;} loadSpotlight(); }
-  else showToast('Chyba pri ukladaní','error');
+// Vyhľadávanie ľudí podľa mena (anonymní sa nezobrazia) → pridať do priateľov
+let _peopleTimer=null;
+function searchPeople(){
+  clearTimeout(_peopleTimer);
+  _peopleTimer=setTimeout(runPeopleSearch, 250);
 }
+async function runPeopleSearch(){
+  const q=document.getElementById('peopleSearch').value.trim();
+  const box=document.getElementById('peopleResults');
+  if(q.length<2){ box.style.display='none'; box.innerHTML=''; return; }
+  const d=await api('/api/community/search?q='+encodeURIComponent(q));
+  const list=(d&&d.people)||[];
+  if(!list.length){ box.innerHTML='<div style="padding:12px 14px;color:var(--muted);font-size:.85rem">Nikto sa nenašiel.</div>'; box.style.display='block'; return; }
+  box.innerHTML=list.map(p=>{
+    const ini=(p.name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+    const av=p.avatar?`<img src="${p.avatar}" style="width:100%;height:100%;object-fit:cover">`:escHtml(ini);
+    let action;
+    if(p.friend_state==='friends') action=`<span style="color:#81c784;font-size:.78rem;font-weight:600"><i class="bi bi-check-circle-fill"></i> Priateľ</span>`;
+    else if(p.friend_state==='requested') action=`<span style="color:var(--muted);font-size:.78rem">Žiadosť odoslaná</span>`;
+    else if(p.friend_state==='incoming') action=`<button onclick="event.stopPropagation();acceptFriendS('${p.id}')" style="background:none;border:1px solid var(--gold);color:var(--gold);border-radius:8px;padding:5px 10px;font-size:.76rem;cursor:pointer">Prijať</button>`;
+    else action=`<button onclick="event.stopPropagation();addFriendS('${p.id}')" style="background:rgba(201,168,76,.15);border:1px solid rgba(201,168,76,.3);color:var(--gold);border-radius:8px;padding:5px 10px;font-size:.76rem;cursor:pointer"><i class="bi bi-person-plus"></i> Pridať</button>`;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #222">
+      <span onclick="location.href='/u/${p.id}'" style="width:34px;height:34px;border-radius:50%;overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700;color:#111;background:linear-gradient(135deg,var(--gold),#a07830);cursor:pointer">${av}</span>
+      <span onclick="location.href='/u/${p.id}'" style="flex:1;cursor:pointer"><span style="font-weight:600;font-size:.88rem">${escHtml(p.nickname||p.name)}</span>${p.name_badge?` <span style="font-size:.72rem">${p.name_badge}</span>`:''}</span>
+      <a href="/community?dm=${p.id}" title="Napísať správu" style="color:var(--muted);text-decoration:none;padding:2px 6px"><i class="bi bi-chat-dots"></i></a>
+      ${action}
+    </div>`;
+  }).join('');
+  box.style.display='block';
+}
+async function addFriendS(id){ const d=await api('/api/friends/request',{method:'POST',body:{to:id}}); if(d?.ok){ runPeopleSearch(); loadFriends(); } }
+async function acceptFriendS(id){ const d=await api('/api/friends/accept',{method:'POST',body:{from:id}}); if(d?.ok){ runPeopleSearch(); loadFriends(); } }
+document.addEventListener('click',e=>{ const b=document.getElementById('peopleResults'); const s=document.getElementById('peopleSearch'); if(b&&s&&!b.contains(e.target)&&e.target!==s) b.style.display='none'; });
 
+function showColmInfo(){
+  alert('🏆 Klient mesiaca\n\nKaždý mesiac vyzdvihujeme jednu členku alebo člena, ktorí najviac žijú komunitou Fusion Academy. Skóre sa počíta z:\n\n• počtu privedených nových členov (váži najviac)\n• počtu odchodených hodín v danom mesiaci\n\nJe to naše poďakovanie za to, že šírite radosť z tanca. Klikni na kartu a pozri si ich profil! 💛');
+}
 let _me=null;
 function slAvatar(a,name){
   const ini=(name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
@@ -1276,10 +1285,12 @@ async function loadSpotlight(){
     const bits=[];
     if(c.refs>0) bits.push(`priviedol/priviedla <b>${c.refs}</b> ${c.refs===1?'nového člena':'nových členov'}`);
     if(c.hours>0) bits.push(`odchodil/a <b>${c.hours}</b> ${c.hours===1?'hodinu':c.hours<5?'hodiny':'hodín'}`);
-    html+=`<div class="sl-card sl-hero">
+    html+=`<div class="sl-card sl-hero" style="position:relative;cursor:pointer" onclick="location.href='/u/${c.id}'" title="Zobraziť profil">
+      <button onclick="event.stopPropagation();showColmInfo()" title="Čo je Klient mesiaca?"
+        style="position:absolute;top:10px;right:12px;background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.3);color:var(--gold);width:26px;height:26px;border-radius:50%;cursor:pointer;font-weight:800;font-size:.8rem;line-height:1;z-index:2">?</button>
       <div class="sl-label">🏆 Klient mesiaca</div>
       <div class="sl-row">${slAvatar(c.avatar,c.name)}
-        <div><div class="sl-name">${escHtml(c.name)} ${c.badge?.emoji||''}</div>
+        <div><div class="sl-name">${escHtml(c.name)} ${c.badge?.emoji||''} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></div>
           <div class="sl-why">Ďakujeme, že si srdcom našej komunity! 💛</div>
           <div class="sl-stats">
             ${c.refs>0?`<span class="sl-stat"><b>${c.refs}</b> nových členov</span>`:''}

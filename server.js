@@ -953,6 +953,26 @@ app.get('/api/community/members', auth, async(req,res)=>{
   res.json(result);
 });
 
+// Search people by name to add as friends (anonymous users are hidden)
+app.get('/api/community/search', auth, async(req,res)=>{
+  try {
+    const me=req.session.uid;
+    const s=(req.query.q||'').trim().toLowerCase();
+    if(s.length<2) return res.json({people:[]});
+    let users=await q.find(db.users,{is_admin:{$ne:true},active:true,is_child:{$ne:true},anonymous:{$ne:true}});
+    users=users.filter(u=>u._id!==me && ((u.nickname||'').toLowerCase().includes(s) || (u.name||'').toLowerCase().includes(s)));
+    users=users.slice(0,20);
+    const people=await Promise.all(users.map(async u=>{
+      const refCount=await downlineCountOf(u._id);
+      const nb=referralBadge(refCount, u.gender==='male'?'male':'female');
+      return { id:u._id, name:u.name, nickname:u.nickname||'', avatar:u.avatar||null,
+        name_badge: nb?`${nb.emoji} ${nb.title}`:'',
+        friend_state: await friendState(me, u._id) };
+    }));
+    res.json({people});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ── Private messages (1-on-1 DMs between members) ─────────────────────────────
 const dmKey = (a,b) => 'dm_' + [String(a),String(b)].sort().join('_');
 

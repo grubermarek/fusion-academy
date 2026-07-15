@@ -478,11 +478,12 @@ function appendMessage(msg) {
       <div class="article-body">${formattedBody}</div>`;
   } else {
     div.className = 'msg' + (isOwn ? ' own' : '');
+    const clickAttr = (!isOwn && msg.user_id) ? `onclick="openUserMenu(event,'${msg.user_id}','${escHtml(msg.nickname||msg.user_name||'').replace(/'/g,'')}')" style="cursor:pointer"` : '';
     div.innerHTML = `
-      <div class="msg-avatar" style="background:${avatarColor}">${initials}</div>
+      <div class="msg-avatar" style="background:${avatarColor}" ${clickAttr}>${initials}</div>
       <div class="msg-body">
         <div class="msg-header">
-          <span class="msg-name">${escHtml(msg.nickname||msg.user_name||'?')}</span>
+          <span class="msg-name" ${clickAttr}>${escHtml(msg.nickname||msg.user_name||'?')}</span>
           ${msg.nickname?`<span class="msg-realname">${escHtml(msg.user_name||'')}</span>`:''}
           <span class="member-badge" style="${badgeStyle}" title="${badge.label||'Nováčik'}">${badge.emoji||'🌱'} ${badge.label||'Nováčik'}</span>
           <span class="rank-badge">${msg.rankBadge||''}</span>
@@ -554,6 +555,34 @@ async function loadConversations() {
     if (d.unread_total>0){ b.textContent=d.unread_total; b.style.display='inline'; } else b.style.display='none';
   } catch {}
 }
+
+// Klik na meno/avatar v chate → menu s možnosťami
+function openUserMenu(ev, userId, name){
+  ev.stopPropagation();
+  closeUserMenu();
+  const m=document.createElement('div');
+  m.id='userMenu';
+  m.style.cssText='position:fixed;z-index:400;background:#161616;border:1px solid var(--gold-border,#3a3020);border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.6);min-width:210px;overflow:hidden;font-size:.9rem';
+  const item=(icon,label,fn,color)=>`<div class="um-item" onclick="${fn}" style="display:flex;align-items:center;gap:10px;padding:12px 15px;cursor:pointer;color:${color||'#eee'}"><i class="bi ${icon}"></i> ${label}</div>`;
+  m.innerHTML=`<div style="padding:11px 15px;border-bottom:1px solid #2a2a2a;color:var(--gold);font-weight:700">${name||'Člen'}</div>`
+    + item('bi-person-circle','Zobraziť profil',`goProfile('${userId}')`)
+    + item('bi-person-plus','Pridať do priateľov',`friendFromMenu('${userId}')`)
+    + item('bi-chat-dots','Napísať súkromnú správu',`dmFromMenu('${userId}','${(name||'').replace(/'/g,'')}')`);
+  document.body.appendChild(m);
+  const px=Math.min(ev.clientX, window.innerWidth-230), py=Math.min(ev.clientY, window.innerHeight-160);
+  m.style.left=px+'px'; m.style.top=py+'px';
+  m.querySelectorAll('.um-item').forEach(el=>{el.onmouseenter=()=>el.style.background='#222';el.onmouseleave=()=>el.style.background='';});
+  setTimeout(()=>document.addEventListener('click',closeUserMenu,{once:true}),0);
+}
+function closeUserMenu(){ const m=document.getElementById('userMenu'); if(m) m.remove(); }
+function goProfile(id){ closeUserMenu(); location.href='/u/'+id; }
+async function friendFromMenu(id){
+  closeUserMenu();
+  const r=await fetch('/api/friends/request',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({to:id})});
+  const d=await r.json();
+  alert(d.ok ? (d.state==='friends'?'Ste priatelia! 💛':'Žiadosť o priateľstvo odoslaná ✓') : (d.error||'Chyba'));
+}
+function dmFromMenu(id,name){ closeUserMenu(); openDM(id, name||'Člen'); }
 
 async function openDM(userId, name) {
   dmMode = true; dmWith = userId; dmWithName = name; exitFeed();
