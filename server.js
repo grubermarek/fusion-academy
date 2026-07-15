@@ -4877,9 +4877,9 @@ const firstName = full => (full||'').trim().split(/\s+/)[0];
 const stripDia = s => (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
 
 // ── Bodový systém „Klient mesiaca" ────────────────────────────────────────────
-// 5 b za odchodenú hodinu (aj online), 1 b za príspevok v komunite,
-// 5 b za privedeného člena, 10 b keď má aktívne členstvo.
-const MP_WEIGHTS = { hour:5, referral:5, post:1, membership:10 };
+// 5 b za odchodenú hodinu (aj online), 5 b za privedeného člena, 10 b za aktívne
+// členstvo. Za príspevky/správy v komunite ZÁMERNE žiadne body (dá sa zneužiť).
+const MP_WEIGHTS = { hour:5, referral:5, membership:10 };
 // Rozpis bodov jedného používateľa za daný mesiac (YYYY-MM)
 async function monthlyPointsFor(userId, month){
   month = month || today().slice(0,7);
@@ -4890,18 +4890,16 @@ async function monthlyPointsFor(userId, month){
   const online = attended.filter(isOnline).length;
   const hours = attended.length - online;
   const refs = (await q.find(db.users,{sponsor_id:userId})).filter(u=>(u.created_at||'').startsWith(month)).length;
-  const posts = (await q.find(db.feed,{author_id:userId})).filter(p=>(p.created_at||'').startsWith(month)).length;
   const m = await checkMembership(userId);
   const hasMem = !!(m && (m.status==='active') && (!m.expires_at || m.expires_at>=today()));
-  return buildPointItems({hours, online, refs, posts, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null}, month);
+  return buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null}, month);
 }
-function buildPointItems({hours, online, refs, posts, hasMem, memName}, month){
+function buildPointItems({hours, online, refs, hasMem, memName}, month){
   online = online||0;
   const items = [
     { icon:'🔥', label:'Odchodené hodiny',        count:hours,  per:MP_WEIGHTS.hour,     points:hours*MP_WEIGHTS.hour },
     { icon:'💻', label:'Online hodiny',            count:online, per:MP_WEIGHTS.hour,     points:online*MP_WEIGHTS.hour },
     { icon:'🤝', label:'Privedení noví členovia',  count:refs,   per:MP_WEIGHTS.referral, points:refs*MP_WEIGHTS.referral },
-    { icon:'💬', label:'Príspevky v komunite',     count:posts,  per:MP_WEIGHTS.post,     points:posts*MP_WEIGHTS.post },
     { icon:'💛', label: hasMem?('Aktívne členstvo'+(memName?' ('+memName+')':'')):'Aktívne členstvo', count: hasMem?1:0, per:MP_WEIGHTS.membership, points: hasMem?MP_WEIGHTS.membership:0 },
   ];
   const total = items.reduce((s,i)=>s+i.points,0);
@@ -4933,10 +4931,6 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
         else attCount[b.user_id]=(attCount[b.user_id]||0)+1;
       }
     });
-    // community posts this month per user
-    const feedPosts = await q.find(db.feed,{});
-    const postCount = {};
-    feedPosts.forEach(p=>{ if((p.created_at||'').startsWith(monthStr) && p.author_id) postCount[p.author_id]=(postCount[p.author_id]||0)+1; });
     // active membership per user (akékoľvek aktívne členstvo)
     const activeMems = await q.find(db.memberships,{status:'active'});
     const memActive = {}, memName = {};
@@ -4945,7 +4939,7 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
     // Full points score — highest total wins
     let winner=null, best=-1;
     for(const u of users){
-      const bd = buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, posts:postCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null }, monthStr);
+      const bd = buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null }, monthStr);
       if(bd.total>0 && bd.total>best){ best=bd.total; winner={ id:u._id, name:u.name, avatar:u.avatar||null, refs:refCount[u._id]||0, hours:attCount[u._id]||0, score:bd.total, points:bd.total, breakdown:bd.items, badge:getMemberBadge(u.created_at) }; }
     }
 

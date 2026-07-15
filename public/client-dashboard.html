@@ -1339,7 +1339,7 @@ async function acceptFriendS(id){ const d=await api('/api/friends/accept',{metho
 document.addEventListener('click',e=>{ const b=document.getElementById('peopleResults'); const s=document.getElementById('peopleSearch'); if(b&&s&&!b.contains(e.target)&&e.target!==s) b.style.display='none'; });
 
 function showColmInfo(){
-  alert('🏆 Klient mesiaca\n\nKaždý mesiac vyzdvihujeme člena s najviac bodmi za aktivitu vo Fusion Academy. Body sa počítajú z:\n\n🔥 Odchodené hodiny — 5 bodov za hodinu\n💻 Online hodiny — 5 bodov za hodinu\n🤝 Privedení noví členovia — 5 bodov za člena\n💬 Príspevky v komunite — 1 bod za príspevok\n💛 Aktívne členstvo — 10 bodov\n\nKlikni na „bodov · rozpis" pre detail. 💛');
+  alert('🏆 Klient mesiaca\n\nKaždý mesiac vyzdvihujeme člena s najviac bodmi za aktivitu vo Fusion Academy. Body sa počítajú z:\n\n🔥 Odchodené hodiny — 5 bodov za hodinu\n💻 Online hodiny — 5 bodov za hodinu\n🤝 Privedení noví členovia — 5 bodov za člena\n💛 Aktívne členstvo — 10 bodov\n\nKlikni na „Rozpis" pre detail. 💛');
 }
 let _colmWinner=null;
 // Univerzálny modal s rozpisom bodov
