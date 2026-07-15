@@ -1994,6 +1994,9 @@ app.get('/api/admin/leads', adminAuth, async(req,res)=>{
   try {
     const {search} = req.query;
     let leads = await q.find(db.users, {user_type:'lead', is_admin:{$ne:true}}, {created_at:-1});
+    // Skry leady, ktorých email je už medzi klientmi (duplicitné záznamy)
+    const clientEmails = new Set((await q.find(db.users,{user_type:'client'})).map(c=>(c.email||'').toLowerCase()).filter(Boolean));
+    leads = leads.filter(u=>!(u.email && clientEmails.has(u.email.toLowerCase())));
     if(search){ const s=search.toLowerCase(); leads = leads.filter(u=>u.name?.toLowerCase().includes(s)||u.email?.toLowerCase().includes(s)||(u.phone||'').includes(s)); }
     const daysAgo = iso => { if(!iso) return null; return Math.max(0, Math.floor((Date.now()-new Date(iso).getTime())/86400000)); };
     const result = await Promise.all(leads.map(async u => {
@@ -2017,6 +2020,18 @@ app.get('/api/admin/leads', adminAuth, async(req,res)=>{
       };
     }));
     res.json({ leads: result, total: result.length });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Vymaž duplicitné leady — lead záznamy, ktorých email už patrí klientovi
+app.post('/api/admin/leads/purge-duplicates', adminAuth, async(req,res)=>{
+  try {
+    const clientEmails = new Set((await q.find(db.users,{user_type:'client'})).map(c=>(c.email||'').toLowerCase()).filter(Boolean));
+    const leads = await q.find(db.users,{user_type:'lead', is_admin:{$ne:true}});
+    const dups = leads.filter(u=>u.email && clientEmails.has(u.email.toLowerCase()));
+    for(const d of dups){ await q.remove(db.users,{_id:d._id}); }
+    await auditLog(req,'leads_purge_duplicates',null,{},{removed:dups.length, emails:dups.map(d=>d.email)},'');
+    res.json({ ok:true, removed:dups.length, names:dups.slice(0,50).map(d=>d.name) });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 

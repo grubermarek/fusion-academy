@@ -132,6 +132,8 @@
   .admin-box{background:linear-gradient(160deg,#1c1712,#141210);border:1px solid #5a4a20;border-radius:14px;margin-top:16px;overflow:hidden}
   .admin-box summary{list-style:none;cursor:pointer;padding:14px 16px;font-weight:700;color:#e0b84c;display:flex;justify-content:space-between;align-items:center}
   .admin-box summary::-webkit-details-marker{display:none}
+  .adm-sub summary::-webkit-details-marker{display:none}
+  .adm-sub[open] summary .bi-chevron-down{transform:rotate(180deg)}
   .admin-body{padding:6px 16px 18px;display:flex;flex-direction:column;gap:16px}
   .adm-hours{display:flex;gap:8px;align-items:center}
   .adm-hours input{width:110px;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:9px 12px;font-family:'Manrope'}
@@ -600,15 +602,16 @@ function renderAdmin(){
         <button onclick="saveTaught('taught_private_hours','admTprivate')">Uložiť</button>
       </div>
     </div>`:''}
-    <div class="set-row">
-      <span class="set-label">Merch (pridať/odobrať odznak)</span>
-      <div class="adm-chips">${merchChips||'<span class="set-hint">—</span>'}</div>
-    </div>
-    <div class="set-row">
-      <span class="set-label">Ručné udelenie odznakov</span>
-      <div class="adm-chips">${achChips}</div>
-      <span class="set-hint">Zvýraznené = udelené. Automaticky získané (napr. za návštevy) sú tiež zvýraznené.</span>
-    </div>
+    <details class="set-row adm-sub" style="cursor:pointer">
+      <summary style="list-style:none;display:flex;align-items:center;gap:8px;font-weight:700;color:#e0b84c"><i class="bi bi-award"></i> Odznaky &amp; merch (rozkliknúť) <i class="bi bi-chevron-down" style="margin-left:auto;font-size:.8rem"></i></summary>
+      <div style="margin-top:12px">
+        <span class="set-label">Merch (pridať/odobrať odznak)</span>
+        <div class="adm-chips">${merchChips||'<span class="set-hint">—</span>'}</div>
+        <span class="set-label" style="display:block;margin-top:14px">Ručné udelenie odznakov</span>
+        <div class="adm-chips">${achChips}</div>
+        <span class="set-hint">Zvýraznené = udelené. Automaticky získané (napr. za návštevy) sú tiež zvýraznené.</span>
+      </div>
+    </details>
     <div class="set-row">
       <span class="set-label">Sponzor (MLM štruktúra)</span>
       <div style="font-size:.85rem;margin-bottom:6px">${a.sponsor_name?`Aktuálny: <a href="/u/${a.sponsor_id}" style="color:var(--gold);font-weight:700;text-decoration:none">${esc(a.sponsor_name)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.7"></i></a> <span class="set-hint">(${esc(a.sponsor_code||'')})</span>`:'<span class="set-hint">Bez sponzora — zaregistroval sa bez kódu.</span>'}</div>

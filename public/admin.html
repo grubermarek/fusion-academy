@@ -684,6 +684,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
         <input type="text" id="leadsSearch" class="form-control form-control-sm" style="width:200px" placeholder="🔍 Meno / email / telefón..." oninput="loadLeads()">
         <input type="file" id="leadsCsvInput" accept=".csv,text/csv" style="display:none" onchange="importLeadsCsv(this)">
         <button class="btn btn-sm btn-outline-warning" onclick="document.getElementById('leadsCsvInput').click()" title="Importovať leady z CSV (napr. Glofox)"><i class="bi bi-upload"></i> Import CSV</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="purgeDuplicateLeads()" title="Vymazať leady, ktorí sú už medzi klientmi"><i class="bi bi-person-x"></i> Odstrániť duplicity</button>
         <button class="btn btn-sm btn-outline-secondary" onclick="loadLeads()"><i class="bi bi-arrow-clockwise"></i></button>
       </div>
     </div>
@@ -2025,6 +2026,12 @@ function renderLeads(){
       <button class="btn btn-sm btn-outline-secondary" title="Zobraziť profil" onclick="window.open('/u/${l.id}','_blank')"><i class="bi bi-box-arrow-up-right"></i></button>
     </td>
   </tr>`).join('');
+}
+async function purgeDuplicateLeads(){
+  if(!confirm('Vymazať leady, ktorí sú už medzi klientmi (rovnaký email)?\n\nOdstránia sa len duplicitné lead záznamy — klient zostane zachovaný.')) return;
+  const r=await api('/api/admin/leads/purge-duplicates',{method:'POST'});
+  if(r&&r.ok){ showToast('Odstránených duplicít: '+r.removed+' ✓','success'); loadLeads(); }
+  else showToast('Chyba: '+(r?.error||'?'),'error');
 }
 async function markContacted(id){
   const r=await api('/api/admin/leads/'+id+'/contacted',{method:'POST'});
