@@ -733,11 +733,12 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
             <th>Telefón</th>
             <th class="sortable" onclick="sortClients('membership')">Členstvo <span class="sort-ind" data-k="membership"></span></th>
             <th class="sortable" onclick="sortClients('expires_at')">Platnosť do <span class="sort-ind" data-k="expires_at"></span></th>
-            <th class="text-center sortable" onclick="sortClients('credits')">Kredit <span class="sort-ind" data-k="credits"></span></th>
+            <th class="text-center sortable" onclick="sortClients('entries')">Vstupy <span class="sort-ind" data-k="entries"></span></th>
+            <th class="text-center sortable" onclick="sortClients('credits')">Kredit € <span class="sort-ind" data-k="credits"></span></th>
             <th class="text-center sortable" onclick="sortClients('bookings')">Rezervácie <span class="sort-ind" data-k="bookings"></span></th>
             <th class="text-center sortable" onclick="sortClients('attendances')">Účasti <span class="sort-ind" data-k="attendances"></span></th>
           </tr></thead>
-          <tbody id="clientsTableBody"><tr><td colspan="8" class="text-center py-4 text-muted">Načítavam...</td></tr></tbody>
+          <tbody id="clientsTableBody"><tr><td colspan="9" class="text-center py-4 text-muted">Načítavam...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -2087,7 +2088,8 @@ function renderClients(){
       <td class="text-nowrap" onclick="event.stopPropagation()">${c.phone?`<a href="tel:${escHtml(c.phone)}" class="text-decoration-none">${escHtml(c.phone)}</a>`:'–'}</td>
       <td>${mem}</td>
       <td class="text-nowrap ${c.expires_at?'':'text-muted'}">${c.expires_at||'–'}</td>
-      <td class="text-center">${c.credits?('<b>'+c.credits+' €</b>'):'0'}</td>
+      <td class="text-center">${c.entries?('<b style="color:#C9A84C">'+c.entries+'</b>'):'<span class="text-muted">0</span>'}${c.free_credits?(' <span class="badge bg-success" title="hodiny zdarma">+'+c.free_credits+'🎁</span>'):''}</td>
+      <td class="text-center">${c.credits?('<b>'+c.credits+' €</b>'):'<span class="text-muted">0</span>'}</td>
       <td class="text-center">${c.bookings}</td>
       <td class="text-center">${c.attendances}</td>
     </tr>`;
@@ -2095,14 +2097,14 @@ function renderClients(){
 }
 async function loadClients(){
   const tbody=document.getElementById('clientsTableBody');
-  tbody.innerHTML='<tr><td colspan="8" class="text-center py-3 text-muted">Načítavam...</td></tr>';
+  tbody.innerHTML='<tr><td colspan="9" class="text-center py-3 text-muted">Načítavam...</td></tr>';
   const s=document.getElementById('clientsSearch').value.trim();
   const d=await api('/api/admin/clients'+(s?('?search='+encodeURIComponent(s)):''));
-  if(!d||d.error){ tbody.innerHTML='<tr><td colspan="8" class="text-center text-danger py-4">Chyba pri načítaní.</td></tr>'; return; }
+  if(!d||d.error){ tbody.innerHTML='<tr><td colspan="9" class="text-center text-danger py-4">Chyba pri načítaní.</td></tr>'; return; }
   document.getElementById('clientsCount').textContent=d.total;
   const b=document.getElementById('crmClientsBadge'); if(d.total>0){ b.textContent=d.total; b.style.display='inline'; }
   _clientsData=d.clients||[];
-  if(!_clientsData.length){ tbody.innerHTML='<tr><td colspan="8" class="text-center py-4 text-muted">Žiadni klienti</td></tr>'; return; }
+  if(!_clientsData.length){ tbody.innerHTML='<tr><td colspan="9" class="text-center py-4 text-muted">Žiadni klienti</td></tr>'; return; }
   renderClients();
 }
 const loadCrm = loadClients; // spätná kompatibilita s refresh volaniami

@@ -2251,6 +2251,8 @@ app.get('/api/admin/clients', adminAuth, async(req,res)=>{
         membership: m ? (MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||null) : null,
         expires_at: m ? (m.expires_at||'').slice(0,10) : null,
         credits: u.referral_credit||0,
+        entries: u.single_entries||0,
+        free_credits: u.free_credits||0,
         bookings: bks.length,
         attendances: u.visit_count||0,
         active: u.active!==false,
