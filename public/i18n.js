@@ -19,7 +19,7 @@
   const DICT = {
     sk:{
       'lang.name':'Jazyk',
-      'profile.back':'Späť na môj profil',
+      'profile.back':'Späť na nástenku',
       'profile.loading':'Načítavam profil…',
       'profile.load_fail':'Profil sa nepodarilo načítať.',
       'profile.friends_remove':'Priatelia · odobrať',
@@ -60,7 +60,7 @@
     },
     cs:{
       'lang.name':'Jazyk',
-      'profile.back':'Zpět na můj profil',
+      'profile.back':'Zpět na nástěnku',
       'profile.loading':'Načítám profil…',
       'profile.load_fail':'Profil se nepodařilo načíst.',
       'profile.friends_remove':'Přátelé · odebrat',
@@ -100,7 +100,7 @@
     },
     en:{
       'lang.name':'Language',
-      'profile.back':'Back to my profile',
+      'profile.back':'Back to dashboard',
       'profile.loading':'Loading profile…',
       'profile.load_fail':'Failed to load profile.',
       'profile.friends_remove':'Friends · remove',
@@ -140,7 +140,7 @@
     },
     uk:{
       'lang.name':'Мова',
-      'profile.back':'Назад до мого профілю',
+      'profile.back':'Назад до дошки',
       'profile.loading':'Завантаження профілю…',
       'profile.load_fail':'Не вдалося завантажити профіль.',
       'profile.friends_remove':'Друзі · видалити',
@@ -180,7 +180,7 @@
     },
     hu:{
       'lang.name':'Nyelv',
-      'profile.back':'Vissza a profilomhoz',
+      'profile.back':'Vissza a faliújságra',
       'profile.loading':'Profil betöltése…',
       'profile.load_fail':'A profil betöltése sikertelen.',
       'profile.friends_remove':'Barátok · eltávolítás',
@@ -220,7 +220,7 @@
     },
     de:{
       'lang.name':'Sprache',
-      'profile.back':'Zurück zu meinem Profil',
+      'profile.back':'Zurück zur Pinnwand',
       'profile.loading':'Profil wird geladen…',
       'profile.load_fail':'Profil konnte nicht geladen werden.',
       'profile.friends_remove':'Freunde · entfernen',
