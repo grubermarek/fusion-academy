@@ -1642,6 +1642,48 @@ app.get('/api/admin/users', adminAuth, async(req,res)=>{
   } catch(e){res.status(500).json({error:e.message});}
 });
 
+// ── Detailed LEADS list (Glofox-style) — only not-yet-paying users ────────────
+// A lead becomes a client automatically on first paid purchase (see line ~340),
+// so filtering user_type==='lead' naturally moves payers into the clients list.
+app.get('/api/admin/leads', adminAuth, async(req,res)=>{
+  try {
+    const {search} = req.query;
+    let leads = await q.find(db.users, {user_type:'lead', is_admin:{$ne:true}}, {created_at:-1});
+    if(search){ const s=search.toLowerCase(); leads = leads.filter(u=>u.name?.toLowerCase().includes(s)||u.email?.toLowerCase().includes(s)||(u.phone||'').includes(s)); }
+    const daysAgo = iso => { if(!iso) return null; return Math.max(0, Math.floor((Date.now()-new Date(iso).getTime())/86400000)); };
+    const result = await Promise.all(leads.map(async u => {
+      const bks = await q.find(db.bookings, {user_id:u._id});
+      const active = bks.filter(b=>b.status!=='cancelled');
+      const lastB = active.map(b=>b.booking_date||b.created_at).filter(Boolean).sort().pop() || null;
+      const regPoint = (u.gclid||u.fbclid||u.utm_source || (u.referrer||'').startsWith('http')) ? 'web' : 'app';
+      const attendances = u.visit_count||0;
+      // "Trial" = already engaged (booked or attended) but not yet paying; else plain Lead
+      const status = (attendances>0 || active.length>0) ? 'trial' : 'lead';
+      const sponsor = u.sponsor_id ? (await q.one(db.users,{_id:u.sponsor_id}))?.name || null : null;
+      return {
+        id:u._id, name:u.name, email:u.email, phone:u.phone||'',
+        created_at:u.created_at, added_days: daysAgo(u.created_at),
+        reg_point: regPoint, lead_source: u.lead_source||'',
+        last_contacted_at: u.last_contacted_at||null, last_contacted_days: daysAgo(u.last_contacted_at),
+        bookings: active.length, last_booking: lastB, last_booking_days: daysAgo(lastB),
+        status, attendances, sponsor,
+        consent: !!u.consent_at,
+      };
+    }));
+    res.json({ leads: result, total: result.length });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Mark a lead as contacted now (CRM follow-up tracking)
+app.post('/api/admin/leads/:id/contacted', adminAuth, async(req,res)=>{
+  try {
+    const u = await q.one(db.users,{_id:req.params.id});
+    if(!u) return res.status(404).json({error:'Nenájdený'});
+    await q.update(db.users,{_id:u._id},{$set:{last_contacted_at:nowISO()}});
+    res.json({ ok:true, last_contacted_at:nowISO() });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ── Set user role ─────────────────────────────────────────────────────────────
 app.put('/api/admin/users/:id/role', adminAuth, async(req,res)=>{
   const {user_type} = req.body;

@@ -110,6 +110,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </div>
 
     <div class="group-links" data-group="manage">
+      <a class="nav-link" href="#" onclick="show('leads')"><i class="bi bi-person-plus me-2"></i>Leady <span id="leadsNavBadge" class="badge ms-1" style="background:#C9A84C;color:#111;display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('crm')"><i class="bi bi-person-lines-fill me-2"></i>Klienti &amp; leady <span id="crmLeadsBadge" class="badge ms-1" style="background:#C9A84C;color:#111;display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('memberships')"><i class="bi bi-patch-check me-2"></i>Členstvá</a>
       <a class="nav-link" href="#" onclick="show('classes')"><i class="bi bi-calendar3 me-2"></i>Hodiny / Stream</a>
@@ -660,6 +661,30 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
         <table class="table table-hover mb-0">
           <thead><tr><th class="ps-3">PayPal Order ID</th><th>Suma</th><th>Popis</th><th>Typ</th><th>Stav</th><th>Dátum</th></tr></thead>
           <tbody id="paymentsTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- LEADS – detailný zoznam (Glofox štýl) -->
+  <div id="s-leads" class="section">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <h4 class="fw-bold mb-0"><i class="bi bi-person-plus me-2 text-warning"></i><span id="leadsCount">0</span> Leady</h4>
+      <div class="d-flex gap-2 flex-wrap">
+        <input type="text" id="leadsSearch" class="form-control form-control-sm" style="width:200px" placeholder="🔍 Meno / email / telefón..." oninput="loadLeads()">
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadLeads()"><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
+    </div>
+    <p class="text-muted small mb-3">Registrovaní, ktorí ešte nezaplatili. Po prvej platbe automaticky prejdú medzi <b>Klientov</b>.</p>
+    <div class="card border-0 rounded-3">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="font-size:.85rem">
+          <thead class="table-light"><tr>
+            <th class="ps-3">Pridaný</th><th>Meno</th><th>Email</th><th>Telefón</th>
+            <th>Registrácia</th><th>Zdroj</th><th>Posl. kontakt</th><th>Rezervácie</th>
+            <th>Posl. rezervácia</th><th>Stav</th><th>Účasti</th><th>Akcia</th>
+          </tr></thead>
+          <tbody id="leadsTableBody"><tr><td colspan="12" class="text-center py-4 text-muted">Načítavam...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -1261,7 +1286,7 @@ function showToast(msg,type='success'){
 }
 
 const GROUP_TITLES={home:'Domov',manage:'Správa',marketing:'Marketing',reports:'Financie & reporty',partners:'Partneri (MLM)'};
-const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',campaigns:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',retention:'reports',accounting:'reports',trainers:'reports',payouts:'reports',refunds:'reports',alerts:'reports',exports:'reports',reset:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
+const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',leads:'manage',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',campaigns:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',retention:'reports',accounting:'reports',trainers:'reports',payouts:'reports',refunds:'reports',alerts:'reports',exports:'reports',reset:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('rail-'+g)?.classList.add('active');
@@ -1288,6 +1313,7 @@ function show(sec){
   if(sec==='articles')loadArticles();
   if(sec==='rentals')loadRentals();
   if(sec==='payments')loadPayments();
+  if(sec==='leads')loadLeads();
   if(sec==='crm')loadCrm();
   if(sec==='churn')loadChurn();
   if(sec==='leaderboard')loadLeaderboard('alltime');
@@ -1932,6 +1958,44 @@ async function loadLeaderboard(period){
     <thead><tr><th>#</th><th>Klient</th><th>${period==='month'?'Návštevy tento mesiac':'Celkovo návštev'}</th></tr></thead>
     <tbody>${d.map((u,i)=>`<tr ${i<3?`style="background:rgba(201,168,76,${0.12-i*0.03})"`:''}><td>${medals[i]||i+1}</td><td><b>${escHtml(u.name)}</b></td><td>${u.visits}</td></tr>`).join('')}</tbody>
   </table></div>`;
+}
+
+// ── LEADS (detailný zoznam) ───────────────────────────────────────────────────
+function agoTxt(d){ if(d===null||d===undefined) return '—'; if(d===0) return 'dnes'; if(d===1) return '1 deň'; if(d<5) return d+' dni'; return d+' dní'; }
+async function loadLeads(){
+  const body=document.getElementById('leadsTableBody');
+  body.innerHTML='<tr><td colspan="12" class="text-center py-4 text-muted">Načítavam...</td></tr>';
+  const s=document.getElementById('leadsSearch').value.trim();
+  const d=await api('/api/admin/leads'+(s?('?search='+encodeURIComponent(s)):''));
+  if(!d||d.error){ body.innerHTML='<tr><td colspan="12" class="text-center text-danger py-4">Chyba pri načítaní.</td></tr>'; return; }
+  document.getElementById('leadsCount').textContent=d.total;
+  const nav=document.getElementById('leadsNavBadge'); if(d.total>0){ nav.textContent=d.total; nav.style.display='inline'; } else nav.style.display='none';
+  if(!d.leads.length){ body.innerHTML='<tr><td colspan="12" class="text-center py-4 text-muted">Žiadne leady 🎉</td></tr>'; return; }
+  const regBadge=p=>p==='web'?'<span class="text-nowrap">🌐 Web</span>':'<span class="text-nowrap">📱 App</span>';
+  const statusBadge=st=>st==='trial'?'<span class="badge bg-info text-dark">Skúša</span>':'<span class="badge bg-secondary">Lead</span>';
+  const fmtD=iso=>iso?new Date(iso).toLocaleDateString('sk-SK',{day:'numeric',month:'short'}):'—';
+  body.innerHTML=d.leads.map(l=>`<tr>
+    <td class="ps-3 text-nowrap"><i class="bi bi-clock text-muted me-1"></i>${agoTxt(l.added_days)}</td>
+    <td><b>${escHtml(l.name||'—')}</b>${l.sponsor?`<div class="small text-muted">👤 ${escHtml(l.sponsor)}</div>`:''}</td>
+    <td class="small">${escHtml(l.email||'—')}</td>
+    <td class="text-nowrap">${l.phone?`<a href="tel:${escHtml(l.phone)}" class="text-decoration-none">${escHtml(l.phone)}</a>`:'—'}</td>
+    <td>${regBadge(l.reg_point)}</td>
+    <td class="small text-muted">${escHtml(l.lead_source||'—')}</td>
+    <td class="text-nowrap ${l.last_contacted_days===null?'text-muted':''}">${agoTxt(l.last_contacted_days)}</td>
+    <td class="text-center">${l.bookings}</td>
+    <td class="text-nowrap">${fmtD(l.last_booking)}</td>
+    <td>${statusBadge(l.status)}</td>
+    <td class="text-center">${l.attendances}</td>
+    <td class="text-nowrap">
+      <button class="btn btn-sm btn-outline-warning" title="Označiť ako kontaktovaný" onclick="markContacted('${l.id}')"><i class="bi bi-telephone-check"></i></button>
+      <button class="btn btn-sm btn-outline-secondary" title="Zobraziť profil" onclick="window.open('/u/${l.id}','_blank')"><i class="bi bi-box-arrow-up-right"></i></button>
+    </td>
+  </tr>`).join('');
+}
+async function markContacted(id){
+  const r=await api('/api/admin/leads/'+id+'/contacted',{method:'POST'});
+  if(r.ok){ showToast('Označené ako kontaktované ✓','success'); loadLeads(); }
+  else showToast('Chyba: '+(r.error||''),'error');
 }
 
 // ── CRM ──────────────────────────────────────────────────────────────────────
