@@ -54,6 +54,16 @@
   .set-inline input[type=date]{background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:9px 12px;font-family:'Manrope';font-size:.9rem}
   .set-check{display:flex;align-items:center;gap:10px;cursor:pointer}
   .set-check input{width:18px;height:18px;accent-color:var(--gold);cursor:pointer}
+  .admin-box{background:linear-gradient(160deg,#1c1712,#141210);border:1px solid #5a4a20;border-radius:14px;margin-top:16px;overflow:hidden}
+  .admin-box summary{list-style:none;cursor:pointer;padding:14px 16px;font-weight:700;color:#e0b84c;display:flex;justify-content:space-between;align-items:center}
+  .admin-box summary::-webkit-details-marker{display:none}
+  .admin-body{padding:6px 16px 18px;display:flex;flex-direction:column;gap:16px}
+  .adm-hours{display:flex;gap:8px;align-items:center}
+  .adm-hours input{width:110px;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:9px 12px;font-family:'Manrope'}
+  .adm-hours button,.adm-save{background:linear-gradient(102deg,#B98F3E,#F7E7B8 45%,#E7C878 65%,#B98F3E);color:#231A08;border:none;border-radius:10px;padding:9px 16px;font-weight:800;cursor:pointer;font-family:'Manrope'}
+  .adm-chips{display:flex;flex-wrap:wrap;gap:8px}
+  .adm-chip{background:var(--card);border:1px solid var(--border);color:var(--muted);border-radius:20px;padding:6px 12px;font-size:.8rem;cursor:pointer;user-select:none;transition:.12s}
+  .adm-chip.on{background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;border-color:transparent;font-weight:700}
   .nick-edit{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;text-decoration:underline;margin-top:4px}
   .nick-edit:hover{color:var(--gold)}
   .gender-switch{display:inline-flex;gap:0;margin-top:10px;border:1px solid var(--border);border-radius:20px;overflow:hidden}
@@ -231,6 +241,10 @@ function render(){
         </div>
       </div>
     </details>` : ''}
+    ${P.viewer_is_admin ? `<details class="admin-box" id="adminBox" ontoggle="if(this.open)loadAdminAwards()">
+      <summary><span>🛠️ Admin – správa profilu</span><i class="bi bi-chevron-down"></i></summary>
+      <div class="admin-body" id="adminBody"><div class="empty">Načítavam…</div></div>
+    </details>` : ''}
     ${P.anonymous && !P.is_self ? `<div class="anon-note">${T('profile.anon')}</div>` : `
     <div class="stats">
       <div class="stat"><div class="n">${P.visits}</div><div class="l">${T('profile.stat_visits')}</div></div>
@@ -323,6 +337,62 @@ async function saveAnon(){
   const inp=document.getElementById('anonInput'); if(!inp) return;
   const anonymous=inp.checked;
   if(await putProfile({anonymous})){ P.anonymous=anonymous; }
+}
+// ── ADMIN: správa odznakov, merchu a odchodených hodín ─────────────────────────
+let _awards=null;
+const MERCH_LABELS={tielko:'🎽 Tielko',tricko:'👕 Tričko',taska:'👜 Taška',mikina:'🧥 Mikina'};
+async function loadAdminAwards(){
+  const box=document.getElementById('adminBody'); if(!box || _awards) return;
+  const r=await fetch('/api/admin/users/'+encodeURIComponent(uid)+'/awards',{credentials:'include'});
+  if(!r.ok){ box.innerHTML='<div class="empty">Chyba pri načítaní admin dát.</div>'; return; }
+  _awards=await r.json();
+  renderAdmin();
+}
+function renderAdmin(){
+  const box=document.getElementById('adminBody'); if(!box) return;
+  const a=_awards;
+  const merchSet=new Set(a.merch_owned||[]);
+  const manualSet=new Set(a.manual_achievements||[]);
+  const merchChips=(a.merch_list||[]).map(m=>`<span class="adm-chip ${merchSet.has(m)?'on':''}" onclick="toggleMerch('${m}')">${MERCH_LABELS[m]||m}</span>`).join('');
+  const achChips=(a.achievements||[]).map(ac=>`<span class="adm-chip ${manualSet.has(ac.id)?'on':(ac.earned?'on':'')}" style="${ac.earned&&!manualSet.has(ac.id)?'opacity:.6;cursor:default':''}" ${ac.earned&&!manualSet.has(ac.id)?'title="Získané automaticky"':`onclick="toggleAch('${ac.id}')"`}>${ac.icon} ${esc(ac.name)}</span>`).join('');
+  box.innerHTML=`
+    <div class="set-row">
+      <span class="set-label">Odchodené hodiny (návštevy)</span>
+      <div class="adm-hours">
+        <input type="number" id="admHours" min="0" value="${a.visit_count||0}">
+        <button onclick="saveHours()">Uložiť</button>
+        <span class="set-hint">Ovplyvní odznaky za návštevy a vernostný level.</span>
+      </div>
+    </div>
+    <div class="set-row">
+      <span class="set-label">Merch (pridať/odobrať odznak)</span>
+      <div class="adm-chips">${merchChips||'<span class="set-hint">—</span>'}</div>
+    </div>
+    <div class="set-row">
+      <span class="set-label">Ručné udelenie odznakov</span>
+      <div class="adm-chips">${achChips}</div>
+      <span class="set-hint">Zvýraznené = udelené. Automaticky získané (napr. za návštevy) sú tiež zvýraznené.</span>
+    </div>`;
+}
+async function putAwards(body){
+  const r=await fetch('/api/admin/users/'+encodeURIComponent(uid)+'/awards',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)});
+  return r.ok;
+}
+async function saveHours(){
+  const v=parseInt(document.getElementById('admHours').value)||0;
+  if(await putAwards({visit_count:v})){ _awards.visit_count=v; P=null; alert('Uložené ✓ Obnovujem profil…'); location.reload(); }
+}
+async function toggleMerch(m){
+  const s=new Set(_awards.merch_owned||[]);
+  s.has(m)?s.delete(m):s.add(m);
+  _awards.merch_owned=[...s];
+  if(await putAwards({merch_owned:_awards.merch_owned})) renderAdmin();
+}
+async function toggleAch(id){
+  const s=new Set(_awards.manual_achievements||[]);
+  s.has(id)?s.delete(id):s.add(id);
+  _awards.manual_achievements=[...s];
+  if(await putAwards({manual_achievements:_awards.manual_achievements})) renderAdmin();
 }
 async function setGender(g){
   if(P.gender===g) return;

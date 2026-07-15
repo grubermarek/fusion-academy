@@ -1273,13 +1273,15 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     const memName=mem ? (MEMBERSHIP_PLANS[mem.plan_id]?.name||mem.plan_name||null) : null;
     const likeCount=await q.count(db.profile_likes,{profile_id:u._id});
     const likedByMe=isSelf?false:!!(await q.one(db.profile_likes,{profile_id:u._id,liker_id:me}));
-    const viewerLang = isSelf ? (u.lang||'') : ((await q.one(db.users,{_id:me}))?.lang||'');
+    const meUser = isSelf ? u : await q.one(db.users,{_id:me});
+    const viewerLang = meUser?.lang||'';
+    const viewerIsAdmin = !!(meUser && meUser.is_admin);
     res.json({
       id:u._id, name: u.anonymous&&!isSelf ? 'Anonymný člen' : u.name,
       nickname: u.anonymous&&!isSelf ? '' : (u.nickname||''),
       status: u.anonymous&&!isSelf ? '' : (u.status||''),
       birthday: isSelf ? (u.birthday||'') : undefined,
-      gender, viewer_lang: viewerLang,
+      gender, viewer_lang: viewerLang, viewer_is_admin: viewerIsAdmin,
       membership_tier: memTier, membership_name: memName,
       likes: likeCount, liked_by_me: likedByMe,
       anonymous: !!u.anonymous, is_self:isSelf,
@@ -1701,6 +1703,33 @@ app.post('/api/admin/leads/:id/contacted', adminAuth, async(req,res)=>{
     if(!u) return res.status(404).json({error:'Nenájdený'});
     await q.update(db.users,{_id:u._id},{$set:{last_contacted_at:nowISO()}});
     res.json({ ok:true, last_contacted_at:nowISO() });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Detailed CLIENTS list (paying members only — leads have their own tab) ────
+app.get('/api/admin/clients', adminAuth, async(req,res)=>{
+  try {
+    const {search} = req.query;
+    let clients = await q.find(db.users, {user_type:'client', is_admin:{$ne:true}}, {created_at:-1});
+    if(search){ const s=search.toLowerCase(); clients = clients.filter(u=>u.name?.toLowerCase().includes(s)||u.email?.toLowerCase().includes(s)||(u.phone||'').includes(s)); }
+    // Load all bookings once and group (avoid N queries)
+    const allB = await q.find(db.bookings, {});
+    const byUser = {};
+    for(const b of allB){ if(!b.user_id) continue; (byUser[b.user_id]=byUser[b.user_id]||[]).push(b); }
+    const result = await Promise.all(clients.map(async u => {
+      const m = await checkMembership(u._id);
+      const bks = (byUser[u._id]||[]).filter(b=>b.status!=='cancelled');
+      return {
+        id:u._id, name:u.name, email:u.email, phone:u.phone||'', avatar:u.avatar||null,
+        membership: m ? (MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||null) : null,
+        expires_at: m ? (m.expires_at||'').slice(0,10) : null,
+        credits: u.referral_credit||0,
+        bookings: bks.length,
+        attendances: u.visit_count||0,
+        active: u.active!==false,
+      };
+    }));
+    res.json({ clients: result, total: result.length });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 

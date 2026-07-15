@@ -111,7 +111,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
     <div class="group-links" data-group="manage">
       <a class="nav-link" href="#" onclick="show('leads')"><i class="bi bi-person-plus me-2"></i>Leady <span id="leadsNavBadge" class="badge ms-1" style="background:#C9A84C;color:#111;display:none"></span></a>
-      <a class="nav-link" href="#" onclick="show('crm')"><i class="bi bi-person-lines-fill me-2"></i>Klienti &amp; leady <span id="crmLeadsBadge" class="badge ms-1" style="background:#C9A84C;color:#111;display:none"></span></a>
+      <a class="nav-link" href="#" onclick="show('crm')"><i class="bi bi-person-lines-fill me-2"></i>Klienti <span id="crmClientsBadge" class="badge ms-1" style="background:#C9A84C;color:#111;display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('memberships')"><i class="bi bi-patch-check me-2"></i>Členstvá</a>
       <a class="nav-link" href="#" onclick="show('classes')"><i class="bi bi-calendar3 me-2"></i>Hodiny / Stream</a>
       <a class="nav-link" href="#" onclick="show('bookings')"><i class="bi bi-calendar-check me-2"></i>Rezervácie</a>
@@ -690,36 +690,26 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </div>
   </div>
 
-  <!-- CRM – Users -->
+  <!-- KLIENTI – platiaci členovia (leady majú vlastný tab) -->
   <div id="s-crm" class="section">
-    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-      <h4 class="fw-bold mb-0"><i class="bi bi-person-lines-fill me-2 text-warning"></i>CRM – Správa používateľov</h4>
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <h4 class="fw-bold mb-0"><i class="bi bi-people-fill me-2 text-warning"></i><span id="clientsCount">0</span> Klienti</h4>
       <div class="d-flex gap-2 flex-wrap">
-        <input type="text" id="crmSearch" class="form-control form-control-sm" style="width:180px" placeholder="🔍 Meno / email..." oninput="loadCrm()">
-        <select id="crmRoleFilter" class="form-select form-select-sm" style="width:130px" onchange="loadCrm()">
-          <option value="all">Všetci</option>
-          <option value="lead">🔵 Lead</option>
-          <option value="client">🟢 Klient</option>
-          <option value="trainer">🟡 Tréner</option>
-          <option value="partner">🟠 Partner</option>
-          <option value="manager">🔴 Manager</option>
-          <option value="admin">⚫ Admin</option>
-        </select>
-        <button class="btn btn-sm btn-outline-secondary" onclick="loadCrm()"><i class="bi bi-arrow-clockwise"></i></button>
+        <input type="text" id="clientsSearch" class="form-control form-control-sm" style="width:220px" placeholder="🔍 Meno / email / telefón..." oninput="loadClients()">
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadClients()"><i class="bi bi-arrow-clockwise"></i></button>
       </div>
     </div>
-    <!-- Stats pills -->
-    <div class="d-flex gap-2 flex-wrap mb-4" id="crmStats">
-      <span class="badge rounded-pill" style="background:#1e1e1e;border:1px solid #333;color:#ccc;padding:8px 14px;font-size:.82rem">Načítavam...</span>
-    </div>
-    <div class="table-responsive">
-      <table class="table table-dark table-hover align-middle mb-0" style="font-size:.85rem">
-        <thead><tr>
-          <th>Meno</th><th>Email</th><th>Rola</th><th>Členstvo</th>
-          <th>Návštevy</th><th>Vernosť</th><th>Registrácia</th><th>Akcie</th>
-        </tr></thead>
-        <tbody id="crmTableBody"><tr><td colspan="8" class="text-center py-4 text-muted">Načítavam...</td></tr></tbody>
-      </table>
+    <p class="text-muted small mb-3">Platiaci klienti. Klikni na klienta pre jeho profil a administráciu (odznaky, merch, odchodené hodiny).</p>
+    <div class="card border-0 rounded-3">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="font-size:.85rem">
+          <thead class="table-light"><tr>
+            <th class="ps-3">Meno</th><th>Email</th><th>Telefón</th><th>Členstvo</th>
+            <th>Platnosť do</th><th class="text-center">Kredit</th><th class="text-center">Rezervácie</th><th class="text-center">Účasti</th>
+          </tr></thead>
+          <tbody id="clientsTableBody"><tr><td colspan="8" class="text-center py-4 text-muted">Načítavam...</td></tr></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -2002,66 +1992,32 @@ async function markContacted(id){
 const ROLE_ICONS={lead:'🔵',client:'🟢',trainer:'🟡',partner:'🟠',manager:'🔴',admin:'⚫'};
 const ROLE_LABELS={lead:'Lead',client:'Klient',trainer:'Tréner',partner:'Partner',manager:'Manager',admin:'Admin'};
 
-async function loadCrm(){
-  const search=document.getElementById('crmSearch').value;
-  const role=document.getElementById('crmRoleFilter').value;
-  const tbody=document.getElementById('crmTableBody');
+async function loadClients(){
+  const tbody=document.getElementById('clientsTableBody');
   tbody.innerHTML='<tr><td colspan="8" class="text-center py-3 text-muted">Načítavam...</td></tr>';
-  const d=await api(`/api/admin/users?role=${role}&search=${encodeURIComponent(search)}`);
-  if(!d)return;
-  // Stats
-  const stats=await api('/api/admin/crm/stats');
-  if(stats){
-    document.getElementById('crmStats').innerHTML=[
-      {k:'total',l:'Celkom',c:'secondary'},{k:'leads',l:'Leads',c:'primary'},
-      {k:'clients',l:'Klienti',c:'success'},{k:'trainers',l:'Tréneri',c:'warning'},
-      {k:'partners',l:'Partneri',c:'danger'},{k:'new_this_month',l:'Nový tento mesiac',c:'info'}
-    ].map(x=>`<span class="badge rounded-pill bg-${x.c}" style="padding:8px 14px;font-size:.82rem">${x.l}: <b>${stats[x.k]||0}</b></span>`).join('')
-     +`<span class="badge rounded-pill" style="padding:8px 14px;font-size:.82rem;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08" title="Podiel klientov z (leadov + klientov)">Konverzia lead→klient: <b>${stats.conversion_rate||0}%</b></span>`;
-    const leads=stats.leads||0;
-    if(leads>0){const b=document.getElementById('crmLeadsBadge');b.textContent=leads;b.style.display='inline';}
-  }
-  if(!d.users?.length){tbody.innerHTML='<tr><td colspan="8" class="text-center py-4 text-muted">Žiadni používatelia</td></tr>';return;}
-  tbody.innerHTML=d.users.map(u=>{
-    const rIcon=ROLE_ICONS[u.user_type]||'🔵';
-    const rLabel=ROLE_LABELS[u.user_type]||u.user_type;
-    const mem=u.membership?`<span class="badge bg-success">${escHtml(u.membership.plan_name||'')}</span><br><small class="text-muted">${u.membership.expires_at||''}</small>`:'<span class="text-muted small">—</span>';
-    const blocked=u.active===false?'<span class="badge bg-danger">Zablokovaný</span>':'';
-    return `<tr>
-      <td><strong style="cursor:pointer;color:#C9A84C;text-decoration:underline dotted" onclick="openClientDetail('${u.id}')" title="Zobraziť 360° profil">${escHtml(u.name)}</strong>${blocked?'<br>'+blocked:''}</td>
-      <td class="text-muted">${escHtml(u.email)}<br><small>${escHtml(u.phone||'')}</small></td>
-      <td>
-        <select class="form-select form-select-sm bg-dark text-light border-secondary" style="font-size:.75rem;width:110px"
-          onchange="setUserRole('${u.id}',this.value)">
-          ${Object.entries(ROLE_LABELS).map(([k,v])=>`<option value="${k}"${u.user_type===k?' selected':''}>${ROLE_ICONS[k]} ${v}</option>`).join('')}
-        </select>
-      </td>
+  const s=document.getElementById('clientsSearch').value.trim();
+  const d=await api('/api/admin/clients'+(s?('?search='+encodeURIComponent(s)):''));
+  if(!d||d.error){ tbody.innerHTML='<tr><td colspan="8" class="text-center text-danger py-4">Chyba pri načítaní.</td></tr>'; return; }
+  document.getElementById('clientsCount').textContent=d.total;
+  const b=document.getElementById('crmClientsBadge'); if(d.total>0){ b.textContent=d.total; b.style.display='inline'; }
+  if(!d.clients.length){ tbody.innerHTML='<tr><td colspan="8" class="text-center py-4 text-muted">Žiadni klienti</td></tr>'; return; }
+  const ini=n=>(n||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+  tbody.innerHTML=d.clients.map(c=>{
+    const av=c.avatar?`<img src="${c.avatar}" style="width:32px;height:32px;border-radius:50%;object-fit:cover">`:`<span style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#C9A84C,#a07830);color:#111;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.72rem">${escHtml(ini(c.name))}</span>`;
+    const mem=c.membership?`<span class="badge" style="background:rgba(201,168,76,.15);color:#C9A84C;border:1px solid rgba(201,168,76,.3)">${escHtml(c.membership)}</span>`:'<span class="text-muted">–</span>';
+    return `<tr style="cursor:pointer" onclick="window.open('/u/${c.id}','_blank')" title="Otvoriť profil klienta">
+      <td class="ps-3"><div class="d-flex align-items-center gap-2">${av}<b>${escHtml(c.name||'–')}</b>${c.active===false?'<span class="badge bg-danger ms-1">Blok</span>':''}</div></td>
+      <td class="small text-muted">${escHtml(c.email||'–')}</td>
+      <td class="text-nowrap" onclick="event.stopPropagation()">${c.phone?`<a href="tel:${escHtml(c.phone)}" class="text-decoration-none">${escHtml(c.phone)}</a>`:'–'}</td>
       <td>${mem}</td>
-      <td style="text-align:center">
-        <span style="color:#C9A84C;font-weight:600">${u.visit_count||0}</span>
-        <div style="font-size:.7rem;color:#888">${u.loyalty_badge||'🔵'} ${escHtml(u.loyalty_label||'')}</div>
-      </td>
-      <td>${escHtml(u.loyalty_label||'—')}</td>
-      <td class="text-muted small">${(u.created_at||'').slice(0,10)}</td>
-      <td>
-        <div class="d-flex gap-1 flex-wrap">
-          <button title="Upraviť" style="font-size:.72rem;padding:3px 9px;background:#1a2a3a;border:1px solid #2a5a8a;color:#60a5fa;border-radius:5px;cursor:pointer"
-            onclick="openEditModal('${u.id}','${escJs(u.name)}','${escJs(u.email)}','${escJs(u.phone||'')}','${escJs(u.notes||'')}','${u.visit_count||0}','${u.user_type||'client'}','${u.sponsor_id||''}')">
-            <i class="bi bi-pencil-fill"></i> Upraviť
-          </button>
-          ${u.active!==false
-            ?`<button title="Zablokovať" style="font-size:.72rem;padding:3px 9px;background:#3a1a1a;border:1px solid #8b3232;color:#ef9a9a;border-radius:5px;cursor:pointer" onclick="blockUser('${u.id}')"><i class="bi bi-slash-circle"></i></button>`
-            :`<button title="Odblokovať" style="font-size:.72rem;padding:3px 9px;background:#1a3a1a;border:1px solid #328b32;color:#81c784;border-radius:5px;cursor:pointer" onclick="unblockUser('${u.id}')"><i class="bi bi-check-circle"></i></button>`
-          }
-          <button title="Zmazať účet" style="font-size:.72rem;padding:3px 9px;background:#3a0f0f;border:1px solid #c62828;color:#f48fb1;border-radius:5px;cursor:pointer"
-            onclick="deleteUser('${u.id}','${escJs(u.name)}')">
-            <i class="bi bi-trash3-fill"></i>
-          </button>
-        </div>
-      </td>
+      <td class="text-nowrap ${c.expires_at?'':'text-muted'}">${c.expires_at||'–'}</td>
+      <td class="text-center">${c.credits?('<b>'+c.credits+' €</b>'):'0'}</td>
+      <td class="text-center">${c.bookings}</td>
+      <td class="text-center">${c.attendances}</td>
     </tr>`;
   }).join('');
 }
+const loadCrm = loadClients; // spätná kompatibilita s refresh volaniami
 
 async function openClientDetail(id){
   document.getElementById('clientDetailModal').style.display='flex';
