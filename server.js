@@ -1077,11 +1077,11 @@ const ACHIEVEMENTS = [
   {id:'v600', cat:'visits', need:600,  icon:'🦋', name:'Ikona',         desc:'600 hodín'},
   {id:'v1000',cat:'visits', need:1000, icon:'🌟', name:'Legenda',       desc:'1000 hodín'},
   // Privedení noví ľudia (referral)
-  {id:'r1',   cat:'refs', need:1,   icon:'🤝', name:'Ambasádor',       desc:'1 privedený člen'},
-  {id:'r3',   cat:'refs', need:3,   icon:'📣', name:'Motivátor',       desc:'3 privedení členovia'},
-  {id:'r5',   cat:'refs', need:5,   icon:'🌱', name:'Rozsievač',       desc:'5 privedených členov'},
-  {id:'r10',  cat:'refs', need:10,  icon:'🚀', name:'Líder komunity',  desc:'10 privedených členov'},
-  {id:'r25',  cat:'refs', need:25,  icon:'👑', name:'Kráľ náboru',     desc:'25 privedených členov'},
+  {id:'r1',   cat:'refs', need:1,   icon:'🤝', name:'Ambasádorka',         desc:'1 privedený člen'},
+  {id:'r3',   cat:'refs', need:3,   icon:'🌱', name:'Rozsievačka radosti', desc:'3 privedení členovia'},
+  {id:'r5',   cat:'refs', need:5,   icon:'🌸', name:'Inšpirácia',          desc:'5 privedených členov'},
+  {id:'r10',  cat:'refs', need:10,  icon:'💫', name:'Duša komunity',       desc:'10 privedených členov'},
+  {id:'r25',  cat:'refs', need:25,  icon:'👑', name:'Srdce komunity',      desc:'25 privedených členov'},
   // Vernosť (mesiace členstva)
   {id:'m3',   cat:'tenure', need:3,  icon:'📅', name:'Verný',          desc:'3 mesiace s nami'},
   {id:'m6',   cat:'tenure', need:6,  icon:'💛', name:'Srdcom Fusion',  desc:'6 mesiacov'},
@@ -1091,11 +1091,11 @@ const ACHIEVEMENTS = [
 async function referralCountOf(uid){ return q.count(db.users,{sponsor_id:uid,is_admin:{$ne:true}}); }
 // Visual reward for bringing new people: an emoji title shown before the name
 const REFERRAL_BADGES = [
-  {need:25, emoji:'👑', title:'Kráľ náboru'},
-  {need:10, emoji:'🚀', title:'Líder komunity'},
-  {need:5,  emoji:'🌱', title:'Rozsievač'},
-  {need:3,  emoji:'📣', title:'Motivátor'},
-  {need:1,  emoji:'🤝', title:'Ambasádor'},
+  {need:25, emoji:'👑', title:'Srdce komunity'},
+  {need:10, emoji:'💫', title:'Duša komunity'},
+  {need:5,  emoji:'🌸', title:'Inšpirácia'},
+  {need:3,  emoji:'🌱', title:'Rozsievačka radosti'},
+  {need:1,  emoji:'🤝', title:'Ambasádorka'},
 ];
 function referralBadge(refCount){ return REFERRAL_BADGES.find(b=>refCount>=b.need)||null; }
 // Referral count also unlocks fancier profile backgrounds (harder than visits)
