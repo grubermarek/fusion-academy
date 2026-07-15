@@ -1389,7 +1389,14 @@ async function loadSpotlight(){
         <div><div class="sl-name">${escHtml(c.name)} ${c.badge?.emoji||''} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></div>
           <div class="sl-why">Ďakujeme, že si srdcom našej komunity! 💛</div>
           <div class="sl-stats">
-            <span class="sl-stat" onclick="event.stopPropagation();showPointsBreakdown(_colmWinner.breakdown,_colmWinner.points,_colmWinner.name)" style="cursor:pointer;background:rgba(201,168,76,.18);border:1px solid rgba(201,168,76,.4)"><b>⭐ ${c.points||0}</b> bodov · rozpis →</span>
+            <span onclick="event.stopPropagation();showPointsBreakdown(_colmWinner.breakdown,_colmWinner.points,_colmWinner.name)"
+              style="display:inline-flex;align-items:center;gap:9px;cursor:pointer;background:linear-gradient(102deg,rgba(201,168,76,.18),rgba(201,168,76,.07));border:1px solid rgba(201,168,76,.45);border-radius:12px;padding:7px 13px;transition:.15s"
+              onmouseenter="this.style.background='rgba(201,168,76,.28)'" onmouseleave="this.style.background='linear-gradient(102deg,rgba(201,168,76,.18),rgba(201,168,76,.07))'">
+              <span style="font-weight:800;color:var(--gold);font-size:1.05rem;line-height:1">⭐ ${c.points||0}</span>
+              <span style="color:var(--muted);font-size:.8rem">bodov</span>
+              <span style="width:1px;height:14px;background:rgba(201,168,76,.3)"></span>
+              <span style="color:var(--gold);font-size:.8rem;font-weight:600;display:inline-flex;align-items:center;gap:3px">Rozpis <i class="bi bi-chevron-right" style="font-size:.68rem"></i></span>
+            </span>
           </div>
         </div>
       </div></div>`;
