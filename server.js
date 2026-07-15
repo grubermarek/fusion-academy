@@ -2228,8 +2228,17 @@ app.post('/api/admin/import-members', adminAuth, async(req,res)=>{
       // ── Účet už existuje → doplň mu vstupy/členstvo (idempotentne cez glofox_synced) ──
       const existing=await q.one(db.users,{email});
       if(existing){
-        if(existing.glofox_synced){ skipped++; continue; } // Glofox dáta už boli priradené
-        const upd={ glofox_synced:true };
+        const upd={};
+        // Návštevy vždy dorovnaj podľa Glofox záznamov (opraví aj skôr naimportované)
+        if(attendances > (existing.visit_count||0)) upd.visit_count = attendances;
+        if(attendances) upd.glofox_attendances = attendances;
+        if(existing.glofox_synced){
+          // Už zosynchronizované — aktualizuj len návštevy, nič sa nezdvojí
+          if(Object.keys(upd).length){ await q.update(db.users,{_id:existing._id},{$set:upd}); merged++; }
+          else skipped++;
+          continue;
+        }
+        upd.glofox_synced=true;
         // Glofox člen → patrí medzi klientov (nie leady), aj keď sa už registroval
         if(existing.user_type==='lead') upd.user_type='client';
         if(credits>0){ upd.single_entries=(existing.single_entries||0)+credits; withEntries++; }
@@ -2249,7 +2258,7 @@ app.post('/api/admin/import-members', adminAuth, async(req,res)=>{
         lead_source:'glofox', gender, birthday,
         last_contacted_at: (iLastC>=0 && parseFlexDate(row[iLastC])) ? row[iLastC] : null,
         consent_at: consent?nowISO():null, email_consent:consent,
-        visit_count:attendances, single_entries:credits, referral_credit:0,
+        visit_count:attendances, glofox_attendances:attendances, single_entries:credits, referral_credit:0,
         // Prvú hodinu zdarma už mali v Glofoxe → tá jedna zdarma sa im pridá až pri
         // registrácii do novej appky (+1 free_credit v claime), nedvojí sa.
         free_class_used:true,
@@ -3913,11 +3922,31 @@ app.post('/api/admin/send-payslips', adminAuth, async(req,res)=>{
     res.json({ ok:true, month, ...r });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
+// Stiahni výplatné pásky za mesiac ako CSV (kedykoľvek)
+app.get('/api/admin/payslips.csv', adminAuth, async(req,res)=>{
+  try {
+    const month = req.query.month || prevMonthStr();
+    const trainers = await q.find(db.users,{$or:[{user_type:'trainer'},{user_type:'manager'}]});
+    const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
+    const num=n=>(+n).toFixed(2).replace('.',',');
+    const rows=[['Tréner','Mesiac','Hodiny','Účasti','Základ EUR','Bonusy EUR','Affiliate EUR','Zrážky EUR','Spolu EUR'].join(';')];
+    let grand=0;
+    for(const t of trainers){
+      const ps=await trainerMonthPayslip(t, month);
+      if(ps.st.sessions===0 && ps.total===0) continue;
+      grand+=ps.total;
+      rows.push([t.name,month,ps.st.sessions,ps.st.attendances,num(ps.base),num(ps.bonuses),num(ps.affiliate),num(ps.ded),num(ps.total)].map(esc).join(';'));
+    }
+    rows.push(''); rows.push([esc('SPOLU'),'','','','','','','',esc(num(grand))].join(';'));
+    res.setHeader('Content-Type','text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition',`attachment; filename=vyplatne_pasky_${month}.csv`);
+    res.send('﻿'+rows.join('\r\n'));
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
 
 // ── Súhrn bodov klientov za obdobie (kto, koľko a za čo) ───────────────────────
-app.get('/api/admin/points-summary', adminAuth, async(req,res)=>{
-  try {
-    const {from, to} = req.query;
+async function pointsSummaryData(from, to){
+  {
     const fromD=(from||'0000').slice(0,10), toD=(to||'9999').slice(0,10);
     const inRange=d=>{ d=(d||'').slice(0,10); return d>=fromD && d<=toD; };
     const users=(await q.find(db.users,{is_admin:{$ne:true}, is_child:{$ne:true}})).filter(u=>!(u.imported&&!u.claimed)&&!u.anonymous);
@@ -3943,8 +3972,29 @@ app.get('/api/admin/points-summary', adminAuth, async(req,res)=>{
         items:pi.items.filter(i=>i.points>0).map(i=>({label:i.label, count:i.count, points:i.points})) });
     }
     rows.sort((a,b)=>b.total-a.total);
-    res.json({ from:fromD, to:toD, count:rows.length, rows, catTotals,
-      grandPoints: rows.reduce((s,r)=>s+r.total,0) });
+    return { from:fromD, to:toD, count:rows.length, rows, catTotals,
+      grandPoints: rows.reduce((s,r)=>s+r.total,0) };
+  }
+}
+app.get('/api/admin/points-summary', adminAuth, async(req,res)=>{
+  try { res.json(await pointsSummaryData(req.query.from, req.query.to)); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Export bodov klientov za obdobie ako CSV
+app.get('/api/admin/points-summary.csv', adminAuth, async(req,res)=>{
+  try {
+    const from=req.query.from||'', to=req.query.to||'';
+    const d=await pointsSummaryData(from, to);
+    const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
+    const rows=[['Klient','Hodiny','Online','Odporúčania','Členstvo','Spolu body','Za čo'].join(';')];
+    for(const u of (d.rows||[])){
+      const za=u.items.map(i=>`${i.label} ${i.points}b`).join(' | ');
+      rows.push([u.name,u.hours,u.online,u.refs,u.hasMem?'áno':'nie',u.total,za].map(esc).join(';'));
+    }
+    res.setHeader('Content-Type','text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition',`attachment; filename=body_klientov_${from||'vse'}_${to||''}.csv`);
+    res.send('﻿'+rows.join('\r\n'));
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 

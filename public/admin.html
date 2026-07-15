@@ -1095,6 +1095,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
         <input type="month" id="poMonth" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:150px" onchange="loadPayouts()">
         <button class="btn btn-sm btn-outline-light" onclick="window.open('/api/admin/payouts/export.csv?month='+document.getElementById('poMonth').value,'_blank')"><i class="bi bi-filetype-csv"></i> CSV</button>
         <button class="btn btn-sm btn-outline-success" onclick="sendPayslips()" title="Poslať výplatné pásky trénerom aj sebe na e-mail"><i class="bi bi-envelope-paper"></i> Poslať pásky</button>
+        <button class="btn btn-sm btn-outline-light" onclick="window.open('/api/admin/payslips.csv?month='+document.getElementById('poMonth').value,'_blank')" title="Stiahnuť výplatné pásky (CSV)"><i class="bi bi-download"></i> Pásky CSV</button>
         <button class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('poRules').classList.toggle('d-none')"><i class="bi bi-sliders"></i> Odmeny</button>
       </div>
     </div>
@@ -1163,7 +1164,10 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <div class="col-lg-6"><div class="card bg-dark border-secondary h-100"><div class="card-body"><h6 class="fw-bold mb-3">Podľa inštruktora</h6><div id="accByInstructor"></div></div></div></div>
       <div class="col-12"><div class="card bg-dark border-secondary"><div class="card-body"><h6 class="fw-bold mb-3">Mesačná uzávierka</h6><div id="accByMonth"></div></div></div></div>
       <div class="col-12"><div class="card bg-dark border-secondary"><div class="card-body">
-        <h6 class="fw-bold mb-3">🏆 Body klientov za obdobie <span class="text-muted small fw-normal">(kto, koľko a za čo)</span></h6>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="fw-bold mb-0">🏆 Body klientov za obdobie <span class="text-muted small fw-normal">(kto, koľko a za čo)</span></h6>
+          <button class="btn btn-sm btn-outline-light" onclick="const r=accRange();window.open('/api/admin/points-summary.csv?from='+r.from+'&to='+r.to,'_blank')" title="Stiahnuť body klientov (CSV)"><i class="bi bi-download"></i> CSV</button>
+        </div>
         <div id="accPoints"><div class="text-muted small">Načítavam…</div></div>
       </div></div></div>
     </div>
