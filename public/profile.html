@@ -290,10 +290,15 @@ function render(){
       ${P.nickname?`<div class="pnick">„${esc(P.nickname)}"</div>`:''}
       ${P.status?`<div class="pstatus">„${esc(P.status)}"</div>`:''}
       <div class="ptags">
+        ${P.is_trainer?'<span class="tag" style="background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;border:none;font-weight:800">🎓 Tréner</span>':''}
         <span class="tag">${P.member_badge?.emoji||'🌱'} ${esc(P.member_badge?.label||'Nováčik')}</span>
         <span class="tag">🏅 ${esc(P.loyalty_label)}</span>
         <span class="tag">🏆 ${T('profile.badges_of',{n:P.earned_count,m:P.total_count})}</span>
       </div>
+      ${P.is_trainer?`<div class="ptags" style="margin-top:8px">
+        <span class="tag">🎵 ${P.taught_group_hours||0} skupinových hodín</span>
+        <span class="tag">🔑 ${P.taught_private_hours||0} súkromných hodín</span>
+      </div>`:''}
       ${P.joined?`<div class="joined-date">💛 ${T('profile.member_since',{who:T(isM?'profile.member_m':'profile.member_f'),date:new Date(P.joined).toLocaleDateString(LOC,{month:'long',year:'numeric'})})}</div>`:''}
       <div>${P.is_self
         ? `<button class="like-btn" disabled style="opacity:.75;cursor:default"><i class="bi bi-heart-fill"></i> ${T('profile.likes',{n:P.likes||0})}</button>`
@@ -467,13 +472,28 @@ function renderAdmin(){
       </div>
     </div>
     <div class="set-row">
-      <span class="set-label">Súkromné hodiny</span>
+      <span class="set-label">Súkromné hodiny (klient)</span>
       <div class="adm-hours">
         <input type="number" id="admPrivate" min="0" value="${a.private_hours||0}">
         <button onclick="savePrivate()">Uložiť</button>
         <span class="set-hint">Odomkne odznaky za súkromné hodiny (1 → 1000).</span>
       </div>
     </div>
+    ${a.is_trainer?`
+    <div class="set-row">
+      <span class="set-label">🎓 Odučené skupinové hodiny (tréner)</span>
+      <div class="adm-hours">
+        <input type="number" id="admTgroup" min="0" value="${a.taught_group_hours||0}">
+        <button onclick="saveTaught('taught_group_hours','admTgroup')">Uložiť</button>
+      </div>
+    </div>
+    <div class="set-row">
+      <span class="set-label">🎓 Odučené súkromné hodiny (tréner)</span>
+      <div class="adm-hours">
+        <input type="number" id="admTprivate" min="0" value="${a.taught_private_hours||0}">
+        <button onclick="saveTaught('taught_private_hours','admTprivate')">Uložiť</button>
+      </div>
+    </div>`:''}
     <div class="set-row">
       <span class="set-label">Merch (pridať/odobrať odznak)</span>
       <div class="adm-chips">${merchChips||'<span class="set-hint">—</span>'}</div>
@@ -525,6 +545,10 @@ async function saveHours(){
 async function savePrivate(){
   const v=parseInt(document.getElementById('admPrivate').value)||0;
   if(await putAwards({private_hours:v})){ _awards.private_hours=v; alert('Uložené ✓ Obnovujem profil…'); location.reload(); }
+}
+async function saveTaught(field,inputId){
+  const v=parseInt(document.getElementById(inputId).value)||0;
+  if(await putAwards({[field]:v})){ _awards[field]=v; alert('Uložené ✓ Obnovujem profil…'); location.reload(); }
 }
 async function toggleMerch(m){
   const s=new Set(_awards.merch_owned||[]);

@@ -1178,6 +1178,18 @@ const ACHIEVEMENTS = [
   {id:'p1000', cat:'private', need:1000, icon:'♾️', name:'Nekonečná oddanosť', desc:'1000 súkromných hodín'},
   // Špeciálne roly
   {id:'assistant', cat:'special', flag:'is_assistant', icon:'🤝', name:'Asistent trénera', desc:'Pomáha trénerovi ako asistent'},
+  {id:'trainer',   cat:'special', role:'trainer', icon:'🎓', name:'Tréner Fusion Academy', desc:'Akreditovaný tréner FA'},
+  // Odučené SKUPINOVÉ hodiny (len tréneri)
+  {id:'tg10',   cat:'tgroup', need:10,   icon:'🎵', name:'Prvé hodiny',       desc:'10 odučených skupinových hodín'},
+  {id:'tg50',   cat:'tgroup', need:50,   icon:'💃', name:'Skúsený tréner',    name_m:'Skúsený tréner', desc:'50 odučených skupinových hodín'},
+  {id:'tg150',  cat:'tgroup', need:150,  icon:'🔥', name:'Majster parketu',   desc:'150 odučených skupinových hodín'},
+  {id:'tg500',  cat:'tgroup', need:500,  icon:'🏆', name:'Legenda tréningov', desc:'500 odučených skupinových hodín'},
+  {id:'tg1000', cat:'tgroup', need:1000, icon:'🌟', name:'Ikona tréningov',   desc:'1000 odučených skupinových hodín'},
+  // Odučené SÚKROMNÉ hodiny (len tréneri)
+  {id:'tp5',    cat:'tprivate', need:5,    icon:'🔑', name:'Osobný tréner',      desc:'5 odučených súkromných hodín'},
+  {id:'tp25',   cat:'tprivate', need:25,   icon:'⚜️', name:'VIP tréner',         desc:'25 odučených súkromných hodín'},
+  {id:'tp100',  cat:'tprivate', need:100,  icon:'💎', name:'Elitný tréner',      desc:'100 odučených súkromných hodín'},
+  {id:'tp500',  cat:'tprivate', need:500,  icon:'♾️', name:'Nesmrteľný mentor',  desc:'500 odučených súkromných hodín'},
   // Merch — odomkne sa pri kúpe daného kúsku
   {id:'merch_tielko', cat:'merch', item:'tielko', icon:'🎽', name:'Tielko FA', desc:'Kúpené tielko Fusion Academy'},
   {id:'merch_tricko', cat:'merch', item:'tricko', icon:'👕', name:'Tričko FA', desc:'Kúpené tričko Fusion Academy'},
@@ -1265,12 +1277,17 @@ function computeAchievements(u, refCount, tenureMonths, gender){
   const visits=u.visit_count||0;
   const g = gender || u.gender || 'female';
   const months = (tenureMonths!==undefined) ? tenureMonths : monthsSince(u.created_at);
-  const val={visits, refs:refCount, tenure:months, private:u.private_hours||0};
+  const isTrainer = (u.user_type==='trainer') || !!u.is_admin;
+  const val={visits, refs:refCount, tenure:months, private:u.private_hours||0,
+    tgroup:u.taught_group_hours||0, tprivate:u.taught_private_hours||0};
   const merch=u.merch_owned||[]; const manual=u.manual_achievements||[];
-  return ACHIEVEMENTS.map(a=>{
+  return ACHIEVEMENTS
+    // Trénerske odznaky (rola + odučené hodiny) ukáž len na profile trénera/admina
+    .filter(a=> (a.cat==='tgroup'||a.cat==='tprivate'||(a.cat==='special'&&a.role==='trainer')) ? isTrainer : true)
+    .map(a=>{
     let earned, progress;
     if(a.cat==='merch'){ earned = merch.includes(a.item); progress = earned?100:0; }
-    else if(a.cat==='special'){ earned = !!u[a.flag]; progress = earned?100:0; }
+    else if(a.cat==='special'){ earned = a.flag ? !!u[a.flag] : (a.role ? (u.user_type===a.role || (a.role==='trainer'&&u.is_admin)) : false); progress = earned?100:0; }
     else { earned = (val[a.cat]||0) >= a.need; progress = Math.min(100, Math.round((val[a.cat]||0)/a.need*100)); }
     if(manual.includes(a.id)) { earned = true; if(progress<100) progress=100; }
     const name = (g==='male' && a.name_m) ? a.name_m : a.name;
@@ -1351,6 +1368,8 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
       avatar: u.anonymous&&!isSelf ? null : (u.avatar||null),
       member_badge:badge, loyalty_label: loyalty.current?.label||'Nováčik',
       visits: u.visit_count||0, referrals: refCount, direct_refs: directRefs,
+      is_trainer: (u.user_type==='trainer')||!!u.is_admin,
+      taught_group_hours: u.taught_group_hours||0, taught_private_hours: u.taught_private_hours||0,
       months_member: memberMonths, joined: (u.created_at||'').slice(0,10),
       achievements: ach, earned_count: earned.length, total_count: ach.length,
       bg_tier: bgTier, next_bg: nextBg, name_badge: nameBadge,
@@ -1445,7 +1464,9 @@ app.get('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
   const refCount=await referralCountOf(u._id);
   const memberMonths=await activeMembershipMonths(u._id);
   const sponsor = u.sponsor_id ? await q.one(db.users,{_id:u.sponsor_id}) : null;
-  res.json({ name:u.name, visit_count:u.visit_count||0, private_hours:u.private_hours||0, referrals:refCount, joined:(u.created_at||'').slice(0,10),
+  res.json({ name:u.name, visit_count:u.visit_count||0, private_hours:u.private_hours||0,
+    is_trainer:(u.user_type==='trainer')||!!u.is_admin, taught_group_hours:u.taught_group_hours||0, taught_private_hours:u.taught_private_hours||0,
+    referrals:refCount, joined:(u.created_at||'').slice(0,10),
     achievements: computeAchievements(u, refCount, memberMonths),
     merch_owned: u.merch_owned||[], manual_achievements: u.manual_achievements||[],
     merch_list: Object.keys(MERCH_KEYWORDS),
@@ -1483,6 +1504,8 @@ app.put('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
   const set={};
   if(req.body.visit_count!==undefined) set.visit_count=Math.max(0,parseInt(req.body.visit_count)||0);
   if(req.body.private_hours!==undefined) set.private_hours=Math.max(0,parseInt(req.body.private_hours)||0);
+  if(req.body.taught_group_hours!==undefined) set.taught_group_hours=Math.max(0,parseInt(req.body.taught_group_hours)||0);
+  if(req.body.taught_private_hours!==undefined) set.taught_private_hours=Math.max(0,parseInt(req.body.taught_private_hours)||0);
   if(Array.isArray(req.body.merch_owned)) set.merch_owned=req.body.merch_owned.filter(x=>MERCH_KEYWORDS[x]);
   if(Array.isArray(req.body.manual_achievements)) set.manual_achievements=req.body.manual_achievements.filter(id=>ACHIEVEMENTS.some(a=>a.id===id));
   if(Object.keys(set).length) await q.update(db.users,{_id:u._id},{$set:set});
