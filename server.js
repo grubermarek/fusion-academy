@@ -1082,11 +1082,19 @@ const ACHIEVEMENTS = [
   {id:'r5',   cat:'refs', need:5,   icon:'🌸', name:'Inšpirácia',          desc:'5 privedených členov'},
   {id:'r10',  cat:'refs', need:10,  icon:'💫', name:'Duša komunity',       desc:'10 privedených členov'},
   {id:'r25',  cat:'refs', need:25,  icon:'👑', name:'Srdce komunity',      desc:'25 privedených členov'},
-  // Vernosť (mesiace členstva)
-  {id:'m3',   cat:'tenure', need:3,  icon:'📅', name:'Verná',          desc:'3 mesiace s nami'},
-  {id:'m6',   cat:'tenure', need:6,  icon:'💛', name:'Srdcom Fusion',  desc:'6 mesiacov'},
-  {id:'m12',  cat:'tenure', need:12, icon:'🎖️', name:'Rok na parkete', desc:'1 rok'},
-  {id:'m24',  cat:'tenure', need:24, icon:'💎', name:'Diamantová éra', desc:'2 roky'},
+  // Vernosť — počíta sa len z mesiacov, v ktorých mala platné členstvo (až po 99 rokov)
+  {id:'m3',    cat:'tenure', need:3,    icon:'📅', name:'Verná',           desc:'3 mesiace s členstvom'},
+  {id:'m6',    cat:'tenure', need:6,    icon:'💛', name:'Srdcom Fusion',   desc:'6 mesiacov s členstvom'},
+  {id:'m12',   cat:'tenure', need:12,   icon:'🎖️', name:'Rok na parkete',  desc:'1 rok s členstvom'},
+  {id:'m24',   cat:'tenure', need:24,   icon:'💎', name:'Diamantová éra',  desc:'2 roky s členstvom'},
+  {id:'m36',   cat:'tenure', need:36,   icon:'🌟', name:'Verná duša',      desc:'3 roky s členstvom'},
+  {id:'m60',   cat:'tenure', need:60,   icon:'🏛️', name:'Pilier komunity', desc:'5 rokov s členstvom'},
+  {id:'m120',  cat:'tenure', need:120,  icon:'👑', name:'Legenda desaťročia', desc:'10 rokov s členstvom'},
+  {id:'m180',  cat:'tenure', need:180,  icon:'💠', name:'Vzácny klenot',   desc:'15 rokov s členstvom'},
+  {id:'m240',  cat:'tenure', need:240,  icon:'🕊️', name:'Nesmrteľná',      desc:'20 rokov s členstvom'},
+  {id:'m360',  cat:'tenure', need:360,  icon:'📜', name:'Živá história',   desc:'30 rokov s členstvom'},
+  {id:'m600',  cat:'tenure', need:600,  icon:'🏅', name:'Zlatá legenda',   desc:'50 rokov s členstvom'},
+  {id:'m1188', cat:'tenure', need:1188, icon:'♾️', name:'Večná ikona',     desc:'99 rokov s členstvom'},
   // Merch — odomkne sa pri kúpe daného kúsku
   {id:'merch_tielko', cat:'merch', item:'tielko', icon:'🎽', name:'Tielko FA', desc:'Kúpené tielko Fusion Academy'},
   {id:'merch_tricko', cat:'merch', item:'tricko', icon:'👕', name:'Tričko FA', desc:'Kúpené tričko Fusion Academy'},
@@ -1108,8 +1116,26 @@ function referralBadge(refCount){ return REFERRAL_BADGES.find(b=>refCount>=b.nee
 function refBgTier(refCount){ return refCount>=20?'legend' : refCount>=10?'gold' : refCount>=5?'silver' : refCount>=2?'bronze' : 'basic'; }
 const BG_RANK={basic:0,bronze:1,silver:2,gold:3,legend:4};
 function monthsSince(iso){ if(!iso) return 0; return Math.max(0, Math.floor((Date.now()-new Date(iso).getTime())/(30*86400000))); }
-function computeAchievements(u, refCount){
-  const visits=u.visit_count||0, months=monthsSince(u.created_at);
+// Count distinct calendar months in which the user held an active membership
+async function activeMembershipMonths(userId){
+  const membs=(await q.find(db.memberships,{user_id:userId})).filter(m=>!m._type);
+  const months=new Set(); const now=new Date();
+  for(const m of membs){
+    const start=new Date(m.started_at||m.start_date||m.created_at||0);
+    const end=new Date(m.expires_at||m.started_at||m.created_at||0);
+    if(isNaN(start.getTime())||isNaN(end.getTime())) continue;
+    let cur=new Date(start.getFullYear(),start.getMonth(),1);
+    const last=(end>now?now:end); let guard=0;
+    while(cur<=last && guard++<2000){
+      months.add(cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0'));
+      cur.setMonth(cur.getMonth()+1);
+    }
+  }
+  return months.size;
+}
+function computeAchievements(u, refCount, tenureMonths){
+  const visits=u.visit_count||0;
+  const months = (tenureMonths!==undefined) ? tenureMonths : monthsSince(u.created_at);
   const val={visits, refs:refCount, tenure:months};
   const merch=u.merch_owned||[]; const manual=u.manual_achievements||[];
   return ACHIEVEMENTS.map(a=>{
@@ -1159,7 +1185,8 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     const me=req.session.uid;
     const isSelf = u._id===me;
     const refCount=await referralCountOf(u._id);
-    const ach=computeAchievements(u, refCount);
+    const memberMonths=await activeMembershipMonths(u._id);
+    const ach=computeAchievements(u, refCount, memberMonths);
     const earned=ach.filter(a=>a.earned);
     const badge=getMemberBadge(u.created_at);
     const loyalty=getLoyaltyStatus(u.visit_count||0);
@@ -1177,7 +1204,7 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
       avatar: u.anonymous&&!isSelf ? null : (u.avatar||null),
       member_badge:badge, loyalty_label: loyalty.current?.label||'Nováčik',
       visits: u.visit_count||0, referrals: refCount,
-      months_member: monthsSince(u.created_at), joined: (u.created_at||'').slice(0,10),
+      months_member: memberMonths, joined: (u.created_at||'').slice(0,10),
       achievements: ach, earned_count: earned.length, total_count: ach.length,
       bg_tier: bgTier, next_bg: nextBg, name_badge: nameBadge,
       friend_state: isSelf ? 'self' : await friendState(me, u._id)
@@ -1189,8 +1216,9 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
 app.get('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
   const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
   const refCount=await referralCountOf(u._id);
+  const memberMonths=await activeMembershipMonths(u._id);
   res.json({ name:u.name, visit_count:u.visit_count||0, referrals:refCount, joined:(u.created_at||'').slice(0,10),
-    achievements: computeAchievements(u, refCount),
+    achievements: computeAchievements(u, refCount, memberMonths),
     merch_owned: u.merch_owned||[], manual_achievements: u.manual_achievements||[],
     merch_list: Object.keys(MERCH_KEYWORDS) });
 });

@@ -348,10 +348,6 @@
     </div>
     <div class="mc-info" id="mcInfo" style="display:none">
       <div class="mc-info-item">
-        <label>Stav</label>
-        <span id="mcStatusText">—</span>
-      </div>
-      <div class="mc-info-item">
         <label>Platné do</label>
         <span id="mcExpiry">—</span>
       </div>
@@ -711,7 +707,6 @@ function renderMembership(me){
     statusEl.className='mc-status '+(isActive?'active':'expired');
     statusEl.textContent=isActive?'✓ Aktívne':'✗ Vypršalo';
     noBlock.style.display='none';infoBlock.style.display='flex';
-    document.getElementById('mcStatusText').textContent=isActive?'Aktívne':'Vypršalo';
     if(m.expires_at){
       const d=new Date(m.expires_at);const days=Math.round((d-new Date())/86400000);
       document.getElementById('mcExpiry').textContent=fmtDate(m.expires_at)+(days>=0&&days<=7?` ⚠️ (${days} dní)`:'');
