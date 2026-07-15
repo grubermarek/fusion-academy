@@ -1976,7 +1976,7 @@ async function loadLeads(){
   const fmtD=iso=>iso?new Date(iso).toLocaleDateString('sk-SK',{day:'numeric',month:'short'}):'—';
   body.innerHTML=d.leads.map(l=>`<tr>
     <td class="ps-3 text-nowrap"><i class="bi bi-clock text-muted me-1"></i>${agoTxt(l.added_days)}</td>
-    <td><b>${escHtml(l.name||'—')}</b>${l.imported?`<span class="badge bg-secondary ms-1" title="Importované z Glofox${l.claimed?' · účet vytvorený':''}">🗂️${l.claimed?'✓':''}</span>`:''}${l.sponsor?`<div class="small text-muted">👤 ${escHtml(l.sponsor)}</div>`:''}</td>
+    <td><a href="/u/${l.id}" target="_blank" style="color:#C9A84C;text-decoration:none;font-weight:700" title="Zobraziť profil">${escHtml(l.name||'—')} <i class="bi bi-box-arrow-up-right" style="font-size:.68rem;opacity:.6"></i></a>${l.imported?`<span class="badge bg-secondary ms-1" title="Importované z Glofox${l.claimed?' · účet vytvorený':''}">🗂️${l.claimed?'✓':''}</span>`:''}${l.sponsor?`<div class="small text-muted">👤 ${escHtml(l.sponsor)}</div>`:''}</td>
     <td class="small">${escHtml(l.email||'—')}</td>
     <td class="text-nowrap">${l.phone?`<a href="tel:${escHtml(l.phone)}" class="text-decoration-none">${escHtml(l.phone)}</a>`:'—'}</td>
     <td>${regBadge(l.reg_point)}</td>

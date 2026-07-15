@@ -1346,13 +1346,13 @@ async function loadAssistant(){
 }
 function asstSearch(){ clearTimeout(_asstTimer); _asstTimer=setTimeout(runAsstSearch,250); }
 async function runAsstSearch(){
-  const q=(document.getElementById('asstSearch').value||'').trim().toLowerCase();
+  const q=(document.getElementById('asstSearch').value||'').trim();
   const box=document.getElementById('asstResults');
   if(q.length<2){ box.style.display='none'; return; }
-  if(!_asstClients.length){ const d=await api('/api/attendance/clients'); _asstClients=(d&&(d.clients||d))||[]; }
-  const list=_asstClients.filter(c=>(c.name||'').toLowerCase().includes(q)).slice(0,10);
+  // hľadá VŠETKÝCH (aj adminov/trénerov ako Beáta/Nelka)
+  const list=(await api('/api/attendance/search-users?q='+encodeURIComponent(q))||[]).filter(c=>!c.is_child).slice(0,12);
   if(!list.length){ box.innerHTML='<div style="padding:9px 12px;color:var(--muted);font-size:.8rem">Nikto sa nenašiel.</div>'; box.style.display='block'; return; }
-  box.innerHTML=list.map(c=>`<div onclick="assignAssistant('${c.id||c._id}')" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:.83rem" onmouseenter="this.style.background='#1a1a1a'" onmouseleave="this.style.background=''"><b>${c.name}</b> <span style="color:var(--muted);font-size:.74rem">${c.email||''}</span></div>`).join('');
+  box.innerHTML=list.map(c=>`<div onclick="assignAssistant('${c.id}')" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:.83rem" onmouseenter="this.style.background='#1a1a1a'" onmouseleave="this.style.background=''"><b>${c.name}</b> <span style="color:var(--muted);font-size:.74rem">${c.email||''}</span></div>`).join('');
   box.style.display='block';
 }
 async function assignAssistant(id){
