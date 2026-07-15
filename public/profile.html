@@ -403,7 +403,7 @@ function renderAdmin(){
     </div>
     <div class="set-row">
       <span class="set-label">Sponzor (MLM štruktúra)</span>
-      <div style="font-size:.85rem;margin-bottom:6px">${a.sponsor_name?`Aktuálny: <b style="color:var(--gold)">${esc(a.sponsor_name)}</b> <span class="set-hint">(${esc(a.sponsor_code||'')})</span>`:'<span class="set-hint">Bez sponzora — zaregistroval sa bez kódu.</span>'}</div>
+      <div style="font-size:.85rem;margin-bottom:6px">${a.sponsor_name?`Aktuálny: <a href="/u/${a.sponsor_id}" style="color:var(--gold);font-weight:700;text-decoration:none">${esc(a.sponsor_name)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.7"></i></a> <span class="set-hint">(${esc(a.sponsor_code||'')})</span>`:'<span class="set-hint">Bez sponzora — zaregistroval sa bez kódu.</span>'}</div>
       <div style="position:relative">
         <div class="adm-hours">
           <input type="text" id="spSearch" placeholder="🔍 Meno / email / kód sponzora…" oninput="searchSponsor()" autocomplete="off" style="flex:1">
