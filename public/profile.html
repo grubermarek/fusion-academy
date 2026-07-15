@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/fa-theme.css">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="/i18n.js"></script>
 <style>
   :root{--gold:#C9A24C;--cream:#EAE3D5;--muted:#8a8272;--bg:#141210;--card:#1b1916;--border:#2e2a20}
   *{box-sizing:border-box;margin:0;padding:0}
@@ -99,45 +100,56 @@
   .cmt-text{font-size:.9rem;color:#d8d2c4;margin-top:3px;word-wrap:break-word;white-space:pre-wrap}
   .cmt-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.85rem;padding:0 2px}
   .cmt-del:hover{color:#e0577b}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:10px}
+  .fa-lang-select{background:var(--card);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:6px 10px;font-family:'Manrope';font-size:.82rem;cursor:pointer}
+  .fa-lang-select:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <a href="/community" class="back"><i class="bi bi-arrow-left"></i> Späť do komunity</a>
-  <div id="host"><div class="empty">Načítavam profil…</div></div>
+  <div class="topbar">
+    <a href="/community" class="back"><i class="bi bi-arrow-left"></i> <span data-i18n="profile.back"></span></a>
+    <span id="langMount"></span>
+  </div>
+  <div id="host"><div class="empty" data-i18n="profile.loading"></div></div>
 </div>
 <script>
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const uid=location.pathname.split('/').pop();
 let P=null;
+const T=(k,v)=>window.FA_T(k,v);
 async function load(){
   const r=await fetch('/api/profile/'+encodeURIComponent(uid),{credentials:'include'});
   if(r.status===401){ location.href='/?next='+encodeURIComponent(location.pathname); return; }
-  if(!r.ok){ document.getElementById('host').innerHTML='<div class="empty">Profil sa nepodarilo načítať.</div>'; return; }
-  P=await r.json(); render();
+  if(!r.ok){ document.getElementById('host').innerHTML='<div class="empty">'+T('profile.load_fail')+'</div>'; return; }
+  P=await r.json();
+  // Apply the logged-in viewer's saved language (server wins over localStorage)
+  if(P.viewer_lang && P.viewer_lang!==FA_I18N.lang){ localStorage.setItem('fa_lang',P.viewer_lang); location.reload(); return; }
+  FA_I18N.mount('langMount');
+  render();
 }
 function friendBtn(){
   if(P.friend_state==='self') return '';
   if(P.anonymous) return '';
-  if(P.friend_state==='friends') return `<button class="fbtn ok" onclick="rmFriend()"><i class="bi bi-check-circle-fill"></i> Priatelia · odobrať</button>`;
-  if(P.friend_state==='requested') return `<button class="fbtn sec" onclick="rmFriend()"><i class="bi bi-hourglass-split"></i> Žiadosť odoslaná · zrušiť</button>`;
-  if(P.friend_state==='incoming') return `<button class="fbtn add" onclick="accept()"><i class="bi bi-person-check-fill"></i> Prijať žiadosť</button>`;
-  return `<button class="fbtn add" onclick="addFriend()"><i class="bi bi-person-plus-fill"></i> Pridať do priateľov</button>`;
+  if(P.friend_state==='friends') return `<button class="fbtn ok" onclick="rmFriend()"><i class="bi bi-check-circle-fill"></i> ${T('profile.friends_remove')}</button>`;
+  if(P.friend_state==='requested') return `<button class="fbtn sec" onclick="rmFriend()"><i class="bi bi-hourglass-split"></i> ${T('profile.friend_sent')}</button>`;
+  if(P.friend_state==='incoming') return `<button class="fbtn add" onclick="accept()"><i class="bi bi-person-check-fill"></i> ${T('profile.friend_accept')}</button>`;
+  return `<button class="fbtn add" onclick="addFriend()"><i class="bi bi-person-plus-fill"></i> ${T('profile.friend_add')}</button>`;
 }
 function render(){
   const isM=P.gender==='male';
-  const memberWord=isM?'člen':'členka';
+  const memberWord=T(isM?'profile.membtag_m':'profile.membtag_f');
+  const LOC={sk:'sk-SK',cs:'cs-CZ',en:'en-GB',uk:'uk-UA',hu:'hu-HU',de:'de-DE'}[FA_I18N.lang]||'sk-SK';
   const initials=(P.name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
   const av=P.avatar?`<img src="${P.avatar}" alt="">`:esc(initials);
   const flex=P.earned_count>=5?'glow':'';
-  const cats={visits:'Návštevy',refs:'Privedení členovia',tenure:'Vernosť'};
   const earned=P.achievements.filter(a=>a.earned), locked=P.achievements.filter(a=>!a.earned);
   const achCard=a=>`<div class="ach ${a.earned?'earned':''}">
      ${a.earned?'':'<span class="lock"><i class="bi bi-lock-fill"></i></span>'}
      <div class="ico">${a.icon}</div><div class="an">${esc(a.name)}</div><div class="ad">${esc(a.desc)}</div>
      ${a.earned?'':`<div class="prog"><i style="width:${a.progress}%"></i></div>`}
    </div>`;
-  const bgNames={bronze:'Bronzové',silver:'Strieborné',gold:'Zlaté',legend:'Legendárne'};
+  const bgNames={bronze:T('bg.bronze'),silver:T('bg.silver'),gold:T('bg.gold'),legend:T('bg.legend')};
   document.getElementById('host').innerHTML=`
     <div class="hero bg-${esc(P.bg_tier||'basic')} ${P.membership_tier?'mem-'+esc(P.membership_tier):''}">
       <div class="avatar">${av}</div>
@@ -145,40 +157,40 @@ function render(){
       ${P.name_badge?`<div class="name-badge">${P.name_badge.emoji} ${esc(P.name_badge.title)}</div>`:''}
       <div class="pname ${flex}">${P.name_badge?P.name_badge.emoji+' ':''}${esc(P.name)}</div>
       ${P.nickname?`<div class="pnick">„${esc(P.nickname)}"</div>`:''}
-      ${P.is_self?`<button class="nick-edit" onclick="editNick()"><i class="bi bi-pencil"></i> ${P.nickname?'Zmeniť prezývku':'Pridať prezývku'}</button>`:''}
+      ${P.is_self?`<button class="nick-edit" onclick="editNick()"><i class="bi bi-pencil"></i> ${T(P.nickname?'profile.nick_edit':'profile.nick_add')}</button>`:''}
       ${P.is_self?`<div class="gender-switch">
-        <button class="gseg ${!isM?'on':''}" onclick="setGender('female')">♀ Žena</button>
-        <button class="gseg ${isM?'on':''}" onclick="setGender('male')">♂ Muž</button>
+        <button class="gseg ${!isM?'on':''}" onclick="setGender('female')">${T('profile.gender_f')}</button>
+        <button class="gseg ${isM?'on':''}" onclick="setGender('male')">${T('profile.gender_m')}</button>
       </div>`:''}
       <div class="ptags">
         <span class="tag">${P.member_badge?.emoji||'🌱'} ${esc(P.member_badge?.label||'Nováčik')}</span>
         <span class="tag">🏅 ${esc(P.loyalty_label)}</span>
-        <span class="tag">🏆 ${P.earned_count}/${P.total_count} odznakov</span>
+        <span class="tag">🏆 ${T('profile.badges_of',{n:P.earned_count,m:P.total_count})}</span>
       </div>
-      ${P.joined?`<div class="joined-date">💛 ${isM?'Členom':'Členkou'} od ${new Date(P.joined).toLocaleDateString('sk-SK',{month:'long',year:'numeric'})}</div>`:''}
+      ${P.joined?`<div class="joined-date">💛 ${T('profile.member_since',{who:T(isM?'profile.member_m':'profile.member_f'),date:new Date(P.joined).toLocaleDateString(LOC,{month:'long',year:'numeric'})})}</div>`:''}
       <div>${P.is_self
-        ? `<button class="like-btn" disabled style="opacity:.75;cursor:default"><i class="bi bi-heart-fill"></i> ${P.likes||0} lajkov</button>`
+        ? `<button class="like-btn" disabled style="opacity:.75;cursor:default"><i class="bi bi-heart-fill"></i> ${T('profile.likes',{n:P.likes||0})}</button>`
         : `<button id="likeBtn" class="like-btn ${P.liked_by_me?'liked':''}" onclick="toggleLike()"><i class="bi ${P.liked_by_me?'bi-heart-fill':'bi-heart'}"></i> <span id="likeCount">${P.likes||0}</span></button>`}</div>
     </div>
-    ${P.is_self && P.next_bg ? `<div class="bg-hint">🎨 Odomkni <b style="color:var(--gold)">${bgNames[P.next_bg.tier]||''} pozadie</b> pri ${P.next_bg.need} odznakoch (máš ${P.earned_count})</div>` : ''}
-    ${P.anonymous && !P.is_self ? '<div class="anon-note">🔒 Tento člen má profil nastavený ako anonymný.</div>' : `
+    ${P.is_self && P.next_bg ? `<div class="bg-hint">${T('profile.bg_hint',{tier:'<b style="color:var(--gold)">'+(bgNames[P.next_bg.tier]||'')+'</b>',need:P.next_bg.need,have:P.earned_count})}</div>` : ''}
+    ${P.anonymous && !P.is_self ? `<div class="anon-note">${T('profile.anon')}</div>` : `
     <div class="stats">
-      <div class="stat"><div class="n">${P.visits}</div><div class="l">Návštev</div></div>
-      <div class="stat"><div class="n">${P.referrals}</div><div class="l">V štruktúre</div></div>
-      <div class="stat"><div class="n">${P.months_member}</div><div class="l">Mesiacov</div></div>
+      <div class="stat"><div class="n">${P.visits}</div><div class="l">${T('profile.stat_visits')}</div></div>
+      <div class="stat"><div class="n">${P.referrals}</div><div class="l">${T('profile.stat_struct')}</div></div>
+      <div class="stat"><div class="n">${P.months_member}</div><div class="l">${T('profile.stat_months')}</div></div>
     </div>
     ${friendBtn()}
-    ${(!P.is_self && !P.anonymous) ? `<a class="msg-btn" href="/community?dm=${P.id}"><i class="bi bi-chat-dots-fill"></i> Napísať správu</a>` : ''}
-    <div class="sec-title">🏆 Získané odznaky (${earned.length})</div>
-    <div class="ach-grid">${earned.length?earned.map(achCard).join(''):'<div class="empty">Zatiaľ žiadne — poď na hodinu! 💃</div>'}</div>
-    ${locked.length?`<div class="sec-title">🔒 Ešte odomknúť</div><div class="ach-grid">${locked.map(achCard).join('')}</div>`:''}
+    ${(!P.is_self && !P.anonymous) ? `<a class="msg-btn" href="/community?dm=${P.id}"><i class="bi bi-chat-dots-fill"></i> ${T('profile.msg')}</a>` : ''}
+    <div class="sec-title">${T('profile.earned_title',{n:earned.length})}</div>
+    <div class="ach-grid">${earned.length?earned.map(achCard).join(''):`<div class="empty">${T('profile.no_badges')}</div>`}</div>
+    ${locked.length?`<div class="sec-title">${T('profile.to_unlock')}</div><div class="ach-grid">${locked.map(achCard).join('')}</div>`:''}
     `}
-    <div class="sec-title">💬 Odkazy na profile</div>
+    <div class="sec-title">${T('profile.comments_title')}</div>
     ${P.anonymous && !P.is_self ? '' : `<div class="cmt-form">
-      <textarea id="cmtText" maxlength="500" placeholder="${P.is_self?'Napíš niečo na svoj profil…':'Zanechaj milý odkaz…'}"></textarea>
-      <button onclick="sendComment()">Pridať</button>
+      <textarea id="cmtText" maxlength="500" placeholder="${T(P.is_self?'profile.cmt_ph_self':'profile.cmt_ph')}"></textarea>
+      <button onclick="sendComment()">${T('profile.cmt_add')}</button>
     </div>`}
-    <div id="cmtList"><div class="empty">Načítavam odkazy…</div></div>
+    <div id="cmtList"><div class="empty">${T('profile.cmt_loading')}</div></div>
   `;
   loadComments();
 }
@@ -187,11 +199,12 @@ async function loadComments(){
   try{
     const r=await fetch('/api/profile/'+encodeURIComponent(uid)+'/comments',{credentials:'include'});
     const d=await r.json();
-    if(!d.comments||!d.comments.length){ box.innerHTML='<div class="empty">Zatiaľ žiadne odkazy. Buď prvá! 💛</div>'; return; }
+    if(!d.comments||!d.comments.length){ box.innerHTML='<div class="empty">'+T('profile.cmt_none')+'</div>'; return; }
+    const LOC={sk:'sk-SK',cs:'cs-CZ',en:'en-GB',uk:'uk-UA',hu:'hu-HU',de:'de-DE'}[FA_I18N.lang]||'sk-SK';
     box.innerHTML=d.comments.map(c=>{
       const ini=(c.author_name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
       const av=c.author_avatar?`<img src="${c.author_avatar}" alt="">`:esc(ini);
-      const t=new Date(c.created_at).toLocaleDateString('sk-SK',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+      const t=new Date(c.created_at).toLocaleDateString(LOC,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
       return `<div class="cmt">
         <div class="cmt-av">${av}</div>
         <div class="cmt-body">
@@ -203,7 +216,7 @@ async function loadComments(){
         </div>
       </div>`;
     }).join('');
-  }catch(e){ box.innerHTML='<div class="empty">Odkazy sa nepodarilo načítať.</div>'; }
+  }catch(e){ box.innerHTML='<div class="empty">'+T('profile.cmt_fail')+'</div>'; }
 }
 async function toggleLike(){
   const btn=document.getElementById('likeBtn');
@@ -223,14 +236,14 @@ async function sendComment(){
   ta.value=''; loadComments();
 }
 async function delComment(cid){
-  if(!confirm('Zmazať tento odkaz?')) return;
+  if(!confirm(T('profile.cmt_del_q'))) return;
   const r=await fetch('/api/profile/'+encodeURIComponent(uid)+'/comments/'+cid,{method:'DELETE',credentials:'include'});
   if(r.ok) loadComments();
 }
 async function post(url,body){ const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)}); return r.json(); }
 async function editNick(){
   const cur=P.nickname||'';
-  const val=prompt('Tvoja prezývka (zobrazí sa pod menom aj v komunitnom chate, max 30 znakov):',cur);
+  const val=prompt(T('profile.nick_prompt'),cur);
   if(val===null) return;
   const nickname=val.trim().slice(0,30);
   const r=await fetch('/api/profile',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({nickname})});

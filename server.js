@@ -1253,10 +1253,11 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     const memName=mem ? (MEMBERSHIP_PLANS[mem.plan_id]?.name||mem.plan_name||null) : null;
     const likeCount=await q.count(db.profile_likes,{profile_id:u._id});
     const likedByMe=isSelf?false:!!(await q.one(db.profile_likes,{profile_id:u._id,liker_id:me}));
+    const viewerLang = isSelf ? (u.lang||'') : ((await q.one(db.users,{_id:me}))?.lang||'');
     res.json({
       id:u._id, name: u.anonymous&&!isSelf ? 'Anonymný člen' : u.name,
       nickname: u.anonymous&&!isSelf ? '' : (u.nickname||''),
-      gender,
+      gender, viewer_lang: viewerLang,
       membership_tier: memTier, membership_name: memName,
       likes: likeCount, liked_by_me: likedByMe,
       anonymous: !!u.anonymous, is_self:isSelf,
@@ -1521,6 +1522,7 @@ app.put('/api/profile', auth, async(req,res)=>{
   if(anonymous!==undefined) set.anonymous = !!anonymous;
   if(nickname!==undefined) set.nickname = String(nickname||'').trim().slice(0,30);
   if(req.body.gender!==undefined) set.gender = req.body.gender==='male' ? 'male' : 'female';
+  if(req.body.lang!==undefined){ const L=String(req.body.lang||'').slice(0,2).toLowerCase(); if(['sk','cs','en','uk','hu','de'].includes(L)) set.lang = L; }
   if(Object.keys(set).length) await q.update(db.users,{_id:req.session.uid},{$set:set});
   res.json({ok:true});
 });
