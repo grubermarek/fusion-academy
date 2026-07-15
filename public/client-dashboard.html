@@ -326,7 +326,7 @@
       </div>
       <input type="file" id="avatarInput" accept="image/*" style="display:none" onchange="uploadAvatar(this)">
       <div class="welcome-info">
-        <h1 id="welcomeName">Načítavam...</h1>
+        <a id="welcomeNameLink" href="#" title="Zobraziť môj verejný profil" style="text-decoration:none;color:inherit;display:inline-flex;align-items:center;gap:6px"><h1 id="welcomeName" style="cursor:pointer">Načítavam...</h1><i class="bi bi-box-arrow-up-right" style="font-size:.75rem;opacity:.55;color:var(--gold)"></i></a>
         <p id="welcomeEmail">—</p>
         <a id="partnerDashLink" href="/dashboard" style="display:none;margin-top:6px;font-size:.8rem;color:var(--gold);text-decoration:none;opacity:.8">
           <i class="bi bi-graph-up"></i> Partnerský prehľad →
@@ -1203,6 +1203,7 @@ async function init(){
   _avatarInitials=initials;
   renderAvatar(me.avatar);
   document.getElementById('welcomeName').textContent='Ahoj, '+(me.name||'')+'!';
+  { const wl=document.getElementById('welcomeNameLink'); if(wl) wl.href='/u/'+me.id; }
   document.getElementById('welcomeEmail').textContent=me.email||'';
   renderMembership(me);
   document.getElementById('mcCancelSub').style.display = me.stripe_subscription ? 'block' : 'none';
