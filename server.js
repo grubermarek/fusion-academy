@@ -1367,7 +1367,7 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     const meUser = isSelf ? u : await q.one(db.users,{_id:me});
     const viewerLang = meUser?.lang||'';
     const viewerIsAdmin = !!(meUser && meUser.is_admin);
-    const monthPoints = await monthlyPointsFor(u._id);
+    let monthPoints; try { monthPoints = await monthlyPointsFor(u._id); } catch(e){ monthPoints = {month:today().slice(0,7),total:0,items:[]}; }
     res.json({
       id:u._id, name: u.anonymous&&!isSelf ? 'Anonymný člen' : u.name,
       nickname: u.anonymous&&!isSelf ? '' : (u.nickname||''),
@@ -1392,7 +1392,7 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
         .map(t=>({need:t.need,key:t.key,name:t.name,unlocked: canCustomBg?true:(refCount>=t.need), current: t.key===bgTier})),
       friend_state: isSelf ? 'self' : await friendState(me, u._id)
     });
-  } catch(e){ res.status(500).json({error:e.message}); }
+  } catch(e){ console.error('profile GET error:', e.message, e.stack); res.status(500).json({error:e.message}); }
 });
 
 // Like / unlike a profile (toggle) — works for any member, trainer or admin
@@ -1963,7 +1963,8 @@ function isTestAccount(u){
   const name=(u.name||'').toLowerCase();
   if(/@ex\.com$|@example\.com$|@example\.org$|@test\.|@mailinator\./.test(email)) return true;
   if(/\d{10,}@/.test(email)) return true; // timestamp e-maily z testov
-  if(/\b(test|bot|webhook|stripe|payout|demo)\b/.test(name)) return true;
+  if(/test|webhook|stripe|resend|demo|porttest/.test(email)) return true; // testovacie e-maily
+  if(/test|bot|webhook|stripe|payout|demo/i.test(name)) return true; // aj „test2", „Test Email"…
   if(/^novy \d/.test(name) || /mesacna sponzorka|bea mid|sp test|cierny test|alica dm|cyntia/.test(name)) return true;
   return false;
 }
@@ -4457,8 +4458,9 @@ app.get('/api/trainer/earnings', trainerAuth, async(req,res)=>{
 function canManageAssistant(u){ return u && (u.is_admin || u.user_type==='trainer' || u.user_type==='manager'); }
 app.get('/api/trainer/assistant', trainerAuth, async(req,res)=>{
   const t=req.trainerUser;
-  const a = await q.one(db.users,{assistant_of:t._id, is_assistant:true});
-  res.json({ assistant: a?{id:a._id,name:a.name,email:a.email,avatar:a.avatar||null}:null, can_manage: canManageAssistant(t) });
+  const list = await q.find(db.users,{assistant_of:t._id, is_assistant:true});
+  const assistants = list.map(a=>({id:a._id,name:a.name,email:a.email,avatar:a.avatar||null}));
+  res.json({ assistants, assistant: assistants[0]||null, can_manage: canManageAssistant(t) });
 });
 app.post('/api/trainer/assistant', trainerAuth, async(req,res)=>{
   try {
@@ -4467,9 +4469,7 @@ app.post('/api/trainer/assistant', trainerAuth, async(req,res)=>{
     const uid=String(req.body.user_id||''); if(!uid) return res.status(400).json({error:'Chýba user_id'});
     const target=await q.one(db.users,{_id:uid}); if(!target) return res.status(404).json({error:'Používateľ nenájdený'});
     if(target._id===t._id) return res.status(400).json({error:'Nemôžeš byť svoj asistent'});
-    // jeden asistent na trénera — odober predošlého
-    const prev=await q.find(db.users,{assistant_of:t._id,is_assistant:true});
-    for(const p of prev){ if(p._id!==uid) await q.update(db.users,{_id:p._id},{$set:{is_assistant:false,assistant_of:null}}); }
+    // viacero asistentov je povolených — len pridaj tohto
     await q.update(db.users,{_id:uid},{$set:{is_assistant:true, assistant_of:t._id}});
     await q.insert(db.notifications,{user_id:uid,type:'assistant',title:'🤝 Stal si sa asistentom!',
       body:`${t.name} ťa určil za svojho asistenta. V appke máš teraz prístup do trénerského panela (bookovanie, QR) a nový odznak. 💛`,read:false,created_at:nowISO()}).catch(()=>{});

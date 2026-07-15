@@ -282,7 +282,7 @@ function endPreview(){ applyProfileBg(P.bg_tier); const b=document.getElementByI
 async function load(){
   const r=await fetch('/api/profile/'+encodeURIComponent(uid),{credentials:'include'});
   if(r.status===401){ location.href='/?next='+encodeURIComponent(location.pathname); return; }
-  if(!r.ok){ document.getElementById('host').innerHTML='<div class="empty">'+T('profile.load_fail')+'</div>'; return; }
+  if(!r.ok){ let em=''; try{ em=(await r.json()).error||''; }catch(e){} document.getElementById('host').innerHTML='<div class="empty">'+T('profile.load_fail')+(em?('<br><small style="opacity:.6">'+esc(em)+'</small>'):'')+' <br><small style="opacity:.5">('+r.status+')</small></div>'; return; }
   P=await r.json();
   // Apply the logged-in viewer's saved language (server wins over localStorage)
   if(P.viewer_lang && P.viewer_lang!==FA_I18N.lang){ localStorage.setItem('fa_lang',P.viewer_lang); location.reload(); return; }
