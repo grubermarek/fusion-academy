@@ -1257,6 +1257,8 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     res.json({
       id:u._id, name: u.anonymous&&!isSelf ? 'Anonymný člen' : u.name,
       nickname: u.anonymous&&!isSelf ? '' : (u.nickname||''),
+      status: u.anonymous&&!isSelf ? '' : (u.status||''),
+      birthday: isSelf ? (u.birthday||'') : undefined,
       gender, viewer_lang: viewerLang,
       membership_tier: memTier, membership_name: memName,
       likes: likeCount, liked_by_me: likedByMe,
@@ -1523,6 +1525,7 @@ app.put('/api/profile', auth, async(req,res)=>{
   if(nickname!==undefined) set.nickname = String(nickname||'').trim().slice(0,30);
   if(req.body.gender!==undefined) set.gender = req.body.gender==='male' ? 'male' : 'female';
   if(req.body.lang!==undefined){ const L=String(req.body.lang||'').slice(0,2).toLowerCase(); if(['sk','cs','en','uk','hu','de'].includes(L)) set.lang = L; }
+  if(req.body.status!==undefined) set.status = String(req.body.status||'').trim().slice(0,120);
   if(Object.keys(set).length) await q.update(db.users,{_id:req.session.uid},{$set:set});
   res.json({ok:true});
 });

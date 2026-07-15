@@ -46,6 +46,14 @@
   .name-badge{display:inline-block;background:linear-gradient(102deg,#B98F3E,#F7E7B8 40%,#E7C878 60%,#B98F3E);color:#231A08;font-weight:800;font-size:.72rem;letter-spacing:.03em;text-transform:uppercase;padding:3px 12px;border-radius:20px;margin-bottom:8px;box-shadow:0 4px 14px -6px rgba(201,162,76,.7)}
   .pname{font-family:'Cormorant Garamond',serif;font-size:2rem;font-weight:600;line-height:1.1}
   .pnick{color:var(--gold);font-size:.92rem;font-weight:700;margin-top:3px}
+  .pstatus{color:var(--cream);font-size:.9rem;font-style:italic;opacity:.85;margin-top:8px;max-width:420px;margin-left:auto;margin-right:auto;line-height:1.4}
+  .set-hint{font-size:.74rem;color:var(--muted);line-height:1.4}
+  .set-status textarea{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:10px 12px;font-family:'Manrope';font-size:.9rem;resize:vertical;min-height:44px}
+  .set-status textarea:focus{outline:none;border-color:var(--gold)}
+  .set-inline{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .set-inline input[type=date]{background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:9px 12px;font-family:'Manrope';font-size:.9rem}
+  .set-check{display:flex;align-items:center;gap:10px;cursor:pointer}
+  .set-check input{width:18px;height:18px;accent-color:var(--gold);cursor:pointer}
   .nick-edit{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;text-decoration:underline;margin-top:4px}
   .nick-edit:hover{color:var(--gold)}
   .gender-switch{display:inline-flex;gap:0;margin-top:10px;border:1px solid var(--border);border-radius:20px;overflow:hidden}
@@ -121,7 +129,6 @@
 <div class="wrap">
   <div class="topbar">
     <a href="/community" class="back"><i class="bi bi-arrow-left"></i> <span data-i18n="profile.back"></span></a>
-    <span id="langMount"></span>
   </div>
   <div id="host"><div class="empty" data-i18n="profile.loading"></div></div>
 </div>
@@ -137,8 +144,8 @@ async function load(){
   P=await r.json();
   // Apply the logged-in viewer's saved language (server wins over localStorage)
   if(P.viewer_lang && P.viewer_lang!==FA_I18N.lang){ localStorage.setItem('fa_lang',P.viewer_lang); location.reload(); return; }
-  FA_I18N.mount('langMount');
   render();
+  FA_I18N.mount('langMount'); // switcher lives inside the settings panel
 }
 function friendBtn(){
   if(P.friend_state==='self') return '';
@@ -169,6 +176,7 @@ function render(){
       ${P.name_badge?`<div class="name-badge">${P.name_badge.emoji} ${esc(P.name_badge.title)}</div>`:''}
       <div class="pname ${flex}">${P.name_badge?P.name_badge.emoji+' ':''}${esc(P.name)}</div>
       ${P.nickname?`<div class="pnick">„${esc(P.nickname)}"</div>`:''}
+      ${P.status?`<div class="pstatus">„${esc(P.status)}"</div>`:''}
       <div class="ptags">
         <span class="tag">${P.member_badge?.emoji||'🌱'} ${esc(P.member_badge?.label||'Nováčik')}</span>
         <span class="tag">🏅 ${esc(P.loyalty_label)}</span>
@@ -190,12 +198,36 @@ function render(){
             <button onclick="saveNick()">${T('settings.save')}</button>
           </div>
         </div>
+        <div class="set-row set-status">
+          <span class="set-label">${T('settings.status')}</span>
+          <textarea id="statusInput" maxlength="120" placeholder="${T('settings.status_ph')}">${esc(P.status||'')}</textarea>
+          <span class="set-hint">${T('settings.status_hint')}</span>
+          <div class="set-nick"><span style="flex:1"></span><button onclick="saveStatus()">${T('settings.save')}</button></div>
+        </div>
         <div class="set-row">
           <span class="set-label">${T('settings.gender')}</span>
           <div class="gender-switch">
             <button class="gseg ${!isM?'on':''}" onclick="setGender('female')">${T('profile.gender_f')}</button>
             <button class="gseg ${isM?'on':''}" onclick="setGender('male')">${T('profile.gender_m')}</button>
           </div>
+        </div>
+        <div class="set-row">
+          <span class="set-label">${T('settings.language')}</span>
+          <span id="langMount"></span>
+        </div>
+        <div class="set-row">
+          <span class="set-label">${T('settings.birthday')}</span>
+          <div class="set-inline">
+            <input type="date" id="bdayInput" value="${esc(P.birthday||'')}">
+            <button class="gseg on" style="border:none;border-radius:10px;padding:9px 16px" onclick="saveBday()">${T('settings.save')}</button>
+          </div>
+        </div>
+        <div class="set-row">
+          <span class="set-label">${T('settings.anonymous')}</span>
+          <label class="set-check">
+            <input type="checkbox" id="anonInput" ${P.anonymous?'checked':''} onchange="saveAnon()">
+            <span class="set-hint">${T('settings.anon_hint')}</span>
+          </label>
         </div>
       </div>
     </details>` : ''}
@@ -267,15 +299,30 @@ async function delComment(cid){
   if(r.ok) loadComments();
 }
 async function post(url,body){ const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)}); return r.json(); }
+function redraw(keepOpen){ render(); FA_I18N.mount('langMount'); if(keepOpen){ const d=document.querySelector('.settings'); if(d) d.open=true; } }
+function flashSaved(btn, then){ if(!btn){ then&&then(); return; } btn.textContent=T('settings.saved'); setTimeout(()=>then&&then(),900); }
+async function putProfile(body){ const r=await fetch('/api/profile',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)}); return r.ok; }
 async function saveNick(){
   const inp=document.getElementById('nickInput'); if(!inp) return;
   const nickname=(inp.value||'').trim().slice(0,30);
+  if(await putProfile({nickname})){ P.nickname=nickname; flashSaved(inp.nextElementSibling, ()=>redraw(true)); }
+}
+async function saveStatus(){
+  const inp=document.getElementById('statusInput'); if(!inp) return;
+  const status=(inp.value||'').trim().slice(0,120);
+  const btn=inp.parentElement.querySelector('button');
+  if(await putProfile({status})){ P.status=status; flashSaved(btn, ()=>redraw(true)); }
+}
+async function saveBday(){
+  const inp=document.getElementById('bdayInput'); if(!inp) return;
+  const birthday=inp.value||'';
   const btn=inp.nextElementSibling;
-  const r=await fetch('/api/profile',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({nickname})});
-  if(r.ok){ P.nickname=nickname;
-    if(btn){ const o=btn.textContent; btn.textContent=T('settings.saved'); setTimeout(()=>{ render(); const d=document.querySelector('.settings'); if(d) d.open=true; },900); }
-    else render();
-  }
+  if(await putProfile({birthday})){ P.birthday=birthday; flashSaved(btn, ()=>{ if(btn) btn.textContent=T('settings.save'); }); }
+}
+async function saveAnon(){
+  const inp=document.getElementById('anonInput'); if(!inp) return;
+  const anonymous=inp.checked;
+  if(await putProfile({anonymous})){ P.anonymous=anonymous; }
 }
 async function setGender(g){
   if(P.gender===g) return;
