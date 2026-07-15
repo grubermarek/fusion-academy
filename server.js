@@ -1166,6 +1166,16 @@ const ACHIEVEMENTS = [
   {id:'m360',  cat:'tenure', need:360,  icon:'📜', name:'Živá história',   desc:'30 rokov s členstvom'},
   {id:'m600',  cat:'tenure', need:600,  icon:'🏅', name:'Zlatá legenda',   desc:'50 rokov s členstvom'},
   {id:'m1188', cat:'tenure', need:1188, icon:'♾️', name:'Večná ikona',     desc:'99 rokov s členstvom'},
+  // Súkromné hodiny (private lessons) — počíta sa private_hours
+  {id:'p1',    cat:'private', need:1,    icon:'🔑', name:'Prvá súkromná',    desc:'1 súkromná hodina'},
+  {id:'p5',    cat:'private', need:5,    icon:'🎯', name:'Osobný prístup',   desc:'5 súkromných hodín'},
+  {id:'p10',   cat:'private', need:10,   icon:'💪', name:'Vlastný tréner',   desc:'10 súkromných hodín'},
+  {id:'p25',   cat:'private', need:25,   icon:'⚜️', name:'VIP tanečnica',    name_m:'VIP tanečník', desc:'25 súkromných hodín'},
+  {id:'p50',   cat:'private', need:50,   icon:'👑', name:'Majsterka pohybu', name_m:'Majster pohybu', desc:'50 súkromných hodín'},
+  {id:'p100',  cat:'private', need:100,  icon:'💎', name:'Diamantová práca', desc:'100 súkromných hodín'},
+  {id:'p250',  cat:'private', need:250,  icon:'🏆', name:'Elitná trénovaná', name_m:'Elitne trénovaný', desc:'250 súkromných hodín'},
+  {id:'p500',  cat:'private', need:500,  icon:'🌟', name:'Legenda parketu',  desc:'500 súkromných hodín'},
+  {id:'p1000', cat:'private', need:1000, icon:'♾️', name:'Nekonečná oddanosť', desc:'1000 súkromných hodín'},
   // Merch — odomkne sa pri kúpe daného kúsku
   {id:'merch_tielko', cat:'merch', item:'tielko', icon:'🎽', name:'Tielko FA', desc:'Kúpené tielko Fusion Academy'},
   {id:'merch_tricko', cat:'merch', item:'tricko', icon:'👕', name:'Tričko FA', desc:'Kúpené tričko Fusion Academy'},
@@ -1236,7 +1246,7 @@ function computeAchievements(u, refCount, tenureMonths, gender){
   const visits=u.visit_count||0;
   const g = gender || u.gender || 'female';
   const months = (tenureMonths!==undefined) ? tenureMonths : monthsSince(u.created_at);
-  const val={visits, refs:refCount, tenure:months};
+  const val={visits, refs:refCount, tenure:months, private:u.private_hours||0};
   const merch=u.merch_owned||[]; const manual=u.manual_achievements||[];
   return ACHIEVEMENTS.map(a=>{
     let earned, progress;
@@ -1417,7 +1427,7 @@ app.get('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
   const refCount=await referralCountOf(u._id);
   const memberMonths=await activeMembershipMonths(u._id);
   const sponsor = u.sponsor_id ? await q.one(db.users,{_id:u.sponsor_id}) : null;
-  res.json({ name:u.name, visit_count:u.visit_count||0, referrals:refCount, joined:(u.created_at||'').slice(0,10),
+  res.json({ name:u.name, visit_count:u.visit_count||0, private_hours:u.private_hours||0, referrals:refCount, joined:(u.created_at||'').slice(0,10),
     achievements: computeAchievements(u, refCount, memberMonths),
     merch_owned: u.merch_owned||[], manual_achievements: u.manual_achievements||[],
     merch_list: Object.keys(MERCH_KEYWORDS),
@@ -1454,6 +1464,7 @@ app.put('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
   const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
   const set={};
   if(req.body.visit_count!==undefined) set.visit_count=Math.max(0,parseInt(req.body.visit_count)||0);
+  if(req.body.private_hours!==undefined) set.private_hours=Math.max(0,parseInt(req.body.private_hours)||0);
   if(Array.isArray(req.body.merch_owned)) set.merch_owned=req.body.merch_owned.filter(x=>MERCH_KEYWORDS[x]);
   if(Array.isArray(req.body.manual_achievements)) set.manual_achievements=req.body.manual_achievements.filter(id=>ACHIEVEMENTS.some(a=>a.id===id));
   if(Object.keys(set).length) await q.update(db.users,{_id:u._id},{$set:set});

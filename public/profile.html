@@ -385,6 +385,14 @@ function renderAdmin(){
       </div>
     </div>
     <div class="set-row">
+      <span class="set-label">Súkromné hodiny</span>
+      <div class="adm-hours">
+        <input type="number" id="admPrivate" min="0" value="${a.private_hours||0}">
+        <button onclick="savePrivate()">Uložiť</button>
+        <span class="set-hint">Odomkne odznaky za súkromné hodiny (1 → 1000).</span>
+      </div>
+    </div>
+    <div class="set-row">
       <span class="set-label">Merch (pridať/odobrať odznak)</span>
       <div class="adm-chips">${merchChips||'<span class="set-hint">—</span>'}</div>
     </div>
@@ -431,6 +439,10 @@ async function putAwards(body){
 async function saveHours(){
   const v=parseInt(document.getElementById('admHours').value)||0;
   if(await putAwards({visit_count:v})){ _awards.visit_count=v; P=null; alert('Uložené ✓ Obnovujem profil…'); location.reload(); }
+}
+async function savePrivate(){
+  const v=parseInt(document.getElementById('admPrivate').value)||0;
+  if(await putAwards({private_hours:v})){ _awards.private_hours=v; alert('Uložené ✓ Obnovujem profil…'); location.reload(); }
 }
 async function toggleMerch(m){
   const s=new Set(_awards.merch_owned||[]);

@@ -680,6 +680,8 @@ function showToast(msg,type='success'){
 }
 function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function fmtDate(iso){ if(!iso) return '—'; const d=new Date(iso); if(isNaN(d)) return String(iso); return d.toLocaleDateString('sk-SK',{day:'numeric',month:'long',year:'numeric'}); }
+// Slovenský číselný formát: 20. 7. 2026
+function skDate(iso){ if(!iso) return ''; const d=new Date(iso); if(isNaN(d)) return String(iso); return d.toLocaleDateString('sk-SK',{day:'numeric',month:'numeric',year:'numeric'}); }
 async function logout(){await api('/api/logout',{method:'POST'});window.location.href='/';}
 async function cancelStripeSub(){
   if(!confirm('Zrušiť automatický mesačný odber? Členstvo ti zostane aktívne do konca zaplateného obdobia.')) return;
@@ -789,7 +791,7 @@ function renderBookings(bookings){
       <div class="booking-emoji">${b.class_emoji||'💃'}</div>
       <div class="booking-info">
         <strong>${escHtml(b.class_name)}${b.is_child_booking?` <span style="font-size:.7rem;background:rgba(201,168,76,.18);color:var(--gold);padding:1px 7px;border-radius:20px;vertical-align:middle">👧 ${escHtml(b.child_name||'dieťa')}</span>`:''}</strong>
-        <span>${b.booking_date||''} ${b.class_time_start?'• '+b.class_time_start:''} ${b.class_location?'• '+escHtml(b.class_location):''}</span>
+        <span>${b.booking_date?skDate(b.booking_date):''} ${b.class_time_start?'• '+b.class_time_start:''} ${b.class_location?'• '+escHtml(b.class_location):''}</span>
       </div>
       <button class="booking-cancel" onclick="cancelBooking('${b._id}','${escHtml(b.class_name).replace(/'/g,"&#39;")}')">
         <i class="bi bi-x"></i> Zrušiť
