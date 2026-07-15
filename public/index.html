@@ -959,19 +959,22 @@ let _allClasses = [];
     const me = await fetch('/api/me',{credentials:'include'}).then(r=>r.json());
     _me = me?.id ? me : null;
     if(me?.id){
-      // User already logged in — skip onboarding
+      // Prihlásený používateľ — preskoč uvítaciu obrazovku a choď rovno do svojej appky.
+      // (?home=1 umožní pozrieť si verejnú domovskú stránku aj po prihlásení.)
+      const dashUrl=me.is_admin?'/admin':me.user_type==='trainer'?'/trainer':'/client-dashboard';
+      if(!new URLSearchParams(location.search).has('home')){
+        location.replace(dashUrl);
+        return;
+      }
       document.getElementById('s0').style.display='none';
       document.getElementById('navLoginBtn').style.display='none';
       document.getElementById('navDashBtn').style.display='flex';
-      // Show welcome-back screen
       const initials=(me.name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
       document.getElementById('wbAvatar').textContent=initials;
       document.getElementById('wbName').textContent='Ahoj, '+(me.name?.split(' ')[0]||'')+'!';
       document.getElementById('wbSub').textContent=me.email||'';
-      const dashUrl=me.is_admin?'/admin':me.user_type==='trainer'?'/trainer':'/client-dashboard';
       document.getElementById('wbDashLink').href=dashUrl;
       document.getElementById('welcomeBackScreen').style.display='block';
-      // Show info section below
       document.getElementById('infoSection').style.display='block';
       document.getElementById('finalCta').style.display='none';
     }
