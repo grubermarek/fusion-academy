@@ -168,32 +168,40 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
     <!-- Step 2: Checkout form -->
     <div id="step-checkout" class="step">
       <button class="fa-btn fa-btn-outline btn btn-sm mb-3" onclick="goBack()"><i class="bi bi-arrow-left me-1"></i>Späť do košíka</button>
-      <h6 class="fw-bold mb-3">Vaše údaje</h6>
+      <h6 class="fw-bold mb-3">Objednávka</h6>
       <div id="checkoutError" class="alert alert-danger d-none py-2 small"></div>
-      <div class="mb-2">
-        <label class="form-label small fw-semibold">Celé meno *</label>
-        <input type="text" class="form-control" id="co-name" placeholder="Jana Nováková">
+      <div id="coLoggedSummary" style="display:none" class="mb-3">
+        <div class="d-flex align-items-center gap-2 p-2 rounded" style="background:var(--dark-3);border:1px solid var(--gold-border)">
+          <i class="bi bi-person-check-fill text-warning"></i>
+          <div><div class="small">Objednávaš ako <b id="coLoggedName"></b></div><div class="text-muted" style="font-size:.72rem">Údaje poznáme z tvojho účtu — netreba nič vypĺňať 💛</div></div>
+        </div>
       </div>
-      <div class="mb-2">
-        <label class="form-label small fw-semibold">Email *</label>
-        <input type="email" class="form-control" id="co-email" placeholder="jana@email.sk">
-      </div>
-      <div class="mb-2">
-        <label class="form-label small fw-semibold">Telefón</label>
-        <input type="tel" class="form-control" id="co-phone" placeholder="+421 9XX XXX XXX">
-      </div>
-      <div class="mb-2">
-        <label class="form-label small fw-semibold">Mesto / prevádzka</label>
-        <select class="form-select" id="co-city">
-          <option value="">— Vyberte —</option>
-          <option>Detva</option><option>Zvolen</option>
-          <option>Banská Bystrica</option><option>Brezno</option><option>Online</option>
-        </select>
-      </div>
-      <div class="mb-2">
-        <label class="form-label small fw-semibold">Referral kód (ak máte)</label>
-        <input type="text" class="form-control" id="co-ref" placeholder="Napr. MARIA10">
-        <div class="form-text small" id="refStatus"></div>
+      <div id="coIdentity">
+        <div class="mb-2">
+          <label class="form-label small fw-semibold">Celé meno *</label>
+          <input type="text" class="form-control" id="co-name" placeholder="Jana Nováková">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-semibold">Email *</label>
+          <input type="email" class="form-control" id="co-email" placeholder="jana@email.sk">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-semibold">Telefón</label>
+          <input type="tel" class="form-control" id="co-phone" placeholder="+421 9XX XXX XXX">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-semibold">Mesto / prevádzka</label>
+          <select class="form-select" id="co-city">
+            <option value="">— Vyberte —</option>
+            <option>Detva</option><option>Zvolen</option>
+            <option>Banská Bystrica</option><option>Brezno</option><option>Online</option>
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-semibold">Referral kód (ak máte)</label>
+          <input type="text" class="form-control" id="co-ref" placeholder="Napr. MARIA10">
+          <div class="form-text small" id="refStatus"></div>
+        </div>
       </div>
       <div class="mb-2">
         <label class="form-label small fw-semibold">Spôsob platby</label>
@@ -336,6 +344,12 @@ function updateCartUI() {
           </div>
           <button class="btn-close btn-close-white btn-close-sm ms-2" onclick="removeFromCart('${item._id}')" style="font-size:.6rem;filter:invert(1) grayscale(100%) brightness(2)"></button>
         </div>
+        ${isApparel(item)?`<div class="mt-2 d-flex align-items-center gap-2">
+          <label class="small text-muted mb-0">Veľkosť:</label>
+          <select class="form-select form-select-sm" style="width:auto" onchange="setSize('${item._id}',this.value)">
+            ${['XS','S','M','L','XL','XXL'].map(s=>`<option${(item.size||'M')===s?' selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>`:''}
         <div class="d-flex align-items-center justify-content-between mt-2">
           <div class="d-flex align-items-center gap-2">
             <button class="qty-btn" onclick="changeQty('${item._id}',-1)">−</button>
@@ -357,15 +371,30 @@ function openCart() {
   cartOffcanvas.show();
 }
 
+let _me=null, _credit=0;
+(async()=>{ try{ _me=await fetch('/api/me',{credentials:'include'}).then(r=>r.json()); _credit=(_me&&_me.referral_credit)||0; }catch(e){} })();
+const isApparel = it => /tielk|tri[čc]k|mikin/i.test(it.name||'');
 function goCheckout() {
   if (!cart.length) return;
   showStep('checkout');
-  // Pre-fill referral from URL
+  // Prihlásený klient — appka pozná údaje, netreba ich zadávať
+  if (_me && _me.id){
+    document.getElementById('co-name').value = _me.name||'';
+    document.getElementById('co-email').value = _me.email||'';
+    document.getElementById('co-phone').value = _me.phone||'';
+    document.getElementById('coIdentity').style.display = 'none';
+    document.getElementById('coLoggedSummary').style.display = 'block';
+    document.getElementById('coLoggedName').textContent = _me.name||'';
+    // Kredit ako spôsob platby
+    if(_credit>0){ const sel=document.getElementById('co-payment');
+      if(!document.getElementById('co-pay-credit')){ const o=document.createElement('option'); o.id='co-pay-credit'; o.value='credit'; o.textContent=`💳 Použiť kredit (${eur(_credit)} k dispozícii)`; sel.insertBefore(o, sel.firstChild); sel.value='credit'; } }
+  }
   if (urlRef && !document.getElementById('co-ref').value) {
     document.getElementById('co-ref').value = urlRef;
     document.getElementById('refStatus').innerHTML = '<span class="text-success">✓ Referral kód predvyplnený z odkazu</span>';
   }
 }
+function setSize(id,size){ const it=cart.find(c=>c._id===id); if(it) it.size=size; }
 
 function goBack() { showStep('cart'); }
 
@@ -388,12 +417,17 @@ async function submitOrder() {
   if (!name || !email) { errEl.textContent = 'Meno a email sú povinné'; errEl.classList.remove('d-none'); return; }
   if (!cart.length) { errEl.textContent = 'Košík je prázdny'; errEl.classList.remove('d-none'); return; }
 
-  const items = cart.map(c => ({ product_id: c._id, qty: c.qty }));
+  const items = cart.map(c => ({ product_id: c._id, qty: c.qty, size: isApparel(c)?(c.size||'M'):undefined }));
+  // Veľkosti pripoj aj do poznámky (istota pre admina)
+  const sizeNote = cart.filter(isApparel).map(c=>`${c.name}: ${c.size||'M'}`).join(', ');
+  const fullNotes = [notes, sizeNote?('Veľkosti — '+sizeNote):''].filter(Boolean).join(' | ');
+  const useCredit = pay==='credit';
+  const payMethod = useCredit ? 'referral_credit' : pay;
   try {
     const r = await fetch('/api/shop/order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ client_name:name, client_email:email, client_phone:phone, referral_code:ref, city, items, notes, payment_method:pay })
+      body: JSON.stringify({ client_name:name, client_email:email, client_phone:phone, referral_code:ref, city, items, notes:fullNotes, payment_method:payMethod, use_referral_credit:useCredit })
     });
     const d = await r.json();
     if (!r.ok) { errEl.textContent = d.error || 'Chyba'; errEl.classList.remove('d-none'); return; }
