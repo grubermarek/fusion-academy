@@ -3796,20 +3796,29 @@ async function trainerMonthStats(month){
       if(b.user_id){ if(firstBookingOf[b.user_id]===d) s.newClients.add(b.user_id); }
     }
   }
-  // full classes: sessions where attendance >= capacity
+  // full classes + zoznam účastí na hodinu (pre výpočet €/klient nad prahom)
+  for(const s of Object.values(stats)) s.session_atts=[];
   for(const [sk,att] of Object.entries(sessionAtt)){
     const [ins,cid]=sk.split('|'); const cap=clsMap[cid]?.capacity||20;
-    if(att>=cap && stats[ins]) stats[ins].fullClasses++;
+    if(stats[ins]){ stats[ins].session_atts.push(att); if(att>=cap) stats[ins].fullClasses++; }
   }
-  return Object.values(stats).map(s=>({instructor:s.instructor, sessions:s.sessions.size, attendances:s.attendances, revenue:+s.revenue.toFixed(2), newClients:s.newClients.size, fullClasses:s.fullClasses}));
+  return Object.values(stats).map(s=>({instructor:s.instructor, sessions:s.sessions.size, attendances:s.attendances, revenue:+s.revenue.toFixed(2), newClients:s.newClients.size, fullClasses:s.fullClasses, session_atts:s.session_atts}));
 }
 
-const DEFAULT_PAYOUT_RULE={fixed_per_class:0, pct_of_revenue:0, per_client:0, bonus_full_class:0, bonus_new_member:0};
+// Nový štandardný model: 10 € základ za hodinu + 1 € za každého klienta NAD 10 na hodine.
+const DEFAULT_PAYOUT_RULE={fixed_per_class:10, pct_of_revenue:0, per_client:1, per_client_threshold:10, bonus_full_class:0, bonus_new_member:0};
+// Počet "platených" účastníkov = súčet klientov nad prah na každej hodine
+function billableAttendances(st, threshold){
+  const thr=threshold||0;
+  if(Array.isArray(st.session_atts)) return st.session_atts.reduce((s,a)=>s+Math.max(0,a-thr),0);
+  return Math.max(0,(st.attendances||0)-thr); // fallback (staré dáta bez rozpisu hodín)
+}
 function computePayout(rule, st){
   const r={...DEFAULT_PAYOUT_RULE, ...(rule||{})};
-  const base=+(r.fixed_per_class*st.sessions + r.pct_of_revenue/100*st.revenue + r.per_client*st.attendances).toFixed(2);
+  const billable=billableAttendances(st, r.per_client_threshold||0);
+  const base=+(r.fixed_per_class*st.sessions + r.pct_of_revenue/100*st.revenue + r.per_client*billable).toFixed(2);
   const bonuses=+(r.bonus_full_class*st.fullClasses + r.bonus_new_member*st.newClients).toFixed(2);
-  return {base, bonuses};
+  return {base, bonuses, billable};
 }
 
 app.get('/api/admin/payout-rules', adminAuth, async(req,res)=>{
@@ -3826,6 +3835,23 @@ app.put('/api/admin/payout-rules/:trainer', adminAuth, async(req,res)=>{
   res.json({ok:true});
 });
 
+// Nastav štandardný model odmien (10 € + 1 €/klient nad 10) všetkým trénerom naraz
+app.post('/api/admin/payout-rules/apply-standard', adminAuth, async(req,res)=>{
+  try {
+    const model = { fixed_per_class:10, pct_of_revenue:0, per_client:1, per_client_threshold:10, bonus_full_class:0, bonus_new_member:0 };
+    const trainers = await q.find(db.users,{$or:[{user_type:'trainer'},{user_type:'manager'},{is_admin:true}]});
+    let n=0;
+    for(const t of trainers){
+      const ex=await q.one(db.payout_rules,{trainer:t.name});
+      if(ex){ await q.update(db.payout_rules,{_id:ex._id},{$set:{...model,updated_at:nowISO()}}); }
+      else { await q.insert(db.payout_rules,{trainer:t.name,...model,created_at:nowISO()}); }
+      n++;
+    }
+    await auditLog(req,'payout_rules_apply_standard',null,{},{trainers:n,model},'');
+    res.json({ ok:true, trainers:n });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Draft payouts for a month = computed stats × rules, merged with any saved payout records
 app.get('/api/admin/payouts', adminAuth, async(req,res)=>{
   try {
@@ -3833,15 +3859,18 @@ app.get('/api/admin/payouts', adminAuth, async(req,res)=>{
     const stats=await trainerMonthStats(month);
     const rules=Object.fromEntries((await q.find(db.payout_rules,{})).map(r=>[r.trainer,r]));
     const saved=Object.fromEntries((await q.find(db.payouts,{month})).map(p=>[p.trainer,p]));
-    const rows=stats.map(st=>{
+    const nameToId=Object.fromEntries((await q.find(db.users,{})).map(u=>[u.name,u._id]));
+    const rows=await Promise.all(stats.map(async st=>{
       const {base,bonuses}=computePayout(rules[st.instructor],st);
       const sv=saved[st.instructor];
       const deductions=sv?.deductions||0;
-      return { trainer:st.instructor, month, ...st,
-        base:sv?sv.base:base, bonuses:sv?sv.bonuses:bonuses, deductions,
-        total:+(((sv?sv.base:base)+(sv?sv.bonuses:bonuses)-deductions)).toFixed(2),
+      const affiliate = nameToId[st.instructor] ? await affiliateCommissionFor(nameToId[st.instructor], month) : 0;
+      const b=sv?sv.base:base, bo=sv?sv.bonuses:bonuses;
+      return { trainer:st.instructor, month, ...st, affiliate,
+        base:b, bonuses:bo, deductions,
+        total:+((b+bo+affiliate-deductions)).toFixed(2),
         status:sv?.status||'draft', saved:!!sv, id:sv?._id||null, note:sv?.note||'', history:sv?.history||[] };
-    });
+    }));
     res.json({month, rows, rules});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -4788,34 +4817,48 @@ app.post('/api/classes/:id/instructor', trainerAuth, async(req,res)=>{
 });
 
 // Prehľad zárobkov trénera (vlastných) — s filtrom obdobia + rozpis za čo koľko
+// Súčet affiliate provízií (z MLM línie) trénera za daný mesiac
+async function affiliateCommissionFor(userId, month){
+  const coms = await q.find(db.commissions,{partner_id:userId, month});
+  return +coms.reduce((s,c)=>s+(+c.amount||0),0).toFixed(2);
+}
 app.get('/api/trainer/earnings', trainerAuth, async(req,res)=>{
   try {
-    const t = req.effectiveTrainer||req.trainerUser;
+    // Admin si vie pozrieť konkrétneho trénera cez ?trainer_id=
+    let t = req.effectiveTrainer||req.trainerUser;
+    if(req.query.trainer_id && req.trainerUser?.is_admin){
+      const tu = await q.one(db.users,{_id:req.query.trainer_id});
+      if(tu) t = tu;
+    }
     const tName = t.name;
     const rule = await q.one(db.payout_rules,{trainer:tName}) || {...DEFAULT_PAYOUT_RULE};
+    const thr = rule.per_client_threshold||0;
     // Posledných 12 mesiacov
     const months=[]; const now=new Date();
     for(let i=0;i<12;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); months.push(d.toISOString().slice(0,7)); }
     const rows=[];
     for(const m of months){
-      const st=(await trainerMonthStats(m)).find(s=>s.instructor===tName || (tName&&s.instructor&&s.instructor.includes(tName.split(' ')[0]))) || {sessions:0,attendances:0,revenue:0,newClients:0,fullClasses:0};
-      const {base,bonuses}=computePayout(rule,st);
+      const st=(await trainerMonthStats(m)).find(s=>s.instructor===tName || (tName&&s.instructor&&s.instructor.includes(tName.split(' ')[0]))) || {sessions:0,attendances:0,revenue:0,newClients:0,fullClasses:0,session_atts:[]};
+      const {base,bonuses,billable}=computePayout(rule,st);
+      const affiliate = await affiliateCommissionFor(t._id, m);
       const rec=await q.one(db.payouts,{trainer:tName,month:m});
       const ded=rec?.deductions||0;
-      const total=+(base+bonuses-ded).toFixed(2);
+      const total=+(base+bonuses+affiliate-ded).toFixed(2);
       const items=[
-        {label:'Fixná odmena za hodinu', count:st.sessions, per:rule.fixed_per_class||0, amount:+((rule.fixed_per_class||0)*st.sessions).toFixed(2)},
+        {label:'Základ za hodinu', count:st.sessions, per:rule.fixed_per_class||0, amount:+((rule.fixed_per_class||0)*st.sessions).toFixed(2)},
+        {label:(thr>0?`Klienti nad ${thr} na hodine`:'Odmena za účastníka'), count:billable, per:rule.per_client||0, amount:+((rule.per_client||0)*billable).toFixed(2)},
         {label:'% z tržby hodín', count:st.revenue, per:(rule.pct_of_revenue||0)+' %', amount:+((rule.pct_of_revenue||0)/100*st.revenue).toFixed(2)},
-        {label:'Odmena za účastníka', count:st.attendances, per:rule.per_client||0, amount:+((rule.per_client||0)*st.attendances).toFixed(2)},
         {label:'Bonus za plnú hodinu', count:st.fullClasses, per:rule.bonus_full_class||0, amount:+((rule.bonus_full_class||0)*st.fullClasses).toFixed(2)},
         {label:'Bonus za nového klienta', count:st.newClients, per:rule.bonus_new_member||0, amount:+((rule.bonus_new_member||0)*st.newClients).toFixed(2)},
+        {label:'Affiliate provízie (moja línia)', count:'', per:'', amount:affiliate},
       ].filter(x=>x.per||x.amount);
       rows.push({month:m, sessions:st.sessions, attendances:st.attendances, revenue:+st.revenue.toFixed(2),
-        base:+base.toFixed(2), bonuses:+bonuses.toFixed(2), deductions:ded, total,
+        base:+base.toFixed(2), bonuses:+bonuses.toFixed(2), affiliate, deductions:ded, total,
         status: rec?.status||'draft', paid: rec?.status==='paid', items});
     }
     const grand=rows.reduce((s,r)=>s+r.total,0);
-    res.json({ trainer:tName, months:rows, grand_total:+grand.toFixed(2) });
+    const grandAffiliate=rows.reduce((s,r)=>s+r.affiliate,0);
+    res.json({ trainer:tName, trainer_id:t._id, months:rows, grand_total:+grand.toFixed(2), grand_affiliate:+grandAffiliate.toFixed(2) });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 

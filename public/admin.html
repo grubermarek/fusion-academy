@@ -1099,14 +1099,18 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </div>
     <p class="text-muted small mb-3">Automatický výpočet z dochádzky podľa pravidiel odmien. Zrážky a stav uprav ručne — každá zmena sa loguje do auditu.</p>
     <div id="poRules" class="card bg-dark border-secondary mb-3 d-none"><div class="card-body">
-      <h6 class="fw-bold mb-2">Pravidlá odmien (€)</h6>
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="fw-bold mb-0">Pravidlá odmien (€)</h6>
+        <button class="btn btn-sm btn-outline-info" onclick="applyStandardModel()" title="Nastaviť všetkým trénerom 10 € + 1 €/klient nad 10"><i class="bi bi-magic"></i> Model 10 € + 1 €/klient nad 10 všetkým</button>
+      </div>
       <div class="table-responsive"><table class="table table-dark table-sm align-middle mb-0" style="font-size:.78rem">
-        <thead><tr><th>Tréner</th><th>Fixne/hodina</th><th>% z tržieb</th><th>€/klient</th><th>Bonus plná hodina</th><th>Bonus nový člen</th><th></th></tr></thead>
+        <thead><tr><th>Tréner</th><th>Fixne/hodina</th><th>% z tržieb</th><th>€/klient</th><th>Nad koľko klientov</th><th>Bonus plná hodina</th><th>Bonus nový člen</th><th></th></tr></thead>
         <tbody id="poRulesBody"></tbody>
       </table></div>
+      <p class="text-muted small mt-2 mb-0">„€/klient" sa počíta len za klientov <b>nad</b> zadaný počet na hodine (napr. nad 10). Affiliate provízie z línie trénera sa pripočítavajú automaticky.</p>
     </div></div>
     <div class="table-responsive"><table class="table table-dark table-hover align-middle" style="font-size:.82rem">
-      <thead><tr><th>Tréner</th><th>Hodiny</th><th>Účasti</th><th>Tržby</th><th>Základ</th><th>Bonusy</th><th>Zrážky</th><th>Spolu</th><th>Stav</th><th>Akcie</th></tr></thead>
+      <thead><tr><th>Tréner</th><th>Hodiny</th><th>Účasti</th><th>Tržby</th><th>Základ</th><th>Bonusy</th><th>Affiliate</th><th>Zrážky</th><th>Spolu</th><th>Stav</th><th>Akcie</th></tr></thead>
       <tbody id="poBody"><tr><td colspan="10" class="text-muted text-center py-4">Načítavam…</td></tr></tbody>
     </table></div>
   </div>
@@ -1510,28 +1514,36 @@ async function loadPayouts(){
       <td>${inp(r.trainer,'fixed_per_class',rule.fixed_per_class)}</td>
       <td>${inp(r.trainer,'pct_of_revenue',rule.pct_of_revenue)}</td>
       <td>${inp(r.trainer,'per_client',rule.per_client)}</td>
+      <td>${inp(r.trainer,'per_client_threshold',rule.per_client_threshold)}</td>
       <td>${inp(r.trainer,'bonus_full_class',rule.bonus_full_class)}</td>
       <td>${inp(r.trainer,'bonus_new_member',rule.bonus_new_member)}</td>
       <td><button class="btn btn-sm btn-warning py-0 px-2" onclick='savePayoutRule(${JSON.stringify(r.trainer)})'>Uložiť</button></td></tr>`;
-  }).join('')||'<tr><td colspan="7" class="text-muted text-center py-2">Žiadni tréneri s dochádzkou.</td></tr>';
+  }).join('')||'<tr><td colspan="8" class="text-muted text-center py-2">Žiadni tréneri s dochádzkou.</td></tr>';
   // payout rows
   document.getElementById('poBody').innerHTML=d.rows.length? d.rows.map(r=>`<tr>
     <td class="fw-semibold">${escHtml(r.trainer)}</td><td>${r.sessions}</td><td>${r.attendances}</td><td>${r.revenue.toFixed(2)} €</td>
     <td>${r.base.toFixed(2)} €</td><td>${r.bonuses.toFixed(2)} €</td>
+    <td class="${r.affiliate>0?'text-info':'text-muted'}">${(r.affiliate||0).toFixed(2)} €</td>
     <td><input type="number" step="0.01" value="${r.deductions||0}" id="ded_${r.id||''}" data-trainer='${escHtml(r.trainer)}' style="width:78px" class="form-control form-control-sm bg-dark text-light border-secondary" ${r.saved?'':'disabled title="Najprv vygeneruj"'}></td>
     <td class="fw-bold" style="color:#C9A24C">${r.total.toFixed(2)} €</td>
     <td>${r.saved?`<select class="form-select form-select-sm bg-dark text-light border-secondary" style="width:120px" onchange="payoutStatus('${r.id}',this.value)">${Object.entries(PO_STATUS).map(([k,v])=>`<option value="${k}"${r.status===k?' selected':''}>${v}</option>`).join('')}</select>`:`<span class="badge bg-${PO_STATUS_C[r.status]}">${PO_STATUS[r.status]}</span>`}</td>
     <td>${r.saved
       ? `<button class="btn btn-sm btn-outline-warning py-0 px-2" onclick="savePayoutDeduction('${r.id}')">Uložiť zrážku</button>`
       : `<button class="btn btn-sm btn-success py-0 px-2" onclick='generatePayout(${JSON.stringify(r.trainer)})'>Vygenerovať</button>`}</td>
-  </tr>`).join('') : '<tr><td colspan="10" class="text-muted text-center py-4">Žiadne dáta pre tento mesiac.</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="11" class="text-muted text-center py-4">Žiadne dáta pre tento mesiac.</td></tr>';
 }
 async function savePayoutRule(trainer){
   const key=btoa(unescape(encodeURIComponent(trainer))).replace(/=/g,'');
   const g=f=>+document.getElementById(`rule_${key}_${f}`).value||0;
-  const body={fixed_per_class:g('fixed_per_class'),pct_of_revenue:g('pct_of_revenue'),per_client:g('per_client'),bonus_full_class:g('bonus_full_class'),bonus_new_member:g('bonus_new_member')};
+  const body={fixed_per_class:g('fixed_per_class'),pct_of_revenue:g('pct_of_revenue'),per_client:g('per_client'),per_client_threshold:g('per_client_threshold'),bonus_full_class:g('bonus_full_class'),bonus_new_member:g('bonus_new_member')};
   const d=await api('/api/admin/payout-rules/'+encodeURIComponent(trainer),{method:'PUT',body:JSON.stringify(body)});
   if(d?.ok){ showToast('Pravidlo uložené ✓','success'); loadPayouts(); }
+}
+async function applyStandardModel(){
+  if(!confirm('Nastaviť všetkým trénerom model 10 € základ + 1 € za každého klienta nad 10 na hodine?\n\nPrepíše ich súčasné pravidlá odmien.')) return;
+  const d=await api('/api/admin/payout-rules/apply-standard',{method:'POST'});
+  if(d?.ok){ showToast('Model nastavený pre '+d.trainers+' trénerov ✓','success'); loadPayouts(); }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 async function generatePayout(trainer){
   const month=document.getElementById('poMonth').value;

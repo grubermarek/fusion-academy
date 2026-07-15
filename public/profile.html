@@ -551,6 +551,10 @@ function renderAdmin(){
   const achChips=(a.achievements||[]).map(ac=>`<span class="adm-chip ${manualSet.has(ac.id)?'on':(ac.earned?'on':'')}" style="${ac.earned&&!manualSet.has(ac.id)?'opacity:.6;cursor:default':''}" ${ac.earned&&!manualSet.has(ac.id)?'title="Získané automaticky"':`onclick="toggleAch('${ac.id}')"`}>${ac.icon} ${esc(ac.name)}</span>`).join('');
   const planOpts=Object.entries(_plans||{}).map(([k,p])=>`<option value="${k}" data-price="${p.price}">${esc(p.name)} — ${p.price} €</option>`).join('');
   box.innerHTML=`
+    ${P.is_trainer ? `<details class="set-row adm-sub" style="cursor:pointer" ontoggle="if(this.open)loadProfileEarnings()">
+      <summary style="list-style:none;display:flex;align-items:center;gap:8px;font-weight:700;color:#e0b84c"><i class="bi bi-cash-coin"></i> Zárobky trénera (rozkliknúť) <i class="bi bi-chevron-down" style="margin-left:auto;font-size:.8rem"></i></summary>
+      <div id="trEarnBox" style="margin-top:12px"><span class="set-hint">Načítavam…</span></div>
+    </details>` : ''}
     <div class="set-row" style="background:rgba(201,168,76,.06);border:1px solid rgba(201,168,76,.2);border-radius:12px;padding:12px">
       <span class="set-label">🎫 Prideliť členstvo / vstupy</span>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
@@ -668,6 +672,24 @@ async function creditOp(op){
   const d=await r.json();
   if(d.ok){ _awards.referral_credit=d.referral_credit; alert('Kredit upravený ✓ Nový zostatok: '+d.referral_credit.toFixed(2)+' €'); renderAdmin(); }
   else alert(d.error||'Chyba');
+}
+async function loadProfileEarnings(){
+  const box=document.getElementById('trEarnBox'); if(!box) return;
+  try {
+    const r=await fetch('/api/trainer/earnings?trainer_id='+encodeURIComponent(uid),{credentials:'include'});
+    const d=await r.json();
+    if(!r.ok){ box.innerHTML='<span class="set-hint">'+(d.error||'Chyba')+'</span>'; return; }
+    const rows=(d.months||[]).filter(m=>m.total>0||m.sessions>0);
+    const MN=['','jan','feb','mar','apr','máj','jún','júl','aug','sep','okt','nov','dec'];
+    const fmtM=m=>{const[y,mo]=m.split('-');return MN[+mo]+' '+y;};
+    let html=`<div style="display:flex;justify-content:space-between;background:rgba(201,168,76,.08);border:1px solid var(--gold-border,#5a4a20);border-radius:10px;padding:10px 12px;margin-bottom:8px"><span style="color:var(--text-muted)">Spolu 12 mes. (z toho affiliate ${(d.grand_affiliate||0).toFixed(2)} €)</span><b style="color:var(--gold)">${(d.grand_total||0).toFixed(2)} €</b></div>`;
+    if(!rows.length){ box.innerHTML=html+'<span class="set-hint">Zatiaľ žiadne zárobky.</span>'; return; }
+    html+=rows.map(M=>{
+      const items=(M.items||[]).map(i=>{const det=(i.count!==''&&i.per!=='')?` · ${i.count}× ${typeof i.per==='string'?i.per:i.per+' €'}`:'';return `<div style="display:flex;justify-content:space-between;font-size:.78rem;padding:3px 0;color:var(--text-muted)"><span>${i.label}<span style="opacity:.7">${det}</span></span><span>${i.amount.toFixed(2)} €</span></div>`;}).join('');
+      return `<details style="border-top:1px solid rgba(255,255,255,.06);padding:6px 0"><summary style="list-style:none;cursor:pointer;display:flex;justify-content:space-between;font-size:.85rem"><span>${fmtM(M.month)} · ${M.sessions} hod.${M.affiliate>0?' · aff '+M.affiliate.toFixed(0)+'€':''}</span><b style="color:#81c784">${M.total.toFixed(2)} €</b></summary><div style="padding:6px 0 4px">${items||'—'}</div></details>`;
+    }).join('');
+    box.innerHTML=html;
+  } catch(e){ box.innerHTML='<span class="set-hint">Chyba pripojenia</span>'; }
 }
 async function entriesOp(op){
   const amount=parseInt(document.getElementById('admEntriesN').value);
