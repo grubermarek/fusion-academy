@@ -48,6 +48,17 @@
   .pnick{color:var(--gold);font-size:.92rem;font-weight:700;margin-top:3px}
   .pstatus{color:var(--cream);font-size:.9rem;font-style:italic;opacity:.85;margin-top:8px;max-width:420px;margin-left:auto;margin-right:auto;line-height:1.4}
   .set-hint{font-size:.74rem;color:var(--muted);line-height:1.4}
+  .pts-box{background:var(--card);border:1px solid var(--border);border-radius:14px;margin-top:14px;overflow:hidden}
+  .pts-box summary{list-style:none;cursor:pointer;padding:13px 16px;font-weight:700;display:flex;justify-content:space-between;align-items:center;color:var(--cream)}
+  .pts-box summary::-webkit-details-marker{display:none}
+  .pts-box[open] summary i{transform:rotate(180deg)}
+  .pts-box summary i{transition:.2s;color:var(--muted)}
+  .pts-body{padding:2px 16px 14px}
+  .pts-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--border);font-size:.88rem}
+  .pts-row b{color:var(--gold);white-space:nowrap}
+  .pts-sub{color:var(--muted);font-size:.76rem}
+  .pts-total{border-bottom:none;padding-top:12px;font-size:1rem}
+  .pts-total b{color:var(--cream)}
   .set-status textarea{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:10px 12px;font-family:'Manrope';font-size:.9rem;resize:vertical;min-height:44px}
   .set-status textarea:focus{outline:none;border-color:var(--gold)}
   .set-inline{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -255,6 +266,13 @@ function render(){
     </div>
     ${friendBtn()}
     ${(!P.is_self && !P.anonymous) ? `<a class="msg-btn" href="/community?dm=${P.id}"><i class="bi bi-chat-dots-fill"></i> ${T('profile.msg')}</a>` : ''}
+    ${P.points ? `<details class="pts-box">
+      <summary><span>⭐ ${T('profile.points_title')} <b style="color:var(--gold)">${P.points.total}</b></span><i class="bi bi-chevron-down"></i></summary>
+      <div class="pts-body">
+        ${P.points.items.map(i=>`<div class="pts-row"><span>${i.icon} ${esc(i.label)} <span class="pts-sub">· ${i.count}× po ${i.per}</span></span><b>${i.points} b</b></div>`).join('')}
+        <div class="pts-row pts-total"><b>${T('profile.points_total')}</b><b style="color:var(--gold)">⭐ ${P.points.total}</b></div>
+      </div>
+    </details>` : ''}
     <div class="sec-title">${T('profile.earned_title',{n:earned.length})}</div>
     <div class="ach-grid">${earned.length?earned.map(achCard).join(''):`<div class="empty">${T('profile.no_badges')}</div>`}</div>
     ${locked.length?`<div class="sec-title">${T('profile.to_unlock')}</div><div class="ach-grid">${locked.map(achCard).join('')}</div>`:''}

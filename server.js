@@ -35,8 +35,8 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 // Capture raw body so webhook signatures (Stripe) can be verified against exact bytes
-app.use(express.json({ verify:(req,res,buf)=>{ req.rawBody = buf; } }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit:'10mb', verify:(req,res,buf)=>{ req.rawBody = buf; } }));
+app.use(express.urlencoded({ extended: true, limit:'10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 // Trust Railway / reverse-proxy HTTPS headers
 if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
@@ -1276,12 +1276,14 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     const meUser = isSelf ? u : await q.one(db.users,{_id:me});
     const viewerLang = meUser?.lang||'';
     const viewerIsAdmin = !!(meUser && meUser.is_admin);
+    const monthPoints = await monthlyPointsFor(u._id);
     res.json({
       id:u._id, name: u.anonymous&&!isSelf ? 'Anonymný člen' : u.name,
       nickname: u.anonymous&&!isSelf ? '' : (u.nickname||''),
       status: u.anonymous&&!isSelf ? '' : (u.status||''),
       birthday: isSelf ? (u.birthday||'') : undefined,
       gender, viewer_lang: viewerLang, viewer_is_admin: viewerIsAdmin,
+      points: monthPoints,
       membership_tier: memTier, membership_name: memName,
       likes: likeCount, liked_by_me: likedByMe,
       anonymous: !!u.anonymous, is_self:isSelf,
@@ -4738,6 +4740,31 @@ const SK_NAMEDAYS = {
 const firstName = full => (full||'').trim().split(/\s+/)[0];
 const stripDia = s => (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
 
+// ── Bodový systém „Klient mesiaca" ────────────────────────────────────────────
+const MP_WEIGHTS = { hour:1, referral:5, post:3, membership:{ bronze:2, silver:4, gold:6 } };
+// Rozpis bodov jedného používateľa za daný mesiac (YYYY-MM)
+async function monthlyPointsFor(userId, month){
+  month = month || today().slice(0,7);
+  const bks = await q.find(db.bookings,{user_id:userId});
+  const hours = bks.filter(b=>{ const d=b.booking_date||(b.created_at||'').slice(0,10); return (d||'').startsWith(month) && ['attended','confirmed'].includes(b.status); }).length;
+  const refs = (await q.find(db.users,{sponsor_id:userId})).filter(u=>(u.created_at||'').startsWith(month)).length;
+  const posts = (await q.find(db.feed,{author_id:userId})).filter(p=>(p.created_at||'').startsWith(month)).length;
+  const m = await checkMembership(userId);
+  const lvl = m && ['bronze','silver','gold'].includes(m.plan_id) ? m.plan_id : null;
+  return buildPointItems({hours, refs, posts, lvl}, month);
+}
+function buildPointItems({hours, refs, posts, lvl}, month){
+  const memPts = lvl ? MP_WEIGHTS.membership[lvl] : 0;
+  const items = [
+    { icon:'🔥', label:'Odchodené hodiny',        count:hours, per:MP_WEIGHTS.hour,     points:hours*MP_WEIGHTS.hour },
+    { icon:'🤝', label:'Privedení noví členovia',  count:refs,  per:MP_WEIGHTS.referral, points:refs*MP_WEIGHTS.referral },
+    { icon:'💬', label:'Príspevky v komunite',     count:posts, per:MP_WEIGHTS.post,     points:posts*MP_WEIGHTS.post },
+    { icon:'💛', label: lvl?('Členstvo '+(MEMBERSHIP_PLANS[lvl]?.name||lvl)):'Členstvo', count: lvl?1:0, per:memPts, points:memPts },
+  ];
+  const total = items.reduce((s,i)=>s+i.points,0);
+  return { month, total, items };
+}
+
 // Spotlight for the client dashboard: klient mesiaca + narodeniny + meniny (bez anonymných)
 app.get('/api/client/spotlight', auth, async(req,res)=>{
   try {
@@ -4760,13 +4787,20 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
       if((d||'').startsWith(monthStr) && ['attended','confirmed'].includes(b.status) && b.user_id)
         attCount[b.user_id]=(attCount[b.user_id]||0)+1;
     });
+    // community posts this month per user
+    const feedPosts = await q.find(db.feed,{});
+    const postCount = {};
+    feedPosts.forEach(p=>{ if((p.created_at||'').startsWith(monthStr) && p.author_id) postCount[p.author_id]=(postCount[p.author_id]||0)+1; });
+    // active membership level per user
+    const activeMems = await q.find(db.memberships,{status:'active'});
+    const memLvl = {};
+    activeMems.forEach(m=>{ if(['bronze','silver','gold'].includes(m.plan_id)) memLvl[m.user_id]=m.plan_id; });
 
-    // combined score (referrals weigh more) — only non-anonymous eligible
+    // Full points score — highest total wins
     let winner=null, best=-1;
     for(const u of users){
-      const refs=refCount[u._id]||0, hrs=attCount[u._id]||0;
-      const score=refs*5 + hrs;
-      if(score>0 && score>best){ best=score; winner={ id:u._id, name:u.name, avatar:u.avatar||null, refs, hours:hrs, score, badge:getMemberBadge(u.created_at) }; }
+      const bd = buildPointItems({ hours:attCount[u._id]||0, refs:refCount[u._id]||0, posts:postCount[u._id]||0, lvl:memLvl[u._id]||null }, monthStr);
+      if(bd.total>0 && bd.total>best){ best=bd.total; winner={ id:u._id, name:u.name, avatar:u.avatar||null, refs:refCount[u._id]||0, hours:attCount[u._id]||0, score:bd.total, points:bd.total, breakdown:bd.items, badge:getMemberBadge(u.created_at) }; }
     }
 
     // birthdays & namedays today (non-anonymous)

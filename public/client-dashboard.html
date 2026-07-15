@@ -1303,7 +1303,35 @@ async function acceptFriendS(id){ const d=await api('/api/friends/accept',{metho
 document.addEventListener('click',e=>{ const b=document.getElementById('peopleResults'); const s=document.getElementById('peopleSearch'); if(b&&s&&!b.contains(e.target)&&e.target!==s) b.style.display='none'; });
 
 function showColmInfo(){
-  alert('🏆 Klient mesiaca\n\nKaždý mesiac vyzdvihujeme jednu členku alebo člena, ktorí najviac žijú komunitou Fusion Academy. Skóre sa počíta z:\n\n• počtu privedených nových členov (váži najviac)\n• počtu odchodených hodín v danom mesiaci\n\nJe to naše poďakovanie za to, že šírite radosť z tanca. Klikni na kartu a pozri si ich profil! 💛');
+  alert('🏆 Klient mesiaca\n\nKaždý mesiac vyzdvihujeme člena s najviac bodmi za aktivitu v komunite Fusion Academy. Body sa počítajú z:\n\n🔥 Odchodené hodiny — 1 bod za hodinu\n🤝 Privedení noví členovia — 5 bodov za člena\n💬 Príspevky v komunite — 3 body za príspevok\n💛 Úroveň členstva — Bronze 2 / Silver 4 / Gold 6\n\nKlikni na „bodov · rozpis" pre detail. 💛');
+}
+let _colmWinner=null;
+// Univerzálny modal s rozpisom bodov
+function showPointsBreakdown(items, total, name){
+  items = items||[];
+  let host = document.getElementById('ptsModal');
+  if(!host){ host=document.createElement('div'); host.id='ptsModal';
+    host.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+    host.onclick=e=>{ if(e.target===host) host.remove(); };
+    document.body.appendChild(host);
+  }
+  const rows = items.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 4px;border-bottom:1px solid #262626">
+      <span style="font-size:.9rem">${i.icon} ${i.label}<span style="color:var(--muted);font-size:.78rem"> · ${i.count}× po ${i.per}</span></span>
+      <b style="color:var(--gold);white-space:nowrap">${i.points} b</b>
+    </div>`).join('');
+  host.innerHTML=`<div style="background:#161512;border:1px solid rgba(201,168,76,.3);border-radius:16px;max-width:400px;width:100%;overflow:hidden" onclick="event.stopPropagation()">
+    <div style="padding:16px 18px;border-bottom:1px solid #262626;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-weight:800;color:var(--gold)">⭐ Body za tento mesiac</div>
+      <button onclick="document.getElementById('ptsModal').remove()" style="background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer;line-height:1">×</button>
+    </div>
+    <div style="padding:14px 18px">
+      ${name?`<div style="color:var(--muted);font-size:.82rem;margin-bottom:8px">${escHtml(name)}</div>`:''}
+      ${rows||'<div style="color:var(--muted)">Zatiaľ žiadne body.</div>'}
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 4px 2px;font-size:1.05rem">
+        <b>Spolu</b><b style="color:var(--gold)">⭐ ${total||0} bodov</b>
+      </div>
+    </div>
+  </div>`;
 }
 let _me=null;
 function slAvatar(a,name){
@@ -1316,10 +1344,7 @@ async function loadSpotlight(){
   if(!d || d.error){ host.style.display='none'; return; }
   let html='';
   if(d.clientOfMonth){
-    const c=d.clientOfMonth;
-    const bits=[];
-    if(c.refs>0) bits.push(`priviedol/priviedla <b>${c.refs}</b> ${c.refs===1?'nového člena':'nových členov'}`);
-    if(c.hours>0) bits.push(`odchodil/a <b>${c.hours}</b> ${c.hours===1?'hodinu':c.hours<5?'hodiny':'hodín'}`);
+    const c=d.clientOfMonth; _colmWinner=c;
     html+=`<div class="sl-card sl-hero" style="position:relative;cursor:pointer" onclick="location.href='/u/${c.id}'" title="Zobraziť profil">
       <button onclick="event.stopPropagation();showColmInfo()" title="Čo je Klient mesiaca?"
         style="position:absolute;top:10px;right:12px;background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.3);color:var(--gold);width:26px;height:26px;border-radius:50%;cursor:pointer;font-weight:800;font-size:.8rem;line-height:1;z-index:2">?</button>
@@ -1328,8 +1353,7 @@ async function loadSpotlight(){
         <div><div class="sl-name">${escHtml(c.name)} ${c.badge?.emoji||''} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></div>
           <div class="sl-why">Ďakujeme, že si srdcom našej komunity! 💛</div>
           <div class="sl-stats">
-            ${c.refs>0?`<span class="sl-stat"><b>${c.refs}</b> nových členov</span>`:''}
-            ${c.hours>0?`<span class="sl-stat"><b>${c.hours}</b> odchodených hodín</span>`:''}
+            <span class="sl-stat" onclick="event.stopPropagation();showPointsBreakdown(_colmWinner.breakdown,_colmWinner.points,_colmWinner.name)" style="cursor:pointer;background:rgba(201,168,76,.18);border:1px solid rgba(201,168,76,.4)"><b>⭐ ${c.points||0}</b> bodov · rozpis →</span>
           </div>
         </div>
       </div></div>`;

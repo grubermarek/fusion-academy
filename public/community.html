@@ -668,7 +668,7 @@ async function loadFeed() {
       <div id="feedPreview"></div>
       <div class="fc-actions">
         <label class="fc-img"><i class="bi bi-image"></i> Pridať fotku<input type="file" accept="image/*" style="display:none" onchange="feedPickImage(this)"></label>
-        <button class="fc-btn" onclick="createPost()">Uverejniť</button>
+        <button class="fc-btn" onclick="createPost(this)">Uverejniť</button>
       </div>
     </div>`;
   container.innerHTML = `<div class="feed-wrap">${composer}<div id="feedPosts">${
@@ -712,12 +712,26 @@ function feedPickImage(input) {
   };
   reader.readAsDataURL(file);
 }
-async function createPost() {
+async function createPost(btn) {
   const text = document.getElementById('feedText').value.trim();
   if(!text && !feedImage) return;
-  const r = await (await fetch('/api/feed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text, image:feedImage})})).json();
-  if(r.ok){ feedImage=null; loadFeed(); }
-  else alert(r.error||'Chyba');
+  const b = btn || document.querySelector('.feed-composer .fc-btn');
+  if(b){ b.disabled=true; b.dataset.o=b.textContent; b.textContent='Uverejňujem…'; }
+  try {
+    const res = await fetch('/api/feed',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({text, image:feedImage})});
+    if(!res.ok){
+      const msg = res.status===413 ? 'Fotka je príliš veľká, skús menšiu.' : ('Chyba pri uverejnení ('+res.status+')');
+      alert(msg);
+      if(b){ b.disabled=false; b.textContent=b.dataset.o||'Uverejniť'; }
+      return;
+    }
+    const r = await res.json();
+    if(r.ok){ feedImage=null; loadFeed(); }
+    else { alert(r.error||'Chyba'); if(b){ b.disabled=false; b.textContent=b.dataset.o||'Uverejniť'; } }
+  } catch(e){
+    alert('Nepodarilo sa uverejniť. Skontroluj pripojenie.');
+    if(b){ b.disabled=false; b.textContent=b.dataset.o||'Uverejniť'; }
+  }
 }
 async function reactPost(id, emoji) {
   await fetch('/api/feed/'+id+'/react',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emoji})});

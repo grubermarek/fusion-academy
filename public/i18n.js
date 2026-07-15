@@ -57,6 +57,7 @@
       'settings.status_ph':'Napr. „Tanec je môj liek."',
       'profile.status_none':'',
       'bg.bronze':'Bronzové','bg.silver':'Strieborné','bg.gold':'Zlaté','bg.legend':'Legendárne',
+      'profile.points_title':'Body tento mesiac','profile.points_total':'Spolu',
     },
     cs:{
       'lang.name':'Jazyk',
@@ -97,6 +98,7 @@
       'settings.status':'Status profilu','settings.status_hint':'Tip: napiš si oblíbenou motivační hlášku nebo cokoli, co tě vystihuje 💛',
       'settings.status_ph':'Např. „Tanec je můj lék."',
       'bg.bronze':'Bronzové','bg.silver':'Stříbrné','bg.gold':'Zlaté','bg.legend':'Legendární',
+      'profile.points_title':'Body tento měsíc','profile.points_total':'Celkem',
     },
     en:{
       'lang.name':'Language',
@@ -137,6 +139,7 @@
       'settings.status':'Profile status','settings.status_hint':'Tip: write your favourite motivational quote or anything that describes you 💛',
       'settings.status_ph':'e.g. “Dance is my medicine.”',
       'bg.bronze':'Bronze','bg.silver':'Silver','bg.gold':'Gold','bg.legend':'Legendary',
+      'profile.points_title':'Points this month','profile.points_total':'Total',
     },
     uk:{
       'lang.name':'Мова',
@@ -177,6 +180,7 @@
       'settings.status':'Статус профілю','settings.status_hint':'Порада: напиши улюблену мотиваційну фразу або будь-що, що тебе описує 💛',
       'settings.status_ph':'Напр. «Танець — це мої ліки.»',
       'bg.bronze':'Бронзовий','bg.silver':'Срібний','bg.gold':'Золотий','bg.legend':'Легендарний',
+      'profile.points_title':'Бали цього місяця','profile.points_total':'Разом',
     },
     hu:{
       'lang.name':'Nyelv',
@@ -217,6 +221,7 @@
       'settings.status':'Profil státusz','settings.status_hint':'Tipp: írd ide kedvenc motivációs mondatod vagy bármit, ami jellemez 💛',
       'settings.status_ph':'Pl. „A tánc az én gyógyszerem.”',
       'bg.bronze':'Bronz','bg.silver':'Ezüst','bg.gold':'Arany','bg.legend':'Legendás',
+      'profile.points_title':'Pontok e hónapban','profile.points_total':'Összesen',
     },
     de:{
       'lang.name':'Sprache',
@@ -257,6 +262,7 @@
       'settings.status':'Profil-Status','settings.status_hint':'Tipp: Schreib deinen Lieblings-Motivationsspruch oder was dich ausmacht 💛',
       'settings.status_ph':'z. B. „Tanzen ist meine Medizin.“',
       'bg.bronze':'Bronze','bg.silver':'Silber','bg.gold':'Gold','bg.legend':'Legendär',
+      'profile.points_title':'Punkte diesen Monat','profile.points_total':'Gesamt',
     },
   };
 
