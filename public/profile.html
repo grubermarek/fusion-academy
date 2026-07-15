@@ -47,6 +47,9 @@
   .pnick{color:var(--gold);font-size:.92rem;font-weight:700;margin-top:3px}
   .nick-edit{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;text-decoration:underline;margin-top:4px}
   .nick-edit:hover{color:var(--gold)}
+  .gender-switch{display:inline-flex;gap:0;margin-top:10px;border:1px solid var(--border);border-radius:20px;overflow:hidden}
+  .gseg{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;font-weight:700;padding:6px 14px;font-family:'Manrope';transition:.15s}
+  .gseg.on{background:linear-gradient(102deg,#B98F3E,#F7E7B8 45%,#E7C878 65%,#B98F3E);color:#231A08}
   .pname.glow{text-shadow:0 0 18px rgba(201,162,76,.65),0 0 4px rgba(201,162,76,.9)}
   .ptags{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px}
   .joined-date{margin-top:10px;font-size:.78rem;color:var(--muted)}
@@ -122,6 +125,8 @@ function friendBtn(){
   return `<button class="fbtn add" onclick="addFriend()"><i class="bi bi-person-plus-fill"></i> Pridať do priateľov</button>`;
 }
 function render(){
+  const isM=P.gender==='male';
+  const memberWord=isM?'člen':'členka';
   const initials=(P.name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
   const av=P.avatar?`<img src="${P.avatar}" alt="">`:esc(initials);
   const flex=P.earned_count>=5?'glow':'';
@@ -136,17 +141,21 @@ function render(){
   document.getElementById('host').innerHTML=`
     <div class="hero bg-${esc(P.bg_tier||'basic')} ${P.membership_tier?'mem-'+esc(P.membership_tier):''}">
       <div class="avatar">${av}</div>
-      ${P.membership_tier?`<div class="mem-badge mem-${esc(P.membership_tier)}">${P.membership_tier==='gold'?'👑':P.membership_tier==='silver'?'⭐':'🥉'} ${esc(P.membership_name||P.membership_tier)} členka</div>`:''}
+      ${P.membership_tier?`<div class="mem-badge mem-${esc(P.membership_tier)}">${P.membership_tier==='gold'?'👑':P.membership_tier==='silver'?'⭐':'🥉'} ${esc(P.membership_name||P.membership_tier)} ${memberWord}</div>`:''}
       ${P.name_badge?`<div class="name-badge">${P.name_badge.emoji} ${esc(P.name_badge.title)}</div>`:''}
       <div class="pname ${flex}">${P.name_badge?P.name_badge.emoji+' ':''}${esc(P.name)}</div>
       ${P.nickname?`<div class="pnick">„${esc(P.nickname)}"</div>`:''}
       ${P.is_self?`<button class="nick-edit" onclick="editNick()"><i class="bi bi-pencil"></i> ${P.nickname?'Zmeniť prezývku':'Pridať prezývku'}</button>`:''}
+      ${P.is_self?`<div class="gender-switch">
+        <button class="gseg ${!isM?'on':''}" onclick="setGender('female')">♀ Žena</button>
+        <button class="gseg ${isM?'on':''}" onclick="setGender('male')">♂ Muž</button>
+      </div>`:''}
       <div class="ptags">
         <span class="tag">${P.member_badge?.emoji||'🌱'} ${esc(P.member_badge?.label||'Nováčik')}</span>
         <span class="tag">🏅 ${esc(P.loyalty_label)}</span>
         <span class="tag">🏆 ${P.earned_count}/${P.total_count} odznakov</span>
       </div>
-      ${P.joined?`<div class="joined-date">💛 Členka od ${new Date(P.joined).toLocaleDateString('sk-SK',{month:'long',year:'numeric'})}</div>`:''}
+      ${P.joined?`<div class="joined-date">💛 ${isM?'Členom':'Členkou'} od ${new Date(P.joined).toLocaleDateString('sk-SK',{month:'long',year:'numeric'})}</div>`:''}
       <div>${P.is_self
         ? `<button class="like-btn" disabled style="opacity:.75;cursor:default"><i class="bi bi-heart-fill"></i> ${P.likes||0} lajkov</button>`
         : `<button id="likeBtn" class="like-btn ${P.liked_by_me?'liked':''}" onclick="toggleLike()"><i class="bi ${P.liked_by_me?'bi-heart-fill':'bi-heart'}"></i> <span id="likeCount">${P.likes||0}</span></button>`}</div>
@@ -226,6 +235,11 @@ async function editNick(){
   const nickname=val.trim().slice(0,30);
   const r=await fetch('/api/profile',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({nickname})});
   if(r.ok){ P.nickname=nickname; render(); }
+}
+async function setGender(g){
+  if(P.gender===g) return;
+  const r=await fetch('/api/profile',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({gender:g})});
+  if(r.ok){ location.reload(); } // reload so achievements re-render with correct declension
 }
 async function addFriend(){ const d=await post('/api/friends/request',{to:uid}); if(d.ok){P.friend_state=d.state;render();} }
 async function accept(){ const d=await post('/api/friends/accept',{from:uid}); if(d.ok){P.friend_state=d.state;render();} }

@@ -1077,30 +1077,30 @@ app.delete('/api/feed/:id', auth, async(req,res)=>{
 const ACHIEVEMENTS = [
   // Návštevy
   {id:'v5',   cat:'visits', need:5,    icon:'👟', name:'Prvé kroky',    desc:'5 odchodených hodín'},
-  {id:'v25',  cat:'visits', need:25,   icon:'💃', name:'Tanečník',      desc:'25 hodín'},
+  {id:'v25',  cat:'visits', need:25,   icon:'💃', name:'Tanečnica',     name_m:'Tanečník', desc:'25 hodín'},
   {id:'v75',  cat:'visits', need:75,   icon:'⭐', name:'Stálica',       desc:'75 hodín'},
   {id:'v150', cat:'visits', need:150,  icon:'🔥', name:'Vášeň',         desc:'150 hodín'},
-  {id:'v350', cat:'visits', need:350,  icon:'🏆', name:'Šampión',       desc:'350 hodín'},
+  {id:'v350', cat:'visits', need:350,  icon:'🏆', name:'Šampiónka',     name_m:'Šampión', desc:'350 hodín'},
   {id:'v600', cat:'visits', need:600,  icon:'🦋', name:'Ikona',         desc:'600 hodín'},
   {id:'v1000',cat:'visits', need:1000, icon:'🌟', name:'Legenda',       desc:'1000 hodín'},
   // Privedení noví ľudia (referral)
-  {id:'r1',   cat:'refs', need:1,   icon:'🤝', name:'Ambasádorka',         desc:'1 privedený člen'},
-  {id:'r3',   cat:'refs', need:3,   icon:'🌱', name:'Rozsievačka radosti', desc:'3 privedení členovia'},
+  {id:'r1',   cat:'refs', need:1,   icon:'🤝', name:'Ambasádorka',         name_m:'Ambasádor', desc:'1 privedený člen'},
+  {id:'r3',   cat:'refs', need:3,   icon:'🌱', name:'Rozsievačka radosti', name_m:'Rozsievač radosti', desc:'3 privedení členovia'},
   {id:'r5',   cat:'refs', need:5,   icon:'🌸', name:'Inšpirácia',          desc:'5 privedených členov'},
   {id:'r10',  cat:'refs', need:10,  icon:'💫', name:'Duša komunity',       desc:'10 privedených členov'},
   {id:'r20',  cat:'refs', need:20,  icon:'👑', name:'Srdce komunity',      desc:'20 privedených členov'},
   {id:'r30',  cat:'refs', need:30,  icon:'🌟', name:'Žiarivá hviezda',     desc:'30 privedených členov'},
   {id:'r50',  cat:'refs', need:50,  icon:'💎', name:'Klenot komunity',     desc:'50 privedených členov'},
   {id:'r75',  cat:'refs', need:75,  icon:'🕊️', name:'Anjel komunity',      desc:'75 ľudí v štruktúre'},
-  {id:'r100', cat:'refs', need:100, icon:'👸', name:'Kráľovná Fusion',     desc:'100 ľudí v štruktúre'},
+  {id:'r100', cat:'refs', need:100, icon:'👸', name:'Kráľovná Fusion',     name_m:'Kráľ Fusion', desc:'100 ľudí v štruktúre'},
   {id:'r250', cat:'refs', need:250, icon:'🦋', name:'Motýľ premeny',       desc:'250 ľudí v štruktúre'},
   {id:'r500', cat:'refs', need:500, icon:'🌟', name:'Superhviezda',        desc:'500 ľudí v štruktúre'},
-  {id:'r1000',cat:'refs', need:1000, icon:'💠', name:'Diamantová kráľovná', desc:'1000 ľudí v štruktúre'},
-  {id:'r2500',cat:'refs', need:2500, icon:'🏆', name:'Šampiónka sŕdc',      desc:'2500 ľudí v štruktúre'},
+  {id:'r1000',cat:'refs', need:1000, icon:'💠', name:'Diamantová kráľovná', name_m:'Diamantový kráľ', desc:'1000 ľudí v štruktúre'},
+  {id:'r2500',cat:'refs', need:2500, icon:'🏆', name:'Šampiónka sŕdc',      name_m:'Šampión sŕdc', desc:'2500 ľudí v štruktúre'},
   {id:'r5000',cat:'refs', need:5000, icon:'🌈', name:'Živel radosti',       desc:'5000 ľudí v štruktúre'},
   {id:'r10000',cat:'refs',need:10000,icon:'🚀', name:'SKY IS THE LIMIT',    desc:'10 000+ ľudí v štruktúre'},
   // Vernosť — počíta sa len z mesiacov, v ktorých mala platné členstvo (až po 99 rokov)
-  {id:'m3',    cat:'tenure', need:3,    icon:'📅', name:'Verná',           desc:'3 mesiace s členstvom'},
+  {id:'m3',    cat:'tenure', need:3,    icon:'📅', name:'Verná',           name_m:'Verný', desc:'3 mesiace s členstvom'},
   {id:'m6',    cat:'tenure', need:6,    icon:'💛', name:'Srdcom Fusion',   desc:'6 mesiacov s členstvom'},
   {id:'m12',   cat:'tenure', need:12,   icon:'🎖️', name:'Rok na parkete',  desc:'1 rok s členstvom'},
   {id:'m24',   cat:'tenure', need:24,   icon:'💎', name:'Diamantová éra',  desc:'2 roky s členstvom'},
@@ -1108,7 +1108,7 @@ const ACHIEVEMENTS = [
   {id:'m60',   cat:'tenure', need:60,   icon:'🏛️', name:'Pilier komunity', desc:'5 rokov s členstvom'},
   {id:'m120',  cat:'tenure', need:120,  icon:'👑', name:'Legenda desaťročia', desc:'10 rokov s členstvom'},
   {id:'m180',  cat:'tenure', need:180,  icon:'💠', name:'Vzácny klenot',   desc:'15 rokov s členstvom'},
-  {id:'m240',  cat:'tenure', need:240,  icon:'🕊️', name:'Nesmrteľná',      desc:'20 rokov s členstvom'},
+  {id:'m240',  cat:'tenure', need:240,  icon:'🕊️', name:'Nesmrteľná',      name_m:'Nesmrteľný', desc:'20 rokov s členstvom'},
   {id:'m360',  cat:'tenure', need:360,  icon:'📜', name:'Živá história',   desc:'30 rokov s členstvom'},
   {id:'m600',  cat:'tenure', need:600,  icon:'🏅', name:'Zlatá legenda',   desc:'50 rokov s členstvom'},
   {id:'m1188', cat:'tenure', need:1188, icon:'♾️', name:'Večná ikona',     desc:'99 rokov s členstvom'},
@@ -1138,21 +1138,25 @@ async function getAllAncestors(uid){
 const REFERRAL_BADGES = [
   {need:10000,emoji:'🚀', title:'SKY IS THE LIMIT'},
   {need:5000, emoji:'🌈', title:'Živel radosti'},
-  {need:2500, emoji:'🏆', title:'Šampiónka sŕdc'},
-  {need:1000, emoji:'💠', title:'Diamantová kráľovná'},
+  {need:2500, emoji:'🏆', title:'Šampiónka sŕdc', title_m:'Šampión sŕdc'},
+  {need:1000, emoji:'💠', title:'Diamantová kráľovná', title_m:'Diamantový kráľ'},
   {need:500,  emoji:'🌟', title:'Superhviezda'},
   {need:250,  emoji:'🦋', title:'Motýľ premeny'},
-  {need:100, emoji:'👸', title:'Kráľovná Fusion'},
+  {need:100, emoji:'👸', title:'Kráľovná Fusion', title_m:'Kráľ Fusion'},
   {need:75,  emoji:'🕊️', title:'Anjel komunity'},
   {need:50,  emoji:'💎', title:'Klenot komunity'},
   {need:30,  emoji:'🌟', title:'Žiarivá hviezda'},
   {need:20,  emoji:'👑', title:'Srdce komunity'},
   {need:10,  emoji:'💫', title:'Duša komunity'},
   {need:5,   emoji:'🌸', title:'Inšpirácia'},
-  {need:3,   emoji:'🌱', title:'Rozsievačka radosti'},
-  {need:1,   emoji:'🤝', title:'Ambasádorka'},
+  {need:3,   emoji:'🌱', title:'Rozsievačka radosti', title_m:'Rozsievač radosti'},
+  {need:1,   emoji:'🤝', title:'Ambasádorka', title_m:'Ambasádor'},
 ];
-function referralBadge(refCount){ return REFERRAL_BADGES.find(b=>refCount>=b.need)||null; }
+function referralBadge(refCount, gender){
+  const b=REFERRAL_BADGES.find(b=>refCount>=b.need);
+  if(!b) return null;
+  return { ...b, title: (gender==='male' && b.title_m) ? b.title_m : b.title };
+}
 // Referral count also unlocks fancier profile backgrounds (harder than visits)
 function refBgTier(refCount){ return refCount>=20?'legend' : refCount>=10?'gold' : refCount>=5?'silver' : refCount>=2?'bronze' : 'basic'; }
 const BG_RANK={basic:0,bronze:1,silver:2,gold:3,legend:4};
@@ -1174,8 +1178,9 @@ async function activeMembershipMonths(userId){
   }
   return months.size;
 }
-function computeAchievements(u, refCount, tenureMonths){
+function computeAchievements(u, refCount, tenureMonths, gender){
   const visits=u.visit_count||0;
+  const g = gender || u.gender || 'female';
   const months = (tenureMonths!==undefined) ? tenureMonths : monthsSince(u.created_at);
   const val={visits, refs:refCount, tenure:months};
   const merch=u.merch_owned||[]; const manual=u.manual_achievements||[];
@@ -1184,7 +1189,8 @@ function computeAchievements(u, refCount, tenureMonths){
     if(a.cat==='merch'){ earned = merch.includes(a.item); progress = earned?100:0; }
     else { earned = (val[a.cat]||0) >= a.need; progress = Math.min(100, Math.round((val[a.cat]||0)/a.need*100)); }
     if(manual.includes(a.id)) { earned = true; if(progress<100) progress=100; }
-    return {...a, earned, progress};
+    const name = (g==='male' && a.name_m) ? a.name_m : a.name;
+    return {...a, name, earned, progress};
   });
 }
 
@@ -1228,7 +1234,8 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     const directRefs=await referralCountOf(u._id);
     const refCount=await downlineCountOf(u._id); // whole structure drives rewards
     const memberMonths=await activeMembershipMonths(u._id);
-    const ach=computeAchievements(u, refCount, memberMonths);
+    const gender = u.gender==='male' ? 'male' : 'female';
+    const ach=computeAchievements(u, refCount, memberMonths, gender);
     const earned=ach.filter(a=>a.earned);
     const badge=getMemberBadge(u.created_at);
     const loyalty=getLoyaltyStatus(u.visit_count||0);
@@ -1239,7 +1246,7 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     const bgTier = BG_RANK[rTier] > BG_RANK[achTier] ? rTier : achTier;
     const bgUnlocks=[{tier:'bronze',need:3},{tier:'silver',need:6},{tier:'gold',need:10},{tier:'legend',need:14}];
     const nextBg=bgUnlocks.find(b=>ec<b.need)||null;
-    const nameBadge=referralBadge(refCount);
+    const nameBadge=referralBadge(refCount, gender);
     // Membership-level glow — visible to everyone on the public profile
     const mem=await checkMembership(u._id);
     const memTier=(mem && ['bronze','silver','gold'].includes(mem.plan_id)) ? mem.plan_id : null;
@@ -1249,6 +1256,7 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     res.json({
       id:u._id, name: u.anonymous&&!isSelf ? 'Anonymný člen' : u.name,
       nickname: u.anonymous&&!isSelf ? '' : (u.nickname||''),
+      gender,
       membership_tier: memTier, membership_name: memName,
       likes: likeCount, liked_by_me: likedByMe,
       anonymous: !!u.anonymous, is_self:isSelf,
@@ -1512,6 +1520,7 @@ app.put('/api/profile', auth, async(req,res)=>{
   if(birthday!==undefined) set.birthday = /^\d{4}-\d{2}-\d{2}$/.test(birthday) ? birthday : '';
   if(anonymous!==undefined) set.anonymous = !!anonymous;
   if(nickname!==undefined) set.nickname = String(nickname||'').trim().slice(0,30);
+  if(req.body.gender!==undefined) set.gender = req.body.gender==='male' ? 'male' : 'female';
   if(Object.keys(set).length) await q.update(db.users,{_id:req.session.uid},{$set:set});
   res.json({ok:true});
 });
