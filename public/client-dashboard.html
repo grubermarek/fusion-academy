@@ -856,16 +856,47 @@ async function loadMyBookings(){
 
 /* ─── Notifications ─── */
 let notifOpen=false;
+let _notifs=[];
 async function toggleNotif(){
   notifOpen=!notifOpen;
   const panel=document.getElementById('notifPanel');
   if(notifOpen){
     panel.classList.add('open');
-    const notifs=await api('/api/client/notifications');
+    _notifs=await api('/api/client/notifications')||[];
     const list=document.getElementById('notifList');
-    if(!notifs?.length){list.innerHTML='<div class="empty-state"><i class="bi bi-bell-slash"></i>Žiadne notifikácie</div>';return;}
-    list.innerHTML=notifs.map(n=>`<div class="notif-item ${n.read?'':'unread'}"><div class="nt">${escHtml(n.title)}</div><div class="nb">${escHtml(n.body||'')} <br><small style="opacity:.6">${new Date(n.created_at).toLocaleDateString('sk')}</small></div></div>`).join('');
+    if(!_notifs.length){list.innerHTML='<div class="empty-state"><i class="bi bi-bell-slash"></i>Žiadne notifikácie</div>';return;}
+    list.innerHTML=_notifs.map((n,i)=>{
+      const arrow=notifDest(n)?' <i class="bi bi-chevron-right" style="float:right;opacity:.4;font-size:.75rem"></i>':'';
+      return `<div class="notif-item ${n.read?'':'unread'}" onclick="openNotif(${i})"><div class="nt">${escHtml(n.title)}${arrow}</div><div class="nb">${escHtml(n.body||'')} <br><small style="opacity:.6">${new Date(n.created_at).toLocaleDateString('sk')}</small></div></div>`;
+    }).join('');
   } else {panel.classList.remove('open');}
+}
+// Kam vedie notifikácia podľa typu (null = nikam)
+function notifDest(n){
+  const my=(_me&&_me.id)||'';
+  switch(n.type){
+    case 'dm': return n.from_id?('/community?dm='+n.from_id):'/community';
+    case 'friend_request': case 'friend_accepted': return n.from_id?('/u/'+n.from_id):null;
+    case 'profile_like': case 'profile_comment': return my?('/u/'+my):null;
+    case 'achievement': return my?('/u/'+my):null;
+    case 'commission': case 'referral_credit': case 'structure_growth': return '/client-dashboard#struktura';
+    case 'new_lead': return '/admin';
+    case 'expiry_warning': case 'credit': case 'role_change': return '/pricing';
+    default: return null;
+  }
+}
+function openNotif(i){
+  const n=_notifs[i]; if(!n) return;
+  const dest=notifDest(n);
+  if(!dest) return;
+  if(dest==='/client-dashboard#struktura'){
+    // otvor panel štruktúry priamo tu
+    document.getElementById('notifPanel').classList.remove('open');notifOpen=false;
+    const p=document.getElementById('networkPanel');
+    if(p){ if(p.style.display==='none') toggleNetwork(); p.scrollIntoView({behavior:'smooth',block:'center'}); }
+    return;
+  }
+  location.href=dest;
 }
 async function markAllRead(){
   await api('/api/client/notifications/read-all',{method:'POST'});

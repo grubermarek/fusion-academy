@@ -147,7 +147,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
 <div class="offcanvas offcanvas-end" tabindex="-1" id="cartPanel">
   <div class="offcanvas-header border-bottom">
     <h5 class="offcanvas-title fw-bold"><i class="bi bi-bag me-2"></i>Košík</h5>
-    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" style="filter:invert(1) grayscale(100%) brightness(2)"></button>
   </div>
   <div class="offcanvas-body d-flex flex-column" style="overflow-y:auto;">
 
@@ -334,7 +334,7 @@ function updateCartUI() {
             <div class="fw-semibold small">${item.emoji||'📦'} ${item.name}</div>
             <div class="text-muted" style="font-size:.75rem">${eur(item.price)} / ks</div>
           </div>
-          <button class="btn-close btn-close-sm ms-2" onclick="removeFromCart('${item._id}')" style="font-size:.6rem"></button>
+          <button class="btn-close btn-close-white btn-close-sm ms-2" onclick="removeFromCart('${item._id}')" style="font-size:.6rem;filter:invert(1) grayscale(100%) brightness(2)"></button>
         </div>
         <div class="d-flex align-items-center justify-content-between mt-2">
           <div class="d-flex align-items-center gap-2">

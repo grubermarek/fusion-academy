@@ -138,7 +138,7 @@
 <body>
 <div class="wrap">
   <div class="topbar">
-    <a href="/community" class="back"><i class="bi bi-arrow-left"></i> <span data-i18n="profile.back"></span></a>
+    <a id="backLink" href="/client-dashboard" class="back"><i class="bi bi-arrow-left"></i> <span data-i18n="profile.back"></span></a>
   </div>
   <div id="host"><div class="empty" data-i18n="profile.loading"></div></div>
 </div>
@@ -156,6 +156,8 @@ async function load(){
   if(P.viewer_lang && P.viewer_lang!==FA_I18N.lang){ localStorage.setItem('fa_lang',P.viewer_lang); location.reload(); return; }
   render();
   FA_I18N.mount('langMount'); // switcher lives inside the settings panel
+  // Admin sa vráti do admin panelu, klient na svoj dashboard
+  const bl=document.getElementById('backLink'); if(bl && P.viewer_is_admin && !P.is_self){ bl.href='/admin'; }
 }
 function friendBtn(){
   if(P.friend_state==='self') return '';

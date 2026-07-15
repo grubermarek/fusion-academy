@@ -177,7 +177,7 @@ html,body{height:100%;overflow:hidden;font-family:var(--sans);-webkit-font-smoot
 
   <!-- Top bar -->
   <div class="top-bar fa-nav">
-    <a class="brand fa-brand" href="/">FUSION ACADEMY</a>
+    <a class="brand fa-brand" href="/client-dashboard">FUSION ACADEMY</a>
     <div class="top-links">
       <a href="/shop"><i class="bi bi-bag me-1"></i>E-shop</a>
       <a href="/schedule"><i class="bi bi-calendar3 me-1"></i>Rozvrh</a>
@@ -363,7 +363,8 @@ function initChat() {
   // Incoming private message
   socket.on('new_dm', msg => {
     const other = msg.from_id === me.id ? msg.to_id : msg.from_id;
-    if (dmMode && (other === dmWith)) {
+    // Vlastnú odoslanú správu sme už zobrazili optimisticky → nepridávaj znova
+    if (msg.from_id !== me.id && dmMode && (other === dmWith)) {
       appendMessage({ ...msg, user_id: msg.from_id, user_name: msg.from_name });
       scrollBottom();
       // mark read on server
@@ -386,6 +387,7 @@ function initChat() {
 
   socket.on('new_message', msg => {
     if (msg.channel !== currentChannel) return;
+    if (msg.user_id === me?.id) return; // vlastnú správu sme už zobrazili optimisticky
     const today = new Date().toISOString().slice(0,10);
     const container = document.getElementById('messages');
     // Add date sep if needed
@@ -530,8 +532,21 @@ function sendMessage() {
   const input = document.getElementById('msgInput');
   const text = input.value.trim();
   if (!text || !socket) return;
-  if (dmMode && dmWith) socket.emit('send_dm', { to: dmWith, text });
-  else socket.emit('send_message', { channel: currentChannel, text });
+  const now = new Date().toISOString();
+  if (dmMode && dmWith){
+    socket.emit('send_dm', { to: dmWith, text });
+    // Optimistické zobrazenie vlastnej správy (echo sa preskočí)
+    appendMessage({ user_id: me.id, from_id: me.id, user_name: me.name, nickname: me.nickname, text, created_at: now, memberBadge: me.memberBadge, rankBadge: me.rankBadge });
+    scrollBottom();
+  } else {
+    socket.emit('send_message', { channel: currentChannel, text });
+    const container = document.getElementById('messages');
+    const today = now.slice(0,10);
+    const lastSep = container.querySelector('.date-sep:last-of-type');
+    if (!lastSep || lastSep.dataset.date !== today) appendDateSep(today);
+    appendMessage({ user_id: me.id, user_name: me.name, nickname: me.nickname, text, created_at: now, memberBadge: me.memberBadge, rankBadge: me.rankBadge });
+    scrollBottom();
+  }
   input.value = '';
   input.style.height = 'auto';
   document.getElementById('charCount').textContent = '0';

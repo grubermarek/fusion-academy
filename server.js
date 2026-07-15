@@ -2271,6 +2271,7 @@ const MEMBERSHIP_PLANS = {
   'kids':           { name:'Zumba Kids',     price:49.9, duration_days:30,  online:false, color:'#FF6B9D', kids:true },
   'online_basic':   { name:'Online Basic',   price:12.9, duration_days:30,  online:true,  color:'#4CAF50' },
   'online_premium': { name:'Online Premium', price:67.9, duration_days:30,  online:true,  color:'#9C27B0' },
+  'vstup1':         { name:'Jednorazový vstup', price:10, duration_days:30, online:false, color:'#4CAF50', type:'bundle', entries:1 },
   'permanentka10':  { name:'10-vstupová permanentka', price:80, duration_days:90, online:false, color:'#FF9800', type:'bundle', entries:10 },
 };
 
