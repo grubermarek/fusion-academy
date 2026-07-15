@@ -1481,6 +1481,7 @@ app.get('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
   const memberMonths=await activeMembershipMonths(u._id);
   const sponsor = u.sponsor_id ? await q.one(db.users,{_id:u.sponsor_id}) : null;
   res.json({ name:u.name, visit_count:u.visit_count||0, private_hours:u.private_hours||0,
+    referral_credit:+(u.referral_credit||0), referral_credit_pending:+(u.referral_credit_pending||0),
     is_trainer:(u.user_type==='trainer')||!!u.is_admin, taught_group_hours:u.taught_group_hours||0, taught_private_hours:u.taught_private_hours||0,
     referrals:refCount, joined:(u.created_at||'').slice(0,10),
     achievements: computeAchievements(u, refCount, memberMonths),
@@ -1522,11 +1523,42 @@ app.put('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
   if(req.body.private_hours!==undefined) set.private_hours=Math.max(0,parseInt(req.body.private_hours)||0);
   if(req.body.taught_group_hours!==undefined) set.taught_group_hours=Math.max(0,parseInt(req.body.taught_group_hours)||0);
   if(req.body.taught_private_hours!==undefined) set.taught_private_hours=Math.max(0,parseInt(req.body.taught_private_hours)||0);
+  if(req.body.referral_credit!==undefined) set.referral_credit=Math.max(0,+parseFloat(req.body.referral_credit).toFixed(2)||0);
   if(Array.isArray(req.body.merch_owned)) set.merch_owned=req.body.merch_owned.filter(x=>MERCH_KEYWORDS[x]);
   if(Array.isArray(req.body.manual_achievements)) set.manual_achievements=req.body.manual_achievements.filter(id=>ACHIEVEMENTS.some(a=>a.id===id));
   if(Object.keys(set).length) await q.update(db.users,{_id:u._id},{$set:set});
   await auditLog(req,'user_awards_update',u._id,{visit_count:u.visit_count,merch:u.merch_owned,manual:u.manual_achievements},set,'');
   res.json({ok:true});
+});
+
+// Admin: úprava kreditu klienta — pridať/odobrať/nastaviť
+app.post('/api/admin/users/:id/credit', adminAuth, async(req,res)=>{
+  try {
+    const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
+    const op=req.body.op; const val=+parseFloat(req.body.amount);
+    if(isNaN(val)) return res.status(400).json({error:'Neplatná suma'});
+    let cur=+(u.referral_credit||0);
+    let nc = op==='set' ? val : op==='add' ? cur+val : op==='sub' ? cur-val : cur;
+    nc=+Math.max(0,nc).toFixed(2);
+    await q.update(db.users,{_id:u._id},{$set:{referral_credit:nc}});
+    await q.insert(db.notifications,{user_id:u._id,type:'credit',title:'💳 Úprava kreditu adminom',body:`Nový zostatok kreditu: ${nc.toFixed(2)} €`,read:false,created_at:nowISO()}).catch(()=>{});
+    await auditLog(req,'credit_adjust',u._id,{old:cur},{op,val,new:nc},'');
+    res.json({ ok:true, referral_credit:nc });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Admin: označiť čakajúcu výplatu ako vyplatenú (peniaze fyzicky poslané)
+app.post('/api/admin/users/:id/mark-payout-paid', adminAuth, async(req,res)=>{
+  try {
+    const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
+    const pend=+(u.referral_credit_pending||0);
+    if(pend<=0) return res.status(400).json({error:'Žiadna čakajúca výplata'});
+    await q.update(db.transactions,{user_id:u._id,type:'referral_payout_request',status:'pending'},{$set:{status:'paid',paid_at:nowISO()}},{multi:true});
+    await q.update(db.users,{_id:u._id},{$set:{referral_credit_pending:0}});
+    await q.insert(db.notifications,{user_id:u._id,type:'payout',title:'✅ Výplata vyplatená',body:`${pend.toFixed(2)} € bolo prevedených na tvoj účet.`,read:false,created_at:nowISO()}).catch(()=>{});
+    await auditLog(req,'payout_mark_paid',u._id,{pending:pend},{paid:pend},'');
+    res.json({ ok:true, paid:pend });
+  } catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // Friends: send request

@@ -596,8 +596,35 @@ function renderAdmin(){
         <div id="spResults" style="display:none;position:absolute;z-index:20;left:0;right:0;top:calc(100% + 4px);background:#161512;border:1px solid var(--border);border-radius:10px;max-height:220px;overflow-y:auto"></div>
       </div>
       <span class="set-hint">Priraď sponzora, ak sa klient zaregistroval bez jeho kódu.</span>
+    </div>
+    <div class="set-row" style="background:rgba(129,199,132,.06);border:1px solid rgba(129,199,132,.2);border-radius:12px;padding:12px">
+      <span class="set-label">💰 Kredit klienta</span>
+      <div style="font-size:.9rem;margin:4px 0 8px">Aktuálny kredit: <b style="color:var(--gold)">${(a.referral_credit||0).toFixed(2)} €</b>${a.referral_credit_pending>0?` · <span style="color:#ff9800">čaká na výplatu ${(a.referral_credit_pending).toFixed(2)} €</span>`:''}</div>
+      <div class="adm-hours" style="flex-wrap:wrap">
+        <input type="number" id="admCredit" step="0.01" min="0" placeholder="suma €" style="width:110px">
+        <button onclick="creditOp('set')" title="Nastaviť na túto hodnotu">= Nastaviť</button>
+        <button class="gseg" style="border:1px solid #35502f;background:#1e2a1e;color:#9fd894;border-radius:10px;padding:9px 12px;cursor:pointer" onclick="creditOp('add')">+ Pridať</button>
+        <button class="gseg" style="border:1px solid #8b3232;background:#3a1a1a;color:#ef9a9a;border-radius:10px;padding:9px 12px;cursor:pointer" onclick="creditOp('sub')">− Odobrať</button>
+      </div>
+      ${a.referral_credit_pending>0?`<button class="adm-save" style="margin-top:10px;justify-self:start;background:linear-gradient(102deg,#2e7d32,#66bb6a)" onclick="markPayoutPaid()"><i class="bi bi-check2-circle"></i> Označiť výplatu ${(a.referral_credit_pending).toFixed(2)} € ako VYPLATENÉ</button>`:''}
+      <span class="set-hint" style="margin-top:6px">„Nastaviť" prepíše hodnotu, „Pridať/Odobrať" upraví o zadanú sumu. Klient dostane notifikáciu.</span>
     </div>`;
   admPlanChange(); // nastav počiatočnú cenu podľa vybraného plánu
+}
+async function creditOp(op){
+  const amount=parseFloat(document.getElementById('admCredit').value);
+  if(isNaN(amount)){ alert('Zadaj sumu.'); return; }
+  const r=await fetch('/api/admin/users/'+encodeURIComponent(uid)+'/credit',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({op,amount})});
+  const d=await r.json();
+  if(d.ok){ _awards.referral_credit=d.referral_credit; alert('Kredit upravený ✓ Nový zostatok: '+d.referral_credit.toFixed(2)+' €'); renderAdmin(); }
+  else alert(d.error||'Chyba');
+}
+async function markPayoutPaid(){
+  if(!confirm('Označiť čakajúcu výplatu ako VYPLATENÉ? (peniaze si fyzicky poslal/a klientovi)')) return;
+  const r=await fetch('/api/admin/users/'+encodeURIComponent(uid)+'/mark-payout-paid',{method:'POST',credentials:'include'});
+  const d=await r.json();
+  if(d.ok){ _awards.referral_credit_pending=0; alert('✅ Výplata '+d.paid.toFixed(2)+' € označená ako vyplatená.'); renderAdmin(); }
+  else alert(d.error||'Chyba');
 }
 let _spTimer=null;
 function searchSponsor(){ clearTimeout(_spTimer); _spTimer=setTimeout(runSponsorSearch,250); }
