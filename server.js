@@ -362,7 +362,7 @@ const adminAuth = async(req,res,next) => {
   if(!req.session.uid) return res.status(401).json({error:'Nie ste prihlásený'});
   const u=await q.one(db.users,{_id:req.session.uid});
   if(!u?.is_admin) return res.status(403).json({error:'Nemáte oprávnenie'});
-  req.user=u; next();
+  req.user=u; req._auditActor=u.name; next();
 };
 
 // ─── Seed ─────────────────────────────────────────────────────────────────────
@@ -1544,6 +1544,43 @@ app.post('/api/admin/users/:id/credit', adminAuth, async(req,res)=>{
     await q.insert(db.notifications,{user_id:u._id,type:'credit',title:'💳 Úprava kreditu adminom',body:`Nový zostatok kreditu: ${nc.toFixed(2)} €`,read:false,created_at:nowISO()}).catch(()=>{});
     await auditLog(req,'credit_adjust',u._id,{old:cur},{op,val,new:nc},'');
     res.json({ ok:true, referral_credit:nc });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Admin: darovať / nastaviť členstvo s vlastnou platnosťou + prípadne vstupy (migrácia z Glofoxu)
+app.post('/api/admin/users/:id/grant-membership', adminAuth, async(req,res)=>{
+  try {
+    const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
+    const plan_id=req.body.plan_id; const plan=MEMBERSHIP_PLANS[plan_id];
+    const gift = req.body.gift!==false; // default darček (bez platby) — migrácia
+    const entries = Math.max(0, parseInt(req.body.entries)||0);
+    let expiresISO=null;
+    if(req.body.expires_at && /^\d{4}-\d{2}-\d{2}/.test(req.body.expires_at)){
+      expiresISO = new Date(req.body.expires_at+'T23:59:59').toISOString();
+    } else if(plan){
+      expiresISO = new Date(Date.now()+(plan.duration_days||30)*86400000).toISOString();
+    }
+    // Členstvo (ak vybraný plán a nie je to len permanentka)
+    if(plan && plan.type!=='bundle'){
+      const existing=await q.one(db.memberships,{user_id:u._id,status:'active'});
+      const rec={user_id:u._id,user_name:u.name,plan_id,plan_name:plan.name,price:gift?0:(req.body.amount||plan.price),
+        status:'active',started_at:nowISO(),expires_at:expiresISO,
+        gift:!!gift,migrated:!!gift,granted_by:req.session.uid,updated_at:nowISO()};
+      if(existing){ await q.update(db.memberships,{_id:existing._id},{$set:{plan_id,plan_name:plan.name,expires_at:expiresISO,gift:!!gift,migrated:!!gift}}); }
+      else { await q.insert(db.memberships,{...rec,created_at:nowISO()}); }
+      await q.update(db.users,{_id:u._id},{$set:{membership_plan:plan_id,membership_expires:expiresISO}});
+      if(!gift){ // reálna platba na mieste → tržba + provízia
+        await q.insert(db.transactions,{type:'membership',user_id:u._id,user_name:u.name,amount:+(req.body.amount||plan.price),
+          payment_method:req.body.payment_method||'cash',note:`Členstvo ${plan.name} (admin)`,plan_id,recorded_by:req.session.uid,created_at:nowISO(),month:today().slice(0,7)});
+        awardPurchaseCommission({buyer_id:u._id, amount:+(req.body.amount||plan.price), product_name:`Členstvo ${plan.name}`});
+      } else if(u.user_type==='lead'){ await q.update(db.users,{_id:u._id},{$set:{user_type:'client'}}); }
+    }
+    // Permanentka / vstupy na hodiny
+    if(entries>0){ await q.update(db.users,{_id:u._id},{$set:{single_entries:(u.single_entries||0)+entries}}); }
+    await q.insert(db.notifications,{user_id:u._id,type:'membership',title: gift?'🎁 Členstvo pridelené':'✅ Členstvo aktivované',
+      body:`${plan?plan.name:''}${expiresISO?` platné do ${expiresISO.slice(0,10)}`:''}${entries?` · +${entries} vstupov`:''}`,read:false,created_at:nowISO()}).catch(()=>{});
+    await auditLog(req, gift?'membership_gift':'membership_sell', u._id, {}, {plan_id,expires_at:expiresISO,entries,gift,amount:gift?0:(req.body.amount||plan?.price)}, gift?'Migrácia/darček':'Platba na mieste');
+    res.json({ ok:true, plan_name:plan?.name||'—', expires_at:expiresISO?expiresISO.slice(0,10):null, entries });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -3012,8 +3049,17 @@ app.post('/api/admin/invoices/:number/credit-note', adminAuth, async(req,res)=>{
 
 // Audit log (main admin only, read-only)
 app.get('/api/admin/audit', adminAuth, async(req,res)=>{
-  const list = await q.find(db.audit,{});
-  res.json(list.sort((a,b)=>b.created_at.localeCompare(a.created_at)).slice(0,300));
+  let list = await q.find(db.audit,{});
+  list = list.sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,400);
+  // doplň meno aktéra ak chýba
+  const cache={};
+  for(const e of list){
+    if(!e.actor_name && e.actor_id){
+      if(!(e.actor_id in cache)){ const u=await q.one(db.users,{_id:e.actor_id}); cache[e.actor_id]=u?u.name:'—'; }
+      e.actor_name=cache[e.actor_id];
+    }
+  }
+  res.json(list);
 });
 
 // ── Finance stats with period filter ──────────────────────────────────────────
