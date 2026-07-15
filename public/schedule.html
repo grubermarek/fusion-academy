@@ -202,7 +202,27 @@ let currentDay = null;
 let selectedClass = null;
 let currentUser = null;
 let myChildren = [];
+let instructorsList = [];
 let preselectChild = new URLSearchParams(location.search).get('child') || '';
+
+function escHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function canManageClasses(){
+  return !!(currentUser && (currentUser.is_admin || currentUser.user_type==='trainer' || currentUser.user_type==='manager' || currentUser.is_assistant));
+}
+async function loadInstructors(){
+  try { const r = await fetch('/api/instructors'); if(r.ok) instructorsList = await r.json(); } catch {}
+}
+async function setClassInstructor(classId, instructorId){
+  try {
+    const r = await fetch('/api/classes/'+classId+'/instructor', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({instructor_id:instructorId})});
+    const d = await r.json();
+    if(r.ok && d.ok){
+      const c = allClasses.find(x=>x._id===classId);
+      if(c){ c.instructor_id = d.instructor_id; c.instructor = d.instructor; }
+      showToast('✅ Tréner hodiny nastavený: '+(d.instructor||'nezadané'), 'success');
+    } else { showToast('❌ '+(d.error||'Chyba'), 'error'); }
+  } catch { showToast('❌ Chyba pripojenia', 'error'); }
+}
 
 // ── Schedule shows only live classes of one focus program (Zumba). ──────────────
 // Online classes are separated to the /online page. Set FOCUS_CATEGORY='' for all.
@@ -229,6 +249,8 @@ async function init() {
   } catch {}
 
   if (!currentUser) document.getElementById('loginBanner').classList.remove('d-none');
+
+  if (canManageClasses()) await loadInstructors();
 
   // Load classes
   const r = await fetch('/api/classes');
@@ -297,7 +319,12 @@ function renderClasses(classes) {
         <div class="class-meta">
           <span class="meta-chip"><i class="bi bi-clock"></i>${c.time_start}${c.time_end?' – '+c.time_end:''}</span>
           <span class="meta-chip"><i class="bi bi-geo-alt"></i>${c.location}</span>
-          <span class="meta-chip"><i class="bi bi-person"></i>${c.instructor}</span>
+          ${canManageClasses()
+            ? `<span class="meta-chip" style="padding:0"><i class="bi bi-person"></i><select onchange="setClassInstructor('${c._id}', this.value)" style="background:transparent;border:none;color:inherit;font:inherit;cursor:pointer;outline:none;max-width:130px">
+                <option value="">— nezadané —</option>
+                ${instructorsList.map(t=>`<option value="${t.id}" ${t.id===c.instructor_id?'selected':''}>${escHtml(t.name)}</option>`).join('')}
+              </select></span>`
+            : `<span class="meta-chip"><i class="bi bi-person"></i>${c.instructor}</span>`}
         </div>
       </div>
       <div class="class-footer">

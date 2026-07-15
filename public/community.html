@@ -87,6 +87,16 @@ body.fa-has-dock #fa-dock{bottom:12px;}
 .post-comments{margin-top:12px;border-top:1px solid #262626;padding-top:10px;}
 .pcomment{font-size:.83rem;color:#ccc;margin-bottom:6px;}
 .pcomment b{color:var(--gold);}
+.cmt-like{cursor:pointer;font-size:.72rem;opacity:.55;margin-left:6px;user-select:none;}
+.cmt-like:hover{opacity:1;}
+.cmt-like.on{opacity:1;}
+.cmt-who{cursor:pointer;font-size:.68rem;color:var(--gold);opacity:.7;margin-left:2px;}
+.cmt-who:hover{opacity:1;text-decoration:underline;}
+.likers-ov{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px;}
+.likers-box{background:#161512;border:1px solid var(--gold-border,#3a3020);border-radius:16px;max-width:340px;width:100%;max-height:70vh;overflow-y:auto;}
+.likers-box h4{padding:14px 16px;border-bottom:1px solid #2a2a2a;color:var(--gold);font-size:.95rem;display:flex;justify-content:space-between;align-items:center;}
+.likers-box a{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid #222;text-decoration:none;color:#eee;font-size:.88rem;}
+.likers-box a:hover{background:#1e1e1e;color:var(--gold);}
 .pc-input{display:flex;gap:6px;margin-top:8px;}
 .pc-input input{flex:1;background:#1e1e1e;border:1px solid #333;border-radius:18px;color:#eee;padding:6px 12px;font-size:.83rem;}
 .post-del{margin-left:auto;background:none;border:none;color:#a55;cursor:pointer;font-size:.85rem;}
@@ -679,8 +689,12 @@ async function loadFeed() {
 function renderPost(p) {
   const av = stringToColor(p.author_id);
   const time = new Date(p.created_at).toLocaleString('sk-SK',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+  _feedById[p.id]=p;
   const reacts = p.reactions.map(r => `<button class="react-btn ${r.mine?'mine':''}" onclick="reactPost('${p.id}','${r.emoji}')">${r.emoji} ${r.count||''}</button>`).join('');
-  const comments = (p.comments||[]).map(c => `<div class="pcomment"><b>${escHtml(c.name)}</b> ${escHtml(c.text)}</div>`).join('');
+  const totalReacts = p.reactions.reduce((s,r)=>s+r.count,0);
+  const whoReacts = totalReacts>0 ? `<button class="react-btn" style="border-style:dashed" onclick="showLikers('${p.id}')" title="Kto reagoval">👀 ${totalReacts}</button>` : '';
+  const comments = (p.comments||[]).map(c => `<div class="pcomment"><b>${escHtml(c.name)}</b> ${escHtml(c.text)}
+     <span class="cmt-like ${c.liked?'on':''}" onclick="likeComment('${p.id}','${c.id}')">❤️${c.likes?' '+c.likes:''}</span>${c.likes?` <span class="cmt-who" onclick="showCmtLikers('${p.id}','${c.id}')">kto</span>`:''}</div>`).join('');
   return `<div class="post" data-id="${p.id}">
     <div class="post-head">
       <div class="post-av" style="background:${av}">${(p.author_name||'?').charAt(0).toUpperCase()}</div>
@@ -689,7 +703,7 @@ function renderPost(p) {
     </div>
     ${p.text?`<div class="post-text">${escHtml(p.text)}</div>`:''}
     ${p.image?`<img class="post-img" src="${p.image}" loading="lazy">`:''}
-    <div class="post-actions">${reacts}</div>
+    <div class="post-actions">${reacts}${whoReacts}</div>
     <div class="post-comments">
       ${comments}
       <div class="pc-input"><input placeholder="Napíš komentár…" onkeydown="if(event.key==='Enter')commentPost('${p.id}',this)"><button class="react-btn" onclick="commentPost('${p.id}',this.previousElementSibling)">➤</button></div>
@@ -733,6 +747,7 @@ async function createPost(btn) {
     if(b){ b.disabled=false; b.textContent=b.dataset.o||'Uverejniť'; }
   }
 }
+const _feedById={};
 async function reactPost(id, emoji) {
   await fetch('/api/feed/'+id+'/react',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emoji})});
   loadFeed();
@@ -741,6 +756,36 @@ async function commentPost(id, input) {
   const text = input.value.trim(); if(!text) return;
   input.value='';
   await fetch('/api/feed/'+id+'/comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+  loadFeed();
+}
+async function likeComment(pid, cid){
+  await fetch('/api/feed/'+pid+'/comments/'+cid+'/like',{method:'POST'});
+  loadFeed();
+}
+function likersModal(title, people){
+  const ov=document.createElement('div'); ov.className='likers-ov';
+  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+  ov.innerHTML=`<div class="likers-box"><h4>${title}<button onclick="this.closest('.likers-ov').remove()" style="background:none;border:none;color:#888;font-size:1.3rem;cursor:pointer">×</button></h4>${
+    people.length?people.map(u=>`<a href="/u/${u.id}"><span style="width:26px;height:26px;border-radius:50%;background:${stringToColor(u.id)};color:#fff;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700">${(u.name||'?').charAt(0).toUpperCase()}</span> ${escHtml(u.name)}</a>`).join(''):'<div style="padding:16px;color:#888">Zatiaľ nikto.</div>'}</div>`;
+  document.body.appendChild(ov);
+}
+function showLikers(pid){
+  const p=_feedById[pid]; if(!p) return;
+  const people=[]; const seen=new Set();
+  p.reactions.forEach(r=>r.likers.forEach(u=>{ if(!seen.has(u.id)){ seen.add(u.id); people.push({...u, emoji:r.emoji}); } }));
+  const grouped=p.reactions.filter(r=>r.count>0).map(r=>`<div style="padding:4px 16px;color:#888;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em">${r.emoji} ${r.count}</div>`+r.likers.map(u=>`<a href="/u/${u.id}"><span style="width:26px;height:26px;border-radius:50%;background:${stringToColor(u.id)};color:#fff;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700">${(u.name||'?').charAt(0).toUpperCase()}</span> ${escHtml(u.name)}</a>`).join('')).join('');
+  const ov=document.createElement('div'); ov.className='likers-ov'; ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+  ov.innerHTML=`<div class="likers-box"><h4>Kto reagoval<button onclick="this.closest('.likers-ov').remove()" style="background:none;border:none;color:#888;font-size:1.3rem;cursor:pointer">×</button></h4>${grouped||'<div style="padding:16px;color:#888">Zatiaľ nikto.</div>'}</div>`;
+  document.body.appendChild(ov);
+}
+function showCmtLikers(pid,cid){
+  const p=_feedById[pid]; if(!p) return;
+  const c=(p.comments||[]).find(x=>x.id===cid); if(!c) return;
+  likersModal('Lajkli komentár', c.likers||[]);
+}
+async function deletePost(id) {
+  if(!confirm('Zmazať príspevok?')) return;
+  await fetch('/api/feed/'+id,{method:'DELETE'});
   loadFeed();
 }
 async function deletePost(id) {

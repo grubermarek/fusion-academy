@@ -1051,22 +1051,38 @@ app.get('/api/dm/history/:userId', auth, async(req,res)=>{
 
 // ── Community feed (nástenka): posts + reactions + comments ───────────────────
 const FEED_EMOJIS = ['❤️','👏','🔥','💪','🎉'];
-function feedView(p, meId){
+function feedView(p, meId, nameMap){
+  const nm = id => (nameMap && nameMap[id]) || 'Člen';
   const reactions = p.reactions||{};
-  const summary = FEED_EMOJIS.map(e=>({emoji:e, count:(reactions[e]||[]).length, mine:(reactions[e]||[]).includes(meId)}))
-    .filter(r=>r.count>0 || true); // keep all for buttons
+  const summary = FEED_EMOJIS.map(e=>{ const ids=reactions[e]||[];
+    return { emoji:e, count:ids.length, mine:ids.includes(meId), likers: ids.map(id=>({id,name:nm(id)})) }; });
+  const comments = (p.comments||[]).slice(-20).map(c=>({
+    id:c.id||null, user_id:c.user_id, name:c.name, text:c.text, at:c.at,
+    likes:(c.likes||[]).length, liked:(c.likes||[]).includes(meId),
+    likers:(c.likes||[]).map(id=>({id,name:nm(id)}))
+  }));
   return {
     id:p._id, author_id:p.author_id, author_name:p.author_name, author_badge:p.author_badge||null,
     text:p.text||'', image:p.image||null, created_at:p.created_at,
     reactions:summary,
-    comments:(p.comments||[]).slice(-20),
+    comments,
     comment_count:(p.comments||[]).length,
     can_delete: p.author_id===meId
   };
 }
+// Postaví mapu id→meno pre všetkých, čo reagovali/komentovali na dané príspevky
+async function feedNameMap(posts){
+  const ids=new Set();
+  posts.forEach(p=>{ Object.values(p.reactions||{}).forEach(arr=>arr.forEach(id=>ids.add(id)));
+    (p.comments||[]).forEach(c=>{ if(c.user_id) ids.add(c.user_id); (c.likes||[]).forEach(id=>ids.add(id)); }); });
+  const map={};
+  if(ids.size){ const us=await q.find(db.users,{_id:{$in:[...ids]}}); us.forEach(u=>map[u._id]=u.nickname||u.name); }
+  return map;
+}
 app.get('/api/feed', auth, async(req,res)=>{
   const posts = (await q.find(db.feed,{})).sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,50);
-  res.json(posts.map(p=>feedView(p, req.session.uid)));
+  const nameMap = await feedNameMap(posts);
+  res.json(posts.map(p=>feedView(p, req.session.uid, nameMap)));
 });
 app.post('/api/feed', auth, async(req,res)=>{
   try {
@@ -1101,7 +1117,23 @@ app.post('/api/feed/:id/react', auth, async(req,res)=>{
     await q.update(db.feed,{_id:post._id},{$set:{reactions}});
     const updated=await q.one(db.feed,{_id:post._id});
     io.emit('feed_update', {id:post._id});
-    res.json({ok:true, post:feedView(updated, uid)});
+    res.json({ok:true, post:feedView(updated, uid, await feedNameMap([updated]))});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+// Lajk na komentár (+ kto lajkol)
+app.post('/api/feed/:id/comments/:cid/like', auth, async(req,res)=>{
+  try {
+    const post=await q.one(db.feed,{_id:req.params.id});
+    if(!post) return res.status(404).json({error:'Nenájdené'});
+    const uid=req.session.uid;
+    const comments=(post.comments||[]).map(c=>{
+      if(c.id===req.params.cid){ const likes=c.likes||[]; c.likes = likes.includes(uid)?likes.filter(x=>x!==uid):[...likes,uid]; }
+      return c;
+    });
+    await q.update(db.feed,{_id:post._id},{$set:{comments}});
+    const updated=await q.one(db.feed,{_id:post._id});
+    io.emit('feed_update', {id:post._id});
+    res.json({ok:true, post:feedView(updated, uid, await feedNameMap([updated]))});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 app.post('/api/feed/:id/comment', auth, async(req,res)=>{
@@ -1111,7 +1143,7 @@ app.post('/api/feed/:id/comment', auth, async(req,res)=>{
     const post=await q.one(db.feed,{_id:req.params.id});
     if(!post) return res.status(404).json({error:'Príspevok nenájdený'});
     const u=await q.one(db.users,{_id:req.session.uid});
-    const comment={user_id:u._id, name:u.name, text:text.slice(0,500), at:nowISO()};
+    const comment={id:'c'+Date.now().toString(36)+Math.floor(Math.random()*1000), user_id:u._id, name:u.name, text:text.slice(0,500), at:nowISO(), likes:[]};
     await q.update(db.feed,{_id:post._id},{$push:{comments:comment}});
     // notify post author about the comment (if someone else commented)
     if(post.author_id!==u._id){
@@ -1120,7 +1152,7 @@ app.post('/api/feed/:id/comment', auth, async(req,res)=>{
     }
     const updated=await q.one(db.feed,{_id:post._id});
     io.emit('feed_update', {id:post._id});
-    res.json({ok:true, post:feedView(updated, u._id)});
+    res.json({ok:true, post:feedView(updated, u._id, await feedNameMap([updated]))});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 app.delete('/api/feed/:id', auth, async(req,res)=>{
@@ -2340,18 +2372,30 @@ app.get('/api/admin/classes', adminAuth, async(req,res)=>{
   res.json(result);
 });
 
+// Resolve an instructor_id → {id, name}. Falls back to given name if no id.
+async function resolveInstructor(instructor_id, fallbackName){
+  if(instructor_id){
+    const u=await q.one(db.users,{_id:instructor_id});
+    if(u) return {instructor_id:u._id, instructor:u.name};
+  }
+  return {instructor_id:'', instructor:fallbackName||'Fusion Team'};
+}
+
 app.post('/api/admin/classes', adminAuth, async(req,res)=>{
-  const{name,emoji,category,instructor,location,day_of_week,time_start,time_end,capacity,level,description,price,color}=req.body;
+  const{name,emoji,category,instructor,instructor_id,location,day_of_week,time_start,time_end,capacity,level,description,price,color}=req.body;
   if(!name||day_of_week===undefined||!time_start) return res.status(400).json({error:'Vyplňte povinné polia'});
-  const c=await q.insert(db.classes,{name,emoji:emoji||'💃',category:category||'Tanec',instructor:instructor||'Fusion Team',location:location||'Banská Bystrica',day_of_week:+day_of_week,time_start,time_end:time_end||'',capacity:+capacity||20,level:level||'Všetky úrovne',description:description||'',price:+price||10,color:color||'#e94560',active:true});
+  const ins=await resolveInstructor(instructor_id,instructor);
+  const c=await q.insert(db.classes,{name,emoji:emoji||'💃',category:category||'Tanec',instructor:ins.instructor,instructor_id:ins.instructor_id,location:location||'Banská Bystrica',day_of_week:+day_of_week,time_start,time_end:time_end||'',capacity:+capacity||20,level:level||'Všetky úrovne',description:description||'',price:+price||10,color:color||'#e94560',active:true});
   res.json({ok:true,id:c._id});
 });
 
 app.put('/api/admin/classes/:id', adminAuth, async(req,res)=>{
-  const{name,emoji,category,instructor,location,day_of_week,time_start,time_end,capacity,level,description,price,color,active}=req.body;
-  await q.update(db.classes,{_id:req.params.id},{$set:{name,emoji:emoji||'💃',category,instructor,location,day_of_week:+day_of_week,time_start,time_end,capacity:+capacity,level,description,price:+price,color,active:!!active}});
+  const{name,emoji,category,instructor,instructor_id,location,day_of_week,time_start,time_end,capacity,level,description,price,color,active}=req.body;
+  const ins=await resolveInstructor(instructor_id,instructor);
+  await q.update(db.classes,{_id:req.params.id},{$set:{name,emoji:emoji||'💃',category,instructor:ins.instructor,instructor_id:ins.instructor_id,location,day_of_week:+day_of_week,time_start,time_end,capacity:+capacity,level,description,price:+price,color,active:!!active}});
   res.json({ok:true});
 });
+
 
 app.delete('/api/admin/classes/:id', adminAuth, async(req,res)=>{
   await q.update(db.classes,{_id:req.params.id},{$set:{active:false}});
@@ -4466,6 +4510,34 @@ app.post('/api/trainer/class-notes', trainerAuth, async(req,res)=>{
   const {class_id,notes,date} = req.body;
   await q.update(db.classes,{_id:class_id},{$set:{trainer_notes:notes||'',notes_date:date||today()}});
   res.json({ok:true});
+});
+
+// List of people who can be assigned to teach a class (trainers, managers, admins, assistants)
+app.get('/api/instructors', trainerAuth, async(req,res)=>{
+  const users=await q.find(db.users,{active:{$ne:false},$or:[{is_admin:true},{user_type:'trainer'},{user_type:'manager'},{is_assistant:true}]});
+  const out=users.map(u=>({id:u._id,name:u.name,is_admin:!!u.is_admin,is_trainer:u.user_type==='trainer'}))
+    .sort((a,b)=>a.name.localeCompare(b.name));
+  res.json(out);
+});
+
+// Assign / change who teaches a class — allowed for admins AND trainers/managers/assistants
+app.post('/api/classes/:id/instructor', trainerAuth, async(req,res)=>{
+  try {
+    const cls=await q.one(db.classes,{_id:req.params.id});
+    if(!cls) return res.status(404).json({error:'Hodina nenájdená'});
+    const {instructor_id}=req.body;
+    let ins;
+    if(instructor_id){
+      const u=await q.one(db.users,{_id:instructor_id});
+      if(!u) return res.status(400).json({error:'Tréner nenájdený'});
+      ins={instructor_id:u._id, instructor:u.name};
+    } else {
+      ins={instructor_id:'', instructor:'Fusion Team'};
+    }
+    await q.update(db.classes,{_id:cls._id},{$set:ins});
+    await auditLog(req,'class_instructor_set','class:'+cls._id,{instructor:cls.instructor,instructor_id:cls.instructor_id||''},ins,'');
+    res.json({ok:true, instructor:ins.instructor, instructor_id:ins.instructor_id});
+  } catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // Prehľad zárobkov trénera (vlastných) — s filtrom obdobia + rozpis za čo koľko

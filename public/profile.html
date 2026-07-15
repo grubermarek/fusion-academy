@@ -104,7 +104,9 @@
   .msg-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:10px;background:#241f17;border:1px solid var(--border);color:var(--cream);border-radius:12px;padding:12px;font-weight:700;font-size:.9rem;text-decoration:none;font-family:'Manrope'}
   .msg-btn:hover{border-color:var(--gold);color:var(--gold)}
   .avatar{width:104px;height:104px;border-radius:50%;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;font-family:'Cormorant Garamond',serif;font-size:2.6rem;font-weight:600;color:#1a1710;background:linear-gradient(135deg,var(--gold),#a07830);overflow:hidden;border:3px solid rgba(201,162,76,.4);box-shadow:0 0 30px -6px rgba(201,162,76,.5)}
+  .avatar{position:relative}
   .avatar img{width:100%;height:100%;object-fit:cover}
+  .av-cam{position:absolute;bottom:2px;right:2px;width:30px;height:30px;border-radius:50%;background:var(--gold);color:#1a1710;display:flex;align-items:center;justify-content:center;font-size:.85rem;border:2px solid var(--bg)}
   .name-badge{display:inline-block;background:linear-gradient(102deg,#B98F3E,#F7E7B8 40%,#E7C878 60%,#B98F3E);color:#231A08;font-weight:800;font-size:.72rem;letter-spacing:.03em;text-transform:uppercase;padding:3px 12px;border-radius:20px;margin-bottom:8px;box-shadow:0 4px 14px -6px rgba(201,162,76,.7)}
   .pname{font-family:'Cormorant Garamond',serif;font-size:2rem;font-weight:600;line-height:1.1}
   .pnick{color:var(--gold);font-size:.92rem;font-weight:700;margin-top:3px}
@@ -220,6 +222,20 @@ const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>
 const uid=location.pathname.split('/').pop();
 let P=null;
 const T=(k,v)=>window.FA_T(k,v);
+function uploadAvatar(input){
+  const file=input.files&&input.files[0]; input.value='';
+  if(!file) return;
+  const rd=new FileReader();
+  rd.onload=e=>{ const img=new Image(); img.onload=async()=>{
+    const max=400, sc=Math.min(1,max/Math.max(img.width,img.height));
+    const c=document.createElement('canvas'); c.width=img.width*sc; c.height=img.height*sc;
+    c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+    const data=c.toDataURL('image/jpeg',0.85);
+    const r=await fetch('/api/client/avatar',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({avatar:data})});
+    if(r.ok) location.reload(); else { const d=await r.json().catch(()=>({})); alert(d.error||'Chyba pri nahrávaní'); }
+  }; img.src=e.target.result; };
+  rd.readAsDataURL(file);
+}
 
 // ─── Pozadia profilu (odmena za privedených ľudí) ───
 const BG_KEYS=['basic','spark','dawn','bloom','sunset','ocean','emerald','royal','nebula','aurora','galaxy','cosmos','nova','infinity'];
@@ -315,7 +331,8 @@ function render(){
   applyProfileBg(P.bg_tier); // pozadie celej stránky podľa štruktúry
   document.getElementById('host').innerHTML=`
     <div class="hero ${P.is_founder?'founder':''} ${P.membership_tier?'mem-'+esc(P.membership_tier):''}">
-      <div class="avatar">${av}</div>
+      <div class="avatar" ${P.is_self?'onclick="document.getElementById(\'avatarInput\').click()" style="cursor:pointer" title="Zmeniť profilovku"':''}>${av}${P.is_self?'<span class="av-cam"><i class="bi bi-camera-fill"></i></span>':''}</div>
+      ${P.is_self?'<input type="file" id="avatarInput" accept="image/*" style="display:none" onchange="uploadAvatar(this)">':''}
       ${P.is_founder?'<div class="founder-crown">👑 Zakladateľ Fusion Academy</div>':''}
       ${P.membership_tier?`<div class="mem-badge mem-${esc(P.membership_tier)}">${P.membership_tier==='gold'?'👑':P.membership_tier==='silver'?'⭐':'🥉'} ${esc(P.membership_name||P.membership_tier)} ${memberWord}</div>`:''}
       ${P.name_badge?`<div class="name-badge">${P.name_badge.emoji} ${esc(P.name_badge.title)}</div>`:''}
