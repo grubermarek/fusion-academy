@@ -288,8 +288,6 @@
     Fusion Academy
   </a>
   <div class="topbar-right">
-    <a id="adminSwitchBtn" href="/admin" class="logout-btn" style="display:none;border-color:rgba(201,168,76,.35);color:var(--gold);margin-right:4px;text-decoration:none"><i class="bi bi-briefcase"></i> Firemný</a>
-    <a id="trainerSwitchBtn" href="/trainer" class="logout-btn" style="display:none;border-color:rgba(201,168,76,.35);color:var(--gold);margin-right:4px;text-decoration:none"><i class="bi bi-clipboard-check"></i> <span id="trainerSwitchLbl">Trénerský</span></a>
     <button class="notif-btn" onclick="toggleNotif()" title="Notifikácie">
       <i class="bi bi-bell"></i>
       <div class="notif-badge" id="notifBadge">0</div>
@@ -1199,13 +1197,7 @@ async function init(){
     return;
   }
   document.getElementById('dashMain').style.display='block';
-  { const a=document.getElementById('adminSwitchBtn'), tb=document.getElementById('trainerSwitchBtn'), tl=document.getElementById('trainerSwitchLbl');
-    if(a && me.is_admin){ a.style.display='inline-flex'; }
-    // Trénerský/Asistent preklik — pre trénera, admina (je aj tréner) aj asistenta
-    if(tb && (me.is_admin || me.user_type==='trainer' || me.user_type==='manager' || me.is_assistant)){
-      if(me.is_assistant && !me.is_admin && me.user_type!=='trainer'){ tb.href='/trainer'; tb.title='Asistent – bookovanie klientov'; if(tl)tl.textContent='Asistent'; }
-      tb.style.display='inline-flex';
-    } }
+  // Prepínanie rolí (Firemný/Trénerský/Asistent) je centralizované v spodnom docku (dock.js)
   const initials=(me.name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
   _avatarInitials=initials;
   renderAvatar(me.avatar);

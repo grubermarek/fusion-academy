@@ -453,8 +453,10 @@ async function loadAdminAwards(){
   const r=await fetch('/api/admin/users/'+encodeURIComponent(uid)+'/awards',{credentials:'include'});
   if(!r.ok){ box.innerHTML='<div class="empty">Chyba pri načítaní admin dát.</div>'; return; }
   _awards=await r.json();
+  if(!_plans){ try{ _plans=await (await fetch('/api/membership/plans',{credentials:'include'})).json(); }catch(e){ _plans={}; } }
   renderAdmin();
 }
+let _plans=null;
 function renderAdmin(){
   const box=document.getElementById('adminBody'); if(!box) return;
   const a=_awards;
@@ -462,7 +464,21 @@ function renderAdmin(){
   const manualSet=new Set(a.manual_achievements||[]);
   const merchChips=(a.merch_list||[]).map(m=>`<span class="adm-chip ${merchSet.has(m)?'on':''}" onclick="toggleMerch('${m}')">${MERCH_LABELS[m]||m}</span>`).join('');
   const achChips=(a.achievements||[]).map(ac=>`<span class="adm-chip ${manualSet.has(ac.id)?'on':(ac.earned?'on':'')}" style="${ac.earned&&!manualSet.has(ac.id)?'opacity:.6;cursor:default':''}" ${ac.earned&&!manualSet.has(ac.id)?'title="Získané automaticky"':`onclick="toggleAch('${ac.id}')"`}>${ac.icon} ${esc(ac.name)}</span>`).join('');
+  const planOpts=Object.entries(_plans||{}).map(([k,p])=>`<option value="${k}" data-price="${p.price}">${esc(p.name)} — ${p.price} €</option>`).join('');
   box.innerHTML=`
+    <div class="set-row" style="background:rgba(201,168,76,.06);border:1px solid rgba(201,168,76,.2);border-radius:12px;padding:12px">
+      <span class="set-label">💳 Prideliť členstvo (platba na mieste)</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+        <select id="admPlan" onchange="admPlanChange()" style="flex:1;min-width:150px;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:9px 12px;font-family:'Manrope'">${planOpts||'<option>—</option>'}</select>
+        <input type="number" id="admPlanPrice" min="0" step="0.01" style="width:90px;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:9px 10px" title="Suma €">
+      </div>
+      <div class="gender-switch" style="margin-top:8px">
+        <button type="button" class="gseg on" id="payCash" onclick="admPay('cash')">💵 Hotovosť</button>
+        <button type="button" class="gseg" id="payCard" onclick="admPay('card')">💳 Karta na mieste</button>
+      </div>
+      <button class="adm-save" style="margin-top:10px;justify-self:start" onclick="assignMembership()"><i class="bi bi-check-lg"></i> Prideliť + zaznamenať platbu</button>
+      <span class="set-hint" style="margin-top:6px">Kartou online si klient kúpi sám. Hotovosť/kartu na mieste zaznamenáš ty. Zaráta sa do tržieb aj provízií štruktúry.</span>
+    </div>
     <div class="set-row">
       <span class="set-label">Odchodené hodiny (návštevy)</span>
       <div class="adm-hours">
@@ -515,6 +531,7 @@ function renderAdmin(){
       </div>
       <span class="set-hint">Priraď sponzora, ak sa klient zaregistroval bez jeho kódu.</span>
     </div>`;
+  admPlanChange(); // nastav počiatočnú cenu podľa vybraného plánu
 }
 let _spTimer=null;
 function searchSponsor(){ clearTimeout(_spTimer); _spTimer=setTimeout(runSponsorSearch,250); }
@@ -549,6 +566,19 @@ async function savePrivate(){
 async function saveTaught(field,inputId){
   const v=parseInt(document.getElementById(inputId).value)||0;
   if(await putAwards({[field]:v})){ _awards[field]=v; alert('Uložené ✓ Obnovujem profil…'); location.reload(); }
+}
+let _admPayMethod='cash';
+function admPlanChange(){ const sel=document.getElementById('admPlan'); const opt=sel.options[sel.selectedIndex]; document.getElementById('admPlanPrice').value=opt?opt.dataset.price:0; }
+function admPay(m){ _admPayMethod=m; document.getElementById('payCash').classList.toggle('on',m==='cash'); document.getElementById('payCard').classList.toggle('on',m==='card'); }
+async function assignMembership(){
+  const plan_id=document.getElementById('admPlan').value;
+  const amount=parseFloat(document.getElementById('admPlanPrice').value)||0;
+  if(!plan_id) return;
+  if(!confirm('Prideliť členstvo „'+plan_id+'" a zaznamenať platbu '+(_admPayMethod==='cash'?'HOTOVOSŤOU':'KARTOU na mieste')+' ('+amount.toFixed(2)+' €)?')) return;
+  const r=await fetch('/api/attendance/record-membership',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({user_id:uid,plan_id,amount,payment_method:_admPayMethod})});
+  const d=await r.json();
+  if(d.ok){ alert('✅ Členstvo '+d.plan_name+' pridelené, platné do '+d.expires_at+'. Platba zaznamenaná.'); location.reload(); }
+  else alert('Chyba: '+(d.error||'?'));
 }
 async function toggleMerch(m){
   const s=new Set(_awards.merch_owned||[]);
