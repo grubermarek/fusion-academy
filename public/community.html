@@ -30,9 +30,10 @@ html,body{height:100%;overflow:hidden;font-family:var(--sans);-webkit-font-smoot
 
 /* ── Layout ── */
 .app{display:flex;flex-direction:column;height:100vh;height:100dvh;}
-/* Keď je dole dock, skráť appku aby neprekrýval pole na písanie */
-body.fa-has-dock .app{height:calc(100vh - 88px);height:calc(100dvh - 88px);}
+/* Keď je dole dock, ostrovček splynie s chatom: input má spodný priestor pre dock */
 body.fa-has-dock{padding-bottom:0 !important;}
+body.fa-has-dock .chat-input-area{padding-bottom:84px;}
+body.fa-has-dock #fa-dock{bottom:12px;}
 .top-bar{background:rgba(8,8,8,0.97);padding:.65rem 1.2rem;display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-shrink:0;border-bottom:1px solid var(--gold-border);}
 .brand{font-size:1.1rem;font-weight:900;background:linear-gradient(90deg,var(--red),var(--orange));-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none;}
 .top-links{display:flex;gap:.4rem;}
@@ -108,6 +109,11 @@ body.fa-has-dock{padding-bottom:0 !important;}
 /* Message */
 .msg{display:flex;gap:.75rem;padding:.5rem .6rem;border-radius:.7rem;transition:.15s;}
 .msg:hover{background:rgba(201,168,76,0.04);}
+/* Animácia príchodu novej správy */
+@keyframes msgIn{from{opacity:0;transform:translateY(12px) scale(.98);}to{opacity:1;transform:translateY(0) scale(1);}}
+.msg.msg-in,.article-card.msg-in{animation:msgIn .32s cubic-bezier(.22,1,.36,1);}
+.msg.msg-in .msg-text{animation:msgIn .38s cubic-bezier(.22,1,.36,1);}
+@media(prefers-reduced-motion:reduce){.msg.msg-in,.msg.msg-in .msg-text,.article-card.msg-in{animation:none;}}
 .msg-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.85rem;color:#fff;flex-shrink:0;margin-top:2px;}
 .msg-body{flex:1;min-width:0;}
 .msg-header{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;margin-bottom:.2rem;}
@@ -368,7 +374,7 @@ function initChat() {
     const other = msg.from_id === me.id ? msg.to_id : msg.from_id;
     // Vlastnú odoslanú správu sme už zobrazili optimisticky → nepridávaj znova
     if (msg.from_id !== me.id && dmMode && (other === dmWith)) {
-      appendMessage({ ...msg, user_id: msg.from_id, user_name: msg.from_name });
+      appendMessage({ ...msg, user_id: msg.from_id, user_name: msg.from_name }, true);
       scrollBottom();
       // mark read on server
       fetch('/api/dm/history/'+dmWith).catch(()=>{});
@@ -396,7 +402,7 @@ function initChat() {
     // Add date sep if needed
     const lastSep = container.querySelector('.date-sep:last-of-type');
     if (!lastSep || lastSep.dataset.date !== today) appendDateSep(today);
-    appendMessage(msg);
+    appendMessage(msg, true);
     scrollBottom();
   });
 
@@ -452,7 +458,7 @@ function joinChannel(channelId) {
 }
 
 // ── Messages ────────────────────────────────────────────────────────────────
-function appendMessage(msg) {
+function appendMessage(msg, animate) {
   const container = document.getElementById('messages');
   const isOwn = msg.user_id === me?.id;
   const initials = (msg.nickname||msg.user_name||'?').charAt(0).toUpperCase();
@@ -497,6 +503,7 @@ function appendMessage(msg) {
         <div class="msg-text">${escHtml(msg.text||'').replace(/\n/g,'<br>')}</div>
       </div>`;
   }
+  if (animate) div.classList.add('msg-in');
   container.appendChild(div);
 }
 
@@ -539,7 +546,7 @@ function sendMessage() {
   if (dmMode && dmWith){
     socket.emit('send_dm', { to: dmWith, text });
     // Optimistické zobrazenie vlastnej správy (echo sa preskočí)
-    appendMessage({ user_id: me.id, from_id: me.id, user_name: me.name, nickname: me.nickname, text, created_at: now, memberBadge: me.memberBadge, rankBadge: me.rankBadge });
+    appendMessage({ user_id: me.id, from_id: me.id, user_name: me.name, nickname: me.nickname, text, created_at: now, memberBadge: me.memberBadge, rankBadge: me.rankBadge }, true);
     scrollBottom();
   } else {
     socket.emit('send_message', { channel: currentChannel, text });
@@ -547,7 +554,7 @@ function sendMessage() {
     const today = now.slice(0,10);
     const lastSep = container.querySelector('.date-sep:last-of-type');
     if (!lastSep || lastSep.dataset.date !== today) appendDateSep(today);
-    appendMessage({ user_id: me.id, user_name: me.name, nickname: me.nickname, text, created_at: now, memberBadge: me.memberBadge, rankBadge: me.rankBadge });
+    appendMessage({ user_id: me.id, user_name: me.name, nickname: me.nickname, text, created_at: now, memberBadge: me.memberBadge, rankBadge: me.rankBadge }, true);
     scrollBottom();
   }
   input.value = '';

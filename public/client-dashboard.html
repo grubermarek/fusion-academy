@@ -288,7 +288,7 @@
     Fusion Academy
   </a>
   <div class="topbar-right">
-    <a id="adminSwitchBtn" href="/admin" class="logout-btn" title="Firemný dashboard" style="display:none;border-color:rgba(201,168,76,.35);color:var(--gold);margin-right:4px;text-decoration:none"><i class="bi bi-briefcase"></i> Firemný</a>
+    <a id="adminSwitchBtn" href="/admin" class="logout-btn" style="display:none;border-color:rgba(201,168,76,.35);color:var(--gold);margin-right:4px;text-decoration:none"><i class="bi bi-briefcase"></i> <span id="adminSwitchLbl">Firemný</span></a>
     <button class="notif-btn" onclick="toggleNotif()" title="Notifikácie">
       <i class="bi bi-bell"></i>
       <div class="notif-badge" id="notifBadge">0</div>
@@ -1187,7 +1187,9 @@ async function init(){
     return;
   }
   document.getElementById('dashMain').style.display='block';
-  if(me.is_admin){ const a=document.getElementById('adminSwitchBtn'); if(a) a.style.display='inline-flex'; }
+  { const a=document.getElementById('adminSwitchBtn'), l=document.getElementById('adminSwitchLbl');
+    if(a){ if(me.is_admin){ a.href='/admin'; a.title='Firemný dashboard'; if(l)l.textContent='Firemný'; a.style.display='inline-flex'; }
+      else if(me.user_type==='trainer'){ a.href='/trainer'; a.title='Trénerský dashboard'; if(l)l.textContent='Trénerský'; a.style.display='inline-flex'; } } }
   const initials=(me.name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
   _avatarInitials=initials;
   renderAvatar(me.avatar);
