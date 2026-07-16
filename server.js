@@ -2195,6 +2195,7 @@ app.get('/api/admin/leads', adminAuth, async(req,res)=>{
         status, attendances, sponsor,
         lead_status: u.lead_status || 'new',
         attended_trial_at: u.attended_trial_at || null,
+        notes: u.notes || '',
         consent: !!u.consent_at,
         imported: !!u.imported, claimed: !!u.claimed,
       };

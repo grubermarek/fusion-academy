@@ -143,6 +143,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('invoices')"><i class="bi bi-file-earmark-text me-2"></i>Faktúry</a>
       <a class="nav-link" href="#" onclick="show('retention')"><i class="bi bi-people-fill me-2"></i>Retencia & LTV</a>
       <a class="nav-link" href="#" onclick="show('accounting')"><i class="bi bi-calculator me-2"></i>Účtovníctvo</a>
+      <a class="nav-link" href="#" onclick="show('points')"><i class="bi bi-trophy me-2"></i>Body klientov</a>
       <a class="nav-link" href="#" onclick="show('trainers')"><i class="bi bi-person-badge me-2"></i>Výkon trénerov</a>
       <a class="nav-link" href="#" onclick="show('payouts')"><i class="bi bi-cash-stack me-2"></i>Výplaty trénerov</a>
       <a class="nav-link" href="#" onclick="show('refunds')"><i class="bi bi-arrow-counterclockwise me-2"></i>Refundácie</a>
@@ -699,18 +700,17 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
           <thead class="table-light"><tr>
             <th class="ps-3 sortable" onclick="sortLeads('added_days')">Pridaný <span class="sort-ind" data-k="added_days"></span></th>
             <th class="sortable" onclick="sortLeads('name')">Meno <span class="sort-ind" data-k="name"></span></th>
+            <th class="sortable" onclick="sortLeads('lead_status')">Stav <span class="sort-ind" data-k="lead_status"></span></th>
+            <th>Poznámka</th>
             <th class="sortable" onclick="sortLeads('email')">Email <span class="sort-ind" data-k="email"></span></th>
             <th>Telefón</th>
-            <th>Registrácia</th>
-            <th class="sortable" onclick="sortLeads('lead_source')">Zdroj <span class="sort-ind" data-k="lead_source"></span></th>
             <th class="sortable" onclick="sortLeads('last_contacted_days')">Posl. kontakt <span class="sort-ind" data-k="last_contacted_days"></span></th>
             <th class="text-center sortable" onclick="sortLeads('bookings')">Rezervácie <span class="sort-ind" data-k="bookings"></span></th>
-            <th class="sortable" onclick="sortLeads('last_booking')">Posl. rezervácia <span class="sort-ind" data-k="last_booking"></span></th>
-            <th class="sortable" onclick="sortLeads('lead_status')">Stav <span class="sort-ind" data-k="lead_status"></span></th>
+            <th class="sortable" onclick="sortLeads('lead_source')">Zdroj <span class="sort-ind" data-k="lead_source"></span></th>
             <th class="text-center sortable" onclick="sortLeads('attendances')">Účasti <span class="sort-ind" data-k="attendances"></span></th>
             <th>Akcia</th>
           </tr></thead>
-          <tbody id="leadsTableBody"><tr><td colspan="12" class="text-center py-4 text-muted">Načítavam...</td></tr></tbody>
+          <tbody id="leadsTableBody"><tr><td colspan="11" class="text-center py-4 text-muted">Načítavam...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -1283,14 +1283,29 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <div class="col-lg-6"><div class="card bg-dark border-secondary h-100"><div class="card-body"><h6 class="fw-bold mb-3">Podľa mesta / štúdia</h6><div id="accByCity"></div></div></div></div>
       <div class="col-lg-6"><div class="card bg-dark border-secondary h-100"><div class="card-body"><h6 class="fw-bold mb-3">Podľa inštruktora</h6><div id="accByInstructor"></div></div></div></div>
       <div class="col-12"><div class="card bg-dark border-secondary"><div class="card-body"><h6 class="fw-bold mb-3">Mesačná uzávierka</h6><div id="accByMonth"></div></div></div></div>
-      <div class="col-12"><div class="card bg-dark border-secondary"><div class="card-body">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-          <h6 class="fw-bold mb-0">🏆 Body klientov za obdobie <span class="text-muted small fw-normal">(kto, koľko a za čo)</span></h6>
-          <button class="btn btn-sm btn-outline-light" onclick="const r=accRange();window.open('/api/admin/points-summary.csv?from='+r.from+'&to='+r.to,'_blank')" title="Stiahnuť body klientov (CSV)"><i class="bi bi-download"></i> CSV</button>
-        </div>
-        <div id="accPoints"><div class="text-muted small">Načítavam…</div></div>
-      </div></div></div>
     </div>
+  </div>
+
+  <!-- BODY KLIENTOV (vlastná záložka) -->
+  <div class="section" id="s-points">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
+      <h4 class="fw-bold mb-0">🏆 Body klientov</h4>
+      <button class="btn btn-sm btn-outline-light" onclick="const r=pointsRange();window.open('/api/admin/points-summary.csv?from='+r.from+'&to='+r.to,'_blank')" title="Stiahnuť body klientov (CSV)"><i class="bi bi-download"></i> CSV</button>
+    </div>
+    <p class="text-muted small mb-3">Kto koľko bodov získal a za čo (hodiny, online, odporúčania, členstvá). Klik na klienta otvorí jeho profil.</p>
+    <div class="d-flex gap-2 align-items-end flex-wrap mb-3">
+      <div><label class="text-muted small">Od</label><input type="date" id="ptFrom" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+      <div><label class="text-muted small">Do</label><input type="date" id="ptTo" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+      <button class="btn btn-sm btn-warning" onclick="loadPointsSummary()">Zobraziť</button>
+      <div class="btn-group btn-group-sm ms-1">
+        <button class="btn btn-outline-secondary" onclick="ptQuick('month')">Mesiac</button>
+        <button class="btn btn-outline-secondary" onclick="ptQuick('year')">Rok</button>
+        <button class="btn btn-outline-secondary" onclick="ptQuick('all')">Celé</button>
+      </div>
+    </div>
+    <div class="card bg-dark border-secondary"><div class="card-body">
+      <div id="accPoints"><div class="text-muted small">Načítavam…</div></div>
+    </div></div>
   </div>
 
   <!-- RETENTION & LTV -->
@@ -1481,6 +1496,7 @@ function show(sec){
   if(sec==='campaigns')loadCampaigns();
   if(sec==='retention')loadRetention();
   if(sec==='accounting')initAccounting();
+  if(sec==='points')initPoints();
   if(sec==='trainers')initTrainers();
   if(sec==='payouts')initPayouts();
   if(sec==='refunds')loadRefunds();
@@ -1579,12 +1595,17 @@ let _refMeta=null, _refSelPay=null;
 let _outSegs=null, _outCities=null, _outPlans=null;
 async function initOutreach(){
   const d=await api('/api/admin/outreach/segments');
-  if(d&&d.segments){ _outSegs=d.segments; _outCities=d.cities||[]; _outPlans=d.memberships||[];
+  if(d&&Array.isArray(d.segments)&&d.segments.length){ _outSegs=d.segments; _outCities=d.cities||[]; _outPlans=d.memberships||[];
     document.getElementById('outSeg').innerHTML=d.segments.map(s=>`<option value="${s.key}">${escHtml(s.label)} (${s.count})</option>`).join('')
       +(_outPlans.length?'<option value="membership">Podľa úrovne členstva… (upsell)</option>':'')
       +(_outCities.length?'<option value="city">Podľa mesta…</option>':'');
     document.getElementById('outCity').innerHTML=(d.cities||[]).map(c=>`<option value="${escHtml(c.key)}">${escHtml(c.key)} (${c.count})</option>`).join('');
     document.getElementById('outPlan').innerHTML=_outPlans.map(p=>`<option value="${escHtml(p.key)}">${escHtml(p.label)} (${p.count})</option>`).join('');
+  } else {
+    // Fallback — dropdown nikdy neostane prázdny (napr. keď sa segmenty nenačítajú)
+    _outSegs=[{key:'clients',label:'Všetci klienti',count:'?'},{key:'leads',label:'Všetci leady',count:'?'},{key:'everyone',label:'Klienti + leady',count:'?'}];
+    document.getElementById('outSeg').innerHTML=_outSegs.map(s=>`<option value="${s.key}">${escHtml(s.label)}</option>`).join('');
+    if(d&&d.error) showToast('Segmenty sa nenačítali ('+d.error+') — použil som základné.','error');
   }
   outSegChange();
   loadOutHistory();
@@ -1923,14 +1944,15 @@ async function loadAccounting(){
   const d=await api(`/api/admin/accounting/summary?from=${from}&to=${to}`);
   if(!d||d.error){ document.getElementById('accTotals').innerHTML='<div class="text-muted">Chyba.</div>'; return; }
   const t=d.totals;
-  const kpi=(l,v,c)=>`<div class="col-6 col-md-3"><div class="card bg-dark border-secondary"><div class="card-body py-3">
-    <div class="text-muted" style="font-size:.66rem;text-transform:uppercase">${l}</div>
-    <div class="fw-bold" style="font-size:1.4rem;color:${c||'#fff'}">${v}</div></div></div>`;
-  document.getElementById('accTotals').innerHTML=
+  const kpi=(l,v,c)=>`<div style="flex:1 1 150px;min-width:140px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px 14px">
+    <div style="font-size:.64rem;text-transform:uppercase;color:#9a9a9a;letter-spacing:.03em">${l}</div>
+    <div style="font-size:1.35rem;font-weight:700;color:${c||'#fff'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v}</div></div>`;
+  document.getElementById('accTotals').innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:10px;width:100%">`+
     kpi('Tržby spolu', t.revenue.toFixed(2)+' €', '#C9A24C')+
     kpi('Transakcie', t.txCount)+
     kpi('Faktúry', t.invoiceCount)+
-    kpi(t.vatPayer?'Základ DPH / DPH':'DPH', t.vatPayer? t.vatBase.toFixed(2)+' / '+t.vat.toFixed(2)+' €' : 'Neplatiteľ');
+    kpi(t.vatPayer?'Základ DPH / DPH':'DPH', t.vatPayer? t.vatBase.toFixed(2)+' / '+t.vat.toFixed(2)+' €' : 'Neplatiteľ')+
+    `</div>`;
   const bars=(list,el)=>{
     const max=Math.max(...list.map(x=>x.revenue),1);
     document.getElementById(el).innerHTML= list.length? list.map(e=>`
@@ -1942,6 +1964,18 @@ async function loadAccounting(){
   };
   bars(d.byPlan,'accByPlan'); bars(d.byMethod,'accByMethod');
   bars(d.byCity,'accByCity'); bars(d.byInstructor,'accByInstructor'); bars(d.byMonth,'accByMonth');
+}
+/* Body klientov — vlastná záložka s vlastným obdobím */
+let _ptInit=false;
+function initPoints(){ if(_ptInit){loadPointsSummary();return;} _ptInit=true; ptQuick('month'); }
+function pointsRange(){ return {from:document.getElementById('ptFrom').value, to:document.getElementById('ptTo').value}; }
+function ptQuick(p){
+  const now=new Date(), to=now.toISOString().slice(0,10);
+  let from='';
+  if(p==='month') from=to.slice(0,7)+'-01';
+  else if(p==='year') from=to.slice(0,4)+'-01-01';
+  document.getElementById('ptFrom').value=from;
+  document.getElementById('ptTo').value= p==='all'?'':to;
   loadPointsSummary();
 }
 async function importIncomeCsv(input){
@@ -1955,7 +1989,7 @@ async function importIncomeCsv(input){
   else showToast('Chyba pri importe: '+(r?.error||'?'),'error');
 }
 async function loadPointsSummary(){
-  const {from,to}=accRange();
+  const {from,to}=pointsRange();
   const box=document.getElementById('accPoints');
   const d=await api(`/api/admin/points-summary?from=${from}&to=${to}`);
   if(!d||d.error){ box.innerHTML='<div class="text-muted small">Chyba.</div>'; return; }
@@ -2456,17 +2490,21 @@ function renderLeads(){
   updSortInd('#s-leads',_leadSort.key,_leadSort.dir);
   const regBadge=p=>p==='web'?'<span class="text-nowrap">🌐 Web</span>':'<span class="text-nowrap">📱 App</span>';
   const fmtD=iso=>iso?new Date(iso).toLocaleDateString('sk-SK',{day:'numeric',month:'short'}):'—';
+  const noteBtn=l=>{
+    const has=(l.notes||'').trim().length>0;
+    const tip=has?escHtml(l.notes.slice(0,120).replace(/"/g,'&quot;')):'Pridať poznámku';
+    return `<button class="btn btn-sm ${has?'btn-warning':'btn-outline-secondary'} py-0 px-2" title="${tip}" onclick="openLeadNote('${l.id}')"><i class="bi bi-journal-text"></i></button>`;
+  };
   body.innerHTML=rows.map(l=>`<tr>
     <td class="ps-3 text-nowrap"><i class="bi bi-clock text-muted me-1"></i>${agoTxt(l.added_days)}</td>
     <td><a href="/u/${l.id}" target="_blank" style="color:#C9A84C;text-decoration:none;font-weight:700" title="Zobraziť profil">${escHtml(l.name||'—')} <i class="bi bi-box-arrow-up-right" style="font-size:.68rem;opacity:.6"></i></a>${l.imported?`<span class="badge bg-secondary ms-1" title="Importované z Glofox${l.claimed?' · účet vytvorený':''}">🗂️${l.claimed?'✓':''}</span>`:''}${l.sponsor?`<div class="small text-muted">👤 ${escHtml(l.sponsor)}</div>`:''}</td>
+    <td>${leadStatusSelect(l)}</td>
+    <td>${noteBtn(l)}</td>
     <td class="small">${escHtml(l.email||'—')}</td>
     <td class="text-nowrap">${l.phone?`<a href="tel:${escHtml(l.phone)}" class="text-decoration-none">${escHtml(l.phone)}</a>`:'—'}</td>
-    <td>${regBadge(l.reg_point)}</td>
-    <td class="small text-muted">${escHtml(l.lead_source||'—')}</td>
     <td class="text-nowrap ${l.last_contacted_days===null?'text-muted':''}">${agoTxt(l.last_contacted_days)}</td>
     <td class="text-center">${l.bookings}</td>
-    <td class="text-nowrap">${fmtD(l.last_booking)}</td>
-    <td>${leadStatusSelect(l)}</td>
+    <td class="small text-muted">${escHtml(l.lead_source||'—')}</td>
     <td class="text-center">${l.attendances}</td>
     <td class="text-nowrap">
       <button class="btn btn-sm btn-outline-info" title="Mailová sekvencia" onclick="showLeadEmails('${l.id}','${escHtml((l.name||'').replace(/'/g,''))}')"><i class="bi bi-envelope-paper"></i></button>
@@ -2474,6 +2512,21 @@ function renderLeads(){
       <button class="btn btn-sm btn-outline-secondary" title="Zobraziť profil" onclick="window.open('/u/${l.id}','_blank')"><i class="bi bi-box-arrow-up-right"></i></button>
     </td>
   </tr>`).join('');
+}
+function openLeadNote(id){
+  const l=_leadsData.find(x=>x.id===id); if(!l) return;
+  document.getElementById('leadNoteId').value=id;
+  document.getElementById('leadNoteName').textContent=l.name||'';
+  document.getElementById('leadNoteText').value=l.notes||'';
+  new bootstrap.Modal(document.getElementById('leadNoteModal')).show();
+  setTimeout(()=>document.getElementById('leadNoteText').focus(),300);
+}
+async function saveLeadNote(){
+  const id=document.getElementById('leadNoteId').value;
+  const notes=document.getElementById('leadNoteText').value;
+  const r=await api('/api/admin/users/'+id,{method:'PUT',body:JSON.stringify({notes})});
+  if(r&&r.ok){ const l=_leadsData.find(x=>x.id===id); if(l) l.notes=notes; showToast('Poznámka uložená ✓','success'); bootstrap.Modal.getInstance(document.getElementById('leadNoteModal')).hide(); renderLeads(); }
+  else showToast('Chyba: '+(r?.error||'?'),'error');
 }
 async function setLeadStatus(id,status){
   const r=await api('/api/admin/leads/'+id+'/status',{method:'PUT',body:JSON.stringify({status})});
@@ -3679,6 +3732,27 @@ document.addEventListener('click', e => {
     </div>
   </div>
 </div>
+<!-- Poznámka k leadovi / klientovi -->
+<div class="modal fade" id="leadNoteModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-journal-text me-2 text-warning"></i>Poznámka · <span id="leadNoteName"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="leadNoteId">
+        <textarea id="leadNoteText" class="form-control bg-dark text-light border-secondary" rows="6" placeholder="Napr. Volaná 12.7. – ozve sa budúci týždeň. Zaujíma ju Silver…"></textarea>
+        <div class="form-text">Interná poznámka (vidia len admini). Ukladá sa k účtu klienta.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Zrušiť</button>
+        <button type="button" class="btn btn-warning" onclick="saveLeadNote()"><i class="bi bi-check-lg me-1"></i>Uložiť</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Refundácia konkrétnej platby (z karty klienta) -->
 <div class="modal fade" id="cdRefundModal" tabindex="-1">
   <div class="modal-dialog">
