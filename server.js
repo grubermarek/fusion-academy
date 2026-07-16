@@ -2329,10 +2329,18 @@ app.post('/api/admin/import-members', adminAuth, async(req,res)=>{
     if(rows.length<2) return res.status(400).json({error:'CSV nemá dáta'});
     const head = rows[0].map(h=>h.trim().toLowerCase());
     const col = name => head.indexOf(name);
+    // Nájdi stĺpec podľa zoznamu možných názvov: najprv presná zhoda, potom „obsahuje".
+    const colAny = (...names) => {
+      for(const n of names){ const i=head.indexOf(n); if(i>=0) return i; }
+      for(const n of names){ const i=head.findIndex(h=>h.includes(n)); if(i>=0) return i; }
+      return -1;
+    };
     const iFirst=col('first name'), iLast=col('last name'), iEmail=col('email'), iPhone=col('phone'),
       iGender=col('gender'), iDob=col('date of birth'), iAdded=col('added'), iSource=col('source'),
       iConsent=col('email consent'), iLastC=col('last contacted'),
-      iAtt=col('total attendances'), iMemName=col('membership name'), iMemPlan=col('membership plan'),
+      // Návštevy/odtancované hodiny — Glofox používa rôzne názvy hlavičky
+      iAtt=colAny('total attendances','attendances','total classes attended','classes attended','attended classes','total classes','visits'),
+      iMemName=col('membership name'), iMemPlan=col('membership plan'),
       iMemExp=col('membership expiry date'), iCredits=col('credits remaining');
     if(iEmail<0) return res.status(400).json({error:'CSV nemá stĺpec Email'});
     const todayStr = today();
