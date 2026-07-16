@@ -1409,6 +1409,44 @@ function computeAchievements(u, refCount, tenureMonths, gender){
   });
 }
 
+// Priatelia (obojsmerné, prijaté) daného používateľa → zoznam ich id
+async function friendsOf(userId){
+  const rows = await q.find(db.friends,{users:userId, status:'accepted'});
+  return rows.map(f=>(f.users||[]).find(x=>x!==userId)).filter(Boolean);
+}
+// Zisti novozískané odznaky, pošli notifikáciu majiteľovi aj jeho priateľom.
+// Prvé spustenie len „naseeduje" existujúce odznaky (nespamuje za historické).
+async function checkNewAchievements(userId){
+  try {
+    const u = await q.one(db.users,{_id:userId});
+    if(!u || u.active===false || u.anonymous) return;
+    const refCount = await downlineCountOf(u._id);
+    const memberMonths = await activeMembershipMonths(u._id);
+    u.cities_visited = await citiesVisitedOf(u._id);
+    const ach = computeAchievements(u, refCount, memberMonths, u.gender);
+    const earnedIds = ach.filter(a=>a.earned && a.cat!=='special').map(a=>a.id); // roly (founder/admin…) neoznamujeme
+    if(u.notified_achievements === undefined){ // baseline bez notifikácií
+      await q.update(db.users,{_id:u._id},{$set:{notified_achievements:earnedIds}});
+      return;
+    }
+    const notified = u.notified_achievements || [];
+    const newly = earnedIds.filter(id=>!notified.includes(id));
+    if(!newly.length) return;
+    const map = Object.fromEntries(ach.map(a=>[a.id,a]));
+    const friends = await friendsOf(u._id);
+    for(const id of newly){
+      const a = map[id]; if(!a) continue;
+      await q.insert(db.notifications,{user_id:u._id, type:'achievement',
+        title:`🏅 Nový odznak: ${a.icon} ${a.name}`, body:a.desc||'Získal/a si nový odznak!', read:false, created_at:nowISO()}).catch(()=>{});
+      for(const fid of friends){
+        await q.insert(db.notifications,{user_id:fid, type:'friend_achievement',
+          title:`${a.icon} ${u.name} získal/a odznak`, body:`${u.name} práve získal/a odznak „${a.name}". Poblahoželaj! 🎉`, read:false, created_at:nowISO()}).catch(()=>{});
+      }
+    }
+    await q.update(db.users,{_id:u._id},{$set:{notified_achievements:earnedIds}});
+  } catch(e){ console.error('checkNewAchievements:', e.message); }
+}
+
 // Grant merch achievements to the buyer of an order (matched by product name)
 async function grantMerchFromOrder(order){
   try {
@@ -5673,6 +5711,7 @@ app.post('/api/attendance/qr-checkin', trainerAuth, async(req,res)=>{
       if(!u.is_child) sendFirstClassEmail(u._id).catch(()=>{});
       await q.insert(db.notifications,{user_id:u._id,type:'checkin',title:'✅ Check-in potvrdený',
         body:`${cls.name} – ${bdate} o ${cls.time_start}`,read:false,created_at:nowISO()});
+      checkNewAchievements(u._id).catch(()=>{}); // nové odznaky (návštevy, mestá) + notif priateľom
       return res.json({ok:true, user:{...userData, visit_count:upd.visit_count},
         booking:{booking_date:bdate, class_name:cls.name, access_type: hasMem?'membership':hasFree?'free':hasCredit?'credit':'single'}});
     }
@@ -7148,6 +7187,46 @@ async function sendBookingCancelEmail(b, byStaff){
   await q.insert(db.notifications,{user_id:u._id,type:'booking_cancelled',title:'Rezervácia zrušená',body:`${b.class_name||''} – ${b.booking_date||''}`,read:false,created_at:nowISO()}).catch(()=>{});
 }
 
+// Dávková kontrola odznakov pre všetkých klientov (+ notif priateľom)
+async function runAchievementsDaily(){
+  const clients = await q.find(db.users,{is_admin:{$ne:true}, active:{$ne:false}, anonymous:{$ne:true}});
+  for(const c of clients){ await checkNewAchievements(c._id); }
+}
+// Notifikácie o blížiacich sa meninách/narodeninách priateľov (7 dní a 1 deň dopredu)
+async function runFriendEventsDaily(){
+  const todayStr2 = today();
+  const now2 = new Date();
+  const mdOff = off => { const x=new Date(now2.getTime()+off*86400000); return String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); };
+  const namesFor = mmdd => { const t=SK_NAMEDAYS[mmdd]||''; return t? t.split(/\s+a\s+|,\s*/).map(stripDia).filter(Boolean):[]; };
+  const targets = { 7:{mmdd:mdOff(7), names:namesFor(mdOff(7))}, 1:{mmdd:mdOff(1), names:namesFor(mdOff(1))} };
+  const usersById = Object.fromEntries((await q.find(db.users,{})).map(u=>[u._id,u]));
+  const friendships = await q.find(db.friends,{status:'accepted'});
+  for(const f of friendships){
+    const [a,b] = f.users||[];
+    for(const [meId2,frId] of [[a,b],[b,a]]){
+      const meU=usersById[meId2], frU=usersById[frId];
+      if(!meU||!frU||meU.active===false||frU.active===false||meU.anonymous) continue;
+      for(const when of [7,1]){
+        const t=targets[when];
+        if(frU.birthday && frU.birthday.slice(5)===t.mmdd){
+          const ref='bd'+when+':'+frId;
+          if(!(await q.one(db.notifications,{user_id:meId2, ref_id:ref, created_at:{$gte:todayStr2}})))
+            await q.insert(db.notifications,{user_id:meId2, type:'friend_event', ref_id:ref,
+              title: when===1?`🎂 Zajtra má ${frU.name} narodeniny`:`🎂 ${frU.name} má o týždeň narodeniny`,
+              body:'Priprav sa poblahoželať svojmu priateľovi! 🎉', read:false, created_at:nowISO()});
+        }
+        const fn=stripDia(firstName(frU.name));
+        if(fn && t.names.includes(fn)){
+          const ref='nd'+when+':'+frId;
+          if(!(await q.one(db.notifications,{user_id:meId2, ref_id:ref, created_at:{$gte:todayStr2}})))
+            await q.insert(db.notifications,{user_id:meId2, type:'friend_event', ref_id:ref,
+              title: when===1?`💐 Zajtra má ${frU.name} meniny`:`💐 ${frU.name} má o týždeň meniny`,
+              body:'Priprav sa poblahoželať svojmu priateľovi! 🎉', read:false, created_at:nowISO()});
+        }
+      }
+    }
+  }
+}
 async function runDailyJobs(){
   const d3 = new Date(Date.now()+3*86400000).toISOString().slice(0,10);
   const d7 = new Date(Date.now()+7*86400000).toISOString().slice(0,10);
@@ -7305,6 +7384,11 @@ async function runDailyJobs(){
       try { await sendDunning(p, sent); } catch(e){ console.error('Dunning error:', e.message); }
     }
   }
+
+  // ── 6d. Odznaky – dávková kontrola + notif priateľom ──────────────────────
+  try { await runAchievementsDaily(); } catch(e){ console.error('Achievements daily error:', e.message); }
+  // ── 6e. Meniny/narodeniny priateľov (týždeň dopredu + deň pred) ────────────
+  try { await runFriendEventsDaily(); } catch(e){ console.error('Friend events error:', e.message); }
 
   // ── 7. Admin alerts (anomaly detection) ───────────────────────────────────
   try { await runAdminAlerts(); } catch(e){ console.error('Admin alerts error:', e.message); }
