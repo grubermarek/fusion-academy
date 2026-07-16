@@ -106,8 +106,14 @@
     .unlock-grid{display:grid;gap:10px;margin-bottom:20px}
     .unlock-card{display:flex;align-items:center;gap:12px;background:#161616;border:1px solid #2a2a2a;border-radius:16px;padding:13px 15px;text-decoration:none;color:#eee;transition:border-color .15s,transform .1s}
     .unlock-card:hover{transform:translateY(-1px)}
-    .unlock-card.locked{border-color:#3a3320;background:linear-gradient(160deg,#1a1710,#141414)}
-    .unlock-card.locked .uc-ic{filter:grayscale(.4) opacity(.85)}
+    .unlock-card.locked{border-color:#202020;background:#111;position:relative}
+    .unlock-card.locked::after{content:'';position:absolute;inset:0;border-radius:16px;background:repeating-linear-gradient(45deg,rgba(255,255,255,.012) 0 8px,transparent 8px 16px);pointer-events:none}
+    .unlock-card.locked .uc-ic{filter:grayscale(1) opacity(.35)}
+    .unlock-card.locked .uc-txt b{color:#5c5c5c;font-weight:600}
+    .unlock-card.locked .uc-txt span{color:#484848}
+    .unlock-card.locked .uc-badge{background:#1c1810;color:#a98a3e;border-color:#3a3320;opacity:.95}
+    .unlock-card.locked:hover{border-color:#5a4a20}
+    .unlock-card.locked:hover .uc-badge{color:var(--gold);border-color:var(--gold)}
     .unlock-card.open{border-color:#2e5a2e}
     .uc-ic{font-size:1.8rem;flex-shrink:0}
     .uc-txt{flex:1;min-width:0;display:flex;flex-direction:column}
