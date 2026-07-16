@@ -109,6 +109,7 @@ const db = {
   refunds:      new Datastore({ filename: path.join(DATA_DIR, 'refunds.db'),     autoload: true }),
   promo_codes:  new Datastore({ filename: path.join(DATA_DIR, 'promo_codes.db'), autoload: true }),
   crm_tasks:    new Datastore({ filename: path.join(DATA_DIR, 'crm_tasks.db'),    autoload: true }),
+  outreach:     new Datastore({ filename: path.join(DATA_DIR, 'outreach.db'),     autoload: true }),
   promo_redemptions:new Datastore({ filename: path.join(DATA_DIR, 'promo_redemptions.db'),autoload: true }),
   feed:         new Datastore({ filename: path.join(DATA_DIR, 'feed.db'),        autoload: true }),
   friends:      new Datastore({ filename: path.join(DATA_DIR, 'friends.db'),      autoload: true }),
@@ -5378,6 +5379,73 @@ app.put('/api/crm/tasks/:id', trainerAuth, async(req,res)=>{
 app.delete('/api/crm/tasks/:id', trainerAuth, async(req,res)=>{
   await q.remove(db.crm_tasks,{_id:req.params.id});
   res.json({ ok:true });
+});
+
+// ── Hromadné správy / kampane na segment (email + notifikácia) ────────────────
+const OUTREACH_SEGMENTS = {
+  clients:  'Všetci klienti',
+  leads:    'Všetci leady',
+  everyone: 'Klienti + leady',
+  expiring: 'Členstvo vyprší do 14 dní',
+  inactive: 'Neaktívni klienti (30+ dní bez hodiny)',
+  entries:  'Majú permanentkové vstupy',
+};
+async function outreachContext(){
+  const users = (await q.find(db.users,{is_admin:{$ne:true}, active:{$ne:false}, is_child:{$ne:true}, anonymous:{$ne:true}}))
+    .filter(u=>['client','lead'].includes(u.user_type||''));
+  const membs = await q.find(db.memberships,{status:'active'});
+  const memExp={}; for(const m of membs){ const e=(m.expires_at||'').slice(0,10); if(!memExp[m.user_id]||e>memExp[m.user_id]) memExp[m.user_id]=e; }
+  const bookings = await q.find(db.bookings,{status:'attended'});
+  const lastAtt={}, cityCount={};
+  for(const b of bookings){ if(!b.user_id) continue; const d=b.booking_date||(b.created_at||'').slice(0,10); if(!lastAtt[b.user_id]||d>lastAtt[b.user_id]) lastAtt[b.user_id]=d;
+    const loc=(b.class_location||'').trim(); if(loc){ (cityCount[b.user_id]=cityCount[b.user_id]||{})[loc]=(cityCount[b.user_id]?.[loc]||0)+1; } }
+  const cityOf={}; for(const uid in cityCount){ cityOf[uid]=Object.entries(cityCount[uid]).sort((a,b)=>b[1]-a[1])[0][0]; }
+  return {users, memExp, lastAtt, cityOf};
+}
+function inSegment(u, seg, ctx, city){
+  const td=today(); const in14=new Date(Date.now()+14*864e5).toISOString().slice(0,10); const ago30=new Date(Date.now()-30*864e5).toISOString().slice(0,10);
+  if(seg==='clients') return u.user_type==='client';
+  if(seg==='leads') return u.user_type==='lead';
+  if(seg==='everyone') return true;
+  if(seg==='expiring') return ctx.memExp[u._id] && ctx.memExp[u._id]>=td && ctx.memExp[u._id]<=in14;
+  if(seg==='inactive') return u.user_type==='client' && (!ctx.lastAtt[u._id] || ctx.lastAtt[u._id]<ago30);
+  if(seg==='entries') return (u.single_entries||0)>0;
+  if(seg==='city') return ctx.cityOf[u._id]===city;
+  return false;
+}
+app.get('/api/admin/outreach/segments', adminAuth, async(req,res)=>{
+  try {
+    const ctx=await outreachContext();
+    const segs=Object.entries(OUTREACH_SEGMENTS).map(([key,label])=>({key,label,count:ctx.users.filter(u=>inSegment(u,key,ctx)).length}));
+    const cities=[...new Set(Object.values(ctx.cityOf))].sort().map(c=>({key:c, count:ctx.users.filter(u=>ctx.cityOf[u._id]===c).length}));
+    res.json({ segments:segs, cities, total:ctx.users.length });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/outreach/send', adminAuth, async(req,res)=>{
+  try {
+    const {segment, city, subject, message, channel} = req.body;
+    if(!subject||!subject.trim()) return res.status(400).json({error:'Zadaj predmet/nadpis'});
+    if(!message||!message.trim()) return res.status(400).json({error:'Zadaj text správy'});
+    const ch = ['email','notification','both'].includes(channel)?channel:'both';
+    const ctx=await outreachContext();
+    const recipients=ctx.users.filter(u=>inSegment(u,segment,ctx,city));
+    const html = emailTemplate(subject.trim(), message.trim().replace(/\n/g,'<br>'), 'Otvoriť Fusion Academy', `${APP_URL}/client-dashboard`);
+    let emailed=0, notified=0;
+    for(const u of recipients){
+      if((ch==='notification'||ch==='both'))
+        { await q.insert(db.notifications,{user_id:u._id,type:'campaign',title:subject.trim().slice(0,120),body:message.trim().slice(0,500),read:false,created_at:nowISO()}).catch(()=>{}); notified++; }
+      if((ch==='email'||ch==='both') && u.email && (u.email_consent || u.consent_at))
+        { await sendMail(u.email, subject.trim(), html).catch(()=>{}); emailed++; }
+    }
+    const rec=await q.insert(db.outreach,{ subject:subject.trim(), message:message.trim(), segment, city:city||null, channel:ch,
+      recipients:recipients.length, emailed, notified, sent_by:req._auditActor||'', created_at:nowISO() });
+    await auditLog(req,'outreach_send',segment,{},{recipients:recipients.length, emailed, notified, subject:subject.trim()},'');
+    res.json({ ok:true, recipients:recipients.length, emailed, notified, id:rec._id });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+app.get('/api/admin/outreach/history', adminAuth, async(req,res)=>{
+  const list=await q.find(db.outreach,{});
+  res.json(list.sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,50));
 });
 
 // Prehľad zárobkov trénera (vlastných) — s filtrom obdobia + rozpis za čo koľko

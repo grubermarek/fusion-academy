@@ -149,6 +149,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('failed')"><i class="bi bi-credit-card-2-front me-2"></i>Neúspešné platby <span id="failedBadge" class="badge bg-danger" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('promos')"><i class="bi bi-ticket-perforated me-2"></i>Promo kódy</a>
       <a class="nav-link" href="#" onclick="show('tasks')"><i class="bi bi-check2-square me-2"></i>CRM úlohy <span id="tasksBadge" class="badge bg-danger" style="display:none"></span></a>
+      <a class="nav-link" href="#" onclick="show('outreach')"><i class="bi bi-send me-2"></i>Hromadné správy</a>
       <a class="nav-link" href="#" onclick="show('alerts')"><i class="bi bi-bell me-2"></i>Alerty <span id="alertsBadge" class="badge bg-danger" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('exports')"><i class="bi bi-download me-2"></i>Exporty</a>
       <a class="nav-link" href="#" onclick="show('reset')" style="color:#e57373"><i class="bi bi-exclamation-octagon me-2"></i>Reset dát</a>
@@ -1143,6 +1144,45 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div id="tasksBody"><div class="text-muted small">Načítavam…</div></div>
   </div>
 
+  <div class="section" id="s-outreach">
+    <h4 class="fw-bold mb-1">📨 Hromadné správy</h4>
+    <p class="text-muted small mb-3">Pošli email a/alebo notifikáciu vyfiltrovanej skupine (segmentu) — napr. na event, akciu, pripomienku. E-mail chodí len tým, čo dali súhlas; notifikácia všetkým v segmente.</p>
+    <div class="row g-3">
+      <div class="col-lg-7">
+        <div class="card bg-dark border-secondary"><div class="card-body">
+          <div class="mb-2">
+            <label class="text-muted small">Segment (komu)</label>
+            <select id="outSeg" class="form-select form-select-sm bg-dark text-light border-secondary" onchange="outSegChange()"></select>
+          </div>
+          <div class="mb-2 d-none" id="outCityWrap">
+            <label class="text-muted small">Mesto</label>
+            <select id="outCity" class="form-select form-select-sm bg-dark text-light border-secondary" onchange="outCount()"></select>
+          </div>
+          <div class="mb-2">
+            <label class="text-muted small">Kanál</label>
+            <select id="outChannel" class="form-select form-select-sm bg-dark text-light border-secondary">
+              <option value="both">E-mail + notifikácia</option>
+              <option value="email">Len e-mail</option>
+              <option value="notification">Len notifikácia v appke</option>
+            </select>
+          </div>
+          <div class="mb-2"><label class="text-muted small">Predmet / nadpis</label><input id="outSubject" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="napr. Cha-Cha Camp — posledné miesta!"></div>
+          <div class="mb-2"><label class="text-muted small">Text správy</label><textarea id="outMessage" rows="6" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="Ahoj! Pripravili sme pre teba…"></textarea></div>
+          <div class="d-flex justify-content-between align-items-center">
+            <div class="small text-muted">Príjemcov: <b id="outCount" style="color:#C9A24C">—</b></div>
+            <button class="btn btn-sm btn-brand" onclick="sendOutreach()"><i class="bi bi-send me-1"></i>Odoslať</button>
+          </div>
+        </div></div>
+      </div>
+      <div class="col-lg-5">
+        <div class="card bg-dark border-secondary h-100"><div class="card-body">
+          <h6 class="fw-bold mb-2">História odoslaných</h6>
+          <div id="outHistory"><div class="text-muted small">Načítavam…</div></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
   <!-- VÝPLATY TRÉNEROV -->
   <div class="section" id="s-payouts">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
@@ -1425,6 +1465,7 @@ function show(sec){
   if(sec==='failed')loadFailed();
   if(sec==='promos')loadPromos();
   if(sec==='tasks')initTasks();
+  if(sec==='outreach')initOutreach();
   if(sec==='alerts')loadAlerts();
   if(sec==='exports')loadExports();
   if(sec==='reset')loadResetPreview();
@@ -1513,6 +1554,49 @@ async function markAlertsRead(){ await api('/api/admin/alerts/read',{method:'POS
 /* ─── REFUNDÁCIE ─────────────────────────────────────────── */
 const REF_TYPE_LABEL={full:'Plná',partial:'Čiastočná',storno:'Storno',credit_note:'Dobropis',app_credit:'Kredit do appky',transfer:'Prevod'};
 let _refMeta=null, _refSelPay=null;
+let _outSegs=null, _outCities=null;
+async function initOutreach(){
+  const d=await api('/api/admin/outreach/segments');
+  if(d&&d.segments){ _outSegs=d.segments; _outCities=d.cities||[];
+    document.getElementById('outSeg').innerHTML=d.segments.map(s=>`<option value="${s.key}">${escHtml(s.label)} (${s.count})</option>`).join('')+'<option value="city">Podľa mesta…</option>';
+    document.getElementById('outCity').innerHTML=(d.cities||[]).map(c=>`<option value="${escHtml(c.key)}">${escHtml(c.key)} (${c.count})</option>`).join('');
+  }
+  outSegChange();
+  loadOutHistory();
+}
+function outSegChange(){
+  const isCity=document.getElementById('outSeg').value==='city';
+  document.getElementById('outCityWrap').classList.toggle('d-none',!isCity);
+  outCount();
+}
+function outCount(){
+  const seg=document.getElementById('outSeg').value; let n='—';
+  if(seg==='city'){ const c=document.getElementById('outCity').value; n=(_outCities.find(x=>x.key===c)||{}).count ?? '—'; }
+  else { n=(_outSegs.find(s=>s.key===seg)||{}).count ?? '—'; }
+  document.getElementById('outCount').textContent=n;
+}
+async function sendOutreach(){
+  const seg=document.getElementById('outSeg').value;
+  const body={ segment:seg, city:seg==='city'?document.getElementById('outCity').value:undefined,
+    channel:document.getElementById('outChannel').value, subject:document.getElementById('outSubject').value, message:document.getElementById('outMessage').value };
+  if(!body.subject.trim()||!body.message.trim()){ showToast('Vyplň predmet aj text','error'); return; }
+  const cnt=document.getElementById('outCount').textContent;
+  if(!confirm('Odoslať správu '+cnt+' príjemcom?')) return;
+  showToast('Odosielam…','info');
+  const r=await api('/api/admin/outreach/send',{method:'POST',body:JSON.stringify(body)});
+  if(r&&r.ok){ showToast(`Odoslané ✓ ${r.recipients} príjemcov · ${r.emailed} e-mailov · ${r.notified} notifikácií`,'success');
+    document.getElementById('outSubject').value='';document.getElementById('outMessage').value=''; loadOutHistory(); }
+  else showToast('Chyba: '+(r?.error||'?'),'error');
+}
+async function loadOutHistory(){
+  const box=document.getElementById('outHistory');
+  const list=await api('/api/admin/outreach/history');
+  if(!Array.isArray(list)||!list.length){ box.innerHTML='<div class="text-muted small">Zatiaľ nič neodoslané.</div>'; return; }
+  box.innerHTML=list.map(o=>`<div class="border-bottom border-secondary py-2">
+    <div class="fw-semibold small">${escHtml(o.subject)}</div>
+    <div class="text-muted" style="font-size:.75rem">${new Date(o.created_at).toLocaleString('sk-SK')} · ${escHtml((_outSegs?.find(s=>s.key===o.segment)||{}).label||o.segment)}${o.city?' · '+escHtml(o.city):''} · 📧 ${o.emailed} · 🔔 ${o.notified}</div>
+  </div>`).join('');
+}
 let _tkInit=false, _tkClientId=null;
 async function initTasks(){
   if(!_tkInit){ _tkInit=true;
