@@ -2516,7 +2516,9 @@ async function purgeTestAccounts(){
   else showToast('Chyba: '+(r?.error||'?'),'error');
 }
 
+let _cdClientId=null;
 async function openClientDetail(id){
+  _cdClientId=id;
   document.getElementById('clientDetailModal').style.display='flex';
   document.getElementById('cdBody').innerHTML='<div class="text-muted text-center py-5">Načítavam…</div>';
   document.getElementById('cdHeader').innerHTML='';
@@ -2548,7 +2550,7 @@ async function openClientDetail(id){
     <ul class="nav nav-tabs mb-2" style="border-color:#333">
       ${['Platby','Členstvá','Návštevy','Faktúry'].map((t,i)=>`<li class="nav-item"><a class="nav-link${i===0?' active':''}" style="cursor:pointer;color:#ccc" onclick="cdTab(${i},this)">${t}</a></li>`).join('')}
     </ul>
-    <div class="cd-tab" data-i="0">${list(d.payments,['Dátum','Suma','Spôsob','Poznámka'],r=>`<tr><td>${(r.date||'').slice(0,10)}</td><td>${r.amount.toFixed(2)} €</td><td>${escHtml(r.method)}</td><td class="text-muted">${escHtml(r.note||'')}</td></tr>`)}</div>
+    <div class="cd-tab" data-i="0">${cdPaymentsHtml(d.payments)}</div>
     <div class="cd-tab" data-i="1" style="display:none">${list(d.memberships,['Členstvo','Cena','Stav','Od','Do'],r=>`<tr><td>${escHtml(r.plan_name||'')}</td><td>${r.price.toFixed(2)} €</td><td>${escHtml(r.status||'')}</td><td>${(r.started_at||'').slice(0,10)}</td><td>${(r.expires_at||'').slice(0,10)}</td></tr>`)}</div>
     <div class="cd-tab" data-i="2" style="display:none">${list(d.bookings,['Dátum','Hodina','Miesto','Stav'],r=>`<tr><td>${(r.date||'').slice(0,10)}</td><td>${escHtml(r.class_name||'')}</td><td>${escHtml(r.location||'')}</td><td>${escHtml(r.status||'')}</td></tr>`)}</div>
     <div class="cd-tab" data-i="3" style="display:none">${list(d.invoices,['Číslo','Suma','Stav','Vystavená'],r=>`<tr><td><a href="/invoice/${r.number}" target="_blank" style="color:#C9A84C">${r.number}</a></td><td>${r.total.toFixed(2)} €</td><td>${escHtml(r.status||'')}</td><td>${(r.issued_at||'').slice(0,10)}</td></tr>`)}</div>
@@ -2594,6 +2596,58 @@ function cdTab(i,el){
   document.querySelectorAll('#cdBody .nav-link').forEach(a=>a.classList.remove('active'));
   el.classList.add('active');
   document.querySelectorAll('#cdBody .cd-tab').forEach(t=>t.style.display= (+t.dataset.i===i)?'block':'none');
+}
+// ── Platby na karte klienta + refundácia jednotlivých platieb ──────────────────
+let _cdPayments=[];
+function cdPaymentsHtml(payments){
+  _cdPayments=payments||[];
+  if(!_cdPayments.length) return '<div class="text-muted small py-2">Žiadne platby.</div>';
+  const gwBadge=g=>g==='stripe'?'💳 Stripe':g==='paypal'?'🅿️ PayPal':'✋ manuál';
+  const rows=_cdPayments.map(r=>{
+    let action;
+    if(r.refunded){
+      action=`<span class="badge bg-secondary" title="${REF_TYPE_LABEL[r.refunded.type]||r.refunded.type} · ${r.refunded.date}">↩️ Refundované ${r.refunded.amount.toFixed(2)} €</span>`
+        + (r.refunded.credit_note?` <a href="/invoice/${r.refunded.credit_note}" target="_blank" style="color:#C9A84C;font-size:.72rem">${r.refunded.credit_note}</a>`:'');
+    } else if(r.refundable){
+      action=`<button class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:.72rem" onclick="cdRefund('${r.id}')"><i class="bi bi-arrow-counterclockwise"></i> Refundovať</button>`;
+    } else { action='<span class="text-muted">—</span>'; }
+    return `<tr><td>${(r.date||'').slice(0,10)}</td><td class="fw-semibold">${r.amount.toFixed(2)} €</td><td class="small">${gwBadge(r.gateway)}</td><td class="text-muted small">${escHtml(r.note||'')}</td><td>${action}</td></tr>`;
+  }).join('');
+  return `<div class="table-responsive"><table class="table table-dark table-sm align-middle mb-0" style="font-size:.78rem">
+    <thead><tr><th>Dátum</th><th>Suma</th><th>Spôsob</th><th>Poznámka</th><th>Akcia</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+async function cdRefund(paymentId){
+  const p=_cdPayments.find(x=>x.id===paymentId); if(!p) return;
+  if(!_refMeta) _refMeta=await api('/api/admin/refund-reasons');
+  document.getElementById('cdRefPayId').value=paymentId;
+  document.getElementById('cdRefInfo').innerHTML=`Platba <b>${p.amount.toFixed(2)} €</b> · ${(p.date||'').slice(0,10)} · ${p.gateway==='stripe'?'Stripe':p.gateway==='paypal'?'PayPal':'manuál'}`;
+  document.getElementById('cdRefAmount').value=p.amount.toFixed(2);
+  document.getElementById('cdRefAmount').max=p.amount.toFixed(2);
+  const gwManual = p.gateway==='manual';
+  document.getElementById('cdRefType').innerHTML=Object.entries(REF_TYPE_LABEL).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');
+  document.getElementById('cdRefReason').innerHTML=Object.entries(_refMeta.reasons).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');
+  document.getElementById('cdRefNote').value='';
+  document.getElementById('cdRefHint').innerHTML = gwManual
+    ? '⚠️ Platba nemá online bránu (hotovosť/manuál) — refund sa <b>zaznamená</b> (a spraví dobropis), peniaze vraciaš ručne.'
+    : `✅ Refund pôjde späť cez ${p.gateway==='stripe'?'Stripe':'PayPal'} na kartu/účet klienta.`;
+  new bootstrap.Modal(document.getElementById('cdRefundModal')).show();
+}
+async function cdRefundSubmit(){
+  const payment_id=document.getElementById('cdRefPayId').value;
+  const amount=+document.getElementById('cdRefAmount').value||0;
+  const type=document.getElementById('cdRefType').value;
+  const reason=document.getElementById('cdRefReason').value;
+  const note=document.getElementById('cdRefNote').value;
+  if(!(amount>0)){ showToast('Zadaj sumu','error'); return; }
+  if(!confirm(`Refundovať ${amount.toFixed(2)} €? Klientovi príde e-mail a notifikácia.`)) return;
+  const btn=document.getElementById('cdRefSubmitBtn'); btn.disabled=true; btn.textContent='Spracúvam…';
+  const d=await api('/api/admin/refunds',{method:'POST',body:JSON.stringify({payment_id,type,amount,reason,note})});
+  btn.disabled=false; btn.innerHTML='<i class="bi bi-arrow-counterclockwise me-1"></i>Refundovať';
+  if(d?.ok){
+    showToast('Refundácia spracovaná ✓'+(d.credit_note?' · dobropis '+d.credit_note:''),'success');
+    bootstrap.Modal.getInstance(document.getElementById('cdRefundModal')).hide();
+    openClientDetail(_cdClientId); // refresh karty
+  } else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 
 async function setUserRole(userId,role){
@@ -3532,6 +3586,45 @@ document.addEventListener('click', e => {
     </div>
   </div>
 </div>
+<!-- Refundácia konkrétnej platby (z karty klienta) -->
+<div class="modal fade" id="cdRefundModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-arrow-counterclockwise me-2 text-danger"></i>Refundovať platbu</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="cdRefPayId">
+        <div class="mb-3 p-2 rounded" style="background:#1e1e1e;border:1px solid #2a2a2a;font-size:.85rem" id="cdRefInfo"></div>
+        <div class="row g-2">
+          <div class="col-6">
+            <label class="form-label small text-muted">Suma (€)</label>
+            <input type="number" step="0.01" min="0" id="cdRefAmount" class="form-control bg-dark text-light border-secondary">
+          </div>
+          <div class="col-6">
+            <label class="form-label small text-muted">Typ</label>
+            <select id="cdRefType" class="form-select bg-dark text-light border-secondary"></select>
+          </div>
+          <div class="col-12">
+            <label class="form-label small text-muted">Dôvod</label>
+            <select id="cdRefReason" class="form-select bg-dark text-light border-secondary"></select>
+          </div>
+          <div class="col-12">
+            <label class="form-label small text-muted">Poznámka (nepovinné)</label>
+            <input type="text" id="cdRefNote" class="form-control bg-dark text-light border-secondary" placeholder="Interná poznámka…">
+          </div>
+        </div>
+        <div class="small mt-3" id="cdRefHint" style="color:#c9a24c"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Zrušiť</button>
+        <button type="button" class="btn btn-danger" id="cdRefSubmitBtn" onclick="cdRefundSubmit()"><i class="bi bi-arrow-counterclockwise me-1"></i>Refundovať</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Mailová sekvencia leada -->
 <div class="modal fade" id="leadEmailsModal" tabindex="-1">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">

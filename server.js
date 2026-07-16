@@ -4103,6 +4103,11 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
     };
     const activeMemb = membs.find(m=>(m.expires_at||'')> new Date().toISOString());
 
+    // Refundácie k platbám tohto klienta (na zobrazenie stavu + zákaz dvojitého refundu)
+    const refundsForUser = await q.find(db.refunds,{user_id:u._id});
+    const refundByPay = {};
+    for(const r of refundsForUser){ if(r.payment_id) refundByPay[r.payment_id]=r; }
+
     res.json({
       profile:{ id:u._id, name:u.name, email:u.email, phone:u.phone||'', created_at:u.created_at,
         user_type:u.user_type||'client', active:u.active!==false,
@@ -4111,8 +4116,14 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
       kpis:{ totalPaid, ltv:totalPaid, visits:attended.length, avgPerMonth,
         firstVisit, lastVisit, topStudio:topBy('class_location'), topInstructor:topBy('instructor'),
         activeMembership: activeMemb? {plan_name:activeMemb.plan_name, expires_at:activeMemb.expires_at} : null },
-      payments: payments.map(p=>({date:p.captured_at||p.activated_at||p.created_at, amount:+p.amount||0, method:p.provider||p.method||'—', note:p.note||p.plan_name||'', status:p.status}))
-        .sort((a,b)=>(b.date||'').localeCompare(a.date||'')),
+      payments: payments.map(p=>{
+        const r = refundByPay[p._id];
+        return {id:p._id, date:p.captured_at||p.activated_at||p.created_at, amount:+p.amount||0,
+          method:p.provider||p.method||'—', note:p.note||p.plan_name||'', status:p.status,
+          gateway: p.stripe_payment_intent ? 'stripe' : (p.paypal_capture_id ? 'paypal' : 'manual'),
+          refundable: !r && (+p.amount||0)>0,
+          refunded: r ? {amount:+r.amount||0, type:r.type, date:(r.created_at||'').slice(0,10), credit_note:r.credit_note||null} : null };
+      }).sort((a,b)=>(b.date||'').localeCompare(a.date||'')),
       memberships: membs.map(m=>({plan_name:m.plan_name, price:+m.price||0, status:m.status, started_at:m.started_at, expires_at:m.expires_at, method:m.payment_method||'—'}))
         .sort((a,b)=>(b.started_at||'').localeCompare(a.started_at||'')),
       bookings: attended.map(b=>({date:b.booking_date||b.created_at, class_name:b.class_name, location:b.class_location, status:b.status}))
