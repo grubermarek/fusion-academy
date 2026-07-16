@@ -4617,11 +4617,29 @@ async function fulfillStripeCheckout(s){
 async function creditRecipient(recipientId, amount, gifterName){
   const rcpt = await q.one(db.users,{_id:recipientId});
   if(!rcpt) return false;
+  const amt=(+amount).toFixed(2);
   const newBal = +((rcpt.referral_credit||0) + (+amount||0)).toFixed(2);
   await q.update(db.users,{_id:recipientId},{$set:{referral_credit:newBal}});
-  await q.insert(db.notifications,{user_id:recipientId,type:'credit',title:`🎁 Dostal/a si darček – ${(+amount).toFixed(2)} € kredit`,
-    body:`${gifterName||'Niekto'} ti kúpil ${(+amount).toFixed(2)} € kredit do appky. Nový zostatok: ${newBal.toFixed(2)} €. Použi ho na hodiny alebo členstvo! 💃`,read:false,created_at:nowISO()}).catch(()=>{});
+  // Notifikácia príjemcovi (in-app)
+  await q.insert(db.notifications,{user_id:recipientId,type:'credit',title:`🎁 Dostal/a si darček – ${amt} € kredit`,
+    body:`${gifterName||'Niekto'} ti kúpil ${amt} € kredit do appky. Nový zostatok: ${newBal.toFixed(2)} €. Použi ho na hodiny alebo členstvo! 💃`,read:false,created_at:nowISO()}).catch(()=>{});
+  // E-mail príjemcovi
+  if(rcpt.email) sendMail(rcpt.email, `🎁 Dostal/a si darček – ${amt} € kredit`,
+    emailTemplate('Máš darček! 🎁',
+      `<p>Ahoj <b>${rcpt.name}</b>,</p><p><b>${gifterName||'Niekto'}</b> ti kúpil/a <b>${amt} € kredit</b> do Fusion Academy! 💛</p><p>Tvoj nový zostatok je <b>${newBal.toFixed(2)} €</b>. Použi ho na hodiny alebo členstvo — stačí pri kúpe zaškrtnúť „Referral kredit".</p>`,
+      '📱 Použiť kredit', `${APP_URL}/pricing`)).catch(()=>{});
   return true;
+}
+// Notifikácia + e-mail darcovi (že darček prebehol)
+async function notifyGifter(gifter, recipientName, amount){
+  if(!gifter) return;
+  const amt=(+amount).toFixed(2);
+  await q.insert(db.notifications,{user_id:gifter._id,type:'credit',title:`🎁 Darček odoslaný – ${amt} €`,
+    body:`Kúpil/a si ${amt} € kredit pre ${recipientName||'klienta'}. Ďakujeme, že šíriš dobrú náladu! 💛`,read:false,created_at:nowISO()}).catch(()=>{});
+  if(gifter.email) sendMail(gifter.email, `🎁 Darček kreditu odoslaný – ${amt} €`,
+    emailTemplate('Darček odoslaný 🎁',
+      `<p>Ahoj <b>${gifter.name}</b>,</p><p>Tvoj darček <b>${amt} € kredit</b> pre <b>${recipientName||'klienta'}</b> bol úspešne pripísaný. Ďakujeme! 💛</p>`,
+      '📱 Môj profil', `${APP_URL}/client-dashboard`)).catch(()=>{});
 }
 async function fulfillGiftCredit(s){
   const meta = s.metadata || {};
@@ -4634,8 +4652,7 @@ async function fulfillGiftCredit(s){
   await q.insert(db.transactions,{type:'gift_credit',user_id:meta.gifter_id,user_name:gifter?.name||'—',amount,payment_method:'stripe',note:`Darček kreditu pre ${rcpt?.name||'klienta'}`,created_at:nowISO(),month:today().slice(0,7)});
   createInvoice({user_id:meta.gifter_id, client_name:gifter?.name, client_email:gifter?.email,
     items:[{desc:`Darčekový kredit pre ${rcpt?.name||'klienta'}`, qty:1, total:amount}], total:amount, method:'Stripe (karta / Apple Pay / Google Pay)'});
-  if(gifter?.email) sendMail(gifter.email,`🎁 Darček kreditu odoslaný – ${amount.toFixed(2)} €`,
-    emailTemplate('Darček odoslaný 🎁', `<p>Ahoj <b>${gifter.name}</b>,</p><p>Tvoj darček <b>${amount.toFixed(2)} € kredit</b> pre <b>${rcpt?.name||'klienta'}</b> bol úspešne pripísaný. Ďakujeme! 💛</p>`, '📱 Môj profil', `${APP_URL}/client-dashboard`)).catch(()=>{});
+  await notifyGifter(gifter, rcpt?.name, amount);
   return {ok:true, gift:true, amount};
 }
 // Klient iniciuje darček kreditu (Stripe / demo)
@@ -4651,6 +4668,7 @@ app.post('/api/gift-credit/checkout', auth, async(req,res)=>{
     // Demo (bez Stripe): pripíš hneď – nech sa dá otestovať
     if(!STRIPE_SECRET){
       await creditRecipient(recipient_id, amount, gifter?.name);
+      await notifyGifter(gifter, rcpt.name, amount);
       await q.insert(db.transactions,{type:'gift_credit',user_id:req.session.uid,user_name:gifter?.name||'—',amount,payment_method:'demo',note:`Darček kreditu pre ${rcpt.name}`,created_at:nowISO(),month:today().slice(0,7)});
       return res.json({ok:true, demo:true, message:`(Demo) Darček ${amount.toFixed(2)} € kredit pre ${rcpt.name} pripísaný.`});
     }
