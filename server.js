@@ -3463,6 +3463,29 @@ app.delete('/api/admin/promos/:id', adminAuth, async(req,res)=>{
   res.json({ok:true});
 });
 
+// Skúšobná aktivácia Silveru zadarmo: Bronze člen dostane Silver do konca aktuálneho
+// obdobia bez platby; Silver sa začne účtovať až od najbližšieho obnovenia. 1×/klient.
+app.post('/api/membership/try-silver', auth, async(req,res)=>{
+  try {
+    const u = await q.one(db.users,{_id:req.session.uid});
+    if(u.silver_trial_used) return res.status(400).json({error:'Skúšku Silver si už využil/a. 🙂'});
+    const m = await q.one(db.memberships,{user_id:u._id, status:'active'});
+    if(!m) return res.status(400).json({error:'no_membership'});
+    if(m.plan_id!=='bronze') return res.status(400).json({error:'not_bronze'});
+    await q.update(db.memberships,{_id:m._id},{$set:{plan_id:'silver', plan_name:'Silver', trial:true, trial_from:'bronze', renew_to:'silver', trial_started:nowISO()}});
+    await q.update(db.users,{_id:u._id},{$set:{membership_plan:'silver', silver_trial_used:true}});
+    cancelSequence(u._id,'bronze_upsell').catch(()=>{});
+    const until = (m.expires_at||'').slice(0,10);
+    await q.insert(db.notifications,{user_id:u._id,type:'membership',title:'✨ Silver aktivovaný na skúšku!',
+      body:`Máš Silver zadarmo do ${until} — užívaj analýzu tela aj online hodiny! Silver sa začne účtovať až od ďalšieho obnovenia.`,read:false,created_at:nowISO()}).catch(()=>{});
+    if(u.email) sendMail(u.email,'✨ Aktivovali sme ti Silver na skúšku!',
+      emailTemplate('Silver na skúšku – zdarma 🎁',
+        `<p>Ahoj <b>${u.name}</b>,</p><p>Práve sme ti <b>aktivovali členstvo Silver</b> — a to <b>úplne zadarmo</b> do konca tvojho aktuálneho obdobia (<b>${until}</b>).</p><p>Odteraz máš odomknutú <b>metabolickú analýzu tela</b> aj <b>online hodiny LIVE</b>. Vyskúšaj si to naplno! 💪</p><p>Silver sa ti začne účtovať až od <b>najbližšieho obnovenia</b> členstva — dovtedy nič nedoplácaš.</p>`,
+        '📱 Objednať analýzu', `${APP_URL}/client-dashboard`)).catch(()=>{});
+    res.json({ ok:true, until });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.post('/api/membership/buy', auth, async(req,res)=>{
   try {
     const {plan_id, payment_method, use_referral_credit, for_child_id, promo_code} = req.body;

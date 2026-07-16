@@ -23,7 +23,8 @@
   .offer{background:linear-gradient(160deg,#231d0e,#171717);border:1px solid var(--gold-border);border-radius:16px;padding:18px;text-align:center;margin-bottom:16px;}
   .offer .big{font-size:1.15rem;font-weight:800;color:var(--gold);}
   .code{display:inline-block;font-family:monospace;font-weight:800;letter-spacing:1px;background:#0d0d0d;border:1px dashed var(--gold);color:var(--gold);border-radius:8px;padding:6px 14px;margin:8px 0;font-size:1.05rem;}
-  .cta{display:block;text-align:center;text-decoration:none;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;font-weight:800;border-radius:14px;padding:15px;font-size:1rem;margin-bottom:10px;}
+  .cta{display:block;width:100%;text-align:center;text-decoration:none;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;font-weight:800;border:none;border-radius:14px;padding:15px;font-size:1rem;margin-bottom:10px;cursor:pointer;font-family:inherit;}
+  .cta:disabled{opacity:.7;cursor:default;}
   .blog{display:block;text-align:center;color:var(--muted);text-decoration:none;font-size:.85rem;}
   .blog:hover{color:var(--gold);}
 </style>
@@ -54,8 +55,11 @@ const F={
 };
 const p=new URLSearchParams(location.search).get('f');
 const d=F[p]||F.analyza;
-const offerHtml = d.offer ? `<div class="offer"><div class="big">🎁 Prvý mesiac Silver za cenu Bronzu!</div><p style="margin:6px 0;font-size:.9rem;color:var(--cream)">Vyskúšaj si všetko naplno — doplatíš len rozdiel, ktorý aj tak platíš. Pri kúpe Silver zadaj kód:</p><div class="code">PRVYMESIAC</div></div>` : '';
-const ctaText = d.tier==='Gold' ? 'Prejsť na Gold 🏆' : 'Prejsť na Silver 💫';
+const isSilver = d.tier==='Silver';
+const offerHtml = isSilver ? `<div class="offer"><div class="big">🎁 Vyskúšaj Silver mesiac zadarmo!</div><p style="margin:8px 0 0;font-size:.9rem;color:var(--cream)">Aktivujeme ti Silver <b>hneď a bez platby</b> — máš ho do konca aktuálneho obdobia za cenu Bronzu. <b>Silver sa začne účtovať až od ďalšieho obnovenia</b> členstva. Nič teraz nedoplácaš.</p></div>` : '';
+const ctaHtml = isSilver
+  ? `<button class="cta" id="tryBtn" onclick="tryS()">✨ Aktivovať Silver na skúšku (zdarma)</button>`
+  : `<a class="cta" href="/pricing">Prejsť na Gold 🏆</a>`;
 document.getElementById('content').innerHTML = `
   <div class="hero"><div class="ic">${d.ic}</div></div>
   <div style="text-align:center"><span class="lockpill"><i class="bi bi-lock-fill"></i> Odomkne sa v členstve ${d.tier}</span></div>
@@ -64,10 +68,23 @@ document.getElementById('content').innerHTML = `
   <div class="card"><h3>Čo dostaneš</h3><ul>${d.what.map(x=>`<li>${x}</li>`).join('')}</ul></div>
   <div class="card"><h3>Prečo je to dôležité</h3><p style="margin:0;font-size:.93rem">${d.why}</p></div>
   ${offerHtml}
-  <a class="cta" href="/pricing">${ctaText}</a>
+  ${ctaHtml}
+  <div id="tryMsg" style="text-align:center;font-size:.85rem;margin:-2px 0 10px"></div>
   ${d.blog?`<a class="blog" href="${BLOG}${d.blog}">📖 Prečítaj si viac na našom blogu →</a>`:''}
 `;
 document.title = d.title + ' – Fusion Academy';
+async function tryS(){
+  const btn=document.getElementById('tryBtn'), msg=document.getElementById('tryMsg');
+  btn.disabled=true; btn.textContent='⏳ Aktivujem…'; msg.textContent='';
+  try{
+    const r=await fetch('/api/membership/try-silver',{method:'POST',credentials:'include'});
+    const j=await r.json();
+    if(j.ok){ btn.style.display='none'; msg.style.color='#8bd06a'; msg.innerHTML='✅ <b>Silver aktivovaný!</b> Máš ho zadarmo do '+(j.until||'konca obdobia')+'. Presmerovávam…'; setTimeout(()=>location.href='/client-dashboard',1800); return; }
+    if(j.error==='no_membership'||j.error==='not_bronze'){ msg.style.color='#e0c070'; msg.innerHTML='Skúšku vieme aktivovať len Bronze členom. <a href="/pricing" style="color:var(--gold)">Pozri členstvá →</a>'; btn.style.display='none'; return; }
+    msg.style.color='#e57373'; msg.textContent=j.error||'Nepodarilo sa'; btn.disabled=false; btn.textContent='✨ Aktivovať Silver na skúšku (zdarma)';
+  }catch{ msg.style.color='#e57373'; msg.textContent='Chyba pripojenia'; btn.disabled=false; btn.textContent='✨ Aktivovať Silver na skúšku (zdarma)'; }
+}
+window.tryS=tryS;
 </script>
 </body>
 </html>
