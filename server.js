@@ -1229,6 +1229,12 @@ const ACHIEVEMENTS = [
   {id:'v350', cat:'visits', need:350,  icon:'🏆', name:'Šampiónka',     name_m:'Šampión', desc:'350 hodín'},
   {id:'v600', cat:'visits', need:600,  icon:'🦋', name:'Ikona',         desc:'600 hodín'},
   {id:'v1000',cat:'visits', need:1000, icon:'🌟', name:'Legenda',       desc:'1000 hodín'},
+  // Mestá — prvá odchodená hodina v danom meste (zberateľské odznaky)
+  {id:'city_detva',  cat:'city', city:'Detva',            icon:'🌲', name:'Detva',            desc:'Prvá hodina v Detve'},
+  {id:'city_zvolen', cat:'city', city:'Zvolen',           icon:'🏰', name:'Zvolen',           desc:'Prvá hodina vo Zvolene'},
+  {id:'city_bb',     cat:'city', city:'Banská Bystrica',  icon:'⛰️', name:'Banská Bystrica',  desc:'Prvá hodina v Banskej Bystrici'},
+  {id:'city_brezno', cat:'city', city:'Brezno',           icon:'🏔️', name:'Brezno',           desc:'Prvá hodina v Brezne'},
+  {id:'city_all',    cat:'city_all', icon:'🗺️', name:'Cestovateľka', name_m:'Cestovateľ', desc:'Odchodená hodina vo všetkých mestách'},
   // Privedení noví ľudia (referral)
   {id:'r1',   cat:'refs', need:1,   icon:'🤝', name:'Ambasádorka',         name_m:'Ambasádor', desc:'1 privedený člen'},
   {id:'r3',   cat:'refs', need:3,   icon:'🌱', name:'Rozsievačka radosti', name_m:'Rozsievač radosti', desc:'3 privedení členovia'},
@@ -1292,6 +1298,14 @@ const ACHIEVEMENTS = [
   {id:'merch_mikina', cat:'merch', item:'mikina', icon:'🧥', name:'Mikina FA', desc:'Kúpená mikina Fusion Academy'},
 ];
 const MERCH_KEYWORDS={tielko:/tielk/i, tricko:/tri[čc]k/i, taska:/ta[šs]k/i, mikina:/mikin/i};
+const CITY_BADGES = ['Detva','Zvolen','Banská Bystrica','Brezno'];
+// Mestá, v ktorých má klient aspoň 1 odchodenú hodinu (podľa lokácie hodiny)
+async function citiesVisitedOf(userId){
+  const bks = await q.find(db.bookings,{user_id:userId, status:'attended'});
+  const set = new Set();
+  for(const b of bks){ const loc=(b.class_location||'').trim(); if(loc) set.add(loc); }
+  return [...set];
+}
 async function referralCountOf(uid){ return q.count(db.users,{sponsor_id:uid,is_admin:{$ne:true}}); }
 // Total people anywhere in the downline (all lines) — drives referral rewards/achievements
 async function downlineCountOf(uid){ return (await getAllDescendants(uid)).length; }
@@ -1383,7 +1397,10 @@ function computeAchievements(u, refCount, tenureMonths, gender){
     .filter(a=> a.id==='founder' ? !!u.is_founder : (a.id==='admin_role' ? !!u.is_admin : true))
     .map(a=>{
     let earned, progress;
+    const cities = u.cities_visited||[];
     if(a.cat==='merch'){ earned = merch.includes(a.item); progress = earned?100:0; }
+    else if(a.cat==='city'){ earned = cities.includes(a.city); progress = earned?100:0; }
+    else if(a.cat==='city_all'){ const done=CITY_BADGES.filter(c=>cities.includes(c)).length; earned = done>=CITY_BADGES.length; progress = Math.round(done/CITY_BADGES.length*100); }
     else if(a.cat==='special'){ earned = a.flag ? !!u[a.flag] : (a.role ? (u.user_type===a.role || (a.role==='trainer'&&u.is_admin)) : false); progress = earned?100:0; }
     else { earned = (val[a.cat]||0) >= a.need; progress = Math.min(100, Math.round((val[a.cat]||0)/a.need*100)); }
     if(manual.includes(a.id)) { earned = true; if(progress<100) progress=100; }
@@ -1433,6 +1450,7 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     const refCount=await downlineCountOf(u._id); // whole structure drives rewards
     const memberMonths=await activeMembershipMonths(u._id);
     const gender = u.gender==='male' ? 'male' : 'female';
+    u.cities_visited = await citiesVisitedOf(u._id);
     const ach=computeAchievements(u, refCount, memberMonths, gender);
     const earned=ach.filter(a=>a.earned);
     const badge=getMemberBadge(u.created_at);
@@ -1564,6 +1582,7 @@ app.get('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
   const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
   const refCount=await referralCountOf(u._id);
   const memberMonths=await activeMembershipMonths(u._id);
+  u.cities_visited = await citiesVisitedOf(u._id);
   const sponsor = u.sponsor_id ? await q.one(db.users,{_id:u.sponsor_id}) : null;
   res.json({ name:u.name, visit_count:u.visit_count||0, private_hours:u.private_hours||0,
     referral_credit:+(u.referral_credit||0), referral_credit_pending:+(u.referral_credit_pending||0),
