@@ -993,6 +993,24 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <h6 class="fw-bold mb-3"><i class="bi bi-graph-up me-2 text-warning"></i>Príjmy za obdobie</h6>
       <canvas id="finChart" height="90"></canvas>
     </div></div>
+
+    <!-- Aktívne členstvá & permanentky -->
+    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <h6 class="fw-bold mb-0"><i class="bi bi-people-fill me-2 text-warning"></i>Aktívne členstvá &amp; permanentky</h6>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadMembOverview()"><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
+      <div class="row g-2 mb-3" id="moSummary"></div>
+      <ul class="nav nav-tabs mb-2" style="border-color:#333">
+        <li class="nav-item"><a class="nav-link active" style="cursor:pointer;color:#ccc" onclick="moTab('members',this)" id="moTabMembers">Členstvá</a></li>
+        <li class="nav-item"><a class="nav-link" style="cursor:pointer;color:#ccc" onclick="moTab('passes',this)" id="moTabPasses">Permanentky</a></li>
+      </ul>
+      <div class="d-flex gap-2 flex-wrap mb-2">
+        <input id="moSearch" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:220px" placeholder="🔍 Meno / email…" oninput="renderMembOverview()">
+        <select id="moPlanFilter" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:170px" onchange="renderMembOverview()"></select>
+      </div>
+      <div id="moTableWrap"><div class="text-muted small py-3">Načítavam…</div></div>
+    </div></div>
   </div>
 
   <!-- INVOICES -->
@@ -2105,6 +2123,81 @@ async function loadFinance(){
   const ctx=document.getElementById('finChart');
   if(_finChart)_finChart.destroy();
   _finChart=new Chart(ctx,{type:'bar',data:{labels:d.series.map(x=>x.d.slice(5)),datasets:[{label:'€',data:d.series.map(x=>x.v),backgroundColor:'rgba(201,162,76,.55)',borderColor:'#C9A24C',borderWidth:1,borderRadius:5}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{color:'#8B8271'}},x:{ticks:{color:'#8B8271'}}}}});
+  loadMembOverview();
+}
+
+/* ─── Aktívne členstvá & permanentky ─── */
+let _moData=null, _moTab='members', _moSort={key:'name',dir:1};
+const MO_PLAN_COLOR={bronze:'#cd7f32',silver:'#c0c0c0',gold:'#e0a656',online_basic:'#5aa9e6',online_premium:'#8a5ae6',kids:'#4ade80'};
+async function loadMembOverview(){
+  const d=await api('/api/admin/memberships-overview');
+  if(!d||!d.ok){ document.getElementById('moTableWrap').innerHTML='<div class="text-danger small">Chyba pri načítaní.</div>'; return; }
+  _moData=d;
+  // súhrnné karty
+  const card=(l,v,c)=>`<div class="col-6 col-md-3 col-lg-2"><div style="background:#1e1e1e;border:1px solid #2a2a2a;border-radius:9px;padding:9px 11px">
+    <div class="text-muted" style="font-size:.6rem;text-transform:uppercase;letter-spacing:.04em">${l}</div>
+    <div class="fw-bold" style="font-size:1.15rem;color:${c||'#EAE3D5'}">${v}</div></div></div>`;
+  let cards=d.summary.map(s=>card(escHtml(s.name),s.count,MO_PLAN_COLOR[s.plan_id]||'#EAE3D5')).join('');
+  cards+=card('Členstvá spolu',d.total_members,'#C9A24C');
+  cards+=card('Permanentky',d.passes_count+' <small class="text-muted" style="font-size:.7rem">('+d.passes_entries+' vst.)</small>','#4ade80');
+  cards+=card('MRR z členstiev',d.mrr.toFixed(0)+' €','#C9A24C');
+  document.getElementById('moSummary').innerHTML=cards;
+  // plán filter (len pre členstvá)
+  const pf=document.getElementById('moPlanFilter');
+  pf.innerHTML='<option value="">Všetky úrovne</option>'+d.summary.map(s=>`<option value="${s.plan_id}">${escHtml(s.name)} (${s.count})</option>`).join('');
+  renderMembOverview();
+}
+function moTab(t,el){
+  _moTab=t; document.querySelectorAll('#moTabMembers,#moTabPasses').forEach(a=>a.classList.remove('active')); el.classList.add('active');
+  document.getElementById('moPlanFilter').style.display = t==='members'?'':'none';
+  _moSort={key:'name',dir:1};
+  renderMembOverview();
+}
+function moSort(key){ if(_moSort.key===key)_moSort.dir*=-1; else _moSort={key,dir:1}; renderMembOverview(); }
+function renderMembOverview(){
+  if(!_moData) return;
+  const wrap=document.getElementById('moTableWrap');
+  const term=(document.getElementById('moSearch').value||'').toLowerCase();
+  const planF=document.getElementById('moPlanFilter').value;
+  const ind=k=>_moSort.key===k?(_moSort.dir>0?' ▲':' ▼'):'';
+  const sortRows=rows=>rows.slice().sort((a,b)=>{
+    let x=a[_moSort.key],y=b[_moSort.key];
+    if(typeof x==='number'&&typeof y==='number') return (x-y)*_moSort.dir;
+    return String(x||'').localeCompare(String(y||''),'sk')*_moSort.dir;
+  });
+  if(_moTab==='members'){
+    let rows=_moData.members.filter(m=>(!term||m.name.toLowerCase().includes(term)||(m.email||'').toLowerCase().includes(term))&&(!planF||m.plan_id===planF));
+    rows=sortRows(rows);
+    if(!rows.length){ wrap.innerHTML='<div class="text-muted small py-3">Žiadne členstvá pre zvolený filter.</div>'; return; }
+    wrap.innerHTML=`<div class="table-responsive"><table class="table table-dark table-sm table-hover align-middle mb-0" style="font-size:.8rem">
+      <thead><tr>
+        <th style="cursor:pointer" onclick="moSort('name')">Klient${ind('name')}</th>
+        <th style="cursor:pointer" onclick="moSort('plan_name')">Úroveň${ind('plan_name')}</th>
+        <th style="cursor:pointer" onclick="moSort('price')">Cena${ind('price')}</th>
+        <th style="cursor:pointer" onclick="moSort('expires_at')">Platí do${ind('expires_at')}</th>
+        <th>Kontakt</th>
+      </tr></thead><tbody>${rows.map(m=>`<tr style="cursor:pointer" onclick="openClientDetail('${m.id}')">
+        <td class="fw-semibold" style="color:#C9A84C">${escHtml(m.name)}${m.trial?' <span class="badge bg-info text-dark" style="font-size:.6rem">skúška</span>':''}${m.active?'':' <span class="badge bg-secondary" style="font-size:.6rem">neaktívny</span>'}</td>
+        <td><span class="badge" style="background:${MO_PLAN_COLOR[m.plan_id]||'#555'};color:#111">${escHtml(m.plan_name)}</span></td>
+        <td>${m.price.toFixed(0)} €</td>
+        <td>${m.expires_at||'—'}</td>
+        <td class="small text-muted" onclick="event.stopPropagation()">${m.email?`<a href="mailto:${escHtml(m.email)}" class="text-decoration-none text-muted">${escHtml(m.email)}</a>`:''}${m.phone?` · <a href="tel:${escHtml(m.phone)}" class="text-decoration-none text-muted">${escHtml(m.phone)}</a>`:''}</td>
+      </tr>`).join('')}</tbody></table></div>`;
+  } else {
+    let rows=_moData.passes.filter(p=>!term||p.name.toLowerCase().includes(term)||(p.email||'').toLowerCase().includes(term));
+    rows=sortRows(rows);
+    if(!rows.length){ wrap.innerHTML='<div class="text-muted small py-3">Žiadne aktívne permanentky.</div>'; return; }
+    wrap.innerHTML=`<div class="table-responsive"><table class="table table-dark table-sm table-hover align-middle mb-0" style="font-size:.8rem">
+      <thead><tr>
+        <th style="cursor:pointer" onclick="moSort('name')">Klient${ind('name')}</th>
+        <th style="cursor:pointer" onclick="moSort('entries')">Zostáva vstupov${ind('entries')}</th>
+        <th>Kontakt</th>
+      </tr></thead><tbody>${rows.map(p=>`<tr style="cursor:pointer" onclick="openClientDetail('${p.id}')">
+        <td class="fw-semibold" style="color:#C9A84C">${escHtml(p.name)}${p.active?'':' <span class="badge bg-secondary" style="font-size:.6rem">neaktívny</span>'}</td>
+        <td><span class="badge bg-success">🎟️ ${p.entries}</span></td>
+        <td class="small text-muted" onclick="event.stopPropagation()">${p.email?`<a href="mailto:${escHtml(p.email)}" class="text-decoration-none text-muted">${escHtml(p.email)}</a>`:''}${p.phone?` · ${escHtml(p.phone)}`:''}</td>
+      </tr>`).join('')}</tbody></table></div>`;
+  }
 }
 
 /* ─── INVOICES ──────────────────────────────────────────── */

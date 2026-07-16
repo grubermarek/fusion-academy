@@ -2401,8 +2401,11 @@ app.post('/api/admin/import-members', adminAuth, async(req,res)=>{
     const iFirst=col('first name'), iLast=col('last name'), iEmail=col('email'), iPhone=col('phone'),
       iGender=col('gender'), iDob=col('date of birth'), iAdded=col('added'), iSource=col('source'),
       iConsent=col('email consent'), iLastC=col('last contacted'),
-      // Návštevy/odtancované hodiny — Glofox používa rôzne názvy hlavičky
+      // Návštevy/odtancované hodiny — Glofox používa rôzne názvy hlavičky.
+      // Berieme VYŠŠIU z „Total Bookings" a „Total Attendances", lebo tréneri
+      // často nepotvrdia všetky hodiny → attendances podhodnocuje skutočný počet.
       iAtt=colAny('total attendances','attendances','total classes attended','classes attended','attended classes','total classes','visits'),
+      iBook=colAny('total bookings','bookings','booked classes'),
       iMemName=col('membership name'), iMemPlan=col('membership plan'),
       iMemExp=col('membership expiry date'), iCredits=col('credits remaining');
     if(iEmail<0) return res.status(400).json({error:'CSV nemá stĺpec Email'});
@@ -2431,7 +2434,9 @@ app.post('/api/admin/import-members', adminAuth, async(req,res)=>{
       const created_at=parseFlexDate(iAdded>=0?row[iAdded]:'')||todayStr;
       const consent=iConsent>=0 && String(row[iConsent]).trim().toLowerCase()==='true';
       const src=(iSource>=0?row[iSource]:'').trim();
-      const attendances=Math.max(0, parseInt(iAtt>=0?row[iAtt]:'0',10)||0);
+      const attVal=Math.max(0, parseInt(iAtt>=0?row[iAtt]:'0',10)||0);
+      const bookVal=Math.max(0, parseInt(iBook>=0?row[iBook]:'0',10)||0);
+      const attendances=Math.max(attVal, bookVal); // vyššia z potvrdených a rezervovaných hodín
       const credits=Math.max(0, parseInt(iCredits>=0?row[iCredits]:'0',10)||0);
       const memName=(iMemName>=0?row[iMemName]:'').trim();
       const memPlan=(iMemPlan>=0?row[iMemPlan]:'').trim();
@@ -3891,6 +3896,53 @@ app.get('/api/admin/audit', adminAuth, async(req,res)=>{
 });
 
 // ── Finance stats with period filter ──────────────────────────────────────────
+// Prehľad aktívnych členstiev (po úrovniach) a aktívnych permanentiek — kto ich má.
+app.get('/api/admin/memberships-overview', adminAuth, async(req,res)=>{
+  try {
+    const nowISOv = new Date().toISOString();
+    const users = await q.find(db.users,{});
+    const uMap = Object.fromEntries(users.map(u=>[u._id,u]));
+    // Aktívne členstvá: status active a platnosť do budúcna; jeden (najneskôr expirujúci) na usera
+    const membs = (await q.find(db.memberships,{status:'active'}))
+      .filter(m=> (m.expires_at||'') > nowISOv && MEMBERSHIP_PLANS[m.plan_id] && MEMBERSHIP_PLANS[m.plan_id].type!=='bundle');
+    const bestByUser = {};
+    for(const m of membs){
+      const cur = bestByUser[m.user_id];
+      if(!cur || (m.expires_at||'') > (cur.expires_at||'')) bestByUser[m.user_id]=m;
+    }
+    const members = Object.values(bestByUser).map(m=>{
+      const u = uMap[m.user_id] || {};
+      const plan = MEMBERSHIP_PLANS[m.plan_id] || {};
+      return {
+        id: m.user_id, name: u.name||'—', email: u.email||'', phone: u.phone||'',
+        plan_id: m.plan_id, plan_name: plan.name||m.plan_name||m.plan_id,
+        price: +plan.price||+m.price||0, expires_at: (m.expires_at||'').slice(0,10),
+        trial: !!m.trial, method: m.payment_method||m.method||'',
+        active: u.active!==false,
+      };
+    });
+    // Aktívne permanentky: používatelia s nevyčerpanými vstupmi
+    const passes = users.filter(u=>(u.single_entries||0)>0 && u.is_admin!==true).map(u=>({
+      id:u._id, name:u.name||'—', email:u.email||'', phone:u.phone||'', entries:u.single_entries||0,
+      active:u.active!==false,
+    }));
+    // Súhrn po úrovniach
+    const byPlan = {};
+    for(const m of members){ byPlan[m.plan_id]=(byPlan[m.plan_id]||0)+1; }
+    const planOrder = ['bronze','silver','gold','online_basic','online_premium','kids'];
+    const summary = planOrder.filter(p=>byPlan[p]).map(p=>({plan_id:p, name:MEMBERSHIP_PLANS[p]?.name||p, count:byPlan[p]}))
+      .concat(Object.keys(byPlan).filter(p=>!planOrder.includes(p)).map(p=>({plan_id:p, name:MEMBERSHIP_PLANS[p]?.name||p, count:byPlan[p]})));
+    const mrr = members.reduce((s,m)=>s+(m.trial?0:m.price),0);
+    res.json({
+      ok:true,
+      summary, total_members: members.length,
+      passes_count: passes.length, passes_entries: passes.reduce((s,p)=>s+p.entries,0),
+      mrr:+mrr.toFixed(2),
+      members, passes
+    });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/admin/finance/stats', adminAuth, async(req,res)=>{
   try {
     const {from, to} = req.query; // YYYY-MM-DD inclusive
