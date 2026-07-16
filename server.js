@@ -1564,7 +1564,13 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     u.cities_visited = await citiesVisitedOf(u._id);
     const ach=computeAchievements(u, refCount, memberMonths, gender);
     const earned=ach.filter(a=>a.earned);
-    const badge=getMemberBadge(u.created_at);
+    // „Členkou od" = najskorší začiatok členstva (napr. z Glofoxu), nie dátum
+    // vzniku appka účtu — aby to sedelo s počtom odčlenených mesiacov.
+    const _membStarts=(await q.find(db.memberships,{user_id:u._id})).filter(m=>!m._type)
+      .map(m=>(m.started_at||m.start_date||m.created_at||'')).filter(Boolean).map(s=>s.slice(0,10)).sort();
+    const joinedDate = (_membStarts[0] && _membStarts[0] < (u.created_at||'9999').slice(0,10))
+      ? _membStarts[0] : (u.created_at||'').slice(0,10);
+    const badge=getMemberBadge(joinedDate);
     const loyalty=getLoyaltyStatus(u.visit_count||0);
     // Pozadie celého profilu = odmena za počet privedených ľudí do štruktúry (1→10000).
     // Admin/zakladateľ si môže nastaviť vlastné (custom_bg), inak zakladateľ = founder.
@@ -1598,7 +1604,7 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
       is_trainer: (u.user_type==='trainer')||!!u.is_admin,
       is_founder: !!u.is_founder, is_admin_profile: !!u.is_admin,
       taught_group_hours: u.taught_group_hours||0, taught_private_hours: u.taught_private_hours||0,
-      months_member: memberMonths, joined: (u.created_at||'').slice(0,10),
+      months_member: memberMonths, joined: joinedDate,
       achievements: ach, earned_count: earned.length, total_count: ach.length,
       bg_tier: bgTier, next_bg: nextBg, name_badge: nameBadge,
       can_custom_bg: canCustomBg, custom_bg: u.custom_bg||'',
