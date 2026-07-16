@@ -108,6 +108,7 @@ const db = {
   payouts:      new Datastore({ filename: path.join(DATA_DIR, 'payouts.db'),     autoload: true }),
   refunds:      new Datastore({ filename: path.join(DATA_DIR, 'refunds.db'),     autoload: true }),
   promo_codes:  new Datastore({ filename: path.join(DATA_DIR, 'promo_codes.db'), autoload: true }),
+  crm_tasks:    new Datastore({ filename: path.join(DATA_DIR, 'crm_tasks.db'),    autoload: true }),
   promo_redemptions:new Datastore({ filename: path.join(DATA_DIR, 'promo_redemptions.db'),autoload: true }),
   feed:         new Datastore({ filename: path.join(DATA_DIR, 'feed.db'),        autoload: true }),
   friends:      new Datastore({ filename: path.join(DATA_DIR, 'friends.db'),      autoload: true }),
@@ -5317,6 +5318,68 @@ app.post('/api/classes/:id/instructor', trainerAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ── CRM úlohy (follow-upy na leadov/klientov) ─────────────────────────────────
+function taskView(t, uMap){
+  const days = t.due_date ? Math.floor((new Date(t.due_date+'T00:00:00')-new Date(today()+'T00:00:00'))/86400000) : null;
+  return { id:t._id, title:t.title, note:t.note||'', client_id:t.client_id||null,
+    client_name:t.client_id?(uMap[t.client_id]?.name||t.client_name||'—'):(t.client_name||''),
+    assigned_to:t.assigned_to||null, assigned_name:t.assigned_to?(uMap[t.assigned_to]?.name||'—'):'—',
+    due_date:t.due_date||null, days, status:t.status||'open', created_at:t.created_at, done_at:t.done_at,
+    created_by_name:t.created_by?(uMap[t.created_by]?.name||''):'' };
+}
+app.get('/api/crm/tasks', trainerAuth, async(req,res)=>{
+  try {
+    const me = req.trainerUser;
+    const q0 = {};
+    if(!me.is_admin) q0.assigned_to = me._id;            // tréner vidí len svoje
+    else if(req.query.assigned) q0.assigned_to = req.query.assigned;
+    let tasks = await q.find(db.crm_tasks, q0);
+    const uMap = Object.fromEntries((await q.find(db.users,{})).map(u=>[u._id,u]));
+    const td = today();
+    const in7 = new Date(Date.now()+7*864e5).toISOString().slice(0,10);
+    const rows = tasks.map(t=>taskView(t,uMap));
+    const open = rows.filter(t=>t.status!=='done');
+    const groups = {
+      overdue: open.filter(t=>t.due_date && t.due_date < td).sort((a,b)=>(a.due_date||'').localeCompare(b.due_date)),
+      today:   open.filter(t=>t.due_date===td),
+      next7:   open.filter(t=>t.due_date && t.due_date>td && t.due_date<=in7).sort((a,b)=>(a.due_date||'').localeCompare(b.due_date)),
+      later:   open.filter(t=>!t.due_date || t.due_date>in7),
+      done:    rows.filter(t=>t.status==='done').sort((a,b)=>(b.done_at||b.created_at||'').localeCompare(a.done_at||a.created_at||'')).slice(0,50),
+    };
+    res.json({ ...groups, counts:{ overdue:groups.overdue.length, today:groups.today.length, open:open.length } });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/crm/tasks', trainerAuth, async(req,res)=>{
+  try {
+    const {title, client_id, assigned_to, due_date, note} = req.body;
+    if(!title || !title.trim()) return res.status(400).json({error:'Zadaj názov úlohy'});
+    const client = client_id ? await q.one(db.users,{_id:client_id}) : null;
+    const t = await q.insert(db.crm_tasks,{ title:title.trim(), note:(note||'').slice(0,1000),
+      client_id:client?client._id:null, client_name:client?client.name:'',
+      assigned_to:assigned_to||req.trainerUser._id, due_date:/^\d{4}-\d{2}-\d{2}$/.test(due_date||'')?due_date:null,
+      status:'open', created_by:req.trainerUser._id, created_at:nowISO() });
+    if(t.assigned_to && t.assigned_to!==req.trainerUser._id)
+      await q.insert(db.notifications,{user_id:t.assigned_to,type:'task',title:'🗒️ Nová úloha',body:`${t.title}${client?' · '+client.name:''}${t.due_date?' · do '+t.due_date:''}`,read:false,created_at:nowISO()}).catch(()=>{});
+    res.json({ ok:true, id:t._id });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+app.put('/api/crm/tasks/:id', trainerAuth, async(req,res)=>{
+  try {
+    const t = await q.one(db.crm_tasks,{_id:req.params.id}); if(!t) return res.status(404).json({error:'Nenájdené'});
+    const set={};
+    if(req.body.status==='done'){ set.status='done'; set.done_at=nowISO(); }
+    if(req.body.status==='open'){ set.status='open'; set.done_at=null; }
+    for(const k of ['title','note','due_date']) if(req.body[k]!==undefined) set[k]=req.body[k];
+    if(req.body.assigned_to!==undefined) set.assigned_to=req.body.assigned_to;
+    await q.update(db.crm_tasks,{_id:t._id},{$set:set});
+    res.json({ ok:true });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+app.delete('/api/crm/tasks/:id', trainerAuth, async(req,res)=>{
+  await q.remove(db.crm_tasks,{_id:req.params.id});
+  res.json({ ok:true });
+});
+
 // Prehľad zárobkov trénera (vlastných) — s filtrom obdobia + rozpis za čo koľko
 // Súčet affiliate provízií (z MLM línie) trénera za daný mesiac
 async function affiliateCommissionFor(userId, month){
@@ -7389,6 +7452,18 @@ async function runDailyJobs(){
   try { await runAchievementsDaily(); } catch(e){ console.error('Achievements daily error:', e.message); }
   // ── 6e. Meniny/narodeniny priateľov (týždeň dopredu + deň pred) ────────────
   try { await runFriendEventsDaily(); } catch(e){ console.error('Friend events error:', e.message); }
+
+  // ── 6f. Pripomienky CRM úloh so splatnosťou dnes (priradenému) ─────────────
+  try {
+    const dueToday = (await q.find(db.crm_tasks,{status:{$ne:'done'}})).filter(t=>t.due_date===todayStr);
+    for(const t of dueToday){
+      if(!t.assigned_to) continue;
+      const already = await q.one(db.notifications,{user_id:t.assigned_to, type:'task_due', ref_id:t._id, created_at:{$gte:todayStr}});
+      if(already) continue;
+      await q.insert(db.notifications,{user_id:t.assigned_to, type:'task_due', ref_id:t._id,
+        title:'⏰ Úloha na dnes', body:`${t.title}${t.client_name?' · '+t.client_name:''}`, read:false, created_at:nowISO()});
+    }
+  } catch(e){ console.error('Task reminders error:', e.message); }
 
   // ── 7. Admin alerts (anomaly detection) ───────────────────────────────────
   try { await runAdminAlerts(); } catch(e){ console.error('Admin alerts error:', e.message); }
