@@ -173,8 +173,8 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
           <li><i class="fas fa-times cross"></i>F1 kokteil zahrnutý</li>
         </ul>
         <div style="display:flex;flex-direction:column;gap:8px">
-          <button class="btn-plan btn-plan-outline" onclick="openSubscribeModal('bronze','🥉 Bronze','50')">🔄 Prihlásiť na odber</button>
-          <button style="background:none;border:none;color:#888;font-size:.8rem;cursor:pointer;padding:4px" onclick="openBuyModal('bronze','🥉 Bronze','50')">Jednorazová platba</button>
+          <button class="btn-plan btn-plan-outline" onclick="chooseBronze('sub')">🔄 Prihlásiť na odber</button>
+          <button style="background:none;border:none;color:#888;font-size:.8rem;cursor:pointer;padding:4px" onclick="chooseBronze('buy')">Jednorazová platba</button>
         </div>
       </div>
 
@@ -620,6 +620,28 @@ let _stripeEnabled = false;
 // ── Subscribe modal ───────────────────────────────────────────────────────────
 let _subPlanId = null;
 
+// Bronze výber → najprv ponúkni Silver za cenu Bronze (ak je oprávnená)
+let _bronzeMode = null;
+function bronzeProceed(){
+  if(_bronzeMode==='sub') openSubscribeModal('bronze','🥉 Bronze','50');
+  else openBuyModal('bronze','🥉 Bronze','50');
+}
+function chooseBronze(mode){
+  _bronzeMode = mode;
+  // Neprihlásená, alebo už využila skúšku, alebo už má Silver/Gold → bez upsellu
+  const m = _pricingMe && _pricingMe.membership;
+  const hasHigher = m && (m.plan_id==='silver' || m.plan_id==='gold');
+  if(!_pricingMe || _pricingMe.silver_trial_used || hasHigher){ bronzeProceed(); return; }
+  document.getElementById('upsellModal').style.display='flex';
+}
+async function upsellChoose(want){
+  document.getElementById('upsellModal').style.display='none';
+  try { await fetch('/api/membership/upsell-intent',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({want})}); }
+  catch(e){}
+  bronzeProceed();
+}
+window.chooseBronze=chooseBronze; window.upsellChoose=upsellChoose;
+
 function openSubscribeModal(planId, planName, price){
   if(!_pricingMe){ window.location.href='/?buy='+planId; return; }
   _subPlanId = planId;
@@ -802,6 +824,32 @@ async function confirmBuy(){
   btn.disabled=false;
 }
 </script>
+
+<!-- BRONZE → SILVER UPSELL MODAL -->
+<div id="upsellModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:1002;align-items:center;justify-content:center">
+  <div style="background:#1a1a1a;border:1px solid rgba(201,168,76,.55);border-radius:1.2rem;padding:1.8rem;max-width:440px;width:92%;position:relative;max-height:92vh;overflow-y:auto">
+    <button onclick="document.getElementById('upsellModal').style.display='none'" style="position:absolute;top:12px;right:14px;background:none;border:none;color:#888;font-size:1.3rem;cursor:pointer">✕</button>
+    <div style="text-align:center;margin-bottom:1rem">
+      <div style="font-size:2rem">🥈</div>
+      <div style="font-size:1.25rem;font-weight:800;color:#F5EDD6;margin-top:6px">Nechceš radšej Silver?</div>
+      <div style="color:#C9A84C;font-size:.9rem;margin-top:4px;font-weight:700">Náš najobľúbenejší program 💛</div>
+    </div>
+    <p style="color:#cfc7b5;font-size:.92rem;line-height:1.5;margin:0 0 12px">
+      Väčšina žien u nás volí <b>Silver</b> — a je za tým dôvod. S Bronze by ti totiž ušli veci, ktoré robia z tanca <b>skutočnú premenu</b>:
+    </p>
+    <ul style="list-style:none;padding:0;margin:0 0 14px;color:#e7dfce;font-size:.9rem">
+      <li style="display:flex;gap:8px;margin:7px 0"><span>📊</span><span><b>Metabolická analýza tela</b> — prestaneš hádať a začneš vidieť, či páliš tuk a nie sval</span></li>
+      <li style="display:flex;gap:8px;margin:7px 0"><span>💻</span><span><b>Online hodiny LIVE</b> — zacvičíš si aj z domu, keď nestíhaš prísť do štúdia</span></li>
+      <li style="display:flex;gap:8px;margin:7px 0"><span>🔥</span><span>Presne tá <b>konzistencia</b>, ktorá robí výsledky — nič nevynecháš</span></li>
+    </ul>
+    <div style="background:linear-gradient(160deg,#231d0e,#171717);border:1px solid rgba(201,168,76,.4);border-radius:14px;padding:14px;text-align:center;margin-bottom:14px">
+      <div style="font-size:1.02rem;font-weight:800;color:#E7C878">🎁 Prvý mesiac Silver za cenu Bronze</div>
+      <div style="color:#cfc7b5;font-size:.85rem;margin-top:6px">Zaplatíš len <b>50 €</b>, no dostaneš plný <b>Silver</b>. Silver (75 €) sa ti začne účtovať až od <b>ďalšieho obnovenia</b>. Nič teraz nedoplácaš.</div>
+    </div>
+    <button id="upsellYesBtn" onclick="upsellChoose(true)" style="display:block;width:100%;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;font-weight:800;border:none;border-radius:14px;padding:14px;font-size:1rem;cursor:pointer;margin-bottom:9px">✨ Áno, chcem Silver za cenu Bronze</button>
+    <button onclick="upsellChoose(false)" style="display:block;width:100%;background:none;border:1px solid #3a3a3a;color:#9a9a9a;border-radius:12px;padding:11px;font-size:.88rem;cursor:pointer">Nie, stačí mi Bronze</button>
+  </div>
+</div>
 
 <!-- SUBSCRIBE MODAL -->
 <div id="subModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1001;align-items:center;justify-content:center">

@@ -3229,6 +3229,27 @@ async function activateMembership(userId, planId, durationDays){
       await q.insert(db.notifications,{user_id:u.sponsor_id,type:'referral_credit',title:`+${bonus} € referral kredit! 💰`,body:`${u.name} zakúpil/a ${plan.name}. Zostatok: ${newCredit} €`,read:false,created_at:nowISO()});
     }
   }
+
+  // ── Bronze upsell: ak si zvolila „prvý mesiac Silver za cenu Bronze" ─────────
+  if(planId==='bronze'){
+    const bu = await q.one(db.users,{_id:userId});
+    if(bu && bu.pending_silver_upsell && !bu.silver_trial_used){
+      const m2 = await q.one(db.memberships,{user_id:userId,status:'active'});
+      if(m2 && m2.plan_id==='bronze'){
+        await q.update(db.memberships,{_id:m2._id},{$set:{plan_id:'silver',plan_name:'Silver',trial:true,trial_from:'bronze',renew_to:'silver',trial_started:nowISO()}});
+        await q.update(db.users,{_id:userId},{$set:{membership_plan:'silver',silver_trial_used:true,pending_silver_upsell:false}});
+        cancelSequence(userId,'bronze_upsell').catch(()=>{});
+        const until=(m2.expires_at||'').slice(0,10);
+        await q.insert(db.notifications,{user_id:userId,type:'membership',title:'✨ Máš Silver za cenu Bronze!',body:`Prvý mesiac máš Silver — odomknuté online hodiny LIVE aj metabolická analýza tela. Silver sa začne účtovať až od ďalšieho obnovenia.`,read:false,created_at:nowISO()}).catch(()=>{});
+        if(bu.email) sendMail(bu.email,'✨ Máš Silver za cenu Bronze!',
+          emailTemplate('Prvý mesiac Silver – za cenu Bronze 🎁',
+            `<p>Ahoj <b>${bu.name}</b>,</p><p>Rozhodla si sa dobre! 💛 Zaplatila si cenu Bronze, ale <b>prvý mesiac máš členstvo Silver</b> — s odomknutou <b>metabolickou analýzou tela</b> aj <b>online hodinami LIVE</b> (do <b>${until}</b>).</p><p>Silver sa ti začne účtovať až od <b>najbližšieho obnovenia</b> — dovtedy nič nedoplácaš. Užívaj si to naplno! 💃</p>`,
+            '📱 Objednať analýzu', `${APP_URL}/client-dashboard`)).catch(()=>{});
+      }
+    } else if(bu && bu.pending_silver_upsell){
+      await q.update(db.users,{_id:userId},{$set:{pending_silver_upsell:false}}); // vyčisti nevyužitý flag
+    }
+  }
 }
 
 async function checkMembership(userId){
@@ -3502,6 +3523,18 @@ app.post('/api/membership/try-silver', auth, async(req,res)=>{
         `<p>Ahoj <b>${u.name}</b>,</p><p>Práve sme ti <b>aktivovali členstvo Silver</b> — a to <b>úplne zadarmo</b> do konca tvojho aktuálneho obdobia (<b>${until}</b>).</p><p>Odteraz máš odomknutú <b>metabolickú analýzu tela</b> aj <b>online hodiny LIVE</b>. Vyskúšaj si to naplno! 💪</p><p>Silver sa ti začne účtovať až od <b>najbližšieho obnovenia</b> členstva — dovtedy nič nedoplácaš.</p>`,
         '📱 Objednať analýzu', `${APP_URL}/client-dashboard`)).catch(()=>{});
     res.json({ ok:true, until });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Zvolenie „prvý mesiac Silver za cenu Bronze" pred kúpou Bronzu.
+// Nastaví príznak; po aktivácii Bronzu ho activateMembership premení na Silver-skúšku.
+app.post('/api/membership/upsell-intent', auth, async(req,res)=>{
+  try {
+    const want = !!req.body.want;
+    const u = await q.one(db.users,{_id:req.session.uid});
+    if(want && u.silver_trial_used) return res.json({ok:false, error:'trial_used'});
+    await q.update(db.users,{_id:req.session.uid},{$set:{pending_silver_upsell:want}});
+    res.json({ok:true, pending:want});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -7476,19 +7509,69 @@ async function sendLeadOffer(u, percent, stage){
   if(u.email) await sendMail(u.email, subj, emailTemplate(subj.replace(/^[^\w]*/,''), body, 'Uplatniť zľavu', `${APP_URL}/pricing`)).catch(()=>{});
   await q.insert(db.notifications,{user_id:u._id,type:'offer',title:`🎁 ${percent}% zľava — len 24 h!`,body:`Kód ${code} na prvý mesiac členstva. Platí len do zajtra!`,read:false,created_at:nowISO()}).catch(()=>{});
 }
+// Motivačná sekvencia PRED absolvovaním hodiny zdarma — pozýva leada prísť
+// na svoju prvú (bezplatnú) hodinu. Bez zľavových kódov, len povzbudenie.
+async function sendFreeClassNudge(u, stage){
+  const bookedBefore = !!u.lead_fc_at;
+  let subj, body;
+  if(!bookedBefore){
+    subj = `${u.name}, tvoja prvá hodina je zadarmo 💃 Kedy prídeš?`;
+    body = `<p>Ahoj <b>${u.name}</b>,</p>
+      <p>tešíme sa, že si tu! Máš u nás <b>prvú hodinu úplne zadarmo</b> — bez záväzkov, len ty a hudba. 🎶</p>
+      <p>Nemusíš nič vedieť dopredu, nemusíš mať „postavu na tanec". Príď v čomkoľvek pohodlnom a zvyšok necháme na parket. 💛</p>
+      <p>Vyber si termín, ktorý ti sadne — a uvidíme sa!</p>`;
+  } else if(stage<=2){
+    subj = `Ešte si neprišla na hodinu zdarma? Držíme ti miesto 🙌`;
+    body = `<p>Ahoj <b>${u.name}</b>,</p>
+      <p>tvoja <b>hodina zdarma stále čaká</b> — a s ňou aj partia žien, ktoré presne ako ty raz spravili ten prvý krok.</p>
+      <div style="background:#141414;border-left:3px solid #C9A84C;padding:12px 14px;margin:14px 0;border-radius:8px;color:#ddd"><p style="margin:0 0 6px"><b>Beátka</b> tiež váhala. Dnes je o <b>17 kg ľahšia</b> a hovorí:</p><p style="margin:0;font-style:italic;color:#bbb">„Odchádzam sama so sebou tak, ako som sa nevidela 15 rokov."</p><p style="margin:6px 0 0;font-size:.85em;color:#999">Všetko sa to začalo jednou hodinou.</p></div>
+      <p>Ten najťažší krok je prísť prvýkrát. My sa postaráme o zvyšok.</p>`;
+  } else {
+    subj = `${u.name}, prvý tanec je stále na nás 💃`;
+    body = `<p>Ahoj <b>${u.name}</b>,</p>
+      <p>nechceme na teba tlačiť — len ti chceme pripomenúť, že <b>tvoja hodina zdarma nikam neutečie</b>. Kedykoľvek budeš pripravená, miesto na parkete ti držíme.</p>
+      <p>Stačí si vybrať termín. 🎶</p>`;
+  }
+  body += `<p style="font-size:.78rem;color:#888;margin-top:18px">Nechceš dostávať tieto e-maily? Vypni si ich vo svojom profile v aplikácii.</p>`;
+  if(u.email) await sendMail(u.email, subj, emailTemplate(subj.replace(/^[^\w]*/,''), body, '🗓️ Vybrať termín hodiny zdarma', `${APP_URL}/schedule`)).catch(()=>{});
+  await q.insert(db.notifications,{user_id:u._id,type:'freeclass_nudge',title:'💃 Tvoja hodina zdarma čaká',body:'Vyber si termín a príď — prvá hodina je na nás.',read:false,created_at:nowISO()}).catch(()=>{});
+}
+
 async function runLeadOffers(){
   const todayStr2 = today();
   const daysAgo = n => new Date(Date.now()-n*864e5).toISOString().slice(0,10);
   const leads = await q.find(db.users,{user_type:'lead', is_admin:{$ne:true}, active:{$ne:false}});
   for(const u of leads){
     if(!u.email || u.offers_optout) continue;
-    if(await q.one(db.memberships,{user_id:u._id, status:'active'})) continue; // už kúpil
+    if(await q.one(db.memberships,{user_id:u._id, status:'active'})) continue; // už kúpil členstvo
+
+    // ── FÁZA A: ešte nebola na hodine zdarma → motivuj ju prísť ──────────────
+    if(!u.free_class_used){
+      const fcStage = u.lead_fc_stage||0;
+      const last = (u.lead_fc_at||u.created_at||'').slice(0,10);
+      let sendFc=false, nextFc=fcStage;
+      if(fcStage===0){ if((u.created_at||'').slice(0,10) <= daysAgo(1)){ sendFc=true; nextFc=1; } }   // +1 deň
+      else if(fcStage===1){ if(last <= daysAgo(3)){ sendFc=true; nextFc=2; } }                          // +3 dni
+      else if(fcStage===2){ if(last <= daysAgo(7)){ sendFc=true; nextFc=3; } }                          // +týždeň
+      else { if(last <= daysAgo(14)){ sendFc=true; nextFc=fcStage+1; } }                                // potom každé 2 týždne
+      if(sendFc){
+        try { await sendFreeClassNudge(u, fcStage); await q.update(db.users,{_id:u._id},{$set:{lead_fc_stage:nextFc, lead_fc_at:todayStr2}}); }
+        catch(e){ console.error('Free-class nudge error:', e.message); }
+      }
+      continue; // kým nepríde na hodinu zdarma, žiadne zľavy
+    }
+
+    // ── FÁZA B: hodinu zdarma už absolvovala → eskalujúce zľavové ponuky ──────
+    if(!u.lead_offer_anchor){ // začni 48 h odpočet od momentu, keď zistíme absolvovanú hodinu
+      await q.update(db.users,{_id:u._id},{$set:{lead_offer_anchor:todayStr2}}); continue;
+    }
     const stage = u.lead_offer_stage||0;
-    const last = (u.lead_offer_at||u.created_at||'').slice(0,10);
+    const anchor = u.lead_offer_anchor.slice(0,10);
+    const last = (u.lead_offer_at||anchor).slice(0,10);
     let send=null, nextStage=stage;
-    if(stage===0){ if((u.created_at||'').slice(0,10) <= daysAgo(2)){ send=20; nextStage=1; } }        // 48 h
-    else if(stage===1){ if(last <= daysAgo(7)){ send=50; nextStage=2; } }                               // +1 týždeň
-    else { if(last <= daysAgo(14)){ send=50; nextStage=stage+1; } }                                     // potom každé 2 týždne
+    if(stage===0){ if(anchor <= daysAgo(2)){ send=20; nextStage=1; } }        // 48 h po hodine zdarma
+    else if(stage===1){ if(last <= daysAgo(7)){ send=50; nextStage=2; } }      // +1 týždeň
+    else { if(last <= daysAgo(14)){ send=50; nextStage=stage+1; } }            // potom každé 2 týždne
     if(send!=null){
       try { await sendLeadOffer(u, send, nextStage); await q.update(db.users,{_id:u._id},{$set:{lead_offer_stage:nextStage, lead_offer_at:todayStr2}}); }
       catch(e){ console.error('Lead offer error:', e.message); }
