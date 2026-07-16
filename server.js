@@ -17,6 +17,7 @@ const bcrypt    = require('bcryptjs');
 const Datastore = require('@seald-io/nedb');
 const path      = require('path');
 const fs        = require('fs');
+const { generatePlan: generateMealPlan } = require('./mealplan');
 
 // ─── PayPal Config ────────────────────────────────────────────────────────────
 const PAYPAL_CLIENT_ID     = process.env.PAYPAL_CLIENT_ID     || '';
@@ -117,6 +118,7 @@ const db = {
   profile_comments:new Datastore({ filename: path.join(DATA_DIR, 'profile_comments.db'),autoload: true }),
   tickets:      new Datastore({ filename: path.join(DATA_DIR, 'tickets.db'),      autoload: true }),
   ticket_msgs:  new Datastore({ filename: path.join(DATA_DIR, 'ticket_msgs.db'),  autoload: true }),
+  meal_plans:   new Datastore({ filename: path.join(DATA_DIR, 'meal_plans.db'),   autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -3535,6 +3537,47 @@ app.post('/api/membership/upsell-intent', auth, async(req,res)=>{
     if(want && u.silver_trial_used) return res.json({ok:false, error:'trial_used'});
     await q.update(db.users,{_id:req.session.uid},{$set:{pending_silver_upsell:want}});
     res.json({ok:true, pending:want});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Jedálniček na mieru (Gold benefit) ──────────────────────────────────────
+// Vráti uložený profil + posledný vygenerovaný plán klientky.
+app.get('/api/meal-plan', auth, async(req,res)=>{
+  try {
+    const rec = await q.one(db.meal_plans,{user_id:req.session.uid});
+    const m = await checkMembership(req.session.uid);
+    const isGold = m && m.status==='active' && m.plan_id==='gold';
+    res.json({ ok:true, gold:!!isGold, profile: rec?.profile||null, plan: rec?.plan||null });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Uloží profil a vygeneruje nový 7-dňový jedálniček. Len pre Gold členky.
+app.post('/api/meal-plan/generate', auth, async(req,res)=>{
+  try {
+    const m = await checkMembership(req.session.uid);
+    if(!(m && m.status==='active' && m.plan_id==='gold'))
+      return res.status(403).json({error:'not_gold'});
+    const b = req.body||{};
+    const profile = {
+      gender: b.gender||'zena',
+      age: Math.max(14, Math.min(90, +b.age||30)),
+      height_cm: Math.max(130, Math.min(210, +b.height_cm||165)),
+      weight_kg: Math.max(35, Math.min(200, +b.weight_kg||65)),
+      goal: b.goal||'chudnutie',
+      activity: b.activity||'stredna',
+      meals_per_day: [3,4,5].includes(+b.meals_per_day) ? +b.meals_per_day : 4,
+      diet: b.diet||'bezna',
+      allergens: Array.isArray(b.allergens) ? b.allergens.slice(0,20).map(x=>String(x).slice(0,30)) : [],
+      likes: String(b.likes||'').slice(0,500),
+      dislikes: String(b.dislikes||'').slice(0,500),
+      include_f1: !!b.include_f1,
+      updated_at: nowISO()
+    };
+    const plan = generateMealPlan(profile);
+    const existing = await q.one(db.meal_plans,{user_id:req.session.uid});
+    if(existing) await q.update(db.meal_plans,{_id:existing._id},{$set:{profile, plan, updated_at:nowISO()}});
+    else await q.insert(db.meal_plans,{user_id:req.session.uid, profile, plan, created_at:nowISO(), updated_at:nowISO()});
+    res.json({ ok:true, profile, plan });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -7011,6 +7054,7 @@ const WEB_URL = 'https://latindancefusion.art';
   app.get(p,(req,res)=>res.redirect(301, WEB_URL));
 });
 app.get('/client-dashboard',(req,res)=>res.sendFile(path.join(__dirname,'public','client-dashboard.html')));
+app.get('/jedalnicek',(req,res)=>res.sendFile(path.join(__dirname,'public','jedalnicek.html')));
 // ── Referral redirect ─────────────────────────────────────────────────────────
 app.get('/r/:code', async(req,res)=>{
   const code = req.params.code?.toUpperCase();

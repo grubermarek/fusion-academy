@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jedálniček na mieru – Fusion Academy</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<style>
+  :root{--gold:#C9A84C;--gold2:#E7C878;--bg:#0f0f0f;--card:#171717;--card2:#1e1e1e;--cream:#F5EDD6;--muted:#9a9a9a;--border:#262626;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--cream);font-family:'Manrope',system-ui,Arial,sans-serif;line-height:1.55;}
+  .wrap{max-width:760px;margin:0 auto;padding:20px 16px 70px;}
+  .back{display:inline-flex;align-items:center;gap:6px;color:var(--muted);text-decoration:none;font-size:.85rem;margin-bottom:16px;}
+  h1{font-size:1.5rem;margin:.2rem 0 .3rem;}
+  .lead{color:var(--muted);font-size:.95rem;margin-bottom:20px;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px;margin-bottom:16px;}
+  label{display:block;font-size:.82rem;color:var(--muted);margin:12px 0 5px;font-weight:600;}
+  input[type=number],input[type=text],select,textarea{width:100%;background:#0d0d0d;border:1px solid #333;border-radius:10px;color:var(--cream);padding:11px 12px;font-size:.95rem;font-family:inherit;}
+  textarea{resize:vertical;min-height:52px;}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+  .seg{display:flex;flex-wrap:wrap;gap:8px;margin-top:5px;}
+  .seg button{flex:1;min-width:90px;background:#0d0d0d;border:1px solid #333;color:var(--cream);border-radius:10px;padding:10px;font-size:.88rem;cursor:pointer;font-family:inherit;transition:.15s;}
+  .seg button.active{background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;border-color:transparent;font-weight:800;}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;}
+  .chip{background:#0d0d0d;border:1px solid #333;color:var(--cream);border-radius:20px;padding:8px 13px;font-size:.85rem;cursor:pointer;user-select:none;transition:.15s;}
+  .chip.on{background:#2a2410;border-color:var(--gold);color:var(--gold2);font-weight:700;}
+  .cta{display:block;width:100%;text-align:center;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;font-weight:800;border:none;border-radius:14px;padding:15px;font-size:1rem;cursor:pointer;font-family:inherit;margin-top:18px;}
+  .cta:disabled{opacity:.6;cursor:default;}
+  .cta.secondary{background:none;border:1px solid #3a3a3a;color:var(--cream);}
+  .hidden{display:none;}
+  /* targets */
+  .targets{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+  .tbox{flex:1;min-width:120px;background:linear-gradient(160deg,#231d0e,#171717);border:1px solid rgba(201,168,76,.35);border-radius:14px;padding:12px 14px;text-align:center;}
+  .tbox .n{font-size:1.4rem;font-weight:800;color:var(--gold2);}
+  .tbox .l{font-size:.75rem;color:var(--muted);}
+  /* day */
+  .day{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:12px;}
+  .day h3{margin:0 0 8px;font-size:1.02rem;color:var(--gold);display:flex;justify-content:space-between;align-items:baseline;}
+  .day h3 small{color:var(--muted);font-size:.75rem;font-weight:500;}
+  .meal{display:flex;gap:10px;padding:8px 0;border-top:1px solid #222;}
+  .meal:first-of-type{border-top:none;}
+  .meal .slot{flex:0 0 78px;font-size:.72rem;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;padding-top:2px;font-weight:700;}
+  .meal .body{flex:1;}
+  .meal .mn{font-weight:600;font-size:.92rem;}
+  .meal .md{font-size:.8rem;color:var(--muted);}
+  .meal .mk{flex:0 0 auto;font-size:.78rem;color:#c9a84c;align-self:flex-start;white-space:nowrap;}
+  .locked-box{text-align:center;padding:26px 18px;}
+  .locked-box .ic{font-size:3rem;}
+  .msg{font-size:.85rem;margin-top:10px;text-align:center;}
+  @media(max-width:520px){.row,.row3{grid-template-columns:1fr 1fr;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/client-dashboard"><i class="bi bi-arrow-left"></i> Späť na dashboard</a>
+  <div id="root"><div style="text-align:center;color:var(--muted);padding:40px">Načítavam…</div></div>
+</div>
+
+<script>
+const BLOG='https://latindancefusion.art/blog';
+let ME_PROFILE=null, ME_PLAN=null, IS_GOLD=false;
+const state={ gender:'zena', goal:'chudnutie', activity:'stredna', meals_per_day:4, diet:'bezna', allergens:[], include_f1:true };
+const ALLERGENS=[['lepok','Lepok'],['laktoza','Laktóza'],['orechy','Orechy'],['vajcia','Vajcia'],['soja','Sója'],['ryby','Ryby / morské plody']];
+
+async function api(url,opts){ try{ const r=await fetch(url,Object.assign({credentials:'include',headers:{'Content-Type':'application/json'}},opts)); return await r.json(); }catch(e){ return null; } }
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+async function init(){
+  const d=await api('/api/meal-plan');
+  if(!d){ document.getElementById('root').innerHTML='<div class="card">Chyba pripojenia.</div>'; return; }
+  IS_GOLD=d.gold; ME_PROFILE=d.profile; ME_PLAN=d.plan;
+  if(!IS_GOLD){ renderLocked(); return; }
+  if(ME_PROFILE) Object.assign(state, ME_PROFILE, {allergens:ME_PROFILE.allergens||[]});
+  if(ME_PLAN) renderPlan(); else renderForm();
+}
+
+function renderLocked(){
+  document.getElementById('root').innerHTML=`
+    <div class="card locked-box">
+      <div class="ic">🥇</div>
+      <h1>Jedálniček na mieru</h1>
+      <p class="lead" style="margin:8px auto 4px;max-width:420px">Osobný jedálniček na celý týždeň — podľa tvojich údajov, chutí, alergénov a cieľa — je súčasťou <b>Gold</b> členstva (spolu s Herbalife F1 raňajkami).</p>
+      <a class="cta" style="max-width:320px;margin:18px auto 0" href="/unlock.html?f=gold">Odomknúť v Gold 🏆</a>
+      <a class="back" style="justify-content:center;margin-top:14px" href="${BLOG}/jedalnicek-na-mieru-zadarmo">📖 Ako funguje jedálniček na mieru →</a>
+    </div>`;
+}
+
+function segBtns(field, opts){
+  return `<div class="seg">${opts.map(([v,l])=>`<button type="button" data-f="${field}" data-v="${v}" class="${state[field]==v?'active':''}" onclick="pick('${field}','${v}')">${l}</button>`).join('')}</div>`;
+}
+window.pick=(f,v)=>{ state[f]= (f==='meals_per_day')? +v : v; renderForm(true); };
+window.toggleAll=(v)=>{ const i=state.allergens.indexOf(v); if(i>=0)state.allergens.splice(i,1); else state.allergens.push(v); renderForm(true); };
+
+function renderForm(keepValues){
+  if(keepValues) syncInputs();
+  document.getElementById('root').innerHTML=`
+    <h1>🥗 Jedálniček na mieru</h1>
+    <p class="lead">Vyplň svoje údaje a preferencie — pripravíme ti stravu na celý týždeň. Údaje si uložíme, takže nabudúce stačí prekliknúť.</p>
+    <div class="card">
+      <div class="row3">
+        <div><label>Vek</label><input type="number" id="age" value="${state.age||''}" placeholder="30" min="14" max="90"></div>
+        <div><label>Výška (cm)</label><input type="number" id="height_cm" value="${state.height_cm||''}" placeholder="165"></div>
+        <div><label>Váha (kg)</label><input type="number" id="weight_kg" value="${state.weight_kg||''}" placeholder="65"></div>
+      </div>
+      <label>Pohlavie</label>${segBtns('gender',[['zena','Žena'],['muz','Muž']])}
+      <label>Tvoj cieľ</label>${segBtns('goal',[['chudnutie','Schudnúť'],['udrzanie','Udržať sa'],['naberanie','Nabrať svaly']])}
+      <label>Aktivita (vrátane tréningov)</label>${segBtns('activity',[['nizka','Nízka'],['stredna','Stredná'],['vysoka','Vysoká']])}
+      <label>Počet jedál za deň</label>${segBtns('meals_per_day',[['3','3 jedlá'],['4','4 jedlá'],['5','5 jedál']])}
+      <label>Typ stravy</label>${segBtns('diet',[['bezna','Bežná'],['vegetarian','Vegetariánska'],['vegan','Vegánska'],['pescetarian','Pescetarián']])}
+    </div>
+
+    <div class="card">
+      <label style="margin-top:0">Alergény a intolerancie <span style="font-weight:400">(vyber, čomu sa vyhnúť)</span></label>
+      <div class="chips">${ALLERGENS.map(([v,l])=>`<div class="chip ${state.allergens.includes(v)?'on':''}" onclick="toggleAll('${v}')">${l}</div>`).join('')}</div>
+      <label>Aké jedlá máš rada? <span style="font-weight:400">(oddeľ čiarkou)</span></label>
+      <textarea id="likes" placeholder="napr. kuracie, losos, avokádo, ovsená kaša">${esc(state.likes||'')}</textarea>
+      <label>Čo nemáš rada / vynechať?</label>
+      <textarea id="dislikes" placeholder="napr. tofu, brokolica, huby">${esc(state.dislikes||'')}</textarea>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:14px">
+        <input type="checkbox" id="include_f1" ${state.include_f1?'checked':''} style="width:18px;height:18px;accent-color:var(--gold)">
+        <span style="color:var(--cream);font-weight:600">Zaradiť Herbalife F1 kokteil do raňajok 🥤</span>
+      </label>
+    </div>
+    <button class="cta" id="genBtn" onclick="generate()">✨ Vygenerovať jedálniček na týždeň</button>
+    <div class="msg" id="msg"></div>`;
+}
+
+function syncInputs(){
+  ['age','height_cm','weight_kg','likes','dislikes'].forEach(id=>{ const el=document.getElementById(id); if(el) state[id]= (id==='likes'||id==='dislikes')? el.value : (+el.value||el.value); });
+  const f1=document.getElementById('include_f1'); if(f1) state.include_f1=f1.checked;
+}
+
+async function generate(){
+  syncInputs();
+  const btn=document.getElementById('genBtn'), msg=document.getElementById('msg');
+  if(!state.age||!state.height_cm||!state.weight_kg){ msg.style.color='#e57373'; msg.textContent='Vyplň vek, výšku a váhu.'; return; }
+  btn.disabled=true; btn.textContent='⏳ Zostavujem tvoj jedálniček…'; msg.textContent='';
+  const d=await api('/api/meal-plan/generate',{method:'POST',body:JSON.stringify(state)});
+  if(d&&d.ok){ ME_PLAN=d.plan; ME_PROFILE=d.profile; renderPlan(); window.scrollTo({top:0,behavior:'smooth'}); return; }
+  btn.disabled=false; btn.textContent='✨ Vygenerovať jedálniček na týždeň';
+  msg.style.color='#e57373'; msg.textContent = d&&d.error==='not_gold' ? 'Jedálniček je súčasťou Gold členstva.' : 'Nepodarilo sa vygenerovať. Skús znova.';
+}
+
+function renderPlan(){
+  const t=ME_PLAN.targets;
+  const days=ME_PLAN.week.map(dw=>`
+    <div class="day">
+      <h3>${dw.day} <small>${dw.total_kcal} kcal · ${dw.total_protein} g bielkovín</small></h3>
+      ${dw.items.map(m=>`<div class="meal"><div class="slot">${esc(m.slot_label)}</div><div class="body"><div class="mn">${esc(m.name)}</div><div class="md">${esc(m.desc)}</div></div><div class="mk">${m.kcal} kcal</div></div>`).join('')}
+    </div>`).join('');
+  document.getElementById('root').innerHTML=`
+    <h1>🥗 Tvoj jedálniček na týždeň</h1>
+    <p class="lead">Zostavený podľa tvojich údajov a preferencií. Porcie prispôsob svojej chuti a hladu.</p>
+    <div class="targets">
+      <div class="tbox"><div class="n">${t.kcal}</div><div class="l">cieľ kcal / deň</div></div>
+      <div class="tbox"><div class="n">${t.protein} g</div><div class="l">bielkoviny / deň</div></div>
+      <div class="tbox"><div class="n">${ME_PLAN.meals_per_day}</div><div class="l">jedál / deň</div></div>
+    </div>
+    ${days}
+    <div class="card" style="font-size:.8rem;color:var(--muted)">${esc(ME_PLAN.note)}</div>
+    <button class="cta" onclick="generate()">🔄 Pregenerovať (iné jedlá)</button>
+    <button class="cta secondary" onclick="renderForm()">✏️ Upraviť moje údaje</button>`;
+}
+
+init();
+</script>
+</body>
+</html>
