@@ -4549,7 +4549,7 @@ async function stripeApi(path, params, method='POST'){
 app.post('/api/stripe/checkout', auth, async(req,res)=>{
   try {
     if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
-    const { plan_id, for_child_id } = req.body;
+    const { plan_id, for_child_id, promo_code } = req.body;
     const plan = MEMBERSHIP_PLANS[plan_id];
     if(!plan) return res.status(400).json({error:'Neplatný plán'});
     const u = await q.one(db.users,{_id:req.session.uid});
@@ -4559,13 +4559,21 @@ app.post('/api/stripe/checkout', auth, async(req,res)=>{
       if(!child || child.parent_id !== req.session.uid || child.active===false) return res.status(403).json({error:'Neplatný detský profil'});
       memberId = child._id; childName = child.name;
     }
+    // Promo kód → zľava z ceny plánu
+    let price = plan.price, promoCode = null, promoDiscount = 0;
+    if(promo_code){
+      const v = await validatePromo(promo_code, plan.price, req.session.uid);
+      if(!v.ok) return res.status(400).json({error:'Promo kód: '+v.reason});
+      price = v.final; promoCode = v.promo.code; promoDiscount = v.discount;
+    }
+    if(price <= 0) return res.status(400).json({error:'Cena po zľave je 0 € — použi tlačidlo „Aktivovať zľavou" bez karty'});
     const base = APP_URL;
     const params = {
       'mode':'payment',
       'line_items[0][quantity]':1,
       'line_items[0][price_data][currency]':'eur',
-      'line_items[0][price_data][unit_amount]':Math.round(plan.price*100),
-      'line_items[0][price_data][product_data][name]':`Členstvo ${plan.name}${childName?' – '+childName:''}`,
+      'line_items[0][price_data][unit_amount]':Math.round(price*100),
+      'line_items[0][price_data][product_data][name]':`Členstvo ${plan.name}${childName?' – '+childName:''}${promoCode?` (promo ${promoCode})`:''}`,
       'success_url':`${base}/client-dashboard?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
       'cancel_url':`${base}/pricing?stripe=cancel`,
       'customer_email':u.email,
@@ -4574,9 +4582,10 @@ app.post('/api/stripe/checkout', auth, async(req,res)=>{
       'metadata[plan_id]':plan_id,
       'metadata[type]':'membership'
     };
+    if(promoCode){ params['metadata[promo_code]']=promoCode; params['metadata[promo_discount]']=promoDiscount; }
     const r = await stripeApi('checkout/sessions', params, 'POST');
     if(r.status>=400 || !r.body?.url) return res.status(400).json({error:r.body?.error?.message||'Stripe chyba pri vytváraní platby'});
-    await q.insert(db.payments,{stripe_session_id:r.body.id, user_id:req.session.uid, member_id:memberId, amount:plan.price, currency:'EUR', description:`Členstvo ${plan.name}${childName?' – '+childName:''}`, ref_id:plan_id, ref_type:'membership', provider:'stripe', status:'pending', created_at:nowISO()});
+    await q.insert(db.payments,{stripe_session_id:r.body.id, user_id:req.session.uid, member_id:memberId, amount:price, currency:'EUR', description:`Členstvo ${plan.name}${childName?' – '+childName:''}${promoCode?` [promo ${promoCode} -${promoDiscount.toFixed(2)}€]`:''}`, ref_id:plan_id, ref_type:'membership', provider:'stripe', status:'pending', promo_code:promoCode, created_at:nowISO()});
     res.json({ok:true, url:r.body.url});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -4610,6 +4619,7 @@ async function fulfillStripeCheckout(s){
     items:[{desc:`Členstvo ${plan.name}${meta.type==='subscription'?' (mesačný odber)':''}`, qty:1, total:plan.price}],
     total:plan.price, method:'Stripe (karta / Apple Pay / Google Pay)'});
   awardPurchaseCommission({buyer_id:meta.user_id, amount:plan.price, product_name:`Členstvo ${plan.name}`});
+  if(meta.promo_code){ const pr=await q.one(db.promo_codes,{code:(meta.promo_code||'').toUpperCase()}); if(pr) await recordPromoRedemption(pr, meta.user_id, +meta.promo_discount||0); }
   return {ok:true, plan_name:plan.name, subscription:meta.type==='subscription'};
 }
 

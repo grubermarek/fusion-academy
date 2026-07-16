@@ -735,7 +735,7 @@ async function payWithStripe(){
   btn.disabled = true; btn.innerHTML = '⏳ Presmerovávam na bezpečnú platbu…';
   try {
     const r = await fetch('/api/stripe/checkout',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({plan_id:_buyPlanId, for_child_id:_buyChildId||undefined})}).then(r=>r.json());
+      body:JSON.stringify({plan_id:_buyPlanId, for_child_id:_buyChildId||undefined, promo_code:_buyPromo?_buyPromo.code:undefined})}).then(r=>r.json());
     if(r.ok && r.url){ window.location.href = r.url; return; }
     alert('Chyba: '+(r.error||'nepodarilo sa spustiť platbu'));
   } catch(e){ alert('Chyba pripojenia'); }
