@@ -103,6 +103,18 @@
     .mc-info-item span{font-size:.98rem;font-weight:600}
     .mc-buy-btn{background:linear-gradient(135deg,var(--gold),#a07830);color:#111;border:none;padding:12px 24px;border-radius:10px;font-weight:700;cursor:pointer;font-size:.95rem;width:100%;transition:all .25s;box-shadow:0 4px 16px rgba(201,168,76,.25);position:relative;z-index:1}
     .mc-buy-btn:hover{opacity:.88;transform:translateY(-1px);box-shadow:0 6px 20px rgba(201,168,76,.35)}
+    .unlock-grid{display:grid;gap:10px;margin-bottom:20px}
+    .unlock-card{display:flex;align-items:center;gap:12px;background:#161616;border:1px solid #2a2a2a;border-radius:16px;padding:13px 15px;text-decoration:none;color:#eee;transition:border-color .15s,transform .1s}
+    .unlock-card:hover{transform:translateY(-1px)}
+    .unlock-card.locked{border-color:#3a3320;background:linear-gradient(160deg,#1a1710,#141414)}
+    .unlock-card.locked .uc-ic{filter:grayscale(.4) opacity(.85)}
+    .unlock-card.open{border-color:#2e5a2e}
+    .uc-ic{font-size:1.8rem;flex-shrink:0}
+    .uc-txt{flex:1;min-width:0;display:flex;flex-direction:column}
+    .uc-txt b{font-size:.94rem}
+    .uc-txt span{font-size:.76rem;color:#9a9a9a;line-height:1.3}
+    .uc-badge{flex-shrink:0;font-size:.72rem;font-weight:800;background:#2a2410;color:var(--gold);border:1px solid #5a4a20;border-radius:20px;padding:5px 11px;white-space:nowrap}
+    .uc-badge.open{background:#16240f;color:#8bd06a;border-color:#2e5a2e}
     .mc-no-membership{text-align:center;padding:8px 0 16px}
     .mc-no-membership p{font-size:.9rem;color:var(--muted);margin-bottom:16px}
     .mc-no-membership .usp{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:16px}
@@ -374,6 +386,9 @@
     <i class="bi bi-gift-fill" id="accessBarIcon"></i>
     <div id="accessBarText">—</div>
   </div>
+
+  <!-- Odomkni viac (prémiové funkcie podľa členstva) -->
+  <div id="unlockCards" class="unlock-grid anim anim-d2"></div>
 
   <!-- ═══════════════════════════════════════════════════════
        BOOK A CLASS
@@ -679,8 +694,25 @@ async function cancelStripeSub(){
   else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 
+/* ─── Odomkni viac (prémiové funkcie podľa členstva) ─── */
+function renderUnlockCards(me){
+  const box=document.getElementById('unlockCards'); if(!box) return;
+  const plan=me?.membership?.plan_id||null;
+  const ONLINE=['silver','gold','online_basic','online_premium'];
+  const feats=[
+    {f:'analyza',ic:'📊',title:'Metabolická analýza (Tanita)',sub:'Zloženie tela, tuk, sval, metabolizmus — naživo v mobile',open:['silver','gold'].includes(plan),tier:'Silver'},
+    {f:'f1',ic:'🥤',title:'Herbalife F1 raňajky',sub:'Kompletná výživa za menej než párky — v cene Gold',open:plan==='gold',tier:'Gold'},
+    {f:'online',ic:'💻',title:'Online hodiny LIVE',sub:'Cvič z domu, kedy sa ti hodí — aj o 22:00',open:ONLINE.includes(plan),tier:'Silver'},
+  ];
+  box.innerHTML=feats.map(x=>x.open
+    ? `<a class="unlock-card open" href="/support"><div class="uc-ic">${x.ic}</div><div class="uc-txt"><b>${x.title}</b><span>${x.sub}</span></div><div class="uc-badge open">✓ Objednať</div></a>`
+    : `<a class="unlock-card locked" href="/unlock.html?f=${x.f}"><div class="uc-ic">${x.ic}</div><div class="uc-txt"><b>${x.title}</b><span>${x.sub}</span></div><div class="uc-badge"><i class="bi bi-lock-fill"></i> ${x.tier}</div></a>`
+  ).join('');
+}
+
 /* ─── Membership ─── */
 function renderMembership(me){
+  renderUnlockCards(me);
   const m=me.membership;
   const planEl=document.getElementById('mcPlan');
   const statusEl=document.getElementById('mcStatus');
