@@ -4699,7 +4699,7 @@ app.post('/api/gift-credit/checkout', auth, async(req,res)=>{
     };
     const r = await stripeApi('checkout/sessions', params, 'POST');
     if(r.status>=400 || !r.body?.url) return res.status(400).json({error:r.body?.error?.message||'Stripe chyba'});
-    await q.insert(db.payments,{stripe_session_id:r.body.id, user_id:req.session.uid, amount, currency:'EUR', description:`Darčekový kredit pre ${rcpt.name}`, ref_type:'gift_credit', gift_recipient:recipient_id, provider:'stripe', status:'pending', created_at:nowISO()});
+    await q.insert(db.payments,{stripe_session_id:r.body.id, user_id:req.session.uid, amount, currency:'EUR', plan_name:'Darčekový kredit', description:`Darčekový kredit pre ${rcpt.name}`, ref_type:'gift_credit', gift_recipient:recipient_id, provider:'stripe', method:'card', status:'pending', created_at:nowISO()});
     res.json({ok:true, url:r.body.url});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
