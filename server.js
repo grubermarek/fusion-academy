@@ -107,6 +107,8 @@ const db = {
   payout_rules: new Datastore({ filename: path.join(DATA_DIR, 'payout_rules.db'),autoload: true }),
   payouts:      new Datastore({ filename: path.join(DATA_DIR, 'payouts.db'),     autoload: true }),
   refunds:      new Datastore({ filename: path.join(DATA_DIR, 'refunds.db'),     autoload: true }),
+  promo_codes:  new Datastore({ filename: path.join(DATA_DIR, 'promo_codes.db'), autoload: true }),
+  promo_redemptions:new Datastore({ filename: path.join(DATA_DIR, 'promo_redemptions.db'),autoload: true }),
   feed:         new Datastore({ filename: path.join(DATA_DIR, 'feed.db'),        autoload: true }),
   friends:      new Datastore({ filename: path.join(DATA_DIR, 'friends.db'),      autoload: true }),
   profile_likes:new Datastore({ filename: path.join(DATA_DIR, 'profile_likes.db'),autoload: true }),
@@ -3264,9 +3266,75 @@ app.post('/api/paypal/webhook', express.raw({type:'application/json'}), async(re
   }
 });
 
+// ── Promo / zľavové kódy ──────────────────────────────────────────────────────
+async function validatePromo(code, price, userId){
+  code=(code||'').toUpperCase().trim();
+  if(!code) return {ok:false, reason:'Zadaj kód'};
+  const p=await q.one(db.promo_codes,{code});
+  if(!p || p.active===false) return {ok:false, reason:'Kód neexistuje alebo je neaktívny'};
+  if(p.expires_at && new Date(p.expires_at) < new Date()) return {ok:false, reason:'Platnosť kódu vypršala'};
+  if(p.min_amount && price < p.min_amount) return {ok:false, reason:`Kód platí od ${p.min_amount} €`};
+  if(p.max_uses && (p.used_count||0) >= p.max_uses) return {ok:false, reason:'Kód už bol vyčerpaný'};
+  if(p.once_per_user && userId){ const used=await q.one(db.promo_redemptions,{code, user_id:userId}); if(used) return {ok:false, reason:'Kód si už použil/a'}; }
+  let discount = p.type==='percent' ? +(price * (+p.value)/100).toFixed(2) : Math.min(+p.value, price);
+  discount = Math.max(0, Math.min(discount, price));
+  return {ok:true, discount, final:+(price-discount).toFixed(2), promo:p,
+    label: p.type==='percent' ? `${p.value}%` : `${(+p.value).toFixed(2)} €` };
+}
+async function recordPromoRedemption(promo, userId, discount){
+  await q.update(db.promo_codes,{_id:promo._id},{$inc:{used_count:1}});
+  await q.insert(db.promo_redemptions,{code:promo.code, user_id:userId||null, discount:+discount||0, at:nowISO()});
+}
+// Klient overí promo kód pred platbou (náhľad zľavy)
+app.post('/api/promo/validate', auth, async(req,res)=>{
+  try {
+    const plan = MEMBERSHIP_PLANS[req.body.plan_id];
+    const price = plan ? plan.price : (+req.body.amount||0);
+    if(price<=0) return res.json({ok:false, reason:'Neplatná suma'});
+    const v = await validatePromo(req.body.code, price, req.session.uid);
+    res.json(v.ok ? {ok:true, discount:v.discount, final:v.final, label:v.label, code:v.promo.code} : {ok:false, reason:v.reason});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+// Admin: správa promo kódov
+app.get('/api/admin/promos', adminAuth, async(req,res)=>{
+  const list=await q.find(db.promo_codes,{});
+  res.json(list.sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')));
+});
+app.post('/api/admin/promos', adminAuth, async(req,res)=>{
+  try {
+    const code=(req.body.code||'').toUpperCase().trim().replace(/\s+/g,'');
+    if(!code) return res.status(400).json({error:'Zadaj kód'});
+    if(await q.one(db.promo_codes,{code})) return res.status(400).json({error:'Kód už existuje'});
+    const type = req.body.type==='fixed' ? 'fixed' : 'percent';
+    const value = Math.max(0, +req.body.value||0);
+    if(value<=0) return res.status(400).json({error:'Zadaj hodnotu zľavy'});
+    const doc = { code, type, value,
+      applies_to: req.body.applies_to||'membership',
+      max_uses: Math.max(0, parseInt(req.body.max_uses)||0),
+      once_per_user: !!req.body.once_per_user,
+      min_amount: Math.max(0, +req.body.min_amount||0),
+      expires_at: req.body.expires_at ? new Date(req.body.expires_at+'T23:59:59').toISOString() : null,
+      active:true, used_count:0, created_at:nowISO() };
+    const p=await q.insert(db.promo_codes, doc);
+    await auditLog(req,'promo_create',code,{},doc,'');
+    res.json({ok:true, id:p._id});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+app.put('/api/admin/promos/:id', adminAuth, async(req,res)=>{
+  const set={}; if(req.body.active!==undefined) set.active=!!req.body.active;
+  await q.update(db.promo_codes,{_id:req.params.id},{$set:set});
+  await auditLog(req,'promo_update',req.params.id,{},set,'');
+  res.json({ok:true});
+});
+app.delete('/api/admin/promos/:id', adminAuth, async(req,res)=>{
+  await q.remove(db.promo_codes,{_id:req.params.id});
+  await auditLog(req,'promo_delete',req.params.id,{},{},'');
+  res.json({ok:true});
+});
+
 app.post('/api/membership/buy', auth, async(req,res)=>{
   try {
-    const {plan_id, payment_method, use_referral_credit, for_child_id} = req.body;
+    const {plan_id, payment_method, use_referral_credit, for_child_id, promo_code} = req.body;
     const plan = MEMBERSHIP_PLANS[plan_id];
     if(!plan) return res.status(400).json({error:'Neplatný plán'});
     const u = await q.one(db.users,{_id:req.session.uid}); // parent = payer
@@ -3281,21 +3349,35 @@ app.post('/api/membership/buy', auth, async(req,res)=>{
     }
     const forWhom = childName ? ` (${childName})` : '';
 
+    // ── Promo / zľavový kód (aplikuje sa na cenu plánu, pred kreditom) ─────────
+    let promoDiscount = 0, promoCode = null, promoObj = null;
+    let basePrice = plan.price;
+    if(promo_code){
+      const v = await validatePromo(promo_code, plan.price, req.session.uid);
+      if(!v.ok) return res.status(400).json({error:'Promo kód: '+v.reason});
+      promoDiscount = v.discount; basePrice = v.final; promoCode = v.promo.code; promoObj = v.promo;
+    }
+
     // ── Referral credit discount (always from parent's balance) ────────────────
     let creditUsed = 0;
-    let finalPrice = plan.price;
+    let finalPrice = basePrice;
     if(use_referral_credit && (u.referral_credit||0) > 0){
-      creditUsed = Math.min(u.referral_credit, plan.price);
-      finalPrice = Math.max(0, +(plan.price - creditUsed).toFixed(2));
+      creditUsed = Math.min(u.referral_credit, basePrice);
+      finalPrice = Math.max(0, +(basePrice - creditUsed).toFixed(2));
       await q.update(db.users,{_id:u._id},{$set:{referral_credit: +(u.referral_credit - creditUsed).toFixed(2)}});
       await q.insert(db.notifications,{user_id:u._id,type:'credit',title:`Referral kredit použitý 💳`,body:`${creditUsed.toFixed(2)} € zľava na ${plan.name}${forWhom}. Nový zostatok: ${(u.referral_credit-creditUsed).toFixed(2)} €`,read:false,created_at:nowISO()});
     }
 
+    // Zaznamenaj použitie promo kódu (raz na nákup)
+    if(promoObj){ await recordPromoRedemption(promoObj, req.session.uid, promoDiscount);
+      await q.insert(db.notifications,{user_id:u._id,type:'credit',title:`Promo kód ${promoCode} 🎟️`,body:`Zľava ${promoDiscount.toFixed(2)} € na ${plan.name}${forWhom}.`,read:false,created_at:nowISO()}).catch(()=>{}); }
+    const promoNote = promoCode ? ` [promo ${promoCode} -${promoDiscount.toFixed(2)}€]` : '';
+
     if(finalPrice === 0){
-      // Fully covered by credit – activate immediately
+      // Fully covered by credit/promo – activate immediately
       await activateMembership(memberId, plan_id, plan.duration_days||30);
-      await q.insert(db.transactions,{type:'membership',user_id:memberId,user_name:childName||u.name,amount:0,payment_method:'referral_credit',note:`${plan.name}${forWhom} – 100% hradené kreditom`,plan_id,created_at:nowISO(),month:today().slice(0,7)});
-      return res.json({ok:true, credit_used:creditUsed, final_price:0, message:`Členstvo ${plan.name}${forWhom} aktivované pomocou referral kreditu!`});
+      await q.insert(db.transactions,{type:'membership',user_id:memberId,user_name:childName||u.name,amount:0,payment_method:'referral_credit',note:`${plan.name}${forWhom} – 100% hradené kreditom${promoNote}`,plan_id,promo_code:promoCode,created_at:nowISO(),month:today().slice(0,7)});
+      return res.json({ok:true, credit_used:creditUsed, promo_discount:promoDiscount, final_price:0, message:`Členstvo ${plan.name}${forWhom} aktivované${promoCode?' (promo '+promoCode+')':' pomocou referral kreditu'}!`});
     }
 
     if(payment_method==='paypal'){
@@ -3306,12 +3388,12 @@ app.post('/api/membership/buy', auth, async(req,res)=>{
       }
       const result = await ppCreateOrder(finalPrice,'EUR',`Fusion Academy – ${plan.name}${forWhom}`);
       if(result.status!==201) return res.status(400).json({error:'PayPal chyba'});
-      const payment = await q.insert(db.payments,{paypal_order_id:result.body.id,user_id:req.session.uid,member_id:memberId,amount:finalPrice,currency:'EUR',description:`Členstvo ${plan.name}${forWhom}`,ref_id:plan_id,ref_type:'membership',status:'pending',created_at:nowISO(),credit_used:creditUsed});
-      return res.json({ok:true, paypalOrderId:result.body.id, paymentId:payment._id, credit_used:creditUsed, final_price:finalPrice});
+      const payment = await q.insert(db.payments,{paypal_order_id:result.body.id,user_id:req.session.uid,member_id:memberId,amount:finalPrice,currency:'EUR',description:`Členstvo ${plan.name}${forWhom}${promoNote}`,ref_id:plan_id,ref_type:'membership',status:'pending',created_at:nowISO(),credit_used:creditUsed,promo_code:promoCode});
+      return res.json({ok:true, paypalOrderId:result.body.id, paymentId:payment._id, credit_used:creditUsed, promo_discount:promoDiscount, final_price:finalPrice});
     }
     // Bank transfer / cash – admin will confirm
-    await q.insert(db.payments,{user_id:req.session.uid,member_id:memberId,amount:finalPrice,currency:'EUR',description:`Členstvo ${plan.name}${forWhom}${creditUsed?` (kredit: -${creditUsed}€)`:''}`,ref_id:plan_id,ref_type:'membership',status:'pending_manual',payment_method:'manual',created_at:nowISO(),credit_used:creditUsed});
-    res.json({ok:true, credit_used:creditUsed, final_price:finalPrice, message:'Žiadosť o členstvo bola odoslaná. Admin ju potvrdí po prijatí platby.'});
+    await q.insert(db.payments,{user_id:req.session.uid,member_id:memberId,amount:finalPrice,currency:'EUR',description:`Členstvo ${plan.name}${forWhom}${creditUsed?` (kredit: -${creditUsed}€)`:''}${promoNote}`,ref_id:plan_id,ref_type:'membership',status:'pending_manual',payment_method:'manual',created_at:nowISO(),credit_used:creditUsed,promo_code:promoCode});
+    res.json({ok:true, credit_used:creditUsed, promo_discount:promoDiscount, final_price:finalPrice, message:'Žiadosť o členstvo bola odoslaná. Admin ju potvrdí po prijatí platby.'});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 

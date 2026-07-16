@@ -722,6 +722,9 @@ function openBuyModal(planId, planName, price, childId){
   const showStripe = _stripeEnabled && finalPrice > 0;
   document.getElementById('buyStripeBtn').style.display = showStripe ? 'flex' : 'none';
   document.getElementById('buyStripeDivider').style.display = showStripe ? 'block' : 'none';
+  _buyPromo=null;
+  const pm=document.getElementById('buyPromoMsg'); if(pm) pm.style.display='none';
+  const pi=document.getElementById('buyPromoInput'); if(pi) pi.value='';
   updateBuyTotal();
   document.getElementById('buyModal').style.display='flex';
 }
@@ -739,15 +742,32 @@ async function payWithStripe(){
   btn.disabled = false; btn.innerHTML = 'Zaplatiť kartou · Apple Pay · Google Pay';
 }
 
+let _buyPromo = null; // {code, discount}
 function updateBuyTotal(){
   const credit = _pricingMe?.referral_credit||0;
+  const promoDisc = _buyPromo ? Math.min(_buyPromo.discount, _buyPrice) : 0;
+  const base = Math.max(0, +(_buyPrice - promoDisc).toFixed(2));
   const useCredit = document.getElementById('buyCreditCheckbox').checked;
-  const creditApply = useCredit ? Math.min(credit, _buyPrice) : 0;
-  const final = Math.max(0, +(_buyPrice - creditApply).toFixed(2));
+  const creditApply = useCredit ? Math.min(credit, base) : 0;
+  const final = Math.max(0, +(base - creditApply).toFixed(2));
   document.getElementById('buyCreditAmount').textContent = '-'+creditApply.toFixed(2)+' €';
+  const pr=document.getElementById('buyPromoRow');
+  if(_buyPromo){ pr.style.display='flex'; document.getElementById('buyPromoCode').textContent=_buyPromo.code; document.getElementById('buyPromoAmount').textContent='-'+promoDisc.toFixed(2)+' €'; }
+  else pr.style.display='none';
   document.getElementById('buyFinalPrice').textContent = final.toFixed(2)+' €';
-  document.getElementById('buyBtnLabel').textContent = final === 0 ? 'Aktivovať pomocou kreditu' : ((_stripeEnabled ? 'Prevod / hotovosť' : 'Pokračovať k platbe') + ` (${final.toFixed(2)} €)`);
+  document.getElementById('buyBtnLabel').textContent = final === 0 ? 'Aktivovať zľavou/kreditom' : ((_stripeEnabled ? 'Prevod / hotovosť' : 'Pokračovať k platbe') + ` (${final.toFixed(2)} €)`);
 }
+async function applyPromo(){
+  const code=(document.getElementById('buyPromoInput').value||'').trim();
+  const msg=document.getElementById('buyPromoMsg');
+  if(!code){ msg.style.display='none'; return; }
+  try{
+    const r=await fetch('/api/promo/validate',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,plan_id:_buyPlanId})}).then(r=>r.json());
+    if(r.ok){ _buyPromo={code:r.code,discount:r.discount}; msg.style.display='none'; document.getElementById('buyPromoInput').value=''; updateBuyTotal(); }
+    else { _buyPromo=null; msg.textContent=r.reason||'Neplatný kód'; msg.style.display='block'; updateBuyTotal(); }
+  }catch{ msg.textContent='Chyba pripojenia'; msg.style.display='block'; }
+}
+function clearPromo(){ _buyPromo=null; document.getElementById('buyPromoMsg').style.display='none'; updateBuyTotal(); }
 
 async function confirmBuy(){
   if(!_buyPlanId) return;
@@ -758,7 +778,7 @@ async function confirmBuy(){
     const r = await fetch('/api/membership/buy',{
       method:'POST', credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({plan_id:_buyPlanId, payment_method:'manual', use_referral_credit:useCredit, for_child_id:_buyChildId||undefined})
+      body: JSON.stringify({plan_id:_buyPlanId, payment_method:'manual', use_referral_credit:useCredit, for_child_id:_buyChildId||undefined, promo_code:_buyPromo?_buyPromo.code:undefined})
     }).then(r=>r.json());
     document.getElementById('buyModal').style.display='none';
     if(r.ok){
@@ -829,6 +849,15 @@ async function confirmBuy(){
         </label>
         <span id="buyCreditAmount" style="color:#4ade80">-0 €</span>
       </div>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <input id="buyPromoInput" placeholder="Promo kód" style="flex:1;background:#0d0d0d;border:1px solid #333;border-radius:.5rem;padding:8px 10px;color:#F5EDD6;font-size:.85rem;text-transform:uppercase">
+        <button onclick="applyPromo()" style="background:#2a2410;border:1px solid var(--gold-border,#5a4a20);color:#C9A84C;border-radius:.5rem;padding:0 14px;cursor:pointer;font-size:.82rem;font-weight:700">Použiť</button>
+      </div>
+      <div id="buyPromoRow" style="display:none;justify-content:space-between;margin-bottom:8px;font-size:.88rem;align-items:center">
+        <span style="color:rgba(201,168,76,.9)">🎟️ Promo <b id="buyPromoCode"></b> <a href="#" onclick="clearPromo();return false" style="color:#e57373;font-size:.75rem;margin-left:6px">✕</a></span>
+        <span id="buyPromoAmount" style="color:#4ade80">-0 €</span>
+      </div>
+      <div id="buyPromoMsg" style="display:none;font-size:.78rem;color:#e57373;margin-bottom:6px"></div>
       <div style="border-top:1px solid #333;padding-top:8px;display:flex;justify-content:space-between;font-weight:700">
         <span style="color:#F5EDD6">Celkom</span>
         <span id="buyFinalPrice" style="color:#C9A84C;font-size:1.1rem">—</span>
