@@ -7964,7 +7964,27 @@ setInterval(async()=>{
 }, 3600000);
 
 // ─── Start ────────────────────────────────────────────────────────────────────
-seedData().then(()=>{
+// Jednorazová migrácia: každého existujúceho člena bez sponzora priraď pod
+// zakladateľa (Marek Gruber). Beží raz (guard cez audit), takže neskoršie
+// manuálne „bez sponzora" na profile ostane rešpektované.
+async function backfillDefaultSponsor(){
+  try {
+    const founder = await q.one(db.users,{email:'gruber.marek@gmail.com'});
+    if(!founder) return;
+    if(await q.one(db.audit,{action:'migrate_default_sponsor_v1'})) return;
+    const orphans = await q.find(db.users,{ $or:[{sponsor_id:null},{sponsor_id:{$exists:false}}] });
+    let n=0;
+    for(const u of orphans){
+      if(u._id===founder._id) continue; // zakladateľ je koreň
+      await q.update(db.users,{_id:u._id},{$set:{sponsor_id:founder._id}});
+      n++;
+    }
+    await q.insert(db.audit,{action:'migrate_default_sponsor_v1',target:'users',after:{assigned:n,founder:founder._id},created_at:nowISO()});
+    console.log(`✅  Default sponzor: ${n} používateľov priradených pod zakladateľa`);
+  } catch(e){ console.error('backfillDefaultSponsor error:', e.message); }
+}
+
+seedData().then(backfillDefaultSponsor).then(()=>{
   server.listen(PORT, ()=>{
     console.log('\n╔══════════════════════════════════════════════════════╗');
     console.log('║  🎵  Fusion Academy – Systém v2.0 spustený             ║');
