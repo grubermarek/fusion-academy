@@ -2133,6 +2133,21 @@ app.get('/api/admin/users', adminAuth, async(req,res)=>{
 // so filtering user_type==='lead' naturally moves payers into the clients list.
 // Samoopravné: Glofox člen s aktívnym členstvom / vstupmi / glofox_synced patrí medzi
 // klientov, nie leady. Spustí sa pri načítaní oboch zoznamov, idempotentne.
+// ── Lead pipeline: stavy starostlivosti o leada ───────────────────────────────
+const LEAD_STATUSES = {
+  new:            { label:'Nový',            icon:'🆕', color:'#6c757d' },
+  contacted:      { label:'Kontaktovaný',    icon:'📞', color:'#0d6efd' },
+  interested:     { label:'Má záujem',       icon:'🔥', color:'#fd7e14' },
+  not_interested: { label:'Nemá záujem',     icon:'❄️', color:'#495057' },
+  trial:          { label:'Bola na hodine',  icon:'💃', color:'#20c997' },
+};
+// Pri účasti na hodine automaticky posuň leada do stavu „Bola na hodine".
+function applyLeadTrial(upd, u){
+  if(u.user_type!=='lead') return;
+  if(!u.attended_trial_at) upd.attended_trial_at = nowISO();
+  if(!u.lead_status || u.lead_status==='new' || u.lead_status==='contacted') upd.lead_status = 'trial';
+}
+
 async function autoPromoteMembers(){
   const activeMemUserIds = new Set((await q.find(db.memberships,{status:'active'})).map(m=>m.user_id));
   const leads = await q.find(db.users,{user_type:'lead', is_admin:{$ne:true}});
@@ -2172,6 +2187,8 @@ app.get('/api/admin/leads', adminAuth, async(req,res)=>{
         last_contacted_at: u.last_contacted_at||null, last_contacted_days: daysAgo(u.last_contacted_at),
         bookings: active.length, last_booking: lastB, last_booking_days: daysAgo(lastB),
         status, attendances, sponsor,
+        lead_status: u.lead_status || 'new',
+        attended_trial_at: u.attended_trial_at || null,
         consent: !!u.consent_at,
         imported: !!u.imported, claimed: !!u.claimed,
       };
@@ -2227,8 +2244,54 @@ app.post('/api/admin/leads/:id/contacted', adminAuth, async(req,res)=>{
   try {
     const u = await q.one(db.users,{_id:req.params.id});
     if(!u) return res.status(404).json({error:'Nenájdený'});
-    await q.update(db.users,{_id:u._id},{$set:{last_contacted_at:nowISO()}});
-    res.json({ ok:true, last_contacted_at:nowISO() });
+    const set = {last_contacted_at:nowISO()};
+    if(!u.lead_status || u.lead_status==='new') set.lead_status='contacted';
+    await q.update(db.users,{_id:u._id},{$set:set});
+    res.json({ ok:true, last_contacted_at:set.last_contacted_at, lead_status:set.lead_status||u.lead_status });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Zmena stavu leada v pipeline starostlivosti (Nový/Kontaktovaný/Má záujem/…)
+app.put('/api/admin/leads/:id/status', adminAuth, async(req,res)=>{
+  try {
+    const {status} = req.body;
+    if(!LEAD_STATUSES[status]) return res.status(400).json({error:'Neplatný stav'});
+    const u = await q.one(db.users,{_id:req.params.id});
+    if(!u) return res.status(404).json({error:'Nenájdený'});
+    const set = {lead_status:status};
+    if(status==='contacted' && !u.last_contacted_at) set.last_contacted_at=nowISO();
+    await q.update(db.users,{_id:u._id},{$set:set});
+    await auditLog(req,'lead_status',u._id,{old:u.lead_status||'new'},{new:status},'');
+    res.json({ ok:true, lead_status:status });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Mailová sekvencia daného leada — čo mu bolo naplánované/odoslané a kedy.
+app.get('/api/admin/leads/:id/emails', adminAuth, async(req,res)=>{
+  try {
+    const u = await q.one(db.users,{_id:req.params.id});
+    if(!u) return res.status(404).json({error:'Nenájdený'});
+    const items = await q.find(db.email_queue,{user_id:u._id});
+    const stepIds = [...new Set(items.map(i=>i.step_id))];
+    const steps = {};
+    for(const sid of stepIds){ const s=await q.one(db.email_steps,{_id:sid}); if(s) steps[sid]=s; }
+    const SEQ_LABELS = {
+      lead_nurture:'Starostlivosť o leada', welcome:'Uvítacia sekvencia', app_launch:'Nová appka',
+      membership_welcome:'Vitajte v členstve', expiry_warning:'Blíži sa koniec členstva',
+      bronze_upsell:'Bronze → Silver', gold_upsell:'Silver → Gold',
+    };
+    const rows = items.map(i=>{
+      const s = steps[i.step_id] || {};
+      return {
+        sequence: i.sequence, sequence_label: SEQ_LABELS[i.sequence] || i.sequence,
+        label: s.label || s.subject || '(krok)', subject: s.subject || '',
+        day: s.day, scheduled_for: i.scheduled_for, status: i.status,
+        sent_at: i.sent_at || null, reason: i.reason || null,
+      };
+    }).sort((a,b)=> (a.scheduled_for||'').localeCompare(b.scheduled_for||'') || (a.day||0)-(b.day||0));
+    // Aktívne sekvencie (majú aspoň jeden čakajúci krok)
+    const activeSeqs = [...new Set(rows.filter(r=>r.status==='pending').map(r=>r.sequence_label))];
+    res.json({ ok:true, name:u.name, email:u.email, lead_status:u.lead_status||'new', rows, active_sequences:activeSeqs });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -3219,8 +3282,11 @@ async function activateMembership(userId, planId, durationDays){
   } else {
     await q.insert(db.memberships,{user_id:userId,plan_id:planId,plan_name:plan.name,price:plan.price,status:'active',started_at:now.toISOString(),expires_at:expiresAt.toISOString(),created_at:nowISO()});
   }
-  // Update user's membership_plan field
-  await q.update(db.users,{_id:userId},{$set:{membership_plan:planId,membership_expires:expiresAt.toISOString()}});
+  // Update user's membership_plan field (+ lead → klient automaticky)
+  const promoU = await q.one(db.users,{_id:userId});
+  const memberSet = {membership_plan:planId, membership_expires:expiresAt.toISOString()};
+  if(promoU && promoU.user_type==='lead') memberSet.user_type='client';
+  await q.update(db.users,{_id:userId},{$set:memberSet});
   // Notification
   await q.insert(db.notifications,{user_id:userId,type:'membership',title:'Členstvo aktivované 🎉',body:`Váš plán ${plan.name} je aktívny do ${expiresAt.toLocaleDateString('sk-SK')}.`,read:false,created_at:nowISO()});
   // ── Email automation: cancel lead_nurture, enqueue membership_welcome ────────
@@ -5837,6 +5903,7 @@ app.post('/api/attendance/manual-booking', trainerAuth, async(req,res)=>{
     }
     upd.visit_count = (u.visit_count||0) + 1;
     if(u.winback_sent) upd.winback_sent = false;
+    applyLeadTrial(upd, u); // lead → automaticky „Bola na hodine"
 
     await q.insert(db.bookings,{
       class_id, class_name:cls.name, class_emoji:cls.emoji||'💃',
@@ -5953,6 +6020,7 @@ app.post('/api/attendance/record-membership', trainerAuth, async(req,res)=>{
       payment_method:payment_method||'cash', note:note||`Členstvo ${plan.name}`,
       plan_id, recorded_by:req.trainerUser._id, created_at:nowISO(), month:today().slice(0,7)
     });
+    if(u.user_type==='lead') await q.update(db.users,{_id:user_id},{$set:{user_type:'client'}}); // lead → klient
     await q.insert(db.notifications,{user_id,type:'membership',title:`Členstvo ${plan.name} aktivované ✅`,body:`Platné do ${expiresDate}`,read:false,created_at:nowISO()});
     createInvoice({user_id, client_name:u.name, client_email:u.email,
       items:[{desc:`Členstvo ${plan.name}`, qty:1, total:+(amount||plan.price)}], total:+(amount||plan.price),
@@ -6045,6 +6113,7 @@ app.post('/api/attendance/qr-checkin', trainerAuth, async(req,res)=>{
       if(hasFree && !u.free_class_used) upd.free_class_used = true;
       else if(hasCredit && !hasMem) upd.free_credits = (u.free_credits||0) - 1;
       else if(hasSingle && !hasMem && !hasFree) upd.single_entries = (u.single_entries||0) - 1;
+      applyLeadTrial(upd, u); // lead → automaticky „Bola na hodine"
       await q.update(db.users,{_id:u._id},{$set:upd});
       if(!u.is_child) sendFirstClassEmail(u._id).catch(()=>{});
       await q.insert(db.notifications,{user_id:u._id,type:'checkin',title:'✅ Check-in potvrdený',

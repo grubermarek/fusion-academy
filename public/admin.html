@@ -692,7 +692,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
         <button class="btn btn-sm btn-outline-secondary" onclick="loadLeads()"><i class="bi bi-arrow-clockwise"></i></button>
       </div>
     </div>
-    <p class="text-muted small mb-3">Registrovaní, ktorí ešte nezaplatili. Po prvej platbe automaticky prejdú medzi <b>Klientov</b>. Importované staré leady (🗂️) vidíte len vy — ľudia si stále vytvoria účet sami.</p>
+    <p class="text-muted small mb-3">Registrovaní, ktorí ešte nezaplatili. V stĺpci <b>Stav</b> meníš fázu starostlivosti (Nový → Kontaktovaný → Má/Nemá záujem). Keď príde na hodinu zdarma, automaticky sa označí <b>💃 Bola na hodine</b>; po prvej platbe automaticky prejde medzi <b>Klientov</b>. <i class="bi bi-envelope-paper"></i> ukáže, akú mailovú sekvenciu a kedy dostala. Importované staré leady (🗂️) vidíte len vy.</p>
     <div class="card border-0 rounded-3">
       <div class="table-responsive">
         <table class="table table-hover align-middle mb-0" style="font-size:.85rem">
@@ -706,7 +706,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
             <th class="sortable" onclick="sortLeads('last_contacted_days')">Posl. kontakt <span class="sort-ind" data-k="last_contacted_days"></span></th>
             <th class="text-center sortable" onclick="sortLeads('bookings')">Rezervácie <span class="sort-ind" data-k="bookings"></span></th>
             <th class="sortable" onclick="sortLeads('last_booking')">Posl. rezervácia <span class="sort-ind" data-k="last_booking"></span></th>
-            <th class="sortable" onclick="sortLeads('status')">Stav <span class="sort-ind" data-k="status"></span></th>
+            <th class="sortable" onclick="sortLeads('lead_status')">Stav <span class="sort-ind" data-k="lead_status"></span></th>
             <th class="text-center sortable" onclick="sortLeads('attendances')">Účasti <span class="sort-ind" data-k="attendances"></span></th>
             <th>Akcia</th>
           </tr></thead>
@@ -2344,12 +2344,24 @@ async function loadLeads(){
   if(!_leadsData.length){ body.innerHTML='<tr><td colspan="12" class="text-center py-4 text-muted">Žiadne leady 🎉</td></tr>'; return; }
   renderLeads();
 }
+const LEAD_STATUS={
+  new:{label:'Nový',icon:'🆕',color:'#6c757d'},
+  contacted:{label:'Kontaktovaný',icon:'📞',color:'#0d6efd'},
+  interested:{label:'Má záujem',icon:'🔥',color:'#fd7e14'},
+  not_interested:{label:'Nemá záujem',icon:'❄️',color:'#495057'},
+  trial:{label:'Bola na hodine',icon:'💃',color:'#20c997'},
+};
+function leadStatusSelect(l){
+  const cur=l.lead_status||'new'; const c=LEAD_STATUS[cur]||LEAD_STATUS.new;
+  const opts=Object.entries(LEAD_STATUS).map(([k,v])=>`<option value="${k}" ${k===cur?'selected':''}>${v.icon} ${v.label}</option>`).join('');
+  const tt=l.attended_trial_at?`title="Na hodine zdarma bola ${new Date(l.attended_trial_at).toLocaleDateString('sk-SK')}"`:'';
+  return `<select class="form-select form-select-sm lead-status-sel" ${tt} style="min-width:150px;font-weight:700;border:0;color:#fff;background-color:${c.color}" onchange="setLeadStatus('${l.id}',this.value)">${opts}</select>`;
+}
 function renderLeads(){
   const body=document.getElementById('leadsTableBody');
   const rows=applySort(_leadsData,_leadSort.key,_leadSort.dir);
   updSortInd('#s-leads',_leadSort.key,_leadSort.dir);
   const regBadge=p=>p==='web'?'<span class="text-nowrap">🌐 Web</span>':'<span class="text-nowrap">📱 App</span>';
-  const statusBadge=st=>st==='trial'?'<span class="badge bg-info text-dark">Skúša</span>':'<span class="badge bg-secondary">Lead</span>';
   const fmtD=iso=>iso?new Date(iso).toLocaleDateString('sk-SK',{day:'numeric',month:'short'}):'—';
   body.innerHTML=rows.map(l=>`<tr>
     <td class="ps-3 text-nowrap"><i class="bi bi-clock text-muted me-1"></i>${agoTxt(l.added_days)}</td>
@@ -2361,13 +2373,43 @@ function renderLeads(){
     <td class="text-nowrap ${l.last_contacted_days===null?'text-muted':''}">${agoTxt(l.last_contacted_days)}</td>
     <td class="text-center">${l.bookings}</td>
     <td class="text-nowrap">${fmtD(l.last_booking)}</td>
-    <td>${statusBadge(l.status)}</td>
+    <td>${leadStatusSelect(l)}</td>
     <td class="text-center">${l.attendances}</td>
     <td class="text-nowrap">
-      <button class="btn btn-sm btn-outline-warning" title="Označiť ako kontaktovaný" onclick="markContacted('${l.id}')"><i class="bi bi-telephone-check"></i></button>
+      <button class="btn btn-sm btn-outline-info" title="Mailová sekvencia" onclick="showLeadEmails('${l.id}','${escHtml((l.name||'').replace(/'/g,''))}')"><i class="bi bi-envelope-paper"></i></button>
+      <button class="btn btn-sm btn-outline-warning" title="Označiť ako kontaktovaný (teraz)" onclick="markContacted('${l.id}')"><i class="bi bi-telephone-check"></i></button>
       <button class="btn btn-sm btn-outline-secondary" title="Zobraziť profil" onclick="window.open('/u/${l.id}','_blank')"><i class="bi bi-box-arrow-up-right"></i></button>
     </td>
   </tr>`).join('');
+}
+async function setLeadStatus(id,status){
+  const r=await api('/api/admin/leads/'+id+'/status',{method:'PUT',body:JSON.stringify({status})});
+  if(r&&r.ok){ const l=_leadsData.find(x=>x.id===id); if(l) l.lead_status=status; showToast('Stav uložený ✓','success'); renderLeads(); }
+  else showToast('Chyba: '+(r?.error||'?'),'error');
+}
+async function showLeadEmails(id,name){
+  const el=document.getElementById('leadEmailsBody');
+  el.innerHTML='<div class="text-center py-4 text-muted">Načítavam…</div>';
+  document.getElementById('leadEmailsName').textContent=name||'';
+  new bootstrap.Modal(document.getElementById('leadEmailsModal')).show();
+  const d=await api('/api/admin/leads/'+id+'/emails');
+  if(!d||!d.ok){ el.innerHTML='<div class="text-danger">Nepodarilo sa načítať.</div>'; return; }
+  const stBadge=st=>({sent:'<span class="badge bg-success">Odoslané</span>',pending:'<span class="badge bg-warning text-dark">Čaká</span>',skipped:'<span class="badge bg-secondary">Preskočené</span>',error:'<span class="badge bg-danger">Chyba</span>'}[st]||`<span class="badge bg-light text-dark">${st}</span>`);
+  const cs=LEAD_STATUS[d.lead_status]||LEAD_STATUS.new;
+  let html=`<div class="mb-3"><span class="me-2">Stav:</span><span class="badge" style="background:${cs.color}">${cs.icon} ${cs.label}</span>`;
+  if(d.active_sequences&&d.active_sequences.length) html+=`<div class="small text-muted mt-2">Aktívne sekvencie: ${d.active_sequences.map(escHtml).join(', ')}</div>`;
+  html+='</div>';
+  if(!d.rows.length){ html+='<div class="text-muted">Zatiaľ žiadne naplánované ani odoslané e-maily.</div>'; }
+  else {
+    html+='<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead class="table-light"><tr><th>Dátum</th><th>Sekvencia</th><th>E-mail</th><th>Stav</th></tr></thead><tbody>';
+    html+=d.rows.map(r=>{
+      const dt=r.status==='sent'&&r.sent_at?new Date(r.sent_at).toLocaleDateString('sk-SK'):(r.scheduled_for?new Date(r.scheduled_for).toLocaleDateString('sk-SK'):'—');
+      const reason=r.reason?`<div class="small text-muted">${escHtml(r.reason)}</div>`:'';
+      return `<tr><td class="text-nowrap">${dt}</td><td class="small">${escHtml(r.sequence_label)}</td><td class="small">${escHtml(r.subject||r.label)}</td><td>${stBadge(r.status)}${reason}</td></tr>`;
+    }).join('');
+    html+='</tbody></table></div>';
+  }
+  el.innerHTML=html;
 }
 async function purgeDuplicateLeads(){
   if(!confirm('Vymazať leady, ktorí sú už medzi klientmi (rovnaký email)?\n\nOdstránia sa len duplicitné lead záznamy — klient zostane zachovaný.')) return;
@@ -3487,6 +3529,18 @@ document.addEventListener('click', e => {
           <i class="bi bi-check2-circle me-1"></i>Uložiť zmeny
         </button>
       </div>
+    </div>
+  </div>
+</div>
+<!-- Mailová sekvencia leada -->
+<div class="modal fade" id="leadEmailsModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-envelope-paper me-2 text-info"></i>Mailová sekvencia · <span id="leadEmailsName"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="leadEmailsBody"></div>
     </div>
   </div>
 </div>
