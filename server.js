@@ -2329,6 +2329,75 @@ app.post('/api/admin/import-income', adminAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ── Chase neúspešných platieb (dunning) ───────────────────────────────────────
+const DUNNING_DAYS = [0, 3, 7]; // upomienka pri zlyhaní, potom +3 a +7 dní
+function dunningEmail(u, payment, stage){
+  const amt = (+payment.amount||0).toFixed(2);
+  const what = payment.description || payment.plan_name || 'členstvo';
+  const bodies = [
+    `<p>Ahoj <b>${u.name}</b>,</p><p>Automatická platba za tvoje <b>${what}</b> (${amt} €) bohužiaľ neprešla 😟. Zvyčajne stačí skontrolovať platnosť karty alebo zostatok.</p><p>Aktualizuj si platobné údaje, aby ti členstvo nevypršalo.</p>`,
+    `<p>Ahoj <b>${u.name}</b>,</p><p>Pripomíname, že platba za <b>${what}</b> (${amt} €) stále neprešla. Nech ti neprepadne členstvo, prosím aktualizuj si platbu.</p><p>Ak máš otázku, stačí odpovedať na tento email. 💛</p>`,
+    `<p>Ahoj <b>${u.name}</b>,</p><p>Toto je posledná pripomienka — platba za <b>${what}</b> (${amt} €) sa nepodarila. Ak ju nevyriešiš, členstvo sa môže pozastaviť.</p><p>Vyrieš to jedným klikom nižšie. Radi ťa uvidíme na parkete! 💃</p>`,
+  ];
+  const titles = ['Platba sa nepodarila', 'Pripomienka platby', 'Posledná pripomienka platby'];
+  return { subject: `⚠️ ${titles[stage]||titles[0]} (${amt} €)`,
+    html: emailTemplate(titles[stage]||titles[0], bodies[stage]||bodies[0], '💳 Aktualizovať platbu', `${APP_URL}/pricing`) };
+}
+async function sendDunning(payment, stage){
+  const u = await q.one(db.users,{_id:payment.user_id});
+  if(!u?.email) return false;
+  const e = dunningEmail(u, payment, stage);
+  await sendMail(u.email, e.subject, e.html).catch(()=>{});
+  await q.insert(db.notifications,{user_id:u._id,type:'payment_failed',title:'⚠️ Platba zlyhala',body:`${(+payment.amount||0).toFixed(2)} € – skontroluj platobné údaje.`,read:false,created_at:nowISO()}).catch(()=>{});
+  await q.update(db.payments,{_id:payment._id},{$set:{reminders_sent:(payment.reminders_sent||0)+1, last_reminder_at:nowISO(), dunning_stage:stage}});
+  return true;
+}
+// Zaznamenaj zlyhanú platbu (idempotentne cez stripe_invoice_id) a pošli 1. upomienku
+async function recordFailedPayment({user_id, amount, description, plan_name, provider, invoice_id}){
+  if(invoice_id){ const ex=await q.one(db.payments,{stripe_invoice_id:invoice_id}); if(ex) return ex; }
+  const p = await q.insert(db.payments,{ status:'failed', user_id, amount:+amount||0, currency:'EUR',
+    description:description||'', plan_name:plan_name||'', provider:provider||'stripe',
+    stripe_invoice_id:invoice_id||null, failed_at:nowISO(), reminders_sent:0, dunning_stage:-1, resolved:false, created_at:nowISO() });
+  await sendDunning(p, 0);
+  return p;
+}
+// Po úspešnej platbe klienta vybav jeho zlyhané platby
+async function resolveFailedPayments(userId){
+  if(!userId) return 0;
+  const n = await q.update(db.payments,{user_id:userId, status:'failed', resolved:{$ne:true}},{$set:{resolved:true, resolved_at:nowISO(), resolved_reason:'payment_succeeded'}},{multi:true});
+  return n;
+}
+app.get('/api/admin/failed-payments', adminAuth, async(req,res)=>{
+  try {
+    const all = (await q.find(db.payments,{status:'failed'})).filter(p=>!p.resolved);
+    const rows = await Promise.all(all.map(async p=>{
+      const u = p.user_id ? await q.one(db.users,{_id:p.user_id}) : null;
+      const days = Math.floor((Date.now()-new Date(p.failed_at||p.created_at).getTime())/86400000);
+      return { id:p._id, name:u?.name||p.member_name||'—', email:u?.email||p.member_email||'', amount:+p.amount||0,
+        description:p.description||p.plan_name||'Členstvo', failed_at:(p.failed_at||p.created_at||'').slice(0,10),
+        days, reminders_sent:p.reminders_sent||0, last_reminder_at:(p.last_reminder_at||'').slice(0,10) };
+    }));
+    rows.sort((a,b)=>b.days-a.days);
+    res.json({ count:rows.length, owed:+rows.reduce((s,r)=>s+r.amount,0).toFixed(2), rows });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/failed-payments/:id/remind', adminAuth, async(req,res)=>{
+  try {
+    const p = await q.one(db.payments,{_id:req.params.id, status:'failed'}); if(!p) return res.status(404).json({error:'Nenájdené'});
+    const ok = await sendDunning(p, Math.min(p.reminders_sent||0, DUNNING_DAYS.length-1));
+    await auditLog(req,'dunning_manual',p._id,{},{reminders_sent:(p.reminders_sent||0)+1},'');
+    res.json({ ok });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/failed-payments/:id/resolve', adminAuth, async(req,res)=>{
+  try {
+    const p = await q.one(db.payments,{_id:req.params.id}); if(!p) return res.status(404).json({error:'Nenájdené'});
+    await q.update(db.payments,{_id:p._id},{$set:{resolved:true, resolved_at:nowISO(), resolved_reason:req.body.reason||'manual'}});
+    await auditLog(req,'dunning_resolve',p._id,{},{reason:req.body.reason||'manual'},'');
+    res.json({ ok:true });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ── Detailed CLIENTS list (paying members only — leads have their own tab) ────
 // ── Testovacie účty: detekcia + kaskádové zmazanie (pred ostrým spustením) ────
 function isTestAccount(u){
@@ -4561,14 +4630,15 @@ app.post('/api/stripe/webhook', async(req,res)=>{
       const inv = event.data.object;
       if(inv.subscription){
         const u = await q.one(db.users,{stripe_subscription_id:inv.subscription});
-        if(u?.email){
-          await sendMail(u.email,'⚠️ Platba členstva zlyhala',
-            emailTemplate('Platba sa nepodarila',
-              `<p>Ahoj <b>${u.name}</b>,</p><p>Automatická platba za tvoje členstvo <b>bohužiaľ neprešla</b> 😟. Zvyčajne stačí skontrolovať platnosť karty alebo zostatok.</p><p>Aktualizuj si platobné údaje, aby ti členstvo nevypršalo. Ak potrebuješ pomôcť, stačí odpovedať na tento email.</p>`,
-              '💳 Aktualizovať platbu',`${APP_URL}/pricing`)).catch(()=>{});
-          await q.insert(db.notifications,{user_id:u._id,type:'payment_failed',title:'⚠️ Platba členstva zlyhala',body:'Skontroluj platobné údaje, aby ti členstvo nevypršalo.',read:false,created_at:nowISO()});
+        if(u){
+          const amt = (inv.amount_due||inv.total||0)/100;
+          await recordFailedPayment({ user_id:u._id, amount:amt, description:'Členstvo (automatická obnova)',
+            plan_name:'Členstvo', provider:'stripe', invoice_id:inv.id });
         }
       }
+    } else if(event.type==='invoice.payment_succeeded'){
+      const inv = event.data.object;
+      if(inv.subscription){ const u = await q.one(db.users,{stripe_subscription_id:inv.subscription}); if(u) await resolveFailedPayments(u._id); }
     } else if(event.type==='customer.subscription.deleted'){
       const sub = event.data.object;
       const u = await q.one(db.users,{stripe_subscription_id:sub.id});
@@ -7028,6 +7098,18 @@ async function runDailyJobs(){
     if(!already){
       try { const r=await sendAllPayslips(pm); await q.insert(db.audit,{action:'send_payslips_auto',target:pm,after:{sent:r.sent,grand:r.grand},created_at:nowISO()}); }
       catch(e){ console.error('Payslip auto error:', e.message); }
+    }
+  }
+
+  // ── 6c. Dunning: upomienky na zlyhané platby (deň 3, deň 7) ────────────────
+  const failedOpen = (await q.find(db.payments,{status:'failed'})).filter(p=>!p.resolved);
+  for(const p of failedOpen){
+    const daysSince = Math.floor((Date.now()-new Date(p.failed_at||p.created_at).getTime())/86400000);
+    const sent = p.reminders_sent||0;
+    if(sent >= DUNNING_DAYS.length) continue; // vyčerpané upomienky
+    // ďalšiu upomienku pošli, keď uplynul jej deň a dnes sme ešte neposielali
+    if(daysSince >= DUNNING_DAYS[sent] && (p.last_reminder_at||'').slice(0,10) !== todayStr){
+      try { await sendDunning(p, sent); } catch(e){ console.error('Dunning error:', e.message); }
     }
   }
 

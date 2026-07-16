@@ -146,6 +146,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('trainers')"><i class="bi bi-person-badge me-2"></i>Výkon trénerov</a>
       <a class="nav-link" href="#" onclick="show('payouts')"><i class="bi bi-cash-stack me-2"></i>Výplaty trénerov</a>
       <a class="nav-link" href="#" onclick="show('refunds')"><i class="bi bi-arrow-counterclockwise me-2"></i>Refundácie</a>
+      <a class="nav-link" href="#" onclick="show('failed')"><i class="bi bi-credit-card-2-front me-2"></i>Neúspešné platby <span id="failedBadge" class="badge bg-danger" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('alerts')"><i class="bi bi-bell me-2"></i>Alerty <span id="alertsBadge" class="badge bg-danger" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('exports')"><i class="bi bi-download me-2"></i>Exporty</a>
       <a class="nav-link" href="#" onclick="show('reset')" style="color:#e57373"><i class="bi bi-exclamation-octagon me-2"></i>Reset dát</a>
@@ -1087,6 +1088,19 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </table></div>
   </div>
 
+  <div class="section" id="s-failed">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
+      <h4 class="fw-bold mb-0">💳 Neúspešné platby / dlžníci</h4>
+      <button class="btn btn-sm btn-outline-secondary" onclick="loadFailed()"><i class="bi bi-arrow-clockwise"></i></button>
+    </div>
+    <p class="text-muted small mb-3">Zlyhané automatické platby členstiev (karta bez zostatku/expirovaná). Appka klientom automaticky posiela upomienky (deň 0, 3, 7). Po zaplatení sa vybaví samo — alebo označ ručne (napr. keď zaplatia hotovosťou).</p>
+    <div id="failedStats" class="row g-3 mb-3"></div>
+    <div class="table-responsive"><table class="table table-dark table-hover align-middle" style="font-size:.82rem">
+      <thead><tr><th>Zlyhalo</th><th>Klient</th><th>Za čo</th><th>Suma</th><th>Upomienok</th><th>Posl. upomienka</th><th>Akcie</th></tr></thead>
+      <tbody id="failedBody"><tr><td colspan="7" class="text-muted text-center py-4">Načítavam…</td></tr></tbody>
+    </table></div>
+  </div>
+
   <!-- VÝPLATY TRÉNEROV -->
   <div class="section" id="s-payouts">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
@@ -1366,6 +1380,7 @@ function show(sec){
   if(sec==='trainers')initTrainers();
   if(sec==='payouts')initPayouts();
   if(sec==='refunds')loadRefunds();
+  if(sec==='failed')loadFailed();
   if(sec==='alerts')loadAlerts();
   if(sec==='exports')loadExports();
   if(sec==='reset')loadResetPreview();
@@ -1454,6 +1469,39 @@ async function markAlertsRead(){ await api('/api/admin/alerts/read',{method:'POS
 /* ─── REFUNDÁCIE ─────────────────────────────────────────── */
 const REF_TYPE_LABEL={full:'Plná',partial:'Čiastočná',storno:'Storno',credit_note:'Dobropis',app_credit:'Kredit do appky',transfer:'Prevod'};
 let _refMeta=null, _refSelPay=null;
+async function loadFailed(){
+  const body=document.getElementById('failedBody');
+  const d=await api('/api/admin/failed-payments');
+  if(!d||d.error){ body.innerHTML='<tr><td colspan="7" class="text-danger py-3">Chyba.</td></tr>'; return; }
+  const badge=document.getElementById('failedBadge');
+  if(d.count>0){ badge.textContent=d.count; badge.style.display='inline'; } else badge.style.display='none';
+  const kpi=(l,v,c)=>`<div class="col-6 col-md-3"><div class="card bg-dark border-secondary"><div class="card-body py-3"><div class="text-muted" style="font-size:.66rem;text-transform:uppercase">${l}</div><div class="fw-bold" style="font-size:1.4rem;color:${c||'#fff'}">${v}</div></div></div></div>`;
+  document.getElementById('failedStats').innerHTML = kpi('Nevybavené',d.count,'#e57373')+kpi('Dlžná suma',(d.owed||0).toFixed(2)+' €','#ff9800');
+  if(!d.rows.length){ body.innerHTML='<tr><td colspan="7" class="text-center py-4 text-muted">Žiadne nevybavené neúspešné platby 🎉</td></tr>'; return; }
+  body.innerHTML=d.rows.map(r=>`<tr>
+    <td class="text-nowrap">${r.failed_at} <span class="text-muted small">(${r.days} d)</span></td>
+    <td class="fw-semibold">${escHtml(r.name)}<div class="small text-muted">${escHtml(r.email)}</div></td>
+    <td class="small">${escHtml(r.description)}</td>
+    <td class="fw-bold" style="color:#ff9800">${r.amount.toFixed(2)} €</td>
+    <td class="text-center">${r.reminders_sent}×</td>
+    <td class="text-nowrap small ${r.last_reminder_at?'':'text-muted'}">${r.last_reminder_at||'—'}</td>
+    <td class="text-nowrap">
+      <button class="btn btn-sm btn-outline-warning py-0 px-2" title="Poslať upomienku teraz" onclick="remindFailed('${r.id}')"><i class="bi bi-envelope"></i></button>
+      <button class="btn btn-sm btn-outline-success py-0 px-2" title="Označiť ako vybavené (napr. zaplatené hotovosťou)" onclick="resolveFailed('${r.id}')"><i class="bi bi-check2"></i></button>
+    </td>
+  </tr>`).join('');
+}
+async function remindFailed(id){
+  const r=await api('/api/admin/failed-payments/'+id+'/remind',{method:'POST'});
+  if(r&&r.ok){ showToast('Upomienka odoslaná ✓','success'); loadFailed(); }
+  else showToast('Nepodarilo sa (klient nemá email?)','error');
+}
+async function resolveFailed(id){
+  if(!confirm('Označiť túto platbu ako vybavenú? (napr. klient zaplatil hotovosťou alebo kartu už opravil)')) return;
+  const r=await api('/api/admin/failed-payments/'+id+'/resolve',{method:'POST',body:{reason:'manual'}});
+  if(r&&r.ok){ showToast('Označené ako vybavené ✓','success'); loadFailed(); }
+  else showToast('Chyba','error');
+}
 async function loadRefunds(){
   const d=await api('/api/admin/refunds');
   if(!d||d.error){ document.getElementById('refBody').innerHTML='<tr><td colspan="8" class="text-danger py-3">Chyba.</td></tr>'; return; }
