@@ -2275,6 +2275,60 @@ app.post('/api/admin/import-members', adminAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Import histórie príjmov z Glofox (Reports → Transactions → Download full report CSV).
+// Vloží PAID platby (>0 €) ako záznamy do db.payments (status completed) → účtovníctvo ich započíta.
+// Idempotentné cez glofox_key (Transaction ID alebo dátum+čas+email+suma).
+app.post('/api/admin/import-income', adminAuth, async(req,res)=>{
+  try {
+    const csv = req.body.csv||'';
+    if(!csv || csv.length<10) return res.status(400).json({error:'Prázdny CSV'});
+    const rows = parseCsv(csv);
+    if(rows.length<2) return res.status(400).json({error:'CSV nemá dáta'});
+    const head = rows[0].map(h=>h.trim().toLowerCase());
+    const col = n => head.indexOf(n);
+    const iDate=col('date'), iTime=col('time'), iMember=col('member'), iEmail=col('email address'),
+      iSoldBy=col('sold by'), iCharge=col('charge'), iPlan=col('plan'), iMethod=col('method'),
+      iAmount=head.findIndex(h=>h.startsWith('amount')), iStatus=col('status'), iTxid=col('transaction id');
+    if(iAmount<0||iStatus<0||iDate<0) return res.status(400).json({error:'CSV nemá stĺpce Date/Amount/Status (Glofox Transactions export)'});
+    const mapMethod=m=>{ m=(m||'').toLowerCase(); if(m.includes('card'))return 'card'; if(m.includes('cash'))return 'cash'; if(m.includes('bank'))return 'bank'; if(m.includes('complimentary'))return 'complimentary'; return m||'other'; };
+    const toISO=(d,t)=>{ const [dd,mm,yy]=(d||'').split('/'); if(!yy) return null; return `${yy}-${mm}-${dd}T${(t||'00:00')}:00.000Z`; };
+    let imported=0, skipped=0, dupes=0; let totalEur=0;
+    const seenComposite={}; // pre stabilné odlíšenie identických riadkov v rámci súboru
+    for(let r=1;r<rows.length;r++){
+      const row=rows[r];
+      const status=(row[iStatus]||'').toUpperCase();
+      const amount=Math.round((parseFloat(row[iAmount])||0)*100)/100;
+      if(status!=='PAID' || amount<=0){ skipped++; continue; }
+      const email=(iEmail>=0?row[iEmail]:'').toLowerCase().trim();
+      const iso=toISO(row[iDate], iTime>=0?row[iTime]:'');
+      if(!iso){ skipped++; continue; }
+      const txid=(iTxid>=0?(row[iTxid]||'').trim():'');
+      let key;
+      if(txid && txid!=='-'){ key='gf:'+txid; }
+      else {
+        const comp=[row[iDate],iTime>=0?row[iTime]:'',email,amount,(iCharge>=0?row[iCharge]:'')].join('|');
+        const n=(seenComposite[comp]=(seenComposite[comp]||0)+1); // 1,2,3… pre identické riadky
+        key='gf:'+comp+'#'+n;
+      }
+      if(await q.one(db.payments,{glofox_key:key})){ dupes++; continue; }
+      const user = email ? await q.one(db.users,{email}) : null;
+      const plan = (iPlan>=0&&row[iPlan]&&row[iPlan]!=='-') ? row[iPlan] : (iCharge>=0?(row[iCharge]||'Platba'):'Platba');
+      await q.insert(db.payments,{
+        glofox_import:true, glofox_key:key,
+        status:'completed', amount, currency:'EUR',
+        plan_name: plan, method: mapMethod(iMethod>=0?row[iMethod]:''),
+        provider: mapMethod(iMethod>=0?row[iMethod]:''),
+        user_id: user?user._id:null, member_name: iMember>=0?row[iMember]:'', member_email: email,
+        sold_by: iSoldBy>=0?row[iSoldBy]:'', charge: iCharge>=0?row[iCharge]:'',
+        created_at: iso, captured_at: iso,
+      });
+      imported++; totalEur+=amount;
+    }
+    await auditLog(req,'import_income',null,{},{imported,dupes,skipped,totalEur:+totalEur.toFixed(2)},'');
+    res.json({ ok:true, imported, dupes, skipped, total:rows.length-1, totalEur:+totalEur.toFixed(2) });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ── Detailed CLIENTS list (paying members only — leads have their own tab) ────
 // ── Testovacie účty: detekcia + kaskádové zmazanie (pred ostrým spustením) ────
 function isTestAccount(u){
