@@ -1458,7 +1458,7 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
       nickname: u.anonymous&&!isSelf ? '' : (u.nickname||''),
       status: u.anonymous&&!isSelf ? '' : (u.status||''),
       birthday: isSelf ? (u.birthday||'') : undefined,
-      gender, viewer_lang: viewerLang, viewer_is_admin: viewerIsAdmin,
+      gender, viewer_lang: viewerLang, viewer_is_admin: viewerIsAdmin, viewer_logged_in: !!req.session?.uid,
       points: monthPoints,
       membership_tier: memTier, membership_name: memName,
       likes: likeCount, liked_by_me: likedByMe,
@@ -4589,6 +4589,7 @@ async function fulfillStripeCheckout(s){
   if(!s || s.payment_status!=='paid') return {ok:false, error:'Platba nebola dokončená'};
   const meta = s.metadata || {};
   if(meta.type==='order') return {ok:false, skip:true}; // e-shop handled separately
+  if(meta.type==='gift_credit') return await fulfillGiftCredit(s);
   const plan = MEMBERSHIP_PLANS[meta.plan_id];
   if(!plan) return {ok:false, error:'Neznámy plán'};
   // Atomic claim: only the first caller flips pending→completed and proceeds
@@ -4611,6 +4612,69 @@ async function fulfillStripeCheckout(s){
   awardPurchaseCommission({buyer_id:meta.user_id, amount:plan.price, product_name:`Členstvo ${plan.name}`});
   return {ok:true, plan_name:plan.name, subscription:meta.type==='subscription'};
 }
+
+// ── Darček kreditu: klient kúpi kredit inému klientovi ────────────────────────
+async function creditRecipient(recipientId, amount, gifterName){
+  const rcpt = await q.one(db.users,{_id:recipientId});
+  if(!rcpt) return false;
+  const newBal = +((rcpt.referral_credit||0) + (+amount||0)).toFixed(2);
+  await q.update(db.users,{_id:recipientId},{$set:{referral_credit:newBal}});
+  await q.insert(db.notifications,{user_id:recipientId,type:'credit',title:`🎁 Dostal/a si darček – ${(+amount).toFixed(2)} € kredit`,
+    body:`${gifterName||'Niekto'} ti kúpil ${(+amount).toFixed(2)} € kredit do appky. Nový zostatok: ${newBal.toFixed(2)} €. Použi ho na hodiny alebo členstvo! 💃`,read:false,created_at:nowISO()}).catch(()=>{});
+  return true;
+}
+async function fulfillGiftCredit(s){
+  const meta = s.metadata || {};
+  const claimed = await q.update(db.payments,{stripe_session_id:s.id, status:{$ne:'completed'}},{$set:{status:'completed', captured_at:nowISO(), stripe_payment_intent:s.payment_intent||''}});
+  if(!claimed) return {ok:true, already:true};
+  const amount = +meta.amount||0;
+  const gifter = await q.one(db.users,{_id:meta.gifter_id});
+  await creditRecipient(meta.recipient_id, amount, gifter?.name);
+  const rcpt = await q.one(db.users,{_id:meta.recipient_id});
+  await q.insert(db.transactions,{type:'gift_credit',user_id:meta.gifter_id,user_name:gifter?.name||'—',amount,payment_method:'stripe',note:`Darček kreditu pre ${rcpt?.name||'klienta'}`,created_at:nowISO(),month:today().slice(0,7)});
+  createInvoice({user_id:meta.gifter_id, client_name:gifter?.name, client_email:gifter?.email,
+    items:[{desc:`Darčekový kredit pre ${rcpt?.name||'klienta'}`, qty:1, total:amount}], total:amount, method:'Stripe (karta / Apple Pay / Google Pay)'});
+  if(gifter?.email) sendMail(gifter.email,`🎁 Darček kreditu odoslaný – ${amount.toFixed(2)} €`,
+    emailTemplate('Darček odoslaný 🎁', `<p>Ahoj <b>${gifter.name}</b>,</p><p>Tvoj darček <b>${amount.toFixed(2)} € kredit</b> pre <b>${rcpt?.name||'klienta'}</b> bol úspešne pripísaný. Ďakujeme! 💛</p>`, '📱 Môj profil', `${APP_URL}/client-dashboard`)).catch(()=>{});
+  return {ok:true, gift:true, amount};
+}
+// Klient iniciuje darček kreditu (Stripe / demo)
+app.post('/api/gift-credit/checkout', auth, async(req,res)=>{
+  try {
+    const recipient_id = String(req.body.recipient_id||'');
+    const amount = Math.round((+req.body.amount||0)*100)/100;
+    if(amount < 5 || amount > 500) return res.status(400).json({error:'Suma musí byť 5–500 €'});
+    const rcpt = await q.one(db.users,{_id:recipient_id});
+    if(!rcpt || rcpt.active===false) return res.status(404).json({error:'Príjemca nenájdený'});
+    if(recipient_id===req.session.uid) return res.status(400).json({error:'Kredit si nemôžeš darovať sám sebe 🙂'});
+    const gifter = await q.one(db.users,{_id:req.session.uid});
+    // Demo (bez Stripe): pripíš hneď – nech sa dá otestovať
+    if(!STRIPE_SECRET){
+      await creditRecipient(recipient_id, amount, gifter?.name);
+      await q.insert(db.transactions,{type:'gift_credit',user_id:req.session.uid,user_name:gifter?.name||'—',amount,payment_method:'demo',note:`Darček kreditu pre ${rcpt.name}`,created_at:nowISO(),month:today().slice(0,7)});
+      return res.json({ok:true, demo:true, message:`(Demo) Darček ${amount.toFixed(2)} € kredit pre ${rcpt.name} pripísaný.`});
+    }
+    const base = APP_URL;
+    const params = {
+      'mode':'payment',
+      'line_items[0][quantity]':1,
+      'line_items[0][price_data][currency]':'eur',
+      'line_items[0][price_data][unit_amount]':Math.round(amount*100),
+      'line_items[0][price_data][product_data][name]':`Darčekový kredit pre ${rcpt.name} (${amount.toFixed(2)} €)`,
+      'success_url':`${base}/client-dashboard?gift=success`,
+      'cancel_url':`${base}/u/${recipient_id}?gift=cancel`,
+      'customer_email':gifter?.email,
+      'metadata[type]':'gift_credit',
+      'metadata[gifter_id]':req.session.uid,
+      'metadata[recipient_id]':recipient_id,
+      'metadata[amount]':amount
+    };
+    const r = await stripeApi('checkout/sessions', params, 'POST');
+    if(r.status>=400 || !r.body?.url) return res.status(400).json({error:r.body?.error?.message||'Stripe chyba'});
+    await q.insert(db.payments,{stripe_session_id:r.body.id, user_id:req.session.uid, amount, currency:'EUR', description:`Darčekový kredit pre ${rcpt.name}`, ref_type:'gift_credit', gift_recipient:recipient_id, provider:'stripe', status:'pending', created_at:nowISO()});
+    res.json({ok:true, url:r.body.url});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
 
 app.post('/api/stripe/verify', auth, async(req,res)=>{
   try {

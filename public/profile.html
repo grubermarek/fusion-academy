@@ -408,6 +408,7 @@ function render(){
     </div>
     ${friendBtn()}
     ${(!P.is_self && !P.anonymous) ? `<a class="msg-btn" href="/community?dm=${P.id}"><i class="bi bi-chat-dots-fill"></i> ${T('profile.msg')}</a>` : ''}
+    ${(!P.is_self && !P.anonymous && P.viewer_logged_in) ? `<button class="report-btn" style="background:#2a2410;border-color:#5a4a20;color:#e0b84c" onclick="openGiftCredit()"><i class="bi bi-gift"></i> Darovať kredit</button>` : ''}
     ${(P.is_admin_profile && !P.is_self) ? `<button class="report-btn" onclick="openReport()"><i class="bi bi-question-circle"></i> Napísať otázku / nahlásiť chybu</button>` : ''}
     ${P.points ? `<details class="pts-box">
       <summary><span>⭐ ${T('profile.points_title')} <b style="color:var(--gold)">${P.points.total}</b></span><i class="bi bi-chevron-down"></i></summary>
@@ -454,6 +455,43 @@ async function loadComments(){
   }catch(e){ box.innerHTML='<div class="empty">'+T('profile.cmt_fail')+'</div>'; }
 }
 let _reportType='question';
+let _giftAmount=10;
+function openGiftCredit(){
+  let ov=document.getElementById('giftOv');
+  if(!ov){ ov=document.createElement('div'); ov.id='giftOv';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px';
+    ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+    document.body.appendChild(ov);
+  }
+  _giftAmount=10;
+  const name=esc(P.nickname||P.name||'klientke');
+  const amts=[10,20,50];
+  ov.innerHTML=`<div style="background:#161512;border:1px solid var(--border);border-radius:16px;max-width:420px;width:100%;padding:22px;text-align:center">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:var(--gold)">🎁 Darovať kredit</b><button onclick="document.getElementById('giftOv').remove()" style="background:none;border:none;color:var(--muted);font-size:1.4rem;cursor:pointer">×</button></div>
+    <p style="color:var(--text-muted);font-size:.88rem;margin:0 0 14px">Kúpiš kredit pre <b style="color:#F5EDD6">${name}</b> — zaplatíš ty, kredit dostane ona a použije ho na hodiny či členstvo.</p>
+    <div id="giftAmts" style="display:flex;gap:8px;justify-content:center;margin-bottom:12px">
+      ${amts.map(a=>`<button onclick="setGift(${a})" data-a="${a}" class="gift-amt" style="flex:1;padding:12px;border-radius:10px;border:1px solid var(--border);background:#0d0d0d;color:#F5EDD6;cursor:pointer;font-weight:800;font-size:1.05rem">${a} €</button>`).join('')}
+    </div>
+    <input id="giftCustom" type="number" min="5" max="500" step="1" placeholder="alebo vlastná suma (5–500 €)" oninput="setGift(+this.value)" style="width:100%;background:#0d0d0d;border:1px solid var(--border);border-radius:10px;padding:11px;color:#F5EDD6;margin-bottom:14px;text-align:center">
+    <button id="giftPayBtn" onclick="payGift()" style="width:100%;padding:.9rem;background:linear-gradient(102deg,#B98F3E,#E7C878);border:none;border-radius:12px;font-weight:800;color:#231A08;cursor:pointer;font-size:.98rem">Zaplatiť a darovať <span id="giftPayAmt">10</span> €</button>
+    <div id="giftMsg" style="display:none;font-size:.82rem;color:#e57373;margin-top:8px"></div>
+  </div>`;
+  setGift(10);
+}
+function setGift(a){ _giftAmount=Math.max(0,+a||0); document.getElementById('giftPayAmt').textContent=_giftAmount||'—';
+  document.querySelectorAll('#giftAmts .gift-amt').forEach(b=>{ const on=+b.dataset.a===_giftAmount; b.style.borderColor=on?'var(--gold)':'var(--border)'; b.style.background=on?'#2a2410':'#0d0d0d'; }); }
+async function payGift(){
+  const msg=document.getElementById('giftMsg'); const btn=document.getElementById('giftPayBtn');
+  if(_giftAmount<5||_giftAmount>500){ msg.textContent='Suma musí byť 5–500 €'; msg.style.display='block'; return; }
+  btn.disabled=true; btn.textContent='⏳ Presmerovávam na platbu…';
+  try{
+    const r=await fetch('/api/gift-credit/checkout',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({recipient_id:uid,amount:_giftAmount})}).then(r=>r.json());
+    if(r.ok && r.url){ window.location.href=r.url; return; }
+    if(r.ok && r.demo){ alert('✅ '+(r.message||'Darček pripísaný.')); document.getElementById('giftOv').remove(); return; }
+    msg.textContent=r.error||'Nepodarilo sa'; msg.style.display='block';
+  }catch{ msg.textContent='Chyba pripojenia'; msg.style.display='block'; }
+  btn.disabled=false; btn.innerHTML='Zaplatiť a darovať <span id="giftPayAmt">'+_giftAmount+'</span> €';
+}
 function openReport(){
   let ov=document.getElementById('reportOv');
   if(!ov){ ov=document.createElement('div'); ov.id='reportOv';
