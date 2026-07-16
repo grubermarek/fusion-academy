@@ -66,6 +66,18 @@ body.fa-has-dock #fa-dock{bottom:12px;}
 /* Feed */
 .feed-wrap{max-width:640px;margin:0 auto;padding:8px 4px 40px;}
 .feed-composer{background:#161616;border:1px solid var(--gold-border,#332a18);border-radius:14px;padding:14px;margin-bottom:18px;}
+.unlock-grid{display:grid;gap:10px;margin-bottom:18px;}
+.unlock-card{display:flex;align-items:center;gap:12px;background:#161616;border:1px solid #2a2a2a;border-radius:14px;padding:12px 14px;text-decoration:none;color:#eee;transition:border-color .15s,transform .1s;}
+.unlock-card:hover{transform:translateY(-1px);}
+.unlock-card.locked{border-color:#3a3320;background:linear-gradient(160deg,#1a1710,#141414);}
+.unlock-card.locked .uc-ic{filter:grayscale(.4) opacity(.85);}
+.unlock-card.open{border-color:#2e5a2e;}
+.uc-ic{font-size:1.7rem;flex-shrink:0;}
+.uc-txt{flex:1;min-width:0;display:flex;flex-direction:column;}
+.uc-txt b{font-size:.92rem;}
+.uc-txt span{font-size:.75rem;color:#9a9a9a;line-height:1.3;}
+.uc-badge{flex-shrink:0;font-size:.72rem;font-weight:800;background:#2a2410;color:#C9A84C;border:1px solid var(--gold-border,#5a4a20);border-radius:20px;padding:5px 11px;white-space:nowrap;}
+.uc-badge.open{background:#16240f;color:#8bd06a;border-color:#2e5a2e;}
 .feed-composer textarea{width:100%;background:#1e1e1e;border:1px solid #333;border-radius:10px;color:#eee;padding:10px 12px;font-size:.9rem;resize:vertical;min-height:56px;}
 .fc-actions{display:flex;justify-content:space-between;align-items:center;margin-top:10px;gap:8px;}
 .fc-btn{background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;border:none;font-weight:800;padding:8px 20px;border-radius:9px;cursor:pointer;font-size:.85rem;}
@@ -681,10 +693,23 @@ async function loadFeed() {
         <button class="fc-btn" onclick="createPost(this)">Uverejniť</button>
       </div>
     </div>`;
-  container.innerHTML = `<div class="feed-wrap">${composer}<div id="feedPosts">${
+  container.innerHTML = `<div class="feed-wrap">${composer}${unlockCardsHtml()}<div id="feedPosts">${
     posts.length ? posts.map(renderPost).join('') : '<div style="text-align:center;color:#888;padding:2rem">Zatiaľ žiadne príspevky. Buď prvá! 🌟</div>'
   }</div></div>`;
   container.scrollTop = 0;
+}
+function unlockCardsHtml(){
+  const plan = me?.membership?.plan_id || null;
+  const ONLINE = ['silver','gold','online_basic','online_premium'];
+  const feats = [
+    { f:'analyza', icon:'📊', title:'Metabolická analýza (Tanita)', sub:'Zloženie tela, tuk, sval, metabolizmus — naživo v mobile', open:['silver','gold'].includes(plan), tier:'Silver' },
+    { f:'f1',      icon:'🥤', title:'Herbalife F1 raňajky',          sub:'Kompletná výživa za menej než párky — v cene Gold', open:plan==='gold', tier:'Gold' },
+    { f:'online',  icon:'💻', title:'Online hodiny LIVE',            sub:'Cvič z domu, kedy sa ti hodí — aj o 22:00', open:ONLINE.includes(plan), tier:'Silver' },
+  ];
+  return `<div class="unlock-grid">${feats.map(x=>x.open
+    ? `<a class="unlock-card open" href="/support"><div class="uc-ic">${x.icon}</div><div class="uc-txt"><b>${x.title}</b><span>${x.sub}</span></div><div class="uc-badge open">✓ Objednať</div></a>`
+    : `<a class="unlock-card locked" href="/unlock.html?f=${x.f}"><div class="uc-ic">${x.icon}</div><div class="uc-txt"><b>${x.title}</b><span>${x.sub}</span></div><div class="uc-badge"><i class="bi bi-lock-fill"></i> ${x.tier}</div></a>`
+  ).join('')}</div>`;
 }
 function renderPost(p) {
   const av = stringToColor(p.author_id);

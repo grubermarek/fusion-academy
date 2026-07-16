@@ -771,6 +771,14 @@ async function seedData() {
     console.log('✅  gold_upsell sekvencia pridaná');
   }
 
+  // Idempotentne: promo kód „prvý mesiac Silver za cenu Bronzu" (25 € zľava, 1×/klient)
+  if(!(await q.one(db.promo_codes,{code:'PRVYMESIAC'}))){
+    await q.insert(db.promo_codes,{ code:'PRVYMESIAC', type:'fixed', value:25, applies_to:'membership',
+      max_uses:0, once_per_user:true, min_amount:0, expires_at:null, active:true, used_count:0,
+      note:'Prvý mesiac Silver za cenu Bronzu', created_at:nowISO() });
+    console.log('✅  promo PRVYMESIAC pridané');
+  }
+
   // ── Zosúladenie obsahu upsell sekvencií s blogom (reálne čísla, citáty, odkazy) ──
   const BLOG='https://latindancefusion.art/blog';
   const up=(seq,day,fields)=>q.update(db.email_steps,{sequence:seq,day},{$set:fields},{multi:true});
