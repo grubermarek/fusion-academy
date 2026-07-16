@@ -721,6 +721,26 @@ async function seedData() {
       cta:'✨ Vytvoriť účet a získať hodinu zdarma', cta_url:`${APP2}/`, created_at:nowISO() });
     console.log('✅  app_launch email krok pridaný');
   }
+
+  // Idempotentne: upsell sekvencia Bronze → Silver (metabolická analýza tela)
+  if(await q.count(db.email_steps,{sequence:'bronze_upsell'})===0){
+    const bu = (day,label,subject,body,cta)=>({sequence:'bronze_upsell',day,label,active:true,subject,body,cta:cta||null,cta_url:`${APP_URL}/pricing`,created_at:nowISO()});
+    const steps = [
+      bu(0,'Váha klame','Tvoja váha ti klame (a je to dokázateľné)',
+        `<p>Ahoj {meno},</p><p>povieme ti tajomstvo, ktoré ti žiadna váha v kúpeľni nepovie:</p><p><b>Číslo na váhe je jedno z najhorších meradiel toho, ako ti to ide.</b></p><p>Môžeš schudnúť 3 kilá a vyzerať <i>horšie</i> — stačí stratiť sval a vodu. A môžeš mať rovnakú váhu tri mesiace a pritom sa úplne zmeniť.</p><p>Váha nevie rozlíšiť tuk od svalu. Ty áno. A <b>my ti to vieme ukázať čierne na bielom.</b></p><p>Zajtra ti napíšeme príbeh baby, ktorá „neschudla ani deko" — a aj tak vyhrala. 💃</p>`),
+      bu(3,'Príbeh','Schudla 0 kg. A predsa to bola výhra.',
+        `<p>{meno}, sľúbili sme príbeh — tu je.</p><p>Baba chodila 8 týždňov na Zumbu. Postavila sa na váhu: <b>rovnaké číslo ako na začiatku.</b> Sklamanie, však?</p><p>Lenže <b>analýza zloženia tela</b> ukázala toto:</p><ul><li>🔥 <b>−4 kg tuku</b></li><li>💪 <b>+4 kg svalu</b></li></ul><p>Rovnaká váha. Úplne iné telo — pevnejšie, silnejšie, s rýchlejším metabolizmom, čo páli kalórie aj na gauči.</p><p>Keby verila len váhe, možno to vzdá. <b>Namiesto toho videla pravdu — a pokračovala.</b></p>`),
+      bu(7,'Čo ukáže analýza','Čo ti povie analýza, čo zrkadlo zatají',
+        `<p>{meno}, zrkadlo ti ukáže <i>ako vyzeráš</i>. Analýza tela ti ukáže <b>prečo</b> — a čo s tým.</p><p>Za pár sekúnd zistíš:</p><ul><li>📉 <b>% telesného tuku</b> — koľko ho reálne páliš</li><li>💪 <b>svalovú hmotu</b> — či cvičíš správne</li><li>⚡ <b>metabolizmus</b> — koľko kalórií spáliš aj v pokoji</li><li>💧 <b>hydratáciu</b> a <b>viscerálny tuk</b> (ten najnebezpečnejší, okolo orgánov)</li></ul><p>A najlepšie? <b>Máš to celé v mobile.</b> Týždeň po týždni vidíš, ako sa krivka hýbe — žiadne hádanie „funguje to alebo nie".</p>`),
+      bu(12,'Prestaň hádať','Prestaň hádať. Začni vidieť.',
+        `<p>{meno}, otázka na telo:</p><p>Cvičíš, snažíš sa… ale <b>vieš, či ideš správnym smerom?</b> Alebo len dúfaš?</p><p>Rozdiel medzi tými, ktorým to vyjde, a tými, čo to po dvoch mesiacoch vzdajú, nie sú gény. Je to <b>spätná väzba.</b></p><p>Keď vidíš, že tuk týždeň po týždni klesá a sval rastie, <b>chce sa ti pokračovať.</b></p><p>Členstvo <b>Silver</b> ti dáva presne toto — <b>pravidelnú metabolickú analýzu tela, ktorú sleduješ v telefóne.</b> Je to rozdiel medzi cvičením naslepo a cvičením s mapou. 🗺️</p>`),
+      bu(18,'Pozvánka','Tvoja prvá analýza čaká 💛',
+        `<p>{meno}, nebudeme ťa presviedčať. Len ťa pozveme.</p><p>Ak ťa už niekedy napadlo <i>„robím to vôbec správne?"</i> — <b>Silver je odpoveď.</b> Zumba, ktorú miluješ, <b>plus</b> pravidelná analýza tela, vďaka ktorej presne vidíš, ako sa meníš.</p><p>Predstav si ten pocit o mesiac: otvoríš appku a vidíš svoju krivku ísť správnym smerom. <b>To je motivácia, ktorá vydrží.</b></p><p>Prejdi na Silver a <b>tvoja prvá metabolická analýza je pripravená.</b> Uvidíme sa na parkete — aj v grafoch. 💃📈</p>`,
+        'Prejsť na Silver 📈'),
+    ];
+    for(const s of steps) await q.insert(db.email_steps, s);
+    console.log('✅  bronze_upsell sekvencia pridaná');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -3094,6 +3114,8 @@ async function activateMembership(userId, planId, durationDays){
   const plan = MEMBERSHIP_PLANS[planId];
   if(!plan) return;
   const now = new Date();
+  // Upgrade z Bronze na vyššie → zastav upsell sekvenciu (netreba už otravovať)
+  if(planId && planId!=='bronze' && plan.type!=='bundle') cancelSequence(userId,'bronze_upsell').catch(()=>{});
 
   // ── Bundle type: add single_entries instead of membership subscription ───────
   if(plan.type === 'bundle'){
@@ -7162,9 +7184,17 @@ async function processEmailQueue(){
         const recent = await q.find(db.bookings,{user_id:u._id,created_at:{$gte:new Date(Date.now()-7*86400000).toISOString().slice(0,10)}});
         if(recent.length){ await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'active_user'}}); continue; }
       }
+      if(step.sequence === 'bronze_upsell'){
+        // Zastav, ak už prešiel na vyššie členstvo (nie Bronze) — netreba upsell
+        const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
+        if(!mem || mem.plan_id!=='bronze'){ await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'upgraded_or_no_bronze'}}); continue; }
+      }
 
-      await sendMail(u.email, step.subject,
-        emailTemplate(step.subject.replace(/^[^\w]*/,''), step.body, step.cta||null, step.cta_url||APP_URL));
+      const meno = firstName(u.name)||'';
+      const subj = (step.subject||'').replace(/\{meno\}/g, meno);
+      const bodyP = (step.body||'').replace(/\{meno\}/g, meno);
+      await sendMail(u.email, subj,
+        emailTemplate(subj.replace(/^[^\w]*/,''), bodyP, step.cta||null, step.cta_url||APP_URL));
       await q.update(db.email_queue,{_id:item._id},{$set:{status:'sent', sent_at: nowISO()}});
       sent++;
     } catch(e){
@@ -7541,6 +7571,20 @@ async function runDailyJobs(){
         title:'⏰ Úloha na dnes', body:`${t.title}${t.client_name?' · '+t.client_name:''}`, read:false, created_at:nowISO()});
     }
   } catch(e){ console.error('Task reminders error:', e.message); }
+
+  // ── 6g. Upsell Bronze → Silver: zaradenie po 14 dňoch na Bronze ────────────
+  try {
+    const cutoff14 = new Date(Date.now()-14*864e5).toISOString().slice(0,10);
+    const bronze = await q.find(db.memberships,{status:'active', plan_id:'bronze'});
+    for(const m of bronze){
+      const start=(m.started_at||m.created_at||'').slice(0,10);
+      if(!start || start>cutoff14) continue;                 // ešte nie 14 dní
+      const u = await q.one(db.users,{_id:m.user_id});
+      if(!u || !u.email || u.bronze_upsell_enrolled) continue;
+      await enqueueSequence(u._id,'bronze_upsell');
+      await q.update(db.users,{_id:u._id},{$set:{bronze_upsell_enrolled:true}});
+    }
+  } catch(e){ console.error('Bronze upsell enrol error:', e.message); }
 
   // ── 7. Admin alerts (anomaly detection) ───────────────────────────────────
   try { await runAdminAlerts(); } catch(e){ console.error('Admin alerts error:', e.message); }
