@@ -632,6 +632,21 @@
   <!-- Odomkni viac (prémiové funkcie podľa členstva) -->
   <div id="unlockCards" class="unlock-grid anim anim-d7" style="margin-top:20px"></div>
 
+  <!-- Nastavenie ponúk (odhlásenie zo zľavových ponúk) -->
+  <div id="offersPref" style="display:none;margin-top:20px;background:#161616;border:1px solid #262626;border-radius:14px;padding:16px 18px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:14px">
+      <div>
+        <div style="font-weight:600;font-size:.95rem">Zľavové ponuky e-mailom</div>
+        <div style="font-size:.8rem;color:var(--muted);margin-top:3px">Občas ti pošleme kód na zľavu z členstva. Môžeš si to kedykoľvek vypnúť.</div>
+      </div>
+      <label style="position:relative;display:inline-block;width:48px;height:26px;flex:0 0 auto">
+        <input type="checkbox" id="offersToggle" onchange="toggleOffers(this.checked)" style="opacity:0;width:0;height:0">
+        <span id="offersSlider" style="position:absolute;cursor:pointer;inset:0;background:#3a3a3a;border-radius:26px;transition:.2s"></span>
+      </label>
+    </div>
+    <div id="offersMsg" style="font-size:.78rem;margin-top:8px;color:var(--muted)"></div>
+  </div>
+
 </div><!-- /container -->
 
 <!-- QR Fullscreen Modal -->
@@ -717,9 +732,34 @@ function renderUnlockCards(me){
   ).join('');
 }
 
+/* ─── Zľavové ponuky (opt-out) ─── */
+function renderOffersPref(me){
+  const box=document.getElementById('offersPref'); if(!box) return;
+  // Ukáž len ak nemá aktívne členstvo (ponuky chodia len leadom bez členstva)
+  if(me.membership){ box.style.display='none'; return; }
+  box.style.display='block';
+  const t=document.getElementById('offersToggle');
+  const wants=!me.offers_optout;      // toggle zapnutý = chce dostávať ponuky
+  t.checked=wants;
+  paintOffersToggle(wants);
+}
+function paintOffersToggle(on){
+  const s=document.getElementById('offersSlider');
+  s.style.background=on?'var(--gold,#C9A84C)':'#3a3a3a';
+  s.innerHTML=`<span style="position:absolute;top:3px;left:${on?'25px':'3px'};width:20px;height:20px;background:#fff;border-radius:50%;transition:.2s"></span>`;
+}
+async function toggleOffers(on){
+  paintOffersToggle(on);
+  const msg=document.getElementById('offersMsg');
+  const r=await api('/api/me/offers-optout',{method:'POST',body:JSON.stringify({optout:!on})});
+  if(r?.ok){ msg.style.color='#8bd06a'; msg.textContent=on?'✅ Budeme ti posielať zľavové ponuky.':'✅ Vypnuté — už ti ponuky posielať nebudeme.'; }
+  else { msg.style.color='#e57373'; msg.textContent='Nepodarilo sa uložiť'; }
+}
+
 /* ─── Membership ─── */
 function renderMembership(me){
   renderUnlockCards(me);
+  renderOffersPref(me);
   const m=me.membership;
   const planEl=document.getElementById('mcPlan');
   const statusEl=document.getElementById('mcStatus');

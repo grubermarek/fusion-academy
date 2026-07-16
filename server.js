@@ -2013,6 +2013,15 @@ app.post('/api/profile/password', auth, async(req,res)=>{
   res.json({ok:true});
 });
 
+// Zapnutie/vypnutie zľavových ponúk (lead sa môže odhlásiť vo svojom profile)
+app.post('/api/me/offers-optout', auth, async(req,res)=>{
+  try {
+    const optout = !!req.body.optout;
+    await q.update(db.users,{_id:req.session.uid},{$set:{offers_optout:optout}});
+    res.json({ok:true, offers_optout:optout});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ADMIN
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -3407,6 +3416,7 @@ async function validatePromo(code, price, userId){
   if(p.min_amount && price < p.min_amount) return {ok:false, reason:`Kód platí od ${p.min_amount} €`};
   if(p.max_uses && (p.used_count||0) >= p.max_uses) return {ok:false, reason:'Kód už bol vyčerpaný'};
   if(p.once_per_user && userId){ const used=await q.one(db.promo_redemptions,{code, user_id:userId}); if(used) return {ok:false, reason:'Kód si už použil/a'}; }
+  if(p.target_user_id && p.target_user_id!==userId) return {ok:false, reason:'Tento kód je viazaný na iný účet'};
   let discount = p.type==='percent' ? +(price * (+p.value)/100).toFixed(2) : Math.min(+p.value, price);
   discount = Math.max(0, Math.min(discount, price));
   return {ok:true, discount, final:+(price-discount).toFixed(2), promo:p,
@@ -3415,6 +3425,15 @@ async function validatePromo(code, price, userId){
 async function recordPromoRedemption(promo, userId, discount){
   await q.update(db.promo_codes,{_id:promo._id},{$inc:{used_count:1}});
   await q.insert(db.promo_redemptions,{code:promo.code, user_id:userId||null, discount:+discount||0, at:nowISO()});
+}
+// Vytvor osobný časovo-limitovaný ponukový kód (napr. 20 % na 24 h) pre konkrétneho leada
+async function createOfferCode(userId, percent, hours){
+  let code; do { code='ZL'+percent+Math.random().toString(36).slice(2,6).toUpperCase(); } while(await q.one(db.promo_codes,{code}));
+  const expires_at = new Date(Date.now()+hours*3600000).toISOString();
+  await q.insert(db.promo_codes,{ code, type:'percent', value:percent, applies_to:'membership',
+    max_uses:1, once_per_user:true, min_amount:0, expires_at, target_user_id:userId,
+    active:true, used_count:0, note:`Ponuka ${percent}% (${hours} h) pre leada`, created_at:nowISO() });
+  return { code, expires_at };
 }
 // Klient overí promo kód pred platbou (náhľad zľavy)
 app.post('/api/promo/validate', auth, async(req,res)=>{
@@ -6345,6 +6364,7 @@ app.get('/api/me', async(req,res)=>{
     single_entries: u.single_entries||0,
     free_credits: u.free_credits||0,
     referral_credit: u.referral_credit||0,
+    offers_optout: !!u.offers_optout,
     role_label: role.label, role_icon: role.icon, dash_url: role.dashUrl,
     created_at: u.created_at, avatar: u.avatar||null,
     birthday: u.birthday||'', anonymous: !!u.anonymous,
@@ -7441,6 +7461,40 @@ async function runAchievementsDaily(){
   for(const c of clients){ await checkNewAchievements(c._id); }
 }
 // Notifikácie o blížiacich sa meninách/narodeninách priateľov (7 dní a 1 deň dopredu)
+// Eskalujúce ponuky pre leadov bez členstva (48 h → 20 %/24 h, +týždeň → 50 %,
+// potom stále ďalej), kým si ich klient nevypne na profile (offers_optout).
+async function sendLeadOffer(u, percent, stage){
+  const { code } = await createOfferCode(u._id, percent, 24);
+  const beata = stage===1 ? `<div style="background:#141414;border-left:3px solid #C9A84C;padding:12px 14px;margin:14px 0;border-radius:8px;color:#ddd"><p style="margin:0 0 6px"><b>Beátka</b> prišla pred rokom schudnúť. Dnes je o <b>17 kg ľahšia</b>.</p><p style="margin:0;font-style:italic;color:#bbb">„Odchádzam so svojou rodinou a sama so sebou tak, ako som sa nevidela 15 rokov."</p><p style="margin:6px 0 0;font-size:.85em;color:#999">Jej recept? 3× týždenne Zumba + výživa. Nič viac.</p></div>` : '';
+  const body = `<p>Ahoj <b>${u.name}</b>,</p>
+    ${stage===1 ? `<p>vieme, že prvý krok je najťažší. Tak ti dáme dôvod. 💛</p>${beata}` : `<p>ešte stále váhaš? Tak pridávame. 🔥</p>`}
+    <p>Tu je <b>${percent}% zľava na tvoj prvý mesiac členstva</b> — ale pozor, <b>platí len 24 hodín</b>:</p>
+    <div style="text-align:center;margin:16px 0"><div style="display:inline-block;font-family:monospace;font-weight:800;letter-spacing:1px;background:#0d0d0d;border:1px dashed #C9A84C;color:#E7C878;border-radius:10px;padding:12px 22px;font-size:1.3rem">${code}</div><div style="color:#e0a060;font-size:.82rem;margin-top:6px">⏳ platí len do zajtra — potom prepadá</div></div>
+    <p>Zadaj ho pri kúpe členstva a ušetríš na prvom mesiaci. Tvoja premena môže začať dnes. 💃</p>
+    <p style="font-size:.78rem;color:#888;margin-top:18px">Nechceš dostávať ponuky? Vypni si ich vo svojom profile v aplikácii.</p>`;
+  const subj = stage===1 ? `Beátka schudla 17 kg 💪 Tvoja zľava ${percent}% platí len 24 h ⏳` : `Posledná šanca: ${percent}% na prvý mesiac (len 24 h) 🔥`;
+  if(u.email) await sendMail(u.email, subj, emailTemplate(subj.replace(/^[^\w]*/,''), body, 'Uplatniť zľavu', `${APP_URL}/pricing`)).catch(()=>{});
+  await q.insert(db.notifications,{user_id:u._id,type:'offer',title:`🎁 ${percent}% zľava — len 24 h!`,body:`Kód ${code} na prvý mesiac členstva. Platí len do zajtra!`,read:false,created_at:nowISO()}).catch(()=>{});
+}
+async function runLeadOffers(){
+  const todayStr2 = today();
+  const daysAgo = n => new Date(Date.now()-n*864e5).toISOString().slice(0,10);
+  const leads = await q.find(db.users,{user_type:'lead', is_admin:{$ne:true}, active:{$ne:false}});
+  for(const u of leads){
+    if(!u.email || u.offers_optout) continue;
+    if(await q.one(db.memberships,{user_id:u._id, status:'active'})) continue; // už kúpil
+    const stage = u.lead_offer_stage||0;
+    const last = (u.lead_offer_at||u.created_at||'').slice(0,10);
+    let send=null, nextStage=stage;
+    if(stage===0){ if((u.created_at||'').slice(0,10) <= daysAgo(2)){ send=20; nextStage=1; } }        // 48 h
+    else if(stage===1){ if(last <= daysAgo(7)){ send=50; nextStage=2; } }                               // +1 týždeň
+    else { if(last <= daysAgo(14)){ send=50; nextStage=stage+1; } }                                     // potom každé 2 týždne
+    if(send!=null){
+      try { await sendLeadOffer(u, send, nextStage); await q.update(db.users,{_id:u._id},{$set:{lead_offer_stage:nextStage, lead_offer_at:todayStr2}}); }
+      catch(e){ console.error('Lead offer error:', e.message); }
+    }
+  }
+}
 async function runFriendEventsDaily(){
   const todayStr2 = today();
   const now2 = new Date();
@@ -7637,6 +7691,8 @@ async function runDailyJobs(){
   try { await runAchievementsDaily(); } catch(e){ console.error('Achievements daily error:', e.message); }
   // ── 6e. Meniny/narodeniny priateľov (týždeň dopredu + deň pred) ────────────
   try { await runFriendEventsDaily(); } catch(e){ console.error('Friend events error:', e.message); }
+  // ── 6e2. Eskalujúce zľavové ponuky pre leadov bez členstva ─────────────────
+  try { await runLeadOffers(); } catch(e){ console.error('Lead offers error:', e.message); }
 
   // ── 6f. Pripomienky CRM úloh so splatnosťou dnes (priradenému) ─────────────
   try {
