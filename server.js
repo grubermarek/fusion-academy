@@ -5394,15 +5394,18 @@ async function outreachContext(){
   const users = (await q.find(db.users,{is_admin:{$ne:true}, active:{$ne:false}, is_child:{$ne:true}, anonymous:{$ne:true}}))
     .filter(u=>['client','lead'].includes(u.user_type||''));
   const membs = await q.find(db.memberships,{status:'active'});
-  const memExp={}; for(const m of membs){ const e=(m.expires_at||'').slice(0,10); if(!memExp[m.user_id]||e>memExp[m.user_id]) memExp[m.user_id]=e; }
+  const td0=today();
+  const memExp={}, memPlan={};
+  for(const m of membs){ const e=(m.expires_at||'').slice(0,10); if(e && e<td0) continue; // len platné
+    if(!memExp[m.user_id]||e>memExp[m.user_id]){ memExp[m.user_id]=e; memPlan[m.user_id]=m.plan_id||''; } }
   const bookings = await q.find(db.bookings,{status:'attended'});
   const lastAtt={}, cityCount={};
   for(const b of bookings){ if(!b.user_id) continue; const d=b.booking_date||(b.created_at||'').slice(0,10); if(!lastAtt[b.user_id]||d>lastAtt[b.user_id]) lastAtt[b.user_id]=d;
     const loc=(b.class_location||'').trim(); if(loc){ (cityCount[b.user_id]=cityCount[b.user_id]||{})[loc]=(cityCount[b.user_id]?.[loc]||0)+1; } }
   const cityOf={}; for(const uid in cityCount){ cityOf[uid]=Object.entries(cityCount[uid]).sort((a,b)=>b[1]-a[1])[0][0]; }
-  return {users, memExp, lastAtt, cityOf};
+  return {users, memExp, memPlan, lastAtt, cityOf};
 }
-function inSegment(u, seg, ctx, city){
+function inSegment(u, seg, ctx, opts={}){
   const td=today(); const in14=new Date(Date.now()+14*864e5).toISOString().slice(0,10); const ago30=new Date(Date.now()-30*864e5).toISOString().slice(0,10);
   if(seg==='clients') return u.user_type==='client';
   if(seg==='leads') return u.user_type==='lead';
@@ -5410,7 +5413,8 @@ function inSegment(u, seg, ctx, city){
   if(seg==='expiring') return ctx.memExp[u._id] && ctx.memExp[u._id]>=td && ctx.memExp[u._id]<=in14;
   if(seg==='inactive') return u.user_type==='client' && (!ctx.lastAtt[u._id] || ctx.lastAtt[u._id]<ago30);
   if(seg==='entries') return (u.single_entries||0)>0;
-  if(seg==='city') return ctx.cityOf[u._id]===city;
+  if(seg==='city') return ctx.cityOf[u._id]===opts.city;
+  if(seg==='membership') return ctx.memPlan[u._id]===opts.plan;
   return false;
 }
 app.get('/api/admin/outreach/segments', adminAuth, async(req,res)=>{
@@ -5418,17 +5422,22 @@ app.get('/api/admin/outreach/segments', adminAuth, async(req,res)=>{
     const ctx=await outreachContext();
     const segs=Object.entries(OUTREACH_SEGMENTS).map(([key,label])=>({key,label,count:ctx.users.filter(u=>inSegment(u,key,ctx)).length}));
     const cities=[...new Set(Object.values(ctx.cityOf))].sort().map(c=>({key:c, count:ctx.users.filter(u=>ctx.cityOf[u._id]===c).length}));
-    res.json({ segments:segs, cities, total:ctx.users.length });
+    // Úrovne členstva (pre upsell kampane) — len plány, ktoré má aspoň 1 aktívny člen
+    const planIds=[...new Set(Object.values(ctx.memPlan).filter(Boolean))];
+    const memberships=planIds.map(pid=>({ key:pid, label:(MEMBERSHIP_PLANS[pid]?.name||pid),
+      count:ctx.users.filter(u=>ctx.memPlan[u._id]===pid).length }))
+      .filter(x=>x.count>0).sort((a,b)=>b.count-a.count);
+    res.json({ segments:segs, cities, memberships, total:ctx.users.length });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 app.post('/api/admin/outreach/send', adminAuth, async(req,res)=>{
   try {
-    const {segment, city, subject, message, channel} = req.body;
+    const {segment, city, plan, subject, message, channel} = req.body;
     if(!subject||!subject.trim()) return res.status(400).json({error:'Zadaj predmet/nadpis'});
     if(!message||!message.trim()) return res.status(400).json({error:'Zadaj text správy'});
     const ch = ['email','notification','both'].includes(channel)?channel:'both';
     const ctx=await outreachContext();
-    const recipients=ctx.users.filter(u=>inSegment(u,segment,ctx,city));
+    const recipients=ctx.users.filter(u=>inSegment(u,segment,ctx,{city,plan}));
     const html = emailTemplate(subject.trim(), message.trim().replace(/\n/g,'<br>'), 'Otvoriť Fusion Academy', `${APP_URL}/client-dashboard`);
     let emailed=0, notified=0;
     for(const u of recipients){
@@ -5437,7 +5446,7 @@ app.post('/api/admin/outreach/send', adminAuth, async(req,res)=>{
       if((ch==='email'||ch==='both') && u.email && (u.email_consent || u.consent_at))
         { await sendMail(u.email, subject.trim(), html).catch(()=>{}); emailed++; }
     }
-    const rec=await q.insert(db.outreach,{ subject:subject.trim(), message:message.trim(), segment, city:city||null, channel:ch,
+    const rec=await q.insert(db.outreach,{ subject:subject.trim(), message:message.trim(), segment, city:city||null, plan:plan||null, channel:ch,
       recipients:recipients.length, emailed, notified, sent_by:req._auditActor||'', created_at:nowISO() });
     await auditLog(req,'outreach_send',segment,{},{recipients:recipients.length, emailed, notified, subject:subject.trim()},'');
     res.json({ ok:true, recipients:recipients.length, emailed, notified, id:rec._id });
