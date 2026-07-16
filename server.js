@@ -2287,13 +2287,19 @@ app.get('/api/admin/leads/:id/emails', adminAuth, async(req,res)=>{
       membership_welcome:'Vitajte v členstve', expiry_warning:'Blíži sa koniec členstva',
       bronze_upsell:'Bronze → Silver', gold_upsell:'Silver → Gold',
     };
+    const meno = firstName(u.name)||'';
     const rows = items.map(i=>{
       const s = steps[i.step_id] || {};
+      const subjP = (s.subject||'').replace(/\{meno\}/g, meno);
+      const bodyP = (s.body||'').replace(/\{meno\}/g, meno);
+      // Presne to isté HTML, aké dostane klientka do schránky
+      const html = s.body ? emailTemplate(subjP.replace(/^[^\w]*/,''), bodyP, s.cta||null, s.cta_url||APP_URL) : '';
       return {
         sequence: i.sequence, sequence_label: SEQ_LABELS[i.sequence] || i.sequence,
-        label: s.label || s.subject || '(krok)', subject: s.subject || '',
+        label: s.label || s.subject || '(krok)', subject: subjP,
         day: s.day, scheduled_for: i.scheduled_for, status: i.status,
         sent_at: i.sent_at || null, reason: i.reason || null,
+        html,
       };
     }).sort((a,b)=> (a.scheduled_for||'').localeCompare(b.scheduled_for||'') || (a.day||0)-(b.day||0));
     // Aktívne sekvencie (majú aspoň jeden čakajúci krok)
@@ -2981,7 +2987,7 @@ async function resolveInstructor(instructor_id, fallbackName){
     const u=await q.one(db.users,{_id:instructor_id});
     if(u) return {instructor_id:u._id, instructor:u.name};
   }
-  return {instructor_id:'', instructor:fallbackName||'Fusion Team'};
+  return {instructor_id:'', instructor:fallbackName||'Marek Gruber'};
 }
 
 app.post('/api/admin/classes', adminAuth, async(req,res)=>{
@@ -5645,7 +5651,8 @@ app.post('/api/classes/:id/instructor', trainerAuth, async(req,res)=>{
       if(!u) return res.status(400).json({error:'Tréner nenájdený'});
       ins={instructor_id:u._id, instructor:u.name};
     } else {
-      ins={instructor_id:'', instructor:'Fusion Team'};
+      const founder=await q.one(db.users,{email:'gruber.marek@gmail.com'});
+      ins={instructor_id:founder?._id||'', instructor:founder?.name||'Marek Gruber'};
     }
     await q.update(db.classes,{_id:cls._id},{$set:ins});
     await auditLog(req,'class_instructor_set','class:'+cls._id,{instructor:cls.instructor,instructor_id:cls.instructor_id||''},ins,'');
@@ -8146,7 +8153,33 @@ async function reconcileGlofoxVisits(){
   } catch(e){ console.error('reconcileGlofoxVisits error:', e.message); }
 }
 
-seedData().then(backfillDefaultSponsor).then(reconcileGlofoxVisits).then(()=>{
+// Hodiny bez prideleného trénera (alebo „Fusion Team") → prideľ zakladateľovi.
+// Metabolická analýza / InBody nie je hodina (bonus pred/po hodine) → skry z rozvrhu.
+async function fixClassesInstructors(){
+  try {
+    const founder = await q.one(db.users,{email:'gruber.marek@gmail.com'});
+    const fname = founder?.name || 'Marek Gruber';
+    const classes = await q.find(db.classes,{});
+    let reassigned=0, hidden=0;
+    for(const c of classes){
+      const nm = (c.name||'').toLowerCase();
+      if(nm.includes('metabolick') || nm.includes('inbody')){
+        if(c.active!==false){ await q.update(db.classes,{_id:c._id},{$set:{active:false}}); hidden++; }
+        continue;
+      }
+      // Len „Fusion Team" / prázdny tréner → zakladateľ. Menovaných trénerov
+      // (napr. Beáta) nechávame, aj keď nemajú instructor_id.
+      const noTrainer = !((c.instructor||'').trim()) || c.instructor==='Fusion Team';
+      if(noTrainer){
+        await q.update(db.classes,{_id:c._id},{$set:{instructor:fname, instructor_id:founder?._id||''}});
+        reassigned++;
+      }
+    }
+    if(reassigned||hidden) console.log(`✅  Hodiny: ${reassigned} pridelených zakladateľovi, ${hidden} skrytých (metabolická analýza)`);
+  } catch(e){ console.error('fixClassesInstructors error:', e.message); }
+}
+
+seedData().then(backfillDefaultSponsor).then(reconcileGlofoxVisits).then(fixClassesInstructors).then(()=>{
   server.listen(PORT, ()=>{
     console.log('\n╔══════════════════════════════════════════════════════╗');
     console.log('║  🎵  Fusion Academy – Systém v2.0 spustený             ║');
