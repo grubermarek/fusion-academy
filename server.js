@@ -7992,7 +7992,22 @@ async function backfillDefaultSponsor(){
   } catch(e){ console.error('backfillDefaultSponsor error:', e.message); }
 }
 
-seedData().then(backfillDefaultSponsor).then(()=>{
+// Bezpečné dorovnanie návštev: ak má člen uložený Glofox počet (glofox_attendances)
+// vyšší než visit_count, zdvihni visit_count naň. Nikdy neznižuje → nič nerozbije.
+// Rieši prípad, keď sa importovaný počet odtancovaných hodín nedostal do visit_count.
+async function reconcileGlofoxVisits(){
+  try {
+    const rows = await q.find(db.users,{glofox_attendances:{$exists:true}});
+    let fixed=0;
+    for(const u of rows){
+      const ga=+u.glofox_attendances||0;
+      if(ga > (u.visit_count||0)){ await q.update(db.users,{_id:u._id},{$set:{visit_count:ga}}); fixed++; }
+    }
+    if(fixed) console.log(`✅  Návštevy dorovnané podľa Glofox záznamov: ${fixed} členov`);
+  } catch(e){ console.error('reconcileGlofoxVisits error:', e.message); }
+}
+
+seedData().then(backfillDefaultSponsor).then(reconcileGlofoxVisits).then(()=>{
   server.listen(PORT, ()=>{
     console.log('\n╔══════════════════════════════════════════════════════╗');
     console.log('║  🎵  Fusion Academy – Systém v2.0 spustený             ║');
