@@ -741,6 +741,35 @@ async function seedData() {
     for(const s of steps) await q.insert(db.email_steps, s);
     console.log('✅  bronze_upsell sekvencia pridaná');
   }
+
+  // Migrácia bronze_upsell: meno „Miška zo Zvolena" v príbehu + emaily o online hodinách
+  await q.update(db.email_steps,{sequence:'bronze_upsell',day:3},{$set:{body:
+    `<p>{meno}, sľúbili sme príbeh — tu je.</p><p><b>Miška zo Zvolena</b> chodila 8 týždňov na Zumbu. Postavila sa na váhu: <b>rovnaké číslo ako na začiatku.</b> Sklamanie, však?</p><p>Lenže <b>analýza zloženia tela</b> ukázala toto:</p><ul><li>🔥 <b>−4 kg tuku</b></li><li>💪 <b>+4 kg svalu</b></li></ul><p>Rovnaká váha. Úplne iné telo — pevnejšie, silnejšie, s rýchlejším metabolizmom, čo páli kalórie aj na gauči.</p><p>Keby Miška verila len váhe, možno to vzdá. <b>Namiesto toho videla pravdu — a pokračovala.</b></p>`}},{multi:true});
+  const buOnline=(day,label,subject,body,cta)=>({sequence:'bronze_upsell',day,label,active:true,subject,body,cta:cta||null,cta_url:`${APP_URL}/pricing`,created_at:nowISO()});
+  if(!(await q.one(db.email_steps,{sequence:'bronze_upsell',day:9}))) await q.insert(db.email_steps, buOnline(9,'Online hodiny','Aj v pyžame. Aj o 22:00. Zumba, keď sa ti hodí. 🛋️',
+    `<p>{meno}, ešte jedna vec, ktorú Bronze nemá a Silver áno:</p><p><b>Online hodiny.</b> 💻</p><p>Dážď? Choré dieťa? Dlho v práci? Namiesto vynechanej hodiny <b>zapneš appku a tancuješ z obývačky</b> — kedy sa ti hodí, aj o desiatej večer v pyžame.</p><p>Žiadna vynechaná hodina = žiadny výpadok v progrese. Cvičíš vtedy, keď <i>ty</i> môžeš, nie keď „to vyšlo".</p>`));
+  if(!(await q.one(db.email_steps,{sequence:'bronze_upsell',day:15}))) await q.insert(db.email_steps, buOnline(15,'Konzistencia','Tajomstvo tých, čo to nevzdajú? Nevynechávajú.',
+    `<p>{meno}, najväčší zabijak výsledkov nie je zlý tréning. Je to <b>vynechaný tréning.</b></p><p>So <b>Silver</b> máš online hodiny stále po ruke — aj na dovolenke, aj keď je vonku −10 °C a nechce sa ti nikam.</p><p>Štúdio, keď môžeš prísť. Online, keď nie. Výsledok? <b>Konzistencia</b> — presne tá, čo robí skutočné premeny.</p><p>Plus tá metabolická analýza tela, o ktorej sme písali. Silver = vidíš pokrok <i>a</i> nikdy nevypadneš z rytmu.</p>`));
+
+  // Idempotentne: upsell sekvencia Silver → Gold (Herbalife F1 raňajková zložka)
+  if(await q.count(db.email_steps,{sequence:'gold_upsell'})===0){
+    const gu=(day,label,subject,body,cta)=>({sequence:'gold_upsell',day,label,active:true,subject,body,cta:cta||null,cta_url:`${APP_URL}/pricing`,created_at:nowISO()});
+    const gsteps=[
+      gu(0,'Slabý článok','Cvičíš 3× do týždňa. A raňajkuješ rožok s párkom? 🌭',
+        `<p>Ahoj {meno},</p><p>otázka na rovinu: dávaš do tréningu všetko — a potom raňajkuješ <b>rožok, párok a kávu s cukrom?</b></p><p>Vieš, čo hovoria tréneri? <b>„Brušáky sa robia v kuchyni."</b> Až 80 % výsledku je o tom, čím telo kŕmiš — nie o tom, koľko drepov spravíš.</p><p>Najslabší článok väčšiny ľudí nie je tréning. Sú to <b>raňajky.</b> A práve tie vieme spraviť tvojou najsilnejšou zbraňou.</p><p>Zajtra ti ukážeme, že zdravé ráno je aj <i>lacnejšie</i> ako to párkové. 👀</p>`),
+      gu(4,'Cena','Koľko stojí tvoje zdravé ráno? Menej ako párky.',
+        `<p>{meno}, poďme počítať.</p><p>Bežné „rýchle" raňajky — rožky, párky, nátierka, sladká káva — ťa vyjdú na pár eur denne. A čo za to telo dostane? Prázdne kalórie, cukor, soľ. Za hodinu si zas hladná.</p><p>Porcia <b>Herbalife Formula 1</b> — kompletnej náhrady stravy — ťa denne stojí <b>menej</b>, a telo dostane úplne iný svet:</p><ul><li>✅ nízke kalórie</li><li>✅ vyvážené makrá (bielkoviny, sacharidy, tuky v správnom pomere)</li><li>✅ <b>23 vitamínov a minerálov</b></li></ul><p>Lacnejšie ako párky. A neporovnateľne výživnejšie. 🥤</p>`),
+      gu(9,'Prečo Herbalife','Prečo Herbalife? Lebo čísla nepustia.',
+        `<p>{meno}, <b>Herbalife</b> nie je náhoda — je to <b>svetová jednotka v nutričných doplnkoch</b>, s desiatkami rokov výskumu za sebou.</p><p><b>Formula 1</b> je náhrada jedla navrhnutá tak, aby ti dala kompletnú výživu v jednej porcii — bez zbytočných kalórií. Presne to, čo tvoje telo potrebuje, keď na sebe pracuješ na parkete.</p><p>Tréning telo <b>rozhýbe.</b> Správna výživa ho <b>postaví.</b> Bez druhého to prvé nikdy nedotiahne naplno.</p>`),
+      gu(14,'Kompletný systém','Gold = tvoj kompletný systém premeny 🏆',
+        `<p>{meno}, poskladajme to dokopy.</p><p>Predstav si to ako stavbu tela:</p><ul><li>💃 <b>Zumba + online hodiny</b> — spaľuješ, budeš silnejšia</li><li>📈 <b>Metabolická analýza</b> — vidíš, čo sa reálne deje</li><li>🥤 <b>Herbalife F1 raňajky</b> — palivo, ktoré to celé posúva</li></ul><p>To všetko je <b>Gold.</b> Kompletný systém, kde jedno ťahá druhé. Nie hádanie — jasný plán od tréningu cez meranie až po výživu.</p>`),
+      gu(20,'Pozvánka','Postav si telo od základov 💛',
+        `<p>{meno}, cvičíš. Vidíš svoj pokrok v analýze. Ostáva posledný kúsok skladačky — <b>výživa, ktorá to celé drží pohromade.</b></p><p>S <b>Gold</b> máš všetko na jednom mieste: hodiny, online, analýzu tela aj <b>Herbalife F1 raňajky</b> — kompletnú výživu za menej, než stojí to párkové ráno.</p><p>Doprej svojmu telu palivo, aké si zaslúži. Uvidíme sa na parkete — a tvoje výsledky ťa prekvapia. 💪</p>`,
+        'Prejsť na Gold 🏆'),
+    ];
+    for(const s of gsteps) await q.insert(db.email_steps, s);
+    console.log('✅  gold_upsell sekvencia pridaná');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -3116,6 +3145,7 @@ async function activateMembership(userId, planId, durationDays){
   const now = new Date();
   // Upgrade z Bronze na vyššie → zastav upsell sekvenciu (netreba už otravovať)
   if(planId && planId!=='bronze' && plan.type!=='bundle') cancelSequence(userId,'bronze_upsell').catch(()=>{});
+  if(planId==='gold') cancelSequence(userId,'gold_upsell').catch(()=>{});
 
   // ── Bundle type: add single_entries instead of membership subscription ───────
   if(plan.type === 'bundle'){
@@ -7189,6 +7219,11 @@ async function processEmailQueue(){
         const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
         if(!mem || mem.plan_id!=='bronze'){ await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'upgraded_or_no_bronze'}}); continue; }
       }
+      if(step.sequence === 'gold_upsell'){
+        // Posielaj len kým je Silver (prešiel na Gold alebo stratil členstvo → stop)
+        const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
+        if(!mem || mem.plan_id!=='silver'){ await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'not_silver'}}); continue; }
+      }
 
       const meno = firstName(u.name)||'';
       const subj = (step.subject||'').replace(/\{meno\}/g, meno);
@@ -7585,6 +7620,20 @@ async function runDailyJobs(){
       await q.update(db.users,{_id:u._id},{$set:{bronze_upsell_enrolled:true}});
     }
   } catch(e){ console.error('Bronze upsell enrol error:', e.message); }
+
+  // ── 6h. Upsell Silver → Gold: zaradenie po 14 dňoch na Silver ──────────────
+  try {
+    const cutoff14 = new Date(Date.now()-14*864e5).toISOString().slice(0,10);
+    const silver = await q.find(db.memberships,{status:'active', plan_id:'silver'});
+    for(const m of silver){
+      const start=(m.started_at||m.created_at||'').slice(0,10);
+      if(!start || start>cutoff14) continue;
+      const u = await q.one(db.users,{_id:m.user_id});
+      if(!u || !u.email || u.gold_upsell_enrolled) continue;
+      await enqueueSequence(u._id,'gold_upsell');
+      await q.update(db.users,{_id:u._id},{$set:{gold_upsell_enrolled:true}});
+    }
+  } catch(e){ console.error('Gold upsell enrol error:', e.message); }
 
   // ── 7. Admin alerts (anomaly detection) ───────────────────────────────────
   try { await runAdminAlerts(); } catch(e){ console.error('Admin alerts error:', e.message); }
