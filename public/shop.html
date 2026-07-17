@@ -253,9 +253,21 @@ let allProducts = [], cart = [], cartOffcanvas = null;
 const urlParams = new URLSearchParams(window.location.search);
 const urlRef = urlParams.get('ref') || '';
 
+// Členstvá / permanentky / vstupy sa nekupujú cez košík (negrantovali by sa),
+// preto ich vedieme na /pricing so správnym platobným tokom.
+const MEMBERSHIP_CARDS = [
+  {_id:'m-vstup',  cat:'Členstvá', emoji:'🎫', name:'Jednorazový vstup',      desc:'Vstup na akúkoľvek lekciu v ktoromkoľvek meste.',            price:10,    type:'single',       link:'/pricing'},
+  {_id:'m-perm',   cat:'Členstvá', emoji:'🎟️', name:'10-vstupová permanentka', desc:'10 vstupov, platnosť 3 mesiace. Úspora 20 %.',               price:80,    type:'bundle',       link:'/pricing'},
+  {_id:'m-bronze', cat:'Členstvá', emoji:'🥉', name:'Členstvo Bronze',        desc:'Neobmedzené Zumba lekcie vo všetkých mestách. Mesačne.',     price:50,    type:'subscription', link:'/pricing'},
+  {_id:'m-silver', cat:'Členstvá', emoji:'🥈', name:'Členstvo Silver',        desc:'Bronze + metabolická analýza mesačne + online prístup.',    price:75,    type:'subscription', link:'/pricing'},
+  {_id:'m-gold',   cat:'Členstvá', emoji:'🥇', name:'Členstvo Gold',          desc:'Silver + Herbalife F1 + jedálniček na mieru.',               price:125,   type:'subscription', link:'/pricing'},
+  {_id:'m-online', cat:'Členstvá', emoji:'🌐', name:'Online Zumba',           desc:'Živé online hodiny Zumby odkiaľkoľvek.',                     price:12.90, type:'subscription', link:'/pricing'},
+];
 async function loadProducts() {
   const res = await fetch('/api/shop/products');
-  allProducts = await res.json();
+  const prods = await res.json();
+  // vyhoď prípadné DB položky v kategórii Členstvá (majú ísť cez /pricing) a nahraď kartami
+  allProducts = MEMBERSHIP_CARDS.concat(prods.filter(p => p.cat !== 'Členstvá'));
   renderProducts(allProducts);
 }
 
@@ -276,9 +288,9 @@ function renderProducts(prods) {
         <div class="prod-desc mb-2">${p.desc||''}</div>
         <div class="prod-price mb-1">${eur(p.price)}</div>
         <div class="prod-type mb-2">${typeLabel(p.type)}</div>
-        <button class="btn-add" id="btn-${p._id}" onclick='addToCart(${JSON.stringify(p)})'>
-          <i class="bi bi-bag-plus me-1"></i>Do košíka
-        </button>
+        ${p.link
+          ? `<a class="btn-add" href="${p.link}" style="text-decoration:none;display:block"><i class="bi bi-arrow-right-circle me-1"></i>Vybrať</a>`
+          : `<button class="btn-add" id="btn-${p._id}" onclick='addToCart(${JSON.stringify(p)})'><i class="bi bi-bag-plus me-1"></i>Do košíka</button>`}
       </div>
     </div>`).join('');
 }
