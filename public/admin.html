@@ -498,7 +498,8 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
                 <div class="mb-2">
                   <input type="text" class="form-control form-control-sm" id="mbNote" placeholder="Poznámka (nepovinné)">
                 </div>
-                <button class="btn btn-sm w-100" style="background:#4ade80;color:#111;font-weight:700" onclick="doManualBooking()">Potvrdiť rezerváciu</button>
+                <button class="btn btn-sm w-100" style="background:#4ade80;color:#111;font-weight:700" onclick="doManualBooking()">Zapísať klienta</button>
+                <div id="mbCoverage" style="display:none;margin-top:10px"></div>
               </div>
             </div>
 
@@ -4089,16 +4090,58 @@ function clearSeUser(){ _seUserId=null; document.getElementById('seSelectedUser'
 function clearGfUser(){ _gfUserId=null; document.getElementById('gfSelectedUser').style.display='none'; document.getElementById('gfUserSearch').value=''; document.getElementById('gfUserDropdown').style.display='none'; }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
+// Inteligentné zapísanie: podľa stavu klienta rovno zapíš, alebo vyzvi na predaj.
 async function doManualBooking(){
   if(!_mbUserId){ showToast('Vyber klienta','error'); return; }
   if(!_attSelectedClass){ showToast('Vyber hodinu (klikni na kartu)','error'); return; }
-  // Default the booking to the currently selected calendar day
   const date = document.getElementById('mbDate').value || _attDateStr();
-  const isFree = document.getElementById('mbIsFree').checked;
   const note = document.getElementById('mbNote').value;
-  const d = await api('/api/attendance/manual-booking',{method:'POST',body:{user_id:_mbUserId,class_id:_attSelectedClass._id,booking_date:date,is_free:isFree,note}});
-  if(d?.ok){ showToast('Rezervácia vytvorená ✓','success'); clearMbUser(); document.getElementById('mbNote').value=''; document.getElementById('mbDate').value=''; document.getElementById('mbIsFree').checked=false; openAttClass(_attSelectedClass._id); loadAttendance(); }
+  document.getElementById('mbCoverage').style.display='none';
+  if(document.getElementById('mbIsFree').checked) return adminBookMethod('free', date, note, 'zadarmo 🎁');
+  const st = await api('/api/attendance/client-status?user_id='+encodeURIComponent(_mbUserId));
+  if(st?.membership) return adminBookMethod('membership', date, note, `kryté členstvom (${st.membership})`);
+  if((st?.single_entries||0) > 0) return adminBookMethod('single_entry', date, note, `použitý vstup (zostáva ${st.single_entries-1})`);
+  adminShowCoverage(st, date, note);
+}
+async function adminBookMethod(method, date, note, label){
+  const d = await api('/api/attendance/manual-booking',{method:'POST',body:{user_id:_mbUserId,class_id:_attSelectedClass._id,booking_date:date,method,note}});
+  if(d?.ok){ showToast('Zapísaný ✓ — '+label,'success'); const uid=_mbUserId; clearMbUser(); document.getElementById('mbNote').value=''; document.getElementById('mbDate').value=''; document.getElementById('mbIsFree').checked=false; document.getElementById('mbCoverage').style.display='none'; openAttClass(_attSelectedClass._id); loadAttendance(); }
   else showToast('Chyba: '+(d?.error||'?'),'error');
+}
+function adminShowCoverage(st, date, note){
+  const box=document.getElementById('mbCoverage'); if(!box) return;
+  box.style.display='block';
+  box.innerHTML=`<div style="background:rgba(224,163,76,.08);border:1px solid rgba(224,163,76,.3);border-radius:.6rem;padding:10px">
+    <div class="small mb-2" style="color:#e0a34c;font-weight:700">⚠️ ${escHtml(st?.name||'Klient')} nemá členstvo ani kredit. Ako zapísať?</div>
+    <div class="d-flex flex-column gap-2">
+      <button class="btn btn-sm btn-outline-warning text-start" onclick="adminCovMembership()"><i class="bi bi-credit-card me-1"></i>💎 Predať členstvo (dole panel) + zapísať</button>
+      <button class="btn btn-sm btn-outline-info text-start" onclick="adminCovEntry(10,80,'${date}','${escJs(note)}')"><i class="bi bi-ticket-perforated-fill me-1"></i>🎫 Permanentka 10× (80€) + zapísať</button>
+      <button class="btn btn-sm btn-outline-info text-start" onclick="adminCovEntry(1,10,'${date}','${escJs(note)}')"><i class="bi bi-ticket-perforated me-1"></i>🎟️ Vstup (10€) + zapísať</button>
+      <button class="btn btn-sm btn-outline-success text-start" onclick="adminBookMethod('free','${date}','${escJs(note)}','zadarmo 🎁')"><i class="bi bi-gift me-1"></i>🎁 Darovať hodinu zadarmo</button>
+    </div></div>`;
+}
+async function adminCovEntry(entries, amount, date, note){
+  const r = await api('/api/attendance/single-entry',{method:'POST',body:{user_id:_mbUserId, entries, amount, payment_method:'cash'}});
+  if(!r?.ok){ showToast('Chyba: '+(r?.error||'?'),'error'); return; }
+  await adminBookMethod('single_entry', date, note, entries>1?`predaná ${entries}-permanentka`:'jednorazový vstup');
+}
+function adminCovMembership(){
+  const box=document.getElementById('mbCoverage'); if(!box) return;
+  box.innerHTML=`<div style="background:rgba(224,163,76,.08);border:1px solid rgba(224,163,76,.3);border-radius:.6rem;padding:10px">
+    <div class="small mb-2" style="color:#e0a34c;font-weight:700">💎 Vyber členstvo (aktivuje sa a klient sa zapíše):</div>
+    <div class="d-flex flex-column gap-2">
+      <button class="btn btn-sm btn-outline-warning text-start" onclick="adminSellMemAndBook('bronze',50)">🥉 Bronze – 50 € / mes</button>
+      <button class="btn btn-sm btn-outline-warning text-start" onclick="adminSellMemAndBook('silver',75)">🥈 Silver – 75 € / mes</button>
+      <button class="btn btn-sm btn-outline-warning text-start" onclick="adminSellMemAndBook('gold',125)">🥇 Gold – 125 € / mes</button>
+      <button class="btn btn-sm btn-outline-secondary text-start" onclick="adminSellMemAndBook('online_basic',12.90)">🌐 Online Basic – 12,90 € / mes</button>
+      <button class="btn btn-sm btn-link text-muted text-start p-0" onclick="doManualBooking()">← Späť</button>
+    </div></div>`;
+}
+async function adminSellMemAndBook(plan, amount){
+  const d=await api('/api/attendance/record-membership',{method:'POST',body:{user_id:_mbUserId,plan_id:plan,amount,payment_method:'cash'}});
+  if(!d?.ok){ showToast('Chyba: '+(d?.error||'?'),'error'); return; }
+  const date=document.getElementById('mbDate').value||_attDateStr();
+  await adminBookMethod('membership', date, document.getElementById('mbNote').value, 'nové členstvo '+plan.toUpperCase());
 }
 
 async function doSingleEntry(){

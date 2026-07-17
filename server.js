@@ -6500,27 +6500,45 @@ app.get('/api/attendance/clients', trainerAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
-// Record single-entry (10€) sale for a user
+// Stav klienta pre inteligentné zapísanie na hodinu (členstvo / kredit / nič)
+app.get('/api/attendance/client-status', trainerAuth, async(req,res)=>{
+  try{
+    const u = await q.one(db.users,{_id:req.query.user_id});
+    if(!u) return res.status(404).json({error:'Klient nenájdený'});
+    const m = await checkMembership(u._id);
+    const SUBS=['bronze','silver','gold','kids','online_basic','online_premium'];
+    const active = !!(m && m.status==='active');
+    const isSub = active && SUBS.includes(m.plan_id);
+    res.json({ id:u._id, name:u.name,
+      single_entries: u.single_entries||0, free_credits: u.free_credits||0, free_class_used: !!u.free_class_used,
+      membership: isSub ? (m.plan_name||MEMBERSHIP_PLANS[m.plan_id]?.name||'Členstvo') : null,
+      plan_id: active ? m.plan_id : null,
+      expires_at: active ? (m.expires_at||null) : null });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Record single-entry / permanentka sale for a user (entries = počet vstupov)
 app.post('/api/attendance/single-entry', trainerAuth, async(req,res)=>{
   try {
     const {user_id, amount, payment_method, note} = req.body;
     if(!user_id) return res.status(400).json({error:'Chýba user_id'});
     const u = await q.one(db.users,{_id:user_id});
     if(!u) return res.status(404).json({error:'Používateľ nenájdený'});
-    const entries = (u.single_entries||0) + 1;
+    const count = Math.max(1, Math.min(50, +req.body.entries||1));
+    const price = +(amount!=null ? amount : (count===10?80:count*10));
+    const entries = (u.single_entries||0) + count;
+    const label = count>1 ? `${count}-vstupová permanentka` : 'Jednorazový vstup';
     await q.update(db.users,{_id:user_id},{$set:{single_entries:entries}});
-    // Record in transactions
     await q.insert(db.transactions,{
-      type:'single_entry', user_id, user_name:u.name, amount:amount||10,
-      payment_method:payment_method||'cash', note:note||'Jednorazový vstup 10€',
+      type:'single_entry', user_id, user_name:u.name, amount:price,
+      payment_method:payment_method||'cash', note:note||`${label} (${count}×)`,
       recorded_by:req.trainerUser._id, created_at:nowISO(), month:today().slice(0,7)
     });
-    await q.insert(db.notifications,{user_id,type:'payment',title:'Jednorazový vstup zakúpený ✅',body:`Zostatok: ${entries} vstup(ov)`,read:false,created_at:nowISO()});
+    await q.insert(db.notifications,{user_id,type:'payment',title:`${label} zakúpená ✅`,body:`Zostatok: ${entries} vstup(ov)`,read:false,created_at:nowISO()});
     createInvoice({user_id, client_name:u.name, client_email:u.email,
-      items:[{desc:'Jednorazový vstup', qty:1, total:+(amount||10)}], total:+(amount||10),
+      items:[{desc:label, qty:count, total:price}], total:price,
       method:payment_method==='card'?'Karta na mieste':(payment_method||'Hotovosť')});
-    awardPurchaseCommission({buyer_id:user_id, amount:+(amount||10), product_name:'Jednorazový vstup'});
-    res.json({ok:true, single_entries:entries});
+    awardPurchaseCommission({buyer_id:user_id, amount:price, product_name:label});
+    res.json({ok:true, single_entries:entries, added:count});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 

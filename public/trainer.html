@@ -971,23 +971,53 @@ async function searchUsersForAdd(){
   }, 280);
 }
 
+// Inteligentné zapísanie: zisti stav klienta → ak má členstvo/kredit, rovno zapíš;
+// inak vyzvi (predať členstvo / permanentku / vstup / darovať zadarmo).
 async function quickAddUser(userId, userName){
-  document.getElementById('addUserResults').style.display='none';
   document.getElementById('addUserSearch').value='';
-  // Default: manual booking free if first visit, else single
-  const u = _allStudents.find(s=>s._id===userId)||{visit_count:0};
-  const isFree = !u.free_class_used && (u.visit_count||0)===0;
-  const r = await api('/api/attendance/manual-booking',{method:'POST',body:{
-    user_id:userId, class_id:_currentClassId, is_free:isFree
-  }});
-  if(r?.ok){
-    toast(`✅ ${userName} pridaný na hodinu`+(isFree?' (zadarmo)':''));
-    await loadAttendees(_currentClassId);
-    await loadSchedule();
-  } else {
-    toast(r?.error||'Chyba', true);
-  }
+  const st = await api('/api/attendance/client-status?user_id='+encodeURIComponent(userId));
+  if(!st || st.error){ toast(st?.error||'Chyba', true); return; }
+  if(st.membership){ await bookCovered(userId,'membership', `kryté členstvom (${st.membership})`); return; }
+  if((st.single_entries||0) > 0){ await bookCovered(userId,'single_entry', `použitý vstup (zostáva ${(st.single_entries-1)})`); return; }
+  showCoverageDialog(st);
 }
+async function bookCovered(userId, method, label, classId){
+  const cid = classId || _currentClassId;
+  const box=document.getElementById('addUserResults'); if(box) box.style.display='none';
+  const r = await api('/api/attendance/manual-booking',{method:'POST',body:{ user_id:userId, class_id:cid, method }});
+  if(r?.ok){ toast(`✅ Zapísaný — ${label}`); if(cid===_currentClassId){ await loadAttendees(_currentClassId); } await loadSchedule(); }
+  else toast(r?.error||'Chyba', true);
+  return r;
+}
+// Dialóg keď klient nemá žiadne krytie
+function showCoverageDialog(st){
+  const box=document.getElementById('addUserResults'); if(!box) return;
+  box.style.display='block';
+  box.innerHTML=`<div style="padding:14px">
+    <div style="font-weight:800;color:var(--cream);margin-bottom:2px">${esc(st.name)}</div>
+    <div style="font-size:.82rem;color:#e0a34c;margin-bottom:12px">⚠️ Nemá žiadne členstvo ani kredit. Ako ho zapísať?</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn-sm" style="justify-content:flex-start" onclick="covSellMembership('${st.id}','${escJs(st.name)}')"><i class="bi bi-credit-card"></i> 💎 Predať mesačné členstvo + zapísať</button>
+      <button class="btn-sm" style="justify-content:flex-start" onclick="covSellEntry('${st.id}',10,80)"><i class="bi bi-ticket-perforated-fill"></i> 🎫 Predať 10-permanentku (80€) + zapísať</button>
+      <button class="btn-sm" style="justify-content:flex-start" onclick="covSellEntry('${st.id}',1,10)"><i class="bi bi-ticket-perforated"></i> 🎟️ Predať jednorazový vstup (10€) + zapísať</button>
+      <button class="btn-sm" style="justify-content:flex-start" onclick="covGiveFree('${st.id}')"><i class="bi bi-gift"></i> 🎁 Darovať hodinu zadarmo</button>
+      <button class="btn-sm" style="opacity:.7;justify-content:center" onclick="document.getElementById('addUserResults').style.display='none'">Zrušiť</button>
+    </div></div>`;
+}
+async function covSellEntry(userId, entries, amount, classId){
+  const r = await api('/api/attendance/single-entry',{method:'POST',body:{user_id:userId, entries, amount, payment_method:'cash'}});
+  if(!r?.ok){ toast(r?.error||'Chyba', true); return; }
+  await bookCovered(userId,'single_entry', entries>1?`predaná ${entries}-permanentka, použitý 1 vstup`:'jednorazový vstup', classId);
+}
+async function covGiveFree(userId, classId){ await bookCovered(userId,'free','hodina zadarmo 🎁', classId); }
+function covSellMembership(userId, name, classId){
+  _pendingBookUser = userId; _pendingBookClass = classId || _currentClassId;
+  const box=document.getElementById('addUserResults'); if(box) box.style.display='none';
+  openModal('sellMembership');
+  const idEl=document.getElementById('sm-userId'); if(idEl) idEl.value=userId;
+  const sel=document.getElementById('sm-selectedUser'); if(sel){ sel.style.display='block'; sel.textContent='✓ '+name; }
+}
+let _pendingBookUser=null, _pendingBookClass=null;
 
 // Cancel booking
 function confirmCancelBook(bookingId, name){
@@ -1221,6 +1251,14 @@ async function doSellMembership(){
   const msg = document.getElementById('sm-msg');
   if(r?.ok){
     showInlineMsg(msg,'ok','✅ Členstvo aktivované! Platné do: '+r.expires_at);
+    // Ak sme sem prišli z „zapísať na hodinu", rovno klienta zapíš
+    const bookCid = _pendingBookClass || _currentClassId;
+    if(_pendingBookUser===userId && bookCid){
+      const method = plan_id==='permanentka10' ? 'single_entry' : 'membership';
+      await bookCovered(userId, method, plan_id==='permanentka10'?'permanentka':'členstvo', bookCid);
+      showInlineMsg(msg,'ok','✅ Členstvo aktivované a klient zapísaný na hodinu!');
+    }
+    _pendingBookUser=null; _pendingBookClass=null;
     setTimeout(()=>closeModal(),1400);
   } else { showInlineMsg(msg,'err','❌ '+(r?.error||'Chyba')); }
 }
@@ -1498,14 +1536,13 @@ function showQrResult(r, classId){
   } else if(r.error==='membership_required'){
     document.getElementById('qrResultStatus').textContent='⚠️';
     msgEl.style.cssText='background:rgba(255,152,0,.1);border:1px solid rgba(255,152,0,.25);color:var(--orange)';
-    msgEl.textContent='⚠️ Žiadne platné členstvo ani vstup!';
+    msgEl.textContent='⚠️ Žiadne platné členstvo ani vstup! Vyber, ako klienta zapísať:';
+    const cid = classId||'';
     actEl.innerHTML=`
-      <button class="btn-sm primary" onclick="openModal('sellEntry');document.getElementById('se-userId').value='${u.id}';document.getElementById('se-selectedUser').style.display='block';document.getElementById('se-selectedUser').textContent='✓ ${esc(u.name)}'">
-        <i class="bi bi-ticket-perforated"></i> Predať vstup
-      </button>
-      <button class="btn-sm" onclick="openModal('sellMembership');document.getElementById('sm-userId').value='${u.id}';document.getElementById('sm-selectedUser').style.display='block';document.getElementById('sm-selectedUser').textContent='✓ ${esc(u.name)}'">
-        <i class="bi bi-credit-card"></i> Predať členstvo
-      </button>`;
+      <button class="btn-sm" onclick="covSellMembership('${u.id}','${escJs(u.name)}','${cid}')"><i class="bi bi-credit-card"></i> 💎 Členstvo + zapísať</button>
+      <button class="btn-sm" onclick="covSellEntry('${u.id}',10,80,'${cid}')"><i class="bi bi-ticket-perforated-fill"></i> 🎫 Permanentka 10× (80€)</button>
+      <button class="btn-sm" onclick="covSellEntry('${u.id}',1,10,'${cid}')"><i class="bi bi-ticket-perforated"></i> 🎟️ Vstup (10€)</button>
+      <button class="btn-sm" onclick="covGiveFree('${u.id}','${cid}')"><i class="bi bi-gift"></i> 🎁 Zadarmo</button>`;
   } else {
     document.getElementById('qrResultStatus').textContent='❌';
     msgEl.style.cssText='background:rgba(244,67,54,.1);border:1px solid rgba(244,67,54,.25);color:#ef9a9a';
