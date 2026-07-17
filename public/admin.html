@@ -3608,7 +3608,12 @@ async function loadAdminClasses(){
     <td class="small">${c.city||'—'}</td>
     <td class="small">${c.capacity||20}</td>
     <td>
-      <input type="text" class="form-control form-control-sm" id="stream_${c._id}" value="${c.stream_url||''}" placeholder="https://..." style="min-width:200px">
+      <input type="text" class="form-control form-control-sm mb-1" id="stream_${c._id}" value="${c.stream_url||''}" placeholder="YouTube/Vimeo link (bez hudby)" style="min-width:200px">
+      <div class="input-group input-group-sm" style="min-width:200px">
+        <span class="input-group-text py-0" style="font-size:.72rem">🔴 key</span>
+        <input type="text" class="form-control form-control-sm" id="streamkey_${c._id}" value="${c.stream_key||''}" placeholder="vlastný RTMP server" style="font-size:.75rem">
+        <button class="btn btn-sm btn-outline-secondary" type="button" title="Vygenerovať kľúč" onclick="genStreamKey('${c._id}','${(c.name||'').replace(/'/g,'')}')"><i class="bi bi-magic"></i></button>
+      </div>
     </td>
     <td>
       <button class="btn btn-sm btn-brand" onclick="saveStreamUrl('${c._id}')">Uložiť</button>
@@ -3630,9 +3635,18 @@ async function keepZumbaOnly(){
   else showToast('Chyba: '+(r?.error||'?'),'error');
 }
 
+function slugify(s){
+  return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,24);
+}
+function genStreamKey(classId,name){
+  const inp=document.getElementById('streamkey_'+classId);
+  if(inp) inp.value = (slugify(name)||'hodina') + '-' + Math.random().toString(36).slice(2,6);
+}
 async function saveStreamUrl(classId){
   const url=document.getElementById('stream_'+classId)?.value||'';
-  const r=await api('/api/admin/classes/'+classId+'/stream',{method:'PUT',body:{stream_url:url}});
+  const streamKey=document.getElementById('streamkey_'+classId)?.value||'';
+  const r=await api('/api/admin/classes/'+classId+'/stream',{method:'PUT',body:{stream_url:url,stream_key:streamKey}});
   if(r?.ok){
     const btn=event.target;
     btn.textContent='✓';btn.classList.add('btn-success');btn.classList.remove('btn-brand');

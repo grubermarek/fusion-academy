@@ -48,6 +48,10 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
 .class-info p{margin:0;font-size:.82rem;color:var(--text-muted);}
 .btn-stream{background:var(--grad-gold);border:none;color:#0A0908;font-weight:700;padding:.4rem 1rem;border-radius:50px;font-size:.82rem;cursor:pointer;transition:opacity .2s;text-decoration:none;display:inline-block;}
 .btn-stream:hover{opacity:.85;color:#0A0908;}
+.btn-arch{background:rgba(255,255,255,.08);border:1px solid rgba(231,200,120,.4);color:#E7C878;font-weight:600;padding:.4rem .9rem;border-radius:50px;font-size:.8rem;cursor:pointer;transition:background .2s;}
+.btn-arch:hover{background:rgba(231,200,120,.15);}
+.live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#ff3b30;margin-right:5px;animation:livepulse 1.4s infinite;}
+@keyframes livepulse{0%,100%{opacity:1}50%{opacity:.3}}
 .badge-active{background:rgba(76,175,80,.2);border:1px solid #4CAF50;color:#4CAF50;font-size:.75rem;padding:3px 10px;border-radius:20px;display:inline-block;font-weight:600;}
 .badge-expired{background:rgba(244,67,54,.15);border:1px solid #f44336;color:#f44336;font-size:.75rem;padding:3px 10px;border-radius:20px;display:inline-block;}
 .toast-container{position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;}
@@ -230,35 +234,107 @@ function showMembershipStatus(data){
   el.innerHTML = `<span class="badge-active">✓ ${m.plan_name} — platné do ${exp}</span>`;
 }
 
+let mediaBase='';
+let liveSet=new Set();
+
 async function loadOnlineClasses(){
   const data = await api('/api/online/classes');
+  mediaBase = (data.media_base||'').replace(/\/$/,'');
   document.getElementById('onlineClasses').style.display='block';
   const container = document.getElementById('classesContainer');
   if(!data?.classes?.length){
     container.innerHTML = `<p style="color:var(--text-muted);text-align:center;padding:2rem">Momentálne nie sú k dispozícii žiadne online hodiny.</p>`;
     return;
   }
+  // Zisti, ktoré streamy práve vysielajú (naživo)
+  liveSet=new Set();
+  if(mediaBase){
+    try{ const s=await fetch(mediaBase+'/api/streams').then(r=>r.json()); (s.live||[]).forEach(k=>liveSet.add(k)); }catch(e){}
+  }
   container.innerHTML = data.classes.map(c=>{
     const locked = !data.has_access;
+    const nm = (c.name||'').replace(/'/g,'');
+    const key = c.stream_key;
+    const isLive = key && liveSet.has(key);
+    let action;
+    if(locked){
+      action = `<span style="font-size:.8rem;color:var(--text-muted)">Vyžaduje členstvo</span>`;
+    } else {
+      const parts=[];
+      if(mediaBase && key){
+        if(isLive) parts.push(`<button class="btn-stream" onclick="watchLive('${key}','${nm}')"><span class="live-dot"></span>Naživo</button>`);
+        parts.push(`<button class="btn-arch" onclick="openArchive('${key}','${nm}')"><i class="bi bi-collection-play me-1"></i>Archív</button>`);
+      }
+      if(c.stream_url) parts.push(`<button class="btn-stream" onclick="watchStream('${encodeURIComponent(c.stream_url)}','${nm}')"><i class="bi bi-play-circle me-1"></i>Sledovať</button>`);
+      action = parts.length ? parts.join(' ') : `<span style="font-size:.8rem;color:var(--text-muted)">Stream čoskoro</span>`;
+    }
     return `<div class="class-card ${locked?'locked':''}">
-      <div class="lock-icon">${locked?'🔒':c.emoji||'💃'}</div>
+      <div class="lock-icon">${locked?'🔒':(isLive?'🔴':c.emoji||'💃')}</div>
       <div class="class-info flex-grow-1">
         <h4>${c.name}</h4>
         <p>${c.instructor||''} · ${c.time_start||''} ${c.day_name||''}</p>
       </div>
-      <div>
-        ${locked
-          ? `<span style="font-size:.8rem;color:var(--text-muted)">Vyžaduje členstvo</span>`
-          : c.stream_url
-            ? `<button class="btn-stream" onclick="watchStream('${encodeURIComponent(c.stream_url)}','${(c.name||'').replace(/'/g,'')}')"><i class="bi bi-play-circle me-1"></i>Sledovať v appke</button>`
-            : `<span style="font-size:.8rem;color:var(--text-muted)">Stream čoskoro</span>`
-        }
-      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${action}</div>
     </div>`;
   }).join('');
   if(!data.has_access){
     document.getElementById('noAccess').style.display='block';
   }
+}
+
+// HLS prehrávanie (Safari natívne, Chrome/Android cez hls.js)
+function loadHls(){
+  return new Promise(res=>{
+    if(window.Hls) return res();
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js';
+    s.onload=()=>res(); s.onerror=()=>res();
+    document.head.appendChild(s);
+  });
+}
+async function playHls(video, src){
+  if(window._hls){ try{window._hls.destroy();}catch(e){} window._hls=null; }
+  if(video.canPlayType('application/vnd.apple.mpegurl')){ video.src=src; return; }
+  await loadHls();
+  if(window.Hls && window.Hls.isSupported()){
+    const h=new Hls({liveSyncDurationCount:3}); window._hls=h;
+    h.loadSource(src); h.attachMedia(video);
+  } else { video.src=src; }
+}
+function showOverlay(title){
+  const ov=document.getElementById('streamOverlay');
+  ov.querySelector('.so-title').textContent=title;
+  ov.style.display='flex';
+  return ov;
+}
+async function watchLive(key,name){
+  const ov=showOverlay('🔴 LIVE · '+(name||'Online hodina'));
+  ov.querySelector('.so-media').innerHTML='<video id="soVideo" controls autoplay playsinline style="width:100%;height:100%;background:#000"></video>';
+  await playHls(document.getElementById('soVideo'), mediaBase+'/live/'+encodeURIComponent(key)+'/index.m3u8');
+}
+async function openArchive(key,name){
+  const ov=showOverlay('📼 Archív · '+(name||'Online hodina'));
+  const media=ov.querySelector('.so-media');
+  media.innerHTML='<div style="color:#fff;padding:1.5rem;text-align:center">Načítavam archív…</div>';
+  let recs=[];
+  try{ const r=await fetch(mediaBase+'/api/recordings?key='+encodeURIComponent(key)).then(x=>x.json()); recs=r.recordings||[]; }catch(e){}
+  if(!recs.length){ media.innerHTML='<div style="color:#fff;padding:1.5rem;text-align:center">Zatiaľ žiadne nahrávky. Nahrávky sa objavia po odvysielaní hodiny.</div>'; return; }
+  media.innerHTML=`<div style="display:flex;height:100%;gap:8px">
+     <div id="soList" style="width:230px;flex:none;overflow:auto;background:#111;padding:8px;border-radius:10px"></div>
+     <div style="flex:1;min-width:0"><video id="soVideo" controls autoplay playsinline style="width:100%;height:100%;background:#000;border-radius:10px"></video></div>
+  </div>`;
+  const list=document.getElementById('soList');
+  list.innerHTML=recs.map((r,i)=>{
+    const d=new Date(r.created_at);
+    const label=d.toLocaleDateString('sk-SK')+' '+d.toLocaleTimeString('sk-SK',{hour:'2-digit',minute:'2-digit'});
+    return `<button data-src="${mediaBase+r.url}" class="arch-item" style="display:block;width:100%;text-align:left;background:${i?'transparent':'#2a2a2a'};color:#eee;border:0;border-radius:8px;padding:9px 10px;margin-bottom:5px;cursor:pointer;font-size:.82rem">🎬 ${label}</button>`;
+  }).join('');
+  list.querySelectorAll('.arch-item').forEach(b=>b.onclick=()=>{
+    document.getElementById('soVideo').src=b.dataset.src;
+    list.querySelectorAll('.arch-item').forEach(x=>x.style.background='transparent');
+    b.style.background='#2a2a2a';
+  });
+  document.getElementById('soVideo').src=mediaBase+recs[0].url;
 }
 
 // Prevedie stream URL na vložiteľný (embed) tvar pre prehrávanie priamo v appke
@@ -287,15 +363,20 @@ function watchStream(encUrl, name){
   const url=decodeURIComponent(encUrl);
   const em=toEmbed(url);
   if(em.type==='external'){ window.open(url,'_blank','noopener'); return; }
-  const media = em.type==='iframe'
-    ? `<iframe src="${em.src}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen style="width:100%;height:100%;border:0"></iframe>`
-    : `<video src="${em.src}" controls autoplay playsinline style="width:100%;height:100%;background:#000"></video>`;
-  const ov=document.getElementById('streamOverlay');
-  ov.querySelector('.so-title').textContent='🔴 LIVE · '+(name||'Online hodina');
-  ov.querySelector('.so-media').innerHTML=media;
-  ov.style.display='flex';
+  const ov=showOverlay('🔴 LIVE · '+(name||'Online hodina'));
+  const media=ov.querySelector('.so-media');
+  if(em.type==='iframe'){
+    media.innerHTML=`<iframe src="${em.src}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen style="width:100%;height:100%;border:0"></iframe>`;
+  } else {
+    media.innerHTML='<video id="soVideo" controls autoplay playsinline style="width:100%;height:100%;background:#000"></video>';
+    const v=document.getElementById('soVideo');
+    if(/\.m3u8(\?|$)/i.test(em.src)) playHls(v, em.src); else v.src=em.src;
+  }
 }
-function closeStream(){ const ov=document.getElementById('streamOverlay'); ov.querySelector('.so-media').innerHTML=''; ov.style.display='none'; }
+function closeStream(){
+  if(window._hls){ try{window._hls.destroy();}catch(e){} window._hls=null; }
+  const ov=document.getElementById('streamOverlay'); ov.querySelector('.so-media').innerHTML=''; ov.style.display='none';
+}
 
 async function buyPlan(planId){
   if(!currentUser){ openLogin(); return; }

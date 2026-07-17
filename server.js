@@ -5556,10 +5556,11 @@ app.get('/api/online/classes', auth, async(req,res)=>{
   const result = classes.map(c=>({
     ...c,
     stream_url: hasAccess ? (c.stream_url||null) : null,
+    stream_key: hasAccess ? (c.stream_key||null) : null,
     has_access: hasAccess,
     locked: !hasAccess,
   }));
-  res.json({classes:result, has_access:hasAccess, membership:m?{plan_id:m.plan_id,plan_name:m.plan_name,expires_at:m.expires_at}:null});
+  res.json({classes:result, has_access:hasAccess, media_base:(process.env.MEDIA_BASE||'').replace(/\/$/,''), membership:m?{plan_id:m.plan_id,plan_name:m.plan_name,expires_at:m.expires_at}:null});
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -6081,9 +6082,11 @@ app.get('/api/trainer/students', trainerAuth, async(req,res)=>{
 
 // Update class stream URL (trainer/admin)
 app.put('/api/admin/classes/:id/stream', adminAuth, async(req,res)=>{
-  const {stream_url,stream_platform,stream_notes} = req.body;
-  await q.update(db.classes,{_id:req.params.id},{$set:{stream_url:stream_url||'',stream_platform:stream_platform||'',stream_notes:stream_notes||''}});
-  res.json({ok:true});
+  const {stream_url,stream_platform,stream_notes,stream_key} = req.body;
+  const $set = {stream_url:stream_url||'',stream_platform:stream_platform||'',stream_notes:stream_notes||''};
+  if(stream_key!==undefined) $set.stream_key = String(stream_key||'').replace(/[^a-zA-Z0-9_-]/g,'');
+  await q.update(db.classes,{_id:req.params.id},{$set});
+  res.json({ok:true, stream_key:$set.stream_key});
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
