@@ -267,6 +267,13 @@ function nextDateForDay(dow) {
   d.setDate(d.getDate() + (diff === 0 ? 7 : diff));
   return d.toISOString().slice(0,10);
 }
+// Zhodné s klientským getNextDateISO: ak je dnes deň hodiny a je pred 22:00, počíta DNES.
+function displayNextDateForDay(dow) {
+  const now = new Date(); const today = now.getDay();
+  let diff = dow - today; if(diff < 0 || (diff === 0 && now.getHours() >= 22)) diff += 7;
+  const d = new Date(now); d.setDate(d.getDate() + diff);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 
 // ─── MLM helpers ─────────────────────────────────────────────────────────────
 async function getAllDescendants(pid) {
@@ -1127,11 +1134,14 @@ app.get('/api/shop/locations', (req,res)=>res.json(LOCATIONS));
 // ═══════════════════════════════════════════════════════════════════════════════
 app.get('/api/classes', async(req,res)=>{
   const classes=await q.find(db.classes,{active:true});
-  // Attach booked count for each class
+  // Attach booked count for each class — obsadenosť pre NAJBLIŽŠÍ termín (nie súčet cez všetky dátumy)
   const result=[];
   for(const c of classes){
-    const booked=await q.count(db.bookings,{class_id:c._id,status:{$ne:'cancelled'}});
-    result.push({...c, booked, spotsLeft:Math.max(0,c.capacity-booked), dayName:DAYS_SK[c.day_of_week]});
+    const bdate = displayNextDateForDay(c.day_of_week);
+    const booking_count = await q.count(db.bookings,{class_id:c._id, booking_date:bdate, status:{$ne:'cancelled'}});
+    const bookedAll = await q.count(db.bookings,{class_id:c._id,status:{$ne:'cancelled'}});
+    result.push({...c, booking_count, next_date:bdate, booked:booking_count, booked_all:bookedAll,
+      spotsLeft:Math.max(0,c.capacity-booking_count), dayName:DAYS_SK[c.day_of_week]});
   }
   result.sort((a,b)=>a.day_of_week-b.day_of_week||a.time_start.localeCompare(b.time_start));
   res.json(result);
@@ -1140,8 +1150,9 @@ app.get('/api/classes', async(req,res)=>{
 app.get('/api/classes/:id', async(req,res)=>{
   const c=await q.one(db.classes,{_id:req.params.id});
   if(!c) return res.status(404).json({error:'Hodina nenájdená'});
-  const booked=await q.count(db.bookings,{class_id:c._id,status:{$ne:'cancelled'}});
-  res.json({...c, booked, spotsLeft:Math.max(0,c.capacity-booked), dayName:DAYS_SK[c.day_of_week]});
+  const bdate = displayNextDateForDay(c.day_of_week);
+  const booking_count = await q.count(db.bookings,{class_id:c._id, booking_date:bdate, status:{$ne:'cancelled'}});
+  res.json({...c, booking_count, next_date:bdate, booked:booking_count, spotsLeft:Math.max(0,c.capacity-booking_count), dayName:DAYS_SK[c.day_of_week]});
 });
 
 // ─── Bookings ─────────────────────────────────────────────────────────────────
@@ -5696,7 +5707,7 @@ app.post('/api/waitlist', auth, async(req,res)=>{
     const cls = await q.one(db.classes,{_id:class_id});
     if(!cls||!cls.active) return res.status(404).json({error:'Hodina nenájdená'});
     const u = await q.one(db.users,{_id:req.session.uid});
-    const bdate = booking_date||nextDateForDay(cls.day_of_week);
+    const bdate = booking_date||displayNextDateForDay(cls.day_of_week);
     if(await q.one(db.class_cancellations,{class_id, date:bdate})) return res.status(400).json({error:'Táto hodina je zrušená.'});
     const alreadyBooked = await q.one(db.bookings,{class_id,user_id:u._id,booking_date:bdate,status:{$ne:'cancelled'}});
     if(alreadyBooked) return res.status(400).json({error:'Ste už prihlásení (alebo na čakacom liste)'});
@@ -6327,7 +6338,7 @@ app.post('/api/attendance/cancel-session', trainerAuth, async(req,res)=>{
     let { date, reason } = req.body;
     const cls = await q.one(db.classes,{_id:class_id});
     if(!cls) return res.status(404).json({error:'Hodina nenájdená'});
-    date = date || nextDateForDay(cls.day_of_week);
+    date = date || displayNextDateForDay(cls.day_of_week);
     reason = (reason||'').slice(0,300);
     // Idempotencia
     if(await q.one(db.class_cancellations,{class_id, date}))
@@ -6339,7 +6350,7 @@ app.post('/api/attendance/cancel-session', trainerAuth, async(req,res)=>{
     const cityClasses = (await q.find(db.classes,{location:cls.location, active:true})).filter(c=>c._id!==class_id);
     let nextInfo=null, nextBest=null;
     for(const c of cityClasses){
-      const d = nextDateForDay(c.day_of_week);
+      const d = displayNextDateForDay(c.day_of_week);
       if(await q.one(db.class_cancellations,{class_id:c._id, date:d})) continue; // aj tá zrušená
       if(!nextBest || d < nextBest.date) nextBest = {date:d, c};
     }
@@ -6427,7 +6438,7 @@ app.post('/api/attendance/manual-booking', trainerAuth, async(req,res)=>{
     if(!cls) return res.status(404).json({error:'Hodina nenájdená'});
     const u = await q.one(db.users,{_id:user_id});
     if(!u) return res.status(404).json({error:'Používateľ nenájdený'});
-    const bdate = booking_date || nextDateForDay(cls.day_of_week);
+    const bdate = booking_date || displayNextDateForDay(cls.day_of_week);
     const exists = await q.one(db.bookings,{class_id,user_id,booking_date:bdate,status:{$ne:'cancelled'}});
     if(exists) return res.status(400).json({error:'Tento klient je už prihlásený na túto hodinu'});
 
@@ -6646,7 +6657,7 @@ app.post('/api/attendance/qr-checkin', trainerAuth, async(req,res)=>{
     if(class_id){
       const cls = await q.one(db.classes,{_id:class_id});
       if(!cls) return res.json({ok:true, user:userData, booking:null, note:'Hodina nenájdená'});
-      const bdate = nextDateForDay(cls.day_of_week);
+      const bdate = displayNextDateForDay(cls.day_of_week);
       const exists = await q.one(db.bookings,{class_id,user_id:u._id,booking_date:bdate,status:{$ne:'cancelled'}});
       if(exists){
         // Mark physical attendance on the pre-existing booking
@@ -6921,7 +6932,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
 
     const booked=await q.count(db.bookings,{class_id,status:{$ne:'cancelled'}});
     if(booked>=cls.capacity) return res.status(400).json({error:'Hodina je plne obsadená – skúste čakací zoznam'});
-    const bdate=booking_date||nextDateForDay(cls.day_of_week);
+    const bdate=booking_date||displayNextDateForDay(cls.day_of_week);
     if(await q.one(db.class_cancellations,{class_id, date:bdate})) return res.status(400).json({error:'Táto hodina je zrušená a nedá sa rezervovať.'});
     const exists=await q.one(db.bookings,{class_id,user_id:u._id,booking_date:bdate,status:{$ne:'cancelled'}});
     if(exists) return res.status(400).json({error:isChild?`${u.name} je už na túto hodinu prihlásené`:'Na túto hodinu ste sa už prihlásili'});
