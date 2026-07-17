@@ -193,7 +193,7 @@ function buildNavBar(){
   // Logo
   nav.innerHTML = `
     <a class="fa-nb-logo" href="/">
-      <svg width="26" height="26" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#111"/><text x="32" y="44" text-anchor="middle" font-family="serif" font-size="30" font-weight="700" fill="#C9A24C">FA</text></svg>
+      <img src="/logo-mark.png" alt="Fusion Academy" width="28" height="28" style="object-fit:contain">
       Fusion Academy
     </a>
     <div class="fa-nb-center" id="fa-nb-links">

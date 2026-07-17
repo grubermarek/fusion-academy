@@ -1,5 +1,5 @@
-const CACHE = 'fa-v166';
-const STATIC = ['/fa-theme.css','/favicon.svg'];
+const CACHE = 'fa-v167';
+const STATIC = ['/fa-theme.css','/logo-mark.png','/logo-wordmark.png'];
 
 self.addEventListener('install', e=>{
   e.waitUntil(caches.open(CACHE).then(c=>c.addAll(STATIC)).then(()=>self.skipWaiting()));

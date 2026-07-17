@@ -2,7 +2,7 @@
 <html lang="sk">
 <head>
 <meta charset="UTF-8">
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/png" href="/logo-mark.png">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fusion Academy – Admin Panel</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -21,7 +21,8 @@ body{background:var(--dark-1);color:var(--cream);font-size:.92rem;}
 /* ── Two-tier sidebar (Glofox-style): icon rail + group panel ── */
 .sidebar{min-height:100vh;position:fixed;left:0;top:0;z-index:100;display:flex;}
 .icon-rail{width:62px;background:#131313;border-right:1px solid #2a2a2a;display:flex;flex-direction:column;align-items:center;padding:12px 0;gap:4px;}
-.rail-logo{width:40px;height:40px;border-radius:11px;background:var(--grad-gold);display:flex;align-items:center;justify-content:center;color:#111;font-weight:900;font-size:.95rem;margin-bottom:12px;}
+.rail-logo{width:40px;height:40px;border-radius:11px;background:#15120c;display:flex;align-items:center;justify-content:center;margin-bottom:12px;overflow:hidden;}
+.rail-logo img{width:100%;height:100%;object-fit:contain;}
 .rail-btn{width:46px;height:46px;border-radius:13px;border:none;background:transparent;color:rgba(245,237,214,.5);font-size:1.25rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.18s;position:relative;}
 .rail-btn:hover{background:rgba(201,168,76,.1);color:var(--gold);}
 .rail-btn.active{background:rgba(201,168,76,.16);color:var(--gold);}
@@ -96,7 +97,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 <div class="sidebar">
   <!-- Icon rail -->
   <div class="icon-rail">
-    <div class="rail-logo">FA</div>
+    <div class="rail-logo"><img src="/logo-mark.png" alt="Fusion Academy"></div>
     <button class="rail-btn active" id="rail-home" onclick="selectGroup('home')" title="Domov"><i class="bi bi-house-door"></i></button>
     <button class="rail-btn" id="rail-manage" onclick="selectGroup('manage')" title="Správa"><i class="bi bi-grid-1x2"></i><span class="rail-dot" id="railDotManage"></span></button>
     <button class="rail-btn" id="rail-marketing" onclick="selectGroup('marketing')" title="Marketing"><i class="bi bi-megaphone"></i></button>
