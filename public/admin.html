@@ -1285,9 +1285,9 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <table class="table table-dark table-hover align-middle mb-0" style="min-width:720px">
         <thead><tr>
           <th>Dátum</th><th>Od</th><th>Pre (tréner)</th><th class="text-end">Suma</th>
-          <th class="text-end">Tréner 80%</th><th class="text-end">My 20%</th><th>Odkaz</th>
+          <th class="text-end">Tréner 80%</th><th class="text-end">My 20%</th><th>Odkaz</th><th></th>
         </tr></thead>
-        <tbody id="tipsBody"><tr><td colspan="7" class="text-center text-muted py-3">Načítavam…</td></tr></tbody>
+        <tbody id="tipsBody"><tr><td colspan="8" class="text-center text-muted py-3">Načítavam…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -2060,19 +2060,27 @@ async function loadAdminTips(){
     <span class="badge bg-secondary">Σ ${eur(t.amount)}</span>
     <span class="badge bg-secondary">🧑‍🏫 Trénerom ${eur(t.trainer_cut)}</span>
     <span class="badge bg-warning text-dark">Náš podiel ${eur(t.our_cut)}</span>`;
-  if(!d.tips.length){ body.innerHTML='<tr><td colspan="7" class="text-center text-muted py-3">Zatiaľ žiadne tipy.</td></tr>'; return; }
+  if(!d.tips.length){ body.innerHTML='<tr><td colspan="8" class="text-center text-muted py-3">Zatiaľ žiadne tipy.</td></tr>'; return; }
   body.innerHTML=d.tips.map(x=>{
     const when=(x.created_at||'').slice(0,10);
     const from=x.from_user_id?`<a href="/u/${x.from_user_id}" target="_blank" style="color:#e0b84c;text-decoration:none">${escHtml(x.from_name)}</a>`:escHtml(x.from_name||'Anonym');
     const to=x.to_user_id?`<a href="/u/${x.to_user_id}" target="_blank" style="color:#e0b84c;text-decoration:none">${escHtml(x.to_name)}</a>`:escHtml(x.to_name||'');
-    return `<tr>
-      <td class="small text-muted">${when}</td><td>${from}</td><td>${to}</td>
+    const demo=(x.paypal_order_id||'').startsWith('demo-');
+    return `<tr${demo?' style="opacity:.7"':''}>
+      <td class="small text-muted">${when}${demo?' <span class="badge bg-secondary">demo</span>':''}</td><td>${from}</td><td>${to}</td>
       <td class="text-end fw-bold">${eur(x.amount)}</td>
       <td class="text-end">${eur(x.trainer_cut)}</td>
       <td class="text-end text-warning">${eur(x.our_cut)}</td>
       <td class="small text-muted">${x.message?escHtml(x.message):'—'}</td>
+      <td class="text-end"><button class="btn btn-sm btn-outline-danger py-0 px-2" title="Zmazať tip" onclick="deleteTip('${x._id}','${escJs(x.to_name||'')}')"><i class="bi bi-trash3"></i></button></td>
     </tr>`;
   }).join('');
+}
+async function deleteTip(id, name){
+  if(!confirm('Zmazať tento tip pre „'+name+'"? Odráta sa aj zo zárobkov a rebríčka.')) return;
+  const d=await api('/api/admin/tips/'+id,{method:'DELETE'});
+  if(d?.ok){ showToast('Tip zmazaný ✓','success'); loadAdminTips(); }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 
 // ── História hodín & zárobky ──────────────────────────────────────────────────

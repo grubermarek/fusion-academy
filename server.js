@@ -3561,6 +3561,16 @@ app.get('/api/admin/tips', adminAuth, async(req,res)=>{
     res.json({ tips: tips.slice(0,500), totals:{ count:tips.length, amount:sum('amount'), our_cut:sum('our_cut'), trainer_cut:sum('trainer_cut') } });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
+// Admin: zmazať tip (napr. demo/omylom). Zárobky/feed/rebríček sa počítajú živo, takže sa hneď prejaví.
+app.delete('/api/admin/tips/:id', adminAuth, async(req,res)=>{
+  try{
+    const t=await q.one(db.tips,{_id:req.params.id});
+    if(!t) return res.status(404).json({error:'Tip nenájdený'});
+    await q.remove(db.tips,{_id:req.params.id},{});
+    await auditLog(req,'tip_delete',req.params.id,{},{amount:t.amount,to:t.to_name,from:t.from_name},'');
+    res.json({ ok:true });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 
 app.post('/api/paypal/webhook', express.json({type:'*/*'}), async(req,res)=>{
   // Basic webhook handler – extend with signature verification for production
