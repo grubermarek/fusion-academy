@@ -3809,8 +3809,10 @@ app.get('/api/meal-plan', auth, async(req,res)=>{
   try {
     const rec = await q.one(db.meal_plans,{user_id:req.session.uid});
     const m = await checkMembership(req.session.uid);
-    const isGold = m && m.status==='active' && m.plan_id==='gold';
-    res.json({ ok:true, gold:!!isGold, profile: rec?.profile||null, plan: rec?.plan||null });
+    const u = await q.one(db.users,{_id:req.session.uid});
+    const privileged = !!(u && (u.is_admin || u.user_type==='trainer' || u.user_type==='manager'));
+    const isGold = (m && m.status==='active' && m.plan_id==='gold') || privileged;
+    res.json({ ok:true, gold:!!isGold, staff:privileged, profile: rec?.profile||null, plan: rec?.plan||null });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -3818,7 +3820,9 @@ app.get('/api/meal-plan', auth, async(req,res)=>{
 app.post('/api/meal-plan/generate', auth, async(req,res)=>{
   try {
     const m = await checkMembership(req.session.uid);
-    if(!(m && m.status==='active' && m.plan_id==='gold'))
+    const u = await q.one(db.users,{_id:req.session.uid});
+    const privileged = !!(u && (u.is_admin || u.user_type==='trainer' || u.user_type==='manager'));
+    if(!privileged && !(m && m.status==='active' && m.plan_id==='gold'))
       return res.status(403).json({error:'not_gold'});
     const b = req.body||{};
     const profile = {

@@ -59,7 +59,7 @@
 
 <script>
 const BLOG='https://latindancefusion.art/blog';
-let ME_PROFILE=null, ME_PLAN=null, IS_GOLD=false;
+let ME_PROFILE=null, ME_PLAN=null, IS_GOLD=false, IS_STAFF=false;
 const state={ gender:'zena', goal:'chudnutie', activity:'stredna', meals_per_day:4, diet:'bezna', allergens:[], include_f1:true };
 const ALLERGENS=[['lepok','Lepok'],['laktoza','Laktóza'],['orechy','Orechy'],['vajcia','Vajcia'],['soja','Sója'],['ryby','Ryby / morské plody']];
 
@@ -69,8 +69,14 @@ function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
 async function init(){
   const d=await api('/api/meal-plan');
   if(!d){ document.getElementById('root').innerHTML='<div class="card">Chyba pripojenia.</div>'; return; }
-  IS_GOLD=d.gold; ME_PROFILE=d.profile; ME_PLAN=d.plan;
+  IS_GOLD=d.gold; IS_STAFF=!!d.staff; ME_PROFILE=d.profile; ME_PLAN=d.plan;
   if(!IS_GOLD){ renderLocked(); return; }
+  if(IS_STAFF){
+    const b=document.createElement('div');
+    b.style.cssText='max-width:640px;margin:0 auto 14px;padding:10px 14px;border-radius:12px;background:rgba(201,162,76,.12);border:1px solid rgba(201,162,76,.35);color:#E7C878;font-size:.85rem;text-align:center';
+    b.innerHTML='👀 <b>Náhľad pre personál</b> — vidíš generátor tak, ako ho vidia Gold členky. Vyskúšaj si vyplniť profil a vygenerovať týždenný jedálniček.';
+    document.getElementById('root').before(b);
+  }
   if(ME_PROFILE) Object.assign(state, ME_PROFILE, {allergens:ME_PROFILE.allergens||[]});
   if(ME_PLAN) renderPlan(); else renderForm();
 }

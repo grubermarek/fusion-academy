@@ -291,8 +291,6 @@ select.form-control option{background:var(--dark3)}
   <div class="topbar-user" id="topUser" style="display:none">
     <div class="topbar-avatar" id="topAvatar">?</div>
     <span id="topName"></span>
-    <a class="logout-btn" id="topAdminLink" href="/admin" title="Firemný dashboard" style="display:none;text-decoration:none;border-color:rgba(201,168,76,.35);color:var(--gold)">💼 Firemný</a>
-    <a class="logout-btn" href="/client-dashboard" title="Osobný dashboard" style="text-decoration:none;border-color:rgba(201,168,76,.35);color:var(--gold)">🏠 Osobný</a>
     <button class="logout-btn" onclick="doLogout()">Odhlásiť</button>
   </div>
 </header>
@@ -341,6 +339,10 @@ select.form-control option{background:var(--dark3)}
       <i class="bi bi-qr-code-scan"></i>
       <span class="nav-label">QR Skener</span>
     </button>
+    <a class="nav-item" href="/jedalnicek" target="_blank" style="text-decoration:none">
+      <i class="bi bi-egg-fried"></i>
+      <span class="nav-label">Jedálniček</span>
+    </a>
   </nav>
 
   <!-- MAIN CONTENT -->
@@ -787,7 +789,6 @@ setInterval(updateClock, 15000);
     const initials = (me.name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
     document.getElementById('topAvatar').textContent = initials;
     document.getElementById('topName').textContent = me.name?.split(' ')[0]||'';
-    if(me.is_admin){ const al=document.getElementById('topAdminLink'); if(al) al.style.display=''; }
     document.getElementById('topUser').style.display='flex';
     await Promise.all([loadSchedule(), loadStudents(), loadAssistant()]);
   } catch(e){ document.getElementById('loginWall').style.display='flex'; }
