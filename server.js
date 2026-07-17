@@ -3086,14 +3086,28 @@ app.put('/api/admin/orders/:id', adminAuth, async(req,res)=>{
     }
     if(!status) return res.json({ok:true});
     await q.update(db.orders,{_id:req.params.id},{$set:{status,updated_at:nowISO(),...(status==='paid'?{paid_at:nowISO()}:{})}});
-    if(status==='paid'&&order.partner_id&&order.status!=='paid'){
-      for(const item of order.items){
-        const tx=await q.insert(db.transactions,{partner_id:order.partner_id,client_name:order.client_name,product_id:item.product_id||null,product_name:item.product_name,amount:item.subtotal,date:today(),notes:'E-shop objednávka '+order.order_number,order_id:order._id});
-        await saveCommissions(tx._id,order.partner_id,item.subtotal);
+    if(status==='paid' && order.status!=='paid'){
+      // Kto objednávku kúpil (ak je to náš člen) — pre províziu po jeho sponzorskej línii
+      const esc=s=>String(s||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+      const buyer = order.client_email
+        ? await q.one(db.users,{email:new RegExp('^'+esc(order.client_email.trim())+'$','i')})
+        : null;
+      if(buyer && buyer.sponsor_id){
+        // Provízia hore po genealógii kupujúceho (rovnako ako pri členstve).
+        // Sponzor tak dostane affiliate kredit aj za merch kúpený niekým v jeho línii.
+        for(const item of order.items){
+          await awardPurchaseCommission({ buyer_id: buyer._id, amount:item.subtotal, product_name: item.product_name });
+        }
+      } else if(order.partner_id){
+        // Predaj cez referral kód (kupujúci nie je náš člen) — provízia referrerovi.
+        for(const item of order.items){
+          const tx=await q.insert(db.transactions,{partner_id:order.partner_id,client_name:order.client_name,product_id:item.product_id||null,product_name:item.product_name,amount:item.subtotal,date:today(),notes:'E-shop objednávka '+order.order_number,order_id:order._id});
+          await saveCommissions(tx._id,order.partner_id,item.subtotal);
+        }
+        await calcRank(order.partner_id);
       }
-      await calcRank(order.partner_id);
+      grantMerchFromOrder(order);
     }
-    if(status==='paid' && order.status!=='paid') grantMerchFromOrder(order);
     res.json({ok:true});
   } catch(e){res.status(500).json({error:e.message});}
 });
@@ -4746,7 +4760,7 @@ async function pointsSummaryData(from, to){
     (await q.find(db.orders,{})).filter(o=>o.status==='paid').forEach(o=>{ if(!inRange(o.paid_at||o.created_at)) return;
       const uid=emailToId[(o.client_email||'').toLowerCase()]; if(!uid) return;
       (o.items||[]).forEach(it=>{ if(isMerchItem(it)) merchMap[uid]=(merchMap[uid]||0)+(+it.qty||1); }); });
-    const rows=[]; const catTotals={hours:0, online:0, refs:0, membership:0, newmem:0, merch:0};
+    const rows=[]; const catTotals={hours:0, online:0, refs:0, membership:0, newmem:0, merch:0, merchline:0};
     for(const u of users){
       const bks=byUser[u._id]||[];
       const online=bks.filter(isOnline).length;
@@ -4755,12 +4769,13 @@ async function pointsSummaryData(from, to){
       const m=await checkMembership(u._id);
       const hasMem=!!m;
       const nm=newMemberPointsFor(u._id, adjacency, buyerSet);
+      const md=merchDownlinePointsFor(u._id, adjacency, merchMap);
       const merchCount=merchMap[u._id]||0;
-      const pi=buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount});
+      const pi=buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points});
       if(pi.total<=0) continue;
       catTotals.hours+=hours*MP_WEIGHTS.hour; catTotals.online+=online*MP_WEIGHTS.hour;
       catTotals.refs+=refs*MP_WEIGHTS.referral; catTotals.membership+=hasMem?MP_WEIGHTS.membership:0;
-      catTotals.newmem+=nm.points; catTotals.merch+=merchCount*MP_WEIGHTS.merch;
+      catTotals.newmem+=nm.points; catTotals.merch+=merchCount*MP_WEIGHTS.merch; catTotals.merchline+=md.points;
       rows.push({ id:u._id, name:u.name, total:pi.total, hours, online, refs, hasMem,
         items:pi.items.filter(i=>i.points>0).map(i=>({label:i.label, count:i.count, points:i.points})) });
     }
@@ -6761,7 +6776,20 @@ const stripDia = s => (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCas
 // členstvo. Za príspevky/správy v komunite ZÁMERNE žiadne body (dá sa zneužiť).
 // 5 b hodina, 5 b privedený člen (registrácia), 10 b aktívne členstvo,
 // 30/15/10/5/5 b za nového PLATIACEHO člena v 1.–5. línii, 15 b za kus merchu.
-const MP_WEIGHTS = { hour:5, referral:5, membership:10, newMemberLine:[30,15,10,5,5], merch:15 };
+const MP_WEIGHTS = { hour:5, referral:5, membership:10, newMemberLine:[30,15,10,5,5], merch:15, merchLine:[10,5,3,2,1] };
+// Body za merch, ktorý si kúpil niekto v mojej štruktúre (po líniách 1..5).
+// merchMap: user_id → počet kusov merchu v období. Vlastné kusy sa nerátajú (tie má buyer sám).
+function merchDownlinePointsFor(userId, adjacency, merchMap){
+  let points=0, count=0;
+  let frontier=[userId]; const seen=new Set([userId]);
+  for(let line=0; line<MP_WEIGHTS.merchLine.length; line++){
+    const next=[];
+    for(const pid of frontier){ for(const cid of (adjacency[pid]||[])){ if(seen.has(cid)) continue; seen.add(cid); next.push(cid);
+      const kusy=merchMap[cid]||0; if(kusy>0){ count+=kusy; points+=kusy*MP_WEIGHTS.merchLine[line]; } } }
+    frontier=next;
+  }
+  return { count, points };
+}
 // Členovia v štruktúre, ktorí si kúpili členstvo v danom období — body po líniách
 function newMemberPointsFor(userId, adjacency, buyerSet){
   let points=0, count=0;
@@ -6813,11 +6841,14 @@ async function monthlyPointsFor(userId, month){
   // noví platiaci členovia (po líniách) + merch
   const adjacency={}; (await q.find(db.users,{})).forEach(u=>{ if(u.sponsor_id) (adjacency[u.sponsor_id]=adjacency[u.sponsor_id]||[]).push(u._id); });
   const nm = newMemberPointsFor(userId, adjacency, await membershipBuyersInPeriod(month));
-  const merchCount = (await merchCountMapInPeriod(month))[userId]||0;
-  return buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount}, month);
+  const merchMap = await merchCountMapInPeriod(month);
+  const merchCount = merchMap[userId]||0;
+  const md = merchDownlinePointsFor(userId, adjacency, merchMap);
+  return buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points}, month);
 }
-function buildPointItems({hours, online, refs, hasMem, memName, newMemberCount, newMemberPoints, merchCount}, month){
+function buildPointItems({hours, online, refs, hasMem, memName, newMemberCount, newMemberPoints, merchCount, merchLineCount, merchLinePoints}, month){
   online = online||0; newMemberCount=newMemberCount||0; newMemberPoints=newMemberPoints||0; merchCount=merchCount||0;
+  merchLineCount=merchLineCount||0; merchLinePoints=merchLinePoints||0;
   const plur=(n,a,b,c)=> n===1?a : (n>=2&&n<=4?b:c);
   const items = [
     { icon:'🔥', label:'Odchodené hodiny',        count:hours,  per:MP_WEIGHTS.hour,     points:hours*MP_WEIGHTS.hour,     sub:`${hours} ${plur(hours,'hodina','hodiny','hodín')}` },
@@ -6825,6 +6856,7 @@ function buildPointItems({hours, online, refs, hasMem, memName, newMemberCount, 
     { icon:'🤝', label:'Privedení noví členovia',  count:refs,   per:MP_WEIGHTS.referral, points:refs*MP_WEIGHTS.referral,   sub:`${refs} ${plur(refs,'člen','členovia','členov')}` },
     { icon:'🏅', label:'Noví platiaci členovia (aj v hĺbke)', count:newMemberCount, points:newMemberPoints, sub:`${newMemberCount} ${plur(newMemberCount,'člen','členovia','členov')}` },
     { icon:'🛍️', label:'Zakúpený merch',          count:merchCount, per:MP_WEIGHTS.merch, points:merchCount*MP_WEIGHTS.merch, sub:`${merchCount} ${plur(merchCount,'kus','kusy','kusov')}` },
+    { icon:'🛒', label:'Merch v mojom tíme (aj v hĺbke)', count:merchLineCount, points:merchLinePoints, sub:`${merchLineCount} ${plur(merchLineCount,'kus','kusy','kusov')}` },
     { icon:'💛', label: hasMem?('Aktívne členstvo'+(memName?' ('+memName+')':'')):'Aktívne členstvo', count: hasMem?1:0, per:MP_WEIGHTS.membership, points: hasMem?MP_WEIGHTS.membership:0, sub: hasMem?'aktívne':'—' },
   ];
   const total = items.reduce((s,i)=>s+i.points,0);
@@ -6860,16 +6892,20 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
         } });
       const buyerSet=await membershipBuyersInPeriod(prefix);
       const merchMap=await merchCountMapInPeriod(prefix);
-      let w=null, best=-1;
+      const ranked=[];
       for(const u of users){
         const nm=newMemberPointsFor(u._id, adjacency, buyerSet);
-        const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount:merchMap[u._id]||0 }, prefix);
-        if(bd.total>0 && bd.total>best){ best=bd.total; w={ id:u._id, name:u.name, avatar:u.avatar||null, refs:refCount[u._id]||0, hours:attCount[u._id]||0, score:bd.total, points:bd.total, breakdown:bd.items, badge:getMemberBadge(u.created_at) }; }
+        const md=merchDownlinePointsFor(u._id, adjacency, merchMap);
+        const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount:merchMap[u._id]||0, merchLineCount:md.count, merchLinePoints:md.points }, prefix);
+        if(bd.total>0) ranked.push({ id:u._id, name:u.name, avatar:u.avatar||null, refs:refCount[u._id]||0, hours:attCount[u._id]||0, score:bd.total, points:bd.total, breakdown:bd.items, badge:getMemberBadge(u.created_at) });
       }
-      return w;
+      ranked.sort((a,b)=>b.points-a.points);
+      return ranked;
     };
-    const winner = await winnerFor(monthStr);
-    const winnerYear = await winnerFor(yearStr);
+    const rankedMonth = await winnerFor(monthStr);
+    const rankedYear  = await winnerFor(yearStr);
+    const winner = rankedMonth[0]||null;
+    const winnerYear = rankedYear[0]||null;
     const rewardsCfg = (await q.one(db.settings,{key:'rewards'}))?.value || {};
 
     // birthdays & namedays today (non-anonymous)
@@ -6881,8 +6917,10 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
       const fn = stripDia(firstName(u.name));
       if(fn && nameTargets.includes(fn)) namedays.push({name:u.name, avatar:u.avatar||null});
     }
+    const slim = w => ({ id:w.id, name:w.name, avatar:w.avatar, points:w.points, breakdown:w.breakdown, badge:w.badge });
     res.json({ month: monthStr, year: yearStr, today_nameday: todayName,
       clientOfMonth: winner, clientOfYear: winnerYear,
+      topMonth: rankedMonth.slice(0,5).map(slim), topYear: rankedYear.slice(0,5).map(slim),
       rewards: { year_end: rewardsCfg.year_end||'', disclaimer: rewardsCfg.disclaimer||'',
         month_prizes: rewardsCfg.month_prizes||[], year_prizes: rewardsCfg.year_prizes||[] },
       birthdays, namedays,
@@ -6930,7 +6968,8 @@ app.get('/api/client/winners-history', auth, async(req,res)=>{
       const buyerSet=await membershipBuyersInPeriod(prefix); const merchMap=await merchCountMapInPeriod(prefix);
       let w=null, best=-1;
       for(const u of users){ const nm=newMemberPointsFor(u._id, adjacency, buyerSet);
-        const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount:merchMap[u._id]||0 }, prefix);
+        const md=merchDownlinePointsFor(u._id, adjacency, merchMap);
+        const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount:merchMap[u._id]||0, merchLineCount:md.count, merchLinePoints:md.points }, prefix);
         if(bd.total>0 && bd.total>best){ best=bd.total; w={ id:u._id, name:u.name, avatar:u.avatar||null, points:bd.total }; } }
       return w;
     };

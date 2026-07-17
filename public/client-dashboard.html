@@ -1503,52 +1503,93 @@ async function loadSpotlight(){
   const host=document.getElementById('spotlight');
   if(!d || d.error){ host.style.display='none'; return; }
   _spotData=d;
-  let html='';
-  if(d.clientOfMonth){
-    const c=d.clientOfMonth; _colmWinner=c;
-    html+=`<div class="sl-card sl-hero" style="position:relative;cursor:pointer" onclick="location.href='/u/${c.id}'" title="Zobraziť profil">
-      <div class="sl-label">🏆 Klientka mesiaca</div>
-      <div class="sl-row">${slAvatar(c.avatar,c.name)}
-        <div><div class="sl-name">${escHtml(c.name)} ${c.badge?.emoji||''} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></div>
-          <div class="sl-why">Ďakujeme, že si srdcom našej komunity! 💛</div>
-          <div class="sl-stats">
-            <span onclick="event.stopPropagation();showPointsBreakdown(_colmWinner.breakdown,_colmWinner.points,_colmWinner.name)"
-              style="display:inline-flex;align-items:center;gap:9px;cursor:pointer;background:linear-gradient(102deg,rgba(201,168,76,.18),rgba(201,168,76,.07));border:1px solid rgba(201,168,76,.45);border-radius:12px;padding:7px 13px;transition:.15s"
-              onmouseenter="this.style.background='rgba(201,168,76,.28)'" onmouseleave="this.style.background='linear-gradient(102deg,rgba(201,168,76,.18),rgba(201,168,76,.07))'">
-              <span style="font-weight:800;color:var(--gold);font-size:1.05rem;line-height:1">⭐ ${c.points||0}</span>
-              <span style="color:var(--muted);font-size:.8rem">bodov</span>
-              <span style="width:1px;height:14px;background:rgba(201,168,76,.3)"></span>
-              <span style="color:var(--gold);font-size:.8rem;font-weight:600;display:inline-flex;align-items:center;gap:3px">Rozpis <i class="bi bi-chevron-right" style="font-size:.68rem"></i></span>
-            </span>
-          </div>
-          <button onclick="event.stopPropagation();openRewardsInfo()" style="margin-top:9px;background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.35);color:var(--gold);border-radius:10px;padding:7px 13px;font-size:.82rem;font-weight:600;cursor:pointer">🎁 Ceny &amp; súťaž</button>
-        </div>
-      </div></div>`;
-  }
-  if(d.clientOfYear){
-    const c=d.clientOfYear;
-    html+=`<div class="sl-card sl-hero" style="position:relative;cursor:pointer;border-color:rgba(201,168,76,.5)" onclick="location.href='/u/${c.id}'" title="Zobraziť profil">
-      <div class="sl-label">👑 Klientka roka ${d.year||''}</div>
-      <div class="sl-row">${slAvatar(c.avatar,c.name)}
-        <div><div class="sl-name">${escHtml(c.name)} ${c.badge?.emoji||''} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></div>
-          <div class="sl-why">Súťaž o titul <b>Ambasádorka ${d.year||''}</b> — zbieraj body celý rok! 👑</div>
-          <div class="sl-stats"><span style="display:inline-flex;align-items:center;gap:6px;background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.35);border-radius:12px;padding:6px 12px"><span style="font-weight:800;color:var(--gold)">⭐ ${c.points||0}</span><span style="color:var(--muted);font-size:.8rem">bodov za rok</span></span></div>
-          <button onclick="event.stopPropagation();openRewardsInfo()" style="margin-top:9px;background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.35);color:var(--gold);border-radius:10px;padding:7px 13px;font-size:.82rem;font-weight:600;cursor:pointer">🏆 Ceny, uzávierka &amp; história</button>
-        </div>
-      </div></div>`;
-  }
+  const board=renderSpotBoard();
   const celeb=[];
   (d.birthdays||[]).forEach(b=>celeb.push(`<span class="sl-chip">🎂 ${escHtml(b.name)}</span>`));
   (d.namedays||[]).forEach(n=>celeb.push(`<span class="sl-chip">💐 ${escHtml(n.name)}</span>`));
+  let celebHtml='';
   if(celeb.length){
-    html+=`<div class="sl-card sl-celebrate">
+    celebHtml=`<div class="sl-card sl-celebrate">
       <div class="sl-label">🎉 Dnes oslavujú${d.today_nameday?` · meniny má ${escHtml(d.today_nameday)}`:''}</div>
       <div class="sl-chips">${celeb.join('')}</div>
       <div class="sl-why" style="margin-top:8px">Zaželaj im všetko najlepšie na najbližšej hodine! 🥳</div>
     </div>`;
   }
-  if(!html){ host.style.display='none'; return; }
-  host.innerHTML=html; host.style.display='grid';
+  if(!board && !celebHtml){ host.style.display='none'; return; }
+  host.innerHTML=board+celebHtml; host.style.display='grid';
+}
+
+let _spotPeriod='month';
+window.setSpotPeriod=(p)=>{
+  _spotPeriod=p;
+  const host=document.getElementById('spotlight'); if(!host||!_spotData) return;
+  // Prekresli len tabuľu, oslavy nechaj
+  loadSpotlightRender();
+};
+function loadSpotlightRender(){
+  const d=_spotData, host=document.getElementById('spotlight');
+  const board=renderSpotBoard();
+  const celeb=[];
+  (d.birthdays||[]).forEach(b=>celeb.push(`<span class="sl-chip">🎂 ${escHtml(b.name)}</span>`));
+  (d.namedays||[]).forEach(n=>celeb.push(`<span class="sl-chip">💐 ${escHtml(n.name)}</span>`));
+  let celebHtml='';
+  if(celeb.length){
+    celebHtml=`<div class="sl-card sl-celebrate">
+      <div class="sl-label">🎉 Dnes oslavujú${d.today_nameday?` · meniny má ${escHtml(d.today_nameday)}`:''}</div>
+      <div class="sl-chips">${celeb.join('')}</div>
+      <div class="sl-why" style="margin-top:8px">Zaželaj im všetko najlepšie na najbližšej hodine! 🥳</div>
+    </div>`;
+  }
+  host.innerHTML=board+celebHtml;
+}
+// Rozpis bodov ľubovoľného člena z rebríčka
+window.spotBreakdown=(period,idx)=>{
+  const list=period==='month'?(_spotData.topMonth||[]):(_spotData.topYear||[]);
+  const c=list[idx]; if(c) showPointsBreakdown(c.breakdown,c.points,c.name);
+};
+// Jedno okno: rebríček TOP 5 s prepínačom Mesiac / Rok
+function renderSpotBoard(){
+  const d=_spotData; if(!d) return '';
+  const isM=_spotPeriod==='month';
+  const list=(isM?d.topMonth:d.topYear)||[];
+  const title=isM?'🏆 Klientka mesiaca':`👑 Klientka roka ${d.year||''}`;
+  const why=isM?'Ďakujeme, že si srdcom našej komunity! 💛':`Súťaž o titul <b>Ambasádorka ${d.year||''}</b> — zbieraj body celý rok! 👑`;
+  const toggle=`<div style="display:inline-flex;gap:2px;background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.3);border-radius:20px;padding:3px">
+    <button onclick="event.stopPropagation();setSpotPeriod('month')" style="border:0;cursor:pointer;border-radius:16px;padding:4px 14px;font-size:.78rem;font-weight:700;background:${isM?'var(--gold)':'transparent'};color:${isM?'#1a1206':'var(--muted)'}">Mesiac</button>
+    <button onclick="event.stopPropagation();setSpotPeriod('year')" style="border:0;cursor:pointer;border-radius:16px;padding:4px 14px;font-size:.78rem;font-weight:700;background:${!isM?'var(--gold)':'transparent'};color:${!isM?'#1a1206':'var(--muted)'}">Rok</button>
+  </div>`;
+  const header=`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+    <div class="sl-label" style="margin:0">${title}</div>${toggle}</div>`;
+  if(!list.length){
+    return `<div class="sl-card sl-hero">${header}
+      <div class="sl-why">Zatiaľ žiadne body za toto obdobie — buď prvá! 💫</div>
+      <button onclick="openRewardsInfo()" style="margin-top:10px;background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.35);color:var(--gold);border-radius:10px;padding:7px 13px;font-size:.82rem;font-weight:600;cursor:pointer">🎁 Ceny &amp; súťaž</button>
+    </div>`;
+  }
+  const c=list[0];
+  const hero=`<div class="sl-row" style="cursor:pointer" onclick="location.href='/u/${c.id}'" title="Zobraziť profil">${slAvatar(c.avatar,c.name)}
+    <div style="flex:1;min-width:0"><div class="sl-name">${escHtml(c.name)} ${c.badge?.emoji||''} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></div>
+      <div class="sl-why">${why}</div>
+      <div class="sl-stats">
+        <span onclick="event.stopPropagation();spotBreakdown('${_spotPeriod}',0)"
+          style="display:inline-flex;align-items:center;gap:9px;cursor:pointer;background:linear-gradient(102deg,rgba(201,168,76,.18),rgba(201,168,76,.07));border:1px solid rgba(201,168,76,.45);border-radius:12px;padding:7px 13px">
+          <span style="font-weight:800;color:var(--gold);font-size:1.05rem;line-height:1">⭐ ${c.points||0}</span>
+          <span style="color:var(--muted);font-size:.8rem">${isM?'bodov':'bodov za rok'}</span>
+          <span style="width:1px;height:14px;background:rgba(201,168,76,.3)"></span>
+          <span style="color:var(--gold);font-size:.8rem;font-weight:600;display:inline-flex;align-items:center;gap:3px">Rozpis <i class="bi bi-chevron-right" style="font-size:.68rem"></i></span>
+        </span>
+      </div>
+    </div></div>`;
+  const medal=['🥇','🥈','🥉','4.','5.'];
+  const rest=list.slice(1,5).map((r,i)=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-top:1px solid rgba(255,255,255,.06)">
+      <span style="width:22px;text-align:center;font-weight:700;color:var(--muted);font-size:.9rem">${medal[i+1]}</span>
+      <a href="/u/${r.id}" style="text-decoration:none;color:inherit;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:.9rem">${escHtml(r.name)} ${r.badge?.emoji||''}</a>
+      <span onclick="spotBreakdown('${_spotPeriod}',${i+1})" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.28);border-radius:10px;padding:3px 10px;font-size:.8rem;font-weight:700;color:var(--gold);white-space:nowrap">⭐ ${r.points||0}</span>
+    </div>`).join('');
+  const restBlock=rest?`<div style="margin-top:10px">${rest}</div>`:'';
+  const cta=`<button onclick="openRewardsInfo()" style="margin-top:12px;background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.35);color:var(--gold);border-radius:10px;padding:7px 13px;font-size:.82rem;font-weight:600;cursor:pointer">${isM?'🎁 Ceny &amp; súťaž':'🏆 Ceny, uzávierka &amp; história'}</button>`;
+  return `<div class="sl-card sl-hero" style="border-color:rgba(201,168,76,.5)">${header}${hero}${restBlock}${cta}</div>`;
 }
 
 /* ─── Profile photo ─── */
