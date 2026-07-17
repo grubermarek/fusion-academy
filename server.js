@@ -3472,11 +3472,34 @@ app.post('/api/tips/create', auth, async(req,res)=>{
 // Verejný feed tipov na profile daného človeka (ako donaty na Twitchi)
 app.get('/api/tips/for/:userId', async(req,res)=>{
   try{
+    const u = await q.one(db.users,{_id:req.params.userId});
     const tips = await q.find(db.tips,{to_user_id:req.params.userId, status:'paid'});
     tips.sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
     const total = tips.reduce((s,t)=>s+(+t.amount||0),0);
-    res.json({ count: tips.length, total:+total.toFixed(2),
+    // Top podporovatelia (súčet podľa darcu)
+    const byDonor={};
+    for(const t of tips){ const key=t.from_user_id||('n:'+(t.from_name||'Anonym'));
+      const d=byDonor[key]=byDonor[key]||{ from_user_id:t.from_user_id||null, from_name:t.from_name||'Anonym', total:0, count:0 };
+      d.total+=(+t.amount||0); d.count++; }
+    const top=Object.values(byDonor).map(d=>({...d,total:+d.total.toFixed(2)})).sort((a,b)=>b.total-a.total).slice(0,5);
+    const goal = (u && +u.tip_goal_amount>0) ? { amount:+u.tip_goal_amount, label:u.tip_goal_label||'' } : null;
+    res.json({ count: tips.length, total:+total.toFixed(2), goal, top,
       tips: tips.slice(0,100).map(t=>({ from_user_id:t.from_user_id, from_name:t.from_name, amount:t.amount, message:t.message, created_at:t.created_at })) });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Nastavenie cieľa tipov — len vlastný profil (alebo admin za trénera)
+app.put('/api/tips/goal', auth, async(req,res)=>{
+  try{
+    const { user_id, amount, label } = req.body;
+    const targetId = user_id || req.session.uid;
+    const me = await q.one(db.users,{_id:req.session.uid});
+    if(targetId!==req.session.uid && !me?.is_admin) return res.status(403).json({error:'Nemáš oprávnenie'});
+    const target = await q.one(db.users,{_id:targetId});
+    if(!target || !(target.is_admin || target.user_type==='trainer' || target.user_type==='manager'))
+      return res.status(400).json({error:'Cieľ tipov je len pre trénerov/tím'});
+    const amt = Math.max(0, Math.min(100000, +parseFloat(amount||0)||0));
+    await q.update(db.users,{_id:targetId},{$set:{ tip_goal_amount:amt, tip_goal_label:String(label||'').slice(0,80) }});
+    res.json({ ok:true, amount:amt });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 // Admin prehľad tipov

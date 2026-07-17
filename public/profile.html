@@ -440,11 +440,40 @@ async function loadTips(){
   const box=document.getElementById('tipsFeed'); if(!box) return;
   try{
     const d=await (await fetch('/api/tips/for/'+encodeURIComponent(uid))).json();
+    _tipData=d;
     const LOC={sk:'sk-SK',cs:'cs-CZ',en:'en-GB',uk:'uk-UA',hu:'hu-HU',de:'de-DE'}[FA_I18N.lang]||'sk-SK';
+    const eur=v=>(+v||0).toFixed(2).replace('.',',')+' €';
+    // Cieľ (goal bar)
+    let goalHtml='';
+    if(d.goal){
+      const pct=Math.min(100,Math.round((d.total||0)/d.goal.amount*100));
+      goalHtml=`<div style="background:rgba(255,255,255,.04);border:1px solid rgba(201,168,76,.3);border-radius:14px;padding:12px 14px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px">
+          <b style="color:var(--gold)">🎯 ${esc(d.goal.label||'Cieľ tipov')}</b>
+          <span style="font-size:.85rem;color:var(--muted)">${eur(d.total)} / <b style="color:var(--cream)">${eur(d.goal.amount)}</b></span></div>
+        <div style="height:12px;background:rgba(255,255,255,.08);border-radius:8px;overflow:hidden"><div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#C9A84C,#E7C878);transition:width .5s"></div></div>
+        <div style="text-align:right;font-size:.78rem;color:var(--gold);font-weight:700;margin-top:4px">${pct}%${pct>=100?' · splnené! 🎉':''}</div>
+      </div>`;
+    }
+    // Ovládanie cieľa (len vlastník / admin)
+    let goalCtrl='';
+    if(P.is_self || P.viewer_is_admin){
+      goalCtrl=`<button onclick="editTipGoal()" style="background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.35);color:var(--gold);border-radius:10px;padding:5px 11px;font-size:.8rem;font-weight:700;cursor:pointer">🎯 ${d.goal?'Upraviť cieľ':'Nastaviť cieľ'}</button>`;
+    }
+    // Top podporovatelia
+    let topHtml='';
+    if(d.top && d.top.length){
+      const medal=['🥇','🥈','🥉','4.','5.'];
+      topHtml=`<div style="margin-bottom:12px"><div style="font-weight:700;color:var(--cream);margin-bottom:6px">🏆 Top podporovatelia</div>`+
+        d.top.map((s,i)=>{
+          const nm=s.from_user_id?`<a href="/u/${s.from_user_id}" style="color:var(--cream);text-decoration:none">${esc(s.from_name)}</a>`:esc(s.from_name);
+          return `<div style="display:flex;align-items:center;gap:9px;padding:5px 2px;border-bottom:1px solid rgba(255,255,255,.05)"><span style="width:22px;text-align:center">${medal[i]}</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${nm}</span><b style="color:var(--gold)">${eur(s.total)}</b></div>`;
+        }).join('')+`</div>`;
+    }
     const head=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-      <span style="background:rgba(201,168,76,.14);border:1px solid rgba(201,168,76,.4);border-radius:12px;padding:6px 12px;font-weight:800;color:var(--gold)">💛 ${(d.total||0).toFixed(2).replace('.',',')} € · ${d.count||0} ${d.count===1?'tip':'tipov'}</span></div>`;
-    if(!d.tips||!d.tips.length){ box.innerHTML=head+'<div class="empty">Zatiaľ žiadne tipy. Buď prvý/prvá! 💛</div>'; return; }
-    box.innerHTML=head+d.tips.map(t=>{
+      <span style="background:rgba(201,168,76,.14);border:1px solid rgba(201,168,76,.4);border-radius:12px;padding:6px 12px;font-weight:800;color:var(--gold)">💛 ${eur(d.total)} · ${d.count||0} ${d.count===1?'tip':'tipov'}</span>${goalCtrl}</div>`;
+    if(!d.tips||!d.tips.length){ box.innerHTML=head+goalHtml+topHtml+'<div class="empty">Zatiaľ žiadne tipy. Buď prvý/prvá! 💛</div>'; return; }
+    box.innerHTML=head+goalHtml+topHtml+d.tips.map(t=>{
       const ini=(t.from_name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
       const when=new Date(t.created_at).toLocaleDateString(LOC,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
       const nameHtml = t.from_user_id ? `<a href="/u/${t.from_user_id}" style="color:var(--cream);text-decoration:none;font-weight:700">${esc(t.from_name)}</a>` : `<span style="font-weight:700">${esc(t.from_name)}</span>`;
@@ -458,7 +487,17 @@ async function loadTips(){
     }).join('');
   }catch(e){ box.innerHTML='<div class="empty">Nepodarilo sa načítať tipy.</div>'; }
 }
-let _tipAmount=10;
+let _tipAmount=10, _tipData=null;
+async function editTipGoal(){
+  const cur=_tipData?.goal||{};
+  const label=prompt('Názov cieľa (napr. „Nový reproduktor na hodiny"):', cur.label||'');
+  if(label===null) return;
+  const amtStr=prompt('Cieľová suma v € (0 = zrušiť cieľ):', cur.amount||'');
+  if(amtStr===null) return;
+  const amount=parseFloat(amtStr)||0;
+  const r=await fetch('/api/tips/goal',{method:'PUT',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:uid,amount,label})}).then(x=>x.json()).catch(()=>null);
+  if(r&&r.ok) loadTips(); else alert('Chyba: '+((r&&r.error)||'?'));
+}
 function openTip(){
   let m=document.getElementById('tipModal');
   if(!m){ m=document.createElement('div'); m.id='tipModal';
