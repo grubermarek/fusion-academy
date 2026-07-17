@@ -31,6 +31,8 @@ body{background:var(--dark-1);color:var(--cream);font-size:.92rem;}
 .group-title{font-size:1.05rem;font-weight:800;color:var(--cream);margin:2px 6px 14px;}
 .group-links{display:none;flex-direction:column;gap:2px;}
 .group-links.active{display:flex;animation:grpIn .22s ease both;}
+.nav-group-label{font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;color:rgba(201,168,76,.6);font-weight:700;padding:.55rem .7rem .2rem;margin-top:.3rem;border-top:1px solid rgba(255,255,255,.05);}
+.nav-group-label:first-child{border-top:none;margin-top:0;}
 @keyframes grpIn{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:translateX(0)}}
 .main{margin-left:262px;min-height:100vh;background:var(--dark-1);}
 .brand{font-size:1.2rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
@@ -120,9 +122,12 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </div>
 
     <div class="group-links" data-group="manage">
+      <div class="nav-group-label">Klienti</div>
       <a class="nav-link" href="#" onclick="show('leads')"><i class="bi bi-person-plus me-2"></i>Leady <span id="leadsNavBadge" class="badge ms-1" style="background:#C9A84C;color:#111;display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('crm')"><i class="bi bi-person-lines-fill me-2"></i>Klienti <span id="crmClientsBadge" class="badge ms-1" style="background:#C9A84C;color:#111;display:none"></span></a>
+      <a class="nav-link" href="#" onclick="show('tasks')"><i class="bi bi-check2-square me-2"></i>CRM úlohy <span id="tasksBadge" class="badge bg-danger" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('memberships')"><i class="bi bi-patch-check me-2"></i>Členstvá</a>
+      <div class="nav-group-label">Prevádzka</div>
       <a class="nav-link" href="#" onclick="show('classes')"><i class="bi bi-calendar3 me-2"></i>Hodiny / Stream</a>
       <a class="nav-link" href="#" onclick="show('bookings')"><i class="bi bi-calendar-check me-2"></i>Rezervácie</a>
       <a class="nav-link" href="#" onclick="show('orders')"><i class="bi bi-bag-check me-2"></i>Objednávky <span id="pendingBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
@@ -134,36 +139,38 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div class="group-links" data-group="marketing">
       <a class="nav-link" href="#" onclick="show('marketing')"><i class="bi bi-graph-up-arrow me-2"></i><span style="color:#C9A84C;font-weight:700">Marketing (CAC/LTV)</span></a>
       <a class="nav-link" href="#" onclick="show('campaigns')"><i class="bi bi-megaphone me-2"></i>Kampane</a>
+      <a class="nav-link" href="#" onclick="show('outreach')"><i class="bi bi-send me-2"></i>Hromadné správy</a>
       <a class="nav-link" href="#" onclick="show('automation')"><i class="bi bi-envelope-check me-2"></i>Automatizácia</a>
+      <a class="nav-link" href="#" onclick="show('promos')"><i class="bi bi-ticket-perforated me-2"></i>Promo kódy</a>
       <a class="nav-link" href="#" onclick="show('churn')"><i class="bi bi-person-dash me-2"></i>Churn Risk <span id="churnBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
     </div>
 
     <div class="group-links" data-group="reports">
+      <div class="nav-group-label">Financie</div>
       <a class="nav-link" href="#" onclick="show('finance')"><i class="bi bi-graph-up me-2"></i><span style="color:#C9A24C;font-weight:700">Financie</span></a>
-      <a class="nav-link" href="#" onclick="show('invoices')"><i class="bi bi-file-earmark-text me-2"></i>Faktúry</a>
-      <a class="nav-link" href="#" onclick="show('retention')"><i class="bi bi-people-fill me-2"></i>Retencia & LTV</a>
       <a class="nav-link" href="#" onclick="show('accounting')"><i class="bi bi-calculator me-2"></i>Účtovníctvo</a>
-      <a class="nav-link" href="#" onclick="show('points')"><i class="bi bi-trophy me-2"></i>Body klientov</a>
-      <a class="nav-link" href="#" onclick="show('trainers')"><i class="bi bi-person-badge me-2"></i>Výkon trénerov</a>
-      <a class="nav-link" href="#" onclick="show('payouts')"><i class="bi bi-cash-stack me-2"></i>Výplaty trénerov</a>
+      <a class="nav-link" href="#" onclick="show('invoices')"><i class="bi bi-file-earmark-text me-2"></i>Faktúry</a>
       <a class="nav-link" href="#" onclick="show('refunds')"><i class="bi bi-arrow-counterclockwise me-2"></i>Refundácie</a>
       <a class="nav-link" href="#" onclick="show('failed')"><i class="bi bi-credit-card-2-front me-2"></i>Neúspešné platby <span id="failedBadge" class="badge bg-danger" style="display:none"></span></a>
-      <a class="nav-link" href="#" onclick="show('promos')"><i class="bi bi-ticket-perforated me-2"></i>Promo kódy</a>
-      <a class="nav-link" href="#" onclick="show('tasks')"><i class="bi bi-check2-square me-2"></i>CRM úlohy <span id="tasksBadge" class="badge bg-danger" style="display:none"></span></a>
-      <a class="nav-link" href="#" onclick="show('outreach')"><i class="bi bi-send me-2"></i>Hromadné správy</a>
-      <a class="nav-link" href="#" onclick="show('alerts')"><i class="bi bi-bell me-2"></i>Alerty <span id="alertsBadge" class="badge bg-danger" style="display:none"></span></a>
-      <a class="nav-link" href="#" onclick="show('exports')"><i class="bi bi-download me-2"></i>Exporty</a>
-      <a class="nav-link" href="#" onclick="show('reset')" style="color:#e57373"><i class="bi bi-exclamation-octagon me-2"></i>Reset dát</a>
       <a class="nav-link" href="#" onclick="show('transactions')"><i class="bi bi-receipt me-2"></i>Všetky predaje</a>
       <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby PayPal</a>
+      <div class="nav-group-label">Výkon & retencia</div>
+      <a class="nav-link" href="#" onclick="show('retention')"><i class="bi bi-people-fill me-2"></i>Retencia & LTV</a>
+      <a class="nav-link" href="#" onclick="show('points')"><i class="bi bi-star me-2"></i>Body klientov</a>
+      <a class="nav-link" href="#" onclick="show('leaderboard')"><i class="bi bi-trophy me-2"></i>Leaderboard dochádzky</a>
+      <a class="nav-link" href="#" onclick="show('trainers')"><i class="bi bi-person-badge me-2"></i>Výkon trénerov</a>
+      <a class="nav-link" href="#" onclick="show('payouts')"><i class="bi bi-cash-stack me-2"></i>Výplaty trénerov</a>
+      <div class="nav-group-label">Systém</div>
+      <a class="nav-link" href="#" onclick="show('alerts')"><i class="bi bi-bell me-2"></i>Alerty <span id="alertsBadge" class="badge bg-danger" style="display:none"></span></a>
+      <a class="nav-link" href="#" onclick="show('exports')"><i class="bi bi-download me-2"></i>Exporty</a>
       <a class="nav-link" href="#" onclick="show('audit')"><i class="bi bi-shield-lock me-2"></i>Audit log</a>
+      <a class="nav-link" href="#" onclick="show('reset')" style="color:#e57373"><i class="bi bi-exclamation-octagon me-2"></i>Reset dát</a>
     </div>
 
     <div class="group-links" data-group="partners">
       <a class="nav-link" href="#" onclick="show('partners')"><i class="bi bi-people me-2"></i>Partneri</a>
       <a class="nav-link" href="#" onclick="show('addpartner')"><i class="bi bi-person-plus me-2"></i>Pridať partnera</a>
       <a class="nav-link" href="#" onclick="show('commissions')"><i class="bi bi-cash-stack me-2"></i>Výplaty provízií</a>
-      <a class="nav-link" href="#" onclick="show('leaderboard')"><i class="bi bi-trophy me-2"></i>Leaderboard</a>
     </div>
   </div>
 </div>
@@ -693,7 +700,8 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
         <button class="btn btn-sm btn-outline-secondary" onclick="loadLeads()"><i class="bi bi-arrow-clockwise"></i></button>
       </div>
     </div>
-    <p class="text-muted small mb-3">Registrovaní, ktorí ešte nezaplatili. V stĺpci <b>Stav</b> meníš fázu starostlivosti (Nový → Kontaktovaný → Má/Nemá záujem). Keď príde na hodinu zdarma, automaticky sa označí <b>💃 Bola na hodine</b>; po prvej platbe automaticky prejde medzi <b>Klientov</b>. <i class="bi bi-envelope-paper"></i> ukáže, akú mailovú sekvenciu a kedy dostala. Importované staré leady (🗂️) vidíte len vy.</p>
+    <p class="text-muted small mb-3">Registrovaní, ktorí ešte nezaplatili. V stĺpci <b>Stav</b> meníš fázu starostlivosti (volané/zdvihol, SMS, e-mail, má/nemá záujem…) — riadok sa podľa toho <b>zafarbí</b>. Keď príde na hodinu zdarma, automaticky sa označí <b>💃 Bola na hodine</b>; po prvej platbe prejde medzi <b>Klientov</b>. <i class="bi bi-envelope-paper"></i> ukáže mailovú sekvenciu, poznámku vidíš priamo v tabuľke. Importované staré leady (🗂️) vidíte len vy.</p>
+    <div id="leadsStats"></div>
     <div class="card border-0 rounded-3">
       <div class="table-responsive">
         <table class="table table-hover align-middle mb-0" style="font-size:.85rem">
@@ -981,6 +989,11 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <button class="btn btn-sm btn-outline-secondary" data-p="lastweek" onclick="finPeriod(this)">Minulý týždeň</button>
       <button class="btn btn-sm btn-warning" data-p="month" onclick="finPeriod(this)">Tento mesiac</button>
       <button class="btn btn-sm btn-outline-secondary" data-p="lastmonth" onclick="finPeriod(this)">Minulý mesiac</button>
+      <span class="d-inline-flex align-items-center gap-1 ms-1" style="border-left:1px solid #333;padding-left:10px">
+        <button class="btn btn-sm btn-outline-warning" onclick="finMonthShift(-1)" title="Predošlý mesiac"><i class="bi bi-chevron-left"></i></button>
+        <button class="btn btn-sm btn-outline-warning" onclick="finMonthShift(0)" id="finMonthBtn" style="min-width:120px">Po mesiacoch</button>
+        <button class="btn btn-sm btn-outline-warning" onclick="finMonthShift(1)" title="Nasledujúci mesiac"><i class="bi bi-chevron-right"></i></button>
+      </span>
       <span class="d-inline-flex align-items-center gap-1">
         <input type="date" id="finFrom" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:150px;color-scheme:dark">
         <span class="text-muted">–</span>
@@ -2137,16 +2150,41 @@ function finCustom(){
   const f=document.getElementById('finFrom').value, t=document.getElementById('finTo').value;
   if(!f||!t){showToast('Vyber oba dátumy','error');return;}
   document.querySelectorAll('#finChips [data-p]').forEach(b=>{b.classList.remove('btn-warning');b.classList.add('btn-outline-secondary');});
-  _finRange={from:f,to:t}; loadFinance();
+  _finMonth=null; _finRange={from:f,to:t}; loadFinance();
+}
+let _finMonth=null;
+const SK_MONTHS=['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
+function finMonthShift(delta){
+  const now=new Date();
+  if(!_finMonth) _finMonth=new Date(now.getFullYear(), now.getMonth(), 1);
+  _finMonth=new Date(_finMonth.getFullYear(), _finMonth.getMonth()+delta, 1);
+  const y=_finMonth.getFullYear(), m=_finMonth.getMonth();
+  const from=new Date(y,m,1), to=new Date(y,m+1,0);
+  document.getElementById('finMonthBtn').textContent=SK_MONTHS[m]+' '+y;
+  document.querySelectorAll('#finChips [data-p]').forEach(b=>{b.classList.remove('btn-warning');b.classList.add('btn-outline-secondary');});
+  _finRange={from:_fmtD(from),to:_fmtD(to)};
+  loadFinance();
 }
 async function loadFinance(){
   if(!_finRange){ const now=new Date(); _finRange={from:_fmtD(new Date(now.getFullYear(),now.getMonth(),1)),to:_fmtD(now)}; }
   const d=await api(`/api/admin/finance/stats?from=${_finRange.from}&to=${_finRange.to}`);
   if(!d||d.error){showToast('Chyba: '+(d?.error||'?'),'error');return;}
+  // Predošlé obdobie rovnakej dĺžky (na % zmenu)
+  const fF=new Date(_finRange.from), tF=new Date(_finRange.to);
+  const lenDays=Math.round((tF-fF)/86400000)+1;
+  const prevTo=new Date(fF-86400000), prevFrom=new Date(prevTo-(lenDays-1)*86400000);
+  let deltaHtml='';
+  const pd=await api(`/api/admin/finance/stats?from=${_fmtD(prevFrom)}&to=${_fmtD(prevTo)}`);
+  if(pd&&!pd.error){
+    const cur=d.revenue.period, prev=pd.revenue.period;
+    if(prev>0){ const ch=(cur-prev)/prev*100; const up=ch>=0;
+      deltaHtml=`<span style="color:${up?'#4ade80':'#e57373'};font-weight:700"> ${up?'▲':'▼'} ${Math.abs(ch).toFixed(1)} %</span> <span class="text-muted">vs ${prev.toFixed(0)} € pred.</span>`;
+    } else if(cur>0){ deltaHtml=`<span style="color:#4ade80;font-weight:700"> ▲ nové</span>`; }
+  }
   const kpi=(l,v,s,c)=>`<div class="col-6 col-md-3"><div class="card bg-dark border-secondary"><div class="card-body py-2 px-3">
     <div class="small text-muted">${l}</div><div class="fs-5 fw-bold" style="color:${c||'#EAE3D5'}">${v}</div><div class="small text-muted">${s||''}</div></div></div></div>`;
   document.getElementById('finKpis').innerHTML =
-    kpi('Obdobie', d.revenue.period.toFixed(2)+' €', `${_finRange.from} – ${_finRange.to} · ${d.txCount} platieb`, '#C9A24C')
+    kpi('Obdobie', d.revenue.period.toFixed(2)+' €', `${_finRange.from} – ${_finRange.to} · ${d.txCount} platieb${deltaHtml?'<br>'+deltaHtml:''}`, '#C9A24C')
     + kpi('Dnes', d.revenue.today.toFixed(2)+' €','', '#4ade80')
     + kpi('Tento mesiac', d.revenue.month.toFixed(2)+' €','')
     + kpi('Tento rok', d.revenue.year.toFixed(2)+' €', 'celkovo '+d.revenue.total.toFixed(2)+' €')
@@ -2468,21 +2506,39 @@ async function loadLeads(){
   document.getElementById('leadsCount').textContent=d.total;
   const nav=document.getElementById('leadsNavBadge'); if(d.total>0){ nav.textContent=d.total; nav.style.display='inline'; } else nav.style.display='none';
   _leadsData=d.leads||[];
+  renderLeadStats(d.stats);
   if(!_leadsData.length){ body.innerHTML='<tr><td colspan="12" class="text-center py-4 text-muted">Žiadne leady 🎉</td></tr>'; return; }
   renderLeads();
 }
+function renderLeadStats(s){
+  const box=document.getElementById('leadsStats'); if(!box) return;
+  if(!s){ box.innerHTML=''; return; }
+  const card=(l,v,c,sub)=>`<div style="flex:1;min-width:130px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:10px 14px">
+    <div class="text-muted" style="font-size:.62rem;text-transform:uppercase;letter-spacing:.03em">${l}</div>
+    <div class="fw-bold" style="font-size:1.3rem;color:${c||'#EAE3D5'}">${v}</div>${sub?`<div class="text-muted" style="font-size:.72rem">${sub}</div>`:''}</div>`;
+  box.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+    ${card('Konverzia lead → klient', s.conversion+' %', '#4ade80', s.clients+' klientov / '+(s.clients+s.leads)+' registrovaných')}
+    ${card('Aktívne leady', s.leads, '#C9A84C', 'ešte nezaplatili')}
+    ${card('Majú záujem', s.interested, '#fd7e14', 'označené „Má záujem"')}
+    ${card('Boli na hodine', s.trial, '#20c997', 'prišli na hodinu zdarma')}
+  </div>`;
+}
 const LEAD_STATUS={
   new:{label:'Nový',icon:'🆕',color:'#6c757d'},
-  contacted:{label:'Kontaktovaný',icon:'📞',color:'#0d6efd'},
+  called_no:{label:'Volané – nezdvihol',icon:'📵',color:'#e0a656'},
+  called_yes:{label:'Volané – zdvihol',icon:'📞',color:'#0d6efd'},
+  sms:{label:'SMS / správa',icon:'💬',color:'#0dcaf0'},
+  mail:{label:'E-mail',icon:'✉️',color:'#6f42c1'},
   interested:{label:'Má záujem',icon:'🔥',color:'#fd7e14'},
   not_interested:{label:'Nemá záujem',icon:'❄️',color:'#495057'},
   trial:{label:'Bola na hodine',icon:'💃',color:'#20c997'},
+  contacted:{label:'Kontaktovaný',icon:'📞',color:'#0d6efd'},
 };
 function leadStatusSelect(l){
   const cur=l.lead_status||'new'; const c=LEAD_STATUS[cur]||LEAD_STATUS.new;
-  const opts=Object.entries(LEAD_STATUS).map(([k,v])=>`<option value="${k}" ${k===cur?'selected':''}>${v.icon} ${v.label}</option>`).join('');
+  const opts=Object.entries(LEAD_STATUS).filter(([k])=>k!=='contacted'||cur==='contacted').map(([k,v])=>`<option value="${k}" ${k===cur?'selected':''}>${v.icon} ${v.label}</option>`).join('');
   const tt=l.attended_trial_at?`title="Na hodine zdarma bola ${new Date(l.attended_trial_at).toLocaleDateString('sk-SK')}"`:'';
-  return `<select class="form-select form-select-sm lead-status-sel" ${tt} style="min-width:150px;font-weight:700;border:0;color:#fff;background-color:${c.color}" onchange="setLeadStatus('${l.id}',this.value)">${opts}</select>`;
+  return `<select class="form-select form-select-sm lead-status-sel" ${tt} style="min-width:178px;font-weight:700;border:0;color:#fff;background-color:${c.color}" onchange="setLeadStatus('${l.id}',this.value)">${opts}</select>`;
 }
 function renderLeads(){
   const body=document.getElementById('leadsTableBody');
@@ -2490,16 +2546,17 @@ function renderLeads(){
   updSortInd('#s-leads',_leadSort.key,_leadSort.dir);
   const regBadge=p=>p==='web'?'<span class="text-nowrap">🌐 Web</span>':'<span class="text-nowrap">📱 App</span>';
   const fmtD=iso=>iso?new Date(iso).toLocaleDateString('sk-SK',{day:'numeric',month:'short'}):'—';
-  const noteBtn=l=>{
-    const has=(l.notes||'').trim().length>0;
-    const tip=has?escHtml(l.notes.slice(0,120).replace(/"/g,'&quot;')):'Pridať poznámku';
-    return `<button class="btn btn-sm ${has?'btn-warning':'btn-outline-secondary'} py-0 px-2" title="${tip}" onclick="openLeadNote('${l.id}')"><i class="bi bi-journal-text"></i></button>`;
+  const noteCell=l=>{
+    const n=(l.notes||'').trim();
+    if(!n) return `<button class="btn btn-sm btn-outline-secondary py-0 px-2" title="Pridať poznámku" onclick="openLeadNote('${l.id}')"><i class="bi bi-journal-plus"></i></button>`;
+    return `<div onclick="openLeadNote('${l.id}')" style="cursor:pointer;max-width:230px;font-size:.76rem;color:#d8d0be;white-space:normal;line-height:1.25" title="Klikni pre úpravu">${escHtml(n.length>110?n.slice(0,110)+'…':n)} <i class="bi bi-pencil" style="opacity:.45;font-size:.7rem"></i></div>`;
   };
-  body.innerHTML=rows.map(l=>`<tr>
+  const rowTint=st=>{ const c=(LEAD_STATUS[st]||{}).color; return c?`style="background:linear-gradient(90deg, ${c}22, transparent 60%)"`:''; };
+  body.innerHTML=rows.map(l=>`<tr ${rowTint(l.lead_status)}>
     <td class="ps-3 text-nowrap"><i class="bi bi-clock text-muted me-1"></i>${agoTxt(l.added_days)}</td>
     <td><a href="/u/${l.id}" target="_blank" style="color:#C9A84C;text-decoration:none;font-weight:700" title="Zobraziť profil">${escHtml(l.name||'—')} <i class="bi bi-box-arrow-up-right" style="font-size:.68rem;opacity:.6"></i></a>${l.imported?`<span class="badge bg-secondary ms-1" title="Importované z Glofox${l.claimed?' · účet vytvorený':''}">🗂️${l.claimed?'✓':''}</span>`:''}${l.sponsor?`<div class="small text-muted">👤 ${escHtml(l.sponsor)}</div>`:''}</td>
     <td>${leadStatusSelect(l)}</td>
-    <td>${noteBtn(l)}</td>
+    <td>${noteCell(l)}</td>
     <td class="small">${escHtml(l.email||'—')}</td>
     <td class="text-nowrap">${l.phone?`<a href="tel:${escHtml(l.phone)}" class="text-decoration-none">${escHtml(l.phone)}</a>`:'—'}</td>
     <td class="text-nowrap ${l.last_contacted_days===null?'text-muted':''}">${agoTxt(l.last_contacted_days)}</td>
@@ -3540,35 +3597,47 @@ async function loadAttendance(){
     closeAttDetail();
     return;
   }
-  // date-specific attendee counts
+  // date-specific attendee counts + zrušené hodiny
   const counts = await Promise.all(list.map(c=>api(`/api/attendance/class/${c._id}?date=${dateStr}`)));
+  const canc = await api('/api/attendance/cancellations') || [];
+  const cancSet = new Set((Array.isArray(canc)?canc:[]).map(x=>x.class_id+'|'+x.date));
   grid.innerHTML = list.map((c,i) => {
     const n = Array.isArray(counts[i]) ? counts[i].length : 0;
     const pct = c.capacity > 0 ? Math.round(n / c.capacity * 100) : 0;
     const colorBar = pct >= 90 ? '#f87171' : pct >= 60 ? '#fbbf24' : '#4ade80';
+    const isCanc = cancSet.has(c._id+'|'+dateStr);
     return `
     <div class="col-6 col-md-4 col-lg-3">
-      <div class="card border-0 rounded-3 p-3 h-100" style="cursor:pointer;transition:all .2s;border:1px solid rgba(74,222,128,.1)!important"
-           onclick="openAttClass('${c._id}')"
-           onmouseover="this.style.borderColor='rgba(74,222,128,.5)'"
-           onmouseout="this.style.borderColor='rgba(74,222,128,.1)'">
+      <div class="card border-0 rounded-3 p-3 h-100" style="cursor:pointer;transition:all .2s;border:1px solid ${isCanc?'rgba(248,113,113,.5)':'rgba(74,222,128,.1)'}!important;${isCanc?'opacity:.75':''}"
+           onclick="openAttClass('${c._id}')">
         <div class="d-flex align-items-center justify-content-between mb-2">
           <div style="font-size:1.3rem">${c.emoji||'💃'}</div>
           <div class="badge" style="background:rgba(74,222,128,.15);color:#4ade80;font-size:.7rem">${c.time_start}</div>
         </div>
         <div class="fw-semibold mb-1" style="font-size:.87rem;color:var(--cream)">${escHtml(c.name)}</div>
         <div class="text-muted" style="font-size:.75rem;margin-bottom:8px">${escHtml(c.location)}</div>
+        ${isCanc ? `<div class="badge bg-danger w-100 mb-1" style="font-size:.72rem">❌ ZRUŠENÁ hodina</div>` : `
         <div style="background:#222;border-radius:4px;height:6px;overflow:hidden;margin-bottom:6px">
           <div style="height:100%;width:${pct}%;background:${colorBar};border-radius:4px;transition:width .4s"></div>
         </div>
-        <div class="d-flex justify-content-between" style="font-size:.75rem">
+        <div class="d-flex justify-content-between mb-2" style="font-size:.75rem">
           <span style="color:${colorBar};font-weight:700">${n} / ${c.capacity}</span>
           <span class="text-muted">${Math.max(0,c.capacity-n)} voľných</span>
         </div>
+        <button class="btn btn-sm btn-outline-danger w-100 py-0" style="font-size:.72rem" onclick="event.stopPropagation();cancelSession('${c._id}','${dateStr}','${escHtml((c.name||'').replace(/'/g,''))}')"><i class="bi bi-x-circle"></i> Zrušiť hodinu</button>`}
       </div>
     </div>`;
   }).join('');
   closeAttDetail();
+}
+async function cancelSession(classId, dateStr, name){
+  const reason = prompt(`Zrušiť hodinu „${name}" dňa ${dateStr}?\n\nVšetkým booknutým pošleme oznámenie, vrátime kredit z permanentky, dáme oznam na nástenku a pozveme ich na najbližšiu hodinu v tom meste.\n\nDôvod (nepovinné):`, '');
+  if(reason===null) return; // zrušené
+  const d=await api('/api/attendance/cancel-session',{method:'POST',body:JSON.stringify({class_id:classId,date:dateStr,reason})});
+  if(d&&d.ok){
+    showToast(`Hodina zrušená ✓ Upozornených ${d.notified||0}${d.refunded?', vrátených vstupov '+d.refunded:''}`,'success');
+    loadAttendance();
+  } else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 
 async function openAttClass(classId){

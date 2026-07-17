@@ -413,7 +413,7 @@ function render(){
     ${P.points ? `<details class="pts-box">
       <summary><span>⭐ ${T('profile.points_title')} <b style="color:var(--gold)">${P.points.total}</b></span><i class="bi bi-chevron-down"></i></summary>
       <div class="pts-body">
-        ${P.points.items.map(i=>`<div class="pts-row"><span>${i.icon} ${esc(i.label)} <span class="pts-sub">· ${i.count}× po ${i.per}</span></span><b>${i.points} b</b></div>`).join('')}
+        ${P.points.items.map(i=>`<div class="pts-row"><span>${i.icon} ${esc(i.label)} <span class="pts-sub">· ${esc(i.sub||(i.count+'×'))}</span></span><b>${i.points} b</b></div>`).join('')}
         <div class="pts-row pts-total"><b>${T('profile.points_total')}</b><b style="color:var(--gold)">⭐ ${P.points.total}</b></div>
       </div>
     </details>` : ''}

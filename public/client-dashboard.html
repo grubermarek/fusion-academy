@@ -1438,7 +1438,7 @@ function showPointsBreakdown(items, total, name){
     document.body.appendChild(host);
   }
   const rows = items.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 4px;border-bottom:1px solid #262626">
-      <span style="font-size:.9rem">${i.icon} ${i.label}<span style="color:var(--muted);font-size:.78rem"> · ${i.count}× po ${i.per}</span></span>
+      <span style="font-size:.9rem">${i.icon} ${i.label}<span style="color:var(--muted);font-size:.78rem"> · ${escHtml(i.sub||(i.count+'×'))}</span></span>
       <b style="color:var(--gold);white-space:nowrap">${i.points} b</b>
     </div>`).join('');
   host.innerHTML=`<div style="background:#161512;border:1px solid rgba(201,168,76,.3);border-radius:16px;max-width:400px;width:100%;overflow:hidden" onclick="event.stopPropagation()">

@@ -815,6 +815,13 @@ function toggleSidebar(){
 
 // ── TAB SWITCHING – defined later with QR support ────────────────────────────
 
+async function trCancelSession(classId, name){
+  const reason = prompt(`Zrušiť najbližšiu hodinu „${name}"?\n\nVšetkým prihláseným pošleme oznámenie, vrátime kredit z permanentky, dáme oznam na nástenku a pozveme ich na ďalšiu hodinu v tom meste.\n\nDôvod (nepovinné):`, '');
+  if(reason===null) return;
+  const d=await api('/api/attendance/cancel-session',{method:'POST',body:JSON.stringify({class_id:classId,reason})});
+  if(d&&d.ok){ alert(`Hodina zrušená ✓ Upozornených ${d.notified||0}${d.refunded?', vrátených vstupov '+d.refunded:''}. Termín: ${d.date}`); loadSchedule(); }
+  else alert('Chyba: '+(d?.error||'?'));
+}
 // ── SCHEDULE ─────────────────────────────────────────────────────────────────
 async function loadSchedule(){
   try {
@@ -878,6 +885,7 @@ async function loadSchedule(){
             <i class="bi bi-clipboard-check"></i> Dochádzka →
           </span>
         </div>
+        <button onclick="event.stopPropagation();trCancelSession('${c._id}','${esc((c.name||'').replace(/'/g,''))}')" style="width:100%;margin-top:8px;background:none;border:1px solid rgba(229,115,115,.5);color:#e57373;border-radius:8px;padding:6px;font-size:.78rem;cursor:pointer"><i class="bi bi-x-circle"></i> Zrušiť najbližšiu hodinu</button>
       </div>`;
     }).join('');
   } catch(e){

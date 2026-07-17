@@ -119,6 +119,7 @@ const db = {
   tickets:      new Datastore({ filename: path.join(DATA_DIR, 'tickets.db'),      autoload: true }),
   ticket_msgs:  new Datastore({ filename: path.join(DATA_DIR, 'ticket_msgs.db'),  autoload: true }),
   meal_plans:   new Datastore({ filename: path.join(DATA_DIR, 'meal_plans.db'),   autoload: true }),
+  class_cancellations: new Datastore({ filename: path.join(DATA_DIR, 'class_cancellations.db'), autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -511,7 +512,7 @@ async function seedData() {
       {name:'Zumba ONLINE – LIVE',         emoji:'🌐', category:'Online',   instructor:'Beáta Gruber Buňová',       location:'Online',                      address:'Živé vysielanie zo Zvolena – link po registrácii',     day_of_week:2, time_start:'19:00', time_end:'20:00', capacity:100, level:'Všetky úrovne',  description:'Živé online Zumba hodiny z pohodlia domova. Odkiaľkoľvek na Slovensku aj v zahraničí. Online členstvo od 12.90 €/mes.', price:6, color:'#2196f3', active:true},
       // Streda (3)
       {name:'Zumba',               emoji:'🎵', category:'Zumba',    instructor:'Beáta Gruber Buňová',       location:'Zvolen',                      address:'Fitko Gymkova, M.R. Štefánika 805, Zvolen',            day_of_week:3, time_start:'17:00', time_end:'18:00', capacity:25,  level:'Všetky úrovne',  description:'Stredajšia Zumba vo Zvolene! Skvelý stred týždňa s latinskými rytmami.',                                            price:10, color:'#C9A84C', active:true},
-      {name:'Zumba',               emoji:'🎵', category:'Zumba',    instructor:'Fusion Team',               location:'Banská Bystrica',             address:'R2N Business centrum, Sládkovičova 29, Banská Bystrica',day_of_week:3, time_start:'19:00', time_end:'20:00', capacity:25,  level:'Všetky úrovne',  description:'Streda patrí Zumbe v BB! Energetická hodina latinského tanca.',                                                      price:10, color:'#C9A84C', active:true},
+      {name:'Zumba',               emoji:'🎵', category:'Zumba',    instructor:'Fusion Team',               location:'Banská Bystrica',             address:'R2N Business centrum, Sládkovičova 29, Banská Bystrica',day_of_week:3, time_start:'19:00', time_end:'20:00', capacity:25,  level:'Všetky úrovne',  description:'Streda patrí Zumbe v Banskej Bystrici! Energetická hodina latinského tanca.',                                                      price:10, color:'#C9A84C', active:true},
       // Štvrtok (4)
       {name:'Zumba',               emoji:'🎵', category:'Zumba',    instructor:'Fusion Team',               location:'Brezno',                      address:'Fitko LÉGIA, Fraňa Kráľa 1/A, Brezno',                day_of_week:4, time_start:'19:00', time_end:'20:00', capacity:20,  level:'Všetky úrovne',  description:'Štvrtok = Zumba v Brezne! Latínsky rytmus a dobrá nálada.',                                                          price:10, color:'#C9A84C', active:true},
       // Piatok (5)
@@ -630,11 +631,11 @@ async function seedData() {
       // ── WELCOME (po registrácii) ─────────────────────────────────────────────
       { sequence:'welcome', day:0, label:'Uvítací email', active:true,
         subject:'Vitaj vo Fusion Academy! 🎉',
-        body:`<p>Sme nadšení, že si tu!</p><p>Vo Fusion Academy ťa čaká:</p><ul><li>💃 Zumba, spoločenské tance, Fit Premena</li><li>📍 4 mestá: Detva, Zvolen, BB, Brezno</li><li>👥 Komunita stoviek spokojných klientok</li></ul><p>Ako začať? <b>Prvá hodina je ZADARMO</b> — bez záväzku, bez platby.</p>`,
+        body:`<p>Sme nadšení, že si tu!</p><p>Vo Fusion Academy ťa čaká:</p><ul><li>💃 Zumba, spoločenské tance, súkromné hodiny</li><li>📍 4 mestá: Detva, Zvolen, Banská Bystrica, Brezno</li><li>👥 Komunita stoviek spokojných klientok</li></ul><p>Ako začať? <b>Prvá hodina je ZADARMO</b> — bez záväzku, bez platby.</p>`,
         cta:'🗓️ Rezervovať prvú hodinu zadarmo', cta_url:`${APP}/schedule` },
       { sequence:'welcome', day:3, label:'Tip po 3 dňoch', active:true,
         subject:'Tip pre teba: ako vybrať správnu hodinu 💃',
-        body:`<p>Nevieš, čia hodina je pre teba? Poradíme!</p><ul><li><b>Zumba</b> – chudnutie, energia, zábava. Ideálne pre začiatočníkov.</li><li><b>Spoločenské tance</b> – elegancia, plesová príprava, páry aj jednotlivci.</li><li><b>Fit Premena</b> – komplexný program s výživou a coachingom.</li></ul><p>Zapíš sa na tú, čo ťa zaujíma – <b>prvá je zadarmo</b>.</p>`,
+        body:`<p>Nevieš, čia hodina je pre teba? Poradíme!</p><ul><li><b>Zumba</b> – chudnutie, energia, zábava. Ideálne pre začiatočníkov.</li><li><b>Spoločenské tance</b> – elegancia, plesová príprava, páry aj jednotlivci.</li><li><b>Súkromná hodina</b> – individuálny tréning jeden na jedného, tempo aj zameranie podľa teba.</li></ul><p>Zapíš sa na tú, čo ťa zaujíma – <b>prvá je zadarmo</b>.</p>`,
         cta:'📋 Pozrieť rozvrh', cta_url:`${APP}/schedule` },
       { sequence:'welcome', day:7, label:'Inšpirácia po týždni', active:true,
         subject:'Beátka schudla 17 kg. Ako? 💪',
@@ -784,6 +785,9 @@ async function seedData() {
   // ── Zosúladenie obsahu upsell sekvencií s blogom (reálne čísla, citáty, odkazy) ──
   const BLOG='https://latindancefusion.art/blog';
   const up=(seq,day,fields)=>q.update(db.email_steps,{sequence:seq,day},{$set:fields},{multi:true});
+  // welcome — už nemáme „Fit Premena" (nahradené súkromnou hodinou), BB → Banská Bystrica
+  await up('welcome',0,{ body:`<p>Sme nadšení, že si tu!</p><p>Vo Fusion Academy ťa čaká:</p><ul><li>💃 Zumba, spoločenské tance, súkromné hodiny</li><li>📍 4 mestá: Detva, Zvolen, Banská Bystrica, Brezno</li><li>👥 Komunita stoviek spokojných klientok</li></ul><p>Ako začať? <b>Prvá hodina je ZADARMO</b> — bez záväzku, bez platby.</p>` });
+  await up('welcome',3,{ body:`<p>Nevieš, čia hodina je pre teba? Poradíme!</p><ul><li><b>Zumba</b> – chudnutie, energia, zábava. Ideálne pre začiatočníkov.</li><li><b>Spoločenské tance</b> – elegancia, plesová príprava, páry aj jednotlivci.</li><li><b>Súkromná hodina</b> – individuálny tréning jeden na jedného, tempo aj zameranie podľa teba.</li></ul><p>Zapíš sa na tú, čo ťa zaujíma – <b>prvá je zadarmo</b>.</p>` });
   // bronze day3 — bez konfliktu s reálnou Miškou (tá je F1 príbeh), + odkaz na článok
   await up('bronze_upsell',3,{ body:`<p>{meno}, sľúbili sme príbeh — tu je.</p><p>Jedna z našich báb chodila 8 týždňov na Zumbu. Postavila sa na váhu: <b>rovnaké číslo ako na začiatku.</b> Sklamanie, však?</p><p>Lenže <b>analýza zloženia tela</b> ukázala pravdu: <b>tuku ubudlo, svalu pribudlo.</b> Rovnaká váha — úplne iné telo. Pevnejšie, silnejšie, s rýchlejším metabolizmom, čo páli kalórie aj na gauči.</p><p>Keby verila len váhe, možno to vzdá. <b>Namiesto toho videla pravdu — a pokračovala.</b></p><p><a href="${BLOG}/metabolicka-analyza-fit-premena">📖 Čo všetko ti analýza prezradí →</a></p>` });
   await up('bronze_upsell',7,{ body:`<p>{meno}, zrkadlo ti ukáže <i>ako vyzeráš</i>. Analýza tela ti ukáže <b>prečo</b> — a čo s tým.</p><p>Za pár sekúnd zistíš:</p><ul><li>📉 <b>% telesného tuku</b> a <b>bazálny metabolizmus</b> — koľko kalórií reálne potrebuješ</li><li>💪 <b>svalovú hmotu</b> — či cvičíš správne</li><li>💧 <b>hydratáciu</b> a <b>viscerálny tuk</b> (ten najnebezpečnejší, okolo orgánov)</li></ul><p>A najlepšie? <b>Máš to celé v mobile</b>, týždeň po týždni. Žiadne hádanie „funguje to alebo nie".</p><p><a href="${BLOG}/metabolicka-analyza-fit-premena">📖 Metabolická analýza — čo o tebe prezradí →</a></p>` });
@@ -1295,8 +1299,10 @@ app.delete('/api/feed/:id', auth, async(req,res)=>{
 // Achievement definitions: unlocked by visits, referrals or membership tenure.
 const ACHIEVEMENTS = [
   // Návštevy
+  {id:'v1',   cat:'visits', need:1,    icon:'✨', name:'Prvý tanec',    desc:'Prvá odchodená hodina'},
   {id:'v5',   cat:'visits', need:5,    icon:'👟', name:'Prvé kroky',    desc:'5 odchodených hodín'},
   {id:'v25',  cat:'visits', need:25,   icon:'💃', name:'Tanečnica',     name_m:'Tanečník', desc:'25 hodín'},
+  {id:'v50',  cat:'visits', need:50,   icon:'🌟', name:'Vytrvalkyňa',   name_m:'Vytrvalec', desc:'50 hodín'},
   {id:'v75',  cat:'visits', need:75,   icon:'⭐', name:'Stálica',       desc:'75 hodín'},
   {id:'v150', cat:'visits', need:150,  icon:'🔥', name:'Vášeň',         desc:'150 hodín'},
   {id:'v350', cat:'visits', need:350,  icon:'🏆', name:'Šampiónka',     name_m:'Šampión', desc:'350 hodín'},
@@ -2141,11 +2147,16 @@ app.get('/api/admin/users', adminAuth, async(req,res)=>{
 // klientov, nie leady. Spustí sa pri načítaní oboch zoznamov, idempotentne.
 // ── Lead pipeline: stavy starostlivosti o leada ───────────────────────────────
 const LEAD_STATUSES = {
-  new:            { label:'Nový',            icon:'🆕', color:'#6c757d' },
-  contacted:      { label:'Kontaktovaný',    icon:'📞', color:'#0d6efd' },
-  interested:     { label:'Má záujem',       icon:'🔥', color:'#fd7e14' },
-  not_interested: { label:'Nemá záujem',     icon:'❄️', color:'#495057' },
-  trial:          { label:'Bola na hodine',  icon:'💃', color:'#20c997' },
+  new:            { label:'Nový',                 icon:'🆕', color:'#6c757d' },
+  called_no:      { label:'Volané – nezdvihol',   icon:'📵', color:'#e0a656' },
+  called_yes:     { label:'Volané – zdvihol',     icon:'📞', color:'#0d6efd' },
+  sms:            { label:'SMS / správa',         icon:'💬', color:'#0dcaf0' },
+  mail:           { label:'E-mail',               icon:'✉️', color:'#6f42c1' },
+  interested:     { label:'Má záujem',            icon:'🔥', color:'#fd7e14' },
+  not_interested: { label:'Nemá záujem',          icon:'❄️', color:'#495057' },
+  trial:          { label:'Bola na hodine',       icon:'💃', color:'#20c997' },
+  // spätná kompatibilita so starým stavom
+  contacted:      { label:'Kontaktovaný',         icon:'📞', color:'#0d6efd' },
 };
 // Pri účasti na hodine automaticky posuň leada do stavu „Bola na hodine".
 function applyLeadTrial(upd, u){
@@ -2200,7 +2211,20 @@ app.get('/api/admin/leads', adminAuth, async(req,res)=>{
         imported: !!u.imported, claimed: !!u.claimed,
       };
     }));
-    res.json({ leads: result, total: result.length });
+    // Konverzia lead → klient + rozklad podľa stavu
+    const clientsCount = await q.count(db.users,{user_type:'client', is_admin:{$ne:true}});
+    const leadsCount = result.length;
+    const byStatus = {};
+    for(const l of result){ byStatus[l.lead_status] = (byStatus[l.lead_status]||0)+1; }
+    const denom = clientsCount + leadsCount;
+    const stats = {
+      leads: leadsCount, clients: clientsCount,
+      conversion: denom>0 ? +(clientsCount/denom*100).toFixed(1) : 0,
+      interested: (byStatus.interested||0),
+      trial: (byStatus.trial||0),
+      by_status: byStatus,
+    };
+    res.json({ leads: result, total: result.length, stats });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -5310,6 +5334,7 @@ app.post('/api/waitlist', auth, async(req,res)=>{
     if(!cls||!cls.active) return res.status(404).json({error:'Hodina nenájdená'});
     const u = await q.one(db.users,{_id:req.session.uid});
     const bdate = booking_date||nextDateForDay(cls.day_of_week);
+    if(await q.one(db.class_cancellations,{class_id, date:bdate})) return res.status(400).json({error:'Táto hodina je zrušená.'});
     const alreadyBooked = await q.one(db.bookings,{class_id,user_id:u._id,booking_date:bdate,status:{$ne:'cancelled'}});
     if(alreadyBooked) return res.status(400).json({error:'Ste už prihlásení (alebo na čakacom liste)'});
     const pos = await q.count(db.bookings,{class_id,booking_date:bdate,status:'waitlist'})+1;
@@ -5916,6 +5941,69 @@ app.get('/api/attendance/schedule', trainerAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Zruš konkrétnu hodinu (dátum) — upozorni booknutých, vráť kredit z permanentky,
+// daj oznam na nástenku, znemožni booknutie, pozvi na najbližšiu hodinu v tom meste.
+app.post('/api/attendance/cancel-session', trainerAuth, async(req,res)=>{
+  try {
+    const { class_id } = req.body;
+    let { date, reason } = req.body;
+    const cls = await q.one(db.classes,{_id:class_id});
+    if(!cls) return res.status(404).json({error:'Hodina nenájdená'});
+    date = date || nextDateForDay(cls.day_of_week);
+    reason = (reason||'').slice(0,300);
+    // Idempotencia
+    if(await q.one(db.class_cancellations,{class_id, date}))
+      return res.json({ ok:true, already:true });
+    await q.insert(db.class_cancellations,{ class_id, date, class_name:cls.name, location:cls.location,
+      reason, cancelled_by: req.trainerUser?._id||null, cancelled_by_name: req.trainerUser?.name||'', created_at:nowISO() });
+
+    // Najbližšia iná hodina v tom istom meste (na pozvánku)
+    const cityClasses = (await q.find(db.classes,{location:cls.location, active:true})).filter(c=>c._id!==class_id);
+    let nextInfo=null, nextBest=null;
+    for(const c of cityClasses){
+      const d = nextDateForDay(c.day_of_week);
+      if(await q.one(db.class_cancellations,{class_id:c._id, date:d})) continue; // aj tá zrušená
+      if(!nextBest || d < nextBest.date) nextBest = {date:d, c};
+    }
+    if(nextBest){ nextInfo = { name:nextBest.c.name, date:nextBest.date, time:nextBest.c.time_start, location:nextBest.c.location }; }
+    const inviteTxt = nextInfo ? ` Pozývame ťa na najbližšiu hodinu v ${cls.location}: <b>${nextInfo.name}</b> ${nextInfo.date} o ${nextInfo.time}.` : '';
+
+    // Zruš rezervácie + vráť permanentkový vstup + notifikuj
+    const bookings = await q.find(db.bookings,{class_id, booking_date:date, status:{$nin:['cancelled','cancelled_studio']}});
+    let refunded=0;
+    for(const b of bookings){
+      if(b.access_method==='single_entry'){
+        const u = await q.one(db.users,{_id:b.user_id});
+        if(u){ await q.update(db.users,{_id:u._id},{$set:{single_entries:(u.single_entries||0)+1}}); refunded++; }
+      }
+      await q.update(db.bookings,{_id:b._id},{$set:{status:'cancelled_studio', cancelled_reason:reason||'Zrušené štúdiom', cancelled_at:nowISO()}});
+      const refundNote = b.access_method==='single_entry' ? ' Tvoj vstup z permanentky sme ti vrátili.' : '';
+      await q.insert(db.notifications,{user_id:b.user_id, type:'class_cancelled',
+        title:`❌ Hodina zrušená: ${cls.name}`,
+        body:`${cls.name} dňa ${date}${cls.time_start?' o '+cls.time_start:''} v ${cls.location} sa NEKONÁ${reason?' ('+reason+')':''}.${refundNote}${inviteTxt}`,
+        read:false, created_at:nowISO() }).catch(()=>{});
+      const u = await q.one(db.users,{_id:b.user_id});
+      if(u?.email) sendMail(u.email, `Hodina zrušená: ${cls.name} (${date})`,
+        emailTemplate('Hodina sa nekoná 😔',
+          `<p>Ahoj <b>${u.name}</b>,</p><p>Mrzí nás to — hodina <b>${cls.name}</b> dňa <b>${date}</b>${cls.time_start?' o '+cls.time_start:''} v <b>${cls.location}</b> sa <b>nekoná</b>${reason?` (${reason})`:''}.</p>${b.access_method==='single_entry'?'<p>Tvoj vstup z permanentky sme ti <b>vrátili</b> späť.</p>':''}${nextInfo?`<p>Pozývame ťa na najbližšiu hodinu v ${cls.location}: <b>${nextInfo.name}</b> ${nextInfo.date} o ${nextInfo.time}. 💃</p>`:''}`,
+          '🗓️ Pozrieť rozvrh', `${APP_URL}/schedule`)).catch(()=>{});
+    }
+
+    // Oznam na nástenku (feed) — vidia všetci členovia
+    await q.insert(db.feed,{ author_id:'studio', author_name:'Fusion Academy', author_badge:{emoji:'📢',label:'Oznam'},
+      studio_announcement:true, city:cls.location,
+      text:`📢 Zrušená hodina — ${cls.location}\n\nHodina „${cls.name}" dňa ${date}${cls.time_start?' o '+cls.time_start:''} sa NEKONÁ${reason?` (${reason})`:''}.${nextInfo?`\n\nNajbližšia hodina v ${cls.location}: ${nextInfo.name} ${nextInfo.date} o ${nextInfo.time}. Tešíme sa na teba! 💃`:''}`,
+      image:null, reactions:{}, comments:[], created_at:nowISO() }).catch(()=>{});
+
+    await auditLog(req,'class_cancel',class_id,{},{date, reason, notified:bookings.length, refunded},reason||'');
+    res.json({ ok:true, notified:bookings.length, refunded, date, next:nextInfo });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+app.get('/api/attendance/cancellations', trainerAuth, async(req,res)=>{
+  const list = await q.find(db.class_cancellations,{ date:{$gte:today()} });
+  res.json(list);
+});
+
 // Attendees for a specific class (optionally filtered to ?date=YYYY-MM-DD)
 app.get('/api/attendance/class/:classId', trainerAuth, async(req,res)=>{
   try {
@@ -6438,6 +6526,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
     const booked=await q.count(db.bookings,{class_id,status:{$ne:'cancelled'}});
     if(booked>=cls.capacity) return res.status(400).json({error:'Hodina je plne obsadená – skúste čakací zoznam'});
     const bdate=booking_date||nextDateForDay(cls.day_of_week);
+    if(await q.one(db.class_cancellations,{class_id, date:bdate})) return res.status(400).json({error:'Táto hodina je zrušená a nedá sa rezervovať.'});
     const exists=await q.one(db.bookings,{class_id,user_id:u._id,booking_date:bdate,status:{$ne:'cancelled'}});
     if(exists) return res.status(400).json({error:isChild?`${u.name} je už na túto hodinu prihlásené`:'Na túto hodinu ste sa už prihlásili'});
     const booking=await q.insert(db.bookings,{
@@ -6514,11 +6603,12 @@ async function monthlyPointsFor(userId, month){
 }
 function buildPointItems({hours, online, refs, hasMem, memName}, month){
   online = online||0;
+  const plur=(n,a,b,c)=> n===1?a : (n>=2&&n<=4?b:c);
   const items = [
-    { icon:'🔥', label:'Odchodené hodiny',        count:hours,  per:MP_WEIGHTS.hour,     points:hours*MP_WEIGHTS.hour },
-    { icon:'💻', label:'Online hodiny',            count:online, per:MP_WEIGHTS.hour,     points:online*MP_WEIGHTS.hour },
-    { icon:'🤝', label:'Privedení noví členovia',  count:refs,   per:MP_WEIGHTS.referral, points:refs*MP_WEIGHTS.referral },
-    { icon:'💛', label: hasMem?('Aktívne členstvo'+(memName?' ('+memName+')':'')):'Aktívne členstvo', count: hasMem?1:0, per:MP_WEIGHTS.membership, points: hasMem?MP_WEIGHTS.membership:0 },
+    { icon:'🔥', label:'Odchodené hodiny',        count:hours,  per:MP_WEIGHTS.hour,     points:hours*MP_WEIGHTS.hour,     sub:`${hours} ${plur(hours,'hodina','hodiny','hodín')}` },
+    { icon:'💻', label:'Online hodiny',            count:online, per:MP_WEIGHTS.hour,     points:online*MP_WEIGHTS.hour,    sub:`${online} ${plur(online,'hodina','hodiny','hodín')}` },
+    { icon:'🤝', label:'Privedení noví členovia',  count:refs,   per:MP_WEIGHTS.referral, points:refs*MP_WEIGHTS.referral,   sub:`${refs} ${plur(refs,'člen','členovia','členov')}` },
+    { icon:'💛', label: hasMem?('Aktívne členstvo'+(memName?' ('+memName+')':'')):'Aktívne členstvo', count: hasMem?1:0, per:MP_WEIGHTS.membership, points: hasMem?MP_WEIGHTS.membership:0, sub: hasMem?'aktívne':'—' },
   ];
   const total = items.reduce((s,i)=>s+i.points,0);
   return { month, total, items };
