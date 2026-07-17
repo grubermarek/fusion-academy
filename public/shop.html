@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="E-shop Fusion Academy – Herbalife produkty, doplnky výživy, wellness produkty. Doručenie po Slovensku.">
+<meta name="description" content="E-shop Fusion Academy – oblečenie, členstvá, kurzy a doplnky. Doručenie po Slovensku.">
 <meta name="keywords" content="herbalife, doplnky výživy, proteín, wellness produkty, fusion academy shop">
 <meta property="og:title" content="Shop – Fusion Academy">
-<meta property="og:description" content="E-shop Fusion Academy – Herbalife produkty, doplnky výživy, wellness produkty. Doručenie po Slovensku.">
+<meta property="og:description" content="E-shop Fusion Academy – oblečenie, členstvá, kurzy a doplnky. Doručenie po Slovensku.">
 <meta property="og:image" content="https://latindancefusion.art/og-image.svg">
 <meta property="og:type" content="website">
 <link rel="canonical" href="https://latindancefusion.art/shop">
@@ -113,7 +113,6 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
       <button class="cat-btn" onclick="filterCat('Členstvá',this)">💃 Členstvá</button>
       <button class="cat-btn" onclick="filterCat('Kurzy',this)">🎓 Kurzy</button>
       <button class="cat-btn" onclick="filterCat('Analýzy',this)">📊 Analýzy</button>
-      <button class="cat-btn" onclick="filterCat('Výživa',this)">🥤 Výživa</button>
       <button class="cat-btn" onclick="filterCat('Oblečenie',this)">👕 Oblečenie</button>
       <button class="cat-btn" onclick="filterCat('Eventy',this)">🎉 Eventy</button>
     </div>
@@ -260,7 +259,7 @@ const MEMBERSHIP_CARDS = [
   {_id:'m-perm',   cat:'Členstvá', emoji:'🎟️', name:'10-vstupová permanentka', desc:'10 vstupov, platnosť 3 mesiace. Úspora 20 %.',               price:80,    type:'bundle',       link:'/pricing'},
   {_id:'m-bronze', cat:'Členstvá', emoji:'🥉', name:'Členstvo Bronze',        desc:'Neobmedzené Zumba lekcie vo všetkých mestách. Mesačne.',     price:50,    type:'subscription', link:'/pricing'},
   {_id:'m-silver', cat:'Členstvá', emoji:'🥈', name:'Členstvo Silver',        desc:'Bronze + metabolická analýza mesačne + online prístup.',    price:75,    type:'subscription', link:'/pricing'},
-  {_id:'m-gold',   cat:'Členstvá', emoji:'🥇', name:'Členstvo Gold',          desc:'Silver + Herbalife F1 + jedálniček na mieru.',               price:125,   type:'subscription', link:'/pricing'},
+  {_id:'m-gold',   cat:'Členstvá', emoji:'🥇', name:'Členstvo Gold',          desc:'Silver + jedálniček na mieru + metabolická analýza.',        price:125,   type:'subscription', link:'/pricing'},
   {_id:'m-online', cat:'Členstvá', emoji:'🌐', name:'Online Zumba',           desc:'Živé online hodiny Zumby odkiaľkoľvek.',                     price:12.90, type:'subscription', link:'/pricing'},
 ];
 async function loadProducts() {

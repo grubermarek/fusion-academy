@@ -123,10 +123,6 @@ function renderForm(keepValues){
       <textarea id="likes" placeholder="napr. kuracie, losos, avokádo, ovsená kaša">${esc(state.likes||'')}</textarea>
       <label>Čo nemáš rada / vynechať?</label>
       <textarea id="dislikes" placeholder="napr. tofu, brokolica, huby">${esc(state.dislikes||'')}</textarea>
-      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:14px">
-        <input type="checkbox" id="include_f1" ${state.include_f1?'checked':''} style="width:18px;height:18px;accent-color:var(--gold)">
-        <span style="color:var(--cream);font-weight:600">Zaradiť Herbalife F1 kokteil do raňajok 🥤</span>
-      </label>
     </div>
     <button class="cta" id="genBtn" onclick="generate()">✨ Vygenerovať jedálniček na týždeň</button>
     <div class="msg" id="msg"></div>`;

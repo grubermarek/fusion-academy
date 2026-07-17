@@ -69,8 +69,6 @@ const SLOTS_BY_MEALS = {
 };
 const DAYS = ['Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota','Nedeľa'];
 
-// Herbalife F1 kokteil ako raňajková voľba (Gold benefit).
-const F1_MEAL = {slot:'ranajky', name:'Herbalife F1 kokteil', kcal:220, protein:18, veg:true, vegan:false, tags:['laktoza','soja'], desc:'Formula 1 kokteil (~220 kcal, 18 g bielkovín, 23 vitamínov a minerálov) + ovocie'};
 
 // Kalorický cieľ podľa Mifflin-St Jeor.
 function calcTargets(p){
@@ -121,13 +119,10 @@ function generatePlan(profile){
   const targets = calcTargets(p);
   const meals = SLOTS_BY_MEALS[+p.meals_per_day] || SLOTS_BY_MEALS[4];
   const likes = norm(p.likes).split(/[,;\n]+/).map(s=>s.trim()).filter(s=>s.length>=3);
-  const wantsF1 = !!p.include_f1;
-
   // Pool jedál pre každý slot po filtrovaní, zoradený tak, aby obľúbené boli vpredu.
   const poolBySlot = {};
   for(const slot of new Set(meals)){
     let pool = FOODS.filter(f=>f.slot===slot && passes(f,p));
-    if(slot==='ranajky' && wantsF1 && passes(F1_MEAL,p)) pool = [F1_MEAL, ...pool];
     // preferencie: jedlá obsahujúce obľúbené kľúčové slová dopredu
     pool.sort((a,b)=>{
       const la = likes.some(k=>norm(a.name+' '+a.desc).includes(k))?0:1;

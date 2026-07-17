@@ -291,6 +291,7 @@
     ::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:#111}::-webkit-scrollbar-thumb{background:#444;border-radius:2px}
   </style>
   <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/favicon.svg">
   <meta name="theme-color" content="#C9A84C">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -723,7 +724,7 @@ function renderUnlockCards(me){
   const ONLINE=['silver','gold','online_basic','online_premium'];
   const feats=[
     {f:'silver',ic:'🥈',title:'Silver výhody',sub:'Metabolická analýza tela (Tanita) + Online hodiny LIVE',open:['silver','gold'].includes(plan),tier:'Silver',href:'/support',cta:'✓ Objednať'},
-    {f:'gold',ic:'🥇',title:'Gold výhody',sub:'Herbalife F1 raňajky na celý mesiac',open:plan==='gold',tier:'Gold',href:'/support',cta:'✓ Objednať'},
+    {f:'gold',ic:'🥇',title:'Gold výhody',sub:'Metabolická analýza + jedálniček na mieru + 20 % na súkromné hodiny',open:plan==='gold',tier:'Gold',href:'/support',cta:'✓ Objednať'},
     {f:'meal',ic:'🍽️',title:'Jedálniček na mieru',sub:'Osobný jedálniček na celý týždeň (Gold aj Online Premium)',open:['gold','online_premium'].includes(plan),tier:'Gold / Online Premium',href:'/jedalnicek',cta:'✓ Otvoriť jedálniček',lockHref:'/pricing'},
   ];
   box.innerHTML=feats.map(x=>x.open

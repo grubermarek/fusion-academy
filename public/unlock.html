@@ -44,8 +44,8 @@ const F={
     blog:'/metabolicka-analyza-fit-premena', offer:true },
   gold:{ ic:'🥇', tier:'Gold', title:'Gold výhody',
     sub:'Výživa, ktorá dokončí to, čo tanec začal — kompletne za teba vyriešená.',
-    what:['🥤 <b>Herbalife F1 raňajky</b> — ~220 kcal · 18 g bielkovín · 23 vitamínov a minerálov, za ~1,50 € / porcia','🍽️ <b>Jedálniček na mieru na celý týždeň</b> — generátor podľa tvojich údajov, chutí, alergénov a cieľa','⏱️ raňajky za 30 sekúnd, zasýti na 3–4 hodiny','🔄 jedálniček si kedykoľvek pregeneruješ nanovo'],
-    why:'„Brušáky sa robia v kuchyni." Až <b>80 % výsledku je o tom, čím telo kŕmiš</b>. V Gold máš <b>F1 raňajky v cene</b> aj <b>osobný jedálniček na celý týždeň</b> — nič nemusíš vymýšľať, len sa najesť a tancovať.',
+    what:['🍽️ <b>Jedálniček na mieru na celý týždeň</b> — generátor podľa tvojich údajov, chutí, alergénov a cieľa','📊 <b>Metabolická analýza</b> — jedálniček sa prispôsobí tvojmu telu','⏱️ raňajky, obedy aj večere naplánované — žiadne hádanie','🔄 jedálniček si kedykoľvek pregeneruješ nanovo'],
+    why:'„Brušáky sa robia v kuchyni." Až <b>80 % výsledku je o tom, čím telo kŕmiš</b>. V Gold máš <b>osobný jedálniček na celý týždeň</b> aj <b>metabolickú analýzu</b> — nič nemusíš vymýšľať, len sa najesť a tancovať.',
     blog:'/jedalnicek-na-mieru-zadarmo', offer:false },
   analyza:{ ic:'📊', tier:'Silver', title:'Metabolická analýza (Tanita)',
     sub:'Prestaň hádať, či to funguje. Začni to vidieť — týždeň po týždni.',
@@ -57,11 +57,6 @@ const F={
     what:['🛋️ tancuj z obývačky, keď nestíhaš prísť do štúdia','🌧️ dážď, choré dieťa, dlho v práci? <b>Žiadna vynechaná hodina</b>','✈️ zacvičíš aj na dovolenke či keď je vonku −10 °C','🔁 <b>konzistencia</b> — presne tá, čo robí skutočné premeny'],
     why:'Najväčší zabijak výsledkov nie je zlý tréning — je to <b>vynechaný tréning</b>. So Silver máš online hodiny stále po ruke, takže cvičíš vtedy, keď <i>ty</i> môžeš.',
     blog:'', offer:true },
-  f1:{ ic:'🥤', tier:'Gold', title:'Herbalife F1 raňajky',
-    sub:'Kompletná výživa za menej, než stoja párky.',
-    what:['~220 kcal · <b>18 g bielkovín</b> · <b>23 vitamínov a minerálov</b>','príprava 30 sekúnd · zasýti na 3–4 hodiny','~<b>1,50 € / porcia</b> — lacnejšie ako bežné raňajky (2–4 €)','Herbalife: 45 rokov, 90+ krajín, certifikát Informed Sport, bez GMO'],
-    why:'„Brušáky sa robia v kuchyni." Až <b>80 % výsledku je o tom, čím telo kŕmiš</b>. F1 je najvýživnejšie jedlo, aké si za tie peniaze vieš dať — a v <b>Gold členstve ho máš v cene</b>.',
-    blog:'/f1-koktejl-ranajky-ktore-ti-zmenia-den', offer:false },
 };
 const p=new URLSearchParams(location.search).get('f');
 const d=F[p]||F.analyza;

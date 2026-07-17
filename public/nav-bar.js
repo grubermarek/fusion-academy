@@ -159,7 +159,7 @@ const NAV_ITEMS = [
   },
   {
     id:'shop', label:'Obchod', href:'/shop',
-    icon:'🛍️', desc:'Herbalife, merch, výživa',
+    icon:'🛍️', desc:'Oblečenie, členstvá, doplnky',
     color:'#4caf50', rgb:'76,175,80',
     paths:['/shop']
   },

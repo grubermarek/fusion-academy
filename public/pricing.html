@@ -103,6 +103,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
 @media(max-width:576px){.btn-cta-outline{margin-left:0;margin-top:.75rem;display:block;text-align:center;}}
 </style>
   <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/favicon.svg">
   <meta name="theme-color" content="#C9A84C">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -170,7 +171,6 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
           <li><i class="fas fa-check check"></i>Aplikácia & rezervácia hodín</li>
           <li><i class="fas fa-times cross"></i>Metabolická analýza</li>
           <li><i class="fas fa-times cross"></i>Jedálniček na mieru</li>
-          <li><i class="fas fa-times cross"></i>F1 kokteil zahrnutý</li>
         </ul>
         <div style="display:flex;flex-direction:column;gap:8px">
           <button class="btn-plan btn-plan-outline" onclick="chooseBronze('sub')">🔄 Prihlásiť na odber</button>
@@ -190,7 +190,6 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
           <li><i class="fas fa-check check"></i>Online program & tréningový plán</li>
           <li><i class="fas fa-check check"></i>Podpora trénera</li>
           <li><i class="fas fa-check check"></i>10 % zľava na súkromné hodiny</li>
-          <li><i class="fas fa-times cross"></i>F1 kokteil zahrnutý</li>
           <li><i class="fas fa-times cross"></i>Jedálniček s porciami na mieru</li>
         </ul>
         <div style="display:flex;flex-direction:column;gap:8px">
@@ -207,8 +206,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
         <div class="plan-period">/ mesiac · najlepšia hodnota</div>
         <ul class="plan-features">
           <li><i class="fas fa-check check"></i>Všetko zo Silver</li>
-          <li><i class="fas fa-check check"></i>Herbalife F1 kokteil zahrnutý (celý mesiac)</li>
-          <li><i class="fas fa-check check"></i>Jedálniček s porciami na mieru</li>
+          <li><i class="fas fa-check check"></i>Jedálniček na mieru na celý týždeň (generátor)</li>
           <li><i class="fas fa-check check"></i>Pravidelné check-iny s trénerom</li>
           <li><i class="fas fa-check check"></i>20 % zľava na súkromné hodiny & eventy</li>
           <li><i class="fas fa-check check"></i>Prioritné miesta na FitDays</li>
@@ -353,7 +351,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
   <div id="cat-wellness" style="display:none">
     <div class="section-header">
       <h2>Wellness & Výživa</h2>
-      <p>Metabolická analýza, výživové poradenstvo a Herbalife produkty.</p>
+      <p>Metabolická analýza a výživové poradenstvo.</p>
     </div>
     <div class="price-table mb-4">
       <table>
@@ -387,45 +385,6 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
       </table>
     </div>
 
-    <div class="section-header">
-      <h2>Herbalife produkty</h2>
-      <p>Originálne produkty od svetového lídra v oblasti výživy. Distribúcia v 90+ krajinách od roku 1980.</p>
-    </div>
-    <div class="price-table">
-      <table>
-        <thead><tr>
-          <th>Produkt</th>
-          <th>Popis</th>
-          <th>Cena</th>
-        </tr></thead>
-        <tbody>
-          <tr><td>🥤 Formula 1 shake (500g)</td><td>220 kcal, 18g bielkovín, 25 vitamínov. Vanilka / Čokoláda / Jahoda / Café Latte</td><td><span class="price-num">38.90 €</span></td></tr>
-          <tr><td>🥤 Formula 1 shake XXL (780g)</td><td>Veľké balenie, úspora ~18 %</td><td><span class="price-num">55.50 €</span></td></tr>
-          <tr><td>🎁 Formula 1 – balíček 3 príchute</td><td>3× Formula 1 podľa výberu. Ideálny štartovací set</td><td><span class="price-num">114.70 €</span></td></tr>
-          <tr><td>🍑 Bylinný čaj Broskyňa (50g)</td><td>Podporuje metabolizmus, 50 dávok</td><td><span class="price-num">26.90 €</span></td></tr>
-          <tr><td>🍵 Bylinný čaj XXL (100g)</td><td>Dvojbalenie bylinného čaju</td><td><span class="price-num">45.90 €</span></td></tr>
-          <tr><td>🌿 Aloe Vera nápoj – Originál</td><td>Pre trávenie a hydratáciu, 473 ml</td><td><span class="price-num">34.90 €</span></td></tr>
-          <tr><td>🌾 Multivlákninový nápoj (Fiber)</td><td>Vláknina pre zdravé trávenie</td><td><span class="price-num">29.90 €</span></td></tr>
-          <tr><td>💪 H24 Rebuild Strength proteín (1 kg)</td><td>24g bielkovín/dávku, podpora svalov po tréningu</td><td><span class="price-num">63.40 €</span></td></tr>
-          <tr><td>⚡ H24 Hydrate elektrolyty (20 sáč.)</td><td>Rýchla hydratácia, elektrolyty + B-vitamíny</td><td><span class="price-num">35.50 €</span></td></tr>
-          <tr><td>⚽ H24 CR7 Drive Acai (10 sáčkov)</td><td>Šport. nápoj Cristiana Ronalda, acai + elektrolyty</td><td><span class="price-num">17.90 €</span></td></tr>
-          <tr><td>🏋️ Creatine+ Herbalife24</td><td>Kreatín monohydrát pre silu a výkon</td><td><span class="price-num">29.90 €</span></td></tr>
-          <tr><td>🍫 H24 Proteínové tyčinky Brusnica (6ks)</td><td>12g bielkovín/kus, brusnica & biela čokoláda</td><td><span class="price-num">20.50 €</span></td></tr>
-          <tr><td>🌱 Phyto Complete (60 kapsúl)</td><td>Rastlinný komplex antioxidantov, bunková ochrana</td><td><span class="price-num">57.90 €</span></td></tr>
-          <tr><td>🌙 Night Mode – spánok & regenerácia</td><td>Harmanček a broskyňa, prirodzený spánok</td><td><span class="price-num">45.90 €</span></td></tr>
-          <tr><td>🛡️ Immune Booster</td><td>Vitamín C, D, zinok, echinacea</td><td><span class="price-num">44.00 €</span></td></tr>
-          <tr><td>🧠 Active Mind Complex (60 kap.)</td><td>Koncentrácia a pamäť, ginko + ginseng</td><td><span class="price-num">46.50 €</span></td></tr>
-          <tr><td>✨ Collagen Skin Booster (171g)</td><td>Morský kolagén + vitamín C + biotin</td><td><span class="price-num">65.00 €</span></td></tr>
-          <tr><td>🎯 Štartovací set: F1 + Čaj</td><td>Formula 1 + Bylinný čaj. Ideálny štart</td><td><span class="price-num">64.80 €</span> <span class="savings-pill">Úspora 22%</span></td></tr>
-          <tr><td>🌿 Štartovací set: F1 + Aloe</td><td>Formula 1 + Aloe vera nápoj</td><td><span class="price-num">72.30 €</span> <span class="savings-pill">Úspora 24%</span></td></tr>
-          <tr><td>📦 Program chudnutia – Štandard</td><td>F1 + Čaj + Aloe + Vláknina na 1 mesiac</td><td><span class="price-num">162.00 €</span></td></tr>
-          <tr><td>🏆 Program chudnutia – Štandard Plus</td><td>Rozšírený program + proteínové tyčinky + vitamíny</td><td><span class="price-num">250.00 €</span></td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p style="font-size:.8rem;color:var(--text-muted);text-align:center;margin-top:.75rem;">
-      Produkty objednajte cez náš <a href="/shop" style="color:var(--gold)">e-shop</a> alebo priamo u trénera. Doručenie do 2–3 pracovných dní.
-    </p>
   </div>
 
   <!-- ══════════════════ ONLINE ══════════════════ -->
@@ -540,15 +499,11 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
     </div>
     <div class="faq-item" onclick="toggleFaq(this)">
       <div class="faq-q">Čo je zahrnuté v Gold členstve za 125 €? <i class="fas fa-plus icon"></i></div>
-      <div class="faq-a">Gold zahŕňa: neobmedzené hodiny vo všetkých 4 mestách, Herbalife Formula 1 kokteil na celý mesiac, metabolickú analýzu (InBody), jedálniček s porciami na mieru, pravidelné check-iny s trénerom, online program a 20 % zľavu na súkromné hodiny a eventy. Odporúčame ho pre ľudí, ktorí chcú viditeľné výsledky.</div>
+      <div class="faq-a">Gold zahŕňa: neobmedzené hodiny vo všetkých 4 mestách, metabolickú analýzu (InBody), jedálniček na mieru na celý týždeň (generátor), pravidelné check-iny s trénerom, online program a 20 % zľavu na súkromné hodiny a eventy. Odporúčame ho pre ľudí, ktorí chcú viditeľné výsledky.</div>
     </div>
     <div class="faq-item" onclick="toggleFaq(this)">
       <div class="faq-q">Musím mať predchádzajúce skúsenosti s tancovaním? <i class="fas fa-plus icon"></i></div>
       <div class="faq-a">Vôbec nie. Väčšina našich členov začínala bez akýchkoľvek skúseností. Každú hodinu začíname od základov a tempo prispôsobujeme skupi. Vítame ľudí od 5 do 70+ rokov.</div>
-    </div>
-    <div class="faq-item" onclick="toggleFaq(this)">
-      <div class="faq-q">Kde si môžem kúpiť Herbalife produkty? <i class="fas fa-plus icon"></i></div>
-      <div class="faq-a">Produkty si môžete objednať priamo cez náš e-shop na tejto stránke, alebo osobne u trénera na hodine. Doručujeme do 2–3 pracovných dní. Gold členovia majú produkty zahrnuté v cene členstva.</div>
     </div>
   </div>
 
