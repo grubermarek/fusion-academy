@@ -284,7 +284,7 @@ select.form-control option{background:var(--dark3)}
 
 <!-- TOP BAR -->
 <header class="topbar">
-  <a href="/" class="topbar-brand" style="display:inline-flex;align-items:center"><img src="/logo-wordmark.png" alt="Fusion Academy" style="height:26px;width:auto"></a>
+  <a href="/" class="topbar-brand" style="display:inline-flex;align-items:center"><img src="/logo-mark.png" alt="Fusion Academy" style="height:38px;width:38px;object-fit:contain"></a>
   <div class="topbar-sep"></div>
   <span class="topbar-title">Tréner Panel</span>
   <span class="topbar-time" id="clock">--:--</span>
@@ -407,17 +407,15 @@ select.form-control option{background:var(--dark3)}
           <!-- Add student to class -->
           <div class="add-user-section">
             <div class="add-user-title"><i class="bi bi-person-plus"></i> Pridať klienta na hodinu</div>
-            <div class="add-user-search">
-              <i class="bi bi-search"></i>
-              <input type="text" id="addUserSearch" placeholder="Hľadať meno alebo email..." autocomplete="off" oninput="searchUsersForAdd()">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <div class="add-user-search" style="flex:1;min-width:200px">
+                <i class="bi bi-search"></i>
+                <input type="text" id="addUserSearch" placeholder="Hľadať meno alebo email..." autocomplete="off" oninput="searchUsersForAdd()">
+              </div>
+              <button class="btn-sm primary" onclick="openQrForClass()" style="white-space:nowrap"><i class="bi bi-qr-code-scan"></i> Skenovať QR kód</button>
             </div>
             <div id="addUserResults" style="display:none" class="search-results"></div>
-            <div class="quick-actions">
-              <button class="btn-sm" onclick="openModal('manualBook')"><i class="bi bi-calendar-plus"></i> Rezervovať manuálne</button>
-              <button class="btn-sm" onclick="openModal('sellEntry')"><i class="bi bi-ticket-perforated"></i> Jednorazový vstup (10€)</button>
-              <button class="btn-sm" onclick="openModal('sellMembership')"><i class="bi bi-credit-card"></i> Predaj členstvo</button>
-              <button class="btn-sm" onclick="openModal('giveFree')"><i class="bi bi-gift"></i> Hodina zadarmo</button>
-            </div>
+            <div style="font-size:.76rem;color:var(--muted);margin-top:8px">Vyhľadaj klienta alebo naskenuj QR — appka sama zapíše podľa členstva/kreditu, prípadne ponúkne predaj alebo hodinu zadarmo.</div>
           </div>
         </div>
 
@@ -432,10 +430,19 @@ select.form-control option{background:var(--dark3)}
         <span class="badge" id="studentsCountBadge">—</span>
       </div>
 
-      <div style="margin-bottom:12px;position:relative;max-width:360px">
-        <i class="bi bi-search" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:.9rem"></i>
-        <input type="text" id="studSearch" placeholder="Hľadať klienta..." oninput="filterStudents()"
-          style="width:100%;background:var(--card);border:1px solid var(--border);color:var(--cream);padding:9px 12px 9px 34px;border-radius:9px;font-size:.85rem;outline:none">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+        <div style="position:relative;flex:1;min-width:200px;max-width:360px">
+          <i class="bi bi-search" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:.9rem"></i>
+          <input type="text" id="studSearch" placeholder="Hľadať klienta..." oninput="filterStudents()"
+            style="width:100%;background:var(--card);border:1px solid var(--border);color:var(--cream);padding:9px 12px 9px 34px;border-radius:9px;font-size:.85rem;outline:none">
+        </div>
+        <select id="studCity" onchange="filterStudents()" style="background:var(--card);border:1px solid var(--border);color:var(--cream);padding:9px 12px;border-radius:9px;font-size:.85rem"><option value="">Všetky mestá</option></select>
+        <select id="studMem" onchange="filterStudents()" style="background:var(--card);border:1px solid var(--border);color:var(--cream);padding:9px 12px;border-radius:9px;font-size:.85rem">
+          <option value="">Všetky členstvá</option>
+          <option value="__has">Len s členstvom</option>
+          <option value="__none">Bez členstva</option>
+          <option value="__entries">Má vstupy/permanentku</option>
+        </select>
       </div>
 
       <div class="table-wrap">
@@ -1054,29 +1061,35 @@ async function loadStudents(){
     _allStudents = Array.isArray(data) ? data : [];
     _baStudents = _allStudents;
     document.getElementById('studentsCountBadge').textContent = _allStudents.length;
-    renderStudents(_allStudents);
+    // naplň filter miest
+    const cities=[...new Set(_allStudents.map(s=>s.city).filter(Boolean))].sort();
+    const csel=document.getElementById('studCity');
+    if(csel && csel.options.length<=1) cities.forEach(c=>csel.add(new Option(c,c)));
+    filterStudents();
   } catch(e){}
 }
 
 function renderStudents(list){
   const tb = document.getElementById('studentsTbody');
+  document.getElementById('studentsCountBadge').textContent = list.length;
   if(!list.length){ tb.innerHTML='<tr><td colspan="6" class="empty">Žiadni klienti</td></tr>'; return; }
   tb.innerHTML = list.map(s=>{
     const initials=(s.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
     return `<tr>
       <td>
-        <a href="/u/${s._id}" title="Zobraziť profil klienta" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit">
+        <a href="/u/${s.id}" title="Zobraziť profil klienta" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit">
           <div style="width:32px;height:32px;border-radius:50%;background:var(--grad-gold);color:#111;font-weight:800;font-size:.75rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">${initials}</div>
           <span style="font-weight:600;color:var(--gold)">${esc(s.name||'—')} <i class="bi bi-box-arrow-up-right" style="font-size:.68rem;opacity:.6"></i></span>
         </a>
+        ${s.city?`<div style="font-size:.72rem;color:#777;margin-left:42px"><i class="bi bi-geo-alt"></i> ${esc(s.city)}</div>`:''}
       </td>
-      <td><div style="color:var(--muted)">${esc(s.email||'—')}</div>${s.phone?`<div style="font-size:.74rem;color:#666">${esc(s.phone)}</div>`:''}</td>
-      <td>${s.membership_plan?`<span style="color:var(--gold);font-weight:600">${esc(s.membership_plan)}</span>`:'<span style="color:var(--muted)">Žiadne</span>'}</td>
+      <td><div style="color:var(--muted)">${esc(s.email||'—')}</div>${s.phone?`<div style="font-size:.74rem;color:#666"><a href="tel:${esc(String(s.phone).replace(/\\s+/g,''))}" style="color:var(--gold);text-decoration:none">${esc(s.phone)}</a></div>`:''}</td>
+      <td>${s.membership?`<span style="color:var(--gold);font-weight:600">${esc(s.membership)}</span>`:'<span style="color:var(--muted)">Žiadne</span>'}</td>
       <td style="font-weight:700;color:var(--blue)">${s.single_entries||0}</td>
       <td style="font-weight:700;color:var(--green)">${s.visit_count||0}</td>
       <td>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <a class="btn-sm" href="/u/${s._id}" target="_blank" style="text-decoration:none"><i class="bi bi-person"></i> Profil</a>
+          <a class="btn-sm" href="/u/${s.id}" target="_blank" style="text-decoration:none"><i class="bi bi-person"></i> Profil</a>
         </div>
       </td>
     </tr>`;
@@ -1085,7 +1098,16 @@ function renderStudents(list){
 
 function filterStudents(){
   const q = document.getElementById('studSearch').value.toLowerCase();
-  renderStudents(q ? _allStudents.filter(s=>(s.name||'').toLowerCase().includes(q)||(s.email||'').toLowerCase().includes(q)) : _allStudents);
+  const city = document.getElementById('studCity')?.value||'';
+  const mem = document.getElementById('studMem')?.value||'';
+  let list=_allStudents;
+  if(q) list=list.filter(s=>(s.name||'').toLowerCase().includes(q)||(s.email||'').toLowerCase().includes(q)||(s.phone||'').includes(q));
+  if(city) list=list.filter(s=>(s.city||'')===city);
+  if(mem==='__has') list=list.filter(s=>s.membership);
+  else if(mem==='__none') list=list.filter(s=>!s.membership && (s.single_entries||0)<=0);
+  else if(mem==='__entries') list=list.filter(s=>(s.single_entries||0)>0);
+  else if(mem) list=list.filter(s=>s.plan_id===mem);
+  renderStudents(list);
 }
 
 // ── BODY ANALYSIS ─────────────────────────────────────────────────────────────
@@ -1481,6 +1503,14 @@ async function loadTrainerEarnings(){
   }).join('');
 }
 
+// Otvor QR skener rovno pre aktuálne otvorenú hodinu (z dochádzky)
+function openQrForClass(){
+  const cid=_currentClassId;
+  switchTab('qrscanner', document.getElementById('tab-qr'));
+  const sel=document.getElementById('qrClassSelect');
+  if(sel && cid){ sel.value=cid; }
+  setTimeout(()=>{ try{ startQrScanner(); }catch(e){} }, 200);
+}
 function populateQrClassSelect(){
   const sel = document.getElementById('qrClassSelect');
   const current = sel.value;

@@ -6386,14 +6386,26 @@ app.delete('/api/trainer/assistant/:id', trainerAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Všetci klienti (pre trénera aj admina) s členstvom/mestom/vstupmi — filtre rieši frontend
 app.get('/api/trainer/students', trainerAuth, async(req,res)=>{
-  const bookings = await q.find(db.bookings,{status:'confirmed'});
-  const userIds = [...new Set(bookings.map(b=>b.user_id))];
-  const users = await q.find(db.users,{active:true,is_admin:{$ne:true}});
-  const result = users.filter(u=>userIds.includes(u._id)).map(u=>({
-    id:u._id, name:u.name, email:u.email, phone:u.phone||'',
-    created_at:u.created_at, membership_plan:u.membership_plan||null
-  }));
+  const users = (await q.find(db.users,{active:{$ne:false}, is_admin:{$ne:true}, is_child:{$ne:true}}))
+    .filter(u=>(u.user_type||'client')!=='trainer' && !u.anonymous);
+  // aktívne členstvá do mapy (rýchle)
+  const memMap={};
+  (await q.find(db.memberships,{status:'active'})).forEach(m=>{
+    if(m.expires_at && m.expires_at<today()) return;
+    if(!memMap[m.user_id]) memMap[m.user_id]={plan_id:m.plan_id, name:(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo')};
+  });
+  // posledné mesto z rezervácií
+  const lastCity={}, lastDate={};
+  for(const b of (await q.find(db.bookings,{}))){ if(!b.user_id) continue; const d=b.booking_date||(b.created_at||'').slice(0,10);
+    if(!lastDate[b.user_id]||d>lastDate[b.user_id]){ lastDate[b.user_id]=d; if(b.class_location) lastCity[b.user_id]=b.class_location; } }
+  const result = users.map(u=>({
+    id:u._id, name:u.name, email:u.email, phone:u.phone||'', created_at:u.created_at,
+    city: u.city||lastCity[u._id]||'', visit_count:u.visit_count||0,
+    single_entries:u.single_entries||0,
+    membership: memMap[u._id]?memMap[u._id].name:null, plan_id: memMap[u._id]?memMap[u._id].plan_id:null,
+  })).sort((a,b)=>a.name.localeCompare(b.name));
   res.json(result);
 });
 
