@@ -307,6 +307,10 @@ async function load(){
   if(P.viewer_lang && P.viewer_lang!==FA_I18N.lang){ localStorage.setItem('fa_lang',P.viewer_lang); location.reload(); return; }
   render();
   FA_I18N.mount('langMount'); // switcher lives inside the settings panel
+  // Návrat z platby tipu
+  const tp=new URLSearchParams(location.search).get('tip');
+  if(tp==='success'){ alert('💛 Ďakujeme za tip! Platba prebehla, tip sa čoskoro zobrazí na profile.'); history.replaceState({},'',location.pathname); if(P.can_receive_tips) setTimeout(loadTips,1500); }
+  else if(tp==='cancel'){ history.replaceState({},'',location.pathname); }
   // Admin sa vráti do admin panelu, klient na svoj dashboard
   const bl=document.getElementById('backLink'); if(bl && P.viewer_is_admin && !P.is_self){ bl.href='/admin'; }
 }
@@ -547,6 +551,7 @@ async function submitTip(){
   box.innerHTML='<span style="color:var(--muted)">Pripravujem platbu…</span>';
   const r=await fetch('/api/tips/create',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({to_user_id:uid,amount:_tipAmount,message:msg,anonymous})}).then(x=>x.json()).catch(()=>null);
   if(!r||r.error){ box.innerHTML='<span style="color:#e0577b">'+((r&&r.error)||'Chyba')+'</span>'; return; }
+  if(r.url){ box.innerHTML='<span style="color:var(--muted)">Presmerúvam na platbu…</span>'; location.href=r.url; return; } // Stripe checkout
   if(r.demo){ box.innerHTML='<span style="color:#8bc34a">✓ Tip zaznamenaný (demo režim). Ďakujeme!</span>'; setTimeout(()=>{document.getElementById('tipModal')?.remove(); loadTips();},1200); return; }
   // PayPal platba
   box.innerHTML='<span style="color:var(--muted)">Načítavam PayPal…</span>';

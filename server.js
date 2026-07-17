@@ -3486,15 +3486,38 @@ app.post('/api/tips/create', auth, async(req,res)=>{
       return res.status(400).json({error:'Tip je možný len trénerovi alebo tímu Fusion'});
     const msg = String(message||'').slice(0,300);
     const anon = !!req.body.anonymous;
-    if(!PAYPAL_CLIENT_ID){
-      await recordTip({ user_id:req.session.uid, ref_id:to_user_id, ref_type:'tip', amount:amt, tip_message:msg, tip_anonymous:anon, paypal_order_id:'demo-'+Date.now() });
-      return res.json({ ok:true, demo:true });
+    const gifter = await q.one(db.users,{_id:req.session.uid});
+    // 1) Stripe (karta / Apple / Google Pay) — hlavný spôsob
+    if(STRIPE_SECRET){
+      const base = APP_URL;
+      const params = {
+        'mode':'payment', 'line_items[0][quantity]':1,
+        'line_items[0][price_data][currency]':'eur',
+        'line_items[0][price_data][unit_amount]':Math.round(amt*100),
+        'line_items[0][price_data][product_data][name]':`Tip pre ${trainer.name} (${amt.toFixed(2)} €)`,
+        'success_url':`${base}/u/${to_user_id}?tip=success`,
+        'cancel_url':`${base}/u/${to_user_id}?tip=cancel`,
+        'customer_email':gifter?.email,
+        'metadata[type]':'tip', 'metadata[gifter_id]':req.session.uid, 'metadata[to_user_id]':to_user_id,
+        'metadata[amount]':amt, 'metadata[message]':msg, 'metadata[anon]':anon?'1':'0'
+      };
+      const r = await stripeApi('checkout/sessions', params, 'POST');
+      if(r.status>=400 || !r.body?.url) return res.status(400).json({error:r.body?.error?.message||'Stripe chyba'});
+      await q.insert(db.payments,{stripe_session_id:r.body.id, user_id:req.session.uid, amount:amt, currency:'EUR',
+        description:`Tip pre ${trainer.name}`, ref_type:'tip', ref_id:to_user_id, tip_message:msg, tip_anonymous:anon, provider:'stripe', method:'card', status:'pending', created_at:nowISO()});
+      return res.json({ ok:true, url:r.body.url });
     }
-    const result = await ppCreateOrder(amt,'EUR',`Tip pre ${trainer.name}`);
-    if(result.status!==201) return res.status(400).json({error:'PayPal chyba', detail:result.body});
-    const payment = await q.insert(db.payments,{ paypal_order_id:result.body.id, user_id:req.session.uid, amount:amt,
-      currency:'EUR', description:`Tip pre ${trainer.name}`, ref_id:to_user_id, ref_type:'tip', tip_message:msg, tip_anonymous:anon, status:'pending', created_at:nowISO() });
-    res.json({ ok:true, paypalOrderId: result.body.id, paymentId: payment._id });
+    // 2) PayPal (ak je nakonfigurovaný)
+    if(PAYPAL_CLIENT_ID){
+      const result = await ppCreateOrder(amt,'EUR',`Tip pre ${trainer.name}`);
+      if(result.status!==201) return res.status(400).json({error:'PayPal chyba', detail:result.body});
+      const payment = await q.insert(db.payments,{ paypal_order_id:result.body.id, user_id:req.session.uid, amount:amt,
+        currency:'EUR', description:`Tip pre ${trainer.name}`, ref_id:to_user_id, ref_type:'tip', tip_message:msg, tip_anonymous:anon, status:'pending', created_at:nowISO() });
+      return res.json({ ok:true, paypalOrderId: result.body.id, paymentId: payment._id });
+    }
+    // 3) Demo (žiadny provider) — zapíš rovno pre test
+    await recordTip({ user_id:req.session.uid, ref_id:to_user_id, ref_type:'tip', amount:amt, tip_message:msg, tip_anonymous:anon, paypal_order_id:'demo-'+Date.now() });
+    res.json({ ok:true, demo:true });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 // Verejný feed tipov na profile daného človeka (ako donaty na Twitchi)
@@ -5413,6 +5436,14 @@ async function fulfillStripeCheckout(s){
   const meta = s.metadata || {};
   if(meta.type==='order') return {ok:false, skip:true}; // e-shop handled separately
   if(meta.type==='gift_credit') return await fulfillGiftCredit(s);
+  if(meta.type==='tip'){
+    // idempotencia cez payment status
+    const claimedTip = await q.update(db.payments,{stripe_session_id:s.id, status:{$ne:'completed'}},{$set:{status:'completed', captured_at:nowISO(), stripe_payment_intent:s.payment_intent||''}});
+    if(!claimedTip) return {ok:true, already:true};
+    await recordTip({ user_id:meta.gifter_id, ref_id:meta.to_user_id, ref_type:'tip',
+      amount:+meta.amount, tip_message:meta.message||'', tip_anonymous:meta.anon==='1', paypal_order_id:'stripe-'+s.id });
+    return {ok:true, tip:true};
+  }
   const plan = MEMBERSHIP_PLANS[meta.plan_id];
   if(!plan) return {ok:false, error:'Neznámy plán'};
   // Atomic claim: only the first caller flips pending→completed and proceeds
