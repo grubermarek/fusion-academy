@@ -6324,9 +6324,11 @@ app.get('/api/attendance/schedule', trainerAuth, async(req,res)=>{
     const classes = await q.find(db.classes, filter);
     const result = [];
     for(const c of classes){
-      const confirmed = await q.count(db.bookings,{class_id:c._id, status:'confirmed'});
-      const waitlist  = await q.count(db.bookings,{class_id:c._id, status:'waitlist'});
-      result.push({...c, confirmed, waitlist, spotsLeft:Math.max(0,c.capacity-confirmed), dayName:DAYS_SK[c.day_of_week]});
+      // Obsadenosť pre NAJBLIŽŠÍ termín (rovnako ako to vidí klient), nie súčet cez všetky dátumy
+      const bdate = displayNextDateForDay(c.day_of_week);
+      const confirmed = await q.count(db.bookings,{class_id:c._id, booking_date:bdate, status:{$in:['confirmed','attended']}});
+      const waitlist  = await q.count(db.bookings,{class_id:c._id, booking_date:bdate, status:'waitlist'});
+      result.push({...c, confirmed, waitlist, next_date:bdate, spotsLeft:Math.max(0,c.capacity-confirmed), dayName:DAYS_SK[c.day_of_week]});
     }
     result.sort((a,b)=>a.day_of_week-b.day_of_week||a.time_start.localeCompare(b.time_start));
     res.json(result);
@@ -6400,7 +6402,10 @@ app.get('/api/attendance/cancellations', trainerAuth, async(req,res)=>{
 app.get('/api/attendance/class/:classId', trainerAuth, async(req,res)=>{
   try {
     const query = {class_id:req.params.classId, status:{$in:['confirmed','attended']}};
-    if(req.query.date) query.booking_date = req.query.date;
+    // bez explicitného ?date zobraz účastníkov NAJBLIŽŠIEHO termínu (zhodné s počtom pre klienta),
+    // ?date=all zobrazí naprieč všetkými termínmi
+    if(req.query.date && req.query.date!=='all') query.booking_date = req.query.date;
+    else if(!req.query.date){ const cls=await q.one(db.classes,{_id:req.params.classId}); if(cls) query.booking_date = displayNextDateForDay(cls.day_of_week); }
     const bookings = await q.find(db.bookings, query, {booking_date:-1});
     const result = [];
     for(const b of bookings){
