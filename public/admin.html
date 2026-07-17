@@ -156,6 +156,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('points')"><i class="bi bi-star me-2"></i>Body klientov</a>
       <a class="nav-link" href="#" onclick="show('leaderboard')"><i class="bi bi-trophy me-2"></i>Leaderboard dochádzky</a>
       <a class="nav-link" href="#" onclick="show('classhistory')"><i class="bi bi-clock-history me-2"></i>História hodín & zárobky</a>
+      <a class="nav-link" href="#" onclick="show('tips')"><i class="bi bi-cash-coin me-2"></i>Tipy (dank) 💛</a>
       <a class="nav-link" href="#" onclick="show('trainers')"><i class="bi bi-person-badge me-2"></i>Výkon trénerov</a>
       <a class="nav-link" href="#" onclick="show('payouts')"><i class="bi bi-cash-stack me-2"></i>Výplaty trénerov</a>
       <div class="nav-group-label">Systém</div>
@@ -1285,6 +1286,22 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </table></div>
   </div>
 
+  <!-- TIPY (DANK) -->
+  <div class="section" id="s-tips">
+    <h4 class="fw-bold mb-1">💛 Tipy (dank)</h4>
+    <p class="text-muted small mb-3">Tipy od klientov pre trénerov/tím. 80 % ide trénerovi k výplate, 20 % nám. Klik na meno = profil.</p>
+    <div id="tipsSummary" class="d-flex flex-wrap gap-2 mb-3"></div>
+    <div class="card border-0 rounded-3 p-0" style="overflow-x:auto">
+      <table class="table table-dark table-hover align-middle mb-0" style="min-width:720px">
+        <thead><tr>
+          <th>Dátum</th><th>Od</th><th>Pre (tréner)</th><th class="text-end">Suma</th>
+          <th class="text-end">Tréner 80%</th><th class="text-end">My 20%</th><th>Odkaz</th>
+        </tr></thead>
+        <tbody id="tipsBody"><tr><td colspan="7" class="text-center text-muted py-3">Načítavam…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
   <!-- HISTÓRIA HODÍN & ZÁROBKY -->
   <div class="section" id="s-classhistory">
     <h4 class="fw-bold mb-1">🕘 História hodín & zárobky</h4>
@@ -1549,7 +1566,7 @@ const GROUP_TITLES={home:'Domov',manage:'Správa',marketing:'Marketing',reports:
 const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',
   leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',
   marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
-  finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',reset:'reports',
+  finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',reset:'reports',
   partners:'partners',addpartner:'partners',commissions:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
@@ -1592,6 +1609,7 @@ function show(sec){
   if(sec==='accounting')initAccounting();
   if(sec==='points')initPoints();
   if(sec==='classhistory')initClassHistory();
+  if(sec==='tips')loadAdminTips();
   if(sec==='trainers')initTrainers();
   if(sec==='payouts')initPayouts();
   if(sec==='refunds')loadRefunds();
@@ -1989,6 +2007,33 @@ async function savePayoutDeduction(id){
 
 /* ─── VÝKON TRÉNEROV ─────────────────────────────────────── */
 let _trInit=false;
+// ── Tipy (dank) ───────────────────────────────────────────────────────────────
+async function loadAdminTips(){
+  const body=document.getElementById('tipsBody'); if(!body) return;
+  const d=await api('/api/admin/tips');
+  if(!d||d.error){ body.innerHTML='<tr><td colspan="7" class="text-danger py-3">Chyba načítania.</td></tr>'; return; }
+  const eur=v=>(+v||0).toFixed(2).replace('.',',')+' €';
+  const t=d.totals||{};
+  document.getElementById('tipsSummary').innerHTML=`
+    <span class="badge bg-secondary">💛 ${t.count||0} tipov</span>
+    <span class="badge bg-secondary">Σ ${eur(t.amount)}</span>
+    <span class="badge bg-secondary">🧑‍🏫 Trénerom ${eur(t.trainer_cut)}</span>
+    <span class="badge bg-warning text-dark">Náš podiel ${eur(t.our_cut)}</span>`;
+  if(!d.tips.length){ body.innerHTML='<tr><td colspan="7" class="text-center text-muted py-3">Zatiaľ žiadne tipy.</td></tr>'; return; }
+  body.innerHTML=d.tips.map(x=>{
+    const when=(x.created_at||'').slice(0,10);
+    const from=x.from_user_id?`<a href="/u/${x.from_user_id}" target="_blank" style="color:#e0b84c;text-decoration:none">${escHtml(x.from_name)}</a>`:escHtml(x.from_name||'Anonym');
+    const to=x.to_user_id?`<a href="/u/${x.to_user_id}" target="_blank" style="color:#e0b84c;text-decoration:none">${escHtml(x.to_name)}</a>`:escHtml(x.to_name||'');
+    return `<tr>
+      <td class="small text-muted">${when}</td><td>${from}</td><td>${to}</td>
+      <td class="text-end fw-bold">${eur(x.amount)}</td>
+      <td class="text-end">${eur(x.trainer_cut)}</td>
+      <td class="text-end text-warning">${eur(x.our_cut)}</td>
+      <td class="small text-muted">${x.message?escHtml(x.message):'—'}</td>
+    </tr>`;
+  }).join('');
+}
+
 // ── História hodín & zárobky ──────────────────────────────────────────────────
 let _chInit=false, _chData=null, _chSort={k:'date',dir:-1};
 function initClassHistory(){

@@ -113,6 +113,7 @@ const db = {
   outreach:     new Datastore({ filename: path.join(DATA_DIR, 'outreach.db'),     autoload: true }),
   promo_redemptions:new Datastore({ filename: path.join(DATA_DIR, 'promo_redemptions.db'),autoload: true }),
   feed:         new Datastore({ filename: path.join(DATA_DIR, 'feed.db'),        autoload: true }),
+  tips:         new Datastore({ filename: path.join(DATA_DIR, 'tips.db'),        autoload: true }),
   friends:      new Datastore({ filename: path.join(DATA_DIR, 'friends.db'),      autoload: true }),
   profile_likes:new Datastore({ filename: path.join(DATA_DIR, 'profile_likes.db'),autoload: true }),
   profile_comments:new Datastore({ filename: path.join(DATA_DIR, 'profile_comments.db'),autoload: true }),
@@ -1664,6 +1665,7 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
       member_badge:badge, loyalty_label: loyalty.current?.label||'Nováčik',
       visits: u.visit_count||0, referrals: refCount, direct_refs: directRefs,
       is_trainer: (u.user_type==='trainer')||!!u.is_admin,
+      can_receive_tips: !!(u.is_admin || u.user_type==='trainer' || u.user_type==='manager') && !u.anonymous,
       is_founder: !!u.is_founder, is_admin_profile: !!u.is_admin,
       taught_group_hours: u.taught_group_hours||0, taught_private_hours: u.taught_private_hours||0,
       months_member: memberMonths, joined: joinedDate,
@@ -3382,12 +3384,16 @@ app.post('/api/paypal/capture-order', async(req,res)=>{
     const payment = paymentId ? await q.one(db.payments,{_id:paymentId}) : null;
     if(captured && payment){
       await q.update(db.payments,{_id:paymentId},{$set:{status:'completed',captured_at:nowISO(),paypal_capture_id:result.body?.purchase_units?.[0]?.payments?.captures?.[0]?.id||''}});
-      trackPurchase(payment.user_id, payment.amount);
-      { const pu = payment.user_id ? await q.one(db.users,{_id:payment.user_id}) : null;
-        createInvoice({user_id:payment.user_id, client_name:pu?.name, client_email:pu?.email,
-          items:[{desc:payment.description||'Platba Fusion Academy', qty:1, total:payment.amount}],
-          total:payment.amount, method:'PayPal'}); }
-      if(payment.status!=='completed') awardPurchaseCommission({buyer_id:payment.user_id, amount:payment.amount, product_name:payment.description||'Členstvo'});
+      const isTip = payment.ref_type==='tip';
+      if(isTip){ await recordTip(payment); }
+      else {
+        trackPurchase(payment.user_id, payment.amount);
+        { const pu = payment.user_id ? await q.one(db.users,{_id:payment.user_id}) : null;
+          createInvoice({user_id:payment.user_id, client_name:pu?.name, client_email:pu?.email,
+            items:[{desc:payment.description||'Platba Fusion Academy', qty:1, total:payment.amount}],
+            total:payment.amount, method:'PayPal'}); }
+        if(payment.status!=='completed') awardPurchaseCommission({buyer_id:payment.user_id, amount:payment.amount, product_name:payment.description||'Členstvo'});
+      }
       // If it's a membership payment, activate membership (member_id = child if family purchase)
       if(payment.ref_type==='membership' && payment.user_id){
         await activateMembership(payment.member_id || payment.user_id, payment.ref_id, 30);
@@ -3403,6 +3409,83 @@ app.post('/api/paypal/capture-order', async(req,res)=>{
     }
     res.json({ ok:captured, status: result.body?.status||'UNKNOWN', detail: captured?undefined:result.body });
   } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ─── TIPY (dank) pre trénerov/adminov — 80 % tréner / 20 % my ──────────────────
+const TIP_TRAINER_SHARE = 0.8;
+async function recordTip(payment){
+  try{
+    if(payment.paypal_order_id && await q.one(db.tips,{paypal_order_id:payment.paypal_order_id})) return; // idempotencia
+    const trainer = await q.one(db.users,{_id:payment.ref_id});
+    if(!trainer) return;
+    const from = payment.user_id ? await q.one(db.users,{_id:payment.user_id}) : null;
+    const amount = +(+payment.amount).toFixed(2);
+    const trainerCut = +(amount*TIP_TRAINER_SHARE).toFixed(2);
+    const ourCut = +(amount-trainerCut).toFixed(2);
+    const message = String(payment.tip_message||'').slice(0,300);
+    const tip = await q.insert(db.tips,{
+      from_user_id: from?._id||null, from_name: from?.name||'Anonym',
+      to_user_id: trainer._id, to_name: trainer.name,
+      amount, trainer_cut:trainerCut, our_cut:ourCut, message,
+      month: currentMonth(), paypal_order_id: payment.paypal_order_id||null,
+      status:'paid', created_at: nowISO()
+    });
+    await q.insert(db.notifications,{user_id:trainer._id, type:'tip',
+      title:`💛 Dostal/a si tip +${trainerCut.toFixed(2)} €`,
+      body:`${from?.name||'Niekto'} ti poslal/a tip ${amount.toFixed(2)} € (tvoj podiel ${trainerCut.toFixed(2)} €)${message?`: „${message}"`:''}.`,
+      read:false, created_at:nowISO()});
+    if(trainer.email && !trainer.email.includes('@internal.local')){
+      sendMail(trainer.email, `💛 Nový tip +${trainerCut.toFixed(2)} € — Fusion Academy`,
+        emailTemplate('Dostal/a si tip! 💛', `<p>Ahoj <b>${trainer.name}</b>,</p><p><b>${from?.name||'Niekto'}</b> ti poslal/a tip <b style="color:#C9A84C">${amount.toFixed(2)} €</b> — tvoj podiel <b>${trainerCut.toFixed(2)} €</b> sa ti pripíše k výplate.</p>${message?`<blockquote style="border-left:3px solid #C9A84C;padding-left:12px;color:#555;font-style:italic">„${message}"</blockquote>`:''}`,
+        'Zobraziť profil', `${APP_URL}/u/${trainer._id}`)).catch(()=>{});
+    }
+    const admins = await q.find(db.users,{is_admin:true});
+    for(const a of admins){ if(a._id===trainer._id) continue;
+      await q.insert(db.notifications,{user_id:a._id, type:'tip',
+        title:`💛 Tip pre ${trainer.name}: ${amount.toFixed(2)} €`,
+        body:`${from?.name||'Niekto'} → ${trainer.name}. Náš podiel ${ourCut.toFixed(2)} €.`, read:false, created_at:nowISO()}); }
+    return tip;
+  }catch(e){ console.error('recordTip:',e.message); }
+}
+// Vytvorí tip (PayPal/karta). Recipient musí byť tréner/admin.
+app.post('/api/tips/create', auth, async(req,res)=>{
+  try{
+    const { to_user_id, amount, message } = req.body;
+    const amt = +parseFloat(amount).toFixed(2);
+    if(!(amt>=1 && amt<=1000)) return res.status(400).json({error:'Suma musí byť medzi 1 a 1000 €'});
+    if(to_user_id===req.session.uid) return res.status(400).json({error:'Nemôžeš poslať tip sám sebe 🙂'});
+    const trainer = await q.one(db.users,{_id:to_user_id});
+    if(!trainer || !(trainer.is_admin || trainer.user_type==='trainer' || trainer.user_type==='manager'))
+      return res.status(400).json({error:'Tip je možný len trénerovi alebo tímu Fusion'});
+    const msg = String(message||'').slice(0,300);
+    if(!PAYPAL_CLIENT_ID){
+      await recordTip({ user_id:req.session.uid, ref_id:to_user_id, ref_type:'tip', amount:amt, tip_message:msg, paypal_order_id:'demo-'+Date.now() });
+      return res.json({ ok:true, demo:true });
+    }
+    const result = await ppCreateOrder(amt,'EUR',`Tip pre ${trainer.name}`);
+    if(result.status!==201) return res.status(400).json({error:'PayPal chyba', detail:result.body});
+    const payment = await q.insert(db.payments,{ paypal_order_id:result.body.id, user_id:req.session.uid, amount:amt,
+      currency:'EUR', description:`Tip pre ${trainer.name}`, ref_id:to_user_id, ref_type:'tip', tip_message:msg, status:'pending', created_at:nowISO() });
+    res.json({ ok:true, paypalOrderId: result.body.id, paymentId: payment._id });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Verejný feed tipov na profile daného človeka (ako donaty na Twitchi)
+app.get('/api/tips/for/:userId', async(req,res)=>{
+  try{
+    const tips = await q.find(db.tips,{to_user_id:req.params.userId, status:'paid'});
+    tips.sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+    const total = tips.reduce((s,t)=>s+(+t.amount||0),0);
+    res.json({ count: tips.length, total:+total.toFixed(2),
+      tips: tips.slice(0,100).map(t=>({ from_user_id:t.from_user_id, from_name:t.from_name, amount:t.amount, message:t.message, created_at:t.created_at })) });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Admin prehľad tipov
+app.get('/api/admin/tips', adminAuth, async(req,res)=>{
+  try{
+    const tips=(await q.find(db.tips,{})).sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+    const sum=(k)=>+tips.reduce((s,t)=>s+(+t[k]||0),0).toFixed(2);
+    res.json({ tips: tips.slice(0,500), totals:{ count:tips.length, amount:sum('amount'), our_cut:sum('our_cut'), trainer_cut:sum('trainer_cut') } });
+  }catch(e){ res.status(500).json({error:e.message}); }
 });
 
 app.post('/api/paypal/webhook', express.json({type:'*/*'}), async(req,res)=>{
@@ -6106,14 +6189,19 @@ app.get('/api/trainer/earnings', trainerAuth, async(req,res)=>{
     // Posledných 12 mesiacov
     const months=[]; const now=new Date();
     for(let i=0;i<12;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); months.push(d.toISOString().slice(0,7)); }
+    // Tipy pre tohto trénera (80 % podiel) — súčet po mesiacoch
+    const myTips = await q.find(db.tips,{to_user_id:t._id, status:'paid'});
+    const tipByMonth={};
+    for(const tp of myTips){ const mm=(tp.month||(tp.created_at||'').slice(0,7)); tipByMonth[mm]=(tipByMonth[mm]||0)+(+tp.trainer_cut||0); }
     const rows=[];
     for(const m of months){
       const st=(await trainerMonthStats(m)).find(s=>s.instructor===tName || (tName&&s.instructor&&s.instructor.includes(tName.split(' ')[0]))) || {sessions:0,attendances:0,revenue:0,newClients:0,fullClasses:0,session_atts:[]};
       const {base,bonuses,billable}=computePayout(rule,st);
       const affiliate = await affiliateCommissionFor(t._id, m);
+      const tips = +(tipByMonth[m]||0).toFixed(2);
       const rec=await q.one(db.payouts,{trainer:tName,month:m});
       const ded=rec?.deductions||0;
-      const total=+(base+bonuses+affiliate-ded).toFixed(2);
+      const total=+(base+bonuses+affiliate+tips-ded).toFixed(2);
       const items=[
         {label:'Základ za hodinu', count:st.sessions, per:rule.fixed_per_class||0, amount:+((rule.fixed_per_class||0)*st.sessions).toFixed(2)},
         {label:(thr>0?`Klienti nad ${thr} na hodine`:'Odmena za účastníka'), count:billable, per:rule.per_client||0, amount:+((rule.per_client||0)*billable).toFixed(2)},
@@ -6121,14 +6209,16 @@ app.get('/api/trainer/earnings', trainerAuth, async(req,res)=>{
         {label:'Bonus za plnú hodinu', count:st.fullClasses, per:rule.bonus_full_class||0, amount:+((rule.bonus_full_class||0)*st.fullClasses).toFixed(2)},
         {label:'Bonus za nového klienta', count:st.newClients, per:rule.bonus_new_member||0, amount:+((rule.bonus_new_member||0)*st.newClients).toFixed(2)},
         {label:'Affiliate provízie (moja línia)', count:'', per:'', amount:affiliate},
+        {label:'💛 Tipy od klientov (80 %)', count:'', per:'', amount:tips},
       ].filter(x=>x.per||x.amount);
       rows.push({month:m, sessions:st.sessions, attendances:st.attendances, revenue:+st.revenue.toFixed(2),
-        base:+base.toFixed(2), bonuses:+bonuses.toFixed(2), affiliate, deductions:ded, total,
+        base:+base.toFixed(2), bonuses:+bonuses.toFixed(2), affiliate, tips, deductions:ded, total,
         status: rec?.status||'draft', paid: rec?.status==='paid', items});
     }
     const grand=rows.reduce((s,r)=>s+r.total,0);
     const grandAffiliate=rows.reduce((s,r)=>s+r.affiliate,0);
-    res.json({ trainer:tName, trainer_id:t._id, months:rows, grand_total:+grand.toFixed(2), grand_affiliate:+grandAffiliate.toFixed(2) });
+    const grandTips=rows.reduce((s,r)=>s+(r.tips||0),0);
+    res.json({ trainer:tName, trainer_id:t._id, months:rows, grand_total:+grand.toFixed(2), grand_affiliate:+grandAffiliate.toFixed(2), grand_tips:+grandTips.toFixed(2) });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
