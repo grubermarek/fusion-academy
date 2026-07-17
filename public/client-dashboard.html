@@ -537,7 +537,14 @@
             <div style="font-size:.75rem;color:var(--muted)">Tielko, tričko, taška – zaplatiť kreditom</div>
           </div>
         </a>
-        <button onclick="requestCreditPayout()" style="display:flex;align-items:center;gap:10px;background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:11px 14px;cursor:pointer;width:100%;text-align:left;color:var(--text);transition:border-color .2s" onmouseover="this.style.borderColor='#4caf50'" onmouseout="this.style.borderColor='#333'">
+        <button onclick="openGiftCreditModal()" style="display:flex;align-items:center;gap:10px;background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:11px 14px;cursor:pointer;width:100%;text-align:left;color:var(--text);transition:border-color .2s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='#333'">
+          <span style="font-size:1.4rem">🎁</span>
+          <div>
+            <div style="font-size:.85rem;font-weight:600">Darovať kredit niekomu</div>
+            <div style="font-size:.75rem;color:var(--muted)">Pošli časť kreditu inému členovi Fusion Academy</div>
+          </div>
+        </button>
+        <button onclick="openPayoutModal()" style="display:flex;align-items:center;gap:10px;background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:11px 14px;cursor:pointer;width:100%;text-align:left;color:var(--text);transition:border-color .2s" onmouseover="this.style.borderColor='#4caf50'" onmouseout="this.style.borderColor='#333'">
           <span style="font-size:1.4rem">💸</span>
           <div>
             <div style="font-size:.85rem;font-weight:600">Vyplatiť na bankový účet</div>
@@ -985,10 +992,67 @@ document.addEventListener('click',e=>{
 let _refLink='';
 let _creditPanelOpen=false;
 function toggleCreditPanel(){_creditPanelOpen=!_creditPanelOpen;document.getElementById('creditPanel').style.display=_creditPanelOpen?'block':'none';}
-async function requestCreditPayout(){
-  const d=await api('/api/client/referral-credit/payout',{method:'POST'});
-  if(d?.ok){showToast('Žiadosť odoslaná! Výplata do 3 dní 💸','success');loadReferral();}
-  else showToast(d?.error||'Chyba','error');
+let _availableCredit=0;
+function _creditModal(html){
+  let m=document.getElementById('creditModal');
+  if(!m){ m=document.createElement('div'); m.id='creditModal';
+    m.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:16px';
+    document.body.appendChild(m);
+  }
+  m.onclick=e=>{ if(e.target===m) m.remove(); };
+  m.innerHTML=`<div style="background:#1a1712;border:1px solid rgba(201,168,76,.4);border-radius:16px;max-width:400px;width:100%;padding:20px;color:var(--text)">${html}</div>`;
+  return m;
+}
+function closeCreditModal(){ document.getElementById('creditModal')?.remove(); }
+function openPayoutModal(){
+  const avail=(+_availableCredit||0);
+  _creditModal(`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:1.1rem;color:var(--gold)">💸 Vyplatiť kredit na účet</b><button onclick="closeCreditModal()" style="background:none;border:none;color:#999;font-size:1.3rem;cursor:pointer">✕</button></div>
+    <div style="font-size:.82rem;color:var(--muted);margin-bottom:12px">Dostupný kredit: <b style="color:var(--gold)">${avail.toFixed(2)} €</b> · minimum na výplatu <b>100 €</b>. Zvyšok ostáva ako kredit (môžeš ho použiť na členstvá, permanentky, merch, súkromné hodiny alebo darovať).</div>
+    ${avail<100?`<div style="background:rgba(255,152,0,.1);border:1px solid rgba(255,152,0,.3);color:#ffb74d;border-radius:10px;padding:10px;font-size:.82rem;margin-bottom:12px">Zatiaľ nemáš 100 € na výplatu. Kredit môžeš hneď použiť v appke ↓</div>
+      <div style="display:flex;flex-direction:column;gap:8px"><a href="/pricing" class="btn-primary" style="text-decoration:none;text-align:center">🏷️ Členstvá / permanentky / vstupenky / súkromné hodiny</a><a href="/shop" class="btn-primary" style="text-decoration:none;text-align:center;background:#2a2a2a;color:var(--text)">🛍️ Merch v e-shope</a></div>`
+    :`
+    <label style="font-size:.8rem;color:var(--muted)">Suma na výplatu (€)</label>
+    <input id="poAmount" type="number" min="100" max="${avail.toFixed(2)}" step="1" value="${Math.floor(avail)}" style="width:100%;background:#111;border:1px solid #333;color:var(--text);border-radius:10px;padding:10px 12px;margin:4px 0 10px">
+    <label style="font-size:.8rem;color:var(--muted)">IBAN</label>
+    <input id="poIban" type="text" placeholder="SK00 0000 0000 0000 0000 0000" style="width:100%;background:#111;border:1px solid #333;color:var(--text);border-radius:10px;padding:10px 12px;margin:4px 0 10px">
+    <label style="font-size:.8rem;color:var(--muted)">Meno majiteľa účtu</label>
+    <input id="poName" type="text" placeholder="Meno Priezvisko" style="width:100%;background:#111;border:1px solid #333;color:var(--text);border-radius:10px;padding:10px 12px;margin:4px 0 12px">
+    <div id="poMsg" style="font-size:.82rem;margin-bottom:8px"></div>
+    <button onclick="submitPayout()" class="btn-primary" style="width:100%">Odoslať žiadosť o výplatu</button>`}
+  `);
+}
+async function submitPayout(){
+  const amount=+document.getElementById('poAmount').value;
+  const iban=(document.getElementById('poIban').value||'').trim();
+  const name=(document.getElementById('poName').value||'').trim();
+  const msg=document.getElementById('poMsg');
+  msg.innerHTML='<span style="color:var(--muted)">Odosielam…</span>';
+  const d=await api('/api/client/referral-credit/payout',{method:'POST',body:{amount,iban,name}});
+  if(d?.ok){ msg.innerHTML='<span style="color:#8bc34a">✓ Žiadosť odoslaná! Výplata do 3 dní 💸</span>'; setTimeout(()=>{closeCreditModal(); loadReferral();},1400); }
+  else msg.innerHTML='<span style="color:#e0577b">'+(d?.error||'Chyba')+'</span>';
+}
+function openGiftCreditModal(){
+  const avail=(+_availableCredit||0);
+  _creditModal(`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:1.1rem;color:var(--gold)">🎁 Darovať kredit</b><button onclick="closeCreditModal()" style="background:none;border:none;color:#999;font-size:1.3rem;cursor:pointer">✕</button></div>
+    <div style="font-size:.82rem;color:var(--muted);margin-bottom:12px">Dostupný kredit: <b style="color:var(--gold)">${avail.toFixed(2)} €</b>. Kredit sa pripíše príjemcovi a použije na členstvá, permanentky, merch či súkromné hodiny.</div>
+    <label style="font-size:.8rem;color:var(--muted)">E-mail alebo meno príjemcu</label>
+    <input id="gcRecipient" type="text" placeholder="email@priklad.sk" style="width:100%;background:#111;border:1px solid #333;color:var(--text);border-radius:10px;padding:10px 12px;margin:4px 0 10px">
+    <label style="font-size:.8rem;color:var(--muted)">Suma (€)</label>
+    <input id="gcAmount" type="number" min="1" max="${avail.toFixed(2)}" step="1" placeholder="napr. 20" style="width:100%;background:#111;border:1px solid #333;color:var(--text);border-radius:10px;padding:10px 12px;margin:4px 0 12px">
+    <div id="gcMsg" style="font-size:.82rem;margin-bottom:8px"></div>
+    <button onclick="submitGiftCredit()" class="btn-primary" style="width:100%">Darovať kredit</button>
+  `);
+}
+async function submitGiftCredit(){
+  const recipient=(document.getElementById('gcRecipient').value||'').trim();
+  const amount=+document.getElementById('gcAmount').value;
+  const msg=document.getElementById('gcMsg');
+  msg.innerHTML='<span style="color:var(--muted)">Odosielam…</span>';
+  const d=await api('/api/client/credit/gift',{method:'POST',body:{recipient,amount}});
+  if(d?.ok){ msg.innerHTML=`<span style="color:#8bc34a">✓ Darované ${(+d.amount).toFixed(2)} € pre ${d.recipient} 🎁</span>`; setTimeout(()=>{closeCreditModal(); loadReferral();},1400); }
+  else msg.innerHTML='<span style="color:#e0577b">'+(d?.error||'Chyba')+'</span>';
 }
 async function loadReferral(){
   const d=await api('/api/client/referral');if(!d||d.error) return;
@@ -997,7 +1061,8 @@ async function loadReferral(){
   { const lbl=document.getElementById('refCountLabel'); if(lbl) lbl.textContent=(d.direct_count!==undefined?d.direct_count+' priamych · ':'')+'v štruktúre'; }
   document.getElementById('refLinkText').textContent=_refLink||'—';
   document.getElementById('refEarned').textContent=(d.earned_total||0).toFixed(2)+' €';
-  document.getElementById('refCreditBalance').textContent=(d.available_credit!==undefined?d.available_credit:(d.referral_credit||0)).toFixed(2)+' €';
+  _availableCredit = (d.available_credit!==undefined?d.available_credit:(d.referral_credit||0));
+  document.getElementById('refCreditBalance').textContent=(_availableCredit).toFixed(2)+' €';
   if(d.next_tier){document.getElementById('refNextReward').style.display='block';document.getElementById('refNextCount').textContent=d.next_tier.referrals;document.getElementById('refNextText').textContent=d.next_tier.reward;}
   const tiers=d.all_tiers||[];const count=d.ref_count||0;
   document.getElementById('refMilestones').innerHTML=tiers.map(t=>{

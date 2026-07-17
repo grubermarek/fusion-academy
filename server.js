@@ -7399,22 +7399,58 @@ app.post('/api/client/referral-credit/payout', auth, async(req,res)=>{
     // Dostupný kredit = referral kredit + čakajúce provízie (jeden pohár)
     const pendComms = await q.find(db.commissions,{partner_id:u._id,status:'pending'});
     const pendSum = +pendComms.reduce((s,c)=>s+(c.amount||0),0).toFixed(2);
-    const credit = +((u.referral_credit||0) + pendSum).toFixed(2);
-    if(credit < 100) return res.status(400).json({error:`Minimálna výplata je 100 €. Aktuálny dostupný kredit: ${credit.toFixed(2)} €. Kredit môžeš použiť aj na členstvá, merch, vstupenky na eventy či súkromné hodiny.`});
-    // Create payout request record
+    const available = +((u.referral_credit||0) + pendSum).toFixed(2);
+    const iban = String(req.body.iban||'').replace(/\s+/g,'').trim();
+    const name = String(req.body.name||u.name||'').slice(0,100).trim();
+    let amount = +parseFloat(req.body.amount);
+    if(!(amount>0)) amount = available; // fallback: celý kredit
+    amount = +amount.toFixed(2);
+    if(available < 100) return res.status(400).json({error:`Minimálna výplata je 100 €. Aktuálny dostupný kredit: ${available.toFixed(2)} €. Kredit môžeš použiť aj na členstvá, permanentky, merch, vstupenky na eventy či súkromné hodiny.`});
+    if(amount < 100) return res.status(400).json({error:'Minimálna suma na výplatu je 100 €.'});
+    if(amount > available) return res.status(400).json({error:`Zadaná suma (${amount.toFixed(2)} €) je vyššia ako dostupný kredit (${available.toFixed(2)} €).`});
+    if(!iban || iban.length < 15) return res.status(400).json({error:'Zadaj platný IBAN.'});
+    if(!name) return res.status(400).json({error:'Zadaj meno majiteľa účtu.'});
+    // Vyrovnaj čakajúce provízie do jedného pohára a odpočítaj vyplácanú sumu; zvyšok ostáva ako kredit
+    await q.update(db.commissions,{partner_id:u._id,status:'pending'},{$set:{status:'paid',paid_at:nowISO()}},{multi:true});
+    const remaining = +(available - amount).toFixed(2);
+    await q.update(db.users,{_id:u._id},{$set:{ referral_credit:remaining, referral_credit_pending:(u.referral_credit_pending||0)+amount, bank_account:iban, payout_name:name }});
     await q.insert(db.transactions,{
       type:'referral_payout_request', user_id:u._id, user_name:u.name,
-      amount:credit, payment_method:'payout', note:`Žiadosť o výplatu kreditu: ${credit.toFixed(2)} € (kredit ${(u.referral_credit||0).toFixed(2)} + provízie ${pendSum.toFixed(2)})`,
-      status:'pending', bank_account:u.bank_account||'', created_at:nowISO(), month:today().slice(0,7)
+      amount, payment_method:'payout', note:`Žiadosť o výplatu kreditu: ${amount.toFixed(2)} € · IBAN ${iban} · ${name}`,
+      status:'pending', bank_account:iban, payout_name:name, created_at:nowISO(), month:today().slice(0,7)
     });
-    // Reserve: čakajúce provízie označ ako vyplatené a vynuluj referral kredit
-    await q.update(db.commissions,{partner_id:u._id,status:'pending'},{$set:{status:'paid',paid_at:nowISO()}},{multi:true});
-    await q.update(db.users,{_id:u._id},{$set:{referral_credit_pending:(u.referral_credit_pending||0)+credit, referral_credit:0}});
-    await q.insert(db.notifications,{user_id:u._id,type:'payout',title:'Žiadosť o výplatu odoslaná 💸',body:`${credit.toFixed(2)} € bude prevedených na váš účet po potvrdení adminom.`,read:false,created_at:nowISO()});
-    // Notify admin
+    await q.insert(db.notifications,{user_id:u._id,type:'payout',title:'Žiadosť o výplatu odoslaná 💸',body:`${amount.toFixed(2)} € bude prevedených na účet ${iban} po potvrdení adminom.`,read:false,created_at:nowISO()});
     const admins = await q.find(db.users,{is_admin:true});
-    for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'payout_request',title:`💸 Žiadosť o výplatu: ${u.name}`,body:`${credit.toFixed(2)} € referral kredit. Bankový účet: ${u.bank_account||'—'}`,read:false,created_at:nowISO()});
-    res.json({ok:true, requested:credit, message:`Žiadosť o výplatu ${credit.toFixed(2)} € bola odoslaná.`});
+    for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'payout_request',title:`💸 Žiadosť o výplatu: ${u.name}`,body:`${amount.toFixed(2)} € · IBAN ${iban} · ${name}`,read:false,created_at:nowISO()});
+    res.json({ok:true, requested:amount, remaining, message:`Žiadosť o výplatu ${amount.toFixed(2)} € bola odoslaná.`});
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Darovať kredit inému členovi (z dostupného kreditu)
+app.post('/api/client/credit/gift', auth, async(req,res)=>{
+  try {
+    const u = await q.one(db.users,{_id:req.session.uid});
+    if(!u) return res.status(404).json({error:'Nenájdený'});
+    let amount = +parseFloat(req.body.amount); amount = +(amount||0).toFixed(2);
+    if(!(amount>0)) return res.status(400).json({error:'Zadaj sumu väčšiu ako 0 €.'});
+    const rq = String(req.body.recipient||'').trim();
+    if(!rq) return res.status(400).json({error:'Zadaj e-mail alebo meno príjemcu.'});
+    const esc=s=>String(s||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    let rcpt = await q.one(db.users,{email:new RegExp('^'+esc(rq)+'$','i')});
+    if(!rcpt){ const matches=(await q.find(db.users,{name:new RegExp(esc(rq),'i')})).filter(x=>x._id!==u._id); if(matches.length===1) rcpt=matches[0]; else if(matches.length>1) return res.status(400).json({error:'Viac zhôd mena — zadaj radšej e-mail príjemcu.'}); }
+    if(!rcpt) return res.status(404).json({error:'Príjemca nenájdený. Skús e-mail.'});
+    if(rcpt._id===u._id) return res.status(400).json({error:'Nemôžeš darovať kredit sám sebe 🙂'});
+    const pendComms = await q.find(db.commissions,{partner_id:u._id,status:'pending'});
+    const pendSum = +pendComms.reduce((s,c)=>s+(c.amount||0),0).toFixed(2);
+    const available = +((u.referral_credit||0) + pendSum).toFixed(2);
+    if(amount > available) return res.status(400).json({error:`Nemáš dosť kreditu. Dostupné: ${available.toFixed(2)} €.`});
+    await q.update(db.commissions,{partner_id:u._id,status:'pending'},{$set:{status:'paid',paid_at:nowISO()}},{multi:true});
+    await q.update(db.users,{_id:u._id},{$set:{ referral_credit:+(available-amount).toFixed(2) }});
+    await q.update(db.users,{_id:rcpt._id},{$set:{ referral_credit:+((rcpt.referral_credit||0)+amount).toFixed(2) }});
+    await q.insert(db.transactions,{type:'credit_gift', user_id:u._id, user_name:u.name, amount, payment_method:'credit', note:`Darček kreditu ${amount.toFixed(2)} € pre ${rcpt.name}`, status:'done', created_at:nowISO(), month:today().slice(0,7)});
+    await q.insert(db.notifications,{user_id:rcpt._id,type:'credit',title:`🎁 Dostal/a si ${amount.toFixed(2)} € kredit!`,body:`${u.name} ti daroval/a kredit. Použi ho na členstvo, permanentku, merch alebo súkromné hodiny.`,read:false,created_at:nowISO()});
+    await q.insert(db.notifications,{user_id:u._id,type:'credit',title:`Darček odoslaný 🎁`,body:`Daroval/a si ${amount.toFixed(2)} € kredit pre ${rcpt.name}.`,read:false,created_at:nowISO()});
+    res.json({ok:true, recipient:rcpt.name, amount});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
