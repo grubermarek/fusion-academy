@@ -757,6 +757,14 @@ function renderAdmin(){
       <span class="set-hint" style="margin-top:6px">🎁 Darček/migrácia = bez platby (napr. prenos z Glofoxu — už zaplatené). Hotovosť/karta = zaráta sa do tržieb + provízií. „Platné do" nastaví dokedy členstvo platí. Vstupy = pripočíta permanentkové vstupy na hodiny.</span>
     </div>
     <div class="set-row">
+      <span class="set-label">🎂 Narodeniny</span>
+      <div class="adm-hours">
+        <input type="date" id="admBday" value="${esc(a.birthday||'')}">
+        <button onclick="saveBirthday()">Uložiť</button>
+        <span class="set-hint">Zobrazí sa všetkým na Dashboarde v deň narodenín. Rok je jedno — počíta sa deň a mesiac.</span>
+      </div>
+    </div>
+    <div class="set-row">
       <span class="set-label">Odchodené hodiny (návštevy)</span>
       <div class="adm-hours">
         <input type="number" id="admHours" min="0" value="${a.visit_count||0}">
@@ -916,6 +924,12 @@ async function saveHours(){
 async function savePrivate(){
   const v=parseInt(document.getElementById('admPrivate').value)||0;
   if(await putAwards({private_hours:v})){ _awards.private_hours=v; alert('Uložené ✓ Obnovujem profil…'); location.reload(); }
+}
+async function saveBirthday(){
+  const v=document.getElementById('admBday').value||'';
+  const r=await fetch('/api/admin/users/'+encodeURIComponent(uid)+'/birthday',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({birthday:v})}).then(x=>x.json()).catch(()=>null);
+  if(r&&r.ok){ _awards.birthday=r.birthday; alert('Narodeniny uložené ✓'); }
+  else alert('Chyba: '+((r&&r.error)||'?'));
 }
 async function saveTaught(field,inputId){
   const v=parseInt(document.getElementById(inputId).value)||0;

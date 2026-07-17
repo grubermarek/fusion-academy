@@ -1781,11 +1781,22 @@ app.get('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
     referral_credit:+(u.referral_credit||0), referral_credit_pending:+(u.referral_credit_pending||0),
     single_entries:+(u.single_entries||0), free_credits:+(u.free_credits||0),
     is_trainer:(u.user_type==='trainer')||!!u.is_admin, taught_group_hours:u.taught_group_hours||0, taught_private_hours:u.taught_private_hours||0,
-    referrals:refCount, joined:(u.created_at||'').slice(0,10),
+    referrals:refCount, joined:(u.created_at||'').slice(0,10), birthday:u.birthday||'',
     achievements: computeAchievements(u, refCount, memberMonths),
     merch_owned: u.merch_owned||[], manual_achievements: u.manual_achievements||[],
     merch_list: Object.keys(MERCH_KEYWORDS),
     sponsor_id: u.sponsor_id||null, sponsor_name: sponsor?.name||null, sponsor_code: sponsor?.referral_code||null });
+});
+
+// Admin: nastaviť narodeniny klientovi (zobrazí sa na Dashboarde v deň narodenín)
+app.put('/api/admin/users/:id/birthday', adminAuth, async(req,res)=>{
+  try {
+    const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
+    const b=String(req.body.birthday||'');
+    const val = /^\d{4}-\d{2}-\d{2}$/.test(b) ? b : '';
+    await q.update(db.users,{_id:u._id},{$set:{birthday:val}});
+    res.json({ ok:true, birthday:val });
+  } catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // Admin: vyhľadať používateľa ako potenciálneho sponzora (meno/email/kód)
