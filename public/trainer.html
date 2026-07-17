@@ -809,7 +809,10 @@ async function loadSchedule(){
               <div class="cap-bar-bg"><div class="cap-bar-fill" style="width:${pct}%;background:${pct>80?'var(--red)':pct>50?'var(--orange)':'var(--green)'}"></div></div>
               <div class="cap-label">${c.confirmed}/${c.capacity}</div>
             </div>
-            <button class="btn-open-attendance"><i class="bi bi-clipboard-check"></i> Dochádzka</button>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+              <button class="btn-open-attendance"><i class="bi bi-clipboard-check"></i> Dochádzka</button>
+              <button onclick="event.stopPropagation();trCancelSession('${c._id}','${esc((c.name||'').replace(/'/g,''))}')" title="Zrušiť túto hodinu" style="background:none;border:1px solid rgba(229,115,115,.5);color:#e57373;border-radius:8px;padding:6px 10px;font-size:.78rem;cursor:pointer;white-space:nowrap"><i class="bi bi-x-circle"></i> Zrušiť</button>
+            </div>
           </div>
         </div>`;
       }).join('');
