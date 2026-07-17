@@ -168,7 +168,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
     <div class="group-links" data-group="partners">
       <a class="nav-link" href="#" onclick="show('partners')"><i class="bi bi-people me-2"></i>Partneri</a>
-      <a class="nav-link" href="#" onclick="show('addpartner')"><i class="bi bi-person-plus me-2"></i>Pridať partnera</a>
+      <a class="nav-link" href="#" onclick="show('addpartner')"><i class="bi bi-person-plus me-2"></i>Vytvoriť účet klienta</a>
       <a class="nav-link" href="#" onclick="show('commissions')"><i class="bi bi-cash-stack me-2"></i>Výplaty provízií</a>
     </div>
   </div>
@@ -384,7 +384,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- ADD PARTNER -->
   <div id="s-addpartner" class="section">
-    <h4 class="fw-bold mb-4">Pridať nového partnera</h4>
+    <h4 class="fw-bold mb-4">Vytvorenie nového účtu pre klienta</h4>
     <div class="row">
       <div class="col-md-6"><div class="card border-0 rounded-3 p-4">
         <div id="apMsg" class="alert d-none py-2 small"></div>
@@ -1508,7 +1508,11 @@ function showToast(msg,type='success'){
 }
 
 const GROUP_TITLES={home:'Domov',manage:'Správa',marketing:'Marketing',reports:'Financie & reporty',partners:'Partneri (MLM)'};
-const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',leads:'manage',crm:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',marketing:'marketing',campaigns:'marketing',automation:'marketing',churn:'marketing',finance:'reports',invoices:'reports',retention:'reports',accounting:'reports',trainers:'reports',payouts:'reports',refunds:'reports',alerts:'reports',exports:'reports',reset:'reports',audit:'reports',transactions:'reports',payments:'reports',partners:'partners',addpartner:'partners',commissions:'partners',leaderboard:'partners'};
+const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',
+  leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',
+  marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
+  finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',reset:'reports',
+  partners:'partners',addpartner:'partners',commissions:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('rail-'+g)?.classList.add('active');
@@ -3234,20 +3238,61 @@ async function loadPartners(){
 }
 function renderPartners(rows){
   document.getElementById('partnerTable').innerHTML=rows.map(p=>`<tr>
-    <td class="ps-3"><div class="fw-semibold">${p.name}</div><div class="text-muted" style="font-size:.72rem">${p.email}</div></td>
+    <td class="ps-3"><a href="/u/${p.id}" target="_blank" class="fw-semibold" style="color:#C9A84C;text-decoration:none" title="Otvoriť profil">${escHtml(p.name)} <i class="bi bi-box-arrow-up-right" style="font-size:.66rem;opacity:.6"></i></a><div class="text-muted" style="font-size:.72rem">${escHtml(p.email)}</div></td>
     <td><code class="small">${p.referral_code}</code></td>
     <td><span class="rank-badge">${p.rankBadge||''} ${p.rankName}</span></td>
-    <td class="small">${p.sponsor_name||'—'}</td>
-    <td>${eur(p.personal30)}</td><td>${p.teamSize}</td>
+    <td class="small">${escHtml(p.sponsor_name||'—')}</td>
+    <td>${eur(p.personal30)}</td>
+    <td><button class="btn btn-xs btn-outline-warning py-0 px-2" style="font-size:.72rem" onclick='openPartnerNet("${p.id}")' title="Zobraziť štruktúru">👥 ${p.teamSize}</button></td>
     <td><span class="badge ${p.active?'bg-success':'bg-secondary'}">${p.active?'Aktívny':'Neaktívny'}</span></td>
     <td class="d-flex gap-1 flex-wrap">
+      <button class="btn btn-sm btn-outline-info" onclick='openPartnerNet("${p.id}")' title="Štruktúra & obrat"><i class="bi bi-diagram-3"></i></button>
       <button class="btn btn-sm btn-outline-secondary" onclick='openEditPartner(${JSON.stringify(p)})' title="Upraviť"><i class="bi bi-pencil"></i></button>
       <button class="btn btn-sm ${p.active?'btn-outline-warning':'btn-outline-success'}" onclick='blockUser("${p._id||p.id}",${p.active})'>
         <i class="bi bi-${p.active?'lock':'unlock'}"></i>${p.active?' Blokovať':' Aktivovať'}
       </button>
-      <button class="btn btn-sm btn-outline-danger" onclick='deleteUser("${p._id||p.id}","${p.name}")' title="Zmazať"><i class="bi bi-trash"></i> Zmazať</button>
+      <button class="btn btn-sm btn-outline-danger" onclick='deleteUser("${p._id||p.id}","${escHtml((p.name||'').replace(/"/g,''))}")' title="Zmazať"><i class="bi bi-trash"></i></button>
     </td>
   </tr>`).join('')||'<tr><td colspan="8" class="text-center text-muted py-4">Žiadni partneri</td></tr>';
+}
+async function openPartnerNet(id){
+  const body=document.getElementById('pnetBody');
+  body.innerHTML='<div class="text-center py-4 text-muted">Načítavam…</div>';
+  new bootstrap.Modal(document.getElementById('partnerNetModal')).show();
+  const d=await api('/api/admin/partner-network/'+id);
+  if(!d||!d.ok){ body.innerHTML='<div class="text-danger">Chyba pri načítaní.</div>'; return; }
+  const p=d.profile;
+  document.getElementById('pnetName').textContent=p.name;
+  await loadUsersLite();
+  const sponsorOpts='<option value="">— Žiadny (koreň) —</option>'+_usersLite.filter(x=>x.id!==id).map(x=>`<option value="${x.id}" ${p.sponsor_id===x.id?'selected':''}>${escHtml(x.name)}${x.referral_code?' ('+x.referral_code+')':''}</option>`).join('');
+  const kpi=(l,v,c)=>`<div style="flex:1 1 130px;min-width:120px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:10px 13px"><div class="text-muted" style="font-size:.62rem;text-transform:uppercase">${l}</div><div class="fw-bold" style="font-size:1.15rem;color:${c||'#EAE3D5'}">${v}</div></div>`;
+  let html=`<div class="mb-3 small text-muted">Kód <code>${p.referral_code}</code> · Rank ${p.rankBadge||''} ${escHtml(p.rankName)} · <a href="/u/${p.id}" target="_blank" style="color:#C9A84C">otvoriť profil →</a></div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+      ${kpi('Priami',d.direct_refs,'#C9A84C')}${kpi('Tím spolu',d.team_size,'#C9A84C')}${kpi('Obrat tímu',d.team_turnover.toFixed(0)+' €','#4ade80')}${kpi('Osobný obrat',p.personal_turnover.toFixed(0)+' €','#EAE3D5')}
+    </div>
+    <div class="mb-3 p-2 rounded" style="background:#161616;border:1px solid #2a2a2a">
+      <label class="form-label small text-muted mb-1">Sponzor (kto ho priviedol)</label>
+      <div class="d-flex gap-2">
+        <select id="pnetSponsor" class="form-select form-select-sm bg-dark text-light border-secondary">${sponsorOpts}</select>
+        <button class="btn btn-sm btn-warning" onclick="savePartnerSponsor('${id}')">Uložiť sponzora</button>
+      </div>
+      <div class="form-text">Zmena sa prejaví v celej štruktúre a províziách.</div>
+    </div>`;
+  html+=d.lines.map(L=>`
+    <div class="mb-2">
+      <div class="d-flex justify-content-between align-items-center" style="border-bottom:1px solid #2a2a2a;padding-bottom:4px;margin-bottom:6px">
+        <b style="color:#C9A84C">${L.line}. línia</b>
+        <span class="small text-muted">${L.count} ľudí · obrat ${L.turnover.toFixed(0)} € · provízia ${(L.rate*100).toFixed(0)}%</span>
+      </div>
+      ${L.members.length?`<div class="table-responsive"><table class="table table-dark table-sm mb-0" style="font-size:.78rem"><tbody>${L.members.map(m=>`<tr><td><a href="/u/${m.id}" target="_blank" style="color:#C9A84C;text-decoration:none">${escHtml(m.name)}</a></td><td class="text-muted small">${m.membership?'<span class="badge bg-success">'+escHtml(m.membership)+'</span>':'—'}</td><td class="text-muted small">od ${m.joined}</td><td class="text-end">${m.turnover.toFixed(0)} €</td></tr>`).join('')}</tbody></table></div>`:'<div class="text-muted small">Prázdna línia.</div>'}
+    </div>`).join('');
+  body.innerHTML=html;
+}
+async function savePartnerSponsor(id){
+  const sponsor_id=document.getElementById('pnetSponsor').value||null;
+  const r=await api('/api/admin/users/'+id+'/sponsor',{method:'PUT',body:JSON.stringify({sponsor_id})});
+  if(r?.ok){ showToast('Sponzor zmenený ✓','success'); openPartnerNet(id); loadPartners(); }
+  else showToast('Chyba: '+(r?.error||'?'),'error');
 }
 async function blockUser(id, isActive){
   const action=isActive?'blokovať':'odblokovať';
@@ -3337,7 +3382,7 @@ async function addPartner(){
   const msg=document.getElementById('apMsg');msg.className='alert d-none py-2 small';
   const pwd=document.getElementById('apPwd').value;
   if(pwd.length<6){msg.textContent='Heslo min. 6 znakov';msg.className='alert alert-danger py-2 small';return;}
-  const r=await api('/api/admin/partners',{method:'POST',body:JSON.stringify({name:document.getElementById('apName').value.trim(),email:document.getElementById('apEmail').value.trim(),password:pwd,phone:document.getElementById('apPhone').value.trim(),sponsor_id:document.getElementById('apSponsor').value||null,bank_account:document.getElementById('apBank').value.trim()})});
+  const r=await api('/api/admin/partners',{method:'POST',body:JSON.stringify({name:document.getElementById('apName').value.trim(),email:document.getElementById('apEmail').value.trim(),password:pwd,phone:document.getElementById('apPhone').value.trim(),sponsor_id:document.getElementById('apSponsor').value||null,bank_account:document.getElementById('apBank').value.trim(),user_type:'client'})});
   if(!r)return;
   if(r.ok){msg.textContent=`✅ Partner vytvorený! Referral kód: ${r.referral_code}`;msg.className='alert alert-success py-2 small';['apName','apEmail','apPwd','apPhone','apBank'].forEach(id=>document.getElementById(id).value='');}
   else{msg.textContent=r.error||'Chyba';msg.className='alert alert-danger py-2 small';}
@@ -3917,6 +3962,19 @@ document.addEventListener('click', e => {
     </div>
   </div>
 </div>
+<!-- Štruktúra partnera (5 línií + obrat) -->
+<div class="modal fade" id="partnerNetModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-diagram-3 me-2 text-info"></i>Štruktúra · <span id="pnetName"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="pnetBody"></div>
+    </div>
+  </div>
+</div>
+
 <!-- Poznámka k leadovi / klientovi -->
 <div class="modal fade" id="leadNoteModal" tabindex="-1">
   <div class="modal-dialog">

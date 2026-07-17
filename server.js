@@ -2113,14 +2113,52 @@ app.get('/api/admin/partners', adminAuth, async(req,res)=>{
   res.json(result);
 });
 
+// Detail štruktúry partnera pre adminov — 5 línií, koľko ľudí a s akým obratom
+app.get('/api/admin/partner-network/:id', adminAuth, async(req,res)=>{
+  try {
+    const target=await q.one(db.users,{_id:req.params.id});
+    if(!target) return res.status(404).json({error:'Nenájdený'});
+    const allU=await q.find(db.users,{});
+    const uMap=Object.fromEntries(allU.map(u=>[u._id,u]));
+    const membs=(await q.find(db.memberships,{})).filter(m=>!m._type);
+    const now=new Date().toISOString();
+    const activeMemb={}; membs.forEach(m=>{ if((m.expires_at||'')>now) activeMemb[m.user_id]=m.plan_name||m.plan_id; });
+    // obrat na osobu (all-time zaplatené)
+    const turnover={};
+    (await q.find(db.transactions,{})).forEach(t=>{ if(t.user_id&&+t.amount>0) turnover[t.user_id]=(turnover[t.user_id]||0)+ +t.amount; });
+    (await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status)).forEach(p=>{ if(p.user_id&&+p.amount>0) turnover[p.user_id]=(turnover[p.user_id]||0)+ +p.amount; });
+    const lines=[[],[],[],[],[]]; let frontier=[target._id]; const seen=new Set([target._id]);
+    for(let line=0;line<5;line++){ const next=[];
+      for(const pid of frontier){ for(const k of allU.filter(u=>u.sponsor_id===pid && !u.is_admin && !u.is_child)){
+        if(seen.has(k._id)) continue; seen.add(k._id);
+        lines[line].push({ id:k._id, name:k.name, email:k.email||'', membership:activeMemb[k._id]||null,
+          joined:(k.created_at||'').slice(0,10), turnover:+(+(turnover[k._id]||0)).toFixed(2), user_type:k.user_type||'client' });
+        next.push(k._id);
+      } } frontier=next;
+    }
+    const linesOut=lines.map((members,i)=>({ line:i+1, rate:(LINE_RATES&&LINE_RATES[i])||0, count:members.length,
+      turnover:+members.reduce((s,m)=>s+m.turnover,0).toFixed(2), members }));
+    res.json({ ok:true,
+      profile:{ id:target._id, name:target.name, email:target.email, referral_code:target.referral_code||'',
+        rank:target.rank||1, rankName:RANKS[(target.rank||1)-1]?.name||'', rankBadge:RANKS[(target.rank||1)-1]?.badge||'',
+        sponsor_id:target.sponsor_id||null, sponsor_name:(uMap[target.sponsor_id]?.name)||'—',
+        personal_turnover:+(+(turnover[target._id]||0)).toFixed(2) },
+      lines:linesOut, direct_refs:lines[0].length, team_size:lines.reduce((s,l)=>s+l.length,0),
+      team_turnover:+linesOut.reduce((s,l)=>s+l.turnover,0).toFixed(2) });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.post('/api/admin/partners', adminAuth, async(req,res)=>{
   const{name,email,password,phone,sponsor_id,bank_account,user_type}=req.body;
   if(!name||!email||!password) return res.status(400).json({error:'Meno, email a heslo sú povinné'});
   const base=name.split(' ')[0].toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8);
   let code=base+Math.floor(10+Math.random()*90);
   while(await q.one(db.users,{referral_code:code})) code=base+Math.floor(100+Math.random()*900);
+  // Bez sponzora → pod zakladateľa (konzistentné so samo-registráciou)
+  let sid = sponsor_id||null;
+  if(!sid){ const founder=await q.one(db.users,{email:'gruber.marek@gmail.com'}); if(founder && founder.email!==email.toLowerCase().trim()) sid=founder._id; }
   try {
-    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',referral_code:code,sponsor_id:sponsor_id||null,bank_account:bank_account||'',rank:1,is_admin:false,active:true,user_type:user_type||'partner',notes:'',created_at:today()});
+    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',referral_code:code,sponsor_id:sid,bank_account:bank_account||'',rank:1,is_admin:false,active:true,user_type:user_type||'partner',notes:'',created_at:today()});
     res.json({ok:true,id:u._id,referral_code:code});
   } catch(e){
     if(e.message?.includes('unique')) return res.status(400).json({error:'Email je už zaregistrovaný'});
