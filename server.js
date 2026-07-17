@@ -2935,9 +2935,17 @@ app.get('/api/admin/orders', adminAuth, async(req,res)=>{
 
 app.put('/api/admin/orders/:id', adminAuth, async(req,res)=>{
   try {
-    const{status}=req.body;
+    const{status, take}=req.body;
     const order=await q.one(db.orders,{_id:req.params.id});
     if(!order) return res.status(404).json({error:'Nenájdená'});
+    // „Prevziať" — priradí objednávku aktuálnemu adminovi (kto to vybavuje)
+    if(take){
+      const me=await q.one(db.users,{_id:req.session.uid});
+      await q.update(db.orders,{_id:req.params.id},{$set:{handled_by:req.session.uid, handled_by_name:me?.name||'', handled_at:nowISO()}});
+      await auditLog(req,'order_take',order.order_number,{},{by:me?.name},'');
+      if(!status) return res.json({ok:true, handled_by_name:me?.name||''});
+    }
+    if(!status) return res.json({ok:true});
     await q.update(db.orders,{_id:req.params.id},{$set:{status,updated_at:nowISO(),...(status==='paid'?{paid_at:nowISO()}:{})}});
     if(status==='paid'&&order.partner_id&&order.status!=='paid'){
       for(const item of order.items){

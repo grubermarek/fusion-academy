@@ -130,8 +130,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <div class="nav-group-label">Prevádzka</div>
       <a class="nav-link" href="#" onclick="show('classes')"><i class="bi bi-calendar3 me-2"></i>Hodiny / Stream</a>
       <a class="nav-link" href="#" onclick="show('bookings')"><i class="bi bi-calendar-check me-2"></i>Rezervácie</a>
-      <a class="nav-link" href="#" onclick="show('orders')"><i class="bi bi-bag-check me-2"></i>Objednávky <span id="pendingBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
-      <a class="nav-link" href="#" onclick="show('products')"><i class="bi bi-box-seam me-2"></i>Produkty</a>
+      <a class="nav-link" href="#" onclick="show('products')"><i class="bi bi-box-seam me-2"></i>Produkty & objednávky <span id="pendingBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('rentals')"><i class="bi bi-building me-2"></i>Prenájmy</a>
       <a class="nav-link" href="#" onclick="show('articles')"><i class="bi bi-newspaper me-2"></i>Blog / Články</a>
     </div>
@@ -216,30 +215,9 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- ORDERS -->
   <div id="s-orders" class="section">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-      <h4 class="fw-bold mb-0">Objednávky z e-shopu</h4>
-      <div class="d-flex gap-2">
-        <select class="form-select form-select-sm" id="orderFilter" onchange="loadOrders()" style="width:160px">
-          <option value="">Všetky</option>
-          <option value="pending">Čakajúce</option>
-          <option value="confirmed">Potvrdené</option>
-          <option value="paid">Zaplatené</option>
-          <option value="cancelled">Zrušené</option>
-        </select>
-        <button class="btn btn-sm btn-brand" onclick="loadOrders()"><i class="bi bi-arrow-clockwise"></i></button>
-      </div>
-    </div>
-    <div class="card border-0 rounded-3 p-0">
-      <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-light"><tr>
-            <th class="ps-3">Č. objednávky</th><th>Klient</th><th>Položky</th>
-            <th>Suma</th><th>Partner</th><th>Mesto</th><th>Platba</th><th>Stav</th><th>Dátum</th><th></th>
-          </tr></thead>
-          <tbody id="ordersTable"></tbody>
-        </table>
-      </div>
-    </div>
+    <h4 class="fw-bold mb-3">Objednávky</h4>
+    <p class="text-muted">Objednávky sú teraz spolu s <b>Produktmi</b> — kto si čo kúpil, stav a kto ich prevzal.</p>
+    <button class="btn btn-brand" onclick="show('products')"><i class="bi bi-box-seam me-1"></i>Otvoriť Produkty & objednávky</button>
   </div>
 
   <!-- SALE -->
@@ -375,6 +353,32 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
           <input type="number" class="form-control form-control-sm" id="np-comm" value="12" step="1"></div>
         <button class="btn btn-brand btn-sm w-100" onclick="addProduct()">Pridať produkt</button>
       </div></div>
+    </div>
+
+    <!-- Objednávky z e-shopu (kto si čo kúpil) -->
+    <div class="d-flex justify-content-between align-items-center mt-4 mb-3">
+      <h5 class="fw-bold mb-0"><i class="bi bi-bag-check me-2 text-warning"></i>Objednávky <span class="text-muted small fw-normal">— kto si čo kúpil</span></h5>
+      <div class="d-flex gap-2">
+        <select class="form-select form-select-sm" id="orderFilter" onchange="loadOrders()" style="width:160px">
+          <option value="">Všetky</option>
+          <option value="pending">Čakajúce</option>
+          <option value="confirmed">Potvrdené</option>
+          <option value="paid">Zaplatené</option>
+          <option value="cancelled">Zrušené</option>
+        </select>
+        <button class="btn btn-sm btn-brand" onclick="loadOrders()"><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
+    </div>
+    <div class="card border-0 rounded-3 p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light"><tr>
+            <th class="ps-3">Č. objednávky</th><th>Klient</th><th>Položky</th>
+            <th>Suma</th><th>Partner</th><th>Mesto</th><th>Platba</th><th>Stav</th><th>Prevzal(a)</th><th>Dátum</th><th></th>
+          </tr></thead>
+          <tbody id="ordersTable"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -3102,6 +3106,7 @@ async function loadOrders(){
       <td class="small">${o.city||'—'}</td>
       <td><span class="badge bg-light text-dark border">${{cash:'Hotovosť',transfer:'Prevod',card:'Karta'}[o.payment_method]||o.payment_method}</span></td>
       <td><span class="badge ${STATUS_CLASSES[o.status]||'bg-secondary'} rounded-pill">${STATUS_LABELS[o.status]||o.status}</span></td>
+      <td class="small">${o.handled_by_name?`<span class="badge bg-dark border border-secondary text-warning" title="Prevzal(a) ${o.handled_at?new Date(o.handled_at).toLocaleDateString('sk-SK'):''}">👤 ${escHtml(o.handled_by_name)}</span>`:`<button class="btn btn-xs btn-outline-warning" style="font-size:.7rem;padding:2px 8px" onclick="takeOrder('${o._id}')">Prevziať</button>`}</td>
       <td class="text-muted small">${o.created_at.slice(0,10)}</td>
       <td>
         <div class="d-flex gap-1 flex-wrap">
@@ -3111,7 +3116,7 @@ async function loadOrders(){
         </div>
         ${o.notes?`<div class="text-muted mt-1" style="font-size:.7rem">📝 ${o.notes}</div>`:''}
       </td>
-    </tr>`).join('')||'<tr><td colspan="10" class="text-center text-muted py-4">Žiadne objednávky</td></tr>';
+    </tr>`).join('')||'<tr><td colspan="11" class="text-center text-muted py-4">Žiadne objednávky</td></tr>';
 }
 
 async function updateOrder(id,status){
@@ -3119,6 +3124,10 @@ async function updateOrder(id,status){
   if(!confirm(labels[status]||'Zmeniť stav?'))return;
   const r=await api('/api/admin/orders/'+id,{method:'PUT',body:JSON.stringify({status})});
   if(r?.ok){loadOrders();loadOverview();}else alert(r?.error||'Chyba');
+}
+async function takeOrder(id){
+  const r=await api('/api/admin/orders/'+id,{method:'PUT',body:JSON.stringify({take:true})});
+  if(r?.ok){ showToast('Objednávku si prevzal(a) ✓','success'); loadOrders(); } else alert(r?.error||'Chyba');
 }
 
 // ── SALE ──
@@ -3271,6 +3280,7 @@ async function deleteTx(id){if(!confirm('Zmazať predaj a jeho provízie?'))retu
 async function loadProducts(){
   const rows=await api('/api/products');if(!rows)return;
   document.getElementById('prodTable').innerHTML=rows.map(p=>`<tr><td class="ps-3 fw-semibold">${p.emoji||''} ${p.name}</td><td><span class="badge bg-light text-dark border">${p.cat}</span></td><td>${eur(p.price)}</td><td>${(p.commission_rate*100).toFixed(0)}%</td><td><span class="badge ${p.active?'bg-success':'bg-secondary'}">${p.active?'Áno':'Nie'}</span></td></tr>`).join('');
+  loadOrders();
 }
 async function addProduct(){
   const msg=document.getElementById('prodMsg');msg.className='alert d-none py-2 small';
