@@ -535,6 +535,9 @@ async function seedData() {
     if(renamed) console.log(`✅  Premenovaných ${renamed} hodín „Zumba Fitness" → „Zumba"`); }
   // Migration: Silver membership product price 65 → 75 (idempotent)
   await q.update(db.products,{name:'Členstvo SILVER',price:65},{$set:{price:75}},{multi:true});
+  // Migration: jednotná kapacita 30 pre všetky hodiny v mestách (online necháme na 100)
+  { const capUp = await q.update(db.classes,{category:{$ne:'Online'},capacity:{$ne:30}},{$set:{capacity:30}},{multi:true});
+    if(capUp) console.log(`✅  Kapacita nastavená na 30 pre ${capUp} hodín`); }
 
   // Herbalife products (add even if other products already exist)
   if(await q.count(db.products,{cat:'Herbalife'})===0){
@@ -3179,7 +3182,7 @@ app.post('/api/admin/classes', adminAuth, async(req,res)=>{
   const{name,emoji,category,instructor,instructor_id,location,day_of_week,time_start,time_end,capacity,level,description,price,color}=req.body;
   if(!name||day_of_week===undefined||!time_start) return res.status(400).json({error:'Vyplňte povinné polia'});
   const ins=await resolveInstructor(instructor_id,instructor);
-  const c=await q.insert(db.classes,{name,emoji:emoji||'💃',category:category||'Tanec',instructor:ins.instructor,instructor_id:ins.instructor_id,location:location||'Banská Bystrica',day_of_week:+day_of_week,time_start,time_end:time_end||'',capacity:+capacity||20,level:level||'Všetky úrovne',description:description||'',price:+price||10,color:color||'#e94560',active:true});
+  const c=await q.insert(db.classes,{name,emoji:emoji||'💃',category:category||'Tanec',instructor:ins.instructor,instructor_id:ins.instructor_id,location:location||'Banská Bystrica',day_of_week:+day_of_week,time_start,time_end:time_end||'',capacity:+capacity||30,level:level||'Všetky úrovne',description:description||'',price:+price||10,color:color||'#e94560',active:true});
   res.json({ok:true,id:c._id});
 });
 

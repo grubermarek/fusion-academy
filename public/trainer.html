@@ -957,13 +957,24 @@ function renderAttendees(list){
     else if(hasSingle) badgeHtml += `<span class="att-badge badge-single"><i class="bi bi-ticket-perforated-fill"></i>${b.single_entries} vstup(ov)</span>`;
     else badgeHtml += `<span class="att-badge badge-noplan">Bez plánu</span>`;
 
+    const canProfile = b.user_id && !b.is_child_booking;
+    const nameHtml = canProfile
+      ? `<a class="att-name" href="/u/${b.user_id}" target="_blank" style="color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:5px">${esc(b.name||'—')} <i class="bi bi-box-arrow-up-right" style="font-size:.65rem;opacity:.55"></i></a>`
+      : `<div class="att-name">${esc(b.name||'—')}</div>`;
+    const hasPhone = b.phone && b.phone!=='—';
+    const phoneHtml = hasPhone
+      ? `<a href="tel:${esc(String(b.phone).replace(/\s+/g,''))}" style="color:var(--gold);text-decoration:none">📞 ${esc(b.phone)}</a>`
+      : '';
+    const avatarHtml = canProfile
+      ? `<a href="/u/${b.user_id}" target="_blank" class="att-avatar" style="text-decoration:none;color:inherit">${initials}</a>`
+      : `<div class="att-avatar">${initials}</div>`;
     return `<div class="attendee-item">
-      <div class="att-avatar">${initials}</div>
+      ${avatarHtml}
       <div class="att-info">
-        <div class="att-name">${esc(b.name||'—')}</div>
+        ${nameHtml}
         <div class="att-sub">
           <span>${esc(b.email||'—')}</span>
-          ${b.phone?`<span>📞 ${esc(b.phone)}</span>`:''}
+          ${phoneHtml}
           <span>👣 ${b.visit_count||0} návštev</span>
           ${badgeHtml}
         </div>
