@@ -1470,10 +1470,11 @@ async function loadSpotlight(){
     html+=`<div class="sl-card sl-hero" style="position:relative;cursor:pointer" onclick="location.href='/u/${c.id}'" title="Zobraziť profil">
       <button onclick="event.stopPropagation();showColmInfo()" title="Čo je Klient mesiaca?"
         style="position:absolute;top:10px;right:12px;background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.3);color:var(--gold);width:26px;height:26px;border-radius:50%;cursor:pointer;font-weight:800;font-size:.8rem;line-height:1;z-index:2">?</button>
-      <div class="sl-label">🏆 Klient mesiaca</div>
+      <div class="sl-label">🏆 Klientka mesiaca</div>
       <div class="sl-row">${slAvatar(c.avatar,c.name)}
         <div><div class="sl-name">${escHtml(c.name)} ${c.badge?.emoji||''} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></div>
           <div class="sl-why">Ďakujeme, že si srdcom našej komunity! 💛</div>
+          ${d.reward_month?`<div class="sl-why" style="color:var(--gold);font-weight:600">🎁 Výhra: ${escHtml(d.reward_month)}</div>`:''}
           <div class="sl-stats">
             <span onclick="event.stopPropagation();showPointsBreakdown(_colmWinner.breakdown,_colmWinner.points,_colmWinner.name)"
               style="display:inline-flex;align-items:center;gap:9px;cursor:pointer;background:linear-gradient(102deg,rgba(201,168,76,.18),rgba(201,168,76,.07));border:1px solid rgba(201,168,76,.45);border-radius:12px;padding:7px 13px;transition:.15s"
@@ -1484,6 +1485,18 @@ async function loadSpotlight(){
               <span style="color:var(--gold);font-size:.8rem;font-weight:600;display:inline-flex;align-items:center;gap:3px">Rozpis <i class="bi bi-chevron-right" style="font-size:.68rem"></i></span>
             </span>
           </div>
+        </div>
+      </div></div>`;
+  }
+  if(d.clientOfYear){
+    const c=d.clientOfYear;
+    html+=`<div class="sl-card sl-hero" style="position:relative;cursor:pointer;border-color:rgba(201,168,76,.5)" onclick="location.href='/u/${c.id}'" title="Zobraziť profil">
+      <div class="sl-label">👑 Klientka roka ${d.year||''}</div>
+      <div class="sl-row">${slAvatar(c.avatar,c.name)}
+        <div><div class="sl-name">${escHtml(c.name)} ${c.badge?.emoji||''} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></div>
+          <div class="sl-why">Najviac bodov za celý rok — legenda komunity! 👑</div>
+          ${d.reward_year?`<div class="sl-why" style="color:var(--gold);font-weight:600">🎁 Výhra: ${escHtml(d.reward_year)}</div>`:''}
+          <div class="sl-stats"><span style="display:inline-flex;align-items:center;gap:6px;background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.35);border-radius:12px;padding:6px 12px"><span style="font-weight:800;color:var(--gold)">⭐ ${c.points||0}</span><span style="color:var(--muted);font-size:.8rem">bodov za rok</span></span></div>
         </div>
       </div></div>`;
   }

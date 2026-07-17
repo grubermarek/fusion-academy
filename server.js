@@ -120,6 +120,7 @@ const db = {
   ticket_msgs:  new Datastore({ filename: path.join(DATA_DIR, 'ticket_msgs.db'),  autoload: true }),
   meal_plans:   new Datastore({ filename: path.join(DATA_DIR, 'meal_plans.db'),   autoload: true }),
   class_cancellations: new Datastore({ filename: path.join(DATA_DIR, 'class_cancellations.db'), autoload: true }),
+  settings:     new Datastore({ filename: path.join(DATA_DIR, 'settings.db'),     autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -6754,32 +6755,32 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
       .filter(u=>u.user_type!=='trainer' && !u.is_child && !u.anonymous && !(u.imported && !u.claimed));
     const uName = Object.fromEntries(users.map(u=>[u._id,u]));
 
-    // referrals this month per sponsor
-    const newThisMonth = (await q.find(db.users,{})).filter(u=>(u.created_at||'').startsWith(monthStr) && u.sponsor_id);
-    const refCount = {}; newThisMonth.forEach(u=>{ refCount[u.sponsor_id]=(refCount[u.sponsor_id]||0)+1; });
-
-    // attended hours this month per user
+    const yearStr = today().slice(0,4);
+    const allUsers = await q.find(db.users,{});
     const bookings = await q.find(db.bookings,{});
-    const attCount = {}, onlineCount = {};
-    bookings.forEach(b=>{
-      const d=b.booking_date||(b.created_at||'').slice(0,10);
-      if((d||'').startsWith(monthStr) && ['attended','confirmed'].includes(b.status) && b.user_id){
-        const on = /online/i.test(b.class_name||'')||/online/i.test(b.class_location||'')||b.online===true;
-        if(on) onlineCount[b.user_id]=(onlineCount[b.user_id]||0)+1;
-        else attCount[b.user_id]=(attCount[b.user_id]||0)+1;
-      }
-    });
-    // active membership per user (akékoľvek aktívne členstvo)
     const activeMems = await q.find(db.memberships,{status:'active'});
     const memActive = {}, memName = {};
     activeMems.forEach(m=>{ if(!m.expires_at || m.expires_at>=today()){ memActive[m.user_id]=true; memName[m.user_id]=MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'; } });
 
-    // Full points score — highest total wins
-    let winner=null, best=-1;
-    for(const u of users){
-      const bd = buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null }, monthStr);
-      if(bd.total>0 && bd.total>best){ best=bd.total; winner={ id:u._id, name:u.name, avatar:u.avatar||null, refs:refCount[u._id]||0, hours:attCount[u._id]||0, score:bd.total, points:bd.total, breakdown:bd.items, badge:getMemberBadge(u.created_at) }; }
-    }
+    // Víťaz za dané obdobie (prefix YYYY-MM alebo YYYY)
+    const winnerFor = (prefix)=>{
+      const refCount={}; allUsers.forEach(u=>{ if((u.created_at||'').startsWith(prefix) && u.sponsor_id) refCount[u.sponsor_id]=(refCount[u.sponsor_id]||0)+1; });
+      const attCount={}, onlineCount={};
+      bookings.forEach(b=>{ const d=b.booking_date||(b.created_at||'').slice(0,10);
+        if((d||'').startsWith(prefix) && ['attended','confirmed'].includes(b.status) && b.user_id){
+          const on=/online/i.test(b.class_name||'')||/online/i.test(b.class_location||'')||b.online===true;
+          if(on) onlineCount[b.user_id]=(onlineCount[b.user_id]||0)+1; else attCount[b.user_id]=(attCount[b.user_id]||0)+1;
+        } });
+      let w=null, best=-1;
+      for(const u of users){
+        const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null }, prefix);
+        if(bd.total>0 && bd.total>best){ best=bd.total; w={ id:u._id, name:u.name, avatar:u.avatar||null, refs:refCount[u._id]||0, hours:attCount[u._id]||0, score:bd.total, points:bd.total, breakdown:bd.items, badge:getMemberBadge(u.created_at) }; }
+      }
+      return w;
+    };
+    const winner = winnerFor(monthStr);
+    const winnerYear = winnerFor(yearStr);
+    const rewardsCfg = (await q.one(db.settings,{key:'rewards'}))?.value || {};
 
     // birthdays & namedays today (non-anonymous)
     const todayName = SK_NAMEDAYS[mmdd] || '';
@@ -6790,9 +6791,26 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
       const fn = stripDia(firstName(u.name));
       if(fn && nameTargets.includes(fn)) namedays.push({name:u.name, avatar:u.avatar||null});
     }
-    res.json({ month: monthStr, today_nameday: todayName,
-      clientOfMonth: winner, birthdays, namedays,
+    res.json({ month: monthStr, year: yearStr, today_nameday: todayName,
+      clientOfMonth: winner, clientOfYear: winnerYear,
+      reward_month: rewardsCfg.month || '', reward_year: rewardsCfg.year || '',
+      birthdays, namedays,
       me_anonymous: !!(await q.one(db.users,{_id:req.session.uid}))?.anonymous });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Ceny za klientku mesiaca/roka — admin nastaví, klientky vidia
+app.get('/api/admin/rewards', adminAuth, async(req,res)=>{
+  const cfg=(await q.one(db.settings,{key:'rewards'}))?.value || {};
+  res.json({ ok:true, month:cfg.month||'', year:cfg.year||'' });
+});
+app.put('/api/admin/rewards', adminAuth, async(req,res)=>{
+  try {
+    const value={ month:String(req.body.month||'').slice(0,200), year:String(req.body.year||'').slice(0,200) };
+    const ex=await q.one(db.settings,{key:'rewards'});
+    if(ex) await q.update(db.settings,{key:'rewards'},{$set:{value, updated_at:nowISO()}});
+    else await q.insert(db.settings,{key:'rewards', value, created_at:nowISO()});
+    res.json({ ok:true });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
