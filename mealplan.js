@@ -9,56 +9,56 @@ function norm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[
 // kcal a protein sú približné hodnoty na porciu.
 const FOODS = [
   // ─── RAŇAJKY ───────────────────────────────────────────────────────────────
-  {slot:'ranajky', name:'Ovsená kaša s ovocím a orechami', kcal:380, protein:12, veg:true, vegan:true, tags:['lepok','orechy'], desc:'Ovsené vločky, banán, čučoriedky, vlašské orechy, škorica'},
-  {slot:'ranajky', name:'Grécky jogurt s granolou a medom', kcal:340, protein:20, veg:true, vegan:false, tags:['laktoza','lepok','orechy'], desc:'Biely grécky jogurt, domáca granola, med, čerstvé ovocie'},
-  {slot:'ranajky', name:'Praženica z 3 vajec so zeleninou', kcal:320, protein:22, veg:true, vegan:false, tags:['vajcia'], desc:'Vajcia, paprika, špenát, cherry paradajky, trocha olivového oleja'},
-  {slot:'ranajky', name:'Celozrnný toast s avokádom a vajcom', kcal:400, protein:18, veg:true, vegan:false, tags:['lepok','vajcia'], desc:'Celozrnné pečivo, avokádo, pošírované vajce, reďkovka'},
-  {slot:'ranajky', name:'Tvarohová pomazánka s ražným chlebom', kcal:330, protein:24, veg:true, vegan:false, tags:['laktoza','lepok'], desc:'Nízkotučný tvaroh, pažítka, reďkovka, ražný chlieb'},
-  {slot:'ranajky', name:'Proteínové lievance s ovocím', kcal:390, protein:26, veg:true, vegan:false, tags:['lepok','vajcia','laktoza'], desc:'Ovsená múka, tvaroh, vajce, banán, javorový sirup'},
-  {slot:'ranajky', name:'Chia puding s kokosovým mliekom', kcal:300, protein:9, veg:true, vegan:true, tags:['orechy'], desc:'Chia semienka, kokosové mlieko, mango, kokosové lupienky'},
-  {slot:'ranajky', name:'Vločky s rastlinným mliekom a arašidmi', kcal:360, protein:14, veg:true, vegan:true, tags:['lepok','orechy'], desc:'Ovsené vločky, sójové/mandľové mlieko, arašidové maslo, jablko'},
-  {slot:'ranajky', name:'Šunkovo-syrový omeleta wrap', kcal:410, protein:28, veg:false, vegan:false, tags:['vajcia','laktoza','lepok'], desc:'Vajcia, chudá šunka, syr, celozrnná tortilla, rukola'},
+  {slot:'ranajky', name:'Ovsená kaša s ovocím a orechami', kcal:380, protein:12, veg:true, vegan:true, tags:['lepok','orechy'], desc:'Ovsené vločky 60 g, banán 100 g, čučoriedky 50 g, vlašské orechy 15 g, škorica'},
+  {slot:'ranajky', name:'Grécky jogurt s granolou a medom', kcal:340, protein:20, veg:true, vegan:false, tags:['laktoza','lepok','orechy'], desc:'Grécky jogurt 200 g, granola 40 g, med 15 g, čerstvé ovocie 80 g'},
+  {slot:'ranajky', name:'Praženica z 3 vajec so zeleninou', kcal:320, protein:22, veg:true, vegan:false, tags:['vajcia'], desc:'Vajcia 3 ks (~165 g), paprika 60 g, špenát 30 g, cherry paradajky 60 g, olivový olej 5 g'},
+  {slot:'ranajky', name:'Celozrnný toast s avokádom a vajcom', kcal:400, protein:18, veg:true, vegan:false, tags:['lepok','vajcia'], desc:'Celozrnné pečivo 60 g, avokádo 70 g, vajce 1 ks (~55 g), reďkovka 30 g'},
+  {slot:'ranajky', name:'Tvarohová pomazánka s ražným chlebom', kcal:330, protein:24, veg:true, vegan:false, tags:['laktoza','lepok'], desc:'Nízkotučný tvaroh 150 g, pažítka, reďkovka 40 g, ražný chlieb 70 g'},
+  {slot:'ranajky', name:'Proteínové lievance s ovocím', kcal:390, protein:26, veg:true, vegan:false, tags:['lepok','vajcia','laktoza'], desc:'Ovsená múka 50 g, tvaroh 100 g, vajce 1 ks, banán 80 g, javorový sirup 15 g'},
+  {slot:'ranajky', name:'Chia puding s kokosovým mliekom', kcal:300, protein:9, veg:true, vegan:true, tags:['orechy'], desc:'Chia semienka 30 g, kokosové mlieko 150 ml, mango 80 g, kokosové lupienky 10 g'},
+  {slot:'ranajky', name:'Vločky s rastlinným mliekom a arašidmi', kcal:360, protein:14, veg:true, vegan:true, tags:['lepok','orechy'], desc:'Ovsené vločky 55 g, rastlinné mlieko 200 ml, arašidové maslo 15 g, jablko 100 g'},
+  {slot:'ranajky', name:'Šunkovo-syrový omeleta wrap', kcal:410, protein:28, veg:false, vegan:false, tags:['vajcia','laktoza','lepok'], desc:'Vajcia 2 ks, chudá šunka 50 g, syr 30 g, celozrnná tortilla 60 g, rukola'},
 
   // ─── DESIATA ───────────────────────────────────────────────────────────────
-  {slot:'desiata', name:'Jablko a hrsť mandlí', kcal:180, protein:6, veg:true, vegan:true, tags:['orechy'], desc:'Stredné jablko + 20 g mandlí'},
-  {slot:'desiata', name:'Grécky jogurt s čučoriedkami', kcal:150, protein:15, veg:true, vegan:false, tags:['laktoza'], desc:'Biely jogurt + hrsť čučoriedok'},
-  {slot:'desiata', name:'Proteínová tyčinka', kcal:200, protein:20, veg:true, vegan:false, tags:['laktoza','orechy'], desc:'Domáca alebo kupovaná proteínová tyčinka'},
-  {slot:'desiata', name:'Zeleninové tyčinky s hummusom', kcal:170, protein:7, veg:true, vegan:true, tags:['soja'], desc:'Mrkva, uhorka, paprika + hummus'},
-  {slot:'desiata', name:'Banán s arašidovým maslom', kcal:210, protein:8, veg:true, vegan:true, tags:['orechy'], desc:'Banán + lyžica arašidového masla'},
-  {slot:'desiata', name:'Cottage syr s paradajkami', kcal:140, protein:16, veg:true, vegan:false, tags:['laktoza'], desc:'Cottage cheese, cherry paradajky, čierne korenie'},
-  {slot:'desiata', name:'Ryžové chlebíčky s tvarohom', kcal:160, protein:12, veg:true, vegan:false, tags:['laktoza'], desc:'Ryžové chlebíčky, tvaroh, pažítka'},
+  {slot:'desiata', name:'Jablko a hrsť mandlí', kcal:180, protein:6, veg:true, vegan:true, tags:['orechy'], desc:'Jablko 150 g + mandle 20 g'},
+  {slot:'desiata', name:'Grécky jogurt s čučoriedkami', kcal:150, protein:15, veg:true, vegan:false, tags:['laktoza'], desc:'Grécky jogurt 150 g + čučoriedky 60 g'},
+  {slot:'desiata', name:'Proteínová tyčinka', kcal:200, protein:20, veg:true, vegan:false, tags:['laktoza','orechy'], desc:'Proteínová tyčinka 1 ks (~50–60 g)'},
+  {slot:'desiata', name:'Zeleninové tyčinky s hummusom', kcal:170, protein:7, veg:true, vegan:true, tags:['soja'], desc:'Mrkva/uhorka/paprika 150 g + hummus 50 g'},
+  {slot:'desiata', name:'Banán s arašidovým maslom', kcal:210, protein:8, veg:true, vegan:true, tags:['orechy'], desc:'Banán 120 g + arašidové maslo 20 g'},
+  {slot:'desiata', name:'Cottage syr s paradajkami', kcal:140, protein:16, veg:true, vegan:false, tags:['laktoza'], desc:'Cottage cheese 150 g, cherry paradajky 80 g, čierne korenie'},
+  {slot:'desiata', name:'Ryžové chlebíčky s tvarohom', kcal:160, protein:12, veg:true, vegan:false, tags:['laktoza'], desc:'Ryžové chlebíčky 2 ks (~18 g), tvaroh 100 g, pažítka'},
 
   // ─── OBED ──────────────────────────────────────────────────────────────────
-  {slot:'obed', name:'Grilované kuracie prsia s batátmi', kcal:520, protein:42, veg:false, vegan:false, tags:[], desc:'Kuracie prsia, pečené batáty, brokolica'},
-  {slot:'obed', name:'Losos s quinoou a špenátom', kcal:540, protein:38, veg:false, vegan:false, tags:['ryby'], desc:'Pečený losos, quinoa, dusený špenát, citrón'},
-  {slot:'obed', name:'Hovädzí steak so zeleninou a zemiakmi', kcal:560, protein:44, veg:false, vegan:false, tags:[], desc:'Chudý hovädzí steak, grilovaná zelenina, varené zemiaky'},
-  {slot:'obed', name:'Cestoviny s morčacím mäsom a paradajkami', kcal:530, protein:36, veg:false, vegan:false, tags:['lepok'], desc:'Celozrnné cestoviny, morčacie, paradajková omáčka, bazalka'},
-  {slot:'obed', name:'Šošovicový dhal s ryžou', kcal:480, protein:22, veg:true, vegan:true, tags:[], desc:'Červená šošovica, kokosové mlieko, kari korenie, basmati ryža'},
-  {slot:'obed', name:'Cícerový falafel s bulgurom', kcal:500, protein:20, veg:true, vegan:true, tags:['lepok'], desc:'Pečený falafel, bulgur, uhorkovo-paradajkový šalát, tahini'},
-  {slot:'obed', name:'Kuracie stir-fry s ryžou', kcal:510, protein:38, veg:false, vegan:false, tags:['soja'], desc:'Kuracie, mix zeleniny, sójová omáčka, jazmínová ryža'},
-  {slot:'obed', name:'Tofu s hnedou ryžou a zeleninou', kcal:470, protein:24, veg:true, vegan:true, tags:['soja'], desc:'Marinované tofu, hnedá ryža, dusená zelenina'},
-  {slot:'obed', name:'Zeleninové rizoto s parmezánom', kcal:490, protein:16, veg:true, vegan:false, tags:['laktoza'], desc:'Arborio ryža, hríby, cuketa, parmezán'},
-  {slot:'obed', name:'Bravčová panenka s pečenou zeleninou', kcal:540, protein:40, veg:false, vegan:false, tags:[], desc:'Bravčová panenka, pečená koreňová zelenina, zemiaky'},
+  {slot:'obed', name:'Grilované kuracie prsia s batátmi', kcal:520, protein:42, veg:false, vegan:false, tags:[], desc:'Kuracie prsia 150 g, pečené batáty 200 g, brokolica 150 g'},
+  {slot:'obed', name:'Losos s quinoou a špenátom', kcal:540, protein:38, veg:false, vegan:false, tags:['ryby'], desc:'Losos 150 g, quinoa 60 g (surová), špenát 100 g, citrón'},
+  {slot:'obed', name:'Hovädzí steak so zeleninou a zemiakmi', kcal:560, protein:44, veg:false, vegan:false, tags:[], desc:'Hovädzí steak 150 g, grilovaná zelenina 200 g, varené zemiaky 200 g'},
+  {slot:'obed', name:'Cestoviny s morčacím mäsom a paradajkami', kcal:530, protein:36, veg:false, vegan:false, tags:['lepok'], desc:'Celozrnné cestoviny 80 g (surové), morčacie 120 g, paradajková omáčka 100 g, bazalka'},
+  {slot:'obed', name:'Šošovicový dhal s ryžou', kcal:480, protein:22, veg:true, vegan:true, tags:[], desc:'Červená šošovica 80 g (surová), kokosové mlieko 100 ml, kari, basmati ryža 60 g (surová)'},
+  {slot:'obed', name:'Cícerový falafel s bulgurom', kcal:500, protein:20, veg:true, vegan:true, tags:['lepok'], desc:'Falafel 150 g, bulgur 70 g (surový), uhorkovo-paradajkový šalát 150 g, tahini 15 g'},
+  {slot:'obed', name:'Kuracie stir-fry s ryžou', kcal:510, protein:38, veg:false, vegan:false, tags:['soja'], desc:'Kuracie 130 g, mix zeleniny 200 g, sójová omáčka 15 ml, jazmínová ryža 60 g (surová)'},
+  {slot:'obed', name:'Tofu s hnedou ryžou a zeleninou', kcal:470, protein:24, veg:true, vegan:true, tags:['soja'], desc:'Tofu 150 g, hnedá ryža 60 g (surová), dusená zelenina 200 g'},
+  {slot:'obed', name:'Zeleninové rizoto s parmezánom', kcal:490, protein:16, veg:true, vegan:false, tags:['laktoza'], desc:'Arborio ryža 70 g (surová), hríby 100 g, cuketa 100 g, parmezán 20 g'},
+  {slot:'obed', name:'Bravčová panenka s pečenou zeleninou', kcal:540, protein:40, veg:false, vegan:false, tags:[], desc:'Bravčová panenka 150 g, koreňová zelenina 200 g, zemiaky 150 g'},
 
   // ─── OLOVRANT ──────────────────────────────────────────────────────────────
-  {slot:'olovrant', name:'Tvaroh s ovocím', kcal:180, protein:20, veg:true, vegan:false, tags:['laktoza'], desc:'Nízkotučný tvaroh, jahody, škorica'},
-  {slot:'olovrant', name:'Hrsť orieškov a sušené marhule', kcal:210, protein:6, veg:true, vegan:true, tags:['orechy'], desc:'Mix orechov + sušené ovocie'},
-  {slot:'olovrant', name:'Proteínový smoothie', kcal:220, protein:25, veg:true, vegan:false, tags:['laktoza'], desc:'Srvátkový proteín, banán, mlieko, škorica'},
-  {slot:'olovrant', name:'Celozrnný krekr s avokádom', kcal:190, protein:6, veg:true, vegan:true, tags:['lepok'], desc:'Celozrnné krekry, avokádo, cherry paradajky'},
-  {slot:'olovrant', name:'Grécky jogurt s medom a orechami', kcal:200, protein:16, veg:true, vegan:false, tags:['laktoza','orechy'], desc:'Grécky jogurt, med, vlašské orechy'},
-  {slot:'olovrant', name:'Ovocný šalát', kcal:150, protein:3, veg:true, vegan:true, tags:[], desc:'Mix sezónneho ovocia, mäta, limetka'},
-  {slot:'olovrant', name:'Varené vajce a zeleninové tyčinky', kcal:160, protein:12, veg:true, vegan:false, tags:['vajcia'], desc:'2 varené vajcia, mrkva, uhorka'},
+  {slot:'olovrant', name:'Tvaroh s ovocím', kcal:180, protein:20, veg:true, vegan:false, tags:['laktoza'], desc:'Nízkotučný tvaroh 150 g, jahody 80 g, škorica'},
+  {slot:'olovrant', name:'Hrsť orieškov a sušené marhule', kcal:210, protein:6, veg:true, vegan:true, tags:['orechy'], desc:'Mix orechov 30 g + sušené marhule 30 g'},
+  {slot:'olovrant', name:'Proteínový smoothie', kcal:220, protein:25, veg:true, vegan:false, tags:['laktoza'], desc:'Srvátkový proteín 30 g, banán 100 g, mlieko 200 ml, škorica'},
+  {slot:'olovrant', name:'Celozrnný krekr s avokádom', kcal:190, protein:6, veg:true, vegan:true, tags:['lepok'], desc:'Celozrnné krekry 30 g, avokádo 60 g, cherry paradajky 50 g'},
+  {slot:'olovrant', name:'Grécky jogurt s medom a orechami', kcal:200, protein:16, veg:true, vegan:false, tags:['laktoza','orechy'], desc:'Grécky jogurt 150 g, med 10 g, vlašské orechy 15 g'},
+  {slot:'olovrant', name:'Ovocný šalát', kcal:150, protein:3, veg:true, vegan:true, tags:[], desc:'Mix sezónneho ovocia 250 g, mäta, limetka'},
+  {slot:'olovrant', name:'Varené vajce a zeleninové tyčinky', kcal:160, protein:12, veg:true, vegan:false, tags:['vajcia'], desc:'2 varené vajcia (~110 g), mrkva 80 g, uhorka 80 g'},
 
   // ─── VEČERA ────────────────────────────────────────────────────────────────
-  {slot:'vecera', name:'Pečená treska so šalátom', kcal:380, protein:34, veg:false, vegan:false, tags:['ryby'], desc:'Treska, zmiešaný listový šalát, olivový olej, citrón'},
-  {slot:'vecera', name:'Kuracie prsia s grilovanou zeleninou', kcal:400, protein:40, veg:false, vegan:false, tags:[], desc:'Kuracie prsia, cuketa, baklažán, paprika'},
-  {slot:'vecera', name:'Omeleta so špenátom a syrom', kcal:360, protein:26, veg:true, vegan:false, tags:['vajcia','laktoza'], desc:'3 vajcia, špenát, feta, cherry paradajky'},
-  {slot:'vecera', name:'Cottage syr so zeleninovým šalátom', kcal:300, protein:24, veg:true, vegan:false, tags:['laktoza'], desc:'Cottage cheese, uhorka, paradajky, ražný chlieb'},
-  {slot:'vecera', name:'Zeleninový guláš s cícerom', kcal:350, protein:16, veg:true, vegan:true, tags:[], desc:'Cícer, paradajky, paprika, zemiaky, paprika koreninová'},
-  {slot:'vecera', name:'Krémová zeleninová polievka a chlieb', kcal:320, protein:10, veg:true, vegan:true, tags:['lepok'], desc:'Brokolicovo-zemiaková polievka, celozrnný chlieb'},
-  {slot:'vecera', name:'Tuniakový šalát', kcal:340, protein:32, veg:false, vegan:false, tags:['ryby','vajcia'], desc:'Tuniak, fazuľa, vajce, listový šalát, olivový olej'},
-  {slot:'vecera', name:'Morčacie medailónky s brokolicou', kcal:390, protein:38, veg:false, vegan:false, tags:[], desc:'Morčacie, dusená brokolica, batáty'},
-  {slot:'vecera', name:'Tofu wok so zeleninou', kcal:340, protein:22, veg:true, vegan:true, tags:['soja'], desc:'Tofu, brokolica, mrkva, sézam, sójová omáčka'},
+  {slot:'vecera', name:'Pečená treska so šalátom', kcal:380, protein:34, veg:false, vegan:false, tags:['ryby'], desc:'Treska 180 g, listový šalát 100 g, olivový olej 10 g, citrón'},
+  {slot:'vecera', name:'Kuracie prsia s grilovanou zeleninou', kcal:400, protein:40, veg:false, vegan:false, tags:[], desc:'Kuracie prsia 150 g, cuketa/baklažán/paprika 250 g'},
+  {slot:'vecera', name:'Omeleta so špenátom a syrom', kcal:360, protein:26, veg:true, vegan:false, tags:['vajcia','laktoza'], desc:'Vajcia 3 ks (~165 g), špenát 50 g, feta 40 g, cherry paradajky 60 g'},
+  {slot:'vecera', name:'Cottage syr so zeleninovým šalátom', kcal:300, protein:24, veg:true, vegan:false, tags:['laktoza'], desc:'Cottage cheese 150 g, uhorka 80 g, paradajky 80 g, ražný chlieb 40 g'},
+  {slot:'vecera', name:'Zeleninový guláš s cícerom', kcal:350, protein:16, veg:true, vegan:true, tags:[], desc:'Cícer 150 g, paradajky 100 g, paprika 100 g, zemiaky 150 g'},
+  {slot:'vecera', name:'Krémová zeleninová polievka a chlieb', kcal:320, protein:10, veg:true, vegan:true, tags:['lepok'], desc:'Brokolicovo-zemiaková polievka 350 ml, celozrnný chlieb 50 g'},
+  {slot:'vecera', name:'Tuniakový šalát', kcal:340, protein:32, veg:false, vegan:false, tags:['ryby','vajcia'], desc:'Tuniak 120 g, fazuľa 80 g, vajce 1 ks, listový šalát 100 g, olivový olej 10 g'},
+  {slot:'vecera', name:'Morčacie medailónky s brokolicou', kcal:390, protein:38, veg:false, vegan:false, tags:[], desc:'Morčacie 150 g, dusená brokolica 150 g, batáty 150 g'},
+  {slot:'vecera', name:'Tofu wok so zeleninou', kcal:340, protein:22, veg:true, vegan:true, tags:['soja'], desc:'Tofu 150 g, brokolica 100 g, mrkva 80 g, sézam 10 g, sójová omáčka 15 ml'},
 ];
 
 const SLOT_LABEL = {ranajky:'Raňajky', desiata:'Desiata', obed:'Obed', olovrant:'Olovrant', vecera:'Večera'};
@@ -164,7 +164,7 @@ function generatePlan(profile){
     targets, meals_per_day: meals.length,
     week,
     generated_at: new Date().toISOString(),
-    note: 'Orientačný plán. Porcie prispôsob svojej chuti a hladu. Pri zdravotných ťažkostiach sa poraď s lekárom/odborníkom na výživu.'
+    note: 'Gramáže sú orientačné na 1 porciu — uvádzajú, koľko čoho zjesť. Podľa hladu a cieľa ich pokojne uprav (±10–20 %). Pri zdravotných ťažkostiach sa poraď s lekárom/odborníkom na výživu.'
   };
 }
 
