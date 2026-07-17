@@ -311,7 +311,6 @@
       <i class="bi bi-bell"></i>
       <div class="notif-badge" id="notifBadge">0</div>
     </button>
-    <button class="logout-btn" onclick="if(window.faNavOpen)faNavOpen();else window.location.href='/'" title="Menu" style="border-color:rgba(201,168,76,.3);color:var(--gold);margin-right:4px">☰</button>
     <button class="logout-btn" onclick="logout()"><i class="bi bi-box-arrow-right"></i> Odhlásiť</button>
   </div>
 </div>
@@ -1040,7 +1039,10 @@ function openGiftCreditModal(){
     <label style="font-size:.8rem;color:var(--muted)">E-mail alebo meno príjemcu</label>
     <input id="gcRecipient" type="text" placeholder="email@priklad.sk" style="width:100%;background:#111;border:1px solid #333;color:var(--text);border-radius:10px;padding:10px 12px;margin:4px 0 10px">
     <label style="font-size:.8rem;color:var(--muted)">Suma (€)</label>
-    <input id="gcAmount" type="number" min="1" max="${avail.toFixed(2)}" step="1" placeholder="napr. 20" style="width:100%;background:#111;border:1px solid #333;color:var(--text);border-radius:10px;padding:10px 12px;margin:4px 0 12px">
+    <input id="gcAmount" type="number" min="1" max="${avail.toFixed(2)}" step="1" placeholder="napr. 20" style="width:100%;background:#111;border:1px solid #333;color:var(--text);border-radius:10px;padding:10px 12px;margin:4px 0 10px">
+    <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-bottom:12px;font-size:.85rem;color:var(--text)">
+      <input type="checkbox" id="gcAnon" style="width:17px;height:17px;accent-color:var(--gold)"> Poslať anonymne (nezobrazí sa moje meno)
+    </label>
     <div id="gcMsg" style="font-size:.82rem;margin-bottom:8px"></div>
     <button onclick="submitGiftCredit()" class="btn-primary" style="width:100%">Darovať kredit</button>
   `);
@@ -1048,9 +1050,10 @@ function openGiftCreditModal(){
 async function submitGiftCredit(){
   const recipient=(document.getElementById('gcRecipient').value||'').trim();
   const amount=+document.getElementById('gcAmount').value;
+  const anonymous=!!document.getElementById('gcAnon')?.checked;
   const msg=document.getElementById('gcMsg');
   msg.innerHTML='<span style="color:var(--muted)">Odosielam…</span>';
-  const d=await api('/api/client/credit/gift',{method:'POST',body:{recipient,amount}});
+  const d=await api('/api/client/credit/gift',{method:'POST',body:{recipient,amount,anonymous}});
   if(d?.ok){ msg.innerHTML=`<span style="color:#8bc34a">✓ Darované ${(+d.amount).toFixed(2)} € pre ${d.recipient} 🎁</span>`; setTimeout(()=>{closeCreditModal(); loadReferral();},1400); }
   else msg.innerHTML='<span style="color:#e0577b">'+(d?.error||'Chyba')+'</span>';
 }
@@ -1231,7 +1234,11 @@ function capColor(filled,capacity){
 
 function renderClassCards(){
   const grid=document.getElementById('classGrid');
-  const filtered=_allClasses.filter(classMatchesFilter);
+  const filtered=_allClasses.filter(classMatchesFilter).sort((a,b)=>{
+    const da=getNextDateISO(a.day_of_week??0)+' '+(a.time_start||'00:00');
+    const db=getNextDateISO(b.day_of_week??0)+' '+(b.time_start||'00:00');
+    return da.localeCompare(db); // najbližší termín prvý
+  });
   if(!filtered.length){
     grid.innerHTML=`<div class="class-empty" style="grid-column:1/-1"><i class="bi bi-search"></i>Žiadne hodiny pre vybraný filter.<br><button onclick="resetFilter()" style="margin-top:10px;background:rgba(201,168,76,.15);border:1px solid rgba(201,168,76,.3);color:var(--gold);padding:6px 16px;border-radius:20px;cursor:pointer;font-size:.8rem">Zobraziť všetky</button></div>`;
     return;

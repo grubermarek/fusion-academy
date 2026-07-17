@@ -3434,8 +3434,10 @@ async function recordTip(payment){
     const trainerCut = +(amount*TIP_TRAINER_SHARE).toFixed(2);
     const ourCut = +(amount-trainerCut).toFixed(2);
     const message = String(payment.tip_message||'').slice(0,300);
+    const anon = !!payment.tip_anonymous;
+    const dispName = anon ? 'Anonym' : (from?.name||'Anonym');
     const tip = await q.insert(db.tips,{
-      from_user_id: from?._id||null, from_name: from?.name||'Anonym',
+      from_user_id: from?._id||null, from_name: from?.name||'Anonym', anonymous: anon,
       to_user_id: trainer._id, to_name: trainer.name,
       amount, trainer_cut:trainerCut, our_cut:ourCut, message,
       month: currentMonth(), paypal_order_id: payment.paypal_order_id||null,
@@ -3443,11 +3445,11 @@ async function recordTip(payment){
     });
     await q.insert(db.notifications,{user_id:trainer._id, type:'tip',
       title:`💛 Dostal/a si tip +${trainerCut.toFixed(2)} €`,
-      body:`${from?.name||'Niekto'} ti poslal/a tip ${amount.toFixed(2)} € (tvoj podiel ${trainerCut.toFixed(2)} €)${message?`: „${message}"`:''}.`,
+      body:`${dispName} ti poslal/a tip ${amount.toFixed(2)} € (tvoj podiel ${trainerCut.toFixed(2)} €)${message?`: „${message}"`:''}.`,
       read:false, created_at:nowISO()});
     if(trainer.email && !trainer.email.includes('@internal.local')){
       sendMail(trainer.email, `💛 Nový tip +${trainerCut.toFixed(2)} € — Fusion Academy`,
-        emailTemplate('Dostal/a si tip! 💛', `<p>Ahoj <b>${trainer.name}</b>,</p><p><b>${from?.name||'Niekto'}</b> ti poslal/a tip <b style="color:#C9A84C">${amount.toFixed(2)} €</b> — tvoj podiel <b>${trainerCut.toFixed(2)} €</b> sa ti pripíše k výplate.</p>${message?`<blockquote style="border-left:3px solid #C9A84C;padding-left:12px;color:#555;font-style:italic">„${message}"</blockquote>`:''}`,
+        emailTemplate('Dostal/a si tip! 💛', `<p>Ahoj <b>${trainer.name}</b>,</p><p><b>${dispName}</b> ti poslal/a tip <b style="color:#C9A84C">${amount.toFixed(2)} €</b> — tvoj podiel <b>${trainerCut.toFixed(2)} €</b> sa ti pripíše k výplate.</p>${message?`<blockquote style="border-left:3px solid #C9A84C;padding-left:12px;color:#555;font-style:italic">„${message}"</blockquote>`:''}`,
         'Zobraziť profil', `${APP_URL}/u/${trainer._id}`)).catch(()=>{});
     }
     const admins = await q.find(db.users,{is_admin:true});
@@ -3469,14 +3471,15 @@ app.post('/api/tips/create', auth, async(req,res)=>{
     if(!trainer || !(trainer.is_admin || trainer.user_type==='trainer' || trainer.user_type==='manager'))
       return res.status(400).json({error:'Tip je možný len trénerovi alebo tímu Fusion'});
     const msg = String(message||'').slice(0,300);
+    const anon = !!req.body.anonymous;
     if(!PAYPAL_CLIENT_ID){
-      await recordTip({ user_id:req.session.uid, ref_id:to_user_id, ref_type:'tip', amount:amt, tip_message:msg, paypal_order_id:'demo-'+Date.now() });
+      await recordTip({ user_id:req.session.uid, ref_id:to_user_id, ref_type:'tip', amount:amt, tip_message:msg, tip_anonymous:anon, paypal_order_id:'demo-'+Date.now() });
       return res.json({ ok:true, demo:true });
     }
     const result = await ppCreateOrder(amt,'EUR',`Tip pre ${trainer.name}`);
     if(result.status!==201) return res.status(400).json({error:'PayPal chyba', detail:result.body});
     const payment = await q.insert(db.payments,{ paypal_order_id:result.body.id, user_id:req.session.uid, amount:amt,
-      currency:'EUR', description:`Tip pre ${trainer.name}`, ref_id:to_user_id, ref_type:'tip', tip_message:msg, status:'pending', created_at:nowISO() });
+      currency:'EUR', description:`Tip pre ${trainer.name}`, ref_id:to_user_id, ref_type:'tip', tip_message:msg, tip_anonymous:anon, status:'pending', created_at:nowISO() });
     res.json({ ok:true, paypalOrderId: result.body.id, paymentId: payment._id });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -3487,15 +3490,15 @@ app.get('/api/tips/for/:userId', async(req,res)=>{
     const tips = await q.find(db.tips,{to_user_id:req.params.userId, status:'paid'});
     tips.sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
     const total = tips.reduce((s,t)=>s+(+t.amount||0),0);
-    // Top podporovatelia (súčet podľa darcu)
+    // Top podporovatelia (súčet podľa darcu; anonymní zvlášť, bez mena/linku)
     const byDonor={};
-    for(const t of tips){ const key=t.from_user_id||('n:'+(t.from_name||'Anonym'));
-      const d=byDonor[key]=byDonor[key]||{ from_user_id:t.from_user_id||null, from_name:t.from_name||'Anonym', total:0, count:0 };
+    for(const t of tips){ const anon=!!t.anonymous; const key=anon?'anon':(t.from_user_id||('n:'+(t.from_name||'Anonym')));
+      const d=byDonor[key]=byDonor[key]||{ from_user_id:anon?null:(t.from_user_id||null), from_name:anon?'Anonym':(t.from_name||'Anonym'), total:0, count:0 };
       d.total+=(+t.amount||0); d.count++; }
     const top=Object.values(byDonor).map(d=>({...d,total:+d.total.toFixed(2)})).sort((a,b)=>b.total-a.total).slice(0,5);
     const goal = (u && +u.tip_goal_amount>0) ? { amount:+u.tip_goal_amount, label:u.tip_goal_label||'' } : null;
     res.json({ count: tips.length, total:+total.toFixed(2), goal, top,
-      tips: tips.slice(0,100).map(t=>({ from_user_id:t.from_user_id, from_name:t.from_name, amount:t.amount, message:t.message, created_at:t.created_at })) });
+      tips: tips.slice(0,100).map(t=>({ from_user_id: t.anonymous?null:t.from_user_id, from_name: t.anonymous?'Anonym':t.from_name, amount:t.amount, message:t.message, created_at:t.created_at })) });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 // Nastavenie cieľa tipov — len vlastný profil (alebo admin za trénera)
@@ -7447,8 +7450,10 @@ app.post('/api/client/credit/gift', auth, async(req,res)=>{
     await q.update(db.commissions,{partner_id:u._id,status:'pending'},{$set:{status:'paid',paid_at:nowISO()}},{multi:true});
     await q.update(db.users,{_id:u._id},{$set:{ referral_credit:+(available-amount).toFixed(2) }});
     await q.update(db.users,{_id:rcpt._id},{$set:{ referral_credit:+((rcpt.referral_credit||0)+amount).toFixed(2) }});
-    await q.insert(db.transactions,{type:'credit_gift', user_id:u._id, user_name:u.name, amount, payment_method:'credit', note:`Darček kreditu ${amount.toFixed(2)} € pre ${rcpt.name}`, status:'done', created_at:nowISO(), month:today().slice(0,7)});
-    await q.insert(db.notifications,{user_id:rcpt._id,type:'credit',title:`🎁 Dostal/a si ${amount.toFixed(2)} € kredit!`,body:`${u.name} ti daroval/a kredit. Použi ho na členstvo, permanentku, merch alebo súkromné hodiny.`,read:false,created_at:nowISO()});
+    const anon = !!req.body.anonymous;
+    const fromDisp = anon ? 'Niekto' : u.name;
+    await q.insert(db.transactions,{type:'credit_gift', user_id:u._id, user_name:u.name, amount, payment_method:'credit', anonymous:anon, note:`Darček kreditu ${amount.toFixed(2)} € pre ${rcpt.name}${anon?' (anonymne)':''}`, status:'done', created_at:nowISO(), month:today().slice(0,7)});
+    await q.insert(db.notifications,{user_id:rcpt._id,type:'credit',title:`🎁 Dostal/a si ${amount.toFixed(2)} € kredit!`,body:`${fromDisp} ti daroval/a kredit. Použi ho na členstvo, permanentku, merch alebo súkromné hodiny.`,read:false,created_at:nowISO()});
     await q.insert(db.notifications,{user_id:u._id,type:'credit',title:`Darček odoslaný 🎁`,body:`Daroval/a si ${amount.toFixed(2)} € kredit pre ${rcpt.name}.`,read:false,created_at:nowISO()});
     res.json({ok:true, recipient:rcpt.name, amount});
   } catch(e){ res.status(500).json({error:e.message}); }

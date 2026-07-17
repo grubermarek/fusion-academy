@@ -409,7 +409,7 @@ function render(){
     </div>
     ${friendBtn()}
     ${(!P.is_self && !P.anonymous) ? `<a class="msg-btn" href="/community?dm=${P.id}"><i class="bi bi-chat-dots-fill"></i> ${T('profile.msg')}</a>` : ''}
-    ${(!P.is_self && !P.anonymous && P.viewer_logged_in) ? `<button class="report-btn" style="background:#2a2410;border-color:#5a4a20;color:#e0b84c" onclick="openGiftCredit()"><i class="bi bi-gift"></i> Darovať kredit</button>` : ''}
+    ${(!P.is_self && !P.anonymous && P.viewer_logged_in && !P.can_receive_tips) ? `<button class="report-btn" style="background:#2a2410;border-color:#5a4a20;color:#e0b84c" onclick="openGiftCredit()"><i class="bi bi-gift"></i> Darovať kredit</button>` : ''}
     ${(P.can_receive_tips && !P.is_self && P.viewer_logged_in) ? `<button class="report-btn" style="background:linear-gradient(102deg,#3a2a10,#5a4520);border-color:#C9A84C;color:#E7C878;font-weight:800" onclick="openTip()">💛 Pošli tip trénerovi</button>` : ''}
     ${(P.is_admin_profile && !P.is_self) ? `<button class="report-btn" onclick="openReport()"><i class="bi bi-question-circle"></i> Napísať otázku / nahlásiť chybu</button>` : ''}
     ${P.points ? `<details class="pts-box">
@@ -511,7 +511,10 @@ function openTip(){
     <p style="font-size:.82rem;color:var(--muted);margin-bottom:12px">Poďakuj svojmu trénerovi. 80 % ide priamo jemu k výplate. Platba kartou.</p>
     <div style="display:flex;gap:6px;margin-bottom:10px">${chips}</div>
     <input id="tipCustom" type="number" min="1" max="1000" step="1" placeholder="Vlastná suma (€)" oninput="setTipAmt(+this.value)" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:10px 12px;margin-bottom:10px">
-    <textarea id="tipMsg" maxlength="300" placeholder="Odkaz (nepovinné) — zobrazí sa na profile" style="width:100%;min-height:64px;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-family:inherit"></textarea>
+    <textarea id="tipMsg" maxlength="300" placeholder="Odkaz (nepovinné) — zobrazí sa na profile" style="width:100%;min-height:64px;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-family:inherit"></textarea>
+    <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-bottom:12px;font-size:.85rem;color:var(--cream)">
+      <input type="checkbox" id="tipAnon" style="width:17px;height:17px;accent-color:var(--gold)"> Poslať anonymne (nezobrazí sa moje meno)
+    </label>
     <div id="tipMsgBox" style="font-size:.82rem;margin-bottom:8px"></div>
     <div id="tipPayArea"><button id="tipPayBtn" onclick="submitTip()" style="width:100%;background:var(--grad-gold,linear-gradient(102deg,#C9A84C,#E7C878));color:#1a1206;border:none;border-radius:12px;padding:12px;font-weight:800;cursor:pointer">Pokračovať na platbu →</button></div>
   </div>`;
@@ -519,10 +522,11 @@ function openTip(){
 window.setTipAmt=(v,btn)=>{ _tipAmount=Math.max(1,Math.min(1000,+v||0)); document.querySelectorAll('.tip-chip').forEach(c=>{ const on=+c.dataset.v===_tipAmount; c.style.background=on?'var(--gold)':'rgba(255,255,255,.06)'; c.style.color=on?'#1a1206':'var(--cream)'; }); };
 async function submitTip(){
   const msg=(document.getElementById('tipMsg')?.value||'').trim();
+  const anonymous=!!document.getElementById('tipAnon')?.checked;
   const box=document.getElementById('tipMsgBox');
   if(!(_tipAmount>=1)){ box.innerHTML='<span style="color:#e0577b">Zadaj sumu aspoň 1 €.</span>'; return; }
   box.innerHTML='<span style="color:var(--muted)">Pripravujem platbu…</span>';
-  const r=await fetch('/api/tips/create',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({to_user_id:uid,amount:_tipAmount,message:msg})}).then(x=>x.json()).catch(()=>null);
+  const r=await fetch('/api/tips/create',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({to_user_id:uid,amount:_tipAmount,message:msg,anonymous})}).then(x=>x.json()).catch(()=>null);
   if(!r||r.error){ box.innerHTML='<span style="color:#e0577b">'+((r&&r.error)||'Chyba')+'</span>'; return; }
   if(r.demo){ box.innerHTML='<span style="color:#8bc34a">✓ Tip zaznamenaný (demo režim). Ďakujeme!</span>'; setTimeout(()=>{document.getElementById('tipModal')?.remove(); loadTips();},1200); return; }
   // PayPal platba
