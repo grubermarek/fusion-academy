@@ -488,15 +488,34 @@ async function loadTips(){
   }catch(e){ box.innerHTML='<div class="empty">Nepodarilo sa načítať tipy.</div>'; }
 }
 let _tipAmount=10, _tipData=null;
-async function editTipGoal(){
+function editTipGoal(){
   const cur=_tipData?.goal||{};
-  const label=prompt('Názov cieľa (napr. „Nový reproduktor na hodiny"):', cur.label||'');
-  if(label===null) return;
-  const amtStr=prompt('Cieľová suma v € (0 = zrušiť cieľ):', cur.amount||'');
-  if(amtStr===null) return;
-  const amount=parseFloat(amtStr)||0;
+  let m=document.getElementById('goalModal');
+  if(!m){ m=document.createElement('div'); m.id='goalModal';
+    m.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:16px';
+    document.body.appendChild(m);
+  }
+  m.onclick=e=>{ if(e.target===m) m.remove(); };
+  m.innerHTML=`<div style="background:#1a1712;border:1px solid rgba(201,168,76,.4);border-radius:16px;max-width:400px;width:100%;padding:20px;color:var(--cream)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:1.1rem;color:var(--gold)">🎯 Nastaviť cieľ tipov</b><button onclick="document.getElementById('goalModal').remove()" style="background:none;border:none;color:#999;font-size:1.3rem;cursor:pointer">✕</button></div>
+    <div style="font-size:.82rem;color:var(--muted);margin-bottom:12px">Napr. „Nový reproduktor na hodiny". Fanúšikovia uvidia postup k cieľu.</div>
+    <label style="font-size:.8rem;color:var(--muted)">Názov cieľa</label>
+    <input id="goalLabel" type="text" maxlength="80" value="${esc(cur.label||'')}" placeholder="Nový reproduktor na hodiny" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:10px 12px;margin:4px 0 10px">
+    <label style="font-size:.8rem;color:var(--muted)">Cieľová suma (€)</label>
+    <input id="goalAmount" type="number" min="0" step="10" value="${cur.amount||''}" placeholder="napr. 300" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:10px 12px;margin:4px 0 12px">
+    <div id="goalMsg" style="font-size:.82rem;margin-bottom:8px"></div>
+    <button onclick="saveTipGoal()" style="width:100%;background:linear-gradient(102deg,#C9A84C,#E7C878);color:#1a1206;border:none;border-radius:12px;padding:12px;font-weight:800;cursor:pointer">Uložiť cieľ</button>
+    ${cur.amount?`<button onclick="document.getElementById('goalAmount').value=0;saveTipGoal()" style="width:100%;margin-top:8px;background:none;border:1px solid rgba(229,115,115,.4);color:#e57373;border-radius:10px;padding:8px;font-size:.82rem;cursor:pointer">Zrušiť cieľ</button>`:''}
+  </div>`;
+}
+async function saveTipGoal(){
+  const label=(document.getElementById('goalLabel').value||'').trim();
+  const amount=parseFloat(document.getElementById('goalAmount').value)||0;
+  const box=document.getElementById('goalMsg');
+  box.innerHTML='<span style="color:var(--muted)">Ukladám…</span>';
   const r=await fetch('/api/tips/goal',{method:'PUT',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:uid,amount,label})}).then(x=>x.json()).catch(()=>null);
-  if(r&&r.ok) loadTips(); else alert('Chyba: '+((r&&r.error)||'?'));
+  if(r&&r.ok){ document.getElementById('goalModal')?.remove(); loadTips(); }
+  else box.innerHTML='<span style="color:#e0577b">'+((r&&r.error)||'Chyba')+'</span>';
 }
 function openTip(){
   let m=document.getElementById('tipModal');

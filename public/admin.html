@@ -113,8 +113,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div class="group-title" id="groupTitle">Domov</div>
 
     <div class="group-links active" data-group="home">
-      <a class="nav-link active" href="#" onclick="show('overview')"><i class="bi bi-speedometer2 me-2"></i>Prehľad</a>
-      <a class="nav-link" href="#" onclick="show('attendance')"><i class="bi bi-calendar-heart me-2"></i><span style="color:#4ade80;font-weight:700">Kalendár rezervácií</span></a>
+      <a class="nav-link active" href="#" onclick="show('attendance')"><i class="bi bi-calendar-heart me-2"></i><span style="color:#4ade80;font-weight:700">Kalendár rezervácií</span></a>
       <a class="nav-link" href="#" onclick="show('sale')"><i class="bi bi-plus-circle me-2"></i>Zaznamenať predaj</a>
     </div>
 
@@ -175,43 +174,6 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 </div>
 
 <div class="main p-4">
-
-  <!-- OVERVIEW -->
-  <div id="s-overview" class="section active">
-    <h4 class="fw-bold mb-4">Prehľad systému</h4>
-    <div class="row g-3 mb-4">
-      <div class="col-6 col-md-3"><div class="stat-card card p-3">
-        <div class="stat-icon bg-primary bg-opacity-10 text-primary mb-2"><i class="bi bi-people"></i></div>
-        <div class="text-muted small">Partneri</div><div class="fs-3 fw-bold" id="ov-partners">—</div>
-      </div></div>
-      <div class="col-6 col-md-3"><div class="stat-card card p-3">
-        <div class="stat-icon bg-success bg-opacity-10 text-success mb-2"><i class="bi bi-graph-up"></i></div>
-        <div class="text-muted small">Tržby tento mesiac</div><div class="fs-3 fw-bold" id="ov-revenue">—</div>
-      </div></div>
-      <div class="col-6 col-md-3"><div class="stat-card card p-3">
-        <div class="stat-icon bg-warning bg-opacity-10 text-warning mb-2"><i class="bi bi-bag"></i></div>
-        <div class="text-muted small">Nové objednávky</div><div class="fs-3 fw-bold" id="ov-orders">—</div>
-      </div></div>
-      <div class="col-6 col-md-3"><div class="stat-card card p-3">
-        <div class="stat-icon bg-danger bg-opacity-10 text-danger mb-2"><i class="bi bi-cash-coin"></i></div>
-        <div class="text-muted small">Čakajúce provízie</div><div class="fs-3 fw-bold" id="ov-comm">—</div>
-      </div></div>
-    </div>
-    <div class="row g-3">
-      <div class="col-md-7"><div class="card border-0 rounded-3 p-4 h-100">
-        <div class="fw-semibold mb-3">Tržby posledných 6 mesiacov</div>
-        <canvas id="revenueChart" height="160"></canvas>
-      </div></div>
-      <div class="col-md-5"><div class="card border-0 rounded-3 p-4 h-100">
-        <div class="fw-semibold mb-3">Top produkty</div>
-        <div id="topProducts" class="small"></div>
-      </div></div>
-    </div>
-    <div class="card border-0 rounded-3 p-4 mt-3">
-      <div class="fw-semibold mb-2">Rozloženie rankov partnerov</div>
-      <div id="rankDist" class="d-flex flex-wrap gap-2 mt-2"></div>
-    </div>
-  </div>
 
   <!-- ORDERS -->
   <div id="s-orders" class="section">
@@ -417,7 +379,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
   <!-- ATTENDANCE DASHBOARD                                                    -->
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
-  <div id="s-attendance" class="section">
+  <div id="s-attendance" class="section active">
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <h4 class="fw-bold mb-0"><i class="bi bi-calendar-heart me-2" style="color:#4ade80"></i>Kalendár rezervácií</h4>
       <a class="btn btn-sm" href="/booking-calendar" style="background:var(--grad-gold,linear-gradient(135deg,#C9A84C,#a07830));color:#111;font-weight:700"><i class="bi bi-arrows-fullscreen me-1"></i>Celoobrazovkový režim</a>
@@ -3326,6 +3288,7 @@ async function sendBulkEmail(){
 }
 
 async function loadOverview(){
+  if(!document.getElementById('ov-partners')) return; // Prehľad sekcia odstránená (redundantná)
   const d=await api('/api/admin/stats');if(!d)return;
   document.getElementById('ov-partners').textContent=d.totalPartners;
   document.getElementById('ov-revenue').textContent=eur(d.monthRevenue);
@@ -3838,7 +3801,7 @@ async function saveStreamUrl(classId){
 
 // Init
 document.getElementById('commMonth').value=new Date().toISOString().slice(0,7);
-loadOverview();
+show('attendance');
 
 // ── EDIT USER MODAL ───────────────────────────────────────────────────────────
 let _editUserId = null;
