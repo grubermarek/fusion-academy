@@ -2015,15 +2015,17 @@ async function loadTaskTracker(){
   _ttTasks=d.tasks;
   document.getElementById('ttPrize').value=d.prize||'';
   // hlavička s ikonami úloh
-  document.getElementById('ttHead').innerHTML='<th>#</th><th>Tréner</th><th class="text-end">Body</th><th class="text-end">Aktívne dni</th>'+d.tasks.map(t=>`<th class="text-end" title="${escHtml(t.label)} (${t.points}b)">${t.icon}</th>`).join('');
-  document.getElementById('ttSummary').innerHTML=`<span class="badge bg-secondary">👥 ${d.rows.length} trénerov</span><span class="badge bg-warning text-dark">Σ ${d.total_points} bodov</span>${d.prize?`<span class="badge" style="background:#3a2a10;border:1px solid #C9A84C;color:#e0b84c">🏆 ${escHtml(d.prize)}</span>`:''}`;
-  if(!d.rows.length){ body.innerHTML='<tr><td colspan="'+(4+d.tasks.length)+'" class="text-center text-muted py-3">Žiadni tréneri.</td></tr>'; return; }
+  document.getElementById('ttHead').innerHTML='<th>#</th><th>Tréner</th><th class="text-end">Body</th>'+d.tasks.map(t=>`<th class="text-end" title="${escHtml(t.label)} (${t.points}b)">${t.icon}</th>`).join('')+'<th class="text-end">⏱️ h</th><th class="text-end">Dni</th>';
+  const totalHours=d.rows.reduce((s,r)=>s+(r.hours||0),0);
+  document.getElementById('ttSummary').innerHTML=`<span class="badge bg-secondary">👥 ${d.rows.length} trénerov</span><span class="badge bg-warning text-dark">Σ ${d.total_points} bodov</span><span class="badge bg-secondary">⏱️ ${(+totalHours).toFixed(1)} h</span>${d.prize?`<span class="badge" style="background:#3a2a10;border:1px solid #C9A84C;color:#e0b84c">🏆 ${escHtml(d.prize)}</span>`:''}`;
+  if(!d.rows.length){ body.innerHTML='<tr><td colspan="'+(5+d.tasks.length)+'" class="text-center text-muted py-3">Žiadni tréneri.</td></tr>'; return; }
   body.innerHTML=d.rows.map((r,i)=>`<tr>
     <td>${['🥇','🥈','🥉'][i]||(i+1)}</td>
     <td><a href="/u/${r.user_id}" target="_blank" style="color:#e0b84c;text-decoration:none">${escHtml(r.name)}</a></td>
     <td class="text-end fw-bold text-warning">${r.points}</td>
-    <td class="text-end">${r.active_days}</td>
     ${d.tasks.map(t=>`<td class="text-end small text-muted">${r.counts[t.key]||0}</td>`).join('')}
+    <td class="text-end small">${r.hours||0}</td>
+    <td class="text-end small text-muted">${r.active_days}</td>
   </tr>`).join('');
 }
 async function saveTaskPrize(){

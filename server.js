@@ -6330,39 +6330,59 @@ async function taskPrizeFor(month){ const s=await q.one(db.settings,{key:'traine
 async function taskLeaderboard(month){
   const logs = await q.find(db.task_logs,{month});
   const by={};
-  logs.forEach(l=>{ const b=by[l.user_id]=by[l.user_id]||{user_id:l.user_id,name:l.user_name,points:0,days:new Set(),counts:{}};
-    b.points+=(l.points||0); b.days.add(l.date); b.counts[l.task_key]=(b.counts[l.task_key]||0)+1; });
-  return Object.values(by).map(b=>({user_id:b.user_id,name:b.name,points:b.points,active_days:b.days.size,counts:b.counts}))
+  logs.forEach(l=>{ const b=by[l.user_id]=by[l.user_id]||{user_id:l.user_id,name:l.user_name,points:0,days:new Set(),counts:{},hours:0};
+    b.days.add(l.date);
+    if(l.task_key==='hours'){ b.hours+=(+l.hours||0); }
+    else { b.points+=(l.points||0); b.counts[l.task_key]=(b.counts[l.task_key]||0)+(+l.count||1); } });
+  return Object.values(by).map(b=>({user_id:b.user_id,name:b.name,points:b.points,active_days:b.days.size,counts:b.counts,hours:+b.hours.toFixed(1)}))
     .sort((a,b)=>b.points-a.points);
 }
-// Tréner: moje úlohy, dnešné splnené, mesačný súhrn, cena, poradie, tímový rebríček
+// Tréner: moje úlohy, dnešné počty, mesačný súhrn, cena, poradie, tímová tabuľka
 app.get('/api/tasks/my', trainerAuth, async(req,res)=>{
   try {
     const u=req.trainerUser;
     const month=(req.query.month||today().slice(0,7)).slice(0,7);
     const day=today();
     const logs=await q.find(db.task_logs,{user_id:u._id, month});
-    const doneToday=logs.filter(l=>l.date===day).map(l=>l.task_key);
-    const total=logs.reduce((s,l)=>s+(l.points||0),0);
-    const byDay={}; logs.forEach(l=>{ (byDay[l.date]=byDay[l.date]||{points:0,tasks:[]}); byDay[l.date].points+=l.points||0; byDay[l.date].tasks.push(l.task_key); });
+    const todayCounts={}; let todayHours=0;
+    logs.filter(l=>l.date===day).forEach(l=>{ if(l.task_key==='hours') todayHours+=(+l.hours||0); else todayCounts[l.task_key]=(todayCounts[l.task_key]||0)+(+l.count||1); });
+    const total=logs.filter(l=>l.task_key!=='hours').reduce((s,l)=>s+(l.points||0),0);
+    const monthHours=logs.filter(l=>l.task_key==='hours').reduce((s,l)=>s+(+l.hours||0),0);
+    const activeDays=new Set(logs.map(l=>l.date)).size;
     const board=await taskLeaderboard(month);
     const rank=board.findIndex(r=>r.user_id===u._id);
-    res.json({ tasks:TRAINER_TASKS, month, day, done_today:doneToday,
-      total_points:total, active_days:Object.keys(byDay).length, by_day:byDay,
+    res.json({ tasks:TRAINER_TASKS, month, day, today_counts:todayCounts, today_hours:todayHours,
+      total_points:total, month_hours:+monthHours.toFixed(1), active_days:activeDays,
       prize:await taskPrizeFor(month), my_rank: rank>=0?rank+1:null, board });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
-// Tréner: zaklikni/odklikni splnenie úlohy na dnes
-app.post('/api/tasks/toggle', trainerAuth, async(req,res)=>{
+// Tréner: nastav počet danej aktivity na dnes (0 = zmazať). Body = počet × sadzba.
+app.post('/api/tasks/set', trainerAuth, async(req,res)=>{
   try {
     const u=req.trainerUser;
     const key=String(req.body.task_key||'');
     if(!TASK_POINTS[key]) return res.status(400).json({error:'Neznáma úloha'});
+    const count=Math.max(0,Math.min(99, parseInt(req.body.count)||0));
     const day=today(); const month=day.slice(0,7);
     const ex=await q.one(db.task_logs,{user_id:u._id, date:day, task_key:key});
-    if(ex){ await q.remove(db.task_logs,{_id:ex._id},{}); return res.json({ok:true, done:false, points:0}); }
-    await q.insert(db.task_logs,{ user_id:u._id, user_name:u.name, task_key:key, points:TASK_POINTS[key], date:day, month, created_at:nowISO() });
-    res.json({ ok:true, done:true, points:TASK_POINTS[key] });
+    if(count<=0){ if(ex) await q.remove(db.task_logs,{_id:ex._id},{}); return res.json({ok:true,count:0,points:0}); }
+    const points=count*TASK_POINTS[key];
+    if(ex) await q.update(db.task_logs,{_id:ex._id},{$set:{count,points}});
+    else await q.insert(db.task_logs,{ user_id:u._id, user_name:u.name, task_key:key, count, points, date:day, month, created_at:nowISO() });
+    res.json({ ok:true, count, points });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+// Tréner: koľko hodín dnes odpracoval (informatívne, sčítava sa v mesiaci)
+app.post('/api/tasks/hours', trainerAuth, async(req,res)=>{
+  try {
+    const u=req.trainerUser;
+    const hours=Math.max(0,Math.min(24, parseFloat(req.body.hours)||0));
+    const day=today(); const month=day.slice(0,7);
+    const ex=await q.one(db.task_logs,{user_id:u._id, date:day, task_key:'hours'});
+    if(hours<=0){ if(ex) await q.remove(db.task_logs,{_id:ex._id},{}); return res.json({ok:true,hours:0}); }
+    if(ex) await q.update(db.task_logs,{_id:ex._id},{$set:{hours}});
+    else await q.insert(db.task_logs,{ user_id:u._id, user_name:u.name, task_key:'hours', hours, points:0, count:0, date:day, month, created_at:nowISO() });
+    res.json({ ok:true, hours });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 // Tréner/admin: história (víťazi + ceny minulých mesiacov)

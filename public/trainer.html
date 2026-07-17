@@ -1431,32 +1431,68 @@ async function loadTasks(){
          <div style="font-size:.78rem;color:var(--muted);margin-top:2px">Vyhráva tréner s najviac bodmi na konci mesiaca.</div>
        </div>`
     : `<div style="background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:14px;padding:12px 16px;margin-bottom:14px;font-size:.85rem;color:var(--muted)">🏆 Cena za tento mesiac zatiaľ nie je nastavená.</div>`;
-  // dnešný checklist
+  // dnešné počty — zadaj koľko čoho si dnes spravil
   const checklist = d.tasks.map(t=>{
-    const done=d.done_today.includes(t.key);
-    return `<button onclick="toggleTask('${t.key}')" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:${done?'rgba(76,175,80,.12)':'var(--card)'};border:1px solid ${done?'rgba(76,175,80,.5)':'var(--border)'};border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:.15s">
-      <span style="font-size:1.5rem">${t.icon}</span>
-      <span style="flex:1;min-width:0"><div style="font-weight:700;color:var(--cream)">${esc(t.label)}</div><div style="font-size:.76rem;color:var(--muted)">${esc(t.hint)}</div></span>
-      <span style="font-weight:800;color:var(--gold);white-space:nowrap">+${t.points} b</span>
-      <span style="font-size:1.3rem;color:${done?'#6bcf6b':'var(--muted)'}">${done?'✓':'○'}</span>
-    </button>`;
+    const c=d.today_counts[t.key]||0;
+    return `<div style="display:flex;align-items:center;gap:10px;background:${c>0?'rgba(76,175,80,.10)':'var(--card)'};border:1px solid ${c>0?'rgba(76,175,80,.4)':'var(--border)'};border-radius:12px;padding:10px 12px;margin-bottom:8px">
+      <span style="font-size:1.4rem">${t.icon}</span>
+      <span style="flex:1;min-width:0"><div style="font-weight:700;color:var(--cream);font-size:.92rem">${esc(t.label)} <span style="color:var(--gold);font-size:.76rem">${t.points} b/ks</span></div><div style="font-size:.72rem;color:var(--muted)">${esc(t.hint)}</div></span>
+      <div style="display:flex;align-items:center;gap:5px">
+        <button onclick="stepTask('${t.key}',-1)" style="width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--cream);font-size:1.1rem;cursor:pointer">−</button>
+        <input id="tc-${t.key}" type="number" min="0" max="99" value="${c}" onchange="setTask('${t.key}',this.value)" style="width:48px;text-align:center;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:8px;padding:6px">
+        <button onclick="stepTask('${t.key}',1)" style="width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--cream);font-size:1.1rem;cursor:pointer">+</button>
+      </div>
+      <span id="tp-${t.key}" style="font-weight:800;color:var(--gold);min-width:46px;text-align:right;font-size:.9rem">${c*t.points} b</span>
+    </div>`;
   }).join('');
-  // súhrn
-  const summary = `<div style="display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 14px">
-    <div style="flex:1;min-width:120px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center"><div style="font-size:1.6rem;font-weight:800;color:var(--gold)">${d.total_points}</div><div style="font-size:.75rem;color:var(--muted)">bodov (${esc(monthLbl)})</div></div>
-    <div style="flex:1;min-width:120px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center"><div style="font-size:1.6rem;font-weight:800;color:var(--cream)">${d.active_days}</div><div style="font-size:.75rem;color:var(--muted)">aktívnych dní</div></div>
-    <div style="flex:1;min-width:120px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center"><div style="font-size:1.6rem;font-weight:800;color:var(--cream)">${d.my_rank?('#'+d.my_rank):'—'}</div><div style="font-size:.75rem;color:var(--muted)">moje poradie</div></div>
+  // hodiny dnes
+  const hoursRow = `<div style="display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:8px">
+    <span style="font-size:1.4rem">⏱️</span>
+    <span style="flex:1"><div style="font-weight:700;color:var(--cream);font-size:.92rem">Odpracované hodiny dnes</div><div style="font-size:.72rem;color:var(--muted)">Koľko hodín si dnes pracoval/a (sčítava sa v mesiaci).</div></span>
+    <input id="th-hours" type="number" min="0" max="24" step="0.5" value="${d.today_hours||0}" onchange="setHours(this.value)" style="width:64px;text-align:center;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:8px;padding:6px"><span style="color:var(--muted);font-size:.8rem">h</span>
   </div>`;
-  // rebríček tímu
-  const board = (d.board&&d.board.length) ? `<div class="section-title" style="font-size:.95rem;margin:18px 0 10px"><i class="bi bi-trophy" style="color:var(--gold)"></i> Rebríček tímu — ${esc(monthLbl)}</div>`+
-    d.board.map((r,i)=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--border)"><span style="width:26px;text-align:center">${['🥇','🥈','🥉'][i]||(i+1+'.')}</span><span style="flex:1;font-weight:600">${esc(r.name)}</span><span style="font-size:.78rem;color:var(--muted)">${r.active_days} dní</span><b style="color:var(--gold);min-width:52px;text-align:right">${r.points} b</b></div>`).join('') : '';
-  box.innerHTML = prize + `<div style="font-weight:700;color:var(--cream);margin-bottom:8px">📅 Dnes — zaklikni čo si spravil</div>` + checklist + summary + board +
+  // súhrn
+  const summary = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px">
+    <div style="flex:1;min-width:110px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center"><div style="font-size:1.5rem;font-weight:800;color:var(--gold)">${d.total_points}</div><div style="font-size:.72rem;color:var(--muted)">bodov</div></div>
+    <div style="flex:1;min-width:110px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center"><div style="font-size:1.5rem;font-weight:800;color:var(--cream)">${d.month_hours||0}</div><div style="font-size:.72rem;color:var(--muted)">hodín</div></div>
+    <div style="flex:1;min-width:110px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center"><div style="font-size:1.5rem;font-weight:800;color:var(--cream)">${d.active_days}</div><div style="font-size:.72rem;color:var(--muted)">aktívnych dní</div></div>
+    <div style="flex:1;min-width:110px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center"><div style="font-size:1.5rem;font-weight:800;color:var(--cream)">${d.my_rank?('#'+d.my_rank):'—'}</div><div style="font-size:.72rem;color:var(--muted)">poradie</div></div>
+  </div>`;
+  // plná tabuľka tímu (ako vidí admin)
+  const medal=['🥇','🥈','🥉'];
+  const board = (d.board&&d.board.length) ? `<div class="section-title" style="font-size:.95rem;margin:18px 0 10px"><i class="bi bi-trophy" style="color:var(--gold)"></i> Výsledky tímu — ${esc(monthLbl)}</div>
+    <div style="overflow-x:auto"><table style="width:100%;min-width:520px;border-collapse:collapse;font-size:.82rem">
+      <thead><tr style="color:var(--muted);text-align:right">
+        <th style="text-align:left;padding:6px 4px">#</th><th style="text-align:left">Tréner</th>
+        ${d.tasks.map(t=>`<th title="${esc(t.label)}" style="padding:6px 4px">${t.icon}</th>`).join('')}
+        <th style="padding:6px 4px">⏱️</th><th style="padding:6px 4px">Dni</th><th style="padding:6px 4px;color:var(--gold)">Body</th>
+      </tr></thead>
+      <tbody>${d.board.map((r,i)=>`<tr style="border-top:1px solid var(--border);text-align:right${r.user_id===d._me?'':''}">
+        <td style="text-align:left;padding:7px 4px">${medal[i]||(i+1)}</td>
+        <td style="text-align:left;font-weight:600">${esc(r.name)}</td>
+        ${d.tasks.map(t=>`<td style="padding:7px 4px;color:${(r.counts[t.key]||0)?'var(--cream)':'#555'}">${r.counts[t.key]||0}</td>`).join('')}
+        <td style="padding:7px 4px;color:var(--muted)">${r.hours||0}</td>
+        <td style="padding:7px 4px;color:var(--muted)">${r.active_days}</td>
+        <td style="padding:7px 4px;font-weight:800;color:var(--gold)">${r.points}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>` : '';
+  box.innerHTML = prize + `<div style="font-weight:700;color:var(--cream);margin-bottom:8px">📅 Dnes — zadaj koľko čoho si spravil</div>` + checklist + hoursRow + summary + board +
     `<button onclick="loadTaskHistory()" style="margin-top:12px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:10px;padding:8px 14px;font-size:.82rem;cursor:pointer">🕘 História & minulí víťazi</button><div id="taskHistBox"></div>`;
 }
-async function toggleTask(key){
-  const r=await api('/api/tasks/toggle',{method:'POST',body:{task_key:key}});
-  if(r?.ok){ if(r.done) toast(`✅ +${r.points} bodov!`); loadTasks(); }
-  else toast(r?.error||'Chyba', true);
+async function setTask(key, count){
+  const c=Math.max(0,Math.min(99,parseInt(count)||0));
+  const r=await api('/api/tasks/set',{method:'POST',body:{task_key:key,count:c}});
+  if(r?.ok){ loadTasks(); } else toast(r?.error||'Chyba', true);
+}
+function stepTask(key, delta){
+  const inp=document.getElementById('tc-'+key); if(!inp) return;
+  const nv=Math.max(0,Math.min(99,(parseInt(inp.value)||0)+delta));
+  inp.value=nv; setTask(key,nv);
+}
+async function setHours(h){
+  const hours=Math.max(0,Math.min(24,parseFloat(h)||0));
+  const r=await api('/api/tasks/hours',{method:'POST',body:{hours}});
+  if(r?.ok){ loadTasks(); } else toast(r?.error||'Chyba', true);
 }
 async function loadTaskHistory(){
   const box=document.getElementById('taskHistBox');
