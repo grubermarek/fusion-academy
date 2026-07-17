@@ -155,6 +155,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('retention')"><i class="bi bi-people-fill me-2"></i>Retencia & LTV</a>
       <a class="nav-link" href="#" onclick="show('points')"><i class="bi bi-star me-2"></i>Body klientov</a>
       <a class="nav-link" href="#" onclick="show('leaderboard')"><i class="bi bi-trophy me-2"></i>Leaderboard dochádzky</a>
+      <a class="nav-link" href="#" onclick="show('classhistory')"><i class="bi bi-clock-history me-2"></i>História hodín & zárobky</a>
       <a class="nav-link" href="#" onclick="show('trainers')"><i class="bi bi-person-badge me-2"></i>Výkon trénerov</a>
       <a class="nav-link" href="#" onclick="show('payouts')"><i class="bi bi-cash-stack me-2"></i>Výplaty trénerov</a>
       <div class="nav-group-label">Systém</div>
@@ -1284,6 +1285,33 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </table></div>
   </div>
 
+  <!-- HISTÓRIA HODÍN & ZÁROBKY -->
+  <div class="section" id="s-classhistory">
+    <h4 class="fw-bold mb-1">🕘 História hodín & zárobky</h4>
+    <p class="text-muted small mb-3">Jednotlivé odučené hodiny — kto učil, kto bol na hodine, tržba a zárobok trénera. Klikni na riadok pre rozpis, na hlavičku pre zoradenie, na meno/trénera pre profil a zárobky.</p>
+    <div class="d-flex gap-2 align-items-end flex-wrap mb-3">
+      <div><label class="text-muted small">Mesiac</label><input type="month" id="chMonth" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+      <div><label class="text-muted small">Mesto</label><select id="chCity" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:160px"><option value="">Všetky</option></select></div>
+      <div><label class="text-muted small">Tréner</label><select id="chTrainer" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:180px"><option value="">Všetci</option></select></div>
+      <button class="btn btn-sm btn-warning" onclick="loadClassHistory()">Zobraziť</button>
+    </div>
+    <div id="chSummary" class="d-flex flex-wrap gap-2 mb-3"></div>
+    <div class="row g-3 mb-3">
+      <div class="col-md-6"><div class="card border-0 rounded-3 p-3"><div class="fw-semibold mb-2">👤 Podľa trénera <span class="text-muted small">(klik = zárobky)</span></div><div id="chByTrainer" class="small"></div></div></div>
+      <div class="col-md-6"><div class="card border-0 rounded-3 p-3"><div class="fw-semibold mb-2">📍 Podľa mesta</div><div id="chByCity" class="small"></div></div></div>
+    </div>
+    <div class="card border-0 rounded-3 p-0" style="overflow-x:auto">
+      <table class="table table-dark table-hover align-middle mb-0" style="min-width:820px">
+        <thead><tr id="chHead" style="cursor:pointer">
+          <th data-k="date">Dátum ⇅</th><th data-k="city">Mesto ⇅</th><th data-k="class_name">Hodina ⇅</th>
+          <th data-k="trainer">Tréner ⇅</th><th data-k="count" class="text-end">Účastníci ⇅</th>
+          <th data-k="revenue" class="text-end">Tržba ⇅</th><th data-k="earning" class="text-end">Zárobok ⇅</th>
+        </tr></thead>
+        <tbody id="chBody"><tr><td colspan="7" class="text-center text-muted py-3">Vyber mesiac a klikni Zobraziť.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
   <!-- VÝKON TRÉNEROV -->
   <div class="section" id="s-trainers">
     <h4 class="fw-bold mb-1">🏅 Výkon trénerov</h4>
@@ -1509,6 +1537,7 @@ async function api(url,opts={}){
 function eur(v){return (+v).toFixed(2)+' €';}
 function dateStr(d){return d?d.slice(0,10):'—';}
 function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function esc(s){return escHtml(s);}
 function showToast(msg,type='success'){
   let t=document.getElementById('adminToast');
   if(!t){t=document.createElement('div');t.id='adminToast';t.style.cssText='position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:8px;color:#fff;font-size:.9rem;z-index:9999;display:none;max-width:300px';document.body.appendChild(t);}
@@ -1520,7 +1549,7 @@ const GROUP_TITLES={home:'Domov',manage:'Správa',marketing:'Marketing',reports:
 const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',
   leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',
   marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
-  finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',reset:'reports',
+  finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',reset:'reports',
   partners:'partners',addpartner:'partners',commissions:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
@@ -1562,6 +1591,7 @@ function show(sec){
   if(sec==='retention')loadRetention();
   if(sec==='accounting')initAccounting();
   if(sec==='points')initPoints();
+  if(sec==='classhistory')initClassHistory();
   if(sec==='trainers')initTrainers();
   if(sec==='payouts')initPayouts();
   if(sec==='refunds')loadRefunds();
@@ -1959,6 +1989,113 @@ async function savePayoutDeduction(id){
 
 /* ─── VÝKON TRÉNEROV ─────────────────────────────────────── */
 let _trInit=false;
+// ── História hodín & zárobky ──────────────────────────────────────────────────
+let _chInit=false, _chData=null, _chSort={k:'date',dir:-1};
+function initClassHistory(){
+  if(!_chInit){ _chInit=true;
+    document.getElementById('chMonth').value=new Date().toISOString().slice(0,7);
+    document.getElementById('chHead').querySelectorAll('th').forEach(th=>{
+      th.onclick=()=>{ const k=th.dataset.k; _chSort.dir=(_chSort.k===k)?-_chSort.dir:1; _chSort.k=k; renderChTable(); };
+    });
+  }
+  loadClassHistory();
+}
+async function loadClassHistory(){
+  const month=document.getElementById('chMonth').value||new Date().toISOString().slice(0,7);
+  const city=document.getElementById('chCity').value||'';
+  const trainer=document.getElementById('chTrainer').value||'';
+  const qs=new URLSearchParams({month}); if(city)qs.set('city',city); if(trainer)qs.set('trainer',trainer);
+  document.getElementById('chBody').innerHTML='<tr><td colspan="7" class="text-center text-muted py-3">Načítavam…</td></tr>';
+  const d=await api('/api/admin/class-history?'+qs.toString());
+  if(!d||d.error){ document.getElementById('chBody').innerHTML='<tr><td colspan="7" class="text-danger py-3">Chyba načítania.</td></tr>'; return; }
+  _chData=d;
+  // naplň filtre (raz)
+  const cityS=document.getElementById('chCity'), trS=document.getElementById('chTrainer');
+  if(cityS.options.length<=1) d.cities.forEach(c=>cityS.add(new Option(c,c)));
+  if(trS.options.length<=1) d.trainers.forEach(t=>trS.add(new Option(t,t)));
+  const eur=v=>(+v||0).toFixed(2).replace('.',',')+' €';
+  const t=d.totals;
+  document.getElementById('chSummary').innerHTML=`
+    <span class="badge bg-secondary">🗓️ ${t.sessions} hodín</span>
+    <span class="badge bg-secondary">👥 ${t.attendances} účastí</span>
+    <span class="badge bg-secondary">💶 Tržba ${eur(t.revenue)}</span>
+    <span class="badge bg-warning text-dark">🧑‍🏫 Zárobky trénerov ${eur(t.earning)}</span>`;
+  document.getElementById('chByTrainer').innerHTML = d.byTrainer.length ? d.byTrainer.map(x=>`
+    <div class="d-flex justify-content-between align-items-center py-1 border-bottom border-secondary" style="cursor:pointer" ${x.trainer_id?`onclick="openTrainerEarnings('${x.trainer_id}','${esc(x.trainer).replace(/'/g,'')}')"`:''}>
+      <span>${esc(x.trainer)} ${x.trainer_id?'<i class=\'bi bi-chevron-right small text-muted\'></i>':''}</span>
+      <span class="text-muted">${x.sessions} hod · ${x.attendances} úč · <b class="text-warning">${eur(x.earning)}</b></span>
+    </div>`).join('') : '<div class="text-muted">Žiadne dáta.</div>';
+  document.getElementById('chByCity').innerHTML = d.byCity.length ? d.byCity.map(x=>`
+    <div class="d-flex justify-content-between py-1 border-bottom border-secondary">
+      <span>📍 ${esc(x.city)}</span><span class="text-muted">${x.sessions} hod · ${x.attendances} úč · <b>${eur(x.revenue)}</b></span>
+    </div>`).join('') : '<div class="text-muted">Žiadne dáta.</div>';
+  renderChTable();
+}
+function renderChTable(){
+  if(!_chData) return;
+  const eur=v=>(+v||0).toFixed(2).replace('.',',')+' €';
+  const {k,dir}=_chSort;
+  const rows=[..._chData.sessions].sort((a,b)=>{
+    let av=a[k], bv=b[k]; if(typeof av==='number'||typeof bv==='number'){av=+av;bv=+bv;return (av-bv)*dir;}
+    return String(av).localeCompare(String(bv))*dir;
+  });
+  const body=document.getElementById('chBody');
+  if(!rows.length){ body.innerHTML='<tr><td colspan="7" class="text-center text-muted py-3">Za toto obdobie žiadne odučené hodiny.</td></tr>'; return; }
+  body.innerHTML=rows.map((s,i)=>{
+    const att=s.attendees.map(a=>a.user_id&&!a.is_child
+      ? `<a href="/u/${a.user_id}" target="_blank" style="color:var(--gold);text-decoration:none">${esc(a.name)}</a>`
+      : esc(a.name)).join(', ');
+    const parts=(s.earn_parts||[]).map(p=>`<div class="d-flex justify-content-between"><span class="text-muted">${esc(p.label)}</span><span>${eur(p.amount)}</span></div>`).join('');
+    return `<tr style="cursor:pointer" onclick="chToggle(${i})">
+        <td>${s.date}</td><td>${esc(s.city)}</td><td>${s.time_start?s.time_start+' ':''}${esc(s.class_name)}</td>
+        <td>${esc(s.trainer)}</td><td class="text-end">${s.count}</td>
+        <td class="text-end">${eur(s.revenue)}</td><td class="text-end fw-bold text-warning">${eur(s.earning)}</td>
+      </tr>
+      <tr id="chDetail-${i}" style="display:none"><td colspan="7" style="background:rgba(255,255,255,.03)">
+        <div class="row g-3 py-2">
+          <div class="col-md-7"><div class="fw-semibold small mb-1">👥 Účastníci (${s.count})</div><div class="small">${att||'<span class="text-muted">Nikto</span>'}</div></div>
+          <div class="col-md-5"><div class="fw-semibold small mb-1">💰 Rozpis zárobku trénera</div><div class="small">${parts||'<span class="text-muted">—</span>'}<div class="d-flex justify-content-between border-top border-secondary mt-1 pt-1"><b>Spolu</b><b class="text-warning">${eur(s.earning)}</b></div></div></div>
+        </div>
+      </td></tr>`;
+  }).join('');
+  // aktualizuj šípky v hlavičke
+  document.getElementById('chHead').querySelectorAll('th').forEach(th=>{
+    const base=th.textContent.replace(/[⇅▲▼]/g,'').trim();
+    th.innerHTML = base+(th.dataset.k===k?(dir>0?' ▲':' ▼'):' ⇅');
+  });
+}
+function chToggle(i){ const d=document.getElementById('chDetail-'+i); if(d) d.style.display=d.style.display==='none'?'table-row':'none'; }
+// Zárobky trénera – rovnaký pohľad ako vidí tréner
+async function openTrainerEarnings(trainerId,name){
+  let modal=document.getElementById('trEarnModal');
+  if(!modal){ modal=document.createElement('div'); modal.id='trEarnModal';
+    modal.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:30px 12px';
+    document.body.appendChild(modal);
+  }
+  modal.innerHTML='<div style="background:#1a1a1a;border:1px solid #444;border-radius:14px;max-width:640px;width:100%;padding:20px;color:#eee"><div class="text-muted">Načítavam…</div></div>';
+  modal.onclick=e=>{ if(e.target===modal) modal.remove(); };
+  const d=await api('/api/trainer/earnings?trainer_id='+encodeURIComponent(trainerId));
+  const eur=v=>(+v||0).toFixed(2).replace('.',',')+' €';
+  if(!d||d.error){ modal.querySelector('div').innerHTML='<div class="text-danger">Chyba načítania.</div>'; return; }
+  const rows=(d.months||[]).filter(m=>m.total||m.sessions).map(m=>`
+    <div style="border:1px solid #333;border-radius:10px;padding:10px 12px;margin-bottom:8px">
+      <div class="d-flex justify-content-between align-items-center">
+        <b>${m.month}</b>
+        <span><span class="badge ${m.paid?'bg-success':'bg-warning text-dark'}">${m.paid?'Vyplatené':'Čaká'}</span> <b class="text-warning ms-2">${eur(m.total)}</b></span>
+      </div>
+      <div class="small text-muted mt-1">${m.sessions} hodín · ${m.attendances} účastí · tržba ${eur(m.revenue)}</div>
+      <div class="small mt-1">${(m.items||[]).map(it=>`<div class="d-flex justify-content-between"><span class="text-muted">${esc(it.label)}${it.count!==''?` · ${it.count}×${it.per}`:''}</span><span>${eur(it.amount)}</span></div>`).join('')}</div>
+    </div>`).join('');
+  modal.innerHTML=`<div style="background:#1a1a1a;border:1px solid #444;border-radius:14px;max-width:640px;width:100%;padding:20px;color:#eee">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h5 class="mb-0">💰 Zárobky — ${esc(name)}</h5>
+      <button class="btn btn-sm btn-outline-light" onclick="document.getElementById('trEarnModal').remove()">✕</button>
+    </div>
+    <div class="mb-3"><span class="badge bg-warning text-dark">Spolu 12 mes.: ${eur(d.grand_total)}</span> <span class="badge bg-secondary">z toho affiliate ${eur(d.grand_affiliate)}</span></div>
+    ${rows||'<div class="text-muted">Žiadne zárobky.</div>'}
+  </div>`;
+}
+
 function initTrainers(){
   if(!_trInit){ _trInit=true;
     const now=new Date(), to=now.toISOString().slice(0,10);

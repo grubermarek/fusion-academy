@@ -4628,6 +4628,77 @@ function computePayout(rule, st){
   return {base, bonuses, billable};
 }
 
+// História hodín + zárobkov: jednotlivé odučené hodiny (session = hodina + dátum),
+// kto učil, kto bol na hodine, tržba a zárobok trénera za tú hodinu. Filtre: mesiac/mesto/tréner.
+app.get('/api/admin/class-history', adminAuth, async(req,res)=>{
+  try {
+    const month = (req.query.month||today().slice(0,7)).slice(0,7);
+    const classes = await q.find(db.classes,{});
+    const clsMap = Object.fromEntries(classes.map(c=>[c._id,c]));
+    const users = await q.find(db.users,{});
+    const uMap = Object.fromEntries(users.map(u=>[u._id,u]));
+    const bookings = await q.find(db.bookings,{});
+    const bDate=b=>b.booking_date||(b.created_at||'').slice(0,10)||'';
+    const firstBookingOf={};
+    for(const b of bookings){ if(!b.user_id||b.status==='cancelled') continue; const d=bDate(b); if(!firstBookingOf[b.user_id]||d<firstBookingOf[b.user_id]) firstBookingOf[b.user_id]=d; }
+    const rules = Object.fromEntries((await q.find(db.payout_rules,{})).map(r=>[r.trainer,r]));
+    const ruleFor = ins => {
+      if(rules[ins]) return {...DEFAULT_PAYOUT_RULE,...rules[ins]};
+      const key=Object.keys(rules).find(k=>ins&&k&&(k.includes(ins.split(' ')[0])||ins.includes(k.split(' ')[0])));
+      return {...DEFAULT_PAYOUT_RULE,...(key?rules[key]:{})};
+    };
+    const sessions={};
+    for(const b of bookings){
+      const d=bDate(b); if(!d.startsWith(month)) continue;
+      if(!['attended','confirmed'].includes(b.status)) continue;
+      const cls=clsMap[b.class_id];
+      const key=b.class_id+'|'+d;
+      const s=sessions[key]=sessions[key]||{ date:d, class_id:b.class_id, class_name:cls?.name||b.class_name||'—',
+        city:cls?.location||b.class_location||'—', trainer:cls?.instructor||'—', time_start:cls?.time_start||'',
+        capacity:cls?.capacity||30, price:+cls?.price||10, attendees:[], newClients:0 };
+      const u=uMap[b.user_id];
+      s.attendees.push({ user_id:b.user_id, name:b.user_name||u?.name||b.child_name||'—', is_child:!!b.is_child_booking, status:b.status });
+      if(b.user_id && firstBookingOf[b.user_id]===d) s.newClients++;
+    }
+    let list=Object.values(sessions).map(s=>{
+      const count=s.attendees.length;
+      const revenue=+(count*s.price).toFixed(2);
+      const rule=ruleFor(s.trainer);
+      const thr=rule.per_client_threshold||0;
+      const over=Math.max(0,count-thr);
+      const full=count>=s.capacity;
+      const parts=[
+        {label:'Základ za hodinu', amount:+(rule.fixed_per_class||0).toFixed(2)},
+        {label:(thr>0?`Klienti nad ${thr}`:'Za účastníka')+` (${over}×${rule.per_client||0} €)`, amount:+((rule.per_client||0)*over).toFixed(2)},
+        {label:`% z tržby (${rule.pct_of_revenue||0} %)`, amount:+((rule.pct_of_revenue||0)/100*revenue).toFixed(2)},
+        {label:'Bonus plná hodina', amount:+(full?(rule.bonus_full_class||0):0).toFixed(2)},
+        {label:`Bonus noví klienti (${s.newClients}×${rule.bonus_new_member||0} €)`, amount:+((rule.bonus_new_member||0)*s.newClients).toFixed(2)},
+      ].filter(p=>p.amount);
+      const earning=+parts.reduce((a,p)=>a+p.amount,0).toFixed(2);
+      return { ...s, count, revenue, earning, earn_parts:parts };
+    });
+    if(req.query.city)    list=list.filter(s=>s.city===req.query.city);
+    if(req.query.trainer) list=list.filter(s=>s.trainer===req.query.trainer);
+    list.sort((a,b)=>b.date.localeCompare(a.date)||(a.time_start||'').localeCompare(b.time_start||''));
+    const byTrainer={}, byCity={};
+    for(const s of list){
+      const t=byTrainer[s.trainer]=byTrainer[s.trainer]||{trainer:s.trainer,sessions:0,attendances:0,revenue:0,earning:0};
+      t.sessions++; t.attendances+=s.count; t.revenue+=s.revenue; t.earning+=s.earning;
+      const c=byCity[s.city]=byCity[s.city]||{city:s.city,sessions:0,attendances:0,revenue:0,earning:0};
+      c.sessions++; c.attendances+=s.count; c.revenue+=s.revenue; c.earning+=s.earning;
+    }
+    const fix=o=>Object.values(o).map(x=>({...x,revenue:+x.revenue.toFixed(2),earning:+x.earning.toFixed(2)}));
+    // trainer_id doplň k byTrainer (pre preklik na zárobky)
+    const tidByName={}; users.forEach(u=>{ if(u.is_admin||u.user_type==='trainer'||u.user_type==='manager') tidByName[u.name]=u._id; });
+    const byTrainerArr=fix(byTrainer).map(t=>({...t, trainer_id: tidByName[t.trainer] || (Object.entries(tidByName).find(([n])=>n.includes((t.trainer||'').split(' ')[0]))||[])[1] || null})).sort((a,b)=>b.earning-a.earning);
+    const totals={ sessions:list.length, attendances:list.reduce((s,x)=>s+x.count,0),
+      revenue:+list.reduce((s,x)=>s+x.revenue,0).toFixed(2), earning:+list.reduce((s,x)=>s+x.earning,0).toFixed(2) };
+    res.json({ month, sessions:list, byTrainer:byTrainerArr, byCity:fix(byCity).sort((a,b)=>b.revenue-a.revenue), totals,
+      cities:[...new Set(classes.map(c=>c.location).filter(Boolean))].sort(),
+      trainers:[...new Set(classes.map(c=>c.instructor).filter(Boolean))].sort() });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/admin/payout-rules', adminAuth, async(req,res)=>{
   res.json(await q.find(db.payout_rules,{}));
 });
