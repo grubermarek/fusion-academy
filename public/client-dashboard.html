@@ -821,9 +821,12 @@ function renderAccessBar(me){
     text.innerHTML='<strong>🎁 Prvá hodina ZADARMO!</strong> Zarezervuj si svoju prvú hodinu bezplatne.';
     bar.style.display='flex';
   } else if((me.single_entries||0)>0||(me.free_credits||0)>0){
-    const cr=(me.single_entries||0)+(me.free_credits||0);
+    const se=me.single_entries||0, fc=me.free_credits||0;
+    const parts=[];
+    if(se>0) parts.push(`<strong>${se} ${se===1?'vstup':(se<5?'vstupy':'vstupov')}</strong>`);
+    if(fc>0) parts.push(`<strong>${fc} ${fc===1?'hodina':(fc<5?'hodiny':'hodín')} zadarmo</strong>`);
     bar.className='access-bar ok anim anim-d2';icon.className='bi bi-ticket-perforated-fill';
-    text.innerHTML=`Máš <strong>${cr} vstup(ov)</strong> k dispozícii. <a href="/pricing" style="color:var(--gold)">Kúpiť členstvo →</a>`;
+    text.innerHTML=`Máš ${parts.join(' + ')} k dispozícii. <a href="/pricing" style="color:var(--gold)">Kúpiť členstvo →</a>`;
     bar.style.display='flex';
   } else {
     bar.className='access-bar warn anim anim-d2';icon.className='bi bi-exclamation-triangle-fill';

@@ -1833,6 +1833,8 @@ app.put('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
   if(req.body.taught_group_hours!==undefined) set.taught_group_hours=Math.max(0,parseInt(req.body.taught_group_hours)||0);
   if(req.body.taught_private_hours!==undefined) set.taught_private_hours=Math.max(0,parseInt(req.body.taught_private_hours)||0);
   if(req.body.referral_credit!==undefined) set.referral_credit=Math.max(0,+parseFloat(req.body.referral_credit).toFixed(2)||0);
+  if(req.body.single_entries!==undefined) set.single_entries=Math.max(0,parseInt(req.body.single_entries)||0);
+  if(req.body.free_credits!==undefined) set.free_credits=Math.max(0,parseInt(req.body.free_credits)||0);
   if(Array.isArray(req.body.merch_owned)) set.merch_owned=req.body.merch_owned.filter(x=>MERCH_KEYWORDS[x]);
   if(Array.isArray(req.body.manual_achievements)) set.manual_achievements=req.body.manual_achievements.filter(id=>ACHIEVEMENTS.some(a=>a.id===id));
   if(Object.keys(set).length) await q.update(db.users,{_id:u._id},{$set:set});

@@ -765,6 +765,17 @@ function renderAdmin(){
       </div>
     </div>
     <div class="set-row">
+      <span class="set-label">🎟️ Vstupy & bonusy</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <label class="set-hint" style="margin:0">Platené vstupy:</label>
+        <input type="number" id="admEntriesSet" min="0" value="${a.single_entries||0}" style="width:70px;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:8px 10px">
+        <label class="set-hint" style="margin:0 0 0 6px">Bonus hodiny zadarmo:</label>
+        <input type="number" id="admFreeSet" min="0" value="${a.free_credits||0}" style="width:70px;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:8px 10px">
+        <button onclick="saveEntries()">Uložiť</button>
+      </div>
+      <span class="set-hint">Na Dashboarde sa zobrazia zvlášť. Sem oprav, ak sedí nesprávny počet (napr. staré bonusy z migrácie).</span>
+    </div>
+    <div class="set-row">
       <span class="set-label">Odchodené hodiny (návštevy)</span>
       <div class="adm-hours">
         <input type="number" id="admHours" min="0" value="${a.visit_count||0}">
@@ -930,6 +941,11 @@ async function saveBirthday(){
   const r=await fetch('/api/admin/users/'+encodeURIComponent(uid)+'/birthday',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({birthday:v})}).then(x=>x.json()).catch(()=>null);
   if(r&&r.ok){ _awards.birthday=r.birthday; alert('Narodeniny uložené ✓'); }
   else alert('Chyba: '+((r&&r.error)||'?'));
+}
+async function saveEntries(){
+  const se=parseInt(document.getElementById('admEntriesSet').value)||0;
+  const fc=parseInt(document.getElementById('admFreeSet').value)||0;
+  if(await putAwards({single_entries:se, free_credits:fc})){ _awards.single_entries=se; _awards.free_credits=fc; alert('Vstupy uložené ✓'); }
 }
 async function saveTaught(field,inputId){
   const v=parseInt(document.getElementById(inputId).value)||0;
