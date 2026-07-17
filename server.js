@@ -6928,10 +6928,20 @@ app.get('/api/client/winners-history', auth, async(req,res)=>{
       return w;
     };
     const SKM=['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
-    const now=new Date(); const months=[], years=[];
-    for(let i=1;i<=12;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); const p=d.toISOString().slice(0,7); const w=await winnerFor(p); if(w) months.push({period:p, label:SKM[d.getMonth()]+' '+d.getFullYear(), name:w.name, id:w.id, avatar:w.avatar, points:w.points}); }
-    for(let y=now.getFullYear(); y>=now.getFullYear()-2; y--){ const w=await winnerFor(String(y)); if(w) years.push({period:String(y), label:String(y), name:w.name, id:w.id, avatar:w.avatar, points:w.points}); }
-    res.json({ ok:true, months, years });
+    // Súťaž štartuje júl 2026 — víťazka mesiaca sa vyhlási 1. deň nasledujúceho
+    // mesiaca, víťazka roka 1. januára. História = len UKONČENÉ (vyhlásené) obdobia.
+    const COMP_START='2026-07'; const COMP_START_Y=2026;
+    const now=new Date(); const curMonth=today().slice(0,7); const curYear=now.getFullYear();
+    const months=[], years=[];
+    // ukončené mesiace: od COMP_START po predošlý mesiac (vrátane)
+    for(let i=1;i<=12;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); const p=d.toISOString().slice(0,7);
+      if(p<COMP_START || p>=curMonth) continue; const w=await winnerFor(p); if(w) months.push({period:p, label:SKM[d.getMonth()]+' '+d.getFullYear(), name:w.name, id:w.id, avatar:w.avatar, points:w.points}); }
+    // ukončené roky: od COMP_START_Y po predošlý rok (vyhlásenie 1.1.)
+    for(let y=curYear-1; y>=COMP_START_Y; y--){ const w=await winnerFor(String(y)); if(w) years.push({period:String(y), label:String(y), name:w.name, id:w.id, avatar:w.avatar, points:w.points}); }
+    const SKMG=['januára','februára','marca','apríla','mája','júna','júla','augusta','septembra','októbra','novembra','decembra'];
+    res.json({ ok:true, months, years,
+      next_month_announce:'1. '+(SKMG[now.getMonth()===11?0:now.getMonth()+1])+' '+(now.getMonth()===11?curYear+1:curYear),
+      next_year_announce:'1. januára '+(curYear+1) });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -7774,12 +7784,12 @@ app.get('/api/leaderboard', async(req,res)=>{
     bkgs.forEach(b=>{ counts[b.user_id]=(counts[b.user_id]||0)+1; });
     const allU = await q.find(db.users,{active:true});
     users = allU
-      .filter(u=>counts[u._id])
+      .filter(u=>counts[u._id] && !u.is_admin && u.user_type!=='trainer' && !u.is_child && !u.anonymous)
       .map(u=>({id:u._id,name:u.name,visits:counts[u._id]||0,total:u.visit_count||0}))
       .sort((a,b)=>b.visits-a.visits).slice(0,20);
   } else {
     const allU = await q.find(db.users,{active:true});
-    users = allU.filter(u=>(u.visit_count||0)>0)
+    users = allU.filter(u=>(u.visit_count||0)>0 && !u.is_admin && u.user_type!=='trainer' && !u.is_child && !u.anonymous)
       .sort((a,b)=>(b.visit_count||0)-(a.visit_count||0)).slice(0,20)
       .map(u=>({id:u._id,name:u.name,visits:u.visit_count||0}));
   }

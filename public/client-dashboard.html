@@ -1458,7 +1458,12 @@ async function toggleWinnersHistory(btn){
   let html='';
   if(d.years&&d.years.length){ html+='<div style="font-weight:700;color:var(--gold);margin:4px 0">👑 Klientka roka</div>'+d.years.map(w=>row(w,'👑')).join(''); }
   if(d.months&&d.months.length){ html+='<div style="font-weight:700;color:var(--gold);margin:10px 0 4px">🏆 Klientka mesiaca</div>'+d.months.map(w=>row(w,'🏆')).join(''); }
-  box.innerHTML=html||'<div class="sl-why">Zatiaľ žiadna história — buď prvá! 💛</div>';
+  if(!html){
+    html=`<div class="sl-why">Súťaž práve prebieha — <b>ešte nemáme prvú víťazku</b>. 💛<br>
+      🏆 Prvá <b>klientka mesiaca</b> sa vyhlási <b>${escHtml(d.next_month_announce||'1. dňa nasledujúceho mesiaca')}</b>.<br>
+      👑 Prvá <b>klientka roka</b> sa vyhlási <b>${escHtml(d.next_year_announce||'1. januára')}</b>.<br>Zbieraj body a buď prvá! ✨</div>`;
+  }
+  box.innerHTML=html;
 }
 let _colmWinner=null;
 // Univerzálny modal s rozpisom bodov
