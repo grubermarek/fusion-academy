@@ -4729,9 +4729,20 @@ async function pointsSummaryData(from, to){
     const isOnline=b=>/online/i.test(b.class_name||'')||/online/i.test(b.class_location||'')||b.online===true;
     const byUser={};
     for(const b of bookings){ if(b.user_id && ['attended','confirmed'].includes(b.status) && inRange(b.booking_date||b.created_at)) (byUser[b.user_id]=byUser[b.user_id]||[]).push(b); }
+    const allU=await q.find(db.users,{});
     const refByUser={};
     for(const u of users){ if(u.sponsor_id && inRange(u.created_at)) refByUser[u.sponsor_id]=(refByUser[u.sponsor_id]||0)+1; }
-    const rows=[]; const catTotals={hours:0, online:0, refs:0, membership:0};
+    // noví platiaci členovia (po líniách) + merch v rozsahu
+    const adjacency={}; allU.forEach(u=>{ if(u.sponsor_id) (adjacency[u.sponsor_id]=adjacency[u.sponsor_id]||[]).push(u._id); });
+    const buyerSet=new Set();
+    (await q.find(db.memberships,{})).forEach(m=>{ const plan=MEMBERSHIP_PLANS[m.plan_id]; if(plan&&plan.type==='bundle') return;
+      const d=(m.started_at||m.start_date||m.created_at||'').slice(0,10); if(inRange(d) && (+m.price>0||m.payment_method||m.status)) buyerSet.add(m.user_id); });
+    const emailToId={}; allU.forEach(u=>{ if(u.email) emailToId[u.email.toLowerCase()]=u._id; });
+    const merchMap={};
+    (await q.find(db.orders,{})).filter(o=>o.status==='paid').forEach(o=>{ if(!inRange(o.paid_at||o.created_at)) return;
+      const uid=emailToId[(o.client_email||'').toLowerCase()]; if(!uid) return;
+      (o.items||[]).forEach(it=>{ if(isMerchItem(it)) merchMap[uid]=(merchMap[uid]||0)+(+it.qty||1); }); });
+    const rows=[]; const catTotals={hours:0, online:0, refs:0, membership:0, newmem:0, merch:0};
     for(const u of users){
       const bks=byUser[u._id]||[];
       const online=bks.filter(isOnline).length;
@@ -4739,10 +4750,13 @@ async function pointsSummaryData(from, to){
       const refs=refByUser[u._id]||0;
       const m=await checkMembership(u._id);
       const hasMem=!!m;
-      const pi=buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null});
+      const nm=newMemberPointsFor(u._id, adjacency, buyerSet);
+      const merchCount=merchMap[u._id]||0;
+      const pi=buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount});
       if(pi.total<=0) continue;
       catTotals.hours+=hours*MP_WEIGHTS.hour; catTotals.online+=online*MP_WEIGHTS.hour;
       catTotals.refs+=refs*MP_WEIGHTS.referral; catTotals.membership+=hasMem?MP_WEIGHTS.membership:0;
+      catTotals.newmem+=nm.points; catTotals.merch+=merchCount*MP_WEIGHTS.merch;
       rows.push({ id:u._id, name:u.name, total:pi.total, hours, online, refs, hasMem,
         items:pi.items.filter(i=>i.points>0).map(i=>({label:i.label, count:i.count, points:i.points})) });
     }
@@ -6738,7 +6752,45 @@ const stripDia = s => (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCas
 // ── Bodový systém „Klient mesiaca" ────────────────────────────────────────────
 // 5 b za odchodenú hodinu (aj online), 5 b za privedeného člena, 10 b za aktívne
 // členstvo. Za príspevky/správy v komunite ZÁMERNE žiadne body (dá sa zneužiť).
-const MP_WEIGHTS = { hour:5, referral:5, membership:10 };
+// 5 b hodina, 5 b privedený člen (registrácia), 10 b aktívne členstvo,
+// 30/15/10/5/5 b za nového PLATIACEHO člena v 1.–5. línii, 15 b za kus merchu.
+const MP_WEIGHTS = { hour:5, referral:5, membership:10, newMemberLine:[30,15,10,5,5], merch:15 };
+// Členovia v štruktúre, ktorí si kúpili členstvo v danom období — body po líniách
+function newMemberPointsFor(userId, adjacency, buyerSet){
+  let points=0, count=0;
+  let frontier=[userId]; const seen=new Set([userId]);
+  for(let line=0; line<MP_WEIGHTS.newMemberLine.length; line++){
+    const next=[];
+    for(const pid of frontier){ for(const cid of (adjacency[pid]||[])){ if(seen.has(cid)) continue; seen.add(cid); next.push(cid);
+      if(buyerSet.has(cid)){ count++; points+=MP_WEIGHTS.newMemberLine[line]; } } }
+    frontier=next;
+  }
+  return { count, points };
+}
+// Set: kto si kúpil (platené) členstvo v danom období (prefix YYYY-MM alebo YYYY)
+async function membershipBuyersInPeriod(prefix){
+  const set=new Set();
+  (await q.find(db.memberships,{})).forEach(m=>{
+    const plan=MEMBERSHIP_PLANS[m.plan_id]; if(plan && plan.type==='bundle') return;
+    const d=(m.started_at||m.start_date||m.created_at||'').slice(0,10);
+    if((d||'').startsWith(prefix) && (+m.price>0 || m.payment_method || m.status)) set.add(m.user_id);
+  });
+  return set;
+}
+// Merch = oblečenie/doplnky (podľa názvu produktu, kategórie sa líšia)
+const MERCH_RE = /trič|tielk|mikin|legg|taš|fľaš|flaš|merch|oblečen|obleč|doplnk|čiapk|šatk|ponožk|termosk|nákrčn/i;
+const isMerchItem = it => MERCH_RE.test(it.product_name||'') || /obleč|merch/i.test(it.cat||'');
+// Mapa user_id → počet kusov zakúpeného merchu v období
+async function merchCountMapInPeriod(prefix){
+  const emailToId={}; (await q.find(db.users,{})).forEach(u=>{ if(u.email) emailToId[u.email.toLowerCase()]=u._id; });
+  const map={};
+  (await q.find(db.orders,{})).filter(o=>o.status==='paid').forEach(o=>{
+    const d=(o.paid_at||o.created_at||'').slice(0,10); if(!(d||'').startsWith(prefix)) return;
+    const uid=emailToId[(o.client_email||'').toLowerCase()]; if(!uid) return;
+    (o.items||[]).forEach(it=>{ if(isMerchItem(it)) map[uid]=(map[uid]||0)+(+it.qty||1); });
+  });
+  return map;
+}
 // Rozpis bodov jedného používateľa za daný mesiac (YYYY-MM)
 async function monthlyPointsFor(userId, month){
   month = month || today().slice(0,7);
@@ -6751,15 +6803,21 @@ async function monthlyPointsFor(userId, month){
   const refs = (await q.find(db.users,{sponsor_id:userId})).filter(u=>(u.created_at||'').startsWith(month)).length;
   const m = await checkMembership(userId);
   const hasMem = !!(m && (m.status==='active') && (!m.expires_at || m.expires_at>=today()));
-  return buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null}, month);
+  // noví platiaci členovia (po líniách) + merch
+  const adjacency={}; (await q.find(db.users,{})).forEach(u=>{ if(u.sponsor_id) (adjacency[u.sponsor_id]=adjacency[u.sponsor_id]||[]).push(u._id); });
+  const nm = newMemberPointsFor(userId, adjacency, await membershipBuyersInPeriod(month));
+  const merchCount = (await merchCountMapInPeriod(month))[userId]||0;
+  return buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount}, month);
 }
-function buildPointItems({hours, online, refs, hasMem, memName}, month){
-  online = online||0;
+function buildPointItems({hours, online, refs, hasMem, memName, newMemberCount, newMemberPoints, merchCount}, month){
+  online = online||0; newMemberCount=newMemberCount||0; newMemberPoints=newMemberPoints||0; merchCount=merchCount||0;
   const plur=(n,a,b,c)=> n===1?a : (n>=2&&n<=4?b:c);
   const items = [
     { icon:'🔥', label:'Odchodené hodiny',        count:hours,  per:MP_WEIGHTS.hour,     points:hours*MP_WEIGHTS.hour,     sub:`${hours} ${plur(hours,'hodina','hodiny','hodín')}` },
     { icon:'💻', label:'Online hodiny',            count:online, per:MP_WEIGHTS.hour,     points:online*MP_WEIGHTS.hour,    sub:`${online} ${plur(online,'hodina','hodiny','hodín')}` },
     { icon:'🤝', label:'Privedení noví členovia',  count:refs,   per:MP_WEIGHTS.referral, points:refs*MP_WEIGHTS.referral,   sub:`${refs} ${plur(refs,'člen','členovia','členov')}` },
+    { icon:'🏅', label:'Noví platiaci členovia (aj v hĺbke)', count:newMemberCount, points:newMemberPoints, sub:`${newMemberCount} ${plur(newMemberCount,'člen','členovia','členov')}` },
+    { icon:'🛍️', label:'Zakúpený merch',          count:merchCount, per:MP_WEIGHTS.merch, points:merchCount*MP_WEIGHTS.merch, sub:`${merchCount} ${plur(merchCount,'kus','kusy','kusov')}` },
     { icon:'💛', label: hasMem?('Aktívne členstvo'+(memName?' ('+memName+')':'')):'Aktívne členstvo', count: hasMem?1:0, per:MP_WEIGHTS.membership, points: hasMem?MP_WEIGHTS.membership:0, sub: hasMem?'aktívne':'—' },
   ];
   const total = items.reduce((s,i)=>s+i.points,0);
@@ -6783,8 +6841,9 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
     const memActive = {}, memName = {};
     activeMems.forEach(m=>{ if(!m.expires_at || m.expires_at>=today()){ memActive[m.user_id]=true; memName[m.user_id]=MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'; } });
 
+    const adjacency={}; allUsers.forEach(u=>{ if(u.sponsor_id) (adjacency[u.sponsor_id]=adjacency[u.sponsor_id]||[]).push(u._id); });
     // Víťaz za dané obdobie (prefix YYYY-MM alebo YYYY)
-    const winnerFor = (prefix)=>{
+    const winnerFor = async (prefix)=>{
       const refCount={}; allUsers.forEach(u=>{ if((u.created_at||'').startsWith(prefix) && u.sponsor_id) refCount[u.sponsor_id]=(refCount[u.sponsor_id]||0)+1; });
       const attCount={}, onlineCount={};
       bookings.forEach(b=>{ const d=b.booking_date||(b.created_at||'').slice(0,10);
@@ -6792,15 +6851,18 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
           const on=/online/i.test(b.class_name||'')||/online/i.test(b.class_location||'')||b.online===true;
           if(on) onlineCount[b.user_id]=(onlineCount[b.user_id]||0)+1; else attCount[b.user_id]=(attCount[b.user_id]||0)+1;
         } });
+      const buyerSet=await membershipBuyersInPeriod(prefix);
+      const merchMap=await merchCountMapInPeriod(prefix);
       let w=null, best=-1;
       for(const u of users){
-        const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null }, prefix);
+        const nm=newMemberPointsFor(u._id, adjacency, buyerSet);
+        const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount:merchMap[u._id]||0 }, prefix);
         if(bd.total>0 && bd.total>best){ best=bd.total; w={ id:u._id, name:u.name, avatar:u.avatar||null, refs:refCount[u._id]||0, hours:attCount[u._id]||0, score:bd.total, points:bd.total, breakdown:bd.items, badge:getMemberBadge(u.created_at) }; }
       }
       return w;
     };
-    const winner = winnerFor(monthStr);
-    const winnerYear = winnerFor(yearStr);
+    const winner = await winnerFor(monthStr);
+    const winnerYear = await winnerFor(yearStr);
     const rewardsCfg = (await q.one(db.settings,{key:'rewards'}))?.value || {};
 
     // birthdays & namedays today (non-anonymous)
@@ -6849,7 +6911,8 @@ app.get('/api/client/winners-history', auth, async(req,res)=>{
     const activeMems = await q.find(db.memberships,{status:'active'});
     const memActive={}, memName={};
     activeMems.forEach(m=>{ if(!m.expires_at||m.expires_at>=today()){ memActive[m.user_id]=true; memName[m.user_id]=MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'; } });
-    const winnerFor=(prefix)=>{
+    const adjacency={}; allUsers.forEach(u=>{ if(u.sponsor_id) (adjacency[u.sponsor_id]=adjacency[u.sponsor_id]||[]).push(u._id); });
+    const winnerFor=async (prefix)=>{
       const refCount={}; allUsers.forEach(u=>{ if((u.created_at||'').startsWith(prefix) && u.sponsor_id) refCount[u.sponsor_id]=(refCount[u.sponsor_id]||0)+1; });
       const attCount={}, onlineCount={};
       bookings.forEach(b=>{ const d=b.booking_date||(b.created_at||'').slice(0,10);
@@ -6857,15 +6920,17 @@ app.get('/api/client/winners-history', auth, async(req,res)=>{
           const on=/online/i.test(b.class_name||'')||/online/i.test(b.class_location||'')||b.online===true;
           if(on) onlineCount[b.user_id]=(onlineCount[b.user_id]||0)+1; else attCount[b.user_id]=(attCount[b.user_id]||0)+1;
         } });
+      const buyerSet=await membershipBuyersInPeriod(prefix); const merchMap=await merchCountMapInPeriod(prefix);
       let w=null, best=-1;
-      for(const u of users){ const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null }, prefix);
+      for(const u of users){ const nm=newMemberPointsFor(u._id, adjacency, buyerSet);
+        const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount:merchMap[u._id]||0 }, prefix);
         if(bd.total>0 && bd.total>best){ best=bd.total; w={ id:u._id, name:u.name, avatar:u.avatar||null, points:bd.total }; } }
       return w;
     };
     const SKM=['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
     const now=new Date(); const months=[], years=[];
-    for(let i=1;i<=12;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); const p=d.toISOString().slice(0,7); const w=winnerFor(p); if(w) months.push({period:p, label:SKM[d.getMonth()]+' '+d.getFullYear(), name:w.name, id:w.id, avatar:w.avatar, points:w.points}); }
-    for(let y=now.getFullYear(); y>=now.getFullYear()-2; y--){ const w=winnerFor(String(y)); if(w) years.push({period:String(y), label:String(y), name:w.name, id:w.id, avatar:w.avatar, points:w.points}); }
+    for(let i=1;i<=12;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); const p=d.toISOString().slice(0,7); const w=await winnerFor(p); if(w) months.push({period:p, label:SKM[d.getMonth()]+' '+d.getFullYear(), name:w.name, id:w.id, avatar:w.avatar, points:w.points}); }
+    for(let y=now.getFullYear(); y>=now.getFullYear()-2; y--){ const w=await winnerFor(String(y)); if(w) years.push({period:String(y), label:String(y), name:w.name, id:w.id, avatar:w.avatar, points:w.points}); }
     res.json({ ok:true, months, years });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
