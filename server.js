@@ -755,6 +755,27 @@ async function seedData() {
       max_uses:0, once_per_user:true, min_amount:0, active:true, used_count:0,
       note:'Návrat odídeného klienta – 30% na prvý mesiac', created_at:nowISO() });
   }
+  // Idempotentne: predvolené ceny za klientku mesiaca/roka
+  if(!await q.one(db.settings,{key:'rewards'})){
+    await q.insert(db.settings,{ key:'rewards', value:{
+      year_end:'31.12.2026',
+      disclaimer:'Odmeny sa môžu v priebehu roka meniť.',
+      month_prizes:[
+        '🎓 Súkromná hodina s Marekom Gruberom zdarma',
+        '🥈 Mesiac členstva Silver zdarma',
+        '🏆 Zvýraznenie na nástenke a Instagrame Fusion Academy',
+        '🎁 Zľava 20% na ďalší nákup v e-shope',
+      ],
+      year_prizes:[
+        '👑 Titul „Ambasádorka 2026" s diplomom a pohárom',
+        '👕 Tričko Ambasádorky 2026',
+        '🥇 Ročné členstvo Gold zdarma',
+        '🎓 Súkromná hodina s Marekom Gruberom',
+        '🌟 Trvalé miesto v Sieni slávy Fusion Academy',
+      ],
+    }, created_at:nowISO() });
+    console.log('✅  Predvolené ceny (klientka mesiaca/roka) nastavené');
+  }
 
   // Idempotentne: upsell sekvencia Bronze → Silver (metabolická analýza tela)
   if(await q.count(db.email_steps,{sequence:'bronze_upsell'})===0){
@@ -6793,7 +6814,8 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
     }
     res.json({ month: monthStr, year: yearStr, today_nameday: todayName,
       clientOfMonth: winner, clientOfYear: winnerYear,
-      reward_month: rewardsCfg.month || '', reward_year: rewardsCfg.year || '',
+      rewards: { year_end: rewardsCfg.year_end||'', disclaimer: rewardsCfg.disclaimer||'',
+        month_prizes: rewardsCfg.month_prizes||[], year_prizes: rewardsCfg.year_prizes||[] },
       birthdays, namedays,
       me_anonymous: !!(await q.one(db.users,{_id:req.session.uid}))?.anonymous });
   } catch(e){ res.status(500).json({error:e.message}); }
@@ -6802,15 +6824,49 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
 // Ceny za klientku mesiaca/roka — admin nastaví, klientky vidia
 app.get('/api/admin/rewards', adminAuth, async(req,res)=>{
   const cfg=(await q.one(db.settings,{key:'rewards'}))?.value || {};
-  res.json({ ok:true, month:cfg.month||'', year:cfg.year||'' });
+  res.json({ ok:true, year_end:cfg.year_end||'', disclaimer:cfg.disclaimer||'',
+    month_prizes:cfg.month_prizes||[], year_prizes:cfg.year_prizes||[] });
 });
 app.put('/api/admin/rewards', adminAuth, async(req,res)=>{
   try {
-    const value={ month:String(req.body.month||'').slice(0,200), year:String(req.body.year||'').slice(0,200) };
+    const toList=v=>Array.isArray(v)?v.map(x=>String(x).slice(0,200)).filter(Boolean):String(v||'').split('\n').map(s=>s.trim()).filter(Boolean).slice(0,20);
+    const value={ year_end:String(req.body.year_end||'').slice(0,40), disclaimer:String(req.body.disclaimer||'').slice(0,300),
+      month_prizes:toList(req.body.month_prizes), year_prizes:toList(req.body.year_prizes) };
     const ex=await q.one(db.settings,{key:'rewards'});
     if(ex) await q.update(db.settings,{key:'rewards'},{$set:{value, updated_at:nowISO()}});
     else await q.insert(db.settings,{key:'rewards', value, created_at:nowISO()});
     res.json({ ok:true });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// História víťaziek — klientka mesiaca (posl. 12 mes.) a klientka roka (posl. roky)
+app.get('/api/client/winners-history', auth, async(req,res)=>{
+  try {
+    const users = (await q.find(db.users,{is_admin:{$ne:true}}))
+      .filter(u=>u.user_type!=='trainer' && !u.is_child && !u.anonymous && !(u.imported && !u.claimed));
+    const allUsers = await q.find(db.users,{});
+    const bookings = await q.find(db.bookings,{});
+    const activeMems = await q.find(db.memberships,{status:'active'});
+    const memActive={}, memName={};
+    activeMems.forEach(m=>{ if(!m.expires_at||m.expires_at>=today()){ memActive[m.user_id]=true; memName[m.user_id]=MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'; } });
+    const winnerFor=(prefix)=>{
+      const refCount={}; allUsers.forEach(u=>{ if((u.created_at||'').startsWith(prefix) && u.sponsor_id) refCount[u.sponsor_id]=(refCount[u.sponsor_id]||0)+1; });
+      const attCount={}, onlineCount={};
+      bookings.forEach(b=>{ const d=b.booking_date||(b.created_at||'').slice(0,10);
+        if((d||'').startsWith(prefix) && ['attended','confirmed'].includes(b.status) && b.user_id){
+          const on=/online/i.test(b.class_name||'')||/online/i.test(b.class_location||'')||b.online===true;
+          if(on) onlineCount[b.user_id]=(onlineCount[b.user_id]||0)+1; else attCount[b.user_id]=(attCount[b.user_id]||0)+1;
+        } });
+      let w=null, best=-1;
+      for(const u of users){ const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null }, prefix);
+        if(bd.total>0 && bd.total>best){ best=bd.total; w={ id:u._id, name:u.name, avatar:u.avatar||null, points:bd.total }; } }
+      return w;
+    };
+    const SKM=['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
+    const now=new Date(); const months=[], years=[];
+    for(let i=1;i<=12;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); const p=d.toISOString().slice(0,7); const w=winnerFor(p); if(w) months.push({period:p, label:SKM[d.getMonth()]+' '+d.getFullYear(), name:w.name, id:w.id, avatar:w.avatar, points:w.points}); }
+    for(let y=now.getFullYear(); y>=now.getFullYear()-2; y--){ const w=winnerFor(String(y)); if(w) years.push({period:String(y), label:String(y), name:w.name, id:w.id, avatar:w.avatar, points:w.points}); }
+    res.json({ ok:true, months, years });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 

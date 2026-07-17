@@ -1346,12 +1346,14 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <p class="text-muted small mb-3">Kto koľko bodov získal a za čo (hodiny, online, odporúčania, členstvá). Prepínaj <b>Mesiac / Rok</b>. Klik na klienta otvorí jeho profil.</p>
     <div class="card bg-dark border-secondary mb-3"><div class="card-body py-3">
       <div class="fw-semibold mb-2" style="color:#C9A84C"><i class="bi bi-gift me-1"></i>Ceny za klientku mesiaca a roka</div>
-      <div class="row g-2 align-items-end">
-        <div class="col-md-5"><label class="text-muted small">🏆 Cena za klientku mesiaca</label><input id="rewMonth" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="napr. Permanentka na 5 hodín zdarma"></div>
-        <div class="col-md-5"><label class="text-muted small">👑 Cena za klientku roka</label><input id="rewYear" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="napr. Mesiac členstva zdarma + tričko"></div>
-        <div class="col-md-2"><button class="btn btn-sm btn-warning w-100" onclick="saveRewards()">Uložiť ceny</button></div>
+      <div class="row g-2">
+        <div class="col-md-6"><label class="text-muted small">🏆 Ceny za klientku mesiaca <span class="text-muted">(jedna na riadok)</span></label><textarea id="rewMonth" rows="4" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="🎓 Súkromná hodina s Marekom Gruberom zdarma&#10;🥈 Mesiac Silver zdarma"></textarea></div>
+        <div class="col-md-6"><label class="text-muted small">👑 Ceny za klientku roka <span class="text-muted">(jedna na riadok)</span></label><textarea id="rewYear" rows="4" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="👑 Titul Ambasádorka + diplom a pohár&#10;🥇 Ročné Gold zdarma"></textarea></div>
+        <div class="col-md-4"><label class="text-muted small">Dátum uzávierky (rok)</label><input id="rewEnd" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="31.12.2026"></div>
+        <div class="col-md-6"><label class="text-muted small">Poznámka (napr. odmeny sa môžu meniť)</label><input id="rewDisc" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="Odmeny sa môžu v priebehu roka meniť."></div>
+        <div class="col-md-2 d-flex align-items-end"><button class="btn btn-sm btn-warning w-100" onclick="saveRewards()">Uložiť ceny</button></div>
       </div>
-      <div class="form-text">Zobrazia sa klientkam na ich dashboarde pri víťazkách. Necháš prázdne = nezobrazí sa nič.</div>
+      <div class="form-text">Zobrazia sa klientkam na dashboarde po kliknutí na „🎁 Ceny &amp; súťaž".</div>
     </div></div>
     <div class="d-flex gap-2 align-items-end flex-wrap mb-3">
       <div><label class="text-muted small">Od</label><input type="date" id="ptFrom" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
@@ -2035,10 +2037,19 @@ let _ptInit=false;
 function initPoints(){ loadRewards(); if(_ptInit){loadPointsSummary();return;} _ptInit=true; ptQuick('month'); }
 async function loadRewards(){
   const d=await api('/api/admin/rewards');
-  if(d&&d.ok){ document.getElementById('rewMonth').value=d.month||''; document.getElementById('rewYear').value=d.year||''; }
+  if(d&&d.ok){
+    document.getElementById('rewMonth').value=(d.month_prizes||[]).join('\n');
+    document.getElementById('rewYear').value=(d.year_prizes||[]).join('\n');
+    document.getElementById('rewEnd').value=d.year_end||'';
+    document.getElementById('rewDisc').value=d.disclaimer||'';
+  }
 }
 async function saveRewards(){
-  const r=await api('/api/admin/rewards',{method:'PUT',body:JSON.stringify({month:document.getElementById('rewMonth').value,year:document.getElementById('rewYear').value})});
+  const r=await api('/api/admin/rewards',{method:'PUT',body:JSON.stringify({
+    month_prizes:document.getElementById('rewMonth').value,
+    year_prizes:document.getElementById('rewYear').value,
+    year_end:document.getElementById('rewEnd').value,
+    disclaimer:document.getElementById('rewDisc').value })});
   if(r?.ok) showToast('Ceny uložené ✓','success'); else showToast('Chyba: '+(r?.error||'?'),'error');
 }
 function pointsRange(){ return {from:document.getElementById('ptFrom').value, to:document.getElementById('ptTo').value}; }
