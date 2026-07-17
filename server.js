@@ -930,7 +930,7 @@ app.post('/api/register', async(req,res)=>{
         const set={ password:await bcrypt.hash(password,10), claimed:true, pw_reset:false,
           name: (name||existing.name), phone: (phone||existing.phone||''),
           consent_at: req.body.consent ? nowISO() : existing.consent_at,
-          free_credits: (existing.free_credits||0)+1 }; // hodina zdarma navyše za vytvorenie účtu
+          free_credits: Math.max(existing.free_credits||0, 1) }; // aspoň 1 hodina zdarma za vytvorenie účtu (nestackuje)
         await q.update(db.users,{_id:existing._id},{$set:set});
         req.session.uid=existing._id;
         req.session.sv=existing.sess_ver||0;
@@ -8739,7 +8739,7 @@ async function runDailyJobs(){
     if(!u || u.is_admin || u.user_type==='trainer' || u.is_child || u.winback_sent) continue;
     const m = await checkMembership(u._id);
     if(m && m.status==='active') continue; // still has access
-    await q.update(db.users,{_id:u._id},{$set:{winback_sent:true, free_credits:(u.free_credits||0)+1}});
+    await q.update(db.users,{_id:u._id},{$set:{winback_sent:true, free_credits:Math.max(u.free_credits||0, 1)}}); // top-up na 1, nestackuje
     if(u.email) await sendMail(u.email,'Darček pre teba: 1 hodina zadarmo 🎁',
       emailTemplate('Vráť sa – hodina je na nás! 🎁',
         `<p>Ahoj <b>${u.name}</b>,</p><p>Už mesiac sme ťa nevideli a na parkete nám chýbaš!</p><p>Pripravili sme pre teba <b>1 hodinu úplne zadarmo</b> – kredit už máš pripísaný v účte. Stačí prísť. 💃</p>`,
