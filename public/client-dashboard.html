@@ -723,11 +723,12 @@ function renderUnlockCards(me){
   const ONLINE=['silver','gold','online_basic','online_premium'];
   const feats=[
     {f:'silver',ic:'🥈',title:'Silver výhody',sub:'Metabolická analýza tela (Tanita) + Online hodiny LIVE',open:['silver','gold'].includes(plan),tier:'Silver',href:'/support',cta:'✓ Objednať'},
-    {f:'gold',ic:'🥇',title:'Gold výhody',sub:'Herbalife F1 raňajky + Jedálniček na mieru na celý týždeň',open:plan==='gold',tier:'Gold',href:'/jedalnicek',cta:'✓ Otvoriť jedálniček'},
+    {f:'gold',ic:'🥇',title:'Gold výhody',sub:'Herbalife F1 raňajky na celý mesiac',open:plan==='gold',tier:'Gold',href:'/support',cta:'✓ Objednať'},
+    {f:'meal',ic:'🍽️',title:'Jedálniček na mieru',sub:'Osobný jedálniček na celý týždeň (Gold aj Online Premium)',open:['gold','online_premium'].includes(plan),tier:'Gold / Online Premium',href:'/jedalnicek',cta:'✓ Otvoriť jedálniček',lockHref:'/pricing'},
   ];
   box.innerHTML=feats.map(x=>x.open
     ? `<a class="unlock-card open" href="${x.href}"><div class="uc-ic">${x.ic}</div><div class="uc-txt"><b>${x.title}</b><span>${x.sub}</span></div><div class="uc-badge open">${x.cta}</div></a>`
-    : `<a class="unlock-card locked" href="/unlock.html?f=${x.f}"><div class="uc-ic">${x.ic}</div><div class="uc-txt"><b>${x.title}</b><span>${x.sub}</span></div><div class="uc-badge"><i class="bi bi-lock-fill"></i> ${x.tier}</div></a>`
+    : `<a class="unlock-card locked" href="${x.lockHref||('/unlock.html?f='+x.f)}"><div class="uc-ic">${x.ic}</div><div class="uc-txt"><b>${x.title}</b><span>${x.sub}</span></div><div class="uc-badge"><i class="bi bi-lock-fill"></i> ${x.tier}</div></a>`
   ).join('');
 }
 

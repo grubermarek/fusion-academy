@@ -3436,10 +3436,10 @@ app.get('/api/payments/:id', auth, async(req,res)=>{
 const MEMBERSHIP_PLANS = {
   'bronze':         { name:'Bronze',         price:50,   duration_days:30,  online:false, color:'#cd7f32' },
   'silver':         { name:'Silver',         price:75,   duration_days:30,  online:true,  color:'#a8a9ad' },
-  'gold':           { name:'Gold',           price:125,  duration_days:30,  online:true,  color:'#C9A84C' },
+  'gold':           { name:'Gold',           price:125,  duration_days:30,  online:true,  color:'#C9A84C', meal:true },
   'kids':           { name:'Zumba Kids',     price:49.9, duration_days:30,  online:false, color:'#FF6B9D', kids:true },
   'online_basic':   { name:'Online Basic',   price:12.9, duration_days:30,  online:true,  color:'#4CAF50' },
-  'online_premium': { name:'Online Premium', price:67.9, duration_days:30,  online:true,  color:'#9C27B0' },
+  'online_premium': { name:'Online Premium', price:67.9, duration_days:30,  online:true,  color:'#9C27B0', meal:true },
   'vstup1':         { name:'Jednorazový vstup', price:10, duration_days:30, online:false, color:'#4CAF50', type:'bundle', entries:1 },
   'permanentka10':  { name:'10-vstupová permanentka', price:80, duration_days:90, online:false, color:'#FF9800', type:'bundle', entries:10 },
 };
@@ -3825,7 +3825,8 @@ app.get('/api/meal-plan', auth, async(req,res)=>{
     const m = await checkMembership(req.session.uid);
     const u = await q.one(db.users,{_id:req.session.uid});
     const privileged = !!(u && (u.is_admin || u.user_type==='trainer' || u.user_type==='manager'));
-    const isGold = (m && m.status==='active' && m.plan_id==='gold') || privileged;
+    const hasMeal = !!(m && m.status==='active' && MEMBERSHIP_PLANS[m.plan_id]?.meal);
+    const isGold = hasMeal || privileged;
     res.json({ ok:true, gold:!!isGold, staff:privileged, profile: rec?.profile||null, plan: rec?.plan||null });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -3836,7 +3837,8 @@ app.post('/api/meal-plan/generate', auth, async(req,res)=>{
     const m = await checkMembership(req.session.uid);
     const u = await q.one(db.users,{_id:req.session.uid});
     const privileged = !!(u && (u.is_admin || u.user_type==='trainer' || u.user_type==='manager'));
-    if(!privileged && !(m && m.status==='active' && m.plan_id==='gold'))
+    const hasMeal = !!(m && m.status==='active' && MEMBERSHIP_PLANS[m.plan_id]?.meal);
+    if(!privileged && !hasMeal)
       return res.status(403).json({error:'not_gold'});
     const b = req.body||{};
     const profile = {
