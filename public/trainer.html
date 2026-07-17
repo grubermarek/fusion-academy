@@ -323,6 +323,10 @@ select.form-control option{background:var(--dark3)}
       <i class="bi bi-people"></i>
       <span class="nav-label">Klienti</span>
     </button>
+    <button class="nav-item" onclick="switchTab('tasks',this)" id="tab-tasks">
+      <i class="bi bi-check2-square"></i>
+      <span class="nav-label">Úlohy</span>
+    </button>
     <button class="nav-item" onclick="switchTab('earnings',this)" id="tab-earnings">
       <i class="bi bi-cash-coin"></i>
       <span class="nav-label">Zárobky</span>
@@ -456,6 +460,13 @@ select.form-control option{background:var(--dark3)}
       <div class="section-title"><i class="bi bi-cash-coin" style="color:var(--gold)"></i> Moje zárobky</div>
       <p style="color:var(--muted);font-size:.85rem;margin-bottom:14px">Prehľad tvojich zárobkov za odučené hodiny. Klikni na mesiac pre rozpis, za čo koľko si zarobil.</p>
       <div id="trEarnBody"><div class="loading">Načítavam…</div></div>
+    </div>
+
+    <!-- ═══════════ ÚLOHY PANEL ═══════════ -->
+    <div class="panel" id="panel-tasks">
+      <div class="section-title"><i class="bi bi-check2-square" style="color:var(--gold)"></i> Denné úlohy</div>
+      <p style="color:var(--muted);font-size:.85rem;margin-bottom:14px">Každý deň zaklikni, čo si spravil pre propagáciu školy. Za každú úlohu dostávaš body — čím náročnejšie, tým viac. Na konci mesiaca vyhráva najviac bodov. 💪</p>
+      <div id="tasksBody"><div class="loading">Načítavam…</div></div>
     </div>
 
     <!-- ═══════════ NOTES PANEL ═══════════ -->
@@ -1342,6 +1353,7 @@ function switchTab(id, btn){
   document.getElementById('panel-'+id).classList.add('active');
   if(btn) btn.classList.add('active');
   if(id==='notes') populateNoteClasses();
+  if(id==='tasks') loadTasks();
   if(id==='earnings') loadTrainerEarnings();
   if(id==='qrscanner') populateQrClassSelect();
   if(id!=='qrscanner') stopQrScanner();
@@ -1380,6 +1392,68 @@ async function removeAssistant(id){
   if(r&&r.ok) loadAssistant();
 }
 const MONTHS_SK_T=['','Január','Február','Marec','Apríl','Máj','Jún','Júl','August','September','Október','November','December'];
+// ── DENNÉ ÚLOHY ───────────────────────────────────────────────────────────────
+let _tasksData=null;
+async function loadTasks(){
+  const box=document.getElementById('tasksBody');
+  box.innerHTML='<div class="loading">Načítavam…</div>';
+  const d=await api('/api/tasks/my');
+  if(!d||d.error){ box.innerHTML='<div class="empty">Chyba načítania.</div>'; return; }
+  _tasksData=d;
+  const SKM=['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
+  const monthLbl=SKM[+d.month.slice(5,7)-1]+' '+d.month.slice(0,4);
+  const prize = d.prize
+    ? `<div style="background:linear-gradient(102deg,rgba(201,168,76,.15),rgba(201,168,76,.05));border:1px solid var(--gold-border);border-radius:14px;padding:14px 16px;margin-bottom:14px">
+         <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)">🏆 Cena za ${esc(monthLbl)}</div>
+         <div style="font-weight:800;color:var(--gold);font-size:1.05rem;margin-top:2px">${esc(d.prize)}</div>
+         <div style="font-size:.78rem;color:var(--muted);margin-top:2px">Vyhráva tréner s najviac bodmi na konci mesiaca.</div>
+       </div>`
+    : `<div style="background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:14px;padding:12px 16px;margin-bottom:14px;font-size:.85rem;color:var(--muted)">🏆 Cena za tento mesiac zatiaľ nie je nastavená.</div>`;
+  // dnešný checklist
+  const checklist = d.tasks.map(t=>{
+    const done=d.done_today.includes(t.key);
+    return `<button onclick="toggleTask('${t.key}')" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:${done?'rgba(76,175,80,.12)':'var(--card)'};border:1px solid ${done?'rgba(76,175,80,.5)':'var(--border)'};border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:.15s">
+      <span style="font-size:1.5rem">${t.icon}</span>
+      <span style="flex:1;min-width:0"><div style="font-weight:700;color:var(--cream)">${esc(t.label)}</div><div style="font-size:.76rem;color:var(--muted)">${esc(t.hint)}</div></span>
+      <span style="font-weight:800;color:var(--gold);white-space:nowrap">+${t.points} b</span>
+      <span style="font-size:1.3rem;color:${done?'#6bcf6b':'var(--muted)'}">${done?'✓':'○'}</span>
+    </button>`;
+  }).join('');
+  // súhrn
+  const summary = `<div style="display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 14px">
+    <div style="flex:1;min-width:120px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center"><div style="font-size:1.6rem;font-weight:800;color:var(--gold)">${d.total_points}</div><div style="font-size:.75rem;color:var(--muted)">bodov (${esc(monthLbl)})</div></div>
+    <div style="flex:1;min-width:120px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center"><div style="font-size:1.6rem;font-weight:800;color:var(--cream)">${d.active_days}</div><div style="font-size:.75rem;color:var(--muted)">aktívnych dní</div></div>
+    <div style="flex:1;min-width:120px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center"><div style="font-size:1.6rem;font-weight:800;color:var(--cream)">${d.my_rank?('#'+d.my_rank):'—'}</div><div style="font-size:.75rem;color:var(--muted)">moje poradie</div></div>
+  </div>`;
+  // rebríček tímu
+  const board = (d.board&&d.board.length) ? `<div class="section-title" style="font-size:.95rem;margin:18px 0 10px"><i class="bi bi-trophy" style="color:var(--gold)"></i> Rebríček tímu — ${esc(monthLbl)}</div>`+
+    d.board.map((r,i)=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--border)"><span style="width:26px;text-align:center">${['🥇','🥈','🥉'][i]||(i+1+'.')}</span><span style="flex:1;font-weight:600">${esc(r.name)}</span><span style="font-size:.78rem;color:var(--muted)">${r.active_days} dní</span><b style="color:var(--gold);min-width:52px;text-align:right">${r.points} b</b></div>`).join('') : '';
+  box.innerHTML = prize + `<div style="font-weight:700;color:var(--cream);margin-bottom:8px">📅 Dnes — zaklikni čo si spravil</div>` + checklist + summary + board +
+    `<button onclick="loadTaskHistory()" style="margin-top:12px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:10px;padding:8px 14px;font-size:.82rem;cursor:pointer">🕘 História & minulí víťazi</button><div id="taskHistBox"></div>`;
+}
+async function toggleTask(key){
+  const r=await api('/api/tasks/toggle',{method:'POST',body:{task_key:key}});
+  if(r?.ok){ if(r.done) toast(`✅ +${r.points} bodov!`); loadTasks(); }
+  else toast(r?.error||'Chyba', true);
+}
+async function loadTaskHistory(){
+  const box=document.getElementById('taskHistBox');
+  box.innerHTML='<div class="loading" style="padding:10px">Načítavam…</div>';
+  const d=await api('/api/tasks/history');
+  const SKM=['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
+  const ml=m=>SKM[+m.slice(5,7)-1]+' '+m.slice(0,4);
+  if(!d||!d.months||!d.months.length){ box.innerHTML='<div class="empty">Zatiaľ žiadna história.</div>'; return; }
+  box.innerHTML='<div style="margin-top:12px">'+d.months.map(m=>`
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+        <b>${ml(m.month)} ${m.ongoing?'<span style="font-size:.7rem;color:#6bcf6b">(prebieha)</span>':''}</b>
+        ${m.prize?`<span style="font-size:.78rem;color:var(--gold)">🏆 ${esc(m.prize)}</span>`:''}
+      </div>
+      ${m.winner?`<div style="margin-top:4px;font-size:.85rem">👑 Víťaz: <b style="color:var(--gold)">${esc(m.winner.name)}</b> (${m.winner.points} b)</div>`:''}
+      <div style="margin-top:4px;font-size:.8rem;color:var(--muted)">${(m.top3||[]).map((t,i)=>`${['🥇','🥈','🥉'][i]} ${esc(t.name)} ${t.points}b`).join(' · ')}</div>
+    </div>`).join('')+'</div>';
+}
+
 async function loadTrainerEarnings(){
   const box=document.getElementById('trEarnBody');
   box.innerHTML='<div class="loading">Načítavam…</div>';

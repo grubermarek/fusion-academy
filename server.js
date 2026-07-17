@@ -114,6 +114,7 @@ const db = {
   promo_redemptions:new Datastore({ filename: path.join(DATA_DIR, 'promo_redemptions.db'),autoload: true }),
   feed:         new Datastore({ filename: path.join(DATA_DIR, 'feed.db'),        autoload: true }),
   tips:         new Datastore({ filename: path.join(DATA_DIR, 'tips.db'),        autoload: true }),
+  task_logs:    new Datastore({ filename: path.join(DATA_DIR, 'task_logs.db'),   autoload: true }),
   friends:      new Datastore({ filename: path.join(DATA_DIR, 'friends.db'),      autoload: true }),
   profile_likes:new Datastore({ filename: path.join(DATA_DIR, 'profile_likes.db'),autoload: true }),
   profile_comments:new Datastore({ filename: path.join(DATA_DIR, 'profile_comments.db'),autoload: true }),
@@ -6256,6 +6257,99 @@ app.get('/api/trainer/earnings', trainerAuth, async(req,res)=>{
     const grandAffiliate=rows.reduce((s,r)=>s+r.affiliate,0);
     const grandTips=rows.reduce((s,r)=>s+(r.tips||0),0);
     res.json({ trainer:tName, trainer_id:t._id, months:rows, grand_total:+grand.toFixed(2), grand_affiliate:+grandAffiliate.toFixed(2), grand_tips:+grandTips.toFixed(2) });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DENNÉ ÚLOHY TRÉNEROV (marketing) — bodovanie, mesačný súhrn, cena, história
+// ═══════════════════════════════════════════════════════════════════════════════
+// Body podľa náročnosti: video najviac, správa najmenej.
+const TRAINER_TASKS = [
+  { key:'video',   label:'Video / Reel',           icon:'🎬', points:10, hint:'Krátke video o hodinách, zumbe, atmosfére' },
+  { key:'karusel', label:'Karusel (viac fotiek)',  icon:'🖼️', points:7,  hint:'Album/karusel na Instagrame alebo FB' },
+  { key:'foto',    label:'Fotka / príspevok',       icon:'📸', points:5,  hint:'Fotka z hodiny, motivačný príspevok' },
+  { key:'story',   label:'Story + zdieľať odkaz',   icon:'📲', points:3,  hint:'Story s odkazom na appku / registráciu' },
+  { key:'sprava',  label:'Napísať / osloviť ľudí',  icon:'✍️', points:2,  hint:'DM alebo osloviť potenciálnych klientov' },
+];
+const TASK_POINTS = Object.fromEntries(TRAINER_TASKS.map(t=>[t.key,t.points]));
+async function taskPrizeFor(month){ const s=await q.one(db.settings,{key:'trainer_task_prizes'}); return (s?.value && s.value[month]) || ''; }
+async function taskLeaderboard(month){
+  const logs = await q.find(db.task_logs,{month});
+  const by={};
+  logs.forEach(l=>{ const b=by[l.user_id]=by[l.user_id]||{user_id:l.user_id,name:l.user_name,points:0,days:new Set(),counts:{}};
+    b.points+=(l.points||0); b.days.add(l.date); b.counts[l.task_key]=(b.counts[l.task_key]||0)+1; });
+  return Object.values(by).map(b=>({user_id:b.user_id,name:b.name,points:b.points,active_days:b.days.size,counts:b.counts}))
+    .sort((a,b)=>b.points-a.points);
+}
+// Tréner: moje úlohy, dnešné splnené, mesačný súhrn, cena, poradie, tímový rebríček
+app.get('/api/tasks/my', trainerAuth, async(req,res)=>{
+  try {
+    const u=req.trainerUser;
+    const month=(req.query.month||today().slice(0,7)).slice(0,7);
+    const day=today();
+    const logs=await q.find(db.task_logs,{user_id:u._id, month});
+    const doneToday=logs.filter(l=>l.date===day).map(l=>l.task_key);
+    const total=logs.reduce((s,l)=>s+(l.points||0),0);
+    const byDay={}; logs.forEach(l=>{ (byDay[l.date]=byDay[l.date]||{points:0,tasks:[]}); byDay[l.date].points+=l.points||0; byDay[l.date].tasks.push(l.task_key); });
+    const board=await taskLeaderboard(month);
+    const rank=board.findIndex(r=>r.user_id===u._id);
+    res.json({ tasks:TRAINER_TASKS, month, day, done_today:doneToday,
+      total_points:total, active_days:Object.keys(byDay).length, by_day:byDay,
+      prize:await taskPrizeFor(month), my_rank: rank>=0?rank+1:null, board });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+// Tréner: zaklikni/odklikni splnenie úlohy na dnes
+app.post('/api/tasks/toggle', trainerAuth, async(req,res)=>{
+  try {
+    const u=req.trainerUser;
+    const key=String(req.body.task_key||'');
+    if(!TASK_POINTS[key]) return res.status(400).json({error:'Neznáma úloha'});
+    const day=today(); const month=day.slice(0,7);
+    const ex=await q.one(db.task_logs,{user_id:u._id, date:day, task_key:key});
+    if(ex){ await q.remove(db.task_logs,{_id:ex._id},{}); return res.json({ok:true, done:false, points:0}); }
+    await q.insert(db.task_logs,{ user_id:u._id, user_name:u.name, task_key:key, points:TASK_POINTS[key], date:day, month, created_at:nowISO() });
+    res.json({ ok:true, done:true, points:TASK_POINTS[key] });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+// Tréner/admin: história (víťazi + ceny minulých mesiacov)
+app.get('/api/tasks/history', trainerAuth, async(req,res)=>{
+  try {
+    const logs=await q.find(db.task_logs,{});
+    const prizes=(await q.one(db.settings,{key:'trainer_task_prizes'}))?.value||{};
+    const months=[...new Set(logs.map(l=>l.month))].sort().reverse();
+    const cur=today().slice(0,7);
+    const out=[];
+    for(const m of months){
+      const board=await taskLeaderboard(m);
+      out.push({ month:m, ongoing:m===cur, prize:prizes[m]||'', winner:(m<cur?board[0]||null:null), top3:board.slice(0,3) });
+    }
+    res.json({ months:out });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+// Admin: detailný prehľad všetkých trénerov za mesiac
+app.get('/api/tasks/admin/overview', adminAuth, async(req,res)=>{
+  try {
+    const month=(req.query.month||today().slice(0,7)).slice(0,7);
+    const rows=await taskLeaderboard(month);
+    // doplň trénerov s 0 bodmi
+    const trainers=(await q.find(db.users,{})).filter(x=>x.is_admin||x.user_type==='trainer'||x.user_type==='manager');
+    const have=new Set(rows.map(r=>r.user_id));
+    trainers.forEach(t=>{ if(!have.has(t._id)) rows.push({user_id:t._id,name:t.name,points:0,active_days:0,counts:{}}); });
+    rows.sort((a,b)=>b.points-a.points);
+    res.json({ month, tasks:TRAINER_TASKS, rows, prize:await taskPrizeFor(month),
+      total_points: rows.reduce((s,r)=>s+r.points,0) });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+// Admin: nastav cenu pre mesiac
+app.put('/api/tasks/admin/prize', adminAuth, async(req,res)=>{
+  try {
+    const month=String(req.body.month||today().slice(0,7)).slice(0,7);
+    const prize=String(req.body.prize||'').slice(0,200);
+    const ex=await q.one(db.settings,{key:'trainer_task_prizes'});
+    const map=(ex?.value)||{}; map[month]=prize;
+    if(ex) await q.update(db.settings,{key:'trainer_task_prizes'},{$set:{value:map,updated_at:nowISO()}});
+    else await q.insert(db.settings,{key:'trainer_task_prizes',value:map,created_at:nowISO()});
+    res.json({ ok:true, month, prize });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 

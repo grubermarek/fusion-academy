@@ -157,6 +157,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('leaderboard')"><i class="bi bi-trophy me-2"></i>Leaderboard dochádzky</a>
       <a class="nav-link" href="#" onclick="show('classhistory')"><i class="bi bi-clock-history me-2"></i>História hodín & zárobky</a>
       <a class="nav-link" href="#" onclick="show('tips')"><i class="bi bi-cash-coin me-2"></i>Tipy (dank) 💛</a>
+      <a class="nav-link" href="#" onclick="show('tasktracker')"><i class="bi bi-check2-square me-2"></i>Úlohy trénerov ✅</a>
       <a class="nav-link" href="#" onclick="show('trainers')"><i class="bi bi-person-badge me-2"></i>Výkon trénerov</a>
       <a class="nav-link" href="#" onclick="show('payouts')"><i class="bi bi-cash-stack me-2"></i>Výplaty trénerov</a>
       <div class="nav-group-label">Systém</div>
@@ -1250,6 +1251,31 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </table></div>
   </div>
 
+  <!-- ÚLOHY TRÉNEROV -->
+  <div class="section" id="s-tasktracker">
+    <h4 class="fw-bold mb-1">✅ Úlohy trénerov</h4>
+    <p class="text-muted small mb-3">Kto ako plní denné marketingové úlohy. Body podľa náročnosti (video najviac). Nastav mesačnú cenu pre víťaza.</p>
+    <div class="d-flex gap-2 align-items-end flex-wrap mb-3">
+      <div><label class="text-muted small">Mesiac</label><input type="month" id="ttMonth" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+      <button class="btn btn-sm btn-warning" onclick="loadTaskTracker()">Zobraziť</button>
+    </div>
+    <div class="card border-0 rounded-3 p-3 mb-3">
+      <div class="fw-semibold mb-2">🏆 Cena za tento mesiac</div>
+      <div class="d-flex gap-2 flex-wrap">
+        <input type="text" id="ttPrize" class="form-control form-control-sm bg-dark text-light border-secondary" style="max-width:420px" placeholder="napr. Poukaz 50 € + tričko Ambasádor">
+        <button class="btn btn-sm btn-outline-warning" onclick="saveTaskPrize()">Uložiť cenu</button>
+      </div>
+    </div>
+    <div id="ttSummary" class="d-flex flex-wrap gap-2 mb-3"></div>
+    <div class="card border-0 rounded-3 p-0" style="overflow-x:auto">
+      <table class="table table-dark table-hover align-middle mb-0" style="min-width:720px">
+        <thead><tr id="ttHead"><th>#</th><th>Tréner</th><th class="text-end">Body</th><th class="text-end">Aktívne dni</th></tr></thead>
+        <tbody id="ttBody"><tr><td colspan="4" class="text-center text-muted py-3">Vyber mesiac a klikni Zobraziť.</td></tr></tbody>
+      </table>
+    </div>
+    <div class="mt-3"><button class="btn btn-sm btn-outline-light" onclick="loadTaskTrackerHistory()"><i class="bi bi-clock-history"></i> História & víťazi</button><div id="ttHistory" class="mt-2"></div></div>
+  </div>
+
   <!-- TIPY (DANK) -->
   <div class="section" id="s-tips">
     <h4 class="fw-bold mb-1">💛 Tipy (dank)</h4>
@@ -1530,7 +1556,7 @@ const GROUP_TITLES={home:'Domov',manage:'Správa',marketing:'Marketing',reports:
 const SECTION_GROUP={overview:'home',attendance:'home',sale:'home',
   leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',
   marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
-  finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',reset:'reports',
+  finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',reset:'reports',
   partners:'partners',addpartner:'partners',commissions:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
@@ -1574,6 +1600,7 @@ function show(sec){
   if(sec==='points')initPoints();
   if(sec==='classhistory')initClassHistory();
   if(sec==='tips')loadAdminTips();
+  if(sec==='tasktracker')initTaskTracker();
   if(sec==='trainers')initTrainers();
   if(sec==='payouts')initPayouts();
   if(sec==='refunds')loadRefunds();
@@ -1971,6 +1998,56 @@ async function savePayoutDeduction(id){
 
 /* ─── VÝKON TRÉNEROV ─────────────────────────────────────── */
 let _trInit=false;
+// ── Úlohy trénerov ────────────────────────────────────────────────────────────
+let _ttInit=false, _ttTasks=[];
+const SK_MON=['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
+function ttMonLbl(m){ return SK_MON[+m.slice(5,7)-1]+' '+m.slice(0,4); }
+function initTaskTracker(){
+  if(!_ttInit){ _ttInit=true; document.getElementById('ttMonth').value=new Date().toISOString().slice(0,7); }
+  loadTaskTracker();
+}
+async function loadTaskTracker(){
+  const month=document.getElementById('ttMonth').value||new Date().toISOString().slice(0,7);
+  const body=document.getElementById('ttBody');
+  body.innerHTML='<tr><td colspan="4" class="text-center text-muted py-3">Načítavam…</td></tr>';
+  const d=await api('/api/tasks/admin/overview?month='+month);
+  if(!d||d.error){ body.innerHTML='<tr><td colspan="4" class="text-danger py-3">Chyba načítania.</td></tr>'; return; }
+  _ttTasks=d.tasks;
+  document.getElementById('ttPrize').value=d.prize||'';
+  // hlavička s ikonami úloh
+  document.getElementById('ttHead').innerHTML='<th>#</th><th>Tréner</th><th class="text-end">Body</th><th class="text-end">Aktívne dni</th>'+d.tasks.map(t=>`<th class="text-end" title="${escHtml(t.label)} (${t.points}b)">${t.icon}</th>`).join('');
+  document.getElementById('ttSummary').innerHTML=`<span class="badge bg-secondary">👥 ${d.rows.length} trénerov</span><span class="badge bg-warning text-dark">Σ ${d.total_points} bodov</span>${d.prize?`<span class="badge" style="background:#3a2a10;border:1px solid #C9A84C;color:#e0b84c">🏆 ${escHtml(d.prize)}</span>`:''}`;
+  if(!d.rows.length){ body.innerHTML='<tr><td colspan="'+(4+d.tasks.length)+'" class="text-center text-muted py-3">Žiadni tréneri.</td></tr>'; return; }
+  body.innerHTML=d.rows.map((r,i)=>`<tr>
+    <td>${['🥇','🥈','🥉'][i]||(i+1)}</td>
+    <td><a href="/u/${r.user_id}" target="_blank" style="color:#e0b84c;text-decoration:none">${escHtml(r.name)}</a></td>
+    <td class="text-end fw-bold text-warning">${r.points}</td>
+    <td class="text-end">${r.active_days}</td>
+    ${d.tasks.map(t=>`<td class="text-end small text-muted">${r.counts[t.key]||0}</td>`).join('')}
+  </tr>`).join('');
+}
+async function saveTaskPrize(){
+  const month=document.getElementById('ttMonth').value||new Date().toISOString().slice(0,7);
+  const prize=document.getElementById('ttPrize').value||'';
+  const d=await api('/api/tasks/admin/prize',{method:'PUT',body:{month,prize}});
+  if(d?.ok){ showToast('Cena uložená ✓','success'); loadTaskTracker(); }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
+}
+async function loadTaskTrackerHistory(){
+  const box=document.getElementById('ttHistory');
+  box.innerHTML='<div class="text-muted small">Načítavam…</div>';
+  const d=await api('/api/tasks/history');
+  if(!d||!d.months||!d.months.length){ box.innerHTML='<div class="text-muted small">Zatiaľ žiadna história.</div>'; return; }
+  box.innerHTML=d.months.map(m=>`<div class="card border-0 rounded-3 p-2 mb-2" style="background:rgba(255,255,255,.03)">
+    <div class="d-flex justify-content-between flex-wrap gap-1">
+      <b>${ttMonLbl(m.month)} ${m.ongoing?'<span class="small text-success">(prebieha)</span>':''}</b>
+      ${m.prize?`<span class="small" style="color:#e0b84c">🏆 ${escHtml(m.prize)}</span>`:''}
+    </div>
+    ${m.winner?`<div class="small mt-1">👑 Víťaz: <b style="color:#e0b84c">${escHtml(m.winner.name)}</b> (${m.winner.points} b)</div>`:''}
+    <div class="small text-muted mt-1">${(m.top3||[]).map((t,i)=>`${['🥇','🥈','🥉'][i]} ${escHtml(t.name)} ${t.points}b`).join(' · ')}</div>
+  </div>`).join('');
+}
+
 // ── Tipy (dank) ───────────────────────────────────────────────────────────────
 async function loadAdminTips(){
   const body=document.getElementById('tipsBody'); if(!body) return;
