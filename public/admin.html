@@ -126,10 +126,10 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('leads')"><i class="bi bi-person-plus me-2"></i>Leady <span id="leadsNavBadge" class="badge ms-1" style="background:#C9A84C;color:#111;display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('crm')"><i class="bi bi-person-lines-fill me-2"></i>Klienti <span id="crmClientsBadge" class="badge ms-1" style="background:#C9A84C;color:#111;display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('tasks')"><i class="bi bi-check2-square me-2"></i>CRM úlohy <span id="tasksBadge" class="badge bg-danger" style="display:none"></span></a>
+      <a class="nav-link" href="#" onclick="show('winback')"><i class="bi bi-arrow-return-left me-2"></i>Odídení klienti <span id="winbackBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('memberships')"><i class="bi bi-patch-check me-2"></i>Členstvá</a>
       <div class="nav-group-label">Prevádzka</div>
       <a class="nav-link" href="#" onclick="show('classes')"><i class="bi bi-calendar3 me-2"></i>Hodiny / Stream</a>
-      <a class="nav-link" href="#" onclick="show('bookings')"><i class="bi bi-calendar-check me-2"></i>Rezervácie</a>
       <a class="nav-link" href="#" onclick="show('products')"><i class="bi bi-box-seam me-2"></i>Produkty & objednávky <span id="pendingBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('rentals')"><i class="bi bi-building me-2"></i>Prenájmy</a>
       <a class="nav-link" href="#" onclick="show('articles')"><i class="bi bi-newspaper me-2"></i>Blog / Články</a>
@@ -604,15 +604,49 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- MEMBERSHIPS -->
   <div id="s-memberships" class="section">
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <h4 class="fw-bold mb-0">Členstvá</h4>
-      <button class="btn btn-sm btn-brand" onclick="loadMemberships()"><i class="bi bi-arrow-clockwise"></i></button>
+      <div class="d-flex gap-2 flex-wrap">
+        <input id="memSearch" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:200px" placeholder="🔍 Meno / email…" oninput="renderMemberships()">
+        <select id="memPlanF" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:170px" onchange="renderMemberships()"><option value="">Všetky úrovne</option></select>
+        <select id="memStatusF" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:150px" onchange="renderMemberships()"><option value="">Všetky stavy</option><option value="active">Aktívne</option><option value="expired">Expirované</option></select>
+        <button class="btn btn-sm btn-brand" onclick="loadMemberships(true)"><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
     </div>
+    <div id="memSummary" class="d-flex flex-wrap gap-2 mb-3"></div>
     <div class="card border-0 rounded-3">
       <div class="table-responsive">
         <table class="table table-hover mb-0">
-          <thead><tr><th class="ps-3">Člen</th><th>Plán</th><th>Platné do</th><th>Stav</th><th>Akcia</th></tr></thead>
+          <thead><tr><th class="ps-3">Člen</th><th>Plán</th><th>Platné do</th><th>Stav</th></tr></thead>
           <tbody id="membershipsTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ODÍDENÍ KLIENTI (WINBACK) -->
+  <div id="s-winback" class="section">
+    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+      <h4 class="fw-bold mb-0"><i class="bi bi-arrow-return-left me-2 text-warning"></i>Odídení klienti</h4>
+      <div class="d-flex gap-2 flex-wrap align-items-center">
+        <label class="text-muted small">Neboli aspoň</label>
+        <select id="wbDays" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:130px" onchange="loadWinback()">
+          <option value="30">30 dní</option><option value="60">60 dní</option><option value="90">90 dní</option><option value="180">6 mesiacov</option><option value="365">1 rok</option>
+        </select>
+        <input id="wbSearch" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:180px" placeholder="🔍 Meno / email…" oninput="renderWinback()">
+        <button class="btn btn-sm btn-outline-warning" onclick="enrollAllWinback()" title="Zaradiť všetkých do mailovej sekvencie na návrat"><i class="bi bi-envelope-heart"></i> Zaradiť všetkých do sekvencie</button>
+        <button class="btn btn-sm btn-brand" onclick="loadWinback()"><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
+    </div>
+    <p class="text-muted small mb-3">Klienti, ktorí prestali chodiť. Automaticky ich zaraďujeme do <b>winback</b> mailovej sekvencie (pozvánka → hodina zdarma → 30% zľava na návrat). Klik na klienta otvorí jeho kartu.</p>
+    <div id="wbBuckets" class="d-flex flex-wrap gap-2 mb-3"></div>
+    <div class="card border-0 rounded-3">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="font-size:.85rem">
+          <thead class="table-light"><tr>
+            <th class="ps-3">Klient</th><th>Naposledy na hodine</th><th>Nebol/a</th><th>Odtancované</th><th>Členstvo</th><th>Sekvencia</th><th></th>
+          </tr></thead>
+          <tbody id="winbackTable"><tr><td colspan="7" class="text-center py-4 text-muted">Načítavam…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -1498,6 +1532,7 @@ function show(sec){
   if(sec==='classes')loadAdminClasses();
   if(sec==='bookings')loadAdminBookings();
   if(sec==='memberships')loadMemberships();
+  if(sec==='winback')loadWinback();
   if(sec==='articles')loadArticles();
   if(sec==='rentals')loadRentals();
   if(sec==='payments')loadPayments();
@@ -3312,38 +3347,85 @@ async function logout(){await fetch('/api/logout',{method:'POST'});window.locati
 async function goMyProfile(){ try{ const me=await api('/api/me'); if(me&&me.id) window.open('/u/'+me.id,'_blank'); }catch(e){} }
 
 // ── Memberships ──────────────────────────────────────────────
-async function loadMemberships(){
-  const rows=await api('/api/admin/memberships');if(!rows)return;
-  const el=document.getElementById('membershipsTable');
-  if(!el)return;
+let _memData=[];
+async function loadMemberships(force){
+  if(!_memData.length || force){ const rows=await api('/api/admin/memberships'); _memData=Array.isArray(rows)?rows:[]; }
+  // naplň filter úrovní
+  const plans=[...new Set(_memData.map(m=>m.plan_name||m.plan_id).filter(Boolean))].sort();
+  const pf=document.getElementById('memPlanF');
+  if(pf && pf.options.length<=1) pf.innerHTML='<option value="">Všetky úrovne</option>'+plans.map(p=>`<option value="${escHtml(p)}">${escHtml(p)}</option>`).join('');
+  renderMemberships();
+}
+function renderMemberships(){
+  const el=document.getElementById('membershipsTable'); if(!el)return;
+  const term=(document.getElementById('memSearch').value||'').toLowerCase();
+  const pf=document.getElementById('memPlanF').value;
+  const sf=document.getElementById('memStatusF').value;
+  const isActive=m=>m.status==='active'&&new Date(m.expires_at)>new Date();
+  let rows=_memData.filter(m=>{
+    const plan=m.plan_name||m.plan_id||'';
+    if(term && !((m.user_name||'').toLowerCase().includes(term)||(m.user_email||'').toLowerCase().includes(term))) return false;
+    if(pf && plan!==pf) return false;
+    if(sf==='active' && !isActive(m)) return false;
+    if(sf==='expired' && isActive(m)) return false;
+    return true;
+  });
+  // súhrn počtov po úrovni
+  const byPlan={}; _memData.filter(isActive).forEach(m=>{const p=m.plan_name||m.plan_id||'—';byPlan[p]=(byPlan[p]||0)+1;});
+  document.getElementById('memSummary').innerHTML=Object.entries(byPlan).sort((a,b)=>b[1]-a[1]).map(([p,n])=>`<span class="badge" style="background:#1e1e1e;border:1px solid #2a2a2a;color:#C9A84C;font-weight:600">${escHtml(p)}: ${n}</span>`).join('')+`<span class="badge" style="background:#1e1e1e;border:1px solid #2a2a2a;color:#4ade80;font-weight:600">Aktívnych spolu: ${_memData.filter(isActive).length}</span>`;
   el.innerHTML=rows.map(m=>{
     const exp=m.expires_at?new Date(m.expires_at).toLocaleDateString('sk-SK'):'—';
-    const active=m.status==='active'&&new Date(m.expires_at)>new Date();
-    return `<tr>
-      <td>${m.user_name||'—'}<div class="text-muted small">${m.user_email||''}</div></td>
-      <td><span class="badge" style="background:rgba(201,168,76,.2);color:var(--gold)">${m.plan_name||m.plan_id||'—'}</span></td>
+    const active=isActive(m);
+    return `<tr style="cursor:pointer" onclick="openClientDetail('${m.user_id}')">
+      <td class="ps-3"><span style="color:#C9A84C;font-weight:600">${escHtml(m.user_name||'—')}</span><div class="text-muted small">${escHtml(m.user_email||'')}</div></td>
+      <td><span class="badge" style="background:rgba(201,168,76,.2);color:var(--gold)">${escHtml(m.plan_name||m.plan_id||'—')}</span></td>
       <td>${exp}</td>
       <td><span class="badge ${active?'bg-success':'bg-secondary'}">${active?'Aktívne':'Expirované'}</span></td>
-      <td>
-        <select class="form-select form-select-sm w-auto d-inline" id="mplan_${m._id}">
-          <option value="bronze">Bronze (€50)</option>
-          <option value="silver">Silver (€65)</option>
-          <option value="gold">Gold (€125)</option>
-          <option value="kids">Zumba Kids (€49.90)</option>
-          <option value="online_basic">Online Basic (€12.90)</option>
-          <option value="online_premium">Online Premium (€67.90)</option>
-        </select>
-        <button class="btn btn-sm btn-outline-warning ms-1" onclick="activateMembership('${m.user_id}')">Aktivovať</button>
-      </td>
     </tr>`;
-  }).join('');
+  }).join('')||'<tr><td colspan="4" class="text-center text-muted py-4">Žiadne členstvá pre zvolený filter.</td></tr>';
 }
-async function activateMembership(userId){
-  const sel=document.querySelector(`[id^='mplan_']`);
-  if(!sel)return;
-  const planId=sel.value;
-  const r=await api('/api/admin/membership/activate',{method:'POST',body:JSON.stringify({user_id:userId,plan_id:planId,duration_days:30})});
-  if(r?.ok)loadMemberships(); else alert(r?.error||'Chyba');
+// ── Odídení klienti (winback) ──
+let _wbData=[];
+async function loadWinback(){
+  const days=document.getElementById('wbDays').value;
+  const d=await api('/api/admin/winback?min_days='+days);
+  if(!d||!d.ok){ document.getElementById('winbackTable').innerHTML='<tr><td colspan="7" class="text-danger py-3">Chyba.</td></tr>'; return; }
+  _wbData=d.clients||[];
+  const nav=document.getElementById('winbackBadge'); if(nav){ if(d.total>0){nav.textContent=d.total;nav.style.display='inline';}else nav.style.display='none'; }
+  const b=d.buckets||{};
+  const chip=(l,n,c)=>`<span class="badge" style="background:#1e1e1e;border:1px solid #2a2a2a;color:${c};font-weight:600">${l}: ${n}</span>`;
+  document.getElementById('wbBuckets').innerHTML=
+    chip('Spolu',d.total,'#C9A84C')+chip('30–60 dní',b.d30||0,'#e0a656')+chip('60–90 dní',b.d60||0,'#fd7e14')+chip('3–6 mes.',b.d90||0,'#f87171')+chip('6–12 mes.',b.d180||0,'#e05656')+chip('1 rok+',b.d365||0,'#b02a2a')+chip('V sekvencii',d.in_winback||0,'#4ade80');
+  renderWinback();
+}
+function fmtSince(days){
+  if(days>=365){const y=Math.floor(days/365);return y+(y===1?' rok':y<5?' roky':' rokov');}
+  if(days>=60){const m=Math.floor(days/30);return m+' mes.';}
+  return days+' dní';
+}
+function renderWinback(){
+  const el=document.getElementById('winbackTable'); if(!el)return;
+  const term=(document.getElementById('wbSearch').value||'').toLowerCase();
+  const rows=_wbData.filter(c=>!term||c.name.toLowerCase().includes(term)||(c.email||'').toLowerCase().includes(term));
+  if(!rows.length){ el.innerHTML='<tr><td colspan="7" class="text-center text-muted py-4">Žiadni odídení klienti pre zvolený filter 🎉</td></tr>'; return; }
+  el.innerHTML=rows.map(c=>`<tr style="cursor:pointer" onclick="openClientDetail('${c.id}')">
+    <td class="ps-3"><span style="color:#C9A84C;font-weight:600">${escHtml(c.name)}</span><div class="text-muted small">${escHtml(c.email||'')}${c.phone?' · '+escHtml(c.phone):''}</div></td>
+    <td>${(c.last_visit||'').slice(0,10)}</td>
+    <td><span class="badge ${c.days_since>=180?'bg-danger':c.days_since>=90?'bg-warning text-dark':'bg-secondary'}">${fmtSince(c.days_since)}</span></td>
+    <td class="text-center">${c.visit_count}</td>
+    <td>${c.membership?`<span class="badge bg-success">${escHtml(c.membership)}</span>`:'<span class="text-muted small">bez členstva</span>'}</td>
+    <td>${c.offers_optout?'<span class="text-muted small">odhlásený</span>':(c.in_winback?'<span class="badge bg-info text-dark">✉️ prebieha</span>':'<span class="text-muted small">—</span>')}</td>
+    <td onclick="event.stopPropagation()">${c.offers_optout?'':(c.in_winback?'':`<button class="btn btn-xs btn-outline-warning" style="font-size:.72rem;padding:2px 8px" onclick="enrollWinback('${c.id}')">Do sekvencie</button>`)}</td>
+  </tr>`).join('');
+}
+async function enrollWinback(id){
+  const r=await api('/api/admin/winback/'+id+'/enroll',{method:'POST'});
+  if(r?.ok){ showToast('Zaradený do winback sekvencie ✓','success'); loadWinback(); } else showToast('Chyba: '+(r?.error||'?'),'error');
+}
+async function enrollAllWinback(){
+  if(!confirm('Zaradiť všetkých odídených klientov (podľa filtra) do winback mailovej sekvencie?')) return;
+  const r=await api('/api/admin/winback/enroll-all',{method:'POST',body:JSON.stringify({min_days:document.getElementById('wbDays').value})});
+  if(r?.ok){ showToast('Zaradených '+r.enrolled+' klientov ✓','success'); loadWinback(); } else showToast('Chyba: '+(r?.error||'?'),'error');
 }
 
 // ── Blog / Articles ───────────────────────────────────────────

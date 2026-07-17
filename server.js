@@ -725,6 +725,36 @@ async function seedData() {
     console.log('✅  app_launch email krok pridaný');
   }
 
+  // Idempotentne: WINBACK sekvencia pre odídených klientov (nurture na návrat + zľavy)
+  if(await q.count(db.email_steps,{sequence:'winback'})===0){
+    const BLOGW='https://latindancefusion.art/blog';
+    await q.insert(db.email_steps,[
+      { sequence:'winback', day:0, label:'Chýbaš nám', active:true,
+        subject:'{meno}, chýbaš nám na parkete 🥺',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>všimli sme si, že sme ťa už nejaký čas nevideli — a úprimne, <b>chýbaš nám</b>. 💛</p><p>Parket, hudba, partia báb, ktoré ťa vždy privítajú… to všetko na teba čaká presne tak, ako si to nechala.</p><p>Nič nemusíš doháňať. Stačí prísť a roztancovať sa. Kedy sa uvidíme?</p>`,
+        cta:'🗓️ Pozrieť rozvrh', cta_url:`${APP2}/schedule`, created_at:nowISO() },
+      { sequence:'winback', day:4, label:'Hodina zadarmo na návrat', active:true,
+        subject:'🎁 Pripravili sme pre teba hodinu ZADARMO',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>aby bol ten prvý krok späť čo najľahší, dávame ti <b>jednu hodinu úplne zadarmo</b> — bez záväzku. 🎶</p><p>Príď si len tak zatancovať, pripomenúť si ten pocit. Zvyšok už príde sám.</p><p>Vidíme sa? 💃</p>`,
+        cta:'🎁 Rezervovať hodinu zdarma', cta_url:`${APP2}/schedule`, created_at:nowISO() },
+      { sequence:'winback', day:11, label:'Zľava 30% na návrat', active:true,
+        subject:'{meno}, vitaj späť — 30% zľava na prvý mesiac 💛',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>ak sa chceš vrátiť naplno, máme pre teba darček: <b>30% zľavu na prvý mesiac členstva</b> pri návrate.</p><div style="text-align:center;margin:14px 0"><div style="display:inline-block;font-family:monospace;font-weight:800;letter-spacing:1px;background:#0d0d0d;border:1px dashed #C9A84C;color:#E7C878;border-radius:10px;padding:12px 22px;font-size:1.2rem">VITAJSPAT</div></div><p>Zadáš ho pri kúpe členstva. Beátka sa tiež raz vrátila — a dnes je o 17 kg ľahšia. Všetko sa začína jedným krokom späť.</p><p><a href="${BLOGW}/metabolicka-analyza-fit-premena">📖 Ako vyzerá skutočná premena →</a></p>`,
+        cta:'💳 Vrátiť sa so zľavou', cta_url:`${APP2}/pricing`, created_at:nowISO() },
+      { sequence:'winback', day:25, label:'Posledná pripomienka', active:true,
+        subject:'Posledná pripomienka: tvoje miesto na parkete stále čaká 💃',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>nechceme byť dotieraví — len ti chceme povedať, že <b>dvere sú stále otvorené</b> a tvoja komunita ťa privíta s otvorenou náručou.</p><p>Zľava <b>VITAJSPAT (30%)</b> na prvý mesiac stále platí. Keď budeš pripravená, sme tu. 💛</p>`,
+        cta:'🗓️ Vrátiť sa', cta_url:`${APP2}/schedule`, created_at:nowISO() },
+    ]);
+    console.log('✅  winback sekvencia pridaná (4 kroky)');
+  }
+  // Promo kód pre návrat odídených klientov (30% na prvý mesiac)
+  if(!await q.one(db.promo_codes,{code:'VITAJSPAT'})){
+    await q.insert(db.promo_codes,{ code:'VITAJSPAT', type:'percent', value:30, applies_to:'membership',
+      max_uses:0, once_per_user:true, min_amount:0, active:true, used_count:0,
+      note:'Návrat odídeného klienta – 30% na prvý mesiac', created_at:nowISO() });
+  }
+
   // Idempotentne: upsell sekvencia Bronze → Silver (metabolická analýza tela)
   if(await q.count(db.email_steps,{sequence:'bronze_upsell'})===0){
     const bu = (day,label,subject,body,cta)=>({sequence:'bronze_upsell',day,label,active:true,subject,body,cta:cta||null,cta_url:`${APP_URL}/pricing`,created_at:nowISO()});
@@ -2309,7 +2339,7 @@ app.get('/api/admin/leads/:id/emails', adminAuth, async(req,res)=>{
     const SEQ_LABELS = {
       lead_nurture:'Starostlivosť o leada', welcome:'Uvítacia sekvencia', app_launch:'Nová appka',
       membership_welcome:'Vitajte v členstve', expiry_warning:'Blíži sa koniec členstva',
-      bronze_upsell:'Bronze → Silver', gold_upsell:'Silver → Gold',
+      bronze_upsell:'Bronze → Silver', gold_upsell:'Silver → Gold', winback:'Winback (návrat)',
     };
     const meno = firstName(u.name)||'';
     const rows = items.map(i=>{
@@ -2329,6 +2359,55 @@ app.get('/api/admin/leads/:id/emails', adminAuth, async(req,res)=>{
     // Aktívne sekvencie (majú aspoň jeden čakajúci krok)
     const activeSeqs = [...new Set(rows.filter(r=>r.status==='pending').map(r=>r.sequence_label))];
     res.json({ ok:true, name:u.name, email:u.email, lead_status:u.lead_status||'new', rows, active_sequences:activeSeqs });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Odídení klienti (winback) — kto prestal chodiť + nurture sekvencia ─────────
+async function churnedClients(minDays){
+  minDays = +minDays || 30;
+  const clients = await q.find(db.users,{user_type:'client', is_admin:{$ne:true}, is_child:{$ne:true}, active:{$ne:false}});
+  const bookings = await q.find(db.bookings,{status:'attended'});
+  const lastAtt={}; for(const b of bookings){ if(!b.user_id) continue; const d=b.booking_date||(b.created_at||'').slice(0,10); if(!lastAtt[b.user_id]||d>lastAtt[b.user_id]) lastAtt[b.user_id]=d; }
+  const now=Date.now(); const out=[];
+  for(const u of clients){
+    const last=lastAtt[u._id];
+    if(!last) continue; // nikdy nebola na hodine → nie „odídená"
+    const days=Math.floor((now-new Date(last).getTime())/864e5);
+    if(days < minDays) continue;
+    const mem=await q.one(db.memberships,{user_id:u._id, status:'active'});
+    const memActive = mem && (mem.expires_at||'')>new Date().toISOString();
+    const pending = await q.count(db.email_queue,{user_id:u._id, sequence:'winback', status:'pending'});
+    out.push({ id:u._id, name:u.name, email:u.email, phone:u.phone||'',
+      last_visit:last, days_since:days, visit_count:u.visit_count||0,
+      membership: memActive?(MEMBERSHIP_PLANS[mem.plan_id]?.name||mem.plan_name||'Členstvo'):null,
+      in_winback: pending>0, offers_optout: !!u.offers_optout });
+  }
+  out.sort((a,b)=>b.days_since-a.days_since);
+  return out;
+}
+app.get('/api/admin/winback', adminAuth, async(req,res)=>{
+  try {
+    const list = await churnedClients(req.query.min_days);
+    const buckets = { d30:0, d60:0, d90:0, d180:0, d365:0 };
+    for(const c of list){ if(c.days_since>=365)buckets.d365++; else if(c.days_since>=180)buckets.d180++; else if(c.days_since>=90)buckets.d90++; else if(c.days_since>=60)buckets.d60++; else buckets.d30++; }
+    res.json({ ok:true, clients:list, total:list.length, buckets, in_winback:list.filter(c=>c.in_winback).length });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/winback/:id/enroll', adminAuth, async(req,res)=>{
+  try {
+    const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
+    if(u.offers_optout) return res.status(400).json({error:'Klient sa odhlásil z ponúk'});
+    await cancelSequence(u._id,'winback');
+    await enqueueSequence(u._id,'winback');
+    res.json({ ok:true });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/winback/enroll-all', adminAuth, async(req,res)=>{
+  try {
+    const list = await churnedClients(req.body.min_days);
+    let n=0;
+    for(const c of list){ if(c.in_winback || c.offers_optout) continue; await enqueueSequence(c.id,'winback'); n++; }
+    res.json({ ok:true, enrolled:n });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -5763,10 +5842,13 @@ const OUTREACH_SEGMENTS = {
   expiring: 'Členstvo vyprší do 14 dní',
   inactive: 'Neaktívni klienti (30+ dní bez hodiny)',
   entries:  'Majú permanentkové vstupy',
+  trainers: 'Tréneri (tím)',
+  admins:   'Admini',
 };
 async function outreachContext(){
-  const users = (await q.find(db.users,{is_admin:{$ne:true}, active:{$ne:false}, is_child:{$ne:true}, anonymous:{$ne:true}}))
-    .filter(u=>['client','lead'].includes(u.user_type||''));
+  // vrátane trénerov a adminov (na interné správy tímu)
+  const users = (await q.find(db.users,{active:{$ne:false}, is_child:{$ne:true}, anonymous:{$ne:true}}))
+    .filter(u=>['client','lead','trainer','manager','partner'].includes(u.user_type||'') || u.is_admin);
   const membs = await q.find(db.memberships,{status:'active'});
   const td0=today();
   const memExp={}, memPlan={};
@@ -5781,9 +5863,11 @@ async function outreachContext(){
 }
 function inSegment(u, seg, ctx, opts={}){
   const td=today(); const in14=new Date(Date.now()+14*864e5).toISOString().slice(0,10); const ago30=new Date(Date.now()-30*864e5).toISOString().slice(0,10);
-  if(seg==='clients') return u.user_type==='client';
-  if(seg==='leads') return u.user_type==='lead';
-  if(seg==='everyone') return true;
+  if(seg==='clients') return u.user_type==='client' && !u.is_admin;
+  if(seg==='leads') return u.user_type==='lead' && !u.is_admin;
+  if(seg==='everyone') return ['client','lead'].includes(u.user_type) && !u.is_admin;
+  if(seg==='trainers') return !u.is_admin && ['trainer','manager'].includes(u.user_type);
+  if(seg==='admins') return !!u.is_admin;
   if(seg==='expiring') return ctx.memExp[u._id] && ctx.memExp[u._id]>=td && ctx.memExp[u._id]<=in14;
   if(seg==='inactive') return u.user_type==='client' && (!ctx.lastAtt[u._id] || ctx.lastAtt[u._id]<ago30);
   if(seg==='entries') return (u.single_entries||0)>0;
@@ -7597,6 +7681,13 @@ async function processEmailQueue(){
         const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
         if(mem){ await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'has_membership'}}); continue; }
       }
+      // Winback: prestaň, ak sa klient vrátil (nedávna účasť) alebo si kúpil členstvo
+      if(step.sequence === 'winback'){
+        const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
+        if(mem){ await cancelSequence(u._id,'winback'); await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'returned_membership'}}); continue; }
+        const recent = await q.find(db.bookings,{user_id:u._id, status:'attended', booking_date:{$gte:new Date(Date.now()-14*864e5).toISOString().slice(0,10)}});
+        if(recent.length){ await cancelSequence(u._id,'winback'); await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'returned_visit'}}); continue; }
+      }
       if(step.sequence === 'expiry_warning'){
         const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
         if(!mem){ await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'no_membership'}}); continue; }
@@ -8072,6 +8163,17 @@ async function runDailyJobs(){
   try { await runFriendEventsDaily(); } catch(e){ console.error('Friend events error:', e.message); }
   // ── 6e2. Eskalujúce zľavové ponuky pre leadov bez členstva ─────────────────
   try { await runLeadOffers(); } catch(e){ console.error('Lead offers error:', e.message); }
+  // ── 6e3. Auto-zaradenie odídených klientov (30+ dní) do winback sekvencie ───
+  try {
+    const churned = await churnedClients(30);
+    for(const c of churned){
+      if(c.in_winback || c.offers_optout) continue;
+      const u = await q.one(db.users,{_id:c.id});
+      if(u?.winback_seq_enrolled) continue; // raz
+      await enqueueSequence(c.id,'winback');
+      await q.update(db.users,{_id:c.id},{$set:{winback_seq_enrolled:true}});
+    }
+  } catch(e){ console.error('Winback enroll error:', e.message); }
 
   // ── 6f. Pripomienky CRM úloh so splatnosťou dnes (priradenému) ─────────────
   try {
