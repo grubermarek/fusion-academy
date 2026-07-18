@@ -1686,9 +1686,21 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
       can_custom_bg: canCustomBg, custom_bg: u.custom_bg||'',
       bg_tiers: (canCustomBg ? [...PROFILE_BG_TIERS, {need:0,key:'founder',name:'👑 Zakladateľ'}] : PROFILE_BG_TIERS)
         .map(t=>({need:t.need,key:t.key,name:t.name,unlocked: canCustomBg?true:(refCount>=t.need), current: t.key===bgTier})),
-      friend_state: isSelf ? 'self' : await friendState(me, u._id)
+      friend_state: isSelf ? 'self' : await friendState(me, u._id),
+      friends_count: await q.count(db.friends,{users:u._id, status:'accepted'})
     });
   } catch(e){ console.error('profile GET error:', e.message, e.stack); res.status(500).json({error:e.message}); }
+});
+// Zoznam priateľov daného používateľa (verejné pre prihlásených)
+app.get('/api/profile/:id/friends', auth, async(req,res)=>{
+  try {
+    const rows=await q.find(db.friends,{users:req.params.id, status:'accepted'});
+    const ids=rows.map(f=>(f.users||[]).find(x=>x!==req.params.id)).filter(Boolean);
+    const users=await q.find(db.users,{_id:{$in:ids}});
+    const list=users.filter(u=>!u.anonymous).map(u=>({ id:u._id, name:u.name, avatar:u.avatar||null }))
+      .sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    res.json({ count:list.length, friends:list });
+  } catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // Like / unlike a profile (toggle) — works for any member, trainer or admin

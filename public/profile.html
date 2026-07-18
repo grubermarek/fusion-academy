@@ -444,6 +444,7 @@ function render(){
       <div class="stat"><div class="n">${P.visits}</div><div class="l">${T('profile.stat_visits')}</div></div>
       <div class="stat"><div class="n">${P.referrals}</div><div class="l">${T('profile.stat_struct')}</div></div>
       <div class="stat"><div class="n">${P.months_member}</div><div class="l">${T('profile.stat_months')}</div></div>
+      <div class="stat" role="button" tabindex="0" style="cursor:pointer" onclick="openFriendsList()" title="Zobraziť priateľov"><div class="n">${P.friends_count||0}</div><div class="l">${(P.friends_count===1)?'priateľ':((P.friends_count>=2&&P.friends_count<=4)?'priatelia':'priateľov')}</div></div>
     </div>
     ${friendBtn()}
     ${(!P.is_self && !P.anonymous) ? `<a class="msg-btn" href="/community?dm=${P.id}"><i class="bi bi-chat-dots-fill"></i> ${T('profile.msg')}</a>` : ''}
@@ -1020,6 +1021,28 @@ async function toggleAch(id){
   s.has(id)?s.delete(id):s.add(id);
   _awards.manual_achievements=[...s];
   if(await putAwards({manual_achievements:_awards.manual_achievements})) renderAdmin();
+}
+async function openFriendsList(){
+  let ov=document.getElementById('friendsOv');
+  if(!ov){ ov=document.createElement('div'); ov.id='friendsOv';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px';
+    ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML=`<div style="background:#161512;border:1px solid var(--border);border-radius:16px;max-width:420px;width:100%;max-height:80vh;display:flex;flex-direction:column;padding:20px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="color:var(--gold)">🤝 Priatelia — ${esc(P.name)}</b><button onclick="document.getElementById('friendsOv').remove()" style="background:none;border:none;color:var(--muted);font-size:1.4rem;cursor:pointer">×</button></div>
+    <div id="friendsBody" style="overflow-y:auto"><div class="empty">Načítavam…</div></div>
+  </div>`;
+  try{
+    const d=await (await fetch('/api/profile/'+encodeURIComponent(uid)+'/friends',{credentials:'include'})).json();
+    const box=document.getElementById('friendsBody'); if(!box) return;
+    if(!d.friends||!d.friends.length){ box.innerHTML='<div class="empty">Zatiaľ žiadni priatelia.</div>'; return; }
+    box.innerHTML=d.friends.map(f=>{
+      const ini=(f.name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+      const av=f.avatar?`<img src="${f.avatar}" alt="" style="width:42px;height:42px;border-radius:50%;object-fit:cover">`:`<div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#C9A84C,#8a6020);color:#111;font-weight:800;display:flex;align-items:center;justify-content:center">${esc(ini)}</div>`;
+      return `<a href="/u/${f.id}" style="display:flex;align-items:center;gap:11px;padding:8px 4px;border-bottom:1px solid rgba(255,255,255,.05);text-decoration:none;color:var(--cream)">${av}<span style="font-weight:700">${esc(f.name)}</span></a>`;
+    }).join('');
+  }catch(e){ const box=document.getElementById('friendsBody'); if(box) box.innerHTML='<div class="empty">Nepodarilo sa načítať.</div>'; }
 }
 async function addFriend(){ const d=await post('/api/friends/request',{to:uid}); if(d.ok){P.friend_state=d.state;render();} }
 async function accept(){ const d=await post('/api/friends/accept',{from:uid}); if(d.ok){P.friend_state=d.state;render();} }
