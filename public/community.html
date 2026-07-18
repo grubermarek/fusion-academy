@@ -461,6 +461,7 @@ function exitFeed() {
 }
 function joinChannel(channelId) {
   currentChannel = channelId;
+  if(socket && dmWith) socket.emit('close_dm', dmWith);
   dmMode = false; dmWith = null; exitFeed();
   document.querySelectorAll('.dm-item').forEach(el => el.classList.remove('active'));
   // Update sidebar
@@ -634,7 +635,9 @@ async function friendFromMenu(id){
 function dmFromMenu(id,name){ closeUserMenu(); openDM(id, name||'Člen'); }
 
 async function openDM(userId, name) {
+  if(socket && dmWith && dmWith!==userId) socket.emit('close_dm', dmWith);
   dmMode = true; dmWith = userId; dmWithName = name; exitFeed();
+  if(socket) socket.emit('open_dm', userId);
   document.querySelectorAll('.channel-item').forEach(el => el.classList.remove('active'));
   document.getElementById('chatChannelName').textContent = '🔒 ' + name;
   document.getElementById('chatChannelDesc').textContent = 'Súkromná konverzácia';
@@ -674,6 +677,7 @@ function renderMemberPicker() {
 
 // ── Community feed (nástenka) ────────────────────────────────────────────────
 function openFeed() {
+  if(socket && dmWith) socket.emit('close_dm', dmWith);
   feedMode = true; dmMode = false; dmWith = null;
   document.querySelectorAll('.channel-item,.dm-item').forEach(el => el.classList.remove('active'));
   document.getElementById('feedBtn').classList.add('active');

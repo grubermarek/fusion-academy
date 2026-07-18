@@ -1246,6 +1246,8 @@ app.get('/api/dm/history/:userId', auth, async(req,res)=>{
   const key = dmKey(me,other);
   const msgs = await q.find(db.messages,{is_dm:true, dm_key:key},{created_at:1});
   await q.update(db.messages,{is_dm:true,dm_key:key,to_id:me,read:{$ne:true}},{$set:{read:true}},{multi:true});
+  // Zmaž aj zvončekovú notifikáciu o neprečítaných správach od tohto odosielateľa
+  await q.update(db.notifications,{user_id:me, type:'dm', from_id:other, read:false},{$set:{read:true}},{multi:true});
   res.json({ messages: msgs.slice(-100),
     other:{ id:other, name:other_u.name, badge:getMemberBadge(other_u.created_at) } });
 });
@@ -8307,6 +8309,7 @@ app.get('/sitemap.xml',(req,res)=>{
 // SOCKET.IO – Real-time community chat
 // ═══════════════════════════════════════════════════════════════════════════════
 const onlineUsers = new Map(); // socketId → { id, name, memberBadge, rankBadge, user_type, channel }
+const dmViewers = new Map(); // userId → Set(peerId) — s kým má daný člen práve otvorené DM vlákno
 
 io.on('connection', async(socket)=>{
   const session = socket.request.session;
@@ -8366,6 +8369,17 @@ io.on('connection', async(socket)=>{
     io.to(channel||'general').emit('new_message', msg);
   });
 
+  // Sleduj, ktoré DM vlákno má člen práve otvorené (aby sme ho nespamovali zvončekom)
+  socket.on('open_dm', (peer)=>{
+    const pid=String(peer||''); if(!pid) return;
+    if(!dmViewers.has(u._id)) dmViewers.set(u._id, new Set());
+    dmViewers.get(u._id).add(pid);
+  });
+  socket.on('close_dm', (peer)=>{
+    const pid=String(peer||''); const set=dmViewers.get(u._id);
+    if(set){ if(pid) set.delete(pid); else set.clear(); }
+  });
+
   // Private message (1-on-1)
   socket.on('send_dm', async(data)=>{
     try {
@@ -8382,17 +8396,30 @@ io.on('connection', async(socket)=>{
       // Deliver live to both participants (any open view)
       io.to('user:'+to).emit('new_dm', msg);
       io.to('user:'+u._id).emit('new_dm', msg);
-      // Persistent notification for the recipient (shows in bell / dashboard)
-      await q.insert(db.notifications,{user_id:to, type:'dm', from_id:u._id,
-        title:`💬 Nová správa od ${u.name}`,
-        body: text.length>80 ? text.slice(0,80)+'…' : text,
-        read:false, created_at:nowISO()});
+      // Ak príjemca práve sedí v tomto DM vlákne, netreba zvončekovú notifikáciu
+      const viewingThisDm = [...(dmViewers.get(to)||[])].includes(u._id);
+      if(!viewingThisDm){
+        const preview = text.length>80 ? text.slice(0,80)+'…' : text;
+        // Dedup: ak už má neprečítanú notifikáciu od tohto odosielateľa, len ju aktualizuj + zvýš počet
+        const existingN = await q.one(db.notifications,{user_id:to, type:'dm', from_id:u._id, read:false});
+        if(existingN){
+          const cnt = (existingN.count||1) + 1;
+          await q.update(db.notifications,{_id:existingN._id},{$set:{
+            title:`💬 ${cnt} nové správy od ${u.name}`, body:preview, count:cnt, created_at:nowISO() }});
+        } else {
+          await q.insert(db.notifications,{user_id:to, type:'dm', from_id:u._id, count:1,
+            title:`💬 Nová správa od ${u.name}`, body:preview, read:false, created_at:nowISO()});
+        }
+      }
     } catch(e){ console.error('send_dm:', e.message); }
   });
 
   // Disconnect
   socket.on('disconnect', ()=>{
     onlineUsers.delete(socket.id);
+    // Ak už nemá otvorený žiadny iný socket, zabudni jeho DM-viewing stav
+    const stillOnline = [...onlineUsers.values()].some(x=>x.id===u._id);
+    if(!stillOnline) dmViewers.delete(u._id);
     io.emit('online_users', Array.from(onlineUsers.values()));
   });
 });
