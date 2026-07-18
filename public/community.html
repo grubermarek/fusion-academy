@@ -320,6 +320,13 @@ let allMembers = [];
 let dmMode = false;      // true when viewing a private conversation
 let dmWith = null;       // other user's id
 let dmWithName = '';
+let _avatars = {};       // cache user_id -> avatar url (pre fotky v správach)
+async function cacheAvatar(userId){
+  if(!userId || _avatars[userId]!==undefined) return _avatars[userId];
+  try{ const p=await (await fetch('/api/profile/'+userId)).json(); _avatars[userId]=p&&p.avatar?p.avatar:null; }
+  catch{ _avatars[userId]=null; }
+  return _avatars[userId];
+}
 let feedMode = false;    // true when viewing the community feed (nástenka)
 let feedImage = null;    // pending composer image (data URL)
 const channels = [];
@@ -502,8 +509,13 @@ function appendMessage(msg, animate) {
   } else {
     div.className = 'msg' + (isOwn ? ' own' : '');
     const clickAttr = (!isOwn && msg.user_id) ? `onclick="openUserMenu(event,'${msg.user_id}','${escHtml(msg.nickname||msg.user_name||'').replace(/'/g,'')}')" style="cursor:pointer"` : '';
+    const av = msg.user_id ? _avatars[msg.user_id] : null;
+    const profAttr = msg.user_id ? `onclick="location.href='/u/${msg.user_id}'" style="cursor:pointer" title="Zobraziť profil"` : '';
+    const avatarInner = av
+      ? `<div class="msg-avatar" style="background:transparent;overflow:hidden" ${profAttr}><img src="${av}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%"></div>`
+      : `<div class="msg-avatar" style="background:${avatarColor}" ${profAttr}>${initials}</div>`;
     div.innerHTML = `
-      <div class="msg-avatar" style="background:${avatarColor}" ${clickAttr}>${initials}</div>
+      ${avatarInner}
       <div class="msg-body">
         <div class="msg-header">
           <span class="msg-name" ${clickAttr}>${escHtml(msg.nickname||msg.user_name||'?')}</span>
@@ -629,6 +641,7 @@ async function openDM(userId, name) {
   document.getElementById('onlinePill').style.visibility = 'hidden';
   const container = document.getElementById('messages');
   container.innerHTML = '<div style="text-align:center;color:#ccc;padding:2rem;font-size:.85rem;">Načítavam…</div>';
+  await Promise.all([cacheAvatar(userId), cacheAvatar(me.id)]); // fotky oboch účastníkov
   const d = await (await fetch('/api/dm/history/'+userId)).json();
   container.innerHTML = '';
   let lastDate = '';
