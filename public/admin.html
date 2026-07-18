@@ -4078,8 +4078,11 @@ async function openAttClass(classId){
           : (a.single_entries > 0
               ? `<span class="badge" style="background:rgba(96,165,250,.15);color:#60a5fa;font-size:.7rem">🎟 x${a.single_entries}</span>`
               : `<span class="badge" style="background:rgba(244,67,54,.15);color:#f87171;font-size:.7rem">⚠ Bez členstva</span>`));
+    const nameCell = a.user_id
+      ? `<a href="/u/${a.user_id}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none"><strong>${escHtml(a.name)}</strong> <i class="bi bi-box-arrow-up-right" style="font-size:.6rem;opacity:.55"></i></a>`
+      : `<strong>${escHtml(a.name)}</strong>`;
     return `<tr>
-      <td class="ps-2"><strong>${escHtml(a.name)}</strong></td>
+      <td class="ps-2">${nameCell}</td>
       <td><small class="text-muted">${escHtml(a.email)}<br>${escHtml(a.phone)}</small></td>
       <td>${mTag}</td>
       <td><span style="color:var(--gold);font-weight:700">${a.visit_count}</span></td>
