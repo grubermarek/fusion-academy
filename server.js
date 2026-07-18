@@ -6620,7 +6620,15 @@ app.get('/api/tasks/my', trainerAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 // Deň (default dnes, nie budúcnosť)
-function taskDayOf(req){ let d=String(req.body.date||req.query.date||''); if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) d=today(); if(d>today()) d=today(); return d; }
+function taskDayOf(req){
+  let d=String(req.body.date||req.query.date||'');
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) return today();
+  // Povoľ aj „zajtra" v UTC — klient počíta „dnes" v lokálnom čase (napr. CEST +2h),
+  // takže bez tejto tolerancie by sa lokálne dnes zrazilo na UTC-dnes a dni by sa zlievali.
+  const maxD=new Date(Date.now()+36*3600e3).toISOString().slice(0,10);
+  if(d>maxD) d=today();
+  return d;
+}
 // Tímový rozpis za konkrétny deň
 async function taskDayBoard(date){
   const logs = await q.find(db.task_logs,{date});
