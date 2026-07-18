@@ -1080,10 +1080,12 @@ async function loadSupportContacts(){
           <div style="font-size:.76rem;color:var(--muted)">${escHtml(c.role||'')}</div>
         </div>
       </a>
-      <div style="display:flex;gap:8px;margin-top:12px">
+      ${c.is_self
+        ? `<div style="margin-top:12px;text-align:center;font-size:.8rem;color:var(--muted);background:rgba(255,255,255,.03);border:1px solid var(--border,#2a2a2a);border-radius:10px;padding:8px">To si ty 💛</div>`
+        : `<div style="display:flex;gap:8px;margin-top:12px">
         <a href="/community?dm=${c.id}" style="flex:1;text-align:center;background:rgba(201,168,76,.14);border:1px solid rgba(201,168,76,.4);color:var(--gold);border-radius:10px;padding:8px;font-size:.82rem;font-weight:700;text-decoration:none"><i class="bi bi-chat-dots-fill"></i> Napísať</a>
         <a href="tel:${tel}" style="flex:1;text-align:center;background:rgba(76,175,80,.12);border:1px solid rgba(76,175,80,.35);color:#7bd47b;border-radius:10px;padding:8px;font-size:.82rem;font-weight:700;text-decoration:none"><i class="bi bi-telephone-fill"></i> Zavolať</a>
-      </div>
+      </div>`}
     </div>`;
   };
   host.innerHTML=`<div style="border-top:1px solid var(--border,#2a2a2a);padding-top:16px">

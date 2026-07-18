@@ -7308,10 +7308,10 @@ function buildPointItems({hours, online, refs, hasMem, memName, newMemberCount, 
 app.get('/api/client/support-contacts', auth, async(req,res)=>{
   try {
     const GEN_PHONE='+421904315151';
-    const founders=(await q.find(db.users,{is_founder:true})).filter(u=>u.active!==false && u._id!==req.session.uid);
+    const founders=(await q.find(db.users,{is_founder:true})).filter(u=>u.active!==false);
     const order={'gruber.marek@gmail.com':0};
     founders.sort((a,b)=>((order[a.email]??9)-(order[b.email]??9)) || (a.name||'').localeCompare(b.name||''));
-    res.json({ contacts: founders.map(u=>({ id:u._id, name:u.name, avatar:u.avatar||null,
+    res.json({ contacts: founders.map(u=>({ id:u._id, name:u.name, avatar:u.avatar||null, is_self: u._id===req.session.uid,
       phone: (u.phone&&u.phone.replace(/\s+/g,'').length>=9) ? u.phone : GEN_PHONE,
       role: /spolu/i.test(u.notes||'') ? 'Spoluzakladateľka' : 'Zakladateľ' })) });
   } catch(e){ res.status(500).json({error:e.message}); }
