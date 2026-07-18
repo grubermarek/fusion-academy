@@ -940,6 +940,7 @@ app.post('/api/register', async(req,res)=>{
           for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'new_lead',
             title:'🆕 Importovaný lead si vytvoril účet',
             body:`${set.name} · ${emailNorm}`, read:false, created_at:nowISO()}); } catch(e){}
+        announceNewMember(existing._id).catch(()=>{});
         return res.json({ ok:true, id:existing._id, claimed:true, free_bonus:true, redirect_to:'/client-dashboard' });
       }
       return res.status(400).json({error:'Tento e-mail je už zaregistrovaný. Skús sa prihlásiť.'});
@@ -1027,6 +1028,7 @@ app.post('/api/register', async(req,res)=>{
     enqueueSequence(u._id, 'lead_nurture').catch(()=>{});
     // Server-side conversion tracking
     metaCapi('CompleteRegistration',{email:u.email, fbclid, fbp:clean(attr.fbp)}).catch(()=>{});
+    announceNewMember(u._id).catch(()=>{});
     res.json({ok:true, userType:utype, redirect_to: dashUrlFor(u)});
   } catch(e){
     if(e.message?.includes('unique')) return res.status(400).json({error:'Email je už zaregistrovaný'});
@@ -1250,7 +1252,7 @@ app.get('/api/dm/history/:userId', auth, async(req,res)=>{
 
 // ── Community feed (nástenka): posts + reactions + comments ───────────────────
 const FEED_EMOJIS = ['❤️','👏','🔥','💪','🎉'];
-function feedView(p, meId, nameMap){
+function feedView(p, meId, nameMap, meIsAdmin){
   const nm = id => (nameMap && nameMap[id]) || 'Člen';
   const reactions = p.reactions||{};
   const summary = FEED_EMOJIS.map(e=>{ const ids=reactions[e]||[];
@@ -1263,11 +1265,74 @@ function feedView(p, meId, nameMap){
   return {
     id:p._id, author_id:p.author_id, author_name:p.author_name, author_badge:p.author_badge||null,
     text:p.text||'', image:p.image||null, created_at:p.created_at,
+    system_event: !!p.system_event,
+    event_kind: p.event_kind||null,
+    event_avatar: p.event_avatar||null,
+    event_actors: p.event_actors||[],
+    event_cta: p.event_cta||null,
     reactions:summary,
     comments,
     comment_count:(p.comments||[]).length,
-    can_delete: p.author_id===meId
+    can_delete: p.author_id===meId || !!meIsAdmin
   };
+}
+// ── Komunitná nástenka: automatické oznamy o dianí v komunite ─────────────────
+async function postCommunityEvent(opts){
+  try{
+    const post = await q.insert(db.feed,{
+      author_id:'community', author_name:'Komunita', author_badge:{emoji:'🤝',label:'Komunita'},
+      system_event:true, event_kind:opts.kind||'', event_avatar:opts.avatar||null,
+      event_actors:(opts.actors||[]).filter(a=>a&&a.id).map(a=>({id:a.id,name:a.name||'Člen'})),
+      event_cta:opts.cta||null,
+      text:opts.text||'', image:null, reactions:{}, comments:[], created_at:nowISO()
+    });
+    io.emit('feed_new', feedView(post, null));
+  }catch(e){}
+}
+// Nedávno už bol rovnaký typ oznamu pre daného člena? (proti spamu — napr. zmena fotky)
+async function recentCommunityEvent(kind, actorId, hours){
+  try{
+    const since = new Date(Date.now()-hours*3600e3).toISOString();
+    const hit = await q.one(db.feed,{ system_event:true, event_kind:kind, 'event_actors.id':actorId, created_at:{$gte:since} });
+    return !!hit;
+  }catch(e){ return false; }
+}
+// Člen viditeľný v komunite? (skryté importované leady bez účtu neoznamujeme)
+function isCommunityVisible(u){ return !!u && u.active!==false && !u.is_child && !(u.imported && !u.claimed); }
+async function announceFriendship(idA, idB){
+  const [a,b]=await Promise.all([q.one(db.users,{_id:idA}), q.one(db.users,{_id:idB})]);
+  if(!isCommunityVisible(a) || !isCommunityVisible(b)) return;
+  await postCommunityEvent({ kind:'friendship', avatar:a.avatar||b.avatar||null,
+    actors:[{id:a._id,name:a.name},{id:b._id,name:b.name}],
+    cta:'💛 Poteš ich lajkom',
+    text:`🤝 ${a.name} a ${b.name} sú teraz priatelia!` });
+}
+async function announceGiftCredit(gifterId, recipientId, amount, anon){
+  const rcpt=await q.one(db.users,{_id:recipientId});
+  if(!isCommunityVisible(rcpt)) return;
+  const gifter = anon ? null : await q.one(db.users,{_id:gifterId});
+  const actors = gifter && isCommunityVisible(gifter) ? [{id:gifter._id,name:gifter.name},{id:rcpt._id,name:rcpt.name}] : [{id:rcpt._id,name:rcpt.name}];
+  const who = (gifter && isCommunityVisible(gifter)) ? gifter.name : 'Niekto anonymne';
+  await postCommunityEvent({ kind:'gift_credit', avatar:(gifter&&isCommunityVisible(gifter)?gifter.avatar:null)||rcpt.avatar||null,
+    actors, cta:'💝 Šírme dobrú náladu',
+    text:`💝 ${who} podaroval/a kredit členke ${rcpt.name}. Krásne gesto! 🌟` });
+}
+async function announceAvatarChange(userId){
+  const u=await q.one(db.users,{_id:userId});
+  if(!isCommunityVisible(u) || !u.avatar) return;
+  if(await recentCommunityEvent('avatar', userId, 24)) return; // max 1× za 24h
+  await postCommunityEvent({ kind:'avatar', avatar:u.avatar,
+    actors:[{id:u._id,name:u.name}], cta:'👀 Mrkni na profil',
+    text:`📸 ${u.name} má novú profilovku!` });
+}
+async function announceNewMember(userId){
+  const u=await q.one(db.users,{_id:userId});
+  if(!isCommunityVisible(u)) return;
+  if(await recentCommunityEvent('welcome', userId, 168)) return; // neopakuj
+  const first=(u.name||'').split(' ')[0]||u.name;
+  await postCommunityEvent({ kind:'welcome', avatar:u.avatar||null,
+    actors:[{id:u._id,name:u.name}], cta:'🎉 Privítaj ju',
+    text:`🎉 Vitajte nového člena — ${u.name}! Privítajme ${first} komentárom alebo lajkom 💛` });
 }
 // Postaví mapu id→meno pre všetkých, čo reagovali/komentovali na dané príspevky
 async function feedNameMap(posts){
@@ -1281,7 +1346,8 @@ async function feedNameMap(posts){
 app.get('/api/feed', auth, async(req,res)=>{
   const posts = (await q.find(db.feed,{})).sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,50);
   const nameMap = await feedNameMap(posts);
-  res.json(posts.map(p=>feedView(p, req.session.uid, nameMap)));
+  const me = await q.one(db.users,{_id:req.session.uid});
+  res.json(posts.map(p=>feedView(p, req.session.uid, nameMap, me?.is_admin)));
 });
 app.post('/api/feed', auth, async(req,res)=>{
   try {
@@ -1969,6 +2035,7 @@ app.post('/api/friends/request', auth, async(req,res)=>{
     // If the other person already requested me, accept it
     if(existing.status==='pending' && existing.requested_by===to){
       await q.update(db.friends,{pair:key},{$set:{status:'accepted',accepted_at:nowISO()}});
+      announceFriendship(me, to).catch(()=>{});
       return res.json({ok:true, state:'friends'});
     }
     return res.json({ok:true, state: existing.status==='accepted'?'friends':'requested'});
@@ -1987,6 +2054,7 @@ app.post('/api/friends/accept', auth, async(req,res)=>{
   await q.update(db.friends,{pair:key},{$set:{status:'accepted',accepted_at:nowISO()}});
   await q.insert(db.notifications,{user_id:from, type:'friend_accepted', from_id:me,
     title:'🎉 Žiadosť prijatá', body:`${(await q.one(db.users,{_id:me}))?.name||'Niekto'} prijal/a tvoju žiadosť o priateľstvo.`, read:false, created_at:nowISO()});
+  announceFriendship(me, from).catch(()=>{});
   res.json({ok:true, state:'friends'});
 });
 // Remove friend / cancel request / decline
@@ -5538,6 +5606,7 @@ async function fulfillGiftCredit(s){
   createInvoice({user_id:meta.gifter_id, client_name:gifter?.name, client_email:gifter?.email,
     items:[{desc:`Darčekový kredit pre ${rcpt?.name||'klienta'}`, qty:1, total:amount}], total:amount, method:'Stripe (karta / Apple Pay / Google Pay)'});
   await notifyGifter(gifter, rcpt?.name, amount);
+  announceGiftCredit(meta.gifter_id, meta.recipient_id, amount, false).catch(()=>{});
   return {ok:true, gift:true, amount};
 }
 // Klient iniciuje darček kreditu (Stripe / demo)
@@ -7497,6 +7566,7 @@ app.post('/api/client/avatar', auth, async(req,res)=>{
       return res.status(400).json({error:'Neplatný obrázok'});
     if(avatar.length > 600000) return res.status(400).json({error:'Obrázok je príliš veľký'});
     await q.update(db.users,{_id:req.session.uid},{$set:{avatar}});
+    announceAvatarChange(req.session.uid).catch(()=>{});
     res.json({ok:true});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -7705,6 +7775,7 @@ app.post('/api/client/credit/gift', auth, async(req,res)=>{
     await q.insert(db.transactions,{type:'credit_gift', user_id:u._id, user_name:u.name, amount, payment_method:'credit', anonymous:anon, note:`Darček kreditu ${amount.toFixed(2)} € pre ${rcpt.name}${anon?' (anonymne)':''}`, status:'done', created_at:nowISO(), month:today().slice(0,7)});
     await q.insert(db.notifications,{user_id:rcpt._id,type:'credit',title:`🎁 Dostal/a si ${amount.toFixed(2)} € kredit!`,body:`${fromDisp} ti daroval/a kredit. Použi ho na členstvo, permanentku, merch alebo súkromné hodiny.`,read:false,created_at:nowISO()});
     await q.insert(db.notifications,{user_id:u._id,type:'credit',title:`Darček odoslaný 🎁`,body:`Daroval/a si ${amount.toFixed(2)} € kredit pre ${rcpt.name}.`,read:false,created_at:nowISO()});
+    announceGiftCredit(u._id, rcpt._id, amount, anon).catch(()=>{});
     res.json({ok:true, recipient:rcpt.name, amount});
   } catch(e){ res.status(500).json({error:e.message}); }
 });

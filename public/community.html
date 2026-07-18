@@ -705,6 +705,7 @@ function renderPost(p) {
   const av = stringToColor(p.author_id);
   const time = new Date(p.created_at).toLocaleString('sk-SK',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
   _feedById[p.id]=p;
+  if(p.system_event) return renderSystemPost(p, time);
   const reacts = p.reactions.map(r => `<button class="react-btn ${r.mine?'mine':''}" onclick="reactPost('${p.id}','${r.emoji}')">${r.emoji} ${r.count||''}</button>`).join('');
   const totalReacts = p.reactions.reduce((s,r)=>s+r.count,0);
   const whoReacts = totalReacts>0 ? `<button class="react-btn" style="border-style:dashed" onclick="showLikers('${p.id}')" title="Kto reagoval">👀 ${totalReacts}</button>` : '';
@@ -722,6 +723,36 @@ function renderPost(p) {
     <div class="post-comments">
       ${comments}
       <div class="pc-input"><input placeholder="Napíš komentár…" onkeydown="if(event.key==='Enter')commentPost('${p.id}',this)"><button class="react-btn" onclick="commentPost('${p.id}',this.previousElementSibling)">➤</button></div>
+    </div>
+  </div>`;
+}
+function renderSystemPost(p, time){
+  const reacts = p.reactions.map(r => `<button class="react-btn ${r.mine?'mine':''}" onclick="reactPost('${p.id}','${r.emoji}')">${r.emoji} ${r.count||''}</button>`).join('');
+  const totalReacts = p.reactions.reduce((s,r)=>s+r.count,0);
+  const whoReacts = totalReacts>0 ? `<button class="react-btn" style="border-style:dashed" onclick="showLikers('${p.id}')" title="Kto reagoval">👀 ${totalReacts}</button>` : '';
+  const comments = (p.comments||[]).map(c => `<div class="pcomment"><b>${escHtml(c.name)}</b> ${escHtml(c.text)}
+     <span class="cmt-like ${c.liked?'on':''}" onclick="likeComment('${p.id}','${c.id}')">❤️${c.likes?' '+c.likes:''}</span>${c.likes?` <span class="cmt-who" onclick="showCmtLikers('${p.id}','${c.id}')">kto</span>`:''}</div>`).join('');
+  const actors=(p.event_actors||[]);
+  const emoji=(p.text||'🤝').trim().charAt(0);
+  const avatar = p.event_avatar
+    ? `<img src="${p.event_avatar}" style="width:46px;height:46px;border-radius:50%;object-fit:cover;border:2px solid var(--gold)">`
+    : `<div style="width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.4rem;background:rgba(201,168,76,.15);border:1px solid var(--gold-border,#332a18)">${emoji}</div>`;
+  const chips = actors.length
+    ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${actors.map(a=>`<a href="/u/${a.id}" style="text-decoration:none"><span style="display:inline-flex;align-items:center;gap:4px;background:rgba(201,168,76,.12);border:1px solid var(--gold-border,#332a18);color:var(--gold);border-radius:999px;padding:3px 10px;font-size:.78rem;font-weight:700">👤 ${escHtml(a.name)}</span></a>`).join('')}</div>`
+    : '';
+  return `<div class="post" data-id="${p.id}" style="background:linear-gradient(135deg,rgba(201,168,76,.07),rgba(201,168,76,.02));border:1px solid var(--gold-border,#3a2f1a)">
+    <div class="post-head" style="align-items:center">
+      ${avatar}
+      <div style="flex:1;margin-left:10px"><div class="post-name" style="color:var(--gold)">🤝 Komunita</div><div class="post-time">${time}</div></div>
+      ${p.can_delete?`<button class="post-del" onclick="deletePost('${p.id}')"><i class="bi bi-trash"></i></button>`:''}
+    </div>
+    <div class="post-text" style="font-size:.98rem">${escHtml(p.text)}</div>
+    ${chips}
+    ${p.event_cta?`<div style="margin-top:8px;font-size:.8rem;color:var(--text-muted)">${escHtml(p.event_cta)}</div>`:''}
+    <div class="post-actions" style="margin-top:8px">${reacts}${whoReacts}</div>
+    <div class="post-comments">
+      ${comments}
+      <div class="pc-input"><input placeholder="Napíš niečo milé…" onkeydown="if(event.key==='Enter')commentPost('${p.id}',this)"><button class="react-btn" onclick="commentPost('${p.id}',this.previousElementSibling)">➤</button></div>
     </div>
   </div>`;
 }
