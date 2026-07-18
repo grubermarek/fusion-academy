@@ -99,8 +99,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   <!-- Icon rail -->
   <div class="icon-rail">
     <div class="rail-logo"><img src="/logo-mark.png" alt="Fusion Academy"></div>
-    <button class="rail-btn active" id="rail-home" onclick="selectGroup('home')" title="Domov"><i class="bi bi-house-door"></i></button>
-    <button class="rail-btn" id="rail-manage" onclick="selectGroup('manage')" title="Správa"><i class="bi bi-grid-1x2"></i><span class="rail-dot" id="railDotManage"></span></button>
+    <button class="rail-btn active" id="rail-manage" onclick="selectGroup('manage')" title="Správa"><i class="bi bi-grid-1x2"></i><span class="rail-dot" id="railDotManage"></span></button>
     <button class="rail-btn" id="rail-marketing" onclick="selectGroup('marketing')" title="Marketing"><i class="bi bi-megaphone"></i></button>
     <button class="rail-btn" id="rail-reports" onclick="selectGroup('reports')" title="Financie a reporty"><i class="bi bi-bar-chart"></i></button>
     <button class="rail-btn" id="rail-partners" onclick="selectGroup('partners')" title="Partneri (MLM)"><i class="bi bi-people"></i></button>
@@ -112,13 +111,10 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- Group panel (links for the active rail group) -->
   <div class="group-panel">
-    <div class="group-title" id="groupTitle">Domov</div>
+    <div class="group-title" id="groupTitle">Správa</div>
 
-    <div class="group-links active" data-group="home">
+    <div class="group-links active" data-group="manage">
       <a class="nav-link active" href="#" onclick="show('attendance')"><i class="bi bi-calendar-heart me-2"></i><span style="color:#4ade80;font-weight:700">Kalendár rezervácií</span></a>
-    </div>
-
-    <div class="group-links" data-group="manage">
       <div class="nav-group-label">Klienti</div>
       <a class="nav-link" href="#" onclick="show('leads')"><i class="bi bi-person-plus me-2"></i>Leady <span id="leadsNavBadge" class="badge ms-1" style="background:#C9A84C;color:#111;display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('crm')"><i class="bi bi-person-lines-fill me-2"></i>Klienti <span id="crmClientsBadge" class="badge ms-1" style="background:#C9A84C;color:#111;display:none"></span></a>
@@ -1529,8 +1525,8 @@ function showToast(msg,type='success'){
   setTimeout(()=>{t.style.display='none'},3500);
 }
 
-const GROUP_TITLES={home:'Domov',manage:'Správa',marketing:'Marketing',reports:'Financie & reporty',partners:'Partneri (MLM)'};
-const SECTION_GROUP={overview:'home',attendance:'home',sale:'reports',
+const GROUP_TITLES={manage:'Správa',marketing:'Marketing',reports:'Financie & reporty',partners:'Partneri (MLM)'};
+const SECTION_GROUP={attendance:'manage',sale:'reports',
   leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',
   marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
   finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
