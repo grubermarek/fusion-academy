@@ -315,7 +315,7 @@ select.form-control option{background:var(--dark3)}
       <i class="bi bi-calendar3"></i>
       <span class="nav-label">Hodiny</span>
     </button>
-    <button class="nav-item" onclick="location.href='/booking-calendar'" id="tab-calendar" style="color:var(--gold)">
+    <button class="nav-item" onclick="switchTab('calendar',this)" id="tab-calendar" style="color:var(--gold)">
       <i class="bi bi-calendar-heart"></i>
       <span class="nav-label">Kalendár</span>
     </button>
@@ -347,6 +347,11 @@ select.form-control option{background:var(--dark3)}
 
   <!-- MAIN CONTENT -->
   <main class="main">
+
+    <!-- ═══════════ KALENDÁR PANEL (vložený, menu ostáva) ═══════════ -->
+    <div class="panel" id="panel-calendar" style="padding:0">
+      <iframe id="calFrame" src="about:blank" style="width:100%;height:calc(100vh - 130px);min-height:520px;border:0;border-radius:12px;background:var(--dark)"></iframe>
+    </div>
 
     <!-- ═══════════ SCHEDULE / HODINY PANEL ═══════════ -->
     <div class="panel active" id="panel-schedule">
@@ -1374,6 +1379,7 @@ function switchTab(id, btn){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('panel-'+id).classList.add('active');
   if(btn) btn.classList.add('active');
+  if(id==='calendar') loadCalFrame();
   if(id==='notes') populateNoteClasses();
   if(id==='tasks') loadTasks();
   if(id==='earnings') loadTrainerEarnings();
@@ -1414,6 +1420,11 @@ async function removeAssistant(id){
   if(r&&r.ok) loadAssistant();
 }
 const MONTHS_SK_T=['','Január','Február','Marec','Apríl','Máj','Jún','Júl','August','September','Október','November','December'];
+// ── KALENDÁR (vložený iframe, menu ostáva viditeľné) ──────────────────────────
+function loadCalFrame(){
+  const f=document.getElementById('calFrame');
+  if(f && (f.src==='about:blank' || !f.src.includes('/booking-calendar'))){ f.src='/booking-calendar?embed=1'; }
+}
 // ── DENNÉ ÚLOHY ───────────────────────────────────────────────────────────────
 const _SKMON=['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
 const _SKDAY=['Nedeľa','Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota'];
