@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="/fa-theme.css">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
 :root{
   --brand1:#C9A84C;--brand2:#F0C060;
@@ -411,6 +412,9 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
             <div class="text-muted small" id="attDetailMeta">—</div>
           </div>
           <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-sm" style="background:rgba(201,168,76,.15);color:#C9A84C;border:1px solid rgba(201,168,76,.35)" onclick="openAttQr()">
+              <i class="bi bi-qr-code-scan me-1"></i>Skenovať QR
+            </button>
             <button class="btn btn-sm" style="background:rgba(74,222,128,.15);color:#4ade80;border:1px solid rgba(74,222,128,.3)" onclick="openManualBooking()">
               <i class="bi bi-person-plus me-1"></i>Pridať ručne
             </button>
@@ -4081,9 +4085,12 @@ async function openAttClass(classId){
     const nameCell = a.user_id
       ? `<a href="/u/${a.user_id}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none"><strong>${escHtml(a.name)}</strong> <i class="bi bi-box-arrow-up-right" style="font-size:.6rem;opacity:.55"></i></a>`
       : `<strong>${escHtml(a.name)}</strong>`;
+    const emailLink = a.email && a.email!=='—' ? `<a href="mailto:${escHtml(a.email)}" class="text-decoration-none text-muted">${escHtml(a.email)}</a>` : '';
+    const telDigits = (a.phone||'').replace(/[^\d+]/g,'');
+    const phoneLink = a.phone && a.phone!=='—' ? `<a href="tel:${escHtml(telDigits)}" class="text-decoration-none" style="color:#60a5fa"><i class="bi bi-telephone-fill me-1"></i>${escHtml(a.phone)}</a>` : '';
     return `<tr>
       <td class="ps-2">${nameCell}</td>
-      <td><small class="text-muted">${escHtml(a.email)}<br>${escHtml(a.phone)}</small></td>
+      <td onclick="event.stopPropagation()"><small class="text-muted">${emailLink}${emailLink&&phoneLink?'<br>':''}${phoneLink}</small></td>
       <td>${mTag}</td>
       <td><span style="color:var(--gold);font-weight:700">${a.visit_count}</span></td>
       <td><small class="text-muted">${a.booking_date||'—'}</small></td>
@@ -4100,6 +4107,42 @@ async function openAttClass(classId){
 function closeAttDetail(){
   document.getElementById('attDetailPanel').style.display = 'none';
   _attSelectedClass = null;
+}
+
+// ── QR check-in do vybranej hodiny ────────────────────────────────────────────
+let _attQr=null, _attScanBusy=false;
+function openAttQr(){
+  const c=_attSelectedClass; if(!c){ showToast('Najprv otvor hodinu.','error'); return; }
+  if(typeof Html5Qrcode==='undefined'){ showToast('QR skener sa nenačítal, obnov stránku.','error'); return; }
+  let m=document.getElementById('attQrModal');
+  if(!m){ m=document.createElement('div'); m.id='attQrModal';
+    m.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;padding:16px';
+    document.body.appendChild(m);
+  }
+  m.innerHTML=`<div style="background:#161512;border:1px solid rgba(201,168,76,.4);border-radius:16px;max-width:400px;width:100%;padding:18px;color:#EAE3D5">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#C9A84C">📷 QR check-in — ${esc(c.name||'Hodina')}</b><button onclick="closeAttQr()" style="background:none;border:none;color:#999;font-size:1.3rem;cursor:pointer">✕</button></div>
+    <div id="attQrReader" style="width:100%;border-radius:10px;overflow:hidden"></div>
+    <div id="attQrMsg" style="font-size:.85rem;margin-top:10px;text-align:center;color:rgba(234,227,213,.6)">Namier kameru na QR kód klienta…</div>
+  </div>`;
+  const reader=new Html5Qrcode('attQrReader'); _attQr=reader;
+  reader.start({facingMode:'environment'}, {fps:10, qrbox:220},
+    txt=>onAttScan(txt, c._id),
+    ()=>{}
+  ).catch(()=>{ const el=document.getElementById('attQrMsg'); if(el) el.innerHTML='<span style="color:#f87171">Nepodarilo sa spustiť kameru. Povoľ prístup.</span>'; });
+}
+async function closeAttQr(){
+  if(_attQr){ try{ await _attQr.stop(); }catch(e){} try{ _attQr.clear(); }catch(e){} _attQr=null; }
+  document.getElementById('attQrModal')?.remove();
+}
+async function onAttScan(txt, classId){
+  if(_attScanBusy) return; _attScanBusy=true;
+  const msg=document.getElementById('attQrMsg'); if(msg) msg.innerHTML='<span style="color:#C9A84C">⏳ Spracúvam…</span>';
+  const r=await api('/api/attendance/qr-checkin',{method:'POST',body:{qr_data:txt, class_id:classId}});
+  if(r && r.booking){ if(msg) msg.innerHTML=`<span style="color:#4ade80">✅ ${esc(r.user?.name||'Klient')} zapísaný</span>`; showToast('✅ '+(r.user?.name||'Klient')+' zapísaný','success'); openAttClass(classId); }
+  else if(r && r.error==='membership_required'){ if(msg) msg.innerHTML=`<span style="color:#fbbf24">⚠️ ${esc(r.user?.name||'Klient')} nemá členstvo/kredit — zapíš ho ručne (Zdarma/Vstup).</span>`; }
+  else if(r && r.booking?.existing){ if(msg) msg.innerHTML='<span style="color:#4ade80">✅ Už prihlásený</span>'; }
+  else { if(msg) msg.innerHTML=`<span style="color:#f87171">${esc(r?.error||'Chyba')}</span>`; }
+  setTimeout(()=>{ _attScanBusy=false; }, 1500);
 }
 
 function openManualBooking(){
