@@ -909,12 +909,44 @@ function renderAdmin(){
       <div style="font-size:.86rem;margin:4px 0 8px;color:var(--text-muted)">Odhlási klienta a pri ďalšom prihlásení si musí vytvoriť nové heslo (na to isté meno/email). Použi, keď klient zabudol heslo.</div>
       <button class="adm-save" style="justify-self:start;background:linear-gradient(102deg,#8b3232,#ef5350)" onclick="resetClientPassword()"><i class="bi bi-key"></i> Resetovať heslo</button>
     </div>` : ''}
-    ${(!P.is_admin_profile && !P.is_self) ? `<div class="set-row" style="background:rgba(239,83,80,.07);border:1px solid rgba(239,83,80,.35);border-radius:12px;padding:12px">
+    ${(!P.is_admin_profile && !P.is_self) ? `<div class="set-row" style="background:rgba(201,168,76,.06);border:1px solid rgba(201,168,76,.28);border-radius:12px;padding:12px">
+      <span class="set-label">🔗 Zlúčiť tento účet do iného</span>
+      <div style="font-size:.86rem;margin:4px 0 8px;color:var(--text-muted)">Prenesie históriu (návštevy, odznaky, hodiny, vstupy, kredit, členstvá, štruktúru…) z <b>${esc(P.name||'tohto účtu')}</b> do vybraného účtu a <b>tento</b> potom zmaže. Ideálne na duplicitný účet z migrácie.</div>
+      <div style="position:relative">
+        <input type="text" id="mergeSearch" placeholder="🔍 Nájsť cieľový účet (meno / email / kód)…" oninput="searchMergeTarget()" autocomplete="off" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:9px 12px">
+        <div id="mergeResults" style="display:none;position:absolute;z-index:20;left:0;right:0;top:calc(100% + 4px);background:#161512;border:1px solid var(--border);border-radius:10px;max-height:220px;overflow-y:auto"></div>
+      </div>
+    </div>
+    <div class="set-row" style="background:rgba(239,83,80,.07);border:1px solid rgba(239,83,80,.35);border-radius:12px;padding:12px">
       <span class="set-label" style="color:#ef5350">🗑️ Zmazať účet natrvalo</span>
-      <div style="font-size:.86rem;margin:4px 0 8px;color:var(--text-muted)">Nezvratné. Zmaže tento účet aj jeho rezervácie, transakcie a provízie. Prípadnú štruktúru pod ním presunie na jeho sponzora. Použi napr. na duplicitný účet z migrácie (ponechaj ten správny).</div>
+      <div style="font-size:.86rem;margin:4px 0 8px;color:var(--text-muted)">Nezvratné. Zmaže tento účet aj jeho rezervácie, transakcie a provízie. Prípadnú štruktúru pod ním presunie na jeho sponzora. Ak je to duplicitný účet, zváž radšej <b>Zlúčiť</b> vyššie, aby sa história nestratila.</div>
       <button class="adm-save" style="justify-self:start;background:linear-gradient(102deg,#7a1f1f,#c62828)" onclick="deleteAccount()"><i class="bi bi-trash3"></i> Zmazať účet</button>
     </div>` : ''}`;
   admPlanChange(); // nastav počiatočnú cenu podľa vybraného plánu
+}
+let _mergeTimer=null;
+function searchMergeTarget(){
+  clearTimeout(_mergeTimer);
+  const q=(document.getElementById('mergeSearch').value||'').trim();
+  const box=document.getElementById('mergeResults');
+  if(q.length<2){ box.style.display='none'; return; }
+  _mergeTimer=setTimeout(async()=>{
+    const d=await api('/api/admin/user-search?q='+encodeURIComponent(q));
+    const people=(d&&d.people||[]).filter(p=>p.id!==uid);
+    if(!people.length){ box.innerHTML='<div style="padding:10px;color:var(--muted);font-size:.85rem">Nikto sa nenašiel.</div>'; box.style.display='block'; return; }
+    box.innerHTML=people.map(p=>`<div onclick="mergeInto('${p.id}','${esc(p.name).replace(/'/g,'')}')" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:.86rem">
+      <b>${esc(p.name)}</b> <span style="color:var(--muted);font-size:.78rem">${esc(p.email||'')}${p.code?' · '+esc(p.code):''}${p.type?' · '+esc(p.type):''}</span></div>`).join('');
+    box.style.display='block';
+  }, 250);
+}
+async function mergeInto(targetId, targetName){
+  document.getElementById('mergeResults').style.display='none';
+  const src=P.name||'tento účet';
+  if(!confirm(`Zlúčiť účet „${src}" DO účtu „${targetName}"?\n\nHistória sa prenesie do „${targetName}" a účet „${src}" sa NATRVALO zmaže.`)) return;
+  const r=await fetch('/api/admin/users/'+encodeURIComponent(uid)+'/merge-into',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({target_id:targetId})});
+  const d=await r.json().catch(()=>({}));
+  if(r.ok&&d.ok){ alert(`Hotovo — účty zlúčené do „${d.target_name}". Presmerúvam na jeho profil.`); location.href='/u/'+d.target_id; }
+  else alert('Nepodarilo sa zlúčiť: '+((d&&d.error)||('chyba '+r.status)));
 }
 async function deleteAccount(){
   const nm = P.name||'tento účet';

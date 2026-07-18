@@ -3268,6 +3268,61 @@ app.delete('/api/admin/users/:id', adminAuth, async(req,res)=>{
   res.json({ok:true});
 });
 
+// Zlúčenie účtov: prenesie históriu zo zdrojového (:id) do cieľového (target_id) a zdroj zmaže.
+app.post('/api/admin/users/:id/merge-into', adminAuth, async(req,res)=>{
+  try{
+    const src=await q.one(db.users,{_id:req.params.id});
+    const tgtId=String(req.body.target_id||'');
+    const tgt=await q.one(db.users,{_id:tgtId});
+    if(!src||!tgt) return res.status(404).json({error:'Účet nenájdený'});
+    if(src._id===tgt._id) return res.status(400).json({error:'Nemôžeš zlúčiť účet sám so sebou'});
+    if(src.is_admin) return res.status(400).json({error:'Admin účet nemožno zlúčiť/zmazať'});
+    // 1) Presuň záznamy zo zdroja na cieľ (podľa polí s user id)
+    const reassign=async(coll,field)=>{ await q.update(coll,{[field]:src._id},{$set:{[field]:tgt._id}},{multi:true}); };
+    await reassign(db.bookings,'user_id');       await reassign(db.bookings,'booked_by');
+    await reassign(db.transactions,'user_id');   await reassign(db.transactions,'partner_id');
+    await reassign(db.commissions,'partner_id'); await reassign(db.commissions,'user_id');
+    await reassign(db.memberships,'user_id');
+    await reassign(db.payments,'user_id');       await reassign(db.payments,'member_id');
+    await reassign(db.invoices,'user_id');
+    await reassign(db.notifications,'user_id');   await reassign(db.notifications,'from_id');
+    await reassign(db.profile_likes,'profile_id');await reassign(db.profile_likes,'liker_id');
+    await reassign(db.profile_comments,'profile_id'); await reassign(db.profile_comments,'author_id');
+    await reassign(db.tips,'to_user');           await reassign(db.tips,'from_user');
+    await reassign(db.task_logs,'user_id');
+    await reassign(db.orders,'user_id');
+    await reassign(db.feed,'author_id');
+    // downline: kto mal za sponzora zdroj → dostane cieľ
+    await q.update(db.users,{sponsor_id:src._id},{$set:{sponsor_id:tgt._id}},{multi:true});
+    // priateľstvá zdroja radšej odstráň (páry sú kľúčované, aby nevznikli duplicity/rozbité väzby)
+    await q.remove(db.friends,{users:src._id},{multi:true});
+    // meal plan: ak cieľ nemá, prenes zdrojový
+    if(!(await q.one(db.meal_plans,{user_id:tgt._id}))) await reassign(db.meal_plans,'user_id');
+    else await q.remove(db.meal_plans,{user_id:src._id},{multi:true});
+    // 2) Spočítaj/zjednoť polia na cieľovom účte
+    const num=k=>(+src[k]||0)+(+tgt[k]||0);
+    const uni=k=>Array.from(new Set([...(tgt[k]||[]),...(src[k]||[])]));
+    const set={
+      visit_count:num('visit_count'), private_hours:num('private_hours'),
+      taught_group_hours:num('taught_group_hours'), taught_private_hours:num('taught_private_hours'),
+      single_entries:num('single_entries'), free_credits:num('free_credits'),
+      referral_credit:+num('referral_credit').toFixed(2), referral_credit_pending:+num('referral_credit_pending').toFixed(2),
+      manual_achievements:uni('manual_achievements'), merch_owned:uni('merch_owned'),
+      free_class_used: !!(tgt.free_class_used||src.free_class_used),
+      birthday: tgt.birthday||src.birthday||'',
+      gender: tgt.gender||src.gender||null,
+      avatar: tgt.avatar||src.avatar||null,
+      // „členom od" = skorší z oboch
+      created_at: [tgt.created_at,src.created_at].filter(Boolean).sort()[0] || tgt.created_at
+    };
+    await q.update(db.users,{_id:tgt._id},{$set:set});
+    // 3) Zmaž zdrojový účet
+    await q.remove(db.users,{_id:src._id});
+    await auditLog(req,'merge_users',src._id,{source:src.name},{into:tgt._id,into_name:tgt.name},'Zlúčenie účtov');
+    res.json({ok:true, target_id:tgt._id, target_name:tgt.name, visit_count:set.visit_count});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.post('/api/admin/transactions', adminAuth, async(req,res)=>{
   try {
     const{client_id,product_id,amount,notes,date}=req.body;
