@@ -6356,14 +6356,25 @@ app.get('/api/tasks/my', trainerAuth, async(req,res)=>{
       prize:await taskPrizeFor(month), my_rank: rank>=0?rank+1:null, board });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
-// Tréner: nastav počet danej aktivity na dnes (0 = zmazať). Body = počet × sadzba.
+// Deň (default dnes, nie budúcnosť)
+function taskDayOf(req){ let d=String(req.body.date||req.query.date||''); if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) d=today(); if(d>today()) d=today(); return d; }
+// Tímový rozpis za konkrétny deň
+async function taskDayBoard(date){
+  const logs = await q.find(db.task_logs,{date});
+  const by={};
+  logs.forEach(l=>{ const b=by[l.user_id]=by[l.user_id]||{user_id:l.user_id,name:l.user_name,points:0,counts:{},hours:0};
+    if(l.task_key==='hours') b.hours+=(+l.hours||0);
+    else { b.points+=(l.points||0); b.counts[l.task_key]=(b.counts[l.task_key]||0)+(+l.count||1); } });
+  return Object.values(by).map(b=>({...b,hours:+b.hours.toFixed(1)})).sort((a,b)=>b.points-a.points);
+}
+// Tréner: nastav počet danej aktivity na deň (0 = zmazať). Body = počet × sadzba.
 app.post('/api/tasks/set', trainerAuth, async(req,res)=>{
   try {
     const u=req.trainerUser;
     const key=String(req.body.task_key||'');
     if(!TASK_POINTS[key]) return res.status(400).json({error:'Neznáma úloha'});
     const count=Math.max(0,Math.min(99, parseInt(req.body.count)||0));
-    const day=today(); const month=day.slice(0,7);
+    const day=taskDayOf(req); const month=day.slice(0,7);
     const ex=await q.one(db.task_logs,{user_id:u._id, date:day, task_key:key});
     if(count<=0){ if(ex) await q.remove(db.task_logs,{_id:ex._id},{}); return res.json({ok:true,count:0,points:0}); }
     const points=count*TASK_POINTS[key];
@@ -6377,12 +6388,34 @@ app.post('/api/tasks/hours', trainerAuth, async(req,res)=>{
   try {
     const u=req.trainerUser;
     const hours=Math.max(0,Math.min(24, parseFloat(req.body.hours)||0));
-    const day=today(); const month=day.slice(0,7);
+    const day=taskDayOf(req); const month=day.slice(0,7);
     const ex=await q.one(db.task_logs,{user_id:u._id, date:day, task_key:'hours'});
     if(hours<=0){ if(ex) await q.remove(db.task_logs,{_id:ex._id},{}); return res.json({ok:true,hours:0}); }
     if(ex) await q.update(db.task_logs,{_id:ex._id},{$set:{hours}});
     else await q.insert(db.task_logs,{ user_id:u._id, user_name:u.name, task_key:'hours', hours, points:0, count:0, date:day, month, created_at:nowISO() });
     res.json({ ok:true, hours });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+// Tréner: rozpis za konkrétny deň (moje počty + čo spravili iní tréneri v ten deň)
+app.get('/api/tasks/day', trainerAuth, async(req,res)=>{
+  try {
+    const u=req.trainerUser;
+    const date=taskDayOf(req);
+    const mine=await q.find(db.task_logs,{user_id:u._id, date});
+    const myCounts={}; let myHours=0;
+    mine.forEach(l=>{ if(l.task_key==='hours') myHours+=(+l.hours||0); else myCounts[l.task_key]=(myCounts[l.task_key]||0)+(+l.count||1); });
+    res.json({ tasks:TRAINER_TASKS, date, is_today:date===today(),
+      my_counts:myCounts, my_hours:myHours, team:await taskDayBoard(date) });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+// Tréner/admin: rebríček za konkrétny mesiac (+ cena, víťaz ak už ukončený)
+app.get('/api/tasks/board', trainerAuth, async(req,res)=>{
+  try {
+    const month=(req.query.month||today().slice(0,7)).slice(0,7);
+    const board=await taskLeaderboard(month);
+    const cur=today().slice(0,7);
+    res.json({ month, tasks:TRAINER_TASKS, board, prize:await taskPrizeFor(month),
+      ongoing: month===cur, winner: (month<cur ? (board[0]||null) : null) });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 // Tréner/admin: história (víťazi + ceny minulých mesiacov)
