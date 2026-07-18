@@ -908,8 +908,24 @@ function renderAdmin(){
       <span class="set-label">🔑 Reset hesla</span>
       <div style="font-size:.86rem;margin:4px 0 8px;color:var(--text-muted)">Odhlási klienta a pri ďalšom prihlásení si musí vytvoriť nové heslo (na to isté meno/email). Použi, keď klient zabudol heslo.</div>
       <button class="adm-save" style="justify-self:start;background:linear-gradient(102deg,#8b3232,#ef5350)" onclick="resetClientPassword()"><i class="bi bi-key"></i> Resetovať heslo</button>
+    </div>` : ''}
+    ${(!P.is_admin_profile && !P.is_self) ? `<div class="set-row" style="background:rgba(239,83,80,.07);border:1px solid rgba(239,83,80,.35);border-radius:12px;padding:12px">
+      <span class="set-label" style="color:#ef5350">🗑️ Zmazať účet natrvalo</span>
+      <div style="font-size:.86rem;margin:4px 0 8px;color:var(--text-muted)">Nezvratné. Zmaže tento účet aj jeho rezervácie, transakcie a provízie. Prípadnú štruktúru pod ním presunie na jeho sponzora. Použi napr. na duplicitný účet z migrácie (ponechaj ten správny).</div>
+      <button class="adm-save" style="justify-self:start;background:linear-gradient(102deg,#7a1f1f,#c62828)" onclick="deleteAccount()"><i class="bi bi-trash3"></i> Zmazať účet</button>
     </div>` : ''}`;
   admPlanChange(); // nastav počiatočnú cenu podľa vybraného plánu
+}
+async function deleteAccount(){
+  const nm = P.name||'tento účet';
+  if(!confirm(`Naozaj NATRVALO zmazať účet „${nm}"?\n\nTáto akcia sa nedá vrátiť.`)) return;
+  const typed = prompt(`Na potvrdenie napíš presné meno účtu:\n${nm}`);
+  if(typed===null) return;
+  if((typed||'').trim()!==nm.trim()){ alert('Meno nesedí — mazanie zrušené.'); return; }
+  const r = await fetch('/api/admin/users/'+encodeURIComponent(uid),{method:'DELETE',credentials:'include'});
+  const d = await r.json().catch(()=>({}));
+  if(r.ok && d.ok){ alert('Účet „'+nm+'" bol zmazaný.'); location.href='/community'; }
+  else alert('Nepodarilo sa zmazať: '+((d&&d.error)||('chyba '+r.status)));
 }
 async function resetClientPassword(){
   if(!confirm('Resetovať heslo tohto klienta?\n\nKlient bude odhlásený a pri prihlásení si vytvorí nové heslo. Typicky mu potom napíš, nech si na prihlasovacej obrazovke klikne „Zabudli ste heslo?" a zadá nové.')) return;
