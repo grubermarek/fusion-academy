@@ -771,7 +771,20 @@ function renderAdmin(){
   const merchChips=(a.merch_list||[]).map(m=>`<span class="adm-chip ${merchSet.has(m)?'on':''}" onclick="toggleMerch('${m}')">${MERCH_LABELS[m]||m}</span>`).join('');
   const achChips=(a.achievements||[]).map(ac=>`<span class="adm-chip ${manualSet.has(ac.id)?'on':(ac.earned?'on':'')}" style="${ac.earned&&!manualSet.has(ac.id)?'opacity:.6;cursor:default':''}" ${ac.earned&&!manualSet.has(ac.id)?'title="Získané automaticky"':`onclick="toggleAch('${ac.id}')"`}>${ac.icon} ${esc(ac.name)}</span>`).join('');
   const planOpts=Object.entries(_plans||{}).map(([k,p])=>`<option value="${k}" data-price="${p.price}">${esc(p.name)} — ${p.price} €</option>`).join('');
+  const M=a.membership;
+  const membHtml = M
+    ? `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:1.05rem">${M.active?'✅':'⛔'}</span><b style="color:${M.active?'#9fd894':'#ef9a9a'}">${esc(M.plan_name)}</b>${M.gift?'<span class="set-hint" style="margin:0">🎁 darček/migrácia</span>':''}<span style="margin-left:auto;font-size:.85rem;color:${M.active?'var(--cream)':'#ef9a9a'}">${M.expires_at?(M.active?('platí do <b>'+M.expires_at+'</b>'):('vypršalo <b>'+M.expires_at+'</b>')):'bez dátumu'}</span></div>`
+    : `<span class="set-hint" style="margin:0">Bez členstva</span>`;
   box.innerHTML=`
+    <div class="set-row" style="background:rgba(129,199,132,.06);border:1px solid rgba(129,199,132,.25);border-radius:12px;padding:12px">
+      <span class="set-label">📋 Prehľad (len admin)</span>
+      <div style="margin:4px 0 8px">${membHtml}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <span style="background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.3);border-radius:10px;padding:6px 11px;font-size:.85rem">💰 Kredit: <b style="color:var(--gold)">${(a.referral_credit||0).toFixed(2)} €</b>${a.referral_credit_pending>0?` <span style="color:#ff9800">(+${(a.referral_credit_pending).toFixed(2)} € čaká)</span>`:''}</span>
+        <span style="background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:10px;padding:6px 11px;font-size:.85rem">🎟️ Vstupy: <b>${a.single_entries||0}</b></span>
+        ${a.free_credits>0?`<span style="background:rgba(129,199,132,.1);border:1px solid rgba(129,199,132,.3);border-radius:10px;padding:6px 11px;font-size:.85rem">🎁 Zdarma: <b style="color:#9fd894">${a.free_credits}</b></span>`:''}
+      </div>
+    </div>
     ${P.is_trainer ? `<details class="set-row adm-sub" style="cursor:pointer" ontoggle="if(this.open)loadProfileEarnings()">
       <summary style="list-style:none;display:flex;align-items:center;gap:8px;font-weight:700;color:#e0b84c"><i class="bi bi-cash-coin"></i> Zárobky trénera (rozkliknúť) <i class="bi bi-chevron-down" style="margin-left:auto;font-size:.8rem"></i></summary>
       <div id="trEarnBox" style="margin-top:12px"><span class="set-hint">Načítavam…</span></div>

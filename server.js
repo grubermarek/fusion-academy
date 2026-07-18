@@ -1789,7 +1789,15 @@ app.get('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
   const memberMonths=await activeMembershipMonths(u._id);
   u.cities_visited = await citiesVisitedOf(u._id);
   const sponsor = u.sponsor_id ? await q.one(db.users,{_id:u.sponsor_id}) : null;
-  res.json({ name:u.name, visit_count:u.visit_count||0, private_hours:u.private_hours||0,
+  // Aktuálne členstvo (najneskôr expirujúce z aktívnych, inak posledné)
+  const membs = await q.find(db.memberships,{user_id:u._id});
+  const nowIso = new Date().toISOString();
+  const activeMembs = membs.filter(m=>(m.expires_at||'')>nowIso).sort((a,b)=>(b.expires_at||'').localeCompare(a.expires_at||''));
+  const lastMemb = membs.slice().sort((a,b)=>(b.expires_at||b.created_at||'').localeCompare(a.expires_at||a.created_at||''))[0];
+  const mm = activeMembs[0] || lastMemb || null;
+  const membership = mm ? { plan_name:mm.plan_name||mm.plan_id||'Členstvo', expires_at:(mm.expires_at||'').slice(0,10)||null,
+    active:(mm.expires_at||'')>nowIso, gift:!!mm.gift } : null;
+  res.json({ membership, name:u.name, visit_count:u.visit_count||0, private_hours:u.private_hours||0,
     referral_credit:+(u.referral_credit||0), referral_credit_pending:+(u.referral_credit_pending||0),
     single_entries:+(u.single_entries||0), free_credits:+(u.free_credits||0),
     is_trainer:(u.user_type==='trainer')||!!u.is_admin, taught_group_hours:u.taught_group_hours||0, taught_private_hours:u.taught_private_hours||0,
