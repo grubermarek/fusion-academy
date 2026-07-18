@@ -820,22 +820,24 @@ async function seedData() {
     `<p>{meno}, najväčší zabijak výsledkov nie je zlý tréning. Je to <b>vynechaný tréning.</b></p><p>So <b>Silver</b> máš online hodiny stále po ruke — aj na dovolenke, aj keď je vonku −10 °C a nechce sa ti nikam.</p><p>Štúdio, keď môžeš prísť. Online, keď nie. Výsledok? <b>Konzistencia</b> — presne tá, čo robí skutočné premeny.</p><p>Plus tá metabolická analýza tela, o ktorej sme písali. Silver = vidíš pokrok <i>a</i> nikdy nevypadneš z rytmu.</p>`));
 
   // Idempotentne: upsell sekvencia Silver → Gold (Herbalife F1 raňajková zložka)
+  // gold_upsell — bez Herbalife: jedálničky, Tanita meranie, zľavy na súkromné hodiny a eventy
+  const GOLD_BLOG='https://latindancefusion.art/blog';
+  const GOLD_UPSELL_STEPS=[
+    { day:0, label:'Jedlo je 80 %', subject:'Cvičíš 3× do týždňa. A jedlo necháš na náhodu? 🍽️',
+      body:`<p>Ahoj {meno},</p><p>otázka na rovinu: dávaš do tréningu všetko — a potom <b>hádaš, čo a koľko jesť?</b></p><p>Tréneri to hovoria jasne: <b>„Brušáky sa robia v kuchyni."</b> Až 80 % výsledku je o strave, nie o počte drepov.</p><p>V <b>Gold</b> to už nemusíš riešiť — máš <b>jedálniček na mieru na celý týždeň</b> podľa tvojich údajov, chutí a cieľa. Žiadne hádanie, len sa najesť a tancovať.</p><p><a href="${GOLD_BLOG}/jedalnicek-na-mieru-zadarmo">📖 Ako funguje jedálniček na mieru →</a></p>`, cta:null },
+    { day:4, label:'Tanita meranie', subject:'Vidíš, čo sa v tvojom tele reálne deje?',
+      body:`<p>{meno}, zrkadlo aj váha ti ukážu len <i>ako vyzeráš</i>. <b>Tanita meranie</b> ti ukáže <b>prečo</b> — a čo s tým.</p><p>Za pár sekúnd zistíš % telesného tuku, svalovú hmotu, bazálny metabolizmus aj viscerálny tuk. A tvoj jedálniček sa tomu prispôsobí.</p><p>V <b>Gold</b> máš Tanita meranie aj jedálniček pod jednou strechou — vidíš pokrok a presne vieš, čo ďalej.</p><p><a href="${GOLD_BLOG}/metabolicka-analyza-fit-premena">📖 Čo všetko ti meranie prezradí →</a></p>`, cta:null },
+    { day:9, label:'Súkromné hodiny', subject:'Chceš rásť rýchlejšie? Súkromná hodina so zľavou.',
+      body:`<p>{meno}, skupinová hodina je super — ale keď chceš niečo doladiť rýchlo (techniku, kondičku, prípravu na vystúpenie), nič neprekoná <b>súkromnú hodinu jeden na jedného.</b></p><p>Ako <b>Gold</b> členka máš na súkromné hodiny <b>špeciálnu zľavu</b> — tempo aj zameranie čisto podľa teba.</p><p>Priprav sa presne na to, čo chceš zvládnuť. 💃</p>`, cta:'Rezervovať súkromnú hodinu' },
+    { day:14, label:'Kompletný systém', subject:'Gold = tvoj kompletný systém premeny 🏆',
+      body:`<p>{meno}, poskladajme to dokopy. Predstav si to ako stavbu tela:</p><ul><li>💃 <b>Neobmedzené tréningy + online hodiny</b> — spaľuješ, silnieš</li><li>📈 <b>Tanita meranie</b> — vidíš, čo sa reálne deje</li><li>🍽️ <b>Jedálniček na mieru na celý týždeň</b> — presné porcie podľa tvojho metabolizmu</li><li>💛 <b>Zľavy na súkromné hodiny a eventy</b></li></ul><p>To všetko je <b>Gold</b> — kompletný systém, kde jedno ťahá druhé. Nie hádanie, ale jasný plán.</p><p><a href="${GOLD_BLOG}/jedalnicek-na-mieru-zadarmo">📖 Vyskúšaj si 7-dňový jedálniček zadarmo →</a></p>`, cta:null },
+    { day:20, label:'Pozvánka + eventy', subject:'Postav si telo od základov — a vidíme sa na evente 💛',
+      body:`<p>{meno}, cvičíš, vidíš svoj pokrok cez Tanita meranie a ješ podľa jedálnička na mieru — máš celý systém v rukách.</p><p>A ako <b>Gold</b> členka máš navrch <b>zľavy na súkromné hodiny aj naše eventy</b> — workshopy, párty, vystúpenia. Tam sa to celé spojí: komunita, zábava aj výsledky.</p><p>Doprej si jasný plán aj zážitky. Uvidíme sa na parkete. 💪</p>`, cta:'Prejsť na Gold 🏆' },
+  ];
   if(await q.count(db.email_steps,{sequence:'gold_upsell'})===0){
-    const gu=(day,label,subject,body,cta)=>({sequence:'gold_upsell',day,label,active:true,subject,body,cta:cta||null,cta_url:`${APP_URL}/pricing`,created_at:nowISO()});
-    const gsteps=[
-      gu(0,'Slabý článok','Cvičíš 3× do týždňa. A raňajkuješ rožok s párkom? 🌭',
-        `<p>Ahoj {meno},</p><p>otázka na rovinu: dávaš do tréningu všetko — a potom raňajkuješ <b>rožok, párok a kávu s cukrom?</b></p><p>Vieš, čo hovoria tréneri? <b>„Brušáky sa robia v kuchyni."</b> Až 80 % výsledku je o tom, čím telo kŕmiš — nie o tom, koľko drepov spravíš.</p><p>Najslabší článok väčšiny ľudí nie je tréning. Sú to <b>raňajky.</b> A práve tie vieme spraviť tvojou najsilnejšou zbraňou.</p><p>Zajtra ti ukážeme, že zdravé ráno je aj <i>lacnejšie</i> ako to párkové. 👀</p>`),
-      gu(4,'Cena','Koľko stojí tvoje zdravé ráno? Menej ako párky.',
-        `<p>{meno}, poďme počítať.</p><p>Bežné „rýchle" raňajky — rožky, párky, nátierka, sladká káva — ťa vyjdú na pár eur denne. A čo za to telo dostane? Prázdne kalórie, cukor, soľ. Za hodinu si zas hladná.</p><p>Porcia <b>Herbalife Formula 1</b> — kompletnej náhrady stravy — ťa denne stojí <b>menej</b>, a telo dostane úplne iný svet:</p><ul><li>✅ nízke kalórie</li><li>✅ vyvážené makrá (bielkoviny, sacharidy, tuky v správnom pomere)</li><li>✅ <b>23 vitamínov a minerálov</b></li></ul><p>Lacnejšie ako párky. A neporovnateľne výživnejšie. 🥤</p>`),
-      gu(9,'Prečo Herbalife','Prečo Herbalife? Lebo čísla nepustia.',
-        `<p>{meno}, <b>Herbalife</b> nie je náhoda — je to <b>svetová jednotka v nutričných doplnkoch</b>, s desiatkami rokov výskumu za sebou.</p><p><b>Formula 1</b> je náhrada jedla navrhnutá tak, aby ti dala kompletnú výživu v jednej porcii — bez zbytočných kalórií. Presne to, čo tvoje telo potrebuje, keď na sebe pracuješ na parkete.</p><p>Tréning telo <b>rozhýbe.</b> Správna výživa ho <b>postaví.</b> Bez druhého to prvé nikdy nedotiahne naplno.</p>`),
-      gu(14,'Kompletný systém','Gold = tvoj kompletný systém premeny 🏆',
-        `<p>{meno}, poskladajme to dokopy.</p><p>Predstav si to ako stavbu tela:</p><ul><li>💃 <b>Zumba + online hodiny</b> — spaľuješ, budeš silnejšia</li><li>📈 <b>Metabolická analýza</b> — vidíš, čo sa reálne deje</li><li>🥤 <b>Herbalife F1 raňajky</b> — palivo, ktoré to celé posúva</li></ul><p>To všetko je <b>Gold.</b> Kompletný systém, kde jedno ťahá druhé. Nie hádanie — jasný plán od tréningu cez meranie až po výživu.</p>`),
-      gu(20,'Pozvánka','Postav si telo od základov 💛',
-        `<p>{meno}, cvičíš. Vidíš svoj pokrok v analýze. Ostáva posledný kúsok skladačky — <b>výživa, ktorá to celé drží pohromade.</b></p><p>S <b>Gold</b> máš všetko na jednom mieste: hodiny, online, analýzu tela aj <b>Herbalife F1 raňajky</b> — kompletnú výživu za menej, než stojí to párkové ráno.</p><p>Doprej svojmu telu palivo, aké si zaslúži. Uvidíme sa na parkete — a tvoje výsledky ťa prekvapia. 💪</p>`,
-        'Prejsť na Gold 🏆'),
-    ];
-    for(const s of gsteps) await q.insert(db.email_steps, s);
+    for(const s of GOLD_UPSELL_STEPS)
+      await q.insert(db.email_steps,{ sequence:'gold_upsell', day:s.day, label:s.label, active:true,
+        subject:s.subject, body:s.body, cta:s.cta, cta_url:`${APP_URL}/pricing`, created_at:nowISO() });
     console.log('✅  gold_upsell sekvencia pridaná');
   }
 
@@ -856,11 +858,14 @@ async function seedData() {
   // bronze day3 — bez konfliktu s reálnou Miškou (tá je F1 príbeh), + odkaz na článok
   await up('bronze_upsell',3,{ body:`<p>{meno}, sľúbili sme príbeh — tu je.</p><p>Jedna z našich báb chodila 8 týždňov na Zumbu. Postavila sa na váhu: <b>rovnaké číslo ako na začiatku.</b> Sklamanie, však?</p><p>Lenže <b>analýza zloženia tela</b> ukázala pravdu: <b>tuku ubudlo, svalu pribudlo.</b> Rovnaká váha — úplne iné telo. Pevnejšie, silnejšie, s rýchlejším metabolizmom, čo páli kalórie aj na gauči.</p><p>Keby verila len váhe, možno to vzdá. <b>Namiesto toho videla pravdu — a pokračovala.</b></p><p><a href="${BLOG}/metabolicka-analyza-fit-premena">📖 Čo všetko ti analýza prezradí →</a></p>` });
   await up('bronze_upsell',7,{ body:`<p>{meno}, zrkadlo ti ukáže <i>ako vyzeráš</i>. Analýza tela ti ukáže <b>prečo</b> — a čo s tým.</p><p>Za pár sekúnd zistíš:</p><ul><li>📉 <b>% telesného tuku</b> a <b>bazálny metabolizmus</b> — koľko kalórií reálne potrebuješ</li><li>💪 <b>svalovú hmotu</b> — či cvičíš správne</li><li>💧 <b>hydratáciu</b> a <b>viscerálny tuk</b> (ten najnebezpečnejší, okolo orgánov)</li></ul><p>A najlepšie? <b>Máš to celé v mobile</b>, týždeň po týždni. Žiadne hádanie „funguje to alebo nie".</p><p><a href="${BLOG}/metabolicka-analyza-fit-premena">📖 Metabolická analýza — čo o tebe prezradí →</a></p>` });
-  // gold — reálne fakty a citát z blogu
-  await up('gold_upsell',4,{ subject:'Cvičíš naplno — a jedlo necháš na náhodu?', body:`<p>{meno}, otázka na rovinu: dávaš do tréningu všetko — a potom <b>hádaš, čo a koľko jesť?</b></p><p>Tréneri to hovoria jasne: <b>„Brušáky sa robia v kuchyni."</b> Až 80 % výsledku je o strave, nie o počte drepov.</p><p>V <b>Gold</b> to už nemusíš riešiť. Máš <b>jedálniček na mieru na celý týždeň</b> — podľa tvojich údajov, chutí, alergénov a cieľa. Žiadne hádanie, len sa najesť a tancovať.</p><p><a href="${BLOG}/jedalnicek-na-mieru-zadarmo">📖 Ako funguje jedálniček na mieru →</a></p>` });
-  await up('gold_upsell',9,{ subject:'Vidíš, čo sa v tvojom tele reálne deje?', body:`<p>{meno}, zrkadlo ti ukáže <i>ako vyzeráš</i>. <b>Metabolická analýza</b> ti ukáže <b>prečo</b> — a čo s tým.</p><p>Za pár sekúnd zistíš % telesného tuku, svalovú hmotu, bazálny metabolizmus aj viscerálny tuk. A jedálniček sa tomu prispôsobí.</p><p>V <b>Gold</b> máš analýzu aj jedálniček pod jednou strechou — vidíš pokrok a presne vieš, čo ďalej.</p><p><a href="${BLOG}/metabolicka-analyza-fit-premena">📖 Čo všetko ti analýza prezradí →</a></p>` });
-  await up('gold_upsell',14,{ subject:'Gold = tvoj kompletný systém premeny 🏆', body:`<p>{meno}, poskladajme to dokopy. Predstav si to ako stavbu tela:</p><ul><li>💃 <b>Neobmedzené tréningy + online hodiny</b> — spaľuješ, silnieš</li><li>📈 <b>Metabolická analýza</b> — vidíš, čo sa reálne deje</li><li>🍽️ <b>Jedálniček na mieru na celý týždeň</b> — presné porcie podľa tvojho metabolizmu</li></ul><p>To všetko je <b>Gold</b> (125 €/mes). Kompletný systém, kde jedno ťahá druhé — nie hádanie, ale jasný plán.</p><p><a href="${BLOG}/jedalnicek-na-mieru-zadarmo">📖 Vyskúšaj si 7-dňový jedálniček zadarmo →</a></p>` });
-  await up('gold_upsell',20,{ subject:'Postav si telo od základov 💛', body:`<p>{meno}, cvičíš. Ostáva posledný kúsok skladačky — <b>strava, ktorá to celé drží pohromade.</b></p><p>S <b>Gold</b> máš všetko na jednom mieste: neobmedzené hodiny, online, metabolickú analýzu aj <b>jedálniček na mieru na celý týždeň</b>. Nič nemusíš vymýšľať — len sa najesť a tancovať.</p><p>Doprej svojmu telu jasný plán. Uvidíme sa na parkete — a tvoje výsledky ťa prekvapia. 💪</p>` });
+  // gold_upsell — prepíš aj existujúce DB na verziu bez Herbalife (labely + subject + body + cta)
+  for(const s of GOLD_UPSELL_STEPS){
+    // dedup: nechaj len jeden riadok na deň (odstráň opakované), potom aktualizuj obsah
+    const rows=(await q.find(db.email_steps,{sequence:'gold_upsell',day:s.day}))
+      .sort((a,b)=>(a.created_at||'').localeCompare(b.created_at||''));
+    for(let i=1;i<rows.length;i++) await q.remove(db.email_steps,{_id:rows[i]._id},{});
+    await up('gold_upsell',s.day,{ label:s.label, subject:s.subject, body:s.body, cta:s.cta });
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
