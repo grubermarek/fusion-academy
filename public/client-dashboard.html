@@ -1826,6 +1826,50 @@ async function loadQR(){
 
 init();
 </script>
+<script>
+/* ── Pridať na plochu (PWA install) ───────────────────────────── */
+(function(){
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone===true;
+  if(isStandalone) return; // už nainštalované → nič neukazuj
+  if(localStorage.getItem('a2hs_dismissed')==='1') return;
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+  let deferred=null;
+
+  function makeBar(inner){
+    if(document.getElementById('a2hsBar')) return;
+    const bar=document.createElement('div'); bar.id='a2hsBar';
+    bar.style.cssText='position:fixed;left:12px;right:12px;bottom:84px;z-index:9998;background:linear-gradient(135deg,#1f1d18,#141310);border:1px solid rgba(201,168,76,.4);border-radius:16px;padding:13px 15px;box-shadow:0 10px 30px rgba(0,0,0,.5);display:flex;align-items:center;gap:12px;max-width:520px;margin:0 auto;animation:a2hsUp .35s ease';
+    bar.innerHTML=`<img src="/logo-mark.png" alt="" style="width:40px;height:40px;border-radius:10px;flex:none">
+      <div style="flex:1;min-width:0">${inner}</div>
+      <button id="a2hsX" aria-label="Zavrieť" style="background:none;border:none;color:#8a857c;font-size:1.4rem;cursor:pointer;line-height:1;flex:none">×</button>`;
+    document.body.appendChild(bar);
+    if(!document.getElementById('a2hsCss')){ const s=document.createElement('style'); s.id='a2hsCss';
+      s.textContent='@keyframes a2hsUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}'; document.head.appendChild(s); }
+    document.getElementById('a2hsX').onclick=()=>{ bar.remove(); localStorage.setItem('a2hs_dismissed','1'); };
+    return bar;
+  }
+
+  if(isIOS){
+    // iOS Safari nepodporuje beforeinstallprompt → ukáž návod
+    setTimeout(()=>{ makeBar(`<div style="font-weight:800;color:#e8e2d4;font-size:.95rem">Pridaj si Fusion na plochu 💛</div>
+      <div style="color:#b9b3a6;font-size:.82rem;margin-top:2px">Ťukni na <b>Zdieľať</b> <span style="font-size:1rem">⬆️</span> a potom <b>„Pridať na plochu"</b>.</div>`); }, 2500);
+    return;
+  }
+
+  window.addEventListener('beforeinstallprompt', e=>{
+    e.preventDefault(); deferred=e;
+    const bar=makeBar(`<div style="font-weight:800;color:#e8e2d4;font-size:.95rem">Nainštaluj si appku 💛</div>
+      <div style="color:#b9b3a6;font-size:.82rem;margin-top:2px">Rýchly prístup priamo z plochy telefónu.</div>`);
+    if(!bar) return;
+    const btn=document.createElement('button');
+    btn.textContent='Pridať';
+    btn.style.cssText='background:linear-gradient(135deg,#C9A84C,#a5842f);color:#161310;border:none;border-radius:10px;padding:9px 16px;font-weight:800;cursor:pointer;flex:none;font-size:.9rem';
+    btn.onclick=async()=>{ if(!deferred) return; deferred.prompt(); const {outcome}=await deferred.userChoice; deferred=null; if(outcome==='accepted'){ bar.remove(); } };
+    bar.insertBefore(btn, document.getElementById('a2hsX'));
+  });
+  window.addEventListener('appinstalled', ()=>{ const b=document.getElementById('a2hsBar'); if(b) b.remove(); });
+})();
+</script>
 <script src="/nav-bar.js"></script>
 <script src="/dock.js"></script>
 </body>
