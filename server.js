@@ -1259,7 +1259,7 @@ app.get('/api/dm/history/:userId', auth, async(req,res)=>{
 
 // ── Community feed (nástenka): posts + reactions + comments ───────────────────
 const FEED_EMOJIS = ['❤️','👏','🔥','💪','🎉'];
-function feedView(p, meId, nameMap, meIsAdmin, voterMap){
+function feedView(p, meId, nameMap, meIsAdmin, voterMap, starsList){
   const nm = id => (nameMap && nameMap[id]) || 'Člen';
   const reactions = p.reactions||{};
   const summary = FEED_EMOJIS.map(e=>{ const ids=reactions[e]||[];
@@ -1279,6 +1279,7 @@ function feedView(p, meId, nameMap, meIsAdmin, voterMap){
     event_cta: p.event_cta||null,
     pinned: !!p.pinned,
     poll: p.poll ? pollResult(p, meId, voterMap) : null,
+    stars: p.event_kind==='top_stars' ? (starsList||[]) : null,
     reactions:summary,
     comments,
     comment_count:(p.comments||[]).length,
@@ -1363,6 +1364,28 @@ async function ensureGenrePoll(){
     console.log('✅  Anketa žánrov vytvorená na nástenke');
   }catch(e){ console.error('ensureGenrePoll:', e.message); }
 }
+// Top hviezdy — pripnutá oslava najaktívnejších členiek (zoznam sa počíta naživo)
+async function ensureTopStars(){
+  try{
+    const existing=await q.one(db.feed,{event_kind:'top_stars', stars_slug:'top20'});
+    if(existing) return;
+    await q.insert(db.feed,{
+      author_id:'community', author_name:'Komunita', author_badge:{emoji:'⭐',label:'Top hviezdy'},
+      system_event:true, event_kind:'top_stars', stars_slug:'top20', pinned:true,
+      text:'⭐ Toto sú naše TOP hviezdy! Gratulujeme každej jednej, že si s nami užíva tie najlepšie momenty na parkete 💛',
+      event_cta:'Zatlieskaj im 👏', image:null, reactions:{}, comments:[], created_at:nowISO()
+    });
+    console.log('✅  Top hviezdy vytvorené na nástenke');
+  }catch(e){ console.error('ensureTopStars:', e.message); }
+}
+// Aktuálny rebríček top N členiek podľa počtu návštev (klikateľné profily)
+async function computeTopStars(n){
+  const users=(await q.find(db.users,{})).filter(u=>
+    isCommunityVisible(u) && !u.is_admin && u.user_type!=='trainer' && (u.visit_count||0)>0);
+  users.sort((a,b)=>(b.visit_count||0)-(a.visit_count||0) || (a.name||'').localeCompare(b.name||''));
+  return users.slice(0,n||20).map((u,i)=>({ rank:i+1, id:u._id, name:u.nickname||u.name,
+    avatar:u.avatar||null, visits:u.visit_count||0 }));
+}
 // Vypočíta výsledky ankety pre feedView
 function pollResult(p, meId, voterMap){
   const poll=p.poll||{}; const votes=poll.votes||{}; const opts=poll.options||[];
@@ -1396,7 +1419,9 @@ app.get('/api/feed', auth, async(req,res)=>{
   const voterMap={};
   if(voterIds.size){ const us=await q.find(db.users,{_id:{$in:[...voterIds]}}); us.forEach(u=>voterMap[u._id]={name:u.nickname||u.name, avatar:u.avatar||null}); }
   const me = await q.one(db.users,{_id:req.session.uid});
-  res.json(posts.map(p=>feedView(p, req.session.uid, nameMap, me?.is_admin, voterMap)));
+  // Živý zoznam top hviezd (ak je taký príspevok na nástenke)
+  const starsList = posts.some(p=>p.event_kind==='top_stars') ? await computeTopStars(20) : [];
+  res.json(posts.map(p=>feedView(p, req.session.uid, nameMap, me?.is_admin, voterMap, starsList)));
 });
 app.post('/api/feed', auth, async(req,res)=>{
   try {
@@ -9348,7 +9373,7 @@ async function fixClassesInstructors(){
   } catch(e){ console.error('fixClassesInstructors error:', e.message); }
 }
 
-seedData().then(backfillDefaultSponsor).then(reconcileGlofoxVisits).then(fixClassesInstructors).then(ensureGenrePoll).then(()=>{
+seedData().then(backfillDefaultSponsor).then(reconcileGlofoxVisits).then(fixClassesInstructors).then(ensureGenrePoll).then(ensureTopStars).then(()=>{
   server.listen(PORT, ()=>{
     console.log('\n╔══════════════════════════════════════════════════════╗');
     console.log('║  🎵  Fusion Academy – Systém v2.0 spustený             ║');
