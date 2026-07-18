@@ -141,7 +141,7 @@ async function generate(){
   const d=await api('/api/meal-plan/generate',{method:'POST',body:JSON.stringify(state)});
   if(d&&d.ok){ ME_PLAN=d.plan; ME_PROFILE=d.profile; renderPlan(); window.scrollTo({top:0,behavior:'smooth'}); return; }
   btn.disabled=false; btn.textContent='✨ Vygenerovať jedálniček na týždeň';
-  msg.style.color='#e57373'; msg.textContent = d&&d.error==='not_gold' ? 'Jedálniček je súčasťou Gold členstva.' : 'Nepodarilo sa vygenerovať. Skús znova.';
+  msg.style.color='#e57373'; msg.textContent = d&&d.error==='not_gold' ? 'Jedálniček je súčasťou členstva Gold alebo Online Premium.' : 'Nepodarilo sa vygenerovať. Skús znova.';
 }
 
 function renderPlan(){
