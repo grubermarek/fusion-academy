@@ -7304,6 +7304,18 @@ function buildPointItems({hours, online, refs, hasMem, memName, newMemberCount, 
 }
 
 // Spotlight for the client dashboard: klient mesiaca + narodeniny + meniny (bez anonymných)
+// Kontakty na zakladateľov (Marek + Beáta) — pre pomoc na Dashboarde
+app.get('/api/client/support-contacts', auth, async(req,res)=>{
+  try {
+    const GEN_PHONE='+421904315151';
+    const founders=(await q.find(db.users,{is_founder:true})).filter(u=>u.active!==false);
+    const order={'gruber.marek@gmail.com':0};
+    founders.sort((a,b)=>((order[a.email]??9)-(order[b.email]??9)) || (a.name||'').localeCompare(b.name||''));
+    res.json({ contacts: founders.map(u=>({ id:u._id, name:u.name, avatar:u.avatar||null,
+      phone: (u.phone&&u.phone.replace(/\s+/g,'').length>=9) ? u.phone : GEN_PHONE,
+      role: /spolu/i.test(u.notes||'') ? 'Spoluzakladateľka' : 'Zakladateľ' })) });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
 app.get('/api/client/spotlight', auth, async(req,res)=>{
   try {
     const now = new Date();
