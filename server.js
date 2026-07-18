@@ -5513,6 +5513,9 @@ app.get('/api/admin/reset-data/preview', adminAuth, async(req,res)=>{
 });
 
 app.post('/api/admin/reset-data', adminAuth, async(req,res)=>{
+  // Bezpečnostné vypnutie: hromadné mazanie dát je zakázané (aby ho nikto nemohol spustiť).
+  return res.status(403).json({error:'Reset dát je z bezpečnostných dôvodov vypnutý.'});
+  /* eslint-disable no-unreachable */
   try {
     if(req.body.confirm !== RESET_CONFIRM_PHRASE)
       return res.status(400).json({error:`Na potvrdenie zadaj presne: ${RESET_CONFIRM_PHRASE}`});
