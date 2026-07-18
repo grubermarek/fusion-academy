@@ -1338,6 +1338,14 @@ async function announceAvatarChange(userId){
     actors:[{id:u._id,name:u.name}], cta:'👀 Mrkni na profil',
     text:`📸 ${u.name} má novú profilovku!` });
 }
+async function announceProfileComment(author, target, text){
+  if(!isCommunityVisible(author) || !isCommunityVisible(target)) return;
+  const snippet = (text||'').length>90 ? text.slice(0,90)+'…' : text;
+  await postCommunityEvent({ kind:'profile_comment', avatar:author.avatar||target.avatar||null,
+    actors:[{id:author._id,name:author.name},{id:target._id,name:target.name}],
+    cta:'💬 Napíš aj ty niekomu na profil',
+    text:`💬 ${author.name} napísal/a ${target.name} na profil: „${snippet}"` });
+}
 async function announceNewMember(userId){
   const u=await q.one(db.users,{_id:userId});
   if(!isCommunityVisible(u)) return;
@@ -1926,6 +1934,7 @@ app.post('/api/profile/:id/comments', auth, async(req,res)=>{
         title:'💬 Nový komentár na tvojom profile',
         body:`${meU?.name||'Niekto'}: ${text.slice(0,80)}`,
         read:false,created_at:nowISO()}).catch(()=>{});
+      announceProfileComment(meU, target, text).catch(()=>{});
     }
     res.json({ ok:true, id:c._id, author_name:meU?.name||'Člen', author_avatar:meU?.avatar||null, text, created_at:c.created_at });
   } catch(e){ res.status(500).json({error:e.message}); }
