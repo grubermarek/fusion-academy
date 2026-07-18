@@ -726,7 +726,48 @@ function renderPost(p) {
     </div>
   </div>`;
 }
+function renderPollCard(p, time){
+  const R=p.poll; const total=R.total||0;
+  const rows=R.options.map(o=>{
+    const mine=R.my_vote===o.key;
+    const voters=(o.voters||[]);
+    const chips=voters.slice(0,12).map(v=>{
+      const a=v.avatar?`<img src="${v.avatar}" title="${escHtml(v.name)}" style="width:22px;height:22px;border-radius:50%;object-fit:cover;border:1px solid #333">`
+        :`<span title="${escHtml(v.name)}" style="width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:.6rem;font-weight:800;background:${stringToColor(v.id)}">${escHtml((v.name||'?').charAt(0).toUpperCase())}</span>`;
+      return `<a href="/u/${v.id}" onclick="event.stopPropagation()" style="margin-left:-6px">${a}</a>`;
+    }).join('');
+    const more=voters.length>12?`<span style="font-size:.72rem;color:var(--text-muted);margin-left:8px">+${voters.length-12}</span>`:'';
+    return `<div onclick="votePoll('${p.id}','${o.key}')" style="cursor:pointer;margin:7px 0;padding:9px 11px;border-radius:11px;border:1px solid ${mine?'var(--gold)':'var(--gold-border,#332a18)'};background:${mine?'rgba(201,168,76,.14)':'rgba(255,255,255,.02)'};position:relative;overflow:hidden">
+      <div style="position:absolute;inset:0 auto 0 0;width:${o.pct}%;background:${o.winning?'rgba(201,168,76,.22)':'rgba(255,255,255,.05)'};transition:width .4s"></div>
+      <div style="position:relative;display:flex;align-items:center;gap:8px">
+        <span style="font-size:1.1rem">${o.emoji}</span>
+        <b style="color:${o.winning?'var(--gold)':'var(--cream)'}">${escHtml(o.label)}</b>
+        ${o.winning&&o.count>0?'<span title="Vedie" style="font-size:.95rem">👑</span>':''}
+        ${mine?'<span style="font-size:.72rem;color:var(--gold)">✓ tvoj hlas</span>':''}
+        <span style="margin-left:auto;font-weight:800;color:${o.winning?'var(--gold)':'var(--text-muted)'}">${o.pct}% · ${o.count}</span>
+      </div>
+      ${chips?`<div style="position:relative;margin-top:7px;padding-left:6px;display:flex;align-items:center;flex-wrap:wrap">${chips}${more}</div>`:''}
+    </div>`;
+  }).join('');
+  const reacts = p.reactions.map(r => `<button class="react-btn ${r.mine?'mine':''}" onclick="reactPost('${p.id}','${r.emoji}')">${r.emoji} ${r.count||''}</button>`).join('');
+  const comments = (p.comments||[]).map(c => `<div class="pcomment"><b>${escHtml(c.name)}</b> ${escHtml(c.text)}
+     <span class="cmt-like ${c.liked?'on':''}" onclick="likeComment('${p.id}','${c.id}')">❤️${c.likes?' '+c.likes:''}</span></div>`).join('');
+  return `<div class="post" data-id="${p.id}" style="background:linear-gradient(135deg,rgba(201,168,76,.1),rgba(201,168,76,.02));border:1px solid var(--gold);box-shadow:0 4px 20px rgba(201,168,76,.08)">
+    <div class="post-head" style="align-items:center">
+      <div style="width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.5rem;background:rgba(201,168,76,.15);border:1px solid var(--gold)">🗳️</div>
+      <div style="flex:1;margin-left:10px"><div class="post-name" style="color:var(--gold)">📌 Anketa · Komunita</div><div class="post-time">${escHtml(R.question)}</div></div>
+      ${p.can_delete?`<button class="post-del" onclick="deletePost('${p.id}')"><i class="bi bi-trash"></i></button>`:''}
+    </div>
+    <div style="margin-top:6px">${rows}</div>
+    <div style="font-size:.78rem;color:var(--text-muted);margin-top:4px">${total} ${total===1?'hlas':(total>=2&&total<=4?'hlasy':'hlasov')} · klikni na možnosť; opätovný klik hlas zruší</div>
+    <div class="post-actions" style="margin-top:8px">${reacts}</div>
+    <div class="post-comments">${comments}
+      <div class="pc-input"><input placeholder="Napíš komentár…" onkeydown="if(event.key==='Enter')commentPost('${p.id}',this)"><button class="react-btn" onclick="commentPost('${p.id}',this.previousElementSibling)">➤</button></div>
+    </div>
+  </div>`;
+}
 function renderSystemPost(p, time){
+  if(p.poll) return renderPollCard(p, time);
   const reacts = p.reactions.map(r => `<button class="react-btn ${r.mine?'mine':''}" onclick="reactPost('${p.id}','${r.emoji}')">${r.emoji} ${r.count||''}</button>`).join('');
   const totalReacts = p.reactions.reduce((s,r)=>s+r.count,0);
   const whoReacts = totalReacts>0 ? `<button class="react-btn" style="border-style:dashed" onclick="showLikers('${p.id}')" title="Kto reagoval">👀 ${totalReacts}</button>` : '';
@@ -796,6 +837,10 @@ async function createPost(btn) {
 const _feedById={};
 async function reactPost(id, emoji) {
   await fetch('/api/feed/'+id+'/react',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emoji})});
+  loadFeed();
+}
+async function votePoll(id, option) {
+  await fetch('/api/feed/'+id+'/vote',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({option})});
   loadFeed();
 }
 async function commentPost(id, input) {

@@ -1252,7 +1252,7 @@ app.get('/api/dm/history/:userId', auth, async(req,res)=>{
 
 // ── Community feed (nástenka): posts + reactions + comments ───────────────────
 const FEED_EMOJIS = ['❤️','👏','🔥','💪','🎉'];
-function feedView(p, meId, nameMap, meIsAdmin){
+function feedView(p, meId, nameMap, meIsAdmin, voterMap){
   const nm = id => (nameMap && nameMap[id]) || 'Člen';
   const reactions = p.reactions||{};
   const summary = FEED_EMOJIS.map(e=>{ const ids=reactions[e]||[];
@@ -1270,6 +1270,8 @@ function feedView(p, meId, nameMap, meIsAdmin){
     event_avatar: p.event_avatar||null,
     event_actors: p.event_actors||[],
     event_cta: p.event_cta||null,
+    pinned: !!p.pinned,
+    poll: p.poll ? pollResult(p, meId, voterMap) : null,
     reactions:summary,
     comments,
     comment_count:(p.comments||[]).length,
@@ -1334,6 +1336,39 @@ async function announceNewMember(userId){
     actors:[{id:u._id,name:u.name}], cta:'🎉 Privítaj ju',
     text:`🎉 Vitajte nového člena — ${u.name}! Privítajme ${first} komentárom alebo lajkom 💛` });
 }
+// Anketa žánrov — pripnutá na nástenke (idempotentne pri štarte)
+const GENRE_POLL_OPTIONS = [
+  {key:'salsa',emoji:'💃',label:'Salsa'}, {key:'bachata',emoji:'❤️',label:'Bachata'},
+  {key:'samba',emoji:'🪶',label:'Samba'}, {key:'jive',emoji:'🎸',label:'Jive'},
+  {key:'cumbia',emoji:'🥁',label:'Cumbia'}, {key:'reggaeton',emoji:'🔥',label:'Reggaeton'}
+];
+async function ensureGenrePoll(){
+  try{
+    const existing=await q.one(db.feed,{event_kind:'poll', poll_slug:'genre'});
+    if(existing) return;
+    await q.insert(db.feed,{
+      author_id:'community', author_name:'Komunita', author_badge:{emoji:'🗳️',label:'Anketa'},
+      system_event:true, event_kind:'poll', poll_slug:'genre', pinned:true,
+      poll:{ question:'Ktorý žáner sa ti najviac páči?', options:GENRE_POLL_OPTIONS, votes:{} },
+      text:'🗳️ Ktorý žáner sa ti najviac páči? Zahlasuj! 👇', event_cta:'Tvoj hlas rozhoduje 💛',
+      image:null, reactions:{}, comments:[], created_at:nowISO()
+    });
+    console.log('✅  Anketa žánrov vytvorená na nástenke');
+  }catch(e){ console.error('ensureGenrePoll:', e.message); }
+}
+// Vypočíta výsledky ankety pre feedView
+function pollResult(p, meId, voterMap){
+  const poll=p.poll||{}; const votes=poll.votes||{}; const opts=poll.options||[];
+  const tally={}; opts.forEach(o=>tally[o.key]=[]);
+  Object.entries(votes).forEach(([uid,key])=>{ if(tally[key]) tally[key].push(uid); });
+  const total=Object.keys(votes).length;
+  let max=0; opts.forEach(o=>{ if(tally[o.key].length>max) max=tally[o.key].length; });
+  return { question:poll.question||'', total, my_vote:votes[meId]||null,
+    options: opts.map(o=>({ key:o.key, label:o.label, emoji:o.emoji,
+      count:tally[o.key].length, pct: total?Math.round(tally[o.key].length/total*100):0,
+      winning: tally[o.key].length>0 && tally[o.key].length===max,
+      voters: tally[o.key].map(id=>({ id, name:(voterMap&&voterMap[id]?.name)||'Člen', avatar:(voterMap&&voterMap[id]?.avatar)||null })) })) };
+}
 // Postaví mapu id→meno pre všetkých, čo reagovali/komentovali na dané príspevky
 async function feedNameMap(posts){
   const ids=new Set();
@@ -1344,10 +1379,17 @@ async function feedNameMap(posts){
   return map;
 }
 app.get('/api/feed', auth, async(req,res)=>{
-  const posts = (await q.find(db.feed,{})).sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,50);
+  let posts = (await q.find(db.feed,{})).sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,50);
+  // Pripnuté (napr. anketa) idú navrch
+  posts = posts.sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0));
   const nameMap = await feedNameMap(posts);
+  // Mapa id→{meno,fotka} pre hlasujúcich v anketách
+  const voterIds=new Set();
+  posts.forEach(p=>{ if(p.poll&&p.poll.votes) Object.keys(p.poll.votes).forEach(id=>voterIds.add(id)); });
+  const voterMap={};
+  if(voterIds.size){ const us=await q.find(db.users,{_id:{$in:[...voterIds]}}); us.forEach(u=>voterMap[u._id]={name:u.nickname||u.name, avatar:u.avatar||null}); }
   const me = await q.one(db.users,{_id:req.session.uid});
-  res.json(posts.map(p=>feedView(p, req.session.uid, nameMap, me?.is_admin)));
+  res.json(posts.map(p=>feedView(p, req.session.uid, nameMap, me?.is_admin, voterMap)));
 });
 app.post('/api/feed', auth, async(req,res)=>{
   try {
@@ -1384,6 +1426,26 @@ app.post('/api/feed/:id/react', auth, async(req,res)=>{
     io.emit('feed_update', {id:post._id});
     res.json({ok:true, post:feedView(updated, uid, await feedNameMap([updated]))});
   } catch(e){ res.status(500).json({error:e.message}); }
+});
+// Hlasovanie v ankete (toggle: opätovný klik na tú istú možnosť hlas zruší)
+app.post('/api/feed/:id/vote', auth, async(req,res)=>{
+  try{
+    const post=await q.one(db.feed,{_id:req.params.id});
+    if(!post || !post.poll) return res.status(404).json({error:'Anketa nenájdená'});
+    const key=String(req.body.option||'');
+    if(!(post.poll.options||[]).some(o=>o.key===key)) return res.status(400).json({error:'Neplatná možnosť'});
+    const uid=req.session.uid;
+    const votes=post.poll.votes||{};
+    if(votes[uid]===key) delete votes[uid]; else votes[uid]=key;
+    await q.update(db.feed,{_id:post._id},{$set:{'poll.votes':votes}});
+    io.emit('feed_update', {id:post._id});
+    const updated=await q.one(db.feed,{_id:post._id});
+    // znovu poskladaj voterMap
+    const ids=Object.keys(votes); const voterMap={};
+    if(ids.length){ const us=await q.find(db.users,{_id:{$in:ids}}); us.forEach(u=>voterMap[u._id]={name:u.nickname||u.name, avatar:u.avatar||null}); }
+    const me=await q.one(db.users,{_id:uid});
+    res.json({ok:true, post:feedView(updated, uid, await feedNameMap([updated]), me?.is_admin, voterMap)});
+  }catch(e){ res.status(500).json({error:e.message}); }
 });
 // Lajk na komentár (+ kto lajkol)
 app.post('/api/feed/:id/comments/:cid/like', auth, async(req,res)=>{
@@ -9193,7 +9255,7 @@ async function fixClassesInstructors(){
   } catch(e){ console.error('fixClassesInstructors error:', e.message); }
 }
 
-seedData().then(backfillDefaultSponsor).then(reconcileGlofoxVisits).then(fixClassesInstructors).then(()=>{
+seedData().then(backfillDefaultSponsor).then(reconcileGlofoxVisits).then(fixClassesInstructors).then(ensureGenrePoll).then(()=>{
   server.listen(PORT, ()=>{
     console.log('\n╔══════════════════════════════════════════════════════╗');
     console.log('║  🎵  Fusion Academy – Systém v2.0 spustený             ║');
