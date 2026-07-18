@@ -7342,8 +7342,13 @@ app.post('/api/bookings', auth, async(req,res)=>{
     // NOTE: the thank-you + membership offer email is sent AFTER the client actually
     // attends their first class (see runDailyJobs → "Post-first-class follow-up"),
     // not here at booking time, so we don't thank them before they've been.
-    // Send confirmation email
-    if(parent.email) sendMail(parent.email,`Rezervácia potvrdená – ${cls.name}`,`<h2>Rezervácia potvrdená ✅</h2><p>Ahoj <b>${parent.name}</b>,</p><p>Rezervácia ${isChild?`pre <b>${u.name}</b> `:''}na hodinu <b>${cls.name}</b> bola úspešne zaznamenaná.</p><ul><li>Dátum: <b>${bdate}</b></li><li>Čas: <b>${cls.time_start}–${cls.time_end||''}</b></li><li>Miesto: <b>${cls.location}</b></li></ul><p>Tešíme sa na vás!</p><p><i>Fusion Academy</i></p>`).catch(()=>{});
+    // Send confirmation email — pri PRVEJ rezervácii (nie dieťa) pošli priateľské uvítanie
+    const isFirstBooking = !isChild && (await q.count(db.bookings,{user_id:u._id, status:{$ne:'cancelled'}}))===1;
+    if(isFirstBooking){
+      await sendFirstBookingWelcome(u, cls, bdate);
+    } else if(parent.email){
+      sendMail(parent.email,`Rezervácia potvrdená – ${cls.name}`,`<h2>Rezervácia potvrdená ✅</h2><p>Ahoj <b>${parent.name}</b>,</p><p>Rezervácia ${isChild?`pre <b>${u.name}</b> `:''}na hodinu <b>${cls.name}</b> bola úspešne zaznamenaná.</p><ul><li>Dátum: <b>${bdate}</b></li><li>Čas: <b>${cls.time_start}–${cls.time_end||''}</b></li><li>Miesto: <b>${cls.location}</b></li></ul><p>Tešíme sa na vás!</p><p><i>Fusion Academy</i></p>`).catch(()=>{});
+    }
     res.json({ok:true, id:booking._id, class_name:cls.name, booking_date:bdate, visit_count:newCount, for_child:isChild?u.name:null});
   } catch(e){res.status(500).json({error:e.message});}
 });
@@ -8717,6 +8722,62 @@ app.post('/api/admin/weekly-report/run', adminAuth, async(req,res)=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 // AUTOMATED CRON JOBS (run on server, no external cron needed)
 // ═══════════════════════════════════════════════════════════════════════════════
+
+// Priateľský uvítací e-mail pri PRVEJ rezervácii novej klientky
+async function sendFirstBookingWelcome(u, cls, bdate){
+  try{
+    if(!u || !u.email) return;
+    const first = (u.name||'').split(' ')[0] || u.name || '';
+    const isOnline = /online/i.test(cls.location||'') || /online/i.test(cls.name||'');
+    // Klikací odkaz na mapu z adresy hodiny (otvorí presné miesto + navigáciu)
+    const mapQuery = encodeURIComponent(cls.address || cls.location || 'Fusion Academy');
+    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${mapQuery}`;
+    // Rozvrh v danom meste (všetky pravidelné hodiny na tom mieste)
+    let scheduleRows = '';
+    if(!isOnline){
+      const sameCity = (await q.find(db.classes,{location:cls.location, active:true}))
+        .sort((a,b)=>a.day_of_week-b.day_of_week || (a.time_start||'').localeCompare(b.time_start||''));
+      scheduleRows = sameCity.map(c=>`<li><b>${DAYS_SK[c.day_of_week]}</b> o <b>${c.time_start}</b>${c.time_end?'–'+c.time_end:''} — ${c.name}</li>`).join('');
+    }
+    const referralCode = u.referral_code || '';
+    const referralUrl = referralCode ? `${APP_URL}/r/${encodeURIComponent(referralCode)}` : `${APP_URL}`;
+    const body = `
+      <p>Ahoj <b>${first}</b>, a vitaj vo Fusion Academy! 💛</p>
+      <p>Máme <b>obrovskú radosť</b>, že si sa prihlásila na svoju prvú hodinu. Poriadne sa spolu rozhýbeme a uvidíš, že tanec je tá najzábavnejšia forma pohybu. 💃</p>
+
+      <div style="background:#1c1c1c;border:1px solid #C9A84C;border-radius:14px;padding:18px 20px;margin:18px 0">
+        <div style="color:#C9A84C;font-weight:800;font-size:15px;margin-bottom:8px">📅 Kedy a kde ${isOnline?'vysielame':'tancujeme'}</div>
+        <p style="margin:0 0 6px;color:#eee"><b>Tvoja hodina:</b> ${cls.name} — <b>${DAYS_SK[cls.day_of_week]} ${bdate}</b> o <b>${cls.time_start}${cls.time_end?'–'+cls.time_end:''}</b></p>
+        ${isOnline
+          ? `<p style="margin:6px 0 0;color:#ccc">Ide o <b>online LIVE</b> hodinu — link ti pošleme pred vysielaním. Stačí ti priestor doma a dobrá nálada. 🌐</p>`
+          : `<p style="margin:6px 0 0;color:#ccc">📍 <b>${cls.address||cls.location}</b></p>
+             <div style="text-align:center;margin:12px 0 4px"><a href="${mapUrl}" style="background:#C9A84C;color:#111;padding:11px 22px;border-radius:9px;text-decoration:none;font-weight:800;font-size:14px">🗺️ Otvoriť mapu / navigáciu</a></div>
+             ${scheduleRows?`<div style="color:#aaa;font-size:13px;margin-top:12px">Pravidelný rozvrh v ${cls.location}:</div><ul style="color:#ccc;font-size:13px;margin:6px 0 0;padding-left:20px">${scheduleRows}</ul>`:''}`}
+      </div>
+
+      <div style="background:#1c1c1c;border:1px solid #333;border-radius:14px;padding:18px 20px;margin:18px 0">
+        <div style="color:#C9A84C;font-weight:800;font-size:15px;margin-bottom:8px">🎒 Čo si priniesť</div>
+        <ul style="color:#ddd;font-size:14px;margin:0;padding-left:20px;line-height:1.9">
+          <li>💧 <b>Fľašu vody</b> — budeš ju potrebovať</li>
+          <li>👟 <b>Tenisky</b> na prezutie</li>
+          <li>👕 <b>Športové tričko</b> — poriadne sa zapotíš! 😄</li>
+        </ul>
+      </div>
+
+      <div style="background:linear-gradient(135deg,#C9A84C,#a07030);border-radius:16px;padding:2px;margin:18px 0">
+        <div style="background:#1c1c1c;border-radius:14px;padding:18px 20px">
+          <div style="color:#C9A84C;font-weight:800;font-size:15px;margin-bottom:8px">👯 Priveď kamošku — obe získate</div>
+          <p style="color:#ddd;font-size:14px;margin:0 0 8px">Zober so sebou kamošku! <b>Aj ona bude mať prvú hodinu zadarmo.</b> A keď príde s tebou, <b>ty získaš odmenu v podobe kreditu</b> — takže tvoja ďalšia hodina ťa bude stáť o to menej. 💛</p>
+          ${referralCode?`<p style="color:#aaa;font-size:13px;margin:0">Nech sa zaregistruje cez tvoj link: <a href="${referralUrl}" style="color:#C9A84C">${referralUrl}</a><br>alebo zadá tvoj kód <b style="color:#fff">${referralCode}</b> pri registrácii.</p>`:''}
+        </div>
+      </div>
+
+      <p>Tešíme sa na teba na parkete! Ak by si čokoľvek potrebovala, len napíš. 🌟</p>
+      <p style="color:#888">Fusion Academy tím 💃</p>`;
+    await sendMail(u.email, `Vitaj vo Fusion Academy, ${first}! 💃 Tešíme sa na teba`,
+      emailTemplate(`Vitaj, ${first}! 🎉`, body)).catch(()=>{});
+  }catch(e){ console.error('sendFirstBookingWelcome:', e.message); }
+}
 
 function emailTemplate(title, body, ctaText, ctaUrl){
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#1a1a1a;font-family:'Segoe UI',Arial,sans-serif">
