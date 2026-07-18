@@ -228,15 +228,49 @@ function uploadAvatar(input){
   const file=input.files&&input.files[0]; input.value='';
   if(!file) return;
   const rd=new FileReader();
-  rd.onload=e=>{ const img=new Image(); img.onload=async()=>{
-    const max=400, sc=Math.min(1,max/Math.max(img.width,img.height));
-    const c=document.createElement('canvas'); c.width=img.width*sc; c.height=img.height*sc;
-    c.getContext('2d').drawImage(img,0,0,c.width,c.height);
-    const data=c.toDataURL('image/jpeg',0.85);
-    const r=await fetch('/api/client/avatar',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({avatar:data})});
-    if(r.ok) location.reload(); else { const d=await r.json().catch(()=>({})); alert(d.error||'Chyba pri nahrávaní'); }
-  }; img.src=e.target.result; };
+  rd.onload=e=>{ const img=new Image(); img.onload=()=>showAvatarCropper(img); img.src=e.target.result; };
   rd.readAsDataURL(file);
+}
+// ── Editor profilovky: potiahni + priblíž ─────────────────────────────────────
+let _crop=null;
+function showAvatarCropper(img){
+  const VP=280;
+  let m=document.getElementById('avatarCropModal');
+  if(!m){ m=document.createElement('div'); m.id='avatarCropModal'; document.body.appendChild(m); }
+  m.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;padding:16px';
+  m.innerHTML=`<div style="background:#1a1712;border:1px solid rgba(201,168,76,.4);border-radius:16px;max-width:340px;width:100%;padding:18px;color:var(--cream)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="color:var(--gold)">📸 Uprav profilovú fotku</b><button onclick="closeAvatarCropper()" style="background:none;border:none;color:#999;font-size:1.3rem;cursor:pointer">✕</button></div>
+    <div id="cropVp" style="width:${VP}px;height:${VP}px;max-width:100%;margin:0 auto;position:relative;overflow:hidden;border-radius:50%;background:#000;touch-action:none;cursor:grab;border:2px solid rgba(201,168,76,.4)">
+      <img id="cropImg" draggable="false" style="position:absolute;left:0;top:0;transform-origin:0 0;user-select:none;pointer-events:none;max-width:none">
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin:14px 0 4px"><span>🔍−</span><input id="cropZoom" type="range" min="1" max="3" step="0.01" value="1" style="flex:1;accent-color:var(--gold)"><span>🔍+</span></div>
+    <div style="font-size:.75rem;color:var(--muted);text-align:center;margin-bottom:12px">Potiahni fotku pre posunutie, posuvníkom priblíž.</div>
+    <button onclick="saveCroppedAvatar()" style="width:100%;background:linear-gradient(102deg,#C9A84C,#E7C878);color:#1a1206;border:none;border-radius:12px;padding:12px;font-weight:800;cursor:pointer">Uložiť fotku</button>
+  </div>`;
+  const vpEl=document.getElementById('cropVp'), imgEl=document.getElementById('cropImg');
+  const cover=VP/Math.min(img.width,img.height);
+  _crop={img,VP,cover,scale:cover,ox:(VP-img.width*cover)/2,oy:(VP-img.height*cover)/2};
+  function clamp(){ const dw=_crop.img.width*_crop.scale, dh=_crop.img.height*_crop.scale;
+    _crop.ox=Math.min(0,Math.max(_crop.VP-dw,_crop.ox)); _crop.oy=Math.min(0,Math.max(_crop.VP-dh,_crop.oy)); }
+  function apply(){ imgEl.style.width=(_crop.img.width*_crop.scale)+'px'; imgEl.style.height=(_crop.img.height*_crop.scale)+'px'; clamp(); imgEl.style.transform=`translate(${_crop.ox}px,${_crop.oy}px)`; }
+  imgEl.src=img.src; apply();
+  document.getElementById('cropZoom').oninput=(e)=>{ const z=+e.target.value; const s0=_crop.scale, s1=_crop.cover*z, cx=VP/2, cy=VP/2;
+    _crop.ox=cx-(cx-_crop.ox)*(s1/s0); _crop.oy=cy-(cy-_crop.oy)*(s1/s0); _crop.scale=s1; apply(); };
+  let drag=false, lx=0, ly=0;
+  vpEl.onpointerdown=(e)=>{ drag=true; lx=e.clientX; ly=e.clientY; vpEl.style.cursor='grabbing'; vpEl.setPointerCapture(e.pointerId); };
+  vpEl.onpointermove=(e)=>{ if(!drag) return; _crop.ox+=(e.clientX-lx); _crop.oy+=(e.clientY-ly); lx=e.clientX; ly=e.clientY; apply(); };
+  vpEl.onpointerup=vpEl.onpointercancel=()=>{ drag=false; vpEl.style.cursor='grab'; };
+  m.onclick=(e)=>{ if(e.target===m) closeAvatarCropper(); };
+}
+function closeAvatarCropper(){ document.getElementById('avatarCropModal')?.remove(); _crop=null; }
+async function saveCroppedAvatar(){
+  if(!_crop) return;
+  const {img,VP,scale,ox,oy}=_crop, out=256;
+  const cv=document.createElement('canvas'); cv.width=out; cv.height=out;
+  cv.getContext('2d').drawImage(img, -ox/scale, -oy/scale, VP/scale, VP/scale, 0,0,out,out);
+  const data=cv.toDataURL('image/jpeg',0.85);
+  const r=await fetch('/api/client/avatar',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({avatar:data})});
+  if(r.ok) location.reload(); else { const d=await r.json().catch(()=>({})); alert(d.error||'Chyba pri nahrávaní'); }
 }
 
 // ─── Pozadia profilu (odmena za privedených ľudí) ───
