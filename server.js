@@ -7750,7 +7750,7 @@ app.get('/api/client/network', auth, async(req,res)=>{
         for(const k of allU.filter(u=>u.sponsor_id===pid && !u.is_admin && u.user_type!=='trainer' && !u.is_child)){
           if(seen.has(k._id)) continue; seen.add(k._id);
           lines[line].push({ id:k._id, name:k.anonymous?'Člen (skrytý)':k.name, anonymous:!!k.anonymous,
-            joined:(k.created_at||'').slice(0,10), membership:activeMemb[k._id]||null });
+            gender:k.gender||null, joined:(k.created_at||'').slice(0,10), membership:activeMemb[k._id]||null });
           next.push(k._id);
         }
       }

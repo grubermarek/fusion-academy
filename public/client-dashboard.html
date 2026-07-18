@@ -1139,7 +1139,7 @@ async function loadNetwork(){
           <span>${m.membership?`<span style="color:#81c784;font-weight:600">🏅 ${escHtml(m.membership)}</span>`:'<span style="color:#ff9800;font-size:.75rem">bez členstva</span>'}</span>
         </div>
         ${noMem&&clickable?`<div style="margin-top:4px;font-size:.72rem;color:var(--muted);display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          💡 Ešte nezačal — skontaktuj sa s ním a pomôž mu vybrať členstvo.
+          💡 ${m.gender==='female'?'Ešte nezačala — skontaktuj sa s ňou a pomôž jej vybrať členstvo.':(m.gender==='male'?'Ešte nezačal — skontaktuj sa s ním a pomôž mu vybrať členstvo.':'Ešte nezačal(a) — kontaktuj a pomôž vybrať členstvo.')}
           <a href="/community?dm=${m.id}" style="color:var(--gold);text-decoration:none;font-weight:600"><i class="bi bi-chat-dots"></i> Napísať</a>
         </div>`:''}
       </div>`;
