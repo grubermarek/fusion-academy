@@ -7308,7 +7308,7 @@ function buildPointItems({hours, online, refs, hasMem, memName, newMemberCount, 
 app.get('/api/client/support-contacts', auth, async(req,res)=>{
   try {
     const GEN_PHONE='+421904315151';
-    const founders=(await q.find(db.users,{is_founder:true})).filter(u=>u.active!==false);
+    const founders=(await q.find(db.users,{is_founder:true})).filter(u=>u.active!==false && u._id!==req.session.uid);
     const order={'gruber.marek@gmail.com':0};
     founders.sort((a,b)=>((order[a.email]??9)-(order[b.email]??9)) || (a.name||'').localeCompare(b.name||''));
     res.json({ contacts: founders.map(u=>({ id:u._id, name:u.name, avatar:u.avatar||null,
