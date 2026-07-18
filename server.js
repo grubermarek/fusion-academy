@@ -463,9 +463,6 @@ async function seedData() {
       {cat:'Kurzy',     name:'Kurz pre dospelých (12 týž)',  emoji:'💃', desc:'Latino, Hip-Hop, Choreo. Začiatočníci vítaní!',                            price:150,   commission_rate:0.12, type:'course',       active:true},
       {cat:'Kurzy',     name:'Maturantský ples – Last Dance', emoji:'🎓', desc:'Špeciálny program pre maturantov.',                                        price:120,   commission_rate:0.12, type:'course',       active:true},
       {cat:'Analýzy',   name:'Metabolická analýza (InBody)', emoji:'📊', desc:'Profesionálna analýza telesnej kompozície.',                               price:35,    commission_rate:0.15, type:'service',      active:true},
-      {cat:'Analýzy',   name:'Fit Premena – základný',       emoji:'🔬', desc:'Analýza + cvičebný plán + výživové odporúčania.',                          price:65,    commission_rate:0.15, type:'service',      active:true},
-      {cat:'Analýzy',   name:'Fit Premena – premium',        emoji:'📈', desc:'4x analýza + tréning + jedálniček + koučing.',                             price:199,   commission_rate:0.15, type:'service',      active:true},
-      {cat:'Analýzy',   name:'Nutričné poradenstvo (60 min)',emoji:'🥗', desc:'Individuálna konzultácia s výživovým poradcom.',                           price:45,    commission_rate:0.15, type:'service',      active:true},
       // Herbalife — náhrada jedla
       {cat:'Herbalife', name:'Formula 1 – Vanilka-smotana (500g)',   emoji:'🥤', desc:'Náhrada jedla. 220 kcal, 18g bielkovín, 25 vitamínov a minerálov. Príchuť vanilka-smotana.',                    price:38.90, commission_rate:0.25, type:'product', active:true},
       {cat:'Herbalife', name:'Formula 1 – Jemná čokoláda (500g)',    emoji:'🍫', desc:'Náhrada jedla. 220 kcal, 18g bielkovín, 25 vitamínov a minerálov. Príchuť čokoláda.',                           price:38.90, commission_rate:0.25, type:'product', active:true},
@@ -552,6 +549,12 @@ async function seedData() {
     if(herbOff) console.log(`✅  Deaktivovaných ${herbOff} Herbalife produktov`);
     const arts = await q.find(db.messages,{channel:'blog'});
     for(const a of arts){ if(/herbalife|formula 1|f1 kokte/i.test((a.title||''))) await q.remove(db.messages,{_id:a._id},{}); } }
+  // Migration: odstránenie služieb Fit Premena (základný/premium) + Nutričné poradenstvo (InBody analýzu ponechaj)
+  { const anOff = await q.update(db.products,{active:true,$or:[
+        {name:new RegExp('fit\\s*premena','i')},
+        {name:new RegExp('nutričné poradenstvo','i')}
+      ]},{$set:{active:false}},{multi:true});
+    if(anOff) console.log(`✅  Deaktivovaných ${anOff} služieb (Fit Premena / Nutričné poradenstvo)`); }
 
   // Herbalife products (add even if other products already exist)
   if(await q.count(db.products,{cat:'Herbalife'})===0){
