@@ -366,6 +366,7 @@ function initChat() {
 
   // Build channel list
   buildChannelList();
+  initChannelDots();
 
   // Connect socket
   socket = io();
@@ -425,6 +426,15 @@ function initChat() {
     scrollBottom();
   });
 
+  // Nová správa v hociktorej miestnosti → bodka (ak tam práve nie sme)
+  socket.on('channel_activity', ({channel, from}) => {
+    if (from === me?.id) return;
+    const viewingChannel = !feedMode && !dmMode && channel === currentChannel;
+    if (viewingChannel) { markChannelRead(channel); return; }
+    _chanUnread.add(channel);
+    setChannelDot(channel, true);
+  });
+
   socket.on('online_users', users => {
     const inChannel = users.filter(u => u.channel === currentChannel);
     document.getElementById('onlinePill').textContent = '🟢 ' + inChannel.length + ' online';
@@ -438,10 +448,12 @@ function initChat() {
 
 function buildChannelList() {
   const list = document.getElementById('channelList');
+  const dot = id => `<span class="ch-dot" data-dot="${id}" style="display:none;margin-left:auto;width:9px;height:9px;border-radius:50%;background:var(--gold,#C9A84C);flex:none;box-shadow:0 0 6px rgba(201,168,76,.7)"></span>`;
   list.innerHTML = Object.entries(CHANNEL_INFO).filter(([id])=>!CITY_CHANNELS.includes(id)).map(([id, ch]) =>
     `<div class="channel-item ${id==='general'?'active':''}" data-ch="${id}" onclick="joinChannel('${id}')">
       <span class="channel-emoji">${ch.emoji}</span>
       <span class="channel-label">#${ch.name}</span>
+      ${dot(id)}
     </div>`
   ).join('');
   const cities = document.getElementById('cityList');
@@ -450,8 +462,36 @@ function buildChannelList() {
     return `<div class="channel-item" data-ch="${id}" onclick="joinChannel('${id}')">
       <span class="channel-emoji">${ch.emoji}</span>
       <span class="channel-label">${ch.name}</span>
+      ${dot(id)}
     </div>`;
   }).join('');
+  applyChannelDots();
+}
+// ── Nepečítané bodky pri kanáloch ─────────────────────────────────────────────
+let _chanRead = {};
+try { _chanRead = JSON.parse(localStorage.getItem('fa_chanRead')||'{}'); } catch { _chanRead = {}; }
+const _chanUnread = new Set();
+function setChannelDot(id, on){
+  const el = document.querySelector(`.ch-dot[data-dot="${id}"]`);
+  if(el) el.style.display = on ? 'inline-block' : 'none';
+}
+function applyChannelDots(){ _chanUnread.forEach(id=>setChannelDot(id, true)); }
+function markChannelRead(id){
+  _chanRead[id] = new Date().toISOString();
+  try { localStorage.setItem('fa_chanRead', JSON.stringify(_chanRead)); } catch {}
+  _chanUnread.delete(id);
+  setChannelDot(id, false);
+}
+async function initChannelDots(){
+  try {
+    const latest = await (await fetch('/api/community/channel-activity',{credentials:'include'})).json();
+    const now = new Date().toISOString();
+    Object.entries(latest||{}).forEach(([id, at])=>{
+      if(!(id in _chanRead)){ _chanRead[id] = now; return; } // prvá návšteva → bez bodky
+      if(at && at > _chanRead[id] && id !== currentChannel){ _chanUnread.add(id); setChannelDot(id, true); }
+    });
+    try { localStorage.setItem('fa_chanRead', JSON.stringify(_chanRead)); } catch {}
+  } catch {}
 }
 
 function exitFeed() {
@@ -464,6 +504,7 @@ function joinChannel(channelId) {
   if(socket && dmWith) socket.emit('close_dm', dmWith);
   dmMode = false; dmWith = null; exitFeed();
   document.querySelectorAll('.dm-item').forEach(el => el.classList.remove('active'));
+  markChannelRead(channelId);
   // Update sidebar
   document.querySelectorAll('.channel-item').forEach(el => el.classList.toggle('active', el.dataset.ch === channelId));
   // Update header

@@ -1203,6 +1203,14 @@ app.get('/api/community/members', auth, async(req,res)=>{
   res.json(result);
 });
 
+// Posledná aktivita v kanáloch (čas poslednej správy) — pre nepečítané bodky pri načítaní
+app.get('/api/community/channel-activity', auth, async(req,res)=>{
+  const msgs = await q.find(db.messages,{ channel:{$exists:true}, is_dm:{$ne:true} });
+  const latest={};
+  for(const m of msgs){ const c=m.channel; if(!c) continue; if(!latest[c] || (m.created_at||'')>latest[c]) latest[c]=m.created_at||''; }
+  res.json(latest);
+});
+
 // Search people by name to add as friends (anonymous users are hidden)
 app.get('/api/community/search', auth, async(req,res)=>{
   try {
@@ -8413,6 +8421,8 @@ io.on('connection', async(socket)=>{
       created_at: nowISO(),
     });
     io.to(channel||'general').emit('new_message', msg);
+    // Ľahký signál pre VŠETKÝCH (aj mimo miestnosti) → nepečítaná bodka v postrannom paneli
+    io.emit('channel_activity', { channel: channel||'general', at: msg.created_at, from: u._id });
   });
 
   // Sleduj, ktoré DM vlákno má člen práve otvorené (aby sme ho nespamovali zvončekom)
