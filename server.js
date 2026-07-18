@@ -866,6 +866,9 @@ async function seedData() {
     for(let i=1;i<rows.length;i++) await q.remove(db.email_steps,{_id:rows[i]._id},{});
     await up('gold_upsell',s.day,{ label:s.label, subject:s.subject, body:s.body, cta:s.cta });
   }
+
+  // Tréneri nemajú % z tržby hodiny — vynuluj ho v uložených pravidlách
+  await q.update(db.payout_rules,{pct_of_revenue:{$gt:0}},{$set:{pct_of_revenue:0}},{multi:true});
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -4973,7 +4976,9 @@ function billableAttendances(st, threshold){
 function computePayout(rule, st){
   const r={...DEFAULT_PAYOUT_RULE, ...(rule||{})};
   const billable=billableAttendances(st, r.per_client_threshold||0);
-  const base=+(r.fixed_per_class*st.sessions + r.pct_of_revenue/100*st.revenue + r.per_client*billable).toFixed(2);
+  // Tréner: len 10 € základ za hodinu + 1 € za každého klienta nad limit (+ affiliate línie).
+  // Žiadne % z tržby hodiny.
+  const base=+(r.fixed_per_class*st.sessions + r.per_client*billable).toFixed(2);
   const bonuses=+(r.bonus_full_class*st.fullClasses + r.bonus_new_member*st.newClients).toFixed(2);
   return {base, bonuses, billable};
 }
@@ -5020,7 +5025,6 @@ app.get('/api/admin/class-history', adminAuth, async(req,res)=>{
       const parts=[
         {label:'Základ za hodinu', amount:+(rule.fixed_per_class||0).toFixed(2)},
         {label:(thr>0?`Klienti nad ${thr}`:'Za účastníka')+` (${over}×${rule.per_client||0} €)`, amount:+((rule.per_client||0)*over).toFixed(2)},
-        {label:`% z tržby (${rule.pct_of_revenue||0} %)`, amount:+((rule.pct_of_revenue||0)/100*revenue).toFixed(2)},
         {label:'Bonus plná hodina', amount:+(full?(rule.bonus_full_class||0):0).toFixed(2)},
         {label:`Bonus noví klienti (${s.newClients}×${rule.bonus_new_member||0} €)`, amount:+((rule.bonus_new_member||0)*s.newClients).toFixed(2)},
       ].filter(p=>p.amount);
@@ -5096,7 +5100,6 @@ async function trainerMonthPayslip(trainerUser, month){
   const lines=[
     ['Základ za hodinu', `${st.sessions}× ${rule.fixed_per_class||0} €`, +((rule.fixed_per_class||0)*st.sessions).toFixed(2)],
     [thr>0?`Klienti nad ${thr} na hodine`:'Odmena za účastníka', `${billable}× ${rule.per_client||0} €`, +((rule.per_client||0)*billable).toFixed(2)],
-    ['% z tržby hodín', `${rule.pct_of_revenue||0} %`, +((rule.pct_of_revenue||0)/100*st.revenue).toFixed(2)],
     ['Bonus za plnú hodinu', `${st.fullClasses}×`, +((rule.bonus_full_class||0)*st.fullClasses).toFixed(2)],
     ['Bonus za nového klienta', `${st.newClients}×`, +((rule.bonus_new_member||0)*st.newClients).toFixed(2)],
     ['Affiliate provízie (moja línia)', '', affiliate],
@@ -6480,7 +6483,6 @@ app.get('/api/trainer/earnings', trainerAuth, async(req,res)=>{
       const items=[
         {label:'Základ za hodinu', count:st.sessions, per:rule.fixed_per_class||0, amount:+((rule.fixed_per_class||0)*st.sessions).toFixed(2)},
         {label:(thr>0?`Klienti nad ${thr} na hodine`:'Odmena za účastníka'), count:billable, per:rule.per_client||0, amount:+((rule.per_client||0)*billable).toFixed(2)},
-        {label:'% z tržby hodín', count:st.revenue, per:(rule.pct_of_revenue||0)+' %', amount:+((rule.pct_of_revenue||0)/100*st.revenue).toFixed(2)},
         {label:'Bonus za plnú hodinu', count:st.fullClasses, per:rule.bonus_full_class||0, amount:+((rule.bonus_full_class||0)*st.fullClasses).toFixed(2)},
         {label:'Bonus za nového klienta', count:st.newClients, per:rule.bonus_new_member||0, amount:+((rule.bonus_new_member||0)*st.newClients).toFixed(2)},
         {label:'Affiliate provízie (moja línia)', count:'', per:'', amount:affiliate},
