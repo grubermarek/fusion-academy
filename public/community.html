@@ -379,7 +379,7 @@ function initChat() {
       try { const p = await (await fetch('/api/profile/'+dmTarget)).json(); if(p && p.name) nm = p.name; } catch {}
       openDM(dmTarget, nm);
     } else {
-      joinChannel('general');
+      openFeed();
     }
   });
 
