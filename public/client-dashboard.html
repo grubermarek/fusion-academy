@@ -1316,13 +1316,13 @@ function renderClassCards(){
           : `<div class="cc-meta" style="margin-top:3px">🎓 ${escHtml(cls.instructor)}</div>`)
       : '';
     const atts=(cls.attendees||[]);
-    const attStrip=atts.length?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border,#2a2a2a);cursor:pointer" onclick="openAttendees('${cls._id}','${escHtml(cls.name).replace(/'/g,"&#39;")}')" title="Zobraziť účastníkov">
-      <div style="font-size:.68rem;color:var(--muted);margin-bottom:4px">👥 Prihlásení (${cls.attendee_count||atts.length}) <span style="color:var(--gold)">›</span></div>
-      <div style="display:flex;align-items:center;flex-wrap:wrap;padding-left:6px">${atts.slice(0,12).map(a=>{
-        const av=attAvatarHtml(a,22);
-        return a.id?`<a href="/u/${a.id}" style="margin-left:-6px" title="${escHtml(a.name)}" onclick="event.stopPropagation()">${av}</a>`:`<span style="margin-left:-6px" title="${escHtml(a.name)}">${av}</span>`;
-      }).join('')}${atts.length>12?`<span style="font-size:.66rem;color:var(--muted);margin-left:8px">+${atts.length-12}</span>`:''}</div>
-    </div>`:'';
+    const attPreview=atts.slice(0,8).map(a=>`<span style="margin-left:-6px;pointer-events:none">${attAvatarHtml(a,24)}</span>`).join('');
+    const attStrip=atts.length?`<button type="button" onclick="openAttendees('${cls._id}','${escHtml(cls.name).replace(/'/g,"&#39;")}')"
+        style="margin-top:10px;width:100%;display:flex;align-items:center;gap:10px;background:rgba(201,168,76,.08);border:1px solid var(--gold-border,#332a18);border-radius:12px;padding:10px 12px;cursor:pointer;color:var(--cream)">
+        <span style="display:flex;align-items:center;padding-left:6px;flex:none">${attPreview}${atts.length>8?`<span style="font-size:.7rem;color:var(--muted);margin-left:8px">+${atts.length-8}</span>`:''}</span>
+        <span style="flex:1;text-align:left;font-size:.8rem;font-weight:700">👥 Prihlásení (${cls.attendee_count||atts.length})</span>
+        <i class="bi bi-chevron-right" style="color:var(--gold);font-size:.9rem;flex:none"></i>
+      </button>`:'';
     return `<div class="class-card${bookedId?' cc-booked-card':''}">
       <div class="cc-top">
         <div class="cc-emoji">${cls.emoji||'🏃'}</div>
