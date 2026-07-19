@@ -7059,12 +7059,14 @@ app.post('/api/attendance/session-instructor', trainerAuth, async(req,res)=>{
     if(!cls) return res.status(404).json({error:'Hodina nenájdená'});
     const date=/^\d{4}-\d{2}-\d{2}$/.test(req.body.date||'') ? req.body.date : displayNextDateForDay(cls.day_of_week);
     let instructor_id = String(req.body.instructor_id||'');
-    // Reset na štandardného inštruktora (len admin)
     if(!instructor_id){
-      if(!u.is_admin) return res.status(403).json({error:'Iba admin môže vrátiť pôvodného trénera'});
-      await q.remove(db.session_instructors,{class_id, date},{multi:true});
-      const si=await sessionInstructor(cls, date);
-      return res.json({ ok:true, ...si, date });
+      // Prázdne id: ADMIN = vráť pôvodného trénera; TRÉNER = prihlás sám seba („učím ja")
+      if(u.is_admin){
+        await q.remove(db.session_instructors,{class_id, date},{multi:true});
+        const si=await sessionInstructor(cls, date);
+        return res.json({ ok:true, ...si, date });
+      }
+      instructor_id = u._id;
     }
     // Tréner (nie admin) môže nastaviť len seba
     if(!u.is_admin) instructor_id=u._id;
