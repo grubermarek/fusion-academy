@@ -775,9 +775,11 @@ function renderAdmin(){
   const membHtml = M
     ? `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:1.05rem">${M.active?'✅':'⛔'}</span><b style="color:${M.active?'#9fd894':'#ef9a9a'}">${esc(M.plan_name)}</b>${M.gift?'<span class="set-hint" style="margin:0">🎁 darček/migrácia</span>':''}<span style="margin-left:auto;font-size:.85rem;color:${M.active?'var(--cream)':'#ef9a9a'}">${M.expires_at?(M.active?('platí do <b>'+M.expires_at+'</b>'):('vypršalo <b>'+M.expires_at+'</b>')):'bez dátumu'}</span></div>`
     : `<span class="set-hint" style="margin:0">Bez členstva</span>`;
+  const dsum = (icon,title,color) => `<summary style="list-style:none;display:flex;align-items:center;gap:8px;font-weight:800;color:${color||'#e0b84c'};cursor:pointer;padding:2px 0">${icon} ${title} <i class="bi bi-chevron-down" style="margin-left:auto;font-size:.8rem"></i></summary>`;
+  const canManage = (!P.is_admin_profile && !P.is_self);
   box.innerHTML=`
     <div class="set-row" style="background:rgba(129,199,132,.06);border:1px solid rgba(129,199,132,.25);border-radius:12px;padding:12px">
-      <span class="set-label">📋 Prehľad (len admin)</span>
+      <span class="set-label">📋 Prehľad</span>
       <div style="margin:4px 0 8px">${membHtml}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <span style="background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.3);border-radius:10px;padding:6px 11px;font-size:.85rem">💰 Kredit: <b style="color:var(--gold)">${(a.referral_credit||0).toFixed(2)} €</b>${a.referral_credit_pending>0?` <span style="color:#ff9800">(+${(a.referral_credit_pending).toFixed(2)} € čaká)</span>`:''}</span>
@@ -785,148 +787,150 @@ function renderAdmin(){
         ${a.free_credits>0?`<span style="background:rgba(129,199,132,.1);border:1px solid rgba(129,199,132,.3);border-radius:10px;padding:6px 11px;font-size:.85rem">🎁 Zdarma: <b style="color:#9fd894">${a.free_credits}</b></span>`:''}
       </div>
     </div>
-    ${P.is_trainer ? `<details class="set-row adm-sub" style="cursor:pointer" ontoggle="if(this.open)loadProfileEarnings()">
-      <summary style="list-style:none;display:flex;align-items:center;gap:8px;font-weight:700;color:#e0b84c"><i class="bi bi-cash-coin"></i> Zárobky trénera (rozkliknúť) <i class="bi bi-chevron-down" style="margin-left:auto;font-size:.8rem"></i></summary>
+
+    ${P.is_trainer ? `<details class="set-row adm-sub" ontoggle="if(this.open)loadProfileEarnings()">
+      ${dsum('<i class="bi bi-cash-coin"></i>','Zárobky trénera')}
       <div id="trEarnBox" style="margin-top:12px"><span class="set-hint">Načítavam…</span></div>
     </details>` : ''}
-    <div class="set-row" style="background:rgba(201,168,76,.06);border:1px solid rgba(201,168,76,.2);border-radius:12px;padding:12px">
-      <span class="set-label">🎫 Prideliť členstvo / vstupy</span>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
-        <select id="admPlan" onchange="admPlanChange()" style="flex:1;min-width:150px;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:9px 12px;font-family:'Manrope'"><option value="">— Bez členstva —</option>${planOpts||''}</select>
-        <input type="number" id="admPlanPrice" min="0" step="0.01" style="width:90px;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:9px 10px" title="Suma €">
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
-        <label class="set-hint" style="margin:0">Platné do:</label>
-        <input type="date" id="admExpiry" style="background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:8px 10px">
-        <label class="set-hint" style="margin:0 0 0 6px">Vstupy (permanentka):</label>
-        <input type="number" id="admEntries" min="0" value="0" style="width:70px;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:8px 10px">
-      </div>
-      <div class="gender-switch" style="margin-top:8px">
-        <button type="button" class="gseg on" id="mGift" onclick="admMode('gift')">🎁 Darček / migrácia</button>
-        <button type="button" class="gseg" id="mCash" onclick="admMode('cash')">💵 Hotovosť</button>
-        <button type="button" class="gseg" id="mCard" onclick="admMode('card')">💳 Karta na mieste</button>
-      </div>
-      <button class="adm-save" style="margin-top:10px;justify-self:start" onclick="grantMembership()"><i class="bi bi-gift"></i> <span id="grantBtnLbl">Darovať členstvo</span></button>
-      <span class="set-hint" style="margin-top:6px">🎁 Darček/migrácia = bez platby (napr. prenos z Glofoxu — už zaplatené). Hotovosť/karta = zaráta sa do tržieb + provízií. „Platné do" nastaví dokedy členstvo platí. Vstupy = pripočíta permanentkové vstupy na hodiny.</span>
-    </div>
-    <div class="set-row">
-      <span class="set-label">🎂 Narodeniny</span>
-      <div class="adm-hours">
-        <input type="date" id="admBday" value="${esc(a.birthday||'')}">
-        <button onclick="saveBirthday()">Uložiť</button>
-        <span class="set-hint">Zobrazí sa všetkým na Dashboarde v deň narodenín. Rok je jedno — počíta sa deň a mesiac.</span>
-      </div>
-    </div>
-    <div class="set-row">
-      <span class="set-label">🎟️ Vstupy & bonusy</span>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <label class="set-hint" style="margin:0">Platené vstupy:</label>
-        <input type="number" id="admEntriesSet" min="0" value="${a.single_entries||0}" style="width:70px;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:8px 10px">
-        <label class="set-hint" style="margin:0 0 0 6px">Bonus hodiny zadarmo:</label>
-        <input type="number" id="admFreeSet" min="0" value="${a.free_credits||0}" style="width:70px;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:8px 10px">
-        <button onclick="saveEntries()">Uložiť</button>
-      </div>
-      <span class="set-hint">Na Dashboarde sa zobrazia zvlášť. Sem oprav, ak sedí nesprávny počet (napr. staré bonusy z migrácie).</span>
-    </div>
-    <div class="set-row">
-      <span class="set-label">Odchodené hodiny (návštevy)</span>
-      <div class="adm-hours">
-        <input type="number" id="admHours" min="0" value="${a.visit_count||0}">
-        <button onclick="saveHours()">Uložiť</button>
-        <span class="set-hint">Ovplyvní odznaky za návštevy a vernostný level.</span>
-      </div>
-    </div>
-    <div class="set-row">
-      <span class="set-label">Súkromné hodiny (klient)</span>
-      <div class="adm-hours">
-        <input type="number" id="admPrivate" min="0" value="${a.private_hours||0}">
-        <button onclick="savePrivate()">Uložiť</button>
-        <span class="set-hint">Odomkne odznaky za súkromné hodiny (1 → 1000).</span>
-      </div>
-    </div>
-    ${a.is_trainer?`
-    <div class="set-row">
-      <span class="set-label">🎓 Odučené skupinové hodiny (tréner)</span>
-      <div class="adm-hours">
-        <input type="number" id="admTgroup" min="0" value="${a.taught_group_hours||0}">
-        <button onclick="saveTaught('taught_group_hours','admTgroup')">Uložiť</button>
-      </div>
-    </div>
-    <div class="set-row">
-      <span class="set-label">🎓 Odučené súkromné hodiny (tréner)</span>
-      <div class="adm-hours">
-        <input type="number" id="admTprivate" min="0" value="${a.taught_private_hours||0}">
-        <button onclick="saveTaught('taught_private_hours','admTprivate')">Uložiť</button>
-      </div>
-    </div>`:''}
-    <details class="set-row adm-sub" style="cursor:pointer">
-      <summary style="list-style:none;display:flex;align-items:center;gap:8px;font-weight:700;color:#e0b84c"><i class="bi bi-award"></i> Odznaky &amp; merch (rozkliknúť) <i class="bi bi-chevron-down" style="margin-left:auto;font-size:.8rem"></i></summary>
+
+    <details class="set-row adm-sub" open>
+      ${dsum('🎫','Členstvo, vstupy & bonusy')}
       <div style="margin-top:12px">
-        <span class="set-label">Merch (pridať/odobrať odznak)</span>
-        <div class="adm-chips">${merchChips||'<span class="set-hint">—</span>'}</div>
-        <span class="set-label" style="display:block;margin-top:14px">Ručné udelenie odznakov</span>
-        <div class="adm-chips">${achChips}</div>
-        <span class="set-hint">Zvýraznené = udelené. Automaticky získané (napr. za návštevy) sú tiež zvýraznené.</span>
+        <div style="font-weight:700;color:var(--cream);font-size:.88rem;margin-bottom:6px">Predať / darovať členstvo</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <select id="admPlan" onchange="admPlanChange()" style="flex:1;min-width:150px;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:9px 12px;font-family:'Manrope'"><option value="">— Bez členstva —</option>${planOpts||''}</select>
+          <input type="number" id="admPlanPrice" min="0" step="0.01" style="width:90px;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:9px 10px" title="Suma €">
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
+          <label class="set-hint" style="margin:0">Platné do:</label>
+          <input type="date" id="admExpiry" style="background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:8px 10px">
+          <label class="set-hint" style="margin:0 0 0 6px">+ vstupov:</label>
+          <input type="number" id="admEntries" min="0" value="0" style="width:66px;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:8px 10px">
+        </div>
+        <div class="gender-switch" style="margin-top:8px">
+          <button type="button" class="gseg on" id="mGift" onclick="admMode('gift')">🎁 Darček</button>
+          <button type="button" class="gseg" id="mCash" onclick="admMode('cash')">💵 Hotovosť</button>
+          <button type="button" class="gseg" id="mCard" onclick="admMode('card')">💳 Karta</button>
+        </div>
+        <button class="adm-save" style="margin-top:10px;justify-self:start" onclick="grantMembership()"><i class="bi bi-gift"></i> <span id="grantBtnLbl">Darovať členstvo</span></button>
+        <span class="set-hint" style="margin-top:6px">🎁 Darček = bez platby (napr. migrácia z Glofoxu). 💵/💳 = zaráta sa do tržieb + provízií línie.</span>
+
+        <div style="height:1px;background:var(--border);margin:14px 0"></div>
+        <div style="font-weight:700;color:var(--cream);font-size:.88rem;margin-bottom:6px">🎟️ Permanentka (platené vstupy)</div>
+        <div style="font-size:.85rem;margin-bottom:6px">Aktuálne: <b style="color:var(--gold)">${a.single_entries||0}</b> vstupov</div>
+        <div class="adm-hours" style="flex-wrap:wrap">
+          <input type="number" id="admEntriesN" step="1" min="0" placeholder="počet" style="width:100px">
+          <button onclick="entriesOp('set')" title="Nastaviť na túto hodnotu">= Nastaviť</button>
+          <button class="gseg" style="border:1px solid #35502f;background:#1e2a1e;color:#9fd894;border-radius:10px;padding:9px 12px;cursor:pointer" onclick="entriesOp('add')">+ Pridať</button>
+          <button class="gseg" style="border:1px solid #8b3232;background:#3a1a1a;color:#ef9a9a;border-radius:10px;padding:9px 12px;cursor:pointer" onclick="entriesOp('sub')">− Odobrať</button>
+        </div>
+
+        <div style="height:1px;background:var(--border);margin:14px 0"></div>
+        <div style="font-weight:700;color:var(--cream);font-size:.88rem;margin-bottom:6px">🎁 Bonus hodiny zadarmo</div>
+        <div class="adm-hours">
+          <input type="number" id="admFree" min="0" value="${a.free_credits||0}" style="width:80px">
+          <button onclick="saveFree()">Uložiť</button>
+          <span class="set-hint">Napr. oprav staré bonusy z migrácie. Zobrazia sa klientovi zvlášť.</span>
+        </div>
       </div>
     </details>
-    <div class="set-row">
-      <span class="set-label">Sponzor (MLM štruktúra)</span>
-      <div style="font-size:.85rem;margin-bottom:6px">${a.sponsor_name?`Aktuálny: <a href="/u/${a.sponsor_id}" style="color:var(--gold);font-weight:700;text-decoration:none">${esc(a.sponsor_name)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.7"></i></a> <span class="set-hint">(${esc(a.sponsor_code||'')})</span>`:'<span class="set-hint">Bez sponzora — zaregistroval sa bez kódu.</span>'}</div>
-      <div style="position:relative">
-        <div class="adm-hours">
-          <input type="text" id="spSearch" placeholder="🔍 Meno / email / kód sponzora…" oninput="searchSponsor()" autocomplete="off" style="flex:1">
-          ${a.sponsor_id?`<button onclick="assignSponsor(null)" style="background:#3a1a1a;border:1px solid #8b3232;color:#ef9a9a;border-radius:10px;padding:9px 12px;cursor:pointer" title="Odobrať sponzora">✕</button>`:''}
+
+    <details class="set-row adm-sub">
+      ${dsum('💳','Kredit klienta','#9fd894')}
+      <div style="margin-top:12px">
+        <div style="font-size:.9rem;margin:0 0 8px">Aktuálny kredit: <b style="color:var(--gold)">${(a.referral_credit||0).toFixed(2)} €</b>${a.referral_credit_pending>0?` · <span style="color:#ff9800">čaká na výplatu ${(a.referral_credit_pending).toFixed(2)} €</span>`:''}</div>
+        <div class="adm-hours" style="flex-wrap:wrap">
+          <input type="number" id="admCredit" step="0.01" min="0" placeholder="suma €" style="width:110px">
+          <button onclick="creditOp('set')" title="Nastaviť na túto hodnotu">= Nastaviť</button>
+          <button class="gseg" style="border:1px solid #35502f;background:#1e2a1e;color:#9fd894;border-radius:10px;padding:9px 12px;cursor:pointer" onclick="creditOp('add')">+ Pridať</button>
+          <button class="gseg" style="border:1px solid #8b3232;background:#3a1a1a;color:#ef9a9a;border-radius:10px;padding:9px 12px;cursor:pointer" onclick="creditOp('sub')">− Odobrať</button>
         </div>
-        <div id="spResults" style="display:none;position:absolute;z-index:20;left:0;right:0;top:calc(100% + 4px);background:#161512;border:1px solid var(--border);border-radius:10px;max-height:220px;overflow-y:auto"></div>
+        ${a.referral_credit_pending>0?`<button class="adm-save" style="margin-top:10px;justify-self:start;background:linear-gradient(102deg,#2e7d32,#66bb6a)" onclick="markPayoutPaid()"><i class="bi bi-check2-circle"></i> Označiť výplatu ${(a.referral_credit_pending).toFixed(2)} € ako VYPLATENÉ</button>`:''}
+        <span class="set-hint" style="margin-top:6px">„Nastaviť" prepíše, „Pridať/Odobrať" upraví o sumu. Klient dostane notifikáciu.</span>
       </div>
-      <span class="set-hint">Priraď sponzora, ak sa klient zaregistroval bez jeho kódu.</span>
-    </div>
-    <div class="set-row" style="background:rgba(129,199,132,.06);border:1px solid rgba(129,199,132,.2);border-radius:12px;padding:12px">
-      <span class="set-label">💰 Kredit klienta</span>
-      <div style="font-size:.9rem;margin:4px 0 8px">Aktuálny kredit: <b style="color:var(--gold)">${(a.referral_credit||0).toFixed(2)} €</b>${a.referral_credit_pending>0?` · <span style="color:#ff9800">čaká na výplatu ${(a.referral_credit_pending).toFixed(2)} €</span>`:''}</div>
-      <div class="adm-hours" style="flex-wrap:wrap">
-        <input type="number" id="admCredit" step="0.01" min="0" placeholder="suma €" style="width:110px">
-        <button onclick="creditOp('set')" title="Nastaviť na túto hodnotu">= Nastaviť</button>
-        <button class="gseg" style="border:1px solid #35502f;background:#1e2a1e;color:#9fd894;border-radius:10px;padding:9px 12px;cursor:pointer" onclick="creditOp('add')">+ Pridať</button>
-        <button class="gseg" style="border:1px solid #8b3232;background:#3a1a1a;color:#ef9a9a;border-radius:10px;padding:9px 12px;cursor:pointer" onclick="creditOp('sub')">− Odobrať</button>
+    </details>
+
+    <details class="set-row adm-sub">
+      ${dsum('🛍️','Predať merch','#60a5fa')}
+      <div style="margin-top:12px">
+        <div style="font-size:.82rem;color:var(--muted);margin-bottom:8px">Odomkne odznak, notifikuje klienta aj priateľov, zaráta províziu.</div>
+        <div id="merchSaleBox" style="display:flex;flex-direction:column;gap:8px"><span class="set-hint">Načítavam produkty…</span></div>
       </div>
-      ${a.referral_credit_pending>0?`<button class="adm-save" style="margin-top:10px;justify-self:start;background:linear-gradient(102deg,#2e7d32,#66bb6a)" onclick="markPayoutPaid()"><i class="bi bi-check2-circle"></i> Označiť výplatu ${(a.referral_credit_pending).toFixed(2)} € ako VYPLATENÉ</button>`:''}
-      <span class="set-hint" style="margin-top:6px">„Nastaviť" prepíše hodnotu, „Pridať/Odobrať" upraví o zadanú sumu. Klient dostane notifikáciu.</span>
-    </div>
-    <div class="set-row" style="background:rgba(201,168,76,.06);border:1px solid rgba(201,168,76,.25);border-radius:12px;padding:12px">
-      <span class="set-label">🎟️ Jednorázové vstupy (permanentka)</span>
-      <div style="font-size:.9rem;margin:4px 0 8px">Aktuálne vstupy: <b style="color:var(--gold)">${a.single_entries||0}</b>${a.free_credits>0?` · <span style="color:#9fd894">${a.free_credits} hod. zdarma 🎁</span>`:''}</div>
-      <div class="adm-hours" style="flex-wrap:wrap">
-        <input type="number" id="admEntriesN" step="1" min="0" placeholder="počet" style="width:100px">
-        <button onclick="entriesOp('set')" title="Nastaviť na túto hodnotu">= Nastaviť</button>
-        <button class="gseg" style="border:1px solid #35502f;background:#1e2a1e;color:#9fd894;border-radius:10px;padding:9px 12px;cursor:pointer" onclick="entriesOp('add')">+ Pridať</button>
-        <button class="gseg" style="border:1px solid #8b3232;background:#3a1a1a;color:#ef9a9a;border-radius:10px;padding:9px 12px;cursor:pointer" onclick="entriesOp('sub')">− Odobrať</button>
+    </details>
+
+    <details class="set-row adm-sub">
+      ${dsum('📊','Body, odznaky & narodeniny')}
+      <div style="margin-top:12px;display:flex;flex-direction:column;gap:12px">
+        <div>
+          <span class="set-label">🎂 Narodeniny</span>
+          <div class="adm-hours"><input type="date" id="admBday" value="${esc(a.birthday||'')}"><button onclick="saveBirthday()">Uložiť</button></div>
+          <span class="set-hint">Zobrazí sa na Dashboarde v deň narodenín (rok je jedno).</span>
+        </div>
+        <div>
+          <span class="set-label">Odchodené hodiny (návštevy)</span>
+          <div class="adm-hours"><input type="number" id="admHours" min="0" value="${a.visit_count||0}"><button onclick="saveHours()">Uložiť</button></div>
+          <span class="set-hint">Ovplyvní odznaky za návštevy a vernostný level.</span>
+        </div>
+        <div>
+          <span class="set-label">Súkromné hodiny (klient)</span>
+          <div class="adm-hours"><input type="number" id="admPrivate" min="0" value="${a.private_hours||0}"><button onclick="savePrivate()">Uložiť</button></div>
+        </div>
+        ${a.is_trainer?`
+        <div>
+          <span class="set-label">🎓 Odučené skupinové hodiny (tréner)</span>
+          <div class="adm-hours"><input type="number" id="admTgroup" min="0" value="${a.taught_group_hours||0}"><button onclick="saveTaught('taught_group_hours','admTgroup')">Uložiť</button></div>
+        </div>
+        <div>
+          <span class="set-label">🎓 Odučené súkromné hodiny (tréner)</span>
+          <div class="adm-hours"><input type="number" id="admTprivate" min="0" value="${a.taught_private_hours||0}"><button onclick="saveTaught('taught_private_hours','admTprivate')">Uložiť</button></div>
+        </div>`:''}
+        <div>
+          <span class="set-label">Merch (pridať/odobrať odznak)</span>
+          <div class="adm-chips">${merchChips||'<span class="set-hint">—</span>'}</div>
+          <span class="set-label" style="display:block;margin-top:14px">Ručné udelenie odznakov</span>
+          <div class="adm-chips">${achChips}</div>
+          <span class="set-hint">Zvýraznené = udelené. Automaticky získané sú tiež zvýraznené.</span>
+        </div>
       </div>
-      <span class="set-hint" style="margin-top:6px">Oprav chyby z importu — napr. nastav presný počet vstupov, alebo pridaj/odober. Klient dostane notifikáciu.</span>
-    </div>
-    <div class="set-row" style="background:rgba(96,165,250,.06);border:1px solid rgba(96,165,250,.25);border-radius:12px;padding:12px">
-      <span class="set-label">🛍️ Predať merch klientovi</span>
-      <div style="font-size:.82rem;color:var(--muted);margin:4px 0 8px">Zaznamená predaj (odomkne odznak, pošle notifikáciu klientovi aj jeho priateľom, zaráta províziu línie).</div>
-      <div id="merchSaleBox" style="display:flex;flex-direction:column;gap:8px"><span class="set-hint">Načítavam produkty…</span></div>
-    </div>
-    ${(!P.is_admin_profile && !P.is_self) ? `<div class="set-row" style="background:rgba(239,154,154,.06);border:1px solid rgba(239,154,154,.22);border-radius:12px;padding:12px">
-      <span class="set-label">🔑 Reset hesla</span>
-      <div style="font-size:.86rem;margin:4px 0 8px;color:var(--text-muted)">Odhlási klienta a pri ďalšom prihlásení si musí vytvoriť nové heslo (na to isté meno/email). Použi, keď klient zabudol heslo.</div>
-      <button class="adm-save" style="justify-self:start;background:linear-gradient(102deg,#8b3232,#ef5350)" onclick="resetClientPassword()"><i class="bi bi-key"></i> Resetovať heslo</button>
-    </div>` : ''}
-    ${(!P.is_admin_profile && !P.is_self) ? `<div class="set-row" style="background:rgba(201,168,76,.06);border:1px solid rgba(201,168,76,.28);border-radius:12px;padding:12px">
-      <span class="set-label">🔗 Zlúčiť tento účet do iného</span>
-      <div style="font-size:.86rem;margin:4px 0 8px;color:var(--text-muted)">Prenesie históriu (návštevy, odznaky, hodiny, vstupy, kredit, členstvá, štruktúru…) z <b>${esc(P.name||'tohto účtu')}</b> do vybraného účtu a <b>tento</b> potom zmaže. Ideálne na duplicitný účet z migrácie.</div>
-      <div style="position:relative">
-        <input type="text" id="mergeSearch" placeholder="🔍 Nájsť cieľový účet (meno / email / kód)…" oninput="searchMergeTarget()" autocomplete="off" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:9px 12px">
-        <div id="mergeResults" style="display:none;position:absolute;z-index:20;left:0;right:0;top:calc(100% + 4px);background:#161512;border:1px solid var(--border);border-radius:10px;max-height:220px;overflow-y:auto"></div>
+    </details>
+
+    <details class="set-row adm-sub">
+      ${dsum('🔗','Sponzor (MLM štruktúra)')}
+      <div style="margin-top:12px">
+        <div style="font-size:.85rem;margin-bottom:6px">${a.sponsor_name?`Aktuálny: <a href="/u/${a.sponsor_id}" style="color:var(--gold);font-weight:700;text-decoration:none">${esc(a.sponsor_name)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.7"></i></a> <span class="set-hint">(${esc(a.sponsor_code||'')})</span>`:'<span class="set-hint">Bez sponzora.</span>'}</div>
+        <div style="position:relative">
+          <div class="adm-hours">
+            <input type="text" id="spSearch" placeholder="🔍 Meno / email / kód sponzora…" oninput="searchSponsor()" autocomplete="off" style="flex:1">
+            ${a.sponsor_id?`<button onclick="assignSponsor(null)" style="background:#3a1a1a;border:1px solid #8b3232;color:#ef9a9a;border-radius:10px;padding:9px 12px;cursor:pointer" title="Odobrať sponzora">✕</button>`:''}
+          </div>
+          <div id="spResults" style="display:none;position:absolute;z-index:20;left:0;right:0;top:calc(100% + 4px);background:#161512;border:1px solid var(--border);border-radius:10px;max-height:220px;overflow-y:auto"></div>
+        </div>
       </div>
-    </div>
-    <div class="set-row" style="background:rgba(239,83,80,.07);border:1px solid rgba(239,83,80,.35);border-radius:12px;padding:12px">
-      <span class="set-label" style="color:#ef5350">🗑️ Zmazať účet natrvalo</span>
-      <div style="font-size:.86rem;margin:4px 0 8px;color:var(--text-muted)">Nezvratné. Zmaže tento účet aj jeho rezervácie, transakcie a provízie. Prípadnú štruktúru pod ním presunie na jeho sponzora. Ak je to duplicitný účet, zváž radšej <b>Zlúčiť</b> vyššie, aby sa história nestratila.</div>
-      <button class="adm-save" style="justify-self:start;background:linear-gradient(102deg,#7a1f1f,#c62828)" onclick="deleteAccount()"><i class="bi bi-trash3"></i> Zmazať účet</button>
-    </div>` : ''}`;
+    </details>
+
+    ${canManage ? `<details class="set-row adm-sub" style="border-color:rgba(239,83,80,.3)">
+      ${dsum('⚠️','Účet: reset hesla / zlúčiť / zmazať','#ef5350')}
+      <div style="margin-top:12px;display:flex;flex-direction:column;gap:14px">
+        <div>
+          <span class="set-label">🔑 Reset hesla</span>
+          <div style="font-size:.84rem;margin:2px 0 8px;color:var(--text-muted)">Klient si pri ďalšom prihlásení vytvorí nové heslo.</div>
+          <button class="adm-save" style="justify-self:start;background:linear-gradient(102deg,#8b3232,#ef5350)" onclick="resetClientPassword()"><i class="bi bi-key"></i> Resetovať heslo</button>
+        </div>
+        <div>
+          <span class="set-label">🔗 Zlúčiť do iného účtu</span>
+          <div style="font-size:.84rem;margin:2px 0 8px;color:var(--text-muted)">Prenesie históriu z <b>${esc(P.name||'tohto účtu')}</b> do vybraného a tento zmaže (na duplicitné účty).</div>
+          <div style="position:relative">
+            <input type="text" id="mergeSearch" placeholder="🔍 Nájsť cieľový účet…" oninput="searchMergeTarget()" autocomplete="off" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:9px 12px">
+            <div id="mergeResults" style="display:none;position:absolute;z-index:20;left:0;right:0;top:calc(100% + 4px);background:#161512;border:1px solid var(--border);border-radius:10px;max-height:220px;overflow-y:auto"></div>
+          </div>
+        </div>
+        <div>
+          <span class="set-label" style="color:#ef5350">🗑️ Zmazať účet natrvalo</span>
+          <div style="font-size:.84rem;margin:2px 0 8px;color:var(--text-muted)">Nezvratné. Radšej zváž Zlúčiť, aby sa história nestratila.</div>
+          <button class="adm-save" style="justify-self:start;background:linear-gradient(102deg,#7a1f1f,#c62828)" onclick="deleteAccount()"><i class="bi bi-trash3"></i> Zmazať účet</button>
+        </div>
+      </div>
+    </details>` : ''}`;
   admPlanChange(); // nastav počiatočnú cenu podľa vybraného plánu
   initMerchSale();
 }
@@ -1089,6 +1093,11 @@ async function saveEntries(){
   const se=parseInt(document.getElementById('admEntriesSet').value)||0;
   const fc=parseInt(document.getElementById('admFreeSet').value)||0;
   if(await putAwards({single_entries:se, free_credits:fc})){ _awards.single_entries=se; _awards.free_credits=fc; alert('Vstupy uložené ✓'); }
+}
+async function saveFree(){
+  const fc=parseInt(document.getElementById('admFree').value)||0;
+  if(await putAwards({free_credits:fc})){ _awards.free_credits=fc; alert('Bonus hodiny zadarmo uložené ✓'); renderAdmin(); }
+  else alert('Chyba pri ukladaní');
 }
 async function saveTaught(field,inputId){
   const v=parseInt(document.getElementById(inputId).value)||0;
