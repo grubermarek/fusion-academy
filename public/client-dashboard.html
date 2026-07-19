@@ -893,8 +893,8 @@ function renderBookings(bookings){
       <button class="booking-cancel" onclick="cancelBooking('${b._id}','${escHtml(b.class_name).replace(/'/g,"&#39;")}')">
         <i class="bi bi-x"></i> Zrušiť
       </button>
-      ${atts.length?`<div style="flex-basis:100%;margin-top:8px;padding-top:8px;border-top:1px solid var(--border,#2a2a2a)">
-        <div style="font-size:.72rem;color:var(--muted);margin-bottom:5px">👥 Prihlásení (${b.attendee_count||atts.length}):</div>
+      ${atts.length?`<div style="flex-basis:100%;margin-top:8px;padding-top:8px;border-top:1px solid var(--border,#2a2a2a);cursor:pointer" onclick="openAttendees('${b.class_id}','${escHtml(b.class_name).replace(/'/g,"&#39;")}','${b.booking_date||''}')" title="Zobraziť účastníkov">
+        <div style="font-size:.72rem;color:var(--muted);margin-bottom:5px">👥 Prihlásení (${b.attendee_count||atts.length}) <span style="color:var(--gold)">›</span></div>
         <div style="display:flex;align-items:center;flex-wrap:wrap;padding-left:6px">${chips}${more}</div>
       </div>`:''}
     </div>`;
@@ -1318,8 +1318,8 @@ function renderClassCards(){
           : `<div class="cc-meta" style="margin-top:3px">🎓 ${escHtml(cls.instructor)}</div>`)
       : '';
     const atts=(cls.attendees||[]);
-    const attStrip=atts.length?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border,#2a2a2a)">
-      <div style="font-size:.68rem;color:var(--muted);margin-bottom:4px">👥 Prihlásení (${cls.attendee_count||atts.length}):</div>
+    const attStrip=atts.length?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border,#2a2a2a);cursor:pointer" onclick="openAttendees('${cls._id}','${escHtml(cls.name).replace(/'/g,"&#39;")}')" title="Zobraziť účastníkov">
+      <div style="font-size:.68rem;color:var(--muted);margin-bottom:4px">👥 Prihlásení (${cls.attendee_count||atts.length}) <span style="color:var(--gold)">›</span></div>
       <div style="display:flex;align-items:center;flex-wrap:wrap;padding-left:6px">${atts.slice(0,12).map(a=>{
         const ini=(a.name||'?').charAt(0).toUpperCase();
         const av=a.avatar
@@ -1352,6 +1352,35 @@ function renderClassCards(){
   }).join('');
 }
 
+async function openAttendees(classId, className, date){
+  let ov=document.getElementById('attOv');
+  if(!ov){ ov=document.createElement('div'); ov.id='attOv';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+    ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML=`<div style="background:#161512;border:1px solid var(--border);border-radius:16px;max-width:420px;width:100%;max-height:82vh;display:flex;flex-direction:column;padding:18px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="color:var(--gold)">👥 Prihlásení — ${escHtml(className)}</b><button onclick="document.getElementById('attOv').remove()" style="background:none;border:none;color:var(--muted);font-size:1.4rem;cursor:pointer">×</button></div>
+    <div id="attOvBody" style="overflow-y:auto;margin-top:6px"><div class="empty-state" style="padding:16px">Načítavam…</div></div>
+  </div>`;
+  try{
+    const d=await api('/api/classes/'+classId+'/attendees'+(date?('?date='+encodeURIComponent(date)):''));
+    const box=document.getElementById('attOvBody'); if(!box) return;
+    const ins = d.instructor && d.instructor!=='—'
+      ? `<div style="font-size:.8rem;color:var(--muted);margin-bottom:10px">🎓 Učí: ${d.instructor_id?`<a href="/u/${d.instructor_id}" style="color:var(--gold);text-decoration:none">${escHtml(d.instructor)}</a>`:escHtml(d.instructor)}${d.date?` · ${skDate(d.date)}`:''}</div>`
+      : '';
+    const list=d.attendees||[];
+    if(!list.length){ box.innerHTML=ins+'<div class="empty-state">Zatiaľ nikto.</div>'; return; }
+    box.innerHTML=ins+list.map(a=>{
+      const ini=(a.name||'?').charAt(0).toUpperCase();
+      const av=a.avatar
+        ? `<img src="${a.avatar}" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover">`
+        : `<div style="width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;background:${stringToColorFriend(a.id||a.name||'?')}">${escHtml(ini)}</div>`;
+      const inner=`<div style="display:flex;align-items:center;gap:11px;padding:8px 4px;border-bottom:1px solid rgba(255,255,255,.05)">${av}<span style="font-weight:700">${escHtml(a.name)}</span></div>`;
+      return a.id?`<a href="/u/${a.id}" style="text-decoration:none;color:var(--cream)">${inner}</a>`:inner;
+    }).join('');
+  }catch(e){ const box=document.getElementById('attOvBody'); if(box) box.innerHTML='<div class="empty-state">Nepodarilo sa načítať.</div>'; }
+}
 function resetFilter(){
   _activeFilter={type:'',city:''};saveFilter();
   document.querySelectorAll('#typeChips .chip').forEach(c=>c.classList.toggle('active',c.dataset.type===''));

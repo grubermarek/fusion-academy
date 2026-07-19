@@ -1180,6 +1180,25 @@ app.get('/api/classes', async(req,res)=>{
   } catch(e){ console.error('/api/classes:', e.message); res.status(500).json({error:e.message}); }
 });
 
+// Zoznam prihlásených NA JEDNU hodinu — vrátane fotiek (načíta sa až na klik, preto je OK poslať avatary)
+app.get('/api/classes/:id/attendees', auth, async(req,res)=>{
+  try{
+    const c=await q.one(db.classes,{_id:req.params.id});
+    if(!c) return res.status(404).json({error:'Hodina nenájdená'});
+    const date=/^\d{4}-\d{2}-\d{2}$/.test(req.query.date||'') ? req.query.date : displayNextDateForDay(c.day_of_week);
+    const rows=await q.find(db.bookings,{class_id:c._id, booking_date:date, status:{$in:['confirmed','attended']}});
+    const list=[];
+    for(const r of rows){
+      if(r.is_child_booking){ list.push({name:r.child_name||'dieťa', child:true}); continue; }
+      const ru=await q.one(db.users,{_id:r.user_id});
+      if(ru && ru.anonymous){ list.push({name:'Člen (skrytý)', anonymous:true}); continue; }
+      list.push({id:r.user_id, name:r.user_name||ru?.name||'Člen', avatar:ru?.avatar||null});
+    }
+    const si=await sessionInstructor(c, date);
+    res.json({ class_name:c.name, date, instructor:si.instructor, instructor_id:si.instructor_id||null, attendees:list });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/classes/:id', async(req,res)=>{
   const c=await q.one(db.classes,{_id:req.params.id});
   if(!c) return res.status(404).json({error:'Hodina nenájdená'});
