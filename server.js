@@ -172,14 +172,15 @@ const USER_ROLES = {
 };
 
 // ─── Loyalty Milestones ───────────────────────────────────────────────────────
+// Odmenou za odchodené hodiny je SAMOTNÝ odznak na profile — žiadne zľavy/darčeky.
 const LOYALTY_MILESTONES = [
   { visits:5,    badge:'👟', label:'Prvé kroky', color:'#8bc34a', reward:null },
-  { visits:25,   badge:'💃', label:'Tanečník',   color:'#ffc107', reward:'Zľava 10 % na ďalší nákup' },
-  { visits:75,   badge:'⭐', label:'Stálica',     color:'#ff9800', reward:'Fusion fľaša zadarmo' },
-  { visits:150,  badge:'🔥', label:'Vášeň',       color:'#e91e63', reward:'Zľava 15 % na mesačné členstvo' },
-  { visits:350,  badge:'🏆', label:'Šampión',     color:'#9c27b0', reward:'Fusion tričko zadarmo' },
-  { visits:600,  badge:'🦋', label:'Ikona',       color:'#2196f3', reward:'Mesiac zdarma' },
-  { visits:1000, badge:'🌟', label:'Legenda',     color:'#C9A84C', reward:'VIP odmena – zistíš pri odovzdaní 😊' },
+  { visits:25,   badge:'💃', label:'Tanečník',   color:'#ffc107', reward:null },
+  { visits:75,   badge:'⭐', label:'Stálica',     color:'#ff9800', reward:null },
+  { visits:150,  badge:'🔥', label:'Vášeň',       color:'#e91e63', reward:null },
+  { visits:350,  badge:'🏆', label:'Šampión',     color:'#9c27b0', reward:null },
+  { visits:600,  badge:'🦋', label:'Ikona',       color:'#2196f3', reward:null },
+  { visits:1000, badge:'🌟', label:'Legenda',     color:'#C9A84C', reward:null },
 ];
 
 function getLoyaltyStatus(visitCount) {
