@@ -903,13 +903,43 @@ async function openAttendance(classId){
         <div class="ah-stat"><span class="val">${Math.max(0,(cls.capacity||0)-(cls.confirmed||0))}</span><span class="lbl">Voľné miesta</span></div>
         <div class="ah-stat"><span class="val">${cls.waitlist||0}</span><span class="lbl">Čakačka</span></div>
       </div>
-    </div>`;
+    </div>
+    <div id="attInsRow" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:.85rem;color:var(--muted)"></div>`;
 
   document.getElementById('attendeeItems').innerHTML = '<div class="loading"><i class="bi bi-arrow-repeat spin"></i>&nbsp; Načítavam...</div>';
   document.getElementById('addUserSearch').value='';
   document.getElementById('addUserResults').style.display='none';
 
+  loadTrainerInstructor(classId);
   await loadAttendees(classId);
+}
+let _trInsBy={}, _trTrainers=null;
+async function loadTrainerInstructor(classId){
+  const el=document.getElementById('attInsRow'); if(!el) return;
+  const si=await api('/api/attendance/session-instructor?class_id='+classId);
+  if(!si||si.error){ el.innerHTML=''; return; }
+  _trInsBy[classId]=si;
+  const teaches = si.instructor_id && si.viewer_id===si.instructor_id;
+  const ctrl = si.viewer_is_admin
+    ? `<button onclick="pickTrainerIns('${classId}','${si.date}')" style="background:rgba(201,168,76,.14);border:1px solid #C9A84C;color:#C9A84C;border-radius:8px;padding:4px 10px;font-size:.76rem;font-weight:700;cursor:pointer">✏️ zmeniť trénera</button>`
+    : (teaches
+        ? `<span style="color:#4ade80;font-weight:700">✓ učíš ty</span>`
+        : `<button onclick="claimTrainerIns('${classId}','${si.date}')" style="background:rgba(74,222,128,.14);border:1px solid #4ade80;color:#4ade80;border-radius:8px;padding:4px 10px;font-size:.76rem;font-weight:700;cursor:pointer">✋ učím ja</button>`);
+  el.innerHTML=`<span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">🎓 Učí: <b style="color:var(--cream)">${esc(si.instructor||'—')}</b>${si.overridden?' <span style="color:#C9A84C;font-size:.72rem">(zmenené)</span>':''} ${ctrl}</span>`;
+}
+async function claimTrainerIns(classId, date){
+  const r=await api('/api/attendance/session-instructor',{method:'POST',body:{class_id:classId, date}});
+  if(r&&r.ok){ toast('✅ Prihlásený/á ako tréner hodiny'); loadTrainerInstructor(classId); } else toast(r?.error||'Chyba', true);
+}
+async function pickTrainerIns(classId, date){
+  if(!_trTrainers){ _trTrainers=await api('/api/attendance/trainers')||[]; }
+  const cur=_trInsBy[classId]||{};
+  const pick=prompt(`Kto učí túto hodinu (${date})?\n\n${_trTrainers.map((t,i)=>`${i+1}. ${t.name}`).join('\n')}\n\nZadaj číslo (0 = pôvodný tréner):`);
+  if(pick===null) return;
+  const n=parseInt(pick); let instructor_id;
+  if(n===0) instructor_id=''; else { const t=_trTrainers[n-1]; if(!t){ toast('Neplatná voľba', true); return; } instructor_id=t.id; }
+  const r=await api('/api/attendance/session-instructor',{method:'POST',body:{class_id:classId, date, instructor_id}});
+  if(r&&r.ok){ toast('✅ Tréner hodiny nastavený'); loadTrainerInstructor(classId); } else toast(r?.error||'Chyba', true);
 }
 
 async function loadAttendees(classId){

@@ -1158,8 +1158,21 @@ app.get('/api/classes', async(req,res)=>{
     const booking_count = await q.count(db.bookings,{class_id:c._id, booking_date:bdate, status:{$ne:'cancelled'}});
     const bookedAll = await q.count(db.bookings,{class_id:c._id,status:{$ne:'cancelled'}});
     const si = await sessionInstructor(c, bdate);
+    // Zoznam prihlásených na najbližší termín — len pre prihlásených používateľov (nie na verejnom rozvrhu)
+    let attendees;
+    if(req.session?.uid){
+      const rows=await q.find(db.bookings,{class_id:c._id, booking_date:bdate, status:{$in:['confirmed','attended']}});
+      attendees=[];
+      for(const r of rows){
+        if(r.is_child_booking){ attendees.push({name:r.child_name||'dieťa', child:true}); continue; }
+        const ru=await q.one(db.users,{_id:r.user_id});
+        if(ru && ru.anonymous){ attendees.push({name:'Člen (skrytý)', anonymous:true}); continue; }
+        attendees.push({id:r.user_id, name:r.user_name||ru?.name||'Člen', avatar:ru?.avatar||null});
+      }
+    }
     result.push({...c, booking_count, next_date:bdate, booked:booking_count, booked_all:bookedAll,
       instructor:si.instructor, instructor_id:si.instructor_id||c.instructor_id||null,
+      attendees, attendee_count: attendees?attendees.length:booking_count,
       spotsLeft:Math.max(0,c.capacity-booking_count), dayName:DAYS_SK[c.day_of_week]});
   }
   result.sort((a,b)=>a.day_of_week-b.day_of_week||a.time_start.localeCompare(b.time_start));

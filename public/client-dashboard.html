@@ -1312,6 +1312,22 @@ function renderClassCards(){
     const nextDate=getNextDate(dow);
     const nextISO=getNextDateISO(dow);
     const bookedId=_bookedMap[cls._id+'|'+nextISO];
+    const insLine = (cls.instructor && cls.instructor!=='—')
+      ? (cls.instructor_id
+          ? `<div class="cc-meta" style="margin-top:3px">🎓 <a href="/u/${cls.instructor_id}" style="color:var(--gold);text-decoration:none">${escHtml(cls.instructor)}</a></div>`
+          : `<div class="cc-meta" style="margin-top:3px">🎓 ${escHtml(cls.instructor)}</div>`)
+      : '';
+    const atts=(cls.attendees||[]);
+    const attStrip=atts.length?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border,#2a2a2a)">
+      <div style="font-size:.68rem;color:var(--muted);margin-bottom:4px">👥 Prihlásení (${cls.attendee_count||atts.length}):</div>
+      <div style="display:flex;align-items:center;flex-wrap:wrap;padding-left:6px">${atts.slice(0,12).map(a=>{
+        const ini=(a.name||'?').charAt(0).toUpperCase();
+        const av=a.avatar
+          ? `<img src="${a.avatar}" title="${escHtml(a.name)}" style="width:22px;height:22px;border-radius:50%;object-fit:cover;border:1px solid #333">`
+          : `<span title="${escHtml(a.name)}" style="width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:.58rem;font-weight:800;background:${stringToColor(a.id||a.name)}">${escHtml(ini)}</span>`;
+        return a.id?`<a href="/u/${a.id}" style="margin-left:-6px" title="${escHtml(a.name)}">${av}</a>`:`<span style="margin-left:-6px">${av}</span>`;
+      }).join('')}${atts.length>12?`<span style="font-size:.66rem;color:var(--muted);margin-left:8px">+${atts.length-12}</span>`:''}</div>
+    </div>`:'';
     return `<div class="class-card${bookedId?' cc-booked-card':''}">
       <div class="cc-top">
         <div class="cc-emoji">${cls.emoji||'🏃'}</div>
@@ -1319,6 +1335,7 @@ function renderClassCards(){
           <div class="cc-name">${escHtml(cls.name)}</div>
           <div class="cc-day-line"><span class="cc-day">${dayFull}</span><span class="cc-date">${nextDate} · ${cls.time_start||'—'}</span></div>
           <div class="cc-meta" style="margin-top:4px"><i class="bi bi-geo-alt" style="font-size:.7rem"></i> ${escHtml(cls.location||'—')}</div>
+          ${insLine}
         </div>
       </div>
       <div class="cc-bottom">
@@ -1330,6 +1347,7 @@ function renderClassCards(){
           ? `<button class="cc-book-btn cc-booked" onclick="cancelBooking('${bookedId}','${escHtml(cls.name).replace(/'/g,"&#39;")}')" title="Klikni pre zrušenie rezervácie">✓ Rezervované</button>`
           : `<button class="cc-book-btn" ${full?'disabled':''} onclick="openBookModal('${cls._id}','${escHtml(cls.name).replace(/'/g,"&#39;")}','${nextDate} ${cls.time_start||''}','fitday-no')">${full?'Plné':'Rezervovať'}</button>`}
       </div>
+      ${attStrip}
     </div>`;
   }).join('');
 }
