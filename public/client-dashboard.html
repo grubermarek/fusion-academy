@@ -985,6 +985,7 @@ function notifDest(n){
     case 'support': return n.ticket_id ? ('/support?t='+n.ticket_id) : '/support';
     case 'new_lead': return '/admin';
     case 'expiry_warning': case 'credit': case 'role_change': return '/pricing';
+    case 'friend_purchase': case 'purchase': return '/shop';
     default: return null;
   }
 }

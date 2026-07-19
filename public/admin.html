@@ -284,6 +284,41 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   <!-- PRODUCTS -->
   <div id="s-products" class="section">
     <h4 class="fw-bold mb-4">Produkty a cenník</h4>
+    <div class="card border-0 rounded-3 p-3 mb-4" style="background:rgba(96,165,250,.06);border:1px solid rgba(96,165,250,.25)!important">
+      <div class="fw-semibold mb-2" style="color:#60a5fa"><i class="bi bi-bag-check me-1"></i>Zaznamenať predaj merchu</div>
+      <div id="merchSaleMsg" class="alert d-none py-2 small mb-2"></div>
+      <div class="row g-2 align-items-end">
+        <div class="col-md-4 position-relative">
+          <label class="form-label small fw-semibold mb-1">Klient</label>
+          <input type="text" class="form-control form-control-sm" id="mkSearch" placeholder="Hľadať meno / email…" oninput="mkSearchClient(this.value)" autocomplete="off">
+          <div id="mkResults" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:50;background:#1a1a1a;border:1px solid var(--gold-border);border-radius:.5rem;max-height:180px;overflow-y:auto"></div>
+          <div id="mkSelected" style="display:none;font-size:.8rem;color:#4ade80;margin-top:4px"></div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold mb-1">Produkt</label>
+          <select class="form-select form-select-sm" id="mkProd" onchange="mkVariants()"></select>
+        </div>
+        <div class="col-md-2" id="mkSizeWrap" style="display:none">
+          <label class="form-label small fw-semibold mb-1">Veľkosť</label>
+          <select class="form-select form-select-sm" id="mkSize"></select>
+        </div>
+        <div class="col-md-2" id="mkColorWrap" style="display:none">
+          <label class="form-label small fw-semibold mb-1">Farba</label>
+          <select class="form-select form-select-sm" id="mkColor"></select>
+        </div>
+        <div class="col-md-1">
+          <label class="form-label small fw-semibold mb-1">Ks</label>
+          <input type="number" class="form-control form-control-sm" id="mkQty" value="1" min="1">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small fw-semibold mb-1">Platba</label>
+          <select class="form-select form-select-sm" id="mkPay"><option value="cash">Hotovosť</option><option value="card">Karta</option><option value="transfer">Prevod</option></select>
+        </div>
+        <div class="col-md-2">
+          <button class="btn btn-sm w-100" style="background:#60a5fa;color:#111;font-weight:700" onclick="doMerchSale()">Predať</button>
+        </div>
+      </div>
+    </div>
     <div class="row">
       <div class="col-md-8"><div class="card border-0 rounded-3 p-0">
         <div class="table-responsive">
@@ -3571,10 +3606,45 @@ async function loadAllTx(){
 async function deleteTx(id){if(!confirm('Zmazať predaj a jeho provízie?'))return;const r=await api('/api/admin/transactions/'+id,{method:'DELETE'});if(r?.ok)loadAllTx();}
 
 // ── PRODUCTS ──
+let _mkProducts=[], _mkClient=null;
 async function loadProducts(){
   const rows=await api('/api/products');if(!rows)return;
   document.getElementById('prodTable').innerHTML=rows.map(p=>`<tr><td class="ps-3 fw-semibold">${p.emoji||''} ${p.name}</td><td><span class="badge bg-light text-dark border">${p.cat}</span></td><td>${eur(p.price)}</td><td>${(p.commission_rate*100).toFixed(0)}%</td><td><span class="badge ${p.active?'bg-success':'bg-secondary'}">${p.active?'Áno':'Nie'}</span></td></tr>`).join('');
+  // Merch predaj — dropdown produktov
+  _mkProducts=rows.filter(p=>p.type==='product'&&p.cat==='Oblečenie');
+  const sel=document.getElementById('mkProd');
+  if(sel){ sel.innerHTML=_mkProducts.map((p,i)=>`<option value="${i}">${escHtml(p.name)} — ${eur(p.price)}</option>`).join(''); mkVariants(); }
   loadOrders();
+}
+let _mkTimer=null;
+function mkSearchClient(q){
+  clearTimeout(_mkTimer); const box=document.getElementById('mkResults');
+  if((q||'').trim().length<2){ box.style.display='none'; return; }
+  _mkTimer=setTimeout(async()=>{
+    const d=await api('/api/admin/user-search?q='+encodeURIComponent(q));
+    const ppl=(d&&d.people)||[];
+    if(!ppl.length){ box.innerHTML='<div class="p-2 small text-muted">Nikto sa nenašiel.</div>'; box.style.display='block'; return; }
+    box.innerHTML=ppl.map(p=>`<div class="p-2 small" style="cursor:pointer;border-bottom:1px solid #333" onclick="mkPick('${p.id}','${escJs(p.name)}')"><b>${escHtml(p.name)}</b> <span class="text-muted">${escHtml(p.email||'')}</span></div>`).join('');
+    box.style.display='block';
+  },250);
+}
+function mkPick(id,name){ _mkClient={id,name}; document.getElementById('mkSelected').textContent='✓ '+name; document.getElementById('mkSelected').style.display='block'; document.getElementById('mkResults').style.display='none'; document.getElementById('mkSearch').value=name; }
+function mkVariants(){
+  const p=_mkProducts[+document.getElementById('mkProd').value]; const v=(p&&p.variants)||{};
+  const sw=document.getElementById('mkSizeWrap'), cw=document.getElementById('mkColorWrap');
+  if(v.sizes){ sw.style.display='block'; document.getElementById('mkSize').innerHTML=v.sizes.map(s=>`<option>${s}</option>`).join(''); } else sw.style.display='none';
+  if(v.colors){ cw.style.display='block'; document.getElementById('mkColor').innerHTML=v.colors.map(c=>`<option>${c}</option>`).join(''); } else cw.style.display='none';
+}
+async function doMerchSale(){
+  const msg=document.getElementById('merchSaleMsg'); msg.className='alert d-none py-2 small';
+  if(!_mkClient){ msg.textContent='Vyber klienta.'; msg.className='alert alert-danger py-2 small'; return; }
+  const p=_mkProducts[+document.getElementById('mkProd').value]; if(!p){ msg.textContent='Vyber produkt.'; msg.className='alert alert-danger py-2 small'; return; }
+  const body={ client_id:_mkClient.id, product_id:p._id, qty:parseInt(document.getElementById('mkQty').value)||1, payment_method:document.getElementById('mkPay').value };
+  if(document.getElementById('mkSizeWrap').style.display!=='none') body.size=document.getElementById('mkSize').value;
+  if(document.getElementById('mkColorWrap').style.display!=='none') body.color=document.getElementById('mkColor').value;
+  const r=await api('/api/admin/merch-sale',{method:'POST',body:JSON.stringify(body)});
+  if(r&&r.ok){ msg.textContent=`✓ Predané: ${r.product}${r.size?' · '+r.size:''}${r.color?' · '+r.color:''} — ${eur(r.amount)} (${_mkClient.name})`; msg.className='alert alert-success py-2 small'; _mkClient=null; document.getElementById('mkSearch').value=''; document.getElementById('mkSelected').style.display='none'; loadOrders(); }
+  else { msg.textContent='Chyba: '+((r&&r.error)||'?'); msg.className='alert alert-danger py-2 small'; }
 }
 async function addProduct(){
   const msg=document.getElementById('prodMsg');msg.className='alert d-none py-2 small';

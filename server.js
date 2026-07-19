@@ -887,6 +887,20 @@ async function seedData() {
       console.log(`✅  ${n} hodín v štúdiu priradených Marekovi ako predvolenému trénerovi`);
     }
   }
+
+  // Merch: doplň tielko a tašku (varianty veľkosť/farba rieši variantsFor)
+  if(!(await q.one(db.products,{name:new RegExp('tielko','i')}))){
+    await q.insert(db.products,{cat:'Oblečenie', name:'Fusion tielko', emoji:'🎽',
+      desc:'Športové tielko Fusion Academy. Čierne alebo ružové. Veľkosti XS–XL.',
+      price:20, commission_rate:0.08, type:'product', active:true});
+    console.log('✅  Produkt „Fusion tielko" pridaný');
+  }
+  if(!(await q.one(db.products,{name:new RegExp('ta[šs]k','i')}))){
+    await q.insert(db.products,{cat:'Oblečenie', name:'Fusion taška', emoji:'👜',
+      desc:'Plátená taška Fusion Academy. Čierna, béžová alebo ružová.',
+      price:15, commission_rate:0.08, type:'product', active:true});
+    console.log('✅  Produkt „Fusion taška" pridaný');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1111,7 +1125,7 @@ async function trackPurchase(userId, amount){
 app.get('/api/shop/products', async(req,res)=>{
   const prods=await q.find(db.products,{active:true});
   prods.sort((a,b)=>a.cat?.localeCompare(b.cat)||a.name.localeCompare(b.name));
-  res.json(prods);
+  res.json(prods.map(p=>({...p, variants:variantsFor(p.name)})));
 });
 
 app.post('/api/shop/order', async(req,res)=>{
@@ -1129,7 +1143,10 @@ app.post('/api/shop/order', async(req,res)=>{
       if(!prod) continue;
       const subtotal=+(prod.price*item.qty).toFixed(2);
       total+=subtotal;
-      enriched.push({product_id:prod._id,product_name:prod.name,price:prod.price,qty:item.qty,subtotal,commission_rate:prod.commission_rate});
+      const vr=variantsFor(prod.name);
+      const size = (vr&&vr.sizes&&item.size&&vr.sizes.includes(item.size)) ? item.size : null;
+      const color = (vr&&vr.colors&&item.color&&vr.colors.includes(item.color)) ? item.color : null;
+      enriched.push({product_id:prod._id,product_name:prod.name,price:prod.price,qty:item.qty,subtotal,commission_rate:prod.commission_rate, size, color});
     }
     total=+total.toFixed(2);
     // ── Apply referral credit ─────────────────────────────────────────────────
@@ -1722,6 +1739,22 @@ const ACHIEVEMENTS = [
   {id:'merch_mikina', cat:'merch', item:'mikina', icon:'🧥', name:'Mikina FA', desc:'Kúpená mikina Fusion Academy'},
 ];
 const MERCH_KEYWORDS={tielko:/tielk/i, tricko:/tri[čc]k/i, taska:/ta[šs]k/i, mikina:/mikin/i};
+// Varianty merchu (veľkosti / farby) — podľa názvu produktu.
+const SIZES=['XS','S','M','L','XL','XXL'];
+function variantsFor(name){
+  const n=(name||'').toLowerCase();
+  if(/tielk/.test(n))  return { sizes:['XS','S','M','L','XL'], colors:['Čierna','Ružová'] };
+  if(/tri[čc]k/.test(n)) return { sizes:['XS','S','M','L','XL'], colors:['Čierna'] };
+  if(/ta[šs]k/.test(n))  return { colors:['Čierna','Béžová','Ružová'] };
+  if(/mikin/.test(n))  return { sizes:['S','M','L','XL','XXL'], colors:['Čierna'] };
+  if(/leggings|legín/.test(n)) return { sizes:['XS','S','M','L','XL'] };
+  return null;
+}
+// Popis variantu do textu (napr. „veľ. M · Ružová")
+function variantLabel(it){
+  const parts=[]; if(it&&it.size) parts.push('veľ. '+it.size); if(it&&it.color) parts.push(it.color);
+  return parts.length?(' ('+parts.join(' · ')+')'):'';
+}
 const CITY_BADGES = ['Detva','Zvolen','Banská Bystrica','Brezno'];
 // Mestá, v ktorých má klient aspoň 1 odchodenú hodinu (podľa lokácie hodiny)
 async function citiesVisitedOf(userId){
@@ -1889,7 +1922,25 @@ async function grantMerchFromOrder(order){
       await q.update(db.users,{_id:buyer._id},{$set:{merch_owned:[...owned]}});
       await q.insert(db.notifications,{user_id:buyer._id,type:'achievement',title:'🏅 Nový odznak za merch!',body:'Odomkla si nový odznak vo svojom profile. Pozri sa! ✨',read:false,created_at:nowISO()}).catch(()=>{});
     }
+    // Upozorni priateľov, že si niečo kúpil/a (bez anonymných a bez skrytých)
+    await notifyFriendsOfPurchase(buyer, order.items||[]);
   } catch(e){ console.error('grantMerchFromOrder:',e.message); }
+}
+// Priateľom kupujúceho pošli oznámenie, že si niečo kúpil (podpora komunity/predaja)
+async function notifyFriendsOfPurchase(buyer, items){
+  try{
+    if(!buyer || buyer.anonymous) return;
+    const label=(items||[]).map(i=>{
+      const nm=i.product_name||i.name||'produkt'; return nm+variantLabel(i);
+    }).filter(Boolean).slice(0,3).join(', ') || 'niečo z ponuky';
+    const rows=await q.find(db.friends,{users:buyer._id, status:'accepted'});
+    for(const f of rows){
+      const friendId=(f.users||[]).find(x=>x!==buyer._id); if(!friendId) continue;
+      await q.insert(db.notifications,{ user_id:friendId, type:'friend_purchase', from_id:buyer._id,
+        title:`🛍️ ${buyer.name} si niečo kúpil/a`, body:`${buyer.name}: ${label} — mrkni aj ty do e-shopu 💛`,
+        read:false, created_at:nowISO() }).catch(()=>{});
+    }
+  }catch(e){ console.error('notifyFriendsOfPurchase:', e.message); }
 }
 
 // Friend relationship helpers (single row per pair, sorted key)
@@ -2374,7 +2425,7 @@ app.get('/api/partner/leaderboard', auth, async(req,res)=>{
 app.get('/api/products', auth, async(req,res)=>{
   const prods=await q.find(db.products,{active:true});
   prods.sort((a,b)=>a.cat?.localeCompare(b.cat)||a.name.localeCompare(b.name));
-  res.json(prods);
+  res.json(prods.map(p=>({...p, variants:variantsFor(p.name)})));
 });
 
 app.put('/api/profile', auth, async(req,res)=>{
@@ -3447,6 +3498,42 @@ app.delete('/api/admin/transactions/:id', adminAuth, async(req,res)=>{
   await q.remove(db.commissions,{transaction_id:req.params.id},{multi:true});
   await q.remove(db.transactions,{_id:req.params.id});
   res.json({ok:true});
+});
+
+// Admin: predaj merchu klientovi (veľkosť/farba). Vytvorí zaplatenú objednávku →
+// odomkne merch odznak, pošle notifikácie kupujúcemu aj priateľom, zaráta províziu línie.
+app.post('/api/admin/merch-sale', adminAuth, async(req,res)=>{
+  try{
+    const client=await q.one(db.users,{_id:String(req.body.client_id||'')});
+    const prod=await q.one(db.products,{_id:String(req.body.product_id||'')});
+    if(!client) return res.status(404).json({error:'Klient nenájdený'});
+    if(!prod) return res.status(404).json({error:'Produkt nenájdený'});
+    const vr=variantsFor(prod.name);
+    const size=(vr&&vr.sizes&&vr.sizes.includes(req.body.size))?req.body.size:null;
+    const color=(vr&&vr.colors&&vr.colors.includes(req.body.color))?req.body.color:null;
+    if(vr&&vr.sizes&&!size) return res.status(400).json({error:'Vyber veľkosť'});
+    if(vr&&vr.colors&&!color) return res.status(400).json({error:'Vyber farbu'});
+    const qty=Math.max(1,Math.min(20,parseInt(req.body.qty)||1));
+    const method=['cash','card','transfer'].includes(req.body.payment_method)?req.body.payment_method:'cash';
+    const subtotal=+(prod.price*qty).toFixed(2);
+    const order_number='FA'+Date.now().toString(36).toUpperCase();
+    const order=await q.insert(db.orders,{ order_number, client_name:client.name, client_email:(client.email||'').toLowerCase(),
+      client_phone:client.phone||'', city:client.city||'',
+      items:[{product_id:prod._id, product_name:prod.name, price:prod.price, qty, subtotal, size, color, commission_rate:prod.commission_rate}],
+      total:subtotal, status:'paid', payment_method:method, sold_by:req.session.uid, manual:true,
+      created_at:nowISO(), paid_at:nowISO() });
+    // Tržba + provízia (sponzorovi klienta)
+    const tx=await q.insert(db.transactions,{ partner_id:client.sponsor_id||null, client_id:client._id, client_name:client.name,
+      product_id:prod._id, product_name:prod.name+variantLabel({size,color}), amount:subtotal, date:today(),
+      payment_method:method, notes:'Predaj merchu (admin)', month:today().slice(0,7), created_at:nowISO() });
+    if(client.sponsor_id){ await saveCommissions(tx._id, client.sponsor_id, subtotal).catch(()=>{}); await calcRank(client.sponsor_id).catch(()=>{}); }
+    // Odznak + notifikácie (kupujúci + priatelia) — cez spoločný hook
+    await grantMerchFromOrder(order);
+    await q.insert(db.notifications,{ user_id:client._id, type:'purchase', title:'🛍️ Nový nákup',
+      body:`${prod.name}${variantLabel({size,color})} — ${subtotal.toFixed(2)} €. Ďakujeme! 💛`, read:false, created_at:nowISO() }).catch(()=>{});
+    await auditLog(req,'merch_sale',client._id,{},{product:prod.name,size,color,amount:subtotal},'');
+    res.json({ ok:true, order_number, product:prod.name, size, color, amount:subtotal });
+  }catch(e){ res.status(500).json({error:e.message}); }
 });
 
 app.get('/api/admin/orders', adminAuth, async(req,res)=>{

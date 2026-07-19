@@ -308,7 +308,10 @@ function scrollToShop() {
 function addToCart(prod) {
   const existing = cart.find(c => c._id === prod._id);
   if (existing) existing.qty++;
-  else cart.push({ ...prod, qty:1 });
+  else {
+    const v=prod.variants||{};
+    cart.push({ ...prod, qty:1, size: v.sizes?v.sizes[0]:undefined, color: v.colors?v.colors[0]:undefined });
+  }
   updateCartUI();
   // Visual feedback on button
   const btn = document.getElementById('btn-' + prod._id);
@@ -355,11 +358,15 @@ function updateCartUI() {
           </div>
           <button class="btn-close btn-close-white btn-close-sm ms-2" onclick="removeFromCart('${item._id}')" style="font-size:.6rem;filter:invert(1) grayscale(100%) brightness(2)"></button>
         </div>
-        ${isApparel(item)?`<div class="mt-2 d-flex align-items-center gap-2">
-          <label class="small text-muted mb-0">Veľkosť:</label>
+        ${(item.variants&&(item.variants.sizes||item.variants.colors))?`<div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
+          ${item.variants.sizes?`<label class="small text-muted mb-0">Veľkosť:</label>
           <select class="form-select form-select-sm" style="width:auto" onchange="setSize('${item._id}',this.value)">
-            ${['XS','S','M','L','XL','XXL'].map(s=>`<option${(item.size||'M')===s?' selected':''}>${s}</option>`).join('')}
-          </select>
+            ${item.variants.sizes.map(s=>`<option${item.size===s?' selected':''}>${s}</option>`).join('')}
+          </select>`:''}
+          ${item.variants.colors?`<label class="small text-muted mb-0">Farba:</label>
+          <select class="form-select form-select-sm" style="width:auto" onchange="setColor('${item._id}',this.value)">
+            ${item.variants.colors.map(c=>`<option${item.color===c?' selected':''}>${c}</option>`).join('')}
+          </select>`:''}
         </div>`:''}
         <div class="d-flex align-items-center justify-content-between mt-2">
           <div class="d-flex align-items-center gap-2">
@@ -406,6 +413,7 @@ function goCheckout() {
   }
 }
 function setSize(id,size){ const it=cart.find(c=>c._id===id); if(it) it.size=size; }
+function setColor(id,color){ const it=cart.find(c=>c._id===id); if(it) it.color=color; }
 
 function goBack() { showStep('cart'); }
 
@@ -428,10 +436,10 @@ async function submitOrder() {
   if (!name || !email) { errEl.textContent = 'Meno a email sú povinné'; errEl.classList.remove('d-none'); return; }
   if (!cart.length) { errEl.textContent = 'Košík je prázdny'; errEl.classList.remove('d-none'); return; }
 
-  const items = cart.map(c => ({ product_id: c._id, qty: c.qty, size: isApparel(c)?(c.size||'M'):undefined }));
-  // Veľkosti pripoj aj do poznámky (istota pre admina)
-  const sizeNote = cart.filter(isApparel).map(c=>`${c.name}: ${c.size||'M'}`).join(', ');
-  const fullNotes = [notes, sizeNote?('Veľkosti — '+sizeNote):''].filter(Boolean).join(' | ');
+  const items = cart.map(c => ({ product_id: c._id, qty: c.qty, size: c.size||undefined, color: c.color||undefined }));
+  // Varianty pripoj aj do poznámky (istota pre admina)
+  const varNote = cart.filter(c=>c.size||c.color).map(c=>`${c.name}: ${[c.size&&('veľ. '+c.size), c.color].filter(Boolean).join(' · ')}`).join(', ');
+  const fullNotes = [notes, varNote?('Varianty — '+varNote):''].filter(Boolean).join(' | ');
   const useCredit = pay==='credit';
   const payMethod = useCredit ? 'referral_credit' : pay;
   try {
