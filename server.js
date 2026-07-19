@@ -5235,8 +5235,8 @@ async function trainerMonthStats(month){
     // skutočný inštruktor termínu: override (kto sa prihlásil/koho admin nastavil) inak štandardný
     const ins=(insOverride[b.class_id+'|'+d]?.name) || cls?.instructor || '—';
     const s=stats[ins]=stats[ins]||{instructor:ins, sessions:new Set(), attendances:0, revenue:0, newClients:new Set(), fullClasses:0};
-    if(b.status==='cancelled'||b.status==='no_show') continue;
-    if(['attended','confirmed'].includes(b.status)){
+    // Zárobok trénera ide len z ABSOLVOVANÝCH hodín (potvrdených), nie z rezervácií vopred.
+    if(b.status==='attended'){
       const sk=ins+'|'+b.class_id+'|'+d; s.sessions.add(sk.split('|').slice(1).join('|'));
       sessionAtt[sk]=(sessionAtt[sk]||0)+1;
       s.attendances++; s.revenue+=(+cls?.price||10);
@@ -7234,7 +7234,7 @@ app.post('/api/attendance/manual-booking', trainerAuth, async(req,res)=>{
       class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
       day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
       user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||'',
-      booking_date:bdate, status:'confirmed', access_method:method,
+      booking_date:bdate, status:'attended', attended_at:nowISO(), attended_by:req.trainerUser._id, access_method:method,
       notes: note || methodNote,
       manual: true, manual_by: req.trainerUser._id, created_at:nowISO()
     });
@@ -7405,6 +7405,48 @@ app.delete('/api/attendance/booking/:id', trainerAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Pripíše ABSOLVOVANÚ hodinu klientovi: +1 návšteva, míľnik/odznaky, uvítací e-mail po 1. hodine.
+// Volá sa až keď tréner POTVRDÍ účasť (QR alebo „potvrdiť hodinu"). Vstupy sa NEdedukujú
+// (tie sa strhli už pri rezervácii). Vráti nový počet návštev.
+async function creditAttendance(u){
+  if(!u) return 0;
+  const newCount=(u.visit_count||0)+1;
+  const upd={visit_count:newCount};
+  if(u.winback_sent) upd.winback_sent=false;
+  try{ applyLeadTrial(upd, u); }catch(e){}
+  await q.update(db.users,{_id:u._id},{$set:upd});
+  const notifUid = u.parent_id || u._id;
+  const milestone = LOYALTY_MILESTONES.find(m=>m.visits===newCount);
+  if(milestone){
+    await q.insert(db.notifications,{user_id:notifUid,type:'loyalty',title:`🏆 Nový odznak: ${milestone.label}`,
+      body:`Gratulujeme! ${newCount} návštev — ${milestone.label}.`,read:false,created_at:nowISO()}).catch(()=>{});
+  }
+  if(!u.is_child) sendFirstClassEmail(u._id).catch(()=>{});
+  checkNewAchievements(u._id).catch(()=>{}); // odznaky za návštevy/mestá + notif priateľom
+  return newCount;
+}
+
+// Tréner/admin: POTVRDIŤ HODINU ako absolvovanú — všetkým „confirmed" na daný termín
+// pripíše návštevu + body (a označí attended). Idempotentné (attended sa preskočia).
+app.post('/api/attendance/confirm-session', trainerAuth, async(req,res)=>{
+  try{
+    const cls=await q.one(db.classes,{_id:String(req.body.class_id||'')});
+    if(!cls) return res.status(404).json({error:'Hodina nenájdená'});
+    const date=/^\d{4}-\d{2}-\d{2}$/.test(req.body.date||'') ? req.body.date : displayNextDateForDay(cls.day_of_week);
+    const rows=await q.find(db.bookings,{class_id:cls._id, booking_date:date, status:'confirmed'});
+    let credited=0;
+    for(const b of rows){
+      await q.update(db.bookings,{_id:b._id},{$set:{status:'attended', attended_at:nowISO(), attended_by:req.trainerUser._id}});
+      if(!b.is_child_booking && b.user_id){
+        const u=await q.one(db.users,{_id:b.user_id});
+        if(u){ await creditAttendance(u); credited++; }
+      } else credited++;
+    }
+    await auditLog(req,'confirm_session',cls._id,{date},{credited},'');
+    res.json({ ok:true, credited, date, class_name:cls.name });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ─── QR CHECK-IN ─────────────────────────────────────────────────────────────
 // POST /api/attendance/qr-checkin  { qr_data: "FA:userId", class_id }
 // Returns member info + books them into the class
@@ -7430,10 +7472,13 @@ app.post('/api/attendance/qr-checkin', trainerAuth, async(req,res)=>{
       const bdate = displayNextDateForDay(cls.day_of_week);
       const exists = await q.one(db.bookings,{class_id,user_id:u._id,booking_date:bdate,status:{$ne:'cancelled'}});
       if(exists){
-        // Mark physical attendance on the pre-existing booking
+        // Mark physical attendance na existujúcej rezervácii + pripíš návštevu/body (ak už nebola attended)
+        const already = exists.status==='attended';
         await q.update(db.bookings,{_id:exists._id},{$set:{status:'attended',attended_at:nowISO(),attended_by:req.trainerUser._id}});
-        if(!u.is_child) sendFirstClassEmail(u._id).catch(()=>{});
-        return res.json({ok:true, user:userData, booking:{existing:true, attended:true, booking_date:bdate, class_name:cls.name}});
+        let vc = u.visit_count||0;
+        if(!already && !exists.is_child_booking){ vc = await creditAttendance(u); }
+        else if(!u.is_child) sendFirstClassEmail(u._id).catch(()=>{});
+        return res.json({ok:true, user:{...userData, visit_count:vc}, booking:{existing:true, attended:true, booking_date:bdate, class_name:cls.name}});
       }
       // Determine access type (first free class governed by free_class_used only)
       const hasMem = mem && mem.status === 'active';
@@ -7714,22 +7759,16 @@ app.post('/api/bookings', auth, async(req,res)=>{
       booked_by:parent._id, booked_by_name:parent.name, is_child_booking:isChild, child_name:isChild?u.name:null,
       booking_date:bdate, status:'confirmed', notes:notes||'', created_at:nowISO()
     });
-    // Increment visit count, mark free class used after first booking
-    const newCount = (u.visit_count || 0) + 1;
-    const userUpd = {visit_count: newCount};
+    // POZOR: rezervácia sama NEpripočíta návštevu ani body — pripíšu sa až keď tréner
+    // POTVRDÍ absolvovanie hodiny (QR alebo „potvrdiť hodinu"). Tu len spotrebuj 1. hodinu zdarma
+    // (rezervácia miesta) a resetni winback príznak.
+    const userUpd = {};
     if(!u.free_class_used) userUpd.free_class_used = true;
-    if(u.winback_sent) userUpd.winback_sent = false; // came back → allow a future win-back
-    await q.update(db.users,{_id:u._id},{$set: userUpd});
-    // Notifications + emails go to the parent (child has no login of its own)
+    if(u.winback_sent) userUpd.winback_sent = false;
+    if(Object.keys(userUpd).length) await q.update(db.users,{_id:u._id},{$set: userUpd});
     const notifUid = parent._id;
     const who = isChild ? `${u.name}: ` : '';
     await q.insert(db.notifications,{user_id:notifUid,type:'booking',title:`Rezervácia potvrdená ✅`,body:`${who}${cls.name} – ${bdate} o ${cls.time_start}`,read:false,created_at:nowISO()});
-    // Check if a loyalty milestone was just crossed
-    const milestone = LOYALTY_MILESTONES.find(m => m.visits === newCount);
-    if (milestone) {
-      await q.insert(db.notifications,{user_id:notifUid,type:'loyalty',title:`🏆 Nový odznak: ${milestone.label}`,body:`${who}Gratulujeme! ${newCount} návštev. ${milestone.reward ? 'Odmena: '+milestone.reward : ''}`,read:false,created_at:nowISO()});
-      if(parent.email) sendMail(parent.email,`🏆 Nový odznak: ${milestone.label}`,`<h2>${milestone.badge} Gratulujeme, ${u.name}!</h2><p>Práve ${isChild?'dosiahlo dieťa':'si dosiahol'} míľnik: <b>${newCount} návštev</b> – ${milestone.label}!</p>${milestone.reward?`<p>🎁 Odmena: <b>${milestone.reward}</b></p>`:''}<p>Ďakujeme, že ste súčasťou Fusion Academy!</p><p><i>Fusion Academy tím 💃</i></p>`).catch(()=>{});
-    }
     // NOTE: the thank-you + membership offer email is sent AFTER the client actually
     // attends their first class (see runDailyJobs → "Post-first-class follow-up"),
     // not here at booking time, so we don't thank them before they've been.
@@ -7740,7 +7779,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
     } else if(parent.email){
       sendMail(parent.email,`Rezervácia potvrdená – ${cls.name}`,`<h2>Rezervácia potvrdená ✅</h2><p>Ahoj <b>${parent.name}</b>,</p><p>Rezervácia ${isChild?`pre <b>${u.name}</b> `:''}na hodinu <b>${cls.name}</b> bola úspešne zaznamenaná.</p><ul><li>Dátum: <b>${bdate}</b></li><li>Čas: <b>${cls.time_start}–${cls.time_end||''}</b></li><li>Miesto: <b>${cls.location}</b></li></ul><p>Tešíme sa na vás!</p><p><i>Fusion Academy</i></p>`).catch(()=>{});
     }
-    res.json({ok:true, id:booking._id, class_name:cls.name, booking_date:bdate, visit_count:newCount, for_child:isChild?u.name:null});
+    res.json({ok:true, id:booking._id, class_name:cls.name, booking_date:bdate, visit_count:u.visit_count||0, for_child:isChild?u.name:null});
   } catch(e){res.status(500).json({error:e.message});}
 });
 

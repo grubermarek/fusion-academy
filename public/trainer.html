@@ -397,6 +397,7 @@ select.form-control option{background:var(--dark3)}
         <div class="attendance-header" id="attHeader"></div>
 
         <!-- Attendee list + add section -->
+        <button onclick="confirmTrainerSession()" style="width:100%;margin-bottom:12px;background:linear-gradient(135deg,#4ade80,#22a559);border:none;color:#0c2a14;border-radius:12px;padding:13px;font-weight:800;cursor:pointer;font-size:.92rem"><i class="bi bi-check2-circle"></i> Potvrdiť hodinu ako absolvovanú (pripísať návštevy + body)</button>
         <div class="attendee-list">
           <div class="attendee-list-header">
             <span class="attendee-list-title">👥 Prihlásení účastníci</span>
@@ -926,6 +927,12 @@ async function loadTrainerInstructor(classId){
         ? `<span style="color:#4ade80;font-weight:700">✓ učíš ty</span>`
         : `<button onclick="claimTrainerIns('${classId}','${si.date}')" style="background:rgba(74,222,128,.14);border:1px solid #4ade80;color:#4ade80;border-radius:8px;padding:4px 10px;font-size:.76rem;font-weight:700;cursor:pointer">✋ učím ja</button>`);
   el.innerHTML=`<span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">🎓 Učí: <b style="color:var(--cream)">${esc(si.instructor||'—')}</b>${si.overridden?' <span style="color:#C9A84C;font-size:.72rem">(zmenené)</span>':''} ${ctrl}</span>`;
+}
+async function confirmTrainerSession(){
+  if(!_currentClassId) return;
+  if(!confirm('Potvrdiť túto hodinu ako ABSOLVOVANÚ?\n\nVšetkým prihláseným sa pripíše návšteva + body a hodina sa započíta do tvojej výplaty.')) return;
+  const r=await api('/api/attendance/confirm-session',{method:'POST',body:{class_id:_currentClassId}});
+  if(r&&r.ok){ toast('✅ Hodina potvrdená · pripísaných '+r.credited+' návštev'); loadAttendees(_currentClassId); loadSchedule&&loadSchedule(); } else toast(r?.error||'Chyba', true);
 }
 async function claimTrainerIns(classId, date){
   const r=await api('/api/attendance/session-instructor',{method:'POST',body:{class_id:classId, date}});

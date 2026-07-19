@@ -443,6 +443,9 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
             <div class="small mt-1" id="attInstructor" style="color:#C9A84C"></div>
           </div>
           <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-sm" style="background:#4ade80;color:#0c2a14;border:none;font-weight:700" onclick="doConfirmSession()">
+              <i class="bi bi-check2-circle me-1"></i>Potvrdiť hodinu (absolvované)
+            </button>
             <button class="btn btn-sm" style="background:rgba(201,168,76,.15);color:#C9A84C;border:1px solid rgba(201,168,76,.35)" onclick="openAttQr()">
               <i class="bi bi-qr-code-scan me-1"></i>Skenovať QR
             </button>
@@ -4125,6 +4128,13 @@ async function openAttClass(classId){
 function closeAttDetail(){
   document.getElementById('attDetailPanel').style.display = 'none';
   _attSelectedClass = null;
+}
+async function doConfirmSession(){
+  if(!_attSelectedClass) return;
+  if(!confirm('Potvrdiť túto hodinu ako ABSOLVOVANÚ?\n\nVšetkým prihláseným sa pripíše návšteva + body a hodina sa započíta do výplaty trénera.')) return;
+  const r=await api('/api/attendance/confirm-session',{method:'POST',body:JSON.stringify({class_id:_attSelectedClass._id, date:_attDateStr()})});
+  if(r&&r.ok){ showToast('Hodina potvrdená · pripísaných '+r.credited+' návštev ✓','success'); openAttClass(_attSelectedClass._id); }
+  else showToast('Chyba: '+(r?.error||'?'),'error');
 }
 
 // ── Tréner hodiny (per termín) ────────────────────────────────────────────────

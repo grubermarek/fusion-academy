@@ -212,6 +212,11 @@ async function renderDay(){
   }).join('');
 }
 const _insBy={};
+async function confirmSession(classId, dateStr){
+  if(!confirm('Potvrdiť túto hodinu ako ABSOLVOVANÚ?\n\nVšetkým prihláseným sa pripíše návšteva + body a hodina sa započíta do tvojej výplaty.')) return;
+  const r=await api('/api/attendance/confirm-session',{method:'POST',body:{class_id:classId, date:dateStr}});
+  if(r&&r.ok){ toast('✅ Hodina potvrdená · pripísaných '+r.credited+' návštev'); renderDay(); } else toast(r?.error||'Chyba', true);
+}
 async function claimSession(classId, dateStr){
   const r=await api('/api/attendance/session-instructor',{method:'POST',body:{class_id:classId, date:dateStr}});
   if(r&&r.ok){ toast('✅ Prihlásený/á ako tréner hodiny'); renderDay(); } else toast(r?.error||'Chyba', true);
@@ -260,6 +265,7 @@ function renderAtt(att, classId, dateStr){
   const cls = _schedule.find(x=>x._id===classId);
   const defCity = cls?.location || 'all';
   return rows + `
+    <button onclick="confirmSession('${classId}','${dateStr}')" style="width:100%;margin:6px 0 12px;background:linear-gradient(135deg,#4ade80,#22a559);border:none;color:#0c2a14;border-radius:10px;padding:11px;font-weight:800;cursor:pointer;font-size:.9rem"><i class="bi bi-check2-circle"></i> Potvrdiť hodinu ako absolvovanú (pripísať návštevy + body)</button>
     <div class="add-wrap">
       <div class="add-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span><i class="bi bi-person-plus"></i> Prihlásiť klientku na túto hodinu</span><button onclick="openBcQr('${classId}','${dateStr}')" style="background:rgba(201,168,76,.15);border:1px solid #C9A84C;color:#C9A84C;border-radius:8px;padding:5px 11px;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap"><i class="bi bi-qr-code-scan"></i> Skenovať QR</button></div>
       <div class="picker-controls">
