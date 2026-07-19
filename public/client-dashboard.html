@@ -1701,7 +1701,7 @@ function renderCelebrate(){
   </div>`;
 }
 async function congratulate(id){
-  const r=await api('/api/birthday/congratulate',{method:'POST',body:JSON.stringify({to_id:id})});
+  const r=await api('/api/birthday/congratulate',{method:'POST',body:{to_id:id}});
   if(r&&r.ok){
     // aktualizuj lokálne dáta a prekresli
     const b=(_spotData.birthdays||[]).find(x=>x.id===id);
