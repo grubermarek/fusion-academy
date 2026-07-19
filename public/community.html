@@ -941,18 +941,21 @@ async function likeComment(pid, cid){
   const r=await fetch('/api/feed/'+pid+'/comments/'+cid+'/like',{method:'POST',credentials:'include'}).then(x=>x.json()).catch(()=>null);
   patchPost(pid, r&&r.post);
 }
+// Riadok používateľa s fotkou (cez /api/avatar/:id), fallback na farebnú iniciálu
+function likerRow(u){
+  const ini=(u.name||'?').charAt(0).toUpperCase();
+  return `<a href="/u/${u.id}"><img src="/api/avatar/${u.id}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="width:26px;height:26px;border-radius:50%;object-fit:cover"><span style="display:none;width:26px;height:26px;border-radius:50%;background:${stringToColor(u.id)};color:#fff;align-items:center;justify-content:center;font-size:.7rem;font-weight:700">${escHtml(ini)}</span> ${escHtml(u.name)}</a>`;
+}
 function likersModal(title, people){
   const ov=document.createElement('div'); ov.className='likers-ov';
   ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
   ov.innerHTML=`<div class="likers-box"><h4>${title}<button onclick="this.closest('.likers-ov').remove()" style="background:none;border:none;color:#888;font-size:1.3rem;cursor:pointer">×</button></h4>${
-    people.length?people.map(u=>`<a href="/u/${u.id}"><span style="width:26px;height:26px;border-radius:50%;background:${stringToColor(u.id)};color:#fff;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700">${(u.name||'?').charAt(0).toUpperCase()}</span> ${escHtml(u.name)}</a>`).join(''):'<div style="padding:16px;color:#888">Zatiaľ nikto.</div>'}</div>`;
+    people.length?people.map(likerRow).join(''):'<div style="padding:16px;color:#888">Zatiaľ nikto.</div>'}</div>`;
   document.body.appendChild(ov);
 }
 function showLikers(pid){
   const p=_feedById[pid]; if(!p) return;
-  const people=[]; const seen=new Set();
-  p.reactions.forEach(r=>r.likers.forEach(u=>{ if(!seen.has(u.id)){ seen.add(u.id); people.push({...u, emoji:r.emoji}); } }));
-  const grouped=p.reactions.filter(r=>r.count>0).map(r=>`<div style="padding:4px 16px;color:#888;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em">${r.emoji} ${r.count}</div>`+r.likers.map(u=>`<a href="/u/${u.id}"><span style="width:26px;height:26px;border-radius:50%;background:${stringToColor(u.id)};color:#fff;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700">${(u.name||'?').charAt(0).toUpperCase()}</span> ${escHtml(u.name)}</a>`).join('')).join('');
+  const grouped=p.reactions.filter(r=>r.count>0).map(r=>`<div style="padding:4px 16px;color:#888;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em">${r.emoji} ${r.count}</div>`+r.likers.map(likerRow).join('')).join('');
   const ov=document.createElement('div'); ov.className='likers-ov'; ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
   ov.innerHTML=`<div class="likers-box"><h4>Kto reagoval<button onclick="this.closest('.likers-ov').remove()" style="background:none;border:none;color:#888;font-size:1.3rem;cursor:pointer">×</button></h4>${grouped||'<div style="padding:16px;color:#888">Zatiaľ nikto.</div>'}</div>`;
   document.body.appendChild(ov);
