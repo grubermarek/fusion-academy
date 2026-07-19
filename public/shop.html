@@ -62,7 +62,9 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
 .form-control,.form-select{background:var(--dark-3)!important;border:1px solid var(--gold-border)!important;color:var(--cream)!important;}
 .form-control,.form-select,.form-control::placeholder{}
 .form-control{color:#F5EDD6!important;font-weight:500;}
-.form-control::placeholder{color:rgba(234,227,213,0.62)!important;}
+.form-control::placeholder{color:rgba(234,227,213,0.75)!important;}
+.form-select{color:#F5EDD6!important;font-weight:500;}
+#step-checkout label,#step-checkout .form-check-label{color:var(--cream);}
 .form-control:focus,.form-select:focus{border-color:var(--gold)!important;box-shadow:0 0 0 2px rgba(201,162,76,0.15)!important;}
 .form-label{color:var(--cream);}
 .form-text{color:var(--text-muted)!important;}
@@ -207,8 +209,8 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
       <div class="mb-2">
         <label class="form-label small fw-semibold">Doručenie</label>
         <div class="d-flex flex-column gap-1">
-          <label class="d-flex align-items-center gap-2" style="cursor:pointer"><input type="radio" name="co-delivery" value="pickup" checked onchange="toggleShipping()"> 🏫 Vyzdvihnem osobne na hodine / recepcii</label>
-          <label class="d-flex align-items-center gap-2" style="cursor:pointer"><input type="radio" name="co-delivery" value="post" onchange="toggleShipping()"> 📦 Pošlite mi to poštou</label>
+          <label class="d-flex align-items-center gap-2" style="cursor:pointer;color:var(--cream);font-weight:500"><input type="radio" name="co-delivery" value="pickup" checked onchange="toggleShipping()"> 🏫 Vyzdvihnem osobne na hodine / recepcii</label>
+          <label class="d-flex align-items-center gap-2" style="cursor:pointer;color:var(--cream);font-weight:500"><input type="radio" name="co-delivery" value="post" onchange="toggleShipping()"> 📦 Pošlite mi to poštou</label>
         </div>
         <div id="shippingForm" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--gold-border);border-radius:.7rem;background:var(--dark-2)">
           <div class="mb-2"><label class="form-label small fw-semibold">Meno a priezvisko *</label><input type="text" class="form-control" id="ship-name" placeholder="Jana Nováková"></div>
