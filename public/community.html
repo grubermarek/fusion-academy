@@ -855,12 +855,10 @@ function renderSystemPost(p, time){
   const comments = (p.comments||[]).map(c => `<div class="pcomment"><b>${escHtml(c.name)}</b> ${escHtml(c.text)}
      <span class="cmt-like ${c.liked?'on':''}" onclick="likeComment('${p.id}','${c.id}')">❤️${c.likes?' '+c.likes:''}</span>${c.likes?` <span class="cmt-who" onclick="showCmtLikers('${p.id}','${c.id}')">kto</span>`:''}</div>`).join('');
   const actors=(p.event_actors||[]);
-  const emoji=(p.text||'🤝').trim().charAt(0);
-  const avatar = p.event_avatar
-    ? `<img src="${p.event_avatar}" style="width:46px;height:46px;border-radius:50%;object-fit:cover;border:2px solid var(--gold)">`
-    : `<div style="width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.4rem;background:rgba(201,168,76,.15);border:1px solid var(--gold-border,#332a18)">${emoji}</div>`;
+  // Hlavička komunitného oznamu = naše logo (fotka konkrétneho člena je v štítku nižšie)
+  const avatar = `<img src="/logo-mark.png" alt="Komunita" style="width:46px;height:46px;border-radius:50%;object-fit:contain;border:2px solid var(--gold);background:#161512;padding:3px">`;
   const chips = actors.length
-    ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${actors.map(a=>`<a href="/u/${a.id}" style="text-decoration:none"><span style="display:inline-flex;align-items:center;gap:4px;background:rgba(201,168,76,.12);border:1px solid var(--gold-border,#332a18);color:var(--gold);border-radius:999px;padding:3px 10px;font-size:.78rem;font-weight:700">👤 ${escHtml(a.name)}</span></a>`).join('')}</div>`
+    ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${actors.map(a=>`<a href="/u/${a.id}" style="text-decoration:none"><span style="display:inline-flex;align-items:center;gap:6px;background:rgba(201,168,76,.12);border:1px solid var(--gold-border,#332a18);color:var(--gold);border-radius:999px;padding:3px 10px 3px 4px;font-size:.78rem;font-weight:700"><img src="/api/avatar/${a.id}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'👤'}))" style="width:20px;height:20px;border-radius:50%;object-fit:cover">${escHtml(a.name)}</span></a>`).join('')}</div>`
     : '';
   return `<div class="post" data-id="${p.id}" style="background:linear-gradient(135deg,rgba(201,168,76,.07),rgba(201,168,76,.02));border:1px solid var(--gold-border,#3a2f1a)">
     <div class="post-head" style="align-items:center">
