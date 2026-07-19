@@ -3519,7 +3519,7 @@ app.post('/api/admin/merch-sale', adminAuth, async(req,res)=>{
     const method=['cash','card','transfer'].includes(req.body.payment_method)?req.body.payment_method:'cash';
     const subtotal=+(prod.price*qty).toFixed(2);
     const order_number='FA'+Date.now().toString(36).toUpperCase();
-    const order=await q.insert(db.orders,{ order_number, client_name:client.name, client_email:(client.email||'').toLowerCase(),
+    const order=await q.insert(db.orders,{ order_number, user_id:client._id, client_name:client.name, client_email:(client.email||'').toLowerCase(),
       client_phone:client.phone||'', city:client.city||'',
       items:[{product_id:prod._id, product_name:prod.name, price:prod.price, qty, subtotal, size, color, commission_rate:prod.commission_rate}],
       total:subtotal, status:'paid', payment_method:method, sold_by:req.session.uid, manual:true,
@@ -3543,6 +3543,14 @@ app.get('/api/admin/orders', adminAuth, async(req,res)=>{
   const filter=status?{status}:{};
   const orders=await q.find(db.orders,filter);
   orders.sort((a,b)=>b.created_at.localeCompare(a.created_at));
+  // Doplň user_id (na preklik na profil) — z objednávky alebo podľa e-mailu
+  const byEmail={};
+  for(const o of orders){
+    if(o.user_id) continue;
+    const em=(o.client_email||'').toLowerCase(); if(!em) continue;
+    if(!(em in byEmail)){ const u=await q.one(db.users,{email:em}); byEmail[em]=u?u._id:null; }
+    o.user_id=byEmail[em];
+  }
   res.json(orders);
 });
 
