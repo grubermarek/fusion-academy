@@ -180,19 +180,29 @@ async function renderDay(){
     host.innerHTML = `<div class="empty-day"><div class="e-emoji">🌙</div>V ${DAYS_FULL[dow].toLowerCase()} nie sú naplánované žiadne Zumba hodiny.</div>`;
     return;
   }
-  // Load date-specific attendees for each class in parallel
+  // Load date-specific attendees + instructor for each class in parallel
   const lists = await Promise.all(classes.map(c=>api(`/api/attendance/class/${c._id}?date=${dateStr}`)));
+  const insList = await Promise.all(classes.map(c=>api(`/api/attendance/session-instructor?class_id=${c._id}&date=${dateStr}`)));
   host.innerHTML = classes.map((c,i)=>{
     const att = Array.isArray(lists[i])?lists[i]:[];
     const cap = c.capacity||0;
     const pct = cap? Math.round(att.length/cap*100):0;
     const col = pct>=90?'#f87171':pct>=60?'#fbbf24':'#4ade80';
+    const si = insList[i]||{};
+    _insBy[c._id]=si;
+    const teaches = si.instructor_id && si.viewer_id && si.instructor_id===si.viewer_id;
+    const insCtrl = si.viewer_is_admin
+      ? `<button onclick="event.stopPropagation();openInsPick('${c._id}','${dateStr}')" style="background:rgba(201,168,76,.14);border:1px solid #C9A84C;color:#C9A84C;border-radius:8px;padding:3px 9px;font-size:.72rem;font-weight:700;cursor:pointer">✏️ zmeniť</button>`
+      : (teaches
+          ? `<span style="color:#4ade80;font-size:.72rem;font-weight:700">✓ učíš ty</span>`
+          : `<button onclick="event.stopPropagation();claimSession('${c._id}','${dateStr}')" style="background:rgba(74,222,128,.14);border:1px solid #4ade80;color:#4ade80;border-radius:8px;padding:3px 9px;font-size:.72rem;font-weight:700;cursor:pointer">✋ učím ja</button>`);
     return `<div class="cls" id="cls-${c._id}" style="animation-delay:${i*40}ms">
       <div class="cls-head" onclick="toggleCls('${c._id}')">
         <div class="cls-emoji">${c.emoji||'💃'}</div>
         <div class="cls-info">
           <div class="cls-name">${esc(c.name)}</div>
           <div class="cls-meta"><span>⏰ ${c.time_start||''}${c.time_end?'–'+c.time_end:''}</span><span>📍 ${esc(c.location||'')}</span></div>
+          <div class="cls-meta" style="margin-top:4px"><span>🎓 <b style="color:var(--cream)">${esc(si.instructor||'—')}</b>${si.overridden?' <span style="color:#C9A84C;font-size:.68rem">(zmenené)</span>':''}</span> ${insCtrl}</div>
         </div>
         <div class="cls-count"><div class="num" style="color:${col}">${att.length}${cap?'/'+cap:''}</div><div class="cap">prihlásených</div></div>
         <i class="bi bi-chevron-down cls-chevron"></i>
@@ -200,6 +210,32 @@ async function renderDay(){
       <div class="cls-body" id="body-${c._id}">${renderAtt(att, c._id, dateStr)}</div>
     </div>`;
   }).join('');
+}
+const _insBy={};
+async function claimSession(classId, dateStr){
+  const r=await api('/api/attendance/session-instructor',{method:'POST',body:{class_id:classId, date:dateStr}});
+  if(r&&r.ok){ toast('✅ Prihlásený/á ako tréner hodiny'); renderDay(); } else toast(r?.error||'Chyba', true);
+}
+async function openInsPick(classId, dateStr){
+  if(!_trainers){ _trainers=await api('/api/attendance/trainers')||[]; }
+  const cur=_insBy[classId]||{};
+  let m=document.getElementById('insModal');
+  if(!m){ m=document.createElement('div'); m.id='insModal'; m.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:16px'; document.body.appendChild(m); }
+  m.onclick=e=>{ if(e.target===m) m.remove(); };
+  m.innerHTML=`<div style="background:#161512;border:1px solid rgba(201,168,76,.4);border-radius:16px;max-width:380px;width:100%;padding:18px;color:#EAE3D5">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="color:#C9A84C">🎓 Tréner hodiny</b><button onclick="document.getElementById('insModal').remove()" style="background:none;border:none;color:#999;font-size:1.3rem;cursor:pointer">✕</button></div>
+    <div style="font-size:.8rem;color:rgba(234,227,213,.6);margin-bottom:10px">Zmena platí pre tento termín (${esc(dateStr)}), kým ju niekto zase nezmení.</div>
+    <div style="display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow-y:auto">
+      ${_trainers.map(t=>`<button onclick="setSessionIns('${classId}','${dateStr}','${t.id}')" style="text-align:left;background:${cur.instructor_id===t.id?'rgba(201,168,76,.18)':'rgba(255,255,255,.04)'};border:1px solid ${cur.instructor_id===t.id?'#C9A84C':'var(--border,#333)'};color:#EAE3D5;border-radius:10px;padding:9px 12px;cursor:pointer">${cur.instructor_id===t.id?'✓ ':''}${esc(t.name)}</button>`).join('')}
+    </div>
+    <button onclick="setSessionIns('${classId}','${dateStr}','')" style="width:100%;margin-top:10px;background:none;border:1px solid #555;color:#999;border-radius:10px;padding:8px;cursor:pointer;font-size:.82rem">↩︎ Vrátiť pôvodného trénera</button>
+  </div>`;
+}
+let _trainers=null;
+async function setSessionIns(classId, dateStr, instructorId){
+  const r=await api('/api/attendance/session-instructor',{method:'POST',body:{class_id:classId, date:dateStr, instructor_id:instructorId}});
+  document.getElementById('insModal')?.remove();
+  if(r&&r.ok){ toast('✅ Tréner hodiny nastavený'); renderDay(); } else toast(r?.error||'Chyba', true);
 }
 
 function renderAtt(att, classId, dateStr){

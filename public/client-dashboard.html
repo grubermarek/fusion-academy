@@ -867,17 +867,38 @@ function renderBookings(bookings){
   active.forEach(b=>{ if(b.class_id&&b.booking_date) _bookedMap[b.class_id+'|'+b.booking_date]=b._id; });
   if(typeof _allClasses!=='undefined' && _allClasses.length) renderClassCards();
   if(!active.length){el.innerHTML=`<div class="empty-state"><i class="bi bi-calendar-x"></i>Zatiaľ žiadne rezervácie – zarezervuj si hodinu hore!</div>`;return;}
-  el.innerHTML=active.map(b=>`
-    <div class="booking-item">
+  el.innerHTML=active.map(b=>{
+    const insHtml = b.instructor && b.instructor!=='—'
+      ? (b.instructor_id
+          ? `<a href="/u/${b.instructor_id}" style="color:var(--gold);text-decoration:none;font-weight:600">${escHtml(b.instructor)}</a>`
+          : `<span style="color:var(--gold)">${escHtml(b.instructor)}</span>`)
+      : '';
+    const atts=(b.attendees||[]);
+    const chips=atts.slice(0,14).map(a=>{
+      const ini=(a.name||'?').charAt(0).toUpperCase();
+      const av=a.avatar
+        ? `<img src="${a.avatar}" title="${escHtml(a.name)}" style="width:24px;height:24px;border-radius:50%;object-fit:cover;border:1px solid #333">`
+        : `<span title="${escHtml(a.name)}" style="width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:800;background:${stringToColor(a.id||a.name)}">${escHtml(ini)}</span>`;
+      return a.id ? `<a href="/u/${a.id}" style="margin-left:-6px" title="${escHtml(a.name)}">${av}</a>` : `<span style="margin-left:-6px">${av}</span>`;
+    }).join('');
+    const more=atts.length>14?`<span style="font-size:.7rem;color:var(--muted);margin-left:8px">+${atts.length-14}</span>`:'';
+    return `
+    <div class="booking-item" style="flex-wrap:wrap">
       <div class="booking-emoji">${b.class_emoji||'💃'}</div>
       <div class="booking-info">
         <strong>${escHtml(b.class_name)}${b.is_child_booking?` <span style="font-size:.7rem;background:rgba(201,168,76,.18);color:var(--gold);padding:1px 7px;border-radius:20px;vertical-align:middle">👧 ${escHtml(b.child_name||'dieťa')}</span>`:''}</strong>
         <span>${b.booking_date?skDate(b.booking_date):''} ${b.class_time_start?'• '+b.class_time_start:''} ${b.class_location?'• '+escHtml(b.class_location):''}</span>
+        ${insHtml?`<span style="font-size:.78rem;color:var(--muted)">🎓 Učí: ${insHtml}</span>`:''}
       </div>
       <button class="booking-cancel" onclick="cancelBooking('${b._id}','${escHtml(b.class_name).replace(/'/g,"&#39;")}')">
         <i class="bi bi-x"></i> Zrušiť
       </button>
-    </div>`).join('');
+      ${atts.length?`<div style="flex-basis:100%;margin-top:8px;padding-top:8px;border-top:1px solid var(--border,#2a2a2a)">
+        <div style="font-size:.72rem;color:var(--muted);margin-bottom:5px">👥 Prihlásení (${b.attendee_count||atts.length}):</div>
+        <div style="display:flex;align-items:center;flex-wrap:wrap;padding-left:6px">${chips}${more}</div>
+      </div>`:''}
+    </div>`;
+  }).join('');
 }
 
 /* ─── Family (children) ─── */

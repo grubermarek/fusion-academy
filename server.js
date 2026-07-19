@@ -122,6 +122,7 @@ const db = {
   ticket_msgs:  new Datastore({ filename: path.join(DATA_DIR, 'ticket_msgs.db'),  autoload: true }),
   meal_plans:   new Datastore({ filename: path.join(DATA_DIR, 'meal_plans.db'),   autoload: true }),
   class_cancellations: new Datastore({ filename: path.join(DATA_DIR, 'class_cancellations.db'), autoload: true }),
+  session_instructors: new Datastore({ filename: path.join(DATA_DIR, 'session_instructors.db'), autoload: true }),
   settings:     new Datastore({ filename: path.join(DATA_DIR, 'settings.db'),     autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
@@ -1177,8 +1178,31 @@ app.get('/api/my-bookings', auth, async(req,res)=>{
   // Own bookings + bookings for my children
   const children = await q.find(db.users,{parent_id:req.session.uid});
   const ids = [req.session.uid, ...children.map(c=>c._id)];
-  const bookings=await q.find(db.bookings,{user_id:{$in:ids}},{booking_date:-1});
-  res.json(bookings.slice(0,80));
+  const bookings=(await q.find(db.bookings,{user_id:{$in:ids}},{booking_date:-1})).slice(0,80);
+  // Obohať o inštruktora termínu + zoznam prihlásených (klikateľné profily)
+  const clsCache={}, attCache={};
+  for(const b of bookings){
+    const cls = clsCache[b.class_id] || (clsCache[b.class_id]=await q.one(db.classes,{_id:b.class_id}));
+    if(!cls) continue;
+    const si = await sessionInstructor(cls, b.booking_date);
+    b.instructor = si.instructor; b.instructor_id = si.instructor_id||null;
+    b.class_emoji = b.class_emoji||cls.emoji||'💃';
+    const key=b.class_id+'|'+b.booking_date;
+    if(!attCache[key]){
+      const rows=await q.find(db.bookings,{class_id:b.class_id, booking_date:b.booking_date, status:{$in:['confirmed','attended']}});
+      const list=[];
+      for(const r of rows){
+        if(r.is_child_booking){ list.push({ name:r.child_name||'dieťa', child:true }); continue; }
+        const ru=await q.one(db.users,{_id:r.user_id});
+        if(ru && ru.anonymous){ list.push({ name:'Člen (skrytý)', anonymous:true }); continue; }
+        list.push({ id:r.user_id, name:r.user_name||ru?.name||'Člen', avatar:ru?.avatar||null });
+      }
+      attCache[key]=list;
+    }
+    b.attendees = attCache[key];
+    b.attendee_count = attCache[key].length;
+  }
+  res.json(bookings);
 });
 
 // (booking cancel with waitlist promotion is handled below in WAITLIST section)
@@ -3467,6 +3491,24 @@ async function resolveInstructor(instructor_id, fallbackName){
   return {instructor_id:'', instructor:fallbackName||'Marek Gruber'};
 }
 
+// Inštruktor konkrétneho termínu hodiny (class_id + dátum). Ak je nastavený override
+// (admin ho zmenil alebo sa tréner prihlásil, že učí), platí až kým ho niekto nezmení.
+// Inak sa použije štandardný inštruktor hodiny.
+async function sessionInstructor(cls, date){
+  if(cls && date){
+    const ov = await q.one(db.session_instructors,{class_id:cls._id, date});
+    if(ov && ov.instructor_id) return { instructor_id:ov.instructor_id, instructor:ov.instructor_name||'—', overridden:true };
+  }
+  return { instructor_id:cls?.instructor_id||'', instructor:cls?.instructor||'—', overridden:false };
+}
+// Mapa všetkých override-ov (class_id|date → {id,name}) — pre hromadný výpočet zárobkov
+async function sessionInstructorMap(){
+  const rows=await q.find(db.session_instructors,{});
+  const m={};
+  rows.forEach(r=>{ if(r.instructor_id) m[r.class_id+'|'+r.date]={id:r.instructor_id,name:r.instructor_name||'—'}; });
+  return m;
+}
+
 app.post('/api/admin/classes', adminAuth, async(req,res)=>{
   const{name,emoji,category,instructor,instructor_id,location,day_of_week,time_start,time_end,capacity,level,description,price,color}=req.body;
   if(!name||day_of_week===undefined||!time_start) return res.status(400).json({error:'Vyplňte povinné polia'});
@@ -5018,11 +5060,14 @@ async function trainerMonthStats(month){
   const bDate=b=>b.booking_date||(b.created_at||'').slice(0,10)||'';
   const firstBookingOf={};
   for(const b of bookings){ if(!b.user_id||b.status==='cancelled') continue; const d=bDate(b); if(!firstBookingOf[b.user_id]||d<firstBookingOf[b.user_id]) firstBookingOf[b.user_id]=d; }
+  const insOverride=await sessionInstructorMap(); // class_id|date → {id,name}
   const stats={};
   const sessionAtt={}; // instructor|sessKey → attendance count
   for(const b of bookings){
     const d=bDate(b); if(!d.startsWith(month)) continue;
-    const cls=clsMap[b.class_id]; const ins=cls?.instructor||'—';
+    const cls=clsMap[b.class_id];
+    // skutočný inštruktor termínu: override (kto sa prihlásil/koho admin nastavil) inak štandardný
+    const ins=(insOverride[b.class_id+'|'+d]?.name) || cls?.instructor || '—';
     const s=stats[ins]=stats[ins]||{instructor:ins, sessions:new Set(), attendances:0, revenue:0, newClients:new Set(), fullClasses:0};
     if(b.status==='cancelled'||b.status==='no_show') continue;
     if(['attended','confirmed'].includes(b.status)){
@@ -6805,19 +6850,68 @@ app.put('/api/admin/classes/:id/stream', adminAuth, async(req,res)=>{
 app.get('/api/attendance/schedule', trainerAuth, async(req,res)=>{
   try {
     const u = req.trainerUser;
-    const filter = u.is_admin ? {active:true} : {active:true, instructor:{$regex:new RegExp(u.name.split(' ')[0],'i')}};
-    const classes = await q.find(db.classes, filter);
+    // Tréner vidí VŠETKY hodiny (aby sa mohol prihlásiť, že učí), nielen svoje.
+    const classes = await q.find(db.classes, {active:true});
     const result = [];
     for(const c of classes){
       // Obsadenosť pre NAJBLIŽŠÍ termín (rovnako ako to vidí klient), nie súčet cez všetky dátumy
       const bdate = displayNextDateForDay(c.day_of_week);
       const confirmed = await q.count(db.bookings,{class_id:c._id, booking_date:bdate, status:{$in:['confirmed','attended']}});
       const waitlist  = await q.count(db.bookings,{class_id:c._id, booking_date:bdate, status:'waitlist'});
-      result.push({...c, confirmed, waitlist, next_date:bdate, spotsLeft:Math.max(0,c.capacity-confirmed), dayName:DAYS_SK[c.day_of_week]});
+      const si = await sessionInstructor(c, bdate);
+      result.push({...c, confirmed, waitlist, next_date:bdate, spotsLeft:Math.max(0,c.capacity-confirmed), dayName:DAYS_SK[c.day_of_week],
+        session_instructor:si.instructor, session_instructor_id:si.instructor_id, instructor_overridden:si.overridden,
+        viewer_id:u._id, viewer_is_admin:!!u.is_admin });
     }
     result.sort((a,b)=>a.day_of_week-b.day_of_week||a.time_start.localeCompare(b.time_start));
     res.json(result);
   } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Inštruktor konkrétneho termínu (class_id + date)
+app.get('/api/attendance/session-instructor', trainerAuth, async(req,res)=>{
+  const cls=await q.one(db.classes,{_id:String(req.query.class_id||'')});
+  if(!cls) return res.status(404).json({error:'Hodina nenájdená'});
+  const date=/^\d{4}-\d{2}-\d{2}$/.test(req.query.date||'') ? req.query.date : displayNextDateForDay(cls.day_of_week);
+  const si=await sessionInstructor(cls, date);
+  res.json({ ...si, date, viewer_id:req.trainerUser._id, viewer_is_admin:!!req.trainerUser.is_admin });
+});
+// Zoznam trénerov (pre výber inštruktora hodiny)
+app.get('/api/attendance/trainers', trainerAuth, async(req,res)=>{
+  const list=(await q.find(db.users,{})).filter(u=>u.active!==false && (u.is_admin||u.user_type==='trainer'||u.user_type==='manager'));
+  list.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  res.json(list.map(u=>({id:u._id, name:u.name})));
+});
+
+// Nastav/zmeň inštruktora konkrétneho termínu (class_id + date). Platí, kým to niekto nezmení.
+// Admin môže priradiť ktoréhokoľvek trénera; tréner môže „prihlásiť sa, že učím" (iba seba).
+app.post('/api/attendance/session-instructor', trainerAuth, async(req,res)=>{
+  try{
+    const u=req.trainerUser;
+    const class_id=String(req.body.class_id||'');
+    const cls=await q.one(db.classes,{_id:class_id});
+    if(!cls) return res.status(404).json({error:'Hodina nenájdená'});
+    const date=/^\d{4}-\d{2}-\d{2}$/.test(req.body.date||'') ? req.body.date : displayNextDateForDay(cls.day_of_week);
+    let instructor_id = String(req.body.instructor_id||'');
+    // Reset na štandardného inštruktora (len admin)
+    if(!instructor_id){
+      if(!u.is_admin) return res.status(403).json({error:'Iba admin môže vrátiť pôvodného trénera'});
+      await q.remove(db.session_instructors,{class_id, date},{multi:true});
+      const si=await sessionInstructor(cls, date);
+      return res.json({ ok:true, ...si, date });
+    }
+    // Tréner (nie admin) môže nastaviť len seba
+    if(!u.is_admin) instructor_id=u._id;
+    const tgt=await q.one(db.users,{_id:instructor_id});
+    if(!tgt || !(tgt.is_admin||tgt.user_type==='trainer'||tgt.user_type==='manager'))
+      return res.status(400).json({error:'Neplatný tréner'});
+    const ex=await q.one(db.session_instructors,{class_id, date});
+    const doc={ class_id, date, instructor_id:tgt._id, instructor_name:tgt.name, set_by:u._id, set_by_name:u.name, set_at:nowISO() };
+    if(ex) await q.update(db.session_instructors,{_id:ex._id},{$set:doc});
+    else await q.insert(db.session_instructors, doc);
+    await auditLog(req,'set_session_instructor',class_id,{date},{instructor:tgt.name},'');
+    res.json({ ok:true, instructor_id:tgt._id, instructor:tgt.name, overridden:true, date });
+  }catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // Zruš konkrétnu hodinu (dátum) — upozorni booknutých, vráť kredit z permanentky,
