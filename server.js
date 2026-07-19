@@ -1159,6 +1159,8 @@ app.get('/api/classes', async(req,res)=>{
     const bookedAll = await q.count(db.bookings,{class_id:c._id,status:{$ne:'cancelled'}});
     const si = await sessionInstructor(c, bdate);
     // Zoznam prihlásených na najbližší termín — len pre prihlásených používateľov (nie na verejnom rozvrhu)
+    // POZOR: bez avatarov (profilovky sú base64 data URI — inak by odpoveď narástla na desiatky MB).
+    // Booking karty ukazujú iniciály; avatary sa nedávajú do zoznamu všetkých hodín.
     let attendees;
     if(req.session?.uid){
       const rows=await q.find(db.bookings,{class_id:c._id, booking_date:bdate, status:{$in:['confirmed','attended']}});
@@ -1167,7 +1169,7 @@ app.get('/api/classes', async(req,res)=>{
         if(r.is_child_booking){ attendees.push({name:r.child_name||'dieťa', child:true}); continue; }
         const ru=await q.one(db.users,{_id:r.user_id});
         if(ru && ru.anonymous){ attendees.push({name:'Člen (skrytý)', anonymous:true}); continue; }
-        attendees.push({id:r.user_id, name:r.user_name||ru?.name||'Člen', avatar:ru?.avatar||null});
+        attendees.push({id:r.user_id, name:r.user_name||ru?.name||'Člen'});
       }
     }
     result.push({...c, booking_count, next_date:bdate, booked:booking_count, booked_all:bookedAll,
@@ -1212,7 +1214,7 @@ app.get('/api/my-bookings', auth, async(req,res)=>{
         if(r.is_child_booking){ list.push({ name:r.child_name||'dieťa', child:true }); continue; }
         const ru=await q.one(db.users,{_id:r.user_id});
         if(ru && ru.anonymous){ list.push({ name:'Člen (skrytý)', anonymous:true }); continue; }
-        list.push({ id:r.user_id, name:r.user_name||ru?.name||'Člen', avatar:ru?.avatar||null });
+        list.push({ id:r.user_id, name:r.user_name||ru?.name||'Člen' }); // bez avatara (base64 = velka odpoved)
       }
       attCache[key]=list;
     }
