@@ -1157,7 +1157,9 @@ app.get('/api/classes', async(req,res)=>{
     const bdate = displayNextDateForDay(c.day_of_week);
     const booking_count = await q.count(db.bookings,{class_id:c._id, booking_date:bdate, status:{$ne:'cancelled'}});
     const bookedAll = await q.count(db.bookings,{class_id:c._id,status:{$ne:'cancelled'}});
+    const si = await sessionInstructor(c, bdate);
     result.push({...c, booking_count, next_date:bdate, booked:booking_count, booked_all:bookedAll,
+      instructor:si.instructor, instructor_id:si.instructor_id||c.instructor_id||null,
       spotsLeft:Math.max(0,c.capacity-booking_count), dayName:DAYS_SK[c.day_of_week]});
   }
   result.sort((a,b)=>a.day_of_week-b.day_of_week||a.time_start.localeCompare(b.time_start));
@@ -1169,7 +1171,8 @@ app.get('/api/classes/:id', async(req,res)=>{
   if(!c) return res.status(404).json({error:'Hodina nenájdená'});
   const bdate = displayNextDateForDay(c.day_of_week);
   const booking_count = await q.count(db.bookings,{class_id:c._id, booking_date:bdate, status:{$ne:'cancelled'}});
-  res.json({...c, booking_count, next_date:bdate, booked:booking_count, spotsLeft:Math.max(0,c.capacity-booking_count), dayName:DAYS_SK[c.day_of_week]});
+  const si = await sessionInstructor(c, bdate);
+  res.json({...c, booking_count, next_date:bdate, booked:booking_count, instructor:si.instructor, instructor_id:si.instructor_id||c.instructor_id||null, spotsLeft:Math.max(0,c.capacity-booking_count), dayName:DAYS_SK[c.day_of_week]});
 });
 
 // ─── Bookings ─────────────────────────────────────────────────────────────────
@@ -6907,10 +6910,27 @@ app.post('/api/attendance/session-instructor', trainerAuth, async(req,res)=>{
     if(!tgt || !(tgt.is_admin||tgt.user_type==='trainer'||tgt.user_type==='manager'))
       return res.status(400).json({error:'Neplatný tréner'});
     const ex=await q.one(db.session_instructors,{class_id, date});
+    const prevInsId = ex?.instructor_id || cls.instructor_id || null; // koho nahradil
     const doc={ class_id, date, instructor_id:tgt._id, instructor_name:tgt.name, set_by:u._id, set_by_name:u.name, set_at:nowISO() };
     if(ex) await q.update(db.session_instructors,{_id:ex._id},{$set:doc});
     else await q.insert(db.session_instructors, doc);
     await auditLog(req,'set_session_instructor',class_id,{date},{instructor:tgt.name},'');
+    // Upozorni relevantných ľudí, že hodinu učí (prebral) niekto iný
+    if(prevInsId!==tgt._id){
+      const dLbl=(date||'').split('-').reverse().join('.');
+      const recips=new Set();
+      const admins=await q.find(db.users,{is_admin:true}); admins.forEach(a=>recips.add(a._id));
+      if(prevInsId) recips.add(prevInsId);          // predošlý tréner
+      if(cls.instructor_id) recips.add(cls.instructor_id); // štandardný tréner hodiny
+      recips.delete(tgt._id); recips.delete(u._id);  // nie tomu, kto to spravil, ani novému
+      const claim = u._id===tgt._id; // tréner sa prihlásil sám
+      for(const rid of recips){
+        await q.insert(db.notifications,{ user_id:rid, type:'session_instructor', from_id:u._id,
+          title: claim ? `🎓 ${tgt.name} preberá hodinu` : `🎓 Zmena trénera hodiny`,
+          body: `${cls.name} · ${cls.location} · ${dLbl} — teraz ju učí ${tgt.name}.`,
+          read:false, created_at:nowISO() }).catch(()=>{});
+      }
+    }
     res.json({ ok:true, instructor_id:tgt._id, instructor:tgt.name, overridden:true, date });
   }catch(e){ res.status(500).json({error:e.message}); }
 });

@@ -325,7 +325,11 @@ function renderClasses(classes) {
                 <option value="">— nezadané —</option>
                 ${instructorsList.map(t=>`<option value="${t.id}" ${t.id===c.instructor_id?'selected':''}>${escHtml(t.name)}</option>`).join('')}
               </select></span>`
-            : `<span class="meta-chip"><i class="bi bi-person"></i>${c.instructor}</span>`}
+            : (c.instructor && c.instructor!=='—'
+                ? (c.instructor_id
+                    ? `<a href="/u/${c.instructor_id}" class="meta-chip" style="text-decoration:none"><i class="bi bi-person"></i>${escHtml(c.instructor)}</a>`
+                    : `<span class="meta-chip"><i class="bi bi-person"></i>${escHtml(c.instructor)}</span>`)
+                : '')}
         </div>
       </div>
       <div class="class-footer">
