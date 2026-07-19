@@ -60,7 +60,9 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
 .location-badge{display:inline-block;background:var(--dark-3);border:1px solid var(--gold-border);border-radius:1rem;padding:4px 12px;font-size:.8rem;margin:3px;color:var(--cream);}
 .stat-badge{background:rgba(201,162,76,0.12);border:1px solid var(--gold-border);border-radius:1rem;padding:.4rem 1rem;font-size:.85rem;color:var(--cream);}
 .form-control,.form-select{background:var(--dark-3)!important;border:1px solid var(--gold-border)!important;color:var(--cream)!important;}
-.form-control::placeholder{color:var(--text-muted)!important;}
+.form-control,.form-select,.form-control::placeholder{}
+.form-control{color:#F5EDD6!important;font-weight:500;}
+.form-control::placeholder{color:rgba(234,227,213,0.62)!important;}
 .form-control:focus,.form-select:focus{border-color:var(--gold)!important;box-shadow:0 0 0 2px rgba(201,162,76,0.15)!important;}
 .form-label{color:var(--cream);}
 .form-text{color:var(--text-muted)!important;}
@@ -200,6 +202,22 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
           <label class="form-label small fw-semibold">Referral kód (ak máte)</label>
           <input type="text" class="form-control" id="co-ref" placeholder="Napr. MARIA10">
           <div class="form-text small" id="refStatus"></div>
+        </div>
+      </div>
+      <div class="mb-2">
+        <label class="form-label small fw-semibold">Doručenie</label>
+        <div class="d-flex flex-column gap-1">
+          <label class="d-flex align-items-center gap-2" style="cursor:pointer"><input type="radio" name="co-delivery" value="pickup" checked onchange="toggleShipping()"> 🏫 Vyzdvihnem osobne na hodine / recepcii</label>
+          <label class="d-flex align-items-center gap-2" style="cursor:pointer"><input type="radio" name="co-delivery" value="post" onchange="toggleShipping()"> 📦 Pošlite mi to poštou</label>
+        </div>
+        <div id="shippingForm" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--gold-border);border-radius:.7rem;background:var(--dark-2)">
+          <div class="mb-2"><label class="form-label small fw-semibold">Meno a priezvisko *</label><input type="text" class="form-control" id="ship-name" placeholder="Jana Nováková"></div>
+          <div class="mb-2"><label class="form-label small fw-semibold">Ulica a číslo *</label><input type="text" class="form-control" id="ship-street" placeholder="Hlavná 12"></div>
+          <div class="row g-2">
+            <div class="col-4"><label class="form-label small fw-semibold">PSČ *</label><input type="text" class="form-control" id="ship-zip" placeholder="960 01"></div>
+            <div class="col-8"><label class="form-label small fw-semibold">Mesto / obec *</label><input type="text" class="form-control" id="ship-city" placeholder="Zvolen"></div>
+          </div>
+          <div class="form-text small mt-1">Tovar ti pošleme poštou na túto adresu.</div>
         </div>
       </div>
       <div class="mb-2">
@@ -414,6 +432,7 @@ function goCheckout() {
 }
 function setSize(id,size){ const it=cart.find(c=>c._id===id); if(it) it.size=size; }
 function setColor(id,color){ const it=cart.find(c=>c._id===id); if(it) it.color=color; }
+function toggleShipping(){ const post=(document.querySelector('input[name="co-delivery"]:checked')||{}).value==='post'; const f=document.getElementById('shippingForm'); if(f) f.style.display=post?'block':'none'; }
 
 function goBack() { showStep('cart'); }
 
@@ -436,6 +455,18 @@ async function submitOrder() {
   if (!name || !email) { errEl.textContent = 'Meno a email sú povinné'; errEl.classList.remove('d-none'); return; }
   if (!cart.length) { errEl.textContent = 'Košík je prázdny'; errEl.classList.remove('d-none'); return; }
 
+  // Doručenie
+  const delivery = (document.querySelector('input[name="co-delivery"]:checked')||{}).value || 'pickup';
+  let shipping = null;
+  if(delivery==='post'){
+    const sName=document.getElementById('ship-name').value.trim();
+    const sStreet=document.getElementById('ship-street').value.trim();
+    const sZip=document.getElementById('ship-zip').value.trim();
+    const sCity=document.getElementById('ship-city').value.trim();
+    if(!sName||!sStreet||!sZip||!sCity){ errEl.textContent='Pri zásielke poštou vyplň celú adresu (meno, ulica, PSČ, mesto).'; errEl.classList.remove('d-none'); return; }
+    shipping={ name:sName, street:sStreet, zip:sZip, city:sCity };
+  }
+
   const items = cart.map(c => ({ product_id: c._id, qty: c.qty, size: c.size||undefined, color: c.color||undefined }));
   // Varianty pripoj aj do poznámky (istota pre admina)
   const varNote = cart.filter(c=>c.size||c.color).map(c=>`${c.name}: ${[c.size&&('veľ. '+c.size), c.color].filter(Boolean).join(' · ')}`).join(', ');
@@ -446,7 +477,7 @@ async function submitOrder() {
     const r = await fetch('/api/shop/order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ client_name:name, client_email:email, client_phone:phone, referral_code:ref, city, items, notes:fullNotes, payment_method:payMethod, use_referral_credit:useCredit })
+      body: JSON.stringify({ client_name:name, client_email:email, client_phone:phone, referral_code:ref, city, items, notes:fullNotes, payment_method:payMethod, use_referral_credit:useCredit, delivery, shipping })
     });
     const d = await r.json();
     if (!r.ok) { errEl.textContent = d.error || 'Chyba'; errEl.classList.remove('d-none'); return; }

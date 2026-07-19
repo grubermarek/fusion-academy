@@ -3391,7 +3391,8 @@ async function loadOrders(){
         <div class="text-muted" style="font-size:.72rem">${escHtml(o.client_email||'')}</div>
         ${o.client_phone?`<div class="text-muted" style="font-size:.72rem">${escHtml(o.client_phone)}</div>`:''}
       </td>
-      <td class="small">${o.items.map(i=>`${i.qty}× ${escHtml(i.product_name)}${(i.size||i.color)?` <span class="text-muted">(${[i.size&&('veľ. '+i.size),i.color].filter(Boolean).join(' · ')})</span>`:''}`).join('<br>')}</td>
+      <td class="small">${o.items.map(i=>`${i.qty}× ${escHtml(i.product_name)}${(i.size||i.color)?` <span class="text-muted">(${[i.size&&('veľ. '+i.size),i.color].filter(Boolean).join(' · ')})</span>`:''}`).join('<br>')}
+        ${o.delivery==='post'&&o.shipping?`<div class="mt-1 p-1 rounded" style="background:rgba(96,165,250,.1);border:1px solid rgba(96,165,250,.3);font-size:.72rem"><b style="color:#60a5fa">📦 Poštou:</b><br>${escHtml(o.shipping.name)}<br>${escHtml(o.shipping.street)}<br>${escHtml(o.shipping.zip)} ${escHtml(o.shipping.city)}</div>`:'<div class="text-muted mt-1" style="font-size:.72rem">🏫 Vyzdvihne na hodine</div>'}</td>
       <td class="fw-bold">${eur(o.total)}</td>
       <td class="small">${o.partner_name||'<span class="text-muted">Bez partnera</span>'}</td>
       <td class="small">${o.city||'—'}</td>
@@ -3404,6 +3405,9 @@ async function loadOrders(){
           ${o.status==='pending'?`<button class="btn btn-xs btn-outline-primary" style="font-size:.7rem;padding:2px 8px" onclick="updateOrder('${o._id}','confirmed')">Potvrdiť</button>`:''}
           ${o.status==='confirmed'||o.status==='pending'?`<button class="btn btn-xs btn-success" style="font-size:.7rem;padding:2px 8px;color:#fff;background:#28a745;border:none;border-radius:4px" onclick="updateOrder('${o._id}','paid')">✓ Zaplatená</button>`:''}
           ${o.status!=='cancelled'&&o.status!=='paid'?`<button class="btn btn-xs btn-outline-danger" style="font-size:.7rem;padding:2px 8px" onclick="updateOrder('${o._id}','cancelled')">Zrušiť</button>`:''}
+          ${o.dispatched
+            ? `<span class="badge bg-success" style="font-size:.68rem" title="${o.dispatched_by_name||''} ${o.dispatched_at?new Date(o.dispatched_at).toLocaleDateString('sk-SK'):''}">✓ ${o.delivery==='post'?'Odoslané':'Vybavené'}</span> <button class="btn btn-xs btn-outline-secondary" style="font-size:.66rem;padding:1px 6px" onclick="dispatchOrder('${o._id}',false)">↩︎</button>`
+            : `<button class="btn btn-xs" style="font-size:.7rem;padding:2px 8px;background:#60a5fa;color:#111;border:none;border-radius:4px;font-weight:700" onclick="dispatchOrder('${o._id}',true)"><i class="bi bi-box-seam"></i> ${o.delivery==='post'?'Odoslať':'Vybavené'}</button>`}
         </div>
         ${o.notes?`<div class="text-muted mt-1" style="font-size:.7rem">📝 ${o.notes}</div>`:''}
       </td>
@@ -3415,6 +3419,11 @@ async function updateOrder(id,status){
   if(!confirm(labels[status]||'Zmeniť stav?'))return;
   const r=await api('/api/admin/orders/'+id,{method:'PUT',body:JSON.stringify({status})});
   if(r?.ok){loadOrders();loadOverview();}else alert(r?.error||'Chyba');
+}
+async function dispatchOrder(id,val){
+  if(val && !confirm('Označiť objednávku ako vybavenú/odoslanú?')) return;
+  const r=await api('/api/admin/orders/'+id,{method:'PUT',body:JSON.stringify({dispatch:val})});
+  if(r?.ok) loadOrders(); else alert(r?.error||'Chyba');
 }
 async function takeOrder(id){
   const r=await api('/api/admin/orders/'+id,{method:'PUT',body:JSON.stringify({take:true})});

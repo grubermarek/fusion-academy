@@ -1134,6 +1134,14 @@ app.get('/api/shop/products', async(req,res)=>{
 app.post('/api/shop/order', async(req,res)=>{
   try {
     const {client_name,client_email,client_phone,referral_code,city,items,notes,payment_method,use_referral_credit}=req.body;
+    // Doručenie: 'pickup' (na hodine) | 'post' (poštou + adresa)
+    const delivery = req.body.delivery==='post' ? 'post' : 'pickup';
+    let shipping = null;
+    if(delivery==='post' && req.body.shipping){
+      const s=req.body.shipping, clean=v=>String(v||'').slice(0,120);
+      shipping={ name:clean(s.name), street:clean(s.street), zip:clean(s.zip), city:clean(s.city) };
+      if(!shipping.name||!shipping.street||!shipping.zip||!shipping.city) return res.status(400).json({error:'Pri zásielke poštou treba celú adresu.'});
+    }
     if(!client_name||!client_email||!items?.length) return res.status(400).json({error:'Meno, email a košík sú povinné'});
     let partner_id=null, partner_name=null;
     if(referral_code?.trim()){
@@ -1165,7 +1173,7 @@ app.post('/api/shop/order', async(req,res)=>{
       }
     }
     const order_number='FA-'+new Date().getFullYear()+'-'+oid();
-    const order=await q.insert(db.orders,{order_number,client_name,client_email:client_email.toLowerCase().trim(),client_phone:client_phone||'',referral_code:referral_code?.trim()||'',partner_id,partner_name,city:city||'',items:enriched,total:finalTotal,original_total:total,credit_used:creditUsed,notes:notes||'',payment_method:payment_method||'cash',status:'pending',created_at:nowISO(),paid_at:null});
+    const order=await q.insert(db.orders,{order_number,client_name,client_email:client_email.toLowerCase().trim(),client_phone:client_phone||'',referral_code:referral_code?.trim()||'',partner_id,partner_name,city:city||'',items:enriched,total:finalTotal,original_total:total,credit_used:creditUsed,notes:notes||'',payment_method:payment_method||'cash',delivery,shipping,status:'pending',created_at:nowISO(),paid_at:null});
     res.json({ok:true,order_number,id:order._id,total:finalTotal,original_total:total,credit_used:creditUsed});
   } catch(e){res.status(500).json({error:e.message});}
 });
@@ -3559,9 +3567,16 @@ app.get('/api/admin/orders', adminAuth, async(req,res)=>{
 
 app.put('/api/admin/orders/:id', adminAuth, async(req,res)=>{
   try {
-    const{status, take}=req.body;
+    const{status, take, dispatch}=req.body;
     const order=await q.one(db.orders,{_id:req.params.id});
     if(!order) return res.status(404).json({error:'Nenájdená'});
+    // „Vybavené / Odoslané" — potvrdenie, že objednávka je vyriešená (odovzdaná/odoslaná poštou)
+    if(dispatch!==undefined){
+      const me=await q.one(db.users,{_id:req.session.uid});
+      await q.update(db.orders,{_id:req.params.id},{$set:{dispatched:!!dispatch, dispatched_at:dispatch?nowISO():null, dispatched_by_name:dispatch?(me?.name||''):''}});
+      await auditLog(req,'order_dispatch',order.order_number,{},{dispatched:!!dispatch},'');
+      return res.json({ok:true, dispatched:!!dispatch});
+    }
     // „Prevziať" — priradí objednávku aktuálnemu adminovi (kto to vybavuje)
     if(take){
       const me=await q.one(db.users,{_id:req.session.uid});
