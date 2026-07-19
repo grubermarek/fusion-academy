@@ -7249,8 +7249,8 @@ app.post('/api/attendance/manual-booking', trainerAuth, async(req,res)=>{
 app.get('/api/attendance/clients', trainerAuth, async(req,res)=>{
   try {
     const { q:query, city, filter } = req.query;
-    let users = await q.find(db.users,{active:{$ne:false}, is_admin:{$ne:true}, is_child:{$ne:true}});
-    users = users.filter(u=>(u.user_type||'client')!=='trainer');
+    // Zahrnuté sú aj tréneri/admini — aj oni sa vedia prihlásiť na hodinu ako účastníci.
+    let users = await q.find(db.users,{active:{$ne:false}, is_child:{$ne:true}});
     if(query && query.trim().length>=1){ const rx=new RegExp(query.trim(),'i'); users = users.filter(u=>rx.test(u.name)||rx.test(u.email||'')); }
     const out = [];
     for(const u of users.slice(0,250)){
