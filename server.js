@@ -1176,10 +1176,14 @@ app.get('/api/classes', async(req,res)=>{
       try {
         si = await sessionInstructor(c, bdate);
         if(loggedIn){
-          // bez avatarov (base64 data URI by nafúklo odpoveď na desiatky MB) → iniciály na fronte
+          // len id/meno + av flag (fotka sa ťahá cez /api/avatar/:id — žiadne base64 v JSON)
           const rows=await q.find(db.bookings,{class_id:c._id, booking_date:bdate, status:{$in:['confirmed','attended']}});
-          attendees=rows.map(r=> r.is_child_booking ? {name:r.child_name||'dieťa', child:true}
-            : {id:r.user_id, name:r.user_name||'Člen'});
+          attendees=[];
+          for(const r of rows){
+            if(r.is_child_booking){ attendees.push({name:r.child_name||'dieťa', child:true}); continue; }
+            const ru=await q.one(db.users,{_id:r.user_id});
+            attendees.push({id:r.user_id, name:r.user_name||ru?.name||'Člen', av:!!(ru&&ru.avatar)});
+          }
         }
       } catch(e){ console.error('classes enrich:', e.message); }
       result.push({...c, booking_count, next_date:bdate, booked:booking_count, booked_all:bookedAll,
@@ -1192,7 +1196,20 @@ app.get('/api/classes', async(req,res)=>{
   } catch(e){ console.error('/api/classes:', e.message); res.status(500).json({error:e.message}); }
 });
 
-// Zoznam prihlásených NA JEDNU hodinu — vrátane fotiek (načíta sa až na klik, preto je OK poslať avatary)
+// Avatar používateľa ako OBRÁZOK (nie base64 v JSON) — prehliadač ho načíta lenivo a nezaťaží zoznamy.
+app.get('/api/avatar/:userId', async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.params.userId});
+    const av=u&&u.avatar;
+    const m = typeof av==='string' && av.match(/^data:(image\/[a-z+]+);base64,(.+)$/i);
+    if(!m) return res.status(404).end();
+    res.set('Content-Type', m[1]);
+    res.set('Cache-Control', 'private, max-age=300'); // 5 min cache
+    res.send(Buffer.from(m[2], 'base64'));
+  }catch(e){ res.status(404).end(); }
+});
+
+// Zoznam prihlásených NA JEDNU hodinu (mená + či majú fotku; fotka sa ťahá cez /api/avatar/:id)
 app.get('/api/classes/:id/attendees', auth, async(req,res)=>{
   try{
     const c=await q.one(db.classes,{_id:req.params.id});
@@ -1200,14 +1217,17 @@ app.get('/api/classes/:id/attendees', auth, async(req,res)=>{
     const date=/^\d{4}-\d{2}-\d{2}$/.test(req.query.date||'') ? req.query.date : displayNextDateForDay(c.day_of_week);
     const rows=await q.find(db.bookings,{class_id:c._id, booking_date:date, status:{$in:['confirmed','attended']}});
     const list=[];
+    const me=req.session.uid;
     for(const r of rows){
       if(r.is_child_booking){ list.push({name:r.child_name||'dieťa', child:true}); continue; }
       const ru=await q.one(db.users,{_id:r.user_id});
       if(ru && ru.anonymous){ list.push({name:'Člen (skrytý)', anonymous:true}); continue; }
-      list.push({id:r.user_id, name:r.user_name||ru?.name||'Člen', avatar:ru?.avatar||null});
+      const fst = (r.user_id && r.user_id!==me) ? await friendState(me, r.user_id) : 'self';
+      list.push({id:r.user_id, name:r.user_name||ru?.name||'Člen', av:!!(ru&&ru.avatar), friend_state:fst});
     }
     const si=await sessionInstructor(c, date);
-    res.json({ class_name:c.name, date, instructor:si.instructor, instructor_id:si.instructor_id||null, attendees:list });
+    res.json({ class_name:c.name, date, instructor:si.instructor, instructor_id:si.instructor_id||null,
+      instructor_av: !!(si.instructor_id && (await q.one(db.users,{_id:si.instructor_id}))?.avatar), attendees:list });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -1244,7 +1264,7 @@ app.get('/api/my-bookings', auth, async(req,res)=>{
         if(r.is_child_booking){ list.push({ name:r.child_name||'dieťa', child:true }); continue; }
         const ru=await q.one(db.users,{_id:r.user_id});
         if(ru && ru.anonymous){ list.push({ name:'Člen (skrytý)', anonymous:true }); continue; }
-        list.push({ id:r.user_id, name:r.user_name||ru?.name||'Člen' }); // bez avatara (base64 = velka odpoved)
+        list.push({ id:r.user_id, name:r.user_name||ru?.name||'Člen', av:!!(ru&&ru.avatar) }); // fotka cez /api/avatar/:id
       }
       attCache[key]=list;
     }

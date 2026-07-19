@@ -875,11 +875,8 @@ function renderBookings(bookings){
       : '';
     const atts=(b.attendees||[]);
     const chips=atts.slice(0,14).map(a=>{
-      const ini=(a.name||'?').charAt(0).toUpperCase();
-      const av=a.avatar
-        ? `<img src="${a.avatar}" title="${escHtml(a.name)}" style="width:24px;height:24px;border-radius:50%;object-fit:cover;border:1px solid #333">`
-        : `<span title="${escHtml(a.name)}" style="width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:800;background:${stringToColorFriend(a.id||a.name)}">${escHtml(ini)}</span>`;
-      return a.id ? `<a href="/u/${a.id}" style="margin-left:-6px" title="${escHtml(a.name)}">${av}</a>` : `<span style="margin-left:-6px">${av}</span>`;
+      const av=attAvatarHtml(a,24);
+      return a.id ? `<a href="/u/${a.id}" style="margin-left:-6px" title="${escHtml(a.name)}" onclick="event.stopPropagation()">${av}</a>` : `<span style="margin-left:-6px" title="${escHtml(a.name)}">${av}</span>`;
     }).join('');
     const more=atts.length>14?`<span style="font-size:.7rem;color:var(--muted);margin-left:8px">+${atts.length-14}</span>`:'';
     return `
@@ -1321,11 +1318,8 @@ function renderClassCards(){
     const attStrip=atts.length?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border,#2a2a2a);cursor:pointer" onclick="openAttendees('${cls._id}','${escHtml(cls.name).replace(/'/g,"&#39;")}')" title="Zobraziť účastníkov">
       <div style="font-size:.68rem;color:var(--muted);margin-bottom:4px">👥 Prihlásení (${cls.attendee_count||atts.length}) <span style="color:var(--gold)">›</span></div>
       <div style="display:flex;align-items:center;flex-wrap:wrap;padding-left:6px">${atts.slice(0,12).map(a=>{
-        const ini=(a.name||'?').charAt(0).toUpperCase();
-        const av=a.avatar
-          ? `<img src="${a.avatar}" title="${escHtml(a.name)}" style="width:22px;height:22px;border-radius:50%;object-fit:cover;border:1px solid #333">`
-          : `<span title="${escHtml(a.name)}" style="width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:.58rem;font-weight:800;background:${stringToColorFriend(a.id||a.name)}">${escHtml(ini)}</span>`;
-        return a.id?`<a href="/u/${a.id}" style="margin-left:-6px" title="${escHtml(a.name)}">${av}</a>`:`<span style="margin-left:-6px">${av}</span>`;
+        const av=attAvatarHtml(a,22);
+        return a.id?`<a href="/u/${a.id}" style="margin-left:-6px" title="${escHtml(a.name)}" onclick="event.stopPropagation()">${av}</a>`:`<span style="margin-left:-6px" title="${escHtml(a.name)}">${av}</span>`;
       }).join('')}${atts.length>12?`<span style="font-size:.66rem;color:var(--muted);margin-left:8px">+${atts.length-12}</span>`:''}</div>
     </div>`:'';
     return `<div class="class-card${bookedId?' cc-booked-card':''}">
@@ -1366,20 +1360,45 @@ async function openAttendees(classId, className, date){
   try{
     const d=await api('/api/classes/'+classId+'/attendees'+(date?('?date='+encodeURIComponent(date)):''));
     const box=document.getElementById('attOvBody'); if(!box) return;
+    const insAv = d.instructor_id
+      ? attAvatarHtml({id:d.instructor_id, name:d.instructor, av:d.instructor_av}, 34)
+      : '';
     const ins = d.instructor && d.instructor!=='—'
-      ? `<div style="font-size:.8rem;color:var(--muted);margin-bottom:10px">🎓 Učí: ${d.instructor_id?`<a href="/u/${d.instructor_id}" style="color:var(--gold);text-decoration:none">${escHtml(d.instructor)}</a>`:escHtml(d.instructor)}${d.date?` · ${skDate(d.date)}`:''}</div>`
+      ? `<div style="display:flex;align-items:center;gap:9px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border,#2a2a2a)">
+          ${d.instructor_id?`<a href="/u/${d.instructor_id}">${insAv}</a>`:insAv}
+          <div style="font-size:.82rem;color:var(--muted)">🎓 Učí: ${d.instructor_id?`<a href="/u/${d.instructor_id}" style="color:var(--gold);text-decoration:none;font-weight:700">${escHtml(d.instructor)}</a>`:`<b style="color:var(--gold)">${escHtml(d.instructor)}</b>`}${d.date?`<br><span style="font-size:.74rem">${skDate(d.date)}</span>`:''}</div>
+        </div>`
       : '';
     const list=d.attendees||[];
     if(!list.length){ box.innerHTML=ins+'<div class="empty-state">Zatiaľ nikto.</div>'; return; }
     box.innerHTML=ins+list.map(a=>{
-      const ini=(a.name||'?').charAt(0).toUpperCase();
-      const av=a.avatar
-        ? `<img src="${a.avatar}" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover">`
-        : `<div style="width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;background:${stringToColorFriend(a.id||a.name||'?')}">${escHtml(ini)}</div>`;
-      const inner=`<div style="display:flex;align-items:center;gap:11px;padding:8px 4px;border-bottom:1px solid rgba(255,255,255,.05)">${av}<span style="font-weight:700">${escHtml(a.name)}</span></div>`;
-      return a.id?`<a href="/u/${a.id}" style="text-decoration:none;color:var(--cream)">${inner}</a>`:inner;
+      const av=attAvatarHtml(a,40);
+      const nameEl = a.id
+        ? `<a href="/u/${a.id}" style="text-decoration:none;color:var(--cream);font-weight:700;flex:1;min-width:0">${escHtml(a.name)}</a>`
+        : `<span style="font-weight:700;flex:1;min-width:0;color:var(--cream)">${escHtml(a.name)}</span>`;
+      // mini akcie: pridať do priateľov + napísať správu (podpora interakcie)
+      let actions='';
+      if(a.id){
+        const dm=`<a href="/community?dm=${a.id}" title="Napísať správu" style="width:32px;height:32px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;background:rgba(201,168,76,.12);border:1px solid var(--gold-border,#332a18);color:var(--gold);text-decoration:none"><i class="bi bi-chat-dots-fill"></i></a>`;
+        let fr;
+        if(a.friend_state==='friends') fr=`<span title="Priatelia" style="width:32px;height:32px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;background:rgba(129,199,132,.12);border:1px solid rgba(129,199,132,.3);color:#9fd894"><i class="bi bi-person-check-fill"></i></span>`;
+        else if(a.friend_state==='requested') fr=`<span title="Žiadosť odoslaná" style="width:32px;height:32px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;background:rgba(255,255,255,.05);border:1px solid var(--border,#333);color:var(--muted)"><i class="bi bi-hourglass-split"></i></span>`;
+        else fr=`<button id="frbtn-${a.id}" onclick="addFriendFromList('${a.id}')" title="Pridať do priateľov" style="width:32px;height:32px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.3);color:#4ade80;cursor:pointer"><i class="bi bi-person-plus-fill"></i></button>`;
+        actions=`<div style="display:flex;gap:6px;flex:none">${fr}${dm}</div>`;
+      }
+      return `<div style="display:flex;align-items:center;gap:11px;padding:8px 4px;border-bottom:1px solid rgba(255,255,255,.05)">
+        ${a.id?`<a href="/u/${a.id}">${av}</a>`:av}${nameEl}${actions}</div>`;
     }).join('');
   }catch(e){ const box=document.getElementById('attOvBody'); if(box) box.innerHTML='<div class="empty-state">Nepodarilo sa načítať.</div>'; }
+}
+async function addFriendFromList(id){
+  const btn=document.getElementById('frbtn-'+id);
+  const d=await api('/api/friends/request',{method:'POST',body:{to:id}});
+  if(d&&d.ok){
+    if(btn){ btn.outerHTML=`<span title="${d.state==='friends'?'Priatelia':'Žiadosť odoslaná'}" style="width:32px;height:32px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;background:rgba(255,255,255,.05);border:1px solid var(--border,#333);color:var(--muted)"><i class="bi ${d.state==='friends'?'bi-person-check-fill':'bi-hourglass-split'}"></i></span>`; }
+    showToast(d.state==='friends'?'Ste priatelia 💛':'Žiadosť o priateľstvo odoslaná','success');
+    if(typeof loadFriends==='function') loadFriends();
+  } else showToast((d&&d.error)||'Chyba','error');
 }
 function resetFilter(){
   _activeFilter={type:'',city:''};saveFilter();
@@ -1510,7 +1529,13 @@ async function loadFriends(){
       <div style="font-size:.7rem;color:var(--muted);text-align:center;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml((f.name||'').split(' ')[0])}</div>
     </a>`).join('') : '<div style="color:var(--muted);font-size:.85rem">Zatiaľ žiadni priatelia. Nájdi ľudí v komunite a pridaj si ich! 👋</div>';
 }
-function stringToColorFriend(str){const c=['#e94560','#f5a623','#9c27b0','#2196f3','#4caf50','#00bcd4','#ff5722','#673ab7'];let h=0;for(let i=0;i<str.length;i++)h=str.charCodeAt(i)+((h<<5)-h);return c[Math.abs(h)%c.length];}
+function stringToColorFriend(str){str=String(str||'?');const c=['#e94560','#f5a623','#9c27b0','#2196f3','#4caf50','#00bcd4','#ff5722','#673ab7'];let h=0;for(let i=0;i<str.length;i++)h=str.charCodeAt(i)+((h<<5)-h);return c[Math.abs(h)%c.length];}
+// Avatar účastníka: fotka cez /api/avatar/:id (lenivo, cez URL – nezaťaží JSON), inak farebná iniciála
+function attAvatarHtml(a, size){
+  const s=size||24, ini=(a.name||'?').charAt(0).toUpperCase();
+  if(a.av && a.id) return `<img src="/api/avatar/${a.id}" loading="lazy" alt="" style="width:${s}px;height:${s}px;border-radius:50%;object-fit:cover">`;
+  return `<span style="width:${s}px;height:${s}px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:${Math.round(s*0.42)}px;font-weight:800;background:${stringToColorFriend(a.id||a.name)}">${escHtml(ini)}</span>`;
+}
 // Krátke vysvetlenie dlaždíc (interaktívne – klient vie za čo je kredit a zárobok)
 function refExplain(key){
   const info={
