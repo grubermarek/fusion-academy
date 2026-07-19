@@ -1150,35 +1150,34 @@ app.get('/api/shop/locations', (req,res)=>res.json(LOCATIONS));
 // SCHEDULE – PUBLIC
 // ═══════════════════════════════════════════════════════════════════════════════
 app.get('/api/classes', async(req,res)=>{
-  const classes=await q.find(db.classes,{active:true});
-  // Attach booked count for each class — obsadenosť pre NAJBLIŽŠÍ termín (nie súčet cez všetky dátumy)
-  const result=[];
-  for(const c of classes){
-    const bdate = displayNextDateForDay(c.day_of_week);
-    const booking_count = await q.count(db.bookings,{class_id:c._id, booking_date:bdate, status:{$ne:'cancelled'}});
-    const bookedAll = await q.count(db.bookings,{class_id:c._id,status:{$ne:'cancelled'}});
-    const si = await sessionInstructor(c, bdate);
-    // Zoznam prihlásených na najbližší termín — len pre prihlásených používateľov (nie na verejnom rozvrhu)
-    // POZOR: bez avatarov (profilovky sú base64 data URI — inak by odpoveď narástla na desiatky MB).
-    // Booking karty ukazujú iniciály; avatary sa nedávajú do zoznamu všetkých hodín.
-    let attendees;
-    if(req.session?.uid){
-      const rows=await q.find(db.bookings,{class_id:c._id, booking_date:bdate, status:{$in:['confirmed','attended']}});
-      attendees=[];
-      for(const r of rows){
-        if(r.is_child_booking){ attendees.push({name:r.child_name||'dieťa', child:true}); continue; }
-        const ru=await q.one(db.users,{_id:r.user_id});
-        if(ru && ru.anonymous){ attendees.push({name:'Člen (skrytý)', anonymous:true}); continue; }
-        attendees.push({id:r.user_id, name:r.user_name||ru?.name||'Člen'});
-      }
+  try {
+    const classes=await q.find(db.classes,{active:true});
+    const loggedIn = !!(req.session && req.session.uid);
+    const result=[];
+    for(const c of classes){
+      const bdate = displayNextDateForDay(c.day_of_week);
+      const booking_count = await q.count(db.bookings,{class_id:c._id, booking_date:bdate, status:{$ne:'cancelled'}});
+      const bookedAll = await q.count(db.bookings,{class_id:c._id,status:{$ne:'cancelled'}});
+      // Obohatenie (inštruktor + prihlásení) je „best effort" — nesmie zhodiť načítanie hodín.
+      let si={instructor:c.instructor||'—', instructor_id:c.instructor_id||null};
+      let attendees;
+      try {
+        si = await sessionInstructor(c, bdate);
+        if(loggedIn){
+          // bez avatarov (base64 data URI by nafúklo odpoveď na desiatky MB) → iniciály na fronte
+          const rows=await q.find(db.bookings,{class_id:c._id, booking_date:bdate, status:{$in:['confirmed','attended']}});
+          attendees=rows.map(r=> r.is_child_booking ? {name:r.child_name||'dieťa', child:true}
+            : {id:r.user_id, name:r.user_name||'Člen'});
+        }
+      } catch(e){ console.error('classes enrich:', e.message); }
+      result.push({...c, booking_count, next_date:bdate, booked:booking_count, booked_all:bookedAll,
+        instructor:si.instructor, instructor_id:si.instructor_id||c.instructor_id||null,
+        attendees, attendee_count: attendees?attendees.length:booking_count,
+        spotsLeft:Math.max(0,c.capacity-booking_count), dayName:DAYS_SK[c.day_of_week]});
     }
-    result.push({...c, booking_count, next_date:bdate, booked:booking_count, booked_all:bookedAll,
-      instructor:si.instructor, instructor_id:si.instructor_id||c.instructor_id||null,
-      attendees, attendee_count: attendees?attendees.length:booking_count,
-      spotsLeft:Math.max(0,c.capacity-booking_count), dayName:DAYS_SK[c.day_of_week]});
-  }
-  result.sort((a,b)=>a.day_of_week-b.day_of_week||a.time_start.localeCompare(b.time_start));
-  res.json(result);
+    result.sort((a,b)=>(a.day_of_week||0)-(b.day_of_week||0)||String(a.time_start||'').localeCompare(String(b.time_start||'')));
+    res.json(result);
+  } catch(e){ console.error('/api/classes:', e.message); res.status(500).json({error:e.message}); }
 });
 
 app.get('/api/classes/:id', async(req,res)=>{
