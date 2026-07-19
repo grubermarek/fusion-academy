@@ -385,9 +385,9 @@ function initChat() {
   });
 
   // Feed live updates
-  socket.on('feed_new', () => { if (feedMode) loadFeed(); });
-  socket.on('feed_update', () => { if (feedMode) loadFeed(); });
-  socket.on('feed_delete', () => { if (feedMode) loadFeed(); });
+  socket.on('feed_new', () => { if (feedMode) loadFeed(true); });
+  socket.on('feed_update', () => { if (feedMode) loadFeed(true); });
+  socket.on('feed_delete', () => { if (feedMode) loadFeed(true); });
 
   // Incoming private message
   socket.on('new_dm', msg => {
@@ -728,8 +728,9 @@ function openFeed() {
   document.querySelector('.chat-input-area').style.display = 'none';
   loadFeed();
 }
-async function loadFeed() {
+async function loadFeed(keepScroll) {
   const container = document.getElementById('messages');
+  const prevScroll = container ? container.scrollTop : 0;
   let posts = [];
   try { posts = await (await fetch('/api/feed')).json(); } catch {}
   const composer = `
@@ -744,7 +745,8 @@ async function loadFeed() {
   container.innerHTML = `<div class="feed-wrap">${composer}<div id="feedPosts">${
     posts.length ? posts.map(renderPost).join('') : '<div style="text-align:center;color:#888;padding:2rem">Zatiaľ žiadne príspevky. Buď prvá! 🌟</div>'
   }</div></div>`;
-  container.scrollTop = 0;
+  // pri obnove (napr. socket update) zachovaj pozíciu; na vrch skoč len pri prvom otvorení
+  container.scrollTop = keepScroll ? prevScroll : 0;
 }
 function renderPost(p) {
   const av = stringToColor(p.author_id);
@@ -914,23 +916,32 @@ async function createPost(btn) {
   }
 }
 const _feedById={};
+// Nahradí v DOM len jeden príspevok (bez prekreslenia celého feedu → neskočí hore)
+function patchPost(id, post){
+  if(!post){ loadFeed(); return; }
+  const el=document.querySelector('.post[data-id="'+id+'"]');
+  if(!el){ loadFeed(); return; }
+  const tmp=document.createElement('div'); tmp.innerHTML=renderPost(post).trim();
+  const fresh=tmp.firstElementChild;
+  if(fresh) el.replaceWith(fresh); else loadFeed();
+}
 async function reactPost(id, emoji) {
-  await fetch('/api/feed/'+id+'/react',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emoji})});
-  loadFeed();
+  const r=await fetch('/api/feed/'+id+'/react',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({emoji})}).then(x=>x.json()).catch(()=>null);
+  patchPost(id, r&&r.post);
 }
 async function votePoll(id, option) {
-  await fetch('/api/feed/'+id+'/vote',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({option})});
-  loadFeed();
+  const r=await fetch('/api/feed/'+id+'/vote',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({option})}).then(x=>x.json()).catch(()=>null);
+  patchPost(id, r&&r.post);
 }
 async function commentPost(id, input) {
   const text = input.value.trim(); if(!text) return;
   input.value='';
-  await fetch('/api/feed/'+id+'/comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
-  loadFeed();
+  const r=await fetch('/api/feed/'+id+'/comment',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({text})}).then(x=>x.json()).catch(()=>null);
+  patchPost(id, r&&r.post);
 }
 async function likeComment(pid, cid){
-  await fetch('/api/feed/'+pid+'/comments/'+cid+'/like',{method:'POST'});
-  loadFeed();
+  const r=await fetch('/api/feed/'+pid+'/comments/'+cid+'/like',{method:'POST',credentials:'include'}).then(x=>x.json()).catch(()=>null);
+  patchPost(pid, r&&r.post);
 }
 function likersModal(title, people){
   const ov=document.createElement('div'); ov.className='likers-ov';
