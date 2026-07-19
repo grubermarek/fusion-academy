@@ -878,7 +878,7 @@ function renderBookings(bookings){
       const ini=(a.name||'?').charAt(0).toUpperCase();
       const av=a.avatar
         ? `<img src="${a.avatar}" title="${escHtml(a.name)}" style="width:24px;height:24px;border-radius:50%;object-fit:cover;border:1px solid #333">`
-        : `<span title="${escHtml(a.name)}" style="width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:800;background:${stringToColor(a.id||a.name)}">${escHtml(ini)}</span>`;
+        : `<span title="${escHtml(a.name)}" style="width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:800;background:${stringToColorFriend(a.id||a.name)}">${escHtml(ini)}</span>`;
       return a.id ? `<a href="/u/${a.id}" style="margin-left:-6px" title="${escHtml(a.name)}">${av}</a>` : `<span style="margin-left:-6px">${av}</span>`;
     }).join('');
     const more=atts.length>14?`<span style="font-size:.7rem;color:var(--muted);margin-left:8px">+${atts.length-14}</span>`:'';
@@ -1324,7 +1324,7 @@ function renderClassCards(){
         const ini=(a.name||'?').charAt(0).toUpperCase();
         const av=a.avatar
           ? `<img src="${a.avatar}" title="${escHtml(a.name)}" style="width:22px;height:22px;border-radius:50%;object-fit:cover;border:1px solid #333">`
-          : `<span title="${escHtml(a.name)}" style="width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:.58rem;font-weight:800;background:${stringToColor(a.id||a.name)}">${escHtml(ini)}</span>`;
+          : `<span title="${escHtml(a.name)}" style="width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:.58rem;font-weight:800;background:${stringToColorFriend(a.id||a.name)}">${escHtml(ini)}</span>`;
         return a.id?`<a href="/u/${a.id}" style="margin-left:-6px" title="${escHtml(a.name)}">${av}</a>`:`<span style="margin-left:-6px">${av}</span>`;
       }).join('')}${atts.length>12?`<span style="font-size:.66rem;color:var(--muted);margin-left:8px">+${atts.length-12}</span>`:''}</div>
     </div>`:'';
@@ -1666,7 +1666,7 @@ function renderCelebrate(){
     const ini=(b.name||'?').charAt(0).toUpperCase();
     const av=b.avatar
       ? `<img src="${b.avatar}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;border:2px solid var(--gold)">`
-      : `<span style="width:38px;height:38px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:800;background:${stringToColor(b.id||b.name)}">${escHtml(ini)}</span>`;
+      : `<span style="width:38px;height:38px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:800;background:${stringToColorFriend(b.id||b.name)}">${escHtml(ini)}</span>`;
     const wishers=(b.wishers||[]);
     const wishersHtml=wishers.length?`<div id="wl-${b.id}" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--border,#2a2a2a)">
       <div style="font-size:.72rem;color:var(--muted);margin-bottom:5px">💛 Blahoželali (${wishers.length}):</div>
