@@ -1637,19 +1637,60 @@ async function loadSpotlight(){
   if(!d || d.error){ host.style.display='none'; return; }
   _spotData=d;
   const board=renderSpotBoard();
-  const celeb=[];
-  (d.birthdays||[]).forEach(b=>celeb.push(`<span class="sl-chip">🎂 ${escHtml(b.name)}</span>`));
-  (d.namedays||[]).forEach(n=>celeb.push(`<span class="sl-chip">💐 ${escHtml(n.name)}</span>`));
-  let celebHtml='';
-  if(celeb.length){
-    celebHtml=`<div class="sl-card sl-celebrate">
-      <div class="sl-label">🎉 Dnes oslavujú${d.today_nameday?` · meniny má ${escHtml(d.today_nameday)}`:''}</div>
-      <div class="sl-chips">${celeb.join('')}</div>
-      <div class="sl-why" style="margin-top:8px">Zaželaj im všetko najlepšie na najbližšej hodine! 🥳</div>
-    </div>`;
-  }
+  const celebHtml=renderCelebrate();
   if(!board && !celebHtml){ host.style.display='none'; return; }
   host.innerHTML=board+celebHtml; host.style.display='grid';
+}
+// Karta „Dnes oslavujú" — narodeniny s preklikom na profil, tlačidlom Blahoželám a zoznamom blahoželajúcich
+function renderCelebrate(){
+  const d=_spotData; if(!d) return '';
+  const bdays=(d.birthdays||[]).map(b=>{
+    const ini=(b.name||'?').charAt(0).toUpperCase();
+    const av=b.avatar
+      ? `<img src="${b.avatar}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;border:2px solid var(--gold)">`
+      : `<span style="width:38px;height:38px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:800;background:${stringToColor(b.id||b.name)}">${escHtml(ini)}</span>`;
+    const wishers=(b.wishers||[]);
+    const wishersHtml=wishers.length?`<div id="wl-${b.id}" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--border,#2a2a2a)">
+      <div style="font-size:.72rem;color:var(--muted);margin-bottom:5px">💛 Blahoželali (${wishers.length}):</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${wishers.map(w=>`<a href="/u/${w.id}" style="text-decoration:none"><span style="display:inline-block;background:rgba(201,168,76,.12);border:1px solid var(--gold-border,#332a18);color:var(--gold);border-radius:999px;padding:3px 9px;font-size:.74rem;font-weight:600">${escHtml(w.name)}</span></a>`).join('')}</div>
+    </div>`:'';
+    const action = b.is_me
+      ? `<span style="font-size:.78rem;color:var(--muted)">To si ty 🎉</span>`
+      : (b.i_wished
+          ? `<span style="font-size:.8rem;color:#9fd894;font-weight:700">✓ Zablahoželal/a si</span>`
+          : `<button onclick="congratulate('${b.id}')" style="background:linear-gradient(135deg,#C9A84C,#a5842f);color:#161310;border:none;border-radius:10px;padding:7px 14px;font-weight:800;cursor:pointer;font-size:.82rem">🎂 Blahoželám</button>`);
+    const countBtn=wishers.length?`<button onclick="document.getElementById('wl-${b.id}').style.display=(document.getElementById('wl-${b.id}').style.display==='none'?'block':'none')" style="background:none;border:none;color:var(--gold);font-size:.74rem;cursor:pointer;text-decoration:underline">${wishers.length} blahoželaní</button>`:'';
+    return `<div style="background:rgba(201,168,76,.06);border:1px solid var(--gold-border,#332a18);border-radius:12px;padding:12px;margin-top:8px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <a href="/u/${b.id}" style="text-decoration:none">${av}</a>
+        <div style="flex:1;min-width:120px">
+          <a href="/u/${b.id}" style="color:var(--cream);text-decoration:none;font-weight:800">${escHtml(b.name)}</a>
+          <div style="font-size:.76rem;color:var(--gold)">🎂 má dnes narodeniny!</div>
+        </div>
+        ${action}
+      </div>
+      <div style="margin-top:6px">${countBtn}</div>
+      ${wishersHtml}
+    </div>`;
+  }).join('');
+  const nds=(d.namedays||[]).map(n=>`<span class="sl-chip">💐 ${escHtml(n.name)}</span>`);
+  if(!bdays && !nds.length) return '';
+  return `<div class="sl-card sl-celebrate">
+    <div class="sl-label">🎉 Dnes oslavujú${d.today_nameday?` · meniny má ${escHtml(d.today_nameday)}`:''}</div>
+    ${bdays}
+    ${nds.length?`<div class="sl-chips" style="margin-top:8px">${nds.join('')}</div>`:''}
+    <div class="sl-why" style="margin-top:8px">Zaželaj im všetko najlepšie! 🥳</div>
+  </div>`;
+}
+async function congratulate(id){
+  const r=await api('/api/birthday/congratulate',{method:'POST',body:JSON.stringify({to_id:id})});
+  if(r&&r.ok){
+    // aktualizuj lokálne dáta a prekresli
+    const b=(_spotData.birthdays||[]).find(x=>x.id===id);
+    if(b){ b.i_wished=true; b.wishers=r.wishers||b.wishers; b.wish_count=r.wish_count; }
+    document.getElementById('spotlight').innerHTML=renderSpotBoard()+renderCelebrate();
+    showToast('Blahoželanie odoslané 💛','success');
+  } else showToast((r&&r.error)||'Chyba','error');
 }
 
 let _spotPeriod='month';
@@ -1660,20 +1701,8 @@ window.setSpotPeriod=(p)=>{
   loadSpotlightRender();
 };
 function loadSpotlightRender(){
-  const d=_spotData, host=document.getElementById('spotlight');
-  const board=renderSpotBoard();
-  const celeb=[];
-  (d.birthdays||[]).forEach(b=>celeb.push(`<span class="sl-chip">🎂 ${escHtml(b.name)}</span>`));
-  (d.namedays||[]).forEach(n=>celeb.push(`<span class="sl-chip">💐 ${escHtml(n.name)}</span>`));
-  let celebHtml='';
-  if(celeb.length){
-    celebHtml=`<div class="sl-card sl-celebrate">
-      <div class="sl-label">🎉 Dnes oslavujú${d.today_nameday?` · meniny má ${escHtml(d.today_nameday)}`:''}</div>
-      <div class="sl-chips">${celeb.join('')}</div>
-      <div class="sl-why" style="margin-top:8px">Zaželaj im všetko najlepšie na najbližšej hodine! 🥳</div>
-    </div>`;
-  }
-  host.innerHTML=board+celebHtml;
+  const host=document.getElementById('spotlight');
+  host.innerHTML=renderSpotBoard()+renderCelebrate();
 }
 // Rozpis bodov ľubovoľného člena z rebríčka
 window.spotBreakdown=(period,idx)=>{

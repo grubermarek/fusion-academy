@@ -123,6 +123,7 @@ const db = {
   meal_plans:   new Datastore({ filename: path.join(DATA_DIR, 'meal_plans.db'),   autoload: true }),
   class_cancellations: new Datastore({ filename: path.join(DATA_DIR, 'class_cancellations.db'), autoload: true }),
   session_instructors: new Datastore({ filename: path.join(DATA_DIR, 'session_instructors.db'), autoload: true }),
+  birthday_wishes: new Datastore({ filename: path.join(DATA_DIR, 'birthday_wishes.db'), autoload: true }),
   settings:     new Datastore({ filename: path.join(DATA_DIR, 'settings.db'),     autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
@@ -7735,8 +7736,16 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
     const todayName = SK_NAMEDAYS[mmdd] || '';
     const nameTargets = todayName ? todayName.split(/\s+a\s+|,\s*/).map(stripDia).filter(Boolean) : [];
     const birthdays=[], namedays=[];
+    const todayISO=today(); const me=req.session.uid;
     for(const u of users){
-      if(u.birthday && u.birthday.slice(5)===mmdd) birthdays.push({name:u.name, avatar:u.avatar||null});
+      if(u.birthday && u.birthday.slice(5)===mmdd){
+        const wishes=await q.find(db.birthday_wishes,{to_id:u._id, date:todayISO});
+        birthdays.push({ id:u._id, name:u.name, avatar:u.avatar||null,
+          wishers: wishes.map(w=>({id:w.from_id, name:w.from_name})),
+          wish_count: wishes.length,
+          i_wished: wishes.some(w=>w.from_id===me),
+          is_me: u._id===me });
+      }
       const fn = stripDia(firstName(u.name));
       if(fn && nameTargets.includes(fn)) namedays.push({name:u.name, avatar:u.avatar||null});
     }
@@ -7749,6 +7758,28 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
       birthdays, namedays,
       me_anonymous: !!(await q.one(db.users,{_id:req.session.uid}))?.anonymous });
   } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Zablahoželať oslávenkyni k narodeninám (dnes). Vidno kto blahoželal, s preklikom na profil.
+app.post('/api/birthday/congratulate', auth, async(req,res)=>{
+  try{
+    const me=req.session.uid;
+    const to=String(req.body.to_id||'');
+    if(!to || to===me) return res.status(400).json({error:'Neplatné'});
+    const u=await q.one(db.users,{_id:to});
+    const meU=await q.one(db.users,{_id:me});
+    if(!u) return res.status(404).json({error:'Nenájdená'});
+    const todayISO=today(); const mmdd=todayISO.slice(5);
+    if(!(u.birthday && u.birthday.slice(5)===mmdd)) return res.status(400).json({error:'Táto osoba dnes nemá narodeniny'});
+    const ex=await q.one(db.birthday_wishes,{to_id:to, from_id:me, date:todayISO});
+    if(!ex){
+      await q.insert(db.birthday_wishes,{ to_id:to, from_id:me, from_name:meU?.name||'Člen', date:todayISO, created_at:nowISO() });
+      await q.insert(db.notifications,{ user_id:to, type:'birthday_wish', from_id:me,
+        title:'🎂 Blahoželanie k narodeninám!', body:`${meU?.name||'Niekto'} ti zablahoželal/a k narodeninám 💛`, read:false, created_at:nowISO() }).catch(()=>{});
+    }
+    const wishes=await q.find(db.birthday_wishes,{to_id:to, date:todayISO});
+    res.json({ ok:true, wish_count:wishes.length, wishers:wishes.map(w=>({id:w.from_id, name:w.from_name})) });
+  }catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // Ceny za klientku mesiaca/roka — admin nastaví, klientky vidia
