@@ -937,7 +937,7 @@ function renderAdmin(){
 let _merchProducts=null;
 async function initMerchSale(){
   const box=document.getElementById('merchSaleBox'); if(!box) return;
-  if(!_merchProducts){ const all=await fetch('/api/products',{credentials:'include'}).then(r=>r.json()).catch(()=>[]); _merchProducts=(Array.isArray(all)?all:[]).filter(p=>p.type==='product' && p.cat==='Oblečenie'); }
+  if(!_merchProducts){ const all=await fetch('/api/products',{credentials:'include'}).then(r=>r.json()).catch(()=>[]); _merchProducts=(Array.isArray(all)?all:[]).filter(p=>p.type==='product'); }
   if(!_merchProducts.length){ box.innerHTML='<span class="set-hint">Žiadne merch produkty.</span>'; return; }
   const opts=_merchProducts.map((p,i)=>`<option value="${i}">${esc(p.name)} — ${(p.price||0).toFixed(2)} €</option>`).join('');
   box.innerHTML=`

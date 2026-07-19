@@ -2151,9 +2151,11 @@ app.put('/api/admin/users/:id/birthday', adminAuth, async(req,res)=>{
 app.get('/api/admin/user-search', adminAuth, async(req,res)=>{
   const s=(req.query.q||'').trim().toLowerCase();
   if(s.length<2) return res.json({people:[]});
+  const includeImported = req.query.all==='1' || req.query.imported==='1';
   let users=await q.find(db.users,{is_child:{$ne:true}});
-  users=users.filter(u=>!u.imported||u.claimed).filter(u=>(u.name||'').toLowerCase().includes(s)||(u.email||'').toLowerCase().includes(s)||(u.referral_code||'').toLowerCase().includes(s)).slice(0,12);
-  res.json({people:users.map(u=>({id:u._id,name:u.name,email:u.email,code:u.referral_code||'',type:u.user_type||''}))});
+  if(!includeImported) users=users.filter(u=>!u.imported||u.claimed);
+  users=users.filter(u=>(u.name||'').toLowerCase().includes(s)||(u.email||'').toLowerCase().includes(s)||(u.referral_code||'').toLowerCase().includes(s)).slice(0,15);
+  res.json({people:users.map(u=>({id:u._id,name:u.name,email:u.email,code:u.referral_code||'',type:u.user_type||'', imported:!!u.imported&&!u.claimed}))});
 });
 
 // Admin: priradiť/zmeniť sponzora klienta (napr. keď sa zaregistroval bez kódu)

@@ -3610,8 +3610,8 @@ let _mkProducts=[], _mkClient=null;
 async function loadProducts(){
   const rows=await api('/api/products');if(!rows)return;
   document.getElementById('prodTable').innerHTML=rows.map(p=>`<tr><td class="ps-3 fw-semibold">${p.emoji||''} ${p.name}</td><td><span class="badge bg-light text-dark border">${p.cat}</span></td><td>${eur(p.price)}</td><td>${(p.commission_rate*100).toFixed(0)}%</td><td><span class="badge ${p.active?'bg-success':'bg-secondary'}">${p.active?'Áno':'Nie'}</span></td></tr>`).join('');
-  // Merch predaj — dropdown produktov
-  _mkProducts=rows.filter(p=>p.type==='product'&&p.cat==='Oblečenie');
+  // Merch predaj — všetky fyzické produkty (Oblečenie, Doplnky, fľaše…)
+  _mkProducts=rows.filter(p=>p.type==='product');
   const sel=document.getElementById('mkProd');
   if(sel){ sel.innerHTML=_mkProducts.map((p,i)=>`<option value="${i}">${escHtml(p.name)} — ${eur(p.price)}</option>`).join(''); mkVariants(); }
   loadOrders();
@@ -3621,10 +3621,10 @@ function mkSearchClient(q){
   clearTimeout(_mkTimer); const box=document.getElementById('mkResults');
   if((q||'').trim().length<2){ box.style.display='none'; return; }
   _mkTimer=setTimeout(async()=>{
-    const d=await api('/api/admin/user-search?q='+encodeURIComponent(q));
+    const d=await api('/api/admin/user-search?imported=1&q='+encodeURIComponent(q));
     const ppl=(d&&d.people)||[];
     if(!ppl.length){ box.innerHTML='<div class="p-2 small text-muted">Nikto sa nenašiel.</div>'; box.style.display='block'; return; }
-    box.innerHTML=ppl.map(p=>`<div class="p-2 small" style="cursor:pointer;border-bottom:1px solid #333" onclick="mkPick('${p.id}','${escJs(p.name)}')"><b>${escHtml(p.name)}</b> <span class="text-muted">${escHtml(p.email||'')}</span></div>`).join('');
+    box.innerHTML=ppl.map(p=>`<div class="p-2 small" style="cursor:pointer;border-bottom:1px solid #333" onclick="mkPick('${p.id}','${escJs(p.name)}')"><b>${escHtml(p.name)}</b> <span class="text-muted">${escHtml(p.email||'')}</span>${p.imported?' <span class="badge bg-secondary" style="font-size:.6rem">import</span>':''}</div>`).join('');
     box.style.display='block';
   },250);
 }
