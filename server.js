@@ -901,6 +901,9 @@ async function seedData() {
       price:15, commission_rate:0.08, type:'product', active:true});
     console.log('✅  Produkt „Fusion taška" pridaný');
   }
+  // Taška v shope patrí pod „Oblečenie" (kat. „Doplnky" nemá vlastné tlačidlo)
+  { const moved = await q.update(db.products,{name:new RegExp('ta[šs]k','i'), cat:'Doplnky'},{$set:{cat:'Oblečenie'}},{multi:true});
+    if(moved) console.log(`✅  ${moved} tašiek presunutých do kat. Oblečenie`); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
