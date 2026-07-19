@@ -875,6 +875,18 @@ async function seedData() {
 
   // Tréneri nemajú % z tržby hodiny — vynuluj ho v uložených pravidlách
   await q.update(db.payout_rules,{pct_of_revenue:{$gt:0}},{$set:{pct_of_revenue:0}},{multi:true});
+
+  // Jednorazovo: predvolený tréner VŠETKÝCH hodín v štúdiu = Marek (online LIVE necháme Beáte).
+  // Per-dátum override (napr. dnešná Detva = Nelka) je oddelený a touto zmenou sa nedotkne.
+  if(!(await q.one(db.settings,{key:'classes_default_marek_v1'}))){
+    const marek = await q.one(db.users,{email:'gruber.marek@gmail.com'});
+    if(marek){
+      const n = await q.update(db.classes, { location:{$ne:'Online'} },
+        {$set:{ instructor:marek.name, instructor_id:marek._id }}, {multi:true});
+      await q.insert(db.settings,{key:'classes_default_marek_v1', value:true, at:nowISO()});
+      console.log(`✅  ${n} hodín v štúdiu priradených Marekovi ako predvolenému trénerovi`);
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
