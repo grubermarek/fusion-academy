@@ -6802,8 +6802,10 @@ async function affiliateCommissionFor(userId, month){
 }
 app.get('/api/trainer/earnings', trainerAuth, async(req,res)=>{
   try {
+    // Zárobky sú OSOBNÉ — vždy pre reálne prihláseného človeka (nie mentora asistenta).
+    // Aj asistent, ktorý sám odučí hodinu (nastaví sa ako inštruktor), musí vidieť svoj zárobok.
+    let t = req.trainerUser;
     // Admin si vie pozrieť konkrétneho trénera cez ?trainer_id=
-    let t = req.effectiveTrainer||req.trainerUser;
     if(req.query.trainer_id && req.trainerUser?.is_admin){
       const tu = await q.one(db.users,{_id:req.query.trainer_id});
       if(tu) t = tu;
