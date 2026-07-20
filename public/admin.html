@@ -269,6 +269,17 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </div>
   </div>
 
+  <!-- DETAIL VÝPLATY TRÉNERA -->
+  <div class="modal fade" id="payoutDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content bg-dark text-light border-secondary">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title" id="poDetailTitle">Výplata trénera</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body"><div id="poDetailContent" class="text-center text-muted py-4">Načítavam…</div></div>
+    </div></div>
+  </div>
+
   <!-- TRANSACTIONS -->
   <div id="s-transactions" class="section">
     <h4 class="fw-bold mb-4">Všetky predaje</h4>
@@ -1848,7 +1859,7 @@ async function loadPayouts(){
   }).join('')||'<tr><td colspan="8" class="text-muted text-center py-2">Žiadni tréneri s dochádzkou.</td></tr>';
   // payout rows
   document.getElementById('poBody').innerHTML=d.rows.length? d.rows.map(r=>`<tr>
-    <td class="fw-semibold">${escHtml(r.trainer)}</td><td>${r.sessions}</td><td>${r.attendances}</td><td>${r.revenue.toFixed(2)} €</td>
+    <td class="fw-semibold"><a href="#" onclick='openPayoutDetail(${JSON.stringify(r.trainer)},${JSON.stringify(r.trainer_id)});return false' style="color:#C9A24C;text-decoration:none">${escHtml(r.trainer)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></a>${r.status==='paid'?' <span class="badge bg-success" style="font-size:.6rem">vyplatené</span>':''}</td><td>${r.sessions}</td><td>${r.attendances}</td><td>${r.revenue.toFixed(2)} €</td>
     <td>${r.base.toFixed(2)} €</td><td>${r.bonuses.toFixed(2)} €</td>
     <td class="${r.affiliate>0?'text-info':'text-muted'}">${(r.affiliate||0).toFixed(2)} €</td>
     <td><input type="number" step="0.01" value="${r.deductions||0}" id="ded_${r.id||''}" data-trainer='${escHtml(r.trainer)}' style="width:78px" class="form-control form-control-sm bg-dark text-light border-secondary" ${r.saved?'':'disabled title="Najprv vygeneruj"'}></td>
@@ -1894,6 +1905,62 @@ async function savePayoutDeduction(id){
   const reason=prompt('Dôvod zrážky (zapíše sa do auditu):','')||'';
   const d=await api('/api/admin/payouts/'+id,{method:'PUT',body:JSON.stringify({deductions:val,reason})});
   if(d?.ok){ showToast('Zrážka uložená ✓','success'); loadPayouts(); }
+}
+
+/* ─── DETAIL VÝPLATY TRÉNERA (mesačný rozpis + uzavrieť & vyplatiť) ─────────── */
+let _poDetailModal=null, _poDetailTrainer=null;
+const MONTHS_SK_FULL=['','Január','Február','Marec','Apríl','Máj','Jún','Júl','August','September','Október','November','December'];
+function fmtMonthSk(m){ const [y,mo]=String(m).split('-'); return `${MONTHS_SK_FULL[+mo]||mo} ${y}`; }
+async function openPayoutDetail(trainer, trainerId){
+  _poDetailTrainer={name:trainer, id:trainerId};
+  document.getElementById('poDetailTitle').innerHTML=`💵 ${escHtml(trainer)} — mesačné výplaty`;
+  document.getElementById('poDetailContent').innerHTML='<div class="text-center text-muted py-4">Načítavam…</div>';
+  if(!_poDetailModal) _poDetailModal=new bootstrap.Modal(document.getElementById('payoutDetailModal'));
+  _poDetailModal.show();
+  if(!trainerId){ document.getElementById('poDetailContent').innerHTML='<div class="text-warning py-3">Tréner nemá používateľský účet — detail nedostupný.</div>'; return; }
+  const d=await api('/api/trainer/earnings?trainer_id='+encodeURIComponent(trainerId));
+  if(!d||d.error){ document.getElementById('poDetailContent').innerHTML='<div class="text-danger py-3">Chyba: '+(d?.error||'?')+'</div>'; return; }
+  renderPayoutDetail(d);
+}
+function renderPayoutDetail(d){
+  const el=document.getElementById('poDetailContent');
+  const rows=(d.months||[]).filter(m=>m.total>0 || m.sessions>0 || m.paid);
+  if(!rows.length){ el.innerHTML='<div class="text-muted py-3">Zatiaľ žiadne zárobky.</div>'; return; }
+  el.innerHTML = `<div class="mb-3 p-2 rounded" style="background:#1a1a1a;border:1px solid #2a2a2a">
+      <span class="text-muted small">Spolu za 12 mesiacov:</span> <span class="fw-bold" style="color:#C9A24C">${(d.grand_total||0).toFixed(2)} €</span>
+    </div>` + rows.map(m=>{
+    const paid=m.status==='paid';
+    const itemsHtml=(m.items||[]).map(it=>`<div class="d-flex justify-content-between small"><span class="text-muted">${escHtml(it.label)}${it.count!==''&&it.count!=null?` <span style="opacity:.6">×${it.count}</span>`:''}</span><span>${(it.amount||0).toFixed(2)} €</span></div>`).join('')
+      || '<div class="small text-muted">Bez položiek.</div>';
+    return `<div class="card bg-dark border-secondary mb-2"><div class="card-body py-2 px-3">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="fw-semibold">${fmtMonthSk(m.month)} ${paid?`<span class="badge bg-success ms-1">Vyplatené${m.payment_method?' · '+(m.payment_method==='cash'?'hotovosť':'karta'):''}</span>`:`<span class="badge bg-secondary ms-1">Neuzavreté</span>`}</div>
+        <div class="fw-bold" style="color:#C9A24C;font-size:1.05rem">${(m.total||0).toFixed(2)} €</div>
+      </div>
+      ${itemsHtml}
+      <div class="d-flex justify-content-between small mt-1 pt-1" style="border-top:1px solid #2a2a2a">
+        <span class="text-muted">Hodiny: ${m.sessions} · Účasti: ${m.attendances}${m.deductions>0?` · zrážky −${m.deductions.toFixed(2)} €`:''}</span>
+      </div>
+      <div class="mt-2 d-flex gap-2">
+        ${paid
+          ? `<span class="text-success small"><i class="bi bi-check-circle-fill"></i> Uzavreté a vyplatené</span>`
+          : `<button class="btn btn-sm btn-success py-0 px-2" onclick="payTrainerMonth('${m.month}','card')"><i class="bi bi-credit-card"></i> Uzavrieť & vyplatiť kartou/prevodom</button>
+             <button class="btn btn-sm btn-outline-warning py-0 px-2" onclick="payTrainerMonth('${m.month}','cash')"><i class="bi bi-cash-coin"></i> Cash</button>`}
+      </div>
+    </div></div>`;
+  }).join('');
+}
+async function payTrainerMonth(month, method){
+  const mlabel=fmtMonthSk(month);
+  const mtxt=method==='cash'?'v hotovosti':'kartou / prevodom';
+  if(!confirm(`Uzavrieť ${mlabel} a vyplatiť ${escHtml(_poDetailTrainer.name)} ${mtxt}?\n\nTrénerovi príde notifikácia aj e-mail, zaznamená sa do výplat a auditu.`)) return;
+  const d=await api('/api/admin/payouts/pay',{method:'POST',body:JSON.stringify({trainer:_poDetailTrainer.name, month, method})});
+  if(d?.ok){
+    showToast(`Vyplatené ${d.total.toFixed(2)} € ${mtxt} ✓`,'success');
+    const rd=await api('/api/trainer/earnings?trainer_id='+encodeURIComponent(_poDetailTrainer.id));
+    if(rd&&!rd.error) renderPayoutDetail(rd);
+    loadPayouts();
+  } else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 
 /* ─── VÝKON TRÉNEROV ─────────────────────────────────────── */
