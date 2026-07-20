@@ -289,11 +289,19 @@ select.form-control option{background:var(--dark3)}
   <span class="topbar-title">Tréner Panel</span>
   <span class="topbar-time" id="clock">--:--</span>
   <div class="topbar-user" id="topUser" style="display:none">
+    <button id="trNotifBell" onclick="toggleTrainerNotif()" style="position:relative;background:none;border:none;color:var(--cream);font-size:1.25rem;cursor:pointer;margin-right:6px" title="Notifikácie">
+      <i class="bi bi-bell-fill"></i>
+      <span id="trNotifDot" style="display:none;position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;font-size:.6rem;min-width:16px;height:16px;border-radius:8px;align-items:center;justify-content:center;padding:0 3px;font-weight:800"></span>
+    </button>
     <div class="topbar-avatar" id="topAvatar">?</div>
     <span id="topName"></span>
     <button class="logout-btn" onclick="doLogout()">Odhlásiť</button>
   </div>
 </header>
+<div id="trNotifPanel" style="display:none;position:fixed;top:64px;right:12px;width:340px;max-width:calc(100vw - 24px);max-height:70vh;overflow-y:auto;background:#161512;border:1px solid var(--gold-border);border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.6);z-index:900;padding:10px">
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px 8px"><b style="color:var(--gold)">🔔 Notifikácie</b><button onclick="document.getElementById('trNotifPanel').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer">×</button></div>
+  <div id="trNotifList"><div style="padding:16px;color:var(--muted);font-size:.85rem">Načítavam…</div></div>
+</div>
 
 <!-- LOGIN WALL -->
 <div class="login-wall" id="loginWall" style="display:flex">
@@ -770,6 +778,8 @@ setInterval(updateClock, 15000);
     document.getElementById('topAvatar').textContent = initials;
     document.getElementById('topName').textContent = me.name?.split(' ')[0]||'';
     document.getElementById('topUser').style.display='flex';
+    loadTrainerNotifCount();
+    setInterval(loadTrainerNotifCount, 60000);
     await Promise.all([loadSchedule(), loadStudents(), loadAssistant()]);
   } catch(e){ document.getElementById('loginWall').style.display='flex'; }
 })();
@@ -852,7 +862,7 @@ async function loadSchedule(){
           <div class="cc-emoji">${c.emoji||'💃'}</div>
           <div>
             <div class="cc-name">${esc(c.name)}</div>
-            <div class="cc-day">${DAYS[c.day_of_week]||''}</div>
+            <div class="cc-day">${DAYS[c.day_of_week]||''}${c.next_date?` · <b style="color:var(--gold)">${(''+c.next_date).slice(8,10)}. ${(+(''+c.next_date).slice(5,7))}.</b>`:''}</div>
           </div>
         </div>
         <div class="cc-details">
@@ -893,7 +903,7 @@ async function openAttendance(classId){
       <div class="ah-info">
         <div class="ah-name">${esc(cls.name||'')}</div>
         <div class="ah-meta">
-          <span><i class="bi bi-calendar"></i>${DAYS[cls.day_of_week]||''}</span>
+          <span><i class="bi bi-calendar"></i>${DAYS[cls.day_of_week]||''}${cls.next_date?` ${(''+cls.next_date).slice(8,10)}.${(+(''+cls.next_date).slice(5,7))}.`:''}</span>
           <span><i class="bi bi-clock"></i>${cls.time_start||''}${cls.time_end?'–'+cls.time_end:''}</span>
           ${cls.location?`<span><i class="bi bi-geo-alt"></i>${esc(cls.location)}</span>`:''}
           ${cls.level?`<span><i class="bi bi-bar-chart"></i>${esc(cls.level)}</span>`:''}
@@ -1386,6 +1396,32 @@ function closeModal(){
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
 
 // ── LOGOUT ───────────────────────────────────────────────────────────────────
+let _trNotifs=[];
+async function loadTrainerNotifCount(){
+  try{
+    const d=await api('/api/notifications/count');
+    const dot=document.getElementById('trNotifDot'); if(!dot) return;
+    if(d&&d.count>0){ dot.textContent=d.count>9?'9+':d.count; dot.style.display='flex'; }
+    else dot.style.display='none';
+  }catch(e){}
+}
+async function toggleTrainerNotif(){
+  const p=document.getElementById('trNotifPanel');
+  if(p.style.display==='block'){ p.style.display='none'; return; }
+  p.style.display='block';
+  const list=document.getElementById('trNotifList');
+  _trNotifs=await api('/api/notifications')||[];
+  if(!Array.isArray(_trNotifs)||!_trNotifs.length){ list.innerHTML='<div style="padding:16px;color:var(--muted);font-size:.85rem">Žiadne notifikácie.</div>'; }
+  else list.innerHTML=_trNotifs.slice(0,40).map(n=>`<div style="padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.05);${n.read?'':'background:rgba(201,168,76,.06)'}">
+    <div style="font-weight:700;font-size:.86rem;color:var(--cream)">${esc(n.title||'')}</div>
+    <div style="font-size:.8rem;color:var(--muted)">${esc(n.body||'')}</div>
+    <div style="font-size:.68rem;color:var(--muted);opacity:.7;margin-top:2px">${n.created_at?new Date(n.created_at).toLocaleString('sk-SK',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):''}</div>
+  </div>`).join('');
+  // označ prečítané
+  await api('/api/notifications/read',{method:'POST',body:{}}).catch(()=>{});
+  loadTrainerNotifCount();
+}
+document.addEventListener('click',e=>{ const p=document.getElementById('trNotifPanel'), b=document.getElementById('trNotifBell'); if(p&&p.style.display==='block'&&!p.contains(e.target)&&b&&!b.contains(e.target)) p.style.display='none'; });
 async function doLogout(){
   await api('/api/logout',{method:'POST'});
   window.location.href='/';

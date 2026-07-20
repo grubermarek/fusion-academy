@@ -6811,9 +6811,10 @@ app.get('/api/trainer/earnings', trainerAuth, async(req,res)=>{
     const tName = t.name;
     const rule = await q.one(db.payout_rules,{trainer:tName}) || {...DEFAULT_PAYOUT_RULE};
     const thr = rule.per_client_threshold||0;
-    // Posledných 12 mesiacov
-    const months=[]; const now=new Date();
-    for(let i=0;i<12;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); months.push(d.toISOString().slice(0,7)); }
+    // Posledných 12 mesiacov (UTC — rovnaký základ ako today() a dátumy rezervácií,
+    // inak by lokálne časové pásmo mohlo vynechať aktuálny mesiac)
+    const months=[]; const ty=+today().slice(0,4), tm=+today().slice(5,7);
+    for(let i=0;i<12;i++){ const d=new Date(Date.UTC(ty, tm-1-i, 1)); months.push(d.toISOString().slice(0,7)); }
     // Tipy pre tohto trénera (80 % podiel) — súčet po mesiacoch
     const myTips = await q.find(db.tips,{to_user_id:t._id, status:'paid'});
     const tipByMonth={};
