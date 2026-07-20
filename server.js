@@ -7240,6 +7240,7 @@ app.get('/api/attendance/class/:classId', trainerAuth, async(req,res)=>{
         is_child_booking: !!b.is_child_booking,
         child_name: b.child_name||null,
         user_id: b.user_id,
+        av: !!(u && u.avatar),
         name: b.user_name||u?.name||'—',
         email: b.user_email||u?.email||'—',
         phone: b.user_phone||u?.phone||'—',

@@ -976,9 +976,12 @@ function renderAttendees(list){
     const phoneHtml = hasPhone
       ? `<a href="tel:${esc(String(b.phone).replace(/\s+/g,''))}" style="color:var(--gold);text-decoration:none">📞 ${esc(b.phone)}</a>`
       : '';
+    const avInner = (b.av && b.user_id)
+      ? `<img src="/api/avatar/${b.user_id}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%" onerror="this.remove();this.parentNode.textContent='${escJs(initials)}'">`
+      : initials;
     const avatarHtml = canProfile
-      ? `<a href="/u/${b.user_id}" target="_blank" class="att-avatar" style="text-decoration:none;color:inherit">${initials}</a>`
-      : `<div class="att-avatar">${initials}</div>`;
+      ? `<a href="/u/${b.user_id}" target="_blank" class="att-avatar" style="text-decoration:none;color:inherit;overflow:hidden">${avInner}</a>`
+      : `<div class="att-avatar" style="overflow:hidden">${avInner}</div>`;
     return `<div class="attendee-item">
       ${avatarHtml}
       <div class="att-info">
