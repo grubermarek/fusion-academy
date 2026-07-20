@@ -323,10 +323,6 @@ select.form-control option{background:var(--dark3)}
       <i class="bi bi-calendar3"></i>
       <span class="nav-label">Hodiny</span>
     </button>
-    <button class="nav-item" onclick="switchTab('calendar',this)" id="tab-calendar" style="color:var(--gold)">
-      <i class="bi bi-calendar-heart"></i>
-      <span class="nav-label">Kalendár</span>
-    </button>
     <button class="nav-item" onclick="switchTab('students',this)" id="tab-students">
       <i class="bi bi-people"></i>
       <span class="nav-label">Klienti</span>
@@ -342,10 +338,6 @@ select.form-control option{background:var(--dark3)}
     <button class="nav-item" onclick="switchTab('notes',this)" id="tab-notes">
       <i class="bi bi-journal-text"></i>
       <span class="nav-label">Poznámky</span>
-    </button>
-    <button class="nav-item" onclick="switchTab('qrscanner',this)" id="tab-qr">
-      <i class="bi bi-qr-code-scan"></i>
-      <span class="nav-label">QR Skener</span>
     </button>
     <a class="nav-item" href="/jedalnicek" target="_blank" style="text-decoration:none">
       <i class="bi bi-egg-fried"></i>
@@ -943,7 +935,8 @@ async function confirmTrainerSession(){
   if(!confirm('Potvrdiť túto hodinu ako ABSOLVOVANÚ?\n\nVšetkým prihláseným sa pripíše návšteva + body a hodina sa započíta do tvojej výplaty.')) return;
   const r=await api('/api/attendance/confirm-session',{method:'POST',body:{class_id:_currentClassId}});
   if(r&&r.ok){
-    toast(`✅ Hodina potvrdená · ${r.attended} účastníkov · zarobil/a si ${(r.session_earn||0).toFixed(2)} € 💰`);
+    if(r.already) toast(`ℹ️ Hodina už bola potvrdená (${r.attended} účastníkov) — nič sa nepripísalo znova.`);
+    else toast(`✅ Hodina potvrdená · ${r.credited} nových · zarobil/a si ${(r.session_earn||0).toFixed(2)} € 💰`);
     loadAttendees(_currentClassId); loadSchedule&&loadSchedule();
     if(typeof loadTrainerEarnings==='function') loadTrainerEarnings();
   } else toast(r?.error||'Chyba', true);

@@ -215,7 +215,7 @@ const _insBy={};
 async function confirmSession(classId, dateStr){
   if(!confirm('Potvrdiť túto hodinu ako ABSOLVOVANÚ?\n\nVšetkým prihláseným sa pripíše návšteva + body a hodina sa započíta do tvojej výplaty.')) return;
   const r=await api('/api/attendance/confirm-session',{method:'POST',body:{class_id:classId, date:dateStr}});
-  if(r&&r.ok){ toast('✅ Hodina potvrdená · pripísaných '+r.credited+' návštev'); renderDay(); } else toast(r?.error||'Chyba', true);
+  if(r&&r.ok){ toast(r.already?('ℹ️ Hodina už bola potvrdená ('+r.attended+' účastníkov)'):('✅ Hodina potvrdená · '+r.credited+' nových návštev')); renderDay(); } else toast(r?.error||'Chyba', true);
 }
 async function claimSession(classId, dateStr){
   const r=await api('/api/attendance/session-instructor',{method:'POST',body:{class_id:classId, date:dateStr}});

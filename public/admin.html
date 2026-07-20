@@ -4117,7 +4117,7 @@ async function doConfirmSession(){
   if(!_attSelectedClass) return;
   if(!confirm('Potvrdiť túto hodinu ako ABSOLVOVANÚ?\n\nVšetkým prihláseným sa pripíše návšteva + body a hodina sa započíta do výplaty trénera.')) return;
   const r=await api('/api/attendance/confirm-session',{method:'POST',body:JSON.stringify({class_id:_attSelectedClass._id, date:_attDateStr()})});
-  if(r&&r.ok){ showToast('Hodina potvrdená · pripísaných '+r.credited+' návštev ✓','success'); openAttClass(_attSelectedClass._id); }
+  if(r&&r.ok){ showToast(r.already?('Hodina už bola potvrdená ('+r.attended+' účastníkov)'):('Hodina potvrdená · '+r.credited+' nových ✓'),'success'); openAttClass(_attSelectedClass._id); }
   else showToast('Chyba: '+(r?.error||'?'),'error');
 }
 
