@@ -977,7 +977,7 @@ function searchMergeTarget(){
   const box=document.getElementById('mergeResults');
   if(q.length<2){ box.style.display='none'; return; }
   _mergeTimer=setTimeout(async()=>{
-    const d=await api('/api/admin/user-search?q='+encodeURIComponent(q));
+    const d=await fetch('/api/admin/user-search?imported=1&q='+encodeURIComponent(q),{credentials:'include'}).then(r=>r.json()).catch(()=>null);
     const people=(d&&d.people||[]).filter(p=>p.id!==uid);
     if(!people.length){ box.innerHTML='<div style="padding:10px;color:var(--muted);font-size:.85rem">Nikto sa nenašiel.</div>'; box.style.display='block'; return; }
     box.innerHTML=people.map(p=>`<div onclick="mergeInto('${p.id}','${esc(p.name).replace(/'/g,'')}')" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:.86rem">
