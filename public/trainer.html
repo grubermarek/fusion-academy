@@ -38,8 +38,6 @@ html,body{height:100%;font-family:'Segoe UI',system-ui,sans-serif;background:var
 .layout{display:flex;height:calc(100vh - 56px)}
 .sidebar{width:64px;background:var(--dark2);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:12px 0;gap:4px;flex-shrink:0;transition:width .25s}
 .sidebar.expanded{width:220px;align-items:stretch}
-.sidebar-toggle{background:none;border:none;color:var(--muted);cursor:pointer;padding:8px;border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:8px;transition:.2s;width:40px;align-self:center}
-.sidebar-toggle:hover{background:var(--gold-dim);color:var(--gold)}
 .nav-item{
   display:flex;align-items:center;gap:12px;padding:10px 12px;
   border-radius:10px;cursor:pointer;color:var(--muted);
@@ -267,7 +265,6 @@ select.form-control option{background:var(--dark3)}
   .layout{flex-direction:column;height:calc(100vh - 52px)}
   .sidebar{width:100%;flex-direction:row;height:52px;overflow-x:auto;padding:6px 8px;border-right:none;border-bottom:1px solid var(--border)}
   .sidebar.expanded{width:100%;flex-direction:row;height:52px;overflow-x:auto;padding:6px 8px}
-  .sidebar-toggle{display:none}
   .nav-item{width:auto;padding:6px 10px;flex-direction:column;gap:3px;font-size:.65rem}
   .nav-item i{font-size:.9rem}
   .nav-label{opacity:1;font-size:.6rem}
@@ -316,9 +313,6 @@ select.form-control option{background:var(--dark3)}
 
   <!-- SIDEBAR -->
   <nav class="sidebar" id="sidebar">
-    <button class="sidebar-toggle" onclick="toggleSidebar()" id="sidebarToggle" title="Rozvinúť/Zbaliť menu">
-      <i class="bi bi-layout-sidebar-inset" id="toggleIcon" style="font-size:1rem"></i>
-    </button>
     <button class="nav-item active" onclick="switchTab('schedule',this)" id="tab-schedule">
       <i class="bi bi-calendar3"></i>
       <span class="nav-label">Hodiny</span>
@@ -744,7 +738,6 @@ let _allStudents = [];
 let _baStudents = [];
 let _currentClassId = null;
 let _attendees = [];
-let _sidebarExpanded = false;
 
 // ── CLOCK ────────────────────────────────────────────────────────────────────
 function updateClock(){
@@ -785,15 +778,6 @@ async function api(url, opts={}){
     body: opts.body ? JSON.stringify(opts.body) : undefined
   });
   return res.json();
-}
-
-// ── SIDEBAR TOGGLE ───────────────────────────────────────────────────────────
-function toggleSidebar(){
-  _sidebarExpanded = !_sidebarExpanded;
-  const sidebar = document.getElementById('sidebar');
-  const icon = document.getElementById('toggleIcon');
-  sidebar.classList.toggle('expanded', _sidebarExpanded);
-  icon.className = _sidebarExpanded ? 'bi bi-layout-sidebar-inset-reverse' : 'bi bi-layout-sidebar-inset';
 }
 
 // ── TAB SWITCHING – defined later with QR support ────────────────────────────
