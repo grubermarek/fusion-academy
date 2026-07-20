@@ -154,7 +154,6 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('points')"><i class="bi bi-star me-2"></i>Body klientov</a>
       <a class="nav-link" href="#" onclick="show('leaderboard')"><i class="bi bi-trophy me-2"></i>Leaderboard dochádzky</a>
       <a class="nav-link" href="#" onclick="show('classhistory')"><i class="bi bi-clock-history me-2"></i>História hodín & zárobky</a>
-      <a class="nav-link" href="#" onclick="show('tips')"><i class="bi bi-cash-coin me-2"></i>Tipy (dank) 💛</a>
       <a class="nav-link" href="#" onclick="show('tasktracker')"><i class="bi bi-check2-square me-2"></i>Úlohy trénerov ✅</a>
       <a class="nav-link" href="#" onclick="show('trainers')"><i class="bi bi-person-badge me-2"></i>Výkon trénerov</a>
       <a class="nav-link" href="#" onclick="show('payouts')"><i class="bi bi-cash-stack me-2"></i>Výplaty trénerov</a>
@@ -1182,6 +1181,22 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <thead><tr><th>Tréner</th><th>Hodiny</th><th>Účasti</th><th>Tržby</th><th>Základ</th><th>Bonusy</th><th>Affiliate</th><th>Zrážky</th><th>Spolu</th><th>Stav</th><th>Akcie</th></tr></thead>
       <tbody id="poBody"><tr><td colspan="10" class="text-muted text-center py-4">Načítavam…</td></tr></tbody>
     </table></div>
+
+    <!-- TIPY (DANK) — súčasť výplat trénerov -->
+    <div class="mt-4 pt-3" style="border-top:1px solid #2a2a2a">
+      <h5 class="fw-bold mb-1">💛 Tipy (dank)</h5>
+      <p class="text-muted small mb-3">Tipy od klientov pre trénerov/tím. 80 % ide trénerovi k výplate, 20 % nám. Klik na meno = profil.</p>
+      <div id="tipsSummary" class="d-flex flex-wrap gap-2 mb-3"></div>
+      <div class="card border-0 rounded-3 p-0" style="overflow-x:auto">
+        <table class="table table-dark table-hover align-middle mb-0" style="min-width:720px">
+          <thead><tr>
+            <th>Dátum</th><th>Od</th><th>Pre (tréner)</th><th class="text-end">Suma</th>
+            <th class="text-end">Tréner 80%</th><th class="text-end">My 20%</th><th>Odkaz</th><th></th>
+          </tr></thead>
+          <tbody id="tipsBody"><tr><td colspan="8" class="text-center text-muted py-3">Načítavam…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <!-- ÚLOHY TRÉNEROV -->
@@ -1210,21 +1225,6 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   </div>
 
   <!-- TIPY (DANK) -->
-  <div class="section" id="s-tips">
-    <h4 class="fw-bold mb-1">💛 Tipy (dank)</h4>
-    <p class="text-muted small mb-3">Tipy od klientov pre trénerov/tím. 80 % ide trénerovi k výplate, 20 % nám. Klik na meno = profil.</p>
-    <div id="tipsSummary" class="d-flex flex-wrap gap-2 mb-3"></div>
-    <div class="card border-0 rounded-3 p-0" style="overflow-x:auto">
-      <table class="table table-dark table-hover align-middle mb-0" style="min-width:720px">
-        <thead><tr>
-          <th>Dátum</th><th>Od</th><th>Pre (tréner)</th><th class="text-end">Suma</th>
-          <th class="text-end">Tréner 80%</th><th class="text-end">My 20%</th><th>Odkaz</th><th></th>
-        </tr></thead>
-        <tbody id="tipsBody"><tr><td colspan="8" class="text-center text-muted py-3">Načítavam…</td></tr></tbody>
-      </table>
-    </div>
-  </div>
-
   <!-- HISTÓRIA HODÍN & ZÁROBKY -->
   <div class="section" id="s-classhistory">
     <h4 class="fw-bold mb-1">🕘 História hodín & zárobky</h4>
@@ -1533,10 +1533,9 @@ function show(sec){
   if(sec==='accounting')initAccounting();
   if(sec==='points')initPoints();
   if(sec==='classhistory')initClassHistory();
-  if(sec==='tips')loadAdminTips();
   if(sec==='tasktracker')initTaskTracker();
   if(sec==='trainers')initTrainers();
-  if(sec==='payouts')initPayouts();
+  if(sec==='payouts'){ initPayouts(); loadAdminTips(); }
   if(sec==='refunds')loadRefunds();
   if(sec==='failed')loadFailed();
   if(sec==='promos')loadPromos();
