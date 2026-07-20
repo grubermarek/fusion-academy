@@ -121,6 +121,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('tasks')"><i class="bi bi-check2-square me-2"></i>CRM úlohy <span id="tasksBadge" class="badge bg-danger" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('winback')"><i class="bi bi-arrow-return-left me-2"></i>Odídení klienti <span id="winbackBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('memberships')"><i class="bi bi-patch-check me-2"></i>Členstvá</a>
+      <a class="nav-link" href="#" onclick="show('staff')"><i class="bi bi-person-badge me-2"></i>Tím &amp; roly</a>
       <div class="nav-group-label">Prevádzka</div>
       <a class="nav-link" href="#" onclick="show('classes')"><i class="bi bi-calendar3 me-2"></i>Hodiny / Stream</a>
       <a class="nav-link" href="/jedalnicek" target="_blank"><i class="bi bi-egg-fried me-2"></i>Generátor jedálničkov <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></a>
@@ -421,6 +422,44 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <iframe id="attFrame" src="about:blank" style="width:100%;height:calc(100vh - 190px);min-height:560px;border:0;border-radius:12px;background:#0f0f0f"></iframe>
   </div>
   <!-- /ATTENDANCE -->
+
+  <div id="s-staff" class="section">
+    <h4 class="fw-bold mb-1"><i class="bi bi-person-badge me-2 text-warning"></i>Tím &amp; roly</h4>
+    <p class="text-muted small mb-3">Priraď typ účtu: <b>Tréner</b>, <b>Asistent</b> alebo <b>Admin</b>. Klientov a leady tu neukazujeme. Do každej roly vieš pridať človeka (vyhľadaj), a pri asistentovi vyberieš, komu asistuje.</p>
+    <div id="staffMsg" class="alert d-none py-2 small"></div>
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="card border-0 rounded-3 p-3 h-100" style="background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.25)!important">
+          <div class="fw-bold mb-2" style="color:#fbbf24">🟡 Tréneri (<span id="cntTrainers">0</span>)</div>
+          <div id="listTrainers" class="d-flex flex-column gap-2 mb-2"></div>
+          <div class="position-relative">
+            <input type="text" class="form-control form-control-sm" placeholder="+ Pridať trénera (hľadať)…" oninput="staffSearch(this,'trainer')" autocomplete="off">
+            <div class="staff-res" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:50;background:#1a1a1a;border:1px solid var(--gold-border);border-radius:.5rem;max-height:180px;overflow-y:auto"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card border-0 rounded-3 p-3 h-100" style="background:rgba(129,199,132,.06);border:1px solid rgba(129,199,132,.25)!important">
+          <div class="fw-bold mb-2" style="color:#81c784">🤝 Asistenti (<span id="cntAssistants">0</span>)</div>
+          <div id="listAssistants" class="d-flex flex-column gap-2 mb-2"></div>
+          <div class="position-relative">
+            <input type="text" class="form-control form-control-sm" placeholder="+ Pridať asistenta (hľadať)…" oninput="staffSearch(this,'assistant')" autocomplete="off">
+            <div class="staff-res" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:50;background:#1a1a1a;border:1px solid var(--gold-border);border-radius:.5rem;max-height:180px;overflow-y:auto"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card border-0 rounded-3 p-3 h-100" style="background:rgba(96,165,250,.06);border:1px solid rgba(96,165,250,.25)!important">
+          <div class="fw-bold mb-2" style="color:#60a5fa">⚫ Admini (<span id="cntAdmins">0</span>)</div>
+          <div id="listAdmins" class="d-flex flex-column gap-2 mb-2"></div>
+          <div class="position-relative">
+            <input type="text" class="form-control form-control-sm" placeholder="+ Pridať admina (hľadať)…" oninput="staffSearch(this,'admin')" autocomplete="off">
+            <div class="staff-res" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:50;background:#1a1a1a;border:1px solid var(--gold-border);border-radius:.5rem;max-height:180px;overflow-y:auto"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div id="s-classes" class="section">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -1437,7 +1476,7 @@ function showToast(msg,type='success'){
 
 const GROUP_TITLES={manage:'Správa',marketing:'Marketing',reports:'Financie & reporty',partners:'Partneri (MLM)'};
 const SECTION_GROUP={attendance:'manage',sale:'reports',
-  leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',
+  leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',staff:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',
   marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
   finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
   partners:'partners',addpartner:'partners',commissions:'partners'};
@@ -1464,6 +1503,7 @@ function show(sec){
   if(sec==='classes')loadAdminClasses();
   if(sec==='bookings')loadAdminBookings();
   if(sec==='memberships')loadMemberships();
+  if(sec==='staff')loadStaff();
   if(sec==='winback')loadWinback();
   if(sec==='articles')loadArticles();
   if(sec==='rentals')loadRentals();
@@ -3295,6 +3335,65 @@ async function dispatchOrder(id,val){
   if(val && !confirm('Označiť objednávku ako vybavenú/odoslanú?')) return;
   const r=await api('/api/admin/orders/'+id,{method:'PUT',body:JSON.stringify({dispatch:val})});
   if(r?.ok) loadOrders(); else alert(r?.error||'Chyba');
+}
+
+// ── TÍM & ROLY ──
+let _staffMentors=[], _staffTimer=null;
+async function loadStaff(){
+  const d=await api('/api/admin/staff'); if(!d) return;
+  _staffMentors=d.mentors||[];
+  const roleBtns=(p,cur)=>{
+    const b=[];
+    if(cur!=='trainer') b.push(`<button class="btn btn-xs btn-outline-warning py-0 px-2" style="font-size:.68rem" onclick="staffAssign('${p.id}','${escJs(p.name)}','trainer')">→ Tréner</button>`);
+    if(cur!=='assistant') b.push(`<button class="btn btn-xs btn-outline-success py-0 px-2" style="font-size:.68rem" onclick="staffAssign('${p.id}','${escJs(p.name)}','assistant')">→ Asistent</button>`);
+    if(cur!=='admin') b.push(`<button class="btn btn-xs btn-outline-primary py-0 px-2" style="font-size:.68rem" onclick="staffAssign('${p.id}','${escJs(p.name)}','admin')">→ Admin</button>`);
+    b.push(`<button class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size:.68rem" onclick="staffAssign('${p.id}','${escJs(p.name)}','client')" title="Odobrať zo staff (späť na klienta)">✕ Klient</button>`);
+    return b.join(' ');
+  };
+  const row=(p,cur)=>`<div class="p-2 rounded" style="background:rgba(255,255,255,.03);border:1px solid var(--gold-border)">
+    <div class="d-flex align-items-center gap-2">
+      <img src="/api/avatar/${p.id}" onerror="this.style.display='none'" style="width:26px;height:26px;border-radius:50%;object-fit:cover">
+      <div class="flex-grow-1" style="min-width:0">
+        <a href="/u/${p.id}" target="_blank" class="fw-semibold small text-decoration-none text-warning">${escHtml(p.name)}</a>
+        <div class="text-muted" style="font-size:.68rem">${escHtml(p.email||'')}${cur==='assistant'&&p.assists_name?` · asistuje: <b>${escHtml(p.assists_name)}</b>`:''}</div>
+      </div>
+    </div>
+    <div class="d-flex flex-wrap gap-1 mt-1">${roleBtns(p,cur)}</div>
+  </div>`;
+  const fill=(id,arr,cur)=>{ document.getElementById(id).innerHTML=arr.length?arr.map(p=>row(p,cur)).join(''):'<div class="text-muted small">Nikto</div>'; };
+  fill('listTrainers',d.trainers,'trainer'); document.getElementById('cntTrainers').textContent=d.trainers.length;
+  fill('listAssistants',d.assistants,'assistant'); document.getElementById('cntAssistants').textContent=d.assistants.length;
+  fill('listAdmins',d.admins,'admin'); document.getElementById('cntAdmins').textContent=d.admins.length;
+}
+function staffSearch(input,type){
+  clearTimeout(_staffTimer);
+  const box=input.parentElement.querySelector('.staff-res');
+  const q=(input.value||'').trim();
+  if(q.length<2){ box.style.display='none'; return; }
+  _staffTimer=setTimeout(async()=>{
+    const d=await api('/api/admin/user-search?imported=1&q='+encodeURIComponent(q));
+    const ppl=(d&&d.people)||[];
+    box.innerHTML=ppl.length?ppl.map(p=>`<div class="p-2 small" style="cursor:pointer;border-bottom:1px solid #333" onclick="staffAssign('${p.id}','${escJs(p.name)}','${type}');this.closest('.staff-res').style.display='none'"><b>${escHtml(p.name)}</b> <span class="text-muted">${escHtml(p.email||'')}</span></div>`).join(''):'<div class="p-2 small text-muted">Nikto sa nenašiel.</div>';
+    box.style.display='block';
+  },250);
+}
+async function staffAssign(id,name,type){
+  const body={ type };
+  if(type==='assistant'){
+    if(!_staffMentors.length){ alert('Najprv vytvor aspoň jedného trénera/admina.'); return; }
+    const pick=prompt(`Komu bude ${name} asistovať?\n\n${_staffMentors.map((m,i)=>`${i+1}. ${m.name}`).join('\n')}\n\nZadaj číslo:`);
+    if(pick===null) return;
+    const m=_staffMentors[parseInt(pick)-1]; if(!m){ alert('Neplatná voľba.'); return; }
+    body.assists_id=m.id;
+    if(!confirm(`Nastaviť ${name} ako ASISTENTA pre ${m.name}?`)) return;
+  } else {
+    const lbl={trainer:'TRÉNERA',admin:'ADMINA',client:'KLIENTA (odobrať zo staff)'}[type]||type;
+    if(!confirm(`Nastaviť ${name} ako ${lbl}?`)) return;
+  }
+  const r=await api('/api/admin/users/'+id+'/account-type',{method:'POST',body:JSON.stringify(body)});
+  const msg=document.getElementById('staffMsg');
+  if(r&&r.ok){ msg.className='alert alert-success py-2 small'; msg.textContent='✓ Rola nastavená.'; loadStaff(); }
+  else { msg.className='alert alert-danger py-2 small'; msg.textContent='Chyba: '+((r&&r.error)||'?'); }
 }
 async function takeOrder(id){
   const r=await api('/api/admin/orders/'+id,{method:'PUT',body:JSON.stringify({take:true})});

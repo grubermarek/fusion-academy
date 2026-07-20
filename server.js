@@ -3276,6 +3276,45 @@ app.put('/api/admin/users/:id/role', adminAuth, async(req,res)=>{
   res.json({ok:true, user_type});
 });
 
+// Tím & roly — zoznam staff rozdelený na trénerov / asistentov / adminov
+app.get('/api/admin/staff', adminAuth, async(req,res)=>{
+  const users=await q.find(db.users,{is_child:{$ne:true}});
+  const nameById=Object.fromEntries(users.map(u=>[u._id,u.name]));
+  const slim=u=>({ id:u._id, name:u.name, email:u.email||'', av:!!u.avatar,
+    assists_id:u.assistant_of||null, assists_name:u.assistant_of?(nameById[u.assistant_of]||'—'):null });
+  const admins=users.filter(u=>u.is_admin).map(slim);
+  const trainers=users.filter(u=>!u.is_admin && u.user_type==='trainer' && !u.is_assistant).map(slim);
+  const assistants=users.filter(u=>u.is_assistant).map(slim);
+  const byName=(a,b)=>(a.name||'').localeCompare(b.name||'');
+  // Možní mentori pre asistenta = tréneri + admini
+  const mentors=users.filter(u=>u.is_admin||u.user_type==='trainer').map(u=>({id:u._id,name:u.name})).sort(byName);
+  res.json({ trainers:trainers.sort(byName), assistants:assistants.sort(byName), admins:admins.sort(byName), mentors });
+});
+
+// Nastav typ účtu: client | trainer | admin | assistant (asistent + komu asistuje)
+app.post('/api/admin/users/:id/account-type', adminAuth, async(req,res)=>{
+  try{
+    const type=String(req.body.type||'');
+    const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
+    const set={};
+    if(type==='client'){ set.user_type='client'; set.is_admin=false; set.is_assistant=false; set.assistant_of=null; }
+    else if(type==='trainer'){ set.user_type='trainer'; set.is_admin=false; set.is_assistant=false; set.assistant_of=null; }
+    else if(type==='admin'){ set.user_type='admin'; set.is_admin=true; set.is_assistant=false; set.assistant_of=null; }
+    else if(type==='assistant'){
+      const mentor=await q.one(db.users,{_id:String(req.body.assists_id||'')});
+      if(!mentor || !(mentor.is_admin||mentor.user_type==='trainer')) return res.status(400).json({error:'Vyber trénera/admina, ktorému bude asistovať'});
+      if(mentor._id===u._id) return res.status(400).json({error:'Asistent nemôže asistovať sám sebe'});
+      set.is_assistant=true; set.assistant_of=mentor._id; set.is_admin=false;
+      if(u.user_type==='lead'||!u.user_type) set.user_type='client';
+    } else return res.status(400).json({error:'Neplatný typ účtu'});
+    await q.update(db.users,{_id:u._id},{$set:set});
+    await q.insert(db.notifications,{user_id:u._id,type:'role_change',title:'Rola účtu zmenená',
+      body:`Nová rola: ${type==='assistant'?'Asistent':(USER_ROLES[set.user_type]?.label||type)}`,read:false,created_at:nowISO()}).catch(()=>{});
+    await auditLog(req,'set_account_type',u._id,{old:{ut:u.user_type,adm:u.is_admin,as:u.is_assistant}},{type,assists_id:set.assistant_of||null},'');
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ── Update user profile (admin) ───────────────────────────────────────────────
 app.put('/api/admin/users/:id', adminAuth, async(req,res)=>{
   try {
