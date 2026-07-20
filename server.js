@@ -888,6 +888,23 @@ async function seedData() {
     }
   }
 
+  // Jednorazovo: obnov rezervácie, ktoré predošlý (zrušený) no-show job omylom prepol na
+  // 'no_show'. Bez tohto by prihlásené klientky ostali skryté a tréner by nevedel potvrdiť
+  // hodinu. Vraciame len auto-generované no_show (majú no_show_at) za posledných 45 dní.
+  if(!(await q.one(db.settings,{key:'noshow_revert_v1'}))){
+    const cutoff = new Date(Date.now()-45*86400000).toISOString().slice(0,10);
+    const bad = await q.find(db.bookings,{status:'no_show', no_show_at:{$exists:true}, booking_date:{$gte:cutoff}});
+    let reverted=0;
+    for(const bk of bad){
+      await q.update(db.bookings,{_id:bk._id},{$set:{status:'confirmed'},$unset:{no_show_at:true}});
+      const u = await q.one(db.users,{_id:bk.user_id});
+      if(u && (u.no_show_count||0)>0) await q.update(db.users,{_id:u._id},{$set:{no_show_count:Math.max(0,(u.no_show_count||0)-1)}});
+      reverted++;
+    }
+    await q.insert(db.settings,{key:'noshow_revert_v1', value:true, at:nowISO()});
+    console.log(`✅  Obnovených ${reverted} rezervácií z omylom nastaveného no-show späť na confirmed`);
+  }
+
   // Merch: doplň tielko a tašku (varianty veľkosť/farba rieši variantsFor)
   if(!(await q.one(db.products,{name:new RegExp('tielko','i')}))){
     await q.insert(db.products,{cat:'Oblečenie', name:'Fusion tielko', emoji:'🎽',
@@ -9626,13 +9643,13 @@ async function runDailyJobs(){
     await sendFirstClassEmail(bk.user_id);
   }
 
-  // ── 3b. No-show detection: confirmed bookings whose date passed, never attended ──
-  const pastConfirmed = await q.find(db.bookings,{status:'confirmed',booking_date:{$lt:todayStr}});
-  for(const bk of pastConfirmed){
-    await q.update(db.bookings,{_id:bk._id},{$set:{status:'no_show',no_show_at:nowISO()}});
-    const u = await q.one(db.users,{_id:bk.user_id});
-    if(u) await q.update(db.users,{_id:u._id},{$set:{no_show_count:(u.no_show_count||0)+1}});
-  }
+  // ── 3b. (ZRUŠENÉ) Auto no-show detekcia ────────────────────────────────────
+  // Predtým sa každá 'confirmed' rezervácia s minulým dátumom automaticky prepla na
+  // 'no_show'. V novom modeli sa však dochádzka pripisuje AŽ keď tréner potvrdí hodinu.
+  // Ak tréner nestihol potvrdiť hodinu do nočného jobu, prihlásené klientky sa prepli na
+  // 'no_show' a ZMIZLI zo zoznamu na potvrdenie (filter berie len confirmed/attended),
+  // takže sa už nedali potvrdiť. Preto auto no-show rušíme — neabsolvované rezervácie
+  // ostávajú 'confirmed', aby ich tréner mohol potvrdiť aj so spätnou platnosťou.
 
   // ── 3c. Review ask: after 5th visit, once ─────────────────────────────────
   const reviewUrl = process.env.GOOGLE_REVIEW_URL || '';
