@@ -905,6 +905,29 @@ async function seedData() {
     console.log(`✅  Obnovených ${reverted} rezervácií z omylom nastaveného no-show späť na confirmed`);
   }
 
+  // Jednorazovo: spätne POTVRĎ všetky minulé 'confirmed' rezervácie (za posledných 45 dní) ako
+  // absolvované — pripíše sa návšteva + body + odznaky, a keďže výplaty trénerov sa rátajú z
+  // 'attended', dopočíta sa aj zárobok trénerom. Rieši hodiny, ktoré tréner nestihol potvrdiť
+  // (napr. kvôli zrušenému no-show jobu). Beží po noshow_revert, takže obnovené rezervácie sú
+  // už 'confirmed'. Rozsah 45 dní = éra nového modelu (dochádzka až po potvrdení), aby sa
+  // nedvojpočítali staršie hodiny, čo mali návštevu pripísanú už pri rezervácii.
+  if(!(await q.one(db.settings,{key:'retro_confirm_v1'}))){
+    const tstr = today();
+    const cutoff = new Date(Date.now()-45*86400000).toISOString().slice(0,10);
+    const past = await q.find(db.bookings,{status:'confirmed', booking_date:{$lt:tstr, $gte:cutoff}});
+    let confirmed=0, credited=0;
+    for(const b of past){
+      await q.update(db.bookings,{_id:b._id},{$set:{status:'attended', attended_at:nowISO(), attended_by:'system_retro'}});
+      confirmed++;
+      if(!b.is_child_booking && b.user_id){
+        const u = await q.one(db.users,{_id:b.user_id});
+        if(u){ await creditAttendance(u); credited++; }
+      }
+    }
+    await q.insert(db.settings,{key:'retro_confirm_v1', value:true, at:nowISO()});
+    console.log(`✅  Spätne potvrdených ${confirmed} rezervácií (pripísaných ${credited} návštev) — zárobky trénerov sa dopočítajú z attended`);
+  }
+
   // Merch: doplň tielko a tašku (varianty veľkosť/farba rieši variantsFor)
   if(!(await q.one(db.products,{name:new RegExp('tielko','i')}))){
     await q.insert(db.products,{cat:'Oblečenie', name:'Fusion tielko', emoji:'🎽',
