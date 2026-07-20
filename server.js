@@ -7462,8 +7462,25 @@ app.post('/api/attendance/confirm-session', trainerAuth, async(req,res)=>{
         if(u){ await creditAttendance(u); credited++; }
       } else credited++;
     }
-    await auditLog(req,'confirm_session',cls._id,{date},{credited},'');
-    res.json({ ok:true, credited, date, class_name:cls.name });
+    // Zárobok trénera za túto hodinu (základ + € za klienta nad limit) — informatívne
+    const si = await sessionInstructor(cls, date);
+    const rules = Object.fromEntries((await q.find(db.payout_rules,{})).map(r=>[r.trainer,r]));
+    const ruleFor = ins => { if(rules[ins]) return {...DEFAULT_PAYOUT_RULE,...rules[ins]};
+      const key=Object.keys(rules).find(k=>ins&&k&&(k.includes(ins.split(' ')[0])||ins.includes(k.split(' ')[0])));
+      return {...DEFAULT_PAYOUT_RULE,...(key?rules[key]:{})}; };
+    const rule = ruleFor(si.instructor);
+    const totalAttended = await q.count(db.bookings,{class_id:cls._id, booking_date:date, status:'attended'});
+    const billable = Math.max(0, totalAttended - (rule.per_client_threshold||0));
+    const sessionEarn = +((rule.fixed_per_class||0) + (rule.per_client||0)*billable).toFixed(2);
+    // Notifikácia inštruktorovi o zárobku za hodinu (zobrazí sa v jeho zvončeku)
+    if(si.instructor_id){
+      await q.insert(db.notifications,{ user_id:si.instructor_id, type:'earning',
+        title:`💰 Hodina potvrdená — +${sessionEarn.toFixed(2)} €`,
+        body:`${cls.name} · ${cls.location} · ${date} — ${totalAttended} účastníkov. Pripísané do tvojej výplaty.`,
+        read:false, created_at:nowISO() }).catch(()=>{});
+    }
+    await auditLog(req,'confirm_session',cls._id,{date},{credited, earn:sessionEarn},'');
+    res.json({ ok:true, credited, date, class_name:cls.name, instructor:si.instructor, attended:totalAttended, session_earn:sessionEarn });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 

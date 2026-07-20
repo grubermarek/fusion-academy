@@ -932,7 +932,11 @@ async function confirmTrainerSession(){
   if(!_currentClassId) return;
   if(!confirm('Potvrdiť túto hodinu ako ABSOLVOVANÚ?\n\nVšetkým prihláseným sa pripíše návšteva + body a hodina sa započíta do tvojej výplaty.')) return;
   const r=await api('/api/attendance/confirm-session',{method:'POST',body:{class_id:_currentClassId}});
-  if(r&&r.ok){ toast('✅ Hodina potvrdená · pripísaných '+r.credited+' návštev'); loadAttendees(_currentClassId); loadSchedule&&loadSchedule(); } else toast(r?.error||'Chyba', true);
+  if(r&&r.ok){
+    toast(`✅ Hodina potvrdená · ${r.attended} účastníkov · zarobil/a si ${(r.session_earn||0).toFixed(2)} € 💰`);
+    loadAttendees(_currentClassId); loadSchedule&&loadSchedule();
+    if(typeof loadTrainerEarnings==='function') loadTrainerEarnings();
+  } else toast(r?.error||'Chyba', true);
 }
 async function claimTrainerIns(classId, date){
   const r=await api('/api/attendance/session-instructor',{method:'POST',body:{class_id:classId, date}});
@@ -971,6 +975,7 @@ function renderAttendees(list){
     const hasFree = !b.free_class_used && (b.visit_count||0)===0;
     const hasSingle = (b.single_entries||0)>0;
     let badgeHtml = '';
+    if(b.status==='attended') badgeHtml += `<span class="att-badge" style="background:rgba(74,222,128,.18);color:#4ade80;border:1px solid rgba(74,222,128,.35)"><i class="bi bi-check-circle-fill"></i>Absolvoval</span>`;
     if(hasMem) badgeHtml += `<span class="att-badge badge-mem"><i class="bi bi-credit-card-fill"></i>${esc(b.membership)}</span>`;
     else if(hasFree) badgeHtml += `<span class="att-badge badge-free"><i class="bi bi-gift-fill"></i>Prvá zadarmo</span>`;
     else if(hasSingle) badgeHtml += `<span class="att-badge badge-single"><i class="bi bi-ticket-perforated-fill"></i>${b.single_entries} vstup(ov)</span>`;
