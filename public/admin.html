@@ -418,136 +418,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="btn btn-sm" href="/booking-calendar" style="background:var(--grad-gold,linear-gradient(135deg,#C9A84C,#a07830));color:#111;font-weight:700"><i class="bi bi-arrows-fullscreen me-1"></i>Celoobrazovkový režim</a>
     </div>
 
-    <!-- Day navigation -->
-    <div class="d-flex align-items-center justify-content-center gap-2 mb-3">
-      <button class="btn btn-outline-secondary btn-sm" onclick="attMoveDay(-1)"><i class="bi bi-chevron-left"></i></button>
-      <div class="text-center" style="min-width:200px">
-        <div class="fw-bold" id="attDayLabel" style="font-size:1.05rem;text-transform:capitalize">—</div>
-        <input type="date" id="attDatePick" onchange="attPickDate(this.value)" class="form-control form-control-sm bg-dark text-light border-secondary mt-1" style="max-width:170px;margin:0 auto;color-scheme:dark">
-      </div>
-      <button class="btn btn-outline-secondary btn-sm" onclick="attMoveDay(1)"><i class="bi bi-chevron-right"></i></button>
-    </div>
-    <div class="text-center mb-3"><button class="btn btn-sm btn-brand" id="attTodayBtn" onclick="attGoToday()" style="display:none">↩︎ Dnes</button></div>
-
-    <!-- Class cards grid -->
-    <div id="attClassGrid" class="row g-3 mb-4"></div>
-
-    <!-- Attendees panel (opens when class is clicked) -->
-    <div id="attDetailPanel" style="display:none">
-      <div class="card border-0 rounded-3 p-4">
-        <!-- Header -->
-        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
-          <div>
-            <h5 class="fw-bold mb-1" id="attDetailTitle">—</h5>
-            <div class="text-muted small" id="attDetailMeta">—</div>
-            <div class="small mt-1" id="attInstructor" style="color:#C9A84C"></div>
-          </div>
-          <div class="d-flex gap-2 flex-wrap">
-            <button class="btn btn-sm" style="background:#4ade80;color:#0c2a14;border:none;font-weight:700" onclick="doConfirmSession()">
-              <i class="bi bi-check2-circle me-1"></i>Potvrdiť hodinu (absolvované)
-            </button>
-            <button class="btn btn-sm" style="background:rgba(201,168,76,.15);color:#C9A84C;border:1px solid rgba(201,168,76,.35)" onclick="openAttQr()">
-              <i class="bi bi-qr-code-scan me-1"></i>Skenovať QR
-            </button>
-            <button class="btn btn-sm" style="background:rgba(74,222,128,.15);color:#4ade80;border:1px solid rgba(74,222,128,.3)" onclick="openManualBooking()">
-              <i class="bi bi-person-plus me-1"></i>Pridať ručne
-            </button>
-            <button class="btn btn-sm btn-outline-secondary" onclick="closeAttDetail()">
-              <i class="bi bi-x me-1"></i>Zavrieť
-            </button>
-          </div>
-        </div>
-
-        <!-- Attendee table -->
-        <div class="table-responsive">
-          <table class="table table-hover mb-0">
-            <thead>
-              <tr>
-                <th class="ps-2">Klient</th>
-                <th>Kontakt</th>
-                <th>Členstvo</th>
-                <th>Návštevy</th>
-                <th>Dátum</th>
-                <th>Akcia</th>
-              </tr>
-            </thead>
-            <tbody id="attAttendeesTable"></tbody>
-          </table>
-        </div>
-
-        <!-- Quick actions row -->
-        <div class="mt-4 pt-3 border-top" style="border-color:var(--gold-border)!important">
-          <div class="row g-3">
-            <!-- Manual booking -->
-            <div class="col-md-4" id="manualBookingPanel" style="display:none">
-              <div style="background:rgba(74,222,128,.07);border:1px solid rgba(74,222,128,.2);border-radius:.75rem;padding:16px">
-                <div class="fw-semibold mb-2 small" style="color:#4ade80"><i class="bi bi-person-plus me-1"></i>Pridať klienta na hodinu</div>
-                <div class="mb-2 position-relative">
-                  <input type="text" class="form-control form-control-sm" id="mbUserSearch" placeholder="Hľadať klienta..." oninput="searchUsersAtt(this.value)" autocomplete="off">
-                  <div id="mbUserDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#1a1a1a;border:1px solid var(--gold-border);border-radius:.5rem;z-index:50;max-height:180px;overflow-y:auto"></div>
-                </div>
-                <div id="mbSelectedUser" style="display:none;background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.2);border-radius:.5rem;padding:8px 10px;margin-bottom:8px;font-size:.82rem">
-                  <span id="mbSelectedName">—</span>
-                  <button onclick="clearMbUser()" style="float:right;background:none;border:none;color:#888;cursor:pointer;font-size:.85rem">✕</button>
-                </div>
-                <div class="mb-2">
-                  <input type="date" class="form-control form-control-sm" id="mbDate" placeholder="Dátum">
-                </div>
-                <div class="form-check mb-2">
-                  <input class="form-check-input" type="checkbox" id="mbIsFree">
-                  <label class="form-check-label small" for="mbIsFree">🎁 Hodina zadarmo</label>
-                </div>
-                <div class="mb-2">
-                  <input type="text" class="form-control form-control-sm" id="mbNote" placeholder="Poznámka (nepovinné)">
-                </div>
-                <button class="btn btn-sm w-100" style="background:#4ade80;color:#111;font-weight:700" onclick="doManualBooking()">Zapísať klienta</button>
-                <div id="mbCoverage" style="display:none;margin-top:10px"></div>
-              </div>
-            </div>
-
-            <!-- Single entry -->
-            <div class="col-md-4">
-              <div style="background:rgba(96,165,250,.07);border:1px solid rgba(96,165,250,.2);border-radius:.75rem;padding:16px">
-                <div class="fw-semibold mb-2 small" style="color:#60a5fa"><i class="bi bi-ticket-perforated me-1"></i>Jednorazový vstup (10 €)</div>
-                <div class="mb-2 position-relative">
-                  <input type="text" class="form-control form-control-sm" id="seUserSearch" placeholder="Hľadať klienta..." oninput="searchUsersSe(this.value)" autocomplete="off">
-                  <div id="seUserDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#1a1a1a;border:1px solid var(--gold-border);border-radius:.5rem;z-index:50;max-height:180px;overflow-y:auto"></div>
-                </div>
-                <div id="seSelectedUser" style="display:none;background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.2);border-radius:.5rem;padding:8px 10px;margin-bottom:8px;font-size:.82rem">
-                  <span id="seSelectedName">—</span>
-                  <button onclick="clearSeUser()" style="float:right;background:none;border:none;color:#888;cursor:pointer;font-size:.85rem">✕</button>
-                </div>
-                <select class="form-select form-select-sm mb-2" id="sePayMethod">
-                  <option value="cash">Hotovosť</option>
-                  <option value="transfer">Prevod</option>
-                  <option value="card">Karta</option>
-                </select>
-                <button class="btn btn-sm w-100" style="background:#60a5fa;color:#111;font-weight:700" onclick="doSingleEntry()">Zaznamenať (10 €)</button>
-              </div>
-            </div>
-
-            <!-- Give free class -->
-            <div class="col-md-4">
-              <div style="background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2);border-radius:.75rem;padding:16px">
-                <div class="fw-semibold mb-2 small" style="color:#fbbf24"><i class="bi bi-gift me-1"></i>Dať hodinu zadarmo</div>
-                <div class="mb-2 position-relative">
-                  <input type="text" class="form-control form-control-sm" id="gfUserSearch" placeholder="Hľadať klienta..." oninput="searchUsersGf(this.value)" autocomplete="off">
-                  <div id="gfUserDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#1a1a1a;border:1px solid var(--gold-border);border-radius:.5rem;z-index:50;max-height:180px;overflow-y:auto"></div>
-                </div>
-                <div id="gfSelectedUser" style="display:none;background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.2);border-radius:.5rem;padding:8px 10px;margin-bottom:8px;font-size:.82rem">
-                  <span id="gfSelectedName">—</span>
-                  <button onclick="clearGfUser()" style="float:right;background:none;border:none;color:#888;cursor:pointer;font-size:.85rem">✕</button>
-                </div>
-                <div class="mb-2">
-                  <input type="text" class="form-control form-control-sm" id="gfNote" placeholder="Dôvod (nepovinné)">
-                </div>
-                <button class="btn btn-sm w-100" style="background:#fbbf24;color:#111;font-weight:700" onclick="doGiveFree()">Udeliť 🎁</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <iframe id="attFrame" src="about:blank" style="width:100%;height:calc(100vh - 190px);min-height:560px;border:0;border-radius:12px;background:#0f0f0f"></iframe>
   </div>
   <!-- /ATTENDANCE -->
 
@@ -4029,6 +3900,11 @@ function _attVisibleClasses(){
 }
 
 async function loadAttendance(){
+  // Zjednotené: admin Kalendár rezervácií používa ten istý booking-calendar ako tréner
+  const f=document.getElementById('attFrame');
+  if(f && (f.src==='about:blank' || !f.src.includes('/booking-calendar'))) f.src='/booking-calendar?embed=1';
+  return;
+  /* starý vlastný kód nižšie sa už nepoužíva */
   if(!_attClasses.length){
     const classes = await api('/api/attendance/schedule');
     _attClasses = Array.isArray(classes) ? classes : [];
