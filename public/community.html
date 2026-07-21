@@ -313,6 +313,12 @@ body.fa-has-dock #fa-dock{bottom:12px;}
 </div>
 
 <script>
+function fmtDate(d){
+  if(d===null||d===undefined||d==='') return '';
+  const s=String(d);
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : s;
+}
 let socket = null;
 let me = null;
 let currentChannel = 'general';
@@ -545,7 +551,7 @@ function appendMessage(msg, animate) {
       <div class="article-meta">
         <span class="msg-name">${escHtml(msg.user_name||'Fusion Academy')}</span>
         <span class="member-badge" style="${badgeStyle}" title="${badge.label||''}">${badge.emoji||'🌱'}</span>
-        <span class="msg-time">${msg.article_date||timeStr}</span>
+        <span class="msg-time">${msg.article_date?fmtDate(msg.article_date):timeStr}</span>
       </div>
       <div class="article-body">${formattedBody}</div>`;
   } else {

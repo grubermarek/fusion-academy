@@ -1475,7 +1475,13 @@ async function api(url,opts={}){
   try{ return await r.json(); }catch(e){ return {ok:false,error:'Server error '+r.status}; }
 }
 function eur(v){return (+v).toFixed(2)+' €';}
-function dateStr(d){return d?d.slice(0,10):'—';}
+function fmtDate(d){
+  if(d===null||d===undefined||d==='') return '';
+  const s=String(d);
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : s;
+}
+function dateStr(d){return d?fmtDate(d):'—';}
 function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function esc(s){return escHtml(s);}
 function showToast(msg,type='success'){
@@ -1725,7 +1731,7 @@ async function loadPromos(){
     const disc = p.type==='percent' ? p.value+' %' : (+p.value).toFixed(2)+' €';
     const cond = [p.once_per_user?'1×/klient':'', p.min_amount?('od '+p.min_amount+' €'):''].filter(Boolean).join(', ')||'—';
     const uses = (p.used_count||0)+(p.max_uses?(' / '+p.max_uses):'');
-    const exp = p.expires_at ? new Date(p.expires_at).toLocaleDateString('sk-SK') : '—';
+    const exp = p.expires_at ? fmtDate(p.expires_at) : '—';
     return `<tr>
       <td class="fw-bold" style="color:#C9A24C;font-family:monospace">${escHtml(p.code)}</td>
       <td>${disc}</td><td>${uses}</td><td class="text-nowrap">${exp}</td><td class="small text-muted">${cond}</td>
@@ -1793,7 +1799,7 @@ async function loadRefunds(){
       <div class="flex-grow-1" style="background:#151515;border-radius:6px;height:16px;overflow:hidden"><div style="width:${Math.max(5,r.amount/max*100)}%;height:100%;background:linear-gradient(90deg,#8a5a2e,#e0a656)"></div></div>
       <div style="min-width:70px;text-align:right;font-size:.8rem" class="fw-bold">${r.amount.toFixed(2)} €</div></div>`).join('') : '<div class="text-muted small">Žiadne refundácie.</div>';
   document.getElementById('refBody').innerHTML= d.refunds.length? d.refunds.map(r=>`<tr>
-    <td>${(r.created_at||'').slice(0,10)}</td><td>${escHtml(r.client_name||'—')}</td>
+    <td>${fmtDate(r.created_at)}</td><td>${escHtml(r.client_name||'—')}</td>
     <td><span class="badge bg-secondary">${REF_TYPE_LABEL[r.type]||r.type}</span></td>
     <td class="fw-bold" style="color:#e0a656">${(+r.amount).toFixed(2)} €</td>
     <td>${escHtml(d.reasons[r.reason]||r.reason)}</td><td>${escHtml(r.gateway||'—')}</td>
@@ -2030,7 +2036,7 @@ async function loadAdminTips(){
     <span class="badge bg-warning text-dark">Náš podiel ${eur(t.our_cut)}</span>`;
   if(!d.tips.length){ body.innerHTML='<tr><td colspan="8" class="text-center text-muted py-3">Zatiaľ žiadne tipy.</td></tr>'; return; }
   body.innerHTML=d.tips.map(x=>{
-    const when=(x.created_at||'').slice(0,10);
+    const when=fmtDate(x.created_at);
     const from=x.from_user_id?`<a href="/u/${x.from_user_id}" target="_blank" style="color:#e0b84c;text-decoration:none">${escHtml(x.from_name)}</a>`:escHtml(x.from_name||'Anonym');
     const to=x.to_user_id?`<a href="/u/${x.to_user_id}" target="_blank" style="color:#e0b84c;text-decoration:none">${escHtml(x.to_name)}</a>`:escHtml(x.to_name||'');
     const demo=(x.paypal_order_id||'').startsWith('demo-');
@@ -2808,7 +2814,7 @@ const LEAD_STATUS={
 function leadStatusSelect(l){
   const cur=l.lead_status||'new'; const c=LEAD_STATUS[cur]||LEAD_STATUS.new;
   const opts=Object.entries(LEAD_STATUS).filter(([k])=>k!=='contacted'||cur==='contacted').map(([k,v])=>`<option value="${k}" ${k===cur?'selected':''}>${v.icon} ${v.label}</option>`).join('');
-  const tt=l.attended_trial_at?`title="Na hodine zdarma bola ${new Date(l.attended_trial_at).toLocaleDateString('sk-SK')}"`:'';
+  const tt=l.attended_trial_at?`title="Na hodine zdarma bola ${fmtDate(l.attended_trial_at)}"`:'';
   return `<select class="form-select form-select-sm lead-status-sel" ${tt} style="min-width:178px;font-weight:700;border:0;color:#fff;background-color:${c.color}" onchange="setLeadStatus('${l.id}',this.value)">${opts}</select>`;
 }
 function renderLeads(){
@@ -2880,7 +2886,7 @@ async function showLeadEmails(id,name){
     html+='<div class="small text-muted mb-2">Klikni na e-mail a zobrazí sa presné znenie, aké klientka dostala/dostane.</div>';
     html+='<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0"><thead class="table-light"><tr><th>Dátum</th><th>Sekvencia</th><th>E-mail</th><th>Stav</th></tr></thead><tbody>';
     html+=d.rows.map((r,idx)=>{
-      const dt=r.status==='sent'&&r.sent_at?new Date(r.sent_at).toLocaleDateString('sk-SK'):(r.scheduled_for?new Date(r.scheduled_for).toLocaleDateString('sk-SK'):'—');
+      const dt=r.status==='sent'&&r.sent_at?fmtDate(r.sent_at):(r.scheduled_for?fmtDate(r.scheduled_for):'—');
       const reason=r.reason?`<div class="small text-muted">${escHtml(r.reason)}</div>`:'';
       const clickable=r.html?`style="cursor:pointer" onclick="viewLeadEmail(${idx})"`:'';
       const eye=r.html?' <i class="bi bi-eye text-info"></i>':'';
@@ -2895,7 +2901,7 @@ async function showLeadEmails(id,name){
 let _leadEmailRows=[];
 function viewLeadEmail(idx){
   const r=_leadEmailRows[idx]; if(!r||!r.html) return;
-  const dt=r.status==='sent'&&r.sent_at?('Odoslané '+new Date(r.sent_at).toLocaleDateString('sk-SK')):(r.scheduled_for?('Naplánované na '+new Date(r.scheduled_for).toLocaleDateString('sk-SK')):'');
+  const dt=r.status==='sent'&&r.sent_at?('Odoslané '+fmtDate(r.sent_at)):(r.scheduled_for?('Naplánované na '+fmtDate(r.scheduled_for)):'');
   document.getElementById('leadEmailView').innerHTML=`
     <button class="btn btn-sm btn-outline-secondary mb-2" onclick="backToEmailList()"><i class="bi bi-arrow-left"></i> Späť na zoznam</button>
     <div class="mb-1"><b>Predmet:</b> ${escHtml(r.subject||r.label)}</div>
@@ -3026,7 +3032,7 @@ async function openClientDetail(id){
   const acq=[p.acq.utm_campaign&&('kampaň: '+p.acq.utm_campaign), p.acq.utm_source&&('zdroj: '+p.acq.utm_source), p.acq.lead_source].filter(Boolean).join(' · ')||'—';
   document.getElementById('cdHeader').innerHTML=`
     <div style="font-family:'Cormorant Garamond',serif;font-size:1.7rem;font-weight:600">${escHtml(p.name)}</div>
-    <div class="text-muted small">${escHtml(p.email)} · ${escHtml(p.phone||'bez tel.')} · od ${(p.created_at||'').slice(0,10)}</div>
+    <div class="text-muted small">${escHtml(p.email)} · ${escHtml(p.phone||'bez tel.')} · od ${fmtDate(p.created_at)}</div>
     <div class="text-muted" style="font-size:.72rem">Akvizícia: ${escHtml(acq)}</div>`;
   const kpi=(l,v)=>`<div class="col-6 col-md-3"><div style="background:#1e1e1e;border:1px solid #2a2a2a;border-radius:9px;padding:11px 13px">
     <div class="text-muted" style="font-size:.62rem;text-transform:uppercase;letter-spacing:.04em">${l}</div>
@@ -3040,18 +3046,18 @@ async function openClientDetail(id){
       ${kpi('Návštevy', k.visits+' <small class="text-muted">('+k.avgPerMonth+'/mes.)</small>')}
       ${kpi('Top štúdio', escHtml(k.topStudio))}
       ${kpi('Top inštruktor', escHtml(k.topInstructor))}
-      ${kpi('Posledná návšteva', k.lastVisit?(k.lastVisit||'').slice(0,10):'—')}
-      ${kpi('Prvá návšteva', k.firstVisit?(k.firstVisit||'').slice(0,10):'—')}
-      ${kpi('Aktívne členstvo', k.activeMembership?escHtml(k.activeMembership.plan_name)+'<br><small class="text-muted">do '+(k.activeMembership.expires_at||'').slice(0,10)+'</small>':'—')}
+      ${kpi('Posledná návšteva', k.lastVisit?fmtDate(k.lastVisit):'—')}
+      ${kpi('Prvá návšteva', k.firstVisit?fmtDate(k.firstVisit):'—')}
+      ${kpi('Aktívne členstvo', k.activeMembership?escHtml(k.activeMembership.plan_name)+'<br><small class="text-muted">do '+fmtDate(k.activeMembership.expires_at)+'</small>':'—')}
       ${kpi('Referral kredit', (p.referral_credit||0).toFixed(2)+' €')}
     </div>
     <ul class="nav nav-tabs mb-2" style="border-color:#333">
       ${['Platby','Členstvá','Návštevy','Faktúry'].map((t,i)=>`<li class="nav-item"><a class="nav-link${i===0?' active':''}" style="cursor:pointer;color:#ccc" onclick="cdTab(${i},this)">${t}</a></li>`).join('')}
     </ul>
     <div class="cd-tab" data-i="0">${cdPaymentsHtml(d.payments)}</div>
-    <div class="cd-tab" data-i="1" style="display:none">${list(d.memberships,['Členstvo','Cena','Stav','Od','Do'],r=>`<tr><td>${escHtml(r.plan_name||'')}</td><td>${r.price.toFixed(2)} €</td><td>${escHtml(r.status||'')}</td><td>${(r.started_at||'').slice(0,10)}</td><td>${(r.expires_at||'').slice(0,10)}</td></tr>`)}</div>
-    <div class="cd-tab" data-i="2" style="display:none">${list(d.bookings,['Dátum','Hodina','Miesto','Stav'],r=>`<tr><td>${(r.date||'').slice(0,10)}</td><td>${escHtml(r.class_name||'')}</td><td>${escHtml(r.location||'')}</td><td>${escHtml(r.status||'')}</td></tr>`)}</div>
-    <div class="cd-tab" data-i="3" style="display:none">${list(d.invoices,['Číslo','Suma','Stav','Vystavená'],r=>`<tr><td><a href="/invoice/${r.number}" target="_blank" style="color:#C9A84C">${r.number}</a></td><td>${r.total.toFixed(2)} €</td><td>${escHtml(r.status||'')}</td><td>${(r.issued_at||'').slice(0,10)}</td></tr>`)}</div>
+    <div class="cd-tab" data-i="1" style="display:none">${list(d.memberships,['Členstvo','Cena','Stav','Od','Do'],r=>`<tr><td>${escHtml(r.plan_name||'')}</td><td>${r.price.toFixed(2)} €</td><td>${escHtml(r.status||'')}</td><td>${fmtDate(r.started_at)}</td><td>${fmtDate(r.expires_at)}</td></tr>`)}</div>
+    <div class="cd-tab" data-i="2" style="display:none">${list(d.bookings,['Dátum','Hodina','Miesto','Stav'],r=>`<tr><td>${fmtDate(r.date)}</td><td>${escHtml(r.class_name||'')}</td><td>${escHtml(r.location||'')}</td><td>${escHtml(r.status||'')}</td></tr>`)}</div>
+    <div class="cd-tab" data-i="3" style="display:none">${list(d.invoices,['Číslo','Suma','Stav','Vystavená'],r=>`<tr><td><a href="/invoice/${r.number}" target="_blank" style="color:#C9A84C">${r.number}</a></td><td>${r.total.toFixed(2)} €</td><td>${escHtml(r.status||'')}</td><td>${fmtDate(r.issued_at)}</td></tr>`)}</div>
     <div id="cdAwards" class="mt-3 pt-3" style="border-top:1px solid #2a2a2a"><div class="text-muted small">Načítavam odznaky…</div></div>`;
   loadAwards(id);
 }
@@ -3109,7 +3115,7 @@ function cdPaymentsHtml(payments){
     } else if(r.refundable){
       action=`<button class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:.72rem" onclick="cdRefund('${r.id}')"><i class="bi bi-arrow-counterclockwise"></i> Refundovať</button>`;
     } else { action='<span class="text-muted">—</span>'; }
-    return `<tr><td>${(r.date||'').slice(0,10)}</td><td class="fw-semibold">${r.amount.toFixed(2)} €</td><td class="small">${gwBadge(r.gateway)}</td><td class="text-muted small">${escHtml(r.note||'')}</td><td>${action}</td></tr>`;
+    return `<tr><td>${fmtDate(r.date)}</td><td class="fw-semibold">${r.amount.toFixed(2)} €</td><td class="small">${gwBadge(r.gateway)}</td><td class="text-muted small">${escHtml(r.note||'')}</td><td>${action}</td></tr>`;
   }).join('');
   return `<div class="table-responsive"><table class="table table-dark table-sm align-middle mb-0" style="font-size:.78rem">
     <thead><tr><th>Dátum</th><th>Suma</th><th>Spôsob</th><th>Poznámka</th><th>Akcia</th></tr></thead><tbody>${rows}</tbody></table></div>`;
@@ -3118,7 +3124,7 @@ async function cdRefund(paymentId){
   const p=_cdPayments.find(x=>x.id===paymentId); if(!p) return;
   if(!_refMeta) _refMeta=await api('/api/admin/refund-reasons');
   document.getElementById('cdRefPayId').value=paymentId;
-  document.getElementById('cdRefInfo').innerHTML=`Platba <b>${p.amount.toFixed(2)} €</b> · ${(p.date||'').slice(0,10)} · ${p.gateway==='stripe'?'Stripe':p.gateway==='paypal'?'PayPal':'manuál'}`;
+  document.getElementById('cdRefInfo').innerHTML=`Platba <b>${p.amount.toFixed(2)} €</b> · ${fmtDate(p.date)} · ${p.gateway==='stripe'?'Stripe':p.gateway==='paypal'?'PayPal':'manuál'}`;
   document.getElementById('cdRefAmount').value=p.amount.toFixed(2);
   document.getElementById('cdRefAmount').max=p.amount.toFixed(2);
   const gwManual = p.gateway==='manual';
@@ -3375,15 +3381,15 @@ async function loadOrders(){
       <td class="small">${o.city||'—'}</td>
       <td><span class="badge bg-light text-dark border">${{cash:'Hotovosť',transfer:'Prevod',card:'Karta'}[o.payment_method]||o.payment_method}</span></td>
       <td><span class="badge ${STATUS_CLASSES[o.status]||'bg-secondary'} rounded-pill">${STATUS_LABELS[o.status]||o.status}</span></td>
-      <td class="small">${o.handled_by_name?`<span class="badge bg-dark border border-secondary text-warning" title="Prevzal(a) ${o.handled_at?new Date(o.handled_at).toLocaleDateString('sk-SK'):''}">👤 ${escHtml(o.handled_by_name)}</span>`:`<button class="btn btn-xs btn-outline-warning" style="font-size:.7rem;padding:2px 8px" onclick="takeOrder('${o._id}')">Prevziať</button>`}</td>
-      <td class="text-muted small">${o.created_at.slice(0,10)}</td>
+      <td class="small">${o.handled_by_name?`<span class="badge bg-dark border border-secondary text-warning" title="Prevzal(a) ${o.handled_at?fmtDate(o.handled_at):''}">👤 ${escHtml(o.handled_by_name)}</span>`:`<button class="btn btn-xs btn-outline-warning" style="font-size:.7rem;padding:2px 8px" onclick="takeOrder('${o._id}')">Prevziať</button>`}</td>
+      <td class="text-muted small">${fmtDate(o.created_at)}</td>
       <td>
         <div class="d-flex gap-1 flex-wrap">
           ${o.status==='pending'?`<button class="btn btn-xs btn-outline-primary" style="font-size:.7rem;padding:2px 8px" onclick="updateOrder('${o._id}','confirmed')">Potvrdiť</button>`:''}
           ${o.status==='confirmed'||o.status==='pending'?`<button class="btn btn-xs btn-success" style="font-size:.7rem;padding:2px 8px;color:#fff;background:#28a745;border:none;border-radius:4px" onclick="updateOrder('${o._id}','paid')">✓ Zaplatená</button>`:''}
           ${o.status!=='cancelled'&&o.status!=='paid'?`<button class="btn btn-xs btn-outline-danger" style="font-size:.7rem;padding:2px 8px" onclick="updateOrder('${o._id}','cancelled')">Zrušiť</button>`:''}
           ${o.dispatched
-            ? `<span class="badge bg-success" style="font-size:.68rem" title="${o.dispatched_by_name||''} ${o.dispatched_at?new Date(o.dispatched_at).toLocaleDateString('sk-SK'):''}">✓ ${o.delivery==='post'?'Odoslané':'Vybavené'}</span> <button class="btn btn-xs btn-outline-secondary" style="font-size:.66rem;padding:1px 6px" onclick="dispatchOrder('${o._id}',false)">↩︎</button>`
+            ? `<span class="badge bg-success" style="font-size:.68rem" title="${o.dispatched_by_name||''} ${o.dispatched_at?fmtDate(o.dispatched_at):''}">✓ ${o.delivery==='post'?'Odoslané':'Vybavené'}</span> <button class="btn btn-xs btn-outline-secondary" style="font-size:.66rem;padding:1px 6px" onclick="dispatchOrder('${o._id}',false)">↩︎</button>`
             : `<button class="btn btn-xs" style="font-size:.7rem;padding:2px 8px;background:#60a5fa;color:#111;border:none;border-radius:4px;font-weight:700" onclick="dispatchOrder('${o._id}',true)"><i class="bi bi-box-seam"></i> ${o.delivery==='post'?'Odoslať':'Vybavené'}</button>`}
         </div>
         ${o.notes?`<div class="text-muted mt-1" style="font-size:.7rem">📝 ${o.notes}</div>`:''}
@@ -3751,7 +3757,7 @@ function renderMemberships(){
   const byPlan={}; _memData.filter(isActive).forEach(m=>{const p=m.plan_name||m.plan_id||'—';byPlan[p]=(byPlan[p]||0)+1;});
   document.getElementById('memSummary').innerHTML=Object.entries(byPlan).sort((a,b)=>b[1]-a[1]).map(([p,n])=>`<span class="badge" style="background:#1e1e1e;border:1px solid #2a2a2a;color:#C9A84C;font-weight:600">${escHtml(p)}: ${n}</span>`).join('')+`<span class="badge" style="background:#1e1e1e;border:1px solid #2a2a2a;color:#4ade80;font-weight:600">Aktívnych spolu: ${_memData.filter(isActive).length}</span>`;
   el.innerHTML=rows.map(m=>{
-    const exp=m.expires_at?new Date(m.expires_at).toLocaleDateString('sk-SK'):'—';
+    const exp=m.expires_at?fmtDate(m.expires_at):'—';
     const active=isActive(m);
     return `<tr style="cursor:pointer" onclick="openClientDetail('${m.user_id}')">
       <td class="ps-3"><span style="color:#C9A84C;font-weight:600">${escHtml(m.user_name||'—')}</span><div class="text-muted small">${escHtml(m.user_email||'')}</div></td>
@@ -3787,7 +3793,7 @@ function renderWinback(){
   if(!rows.length){ el.innerHTML='<tr><td colspan="7" class="text-center text-muted py-4">Žiadni odídení klienti pre zvolený filter 🎉</td></tr>'; return; }
   el.innerHTML=rows.map(c=>`<tr style="cursor:pointer" onclick="openClientDetail('${c.id}')">
     <td class="ps-3"><span style="color:#C9A84C;font-weight:600">${escHtml(c.name)}</span><div class="text-muted small">${escHtml(c.email||'')}${c.phone?' · '+escHtml(c.phone):''}</div></td>
-    <td>${(c.last_visit||'').slice(0,10)}</td>
+    <td>${fmtDate(c.last_visit)}</td>
     <td><span class="badge ${c.days_since>=180?'bg-danger':c.days_since>=90?'bg-warning text-dark':'bg-secondary'}">${fmtSince(c.days_since)}</span></td>
     <td class="text-center">${c.visit_count}</td>
     <td>${c.membership?`<span class="badge bg-success">${escHtml(c.membership)}</span>`:'<span class="text-muted small">bez členstva</span>'}</td>
@@ -3813,7 +3819,7 @@ async function loadArticles(){
   el.innerHTML=rows.map(a=>{
     const lines=a.text?.split('\n')||[];
     const title=lines[0]||'Bez názvu';
-    const date=a.article_date||a.created_at?.slice(0,10)||'';
+    const date=fmtDate(a.article_date||a.created_at);
     return `<tr>
       <td class="fw-semibold" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${title}</td>
       <td><span class="badge" style="background:rgba(201,168,76,.15);color:var(--gold)">${a.article_cat||'Blog'}</span></td>
@@ -3896,7 +3902,7 @@ async function loadPayments(){
     <td>${p.description||'—'}</td>
     <td>${p.ref_type||'—'}</td>
     <td><span class="badge ${p.status==='completed'?'bg-success':p.status==='pending'?'bg-warning text-dark':'bg-secondary'}">${p.status}</span></td>
-    <td class="small text-muted">${p.created_at?.slice(0,10)||'—'}</td>
+    <td class="small text-muted">${p.created_at?fmtDate(p.created_at):'—'}</td>
   </tr>`).join('');
 }
 

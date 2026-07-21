@@ -220,6 +220,12 @@
   <div id="host"><div class="empty" data-i18n="profile.loading"></div></div>
 </div>
 <script>
+function fmtDate(d){
+  if(d===null||d===undefined||d==='') return '';
+  const s=String(d);
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : s;
+}
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const uid=location.pathname.split('/').pop();
 let P=null;
@@ -1113,13 +1119,13 @@ async function grantMembership(){
   const entries=parseInt(document.getElementById('admEntries').value)||0;
   if(!plan_id && !entries){ alert('Vyber členstvo alebo zadaj počet vstupov.'); return; }
   const gift=_admMode==='gift';
-  const msg = gift ? ('Darovať '+(plan_id?('členstvo '+plan_id):'')+(entries?(' + '+entries+' vstupov'):'')+(expires_at?(' platné do '+expires_at):'')+' bez platby?')
+  const msg = gift ? ('Darovať '+(plan_id?('členstvo '+plan_id):'')+(entries?(' + '+entries+' vstupov'):'')+(expires_at?(' platné do '+fmtDate(expires_at)):'')+' bez platby?')
                    : ('Prideliť členstvo a zaznamenať platbu '+(_admMode==='cash'?'HOTOVOSŤOU':'KARTOU')+' ('+amount.toFixed(2)+' €)?');
   if(!confirm(msg)) return;
   const r=await fetch('/api/admin/users/'+encodeURIComponent(uid)+'/grant-membership',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',
     body:JSON.stringify({plan_id:plan_id||null, amount, expires_at, entries, gift, payment_method:gift?null:_admMode})});
   const d=await r.json();
-  if(d.ok){ alert('✅ Hotovo. '+(d.plan_name!=='—'?('Členstvo '+d.plan_name+(d.expires_at?' do '+d.expires_at:'')+'. '):'')+(d.entries?('+'+d.entries+' vstupov.'):'')); location.reload(); }
+  if(d.ok){ alert('✅ Hotovo. '+(d.plan_name!=='—'?('Členstvo '+d.plan_name+(d.expires_at?' do '+fmtDate(d.expires_at):'')+'. '):'')+(d.entries?('+'+d.entries+' vstupov.'):'')); location.reload(); }
   else alert('Chyba: '+(d.error||'?'));
 }
 async function toggleMerch(m){

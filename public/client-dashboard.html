@@ -718,6 +718,12 @@ function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt
 function fmtDate(iso){ if(!iso) return '—'; const d=new Date(iso); if(isNaN(d)) return String(iso); return d.toLocaleDateString('sk-SK',{day:'numeric',month:'long',year:'numeric'}); }
 // Slovenský číselný formát: 20. 7. 2026
 function skDate(iso){ if(!iso) return ''; const d=new Date(iso); if(isNaN(d)) return String(iso); return d.toLocaleDateString('sk-SK',{day:'numeric',month:'numeric',year:'numeric'}); }
+function fmtDMY(d){
+  if(d===null||d===undefined||d==='') return '';
+  const s=String(d);
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : s;
+}
 async function logout(){await api('/api/logout',{method:'POST'});window.location.href='/';}
 async function cancelStripeSub(){
   if(!confirm('Zrušiť automatický mesačný odber? Členstvo ti zostane aktívne do konca zaplateného obdobia.')) return;
@@ -791,7 +797,7 @@ function renderMembership(me){
     noBlock.style.display='none';infoBlock.style.display='flex';
     if(m.expires_at){
       const d=new Date(m.expires_at);const days=Math.round((d-new Date())/86400000);
-      document.getElementById('mcExpiry').textContent=fmtDate(m.expires_at)+(days>=0&&days<=7?` ⚠️ (${days} dní)`:'');
+      document.getElementById('mcExpiry').textContent=fmtDMY(m.expires_at)+(days>=0&&days<=7?` ⚠️ (${days} dní)`:'');
       if(days>=0&&days<=7) document.getElementById('mcExpiry').style.color='#ffb74d';
     } else {document.getElementById('mcExpiry').textContent='Neobmedzené';}
     // Auto-renew (subscription) status
@@ -911,7 +917,7 @@ async function loadFamily(){
       <div class="booking-emoji">🧒</div>
       <div class="booking-info">
         <strong>${escHtml(c.name)}${c.birth_year?` <span style="opacity:.5;font-weight:400">• ${c.birth_year}</span>`:''}</strong>
-        <span>${c.visit_count} návštev • ${mem}${c.upcoming?.length?` • najbližšie ${c.upcoming[0].booking_date}`:''}</span>
+        <span>${c.visit_count} návštev • ${mem}${c.upcoming?.length?` • najbližšie ${fmtDMY(c.upcoming[0].booking_date)}`:''}</span>
       </div>
       <div style="display:flex;gap:6px">
         <button class="qa-btn" style="padding:7px 10px" title="QR kód" onclick="showChildQR('${c.id}','${escHtml(c.name).replace(/'/g,"&#39;")}')"><i class="bi bi-qr-code" style="margin:0"></i></button>

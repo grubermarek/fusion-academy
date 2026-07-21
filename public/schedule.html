@@ -207,6 +207,12 @@ let instructorsList = [];
 let preselectChild = new URLSearchParams(location.search).get('child') || '';
 
 function escHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmtDate(d){
+  if(d===null||d===undefined||d==='') return '';
+  const s=String(d);
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : s;
+}
 function canManageClasses(){
   return !!(currentUser && (currentUser.is_admin || currentUser.user_type==='trainer' || currentUser.user_type==='manager' || currentUser.is_assistant));
 }
@@ -381,7 +387,7 @@ function bookClass(classId) {
   if (!selectedClass) return;
 
   const nextDate = getNextDate(selectedClass.day_of_week);
-  const formatted = formatDate(nextDate);
+  const formatted = fmtDate(nextDate);
 
   document.getElementById('modalTitle').textContent = selectedClass.name + ' ' + selectedClass.emoji;
   document.getElementById('modalSub').textContent = 'Potvrďte svoju rezerváciu';
@@ -424,7 +430,7 @@ async function confirmBooking() {
     // Success
     closeBookModal();
     showToast('✅ Rezervácia potvrdená' + (d.for_child?' pre '+d.for_child:'') + ' – ' + selectedClass.name, 'success');
-    showSuccess(selectedClass.name, formatDate(nextDate));
+    showSuccess(selectedClass.name, fmtDate(nextDate));
     // Refresh class list
     const resp = await fetch('/api/classes');
     allClasses = filterSchedule(await resp.json());

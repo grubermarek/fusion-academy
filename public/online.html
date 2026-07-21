@@ -179,6 +179,12 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
 <div class="toast-container" id="toasts"></div>
 
 <script>
+function fmtDate(d){
+  if(d===null||d===undefined||d==='') return '';
+  const s=String(d);
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : s;
+}
 let currentUser = null;
 let membership = null;
 
@@ -231,7 +237,7 @@ function showMembershipStatus(data){
     return;
   }
   const m = data.membership;
-  const exp = new Date(m.expires_at).toLocaleDateString('sk-SK');
+  const exp = fmtDate(m.expires_at);
   el.innerHTML = `<span class="badge-active">✓ ${m.plan_name} — platné do ${exp}</span>`;
 }
 

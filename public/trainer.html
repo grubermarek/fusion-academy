@@ -730,6 +730,12 @@ select.form-control option{background:var(--dark3)}
 <div class="toast" id="toast"></div>
 
 <script>
+function fmtDate(d){
+  if(d===null||d===undefined||d==='') return '';
+  const s=String(d);
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : s;
+}
 // ── GLOBALS ──────────────────────────────────────────────────────────────────
 const DAYS = ['Nedeľa','Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota'];
 let _me = null;
@@ -786,7 +792,7 @@ async function trCancelSession(classId, name){
   const reason = prompt(`Zrušiť najbližšiu hodinu „${name}"?\n\nVšetkým prihláseným pošleme oznámenie, vrátime kredit z permanentky, dáme oznam na nástenku a pozveme ich na ďalšiu hodinu v tom meste.\n\nDôvod (nepovinné):`, '');
   if(reason===null) return;
   const d=await api('/api/attendance/cancel-session',{method:'POST',body:JSON.stringify({class_id:classId,reason})});
-  if(d&&d.ok){ alert(`Hodina zrušená ✓ Upozornených ${d.notified||0}${d.refunded?', vrátených vstupov '+d.refunded:''}. Termín: ${d.date}`); loadSchedule(); }
+  if(d&&d.ok){ alert(`Hodina zrušená ✓ Upozornených ${d.notified||0}${d.refunded?', vrátených vstupov '+d.refunded:''}. Termín: ${fmtDate(d.date)}`); loadSchedule(); }
   else alert('Chyba: '+(d?.error||'?'));
 }
 // ── SCHEDULE ─────────────────────────────────────────────────────────────────
@@ -932,7 +938,7 @@ async function claimTrainerIns(classId, date){
 async function pickTrainerIns(classId, date){
   if(!_trTrainers){ _trTrainers=await api('/api/attendance/trainers')||[]; }
   const cur=_trInsBy[classId]||{};
-  const pick=prompt(`Kto učí túto hodinu (${date})?\n\n${_trTrainers.map((t,i)=>`${i+1}. ${t.name}`).join('\n')}\n\nZadaj číslo (0 = pôvodný tréner):`);
+  const pick=prompt(`Kto učí túto hodinu (${fmtDate(date)})?\n\n${_trTrainers.map((t,i)=>`${i+1}. ${t.name}`).join('\n')}\n\nZadaj číslo (0 = pôvodný tréner):`);
   if(pick===null) return;
   const n=parseInt(pick); let instructor_id;
   if(n===0) instructor_id=''; else { const t=_trTrainers[n-1]; if(!t){ toast('Neplatná voľba', true); return; } instructor_id=t.id; }
@@ -1176,7 +1182,7 @@ async function selectBAClient(userId, name){
   }
   el.innerHTML = data.slice().reverse().map(m=>`
     <div class="ba-history-item">
-      <div class="ba-date">${m.date||''}</div>
+      <div class="ba-date">${fmtDate(m.date)}</div>
       <div class="ba-vals">
         ${m.weight?`<span>⚖️ <strong style="color:var(--cream)">${m.weight} kg</strong></span>`:''}
         ${m.body_fat?`<span>💧 ${m.body_fat}%</span>`:''}
@@ -1323,7 +1329,7 @@ async function doSellMembership(){
   const r = await api('/api/attendance/record-membership',{method:'POST',body:{user_id:userId,plan_id,amount,payment_method:payment}});
   const msg = document.getElementById('sm-msg');
   if(r?.ok){
-    showInlineMsg(msg,'ok','✅ Členstvo aktivované! Platné do: '+r.expires_at);
+    showInlineMsg(msg,'ok','✅ Členstvo aktivované! Platné do: '+fmtDate(r.expires_at));
     // Ak sme sem prišli z „zapísať na hodinu", rovno klienta zapíš
     const bookCid = _pendingBookClass || _currentClassId;
     if(_pendingBookUser===userId && bookCid){

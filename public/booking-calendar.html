@@ -150,6 +150,12 @@ function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
 function escJs(s){return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
 function toast(msg,err){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show'+(err?' err':'');setTimeout(()=>t.className='toast',2600);}
 function fmtDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function fmtDMY(d){
+  if(d===null||d===undefined||d==='') return '';
+  const s=String(d);
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : s;
+}
 function isToday(d){const t=new Date();return d.getFullYear()===t.getFullYear()&&d.getMonth()===t.getMonth()&&d.getDate()===t.getDate();}
 
 async function init(){
@@ -229,7 +235,7 @@ async function openInsPick(classId, dateStr){
   m.onclick=e=>{ if(e.target===m) m.remove(); };
   m.innerHTML=`<div style="background:#161512;border:1px solid rgba(201,168,76,.4);border-radius:16px;max-width:380px;width:100%;padding:18px;color:#EAE3D5">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="color:#C9A84C">🎓 Tréner hodiny</b><button onclick="document.getElementById('insModal').remove()" style="background:none;border:none;color:#999;font-size:1.3rem;cursor:pointer">✕</button></div>
-    <div style="font-size:.8rem;color:rgba(234,227,213,.6);margin-bottom:10px">Zmena platí pre tento termín (${esc(dateStr)}), kým ju niekto zase nezmení.</div>
+    <div style="font-size:.8rem;color:rgba(234,227,213,.6);margin-bottom:10px">Zmena platí pre tento termín (${esc(fmtDMY(dateStr))}), kým ju niekto zase nezmení.</div>
     <div style="display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow-y:auto">
       ${_trainers.map(t=>`<button onclick="setSessionIns('${classId}','${dateStr}','${t.id}')" style="text-align:left;background:${cur.instructor_id===t.id?'rgba(201,168,76,.18)':'rgba(255,255,255,.04)'};border:1px solid ${cur.instructor_id===t.id?'#C9A84C':'var(--border,#333)'};color:#EAE3D5;border-radius:10px;padding:9px 12px;cursor:pointer">${cur.instructor_id===t.id?'✓ ':''}${esc(t.name)}</button>`).join('')}
     </div>

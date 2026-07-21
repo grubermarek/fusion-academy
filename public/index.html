@@ -965,6 +965,14 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
 let _step = 0;
 let _allClasses = [];
 
+// Display-only: ISO date string → dd-mm-yyyy (never for logic/values sent to server)
+function fmtDMY(d){
+  if(d===null||d===undefined||d==='') return '';
+  const s=String(d);
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : s;
+}
+
 // ── ON LOAD: Check session ───────────────────────────────────────────────────
 (async function(){
   try {
@@ -1050,7 +1058,7 @@ async function checkPreRegistered(){
     const first=(d.name||'').split(' ')[0];
     let waiting='';
     if(d.membership){
-      const exp=d.membership.expires_at?new Date(d.membership.expires_at).toLocaleDateString('sk-SK'):'';
+      const exp=fmtDMY(d.membership.expires_at);
       waiting=`<br>Máš pripravené členstvo <b>${d.membership.plan_name}</b>${exp?' platné do '+exp:''}.`;
     } else if(d.entries>0){
       waiting=`<br>Máš pripravených <b>${d.entries} vstupov</b> 🎟️`;
@@ -1369,7 +1377,7 @@ async function showConfirmation(booking){
   document.getElementById('confirmInfo').innerHTML=`
     <div class="booked-pill">
       <strong>${escHtml(booking.class_name||'')}</strong>
-      <span>Najbližší termín: ${booking.booking_date||'čoskoro'}</span>
+      <span>Najbližší termín: ${fmtDMY(booking.booking_date)||'čoskoro'}</span>
     </div>`;
   // Load referral link
   try{
