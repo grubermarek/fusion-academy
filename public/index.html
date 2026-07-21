@@ -974,8 +974,21 @@ function fmtDMY(d){
   return m ? `${m[3]}-${m[2]}-${m[1]}` : s;
 }
 
+// ── PREVIEW REŽIM (admin): /?preview=1 — prejdi si celý onboarding bez zápisu dát.
+// Registrácia aj rezervácia sa len simulujú; guide na dashboarde sa spustí cez ?welcome=1.
+const _preview = new URLSearchParams(location.search).get('preview')==='1';
+if(_preview){
+  document.addEventListener('DOMContentLoaded',()=>{
+    const b=document.createElement('div');
+    b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:#C9A84C;color:#111;font-weight:800;text-align:center;padding:6px;font-size:.8rem';
+    b.innerHTML='🧪 NÁHĽAD ONBOARDINGU — nič sa reálne neukladá · <a href="/admin" style="color:#111;text-decoration:underline">späť do adminu</a>';
+    document.body.appendChild(b);
+  });
+}
+
 // ── ON LOAD: Check session ───────────────────────────────────────────────────
 (async function(){
+  if(_preview) return; // v náhľade sa správaj ako nový návštevník (žiadne presmerovanie)
   try {
     const me = await fetch('/api/me',{credentials:'include'}).then(r=>r.json());
     _me = me?.id ? me : null;
@@ -1085,6 +1098,11 @@ async function doRegister(){
   if(!/\S+@\S+\.\S+/.test(email)){showErr('regErr','Neplatný email');return;}
   if(!document.getElementById('rConsent').checked){showErr('regErr','Pre pokračovanie musíš súhlasiť so spracovaním údajov a podmienkami.');return;}
   btn.disabled=true;btn.innerHTML='<i class="bi bi-arrow-repeat spin"></i>&nbsp; Registrujem...';
+  if(_preview){ // náhľad: účet sa nevytvára, len pokračuj vo flow
+    await loadClasses(); goTo(2);
+    btn.disabled=false;btn.innerHTML='Pokračovať &nbsp;<i class="bi bi-arrow-right"></i>';
+    return;
+  }
   try{
     const lead_source=document.getElementById('rLeadSource')?.value||'';
     const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -1342,6 +1360,13 @@ async function doConfirmBook(){
   btn.innerHTML='<i class="bi bi-arrow-repeat spin"></i>&nbsp; Rezervujem...';
   closeBookConfirm();
   if(el){ el.classList.add('booking'); el.querySelector('.cc-cta').innerHTML='<i class="bi bi-arrow-repeat spin"></i>'; }
+  if(_preview){ // náhľad: rezervácia sa nevytvára, len ukáž potvrdenie s animáciou
+    btn.disabled=false; btn.innerHTML='<i class="bi bi-check2-circle"></i> Áno, rezervovať!';
+    await showConfirmation({class_name:className, booking_date:date||''});
+    goTo(3);
+    setTimeout(()=>{ document.querySelectorAll('.tip-item').forEach((t,i)=>{ setTimeout(()=>{t.style.opacity='1';t.style.animation='fadeUp .4s ease both';},i*130); }); },500);
+    _pending=null; return;
+  }
   try{
     const r=await fetch('/api/bookings',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({class_id:classId, booking_date:date||undefined}),credentials:'include'});
