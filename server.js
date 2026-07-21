@@ -1197,8 +1197,31 @@ app.get('/api/config', async(req,res)=>{
 });
 
 // ─── Meta Conversions API (server-side events; needs META_PIXEL_ID + META_CAPI_TOKEN) ───
+// CAPI token sa uklada v DB (settings.meta_capi_token) — nastavuje sa zabezpecenym
+// endpointom /api/meta-token (token ide priamo z prehliadaca do servera, nie cez chat/git).
+let _metaTokenCache;
+async function getMetaCapiToken(){
+  if(process.env.META_CAPI_TOKEN) return process.env.META_CAPI_TOKEN;
+  if(_metaTokenCache!==undefined) return _metaTokenCache;
+  const s=await q.one(db.settings,{key:'meta_capi_token'}).catch(()=>null);
+  _metaTokenCache = s?.value || null;
+  return _metaTokenCache;
+}
+app.post('/api/meta-token', async(req,res)=>{
+  try{
+    const tok=process.env.IMPORT_TOKEN;
+    if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
+    const t=String(req.body?.token||'');
+    if(!/^EAA[0-9A-Za-z]{50,}$/.test(t)) return res.status(400).json({error:'invalid token format'});
+    const existing=await q.one(db.settings,{key:'meta_capi_token'});
+    if(existing) await q.update(db.settings,{_id:existing._id},{$set:{value:t, at:nowISO()}});
+    else await q.insert(db.settings,{key:'meta_capi_token', value:t, at:nowISO()});
+    _metaTokenCache=t;
+    res.json({ok:true, len:t.length});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 async function metaCapi(eventName, {email, value, currency='EUR', fbclid, fbp}={}){
-  const pixel=process.env.META_PIXEL_ID, token=process.env.META_CAPI_TOKEN;
+  const pixel=process.env.META_PIXEL_ID, token=await getMetaCapiToken();
   if(!pixel||!token) return;
   try {
     const crypto=require('crypto');
@@ -9144,7 +9167,7 @@ app.get('/api/admin/meta-stats', adminAuth, async(req,res)=>{
     const months=Object.entries(monthly).sort((a,b)=>a[0].localeCompare(b[0])).slice(-6);
     const attended=meta.filter(u=>(u.visit_count||0)>0).length;
     res.json({ ok:true, total:meta.length, attended, payers:payerIds.size, revenue,
-      months, pixel_configured:!!process.env.META_PIXEL_ID, capi_configured:!!process.env.META_CAPI_TOKEN,
+      months, pixel_configured:!!process.env.META_PIXEL_ID, capi_configured:!!(await getMetaCapiToken()),
       sample: meta.slice(0,50).map(u=>({id:u._id,name:u.name,created_at:(u.created_at||'').slice(0,10),utm_campaign:u.utm_campaign||'',visits:u.visit_count||0,paying:payerIds.has(u._id)})) });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
