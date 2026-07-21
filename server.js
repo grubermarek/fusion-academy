@@ -9804,6 +9804,27 @@ async function runDailyJobs(){
     await sendCashUpsellTo(u, MEMBERSHIP_PLANS[m.plan_id]);
   }
 
+  // ── 1d. Auto-winback: skončení klienti (30+ dní bez hodiny) sa automaticky zaradia
+  // do winback sekvencie. Poistky: preskoč odhlásených z ponúk, tých čo už v sekvencii sú,
+  // a každého zaraď najviac raz za 180 dní (guard winback_enrolled_at). Max 30 nových
+  // zaradení denne, aby prvý deň neodišlo naraz 200+ mailov (ochrana doručiteľnosti).
+  try{
+    const churned = await churnedClients(30);
+    let enrolled=0;
+    for(const c of churned){
+      if(enrolled>=30) break;
+      if(c.in_winback || c.offers_optout) continue;
+      const u=await q.one(db.users,{_id:c.id});
+      if(!u||!u.email) continue;
+      const lastEnroll=u.winback_enrolled_at||'';
+      if(lastEnroll && (Date.now()-new Date(lastEnroll).getTime()) < 180*86400000) continue; // už bol v sekvencii nedávno
+      await enqueueSequence(u._id,'winback');
+      await q.update(db.users,{_id:u._id},{$set:{winback_enrolled_at:nowISO()}});
+      enrolled++;
+    }
+    if(enrolled) console.log(`✉️  Auto-winback: zaradených ${enrolled} skončených klientov do sekvencie`);
+  }catch(e){ console.error('auto-winback error:', e.message); }
+
   // ── 2. Day-before class reminders ─────────────────────────────────────────
   const tomorrow = new Date(Date.now()+86400000);
   const tomorrowDow = tomorrow.getDay();
