@@ -2860,21 +2860,43 @@ app.get('/api/admin/leads/:id/emails', adminAuth, async(req,res)=>{
 async function churnedClients(minDays){
   minDays = +minDays || 30;
   const clients = await q.find(db.users,{user_type:'client', is_admin:{$ne:true}, is_child:{$ne:true}, active:{$ne:false}});
-  const bookings = await q.find(db.bookings,{status:'attended'});
-  const lastAtt={}; for(const b of bookings){ if(!b.user_id) continue; const d=b.booking_date||(b.created_at||'').slice(0,10); if(!lastAtt[b.user_id]||d>lastAtt[b.user_id]) lastAtt[b.user_id]=d; }
+  const todayS = today();
+  const nowISOv = new Date().toISOString();
+  // Posledná REÁLNA (minulá) hodina — z akéhokoľvek stavu okrem zrušených/čakačky.
+  // (V novom modeli väčšina rezervácií ostáva 'confirmed', kým ich tréner nepotvrdí,
+  //  preto nemôžeme rátať len 'attended' — inak by zoznam bol prázdny.)
+  const bookings = await q.find(db.bookings,{});
+  const lastVisit={};
+  for(const b of bookings){
+    if(!b.user_id || b.status==='cancelled' || b.status==='waitlist') continue;
+    const d=b.booking_date||(b.created_at||'').slice(0,10);
+    if(!d || d>todayS) continue; // budúca rezervácia nie je „posledná návšteva"
+    if(!lastVisit[b.user_id] || d>lastVisit[b.user_id]) lastVisit[b.user_id]=d;
+  }
+  // Posledné mesačné členstvo na usera (aj EXPIROVANÉ) — „aké členstvo naposledy mali".
+  const membs = await q.find(db.memberships,{});
+  const lastMemb={};
+  for(const m of membs){
+    const p=MEMBERSHIP_PLANS[m.plan_id]||{}; if(p.type==='bundle'||m.status==='bundle') continue;
+    const cur=lastMemb[m.user_id]; const k=m.expires_at||m.created_at||'';
+    if(!cur || k>(cur.expires_at||cur.created_at||'')) lastMemb[m.user_id]=m;
+  }
+  const queue = await q.find(db.email_queue,{sequence:'winback', status:'pending'});
+  const inWB = new Set(queue.map(x=>x.user_id));
   const now=Date.now(); const out=[];
   for(const u of clients){
-    const last=lastAtt[u._id];
+    const last=lastVisit[u._id];
     if(!last) continue; // nikdy nebola na hodine → nie „odídená"
     const days=Math.floor((now-new Date(last).getTime())/864e5);
     if(days < minDays) continue;
-    const mem=await q.one(db.memberships,{user_id:u._id, status:'active'});
-    const memActive = mem && (mem.expires_at||'')>new Date().toISOString();
-    const pending = await q.count(db.email_queue,{user_id:u._id, sequence:'winback', status:'pending'});
+    const m=lastMemb[u._id];
+    const memActive = m && (m.status==='active') && ((m.expires_at||'')>nowISOv);
     out.push({ id:u._id, name:u.name, email:u.email, phone:u.phone||'',
       last_visit:last, days_since:days, visit_count:u.visit_count||0,
-      membership: memActive?(MEMBERSHIP_PLANS[mem.plan_id]?.name||mem.plan_name||'Členstvo'):null,
-      in_winback: pending>0, offers_optout: !!u.offers_optout });
+      membership: m ? (MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo') : null,
+      membership_active: !!memActive,
+      membership_expired_on: (m && !memActive) ? (m.expires_at||'').slice(0,10) : null,
+      in_winback: inWB.has(u._id), offers_optout: !!u.offers_optout });
   }
   out.sort((a,b)=>b.days_since-a.days_since);
   return out;
