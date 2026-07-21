@@ -703,6 +703,42 @@
   </div>
 </div>
 
+<!-- ── WELCOME GUIDE: prvé kroky po registrácii/rezervácii ── -->
+<div id="welcomeGuide" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:2000;align-items:center;justify-content:center;padding:16px;overflow-y:auto">
+  <div style="background:var(--card,#1a1a1a);border:1px solid var(--gold,#C9A84C);border-radius:18px;max-width:440px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.6);animation:fadeUp .4s ease">
+    <div style="text-align:center;margin-bottom:14px">
+      <div style="font-size:2rem">💛</div>
+      <h2 style="margin:6px 0 2px;font-size:1.25rem">Vitaj vo Fusion Academy!</h2>
+      <p style="color:#999;font-size:.85rem;margin:0" id="wgSub">Pár krokov, nech z appky vyťažíš maximum:</p>
+    </div>
+    <div id="wgBooked" style="display:none;background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.3);border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:.85rem">
+      ✅ <b>Tvoja prvá hodina je rezervovaná!</b> Nájdeš ju nižšie v „Moje rezervácie". Nezabudni: uterák, voda, tenisky. 😉
+    </div>
+    <div class="wg-step" id="wgAvatar" style="display:flex;gap:10px;align-items:center;background:#161616;border:1px solid #2a2a2a;border-radius:12px;padding:10px 12px;margin-bottom:8px">
+      <div style="font-size:1.3rem">📸</div>
+      <div style="flex:1;font-size:.85rem"><b>Pridaj si profilovú fotku</b><div style="color:#999;font-size:.75rem">Nech ťa trénerka aj baby na hodine spoznajú.</div></div>
+      <button onclick="wgPickAvatar()" style="background:var(--gold,#C9A84C);border:none;color:#111;font-weight:700;padding:6px 12px;border-radius:8px;cursor:pointer;font-size:.78rem">Nahrať</button>
+    </div>
+    <div class="wg-step" id="wgBday" style="display:flex;gap:10px;align-items:center;background:#161616;border:1px solid #2a2a2a;border-radius:12px;padding:10px 12px;margin-bottom:8px">
+      <div style="font-size:1.3rem">🎂</div>
+      <div style="flex:1;font-size:.85rem"><b>Kedy máš narodeniny?</b><div style="color:#999;font-size:.75rem">Nech ti môžeme zablahoželať (a niečo malé pridať 😉).</div>
+        <input type="date" id="wgBdayInput" style="margin-top:6px;background:#0f0f0f;border:1px solid #333;color:#eee;border-radius:8px;padding:5px 8px;font-size:.8rem;color-scheme:dark">
+      </div>
+      <button onclick="wgSaveBday()" style="background:var(--gold,#C9A84C);border:none;color:#111;font-weight:700;padding:6px 12px;border-radius:8px;cursor:pointer;font-size:.78rem">Uložiť</button>
+    </div>
+    <div class="wg-step" style="display:flex;gap:10px;align-items:center;background:#161616;border:1px solid #2a2a2a;border-radius:12px;padding:10px 12px;margin-bottom:8px">
+      <div style="font-size:1.3rem">🏅</div>
+      <div style="flex:1;font-size:.85rem"><b>Za každú hodinu zbieraš body a odznaky</b><div style="color:#999;font-size:.75rem">Návštevy sa počítajú automaticky — odznaky nájdeš na svojom profile.</div></div>
+    </div>
+    <div class="wg-step" style="display:flex;gap:10px;align-items:center;background:#161616;border:1px solid #2a2a2a;border-radius:12px;padding:10px 12px;margin-bottom:14px">
+      <div style="font-size:1.3rem">👯‍♀️</div>
+      <div style="flex:1;font-size:.85rem"><b>Pridaj si kamarátky</b><div style="color:#999;font-size:.75rem">Uvidíte sa v komunite a môžeš pozvať kamarátku — prvú hodinu má zadarmo.</div></div>
+      <button onclick="wgGoFriends()" style="background:none;border:1px solid var(--gold,#C9A84C);color:var(--gold,#C9A84C);font-weight:700;padding:6px 12px;border-radius:8px;cursor:pointer;font-size:.78rem">Pozrieť</button>
+    </div>
+    <button onclick="wgClose()" style="width:100%;background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);border:none;color:#111;font-weight:800;padding:12px;border-radius:12px;cursor:pointer;font-size:.95rem">Poďme tancovať! 💃</button>
+  </div>
+</div>
+
 <script>
 /* ─── API helper ─── */
 const api = async(url,o={})=>{
@@ -1515,8 +1551,48 @@ async function init(){
   // Friends & public profile
   document.getElementById('myProfileLink').href='/u/'+me.id;
   loadFriends();
+  // Welcome guide: po prvej rezervácii (?welcome=1) alebo pri prvom vstupe bez fotky
+  try{
+    const isWelcome=new URLSearchParams(location.search).get('welcome')==='1';
+    if(isWelcome || (!localStorage.getItem('fa_welcome_seen') && !me.avatar)){
+      showWelcomeGuide(me, isWelcome);
+    }
+  }catch(e){}
   // Safety net: force any card that failed to fade in to become visible
   setTimeout(()=>document.querySelectorAll('.anim').forEach(e=>{ if(getComputedStyle(e).opacity==='0') e.style.opacity='1'; }), 1000);
+}
+
+/* ─── Welcome guide (prvé kroky) ─── */
+function showWelcomeGuide(me, booked){
+  const g=document.getElementById('welcomeGuide'); if(!g) return;
+  if(booked) document.getElementById('wgBooked').style.display='block';
+  if(me.avatar) document.getElementById('wgAvatar').style.display='none';
+  if(me.birthday){ document.getElementById('wgBday').style.display='none'; }
+  g.style.display='flex';
+}
+function wgClose(){
+  document.getElementById('welcomeGuide').style.display='none';
+  try{ localStorage.setItem('fa_welcome_seen','1');
+    if(new URLSearchParams(location.search).get('welcome')) history.replaceState({},'',location.pathname);
+  }catch(e){}
+}
+function wgPickAvatar(){
+  wgClose();
+  const inp=document.getElementById('avatarInput');
+  document.getElementById('avatarEl').scrollIntoView({behavior:'smooth',block:'center'});
+  setTimeout(()=>inp&&inp.click(),400);
+}
+async function wgSaveBday(){
+  const v=document.getElementById('wgBdayInput').value;
+  if(!v){ showToast('Vyber dátum 🎂'); return; }
+  const r=await api('/api/me/birthday',{method:'PUT',body:{birthday:v}});
+  if(r&&r.ok){ showToast('🎂 Uložené — nezabudneme!'); document.getElementById('wgBday').style.display='none'; }
+  else showToast('Nepodarilo sa uložiť');
+}
+function wgGoFriends(){
+  wgClose();
+  const fc=document.getElementById('friendsCard');
+  if(fc) fc.scrollIntoView({behavior:'smooth',block:'center'});
 }
 
 async function loadFriends(){

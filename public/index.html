@@ -744,9 +744,10 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
         </div>
       </div>
       <div class="confirm-actions">
-        <a href="/client-dashboard" class="btn-primary" style="max-width:340px;text-decoration:none">
+        <a href="/client-dashboard?welcome=1" id="confirmDashBtn" class="btn-primary" style="max-width:340px;text-decoration:none">
           <i class="bi bi-speedometer2"></i>&nbsp; Otvoriť môj profil
         </a>
+        <div id="redirectCountdown" class="step-sub" style="margin-top:6px;font-size:.8rem;opacity:.75"></div>
         <button class="btn-ghost" onclick="showInfoSection()">
           Zistiť viac o Fusion Academy &nbsp;<i class="bi bi-chevron-down"></i>
         </button>
@@ -1393,6 +1394,15 @@ async function showConfirmation(booking){
     }
   }catch(e){}
   setTimeout(launchConfetti,350);
+  // Automatické presmerovanie na dashboard (guidance pokračuje tam) — s odpočtom, klik ide hneď
+  let left=10;
+  const cd=document.getElementById('redirectCountdown');
+  const tick=()=>{ if(!cd) return;
+    cd.textContent=`Za ${left} s ťa presmerujeme na tvoj profil…`;
+    if(left<=0){ window.location.href='/client-dashboard?welcome=1'; return; }
+    left--; setTimeout(tick,1000);
+  };
+  setTimeout(tick,1500);
 }
 
 function copyLink(url){

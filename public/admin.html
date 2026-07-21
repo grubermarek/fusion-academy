@@ -563,6 +563,12 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
           <option value="30">30 dní</option><option value="60">60 dní</option><option value="90">90 dní</option><option value="180">6 mesiacov</option><option value="365">1 rok</option>
         </select>
         <input id="wbSearch" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:180px" placeholder="🔍 Meno / email…" oninput="renderWinback()">
+        <select id="wbMemF" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:150px" onchange="renderWinback()">
+          <option value="">Členstvo: všetky</option><option value="active">S aktívnym</option><option value="expired">Expirované</option><option value="none">Bez členstva</option>
+        </select>
+        <select id="wbSeqF" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:150px" onchange="renderWinback()">
+          <option value="">Sekvencia: všetci</option><option value="in">✉️ V sekvencii</option><option value="out">Nezaradení</option>
+        </select>
         <button class="btn btn-sm btn-outline-warning" onclick="enrollAllWinback()" title="Zaradiť všetkých do mailovej sekvencie na návrat"><i class="bi bi-envelope-heart"></i> Zaradiť všetkých do sekvencie</button>
         <button class="btn btn-sm btn-brand" onclick="loadWinback()"><i class="bi bi-arrow-clockwise"></i></button>
       </div>
@@ -572,8 +578,13 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div class="card border-0 rounded-3">
       <div class="table-responsive">
         <table class="table table-hover align-middle mb-0" style="font-size:.85rem">
-          <thead class="table-light"><tr>
-            <th class="ps-3">Klient</th><th>Naposledy na hodine</th><th>Nebol/a</th><th>Odtancované</th><th>Členstvo</th><th>Sekvencia</th><th></th>
+          <thead class="table-light"><tr id="wbHead">
+            <th class="ps-3" style="cursor:pointer" onclick="wbSort('name')">Klient <span data-s="name"></span></th>
+            <th style="cursor:pointer" onclick="wbSort('last_visit')">Naposledy na hodine <span data-s="last_visit"></span></th>
+            <th style="cursor:pointer" onclick="wbSort('days_since')">Nebol/a <span data-s="days_since"></span></th>
+            <th style="cursor:pointer" onclick="wbSort('visit_count')">Odtancované <span data-s="visit_count"></span></th>
+            <th style="cursor:pointer" onclick="wbSort('membership')">Členstvo <span data-s="membership"></span></th>
+            <th style="cursor:pointer" onclick="wbSort('in_winback')">Sekvencia <span data-s="in_winback"></span></th><th></th>
           </tr></thead>
           <tbody id="winbackTable"><tr><td colspan="7" class="text-center py-4 text-muted">Načítavam…</td></tr></tbody>
         </table>
@@ -3951,10 +3962,32 @@ function fmtSince(days){
   if(days>=60){const m=Math.floor(days/30);return m+' mes.';}
   return days+' dní';
 }
+let _wbSort={key:'days_since',dir:-1};
+function wbSort(key){
+  if(_wbSort.key===key) _wbSort.dir*=-1; else _wbSort={key,dir:key==='name'?1:-1};
+  renderWinback();
+}
 function renderWinback(){
   const el=document.getElementById('winbackTable'); if(!el)return;
   const term=(document.getElementById('wbSearch').value||'').toLowerCase();
-  const rows=_wbData.filter(c=>!term||c.name.toLowerCase().includes(term)||(c.email||'').toLowerCase().includes(term));
+  const memF=(document.getElementById('wbMemF')||{}).value||'';
+  const seqF=(document.getElementById('wbSeqF')||{}).value||'';
+  let rows=_wbData.filter(c=>{
+    if(term && !(c.name.toLowerCase().includes(term)||(c.email||'').toLowerCase().includes(term)||(c.phone||'').includes(term))) return false;
+    if(memF==='active' && !c.membership_active) return false;
+    if(memF==='expired' && !(c.membership && !c.membership_active)) return false;
+    if(memF==='none' && c.membership) return false;
+    if(seqF==='in' && !c.in_winback) return false;
+    if(seqF==='out' && c.in_winback) return false;
+    return true;
+  });
+  rows=rows.slice().sort((a,b)=>{
+    let x=a[_wbSort.key], y=b[_wbSort.key];
+    if(_wbSort.key==='in_winback'){ x=x?1:0; y=y?1:0; }
+    if(typeof x==='number'&&typeof y==='number') return (x-y)*_wbSort.dir;
+    return String(x||'').localeCompare(String(y||''),'sk')*_wbSort.dir;
+  });
+  document.querySelectorAll('#wbHead [data-s]').forEach(s=>{ s.textContent = s.dataset.s===_wbSort.key ? (_wbSort.dir>0?'▲':'▼') : ''; });
   if(!rows.length){ el.innerHTML='<tr><td colspan="7" class="text-center text-muted py-4">Žiadni odídení klienti pre zvolený filter 🎉</td></tr>'; return; }
   el.innerHTML=rows.map(c=>`<tr style="cursor:pointer" onclick="openClientDetail('${c.id}')">
     <td class="ps-3"><span style="color:#C9A84C;font-weight:600">${escHtml(c.name)}</span><div class="text-muted small">${escHtml(c.email||'')}${c.phone?' · '+escHtml(c.phone):''}</div></td>

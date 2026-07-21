@@ -2253,6 +2253,17 @@ app.get('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
 });
 
 // Admin: nastaviť narodeniny klientovi (zobrazí sa na Dashboarde v deň narodenín)
+// Klient si sám nastaví narodeniny (welcome guide + profil) — nech vieme kedy gratulovať
+app.put('/api/me/birthday', auth, async(req,res)=>{
+  try {
+    const b=String(req.body.birthday||'');
+    const val = /^\d{4}-\d{2}-\d{2}$/.test(b) ? b : '';
+    if(!val) return res.status(400).json({error:'Neplatný dátum'});
+    await q.update(db.users,{_id:req.session.uid},{$set:{birthday:val}});
+    res.json({ ok:true, birthday:val });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.put('/api/admin/users/:id/birthday', adminAuth, async(req,res)=>{
   try {
     const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
