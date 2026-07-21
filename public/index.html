@@ -923,6 +923,9 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
     <a href="/pricing" class="bc-btn-confirm" style="display:block;text-align:center;text-decoration:none;background:linear-gradient(135deg,var(--gold),#a07830);color:#111">
       <i class="bi bi-credit-card"></i> Pozrieť všetky plány
     </a>
+    <button class="bc-btn-confirm" style="margin-top:8px;width:100%;background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.4);color:#4ade80" onclick="bookPayOnSite()">
+      💵 Rezervovať a zaplatiť na mieste (10 €)
+    </button>
     <button class="bc-btn-cancel" style="margin-top:8px;width:100%" onclick="closeMembershipWall()">Zatvoriť</button>
   </div>
 </div>
@@ -1352,9 +1355,20 @@ function closeBookConfirm(){
   _pending=null;
 }
 
+// Rezervácia bez členstva/kreditu — klient zaplatí vstup na mieste (cash)
+let _payOnSite=false, _lastAttempt=null;
+function bookPayOnSite(){
+  if(!_lastAttempt){ closeMembershipWall(); showToast('Vyber si hodinu znova, prosím.'); return; }
+  closeMembershipWall();
+  _pending={..._lastAttempt};
+  _payOnSite=true;
+  doConfirmBook();
+}
+
 async function doConfirmBook(){
   if(!_pending) return;
   const {classId, className, el, date} = _pending;
+  _lastAttempt={classId, className, el:null, date}; // pre "zaplatím na mieste" po membership walle
   const btn = document.getElementById('bcConfirmBtn');
   btn.disabled=true;
   btn.innerHTML='<i class="bi bi-arrow-repeat spin"></i>&nbsp; Rezervujem...';
@@ -1368,13 +1382,23 @@ async function doConfirmBook(){
     _pending=null; return;
   }
   try{
-    const r=await fetch('/api/bookings',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({class_id:classId, booking_date:date||undefined}),credentials:'include'});
+    let r=await fetch('/api/bookings',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({class_id:classId, booking_date:date||undefined, pay_on_site:_payOnSite||undefined}),credentials:'include'});
+    // Mobil/cookie race hneď po registrácii: pri 401 skús raz znova po krátkej pauze
+    if(r.status===401){ await new Promise(x=>setTimeout(x,800));
+      r=await fetch('/api/bookings',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({class_id:classId, booking_date:date||undefined, pay_on_site:_payOnSite||undefined}),credentials:'include'});
+    }
     const d=await r.json();
     btn.disabled=false;
     btn.innerHTML='<i class="bi bi-check2-circle"></i> Áno, rezervovať!';
     if(!r.ok){
-      if(d.error==='membership_required'){
+      if(r.status===401){
+        // Session sa stratila — ulož rezerváciu, dokončí sa automaticky po prihlásení na dashboarde
+        try{ localStorage.setItem('fa_pending_booking', JSON.stringify({class_id:classId, class_name:className, date:date||null})); }catch(e){}
+        showToast('Prihlás sa prosím — rezerváciu potom dokončíme automaticky.');
+        openLogin && openLogin();
+      } else if(d.error==='membership_required'){
         showMembershipWall();
       } else {
         showToast(d.error||'Chyba rezervácie');
@@ -1382,6 +1406,7 @@ async function doConfirmBook(){
       if(el){el.classList.remove('booking');el.querySelector('.cc-cta').innerHTML='<i class="bi bi-check2-circle"></i> Rezervovať';}
       return;
     }
+    _payOnSite=false;
     await showConfirmation({class_name:className,...d});
     goTo(3);
     setTimeout(()=>{

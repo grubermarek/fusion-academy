@@ -1497,6 +1497,11 @@ async function confirmBooking(){
     loadMyBookings();loadClasses();
     if(_bookIsFitDay) checkFitDayBooked();
   } else if(d?.error==='membership_required'){
+    if(d.can_pay_on_site && confirm('Nemáš aktívne členstvo ani vstupy.\n\nChceš sa rezervovať s tým, že vstup (10 €) zaplatíš na mieste v hotovosti?')){
+      const d2=await api('/api/bookings',{method:'POST',body:{class_id:_bookClassId, pay_on_site:true}});
+      if(d2?.ok){ showToast('✅ Rezervované — vstup zaplatíš na mieste 💵','success'); loadMyBookings(); loadClasses(); return; }
+      showToast('Chyba: '+(d2?.error||'?'),'error'); return;
+    }
     showToast('Najskôr si kúp členstvo alebo jednorazový vstup.','error');
     setTimeout(()=>{window.location.href='/pricing';},1500);
   } else if(d?.error==='already_booked'){
@@ -1551,6 +1556,16 @@ async function init(){
   // Friends & public profile
   document.getElementById('myProfileLink').href='/u/'+me.id;
   loadFriends();
+  // Nedokončená rezervácia z onboardingu (stratená session) — dokonči automaticky
+  try{
+    const pb=JSON.parse(localStorage.getItem('fa_pending_booking')||'null');
+    if(pb&&pb.class_id){
+      localStorage.removeItem('fa_pending_booking');
+      const bd=await api('/api/bookings',{method:'POST',body:{class_id:pb.class_id, booking_date:pb.date||undefined}});
+      if(bd?.ok) showToast(`✅ Rezervácia dokončená: ${pb.class_name||'hodina'}`,'success');
+      loadMyBookings();
+    }
+  }catch(e){}
   // Welcome guide: po prvej rezervácii (?welcome=1) alebo pri prvom vstupe bez fotky
   try{
     const isWelcome=new URLSearchParams(location.search).get('welcome')==='1';

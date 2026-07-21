@@ -3535,8 +3535,9 @@ app.post('/api/admin/users/:id/account-type', adminAuth, async(req,res)=>{
 // ── Update user profile (admin) ───────────────────────────────────────────────
 app.put('/api/admin/users/:id', adminAuth, async(req,res)=>{
   try {
-    const {name, email, phone, notes, bank_account, sponsor_id, visit_count} = req.body;
+    const {name, email, phone, notes, bank_account, sponsor_id, visit_count, member_since} = req.body;
     const upd = {};
+    if(member_since !== undefined) upd.member_since = /^\d{4}-\d{2}-\d{2}$/.test(String(member_since)) ? member_since : null;
     if(name !== undefined) upd.name = name.trim();
     if(email !== undefined){
       const newEmail = email.toLowerCase().trim();
@@ -5380,6 +5381,7 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
 
     res.json({
       profile:{ id:u._id, name:u.name, email:u.email, phone:u.phone||'', created_at:u.created_at,
+        member_since:u.member_since||null,
         user_type:u.user_type||'client', active:u.active!==false,
         acq:{ utm_source:u.utm_source||'', utm_campaign:u.utm_campaign||'', lead_source:u.lead_source||'' },
         referral_credit:+u.referral_credit||0, notes:u.notes||'' },
@@ -7610,6 +7612,7 @@ app.get('/api/attendance/class/:classId', trainerAuth, async(req,res)=>{
         child_name: b.child_name||null,
         user_id: b.user_id,
         av: !!(u && u.avatar),
+        pay_on_site: !!b.pay_on_site,
         name: b.user_name||u?.name||'—',
         email: b.user_email||u?.email||'—',
         phone: b.user_phone||u?.phone||'—',
@@ -8163,6 +8166,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
     // Private lessons are never free (category check)
     const isPrivate = /súkromn/i.test(cls.name) || /súkromn/i.test(cls.category||'');
     const visitCount = u.visit_count || 0;
+    let payOnSite = false; // rezervácia bez členstva/kreditu so sľubom platby na mieste
     // "First class free" is governed solely by free_class_used — the same flag the
     // client profile shows. Do NOT also gate on visit_count, or a client whose free
     // class is still available (flag false) but has visits from other paths gets
@@ -8175,8 +8179,13 @@ app.post('/api/bookings', auth, async(req,res)=>{
         const singleEntries = u.single_entries || 0;
         const freeCredits = u.free_credits || 0;
         if(!hasMembership && singleEntries <= 0 && freeCredits <= 0){
-          return res.status(402).json({
+          if(req.body.pay_on_site){
+            // Klient sľúbil zaplatiť vstup na mieste (cash) — rezerváciu povoľ a výrazne označ,
+            // aby tréner/admin vedel vybrať vstupné/členské. Nič sa neodpočítava.
+            payOnSite = true;
+          } else return res.status(402).json({
             error:'membership_required',
+            can_pay_on_site: true,
             message: isChild
               ? `Prvá hodina zadarmo pre ${u.name} bola využitá. Na ďalšiu potrebuje členstvo alebo jednorazový vstup (10 €).`
               : 'Prvá hodina zadarmo bola využitá. Na ďalšiu hodinu potrebuješ členstvo alebo jednorazový vstup (10 €).',
@@ -8207,8 +8216,15 @@ app.post('/api/bookings', auth, async(req,res)=>{
       day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
       user_id:u._id, user_name:u.name, user_email:isChild?parent.email:u.email, user_phone:u.phone||parent.phone||'',
       booked_by:parent._id, booked_by_name:parent.name, is_child_booking:isChild, child_name:isChild?u.name:null,
-      booking_date:bdate, status:'confirmed', notes:notes||'', created_at:nowISO()
+      booking_date:bdate, status:'confirmed', pay_on_site:payOnSite, notes:notes||'', created_at:nowISO()
     });
+    if(payOnSite){
+      // Daj vedieť adminom, že príde klient bez členstva — vybrať vstupné/členské na mieste
+      const adminsPO = await q.find(db.users,{is_admin:true});
+      for(const a of adminsPO) await q.insert(db.notifications,{user_id:a._id, type:'pay_on_site',
+        title:'💵 Rezervácia s platbou na mieste', body:`${u.name} — ${cls.name} ${bdate}. Nemá členstvo ani vstupy, vybrať platbu na mieste.`,
+        read:false, created_at:nowISO()}).catch(()=>{});
+    }
     // POZOR: rezervácia sama NEpripočíta návštevu ani body — pripíšu sa až keď tréner
     // POTVRDÍ absolvovanie hodiny (QR alebo „potvrdiť hodinu"). Tu len spotrebuj 1. hodinu zdarma
     // (rezervácia miesta) a resetni winback príznak.
