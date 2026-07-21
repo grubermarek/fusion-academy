@@ -3323,8 +3323,10 @@ app.get('/api/admin/staff', adminAuth, async(req,res)=>{
   const slim=u=>({ id:u._id, name:u.name, email:u.email||'', av:!!u.avatar,
     assists_id:u.assistant_of||null, assists_name:u.assistant_of?(nameById[u.assistant_of]||'—'):null });
   const admins=users.filter(u=>u.is_admin).map(slim);
-  const trainers=users.filter(u=>!u.is_admin && u.user_type==='trainer' && !u.is_assistant).map(slim);
-  const assistants=users.filter(u=>u.is_assistant).map(slim);
+  // Tréner = každý s user_type 'trainer' (aj keď je zároveň asistent — napr. Nelka učí aj asistuje).
+  // Predtým `&& !u.is_assistant` ho z Trénerov vylúčilo, hoci reálne trénerom je.
+  const trainers=users.filter(u=>!u.is_admin && u.user_type==='trainer').map(u=>({...slim(u), also_assistant:!!u.is_assistant}));
+  const assistants=users.filter(u=>u.is_assistant).map(u=>({...slim(u), also_trainer:u.user_type==='trainer'}));
   const byName=(a,b)=>(a.name||'').localeCompare(b.name||'');
   // Možní mentori pre asistenta = tréneri + admini
   const mentors=users.filter(u=>u.is_admin||u.user_type==='trainer').map(u=>({id:u._id,name:u.name})).sort(byName);

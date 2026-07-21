@@ -437,7 +437,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <h4 class="fw-bold mb-1"><i class="bi bi-person-badge me-2 text-warning"></i>Tím &amp; roly</h4>
     <p class="text-muted small mb-3">Priraď typ účtu: <b>Tréner</b>, <b>Asistent</b> alebo <b>Admin</b>. Klientov a leady tu neukazujeme. Do každej roly vieš pridať človeka (vyhľadaj), a pri asistentovi vyberieš, komu asistuje.</p>
     <div id="staffMsg" class="alert d-none py-2 small"></div>
-    <div class="row g-3">
+    <div class="row g-3" style="max-width:1200px">
       <div class="col-md-4">
         <div class="card border-0 rounded-3 p-3 h-100" style="background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.25)!important">
           <div class="fw-bold mb-2" style="color:#fbbf24">🟡 Tréneri (<span id="cntTrainers">0</span>)</div>
@@ -3496,7 +3496,7 @@ async function loadStaff(){
     <div class="d-flex align-items-center gap-2">
       <img src="/api/avatar/${p.id}" onerror="this.style.display='none'" style="width:26px;height:26px;border-radius:50%;object-fit:cover">
       <div class="flex-grow-1" style="min-width:0">
-        <a href="/u/${p.id}" target="_blank" class="fw-semibold small text-decoration-none text-warning">${escHtml(p.name)}</a>
+        <a href="/u/${p.id}" target="_blank" class="fw-semibold small text-decoration-none text-warning">${escHtml(p.name)}${cur==='trainer'&&p.also_assistant?' <span class="badge bg-success" style="font-size:.55rem;vertical-align:middle">aj asistent</span>':''}${cur==='assistant'&&p.also_trainer?' <span class="badge bg-warning text-dark" style="font-size:.55rem;vertical-align:middle">aj tréner</span>':''}</a>
         <div class="text-muted" style="font-size:.68rem">${escHtml(p.email||'')}${cur==='assistant'&&p.assists_name?` · asistuje: <b>${escHtml(p.assists_name)}</b>`:''}</div>
       </div>
     </div>
