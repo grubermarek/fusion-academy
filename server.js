@@ -2870,7 +2870,10 @@ app.get('/api/admin/leads/:id/emails', adminAuth, async(req,res)=>{
 // ── Odídení klienti (winback) — kto prestal chodiť + nurture sekvencia ─────────
 async function churnedClients(minDays){
   minDays = +minDays || 30;
-  const clients = await q.find(db.users,{user_type:'client', is_admin:{$ne:true}, is_child:{$ne:true}, active:{$ne:false}});
+  // Každý, kto reálne chodil a prestal — nie len user_type 'client'. Vylúč len personál/deti
+  // a neregistrovaných importovaných leadov (tí nemajú v appke rezervácie).
+  const clients = (await q.find(db.users,{ is_admin:{$ne:true}, is_child:{$ne:true}, active:{$ne:false} }))
+    .filter(u=> !u.is_assistant && u.user_type!=='trainer' && u.user_type!=='manager' && u.user_type!=='admin');
   const todayS = today();
   const nowISOv = new Date().toISOString();
   // Posledná REÁLNA (minulá) hodina — z akéhokoľvek stavu okrem zrušených/čakačky.
