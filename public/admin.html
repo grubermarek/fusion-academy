@@ -3958,7 +3958,7 @@ function renderWinback(){
   if(!rows.length){ el.innerHTML='<tr><td colspan="7" class="text-center text-muted py-4">Žiadni odídení klienti pre zvolený filter 🎉</td></tr>'; return; }
   el.innerHTML=rows.map(c=>`<tr style="cursor:pointer" onclick="openClientDetail('${c.id}')">
     <td class="ps-3"><span style="color:#C9A84C;font-weight:600">${escHtml(c.name)}</span><div class="text-muted small">${escHtml(c.email||'')}${c.phone?' · '+escHtml(c.phone):''}</div></td>
-    <td>${fmtDate(c.last_visit)}</td>
+    <td>${c.last_visit?fmtDate(c.last_visit):'—'}${c.approx?' <span class="text-muted" style="font-size:.62rem" title="Importovaný klient bez rezervácie v appke — dátum je odhad z členstva/importu">~odhad</span>':''}</td>
     <td><span class="badge ${c.days_since>=180?'bg-danger':c.days_since>=90?'bg-warning text-dark':'bg-secondary'}">${fmtSince(c.days_since)}</span></td>
     <td class="text-center">${c.visit_count}</td>
     <td>${c.membership?(c.membership_active?`<span class="badge bg-success">${escHtml(c.membership)}</span>`:`<span class="badge bg-secondary">${escHtml(c.membership)}</span>${c.membership_expired_on?`<div class="text-muted" style="font-size:.65rem">vypršalo ${fmtDate(c.membership_expired_on)}</div>`:''}`):'<span class="text-muted small">bez členstva</span>'}</td>

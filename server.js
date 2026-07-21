@@ -2899,14 +2899,27 @@ async function churnedClients(minDays){
   const inWB = new Set(queue.map(x=>x.user_id));
   const now=Date.now(); const out=[];
   for(const u of clients){
-    const last=lastVisit[u._id];
-    if(!last) continue; // nikdy nebola na hodine → nie „odídená"
-    const days=Math.floor((now-new Date(last).getTime())/864e5);
-    if(days < minDays) continue;
+    // Skutočná posledná hodina z appky (ak existuje).
+    const realLast=lastVisit[u._id];
     const m=lastMemb[u._id];
+    // Klient je „bývalý", ak reálne chodil (visit_count) alebo mal rezerváciu/členstvo.
+    const engaged = (u.visit_count||0)>0 || realLast || m;
+    if(!engaged) continue;
+    // Ak nemá v appke rezerváciu (napr. importovaný z Glofoxu), použij najlepší dostupný
+    // MINULÝ signál aktivity: koniec/začiatok posledného členstva alebo dátum vzniku účtu.
+    let ref=realLast, approx=false;
+    if(!ref){
+      const cands=[ (m&&(m.expires_at||'').slice(0,10)), (m&&(m.started_at||'').slice(0,10)), (u.last_visit_at||'').slice(0,10), (u.created_at||'').slice(0,10) ]
+        .filter(d=>d && d<=todayS);           // len minulé dátumy
+      ref = cands.sort().pop() || null;        // najnovší minulý signál
+      approx = true;
+    }
+    if(!ref) continue;
+    const days=Math.floor((now-new Date(ref).getTime())/864e5);
+    if(days < minDays) continue;
     const memActive = m && (m.status==='active') && ((m.expires_at||'')>nowISOv);
     out.push({ id:u._id, name:u.name, email:u.email, phone:u.phone||'',
-      last_visit:last, days_since:days, visit_count:u.visit_count||0,
+      last_visit:ref, approx, days_since:days, visit_count:u.visit_count||0,
       membership: m ? (MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo') : null,
       membership_active: !!memActive,
       membership_expired_on: (m && !memActive) ? (m.expires_at||'').slice(0,10) : null,
