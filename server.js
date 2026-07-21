@@ -2852,7 +2852,18 @@ app.get('/api/admin/leads/:id/emails', adminAuth, async(req,res)=>{
     }).sort((a,b)=> (a.scheduled_for||'').localeCompare(b.scheduled_for||'') || (a.day||0)-(b.day||0));
     // Aktívne sekvencie (majú aspoň jeden čakajúci krok)
     const activeSeqs = [...new Set(rows.filter(r=>r.status==='pending').map(r=>r.sequence_label))];
-    res.json({ ok:true, name:u.name, email:u.email, lead_status:u.lead_status||'new', rows, active_sequences:activeSeqs });
+    // Jednorazové automatické maily (mimo sekvencií) — z príznakov + notifikácií
+    const oneoff = [];
+    if(u.first_class_email_sent) oneoff.push({ label:'Po prvej hodine — poďakovanie + ponuka členstva', when:null });
+    if(u.cash_upsell_sent)       oneoff.push({ label:'Motivácia: prejsť na automatickú platbu kartou', when:(u.cash_upsell_sent_at||'').slice(0,10)||null });
+    if(u.review_asked)           oneoff.push({ label:'Prosba o Google recenziu', when:null });
+    if(u.winback_sent)           oneoff.push({ label:'Winback pripomienka (chýbaš nám)', when:null });
+    try{
+      const ended = await q.find(db.notifications,{user_id:u._id, type:'membership_ended'});
+      for(const n of ended) oneoff.push({ label:'Členstvo skončilo → obnov', when:(n.created_at||'').slice(0,10)||null });
+    }catch(e){}
+    oneoff.sort((a,b)=>(b.when||'').localeCompare(a.when||''));
+    res.json({ ok:true, name:u.name, email:u.email, lead_status:u.lead_status||'new', rows, active_sequences:activeSeqs, oneoff });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 

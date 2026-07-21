@@ -3099,6 +3099,7 @@ async function purgeTestAccounts(){
 let _cdClientId=null;
 async function openClientDetail(id){
   _cdClientId=id;
+  _cdEmailsLoaded=false;
   document.getElementById('clientDetailModal').style.display='flex';
   document.getElementById('cdBody').innerHTML='<div class="text-muted text-center py-5">Načítavam…</div>';
   document.getElementById('cdHeader').innerHTML='';
@@ -3128,12 +3129,13 @@ async function openClientDetail(id){
       ${kpi('Referral kredit', (p.referral_credit||0).toFixed(2)+' €')}
     </div>
     <ul class="nav nav-tabs mb-2" style="border-color:#333">
-      ${['Platby','Členstvá','Návštevy','Faktúry'].map((t,i)=>`<li class="nav-item"><a class="nav-link${i===0?' active':''}" style="cursor:pointer;color:#ccc" onclick="cdTab(${i},this)">${t}</a></li>`).join('')}
+      ${['Platby','Členstvá','Návštevy','Faktúry','✉️ E-maily'].map((t,i)=>`<li class="nav-item"><a class="nav-link${i===0?' active':''}" style="cursor:pointer;color:#ccc" onclick="cdTab(${i},this)">${t}</a></li>`).join('')}
     </ul>
     <div class="cd-tab" data-i="0">${cdPaymentsHtml(d.payments)}</div>
     <div class="cd-tab" data-i="1" style="display:none">${list(d.memberships,['Členstvo','Cena','Stav','Od','Do'],r=>`<tr><td>${escHtml(r.plan_name||'')}</td><td>${r.price.toFixed(2)} €</td><td>${escHtml(r.status||'')}</td><td>${fmtDate(r.started_at)}</td><td>${fmtDate(r.expires_at)}</td></tr>`)}</div>
     <div class="cd-tab" data-i="2" style="display:none">${list(d.bookings,['Dátum','Hodina','Miesto','Stav'],r=>`<tr><td>${fmtDate(r.date)}</td><td>${escHtml(r.class_name||'')}</td><td>${escHtml(r.location||'')}</td><td>${escHtml(r.status||'')}</td></tr>`)}</div>
     <div class="cd-tab" data-i="3" style="display:none">${list(d.invoices,['Číslo','Suma','Stav','Vystavená'],r=>`<tr><td><a href="/invoice/${r.number}" target="_blank" style="color:#C9A84C">${r.number}</a></td><td>${r.total.toFixed(2)} €</td><td>${escHtml(r.status||'')}</td><td>${fmtDate(r.issued_at)}</td></tr>`)}</div>
+    <div class="cd-tab" data-i="4" style="display:none" id="cdEmailsTab"><div class="text-muted small py-2">Klikni na záložku pre načítanie…</div></div>
     <div id="cdAwards" class="mt-3 pt-3" style="border-top:1px solid #2a2a2a"><div class="text-muted small">Načítavam odznaky…</div></div>`;
   loadAwards(id);
 }
@@ -3176,6 +3178,46 @@ function cdTab(i,el){
   document.querySelectorAll('#cdBody .nav-link').forEach(a=>a.classList.remove('active'));
   el.classList.add('active');
   document.querySelectorAll('#cdBody .cd-tab').forEach(t=>t.style.display= (+t.dataset.i===i)?'block':'none');
+  if(i===4 && !_cdEmailsLoaded){ _cdEmailsLoaded=true; loadClientEmails(_cdClientId); }
+}
+let _cdEmailsLoaded=false;
+const CD_ESTATUS={ sent:'<span class="badge bg-success">✓ Odoslané</span>', pending:'<span class="badge bg-info text-dark">⏳ Naplánované</span>',
+  skipped:'<span class="badge bg-secondary">Preskočené</span>', error:'<span class="badge bg-danger">Chyba</span>' };
+async function loadClientEmails(id){
+  const box=document.getElementById('cdEmailsTab'); if(!box) return;
+  box.innerHTML='<div class="text-muted small py-2">Načítavam…</div>';
+  const d=await api('/api/admin/leads/'+id+'/emails');
+  if(!d||!d.ok){ box.innerHTML='<div class="text-danger small py-2">Chyba načítania.</div>'; return; }
+  const sent=(d.rows||[]).filter(r=>r.status==='sent');
+  const planned=(d.rows||[]).filter(r=>r.status==='pending');
+  const other=(d.rows||[]).filter(r=>r.status!=='sent'&&r.status!=='pending');
+  const seqRow=r=>`<tr>
+      <td><span class="badge" style="background:rgba(201,168,76,.15);color:var(--gold)">${escHtml(r.sequence_label||'')}</span></td>
+      <td>${escHtml(r.subject||r.label||'')}</td>
+      <td>${CD_ESTATUS[r.status]||escHtml(r.status)}${r.reason?` <span class="text-muted" style="font-size:.65rem">(${escHtml(r.reason)})</span>`:''}</td>
+      <td class="text-muted small">${r.sent_at?fmtDate(r.sent_at):(r.scheduled_for?fmtDate(r.scheduled_for):'—')}</td>
+      <td>${r.html?`<button class="btn btn-sm btn-outline-info py-0 px-2" style="font-size:.7rem" onclick='cdPreviewEmail(${JSON.stringify(r.subject||"")},${JSON.stringify(r.html)})'>Náhľad</button>`:''}</td>
+    </tr>`;
+  const tbl=(title,rows,empty)=>`<div class="fw-bold small mb-1" style="color:#C9A84C">${title}</div>`+
+    (rows.length?`<div class="table-responsive mb-3"><table class="table table-dark table-sm align-middle mb-0" style="font-size:.76rem">
+      <thead><tr><th>Sekvencia</th><th>Predmet</th><th>Stav</th><th>Dátum</th><th></th></tr></thead>
+      <tbody>${rows.map(seqRow).join('')}</tbody></table></div>`:`<div class="text-muted small py-1 mb-3">${empty}</div>`);
+  let html='';
+  html+=tbl('📤 Už odoslané (automatizácia)', sent, 'Zatiaľ nič neodoslané.');
+  html+=tbl('⏳ Naplánované', planned, 'Nič naplánované.');
+  if(other.length) html+=tbl('⏭️ Preskočené / chyby', other, '');
+  // jednorazové automatické maily
+  if((d.oneoff||[]).length){
+    html+=`<div class="fw-bold small mb-1" style="color:#C9A84C">🔔 Jednorazové automatické maily</div>
+      <ul class="mb-0" style="font-size:.78rem">${d.oneoff.map(o=>`<li>${escHtml(o.label)}${o.when?` <span class="text-muted">· ${fmtDate(o.when)}</span>`:''}</li>`).join('')}</ul>`;
+  }
+  box.innerHTML=html||'<div class="text-muted small py-2">Žiadne automatizačné e-maily.</div>';
+}
+function cdPreviewEmail(subject, html){
+  const w=window.open('','_blank','width=680,height=800');
+  if(!w){ showToast('Povoľ pop-up okná pre náhľad','error'); return; }
+  w.document.write(`<title>${(subject||'Náhľad e-mailu').replace(/</g,'&lt;')}</title>`+html);
+  w.document.close();
 }
 // ── Platby na karte klienta + refundácia jednotlivých platieb ──────────────────
 let _cdPayments=[];
