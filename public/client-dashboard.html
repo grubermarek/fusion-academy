@@ -378,6 +378,8 @@
         <span id="mcAutoRenew">—</span>
       </div>
     </div>
+    <!-- Permanentkové vstupy + darované hodiny — viditeľné VŽDY keď nejaké sú (aj popri členstve) -->
+    <div id="mcEntriesRow" style="display:none;margin-top:10px;background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.3);border-radius:12px;padding:10px 14px;font-size:.88rem"></div>
     <button class="mc-buy-btn" id="mcBuyBtn" onclick="window.location.href='/pricing'">
       <i class="bi bi-cart-plus"></i> Kúpiť / obnoviť členstvo
     </button>
@@ -812,6 +814,18 @@ async function toggleOffers(on){
 function renderMembership(me){
   renderUnlockCards(me);
   renderOffersPref(me);
+  // Vstupy z permanentky + darované hodiny — ukáž vždy, keď nejaké sú (aj popri členstve)
+  const entries=+me.single_entries||0, freeCr=+me.free_credits||0;
+  const er=document.getElementById('mcEntriesRow');
+  if(er){
+    if(entries>0 || freeCr>0){
+      const parts=[];
+      if(entries>0) parts.push(`🎟️ <b>${entries}</b> vstup${entries===1?'':entries<5?'y':'ov'} z permanentky`);
+      if(freeCr>0) parts.push(`🎁 <b>${freeCr}</b> darovan${freeCr===1?'á hodina':freeCr<5?'é hodiny':'ých hodín'}`);
+      er.innerHTML='K dispozícii máš aj: '+parts.join(' · ');
+      er.style.display='block';
+    } else er.style.display='none';
+  }
   const m=me.membership;
   const planEl=document.getElementById('mcPlan');
   const statusEl=document.getElementById('mcStatus');

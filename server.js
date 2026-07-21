@@ -5383,7 +5383,7 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
       profile:{ id:u._id, name:u.name, email:u.email, phone:u.phone||'', created_at:u.created_at,
         member_since:u.member_since||null,
         user_type:u.user_type||'client', active:u.active!==false,
-        acq:{ utm_source:u.utm_source||'', utm_campaign:u.utm_campaign||'', lead_source:u.lead_source||'' },
+        acq:{ utm_source:u.utm_source||'', utm_campaign:u.utm_campaign||'', lead_source:u.lead_source||'', is_meta:isMetaUser(u) },
         referral_credit:+u.referral_credit||0, notes:u.notes||'' },
       kpis:{ totalPaid, ltv:totalPaid, visits:attended.length, avgPerMonth,
         firstVisit, lastVisit, topStudio:topBy('class_location'), topInstructor:topBy('instructor'),
@@ -9124,6 +9124,30 @@ async function campaignRevenueMap(){
   });
   return byCampaign;
 }
+
+// Meta Ads prehľad: klienti prišli z Meta (fbclid / utm_source / lead_source), ich tržby,
+// stav prepojenia (pixel + CAPI). Zdroj pravdy pre "ktorá klientka je z Meta Ads".
+const isMetaUser = u => !!(u.fbclid || /faceb|^fb$|meta|instagr|^ig$/i.test(String(u.utm_source||''))
+  || /faceb|meta|instagr/i.test(String(u.lead_source||'')));
+app.get('/api/admin/meta-stats', adminAuth, async(req,res)=>{
+  try{
+    const users=(await q.find(db.users,{})).filter(u=>!u.is_admin && !u.is_child);
+    const meta=users.filter(isMetaUser);
+    const ids=new Set(meta.map(u=>u._id));
+    const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status) && ids.has(p.user_id));
+    const membs=(await q.find(db.memberships,{})).filter(m=>m.payment_method && ids.has(m.user_id));
+    const orders=(await q.find(db.orders,{})).filter(o=>o.status==='paid' && ids.has(o.user_id));
+    const revenue=+([...payments.map(p=>+p.amount||0), ...membs.map(m=>+m.price||0), ...orders.map(o=>+o.total||0)].reduce((s,x)=>s+x,0)).toFixed(2);
+    const payerIds=new Set([...payments.map(p=>p.user_id),...membs.map(m=>m.user_id),...orders.map(o=>o.user_id)]);
+    const monthly={};
+    for(const u of meta){ const m=(u.created_at||'').slice(0,7); if(m) monthly[m]=(monthly[m]||0)+1; }
+    const months=Object.entries(monthly).sort((a,b)=>a[0].localeCompare(b[0])).slice(-6);
+    const attended=meta.filter(u=>(u.visit_count||0)>0).length;
+    res.json({ ok:true, total:meta.length, attended, payers:payerIds.size, revenue,
+      months, pixel_configured:!!process.env.META_PIXEL_ID, capi_configured:!!process.env.META_CAPI_TOKEN,
+      sample: meta.slice(0,50).map(u=>({id:u._id,name:u.name,created_at:(u.created_at||'').slice(0,10),utm_campaign:u.utm_campaign||'',visits:u.visit_count||0,paying:payerIds.has(u._id)})) });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 
 app.get('/api/admin/campaigns', adminAuth, async(req,res)=>{
   try {

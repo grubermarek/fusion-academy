@@ -922,6 +922,14 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
         <p class="text-muted small mb-0">Zadaj investíciu a čísla — metriky (CTR, CPC, ROAS, ROI, CAC…) sa počítajú automaticky. Tržby sa priradia podľa <code>utm_campaign</code>.</p></div>
       <button class="btn btn-sm btn-brand" onclick="openCampaign()"><i class="bi bi-plus-lg me-1"></i>Nová kampaň</button>
     </div>
+    <!-- META ADS prehľad -->
+    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+        <h6 class="fw-bold mb-0">📘 Meta Ads (Facebook / Instagram)</h6>
+        <span id="metaSetupStatus" class="small"></span>
+      </div>
+      <div id="metaAdsPanel" class="text-muted small">Načítavam…</div>
+    </div></div>
     <div id="campaignsList"><div class="text-muted py-4 text-center">Načítavam…</div></div>
   </div>
 
@@ -2362,7 +2370,31 @@ async function accExportXlsx(){
 
 /* ─── CAMPAIGNS ─────────────────────────────────────────── */
 const PLAT_LABEL={facebook:'📘 Facebook',instagram:'📸 Instagram',google:'🔎 Google',tiktok:'🎵 TikTok',email:'✉️ Email',sms:'💬 SMS',referral:'🤝 Referral',organic:'🌱 Organika',other:'Iné'};
+async function loadMetaStats(){
+  const el=document.getElementById('metaAdsPanel'); if(!el) return;
+  const d=await api('/api/admin/meta-stats');
+  if(!d||!d.ok){ el.innerHTML='<span class="text-danger">Chyba načítania.</span>'; return; }
+  const st=document.getElementById('metaSetupStatus');
+  st.innerHTML = (d.pixel_configured?'<span class="badge bg-success">Pixel ✓</span>':'<span class="badge bg-danger">Pixel ✗</span>')
+    + ' ' + (d.capi_configured?'<span class="badge bg-success">CAPI ✓</span>':'<span class="badge bg-danger">CAPI ✗</span>');
+  const chip=(l,v,c)=>`<div class="col-6 col-md-3"><div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:10px 12px">
+    <div class="text-muted" style="font-size:.62rem;text-transform:uppercase">${l}</div>
+    <div class="fw-bold" style="font-size:1.2rem;color:${c||'#EAE3D5'}">${v}</div></div></div>`;
+  let html=`<div class="row g-2 mb-2">
+    ${chip('Klientky z Meta Ads', d.total, '#60a5fa')}
+    ${chip('Prišli na hodinu', d.attended, '#4ade80')}
+    ${chip('Platiace', d.payers, '#C9A84C')}
+    ${chip('Tržby z Meta klientok', d.revenue.toFixed(2)+' €', '#C9A84C')}
+  </div>`;
+  if(d.months.length) html+=`<div class="small text-muted mb-2">Registrácie po mesiacoch: ${d.months.map(([m,n])=>`<b>${m.slice(5)}/${m.slice(2,4)}</b>: ${n}`).join(' · ')}</div>`;
+  if(!d.pixel_configured || !d.capi_configured){
+    html+=`<div class="alert py-2 small mb-0" style="background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.3)">
+      <b>Dokonči prepojenie (5 min):</b> ①&nbsp;V <a href="https://business.facebook.com/events_manager2" target="_blank">Meta Events Manageri</a> vytvor <b>Pixel</b> (Dátový zdroj → Web) a skopíruj jeho ID. ②&nbsp;V pixeli otvor <b>Nastavenia → Conversions API → Vygenerovať access token</b>. ③&nbsp;Pošli mi Pixel ID + token a zapnem meranie (appka už má všetko pripravené: pixel, PageView/Registration/Purchase eventy aj server-side CAPI).</div>`;
+  }
+  el.innerHTML=html;
+}
 async function loadCampaigns(){
+  loadMetaStats();
   const list=await api('/api/admin/campaigns');
   const host=document.getElementById('campaignsList');
   if(!Array.isArray(list)||!list.length){ host.innerHTML='<div class="text-muted text-center py-5">Zatiaľ žiadne kampane. Klikni „Nová kampaň" a začni merať návratnosť.</div>'; return; }
@@ -3129,7 +3161,7 @@ async function openClientDetail(id){
       · členom od <b style="color:#C9A84C">${fmtDate(p.member_since||p.created_at)}</b>
       <button class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1" style="font-size:.65rem" title="Upraviť dátum, odkedy je členom tanečnej školy (napr. z Glofoxu)" onclick="cdEditMemberSince('${p.id}','${p.member_since||''}')"><i class="bi bi-pencil"></i></button>
       ${p.member_since?'':`<span class="text-muted" style="font-size:.65rem">(= registrácia v appke)</span>`}</div>
-    <div class="text-muted" style="font-size:.72rem">Akvizícia: ${escHtml(acq)}</div>`;
+    <div class="text-muted" style="font-size:.72rem">Akvizícia: ${p.acq.is_meta?'<span class="badge" style="background:#1877F2;font-size:.6rem">📘 Meta Ads</span> ':''}${escHtml(acq)}</div>`;
   const kpi=(l,v)=>`<div class="col-6 col-md-3"><div style="background:#1e1e1e;border:1px solid #2a2a2a;border-radius:9px;padding:11px 13px">
     <div class="text-muted" style="font-size:.62rem;text-transform:uppercase;letter-spacing:.04em">${l}</div>
     <div class="fw-bold" style="font-size:1.05rem">${v}</div></div></div>`;
