@@ -527,20 +527,26 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- MEMBERSHIPS -->
   <div id="s-memberships" class="section">
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-      <h4 class="fw-bold mb-0">Členstvá</h4>
+    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+      <h4 class="fw-bold mb-0">Členstvá &amp; permanentky</h4>
       <div class="d-flex gap-2 flex-wrap">
         <input id="memSearch" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:200px" placeholder="🔍 Meno / email…" oninput="renderMemberships()">
-        <select id="memPlanF" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:170px" onchange="renderMemberships()"><option value="">Všetky úrovne</option></select>
-        <select id="memStatusF" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:150px" onchange="renderMemberships()"><option value="">Všetky stavy</option><option value="active">Aktívne</option><option value="expired">Expirované</option></select>
         <button class="btn btn-sm btn-brand" onclick="loadMemberships(true)"><i class="bi bi-arrow-clockwise"></i></button>
       </div>
     </div>
-    <div id="memSummary" class="d-flex flex-wrap gap-2 mb-3"></div>
+    <p class="text-muted small mb-3">Klik na človeka = jeho karta. Pri každom vieš napísať e‑mail alebo zavolať. Vypršaní a minutí sú kandidáti na <b>churn / winback</b>.</p>
+    <!-- 4 kategórie -->
+    <div class="d-flex flex-wrap gap-2 mb-3" id="memTabs">
+      <button class="btn btn-sm btn-warning" data-mt="active_monthly" onclick="memTab('active_monthly')">✅ Aktívne členstvá <span class="badge bg-dark ms-1" id="mtc_active_monthly">0</span></button>
+      <button class="btn btn-sm btn-outline-warning" data-mt="active_passes" onclick="memTab('active_passes')">🎟️ Aktívne permanentky <span class="badge bg-dark ms-1" id="mtc_active_passes">0</span></button>
+      <button class="btn btn-sm btn-outline-danger" data-mt="expired_memberships" onclick="memTab('expired_memberships')">⌛ Vypršané členstvá <span class="badge bg-dark ms-1" id="mtc_expired_memberships">0</span></button>
+      <button class="btn btn-sm btn-outline-danger" data-mt="used_passes" onclick="memTab('used_passes')">🪫 Minuté permanentky <span class="badge bg-dark ms-1" id="mtc_used_passes">0</span></button>
+    </div>
+    <div id="memBanner"></div>
     <div class="card border-0 rounded-3">
       <div class="table-responsive">
-        <table class="table table-hover mb-0">
-          <thead><tr><th class="ps-3">Člen</th><th>Plán</th><th>Platné do</th><th>Stav</th></tr></thead>
+        <table class="table table-hover align-middle mb-0" style="font-size:.85rem">
+          <thead><tr id="memHead"></tr></thead>
           <tbody id="membershipsTable"></tbody>
         </table>
       </div>
@@ -3800,42 +3806,89 @@ async function logout(){await fetch('/api/logout',{method:'POST'});window.locati
 async function goMyProfile(){ try{ const me=await api('/api/me'); if(me&&me.id) window.open('/u/'+me.id,'_blank'); }catch(e){} }
 
 // ── Memberships ──────────────────────────────────────────────
-let _memData=[];
+let _memDetail=null, _memTab='active_monthly';
 async function loadMemberships(force){
-  if(!_memData.length || force){ const rows=await api('/api/admin/memberships'); _memData=Array.isArray(rows)?rows:[]; }
-  // naplň filter úrovní
-  const plans=[...new Set(_memData.map(m=>m.plan_name||m.plan_id).filter(Boolean))].sort();
-  const pf=document.getElementById('memPlanF');
-  if(pf && pf.options.length<=1) pf.innerHTML='<option value="">Všetky úrovne</option>'+plans.map(p=>`<option value="${escHtml(p)}">${escHtml(p)}</option>`).join('');
+  if(!_memDetail || force){ _memDetail=await api('/api/admin/memberships-detailed'); }
+  if(!_memDetail||!_memDetail.ok){ document.getElementById('membershipsTable').innerHTML='<tr><td class="text-danger py-3">Chyba načítania.</td></tr>'; return; }
+  ['active_monthly','active_passes','expired_memberships','used_passes'].forEach(k=>{ const el=document.getElementById('mtc_'+k); if(el) el.textContent=(_memDetail.counts[k]||0); });
   renderMemberships();
 }
-function renderMemberships(){
-  const el=document.getElementById('membershipsTable'); if(!el)return;
-  const term=(document.getElementById('memSearch').value||'').toLowerCase();
-  const pf=document.getElementById('memPlanF').value;
-  const sf=document.getElementById('memStatusF').value;
-  const isActive=m=>m.status==='active'&&new Date(m.expires_at)>new Date();
-  let rows=_memData.filter(m=>{
-    const plan=m.plan_name||m.plan_id||'';
-    if(term && !((m.user_name||'').toLowerCase().includes(term)||(m.user_email||'').toLowerCase().includes(term))) return false;
-    if(pf && plan!==pf) return false;
-    if(sf==='active' && !isActive(m)) return false;
-    if(sf==='expired' && isActive(m)) return false;
-    return true;
+function memTab(t){
+  _memTab=t;
+  document.querySelectorAll('#memTabs [data-mt]').forEach(b=>{ const on=b.dataset.mt===t;
+    const danger=(b.dataset.mt==='expired_memberships'||b.dataset.mt==='used_passes');
+    b.classList.remove('btn-warning','btn-danger','btn-outline-warning','btn-outline-danger');
+    if(on) b.classList.add(danger?'btn-danger':'btn-warning');
+    else   b.classList.add(danger?'btn-outline-danger':'btn-outline-warning');
   });
-  // súhrn počtov po úrovni
-  const byPlan={}; _memData.filter(isActive).forEach(m=>{const p=m.plan_name||m.plan_id||'—';byPlan[p]=(byPlan[p]||0)+1;});
-  document.getElementById('memSummary').innerHTML=Object.entries(byPlan).sort((a,b)=>b[1]-a[1]).map(([p,n])=>`<span class="badge" style="background:#1e1e1e;border:1px solid #2a2a2a;color:#C9A84C;font-weight:600">${escHtml(p)}: ${n}</span>`).join('')+`<span class="badge" style="background:#1e1e1e;border:1px solid #2a2a2a;color:#4ade80;font-weight:600">Aktívnych spolu: ${_memData.filter(isActive).length}</span>`;
-  el.innerHTML=rows.map(m=>{
-    const exp=m.expires_at?fmtDate(m.expires_at):'—';
-    const active=isActive(m);
-    return `<tr style="cursor:pointer" onclick="openClientDetail('${m.user_id}')">
-      <td class="ps-3"><span style="color:#C9A84C;font-weight:600">${escHtml(m.user_name||'—')}</span><div class="text-muted small">${escHtml(m.user_email||'')}</div></td>
-      <td><span class="badge" style="background:rgba(201,168,76,.2);color:var(--gold)">${escHtml(m.plan_name||m.plan_id||'—')}</span></td>
-      <td>${exp}</td>
-      <td><span class="badge ${active?'bg-success':'bg-secondary'}">${active?'Aktívne':'Expirované'}</span></td>
-    </tr>`;
-  }).join('')||'<tr><td colspan="4" class="text-center text-muted py-4">Žiadne členstvá pre zvolený filter.</td></tr>';
+  renderMemberships();
+}
+function _memContactBtns(p){
+  const mail=p.email?`<a class="btn btn-sm btn-outline-info py-0 px-2" style="font-size:.72rem" href="mailto:${escHtml(p.email)}" onclick="event.stopPropagation()" title="Napísať e-mail"><i class="bi bi-envelope"></i></a>`:'';
+  const tel=p.phone?`<a class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:.72rem" href="tel:${escHtml((p.phone||'').replace(/\s+/g,''))}" onclick="event.stopPropagation()" title="Zavolať"><i class="bi bi-telephone"></i></a>`:'';
+  return `<div class="d-flex gap-1">${mail}${tel}</div>`;
+}
+function _memNameCell(p){
+  return `<td class="ps-3"><div class="d-flex align-items-center gap-2">
+    <img src="/api/avatar/${p.id}" onerror="this.style.display='none'" style="width:26px;height:26px;border-radius:50%;object-fit:cover">
+    <div><span style="color:#C9A84C;font-weight:600">${escHtml(p.name||'—')}</span><div class="text-muted small">${escHtml(p.email||'')}${p.phone?' · '+escHtml(p.phone):''}</div></div>
+  </div></td>`;
+}
+function _memEmpty(c){ return `<tr><td colspan="${c}" class="text-center text-muted py-4">Nikto v tejto kategórii.</td></tr>`; }
+function _memChurnBanner(kind){
+  return `<div class="alert py-2 small d-flex justify-content-between align-items-center flex-wrap gap-2" style="background:rgba(224,86,86,.08);border:1px solid rgba(224,86,86,.3)">
+    <span>⚠️ Títo ${kind==='members'?'bývalí členovia':'klienti s minutou permanentkou'} sú <b>churn risk</b>. Zaraď ich do winback sekvencie (pozvánka → hodina zdarma → zľava).</span>
+    <button class="btn btn-sm btn-outline-warning py-0 px-2" onclick="show('winback')"><i class="bi bi-arrow-return-left"></i> Otvoriť Odídení klienti</button></div>`;
+}
+function renderMemberships(){
+  if(!_memDetail) return;
+  const term=(document.getElementById('memSearch').value||'').toLowerCase();
+  const list=(_memDetail[_memTab]||[]).filter(p=>!term||(p.name||'').toLowerCase().includes(term)||(p.email||'').toLowerCase().includes(term));
+  const head=document.getElementById('memHead'), tb=document.getElementById('membershipsTable'), banner=document.getElementById('memBanner');
+  banner.innerHTML='';
+  const open=p=>`<tr style="cursor:pointer" onclick="openClientDetail('${p.id}')">`;
+  if(_memTab==='active_monthly'){
+    const cash=list.filter(p=>p.is_cash);
+    if(cash.length) banner.innerHTML=`<div class="alert py-2 small d-flex justify-content-between align-items-center flex-wrap gap-2" style="background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.3)">
+      <span>💳 <b>${cash.length}</b> členov platí <b>hotovosťou</b>. Pošli im motiváciu prejsť na automatickú platbu kartou (menej starostí, žiadne nosenie hotovosti).</span>
+      <button class="btn btn-sm btn-outline-info py-0 px-2" onclick="sendCashUpsell()">✉️ Poslať motiváciu (${cash.length})</button></div>`;
+    head.innerHTML='<th class="ps-3">Člen</th><th>Plán</th><th>Platba</th><th>Platné do</th><th>Zostáva</th><th></th>';
+    tb.innerHTML=list.map(p=>open(p)+_memNameCell(p)+
+      `<td><span class="badge" style="background:rgba(201,168,76,.2);color:var(--gold)">${escHtml(p.plan_name||'—')}</span></td>
+       <td>${p.is_auto?'<span class="badge bg-success">Karta (auto)</span>':p.is_cash?'<span class="badge bg-warning text-dark">Hotovosť</span>':`<span class="badge bg-secondary">${escHtml(p.method||'—')}</span>`}</td>
+       <td>${p.expires_at?fmtDate(p.expires_at):'—'}</td>
+       <td>${p.days_left!=null?`<b>${p.days_left}</b> dní`:'—'}</td>
+       <td>${_memContactBtns(p)}</td></tr>`).join('')||_memEmpty(6);
+  } else if(_memTab==='active_passes'){
+    head.innerHTML='<th class="ps-3">Klient</th><th>Zostáva vstupov</th><th>Naposledy na hodine</th><th></th>';
+    tb.innerHTML=list.map(p=>open(p)+_memNameCell(p)+
+      `<td><span class="badge bg-info text-dark">🎟️ ${p.entries} vstup(ov)</span></td>
+       <td>${p.last_visit?fmtDate(p.last_visit):'—'}</td>
+       <td>${_memContactBtns(p)}</td></tr>`).join('')||_memEmpty(4);
+  } else if(_memTab==='expired_memberships'){
+    banner.innerHTML=_memChurnBanner('members');
+    head.innerHTML='<th class="ps-3">Bývalý člen</th><th>Plán</th><th>Vypršalo</th><th>Pred koľkými dňami</th><th></th>';
+    tb.innerHTML=list.map(p=>open(p)+_memNameCell(p)+
+      `<td><span class="badge bg-secondary">${escHtml(p.plan_name||'—')}</span></td>
+       <td>${p.expires_at?fmtDate(p.expires_at):'—'}</td>
+       <td><span class="badge bg-danger">${p.days_expired!=null?p.days_expired+' dní':'—'}</span></td>
+       <td>${_memContactBtns(p)}</td></tr>`).join('')||_memEmpty(5);
+  } else {
+    banner.innerHTML=_memChurnBanner('passes');
+    head.innerHTML='<th class="ps-3">Klient</th><th>Vstupy</th><th>Naposledy na hodine</th><th>Pred koľkými dňami</th><th></th>';
+    tb.innerHTML=list.map(p=>open(p)+_memNameCell(p)+
+      `<td><span class="badge bg-secondary">0 vstupov</span></td>
+       <td>${p.last_visit?fmtDate(p.last_visit):'—'}</td>
+       <td>${p.days_used_up!=null?`<span class="badge bg-danger">${p.days_used_up} dní</span>`:'—'}</td>
+       <td>${_memContactBtns(p)}</td></tr>`).join('')||_memEmpty(5);
+  }
+}
+async function sendCashUpsell(){
+  if(!confirm('Poslať motivačný e-mail na prechod na automatickú platbu kartou všetkým aktívnym členom, čo platia hotovosťou?\n\nKaždému sa pošle len raz (kým ho už dostal, preskočí sa).')) return;
+  showToast('Posielam…','info');
+  const d=await api('/api/admin/cash-upsell-blast',{method:'POST',body:JSON.stringify({})});
+  if(d&&d.ok) showToast(`Odoslané ${d.sent} členom (preskočených ${d.skipped||0}) ✓`,'success');
+  else showToast('Chyba: '+((d&&d.error)||'?'),'error');
 }
 // ── Odídení klienti (winback) ──
 let _wbData=[];

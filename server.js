@@ -4886,6 +4886,100 @@ app.get('/api/admin/memberships-overview', adminAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Detailné členstvá: 4 kategórie — aktívne mesačné, aktívne permanentky,
+// vypršané členstvá (+ dni), minuté permanentky (+ dni od posledného použitia).
+app.get('/api/admin/memberships-detailed', adminAuth, async(req,res)=>{
+  try{
+    const nowMs=Date.now(), nowISOv=new Date().toISOString();
+    const users=await q.find(db.users,{});
+    const uMap=Object.fromEntries(users.map(u=>[u._id,u]));
+    const membs=await q.find(db.memberships,{});
+    const daysSince=iso=>iso?Math.max(0,Math.round((nowMs-new Date(iso).getTime())/86400000)):null;
+    const contact=u=>({ id:u._id, name:u.name||'—', email:u.email||'', phone:u.phone||'', av:!!u.avatar, active:u.active!==false, visits:u.visit_count||0 });
+    // 1+3) mesačné členstvá — najneskôr expirujúci záznam na usera (bez bundle)
+    const monthlyByUser={};
+    for(const m of membs){
+      const plan=MEMBERSHIP_PLANS[m.plan_id]||{};
+      if(plan.type==='bundle'||m.status==='bundle') continue;
+      const cur=monthlyByUser[m.user_id];
+      if(!cur||(m.expires_at||'')>(cur.expires_at||'')) monthlyByUser[m.user_id]=m;
+    }
+    const active_monthly=[], expired_memberships=[];
+    for(const uid in monthlyByUser){
+      const m=monthlyByUser[uid], u=uMap[uid]; if(!u||u.is_admin) continue;
+      const plan=MEMBERSHIP_PLANS[m.plan_id]||{};
+      const method=(m.payment_method||m.method||'').toLowerCase();
+      const isAuto=!!(u.stripe_subscription_id||u.paypal_subscription_id);
+      const base={ ...contact(u), plan_id:m.plan_id, plan_name:plan.name||m.plan_name||m.plan_id,
+        method, is_cash:method==='cash', is_auto:isAuto, expires_at:(m.expires_at||'').slice(0,10) };
+      const isActive=(m.status==='active')&&((m.expires_at||'')>nowISOv);
+      if(isActive){ base.days_left=Math.max(0,Math.round((new Date(m.expires_at).getTime()-nowMs)/86400000)); active_monthly.push(base); }
+      else { base.days_expired=daysSince(m.expires_at||m.created_at); expired_memberships.push(base); }
+    }
+    // 2+4) permanentky
+    const bundleUsers=new Set(membs.filter(m=>{ const p=MEMBERSHIP_PLANS[m.plan_id]||{}; return p.type==='bundle'||m.status==='bundle'; }).map(m=>m.user_id));
+    const bookings=await q.find(db.bookings,{});
+    const lastBk={};
+    for(const b of bookings){ if(!b.user_id||b.status==='cancelled') continue; const d=b.booking_date||(b.created_at||'').slice(0,10); if(!lastBk[b.user_id]||d>lastBk[b.user_id]) lastBk[b.user_id]=d; }
+    const active_passes=[], used_passes=[];
+    for(const u of users){
+      if(u.is_admin||u.is_child) continue;
+      const entries=u.single_entries||0;
+      if(entries>0) active_passes.push({ ...contact(u), entries, last_visit:lastBk[u._id]||null });
+      else if(bundleUsers.has(u._id)) used_passes.push({ ...contact(u), last_visit:lastBk[u._id]||null, days_used_up: lastBk[u._id]?daysSince(lastBk[u._id]+'T12:00:00'):null });
+    }
+    const byName=(a,b)=>(a.name||'').localeCompare(b.name||'','sk');
+    active_monthly.sort((a,b)=>(a.days_left||0)-(b.days_left||0));   // čo skôr vyprší hore
+    expired_memberships.sort((a,b)=>(a.days_expired||0)-(b.days_expired||0)); // čerstvo vypršané hore
+    active_passes.sort((a,b)=>(a.entries||0)-(b.entries||0));        // najmenej vstupov hore
+    used_passes.sort((a,b)=>(a.days_used_up||0)-(b.days_used_up||0));
+    res.json({ ok:true, active_monthly, active_passes, expired_memberships, used_passes,
+      counts:{ active_monthly:active_monthly.length, active_passes:active_passes.length, expired_memberships:expired_memberships.length, used_passes:used_passes.length } });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Motivačný e-mail: prejdi z platby hotovosťou na automatickú platbu kartou.
+// Idempotentné cez flag cash_upsell_sent. Vracia počet naozaj odoslaných.
+async function sendCashUpsellTo(u, plan){
+  if(!u || !u.email || u.cash_upsell_sent) return false;
+  const planName = plan?.name || 'členstvo';
+  const price = plan?.price ? `${(+plan.price).toFixed(2)} €` : '';
+  const ok = await sendMail(u.email, '💳 Zjednoduš si členstvo — automatická platba kartou',
+    emailTemplate('Už žiadne nosenie hotovosti 💛',
+      `<p>Ahoj <b>${(u.name||'').split(' ')[0]}</b>,</p>
+       <p>Všimli sme si, že svoje <b>${planName}</b>${price?` (${price}/mes.)`:''} platíš <b>hotovosťou</b>. Máme pre teba jednoduchší spôsob:</p>
+       <p><b>Automatická platba kartou</b> — nastavíš raz a máš pokoj:</p>
+       <ul style="color:#ccc">
+         <li>✅ Nemusíš nosiť hotovosť ani myslieť na to, či máš zaplatené</li>
+         <li>✅ Členstvo sa nikdy nepreruší — žiadne „vypadol som z rytmu"</li>
+         <li>✅ Vždy prehľad v appke, kedykoľvek zrušíš jedným klikom</li>
+         <li>✅ Bez papierovačiek — faktúra ti príde automaticky na e-mail</li>
+       </ul>
+       <p>Prejsť na kartu zaberie minútu priamo v aplikácii:</p>`,
+      '💳 Nastaviť automatickú platbu', `${APP_URL}/pricing`)).catch(()=>false);
+  if(ok!==false){ await q.update(db.users,{_id:u._id},{$set:{cash_upsell_sent:true, cash_upsell_sent_at:nowISO()}}); return true; }
+  return false;
+}
+app.post('/api/admin/cash-upsell-blast', adminAuth, async(req,res)=>{
+  try{
+    const nowISOv=new Date().toISOString();
+    const membs=(await q.find(db.memberships,{status:'active'})).filter(m=>{
+      const p=MEMBERSHIP_PLANS[m.plan_id]||{}; return p.type!=='bundle' && (m.expires_at||'')>nowISOv && (String(m.payment_method||m.method||'').toLowerCase()==='cash');
+    });
+    const seen=new Set(); let sent=0, skipped=0;
+    for(const m of membs){
+      if(seen.has(m.user_id)) continue; seen.add(m.user_id);
+      const u=await q.one(db.users,{_id:m.user_id});
+      if(!u||u.is_admin){ continue; }
+      if(u.stripe_subscription_id||u.paypal_subscription_id){ continue; } // už platí kartou
+      const done=await sendCashUpsellTo(u, MEMBERSHIP_PLANS[m.plan_id]);
+      if(done) sent++; else skipped++;
+    }
+    await auditLog(req,'cash_upsell_blast',`sent ${sent}`,null,{sent,skipped},'');
+    res.json({ok:true, sent, skipped});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/admin/finance/stats', adminAuth, async(req,res)=>{
   try {
     const {from, to} = req.query; // YYYY-MM-DD inclusive
@@ -9639,6 +9733,20 @@ async function runDailyJobs(){
         `<p>Ahoj <b>${u.name}</b>,</p><p>Tvoje členstvo <b>${m.plan_name}</b> práve skončilo. Dúfame, že si si tanec užil/a naplno! 🌟</p><p>Obnov si ho jedným klikom a pokračuj tam, kde si prestal/a – tvoje miesto na parkete čaká.</p>`,
         '🔄 Obnoviť členstvo',`${APP_URL}/pricing`)).catch(()=>{});
     await q.insert(db.notifications,{user_id:u._id,type:'membership_ended',title:'Členstvo skončilo',body:`${m.plan_name} vypršalo ${m.expires_at.slice(0,10)}`,read:false,created_at:nowISO()});
+  }
+
+  // ── 1c. Cash → karta: pravidelní členovia platiaci hotovosťou dostanú (raz) motiváciu ──
+  const cashActive = (await q.find(db.memberships,{status:'active'})).filter(m=>{
+    const p=MEMBERSHIP_PLANS[m.plan_id]||{}; return p.type!=='bundle' && (m.expires_at||'')>todayStr+'T00:00:00' && String(m.payment_method||m.method||'').toLowerCase()==='cash';
+  });
+  const cashSeen=new Set();
+  for(const m of cashActive){
+    if(cashSeen.has(m.user_id)) continue; cashSeen.add(m.user_id);
+    const u=await q.one(db.users,{_id:m.user_id});
+    if(!u||u.is_admin||u.cash_upsell_sent) continue;
+    if(u.stripe_subscription_id||u.paypal_subscription_id) continue; // už platí kartou
+    if((u.visit_count||0) < 3) continue; // len pravidelní (aspoň 3 návštevy)
+    await sendCashUpsellTo(u, MEMBERSHIP_PLANS[m.plan_id]);
   }
 
   // ── 2. Day-before class reminders ─────────────────────────────────────────
