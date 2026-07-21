@@ -4896,6 +4896,9 @@ app.get('/api/admin/memberships-detailed', adminAuth, async(req,res)=>{
     const membs=await q.find(db.memberships,{});
     const daysSince=iso=>iso?Math.max(0,Math.round((nowMs-new Date(iso).getTime())/86400000)):null;
     const contact=u=>({ id:u._id, name:u.name||'—', email:u.email||'', phone:u.phone||'', av:!!u.avatar, active:u.active!==false, visits:u.visit_count||0 });
+    // Kto má PRÁVE TERAZ aktívnu permanentku (nevyčerpané vstupy) — aktívny stav má prednosť
+    // pred „vypršaným", aby sa ten istý človek neukazoval v dvoch kategóriách naraz.
+    const activePassIds=new Set(users.filter(u=>(u.single_entries||0)>0).map(u=>u._id));
     // 1+3) mesačné členstvá — najneskôr expirujúci záznam na usera (bez bundle)
     const monthlyByUser={};
     for(const m of membs){
@@ -4905,6 +4908,7 @@ app.get('/api/admin/memberships-detailed', adminAuth, async(req,res)=>{
       if(!cur||(m.expires_at||'')>(cur.expires_at||'')) monthlyByUser[m.user_id]=m;
     }
     const active_monthly=[], expired_memberships=[];
+    const activeMonthlyIds=new Set();
     for(const uid in monthlyByUser){
       const m=monthlyByUser[uid], u=uMap[uid]; if(!u||u.is_admin) continue;
       const plan=MEMBERSHIP_PLANS[m.plan_id]||{};
@@ -4913,8 +4917,9 @@ app.get('/api/admin/memberships-detailed', adminAuth, async(req,res)=>{
       const base={ ...contact(u), plan_id:m.plan_id, plan_name:plan.name||m.plan_name||m.plan_id,
         method, is_cash:method==='cash', is_auto:isAuto, expires_at:(m.expires_at||'').slice(0,10) };
       const isActive=(m.status==='active')&&((m.expires_at||'')>nowISOv);
-      if(isActive){ base.days_left=Math.max(0,Math.round((new Date(m.expires_at).getTime()-nowMs)/86400000)); active_monthly.push(base); }
-      else { base.days_expired=daysSince(m.expires_at||m.created_at); expired_memberships.push(base); }
+      if(isActive){ base.days_left=Math.max(0,Math.round((new Date(m.expires_at).getTime()-nowMs)/86400000)); active_monthly.push(base); activeMonthlyIds.add(uid); }
+      // do „vypršaných" NEdávaj toho, kto má teraz aktívnu permanentku (jeho aktuálny stav je aktívny)
+      else if(!activePassIds.has(uid)){ base.days_expired=daysSince(m.expires_at||m.created_at); expired_memberships.push(base); }
     }
     // 2+4) permanentky
     const bundleUsers=new Set(membs.filter(m=>{ const p=MEMBERSHIP_PLANS[m.plan_id]||{}; return p.type==='bundle'||m.status==='bundle'; }).map(m=>m.user_id));
@@ -4926,7 +4931,8 @@ app.get('/api/admin/memberships-detailed', adminAuth, async(req,res)=>{
       if(u.is_admin||u.is_child) continue;
       const entries=u.single_entries||0;
       if(entries>0) active_passes.push({ ...contact(u), entries, last_visit:lastBk[u._id]||null });
-      else if(bundleUsers.has(u._id)) used_passes.push({ ...contact(u), last_visit:lastBk[u._id]||null, days_used_up: lastBk[u._id]?daysSince(lastBk[u._id]+'T12:00:00'):null });
+      // minuté permanentky: 0 vstupov + kúpil kedysi permanentku + NEMÁ aktívne členstvo (inak nie je churn)
+      else if(bundleUsers.has(u._id) && !activeMonthlyIds.has(u._id)) used_passes.push({ ...contact(u), last_visit:lastBk[u._id]||null, days_used_up: lastBk[u._id]?daysSince(lastBk[u._id]+'T12:00:00'):null });
     }
     const byName=(a,b)=>(a.name||'').localeCompare(b.name||'','sk');
     active_monthly.sort((a,b)=>(a.days_left||0)-(b.days_left||0));   // čo skôr vyprší hore
