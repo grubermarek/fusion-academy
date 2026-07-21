@@ -3963,7 +3963,9 @@ function renderWinback(){
     <td class="text-center">${c.visit_count}</td>
     <td>${c.membership?(c.membership_active?`<span class="badge bg-success">${escHtml(c.membership)}</span>`:`<span class="badge bg-secondary">${escHtml(c.membership)}</span>${c.membership_expired_on?`<div class="text-muted" style="font-size:.65rem">vypršalo ${fmtDate(c.membership_expired_on)}</div>`:''}`):'<span class="text-muted small">bez členstva</span>'}</td>
     <td>${c.offers_optout?'<span class="text-muted small">odhlásený</span>':(c.in_winback?'<span class="badge bg-info text-dark">✉️ prebieha</span>':'<span class="text-muted small">—</span>')}</td>
-    <td onclick="event.stopPropagation()">${c.offers_optout?'':(c.in_winback?'':`<button class="btn btn-xs btn-outline-warning" style="font-size:.72rem;padding:2px 8px" onclick="enrollWinback('${c.id}')">Do sekvencie</button>`)}</td>
+    <td onclick="event.stopPropagation()" class="d-flex gap-1 align-items-center">
+      <button class="btn btn-xs btn-outline-info" style="font-size:.72rem;padding:2px 8px" title="Aké maily už dostal/a a čo je naplánované" onclick="showLeadEmails('${c.id}','${escJs(c.name||'')}')"><i class="bi bi-envelope-paper"></i></button>
+      ${c.offers_optout?'':(c.in_winback?'':`<button class="btn btn-xs btn-outline-warning" style="font-size:.72rem;padding:2px 8px" onclick="enrollWinback('${c.id}')">Do sekvencie</button>`)}</td>
   </tr>`).join('');
 }
 async function enrollWinback(id){
