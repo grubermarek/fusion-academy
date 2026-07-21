@@ -768,6 +768,71 @@ async function seedData() {
     ]);
     console.log('✅  winback sekvencia pridaná (4 kroky)');
   }
+
+  // Rozšírenie winback sekvencie na 13 mailov v rozpätí ~2 rokov (dni 0–720).
+  // Psychológia predaja: príbehy, sociálny dôkaz, empatia na námietky, FOMO, sezónny
+  // reštart, priveď kamarátku, „takeaway close" na záver. Jednorazová migrácia.
+  if(!(await q.one(db.settings,{key:'winback_v2_extended'}))){
+    const BLOGW='https://latindancefusion.art/blog';
+    await q.insert(db.email_steps,[
+      { sequence:'winback', day:45, label:'Príbeh: Beátkina premena', active:true,
+        subject:'Ako sa Beátka vrátila na parket (a čo sa stalo potom) ✨',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>chcem ti porozprávať krátky príbeh. Beátka k nám chodila, potom prestala — práca, rodina, „nemám čas". Poznáš to.</p><p>Po pol roku prišla len tak, na jednu hodinu. Vraj „len si pripomenúť". Dnes je <b>o 17 kg ľahšia</b>, chodí 3× do týždňa a hovorí, že tá jedna hodina bola najlepšie rozhodnutie roka.</p><p>Nič nemusíš sľubovať. Len jedna hodina. Presne ako Beátka. 💛</p><p><a href="${BLOGW}/metabolicka-analyza-fit-premena">📖 Celý príbeh premeny →</a></p>`,
+        cta:'🗓️ Jedna hodina, žiadne záväzky', cta_url:`${APP2}/schedule`, created_at:nowISO() },
+      { sequence:'winback', day:70, label:'Čo ťa vtedy zastavilo?', active:true,
+        subject:'{meno}, môžem sa ťa niečo opýtať? 🤍',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>úprimná otázka: <b>čo ťa vtedy zastavilo?</b></p><p>„Nemám čas" — hodina má 60 minút, menej než jeden diel seriálu.<br>„Nemám kondičku" — presne preto existujú naše hodiny, každá ide vlastným tempom.<br>„Hanbím sa" — u nás sa nikto na nikoho nepozerá. Každá rieši samú seba. 😄</p><p>Nech to bolo čokoľvek, riešenie je rovnaké: prísť raz. Prvá hodina po návrate je <b>na nás</b>.</p>`,
+        cta:'🎁 Prísť na hodinu zadarmo', cta_url:`${APP2}/schedule`, created_at:nowISO() },
+      { sequence:'winback', day:100, label:'Čo je u nás nové (FOMO)', active:true,
+        subject:'Toľko sa toho zmenilo, odkedy si tu nebola… 👀',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>len rýchly prehľad, čo ti medzitým uniká:</p><ul style="color:#ccc"><li>📱 Nová appka — rezervácie na 2 kliky, odznaky za návštevy, komunita</li><li>🏆 Vernostné odmeny — za odchodené hodiny zbieraš body a odznaky</li><li>💃 Nové hodiny a výzvy v našich mestách</li><li>👭 Komunita, ktorá sa medzitým rozrástla — a stále v nej máš miesto</li></ul><p>Baby sa pýtali, kedy prídeš. Nekecám. 😊</p>`,
+        cta:'👀 Pozrieť, čo je nové', cta_url:`${APP2}/community`, created_at:nowISO() },
+      { sequence:'winback', day:150, label:'Sezónny reštart + permanentka', active:true,
+        subject:'{meno}, nový začiatok sa nikdy nezačína „v pondelok" 🌱',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>vieš, kedy je najlepší čas začať odznova? Nie v pondelok, nie od prvého. <b>Vtedy, keď sa rozhodneš.</b></p><p>A aby to bolo jednoduchšie: <b>10-vstupová permanentka</b> — žiadny mesačný záväzok, chodíš, kedy chceš, platí 3 mesiace. Ušetríš 20 % oproti jednorazovým vstupom.</p><p>Jedna karta, desať tancov, nula výhovoriek. 💪</p>`,
+        cta:'🎟️ Pozrieť permanentku', cta_url:`${APP2}/pricing`, created_at:nowISO() },
+      { sequence:'winback', day:210, label:'Zdravie a pohyb (jemné)', active:true,
+        subject:'60 minút, ktoré ti telo vráti desaťnásobne 🫀',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>žiadny predaj, len fakt: pravidelný tanec preukázateľne zlepšuje náladu, spánok, pamäť aj kondíciu — a je to jediný „tréning", pri ktorom sa ľudia usmievajú. 😄</p><p>Tvoje telo si pamätá, aké to bolo. A my tiež.</p><p>Keby si chcela začať potichu, bez veľkých slov — príď na jednu hodinu. Nikomu nič nemusíš vysvetľovať.</p>`,
+        cta:'🗓️ Rozvrh hodín', cta_url:`${APP2}/schedule`, created_at:nowISO() },
+      { sequence:'winback', day:300, label:'Priveď kamarátku — obe zadarmo', active:true,
+        subject:'{meno}, vezmi kamarátku — prvá hodina zadarmo pre obe 👯‍♀️',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>vieme, že vrátiť sa samej je ťažšie. Tak to sprav inak: <b>vezmi kamarátku a prvú hodinu máte obe zadarmo.</b></p><p>Spolu je to vždy jednoduchšie — aj smiech je dvojnásobný. A keď sa vám bude chcieť pokračovať, appka vám dá odznak „Priviedla kamarátku". 😉</p>`,
+        cta:'👯‍♀️ Prísť vo dvojici', cta_url:`${APP2}/schedule`, created_at:nowISO() },
+      { sequence:'winback', day:420, label:'Rok — nová kapitola', active:true,
+        subject:'Už je to rok… a presne preto ti píšem 💛',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>už je to približne rok, čo sme sa nevideli. Nepíšem ti preto, aby som ťa presviedčal — píšem, lebo za ten rok sa u nás vystriedalo veľa žien a vieš, čo hovoria tie, čo sa vrátili po dlhšom čase?</p><p><i>„Najhoršie bolo otvoriť dvere. Potom už všetko išlo samo."</i></p><p>Tvoje dvere sú stále otvorené. A prvá hodina po návrate je stále na nás.</p>`,
+        cta:'🚪 Otvoriť dvere', cta_url:`${APP2}/schedule`, created_at:nowISO() },
+      { sequence:'winback', day:560, label:'Príbehy komunity', active:true,
+        subject:'3 krátke príbehy z nášho parketu 📖',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>tri pravdivé mini-príbehy z poslednej doby:</p><p>1️⃣ Klientka, čo prišla „len schudnúť", dnes vedie našu tanečnú výzvu.<br>2️⃣ Mamička, čo si po deťoch netrúfala — po 10 hodinách tancovala na plese.<br>3️⃣ Babička (68), čo tvrdila, že „na tanec je stará" — chodí 2× týždenne.</p><p>Každý z tých príbehov sa začal rovnako: jednou hodinou. Ten tvoj ešte stále čaká na prvú kapitolu. 💛</p>`,
+        cta:'✍️ Začať svoj príbeh', cta_url:`${APP2}/schedule`, created_at:nowISO() },
+      { sequence:'winback', day:720, label:'Posledný mail — dvere ostávajú otvorené', active:true,
+        subject:'{meno}, toto je môj posledný mail (sľubujem) 🤍',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>toto je posledný mail, ktorý ti pošlem — nechceme sa pripomínať donekonečna.</p><p>Chcem, aby si vedela len jedno: <b>nikdy nie je neskoro.</b> Kedykoľvek — o mesiac, o rok — príď, dvere ti otvoríme a privítame ťa, ako keby si odišla včera.</p><p>Ďakujeme, že si bola súčasťou Fusion Academy. Parket na teba počká. 💛</p><p><i>— Marek & celý tím</i></p>`,
+        cta:'💛 Kedykoľvek sa vráť', cta_url:`${APP2}/schedule`, created_at:nowISO() },
+    ]);
+    // Ľuďom, čo už vo winback sekvencii sú, doplň nové kroky (kotva = ich prvý naplánovaný krok),
+    // aby aj oni dostali celý 2-ročný drip. Minulé termíny sa preskočia.
+    try{
+      const wq = await q.find(db.email_queue,{sequence:'winback'});
+      const anchorByUser = {};
+      for(const it of wq){ const d=it.scheduled_for||''; if(!anchorByUser[it.user_id]||d<anchorByUser[it.user_id]) anchorByUser[it.user_id]=d; }
+      const newSteps = await q.find(db.email_steps,{sequence:'winback', day:{$gte:45}});
+      let added=0;
+      for(const [uid, anchor] of Object.entries(anchorByUser)){
+        if(!anchor) continue;
+        for(const st of newSteps){
+          const sched = new Date(new Date(anchor+'T12:00:00').getTime()+st.day*86400000).toISOString().slice(0,10);
+          if(sched < today()) continue;
+          const exists = await q.one(db.email_queue,{user_id:uid, step_id:st._id});
+          if(!exists){ await q.insert(db.email_queue,{user_id:uid, sequence:'winback', step_id:st._id, scheduled_for:sched, status:'pending', created_at:nowISO()}); added++; }
+        }
+      }
+      console.log(`✅  winback rozšírený na 13 mailov (0–720 dní); doplnených ${added} krokov už zaradeným`);
+    }catch(e){ console.error('winback extend enqueue:', e.message); }
+    await q.insert(db.settings,{key:'winback_v2_extended', value:true, at:nowISO()});
+  }
   // Promo kód pre návrat odídených klientov (30% na prvý mesiac)
   if(!await q.one(db.promo_codes,{code:'VITAJSPAT'})){
     await q.insert(db.promo_codes,{ code:'VITAJSPAT', type:'percent', value:30, applies_to:'membership',
