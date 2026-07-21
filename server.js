@@ -2979,6 +2979,56 @@ function parseCsv(text){
   if(field.length||row.length) pushR();
   return rows.filter(r=>r.length>1);
 }
+// ── Jednorazový import starého zoznamu (xlsx s menami a telefónmi, bez mailov) ──
+// Zabezpečené tokenom v env (IMPORT_TOKEN) — endpoint je mŕtvy, kým token nie je nastavený.
+// Idempotentné: páruje podľa telefónu (posledných 9 číslic), potom podľa presného mena.
+// Bez mailu → syntetická adresa @import.local (sendMail ju nikdy nepoužije; kontakt = SMS).
+app.post('/api/import-oldlist', async(req,res)=>{
+  try{
+    const tok=process.env.IMPORT_TOKEN;
+    if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
+    const list=Array.isArray(req.body?.people)?req.body.people:[];
+    if(!list.length) return res.status(400).json({error:'people[] required'});
+    const users=await q.find(db.users,{});
+    const p9=v=>{ let s=String(v||'').replace(/[^\d]/g,''); if(s.startsWith('421'))s=s.slice(3); if(s.startsWith('0'))s=s.slice(1); return s.length===9?s:null; };
+    const byPhone={}, byName={};
+    for(const u of users){ const k=p9(u.phone); if(k&&!byPhone[k]) byPhone[k]=u;
+      const n=String(u.name||'').trim().toLowerCase(); if(n){ if(byName[n]===undefined) byName[n]=u; else byName[n]=null; } } // null = nejednoznačné
+    let created_clients=0, created_leads=0, updated=0, skipped=0;
+    for(const p of list){
+      const name=String(p.name||'').trim(); if(!name){ skipped++; continue; }
+      const ph=p9(p.phone);
+      const existing=(ph&&byPhone[ph]) || byName[name.toLowerCase()] || null;
+      const lastISO=p.last_date?`${p.last_date}T12:00:00.000Z`:null;
+      const visits=Math.max(0, +p.visits||0) || (p.attended?1:0);
+      if(existing){
+        const upd={};
+        if(!existing.phone && ph) upd.phone='0'+ph;
+        if(!existing.city && p.city) upd.city=p.city;
+        if(visits>(existing.visit_count||0)) { upd.visit_count=visits; }
+        if(lastISO && !(existing.last_visit_at)) upd.last_visit_at=lastISO;
+        if(p.attended && existing.user_type==='lead') upd.user_type='client';
+        if(Object.keys(upd).length){ await q.update(db.users,{_id:existing._id},{$set:upd}); updated++; } else skipped++;
+        continue;
+      }
+      const email = ph ? `sms-0${ph}@import.local`
+        : `sms-${name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z]/g,'.')}@import.local`;
+      if(await q.one(db.users,{email})){ skipped++; continue; }
+      const nu={ name, email, phone: ph?('0'+ph):'', city:p.city||null,
+        user_type: p.attended?'client':'lead', is_admin:false, active:true,
+        imported:true, claimed:false, oldlist:true, lead_source:'oldlist_xlsx',
+        sms_only:true, visit_count:visits, free_class_used:!!p.attended,
+        last_visit_at:lastISO, referral_credit:0, single_entries:0, rank:1,
+        created_at:nowISO() };
+      await q.insert(db.users,nu);
+      if(ph) byPhone[ph]=nu;
+      if(p.attended) created_clients++; else created_leads++;
+    }
+    await auditLog(req,'oldlist_import',`+${created_clients} klientov, +${created_leads} leadov, ~${updated} doplnených`,null,{created_clients,created_leads,updated,skipped},'');
+    res.json({ok:true, created_clients, created_leads, updated, skipped, total_in:list.length});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.post('/api/admin/import-leads', adminAuth, async(req,res)=>{
   try {
     const csv = req.body.csv||'';
@@ -7969,6 +8019,9 @@ let brevoApiKey = null;
 })();
 
 async function sendMail(to, subject, html){
+  // @import.local = syntetické adresy klientov zo starého zoznamu (majú len telefón,
+  // kontaktujú sa SMSkou) — nikdy na ne nič neposielaj.
+  if(/@import\.local$/i.test(String(to||''))) return false;
   // Brevo HTTP API (preferred on Railway – HTTPS, no blocked SMTP ports)
   if(brevoApiKey){
     try {
@@ -9816,6 +9869,7 @@ async function runDailyJobs(){
       if(c.in_winback || c.offers_optout) continue;
       const u=await q.one(db.users,{_id:c.id});
       if(!u||!u.email) continue;
+      if(/@import\.local$/i.test(u.email)) continue; // len telefón — kontaktovať SMSkou, nie mailom
       const lastEnroll=u.winback_enrolled_at||'';
       if(lastEnroll && (Date.now()-new Date(lastEnroll).getTime()) < 180*86400000) continue; // už bol v sekvencii nedávno
       await enqueueSequence(u._id,'winback');
