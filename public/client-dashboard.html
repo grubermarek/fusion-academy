@@ -805,7 +805,7 @@ function paintOffersToggle(on){
 async function toggleOffers(on){
   paintOffersToggle(on);
   const msg=document.getElementById('offersMsg');
-  const r=await api('/api/me/offers-optout',{method:'POST',body:JSON.stringify({optout:!on})});
+  const r=await api('/api/me/offers-optout',{method:'POST',body:{optout:!on}});
   if(r?.ok){ msg.style.color='#8bd06a'; msg.textContent=on?'✅ Budeme ti posielať zľavové ponuky.':'✅ Vypnuté — už ti ponuky posielať nebudeme.'; }
   else { msg.style.color='#e57373'; msg.textContent='Nepodarilo sa uložiť'; }
 }

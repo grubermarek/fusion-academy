@@ -804,7 +804,7 @@ async function api(url, opts={}){
 async function trCancelSession(classId, name){
   const reason = prompt(`Zrušiť najbližšiu hodinu „${name}"?\n\nVšetkým prihláseným pošleme oznámenie, vrátime kredit z permanentky, dáme oznam na nástenku a pozveme ich na ďalšiu hodinu v tom meste.\n\nDôvod (nepovinné):`, '');
   if(reason===null) return;
-  const d=await api('/api/attendance/cancel-session',{method:'POST',body:JSON.stringify({class_id:classId,reason})});
+  const d=await api('/api/attendance/cancel-session',{method:'POST',body:{class_id:classId,reason}});
   if(d&&d.ok){ alert(`Hodina zrušená ✓ Upozornených ${d.notified||0}${d.refunded?', vrátených vstupov '+d.refunded:''}. Termín: ${fmtDate(d.date)}`); loadSchedule(); }
   else alert('Chyba: '+(d?.error||'?'));
 }
