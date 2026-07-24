@@ -2298,12 +2298,13 @@ app.put('/api/admin/users/:id/birthday', adminAuth, async(req,res)=>{
 
 // Admin: vyhľadať používateľa ako potenciálneho sponzora (meno/email/kód)
 app.get('/api/admin/user-search', adminAuth, async(req,res)=>{
-  const s=(req.query.q||'').trim().toLowerCase();
+  const s=searchNorm((req.query.q||'').trim());
   if(s.length<2) return res.json({people:[]});
   const includeImported = req.query.all==='1' || req.query.imported==='1';
   let users=await q.find(db.users,{is_child:{$ne:true}});
   if(!includeImported) users=users.filter(u=>!u.imported||u.claimed);
-  users=users.filter(u=>(u.name||'').toLowerCase().includes(s)||(u.email||'').toLowerCase().includes(s)||(u.referral_code||'').toLowerCase().includes(s)).slice(0,15);
+  const byCode=users.filter(u=>searchNorm(u.referral_code).includes(s));
+  users=[...new Set([...rankUserMatches(users,s), ...byCode])].slice(0,15);
   res.json({people:users.map(u=>({id:u._id,name:u.name,email:u.email,code:u.referral_code||'',type:u.user_type||'', imported:!!u.imported&&!u.claimed}))});
 });
 
@@ -7873,7 +7874,7 @@ app.get('/api/attendance/clients', trainerAuth, async(req,res)=>{
     const { q:query, city, filter } = req.query;
     // Zahrnuté sú aj tréneri/admini — aj oni sa vedia prihlásiť na hodinu ako účastníci.
     let users = await q.find(db.users,{active:{$ne:false}, is_child:{$ne:true}});
-    if(query && query.trim().length>=1){ const rx=new RegExp(query.trim(),'i'); users = users.filter(u=>rx.test(u.name)||rx.test(u.email||'')); }
+    if(query && query.trim().length>=1){ users = rankUserMatches(users, query.trim()); } // bez diakritiky + radenie
     const out = [];
     for(const u of users.slice(0,250)){
       const m = await checkMembership(u._id);
@@ -7995,15 +7996,31 @@ app.post('/api/attendance/record-membership', trainerAuth, async(req,res)=>{
 });
 
 // Search users (for manual booking autocomplete)
+// Hľadanie bez diakritiky ("Notová" nájde aj "Notova" a naopak) + radenie podľa zhody
+function searchNorm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
+function rankUserMatches(users, query){
+  const needle = searchNorm(query);
+  return users
+    .map(u=>{ const n=searchNorm(u.name), e=searchNorm(u.email);
+      let score=-1;
+      if(n.startsWith(needle)||e.startsWith(needle)) score=0;                       // presný začiatok
+      else if(n.split(' ').some(w=>w.startsWith(needle))) score=1;                  // začiatok priezviska
+      else if(n.includes(needle)||e.includes(needle)) score=2;                      // hocikde
+      return {u, score};
+    })
+    .filter(x=>x.score>=0)
+    .sort((a,b)=>a.score-b.score || searchNorm(a.u.name).localeCompare(searchNorm(b.u.name)))
+    .map(x=>x.u);
+}
 app.get('/api/attendance/search-users', trainerAuth, async(req,res)=>{
   try {
     const {q:query} = req.query;
     if(!query||query.length<2) return res.json([]);
-    const regex = new RegExp(query,'i');
-    const users = await q.find(db.users,{active:{$ne:false},$or:[{name:regex},{email:regex}]});
+    const all = await q.find(db.users,{active:{$ne:false}});
+    const users = rankUserMatches(all, query);
     const parentNames = {};
     const out = [];
-    for(const u of users.slice(0,10)){
+    for(const u of users.slice(0,15)){
       let parentName = null;
       if(u.is_child && u.parent_id){
         if(!(u.parent_id in parentNames)){ const p=await q.one(db.users,{_id:u.parent_id}); parentNames[u.parent_id]=p?p.name:null; }
