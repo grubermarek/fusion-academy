@@ -1032,7 +1032,10 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   <div class="section" id="s-invoices">
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <h4 class="fw-bold mb-0">🧾 Faktúry</h4>
-      <a class="btn btn-sm btn-brand" href="/api/admin/invoices/export.csv"><i class="bi bi-download me-1"></i>Export CSV (účtovníctvo)</a>
+      <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-brand" onclick="openNewInvoice()"><i class="bi bi-plus-lg me-1"></i>Nová faktúra</button>
+        <a class="btn btn-sm btn-outline-light" href="/api/admin/invoices/export.csv"><i class="bi bi-download me-1"></i>Export CSV (účtovníctvo)</a>
+      </div>
     </div>
     <div class="d-flex gap-2 flex-wrap mb-3">
       <select id="invYear" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:110px" onchange="loadInvoices()"></select>
@@ -1041,7 +1044,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
         <option value="1">Január</option><option value="2">Február</option><option value="3">Marec</option><option value="4">Apríl</option><option value="5">Máj</option><option value="6">Jún</option><option value="7">Júl</option><option value="8">August</option><option value="9">September</option><option value="10">Október</option><option value="11">November</option><option value="12">December</option>
       </select>
       <select id="invStatus" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:140px" onchange="loadInvoices()">
-        <option value="">Všetky stavy</option><option value="paid">Uhradené</option><option value="cancelled">Stornované</option><option value="credited">Dobropisy</option>
+        <option value="">Všetky stavy</option><option value="issued">Neuhradené</option><option value="paid">Uhradené</option><option value="cancelled">Stornované</option><option value="credited">Dobropisy</option>
       </select>
       <input id="invQ" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:220px" placeholder="Hľadať klienta / číslo…" oninput="clearTimeout(window.__invT);window.__invT=setTimeout(loadInvoices,300)">
     </div>
@@ -1049,6 +1052,55 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <thead><tr><th>Číslo</th><th>Klient</th><th>Popis</th><th>Suma</th><th>Uhradená</th><th>Spôsob</th><th>Stav</th><th>Akcie</th></tr></thead>
       <tbody id="invBody"><tr><td colspan="8" class="text-muted text-center py-4">Načítavam…</td></tr></tbody>
     </table></div>
+
+    <!-- NOVÁ FAKTÚRA (eventy, prenájmy, firemné objednávky) -->
+    <div class="modal fade" id="newInvoiceModal" tabindex="-1">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content bg-dark text-light border-secondary">
+        <div class="modal-header border-secondary">
+          <h5 class="modal-title">🧾 Nová faktúra</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="fw-bold small mb-2" style="color:#C9A24C">Odberateľ</div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-6"><input id="niName" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="Meno / firma *"></div>
+            <div class="col-md-6"><input id="niEmail" type="email" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="E-mail (na poslanie faktúry)"></div>
+            <div class="col-md-6"><input id="niAddress" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="Adresa (ulica, PSČ, mesto)"></div>
+            <div class="col-md-2"><input id="niIco" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="IČO"></div>
+            <div class="col-md-2"><input id="niDic" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="DIČ"></div>
+            <div class="col-md-2"><input id="niIcdph" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="IČ DPH"></div>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <div class="fw-bold small" style="color:#C9A24C">Položky</div>
+            <button class="btn btn-sm btn-outline-warning py-0 px-2" onclick="niAddItem()"><i class="bi bi-plus"></i> Pridať položku</button>
+          </div>
+          <div id="niItems"></div>
+          <div class="text-end fw-bold my-2" style="color:#C9A24C;font-size:1.1rem">Spolu: <span id="niTotal">0.00</span> €</div>
+          <div class="fw-bold small mb-2" style="color:#C9A24C">Dátumy &amp; platba</div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-3"><label class="text-muted" style="font-size:.68rem">Vystavenie</label><input id="niIssued" type="date" class="form-control form-control-sm bg-dark text-light border-secondary" style="color-scheme:dark"></div>
+            <div class="col-md-3"><label class="text-muted" style="font-size:.68rem">Dodanie</label><input id="niDelivery" type="date" class="form-control form-control-sm bg-dark text-light border-secondary" style="color-scheme:dark"></div>
+            <div class="col-md-3"><label class="text-muted" style="font-size:.68rem">Splatnosť</label><input id="niDue" type="date" class="form-control form-control-sm bg-dark text-light border-secondary" style="color-scheme:dark"></div>
+            <div class="col-md-3"><label class="text-muted" style="font-size:.68rem">Spôsob platby</label>
+              <select id="niMethod" class="form-select form-select-sm bg-dark text-light border-secondary">
+                <option value="prevod">Prevod na účet</option><option value="hotovosť">Hotovosť</option><option value="karta">Karta</option>
+              </select></div>
+          </div>
+          <div class="row g-2 mb-3 align-items-end">
+            <div class="col-md-4"><label class="text-muted" style="font-size:.68rem">Stav</label>
+              <select id="niStatus" class="form-select form-select-sm bg-dark text-light border-secondary">
+                <option value="issued">Neuhradená (na úhradu)</option><option value="paid">Uhradená</option>
+              </select></div>
+            <div class="col-md-8"><input id="niNote" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="Poznámka na faktúre (napr. Vystúpenie na firemnom evente 15.8.)"></div>
+          </div>
+          <label class="small" style="cursor:pointer"><input type="checkbox" id="niSendMail" checked> ✉️ Poslať faktúru odberateľovi e-mailom (s platobnými údajmi)</label>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Zrušiť</button>
+          <button class="btn btn-sm btn-brand" id="niSubmit" onclick="submitNewInvoice()"><i class="bi bi-check-lg me-1"></i>Vystaviť faktúru</button>
+        </div>
+      </div></div>
+    </div>
   </div>
 
   <!-- AUDIT LOG -->
@@ -1219,8 +1271,8 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <p class="text-muted small mt-2 mb-0">„€/klient" sa počíta len za klientov <b>nad</b> zadaný počet na hodine (napr. nad 10). Affiliate provízie z línie trénera sa pripočítavajú automaticky.</p>
     </div></div>
     <div class="table-responsive"><table class="table table-dark table-hover align-middle" style="font-size:.82rem">
-      <thead><tr><th>Tréner</th><th>Hodiny</th><th>Účasti</th><th>Tržby</th><th>Základ</th><th>Bonusy</th><th>Affiliate</th><th>Zrážky</th><th>Spolu</th><th>Stav</th><th>Akcie</th></tr></thead>
-      <tbody id="poBody"><tr><td colspan="10" class="text-muted text-center py-4">Načítavam…</td></tr></tbody>
+      <thead><tr><th>Tréner</th><th>Hodiny</th><th>Účasti</th><th>Tržby</th><th>Základ</th><th>Bonusy</th><th>Affiliate</th><th>💵 Hotovosť</th><th>Zrážky</th><th>Spolu</th><th>Stav</th><th>Akcie</th></tr></thead>
+      <tbody id="poBody"><tr><td colspan="12" class="text-muted text-center py-4">Načítavam…</td></tr></tbody>
     </table></div>
 
     <!-- TIPY (DANK) — súčasť výplat trénerov -->
@@ -1889,7 +1941,7 @@ function initPayouts(){ if(!_poInit){ _poInit=true; document.getElementById('poM
 async function loadPayouts(){
   const month=document.getElementById('poMonth').value;
   const d=await api('/api/admin/payouts?month='+month);
-  if(!d||d.error){ document.getElementById('poBody').innerHTML='<tr><td colspan="10" class="text-danger py-3">Chyba.</td></tr>'; return; }
+  if(!d||d.error){ document.getElementById('poBody').innerHTML='<tr><td colspan="12" class="text-danger py-3">Chyba.</td></tr>'; return; }
   // rules editor
   const rb=document.getElementById('poRulesBody');
   const inp=(tr,f,v)=>`<input type="number" step="0.01" value="${v||0}" id="rule_${btoa(unescape(encodeURIComponent(tr))).replace(/=/g,'')}_${f}" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:82px">`;
@@ -1908,13 +1960,14 @@ async function loadPayouts(){
     <td class="fw-semibold"><a href="#" onclick='openPayoutDetail(${JSON.stringify(r.trainer)},${JSON.stringify(r.trainer_id)});return false' style="color:#C9A24C;text-decoration:none">${escHtml(r.trainer)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></a>${r.status==='paid'?' <span class="badge bg-success" style="font-size:.6rem">vyplatené</span>':''}</td><td>${r.sessions}</td><td>${r.attendances}</td><td>${r.revenue.toFixed(2)} €</td>
     <td>${r.base.toFixed(2)} €</td><td>${r.bonuses.toFixed(2)} €</td>
     <td class="${r.affiliate>0?'text-info':'text-muted'}">${(r.affiliate||0).toFixed(2)} €</td>
+    <td>${(r.cash_deduct||0)>0?`<span class="badge bg-danger" title="Vybraná hotovosť u trénera — zníži výplatu (klik na trénera pre detail)">−${r.cash_deduct.toFixed(2)} €</span>`:'<span class="text-muted">—</span>'}</td>
     <td><input type="number" step="0.01" value="${r.deductions||0}" id="ded_${r.id||''}" data-trainer='${escHtml(r.trainer)}' style="width:78px" class="form-control form-control-sm bg-dark text-light border-secondary" ${r.saved?'':'disabled title="Najprv vygeneruj"'}></td>
     <td class="fw-bold" style="color:#C9A24C">${r.total.toFixed(2)} €</td>
     <td>${r.saved?`<select class="form-select form-select-sm bg-dark text-light border-secondary" style="width:120px" onchange="payoutStatus('${r.id}',this.value)">${Object.entries(PO_STATUS).map(([k,v])=>`<option value="${k}"${r.status===k?' selected':''}>${v}</option>`).join('')}</select>`:`<span class="badge bg-${PO_STATUS_C[r.status]}">${PO_STATUS[r.status]}</span>`}</td>
     <td>${r.saved
       ? `<button class="btn btn-sm btn-outline-warning py-0 px-2" onclick="savePayoutDeduction('${r.id}')">Uložiť zrážku</button>`
       : `<button class="btn btn-sm btn-success py-0 px-2" onclick='generatePayout(${JSON.stringify(r.trainer)})'>Vygenerovať</button>`}</td>
-  </tr>`).join('') : '<tr><td colspan="11" class="text-muted text-center py-4">Žiadne dáta pre tento mesiac.</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="12" class="text-muted text-center py-4">Žiadne dáta pre tento mesiac.</td></tr>';
 }
 async function savePayoutRule(trainer){
   const key=btoa(unescape(encodeURIComponent(trainer))).replace(/=/g,'');
@@ -1967,12 +2020,36 @@ async function openPayoutDetail(trainer, trainerId){
   const d=await api('/api/trainer/earnings?trainer_id='+encodeURIComponent(trainerId));
   if(!d||d.error){ document.getElementById('poDetailContent').innerHTML='<div class="text-danger py-3">Chyba: '+(d?.error||'?')+'</div>'; return; }
   renderPayoutDetail(d);
+  loadPayoutCash();
+}
+async function loadPayoutCash(){
+  const box=document.getElementById('poCashBox'); if(!box||!_poDetailTrainer) return;
+  const d=await api('/api/admin/cash?trainer='+encodeURIComponent(_poDetailTrainer.name));
+  if(!d||!d.ok||!(d.rows||[]).length){ box.innerHTML=''; return; }
+  const ST={held:'<span class="badge bg-danger">u trénera</span>', settled_handed:'<span class="badge bg-success">odovzdané</span>', settled_payout:'<span class="badge bg-secondary">zúčtované s výplatou</span>'};
+  const pending=d.rows.filter(r=>r.status==='held');
+  box.innerHTML=`<div class="card bg-dark border-danger mb-3"><div class="card-body py-2 px-3">
+    <div class="fw-bold small mb-1" style="color:#ff8a8a">💵 Hotovosť vybraná od klientov ${pending.length?`— <b>${pending.reduce((s,r)=>s+(+r.amount||0),0).toFixed(2)} €</b> má u seba`:''}</div>
+    ${d.rows.slice(0,15).map(r=>`
+      <div class="d-flex justify-content-between align-items-center gap-2 py-1" style="border-top:1px solid #2a2a2a;font-size:.78rem">
+        <span class="text-muted">${fmtDate(r.date)}${r.note?` · ${escHtml(r.note)}`:''}</span>
+        <span class="d-flex align-items-center gap-2"><b>${(+r.amount).toFixed(2)} €</b> ${ST[r.status]||r.status}
+          ${r.status==='held'?`<button class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:.7rem" onclick="cashHandover('${r._id}')" title="Tréner mi peniaze odovzdal — zrážka z výplaty sa zruší">Prevzal som</button>`:''}</span>
+      </div>`).join('')}
+    <div class="text-muted mt-1" style="font-size:.66rem">„Prevzal som" = peniaze máš ty, zrážka sa zruší. Inak sa hotovosť odpočíta pri uzavretí mesiaca.</div>
+  </div></div>`;
+}
+async function cashHandover(id){
+  if(!confirm('Potvrdiť, že ti tréner túto hotovosť odovzdal? Zrážka z jeho výplaty sa zruší.')) return;
+  const d=await api('/api/admin/cash/'+id+'/handover',{method:'POST'});
+  if(d?.ok){ showToast('✅ Hotovosť prevzatá','success'); loadPayoutCash(); const rd=await api('/api/trainer/earnings?trainer_id='+encodeURIComponent(_poDetailTrainer.id)); if(rd&&!rd.error) renderPayoutDetail(rd); loadPayouts(); }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 function renderPayoutDetail(d){
   const el=document.getElementById('poDetailContent');
-  const rows=(d.months||[]).filter(m=>m.total>0 || m.sessions>0 || m.paid);
+  const rows=(d.months||[]).filter(m=>m.total>0 || m.sessions>0 || m.paid || (m.cash_deduct||0)>0);
   if(!rows.length){ el.innerHTML='<div class="text-muted py-3">Zatiaľ žiadne zárobky.</div>'; return; }
-  el.innerHTML = `<div class="mb-3 p-2 rounded" style="background:#1a1a1a;border:1px solid #2a2a2a">
+  el.innerHTML = `<div id="poCashBox"></div><div class="mb-3 p-2 rounded" style="background:#1a1a1a;border:1px solid #2a2a2a">
       <span class="text-muted small">Spolu za 12 mesiacov:</span> <span class="fw-bold" style="color:#C9A24C">${(d.grand_total||0).toFixed(2)} €</span>
     </div>` + rows.map(m=>{
     const paid=m.status==='paid';
@@ -2688,20 +2765,91 @@ async function loadInvoices(){
   const list=await api('/api/admin/invoices?'+qs.toString());
   const body=document.getElementById('invBody');
   if(!Array.isArray(list)||!list.length){body.innerHTML='<tr><td colspan="8" class="text-muted text-center py-4">Žiadne faktúry pre zvolený filter.</td></tr>';return;}
-  const st={paid:'<span class="badge bg-success">Uhradená</span>',cancelled:'<span class="badge bg-danger">Storno</span>',credited:'<span class="badge bg-warning text-dark">Dobropis</span>'};
+  const st={paid:'<span class="badge bg-success">Uhradená</span>',issued:'<span class="badge bg-warning text-dark">Neuhradená</span>',cancelled:'<span class="badge bg-danger">Storno</span>',credited:'<span class="badge bg-warning text-dark">Dobropis</span>'};
+  const overdue=i=>i.status==='issued'&&i.due_at&&i.due_at<new Date().toISOString().slice(0,10);
   body.innerHTML=list.map(i=>`<tr>
-    <td><a href="/invoice/${i.number}" target="_blank" style="color:#C9A24C;font-weight:700;text-decoration:none">${i.number}</a>${i.type==='credit_note'?' <span class="badge bg-warning text-dark" style="font-size:.6rem">DOBROPIS</span>':''}</td>
+    <td><a href="/invoice/${i.number}" target="_blank" style="color:#C9A24C;font-weight:700;text-decoration:none">${i.number}</a>${i.type==='credit_note'?' <span class="badge bg-warning text-dark" style="font-size:.6rem">DOBROPIS</span>':''}${i.manual?' <span class="badge bg-info text-dark" style="font-size:.6rem" title="Ručne vystavená faktúra">MANUÁL</span>':''}</td>
     <td>${escHtml(i.client_name)}<br><small class="text-muted">${escHtml(i.client_email||'')}</small></td>
     <td class="text-muted" style="max-width:260px">${escHtml((i.items||[]).map(x=>x.desc).join(', ')).slice(0,90)}</td>
     <td style="font-weight:700;color:${i.total<0?'#f87171':'#EAE3D5'}">${(+i.total).toFixed(2)} €</td>
-    <td><small>${i.paid_at}</small></td>
+    <td><small>${i.status==='issued'?(i.due_at?`splatná ${fmtDate(i.due_at)}${overdue(i)?' <span style="color:#f87171">⚠️ po splatnosti</span>':''}`:'—'):(i.paid_at?fmtDate(i.paid_at):'—')}</small></td>
     <td><small class="text-muted">${escHtml(i.payment_method)}</small></td>
     <td>${st[i.status]||i.status}</td>
     <td><a class="btn btn-sm btn-outline-secondary py-0 px-1" style="font-size:.72rem" href="/api/admin/invoices/${i.number}/isdoc" title="Stiahnuť ISDOC e-faktúru">ISDOC</a>
+      ${i.status==='issued'?`<button class="btn btn-sm btn-outline-success py-0 px-1" style="font-size:.72rem" onclick="invMarkPaid('${i.number}')">💰 Uhradená</button>`:''}
       ${i.type!=='credit_note'&&i.status==='paid'?`
       <button class="btn btn-sm btn-outline-warning py-0 px-1" style="font-size:.72rem" onclick="invCreditNote('${i.number}')">Dobropis</button>
-      <button class="btn btn-sm btn-outline-danger py-0 px-1" style="font-size:.72rem" onclick="invCancel('${i.number}')">Storno</button>`:''}</td>
+      <button class="btn btn-sm btn-outline-danger py-0 px-1" style="font-size:.72rem" onclick="invCancel('${i.number}')">Storno</button>`:''}
+      ${i.status==='issued'?`<button class="btn btn-sm btn-outline-danger py-0 px-1" style="font-size:.72rem" onclick="invCancel('${i.number}')">Storno</button>`:''}</td>
   </tr>`).join('');
+}
+async function invMarkPaid(num){
+  const m=prompt('Ako bola faktúra '+num+' uhradená? (prevod / hotovosť / karta)','prevod'); if(m===null)return;
+  const d=await api('/api/admin/invoices/'+num+'/pay',{method:'POST',body:{method:m||'prevod'}});
+  showToast(d?.ok?'✅ Faktúra označená ako uhradená':'Chyba: '+(d?.error||'?'),d?.ok?'success':'error'); loadInvoices();
+}
+/* ─── Nová faktúra (interaktívne) ─── */
+let _niModal=null;
+function niItemRow(desc='',qty=1,price=''){
+  const div=document.createElement('div');
+  div.className='row g-2 mb-1 ni-item';
+  div.innerHTML=`
+    <div class="col-6"><input class="form-control form-control-sm bg-dark text-light border-secondary ni-desc" placeholder="Popis (napr. Tanečné vystúpenie — event)" value="${escHtml(desc)}"></div>
+    <div class="col-2"><input type="number" min="1" step="1" class="form-control form-control-sm bg-dark text-light border-secondary ni-qty" placeholder="ks" value="${qty}" oninput="niRecalc()"></div>
+    <div class="col-3"><input type="number" min="0" step="0.01" class="form-control form-control-sm bg-dark text-light border-secondary ni-price" placeholder="Cena/ks €" value="${price}" oninput="niRecalc()"></div>
+    <div class="col-1 d-flex align-items-center"><button class="btn btn-sm btn-outline-danger py-0 px-2" onclick="this.closest('.ni-item').remove();niRecalc()">✕</button></div>`;
+  document.getElementById('niItems').appendChild(div);
+}
+function niAddItem(){ niItemRow(); }
+function niRecalc(){
+  let t=0;
+  document.querySelectorAll('.ni-item').forEach(r=>{
+    const q=+r.querySelector('.ni-qty').value||1, p=+r.querySelector('.ni-price').value||0;
+    t+=q*p;
+  });
+  document.getElementById('niTotal').textContent=t.toFixed(2);
+}
+function openNewInvoice(){
+  document.getElementById('niItems').innerHTML='';
+  niItemRow();
+  ['niName','niEmail','niAddress','niIco','niDic','niIcdph','niNote'].forEach(id=>document.getElementById(id).value='');
+  const t=new Date().toISOString().slice(0,10);
+  document.getElementById('niIssued').value=t;
+  document.getElementById('niDelivery').value=t;
+  document.getElementById('niDue').value=new Date(Date.now()+14*86400000).toISOString().slice(0,10);
+  document.getElementById('niStatus').value='issued';
+  document.getElementById('niMethod').value='prevod';
+  document.getElementById('niSendMail').checked=true;
+  niRecalc();
+  if(!_niModal) _niModal=new bootstrap.Modal(document.getElementById('newInvoiceModal'));
+  _niModal.show();
+}
+async function submitNewInvoice(){
+  const items=[...document.querySelectorAll('.ni-item')].map(r=>({
+    desc:r.querySelector('.ni-desc').value.trim(),
+    qty:+r.querySelector('.ni-qty').value||1,
+    unit_price:+r.querySelector('.ni-price').value||0
+  })).filter(i=>i.desc&&i.unit_price>0);
+  if(!document.getElementById('niName').value.trim()){ showToast('Zadaj meno / firmu odberateľa','error'); return; }
+  if(!items.length){ showToast('Pridaj aspoň jednu položku s cenou','error'); return; }
+  const btn=document.getElementById('niSubmit'); btn.disabled=true;
+  const d=await api('/api/admin/invoices',{method:'POST',body:JSON.stringify({
+    client:{ name:document.getElementById('niName').value.trim(), email:document.getElementById('niEmail').value.trim(),
+      address:document.getElementById('niAddress').value.trim(), ico:document.getElementById('niIco').value.trim(),
+      dic:document.getElementById('niDic').value.trim(), icdph:document.getElementById('niIcdph').value.trim() },
+    items,
+    issued_at:document.getElementById('niIssued').value, delivery_at:document.getElementById('niDelivery').value,
+    due_at:document.getElementById('niDue').value, payment_method:document.getElementById('niMethod').value,
+    status:document.getElementById('niStatus').value, note:document.getElementById('niNote').value.trim(),
+    send_email:document.getElementById('niSendMail').checked
+  })});
+  btn.disabled=false;
+  if(d?.ok){
+    _niModal.hide();
+    showToast(`🧾 Faktúra ${d.number} vystavená (${d.total.toFixed(2)} €) a uložená do archívu`,'success');
+    window.open('/invoice/'+d.number,'_blank');
+    loadInvoices();
+  } else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 async function invCancel(num){
   const reason=prompt('Dôvod storna faktúry '+num+':'); if(reason===null)return;

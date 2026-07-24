@@ -1127,14 +1127,13 @@ app.post('/api/register', async(req,res)=>{
     const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,referral_credit:0,lead_source,utm_source,utm_medium,utm_campaign,fbclid,gclid,landing_page:clean(attr.landing),referrer:clean(attr.referrer),consent_at: req.body.consent ? nowISO() : null,created_at:today()});
     req.session.uid=u._id;
     req.session.sv=0;
-    // ── Give sponzor referral credit (5€ za každého nového člena) ─────────────
+    // ── Referral: za SAMOTNÚ registráciu už NIE JE odmena (zneužívalo by sa) ───
+    // Kredit sponzorovi ide až keď privedený človek reálne MINIE peniaze
+    // (10 % z členstva / permanentky — rieši sa pri platbe, nie tu).
     if(sponsor_id){
-      const REFERRAL_SIGNUP_CREDIT = 5; // € za registráciu
       const sp = await q.one(db.users,{_id:sponsor_id});
       if(sp){
-        const newCredit = +((sp.referral_credit||0) + REFERRAL_SIGNUP_CREDIT).toFixed(2);
-        await q.update(db.users,{_id:sponsor_id},{$set:{referral_credit: newCredit}});
-        await q.insert(db.notifications,{user_id:sponsor_id,type:'referral_credit',title:`+${REFERRAL_SIGNUP_CREDIT} € referral kredit! 🎉`,body:`${name} sa zaregistroval/a cez tvoj link. Zostatok: ${newCredit} €`,read:false,created_at:nowISO()});
+        await q.insert(db.notifications,{user_id:sponsor_id,type:'referral_credit',title:`🎉 ${name} sa registroval/a cez tvoj link!`,body:`Odmena ti príde, keď si kúpi členstvo alebo vstupy (10 % z nákupu).`,read:false,created_at:nowISO()});
       }
       // Structure-growth notification for everyone higher up the chain (beyond the direct sponsor)
       const ancestors = await getAllAncestors(sponsor_id); // sponsor's own upline
@@ -4950,10 +4949,12 @@ async function createInvoice({user_id, client_name, client_email, items, total, 
 }
 
 // ── Invoice API ────────────────────────────────────────────────────────────────
-// Owner or admin can read a single invoice
-app.get('/api/invoice/:number', auth, async(req,res)=>{
+// Owner alebo admin; externý odberateľ (bez účtu) cez prístupový kľúč ?k= z e-mailu
+app.get('/api/invoice/:number', async(req,res)=>{
   const inv = await q.one(db.invoices,{number:req.params.number});
   if(!inv) return res.status(404).json({error:'Faktúra nenájdená'});
+  if(inv.access_key && req.query.k===inv.access_key) return res.json(inv);
+  if(!req.session?.uid) return res.status(401).json({error:'Nie ste prihlásený'});
   const me = await q.one(db.users,{_id:req.session.uid});
   if(inv.user_id!==req.session.uid && !me?.is_admin) return res.status(403).json({error:'Prístup zamietnutý'});
   res.json(inv);
@@ -4963,6 +4964,82 @@ app.get('/api/invoice/:number', auth, async(req,res)=>{
 app.get('/api/my-invoices', auth, async(req,res)=>{
   const list = await q.find(db.invoices,{user_id:req.session.uid});
   res.json(list.sort((a,b)=>b.number.localeCompare(a.number)).slice(0,100));
+});
+
+// ── Manuálna faktúra (eventy, prenájmy, firemné objednávky) ────────────────────
+// Admin ju vystaví interaktívne vo Faktúrach; uloží sa do rovnakého archívu
+// db.invoices (číselný rad, CSV/ISDOC export, účtovníctvo — všetko automaticky).
+// status 'issued' = neuhradená (so splatnosťou), 'paid' = uhradená.
+app.post('/api/admin/invoices', adminAuth, async(req,res)=>{
+  try{
+    const b=req.body||{};
+    const c=b.client||{};
+    if(!String(c.name||'').trim()) return res.status(400).json({error:'Zadaj meno / firmu odberateľa'});
+    const items=(Array.isArray(b.items)?b.items:[]).map(it=>{
+      const qty=Math.max(0,+it.qty||1), unit=+it.unit_price||0;
+      return { desc:String(it.desc||'').slice(0,200), qty, unit_price:+unit.toFixed(2), total:+(qty*unit).toFixed(2) };
+    }).filter(it=>it.desc && it.total>0);
+    if(!items.length) return res.status(400).json({error:'Pridaj aspoň jednu položku so sumou'});
+    const total=+items.reduce((s,it)=>s+it.total,0).toFixed(2);
+    const D=v=>/^\d{4}-\d{2}-\d{2}$/.test(String(v||''))?v:null;
+    const issued=D(b.issued_at)||today();
+    const delivery=D(b.delivery_at)||issued;
+    const due=D(b.due_at)||new Date(new Date(issued).getTime()+14*86400000).toISOString().slice(0,10);
+    const paid=b.status==='paid';
+    const number=await nextInvoiceNumber();
+    const access_key=require('crypto').randomBytes(12).toString('hex'); // odkaz pre odberateľa bez účtu
+    const inv=await q.insert(db.invoices,{
+      number, vs:number, type:'invoice', manual:true, access_key,
+      user_id:b.user_id||null,
+      client_name:String(c.name).trim(), client_email:String(c.email||'').trim(),
+      client_address:String(c.address||'').trim(), client_ico:String(c.ico||'').trim(),
+      client_dic:String(c.dic||'').trim(), client_icdph:String(c.icdph||'').trim(),
+      items, total, currency:'EUR',
+      payment_method:String(b.payment_method||'prevod'),
+      issued_at:issued, delivery_at:delivery, due_at:due,
+      paid_at: paid?issued:null,
+      status: paid?'paid':'issued',
+      note:String(b.note||'').slice(0,500),
+      supplier:invoiceSupplier(), created_at:nowISO()
+    });
+    await auditLog(req,'invoice_manual_create',`${number} · ${inv.client_name} · ${total.toFixed(2)} €`,null,{number,total,status:inv.status},'');
+    // Poslať odberateľovi e-mailom (s platobnými údajmi ak neuhradená)
+    if(b.send_email && inv.client_email){
+      const s=inv.supplier||{};
+      const rows=items.map(it=>`<tr><td style="padding:6px 0;color:#ccc">${it.desc}${it.qty>1?` × ${it.qty}`:''}</td><td style="padding:6px 0;text-align:right;color:#fff;white-space:nowrap">${it.total.toFixed(2)} €</td></tr>`).join('');
+      const payInfo = paid ? '' : `<div style="background:#12100b;border:1px dashed #C9A84C;border-radius:10px;padding:12px 16px;margin-top:12px;font-size:13px;color:#ccc">
+        <b style="color:#E7C878">Platobné údaje</b><br>${s.iban?`IBAN: <b>${s.iban}</b><br>`:''}Variabilný symbol: <b>${inv.vs}</b><br>Splatnosť: <b>${due}</b> · Suma: <b>${total.toFixed(2)} €</b></div>`;
+      sendMail(inv.client_email, `Faktúra ${number} — Fusion Academy`,
+        emailTemplate(paid?'Faktúra (uhradená) 🧾':'Faktúra na úhradu 🧾',
+          `<p>Dobrý deň, <b>${inv.client_name}</b>,</p><p>posielame ${paid?'faktúru za vašu objednávku (uhradená)':'faktúru na úhradu za vašu objednávku'}.</p>
+           <div style="background:#1c1c1c;border-radius:12px;padding:16px 18px;margin:14px 0">
+             <table width="100%" style="border-collapse:collapse;font-size:14px">${rows}
+               <tr><td style="padding:10px 0 0;border-top:1px solid #333;color:#C9A84C;font-weight:800">Spolu</td>
+               <td style="padding:10px 0 0;border-top:1px solid #333;text-align:right;color:#C9A84C;font-weight:800">${total.toFixed(2)} €</td></tr></table>
+             <div style="color:#888;font-size:12px;margin-top:10px">Faktúra č. <b style="color:#ccc">${number}</b> · vystavená ${issued}</div>
+           </div>${payInfo}`,
+          '🧾 Zobraziť faktúru', `${APP_URL}/invoice/${number}?k=${access_key}`)).catch(()=>{});
+    }
+    res.json({ok:true, number, total, status:inv.status});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Označiť manuálnu faktúru ako uhradenú
+app.post('/api/admin/invoices/:number/pay', adminAuth, async(req,res)=>{
+  try{
+    const inv=await q.one(db.invoices,{number:req.params.number});
+    if(!inv) return res.status(404).json({error:'Faktúra nenájdená'});
+    if(inv.status!=='issued') return res.status(400).json({error:'Faktúra nie je v stave na úhradu'});
+    const method=String(req.body.method||inv.payment_method||'prevod');
+    await q.update(db.invoices,{_id:inv._id},{$set:{status:'paid', paid_at:today(), payment_method:method}});
+    await auditLog(req,'invoice_paid',`${inv.number} · ${inv.client_name} · ${(+inv.total).toFixed(2)} €`,{status:'issued'},{status:'paid',method},'');
+    if(inv.client_email){
+      sendMail(inv.client_email, `Platba prijatá · faktúra ${inv.number} — Fusion Academy`,
+        emailTemplate('Platba prijatá ✅',
+          `<p>Dobrý deň, <b>${inv.client_name}</b>,</p><p>potvrdzujeme prijatie platby <b>${(+inv.total).toFixed(2)} €</b> k faktúre <b>${inv.number}</b>. Ďakujeme!</p>`,
+          '🧾 Zobraziť faktúru', `${APP_URL}/invoice/${inv.number}${inv.access_key?'?k='+inv.access_key:''}`)).catch(()=>{});
+    }
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // Admin list with filters: ?year=&month=&q=&status=
@@ -5450,7 +5527,9 @@ async function accountingData(from, to){
     ...payments.map(p=>({date:(p.captured_at||p.activated_at||p.created_at||''),amount:+p.amount||0,plan:p.plan_name||MEMBERSHIP_PLANS[p.stripe_sub_plan]?.name||MEMBERSHIP_PLANS[p.subscription_plan]?.name||'Platba',user_id:p.user_id,method:p.provider||p.method||'card'})),
     ...membs.filter(m=>m.payment_method).map(m=>({date:m.created_at||'',amount:+m.price||0,plan:m.plan_name||'Členstvo',user_id:m.user_id,method:m.payment_method})),
     ...orders.map(o=>({date:o.paid_at||o.created_at||'',amount:+o.total||0,plan:'E-shop',user_id:o.partner_id,method:o.payment_method||'cash'})),
-    ...singleEntries.map(t=>({date:t.created_at||'',amount:+t.amount||0,plan:'Jednorazový vstup',user_id:t.user_id,method:t.method||'cash'}))
+    ...singleEntries.map(t=>({date:t.created_at||'',amount:+t.amount||0,plan:'Jednorazový vstup',user_id:t.user_id,method:t.method||'cash'})),
+    // Manuálne faktúry (eventy, prenájmy…) — do tržieb až keď sú UHRADENÉ
+    ...invoices.filter(i=>i.manual && i.status==='paid').map(i=>({date:i.paid_at||i.issued_at||'',amount:+i.total||0,plan:'Faktúra (event/manuál)',user_id:i.user_id,method:i.payment_method||'prevod'}))
   ].filter(e=>inRange(e.date));
 
   const bucket=(keyFn)=>{ const m={}; for(const e of events){ const k=keyFn(e)||'—'; m[k]=(m[k]||0)+e.amount; } return Object.entries(m).map(([key,v])=>({key,revenue:+v.toFixed(2)})).sort((a,b)=>b.revenue-a.revenue); };
@@ -5927,7 +6006,7 @@ app.get('/api/admin/payouts', adminAuth, async(req,res)=>{
     const month=req.query.month||today().slice(0,7);
     const stats=await trainerMonthStats(month);
     const rules=Object.fromEntries((await q.find(db.payout_rules,{})).map(r=>[r.trainer,r]));
-    const saved=Object.fromEntries((await q.find(db.payouts,{month})).map(p=>[p.trainer,p]));
+    const saved=Object.fromEntries((await q.find(db.payouts,{month, _type:{$exists:false}})).map(p=>[p.trainer,p]));
     const nameToId=Object.fromEntries((await q.find(db.users,{})).map(u=>[u.name,u._id]));
     const rows=await Promise.all(stats.map(async st=>{
       const {base,bonuses}=computePayout(rules[st.instructor],st);
@@ -5935,9 +6014,11 @@ app.get('/api/admin/payouts', adminAuth, async(req,res)=>{
       const deductions=sv?.deductions||0;
       const affiliate = nameToId[st.instructor] ? await affiliateCommissionFor(nameToId[st.instructor], month) : 0;
       const b=sv?sv.base:base, bo=sv?sv.bonuses:bonuses;
+      const cash=await cashCollectedFor(st.instructor, month); // hotovosť u trénera = zrážka
       return { trainer:st.instructor, trainer_id:nameToId[st.instructor]||null, month, ...st, affiliate,
         base:b, bonuses:bo, deductions,
-        total:+((b+bo+affiliate-deductions)).toFixed(2),
+        cash_deduct:cash.deduct, cash_pending:cash.pending,
+        total:+((b+bo+affiliate-deductions-cash.deduct)).toFixed(2),
         status:sv?.status||'draft', saved:!!sv, id:sv?._id||null, note:sv?.note||'',
         payment_method:sv?.payment_method||null, paid_at:sv?.paid_at||null, history:sv?.history||[] };
     }));
@@ -6003,10 +6084,16 @@ app.post('/api/admin/payouts/pay', adminAuth, async(req,res)=>{
     const tips = tUser ? await trainerTipsForMonth(tUser._id, month) : 0;
     let rec=await q.one(db.payouts,{trainer,month});
     const deductions=rec?.deductions||0;
-    const total=+(base+bonuses+affiliate+tips-deductions).toFixed(2);
+    // Hotovosť, ktorú tréner vybral a neodovzdal → zníži výplatu a zúčtuje sa
+    const cash=await cashCollectedFor(trainer, month);
+    const total=+(base+bonuses+affiliate+tips-deductions-cash.deduct).toFixed(2);
     const payMeta={ status:'paid', payment_method:method, paid_at:nowISO(),
       paid_by_name:req.trainerUser?.name||req._auditActor?.name||'Admin',
-      base, bonuses, affiliate, tips, deductions, total, stats, updated_at:nowISO() };
+      base, bonuses, affiliate, tips, deductions, cash_deduct:cash.deduct, total, stats, updated_at:nowISO() };
+    // Označ 'held' hotovosť ako zúčtovanú s výplatou (peniaze si nechal, výplata je o to nižšia)
+    for(const cr of cash.rows.filter(r=>r.status==='held')){
+      await q.update(db.payouts,{_id:cr._id},{$set:{status:'settled_payout', settled_at:nowISO(), settled_by:'výplata '+month}});
+    }
     const histEntry={at:nowISO(), actor:req._auditActor||null, change:{status:'paid',payment_method:method,total}, reason:'Uzavretie mesiaca a vyplatenie'};
     if(rec){ await q.update(db.payouts,{_id:rec._id},{$set:payMeta, $push:{history:histEntry}}); }
     else { rec=await q.insert(db.payouts,{trainer,month,...payMeta,note:'',history:[histEntry],created_at:nowISO()}); }
@@ -6017,10 +6104,10 @@ app.post('/api/admin/payouts/pay', adminAuth, async(req,res)=>{
     if(tUser){
       await q.insert(db.notifications,{ user_id:tUser._id, type:'payout',
         title:`💵 Výplata za ${monthTxt}: ${total.toFixed(2)} €`,
-        body:`Tvoja výplata za ${monthTxt} bola uzavretá a vyplatená ${methodTxt}. Základ ${base.toFixed(2)} € · bonusy ${bonuses.toFixed(2)} €${affiliate>0?` · affiliate ${affiliate.toFixed(2)} €`:''}${tips>0?` · tipy ${tips.toFixed(2)} €`:''}${deductions>0?` · zrážky −${deductions.toFixed(2)} €`:''}. Ďakujeme! 💛`,
+        body:`Tvoja výplata za ${monthTxt} bola uzavretá a vyplatená ${methodTxt}. Základ ${base.toFixed(2)} € · bonusy ${bonuses.toFixed(2)} €${affiliate>0?` · affiliate ${affiliate.toFixed(2)} €`:''}${tips>0?` · tipy ${tips.toFixed(2)} €`:''}${deductions>0?` · zrážky −${deductions.toFixed(2)} €`:''}${cash.deduct>0?` · vybraná hotovosť −${cash.deduct.toFixed(2)} €`:''}. Ďakujeme! 💛`,
         read:false, created_at:nowISO() }).catch(()=>{});
       if(tUser.email) sendMail(tUser.email, `💵 Výplata za ${monthTxt} — Fusion Academy`,
-        `Ahoj ${tUser.name.split(' ')[0]},\n\ntvoja výplata za ${monthTxt} bola uzavretá a vyplatená ${methodTxt}.\n\n• Základ za odučené hodiny: ${base.toFixed(2)} €\n• Bonusy: ${bonuses.toFixed(2)} €\n${affiliate>0?`• Affiliate provízie: ${affiliate.toFixed(2)} €\n`:''}${tips>0?`• Tipy od klientov: ${tips.toFixed(2)} €\n`:''}${deductions>0?`• Zrážky: −${deductions.toFixed(2)} €\n`:''}────────────────\nSPOLU: ${total.toFixed(2)} €\n\nĎakujeme za tvoju prácu! 💛\nFusion Academy`).catch(()=>{});
+        `Ahoj ${tUser.name.split(' ')[0]},\n\ntvoja výplata za ${monthTxt} bola uzavretá a vyplatená ${methodTxt}.\n\n• Základ za odučené hodiny: ${base.toFixed(2)} €\n• Bonusy: ${bonuses.toFixed(2)} €\n${affiliate>0?`• Affiliate provízie: ${affiliate.toFixed(2)} €\n`:''}${tips>0?`• Tipy od klientov: ${tips.toFixed(2)} €\n`:''}${deductions>0?`• Zrážky: −${deductions.toFixed(2)} €\n`:''}${cash.deduct>0?`• Vybraná hotovosť od klientov: −${cash.deduct.toFixed(2)} € (nechávaš si ju)\n`:''}────────────────\nSPOLU: ${total.toFixed(2)} €\n\nĎakujeme za tvoju prácu! 💛\nFusion Academy`).catch(()=>{});
     }
     await auditLog(req,'payout_pay',`${trainer} ${month} · ${method} · ${total.toFixed(2)} €`,rec?{status:rec.status}:null,payMeta,'');
     res.json({ok:true, total, method, trainer, month});
@@ -6031,7 +6118,7 @@ app.get('/api/admin/payouts/export.csv', adminAuth, async(req,res)=>{
   const month=req.query.month||today().slice(0,7);
   const stats=await trainerMonthStats(month);
   const rules=Object.fromEntries((await q.find(db.payout_rules,{})).map(r=>[r.trainer,r]));
-  const saved=Object.fromEntries((await q.find(db.payouts,{month})).map(p=>[p.trainer,p]));
+  const saved=Object.fromEntries((await q.find(db.payouts,{month, _type:{$exists:false}})).map(p=>[p.trainer,p]));
   const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`; const num=n=>(+n).toFixed(2).replace('.',',');
   const rows=[['Tréner','Mesiac','Hodiny','Účasti','Tržby','Základ','Bonusy','Zrážky','Spolu','Stav'].join(';')];
   for(const st of stats){
@@ -7192,6 +7279,82 @@ async function trainerTipsForMonth(userId, month){
   for(const tp of tips){ const mm=(tp.month||(tp.created_at||'').slice(0,7)); if(mm===month) sum+=(+tp.trainer_cut||0); }
   return +sum.toFixed(2);
 }
+// ═══════════════════════════════════════════════════════════════════════════════
+// HOTOVOSŤ VYBRANÁ TRÉNEROM (cash collected)
+// Tréner zapíše, že vybral od klienta hotovosť (vstup/členstvo v hotovosti na hodine).
+// Kým ju neodovzdá, ráta sa ako zrážka z jeho výplaty. Admin ju vie označiť ako
+// "prevzatú" (odovzdal peniaze → zrážka zmizne), alebo sa pri uzavretí mesiaca
+// zúčtuje s výplatou (peniaze si nechá a o to menej dostane).
+// Záznamy žijú v db.payouts s _type:'cash_collected' (rovnaký vzor ako body_analysis).
+// status: 'held' (má u seba) | 'settled_handed' (odovzdal admin prevzal) | 'settled_payout' (zúčtované s výplatou)
+async function cashCollectedFor(trainerName, month){
+  const rows=await q.find(db.payouts,{_type:'cash_collected', trainer_name:trainerName, month});
+  const active=rows.filter(r=>r.status!=='settled_handed'); // odovzdané sa už nezráža
+  return { deduct:+active.reduce((s,r)=>s+(+r.amount||0),0).toFixed(2),
+           pending:+rows.filter(r=>r.status==='held').reduce((s,r)=>s+(+r.amount||0),0).toFixed(2),
+           rows };
+}
+app.post('/api/trainer/cash', trainerAuth, async(req,res)=>{
+  try{
+    const t=req.trainerUser;
+    const amount=+req.body.amount;
+    if(!Number.isFinite(amount)||amount<=0||amount>1000) return res.status(400).json({error:'Zadaj platnú sumu (0–1000 €)'});
+    const note=String(req.body.note||'').slice(0,200);
+    const rec=await q.insert(db.payouts,{_type:'cash_collected', trainer_id:t._id, trainer_name:t.name,
+      amount:+amount.toFixed(2), note, month:today().slice(0,7), date:today(), status:'held', created_at:nowISO()});
+    const admins=await q.find(db.users,{is_admin:true});
+    for(const a of admins) await q.insert(db.notifications,{user_id:a._id, type:'cash_collected',
+      title:`💵 ${t.name} vybral/a hotovosť ${amount.toFixed(2)} €`,
+      body:`${note||'Bez poznámky'} — má ju odovzdať, alebo sa zúčtuje s výplatou.`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+    await auditLog(req,'cash_collected',`${t.name} +${amount.toFixed(2)} €`,null,{amount,note},'');
+    res.json({ok:true, id:rec._id});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.get('/api/trainer/cash', trainerAuth, async(req,res)=>{
+  try{
+    const t=req.trainerUser;
+    const rows=(await q.find(db.payouts,{_type:'cash_collected', trainer_id:t._id})).sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+    const pending=+rows.filter(r=>r.status==='held').reduce((s,r)=>s+(+r.amount||0),0).toFixed(2);
+    res.json({ok:true, rows:rows.slice(0,60), pending});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Tréner môže zmazať len VLASTNÝ, ešte nezúčtovaný záznam z dnešného dňa (preklep)
+app.delete('/api/trainer/cash/:id', trainerAuth, async(req,res)=>{
+  try{
+    const r=await q.one(db.payouts,{_id:req.params.id, _type:'cash_collected'});
+    if(!r||r.trainer_id!==req.trainerUser._id) return res.status(404).json({error:'Nenájdené'});
+    if(r.status!=='held'||r.date!==today()) return res.status(400).json({error:'Zmazať sa dá len dnešný neodovzdaný záznam'});
+    await q.remove(db.payouts,{_id:r._id},{});
+    await auditLog(req,'cash_collected_delete',`${r.trainer_name} -${r.amount} €`,r,null,'');
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Admin: prevzal hotovosť od trénera → zrážka z výplaty zmizne
+// Admin: zoznam hotovostných záznamov trénera (pre detail výplaty)
+app.get('/api/admin/cash', adminAuth, async(req,res)=>{
+  try{
+    const filt={_type:'cash_collected'};
+    if(req.query.trainer) filt.trainer_name=String(req.query.trainer);
+    if(req.query.month) filt.month=String(req.query.month);
+    const rows=(await q.find(db.payouts,filt)).sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+    res.json({ok:true, rows:rows.slice(0,200)});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/cash/:id/handover', adminAuth, async(req,res)=>{
+  try{
+    const r=await q.one(db.payouts,{_id:req.params.id, _type:'cash_collected'});
+    if(!r) return res.status(404).json({error:'Nenájdené'});
+    if(r.status!=='held') return res.status(400).json({error:'Už je zúčtované'});
+    await q.update(db.payouts,{_id:r._id},{$set:{status:'settled_handed', settled_at:nowISO(), settled_by:req.trainerUser?.name||'Admin'}});
+    await q.insert(db.notifications,{user_id:r.trainer_id, type:'cash_collected',
+      title:'✅ Hotovosť prevzatá', body:`Odovzdal/a si ${(+r.amount).toFixed(2)} € — zrážka z výplaty je zrušená.`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+    await auditLog(req,'cash_handover',`${r.trainer_name} ${(+r.amount).toFixed(2)} €`,{status:'held'},{status:'settled_handed'},'');
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/trainer/earnings', trainerAuth, async(req,res)=>{
   try {
     // Zárobky sú OSOBNÉ — vždy pre reálne prihláseného človeka (nie mentora asistenta).
@@ -7221,7 +7384,8 @@ app.get('/api/trainer/earnings', trainerAuth, async(req,res)=>{
       const tips = +(tipByMonth[m]||0).toFixed(2);
       const rec=await q.one(db.payouts,{trainer:tName,month:m});
       const ded=rec?.deductions||0;
-      const total=+(base+bonuses+affiliate+tips-ded).toFixed(2);
+      const cash=await cashCollectedFor(tName, m); // vybraná hotovosť = zrážka, kým sa neodovzdá
+      const total=+(base+bonuses+affiliate+tips-ded-cash.deduct).toFixed(2);
       const items=[
         {label:'Základ za hodinu', count:st.sessions, per:rule.fixed_per_class||0, amount:+((rule.fixed_per_class||0)*st.sessions).toFixed(2)},
         {label:(thr>0?`Klienti nad ${thr} na hodine`:'Odmena za účastníka'), count:billable, per:rule.per_client||0, amount:+((rule.per_client||0)*billable).toFixed(2)},
@@ -7229,9 +7393,11 @@ app.get('/api/trainer/earnings', trainerAuth, async(req,res)=>{
         {label:'Bonus za nového klienta', count:st.newClients, per:rule.bonus_new_member||0, amount:+((rule.bonus_new_member||0)*st.newClients).toFixed(2)},
         {label:'Affiliate provízie (moja línia)', count:'', per:'', amount:affiliate},
         {label:'💛 Tipy od klientov (80 %)', count:'', per:'', amount:tips},
+        {label:'💵 Vybraná hotovosť od klientov (zrážka)', count:'', per:'', amount:-cash.deduct},
       ].filter(x=>x.per||x.amount);
       rows.push({month:m, sessions:st.sessions, attendances:st.attendances, revenue:+st.revenue.toFixed(2),
-        base:+base.toFixed(2), bonuses:+bonuses.toFixed(2), affiliate, tips, deductions:ded, total,
+        base:+base.toFixed(2), bonuses:+bonuses.toFixed(2), affiliate, tips, deductions:ded,
+        cash_deduct:cash.deduct, cash_pending:cash.pending, total,
         status: rec?.status||'draft', paid: rec?.status==='paid', payment_method: rec?.payment_method||null, paid_at: rec?.paid_at||null, items});
     }
     const grand=rows.reduce((s,r)=>s+r.total,0);

@@ -53,7 +53,8 @@
 (async()=>{
   const number = location.pathname.split('/').pop();
   let inv;
-  try { const r = await fetch('/api/invoice/'+encodeURIComponent(number),{credentials:'include'});
+  const accessKey = new URLSearchParams(location.search).get('k');
+  try { const r = await fetch('/api/invoice/'+encodeURIComponent(number)+(accessKey?'?k='+encodeURIComponent(accessKey):''),{credentials:'include'});
     if(r.status===401){ location.href='/?next='+encodeURIComponent(location.pathname); return; }
     inv = await r.json(); if(!r.ok) throw new Error(inv.error||'Chyba');
   } catch(e){ document.getElementById('host').innerHTML = '<div class="err">'+ (e.message||'Faktúru sa nepodarilo načítať') +'</div>'; return; }
@@ -62,7 +63,9 @@
   const isCN = inv.type==='credit_note';
   const badge = inv.status==='cancelled' ? '<span class="badge b-cancelled">Stornovaná</span>'
     : inv.status==='credited' ? '<span class="badge b-credited">'+(isCN?'Dobropis':'Dobropisovaná')+'</span>'
+    : inv.status==='issued' ? '<span class="badge b-cancelled" style="background:#7a5a12;color:#ffd98a">Neuhradená</span>'
     : '<span class="badge b-paid">Uhradená</span>';
+  const hasQty = (inv.items||[]).some(it=>it.qty!==undefined && it.unit_price!==undefined);
   document.title = (isCN?'Dobropis ':'Faktúra ')+inv.number+' – Fusion Academy';
   document.getElementById('host').innerHTML = `
   <div class="sheet">
@@ -82,23 +85,34 @@
       <div class="party">
         <div class="h">Odberateľ</div>
         <div class="n">${esc(inv.client_name)}</div>
+        ${inv.client_address?`<div>${esc(inv.client_address)}</div>`:''}
+        ${(inv.client_ico||inv.client_dic)?`<div class="m">${inv.client_ico?'IČO: '+esc(inv.client_ico):''}${inv.client_ico&&inv.client_dic?' · ':''}${inv.client_dic?'DIČ: '+esc(inv.client_dic):''}${inv.client_icdph?' · IČ DPH: '+esc(inv.client_icdph):''}</div>`:''}
         ${inv.client_email && !inv.client_email.includes('@internal.local')?`<div class="m">${esc(inv.client_email)}</div>`:''}
       </div>
     </div>
     <div class="meta">
       <div>Dátum vystavenia<b>${esc(inv.issued_at)}</b></div>
-      <div>Dátum úhrady<b>${esc(inv.paid_at)}</b></div>
+      ${inv.delivery_at?`<div>Dátum dodania<b>${esc(inv.delivery_at)}</b></div>`:''}
+      ${inv.status==='issued'
+        ? `<div>Splatnosť<b>${esc(inv.due_at||'—')}</b></div>`
+        : `<div>Dátum úhrady<b>${esc(inv.paid_at||'—')}</b></div>`}
       <div>Variabilný symbol<b>${esc(inv.vs)}</b></div>
       <div>Spôsob platby<b>${esc(inv.payment_method)}</b></div>
       ${inv.related_invoice?`<div>K faktúre<b>${esc(inv.related_invoice)}</b></div>`:''}
     </div>
+    ${inv.status==='issued'&&s.iban?`<div style="background:#faf6ec;border:1px dashed #b98f2e;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px">
+      <b>Platobné údaje:</b> IBAN <b>${esc(s.iban)}</b> · VS <b>${esc(inv.vs)}</b> · Suma <b>${(+inv.total).toFixed(2)} €</b>${inv.due_at?` · Splatnosť <b>${esc(inv.due_at)}</b>`:''}</div>`:''}
     <table>
-      <thead><tr><th>Položka</th><th>Suma</th></tr></thead>
-      <tbody>${(inv.items||[]).map(it=>`<tr><td>${esc(it.desc)}</td><td>${(+it.total).toFixed(2)} €</td></tr>`).join('')}</tbody>
+      ${hasQty
+        ? `<thead><tr><th>Položka</th><th style="text-align:right">Množstvo</th><th style="text-align:right">Jedn. cena</th><th style="text-align:right">Spolu</th></tr></thead>
+           <tbody>${(inv.items||[]).map(it=>`<tr><td>${esc(it.desc)}</td><td style="text-align:right">${+it.qty||1}</td><td style="text-align:right">${(+it.unit_price||+it.total).toFixed(2)} €</td><td style="text-align:right">${(+it.total).toFixed(2)} €</td></tr>`).join('')}</tbody>`
+        : `<thead><tr><th>Položka</th><th>Suma</th></tr></thead>
+           <tbody>${(inv.items||[]).map(it=>`<tr><td>${esc(it.desc)}</td><td>${(+it.total).toFixed(2)} €</td></tr>`).join('')}</tbody>`}
     </table>
     <div class="total-row"><div class="total"><span class="l">Spolu k úhrade</span><span class="v">${(+inv.total).toFixed(2)} €</span></div></div>
+    ${inv.note?`<div style="margin-top:12px;font-size:13px;color:#555"><b>Poznámka:</b> ${esc(inv.note)}</div>`:''}
     <div class="foot">
-      Faktúra slúži zároveň ako potvrdenie o prijatí platby.${!s.icdph?' Cena je konečná — dodávateľ nie je platiteľom DPH podľa §4 zákona č. 222/2004 Z. z.':''}<br>
+      ${inv.status==='issued'?'Faktúra je daňovým dokladom. Prosíme o úhradu do dátumu splatnosti.':'Faktúra slúži zároveň ako potvrdenie o prijatí platby.'}${!s.icdph?' Cena je konečná — dodávateľ nie je platiteľom DPH podľa §4 zákona č. 222/2004 Z. z.':''}<br>
       Fusion Academy · latindancefusion.art
     </div>
   </div>`;
