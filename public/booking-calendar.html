@@ -186,10 +186,18 @@ async function renderDay(){
     host.innerHTML = `<div class="empty-day"><div class="e-emoji">🌙</div>V ${DAYS_FULL[dow].toLowerCase()} nie sú naplánované žiadne Zumba hodiny.</div>`;
     return;
   }
-  // Load date-specific attendees + instructor for each class in parallel
-  const lists = await Promise.all(classes.map(c=>api(`/api/attendance/class/${c._id}?date=${dateStr}`)));
-  const insList = await Promise.all(classes.map(c=>api(`/api/attendance/session-instructor?class_id=${c._id}&date=${dateStr}`)));
+  // Load date-specific attendees + instructor for each class in parallel (+ zrušené termíny)
+  const [insListArr, cancList, ...listsArr] = await Promise.all([
+    Promise.all(classes.map(c=>api(`/api/attendance/session-instructor?class_id=${c._id}&date=${dateStr}`))),
+    api('/api/attendance/cancellations'),
+    ...classes.map(c=>api(`/api/attendance/class/${c._id}?date=${dateStr}`))
+  ]);
+  const lists = listsArr, insList = insListArr;
+  const cancSet = new Set((Array.isArray(cancList)?cancList:[]).map(x=>x.class_id+'|'+x.date));
+  const cancBy = Object.fromEntries((Array.isArray(cancList)?cancList:[]).map(x=>[x.class_id+'|'+x.date, x]));
   host.innerHTML = classes.map((c,i)=>{
+    const isCanc = cancSet.has(c._id+'|'+dateStr);
+    const cancInfo = cancBy[c._id+'|'+dateStr];
     const att = Array.isArray(lists[i])?lists[i]:[];
     const cap = c.capacity||0;
     const pct = cap? Math.round(att.length/cap*100):0;
@@ -208,16 +216,30 @@ async function renderDay(){
         <div class="cls-info">
           <div class="cls-name">${esc(c.name)}</div>
           <div class="cls-meta"><span>⏰ ${c.time_start||''}${c.time_end?'–'+c.time_end:''}</span><span>📍 ${esc(c.location||'')}</span></div>
-          <div class="cls-meta" style="margin-top:4px"><span>🎓 <b style="color:var(--cream)">${esc(si.instructor||'—')}</b>${si.overridden?' <span style="color:#C9A84C;font-size:.68rem">(zmenené)</span>':''}</span> ${insCtrl}</div>
+          <div class="cls-meta" style="margin-top:4px"><span>🎓 <b style="color:var(--cream)">${esc(si.instructor||'—')}</b>${si.overridden?' <span style="color:#C9A24C;font-size:.68rem">(zmenené)</span>':''}</span> ${insCtrl}
+            ${isCanc?'':`<button onclick="event.stopPropagation();cancelDay('${c._id}','${dateStr}','${escJs(c.name)}')" title="Zrušiť tento termín hodiny" style="background:none;border:1px solid rgba(229,115,115,.5);color:#e57373;border-radius:8px;padding:3px 9px;font-size:.72rem;font-weight:700;cursor:pointer">✕ Zrušiť hodinu</button>`}
+          </div>
         </div>
-        <div class="cls-count"><div class="num" style="color:${col}">${att.length}${cap?'/'+cap:''}</div><div class="cap">prihlásených</div></div>
+        <div class="cls-count">${isCanc
+          ? `<div class="num" style="color:#f87171;font-size:.9rem">ZRUŠENÁ</div>`
+          : `<div class="num" style="color:${col}">${att.length}${cap?'/'+cap:''}</div><div class="cap">prihlásených</div>`}</div>
         <i class="bi bi-chevron-down cls-chevron"></i>
       </div>
-      <div class="cls-body" id="body-${c._id}">${renderAtt(att, c._id, dateStr)}</div>
+      <div class="cls-body" id="body-${c._id}">${isCanc
+        ? `<div style="background:rgba(224,86,86,.1);border:1px solid rgba(224,86,86,.4);border-radius:10px;padding:12px 14px;font-size:.85rem;color:#ff9a9a">❌ <b>Hodina je pre tento termín zrušená.</b>${cancInfo&&cancInfo.reason?` Dôvod: ${esc(cancInfo.reason)}`:''}<br><span style="color:#9B9078;font-size:.76rem">Prihláseným boli poslané oznámenia a vrátené vstupy. Rezervácie na tento termín sú zablokované.</span></div>`
+        : renderAtt(att, c._id, dateStr)}</div>
     </div>`;
   }).join('');
 }
 const _insBy={};
+// Zrušiť KONKRÉTNY termín hodiny (napr. štvrtok 23.7. Brezno) — oznámenia + vrátenie vstupov
+async function cancelDay(classId, dateStr, name){
+  const reason = prompt(`Zrušiť hodinu „${name}" dňa ${dateStr.split('-').reverse().join('.')}?\n\nVšetkým prihláseným pošleme oznámenie, vrátime vstupy z permanentky a pozveme ich na inú hodinu. Rezervácie na tento termín sa zablokujú.\n\nDôvod (nepovinné):`, '');
+  if(reason===null) return;
+  const r=await api('/api/attendance/cancel-session',{method:'POST',body:{class_id:classId, date:dateStr, reason}});
+  if(r&&r.ok){ toast(r.already?'ℹ️ Tento termín už bol zrušený':`✅ Hodina zrušená · upozornených ${r.notified||0}${r.refunded?', vrátených vstupov '+r.refunded:''}`); renderDay(); }
+  else toast((r&&r.error)||'Chyba', true);
+}
 async function confirmSession(classId, dateStr){
   if(!confirm('Potvrdiť túto hodinu ako ABSOLVOVANÚ?\n\nVšetkým prihláseným sa pripíše návšteva + body a hodina sa započíta do tvojej výplaty.')) return;
   const r=await api('/api/attendance/confirm-session',{method:'POST',body:{class_id:classId, date:dateStr}});
