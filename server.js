@@ -216,7 +216,14 @@ const CHANNELS    = [
 ];
 
 // ─── Member Badge (Twitch-style) ──────────────────────────────────────────────
-function getMemberBadge(createdAt) {
+// Druhý parameter (user) je voliteľný: personál dostane ROLOVÝ odznak namiesto
+// veku členstva — majiteľ/tréner predsa nie je „Nováčik".
+function getMemberBadge(createdAt, u) {
+  if (u) {
+    if (u.is_admin) return { emoji:'👑', label:'Majiteľ', months:0, color:'#C9A84C', staff:true };
+    if (u.user_type==='trainer') return { emoji:'💃', label:'Tréner', months:0, color:'#e0a656', staff:true };
+    if (u.is_assistant) return { emoji:'🤝', label:'Asistent', months:0, color:'#e0a656', staff:true };
+  }
   if (!createdAt) return { emoji:'🌱', label:'Nováčik', months:0, color:'#8bc34a' };
   const ms   = Date.now() - new Date(createdAt).getTime();
   const days = Math.floor(ms / (1000 * 60 * 60 * 24));
@@ -232,7 +239,7 @@ function getMemberBadge(createdAt) {
 
 function userPublic(u) {
   if (!u) return null;
-  const badge = getMemberBadge(u.created_at);
+  const badge = getMemberBadge(u.created_at, u);
   const loyalty = getLoyaltyStatus(u.visit_count || 0);
   const role = USER_ROLES[u.user_type] || USER_ROLES.client;
   return {
@@ -886,6 +893,21 @@ async function seedData() {
     console.log(`✅  trial_followup: prepnutých ${switched} žien z lead_nurture (už boli na hodine zdarma)`);
   }
 
+  // Jednorazovo: rolové odznaky personálu aj v UŽ uložených správach/príspevkoch
+  // (chat/DM/feed si odznak ukladajú pri odoslaní — staré by ukazovali „Nováčik").
+  if(!(await q.one(db.settings,{key:'staff_badges_v1'}))){
+    const staff=(await q.find(db.users,{})).filter(x=>x.is_admin||x.user_type==='trainer'||x.is_assistant);
+    let fixed=0;
+    for(const s of staff){
+      const b=getMemberBadge(s.created_at, s);
+      fixed+=await q.update(db.messages,{user_id:s._id},{$set:{memberBadge:b}},{multi:true});
+      fixed+=await q.update(db.messages,{from_id:s._id},{$set:{memberBadge:b}},{multi:true});
+      fixed+=await q.update(db.feed,{author_id:s._id},{$set:{author_badge:b}},{multi:true});
+    }
+    await q.insert(db.settings,{key:'staff_badges_v1', value:true, at:nowISO()});
+    console.log(`✅  Rolové odznaky personálu: aktualizovaných ${fixed} starých správ/príspevkov`);
+  }
+
   // Promo kód pre návrat odídených klientov (30% na prvý mesiac)
   if(!await q.one(db.promo_codes,{code:'VITAJSPAT'})){
     await q.insert(db.promo_codes,{ code:'VITAJSPAT', type:'percent', value:30, applies_to:'membership',
@@ -1502,7 +1524,7 @@ app.get('/api/community/members', auth, async(req,res)=>{
     id:u._id, name:u.name,
     user_type:u.user_type||'partner',
     rankBadge: RANKS[(u.rank||1)-1].badge,
-    memberBadge: getMemberBadge(u.created_at),
+    memberBadge: getMemberBadge(u.created_at, u),
     created_at: u.created_at,
   })).sort((a,b)=>a.name.localeCompare(b.name));
   res.json(result);
@@ -1553,7 +1575,7 @@ app.get('/api/dm/conversations', auth, async(req,res)=>{
   const users = Object.fromEntries((await q.find(db.users,{})).map(u=>[u._id,u]));
   const list = Object.values(convs).map(c=>({
     ...c, other_name: users[c.other_id]?.name||'Neznámy užívateľ',
-    other_badge: getMemberBadge(users[c.other_id]?.created_at)
+    other_badge: getMemberBadge(users[c.other_id]?.created_at, users[c.other_id])
   })).sort((a,b)=>(b.last_at||'').localeCompare(a.last_at||''));
   res.json({conversations:list, unread_total:list.reduce((s,c)=>s+c.unread,0)});
 });
@@ -1570,7 +1592,7 @@ app.get('/api/dm/history/:userId', auth, async(req,res)=>{
   // Zmaž aj zvončekovú notifikáciu o neprečítaných správach od tohto odosielateľa
   await q.update(db.notifications,{user_id:me, type:'dm', from_id:other, read:false},{$set:{read:true}},{multi:true});
   res.json({ messages: msgs.slice(-100),
-    other:{ id:other, name:other_u.name, badge:getMemberBadge(other_u.created_at) } });
+    other:{ id:other, name:other_u.name, badge:getMemberBadge(other_u.created_at, other_u) } });
 });
 
 // ── Community feed (nástenka): posts + reactions + comments ───────────────────
@@ -1759,7 +1781,7 @@ app.post('/api/feed', auth, async(req,res)=>{
     if(text.length>2000) return res.status(400).json({error:'Text je príliš dlhý'});
     const u=await q.one(db.users,{_id:req.session.uid});
     const post=await q.insert(db.feed,{
-      author_id:u._id, author_name:u.name, author_badge:getMemberBadge(u.created_at),
+      author_id:u._id, author_name:u.name, author_badge:getMemberBadge(u.created_at, u),
       text:text.slice(0,2000), image:image||null, reactions:{}, comments:[], created_at:nowISO()
     });
     const view=feedView(post, req.session.uid);
@@ -2163,7 +2185,7 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
       .map(m=>(m.started_at||m.start_date||m.created_at||'')).filter(Boolean).map(s=>s.slice(0,10)).sort();
     const joinedDate = (_membStarts[0] && _membStarts[0] < (u.created_at||'9999').slice(0,10))
       ? _membStarts[0] : (u.created_at||'').slice(0,10);
-    const badge=getMemberBadge(joinedDate);
+    const badge=getMemberBadge(joinedDate, u);
     const loyalty=getLoyaltyStatus(u.visit_count||0);
     // Pozadie celého profilu = odmena za počet privedených ľudí do štruktúry (1→10000).
     // Admin/zakladateľ si môže nastaviť vlastné (custom_bg), inak zakladateľ = founder.
@@ -2535,7 +2557,7 @@ app.get('/api/friends', auth, async(req,res)=>{
   const me=req.session.uid;
   const rows=await q.find(db.friends,{users:me});
   const uMap=Object.fromEntries((await q.find(db.users,{})).map(u=>[u._id,u]));
-  const mkCard=oid=>{ const u=uMap[oid]; if(!u) return null; return {id:oid, name:u.anonymous?'Anonymný člen':u.name, avatar:u.anonymous?null:(u.avatar||null), badge:getMemberBadge(u.created_at), visits:u.visit_count||0}; };
+  const mkCard=oid=>{ const u=uMap[oid]; if(!u) return null; return {id:oid, name:u.anonymous?'Anonymný člen':u.name, avatar:u.anonymous?null:(u.avatar||null), badge:getMemberBadge(u.created_at, u), visits:u.visit_count||0}; };
   const friends=[], incoming=[], outgoing=[];
   for(const f of rows){
     const other=f.users.find(x=>x!==me);
@@ -2715,7 +2737,7 @@ app.get('/api/admin/partners', adminAuth, async(req,res)=>{
   for(const p of allU){
     const p30=await getPersonal30(p._id);
     const desc=await getAllDescendants(p._id);
-    result.push({id:p._id,name:p.name,email:p.email,phone:p.phone||'',referral_code:p.referral_code,rank:p.rank||1,active:p.active,bank_account:p.bank_account||'',notes:p.notes||'',sponsor_id:p.sponsor_id,sponsor_name:uMap[p.sponsor_id]||'—',rankName:RANKS[(p.rank||1)-1].name,rankBadge:RANKS[(p.rank||1)-1].badge,personal30:+p30.toFixed(2),teamSize:desc.length,created_at:p.created_at,user_type:p.user_type||'partner',memberBadge:getMemberBadge(p.created_at)});
+    result.push({id:p._id,name:p.name,email:p.email,phone:p.phone||'',referral_code:p.referral_code,rank:p.rank||1,active:p.active,bank_account:p.bank_account||'',notes:p.notes||'',sponsor_id:p.sponsor_id,sponsor_name:uMap[p.sponsor_id]||'—',rankName:RANKS[(p.rank||1)-1].name,rankBadge:RANKS[(p.rank||1)-1].badge,personal30:+p30.toFixed(2),teamSize:desc.length,created_at:p.created_at,user_type:p.user_type||'partner',memberBadge:getMemberBadge(p.created_at, p)});
   }
   result.sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
   res.json(result);
@@ -6938,7 +6960,7 @@ app.post('/api/admin/articles', adminAuth, async(req,res)=>{
     const msg = await q.insert(db.messages,{
       channel:channel||'blog', text:`${title}\n\n${body}`,
       user_id:u._id, user_name:u.name,
-      memberBadge:getMemberBadge(u.created_at),
+      memberBadge:getMemberBadge(u.created_at, u),
       rankBadge:RANKS[(u.rank||1)-1].badge,
       is_article:true, article_cat:article_cat||'Blog',
       article_date:today(), perex:perex||'',
@@ -8682,7 +8704,7 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
         const nm=newMemberPointsFor(u._id, adjacency, buyerSet);
         const md=merchDownlinePointsFor(u._id, adjacency, merchMap);
         const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount:merchMap[u._id]||0, merchLineCount:md.count, merchLinePoints:md.points }, prefix);
-        if(bd.total>0) ranked.push({ id:u._id, name:u.name, avatar:u.avatar||null, refs:refCount[u._id]||0, hours:attCount[u._id]||0, score:bd.total, points:bd.total, breakdown:bd.items, badge:getMemberBadge(u.created_at) });
+        if(bd.total>0) ranked.push({ id:u._id, name:u.name, avatar:u.avatar||null, refs:refCount[u._id]||0, hours:attCount[u._id]||0, score:bd.total, points:bd.total, breakdown:bd.items, badge:getMemberBadge(u.created_at, u) });
       }
       ranked.sort((a,b)=>b.points-a.points);
       return ranked;
@@ -9556,7 +9578,7 @@ io.on('connection', async(socket)=>{
 
   const userInfo = {
     id: u._id, name: u.name, nickname: u.nickname||'',
-    memberBadge: getMemberBadge(u.created_at),
+    memberBadge: getMemberBadge(u.created_at, u),
     rankBadge: RANKS[(u.rank||1)-1].badge,
     user_type: u.user_type||'partner',
     socketId: socket.id,
@@ -9595,7 +9617,7 @@ io.on('connection', async(socket)=>{
     const msg = await q.insert(db.messages, {
       channel: channel||'general',
       user_id: u._id, user_name: u.name, nickname: u.nickname||'',
-      memberBadge: getMemberBadge(u.created_at),
+      memberBadge: getMemberBadge(u.created_at, u),
       rankBadge: RANKS[(u.rank||1)-1].badge,
       text: text.trim().slice(0,500),
       created_at: nowISO(),
@@ -9626,7 +9648,7 @@ io.on('connection', async(socket)=>{
       const msg = await q.insert(db.messages, {
         is_dm:true, dm_key: dmKey(u._id,to), participants:[u._id,to],
         from_id:u._id, from_name:u.name, to_id:to,
-        memberBadge:getMemberBadge(u.created_at),
+        memberBadge:getMemberBadge(u.created_at, u),
         text: text.slice(0,1000), read:false, created_at: nowISO(),
       });
       // Deliver live to both participants (any open view)
