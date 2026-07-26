@@ -346,6 +346,12 @@ function toEmbed(url){
     const host=u.hostname.replace(/^www\./,'');
     // YouTube
     if(host.includes('youtube.com')||host==='youtu.be'){
+      // Trvalý link na kanál: /@handle/live, /channel/UC.../live alebo embed/live_stream?channel=UC...
+      const ch=u.searchParams.get('channel');
+      if(ch) return {type:'iframe', src:`https://www.youtube.com/embed/live_stream?channel=${ch}&autoplay=1`};
+      const chm=u.pathname.match(/^\/channel\/(UC[\w-]+)/);
+      if(chm&&u.pathname.endsWith('/live')) return {type:'iframe', src:`https://www.youtube.com/embed/live_stream?channel=${chm[1]}&autoplay=1`};
+      if(/^\/@[^/]+\/live\/?$/.test(u.pathname)) return {type:'external', src:url}; // handle nevieme previesť na channel ID — otvorí sa na YouTube
       let id=''; if(host==='youtu.be') id=u.pathname.slice(1);
       else if(u.pathname.startsWith('/live/')) id=u.pathname.split('/')[2];
       else if(u.pathname.startsWith('/embed/')) id=u.pathname.split('/')[2];
