@@ -7163,6 +7163,15 @@ function privateSettings(u){
     split: (u.private_split>=0 && u.private_split<=100) ? +u.private_split : PRIVATE_DEFAULT_SPLIT };
 }
 function privSlotStartMs(s){ return new Date(`${s.date}T${s.time_start||'00:00'}:00`).getTime(); }
+// Zľava na súkromné hodiny podľa aktívneho členstva: Bronze −10 %, Silver −20 %, Gold −30 %
+const PRIVATE_MEMBER_DISCOUNT = { bronze:10, silver:20, gold:30 };
+async function privateDiscountFor(userId){
+  const m = await checkMembership(userId);
+  if(!m || m.status!=='active') return { pct:0, plan:null };
+  const pct = PRIVATE_MEMBER_DISCOUNT[m.plan_id] || 0;
+  return { pct, plan: pct ? (m.plan_name||m.plan_id) : null };
+}
+function privDiscounted(price, pct){ return +((+price||0)*(1-(pct||0)/100)).toFixed(2); }
 // Zárobok trénera zo súkromných hodín za mesiac: podiel z absolvovaných + prepadnuté storná
 async function privateEarningsFor(trainerId, month){
   const bks = await q.find(db.private_bookings,{trainer_id:trainerId});
@@ -7253,7 +7262,9 @@ app.get('/api/private/slots', auth, async(req,res)=>{
     const slots=(await q.find(db.private_slots,{trainer_id:tid, status:'open'}))
       .filter(s=>s.date>today() || (s.date===today() && s.time_start>new Date().toTimeString().slice(0,5)))
       .sort((a,b)=>(a.date+a.time_start).localeCompare(b.date+b.time_start)).slice(0,40);
-    res.json({ok:true, slots:slots.map(s=>({id:s._id,date:s.date,time_start:s.time_start,duration_min:s.duration_min||60,city:s.city,location:s.location||'',price:s.price}))});
+    const disc=await privateDiscountFor(req.session.uid); // zľava podľa členstva klienta
+    res.json({ok:true, discount_pct:disc.pct, discount_plan:disc.plan,
+      slots:slots.map(s=>({id:s._id,date:s.date,time_start:s.time_start,duration_min:s.duration_min||60,city:s.city,location:s.location||'',price:s.price,my_price:privDiscounted(s.price,disc.pct)}))});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -7265,16 +7276,20 @@ app.post('/api/private/book', auth, async(req,res)=>{
     if(privSlotStartMs(s)<Date.now()) return res.status(400).json({error:'Termín je v minulosti'});
     if(s.trainer_id===u._id) return res.status(400).json({error:'Nemôžeš si rezervovať vlastnú hodinu 🙂'});
     const trainer=await q.one(db.users,{_id:s.trainer_id});
+    // Zľava podľa členstva klienta (Bronze −10 %, Silver −20 %, Gold −30 %; bez členstva/permanentka = plná cena)
+    const disc=await privateDiscountFor(u._id);
+    const price=privDiscounted(s.price, disc.pct);
     const pay = req.body.pay==='credit' ? 'credit' : 'onsite';
     if(pay==='credit'){
-      if((u.referral_credit||0) < s.price) return res.status(400).json({error:`Nedostatočný kredit (${(u.referral_credit||0).toFixed(2)} €). Vyber platbu na mieste.`});
-      await q.update(db.users,{_id:u._id},{$set:{referral_credit:+((u.referral_credit||0)-s.price).toFixed(2)}});
+      if((u.referral_credit||0) < price) return res.status(400).json({error:`Nedostatočný kredit (${(u.referral_credit||0).toFixed(2)} €). Vyber platbu na mieste.`});
+      await q.update(db.users,{_id:u._id},{$set:{referral_credit:+((u.referral_credit||0)-price).toFixed(2)}});
     }
     const bk=await q.insert(db.private_bookings,{
       slot_id:s._id, trainer_id:s.trainer_id, trainer_name:s.trainer_name,
       client_id:u._id, client_name:u.name, client_phone:u.phone||'', client_email:u.email||'',
       date:s.date, time_start:s.time_start, duration_min:s.duration_min||60, city:s.city, location:s.location||'',
-      price:s.price, split:privateSettings(trainer||{}).split,
+      price, base_price:s.price, discount_pct:disc.pct, discount_plan:disc.plan||null,
+      split:privateSettings(trainer||{}).split,
       pay_method:pay, paid:pay==='credit', status:'booked', created_at:nowISO() });
     await q.update(db.private_slots,{_id:s._id},{$set:{status:'booked', booking_id:bk._id}});
     const when=`${s.date.split('-').reverse().join('.')} o ${s.time_start} · ${s.city}`;
@@ -7282,9 +7297,9 @@ app.post('/api/private/book', auth, async(req,res)=>{
     await q.insert(db.notifications,{user_id:u._id,type:'private_booking',title:'🎭 Súkromná hodina rezervovaná ✅',body:`${s.trainer_name} · ${when}. Bezplatné zrušenie do 24 h pred začiatkom.`,read:false,created_at:nowISO()}).catch(()=>{});
     if(u.email) sendMail(u.email,'🎭 Súkromná hodina rezervovaná — Fusion Academy',
       emailTemplate('Rezervácia potvrdená',
-        `<p>Ahoj <b>${u.name.split(' ')[0]}</b>,</p><p>tvoja súkromná hodina je rezervovaná:</p><ul style="color:#ccc"><li>🎓 Tréner: <b>${s.trainer_name}</b></li><li>📅 ${when}</li><li>⏱ ${s.duration_min||60} min</li><li>💶 ${s.price.toFixed(2)} € ${pay==='credit'?'(zaplatené kreditom)':'(platba na mieste)'}</li></ul><p><b>Storno podmienky:</b> bezplatné zrušenie najneskôr 24 hodín pred začiatkom. Pri neskoršom zrušení suma prepadá trénerovi.</p>`,
+        `<p>Ahoj <b>${u.name.split(' ')[0]}</b>,</p><p>tvoja súkromná hodina je rezervovaná:</p><ul style="color:#ccc"><li>🎓 Tréner: <b>${s.trainer_name}</b></li><li>📅 ${when}</li><li>⏱ ${s.duration_min||60} min</li><li>💶 ${price.toFixed(2)} €${disc.pct?` (so zľavou ${disc.pct} % — ${disc.plan})`:``} ${pay==='credit'?'(zaplatené kreditom)':'(platba na mieste)'}</li></ul><p><b>Storno podmienky:</b> bezplatné zrušenie najneskôr 24 hodín pred začiatkom. Pri neskoršom zrušení suma prepadá trénerovi.</p>`,
         '📱 Moje rezervácie',`${APP_URL}/client-dashboard`)).catch(()=>{});
-    res.json({ok:true, id:bk._id, price:s.price, pay});
+    res.json({ok:true, id:bk._id, price, pay});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 

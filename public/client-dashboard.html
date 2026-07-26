@@ -1639,10 +1639,16 @@ async function pvPick(tid){
   const d=await api('/api/private/slots?trainer_id='+tid);
   const slots=(d&&d.slots)||[];
   if(!slots.length){ host.innerHTML='<div style="color:var(--muted);font-size:.83rem">Tento tréner nemá voľné termíny.</div>'; return; }
-  host.innerHTML='<div style="font-size:.8rem;color:var(--muted);margin-bottom:8px">Voľné termíny:</div>'+slots.map(s=>`
-    <button onclick="pvBook('${s.id}',${s.price},'${escHtml(s.date)}','${escHtml(s.time_start)}')" style="display:inline-block;background:#161616;border:1px solid var(--gold-border,#332a18);color:var(--cream,#eee);border-radius:10px;padding:8px 12px;margin:0 8px 8px 0;cursor:pointer;font-size:.82rem">
-      <b>${s.date.split('-').reverse().join('.')}</b> ${s.time_start} · ${s.duration_min} min<br><span style="font-size:.72rem;color:var(--muted)">📍 ${escHtml(s.city)}${s.location?' · '+escHtml(s.location):''}</span> <b style="color:var(--gold)">${s.price.toFixed(2)} €</b>
-    </button>`).join('');
+  const discNote = d.discount_pct
+    ? `<div style="background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.3);border-radius:10px;padding:8px 12px;margin-bottom:8px;font-size:.8rem;color:#9fd894">🎁 Tvoje členstvo <b>${escHtml(d.discount_plan||'')}</b> = <b>−${d.discount_pct} %</b> na súkromné hodiny!</div>` : '';
+  host.innerHTML=discNote+'<div style="font-size:.8rem;color:var(--muted);margin-bottom:8px">Voľné termíny:</div>'+slots.map(s=>{
+    const my=(s.my_price!=null?s.my_price:s.price);
+    const priceHtml = d.discount_pct
+      ? `<span style="text-decoration:line-through;color:var(--muted);font-size:.72rem">${s.price.toFixed(2)} €</span> <b style="color:#4ade80">${my.toFixed(2)} €</b>`
+      : `<b style="color:var(--gold)">${my.toFixed(2)} €</b>`;
+    return `<button onclick="pvBook('${s.id}',${my},'${escHtml(s.date)}','${escHtml(s.time_start)}')" style="display:inline-block;background:#161616;border:1px solid var(--gold-border,#332a18);color:var(--cream,#eee);border-radius:10px;padding:8px 12px;margin:0 8px 8px 0;cursor:pointer;font-size:.82rem">
+      <b>${s.date.split('-').reverse().join('.')}</b> ${s.time_start} · ${s.duration_min} min<br><span style="font-size:.72rem;color:var(--muted)">📍 ${escHtml(s.city)}${s.location?' · '+escHtml(s.location):''}</span> ${priceHtml}
+    </button>`;}).join('');
 }
 async function pvBook(slotId, price, date, time){
   const credit=+(_me&&_me.referral_credit||0);
