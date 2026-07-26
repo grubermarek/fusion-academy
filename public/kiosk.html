@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Fusion Academy — Kiosk</title>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root{ --gold:#C9A84C; --gold2:#E7C878; --cream:#EFE6D0; --muted:#9B9078; --ground:#0B0A07; --card:#161310; }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none}
+  html,body{height:100%;overflow:hidden;background:var(--ground);color:var(--cream);font-family:'Helvetica Neue',system-ui,sans-serif;cursor:none}
+  /* ── vrstvy ── */
+  .layer{position:fixed;inset:0;display:none}
+  .layer.on{display:flex}
+  /* ── SLIDESHOW ── */
+  #stage{align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:5vmin;
+    background:radial-gradient(120% 90% at 50% -20%, rgba(201,168,76,.14), transparent 55%), var(--ground)}
+  .slide{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6vmin;text-align:center;opacity:0;transform:scale(1.04);transition:opacity 1.1s ease, transform 8s linear;pointer-events:none}
+  .slide.show{opacity:1;transform:scale(1)}
+  .kicker{font-size:2.2vmin;letter-spacing:.35em;text-transform:uppercase;color:var(--gold);font-weight:700;margin-bottom:2.5vmin}
+  .big{font-family:Georgia,serif;font-size:8vmin;line-height:1.05;max-width:82vw;text-wrap:balance}
+  .big .g{color:var(--gold2)}
+  .sub{font-size:2.8vmin;color:var(--muted);margin-top:2.5vmin;max-width:70vw;line-height:1.5}
+  .huge{font-family:Georgia,serif;font-size:16vmin;color:var(--gold2);line-height:1}
+  .chiprow{display:flex;gap:1.6vmin;flex-wrap:wrap;justify-content:center;margin-top:3vmin}
+  .chip{background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.35);border-radius:999px;padding:1.4vmin 3vmin;font-size:2.4vmin}
+  .progrow{display:flex;justify-content:space-between;align-items:center;gap:2vmin;width:min(80vw,900px);background:var(--card);border:1px solid rgba(201,168,76,.25);border-radius:2vmin;padding:2.4vmin 3vmin;margin-top:1.6vmin;font-size:2.8vmin;text-align:left}
+  .cap{font-variant-numeric:tabular-nums;color:var(--gold2);font-weight:800}
+  /* logo + hodiny hore */
+  #topbar{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:2.2vmin 3.2vmin;z-index:5}
+  #topbar .brand{font-size:2.4vmin;letter-spacing:.3em;text-transform:uppercase;color:var(--gold);font-weight:800}
+  #clock{font-variant-numeric:tabular-nums;font-size:2.6vmin;color:var(--muted)}
+  /* ── CHECK-IN CTA ── */
+  #cta{position:fixed;left:50%;bottom:4vmin;transform:translateX(-50%);z-index:6;
+    background:linear-gradient(135deg,var(--gold),#a07830);color:#141310;border:none;border-radius:999px;
+    padding:3vmin 7vmin;font-size:3.4vmin;font-weight:900;letter-spacing:.04em;cursor:pointer;
+    box-shadow:0 0 0 0 rgba(201,168,76,.5);animation:pulse 2.4s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(201,168,76,.45)}70%{box-shadow:0 0 0 3.2vmin rgba(201,168,76,0)}100%{box-shadow:0 0 0 0 rgba(201,168,76,0)}}
+  /* ── SCANNER ── */
+  #scan{background:rgba(6,5,3,.97);flex-direction:column;align-items:center;justify-content:center;gap:3vmin;z-index:20}
+  #qrbox{width:min(70vmin,520px);border-radius:2.4vmin;overflow:hidden;border:2px solid rgba(201,168,76,.5)}
+  #scanMsg{font-size:2.8vmin;color:var(--muted)}
+  #scanClose{background:none;border:1px solid rgba(201,168,76,.4);color:var(--gold);border-radius:999px;padding:1.8vmin 5vmin;font-size:2.6vmin;cursor:pointer}
+  /* ── WELCOME ── */
+  #welcome{background:radial-gradient(100% 100% at 50% 0%, rgba(201,168,76,.22), transparent 60%), var(--ground);
+    flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:2.4vmin;z-index:30}
+  #wAvatar{width:22vmin;height:22vmin;border-radius:50%;border:4px solid var(--gold);object-fit:cover;background:var(--card);
+    display:flex;align-items:center;justify-content:center;font-size:9vmin;font-family:Georgia,serif;color:var(--gold2)}
+  #wName{font-family:Georgia,serif;font-size:8vmin}
+  #wRows{display:flex;flex-direction:column;gap:1.4vmin;font-size:3.4vmin}
+  #wRows .r{opacity:0;transform:translateY(2vmin);animation:up .5s forwards}
+  @keyframes up{to{opacity:1;transform:none}}
+  /* ── NOC ── */
+  #night{background:#050503;flex-direction:column;align-items:center;justify-content:center;gap:2vmin;z-index:40}
+  #night .z{font-family:Georgia,serif;font-size:6vmin;color:rgba(201,168,76,.5)}
+  canvas#fx{position:fixed;inset:0;pointer-events:none;z-index:50}
+  #err{position:fixed;bottom:1vmin;left:1vmin;font-size:1.6vmin;color:#553}
+</style>
+</head>
+<body>
+<div id="topbar"><span class="brand">Fusion Academy · <span id="cityName"></span></span><span id="clock">--:--</span></div>
+
+<div class="layer on" id="stage"></div>
+<button id="cta" onclick="openScan()">✋ ŤUKNI A CHECKNI SA</button>
+
+<div class="layer" id="scan">
+  <div class="kicker">QR Check-in</div>
+  <div id="qrbox"></div>
+  <div id="scanMsg">Ukáž kamere svoj QR kód z appky 📱</div>
+  <button id="scanClose" onclick="closeScan()">Zavrieť</button>
+</div>
+
+<div class="layer" id="welcome"></div>
+
+<div class="layer" id="night">
+  <div class="brand" style="font-size:3vmin;letter-spacing:.3em;color:var(--gold)">FUSION ACADEMY</div>
+  <div class="z">Dobrú noc 🌙</div>
+  <div id="nightClock" style="font-size:5vmin;color:var(--muted);font-variant-numeric:tabular-nums"></div>
+</div>
+
+<canvas id="fx"></canvas>
+<div id="err"></div>
+
+<script>
+'use strict';
+/* ── Kontext: /kiosk/:studio?k=token ── */
+const SLUG = location.pathname.split('/').filter(Boolean)[1] || '';
+const KEY  = new URLSearchParams(location.search).get('k') || '';
+let CFG=null, DATA=null, slides=[], slideIdx=0, slideTimer=null, idleTimer=null, paused=false, qrReader=null, scanBusy=false;
+
+const $=id=>document.getElementById(id);
+const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+/* ── Statické obsahy ── */
+const HEALTH=[
+ ['🫀','Tanec podporuje srdce','Pravidelný tanec zlepšuje kondíciu srdca a ciev — už 2 hodiny týždenne robia rozdiel.'],
+ ['🔥','400–800 kcal za hodinu','Jedna hodina Zumby spáli toľko, čo hodina behu — a je pri tom zábava.'],
+ ['🧠','Posilňuje mozog','Učenie choreografií tvorí nové nervové spojenia a zlepšuje pamäť.'],
+ ['🧘','Menej stresu','Tanec preukázateľne znižuje hladinu kortizolu a zlepšuje náladu.'],
+ ['💧','Pi vodu!','Počas hodiny vypi aspoň pol litra — telo ti poďakuje.'],
+ ['🤸','Strečing po hodine','5 minút strečingu po tanci = menej svalovice a lepšia mobilita.'],
+ ['🛌','Regenerácia je tréning','Kvalitný spánok po tréningu je polovica výsledku.'],
+ ['🥗','Jedlo po hodine','Do 60 minút po tréningu si daj bielkoviny — svaly sa ti poďakujú.'],
+ ['🦴','Lepšie držanie tela','Tanec prirodzene narovnáva chrbát a posilňuje stred tela.'],
+ ['😊','Sebavedomie rastie','Každá zvládnutá choreografia = malé víťazstvo, ktoré si odnášaš zo sály.']];
+const APP_PROMO=[
+ ['📱','Rezervuj si hodiny v appke','Dva kliky a máš miesto. Žiadne volanie, žiadne čakanie.'],
+ ['⭐','Zbieraj body a odznaky','Každá hodina sa počíta — súťaž o Klientku mesiaca beží stále.'],
+ ['👯','Komunita','Fotky, výzvy, ankety a kamarátky — všetko v appke.'],
+ ['🤝','Priveď kamarátku','Ona má prvú hodinu zadarmo, ty odmenu z referral programu.'],
+ ['✨','Súkromné hodiny','Tréner len pre teba — vyber si termín z kalendára v appke.'],
+ ['🍽️','Jedálničky na mieru','Gold členky majú týždenné jedálničky na jeden klik.']];
+const UPSELL=[
+ ['🥇','GOLD členstvo','Neobmedzené hodiny + jedálniček + −30 % na súkromné hodiny.'],
+ ['🥈','SILVER členstvo','Neobmedzené hodiny + online prístup + −20 % na súkromky.'],
+ ['🎟️','Permanentka 10 vstupov','80 € · bez záväzku · platí 3 mesiace.'],
+ ['✨','Súkromná hodina od 25 €/h','1:1 s trénerom — svadobný tanec, technika, čokoľvek.'],
+ ['🎽','Fusion merch','Tričká, tielka a tašky — spýtaj sa trénera alebo pozri e-shop v appke.']];
+const QUOTES=[
+ 'Nikto sa na teba nepozerá.\nKaždý rieši samého seba. 😊',
+ 'Nemusíš byť dokonalá.\nStačí prísť.',
+ 'Tancuj, ako keby sa nikto nedíval.',
+ 'Najťažší krok je ten\ncez prah dverí. Ten už máš za sebou.',
+ 'Energia, ktorú dnes dáš parketu,\nsa ti vráti dvojnásobne.'];
+const CHALLENGES=[
+ '💪 Výzva týždňa: príď 3× tento týždeň!',
+ '👯 Výzva: priveď kamarátku — má prvú hodinu zadarmo!',
+ '📸 Výzva: zdieľaj fotku z hodiny do komunity!',
+ '⭐ Výzva: nazbieraj tento mesiac 50 bodov!'];
+
+/* ── Slide builder ── */
+function buildSlides(){
+  const W=(CFG.widgets)||{}; const S=[];
+  const add=(html)=>S.push(html);
+  if(CFG.announcement) add(sl('Oznam','📢','<div class="big">'+esc(CFG.announcement)+'</div>'));
+  if(DATA.running) add(sl('Práve prebieha','🤫',
+    '<div class="big">Hodina práve prebieha<br><span class="g">'+esc(DATA.running.emoji+' '+DATA.running.name)+'</span></div>'+
+    (DATA.next?'<div class="sub">Ďalšia hodina: <b style="color:var(--cream)">'+esc(DATA.next.time_start)+' '+esc(DATA.next.name)+'</b></div>':'')+
+    '<div class="sub">Ďakujeme, že netlačíš na dvere 💛</div>'));
+  if(W.program!==false && DATA.program.length){
+    add(sl('Dnešný program','🗓️','<div class="big">Dnes v štúdiu <span class="g">'+esc(DATA.city)+'</span></div>'+
+      DATA.program.map(p=>'<div class="progrow"><span>'+esc(p.emoji)+' <b>'+esc(p.name)+'</b> · '+esc(p.instructor)+'</span><span>'+esc(p.time_start)+'–'+esc(p.time_end||'')+' · <span class="cap">'+p.booked+'/'+p.capacity+'</span></span></div>').join('')));
+  }
+  if(W.stats!==false) add(sl('Naša komunita','🔥',
+    '<div class="big">Dnes už odtancovalo</div><div class="huge">'+DATA.stats.today+'</div><div class="sub">členiek · tento týždeň '+DATA.stats.week+' návštev · celkovo '+DATA.stats.total.toLocaleString('sk')+' hodín spolu</div>'));
+  if(W.klient_mesiaca!==false && DATA.spotlight && DATA.spotlight.length){
+    add(sl('Klientka mesiaca','🏆','<div class="big">Najaktívnejšie tento mesiac</div><div class="chiprow">'+
+      DATA.spotlight.map((s,i)=>'<span class="chip">'+['🥇','🥈','🥉'][i]+' <b>'+esc(s.name)+'</b> · '+s.visits+' hodín</span>').join('')+'</div>'));
+  }
+  if(W.birthdays!==false && DATA.birthdays.length){
+    add(sl('Dnes oslavuje','🎂','<div class="big">Všetko najlepšie, <span class="g">'+DATA.birthdays.map(b=>esc(b.name.split(' ')[0])).join(' & ')+'</span>! 🎉</div><div class="sub">Zaželaj im na hodine 💛</div>'));
+  }
+  if(DATA.promo_class && DATA.promo_class.booked < DATA.promo_class.capacity*0.6){
+    add(sl('Ešte je miesto','👟','<div class="big">'+esc(DATA.promo_class.emoji+' '+DATA.promo_class.name)+' o <span class="g">'+esc(DATA.promo_class.time_start)+'</span></div><div class="sub">Voľných ešte '+(DATA.promo_class.capacity-DATA.promo_class.booked)+' miest — rezervuj v appke alebo príď rovno!</div>'));
+  }
+  if(W.upsell!==false) UPSELL.forEach(u=>add(sl('Pre teba','🛍️',card(u))));
+  if(W.health!==false) HEALTH.forEach(h=>add(sl('Vedela si, že…','💡',card(h))));
+  if(W.app_promo!==false) APP_PROMO.forEach(p=>add(sl('Fusion appka','📲',card(p)+qrApp())));
+  if(W.referral!==false) add(sl('Referral program','🤝','<div class="big">Priveď kamarátku —<br><span class="g">obe získate</span></div><div class="sub">Ona prvú hodinu zadarmo, ty odmenu do kreditu. Zdieľaj svoj link z appky!</div>'));
+  if(W.challenge!==false) add(sl('Výzva','🎯','<div class="big">'+esc(CHALLENGES[new Date().getDate()%CHALLENGES.length])+'</div>'));
+  QUOTES.forEach(qt=>add(sl('Fusion Academy','💛','<div class="big">'+esc(qt).replace(/\n/g,'<br>')+'</div>')));
+  if(W.custom!==false) (CFG.custom_slides||[]).forEach(c=>add(sl('Oznam',''+(c.emoji||'✨'),'<div class="big">'+esc(c.title)+'</div>'+(c.text?'<div class="sub">'+esc(c.text)+'</div>':''))));
+  return S;
+}
+function sl(kick, emoji, inner){ return '<div class="kicker">'+esc(emoji)+' '+esc(kick)+'</div>'+inner; }
+function card([e,t,d]){ return '<div style="font-size:10vmin">'+e+'</div><div class="big" style="font-size:6.5vmin">'+esc(t)+'</div><div class="sub">'+esc(d)+'</div>'; }
+function qrApp(){ return '<img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&bgcolor=0B0A07&color=C9A84C&data='+encodeURIComponent(DATA.app_url)+'" style="margin-top:3vmin;border-radius:1.6vmin;border:1px solid rgba(201,168,76,.4);width:18vmin;height:18vmin" alt="QR">'; }
+
+/* ── Slideshow engine ── */
+function showSlide(i){
+  const stage=$('stage');
+  const old=stage.querySelector('.slide.show');
+  const div=document.createElement('div'); div.className='slide'; div.innerHTML=slides[i];
+  stage.appendChild(div);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>div.classList.add('show')));
+  if(old){ old.classList.remove('show'); setTimeout(()=>old.remove(), 1300); }
+}
+function nextSlide(){ if(!slides.length) return; slideIdx=(slideIdx+1)%slides.length; showSlide(slideIdx); }
+function startShow(){ stopShow(); if(!slides.length) return; showSlide(slideIdx%slides.length); slideTimer=setInterval(nextSlide, (CFG.interval_s||12)*1000); }
+function stopShow(){ if(slideTimer){ clearInterval(slideTimer); slideTimer=null; } }
+
+/* ── Idle / touch ── */
+function poke(){
+  if(paused){ /* už pozastavené */ } else { stopShow(); paused=true; }
+  clearTimeout(idleTimer);
+  idleTimer=setTimeout(()=>{ paused=false; startShow(); }, (CFG?CFG.idle_s:15)*1000);
+}
+['pointerdown','touchstart'].forEach(ev=>document.addEventListener(ev, e=>{
+  if(e.target.closest('#cta')||e.target.closest('#scan')||e.target.closest('#scanClose')) return;
+  poke();
+  if(document.fullscreenElement==null && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
+},{passive:true}));
+
+/* ── Scanner ── */
+async function openScan(){
+  stopShow(); clearTimeout(idleTimer);
+  $('scan').classList.add('on');
+  $('scanMsg').textContent='Ukáž kamere svoj QR kód z appky 📱';
+  try{
+    qrReader=new Html5Qrcode('qrbox');
+    await qrReader.start({facingMode:'user'}, {fps:10, qrbox:260}, onScan, ()=>{});
+  }catch(e){
+    try{ qrReader=new Html5Qrcode('qrbox'); await qrReader.start({facingMode:'environment'}, {fps:10, qrbox:260}, onScan, ()=>{}); }
+    catch(e2){ $('scanMsg').textContent='❌ Kamera sa nedá spustiť — povoľ prístup ku kamere.'; }
+  }
+}
+async function closeScan(){
+  if(qrReader){ try{ await qrReader.stop(); qrReader.clear(); }catch(e){} qrReader=null; }
+  $('scan').classList.remove('on'); scanBusy=false;
+  paused=false; startShow();
+}
+async function onScan(txt){
+  if(scanBusy) return; scanBusy=true;
+  $('scanMsg').textContent='⏳ Overujem…';
+  try{
+    const r=await fetch('/api/kiosk/checkin',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({studio:SLUG, k:KEY, qr_data:txt})});
+    const d=await r.json();
+    if(r.ok && d.ok){ await closeScan(); showWelcome(d); }
+    else { $('scanMsg').textContent='⚠️ '+(d.error||'Skús to znova'); setTimeout(()=>{scanBusy=false; $('scanMsg').textContent='Ukáž kamere svoj QR kód z appky 📱';}, 3500); }
+  }catch(e){ $('scanMsg').textContent='⚠️ Chyba spojenia — skús znova.'; scanBusy=false; }
+}
+
+/* ── Welcome ── */
+function showWelcome(d){
+  const u=d.user; const w=$('welcome');
+  const av=u.av ? '<img id="wAvatar" src="/api/avatar/'+u.id+'">' : '<div id="wAvatar">'+esc((u.first||'?')[0])+'</div>';
+  const rows=[];
+  if(u.birthday) rows.push('🎂 Všetko najlepšie k narodeninám!');
+  rows.push(d.already ? '✅ Dnes si už checknutá — vidíme sa na parkete!' : '⭐ +'+u.points_gain+' bodov do mesačnej súťaže');
+  if(u.streak_weeks>1) rows.push('🔥 Séria '+u.streak_weeks+' týždňov po sebe!');
+  rows.push('👣 Celkovo '+u.visit_count+' hodín · '+esc(d.class_name));
+  rows.push('❤️ Ďakujeme, že si prišla.');
+  w.innerHTML=av+'<div id="wName">'+(u.birthday?'🎉':'👋')+' Vitaj, <span style="color:var(--gold2)">'+esc(u.first)+'</span>!</div>'+
+    '<div id="wRows">'+rows.map((r,i)=>'<div class="r" style="animation-delay:'+(0.3+i*0.35)+'s">'+r+'</div>').join('')+'</div>';
+  w.classList.add('on');
+  burstFx(u.birthday?'birthday':(u.streak_weeks>3?'fire':'confetti'));
+  setTimeout(()=>{ w.classList.remove('on'); paused=false; startShow(); }, 6500);
+}
+
+/* ── Efekty (konfety/oheň/srdcia) ── */
+const fx=$('fx'), ctx=fx.getContext('2d'); let parts=[];
+function sizeFx(){ fx.width=innerWidth; fx.height=innerHeight; } sizeFx(); addEventListener('resize', sizeFx);
+function burstFx(kind){
+  const COLORS=kind==='fire'?['#ff6b35','#f7c548','#ff3b30']:kind==='birthday'?['#C9A84C','#E7C878','#ff6fa5','#7ec8ff']:['#C9A84C','#E7C878','#EFE6D0','#a07830'];
+  const glyph=kind==='hearts'?'❤':null;
+  for(let i=0;i<160;i++) parts.push({x:Math.random()*fx.width, y:-20-Math.random()*fx.height*0.5, vx:(Math.random()-0.5)*2.2, vy:2+Math.random()*3.4, r:4+Math.random()*7, c:COLORS[i%COLORS.length], a:1, g:glyph, rot:Math.random()*6.28, vr:(Math.random()-0.5)*0.2});
+  animFx();
+}
+let fxRun=false;
+function animFx(){
+  if(fxRun) return; fxRun=true;
+  const step=()=>{
+    ctx.clearRect(0,0,fx.width,fx.height);
+    parts.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.rot+=p.vr; p.a-=0.004;
+      ctx.save(); ctx.globalAlpha=Math.max(p.a,0); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.c;
+      if(p.g){ ctx.font=p.r*3+'px serif'; ctx.fillText(p.g,0,0); } else ctx.fillRect(-p.r/2,-p.r/2,p.r,p.r*0.6);
+      ctx.restore(); });
+    parts=parts.filter(p=>p.a>0 && p.y<fx.height+30);
+    if(parts.length){ requestAnimationFrame(step); } else { fxRun=false; ctx.clearRect(0,0,fx.width,fx.height); }
+  };
+  requestAnimationFrame(step);
+}
+
+/* ── Noc ── */
+function inNight(){
+  if(!CFG) return false;
+  const now=new Date().toTimeString().slice(0,5);
+  const off=CFG.night_off||'21:30', on=CFG.night_on||'07:30';
+  return off>on ? (now>=off || now<on) : (now>=off && now<on);
+}
+function tickNight(){
+  const n=inNight();
+  $('night').classList.toggle('on', n);
+  $('cta').style.display = n?'none':'block';
+  if(n){ stopShow(); $('nightClock').textContent=new Date().toTimeString().slice(0,5); }
+  else if(!slideTimer && !paused && !$('scan').classList.contains('on') && !$('welcome').classList.contains('on')) startShow();
+}
+
+/* ── Hodiny + refresh ── */
+setInterval(()=>{ $('clock').textContent=new Date().toTimeString().slice(0,5); tickNight(); }, 1000*15);
+$('clock').textContent=new Date().toTimeString().slice(0,5);
+
+async function loadContent(first){
+  try{
+    const r=await fetch('/api/kiosk/content?studio='+encodeURIComponent(SLUG)+'&k='+encodeURIComponent(KEY));
+    const d=await r.json();
+    if(!r.ok||!d.ok){ $('stage').innerHTML='<div class="big" style="align-self:center">🔒 '+esc(d.error||'Kiosk nie je aktivovaný')+'</div>'; return; }
+    DATA=d; CFG=d.config; $('cityName').textContent=d.city;
+    slides=buildSlides();
+    if(first){ slideIdx=0; startShow(); tickNight(); }
+  }catch(e){ $('err').textContent='offline — skúsim znova'; }
+}
+loadContent(true);
+setInterval(()=>loadContent(false), 60*1000); // sync zmien z adminu
+
+/* Wake Lock — nech tablet nezhasína */
+async function wakeLock(){ try{ if('wakeLock' in navigator) await navigator.wakeLock.request('screen'); }catch(e){} }
+wakeLock(); document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) wakeLock(); });
+</script>
+</body>
+</html>

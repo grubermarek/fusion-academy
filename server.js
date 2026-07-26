@@ -911,6 +911,39 @@ async function seedData() {
     console.log(`✅  Rolové odznaky personálu: aktualizovaných ${fixed} starých správ/príspevkov`);
   }
 
+  // Online rozvrh v2: Po 17 BB · Po 19 ZV · St 17 ZV · St 19 BB · Pi 19 DT · Ne 19 DT (všetko Zumba LIVE)
+  if(!(await q.one(db.settings,{key:'online_schedule_v2'}))){
+    const beata = await q.one(db.users,{name:/Beáta Gruber/i}) || {};
+    const ONLINE_V2=[
+      {dow:1, start:'17:00', end:'18:00', src:'Banská Bystrica'},
+      {dow:1, start:'19:00', end:'20:00', src:'Zvolen'},
+      {dow:3, start:'17:00', end:'18:00', src:'Zvolen'},
+      {dow:3, start:'19:00', end:'20:00', src:'Banská Bystrica'},
+      {dow:5, start:'19:00', end:'20:00', src:'Detva'},
+      {dow:0, start:'19:00', end:'20:00', src:'Detva'},
+    ];
+    // vypni staré online hodiny, ktoré nesedia s novým rozvrhom
+    const oldOnline=await q.find(db.classes,{category:'Online', active:true});
+    for(const c of oldOnline){
+      const keep=ONLINE_V2.some(o=>o.dow===c.day_of_week && o.start===c.time_start);
+      if(!keep) await q.update(db.classes,{_id:c._id},{$set:{active:false, deactivated_reason:'online_schedule_v2'}});
+    }
+    let added=0;
+    for(const o of ONLINE_V2){
+      const dup=await q.one(db.classes,{category:'Online', day_of_week:o.dow, time_start:o.start, active:true});
+      if(dup){ await q.update(db.classes,{_id:dup._id},{$set:{stream_city:o.src, address:'Živé vysielanie – '+o.src}}); continue; }
+      await q.insert(db.classes,{ name:'Zumba ONLINE – LIVE', emoji:'🌐', category:'Online',
+        instructor:beata.name||'Fusion Academy', instructor_id:beata._id||null,
+        location:'Online', stream_city:o.src, address:'Živé vysielanie – '+o.src,
+        day_of_week:o.dow, time_start:o.start, time_end:o.end, capacity:100, level:'Všetky úrovne',
+        description:'Živá online Zumba z mesta '+o.src+'. Tancuj z obývačky — počíta sa do bodov aj odznakov!',
+        price:6, color:'#2196f3', active:true, created_at:nowISO() });
+      added++;
+    }
+    await q.insert(db.settings,{key:'online_schedule_v2', value:true, at:nowISO()});
+    console.log(`✅  Online rozvrh v2: ${added} hodín pridaných (Po/St/Pi/Ne)`);
+  }
+
   // Promo kód pre návrat odídených klientov (30% na prvý mesiac)
   if(!await q.one(db.promo_codes,{code:'VITAJSPAT'})){
     await q.insert(db.promo_codes,{ code:'VITAJSPAT', type:'percent', value:30, applies_to:'membership',
@@ -7041,6 +7074,226 @@ app.get('/api/notifications/count', auth, async(req,res)=>{
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ONLINE HODINY — dashboard banner (blíži sa / LIVE) + notifikácie pri štarte
+// ═══════════════════════════════════════════════════════════════════════════════
+let _liveKeysCache={at:0, keys:new Set()};
+async function liveStreamKeys(){
+  const base=(process.env.MEDIA_BASE||'').replace(/\/$/,'');
+  if(!base) return new Set();
+  if(Date.now()-_liveKeysCache.at<30000) return _liveKeysCache.keys;
+  try{
+    const r=await fetch(base+'/api/streams'); const d=await r.json();
+    _liveKeysCache={at:Date.now(), keys:new Set(d.live||[])};
+  }catch(e){ _liveKeysCache={at:Date.now(), keys:new Set()}; }
+  return _liveKeysCache.keys;
+}
+// Najbližšia dnešná online hodina (90 min pred štartom až do konca) + stav pre používateľa
+app.get('/api/online/upcoming', auth, async(req,res)=>{
+  try{
+    const dow=new Date().getDay();
+    const toMin=t=>{ const [h,m]=String(t||'0:0').split(':').map(Number); return h*60+m; };
+    const nowMin=(d=>d.getHours()*60+d.getMinutes())(new Date());
+    const classes=(await q.find(db.classes,{category:'Online', active:true, day_of_week:dow}))
+      .sort((a,b)=>(a.time_start||'').localeCompare(b.time_start||''));
+    const cls=classes.find(c=> nowMin>=toMin(c.time_start)-90 && nowMin<toMin(c.time_end||c.time_start)+5 );
+    if(!cls) return res.json({ok:true, upcoming:null});
+    const m=await checkMembership(req.session.uid);
+    const plan=m?MEMBERSHIP_PLANS[m.plan_id]||null:null;
+    const hasAccess=!!(plan&&plan.online);
+    const liveKeys=await liveStreamKeys();
+    const running = nowMin>=toMin(cls.time_start);
+    const live = (cls.stream_key && liveKeys.has(cls.stream_key)) || running; // bez media servera = podľa času
+    const booked = !!(await q.one(db.bookings,{class_id:cls._id, user_id:req.session.uid, booking_date:today(), status:{$ne:'cancelled'}}));
+    res.json({ok:true, upcoming:{ id:cls._id, name:cls.name, time_start:cls.time_start, time_end:cls.time_end,
+      src:cls.stream_city||'', starts_in_min:Math.max(0,toMin(cls.time_start)-nowMin), running, live,
+      has_access:hasAccess, plan_id:m?m.plan_id:null, booked }});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Ticker: keď online hodina začne, pošli notifikáciu všetkým s online prístupom (raz/deň/hodinu)
+setInterval(async()=>{
+  try{
+    const dow=new Date().getDay(); const nowHM=new Date().toTimeString().slice(0,5);
+    const classes=await q.find(db.classes,{category:'Online', active:true, day_of_week:dow, time_start:nowHM});
+    for(const cls of classes){
+      const guardKey='online_live_'+cls._id+'_'+today();
+      if(await q.one(db.settings,{key:guardKey})) continue;
+      await q.insert(db.settings,{key:guardKey, value:true, at:nowISO()});
+      const membs=(await q.find(db.memberships,{status:'active'})).filter(m=>(m.expires_at||'')>new Date().toISOString());
+      const notified=new Set();
+      for(const m of membs){
+        const plan=MEMBERSHIP_PLANS[m.plan_id];
+        if(!plan||!plan.online||notified.has(m.user_id)) continue;
+        notified.add(m.user_id);
+        await q.insert(db.notifications,{user_id:m.user_id, type:'online_live',
+          title:'🔴 Online Zumba PRÁVE ZAČÍNA!', body:`Živé vysielanie z mesta ${cls.stream_city||''} beží. Pripoj sa jedným klikom!`,
+          link:'/online', read:false, created_at:nowISO()}).catch(()=>{});
+      }
+      console.log(`🔴 Online LIVE notifikácie: ${notified.size} členov (${cls.time_start} ${cls.stream_city||''})`);
+    }
+  }catch(e){}
+}, 60*1000);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// KIOSK MODE — digitálna recepcia (fullscreen tablet pri vstupe do štúdia)
+// ═══════════════════════════════════════════════════════════════════════════════
+const KIOSK_STUDIOS = { detva:'Detva', zvolen:'Zvolen', bb:'Banská Bystrica', brezno:'Brezno', podbrezova:'Podbrezová' };
+const KIOSK_DEFAULT_WIDGETS = { program:true, stats:true, klient_mesiaca:true, birthdays:true, upsell:true, health:true, app_promo:true, referral:true, challenge:true, custom:true };
+async function kioskConfig(){
+  let s = await q.one(db.settings,{key:'kiosk_config'});
+  if(!s){
+    const studios={};
+    for(const slug of Object.keys(KIOSK_STUDIOS)){
+      studios[slug]={ enabled:false, token:require('crypto').randomBytes(12).toString('hex'),
+        interval_s:12, idle_s:15, night_off:'21:30', night_on:'07:30',
+        widgets:{...KIOSK_DEFAULT_WIDGETS}, announcement:'', custom_slides:[] };
+    }
+    s = await q.insert(db.settings,{key:'kiosk_config', value:{studios}, at:nowISO()});
+  }
+  return s.value;
+}
+async function kioskAuth(req,res){
+  const slug=String(req.params.studio||req.query.studio||req.body?.studio||'').toLowerCase();
+  if(!KIOSK_STUDIOS[slug]){ res.status(404).json({error:'Neznáme štúdio'}); return null; }
+  const cfg=await kioskConfig();
+  const st=cfg.studios[slug];
+  const k=String(req.query.k||req.body?.k||'');
+  if(!st || !st.enabled || k!==st.token){ res.status(403).json({error:'Kiosk nie je aktivovaný alebo neplatný kľúč'}); return null; }
+  return { slug, city:KIOSK_STUDIOS[slug], st, cfg };
+}
+// Séria: po sebe idúce týždne s aspoň 1 absolvovanou hodinou
+function weekKey(d){ const x=new Date(d+'T12:00:00'); const day=(x.getDay()+6)%7; x.setDate(x.getDate()-day); return x.toISOString().slice(0,10); }
+async function visitStreakWeeks(userId){
+  const bks=(await q.find(db.bookings,{user_id:userId, status:'attended'})).map(b=>b.booking_date||(b.created_at||'').slice(0,10)).filter(Boolean);
+  const weeks=new Set(bks.map(weekKey));
+  let streak=0; let cur=weekKey(today());
+  while(weeks.has(cur) && streak<99){ streak++; const d=new Date(cur+'T12:00:00'); d.setDate(d.getDate()-7); cur=d.toISOString().slice(0,10); }
+  return streak;
+}
+
+// Obsah pre kiosk (slideshow dáta) — token-auth, žiadne osobné citlivé údaje
+app.get('/api/kiosk/content', async(req,res)=>{
+  try{
+    const a=await kioskAuth(req,res); if(!a) return;
+    const {city, st}=a;
+    const todayS=today(); const dow=new Date().getDay();
+    const nowHM=new Date().toTimeString().slice(0,5);
+    // Dnešný program v tomto meste
+    const classes=(await q.find(db.classes,{active:true}))
+      .filter(c=>c.day_of_week===dow && (c.location||'').toLowerCase().includes(city.toLowerCase().split(' ')[0].toLowerCase()));
+    const program=[];
+    let running=null, next=null;
+    for(const c of classes.sort((x,y)=>(x.time_start||'').localeCompare(y.time_start||''))){
+      const booked=await q.count(db.bookings,{class_id:c._id, booking_date:todayS, status:{$in:['confirmed','attended']}});
+      const item={ name:c.name, emoji:c.emoji||'💃', time_start:c.time_start, time_end:c.time_end, booked, capacity:c.capacity||30, instructor:c.instructor||'' };
+      program.push(item);
+      if(c.time_start<=nowHM && nowHM<(c.time_end||'23:59')) running=item;
+      else if(c.time_start>nowHM && !next) next=item;
+    }
+    // Štatistiky
+    const allB=await q.find(db.bookings,{});
+    const todayAtt=allB.filter(b=>b.booking_date===todayS && b.status==='attended').length;
+    const mon=new Date(); mon.setDate(mon.getDate()-((mon.getDay()+6)%7)); const monS=mon.toISOString().slice(0,10);
+    const weekAtt=allB.filter(b=>(b.booking_date||'')>=monS && ['attended','confirmed'].includes(b.status)).length;
+    const totalAtt=allB.filter(b=>b.status==='attended').length;
+    // Klient mesiaca + narodeniny (mená sú verejné v komunite; kiosk je v štúdiu)
+    let spotlight=null, bdays=[];
+    try{
+      const monthStr=todayS.slice(0,7);
+      const users=(await q.find(db.users,{is_admin:{$ne:true}})).filter(u=>u.user_type!=='trainer'&&!u.is_child&&!u.anonymous&&!(u.imported&&!u.claimed));
+      const mmdd=todayS.slice(5);
+      bdays=users.filter(u=>(u.birthday||'').slice(5)===mmdd).map(u=>({name:u.name, av:!!u.avatar, id:u._id}));
+      const att={}; allB.forEach(b=>{ if((b.booking_date||'').startsWith(monthStr)&&['attended','confirmed'].includes(b.status)&&b.user_id) att[b.user_id]=(att[b.user_id]||0)+1; });
+      const top=Object.entries(att).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([id,n])=>{ const u=users.find(x=>x._id===id); return u?{name:u.name, visits:n, av:!!u.avatar, id}:null; }).filter(Boolean);
+      spotlight=top;
+    }catch(e){}
+    // Málo obsadené dnešné hodiny (promo)
+    const promoClass=program.filter(p=>!running||p!==running).sort((x,y)=>(x.booked/x.capacity)-(y.booked/y.capacity))[0]||null;
+    res.json({ ok:true, city, now:nowHM,
+      config:{ interval_s:st.interval_s||12, idle_s:st.idle_s||15, night_off:st.night_off||'21:30', night_on:st.night_on||'07:30', widgets:st.widgets||KIOSK_DEFAULT_WIDGETS, announcement:st.announcement||'', custom_slides:st.custom_slides||[] },
+      program, running, next,
+      stats:{ today:todayAtt, week:weekAtt, total:totalAtt },
+      spotlight, birthdays:bdays,
+      promo_class:promoClass,
+      app_url:APP_URL });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// QR check-in z kiosku: nájde bežiacu/najbližšiu dnešnú hodinu v meste a zapíše účasť
+app.post('/api/kiosk/checkin', async(req,res)=>{
+  try{
+    const a=await kioskAuth(req,res); if(!a) return;
+    const {city}=a;
+    const qr=String(req.body.qr_data||'');
+    const userId = qr.startsWith('FA:') ? qr.slice(3) : qr;
+    const u=await q.one(db.users,{_id:userId});
+    if(!u) return res.status(404).json({error:'Neplatný QR kód — skús to znova alebo sa ozvi trénerovi.'});
+    // Cieľová hodina: beží práve teraz (±15 min pred začiatkom), inak najbližšia dnešná do 90 min
+    const todayS=today(); const dow=new Date().getDay(); const nowMin=(d=>d.getHours()*60+d.getMinutes())(new Date());
+    const toMin=t=>{ const [h,m]=String(t||'0:0').split(':').map(Number); return h*60+m; };
+    const classes=(await q.find(db.classes,{active:true, day_of_week:dow}))
+      .filter(c=>(c.location||'').toLowerCase().includes(city.toLowerCase().split(' ')[0].toLowerCase()))
+      .sort((x,y)=>(x.time_start||'').localeCompare(y.time_start||''));
+    let cls=classes.find(c=>nowMin>=toMin(c.time_start)-15 && nowMin<toMin(c.time_end||c.time_start)+60);
+    if(!cls) cls=classes.find(c=>toMin(c.time_start)>nowMin && toMin(c.time_start)-nowMin<=90);
+    if(!cls) return res.status(400).json({error:'Dnes tu už nie je žiadna hodina na check-in.'});
+    // Zapíš účasť (rovnaká logika ako trénerský QR check-in)
+    const exists=await q.one(db.bookings,{class_id:cls._id, user_id:u._id, booking_date:todayS, status:{$ne:'cancelled'}});
+    let already=false, vc=u.visit_count||0;
+    if(exists){
+      already = exists.status==='attended';
+      await q.update(db.bookings,{_id:exists._id},{$set:{status:'attended', attended_at:nowISO(), attended_by:'kiosk_'+a.slug}});
+      if(!already && !exists.is_child_booking) vc=await creditAttendance(u);
+    } else {
+      const mem=await checkMembership(u._id);
+      const hasMem=mem&&mem.status==='active', hasFree=!u.free_class_used, hasSingle=(u.single_entries||0)>0, hasCredit=(u.free_credits||0)>0;
+      if(!hasMem&&!hasFree&&!hasSingle&&!hasCredit) return res.status(402).json({error:'Nemáš aktívne členstvo ani vstup — ozvi sa prosím trénerovi na hodine. 💛', name:u.name});
+      const upd={};
+      if(!hasMem){ if(hasFree) upd.free_class_used=true; else if(hasCredit) upd.free_credits=(u.free_credits||0)-1; else if(hasSingle) upd.single_entries=(u.single_entries||0)-1; }
+      if(Object.keys(upd).length) await q.update(db.users,{_id:u._id},{$set:upd});
+      await q.insert(db.bookings,{ class_id:cls._id, class_name:cls.name, class_emoji:cls.emoji||'💃',
+        class_location:cls.location, class_time_start:cls.time_start, day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
+        user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||'',
+        booking_date:todayS, status:'attended', attended_at:nowISO(), attended_by:'kiosk_'+a.slug, notes:'kiosk', created_at:nowISO() });
+      vc=await creditAttendance(u);
+    }
+    const streak=await visitStreakWeeks(u._id);
+    const birthdayToday=(u.birthday||'').slice(5)===todayS.slice(5);
+    res.json({ ok:true, already,
+      user:{ id:u._id, name:u.name, first:(u.name||'').split(' ')[0], av:!!u.avatar, visit_count:vc,
+        points_gain:5, streak_weeks:streak, birthday:birthdayToday },
+      class_name:cls.name });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Admin: čítanie/úprava nastavení kiosku
+app.get('/api/admin/kiosk', adminAuth, async(req,res)=>{
+  const cfg=await kioskConfig();
+  res.json({ ok:true, studios:Object.entries(cfg.studios).map(([slug,s])=>({slug, city:KIOSK_STUDIOS[slug], ...s, url:`${APP_URL}/kiosk/${slug}?k=${s.token}`})) });
+});
+app.put('/api/admin/kiosk/:studio', adminAuth, async(req,res)=>{
+  try{
+    const slug=String(req.params.studio||'').toLowerCase();
+    if(!KIOSK_STUDIOS[slug]) return res.status(404).json({error:'Neznáme štúdio'});
+    const s=await q.one(db.settings,{key:'kiosk_config'});
+    const cfg=s.value; const st=cfg.studios[slug];
+    const b=req.body||{};
+    if(b.enabled!==undefined) st.enabled=!!b.enabled;
+    if(b.interval_s!==undefined) st.interval_s=Math.min(Math.max(+b.interval_s||12,5),120);
+    if(b.idle_s!==undefined) st.idle_s=Math.min(Math.max(+b.idle_s||15,5),300);
+    if(/^\d{2}:\d{2}$/.test(b.night_off||'')) st.night_off=b.night_off;
+    if(/^\d{2}:\d{2}$/.test(b.night_on||'')) st.night_on=b.night_on;
+    if(b.widgets && typeof b.widgets==='object'){ for(const k of Object.keys(KIOSK_DEFAULT_WIDGETS)) if(b.widgets[k]!==undefined) st.widgets={...KIOSK_DEFAULT_WIDGETS,...st.widgets,[k]:!!b.widgets[k]}; }
+    if(b.announcement!==undefined) st.announcement=String(b.announcement).slice(0,300);
+    if(Array.isArray(b.custom_slides)) st.custom_slides=b.custom_slides.slice(0,20).map(x=>({emoji:String(x.emoji||'✨').slice(0,8), title:String(x.title||'').slice(0,80), text:String(x.text||'').slice(0,300)}));
+    if(b.regen_token) st.token=require('crypto').randomBytes(12).toString('hex');
+    await q.update(db.settings,{_id:s._id},{$set:{value:cfg, at:nowISO()}});
+    await auditLog(req,'kiosk_update',slug,null,{enabled:st.enabled},'');
+    res.json({ok:true, token:st.token, url:`${APP_URL}/kiosk/${slug}?k=${st.token}`});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // CONTACT FORM
 // ═══════════════════════════════════════════════════════════════════════════════
 app.post('/api/contact', async(req,res)=>{
@@ -7152,6 +7405,16 @@ const trainerAuth = async(req,res,next)=>{
   req.effectiveTrainer = (u.is_assistant && u.assistant_of) ? (await q.one(db.users,{_id:u.assistant_of})||u) : u;
   next();
 };
+
+// Tréner: linky na spustenie kiosku (len zapnuté štúdiá)
+app.get('/api/trainer/kiosk-links', trainerAuth, async(req,res)=>{
+  const cfg=await kioskConfig();
+  const links=Object.entries(cfg.studios).filter(([,s])=>s.enabled)
+    .map(([slug,s])=>({slug, city:KIOSK_STUDIOS[slug], url:`${APP_URL}/kiosk/${slug}?k=${s.token}`}));
+  res.json({ok:true, links});
+});
+
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SÚKROMNÉ HODINY — kalendár trénera, booking klienta, 24h storno, účtovanie
@@ -9881,6 +10144,7 @@ app.delete('/api/admin/campaigns/:id', adminAuth, async(req,res)=>{
 // PAGES
 // ═══════════════════════════════════════════════════════════════════════════════
 app.get('/',           (req,res)=>res.sendFile(path.join(__dirname,'public','index.html')));
+app.get('/kiosk/:studio', (req,res)=>res.sendFile(path.join(__dirname,'public','kiosk.html')));
 app.get('/shop',       (req,res)=>res.sendFile(path.join(__dirname,'public','shop.html')));
 app.get('/schedule',   (req,res)=>res.sendFile(path.join(__dirname,'public','schedule.html')));
 app.get('/community',  (req,res)=>res.sendFile(path.join(__dirname,'public','community.html')));

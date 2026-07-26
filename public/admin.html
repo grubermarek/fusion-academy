@@ -125,6 +125,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <div class="nav-group-label">Prevádzka</div>
       <a class="nav-link" href="#" onclick="show('classes')"><i class="bi bi-calendar3 me-2"></i>Hodiny / Stream</a>
       <a class="nav-link" href="#" onclick="show('privatehours')"><i class="bi bi-person-heart me-2"></i>Súkromné hodiny 🎭</a>
+      <a class="nav-link" href="#" onclick="show('kiosk')"><i class="bi bi-display me-2"></i>Kiosk / Recepcia</a>
       <a class="nav-link" href="/jedalnicek" target="_blank"><i class="bi bi-egg-fried me-2"></i>Generátor jedálničkov <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></a>
       <a class="nav-link" href="#" onclick="show('products')"><i class="bi bi-box-seam me-2"></i>Produkty & objednávky <span id="pendingBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('rentals')"><i class="bi bi-building me-2"></i>Prenájmy</a>
@@ -470,6 +471,13 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- KIOSK -->
+  <div id="s-kiosk" class="section">
+    <h4 class="fw-bold mb-1"><i class="bi bi-display me-2 text-warning"></i>Kiosk / Digitálna recepcia</h4>
+    <p class="text-muted small mb-3">Fullscreen obrazovka na tablet pri vstupe: slideshow (program, štatistiky, upsell, tipy) + veľký QR check-in. Zapni štúdio, otvor link na tablete a ťukni na obrazovku (spustí sa fullscreen). Tréner nájde linky v paneli.</p>
+    <div id="kioskStudios"><div class="text-muted py-3">Načítavam…</div></div>
   </div>
 
   <!-- SÚKROMNÉ HODINY -->
@@ -1607,7 +1615,7 @@ function showToast(msg,type='success'){
 
 const GROUP_TITLES={manage:'Správa',marketing:'Marketing',reports:'Financie & reporty',partners:'Partneri (MLM)'};
 const SECTION_GROUP={attendance:'manage',sale:'reports',
-  leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',staff:'manage',classes:'manage',privatehours:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',
+  leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',staff:'manage',classes:'manage',privatehours:'manage',kiosk:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',
   marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
   finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
   partners:'partners',addpartner:'partners',commissions:'partners'};
@@ -1633,6 +1641,7 @@ function show(sec){
   if(sec==='attendance')loadAttendance();
   if(sec==='classes')loadAdminClasses();
   if(sec==='privatehours')loadAdminPrivate();
+  if(sec==='kiosk')loadKiosk();
   if(sec==='bookings')loadAdminBookings();
   if(sec==='memberships')loadMemberships();
   if(sec==='staff')loadStaff();
@@ -3760,6 +3769,66 @@ async function dispatchOrder(id,val){
 
 // ── TÍM & ROLY ──
 let _staffMentors=[], _staffTimer=null;
+/* ─── Kiosk (admin) ─── */
+const KW_LABELS={program:'Dnešný program', stats:'Štatistiky komunity', klient_mesiaca:'Klientka mesiaca', birthdays:'Narodeniny', upsell:'Upsell (členstvá/merch)', health:'Zdravie & tipy', app_promo:'Promo appky', referral:'Referral program', challenge:'Výzva dňa', custom:'Vlastné slidy'};
+let _kioskData=null;
+async function loadKiosk(){
+  const d=await api('/api/admin/kiosk');
+  if(!d||!d.ok){ document.getElementById('kioskStudios').innerHTML='<div class="text-danger">Chyba.</div>'; return; }
+  _kioskData=d;
+  document.getElementById('kioskStudios').innerHTML=d.studios.map(s=>`
+    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+        <h6 class="fw-bold mb-0">📍 ${escHtml(s.city)} ${s.enabled?'<span class="badge bg-success ms-1">Zapnutý</span>':'<span class="badge bg-secondary ms-1">Vypnutý</span>'}</h6>
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-outline-info py-0 px-2" onclick="navigator.clipboard.writeText('${s.url}').then(()=>showToast('Link skopírovaný ✓','success'))"><i class="bi bi-clipboard"></i> Kopírovať link</button>
+          <a class="btn btn-sm btn-outline-warning py-0 px-2" href="${s.url}" target="_blank"><i class="bi bi-box-arrow-up-right"></i> Otvoriť</a>
+          <button class="btn btn-sm btn-outline-danger py-0 px-2" onclick="kioskSave('${s.slug}',{regen_token:true})" title="Starý link prestane fungovať">↻ Nový kľúč</button>
+        </div>
+      </div>
+      <div class="d-flex flex-wrap gap-3 align-items-end mb-2">
+        <label class="small"><input type="checkbox" id="kq_en_${s.slug}" ${s.enabled?'checked':''}> Zapnutý</label>
+        <div><label class="text-muted" style="font-size:.68rem">Interval slidov (s)</label><br><input type="number" id="kq_int_${s.slug}" value="${s.interval_s}" min="5" max="120" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:80px"></div>
+        <div><label class="text-muted" style="font-size:.68rem">Nečinnosť → slideshow (s)</label><br><input type="number" id="kq_idle_${s.slug}" value="${s.idle_s}" min="5" max="300" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:80px"></div>
+        <div><label class="text-muted" style="font-size:.68rem">Nočný režim od</label><br><input type="time" id="kq_off_${s.slug}" value="${s.night_off}" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:110px"></div>
+        <div><label class="text-muted" style="font-size:.68rem">do</label><br><input type="time" id="kq_on_${s.slug}" value="${s.night_on}" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:110px"></div>
+      </div>
+      <div class="mb-2"><label class="text-muted" style="font-size:.68rem">📢 Oznam (zobrazí sa ako prvý slide)</label>
+        <input id="kq_ann_${s.slug}" value="${escHtml(s.announcement||'')}" placeholder="napr. V piatok 15.8. je štúdio zatvorené" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+      <div class="mb-2"><span class="text-muted" style="font-size:.68rem">Widgety:</span><br>
+        ${Object.entries(KW_LABELS).map(([k,l])=>`<label class="me-3 small" style="cursor:pointer"><input type="checkbox" class="kq_w_${s.slug}" value="${k}" ${(s.widgets||{})[k]!==false?'checked':''}> ${l}</label>`).join('')}
+      </div>
+      <div class="mb-2"><span class="text-muted" style="font-size:.68rem">Vlastné slidy (${(s.custom_slides||[]).length}):</span>
+        ${(s.custom_slides||[]).map((c,i)=>`<span class="badge bg-secondary me-1">${escHtml(c.emoji)} ${escHtml(c.title)} <a style="cursor:pointer;color:#f88" onclick="kioskDelSlide('${s.slug}',${i})">✕</a></span>`).join('')||'<span class="text-muted small">žiadne</span>'}
+        <button class="btn btn-sm btn-outline-secondary py-0 px-2 ms-2" style="font-size:.7rem" onclick="kioskAddSlide('${s.slug}')">+ Pridať slide</button>
+      </div>
+      <button class="btn btn-sm btn-warning" onclick="kioskSaveAll('${s.slug}')">Uložiť ${escHtml(s.city)}</button>
+    </div></div>`).join('');
+}
+async function kioskSave(slug, body){
+  const r=await api('/api/admin/kiosk/'+slug,{method:'PUT',body:JSON.stringify(body)});
+  if(r&&r.ok){ showToast('Uložené ✓','success'); loadKiosk(); } else showToast('Chyba: '+((r&&r.error)||'?'),'error');
+}
+function kioskSaveAll(slug){
+  const widgets={}; document.querySelectorAll('.kq_w_'+slug).forEach(c=>widgets[c.value]=c.checked);
+  kioskSave(slug,{ enabled:document.getElementById('kq_en_'+slug).checked,
+    interval_s:+document.getElementById('kq_int_'+slug).value, idle_s:+document.getElementById('kq_idle_'+slug).value,
+    night_off:document.getElementById('kq_off_'+slug).value, night_on:document.getElementById('kq_on_'+slug).value,
+    announcement:document.getElementById('kq_ann_'+slug).value, widgets });
+}
+function kioskAddSlide(slug){
+  const title=prompt('Nadpis slidu:'); if(!title) return;
+  const text=prompt('Text (nepovinné):')||'';
+  const emoji=prompt('Emoji (nepovinné):','✨')||'✨';
+  const st=_kioskData.studios.find(x=>x.slug===slug);
+  kioskSave(slug,{custom_slides:[...(st.custom_slides||[]),{emoji,title,text}]});
+}
+function kioskDelSlide(slug,i){
+  const st=_kioskData.studios.find(x=>x.slug===slug);
+  const cs=[...(st.custom_slides||[])]; cs.splice(i,1);
+  kioskSave(slug,{custom_slides:cs});
+}
+
 /* ─── Súkromné hodiny (admin) ─── */
 const PH_STATUS={booked:'<span class="badge bg-info text-dark">Rezervovaná</span>', completed:'<span class="badge bg-success">Absolvovaná</span>',
   cancelled:'<span class="badge bg-secondary">Zrušená</span>', cancelled_late:'<span class="badge bg-danger">Storno &lt;24h</span>', cancelled_by_trainer:'<span class="badge bg-warning text-dark">Zrušil tréner</span>'};

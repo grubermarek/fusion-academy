@@ -374,10 +374,12 @@ select.form-control option{background:var(--dark3)}
         <div class="today-classes" id="todayClasses"></div>
       </div>
 
-      <div class="section-title">
+      <div class="section-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <i class="bi bi-calendar-week" style="color:var(--gold)"></i>
         Všetky hodiny
         <span class="badge" id="classCountBadge">—</span>
+        <span style="flex:1"></span>
+        <button onclick="openKiosk()" title="Spustiť digitálnu recepciu na tomto tablete" style="background:rgba(201,168,76,.12);border:1px solid var(--gold-border);color:var(--gold);border-radius:10px;padding:7px 14px;font-size:.8rem;font-weight:700;cursor:pointer"><i class="bi bi-display"></i> Spustiť kiosk</button>
       </div>
       <div id="classGrid" class="class-grid">
         <div class="loading"><i class="bi bi-arrow-repeat spin"></i><br><br>Načítavam hodiny...</div>
@@ -1683,6 +1685,16 @@ async function trCashDel(id){
   if(!confirm('Zmazať tento záznam o hotovosti?')) return;
   const r=await api('/api/trainer/cash/'+id,{method:'DELETE'});
   if(r&&r.ok){ toast('Zmazané'); loadTrainerCash(); loadTrainerEarnings(); } else toast(r?.error||'Chyba', true);
+}
+
+// ── KIOSK ────────────────────────────────────────────────────────────────────
+async function openKiosk(){
+  const d=await api('/api/trainer/kiosk-links');
+  const links=(d&&d.links)||[];
+  if(!links.length){ toast('Kiosk zatiaľ nie je zapnutý — admin ho aktivuje v sekcii Kiosk / Recepcia.', true); return; }
+  if(links.length===1){ window.open(links[0].url,'_blank'); return; }
+  const pick=prompt('Ktoré štúdio?\n\n'+links.map((l,i)=>`${i+1}. ${l.city}`).join('\n')+'\n\nZadaj číslo:');
+  const l=links[parseInt(pick)-1]; if(l) window.open(l.url,'_blank');
 }
 
 // ── SÚKROMNÉ HODINY (tréner) ─────────────────────────────────────────────────
