@@ -4434,13 +4434,24 @@ async function loadPayments(){
   </tr>`).join('');
 }
 
+let adminClassesWholeWeek=false;
+function toggleAdminClassesWeek(){ adminClassesWholeWeek=!adminClassesWholeWeek; loadAdminClasses(); }
 async function loadAdminClasses(){
-  const rows=await api('/api/classes');if(!Array.isArray(rows))return;
+  let rows=await api('/api/classes');if(!Array.isArray(rows))return;
   const tb=document.getElementById('adminClassesTable');if(!tb)return;
-  if(!rows.length){tb.innerHTML='<tr><td colspan="6" class="text-center text-muted py-3">Žiadne hodiny</td></tr>';return;}
-  tb.innerHTML=rows.map(c=>`<tr>
-    <td class="ps-3 fw-semibold">${c.emoji||''} ${c.name}</td>
-    <td class="small text-muted">${c.day||''} ${c.time_start||''}</td>
+  // Sekcia je len pre ONLINE hodiny; predvolene sa zobrazia iba dnešné
+  rows=rows.filter(c=>c.category==='Online');
+  const todayDow=new Date().getDay();
+  const todays=rows.filter(c=>c.day_of_week===todayDow);
+  const shown=adminClassesWholeWeek?rows:todays;
+  const toggle=`<tr><td colspan="6" class="text-center py-2">
+    ${!adminClassesWholeWeek&&!todays.length?'<div class="text-muted small mb-2">🌐 Dnes nie je žiadna online hodina</div>':''}
+    <button class="btn btn-sm btn-outline-secondary" onclick="toggleAdminClassesWeek()">${adminClassesWholeWeek?'Zobraziť len dnešné':'Zobraziť celý týždeň'}</button>
+  </td></tr>`;
+  if(!shown.length){tb.innerHTML=toggle;return;}
+  tb.innerHTML=shown.map(c=>`<tr>
+    <td class="ps-3 fw-semibold">${c.emoji||''} ${c.name}<div class="small text-muted">${c.stream_city||''}</div></td>
+    <td class="small text-muted">${c.dayName||c.day||''} ${c.time_start||''}</td>
     <td class="small">${c.city||'—'}</td>
     <td class="small">${c.capacity||20}</td>
     <td>
@@ -4455,7 +4466,7 @@ async function loadAdminClasses(){
       <button class="btn btn-sm btn-brand" onclick="saveStreamUrl('${c._id}')">Uložiť</button>
       <button class="btn btn-sm btn-outline-danger" title="Odstrániť hodinu" onclick="deleteClass('${c._id}','${(c.name||'').replace(/'/g,'')}')"><i class="bi bi-trash3"></i></button>
     </td>
-  </tr>`).join('');
+  </tr>`).join('')+toggle;
 }
 
 async function deleteClass(id,name){
