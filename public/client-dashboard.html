@@ -365,7 +365,7 @@
           <div style="font-size:1.5rem">🎟️</div><div style="font-weight:800;margin:4px 0 2px">Permanentka</div>
           <div style="font-size:.74rem;color:var(--muted,#999)">10 vstupov · 80 € · bez záväzku</div>
         </a>
-        <a href="#privateCard" onclick="document.getElementById('privateCard').scrollIntoView({behavior:'smooth'});return false" style="text-decoration:none;background:#161616;border:1px solid var(--gold-border,#332a18);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
+        <a href="#privateCard" onclick="scrollToPrivate();return false" style="text-decoration:none;background:#161616;border:1px solid var(--gold-border,#332a18);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
           <div style="font-size:1.5rem">🎭</div><div style="font-weight:800;margin:4px 0 2px">Súkromná hodina</div>
           <div style="font-size:.74rem;color:var(--muted,#999)">tréner len pre teba · 1:1</div>
         </a>
@@ -1612,6 +1612,18 @@ async function init(){
 
 /* ─── Súkromné hodiny (klient) ─── */
 let _pvTrainers=[], _pvSel=null;
+// Presné narolovanie na kartu: obsah nad ňou sa donačítava a mení výšku stránky,
+// preto pozíciu ešte 2 s opakovane koriguj, kým sa layout neustáli.
+function scrollToPrivate(){
+  const el=document.getElementById('privateCard'); if(!el) return;
+  el.style.scrollMarginTop='14px';
+  let tries=0;
+  const go=()=>{
+    el.scrollIntoView({behavior:tries===0?'smooth':'auto', block:'start'});
+    if(++tries<6) setTimeout(go, 400);
+  };
+  go();
+}
 async function loadPrivate(){
   const [t,my]=await Promise.all([api('/api/private/trainers'), api('/api/private/my')]);
   // Moje rezervácie
@@ -2171,13 +2183,13 @@ async function loadQR(){
       else showToast('Platbu sa nepodarilo overiť: '+((r&&r.error)||'kontaktuj nás'),'error');
     }catch(e){ showToast('Chyba pri overovaní platby','error'); }
     window.history.replaceState({},'','/client-dashboard');
-    setTimeout(()=>{ const c=document.getElementById('privateCard'); if(c) c.scrollIntoView({behavior:'smooth'}); loadPrivate&&loadPrivate(); }, 800);
+    setTimeout(()=>{ scrollToPrivate(); loadPrivate&&loadPrivate(); }, 800);
   } else if(p.get('stripe')==='private_cancel'){
     showToast('Kartová platba zrušená — hodinu môžeš zaplatiť na mieste, alebo rezerváciu zruš.','error');
     window.history.replaceState({},'','/client-dashboard');
   } else if(p.get('goto')==='private'){
     window.history.replaceState({},'','/client-dashboard');
-    setTimeout(()=>{ const c=document.getElementById('privateCard'); if(c) c.scrollIntoView({behavior:'smooth'}); }, 600);
+    setTimeout(()=>{ scrollToPrivate(); }, 600);
   }
 })();
 
