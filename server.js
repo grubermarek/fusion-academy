@@ -7137,7 +7137,7 @@ setInterval(async()=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 // KIOSK MODE — digitálna recepcia (fullscreen tablet pri vstupe do štúdia)
 // ═══════════════════════════════════════════════════════════════════════════════
-const KIOSK_STUDIOS = { detva:'Detva', zvolen:'Zvolen', bb:'Banská Bystrica', brezno:'Brezno', podbrezova:'Podbrezová' };
+const KIOSK_STUDIOS = { detva:'Detva', zvolen:'Zvolen', bb:'Banská Bystrica', brezno:'Brezno' };
 const KIOSK_DEFAULT_WIDGETS = { program:true, stats:true, klient_mesiaca:true, birthdays:true, upsell:true, health:true, app_promo:true, referral:true, challenge:true, custom:true };
 async function kioskConfig(){
   let s = await q.one(db.settings,{key:'kiosk_config'});
