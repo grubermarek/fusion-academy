@@ -263,7 +263,9 @@ function animFx(){
 }
 
 /* ── Noc ── */
+const PREVIEW = new URLSearchParams(location.search).has('preview');
 function inNight(){
+  if(PREVIEW) return false; // admin náhľad — nočný režim vypnutý
   if(!CFG) return false;
   const now=new Date().toTimeString().slice(0,5);
   const off=CFG.night_off||'21:30', on=CFG.night_on||'07:30';

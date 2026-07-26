@@ -3783,6 +3783,7 @@ async function loadKiosk(){
         <div class="d-flex gap-2">
           <button class="btn btn-sm btn-outline-info py-0 px-2" onclick="navigator.clipboard.writeText('${s.url}').then(()=>showToast('Link skopírovaný ✓','success'))"><i class="bi bi-clipboard"></i> Kopírovať link</button>
           <a class="btn btn-sm btn-outline-warning py-0 px-2" href="${s.url}" target="_blank"><i class="bi bi-box-arrow-up-right"></i> Otvoriť</a>
+          <a class="btn btn-sm btn-outline-info py-0 px-2" href="${s.url}&preview=1" target="_blank" title="Náhľad bez nočného režimu — na kontrolu obsahu aj večer"><i class="bi bi-eye"></i> Náhľad</a>
           <button class="btn btn-sm btn-outline-danger py-0 px-2" onclick="kioskSave('${s.slug}',{regen_token:true})" title="Starý link prestane fungovať">↻ Nový kľúč</button>
         </div>
       </div>
