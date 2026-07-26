@@ -479,7 +479,7 @@ select.form-control option{background:var(--dark3)}
           <div><label style="font-size:.72rem;color:var(--muted)">Trvanie</label><br><select id="pvDur" style="background:#161310;border:1px solid var(--border);color:var(--cream);border-radius:8px;padding:9px"><option value="60">60 min</option><option value="90">90 min</option><option value="120">120 min</option></select></div>
           <div><label style="font-size:.72rem;color:var(--muted)">Mesto</label><br><select id="pvCity" style="background:#161310;border:1px solid var(--border);color:var(--cream);border-radius:8px;padding:9px"><option>Detva</option><option>Zvolen</option><option>Banská Bystrica</option><option>Brezno</option><option>Podbrezová</option></select></div>
           <div style="flex:1;min-width:140px"><label style="font-size:.72rem;color:var(--muted)">Miesto (nepovinné)</label><br><input id="pvLoc" placeholder="napr. Fitko LÉGIA" style="width:100%;background:#161310;border:1px solid var(--border);color:var(--cream);border-radius:8px;padding:8px"></div>
-          <div><label style="font-size:.72rem;color:var(--muted)">Opakovať</label><br><select id="pvRep" style="background:#161310;border:1px solid var(--border);color:var(--cream);border-radius:8px;padding:9px"><option value="1">len raz</option><option value="2">2 týždne</option><option value="4">4 týždne</option><option value="8">8 týždňov</option></select></div>
+          <div><label style="font-size:.72rem;color:var(--muted)">Opakovať</label><br><select id="pvRep" style="background:#161310;border:1px solid var(--border);color:var(--cream);border-radius:8px;padding:9px"><option value="1">len raz</option><option value="2">2 týždne</option><option value="4">4 týždne</option><option value="8">8 týždňov</option><option value="forever">♾️ navždy (každý týždeň)</option></select></div>
           <button onclick="addPrivSlot()" style="background:linear-gradient(135deg,var(--gold),#a07830);border:none;color:#111;font-weight:800;padding:10px 18px;border-radius:10px;cursor:pointer">Pridať</button>
         </div>
       </div>
@@ -1701,6 +1701,17 @@ async function loadTrainerPrivate(){
     <span style="background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.3);border-radius:10px;padding:8px 14px;font-size:.85rem">📅 Tento mesiac: <b style="color:#4ade80">${(d.month_earn||0).toFixed(2)} €</b> (${d.month_count||0} hodín)</span>
   </div>`;
   document.getElementById('privCreate').style.display='block';
+  // ♾️ Týždenné pravidlá (navždy)
+  if((d.recurring||[]).length){
+    info.innerHTML+=`<div style="margin-top:10px;background:var(--card);border:1px solid var(--gold-border);border-radius:12px;padding:12px">
+      <div style="font-weight:700;font-size:.85rem;margin-bottom:6px;color:var(--cream)">♾️ Opakujúce sa termíny (každý týždeň)</div>
+      ${d.recurring.map(r=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;font-size:.83rem;border-top:1px solid rgba(201,168,76,.08)">
+        <span><b>${r.weekday_name}</b> ${r.time_start} · ${r.duration_min} min · 📍 ${esc(r.city)}${r.location?' ('+esc(r.location)+')':''}</span>
+        <button onclick="delPrivRule('${r.id}')" style="background:none;border:1px solid rgba(229,115,115,.5);color:#e57373;border-radius:8px;padding:3px 9px;font-size:.72rem;cursor:pointer">✕ Zrušiť opakovanie</button>
+      </div>`).join('')}
+      <div style="font-size:.7rem;color:var(--muted);margin-top:6px">Termíny sa automaticky dopĺňajú na 4 týždne dopredu.</div>
+    </div>`;
+  }
   const rows=(d.slots||[]).map(sl=>{
     const when=`<b>${sl.date.split('-').reverse().join('.')}</b> ${sl.time_start} · ${sl.duration_min} min · 📍 ${esc(sl.city)}${sl.location?' ('+esc(sl.location)+')':''}`;
     if(sl.booking && sl.booking.status==='booked'){
@@ -1728,12 +1739,18 @@ async function loadTrainerPrivate(){
   host.innerHTML=rows||'<div class="empty">🗓️ Zatiaľ žiadne termíny — pridaj prvý hore.</div>';
 }
 async function addPrivSlot(){
+  const repVal=document.getElementById('pvRep').value;
   const body={ date:document.getElementById('pvDate').value, time_start:document.getElementById('pvTime').value,
     duration_min:+document.getElementById('pvDur').value, city:document.getElementById('pvCity').value,
-    location:document.getElementById('pvLoc').value, repeat_weeks:+document.getElementById('pvRep').value };
+    location:document.getElementById('pvLoc').value, repeat_weeks: repVal==='forever' ? 'forever' : +repVal };
   if(!body.date||!body.time_start){ toast('Vyplň dátum a čas', true); return; }
   const r=await api('/api/trainer/private-slots',{method:'POST',body});
-  if(r&&r.ok){ toast(`✅ Pridané ${r.created} termín(ov)`); loadTrainerPrivate(); } else toast((r&&r.error)||'Chyba', true);
+  if(r&&r.ok){ toast(r.forever?`♾️ Týždenné pravidlo vytvorené — termíny sa dopĺňajú automaticky (${r.created} pridaných)`:`✅ Pridané ${r.created} termín(ov)`); loadTrainerPrivate(); } else toast((r&&r.error)||'Chyba', true);
+}
+async function delPrivRule(id){
+  if(!confirm('Zrušiť týždenné opakovanie?\n\nBudúce VOĽNÉ termíny z tohto pravidla sa odstránia; už rezervované hodiny ostávajú.')) return;
+  const r=await api('/api/trainer/private-recurring/'+id,{method:'DELETE'});
+  if(r&&r.ok){ toast(`Opakovanie zrušené (odstránených ${r.removed||0} voľných termínov)`); loadTrainerPrivate(); } else toast((r&&r.error)||'Chyba', true);
 }
 async function delPrivSlot(id){
   if(!confirm('Odstrániť tento voľný termín?')) return;

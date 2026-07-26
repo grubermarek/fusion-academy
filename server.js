@@ -127,6 +127,7 @@ const db = {
   settings:     new Datastore({ filename: path.join(DATA_DIR, 'settings.db'),     autoload: true }),
   private_slots:    new Datastore({ filename: path.join(DATA_DIR, 'private_slots.db'),    autoload: true }),
   private_bookings: new Datastore({ filename: path.join(DATA_DIR, 'private_bookings.db'), autoload: true }),
+  private_recurring: new Datastore({ filename: path.join(DATA_DIR, 'private_recurring.db'), autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -7198,11 +7199,37 @@ app.get('/api/trainer/private', trainerAuth, async(req,res)=>{
     });
     const m=today().slice(0,7);
     const earn=await privateEarningsFor(t._id, m);
-    res.json({ ok:true, settings:privateSettings(t), slots:out, month_earn:earn.amount, month_count:earn.count });
+    const DAYS_W=['Nedeľa','Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota'];
+    const recurring=(await q.find(db.private_recurring,{trainer_id:t._id, active:{$ne:false}}))
+      .map(r=>({id:r._id, weekday:r.weekday, weekday_name:DAYS_W[r.weekday], time_start:r.time_start, duration_min:r.duration_min||60, city:r.city, location:r.location||''}));
+    res.json({ ok:true, settings:privateSettings(t), slots:out, recurring, month_earn:earn.amount, month_count:earn.count });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
-// Tréner/admin: pridať sloty (voliteľne opakovať X týždňov)
+// Materializuj sloty z „navždy" pravidiel na najbližších 28 dní (idempotentné)
+async function materializeRecurringSlots(){
+  const rules=await q.find(db.private_recurring,{active:{$ne:false}});
+  let created=0;
+  for(const r of rules){
+    const t=await q.one(db.users,{_id:r.trainer_id});
+    if(!t || !privateSettings(t).enabled) continue;
+    const price=+(privateSettings(t).rate*((r.duration_min||60)/60)).toFixed(2);
+    for(let i=0;i<28;i++){
+      const d=new Date(Date.now()+i*864e5);
+      if(d.getDay()!==r.weekday) continue;
+      const ds=d.toISOString().slice(0,10);
+      if(ds<today()) continue;
+      const dup=await q.one(db.private_slots,{trainer_id:r.trainer_id, date:ds, time_start:r.time_start, status:{$ne:'cancelled'}});
+      if(dup) continue;
+      await q.insert(db.private_slots,{ trainer_id:r.trainer_id, trainer_name:r.trainer_name, date:ds, time_start:r.time_start,
+        duration_min:r.duration_min||60, city:r.city, location:r.location||'', price, status:'open', rule_id:r._id, created_at:nowISO() });
+      created++;
+    }
+  }
+  return created;
+}
+
+// Tréner/admin: pridať sloty (raz, X týždňov, alebo „navždy" = týždenné pravidlo)
 app.post('/api/trainer/private-slots', trainerAuth, async(req,res)=>{
   try{
     let t=req.trainerUser;
@@ -7211,9 +7238,19 @@ app.post('/api/trainer/private-slots', trainerAuth, async(req,res)=>{
     if(!st.enabled && !req.trainerUser.is_admin) return res.status(403).json({error:'Súkromné hodiny ti musí najprv povoliť admin (sekcia Súkromné hodiny).'});
     const {date, time_start, city} = req.body;
     const duration_min = [60,90,120].includes(+req.body.duration_min) ? +req.body.duration_min : 60;
-    const repeat = Math.min(Math.max(+req.body.repeat_weeks||1,1),8);
     if(!/^\d{4}-\d{2}-\d{2}$/.test(String(date))||!/^\d{2}:\d{2}$/.test(String(time_start))||!city) return res.status(400).json({error:'Chýba dátum, čas alebo mesto'});
     if(date<today()) return res.status(400).json({error:'Dátum je v minulosti'});
+    // ♾️ „Navždy": ulož týždenné pravidlo (deň v týždni + čas) — termíny sa dopĺňajú automaticky
+    if(req.body.repeat_weeks==='forever'){
+      const weekday=new Date(date+'T12:00:00').getDay();
+      const dupR=await q.one(db.private_recurring,{trainer_id:t._id, weekday, time_start, active:{$ne:false}});
+      if(dupR) return res.status(400).json({error:'Také týždenné pravidlo už máš (rovnaký deň a čas).'});
+      const rule=await q.insert(db.private_recurring,{ trainer_id:t._id, trainer_name:t.name, weekday, time_start,
+        duration_min, city:String(city), location:String(req.body.location||'').slice(0,120), active:true, created_at:nowISO() });
+      const created=await materializeRecurringSlots();
+      return res.json({ok:true, created, forever:true, rule_id:rule._id});
+    }
+    const repeat = Math.min(Math.max(+req.body.repeat_weeks||1,1),8);
     const price=+(st.rate*(duration_min/60)).toFixed(2);
     let created=0;
     for(let w=0;w<repeat;w++){
@@ -7227,6 +7264,18 @@ app.post('/api/trainer/private-slots', trainerAuth, async(req,res)=>{
       created++;
     }
     res.json({ok:true, created});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Zrušiť „navždy" pravidlo (+ odstráni jeho budúce voľné termíny; rezervované ostávajú)
+app.delete('/api/trainer/private-recurring/:id', trainerAuth, async(req,res)=>{
+  try{
+    const r=await q.one(db.private_recurring,{_id:req.params.id});
+    if(!r) return res.status(404).json({error:'Pravidlo nenájdené'});
+    if(r.trainer_id!==req.trainerUser._id && !req.trainerUser.is_admin) return res.status(403).json({error:'Nie je tvoje pravidlo'});
+    await q.update(db.private_recurring,{_id:r._id},{$set:{active:false, deactivated_at:nowISO()}});
+    const removed=await q.remove(db.private_slots,{rule_id:r._id, status:'open'},{multi:true});
+    res.json({ok:true, removed});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -10648,6 +10697,7 @@ async function runDailyJobs(){
   }
 
   // ── 2b. Súkromné hodiny: pripomienka deň vopred + výzva trénerovi potvrdiť včerajšie ──
+  try{ await materializeRecurringSlots(); }catch(e){ console.error('recurring slots:', e.message); }
   try{
     const tomorrowStr = new Date(Date.now()+86400000).toISOString().slice(0,10);
     const privTomorrow = await q.find(db.private_bookings,{date:tomorrowStr, status:'booked'});
