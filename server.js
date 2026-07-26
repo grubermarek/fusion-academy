@@ -7279,7 +7279,7 @@ app.post('/api/private/book', auth, async(req,res)=>{
     // Zľava podľa členstva klienta (Bronze −10 %, Silver −20 %, Gold −30 %; bez členstva/permanentka = plná cena)
     const disc=await privateDiscountFor(u._id);
     const price=privDiscounted(s.price, disc.pct);
-    const pay = req.body.pay==='credit' ? 'credit' : 'onsite';
+    const pay = ['credit','card','onsite'].includes(req.body.pay) ? req.body.pay : 'onsite';
     if(pay==='credit'){
       if((u.referral_credit||0) < price) return res.status(400).json({error:`Nedostatočný kredit (${(u.referral_credit||0).toFixed(2)} €). Vyber platbu na mieste.`});
       await q.update(db.users,{_id:u._id},{$set:{referral_credit:+((u.referral_credit||0)-price).toFixed(2)}});
@@ -7303,6 +7303,48 @@ app.post('/api/private/book', auth, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Platba kartou za súkromnú hodinu: Stripe Checkout (Apple/Google Pay + karta)
+app.post('/api/private/card-checkout', auth, async(req,res)=>{
+  try{
+    if(!STRIPE_SECRET) return res.status(400).json({error:'Platba kartou nie je momentálne dostupná — vyber platbu na mieste.'});
+    const b=await q.one(db.private_bookings,{_id:String(req.body.booking_id||'')});
+    if(!b||b.client_id!==req.session.uid||b.status!=='booked'||b.paid) return res.status(400).json({error:'Rezervácia sa nedá zaplatiť'});
+    const u=await q.one(db.users,{_id:req.session.uid});
+    const params={
+      'mode':'payment',
+      'line_items[0][quantity]':1,
+      'line_items[0][price_data][currency]':'eur',
+      'line_items[0][price_data][unit_amount]':Math.round((+b.price)*100),
+      'line_items[0][price_data][product_data][name]':`Súkromná hodina — ${b.trainer_name} ${b.date.split('-').reverse().join('.')} ${b.time_start}`,
+      'success_url':`${APP_URL}/client-dashboard?stripe=private&session_id={CHECKOUT_SESSION_ID}`,
+      'cancel_url':`${APP_URL}/client-dashboard?stripe=private_cancel`,
+      'customer_email':u.email,
+      'metadata[private_booking_id]':b._id,
+      'metadata[user_id]':u._id,
+    };
+    const r=await stripeApi('checkout/sessions', params, 'POST');
+    if(r.status>=300||!r.body?.url) return res.status(400).json({error:'Stripe: '+(r.body?.error?.message||'chyba')});
+    res.json({ok:true, url:r.body.url});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Po návrate zo Stripe: over platbu a označ rezerváciu ako zaplatenú
+app.post('/api/private/card-activate', auth, async(req,res)=>{
+  try{
+    const sid=String(req.body.session_id||''); if(!sid) return res.status(400).json({error:'Chýba session'});
+    const r=await stripeApi('checkout/sessions/'+encodeURIComponent(sid), null, 'GET');
+    const sess=r.body||{};
+    if(sess.payment_status!=='paid') return res.status(400).json({error:'Platba ešte neprebehla'});
+    const bid=sess.metadata?.private_booking_id;
+    const b=bid && await q.one(db.private_bookings,{_id:bid});
+    if(!b) return res.status(404).json({error:'Rezervácia nenájdená'});
+    if(b.paid) return res.json({ok:true, already:true});
+    await q.update(db.private_bookings,{_id:b._id},{$set:{paid:true, pay_method:'card', stripe_session:sid, paid_at:nowISO()}});
+    await q.insert(db.notifications,{user_id:b.trainer_id,type:'private_booking',title:'💳 Súkromná hodina zaplatená kartou',body:`${b.client_name} zaplatil/a ${(+b.price).toFixed(2)} € online.`,read:false,created_at:nowISO()}).catch(()=>{});
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Zrušenie: klient (24h pravidlo) alebo tréner/admin (kedykoľvek, refund)
 app.post('/api/private/cancel', auth, async(req,res)=>{
   try{
@@ -7318,7 +7360,7 @@ app.post('/api/private/cancel', auth, async(req,res)=>{
     if(isTrainerSide && !isClient){
       // Tréner/admin ruší → klientovi vrátime peniaze (kredit) a ospravedlníme sa
       const upd={status:'cancelled_by_trainer', cancelled_at:nowISO(), cancelled_by:me._id, cancel_reason:reason};
-      if(b.paid && b.pay_method==='credit'){ const c=await q.one(db.users,{_id:b.client_id});
+      if(b.paid && ['credit','card'].includes(b.pay_method)){ const c=await q.one(db.users,{_id:b.client_id});
         if(c) await q.update(db.users,{_id:c._id},{$set:{referral_credit:+((c.referral_credit||0)+b.price).toFixed(2)}});
         upd.refunded=true; }
       await q.update(db.private_bookings,{_id:b._id},{$set:upd});
@@ -7331,7 +7373,7 @@ app.post('/api/private/cancel', auth, async(req,res)=>{
     // Klient ruší
     if(hoursLeft>=24){
       const upd={status:'cancelled', cancelled_at:nowISO(), cancelled_by:me._id, cancel_reason:reason};
-      if(b.paid && b.pay_method==='credit'){ await q.update(db.users,{_id:me._id},{$set:{referral_credit:+((me.referral_credit||0)+b.price).toFixed(2)}}); upd.refunded=true; }
+      if(b.paid && ['credit','card'].includes(b.pay_method)){ await q.update(db.users,{_id:me._id},{$set:{referral_credit:+((me.referral_credit||0)+b.price).toFixed(2)}}); upd.refunded=true; }
       await q.update(db.private_bookings,{_id:b._id},{$set:upd});
       await q.update(db.private_slots,{_id:b.slot_id},{$set:{status:'open', booking_id:null}}); // termín sa uvoľní
       await q.insert(db.notifications,{user_id:b.trainer_id,type:'private_cancel',title:'Súkromná hodina zrušená klientom',body:`${b.client_name} zrušil/a hodinu ${when} (viac než 24 h vopred). Termín je opäť voľný.`,read:false,created_at:nowISO()}).catch(()=>{});
@@ -7339,8 +7381,8 @@ app.post('/api/private/cancel', auth, async(req,res)=>{
     }
     // Neskoré zrušenie (<24 h): peniaze prepadajú v prospech trénera
     const upd={status:'cancelled_late', cancelled_at:nowISO(), cancelled_by:me._id, cancel_reason:reason, forfeit:true};
-    if(b.paid && b.pay_method==='credit'){
-      await q.insert(db.transactions,{type:'private_lesson', amount:+b.price, user_id:b.client_id, user_name:b.client_name, method:'credit', note:`Storno <24h — súkromná hodina ${b.trainer_name} ${b.date}`, created_at:nowISO()}).catch(()=>{});
+    if(b.paid){
+      await q.insert(db.transactions,{type:'private_lesson', amount:+b.price, user_id:b.client_id, user_name:b.client_name, method:b.pay_method, note:`Storno <24h — súkromná hodina ${b.trainer_name} ${b.date}`, created_at:nowISO()}).catch(()=>{});
     } else { upd.forfeit_due=true; } // neuhradený storno poplatok — vyberá sa na mieste
     await q.update(db.private_bookings,{_id:b._id},{$set:upd});
     await q.update(db.private_slots,{_id:b.slot_id},{$set:{status:'cancelled'}});
@@ -8849,7 +8891,7 @@ const stripDia = s => (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCas
 // členstvo. Za príspevky/správy v komunite ZÁMERNE žiadne body (dá sa zneužiť).
 // 5 b hodina, 5 b privedený člen (registrácia), 10 b aktívne členstvo,
 // 30/15/10/5/5 b za nového PLATIACEHO člena v 1.–5. línii, 15 b za kus merchu.
-const MP_WEIGHTS = { hour:5, referral:5, membership:10, newMemberLine:[30,15,10,5,5], merch:15, merchLine:[10,5,3,2,1] };
+const MP_WEIGHTS = { hour:5, referral:5, membership:10, newMemberLine:[30,15,10,5,5], merch:15, merchLine:[10,5,3,2,1], private:8 };
 // Body za merch, ktorý si kúpil niekto v mojej štruktúre (po líniách 1..5).
 // merchMap: user_id → počet kusov merchu v období. Vlastné kusy sa nerátajú (tie má buyer sám).
 function merchDownlinePointsFor(userId, adjacency, merchMap){
@@ -8899,6 +8941,12 @@ async function merchCountMapInPeriod(prefix){
   });
   return map;
 }
+// Absolvované súkromné hodiny v období (prefix YYYY-MM alebo YYYY) → client_id → počet
+async function privCountMapInPeriod(prefix){
+  const map={};
+  (await q.find(db.private_bookings,{status:'completed'})).forEach(b=>{ if((b.date||'').startsWith(prefix)) map[b.client_id]=(map[b.client_id]||0)+1; });
+  return map;
+}
 // Rozpis bodov jedného používateľa za daný mesiac (YYYY-MM)
 async function monthlyPointsFor(userId, month){
   month = month || today().slice(0,7);
@@ -8917,15 +8965,18 @@ async function monthlyPointsFor(userId, month){
   const merchMap = await merchCountMapInPeriod(month);
   const merchCount = merchMap[userId]||0;
   const md = merchDownlinePointsFor(userId, adjacency, merchMap);
-  return buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points}, month);
+  const privCount = (await privCountMapInPeriod(month))[userId]||0;
+  return buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, privCount}, month);
 }
-function buildPointItems({hours, online, refs, hasMem, memName, newMemberCount, newMemberPoints, merchCount, merchLineCount, merchLinePoints}, month){
+function buildPointItems({hours, online, refs, hasMem, memName, newMemberCount, newMemberPoints, merchCount, merchLineCount, merchLinePoints, privCount}, month){
+  privCount=privCount||0;
   online = online||0; newMemberCount=newMemberCount||0; newMemberPoints=newMemberPoints||0; merchCount=merchCount||0;
   merchLineCount=merchLineCount||0; merchLinePoints=merchLinePoints||0;
   const plur=(n,a,b,c)=> n===1?a : (n>=2&&n<=4?b:c);
   const items = [
     { icon:'🔥', label:'Odchodené hodiny',        count:hours,  per:MP_WEIGHTS.hour,     points:hours*MP_WEIGHTS.hour,     sub:`${hours} ${plur(hours,'hodina','hodiny','hodín')}` },
     { icon:'💻', label:'Online hodiny',            count:online, per:MP_WEIGHTS.hour,     points:online*MP_WEIGHTS.hour,    sub:`${online} ${plur(online,'hodina','hodiny','hodín')}` },
+    { icon:'🎭', label:'Súkromné hodiny',          count:privCount, per:MP_WEIGHTS.private, points:privCount*MP_WEIGHTS.private, sub:`${privCount} ${plur(privCount,'hodina','hodiny','hodín')}` },
     { icon:'🤝', label:'Privedení noví členovia',  count:refs,   per:MP_WEIGHTS.referral, points:refs*MP_WEIGHTS.referral,   sub:`${refs} ${plur(refs,'člen','členovia','členov')}` },
     { icon:'🏅', label:'Noví platiaci členovia (aj v hĺbke)', count:newMemberCount, points:newMemberPoints, sub:`${newMemberCount} ${plur(newMemberCount,'člen','členovia','členov')}` },
     { icon:'🛍️', label:'Zakúpený merch',          count:merchCount, per:MP_WEIGHTS.merch, points:merchCount*MP_WEIGHTS.merch, sub:`${merchCount} ${plur(merchCount,'kus','kusy','kusov')}` },
@@ -8977,11 +9028,12 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
         } });
       const buyerSet=await membershipBuyersInPeriod(prefix);
       const merchMap=await merchCountMapInPeriod(prefix);
+      const privMap=await privCountMapInPeriod(prefix);
       const ranked=[];
       for(const u of users){
         const nm=newMemberPointsFor(u._id, adjacency, buyerSet);
         const md=merchDownlinePointsFor(u._id, adjacency, merchMap);
-        const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount:merchMap[u._id]||0, merchLineCount:md.count, merchLinePoints:md.points }, prefix);
+        const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount:merchMap[u._id]||0, merchLineCount:md.count, merchLinePoints:md.points, privCount:privMap[u._id]||0 }, prefix);
         if(bd.total>0) ranked.push({ id:u._id, name:u.name, avatar:u.avatar||null, refs:refCount[u._id]||0, hours:attCount[u._id]||0, score:bd.total, points:bd.total, breakdown:bd.items, badge:getMemberBadge(u.created_at, u) });
       }
       ranked.sort((a,b)=>b.points-a.points);
@@ -9084,7 +9136,7 @@ app.get('/api/client/winners-history', auth, async(req,res)=>{
       let w=null, best=-1;
       for(const u of users){ const nm=newMemberPointsFor(u._id, adjacency, buyerSet);
         const md=merchDownlinePointsFor(u._id, adjacency, merchMap);
-        const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount:merchMap[u._id]||0, merchLineCount:md.count, merchLinePoints:md.points }, prefix);
+        const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount:merchMap[u._id]||0, merchLineCount:md.count, merchLinePoints:md.points, privCount:privMap[u._id]||0 }, prefix);
         if(bd.total>0 && bd.total>best){ best=bd.total; w={ id:u._id, name:u.name, avatar:u.avatar||null, points:bd.total }; } }
       return w;
     };

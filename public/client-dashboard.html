@@ -356,12 +356,19 @@
       <div class="mc-status none" id="mcStatus">Neaktívne</div>
     </div>
     <div id="mcNoMembershipBlock" class="mc-no-membership" style="display:none">
-      <p>Odomkni neobmedzený prístup ku všetkým hodinám, tréninom a eventom.</p>
-      <div class="usp">
-        <span class="usp-chip">💪 Neobmedzené hodiny</span>
-        <span class="usp-chip">🎯 Osobný tréner</span>
-        <span class="usp-chip">🌐 Online Zumba</span>
-        <span class="usp-chip">🎁 Vernostné odmeny</span>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:6px">
+        <a href="/pricing" style="text-decoration:none;background:rgba(201,168,76,.1);border:1px solid var(--gold,#C9A84C);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
+          <div style="font-size:1.5rem">💛</div><div style="font-weight:800;margin:4px 0 2px">Mesačné členstvo</div>
+          <div style="font-size:.74rem;color:var(--muted,#999)">neobmedzené hodiny · od 50 €/mes.</div>
+        </a>
+        <a href="/pricing" style="text-decoration:none;background:#161616;border:1px solid var(--gold-border,#332a18);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
+          <div style="font-size:1.5rem">🎟️</div><div style="font-weight:800;margin:4px 0 2px">Permanentka</div>
+          <div style="font-size:.74rem;color:var(--muted,#999)">10 vstupov · 80 € · bez záväzku</div>
+        </a>
+        <a href="#privateCard" onclick="document.getElementById('privateCard').scrollIntoView({behavior:'smooth'});return false" style="text-decoration:none;background:#161616;border:1px solid var(--gold-border,#332a18);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
+          <div style="font-size:1.5rem">🎭</div><div style="font-weight:800;margin:4px 0 2px">Súkromná hodina</div>
+          <div style="font-size:.74rem;color:var(--muted,#999)">tréner len pre teba · 1:1</div>
+        </a>
       </div>
     </div>
     <div class="mc-info" id="mcInfo" style="display:none">
@@ -1650,18 +1657,36 @@ async function pvPick(tid){
       <b>${s.date.split('-').reverse().join('.')}</b> ${s.time_start} · ${s.duration_min} min<br><span style="font-size:.72rem;color:var(--muted)">📍 ${escHtml(s.city)}${s.location?' · '+escHtml(s.location):''}</span> ${priceHtml}
     </button>`;}).join('');
 }
-async function pvBook(slotId, price, date, time){
+function pvBook(slotId, price, date, time){
   const credit=+(_me&&_me.referral_credit||0);
-  let pay='onsite';
-  if(credit>=price){
-    pay = confirm(`Rezervovať ${date.split('-').reverse().join('.')} o ${time} za ${price.toFixed(2)} €?\n\nOK = zaplatiť KREDITOM (máš ${credit.toFixed(2)} €)\nZrušiť a znova = platba na mieste`) ? 'credit' : null;
-    if(pay===null){ if(!confirm(`Rezervovať s platbou NA MIESTE (${price.toFixed(2)} €)?\n\nStorno zdarma do 24 h pred hodinou, potom suma prepadá trénerovi.`)) return; pay='onsite'; }
-  } else {
-    if(!confirm(`Rezervovať ${date.split('-').reverse().join('.')} o ${time} za ${price.toFixed(2)} € (platba na mieste)?\n\nStorno zdarma do 24 h pred hodinou, potom suma prepadá trénerovi.`)) return;
-  }
+  const old=document.getElementById('pvPayModal'); if(old) old.remove();
+  const wrap=document.createElement('div');
+  wrap.id='pvPayModal';
+  wrap.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px';
+  wrap.innerHTML=`<div style="background:var(--card,#1a1a1a);border:1px solid var(--gold,#C9A84C);border-radius:16px;max-width:380px;width:100%;padding:20px">
+    <div style="font-weight:800;font-size:1.05rem;margin-bottom:4px">🎭 Súkromná hodina</div>
+    <div style="color:var(--muted,#999);font-size:.85rem;margin-bottom:12px">${date.split('-').reverse().join('.')} o ${time} · <b style="color:var(--gold)">${price.toFixed(2)} €</b></div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button onclick="pvDoBook('${slotId}','card',${price})" style="background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);border:none;color:#111;font-weight:800;padding:12px;border-radius:11px;cursor:pointer">💳 Zaplatiť kartou online</button>
+      ${credit>=price?`<button onclick="pvDoBook('${slotId}','credit',${price})" style="background:rgba(74,222,128,.14);border:1px solid #4ade80;color:#4ade80;font-weight:700;padding:11px;border-radius:11px;cursor:pointer">💛 Zaplatiť kreditom (${credit.toFixed(2)} €)</button>`:''}
+      <button onclick="pvDoBook('${slotId}','onsite',${price})" style="background:#161616;border:1px solid #333;color:var(--cream,#eee);font-weight:700;padding:11px;border-radius:11px;cursor:pointer">💵 Zaplatím na mieste</button>
+      <button onclick="document.getElementById('pvPayModal').remove()" style="background:none;border:none;color:var(--muted,#999);padding:6px;cursor:pointer;font-size:.82rem">Zrušiť</button>
+    </div>
+    <div style="color:var(--muted,#999);font-size:.7rem;margin-top:10px">Storno zdarma do 24 h pred začiatkom — neskôr suma prepadá trénerovi.</div>
+  </div>`;
+  document.body.appendChild(wrap);
+}
+async function pvDoBook(slotId, pay, price){
+  const m=document.getElementById('pvPayModal'); if(m) m.remove();
   const r=await api('/api/private/book',{method:'POST',body:{slot_id:slotId, pay}});
-  if(r&&r.ok){ showToast('🎭 Súkromná hodina rezervovaná!','success'); _pvSel=null; document.getElementById('pvSlots').style.display='none'; loadPrivate(); if(pay==='credit'&&_me) _me.referral_credit=credit-price; }
-  else showToast((r&&r.error)||'Chyba rezervácie','error');
+  if(!(r&&r.ok)){ showToast((r&&r.error)||'Chyba rezervácie','error'); return; }
+  if(pay==='card'){
+    const c=await api('/api/private/card-checkout',{method:'POST',body:{booking_id:r.id}});
+    if(c&&c.ok&&c.url){ window.location.href=c.url; return; }
+    showToast('Rezervované ✓ — kartová platba nie je dostupná, zaplatíš na mieste','success');
+  } else if(pay==='credit'&&_me){ _me.referral_credit=(+_me.referral_credit||0)-price; }
+  showToast('🎭 Súkromná hodina rezervovaná!','success');
+  _pvSel=null; document.getElementById('pvSlots').style.display='none'; loadPrivate();
 }
 async function pvCancelMine(id, late){
   const msg = late
@@ -2139,6 +2164,20 @@ async function loadQR(){
     }catch(e){ showToast('Chyba pri overovaní platby','error'); }
     window.history.replaceState({},'','/client-dashboard');
     setTimeout(()=>location.reload(), 1600);
+  } else if(p.get('stripe')==='private' && p.get('session_id')){
+    try{
+      const r=await api('/api/private/card-activate',{method:'POST',body:{session_id:p.get('session_id')}});
+      if(r&&r.ok){ showToast('💳 Súkromná hodina zaplatená! Vidíme sa na parkete 🎭','success'); if(window.faTrack) window.faTrack('Purchase'); }
+      else showToast('Platbu sa nepodarilo overiť: '+((r&&r.error)||'kontaktuj nás'),'error');
+    }catch(e){ showToast('Chyba pri overovaní platby','error'); }
+    window.history.replaceState({},'','/client-dashboard');
+    setTimeout(()=>{ const c=document.getElementById('privateCard'); if(c) c.scrollIntoView({behavior:'smooth'}); loadPrivate&&loadPrivate(); }, 800);
+  } else if(p.get('stripe')==='private_cancel'){
+    showToast('Kartová platba zrušená — hodinu môžeš zaplatiť na mieste, alebo rezerváciu zruš.','error');
+    window.history.replaceState({},'','/client-dashboard');
+  } else if(p.get('goto')==='private'){
+    window.history.replaceState({},'','/client-dashboard');
+    setTimeout(()=>{ const c=document.getElementById('privateCard'); if(c) c.scrollIntoView({behavior:'smooth'}); }, 600);
   }
 })();
 
