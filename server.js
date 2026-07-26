@@ -833,6 +833,59 @@ async function seedData() {
     }catch(e){ console.error('winback extend enqueue:', e.message); }
     await q.insert(db.settings,{key:'winback_v2_extended', value:true, at:nowISO()});
   }
+  // Sekvencia PO HODINE ZDARMA (trial_followup): žena už bola na skúšobnej hodine,
+  // ale ešte si nič nekúpila. Nemá zmysel jej písať „príď na hodinu zadarmo" —
+  // motivujeme ku kúpe členstva/permanentky. Nahrádza lead_nurture po účasti.
+  if(await q.count(db.email_steps,{sequence:'trial_followup'})===0){
+    await q.insert(db.email_steps,[
+      { sequence:'trial_followup', day:2, label:'Ako bolo na hodine?', active:true,
+        subject:'{meno}, aká bola tvoja prvá hodina? 💃',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>videli sme ťa na hodine — a dúfame, že ti to dalo rovnakú energiu ako nám! 🔥</p><p>Vieš, čo hovoria baby najčastejšie po prvej hodine? <i>„Neviem prečo som tak dlho váhala."</i></p><p>Ak chceš pokračovať, máš na výber:</p><ul style="color:#ccc"><li>🥉 <b>Mesačné členstvo</b> — neobmedzené hodiny, od 50 €/mes.</li><li>🎟️ <b>Permanentka 10 vstupov</b> — 80 €, bez záväzku, platí 3 mesiace</li><li>🎫 <b>Jednorazový vstup</b> — 10 €, zaplatíš aj na mieste</li></ul>`,
+        cta:'💳 Pozrieť možnosti', cta_url:`${APP2}/pricing`, created_at:nowISO() },
+      { sequence:'trial_followup', day:5, label:'Prečo sa oplatí pokračovať', active:true,
+        subject:'Prvá hodina je za tebou. Vieš, čo príde po tretej? ✨',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>prvá hodina je zoznámenie. <b>Po tretej</b> sa telo rozpamätá, kroky sadnú a začne tá najlepšia časť — keď tanec prestane byť cvičenie a začne byť radosť.</p><p>Beátka k nám tiež prišla „len vyskúšať". Dnes je o <b>17 kg ľahšia</b> a nevynechá ani týždeň. 💛</p><p>Tvoje miesto na parkete čaká — stačí si vybrať, ako chceš chodiť.</p>`,
+        cta:'🗓️ Chcem pokračovať', cta_url:`${APP2}/pricing`, created_at:nowISO() },
+      { sequence:'trial_followup', day:9, label:'10% zľava na prvé členstvo', active:true,
+        subject:'🎁 {meno}, 10% zľava na tvoje prvé členstvo',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>páčilo sa ti u nás? Poďme to spečatiť: máš od nás <b>10% zľavu na prvé členstvo</b>.</p><p>S členstvom máš <b>neobmedzené hodiny</b> vo všetkých našich mestách — čím viac chodíš, tým menej ťa jedna hodina stojí. 😉</p><p>Zľava platí do konca týždňa.</p>`,
+        cta:'💳 Aktivovať zľavu', cta_url:`${APP2}/pricing`, created_at:nowISO() },
+      { sequence:'trial_followup', day:16, label:'Permanentka bez záväzku', active:true,
+        subject:'Nechceš záväzok? Rozumieme. Preto máme permanentku 🎟️',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>nie každému vyhovuje mesačné členstvo — a to je úplne v poriadku.</p><p><b>10-vstupová permanentka za 80 €:</b></p><ul style="color:#ccc"><li>✅ žiadny mesačný záväzok</li><li>✅ chodíš, kedy chceš (platí 3 mesiace)</li><li>✅ ušetríš 20 % oproti jednorazovým vstupom</li></ul><p>Alebo príď len tak — vstup 10 € zaplatíš aj v hotovosti na mieste.</p>`,
+        cta:'🎟️ Pozrieť permanentku', cta_url:`${APP2}/pricing`, created_at:nowISO() },
+      { sequence:'trial_followup', day:25, label:'Miesto ťa čaká', active:true,
+        subject:'{meno}, tvoje miesto na parkete stále čaká 💛',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>od tvojej hodiny ubehol už nejaký čas. Nebudeme ťa naháňať — len ti chceme povedať, že <b>dvere sú otvorené</b> a baby sa na teba pamätajú.</p><p>Keď budeš pripravená, vyber si hodinu a príď. Vstup vyriešiš členstvom, permanentkou, alebo desiatkou na mieste. Jednoduchšie to už nevieme spraviť. 😄</p>`,
+        cta:'💃 Vrátiť sa na parket', cta_url:`${APP2}/schedule`, created_at:nowISO() },
+    ]);
+    console.log('✅  trial_followup sekvencia pridaná (5 krokov)');
+  }
+
+  // Jednorazovo: leady, čo UŽ boli na hodine zdarma, ale stále im chodí „príď na prvú hodinu
+  // zadarmo" (lead_nurture/welcome) → prepni ich na trial_followup. Rieši mätúce maily.
+  if(!(await q.one(db.settings,{key:'trial_followup_migrate_v1'}))){
+    const allU = await q.find(db.users,{is_child:{$ne:true}, active:{$ne:false}});
+    const nowV = new Date().toISOString();
+    let switched=0;
+    for(const u of allU){
+      if(u.is_admin || u.user_type==='trainer' || u.trial_followup_enrolled) continue;
+      if((u.visit_count||0) < 1) continue;                       // ešte nebola na hodine
+      if((u.single_entries||0) > 0) continue;                    // už má vstupy = zaplatila
+      const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
+      if(mem && (mem.expires_at||'') > nowV) continue;           // má členstvo = zaplatila
+      const pend = await q.count(db.email_queue,{user_id:u._id, status:'pending', sequence:{$in:['lead_nurture','welcome']}});
+      if(!pend) continue;                                        // nič jej nechodí — netreba prepínať
+      await cancelSequence(u._id,'lead_nurture');
+      await cancelSequence(u._id,'welcome');
+      await enqueueSequence(u._id,'trial_followup');
+      await q.update(db.users,{_id:u._id},{$set:{trial_followup_enrolled:true, trial_followup_at:nowISO()}});
+      switched++;
+    }
+    await q.insert(db.settings,{key:'trial_followup_migrate_v1', value:true, at:nowISO()});
+    console.log(`✅  trial_followup: prepnutých ${switched} žien z lead_nurture (už boli na hodine zdarma)`);
+  }
+
   // Promo kód pre návrat odídených klientov (30% na prvý mesiac)
   if(!await q.one(db.promo_codes,{code:'VITAJSPAT'})){
     await q.insert(db.promo_codes,{ code:'VITAJSPAT', type:'percent', value:30, applies_to:'membership',
@@ -2933,6 +2986,7 @@ app.get('/api/admin/leads/:id/emails', adminAuth, async(req,res)=>{
       lead_nurture:'Starostlivosť o leada', welcome:'Uvítacia sekvencia', app_launch:'Nová appka',
       membership_welcome:'Vitajte v členstve', expiry_warning:'Blíži sa koniec členstva',
       bronze_upsell:'Bronze → Silver', gold_upsell:'Silver → Gold', winback:'Winback (návrat)',
+      trial_followup:'Po hodine zdarma',
     };
     const meno = firstName(u.name)||'';
     const rows = items.map(i=>{
@@ -8062,6 +8116,20 @@ async function creditAttendance(u){
   }
   if(!u.is_child) sendFirstClassEmail(u._id).catch(()=>{});
   checkNewAchievements(u._id).catch(()=>{}); // odznaky za návštevy/mestá + notif priateľom
+  // Bola na hodine (zdarma), ale ešte nič nekúpila → prepni maily z „príď zadarmo"
+  // (lead_nurture/welcome) na trial_followup (motivácia ku kúpe). Raz na osobu.
+  (async()=>{
+    try{
+      if(u.is_child || u.is_admin || u.trial_followup_enrolled) return;
+      if((u.single_entries||0)>0) return;
+      const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
+      if(mem && (mem.expires_at||'')>new Date().toISOString()) return;
+      await cancelSequence(u._id,'lead_nurture');
+      await cancelSequence(u._id,'welcome');
+      await enqueueSequence(u._id,'trial_followup');
+      await q.update(db.users,{_id:u._id},{$set:{trial_followup_enrolled:true, trial_followup_at:nowISO()}});
+    }catch(e){}
+  })();
   return newCount;
 }
 
@@ -9751,6 +9819,13 @@ async function processEmailQueue(){
       if(step.sequence === 'lead_nurture'){
         const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
         if(mem){ await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'has_membership'}}); continue; }
+        // Už bola na hodine zdarma → „príď na prvú hodinu zadarmo" je mätúce; beží jej trial_followup
+        if((u.visit_count||0)>0){ await cancelSequence(u._id,'lead_nurture'); await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'attended_trial'}}); continue; }
+      }
+      // Po hodine zdarma: prestaň, len čo si kúpi členstvo alebo vstupy (konvertovala)
+      if(step.sequence === 'trial_followup'){
+        const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
+        if(mem || (u.single_entries||0)>0){ await cancelSequence(u._id,'trial_followup'); await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'converted'}}); continue; }
       }
       // Winback: prestaň, ak sa klient vrátil (nedávna účasť) alebo si kúpil členstvo
       if(step.sequence === 'winback'){
