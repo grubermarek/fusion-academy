@@ -124,6 +124,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('staff')"><i class="bi bi-person-badge me-2"></i>Tím &amp; roly</a>
       <div class="nav-group-label">Prevádzka</div>
       <a class="nav-link" href="#" onclick="show('classes')"><i class="bi bi-calendar3 me-2"></i>Hodiny / Stream</a>
+      <a class="nav-link" href="#" onclick="show('privatehours')"><i class="bi bi-person-heart me-2"></i>Súkromné hodiny 🎭</a>
       <a class="nav-link" href="/jedalnicek" target="_blank"><i class="bi bi-egg-fried me-2"></i>Generátor jedálničkov <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></a>
       <a class="nav-link" href="#" onclick="show('products')"><i class="bi bi-box-seam me-2"></i>Produkty & objednávky <span id="pendingBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('rentals')"><i class="bi bi-building me-2"></i>Prenájmy</a>
@@ -469,6 +470,26 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- SÚKROMNÉ HODINY -->
+  <div id="s-privatehours" class="section">
+    <h4 class="fw-bold mb-1"><i class="bi bi-person-heart me-2 text-warning"></i>Súkromné hodiny</h4>
+    <p class="text-muted small mb-3">Povoľ trénerom súkromné hodiny, nastav <b>sadzbu pre klienta</b> (€/h) a <b>podiel trénera</b> (%). Tréner si potom sám vypíše termíny; klienti si ich rezervujú v appke. Storno &lt;24 h = suma prepadá trénerovi.</p>
+    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
+      <h6 class="fw-bold mb-2">Nastavenia trénerov</h6>
+      <div class="table-responsive"><table class="table table-dark table-sm align-middle mb-0" style="font-size:.82rem">
+        <thead><tr><th>Tréner</th><th>Povolené</th><th>Sadzba €/h</th><th>Podiel trénera %</th><th>Voľné sloty</th><th>Tento mesiac</th><th></th></tr></thead>
+        <tbody id="phTrainers"><tr><td colspan="7" class="text-muted py-3">Načítavam…</td></tr></tbody>
+      </table></div>
+    </div></div>
+    <div class="card bg-dark border-secondary"><div class="card-body">
+      <h6 class="fw-bold mb-2">Rezervácie (posledných 60)</h6>
+      <div class="table-responsive"><table class="table table-dark table-sm table-hover align-middle mb-0" style="font-size:.8rem">
+        <thead><tr><th>Dátum</th><th>Tréner</th><th>Klient</th><th>Mesto</th><th>Cena</th><th>Platba</th><th>Stav</th><th></th></tr></thead>
+        <tbody id="phBookings"><tr><td colspan="8" class="text-muted py-3">Načítavam…</td></tr></tbody>
+      </table></div>
+    </div></div>
   </div>
 
   <div id="s-classes" class="section">
@@ -1586,7 +1607,7 @@ function showToast(msg,type='success'){
 
 const GROUP_TITLES={manage:'Správa',marketing:'Marketing',reports:'Financie & reporty',partners:'Partneri (MLM)'};
 const SECTION_GROUP={attendance:'manage',sale:'reports',
-  leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',staff:'manage',classes:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',
+  leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',staff:'manage',classes:'manage',privatehours:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',
   marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
   finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
   partners:'partners',addpartner:'partners',commissions:'partners'};
@@ -1611,6 +1632,7 @@ function show(sec){
   if(sec==='addpartner')loadAddPartner();
   if(sec==='attendance')loadAttendance();
   if(sec==='classes')loadAdminClasses();
+  if(sec==='privatehours')loadAdminPrivate();
   if(sec==='bookings')loadAdminBookings();
   if(sec==='memberships')loadMemberships();
   if(sec==='staff')loadStaff();
@@ -3738,6 +3760,45 @@ async function dispatchOrder(id,val){
 
 // ── TÍM & ROLY ──
 let _staffMentors=[], _staffTimer=null;
+/* ─── Súkromné hodiny (admin) ─── */
+const PH_STATUS={booked:'<span class="badge bg-info text-dark">Rezervovaná</span>', completed:'<span class="badge bg-success">Absolvovaná</span>',
+  cancelled:'<span class="badge bg-secondary">Zrušená</span>', cancelled_late:'<span class="badge bg-danger">Storno &lt;24h</span>', cancelled_by_trainer:'<span class="badge bg-warning text-dark">Zrušil tréner</span>'};
+async function loadAdminPrivate(){
+  const d=await api('/api/admin/private');
+  if(!d||!d.ok){ document.getElementById('phTrainers').innerHTML='<tr><td colspan="7" class="text-danger py-2">Chyba.</td></tr>'; return; }
+  document.getElementById('phTrainers').innerHTML=(d.trainers||[]).map(t=>`<tr>
+    <td class="fw-semibold">${escHtml(t.name)}</td>
+    <td><input type="checkbox" id="ph_en_${t.id}" ${t.enabled?'checked':''}></td>
+    <td><input type="number" step="1" min="1" id="ph_rate_${t.id}" value="${t.rate}" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:85px"></td>
+    <td><input type="number" step="5" min="0" max="100" id="ph_split_${t.id}" value="${t.split}" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:85px"></td>
+    <td>${t.open_slots}</td>
+    <td>${t.month_count}× · <b style="color:#C9A84C">${t.month_earn.toFixed(2)} €</b></td>
+    <td><button class="btn btn-sm btn-warning py-0 px-2" onclick="savePrivTrainer('${t.id}')">Uložiť</button></td>
+  </tr>`).join('')||'<tr><td colspan="7" class="text-muted py-2">Žiadni tréneri.</td></tr>';
+  document.getElementById('phBookings').innerHTML=(d.bookings||[]).map(b=>`<tr>
+    <td>${fmtDate(b.date)} ${b.time_start}</td>
+    <td>${escHtml(b.trainer_name)}</td>
+    <td><a href="#" onclick="openClientDetail('${b.client_id}');return false" style="color:#C9A84C">${escHtml(b.client_name)}</a></td>
+    <td>${escHtml(b.city||'')}</td>
+    <td>${(+b.price).toFixed(2)} € <span class="text-muted" style="font-size:.68rem">(tréner ${b.split||70}%)</span></td>
+    <td>${b.paid?'<span class="badge bg-success">kredit ✓</span>':'<span class="badge bg-warning text-dark">na mieste</span>'}</td>
+    <td>${PH_STATUS[b.status]||escHtml(b.status)}</td>
+    <td>${b.status==='booked'?`<button class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:.7rem" onclick="adminCancelPriv('${b.id}')">✕ Zrušiť</button>`:''}</td>
+  </tr>`).join('')||'<tr><td colspan="8" class="text-muted py-2">Zatiaľ žiadne rezervácie.</td></tr>';
+}
+async function savePrivTrainer(id){
+  const body={ enabled:document.getElementById('ph_en_'+id).checked,
+    rate:+document.getElementById('ph_rate_'+id).value, split:+document.getElementById('ph_split_'+id).value };
+  const r=await api('/api/admin/private/trainer/'+id,{method:'PUT',body:JSON.stringify(body)});
+  if(r&&r.ok){ showToast('Nastavenia uložené ✓','success'); loadAdminPrivate(); } else showToast('Chyba: '+((r&&r.error)||'?'),'error');
+}
+async function adminCancelPriv(id){
+  const reason=prompt('Zrušiť túto súkromnú hodinu? Klientovi sa vráti platba (kredit) a príde mu oznámenie.\n\nDôvod:','');
+  if(reason===null) return;
+  const r=await api('/api/private/cancel',{method:'POST',body:JSON.stringify({booking_id:id, reason})});
+  if(r&&r.ok){ showToast('Zrušené ✓','success'); loadAdminPrivate(); } else showToast('Chyba: '+((r&&r.error)||'?'),'error');
+}
+
 async function loadStaff(){
   const d=await api('/api/admin/staff'); if(!d) return;
   _staffMentors=d.mentors||[];

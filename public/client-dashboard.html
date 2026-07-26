@@ -594,6 +594,17 @@
     </div>
   </div>
 
+  <!-- Súkromné hodiny -->
+  <div class="card anim anim-d6" id="privateCard" style="margin-bottom:20px">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+      <span><i class="bi bi-person-heart"></i> Súkromné hodiny</span>
+    </div>
+    <p style="color:var(--muted,#999);font-size:.82rem;margin:4px 0 12px">Hodina len pre teba — tréner sa ti venuje 1:1. Vyber si trénera a voľný termín. <b>Bezplatné zrušenie do 24 h pred začiatkom</b>, neskôr suma prepadá trénerovi.</p>
+    <div id="pvMine"></div>
+    <div id="pvTrainers"><div style="color:var(--muted,#999);font-size:.85rem">Načítavam trénerov…</div></div>
+    <div id="pvSlots" style="display:none;margin-top:10px"></div>
+  </div>
+
   <!-- Friends & public profile -->
   <div class="card anim anim-d6" id="friendsCard" style="margin-bottom:20px">
     <div class="card-title" style="margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
@@ -1570,6 +1581,7 @@ async function init(){
   // Friends & public profile
   document.getElementById('myProfileLink').href='/u/'+me.id;
   loadFriends();
+  loadPrivate();
   // Nedokončená rezervácia z onboardingu (stratená session) — dokonči automaticky
   try{
     const pb=JSON.parse(localStorage.getItem('fa_pending_booking')||'null');
@@ -1589,6 +1601,70 @@ async function init(){
   }catch(e){}
   // Safety net: force any card that failed to fade in to become visible
   setTimeout(()=>document.querySelectorAll('.anim').forEach(e=>{ if(getComputedStyle(e).opacity==='0') e.style.opacity='1'; }), 1000);
+}
+
+/* ─── Súkromné hodiny (klient) ─── */
+let _pvTrainers=[], _pvSel=null;
+async function loadPrivate(){
+  const [t,my]=await Promise.all([api('/api/private/trainers'), api('/api/private/my')]);
+  // Moje rezervácie
+  const mineHost=document.getElementById('pvMine');
+  const upcoming=((my&&my.bookings)||[]).filter(b=>b.status==='booked');
+  mineHost.innerHTML = upcoming.map(b=>{
+    const when=`${b.date.split('-').reverse().join('.')} o ${b.time_start} · ${escHtml(b.city)}`;
+    const hoursLeft=(new Date(`${b.date}T${b.time_start}:00`)-Date.now())/36e5;
+    return `<div style="background:rgba(201,168,76,.07);border:1px solid var(--gold-border,#332a18);border-radius:12px;padding:12px;margin-bottom:10px">
+      <div style="font-size:.9rem"><b>🎭 ${escHtml(b.trainer_name)}</b> · ${when} · <b style="color:var(--gold)">${(+b.price).toFixed(2)} €</b> ${b.paid?'<span style="color:#4ade80;font-size:.72rem">✓ zaplatené</span>':'<span style="color:#fbbf24;font-size:.72rem">💵 na mieste</span>'}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;align-items:center">
+        ${b.trainer_phone?`<a href="tel:${escHtml(b.trainer_phone.replace(/\s+/g,''))}" style="color:#4ade80;text-decoration:none;font-size:.8rem">📞 Zavolať trénerovi</a>`:''}
+        <a href="/community?dm=${b.trainer_id}" style="color:var(--gold);text-decoration:none;font-size:.8rem">✉️ Napísať</a>
+        <span style="flex:1"></span>
+        <button onclick="pvCancelMine('${b.id}',${hoursLeft<24})" style="background:none;border:1px solid ${hoursLeft<24?'rgba(229,115,115,.6)':'#444'};color:${hoursLeft<24?'#e57373':'#999'};border-radius:8px;padding:5px 12px;font-size:.76rem;cursor:pointer">✕ Zrušiť${hoursLeft<24?' (spoplatnené)':''}</button>
+      </div></div>`;
+  }).join('');
+  // Tréneri
+  const th=document.getElementById('pvTrainers');
+  _pvTrainers=(t&&t.trainers)||[];
+  if(!_pvTrainers.length){ th.innerHTML='<div style="color:var(--muted,#999);font-size:.83rem">Momentálne nie sú vypísané žiadne voľné termíny — skús neskôr. 💛</div>'; return; }
+  th.innerHTML='<div style="font-size:.8rem;color:var(--muted);margin-bottom:8px">Vyber trénera:</div>'+_pvTrainers.map(tr=>`
+    <button onclick="pvPick('${tr.id}')" style="display:inline-flex;align-items:center;gap:8px;background:${_pvSel===tr.id?'rgba(201,168,76,.18)':'#161616'};border:1px solid ${_pvSel===tr.id?'var(--gold)':'#2a2a2a'};color:var(--cream,#eee);border-radius:12px;padding:8px 14px;margin:0 8px 8px 0;cursor:pointer">
+      ${tr.av?`<img src="/api/avatar/${tr.id}" style="width:26px;height:26px;border-radius:50%;object-fit:cover">`:''}<b>${escHtml(tr.name)}</b>
+      <span style="font-size:.72rem;color:var(--muted)">od ${tr.rate.toFixed(0)} €/h · ${escHtml(tr.cities.join(', '))}</span>
+    </button>`).join('');
+}
+async function pvPick(tid){
+  _pvSel=tid; loadPrivate();
+  const host=document.getElementById('pvSlots');
+  host.style.display='block'; host.innerHTML='<div style="color:var(--muted);font-size:.83rem">Načítavam termíny…</div>';
+  const d=await api('/api/private/slots?trainer_id='+tid);
+  const slots=(d&&d.slots)||[];
+  if(!slots.length){ host.innerHTML='<div style="color:var(--muted);font-size:.83rem">Tento tréner nemá voľné termíny.</div>'; return; }
+  host.innerHTML='<div style="font-size:.8rem;color:var(--muted);margin-bottom:8px">Voľné termíny:</div>'+slots.map(s=>`
+    <button onclick="pvBook('${s.id}',${s.price},'${escHtml(s.date)}','${escHtml(s.time_start)}')" style="display:inline-block;background:#161616;border:1px solid var(--gold-border,#332a18);color:var(--cream,#eee);border-radius:10px;padding:8px 12px;margin:0 8px 8px 0;cursor:pointer;font-size:.82rem">
+      <b>${s.date.split('-').reverse().join('.')}</b> ${s.time_start} · ${s.duration_min} min<br><span style="font-size:.72rem;color:var(--muted)">📍 ${escHtml(s.city)}${s.location?' · '+escHtml(s.location):''}</span> <b style="color:var(--gold)">${s.price.toFixed(2)} €</b>
+    </button>`).join('');
+}
+async function pvBook(slotId, price, date, time){
+  const credit=+(_me&&_me.referral_credit||0);
+  let pay='onsite';
+  if(credit>=price){
+    pay = confirm(`Rezervovať ${date.split('-').reverse().join('.')} o ${time} za ${price.toFixed(2)} €?\n\nOK = zaplatiť KREDITOM (máš ${credit.toFixed(2)} €)\nZrušiť a znova = platba na mieste`) ? 'credit' : null;
+    if(pay===null){ if(!confirm(`Rezervovať s platbou NA MIESTE (${price.toFixed(2)} €)?\n\nStorno zdarma do 24 h pred hodinou, potom suma prepadá trénerovi.`)) return; pay='onsite'; }
+  } else {
+    if(!confirm(`Rezervovať ${date.split('-').reverse().join('.')} o ${time} za ${price.toFixed(2)} € (platba na mieste)?\n\nStorno zdarma do 24 h pred hodinou, potom suma prepadá trénerovi.`)) return;
+  }
+  const r=await api('/api/private/book',{method:'POST',body:{slot_id:slotId, pay}});
+  if(r&&r.ok){ showToast('🎭 Súkromná hodina rezervovaná!','success'); _pvSel=null; document.getElementById('pvSlots').style.display='none'; loadPrivate(); if(pay==='credit'&&_me) _me.referral_credit=credit-price; }
+  else showToast((r&&r.error)||'Chyba rezervácie','error');
+}
+async function pvCancelMine(id, late){
+  const msg = late
+    ? 'POZOR: do začiatku hodiny je menej než 24 hodín.\n\nPodľa storno podmienok suma PREPADÁ trénerovi (nevracia sa).\n\nNaozaj zrušiť?'
+    : 'Zrušiť súkromnú hodinu? (viac než 24 h vopred — bezplatne, platba sa vráti)';
+  if(!confirm(msg)) return;
+  const r=await api('/api/private/cancel',{method:'POST',body:{booking_id:id}});
+  if(r&&r.ok){ showToast(r.late?'Hodina zrušená — storno poplatok prepadol trénerovi':'Hodina zrušená ✓','success'); loadPrivate(); }
+  else showToast((r&&r.error)||'Chyba','error');
 }
 
 /* ─── Welcome guide (prvé kroky) ─── */
