@@ -77,7 +77,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
   <!-- Membership plans -->
   <div id="plansSection">
     <h2 class="text-center fw-900 mb-1" style="color:var(--cream)">Vyberte si plán</h2>
-    <p class="text-center mb-4" style="color:var(--text-muted)">Prístup k online hodinám, živým prenosom a záznamom</p>
+    <p class="text-center mb-4" style="color:var(--text-muted)">Prístup k online hodinám a živým prenosom</p>
     <div class="row g-3 justify-content-center mb-5">
       <div class="col-md-5 col-lg-4">
         <div class="plan-card h-100">
@@ -89,10 +89,8 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
           </div>
           <ul class="feature-list">
             <li>Prístup k živým prenosom</li>
-            <li>Základné záznamy hodín</li>
             <li>Komunita – všetky kanály</li>
             <li class="locked">Offline hodiny nezahrnuté</li>
-            <li class="locked">Osobná konzultácia</li>
           </ul>
           <button class="btn-buy-outline" onclick="buyPlan('online_basic')">Kúpiť Online Basic</button>
         </div>
@@ -107,11 +105,8 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
           </div>
           <ul class="feature-list">
             <li>Všetky živé prenosy</li>
-            <li>Plný archív záznamov</li>
             <li>Jedálniček na mieru na celý týždeň</li>
             <li>Komunita + Blog prístup</li>
-            <li>Hodnotenie trénerom</li>
-            <li>Online konzultácia</li>
           </ul>
           <button class="btn-buy" onclick="buyPlan('online_premium')">Kúpiť Online Premium</button>
         </div>
@@ -139,7 +134,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
 
   <!-- Online classes (shown after login) -->
   <div id="onlineClasses" style="display:none">
-    <h2 class="fw-900 mb-3" style="color:var(--cream)">Live hodiny a záznamy</h2>
+    <h2 class="fw-900 mb-3" style="color:var(--cream)">Live hodiny</h2>
     <div id="classesContainer">
       <div class="text-center py-4" style="color:var(--text-muted)"><div class="spinner-border spinner-border-sm me-2"></div>Načítavam...</div>
     </div>
@@ -149,7 +144,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
   <div id="noAccess" class="access-section text-center" style="display:none">
     <div style="font-size:3rem;margin-bottom:1rem">🔒</div>
     <h3 style="color:var(--cream)">Prístup k online hodinám je chránený</h3>
-    <p style="color:var(--text-muted)">Pre zobrazenie živých prenosov a záznamov si zakúpte jeden z plánov vyššie.</p>
+    <p style="color:var(--text-muted)">Pre zobrazenie živých prenosov si zakúp jeden z plánov vyššie.</p>
   </div>
 </div>
 
