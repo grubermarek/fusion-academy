@@ -7376,7 +7376,8 @@ app.get('/api/private/my', auth, async(req,res)=>{
 // ── Admin: nastavenia trénerov + prehľad rezervácií ──────────────────────────
 app.get('/api/admin/private', adminAuth, async(req,res)=>{
   try{
-    const staff=(await q.find(db.users,{active:{$ne:false}})).filter(u=>u.user_type==='trainer'||u.is_admin);
+    const staff=(await q.find(db.users,{active:{$ne:false}}))
+      .filter(u=>(u.user_type==='trainer'||u.is_admin) && u.email!=='admin@fusionacademy.sk'); // systémový Admin účet netrénuje
     const m=today().slice(0,7);
     const trainers=[];
     for(const t of staff){
