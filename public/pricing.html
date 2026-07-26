@@ -147,7 +147,6 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
     <button class="cat-tab" onclick="showCat('courses',this)">💃 Kurzy & Lekcie</button>
     <button class="cat-tab" onclick="showCat('wellness',this)">📊 Wellness & Výživa</button>
     <button class="cat-tab" onclick="showCat('online',this)">🌐 Online</button>
-    <button class="cat-tab" onclick="showCat('events',this)">🎉 Eventy</button>
   </div>
 
   <!-- ══════════════════ MEMBERSHIPS ══════════════════ -->
@@ -209,7 +208,6 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
           <li><i class="fas fa-check check"></i>Jedálniček na mieru na celý týždeň (generátor)</li>
           <li><i class="fas fa-check check"></i>Pravidelné check-iny s trénerom</li>
           <li><i class="fas fa-check check"></i>20 % zľava na súkromné hodiny & eventy</li>
-          <li><i class="fas fa-check check"></i>Prioritné miesta na FitDays</li>
         </ul>
         <div style="display:flex;flex-direction:column;gap:8px">
           <button class="btn-plan btn-plan-gold" onclick="openSubscribeModal('gold','🥇 Gold','125')">🔄 Prihlásiť na odber</button>
@@ -281,7 +279,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
     <div style="max-width:560px;margin:0 auto;background:rgba(201,168,76,.06);border:1px solid var(--gold-border);border-radius:16px;padding:22px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
         <div style="font-weight:800;font-size:1.05rem">Individuálny tréning (60–120 min)</div>
-        <div style="font-size:1.3rem;font-weight:900;color:var(--gold)">od 45 €/h</div>
+        <div style="font-size:1.3rem;font-weight:900;color:var(--gold)">od 25 €/h</div>
       </div>
       <div style="margin-top:12px;font-size:.85rem;color:var(--text-muted)">Zľava pre členov z ceny súkromnej hodiny:</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
@@ -302,72 +300,26 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
   <div id="cat-courses" style="display:none">
     <div class="section-header">
       <h2>Kurzy & Lekcie</h2>
-      <p>Začni od základov a postúp medzi pokročilých — krok po kroku.</p>
+      <p>Individuálny tréning s trénerom — 1:1, tempo aj štýl na mieru.</p>
     </div>
-
-    <!-- Beginner social dance package — FEATURED -->
-    <div style="background:linear-gradient(135deg,rgba(201,168,76,.12),rgba(201,168,76,.04));border:2px solid var(--gold-border);border-radius:1.25rem;padding:2rem;margin-bottom:1.5rem;position:relative;">
-      <div style="position:absolute;top:-1px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#C9A84C,#a07830);color:#111;font-size:.65rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:.3rem 1.2rem;border-radius:0 0 .75rem .75rem;">Odporúčaný štart</div>
-      <div style="display:flex;align-items:flex-start;gap:1.5rem;flex-wrap:wrap">
-        <div style="font-size:3rem;flex-shrink:0">💃</div>
-        <div style="flex:1;min-width:220px">
-          <div style="font-size:1.25rem;font-weight:900;color:var(--gold);margin-bottom:.4rem">Základný kurz spoločenských tancov — začiatočníci</div>
-          <div style="font-size:.88rem;color:rgba(245,237,214,.7);margin-bottom:.75rem;line-height:1.6">
-            <strong style="color:var(--cream)">10 lekcií pre pár</strong> — naučíte sa základy spoločenských tancov od nuly.
-            Hodiny prebiehajú každý <strong style="color:var(--cream)">piatok a nedeľu o 17:00</strong> v Detve.
-            <br><br>
-            <span style="color:#81c784">✓</span> Po absolvovaní kurzu automaticky postúpite medzi <strong style="color:var(--cream)">pokročilých</strong> (piatky/nedele 20:00) a môžete si vybrať mesačný balíček Bronze, Silver alebo Gold.
-          </div>
-          <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
-            <div>
-              <div style="font-size:2.2rem;font-weight:900;color:var(--gold);line-height:1">150 <span style="font-size:1rem">€</span></div>
-              <div style="font-size:.75rem;color:rgba(245,237,214,.45)">za pár · 10 lekcií</div>
-            </div>
-            <a href="/" class="btn-plan btn-plan-gold" style="padding:.65rem 1.5rem;text-decoration:none;display:inline-block;width:auto">Registrovať sa</a>
-          </div>
-        </div>
+    <div style="max-width:560px;margin:0 auto;background:rgba(201,168,76,.06);border:1px solid var(--gold-border);border-radius:16px;padding:22px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+        <div style="font-weight:800;font-size:1.05rem">✨ Súkromná lekcia (60–120 min)</div>
+        <div style="font-size:1.3rem;font-weight:900;color:var(--gold)">od 25 €/h</div>
       </div>
-      <!-- Progression path -->
-      <div style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid rgba(201,168,76,.2)">
-        <div style="font-size:.75rem;color:rgba(245,237,214,.4);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.75rem">Tvoja cesta v spoločenských tancoch</div>
-        <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;font-size:.82rem">
-          <div style="background:rgba(201,168,76,.15);border:1px solid var(--gold-border);color:var(--gold);padding:.35rem .85rem;border-radius:.5rem;font-weight:700">💃 Základný kurz 150 €/pár</div>
-          <div style="color:rgba(245,237,214,.3);font-size:1rem">→</div>
-          <div style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:rgba(245,237,214,.6);padding:.35rem .85rem;border-radius:.5rem">🏆 Pokročilí (pia/ned 20:00)</div>
-          <div style="color:rgba(245,237,214,.3);font-size:1rem">→</div>
-          <div style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:rgba(245,237,214,.6);padding:.35rem .85rem;border-radius:.5rem">🥉 Bronze / 🥈 Silver / 🥇 Gold</div>
-        </div>
+      <div style="margin-top:8px;font-size:.85rem;color:var(--text-muted)">Svadobný tanec, spoločenské tance, Zumba technika, Pro-Am tréning — podľa dohody s trénerom. Termín si vyberieš z kalendára trénera priamo v appke.</div>
+      <div style="margin-top:12px;font-size:.85rem;color:var(--text-muted)">Zľava pre členov:</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <span style="background:rgba(205,127,50,.15);border:1px solid rgba(205,127,50,.4);border-radius:999px;padding:5px 12px;font-size:.8rem">🥉 Bronze <b>−10 %</b></span>
+        <span style="background:rgba(192,192,192,.12);border:1px solid rgba(192,192,192,.35);border-radius:999px;padding:5px 12px;font-size:.8rem">🥈 Silver <b>−20 %</b></span>
+        <span style="background:rgba(201,168,76,.15);border:1px solid var(--gold-border);border-radius:999px;padding:5px 12px;font-size:.8rem">🥇 Gold <b>−30 %</b></span>
       </div>
-    </div>
-
-    <div class="price-table">
-      <table>
-        <thead><tr>
-          <th>Služba</th>
-          <th>Popis</th>
-          <th>Cena</th>
-        </tr></thead>
-        <tbody>
-          <tr>
-            <td>🧒 Spoločenské tance pre deti (10 lekcií)</td>
-            <td>Pre deti <strong>do 14 rokov</strong> — rytmus, správne držanie tela, pohyb a sebavedomie. Detva, pia/ned 15:00.</td>
-            <td><span class="price-num">90 €</span> / kurz</td>
-          </tr>
-          <tr>
-            <td>👤 Súkromná lekcia (60 min)</td>
-            <td>Individuálna hodina s inštruktorom. Svadobný tanec, spoločenské tance, Pro-Am tréning — podľa dohody.</td>
-            <td><span class="price-num">70 €</span> / hod<br><small style="color:var(--text-muted)">Silver: 63 € · Gold: 56 €</small></td>
-          </tr>
-          <tr>
-            <td>🏆 FitDay</td>
-            <td>Celodenný workshop — výživa, motivácia, kariérny rozvoj, Zumba party a sieťovanie.</td>
-            <td><span class="price-num">25 €</span> / osoba<br><small style="color:var(--text-muted)">Gold: zľava 20 %</small></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <div style="background:rgba(201,168,76,.06);border:1px solid var(--gold-border);border-radius:.85rem;padding:1.25rem 1.5rem;font-size:.85rem;color:rgba(245,237,214,.7);">
-      <strong style="color:var(--gold)">📞 Rezervácie:</strong> Zavolajte alebo napíšte WhatsApp na <strong>+421 904 315 151</strong>. Hodiny prebiehajú v Detve.
+      <ul style="font-size:.82rem;color:var(--text-muted);margin:12px 0 14px;padding-left:18px;line-height:1.7">
+        <li>Platba kartou online, kreditom alebo na mieste</li>
+        <li>Bezplatné zrušenie do 24 h pred začiatkom</li>
+        <li>Počíta sa do návštev, odznakov aj mesačnej súťaže</li>
+      </ul>
+      <a href="/client-dashboard?goto=private" style="display:block;text-align:center;background:linear-gradient(135deg,var(--gold),#a07830);color:#111;font-weight:800;padding:13px;border-radius:12px;text-decoration:none">✨ Vybrať trénera a termín →</a>
     </div>
   </div>
 
@@ -375,7 +327,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
   <div id="cat-wellness" style="display:none">
     <div class="section-header">
       <h2>Wellness & Výživa</h2>
-      <p>Metabolická analýza a výživové poradenstvo.</p>
+      <p>Metabolická analýza tela (InBody).</p>
     </div>
     <div class="price-table mb-4">
       <table>
@@ -389,21 +341,6 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
             <td>📊 Metabolická analýza (InBody)</td>
             <td>Telesná kompozícia, bazálny metabolizmus, % tuku, biologický vek</td>
             <td><span class="price-num">35 €</span><br><small style="color:var(--text-muted)">Zahrnuté v Silver & Gold</small></td>
-          </tr>
-          <tr>
-            <td>🥗 Nutričné poradenstvo (60 min)</td>
-            <td>Individuálna konzultácia s výživovým poradcom, odporúčania</td>
-            <td><span class="price-num">45 €</span> / hodina</td>
-          </tr>
-          <tr>
-            <td>🔬 Fit Premena – Základný</td>
-            <td>Analýza + cvičebný plán + výživové odporúčania na 1 mesiac</td>
-            <td><span class="price-num">65 €</span> / mes</td>
-          </tr>
-          <tr>
-            <td>📈 Fit Premena – Premium</td>
-            <td>4× analýza + tréning + jedálniček + koučing (3 mesiace)</td>
-            <td><span class="price-num">199 €</span> / 3 mes</td>
           </tr>
         </tbody>
       </table>
@@ -426,7 +363,6 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
         <div class="plan-period">/ mesiac · zakladacia cena pre prvých 25 členov</div>
         <ul class="plan-features">
           <li><i class="fas fa-check check"></i>Živé online Zumba hodiny (LIVE)</li>
-          <li><i class="fas fa-check check"></i>Fit Premena online hodiny</li>
           <li><i class="fas fa-check check"></i>Prístup k nahrávkam</li>
           <li><i class="fas fa-times cross"></i>Nutričný plán na mieru</li>
           <li><i class="fas fa-times cross"></i>Osobný koučing</li>
@@ -455,59 +391,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
     </div>
   </div>
 
-  <!-- ══════════════════ EVENTS ══════════════════ -->
-  <div id="cat-events" style="display:none">
-    <div class="section-header">
-      <h2>Eventy & Špeciálne akcie</h2>
-      <p>Workshopy, FitDays, retreaty a špeciálne podujatia Fusion Academy.</p>
-    </div>
-    <div class="price-table">
-      <table>
-        <thead><tr>
-          <th>Podujatie</th>
-          <th>Popis</th>
-          <th>Cena</th>
-        </tr></thead>
-        <tbody>
-          <tr>
-            <td>✨ Masterclass / Workshop</td>
-            <td>Špeciálny workshop s hosťujúcim inštruktorom. Rôzne štýly</td>
-            <td><span class="price-num">35 €</span> / osoba</td>
-          </tr>
-          <tr>
-            <td>💪 FitDays</td>
-            <td>Celodenná akcia: vstup + refreshments + afterparty. Tréning, výživa, motivácia</td>
-            <td><span class="price-num">25 €</span> / osoba</td>
-          </tr>
-          <tr>
-            <td>🏔️ Víkendový retreat</td>
-            <td>Tanečno-wellness pobyt. Ubytovanie + strava + tréningy + prednášky</td>
-            <td><span class="price-num">280 €</span> / osoba</td>
-          </tr>
-          <tr>
-            <td>🎓 FitDays školenia</td>
-            <td>Dvojtýždenné stretnutia: výživa, motivácia, osobný rozvoj, kariéra</td>
-            <td><span class="price-num">Zadarmo</span> pre členov</td>
-          </tr>
-          <tr>
-            <td>🎉 Tanečná párty</td>
-            <td>Voľná tanečná zábava. Každý piatok od 20:00, Banská Bystrica</td>
-            <td><span class="price-num">5 €</span> vstupné</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <p style="font-size:.82rem;color:var(--text-muted);text-align:center;margin-top:.75rem;">
-      Gold členovia majú 20 % zľavu na všetky eventy a prioritné miesta na FitDays.
-    </p>
-  </div>
-
-  <div class="section-divider"></div>
-
-  <!-- FAQ -->
-  <div class="section-header">
-    <h2>Časté otázky</h2>
-  </div>
+  
   <div style="max-width:700px;margin:0 auto 3rem;">
     <div class="faq-item" onclick="toggleFaq(this)">
       <div class="faq-q">Je prvá hodina naozaj zadarmo? <i class="fas fa-plus icon"></i></div>

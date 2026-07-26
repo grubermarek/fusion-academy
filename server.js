@@ -7156,7 +7156,7 @@ const trainerAuth = async(req,res,next)=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 // SÚKROMNÉ HODINY — kalendár trénera, booking klienta, 24h storno, účtovanie
 // ═══════════════════════════════════════════════════════════════════════════════
-const PRIVATE_DEFAULT_RATE = 45;   // €/hodina, admin mení per tréner
+const PRIVATE_DEFAULT_RATE = 25;   // €/hodina, admin mení per tréner
 const PRIVATE_DEFAULT_SPLIT = 70;  // % z ceny ide trénerovi
 function privateSettings(u){
   return { enabled: !!u.private_enabled,
