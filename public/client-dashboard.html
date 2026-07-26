@@ -784,7 +784,7 @@ async function logout(){await api('/api/logout',{method:'POST'});window.location
 async function cancelStripeSub(){
   if(!confirm('Zrušiť automatický mesačný odber? Členstvo ti zostane aktívne do konca zaplateného obdobia.')) return;
   const d=await api('/api/stripe/subscribe/cancel',{method:'POST'});
-  if(d?.ok){ showToast('Odber zrušený. Členstvo platí do konca obdobia.','success'); document.getElementById('mcCancelSub').style.display='none'; }
+  if(d?.ok){ showToast('Odber zrušený. Členstvo platí do konca obdobia.','success'); if(_me){ _me.stripe_subscription=false; renderMembership(_me); } }
   else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 
@@ -850,38 +850,81 @@ function renderMembership(me){
   const noBlock=document.getElementById('mcNoMembershipBlock');
   const infoBlock=document.getElementById('mcInfo');
   const buyBtn=document.getElementById('mcBuyBtn');
-  if(!m){
-    planEl.textContent='Žiadne aktívne členstvo';
-    statusEl.className='mc-status none';statusEl.textContent='Neaktívne';
-    noBlock.style.display='block';infoBlock.style.display='none';
-    buyBtn.innerHTML='<i class="bi bi-cart-plus"></i> 🛒 Kúpiť prvé členstvo →';
-  } else {
+  const cancelLink=document.getElementById('mcCancelSub'); if(cancelLink) cancelLink.style.display='none';
+  const isActive=!!(m && m.status==='active' && (!m.expires_at||m.expires_at>=new Date().toISOString().slice(0,10)));
+  if(isActive){
+    // ── MÁ MESAČNÉ ČLENSTVO: len info — dokedy + automatické obnovenie (klik = vypnúť) ──
     const icons={bronze:'🥉',silver:'🥈',gold:'🥇',online:'🌐'};
     const planKey=(m.plan_id||'').toLowerCase();
     planEl.textContent=(icons[planKey]||'🎫')+' '+(m.plan_name||'Členstvo');
-    const isActive=m.status==='active'&&(!m.expires_at||m.expires_at>=new Date().toISOString().slice(0,10));
-    statusEl.className='mc-status '+(isActive?'active':'expired');
-    statusEl.textContent=isActive?'✓ Aktívne':'✗ Vypršalo';
-    noBlock.style.display='none';infoBlock.style.display='flex';
+    statusEl.className='mc-status active'; statusEl.textContent='✓ Aktívne';
+    noBlock.style.display='none'; infoBlock.style.display='flex'; buyBtn.style.display='none';
     if(m.expires_at){
       const d=new Date(m.expires_at);const days=Math.round((d-new Date())/86400000);
       document.getElementById('mcExpiry').textContent=fmtDMY(m.expires_at)+(days>=0&&days<=7?` ⚠️ (${days} dní)`:'');
       if(days>=0&&days<=7) document.getElementById('mcExpiry').style.color='#ffb74d';
     } else {document.getElementById('mcExpiry').textContent='Neobmedzené';}
-    // Auto-renew (subscription) status
-    const autoRenew = !!(me.stripe_subscription || me.paypal_subscription);
     const ar=document.getElementById('mcAutoRenew');
-    ar.innerHTML = autoRenew
-      ? '<span style="color:#81c784;font-weight:700">🔄 Áno</span>'
-      : '<span style="color:#9e9e9e">Nie</span> <a href="/pricing" style="color:var(--gold);font-size:.78rem">zapnúť →</a>';
-    // Tier-based glow on the card
-    const TIER_COLORS={bronze:'#cd7f32',silver:'#c0c6d0',gold:'#C9A84C',kids:'#FF6B9D',online_basic:'#4CAF50',online_premium:'#9C27B0',permanentka10:'#FF9800'};
+    if(me.stripe_subscription){
+      ar.innerHTML='<a onclick="mcToggleRenew()" style="color:#81c784;font-weight:700;cursor:pointer;text-decoration:underline dotted">🔄 Aktívne — vypnúť?</a>';
+    } else if(me.paypal_subscription){
+      ar.innerHTML='<span style="color:#81c784;font-weight:700">🔄 Aktívne (PayPal)</span>';
+    } else {
+      ar.innerHTML='<span style="color:#9e9e9e">Vypnuté</span> <a href="/pricing" style="color:var(--gold);font-size:.78rem">zapnúť →</a>';
+    }
+    const TIER_COLORS={bronze:'#cd7f32',silver:'#c0c6d0',gold:'#C9A84C',kids:'#FF6B9D',online_basic:'#4CAF50',online_premium:'#9C27B0'};
     const card=document.getElementById('membershipCard');
-    const tc=TIER_COLORS[planKey]||'#C9A84C';
-    card.style.setProperty('--tier', tc);
-    card.classList.toggle('mc-tiered', isActive);
-    buyBtn.innerHTML=isActive?'<i class="bi bi-arrow-repeat"></i> Obnoviť / Upgradovať':'<i class="bi bi-cart-plus"></i> 🛒 Obnoviť členstvo';
+    card.style.setProperty('--tier', TIER_COLORS[planKey]||'#C9A84C');
+    card.classList.add('mc-tiered');
+    return;
   }
+  document.getElementById('membershipCard').classList.remove('mc-tiered');
+  infoBlock.style.display='none'; noBlock.style.display='block'; buyBtn.style.display='';
+  if(entries>0){
+    // ── MÁ PERMANENTKU (bez členstva): zostatok vstupov + upsell na členstvo + súkromná hodina ──
+    planEl.textContent='🎟️ Permanentka';
+    statusEl.className='mc-status active'; statusEl.textContent=`✓ ${entries} vstup${entries===1?'':entries<5?'y':'ov'}`;
+    noBlock.innerHTML=`
+      <div style="background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.3);border-radius:12px;padding:12px 14px;font-size:.9rem;margin-bottom:10px">
+        🎟️ Zostáva ti <b style="color:#60a5fa">${entries}</b> vstup${entries===1?'':entries<5?'y':'ov'} z permanentky.${freeCr>0?` 🎁 + ${freeCr} darovan${freeCr===1?'á hodina':'é hodiny'}.`:''}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+        <a href="/pricing" style="text-decoration:none;background:rgba(201,168,76,.1);border:1px solid var(--gold,#C9A84C);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
+          <div style="font-size:1.4rem">💛</div><div style="font-weight:800;margin:4px 0 2px">Prejdi na mesačné členstvo</div>
+          <div style="font-size:.72rem;color:var(--muted,#999)">neobmedzené hodiny + zľavy na súkromky — pri 2+ hodinách týždenne výhodnejšie</div>
+        </a>
+        <a href="#privateCard" onclick="scrollToPrivate();return false" style="text-decoration:none;background:#161616;border:1px solid var(--gold-border,#332a18);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
+          <div style="font-size:1.4rem">🎭</div><div style="font-weight:800;margin:4px 0 2px">Súkromná hodina</div>
+          <div style="font-size:.72rem;color:var(--muted,#999)">tréner len pre teba · 1:1</div>
+        </a>
+      </div>`;
+    buyBtn.innerHTML='<i class="bi bi-arrow-up-circle"></i> 💛 Prejsť na mesačné členstvo →';
+    if(er) er.style.display='none'; // zostatok už ukazujeme tu
+    return;
+  }
+  // ── NIČ: pôvodné 3 dlaždice ──
+  planEl.textContent = m ? '✗ Členstvo vypršalo' : 'Žiadne aktívne členstvo';
+  statusEl.className='mc-status none'; statusEl.textContent='Neaktívne';
+  noBlock.innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:6px">
+      <a href="/pricing" style="text-decoration:none;background:rgba(201,168,76,.1);border:1px solid var(--gold,#C9A84C);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
+        <div style="font-size:1.5rem">💛</div><div style="font-weight:800;margin:4px 0 2px">Mesačné členstvo</div>
+        <div style="font-size:.74rem;color:var(--muted,#999)">neobmedzené hodiny · od 50 €/mes.</div>
+      </a>
+      <a href="/pricing" style="text-decoration:none;background:#161616;border:1px solid var(--gold-border,#332a18);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
+        <div style="font-size:1.5rem">🎟️</div><div style="font-weight:800;margin:4px 0 2px">Permanentka</div>
+        <div style="font-size:.74rem;color:var(--muted,#999)">10 vstupov · 80 € · bez záväzku</div>
+      </a>
+      <a href="#privateCard" onclick="scrollToPrivate();return false" style="text-decoration:none;background:#161616;border:1px solid var(--gold-border,#332a18);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
+        <div style="font-size:1.5rem">🎭</div><div style="font-weight:800;margin:4px 0 2px">Súkromná hodina</div>
+        <div style="font-size:.74rem;color:var(--muted,#999)">tréner len pre teba · 1:1</div>
+      </a>
+    </div>`;
+  buyBtn.innerHTML = m ? '<i class="bi bi-cart-plus"></i> 🛒 Obnoviť členstvo →' : '<i class="bi bi-cart-plus"></i> 🛒 Kúpiť prvé členstvo →';
+}
+// Klik na „Automatické obnovenie" pri aktívnom Stripe odbere → ponúkni vypnutie
+function mcToggleRenew(){
+  if(confirm('Vypnúť automatické obnovenie členstva?\n\nČlenstvo ti ostane aktívne do konca zaplateného obdobia, potom sa už samo neobnoví.')) cancelStripeSub();
 }
 
 /* ─── Access bar ─── */
@@ -1562,7 +1605,7 @@ async function init(){
   { const wl=document.getElementById('welcomeNameLink'); if(wl) wl.href='/u/'+me.id; }
   document.getElementById('welcomeEmail').textContent=me.email||'';
   renderMembership(me);
-  document.getElementById('mcCancelSub').style.display = me.stripe_subscription ? 'block' : 'none';
+  document.getElementById('mcCancelSub').style.display='none'; // vypnutie odberu je teraz v riadku Automatický odber
   renderAccessBar(me);
   if(me.notif_count>0){const b=document.getElementById('notifBadge');b.textContent=me.notif_count>9?'9+':me.notif_count;b.style.display='flex';}
   if(me.user_type==='partner'||me.user_type==='manager'){document.getElementById('partnerDashLink').style.display='block';}
