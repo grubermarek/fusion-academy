@@ -8640,7 +8640,7 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
           is_me: u._id===me });
       }
       const fn = stripDia(firstName(u.name));
-      if(fn && nameTargets.includes(fn)) namedays.push({name:u.name, avatar:u.avatar||null});
+      if(fn && nameTargets.includes(fn)) namedays.push({id:u._id, name:u.name, avatar:u.avatar||null});
     }
     const slim = w => ({ id:w.id, name:w.name, avatar:w.avatar, points:w.points, breakdown:w.breakdown, badge:w.badge });
     res.json({ month: monthStr, year: yearStr, today_nameday: todayName,

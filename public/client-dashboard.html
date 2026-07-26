@@ -1857,7 +1857,9 @@ function renderCelebrate(){
       ${wishersHtml}
     </div>`;
   }).join('');
-  const nds=(d.namedays||[]).map(n=>`<span class="sl-chip">💐 ${escHtml(n.name)}</span>`);
+  const nds=(d.namedays||[]).map(n=> n.id
+    ? `<a href="/u/${n.id}" style="text-decoration:none"><span class="sl-chip" style="cursor:pointer">💐 ${escHtml(n.name)}</span></a>`
+    : `<span class="sl-chip">💐 ${escHtml(n.name)}</span>`);
   if(!bdays && !nds.length) return '';
   return `<div class="sl-card sl-celebrate">
     <div class="sl-label">🎉 Dnes oslavujú${d.today_nameday?` · meniny má ${escHtml(d.today_nameday)}`:''}</div>
