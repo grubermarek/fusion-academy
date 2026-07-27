@@ -8060,6 +8060,64 @@ app.delete('/api/trainer/cash/:id', trainerAuth, async(req,res)=>{
     res.json({ok:true});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
+// ── PREDAJ TRÉNEROM (členstvá / permanentky / merch) ─────────────────────────
+// Tréner predá klientovi na mieste bez admina. Cash → automaticky sa zapíše do
+// hotovostnej evidencie trénera (zrážka z výplaty, kým ju neodovzdá).
+app.post('/api/trainer/sell', trainerAuth, async(req,res)=>{
+  try{
+    const t=req.trainerUser;
+    const {user_id, kind}=req.body; // kind: 'plan' (členstvo/permanentka) | 'merch'
+    const u=await q.one(db.users,{_id:user_id});
+    if(!u) return res.status(404).json({error:'Klient nenájdený'});
+    let amount=0, what='';
+    if(kind==='plan'){
+      const plan=MEMBERSHIP_PLANS[req.body.plan_id];
+      if(!plan) return res.status(400).json({error:'Neplatný plán'});
+      amount=+(+req.body.amount>0?+req.body.amount:plan.price).toFixed(2);
+      what=plan.type==='bundle'?`Permanentka ${plan.name}`:`Členstvo ${plan.name}`;
+      await activateMembership(u._id, req.body.plan_id);
+      // platba cash — payment_method 'cash' drží konzistenciu s admin predajom aj cash-upsell automatizáciou
+      const mem=await q.one(db.memberships,{user_id:u._id, status:plan.type==='bundle'?'bundle':'active'});
+      if(mem) await q.update(db.memberships,{_id:mem._id},{$set:{payment_method:'cash', price:amount, sold_by:t.name}});
+      await q.insert(db.transactions,{type:plan.type==='bundle'?'single_entry':'membership', user_id:u._id, user_name:u.name,
+        amount, payment_method:'cash', method:'cash', note:`${what} (tréner ${t.name})`, plan_id:req.body.plan_id,
+        recorded_by:t._id, created_at:nowISO(), month:today().slice(0,7)});
+      awardPurchaseCommission({buyer_id:u._id, amount, product_name:what}).catch?.(()=>{});
+    } else if(kind==='merch'){
+      const p=await q.one(db.products,{_id:req.body.product_id});
+      if(!p) return res.status(400).json({error:'Produkt nenájdený'});
+      const qty=Math.min(Math.max(parseInt(req.body.qty)||1,1),20);
+      amount=+(p.price*qty).toFixed(2);
+      what=`${p.name}${qty>1?' ×'+qty:''}`;
+      const order_number='T'+Date.now().toString().slice(-8);
+      await q.insert(db.orders,{order_number, client_name:u.name, client_email:u.email, client_phone:u.phone||'',
+        partner_id:u._id, partner_name:u.name, city:'', items:[{id:p._id, name:p.name, price:p.price, qty, variant:req.body.variant||''}],
+        total:amount, original_total:amount, credit_used:0, notes:`Predal tréner ${t.name} na mieste`,
+        payment_method:'cash', delivery:'osobne', shipping:0, status:'paid', sold_by:t.name, created_at:nowISO(), paid_at:nowISO()});
+      awardPurchaseCommission({buyer_id:u._id, amount, product_name:p.name}).catch?.(()=>{});
+    } else return res.status(400).json({error:'Neplatný typ predaja'});
+    // Hotovosť u trénera → rovnaká automatizácia ako ručný zápis hotovosti
+    await q.insert(db.payouts,{_type:'cash_collected', trainer_id:t._id, trainer_name:t.name,
+      amount, note:`${what} — ${u.name}`, month:today().slice(0,7), date:today(), status:'held', created_at:nowISO()});
+    const admins=await q.find(db.users,{is_admin:true});
+    for(const a of admins) await q.insert(db.notifications,{user_id:a._id, type:'cash_collected',
+      title:`💵 ${t.name} predal/a: ${what} (${amount.toFixed(2)} €)`,
+      body:`Klient: ${u.name} · hotovosť u trénera — odovzdá ju alebo sa zúčtuje s výplatou.`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+    await q.insert(db.notifications,{user_id:u._id, type:'purchase',
+      title:`✅ ${what}`, body:`Nákup za ${amount.toFixed(2)} € (hotovosť) je zaznamenaný. Ďakujeme! 💛`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+    await auditLog(req,'trainer_sell',`${t.name}: ${what} → ${u.name}`,null,{amount, kind},'');
+    res.json({ok:true, what, amount});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Plány pre trénerský predaj (id, názov, cena)
+app.get('/api/trainer/sell-options', trainerAuth, async(req,res)=>{
+  const plans=Object.entries(MEMBERSHIP_PLANS).map(([id,p])=>({id, name:p.name, price:p.price, bundle:p.type==='bundle'}));
+  const products=(await q.find(db.products,{active:true})).map(p=>({id:p._id, name:p.name, price:p.price, cat:p.cat||''}));
+  res.json({ok:true, plans, products});
+});
+
 // Admin: prevzal hotovosť od trénera → zrážka z výplaty zmizne
 // Admin: zoznam hotovostných záznamov trénera (pre detail výplaty)
 app.get('/api/admin/cash', adminAuth, async(req,res)=>{

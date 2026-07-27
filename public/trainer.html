@@ -329,6 +329,10 @@ select.form-control option{background:var(--dark3)}
       <i class="bi bi-person-heart"></i>
       <span class="nav-label">Súkromné</span>
     </button>
+    <button class="nav-item" onclick="switchTab('sell',this)" id="tab-sell">
+      <i class="bi bi-bag-heart"></i>
+      <span class="nav-label">Predaj</span>
+    </button>
     <button class="nav-item" onclick="switchTab('earnings',this)" id="tab-earnings">
       <i class="bi bi-cash-coin"></i>
       <span class="nav-label">Zárobky</span>
@@ -465,6 +469,29 @@ select.form-control option{background:var(--dark3)}
             <tr><td colspan="6" class="loading">Načítavam...</td></tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- ═══════════ PREDAJ PANEL ═══════════ -->
+    <div class="panel" id="panel-sell">
+      <div class="section-title"><i class="bi bi-bag-heart" style="color:var(--gold)"></i> Predaj klientom</div>
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px">
+        <div style="font-size:.82rem;color:var(--muted);margin-bottom:8px">1️⃣ Vyber klienta (meno / email / telefón)</div>
+        <div style="position:relative;max-width:380px">
+          <input id="sellSearch" placeholder="🔍 Hľadať klienta…" oninput="sellSearchInput()" autocomplete="off"
+            style="width:100%;background:#111;border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:10px 13px;font-size:.9rem">
+          <div id="sellResults" style="display:none;position:absolute;z-index:30;left:0;right:0;top:calc(100% + 4px);background:#141414;border:1px solid var(--border);border-radius:10px;max-height:240px;overflow-y:auto"></div>
+        </div>
+        <div id="sellClientChip" style="display:none;margin-top:10px"></div>
+      </div>
+      <div id="sellCatalog" style="display:none">
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px">
+          <div style="font-size:.82rem;color:var(--muted);margin-bottom:10px">2️⃣ Čo predávaš? Platba je <b style="color:var(--gold)">v hotovosti</b> — automaticky sa zapíše do tvojej hotovostnej evidencie.</div>
+          <div style="font-weight:800;color:var(--gold);font-size:.88rem;margin-bottom:8px">💳 Členstvá & permanentky</div>
+          <div id="sellPlans" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px"></div>
+          <div style="font-weight:800;color:var(--gold);font-size:.88rem;margin:16px 0 8px">👕 Merch</div>
+          <div id="sellProducts" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px"></div>
+        </div>
       </div>
     </div>
 
@@ -1172,6 +1199,7 @@ function renderStudents(list){
       <td>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <a class="btn-sm" href="/u/${s.id}" target="_blank" style="text-decoration:none"><i class="bi bi-person"></i> Profil</a>
+          <button class="btn-sm" onclick="sellTo('${s.id}','${esc(s.name||'').replace(/'/g,'')}')" style="border-color:var(--gold-border);color:var(--gold)"><i class="bi bi-bag-heart"></i> Predať</button>
         </div>
       </td>
     </tr>`;
@@ -1486,10 +1514,70 @@ function switchTab(id, btn){
   if(id==='notes') populateNoteClasses();
   if(id==='tasks') loadTasks();
   if(id==='earnings') loadTrainerEarnings();
+  if(id==='sell') loadSellOptions();
   if(id==='private') loadTrainerPrivate();
   if(id==='qrscanner') populateQrClassSelect();
   if(id!=='qrscanner') stopQrScanner();
 }
+// ── PREDAJ KLIENTOM ──────────────────────────────────────────────────────────
+let _sellClient=null, _sellOpts=null, _sellTimer=null;
+async function loadSellOptions(){
+  if(_sellOpts) return renderSellCatalog();
+  const d=await api('/api/trainer/sell-options');
+  if(d&&d.ok){ _sellOpts=d; renderSellCatalog(); }
+}
+function sellSearchInput(){
+  clearTimeout(_sellTimer);
+  const v=document.getElementById('sellSearch').value.trim();
+  const box=document.getElementById('sellResults');
+  if(v.length<2){ box.style.display='none'; return; }
+  _sellTimer=setTimeout(async()=>{
+    const rows=await api('/api/attendance/search-users?q='+encodeURIComponent(v));
+    if(!Array.isArray(rows)||!rows.length){ box.innerHTML='<div style="padding:10px;color:var(--muted);font-size:.82rem">Nikto sa nenašiel</div>'; box.style.display='block'; return; }
+    box.innerHTML=rows.filter(r=>!r.is_child).map(r=>`<div onclick='sellPick(${JSON.stringify(r).replace(/'/g,"&#39;")})' style="padding:9px 12px;cursor:pointer;border-bottom:1px solid #1e1e1e" onmouseover="this.style.background='#1c1c1c'" onmouseout="this.style.background=''">
+      <b style="color:var(--gold)">${esc(r.name)}</b> <span style="font-size:.74rem;color:var(--muted)">${esc(r.email||'')} · ${r.visit_count||0} návštev</span></div>`).join('');
+    box.style.display='block';
+  },250);
+}
+function sellPick(r){
+  _sellClient=r;
+  document.getElementById('sellResults').style.display='none';
+  document.getElementById('sellSearch').value='';
+  document.getElementById('sellClientChip').style.display='block';
+  document.getElementById('sellClientChip').innerHTML=`<span style="background:var(--gold-dim);border:1px solid var(--gold-border);color:var(--gold);border-radius:20px;padding:7px 14px;font-weight:700;font-size:.88rem">👤 ${esc(r.name)} <a onclick="sellClear()" style="cursor:pointer;margin-left:6px;color:#e05656">✕</a></span>`;
+  document.getElementById('sellCatalog').style.display='block';
+  loadSellOptions();
+}
+function sellClear(){ _sellClient=null; document.getElementById('sellClientChip').style.display='none'; document.getElementById('sellCatalog').style.display='none'; }
+function renderSellCatalog(){
+  if(!_sellOpts) return;
+  const tile=(onclick,emoji,name,price)=>`<div onclick="${onclick}" style="background:#151515;border:1px solid #2a2a2a;border-radius:12px;padding:14px;cursor:pointer;text-align:center" onmouseover="this.style.borderColor='var(--gold-border)'" onmouseout="this.style.borderColor='#2a2a2a'">
+    <div style="font-size:1.4rem">${emoji}</div><div style="font-weight:700;font-size:.86rem;margin:4px 0">${esc(name)}</div><div style="color:var(--gold);font-weight:800">${(+price).toFixed(2)} €</div></div>`;
+  document.getElementById('sellPlans').innerHTML=_sellOpts.plans.map(p=>tile(`sellConfirm('plan','${p.id}')`, p.bundle?'🎟️':'💳', p.name, p.price)).join('');
+  document.getElementById('sellProducts').innerHTML=_sellOpts.products.length?_sellOpts.products.map(p=>tile(`sellConfirm('merch','${p.id}')`, '👕', p.name, p.price)).join(''):'<div style="color:var(--muted);font-size:.82rem">Žiadne produkty v e-shope.</div>';
+}
+async function sellConfirm(kind, id){
+  if(!_sellClient) return toast('Najprv vyber klienta', true);
+  const item=kind==='plan'?_sellOpts.plans.find(p=>p.id===id):_sellOpts.products.find(p=>p.id===id);
+  let qty=1, amount=item.price;
+  if(kind==='merch'){
+    qty=parseInt(prompt(`Počet kusov „${item.name}":`,'1'))||0;
+    if(qty<1) return;
+    amount=+(item.price*qty).toFixed(2);
+  } else {
+    const a=prompt(`Suma v hotovosti za „${item.name}" (predvyplnená bežná cena):`, (+item.price).toFixed(2));
+    if(a===null) return;
+    amount=+String(a).replace(',','.')||item.price;
+  }
+  if(!confirm(`Predať: ${item.name}${qty>1?' ×'+qty:''}\nKlient: ${_sellClient.name}\nHotovosť: ${(+amount).toFixed(2)} €\n\nSuma sa zapíše do tvojej hotovostnej evidencie (odovzdáš ju, alebo sa zúčtuje s výplatou).`)) return;
+  const body=kind==='plan'?{user_id:_sellClient.id, kind, plan_id:id, amount}:{user_id:_sellClient.id, kind, product_id:id, qty};
+  const d=await api('/api/trainer/sell',{method:'POST',body:JSON.stringify(body)});
+  if(d&&d.ok){ toast(`✅ ${d.what} — ${d.amount.toFixed(2)} € (zapísané v hotovosti)`); loadTrainerCash&&loadTrainerCash(); loadStudents&&loadStudents(); }
+  else toast((d&&d.error)||'Chyba predaja', true);
+}
+// Predklik z riadku klienta / z profilu
+function sellTo(id,name){ switchTab('sell', document.getElementById('tab-sell')); sellPick({id, name, email:'', visit_count:''}); }
+
 // ── Asistent ──
 let _asstClients=[], _asstTimer=null;
 async function loadAssistant(){
