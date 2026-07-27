@@ -3191,25 +3191,6 @@ function parseCsv(text){
   return rows.filter(r=>r.length>1);
 }
 // ── Jednorazový import starého zoznamu (xlsx s menami a telefónmi, bez mailov) ──
-// Jednorazové čistenie testovacích účtov (@test-fa.local) — mŕtve bez IMPORT_TOKEN v env.
-app.post('/api/cleanup-testdata', async(req,res)=>{
-  try{
-    const tok=process.env.IMPORT_TOKEN;
-    if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
-    const testUsers=(await q.find(db.users,{})).filter(u=>/@test-fa\.local$/i.test(u.email||''));
-    let bookings=0, notifs=0, queue=0;
-    for(const u of testUsers){
-      bookings+=await q.remove(db.bookings,{user_id:u._id},{multi:true});
-      notifs+=await q.remove(db.notifications,{user_id:u._id},{multi:true});
-      queue+=await q.remove(db.email_queue,{user_id:u._id},{multi:true}).catch(()=>0);
-      await q.remove(db.memberships,{user_id:u._id},{multi:true}).catch(()=>{});
-      await q.remove(db.users,{_id:u._id});
-    }
-    for(const d of [db.users,db.bookings,db.notifications,db.email_queue,db.memberships]) try{ d.compactDatafile(); }catch(e){}
-    res.json({ok:true, users:testUsers.map(u=>u.email), bookings, notifs, queue});
-  }catch(e){ res.status(500).json({error:e.message}); }
-});
-
 // Zabezpečené tokenom v env (IMPORT_TOKEN) — endpoint je mŕtvy, kým token nie je nastavený.
 // Idempotentné: páruje podľa telefónu (posledných 9 číslic), potom podľa presného mena.
 // Bez mailu → syntetická adresa @import.local (sendMail ju nikdy nepoužije; kontakt = SMS).
