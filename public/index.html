@@ -1373,7 +1373,7 @@ async function doConfirmBook(){
   btn.disabled=true;
   btn.innerHTML='<i class="bi bi-arrow-repeat spin"></i>&nbsp; Rezervujem...';
   closeBookConfirm();
-  if(el){ el.classList.add('booking'); el.querySelector('.cc-cta').innerHTML='<i class="bi bi-arrow-repeat spin"></i>'; }
+  if(el){ el.classList.add('booking'); const cta=el.querySelector('.cc-cta'); if(cta) cta.innerHTML='<i class="bi bi-arrow-repeat spin"></i>'; }
   if(_preview){ // náhľad: rezervácia sa nevytvára, len ukáž potvrdenie s animáciou
     btn.disabled=false; btn.innerHTML='<i class="bi bi-check2-circle"></i> Áno, rezervovať!';
     await showConfirmation({class_name:className, booking_date:date||''});
@@ -1400,14 +1400,23 @@ async function doConfirmBook(){
         openLogin && openLogin();
       } else if(d.error==='membership_required'){
         showMembershipWall();
+      } else if(/už (ste sa |si )?prihlás/i.test(d.error||'')){
+        // Rezervácia už existuje (dvojité ťuknutie / opakovaný pokus) — pre klientku
+        // je to úspech, pokračuj na potvrdenie namiesto slepej uličky.
+        _payOnSite=false;
+        try{ await showConfirmation({class_name:className, booking_date:date||''}); }catch(e){}
+        goTo(3);
+        _pending=null; return;
       } else {
         showToast(d.error||'Chyba rezervácie');
       }
-      if(el){el.classList.remove('booking');el.querySelector('.cc-cta').innerHTML='<i class="bi bi-check2-circle"></i> Rezervovať';}
+      if(el){el.classList.remove('booking');const cta=el.querySelector('.cc-cta');if(cta)cta.innerHTML='<i class="bi bi-check2-circle"></i> Rezervovať';}
       return;
     }
     _payOnSite=false;
-    await showConfirmation({class_name:className,...d});
+    // Potvrdenie nesmie nikdy zhodiť úspešnú rezerváciu — krok 3 sa zobrazí vždy
+    try{ await showConfirmation({class_name:className,...d}); }
+    catch(e){ setTimeout(()=>{ window.location.href='/client-dashboard?welcome=1'; }, 2500); }
     goTo(3);
     setTimeout(()=>{
       document.querySelectorAll('.tip-item').forEach((t,i)=>{
