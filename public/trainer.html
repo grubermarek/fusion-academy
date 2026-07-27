@@ -1001,12 +1001,27 @@ async function claimTrainerIns(classId, date){
   if(r&&r.ok){ toast('✅ Prihlásený/á ako tréner hodiny'); loadTrainerInstructor(classId); } else toast(r?.error||'Chyba', true);
 }
 async function pickTrainerIns(classId, date){
-  if(!_trTrainers){ _trTrainers=await api('/api/attendance/trainers')||[]; }
+  if(!_trTrainers){ _trTrainers=(await api('/api/attendance/trainers')||[]).filter(t=>(t.name||'').trim().toLowerCase()!=='admin'); }
   const cur=_trInsBy[classId]||{};
-  const pick=prompt(`Kto učí túto hodinu (${fmtDate(date)})?\n\n${_trTrainers.map((t,i)=>`${i+1}. ${t.name}`).join('\n')}\n\nZadaj číslo (0 = pôvodný tréner):`);
-  if(pick===null) return;
-  const n=parseInt(pick); let instructor_id;
-  if(n===0) instructor_id=''; else { const t=_trTrainers[n-1]; if(!t){ toast('Neplatná voľba', true); return; } instructor_id=t.id; }
+  let m=document.getElementById('pickInsModal');
+  if(!m){ m=document.createElement('div'); m.id='pickInsModal';
+    m.style.cssText='display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9999;align-items:center;justify-content:center;padding:16px';
+    m.onclick=()=>m.style.display='none';
+    document.body.appendChild(m); }
+  const row=(label,ins_id,active)=>`<button onclick="event.stopPropagation();setTrainerIns('${classId}','${date}','${ins_id}')" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:${active?'rgba(201,168,76,.16)':'#151515'};border:1px solid ${active?'var(--gold)':'#2a2a2a'};color:var(--cream);border-radius:11px;padding:12px 14px;font-size:.92rem;font-weight:600;cursor:pointer" onmouseover="this.style.borderColor='var(--gold-border)'" onmouseout="this.style.borderColor='${active?'var(--gold)':'#2a2a2a'}'">${label}${active?' <span style=\'margin-left:auto;color:var(--gold)\'>✓</span>':''}</button>`;
+  m.innerHTML=`<div onclick="event.stopPropagation()" style="background:#181818;border:1px solid var(--gold-border);border-radius:16px;max-width:380px;width:100%;padding:20px">
+    <div style="font-weight:800;color:var(--gold);margin-bottom:4px">🎓 Kto učí túto hodinu?</div>
+    <div style="font-size:.8rem;color:var(--muted);margin-bottom:14px">${fmtDate(date)}</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${row('↩️ Pôvodný tréner z rozvrhu','',!cur.overridden)}
+      ${_trTrainers.map(t=>row('💃 '+esc(t.name), t.id, cur.overridden&&cur.instructor_id===t.id)).join('')}
+    </div>
+    <button onclick="document.getElementById('pickInsModal').style.display='none'" style="margin-top:14px;background:none;border:1px solid #333;color:var(--muted);border-radius:9px;padding:8px 16px;font-size:.82rem;cursor:pointer">Zrušiť</button>
+  </div>`;
+  m.style.display='flex';
+}
+async function setTrainerIns(classId, date, instructor_id){
+  document.getElementById('pickInsModal').style.display='none';
   const r=await api('/api/attendance/session-instructor',{method:'POST',body:{class_id:classId, date, instructor_id}});
   if(r&&r.ok){ toast('✅ Tréner hodiny nastavený'); loadTrainerInstructor(classId); } else toast(r?.error||'Chyba', true);
 }
