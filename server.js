@@ -2133,6 +2133,33 @@ async function activeMembershipMonths(userId){
   }
   return months.size;
 }
+// Koľko % členov má každý odznak — počíta sa hromadne, cache 6 h.
+// (Import @import.local a deti sa nerátajú, aby percentá odrážali reálnu komunitu.)
+let _achPctCache={at:0, map:null, total:0};
+async function achievementOwnershipPct(){
+  if(_achPctCache.map && Date.now()-_achPctCache.at < 6*3600*1000) return _achPctCache;
+  const users=(await q.find(db.users,{})).filter(u=>u.active!==false && !u.is_child && !u.is_admin && !/@import\.local$/i.test(u.email||''));
+  const adj={}; users.forEach(u=>{ if(u.sponsor_id) (adj[u.sponsor_id]=adj[u.sponsor_id]||[]).push(u._id); });
+  const downOf=id=>{ let n=0; const st=[...(adj[id]||[])]; const seen=new Set();
+    while(st.length){ const x=st.pop(); if(seen.has(x)) continue; seen.add(x); n++; for(const y of (adj[x]||[])) st.push(y); } return n; };
+  const membBy={}; (await q.find(db.memberships,{})).filter(m=>!m._type).forEach(m=>{ (membBy[m.user_id]=membBy[m.user_id]||[]).push(m); });
+  const monthsOf=uid=>{ const months=new Set(); const now=new Date();
+    for(const m of (membBy[uid]||[])){
+      const start=new Date(m.started_at||m.start_date||m.created_at||0), end=new Date(m.expires_at||m.started_at||m.created_at||0);
+      if(isNaN(start)||isNaN(end)) continue;
+      let cur=new Date(start.getFullYear(),start.getMonth(),1); const last=(end>now?now:end); let g=0;
+      while(cur<=last && g++<2000){ months.add(cur.getFullYear()+'-'+(cur.getMonth()+1)); cur.setMonth(cur.getMonth()+1); }
+    } return months.size; };
+  const cityBy={}; (await q.find(db.bookings,{status:'attended'})).forEach(b=>{ if(b.user_id&&b.class_location) (cityBy[b.user_id]=cityBy[b.user_id]||new Set()).add(b.class_location); });
+  const counts={}; const total=users.length;
+  for(const u of users){
+    u.cities_visited=[...(cityBy[u._id]||[])];
+    try{ for(const a of computeAchievements(u, downOf(u._id), monthsOf(u._id), u.gender)) if(a.earned) counts[a.id]=(counts[a.id]||0)+1; }catch(e){}
+  }
+  const map={}; for(const [id,c] of Object.entries(counts)) map[id]=Math.max(1, Math.round(c/Math.max(total,1)*100));
+  _achPctCache={at:Date.now(), map, total};
+  return _achPctCache;
+}
 function computeAchievements(u, refCount, tenureMonths, gender){
   const visits=u.visit_count||0;
   const g = gender || u.gender || 'female';
@@ -6987,10 +7014,19 @@ app.delete('/api/bookings/:id', auth, async(req,res)=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 // ONLINE CLASS ACCESS
 // ═══════════════════════════════════════════════════════════════════════════════
+// Online prístup: plán s online:true, alebo Silver/Gold/online podľa id či názvu
+// (staré/členstvá z migrácie nemusia mať presné plan_id), tréner/admin vždy.
+function hasOnlineAccess(m, u){
+  if(u && (u.is_admin || u.user_type==='trainer')) return true;
+  if(!m) return false;
+  const plan=MEMBERSHIP_PLANS[m.plan_id];
+  if(plan && plan.online) return true;
+  return /silver|gold|online/i.test(String(m.plan_id||'')+' '+String(m.plan_name||''));
+}
 app.get('/api/online/classes', auth, async(req,res)=>{
   const m = await checkMembership(req.session.uid);
-  const plan = m ? MEMBERSHIP_PLANS[m.plan_id]||null : null;
-  const hasAccess = plan?.online || false;
+  const mu = await q.one(db.users,{_id:req.session.uid});
+  const hasAccess = hasOnlineAccess(m, mu);
   const classes = await q.find(db.classes,{category:'Online',active:true});
   const result = classes.map(c=>({
     ...c,
@@ -7144,8 +7180,7 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
     const cls=classes.find(c=> nowMin>=toMin(c.time_start)-90 && nowMin<toMin(c.time_end||c.time_start)+5 );
     if(!cls) return res.json({ok:true, upcoming:null});
     const m=await checkMembership(req.session.uid);
-    const plan=m?MEMBERSHIP_PLANS[m.plan_id]||null:null;
-    const hasAccess=!!(plan&&plan.online);
+    const hasAccess=hasOnlineAccess(m, await q.one(db.users,{_id:req.session.uid}));
     const liveKeys=await liveStreamKeys();
     const running = nowMin>=toMin(cls.time_start);
     const live = (cls.stream_key && liveKeys.has(cls.stream_key)) || running; // bez media servera = podľa času
@@ -7182,8 +7217,7 @@ setInterval(async()=>{
       const membs=(await q.find(db.memberships,{status:'active'})).filter(m=>(m.expires_at||'')>new Date().toISOString());
       const notified=new Set();
       for(const m of membs){
-        const plan=MEMBERSHIP_PLANS[m.plan_id];
-        if(!plan||!plan.online||notified.has(m.user_id)) continue;
+        if(!hasOnlineAccess(m,null)||notified.has(m.user_id)) continue;
         notified.add(m.user_id);
         await q.insert(db.notifications,{user_id:m.user_id, type:'online_live',
           title:'🔴 Online Zumba PRÁVE ZAČÍNA!', body:`Živé vysielanie z mesta ${cls.stream_city||''} beží. Pripoj sa jedným klikom!`,

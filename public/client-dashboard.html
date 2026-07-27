@@ -1671,12 +1671,14 @@ async function loadOnlineBanner(){
   host.style.display='block';
   const base='border-radius:16px;padding:16px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;border:1px solid var(--gold-border,#332a18)';
   if(!u.has_access){
-    // Bronze / bez online prístupu → upsell na Silver
-    host.innerHTML=`<div style="${base};background:linear-gradient(120deg,rgba(201,168,76,.08),rgba(96,165,250,.06))">
-      <div style="font-size:1.8rem">🔒</div>
+    // Bronze / bez online prístupu → upsell na Silver.
+    // Počas LIVE dostane aj zamknutý používateľ výraznú živú animáciu (FOMO), len s 🔒.
+    const liveNow=u.live||u.running;
+    host.innerHTML=`<div class="${liveNow?'ob-live':''}" style="${base};${liveNow?'':'background:linear-gradient(120deg,rgba(201,168,76,.08),rgba(96,165,250,.06))'}">
+      <div style="font-size:1.8rem">${liveNow?'🔴':'🔒'}</div>
       <div style="flex:1;min-width:200px">
-        <b>🌐 Online Zumba ${u.running?'práve prebieha':'o '+u.time_start} ${u.src?'· vysielame z mesta '+escHtml(u.src):''}</b>
-        <div style="font-size:.8rem;color:var(--muted,#999)">Tancuj z obývačky! Online prístup je súčasťou <b style="color:#c0c6d0">Silver</b> a <b style="color:var(--gold)">Gold</b> členstva.</div>
+        <b>${liveNow?'ONLINE ZUMBA PRÁVE PREBIEHA NAŽIVO!':'🌐 Online Zumba o '+u.time_start} ${u.src?'· vysielame z mesta '+escHtml(u.src):''}</b>
+        <div style="font-size:.8rem;color:${liveNow?'#f3d9d9':'var(--muted,#999)'}">${liveNow?'Práve teraz tancujú ostatné z obývačky — pridaj sa k nim!':'Tancuj z obývačky!'} Online prístup je súčasťou <b style="color:#c0c6d0">Silver</b> a <b style="color:var(--gold)">Gold</b> členstva.</div>
       </div>
       <a href="/pricing" style="background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);color:#111;font-weight:800;padding:10px 18px;border-radius:11px;text-decoration:none;white-space:nowrap">🔓 Odomknúť so Silver →</a>
     </div>`;
