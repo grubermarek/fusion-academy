@@ -35,10 +35,56 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
+// Bezpečnostné hlavičky (clickjacking, MIME sniffing, únik referrera, HTTPS)
+app.use((req,res,next)=>{
+  res.setHeader('X-Frame-Options','SAMEORIGIN');
+  res.setHeader('X-Content-Type-Options','nosniff');
+  res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy','geolocation=(), microphone=(), payment=()');
+  if(process.env.NODE_ENV==='production') res.setHeader('Strict-Transport-Security','max-age=15552000; includeSubDomains');
+  next();
+});
 // Capture raw body so webhook signatures (Stripe) can be verified against exact bytes
 app.use(express.json({ limit:'10mb', verify:(req,res,buf)=>{ req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: true, limit:'10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ─── Rate limiting (in-memory; appka beží ako jedna inštancia) ────────────────
+// Chráni prihlásenie pred hádaním hesla a verejné endpointy pred zneužitím/spamom.
+const _rlHits = new Map();
+setInterval(()=>{ const now=Date.now(); for(const [k,v] of _rlHits) if(now-v.start > v.windowMs) _rlHits.delete(k); }, 60000).unref?.();
+function rateLimit({max, windowMs, key='ip', message}){
+  return (req,res,next)=>{
+    if(process.env.RATE_LIMIT_OFF==='1') return next(); // QA/testovacie prostredie
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+    const id = `${key}:${req.path}:${ip}`;
+    const now = Date.now();
+    let e = _rlHits.get(id);
+    if(!e || now-e.start > windowMs){ e = {start:now, count:0, windowMs}; _rlHits.set(id, e); }
+    e.count++;
+    if(e.count > max){
+      const wait = Math.ceil((e.start + windowMs - now)/1000);
+      res.setHeader('Retry-After', wait);
+      return res.status(429).json({error: message || `Priveľa pokusov. Skús to znova o ${Math.ceil(wait/60)} min.`});
+    }
+    next();
+  };
+}
+// Limity sú nastavené tak, aby nikdy nezasiahli bežnú prevádzku: na hodine sa môže
+// zo spoločnej štúdiovej WiFi zaregistrovať aj celá skupina (30/h), ale hádanie
+// hesla (15 pokusov/10 min) a hromadné vyťahovanie e-mailov sa zastaví.
+const rlLogin  = rateLimit({max:15, windowMs:10*60*1000, message:'Priveľa neúspešných pokusov o prihlásenie. Skús to znova o 10 minút.'});
+const rlSignup = rateLimit({max:30, windowMs:60*60*1000, message:'Priveľa registrácií z tohto zariadenia. Skús to o chvíľu znova.'});
+const rlLookup = rateLimit({max:60, windowMs:60*60*1000, message:'Priveľa požiadaviek. Skús to neskôr.'});
+const rlPublic = rateLimit({max:20, windowMs:60*60*1000, message:'Priveľa odoslaní. Skús to neskôr.'});
+
+// PayPal sa v produkcii nepoužíva (platby idú cez Stripe). Kým nie je nastavený
+// PAYPAL_CLIENT_ID, celá vetva vrátane webhooku je mŕtva — inak by sa dal
+// nepodpísaný webhook zneužiť na „zaplatenie" objednávky bez platby.
+app.use('/api/paypal', (req,res,next)=>{
+  if(!process.env.PAYPAL_CLIENT_ID) return res.status(404).json({error:'PayPal nie je aktívny'});
+  next();
+});
 // Trust Railway / reverse-proxy HTTPS headers
 if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
 
@@ -1171,7 +1217,7 @@ async function seedData() {
 // ═══════════════════════════════════════════════════════════════════════════════
 // AUTH
 // ═══════════════════════════════════════════════════════════════════════════════
-app.post('/api/login', async(req,res)=>{
+app.post('/api/login', rlLogin, async(req,res)=>{
   try {
     const {email,password}=req.body;
     const u=await q.one(db.users,{email:(email||'').toLowerCase().trim()});
@@ -1188,14 +1234,26 @@ app.post('/api/login', async(req,res)=>{
 app.post('/api/logout',(req,res)=>{ req.session.destroy(); res.json({ok:true}); });
 
 // Klient si po admin resete vytvorí nové heslo (bez starého). Funguje len ak má nastavený pw_reset.
-app.post('/api/set-new-password', async(req,res)=>{
+app.post('/api/set-new-password', rlLogin, async(req,res)=>{
   try {
     const {email,password}=req.body;
     if(!password || password.length<6) return res.status(400).json({error:'Heslo musí mať aspoň 6 znakov'});
     const u=await q.one(db.users,{email:(email||'').toLowerCase().trim()});
     if(!u || !u.pw_reset) return res.status(400).json({error:'Pre tento email nie je vyžiadaný reset hesla. Skús sa prihlásiť alebo zaregistrovať.'});
     if(u.active===false) return res.status(403).json({error:'Váš účet je zablokovaný. Kontaktujte správcu.'});
-    await q.update(db.users,{_id:u._id},{$set:{password:await bcrypt.hash(password,10), pw_reset:false}});
+    // Okno na nastavenie hesla je časovo obmedzené (72 h od resetu) — bez toho by
+    // ktokoľvek, kto pozná e-mail, mohol účet prevziať kedykoľvek v budúcnosti.
+    if(u.pw_reset_at){
+      const ageH=(Date.now()-new Date(u.pw_reset_at).getTime())/3600000;
+      if(ageH>72){
+        await q.update(db.users,{_id:u._id},{$set:{pw_reset:false}});
+        return res.status(400).json({error:'Platnosť resetu vypršala (72 hodín). Požiadaj správcu o nový reset hesla.'});
+      }
+    }
+    await q.update(db.users,{_id:u._id},{$set:{password:await bcrypt.hash(password,10), pw_reset:false, pw_reset_at:null}});
+    // Stopa pre audit: kto a kedy si po resete nastavil nové heslo
+    await q.insert(db.audit,{action:'password_set_after_reset', actor:u.name, target:u._id,
+      meta:{email:u.email, ip:req.ip||''}, created_at:nowISO()}).catch(()=>{});
     req.session.uid=u._id;
     req.session.sv=(u.sess_ver||0);
     res.json({ok:true, redirect_to:dashUrlFor(u)});
@@ -1204,7 +1262,7 @@ app.post('/api/set-new-password', async(req,res)=>{
 
 // Pri registrácii: zisti, či daný email už evidujeme (importovaný z Glofoxu, ešte bez hesla),
 // aby sme jej ukázali „už ťa máme, stačí nastaviť heslo" + čo na ňu čaká (vstupy / členstvo).
-app.get('/api/check-registration', async(req,res)=>{
+app.get('/api/check-registration', rlLookup, async(req,res)=>{
   try {
     const email=(req.query.email||'').toLowerCase().trim();
     if(!email || !/@/.test(email)) return res.json({pending:false});
@@ -1223,11 +1281,18 @@ app.get('/api/check-registration', async(req,res)=>{
   } catch(e){ res.json({pending:false}); }
 });
 
-app.post('/api/register', async(req,res)=>{
+app.post('/api/register', rlSignup, async(req,res)=>{
   try {
     const {name,email,password,phone,sponsorCode,user_type}=req.body;
     if(!name||!email||!password) return res.status(400).json({error:'Meno, email a heslo sú povinné'});
-    const emailNorm=(email||'').toLowerCase().trim();
+    // Serverová validácia (frontend sa dá obísť) — formát mailu, dĺžka hesla a rozumné limity polí
+    const emailNorm=String(email||'').toLowerCase().trim();
+    if(!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(emailNorm) || emailNorm.length>120)
+      return res.status(400).json({error:'Zadaj platnú e-mailovú adresu.'});
+    if(String(password).length<6) return res.status(400).json({error:'Heslo musí mať aspoň 6 znakov.'});
+    if(String(name).trim().length<2 || String(name).length>80)
+      return res.status(400).json({error:'Meno musí mať 2 až 80 znakov.'});
+    if(phone && String(phone).length>30) return res.status(400).json({error:'Telefónne číslo je príliš dlhé.'});
     // ── Existujúci e-mail? Ak je to importovaný lead bez účtu, „claimni" ho ───────
     const existing=await q.one(db.users,{email:emailNorm});
     if(existing){
@@ -1415,7 +1480,7 @@ app.get('/api/shop/products', async(req,res)=>{
   res.json(prods.map(p=>({...p, variants:variantsFor(p.name)})));
 });
 
-app.post('/api/shop/order', async(req,res)=>{
+app.post('/api/shop/order', rlPublic, async(req,res)=>{
   try {
     const {client_name,client_email,client_phone,referral_code,city,items,notes,payment_method,use_referral_credit}=req.body;
     // Doručenie: 'pickup' (na hodine) | 'post' (poštou + adresa)
@@ -1465,7 +1530,16 @@ app.post('/api/shop/order', async(req,res)=>{
 app.get('/api/shop/order/:num', async(req,res)=>{
   const order=await q.one(db.orders,{order_number:req.params.num});
   if(!order) return res.status(404).json({error:'Objednávka nenájdená'});
-  res.json({order_number:order.order_number,client_name:order.client_name,items:order.items,total:order.total,status:order.status,created_at:order.created_at,city:order.city,payment_method:order.payment_method});
+  // Meno klienta vidí len majiteľ objednávky alebo admin — číslo objednávky je
+  // predvídateľné, takže bez tejto kontroly by sa dali vyťahovať mená zákazníkov.
+  let owner=false;
+  if(req.session?.uid){
+    const me=await q.one(db.users,{_id:req.session.uid});
+    owner = !!(me && (me.is_admin || (me.email||'').toLowerCase()===(order.client_email||'').toLowerCase()));
+  }
+  res.json({order_number:order.order_number, client_name: owner?order.client_name:undefined,
+    items:order.items, total:order.total, status:order.status, created_at:order.created_at,
+    city:order.city, payment_method:order.payment_method});
 });
 
 app.get('/api/shop/locations', (req,res)=>res.json(LOCATIONS));
@@ -1512,6 +1586,9 @@ app.get('/api/classes', async(req,res)=>{
 app.get('/api/avatar/:userId', async(req,res)=>{
   try{
     const u=await q.one(db.users,{_id:req.params.userId});
+    // Rešpektuj anonymitu — kto si zapol „anonymný profil", nesmie mať verejnú fotku
+    // (ostatné endpointy anonymitu ctia, tento ju obchádzal).
+    if(u && u.anonymous && req.session?.uid !== u._id) return res.status(404).end();
     const av=u&&u.avatar;
     const m = typeof av==='string' && av.match(/^data:(image\/[a-z+]+);base64,(.+)$/i);
     if(!m) return res.status(404).end();
@@ -2620,7 +2697,7 @@ app.post('/api/admin/users/:id/reset-password', adminAuth, async(req,res)=>{
   try {
     const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
     if(u.is_admin) return res.status(400).json({error:'Heslo admina nemožno takto resetovať'});
-    await q.update(db.users,{_id:u._id},{$set:{password:null, pw_reset:true}, $inc:{sess_ver:1}});
+    await q.update(db.users,{_id:u._id},{$set:{password:null, pw_reset:true, pw_reset_at:nowISO()}, $inc:{sess_ver:1}});
     await q.insert(db.notifications,{user_id:u._id,type:'account',title:'🔑 Heslo bolo resetované',body:'Správca resetoval tvoje heslo. Pri prihlásení si vytvor nové.',read:false,created_at:nowISO()}).catch(()=>{});
     await auditLog(req,'password_reset',u._id,{email:u.email},{pw_reset:true},'');
     res.json({ ok:true, name:u.name, email:u.email });
@@ -7019,9 +7096,30 @@ app.delete('/api/bookings/:id', auth, async(req,res)=>{
     }
   }
   await q.update(db.bookings,{_id:req.params.id},{$set:{status:'cancelled',cancelled_at:nowISO()}});
-  if(b.status==='confirmed') await promoteWaitlist(b.class_id, b.booking_date);
+  // Vrátenie toho, čím klientka za hodinu zaplatila (len ak ju ešte neabsolvovala) —
+  // bez tohto jej vstup z permanentky pri zrušení prepadol.
+  let refundNote='';
+  if(b.status==='confirmed'){
+    const cu=await q.one(db.users,{_id:b.user_id});
+    if(cu){
+      if(b.access_method==='single_entry'){
+        await q.update(db.users,{_id:cu._id},{$set:{single_entries:(cu.single_entries||0)+1}});
+        refundNote=' Vstup z permanentky sme ti vrátili.';
+      } else if(b.access_method==='free_credit'){
+        await q.update(db.users,{_id:cu._id},{$set:{free_credits:(cu.free_credits||0)+1}});
+        refundNote=' Hodinu zdarma sme ti vrátili.';
+      } else if(b.access_method==='free_class' || b.free_class){
+        await q.update(db.users,{_id:cu._id},{$set:{free_class_used:false}});
+        refundNote=' Prvú hodinu zdarma máš stále k dispozícii.';
+      }
+      if(refundNote) await q.insert(db.notifications,{user_id:cu._id, type:'booking',
+        title:'↩️ Rezervácia zrušená', body:`${b.class_name||'Hodina'} ${b.booking_date||''}.${refundNote}`,
+        read:false, created_at:nowISO()}).catch(()=>{});
+    }
+    await promoteWaitlist(b.class_id, b.booking_date);
+  }
   sendBookingCancelEmail(b).catch(()=>{});
-  res.json({ok:true});
+  res.json({ok:true, refunded:!!refundNote});
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -7055,7 +7153,7 @@ app.get('/api/online/classes', auth, async(req,res)=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 // RENTAL MODULE
 // ═══════════════════════════════════════════════════════════════════════════════
-app.post('/api/rental', async(req,res)=>{
+app.post('/api/rental', rlPublic, async(req,res)=>{
   try {
     const {name,email,phone,company,city,date_from,date_to,event_type,attendees,message} = req.body;
     if(!name||!email||!phone) return res.status(400).json({error:'Meno, email a telefón sú povinné'});
@@ -7413,7 +7511,7 @@ app.put('/api/admin/kiosk/:studio', adminAuth, async(req,res)=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONTACT FORM
 // ═══════════════════════════════════════════════════════════════════════════════
-app.post('/api/contact', async(req,res)=>{
+app.post('/api/contact', rlPublic, async(req,res)=>{
   try {
     const {name,email,phone,subject,message,city} = req.body;
     if(!name||!email||!message) return res.status(400).json({error:'Meno, email a správa sú povinné'});
@@ -8632,12 +8730,23 @@ app.post('/api/attendance/cancel-session', trainerAuth, async(req,res)=>{
     const bookings = await q.find(db.bookings,{class_id, booking_date:date, status:{$nin:['cancelled','cancelled_studio']}});
     let refunded=0;
     for(const b of bookings){
-      if(b.access_method==='single_entry'){
-        const u = await q.one(db.users,{_id:b.user_id});
-        if(u){ await q.update(db.users,{_id:u._id},{$set:{single_entries:(u.single_entries||0)+1}}); refunded++; }
+      // Vráť všetko, čím klientka zaplatila — nielen permanentkový vstup
+      let backTxt='';
+      const u0 = await q.one(db.users,{_id:b.user_id});
+      if(u0){
+        if(b.access_method==='single_entry'){
+          await q.update(db.users,{_id:u0._id},{$set:{single_entries:(u0.single_entries||0)+1}}); refunded++;
+          backTxt=' Tvoj vstup z permanentky sme ti vrátili.';
+        } else if(b.access_method==='free_credit'){
+          await q.update(db.users,{_id:u0._id},{$set:{free_credits:(u0.free_credits||0)+1}}); refunded++;
+          backTxt=' Hodinu zdarma sme ti vrátili.';
+        } else if(b.access_method==='free_class' || b.free_class){
+          await q.update(db.users,{_id:u0._id},{$set:{free_class_used:false}}); refunded++;
+          backTxt=' Prvú hodinu zdarma máš stále k dispozícii.';
+        }
       }
       await q.update(db.bookings,{_id:b._id},{$set:{status:'cancelled_studio', cancelled_reason:reason||'Zrušené štúdiom', cancelled_at:nowISO()}});
-      const refundNote = b.access_method==='single_entry' ? ' Tvoj vstup z permanentky sme ti vrátili.' : '';
+      const refundNote = backTxt;
       await q.insert(db.notifications,{user_id:b.user_id, type:'class_cancelled',
         title:`❌ Hodina zrušená: ${cls.name}`,
         body:`${cls.name} dňa ${date}${cls.time_start?' o '+cls.time_start:''} v ${cls.location} sa NEKONÁ${reason?' ('+reason+')':''}.${refundNote}${inviteTxt}`,
@@ -9275,6 +9384,8 @@ app.post('/api/bookings', auth, async(req,res)=>{
     const isPrivate = /súkromn/i.test(cls.name) || /súkromn/i.test(cls.category||'');
     const visitCount = u.visit_count || 0;
     let payOnSite = false; // rezervácia bez členstva/kreditu so sľubom platby na mieste
+    // Čím klientka za hodinu „zaplatila" — bez tohto sa jej pri zrušení nedal vrátiť vstup
+    let accessMethod = u.free_class_used ? 'membership' : 'free_class';
     // "First class free" is governed solely by free_class_used — the same flag the
     // client profile shows. Do NOT also gate on visit_count, or a client whose free
     // class is still available (flag false) but has visits from other paths gets
@@ -9305,9 +9416,11 @@ app.post('/api/bookings', auth, async(req,res)=>{
         if(!hasMembership){
           if(freeCredits > 0){
             await q.update(db.users,{_id:u._id},{$set:{free_credits: freeCredits - 1}});
+            accessMethod='free_credit';
           } else if(singleEntries > 0){
             await q.update(db.users,{_id:u._id},{$set:{single_entries: singleEntries - 1}});
-          }
+            accessMethod='single_entry';
+          } else if(payOnSite) accessMethod='pay_on_site';
         }
       }
     }
@@ -9326,6 +9439,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
       booked_by:parent._id, booked_by_name:parent.name, is_child_booking:isChild, child_name:isChild?u.name:null,
       booking_date:bdate, status:'confirmed', pay_on_site:payOnSite, notes:notes||'',
       free_class: !u.free_class_used, // 1. hodina zdarma — nepočíta sa do €/klient bonusu trénera
+      access_method: accessMethod,    // pre korektné vrátenie vstupu pri zrušení
       created_at:nowISO()
     });
     if(payOnSite){
@@ -10492,8 +10606,17 @@ app.get('/booking-calendar',(req,res)=>res.sendFile(path.join(__dirname,'public'
 app.get('/invoice/:number',(req,res)=>res.sendFile(path.join(__dirname,'public','invoice.html')));
 // ── Marketing pages moved to the public website ───────────────────────────────
 const WEB_URL = 'https://latindancefusion.art';
-['/programs','/about','/trainers','/cities','/rental','/contact','/meal-plan','/fitdays','/blog','/gallery','/podcast','/collaborate'].forEach(p=>{
-  app.get(p,(req,res)=>res.redirect(301, WEB_URL));
+// Jedálniček je NAŠA stránka v appke — predtým redirectoval na web a vyhadzoval
+// klientku z aplikácie. Ostatné cesty smerujú na konkrétnu stránku webu
+// (slovenské slugy), nie na homepage, aby odkaz doviedol tam, čo sľubuje.
+app.get('/meal-plan', (req,res)=>res.redirect(302, '/jedalnicek'));
+const WEB_MAP = {
+  '/about':'/o-nas', '/trainers':'/o-nas', '/cities':'/lokality', '/rental':'/prenajom',
+  '/contact':'/kontakt', '/collaborate':'/kontakt', '/gallery':'/galeria',
+  '/blog':'/blog', '/podcast':'/podcast', '/fitdays':'/fitdays', '/programs':'/cennik',
+};
+Object.entries(WEB_MAP).forEach(([from,to])=>{
+  app.get(from,(req,res)=>res.redirect(301, WEB_URL+to));
 });
 app.get('/client-dashboard',(req,res)=>res.sendFile(path.join(__dirname,'public','client-dashboard.html')));
 app.get('/jedalnicek',(req,res)=>res.sendFile(path.join(__dirname,'public','jedalnicek.html')));
