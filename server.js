@@ -10733,12 +10733,16 @@ async function sendFirstClassDayReminder(bk){
     let refLink=`${APP_URL}/`;
     try{ if(u.referral_code) refLink=`${APP_URL}/r/${u.referral_code}`; }catch(e){}
     const first=(u.name||'').split(' ')[0];
+    // Presné detaily hodiny, ktorú si bookla: adresa štúdia + trénerka
+    let addr='', inst='';
+    try{ const cls=await q.one(db.classes,{_id:bk.class_id}); if(cls){ addr=cls.address||''; inst=cls.instructor||''; } }catch(e){}
     const body=`
       <p>Ahoj <b>${first}</b>,</p>
       <p><b>dnes je tvoj deň</b> — čaká ťa tvoja prvá hodina zadarmo! 🎉</p>
       <div style="border:1px solid #C9A84C55;border-radius:12px;padding:16px 18px;margin:14px 0">
         <div style="font-size:16px;font-weight:800;color:#C9A84C">${bk.class_emoji||'💃'} ${bk.class_name}</div>
-        <div style="color:#ccc;margin-top:6px">🕐 Dnes o <b>${bk.class_time_start||''}</b>${bk.class_time_end?'–'+bk.class_time_end:''}<br>📍 ${bk.class_location||''}</div>
+        <div style="color:#ccc;margin-top:6px">🕐 Dnes o <b>${bk.class_time_start||''}</b>${bk.class_time_end?'–'+bk.class_time_end:''}<br>📍 <b>${bk.class_location||''}</b>${addr?' · '+addr:''}${inst?`<br>🎓 Trénerka: <b>${inst}</b>`:''}</div>
+        ${addr?`<div style="margin-top:8px"><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr+', '+(bk.class_location||''))}" style="color:#C9A84C;font-size:13px;text-decoration:none">🗺️ Otvoriť v mapách →</a></div>`:''}
       </div>
       <p><b>Čo si priniesť?</b> Úplne stačí:</p>
       <ul style="color:#ccc;line-height:1.8">
