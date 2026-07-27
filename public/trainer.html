@@ -874,12 +874,12 @@ async function loadSchedule(){
     _allClasses = data;
     // Online hodiny majú vlastnú sekciu — v programe dňa a gride by len zavádzali
     const online = data.filter(c=>c.category==='Online');
-    data = data.filter(c=>c.category!=='Online');
+    const fyzicke = data.filter(c=>c.category!=='Online');
     renderOnlineSection(online);
-    document.getElementById('classCountBadge').textContent = data.length;
+    document.getElementById('classCountBadge').textContent = fyzicke.length;
 
     const todayDow = new Date().getDay();
-    const todayClasses = data.filter(c => c.day_of_week === todayDow);
+    const todayClasses = fyzicke.filter(c => c.day_of_week === todayDow);
     const todayCard = document.getElementById('todayCard');
     if(todayClasses.length){
       todayCard.style.display='block';
@@ -906,7 +906,7 @@ async function loadSchedule(){
       }).join('');
     }
 
-    document.getElementById('classGrid').innerHTML = data.map(c=>{
+    document.getElementById('classGrid').innerHTML = fyzicke.map(c=>{
       const pct = c.capacity ? Math.round(c.confirmed/c.capacity*100) : 0;
       const isToday = c.day_of_week === todayDow;
       const fillClass = pct>80?'fill-high':pct>50?'fill-med':'fill-low';
