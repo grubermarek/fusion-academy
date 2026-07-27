@@ -9196,6 +9196,8 @@ app.post('/api/bookings', auth, async(req,res)=>{
     } else if(parent.email){
       sendMail(parent.email,`Rezervácia potvrdená – ${cls.name}`,`<h2>Rezervácia potvrdená ✅</h2><p>Ahoj <b>${parent.name}</b>,</p><p>Rezervácia ${isChild?`pre <b>${u.name}</b> `:''}na hodinu <b>${cls.name}</b> bola úspešne zaznamenaná.</p><ul><li>Dátum: <b>${bdate}</b></li><li>Čas: <b>${cls.time_start}–${cls.time_end||''}</b></li><li>Miesto: <b>${cls.location}</b></li></ul><p>Tešíme sa na vás!</p><p><i>Fusion Academy</i></p>`).catch(()=>{});
     }
+    // Rezervácia na dnešok = ranný pripomienkový mail by už nebehol → pošli hneď
+    if(bdate===today()) sendFirstClassDayReminder(booking).catch(()=>{});
     res.json({ok:true, id:booking._id, class_name:cls.name, booking_date:bdate, visit_count:u.visit_count||0, for_child:isChild?u.name:null});
   } catch(e){res.status(500).json({error:e.message});}
 });
@@ -10067,6 +10069,7 @@ function campaignMetrics(c, revenue, payingCustomers){
     roas:           spend? +num(rev,spend).toFixed(2) : null,
     roi:            spend? +(((rev-spend)/spend)*100).toFixed(1) : null,
     cac:            pay? +num(spend,pay).toFixed(2) : null,
+    avgLtv:         pay? +num(rev,pay).toFixed(2) : null,   // priemerné tržby na platiacu klientku z kampane
     revenue:        +rev.toFixed(2)
   };
 }
@@ -10716,6 +10719,49 @@ function emailTemplate(title, body, ctaText, ctaUrl){
 </td></tr></table></td></tr></table></body></html>`;
 }
 
+// Deň prvej hodiny zdarma: ranná pripomienka s info + odbúraním strachu + výzvou
+// zobrať kamošku (referral kredit). Idempotentné cez notifications ref na booking.
+async function sendFirstClassDayReminder(bk){
+  try{
+    if(!bk || bk.is_child_booking) return;
+    const u=await q.one(db.users,{_id:bk.user_id});
+    if(!u || !u.email || u.is_child || /@import\.local$/i.test(u.email)) return;
+    if((u.visit_count||0)>0) return; // len úplne prvá hodina
+    if(await q.one(db.notifications,{user_id:u._id, type:'first_class_dayof', ref_id:bk._id})) return;
+    await q.insert(db.notifications,{user_id:u._id, type:'first_class_dayof', ref_id:bk._id,
+      title:'💃 Dnes je tvoj deň!', body:`${bk.class_name} o ${bk.class_time_start} · ${bk.class_location}. Tešíme sa na teba!`, read:false, created_at:nowISO()});
+    let refLink=`${APP_URL}/`;
+    try{ if(u.referral_code) refLink=`${APP_URL}/r/${u.referral_code}`; }catch(e){}
+    const first=(u.name||'').split(' ')[0];
+    const body=`
+      <p>Ahoj <b>${first}</b>,</p>
+      <p><b>dnes je tvoj deň</b> — čaká ťa tvoja prvá hodina zadarmo! 🎉</p>
+      <div style="border:1px solid #C9A84C55;border-radius:12px;padding:16px 18px;margin:14px 0">
+        <div style="font-size:16px;font-weight:800;color:#C9A84C">${bk.class_emoji||'💃'} ${bk.class_name}</div>
+        <div style="color:#ccc;margin-top:6px">🕐 Dnes o <b>${bk.class_time_start||''}</b>${bk.class_time_end?'–'+bk.class_time_end:''}<br>📍 ${bk.class_location||''}</div>
+      </div>
+      <p><b>Čo si priniesť?</b> Úplne stačí:</p>
+      <ul style="color:#ccc;line-height:1.8">
+        <li>👟 pohodlné tenisky a oblečenie, v ktorom sa vieš hýbať</li>
+        <li>💧 fľašu vody</li>
+        <li>🙂 dobrú náladu — o zvyšok sa postaráme my</li>
+      </ul>
+      <div style="background:#1c1c1c;border-radius:12px;padding:16px 18px;margin:16px 0;text-align:center">
+        <div style="color:#C9A84C;font-weight:800;font-size:15px">„Nemusíš byť dobrá, aby si začala.<br>Musíš začať, aby si bola dobrá." ✨</div>
+      </div>
+      <p>Vieme, že prvý raz vie byť stresík — <b>nikto na teba nebude pozerať</b>, každá z nás raz stála na hodine prvýkrát. Trénerka ti so všetkým pomôže a tancuješ vlastným tempom. Stačí prísť o pár minút skôr a povedať, že si tu prvý raz. 💛</p>
+      <div style="border:1px dashed #C9A84C88;border-radius:12px;padding:16px 18px;margin:16px 0">
+        <div style="font-weight:800;color:#fff;margin-bottom:6px">👯‍♀️ Vo dvojici je to hneď väčšia zábava!</div>
+        <div style="color:#ccc;font-size:14px">Zober so sebou kamošku — jej prvá hodina je tiež <b>zadarmo</b>. A keď sa zaregistruje cez tvoj odkaz a neskôr si kúpi vstup či členstvo, <b>získaš kredit do aplikácie</b>, ktorý môžeš minúť na hodiny.</div>
+        <div style="margin-top:10px"><a href="${refLink}" style="color:#C9A84C;font-weight:700;word-break:break-all">${refLink}</a></div>
+      </div>
+      <p>Vidíme sa večer na parkete! 💃</p>`;
+    await sendMail(u.email, `💃 Dnes o ${bk.class_time_start||''} — tvoja prvá hodina! (nezabudni)`,
+      emailTemplate('Dnes je tvoj deň! 🎉', body, '📱 Moja rezervácia', `${APP_URL}/client-dashboard`)).catch(()=>{});
+    processEmailQueue().catch(()=>{});
+  }catch(e){ console.error('sendFirstClassDayReminder:', e.message); }
+}
+
 // Thank-you + membership/permanentka offer, sent once after the client's first class.
 // Idempotent: guarded by user.first_class_email_sent. Call from QR check-in and daily job.
 async function sendFirstClassEmail(userId){
@@ -10982,6 +11028,12 @@ async function runDailyJobs(){
       await q.insert(db.notifications,{user_id:u._id,type:'class_reminder',ref_id:cls._id,title:`🗓️ Zajtra: ${cls.name}`,body:`${cls.time_start} · ${cls.location}`,read:false,created_at:nowISO()});
     }
   }
+
+  // ── 2a2. Deň prvej hodiny zdarma: ranný mail s info + motiváciou + referral ──
+  try{
+    const todaysBookings=await q.find(db.bookings,{booking_date:todayStr, status:'confirmed'});
+    for(const bk of todaysBookings) await sendFirstClassDayReminder(bk);
+  }catch(e){ console.error('first class dayof:', e.message); }
 
   // ── 2b. Súkromné hodiny: pripomienka deň vopred + výzva trénerovi potvrdiť včerajšie ──
   try{ await materializeRecurringSlots(); }catch(e){ console.error('recurring slots:', e.message); }
