@@ -4593,7 +4593,9 @@ async function activateMembership(userId, planId, durationDays){
     if(u0b?.sponsor_id){
       const bonus = +(plan.price * 0.10).toFixed(2);
       const sponsor = await q.one(db.users,{_id:u0b.sponsor_id});
-      if(sponsor){
+      // Tréner/manažér/admin dostáva affiliate províziu do VÝPLATY (db.commissions) —
+      // kredit by bol dvojitá odmena za ten istý nákup.
+      if(sponsor && !sponsor.is_admin && !['trainer','manager'].includes(sponsor.user_type)){
         const newCredit = +((sponsor.referral_credit||0)+bonus).toFixed(2);
         await q.update(db.users,{_id:u0b.sponsor_id},{$set:{referral_credit:newCredit}});
         await q.insert(db.notifications,{user_id:u0b.sponsor_id,type:'referral_credit',title:`+${bonus} € referral kredit! 💰`,body:`${u0b.name} kúpil/a permanentku. Zostatok: ${newCredit} €`,read:false,created_at:nowISO()});
@@ -4626,11 +4628,13 @@ async function activateMembership(userId, planId, durationDays){
   // ── Expiry warning sequence anchored from expiry date ───────────────────────
   enqueueSequence(userId,'expiry_warning', expiresAt).catch(()=>{});
   // ── Give sponsor 10% referral credit on membership purchase ─────────────────
+  // Tréner/manažér/admin ako sponzor dostáva affiliate províziu do VÝPLATY —
+  // kredit sa mu nepripíše (dvojitá odmena za ten istý nákup).
   const u = await q.one(db.users,{_id:userId});
   if(u?.sponsor_id){
     const bonus = +(plan.price * 0.10).toFixed(2);
     const sponsor = await q.one(db.users,{_id:u.sponsor_id});
-    if(sponsor){
+    if(sponsor && !sponsor.is_admin && !['trainer','manager'].includes(sponsor.user_type)){
       const newCredit = +((sponsor.referral_credit||0) + bonus).toFixed(2);
       await q.update(db.users,{_id:u.sponsor_id},{$set:{referral_credit:newCredit}});
       await q.insert(db.notifications,{user_id:u.sponsor_id,type:'referral_credit',title:`+${bonus} € referral kredit! 💰`,body:`${u.name} zakúpil/a ${plan.name}. Zostatok: ${newCredit} €`,read:false,created_at:nowISO()});
@@ -5910,8 +5914,9 @@ async function trainerMonthStats(month){
     // Zárobok trénera ide len z ABSOLVOVANÝCH hodín (potvrdených), nie z rezervácií vopred.
     if(b.status==='attended'){
       const sk=ins+'|'+b.class_id+'|'+d; s.sessions.add(sk.split('|').slice(1).join('|'));
-      sessionAtt[sk]=(sessionAtt[sk]||0)+1;
-      s.attendances++; s.revenue+=(+cls?.price||10);
+      // Hodina zdarma sa nepočíta do €/klient bonusu ani do tržby (klient nič neplatil)
+      if(!b.free_class){ sessionAtt[sk]=(sessionAtt[sk]||0)+1; s.revenue+=(+cls?.price||10); }
+      s.attendances++;
       if(b.user_id){ if(firstBookingOf[b.user_id]===d) s.newClients.add(b.user_id); }
     }
   }
@@ -7352,6 +7357,7 @@ app.post('/api/kiosk/checkin', async(req,res)=>{
       if(!hasMem){ if(hasFree) upd.free_class_used=true; else if(hasCredit) upd.free_credits=(u.free_credits||0)-1; else if(hasSingle) upd.single_entries=(u.single_entries||0)-1; }
       if(Object.keys(upd).length) await q.update(db.users,{_id:u._id},{$set:upd});
       await q.insert(db.bookings,{ class_id:cls._id, class_name:cls.name, class_emoji:cls.emoji||'💃',
+        free_class: !hasMem&&hasFree,
         class_location:cls.location, class_time_start:cls.time_start, day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
         user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||'',
         booking_date:todayS, status:'attended', attended_at:nowISO(), attended_by:'kiosk_'+a.slug, notes:'kiosk', created_at:nowISO() });
@@ -8725,6 +8731,7 @@ app.post('/api/attendance/manual-booking', trainerAuth, async(req,res)=>{
       day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
       user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||'',
       booking_date:bdate, status:'attended', attended_at:nowISO(), attended_by:req.trainerUser._id, access_method:method,
+      free_class: method==='free', // zdarma — nepočíta sa do €/klient bonusu trénera
       notes: note || methodNote,
       manual: true, manual_by: req.trainerUser._id, created_at:nowISO()
     });
@@ -8971,7 +8978,9 @@ app.post('/api/attendance/confirm-session', trainerAuth, async(req,res)=>{
       return {...DEFAULT_PAYOUT_RULE,...(key?rules[key]:{})}; };
     const rule = ruleFor(si.instructor);
     const totalAttended = await q.count(db.bookings,{class_id:cls._id, booking_date:date, status:'attended'});
-    const billable = Math.max(0, totalAttended - (rule.per_client_threshold||0));
+    const freeAttended = await q.count(db.bookings,{class_id:cls._id, booking_date:date, status:'attended', free_class:true});
+    // Klientky na hodine zdarma sa nerátajú do €/klient bonusu nad prahom
+    const billable = Math.max(0, (totalAttended - freeAttended) - (rule.per_client_threshold||0));
     const sessionEarn = +((rule.fixed_per_class||0) + (rule.per_client||0)*billable).toFixed(2);
     // Notifikáciu o zárobku pošli LEN keď sa reálne niečo nové potvrdilo (žiadne duplicity).
     if(credited>0 && si.instructor_id){
@@ -9032,6 +9041,7 @@ app.post('/api/attendance/qr-checkin', trainerAuth, async(req,res)=>{
         day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
         user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||'',
         booking_date:bdate, status:'attended', attended_at:nowISO(), attended_by:req.trainerUser._id,
+        free_class: !hasMem&&hasFree,
         notes:'📱 QR check-in', manual:true, manual_by:req.trainerUser._id, created_at:nowISO()
       });
       const upd = {visit_count:(u.visit_count||0)+1};
@@ -9304,7 +9314,9 @@ app.post('/api/bookings', auth, async(req,res)=>{
       day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
       user_id:u._id, user_name:u.name, user_email:isChild?parent.email:u.email, user_phone:u.phone||parent.phone||'',
       booked_by:parent._id, booked_by_name:parent.name, is_child_booking:isChild, child_name:isChild?u.name:null,
-      booking_date:bdate, status:'confirmed', pay_on_site:payOnSite, notes:notes||'', created_at:nowISO()
+      booking_date:bdate, status:'confirmed', pay_on_site:payOnSite, notes:notes||'',
+      free_class: !u.free_class_used, // 1. hodina zdarma — nepočíta sa do €/klient bonusu trénera
+      created_at:nowISO()
     });
     if(payOnSite){
       // Daj vedieť adminom, že príde klient bez členstva — vybrať vstupné/členské na mieste
