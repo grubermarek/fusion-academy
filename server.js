@@ -966,6 +966,21 @@ async function seedData() {
     console.log(`✅  Meta kampaň synchronizovaná: ${users.length} registrácií (${tagged} dotagovaných), ${firstVisits} na hodine, ${mems} členstiev`);
   }
 
+  // Nová Meta kampaň „FA — Zumba Web — Registrácia" (27.7.2026) — vedie priamo do
+  // registrácie v appke; registrácie/tržby sa počítajú živo cez utm_key.
+  if(!(await q.one(db.settings,{key:'meta_campaign_sync_v2'}))){
+    if(!(await q.one(db.campaigns,{name:'FA — Zumba Web — Registrácia'}))){
+      await q.insert(db.campaigns,{ name:'FA — Zumba Web — Registrácia', utm_key:'fa-zumba-web-registracia',
+        platform:'facebook', date_from:'2026-07-27', date_to:'', budget:0,
+        goal:'Registrácie priamo v appke (web /vitaj → app)',
+        note:'Live kampaň — registrácie, návštevy, členstvá a tržby sa počítajú automaticky podľa utm_campaign=fa-zumba-web-registracia. Spend aktualizuj z Ads Manageru.',
+        spend:0, impressions:0, clicks:0, registrations:0, first_visits:0, memberships:0,
+        created_at:nowISO() });
+    }
+    await q.insert(db.settings,{key:'meta_campaign_sync_v2', value:true, at:nowISO()});
+    console.log('✅  Meta kampaň v2 (Zumba Web — Registrácia) pridaná s live utm atribúciou');
+  }
+
   // Promo kód pre návrat odídených klientov (30% na prvý mesiac)
   if(!await q.one(db.promo_codes,{code:'VITAJSPAT'})){
     await q.insert(db.promo_codes,{ code:'VITAJSPAT', type:'percent', value:30, applies_to:'membership',
@@ -10175,10 +10190,21 @@ app.get('/api/admin/campaigns', adminAuth, async(req,res)=>{
   try {
     const list=await q.find(db.campaigns,{});
     const revMap=await campaignRevenueMap();
+    // Kampane s utm_key majú registrácie/návštevy/členstvá počítané ŽIVO z používateľov
+    const allUsers=(await q.find(db.users,{is_admin:{$ne:true}})).filter(u=>!u.is_child);
+    const activeMembIds=new Set((await q.find(db.memberships,{status:'active'})).map(m=>m.user_id));
     const out=list.map(c=>{
       const key=(c.name||'').toLowerCase().trim();
-      const attr=revMap[key]||{revenue:0,payers:0};
-      return {...c, metrics:campaignMetrics(c, attr.revenue, attr.payers), attributed_revenue:+attr.revenue.toFixed(2), attributed_payers:attr.payers};
+      const ukey=(c.utm_key||'').toLowerCase().trim();
+      const attr=revMap[key]||revMap[ukey]||{revenue:0,payers:0};
+      let cc={...c};
+      if(ukey){
+        const mine=allUsers.filter(u=>{ const uc=(u.utm_campaign||'').toLowerCase().trim(); return uc===ukey||uc===key; });
+        cc.registrations=mine.length;
+        cc.first_visits=mine.filter(u=>(u.visit_count||0)>0).length;
+        cc.memberships=mine.filter(u=>activeMembIds.has(u._id)).length;
+      }
+      return {...cc, metrics:campaignMetrics(cc, attr.revenue, attr.payers), attributed_revenue:+attr.revenue.toFixed(2), attributed_payers:attr.payers};
     }).sort((a,b)=>(b.date_from||'').localeCompare(a.date_from||''));
     res.json(out);
   } catch(e){ res.status(500).json({error:e.message}); }
