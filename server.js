@@ -95,6 +95,7 @@ const db = {
   classes:      new Datastore({ filename: path.join(DATA_DIR, 'classes.db'),      autoload: true }),
   bookings:     new Datastore({ filename: path.join(DATA_DIR, 'bookings.db'),     autoload: true }),
   messages:     new Datastore({ filename: path.join(DATA_DIR, 'messages.db'),     autoload: true }),
+  spins:        new Datastore({ filename: path.join(DATA_DIR, 'spins.db'),        autoload: true }),
   memberships:  new Datastore({ filename: path.join(DATA_DIR, 'memberships.db'),  autoload: true }),
   rentals:      new Datastore({ filename: path.join(DATA_DIR, 'rentals.db'),      autoload: true }),
   notifications:new Datastore({ filename: path.join(DATA_DIR, 'notifications.db'),autoload: true }),
@@ -6154,6 +6155,7 @@ async function pointsSummaryData(from, to){
       const uid=emailToId[(o.client_email||'').toLowerCase()]; if(!uid) return;
       (o.items||[]).forEach(it=>{ if(isMerchItem(it)) merchMap[uid]=(merchMap[uid]||0)+(+it.qty||1); }); });
     const rows=[]; const catTotals={hours:0, online:0, refs:0, membership:0, newmem:0, merch:0, merchline:0};
+    const spinBy={}; (await q.find(db.spins,{})).forEach(s=>{ if(inRange(s.date)){ const b=spinBy[s.user_id]=spinBy[s.user_id]||{p:0,c:0}; b.p+=(+s.points||0); if(!s.milestone) b.c++; } });
     for(const u of users){
       const bks=byUser[u._id]||[];
       const online=bks.filter(isOnline).length;
@@ -6164,7 +6166,7 @@ async function pointsSummaryData(from, to){
       const nm=newMemberPointsFor(u._id, adjacency, buyerSet);
       const md=merchDownlinePointsFor(u._id, adjacency, merchMap);
       const merchCount=merchMap[u._id]||0;
-      const pi=buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points});
+      const pi=buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, spinPoints:(spinBy[u._id]||{}).p||0, spinCount:(spinBy[u._id]||{}).c||0});
       if(pi.total<=0) continue;
       catTotals.hours+=hours*MP_WEIGHTS.hour; catTotals.online+=online*MP_WEIGHTS.hour;
       catTotals.refs+=refs*MP_WEIGHTS.referral; catTotals.membership+=hasMem?MP_WEIGHTS.membership:0;
@@ -7029,6 +7031,7 @@ app.delete('/api/bookings/:id', auth, async(req,res)=>{
 // (staré/členstvá z migrácie nemusia mať presné plan_id), tréner/admin vždy.
 function hasOnlineAccess(m, u){
   if(u && (u.is_admin || u.user_type==='trainer')) return true;
+  if(u && (u.online_passes||0)>0) return true; // výhra z kolesa: 1 online hodina zdarma
   if(!m) return false;
   const plan=MEMBERSHIP_PLANS[m.plan_id];
   if(plan && plan.online) return true;
@@ -7220,7 +7223,14 @@ setInterval(async()=>{
           await q.update(db.bookings,{_id:b._id},{$set:{status:'attended', attended_at:nowISO(), attended_by:'online_auto'}});
           if(!b.is_child_booking && b.user_id){
             const bu=await q.one(db.users,{_id:b.user_id});
-            if(bu) await creditAttendance(bu);
+            if(bu){
+              await creditAttendance(bu);
+              // Výherný online pass z kolesa sa spotrebuje prvou absolvovanou online hodinou
+              const bm=await checkMembership(bu._id);
+              const planB=bm?MEMBERSHIP_PLANS[bm.plan_id]:null;
+              if((bu.online_passes||0)>0 && !(planB&&planB.online))
+                await q.update(db.users,{_id:bu._id},{$set:{online_passes:(bu.online_passes||0)-1}});
+            }
           }
         }
         if(bks.length) console.log(`🌐 Online auto-účasť: ${bks.length} klientok (${cls.time_start} ${cls.stream_city||''})`);
@@ -9452,7 +9462,9 @@ async function monthlyPointsFor(userId, month){
   const merchCount = merchMap[userId]||0;
   const md = merchDownlinePointsFor(userId, adjacency, merchMap);
   const privCount = (await privCountMapInPeriod(month))[userId]||0;
-  return buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, privCount}, month);
+  const spins=(await q.find(db.spins,{user_id:userId, month}));
+  const spinPoints=spins.reduce((s,x)=>s+(+x.points||0),0), spinCount=spins.filter(x=>!x.milestone).length;
+  return buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, privCount, spinPoints, spinCount}, month);
 }
 function buildPointItems({hours, online, refs, hasMem, memName, newMemberCount, newMemberPoints, merchCount, merchLineCount, merchLinePoints, privCount}, month){
   privCount=privCount||0;
@@ -9468,10 +9480,97 @@ function buildPointItems({hours, online, refs, hasMem, memName, newMemberCount, 
     { icon:'🛍️', label:'Zakúpený merch',          count:merchCount, per:MP_WEIGHTS.merch, points:merchCount*MP_WEIGHTS.merch, sub:`${merchCount} ${plur(merchCount,'kus','kusy','kusov')}` },
     { icon:'🛒', label:'Merch v mojom tíme (aj v hĺbke)', count:merchLineCount, points:merchLinePoints, sub:`${merchLineCount} ${plur(merchLineCount,'kus','kusy','kusov')}` },
     { icon:'💛', label: hasMem?('Aktívne členstvo'+(memName?' ('+memName+')':'')):'Aktívne členstvo', count: hasMem?1:0, per:MP_WEIGHTS.membership, points: hasMem?MP_WEIGHTS.membership:0, sub: hasMem?'aktívne':'—' },
+    { icon:'🎡', label:'Denné odmeny (koleso + séria)', count: arguments[0].spinCount||0, points: arguments[0].spinPoints||0, sub: (arguments[0].spinCount||0)+'× denná odmena' },
   ];
   const total = items.reduce((s,i)=>s+i.points,0);
   return { month, total, items };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// KOLESO DENNEJ ODMENY + LOGIN STREAK
+// Vernostný program, nie hazard: točenie je raz denne zadarmo a VŽDY niečo dá
+// (body do mesačnej súťaže). Veľké odmeny sú deterministické za sériu dní:
+// 7 dní → +5 b · 30 dní → +15 b · 90 dní → 5 € kredit · 180 dní → súkromná hodina.
+// Bonus: 1× do mesiaca v celej appke padne 🩺 Tanita meranie zdarma (globálny strop).
+// ═══════════════════════════════════════════════════════════════════════════════
+const SPIN_SEGMENTS=[ // poradie = výseky kolesa na dashboarde
+  {key:'p1', label:'+1 bod',  points:1},
+  {key:'p2', label:'+2 body', points:2},
+  {key:'p1b',label:'+1 bod',  points:1},
+  {key:'p5', label:'+5 bodov',points:5},
+  {key:'p2b',label:'+2 body', points:2},
+  {key:'tanita', label:'🩺 Tanita meranie zdarma', points:0},
+  {key:'online1',label:'💻 Online hodina zdarma', points:0},
+  {key:'p10',label:'+10 bodov',points:10},
+];
+const SPIN_MILESTONES=[
+  {days:7,   label:'Séria 7 dní',   points:5},
+  {days:30,  label:'Séria 30 dní',  points:15},
+  {days:90,  label:'Séria 90 dní',  credit:5},
+  {days:180, label:'Séria 180 dní', private_lesson:true},
+];
+function yesterdayStr(){ const d=new Date(Date.now()-86400000); return d.toISOString().slice(0,10); }
+app.get('/api/spin/status', auth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.session.uid});
+    if(!u) return res.status(404).json({error:'?'});
+    const last=u.last_spin_date||'';
+    const streak=(last===today()||last===yesterdayStr()) ? (u.spin_streak||0) : 0;
+    const next=SPIN_MILESTONES.find(m=>m.days>streak)||null;
+    res.json({ ok:true, can_spin: last!==today(), streak, last_spin_date:last,
+      segments:SPIN_SEGMENTS.map(s=>({key:s.key,label:s.label})),
+      milestones:SPIN_MILESTONES.map(m=>({days:m.days,label:m.label,reward:m.points?('+'+m.points+' bodov'):(m.credit?m.credit+' € kredit':'Súkromná hodina zdarma'),reached:streak>=m.days})),
+      next_milestone: next?{days:next.days, missing:next.days-streak}:null });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/spin', auth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.session.uid});
+    if(!u || u.is_child) return res.status(400).json({error:'Nedostupné'});
+    if(u.last_spin_date===today()) return res.status(400).json({error:'Dnes si už točila — príď zajtra! 🌙'});
+    const month=today().slice(0,7);
+    // streak: pokračuje ak točila včera, inak začína odznova
+    const streak=(u.last_spin_date===yesterdayStr() ? (u.spin_streak||0) : 0) + 1;
+    // výber výseku (server-side): body 40/30/20/9 %, tanita 1 % s globálnym stropom 1×/mesiac
+    let pick;
+    const r=Math.random()*100;
+    if(r<1 && !(await q.one(db.settings,{key:'spin_tanita_'+month}))) pick=SPIN_SEGMENTS.find(s=>s.key==='tanita');
+    else if(r<9) pick=SPIN_SEGMENTS.find(s=>s.key==='online1'); // promo online programu — nestojí nič
+    else if(r<45) pick=SPIN_SEGMENTS.find(s=>s.key==='p1');
+    else if(r<72) pick=SPIN_SEGMENTS.find(s=>s.key==='p2');
+    else if(r<91) pick=SPIN_SEGMENTS.find(s=>s.key==='p5');
+    else pick=SPIN_SEGMENTS.find(s=>s.key==='p10');
+    if(pick.key==='online1'){
+      await q.update(db.users,{_id:u._id},{$set:{online_passes:(u.online_passes||0)+1}});
+      await q.insert(db.notifications,{user_id:u._id,type:'spin_prize',title:'💻 Vyhrala si online hodinu zdarma!',body:'Prihlás sa na najbližšiu Online Zumbu na dashboarde — vstup máš zadarmo. 🎉',read:false,created_at:nowISO()}).catch(()=>{});
+    }
+    if(pick.key==='tanita'){
+      await q.insert(db.settings,{key:'spin_tanita_'+month, value:{user_id:u._id,name:u.name}, at:nowISO()});
+      const admins=await q.find(db.users,{is_admin:true});
+      for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'spin_prize',title:'🩺 Mesačná cena z kolesa padla!',body:`${u.name} vyhral/a Tanita meranie zdarma — dohodnite termín.`,read:false,created_at:nowISO()}).catch(()=>{});
+    }
+    await q.insert(db.spins,{user_id:u._id, user_name:u.name, date:today(), month, prize:pick.key, label:pick.label, points:pick.points||0, streak, created_at:nowISO()});
+    // míľnik série — presne v deň dosiahnutia
+    const ms=SPIN_MILESTONES.find(m=>m.days===streak);
+    let milestone=null;
+    if(ms){
+      milestone={label:ms.label, reward: ms.points?('+'+ms.points+' bodov'):(ms.credit?ms.credit+' € kredit':'Súkromná hodina zdarma')};
+      if(ms.points) await q.insert(db.spins,{user_id:u._id, user_name:u.name, date:today(), month, prize:'milestone_'+ms.days, label:ms.label, points:ms.points, milestone:true, created_at:nowISO()});
+      if(ms.credit){
+        await q.update(db.users,{_id:u._id},{$set:{referral_credit:+((u.referral_credit||0)+ms.credit).toFixed(2)}});
+        await q.insert(db.notifications,{user_id:u._id,type:'spin_prize',title:`🎉 ${ms.label}: +${ms.credit} € kredit!`,body:'Kredit môžeš minúť v e-shope alebo na vstupy.',read:false,created_at:nowISO()}).catch(()=>{});
+      }
+      if(ms.private_lesson){
+        await q.insert(db.notifications,{user_id:u._id,type:'spin_prize',title:`👑 ${ms.label}: súkromná hodina ZDARMA!`,body:'Gratulujeme k neuveriteľnej vernosti — ozveme sa ti s termínom.',read:false,created_at:nowISO()}).catch(()=>{});
+        const admins=await q.find(db.users,{is_admin:true});
+        for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'spin_prize',title:'👑 180-dňová séria!',body:`${u.name} dosiahol/la 180 dní v rade — má nárok na súkromnú hodinu zdarma.`,read:false,created_at:nowISO()}).catch(()=>{});
+      }
+    }
+    await q.update(db.users,{_id:u._id},{$set:{last_spin_date:today(), spin_streak:streak}});
+    const segIndex=SPIN_SEGMENTS.findIndex(s=>s.key===pick.key);
+    res.json({ok:true, prize:{key:pick.key,label:pick.label,points:pick.points||0}, segment:segIndex, streak, milestone});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 
 // Spotlight for the client dashboard: klient mesiaca + narodeniny + meniny (bez anonymných)
 // Kontakty na zakladateľov (Marek + Beáta) — pre pomoc na Dashboarde
