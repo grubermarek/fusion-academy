@@ -9527,6 +9527,19 @@ app.post('/api/spin', auth, async(req,res)=>{
   try{
     const u=await q.one(db.users,{_id:req.session.uid});
     if(!u || u.is_child) return res.status(400).json({error:'Nedostupné'});
+    // Admin TEST režim: točí neobmedzene, nič sa nezapisuje (žiadne body, streak, Tanita lock)
+    if(req.body.test){
+      if(!u.is_admin) return res.status(403).json({error:'Test môže spúšťať len admin'});
+      const rT=Math.random()*100;
+      let pT;
+      if(rT<1) pT=SPIN_SEGMENTS.find(s=>s.key==='tanita');
+      else if(rT<9) pT=SPIN_SEGMENTS.find(s=>s.key==='online1');
+      else if(rT<45) pT=SPIN_SEGMENTS.find(s=>s.key==='p1');
+      else if(rT<72) pT=SPIN_SEGMENTS.find(s=>s.key==='p2');
+      else if(rT<91) pT=SPIN_SEGMENTS.find(s=>s.key==='p5');
+      else pT=SPIN_SEGMENTS.find(s=>s.key==='p10');
+      return res.json({ok:true, test:true, prize:{key:pT.key,label:pT.label,points:pT.points||0}, segment:SPIN_SEGMENTS.findIndex(s=>s.key===pT.key), streak:u.spin_streak||0, milestone:null});
+    }
     if(u.last_spin_date===today()) return res.status(400).json({error:'Dnes si už točila — príď zajtra! 🌙'});
     const month=today().slice(0,7);
     // streak: pokračuje ak točila včera, inak začína odznova

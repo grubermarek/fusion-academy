@@ -344,22 +344,41 @@
   <div id="onlineBanner" style="display:none;margin-bottom:16px"></div>
 
   <!-- Denná odmena: koleso + login streak (vernostný program — vždy niečo vyhráš) -->
-  <div id="spinCard" style="display:none;margin-bottom:16px;background:var(--card,#161616);border:1px solid var(--gold-border,#332a18);border-radius:16px;padding:16px 18px">
-    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-      <div id="spinWheelWrap" style="position:relative;width:120px;height:120px;flex-shrink:0">
-        <div style="position:absolute;top:-6px;left:50%;transform:translateX(-50%);z-index:3;font-size:1.1rem">🔻</div>
-        <div id="spinWheel" style="width:120px;height:120px;border-radius:50%;border:3px solid var(--gold,#C9A84C);transition:transform 3.2s cubic-bezier(.15,.9,.25,1);
-          background:conic-gradient(#2a2318 0 45deg,#1c1c1c 45deg 90deg,#2a2318 90deg 135deg,#3a2e14 135deg 180deg,#1c1c1c 180deg 225deg,#12303a 225deg 270deg,#2a2318 270deg 315deg,#403008 315deg 360deg)"></div>
-        <div style="position:absolute;inset:38px;background:#111;border:2px solid var(--gold-border,#332a18);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.3rem;z-index:2">🎡</div>
+  <style>
+    @keyframes spinGlow{0%,100%{box-shadow:0 0 24px -4px rgba(201,168,76,.55)}50%{box-shadow:0 0 52px 2px rgba(201,168,76,.95)}}
+    @keyframes prizePop{0%{transform:scale(.2);opacity:0}55%{transform:scale(1.14);opacity:1}75%{transform:scale(.96)}100%{transform:scale(1)}}
+    @keyframes prizeGlow{0%,100%{box-shadow:0 0 22px -2px rgba(129,199,132,.65)}50%{box-shadow:0 0 44px 4px rgba(129,199,132,.95)}}
+    #spinWheel.spinning{animation:spinGlow 1.1s ease-in-out infinite}
+    .spin-seg{position:absolute;left:50%;top:50%;transform-origin:0 0;font-size:.66rem;font-weight:800;color:#eee;white-space:nowrap;text-shadow:0 1px 3px #000}
+    #spinPrizeOverlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;z-index:6}
+    #spinPrizeOverlay .box{background:#101408;border:2px solid #81c784;border-radius:16px;padding:14px 20px;text-align:center;font-weight:900;color:#a5e8a8;font-size:1rem;animation:prizePop .7s cubic-bezier(.2,1.4,.4,1) both, prizeGlow 1.6s ease-in-out infinite}
+  </style>
+  <div id="spinCard" style="display:none;margin-bottom:16px;background:var(--card,#161616);border:1px solid var(--gold-border,#332a18);border-radius:16px;padding:20px 18px;text-align:center">
+    <div style="font-weight:800;color:var(--gold,#C9A84C);font-size:1.05rem">🎁 Koleso dennej odmeny</div>
+    <div id="spinStreakRow" style="font-size:.82rem;color:var(--muted,#999);margin:6px 0 14px"></div>
+    <div id="spinWheelWrap" style="position:relative;width:230px;height:230px;margin:0 auto">
+      <div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);z-index:5;font-size:1.5rem;filter:drop-shadow(0 2px 3px #000)">🔻</div>
+      <div id="spinWheel" style="width:230px;height:230px;border-radius:50%;border:4px solid var(--gold,#C9A84C);position:relative;overflow:hidden;transition:transform 8.5s cubic-bezier(.07,.82,.08,1);
+        background:conic-gradient(#2a2318 0 45deg,#1c1c1c 45deg 90deg,#33270f 90deg 135deg,#4a3a10 135deg 180deg,#1c1c1c 180deg 225deg,#123a46 225deg 270deg,#1e3a1e 270deg 315deg,#584208 315deg 360deg)">
+        <div id="spinLabels"></div>
       </div>
-      <div style="flex:1;min-width:200px">
-        <div style="font-weight:800;color:var(--gold,#C9A84C)">🎁 Denná odmena</div>
-        <div id="spinStreakRow" style="font-size:.82rem;color:var(--muted,#999);margin:4px 0 8px"></div>
-        <button id="spinBtn" onclick="doSpin()" style="background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);color:#111;font-weight:800;border:none;border-radius:11px;padding:10px 20px;cursor:pointer;font-size:.9rem">🎡 Zatočiť si</button>
-        <div id="spinResult" style="margin-top:8px;font-size:.88rem;font-weight:700;color:#81c784"></div>
-      </div>
+      <div style="position:absolute;inset:88px;background:#0d0d0d;border:2px solid var(--gold-border,#332a18);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.6rem;z-index:2;pointer-events:none">🎡</div>
+      <div id="spinPrizeOverlay"><div class="box" id="spinPrizeBox"></div></div>
     </div>
-    <div id="spinMilestones" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"></div>
+    <div style="margin-top:16px">
+      <button id="spinBtn" onclick="doSpin()" style="background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);color:#111;font-weight:800;border:none;border-radius:12px;padding:12px 30px;cursor:pointer;font-size:1rem">🎡 Zatočiť si</button>
+      <button id="spinTestBtn" onclick="doSpin(true)" style="display:none;margin-left:8px;background:none;border:1px dashed #666;color:#999;border-radius:12px;padding:12px 16px;cursor:pointer;font-size:.8rem" title="Admin test — nič sa nezapíše">🧪 Test</button>
+    </div>
+    <div id="spinResult" style="margin-top:10px;font-size:.9rem;font-weight:700;color:#81c784;min-height:1.2em"></div>
+    <div id="spinMilestones" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:12px"></div>
+    <details style="margin-top:12px;text-align:left;background:#131313;border:1px solid #242424;border-radius:12px;padding:10px 14px">
+      <summary style="cursor:pointer;font-size:.82rem;color:var(--gold,#C9A84C);font-weight:700;list-style:none">ℹ️ Čo je koleso dennej odmeny?</summary>
+      <div style="font-size:.8rem;color:var(--muted,#999);line-height:1.65;margin-top:8px">
+        <p style="margin:0 0 8px">Naša <b style="color:#ddd">denná odmena za vernosť</b> — raz denne si zadarmo zatočíš a <b style="color:#81c784">vždy niečo vyhráš</b>: body do súťaže o Klientku mesiaca (+1 až +10), občas <b style="color:#7ec8e3">online hodinu zdarma</b> a raz do mesiaca padne jednej z nás <b style="color:#e7c878">🩺 Tanita meranie zdarma</b> (profesionálna analýza zloženia tela).</p>
+        <p style="margin:0 0 8px">Každý deň točenia ti rastie <b style="color:#ff9f43">🔥 séria</b>. Za vytrvalosť prichádzajú extra odmeny: <b>7 dní → +5 bodov · 30 dní → +15 bodov · 90 dní → 5 € kredit · 180 dní → súkromná hodina zdarma</b>. Vynechaný deň sériu preruší — tak nezabudni! 😉</p>
+        <p style="margin:0">Žiadny hazard — nič nevkladáš, nič neriskuješ. Je to naše poďakovanie, že si súčasťou Fusion Academy. 💛</p>
+      </div>
+    </details>
   </div>
   <style>
     @keyframes liveGlow{0%,100%{box-shadow:0 0 0 0 rgba(255,59,48,.5)}50%{box-shadow:0 0 0 14px rgba(255,59,48,0)}}
@@ -1689,34 +1708,55 @@ async function init(){
 
 /* ─── Denná odmena: koleso + streak ─── */
 let _spinBusy=false, _spinRot=0;
+const SPIN_SHORT=['+1 bod','+2 body','+1 bod','+5 bodov','+2 body','🩺 Tanita','💻 Online','+10 bodov'];
+function renderSpinLabels(){
+  const host=document.getElementById('spinLabels'); if(!host||host.childElementCount) return;
+  // popisky na výsekoch: stred výseku i je na uhle i*45+22.5° (0° = hore), text smeruje od stredu von
+  host.innerHTML=SPIN_SHORT.map((t,i)=>{
+    const ang=i*45+22.5;
+    return `<div class="spin-seg" style="transform:rotate(${ang-90}deg) translate(52px,-6px)">${t}</div>`;
+  }).join('');
+}
 async function loadSpin(){
   const card=document.getElementById('spinCard'); if(!card) return;
   const d=await api('/api/spin/status');
   if(!d||!d.ok){ card.style.display='none'; return; }
   card.style.display='block';
+  renderSpinLabels();
   const row=document.getElementById('spinStreakRow');
-  row.innerHTML=`${d.streak>0?`🔥 <b style="color:#ff9f43">Séria ${d.streak} ${d.streak===1?'deň':d.streak<5?'dni':'dní'}</b>`:'Začni svoju sériu ešte dnes!'}${d.next_milestone?` · do odmeny zostáva <b>${d.next_milestone.missing}</b> ${d.next_milestone.missing===1?'deň':d.next_milestone.missing<5?'dni':'dní'}`:''}`;
+  row.innerHTML=`${d.streak>0?`🔥 <b style="color:#ff9f43">Séria ${d.streak} ${d.streak===1?'deň':d.streak<5?'dni':'dní'}</b>`:'Začni svoju sériu ešte dnes!'}${d.next_milestone?` · do ďalšej odmeny <b>${d.next_milestone.missing}</b> ${d.next_milestone.missing===1?'deň':d.next_milestone.missing<5?'dni':'dní'}`:''}`;
   document.getElementById('spinMilestones').innerHTML=(d.milestones||[]).map(m=>
     `<span style="font-size:.72rem;font-weight:700;border-radius:20px;padding:4px 11px;border:1px solid ${m.reached?'#4ade80':'var(--gold-border,#332a18)'};color:${m.reached?'#4ade80':'var(--muted,#888)'};background:${m.reached?'rgba(74,222,128,.08)':'transparent'}">${m.reached?'✓ ':''}${m.days} dní → ${m.reward}</span>`).join('');
   const btn=document.getElementById('spinBtn');
   if(!d.can_spin){ btn.disabled=true; btn.style.opacity=.5; btn.textContent='✓ Dnešná odmena vyzdvihnutá'; }
   else { btn.disabled=false; btn.style.opacity=1; btn.innerHTML='🎡 Zatočiť si'; }
+  try{ const meR=await api('/api/me'); if(meR&&(meR.is_admin||meR.user_type==='admin')) document.getElementById('spinTestBtn').style.display='inline-block'; }catch(e){}
 }
-async function doSpin(){
+async function doSpin(test){
   if(_spinBusy) return; _spinBusy=true;
   const btn=document.getElementById('spinBtn'); btn.disabled=true;
-  const d=await api('/api/spin',{method:'POST',body:{}});
+  document.getElementById('spinResult').innerHTML='';
+  document.getElementById('spinPrizeOverlay').style.display='none';
+  const d=await api('/api/spin',{method:'POST',body:{test:!!test}});
   if(!d||!d.ok){ showToast((d&&d.error)||'Skús to znova','error'); _spinBusy=false; loadSpin(); return; }
-  // animácia: 5 otáčok + dotočenie na stred vyhraného výseku (výsek i = i*45°..i*45+45°, stred na 12h)
-  const target = 360*5 + (360 - (d.segment*45 + 22.5));
+  // 8,5 s točenie: 7 otáčok, dramatické spomaľovanie (easing s dlhým dobehom)
+  const wheel=document.getElementById('spinWheel');
+  wheel.classList.add('spinning');
+  const target = 360*7 + (360 - (d.segment*45 + 22.5)) - (_spinRot % 360);
   _spinRot += target;
-  document.getElementById('spinWheel').style.transform=`rotate(${_spinRot}deg)`;
+  wheel.style.transform=`rotate(${_spinRot}deg)`;
   setTimeout(()=>{
+    wheel.classList.remove('spinning');
+    // výhra: zvýraznený box na strede kolesa + text pod tlačidlom
+    const box=document.getElementById('spinPrizeBox');
+    box.innerHTML=`🎉 ${escHtml(d.prize.label)}${d.test?'<div style="font-size:.65rem;color:#999;font-weight:600">TEST — nič sa nezapísalo</div>':''}`;
+    document.getElementById('spinPrizeOverlay').style.display='flex';
+    setTimeout(()=>{ document.getElementById('spinPrizeOverlay').style.display='none'; }, 5000);
     const res=document.getElementById('spinResult');
-    res.innerHTML=`🎉 ${escHtml(d.prize.label)}${d.prize.points?' do mesačnej súťaže':''}${d.milestone?`<br>🏆 <b>${escHtml(d.milestone.label)}</b> — ${escHtml(d.milestone.reward)}!`:''}`;
+    res.innerHTML=`${escHtml(d.prize.label)}${d.prize.points?' do mesačnej súťaže':''}${d.milestone?`<br>🏆 <b>${escHtml(d.milestone.label)}</b> — ${escHtml(d.milestone.reward)}!`:''}`;
     if(typeof launchConfetti==='function' && (d.milestone||['tanita','online1','p10'].includes(d.prize.key))) try{launchConfetti();}catch(e){}
-    _spinBusy=false; loadSpin();
-  }, 3400);
+    _spinBusy=false; if(!d.test) loadSpin(); else { btn.disabled=false; }
+  }, 8600);
 }
 
 /* ─── Bublinka nových správ (DM) v hlavičke ─── */
