@@ -7275,6 +7275,7 @@ app.put('/api/admin/kiosk/:studio', adminAuth, async(req,res)=>{
   try{
     const slug=String(req.params.studio||'').toLowerCase();
     if(!KIOSK_STUDIOS[slug]) return res.status(404).json({error:'Neznáme štúdio'});
+    await kioskConfig(); // zaisti, že config existuje
     const s=await q.one(db.settings,{key:'kiosk_config'});
     const cfg=s.value; const st=cfg.studios[slug];
     const b=req.body||{};
