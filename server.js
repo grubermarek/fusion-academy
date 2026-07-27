@@ -944,6 +944,28 @@ async function seedData() {
     console.log(`✅  Online rozvrh v2: ${added} hodín pridaných (Po/St/Pi/Ne)`);
   }
 
+  // Meta kampaň „FA — Zumba Leads — Jún 2026" — live čísla z Ads Manageru (27.7.2026)
+  // + priradenie meta-klientov registrovaných počas kampane, aby fungovalo ROAS/CAC.
+  if(!(await q.one(db.settings,{key:'meta_campaign_sync_v1'}))){
+    const CAMP='FA — Zumba Leads — Jún 2026';
+    const metaOf = u => !!(u.fbclid || /faceb|^fb$|meta|instagr|^ig$/i.test(String(u.utm_source||'')) || /faceb|meta|instagr/i.test(String(u.lead_source||'')));
+    const users=(await q.find(db.users,{})).filter(u=>!u.is_admin && !u.is_child && metaOf(u) && (u.created_at||'')>='2026-06-14');
+    let tagged=0;
+    for(const u of users){ if(!u.utm_campaign){ await q.update(db.users,{_id:u._id},{$set:{utm_campaign:CAMP}}); tagged++; } }
+    const firstVisits=users.filter(u=>(u.visit_count||0)>0).length;
+    const membIds=new Set((await q.find(db.memberships,{status:'active'})).map(m=>m.user_id));
+    const mems=users.filter(u=>membIds.has(u._id)).length;
+    if(!(await q.one(db.campaigns,{name:CAMP}))){
+      await q.insert(db.campaigns,{ name:CAMP, platform:'facebook', date_from:'2026-06-14', date_to:'',
+        budget:0, goal:'Leady na Zumbu (formulár) — 10 €/deň', note:'Čísla synchronizované z Meta Ads Manageru 27.07.2026 (live).',
+        spend:953.72, impressions:261211, clicks:6236, registrations:users.length, first_visits:firstVisits, memberships:mems,
+        meta_leads:366, meta_cost_per_lead:2.77, meta_reach:51770, meta_daily_budget:10,
+        created_at:nowISO() });
+    }
+    await q.insert(db.settings,{key:'meta_campaign_sync_v1', value:true, at:nowISO()});
+    console.log(`✅  Meta kampaň synchronizovaná: ${users.length} registrácií (${tagged} dotagovaných), ${firstVisits} na hodine, ${mems} členstiev`);
+  }
+
   // Promo kód pre návrat odídených klientov (30% na prvý mesiac)
   if(!await q.one(db.promo_codes,{code:'VITAJSPAT'})){
     await q.insert(db.promo_codes,{ code:'VITAJSPAT', type:'percent', value:30, applies_to:'membership',

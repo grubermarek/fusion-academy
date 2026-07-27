@@ -2534,6 +2534,7 @@ async function loadCampaigns(){
         ${met('Kliky', c.clicks)}
       </div>
       <div class="text-muted small mt-2">Reg: ${c.registrations} · Prvé návštevy: ${c.first_visits} · Členstvá: ${c.memberships} · Platiaci klienti z kampane: ${c.attributed_payers||0}</div>
+      ${c.meta_leads?`<div class="small mt-1" style="color:#7ea6d9">📘 Meta Ads: ${c.meta_leads} leadov (formulár) · ${(+c.meta_cost_per_lead).toFixed(2)} €/lead · dosah ${(+c.meta_reach).toLocaleString('sk')} ľudí · denný rozpočet ${(+c.meta_daily_budget).toFixed(0)} €</div>`:''}
     </div></div>`;
   }).join('');
 }
