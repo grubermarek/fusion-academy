@@ -370,9 +370,17 @@ function render(){
   const av=P.avatar?`<img src="${P.avatar}" alt="">`:esc(initials);
   const flex=P.earned_count>=5?'glow':'';
   const earned=P.achievements.filter(a=>a.earned), locked=P.achievements.filter(a=>!a.earned);
+  // Vzácnosť odznaku: % členov, ktorí ho majú (menej = výnimočnejší)
+  const rarity=a=>{
+    if(a.pct===undefined||a.pct===null) return '';
+    if(a.pct<=0) return `<div class="ach-pct" style="font-size:.62rem;font-weight:800;color:#e7c878;margin-top:3px">💎 ešte ho nemá nikto</div>`;
+    const c=a.pct<=5?'#e7c878':a.pct<=20?'#c9a84c':'#8a8a8a';
+    return `<div class="ach-pct" style="font-size:.62rem;font-weight:700;color:${c};margin-top:3px">${a.pct<=5?'💎':a.pct<=20?'⭐':'👥'} má ${a.pct} % členov</div>`;
+  };
   const achCard=a=>`<div class="ach ${a.earned?'earned':''}">
      ${a.earned?'':'<span class="lock"><i class="bi bi-lock-fill"></i></span>'}
      <div class="ico">${a.icon}</div><div class="an">${esc(a.name)}</div><div class="ad">${esc(a.desc)}</div>
+     ${rarity(a)}
      ${a.earned?'':`<div class="prog"><i style="width:${a.progress}%"></i></div>`}
    </div>`;
   applyProfileBg(P.bg_tier); // pozadie celej stránky podľa štruktúry

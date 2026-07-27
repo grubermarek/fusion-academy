@@ -307,6 +307,10 @@
     Fusion Academy
   </a>
   <div class="topbar-right">
+    <button class="notif-btn" onclick="location.href='/community'" title="Správy" id="dmBtn" style="position:relative">
+      <i class="bi bi-chat-dots"></i>
+      <div class="notif-badge" id="dmBadge" style="display:none;background:#4a9eda">0</div>
+    </button>
     <button class="notif-btn" onclick="toggleNotif()" title="Notifikácie">
       <i class="bi bi-bell"></i>
       <div class="notif-badge" id="notifBadge">0</div>
@@ -1641,6 +1645,7 @@ async function init(){
   loadFriends();
   loadPrivate();
   loadOnlineBanner();
+  loadDmBadge();
   // Nedokončená rezervácia z onboardingu (stratená session) — dokonči automaticky
   try{
     const pb=JSON.parse(localStorage.getItem('fa_pending_booking')||'null');
@@ -1661,6 +1666,18 @@ async function init(){
   // Safety net: force any card that failed to fade in to become visible
   setTimeout(()=>document.querySelectorAll('.anim').forEach(e=>{ if(getComputedStyle(e).opacity==='0') e.style.opacity='1'; }), 1000);
 }
+
+/* ─── Bublinka nových správ (DM) v hlavičke ─── */
+async function loadDmBadge(){
+  try{
+    const d=await api('/api/dm/conversations');
+    const n=(d&&d.unread_total)||0;
+    const b=document.getElementById('dmBadge'); if(!b) return;
+    if(n>0){ b.textContent=n>9?'9+':n; b.style.display='flex'; }
+    else b.style.display='none';
+  }catch(e){}
+}
+setInterval(loadDmBadge, 60*1000);
 
 /* ─── Online hodina banner (blíži sa / LIVE) ─── */
 async function loadOnlineBanner(){

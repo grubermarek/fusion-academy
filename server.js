@@ -2286,6 +2286,12 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     const gender = u.gender==='male' ? 'male' : 'female';
     u.cities_visited = await citiesVisitedOf(u._id);
     const ach=computeAchievements(u, refCount, memberMonths, gender);
+    // Vzácnosť: koľko % členov má odznak + zoradenie od najvýnimočnejších
+    try{
+      const pc=await achievementOwnershipPct();
+      for(const a of ach) a.pct = pc.map[a.id]!==undefined ? pc.map[a.id] : 0;
+      ach.sort((x,y)=>(x.pct||0)-(y.pct||0));
+    }catch(e){}
     const earned=ach.filter(a=>a.earned);
     // „Členkou od" = najskorší začiatok členstva (napr. z Glofoxu), nie dátum
     // vzniku appka účtu — aby to sedelo s počtom odčlenených mesiacov.
