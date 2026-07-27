@@ -981,6 +981,14 @@ async function seedData() {
     console.log('✅  Meta kampaň v2 (Zumba Web — Registrácia) pridaná s live utm atribúciou');
   }
 
+  // Prepojenie kampaní na Meta campaign ID → automatický sync spend/impresií/klikov
+  if(!(await q.one(db.settings,{key:'meta_campaign_ids_v1'}))){
+    await q.update(db.campaigns,{name:'FA — Zumba Leads — Jún 2026'},{$set:{meta_campaign_id:'52509246681873'}});
+    await q.update(db.campaigns,{name:'FA — Zumba Web — Registrácia'},{$set:{meta_campaign_id:'52538230154873'}});
+    await q.insert(db.settings,{key:'meta_campaign_ids_v1', value:true, at:nowISO()});
+    console.log('✅  Meta campaign IDs prepojené — auto-sync štatistík aktívny');
+  }
+
   // Promo kód pre návrat odídených klientov (30% na prvý mesiac)
   if(!await q.one(db.promo_codes,{code:'VITAJSPAT'})){
     await q.insert(db.promo_codes,{ code:'VITAJSPAT', type:'percent', value:30, applies_to:'membership',
@@ -5862,6 +5870,7 @@ async function trainerMonthStats(month){
   for(const b of bookings){
     const d=bDate(b); if(!d.startsWith(month)) continue;
     const cls=clsMap[b.class_id];
+    if(cls && cls.category==='Online') continue; // online hodiny netvoria výplatu ani odučené hodiny
     // skutočný inštruktor termínu: override (kto sa prihlásil/koho admin nastavil) inak štandardný
     const ins=(insOverride[b.class_id+'|'+d]?.name) || cls?.instructor || '—';
     const s=stats[ins]=stats[ins]||{instructor:ins, sessions:new Set(), attendances:0, revenue:0, newClients:new Set(), fullClasses:0};
@@ -7156,6 +7165,20 @@ setInterval(async()=>{
       const guardKey='online_live_'+cls._id+'_'+today();
       if(await q.one(db.settings,{key:guardKey})) continue;
       await q.insert(db.settings,{key:guardKey, value:true, at:nowISO()});
+      // Auto-absolvovanie: prihlásené klientky dostanú účasť + body + odznaky hneď pri štarte
+      // (majú zaplatené online členstvo). Trénerovi sa NIČ nepripisuje — online hodiny sa
+      // nepočítajú do výplat ani odučených hodín (vylúčené v trainerMonthStats).
+      try{
+        const bks=await q.find(db.bookings,{class_id:cls._id, booking_date:today(), status:'confirmed'});
+        for(const b of bks){
+          await q.update(db.bookings,{_id:b._id},{$set:{status:'attended', attended_at:nowISO(), attended_by:'online_auto'}});
+          if(!b.is_child_booking && b.user_id){
+            const bu=await q.one(db.users,{_id:b.user_id});
+            if(bu) await creditAttendance(bu);
+          }
+        }
+        if(bks.length) console.log(`🌐 Online auto-účasť: ${bks.length} klientok (${cls.time_start} ${cls.stream_city||''})`);
+      }catch(e){ console.error('online auto-attend:', e.message); }
       const membs=(await q.find(db.memberships,{status:'active'})).filter(m=>(m.expires_at||'')>new Date().toISOString());
       const notified=new Set();
       for(const m of membs){
@@ -8889,6 +8912,7 @@ app.post('/api/attendance/confirm-session', trainerAuth, async(req,res)=>{
   try{
     const cls=await q.one(db.classes,{_id:String(req.body.class_id||'')});
     if(!cls) return res.status(404).json({error:'Hodina nenájdená'});
+    if(cls.category==='Online') return res.status(400).json({error:'Online hodiny sa potvrdzujú automaticky pri štarte vysielania — účasť aj body dostanú klientky samé, tréner za ne výplatu nemá.'});
     const date=/^\d{4}-\d{2}-\d{2}$/.test(req.body.date||'') ? req.body.date : displayNextDateForDay(cls.day_of_week);
     const rows=await q.find(db.bookings,{class_id:cls._id, booking_date:date, status:'confirmed'});
     let credited=0;
@@ -10146,6 +10170,36 @@ function campaignMetrics(c, revenue, payingCustomers){
     revenue:        +rev.toFixed(2)
   };
 }
+// ── AUTO-SYNC Meta Ads štatistík do kampaní ──────────────────────────────────
+// Kampane s meta_campaign_id si server sám stiahne z Graph API (spend, impresie,
+// kliky, dosah, leady) cez CAPI token v DB. Beží max. raz za 6 h + v dennom jobe.
+async function syncMetaCampaignStats(force){
+  try{
+    const tok=await getMetaCapiToken(); if(!tok) return {ok:false, error:'no_token'};
+    const last=await q.one(db.settings,{key:'meta_sync_at'});
+    if(!force && last && (Date.now()-new Date(last.at||0).getTime()) < 6*3600*1000) return {ok:true, cached:true};
+    if(last) await q.update(db.settings,{_id:last._id},{$set:{at:nowISO()}});
+    else await q.insert(db.settings,{key:'meta_sync_at', at:nowISO()});
+    const camps=(await q.find(db.campaigns,{})).filter(c=>c.meta_campaign_id);
+    let updated=0;
+    for(const c of camps){
+      try{
+        const url=`https://graph.facebook.com/v21.0/${c.meta_campaign_id}/insights?fields=spend,impressions,clicks,reach,actions&date_preset=maximum&access_token=${encodeURIComponent(tok)}`;
+        const d=await (await fetch(url)).json();
+        if(d.error){ console.error('meta sync', c.name, d.error.message); continue; }
+        const row=d.data&&d.data[0]; if(!row) continue;
+        const upd={spend:+row.spend||0, impressions:+row.impressions||0, clicks:+row.clicks||0,
+          meta_reach:+row.reach||0, meta_synced_at:nowISO()};
+        const leads=(row.actions||[]).find(a=>a.action_type==='lead');
+        if(leads){ upd.meta_leads=+leads.value||0; if(upd.spend&&upd.meta_leads) upd.meta_cost_per_lead=+(upd.spend/upd.meta_leads).toFixed(2); }
+        await q.update(db.campaigns,{_id:c._id},{$set:upd}); updated++;
+      }catch(e){ console.error('meta sync', c.name, e.message); }
+    }
+    if(updated) console.log(`📘 Meta sync: ${updated} kampaní aktualizovaných z Ads API`);
+    return {ok:true, updated};
+  }catch(e){ return {ok:false, error:e.message}; }
+}
+
 // Revenue attributed to a campaign = total spend of clients whose utm_campaign matches
 async function campaignRevenueMap(){
   const users=await q.find(db.users,{is_admin:{$ne:true}});
@@ -10189,6 +10243,7 @@ app.get('/api/admin/meta-stats', adminAuth, async(req,res)=>{
 app.get('/api/admin/campaigns', adminAuth, async(req,res)=>{
   try {
     const list=await q.find(db.campaigns,{});
+    syncMetaCampaignStats(false).catch(()=>{}); // na pozadí, výsledok vidno pri ďalšom načítaní
     const revMap=await campaignRevenueMap();
     // Kampane s utm_key majú registrácie/návštevy/členstvá počítané ŽIVO z používateľov
     const allUsers=(await q.find(db.users,{is_admin:{$ne:true}})).filter(u=>!u.is_child);
@@ -11116,6 +11171,9 @@ async function runDailyJobs(){
       await q.insert(db.notifications,{user_id:u._id,type:'class_reminder',ref_id:cls._id,title:`🗓️ Zajtra: ${cls.name}`,body:`${cls.time_start} · ${cls.location}`,read:false,created_at:nowISO()});
     }
   }
+
+  // ── Meta Ads: denná synchronizácia štatistík kampaní ──
+  try{ await syncMetaCampaignStats(true); }catch(e){ console.error('meta sync daily:', e.message); }
 
   // ── 2a2. Deň prvej hodiny zdarma: ranný mail s info + motiváciou + referral ──
   try{
