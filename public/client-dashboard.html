@@ -353,6 +353,8 @@
     #spinPrizeOverlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;z-index:6}
     #spinPrizeOverlay .box{background:#101408;border:2px solid #81c784;border-radius:16px;padding:14px 20px;text-align:center;font-weight:900;color:#a5e8a8;font-size:1rem;animation:prizePop .7s cubic-bezier(.2,1.4,.4,1) both, prizeGlow 1.6s ease-in-out infinite}
   </style>
+  <!-- Kompaktné tlačidlo — celé koleso sa rozbalí až po kliknutí -->
+  <button id="spinToggle" onclick="toggleSpinCard()" style="visibility:hidden;width:100%;margin-bottom:16px;background:linear-gradient(135deg,rgba(201,168,76,.16),rgba(160,120,48,.1));border:1px solid var(--gold-border,#332a18);color:var(--gold,#C9A84C);border-radius:14px;padding:13px 16px;font-size:.95rem;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px"></button>
   <div id="spinCard" style="display:none;margin-bottom:16px;background:var(--card,#161616);border:1px solid var(--gold-border,#332a18);border-radius:16px;padding:20px 18px;text-align:center">
     <div style="font-weight:800;color:var(--gold,#C9A84C);font-size:1.05rem">🎁 Koleso dennej odmeny</div>
     <div id="spinStreakRow" style="font-size:.82rem;color:var(--muted,#999);margin:6px 0 14px"></div>
@@ -1707,8 +1709,32 @@ async function init(){
 }
 
 /* ─── Denná odmena: koleso + streak ─── */
-let _spinBusy=false, _spinRot=0;
+let _spinBusy=false, _spinRot=0, _spinOpen=false, _spinCanSpin=false, _spinTimer=null;
 const SPIN_SHORT=['+1 bod','+2 body','+1 bod','+5 bodov','+2 body','🩺 Tanita','💻 Online','+10 bodov'];
+function toggleSpinCard(force){
+  _spinOpen = force!==undefined ? !!force : !_spinOpen;
+  document.getElementById('spinCard').style.display=_spinOpen?'block':'none';
+}
+// Odpočet do polnoci (reset dennej odmeny)
+function spinCountdown(){
+  const now=new Date();
+  const mid=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1,0,0,0);
+  const s=Math.max(0,Math.floor((mid-now)/1000));
+  const hh=String(Math.floor(s/3600)).padStart(2,'0'), mm=String(Math.floor(s%3600/60)).padStart(2,'0'), ss=String(s%60).padStart(2,'0');
+  return `${hh}:${mm}:${ss}`;
+}
+function updateSpinToggle(){
+  const t=document.getElementById('spinToggle'); if(!t) return;
+  t.style.display='flex'; t.style.visibility='visible';
+  if(_spinCanSpin){
+    t.style.opacity='1'; t.style.filter='none';
+    t.innerHTML='🎡 <span>Denná odmena — zatoč si!</span>';
+  } else {
+    t.style.opacity='.55'; t.style.filter='grayscale(.4)';
+    t.innerHTML=`✓ <span>Dnešná odmena vyzdvihnutá</span> <span style="font-variant-numeric:tabular-nums;font-weight:700;color:var(--muted,#999)">⏳ ${spinCountdown()}</span>`;
+    if(spinCountdown()==='00:00:00') loadSpin();
+  }
+}
 function renderSpinLabels(){
   const host=document.getElementById('spinLabels'); if(!host||host.childElementCount) return;
   // popisky na výsekoch: stred výseku i je na uhle i*45+22.5° (0° = hore), text smeruje od stredu von
@@ -1720,8 +1746,11 @@ function renderSpinLabels(){
 async function loadSpin(){
   const card=document.getElementById('spinCard'); if(!card) return;
   const d=await api('/api/spin/status');
-  if(!d||!d.ok){ card.style.display='none'; return; }
-  card.style.display='block';
+  if(!d||!d.ok){ card.style.display='none'; document.getElementById('spinToggle').style.display='none'; return; }
+  _spinCanSpin=!!d.can_spin;
+  updateSpinToggle();
+  if(!_spinTimer) _spinTimer=setInterval(updateSpinToggle, 1000);
+  card.style.display=_spinOpen?'block':'none';
   renderSpinLabels();
   const row=document.getElementById('spinStreakRow');
   row.innerHTML=`${d.streak>0?`🔥 <b style="color:#ff9f43">Séria ${d.streak} ${d.streak===1?'deň':d.streak<5?'dni':'dní'}</b>`:'Začni svoju sériu ešte dnes!'}${d.next_milestone?` · do ďalšej odmeny <b>${d.next_milestone.missing}</b> ${d.next_milestone.missing===1?'deň':d.next_milestone.missing<5?'dni':'dní'}`:''}`;
