@@ -2609,6 +2609,91 @@ app.put('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
   res.json({ok:true});
 });
 
+// ── OPRAVA HISTORICKÝCH PREDAJOV (chyba: permanentka sa nepripísala, členstvo
+// chýbalo v účtovníctve). Zdroj pravdy = auditný log, ktorý sa písal vždy.
+// GET  = suchý náhľad (nič nemení), POST ?apply=1 = vykonanie opravy.
+async function analyzeSaleRepairs(){
+  const audits=(await q.find(db.audit,{})).filter(a=>a.action==='membership_sell'||a.action==='membership_gift');
+  const out=[];
+  for(const a of audits){
+    const af=a.after||{}; const planId=af.plan_id; const plan=planId?MEMBERSHIP_PLANS[planId]:null;
+    if(!plan) continue;
+    const u=await q.one(db.users,{_id:a.target}); if(!u) continue;
+    const when=(a.created_at||'').slice(0,10);
+    const amount=+af.amount||0;
+    const gift=!!af.gift;
+    const item={ audit_id:a._id, date:when, user_id:u._id, name:u.name, email:u.email,
+      plan_id:planId, plan_name:plan.name, amount, gift, problems:[], fix:{} };
+    if(plan.type==='bundle'){
+      // Vstupy sa vtedy nepripísali vôbec (server bundle preskakoval)
+      const already=await q.one(db.memberships,{user_id:u._id, plan_id:planId, status:'bundle'});
+      if(!already){
+        item.problems.push(`nepripísaných ${plan.entries||1} vstupov`);
+        item.fix.entries=plan.entries||1;
+        item.fix.bundle_record=true;
+      }
+      if(!gift && amount>0){
+        const tx=await q.one(db.transactions,{type:'single_entry', user_id:u._id, amount, created_at:{$gte:when+'T00:00:00', $lte:when+'T23:59:59'}});
+        if(!tx){ item.problems.push(`chýba ${amount.toFixed(2)} € v účtovníctve`); item.fix.transaction=true; }
+      }
+    } else {
+      // Členstvo bez payment_method → neviditeľné v tržbách
+      if(!gift && amount>0){
+        const mem=(await q.find(db.memberships,{user_id:u._id, plan_id:planId})).find(m=>(m.created_at||'').slice(0,10)===when);
+        if(mem && !mem.payment_method){
+          item.problems.push(`členstvo chýba v účtovníctve (${amount.toFixed(2)} €)`);
+          item.fix.membership_payment_method=true; item.fix.membership_id=mem._id;
+        }
+      }
+    }
+    if(item.problems.length) out.push(item);
+  }
+  out.sort((x,y)=>(x.date||'').localeCompare(y.date||''));
+  const missingEur=out.reduce((s,i)=>s+((i.fix.transaction||i.fix.membership_payment_method)?i.amount:0),0);
+  const missingEntries=out.reduce((s,i)=>s+(i.fix.entries||0),0);
+  return { count:out.length, missing_revenue:+missingEur.toFixed(2), missing_entries:missingEntries, items:out };
+}
+app.get('/api/admin/repair-sales', adminAuth, async(req,res)=>{
+  try{ res.json({ok:true, dry_run:true, ...(await analyzeSaleRepairs())}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/repair-sales', adminAuth, async(req,res)=>{
+  try{
+    const plan=await analyzeSaleRepairs();
+    if(req.query.apply!=='1') return res.json({ok:true, dry_run:true, ...plan});
+    let entriesAdded=0, txAdded=0, memFixed=0;
+    for(const it of plan.items){
+      const u=await q.one(db.users,{_id:it.user_id}); if(!u) continue;
+      if(it.fix.entries){
+        await q.update(db.users,{_id:u._id},{$set:{single_entries:(u.single_entries||0)+it.fix.entries}});
+        entriesAdded+=it.fix.entries;
+        if(it.fix.bundle_record){
+          const p=MEMBERSHIP_PLANS[it.plan_id];
+          await q.insert(db.memberships,{user_id:u._id,user_name:u.name,plan_id:it.plan_id,plan_name:it.plan_name,
+            price:it.gift?0:it.amount, status:'bundle', started_at:it.date+'T12:00:00.000Z',
+            expires_at:new Date(new Date(it.date).getTime()+(p?.duration_days||90)*86400000).toISOString(),
+            gift:!!it.gift, repaired:true, created_at:it.date+'T12:00:00.000Z'});
+        }
+        await q.insert(db.notifications,{user_id:u._id,type:'entries',title:'🎟️ Vstupy pripísané',
+          body:`Doplnili sme ti ${it.fix.entries} vstupov z permanentky, ktorú si u nás kúpila ${it.date.split('-').reverse().join('.')}. Ospravedlňujeme sa za zdržanie! 💛`,
+          read:false, created_at:nowISO()}).catch(()=>{});
+      }
+      if(it.fix.transaction){
+        await q.insert(db.transactions,{type:'single_entry', user_id:u._id, user_name:u.name, amount:it.amount,
+          payment_method:'cash', method:'cash', note:`${it.plan_name} (spätná oprava z auditu)`,
+          plan_id:it.plan_id, repaired:true, created_at:it.date+'T12:00:00.000Z', month:it.date.slice(0,7)});
+        txAdded++;
+      }
+      if(it.fix.membership_payment_method && it.fix.membership_id){
+        await q.update(db.memberships,{_id:it.fix.membership_id},{$set:{payment_method:'cash', price:it.amount, repaired:true}});
+        memFixed++;
+      }
+    }
+    await auditLog(req,'repair_sales','bulk',null,{items:plan.count, entriesAdded, txAdded, memFixed},'Spätná oprava predajov z auditného logu');
+    res.json({ok:true, applied:true, items:plan.count, entries_added:entriesAdded, transactions_added:txAdded, memberships_fixed:memFixed});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Admin: úprava kreditu klienta — pridať/odobrať/nastaviť
 app.post('/api/admin/users/:id/credit', adminAuth, async(req,res)=>{
   try {

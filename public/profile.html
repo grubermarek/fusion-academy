@@ -784,7 +784,7 @@ function renderAdmin(){
   const manualSet=new Set(a.manual_achievements||[]);
   const merchChips=(a.merch_list||[]).map(m=>`<span class="adm-chip ${merchSet.has(m)?'on':''}" onclick="toggleMerch('${m}')">${MERCH_LABELS[m]||m}</span>`).join('');
   const achChips=(a.achievements||[]).map(ac=>`<span class="adm-chip ${manualSet.has(ac.id)?'on':(ac.earned?'on':'')}" style="${ac.earned&&!manualSet.has(ac.id)?'opacity:.6;cursor:default':''}" ${ac.earned&&!manualSet.has(ac.id)?'title="Získané automaticky"':`onclick="toggleAch('${ac.id}')"`}>${ac.icon} ${esc(ac.name)}</span>`).join('');
-  const planOpts=Object.entries(_plans||{}).map(([k,p])=>`<option value="${k}" data-price="${p.price}">${esc(p.name)} — ${p.price} €</option>`).join('');
+  const planOpts=Object.entries(_plans||{}).map(([k,p])=>`<option value="${k}" data-price="${p.price}" data-days="${p.duration_days||30}" data-entries="${p.entries||0}">${esc(p.name)} — ${p.price} €${p.entries?(' · '+p.entries+' vstupov'):''}</option>`).join('');
   const M=a.membership;
   const membHtml = M
     ? `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:1.05rem">${M.active?'✅':'⛔'}</span><b style="color:${M.active?'#9fd894':'#ef9a9a'}">${esc(M.plan_name)}</b>${M.gift?'<span class="set-hint" style="margin:0">🎁 darček/migrácia</span>':''}<span style="margin-left:auto;font-size:.85rem;color:${M.active?'var(--cream)':'#ef9a9a'}">${M.expires_at?(M.active?('platí do <b>'+M.expires_at+'</b>'):('vypršalo <b>'+M.expires_at+'</b>')):'bez dátumu'}</span></div>`
@@ -1118,7 +1118,21 @@ async function saveTaught(field,inputId){
   if(await putAwards({[field]:v})){ _awards[field]=v; alert('Uložené ✓ Obnovujem profil…'); location.reload(); }
 }
 let _admMode='gift';
-function admPlanChange(){ const sel=document.getElementById('admPlan'); const opt=sel.options[sel.selectedIndex]; const el=document.getElementById('admPlanPrice'); if(el&&opt) el.value=opt.dataset.price||''; }
+function admPlanChange(){
+  const sel=document.getElementById('admPlan'); const opt=sel.options[sel.selectedIndex];
+  const el=document.getElementById('admPlanPrice'); if(el&&opt) el.value=opt.dataset.price||'';
+  // Dátum platnosti sa predvyplní automaticky podľa dĺžky plánu (30 dní členstvo, 90 permanentka).
+  // Ak už členstvo beží, nadviaže sa na jeho koniec, aby sa predplatné nekrátilo.
+  const exp=document.getElementById('admExpiry');
+  if(exp && opt && opt.value){
+    const days=parseInt(opt.dataset.days)||30;
+    let from=new Date();
+    const cur=_awards&&_awards.membership;
+    if(cur && cur.active && cur.expires_at){ const d=new Date(cur.expires_at); if(d>from) from=d; }
+    const to=new Date(from.getTime()+days*86400000);
+    exp.value=to.toISOString().slice(0,10);
+  } else if(exp && opt && !opt.value){ exp.value=''; }
+}
 function admMode(m){ _admMode=m; ['gift','cash','card'].forEach(x=>document.getElementById('m'+x.charAt(0).toUpperCase()+x.slice(1)).classList.toggle('on',x===m)); const lbl=document.getElementById('grantBtnLbl'); if(lbl) lbl.textContent = m==='gift'?'Darovať členstvo':'Prideliť + zaznamenať platbu'; }
 async function grantMembership(){
   const plan_id=document.getElementById('admPlan').value;
