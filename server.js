@@ -2666,6 +2666,75 @@ app.get('/api/admin/repair-sales', adminAuth, async(req,res)=>{
   try{ res.json({ok:true, dry_run:true, ...(await analyzeSaleRepairs())}); }
   catch(e){ res.status(500).json({error:e.message}); }
 });
+// Jednorazové „spárovanie": faktúry doplnené pred zavedením značky repaired_audit
+// sa k svojmu predaju priradia dodatočne, aby sa uz nikdy nevytvorili druhýkrát.
+app.post('/api/admin/repair-sales/stamp', adminAuth, async(req,res)=>{
+  try{
+    const plan=await analyzeSaleRepairs(); let stamped=0;
+    for(const it of plan.items){
+      if(!it.fix.invoice) continue;
+      const cand=(await q.find(db.invoices,{user_id:it.user_id})).filter(i=>i.type!=='credit_note' && !i.repaired_audit && Math.abs((+i.total||0)-it.amount)<0.01);
+      if(cand.length){
+        await q.update(db.invoices,{_id:cand[0]._id},{$set:{repaired_audit:it.audit_id, issued_at:it.date, paid_at:it.date}});
+        stamped++;
+      }
+    }
+    res.json({ok:true, stamped});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── CELKOVÁ KONTROLA PREDAJOV od spustenia appky ─────────────────────────────
+// Krížom porovná KAŽDÝ zdroj tržby s faktúrami a účtovníctvom a nájde diery
+// bez ohľadu na to, ktorou cestou sa predávalo.
+app.get('/api/admin/sales-health', adminAuth, async(req,res)=>{
+  try{
+    const users=Object.fromEntries((await q.find(db.users,{})).map(u=>[u._id,u]));
+    const invoices=(await q.find(db.invoices,{})).filter(i=>i.type!=='credit_note');
+    const invByUser={}; invoices.forEach(i=>{ (invByUser[i.user_id]=invByUser[i.user_id]||[]).push(i); });
+    const hasInvoice=(uid,amount,date)=>(invByUser[uid]||[]).some(i=>Math.abs((+i.total||0)-(+amount||0))<0.01 &&
+      Math.abs(new Date(i.issued_at||i.created_at||0)-new Date(date||0))<3*86400000);
+    const issues=[];
+    const add=(kind,date,name,amount,what,detail)=>issues.push({kind,date:(date||'').slice(0,10),name,amount:+(+amount).toFixed(2),what,detail});
+
+    // 1) Členstvá: platené, ale bez payment_method → nie sú v tržbách
+    for(const m of await q.find(db.memberships,{})){
+      if(m._type || m.gift || m.migrated) continue;
+      const price=+m.price||0; if(price<=0) continue;
+      const u=users[m.user_id]; if(!u) continue;
+      if(!m.payment_method && m.status!=='bundle')
+        add('členstvo mimo účtovníctva', m.created_at||m.started_at, u.name, price, m.plan_name||'Členstvo', 'chýba spôsob platby');
+      if(!hasInvoice(m.user_id, price, m.created_at||m.started_at))
+        add('chýba faktúra', m.created_at||m.started_at, u.name, price, m.plan_name||'Členstvo', '');
+    }
+    // 2) Transakcie (vstupy, súkromné hodiny, členstvá zapísané trénerom)
+    for(const t of await q.find(db.transactions,{})){
+      if(t.commission_only) continue;
+      const amt=+t.amount||0; if(amt<=0) continue;
+      if(!['membership','single_entry','private_lesson','subscription_renewal'].includes(t.type)) continue;
+      const u=users[t.user_id]; if(!u) continue;
+      if(!hasInvoice(t.user_id, amt, t.created_at))
+        add('chýba faktúra', t.created_at, u.name, amt, t.note||t.type, '');
+    }
+    // 3) Zaplatené objednávky bez faktúry
+    for(const o of (await q.find(db.orders,{}))){
+      if(o.status!=='paid') continue;
+      const amt=+o.total||0; if(amt<=0) continue;
+      const uid=o.partner_id||null;
+      const hit=invoices.some(i=>Math.abs((+i.total||0)-amt)<0.01 && Math.abs(new Date(i.issued_at||i.created_at||0)-new Date(o.paid_at||o.created_at||0))<3*86400000
+        && ((i.client_email||'').toLowerCase()===(o.client_email||'').toLowerCase() || i.user_id===uid));
+      if(!hit) add('chýba faktúra', o.paid_at||o.created_at, o.client_name||'—', amt, 'E-shop '+(o.order_number||''), '');
+    }
+    // 4) Duplicitné faktúry (rovnaký klient, suma aj deň)
+    const seen={}, dup=[];
+    invoices.forEach(i=>{ const k=(i.user_id||i.client_name)+'|'+(+i.total||0)+'|'+(i.issued_at||'').slice(0,10);
+      if(seen[k]) dup.push({number:i.number, name:i.client_name, total:i.total, date:i.issued_at}); else seen[k]=i.number; });
+
+    issues.sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+    const total=issues.reduce((s,i)=>s+(i.kind==='členstvo mimo účtovníctva'?i.amount:0),0);
+    res.json({ok:true, issues_count:issues.length, revenue_missing_from_accounting:+total.toFixed(2),
+      duplicate_invoices:dup, issues});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 app.post('/api/admin/repair-sales', adminAuth, async(req,res)=>{
   try{
     const plan=await analyzeSaleRepairs();
