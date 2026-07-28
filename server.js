@@ -2750,8 +2750,11 @@ app.get('/api/admin/sales-health', adminAuth, async(req,res)=>{
     // chýbajúce faktúry k pôvodným dátumom. Faktúry idú ticho, bez e-mailu klientke.
     let applied=null;
     if(req.query.apply==='1'){
+      // ?filter=eshop → doplní LEN chýbajúce faktúry k e-shopovým objednávkam
+      // (nedotkne sa členstiev, kým nie je istý spôsob platby)
+      const onlyEshop = req.query.filter==='eshop';
       let memFixed=0, invAdded=0;
-      for(const m of await q.find(db.memberships,{})){
+      if(!onlyEshop) for(const m of await q.find(db.memberships,{})){
         if(m._type || m.gift || m.migrated || m.payment_method || m.status==='bundle') continue;
         const price=+m.price||0; if(price<=0) continue;
         const when=m.created_at||m.started_at;
@@ -2766,7 +2769,7 @@ app.get('/api/admin/sales-health', adminAuth, async(req,res)=>{
           repaired_audit:'health_'+uid+'_'+(+amount)+'_'+(date||'').slice(0,10)}).catch(()=>{});
         invAdded++;
       };
-      for(const it of issues.filter(i=>i.kind==='chýba faktúra')){
+      for(const it of issues.filter(i=>i.kind==='chýba faktúra' && (!onlyEshop || /^E-shop/.test(it.what)))){
         const u=Object.values(users).find(x=>x.name===it.name);
         await mkInv(u?u._id:null, it.name, u?u.email:'', it.what, it.amount, it.date);
       }
