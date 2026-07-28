@@ -2649,7 +2649,10 @@ async function analyzeSaleRepairs(){
     // Faktúra sa pri predaji cez profil/panel nevystavovala vôbec
     if(!gift && amount>0){
       const invs=(await q.find(db.invoices,{user_id:u._id})).filter(i=>i.type!=='credit_note');
-      const hasInv=invs.some(i=>Math.abs((+i.total||0)-amount)<0.01 && ((i.issued_at||i.created_at||'').slice(0,10)===when));
+      // Doplnená faktúra sa označí id-čkom auditného záznamu → oprava je idempotentná
+      // a nikdy nevytvorí duplicitnú faktúru pri opakovanom spustení.
+      const hasInv=invs.some(i=> i.repaired_audit===a._id ||
+        (Math.abs((+i.total||0)-amount)<0.01 && ((i.issued_at||i.created_at||'').slice(0,10)===when)));
       if(!hasInv){ item.problems.push('chýba faktúra'); item.fix.invoice=true; }
     }
     if(item.problems.length) out.push(item);
@@ -2696,7 +2699,8 @@ app.post('/api/admin/repair-sales', adminAuth, async(req,res)=>{
       if(it.fix.invoice){
         await createInvoice({user_id:u._id, client_name:u.name, client_email:u.email,
           items:[{desc:(MEMBERSHIP_PLANS[it.plan_id]?.type==='bundle'?it.plan_name:`Členstvo ${it.plan_name}`), qty:1, total:it.amount}],
-          total:it.amount, method:'Hotovosť', paid_at:it.date, silent:true}).catch(()=>{});
+          total:it.amount, method:'Hotovosť', paid_at:it.date, issued_at:it.date,
+          silent:true, repaired_audit:it.audit_id}).catch(()=>{});
         invAdded++;
       }
     }
@@ -5314,7 +5318,7 @@ async function nextInvoiceNumber(){
 // Create + archive an invoice, then email the payment confirmation. Never throws.
 // silent:true = faktúra sa vytvorí, ale klientke NEODÍDE e-mail (spätné doplnenie
 // starých predajov — nemá zmysel po dňoch posielať „ďakujeme za platbu").
-async function createInvoice({user_id, client_name, client_email, items, total, method, type, related_invoice, paid_at, silent}){
+async function createInvoice({user_id, client_name, client_email, items, total, method, type, related_invoice, paid_at, silent, issued_at, repaired_audit}){
   try {
     const number = await nextInvoiceNumber();
     const inv = await q.insert(db.invoices, {
@@ -5325,7 +5329,8 @@ async function createInvoice({user_id, client_name, client_email, items, total, 
       client_name: client_name||'—', client_email: client_email||'',
       items: items||[], total: +(+total).toFixed(2), currency:'EUR',
       payment_method: method||'—',
-      issued_at: today(), paid_at: paid_at||today(),
+      issued_at: issued_at||today(), paid_at: paid_at||today(),
+      ...(repaired_audit ? {repaired_audit} : {}),
       status: type==='credit_note' ? 'credited' : 'paid',
       supplier: invoiceSupplier(),
       created_at: nowISO()
