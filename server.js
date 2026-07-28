@@ -1028,6 +1028,19 @@ async function seedData() {
     console.log('✅  Meta kampaň v2 (Zumba Web — Registrácia) pridaná s live utm atribúciou');
   }
 
+  // Staré transakcie bez poľa `date` (predaje cez tréner/admin cesty) — doplň ho
+  // z created_at, nech sa v „Všetkých predajoch" zobrazuje dátum a dá sa triediť.
+  if(!(await q.one(db.settings,{key:'tx_date_backfill_v1'}))){
+    let fixed=0;
+    for(const t of await q.find(db.transactions,{})){
+      if(t.date) continue;
+      const d=(t.created_at||'').slice(0,10);
+      if(d){ await q.update(db.transactions,{_id:t._id},{$set:{date:d}}); fixed++; }
+    }
+    await q.insert(db.settings,{key:'tx_date_backfill_v1', value:true, at:nowISO()});
+    if(fixed) console.log(`✅  Doplnený dátum k ${fixed} starým transakciám`);
+  }
+
   // Prepojenie kampaní na Meta campaign ID → automatický sync spend/impresií/klikov
   if(!(await q.one(db.settings,{key:'meta_campaign_ids_v1'}))){
     await q.update(db.campaigns,{name:'FA — Zumba Leads — Jún 2026'},{$set:{meta_campaign_id:'52509246681873'}});
@@ -2884,7 +2897,7 @@ app.post('/api/admin/users/:id/grant-membership', adminAuth, async(req,res)=>{
       else { await q.insert(db.memberships,{...rec,created_at:nowISO()}); }
       await q.update(db.users,{_id:u._id},{$set:{membership_plan:plan_id,membership_expires:expiresISO}});
       if(!gift){ // reálna platba na mieste → tržba + faktúra + provízia
-        await q.insert(db.transactions,{type:'membership',user_id:u._id,user_name:u.name,amount:paidAmount,
+        await q.insert(db.transactions,{type:'membership',user_id:u._id,user_name:u.name,amount:paidAmount,date:today(),
           payment_method:payMethod, method:payMethod, note:`Členstvo ${plan.name} (admin)`,plan_id,recorded_by:req.session.uid,created_at:nowISO(),month:today().slice(0,7)});
         createInvoice({user_id:u._id, client_name:u.name, client_email:u.email,
           items:[{desc:`Členstvo ${plan.name}`, qty:1, total:paidAmount}], total:paidAmount,
@@ -2903,7 +2916,7 @@ app.post('/api/admin/users/:id/grant-membership', adminAuth, async(req,res)=>{
         expires_at:expiresISO || new Date(Date.now()+(plan.duration_days||90)*86400000).toISOString(),
         gift:!!gift, granted_by:req.session.uid, created_at:nowISO()});
       if(!gift){
-        await q.insert(db.transactions,{type:'single_entry', user_id:u._id, user_name:u.name, amount:paidAmount,
+        await q.insert(db.transactions,{type:'single_entry', user_id:u._id, user_name:u.name, amount:paidAmount, date:today(),
           payment_method:payMethod, method:payMethod, note:`${plan.name} (admin)`, plan_id,
           recorded_by:req.session.uid, created_at:nowISO(), month:today().slice(0,7)});
         createInvoice({user_id:u._id, client_name:u.name, client_email:u.email,
@@ -3024,7 +3037,7 @@ app.get('/api/dashboard', auth, async(req,res)=>{
     const directTeam=await q.find(db.users,{sponsor_id:uid});
     const allDesc=await getAllDescendants(uid);
     const allTx=await q.find(db.transactions,{partner_id:uid});
-    allTx.sort((a,b)=>b.date.localeCompare(a.date));
+    allTx.sort((a,b)=>String(b.date||b.created_at||'').localeCompare(String(a.date||a.created_at||'')));
     const sixAgo=new Date(); sixAgo.setMonth(sixAgo.getMonth()-6);
     const chartMap={};
     for(const t of allTx){const m=t.date.slice(0,7);if(m>=sixAgo.toISOString().slice(0,7)){if(!chartMap[m])chartMap[m]=0;chartMap[m]+=t.amount;}}
@@ -3044,7 +3057,7 @@ app.get('/api/transactions', auth, async(req,res)=>{
   const u=await q.one(db.users,{_id:uid});
   let txs=u.is_admin?await q.find(db.transactions,{}):await q.find(db.transactions,{partner_id:uid});
   if(u.is_admin){const allU=await q.find(db.users,{});const uMap=Object.fromEntries(allU.map(u=>[u._id,u.name]));txs=txs.map(t=>({...t,partner_name:uMap[t.partner_id]||'—'}));}
-  txs.sort((a,b)=>b.date.localeCompare(a.date));
+  txs.sort((a,b)=>String(b.date||b.created_at||'').localeCompare(String(a.date||a.created_at||'')));
   res.json(txs.slice(0,200));
 });
 
@@ -3055,7 +3068,7 @@ app.get('/api/commissions', auth, async(req,res)=>{
   const txMap=Object.fromEntries(allTx.map(t=>[t._id,t]));
   const uMap=Object.fromEntries(allU.map(u=>[u._id,u.name]));
   const result=comms.map(c=>({...c,client_name:txMap[c.transaction_id]?.client_name||'—',product_name:txMap[c.transaction_id]?.product_name||'—',tx_amount:txMap[c.transaction_id]?.amount||0,source_name:uMap[c.source_partner_id]||'—'}));
-  result.sort((a,b)=>b.created_at.localeCompare(a.created_at));
+  result.sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
   res.json(result.slice(0,200));
 });
 
@@ -4346,7 +4359,7 @@ app.get('/api/admin/orders', adminAuth, async(req,res)=>{
   const{status}=req.query;
   const filter=status?{status}:{};
   const orders=await q.find(db.orders,filter);
-  orders.sort((a,b)=>b.created_at.localeCompare(a.created_at));
+  orders.sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
   // Doplň user_id (na preklik na profil) — z objednávky alebo podľa e-mailu
   const byEmail={};
   for(const o of orders){
@@ -4431,7 +4444,7 @@ app.get('/api/admin/commissions/detail', adminAuth, async(req,res)=>{
   const allTx=await q.find(db.transactions,{}), allU=await q.find(db.users,{});
   const txMap=Object.fromEntries(allTx.map(t=>[t._id,t]));
   const uMap=Object.fromEntries(allU.map(u=>[u._id,u.name]));
-  res.json(comms.map(c=>({...c,client_name:txMap[c.transaction_id]?.client_name||'—',product_name:txMap[c.transaction_id]?.product_name||'—',tx_amount:txMap[c.transaction_id]?.amount||0,source_name:uMap[c.source_partner_id]||'—'})).sort((a,b)=>b.created_at.localeCompare(a.created_at)));
+  res.json(comms.map(c=>({...c,client_name:txMap[c.transaction_id]?.client_name||'—',product_name:txMap[c.transaction_id]?.product_name||'—',tx_amount:txMap[c.transaction_id]?.amount||0,source_name:uMap[c.source_partner_id]||'—'})).sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||''))));
 });
 
 app.post('/api/admin/products', adminAuth, async(req,res)=>{
@@ -4524,7 +4537,7 @@ app.post('/api/admin/classes/keep-zumba-only', adminAuth, async(req,res)=>{
 // Admin: Bookings
 app.get('/api/admin/bookings', adminAuth, async(req,res)=>{
   const bookings=await q.find(db.bookings,{});
-  bookings.sort((a,b)=>b.created_at.localeCompare(a.created_at));
+  bookings.sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
   res.json(bookings.slice(0,200));
 });
 
@@ -4869,7 +4882,7 @@ app.post('/api/paypal/webhook', express.json({type:'*/*'}), async(req,res)=>{
 
 app.get('/api/payments', adminAuth, async(req,res)=>{
   const payments = await q.find(db.payments,{});
-  payments.sort((a,b)=>b.created_at.localeCompare(a.created_at));
+  payments.sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
   res.json(payments.slice(0,200));
 });
 
@@ -6323,7 +6336,7 @@ app.get('/api/admin/class-history', adminAuth, async(req,res)=>{
     });
     if(req.query.city)    list=list.filter(s=>s.city===req.query.city);
     if(req.query.trainer) list=list.filter(s=>s.trainer===req.query.trainer);
-    list.sort((a,b)=>b.date.localeCompare(a.date)||(a.time_start||'').localeCompare(b.time_start||''));
+    list.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||(a.time_start||'').localeCompare(b.time_start||''));
     const byTrainer={}, byCity={};
     for(const s of list){
       const t=byTrainer[s.trainer]=byTrainer[s.trainer]||{trainer:s.trainer,sessions:0,attendances:0,revenue:0,earning:0};
@@ -7180,7 +7193,7 @@ app.post('/api/stripe/webhook', async(req,res)=>{
           const planId = u.stripe_sub_plan; const plan = MEMBERSHIP_PLANS[planId];
           if(plan){
             await activateMembership(u.stripe_sub_member||u._id, planId, plan.duration_days||30);
-            await q.insert(db.transactions,{type:'subscription_renewal',user_id:u.stripe_sub_member||u._id,user_name:u.name,amount:plan.price,payment_method:'stripe',note:`Auto-obnova ${plan.name} (Stripe)`,plan_id:planId,created_at:nowISO(),month:today().slice(0,7)});
+            await q.insert(db.transactions,{type:'subscription_renewal',user_id:u.stripe_sub_member||u._id,user_name:u.name,amount:plan.price,date:today(),payment_method:'stripe',note:`Auto-obnova ${plan.name} (Stripe)`,plan_id:planId,created_at:nowISO(),month:today().slice(0,7)});
             createInvoice({user_id:u._id, client_name:u.name, client_email:u.email,
               items:[{desc:`Členstvo ${plan.name} — mesačná obnova`, qty:1, total:plan.price}],
               total:plan.price, method:'Stripe (automatický odber)'});
@@ -7284,7 +7297,7 @@ app.get('/api/admin/memberships', adminAuth, async(req,res)=>{
   const allU = await q.find(db.users,{});
   const uMap = Object.fromEntries(allU.map(u=>[u._id,{name:u.name,email:u.email}]));
   const result = memberships.map(m=>({...m, user_name:uMap[m.user_id]?.name||'—', user_email:uMap[m.user_id]?.email||'—'}));
-  result.sort((a,b)=>b.created_at.localeCompare(a.created_at));
+  result.sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
   res.json(result);
 });
 
@@ -7421,7 +7434,7 @@ app.post('/api/rental', rlPublic, async(req,res)=>{
 
 app.get('/api/admin/rentals', adminAuth, async(req,res)=>{
   const rentals = await q.find(db.rentals,{});
-  rentals.sort((a,b)=>b.created_at.localeCompare(a.created_at));
+  rentals.sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
   res.json(rentals);
 });
 
@@ -7793,14 +7806,14 @@ app.post('/api/body-analysis', auth, async(req,res)=>{
 app.get('/api/body-analysis', auth, async(req,res)=>{
   try {
     const entries = await q.find(db.memberships,{_type:'body_analysis',user_id:req.session.uid});
-    entries.sort((a,b)=>a.date.localeCompare(b.date));
+    entries.sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
     res.json(entries);
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
 app.get('/api/admin/body-analysis/:userId', adminAuth, async(req,res)=>{
   const entries = await q.find(db.memberships,{_type:'body_analysis',user_id:req.params.userId});
-  entries.sort((a,b)=>a.date.localeCompare(b.date));
+  entries.sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
   res.json(entries);
 });
 
@@ -8157,7 +8170,7 @@ app.post('/api/private/cancel', auth, async(req,res)=>{
     // Neskoré zrušenie (<24 h): peniaze prepadajú v prospech trénera
     const upd={status:'cancelled_late', cancelled_at:nowISO(), cancelled_by:me._id, cancel_reason:reason, forfeit:true};
     if(b.paid){
-      await q.insert(db.transactions,{type:'private_lesson', amount:+b.price, user_id:b.client_id, user_name:b.client_name, method:b.pay_method, note:`Storno <24h — súkromná hodina ${b.trainer_name} ${b.date}`, created_at:nowISO()}).catch(()=>{});
+      await q.insert(db.transactions,{type:'private_lesson', amount:+b.price, user_id:b.client_id, user_name:b.client_name, date:today(), method:b.pay_method, note:`Storno <24h — súkromná hodina ${b.trainer_name} ${b.date}`, created_at:nowISO()}).catch(()=>{});
     } else { upd.forfeit_due=true; } // neuhradený storno poplatok — vyberá sa na mieste
     await q.update(db.private_bookings,{_id:b._id},{$set:upd});
     await q.update(db.private_slots,{_id:b.slot_id},{$set:{status:'cancelled'}});
@@ -8176,7 +8189,7 @@ app.post('/api/private/complete', trainerAuth, async(req,res)=>{
     const cut=+((+b.price||0)*((+b.split||PRIVATE_DEFAULT_SPLIT)/100)).toFixed(2);
     await q.update(db.private_bookings,{_id:b._id},{$set:{status:'completed', completed_at:nowISO(), trainer_cut:cut}});
     // Účtovníctvo: tržba za súkromnú hodinu
-    await q.insert(db.transactions,{type:'private_lesson', amount:+b.price, user_id:b.client_id, user_name:b.client_name, method:b.pay_method, note:`Súkromná hodina ${b.trainer_name} ${b.date} ${b.time_start}`, created_at:nowISO()}).catch(()=>{});
+    await q.insert(db.transactions,{type:'private_lesson', amount:+b.price, user_id:b.client_id, user_name:b.client_name, date:today(), method:b.pay_method, note:`Súkromná hodina ${b.trainer_name} ${b.date} ${b.time_start}`, created_at:nowISO()}).catch(()=>{});
     // Klient: návšteva + súkromné odznaky
     const c=await q.one(db.users,{_id:b.client_id});
     // Faktúra za súkromnú hodinu (pri platbe kartou vopred ju už vystavil Stripe)
@@ -8525,7 +8538,7 @@ app.post('/api/trainer/sell', trainerAuth, async(req,res)=>{
       const mem=await q.one(db.memberships,{user_id:u._id, status:plan.type==='bundle'?'bundle':'active'});
       if(mem) await q.update(db.memberships,{_id:mem._id},{$set:{
         ...(plan.type==='bundle' ? {} : {payment_method:'cash'}), price:amount, sold_by:t.name}});
-      await q.insert(db.transactions,{type:plan.type==='bundle'?'single_entry':'membership', user_id:u._id, user_name:u.name,
+      await q.insert(db.transactions,{type:plan.type==='bundle'?'single_entry':'membership', user_id:u._id, user_name:u.name, date:today(),
         amount, payment_method:'cash', method:'cash', note:`${what} (tréner ${t.name})`, plan_id:req.body.plan_id,
         recorded_by:t._id, created_at:nowISO(), month:today().slice(0,7)});
       awardPurchaseCommission({buyer_id:u._id, amount, product_name:what}).catch?.(()=>{});
@@ -9183,7 +9196,7 @@ app.post('/api/attendance/single-entry', trainerAuth, async(req,res)=>{
     const label = count>1 ? `${count}-vstupová permanentka` : 'Jednorazový vstup';
     await q.update(db.users,{_id:user_id},{$set:{single_entries:entries}});
     await q.insert(db.transactions,{
-      type:'single_entry', user_id, user_name:u.name, amount:price,
+      type:'single_entry', user_id, user_name:u.name, amount:price, date:today(),
       payment_method:payment_method||'cash', note:note||`${label} (${count}×)`,
       recorded_by:req.trainerUser._id, created_at:nowISO(), month:today().slice(0,7)
     });
@@ -9231,7 +9244,7 @@ app.post('/api/attendance/record-membership', trainerAuth, async(req,res)=>{
       recorded_by:req.trainerUser._id, note:note||'', created_at:nowISO()
     });
     await q.insert(db.transactions,{
-      type:'membership', user_id, user_name:u.name, amount:amount||plan.price,
+      type:'membership', user_id, user_name:u.name, amount:amount||plan.price, date:today(),
       payment_method:payment_method||'cash', note:note||`Členstvo ${plan.name}`,
       plan_id, recorded_by:req.trainerUser._id, created_at:nowISO(), month:today().slice(0,7)
     });
@@ -11134,7 +11147,7 @@ app.get('/api/admin/churn-risk', adminAuth, async(req,res)=>{
     if((u.visit_count||0)===0) continue;
     const lastBk = await q.find(db.bookings,{user_id:u._id});
     if(!lastBk.length) continue;
-    lastBk.sort((a,b)=>b.created_at.localeCompare(a.created_at));
+    lastBk.sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
     const lastDate = lastBk[0].created_at.slice(0,10);
     if(lastDate < cutoff){
       const daysSince = Math.round((Date.now()-new Date(lastDate).getTime())/86400000);
@@ -12022,6 +12035,16 @@ setInterval(async()=>{
     try{ await processEmailQueue(); }catch(e){ console.error('Email queue error:',e); }
   }
 }, 3600000);
+
+// ─── Poistka: jediná neošetrená chyba nesmie zhodiť celú appku ────────────────
+// Bez tohto stačilo otvoriť jednu sekciu s poškodeným záznamom a server spadol
+// (klientky vypadli z rezervácií, kiosk prestal fungovať). Radšej chybu zalogujeme.
+process.on('uncaughtException', err=>{
+  console.error('❗ Neošetrená chyba (appka beží ďalej):', err && err.stack || err);
+});
+process.on('unhandledRejection', err=>{
+  console.error('❗ Neošetrený promise (appka beží ďalej):', err && err.stack || err);
+});
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 // Jednorazová migrácia: každého existujúceho člena bez sponzora priraď pod
