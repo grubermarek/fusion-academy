@@ -4800,15 +4800,7 @@ app.post('/api/tips/create', auth, async(req,res)=>{
         description:`Tip pre ${trainer.name}`, ref_type:'tip', ref_id:to_user_id, tip_message:msg, tip_anonymous:anon, provider:'stripe', method:'card', status:'pending', created_at:nowISO()});
       return res.json({ ok:true, url:r.body.url });
     }
-    // 2) PayPal (ak je nakonfigurovaný)
-    if(PAYPAL_CLIENT_ID){
-      const result = await ppCreateOrder(amt,'EUR',`Tip pre ${trainer.name}`);
-      if(result.status!==201) return res.status(400).json({error:'PayPal chyba', detail:result.body});
-      const payment = await q.insert(db.payments,{ paypal_order_id:result.body.id, user_id:req.session.uid, amount:amt,
-        currency:'EUR', description:`Tip pre ${trainer.name}`, ref_id:to_user_id, ref_type:'tip', tip_message:msg, tip_anonymous:anon, status:'pending', created_at:nowISO() });
-      return res.json({ ok:true, paypalOrderId: result.body.id, paymentId: payment._id });
-    }
-    // 3) Demo (žiadny provider) — zapíš rovno pre test
+    // 2) Demo (Stripe nenakonfigurovaný) — zapíš rovno pre test
     await recordTip({ user_id:req.session.uid, ref_id:to_user_id, ref_type:'tip', amount:amt, tip_message:msg, tip_anonymous:anon, paypal_order_id:'demo-'+Date.now() });
     res.json({ ok:true, demo:true });
   }catch(e){ res.status(500).json({error:e.message}); }

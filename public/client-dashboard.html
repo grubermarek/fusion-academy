@@ -2314,8 +2314,18 @@ function renderSpotBoard(){
     <button onclick="event.stopPropagation();setSpotPeriod('month')" style="border:0;cursor:pointer;border-radius:16px;padding:4px 14px;font-size:.78rem;font-weight:700;background:${isM?'var(--gold)':'transparent'};color:${isM?'#1a1206':'var(--muted)'}">Mesiac</button>
     <button onclick="event.stopPropagation();setSpotPeriod('year')" style="border:0;cursor:pointer;border-radius:16px;padding:4px 14px;font-size:.78rem;font-weight:700;background:${!isM?'var(--gold)':'transparent'};color:${!isM?'#1a1206':'var(--muted)'}">Rok</button>
   </div>`;
+  // Odpočet do konca súťaže — tlačí na zbieranie bodov, kým je ešte čas
+  const nowD=new Date();
+  const endD=isM ? new Date(nowD.getFullYear(), nowD.getMonth()+1, 0) : new Date(nowD.getFullYear(), 11, 31);
+  const daysLeft=Math.max(0, Math.ceil((endD - nowD)/86400000));
+  const dayWord=n=> n===1?'deň':(n>=2&&n<=4?'dni':'dní');
+  const urgent=daysLeft<=7;
+  const countdown=`<div style="display:flex;align-items:center;gap:7px;background:${urgent?'rgba(224,86,86,.14)':'rgba(201,168,76,.1)'};border:1px solid ${urgent?'rgba(224,86,86,.45)':'rgba(201,168,76,.3)'};border-radius:20px;padding:5px 13px;font-size:.78rem;font-weight:800;color:${urgent?'#ff9f9f':'var(--gold)'};margin-bottom:10px">
+    ${urgent?'🔥':'⏳'} ${daysLeft===0?'Dnes je posledný deň súťaže!':`Zostávaj${daysLeft===1?'ú':'ú'} <span style="font-size:.95rem">${daysLeft}</span> ${dayWord(daysLeft)} do konca ${isM?'mesačnej':'ročnej'} súťaže!`}
+    <span style="font-weight:600;color:var(--muted,#999)">${daysLeft>0?'Ešte to stihneš 💪':''}</span>
+  </div>`;
   const header=`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-    <div class="sl-label" style="margin:0">${title}</div>${toggle}</div>`;
+    <div class="sl-label" style="margin:0">${title}</div>${toggle}</div>${countdown}`;
   if(!list.length){
     return `<div class="sl-card sl-hero">${header}
       <div class="sl-why">Zatiaľ žiadne body za toto obdobie — buď prvá! 💫</div>

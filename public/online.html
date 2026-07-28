@@ -148,17 +148,6 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
   </div>
 </div>
 
-<!-- PayPal checkout modal -->
-<div id="paypalModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:600;align-items:center;justify-content:center;flex-direction:column">
-  <div style="background:var(--dark-2);border:1px solid var(--gold-border);border-radius:1.4rem;padding:2rem;max-width:440px;width:92%">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem">
-      <h4 style="color:var(--cream);margin:0;font-size:1.1rem;font-weight:800">💳 Platba cez PayPal</h4>
-      <button onclick="document.getElementById('paypalModal').style.display='none'" style="background:none;border:none;color:var(--text-muted);font-size:1.4rem;cursor:pointer">✕</button>
-    </div>
-    <p style="color:var(--text-muted);font-size:.88rem;margin-bottom:1.2rem">Bezpečná platba cez PayPal. Po dokončení platby bude členstvo okamžite aktivované.</p>
-    <div id="paypalButtonContainer"></div>
-  </div>
-</div>
 
 <!-- Login modal -->
 <div id="loginModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:500;align-items:center;justify-content:center;">
@@ -201,9 +190,7 @@ async function api(url, opts={}){
 }
 
 async function init(){
-  // Load PayPal client ID
   const cfg = await api('/api/config');
-  if(cfg?.paypal_client_id) window.__PAYPAL_CLIENT_ID__ = cfg.paypal_client_id;
 
   const me = await api('/api/me');
   if(me?.id){
@@ -388,57 +375,13 @@ function closeStream(){
 
 async function buyPlan(planId){
   if(!currentUser){ openLogin(); return; }
-  const r = await api('/api/membership/buy',{method:'POST',body:{plan_id:planId,payment_method:'paypal'}});
-  if(r?.demo){ toast('Demo režim: členstvo aktivované!','ok'); await loadMembership(); loadOnlineClasses(); return; }
-  if(r?.paypalOrderId){
-    openPayPalCheckout(r.paypalOrderId, planId);
-    return;
-  }
-  if(r?.ok){ toast('Žiadosť o členstvo odoslaná','ok'); await loadMembership(); return; }
-  toast(r?.error||'Chyba','err');
-}
-
-function openPayPalCheckout(orderId, planId){
-  // Show PayPal modal
-  const modal = document.getElementById('paypalModal');
-  const container = document.getElementById('paypalButtonContainer');
-  container.innerHTML = '<div style="text-align:center;padding:1rem;color:rgba(255,255,255,.6)">Načítavam PayPal...</div>';
-  modal.style.display = 'flex';
-  window._ppOrderId = orderId;
-  window._ppPlanId = planId;
-
-  const clientId = window.__PAYPAL_CLIENT_ID__ || 'sb';
-  const existingScript = document.getElementById('paypal-sdk');
-  if(existingScript) existingScript.remove();
-
-  const script = document.createElement('script');
-  script.id = 'paypal-sdk';
-  script.src = `https://www.paypal.com/sdk/js?client-id=${clientId}&currency=EUR`;
-  script.onload = () => renderPayPalButtons(orderId, planId);
-  script.onerror = () => { container.innerHTML = '<div style="color:#f44336;text-align:center">PayPal nie je dostupný. Kontaktujte nás.</div>'; };
-  document.head.appendChild(script);
-}
-
-function renderPayPalButtons(orderId, planId){
-  const container = document.getElementById('paypalButtonContainer');
-  container.innerHTML = '';
-  paypal.Buttons({
-    createOrder: () => orderId,
-    onApprove: async(data) => {
-      container.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--gold)">⏳ Spracúvam platbu...</div>';
-      const r = await api('/api/paypal/capture-order',{method:'POST',body:{paypalOrderId:data.orderID}});
-      if(r?.ok || r?.status === 'COMPLETED'){
-        document.getElementById('paypalModal').style.display='none';
-        toast('✅ Platba úspešná! Členstvo aktivované.','ok');
-        await loadMembership();
-        loadOnlineClasses();
-      } else {
-        container.innerHTML = `<div style="color:#f44336;text-align:center">❌ ${r?.error||'Chyba platby'}</div>`;
-      }
-    },
-    onCancel: () => { document.getElementById('paypalModal').style.display='none'; toast('Platba zrušená','info'); },
-    onError: (err) => { console.error(err); container.innerHTML = '<div style="color:#f44336;text-align:center">❌ Chyba PayPal</div>'; }
-  }).render('#paypalButtonContainer');
+  // Platba kartou cez Stripe (Apple Pay / Google Pay podporované)
+  try{
+    const r = await fetch('/api/stripe/subscribe',{method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({plan_id:planId})}).then(x=>x.json());
+    if(r.ok && r.url){ window.location.href = r.url; return; }
+    toast(r.error||'Platbu sa nepodarilo spustiť','err');
+  }catch(e){ toast('Chyba pripojenia','err'); }
 }
 
 function openLogin(){ const m=document.getElementById('loginModal'); m.style.display='flex'; m.style.alignItems='center'; m.style.justifyContent='center'; }

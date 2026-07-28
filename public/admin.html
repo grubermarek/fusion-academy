@@ -150,7 +150,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('failed')"><i class="bi bi-credit-card-2-front me-2"></i>Neúspešné platby <span id="failedBadge" class="badge bg-danger" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('sale')"><i class="bi bi-plus-circle me-2"></i>Zaznamenať predaj</a>
       <a class="nav-link" href="#" onclick="show('transactions')"><i class="bi bi-receipt me-2"></i>Všetky predaje</a>
-      <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby PayPal</a>
+      <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby kartou</a>
       <div class="nav-group-label">Výkon & retencia</div>
       <a class="nav-link" href="#" onclick="show('retention')"><i class="bi bi-people-fill me-2"></i>Retencia & LTV</a>
       <a class="nav-link" href="#" onclick="show('points')"><i class="bi bi-star me-2"></i>Body klientov</a>
@@ -682,13 +682,13 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   <!-- PAYMENTS -->
   <div id="s-payments" class="section">
     <div class="d-flex justify-content-between align-items-center mb-4">
-      <h4 class="fw-bold mb-0">PayPal platby</h4>
+      <h4 class="fw-bold mb-0">Platby kartou (Stripe)</h4>
       <button class="btn btn-sm btn-brand" onclick="loadPayments()"><i class="bi bi-arrow-clockwise"></i></button>
     </div>
     <div class="card border-0 rounded-3">
       <div class="table-responsive">
         <table class="table table-hover mb-0">
-          <thead><tr><th class="ps-3">PayPal Order ID</th><th>Suma</th><th>Popis</th><th>Typ</th><th>Stav</th><th>Dátum</th></tr></thead>
+          <thead><tr><th class="ps-3">ID platby</th><th>Suma</th><th>Popis</th><th>Typ</th><th>Stav</th><th>Dátum</th></tr></thead>
           <tbody id="paymentsTable"></tbody>
         </table>
       </div>
@@ -1170,7 +1170,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <h4 class="fw-bold mb-0">↩️ Refundácie</h4>
       <button class="btn btn-sm btn-warning" onclick="openRefund()"><i class="bi bi-plus-lg"></i> Nová refundácia</button>
     </div>
-    <p class="text-muted small mb-3">Vrátenie platieb cez Stripe/PayPal, storná, dobropisy a kredit do aplikácie. Každá refundácia = audit + dobropis + email klientovi.</p>
+    <p class="text-muted small mb-3">Vrátenie platieb cez Stripe, storná, dobropisy a kredit do aplikácie. Každá refundácia = audit + dobropis + email klientovi.</p>
     <div id="refStats" class="row g-3 mb-3"></div>
     <div class="row g-3 mb-3"><div class="col-lg-5"><div class="card bg-dark border-secondary h-100"><div class="card-body"><h6 class="fw-bold mb-2">Podľa dôvodu</h6><div id="refByReason"></div></div></div></div></div>
     <div class="table-responsive"><table class="table table-dark table-hover align-middle" style="font-size:.82rem">
@@ -3495,7 +3495,7 @@ let _cdPayments=[];
 function cdPaymentsHtml(payments){
   _cdPayments=payments||[];
   if(!_cdPayments.length) return '<div class="text-muted small py-2">Žiadne platby.</div>';
-  const gwBadge=g=>g==='stripe'?'💳 Stripe':g==='paypal'?'🅿️ PayPal':'✋ manuál';
+  const gwBadge=g=>g==='stripe'?'💳 Stripe':g==='paypal'?'🅿️ PayPal (historické)':'✋ manuál';
   const rows=_cdPayments.map(r=>{
     let action;
     if(r.refunded){

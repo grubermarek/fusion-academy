@@ -338,7 +338,6 @@ async function setCustomBg(key,name){
 function showPreviewBar(txt){ const b=document.getElementById('bgPrevBar'); if(b){ document.getElementById('bgPrevTxt').textContent=txt; b.classList.add('on'); } }
 function endPreview(){ applyProfileBg(P.bg_tier); const b=document.getElementById('bgPrevBar'); if(b) b.classList.remove('on'); }
 async function load(){
-  try{ const cfg=await (await fetch('/api/config')).json(); if(cfg?.paypal_client_id) window.__PAYPAL_CLIENT_ID__=cfg.paypal_client_id; }catch(e){}
   const r=await fetch('/api/profile/'+encodeURIComponent(uid),{credentials:'include'});
   if(r.status===401){ location.href='/?next='+encodeURIComponent(location.pathname); return; }
   if(!r.ok){ let em=''; try{ em=(await r.json()).error||''; }catch(e){} document.getElementById('host').innerHTML='<div class="empty">'+T('profile.load_fail')+(em?('<br><small style="opacity:.6">'+esc(em)+'</small>'):'')+' <br><small style="opacity:.5">('+r.status+')</small></div>'; return; }
