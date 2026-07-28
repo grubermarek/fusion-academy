@@ -2646,6 +2646,12 @@ async function analyzeSaleRepairs(){
         }
       }
     }
+    // Faktúra sa pri predaji cez profil/panel nevystavovala vôbec
+    if(!gift && amount>0){
+      const invs=(await q.find(db.invoices,{user_id:u._id})).filter(i=>i.type!=='credit_note');
+      const hasInv=invs.some(i=>Math.abs((+i.total||0)-amount)<0.01 && ((i.issued_at||i.created_at||'').slice(0,10)===when));
+      if(!hasInv){ item.problems.push('chýba faktúra'); item.fix.invoice=true; }
+    }
     if(item.problems.length) out.push(item);
   }
   out.sort((x,y)=>(x.date||'').localeCompare(y.date||''));
@@ -2661,7 +2667,7 @@ app.post('/api/admin/repair-sales', adminAuth, async(req,res)=>{
   try{
     const plan=await analyzeSaleRepairs();
     if(req.query.apply!=='1') return res.json({ok:true, dry_run:true, ...plan});
-    let entriesAdded=0, txAdded=0, memFixed=0;
+    let entriesAdded=0, txAdded=0, memFixed=0, invAdded=0;
     for(const it of plan.items){
       const u=await q.one(db.users,{_id:it.user_id}); if(!u) continue;
       if(it.fix.entries){
@@ -2687,9 +2693,15 @@ app.post('/api/admin/repair-sales', adminAuth, async(req,res)=>{
         await q.update(db.memberships,{_id:it.fix.membership_id},{$set:{payment_method:'cash', price:it.amount, repaired:true}});
         memFixed++;
       }
+      if(it.fix.invoice){
+        await createInvoice({user_id:u._id, client_name:u.name, client_email:u.email,
+          items:[{desc:(MEMBERSHIP_PLANS[it.plan_id]?.type==='bundle'?it.plan_name:`Členstvo ${it.plan_name}`), qty:1, total:it.amount}],
+          total:it.amount, method:'Hotovosť', paid_at:it.date, silent:true}).catch(()=>{});
+        invAdded++;
+      }
     }
-    await auditLog(req,'repair_sales','bulk',null,{items:plan.count, entriesAdded, txAdded, memFixed},'Spätná oprava predajov z auditného logu');
-    res.json({ok:true, applied:true, items:plan.count, entries_added:entriesAdded, transactions_added:txAdded, memberships_fixed:memFixed});
+    await auditLog(req,'repair_sales','bulk',null,{items:plan.count, entriesAdded, txAdded, memFixed, invAdded},'Spätná oprava predajov z auditného logu');
+    res.json({ok:true, applied:true, items:plan.count, entries_added:entriesAdded, transactions_added:txAdded, memberships_fixed:memFixed, invoices_added:invAdded});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -2753,9 +2765,12 @@ app.post('/api/admin/users/:id/grant-membership', adminAuth, async(req,res)=>{
       if(existing){ await q.update(db.memberships,{_id:existing._id},{$set:{plan_id,plan_name:plan.name,expires_at:expiresISO,price:gift?0:paidAmount,payment_method:payMethod,gift:!!gift,migrated:!!gift}}); }
       else { await q.insert(db.memberships,{...rec,created_at:nowISO()}); }
       await q.update(db.users,{_id:u._id},{$set:{membership_plan:plan_id,membership_expires:expiresISO}});
-      if(!gift){ // reálna platba na mieste → tržba + provízia
+      if(!gift){ // reálna platba na mieste → tržba + faktúra + provízia
         await q.insert(db.transactions,{type:'membership',user_id:u._id,user_name:u.name,amount:paidAmount,
           payment_method:payMethod, method:payMethod, note:`Členstvo ${plan.name} (admin)`,plan_id,recorded_by:req.session.uid,created_at:nowISO(),month:today().slice(0,7)});
+        createInvoice({user_id:u._id, client_name:u.name, client_email:u.email,
+          items:[{desc:`Členstvo ${plan.name}`, qty:1, total:paidAmount}], total:paidAmount,
+          method: payMethod==='card' ? 'Karta na mieste' : 'Hotovosť'}).catch(()=>{});
         awardPurchaseCommission({buyer_id:u._id, amount:paidAmount, product_name:`Členstvo ${plan.name}`});
       } else if(u.user_type==='lead'){ await q.update(db.users,{_id:u._id},{$set:{user_type:'client'}}); }
     }
@@ -2773,6 +2788,9 @@ app.post('/api/admin/users/:id/grant-membership', adminAuth, async(req,res)=>{
         await q.insert(db.transactions,{type:'single_entry', user_id:u._id, user_name:u.name, amount:paidAmount,
           payment_method:payMethod, method:payMethod, note:`${plan.name} (admin)`, plan_id,
           recorded_by:req.session.uid, created_at:nowISO(), month:today().slice(0,7)});
+        createInvoice({user_id:u._id, client_name:u.name, client_email:u.email,
+          items:[{desc:plan.name, qty:1, total:paidAmount}], total:paidAmount,
+          method: payMethod==='card' ? 'Karta na mieste' : 'Hotovosť'}).catch(()=>{});
         awardPurchaseCommission({buyer_id:u._id, amount:paidAmount, product_name:plan.name});
       }
       if(u.user_type==='lead') await q.update(db.users,{_id:u._id},{$set:{user_type:'client'}});
@@ -5294,7 +5312,9 @@ async function nextInvoiceNumber(){
 }
 
 // Create + archive an invoice, then email the payment confirmation. Never throws.
-async function createInvoice({user_id, client_name, client_email, items, total, method, type, related_invoice, paid_at}){
+// silent:true = faktúra sa vytvorí, ale klientke NEODÍDE e-mail (spätné doplnenie
+// starých predajov — nemá zmysel po dňoch posielať „ďakujeme za platbu").
+async function createInvoice({user_id, client_name, client_email, items, total, method, type, related_invoice, paid_at, silent}){
   try {
     const number = await nextInvoiceNumber();
     const inv = await q.insert(db.invoices, {
@@ -5310,7 +5330,7 @@ async function createInvoice({user_id, client_name, client_email, items, total, 
       supplier: invoiceSupplier(),
       created_at: nowISO()
     });
-    if(inv.type==='invoice' && inv.client_email && !inv.client_email.includes('@internal.local')){
+    if(!silent && inv.type==='invoice' && inv.client_email && !inv.client_email.includes('@internal.local')){
       const rows = (inv.items||[]).map(it=>`<tr><td style="padding:6px 0;color:#ccc">${it.desc}</td><td style="padding:6px 0;text-align:right;color:#fff;white-space:nowrap">${(+it.total).toFixed(2)} €</td></tr>`).join('');
       sendMail(inv.client_email, `Ďakujeme za platbu · faktúra ${inv.number} — Fusion Academy`,
         emailTemplate('Platba prijatá ✅',
@@ -8040,6 +8060,10 @@ app.post('/api/private/complete', trainerAuth, async(req,res)=>{
     await q.insert(db.transactions,{type:'private_lesson', amount:+b.price, user_id:b.client_id, user_name:b.client_name, method:b.pay_method, note:`Súkromná hodina ${b.trainer_name} ${b.date} ${b.time_start}`, created_at:nowISO()}).catch(()=>{});
     // Klient: návšteva + súkromné odznaky
     const c=await q.one(db.users,{_id:b.client_id});
+    // Faktúra za súkromnú hodinu (pri platbe kartou vopred ju už vystavil Stripe)
+    if(+b.price>0 && b.pay_method!=='card') createInvoice({user_id:b.client_id, client_name:b.client_name, client_email:c?.email,
+      items:[{desc:`Súkromná hodina — ${b.trainer_name} (${b.date} ${b.time_start})`, qty:1, total:+b.price}],
+      total:+b.price, method: b.pay_method==='credit' ? 'Kredit' : 'Hotovosť'}).catch(()=>{});
     if(c){ await creditAttendance(c);
       await q.update(db.users,{_id:c._id},{$set:{private_hours:(c.private_hours||0)+1}});
       checkNewAchievements(c._id).catch(()=>{});
@@ -8399,6 +8423,9 @@ app.post('/api/trainer/sell', trainerAuth, async(req,res)=>{
         payment_method:'cash', delivery:'osobne', shipping:0, status:'paid', sold_by:t.name, created_at:nowISO(), paid_at:nowISO()});
       awardPurchaseCommission({buyer_id:u._id, amount, product_name:p.name}).catch?.(()=>{});
     } else return res.status(400).json({error:'Neplatný typ predaja'});
+    // Faktúra — rovnako ako pri každom inom predaji (predtým sa tu nevystavovala)
+    createInvoice({user_id:u._id, client_name:u.name, client_email:u.email,
+      items:[{desc:what, qty:1, total:amount}], total:amount, method:'Hotovosť'}).catch(()=>{});
     // Hotovosť u trénera → rovnaká automatizácia ako ručný zápis hotovosti
     await q.insert(db.payouts,{_type:'cash_collected', trainer_id:t._id, trainer_name:t.name,
       amount, note:`${what} — ${u.name}`, month:today().slice(0,7), date:today(), status:'held', created_at:nowISO()});
