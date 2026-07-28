@@ -1843,8 +1843,24 @@ async function openKiosk(){
   const links=(d&&d.links)||[];
   if(!links.length){ toast('Kiosk zatiaľ nie je zapnutý — admin ho aktivuje v sekcii Kiosk / Recepcia.', true); return; }
   if(links.length===1){ window.open(links[0].url,'_blank'); return; }
-  const pick=prompt('Ktoré štúdio?\n\n'+links.map((l,i)=>`${i+1}. ${l.city}`).join('\n')+'\n\nZadaj číslo:');
-  const l=links[parseInt(pick)-1]; if(l) window.open(l.url,'_blank');
+  let m=document.getElementById('kioskPickModal');
+  if(!m){ m=document.createElement('div'); m.id='kioskPickModal';
+    m.style.cssText='display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9999;align-items:center;justify-content:center;padding:16px';
+    m.onclick=()=>m.style.display='none';
+    document.body.appendChild(m); }
+  m.innerHTML=`<div onclick="event.stopPropagation()" style="background:#181818;border:1px solid var(--gold-border);border-radius:16px;max-width:380px;width:100%;padding:20px">
+    <div style="font-weight:800;color:var(--gold);margin-bottom:4px">🖥️ Spustiť kiosk</div>
+    <div style="font-size:.8rem;color:var(--muted);margin-bottom:14px">V ktorom štúdiu stojí tento tablet?</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${links.map(l=>`<button onclick="openKioskUrl('${l.url}')" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:#151515;border:1px solid #2a2a2a;color:var(--cream);border-radius:11px;padding:13px 15px;font-size:.95rem;font-weight:700;cursor:pointer" onmouseover="this.style.borderColor='var(--gold-border)'" onmouseout="this.style.borderColor='#2a2a2a'">📍 ${esc(l.city)}</button>`).join('')}
+    </div>
+    <button onclick="document.getElementById('kioskPickModal').style.display='none'" style="margin-top:14px;background:none;border:1px solid #333;color:var(--muted);border-radius:9px;padding:8px 16px;font-size:.82rem;cursor:pointer">Zrušiť</button>
+  </div>`;
+  m.style.display='flex';
+}
+function openKioskUrl(url){
+  document.getElementById('kioskPickModal').style.display='none';
+  window.open(url,'_blank');
 }
 
 // ── SÚKROMNÉ HODINY (tréner) ─────────────────────────────────────────────────
