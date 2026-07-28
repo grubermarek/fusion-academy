@@ -2674,9 +2674,8 @@ app.post('/api/admin/repair-sales', adminAuth, async(req,res)=>{
             expires_at:new Date(new Date(it.date).getTime()+(p?.duration_days||90)*86400000).toISOString(),
             gift:!!it.gift, repaired:true, created_at:it.date+'T12:00:00.000Z'});
         }
-        await q.insert(db.notifications,{user_id:u._id,type:'entries',title:'🎟️ Vstupy pripísané',
-          body:`Doplnili sme ti ${it.fix.entries} vstupov z permanentky, ktorú si u nás kúpila ${it.date.split('-').reverse().join('.')}. Ospravedlňujeme sa za zdržanie! 💛`,
-          read:false, created_at:nowISO()}).catch(()=>{});
+        // Bez notifikácie — klientky o zdržaní nevedeli, netreba ich zneisťovať.
+        // Stopa o oprave ostáva v auditnom logu.
       }
       if(it.fix.transaction){
         await q.insert(db.transactions,{type:'single_entry', user_id:u._id, user_name:u.name, amount:it.amount,
