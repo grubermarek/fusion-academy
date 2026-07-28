@@ -2654,27 +2654,52 @@ app.post('/api/admin/users/:id/grant-membership', adminAuth, async(req,res)=>{
     } else if(plan){
       expiresISO = new Date(Date.now()+(plan.duration_days||30)*86400000).toISOString();
     }
+    const payMethod = gift ? null : (req.body.payment_method||'cash');
+    const paidAmount = +(req.body.amount||plan?.price||0);
+    let bundleEntries = 0;
     // Členstvo (ak vybraný plán a nie je to len permanentka)
     if(plan && plan.type!=='bundle'){
       const existing=await q.one(db.memberships,{user_id:u._id,status:'active'});
-      const rec={user_id:u._id,user_name:u.name,plan_id,plan_name:plan.name,price:gift?0:(req.body.amount||plan.price),
+      // POZOR: payment_method na zázname členstva je to, podľa čoho ho vidí ÚČTOVNÍCTVO
+      // (accountingData berie membs.filter(m=>m.payment_method)) — bez neho je predaj neviditeľný.
+      const rec={user_id:u._id,user_name:u.name,plan_id,plan_name:plan.name,price:gift?0:paidAmount,
         status:'active',started_at:nowISO(),expires_at:expiresISO,
+        payment_method: payMethod,
         gift:!!gift,migrated:!!gift,granted_by:req.session.uid,updated_at:nowISO()};
-      if(existing){ await q.update(db.memberships,{_id:existing._id},{$set:{plan_id,plan_name:plan.name,expires_at:expiresISO,gift:!!gift,migrated:!!gift}}); }
+      if(existing){ await q.update(db.memberships,{_id:existing._id},{$set:{plan_id,plan_name:plan.name,expires_at:expiresISO,price:gift?0:paidAmount,payment_method:payMethod,gift:!!gift,migrated:!!gift}}); }
       else { await q.insert(db.memberships,{...rec,created_at:nowISO()}); }
       await q.update(db.users,{_id:u._id},{$set:{membership_plan:plan_id,membership_expires:expiresISO}});
       if(!gift){ // reálna platba na mieste → tržba + provízia
-        await q.insert(db.transactions,{type:'membership',user_id:u._id,user_name:u.name,amount:+(req.body.amount||plan.price),
-          payment_method:req.body.payment_method||'cash',note:`Členstvo ${plan.name} (admin)`,plan_id,recorded_by:req.session.uid,created_at:nowISO(),month:today().slice(0,7)});
-        awardPurchaseCommission({buyer_id:u._id, amount:+(req.body.amount||plan.price), product_name:`Členstvo ${plan.name}`});
+        await q.insert(db.transactions,{type:'membership',user_id:u._id,user_name:u.name,amount:paidAmount,
+          payment_method:payMethod, method:payMethod, note:`Členstvo ${plan.name} (admin)`,plan_id,recorded_by:req.session.uid,created_at:nowISO(),month:today().slice(0,7)});
+        awardPurchaseCommission({buyer_id:u._id, amount:paidAmount, product_name:`Členstvo ${plan.name}`});
       } else if(u.user_type==='lead'){ await q.update(db.users,{_id:u._id},{$set:{user_type:'client'}}); }
     }
-    // Permanentka / vstupy na hodiny
-    if(entries>0){ await q.update(db.users,{_id:u._id},{$set:{single_entries:(u.single_entries||0)+entries}}); }
+    // Permanentka / jednorazový vstup vybraný v zozname plánov — predtým sa PRESKOČIL
+    // (žiadne vstupy, žiadna tržba), takže predaj „zmizol" a klientka sa nemohla prihlásiť.
+    if(plan && plan.type==='bundle'){
+      bundleEntries = plan.entries || 1;
+      // Záznam permanentky je len HISTÓRIA — zámerne bez payment_method, aby sa tržba
+      // nezapočítala dvakrát (účtovníctvo ju berie z transakcie 'single_entry' nižšie).
+      await q.insert(db.memberships,{user_id:u._id,user_name:u.name,plan_id,plan_name:plan.name,
+        price:gift?0:paidAmount, status:'bundle', started_at:nowISO(),
+        expires_at:expiresISO || new Date(Date.now()+(plan.duration_days||90)*86400000).toISOString(),
+        gift:!!gift, granted_by:req.session.uid, created_at:nowISO()});
+      if(!gift){
+        await q.insert(db.transactions,{type:'single_entry', user_id:u._id, user_name:u.name, amount:paidAmount,
+          payment_method:payMethod, method:payMethod, note:`${plan.name} (admin)`, plan_id,
+          recorded_by:req.session.uid, created_at:nowISO(), month:today().slice(0,7)});
+        awardPurchaseCommission({buyer_id:u._id, amount:paidAmount, product_name:plan.name});
+      }
+      if(u.user_type==='lead') await q.update(db.users,{_id:u._id},{$set:{user_type:'client'}});
+    }
+    // Permanentka / vstupy na hodiny (ručne zadané číslo + vstupy z vybraného balíka)
+    const totalEntries = entries + bundleEntries;
+    if(totalEntries>0){ await q.update(db.users,{_id:u._id},{$set:{single_entries:(u.single_entries||0)+totalEntries}}); }
     await q.insert(db.notifications,{user_id:u._id,type:'membership',title: gift?'🎁 Členstvo pridelené':'✅ Členstvo aktivované',
       body:`${plan?plan.name:''}${expiresISO?` platné do ${expiresISO.slice(0,10)}`:''}${entries?` · +${entries} vstupov`:''}`,read:false,created_at:nowISO()}).catch(()=>{});
     await auditLog(req, gift?'membership_gift':'membership_sell', u._id, {}, {plan_id,expires_at:expiresISO,entries,gift,amount:gift?0:(req.body.amount||plan?.price)}, gift?'Migrácia/darček':'Platba na mieste');
-    res.json({ ok:true, plan_name:plan?.name||'—', expires_at:expiresISO?expiresISO.slice(0,10):null, entries });
+    res.json({ ok:true, plan_name:plan?.name||'—', expires_at:expiresISO?expiresISO.slice(0,10):null, entries: totalEntries });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -8268,9 +8293,11 @@ app.post('/api/trainer/sell', trainerAuth, async(req,res)=>{
       amount=+(+req.body.amount>0?+req.body.amount:plan.price).toFixed(2);
       what=plan.type==='bundle'?`Permanentka ${plan.name}`:`Členstvo ${plan.name}`;
       await activateMembership(u._id, req.body.plan_id);
-      // platba cash — payment_method 'cash' drží konzistenciu s admin predajom aj cash-upsell automatizáciou
+      // Platba cash. Pri ČLENSTVE nesie tržbu záznam členstva (payment_method), pri
+      // PERMANENTKE ju nesie transakcia 'single_entry' — inak by sa počítala dvakrát.
       const mem=await q.one(db.memberships,{user_id:u._id, status:plan.type==='bundle'?'bundle':'active'});
-      if(mem) await q.update(db.memberships,{_id:mem._id},{$set:{payment_method:'cash', price:amount, sold_by:t.name}});
+      if(mem) await q.update(db.memberships,{_id:mem._id},{$set:{
+        ...(plan.type==='bundle' ? {} : {payment_method:'cash'}), price:amount, sold_by:t.name}});
       await q.insert(db.transactions,{type:plan.type==='bundle'?'single_entry':'membership', user_id:u._id, user_name:u.name,
         amount, payment_method:'cash', method:'cash', note:`${what} (tréner ${t.name})`, plan_id:req.body.plan_id,
         recorded_by:t._id, created_at:nowISO(), month:today().slice(0,7)});
