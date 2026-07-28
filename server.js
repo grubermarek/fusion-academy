@@ -2696,15 +2696,21 @@ app.get('/api/admin/sales-health', adminAuth, async(req,res)=>{
     const issues=[];
     const add=(kind,date,name,amount,what,detail)=>issues.push({kind,date:(date||'').slice(0,10),name,amount:+(+amount).toFixed(2),what,detail});
 
+    // Platby kartou (Stripe) sú v tržbách cez db.payments — pri nich sa payment_method
+    // na členstve NESMIE doplniť, inak by sa tržba započítala dvakrát.
+    const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status));
+    const paidByCard=(uid,amount,date)=>payments.some(p=>p.user_id===uid && Math.abs((+p.amount||0)-(+amount||0))<0.01 &&
+      Math.abs(new Date(p.captured_at||p.activated_at||p.created_at||0)-new Date(date||0))<5*86400000);
     // 1) Členstvá: platené, ale bez payment_method → nie sú v tržbách
     for(const m of await q.find(db.memberships,{})){
       if(m._type || m.gift || m.migrated) continue;
       const price=+m.price||0; if(price<=0) continue;
       const u=users[m.user_id]; if(!u) continue;
-      if(!m.payment_method && m.status!=='bundle')
-        add('členstvo mimo účtovníctva', m.created_at||m.started_at, u.name, price, m.plan_name||'Členstvo', 'chýba spôsob platby');
-      if(!hasInvoice(m.user_id, price, m.created_at||m.started_at))
-        add('chýba faktúra', m.created_at||m.started_at, u.name, price, m.plan_name||'Členstvo', '');
+      const when=m.created_at||m.started_at;
+      if(!m.payment_method && m.status!=='bundle' && !paidByCard(m.user_id, price, when))
+        add('členstvo mimo účtovníctva', when, u.name, price, m.plan_name||'Členstvo', 'chýba spôsob platby');
+      if(!hasInvoice(m.user_id, price, when))
+        add('chýba faktúra', when, u.name, price, m.plan_name||'Členstvo', m.payment_method||(paidByCard(m.user_id,price,when)?'karta':'hotovosť?'));
     }
     // 2) Transakcie (vstupy, súkromné hodiny, členstvá zapísané trénerom)
     for(const t of await q.find(db.transactions,{})){
@@ -2731,8 +2737,35 @@ app.get('/api/admin/sales-health', adminAuth, async(req,res)=>{
 
     issues.sort((a,b)=>(a.date||'').localeCompare(b.date||''));
     const total=issues.reduce((s,i)=>s+(i.kind==='členstvo mimo účtovníctva'?i.amount:0),0);
+    // Oprava (len s ?apply=1): doplní spôsob platby chýbajúcim členstvám a dogeneruje
+    // chýbajúce faktúry k pôvodným dátumom. Faktúry idú ticho, bez e-mailu klientke.
+    let applied=null;
+    if(req.query.apply==='1'){
+      let memFixed=0, invAdded=0;
+      for(const m of await q.find(db.memberships,{})){
+        if(m._type || m.gift || m.migrated || m.payment_method || m.status==='bundle') continue;
+        const price=+m.price||0; if(price<=0) continue;
+        const when=m.created_at||m.started_at;
+        if(paidByCard(m.user_id, price, when)) continue; // kartu už účtovníctvo vidí
+        await q.update(db.memberships,{_id:m._id},{$set:{payment_method:'cash', repaired:true}});
+        memFixed++;
+      }
+      const mkInv=async(uid,name,email,desc,amount,date)=>{
+        await createInvoice({user_id:uid, client_name:name, client_email:email,
+          items:[{desc, qty:1, total:+amount}], total:+amount, method:'Hotovosť',
+          issued_at:(date||'').slice(0,10), paid_at:(date||'').slice(0,10), silent:true,
+          repaired_audit:'health_'+uid+'_'+(+amount)+'_'+(date||'').slice(0,10)}).catch(()=>{});
+        invAdded++;
+      };
+      for(const it of issues.filter(i=>i.kind==='chýba faktúra')){
+        const u=Object.values(users).find(x=>x.name===it.name);
+        await mkInv(u?u._id:null, it.name, u?u.email:'', it.what, it.amount, it.date);
+      }
+      await auditLog(req,'sales_health_repair','bulk',null,{memFixed, invAdded},'Doplnenie chýbajúcich tržieb a faktúr');
+      applied={memberships_fixed:memFixed, invoices_added:invAdded};
+    }
     res.json({ok:true, issues_count:issues.length, revenue_missing_from_accounting:+total.toFixed(2),
-      duplicate_invoices:dup, issues});
+      duplicate_invoices:dup, applied, issues});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 app.post('/api/admin/repair-sales', adminAuth, async(req,res)=>{
