@@ -2666,6 +2666,15 @@ app.get('/api/admin/repair-sales', adminAuth, async(req,res)=>{
   try{ res.json({ok:true, dry_run:true, ...(await analyzeSaleRepairs())}); }
   catch(e){ res.status(500).json({error:e.message}); }
 });
+// Označenie účtovnej otázky za vyriešenú (prestane chodiť pripomienka)
+app.post('/api/admin/open-question/:key/done', adminAuth, async(req,res)=>{
+  try{
+    await q.insert(db.settings,{key:'openq_done_'+req.params.key, value:true, at:nowISO()}).catch(()=>{});
+    await auditLog(req,'open_question_resolved',req.params.key,null,{resolved:true},'');
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Jednorazové „spárovanie": faktúry doplnené pred zavedením značky repaired_audit
 // sa k svojmu predaju priradia dodatočne, aby sa uz nikdy nevytvorili druhýkrát.
 app.post('/api/admin/repair-sales/stamp', adminAuth, async(req,res)=>{
@@ -11706,6 +11715,21 @@ async function runDailyJobs(){
 
   // ── Meta Ads: denná synchronizácia štatistík kampaní ──
   try{ await syncMetaCampaignStats(true); }catch(e){ console.error('meta sync daily:', e.message); }
+
+  // ── Otvorené účtovné otázniky: pripomienka adminom, kým ich nevyriešia ──
+  try{
+    const OPEN=[{key:'anna_debnarova_23_07', text:'Anna Debnárová — Silver 75 € z 23.07.2026: akým spôsobom zaplatila? Systém k tomu nenašiel kartovú platbu, takže tržba zatiaľ chýba v účtovníctve. Keď to zistíš, napíš mi to a doplním.'}];
+    for(const o of OPEN){
+      if(await q.one(db.settings,{key:'openq_done_'+o.key})) continue;      // vyriešené
+      const last=await q.one(db.settings,{key:'openq_at_'+o.key});
+      if(last && (Date.now()-new Date(last.at||0).getTime()) < 2*86400000) continue; // pripomínaj každé 2 dni
+      if(last) await q.update(db.settings,{_id:last._id},{$set:{at:nowISO()}});
+      else await q.insert(db.settings,{key:'openq_at_'+o.key, at:nowISO()});
+      for(const a of await q.find(db.users,{is_admin:true}))
+        await q.insert(db.notifications,{user_id:a._id, type:'accounting_question',
+          title:'❓ Nevyriešená účtovná otázka', body:o.text, read:false, created_at:nowISO()}).catch(()=>{});
+    }
+  }catch(e){ console.error('open questions:', e.message); }
 
   // ── 2a2. Deň prvej hodiny zdarma: ranný mail s info + motiváciou + referral ──
   try{
