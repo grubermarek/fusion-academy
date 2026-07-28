@@ -2769,7 +2769,7 @@ app.get('/api/admin/sales-health', adminAuth, async(req,res)=>{
           repaired_audit:'health_'+uid+'_'+(+amount)+'_'+(date||'').slice(0,10)}).catch(()=>{});
         invAdded++;
       };
-      for(const it of issues.filter(i=>i.kind==='chýba faktúra' && (!onlyEshop || /^E-shop/.test(it.what)))){
+      for(const it of issues.filter(i=>i.kind==='chýba faktúra' && (!onlyEshop || /^E-shop/.test(i.what)))){
         const u=Object.values(users).find(x=>x.name===it.name);
         await mkInv(u?u._id:null, it.name, u?u.email:'', it.what, it.amount, it.date);
       }
