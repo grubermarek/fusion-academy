@@ -240,7 +240,18 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
         <label class="form-label small fw-semibold">Poznámka</label>
         <textarea class="form-control" id="co-notes" rows="2" placeholder="Napr. preferovaný termín..."></textarea>
       </div>
+      <div class="mb-3">
+        <label class="form-label small fw-semibold">Zľavový kód <span class="text-muted fw-normal">(nepovinné)</span></label>
+        <div class="input-group">
+          <input type="text" class="form-control" id="co-promo" placeholder="napr. VITAZKA1A2B" style="text-transform:uppercase">
+          <button class="btn btn-outline-secondary" type="button" onclick="applyPromoCode()">Uplatniť</button>
+        </div>
+        <div id="co-promo-msg" class="small mt-1"></div>
+      </div>
       <div class="border-top pt-3 mb-3">
+        <div class="d-flex justify-content-between small text-muted d-none" id="co-promo-row">
+          <span>Zľava</span><span id="co-promo-amount">−0,00 €</span>
+        </div>
         <div class="d-flex justify-content-between fw-bold">
           <span>Celková suma:</span>
           <span class="cart-total" id="checkoutTotal">0,00 €</span>
@@ -272,6 +283,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 let allProducts = [], cart = [], cartOffcanvas = null;
+let appliedPromo = null;
 
 // Read referral from URL
 const urlParams = new URLSearchParams(window.location.search);
@@ -406,7 +418,45 @@ function updateCartUI() {
   }
 
   document.getElementById('cartTotal').textContent = eur(total);
+  appliedPromo = null;
+  const rowEl=document.getElementById('co-promo-row'), msgEl=document.getElementById('co-promo-msg');
+  if(rowEl) rowEl.classList.add('d-none');
+  if(msgEl) msgEl.textContent='';
   document.getElementById('checkoutTotal').textContent = eur(total);
+}
+
+async function applyPromoCode() {
+  const input = document.getElementById('co-promo');
+  const msgEl = document.getElementById('co-promo-msg');
+  const rowEl = document.getElementById('co-promo-row');
+  const code = (input.value||'').trim().toUpperCase();
+  const total = cart.reduce((s, c) => s + c.price * c.qty, 0);
+  if (!code) { msgEl.className='small mt-1 text-danger'; msgEl.textContent='Zadaj kód'; return; }
+  msgEl.className='small mt-1 text-muted'; msgEl.textContent='Overujem…';
+  try {
+    const r = await fetch('/api/promo/validate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, amount: total, context: 'merch' })
+    });
+    const v = await r.json();
+    if (v.ok) {
+      appliedPromo = { code: v.code, discount: v.discount };
+      msgEl.className='small mt-1 text-success';
+      msgEl.textContent = `✓ Kód uplatnený — zľava ${v.label}`;
+      document.getElementById('co-promo-amount').textContent = '−' + eur(v.discount);
+      rowEl.classList.remove('d-none');
+      document.getElementById('checkoutTotal').textContent = eur(Math.max(0, total - v.discount));
+    } else {
+      appliedPromo = null;
+      rowEl.classList.add('d-none');
+      msgEl.className='small mt-1 text-danger';
+      msgEl.textContent = v.reason || 'Neplatný kód';
+      document.getElementById('checkoutTotal').textContent = eur(total);
+    }
+  } catch(e) {
+    msgEl.className='small mt-1 text-danger';
+    msgEl.textContent = 'Chyba pri overovaní kódu';
+  }
 }
 
 function openCart() {
@@ -480,11 +530,12 @@ async function submitOrder() {
   const fullNotes = [notes, varNote?('Varianty — '+varNote):''].filter(Boolean).join(' | ');
   const useCredit = pay==='credit';
   const payMethod = useCredit ? 'referral_credit' : pay;
+  const promoCode = appliedPromo ? appliedPromo.code : undefined;
   try {
     const r = await fetch('/api/shop/order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ client_name:name, client_email:email, client_phone:phone, referral_code:ref, city, items, notes:fullNotes, payment_method:payMethod, use_referral_credit:useCredit, delivery, shipping })
+      body: JSON.stringify({ client_name:name, client_email:email, client_phone:phone, referral_code:ref, city, items, notes:fullNotes, payment_method:payMethod, use_referral_credit:useCredit, delivery, shipping, promo_code:promoCode })
     });
     const d = await r.json();
     if (!r.ok) { errEl.textContent = d.error || 'Chyba'; errEl.classList.remove('d-none'); return; }

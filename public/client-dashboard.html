@@ -1713,6 +1713,7 @@ async function init(){
   loadOnlineBanner();
   loadDmBadge();
   loadSpin();
+  loadMonthlyWinnerCelebration();
   // Nedokončená rezervácia z onboardingu (stratená session) — dokonči automaticky
   try{
     const pb=JSON.parse(localStorage.getItem('fa_pending_booking')||'null');
@@ -1732,6 +1733,83 @@ async function init(){
   }catch(e){}
   // Safety net: force any card that failed to fade in to become visible
   setTimeout(()=>document.querySelectorAll('.anim').forEach(e=>{ if(getComputedStyle(e).opacity==='0') e.style.opacity='1'; }), 1000);
+}
+
+/* ─── Klientka mesiaca: veľká oslavná obrazovka s cenami ─── */
+async function loadMonthlyWinnerCelebration(){
+  try{
+    const d=await api('/api/client/monthly-winner');
+    if(!d||!d.ok||!d.win) return;
+    showMonthlyWinnerCelebration(d.win);
+  }catch(e){}
+}
+function _mwConfetti(){
+  const c=document.createElement('canvas'); c.id='mwConfettiCanvas';
+  c.style.cssText='position:fixed;inset:0;z-index:10001;pointer-events:none';
+  c.width=innerWidth; c.height=innerHeight;
+  document.body.appendChild(c);
+  const ctx=c.getContext('2d');
+  const colors=['#C9A84C','#F7E7B8','#e05656','#7ec8e3','#81c784','#fff'];
+  const N=140;
+  const parts=Array.from({length:N},()=>({
+    x:Math.random()*c.width, y:-20-Math.random()*c.height*.5,
+    r:4+Math.random()*6, c:colors[Math.floor(Math.random()*colors.length)],
+    vy:2+Math.random()*3.5, vx:(Math.random()-.5)*2.5, rot:Math.random()*360, vr:(Math.random()-.5)*10
+  }));
+  let t=0;
+  (function step(){
+    t++;
+    ctx.clearRect(0,0,c.width,c.height);
+    let alive=false;
+    for(const p of parts){
+      p.x+=p.vx; p.y+=p.vy; p.rot+=p.vr;
+      if(p.y<c.height+20) alive=true;
+      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot*Math.PI/180);
+      ctx.fillStyle=p.c; ctx.fillRect(-p.r/2,-p.r/2,p.r,p.r*1.6);
+      ctx.restore();
+    }
+    if(alive && t<260) requestAnimationFrame(step); else c.remove();
+  })();
+}
+function showMonthlyWinnerCelebration(win){
+  const monthLabel=new Date(win.month+'-15').toLocaleDateString('sk-SK',{month:'long',year:'numeric'});
+  const ov=document.createElement('div'); ov.id='mwOverlay';
+  ov.style.cssText='position:fixed;inset:0;background:radial-gradient(ellipse at 50% 20%,rgba(80,60,10,.55),rgba(0,0,0,.88));z-index:10000;display:flex;align-items:center;justify-content:center;padding:18px;animation:mwFadeIn .5s ease';
+  ov.innerHTML=`<style>
+    @keyframes mwFadeIn{from{opacity:0}to{opacity:1}}
+    @keyframes mwPop{0%{transform:scale(.5) translateY(30px);opacity:0}60%{transform:scale(1.06) translateY(-4px);opacity:1}100%{transform:scale(1) translateY(0)}}
+    @keyframes mwCrownBounce{0%,100%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-10px) rotate(4deg)}}
+    @keyframes mwGoldPulse{0%,100%{box-shadow:0 0 40px -6px rgba(201,168,76,.6)}50%{box-shadow:0 0 70px 4px rgba(201,168,76,.95)}}
+    @keyframes mwShine{0%{background-position:-200% 0}100%{background-position:200% 0}}
+  </style>
+  <div style="background:linear-gradient(160deg,#1c1712,#0c0a07);border:2px solid var(--gold,#C9A84C);border-radius:24px;max-width:440px;width:100%;padding:30px 26px;text-align:center;animation:mwPop .6s cubic-bezier(.2,1.4,.4,1) both, mwGoldPulse 2.6s ease-in-out infinite;position:relative;overflow:hidden">
+    <div style="font-size:4rem;animation:mwCrownBounce 1.8s ease-in-out infinite;display:inline-block">👑</div>
+    <div style="font-family:Georgia,serif;font-size:1.7rem;font-weight:800;background:linear-gradient(100deg,#C9A84C 20%,#F7E7B8 40%,#C9A84C 60%);background-size:200% auto;-webkit-background-clip:text;background-clip:text;color:transparent;animation:mwShine 3s linear infinite;margin:6px 0 2px">GRATULUJEME!</div>
+    <div style="color:#eee;font-size:1.15rem;font-weight:700;margin-bottom:4px">Si Klientka mesiaca 🏆</div>
+    <div style="color:var(--muted,#999);font-size:.82rem;margin-bottom:18px;text-transform:capitalize">${escHtml(monthLabel)}</div>
+    <div style="background:#141210;border:1px solid rgba(201,168,76,.3);border-radius:16px;padding:16px;text-align:left">
+      ${(win.prizes||[]).map(p=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #262220">
+        <span style="font-size:1.3rem">${p.icon}</span>
+        <span style="flex:1;color:#eee;font-weight:600;font-size:.9rem">${escHtml(p.label)}</span>
+        <span style="color:var(--gold,#C9A84C);font-weight:800;font-size:.86rem">${p.value} €</span>
+      </div>`).join('')}
+      <div style="display:flex;justify-content:space-between;align-items:center;padding-top:12px;margin-top:4px">
+        <span style="color:#eee;font-weight:800">Spolu</span>
+        <span style="color:var(--gold,#C9A84C);font-weight:900;font-size:1.25rem">${win.value} €</span>
+      </div>
+    </div>
+    ${win.merch_promo_code?`<div style="margin-top:14px;font-size:.8rem;color:var(--muted,#999)">Zľavový kód na merch: <b style="color:var(--gold,#C9A84C);letter-spacing:.05em">${escHtml(win.merch_promo_code)}</b> (platí 60 dní)</div>`:''}
+    <div style="font-size:.78rem;color:var(--muted,#999);margin-top:10px">👑 Gold aj súkromná hodina zdarma sú už pripravené v appke.</div>
+    <button onclick="closeMonthlyWinnerCelebration('${win._id}')" style="margin-top:20px;width:100%;background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);color:#111;border:none;font-weight:800;padding:13px;border-radius:12px;font-size:.95rem;cursor:pointer">Ďakujem! 💛</button>
+  </div>`;
+  document.body.appendChild(ov);
+  _mwConfetti();
+  setTimeout(_mwConfetti, 700);
+}
+async function closeMonthlyWinnerCelebration(id){
+  document.getElementById('mwOverlay')?.remove();
+  document.getElementById('mwConfettiCanvas')?.remove();
+  try{ await api('/api/client/monthly-winner/'+id+'/seen',{method:'POST'}); }catch(e){}
 }
 
 /* ─── Denná odmena: koleso + streak ─── */
@@ -1994,6 +2072,7 @@ function pvBook(slotId, price, date, time){
     <div style="font-weight:800;font-size:1.05rem;margin-bottom:4px">✨ Súkromná hodina</div>
     <div style="color:var(--muted,#999);font-size:.85rem;margin-bottom:12px">${date.split('-').reverse().join('.')} o ${time} · <b style="color:var(--gold)">${price.toFixed(2)} €</b></div>
     <div style="display:flex;flex-direction:column;gap:8px">
+      ${(+(_me&&_me.free_private_lesson_credits||0))>0?`<button onclick="pvDoBook('${slotId}','prize',${price})" style="background:linear-gradient(135deg,#7ec8e3,#4a9eda);border:none;color:#0a1a24;font-weight:800;padding:12px;border-radius:11px;cursor:pointer">🎁 Zadarmo — výhra súťaže</button>`:''}
       <button onclick="pvDoBook('${slotId}','card',${price})" style="background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);border:none;color:#111;font-weight:800;padding:12px;border-radius:11px;cursor:pointer">💳 Zaplatiť kartou online</button>
       ${credit>=price?`<button onclick="pvDoBook('${slotId}','credit',${price})" style="background:rgba(74,222,128,.14);border:1px solid #4ade80;color:#4ade80;font-weight:700;padding:11px;border-radius:11px;cursor:pointer">💛 Zaplatiť kreditom (${credit.toFixed(2)} €)</button>`:''}
       <button onclick="pvDoBook('${slotId}','onsite',${price})" style="background:#161616;border:1px solid #333;color:var(--cream,#eee);font-weight:700;padding:11px;border-radius:11px;cursor:pointer">💵 Zaplatím na mieste</button>
@@ -2012,7 +2091,8 @@ async function pvDoBook(slotId, pay, price){
     if(c&&c.ok&&c.url){ window.location.href=c.url; return; }
     showToast('Rezervované ✓ — kartová platba nie je dostupná, zaplatíš na mieste','success');
   } else if(pay==='credit'&&_me){ _me.referral_credit=(+_me.referral_credit||0)-price; }
-  showToast('✨ Súkromná hodina rezervovaná!','success');
+  else if(pay==='prize'&&_me){ _me.free_private_lesson_credits=Math.max(0,(+_me.free_private_lesson_credits||0)-1); }
+  showToast(pay==='prize'?'🎁 Výherná hodina rezervovaná — teší sa na teba!':'✨ Súkromná hodina rezervovaná!','success');
   _pvSel=null; document.getElementById('pvSlots').style.display='none'; loadPrivate();
 }
 async function pvCancelMine(id, late){

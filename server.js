@@ -142,6 +142,7 @@ const db = {
   bookings:     new Datastore({ filename: path.join(DATA_DIR, 'bookings.db'),     autoload: true }),
   messages:     new Datastore({ filename: path.join(DATA_DIR, 'messages.db'),     autoload: true }),
   spins:        new Datastore({ filename: path.join(DATA_DIR, 'spins.db'),        autoload: true }),
+  monthly_winners: new Datastore({ filename: path.join(DATA_DIR, 'monthly_winners.db'), autoload: true }),
   memberships:  new Datastore({ filename: path.join(DATA_DIR, 'memberships.db'),  autoload: true }),
   rentals:      new Datastore({ filename: path.join(DATA_DIR, 'rentals.db'),      autoload: true }),
   notifications:new Datastore({ filename: path.join(DATA_DIR, 'notifications.db'),autoload: true }),
@@ -1550,6 +1551,12 @@ app.post('/api/shop/order', rlPublic, async(req,res)=>{
       enriched.push({product_id:prod._id,product_name:prod.name,price:prod.price,qty:item.qty,subtotal,commission_rate:prod.commission_rate, size, color});
     }
     total=+total.toFixed(2);
+    // ── Zľavový kód (napr. osobná odmena za klientku mesiaca) ──────────────────
+    let promoDiscount=0, appliedPromo=null;
+    if(req.body.promo_code){
+      const v=await validatePromo(req.body.promo_code, total, req.session?.uid, 'merch');
+      if(v.ok){ promoDiscount=v.discount; total=v.final; appliedPromo=v.promo; }
+    }
     // ── Apply referral credit ─────────────────────────────────────────────────
     let creditUsed = 0;
     let finalTotal = total;
@@ -1563,8 +1570,9 @@ app.post('/api/shop/order', rlPublic, async(req,res)=>{
       }
     }
     const order_number='FA-'+new Date().getFullYear()+'-'+oid();
-    const order=await q.insert(db.orders,{order_number,client_name,client_email:client_email.toLowerCase().trim(),client_phone:client_phone||'',referral_code:referral_code?.trim()||'',partner_id,partner_name,city:city||'',items:enriched,total:finalTotal,original_total:total,credit_used:creditUsed,notes:notes||'',payment_method:payment_method||'cash',delivery,shipping,status:'pending',created_at:nowISO(),paid_at:null});
-    res.json({ok:true,order_number,id:order._id,total:finalTotal,original_total:total,credit_used:creditUsed});
+    const order=await q.insert(db.orders,{order_number,client_name,client_email:client_email.toLowerCase().trim(),client_phone:client_phone||'',referral_code:referral_code?.trim()||'',partner_id,partner_name,city:city||'',items:enriched,total:finalTotal,original_total:total,credit_used:creditUsed,promo_code:appliedPromo?appliedPromo.code:null,promo_discount:promoDiscount,notes:notes||'',payment_method:payment_method||'cash',delivery,shipping,status:'pending',created_at:nowISO(),paid_at:null});
+    if(appliedPromo) await recordPromoRedemption(appliedPromo, req.session?.uid, promoDiscount);
+    res.json({ok:true,order_number,id:order._id,total:finalTotal,original_total:+(total+promoDiscount).toFixed(2),credit_used:creditUsed,promo_discount:promoDiscount});
   } catch(e){res.status(500).json({error:e.message});}
 });
 
@@ -5195,11 +5203,12 @@ app.post('/api/paypal/webhook', express.raw({type:'application/json'}), async(re
 });
 
 // ── Promo / zľavové kódy ──────────────────────────────────────────────────────
-async function validatePromo(code, price, userId){
+async function validatePromo(code, price, userId, context){
   code=(code||'').toUpperCase().trim();
   if(!code) return {ok:false, reason:'Zadaj kód'};
   const p=await q.one(db.promo_codes,{code});
   if(!p || p.active===false) return {ok:false, reason:'Kód neexistuje alebo je neaktívny'};
+  if(p.applies_to && context && p.applies_to!==context) return {ok:false, reason:'Tento kód platí len na '+(p.applies_to==='merch'?'e-shop':'členstvá')};
   if(p.expires_at && new Date(p.expires_at) < new Date()) return {ok:false, reason:'Platnosť kódu vypršala'};
   if(p.min_amount && price < p.min_amount) return {ok:false, reason:`Kód platí od ${p.min_amount} €`};
   if(p.max_uses && (p.used_count||0) >= p.max_uses) return {ok:false, reason:'Kód už bol vyčerpaný'};
@@ -5229,7 +5238,7 @@ app.post('/api/promo/validate', auth, async(req,res)=>{
     const plan = MEMBERSHIP_PLANS[req.body.plan_id];
     const price = plan ? plan.price : (+req.body.amount||0);
     if(price<=0) return res.json({ok:false, reason:'Neplatná suma'});
-    const v = await validatePromo(req.body.code, price, req.session.uid);
+    const v = await validatePromo(req.body.code, price, req.session.uid, req.body.context||'membership');
     res.json(v.ok ? {ok:true, discount:v.discount, final:v.final, label:v.label, code:v.promo.code} : {ok:false, reason:v.reason});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -5373,7 +5382,7 @@ app.post('/api/membership/buy', auth, async(req,res)=>{
     let promoDiscount = 0, promoCode = null, promoObj = null;
     let basePrice = plan.price;
     if(promo_code){
-      const v = await validatePromo(promo_code, plan.price, req.session.uid);
+      const v = await validatePromo(promo_code, plan.price, req.session.uid, 'membership');
       if(!v.ok) return res.status(400).json({error:'Promo kód: '+v.reason});
       promoDiscount = v.discount; basePrice = v.final; promoCode = v.promo.code; promoObj = v.promo;
     }
@@ -6490,6 +6499,80 @@ app.get('/api/admin/payslips.csv', adminAuth, async(req,res)=>{
 });
 
 // ── Súhrn bodov klientov za obdobie (kto, koľko a za čo) ───────────────────────
+// ── Klientka mesiaca: automatické korunovanie + odovzdanie cien ─────────────
+// Beží raz na začiatku každého mesiaca (denný job), vyhodnotí PREDOŠLÝ mesiac
+// a víťazke reálne pripíše: mesiac Gold zdarma, 1 súkromnú hodinu s Marekom
+// Gruberom zdarma (spotrebuje sa pri najbližšej rezervácii) a osobný 20 %
+// zľavový kód na merch. Hodnota cien: 125 (Gold) + 80 (súkromná hodina, plná
+// cena) + odhad 20 € zľavy = 225 €.
+const MONTHLY_PRIZE_VALUE = 225;
+async function crownMonthlyWinner(){
+  try{
+    const now=new Date();
+    const prevMonthDate=new Date(now.getFullYear(), now.getMonth()-1, 1);
+    const month=prevMonthDate.toISOString().slice(0,7); // YYYY-MM predošlého mesiaca
+    if(await q.one(db.monthly_winners,{month})) return; // už korunovaná
+    const from=month+'-01', to=month+'-31';
+    const summary=await pointsSummaryData(from, to);
+    const top=(summary.rows||[])[0];
+    if(!top || top.total<=0) return; // nikto nezbieral body, nikoho nekorunuj
+    const winner=await q.one(db.users,{_id:top.id});
+    if(!winner) return;
+    // 1) Mesiac Gold zdarma (nadviaže na existujúce členstvo, ak nejaké beží)
+    await activateMembership(winner._id, 'gold', 30).catch(e=>console.error('crown gold:',e.message));
+    // 2) Súkromná hodina s Marekom Gruberom zdarma — pripíše sa ako kredit,
+    // spotrebuje sa pri najbližšej rezervácii (voľba „🎁 Zadarmo — výhra súťaže")
+    await q.update(db.users,{_id:winner._id},{$set:{free_private_lesson_credits:(winner.free_private_lesson_credits||0)+1}});
+    // 3) Osobný 20% zľavový kód na merch, platný 60 dní
+    let code; do{ code='VITAZKA'+Math.random().toString(36).slice(2,6).toUpperCase(); } while(await q.one(db.promo_codes,{code}));
+    const expires_at=new Date(Date.now()+60*86400000).toISOString();
+    await q.insert(db.promo_codes,{ code, type:'percent', value:20, applies_to:'merch',
+      max_uses:1, once_per_user:true, min_amount:0, expires_at, target_user_id:winner._id,
+      active:true, used_count:0, note:`Klientka mesiaca ${month} — 20% na merch`, created_at:nowISO() });
+    const monthLabel=prevMonthDate.toLocaleDateString('sk-SK',{month:'long',year:'numeric'});
+    const prizes=[
+      {icon:'👑', label:'Mesiac členstva Gold zdarma', value:125},
+      {icon:'🎓', label:'Súkromná hodina s Marekom Gruberom zdarma', value:80},
+      {icon:'🛍️', label:'20% zľava na merch', value:20},
+    ];
+    const win=await q.insert(db.monthly_winners,{ month, user_id:winner._id, user_name:winner.name,
+      points:top.total, prizes, value:MONTHLY_PRIZE_VALUE, merch_promo_code:code, seen:false, created_at:nowISO() });
+    // Notifikácia + mail víťazke
+    await q.insert(db.notifications,{user_id:winner._id, type:'monthly_winner',
+      title:'🏆 Si Klientka mesiaca!', body:`Gratulujeme! Za ${monthLabel} si vyzbierala najviac bodov. Ceny v hodnote ${MONTHLY_PRIZE_VALUE} € ťa čakajú v appke. 🎉`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+    if(winner.email) sendMail(winner.email, `🏆 Si Klientka mesiaca (${monthLabel})! Gratulujeme!`,
+      emailTemplate('🏆 GRATULUJEME, si Klientka mesiaca!',
+        `<p>Ahoj <b>${winner.name.split(' ')[0]}</b>,</p>
+         <p>za <b>${monthLabel}</b> si so ${top.total} bodmi vyzbierala najviac zo všetkých — si naša <b>Klientka mesiaca</b>! 🎉</p>
+         <div style="background:#1c1c1c;border-radius:12px;padding:16px 18px;margin:16px 0">
+           ${prizes.map(p=>`<div style="margin:6px 0">${p.icon} <b>${p.label}</b></div>`).join('')}
+           <div style="margin-top:10px;padding-top:10px;border-top:1px solid #333;color:#C9A84C;font-weight:800">Spolu v hodnote ${MONTHLY_PRIZE_VALUE} €</div>
+         </div>
+         <p>Zľavový kód na merch: <b style="color:#C9A84C">${code}</b> (platí 60 dní). Gold členstvo aj súkromná hodina sú už pripravené priamo v appke.</p>`,
+        '🎉 Pozrieť moje výhry', `${APP_URL}/client-dashboard`)).catch(()=>{});
+    // Verejný oznam na nástenku — nech sa teší celá komunita
+    await q.insert(db.feed,{ author_id:'studio', author_name:'Fusion Academy', author_badge:{emoji:'🏆',label:'Klientka mesiaca'},
+      system_event:true, event_kind:'monthly_winner',
+      text:`🏆 KLIENTKA MESIACA — ${monthLabel}\n\nGratulujeme ${winner.name}! 👑 Najviac bodov, najviac srdca. Vyhráva mesiac Gold členstva zdarma, súkromnú hodinu s Marekom Gruberom a 20% zľavu na merch. Ceny spolu v hodnote ${MONTHLY_PRIZE_VALUE} €! 🎉`,
+      image:null, reactions:{}, comments:[], created_at:nowISO() }).catch(()=>{});
+    console.log(`🏆 Klientka mesiaca ${month}: ${winner.name} (${top.total} b.) — ceny odovzdané (${MONTHLY_PRIZE_VALUE} €)`);
+  }catch(e){ console.error('crownMonthlyWinner:', e.message); }
+}
+app.get('/api/client/monthly-winner', auth, async(req,res)=>{
+  try{
+    const win=await q.one(db.monthly_winners,{user_id:req.session.uid, seen:false});
+    res.json({ok:true, win: win||null});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/client/monthly-winner/:id/seen', auth, async(req,res)=>{
+  try{
+    const win=await q.one(db.monthly_winners,{_id:req.params.id, user_id:req.session.uid});
+    if(win) await q.update(db.monthly_winners,{_id:win._id},{$set:{seen:true}});
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 async function pointsSummaryData(from, to){
   {
     const fromD=(from||'0000').slice(0,10), toD=(to||'9999').slice(0,10);
@@ -6974,7 +7057,7 @@ app.post('/api/stripe/checkout', auth, async(req,res)=>{
     // Promo kód → zľava z ceny plánu
     let price = plan.price, promoCode = null, promoDiscount = 0;
     if(promo_code){
-      const v = await validatePromo(promo_code, plan.price, req.session.uid);
+      const v = await validatePromo(promo_code, plan.price, req.session.uid, 'membership');
       if(!v.ok) return res.status(400).json({error:'Promo kód: '+v.reason});
       price = v.final; promoCode = v.promo.code; promoDiscount = v.discount;
     }
@@ -8087,8 +8170,14 @@ app.post('/api/private/book', auth, async(req,res)=>{
     // Zľava podľa členstva klienta (Bronze −10 %, Silver −20 %, Gold −30 %; bez členstva/permanentka = plná cena)
     const disc=await privateDiscountFor(u._id);
     const price=privDiscounted(s.price, disc.pct);
-    const pay = ['credit','card','onsite'].includes(req.body.pay) ? req.body.pay : 'onsite';
-    if(pay==='credit'){
+    let pay = ['credit','card','onsite'].includes(req.body.pay) ? req.body.pay : 'onsite';
+    // Výhra súťaže — 1 súkromná hodina zdarma. Cena sa ráta ďalej normálne (tréner
+    // dostane svoj podiel), len klientke sa nič neodpočíta a štúdio to neráta do tržieb.
+    if(req.body.pay==='prize'){
+      if((u.free_private_lesson_credits||0) <= 0) return res.status(400).json({error:'Nemáš žiadnu súkromnú hodinu zdarma.'});
+      await q.update(db.users,{_id:u._id},{$set:{free_private_lesson_credits:(u.free_private_lesson_credits||0)-1}});
+      pay='prize';
+    } else if(pay==='credit'){
       if((u.referral_credit||0) < price) return res.status(400).json({error:`Nedostatočný kredit (${(u.referral_credit||0).toFixed(2)} €). Vyber platbu na mieste.`});
       await q.update(db.users,{_id:u._id},{$set:{referral_credit:+((u.referral_credit||0)-price).toFixed(2)}});
     }
@@ -8098,7 +8187,7 @@ app.post('/api/private/book', auth, async(req,res)=>{
       date:s.date, time_start:s.time_start, duration_min:s.duration_min||60, city:s.city, location:s.location||'',
       price, base_price:s.price, discount_pct:disc.pct, discount_plan:disc.plan||null,
       split:privateSettings(trainer||{}).split,
-      pay_method:pay, paid:pay==='credit', status:'booked', created_at:nowISO() });
+      pay_method:pay, paid:(pay==='credit'||pay==='prize'), status:'booked', created_at:nowISO() });
     await q.update(db.private_slots,{_id:s._id},{$set:{status:'booked', booking_id:bk._id}});
     const when=`${s.date.split('-').reverse().join('.')} o ${s.time_start} · ${s.city}`;
     await q.insert(db.notifications,{user_id:s.trainer_id,type:'private_booking',title:'🎭 Nová súkromná hodina!',body:`${u.name} si rezervoval/a ${when}. ${pay==='credit'?'Zaplatené kreditom.':'Platba na mieste.'}`,read:false,created_at:nowISO()}).catch(()=>{});
@@ -8208,12 +8297,14 @@ app.post('/api/private/complete', trainerAuth, async(req,res)=>{
     if(b.trainer_id!==req.trainerUser._id && !req.trainerUser.is_admin) return res.status(403).json({error:'Nie je tvoja hodina'});
     const cut=+((+b.price||0)*((+b.split||PRIVATE_DEFAULT_SPLIT)/100)).toFixed(2);
     await q.update(db.private_bookings,{_id:b._id},{$set:{status:'completed', completed_at:nowISO(), trainer_cut:cut}});
-    // Účtovníctvo: tržba za súkromnú hodinu
-    await q.insert(db.transactions,{type:'private_lesson', amount:+b.price, user_id:b.client_id, user_name:b.client_name, date:today(), method:b.pay_method, note:`Súkromná hodina ${b.trainer_name} ${b.date} ${b.time_start}`, created_at:nowISO()}).catch(()=>{});
+    // Účtovníctvo: tržba za súkromnú hodinu — výherná hodina (pay_method 'prize')
+    // sa NEPOČÍTA do tržieb, klientka za ňu neplatila (cenu preplatilo štúdio, tréner
+    // dostáva svoj podiel normálne z trainer_cut vyššie).
+    if(b.pay_method!=='prize') await q.insert(db.transactions,{type:'private_lesson', amount:+b.price, user_id:b.client_id, user_name:b.client_name, date:today(), method:b.pay_method, note:`Súkromná hodina ${b.trainer_name} ${b.date} ${b.time_start}`, created_at:nowISO()}).catch(()=>{});
     // Klient: návšteva + súkromné odznaky
     const c=await q.one(db.users,{_id:b.client_id});
-    // Faktúra za súkromnú hodinu (pri platbe kartou vopred ju už vystavil Stripe)
-    if(+b.price>0 && b.pay_method!=='card') createInvoice({user_id:b.client_id, client_name:b.client_name, client_email:c?.email,
+    // Faktúra za súkromnú hodinu (pri platbe kartou vopred ju už vystavil Stripe; výherná hodina fakturu nemá)
+    if(+b.price>0 && b.pay_method!=='card' && b.pay_method!=='prize') createInvoice({user_id:b.client_id, client_name:b.client_name, client_email:c?.email,
       items:[{desc:`Súkromná hodina — ${b.trainer_name} (${b.date} ${b.time_start})`, qty:1, total:+b.price}],
       total:+b.price, method: b.pay_method==='credit' ? 'Kredit' : 'Hotovosť'}).catch(()=>{});
     if(c){ await creditAttendance(c);
@@ -10201,6 +10292,7 @@ app.get('/api/me', async(req,res)=>{
     single_entries: u.single_entries||0,
     free_credits: u.free_credits||0,
     referral_credit: u.referral_credit||0,
+    free_private_lesson_credits: u.free_private_lesson_credits||0,
     offers_optout: !!u.offers_optout,
     role_label: role.label, role_icon: role.icon, dash_url: role.dashUrl,
     created_at: u.created_at, avatar: u.avatar||null,
@@ -11774,6 +11866,9 @@ async function runDailyJobs(){
       await q.insert(db.notifications,{user_id:u._id,type:'class_reminder',ref_id:cls._id,title:`🗓️ Zajtra: ${cls.name}`,body:`${cls.time_start} · ${cls.location}`,read:false,created_at:nowISO()});
     }
   }
+
+  // ── Klientka mesiaca: korunovanie a odovzdanie cien (1. deň v mesiaci) ──
+  if(new Date().getDate()===1){ try{ await crownMonthlyWinner(); }catch(e){ console.error('crown winner daily:', e.message); } }
 
   // ── Meta Ads: denná synchronizácia štatistík kampaní ──
   try{ await syncMetaCampaignStats(true); }catch(e){ console.error('meta sync daily:', e.message); }
