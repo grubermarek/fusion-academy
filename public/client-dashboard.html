@@ -1052,7 +1052,7 @@ function renderBookings(bookings){
     <div class="booking-item" style="flex-wrap:wrap">
       <div class="booking-emoji">${b.class_emoji||'💃'}</div>
       <div class="booking-info">
-        <strong>${escHtml(b.class_name)}${b.is_child_booking?` <span style="font-size:.7rem;background:rgba(201,168,76,.18);color:var(--gold);padding:1px 7px;border-radius:20px;vertical-align:middle">👧 ${escHtml(b.child_name||'dieťa')}</span>`:''}</strong>
+        <strong>${escHtml(b.class_name)}${b.is_child_booking?` <span style="font-size:.7rem;background:rgba(201,168,76,.18);color:var(--gold);padding:1px 7px;border-radius:20px;vertical-align:middle">👧 ${escHtml(b.child_name||'dieťa')}</span>`:''}${b.pay_on_site?` <span style="font-size:.7rem;background:rgba(224,86,86,.2);color:#ff8a8a;border:1px solid rgba(224,86,86,.5);padding:1px 8px;border-radius:20px;vertical-align:middle;font-weight:800">💵 platíš na mieste</span>`:''}</strong>
         <span>${b.booking_date?skDate(b.booking_date):''} ${b.class_time_start?'• '+b.class_time_start:''} ${b.class_location?'• '+escHtml(b.class_location):''}</span>
         ${insHtml?`<span style="font-size:.78rem;color:var(--muted)">🎓 Učí: ${insHtml}</span>`:''}
       </div>
@@ -1597,8 +1597,33 @@ async function loadClasses(){
 let _bookClassId=null;
 let _bookIsFitDay=false;
 
+let className0='';
+// Ponuka pre klientku bez členstva: rezervovať teraz, zaplatiť na mieste
+function showPayOnSiteChoice(classId, name){
+  let m=document.getElementById('posModal');
+  if(!m){ m=document.createElement('div'); m.id='posModal';
+    m.style.cssText='display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center;padding:16px';
+    m.onclick=e=>{ if(e.target===m) m.style.display='none'; };
+    document.body.appendChild(m); }
+  m.innerHTML=`<div style="background:#181818;border:1px solid var(--gold-border,#332a18);border-radius:16px;max-width:400px;width:100%;padding:22px">
+    <div style="font-weight:800;color:var(--gold,#C9A84C);font-size:1.05rem;margin-bottom:6px">Nemáš aktívne členstvo</div>
+    <div style="font-size:.88rem;color:var(--muted,#999);line-height:1.6;margin-bottom:16px">
+      Miesto na hodinu <b style="color:#ddd">${escHtml(name)}</b> ti vieme podržať aj tak — vstup jednoducho zaplatíš v hotovosti priamo v štúdiu.
+    </div>
+    <button onclick="doPayOnSite('${classId}')" style="width:100%;background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);color:#111;font-weight:800;border:none;border-radius:12px;padding:13px;font-size:.95rem;cursor:pointer;margin-bottom:8px">💵 Rezervovať a zaplatiť na mieste (10 €)</button>
+    <a href="/pricing" style="display:block;text-align:center;background:rgba(201,168,76,.1);border:1px solid var(--gold-border,#332a18);color:var(--gold,#C9A84C);border-radius:12px;padding:12px;font-size:.9rem;font-weight:700;text-decoration:none;margin-bottom:8px">✨ Pozrieť členstvá a permanentky</a>
+    <button onclick="document.getElementById('posModal').style.display='none'" style="width:100%;background:none;border:1px solid #333;color:var(--muted,#888);border-radius:10px;padding:9px;font-size:.82rem;cursor:pointer">Zrušiť</button>
+  </div>`;
+  m.style.display='flex';
+}
+async function doPayOnSite(classId){
+  document.getElementById('posModal').style.display='none';
+  const d=await api('/api/bookings',{method:'POST',body:{class_id:classId, pay_on_site:true}});
+  if(d?.ok){ showToast('✅ Rezervované — vstup zaplatíš na mieste 💵','success'); loadMyBookings(); loadClasses(); }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
+}
 function openBookModal(classId, className, dateStr, type){
-  _bookClassId=classId;
+  _bookClassId=classId; className0=className||'';
   _bookIsFitDay=(type==='fitday');
   document.getElementById('bookModalTitle').textContent=_bookIsFitDay?'Prihlásiť sa na FitDay':'Potvrdiť rezerváciu';
   document.getElementById('bookModalBody').innerHTML=`
@@ -1624,13 +1649,11 @@ async function confirmBooking(){
     loadMyBookings();loadClasses();
     if(_bookIsFitDay) checkFitDayBooked();
   } else if(d?.error==='membership_required'){
-    if(d.can_pay_on_site && confirm('Nemáš aktívne členstvo ani vstupy.\n\nChceš sa rezervovať s tým, že vstup (10 €) zaplatíš na mieste v hotovosti?')){
-      const d2=await api('/api/bookings',{method:'POST',body:{class_id:_bookClassId, pay_on_site:true}});
-      if(d2?.ok){ showToast('✅ Rezervované — vstup zaplatíš na mieste 💵','success'); loadMyBookings(); loadClasses(); return; }
-      showToast('Chyba: '+(d2?.error||'?'),'error'); return;
-    }
-    showToast('Najskôr si kúp členstvo alebo jednorazový vstup.','error');
-    setTimeout(()=>{window.location.href='/pricing';},1500);
+    // Klientka bez členstva sa MÔŽE rezervovať dopredu a zaplatiť na mieste —
+    // rezervácia sa všade viditeľne označí, aby tréner vedel vybrať vstupné.
+    if(d.can_pay_on_site) showPayOnSiteChoice(_bookClassId, className0||'');
+    else { showToast('Najskôr si kúp členstvo alebo jednorazový vstup.','error');
+      setTimeout(()=>{window.location.href='/pricing';},1500); }
   } else if(d?.error==='already_booked'){
     showToast('Na túto hodinu si už prihlásený/á.','error');
   } else {

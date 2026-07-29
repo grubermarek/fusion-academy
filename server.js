@@ -9687,10 +9687,12 @@ app.post('/api/bookings', auth, async(req,res)=>{
       }
     }
 
-    const booked=await q.count(db.bookings,{class_id,status:{$ne:'cancelled'}});
-    if(booked>=cls.capacity) return res.status(400).json({error:'Hodina je plne obsadená – skúste čakací zoznam'});
     const bdate=booking_date||displayNextDateForDay(cls.day_of_week);
     if(await q.one(db.class_cancellations,{class_id, date:bdate})) return res.status(400).json({error:'Táto hodina je zrušená a nedá sa rezervovať.'});
+    // Kapacita sa počíta pre KONKRÉTNY termín — predtým sa sčítavali rezervácie zo
+    // všetkých týždňov dokopy, takže po pár týždňoch hlásila obľúbená hodina „plná" navždy.
+    const booked=await q.count(db.bookings,{class_id, booking_date:bdate, status:{$ne:'cancelled'}});
+    if(booked>=cls.capacity) return res.status(400).json({error:'Hodina je plne obsadená – skúste čakací zoznam'});
     const exists=await q.one(db.bookings,{class_id,user_id:u._id,booking_date:bdate,status:{$ne:'cancelled'}});
     if(exists) return res.status(400).json({error:isChild?`${u.name} je už na túto hodinu prihlásené`:'Na túto hodinu ste sa už prihlásili'});
     const booking=await q.insert(db.bookings,{
