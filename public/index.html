@@ -586,7 +586,7 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
         <span class="line1">Nájdi svoj</span>
         <span class="foil">rytmus.</span>
       </h1>
-      <p class="hero-sub">
+      <p class="hero-sub" id="heroSub">
         Latinskoamerické tance a Zumba v prémiovom štúdiu — pod vedením majstrov s 18-ročnou praxou.
         Tvoja prvá hodina je na nás.
       </p>
@@ -609,8 +609,8 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
   <div class="screen" id="s1">
     <div class="step-content">
       <div class="step-icon">👋</div>
-      <h2 class="step-title">Vitaj v Fusion Academy!</h2>
-      <p class="step-sub">Prvá hodina je <span class="gold">zadarmo</span>. Stačí sa zaregistrovať — trvá to 30 sekúnd.</p>
+      <h2 class="step-title" id="s1Title">Vitaj v Fusion Academy!</h2>
+      <p class="step-sub" id="s1Sub">Prvá hodina je <span class="gold">zadarmo</span>. Stačí sa zaregistrovať — trvá to 30 sekúnd.</p>
       <div class="form-card">
         <div class="auth-error" id="regErr"></div>
         <div class="form-group">
@@ -1016,6 +1016,23 @@ if(_preview){
       document.getElementById('finalCta').style.display='none';
     }
   } catch(e){}
+})();
+
+// ── PRÍCHOD Z REKLAMY: rovno na registráciu, bez medzikroku a bez "predajného" tónu ──
+// Kto klikol na Facebook/Instagram reklamu, nemá čakať na druhý klik na hero tlačidlo —
+// ide rovno na krok „Vitaj", ale s textom, ktorý znie ako darček, nie ako ponuka.
+(function(){
+  const p=new URLSearchParams(location.search);
+  const fromAd = p.get('fbclid') || p.get('utm_source') || p.get('gclid');
+  if(!fromAd || _preview) return;
+  const t=document.getElementById('s1Title'), s=document.getElementById('s1Sub');
+  if(t) t.textContent='Tvoja prvá hodina je zadarmo 🎁';
+  if(s) s.innerHTML='Vyplň pár údajov a rezervuj si termín — bez platby, bez záväzkov. Trvá to 30 sekúnd.';
+  const src=(p.get('utm_source')||'').toLowerCase();
+  const sel=document.getElementById('rLeadSource');
+  if(sel && /facebook|fb/.test(src)) sel.value='facebook';
+  else if(sel && /instagram|ig/.test(src)) sel.value='instagram';
+  setTimeout(()=>{ if(typeof startOnboarding==='function') startOnboarding(); }, 50);
 })();
 
 // ── AUTO-FILL REF CODE FROM URL ──────────────────────────────────────────────
