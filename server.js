@@ -1454,6 +1454,34 @@ app.post('/api/meta-token', async(req,res)=>{
     res.json({ok:true, len:t.length});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
+// Samostatný token pre ČÍTANIE štatistík kampaní (ads_read) — iný účel než CAPI
+// token vyššie (ten len POSIELA konverzie, nemusí vedieť čítať štatistiky).
+// Nastavuje admin cez chránené admin UI (session), nikdy cez chat/git.
+let _metaAdsTokenCache;
+async function getMetaAdsToken(){
+  if(_metaAdsTokenCache!==undefined) return _metaAdsTokenCache;
+  const s=await q.one(db.settings,{key:'meta_ads_token'}).catch(()=>null);
+  _metaAdsTokenCache = s?.value || null;
+  return _metaAdsTokenCache;
+}
+app.post('/api/admin/meta-ads-token', adminAuth, async(req,res)=>{
+  try{
+    const t=String(req.body?.token||'').trim();
+    if(!/^EAA[0-9A-Za-z]{50,}$/.test(t)) return res.status(400).json({error:'Token nevyzerá platne (má začínať EAA...).'});
+    const existing=await q.one(db.settings,{key:'meta_ads_token'});
+    if(existing) await q.update(db.settings,{_id:existing._id},{$set:{value:t, at:nowISO()}});
+    else await q.insert(db.settings,{key:'meta_ads_token', value:t, at:nowISO()});
+    _metaAdsTokenCache=t;
+    await auditLog(req,'meta_ads_token_set','settings',null,{len:t.length},'');
+    // Overenie hneď na mieste + prvý sync, nech admin vidí výsledok ihneď
+    const test=await syncMetaCampaignStats(true);
+    res.json({ok:true, len:t.length, sync:test});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.get('/api/admin/meta-ads-token', adminAuth, async(req,res)=>{
+  const t=await getMetaAdsToken();
+  res.json({ok:true, configured:!!t});
+});
 async function metaCapi(eventName, {email, value, currency='EUR', fbclid, fbp}={}){
   const pixel=process.env.META_PIXEL_ID, token=await getMetaCapiToken();
   if(!pixel||!token) return;
@@ -10738,7 +10766,9 @@ function campaignMetrics(c, revenue, payingCustomers){
 // kliky, dosah, leady) cez CAPI token v DB. Beží max. raz za 6 h + v dennom jobe.
 async function syncMetaCampaignStats(force){
   try{
-    const tok=await getMetaCapiToken(); if(!tok) return {ok:false, error:'no_token'};
+    // Prednostne dedikovaný ads_read token (číta štatistiky); CAPI token ako
+    // záloha pre prípad, že má širšie oprávnenia (staré nastavenie).
+    const tok=(await getMetaAdsToken()) || (await getMetaCapiToken()); if(!tok) return {ok:false, error:'no_token'};
     const last=await q.one(db.settings,{key:'meta_sync_at'});
     if(!force && last && (Date.now()-new Date(last.at||0).getTime()) < 6*3600*1000) return {ok:true, cached:true};
     if(last) await q.update(db.settings,{_id:last._id},{$set:{at:nowISO()}});
@@ -10799,6 +10829,7 @@ app.get('/api/admin/meta-stats', adminAuth, async(req,res)=>{
     const attended=meta.filter(u=>(u.visit_count||0)>0).length;
     res.json({ ok:true, total:meta.length, attended, payers:payerIds.size, revenue,
       months, pixel_configured:!!process.env.META_PIXEL_ID, capi_configured:!!(await getMetaCapiToken()),
+      ads_token_configured:!!((await getMetaAdsToken())||(await getMetaCapiToken())),
       sample: meta.slice(0,50).map(u=>({id:u._id,name:u.name,created_at:(u.created_at||'').slice(0,10),utm_campaign:u.utm_campaign||'',visits:u.visit_count||0,paying:payerIds.has(u._id)})) });
   }catch(e){ res.status(500).json({error:e.message}); }
 });

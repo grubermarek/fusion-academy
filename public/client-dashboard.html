@@ -307,6 +307,9 @@
     Fusion Academy
   </a>
   <div class="topbar-right">
+    <button class="notif-btn" onclick="openInstallGuide()" title="Stiahnuť appku na plochu" id="installBtn" style="display:none">
+      <i class="bi bi-phone"></i>
+    </button>
     <button class="notif-btn" onclick="location.href='/community'" title="Správy" id="dmBtn" style="position:relative">
       <i class="bi bi-chat-dots"></i>
       <div class="notif-badge" id="dmBadge" style="display:none;background:#4a9eda">0</div>
@@ -2519,14 +2522,19 @@ init();
 </script>
 <script>
 /* ── Pridať na plochu (PWA install) ───────────────────────────── */
+// Android/desktop Chrome vie appku nainštalovať jedným klikom (natívny prompt).
+// iPhone/Safari to Apple nedovoľuje spustiť automaticky — ukážeme len presný
+// vizuálny návod (Zdieľať → Pridať na plochu). Tlačidlo v hlavičke ostáva
+// vždy dostupné, aj keď niekto pôvodnú ponuku predtým zavrel.
 (function(){
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone===true;
-  if(isStandalone) return; // už nainštalované → nič neukazuj
-  if(localStorage.getItem('a2hs_dismissed')==='1') return;
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
   let deferred=null;
+  window._faInstallDeferred = null;
 
-  function makeBar(inner, top){
+  if(isStandalone) return; // už nainštalované → appka sa netreba ponúkať
+
+  function makeBar(inner, top, sticky){
     if(document.getElementById('a2hsBar')) return;
     const bar=document.createElement('div'); bar.id='a2hsBar';
     const pos = top ? 'top:calc(env(safe-area-inset-top,0px) + 12px)' : 'bottom:84px';
@@ -2537,29 +2545,49 @@ init();
     document.body.appendChild(bar);
     if(!document.getElementById('a2hsCss')){ const s=document.createElement('style'); s.id='a2hsCss';
       s.textContent='@keyframes a2hsDown{from{transform:translateY(-20px);opacity:0}to{transform:translateY(0);opacity:1}}'; document.head.appendChild(s); }
-    document.getElementById('a2hsX').onclick=()=>{ bar.remove(); localStorage.setItem('a2hs_dismissed','1'); };
+    document.getElementById('a2hsX').onclick=()=>{ bar.remove(); if(!sticky) localStorage.setItem('a2hs_dismissed','1'); };
     return bar;
   }
 
+  // Trvalé tlačidlo v hlavičke — funguje kedykoľvek, aj po zavretí pôvodnej ponuky
+  const installBtn=document.getElementById('installBtn');
+  window.openInstallGuide=function(){
+    if(isIOS){
+      makeBar(`<div style="font-weight:800;color:#e8e2d4;font-size:.95rem">Pridaj si Fusion na plochu 💛</div>
+        <div style="color:#b9b3a6;font-size:.82rem;margin-top:2px">Ťukni dole na <b>Zdieľať</b> <span style="font-size:1rem">⬆️</span> a potom <b>„Pridať na plochu"</b>.</div>`, true, true);
+      return;
+    }
+    if(deferred){
+      deferred.prompt();
+      deferred.userChoice.then(({outcome})=>{ if(outcome==='accepted' && installBtn) installBtn.style.display='none'; deferred=null; });
+    } else {
+      makeBar(`<div style="font-weight:800;color:#e8e2d4;font-size:.95rem">Appka sa dá nainštalovať</div>
+        <div style="color:#b9b3a6;font-size:.82rem;margin-top:2px">V menu prehliadača (⋮) nájdi <b>„Nainštalovať appku"</b> alebo <b>„Pridať na plochu"</b>.</div>`, true, true);
+    }
+  };
+
+  if(installBtn) installBtn.style.display='flex';
+
   if(isIOS){
-    // iOS Safari nepodporuje beforeinstallprompt → ukáž návod
-    setTimeout(()=>{ makeBar(`<div style="font-weight:800;color:#e8e2d4;font-size:.95rem">Pridaj si Fusion na plochu 💛</div>
+    // iOS Safari nepodporuje beforeinstallprompt → automatická ponuka raz, tlačidlo ostáva navždy
+    if(localStorage.getItem('a2hs_dismissed')!=='1') setTimeout(()=>{ makeBar(`<div style="font-weight:800;color:#e8e2d4;font-size:.95rem">Pridaj si Fusion na plochu 💛</div>
       <div style="color:#b9b3a6;font-size:.82rem;margin-top:2px">Ťukni hore na <b>Zdieľať</b> <span style="font-size:1rem">⬆️</span> a potom <b>„Pridať na plochu"</b>.</div>`, true); }, 2500);
     return;
   }
 
   window.addEventListener('beforeinstallprompt', e=>{
     e.preventDefault(); deferred=e;
+    if(localStorage.getItem('a2hs_dismissed')==='1') return; // tlačidlo v hlavičke ostáva, len sa neopakuje banner
     const bar=makeBar(`<div style="font-weight:800;color:#e8e2d4;font-size:.95rem">Nainštaluj si appku 💛</div>
       <div style="color:#b9b3a6;font-size:.82rem;margin-top:2px">Rýchly prístup priamo z plochy telefónu.</div>`);
     if(!bar) return;
     const btn=document.createElement('button');
     btn.textContent='Pridať';
     btn.style.cssText='background:linear-gradient(135deg,#C9A84C,#a5842f);color:#161310;border:none;border-radius:10px;padding:9px 16px;font-weight:800;cursor:pointer;flex:none;font-size:.9rem';
-    btn.onclick=async()=>{ if(!deferred) return; deferred.prompt(); const {outcome}=await deferred.userChoice; deferred=null; if(outcome==='accepted'){ bar.remove(); } };
+    btn.onclick=async()=>{ if(!deferred) return; deferred.prompt(); const {outcome}=await deferred.userChoice; deferred=null; if(outcome==='accepted'){ bar.remove(); if(installBtn) installBtn.style.display='none'; } };
     bar.insertBefore(btn, document.getElementById('a2hsX'));
   });
-  window.addEventListener('appinstalled', ()=>{ const b=document.getElementById('a2hsBar'); if(b) b.remove(); });
+  window.addEventListener('appinstalled', ()=>{ const b=document.getElementById('a2hsBar'); if(b) b.remove(); if(installBtn) installBtn.style.display='none'; });
 })();
 </script>
 <script src="/nav-bar.js"></script>

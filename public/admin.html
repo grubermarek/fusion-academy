@@ -2496,10 +2496,44 @@ async function loadMetaStats(){
   </div>`;
   if(d.months.length) html+=`<div class="small text-muted mb-2">Registrácie po mesiacoch: ${d.months.map(([m,n])=>`<b>${m.slice(5)}/${m.slice(2,4)}</b>: ${n}`).join(' · ')}</div>`;
   if(!d.pixel_configured || !d.capi_configured){
-    html+=`<div class="alert py-2 small mb-0" style="background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.3)">
+    html+=`<div class="alert py-2 small mb-2" style="background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.3)">
       <b>Dokonči prepojenie (5 min):</b> ①&nbsp;V <a href="https://business.facebook.com/events_manager2" target="_blank">Meta Events Manageri</a> vytvor <b>Pixel</b> (Dátový zdroj → Web) a skopíruj jeho ID. ②&nbsp;V pixeli otvor <b>Nastavenia → Conversions API → Vygenerovať access token</b>. ③&nbsp;Pošli mi Pixel ID + token a zapnem meranie (appka už má všetko pripravené: pixel, PageView/Registration/Purchase eventy aj server-side CAPI).</div>`;
   }
+  html+=`<div class="alert py-2 small mb-0" style="background:${d.ads_token_configured?'rgba(74,222,128,.08)':'rgba(224,86,86,.08)'};border:1px solid ${d.ads_token_configured?'rgba(74,222,128,.3)':'rgba(224,86,86,.3)'}">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div><b>🔄 Automatický sync štatistík kampaní</b> — ${d.ads_token_configured?'<span class="text-success">zapnutý, beží samo (každých 6 h + denne)</span>':'<span class="text-danger">vypnutý — chýba token</span>'}</div>
+      <button class="btn btn-sm btn-outline-light" onclick="document.getElementById('metaAdsTokenBox').classList.toggle('d-none')">${d.ads_token_configured?'Zmeniť token':'Nastaviť token'}</button>
+    </div>
+    <div id="metaAdsTokenBox" class="${d.ads_token_configured?'d-none':''} mt-2">
+      <div class="text-muted mb-2" style="font-size:.78rem">
+        Bez tohto tokenu ti čísla v kampaniach musím dopĺňať ručne. S ním sa sťahujú samé:<br>
+        ①&nbsp;<a href="https://business.facebook.com/settings/system-users" target="_blank">Meta Business Settings → Používatelia systému</a> → vyber (alebo vytvor) systémového používateľa priradeného k tomuto reklamnému účtu.<br>
+        ②&nbsp;<b>Vygenerovať token</b> → aplikácia: tvoja Marketing API app → oprávnenia: zaškrtni <b>ads_read</b> → Vygenerovať.<br>
+        ③&nbsp;Skopíruj token (začína <code>EAA...</code>) a vlož sem:
+      </div>
+      <div class="d-flex gap-2">
+        <input type="password" id="metaAdsTokenInput" class="form-control form-control-sm" placeholder="EAA...">
+        <button class="btn btn-sm btn-brand" onclick="saveMetaAdsToken()">Uložiť a otestovať</button>
+      </div>
+      <div id="metaAdsTokenMsg" class="small mt-1"></div>
+    </div>
+  </div>`;
   el.innerHTML=html;
+}
+async function saveMetaAdsToken(){
+  const input=document.getElementById('metaAdsTokenInput'), msg=document.getElementById('metaAdsTokenMsg');
+  const token=(input.value||'').trim();
+  if(!token){ msg.innerHTML='<span class="text-danger">Zadaj token.</span>'; return; }
+  msg.innerHTML='<span class="text-muted">Ukladám a testujem…</span>';
+  const r=await api('/api/admin/meta-ads-token',{method:'POST',body:JSON.stringify({token})});
+  if(r&&r.ok){
+    input.value='';
+    const s=r.sync||{};
+    msg.innerHTML = s.ok
+      ? `<span class="text-success">✅ Funguje! Kampane sa práve aktualizovali (${s.updated||0}× ). Odteraz sa to deje samo.</span>`
+      : `<span class="text-warning">Token uložený, ale test zlyhal (${s.error||'?'}) — skontroluj, či má oprávnenie ads_read na tento účet.</span>`;
+    setTimeout(loadCampaigns, 1500);
+  } else msg.innerHTML=`<span class="text-danger">Chyba: ${(r&&r.error)||'?'}</span>`;
 }
 async function loadCampaigns(){
   loadMetaStats();
