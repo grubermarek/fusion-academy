@@ -1050,6 +1050,14 @@ async function seedData() {
     console.log('✅  Meta campaign IDs prepojené — auto-sync štatistík aktívny');
   }
 
+  // Po výmene kreatívy (priamy vstup do appky) čítame štatistiky len z novej reklamy,
+  // nie z celej kampane — inak by sa miešali so staršou (pozastavenou) reklamou.
+  if(!(await q.one(db.settings,{key:'meta_ad_id_v1'}))){
+    await q.update(db.campaigns,{name:'FA — Zumba Web — Registrácia'},{$set:{meta_ad_id:'52539090240673'}});
+    await q.insert(db.settings,{key:'meta_ad_id_v1', value:true, at:nowISO()});
+    console.log('✅  Meta ad ID (nová reklama) prepojené — štatistiky sa už nemiešajú so starou reklamou');
+  }
+
   // Promo kód pre návrat odídených klientov (30% na prvý mesiac)
   if(!await q.one(db.promo_codes,{code:'VITAJSPAT'})){
     await q.insert(db.promo_codes,{ code:'VITAJSPAT', type:'percent', value:30, applies_to:'membership',
@@ -10869,7 +10877,11 @@ async function syncMetaCampaignStats(force){
     let updated=0;
     for(const c of camps){
       try{
-        const url=`https://graph.facebook.com/v21.0/${c.meta_campaign_id}/insights?fields=spend,impressions,clicks,reach,actions&date_preset=maximum&access_token=${encodeURIComponent(tok)}`;
+        // Ak má kampaň nastavené meta_ad_id (napr. po výmene kreatívy za novú reklamu),
+        // čítame štatistiky len z tejto konkrétnej reklamy — nie z celej kampane, aby sa
+        // čísla nezmiešali s históriou staršej (pozastavenej) reklamy v tej istej kampani.
+        const targetId=c.meta_ad_id||c.meta_campaign_id;
+        const url=`https://graph.facebook.com/v21.0/${targetId}/insights?fields=spend,impressions,clicks,reach,actions&date_preset=maximum&access_token=${encodeURIComponent(tok)}`;
         const d=await (await fetch(url)).json();
         if(d.error){ console.error('meta sync', c.name, d.error.message); continue; }
         const row=d.data&&d.data[0]; if(!row) continue;
