@@ -9026,8 +9026,29 @@ app.post('/api/attendance/cancel-session', trainerAuth, async(req,res)=>{
       text:`📢 Zrušená hodina — ${cls.location}\n\nHodina „${cls.name}" dňa ${date}${cls.time_start?' o '+cls.time_start:''} sa NEKONÁ${reason?` (${reason})`:''}.${nextInfo?`\n\nNajbližšia hodina v ${cls.location}: ${nextInfo.name} ${nextInfo.date} o ${nextInfo.time}. Tešíme sa na teba! 💃`:''}`,
       image:null, reactions:{}, comments:[], created_at:nowISO() }).catch(()=>{});
 
-    await auditLog(req,'class_cancel',class_id,{},{date, reason, notified:bookings.length, refunded},reason||'');
-    res.json({ ok:true, notified:bookings.length, refunded, date, next:nextInfo });
+    // Online prenos beží z tejto hodiny — ak sa hodina nekoná, nekoná sa ani vysielanie.
+    // Zruší sa spárovaná online hodina (rovnaký deň, čas a mesto vysielania).
+    let onlineCancelled=null;
+    if(cls.category!=='Online' && !req.body.skip_online){
+      const pair=(await q.find(db.classes,{category:'Online', active:true, day_of_week:cls.day_of_week}))
+        .find(o=>o.time_start===cls.time_start && (o.stream_city||'')===(cls.location||''));
+      if(pair && !(await q.one(db.class_cancellations,{class_id:pair._id, date}))){
+        await q.insert(db.class_cancellations,{ class_id:pair._id, date, class_name:pair.name, location:'Online',
+          reason: reason||`Zrušená hodina v ${cls.location}`, cancelled_by:req.trainerUser?._id||null,
+          cancelled_by_name:req.trainerUser?.name||'', auto_from:class_id, created_at:nowISO() });
+        const onBk=await q.find(db.bookings,{class_id:pair._id, booking_date:date, status:{$nin:['cancelled','cancelled_studio']}});
+        for(const b of onBk){
+          await q.update(db.bookings,{_id:b._id},{$set:{status:'cancelled_studio', cancelled_reason:reason||'Zrušené štúdiom', cancelled_at:nowISO()}});
+          await q.insert(db.notifications,{user_id:b.user_id, type:'class_cancelled',
+            title:'❌ Online hodina zrušená', body:`Online vysielanie ${date}${pair.time_start?' o '+pair.time_start:''} sa NEKONÁ${reason?' ('+reason+')':''} — nekoná sa ani hodina v ${cls.location}, z ktorej vysielame.`,
+            read:false, created_at:nowISO()}).catch(()=>{});
+        }
+        onlineCancelled={id:pair._id, name:pair.name, time:pair.time_start, notified:onBk.length};
+      }
+    }
+
+    await auditLog(req,'class_cancel',class_id,{},{date, reason, notified:bookings.length, refunded, online:!!onlineCancelled},reason||'');
+    res.json({ ok:true, notified:bookings.length, refunded, date, next:nextInfo, online_cancelled:onlineCancelled });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 app.get('/api/attendance/cancellations', trainerAuth, async(req,res)=>{

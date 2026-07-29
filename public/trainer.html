@@ -860,7 +860,19 @@ async function trCancelSession(classId, name){
   const reason = prompt(`Zrušiť najbližšiu hodinu „${name}"?\n\nVšetkým prihláseným pošleme oznámenie, vrátime kredit z permanentky, dáme oznam na nástenku a pozveme ich na ďalšiu hodinu v tom meste.\n\nDôvod (nepovinné):`, '');
   if(reason===null) return;
   const d=await api('/api/attendance/cancel-session',{method:'POST',body:{class_id:classId,reason}});
-  if(d&&d.ok){ alert(`Hodina zrušená ✓ Upozornených ${d.notified||0}${d.refunded?', vrátených vstupov '+d.refunded:''}. Termín: ${fmtDate(d.date)}`); loadSchedule(); }
+  if(d&&d.ok){
+    const onl = d.online_cancelled ? `\n\n🌐 Automaticky zrušené aj online vysielanie o ${d.online_cancelled.time} (upozornených ${d.online_cancelled.notified}).` : '';
+    alert(`Hodina zrušená ✓ Upozornených ${d.notified||0}${d.refunded?', vrátených vstupov '+d.refunded:''}. Termín: ${fmtDate(d.date)}${onl}`);
+    loadSchedule();
+  }
+  else alert('Chyba: '+(d?.error||'?'));
+}
+// Zrušenie SAMOTNÉHO online vysielania (hodina v štúdiu beží ďalej)
+async function trCancelOnline(classId, name, date){
+  const reason = prompt(`Zrušiť online vysielanie „${name}" (${fmtDate(date)})?\n\nHodina v štúdiu prebehne normálne — zruší sa len prenos. Prihláseným online pošleme oznámenie.\n\nDôvod (nepovinné):`, '');
+  if(reason===null) return;
+  const d=await api('/api/attendance/cancel-session',{method:'POST',body:{class_id:classId, date, reason, skip_online:true}});
+  if(d&&d.ok){ alert(`Online vysielanie zrušené ✓ Upozornených ${d.notified||0}. Termín: ${fmtDate(d.date)}`); loadSchedule(); }
   else alert('Chyba: '+(d?.error||'?'));
 }
 // ── SCHEDULE ─────────────────────────────────────────────────────────────────
@@ -964,6 +976,7 @@ function renderOnlineSection(online){
             ${c.day_of_week===todayDow?'<span style="background:var(--grad-gold);color:#111;font-size:.62rem;font-weight:800;padding:1px 8px;border-radius:20px">DNES</span>':''}
             <span style="flex:1"></span>
             <span style="color:var(--muted);font-size:.76rem">👥 ${c.confirmed||0} prihlásených (${c.next_date?fmtDate(c.next_date):''})</span>
+            <button onclick="event.stopPropagation();event.preventDefault();trCancelOnline('${c._id}','${esc((c.name||'').replace(/'/g,''))}','${c.next_date||''}')" title="Zrušiť len online vysielanie — hodina v štúdiu prebehne" style="background:none;border:1px solid rgba(229,115,115,.5);color:#e57373;border-radius:8px;padding:3px 9px;font-size:.7rem;font-weight:700;cursor:pointer;white-space:nowrap">✕ Zrušiť prenos</button>
           </summary>
           <div style="padding:4px 12px 10px" id="onlAtt_${c._id}"><div style="color:var(--muted);font-size:.8rem">Načítavam…</div></div>
         </details>`;
