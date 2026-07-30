@@ -729,7 +729,8 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
       </div>
       <h2 class="step-title" id="confirmTitle">Rezervácia potvrdená! 🎉</h2>
       <div id="confirmInfo"></div>
-      <div class="tips-card" style="margin:0 auto 0">
+      <div class="step-sub" style="margin:6px 0 0;opacity:.85"><i class="bi bi-envelope-check"></i>&nbsp; Detaily rezervácie ti posielame aj na email.</div>
+      <div class="tips-card" style="margin:16px auto 0">
         <h3>🎒 Na hodinu si prines:</h3>
         <div class="tip-list" id="tipList">
           <div class="tip-item">🏊 Uterák</div>
@@ -737,9 +738,12 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
           <div class="tip-item">👟 Tenisky a pohodlné športové oblečenie</div>
           <div class="tip-item">👯‍♀️ Kamarátku, ktorá tiež miluje tanec</div>
         </div>
+      </div>
+      <div class="tips-card" style="margin:16px auto 0">
+        <h3>👯‍♀️ Pozvi kamošku</h3>
         <div class="friend-bonus">
           <i class="bi bi-gift-fill"></i>
-          Tvoja kamarátka dostane prvú hodinu <strong>tiež zadarmo!</strong>
+          Tvoja kamarátka dostane prvú hodinu <strong>tiež zadarmo!</strong> Skopíruj si svoj odkaz a pošli jej ho.
           <div id="friendRefBox"></div>
         </div>
       </div>
@@ -865,7 +869,6 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
       <div class="bc-row"><i class="bi bi-calendar-week"></i><span id="bcDay">—</span></div>
       <div class="bc-row"><i class="bi bi-clock"></i><span id="bcTime">—</span></div>
       <div class="bc-row"><i class="bi bi-geo-alt"></i><span id="bcLocation">—</span></div>
-      <div class="bc-level" id="bcLevel">—</div>
     </div>
     <div class="bc-free-badge" id="bcFreeBadge">
       <i class="bi bi-gift-fill"></i> Táto hodina je pre teba <strong>&nbsp;ZADARMO&nbsp;</strong> ako prvá
@@ -1344,8 +1347,7 @@ function openBookConfirm(clsOrId, dateStr){
   document.getElementById('bcName').textContent = cls.emoji ? cls.emoji+' '+className : className;
   document.getElementById('bcDay').textContent = dateStr ? prettyDate(dateStr) : ((DAYS[cls.day_of_week]||'') + ', každý týždeň');
   document.getElementById('bcTime').textContent = cls.time_start + (cls.time_end?'–'+cls.time_end:'');
-  document.getElementById('bcLocation').textContent = cls.location + (cls.address ? ' · '+cls.address : '');
-  document.getElementById('bcLevel').textContent = cls.level||'Všetky úrovne';
+  document.getElementById('bcLocation').textContent = cls.address || cls.location || '';
   // Show/hide free badge and adjust button label based on access status
   const freeBadge = document.getElementById('bcFreeBadge');
   const confirmBtn = document.getElementById('bcConfirmBtn');
