@@ -1024,7 +1024,7 @@ if(_preview){
 (function(){
   const p=new URLSearchParams(location.search);
   const fromAd = p.get('fbclid') || p.get('utm_source') || p.get('gclid');
-  if(!fromAd || _preview) return;
+  if(!fromAd) return;
   const t=document.getElementById('s1Title'), s=document.getElementById('s1Sub');
   if(t) t.textContent='Tvoja prvá hodina je zadarmo 🎁';
   if(s) s.innerHTML='Vyplň pár údajov a rezervuj si termín — bez platby, bez záväzkov. Trvá to 30 sekúnd.';
