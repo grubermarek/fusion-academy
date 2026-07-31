@@ -316,7 +316,9 @@ function dashUrlFor(u) {
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
-function today()        { return new Date().toISOString().slice(0,10); }
+// Dátum podľa SLOVENSKÉHO času — server beží v UTC a medzi 22:00–00:00 SK by inak
+// „dnes" bol včerajšok (rozbíjalo to reset mesačnej súťaže, rezervácie po 22:00 atď.)
+function today()        { return new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Bratislava'}).format(new Date()); }
 function nowISO()       { return new Date().toISOString(); }
 function currentMonth() { return new Date().toISOString().slice(0,7); }
 function dateAgo30()    { const d=new Date(); d.setDate(d.getDate()-30); return d.toISOString().slice(0,10); }
@@ -1098,6 +1100,21 @@ async function seedData() {
       }
     }catch(e){ console.error('fix crown june:', e.message); }
     await q.insert(db.settings,{key:'fix_crown_june_to_july_v1', value:true, at:nowISO()});
+  }
+
+  // Správne hodnoty cien: súkromná hodina 100 € (nie 80), merch je 20 % bez €-hodnoty
+  if(!(await q.one(db.settings,{key:'fix_prize_values_v1'}))){
+    const winRecs=(await q.find(db.monthly_winners,{})).filter(w=>w.type!=='year');
+    for(const w of winRecs){
+      const prizes=[
+        {icon:'👑', label:'Mesiac členstva Gold zdarma', value:125},
+        {icon:'🎓', label:'Súkromná hodina s Marekom Gruberom zdarma', value:100},
+        {icon:'🛍️', label:'Zľava 20 % na merch', value:null},
+      ];
+      await q.update(db.monthly_winners,{_id:w._id},{$set:{prizes, value:225}});
+    }
+    await q.insert(db.settings,{key:'fix_prize_values_v1', value:true, at:nowISO()});
+    if(winRecs.length) console.log(`🔧 Ceny víťaziek opravené (súkromná 100 €, merch 20 %) — ${winRecs.length} záznamov`);
   }
 
   // Po výmene kreatívy (priamy vstup do appky) čítame štatistiky len z novej reklamy,
@@ -6668,8 +6685,8 @@ async function crownMonthlyWinner(){
     const monthLabel=prevMonthDate.toLocaleDateString('sk-SK',{month:'long',year:'numeric'});
     const prizes=[
       {icon:'👑', label:'Mesiac členstva Gold zdarma', value:125},
-      {icon:'🎓', label:'Súkromná hodina s Marekom Gruberom zdarma', value:80},
-      {icon:'🛍️', label:'20% zľava na merch', value:20},
+      {icon:'🎓', label:'Súkromná hodina s Marekom Gruberom zdarma', value:100},
+      {icon:'🛍️', label:'Zľava 20 % na merch', value:null},
     ];
     const win=await q.insert(db.monthly_winners,{ month, user_id:winner._id, user_name:winner.name,
       points:top.total, prizes, value:MONTHLY_PRIZE_VALUE, merch_promo_code:code, seen:false, created_at:nowISO() });
