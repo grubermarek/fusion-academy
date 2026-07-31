@@ -2435,19 +2435,18 @@ function renderSpotBoard(){
     ${urgent?'🔥':'⏳'} ${daysLeft===0?'Dnes je posledný deň súťaže!':`Zostávaj${daysLeft===1?'ú':'ú'} <span style="font-size:.95rem">${daysLeft}</span> ${dayWord(daysLeft)} do konca ${isM?'mesačnej':'ročnej'} súťaže!`}
     <span style="font-weight:600;color:var(--muted,#999)">${daysLeft>0?'Ešte to stihneš 💪':''}</span>
   </div>`;
-  // „Tvoje body" — vlastné body a miesto v rebríčku pre vybrané obdobie (mesiac/rok)
+  // „Tvoje body" — vlastné body a miesto v rebríčku, kompaktne vedľa „Ceny & súťaž"
   const my=(isM?d.myMonth:d.myYear)||{};
-  const myRow=`<div onclick="event.stopPropagation();mySpotBreakdown()" style="display:flex;align-items:center;gap:8px;background:linear-gradient(102deg,rgba(126,200,227,.14),rgba(126,200,227,.05));border:1px solid rgba(126,200,227,.4);border-radius:12px;padding:8px 13px;margin-bottom:10px;cursor:pointer">
-    <span style="font-weight:800;color:#7ec8e3;font-size:.95rem">⭐ Tvoje body: ${my.points||0}</span>
-    <span style="color:var(--muted);font-size:.8rem">${my.rank?`· ${my.rank}. miesto z ${my.total}`:'· zbieraj body a dostaň sa do rebríčka!'}</span>
-    ${my.points?'<span style="margin-left:auto;color:#7ec8e3;font-size:.78rem;font-weight:600">Rozpis <i class="bi bi-chevron-right" style="font-size:.66rem"></i></span>':''}
-  </div>`;
+  const myChip=`<button onclick="event.stopPropagation();mySpotBreakdown()" title="${my.rank?`${my.rank}. miesto z ${my.total}`:'Zbieraj body a dostaň sa do rebríčka!'}" style="background:linear-gradient(102deg,rgba(126,200,227,.16),rgba(126,200,227,.06));border:1px solid rgba(126,200,227,.4);color:#7ec8e3;border-radius:10px;padding:7px 13px;font-size:.82rem;font-weight:700;cursor:pointer;white-space:nowrap">⭐ Tvoje body: ${my.points||0}${my.rank?` · ${my.rank}. miesto`:''}</button>`;
   const header=`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-    <div class="sl-label" style="margin:0">${title}</div>${toggle}</div>${countdown}${myRow}`;
+    <div class="sl-label" style="margin:0">${title}</div>${toggle}</div>${countdown}`;
   if(!list.length){
     return `<div class="sl-card sl-hero">${header}
       <div class="sl-why">Zatiaľ žiadne body za toto obdobie — buď prvá! 💫</div>
-      <button onclick="openRewardsInfo()" style="margin-top:10px;background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.35);color:var(--gold);border-radius:10px;padding:7px 13px;font-size:.82rem;font-weight:600;cursor:pointer">🎁 Ceny &amp; súťaž</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button onclick="openRewardsInfo()" style="background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.35);color:var(--gold);border-radius:10px;padding:7px 13px;font-size:.82rem;font-weight:600;cursor:pointer">🎁 Ceny &amp; súťaž</button>
+        ${myChip}
+      </div>
     </div>`;
   }
   const c=list[0];
@@ -2472,7 +2471,10 @@ function renderSpotBoard(){
       <span onclick="spotBreakdown('${_spotPeriod}',${i+1})" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.28);border-radius:10px;padding:3px 10px;font-size:.8rem;font-weight:700;color:var(--gold);white-space:nowrap">⭐ ${r.points||0}</span>
     </div>`).join('');
   const restBlock=rest?`<div style="margin-top:10px">${rest}</div>`:'';
-  const cta=`<button onclick="openRewardsInfo()" style="margin-top:12px;background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.35);color:var(--gold);border-radius:10px;padding:7px 13px;font-size:.82rem;font-weight:600;cursor:pointer">${isM?'🎁 Ceny &amp; súťaž':'🏆 Ceny, uzávierka &amp; história'}</button>`;
+  const cta=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+    <button onclick="openRewardsInfo()" style="background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.35);color:var(--gold);border-radius:10px;padding:7px 13px;font-size:.82rem;font-weight:600;cursor:pointer">${isM?'🎁 Ceny &amp; súťaž':'🏆 Ceny, uzávierka &amp; história'}</button>
+    ${myChip}
+  </div>`;
   return `<div class="sl-card sl-hero" style="border-color:rgba(201,168,76,.5)">${header}${hero}${restBlock}${cta}</div>`;
 }
 
