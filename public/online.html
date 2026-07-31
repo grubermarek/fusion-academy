@@ -279,6 +279,16 @@ async function loadOnlineClasses(){
   if(data.has_access && !window._autoLiveOpened){
     const liveCls = data.classes.find(c=>c.stream_key && liveSet.has(c.stream_key));
     if(liveCls){ window._autoLiveOpened=true; watchLive(liveCls.stream_key,(liveCls.name||'').replace(/'/g,'')); }
+    else {
+      // Bez media servera: hodina s nastaveným linkom (YouTube/Vimeo/FB), ktorá práve
+      // beží (od 15 min pred začiatkom do konca) → otvor prehrávač automaticky.
+      const now=new Date(); const dow=now.getDay();
+      const toMin=t=>{const[a,b]=String(t||'0:0').split(':').map(Number);return a*60+b;};
+      const nowMin=now.getHours()*60+now.getMinutes();
+      const run=data.classes.find(c=>c.stream_url && c.day_of_week===dow
+        && nowMin>=toMin(c.time_start)-15 && nowMin<toMin(c.time_end||c.time_start)+5);
+      if(run){ window._autoLiveOpened=true; watchStream(encodeURIComponent(run.stream_url),(run.name||'').replace(/'/g,'')); }
+    }
   }
 }
 
