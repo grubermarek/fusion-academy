@@ -1062,6 +1062,19 @@ async function seedData() {
     await q.insert(db.settings,{key:'visitcount_sanity_v1', value:true, at:nowISO()});
   }
 
+  // Nelka júl 2026: Marek reálne vyplatil 200 € cash, ale zápis sa orezal na nárok
+  // (172 €) — doplň rozdiel ako 🎁 prémiu, nech doklady sedia so skutočnosťou.
+  if(!(await q.one(db.settings,{key:'nelka_premia_2026_07_v1'}))){
+    const rec=(await q.find(db.payouts,{month:'2026-07'})).find(p=>/kyse/i.test(p.trainer||'') && ['paid','partial'].includes(p.status));
+    if(rec && (rec.paid_total||0)>0 && (rec.paid_total||0)<200){
+      const diff=+(200-(rec.paid_total||0)).toFixed(2);
+      const payments=[...(rec.payments||[]), {amount:diff, method:'cash', at:nowISO(), by:'Marek Gruber', premium:diff, note:'Dorovnanie na reálne vyplatených 200 € (prémia)'}];
+      await q.update(db.payouts,{_id:rec._id},{$set:{payments, paid_total:200, premium_total:+((rec.premium_total||0)+diff).toFixed(2), status:'paid', updated_at:nowISO()}});
+      console.log(`💶 Nelka júl: doplnená prémia ${diff} € → vyplatené spolu 200 €`);
+    }
+    await q.insert(db.settings,{key:'nelka_premia_2026_07_v1', value:true, at:nowISO()});
+  }
+
   // Po výmene kreatívy (priamy vstup do appky) čítame štatistiky len z novej reklamy,
   // nie z celej kampane — inak by sa miešali so staršou (pozastavenou) reklamou.
   if(!(await q.one(db.settings,{key:'meta_ad_id_v1'}))){
@@ -6750,6 +6763,7 @@ app.get('/api/admin/payouts', adminAuth, async(req,res)=>{
         base:b, bonuses:bo, deductions, private:priv.amount,
         cash_deduct:cash.deduct, cash_pending:cash.pending,
         total, paid_total, outstanding:+Math.max(0,total-paid_total).toFixed(2),
+        premium_total:+(sv?.premium_total||0),
         payments:sv?.payments||[],
         status:sv?.status||'draft', saved:!!sv, id:sv?._id||null, note:sv?.note||'',
         payment_method:sv?.payment_method||null, paid_at:sv?.paid_at||null, history:sv?.history||[] };
@@ -6827,14 +6841,17 @@ app.post('/api/admin/payouts/pay', adminAuth, async(req,res)=>{
     const outstandingBefore=+Math.max(0,total-paidBefore).toFixed(2);
     let amount = req.body.amount!==undefined && req.body.amount!==null && req.body.amount!=='' ? +req.body.amount : outstandingBefore;
     if(!(amount>0)) return res.status(400).json({error:'Suma na vyplatenie musí byť väčšia ako 0.'});
-    amount=+Math.min(amount, outstandingBefore).toFixed(2);
+    amount=+amount.toFixed(2);
     if(outstandingBefore<=0) return res.status(400).json({error:'Za tento mesiac už je všetko vyplatené.'});
-    const payments=[...prevPayments, {amount, method, at:nowISO(), by:req.trainerUser?.name||req._auditActor?.name||'Admin'}];
+    // Suma NAD zostatok sa neoreže — eviduje sa ako 🎁 prémia (odmena navyše od štúdia)
+    const premium=+Math.max(0, amount-outstandingBefore).toFixed(2);
+    const payments=[...prevPayments, {amount, method, at:nowISO(), by:req.trainerUser?.name||req._auditActor?.name||'Admin', ...(premium>0?{premium}:{})}];
     const paid_total=+(paidBefore+amount).toFixed(2);
+    const premium_total=+payments.reduce((s,p)=>s+(+p.premium||0),0).toFixed(2);
     const fullyPaid=paid_total>=total-0.009;
     const payMeta={ status:fullyPaid?'paid':'partial', payment_method:method, paid_at:nowISO(),
       paid_by_name:req.trainerUser?.name||req._auditActor?.name||'Admin',
-      payments, paid_total,
+      payments, paid_total, premium_total,
       base, bonuses, affiliate, tips, private:priv.amount, deductions, cash_deduct:cash.deduct, total, stats, updated_at:nowISO() };
     // Označ 'held' hotovosť ako zúčtovanú s výplatou (peniaze si nechal, výplata je o to nižšia)
     for(const cr of cash.rows.filter(r=>r.status==='held')){
@@ -6849,16 +6866,46 @@ app.post('/api/admin/payouts/pay', adminAuth, async(req,res)=>{
     const monthTxt=`${MONTHS_SK[+mo]||mo} ${y}`;
     if(tUser){
       await q.insert(db.notifications,{ user_id:tUser._id, type:'payout',
-        title: fullyPaid ? `💵 Výplata za ${monthTxt}: ${total.toFixed(2)} €` : `💵 Vyplatené ${amount.toFixed(2)} € za ${monthTxt}`,
+        title: fullyPaid ? `💵 Výplata za ${monthTxt}: ${paid_total.toFixed(2)} €` : `💵 Vyplatené ${amount.toFixed(2)} € za ${monthTxt}`,
         body: fullyPaid
-          ? `Tvoja výplata za ${monthTxt} bola uzavretá a vyplatená ${methodTxt}. Základ ${base.toFixed(2)} € · bonusy ${bonuses.toFixed(2)} €${affiliate>0?` · affiliate ${affiliate.toFixed(2)} €`:''}${tips>0?` · tipy ${tips.toFixed(2)} €`:''}${priv.amount>0?` · súkromné ${priv.amount.toFixed(2)} €`:''}${deductions>0?` · zrážky −${deductions.toFixed(2)} €`:''}${cash.deduct>0?` · vybraná hotovosť −${cash.deduct.toFixed(2)} €`:''}. Ďakujeme! 💛`
+          ? `Tvoja výplata za ${monthTxt} bola uzavretá a vyplatená ${methodTxt}${premium_total>0?` vrátane 🎁 prémie ${premium_total.toFixed(2)} €`:''}. Výplatná páska ti prišla na email. Ďakujeme! 💛`
           : `Dostala si ${amount.toFixed(2)} € ${methodTxt} za ${monthTxt}. Zostáva na vyplatenie ${(total-paid_total).toFixed(2)} € z celkových ${total.toFixed(2)} €.`,
         read:false, created_at:nowISO() }).catch(()=>{});
-      if(tUser.email) sendMail(tUser.email, `💵 Výplata za ${monthTxt} — Fusion Academy`,
-        `Ahoj ${tUser.name.split(' ')[0]},\n\ntvoja výplata za ${monthTxt} bola uzavretá a vyplatená ${methodTxt}.\n\n• Základ za odučené hodiny: ${base.toFixed(2)} €\n• Bonusy: ${bonuses.toFixed(2)} €\n${affiliate>0?`• Affiliate provízie: ${affiliate.toFixed(2)} €\n`:''}${tips>0?`• Tipy od klientov: ${tips.toFixed(2)} €\n`:''}${priv.amount>0?`• Súkromné hodiny (${priv.count}×): ${priv.amount.toFixed(2)} €\n`:''}${deductions>0?`• Zrážky: −${deductions.toFixed(2)} €\n`:''}${cash.deduct>0?`• Vybraná hotovosť od klientov: −${cash.deduct.toFixed(2)} € (nechávaš si ju)\n`:''}────────────────\nSPOLU: ${total.toFixed(2)} €\n\nĎakujeme za tvoju prácu! 💛\nFusion Academy`).catch(()=>{});
+      // Rozpis výplaty (spoločný pre pásku trénerke aj doklad pre účtovníctvo)
+      const lines=[
+        ['Základ za odučené hodiny', base],['Bonusy', bonuses],['Affiliate provízie', affiliate],
+        ['💛 Tipy od klientov (80 %)', tips],[`🎭 Súkromné hodiny${priv.count?` (${priv.count}×)`:''}`, priv.amount],
+      ].filter(l=>l[1]>0);
+      if(deductions>0) lines.push(['Zrážky', -deductions]);
+      if(cash.deduct>0) lines.push(['Vybraná hotovosť od klientov (necháva si)', -cash.deduct]);
+      if(premium_total>0) lines.push(['🎁 Prémia od štúdia (nad rámec výplaty)', premium_total]);
+      const rowsHtml=lines.map(l=>`<tr><td style="padding:7px 0;border-bottom:1px solid #333">${l[0]}</td><td style="padding:7px 0;border-bottom:1px solid #333;text-align:right;color:#C9A84C;font-weight:700">${l[1].toFixed(2)} €</td></tr>`).join('');
+      const paysHtml=payments.map(p=>`<tr><td style="padding:5px 0;border-bottom:1px solid #2a2a2a;color:#999;font-size:.85em">💸 ${String(p.at||'').slice(0,10)} · ${p.method==='cash'?'hotovosť':'karta/prevod'}${p.premium?` · z toho prémia ${(+p.premium).toFixed(2)} €`:''}</td><td style="padding:5px 0;border-bottom:1px solid #2a2a2a;text-align:right;color:#81c784">${(+p.amount).toFixed(2)} €</td></tr>`).join('');
+      const tableHtml=`<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:8px">${rowsHtml}
+        <tr><td style="padding:12px 0 4px;font-weight:800">SPOLU vyplatené</td><td style="padding:12px 0 4px;text-align:right;font-weight:800;font-size:1.15em;color:#81c784">${paid_total.toFixed(2)} €</td></tr>
+        ${paysHtml}</table>`;
+      if(fullyPaid){
+        // 1) Výplatná páska trénerke
+        if(tUser.email) sendMail(tUser.email, `💵 Výplatná páska – ${monthTxt} — Fusion Academy`,
+          emailTemplate(`Výplatná páska – ${monthTxt}`,
+            `<p>Ahoj <b>${tUser.name.split(' ')[0]}</b>,</p><p>tvoja výplata za <b>${monthTxt}</b> je uzavretá a vyplatená ${methodTxt}.</p>
+             <p style="color:#999;font-size:.85em">${stats.sessions||0} odučených hodín · ${stats.attendances||0} účastí</p>${tableHtml}
+             ${premium_total>0?`<p>🎁 Prémia ${premium_total.toFixed(2)} € je odmena navyše od štúdia — ďakujeme za skvelú prácu!</p>`:''}
+             <p>Ďakujeme! 💛</p>`, 'Otvoriť appku', `${APP_URL}/trainer`)).catch(()=>{});
+        // 2) Doklad pre účtovníctvo adminom
+        const admins=await q.find(db.users,{is_admin:true});
+        for(const a of admins){ if(a.email) sendMail(a.email, `🧾 Doklad o výplate — ${trainer} · ${monthTxt}`,
+          emailTemplate(`Doklad o výplate trénera`,
+            `<p><b>Tréner:</b> ${trainer}<br><b>Obdobie:</b> ${monthTxt}<br><b>Uzavrel:</b> ${payMeta.paid_by_name} · ${nowISO().slice(0,10)}</p>${tableHtml}
+             <p style="color:#999;font-size:.8em">Nárok podľa výpočtu: ${total.toFixed(2)} €${premium_total>0?` · prémia navyše: ${premium_total.toFixed(2)} €`:''} · vyplatené spolu: ${paid_total.toFixed(2)} €</p>`,
+            'Otvoriť výplaty', `${APP_URL}/admin`)).catch(()=>{}); }
+      } else if(tUser.email){
+        sendMail(tUser.email, `💵 Čiastočná výplata za ${monthTxt} — Fusion Academy`,
+          `Ahoj ${tUser.name.split(' ')[0]},\n\ndostala si ${amount.toFixed(2)} € ${methodTxt} za ${monthTxt}. Zostáva na vyplatenie ${(total-paid_total).toFixed(2)} € z celkových ${total.toFixed(2)} €.\n\nFusion Academy`).catch(()=>{});
+      }
     }
     await auditLog(req,'payout_pay',`${trainer} ${month} · ${method} · ${total.toFixed(2)} €`,rec?{status:rec.status}:null,payMeta,'');
-    res.json({ok:true, total, amount, paid_total, outstanding:+(total-paid_total).toFixed(2), fully_paid:fullyPaid, method, trainer, month});
+    res.json({ok:true, total, amount, paid_total, premium, premium_total, outstanding:+Math.max(0,total-paid_total).toFixed(2), fully_paid:fullyPaid, method, trainer, month});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 

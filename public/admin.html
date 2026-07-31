@@ -2101,7 +2101,7 @@ function renderPayoutDetail(d){
       || '<div class="small text-muted">Bez položiek.</div>';
     const paidTotal=+(m.paid_total||0), outstanding=m.outstanding!=null?+m.outstanding:Math.max(0,(m.total||0)-paidTotal);
     const partial=!paid && paidTotal>0;
-    const payHist=(m.payments||[]).map(p=>`<div class="d-flex justify-content-between small" style="color:#81c784"><span>💸 Vyplatené ${p.at?fmtDate(p.at.slice(0,10)):''} · ${p.method==='cash'?'hotovosť':'karta/prevod'}</span><span>−${(+p.amount).toFixed(2)} €</span></div>`).join('');
+    const payHist=(m.payments||[]).map(p=>`<div class="d-flex justify-content-between small" style="color:#81c784"><span>💸 Vyplatené ${p.at?fmtDate(p.at.slice(0,10)):''} · ${p.method==='cash'?'hotovosť':'karta/prevod'}${p.premium?` · <span style="color:#e7c878">🎁 prémia ${(+p.premium).toFixed(2)} €</span>`:''}</span><span>−${(+p.amount).toFixed(2)} €</span></div>`).join('');
     return `<div class="card bg-dark border-secondary mb-2"><div class="card-body py-2 px-3">
       <div class="d-flex justify-content-between align-items-center mb-2">
         <div class="fw-semibold">${fmtMonthSk(m.month)} ${paid?`<span class="badge bg-success ms-1">Vyplatené${m.payment_method?' · '+(m.payment_method==='cash'?'hotovosť':'karta'):''}</span>`:partial?`<span class="badge bg-warning text-dark ms-1">Čiastočne · zostáva ${outstanding.toFixed(2)} €</span>`:`<span class="badge bg-secondary ms-1">Neuzavreté</span>`}</div>
@@ -2126,13 +2126,13 @@ async function payTrainerMonth(month, method, outstanding){
   const mlabel=fmtMonthSk(month);
   const mtxt=method==='cash'?'v hotovosti':'kartou / prevodom';
   const def=(outstanding!=null&&outstanding>0)?outstanding.toFixed(2):'';
-  const inp=prompt(`Koľko vyplácaš ${_poDetailTrainer.name} za ${mlabel} ${mtxt}?\n\nCelá suma = uzavretie mesiaca. Menšia suma = čiastočná výplata, zvyšok zostane „na vyplatenie".`, def);
+  const inp=prompt(`Koľko vyplácaš ${_poDetailTrainer.name} za ${mlabel} ${mtxt}?\n\nCelá suma = uzavretie mesiaca (pošle sa výplatná páska trénerke + doklad tebe).\nMenšia suma = čiastočná výplata, zvyšok zostane „na vyplatenie".\nVyššia suma = rozdiel sa zapíše ako 🎁 prémia od teba.`, def);
   if(inp===null) return;
   const amount=+String(inp).replace(',','.');
   if(!(amount>0)){ showToast('Neplatná suma','error'); return; }
   const d=await api('/api/admin/payouts/pay',{method:'POST',body:JSON.stringify({trainer:_poDetailTrainer.name, month, method, amount})});
   if(d?.ok){
-    showToast(d.fully_paid?`Mesiac uzavretý — vyplatené ${d.amount.toFixed(2)} € ${mtxt} ✓`:`Vyplatené ${d.amount.toFixed(2)} € ${mtxt} · zostáva ${d.outstanding.toFixed(2)} €`,'success');
+    showToast(d.fully_paid?`Mesiac uzavretý — vyplatené ${d.paid_total.toFixed(2)} € ${mtxt}${d.premium>0?` (🎁 prémia ${d.premium.toFixed(2)} €)`:''} · páska + doklad odoslané ✓`:`Vyplatené ${d.amount.toFixed(2)} € ${mtxt} · zostáva ${d.outstanding.toFixed(2)} €`,'success');
     const rd=await api('/api/trainer/earnings?trainer_id='+encodeURIComponent(_poDetailTrainer.id));
     if(rd&&!rd.error) renderPayoutDetail(rd);
     loadPayouts();
