@@ -7718,8 +7718,11 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
     const running = nowMin>=toMin(cls.time_start);
     const live = (cls.stream_key && liveKeys.has(cls.stream_key)) || running; // bez media servera = podľa času
     const booked = !!(await q.one(db.bookings,{class_id:cls._id, user_id:req.session.uid, booking_date:today(), status:{$ne:'cancelled'}}));
+    // Tréner pre dnešný termín — rešpektuje aj jednorazovú výmenu (session_instructors)
+    const si = await sessionInstructor(cls, today()).catch(()=>null);
     res.json({ok:true, upcoming:{ id:cls._id, name:cls.name, time_start:cls.time_start, time_end:cls.time_end,
       src:cls.stream_city||'', starts_in_min:Math.max(0,toMin(cls.time_start)-nowMin), running, live,
+      instructor:(si&&si.name)||cls.instructor||'',
       has_access:hasAccess, plan_id:m?m.plan_id:null, booked }});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
