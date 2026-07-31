@@ -10407,8 +10407,17 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
     const myRank = ranked => { const i=ranked.findIndex(w=>w.id===req.session.uid);
       return i>=0 ? {points:ranked[i].points, rank:i+1, total:ranked.length, breakdown:ranked[i].breakdown}
                   : {points:0, rank:null, total:ranked.length, breakdown:[]}; };
+    // Posledná korunovaná Klientka mesiaca — glow-up karta s cenami na dashboarde
+    let lastWinner=null;
+    try{
+      const w=(await q.find(db.monthly_winners,{})).filter(x=>x.type!=='year')
+        .sort((a,b)=>String(b.month).localeCompare(String(a.month)))[0];
+      if(w){ const wu=await q.one(db.users,{_id:w.user_id});
+        lastWinner={ month:w.month, id:w.user_id, name:w.user_name, avatar:wu?.avatar||null,
+          points:w.points, prizes:w.prizes||[], value:w.value||0 }; }
+    }catch(e){}
     res.json({ month: monthStr, year: yearStr, today_nameday: todayName,
-      clientOfMonth: winner, clientOfYear: winnerYear,
+      clientOfMonth: winner, clientOfYear: winnerYear, lastWinner,
       topMonth: rankedMonth.slice(0,5).map(slim), topYear: rankedYear.slice(0,5).map(slim),
       myMonth: myRank(rankedMonth), myYear: myRank(rankedYear),
       rewards: { year_end: rewardsCfg.year_end||'', disclaimer: rewardsCfg.disclaimer||'',
@@ -12411,6 +12420,12 @@ setInterval(async()=>{
     try{ await processEmailQueue(); }catch(e){ console.error('Email queue error:',e); }
   }
 }, 3600000);
+// Korunovanie víťaziek nesmie čakať na 8:00 ani prežiť reštart bez behu —
+// obe funkcie sú idempotentné, takže ich pri štarte pokojne skúsime hneď.
+setTimeout(async()=>{
+  try{ await crownMonthlyWinner(); }catch(e){ console.error('crown at boot:', e.message); }
+  if(new Date().getMonth()===0){ try{ await crownYearlyWinner(); }catch(e){ console.error('crown year at boot:', e.message); } }
+}, 15000);
 
 // ─── Poistka: jediná neošetrená chyba nesmie zhodiť celú appku ────────────────
 // Bez tohto stačilo otvoriť jednu sekciu s poškodeným záznamom a server spadol

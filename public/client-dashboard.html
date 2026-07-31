@@ -2404,6 +2404,14 @@ function loadSpotlightRender(){
   const host=document.getElementById('spotlight');
   host.innerHTML=renderSpotBoard()+renderCelebrate();
 }
+// Skopírovanie vlastného referral odkazu (motivácia v súťažnom okne)
+window.copyMyRefLink=async()=>{
+  let code=_me?.referral_code;
+  if(!code){ try{ const r=await api('/api/client/referral'); code=r?.code||String(r?.ref_link||'').split('ref=')[1]||''; }catch(e){} }
+  const link=location.origin+'/?ref='+(code||'');
+  try{ await navigator.clipboard.writeText(link); showToast('🔗 Tvoj odkaz je skopírovaný — pošli ho kamoške!','success'); }
+  catch(e){ const i=document.createElement('input'); i.value=link; document.body.appendChild(i); i.select(); document.execCommand('copy'); i.remove(); showToast('🔗 Odkaz skopírovaný!','success'); }
+};
 // Rozpis vlastných bodov („Tvoje body" v súťažnom okne)
 window.mySpotBreakdown=()=>{
   const my=(_spotPeriod==='month'?_spotData?.myMonth:_spotData?.myYear)||{};
@@ -2438,8 +2446,35 @@ function renderSpotBoard(){
   // „Tvoje body" — vlastné body a miesto v rebríčku, kompaktne vedľa „Ceny & súťaž"
   const my=(isM?d.myMonth:d.myYear)||{};
   const myChip=`<button onclick="event.stopPropagation();mySpotBreakdown()" title="${my.rank?`${my.rank}. miesto z ${my.total}`:'Zbieraj body a dostaň sa do rebríčka!'}" style="background:linear-gradient(102deg,rgba(126,200,227,.16),rgba(126,200,227,.06));border:1px solid rgba(126,200,227,.4);color:#7ec8e3;border-radius:10px;padding:7px 13px;font-size:.82rem;font-weight:700;cursor:pointer;white-space:nowrap">⭐ Tvoje body: ${my.points||0}${my.rank?` · ${my.rank}. miesto`:''}</button>`;
+  // 👑 Glow-up karta poslednej korunovanej Klientky mesiaca + jej ceny
+  const lw=d.lastWinner;
+  const SKMON=['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
+  const winnerCard=(isM&&lw)?`<style>
+    @keyframes cwPulse{0%,100%{box-shadow:0 0 16px rgba(231,200,120,.3)}50%{box-shadow:0 0 34px rgba(231,200,120,.7)}}
+    @keyframes cwShine{0%{background-position:-200% 0}100%{background-position:200% 0}}
+    @keyframes cwCrown{0%,100%{transform:translateY(0) rotate(-6deg)}50%{transform:translateY(-4px) rotate(6deg)}}
+    </style>
+    <div style="border:1.5px solid rgba(231,200,120,.65);border-radius:14px;padding:12px 14px;margin-bottom:12px;background:linear-gradient(135deg,rgba(201,168,76,.16),rgba(120,90,20,.06));animation:cwPulse 2.4s ease-in-out infinite">
+      <div style="font-weight:800;letter-spacing:.04em;background:linear-gradient(102deg,#B98F3E,#F7E7B8 40%,#E7C878 60%,#B98F3E);background-size:200% 100%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:cwShine 3s linear infinite">
+        <span style="display:inline-block;animation:cwCrown 1.6s ease-in-out infinite;-webkit-text-fill-color:initial">👑</span> KLIENTKA MESIACA — ${SKMON[+lw.month.slice(5,7)-1]||''} ${lw.month.slice(0,4)}
+      </div>
+      <div onclick="location.href='/u/${lw.id}'" style="display:flex;align-items:center;gap:10px;margin-top:9px;cursor:pointer">
+        ${slAvatar(lw.avatar,lw.name)}
+        <div style="min-width:0"><div class="sl-name">${escHtml(lw.name)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></div>
+        <div class="sl-why">⭐ ${lw.points} bodov · GRATULUJEME! 🎉</div></div>
+      </div>
+      <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(231,200,120,.25)">
+        ${(lw.prizes||[]).map(p=>`<div style="font-size:.82rem;margin-top:4px">${p.icon||'🎁'} ${escHtml(p.label)}${p.value?` <span style="color:var(--muted)">· ${p.value} €</span>`:''}</div>`).join('')}
+        ${lw.value?`<div style="margin-top:6px;font-weight:800;color:var(--gold);font-size:.85rem">Vyhrala ceny v hodnote ${lw.value} € 🎁</div>`:''}
+      </div>
+    </div>`:'';
+  // 🤝 Motivácia: pozvi kamošku = body do súťaže (nový mesiac začína od nuly)
+  const refRow=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:rgba(139,195,74,.08);border:1px solid rgba(139,195,74,.35);border-radius:12px;padding:8px 13px;margin-bottom:10px">
+    <span style="font-size:.82rem;color:#a5d6a7">🤝 <b>Pozvi kamošku</b> — +5 b. za privedenie a +30 b., keď sa stane členkou!</span>
+    <button onclick="event.stopPropagation();copyMyRefLink()" style="margin-left:auto;background:rgba(139,195,74,.15);border:1px solid #8bc34a;color:#8bc34a;border-radius:9px;padding:5px 11px;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap">🔗 Skopírovať môj odkaz</button>
+  </div>`;
   const header=`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-    <div class="sl-label" style="margin:0">${title}</div>${toggle}</div>${countdown}`;
+    <div class="sl-label" style="margin:0">${title}</div>${toggle}</div>${winnerCard}${countdown}${refRow}`;
   if(!list.length){
     return `<div class="sl-card sl-hero">${header}
       <div class="sl-why">Zatiaľ žiadne body za toto obdobie — buď prvá! 💫</div>
