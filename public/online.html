@@ -195,6 +195,9 @@ async function init(){
   const me = await api('/api/me');
   if(me?.id){
     currentUser = me;
+    // Prihlásenej osobe cenník NEZOBRAZUJ, kým server výslovne nepovie, že nemá
+    // prístup — inak pri akejkoľvek chybe načítania svieti nákupná stránka.
+    const ps=document.getElementById('plansSection'); if(ps) ps.style.display='none';
     document.getElementById('navLogin').style.display='none';
     document.getElementById('navLogout').style.display='';
     document.getElementById('navDash').style.display='';
@@ -228,15 +231,25 @@ let liveSet=new Set();
 
 async function loadOnlineClasses(){
   const data = await api('/api/online/classes');
-  mediaBase = (data.media_base||'').replace(/\/$/,'');
-  // Kto už má online prístup (Silver/Gold/Online plán), nemá vidieť cenník —
-  // ide rovno na svoje hodiny. Cenník ostáva len pre ľudí bez prístupu.
-  if(data.has_access){
-    const ps=document.getElementById('plansSection'); if(ps) ps.style.display='none';
-  }
+  const ps=document.getElementById('plansSection');
   document.getElementById('onlineClasses').style.display='block';
   const container = document.getElementById('classesContainer');
-  if(!data?.classes?.length){
+  // Diagnostika: /online?debug=1 ukáže, čo presne server vrátil
+  if(new URLSearchParams(location.search).get('debug')==='1'){
+    const dbg=document.createElement('pre');
+    dbg.style.cssText='background:#111;color:#8f8;padding:10px;border-radius:8px;font-size:.7rem;white-space:pre-wrap;word-break:break-all';
+    dbg.textContent='DEBUG me='+JSON.stringify({id:currentUser?.id,email:currentUser?.email})+'\nmembership='+JSON.stringify(membership?.membership?{plan_id:membership.membership.plan_id,status:membership.membership.status,expires:membership.membership.expires_at}:null)+'\nclasses='+JSON.stringify({error:data?.error,has_access:data?.has_access,count:data?.classes?.length,media_base:data?.media_base});
+    container.parentElement.prepend(dbg);
+  }
+  if(!data || data.error || !Array.isArray(data.classes)){
+    // Chyba načítania — NIKDY neukazuj cenník prihlásenej klientke, ukáž chybu
+    container.innerHTML = `<p style="color:#ff9f9f;text-align:center;padding:2rem">Nepodarilo sa načítať online hodiny${data?.error?` (${data.error})`:''}. Obnov stránku, prosím.</p>`;
+    return;
+  }
+  mediaBase = (data.media_base||'').replace(/\/$/,'');
+  // Cenník vidí len ten, o kom server výslovne povedal, že prístup nemá.
+  if(ps) ps.style.display = data.has_access ? 'none' : 'block';
+  if(!data.classes.length){
     container.innerHTML = `<p style="color:var(--text-muted);text-align:center;padding:2rem">Momentálne nie sú k dispozícii žiadne online hodiny.</p>`;
     return;
   }

@@ -7604,6 +7604,7 @@ function hasOnlineAccess(m, u){
   return /silver|gold|online/i.test(String(m.plan_id||'')+' '+String(m.plan_name||''));
 }
 app.get('/api/online/classes', auth, async(req,res)=>{
+  try{
   const m = await checkMembership(req.session.uid);
   const mu = await q.one(db.users,{_id:req.session.uid});
   const hasAccess = hasOnlineAccess(m, mu);
@@ -7616,6 +7617,7 @@ app.get('/api/online/classes', auth, async(req,res)=>{
     locked: !hasAccess,
   }));
   res.json({classes:result, has_access:hasAccess, media_base:(process.env.MEDIA_BASE||'').replace(/\/$/,''), membership:m?{plan_id:m.plan_id,plan_name:m.plan_name,expires_at:m.expires_at}:null});
+  }catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -7765,8 +7767,14 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
     const running = nowMin>=toMin(cls.time_start);
     const live = (cls.stream_key && liveKeys.has(cls.stream_key)) || running; // bez media servera = podľa času
     const booked = !!(await q.one(db.bookings,{class_id:cls._id, user_id:req.session.uid, booking_date:today(), status:{$ne:'cancelled'}}));
-    // Tréner pre dnešný termín — rešpektuje aj jednorazovú výmenu (session_instructors)
-    const si = await sessionInstructor(cls, today()).catch(()=>null);
+    // Tréner pre dnešný termín — výmena môže byť nastavená na online hodine ALEBO na
+    // párovej fyzickej hodine (rovnaký deň/čas, mesto = stream_city), z ktorej sa vysiela.
+    let si = await sessionInstructor(cls, today()).catch(()=>null);
+    if(!si || !si.name || si.name===cls.instructor){
+      const pair=(await q.find(db.classes,{active:true, day_of_week:cls.day_of_week}))
+        .find(p=>p.category!=='Online' && p.time_start===cls.time_start && (p.location||'')===(cls.stream_city||''));
+      if(pair){ const psi=await sessionInstructor(pair, today()).catch(()=>null); if(psi&&psi.name) si=psi; else if(!si?.name) si={name:pair.instructor}; }
+    }
     res.json({ok:true, upcoming:{ id:cls._id, name:cls.name, time_start:cls.time_start, time_end:cls.time_end,
       src:cls.stream_city||'', starts_in_min:Math.max(0,toMin(cls.time_start)-nowMin), running, live,
       instructor:(si&&si.name)||cls.instructor||'',
