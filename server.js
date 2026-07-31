@@ -3818,6 +3818,55 @@ app.post('/api/import-meta-leads', async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ── Report konverzií kampane: lievik lead → registrácia → návšteva → platba ──
+// Chránené IMPORT_TOKEN (len čítanie). Vstup: people[{email,phone,city}].
+app.post('/api/import-meta-leads/report', async(req,res)=>{
+  try{
+    const tok=process.env.IMPORT_TOKEN;
+    if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
+    const list=Array.isArray(req.body?.people)?req.body.people:[];
+    const users=await q.find(db.users,{});
+    const p9=v=>{ let s=String(v||'').replace(/[^\d]/g,''); if(s.startsWith('421'))s=s.slice(3); if(s.startsWith('0'))s=s.slice(1); return s.length===9?s:null; };
+    const byEmail={}, byPhone={};
+    for(const u of users){ if(u.email) byEmail[u.email.toLowerCase()]=u; const k=p9(u.phone); if(k&&!byPhone[k]) byPhone[k]=u; }
+    const membs=await q.find(db.memberships,{});
+    const pays=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status));
+    const txs=await q.find(db.transactions,{});
+    const orders=(await q.find(db.orders,{})).filter(o=>o.status==='paid');
+    const bookings=await q.find(db.bookings,{});
+    const revOf=uid=>{
+      let r=0;
+      membs.filter(m=>m.user_id===uid && m.payment_method).forEach(m=>r+=(+m.price||0));
+      pays.filter(p=>p.user_id===uid).forEach(p=>r+=(+p.amount||0));
+      txs.filter(t=>(t.user_id===uid||t.client_id===uid) && !t.payment_method).forEach(t=>r+=(+t.amount||0));
+      orders.filter(o=>o.user_id===uid).forEach(o=>r+=(+o.total||0));
+      return +r.toFixed(2);
+    };
+    const out={ total:list.length, registered:0, attended:0, booked:0, paying:0, revenue:0,
+      active_membership:0, byCity:{}, payers:[] };
+    for(const p of list){
+      const u=byEmail[String(p.email||'').toLowerCase()] || (p9(p.phone)&&byPhone[p9(p.phone)]) || null;
+      const city=String(p.city||'?');
+      const c=out.byCity[city]=out.byCity[city]||{leads:0,registered:0,attended:0,paying:0,revenue:0};
+      c.leads++;
+      if(!u) continue;
+      const selfRegistered=!!u.password || u.claimed;
+      if(!selfRegistered) continue;
+      out.registered++; c.registered++;
+      const att=(u.visit_count||0)>0 || bookings.some(b=>b.user_id===u._id && b.status==='attended');
+      if(att){ out.attended++; c.attended++; }
+      if(bookings.some(b=>b.user_id===u._id && b.status!=='cancelled')) out.booked++;
+      const rev=revOf(u._id);
+      if(rev>0){ out.paying++; c.paying++; out.revenue=+(out.revenue+rev).toFixed(2); c.revenue=+(c.revenue+rev).toFixed(2);
+        out.payers.push({name:u.name, city:u.city||city, revenue:rev}); }
+      const m=membs.find(x=>x.user_id===u._id && x.status==='active' && (!x.expires_at||x.expires_at>=today()));
+      if(m) out.active_membership++;
+    }
+    out.payers.sort((a,b)=>b.revenue-a.revenue);
+    res.json({ok:true, ...out});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.post('/api/admin/import-leads', adminAuth, async(req,res)=>{
   try {
     const csv = req.body.csv||'';
