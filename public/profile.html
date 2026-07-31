@@ -340,6 +340,16 @@ async function setCustomBg(key,name){
   if(ok){ P.bg_tier=key; P.custom_bg=key; showPreviewBar('✓ Nastavené ako tvoje pozadie: '+name); redraw(true); }
   else applyProfileBg(P.bg_tier);
 }
+// Admin: ručná úprava dátumu „odkedy u nás tancuje" (import nie vždy preniesol správny začiatok)
+async function adminEditJoined(userId, current){
+  const v=prompt('Odkedy u nás klientka tancuje? (RRRR-MM-DD)', String(current||'').slice(0,10));
+  if(v===null) return;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(v.trim())){ alert('Zadaj dátum vo formáte RRRR-MM-DD, napr. 2023-09-01'); return; }
+  const r=await fetch('/api/admin/users/'+encodeURIComponent(userId),{method:'PUT',credentials:'include',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({member_since:v.trim()})}).then(x=>x.json()).catch(()=>null);
+  if(r&&(r.ok||r.success!==false&&!r.error)){ location.reload(); }
+  else alert('Chyba: '+(r?.error||'nepodarilo sa uložiť'));
+}
 function showPreviewBar(txt){ const b=document.getElementById('bgPrevBar'); if(b){ document.getElementById('bgPrevTxt').textContent=txt; b.classList.add('on'); } }
 function endPreview(){ applyProfileBg(P.bg_tier); const b=document.getElementById('bgPrevBar'); if(b) b.classList.remove('on'); }
 async function load(){
@@ -413,7 +423,7 @@ function render(){
         <span class="tag">🎵 ${P.taught_group_hours||0} skupinových hodín${(P.taught_group_hours||0)<100?` <span style="opacity:.7">/ 100 zácvik</span>`:''}</span>
         <span class="tag">🔑 ${P.taught_private_hours||0} súkromných hodín</span>
       </div>`:''}
-      ${P.joined?`<div class="joined-date">💛 ${T('profile.member_since',{who:T(isM?'profile.member_m':'profile.member_f'),date:new Date(P.joined).toLocaleDateString(LOC,{month:'long',year:'numeric'})})}</div>`:''}
+      ${P.joined?`<div class="joined-date">💛 ${T('profile.member_since',{who:T(isM?'profile.member_m':'profile.member_f'),date:new Date(P.joined).toLocaleDateString(LOC,{month:'long',year:'numeric'})})}${P.viewer_is_admin?` <a href="#" onclick="adminEditJoined('${P.id}','${P.joined}');return false" title="Upraviť dátum začiatku (len admin)" style="color:var(--gold);text-decoration:none">✏️</a>`:''}</div>`:''}
       <div>${P.is_self
         ? `<button class="like-btn" disabled style="opacity:.75;cursor:default"><i class="bi bi-heart-fill"></i> ${T('profile.likes',{n:P.likes||0})}</button>`
         : `<button id="likeBtn" class="like-btn ${P.liked_by_me?'liked':''}" onclick="toggleLike()"><i class="bi ${P.liked_by_me?'bi-heart-fill':'bi-heart'}"></i> <span id="likeCount">${P.likes||0}</span></button>`}</div>

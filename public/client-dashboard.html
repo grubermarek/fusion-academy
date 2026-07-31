@@ -849,8 +849,8 @@ function renderUnlockCards(me){
   const plan=me?.membership?.plan_id||null;
   const ONLINE=['silver','gold','online_basic','online_premium'];
   const feats=[
-    {f:'silver',ic:'🥈',title:'Silver výhody',sub:'Metabolická analýza tela (Tanita) + Online hodiny LIVE',open:['silver','gold'].includes(plan),tier:'Silver',href:'/support',cta:'✓ Objednať'},
-    {f:'gold',ic:'🥇',title:'Gold výhody',sub:'Metabolická analýza + jedálniček na mieru + 20 % na súkromné hodiny',open:plan==='gold',tier:'Gold',href:'/support',cta:'✓ Objednať'},
+    {f:'silver',ic:'🥈',title:'Silver výhody',sub:'Metabolická analýza tela (Tanita) + Online hodiny LIVE',open:['silver','gold'].includes(plan),tier:'Silver',href:'/support',cta:'✓ Aktívne'},
+    {f:'gold',ic:'🥇',title:'Gold výhody',sub:'Metabolická analýza + jedálniček na mieru + 20 % na súkromné hodiny',open:plan==='gold',tier:'Gold',href:'/support',cta:'✓ Aktívne'},
     {f:'meal',ic:'🍽️',title:'Jedálniček na mieru',sub:'Osobný jedálniček na celý týždeň (Gold aj Online Premium)',open:['gold','online_premium'].includes(plan),tier:'Gold / Online Premium',href:'/jedalnicek',cta:'✓ Otvoriť jedálniček',lockHref:'/pricing'},
   ];
   box.innerHTML=feats.map(x=>x.open

@@ -145,11 +145,10 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <div class="nav-group-label">Financie</div>
       <a class="nav-link" href="#" onclick="show('finance')"><i class="bi bi-graph-up me-2"></i><span style="color:#C9A24C;font-weight:700">Financie</span></a>
       <a class="nav-link" href="#" onclick="show('accounting')"><i class="bi bi-calculator me-2"></i>Účtovníctvo</a>
-      <a class="nav-link" href="#" onclick="show('invoices')"><i class="bi bi-file-earmark-text me-2"></i>Faktúry</a>
+      <a class="nav-link" href="#" onclick="show('invoices')"><i class="bi bi-file-earmark-text me-2"></i>Predaje &amp; faktúry</a>
       <a class="nav-link" href="#" onclick="show('refunds')"><i class="bi bi-arrow-counterclockwise me-2"></i>Refundácie</a>
       <a class="nav-link" href="#" onclick="show('failed')"><i class="bi bi-credit-card-2-front me-2"></i>Neúspešné platby <span id="failedBadge" class="badge bg-danger" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('sale')"><i class="bi bi-plus-circle me-2"></i>Zaznamenať predaj</a>
-      <a class="nav-link" href="#" onclick="show('transactions')"><i class="bi bi-receipt me-2"></i>Všetky predaje</a>
       <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby kartou</a>
       <div class="nav-group-label">Výkon & retencia</div>
       <a class="nav-link" href="#" onclick="show('retention')"><i class="bi bi-people-fill me-2"></i>Retencia & LTV</a>
@@ -279,19 +278,6 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       </div>
       <div class="modal-body"><div id="poDetailContent" class="text-center text-muted py-4">Načítavam…</div></div>
     </div></div>
-  </div>
-
-  <!-- TRANSACTIONS -->
-  <div id="s-transactions" class="section">
-    <h4 class="fw-bold mb-4">Všetky predaje</h4>
-    <div class="card border-0 rounded-3 p-0">
-      <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-light"><tr><th class="ps-3">Dátum</th><th>Partner</th><th>Klient</th><th>Produkt</th><th>Suma</th><th></th></tr></thead>
-          <tbody id="allTxTable"></tbody>
-        </table>
-      </div>
-    </div>
   </div>
 
   <!-- PRODUCTS -->
@@ -1060,12 +1046,28 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   <!-- INVOICES -->
   <div class="section" id="s-invoices">
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-      <h4 class="fw-bold mb-0">🧾 Faktúry</h4>
+      <h4 class="fw-bold mb-0">🧾 Predaje &amp; faktúry</h4>
       <div class="d-flex gap-2">
         <button class="btn btn-sm btn-brand" onclick="openNewInvoice()"><i class="bi bi-plus-lg me-1"></i>Nová faktúra</button>
         <a class="btn btn-sm btn-outline-light" href="/api/admin/invoices/export.csv"><i class="bi bi-download me-1"></i>Export CSV (účtovníctvo)</a>
       </div>
     </div>
+    <ul class="nav nav-pills mb-3" style="gap:6px">
+      <li class="nav-item"><a class="nav-link active py-1 px-3" id="invTabBtnInv" style="cursor:pointer" onclick="invTab('inv')">🧾 Faktúry</a></li>
+      <li class="nav-item"><a class="nav-link py-1 px-3" id="invTabBtnSales" style="cursor:pointer" onclick="invTab('sales')">🛒 Všetky predaje</a></li>
+    </ul>
+    <div id="invTabSales" style="display:none">
+      <p class="text-muted small mb-2">Všetky zaznamenané predaje (členstvá, vstupy, merch, súkromné hodiny…). Faktúru k predaju nájdeš v záložke Faktúry.</p>
+      <div class="card border-0 rounded-3 p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light"><tr><th class="ps-3">Dátum</th><th>Partner</th><th>Klient</th><th>Produkt</th><th>Suma</th><th></th></tr></thead>
+            <tbody id="allTxTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div id="invTabInv">
     <div class="d-flex gap-2 flex-wrap mb-3">
       <select id="invYear" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:110px" onchange="loadInvoices()"></select>
       <select id="invMonth" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:130px" onchange="loadInvoices()">
@@ -1081,6 +1083,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <thead><tr><th>Číslo</th><th>Klient</th><th>Popis</th><th>Suma</th><th>Uhradená</th><th>Spôsob</th><th>Stav</th><th>Akcie</th></tr></thead>
       <tbody id="invBody"><tr><td colspan="8" class="text-muted text-center py-4">Načítavam…</td></tr></tbody>
     </table></div>
+    </div><!-- /invTabInv -->
 
     <!-- NOVÁ FAKTÚRA (eventy, prenájmy, firemné objednávky) -->
     <div class="modal fade" id="newInvoiceModal" tabindex="-1">
@@ -1300,8 +1303,8 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <p class="text-muted small mt-2 mb-0">„€/klient" sa počíta len za klientov <b>nad</b> zadaný počet na hodine (napr. nad 10). Affiliate provízie z línie trénera sa pripočítavajú automaticky.</p>
     </div></div>
     <div class="table-responsive"><table class="table table-dark table-hover align-middle" style="font-size:.82rem">
-      <thead><tr><th>Tréner</th><th>Hodiny</th><th>Účasti</th><th>Tržby</th><th>Základ</th><th>Bonusy</th><th>Affiliate</th><th>💵 Hotovosť</th><th>Zrážky</th><th>Spolu</th><th>Stav</th><th>Akcie</th></tr></thead>
-      <tbody id="poBody"><tr><td colspan="12" class="text-muted text-center py-4">Načítavam…</td></tr></tbody>
+      <thead><tr><th>Tréner</th><th>Hodiny</th><th>Účasti</th><th>Tržby</th><th>Základ</th><th>Bonusy</th><th>Affiliate</th><th>💛 Tipy</th><th>🎭 Súkromné</th><th>💵 Hotovosť</th><th>Zrážky</th><th>Spolu</th><th>Na vyplatenie</th><th>Stav</th><th>Akcie</th></tr></thead>
+      <tbody id="poBody"><tr><td colspan="15" class="text-muted text-center py-4">Načítavam…</td></tr></tbody>
     </table></div>
 
     <!-- TIPY (DANK) — súčasť výplat trénerov -->
@@ -1626,6 +1629,8 @@ function selectGroup(g){
   document.getElementById('groupTitle').textContent=GROUP_TITLES[g]||'';
 }
 function show(sec){
+  // Predaje sú zlúčené s faktúrami do jedného okna (záložka v sekcii Faktúry)
+  if(sec==='transactions'){ show('invoices'); invTab('sales'); return; }
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   document.getElementById('s-'+sec).classList.add('active');
   document.querySelectorAll('.nav-link').forEach(a=>a.classList.remove('active'));
@@ -1634,7 +1639,6 @@ function show(sec){
   if(sec==='orders')loadOrders();
   if(sec==='partners')loadPartners();
   if(sec==='commissions')loadCommissions();
-  if(sec==='transactions')loadAllTx();
   if(sec==='products')loadProducts();
   if(sec==='sale')loadSaleForm();
   if(sec==='addpartner')loadAddPartner();
@@ -1965,14 +1969,14 @@ async function submitRefund(){
 }
 
 /* ─── VÝPLATY TRÉNEROV ────────────────────────────────────── */
-const PO_STATUS={draft:'Návrh',approved:'Schválené',paid:'Vyplatené',held:'Pozdržané',cancelled:'Zrušené'};
-const PO_STATUS_C={draft:'secondary',approved:'info',paid:'success',held:'warning',cancelled:'danger'};
+const PO_STATUS={draft:'Návrh',approved:'Schválené',partial:'Čiastočne vyplatené',paid:'Vyplatené',held:'Pozdržané',cancelled:'Zrušené'};
+const PO_STATUS_C={draft:'secondary',approved:'info',partial:'warning',paid:'success',held:'warning',cancelled:'danger'};
 let _poInit=false;
 function initPayouts(){ if(!_poInit){ _poInit=true; document.getElementById('poMonth').value=new Date().toISOString().slice(0,7); } loadPayouts(); }
 async function loadPayouts(){
   const month=document.getElementById('poMonth').value;
   const d=await api('/api/admin/payouts?month='+month);
-  if(!d||d.error){ document.getElementById('poBody').innerHTML='<tr><td colspan="12" class="text-danger py-3">Chyba.</td></tr>'; return; }
+  if(!d||d.error){ document.getElementById('poBody').innerHTML='<tr><td colspan="15" class="text-danger py-3">Chyba.</td></tr>'; return; }
   // rules editor
   const rb=document.getElementById('poRulesBody');
   const inp=(tr,f,v)=>`<input type="number" step="0.01" value="${v||0}" id="rule_${btoa(unescape(encodeURIComponent(tr))).replace(/=/g,'')}_${f}" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:82px">`;
@@ -1988,17 +1992,20 @@ async function loadPayouts(){
   }).join('')||'<tr><td colspan="8" class="text-muted text-center py-2">Žiadni tréneri s dochádzkou.</td></tr>';
   // payout rows
   document.getElementById('poBody').innerHTML=d.rows.length? d.rows.map(r=>`<tr>
-    <td class="fw-semibold"><a href="#" onclick='openPayoutDetail(${JSON.stringify(r.trainer)},${JSON.stringify(r.trainer_id)});return false' style="color:#C9A24C;text-decoration:none">${escHtml(r.trainer)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></a>${r.status==='paid'?' <span class="badge bg-success" style="font-size:.6rem">vyplatené</span>':''}</td><td>${r.sessions}</td><td>${r.attendances}</td><td>${r.revenue.toFixed(2)} €</td>
+    <td class="fw-semibold"><a href="#" onclick='openPayoutDetail(${JSON.stringify(r.trainer)},${JSON.stringify(r.trainer_id)});return false' style="color:#C9A24C;text-decoration:none">${escHtml(r.trainer)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></a>${r.status==='paid'?' <span class="badge bg-success" style="font-size:.6rem">vyplatené</span>':r.status==='partial'?' <span class="badge bg-warning text-dark" style="font-size:.6rem">čiastočne</span>':''}</td><td>${r.sessions}</td><td>${r.attendances}</td><td>${r.revenue.toFixed(2)} €</td>
     <td>${r.base.toFixed(2)} €</td><td>${r.bonuses.toFixed(2)} €</td>
     <td class="${r.affiliate>0?'text-info':'text-muted'}">${(r.affiliate||0).toFixed(2)} €</td>
+    <td class="${(r.tips||0)>0?'':'text-muted'}" style="${(r.tips||0)>0?'color:#e7c878':''}">${(r.tips||0).toFixed(2)} €</td>
+    <td class="${(r.private||0)>0?'':'text-muted'}">${(r.private||0).toFixed(2)} €</td>
     <td>${(r.cash_deduct||0)>0?`<span class="badge bg-danger" title="Vybraná hotovosť u trénera — zníži výplatu (klik na trénera pre detail)">−${r.cash_deduct.toFixed(2)} €</span>`:'<span class="text-muted">—</span>'}</td>
     <td><input type="number" step="0.01" value="${r.deductions||0}" id="ded_${r.id||''}" data-trainer='${escHtml(r.trainer)}' style="width:78px" class="form-control form-control-sm bg-dark text-light border-secondary" ${r.saved?'':'disabled title="Najprv vygeneruj"'}></td>
-    <td class="fw-bold" style="color:#C9A24C">${r.total.toFixed(2)} €</td>
+    <td class="fw-bold" style="color:#C9A24C">${r.total.toFixed(2)} €${(r.paid_total||0)>0?`<div class="text-success" style="font-size:.66rem;font-weight:600">vyplatené ${r.paid_total.toFixed(2)} €</div>`:''}</td>
+    <td class="fw-bold ${r.outstanding>0?'':'text-muted'}" style="${r.outstanding>0?'color:#81c784':''}">${(r.outstanding??r.total).toFixed(2)} €</td>
     <td>${r.saved?`<select class="form-select form-select-sm bg-dark text-light border-secondary" style="width:120px" onchange="payoutStatus('${r.id}',this.value)">${Object.entries(PO_STATUS).map(([k,v])=>`<option value="${k}"${r.status===k?' selected':''}>${v}</option>`).join('')}</select>`:`<span class="badge bg-${PO_STATUS_C[r.status]}">${PO_STATUS[r.status]}</span>`}</td>
     <td>${r.saved
       ? `<button class="btn btn-sm btn-outline-warning py-0 px-2" onclick="savePayoutDeduction('${r.id}')">Uložiť zrážku</button>`
       : `<button class="btn btn-sm btn-success py-0 px-2" onclick='generatePayout(${JSON.stringify(r.trainer)})'>Vygenerovať</button>`}</td>
-  </tr>`).join('') : '<tr><td colspan="12" class="text-muted text-center py-4">Žiadne dáta pre tento mesiac.</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="15" class="text-muted text-center py-4">Žiadne dáta pre tento mesiac.</td></tr>';
 }
 async function savePayoutRule(trainer){
   const key=btoa(unescape(encodeURIComponent(trainer))).replace(/=/g,'');
@@ -2086,31 +2093,40 @@ function renderPayoutDetail(d){
     const paid=m.status==='paid';
     const itemsHtml=(m.items||[]).map(it=>`<div class="d-flex justify-content-between small"><span class="text-muted">${escHtml(it.label)}${it.count!==''&&it.count!=null?` <span style="opacity:.6">×${it.count}</span>`:''}</span><span>${(it.amount||0).toFixed(2)} €</span></div>`).join('')
       || '<div class="small text-muted">Bez položiek.</div>';
+    const paidTotal=+(m.paid_total||0), outstanding=m.outstanding!=null?+m.outstanding:Math.max(0,(m.total||0)-paidTotal);
+    const partial=!paid && paidTotal>0;
+    const payHist=(m.payments||[]).map(p=>`<div class="d-flex justify-content-between small" style="color:#81c784"><span>💸 Vyplatené ${p.at?fmtDate(p.at.slice(0,10)):''} · ${p.method==='cash'?'hotovosť':'karta/prevod'}</span><span>−${(+p.amount).toFixed(2)} €</span></div>`).join('');
     return `<div class="card bg-dark border-secondary mb-2"><div class="card-body py-2 px-3">
       <div class="d-flex justify-content-between align-items-center mb-2">
-        <div class="fw-semibold">${fmtMonthSk(m.month)} ${paid?`<span class="badge bg-success ms-1">Vyplatené${m.payment_method?' · '+(m.payment_method==='cash'?'hotovosť':'karta'):''}</span>`:`<span class="badge bg-secondary ms-1">Neuzavreté</span>`}</div>
+        <div class="fw-semibold">${fmtMonthSk(m.month)} ${paid?`<span class="badge bg-success ms-1">Vyplatené${m.payment_method?' · '+(m.payment_method==='cash'?'hotovosť':'karta'):''}</span>`:partial?`<span class="badge bg-warning text-dark ms-1">Čiastočne · zostáva ${outstanding.toFixed(2)} €</span>`:`<span class="badge bg-secondary ms-1">Neuzavreté</span>`}</div>
         <div class="fw-bold" style="color:#C9A24C;font-size:1.05rem">${(m.total||0).toFixed(2)} €</div>
       </div>
       ${itemsHtml}
+      ${payHist}
+      ${paidTotal>0&&!paid?`<div class="d-flex justify-content-between small fw-bold mt-1 pt-1" style="border-top:1px solid #2a2a2a;color:#81c784"><span>Zostáva na vyplatenie</span><span>${outstanding.toFixed(2)} €</span></div>`:''}
       <div class="d-flex justify-content-between small mt-1 pt-1" style="border-top:1px solid #2a2a2a">
         <span class="text-muted">Hodiny: ${m.sessions} · Účasti: ${m.attendances}${m.deductions>0?` · zrážky −${m.deductions.toFixed(2)} €`:''}</span>
       </div>
-      <div class="mt-2 d-flex gap-2">
+      <div class="mt-2 d-flex gap-2 flex-wrap">
         ${paid
           ? `<span class="text-success small"><i class="bi bi-check-circle-fill"></i> Uzavreté a vyplatené</span>`
-          : `<button class="btn btn-sm btn-success py-0 px-2" onclick="payTrainerMonth('${m.month}','card')"><i class="bi bi-credit-card"></i> Uzavrieť & vyplatiť kartou/prevodom</button>
-             <button class="btn btn-sm btn-outline-warning py-0 px-2" onclick="payTrainerMonth('${m.month}','cash')"><i class="bi bi-cash-coin"></i> Cash</button>`}
+          : `<button class="btn btn-sm btn-success py-0 px-2" onclick="payTrainerMonth('${m.month}','card',${outstanding})"><i class="bi bi-credit-card"></i> Vyplatiť kartou/prevodom</button>
+             <button class="btn btn-sm btn-outline-warning py-0 px-2" onclick="payTrainerMonth('${m.month}','cash',${outstanding})"><i class="bi bi-cash-coin"></i> Cash</button>`}
       </div>
     </div></div>`;
   }).join('');
 }
-async function payTrainerMonth(month, method){
+async function payTrainerMonth(month, method, outstanding){
   const mlabel=fmtMonthSk(month);
   const mtxt=method==='cash'?'v hotovosti':'kartou / prevodom';
-  if(!confirm(`Uzavrieť ${mlabel} a vyplatiť ${escHtml(_poDetailTrainer.name)} ${mtxt}?\n\nTrénerovi príde notifikácia aj e-mail, zaznamená sa do výplat a auditu.`)) return;
-  const d=await api('/api/admin/payouts/pay',{method:'POST',body:JSON.stringify({trainer:_poDetailTrainer.name, month, method})});
+  const def=(outstanding!=null&&outstanding>0)?outstanding.toFixed(2):'';
+  const inp=prompt(`Koľko vyplácaš ${_poDetailTrainer.name} za ${mlabel} ${mtxt}?\n\nCelá suma = uzavretie mesiaca. Menšia suma = čiastočná výplata, zvyšok zostane „na vyplatenie".`, def);
+  if(inp===null) return;
+  const amount=+String(inp).replace(',','.');
+  if(!(amount>0)){ showToast('Neplatná suma','error'); return; }
+  const d=await api('/api/admin/payouts/pay',{method:'POST',body:JSON.stringify({trainer:_poDetailTrainer.name, month, method, amount})});
   if(d?.ok){
-    showToast(`Vyplatené ${d.total.toFixed(2)} € ${mtxt} ✓`,'success');
+    showToast(d.fully_paid?`Mesiac uzavretý — vyplatené ${d.amount.toFixed(2)} € ${mtxt} ✓`:`Vyplatené ${d.amount.toFixed(2)} € ${mtxt} · zostáva ${d.outstanding.toFixed(2)} €`,'success');
     const rd=await api('/api/trainer/earnings?trainer_id='+encodeURIComponent(_poDetailTrainer.id));
     if(rd&&!rd.error) renderPayoutDetail(rd);
     loadPayouts();
@@ -4175,10 +4191,21 @@ async function payComm(pid,month,name,amt){
   if(r?.ok)loadCommissions();
 }
 
-// ── TRANSACTIONS ──
+// ── TRANSACTIONS (záložka v okne Predaje & faktúry) ──
+function invTab(t){
+  const sales=t==='sales';
+  document.getElementById('invTabSales').style.display=sales?'block':'none';
+  document.getElementById('invTabInv').style.display=sales?'none':'block';
+  document.getElementById('invTabBtnSales').classList.toggle('active',sales);
+  document.getElementById('invTabBtnInv').classList.toggle('active',!sales);
+  if(sales) loadAllTx();
+}
 async function loadAllTx(){
   const rows=await api('/api/transactions');if(!rows)return;
-  document.getElementById('allTxTable').innerHTML=rows.map(t=>`<tr><td class="ps-3 text-muted">${dateStr(t.date)}</td><td>${t.partner_name||'—'}</td><td>${t.client_name}</td><td>${t.product_name}</td><td class="fw-bold">${eur(t.amount)}</td><td><button class="btn btn-sm btn-outline-danger" onclick="deleteTx('${t._id}')"><i class="bi bi-trash"></i></button></td></tr>`).join('')||'<tr><td colspan="6" class="text-center text-muted py-4">Žiadne predaje</td></tr>';
+  // Rôzne typy transakcií nesú meno/produkt v rôznych poliach (client_name vs user_name,
+  // product_name vs note) — zjednoť, nech sa nikde neukazuje "undefined".
+  const TX_TYPE_LBL={membership:'Členstvo', single_entry:'Jednorazový vstup', private_lesson:'Súkromná hodina', shop:'E-shop', merch:'Merch', tip:'Tip'};
+  document.getElementById('allTxTable').innerHTML=rows.map(t=>`<tr><td class="ps-3 text-muted">${dateStr(t.date)}</td><td>${t.partner_name||'—'}</td><td>${t.client_name||t.user_name||'—'}</td><td>${t.product_name||t.note||TX_TYPE_LBL[t.type]||t.type||'—'}</td><td class="fw-bold">${eur(t.amount)}</td><td><button class="btn btn-sm btn-outline-danger" onclick="deleteTx('${t._id}')"><i class="bi bi-trash"></i></button></td></tr>`).join('')||'<tr><td colspan="6" class="text-center text-muted py-4">Žiadne predaje</td></tr>';
 }
 async function deleteTx(id){if(!confirm('Zmazať predaj a jeho provízie?'))return;const r=await api('/api/admin/transactions/'+id,{method:'DELETE'});if(r?.ok)loadAllTx();}
 
