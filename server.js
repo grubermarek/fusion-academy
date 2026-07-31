@@ -3734,6 +3734,48 @@ app.post('/api/import-oldlist', async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ── Jednorazový import leadov z Meta Lead Ads (formulár = súhlas s kontaktovaním) ──
+// Chránené IMPORT_TOKEN. Idempotentné (dedup podľa emailu aj telefónu). Leady sú
+// skryté (imported, claim pri registrácii) a hneď sa im spustí mailová sekvencia.
+app.post('/api/import-meta-leads', async(req,res)=>{
+  try{
+    const tok=process.env.IMPORT_TOKEN;
+    if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
+    const list=Array.isArray(req.body?.people)?req.body.people:[];
+    if(!list.length) return res.status(400).json({error:'people[] required'});
+    const CITY={zvolen:'Zvolen', 'banská_bystrica':'Banská Bystrica', brezno:'Brezno', detva:'Detva'};
+    const users=await q.find(db.users,{});
+    const p9=v=>{ let s=String(v||'').replace(/[^\d]/g,''); if(s.startsWith('421'))s=s.slice(3); if(s.startsWith('0'))s=s.slice(1); return s.length===9?s:null; };
+    const byEmail={}, byPhone={};
+    for(const u of users){ if(u.email) byEmail[u.email.toLowerCase()]=u; const k=p9(u.phone); if(k&&!byPhone[k]) byPhone[k]=u; }
+    let inserted=0, skipped=0, enrolled=0;
+    for(const p of list){
+      const email=String(p.email||'').toLowerCase().trim();
+      if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ skipped++; continue; }
+      const ph=p9(p.phone);
+      if(byEmail[email] || (ph&&byPhone[ph])){ skipped++; continue; }
+      const name=String(p.name||'').trim()||email.split('@')[0];
+      let code=(name.replace(/[^a-zA-Z]/g,'').toUpperCase().slice(0,5)||'LEAD')+Math.floor(100+Math.random()*900);
+      while(await q.one(db.users,{referral_code:code})) code='LEAD'+Math.floor(1000+Math.random()*9000);
+      const u=await q.insert(db.users,{
+        name, email, phone: ph?('0'+ph):'', referral_code:code,
+        sponsor_id:null, rank:1, is_admin:false, active:true, user_type:'lead',
+        password:null, imported:true, claimed:false,
+        lead_source:'meta_leadform', utm_source:'facebook', utm_medium:'paid',
+        utm_campaign:String(p.campaign||'fa-zumba-leads-jun-2026'),
+        city: CITY[String(p.city||'').toLowerCase()]||p.city||null,
+        consent_at: p.created?`${p.created}T12:00:00.000Z`:nowISO(), email_consent:true,
+        visit_count:0, referral_credit:0, notes:'Import z Meta Lead Ads (Zumba Leady jún 2026)',
+        created_at: p.created||today() });
+      byEmail[email]=u; if(ph) byPhone[ph]=u;
+      inserted++;
+      try{ await enqueueSequence(u._id,'app_launch'); await enqueueSequence(u._id,'lead_nurture'); enrolled++; }catch(e){}
+    }
+    await auditLog(req,'meta_leads_import',`+${inserted} leadov, ${skipped} preskočených (duplicitné/neplatné)`,null,{inserted,skipped,enrolled},'');
+    res.json({ok:true, inserted, skipped, enrolled, total_in:list.length});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.post('/api/admin/import-leads', adminAuth, async(req,res)=>{
   try {
     const csv = req.body.csv||'';
