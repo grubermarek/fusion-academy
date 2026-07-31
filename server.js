@@ -1075,6 +1075,31 @@ async function seedData() {
     await q.insert(db.settings,{key:'nelka_premia_2026_07_v1', value:true, at:nowISO()});
   }
 
+  // Oprava UTC prešľapu: korunovanie tesne po polnoci 1.8. vyhodnotilo jún namiesto
+  // júla. Ak júnový záznam patrí tej istej víťazke ako júlové poradie, premenuj ho na
+  // júl (ceny už boli odovzdané raz — nič sa nedubluje) a oprav aj oznam na nástenke.
+  if(!(await q.one(db.settings,{key:'fix_crown_june_to_july_v1'}))){
+    try{
+      const juneRec=await q.one(db.monthly_winners,{month:'2026-06'});
+      const julyRec=await q.one(db.monthly_winners,{month:'2026-07'});
+      if(juneRec && !julyRec){
+        const summary=await pointsSummaryData('2026-07-01','2026-07-31');
+        const top=(summary.rows||[])[0];
+        if(top && top.id===juneRec.user_id){
+          await q.update(db.monthly_winners,{_id:juneRec._id},{$set:{month:'2026-07', points:top.total}});
+          const posts=(await q.find(db.feed,{system_event:true, event_kind:'monthly_winner'})).filter(p=>/jún/i.test(p.text||''));
+          for(const p of posts) await q.update(db.feed,{_id:p._id},{$set:{text:p.text.replace(/jún(a)?/gi,'júl')}});
+          console.log(`🔧 Klientka mesiaca: jún → júl (${juneRec.user_name}, ${top.total} b.)`);
+        } else if(top){
+          // Iná víťazka júla — júnový (omylom korunovaný) záznam odstráň, júl korunuje boot-krok
+          await q.remove(db.monthly_winners,{_id:juneRec._id},{});
+          console.log(`🔧 Klientka mesiaca: júnový omyl odstránený (${juneRec.user_name}); júl korunuje ${top.name}`);
+        }
+      }
+    }catch(e){ console.error('fix crown june:', e.message); }
+    await q.insert(db.settings,{key:'fix_crown_june_to_july_v1', value:true, at:nowISO()});
+  }
+
   // Po výmene kreatívy (priamy vstup do appky) čítame štatistiky len z novej reklamy,
   // nie z celej kampane — inak by sa miešali so staršou (pozastavenou) reklamou.
   if(!(await q.one(db.settings,{key:'meta_ad_id_v1'}))){
@@ -6616,9 +6641,12 @@ app.get('/api/admin/payslips.csv', adminAuth, async(req,res)=>{
 const MONTHLY_PRIZE_VALUE = 225;
 async function crownMonthlyWinner(){
   try{
-    const now=new Date();
-    const prevMonthDate=new Date(now.getFullYear(), now.getMonth()-1, 1);
-    const month=prevMonthDate.toISOString().slice(0,7); // YYYY-MM predošlého mesiaca
+    // Mesiac počítame podľa SLOVENSKÉHO času — server beží v UTC a tesne po polnoci
+    // by inak korunoval o mesiac skôr (stalo sa: jún namiesto júla).
+    const skToday=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Bratislava'}).format(new Date()); // YYYY-MM-DD
+    const prevMonthDate=new Date(+skToday.slice(0,4), +skToday.slice(5,7)-1-1, 1);
+    const month=`${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth()+1).padStart(2,'0')}`;
+    if(month<'2026-07') return; // súťaž beží od júla 2026
     if(await q.one(db.monthly_winners,{month})) return; // už korunovaná
     const from=month+'-01', to=month+'-31';
     const summary=await pointsSummaryData(from, to);
@@ -6672,8 +6700,9 @@ async function crownMonthlyWinner(){
 // podľa admin nastavenia (Ceny → ročné), tu ide o titul, odznak a oznámenie.
 async function crownYearlyWinner(){
   try{
-    const now=new Date();
-    const year=String(now.getFullYear()-1);
+    const skToday=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Bratislava'}).format(new Date());
+    const year=String(+skToday.slice(0,4)-1);
+    if(+year<2026) return; // súťaž beží od roku 2026
     if(await q.one(db.monthly_winners,{month:year, type:'year'})) return;
     const summary=await pointsSummaryData(year+'-01-01', year+'-12-31');
     const top=(summary.rows||[])[0];
