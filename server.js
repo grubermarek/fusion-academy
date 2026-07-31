@@ -3863,6 +3863,58 @@ app.post('/api/import-meta-leads/report', async(req,res)=>{
       if(m) out.active_membership++;
     }
     out.payers.sort((a,b)=>b.revenue-a.revenue);
+    // ?tag=1 — označ spárovaných používateľov (meta_lead:true), aby živý lievik
+    // v admine (Kampane) videl aj tých, čo sa registrovali ešte pred importom.
+    if(req.query.tag==='1'){
+      let tagged=0;
+      for(const p of list){
+        const u=byEmail[String(p.email||'').toLowerCase()] || (p9(p.phone)&&byPhone[p9(p.phone)]) || null;
+        if(u && !u.meta_lead){ await q.update(db.users,{_id:u._id},{$set:{meta_lead:true, meta_lead_city:String(p.city||'')}}); tagged++; }
+      }
+      const ex=await q.one(db.settings,{key:'meta_lead_total'});
+      if(ex) await q.update(db.settings,{_id:ex._id},{$set:{value:list.length, at:nowISO()}});
+      else await q.insert(db.settings,{key:'meta_lead_total', value:list.length, at:nowISO()});
+      out.tagged=tagged;
+    }
+    res.json({ok:true, ...out});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Živý lievik leadovej kampane pre admin Kampane — počíta sa z DB pri každom
+// otvorení, takže sa „aktualizuje sám" pri každej zmene (registrácia/platba/…)
+app.get('/api/admin/meta-lead-funnel', adminAuth, async(req,res)=>{
+  try{
+    const users=(await q.find(db.users,{})).filter(u=>u.meta_lead || u.lead_source==='meta_leadform');
+    const totalSetting=await q.one(db.settings,{key:'meta_lead_total'});
+    const total=Math.max(+(totalSetting?.value)||0, users.length);
+    const membs=await q.find(db.memberships,{});
+    const pays=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status));
+    const txs=await q.find(db.transactions,{});
+    const orders=(await q.find(db.orders,{})).filter(o=>o.status==='paid');
+    const bookings=await q.find(db.bookings,{});
+    const revOf=uid=>{
+      let r=0;
+      membs.filter(m=>m.user_id===uid && m.payment_method).forEach(m=>r+=(+m.price||0));
+      pays.filter(p=>p.user_id===uid).forEach(p=>r+=(+p.amount||0));
+      txs.filter(t=>(t.user_id===uid||t.client_id===uid) && !t.payment_method).forEach(t=>r+=(+t.amount||0));
+      orders.filter(o=>o.user_id===uid).forEach(o=>r+=(+o.total||0));
+      return +r.toFixed(2);
+    };
+    const out={ total, registered:0, attended:0, paying:0, revenue:0, active_membership:0, byCity:{}, payers:[] };
+    for(const u of users){
+      const city=(u.meta_lead_city||u.city||'?').toLowerCase();
+      const c=out.byCity[city]=out.byCity[city]||{registered:0,attended:0,paying:0,revenue:0};
+      const selfRegistered=!!u.password || u.claimed;
+      if(!selfRegistered) continue;
+      out.registered++; c.registered++;
+      if((u.visit_count||0)>0 || bookings.some(b=>b.user_id===u._id && b.status==='attended')){ out.attended++; c.attended++; }
+      const rev=revOf(u._id);
+      if(rev>0){ out.paying++; c.paying++; out.revenue=+(out.revenue+rev).toFixed(2); c.revenue=+(c.revenue+rev).toFixed(2);
+        out.payers.push({id:u._id, name:u.name, revenue:rev}); }
+      const m=membs.find(x=>x.user_id===u._id && x.status==='active' && (!x.expires_at||x.expires_at>=today()));
+      if(m) out.active_membership++;
+    }
+    out.payers.sort((a,b)=>b.revenue-a.revenue);
     res.json({ok:true, ...out});
   }catch(e){ res.status(500).json({error:e.message}); }
 });

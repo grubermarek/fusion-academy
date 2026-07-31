@@ -945,6 +945,14 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       </div>
       <div id="metaAdsPanel" class="text-muted small">Načítavam…</div>
     </div></div>
+    <!-- Živý lievik leadovej kampane — počíta sa z databázy pri každom otvorení -->
+    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+        <h6 class="fw-bold mb-0">🪣 Lievik leadov (Zumba Leady jún 2026)</h6>
+        <span class="small text-muted">aktualizuje sa naživo pri každom otvorení</span>
+      </div>
+      <div id="leadFunnelPanel" class="small text-muted">Načítavam…</div>
+    </div></div>
     <div id="campaignsList"><div class="text-muted py-4 text-center">Načítavam…</div></div>
   </div>
 
@@ -2557,8 +2565,26 @@ async function saveMetaAdsToken(){
     setTimeout(loadCampaigns, 1500);
   } else msg.innerHTML=`<span class="text-danger">Chyba: ${(r&&r.error)||'?'}</span>`;
 }
+async function loadLeadFunnel(){
+  const el=document.getElementById('leadFunnelPanel'); if(!el) return;
+  const d=await api('/api/admin/meta-lead-funnel');
+  if(!d||!d.ok){ el.innerHTML='<span class="text-danger">Chyba načítania.</span>'; return; }
+  const pct=n=>d.total?((n/d.total)*100).toFixed(1)+' %':'—';
+  const CITY_LBL={'zvolen':'Zvolen','banská_bystrica':'B. Bystrica','brezno':'Brezno','detva':'Detva'};
+  const step=(lbl,n,extra)=>`<div class="d-flex justify-content-between py-1" style="border-bottom:1px solid #2a2a2a"><span>${lbl}</span><span><b>${n}</b> <span class="text-muted">· ${extra??pct(n)}</span></span></div>`;
+  el.innerHTML=`
+    ${step('Leady z formulára', d.total, '100 %')}
+    ${step('Zaregistrované v appke', d.registered)}
+    ${step('Prišli na hodinu', d.attended)}
+    ${step('💶 Zaplatili', d.paying)}
+    ${step('Aktívne členstvo dnes', d.active_membership)}
+    <div class="d-flex justify-content-between py-2"><span class="fw-bold">Tržby z kampane</span><span class="fw-bold" style="color:#C9A24C">${(d.revenue||0).toFixed(2)} €</span></div>
+    <div class="d-flex gap-2 flex-wrap mt-1">${Object.entries(d.byCity).map(([c,v])=>`<span class="badge bg-secondary">${CITY_LBL[c]||c}: ${v.registered} reg · ${v.paying} plat · ${v.revenue.toFixed(0)} €</span>`).join('')}</div>
+    ${(d.payers||[]).length?`<div class="mt-2 text-muted">Zaplatili: ${d.payers.map(p=>`<a href="/u/${p.id}" style="color:#C9A24C;text-decoration:none">${escHtml(p.name)}</a> (${p.revenue.toFixed(2)} €)`).join(' · ')}</div>`:''}`;
+}
 async function loadCampaigns(){
   loadMetaStats();
+  loadLeadFunnel();
   const list=await api('/api/admin/campaigns');
   const host=document.getElementById('campaignsList');
   if(!Array.isArray(list)||!list.length){ host.innerHTML='<div class="text-muted text-center py-5">Zatiaľ žiadne kampane. Klikni „Nová kampaň" a začni merať návratnosť.</div>'; return; }
