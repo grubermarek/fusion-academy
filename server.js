@@ -7767,17 +7767,23 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
     const running = nowMin>=toMin(cls.time_start);
     const live = (cls.stream_key && liveKeys.has(cls.stream_key)) || running; // bez media servera = podľa času
     const booked = !!(await q.one(db.bookings,{class_id:cls._id, user_id:req.session.uid, booking_date:today(), status:{$ne:'cancelled'}}));
-    // Tréner pre dnešný termín — výmena môže byť nastavená na online hodine ALEBO na
-    // párovej fyzickej hodine (rovnaký deň/čas, mesto = stream_city), z ktorej sa vysiela.
-    let si = await sessionInstructor(cls, today()).catch(()=>null);
-    if(!si || !si.name || si.name===cls.instructor){
+    // Tréner pre dnešný termín — výmena (override) môže byť nastavená na online hodine
+    // ALEBO na párovej fyzickej hodine (rovnaký deň/čas, mesto = stream_city), z ktorej
+    // sa vysiela. Override má vždy prednosť pred štandardným inštruktorom.
+    let insName='';
+    const si = await sessionInstructor(cls, today()).catch(()=>null);
+    if(si?.overridden) insName=si.instructor;
+    if(!insName){
       const pair=(await q.find(db.classes,{active:true, day_of_week:cls.day_of_week}))
         .find(p=>p.category!=='Online' && p.time_start===cls.time_start && (p.location||'')===(cls.stream_city||''));
-      if(pair){ const psi=await sessionInstructor(pair, today()).catch(()=>null); if(psi&&psi.name) si=psi; else if(!si?.name) si={name:pair.instructor}; }
+      if(pair){
+        const psi=await sessionInstructor(pair, today()).catch(()=>null);
+        insName = psi?.overridden ? psi.instructor : (cls.instructor||pair.instructor||'');
+      } else insName=cls.instructor||'';
     }
     res.json({ok:true, upcoming:{ id:cls._id, name:cls.name, time_start:cls.time_start, time_end:cls.time_end,
       src:cls.stream_city||'', starts_in_min:Math.max(0,toMin(cls.time_start)-nowMin), running, live,
-      instructor:(si&&si.name)||cls.instructor||'',
+      instructor:insName,
       has_access:hasAccess, plan_id:m?m.plan_id:null, booked }});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
