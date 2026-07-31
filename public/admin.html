@@ -1057,7 +1057,13 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <li class="nav-item"><a class="nav-link py-1 px-3" id="invTabBtnSales" style="cursor:pointer" onclick="invTab('sales')">🛒 Všetky predaje</a></li>
     </ul>
     <div id="invTabSales" style="display:none">
-      <p class="text-muted small mb-2">Všetky zaznamenané predaje (členstvá, vstupy, merch, súkromné hodiny…). Faktúru k predaju nájdeš v záložke Faktúry.</p>
+      <p class="text-muted small mb-2">Všetky zaznamenané predaje (členstvá, vstupy, merch, súkromné hodiny…). Klik na klienta otvorí detail; faktúru nájdeš v záložke Faktúry.</p>
+      <div class="d-flex gap-2 flex-wrap mb-3">
+        <input type="month" id="txMonth" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:150px" onchange="renderAllTx()">
+        <select id="txType" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:170px" onchange="renderAllTx()"><option value="">Všetky typy</option></select>
+        <input id="txQ" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:220px" placeholder="Hľadať klienta / produkt…" oninput="clearTimeout(window.__txT);window.__txT=setTimeout(renderAllTx,250)">
+        <span class="small text-muted align-self-center" id="txCount"></span>
+      </div>
       <div class="card border-0 rounded-3 p-0">
         <div class="table-responsive">
           <table class="table table-hover align-middle mb-0">
@@ -4200,12 +4206,51 @@ function invTab(t){
   document.getElementById('invTabBtnInv').classList.toggle('active',!sales);
   if(sales) loadAllTx();
 }
+// Rôzne typy transakcií nesú meno/produkt v rôznych poliach (client_name vs user_name,
+// product_name vs note) — zjednoť, nech sa nikde neukazuje "undefined".
+const TX_TYPE_LBL={membership:'Členstvo', single_entry:'Jednorazový vstup', private_lesson:'Súkromná hodina', subscription:'Predplatné', subscription_renewal:'Obnova predplatného', gift_credit:'Darček kreditu', shop:'E-shop', merch:'Merch', tip:'Tip'};
+let _allTxRows=[];
 async function loadAllTx(){
   const rows=await api('/api/transactions');if(!rows)return;
-  // Rôzne typy transakcií nesú meno/produkt v rôznych poliach (client_name vs user_name,
-  // product_name vs note) — zjednoť, nech sa nikde neukazuje "undefined".
-  const TX_TYPE_LBL={membership:'Členstvo', single_entry:'Jednorazový vstup', private_lesson:'Súkromná hodina', shop:'E-shop', merch:'Merch', tip:'Tip'};
-  document.getElementById('allTxTable').innerHTML=rows.map(t=>`<tr><td class="ps-3 text-muted">${dateStr(t.date)}</td><td>${t.partner_name||'—'}</td><td>${t.client_name||t.user_name||'—'}</td><td>${t.product_name||t.note||TX_TYPE_LBL[t.type]||t.type||'—'}</td><td class="fw-bold">${eur(t.amount)}</td><td><button class="btn btn-sm btn-outline-danger" onclick="deleteTx('${t._id}')"><i class="bi bi-trash"></i></button></td></tr>`).join('')||'<tr><td colspan="6" class="text-center text-muted py-4">Žiadne predaje</td></tr>';
+  _allTxRows=rows;
+  // Naplň zoznam typov podľa reálnych dát (raz)
+  const sel=document.getElementById('txType');
+  if(sel && sel.options.length<=1){
+    [...new Set(rows.map(t=>t.type||'sale'))].sort().forEach(ty=>{
+      const o=document.createElement('option'); o.value=ty; o.textContent=TX_TYPE_LBL[ty]||(ty==='sale'?'Predaj (merch/produkt)':ty); sel.appendChild(o);
+    });
+  }
+  renderAllTx();
+}
+function renderAllTx(){
+  const m=document.getElementById('txMonth')?.value||'';
+  const ty=document.getElementById('txType')?.value||'';
+  const qq=(document.getElementById('txQ')?.value||'').toLowerCase().trim();
+  const list=_allTxRows.filter(t=>{
+    const d=String(t.date||t.created_at||'');
+    if(m && !d.startsWith(m)) return false;
+    if(ty && (t.type||'sale')!==ty) return false;
+    if(qq){
+      const hay=[t.client_name,t.user_name,t.partner_name,t.product_name,t.note,t.type].map(x=>String(x||'').toLowerCase()).join(' ');
+      if(!hay.includes(qq)) return false;
+    }
+    return true;
+  });
+  const cEl=document.getElementById('txCount');
+  if(cEl) cEl.textContent=`${list.length} predajov · ${list.reduce((s,t)=>s+(+t.amount||0),0).toFixed(2)} €`;
+  const clientCell=t=>{
+    const nm=t.client_name||t.user_name||'—';
+    return t.client_uid?`<a href="#" onclick="openClientDetail('${t.client_uid}');return false" style="color:#C9A24C;text-decoration:none">${escHtml(nm)}</a>`:escHtml(nm);
+  };
+  const partnerCell=t=>t.partner_id?`<a href="/u/${t.partner_id}" style="color:inherit;text-decoration:none">${escHtml(t.partner_name||'—')}</a>`:(t.partner_name||'—');
+  document.getElementById('allTxTable').innerHTML=list.map(t=>`<tr>
+    <td class="ps-3 text-muted">${dateStr(t.date||t.created_at)}</td>
+    <td>${partnerCell(t)}</td>
+    <td>${clientCell(t)}</td>
+    <td>${escHtml(t.product_name||t.note||TX_TYPE_LBL[t.type]||t.type||'—')}${t.payment_method||t.method?` <span class="badge bg-secondary" style="font-size:.6rem">${escHtml(t.payment_method||t.method)}</span>`:''}</td>
+    <td class="fw-bold">${eur(t.amount)}</td>
+    <td><button class="btn btn-sm btn-outline-danger" onclick="deleteTx('${t._id}')"><i class="bi bi-trash"></i></button></td>
+  </tr>`).join('')||'<tr><td colspan="6" class="text-center text-muted py-4">Žiadne predaje pre zvolený filter</td></tr>';
 }
 async function deleteTx(id){if(!confirm('Zmazať predaj a jeho provízie?'))return;const r=await api('/api/admin/transactions/'+id,{method:'DELETE'});if(r?.ok)loadAllTx();}
 

@@ -1050,6 +1050,18 @@ async function seedData() {
     console.log('✅  Meta campaign IDs prepojené — auto-sync štatistík aktívny');
   }
 
+  // Chybný import návštev (napr. 45426 u jednej klientky) — prepočítaj absurdné
+  // hodnoty z reálne absolvovaných hodín v appke.
+  if(!(await q.one(db.settings,{key:'visitcount_sanity_v1'}))){
+    const crazy=(await q.find(db.users,{})).filter(u=>(+u.visit_count||0)>5000);
+    for(const u of crazy){
+      const real=await q.count(db.bookings,{user_id:u._id, status:'attended'});
+      await q.update(db.users,{_id:u._id},{$set:{visit_count:real}});
+      console.log(`🧹 visit_count fix: ${u.name} ${u.visit_count} → ${real}`);
+    }
+    await q.insert(db.settings,{key:'visitcount_sanity_v1', value:true, at:nowISO()});
+  }
+
   // Po výmene kreatívy (priamy vstup do appky) čítame štatistiky len z novej reklamy,
   // nie z celej kampane — inak by sa miešali so staršou (pozastavenou) reklamou.
   if(!(await q.one(db.settings,{key:'meta_ad_id_v1'}))){
@@ -3111,9 +3123,9 @@ app.get('/api/transactions', auth, async(req,res)=>{
   const uid=req.session.uid;
   const u=await q.one(db.users,{_id:uid});
   let txs=u.is_admin?await q.find(db.transactions,{}):await q.find(db.transactions,{partner_id:uid});
-  if(u.is_admin){const allU=await q.find(db.users,{});const uMap=Object.fromEntries(allU.map(u=>[u._id,u.name]));txs=txs.map(t=>({...t,partner_name:uMap[t.partner_id]||'—'}));}
+  if(u.is_admin){const allU=await q.find(db.users,{});const uMap=Object.fromEntries(allU.map(u=>[u._id,u.name]));txs=txs.map(t=>({...t,partner_name:uMap[t.partner_id]||'—', client_uid:t.client_id||t.user_id||null}));}
   txs.sort((a,b)=>String(b.date||b.created_at||'').localeCompare(String(a.date||a.created_at||'')));
-  res.json(txs.slice(0,200));
+  res.json(txs.slice(0,500));
 });
 
 app.get('/api/commissions', auth, async(req,res)=>{
