@@ -229,6 +229,11 @@ let liveSet=new Set();
 async function loadOnlineClasses(){
   const data = await api('/api/online/classes');
   mediaBase = (data.media_base||'').replace(/\/$/,'');
+  // Kto už má online prístup (Silver/Gold/Online plán), nemá vidieť cenník —
+  // ide rovno na svoje hodiny. Cenník ostáva len pre ľudí bez prístupu.
+  if(data.has_access){
+    const ps=document.getElementById('plansSection'); if(ps) ps.style.display='none';
+  }
   document.getElementById('onlineClasses').style.display='block';
   const container = document.getElementById('classesContainer');
   if(!data?.classes?.length){
