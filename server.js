@@ -7603,6 +7603,18 @@ function hasOnlineAccess(m, u){
   if(plan && plan.online) return true;
   return /silver|gold|online/i.test(String(m.plan_id||'')+' '+String(m.plan_name||''));
 }
+// Klientske JS chyby → do server logov (diagnostika bielej obrazovky na zariadeniach,
+// ku ktorým nemám prístup). Bez dát navyše, len chybová hláška + stránka + prehliadač.
+app.post('/api/client-error', rlPublic, async(req,res)=>{
+  try{
+    const msg=String(req.body.message||'').slice(0,500);
+    const page=String(req.body.page||'').slice(0,200);
+    const stack=String(req.body.stack||'').slice(0,800);
+    console.error(`🐞 CLIENT-ERROR [${page}] uid=${req.session?.uid||'—'} ua=${String(req.headers['user-agent']||'').slice(0,80)}\n   ${msg}\n   ${stack}`);
+    res.json({ok:true});
+  }catch(e){ res.json({ok:false}); }
+});
+
 app.get('/api/online/classes', auth, async(req,res)=>{
   try{
   const m = await checkMembership(req.session.uid);

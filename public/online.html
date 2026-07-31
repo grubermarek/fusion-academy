@@ -182,6 +182,21 @@ function toast(msg, type='info'){
   setTimeout(()=>t.remove(), 4000);
 }
 
+// Diagnostika bielej obrazovky: každá JS chyba sa ukáže červeným pruhom a pošle
+// do server logov, aby sa dala opraviť aj bez prístupu k zariadeniu klientky.
+function reportClientError(msg, stack){
+  try{
+    const bar=document.createElement('div');
+    bar.style.cssText='position:fixed;top:0;left:0;right:0;background:#7a1f1f;color:#ffdada;padding:8px 12px;font-size:.8rem;z-index:99999;word-break:break-all';
+    bar.textContent='⚠️ Chyba stránky: '+msg;
+    document.body.appendChild(bar);
+    fetch('/api/client-error',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({message:msg, stack:stack||'', page:location.pathname+location.search})}).catch(()=>{});
+  }catch(e){}
+}
+window.addEventListener('error', e=>reportClientError(e.message+' @'+(e.filename||'')+':'+(e.lineno||''), e.error?.stack));
+window.addEventListener('unhandledrejection', e=>reportClientError('Promise: '+(e.reason?.message||String(e.reason)), e.reason?.stack));
+
 async function api(url, opts={}){
   try {
     const r = await fetch(url, {credentials:'include', headers:{'Content-Type':'application/json'},...opts, body:opts.body?JSON.stringify(opts.body):undefined});
