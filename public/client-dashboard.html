@@ -2404,6 +2404,11 @@ function loadSpotlightRender(){
   const host=document.getElementById('spotlight');
   host.innerHTML=renderSpotBoard()+renderCelebrate();
 }
+// Rozpis vlastných bodov („Tvoje body" v súťažnom okne)
+window.mySpotBreakdown=()=>{
+  const my=(_spotPeriod==='month'?_spotData?.myMonth:_spotData?.myYear)||{};
+  showPointsBreakdown(my.breakdown||[], my.points||0, 'Tvoje body — '+(_spotPeriod==='month'?'tento mesiac':'tento rok'));
+};
 // Rozpis bodov ľubovoľného člena z rebríčka
 window.spotBreakdown=(period,idx)=>{
   const list=period==='month'?(_spotData.topMonth||[]):(_spotData.topYear||[]);
@@ -2430,8 +2435,15 @@ function renderSpotBoard(){
     ${urgent?'🔥':'⏳'} ${daysLeft===0?'Dnes je posledný deň súťaže!':`Zostávaj${daysLeft===1?'ú':'ú'} <span style="font-size:.95rem">${daysLeft}</span> ${dayWord(daysLeft)} do konca ${isM?'mesačnej':'ročnej'} súťaže!`}
     <span style="font-weight:600;color:var(--muted,#999)">${daysLeft>0?'Ešte to stihneš 💪':''}</span>
   </div>`;
+  // „Tvoje body" — vlastné body a miesto v rebríčku pre vybrané obdobie (mesiac/rok)
+  const my=(isM?d.myMonth:d.myYear)||{};
+  const myRow=`<div onclick="event.stopPropagation();mySpotBreakdown()" style="display:flex;align-items:center;gap:8px;background:linear-gradient(102deg,rgba(126,200,227,.14),rgba(126,200,227,.05));border:1px solid rgba(126,200,227,.4);border-radius:12px;padding:8px 13px;margin-bottom:10px;cursor:pointer">
+    <span style="font-weight:800;color:#7ec8e3;font-size:.95rem">⭐ Tvoje body: ${my.points||0}</span>
+    <span style="color:var(--muted);font-size:.8rem">${my.rank?`· ${my.rank}. miesto z ${my.total}`:'· zbieraj body a dostaň sa do rebríčka!'}</span>
+    ${my.points?'<span style="margin-left:auto;color:#7ec8e3;font-size:.78rem;font-weight:600">Rozpis <i class="bi bi-chevron-right" style="font-size:.66rem"></i></span>':''}
+  </div>`;
   const header=`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-    <div class="sl-label" style="margin:0">${title}</div>${toggle}</div>${countdown}`;
+    <div class="sl-label" style="margin:0">${title}</div>${toggle}</div>${countdown}${myRow}`;
   if(!list.length){
     return `<div class="sl-card sl-hero">${header}
       <div class="sl-why">Zatiaľ žiadne body za toto obdobie — buď prvá! 💫</div>

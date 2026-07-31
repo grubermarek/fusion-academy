@@ -2452,6 +2452,13 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     const viewerLang = meUser?.lang||'';
     const viewerIsAdmin = !!(meUser && meUser.is_admin);
     let monthPoints; try { monthPoints = await monthlyPointsFor(u._id); } catch(e){ monthPoints = {month:today().slice(0,7),total:0,items:[]}; }
+    // Tituly zo súťaže — trvalé odznaky s počtom výhier (🏆 mesiac / 👑 rok)
+    let winnerTitles={month_wins:0, year_wins:0};
+    try{
+      const wins=await q.find(db.monthly_winners,{user_id:u._id});
+      winnerTitles.month_wins=wins.filter(w=>w.type!=='year').length;
+      winnerTitles.year_wins=wins.filter(w=>w.type==='year').length;
+    }catch(e){}
     res.json({
       id:u._id, name: u.anonymous&&!isSelf ? 'Anonymný člen' : u.name,
       nickname: u.anonymous&&!isSelf ? '' : (u.nickname||''),
@@ -2460,6 +2467,7 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
       gender, viewer_lang: viewerLang, viewer_is_admin: viewerIsAdmin, viewer_logged_in: !!req.session?.uid,
       points: monthPoints,
       membership_tier: memTier, membership_name: memName,
+      winner_titles: winnerTitles,
       likes: likeCount, liked_by_me: likedByMe,
       anonymous: !!u.anonymous, is_self:isSelf,
       avatar: u.anonymous&&!isSelf ? null : (u.avatar||null),
@@ -5037,14 +5045,24 @@ async function activateMembership(userId, planId, durationDays){
 
 async function checkMembership(userId){
   if(!userId) return null;
-  const m = await q.one(db.memberships,{user_id:userId,status:'active'});
-  if(!m) return null;
-  if(new Date(m.expires_at) < new Date()){
-    await q.update(db.memberships,{_id:m._id},{$set:{status:'expired'}});
+  const list = await q.find(db.memberships,{user_id:userId,status:'active'});
+  if(!list.length) return null;
+  const now = new Date();
+  const valid=[], stale=[];
+  for(const m of list) (new Date(m.expires_at) < now ? stale : valid).push(m);
+  for(const m of stale) await q.update(db.memberships,{_id:m._id},{$set:{status:'expired'}});
+  if(!valid.length){
     await q.update(db.users,{_id:userId},{$set:{membership_plan:null,membership_expires:null}});
     return null;
   }
-  return m;
+  // Účet môže mať naraz plné členstvo AJ permanentku/vstup (bundle) — vráť plné
+  // členstvo (nesie online prístup a benefity); pri viacerých ber najdlhšie platné.
+  valid.sort((a,b)=>{
+    const ab=MEMBERSHIP_PLANS[a.plan_id]?.type==='bundle'?1:0, bb=MEMBERSHIP_PLANS[b.plan_id]?.type==='bundle'?1:0;
+    if(ab!==bb) return ab-bb;
+    return String(b.expires_at||'').localeCompare(String(a.expires_at||''));
+  });
+  return valid[0];
 }
 
 app.get('/api/membership', auth, async(req,res)=>{
@@ -6567,9 +6585,40 @@ async function crownMonthlyWinner(){
     console.log(`🏆 Klientka mesiaca ${month}: ${winner.name} (${top.total} b.) — ceny odovzdané (${MONTHLY_PRIZE_VALUE} €)`);
   }catch(e){ console.error('crownMonthlyWinner:', e.message); }
 }
+// Klientka ROKA — vyhlási sa 1. januára za predošlý rok. Titul sa zapíše do
+// monthly_winners s type:'year' (month='YYYY'), ceny odovzdáva štúdio ručne
+// podľa admin nastavenia (Ceny → ročné), tu ide o titul, odznak a oznámenie.
+async function crownYearlyWinner(){
+  try{
+    const now=new Date();
+    const year=String(now.getFullYear()-1);
+    if(await q.one(db.monthly_winners,{month:year, type:'year'})) return;
+    const summary=await pointsSummaryData(year+'-01-01', year+'-12-31');
+    const top=(summary.rows||[])[0];
+    if(!top || top.total<=0) return;
+    const winner=await q.one(db.users,{_id:top.id});
+    if(!winner) return;
+    await q.insert(db.monthly_winners,{ month:year, type:'year', user_id:winner._id, user_name:winner.name,
+      points:top.total, seen:true, created_at:nowISO() });
+    await q.insert(db.notifications,{user_id:winner._id, type:'yearly_winner',
+      title:'👑 Si Klientka roka '+year+'!', body:`Gratulujeme! Za rok ${year} si vyzbierala najviac bodov zo všetkých (${top.total} b.). Ohľadom cien sa ti ozveme. 🎉`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+    if(winner.email) sendMail(winner.email, `👑 Si Klientka roka ${year}! Gratulujeme!`,
+      emailTemplate('👑 GRATULUJEME, si Klientka roka!',
+        `<p>Ahoj <b>${winner.name.split(' ')[0]}</b>,</p>
+         <p>za rok <b>${year}</b> si so <b>${top.total} bodmi</b> vyzbierala najviac zo všetkých — si naša <b>Klientka roka</b>! 👑🎉</p>
+         <p>Na tvojom profile ti pribudol trvalý odznak 👑 Klientka roka. Ohľadom odovzdania cien sa ti čoskoro ozveme.</p>`,
+        '🎉 Otvoriť appku', `${APP_URL}/client-dashboard`)).catch(()=>{});
+    await q.insert(db.feed,{ author_id:'studio', author_name:'Fusion Academy', author_badge:{emoji:'👑',label:'Klientka roka'},
+      system_event:true, event_kind:'yearly_winner',
+      text:`👑 KLIENTKA ROKA ${year}\n\nGratulujeme ${winner.name}! Celý rok najviac bodov, najviac energie, najviac srdca. Ďakujeme, že si dušou našej komunity! 🎉`,
+      image:null, reactions:{}, comments:[], created_at:nowISO() }).catch(()=>{});
+    console.log(`👑 Klientka roka ${year}: ${winner.name} (${top.total} b.)`);
+  }catch(e){ console.error('crownYearlyWinner:', e.message); }
+}
 app.get('/api/client/monthly-winner', auth, async(req,res)=>{
   try{
-    const win=await q.one(db.monthly_winners,{user_id:req.session.uid, seen:false});
+    const win=await q.one(db.monthly_winners,{user_id:req.session.uid, seen:false, type:{$ne:'year'}});
     res.json({ok:true, win: win||null});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -10187,9 +10236,14 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
       if(fn && nameTargets.includes(fn)) namedays.push({id:u._id, name:u.name, avatar:u.avatar||null});
     }
     const slim = w => ({ id:w.id, name:w.name, avatar:w.avatar, points:w.points, breakdown:w.breakdown, badge:w.badge });
+    // „Tvoje body" — pozícia a body prihlásenej klientky v mesačnom aj ročnom rebríčku
+    const myRank = ranked => { const i=ranked.findIndex(w=>w.id===req.session.uid);
+      return i>=0 ? {points:ranked[i].points, rank:i+1, total:ranked.length, breakdown:ranked[i].breakdown}
+                  : {points:0, rank:null, total:ranked.length, breakdown:[]}; };
     res.json({ month: monthStr, year: yearStr, today_nameday: todayName,
       clientOfMonth: winner, clientOfYear: winnerYear,
       topMonth: rankedMonth.slice(0,5).map(slim), topYear: rankedYear.slice(0,5).map(slim),
+      myMonth: myRank(rankedMonth), myYear: myRank(rankedYear),
       rewards: { year_end: rewardsCfg.year_end||'', disclaimer: rewardsCfg.disclaimer||'',
         month_prizes: rewardsCfg.month_prizes||[], year_prizes: rewardsCfg.year_prizes||[] },
       birthdays, namedays,
@@ -11881,6 +11935,8 @@ async function runDailyJobs(){
 
   // ── Klientka mesiaca: korunovanie a odovzdanie cien (1. deň v mesiaci) ──
   if(new Date().getDate()===1){ try{ await crownMonthlyWinner(); }catch(e){ console.error('crown winner daily:', e.message); } }
+  // ── Klientka roka: vyhlásenie 1. januára za predošlý rok ──
+  if(new Date().getDate()===1 && new Date().getMonth()===0){ try{ await crownYearlyWinner(); }catch(e){ console.error('crown year daily:', e.message); } }
 
   // ── Meta Ads: denná synchronizácia štatistík kampaní ──
   try{ await syncMetaCampaignStats(true); }catch(e){ console.error('meta sync daily:', e.message); }

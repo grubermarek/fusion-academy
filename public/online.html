@@ -274,6 +274,12 @@ async function loadOnlineClasses(){
   if(!data.has_access){
     document.getElementById('noAccess').style.display='block';
   }
+  // Ak práve beží prenos a klientka má prístup, otvor ho rovno — nemusí hľadať
+  // tlačidlo v zozname. Otvára sa len raz pri načítaní stránky.
+  if(data.has_access && !window._autoLiveOpened){
+    const liveCls = data.classes.find(c=>c.stream_key && liveSet.has(c.stream_key));
+    if(liveCls){ window._autoLiveOpened=true; watchLive(liveCls.stream_key,(liveCls.name||'').replace(/'/g,'')); }
+  }
 }
 
 // HLS prehrávanie (Safari natívne, Chrome/Android cez hls.js)

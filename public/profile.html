@@ -108,6 +108,11 @@
   .avatar img{width:100%;height:100%;object-fit:cover}
   .av-cam{position:absolute;bottom:2px;right:2px;width:30px;height:30px;border-radius:50%;background:var(--gold);color:#1a1710;display:flex;align-items:center;justify-content:center;font-size:.85rem;border:2px solid var(--bg)}
   .name-badge{display:inline-block;background:linear-gradient(102deg,#B98F3E,#F7E7B8 40%,#E7C878 60%,#B98F3E);color:#231A08;font-weight:800;font-size:.72rem;letter-spacing:.03em;text-transform:uppercase;padding:3px 12px;border-radius:20px;margin-bottom:8px;box-shadow:0 4px 14px -6px rgba(201,162,76,.7)}
+  .win-badge{display:inline-flex;align-items:center;gap:5px;font-weight:800;font-size:.74rem;letter-spacing:.04em;text-transform:uppercase;padding:4px 14px;border-radius:20px;margin:0 3px 8px}
+  .win-badge.win-month{background:linear-gradient(102deg,#B98F3E,#F7E7B8 45%,#E7C878 65%,#B98F3E);color:#231A08;box-shadow:0 4px 16px -5px rgba(201,168,76,.9);background-size:200% 100%;animation:winShine 3.2s linear infinite}
+  .win-badge.win-year{background:linear-gradient(102deg,#7a5c14,#ffe9a8 45%,#f5cf6b 65%,#7a5c14);color:#231A08;box-shadow:0 0 18px rgba(255,215,120,.55);background-size:200% 100%;animation:winShine 2.6s linear infinite}
+  .win-count{background:rgba(0,0,0,.28);color:#fff;border-radius:10px;padding:1px 7px;font-size:.7rem}
+  @keyframes winShine{0%{background-position:0 0}100%{background-position:200% 0}}
   .pname{font-family:'Cormorant Garamond',serif;font-size:2rem;font-weight:600;line-height:1.1}
   .pnick{color:var(--gold);font-size:.92rem;font-weight:700;margin-top:3px}
   .pstatus{color:var(--cream);font-size:.9rem;font-style:italic;opacity:.85;margin-top:8px;max-width:420px;margin-left:auto;margin-right:auto;line-height:1.4}
@@ -390,6 +395,8 @@ function render(){
       ${P.is_founder?'<div class="founder-crown">👑 Zakladateľ Fusion Academy</div>':''}
       ${P.membership_tier?`<div class="mem-badge mem-${esc(P.membership_tier)}">${P.membership_tier==='gold'?'👑':P.membership_tier==='silver'?'⭐':'🥉'} ${esc(P.membership_name||P.membership_tier)} ${memberWord}</div>`:''}
       ${P.name_badge?`<div class="name-badge">${P.name_badge.emoji} ${esc(P.name_badge.title)}</div>`:''}
+      ${P.winner_titles?.year_wins?`<div class="win-badge win-year">👑 Klientka roka${P.winner_titles.year_wins>1?` <span class="win-count">×${P.winner_titles.year_wins}</span>`:''}</div>`:''}
+      ${P.winner_titles?.month_wins?`<div class="win-badge win-month">🏆 Klientka mesiaca${P.winner_titles.month_wins>1?` <span class="win-count">×${P.winner_titles.month_wins}</span>`:''}</div>`:''}
       <div class="pname ${flex}">${P.name_badge?P.name_badge.emoji+' ':''}${esc(P.name)}</div>
       ${P.nickname?`<div class="pnick">„${esc(P.nickname)}"</div>`:''}
       ${P.status?`<div class="pstatus">„${esc(P.status)}"</div>`:''}
