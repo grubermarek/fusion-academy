@@ -213,13 +213,15 @@ async function init(){
     // Prihlásenej osobe cenník NEZOBRAZUJ, kým server výslovne nepovie, že nemá
     // prístup — inak pri akejkoľvek chybe načítania svieti nákupná stránka.
     const ps=document.getElementById('plansSection'); if(ps) ps.style.display='none';
-    document.getElementById('navLogin').style.display='none';
-    document.getElementById('navLogout').style.display='';
-    document.getElementById('navDash').style.display='';
+    // Staré menu už nemá navLogin/navLogout — bez null-checkov tu init padal a
+    // KAŽDÝ prihlásený videl prázdnu stránku. Preto všetko s ?.
+    const nl=document.getElementById('navLogin'); if(nl) nl.style.display='none';
+    const no=document.getElementById('navLogout'); if(no) no.style.display='';
+    const nd=document.getElementById('navDash'); if(nd) nd.style.display='';
     await loadMembership();
     loadOnlineClasses();
   } else {
-    document.getElementById('noAccess').style.display='block';
+    const na=document.getElementById('noAccess'); if(na) na.style.display='block';
     showMembershipStatus(null);
   }
 }
