@@ -1117,6 +1117,54 @@ async function seedData() {
     if(winRecs.length) console.log(`🔧 Ceny víťaziek opravené (súkromná 100 €, merch 20 %) — ${winRecs.length} záznamov`);
   }
 
+  // Sekvencia pre leady z Meta Zumba reklamy — generický „nová appka" mail im nič
+  // nehovoril (nevedeli, od koho prišiel). Táto hovorí o Zumbe, formulári z FB/IG
+  // a hodine zdarma v ich meste. Čakajúce generické maily leadov sa vymenia.
+  if(!(await q.one(db.settings,{key:'meta_lead_seq_v1'}))){
+    if(await q.count(db.email_steps,{sequence:'meta_lead_zumba'})===0){
+      const CTA_URL=`${APP_URL}/?utm_source=email&utm_medium=sequence&utm_campaign=meta-lead-zumba`;
+      await q.insert(db.email_steps,[
+        { sequence:'meta_lead_zumba', day:0, label:'Zumba lead – privítanie', active:true,
+          subject:'💃 {meno}, tvoja hodina Zumby ZADARMO v meste {mesto} ťa čaká!',
+          body:`<p>Ahoj {meno},</p>
+            <p>nedávno si na Facebooku/Instagrame vyplnila formulár, že ťa zaujíma <b>Zumba v meste {mesto}</b> — sme <b>Fusion Academy</b>, tanečná škola, ktorá tieto hodiny vedie (18 rokov praxe, 2000+ tanečníčok, 5,0★ na Google). 💛</p>
+            <p>Tvoja <b>prvá hodina je úplne ZADARMO</b> 🎁 — bez platby a bez záväzkov. Stačí si v našej appke vybrať termín, zaberie to 30 sekúnd.</p>
+            <p>Vidíme sa na parkete! 💃<br><i>Marek & Beáta, Fusion Academy</i></p>`,
+          cta:'💃 Rezervovať hodinu ZADARMO', cta_url:CTA_URL, created_at:nowISO() },
+        { sequence:'meta_lead_zumba', day:3, label:'Zumba lead – pripomienka', active:true,
+          subject:'{meno}, tvoja Zumba zadarmo v meste {mesto} stále čaká 😊',
+          body:`<p>Ahoj {meno},</p>
+            <p>len pripomíname — <b>hodina Zumby zadarmo</b>, o ktorú si mala záujem cez Facebook, na teba stále čaká. Hodiny v meste {mesto} sa plnia, tak si rezervuj miesto včas.</p>
+            <p>Nemusíš vedieť tancovať — všetky úrovne, skvelá hudba a partia žien, ktoré to prišli skúsiť presne ako ty. 🎵</p>`,
+          cta:'✨ Vybrať si termín (zadarmo)', cta_url:CTA_URL, created_at:nowISO() },
+        { sequence:'meta_lead_zumba', day:7, label:'Zumba lead – čo ťa čaká', active:true,
+          subject:'Čo ťa čaká na prvej hodine Zumby? (spoiler: žiadny stres)',
+          body:`<p>Ahoj {meno},</p>
+            <p>vieme, že prvý krok je najťažší, tak prezradíme, ako to u nás vyzerá: prídeš, trénerka ťa privíta, postavíš sa kamkoľvek do sály — a o 3 minúty sa hýbeš, aj keby si „nevedela tancovať". Spáliš 400–600 kcal a odídeš s úsmevom. 😄</p>
+            <p>Prines si len tenisky, vodu a dobrú náladu. Tvoja prvá hodina v meste {mesto} je stále <b>zadarmo</b>.</p>`,
+          cta:'💃 Idem to skúsiť', cta_url:CTA_URL, created_at:nowISO() },
+        { sequence:'meta_lead_zumba', day:14, label:'Zumba lead – posledná výzva', active:true,
+          subject:'🎁 {meno}, posledná pripomienka — hodina zdarma stále platí',
+          body:`<p>Ahoj {meno},</p>
+            <p>toto je naša posledná pripomienka — tvoja <b>hodina Zumby zadarmo</b> v meste {mesto} stále platí. 🙂</p>
+            <p>Tip: vezmi kamošku — <b>aj ona dostane prvú hodinu zadarmo</b> a vo dvojici je to hneď väčšia zábava. 👯‍♀️</p>
+            <p>Keby čokoľvek, stačí odpísať na tento mail. Tešíme sa na teba!<br><i>Marek & Beáta, Fusion Academy</i></p>`,
+          cta:'💃 Rezervovať poslednú voľnú hodinu', cta_url:CTA_URL, created_at:nowISO() },
+      ]);
+      console.log('✅  meta_lead_zumba sekvencia pridaná (4 kroky)');
+    }
+    // Leadom z reklamy vymeň čakajúce generické maily za zumba sekvenciu
+    const metaLeads=(await q.find(db.users,{lead_source:'meta_leadform'})).filter(u=>!u.claimed);
+    let swapped=0;
+    for(const u of metaLeads){
+      await q.remove(db.email_queue,{user_id:u._id, sequence:{$in:['app_launch','lead_nurture']}, status:'pending'},{multi:true});
+      await enqueueSequence(u._id,'meta_lead_zumba');
+      swapped++;
+    }
+    await q.insert(db.settings,{key:'meta_lead_seq_v1', value:true, at:nowISO()});
+    console.log(`📧 Zumba sekvencia nasadená pre ${swapped} leadov z Meta reklamy`);
+  }
+
   // Po výmene kreatívy (priamy vstup do appky) čítame štatistiky len z novej reklamy,
   // nie z celej kampane — inak by sa miešali so staršou (pozastavenou) reklamou.
   if(!(await q.one(db.settings,{key:'meta_ad_id_v1'}))){
@@ -11768,9 +11816,16 @@ async function processEmailQueue(){
         if(!mem || mem.plan_id!=='silver'){ await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'not_silver'}}); continue; }
       }
 
+      if(step.sequence === 'meta_lead_zumba'){
+        // Lead z reklamy: prestaň, len čo prišla na hodinu alebo má členstvo
+        const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
+        if(mem || (u.visit_count||0)>0){ await cancelSequence(u._id,'meta_lead_zumba'); await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'converted'}}); continue; }
+      }
+
       const meno = firstName(u.name)||'';
-      const subj = (step.subject||'').replace(/\{meno\}/g, meno);
-      const bodyP = (step.body||'').replace(/\{meno\}/g, meno);
+      const mesto = (u.city||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())||'tvojom meste';
+      const subj = (step.subject||'').replace(/\{meno\}/g, meno).replace(/\{mesto\}/g, mesto);
+      const bodyP = (step.body||'').replace(/\{meno\}/g, meno).replace(/\{mesto\}/g, mesto);
       await sendMail(u.email, subj,
         emailTemplate(subj.replace(/^[^\w]*/,''), bodyP, step.cta||null, step.cta_url||APP_URL));
       await q.update(db.email_queue,{_id:item._id},{$set:{status:'sent', sent_at: nowISO()}});
