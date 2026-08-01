@@ -3628,13 +3628,14 @@ app.get('/api/admin/leads/:id/emails', adminAuth, async(req,res)=>{
       lead_nurture:'Starostlivosť o leada', welcome:'Uvítacia sekvencia', app_launch:'Nová appka',
       membership_welcome:'Vitajte v členstve', expiry_warning:'Blíži sa koniec členstva',
       bronze_upsell:'Bronze → Silver', gold_upsell:'Silver → Gold', winback:'Winback (návrat)',
-      trial_followup:'Po hodine zdarma',
+      trial_followup:'Po hodine zdarma', meta_lead_zumba:'Zumba reklama (leady)',
     };
     const meno = firstName(u.name)||'';
+    const mesto = (u.city||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())||'tvojom meste';
     const rows = items.map(i=>{
       const s = steps[i.step_id] || {};
-      const subjP = (s.subject||'').replace(/\{meno\}/g, meno);
-      const bodyP = (s.body||'').replace(/\{meno\}/g, meno);
+      const subjP = (s.subject||'').replace(/\{meno\}/g, meno).replace(/\{mesto\}/g, mesto);
+      const bodyP = (s.body||'').replace(/\{meno\}/g, meno).replace(/\{mesto\}/g, mesto);
       // Presne to isté HTML, aké dostane klientka do schránky
       const html = s.body ? emailTemplate(subjP.replace(/^[^\w]*/,''), bodyP, s.cta||null, s.cta_url||APP_URL) : '';
       return {
@@ -11836,6 +11837,18 @@ async function processEmailQueue(){
   }
   if(sent) console.log(`📧 Email queue: odoslaných ${sent} emailov`);
 }
+
+// Okamžité spracovanie mailovej fronty (admin tlačidlo / jednorazové spustenie)
+app.post('/api/admin/email-queue/run', adminAuth, async(req,res)=>{
+  try{ await processEmailQueue(); res.json({ok:true}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/email-queue/run', async(req,res)=>{
+  const tok=process.env.IMPORT_TOKEN;
+  if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
+  try{ await processEmailQueue(); res.json({ok:true}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
 
 // ── Email automation API ──────────────────────────────────────────────────────
 // GET all sequences with their steps
