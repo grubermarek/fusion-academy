@@ -264,8 +264,15 @@ async function loadOnlineClasses(){
     return;
   }
   mediaBase = (data.media_base||'').replace(/\/$/,'');
+  window._onlineEntries = data.entries||0;
   // Cenník vidí len ten, o kom server výslovne povedal, že prístup nemá.
   if(ps) ps.style.display = data.has_access ? 'none' : 'block';
+  if(data.access_mode==='entry'){
+    const note=document.createElement('div');
+    note.style.cssText='background:rgba(255,152,0,.1);border:1px solid rgba(255,152,0,.4);border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:.85rem;color:#ffcc80';
+    note.innerHTML=`🎟️ Máš permanentku — online hodinu môžeš sledovať za <b>1 vstup</b> (odčíta sa raz za deň). Zostáva ti <b>${data.entries}</b> ${data.entries===1?'vstup':data.entries>=2&&data.entries<=4?'vstupy':'vstupov'}.`;
+    container.parentElement.prepend(note);
+  }
   if(!data.classes.length){
     container.innerHTML = `<p style="color:var(--text-muted);text-align:center;padding:2rem">Momentálne nie sú k dispozícii žiadne online hodiny.</p>`;
     return;
@@ -283,6 +290,11 @@ async function loadOnlineClasses(){
     let action;
     if(locked){
       action = `<span style="font-size:.8rem;color:var(--text-muted)">Vyžaduje členstvo</span>`;
+    } else if(data.access_mode==='entry'){
+      // Permanentkárka: sledovanie za 1 vstup — stream vydá server až po odpočte
+      action = c.has_stream
+        ? `<button class="btn-stream" onclick="entryWatch('${c._id}','${nm}')">▶️ Sledovať · 🎟️ 1 vstup</button>`
+        : `<span style="font-size:.8rem;color:var(--text-muted)">Stream čoskoro</span>`;
     } else {
       const parts=[];
       if(mediaBase && key){
@@ -421,6 +433,21 @@ function watchStream(encUrl, name){
     const v=document.getElementById('soVideo');
     if(/\.m3u8(\?|$)/i.test(em.src)) playHls(v, em.src); else v.src=em.src;
   }
+}
+// Permanentkárka: sledovanie za 1 vstup — prvýkrát s upozornením, potom odpočet a prehratie
+async function entryWatch(classId, name){
+  const entries = window._onlineEntries ?? 0;
+  if(!localStorage.getItem('fa_online_entry_ok')){
+    if(!confirm(`Sledovanie online hodiny ti odčíta 1 vstup z permanentky (zostáva ti ${entries}).\n\nOdpočíta sa len raz za deň — potom môžeš sledovať ľubovoľne dlho. Pokračovať?`)) return;
+    localStorage.setItem('fa_online_entry_ok','1');
+  }
+  const r=await api('/api/online/enter',{method:'POST',body:{class_id:classId}});
+  if(!r||!r.ok){ toast(r?.error||'Nepodarilo sa vstúpiť do prenosu','err'); return; }
+  if(r.charged){ window._onlineEntries=r.remaining; toast(`🎟️ Odčítal sa 1 vstup — zostáva ti ${r.remaining}`,'ok'); }
+  const s=r.stream||{};
+  if(s.stream_url) watchStream(encodeURIComponent(s.stream_url), name);
+  else if(s.stream_key && mediaBase) watchLive(s.stream_key, name);
+  else toast('Prenos ešte nezačal — skús to o chvíľu.','info');
 }
 function closeStream(){
   if(window._hls){ try{window._hls.destroy();}catch(e){} window._hls=null; }

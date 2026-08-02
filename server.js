@@ -7935,16 +7935,48 @@ app.get('/api/online/classes', auth, async(req,res)=>{
   try{
   const m = await checkMembership(req.session.uid);
   const mu = await q.one(db.users,{_id:req.session.uid});
-  const hasAccess = hasOnlineAccess(m, mu);
+  const hasFull = hasOnlineAccess(m, mu);
+  // Permanentkárka: prístup má, ale sledovanie ju stojí 1 vstup (odčíta /api/online/enter)
+  const entryMode = !hasFull && (mu?.single_entries||0)>0;
+  const hasAccess = hasFull || entryMode;
   const classes = await q.find(db.classes,{category:'Online',active:true});
   const result = classes.map(c=>({
     ...c,
-    stream_url: hasAccess ? (c.stream_url||null) : null,
-    stream_key: hasAccess ? (c.stream_key||null) : null,
+    // V entry režime sa stream NEprezradí vopred — vydá ho až /api/online/enter po odpočte
+    stream_url: hasFull ? (c.stream_url||null) : null,
+    stream_key: hasFull ? (c.stream_key||null) : null,
+    has_stream: !!(c.stream_url||c.stream_key),
     has_access: hasAccess,
     locked: !hasAccess,
   }));
-  res.json({classes:result, has_access:hasAccess, media_base:(process.env.MEDIA_BASE||'').replace(/\/$/,''), membership:m?{plan_id:m.plan_id,plan_name:m.plan_name,expires_at:m.expires_at}:null});
+  res.json({classes:result, has_access:hasAccess, access_mode: hasFull?'full':(entryMode?'entry':null),
+    entries: mu?.single_entries||0,
+    media_base:(process.env.MEDIA_BASE||'').replace(/\/$/,''), membership:m?{plan_id:m.plan_id,plan_name:m.plan_name,expires_at:m.expires_at}:null});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Vstup do online prenosu pre permanentkárku: odčíta 1 vstup (raz za deň) a vydá stream.
+// Plný online prístup (Silver/Gold/Online) prechádza bez odpočtu.
+app.post('/api/online/enter', auth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.session.uid});
+    const m=await checkMembership(u._id);
+    const cls=await q.one(db.classes,{_id:String(req.body.class_id||'')});
+    if(!cls || cls.category!=='Online') return res.status(404).json({error:'Online hodina nenájdená'});
+    const stream={stream_url:cls.stream_url||null, stream_key:cls.stream_key||null};
+    if(hasOnlineAccess(m,u)) return res.json({ok:true, charged:false, mode:'full', stream});
+    const entries=u.single_entries||0;
+    const guardKey='online_entry_'+u._id+'_'+today();
+    if(await q.one(db.settings,{key:guardKey})) return res.json({ok:true, charged:false, mode:'entry', remaining:entries, stream});
+    if(entries<=0) return res.status(402).json({error:'Nemáš žiadne vstupy na permanentke.'});
+    await q.update(db.users,{_id:u._id},{$set:{single_entries:entries-1}});
+    await q.insert(db.settings,{key:guardKey, value:true, at:nowISO()});
+    await q.insert(db.notifications,{user_id:u._id, type:'online_entry',
+      title:'🎟️ Použitý 1 vstup na online hodinu',
+      body:`Za dnešnú online hodinu sa ti odčítal 1 vstup z permanentky. Zostáva ti ${entries-1} ${entries-1===1?'vstup':entries-1>=2&&entries-1<=4?'vstupy':'vstupov'}.`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+    await auditLog(req,'online_entry_charge',u._id,{entries},{remaining:entries-1, class:cls.name},'');
+    res.json({ok:true, charged:true, mode:'entry', remaining:entries-1, stream});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -8090,7 +8122,10 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
     const cls=classes.find(c=> nowMin>=toMin(c.time_start)-90 && nowMin<toMin(c.time_end||c.time_start)+5 );
     if(!cls) return res.json({ok:true, upcoming:null});
     const m=await checkMembership(req.session.uid);
-    const hasAccess=hasOnlineAccess(m, await q.one(db.users,{_id:req.session.uid}));
+    const upcU=await q.one(db.users,{_id:req.session.uid});
+    const hasFull=hasOnlineAccess(m, upcU);
+    const entryMode=!hasFull && (upcU?.single_entries||0)>0; // permanentka: za 1 vstup
+    const hasAccess=hasFull||entryMode;
     const liveKeys=await liveStreamKeys();
     const running = nowMin>=toMin(cls.time_start);
     const live = (cls.stream_key && liveKeys.has(cls.stream_key)) || running; // bez media servera = podľa času
@@ -8112,7 +8147,8 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
     res.json({ok:true, upcoming:{ id:cls._id, name:cls.name, time_start:cls.time_start, time_end:cls.time_end,
       src:cls.stream_city||'', starts_in_min:Math.max(0,toMin(cls.time_start)-nowMin), running, live,
       instructor:insName,
-      has_access:hasAccess, plan_id:m?m.plan_id:null, booked }});
+      has_access:hasAccess, access_mode: hasFull?'full':(entryMode?'entry':null), entries:upcU?.single_entries||0,
+      plan_id:m?m.plan_id:null, booked }});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 

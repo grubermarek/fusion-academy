@@ -1931,7 +1931,7 @@ async function loadOnlineBanner(){
       <div style="font-size:1.8rem">🔴</div>
       <div style="flex:1;min-width:200px">
         <b style="font-size:1.05rem"><span class="ob-dot"></span>ONLINE ZUMBA PRÁVE PREBIEHA!</b>
-        <div style="font-size:.8rem;color:#ffb3ad">Živé vysielanie z mesta ${escHtml(u.src||'')} · do ${escHtml(u.time_end||'')}${u.instructor?` · 💃 Učí: <b>${escHtml(u.instructor)}</b>`:''}</div>
+        <div style="font-size:.8rem;color:#ffb3ad">Živé vysielanie z mesta ${escHtml(u.src||'')} · do ${escHtml(u.time_end||'')}${u.instructor?` · 💃 Učí: <b>${escHtml(u.instructor)}</b>`:''}${u.access_mode==='entry'?` · 🎟️ za 1 vstup z permanentky (máš ${u.entries})`:''}</div>
       </div>
       <a href="/online" style="background:#ff3b30;color:#fff;font-weight:800;padding:12px 22px;border-radius:11px;text-decoration:none;white-space:nowrap">▶️ VSTÚPIŤ</a>
     </div>`;
