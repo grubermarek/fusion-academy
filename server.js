@@ -4849,9 +4849,20 @@ app.post('/api/admin/classes', adminAuth, async(req,res)=>{
 });
 
 app.put('/api/admin/classes/:id', adminAuth, async(req,res)=>{
-  const{name,emoji,category,instructor,instructor_id,location,day_of_week,time_start,time_end,capacity,level,description,price,color,active}=req.body;
-  const ins=await resolveInstructor(instructor_id,instructor);
-  await q.update(db.classes,{_id:req.params.id},{$set:{name,emoji:emoji||'💃',category,instructor:ins.instructor,instructor_id:ins.instructor_id,location,day_of_week:+day_of_week,time_start,time_end,capacity:+capacity,level,description,price:+price,color,active:!!active}});
+  // Meň len POSLANÉ polia — čiastočný update (napr. len kapacita) predtým
+  // prepísal ostatné polia na undefined/NaN a hodinu deaktivoval.
+  const b=req.body, $set={};
+  for(const f of ['name','category','location','time_start','time_end','level','description','color']) if(b[f]!==undefined) $set[f]=b[f];
+  if(b.emoji!==undefined) $set.emoji=b.emoji||'💃';
+  if(b.day_of_week!==undefined) $set.day_of_week=+b.day_of_week;
+  if(b.capacity!==undefined) $set.capacity=+b.capacity;
+  if(b.price!==undefined) $set.price=+b.price;
+  if(b.active!==undefined) $set.active=!!b.active;
+  if(b.instructor!==undefined || b.instructor_id!==undefined){
+    const ins=await resolveInstructor(b.instructor_id,b.instructor);
+    $set.instructor=ins.instructor; $set.instructor_id=ins.instructor_id;
+  }
+  await q.update(db.classes,{_id:req.params.id},{$set});
   res.json({ok:true});
 });
 
@@ -6395,6 +6406,12 @@ async function accountingData(from, to){
   const membs=(await q.find(db.memberships,{})).filter(m=>!m._type);
   const orders=(await q.find(db.orders,{})).filter(o=>o.status==='paid');
   const singleEntries=await q.find(db.transactions,{type:'single_entry'});
+  // Hotovostné/kartové predaje členstiev z transakcií — záznam členstva sa pri
+  // upgrade PREPÍŠE (Bronze→Silver), takže bez transakcií by stará tržba zmizla.
+  // Stripe/PayPal/free/kredit sa vynechajú (tie už sedia v payments / nie sú tržba).
+  const memTxs=(await q.find(db.transactions,{type:'membership'}))
+    .filter(t=>+t.amount>0 && !/stripe|paypal|free|referral_credit|demo/i.test(String(t.payment_method||t.method||'')));
+  const memTxKeys=new Set(memTxs.map(t=>`${t.user_id}|${(+t.amount).toFixed(2)}`));
   const bookings=await q.find(db.bookings,{});
   const invoices=(await q.find(db.invoices,{}));
 
@@ -6405,7 +6422,8 @@ async function accountingData(from, to){
 
   const events=[
     ...payments.map(p=>({date:(p.captured_at||p.activated_at||p.created_at||''),amount:+p.amount||0,plan:p.plan_name||MEMBERSHIP_PLANS[p.stripe_sub_plan]?.name||MEMBERSHIP_PLANS[p.subscription_plan]?.name||'Platba',user_id:p.user_id,method:p.provider||p.method||'card'})),
-    ...membs.filter(m=>m.payment_method).map(m=>({date:m.created_at||'',amount:+m.price||0,plan:m.plan_name||'Členstvo',user_id:m.user_id,method:m.payment_method})),
+    ...membs.filter(m=>m.payment_method && !memTxKeys.has(`${m.user_id}|${(+m.price||0).toFixed(2)}`)).map(m=>({date:m.created_at||'',amount:+m.price||0,plan:m.plan_name||'Členstvo',user_id:m.user_id,method:m.payment_method})),
+    ...memTxs.map(t=>({date:t.created_at||t.date||'',amount:+t.amount||0,plan:(MEMBERSHIP_PLANS[t.plan_id]?.name)||'Členstvo',user_id:t.user_id,method:t.payment_method||t.method||'cash'})),
     ...orders.map(o=>({date:o.paid_at||o.created_at||'',amount:+o.total||0,plan:'E-shop',user_id:o.partner_id,method:o.payment_method||'cash'})),
     ...singleEntries.map(t=>({date:t.created_at||'',amount:+t.amount||0,plan:'Jednorazový vstup',user_id:t.user_id,method:t.method||'cash'})),
     // Manuálne faktúry (eventy, prenájmy…) — do tržieb až keď sú UHRADENÉ
@@ -10273,6 +10291,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
     const isPrivate = /súkromn/i.test(cls.name) || /súkromn/i.test(cls.category||'');
     const visitCount = u.visit_count || 0;
     let payOnSite = false; // rezervácia bez členstva/kreditu so sľubom platby na mieste
+    let deductPlan = null; // odpočet vstupu/kreditu sa vykoná až po úspešnej validácii
     // Čím klientka za hodinu „zaplatila" — bez tohto sa jej pri zrušení nedal vrátiť vstup
     let accessMethod = u.free_class_used ? 'membership' : 'free_class';
     // "First class free" is governed solely by free_class_used — the same flag the
@@ -10301,13 +10320,15 @@ app.post('/api/bookings', auth, async(req,res)=>{
             free_class_used: !!u.free_class_used
           });
         }
-        // Use free credit first, then single entry, then membership
+        // Use free credit first, then single entry, then membership.
+        // POZOR: odpočet sa vykoná až PO kontrole kapacity/duplicity/zrušenia —
+        // inak zamietnutá rezervácia zožrala klientke vstup (reálne sa stávalo).
         if(!hasMembership){
           if(freeCredits > 0){
-            await q.update(db.users,{_id:u._id},{$set:{free_credits: freeCredits - 1}});
+            deductPlan={field:'free_credits', value:freeCredits-1};
             accessMethod='free_credit';
           } else if(singleEntries > 0){
-            await q.update(db.users,{_id:u._id},{$set:{single_entries: singleEntries - 1}});
+            deductPlan={field:'single_entries', value:singleEntries-1};
             accessMethod='single_entry';
           } else if(payOnSite) accessMethod='pay_on_site';
         }
@@ -10322,6 +10343,8 @@ app.post('/api/bookings', auth, async(req,res)=>{
     if(booked>=cls.capacity) return res.status(400).json({error:'Hodina je plne obsadená – skúste čakací zoznam'});
     const exists=await q.one(db.bookings,{class_id,user_id:u._id,booking_date:bdate,status:{$ne:'cancelled'}});
     if(exists) return res.status(400).json({error:isChild?`${u.name} je už na túto hodinu prihlásené`:'Na túto hodinu ste sa už prihlásili'});
+    // Validácia prešla — až teraz odpočítaj vstup/kredit
+    if(deductPlan) await q.update(db.users,{_id:u._id},{$set:{[deductPlan.field]: deductPlan.value}});
     const booking=await q.insert(db.bookings,{
       class_id, class_name:cls.name, class_emoji:cls.emoji||'💃',
       class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
