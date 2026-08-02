@@ -1176,6 +1176,30 @@ async function seedData() {
     console.log(`📧 Zumba sekvencia nasadená pre ${swapped} leadov z Meta reklamy`);
   }
 
+  // Vrátenie výherných online hodín: starý auto-attend ich spotrebúval pri štarte
+  // hodiny (bez kliku „pripojiť sa"). Každej, čo v kolese vyhrala online hodinu
+  // a už ju nemá, sa pass vráti — spotrebuje sa až vedomým pripojením.
+  if(!(await q.one(db.settings,{key:'online_pass_restore_v1'}))){
+    const spins=(await q.find(db.spins,{prize:'online1'}));
+    const wonBy={}; spins.forEach(s=>{ if(s.user_id) wonBy[s.user_id]=(wonBy[s.user_id]||0)+1; });
+    const clickUses=(await q.find(db.audit,{action:'online_pass_use'}));
+    const usedBy={}; clickUses.forEach(a=>{ const uid=a.target; if(uid) usedBy[uid]=(usedBy[uid]||0)+1; });
+    let restored=0;
+    for(const [uid,won] of Object.entries(wonBy)){
+      const u=await q.one(db.users,{_id:uid}); if(!u) continue;
+      const should=Math.max(0, won-(usedBy[uid]||0));
+      if((u.online_passes||0) < should){
+        await q.update(db.users,{_id:uid},{$set:{online_passes:should}});
+        await q.insert(db.notifications,{user_id:uid, type:'online_pass',
+          title:'🎡 Tvoja výherná online hodina je späť!', body:'Ospravedlňujeme sa — výhra z kolesa sa omylom spotrebovala sama. Vrátili sme ti ju: použije sa až keď sa nabudúce pripojíš na online hodinu. 💛',
+          read:false, created_at:nowISO()}).catch(()=>{});
+        restored++;
+      }
+    }
+    await q.insert(db.settings,{key:'online_pass_restore_v1', value:true, at:nowISO()});
+    if(restored) console.log(`🎡 Vrátené výherné online hodiny: ${restored} klientkam`);
+  }
+
   // Soňa Moskalová: výherný online pass jej spotreboval auto-attend pri štarte
   // hodiny a stratila prístup — vráť jej dnešný prístup (pass ostáva spotrebovaný).
   if(!(await q.one(db.settings,{key:'sona_online_pass_fix_v1'}))){
@@ -7940,8 +7964,9 @@ app.delete('/api/bookings/:id', auth, async(req,res)=>{
 // (staré/členstvá z migrácie nemusia mať presné plan_id), tréner/admin vždy.
 function hasOnlineAccess(m, u){
   if(u && (u.is_admin || u.user_type==='trainer')) return true;
-  if(u && (u.online_passes||0)>0) return true; // výhra z kolesa: 1 online hodina zdarma
-  if(u && u.online_pass_used_date===today()) return true; // pass spotrebovaný dnes → prístup platí do konca dňa
+  // Výherný pass (online_passes) tu úmyselne NEdáva plný prístup — spotrebuje sa
+  // až klikom „pripojiť sa" (/api/online/enter). Po spotrebe platí do konca dňa:
+  if(u && u.online_pass_used_date===today()) return true;
   if(!m) return false;
   const plan=MEMBERSHIP_PLANS[m.plan_id];
   if(plan && plan.online) return true;
@@ -7964,9 +7989,11 @@ app.get('/api/online/classes', auth, async(req,res)=>{
   const m = await checkMembership(req.session.uid);
   const mu = await q.one(db.users,{_id:req.session.uid});
   const hasFull = hasOnlineAccess(m, mu);
+  // Výherný pass z kolesa: spotrebuje sa klikom „pripojiť sa" — má prednosť pred vstupmi
+  const passMode = !hasFull && (mu?.online_passes||0)>0;
   // Permanentkárka: prístup má, ale sledovanie ju stojí 1 vstup (odčíta /api/online/enter)
-  const entryMode = !hasFull && (mu?.single_entries||0)>0;
-  const hasAccess = hasFull || entryMode;
+  const entryMode = !hasFull && !passMode && (mu?.single_entries||0)>0;
+  const hasAccess = hasFull || passMode || entryMode;
   const classes = await q.find(db.classes,{category:'Online',active:true});
   const result = classes.map(c=>({
     ...c,
@@ -7977,8 +8004,8 @@ app.get('/api/online/classes', auth, async(req,res)=>{
     has_access: hasAccess,
     locked: !hasAccess,
   }));
-  res.json({classes:result, has_access:hasAccess, access_mode: hasFull?'full':(entryMode?'entry':null),
-    entries: mu?.single_entries||0,
+  res.json({classes:result, has_access:hasAccess, access_mode: hasFull?'full':(passMode?'pass':(entryMode?'entry':null)),
+    entries: mu?.single_entries||0, online_passes: mu?.online_passes||0,
     media_base:(process.env.MEDIA_BASE||'').replace(/\/$/,''), membership:m?{plan_id:m.plan_id,plan_name:m.plan_name,expires_at:m.expires_at}:null});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -7993,6 +8020,16 @@ app.post('/api/online/enter', auth, async(req,res)=>{
     if(!cls || cls.category!=='Online') return res.status(404).json({error:'Online hodina nenájdená'});
     const stream={stream_url:cls.stream_url||null, stream_key:cls.stream_key||null};
     if(hasOnlineAccess(m,u)) return res.json({ok:true, charged:false, mode:'full', stream});
+    // 1) Výherný pass z kolesa — spotrebuje sa práve teraz, prístup platí do konca dňa
+    if((u.online_passes||0)>0){
+      await q.update(db.users,{_id:u._id},{$set:{online_passes:(u.online_passes||0)-1, online_pass_used_date:today()}});
+      await q.insert(db.notifications,{user_id:u._id, type:'online_pass',
+        title:'🎡 Použila si výhernú online hodinu', body:'Príjemné cvičenie! Prístup k dnešnému prenosu ti platí do konca dňa.',
+        read:false, created_at:nowISO()}).catch(()=>{});
+      await auditLog(req,'online_pass_use',u._id,{passes:u.online_passes},{remaining:(u.online_passes||0)-1, class:cls.name},'');
+      return res.json({ok:true, charged:true, mode:'pass', remaining:(u.online_passes||0)-1, stream});
+    }
+    // 2) Permanentka — 1 vstup, raz za deň
     const entries=u.single_entries||0;
     const guardKey='online_entry_'+u._id+'_'+today();
     if(await q.one(db.settings,{key:guardKey})) return res.json({ok:true, charged:false, mode:'entry', remaining:entries, stream});
@@ -8152,8 +8189,9 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
     const m=await checkMembership(req.session.uid);
     const upcU=await q.one(db.users,{_id:req.session.uid});
     const hasFull=hasOnlineAccess(m, upcU);
-    const entryMode=!hasFull && (upcU?.single_entries||0)>0; // permanentka: za 1 vstup
-    const hasAccess=hasFull||entryMode;
+    const passMode=!hasFull && (upcU?.online_passes||0)>0;   // výherná online hodina z kolesa
+    const entryMode=!hasFull && !passMode && (upcU?.single_entries||0)>0; // permanentka: za 1 vstup
+    const hasAccess=hasFull||passMode||entryMode;
     const liveKeys=await liveStreamKeys();
     const running = nowMin>=toMin(cls.time_start);
     const live = (cls.stream_key && liveKeys.has(cls.stream_key)) || running; // bez media servera = podľa času
@@ -8175,7 +8213,7 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
     res.json({ok:true, upcoming:{ id:cls._id, name:cls.name, time_start:cls.time_start, time_end:cls.time_end,
       src:cls.stream_city||'', starts_in_min:Math.max(0,toMin(cls.time_start)-nowMin), running, live,
       instructor:insName,
-      has_access:hasAccess, access_mode: hasFull?'full':(entryMode?'entry':null), entries:upcU?.single_entries||0,
+      has_access:hasAccess, access_mode: hasFull?'full':(passMode?'pass':(entryMode?'entry':null)), entries:upcU?.single_entries||0,
       plan_id:m?m.plan_id:null, booked }});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -8203,11 +8241,8 @@ setInterval(async()=>{
               // Výherný online pass z kolesa sa spotrebuje prvou absolvovanou online hodinou
               const bm=await checkMembership(bu._id);
               const planB=bm?MEMBERSHIP_PLANS[bm.plan_id]:null;
-              // Pozor: prístup jej musí vydržať do konca DNEŠNEJ hodiny — bez
-              // online_pass_used_date ju spotreba passu vyhodila zo streamu
-              // presne pri štarte hodiny (na /online videla cenník).
-              if((bu.online_passes||0)>0 && !(planB&&planB.online))
-                await q.update(db.users,{_id:bu._id},{$set:{online_passes:(bu.online_passes||0)-1, online_pass_used_date:today()}});
+              // Výherný online pass sa tu už NEspotrebúva — odčíta sa až keď
+              // klientka reálne klikne „pripojiť sa" (/api/online/enter).
             }
           }
         }

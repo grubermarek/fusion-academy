@@ -290,10 +290,11 @@ async function loadOnlineClasses(){
     let action;
     if(locked){
       action = `<span style="font-size:.8rem;color:var(--text-muted)">Vyžaduje členstvo</span>`;
-    } else if(data.access_mode==='entry'){
-      // Permanentkárka: sledovanie za 1 vstup — stream vydá server až po odpočte
+    } else if(data.access_mode==='entry' || data.access_mode==='pass'){
+      // Permanentka (1 vstup) alebo výherná online hodina z kolesa — stream vydá server po odpočte
+      const lbl = data.access_mode==='pass' ? '▶️ Pripojiť sa · 🎡 výherná hodina' : '▶️ Sledovať · 🎟️ 1 vstup';
       action = c.has_stream
-        ? `<button class="btn-stream" onclick="entryWatch('${c._id}','${nm}')">▶️ Sledovať · 🎟️ 1 vstup</button>`
+        ? `<button class="btn-stream" onclick="entryWatch('${c._id}','${nm}')">${lbl}</button>`
         : `<span style="font-size:.8rem;color:var(--text-muted)">Stream čoskoro</span>`;
     } else {
       const parts=[];
@@ -436,14 +437,18 @@ function watchStream(encUrl, name){
 }
 // Permanentkárka: sledovanie za 1 vstup — prvýkrát s upozornením, potom odpočet a prehratie
 async function entryWatch(classId, name){
-  const entries = window._onlineEntries ?? 0;
-  if(!localStorage.getItem('fa_online_entry_ok')){
+  const mode = window._onlineAccessMode||'entry';
+  if(mode==='pass'){
+    if(!confirm('Pripojíš sa cez svoju 🎡 VÝHERNÚ online hodinu z kolesa šťastia — spotrebuje sa práve teraz a prístup ti platí do konca dňa. Pokračovať?')) return;
+  } else if(!localStorage.getItem('fa_online_entry_ok')){
+    const entries = window._onlineEntries ?? 0;
     if(!confirm(`Sledovanie online hodiny ti odčíta 1 vstup z permanentky (zostáva ti ${entries}).\n\nOdpočíta sa len raz za deň — potom môžeš sledovať ľubovoľne dlho. Pokračovať?`)) return;
     localStorage.setItem('fa_online_entry_ok','1');
   }
   const r=await api('/api/online/enter',{method:'POST',body:{class_id:classId}});
   if(!r||!r.ok){ toast(r?.error||'Nepodarilo sa vstúpiť do prenosu','err'); return; }
-  if(r.charged){ window._onlineEntries=r.remaining; toast(`🎟️ Odčítal sa 1 vstup — zostáva ti ${r.remaining}`,'ok'); }
+  if(r.charged && r.mode==='pass'){ toast('🎡 Výherná online hodina použitá — príjemné cvičenie!','ok'); }
+  else if(r.charged){ window._onlineEntries=r.remaining; toast(`🎟️ Odčítal sa 1 vstup — zostáva ti ${r.remaining}`,'ok'); }
   const s=r.stream||{};
   if(s.stream_url) watchStream(encodeURIComponent(s.stream_url), name);
   else if(s.stream_key && mediaBase) watchLive(s.stream_key, name);
