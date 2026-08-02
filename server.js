@@ -1176,6 +1176,15 @@ async function seedData() {
     console.log(`📧 Zumba sekvencia nasadená pre ${swapped} leadov z Meta reklamy`);
   }
 
+  // Soňa Moskalová: výherný online pass jej spotreboval auto-attend pri štarte
+  // hodiny a stratila prístup — vráť jej dnešný prístup (pass ostáva spotrebovaný).
+  if(!(await q.one(db.settings,{key:'sona_online_pass_fix_v1'}))){
+    const sona=(await q.find(db.users,{})).find(x=>/moskalov/i.test(x.name||''));
+    if(sona){ await q.update(db.users,{_id:sona._id},{$set:{online_pass_used_date:today()}});
+      console.log(`🎡 Online pass fix: ${sona.name} má dnes prístup k online hodine`); }
+    await q.insert(db.settings,{key:'sona_online_pass_fix_v1', value:true, at:nowISO()});
+  }
+
   // Po výmene kreatívy (priamy vstup do appky) čítame štatistiky len z novej reklamy,
   // nie z celej kampane — inak by sa miešali so staršou (pozastavenou) reklamou.
   if(!(await q.one(db.settings,{key:'meta_ad_id_v1'}))){
@@ -7932,6 +7941,7 @@ app.delete('/api/bookings/:id', auth, async(req,res)=>{
 function hasOnlineAccess(m, u){
   if(u && (u.is_admin || u.user_type==='trainer')) return true;
   if(u && (u.online_passes||0)>0) return true; // výhra z kolesa: 1 online hodina zdarma
+  if(u && u.online_pass_used_date===today()) return true; // pass spotrebovaný dnes → prístup platí do konca dňa
   if(!m) return false;
   const plan=MEMBERSHIP_PLANS[m.plan_id];
   if(plan && plan.online) return true;
@@ -8193,8 +8203,11 @@ setInterval(async()=>{
               // Výherný online pass z kolesa sa spotrebuje prvou absolvovanou online hodinou
               const bm=await checkMembership(bu._id);
               const planB=bm?MEMBERSHIP_PLANS[bm.plan_id]:null;
+              // Pozor: prístup jej musí vydržať do konca DNEŠNEJ hodiny — bez
+              // online_pass_used_date ju spotreba passu vyhodila zo streamu
+              // presne pri štarte hodiny (na /online videla cenník).
               if((bu.online_passes||0)>0 && !(planB&&planB.online))
-                await q.update(db.users,{_id:bu._id},{$set:{online_passes:(bu.online_passes||0)-1}});
+                await q.update(db.users,{_id:bu._id},{$set:{online_passes:(bu.online_passes||0)-1, online_pass_used_date:today()}});
             }
           }
         }
