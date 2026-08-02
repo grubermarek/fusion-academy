@@ -350,6 +350,17 @@ async function adminEditJoined(userId, current){
   if(r&&(r.ok||r.success!==false&&!r.error)){ location.reload(); }
   else alert('Chyba: '+(r?.error||'nepodarilo sa uložiť'));
 }
+// Admin: ručná úprava počtu odčlenených mesiacov (import nepreniesol celú históriu)
+async function adminEditMonths(userId, current){
+  const v=prompt('Koľko mesiacov členstva má klientka za sebou?\n(Prázdne = vrátiť automatický výpočet z histórie členstiev)', String(current??''));
+  if(v===null) return;
+  const val=v.trim()==='' ? null : Math.round(+v.replace(',','.'));
+  if(val!==null && (!Number.isFinite(val)||val<0)){ alert('Zadaj celé číslo (napr. 14) alebo nechaj prázdne.'); return; }
+  const r=await fetch('/api/admin/users/'+encodeURIComponent(userId),{method:'PUT',credentials:'include',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({months_member_override:val})}).then(x=>x.json()).catch(()=>null);
+  if(r&&!r.error){ location.reload(); }
+  else alert('Chyba: '+(r?.error||'nepodarilo sa uložiť'));
+}
 function showPreviewBar(txt){ const b=document.getElementById('bgPrevBar'); if(b){ document.getElementById('bgPrevTxt').textContent=txt; b.classList.add('on'); } }
 function endPreview(){ applyProfileBg(P.bg_tier); const b=document.getElementById('bgPrevBar'); if(b) b.classList.remove('on'); }
 async function load(){
@@ -473,7 +484,7 @@ function render(){
     <div class="stats">
       <div class="stat"><div class="n">${P.visits}</div><div class="l">${T('profile.stat_visits')}</div></div>
       <div class="stat"><div class="n">${P.referrals}</div><div class="l">${T('profile.stat_struct')}</div></div>
-      <div class="stat"><div class="n">${P.months_member}</div><div class="l">${T('profile.stat_months')}</div></div>
+      <div class="stat"><div class="n">${P.months_member}${P.viewer_is_admin?` <a href="#" onclick="adminEditMonths('${P.id}',${P.months_member});return false" title="Upraviť počet mesiacov členstva (len admin)" style="font-size:.7em;text-decoration:none">✏️</a>`:''}</div><div class="l">${T('profile.stat_months')}</div></div>
       <div class="stat" role="button" tabindex="0" style="cursor:pointer" onclick="openFriendsList()" title="Zobraziť priateľov"><div class="n">${P.friends_count||0}</div><div class="l">${(P.friends_count===1)?'priateľ':((P.friends_count>=2&&P.friends_count<=4)?'priatelia':'priateľov')}</div></div>
     </div>
     ${friendBtn()}

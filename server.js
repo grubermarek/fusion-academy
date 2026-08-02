@@ -1117,6 +1117,17 @@ async function seedData() {
     if(winRecs.length) console.log(`🔧 Ceny víťaziek opravené (súkromná 100 €, merch 20 %) — ${winRecs.length} záznamov`);
   }
 
+  // Výherné Gold existujúcich víťaziek: viditeľné v predajoch ako 0 € (nie v tržbách)
+  if(!(await q.one(db.settings,{key:'free_tx_backfill_v1'}))){
+    const wins=(await q.find(db.monthly_winners,{})).filter(w=>w.type!=='year');
+    for(const w of wins){
+      const exists=(await q.find(db.transactions,{user_id:w.user_id, payment_method:'free'})).some(t=>/Klientka mesiaca/.test(t.note||''));
+      if(!exists) await q.insert(db.transactions,{type:'membership', user_id:w.user_id, user_name:w.user_name, amount:0, date:today(),
+        payment_method:'free', method:'free', note:'🏆 Klientka mesiaca — mesiac Gold zdarma (výhra)', plan_id:'gold', created_at:nowISO(), month:today().slice(0,7)});
+    }
+    await q.insert(db.settings,{key:'free_tx_backfill_v1', value:true, at:nowISO()});
+  }
+
   // Sekvencia pre leady z Meta Zumba reklamy — generický „nová appka" mail im nič
   // nehovoril (nevedeli, od koho prišiel). Táto hovorí o Zumbe, formulári z FB/IG
   // a hodine zdarma v ich meste. Čakajúce generické maily leadov sa vymenia.
@@ -2532,7 +2543,10 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     const isSelf = u._id===me;
     const directRefs=await referralCountOf(u._id);
     const refCount=await downlineCountOf(u._id); // whole structure drives rewards
-    const memberMonths=await activeMembershipMonths(u._id);
+    // Admin môže počet odčlenených mesiacov nastaviť ručne (override) — import
+    // z Glofoxu nie vždy preniesol celú históriu členstva.
+    const memberMonths=(u.months_member_override!=null && u.months_member_override!=='')
+      ? +u.months_member_override : await activeMembershipMonths(u._id);
     const gender = u.gender==='male' ? 'male' : 'female';
     u.cities_visited = await citiesVisitedOf(u._id);
     const ach=computeAchievements(u, refCount, memberMonths, gender);
@@ -3073,7 +3087,12 @@ app.post('/api/admin/users/:id/grant-membership', adminAuth, async(req,res)=>{
           items:[{desc:`Členstvo ${plan.name}`, qty:1, total:paidAmount}], total:paidAmount,
           method: payMethod==='card' ? 'Karta na mieste' : 'Hotovosť'}).catch(()=>{});
         awardPurchaseCommission({buyer_id:u._id, amount:paidAmount, product_name:`Členstvo ${plan.name}`});
-      } else if(u.user_type==='lead'){ await q.update(db.users,{_id:u._id},{$set:{user_type:'client'}}); }
+      } else {
+        // Darček: do tržieb sa NEpočíta, ale v predajoch má byť viditeľný s 0 €
+        await q.insert(db.transactions,{type:'membership',user_id:u._id,user_name:u.name,amount:0,date:today(),
+          payment_method:'free', method:'free', note:`🎁 Členstvo ${plan.name} zadarmo (darček)`,plan_id,recorded_by:req.session.uid,created_at:nowISO(),month:today().slice(0,7)});
+        if(u.user_type==='lead') await q.update(db.users,{_id:u._id},{$set:{user_type:'client'}});
+      }
     }
     // Permanentka / jednorazový vstup vybraný v zozname plánov — predtým sa PRESKOČIL
     // (žiadne vstupy, žiadna tržba), takže predaj „zmizol" a klientka sa nemohla prihlásiť.
@@ -3093,6 +3112,10 @@ app.post('/api/admin/users/:id/grant-membership', adminAuth, async(req,res)=>{
           items:[{desc:plan.name, qty:1, total:paidAmount}], total:paidAmount,
           method: payMethod==='card' ? 'Karta na mieste' : 'Hotovosť'}).catch(()=>{});
         awardPurchaseCommission({buyer_id:u._id, amount:paidAmount, product_name:plan.name});
+      } else {
+        await q.insert(db.transactions,{type:'single_entry', user_id:u._id, user_name:u.name, amount:0, date:today(),
+          payment_method:'free', method:'free', note:`🎁 ${plan.name} zadarmo (darček)`, plan_id,
+          recorded_by:req.session.uid, created_at:nowISO(), month:today().slice(0,7)});
       }
       if(u.user_type==='lead') await q.update(db.users,{_id:u._id},{$set:{user_type:'client'}});
     }
@@ -4398,9 +4421,13 @@ app.post('/api/admin/users/:id/account-type', adminAuth, async(req,res)=>{
 // ── Update user profile (admin) ───────────────────────────────────────────────
 app.put('/api/admin/users/:id', adminAuth, async(req,res)=>{
   try {
-    const {name, email, phone, notes, bank_account, sponsor_id, visit_count, member_since} = req.body;
+    const {name, email, phone, notes, bank_account, sponsor_id, visit_count, member_since, months_member_override} = req.body;
     const upd = {};
     if(member_since !== undefined) upd.member_since = /^\d{4}-\d{2}-\d{2}$/.test(String(member_since)) ? member_since : null;
+    if(months_member_override !== undefined){
+      const n=+months_member_override;
+      upd.months_member_override = (months_member_override===null||months_member_override==='') ? null : (Number.isFinite(n)&&n>=0 ? Math.round(n) : null);
+    }
     if(name !== undefined) upd.name = name.trim();
     if(email !== undefined){
       const newEmail = email.toLowerCase().trim();
@@ -6821,8 +6848,12 @@ async function crownMonthlyWinner(){
     if(!top || top.total<=0) return; // nikto nezbieral body, nikoho nekorunuj
     const winner=await q.one(db.users,{_id:top.id});
     if(!winner) return;
-    // 1) Mesiac Gold zdarma (nadviaže na existujúce členstvo, ak nejaké beží)
+    // 1) Mesiac Gold zdarma (nadviaže na existujúce členstvo, ak nejaké beží).
+    // Do tržieb sa nepočíta, v predajoch je viditeľné ako 0 €.
     await activateMembership(winner._id, 'gold', 30).catch(e=>console.error('crown gold:',e.message));
+    await q.insert(db.transactions,{type:'membership', user_id:winner._id, user_name:winner.name, amount:0, date:today(),
+      payment_method:'free', method:'free', note:'🏆 Klientka mesiaca — mesiac Gold zdarma (výhra)', plan_id:'gold',
+      created_at:nowISO(), month:today().slice(0,7)}).catch(()=>{});
     // 2) Súkromná hodina s Marekom Gruberom zdarma — pripíše sa ako kredit,
     // spotrebuje sa pri najbližšej rezervácii (voľba „🎁 Zadarmo — výhra súťaže")
     await q.update(db.users,{_id:winner._id},{$set:{free_private_lesson_credits:(winner.free_private_lesson_credits||0)+1}});
