@@ -7070,6 +7070,7 @@ async function pointsSummaryData(from, to){
       (o.items||[]).forEach(it=>{ if(isMerchItem(it)) merchMap[uid]=(merchMap[uid]||0)+(+it.qty||1); }); });
     const rows=[]; const catTotals={hours:0, online:0, refs:0, membership:0, newmem:0, merch:0, merchline:0};
     const spinBy={}; (await q.find(db.spins,{})).forEach(s=>{ if(inRange(s.date)){ const b=spinBy[s.user_id]=spinBy[s.user_id]||{p:0,c:0}; b.p+=(+s.points||0); if(!s.milestone) b.c++; } });
+    const paidTiers=await paidMembershipTierMap();
     for(const u of users){
       const bks=byUser[u._id]||[];
       const online=bks.filter(isOnline).length;
@@ -7080,10 +7081,11 @@ async function pointsSummaryData(from, to){
       const nm=newMemberPointsFor(u._id, adjacency, buyerSet);
       const md=merchDownlinePointsFor(u._id, adjacency, merchMap);
       const merchCount=merchMap[u._id]||0;
-      const pi=buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, memTier:hasMem?m.plan_id:null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, spinPoints:(spinBy[u._id]||{}).p||0, spinCount:(spinBy[u._id]||{}).c||0});
+      const effTier=hasMem?effectiveMemTier(paidTiers[u._id]||null, m.plan_id, !!m.gift):null;
+      const pi=buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, memTier:effTier, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, spinPoints:(spinBy[u._id]||{}).p||0, spinCount:(spinBy[u._id]||{}).c||0});
       if(pi.total<=0) continue;
       catTotals.hours+=hours*MP_WEIGHTS.hour; catTotals.online+=online*MP_WEIGHTS.hour;
-      catTotals.refs+=refs*MP_WEIGHTS.referral; catTotals.membership+=hasMem?membershipPointsFor(m.plan_id):0;
+      catTotals.refs+=refs*MP_WEIGHTS.referral; catTotals.membership+=hasMem?membershipPointsFor(effTier):0;
       catTotals.newmem+=nm.points; catTotals.merch+=merchCount*MP_WEIGHTS.merch; catTotals.merchline+=md.points;
       rows.push({ id:u._id, name:u.name, total:pi.total, hours, online, refs, hasMem,
         items:pi.items.filter(i=>i.points>0).map(i=>({label:i.label, count:i.count, points:i.points})) });
@@ -10523,6 +10525,19 @@ const MP_WEIGHTS = { hour:5, referral:5, membership:10, newMemberLine:[30,15,10,
 // Body za aktívne členstvo podľa úrovne (iné plány, napr. Online, majú default MP_WEIGHTS.membership)
 const MEMBERSHIP_TIER_POINTS = { bronze:10, silver:20, gold:40 };
 const membershipPointsFor = planId => MEMBERSHIP_TIER_POINTS[planId] ?? MP_WEIGHTS.membership;
+// Body sa dávajú za úroveň, ktorú si klientka naozaj ZAPLATILA — darovaný upgrade
+// (napr. Gold pre klientku mesiaca) bodovú úroveň nezvyšuje. Mapa user_id → posledná
+// zaplatená úroveň z transakcií (free/darčekové sa nerátajú, kreditom platené áno).
+async function paidMembershipTierMap(){
+  const map={};
+  (await q.find(db.transactions,{type:'membership'}))
+    .filter(t=>t.plan_id && MEMBERSHIP_TIER_POINTS[t.plan_id]!==undefined && t.payment_method!=='free' && ((+t.amount||0)>0 || t.payment_method==='referral_credit'))
+    .sort((a,b)=>String(a.date||a.created_at||'').localeCompare(String(b.date||b.created_at||'')))
+    .forEach(t=>{ map[t.user_id]=t.plan_id; });
+  return map;
+}
+// Efektívna úroveň pre body: zaplatená > (nedarovaný záznam) > default
+const effectiveMemTier = (paidTier, recTier, isGift) => paidTier || (isGift ? null : recTier);
 // Body za merch, ktorý si kúpil niekto v mojej štruktúre (po líniách 1..5).
 // merchMap: user_id → počet kusov merchu v období. Vlastné kusy sa nerátajú (tie má buyer sám).
 function merchDownlinePointsFor(userId, adjacency, merchMap){
@@ -10599,7 +10614,8 @@ async function monthlyPointsFor(userId, month){
   const privCount = (await privCountMapInPeriod(month))[userId]||0;
   const spins=(await q.find(db.spins,{user_id:userId, month}));
   const spinPoints=spins.reduce((s,x)=>s+(+x.points||0),0), spinCount=spins.filter(x=>!x.milestone).length;
-  return buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, memTier:hasMem?m.plan_id:null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, privCount, spinPoints, spinCount}, month);
+  const paidTier=(await paidMembershipTierMap())[userId]||null;
+  return buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, memTier:hasMem?effectiveMemTier(paidTier, m.plan_id, !!m.gift):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, privCount, spinPoints, spinCount}, month);
 }
 function buildPointItems({hours, online, refs, hasMem, memName, memTier, newMemberCount, newMemberPoints, merchCount, merchLineCount, merchLinePoints, privCount}, month){
   privCount=privCount||0;
@@ -10747,7 +10763,8 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
     const bookings = await q.find(db.bookings,{});
     const activeMems = await q.find(db.memberships,{status:'active'});
     const memActive = {}, memName = {}, memTier = {};
-    activeMems.forEach(m=>{ if(!m.expires_at || m.expires_at>=today()){ memActive[m.user_id]=true; memName[m.user_id]=MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'; memTier[m.user_id]=m.plan_id||null; } });
+    const paidTiersSpot = await paidMembershipTierMap();
+    activeMems.forEach(m=>{ if(!m.expires_at || m.expires_at>=today()){ memActive[m.user_id]=true; memName[m.user_id]=MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'; memTier[m.user_id]=effectiveMemTier(paidTiersSpot[m.user_id]||null, m.plan_id||null, !!m.gift); } });
 
     const adjacency={}; allUsers.forEach(u=>{ if(u.sponsor_id) (adjacency[u.sponsor_id]=adjacency[u.sponsor_id]||[]).push(u._id); });
     // Víťaz za dané obdobie (prefix YYYY-MM alebo YYYY)

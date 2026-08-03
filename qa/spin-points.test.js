@@ -88,24 +88,40 @@ const post = (jar, p, b) => call(jar, 'POST', p, b);
     await post(jar, '/api/register', { name, email: jar.toLowerCase() + '-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', city: 'Zvolen', consent: true });
     return ((await g(jar, '/api/me')).data || {}).id;
   };
-  const expect = { B: ['bronze', 10], S: ['silver', 20], G: ['gold', 40] };
-  for (const [jar, [plan, pts]] of Object.entries(expect)) {
-    const uid = await mkUser(jar, 'AUDIT Mem ' + plan);
-    const gr = await post('admin', '/api/admin/users/' + uid + '/grant-membership', { plan_id: plan, gift: true });
-    ok('grant ' + plan, gr.status === 200, gr.data);
+  const memPts = async (jar, uid) => {
     const spotX = (await g(jar, '/api/client/spotlight')).data || {};
-    const memItem = ((spotX.myMonth || {}).breakdown || []).find(i => /Aktívne členstvo/.test(i.label || ''));
-    ok(plan + ' = ' + pts + ' b v rebríčku', memItem && memItem.points === pts, memItem);
+    const a = ((spotX.myMonth || {}).breakdown || []).find(i => /Aktívne členstvo/.test(i.label || ''));
     const profX = (await g(jar, '/api/profile/' + uid)).data || {};
-    const memItem2 = ((profX.points || {}).items || []).find(i => /Aktívne členstvo/.test(i.label || ''));
-    ok(plan + ' = ' + pts + ' b na profile', memItem2 && memItem2.points === pts, memItem2);
+    const b = ((profX.points || {}).items || []).find(i => /Aktívne členstvo/.test(i.label || ''));
+    return { spot: a ? a.points : null, prof: b ? b.points : null };
+  };
+  // Platené členstvá → plné body podľa úrovne
+  const expect = { B: ['bronze', 10], S: ['silver', 20], G: ['gold', 40] };
+  const ids = {};
+  for (const [jar, [plan, pts]] of Object.entries(expect)) {
+    const uid = ids[jar] = await mkUser(jar, 'AUDIT Mem ' + plan);
+    const gr = await post('admin', '/api/admin/users/' + uid + '/grant-membership', { plan_id: plan, gift: false, payment_method: 'cash' });
+    ok('grant ' + plan + ' (platené)', gr.status === 200, gr.data);
+    const p = await memPts(jar, uid);
+    ok('platené ' + plan + ' = ' + pts + ' b (rebríček aj profil)', p.spot === pts && p.prof === pts, p);
   }
-  // admin points-summary konzistentný s tiermi
+  // Miška scenár: platený bronze + darovaný gold → stále len 10 b
+  const giftUp = await post('admin', '/api/admin/users/' + ids.B + '/grant-membership', { plan_id: 'gold', gift: true });
+  ok('darovaný gold pre bronze klientku', giftUp.status === 200, giftUp.data);
+  const pB = await memPts('B', ids.B);
+  ok('bronze + darovaný gold = stále 10 b', pB.spot === 10 && pB.prof === 10, pB);
+  // Čisto darovaný gold (nikdy nič neplatila) → základných 10 b
+  const uidD = await mkUser('D', 'AUDIT Mem giftonly');
+  await post('admin', '/api/admin/users/' + uidD + '/grant-membership', { plan_id: 'gold', gift: true });
+  const pD = await memPts('D', uidD);
+  ok('čisto darovaný gold = 10 b (základ)', pD.spot === 10 && pD.prof === 10, pD);
+  // admin points-summary konzistentný
   const sum2 = (await g('admin', '/api/admin/points-summary?from=' + month + '-01&to=' + month + '-31')).data || {};
-  for (const [, [plan, pts]] of Object.entries(expect)) {
-    const r = (sum2.rows || []).find(x => x.name === 'AUDIT Mem ' + plan);
+  const expSum = { 'AUDIT Mem bronze': 10, 'AUDIT Mem silver': 20, 'AUDIT Mem gold': 40, 'AUDIT Mem giftonly': 10 };
+  for (const [nm2, pts] of Object.entries(expSum)) {
+    const r = (sum2.rows || []).find(x => x.name === nm2);
     const it = r && (r.items || []).find(i => /Aktívne členstvo/.test(i.label || ''));
-    ok('admin summary: ' + plan + ' = ' + pts + ' b', it && it.points === pts, it || r);
+    ok('admin summary: ' + nm2 + ' = ' + pts + ' b', it && it.points === pts, it || r);
   }
 
   // Cleanup: zmaž testovací účet + záznamy (izolovaný sandbox, ale pre poriadok)
