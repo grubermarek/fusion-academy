@@ -613,6 +613,12 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
       <p class="step-sub" id="s1Sub">Prvá hodina je <span class="gold">zadarmo</span>. Stačí sa zaregistrovať — trvá to 30 sekúnd.</p>
       <div class="form-card">
         <div class="auth-error" id="regErr"></div>
+        <!-- Google-first: najrýchlejšia registrácia na 1 klik — maximalizuje dokončené registrácie -->
+        <div id="gsiRegTopWrap" style="display:none;margin-bottom:14px">
+          <div id="gsiReg" style="display:flex;justify-content:center;transform:scale(1.08);transform-origin:center"></div>
+          <p style="font-size:.72rem;color:#8d8676;text-align:center;margin-top:9px">Jedným klikom, bez hesla. Prihlásením súhlasíš so <a href="/terms" target="_blank" style="color:#bdb6a6">spracovaním údajov a podmienkami</a>.</p>
+          <div style="display:flex;align-items:center;gap:10px;margin:12px 0 2px;color:#8d8676;font-size:.78rem"><span style="flex:1;height:1px;background:rgba(255,255,255,.12)"></span>alebo vyplň údaje ručne<span style="flex:1;height:1px;background:rgba(255,255,255,.12)"></span></div>
+        </div>
         <div class="form-group">
           <label>Celé meno</label>
           <input type="text" id="rName" placeholder="Jana Nováková" autocomplete="name">
@@ -655,11 +661,6 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
         <button class="btn-primary" id="regBtn" onclick="doRegister()">
           Pokračovať &nbsp;<i class="bi bi-arrow-right"></i>
         </button>
-        <div id="gsiRegWrap" style="display:none;margin-top:12px">
-          <div style="display:flex;align-items:center;gap:10px;margin:2px 0 10px;color:#8d8676;font-size:.78rem"><span style="flex:1;height:1px;background:rgba(255,255,255,.12)"></span>alebo<span style="flex:1;height:1px;background:rgba(255,255,255,.12)"></span></div>
-          <div id="gsiReg" style="display:flex;justify-content:center"></div>
-          <p style="font-size:.72rem;color:#8d8676;text-align:center;margin-top:8px">Prihlásením cez Google súhlasíš so <a href="/terms" target="_blank" style="color:#bdb6a6">spracovaním údajov a podmienkami</a>.</p>
-        </div>
         <p class="form-footer">
           Už máš účet? <a href="#" onclick="openLogin();return false">Prihlásiť sa</a>
         </p>
@@ -945,6 +946,8 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
     <h3 class="modal-title">Prihlásiť sa</h3>
     <p class="modal-sub">Vitaj späť v Fusion Academy!</p>
     <div class="auth-error" id="loginErr"></div>
+    <div id="gsiLogin" style="display:flex;justify-content:center;margin-bottom:6px;transform:scale(1.05);transform-origin:center"></div>
+    <div style="display:flex;align-items:center;gap:10px;margin:10px 0;color:#8d8676;font-size:.78rem"><span style="flex:1;height:1px;background:rgba(255,255,255,.12)"></span>alebo emailom<span style="flex:1;height:1px;background:rgba(255,255,255,.12)"></span></div>
     <div class="form-group">
       <label>E-mail</label>
       <input type="email" id="lEmail" placeholder="jana@email.sk" autocomplete="email">
@@ -956,7 +959,6 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
     <button class="btn-primary" onclick="doLogin()">
       <i class="bi bi-box-arrow-in-right"></i>&nbsp; Prihlásiť sa
     </button>
-    <div id="gsiLogin" style="margin-top:12px;display:flex;justify-content:center"></div>
     <div id="lResetBox" style="display:none;margin-top:14px;border-top:1px solid rgba(255,255,255,.1);padding-top:14px">
       <div class="form-group">
         <label>Nové heslo</label>
@@ -1571,9 +1573,9 @@ function scrollToTop(){
           else { showErr && showErr('regErr', d.error||'Google prihlásenie zlyhalo'); }
         }catch(e){ showErr && showErr('regErr','Google prihlásenie zlyhalo — skús email a heslo.'); }
       }});
-      const opts={theme:'filled_black', size:'large', shape:'pill', text:'continue_with', locale:'sk', width:280};
+      const opts={theme:'filled_black', size:'large', shape:'pill', text:'continue_with', locale:'sk', width:300};
       const l=document.getElementById('gsiLogin'); if(l) google.accounts.id.renderButton(l, opts);
-      const g=document.getElementById('gsiReg'); if(g){ google.accounts.id.renderButton(g, opts); const w=document.getElementById('gsiRegWrap'); if(w) w.style.display='block'; }
+      const g=document.getElementById('gsiReg'); if(g){ google.accounts.id.renderButton(g, opts); const w=document.getElementById('gsiRegTopWrap'); if(w) w.style.display='block'; }
     }catch(e){}
   };
   document.head.appendChild(s);
