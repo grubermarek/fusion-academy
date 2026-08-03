@@ -1398,6 +1398,61 @@ async function seedData() {
 // ═══════════════════════════════════════════════════════════════════════════════
 // AUTH
 // ═══════════════════════════════════════════════════════════════════════════════
+// ── Prihlásenie / registrácia cez Google (Google Identity Services ID token) ──
+// Páruje sa podľa emailu: existujúci účet sa prihlási (heslo ostáva funkčné),
+// importovaný lead sa claimne, nový email dostane účet ako pri registrácii.
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '112633525522-isq7nndkkm6s4832tc8gcj5mjin4o03s.apps.googleusercontent.com';
+app.post('/api/auth/google', rlLogin, async(req,res)=>{
+  try{
+    const cred=String(req.body.credential||'');
+    if(!cred) return res.status(400).json({error:'Chýba Google token'});
+    const info=await (await fetch('https://oauth2.googleapis.com/tokeninfo?id_token='+encodeURIComponent(cred))).json();
+    if(info.aud!==GOOGLE_CLIENT_ID || String(info.email_verified)!=='true')
+      return res.status(401).json({error:'Neplatné Google prihlásenie'});
+    const email=String(info.email||'').toLowerCase().trim();
+    if(!email) return res.status(400).json({error:'Google nevrátil email'});
+    let u=await q.one(db.users,{email});
+    if(u){
+      if(u.active===false) return res.status(403).json({error:'Účet je deaktivovaný'});
+      const set={google_id:info.sub};
+      if(u.imported && !u.claimed){
+        set.claimed=true; set.free_credits=Math.max(u.free_credits||0,1);
+        if(!u.consent_at) set.consent_at=nowISO();
+        cancelSequence(u._id,'app_launch').catch(()=>{});
+        cancelSequence(u._id,'meta_lead_zumba').catch(()=>{});
+        try{ const admins=await q.find(db.users,{is_admin:true});
+          for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'new_lead',title:'🆕 Importovaný lead si vytvoril účet (Google)',body:`${u.name} · ${email}`,read:false,created_at:nowISO()}); }catch(e){}
+        announceNewMember(u._id).catch(()=>{});
+      }
+      await q.update(db.users,{_id:u._id},{$set:set});
+      req.session.uid=u._id; req.session.sv=u.sess_ver||0;
+      return res.json({ok:true, redirect_to:dashUrlFor(u), claimed:!!set.claimed});
+    }
+    // Nový účet (lead) — rovnaká logika ako pri klasickej registrácii
+    const name=String(info.name||email.split('@')[0]).slice(0,80);
+    let sponsor_id=null;
+    if(req.body.sponsorCode){ const sp=await q.one(db.users,{referral_code:new RegExp('^'+String(req.body.sponsorCode).replace(/[^a-zA-Z0-9]/g,'')+'$','i')}); if(sp) sponsor_id=sp._id; }
+    if(!sponsor_id){ const f=await q.one(db.users,{email:'gruber.marek@gmail.com'}); if(f&&f.email!==email) sponsor_id=f._id; }
+    const base=name.split(' ')[0].toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8)||'GOOGLE';
+    let code=base+Math.floor(10+Math.random()*90);
+    while(await q.one(db.users,{referral_code:code})) code=base+Math.floor(100+Math.random()*900);
+    const attr=req.body.attribution||{}; const clean=v=>String(v||'').slice(0,200);
+    let lead_source='google_signin';
+    if(clean(attr.fbclid)) lead_source='meta'; else if(clean(attr.utm_source)) lead_source=clean(attr.utm_source).toLowerCase();
+    u=await q.insert(db.users,{name, email, password:null, google_id:info.sub, avatar:info.picture||null,
+      phone:'', referral_code:code, sponsor_id, rank:1, is_admin:false, active:true, user_type:'lead',
+      bank_account:'', notes:'', visit_count:0, referral_credit:0, lead_source,
+      utm_source:clean(attr.utm_source), utm_medium:clean(attr.utm_medium), utm_campaign:clean(attr.utm_campaign),
+      fbclid:clean(attr.fbclid), gclid:clean(attr.gclid), landing_page:clean(attr.landing), referrer:clean(attr.referrer),
+      consent_at:nowISO(), created_at:today()});
+    req.session.uid=u._id; req.session.sv=0;
+    try{ const admins=await q.find(db.users,{is_admin:true});
+      for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'new_lead',title:'🆕 Nová registrácia cez Google',body:`${name} · ${email}`,read:false,created_at:nowISO()}); }catch(e){}
+    announceNewMember(u._id).catch(()=>{});
+    res.json({ok:true, redirect_to:'/client-dashboard', new_account:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.post('/api/login', rlLogin, async(req,res)=>{
   try {
     const {email,password}=req.body;
@@ -1594,6 +1649,7 @@ app.get('/api/config', async(req,res)=>{
     stripe_enabled: !!process.env.STRIPE_SECRET_KEY,
     meta_pixel_id: process.env.META_PIXEL_ID||'',
     google_ads_id: process.env.GOOGLE_ADS_ID||'',
+    google_client_id: GOOGLE_CLIENT_ID,
     default_sponsor_code: founder?.referral_code || ''
   });
 });
