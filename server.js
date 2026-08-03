@@ -10759,11 +10759,13 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
       const buyerSet=await membershipBuyersInPeriod(prefix);
       const merchMap=await merchCountMapInPeriod(prefix);
       const privMap=await privCountMapInPeriod(prefix);
+      // body z kolesa dennej odmeny + míľniky série — bez nich rebríček nesedel s „Tvoje body"
+      const spinBy={}; (await q.find(db.spins,{})).forEach(s=>{ if((s.date||'').startsWith(prefix)){ const b=spinBy[s.user_id]=spinBy[s.user_id]||{p:0,c:0}; b.p+=(+s.points||0); if(!s.milestone) b.c++; } });
       const ranked=[];
       for(const u of users){
         const nm=newMemberPointsFor(u._id, adjacency, buyerSet);
         const md=merchDownlinePointsFor(u._id, adjacency, merchMap);
-        const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount:merchMap[u._id]||0, merchLineCount:md.count, merchLinePoints:md.points, privCount:privMap[u._id]||0 }, prefix);
+        const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount:merchMap[u._id]||0, merchLineCount:md.count, merchLinePoints:md.points, privCount:privMap[u._id]||0, spinPoints:(spinBy[u._id]||{}).p||0, spinCount:(spinBy[u._id]||{}).c||0 }, prefix);
         if(bd.total>0) ranked.push({ id:u._id, name:u.name, avatar:u.avatar||null, refs:refCount[u._id]||0, hours:attCount[u._id]||0, score:bd.total, points:bd.total, breakdown:bd.items, badge:getMemberBadge(u.created_at, u) });
       }
       ranked.sort((a,b)=>b.points-a.points);
