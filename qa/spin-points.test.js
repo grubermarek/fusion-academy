@@ -82,6 +82,32 @@ const post = (jar, p, b) => call(jar, 'POST', p, b);
   if (wonPts > 0) ok('admin points-summary obsahuje výhru', row && row.total >= wonPts, row);
   else ok('admin points-summary konzistentný (0 b výhra)', !row || row.total >= 0, row);
 
+  // 4) Body za aktívne členstvo podľa úrovne: Bronze 10 / Silver 20 / Gold 40
+  console.log('\n[členstvá]');
+  const mkUser = async (jar, name) => {
+    await post(jar, '/api/register', { name, email: jar.toLowerCase() + '-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', city: 'Zvolen', consent: true });
+    return ((await g(jar, '/api/me')).data || {}).id;
+  };
+  const expect = { B: ['bronze', 10], S: ['silver', 20], G: ['gold', 40] };
+  for (const [jar, [plan, pts]] of Object.entries(expect)) {
+    const uid = await mkUser(jar, 'AUDIT Mem ' + plan);
+    const gr = await post('admin', '/api/admin/users/' + uid + '/grant-membership', { plan_id: plan, gift: true });
+    ok('grant ' + plan, gr.status === 200, gr.data);
+    const spotX = (await g(jar, '/api/client/spotlight')).data || {};
+    const memItem = ((spotX.myMonth || {}).breakdown || []).find(i => /Aktívne členstvo/.test(i.label || ''));
+    ok(plan + ' = ' + pts + ' b v rebríčku', memItem && memItem.points === pts, memItem);
+    const profX = (await g(jar, '/api/profile/' + uid)).data || {};
+    const memItem2 = ((profX.points || {}).items || []).find(i => /Aktívne členstvo/.test(i.label || ''));
+    ok(plan + ' = ' + pts + ' b na profile', memItem2 && memItem2.points === pts, memItem2);
+  }
+  // admin points-summary konzistentný s tiermi
+  const sum2 = (await g('admin', '/api/admin/points-summary?from=' + month + '-01&to=' + month + '-31')).data || {};
+  for (const [, [plan, pts]] of Object.entries(expect)) {
+    const r = (sum2.rows || []).find(x => x.name === 'AUDIT Mem ' + plan);
+    const it = r && (r.items || []).find(i => /Aktívne členstvo/.test(i.label || ''));
+    ok('admin summary: ' + plan + ' = ' + pts + ' b', it && it.points === pts, it || r);
+  }
+
   // Cleanup: zmaž testovací účet + záznamy (izolovaný sandbox, ale pre poriadok)
   console.log('\n═══ VÝSLEDOK: ' + PASS + ' PASS, ' + FAIL + ' FAIL ═══');
   if (FAIL) { FAILS.forEach(f => console.log('  FAIL: ' + f.name)); process.exit(1); }
