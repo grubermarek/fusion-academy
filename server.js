@@ -1603,6 +1603,7 @@ app.post('/api/register', rlSignup, async(req,res)=>{
       if(!existing.password && ((existing.imported && !existing.claimed) || existing.pw_reset)){
         const set={ password:await bcrypt.hash(password,10), claimed:true, pw_reset:false,
           name: (name||existing.name), phone: (phone||existing.phone||''),
+          city: String(req.body.city||existing.city||'').trim().slice(0,60),
           consent_at: req.body.consent ? nowISO() : existing.consent_at,
           free_credits: Math.max(existing.free_credits||0, 1) }; // aspoň 1 hodina zdarma za vytvorenie účtu (nestackuje)
         await q.update(db.users,{_id:existing._id},{$set:set});
@@ -1650,7 +1651,7 @@ app.post('/api/register', rlSignup, async(req,res)=>{
       else if(utm_source) lead_source=utm_source.toLowerCase();
       else if(sponsor_id) lead_source='referral';
     }
-    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,referral_credit:0,lead_source,utm_source,utm_medium,utm_campaign,fbclid,gclid,landing_page:clean(attr.landing),referrer:clean(attr.referrer),consent_at: req.body.consent ? nowISO() : null,created_at:today()});
+    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',city:String(req.body.city||'').trim().slice(0,60),referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,referral_credit:0,lead_source,utm_source,utm_medium,utm_campaign,fbclid,gclid,landing_page:clean(attr.landing),referrer:clean(attr.referrer),consent_at: req.body.consent ? nowISO() : null,created_at:today()});
     req.session.uid=u._id;
     req.session.sv=0;
     // ── Referral: za SAMOTNÚ registráciu už NIE JE odmena (zneužívalo by sa) ───
@@ -9229,6 +9230,17 @@ async function outreachContext(){
   for(const b of bookings){ if(!b.user_id) continue; const d=b.booking_date||(b.created_at||'').slice(0,10); if(!lastAtt[b.user_id]||d>lastAtt[b.user_id]) lastAtt[b.user_id]=d;
     const loc=(b.class_location||'').trim(); if(loc){ (cityCount[b.user_id]=cityCount[b.user_id]||{})[loc]=(cityCount[b.user_id]?.[loc]||0)+1; } }
   const cityOf={}; for(const uid in cityCount){ cityOf[uid]=Object.entries(cityCount[uid]).sort((a,b)=>b[1]-a[1])[0][0]; }
+  // Fallback: kto ešte nemá odchodenú hodinu (leady, noví klienti), berie mesto z registrácie —
+  // inak segment „Podľa mesta" leady úplne vynechal. Normalizácia: „banska_bystrica" → „Banská Bystrica"
+  // (podľa miest reálnych hodín), aby sa nezobrazovali duplicitné varianty.
+  const canonCity = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/_/g,' ').trim();
+  const knownCity = {};
+  (await q.find(db.classes,{active:true})).forEach(c=>{ const loc=(c.location||'').trim(); if(loc) knownCity[canonCity(loc)]=loc; });
+  for(const u of users){
+    if(cityOf[u._id] || !(u.city||'').trim()) continue;
+    const raw=u.city.replace(/_/g,' ').trim();
+    cityOf[u._id]=knownCity[canonCity(raw)] || raw.replace(/\b\w/g,ch=>ch.toUpperCase());
+  }
   return {users, memExp, memPlan, lastAtt, cityOf};
 }
 function inSegment(u, seg, ctx, opts={}){
