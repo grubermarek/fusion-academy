@@ -1930,8 +1930,8 @@ async function loadOnlineBanner(){
     host.innerHTML=`<div class="ob-live" style="${base}">
       <div style="font-size:1.8rem">🔴</div>
       <div style="flex:1;min-width:200px">
-        <b style="font-size:1.05rem"><span class="ob-dot"></span>ONLINE ZUMBA PRÁVE PREBIEHA!</b>
-        <div style="font-size:.8rem;color:#ffb3ad">Živé vysielanie z mesta ${escHtml(u.src||'')} · do ${escHtml(u.time_end||'')}${u.instructor?` · 💃 Učí: <b>${escHtml(u.instructor)}</b>`:''}${u.access_mode==='entry'?` · 🎟️ za 1 vstup z permanentky (máš ${u.entries})`:''}</div>
+        <b style="font-size:1.05rem"><span class="ob-dot"></span>ONLINE ZUMBA PRÁVE PREBIEHA!${u.free_today?' <span style="background:#4ade80;color:#0b2513;border-radius:8px;padding:2px 8px;font-size:.75rem;vertical-align:middle">🎉 DNES ZDARMA PRE VŠETKÝCH</span>':''}</b>
+        <div style="font-size:.8rem;color:#ffb3ad">Živé vysielanie z mesta ${escHtml(u.src||'')} · do ${escHtml(u.time_end||'')}${u.instructor?` · 💃 Učí: <b>${escHtml(u.instructor)}</b>`:''}${u.free_today?' · dnes bez členstva a vstupov':(u.access_mode==='entry'?` · 🎟️ za 1 vstup z permanentky (máš ${u.entries})`:'')}</div>
       </div>
       <a href="/online" style="background:#ff3b30;color:#fff;font-weight:800;padding:12px 22px;border-radius:11px;text-decoration:none;white-space:nowrap">▶️ VSTÚPIŤ</a>
     </div>`;
@@ -1940,8 +1940,8 @@ async function loadOnlineBanner(){
   host.innerHTML=`<div style="${base};background:rgba(33,150,243,.08)">
     <div style="font-size:1.8rem">🌐</div>
     <div style="flex:1;min-width:200px">
-      <b>Online Zumba už o ${escHtml(u.time_start)} ${u.src?'· z mesta '+escHtml(u.src):''}</b>
-      <div style="font-size:.8rem;color:var(--muted,#999)">${u.instructor?`💃 Učí: <b style="color:var(--gold)">${escHtml(u.instructor)}</b> · `:''}Začíname o ${u.starts_in_min} min. ${u.booked?'✅ Si prihlásená — body máš isté!':'Prihlás sa — počíta sa do bodov aj odznakov.'}</div>
+      <b>Online Zumba už o ${escHtml(u.time_start)} ${u.src?'· z mesta '+escHtml(u.src):''}${u.free_today?' <span style="background:#4ade80;color:#0b2513;border-radius:8px;padding:2px 8px;font-size:.75rem;vertical-align:middle">🎉 DNES ZDARMA PRE VŠETKÝCH</span>':''}</b>
+      <div style="font-size:.8rem;color:var(--muted,#999)">${u.instructor?`💃 Učí: <b style="color:var(--gold)">${escHtml(u.instructor)}</b> · `:''}Začíname o ${u.starts_in_min} min. ${u.free_today?'Dnes bez členstva a vstupov — pripoj sa zadarmo! ':''}${u.booked?'✅ Si prihlásená — body máš isté!':'Prihlás sa — počíta sa do bodov aj odznakov.'}</div>
     </div>
     ${u.booked
       ? `<a href="/online" style="background:rgba(74,222,128,.15);border:1px solid #4ade80;color:#4ade80;font-weight:700;padding:10px 18px;border-radius:11px;text-decoration:none;white-space:nowrap">▶️ Prejsť na vysielanie</a>`

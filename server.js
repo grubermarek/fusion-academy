@@ -1077,6 +1077,37 @@ async function seedData() {
     await q.insert(db.settings,{key:'nelka_premia_2026_07_v1', value:true, at:nowISO()});
   }
 
+  // Simonka Hudecová (dcéra Ivety Hudecovej) — dobooknúť na pondelok 10.8.2026 19:00 Zvolen
+  // z rodičovského účtu (Marekova požiadavka 4.8.). Kryté členstvom/vstupom mamy, ak ho má.
+  if(!(await q.one(db.settings,{key:'book_simonka_2026_08_10_v1'}))){
+    try{
+      const mom=(await q.find(db.users,{})).find(x=>/iveta\s+hudecov/i.test(x.name||'') && !x.is_child);
+      const kid=(await q.find(db.users,{is_child:true})).find(x=>/simonk?a\s+hudecov/i.test(x.name||'') || (mom && x.parent_id===mom._id && /hudecov/i.test(x.name||'')));
+      const cls=(await q.find(db.classes,{active:true})).find(c=>c.day_of_week===1 && String(c.time_start||'').startsWith('19:00') && /zvolen/i.test(c.location||''));
+      if(kid && cls){
+        const bdate='2026-08-10';
+        const dup=await q.one(db.bookings,{class_id:cls._id, user_id:kid._id, booking_date:bdate, status:{$ne:'cancelled'}});
+        if(!dup){
+          let accessMethod='pay_on_site';
+          if(mom){ const pm=await checkMembership(mom._id);
+            if(pm && pm.status==='active' && (!pm.expires_at || pm.expires_at>=bdate)) accessMethod='parent_membership';
+            else if((mom.single_entries||0)>0){ accessMethod='parent_single_entry'; await q.update(db.users,{_id:mom._id},{$set:{single_entries:(mom.single_entries||0)-1}}); } }
+          await q.insert(db.bookings,{ class_id:cls._id, class_name:cls.name, class_emoji:cls.emoji||'💃',
+            class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
+            day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
+            user_id:kid._id, user_name:kid.name, user_email:mom?.email||null, user_phone:mom?.phone||'',
+            booked_by:mom?._id||'admin', booked_by_name:mom?.name||'Fusion Academy', is_child_booking:true, child_name:kid.name,
+            booking_date:bdate, status:'confirmed', pay_on_site:accessMethod==='pay_on_site', notes:'Dobooknuté štúdiom na žiadosť',
+            free_class:false, access_method:accessMethod, created_at:nowISO() });
+          if(mom) await q.insert(db.notifications,{user_id:mom._id,type:'booking',title:'Rezervácia potvrdená ✅',
+            body:`${kid.name}: ${cls.name} – ${bdate} o ${cls.time_start}. Booknuté štúdiom.`,read:false,created_at:nowISO()}).catch(()=>{});
+          console.log(`👧 Simonka booknutá: ${cls.name} ${bdate} (${accessMethod})`);
+        }
+      } else console.log('👧 Simonka booking: nenašiel som dieťa alebo hodinu Po 19:00 Zvolen — treba ručne');
+    }catch(e){ console.error('book_simonka:', e.message); }
+    await q.insert(db.settings,{key:'book_simonka_2026_08_10_v1', value:true, at:nowISO()});
+  }
+
   // Oprava UTC prešľapu: korunovanie tesne po polnoci 1.8. vyhodnotilo jún namiesto
   // júla. Ak júnový záznam patrí tej istej víťazke ako júlové poradie, premenuj ho na
   // júl (ceny už boli odovzdané raz — nič sa nedubluje) a oprav aj oznam na nástenke.
@@ -1838,7 +1869,7 @@ app.get('/api/classes', async(req,res)=>{
           const rows=await q.find(db.bookings,{class_id:c._id, booking_date:bdate, status:{$in:['confirmed','attended']}});
           attendees=[];
           for(const r of rows){
-            if(r.is_child_booking){ attendees.push({name:r.child_name||'dieťa', child:true}); continue; }
+            if(r.is_child_booking){ attendees.push({name:r.child_name||'dieťa', child:true, parent:r.booked_by_name||null}); continue; }
             const ru=await q.one(db.users,{_id:r.user_id});
             attendees.push({id:r.user_id, name:r.user_name||ru?.name||'Člen', av:!!(ru&&ru.avatar)});
           }
@@ -1880,7 +1911,7 @@ app.get('/api/classes/:id/attendees', auth, async(req,res)=>{
     const list=[];
     const me=req.session.uid;
     for(const r of rows){
-      if(r.is_child_booking){ list.push({name:r.child_name||'dieťa', child:true}); continue; }
+      if(r.is_child_booking){ list.push({name:r.child_name||'dieťa', child:true, parent:r.booked_by_name||null}); continue; }
       const ru=await q.one(db.users,{_id:r.user_id});
       if(ru && ru.anonymous){ list.push({name:'Člen (skrytý)', anonymous:true}); continue; }
       const fst = (r.user_id && r.user_id!==me) ? await friendState(me, r.user_id) : 'self';
@@ -1922,7 +1953,7 @@ app.get('/api/my-bookings', auth, async(req,res)=>{
       const rows=await q.find(db.bookings,{class_id:b.class_id, booking_date:b.booking_date, status:{$in:['confirmed','attended']}});
       const list=[];
       for(const r of rows){
-        if(r.is_child_booking){ list.push({ name:r.child_name||'dieťa', child:true }); continue; }
+        if(r.is_child_booking){ list.push({ name:r.child_name||'dieťa', child:true, parent:r.booked_by_name||null }); continue; }
         const ru=await q.one(db.users,{_id:r.user_id});
         if(ru && ru.anonymous){ list.push({ name:'Člen (skrytý)', anonymous:true }); continue; }
         list.push({ id:r.user_id, name:r.user_name||ru?.name||'Člen', av:!!(ru&&ru.avatar) }); // fotka cez /api/avatar/:id
@@ -6772,7 +6803,7 @@ app.get('/api/admin/class-history', adminAuth, async(req,res)=>{
         city:cls?.location||b.class_location||'—', trainer:cls?.instructor||'—', time_start:cls?.time_start||'',
         capacity:cls?.capacity||30, price:+cls?.price||10, attendees:[], newClients:0 };
       const u=uMap[b.user_id];
-      s.attendees.push({ user_id:b.user_id, name:b.user_name||u?.name||b.child_name||'—', is_child:!!b.is_child_booking, status:b.status });
+      s.attendees.push({ user_id:b.user_id, name:b.user_name||u?.name||b.child_name||'—', is_child:!!b.is_child_booking, parent:b.is_child_booking?(b.booked_by_name||null):null, status:b.status });
       if(b.user_id && firstBookingOf[b.user_id]===d) s.newClients++;
     }
     let list=Object.values(sessions).map(s=>{
@@ -7978,7 +8009,15 @@ async function promoteWaitlist(class_id, booking_date){
 // Storno policy (Glofox-style): cancellation only up to N hours before class start
 const CANCEL_DEADLINE_HOURS = +process.env.CANCEL_DEADLINE_HOURS || 3;
 app.delete('/api/bookings/:id', auth, async(req,res)=>{
-  const b = await q.one(db.bookings,{_id:req.params.id,user_id:req.session.uid});
+  let b = await q.one(db.bookings,{_id:req.params.id,user_id:req.session.uid});
+  // Rodič môže stornovať aj rezerváciu svojho dieťaťa (user_id je dieťa, booked_by rodič)
+  if(!b){
+    const cb = await q.one(db.bookings,{_id:req.params.id});
+    if(cb && cb.is_child_booking){
+      const kidU = await q.one(db.users,{_id:cb.user_id});
+      if(cb.booked_by===req.session.uid || (kidU && kidU.parent_id===req.session.uid)) b=cb;
+    }
+  }
   if(!b) return res.status(404).json({error:'Rezervácia nenájdená'});
   if(b.status==='confirmed' && b.booking_date){
     const cls = await q.one(db.classes,{_id:b.class_id});
@@ -8004,8 +8043,14 @@ app.delete('/api/bookings/:id', auth, async(req,res)=>{
       } else if(b.access_method==='free_class' || b.free_class){
         await q.update(db.users,{_id:cu._id},{$set:{free_class_used:false}});
         refundNote=' Prvú hodinu zdarma máš stále k dispozícii.';
+      } else if(b.access_method==='parent_single_entry' && b.booked_by){
+        const pu=await q.one(db.users,{_id:b.booked_by});
+        if(pu){ await q.update(db.users,{_id:pu._id},{$set:{single_entries:(pu.single_entries||0)+1}}); refundNote=' Vstup z tvojej permanentky sme ti vrátili.'; }
+      } else if(b.access_method==='parent_free_credit' && b.booked_by){
+        const pu=await q.one(db.users,{_id:b.booked_by});
+        if(pu){ await q.update(db.users,{_id:pu._id},{$set:{free_credits:(pu.free_credits||0)+1}}); refundNote=' Hodinu zdarma sme ti vrátili.'; }
       }
-      if(refundNote) await q.insert(db.notifications,{user_id:cu._id, type:'booking',
+      if(refundNote) await q.insert(db.notifications,{user_id:(b.access_method||'').startsWith('parent_')?(b.booked_by||cu._id):cu._id, type:'booking',
         title:'↩️ Rezervácia zrušená', body:`${b.class_name||'Hodina'} ${b.booking_date||''}.${refundNote}`,
         read:false, created_at:nowISO()}).catch(()=>{});
     }
@@ -8020,6 +8065,9 @@ app.delete('/api/bookings/:id', auth, async(req,res)=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 // Online prístup: plán s online:true, alebo Silver/Gold/online podľa id či názvu
 // (staré/členstvá z migrácie nemusia mať presné plan_id), tréner/admin vždy.
+// „Online zdarma pre všetkých" — admin môže dnešný online prenos otvoriť každému
+// (promo deň). Kľúč drží konkrétny dátum, takže o polnoci automaticky vyprší.
+async function onlineFreeToday(){ const s=await q.one(db.settings,{key:'online_free_date'}); return s?.value===today(); }
 function hasOnlineAccess(m, u){
   if(u && (u.is_admin || u.user_type==='trainer')) return true;
   // Výherný pass (online_passes) tu úmyselne NEdáva plný prístup — spotrebuje sa
@@ -8046,7 +8094,8 @@ app.get('/api/online/classes', auth, async(req,res)=>{
   try{
   const m = await checkMembership(req.session.uid);
   const mu = await q.one(db.users,{_id:req.session.uid});
-  const hasFull = hasOnlineAccess(m, mu);
+  const freeDay = await onlineFreeToday();
+  const hasFull = freeDay || hasOnlineAccess(m, mu);
   // Výherný pass z kolesa: spotrebuje sa klikom „pripojiť sa" — má prednosť pred vstupmi
   const passMode = !hasFull && (mu?.online_passes||0)>0;
   // Permanentkárka: prístup má, ale sledovanie ju stojí 1 vstup (odčíta /api/online/enter)
@@ -8062,7 +8111,7 @@ app.get('/api/online/classes', auth, async(req,res)=>{
     has_access: hasAccess,
     locked: !hasAccess,
   }));
-  res.json({classes:result, has_access:hasAccess, access_mode: hasFull?'full':(passMode?'pass':(entryMode?'entry':null)),
+  res.json({classes:result, has_access:hasAccess, online_free_today:freeDay, access_mode: hasFull?'full':(passMode?'pass':(entryMode?'entry':null)),
     entries: mu?.single_entries||0, online_passes: mu?.online_passes||0,
     media_base:(process.env.MEDIA_BASE||'').replace(/\/$/,''), membership:m?{plan_id:m.plan_id,plan_name:m.plan_name,expires_at:m.expires_at}:null});
   }catch(e){ res.status(500).json({error:e.message}); }
@@ -8077,6 +8126,7 @@ app.post('/api/online/enter', auth, async(req,res)=>{
     const cls=await q.one(db.classes,{_id:String(req.body.class_id||'')});
     if(!cls || cls.category!=='Online') return res.status(404).json({error:'Online hodina nenájdená'});
     const stream={stream_url:cls.stream_url||null, stream_key:cls.stream_key||null};
+    if(await onlineFreeToday()) return res.json({ok:true, charged:false, mode:'full', free_day:true, stream});
     if(hasOnlineAccess(m,u)) return res.json({ok:true, charged:false, mode:'full', stream});
     // 1) Výherný pass z kolesa — spotrebuje sa práve teraz, prístup platí do konca dňa
     if((u.online_passes||0)>0){
@@ -8235,6 +8285,30 @@ async function liveStreamKeys(){
   return _liveKeysCache.keys;
 }
 // Najbližšia dnešná online hodina (90 min pred štartom až do konca) + stav pre používateľa
+// Admin: prepnúť „dnešná online zumba ZDARMA pre všetkých" (vyprší o polnoci)
+app.get('/api/admin/online-free-day', adminAuth, async(req,res)=>{
+  try{ res.json({ok:true, active: await onlineFreeToday()}); }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/online-free-day', adminAuth, async(req,res)=>{
+  try{
+    const on=!!req.body.on;
+    const ex=await q.one(db.settings,{key:'online_free_date'});
+    if(on){
+      if(ex) await q.update(db.settings,{key:'online_free_date'},{$set:{value:today(), at:nowISO()}});
+      else await q.insert(db.settings,{key:'online_free_date', value:today(), at:nowISO()});
+      if(!(await q.one(db.settings,{key:'online_free_feed_'+today()}))){
+        await q.insert(db.feed,{ author_id:'studio', author_name:'Fusion Academy', author_badge:{emoji:'📢',label:'Oznam'},
+          studio_announcement:true,
+          text:'💻🎉 Dnešná ONLINE ZUMBA je ZDARMA pre všetkých!\n\nPripoj sa večer cez Dashboard — dnes netreba členstvo ani vstupy. Povedz aj kamoškám! 💃',
+          image:null, reactions:{}, comments:[], created_at:nowISO() }).catch(()=>{});
+        await q.insert(db.settings,{key:'online_free_feed_'+today(), value:true, at:nowISO()});
+      }
+    } else if(ex) await q.update(db.settings,{key:'online_free_date'},{$set:{value:null, at:nowISO()}});
+    await auditLog(req,'online_free_day',null,{},{on},'').catch(()=>{});
+    res.json({ok:true, active:on});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/online/upcoming', auth, async(req,res)=>{
   try{
     const dow=new Date().getDay();
@@ -8246,7 +8320,8 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
     if(!cls) return res.json({ok:true, upcoming:null});
     const m=await checkMembership(req.session.uid);
     const upcU=await q.one(db.users,{_id:req.session.uid});
-    const hasFull=hasOnlineAccess(m, upcU);
+    const freeDay=await onlineFreeToday();
+    const hasFull=freeDay || hasOnlineAccess(m, upcU);
     const passMode=!hasFull && (upcU?.online_passes||0)>0;   // výherná online hodina z kolesa
     const entryMode=!hasFull && !passMode && (upcU?.single_entries||0)>0; // permanentka: za 1 vstup
     const hasAccess=hasFull||passMode||entryMode;
@@ -8270,7 +8345,7 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
     }
     res.json({ok:true, upcoming:{ id:cls._id, name:cls.name, time_start:cls.time_start, time_end:cls.time_end,
       src:cls.stream_city||'', starts_in_min:Math.max(0,toMin(cls.time_start)-nowMin), running, live,
-      instructor:insName,
+      instructor:insName, free_today:freeDay,
       has_access:hasAccess, access_mode: hasFull?'full':(passMode?'pass':(entryMode?'entry':null)), entries:upcU?.single_entries||0,
       plan_id:m?m.plan_id:null, booked }});
   }catch(e){ res.status(500).json({error:e.message}); }
@@ -9735,6 +9810,12 @@ app.post('/api/attendance/cancel-session', trainerAuth, async(req,res)=>{
         } else if(b.access_method==='free_class' || b.free_class){
           await q.update(db.users,{_id:u0._id},{$set:{free_class_used:false}}); refunded++;
           backTxt=' Prvú hodinu zdarma máš stále k dispozícii.';
+        } else if(b.access_method==='parent_single_entry' && b.booked_by){
+          const pu=await q.one(db.users,{_id:b.booked_by});
+          if(pu){ await q.update(db.users,{_id:pu._id},{$set:{single_entries:(pu.single_entries||0)+1}}); refunded++; backTxt=' Vstup z rodičovskej permanentky sme vrátili.'; }
+        } else if(b.access_method==='parent_free_credit' && b.booked_by){
+          const pu=await q.one(db.users,{_id:b.booked_by});
+          if(pu){ await q.update(db.users,{_id:pu._id},{$set:{free_credits:(pu.free_credits||0)+1}}); refunded++; backTxt=' Hodinu zdarma sme vrátili rodičovi.'; }
         }
       }
       await q.update(db.bookings,{_id:b._id},{$set:{status:'cancelled_studio', cancelled_reason:reason||'Zrušené štúdiom', cancelled_at:nowISO()}});
@@ -9805,6 +9886,8 @@ app.get('/api/attendance/class/:classId', trainerAuth, async(req,res)=>{
         status: b.status,
         is_child_booking: !!b.is_child_booking,
         child_name: b.child_name||null,
+        booked_by_name: b.booked_by_name||null,
+        access_method: b.access_method||null,
         user_id: b.user_id,
         av: !!(u && u.avatar),
         pay_on_site: !!b.pay_on_site,
@@ -10411,7 +10494,17 @@ app.post('/api/bookings', auth, async(req,res)=>{
         const hasMembership = m && (m.status==='active') && (!m.expires_at || m.expires_at >= today());
         const singleEntries = u.single_entries || 0;
         const freeCredits = u.free_credits || 0;
-        if(!hasMembership && singleEntries <= 0 && freeCredits <= 0){
+        // ── Dieťa bez vlastného členstva/vstupov → skús ČLENSTVO/VSTUPY RODIČA ──
+        // Mama s členstvom môže dcéru booknúť zo svojho účtu; vstup/kredit sa odráta jej.
+        let parentCover = null;
+        if(isChild && !hasMembership && singleEntries <= 0 && freeCredits <= 0){
+          const pm = await checkMembership(parent._id);
+          const pHasMem = pm && (pm.status==='active') && (!pm.expires_at || pm.expires_at >= today());
+          if(pHasMem) parentCover = {method:'parent_membership'};
+          else if((parent.free_credits||0) > 0) parentCover = {method:'parent_free_credit', deduct:{uid:parent._id, field:'free_credits', value:(parent.free_credits||0)-1}};
+          else if((parent.single_entries||0) > 0) parentCover = {method:'parent_single_entry', deduct:{uid:parent._id, field:'single_entries', value:(parent.single_entries||0)-1}};
+        }
+        if(!hasMembership && singleEntries <= 0 && freeCredits <= 0 && !parentCover){
           if(req.body.pay_on_site){
             // Klient sľúbil zaplatiť vstup na mieste (cash) — rezerváciu povoľ a výrazne označ,
             // aby tréner/admin vedel vybrať vstupné/členské. Nič sa neodpočítava.
@@ -10431,11 +10524,14 @@ app.post('/api/bookings', auth, async(req,res)=>{
         // inak zamietnutá rezervácia zožrala klientke vstup (reálne sa stávalo).
         if(!hasMembership){
           if(freeCredits > 0){
-            deductPlan={field:'free_credits', value:freeCredits-1};
+            deductPlan={uid:u._id, field:'free_credits', value:freeCredits-1};
             accessMethod='free_credit';
           } else if(singleEntries > 0){
-            deductPlan={field:'single_entries', value:singleEntries-1};
+            deductPlan={uid:u._id, field:'single_entries', value:singleEntries-1};
             accessMethod='single_entry';
+          } else if(parentCover){
+            accessMethod=parentCover.method;
+            if(parentCover.deduct) deductPlan=parentCover.deduct;
           } else if(payOnSite) accessMethod='pay_on_site';
         }
       }
@@ -10450,7 +10546,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
     const exists=await q.one(db.bookings,{class_id,user_id:u._id,booking_date:bdate,status:{$ne:'cancelled'}});
     if(exists) return res.status(400).json({error:isChild?`${u.name} je už na túto hodinu prihlásené`:'Na túto hodinu ste sa už prihlásili'});
     // Validácia prešla — až teraz odpočítaj vstup/kredit
-    if(deductPlan) await q.update(db.users,{_id:u._id},{$set:{[deductPlan.field]: deductPlan.value}});
+    if(deductPlan) await q.update(db.users,{_id:deductPlan.uid||u._id},{$set:{[deductPlan.field]: deductPlan.value}});
     const booking=await q.insert(db.bookings,{
       class_id, class_name:cls.name, class_emoji:cls.emoji||'💃',
       class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
@@ -10882,41 +10978,19 @@ app.put('/api/admin/rewards', adminAuth, async(req,res)=>{
 // História víťaziek — klientka mesiaca (posl. 12 mes.) a klientka roka (posl. roky)
 app.get('/api/client/winners-history', auth, async(req,res)=>{
   try {
-    const users = (await q.find(db.users,{is_admin:{$ne:true}}))
-      .filter(u=>u.user_type!=='trainer' && !u.is_child && !u.anonymous && !(u.imported && !u.claimed));
-    const allUsers = await q.find(db.users,{});
-    const bookings = await q.find(db.bookings,{});
-    const activeMems = await q.find(db.memberships,{status:'active'});
-    const memActive={}, memName={};
-    activeMems.forEach(m=>{ if(!m.expires_at||m.expires_at>=today()){ memActive[m.user_id]=true; memName[m.user_id]=MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'; } });
-    const adjacency={}; allUsers.forEach(u=>{ if(u.sponsor_id) (adjacency[u.sponsor_id]=adjacency[u.sponsor_id]||[]).push(u._id); });
-    const winnerFor=async (prefix)=>{
-      const refCount={}; allUsers.forEach(u=>{ if((u.created_at||'').startsWith(prefix) && u.sponsor_id) refCount[u.sponsor_id]=(refCount[u.sponsor_id]||0)+1; });
-      const attCount={}, onlineCount={};
-      bookings.forEach(b=>{ const d=b.booking_date||(b.created_at||'').slice(0,10);
-        if((d||'').startsWith(prefix) && ['attended','confirmed'].includes(b.status) && b.user_id){
-          const on=/online/i.test(b.class_name||'')||/online/i.test(b.class_location||'')||b.online===true;
-          if(on) onlineCount[b.user_id]=(onlineCount[b.user_id]||0)+1; else attCount[b.user_id]=(attCount[b.user_id]||0)+1;
-        } });
-      const buyerSet=await membershipBuyersInPeriod(prefix); const merchMap=await merchCountMapInPeriod(prefix);
-      let w=null, best=-1;
-      for(const u of users){ const nm=newMemberPointsFor(u._id, adjacency, buyerSet);
-        const md=merchDownlinePointsFor(u._id, adjacency, merchMap);
-        const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount:merchMap[u._id]||0, merchLineCount:md.count, merchLinePoints:md.points, privCount:privMap[u._id]||0 }, prefix);
-        if(bd.total>0 && bd.total>best){ best=bd.total; w={ id:u._id, name:u.name, avatar:u.avatar||null, points:bd.total }; } }
-      return w;
-    };
+    // História = REÁLNE korunované víťazky z db.monthly_winners (zdroj pravdy, s cenami
+    // aj bodmi z momentu korunovácie). Predtým sa história prepočítavala nanovo a kvôli
+    // UTC posunu (toISOString) júl vypadol — preto „ešte nemáme prvú víťazku".
     const SKM=['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
-    // Súťaž štartuje júl 2026 — víťazka mesiaca sa vyhlási 1. deň nasledujúceho
-    // mesiaca, víťazka roka 1. januára. História = len UKONČENÉ (vyhlásené) obdobia.
-    const COMP_START='2026-07'; const COMP_START_Y=2026;
-    const now=new Date(); const curMonth=today().slice(0,7); const curYear=now.getFullYear();
+    const wins=(await q.find(db.monthly_winners,{})).sort((a,b)=>String(b.month).localeCompare(String(a.month)));
     const months=[], years=[];
-    // ukončené mesiace: od COMP_START po predošlý mesiac (vrátane)
-    for(let i=1;i<=12;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); const p=d.toISOString().slice(0,7);
-      if(p<COMP_START || p>=curMonth) continue; const w=await winnerFor(p); if(w) months.push({period:p, label:SKM[d.getMonth()]+' '+d.getFullYear(), name:w.name, id:w.id, avatar:w.avatar, points:w.points}); }
-    // ukončené roky: od COMP_START_Y po predošlý rok (vyhlásenie 1.1.)
-    for(let y=curYear-1; y>=COMP_START_Y; y--){ const w=await winnerFor(String(y)); if(w) years.push({period:String(y), label:String(y), name:w.name, id:w.id, avatar:w.avatar, points:w.points}); }
+    for(const w of wins){
+      const u=await q.one(db.users,{_id:w.user_id});
+      const row={ period:String(w.month), name:w.user_name||u?.name||'—', id:w.user_id, avatar:u?.avatar||null, points:w.points||0 };
+      if(w.type==='year'){ row.label=String(w.month).slice(0,4); years.push(row); }
+      else { const [y,m]=String(w.month).split('-'); row.label=(SKM[(+m||1)-1]||'')+' '+y; months.push(row); }
+    }
+    const now=new Date(); const curYear=now.getFullYear();
     const SKMG=['januára','februára','marca','apríla','mája','júna','júla','augusta','septembra','októbra','novembra','decembra'];
     res.json({ ok:true, months, years,
       next_month_announce:'1. '+(SKMG[now.getMonth()===11?0:now.getMonth()+1])+' '+(now.getMonth()===11?curYear+1:curYear),

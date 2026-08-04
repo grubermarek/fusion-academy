@@ -490,6 +490,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div class="d-flex justify-content-between align-items-center mb-4">
       <h4 class="fw-bold mb-0">Hodiny &amp; Stream URL</h4>
       <div class="d-flex gap-2">
+        <button class="btn btn-sm" id="freeOnlineBtn" onclick="toggleFreeOnline()" style="border:1px solid #4ade80;color:#4ade80">💻 Online dnes ZDARMA: …</button>
         <button class="btn btn-sm btn-outline-warning" onclick="keepZumbaOnly()"><i class="bi bi-funnel"></i> Nechať len Zumbu</button>
         <button class="btn btn-sm btn-brand" onclick="loadAdminClasses()"><i class="bi bi-arrow-clockwise"></i></button>
       </div>
@@ -4625,6 +4626,7 @@ async function loadPayments(){
 let adminClassesWholeWeek=false;
 function toggleAdminClassesWeek(){ adminClassesWholeWeek=!adminClassesWholeWeek; loadAdminClasses(); }
 async function loadAdminClasses(){
+  refreshFreeOnlineBtn();
   let rows=await api('/api/classes');if(!Array.isArray(rows))return;
   const tb=document.getElementById('adminClassesTable');if(!tb)return;
   // Sekcia je len pre ONLINE hodiny; predvolene sa zobrazia iba dnešné
@@ -4673,6 +4675,22 @@ async function keepZumbaOnly(){
 function slugify(s){
   return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
     .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,24);
+}
+// „Online dnes ZDARMA" — otvorí dnešný online prenos všetkým (vyprší o polnoci)
+async function refreshFreeOnlineBtn(){
+  const b=document.getElementById('freeOnlineBtn'); if(!b) return;
+  const d=await api('/api/admin/online-free-day').catch(()=>null);
+  const on=!!(d&&d.active); b.dataset.on=on?'1':'0';
+  b.textContent = on ? '💻 Online dnes ZDARMA: ZAPNUTÉ ✅' : '💻 Online dnes ZDARMA: vypnuté';
+  b.style.background = on ? 'rgba(74,222,128,.15)' : 'transparent';
+}
+async function toggleFreeOnline(){
+  const b=document.getElementById('freeOnlineBtn');
+  const on=b.dataset.on==='1';
+  if(!on && !confirm('Spustiť dnešnú online zumbu ZDARMA pre všetkých?\nKlientkam sa na Dashboarde zobrazí, že je dnes zadarmo, a pridá sa oznam na nástenku.')) return;
+  if(on && !confirm('Vypnúť dnešný free online deň?')) return;
+  const r=await api('/api/admin/online-free-day',{method:'POST',body:{on:!on}});
+  if(r&&r.ok) refreshFreeOnlineBtn();
 }
 function genStreamKey(classId,name){
   const inp=document.getElementById('streamkey_'+classId);
