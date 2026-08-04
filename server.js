@@ -1182,6 +1182,35 @@ async function seedData() {
     await q.insert(db.settings,{key:'fix_janka_silver_expiry_v1', value:true, at:nowISO()});
   }
 
+  // v2: tolerantné hľadanie (bez diakritiky, aj „Jana") + diagnostika kandidátok
+  if(!(await q.one(db.settings,{key:'fix_janka_silver_expiry_v2'}))){
+    try{
+      const strip=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+      const all=(await q.find(db.users,{})).filter(x=>!x.is_child);
+      const janka=all.find(x=>/jan(k)?a\s+kral/i.test(strip(x.name)));
+      if(janka){
+        const txs=(await q.find(db.transactions,{type:'membership', user_id:janka._id}))
+          .filter(t=>t.payment_method!=='free' && ((+t.amount||0)>0 || t.payment_method==='referral_credit'))
+          .sort((a,b)=>String(a.date||a.created_at||'').localeCompare(String(b.date||b.created_at||'')));
+        let exp=null;
+        for(const t of txs){ const d=new Date((t.date||t.created_at||'').slice(0,10)+'T12:00:00');
+          const base=(exp && exp>d)?exp:d; exp=new Date(base.getTime()+30*86400000); }
+        const mem=await q.one(db.memberships,{user_id:janka._id, status:'active'});
+        if(mem && exp && (!mem.expires_at || new Date(mem.expires_at)<exp)){
+          const oldExp=(mem.expires_at||'').slice(0,10);
+          const newExpISO=new Date(exp.toISOString().slice(0,10)+'T23:59:59').toISOString();
+          await q.update(db.memberships,{_id:mem._id},{$set:{expires_at:newExpISO, updated_at:nowISO()}});
+          await q.update(db.users,{_id:janka._id},{$set:{membership_expires:newExpISO}});
+          await q.insert(db.notifications,{user_id:janka._id,type:'membership',title:'✅ Členstvo predĺžené',
+            body:`Opravili sme dátum platnosti tvojho členstva — platí do ${exp.toLocaleDateString('sk-SK')}. Ďakujeme, že si s nami!`,
+            read:false,created_at:nowISO()}).catch(()=>{});
+          console.log(`💳 Janka v2 (${janka.name}): expirácia ${oldExp} → ${exp.toISOString().slice(0,10)} (z ${txs.length} platieb)`);
+        } else console.log(`💳 Janka v2 (${janka.name}): bez zmeny (mem=${!!mem}, vypočítané=${exp?exp.toISOString().slice(0,10):'—'}, aktuálne=${mem?String(mem.expires_at).slice(0,10):'—'}, platieb=${txs.length})`);
+      } else console.log('💳 Janka v2: nenájdená. Kandidátky: '+all.filter(x=>/kral|jank/i.test(strip(x.name))).map(x=>x.name).join(', '));
+    }catch(e){ console.error('fix_janka_v2:', e.message); }
+    await q.insert(db.settings,{key:'fix_janka_silver_expiry_v2', value:true, at:nowISO()});
+  }
+
   // Oprava UTC prešľapu: korunovanie tesne po polnoci 1.8. vyhodnotilo jún namiesto
   // júla. Ak júnový záznam patrí tej istej víťazke ako júlové poradie, premenuj ho na
   // júl (ceny už boli odovzdané raz — nič sa nedubluje) a oprav aj oznam na nástenke.
