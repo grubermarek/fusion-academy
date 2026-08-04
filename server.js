@@ -1108,6 +1108,43 @@ async function seedData() {
     await q.insert(db.settings,{key:'book_simonka_2026_08_10_v1', value:true, at:nowISO()});
   }
 
+  // v2: tolerantnejšie hľadanie + diagnostika do logov, keď sa nenájde
+  if(!(await q.one(db.settings,{key:'book_simonka_2026_08_10_v2'}))){
+    try{
+      const all=await q.find(db.users,{});
+      const mom=all.find(x=>!x.is_child && /hudecov/i.test(x.name||'') && /iveta/i.test(x.name||''));
+      const kid=all.find(x=>x.is_child && (/hudecov/i.test(x.name||'') || /simon/i.test(x.name||'') || (mom && x.parent_id===mom._id)));
+      const monCls=(await q.find(db.classes,{active:true})).filter(c=>c.day_of_week===1 && /zvolen/i.test(c.location||''));
+      const cls=monCls.find(c=>String(c.time_start||'').startsWith('19')) || null;
+      if(kid && cls){
+        const bdate='2026-08-10';
+        const dup=await q.one(db.bookings,{class_id:cls._id, user_id:kid._id, booking_date:bdate, status:{$ne:'cancelled'}});
+        if(!dup){
+          let accessMethod='pay_on_site';
+          if(mom){ const pm=await checkMembership(mom._id);
+            if(pm && pm.status==='active' && (!pm.expires_at || pm.expires_at>=bdate)) accessMethod='parent_membership';
+            else if((mom.single_entries||0)>0){ accessMethod='parent_single_entry'; await q.update(db.users,{_id:mom._id},{$set:{single_entries:(mom.single_entries||0)-1}}); } }
+          await q.insert(db.bookings,{ class_id:cls._id, class_name:cls.name, class_emoji:cls.emoji||'💃',
+            class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
+            day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
+            user_id:kid._id, user_name:kid.name, user_email:mom?.email||null, user_phone:mom?.phone||'',
+            booked_by:mom?._id||'admin', booked_by_name:mom?.name||'Fusion Academy', is_child_booking:true, child_name:kid.name,
+            booking_date:bdate, status:'confirmed', pay_on_site:accessMethod==='pay_on_site', notes:'Dobooknuté štúdiom na žiadosť',
+            free_class:false, access_method:accessMethod, created_at:nowISO() });
+          if(mom) await q.insert(db.notifications,{user_id:mom._id,type:'booking',title:'Rezervácia potvrdená ✅',
+            body:`${kid.name}: ${cls.name} – ${bdate} o ${cls.time_start}. Booknuté štúdiom.`,read:false,created_at:nowISO()}).catch(()=>{});
+          console.log(`👧 Simonka v2 booknutá: ${cls.name} 2026-08-10 (${accessMethod})`);
+        } else console.log('👧 Simonka v2: už je booknutá');
+      } else {
+        console.log('👧 Simonka v2 DIAG: mama='+(mom?mom.name:'NENÁJDENÁ')
+          +' | deti Hudecov/Simon: '+all.filter(x=>x.is_child&&(/hudecov/i.test(x.name||'')||/simon/i.test(x.name||''))).map(x=>x.name).join(', ')
+          +' | deti Ivety: '+(mom?all.filter(x=>x.is_child&&x.parent_id===mom._id).map(x=>x.name).join(', '):'—')
+          +' | Po Zvolen hodiny: '+monCls.map(c=>c.name+' '+c.time_start).join(', '));
+      }
+    }catch(e){ console.error('book_simonka_v2:', e.message); }
+    await q.insert(db.settings,{key:'book_simonka_2026_08_10_v2', value:true, at:nowISO()});
+  }
+
   // Oprava UTC prešľapu: korunovanie tesne po polnoci 1.8. vyhodnotilo jún namiesto
   // júla. Ak júnový záznam patrí tej istej víťazke ako júlové poradie, premenuj ho na
   // júl (ceny už boli odovzdané raz — nič sa nedubluje) a oprav aj oznam na nástenke.
