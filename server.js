@@ -11093,6 +11093,7 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
 // ── Referral cieľ: motivačný progress k odmenám za nové registrácie ──────────
 // 1 nová = 🎒 športová taška · 2 nové = 🎟️ 50 % zľava na event · 3 nové = ⭐ masterclass zdarma
 const REFERRAL_GOAL_FROM = '2026-08-05'; // štart kampane
+const REFERRAL_GOAL_TO   = '2026-08-31'; // deadline — do konca augusta, nech je to poriadna súťaž
 const REFERRAL_GOAL_TIERS = [
   { need:1, emoji:'🎒', label:'Športová taška Fusion' },
   { need:2, emoji:'🎟️', label:'50 % zľava na event' },
@@ -11100,18 +11101,20 @@ const REFERRAL_GOAL_TIERS = [
 ];
 async function referralGoalCount(userId){
   return (await q.find(db.users,{sponsor_id:userId}))
-    .filter(u=>!u.is_child && !u.anonymous && (u.created_at||'')>=REFERRAL_GOAL_FROM).length;
+    .filter(u=>!u.is_child && !u.anonymous && (u.created_at||'')>=REFERRAL_GOAL_FROM && (u.created_at||'').slice(0,10)<=REFERRAL_GOAL_TO).length;
 }
 app.get('/api/client/referral-goal', auth, async(req,res)=>{
   try{
     const count=await referralGoalCount(req.session.uid);
-    res.json({ ok:true, count, from:REFERRAL_GOAL_FROM,
+    const daysLeft=Math.max(0, Math.ceil((new Date(REFERRAL_GOAL_TO+'T23:59:59')-Date.now())/86400000));
+    res.json({ ok:true, count, from:REFERRAL_GOAL_FROM, to:REFERRAL_GOAL_TO, days_left:daysLeft, ended:today()>REFERRAL_GOAL_TO,
       tiers:REFERRAL_GOAL_TIERS.map(t=>({...t, reached:count>=t.need})) });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 // Po registrácii cez referral: skontroluj dosiahnutie odmeny a daj vedieť sponzorke aj adminom
 async function referralGoalCheck(sponsorId){
   try{
+    if(today()>REFERRAL_GOAL_TO) return; // súťaž skončila — odmeny sa už neodomýkajú
     const sp=await q.one(db.users,{_id:sponsorId});
     if(!sp || sp.is_admin || ['trainer','manager'].includes(sp.user_type)) return;
     const count=await referralGoalCount(sponsorId);

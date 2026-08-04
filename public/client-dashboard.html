@@ -2430,7 +2430,12 @@ async function loadRefGoal(){
   host.innerHTML=`<div style="background:linear-gradient(135deg,rgba(201,168,76,.10),rgba(139,195,74,.06));border:1px solid rgba(201,168,76,.35);border-radius:14px;padding:12px 14px;margin-bottom:10px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <b style="font-size:.9rem">🎯 Výzva: pozvi kamošky, zbieraj odmeny!</b>
-      <span style="font-size:.8rem;color:var(--gold);font-weight:800">${d.count} / ${max} registrácií</span>
+      <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        ${d.ended
+          ? '<span style="font-size:.72rem;background:#3a3427;color:var(--muted);border-radius:8px;padding:3px 9px;font-weight:700">Súťaž skončila 31.8.</span>'
+          : `<span style="font-size:.72rem;background:${(d.days_left<=7)?'rgba(224,86,86,.18)':'rgba(201,168,76,.15)'};color:${(d.days_left<=7)?'#ff8a8a':'var(--gold)'};border:1px solid ${(d.days_left<=7)?'rgba(224,86,86,.5)':'rgba(201,168,76,.4)'};border-radius:8px;padding:3px 9px;font-weight:800">⏳ do 31. augusta${d.days_left<=10?` · ostáva ${d.days_left} ${d.days_left===1?'deň':(d.days_left<=4?'dni':'dní')}`:''}</span>`}
+        <span style="font-size:.8rem;color:var(--gold);font-weight:800">${d.count} / ${max} registrácií</span>
+      </span>
     </div>
     <div class="rg-bar">
       <div class="rg-fill" style="width:${pct}%"></div>
@@ -2439,8 +2444,10 @@ async function loadRefGoal(){
     <div style="display:flex;justify-content:space-between;gap:6px;margin-top:12px;flex-wrap:wrap">
       ${d.tiers.map(t=>`<div style="flex:1;min-width:90px;text-align:center;font-size:.72rem;color:${t.reached?'var(--gold)':'var(--muted)'};font-weight:${t.reached?'800':'500'}">${t.emoji} ${escHtml(t.label)}${t.reached?' ✓':''}</div>`).join('')}
     </div>
-    <div style="font-size:.78rem;color:#a5d6a7;margin-top:8px">${next
-      ? `Ešte <b>${next.need-d.count}</b> ${(next.need-d.count)===1?'registrácia':'registrácie'} a získaš: <b style="color:var(--gold)">${next.emoji} ${escHtml(next.label)}</b> — pošli kamoške svoj odkaz! 👆`
+    <div style="font-size:.78rem;color:#a5d6a7;margin-top:8px">${d.ended
+      ? (d.count>0 ? `Súťaž skončila — získané odmeny ti odovzdáme v štúdiu. Ďakujeme! 💛` : `Súťaž skončila. Sleduj dashboard — čoskoro ďalšia výzva! ✨`)
+      : next
+      ? `Ešte <b>${next.need-d.count}</b> ${(next.need-d.count)===1?'registrácia':'registrácie'} do 31. augusta a získaš: <b style="color:var(--gold)">${next.emoji} ${escHtml(next.label)}</b> — pošli kamoške svoj odkaz! 👆`
       : `👑 Máš všetky odmeny — ozveme sa ti s odovzdaním. Každá ďalšia kamoška = ďalšie body do súťaže!`}</div>
   </div>`;
 }

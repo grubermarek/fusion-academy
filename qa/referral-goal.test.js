@@ -31,6 +31,7 @@ const post = (jar, p, b) => call(jar, 'POST', p, b);
 
   const goal0 = (await g('S', '/api/client/referral-goal')).data || {};
   ok('goal 0/3, žiadny tier', goal0.ok && goal0.count === 0 && goal0.tiers.every(t => !t.reached), goal0);
+  ok('deadline 31.8. + days_left + ended flag', goal0.to === '2026-08-31' && typeof goal0.days_left === 'number' && goal0.ended === (new Date().toISOString().slice(0, 10) > '2026-08-31'), { to: goal0.to, days_left: goal0.days_left, ended: goal0.ended });
 
   const reg = async (jar, n) => post(jar, '/api/register', { name: 'AUDIT Ref ' + n, email: 'audit-ref' + n + '-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', city: 'Zvolen', consent: true, sponsorCode: code });
   await reg('R1', 1);
