@@ -1145,6 +1145,43 @@ async function seedData() {
     await q.insert(db.settings,{key:'book_simonka_2026_08_10_v2', value:true, at:nowISO()});
   }
 
+  // CRM audit 8/2026: sekvencie post_first_class a reengagement sa NIKDY nezaraďovali
+  // (mŕtvy kód) a ich úlohu plnia trial_followup + churn/winback bloky denného jobu.
+  // Deaktivuj ich, nech admin UI neklame, že bežia — kroky ostávajú, dajú sa zapnúť ručne.
+  if(!(await q.one(db.settings,{key:'crm_dead_seqs_off_v1'}))){
+    await q.update(db.email_steps,{sequence:{$in:['post_first_class','reengagement']}},{$set:{active:false}},{multi:true});
+    await q.insert(db.settings,{key:'crm_dead_seqs_off_v1', value:true, at:nowISO()});
+  }
+
+  // Janka Králiková: platila Silver, ale obnova sa počítala od dňa platby namiesto
+  // nadviazania na koniec predchádzajúceho členstva → expirácia vyšla prikrátko.
+  // Prepočet z reálnych zaplatených transakcií: každá platba = +30 dní NADVÄZUJÚCICH.
+  if(!(await q.one(db.settings,{key:'fix_janka_silver_expiry_v1'}))){
+    try{
+      const janka=(await q.find(db.users,{})).find(x=>/janka?\s+kr[áa]likov/i.test(x.name||'') && !x.is_child);
+      if(janka){
+        const txs=(await q.find(db.transactions,{type:'membership', user_id:janka._id}))
+          .filter(t=>t.payment_method!=='free' && ((+t.amount||0)>0 || t.payment_method==='referral_credit'))
+          .sort((a,b)=>String(a.date||a.created_at||'').localeCompare(String(b.date||b.created_at||'')));
+        let exp=null;
+        for(const t of txs){ const d=new Date((t.date||t.created_at||'').slice(0,10)+'T12:00:00');
+          const base=(exp && exp>d)?exp:d; exp=new Date(base.getTime()+30*86400000); }
+        const mem=await q.one(db.memberships,{user_id:janka._id, status:'active'});
+        if(mem && exp && (!mem.expires_at || new Date(mem.expires_at)<exp)){
+          const oldExp=(mem.expires_at||'').slice(0,10);
+          const newExpISO=new Date(exp.toISOString().slice(0,10)+'T23:59:59').toISOString();
+          await q.update(db.memberships,{_id:mem._id},{$set:{expires_at:newExpISO, updated_at:nowISO()}});
+          await q.update(db.users,{_id:janka._id},{$set:{membership_expires:newExpISO}});
+          await q.insert(db.notifications,{user_id:janka._id,type:'membership',title:'✅ Členstvo predĺžené',
+            body:`Opravili sme dátum platnosti tvojho členstva — platí do ${exp.toLocaleDateString('sk-SK')}. Ďakujeme, že si s nami!`,
+            read:false,created_at:nowISO()}).catch(()=>{});
+          console.log(`💳 Janka Králiková: expirácia ${oldExp} → ${exp.toISOString().slice(0,10)} (z ${txs.length} platieb)`);
+        } else console.log(`💳 Janka fix: bez zmeny (mem=${!!mem}, vypočítané=${exp?exp.toISOString().slice(0,10):'—'}, aktuálne=${mem?String(mem.expires_at).slice(0,10):'—'}, platieb=${txs.length})`);
+      } else console.log('💳 Janka fix: používateľka nenájdená');
+    }catch(e){ console.error('fix_janka:', e.message); }
+    await q.insert(db.settings,{key:'fix_janka_silver_expiry_v1', value:true, at:nowISO()});
+  }
+
   // Oprava UTC prešľapu: korunovanie tesne po polnoci 1.8. vyhodnotilo jún namiesto
   // júla. Ak júnový záznam patrí tej istej víťazke ako júlové poradie, premenuj ho na
   // júl (ceny už boli odovzdané raz — nič sa nedubluje) a oprav aj oznam na nástenke.
@@ -1662,6 +1699,7 @@ app.post('/api/register', rlSignup, async(req,res)=>{
       if(sp){
         await q.insert(db.notifications,{user_id:sponsor_id,type:'referral_credit',title:`🎉 ${name} sa registroval/a cez tvoj link!`,body:`Odmena ti príde, keď si kúpi členstvo alebo vstupy (10 % z nákupu).`,read:false,created_at:nowISO()});
       }
+      referralGoalCheck(sponsor_id).catch(()=>{});
       // Structure-growth notification for everyone higher up the chain (beyond the direct sponsor)
       const ancestors = await getAllAncestors(sponsor_id); // sponsor's own upline
       for(const aid of ancestors){
@@ -3221,7 +3259,12 @@ app.post('/api/admin/users/:id/grant-membership', adminAuth, async(req,res)=>{
     if(req.body.expires_at && /^\d{4}-\d{2}-\d{2}/.test(req.body.expires_at)){
       expiresISO = new Date(req.body.expires_at+'T23:59:59').toISOString();
     } else if(plan){
-      expiresISO = new Date(Date.now()+(plan.duration_days||30)*86400000).toISOString();
+      // Obnova NADVÄZUJE na koniec bežiaceho členstva — kto si zaplatí ďalší mesiac
+      // skôr, nesmie oň prísť (predtým sa počítalo od dnešného dňa a obdobie sa skrátilo).
+      const existingForExp = plan.type!=='bundle' ? await q.one(db.memberships,{user_id:u._id,status:'active'}) : null;
+      const base = (existingForExp && existingForExp.expires_at && new Date(existingForExp.expires_at)>new Date())
+        ? new Date(existingForExp.expires_at) : new Date();
+      expiresISO = new Date(base.getTime()+(plan.duration_days||30)*86400000).toISOString();
     }
     const payMethod = gift ? null : (req.body.payment_method||'cash');
     const paidAmount = +(req.body.amount||plan?.price||0);
@@ -10138,9 +10181,13 @@ app.post('/api/attendance/record-membership', trainerAuth, async(req,res)=>{
     if(!u) return res.status(404).json({error:'Používateľ nenájdený'});
     const plan = MEMBERSHIP_PLANS[plan_id];
     if(!plan) return res.status(400).json({error:'Neznámy plán'});
-    // Create/renew membership
+    // Create/renew membership — obnova NADVÄZUJE na koniec bežiaceho členstva,
+    // aby skorá platba klientku neukrátila (predtým vždy dnes+30).
     const startDate = today();
-    const expires = new Date(); expires.setDate(expires.getDate()+30);
+    const existingMem = await q.one(db.memberships,{user_id, status:'active'});
+    const baseExp = (existingMem && existingMem.expires_at && String(existingMem.expires_at).slice(0,10) >= today())
+      ? new Date(existingMem.expires_at) : new Date();
+    const expires = new Date(baseExp); expires.setDate(expires.getDate()+30);
     const expiresDate = expires.toISOString().slice(0,10);
     await q.insert(db.memberships,{
       user_id, user_name:u.name, plan_id, plan_name:plan.name,
@@ -11013,6 +11060,49 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
       me_anonymous: !!(await q.one(db.users,{_id:req.session.uid}))?.anonymous });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
+
+// ── Referral cieľ: motivačný progress k odmenám za nové registrácie ──────────
+// 1 nová = 🎒 športová taška · 2 nové = 🎟️ 50 % zľava na event · 3 nové = ⭐ masterclass zdarma
+const REFERRAL_GOAL_FROM = '2026-08-05'; // štart kampane
+const REFERRAL_GOAL_TIERS = [
+  { need:1, emoji:'🎒', label:'Športová taška Fusion' },
+  { need:2, emoji:'🎟️', label:'50 % zľava na event' },
+  { need:3, emoji:'⭐', label:'Masterclass event ZDARMA' },
+];
+async function referralGoalCount(userId){
+  return (await q.find(db.users,{sponsor_id:userId}))
+    .filter(u=>!u.is_child && !u.anonymous && (u.created_at||'')>=REFERRAL_GOAL_FROM).length;
+}
+app.get('/api/client/referral-goal', auth, async(req,res)=>{
+  try{
+    const count=await referralGoalCount(req.session.uid);
+    res.json({ ok:true, count, from:REFERRAL_GOAL_FROM,
+      tiers:REFERRAL_GOAL_TIERS.map(t=>({...t, reached:count>=t.need})) });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Po registrácii cez referral: skontroluj dosiahnutie odmeny a daj vedieť sponzorke aj adminom
+async function referralGoalCheck(sponsorId){
+  try{
+    const sp=await q.one(db.users,{_id:sponsorId});
+    if(!sp || sp.is_admin || ['trainer','manager'].includes(sp.user_type)) return;
+    const count=await referralGoalCount(sponsorId);
+    const tier=REFERRAL_GOAL_TIERS.filter(t=>count>=t.need).length;
+    if(tier<=(sp.referral_goal_notified||0)) return;
+    await q.update(db.users,{_id:sp._id},{$set:{referral_goal_notified:tier}});
+    const t=REFERRAL_GOAL_TIERS[tier-1];
+    await q.insert(db.notifications,{user_id:sp._id,type:'referral_goal',
+      title:`${t.emoji} Odmena odomknutá: ${t.label}!`,
+      body: tier<REFERRAL_GOAL_TIERS.length
+        ? `Máš ${count}. novú registráciu — ${t.label} je tvoja! Ďalšia méta: ${REFERRAL_GOAL_TIERS[tier].label}. 🔥`
+        : `Máš ${count} nové registrácie — získala si VŠETKY odmeny vrátane: ${t.label}! 👑`,
+      read:false,created_at:nowISO()}).catch(()=>{});
+    const admins=await q.find(db.users,{is_admin:true});
+    for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'referral_goal',
+      title:`🎯 Referral odmena: ${sp.name}`,
+      body:`${sp.name} dosiahla ${count}. registráciu → odovzdať: ${t.emoji} ${t.label}`,
+      read:false,created_at:nowISO()}).catch(()=>{});
+  }catch(e){ console.error('referralGoalCheck:', e.message); }
+}
 
 // Zablahoželať oslávenkyni k narodeninám (dnes). Vidno kto blahoželal, s preklikom na profil.
 app.post('/api/birthday/congratulate', auth, async(req,res)=>{
@@ -12119,9 +12209,13 @@ async function enqueueSequence(userId, sequenceName, anchorDate){
   for(const step of steps){
     const sendDate = new Date(anchor.getTime() + step.day * 86400000);
     const scheduled_for = sendDate.toISOString().slice(0,10);
-    // Don't duplicate
+    // Don't duplicate: čakajúci ANI nedávno odoslaný ten istý krok (do 90 dní).
+    // Predtým sa kontrolovalo len 'pending' — po odoslaní 1. kroku sa dal človek
+    // zaradiť znova a dostal celú sekvenciu duplicitne.
     const exists = await q.one(db.email_queue, {user_id: userId, step_id: step._id, status:'pending'});
-    if(!exists){
+    const ago90 = new Date(Date.now()-90*86400000).toISOString();
+    const sentRecently = exists ? null : await q.one(db.email_queue, {user_id: userId, step_id: step._id, status:'sent', sent_at:{$gte:ago90}});
+    if(!exists && !sentRecently){
       await q.insert(db.email_queue, {
         user_id: userId, sequence: sequenceName, step_id: step._id,
         scheduled_for, status:'pending', created_at: nowISO()
@@ -12147,6 +12241,13 @@ async function processEmailQueue(){
       const u = await q.one(db.users, {_id: item.user_id});
       if(!u?.email){ await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped'}}); continue; }
 
+      // Opt-out: marketingové sekvencie sa NEposielajú tomu, kto si vypol ponuky.
+      // Servisné (privítanie po kúpe, expirácia členstva) idú vždy.
+      const MARKETING_SEQS=['lead_nurture','winback','trial_followup','bronze_upsell','gold_upsell','meta_lead_zumba','app_launch','reengagement','post_first_class'];
+      if(u.offers_optout && MARKETING_SEQS.includes(step.sequence)){
+        await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'offers_optout'}}); continue;
+      }
+
       // Conditional checks per sequence
       if(step.sequence === 'lead_nurture'){
         const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
@@ -12169,6 +12270,11 @@ async function processEmailQueue(){
       if(step.sequence === 'expiry_warning'){
         const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
         if(!mem){ await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'no_membership'}}); continue; }
+      }
+      if(step.sequence === 'membership_welcome'){
+        // Zrušené/refundované členstvo → „ako ti ide prvý týždeň?" už neposielaj
+        const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
+        if(!mem){ await cancelSequence(u._id,'membership_welcome'); await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'membership_gone'}}); continue; }
       }
       if(step.sequence === 'reengagement'){
         // Skip if visited recently (last 7 days)
@@ -12222,7 +12328,9 @@ app.post('/api/email-queue/run', async(req,res)=>{
 // ── Email automation API ──────────────────────────────────────────────────────
 // GET all sequences with their steps
 app.get('/api/admin/email-sequences', adminAuth, async(req,res)=>{
-  const steps = await q.find(db.email_steps, {});
+  // email_steps kolekcia obsahuje aj PayPal plány (_type:'paypal_plan') — do zoznamu
+  // sekvencií nepatria (zobrazovali sa ako neznáma sivá sekvencia).
+  const steps = (await q.find(db.email_steps, {})).filter(s=>s.sequence && !s._type);
   steps.sort((a,b)=>a.sequence.localeCompare(b.sequence)||(a.day-b.day));
   res.json(steps);
 });
@@ -12667,7 +12775,9 @@ async function runDailyJobs(){
       if(/@import\.local$/i.test(u.email)) continue; // len telefón — kontaktovať SMSkou, nie mailom
       const lastEnroll=u.winback_enrolled_at||'';
       if(lastEnroll && (Date.now()-new Date(lastEnroll).getTime()) < 180*86400000) continue; // už bol v sekvencii nedávno
-      await enqueueSequence(u._id,'winback');
+      // Kotva +2 dni: v deň 30 ide klientke win-back KUPÓN (blok 5) — sekvencia
+      // začne až o 2 dni, nech nedostane dva „chýbaš nám" maily v jeden deň.
+      await enqueueSequence(u._id,'winback', new Date(Date.now()+2*86400000));
       await q.update(db.users,{_id:u._id},{$set:{winback_enrolled_at:nowISO()}});
       enrolled++;
     }
@@ -12818,9 +12928,11 @@ async function runDailyJobs(){
     await q.insert(db.notifications,{user_id:u._id,type:'winback',title:'🎁 Máš hodinu zadarmo!',body:'Vráť sa na parket – 1 hodina je na nás.',read:false,created_at:nowISO()});
   }
 
-  // ── 6. Weekly admin report (Mondays) ──────────────────────────────────────
-  if(new Date().getDay() === 1){
-    try { await sendWeeklyAdminReport(); } catch(e){ console.error('Weekly report error:', e.message); }
+  // ── 6. Weekly admin report (Mondays) — guard: reštart servera v pondelok ráno
+  // vedel report poslať druhýkrát; teraz max 1× za deň.
+  if(new Date().getDay() === 1 && !(await q.one(db.settings,{key:'weekly_report_'+todayStr}))){
+    try { await sendWeeklyAdminReport(); await q.insert(db.settings,{key:'weekly_report_'+todayStr, value:true, at:nowISO()}); }
+    catch(e){ console.error('Weekly report error:', e.message); }
   }
 
   // ── 6b. Mesačné výplatné pásky (1. deň v mesiaci, za predošlý mesiac, raz) ──
@@ -12851,17 +12963,10 @@ async function runDailyJobs(){
   try { await runFriendEventsDaily(); } catch(e){ console.error('Friend events error:', e.message); }
   // ── 6e2. Eskalujúce zľavové ponuky pre leadov bez členstva ─────────────────
   try { await runLeadOffers(); } catch(e){ console.error('Lead offers error:', e.message); }
-  // ── 6e3. Auto-zaradenie odídených klientov (30+ dní) do winback sekvencie ───
-  try {
-    const churned = await churnedClients(30);
-    for(const c of churned){
-      if(c.in_winback || c.offers_optout) continue;
-      const u = await q.one(db.users,{_id:c.id});
-      if(u?.winback_seq_enrolled) continue; // raz
-      await enqueueSequence(c.id,'winback');
-      await q.update(db.users,{_id:c.id},{$set:{winback_seq_enrolled:true}});
-    }
-  } catch(e){ console.error('Winback enroll error:', e.message); }
+  // ── 6e3. ZRUŠENÉ (CRM audit 8/2026): duplikát bloku 1d — dva nezávislé winback
+  // enrolly s ODLIŠNÝMI flagmi (winback_enrolled_at vs winback_seq_enrolled) vedeli
+  // zaradiť tú istú klientku dvakrát a tento blok nemal denný limit ani filter
+  // importovaných mailov. Winback zaraďuje výhradne blok 1d (limit 30/deň, 180-dňový odstup).
 
   // ── 6f. Pripomienky CRM úloh so splatnosťou dnes (priradenému) ─────────────
   try {

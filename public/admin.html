@@ -3649,8 +3649,14 @@ const SEQ_META = {
   lead_nurture:       {label:'🎯 Lead nurture',         color:'#2196F3', desc:'Spúšťa sa pri registrácii – stopne sa ak si kúpi členstvo'},
   membership_welcome: {label:'🏆 Nový člen',            color:'#C9A84C', desc:'Spúšťa sa po kúpe akéhokoľvek členstva'},
   expiry_warning:     {label:'⚠️ Upozornenie expiry',  color:'#FF5722', desc:'Spúšťa sa pri kúpe – dni sú záporné (pred expiráciou)'},
-  post_first_class:   {label:'💃 Po prvej hodine',      color:'#9C27B0', desc:'Spúšťa sa automaticky po prvej zaznamenanej hodine'},
-  reengagement:       {label:'😴 Re-engagement',        color:'#FF9800', desc:'Manuálne alebo cez churn panel'},
+  post_first_class:   {label:'💃 Po prvej hodine (VYPNUTÉ)', color:'#9C27B0', desc:'Deaktivované — úlohu plní „Po hodine zdarma" (trial_followup). Nezapínaj súčasne s ňou.'},
+  reengagement:       {label:'😴 Re-engagement (VYPNUTÉ)',   color:'#FF9800', desc:'Deaktivované — úlohu plní churn mail (14 dní) + winback (30 dní) v dennom jobe.'},
+  winback:            {label:'🔙 Winback séria',        color:'#E91E63', desc:'Auto-zaradenie po 30 dňoch bez hodiny (max 30/deň, opakovane najskôr po 180 dňoch). Stopne sa pri návrate alebo kúpe.'},
+  trial_followup:     {label:'✨ Po hodine zdarma',     color:'#00BCD4', desc:'Po absolvovanej prvej hodine bez nákupu (dni 2–25). Stopne sa pri kúpe členstva/vstupov.'},
+  bronze_upsell:      {label:'🥈 Bronze → Silver',      color:'#c0c6d0', desc:'Po 14 dňoch na Bronze. Stopne sa pri upgrade.'},
+  gold_upsell:        {label:'🥇 Silver → Gold',        color:'#C9A84C', desc:'Po 14 dňoch na Silver. Stopne sa pri prechode na Gold.'},
+  meta_lead_zumba:    {label:'📣 Meta leady — Zumba',   color:'#1877F2', desc:'Importované leady z FB/IG formulárov (dni 0–14). Stopne sa pri návšteve/členstve.'},
+  app_launch:         {label:'🚀 Spustenie appky',      color:'#607D8B', desc:'Jednorazový mail importovaným kontaktom pri spustení appky.'},
 };
 
 function showAutoTab(tab, el){
