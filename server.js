@@ -4049,6 +4049,36 @@ app.post('/api/import-meta-leads', async(req,res)=>{
 });
 
 // ── Report konverzií kampane: lievik lead → registrácia → návšteva → platba ──
+// Doplnenie miest klientom/leadom z historickej evidencie (xlsx) — pre segment
+// „Hromadné správy podľa mesta". Chránené IMPORT_TOKEN. Match: email → telefón → meno.
+// dry:true = len report bez zápisu. Idempotentné (druhý beh nič nezmení).
+app.post('/api/import-city-map', async(req,res)=>{
+  try{
+    const tok=process.env.IMPORT_TOKEN;
+    if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
+    const entries=Array.isArray(req.body?.entries)?req.body.entries:[];
+    const dry=!!req.body?.dry;
+    const users=await q.find(db.users,{is_child:{$ne:true}});
+    const p9=v=>{ let s=String(v||'').replace(/[^\d]/g,''); if(s.startsWith('421'))s=s.slice(3); if(s.startsWith('0'))s=s.slice(1); return s.length===9?s:null; };
+    const cn=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();
+    const byEmail={}, byPhone={}, byName={};
+    for(const u of users){ if(u.email) byEmail[u.email.toLowerCase()]=u; const k=p9(u.phone); if(k&&!byPhone[k]) byPhone[k]=u;
+      const nk=cn(u.name); if(nk&&nk.length>5){ (byName[nk]=byName[nk]||[]).push(u); } }
+    let matched=0, updated=0, unmatched=0; const byCity={};
+    for(const e of entries){
+      const city=String(e.city||'').trim(); if(!city) continue;
+      let u=null;
+      if(e.email) u=byEmail[String(e.email).toLowerCase()];
+      if(!u && e.phone){ const k=p9(e.phone); if(k) u=byPhone[k]; }
+      if(!u && e.name){ const cand=byName[cn(e.name)]; if(cand && cand.length===1) u=cand[0]; }
+      if(!u){ unmatched++; continue; }
+      matched++;
+      if((u.city||'')!==city){ if(!dry) await q.update(db.users,{_id:u._id},{$set:{city}}); updated++; byCity[city]=(byCity[city]||0)+1; }
+    }
+    res.json({ok:true, dry, total:entries.length, matched, updated, unmatched, updated_by_city:byCity});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Chránené IMPORT_TOKEN (len čítanie). Vstup: people[{email,phone,city}].
 app.post('/api/import-meta-leads/report', async(req,res)=>{
   try{
