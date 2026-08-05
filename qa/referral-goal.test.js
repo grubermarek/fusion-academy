@@ -33,17 +33,28 @@ const post = (jar, p, b) => call(jar, 'POST', p, b);
   ok('goal 0/3, žiadny tier', goal0.ok && goal0.count === 0 && goal0.tiers.every(t => !t.reached), goal0);
   ok('deadline 31.8. + days_left + ended flag', goal0.to === '2026-08-31' && typeof goal0.days_left === 'number' && goal0.ended === (new Date().toISOString().slice(0, 10) > '2026-08-31'), { to: goal0.to, days_left: goal0.days_left, ended: goal0.ended });
 
-  const reg = async (jar, n) => post(jar, '/api/register', { name: 'AUDIT Ref ' + n, email: 'audit-ref' + n + '-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', city: 'Zvolen', consent: true, sponsorCode: code });
-  await reg('R1', 1);
+  const reg = async (jar, n) => { await post(jar, '/api/register', { name: 'AUDIT Ref ' + n, email: 'audit-ref' + n + '-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', city: 'Zvolen', consent: true, sponsorCode: code }); return ((await g(jar, '/api/me')).data || {}).id; };
+  const id1 = await reg('R1', 1);
+  const goalReg = (await g('S', '/api/client/referral-goal')).data || {};
+  ok('samotná registrácia sa NEráta (0/3)', goalReg.count === 0 && !goalReg.tiers[0].reached, goalReg);
+  // darované členstvo sa NEráta
+  await post('admin', '/api/admin/users/' + id1 + '/grant-membership', { plan_id: 'bronze', gift: true });
+  const goalGift = (await g('S', '/api/client/referral-goal')).data || {};
+  ok('darované členstvo sa NEráta', goalGift.count === 0, goalGift);
+  // zaplatené členstvo → ráta sa
+  await post('admin', '/api/admin/users/' + id1 + '/grant-membership', { plan_id: 'bronze', gift: false, payment_method: 'cash' });
   const goal1 = (await g('S', '/api/client/referral-goal')).data || {};
-  ok('1 registrácia → taška odomknutá', goal1.count === 1 && goal1.tiers[0].reached && !goal1.tiers[1].reached, goal1);
+  ok('1 PLATIACA → taška odomknutá', goal1.count === 1 && goal1.tiers[0].reached && !goal1.tiers[1].reached, goal1);
   const notif1 = ((await g('S', '/api/notifications')).data);
   const list1 = Array.isArray(notif1) ? notif1 : (notif1.notifications || []);
   ok('sponzorka dostala notifikáciu o taške', list1.some(n => /taška/i.test((n.title || '') + (n.body || ''))), list1.slice(0, 3).map(n => n.title));
 
-  await reg('R2', 2); await reg('R3', 3);
+  const id2 = await reg('R2', 2); const id3 = await reg('R3', 3);
+  // R2 platí permanentku (vstupy), R3 členstvo cez trénerský zápis
+  await post('admin', '/api/admin/users/' + id2 + '/grant-membership', { plan_id: 'permanentka10', gift: false, payment_method: 'cash' });
+  await post('admin', '/api/attendance/record-membership', { user_id: id3, plan_id: 'silver', amount: 49, payment_method: 'card' });
   const goal3 = (await g('S', '/api/client/referral-goal')).data || {};
-  ok('3 registrácie → všetky odmeny', goal3.count === 3 && goal3.tiers.every(t => t.reached), goal3);
+  ok('3 platiace (členstvo+permanentka+tréner zápis) → všetky odmeny', goal3.count === 3 && goal3.tiers.every(t => t.reached), goal3);
   const notif3 = ((await g('S', '/api/notifications')).data);
   const list3 = Array.isArray(notif3) ? notif3 : (notif3.notifications || []);
   const goalNotifs = list3.filter(n => n.type === 'referral_goal');

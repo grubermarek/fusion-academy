@@ -417,6 +417,8 @@ async function awardPurchaseCommission({buyer_id, amount, product_name}){
     if(!buyer_id || !(amount>0)) return;
     const buyer = await q.one(db.users,{_id:buyer_id});
     if(!buyer) return;
+    // Referral výzva: kamoška sa ráta, až keď zaplatí — skontroluj odmenu sponzorke
+    if(buyer.sponsor_id) referralGoalCheck(buyer.sponsor_id).catch(()=>{});
     // First paid purchase promotes a lead → client
     if(buyer.user_type==='lead'){
       await q.update(db.users,{_id:buyer._id},{$set:{user_type:'client'}});
@@ -5571,6 +5573,7 @@ async function activateMembership(userId, planId, durationDays){
   // Tréner/manažér/admin ako sponzor dostáva affiliate províziu do VÝPLATY —
   // kredit sa mu nepripíše (dvojitá odmena za ten istý nákup).
   const u = await q.one(db.users,{_id:userId});
+  if(u?.sponsor_id) referralGoalCheck(u.sponsor_id).catch(()=>{}); // platiaca kamoška → skontroluj odmenu
   if(u?.sponsor_id){
     const bonus = +(plan.price * 0.10).toFixed(2);
     const sponsor = await q.one(db.users,{_id:u.sponsor_id});
@@ -11099,9 +11102,22 @@ const REFERRAL_GOAL_TIERS = [
   { need:2, emoji:'🎟️', label:'50 % zľava na event' },
   { need:3, emoji:'⭐', label:'Masterclass event ZDARMA' },
 ];
+// Ráta sa až PLATIACA kamoška: registrácia v okne súťaže + reálne zaplatené
+// členstvo alebo permanentka/vstupy (darčeky a 0 € sa nerátajú).
+async function referralGoalHasPaid(uid){
+  const tx=(await q.find(db.transactions,{user_id:uid}))
+    .find(t=>['membership','single_entry'].includes(t.type) && t.payment_method!=='free' && ((+t.amount||0)>0 || t.payment_method==='referral_credit'));
+  if(tx) return true;
+  const mem=(await q.find(db.memberships,{user_id:uid})).find(m=>(+m.price||0)>0 && m.payment_method);
+  if(mem) return true;
+  const pay=(await q.find(db.payments,{user_id:uid})).find(p=>['completed','active'].includes(p.status));
+  return !!pay;
+}
 async function referralGoalCount(userId){
-  return (await q.find(db.users,{sponsor_id:userId}))
-    .filter(u=>!u.is_child && !u.anonymous && (u.created_at||'')>=REFERRAL_GOAL_FROM && (u.created_at||'').slice(0,10)<=REFERRAL_GOAL_TO).length;
+  const refs=(await q.find(db.users,{sponsor_id:userId}))
+    .filter(u=>!u.is_child && !u.anonymous && (u.created_at||'')>=REFERRAL_GOAL_FROM && (u.created_at||'').slice(0,10)<=REFERRAL_GOAL_TO);
+  let n=0; for(const r of refs){ if(await referralGoalHasPaid(r._id)) n++; }
+  return n;
 }
 app.get('/api/client/referral-goal', auth, async(req,res)=>{
   try{

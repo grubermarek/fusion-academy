@@ -2434,7 +2434,7 @@ async function loadRefGoal(){
         ${d.ended
           ? '<span style="font-size:.72rem;background:#3a3427;color:var(--muted);border-radius:8px;padding:3px 9px;font-weight:700">Súťaž skončila 31.8.</span>'
           : `<span style="font-size:.72rem;background:${(d.days_left<=7)?'rgba(224,86,86,.18)':'rgba(201,168,76,.15)'};color:${(d.days_left<=7)?'#ff8a8a':'var(--gold)'};border:1px solid ${(d.days_left<=7)?'rgba(224,86,86,.5)':'rgba(201,168,76,.4)'};border-radius:8px;padding:3px 9px;font-weight:800">⏳ do 31. augusta${d.days_left<=10?` · ostáva ${d.days_left} ${d.days_left===1?'deň':(d.days_left<=4?'dni':'dní')}`:''}</span>`}
-        <span style="font-size:.8rem;color:var(--gold);font-weight:800">${d.count} / ${max} registrácií</span>
+        <span style="font-size:.8rem;color:var(--gold);font-weight:800">${d.count} / ${max} platiacich kamošiek</span>
       </span>
     </div>
     <div class="rg-bar">
@@ -2447,7 +2447,7 @@ async function loadRefGoal(){
     <div style="font-size:.78rem;color:#a5d6a7;margin-top:8px">${d.ended
       ? (d.count>0 ? `Súťaž skončila — získané odmeny ti odovzdáme v štúdiu. Ďakujeme! 💛` : `Súťaž skončila. Sleduj dashboard — čoskoro ďalšia výzva! ✨`)
       : next
-      ? `Ešte <b>${next.need-d.count}</b> ${(next.need-d.count)===1?'registrácia':'registrácie'} do 31. augusta a získaš: <b style="color:var(--gold)">${next.emoji} ${escHtml(next.label)}</b> — pošli kamoške svoj odkaz! 👆`
+      ? `Ráta sa kamoška, ktorá si kúpi členstvo alebo permanentku. Ešte <b>${next.need-d.count}</b> do 31. augusta a získaš: <b style="color:var(--gold)">${next.emoji} ${escHtml(next.label)}</b> — pošli kamoške svoj odkaz! 👆`
       : `👑 Máš všetky odmeny — ozveme sa ti s odovzdaním. Každá ďalšia kamoška = ďalšie body do súťaže!`}</div>
   </div>`;
 }
