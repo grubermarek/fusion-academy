@@ -1982,9 +1982,12 @@ app.get('/api/classes', async(req,res)=>{
           }
         }
       } catch(e){ console.error('classes enrich:', e.message); }
+      // Zrušený najbližší termín — klient to MUSÍ vidieť na karte, nie až pri rezervácii
+      const cancelRec = await q.one(db.class_cancellations,{class_id:c._id, date:bdate}).catch(()=>null);
       result.push({...c, booking_count, next_date:bdate, booked:booking_count, booked_all:bookedAll,
         instructor:si.instructor, instructor_id:si.instructor_id||c.instructor_id||null,
         attendees, attendee_count: attendees?attendees.length:booking_count,
+        cancelled: !!cancelRec, cancel_reason: cancelRec?.reason||null,
         spotsLeft:Math.max(0,c.capacity-booking_count), dayName:DAYS_SK[c.day_of_week]});
     }
     result.sort((a,b)=>(a.day_of_week||0)-(b.day_of_week||0)||String(a.time_start||'').localeCompare(String(b.time_start||'')));

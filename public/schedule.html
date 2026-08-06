@@ -310,6 +310,28 @@ function renderClasses(classes) {
   grid.innerHTML = classes.map(c => {
     const full = c.spotsLeft <= 0;
     const low  = !full && c.spotsLeft <= 3;
+    // Zrušený najbližší termín — výrazná červená karta bez rezervácie
+    if (c.cancelled) {
+      return `
+    <div class="class-card" style="--color:#e05656;border:1.5px solid rgba(224,86,86,.65);background:linear-gradient(160deg,rgba(224,86,86,.10),rgba(20,16,16,.5));position:relative;overflow:hidden">
+      <div style="position:absolute;top:12px;right:-36px;transform:rotate(35deg);background:#e05656;color:#fff;font-weight:900;font-size:.75rem;letter-spacing:1px;padding:4px 44px;box-shadow:0 2px 8px rgba(0,0,0,.4)">ZRUŠENÁ</div>
+      <div class="class-card-top">
+        <div class="class-header">
+          <span class="class-emoji" style="filter:grayscale(1);opacity:.6">${c.emoji}</span>
+          <div><div class="class-title" style="text-decoration:line-through;opacity:.7">${c.name}</div></div>
+        </div>
+        <div class="class-meta">
+          <span class="meta-chip"><i class="bi bi-clock"></i>${c.time_start}${c.time_end?' – '+c.time_end:''}</span>
+          <span class="meta-chip"><i class="bi bi-geo-alt"></i>${c.location}</span>
+        </div>
+        <div style="margin-top:12px;background:rgba(224,86,86,.14);border:1px solid rgba(224,86,86,.4);border-radius:12px;padding:12px 14px">
+          <b style="color:#ff8a8a">❌ Táto hodina sa ${c.next_date?c.next_date.slice(8,10).replace(/^0/,'')+'. '+c.next_date.slice(5,7).replace(/^0/,'')+'.':''} NEKONÁ</b>
+          ${c.cancel_reason?`<div style="font-size:.82rem;color:#f3d9d9;margin-top:3px">${c.cancel_reason}</div>`:''}
+          <div style="font-size:.78rem;opacity:.7;margin-top:4px">Vidíme sa na najbližšom ďalšom termíne 💛</div>
+        </div>
+      </div>
+    </div>`;
+    }
     const spotsText = full ? '🔴 Plne obsadené' : low ? `⚠️ Zostáva ${c.spotsLeft} miest` : `✅ ${c.spotsLeft} voľných miest`;
     const spotsClass = full ? 'full' : low ? 'low' : '';
     return `

@@ -1495,6 +1495,25 @@ function renderClassCards(){
         <span style="flex:1;text-align:left;font-size:.8rem;font-weight:700">👥 Prihlásení (${cls.attendee_count||atts.length})</span>
         <i class="bi bi-chevron-right" style="color:var(--gold);font-size:.9rem;flex:none"></i>
       </button>`:'';
+    // Zrušený najbližší termín — výrazná červená karta, bez možnosti rezervácie
+    if(cls.cancelled){
+      return `<div class="class-card" style="border:1.5px solid rgba(224,86,86,.65);background:linear-gradient(160deg,rgba(224,86,86,.10),rgba(20,16,16,.6));position:relative;overflow:hidden">
+        <div style="position:absolute;top:10px;right:-34px;transform:rotate(35deg);background:#e05656;color:#fff;font-weight:900;font-size:.72rem;letter-spacing:1px;padding:4px 40px;box-shadow:0 2px 8px rgba(0,0,0,.4)">ZRUŠENÁ</div>
+        <div class="cc-top">
+          <div class="cc-emoji" style="filter:grayscale(1);opacity:.6">${cls.emoji||'🏃'}</div>
+          <div style="flex:1;min-width:0">
+            <div class="cc-name" style="text-decoration:line-through;opacity:.7">${escHtml(cls.name)}</div>
+            <div class="cc-day-line"><span class="cc-day" style="background:rgba(224,86,86,.2);color:#ff8a8a">${dayFull}</span><span class="cc-date" style="opacity:.65">${nextDate} · ${cls.time_start||'—'}</span></div>
+            <div class="cc-meta" style="margin-top:4px;opacity:.65"><i class="bi bi-geo-alt" style="font-size:.7rem"></i> ${escHtml(cls.location||'—')}</div>
+          </div>
+        </div>
+        <div style="margin-top:10px;background:rgba(224,86,86,.14);border:1px solid rgba(224,86,86,.4);border-radius:12px;padding:11px 13px">
+          <b style="color:#ff8a8a;font-size:.9rem">❌ Táto hodina sa ${nextDate} NEKONÁ</b>
+          ${cls.cancel_reason?`<div style="font-size:.78rem;color:#f3d9d9;margin-top:3px">${escHtml(cls.cancel_reason)}</div>`:''}
+          <div style="font-size:.75rem;color:var(--muted,#999);margin-top:4px">Vidíme sa na najbližšom ďalšom termíne 💛</div>
+        </div>
+      </div>`;
+    }
     return `<div class="class-card${bookedId?' cc-booked-card':''}">
       <div class="cc-top">
         <div class="cc-emoji">${cls.emoji||'🏃'}</div>
