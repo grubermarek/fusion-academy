@@ -44,6 +44,18 @@ app.use((req,res,next)=>{
   if(process.env.NODE_ENV==='production') res.setHeader('Strict-Transport-Security','max-age=15552000; includeSubDomains');
   next();
 });
+// Migrácia domény (8/2026): app.latindancefusion.art → app.fusionacademy.sk.
+// Presmerúvajú sa len GET/HEAD HTML navigácie — API volania a webhooky (Stripe/PayPal)
+// zo starej domény fungujú ďalej, aby sa nič nerozbilo starým PWA klientom.
+app.use((req,res,next)=>{
+  const host=String(req.headers.host||'').toLowerCase();
+  if(host==='app.latindancefusion.art' && (req.method==='GET'||req.method==='HEAD')
+     && !req.path.startsWith('/api/') && String(req.headers.accept||'').includes('text/html')){
+    return res.redirect(301,'https://app.fusionacademy.sk'+req.originalUrl);
+  }
+  next();
+});
+
 // Capture raw body so webhook signatures (Stripe) can be verified against exact bytes
 app.use(express.json({ limit:'10mb', verify:(req,res,buf)=>{ req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: true, limit:'10mb' }));
@@ -12248,10 +12260,11 @@ app.get('/api/admin/churn-risk', adminAuth, async(req,res)=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 // EMAIL AUTOMATION ENGINE
 // ═══════════════════════════════════════════════════════════════════════════════
-let APP_URL = process.env.APP_URL || 'https://app.latindancefusion.art';
-// Appka žije na app. subdoméne (Railway); apex latindancefusion.art je Netlify web (404 na /admin, /trainer…).
+let APP_URL = process.env.APP_URL || 'https://app.fusionacademy.sk';
+// Appka žije na app. subdoméne (Railway); apexy sú Netlify web (404 na /admin, /trainer…).
 // Ak je APP_URL omylom nastavená na apex, oprav ju na app. subdoménu, nech maily nevedú na 404.
-if(/^https?:\/\/(www\.)?latindancefusion\.art/i.test(APP_URL)) APP_URL = 'https://app.latindancefusion.art';
+if(/^https?:\/\/(www\.)?latindancefusion\.art/i.test(APP_URL)) APP_URL = 'https://app.fusionacademy.sk';
+if(/^https?:\/\/(www\.)?fusionacademy\.sk/i.test(APP_URL)) APP_URL = 'https://app.fusionacademy.sk';
 
 // Enqueue all steps of a sequence for a user, starting from today + step.day
 async function enqueueSequence(userId, sequenceName, anchorDate){
