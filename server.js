@@ -181,6 +181,7 @@ const db = {
   private_slots:    new Datastore({ filename: path.join(DATA_DIR, 'private_slots.db'),    autoload: true }),
   private_bookings: new Datastore({ filename: path.join(DATA_DIR, 'private_bookings.db'), autoload: true }),
   private_recurring: new Datastore({ filename: path.join(DATA_DIR, 'private_recurring.db'), autoload: true }),
+  business_snapshots: new Datastore({ filename: path.join(DATA_DIR, 'business_snapshots.db'), autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -12781,6 +12782,343 @@ async function runFriendEventsDaily(){
     }
   }
 }
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🏆 BUSINESS RANK — gamifikovaný rank podnikania (len admin)
+// Rank sa prepočítava z reálnych dát (rovnaké zdroje ako Financie): môže stúpať
+// aj klesať. XP = diminishing returns (sqrt škálovanie), ranky majú divízie
+// (III→II→I) a vyššie ranky aj minimum requirements. Achievements sú permanentné.
+// ═══════════════════════════════════════════════════════════════════════════════
+const BUSINESS_RANK_CONFIG = {
+  // XP váhy — w*sqrt(hodnota) pre objemové metriky, lineárne pre percentá.
+  weights: {
+    members:      { w:120, fn:'sqrt', label:'Aktívne členstvá' },
+    revenue:      { w:45,  fn:'sqrt', label:'Mesačný obrat (net)' },
+    mrr:          { w:25,  fn:'sqrt', label:'MRR' },
+    passes:       { w:40,  fn:'sqrt', label:'Aktívne permanentky' },
+    trainers:     { w:350, fn:'sqrt', label:'Vyťažení tréneri' },
+    retention:    { w:8,   fn:'lin',  label:'Retention %' },
+    attendance:   { w:9,   fn:'sqrt', label:'Návštevy (30 dní)' },
+    activeClients:{ w:30,  fn:'sqrt', label:'Aktívni klienti (30 dní)' },
+    newPaying:    { w:55,  fn:'sqrt', label:'Noví platiaci (mesiac)' },
+    conversion:   { w:6,   fn:'lin',  label:'Konverzia na člena %' },
+    referrals:    { w:25,  fn:'sqrt', label:'Referral registrácie (mesiac)' },
+    growth:       { w:12,  fn:'growth', label:'Rast obratu %' }, // clamp(-20..30)*w
+  },
+  // 7 mien × 3 divízie + finálny rank = 22 tierov. reqs platia od III divízie mena.
+  ranks: [
+    { name:'STARTER',      icon:'🌱', div:3, xp:0 },     { name:'STARTER', icon:'🌱', div:2, xp:400 },   { name:'STARTER', icon:'🌱', div:1, xp:900 },
+    { name:'BUILDER',      icon:'🧱', div:3, xp:1500 },  { name:'BUILDER', icon:'🧱', div:2, xp:2200 },  { name:'BUILDER', icon:'🧱', div:1, xp:3000 },
+    { name:'OPERATOR',     icon:'⚙️', div:3, xp:3900 },  { name:'OPERATOR', icon:'⚙️', div:2, xp:4900 }, { name:'OPERATOR', icon:'⚙️', div:1, xp:6000 },
+    { name:'ENTREPRENEUR', icon:'🚀', div:3, xp:7200 },  { name:'ENTREPRENEUR', icon:'🚀', div:2, xp:8500 }, { name:'ENTREPRENEUR', icon:'🚀', div:1, xp:10000 },
+    { name:'CEO',          icon:'👔', div:3, xp:11800, reqs:{members:80, revenue:8000, trainers:3} },
+    { name:'CEO',          icon:'👔', div:2, xp:13800, reqs:{members:80, revenue:8000, trainers:3} },
+    { name:'CEO',          icon:'👔', div:1, xp:16000, reqs:{members:80, revenue:8000, trainers:3} },
+    { name:'SCALE MASTER', icon:'🔥', div:3, xp:18500, reqs:{members:150, revenue:15000, trainers:5, retention:70} },
+    { name:'SCALE MASTER', icon:'🔥', div:2, xp:21500, reqs:{members:150, revenue:15000, trainers:5, retention:70} },
+    { name:'SCALE MASTER', icon:'🔥', div:1, xp:25000, reqs:{members:150, revenue:15000, trainers:5, retention:70} },
+    { name:'EMPIRE',       icon:'🏛️', div:3, xp:29000, reqs:{members:250, revenue:25000, trainers:8, retention:75} },
+    { name:'EMPIRE',       icon:'🏛️', div:2, xp:33500, reqs:{members:250, revenue:25000, trainers:8, retention:75} },
+    { name:'EMPIRE',       icon:'🏛️', div:1, xp:38500, reqs:{members:250, revenue:25000, trainers:8, retention:75} },
+    { name:'FUSION LEGEND',icon:'👑', div:0, xp:44000, reqs:{members:400, revenue:40000, trainers:10, retention:80} },
+  ],
+  reqLabels: { members:'Aktívne členstvá', revenue:'Mesačný obrat €', trainers:'Vyťažení tréneri', retention:'Retention %' },
+  // Rank down až po 3 dňoch pod hranicou a s 3 % toleranciou (hysteresis)
+  downGraceDays: 3, downTolerance: 0.97,
+  achievements: [
+    { id:'rev1k',   icon:'💶', title:'Prvý 1 000 € mesiac',  metric:'revenue', value:1000 },
+    { id:'rev5k',   icon:'💶', title:'Prvý 5 000 € mesiac',  metric:'revenue', value:5000 },
+    { id:'rev10k',  icon:'💰', title:'Prvý 10 000 € mesiac', metric:'revenue', value:10000 },
+    { id:'rev20k',  icon:'💰', title:'Prvý 20 000 € mesiac', metric:'revenue', value:20000 },
+    { id:'rev50k',  icon:'🏦', title:'Prvý 50 000 € mesiac', metric:'revenue', value:50000 },
+    { id:'mem50',   icon:'👥', title:'50 aktívnych členstiev',  metric:'members', value:50 },
+    { id:'mem100',  icon:'👥', title:'100 aktívnych členstiev', metric:'members', value:100 },
+    { id:'mem250',  icon:'🏟️', title:'250 aktívnych členstiev', metric:'members', value:250 },
+    { id:'tr5',     icon:'💃', title:'5 aktívnych trénerov',  metric:'trainersAll', value:5 },
+    { id:'tr10',    icon:'💃', title:'10 aktívnych trénerov', metric:'trainersAll', value:10 },
+    { id:'book1k',  icon:'📅', title:'1 000 absolvovaných hodín',  metric:'attendedTotal', value:1000 },
+    { id:'book10k', icon:'📅', title:'10 000 absolvovaných hodín', metric:'attendedTotal', value:10000 },
+    { id:'merch500',icon:'👕', title:'500 € merch mesiac', metric:'merchMonth', value:500 },
+    { id:'pass100', icon:'🎟️', title:'100 predaných permanentiek (celkovo)', metric:'passesSoldTotal', value:100 },
+    { id:'ret90',   icon:'🔒', title:'90 % retention', metric:'retention', value:90 },
+  ],
+};
+
+const brIsTest = u => /@test-fa-qa\.local$/i.test(String(u?.email||''));
+const brXpFn = (v, cfg) => cfg.fn==='sqrt' ? cfg.w*Math.sqrt(Math.max(0,v))
+  : cfg.fn==='growth' ? Math.max(-20,Math.min(30,v))*cfg.w
+  : cfg.w*Math.max(0,v);
+
+// Jediný zdroj pravdy pre obrat — rovnaké zdroje ako /api/admin/finance/stats
+// (payments completed/active + hotovostné členstvá + zaplatené objednávky +
+// jednorazové vstupy + súkromné hodiny), navyše s kategóriou a bez test účtov.
+async function brRevenueEvents(){
+  const testIds=new Set((await q.find(db.users,{})).filter(brIsTest).map(u=>u._id));
+  const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status) && !testIds.has(p.user_id));
+  const membs=(await q.find(db.memberships,{})).filter(m=>!m._type && !testIds.has(m.user_id));
+  const cashMembs=membs.filter(m=>m.payment_method);
+  const orders=(await q.find(db.orders,{})).filter(o=>o.status==='paid' && !testIds.has(o.user_id));
+  const singleEntries=(await q.find(db.transactions,{type:'single_entry'})).filter(t=>!testIds.has(t.buyer_id||t.user_id));
+  const privateLessons=(await q.find(db.transactions,{type:'private_lesson'})).filter(t=>!testIds.has(t.buyer_id||t.user_id));
+  const payDate=p=>p.captured_at||p.activated_at||p.created_at||'';
+  const catOfPayment=p=>{ const d=String(p.description||'').toLowerCase();
+    if(/permanentk|vstupov/.test(d)) return 'passes';
+    if(/vstup/.test(d)) return 'entries';
+    if(/súkrom|sukrom|private|svadob/.test(d)) return 'private';
+    if(/event|masterclass|workshop|kurz|course/.test(d)) return 'events';
+    if(/členstv|clenstv|member|bronze|silver|gold|online/.test(d)) return 'memberships';
+    return 'other'; };
+  const events=[
+    ...payments.map(p=>({d:payDate(p), a:+p.amount||0, cat:catOfPayment(p)})),
+    ...cashMembs.map(m=>({d:m.created_at||'', a:+m.price||0, cat:(MEMBERSHIP_PLANS[m.plan_id]?.type==='bundle'||m.status==='bundle')?'passes':'memberships'})),
+    ...orders.map(o=>({d:o.paid_at||o.created_at||'', a:+o.total||0, cat:'merch'})),
+    ...singleEntries.map(t=>({d:t.created_at||'', a:+t.amount||0,
+      cat:((MEMBERSHIP_PLANS[t.plan_id]?.entries||1)>1 || (+t.entries||1)>1 || /permanentk/i.test(String(t.note||''))) ? 'passes':'entries'})),
+    ...privateLessons.map(t=>({d:t.created_at||'', a:+t.amount||0, cat:'private'})),
+  ];
+  return { events, testIds, membs, payments };
+}
+
+let brCache=null; // {at, data}
+async function businessRankData(fresh){
+  if(!fresh && brCache && Date.now()-brCache.at < 10*60*1000) return brCache.data;
+  const C=BUSINESS_RANK_CONFIG;
+  const nowIso=nowISO(), dayStr=today(), monthStr=dayStr.slice(0,7);
+  const prevMonth=new Date(new Date(dayStr+'T12:00:00').setDate(0)).toISOString().slice(0,7);
+  const d30=new Date(Date.now()-30*86400000).toISOString();
+
+  const { events, testIds, membs } = await brRevenueEvents();
+  const refunds=await q.find(db.refunds,{});
+  const refSum=ms=>+refunds.filter(r=>(r.month||String(r.created_at||'').slice(0,7))===ms).reduce((s,r)=>s+(+r.amount||0),0).toFixed(2);
+  const evSum=(ms,cat)=>+events.filter(e=>e.d.startsWith(ms)&&(!cat||e.cat===cat)).reduce((s,e)=>s+e.a,0).toFixed(2);
+  const grossMonth=evSum(monthStr), refMonth=refSum(monthStr);
+  const revenue=+(grossMonth-refMonth).toFixed(2); // TOTAL NET REVENUE
+  const revenuePrev=+(evSum(prevMonth)-refSum(prevMonth)).toFixed(2);
+  const growthPct=revenuePrev>0? +(((revenue-revenuePrev)/revenuePrev)*100).toFixed(1) : (revenue>0?100:0);
+  const breakdown={}; for(const cat of ['memberships','passes','entries','private','events','merch','other']) breakdown[cat]=evSum(monthStr,cat);
+
+  const users=(await q.find(db.users,{})).filter(u=>!brIsTest(u));
+  const clients=users.filter(u=>!u.is_admin && u.user_type!=='trainer' && !u.is_child);
+  // Aktívne PLATENÉ mesačné členstvá (bez bundle/permanentiek, bez darčekov)
+  const activeMemUsers=new Set(membs.filter(m=>m.status!=='bundle' && MEMBERSHIP_PLANS[m.plan_id]?.type!=='bundle'
+    && (m.expires_at||'')>nowIso && !m.gift && +m.price>0).map(m=>m.user_id));
+  const members=activeMemUsers.size;
+  // Aktívne permanentky = klienti so zostávajúcimi vstupmi
+  const passes=clients.filter(u=>(u.single_entries||0)>0).length;
+  const passesSoldMonth=(membs.filter(m=>(m.status==='bundle'||MEMBERSHIP_PLANS[m.plan_id]?.type==='bundle') && (m.created_at||'').startsWith(monthStr) && +m.price>0)).length;
+  const passesSoldTotal=(membs.filter(m=>(m.status==='bundle'||MEMBERSHIP_PLANS[m.plan_id]?.type==='bundle') && +m.price>0)).length;
+
+  // MRR — rovnaká logika ako Financie (aktívne Stripe/PayPal subscriptions)
+  let mrr=0; for(const u of clients){
+    if(u.stripe_subscription_id) mrr+=MEMBERSHIP_PLANS[u.stripe_sub_plan]?.price||0;
+    if(u.paypal_subscription_id) mrr+=MEMBERSHIP_PLANS[u.subscription_plan]?.price||0; }
+  mrr=+mrr.toFixed(2);
+
+  // Tréneri: aktívni + vyťažení (učili za 30 dní podľa session_instructors/task logu/taught hodín)
+  const trainerUsers=users.filter(u=>u.user_type==='trainer' && !u.deactivated);
+  const si=await q.find(db.session_instructors,{});
+  const taught30=new Set(si.filter(s=>(s.date||'')>=d30.slice(0,10)).map(s=>s.trainer_id||s.user_id));
+  const utilizedTrainers=trainerUsers.filter(t=>taught30.has(t._id)||((t.taught_group_hours||0)+(t.taught_private_hours||0))>0).length;
+  const trainersAll=trainerUsers.length;
+
+  // Retention/churn — rovnaká logika ako /api/admin/analytics/retention
+  const memberIds=[...new Set(membs.map(m=>m.user_id))].filter(id=>!testIds.has(id));
+  let activeNow=0; for(const uid of memberIds){
+    const latestExp=membs.filter(m=>m.user_id===uid).reduce((mx,m)=>{const e=m.expires_at||'';return e>mx?e:mx;},'');
+    if(latestExp && latestExp>nowIso) activeNow++; }
+  const retention=memberIds.length? +(activeNow/memberIds.length*100).toFixed(1):0;
+  const churn=+(100-retention).toFixed(1);
+
+  const bookings=await q.find(db.bookings,{});
+  const att30=bookings.filter(b=>b.status==='attended' && (b.attended_at||'')>=d30 && !testIds.has(b.user_id));
+  const attendance=att30.length;
+  const activeClients=new Set(att30.map(b=>b.user_id)).size;
+  const attendedTotal=bookings.filter(b=>b.status==='attended' && !testIds.has(b.user_id)).length;
+
+  const newPayingIds=new Set(membs.filter(m=>(m.created_at||'').startsWith(monthStr) && !m.gift && +m.price>0).map(m=>m.user_id));
+  const newPaying=newPayingIds.size;
+  const referrals=clients.filter(u=>u.sponsor_id && (u.created_at||'').startsWith(monthStr)).length;
+
+  // Konverzný lievik (posledných 90 dní registrácií)
+  const d90=new Date(Date.now()-90*86400000).toISOString();
+  const regs90=clients.filter(u=>(u.created_at||'')>=d90);
+  const visited90=regs90.filter(u=>(u.visit_count||0)>0).length;
+  const paidSet=new Set(membs.filter(m=>!m.gift&&+m.price>0).map(m=>m.user_id));
+  const converted90=regs90.filter(u=>paidSet.has(u._id)).length;
+  const conversion=visited90? +(converted90/visited90*100).toFixed(1):0;
+  const funnel={registered:regs90.length, visited:visited90, paid:converted90,
+    visitRate:regs90.length? +(visited90/regs90.length*100).toFixed(1):0, memberRate:conversion};
+
+  // ── XP ──
+  const vals={members, revenue, mrr, passes, trainers:utilizedTrainers, retention,
+    attendance, activeClients, newPaying, conversion, referrals, growth:growthPct};
+  const xpParts={}; let xp=0;
+  for(const[k,cfg] of Object.entries(C.weights)){ const p=Math.round(brXpFn(vals[k],cfg)); xpParts[k]={value:vals[k], xp:p, label:cfg.label}; xp+=p; }
+  xp=Math.max(0,Math.round(xp));
+
+  // ── Rank (s hysteresis) ──
+  const meetsReqs=r=>!r.reqs||Object.entries(r.reqs).every(([k,v])=>({members,revenue,trainers:utilizedTrainers,retention})[k]>=v);
+  let eligibleIdx=0; C.ranks.forEach((r,i)=>{ if(xp>=r.xp && meetsReqs(r)) eligibleIdx=i; });
+  let state=await q.one(db.settings,{key:'business_rank_state'});
+  if(!state){ state=await q.insert(db.settings,{key:'business_rank_state', rankIdx:eligibleIdx, since:nowIso, belowStreak:0}); }
+  const currentIdx=Math.min(state.rankIdx??eligibleIdx, C.ranks.length-1);
+  const rank=C.ranks[currentIdx], nextRank=C.ranks[currentIdx+1]||null;
+  const divRoman=d=>d===3?'III':d===2?'II':d===1?'I':'';
+  const rankLabel=r=>r.name+(r.div?' '+divRoman(r.div):'');
+
+  // Next rank analýza
+  let next=null;
+  if(nextRank){
+    const missingXp=Math.max(0,nextRank.xp-xp);
+    const reqRows=Object.entries(nextRank.reqs||{}).map(([k,v])=>{
+      const cur={members,revenue,trainers:utilizedTrainers,retention}[k];
+      return {key:k, label:C.reqLabels[k], current:cur, required:v, ok:cur>=v}; });
+    next={label:rankLabel(nextRank), icon:nextRank.icon, xp:nextRank.xp, missingXp, reqs:reqRows,
+      progress:Math.min(100, Math.round(((xp-rank.xp)/Math.max(1,nextRank.xp-rank.xp))*100))};
+  }
+
+  // ── Missions (podľa najslabších metrík + reálneho biznis dopadu) ──
+  const missions=[];
+  const xpFor=(k,newVal)=>Math.round(brXpFn(newVal,C.weights[k])-brXpFn(vals[k],C.weights[k]));
+  if(next){ for(const rr of next.reqs.filter(r=>!r.ok)){
+    if(rr.key==='members') missions.push({icon:'🎯', title:`Získaj ${rr.required-rr.current} nových členov`, cur:rr.current, target:rr.required, impact:xpFor('members',rr.required), note:'podmienka ďalšieho ranku'});
+    if(rr.key==='revenue') missions.push({icon:'💰', title:`Dosiahni ${rr.required.toLocaleString('sk')} € mesiac`, cur:revenue, target:rr.required, impact:xpFor('revenue',rr.required), note:'podmienka ďalšieho ranku'});
+    if(rr.key==='trainers') missions.push({icon:'👨‍🏫', title:`Vyťaž ${rr.required-rr.current} ďalších trénerov`, cur:rr.current, target:rr.required, impact:xpFor('trainers',rr.required), note:'podmienka ďalšieho ranku'});
+    if(rr.key==='retention') missions.push({icon:'🔒', title:`Zvýš retention na ${rr.required} %`, cur:retention, target:rr.required, impact:xpFor('retention',rr.required), note:'podmienka ďalšieho ranku'});
+  }}
+  const revTarget=Math.ceil((revenue+1)/1000)*1000;
+  missions.push({icon:'💶', title:`Dosiahni ${revTarget.toLocaleString('sk')} € tento mesiac`, cur:revenue, target:revTarget, impact:xpFor('revenue',revTarget), note:`chýba ${(revTarget-revenue).toFixed(0)} €`});
+  const expPassClients=clients.filter(u=>(u.single_entries||0)>0 && (u.single_entries||0)<=2).length;
+  if(expPassClients>=3) missions.push({icon:'🎟️', title:`Obnov ${expPassClients} končiacich permanentiek`, cur:0, target:expPassClients, impact:xpFor('revenue',revenue+expPassClients*80), note:`potenciál +${(expPassClients*80).toLocaleString('sk')} €`});
+  const memTarget=members+Math.max(3,Math.ceil(members*0.06));
+  missions.push({icon:'👥', title:`Rozšír členskú základňu na ${memTarget}`, cur:members, target:memTarget, impact:xpFor('members',memTarget), note:'zdravý mesačný rast ~6 %'});
+  missions.sort((a,b)=>b.impact-a.impact); missions.length=Math.min(5,missions.length);
+
+  // ── Tipy z reálnych dát ──
+  const tips=[];
+  if(funnel.registered>=10 && funnel.visitRate<50) tips.push({metric:'Konverzia registrácia → 1. hodina', value:funnel.visitRate+' %', tip:`Z ${funnel.registered} registrovaných (90 dní) prišlo na hodinu len ${funnel.visited}. Follow-up deň po registrácii (SMS/telefonát) a pripomienka rezervácie vedia toto číslo zdvihnúť o 10–20 b.`});
+  if(funnel.visited>=10 && conversion<35) tips.push({metric:'Konverzia 1. hodina → člen', value:conversion+' %', tip:`${funnel.visited} klientiek prišlo na hodinu, ${funnel.paid} si kúpilo členstvo. Časovo limitovaná ponuka do 48 h po prvej hodine (napr. kupón na 1. mesiac) je najrýchlejšia páka — pri ${conversion}→30 % by to bolo +${Math.max(0,Math.round(funnel.visited*0.3-funnel.paid))} členov.`});
+  if(churn>35) tips.push({metric:'Churn', value:churn+' %', tip:`${churn} % klientov s históriou členstva už nemá aktívne. Winback sekvencia beží — pridaj osobný telefonát 5 dní po expirácii, je 3–4× účinnejší než email.`});
+  if(mrr>0 && revenue>0 && mrr/revenue<0.5) tips.push({metric:'Recurring podiel', value:Math.round(mrr/revenue*100)+' %', tip:`Len ${Math.round(mrr/revenue*100)} % obratu je opakovaný príjem. Motivuj permanentkárov na mesačné členstvo (je lacnejšie na návštevu) — stabilizuje to cash flow.`});
+  if(!tips.length) tips.push({metric:'Zdravý stav', value:'✓', tip:'Žiadna metrika nesvieti načerveno — sústreď sa na misie vyššie.'});
+
+  // ── Business Health 0–100 ──
+  const clamp01=v=>Math.max(0,Math.min(100,Math.round(v)));
+  const health={
+    growth: clamp01(50+growthPct*2.5),
+    revenue: clamp01(revenue/150),          // 15 000 € = 100
+    retention: clamp01(retention*1.15),
+    members: clamp01(members/1.5),          // 150 = 100
+    team: clamp01(trainersAll? utilizedTrainers/trainersAll*100 : 0),
+    conversion: clamp01(conversion*2.5),    // 40 % = 100
+  };
+  const healthScore=clamp01(Object.values(health).reduce((s,v)=>s+v,0)/Object.keys(health).length);
+
+  // ── Forecast (jednoduchá projekcia tempa — označené ako projekcia) ──
+  const dayOfMonth=+dayStr.slice(8,10), daysInMonth=new Date(+dayStr.slice(0,4), +dayStr.slice(5,7), 0).getDate();
+  const pace=dayOfMonth? revenue/dayOfMonth : 0;
+  const forecastRevenue=+(pace*daysInMonth).toFixed(0);
+  const forecastMembers=members+Math.round((newPaying/Math.max(1,dayOfMonth))*(daysInMonth-dayOfMonth)*0.6);
+  const fVals={...vals, revenue:forecastRevenue, members:forecastMembers};
+  let forecastXp=0; for(const[k,cfg] of Object.entries(C.weights)) forecastXp+=brXpFn(fVals[k],cfg);
+  forecastXp=Math.round(forecastXp);
+  let fIdx=0; C.ranks.forEach((r,i)=>{ if(forecastXp>=r.xp && (!r.reqs||Object.entries(r.reqs).every(([k,v])=>({members:forecastMembers,revenue:forecastRevenue,trainers:utilizedTrainers,retention})[k]>=v))) fIdx=i; });
+
+  // ── Pobočky (30 dní; revenue per pobočka appka neeviduje → aproximácia cez návštevy) ──
+  const classes=await q.find(db.classes,{});
+  const classLoc={}; classes.forEach(c=>classLoc[c._id]=c.location||'—');
+  const locStats={};
+  for(const L of LOCATIONS){ locStats[L]={location:L, attended:0, clients:new Set(), members:0}; }
+  att30.forEach(b=>{ const L=b.class_location||classLoc[b.class_id]||'—'; if(locStats[L]){ locStats[L].attended++; locStats[L].clients.add(b.user_id); } });
+  activeMemUsers.forEach(uid=>{ const bs=bookings.filter(b=>b.user_id===uid&&b.status==='attended'); if(!bs.length) return;
+    const cnt={}; bs.forEach(b=>{const L=b.class_location||classLoc[b.class_id]||'—'; cnt[L]=(cnt[L]||0)+1;});
+    const top=Object.entries(cnt).sort((a,b)=>b[1]-a[1])[0]?.[0]; if(locStats[top]) locStats[top].members++; });
+  const locations=Object.values(locStats).map(l=>({location:l.location, attended:l.attended, activeClients:l.clients.size, members:l.members}))
+    .sort((a,b)=>b.attended-a.attended);
+
+  // ── História + records + achievements (zo snapshots/settings) ──
+  const snaps=(await q.find(db.business_snapshots,{})).sort((a,b)=>a.date.localeCompare(b.date));
+  let ach=await q.one(db.settings,{key:'business_achievements'});
+  if(!ach){ ach=await q.insert(db.settings,{key:'business_achievements', unlocked:{}, records:{}}); }
+  const merchMonth=breakdown.merch||0;
+  const achVals={revenue, members, trainersAll, attendedTotal, merchMonth, passesSoldTotal, retention};
+  const achievements=C.achievements.map(a=>({...a, unlocked:ach.unlocked?.[a.id]||null, current:achVals[a.metric]??null}));
+  const records=ach.records||{};
+
+  // Týždenné zhrnutie zo snapshotov
+  const weekAgoSnap=[...snaps].reverse().find(s=>s.date<=new Date(Date.now()-7*86400000).toISOString().slice(0,10));
+  const weekly=weekAgoSnap?{ xpFrom:weekAgoSnap.xp, xpTo:xp, members:members-(weekAgoSnap.members||0),
+    revenue:+(revenue-(weekAgoSnap.date.slice(0,7)===monthStr?(weekAgoSnap.revenue||0):0)).toFixed(2),
+    retention:+(retention-(weekAgoSnap.retention||0)).toFixed(1), trainers:utilizedTrainers-(weekAgoSnap.trainers||0) }:null;
+
+  const data={
+    computed_at:nowIso, xp, xpParts,
+    rank:{label:rankLabel(rank), icon:rank.icon, idx:currentIdx, minXp:rank.xp}, next,
+    eligible:{label:rankLabel(C.ranks[eligibleIdx]), idx:eligibleIdx},
+    metrics:{ members, passes, passesSoldMonth, mrr, revenue, grossMonth, refundsMonth:refMonth, revenuePrev, growthPct,
+      trainers:trainersAll, utilizedTrainers, retention, churn, attendance, activeClients, newPaying, referrals, conversion,
+      recurringShare: revenue>0? +(mrr/revenue*100).toFixed(1):0 },
+    breakdown, funnel, missions, tips, health:{score:healthScore, parts:health},
+    forecast:{revenue:forecastRevenue, members:forecastMembers, xp:forecastXp, rank:rankLabel(C.ranks[fIdx]), note:'Projekcia z tempa mesiaca — nie garancia.'},
+    locations, achievements, records,
+    history:snaps.slice(-365).map(s=>({date:s.date, xp:s.xp, rank:s.rank, revenue:s.revenue, members:s.members})),
+    weekly,
+    config:{ weights:C.weights, ranks:C.ranks.map(r=>({label:rankLabel(r), icon:r.icon, xp:r.xp, reqs:r.reqs||null})) },
+  };
+  brCache={at:Date.now(), data};
+  return data;
+}
+
+// Denný snapshot + rank state + achievements/records + notifikácie
+async function businessRankDailyJob(){
+  try{
+    const C=BUSINESS_RANK_CONFIG;
+    const data=await businessRankData(true);
+    const dayStr=today();
+    if(!(await q.one(db.business_snapshots,{date:dayStr}))){
+      await q.insert(db.business_snapshots,{date:dayStr, xp:data.xp, rank:data.rank.label,
+        members:data.metrics.members, revenue:data.metrics.revenue, mrr:data.metrics.mrr,
+        trainers:data.metrics.utilizedTrainers, retention:data.metrics.retention,
+        attendance:data.metrics.attendance, created_at:nowISO()});
+    }
+    const admins=await q.find(db.users,{is_admin:true});
+    const notify=async(title,body)=>{ for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'business_rank',title,body,read:false,created_at:nowISO()}); };
+
+    // Rank state (hysteresis): up hneď, down po downGraceDays dňoch pod hranicou
+    const state=await q.one(db.settings,{key:'business_rank_state'});
+    const cur=Math.min(state?.rankIdx??0, C.ranks.length-1), eli=data.eligible.idx;
+    if(eli>cur){
+      await q.update(db.settings,{key:'business_rank_state'},{$set:{rankIdx:eli, since:nowISO(), belowStreak:0}});
+      await notify(`🏆 RANK UP: ${C.ranks[eli].icon} ${data.eligible.label}`,`Business Score ${data.xp.toLocaleString('sk')} XP — posun z ${data.rank.label}. Len tak ďalej!`);
+    } else if(eli<cur){
+      const curRank=C.ranks[cur];
+      const belowHard=data.xp < curRank.xp*C.downTolerance;
+      const streak=belowHard? (state?.belowStreak||0)+1 : 0;
+      if(streak>=C.downGraceDays){
+        await q.update(db.settings,{key:'business_rank_state'},{$set:{rankIdx:eli, since:nowISO(), belowStreak:0}});
+        await notify(`⚠️ RANK DOWN: ${data.eligible.label}`,`Business Score klesol na ${data.xp.toLocaleString('sk')} XP (${C.downGraceDays} dni pod hranicou ${curRank.xp.toLocaleString('sk')}).`);
+      } else await q.update(db.settings,{key:'business_rank_state'},{$set:{belowStreak:streak}});
+    } else if(state?.belowStreak) await q.update(db.settings,{key:'business_rank_state'},{$set:{belowStreak:0}});
+
+    // Achievements + records
+    const ach=await q.one(db.settings,{key:'business_achievements'});
+    const unlocked={...(ach?.unlocked||{})}, records={...(ach?.records||{})};
+    let changed=false;
+    for(const a of data.achievements){ if(!unlocked[a.id] && a.current!=null && a.current>=a.value){
+      unlocked[a.id]=dayStr; changed=true; await notify(`🏆 ACHIEVEMENT: ${a.icon} ${a.title}`,`Odomknuté ${dayStr}. Permanentný míľnik — už ti ho nikto nezoberie.`); } }
+    const recDefs={members:data.metrics.members, revenue_month:data.metrics.revenue, mrr:data.metrics.mrr,
+      trainers:data.metrics.trainers, xp:data.xp};
+    for(const[k,v] of Object.entries(recDefs)){ if(v>(records[k]?.value??-1)){
+      const prev=records[k]?.value; records[k]={value:v, date:dayStr}; changed=true;
+      if(prev!=null && k!=='xp' && v>prev*1.02) await notify(`🔥 NOVÝ REKORD: ${k==='members'?'aktívne členstvá':k==='revenue_month'?'mesačný obrat':k==='mrr'?'MRR':'tréneri'} ${typeof v==='number'?v.toLocaleString('sk'):v}`,`Predchádzajúci rekord: ${prev.toLocaleString('sk')}.`); } }
+    if(changed||!ach) await q.update(db.settings,{key:'business_achievements'},{$set:{unlocked, records}});
+  }catch(e){ console.error('Business rank job error:', e.message); }
+}
+
+app.get('/api/admin/business-rank', adminAuth, async(req,res)=>{
+  try{ res.json(await businessRankData(req.query.fresh==='1')); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+
 async function runDailyJobs(){
   const d3 = new Date(Date.now()+3*86400000).toISOString().slice(0,10);
   const d7 = new Date(Date.now()+7*86400000).toISOString().slice(0,10);
@@ -13033,6 +13371,8 @@ async function runDailyJobs(){
 
   // ── 6d. Odznaky – dávková kontrola + notif priateľom ──────────────────────
   try { await runAchievementsDaily(); } catch(e){ console.error('Achievements daily error:', e.message); }
+  // ── 6d2. Business Rank — denný snapshot, rank up/down, achievements, rekordy ─
+  try { await businessRankDailyJob(); } catch(e){ console.error('Business rank error:', e.message); }
   // ── 6e. Meniny/narodeniny priateľov (týždeň dopredu + deň pred) ────────────
   try { await runFriendEventsDaily(); } catch(e){ console.error('Friend events error:', e.message); }
   // ── 6e2. Eskalujúce zľavové ponuky pre leadov bez členstva ─────────────────

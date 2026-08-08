@@ -142,6 +142,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </div>
 
     <div class="group-links" data-group="reports">
+      <a class="nav-link" href="#" onclick="show('bizrank')"><i class="bi bi-trophy me-2"></i><span style="background:linear-gradient(90deg,#C9A84C,#e8d18a);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:800">Business Rank</span></a>
       <div class="nav-group-label">Financie</div>
       <a class="nav-link" href="#" onclick="show('finance')"><i class="bi bi-graph-up me-2"></i><span style="color:#C9A24C;font-weight:700">Financie</span></a>
       <a class="nav-link" href="#" onclick="show('accounting')"><i class="bi bi-calculator me-2"></i>Účtovníctvo</a>
@@ -958,6 +959,16 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div id="campaignsList"><div class="text-muted py-4 text-center">Načítavam…</div></div>
   </div>
 
+  <!-- BUSINESS RANK -->
+  <div class="section" id="s-bizrank" style="max-width:1100px">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <div><h4 class="fw-bold mb-0">🏆 Business Rank</h4>
+        <p class="text-muted small mb-0">Rank tvojho podnikania — počíta sa živo z reálnych dát a môže stúpať aj klesať. Nič sa tu nezadáva ručne.</p></div>
+      <button class="btn btn-sm btn-outline-light" onclick="loadBizRank(true)"><i class="bi bi-arrow-clockwise me-1"></i>Prepočítať</button>
+    </div>
+    <div id="bizrankBody"><div class="text-muted py-4 text-center">Načítavam…</div></div>
+  </div>
+
   <!-- Campaign modal -->
   <div id="campaignModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center;padding:16px">
     <div style="background:#1e1e1e;border:1px solid #333;border-radius:14px;padding:24px;width:min(560px,96vw);max-height:92vh;overflow-y:auto">
@@ -1636,7 +1647,7 @@ const GROUP_TITLES={manage:'Správa',marketing:'Marketing',reports:'Financie & r
 const SECTION_GROUP={attendance:'manage',sale:'reports',
   leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',staff:'manage',classes:'manage',privatehours:'manage',kiosk:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',
   marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
-  finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
+  bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
   partners:'partners',addpartner:'partners',commissions:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
@@ -1644,6 +1655,146 @@ function selectGroup(g){
   document.querySelectorAll('.group-links').forEach(el=>el.classList.toggle('active', el.dataset.group===g));
   document.getElementById('groupTitle').textContent=GROUP_TITLES[g]||'';
 }
+/* ═══ BUSINESS RANK ═══ */
+let BR=null;
+const brEur=v=>(+v||0).toLocaleString('sk',{maximumFractionDigits:0})+' €';
+const brNum=v=>(+v||0).toLocaleString('sk');
+const brTrend=(v,suffix='')=>v>0?`<span style="color:#4ade80">↑ +${brNum(v)}${suffix}</span>`:v<0?`<span style="color:#f87171">↓ ${brNum(v)}${suffix}</span>`:`<span class="text-muted">—</span>`;
+function brXpCalc(k,v){ const w=BR.config.weights[k]; if(!w) return 0;
+  return Math.round(w.fn==='sqrt'?w.w*Math.sqrt(Math.max(0,v)):w.fn==='growth'?Math.max(-20,Math.min(30,v))*w.w:w.w*Math.max(0,v)); }
+async function loadBizRank(fresh){
+  const el=document.getElementById('bizrankBody');
+  if(fresh) el.innerHTML='<div class="text-muted py-4 text-center">Prepočítavam…</div>';
+  const r=await fetch('/api/admin/business-rank'+(fresh?'?fresh=1':'')); if(!r.ok){ el.innerHTML='<div class="text-danger py-4">Nepodarilo sa načítať.</div>'; return; }
+  BR=await r.json();
+  const m=BR.metrics, card=(inner,extra='')=>`<div class="card bg-dark border-secondary mb-3 ${extra}"><div class="card-body">${inner}</div></div>`;
+
+  // ── Hero ──
+  const prog=BR.next?BR.next.progress:100;
+  let hero=`<div class="text-center py-3">
+    <div style="font-size:3.4rem;line-height:1;filter:drop-shadow(0 0 18px rgba(201,168,76,.45))">${BR.rank.icon}</div>
+    <div style="font-size:1.9rem;font-weight:900;letter-spacing:2px;background:linear-gradient(90deg,#C9A84C,#f0dfa8);-webkit-background-clip:text;background-clip:text;color:transparent">${BR.rank.label}</div>
+    <div style="font-size:1.25rem;font-weight:800;color:#e8e2d4;margin-top:2px">${brNum(BR.xp)} XP</div>
+    ${BR.next?`<div style="max-width:460px;margin:14px auto 0">
+      <div style="height:14px;background:#26221a;border-radius:8px;overflow:hidden;border:1px solid #3a3428">
+        <div style="height:100%;width:${prog}%;background:linear-gradient(90deg,#C9A84C,#e8d18a);border-radius:8px;transition:width .8s"></div></div>
+      <div class="d-flex justify-content-between small mt-1"><span class="text-muted">${brNum(BR.rank.minXp)} XP</span>
+        <span style="color:#C9A84C;font-weight:700">chýba ${brNum(BR.next.missingXp)} XP</span><span class="text-muted">${brNum(BR.next.xp)} XP</span></div>
+      <div class="mt-1 small">Ďalší rank: <b>${BR.next.icon} ${BR.next.label}</b></div></div>`:'<div class="mt-2">👑 Najvyšší rank!</div>'}</div>`;
+  if(BR.next&&BR.next.reqs.length){
+    hero+=`<div class="row g-2 justify-content-center mt-1">${BR.next.reqs.map(rq=>`<div class="col-auto">
+      <span class="badge ${rq.ok?'bg-success':'bg-secondary'}" style="font-size:.8rem">${rq.ok?'✅':'❌'} ${rq.label}: ${rq.key==='revenue'?brEur(rq.current)+' / '+brEur(rq.required):brNum(rq.current)+' / '+brNum(rq.required)}</span></div>`).join('')}</div>`;
+  }
+
+  // ── This month cards ──
+  const mc=(t,v,sub)=>`<div class="col-6 col-md-4 col-lg-3"><div class="p-3 h-100" style="background:#1d1a15;border:1px solid #3a3428;border-radius:12px">
+    <div class="small text-muted">${t}</div><div style="font-size:1.25rem;font-weight:800;color:#e8e2d4">${v}</div><div class="small">${sub||''}</div></div></div>`;
+  const cards=`<div class="row g-2">
+    ${mc('💶 Obrat (net)',brEur(m.revenue),brTrend(+(m.revenue-m.revenuePrev).toFixed(0),' € vs minulý')+(m.refundsMonth?`<div class="text-muted">refundácie −${brEur(m.refundsMonth)}</div>`:''))}
+    ${mc('🔁 MRR',brEur(m.mrr),`${m.recurringShare} % obratu`)}
+    ${mc('👥 Aktívne členstvá',brNum(m.members),brTrend(m.newPaying)+' nových platiacich')}
+    ${mc('🎟️ Permanentky',brNum(m.passes),`${m.passesSoldMonth} predaných tento mesiac`)}
+    ${mc('🧑‍🤝‍🧑 Aktívni klienti (30 d)',brNum(m.activeClients),`${brNum(m.attendance)} návštev`)}
+    ${mc('💃 Tréneri',`${m.utilizedTrainers} / ${m.trainers}`,'vyťažení / všetci')}
+    ${mc('🔒 Retention',m.retention+' %','churn '+m.churn+' %')}
+    ${mc('🎯 Konverzia na člena',m.conversion+' %','1. hodina → členstvo (90 d)')}
+  </div>`;
+
+  // ── Revenue mix ──
+  const bdLabels={memberships:'Členstvá',passes:'Permanentky',entries:'Vstupy',private:'Súkromné hodiny',events:'Eventy & kurzy',merch:'Merch',other:'Ostatné'};
+  const bdTotal=Object.values(BR.breakdown).reduce((s,v)=>s+v,0)||1;
+  const mix=Object.entries(BR.breakdown).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).map(([k,v])=>{
+    const pct=(v/bdTotal*100).toFixed(1);
+    return `<div class="d-flex align-items-center gap-2 mb-1"><div style="width:130px" class="small">${bdLabels[k]}</div>
+      <div style="flex:1;height:10px;background:#26221a;border-radius:6px;overflow:hidden"><div style="height:100%;width:${pct}%;background:#C9A84C"></div></div>
+      <div style="width:120px;text-align:right" class="small"><b>${brEur(v)}</b> · ${pct} %</div></div>`;}).join('')||'<span class="text-muted small">Tento mesiac zatiaľ bez tržieb.</span>';
+
+  // ── Missions ──
+  const missions=BR.missions.map(x=>{const p=x.target?Math.min(100,Math.round((x.cur/x.target)*100)):0;
+    return `<div class="mb-2 p-2" style="background:#1d1a15;border:1px solid #3a3428;border-radius:10px">
+      <div class="d-flex justify-content-between"><b>${x.icon} ${x.title}</b><span style="color:#C9A84C;font-weight:700">+${brNum(x.impact)} XP</span></div>
+      <div style="height:8px;background:#26221a;border-radius:5px;overflow:hidden;margin:6px 0 2px"><div style="height:100%;width:${p}%;background:linear-gradient(90deg,#C9A84C,#e8d18a)"></div></div>
+      <div class="small text-muted">${brNum(x.cur)} / ${x.target?brNum(x.target):''} · ${x.note||''}</div></div>`;}).join('');
+
+  // ── Tips ──
+  const tips=BR.tips.map(t=>`<div class="mb-2"><b style="color:#C9A84C">${t.metric}: ${t.value}</b><div class="small text-muted">${t.tip}</div></div>`).join('');
+
+  // ── Health ──
+  const hLabels={growth:'Rast',revenue:'Obrat',retention:'Retention',members:'Členovia',team:'Tím',conversion:'Konverzia'};
+  const hColor=v=>v>=70?'#4ade80':v>=45?'#C9A84C':'#f87171';
+  const health=`<div class="d-flex align-items-center gap-3 mb-2"><div style="font-size:2rem;font-weight:900;color:${hColor(BR.health.score)}">${BR.health.score}<span class="small text-muted"> / 100</span></div>
+    <div>${BR.health.score>=70?'🟢 Zdravá firma':BR.health.score>=45?'🟡 Stabilná, ale s rezervami':'🔴 Vyžaduje pozornosť'}</div></div>
+    ${Object.entries(BR.health.parts).map(([k,v])=>`<div class="d-flex align-items-center gap-2 mb-1"><div style="width:90px" class="small">${hLabels[k]}</div>
+      <div style="flex:1;height:8px;background:#26221a;border-radius:5px;overflow:hidden"><div style="height:100%;width:${v}%;background:${hColor(v)}"></div></div>
+      <div style="width:34px;text-align:right" class="small">${v}</div></div>`).join('')}`;
+
+  // ── History sparkline ──
+  let histSvg='<span class="text-muted small">História sa začne kresliť po prvom dennom snapshote.</span>';
+  if(BR.history.length>1){
+    const H=BR.history.slice(-90), xs=H.map((s,i)=>i), max=Math.max(...H.map(s=>s.xp),1), min=Math.min(...H.map(s=>s.xp));
+    const W=640,Ht=120,pad=6, span=Math.max(1,max-min);
+    const pts=H.map((s,i)=>`${pad+i*(W-2*pad)/Math.max(1,H.length-1)},${Ht-pad-((s.xp-min)/span)*(Ht-2*pad)}`).join(' ');
+    histSvg=`<svg viewBox="0 0 ${W} ${Ht}" style="width:100%;max-width:${W}px"><polyline points="${pts}" fill="none" stroke="#C9A84C" stroke-width="2.5" stroke-linejoin="round"/></svg>
+      <div class="d-flex justify-content-between small text-muted"><span>${H[0].date}</span><span>max ${brNum(max)} XP</span><span>${H[H.length-1].date}</span></div>`;
+  }
+
+  // ── XP breakdown ──
+  const xpRows=Object.entries(BR.xpParts).sort((a,b)=>b[1].xp-a[1].xp).map(([k,p])=>
+    `<tr><td>${p.label}</td><td class="text-end">${k==='revenue'||k==='mrr'?brEur(p.value):brNum(p.value)+(['retention','conversion','growth'].includes(k)?' %':'')}</td><td class="text-end" style="color:#C9A84C;font-weight:700">+${brNum(p.xp)} XP</td></tr>`).join('');
+
+  // ── Achievements + records ──
+  const achHtml=BR.achievements.map(a=>`<div class="col-6 col-md-4 col-lg-3"><div class="p-2 h-100 text-center" style="background:${a.unlocked?'#241f14':'#1a1a1a'};border:1px solid ${a.unlocked?'#C9A84C':'#333'};border-radius:10px;${a.unlocked?'':'opacity:.45'}">
+    <div style="font-size:1.4rem">${a.icon}</div><div class="small fw-bold">${a.title}</div>
+    <div class="small text-muted">${a.unlocked?'✅ '+a.unlocked:a.current!=null?brNum(a.current)+' / '+brNum(a.value):'—'}</div></div></div>`).join('');
+  const recLabels={members:'Najviac členstiev',revenue_month:'Najlepší mesačný obrat',mrr:'Najvyššie MRR',trainers:'Najviac trénerov',xp:'Najvyššie XP'};
+  const recs=Object.entries(BR.records||{}).map(([k,r])=>`<div class="col-auto"><span class="badge bg-secondary" style="font-size:.8rem">🏅 ${recLabels[k]||k}: <b>${['revenue_month','mrr'].includes(k)?brEur(r.value):brNum(r.value)}</b> <span class="text-light-emphasis">(${r.date})</span></span></div>`).join('')||'<span class="text-muted small">Rekordy sa začnú zapisovať po prvom dennom prepočte.</span>';
+
+  // ── Locations ──
+  const locs=`<table class="table table-dark table-sm small mb-0"><thead><tr><th>Pobočka</th><th class="text-end">Návštevy (30 d)</th><th class="text-end">Klienti</th><th class="text-end">Členovia</th></tr></thead>
+    <tbody>${BR.locations.map(l=>`<tr><td>${l.location}</td><td class="text-end">${brNum(l.attended)}</td><td class="text-end">${brNum(l.activeClients)}</td><td class="text-end">${brNum(l.members)}</td></tr>`).join('')}</tbody></table>
+    <div class="small text-muted mt-1">Tržby na pobočku appka neeviduje priamo — poradie podľa návštev ukazuje, ktorá pobočka ťa ťahá a ktorá brzdí.</div>`;
+
+  // ── Forecast + weekly ──
+  const fc=`<div class="row g-2">${mc('Projektovaný obrat',brEur(BR.forecast.revenue),'koniec mesiaca')}${mc('Projektovaní členovia',brNum(BR.forecast.members),'')}${mc('Projektované XP',brNum(BR.forecast.xp),BR.forecast.rank)}</div><div class="small text-muted mt-1">${BR.forecast.note}</div>`;
+  const wk=BR.weekly?`<div class="small">${brTrend(BR.weekly.members)} členstiev · ${brTrend(+BR.weekly.revenue.toFixed(0),' €')} obrat · ${brTrend(BR.weekly.retention,' %')} retention · ${brTrend(BR.weekly.trainers)} tréneri
+    <div class="mt-1">Business Score: <b>${brNum(BR.weekly.xpFrom)} → ${brNum(BR.weekly.xpTo)}</b> ${brTrend(BR.weekly.xpTo-BR.weekly.xpFrom,' XP')}</div></div>`:'<span class="text-muted small">Zobrazí sa po týždni snapshotov.</span>';
+
+  // ── Simulator ──
+  const simDefs=[['members','Aktívne členstvá',0,Math.max(300,m.members*3)],['revenue','Mesačný obrat €',0,Math.max(30000,m.revenue*3)],['trainers','Vyťažení tréneri',0,15],['retention','Retention %',0,100]];
+  const sim=`<div class="row g-3">${simDefs.map(([k,l,mn,mx])=>{const cur=k==='trainers'?m.utilizedTrainers:m[k]??0;
+    return `<div class="col-md-6"><label class="small">${l}: <b id="simv_${k}">${brNum(cur)}</b></label>
+    <input type="range" class="form-range" id="sim_${k}" min="${mn}" max="${mx}" value="${cur}" oninput="brSim()"></div>`;}).join('')}</div>
+    <div class="mt-2 p-2 text-center" style="background:#1d1a15;border:1px solid #3a3428;border-radius:10px">
+    <span class="small text-muted">Projektované:</span> <b id="simXp" style="color:#C9A84C">${brNum(BR.xp)} XP</b> · <b id="simRank">${BR.rank.label}</b></div>
+    <div class="small text-muted mt-1">Simulátor nič nemení — je len analytický.</div>`;
+
+  el.innerHTML=card(hero)
+    +card(`<h6 class="fw-bold">📅 Tento mesiac</h6>${cards}`)
+    +`<div class="row g-0"><div class="col-lg-6 pe-lg-2">${card(`<h6 class="fw-bold">💰 Revenue mix</h6>${mix}`)}</div><div class="col-lg-6 ps-lg-1">${card(`<h6 class="fw-bold">❤️ Business Health</h6>${health}`)}</div></div>`
+    +card(`<h6 class="fw-bold">🎯 Aktuálne misie</h6>${missions}`)
+    +card(`<h6 class="fw-bold">💡 Ako sa zlepšiť (z tvojich dát)</h6>${tips}`)
+    +`<div class="row g-0"><div class="col-lg-6 pe-lg-2">${card(`<h6 class="fw-bold">📈 Forecast</h6>${fc}`)}</div><div class="col-lg-6 ps-lg-1">${card(`<h6 class="fw-bold">🗓️ Tento týždeň</h6>${wk}`)}</div></div>`
+    +card(`<h6 class="fw-bold">📊 Business Score — história</h6>${histSvg}`)
+    +card(`<h6 class="fw-bold">🧮 Z čoho sa skladá XP</h6><table class="table table-dark table-sm small mb-0"><tbody>${xpRows}</tbody></table>`)
+    +card(`<h6 class="fw-bold">🏛️ Pobočky (30 dní)</h6>${locs}`)
+    +card(`<h6 class="fw-bold">🏆 Achievements <span class="small text-muted fw-normal">— permanentné, nikdy sa nestratia</span></h6><div class="row g-2">${achHtml}</div>`)
+    +card(`<h6 class="fw-bold">🥇 Personal best</h6><div class="row g-2">${recs}</div>`)
+    +card(`<h6 class="fw-bold">🕹️ Rank simulátor</h6>${sim}`);
+}
+function brSim(){
+  if(!BR) return;
+  const get=k=>+document.getElementById('sim_'+k).value;
+  const v={members:get('members'), revenue:get('revenue'), trainers:get('trainers'), retention:get('retention')};
+  for(const k of Object.keys(v)) document.getElementById('simv_'+k).textContent=brNum(v[k]);
+  let xp=0;
+  for(const[k,p] of Object.entries(BR.xpParts)) xp += (k in v)? brXpCalc(k,v[k]) : p.xp;
+  xp=Math.round(xp);
+  let best=BR.config.ranks[0];
+  for(const r of BR.config.ranks){ const ok=!r.reqs||Object.entries(r.reqs).every(([k,q])=>(v[k]??Infinity)>=q); if(xp>=r.xp&&ok) best=r; }
+  document.getElementById('simXp').textContent=brNum(xp)+' XP';
+  document.getElementById('simRank').textContent=best.icon+' '+best.label;
+}
+
 function show(sec){
   // Predaje sú zlúčené s faktúrami do jedného okna (záložka v sekcii Faktúry)
   if(sec==='transactions'){ show('invoices'); invTab('sales'); return; }
@@ -1652,6 +1803,7 @@ function show(sec){
   document.querySelectorAll('.nav-link').forEach(a=>a.classList.remove('active'));
   document.querySelector(`.nav-link[onclick*="'${sec}'"]`)?.classList.add('active');
   if(SECTION_GROUP[sec]) selectGroup(SECTION_GROUP[sec]);
+  if(sec==='bizrank')loadBizRank();
   if(sec==='orders')loadOrders();
   if(sec==='partners')loadPartners();
   if(sec==='commissions')loadCommissions();
