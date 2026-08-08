@@ -1673,7 +1673,8 @@ async function loadBizRank(fresh){
   const prog=BR.next?BR.next.progress:100;
   let hero=`<div class="text-center py-3">
     <div style="font-size:3.4rem;line-height:1;filter:drop-shadow(0 0 18px rgba(201,168,76,.45))">${BR.rank.icon}</div>
-    <div style="font-size:1.9rem;font-weight:900;letter-spacing:2px;background:linear-gradient(90deg,#C9A84C,#f0dfa8);-webkit-background-clip:text;background-clip:text;color:transparent">${BR.rank.label}</div>
+    <div style="font-size:2.6rem;font-weight:900;line-height:1.1;background:linear-gradient(90deg,#C9A84C,#f0dfa8);-webkit-background-clip:text;background-clip:text;color:transparent">LEVEL ${BR.rank.level}</div>
+    <div style="font-size:1.15rem;font-weight:800;letter-spacing:3px;color:#b9b3a6">${BR.rank.name}</div>
     <div style="font-size:1.25rem;font-weight:800;color:#e8e2d4;margin-top:2px">${brNum(BR.xp)} XP</div>
     ${BR.next?`<div style="max-width:460px;margin:14px auto 0">
       <div style="height:14px;background:#26221a;border-radius:8px;overflow:hidden;border:1px solid #3a3428">
@@ -1779,7 +1780,33 @@ async function loadBizRank(fresh){
     +card(`<h6 class="fw-bold">🏛️ Pobočky (30 dní)</h6>${locs}`)
     +card(`<h6 class="fw-bold">🏆 Achievements <span class="small text-muted fw-normal">— permanentné, nikdy sa nestratia</span></h6><div class="row g-2">${achHtml}</div>`)
     +card(`<h6 class="fw-bold">🥇 Personal best</h6><div class="row g-2">${recs}</div>`)
+    +card(`<h6 class="fw-bold">📜 Levely <span class="small text-muted fw-normal">— 1 až 100, level 100 = 1 miliarda € ročný obrat</span></h6><div id="brLevels"></div>`)
     +card(`<h6 class="fw-bold">🕹️ Rank simulátor</h6>${sim}`);
+  brLevelShow(BR.rank.level);
+}
+let brLvlCursor=1;
+function brLevelShow(lvl){
+  if(!BR) return;
+  brLvlCursor=Math.max(1,Math.min(100,lvl));
+  const r=BR.config.ranks[brLvlCursor-1], cur=BR.rank.level;
+  const status=r.level<cur?'<span class="badge bg-success">✅ dosiahnutý</span>':r.level===cur?'<span class="badge" style="background:#C9A84C;color:#111">⭐ aktuálny</span>':'<span class="badge bg-secondary">🔒 pred tebou</span>';
+  const reqLbl={members:'členstiev',revenue:'€ mesačný obrat',trainers:'vyťažení tréneri',retention:'% retention'};
+  const reqs=r.reqs?`<div class="small mt-1 text-muted">Podmienky pásma: ${Object.entries(r.reqs).map(([k,v])=>`${(+v).toLocaleString('sk')} ${reqLbl[k]}`).join(' · ')}</div>`:'';
+  const nextXp=BR.config.ranks[Math.min(99,brLvlCursor)]?.xp;
+  document.getElementById('brLevels').innerHTML=`
+    <div class="d-flex align-items-center gap-2">
+      <button class="btn btn-outline-light btn-sm" onclick="brLevelShow(${brLvlCursor-1})" ${brLvlCursor<=1?'disabled':''} style="min-width:44px">‹</button>
+      <div class="flex-fill text-center p-3" style="background:#1d1a15;border:1px solid ${r.level===cur?'#C9A84C':'#3a3428'};border-radius:12px">
+        <div style="font-size:1.6rem">${r.icon}</div>
+        <div style="font-weight:900;font-size:1.15rem;color:#e8e2d4">LEVEL ${r.level} <span style="color:#C9A84C">· ${r.name}</span></div>
+        <div class="small">od <b>${(+r.xp).toLocaleString('sk')} XP</b>${r.level<100?` · ďalší level od ${(+nextXp).toLocaleString('sk')} XP`:' · maximálny level 🏁'}</div>
+        <div class="mt-1">${status}</div>${reqs}
+      </div>
+      <button class="btn btn-outline-light btn-sm" onclick="brLevelShow(${brLvlCursor+1})" ${brLvlCursor>=100?'disabled':''} style="min-width:44px">›</button>
+    </div>
+    <div class="d-flex flex-wrap gap-1 mt-2 justify-content-center">
+      ${BR.config.ranks.filter(x=>x.level%10===0||x.level===1).map(x=>`<button class="btn btn-sm ${x.level<=cur?'btn-outline-warning':'btn-outline-secondary'}" style="font-size:.72rem;padding:2px 8px" onclick="brLevelShow(${x.level})">${x.icon} ${x.level}</button>`).join('')}
+    </div>`;
 }
 function brSim(){
   if(!BR) return;

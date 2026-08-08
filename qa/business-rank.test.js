@@ -37,7 +37,10 @@ const br = async () => (await g('admin', '/api/admin/business-rank?fresh=1')).da
   // 2) takmer prázdna firma — endpoint drží pokope
   const d0 = await br();
   ok('endpoint 200 + štruktúra', !!(d0 && d0.rank && d0.metrics && d0.config && Array.isArray(d0.missions)), d0 && Object.keys(d0));
-  ok('22 rank tierov v configu', d0.config.ranks.length === 22, d0.config.ranks.length);
+  ok('100 levelov v configu', d0.config.ranks.length === 100, d0.config.ranks.length);
+  ok('level 100 ≈ 460k XP (1 mld € ročne)', d0.config.ranks[99].xp >= 400000 && d0.config.ranks[99].xp <= 500000, d0.config.ranks[99]);
+  ok('rank má level + name', Number.isFinite(d0.rank.level) && !!d0.rank.name, d0.rank);
+  ok('levely rastú monotónne', d0.config.ranks.every((r, i, a) => !i || r.xp > a[i - 1].xp), null);
   ok('XP je číslo ≥ 0', Number.isFinite(d0.xp) && d0.xp >= 0, d0.xp);
   ok('misie max 5', d0.missions.length >= 1 && d0.missions.length <= 5, d0.missions.length);
   ok('health 0–100', d0.health.score >= 0 && d0.health.score <= 100, d0.health);

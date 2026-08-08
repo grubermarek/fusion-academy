@@ -12804,23 +12804,32 @@ const BUSINESS_RANK_CONFIG = {
     referrals:    { w:25,  fn:'sqrt', label:'Referral registrácie (mesiac)' },
     growth:       { w:12,  fn:'growth', label:'Rast obratu %' }, // clamp(-20..30)*w
   },
-  // 7 mien × 3 divízie + finálny rank = 22 tierov. reqs platia od III divízie mena.
-  ranks: [
-    { name:'STARTER',      icon:'🌱', div:3, xp:0 },     { name:'STARTER', icon:'🌱', div:2, xp:400 },   { name:'STARTER', icon:'🌱', div:1, xp:900 },
-    { name:'BUILDER',      icon:'🧱', div:3, xp:1500 },  { name:'BUILDER', icon:'🧱', div:2, xp:2200 },  { name:'BUILDER', icon:'🧱', div:1, xp:3000 },
-    { name:'OPERATOR',     icon:'⚙️', div:3, xp:3900 },  { name:'OPERATOR', icon:'⚙️', div:2, xp:4900 }, { name:'OPERATOR', icon:'⚙️', div:1, xp:6000 },
-    { name:'ENTREPRENEUR', icon:'🚀', div:3, xp:7200 },  { name:'ENTREPRENEUR', icon:'🚀', div:2, xp:8500 }, { name:'ENTREPRENEUR', icon:'🚀', div:1, xp:10000 },
-    { name:'CEO',          icon:'👔', div:3, xp:11800, reqs:{members:80, revenue:8000, trainers:3} },
-    { name:'CEO',          icon:'👔', div:2, xp:13800, reqs:{members:80, revenue:8000, trainers:3} },
-    { name:'CEO',          icon:'👔', div:1, xp:16000, reqs:{members:80, revenue:8000, trainers:3} },
-    { name:'SCALE MASTER', icon:'🔥', div:3, xp:18500, reqs:{members:150, revenue:15000, trainers:5, retention:70} },
-    { name:'SCALE MASTER', icon:'🔥', div:2, xp:21500, reqs:{members:150, revenue:15000, trainers:5, retention:70} },
-    { name:'SCALE MASTER', icon:'🔥', div:1, xp:25000, reqs:{members:150, revenue:15000, trainers:5, retention:70} },
-    { name:'EMPIRE',       icon:'🏛️', div:3, xp:29000, reqs:{members:250, revenue:25000, trainers:8, retention:75} },
-    { name:'EMPIRE',       icon:'🏛️', div:2, xp:33500, reqs:{members:250, revenue:25000, trainers:8, retention:75} },
-    { name:'EMPIRE',       icon:'🏛️', div:1, xp:38500, reqs:{members:250, revenue:25000, trainers:8, retention:75} },
-    { name:'FUSION LEGEND',icon:'👑', div:0, xp:44000, reqs:{members:400, revenue:40000, trainers:10, retention:80} },
+  // 100 levelov. Krivka T(n)=4.6·n^2.5 → level 100 ≈ 460 000 XP, čo zodpovedá
+  // ~83 mil. € mesačného obratu = 1 MILIARDA € ročne (45·√83.3M ≈ 411k XP z obratu
+  // + zvyšné metriky vo veľkom). Mená sú pásma po 10 leveloch, reqs od pásma CEO.
+  levelBands: [
+    { from:1,  name:'STARTER',      icon:'🌱' },
+    { from:10, name:'BUILDER',      icon:'🧱' },
+    { from:20, name:'OPERATOR',     icon:'⚙️' },
+    { from:30, name:'ENTREPRENEUR', icon:'🚀' },
+    { from:40, name:'EXECUTIVE',    icon:'💼' },
+    { from:50, name:'CEO',          icon:'👔', reqs:{members:80,  revenue:8000,   trainers:3} },
+    { from:60, name:'SCALE MASTER', icon:'🔥', reqs:{members:150, revenue:15000,  trainers:5,  retention:70} },
+    { from:70, name:'EMPIRE',       icon:'🏛️', reqs:{members:250, revenue:25000,  trainers:8,  retention:75} },
+    { from:80, name:'MOGUL',        icon:'💎', reqs:{members:500, revenue:60000,  trainers:12, retention:78} },
+    { from:90, name:'TYCOON',       icon:'🌍', reqs:{members:1000,revenue:150000, trainers:20, retention:80} },
+    { from:100,name:'FUSION LEGEND',icon:'👑', reqs:{members:2000,revenue:83000000,trainers:40, retention:85} }, // 83 mil. €/mes ≈ 1 miliarda € ročne
   ],
+  get ranks(){
+    if(this._ranks) return this._ranks;
+    const T=n=>n<=1?0:Math.round(4.6*Math.pow(n,2.5));
+    this._ranks=Array.from({length:100},(_,i)=>{
+      const lvl=i+1;
+      const band=[...this.levelBands].reverse().find(b=>lvl>=b.from);
+      return { level:lvl, name:band.name, icon:band.icon, xp:T(lvl), reqs:band.reqs||null };
+    });
+    return this._ranks;
+  },
   reqLabels: { members:'Aktívne členstvá', revenue:'Mesačný obrat €', trainers:'Vyťažení tréneri', retention:'Retention %' },
   // Rank down až po 3 dňoch pod hranicou a s 3 % toleranciou (hysteresis)
   downGraceDays: 3, downTolerance: 0.97,
@@ -12962,8 +12971,7 @@ async function businessRankData(fresh){
   if(!state){ state=await q.insert(db.settings,{key:'business_rank_state', rankIdx:eligibleIdx, since:nowIso, belowStreak:0}); }
   const currentIdx=Math.min(state.rankIdx??eligibleIdx, C.ranks.length-1);
   const rank=C.ranks[currentIdx], nextRank=C.ranks[currentIdx+1]||null;
-  const divRoman=d=>d===3?'III':d===2?'II':d===1?'I':'';
-  const rankLabel=r=>r.name+(r.div?' '+divRoman(r.div):'');
+  const rankLabel=r=>`LEVEL ${r.level} · ${r.name}`;
 
   // Next rank analýza
   let next=null;
@@ -13052,7 +13060,7 @@ async function businessRankData(fresh){
 
   const data={
     computed_at:nowIso, xp, xpParts,
-    rank:{label:rankLabel(rank), icon:rank.icon, idx:currentIdx, minXp:rank.xp}, next,
+    rank:{label:rankLabel(rank), name:rank.name, level:rank.level, icon:rank.icon, idx:currentIdx, minXp:rank.xp}, next,
     eligible:{label:rankLabel(C.ranks[eligibleIdx]), idx:eligibleIdx},
     metrics:{ members, passes, passesSoldMonth, mrr, revenue, grossMonth, refundsMonth:refMonth, revenuePrev, growthPct,
       trainers:trainersAll, utilizedTrainers, retention, churn, attendance, activeClients, newPaying, referrals, conversion,
@@ -13062,7 +13070,7 @@ async function businessRankData(fresh){
     locations, achievements, records,
     history:snaps.slice(-365).map(s=>({date:s.date, xp:s.xp, rank:s.rank, revenue:s.revenue, members:s.members})),
     weekly,
-    config:{ weights:C.weights, ranks:C.ranks.map(r=>({label:rankLabel(r), icon:r.icon, xp:r.xp, reqs:r.reqs||null})) },
+    config:{ weights:C.weights, ranks:C.ranks.map(r=>({level:r.level, label:rankLabel(r), name:r.name, icon:r.icon, xp:r.xp, reqs:r.reqs||null})) },
   };
   brCache={at:Date.now(), data};
   return data;
