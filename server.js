@@ -1358,6 +1358,23 @@ async function seedData() {
     console.log('✅  Meta ad ID (nová reklama) prepojené — štatistiky sa už nemiešajú so starou reklamou');
   }
 
+  // A/B test kreatívy (8/2026): druhá reklama v tej istej Meta kampani má vlastný
+  // záznam s meta_ad_id → auto-sync číta jej spend/impresie/kliky oddelene a
+  // registrácie/tržby sa počítajú živo cez utm_campaign=fa-zumba-obrazok-ab-test.
+  if(!(await q.one(db.settings,{key:'meta_ab_test_campaign_v1'}))){
+    if(!(await q.one(db.campaigns,{name:'FA — Zumba Obrázok — A/B test'}))){
+      await q.insert(db.campaigns,{ name:'FA — Zumba Obrázok — A/B test', utm_key:'fa-zumba-obrazok-ab-test',
+        platform:'facebook', date_from:'2026-08-07', date_to:'', budget:0,
+        goal:'A/B test novej obrázkovej kreatívy vs. pôvodná reklama (5 € + 5 €/deň)',
+        note:'Porovnaj cenu za registráciu s kampaňou „FA — Zumba Web — Registrácia". Štatistiky sa sťahujú automaticky.',
+        meta_campaign_id:'52538230154873', meta_ad_id:'52541740714473',
+        spend:0, impressions:0, clicks:0, registrations:0, first_visits:0, memberships:0,
+        created_at:nowISO() });
+      console.log('✅  A/B test kampaň (obrázková kreatíva) pridaná s auto-syncom');
+    }
+    await q.insert(db.settings,{key:'meta_ab_test_campaign_v1', value:true, at:nowISO()});
+  }
+
   // Promo kód pre návrat odídených klientov (30% na prvý mesiac)
   if(!await q.one(db.promo_codes,{code:'VITAJSPAT'})){
     await q.insert(db.promo_codes,{ code:'VITAJSPAT', type:'percent', value:30, applies_to:'membership',
