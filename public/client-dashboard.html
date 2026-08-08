@@ -2783,6 +2783,19 @@ init();
   });
   window.addEventListener('appinstalled', ()=>{ const b=document.getElementById('a2hsBar'); if(b) b.remove(); if(installBtn) installBtn.style.display='none'; });
 })();
+
+// Info o novej adrese pre klientky na starej doméne — ikonka aj prihlásenie fungujú ďalej
+(function(){
+  if(location.hostname!=='app.latindancefusion.art') return;
+  if(localStorage.getItem('newdomain_dismissed')==='1') return;
+  const bar=document.createElement('div');
+  bar.style.cssText='position:fixed;left:12px;right:12px;bottom:84px;z-index:60;background:#1d1a15;border:1px solid #3a3428;border-radius:14px;padding:12px 14px;display:flex;gap:10px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.45)';
+  bar.innerHTML=`<div style="flex:1"><div style="font-weight:800;color:#e8e2d4;font-size:.92rem">Máme novú adresu 💛</div>
+    <div style="color:#b9b3a6;font-size:.8rem;margin-top:2px">Appka je teraz na <b>app.fusionacademy.sk</b>. Tvoja ikonka aj prihlásenie fungujú ďalej — nič nemusíš meniť.</div></div>
+    <button id="ndX" style="background:none;border:none;color:#b9b3a6;font-size:1.1rem;cursor:pointer;flex:none">✕</button>`;
+  document.body.appendChild(bar);
+  document.getElementById('ndX').onclick=()=>{ localStorage.setItem('newdomain_dismissed','1'); bar.remove(); };
+})();
 </script>
 <script src="/nav-bar.js"></script>
 <script src="/dock.js"></script>

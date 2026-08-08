@@ -44,17 +44,10 @@ app.use((req,res,next)=>{
   if(process.env.NODE_ENV==='production') res.setHeader('Strict-Transport-Security','max-age=15552000; includeSubDomains');
   next();
 });
-// Migrácia domény (8/2026): app.latindancefusion.art → app.fusionacademy.sk.
-// Presmerúvajú sa len GET/HEAD HTML navigácie — API volania a webhooky (Stripe/PayPal)
-// zo starej domény fungujú ďalej, aby sa nič nerozbilo starým PWA klientom.
-app.use((req,res,next)=>{
-  const host=String(req.headers.host||'').toLowerCase();
-  if(host==='app.latindancefusion.art' && (req.method==='GET'||req.method==='HEAD')
-     && !req.path.startsWith('/api/') && String(req.headers.accept||'').includes('text/html')){
-    return res.redirect(301,'https://app.fusionacademy.sk'+req.originalUrl);
-  }
-  next();
-});
+// Migrácia domény (8/2026): appka žije na app.fusionacademy.sk, ale stará adresa
+// app.latindancefusion.art sa NEsmie presmerovávať — PWA ikonky na ploche a session
+// cookies klientiek sú viazané na starú doménu; 301 ich odhlásil a rozbil ikonky.
+// Appka preto beží plnohodnotne na oboch doménach; nové odkazy idú cez APP_URL.
 
 // Capture raw body so webhook signatures (Stripe) can be verified against exact bytes
 app.use(express.json({ limit:'10mb', verify:(req,res,buf)=>{ req.rawBody = buf; } }));
