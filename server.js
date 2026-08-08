@@ -8269,6 +8269,28 @@ app.post('/api/client-error', rlPublic, async(req,res)=>{
   }catch(e){ res.json({ok:false}); }
 });
 
+// Tréner online hodiny pre daný dátum: override na online hodine > override na
+// párovej fyzickej hodine (rovnaký deň/čas, mesto = stream_city) > inštruktor
+// online hodiny > inštruktor párovej hodiny. (Rovnaká logika ako /api/online/upcoming.)
+async function onlineInstructorFor(cls, date){
+  try{
+    const si=await sessionInstructor(cls, date).catch(()=>null);
+    if(si?.overridden) return si.instructor;
+    const pair=(await q.find(db.classes,{active:true, day_of_week:cls.day_of_week}))
+      .find(p=>p.category!=='Online' && p.time_start===cls.time_start && (p.location||'')===(cls.stream_city||''));
+    if(pair){
+      const psi=await sessionInstructor(pair, date).catch(()=>null);
+      return psi?.overridden ? psi.instructor : (cls.instructor||pair.instructor||'');
+    }
+    return cls.instructor||'';
+  }catch(e){ return cls.instructor||''; }
+}
+// Najbližší dátum (YYYY-MM-DD), kedy sa hodina koná (dnes, ak je dnes jej deň)
+function nextOccurrence(dow){
+  const d=new Date(); const diff=(dow-d.getDay()+7)%7;
+  return new Date(d.getTime()+diff*86400000).toISOString().slice(0,10);
+}
+
 app.get('/api/online/classes', auth, async(req,res)=>{
   try{
   const m = await checkMembership(req.session.uid);
@@ -8281,15 +8303,16 @@ app.get('/api/online/classes', auth, async(req,res)=>{
   const entryMode = !hasFull && !passMode && (mu?.single_entries||0)>0;
   const hasAccess = hasFull || passMode || entryMode;
   const classes = await q.find(db.classes,{category:'Online',active:true});
-  const result = classes.map(c=>({
+  const result = await Promise.all(classes.map(async c=>({
     ...c,
+    instructor: await onlineInstructorFor(c, nextOccurrence(c.day_of_week)),
     // V entry režime sa stream NEprezradí vopred — vydá ho až /api/online/enter po odpočte
     stream_url: hasFull ? (c.stream_url||null) : null,
     stream_key: hasFull ? (c.stream_key||null) : null,
     has_stream: !!(c.stream_url||c.stream_key),
     has_access: hasAccess,
     locked: !hasAccess,
-  }));
+  })));
   res.json({classes:result, has_access:hasAccess, online_free_today:freeDay, access_mode: hasFull?'full':(passMode?'pass':(entryMode?'entry':null)),
     entries: mu?.single_entries||0, online_passes: mu?.online_passes||0,
     media_base:(process.env.MEDIA_BASE||'').replace(/\/$/,''), membership:m?{plan_id:m.plan_id,plan_name:m.plan_name,expires_at:m.expires_at}:null});
@@ -8511,17 +8534,7 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
     // Tréner pre dnešný termín — výmena (override) môže byť nastavená na online hodine
     // ALEBO na párovej fyzickej hodine (rovnaký deň/čas, mesto = stream_city), z ktorej
     // sa vysiela. Override má vždy prednosť pred štandardným inštruktorom.
-    let insName='';
-    const si = await sessionInstructor(cls, today()).catch(()=>null);
-    if(si?.overridden) insName=si.instructor;
-    if(!insName){
-      const pair=(await q.find(db.classes,{active:true, day_of_week:cls.day_of_week}))
-        .find(p=>p.category!=='Online' && p.time_start===cls.time_start && (p.location||'')===(cls.stream_city||''));
-      if(pair){
-        const psi=await sessionInstructor(pair, today()).catch(()=>null);
-        insName = psi?.overridden ? psi.instructor : (cls.instructor||pair.instructor||'');
-      } else insName=cls.instructor||'';
-    }
+    const insName = await onlineInstructorFor(cls, today());
     res.json({ok:true, upcoming:{ id:cls._id, name:cls.name, time_start:cls.time_start, time_end:cls.time_end,
       src:cls.stream_city||'', starts_in_min:Math.max(0,toMin(cls.time_start)-nowMin), running, live,
       instructor:insName, free_today:freeDay,
