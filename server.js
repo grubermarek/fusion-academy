@@ -423,6 +423,16 @@ async function awardPurchaseCommission({buyer_id, amount, product_name}){
     if(!buyer_id || !(amount>0)) return;
     const buyer = await q.one(db.users,{_id:buyer_id});
     if(!buyer) return;
+    // 🔔 Admin notifikácia o KAŽDOM predaji (okrem test účtov) — beží cez tento
+    // centrálny hook, ktorý volá každý predaj (členstvá, permanentky, vstupy,
+    // súkromné hodiny, merch/objednávky, obnovy — hotovosť aj online platby).
+    if(!/@test-fa-qa\.local$/i.test(String(buyer.email||''))){
+      (async()=>{ const admins=await q.find(db.users,{is_admin:true});
+        for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'sale',
+          title:`💶 Predaj: ${(+amount).toFixed(2)} €`,
+          body:`${buyer.name} — ${product_name||'Nákup'}`,read:false,created_at:nowISO()});
+      })().catch(e=>console.error('sale notify:',e.message));
+    }
     // Referral výzva: kamoška sa ráta, až keď zaplatí — skontroluj odmenu sponzorke
     if(buyer.sponsor_id) referralGoalCheck(buyer.sponsor_id).catch(()=>{});
     // First paid purchase promotes a lead → client
