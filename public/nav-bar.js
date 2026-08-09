@@ -382,3 +382,15 @@ if(document.readyState === 'loading'){
 }
 
 })();
+
+/* Google tag (AW-734724861) — meranie konverzií Google Ads v celej appke */
+(function(){
+  if (window.gtag) return;
+  var s=document.createElement('script'); s.async=true;
+  s.src='https://www.googletagmanager.com/gtag/js?id=AW-734724861';
+  document.head.appendChild(s);
+  window.dataLayer=window.dataLayer||[];
+  window.gtag=function(){dataLayer.push(arguments);};
+  gtag('js', new Date());
+  gtag('config', 'AW-734724861');
+})();
