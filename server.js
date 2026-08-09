@@ -2994,7 +2994,11 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
       membership_tier: memTier, membership_name: memName,
       winner_titles: winnerTitles,
       likes: likeCount, liked_by_me: likedByMe,
-      anonymous: !!u.anonymous, is_self:isSelf,
+      anonymous: !!u.anonymous, is_self:isSelf, gender,
+      // Ambasádorský odznak: rátajú sa len ľudia z línie, ktorí REÁLNE začali
+      // tancovať (majú aspoň 1 návštevu) — nie mŕtve registrácie.
+      ambassador_count: await (async()=>{ const ids=await getAllDescendants(u._id); let n=0;
+        for(const id of ids){ const d=await q.one(db.users,{_id:id}); if(d && (d.visit_count||0)>0) n++; } return n; })(),
       avatar: u.anonymous&&!isSelf ? null : (u.avatar||null),
       member_badge:badge, loyalty_label: loyalty.current?.label||'Nováčik',
       visits: u.visit_count||0, referrals: refCount, direct_refs: directRefs,

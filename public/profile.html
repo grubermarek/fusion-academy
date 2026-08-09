@@ -444,10 +444,15 @@ function render(){
       ${P.name_badge?`<div class="name-badge">${P.name_badge.emoji} ${esc(P.name_badge.title)}</div>`:''}
       ${P.winner_titles?.year_wins?`<div class="win-badge win-year">👑 Klientka roka${P.winner_titles.year_wins>1?` <span class="win-count">×${P.winner_titles.year_wins}</span>`:''}</div>`:''}
       ${P.winner_titles?.month_wins?`<div class="win-badge win-month">🏆 Klientka mesiaca${P.winner_titles.month_wins>1?` <span class="win-count">×${P.winner_titles.month_wins}</span>`:''}</div>`:''}
-      <div class="amb-badge ${(P.referrals||0)>=25?'amb-diamond':(P.referrals||0)>=10?'amb-elite':(P.referrals||0)>=1?'amb-gold':'amb-zero'}" title="Počet ľudí v celej línii — každý, koho priviedla ona alebo jej kamošky">
-        <span class="amb-ring"><span class="amb-num" data-count="${P.referrals||0}">0</span></span>
-        <span class="amb-txt">AMBASÁDOR${(P.referrals||0)===1?'':''}<small>${(P.referrals||0)===1?'1 človek v línii':((P.referrals||0)>=2&&(P.referrals||0)<=4?(P.referrals||0)+' ľudia v línii':(P.referrals||0)+' ľudí v línii')}</small></span>
-      </div>
+      ${(()=>{ const n=P.ambassador_count||0, fem=P.gender!=='male';
+        const helped=fem?'pomohla':'pomohol';
+        const sub = n===0 ? 'klikni a zisti, ako pomôcť ľuďom k tancu'
+          : n===1 ? `${helped} 1 človeku zamilovať si tanec`
+          : `${helped} ${n} ľuďom zamilovať si tanec a pohyb`;
+        return `<div class="amb-badge ${n>=25?'amb-diamond':n>=10?'amb-elite':n>=1?'amb-gold':'amb-zero'}" style="cursor:pointer" onclick="showAmbModal()" title="Klikni — cesta k ďalšiemu odznaku">
+        <span class="amb-ring"><span class="amb-num" data-count="${n}">0</span></span>
+        <span class="amb-txt">${fem?'AMBASÁDORKA':'AMBASÁDOR'}<small>${sub}</small></span>
+      </div>`; })()}
       <div class="pname ${flex}">${P.name_badge?P.name_badge.emoji+' ':''}${esc(P.name)}</div>
       ${P.nickname?`<div class="pnick">„${esc(P.nickname)}"</div>`:''}
       ${P.status?`<div class="pstatus">„${esc(P.status)}"</div>`:''}
@@ -543,6 +548,45 @@ function render(){
   `;
   loadComments();
   if(P.can_receive_tips) loadTips();
+  window.ambCopyLink=async(btn)=>{
+    try{
+      const r=await fetch('/api/client/referral',{credentials:'include'}); const d=await r.json();
+      const code=d.referral_code||String(d.ref_link||'').split('ref=')[1]||'';
+      const link=location.origin+'/?ref='+code;
+      await navigator.clipboard.writeText(link);
+      btn.textContent='✅ Odkaz skopírovaný — pošli ho kamoške!';
+    }catch(e){ btn.textContent='Odkaz nájdeš na nástenke v appke'; }
+  };
+  window.showAmbModal=()=>{
+    const n=P.ambassador_count||0, fem=P.gender!=='male';
+    const TIERS=fem
+      ?[{need:1,icon:'🥇',name:'Zlatá ambasádorka'},{need:10,icon:'✨',name:'Elitná ambasádorka'},{need:25,icon:'💎',name:'Diamantová ambasádorka'}]
+      :[{need:1,icon:'🥇',name:'Zlatý ambasádor'},{need:10,icon:'✨',name:'Elitný ambasádor'},{need:25,icon:'💎',name:'Diamantový ambasádor'}];
+    const next=TIERS.find(t=>n<t.need);
+    const cur=[...TIERS].reverse().find(t=>n>=t.need);
+    const prog=next?Math.min(100,Math.round(n/next.need*100)):100;
+    const m=document.createElement('div');
+    m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px';
+    m.onclick=e=>{ if(e.target===m) m.remove(); };
+    m.innerHTML=`<div style="background:linear-gradient(160deg,#1c1608,#12100a);border:1px solid rgba(231,200,120,.5);border-radius:20px;max-width:400px;width:100%;padding:26px;text-align:center;box-shadow:0 0 60px -10px rgba(231,200,120,.4)">
+      <div style="font-size:2.6rem;filter:drop-shadow(0 0 16px rgba(231,200,120,.6))">${cur?cur.icon:'🌱'}</div>
+      <div style="font-weight:900;font-size:1.15rem;color:#F0DFA8;letter-spacing:.08em;margin:6px 0 2px">${cur?cur.name.toUpperCase():'TVOJA CESTA AMBASÁDOR'+(fem?'KY':'A')}</div>
+      <div style="font-size:2.2rem;font-weight:900;color:#fff;margin:8px 0 2px">${n}</div>
+      <div style="color:#b9a76b;font-size:.85rem;margin-bottom:16px">${n===1?'človek, ktorému si '+(fem?'pomohla':'pomohol')+' zamilovať si tanec':'ľudí, ktorým si '+(fem?'pomohla':'pomohol')+' zamilovať si tanec a pohyb'}</div>
+      ${next?`
+      <div style="height:12px;background:#26221a;border-radius:8px;overflow:hidden;border:1px solid #3a3428;margin-bottom:8px">
+        <div style="height:100%;width:${prog}%;background:linear-gradient(90deg,#C9A84C,#F7E7B8);border-radius:8px;transition:width .8s"></div></div>
+      <div style="color:#E7C878;font-weight:800;font-size:.95rem;margin-bottom:14px">Ešte ${next.need-n} ${next.need-n===1?'človek':(next.need-n<=4?'ľudia':'ľudí')} do odznaku ${next.icon} ${next.name}</div>`
+      :`<div style="color:#dfeeff;font-weight:800;margin-bottom:14px">💎 Najvyšší odznak — legenda Fusion Academy!</div>`}
+      <div style="text-align:left;background:rgba(201,168,76,.07);border:1px solid rgba(201,168,76,.25);border-radius:12px;padding:12px 14px;font-size:.82rem;color:#cfc9bb;line-height:1.6">
+        <b style="color:#F0DFA8">Ako sa počíta?</b><br>
+        Rátajú sa ľudia z tvojej línie, ktorí sa <b style="color:#E7C878">stali aktívnymi a prišli tancovať</b> — priamo tvoje pozvania aj kamošky tvojich kamošiek. Samotná registrácia nestačí, počíta sa skutočný tanec. 💃
+      </div>
+      ${P.is_self?`<button onclick="ambCopyLink(this)" style="margin-top:16px;width:100%;background:linear-gradient(135deg,#C9A84C,#a5842f);color:#161310;border:none;border-radius:12px;padding:12px;font-weight:800;cursor:pointer">🔗 Pozvať kamošku — skopírovať odkaz</button>`:''}
+      <button onclick="this.closest('div[style*=fixed]').remove()" style="margin-top:10px;background:none;border:none;color:#8a8272;cursor:pointer;font-size:.85rem">Zavrieť</button>
+    </div>`;
+    document.body.appendChild(m);
+  };
   // Ambasádorský odznak — číslo sa napočíta od 0 s easingom (lúxusny count-up)
   (function(){
     const el=document.querySelector('.amb-num'); if(!el) return;
