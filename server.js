@@ -1429,6 +1429,41 @@ async function seedData() {
     })().catch(e=>console.error('Taska kampaň error:', e.message));
   }
 
+  // v2: EMAILOVÁ dorozielka kampane — prvý beh mal rozbitý mailer (chýbal Brevo
+  // kľúč, SMTP na Railway blokované), takže emaily nedošli. Notifikácie už išli
+  // vo v1 a NEposielajú sa znova. Beží až keď je BREVO_API_KEY nastavený.
+  if(process.env.BREVO_API_KEY && !(await q.one(db.settings,{key:'referral_taska_campaign_mail_v2'}))){
+    await q.insert(db.settings,{key:'referral_taska_campaign_mail_v2', value:true, at:nowISO()});
+    (async()=>{
+      const users=(await q.find(db.users,{}))
+        .filter(u=>!u.is_admin && u.user_type!=='trainer' && u.user_type!=='manager' && !u.is_child
+          && u.user_type!=='lead' && !u.hidden_lead
+          && !/@test-fa-qa\.local$|@import\.local$|@qa-biz\.local$/i.test(String(u.email||''))
+          && u.email && /@/.test(u.email));
+      let mails=0;
+      for(const u of users){
+        const firstName=String(u.name||'').split(' ')[0]||'tanečníčka';
+        const okMail=await sendMail(u.email,'🎁 Priveď kamošku a športová taška Fusion je tvoja (len do 31. 8.)',
+          emailTemplate(`Ahoj ${firstName}! 💛`,
+          `<div style="text-align:center;margin:6px 0 16px"><img src="${APP_URL}/promo-taska-fusion.jpg" alt="Športová taška Fusion — limitovaná edícia" style="width:100%;max-width:520px;border-radius:14px"></div>
+           <p>Máme pre teba <b>augustovú výzvu</b> — a odmeny, ktoré stoja za to:</p>
+           <p style="line-height:2">✅ <b style="color:#C9A84C">1 kamoška</b> → športová taška Fusion (limitovaná edícia) <b>zadarmo</b><br>
+           ✅ <b style="color:#C9A84C">2 kamošky</b> → <b>50 % zľava</b> na event<br>
+           ✅ <b style="color:#C9A84C">3 kamošky</b> → masterclass <b>úplne zadarmo</b></p>
+           <p><b>Ako na to?</b><br>1. Otvor appku a na nástenke klikni na <b>„Skopírovať môj odkaz"</b><br>
+           2. Pošli ho kamoške, ktorá ešte u nás netancuje<br>
+           3. Keď sa zaregistruje a kúpi si členstvo alebo permanentku — odmena je tvoja 💛</p>
+           <p>Svoj progres vidíš naživo priamo na nástenke v appke.</p>
+           <p>⏳ <b>Výzva platí len do 31. augusta</b> — čím skôr pošleš odkaz, tým viac času má kamoška prísť na prvú hodinu (má ju zadarmo!).</p>
+           <p>Vidíme sa na parkete!<br>Tím Fusion Academy</p>`,
+          '🔗 Otvoriť appku a zapojiť sa', `${APP_URL}/client-dashboard`)).catch(()=>false);
+        if(okMail) mails++;
+        await new Promise(r=>setTimeout(r,300));
+      }
+      console.log(`🎁 TAŠKA KAMPAŇ MAIL v2: ${mails}/${users.length} emailov doručených do Brevo. Príjemkyne: ${users.map(u=>u.name).join(', ')}`);
+    })().catch(e=>console.error('Taska kampaň mail v2 error:', e.message));
+  }
+
   // Promo kód pre návrat odídených klientov (30% na prvý mesiac)
   if(!await q.one(db.promo_codes,{code:'VITAJSPAT'})){
     await q.insert(db.promo_codes,{ code:'VITAJSPAT', type:'percent', value:30, applies_to:'membership',
@@ -11251,6 +11286,39 @@ async function referralGoalCount(userId){
   let n=0; for(const r of refs){ if(await referralGoalHasPaid(r._id)) n++; }
   return n;
 }
+// Admin report výzvy: kto priviedol koľko platiacich kamošiek + aká odmena mu
+// patrí (nákup tašiek, zľavy na event, masterclass) + súčty na objednávku.
+app.get('/api/admin/referral-goal-report', adminAuth, async(req,res)=>{
+  try{
+    const refs=(await q.find(db.users,{}))
+      .filter(u=>u.sponsor_id && !u.is_child && !u.anonymous
+        && (u.created_at||'')>=REFERRAL_GOAL_FROM && (u.created_at||'').slice(0,10)<=REFERRAL_GOAL_TO
+        && !/@test-fa-qa\.local$/i.test(String(u.email||'')));
+    const bySponsor={};
+    for(const r of refs){
+      const paid=await referralGoalHasPaid(r._id);
+      (bySponsor[r.sponsor_id]=bySponsor[r.sponsor_id]||{registered:[], paid:[]});
+      bySponsor[r.sponsor_id][paid?'paid':'registered'].push({name:r.name, created:(r.created_at||'').slice(0,10)});
+    }
+    const rows=[];
+    for(const [sid, v] of Object.entries(bySponsor)){
+      const s=await q.one(db.users,{_id:sid}); if(!s || s.is_admin) continue;
+      const n=v.paid.length;
+      rows.push({ sponsor:s.name, email:s.email, phone:s.phone||'', paying:n,
+        registeredOnly:v.registered.length,
+        paidNames:v.paid.map(x=>x.name), registeredNames:v.registered.map(x=>x.name),
+        rewards:{ taska:n>=1, event50:n>=2, masterclass:n>=3 } });
+    }
+    rows.sort((a,b)=>b.paying-a.paying || b.registeredOnly-a.registeredOnly);
+    const totals={ taska:rows.filter(r=>r.rewards.taska).length,
+      event50:rows.filter(r=>r.rewards.event50).length,
+      masterclass:rows.filter(r=>r.rewards.masterclass).length,
+      payingTotal:rows.reduce((s,r)=>s+r.paying,0),
+      registeredTotal:rows.reduce((s,r)=>s+r.registeredOnly+r.paying,0) };
+    res.json({ok:true, from:REFERRAL_GOAL_FROM, to:REFERRAL_GOAL_TO, ended:today()>REFERRAL_GOAL_TO, rows, totals});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/client/referral-goal', auth, async(req,res)=>{
   try{
     const count=await referralGoalCount(req.session.uid);

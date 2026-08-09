@@ -948,6 +948,14 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       </div>
       <div id="metaAdsPanel" class="text-muted small">Načítavam…</div>
     </div></div>
+    <!-- Augustová referral výzva — kto priviedol koľko platiacich + odmeny -->
+    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+        <h6 class="fw-bold mb-0">🎁 Výzva: priveď kamošku (do 31. 8.)</h6>
+        <span id="refGoalRepTotals" class="small text-muted"></span>
+      </div>
+      <div id="refGoalReport" class="small text-muted">Načítavam…</div>
+    </div></div>
     <!-- Živý lievik leadovej kampane — počíta sa z databázy pri každom otvorení -->
     <div class="card bg-dark border-secondary mb-3"><div class="card-body">
       <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
@@ -2763,7 +2771,29 @@ async function loadLeadFunnel(){
     <div class="d-flex gap-2 flex-wrap mt-1">${Object.entries(d.byCity).map(([c,v])=>`<span class="badge bg-secondary">${CITY_LBL[c]||c}: ${v.registered} reg · ${v.paying} plat · ${v.revenue.toFixed(0)} €</span>`).join('')}</div>
     ${(d.payers||[]).length?`<div class="mt-2 text-muted">Zaplatili: ${d.payers.map(p=>`<a href="/u/${p.id}" style="color:#C9A24C;text-decoration:none">${escHtml(p.name)}</a> (${p.revenue.toFixed(2)} €)`).join(' · ')}</div>`:''}`;
 }
+async function loadRefGoalReport(){
+  const el=document.getElementById('refGoalReport'); if(!el) return;
+  try{
+    const r=await fetch('/api/admin/referral-goal-report'); const d=await r.json();
+    if(!d.ok){ el.textContent='Nepodarilo sa načítať.'; return; }
+    document.getElementById('refGoalRepTotals').innerHTML=
+      `🛍️ tašky na nákup: <b style="color:#C9A84C">${d.totals.taska}</b> · 🎟️ zľavy na event: <b style="color:#C9A84C">${d.totals.event50}</b> · ⭐ masterclass zdarma: <b style="color:#C9A84C">${d.totals.masterclass}</b> · platiacich kamošiek spolu: <b>${d.totals.payingTotal}</b>${d.ended?' · <span class="text-warning">súťaž skončila</span>':''}`;
+    if(!d.rows.length){ el.innerHTML='Zatiaľ nikto nepriviedol novú registráciu v rámci výzvy (od 5. 8.). Po prvej registrácii cez referral odkaz sa tu objaví.'; return; }
+    el.innerHTML=`<table class="table table-dark table-sm small mb-0"><thead><tr>
+      <th>Klientka</th><th class="text-center">💰 Platiace</th><th class="text-center">📝 Len registrované</th><th>Odmeny</th><th>Koho priviedla</th><th>Kontakt</th></tr></thead><tbody>
+      ${d.rows.map(x=>`<tr>
+        <td><b>${x.sponsor}</b></td>
+        <td class="text-center" style="color:#C9A84C;font-weight:800">${x.paying}</td>
+        <td class="text-center text-muted">${x.registeredOnly}</td>
+        <td>${x.rewards.taska?'<span class="badge" style="background:#C9A84C;color:#111">🛍️ taška</span> ':''}${x.rewards.event50?'<span class="badge bg-secondary">🎟️ −50 % event</span> ':''}${x.rewards.masterclass?'<span class="badge bg-success">⭐ masterclass</span>':''}${!x.rewards.taska?'<span class="text-muted">— (kamoška ešte nezaplatila)</span>':''}</td>
+        <td class="text-muted">${x.paidNames.map(n=>'💰 '+n).concat(x.registeredNames.map(n=>'📝 '+n)).join(', ')||'—'}</td>
+        <td class="text-muted">${x.phone||x.email||''}</td></tr>`).join('')}
+    </tbody></table>
+    <div class="text-muted mt-1">💰 = kamoška si už kúpila členstvo/permanentku (ráta sa do odmien) · 📝 = zatiaľ len registrácia. Súčty hore = koľko tašiek objednať a komu dať zľavy.</div>`;
+  }catch(e){ el.textContent='Chyba: '+e.message; }
+}
 async function loadCampaigns(){
+  loadRefGoalReport();
   loadMetaStats();
   loadLeadFunnel();
   const list=await api('/api/admin/campaigns');
