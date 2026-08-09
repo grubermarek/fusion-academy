@@ -111,6 +111,32 @@
   .win-badge{display:inline-flex;align-items:center;gap:5px;font-weight:800;font-size:.74rem;letter-spacing:.04em;text-transform:uppercase;padding:4px 14px;border-radius:20px;margin:0 3px 8px}
   .win-badge.win-month{background:linear-gradient(102deg,#B98F3E,#F7E7B8 45%,#E7C878 65%,#B98F3E);color:#231A08;box-shadow:0 4px 16px -5px rgba(201,168,76,.9);background-size:200% 100%;animation:winShine 3.2s linear infinite}
   .win-badge.win-year{background:linear-gradient(102deg,#7a5c14,#ffe9a8 45%,#f5cf6b 65%,#7a5c14);color:#231A08;box-shadow:0 0 18px rgba(255,215,120,.55);background-size:200% 100%;animation:winShine 2.6s linear infinite}
+  /* ── Ambasádorský odznak — luxusný, animovaný, s počtom celej línie ── */
+  .amb-badge{display:inline-flex;align-items:center;gap:10px;padding:7px 18px 7px 8px;border-radius:999px;margin:2px 3px 10px;position:relative;isolation:isolate;
+    background:linear-gradient(115deg,#1c1608,#3a2e12 30%,#1c1608 60%,#2c2410);border:1px solid rgba(231,200,120,.55);
+    box-shadow:0 0 22px -4px rgba(231,200,120,.45), inset 0 1px 0 rgba(255,255,255,.08);animation:ambGlow 2.8s ease-in-out infinite}
+  .amb-badge::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+    background:linear-gradient(115deg,transparent 30%,rgba(255,240,200,.22) 48%,rgba(255,255,255,.32) 50%,rgba(255,240,200,.22) 52%,transparent 70%);
+    background-size:250% 100%;animation:winShine 3s linear infinite}
+  .amb-ring{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;position:relative;flex:none;
+    background:radial-gradient(circle at 35% 30%,#F7E7B8,#C9A84C 55%,#8a6b23);box-shadow:0 0 14px rgba(231,200,120,.7)}
+  .amb-ring::before{content:'';position:absolute;inset:-3px;border-radius:50%;
+    background:conic-gradient(from 0deg,#E7C878,#fff6d8,#B98F3E,#E7C878,#fff6d8,#B98F3E,#E7C878);
+    z-index:-1;animation:ambSpin 4s linear infinite}
+  .amb-num{font-weight:900;font-size:1.15rem;color:#231A08;font-variant-numeric:tabular-nums;text-shadow:0 1px 0 rgba(255,255,255,.35)}
+  .amb-txt{display:flex;flex-direction:column;line-height:1.15;text-align:left}
+  .amb-txt{font-weight:900;font-size:.78rem;letter-spacing:.14em;color:#F0DFA8}
+  .amb-txt small{font-weight:600;font-size:.68rem;letter-spacing:.02em;color:#b9a76b;text-transform:none}
+  .amb-elite .amb-ring{box-shadow:0 0 20px rgba(231,200,120,.95)}
+  .amb-elite{border-color:#E7C878;box-shadow:0 0 30px -4px rgba(231,200,120,.7), inset 0 1px 0 rgba(255,255,255,.1)}
+  .amb-diamond{border-color:#cfe8ff;box-shadow:0 0 34px -4px rgba(190,225,255,.75), inset 0 1px 0 rgba(255,255,255,.14)}
+  .amb-diamond .amb-ring{background:radial-gradient(circle at 35% 30%,#ffffff,#bfe0ff 55%,#5f8fc0)}
+  .amb-diamond .amb-ring::before{background:conic-gradient(from 0deg,#bfe0ff,#ffffff,#7fb2e5,#bfe0ff,#ffffff,#7fb2e5,#bfe0ff)}
+  .amb-diamond .amb-txt{color:#dfeeff}.amb-diamond .amb-txt small{color:#9fc0dd}
+  .amb-zero{opacity:.55;filter:saturate(.5)}
+  @keyframes ambGlow{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}
+  @keyframes ambSpin{to{transform:rotate(360deg)}}
+  @media(prefers-reduced-motion:reduce){.amb-badge,.amb-badge::after,.amb-ring::before{animation:none}}
   .win-count{background:rgba(0,0,0,.28);color:#fff;border-radius:10px;padding:1px 7px;font-size:.7rem}
   @keyframes winShine{0%{background-position:0 0}100%{background-position:200% 0}}
   .pname{font-family:'Cormorant Garamond',serif;font-size:2rem;font-weight:600;line-height:1.1}
@@ -418,6 +444,10 @@ function render(){
       ${P.name_badge?`<div class="name-badge">${P.name_badge.emoji} ${esc(P.name_badge.title)}</div>`:''}
       ${P.winner_titles?.year_wins?`<div class="win-badge win-year">👑 Klientka roka${P.winner_titles.year_wins>1?` <span class="win-count">×${P.winner_titles.year_wins}</span>`:''}</div>`:''}
       ${P.winner_titles?.month_wins?`<div class="win-badge win-month">🏆 Klientka mesiaca${P.winner_titles.month_wins>1?` <span class="win-count">×${P.winner_titles.month_wins}</span>`:''}</div>`:''}
+      <div class="amb-badge ${(P.referrals||0)>=25?'amb-diamond':(P.referrals||0)>=10?'amb-elite':(P.referrals||0)>=1?'amb-gold':'amb-zero'}" title="Počet ľudí v celej línii — každý, koho priviedla ona alebo jej kamošky">
+        <span class="amb-ring"><span class="amb-num" data-count="${P.referrals||0}">0</span></span>
+        <span class="amb-txt">AMBASÁDOR${(P.referrals||0)===1?'':''}<small>${(P.referrals||0)===1?'1 človek v línii':((P.referrals||0)>=2&&(P.referrals||0)<=4?(P.referrals||0)+' ľudia v línii':(P.referrals||0)+' ľudí v línii')}</small></span>
+      </div>
       <div class="pname ${flex}">${P.name_badge?P.name_badge.emoji+' ':''}${esc(P.name)}</div>
       ${P.nickname?`<div class="pnick">„${esc(P.nickname)}"</div>`:''}
       ${P.status?`<div class="pstatus">„${esc(P.status)}"</div>`:''}
@@ -513,6 +543,17 @@ function render(){
   `;
   loadComments();
   if(P.can_receive_tips) loadTips();
+  // Ambasádorský odznak — číslo sa napočíta od 0 s easingom (lúxusny count-up)
+  (function(){
+    const el=document.querySelector('.amb-num'); if(!el) return;
+    const target=+el.dataset.count||0; if(!target){ el.textContent='0'; return; }
+    const t0=performance.now(), dur=1400;
+    (function tick(t){
+      const p=Math.min(1,(t-t0)/dur), ease=1-Math.pow(1-p,3);
+      el.textContent=Math.round(target*ease);
+      if(p<1) requestAnimationFrame(tick);
+    })(t0);
+  })();
 }
 
 // ── Tipy (dank) ───────────────────────────────────────────────────────────────
