@@ -135,6 +135,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div class="group-links" data-group="marketing">
       <a class="nav-link" href="#" onclick="show('marketing')"><i class="bi bi-graph-up-arrow me-2"></i><span style="color:#C9A84C;font-weight:700">Marketing (CAC/LTV)</span></a>
       <a class="nav-link" href="#" onclick="show('campaigns')"><i class="bi bi-megaphone me-2"></i>Kampane</a>
+      <a class="nav-link" href="#" onclick="show('sutaze')"><i class="bi bi-trophy me-2"></i>Súťaže</a>
       <a class="nav-link" href="#" onclick="show('outreach')"><i class="bi bi-send me-2"></i>Hromadné správy</a>
       <a class="nav-link" href="#" onclick="show('automation')"><i class="bi bi-envelope-check me-2"></i>Automatizácia</a>
       <a class="nav-link" href="#" onclick="show('promos')"><i class="bi bi-ticket-perforated me-2"></i>Promo kódy</a>
@@ -948,14 +949,6 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       </div>
       <div id="metaAdsPanel" class="text-muted small">Načítavam…</div>
     </div></div>
-    <!-- Augustová referral výzva — kto priviedol koľko platiacich + odmeny -->
-    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
-      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-        <h6 class="fw-bold mb-0">🎁 Výzva: priveď kamošku (do 31. 8.)</h6>
-        <span id="refGoalRepTotals" class="small text-muted"></span>
-      </div>
-      <div id="refGoalReport" class="small text-muted">Načítavam…</div>
-    </div></div>
     <!-- Živý lievik leadovej kampane — počíta sa z databázy pri každom otvorení -->
     <div class="card bg-dark border-secondary mb-3"><div class="card-body">
       <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
@@ -965,6 +958,23 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <div id="leadFunnelPanel" class="small text-muted">Načítavam…</div>
     </div></div>
     <div id="campaignsList"><div class="text-muted py-4 text-center">Načítavam…</div></div>
+  </div>
+
+  <!-- SÚŤAŽE -->
+  <div class="section" id="s-sutaze" style="max-width:1100px">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <div><h4 class="fw-bold mb-0">🏆 Súťaže</h4>
+        <p class="text-muted small mb-0">Prehľad bežiacich súťaží pre klientky — kto vedie, aké odmeny rozdať a koľko ich objednať.</p></div>
+      <button class="btn btn-sm btn-outline-light" onclick="loadRefGoalReport()"><i class="bi bi-arrow-clockwise me-1"></i>Obnoviť</button>
+    </div>
+    <!-- Augustová referral výzva — kto priviedol koľko platiacich + odmeny -->
+    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+        <h6 class="fw-bold mb-0">🎁 Priveď kamošku — taška Fusion (5. 8. – 31. 8.)</h6>
+        <span id="refGoalRepTotals" class="small text-muted"></span>
+      </div>
+      <div id="refGoalReport" class="small text-muted">Načítavam…</div>
+    </div></div>
   </div>
 
   <!-- BUSINESS RANK -->
@@ -1655,7 +1665,7 @@ const GROUP_TITLES={manage:'Správa',marketing:'Marketing',reports:'Financie & r
 const SECTION_GROUP={attendance:'manage',sale:'reports',
   leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',staff:'manage',classes:'manage',privatehours:'manage',kiosk:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',
   marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
-  bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
+  sutaze:'marketing',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
   partners:'partners',addpartner:'partners',commissions:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
@@ -1839,6 +1849,7 @@ function show(sec){
   document.querySelector(`.nav-link[onclick*="'${sec}'"]`)?.classList.add('active');
   if(SECTION_GROUP[sec]) selectGroup(SECTION_GROUP[sec]);
   if(sec==='bizrank')loadBizRank();
+  if(sec==='sutaze')loadRefGoalReport();
   if(sec==='orders')loadOrders();
   if(sec==='partners')loadPartners();
   if(sec==='commissions')loadCommissions();
@@ -2793,7 +2804,6 @@ async function loadRefGoalReport(){
   }catch(e){ el.textContent='Chyba: '+e.message; }
 }
 async function loadCampaigns(){
-  loadRefGoalReport();
   loadMetaStats();
   loadLeadFunnel();
   const list=await api('/api/admin/campaigns');
