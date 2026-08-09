@@ -1464,6 +1464,27 @@ async function seedData() {
     })().catch(e=>console.error('Taska kampaň mail v2 error:', e.message));
   }
 
+  // Úprata: zmazanie prod test účtu „QA Online Test" aj so všetkými stopami
+  if(!(await q.one(db.settings,{key:'cleanup_qa_online_test_v1'}))){
+    await q.insert(db.settings,{key:'cleanup_qa_online_test_v1', value:true, at:nowISO()});
+    try{
+      const victims=(await q.find(db.users,{})).filter(u=>/@test-fa-qa\.local$/i.test(String(u.email||'')));
+      let wiped=0;
+      for(const u of victims){
+        const uid=u._id;
+        for(const col of ['bookings','notifications','memberships','transactions','payments','commissions','spins','mail_log','invoices','orders','private_bookings','promo_redemptions','tips','feed','friends','profile_likes','profile_comments','tickets','email_queue']){
+          try{ await q.remove(db[col],{user_id:uid},{multi:true}); }catch(e){}
+          try{ await q.remove(db[col],{client_id:uid},{multi:true}); }catch(e){}
+          try{ await q.remove(db[col],{buyer_id:uid},{multi:true}); }catch(e){}
+        }
+        await q.remove(db.users,{_id:uid},{multi:true});
+        wiped++; console.log(`🧹 Test účet zmazaný: ${u.name} <${u.email}>`);
+      }
+      if(wiped){ for(const k of Object.keys(db)){ try{ db[k].persistence.compactDatafile(); }catch(e){} } }
+      console.log(`🧹 Cleanup test účtov: ${wiped} účtov + záznamy, DB skomprimovaná`);
+    }catch(e){ console.error('cleanup qa error:', e.message); }
+  }
+
   // Promo kód pre návrat odídených klientov (30% na prvý mesiac)
   if(!await q.one(db.promo_codes,{code:'VITAJSPAT'})){
     await q.insert(db.promo_codes,{ code:'VITAJSPAT', type:'percent', value:30, applies_to:'membership',
