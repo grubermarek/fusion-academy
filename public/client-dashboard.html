@@ -2446,11 +2446,32 @@ async function loadRefGoal(){
     .rg-m.next{border-color:var(--gold);animation:rgPulse 1.6s infinite}`;
     document.head.appendChild(st);
   }
-  host.innerHTML=`<div style="background:linear-gradient(135deg,rgba(201,168,76,.10),rgba(139,195,74,.06));border:1px solid rgba(201,168,76,.35);border-radius:14px;padding:12px 14px;margin-bottom:10px">
-    ${!d.ended?`<img src="/promo-taska-fusion.png" alt="Športová taška Fusion — limitovaná edícia" loading="lazy"
-      style="width:100%;border-radius:12px;margin-bottom:12px;border:1px solid rgba(201,168,76,.3);cursor:pointer" onclick="window.copyMyRefLink()">`:''}
+  const rewardRows=[
+    {n:'1 kamoška', txt:'športová taška Fusion (limitovaná edícia) zadarmo'},
+    {n:'2 kamošky', txt:'50 % zľava na event'},
+    {n:'3 kamošky', txt:'masterclass úplne zadarmo'},
+  ].map((r,i)=>{const done=d.count>=i+1;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.07)">
+      <span style="flex:none;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:900;${done?'background:var(--gold);color:#161310':'background:rgba(201,168,76,.15);border:1px solid rgba(201,168,76,.45);color:var(--gold)'}">✓</span>
+      <span style="font-size:.85rem;color:${done?'#e8e2d4':'#cfc9bb'}"><b style="color:var(--gold)">${r.n}</b> — ${r.txt}${done?' <b style="color:#8bc34a">✓ máš!</b>':''}</span>
+    </div>`;}).join('');
+  host.innerHTML=`<div style="background:linear-gradient(135deg,rgba(201,168,76,.10),rgba(139,195,74,.06));border:1px solid rgba(201,168,76,.35);border-radius:14px;padding:16px;margin-bottom:10px">
+    ${!d.ended?`
+    <div style="display:grid;grid-template-columns:1fr;gap:14px" class="rg-promo-grid">
+      <style>@media(min-width:700px){.rg-promo-grid{grid-template-columns:1.2fr 1fr !important;align-items:center}}</style>
+      <div>
+        <div style="font-size:.72rem;letter-spacing:2px;text-transform:uppercase;color:var(--gold);font-weight:800;margin-bottom:6px">Augustová výzva · len do 31. 8.</div>
+        <div style="font-size:1.25rem;font-weight:900;color:#fff;line-height:1.25;margin-bottom:8px">Priveď kamošku, <span style="color:var(--gold)">taška je tvoja</span>.</div>
+        <div style="font-size:.82rem;color:#b9b3a6;margin-bottom:6px">Pozvi kamošku cez svoj odkaz. Keď sa zaregistruje a kúpi si členstvo alebo permanentku, získavaš odmenu:</div>
+        ${rewardRows}
+        <button onclick="window.copyMyRefLink()" style="margin-top:14px;background:linear-gradient(135deg,#C9A84C,#a5842f);color:#161310;border:none;border-radius:999px;padding:11px 22px;font-weight:800;font-size:.9rem;cursor:pointer">🔗 Skopírovať môj odkaz</button>
+      </div>
+      <img src="/promo-taska-fusion.png" alt="Športová taška Fusion — limitovaná edícia" loading="lazy"
+        style="width:100%;border-radius:12px;border:1px solid rgba(201,168,76,.3);cursor:pointer" onclick="window.copyMyRefLink()">
+    </div>
+    <div style="border-top:1px solid rgba(255,255,255,.08);margin:14px 0 12px"></div>`:''}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <b style="font-size:.9rem">🎯 Výzva: pozvi kamošku — táto taška je tvoja!</b>
+      <b style="font-size:.9rem">🎯 Tvoj progres vo výzve</b>
       <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         ${d.ended
           ? '<span style="font-size:.72rem;background:#3a3427;color:var(--muted);border-radius:8px;padding:3px 9px;font-weight:700">Súťaž skončila 31.8.</span>'
