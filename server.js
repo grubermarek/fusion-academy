@@ -1409,7 +1409,7 @@ async function seedData() {
         if(u.email && /@/.test(u.email)){
           const okMail=await sendMail(u.email,'🎁 Priveď kamošku a športová taška Fusion je tvoja (len do 31. 8.)',
             emailTemplate(`Ahoj ${firstName}! 💛`,
-            `<div style="text-align:center;margin:6px 0 16px"><img src="${APP_URL}/promo-taska-fusion.png" alt="Športová taška Fusion — limitovaná edícia" style="width:100%;max-width:520px;border-radius:14px"></div>
+            `<div style="text-align:center;margin:6px 0 16px"><img src="${APP_URL}/promo-taska-fusion.jpg" alt="Športová taška Fusion — limitovaná edícia" style="width:100%;max-width:520px;border-radius:14px"></div>
              <p>Máme pre teba <b>augustovú výzvu</b> — a odmeny, ktoré stoja za to:</p>
              <p style="line-height:2">✅ <b style="color:#C9A84C">1 kamoška</b> → športová taška Fusion (limitovaná edícia) <b>zadarmo</b><br>
              ✅ <b style="color:#C9A84C">2 kamošky</b> → <b>50 % zľava</b> na event<br>
