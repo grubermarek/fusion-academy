@@ -283,14 +283,22 @@ function tickNight(){
 setInterval(()=>{ $('clock').textContent=new Date().toTimeString().slice(0,5); tickNight(); }, 1000*15);
 $('clock').textContent=new Date().toTimeString().slice(0,5);
 
+let kioskLocked=false;
 async function loadContent(first){
   try{
     const r=await fetch('/api/kiosk/content?studio='+encodeURIComponent(SLUG)+'&k='+encodeURIComponent(KEY));
     const d=await r.json();
-    if(!r.ok||!d.ok){ $('stage').innerHTML='<div class="big" style="align-self:center">🔒 '+esc(d.error||'Kiosk nie je aktivovaný')+'</div>'; return; }
+    if(!r.ok||!d.ok){
+      // Zámok musí ZASTAVIŤ slideshow, inak sa slidy prekresľujú cez hlášku.
+      kioskLocked=true; stopShow(); slides=[];
+      $('cta').style.display='none';
+      $('stage').innerHTML='<div class="big" style="align-self:center;text-align:center">🔒 '+esc(d.error||'Kiosk nie je aktivovaný')+'<br><small style="font-size:.45em;opacity:.6">skúšam znova každú minútu…</small></div>';
+      return;
+    }
+    const wasLocked=kioskLocked; kioskLocked=false; $('err').textContent='';
     DATA=d; CFG=d.config; $('cityName').textContent=d.city;
     slides=buildSlides();
-    if(first){ slideIdx=0; startShow(); tickNight(); }
+    if(first||wasLocked){ slideIdx=0; $('cta').style.display=inNight()?'none':'block'; startShow(); tickNight(); }
   }catch(e){ $('err').textContent='offline — skúsim znova'; }
 }
 loadContent(true);
