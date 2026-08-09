@@ -1387,6 +1387,48 @@ async function seedData() {
     await q.insert(db.settings,{key:'meta_ab_test_campaign_v1', value:true, at:nowISO()});
   }
 
+  // Augustová referral výzva — jednorazová kampaň (8/2026): email s fotkou tašky
+  // + in-app notifikácia všetkým aktívnym klientkam (nie leady/deti/staff/test).
+  if(!(await q.one(db.settings,{key:'referral_taska_campaign_v1'}))){
+    await q.insert(db.settings,{key:'referral_taska_campaign_v1', value:true, at:nowISO()});
+    (async()=>{
+      const users=(await q.find(db.users,{}))
+        .filter(u=>!u.is_admin && u.user_type!=='trainer' && u.user_type!=='manager' && !u.is_child
+          && u.user_type!=='lead' && !u.hidden_lead
+          && !/@test-fa-qa\.local$|@import\.local$|@qa-biz\.local$/i.test(String(u.email||'')));
+      let mails=0, notifs=0;
+      for(const u of users){
+        const firstName=String(u.name||'').split(' ')[0]||'tanečníčka';
+        try{
+          await q.insert(db.notifications,{user_id:u._id,type:'campaign',
+            title:'🎁 Augustová výzva: taška Fusion zadarmo',
+            body:`Priveď kamošku do 31. 8. a športová taška Fusion (limitovaná edícia) je tvoja! 2 kamošky = 50 % na event, 3 = masterclass zadarmo. Svoj odkaz a progres nájdeš na nástenke.`,
+            read:false, created_at:nowISO()});
+          notifs++;
+        }catch(e){}
+        if(u.email && /@/.test(u.email)){
+          const okMail=await sendMail(u.email,'🎁 Priveď kamošku a športová taška Fusion je tvoja (len do 31. 8.)',
+            emailTemplate(`Ahoj ${firstName}! 💛`,
+            `<div style="text-align:center;margin:6px 0 16px"><img src="${APP_URL}/promo-taska-fusion.png" alt="Športová taška Fusion — limitovaná edícia" style="width:100%;max-width:520px;border-radius:14px"></div>
+             <p>Máme pre teba <b>augustovú výzvu</b> — a odmeny, ktoré stoja za to:</p>
+             <p style="line-height:2">✅ <b style="color:#C9A84C">1 kamoška</b> → športová taška Fusion (limitovaná edícia) <b>zadarmo</b><br>
+             ✅ <b style="color:#C9A84C">2 kamošky</b> → <b>50 % zľava</b> na event<br>
+             ✅ <b style="color:#C9A84C">3 kamošky</b> → masterclass <b>úplne zadarmo</b></p>
+             <p><b>Ako na to?</b><br>1. Otvor appku a na nástenke klikni na <b>„Skopírovať môj odkaz"</b><br>
+             2. Pošli ho kamoške, ktorá ešte u nás netancuje<br>
+             3. Keď sa zaregistruje a kúpi si členstvo alebo permanentku — odmena je tvoja 💛</p>
+             <p>Svoj progres vidíš naživo priamo na nástenke v appke.</p>
+             <p>⏳ <b>Výzva platí len do 31. augusta</b> — čím skôr pošleš odkaz, tým viac času má kamoška prísť na prvú hodinu (má ju zadarmo!).</p>
+             <p>Vidíme sa na parkete!<br>Tím Fusion Academy</p>`,
+            '🔗 Otvoriť appku a zapojiť sa', `${APP_URL}/client-dashboard`)).catch(()=>false);
+          if(okMail) mails++;
+          await new Promise(r=>setTimeout(r,300)); // šetrný rozstup pre mail API
+        }
+      }
+      console.log(`🎁 TAŠKA KAMPAŇ: ${users.length} príjemkýň → ${notifs} notifikácií, ${mails} emailov. Mená: ${users.map(u=>u.name).join(', ')}`);
+    })().catch(e=>console.error('Taska kampaň error:', e.message));
+  }
+
   // Promo kód pre návrat odídených klientov (30% na prvý mesiac)
   if(!await q.one(db.promo_codes,{code:'VITAJSPAT'})){
     await q.insert(db.promo_codes,{ code:'VITAJSPAT', type:'percent', value:30, applies_to:'membership',
