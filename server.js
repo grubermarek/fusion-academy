@@ -182,6 +182,7 @@ const db = {
   private_bookings: new Datastore({ filename: path.join(DATA_DIR, 'private_bookings.db'), autoload: true }),
   private_recurring: new Datastore({ filename: path.join(DATA_DIR, 'private_recurring.db'), autoload: true }),
   business_snapshots: new Datastore({ filename: path.join(DATA_DIR, 'business_snapshots.db'), autoload: true }),
+  mail_log:     new Datastore({ filename: path.join(DATA_DIR, 'mail_log.db'), autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -10652,6 +10653,15 @@ async function sendMail(to, subject, html){
   // @import.local = syntetické adresy klientov zo starého zoznamu (majú len telefón,
   // kontaktujú sa SMSkou) — nikdy na ne nič neposielaj.
   if(/@import\.local$/i.test(String(to||''))) return false;
+  // Mail log + tracking pixel (CRM P3): každý odoslaný mail sa zaloguje a otvorenie
+  // sa zaznamená cez 1×1 pixel — open rate vidno v /api/admin/mail-log/stats.
+  try{
+    const log=await q.insert(db.mail_log,{to:String(to), subject:String(subject||''), created_at:nowISO(), opened_at:null});
+    if(typeof html==='string' && html.includes('</body>'))
+      html=html.replace('</body>',`<img src="${APP_URL}/api/mail/open/${log._id}.gif" width="1" height="1" alt="" style="display:none"></body>`);
+    else if(typeof html==='string')
+      html+=`<img src="${APP_URL}/api/mail/open/${log._id}.gif" width="1" height="1" alt="" style="display:none">`;
+  }catch(e){}
   // Brevo HTTP API (preferred on Railway – HTTPS, no blocked SMTP ports)
   if(brevoApiKey){
     try {
@@ -13577,12 +13587,87 @@ async function sendWeeklyAdminReport(){
   }
 }
 
+// ── CRM P3: mail tracking pixel + open-rate štatistiky ────────────────────────
+app.get('/api/mail/open/:id.gif', async(req,res)=>{
+  try{ const log=await q.one(db.mail_log,{_id:String(req.params.id)});
+    if(log && !log.opened_at) await q.update(db.mail_log,{_id:log._id},{$set:{opened_at:nowISO()}});
+  }catch(e){}
+  res.set({'Content-Type':'image/gif','Cache-Control':'no-store'});
+  res.end(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7','base64'));
+});
+app.get('/api/admin/mail-log/stats', adminAuth, async(req,res)=>{
+  try{
+    const d30=new Date(Date.now()-30*86400000).toISOString();
+    const logs=(await q.find(db.mail_log,{})).filter(l=>l.created_at>=d30);
+    const opened=logs.filter(l=>l.opened_at).length;
+    const bySubject={};
+    logs.forEach(l=>{ const k=l.subject; (bySubject[k]=bySubject[k]||{sent:0,opened:0}).sent++; if(l.opened_at) bySubject[k].opened++; });
+    res.json({days:30, sent:logs.length, opened, open_rate:logs.length?+(opened/logs.length*100).toFixed(1):0,
+      by_subject:Object.entries(bySubject).map(([subject,v])=>({subject,...v, rate:v.sent?+(v.opened/v.sent*100).toFixed(1):0})).sort((a,b)=>b.sent-a.sent).slice(0,30)});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── CRM P2: večerný follow-up po PRVEJ hodine + osobný kupón na 48 h ─────────
+// Beží o 20:00 — klientka, ktorá dnes absolvovala svoju úplne prvú hodinu,
+// dostane večer mail „ako sa ti páčilo" s vlastným zľavovým kódom (20 % na
+// prvý mesiac členstva, platí 48 hodín) + push notifikáciu v appke.
+async function runFirstClassFollowup(){
+  const dayStr=today();
+  const attendedToday=(await q.find(db.bookings,{status:'attended'})).filter(b=>(b.attended_at||'').startsWith(dayStr));
+  let sent=0;
+  for(const b of attendedToday){
+    const u=await q.one(db.users,{_id:b.user_id});
+    if(!u || u.is_admin || u.user_type==='trainer' || u.is_child || u.first_class_followup_sent) continue;
+    if(/@test-fa-qa\.local$|@import\.local$/i.test(String(u.email||''))) continue;
+    // je to naozaj jej PRVÁ absolvovaná hodina?
+    const prev=(await q.find(db.bookings,{user_id:u._id, status:'attended'})).filter(x=>(x.attended_at||'')<dayStr+'T00:00:00');
+    if(prev.length) { await q.update(db.users,{_id:u._id},{$set:{first_class_followup_sent:true}}); continue; }
+    // má už členstvo? potom kupón netreba, len poďakovanie
+    const mem=await checkMembership(u._id);
+    const firstName=String(u.name||'').split(' ')[0];
+    if(mem && mem.status==='active'){
+      await sendMail(u.email,'Ako sa ti páčila prvá hodina? 💛', emailTemplate(`Bola si skvelá, ${firstName}! 💃`,
+        `<p>Dnes si absolvovala svoju prvú hodinu vo Fusion Academy — a my dúfame, že to bola jazda!</p>
+         <p>Ak máš akúkoľvek otázku alebo spätnú väzbu, jednoducho odpíš na tento mail. A vidíme sa na ďalšej hodine!</p>`,
+        '📅 Rezervovať ďalšiu hodinu', `${APP_URL}/schedule`)).catch(()=>{});
+    } else {
+      const code=('PRVA-'+Math.random().toString(36).slice(2,6)).toUpperCase();
+      const expires=new Date(Date.now()+48*3600000).toISOString();
+      await q.insert(db.promo_codes,{code, type:'percent', value:20, applies_to:'membership',
+        max_uses:1, once_per_user:true, min_amount:0, active:true, used_count:0, expires_at:expires,
+        note:`Follow-up po 1. hodine — ${u.name}`, created_at:nowISO()});
+      await sendMail(u.email,'Ako sa ti páčila prvá hodina? 💛 (darček dnu)', emailTemplate(`Bola si skvelá, ${firstName}! 💃`,
+        `<p>Dnes si absolvovala svoju prvú hodinu vo Fusion Academy — a my dúfame, že to bola jazda!</p>
+         <p>Aby si nemusela dlho rozmýšľať, máme pre teba darček: <b>20 % zľavu na prvý mesiac členstva</b>.</p>
+         <div style="text-align:center;margin:16px 0"><div style="display:inline-block;font-family:monospace;font-weight:800;letter-spacing:1px;background:#0d0d0d;border:1px dashed #C9A84C;color:#E7C878;border-radius:10px;padding:12px 22px;font-size:1.2rem">${code}</div></div>
+         <p style="color:#b9b3a6">⏳ Kód platí len <b>48 hodín</b> a je len tvoj. Zadáš ho pri kúpe členstva v appke.</p>`,
+        '💛 Vybrať členstvo so zľavou', `${APP_URL}/pricing`)).catch(()=>{});
+      await q.insert(db.notifications,{user_id:u._id, type:'promo',
+        title:'🎁 Darček po prvej hodine', body:`20 % zľava na prvý mesiac členstva — kód ${code}, platí 48 hodín. Nájdeš ho aj v maile.`,
+        read:false, created_at:nowISO()}).catch(()=>{});
+    }
+    await q.update(db.users,{_id:u._id},{$set:{first_class_followup_sent:true}});
+    sent++;
+  }
+  if(sent) console.log(`💌 First-class follow-up: ${sent} klientok`);
+  return sent;
+}
+
+// Manuálne spustenie follow-upu (admin) — na test aj dobehnutie po výpadku
+app.post('/api/admin/run-first-class-followup', adminAuth, async(req,res)=>{
+  try{ res.json({ok:true, sent:await runFirstClassFollowup()}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Run daily at ~08:00 server time (check every hour)
 setInterval(async()=>{
   const h = new Date().getHours();
   if(h === 8){
     try{ await runDailyJobs(); }catch(e){ console.error('Cron error:',e); }
     try{ await processEmailQueue(); }catch(e){ console.error('Email queue error:',e); }
+  }
+  if(h === 20){
+    try{ await runFirstClassFollowup(); }catch(e){ console.error('First class followup error:',e); }
   }
 }, 3600000);
 // Korunovanie víťaziek nesmie čakať na 8:00 ani prežiť reštart bez behu —
