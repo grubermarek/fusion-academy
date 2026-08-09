@@ -1990,6 +1990,37 @@ app.get('/api/shop/locations', (req,res)=>res.json(LOCATIONS));
 // ═══════════════════════════════════════════════════════════════════════════════
 // SCHEDULE – PUBLIC
 // ═══════════════════════════════════════════════════════════════════════════════
+// ── Verejný rozvrh pre web fusionacademy.sk (bez auth, bez osobných dát) ──────
+// Vracia týždenný rozvrh + najbližší termín každej hodiny s voľnými miestami,
+// aktuálnym trénerom (vrátane výmen) a príznakom zrušenia. Cache 5 minút.
+let pubSchedCache=null;
+app.get('/api/public/schedule', async(req,res)=>{
+  try{
+    res.setHeader('Access-Control-Allow-Origin','*');
+    if(pubSchedCache && Date.now()-pubSchedCache.at<5*60*1000) return res.json(pubSchedCache.data);
+    const classes=(await q.find(db.classes,{active:true}))
+      .sort((a,b)=>(a.day_of_week-b.day_of_week)||String(a.time_start||'').localeCompare(b.time_start||''));
+    const out=[];
+    for(const c of classes){
+      const date=displayNextDateForDay(c.day_of_week);
+      const cancel=await q.one(db.class_cancellations,{class_id:c._id, date});
+      const booked=(await q.find(db.bookings,{class_id:c._id, booking_date:date})).filter(b=>b.status!=='cancelled').length;
+      let instructor=c.instructor||'';
+      try{
+        if(c.category==='Online') instructor=await onlineInstructorFor(c, date);
+        else { const si=await sessionInstructor(c, date); if(si?.overridden) instructor=si.instructor; }
+      }catch(e){}
+      out.push({ name:c.name, category:c.category||'', location:c.location||'', day_of_week:c.day_of_week,
+        time_start:c.time_start||'', time_end:c.time_end||'', instructor,
+        next_date:date, cancelled:!!cancel, cancel_reason:cancel?.reason||null,
+        capacity:+c.capacity||0, spots_left: c.capacity? Math.max(0,(+c.capacity)-booked) : null });
+    }
+    const data={ok:true, classes:out, updated_at:nowISO()};
+    pubSchedCache={at:Date.now(), data};
+    res.json(data);
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/classes', async(req,res)=>{
   try {
     const classes=await q.find(db.classes,{active:true});
