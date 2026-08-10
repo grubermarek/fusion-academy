@@ -265,8 +265,16 @@ async function loadOnlineClasses(){
   }
   mediaBase = (data.media_base||'').replace(/\/$/,'');
   window._onlineEntries = data.entries||0;
-  // Cenník vidí len ten, o kom server výslovne povedal, že prístup nemá.
-  if(ps) ps.style.display = data.has_access ? 'none' : 'block';
+  // Cenník skry len členkám s reálnym online prístupom. Počas „online zadarmo" dňa
+  // nečlenka vidí banner s vysvetlením + ponuku členstva pod hodinami.
+  const hasPaidAccess = !!data.membership || data.access_mode==='pass' || data.access_mode==='entry';
+  if(ps) ps.style.display = (data.has_access && hasPaidAccess) ? 'none' : 'block';
+  if(data.online_free_today && !data.membership){
+    const fb=document.createElement('div');
+    fb.style.cssText='background:linear-gradient(102deg,rgba(201,168,76,.18),rgba(201,168,76,.06));border:1px solid rgba(201,168,76,.5);border-radius:12px;padding:12px 16px;margin-bottom:12px;font-size:.9rem';
+    fb.innerHTML='🎁 <b>Dnes sú online hodiny ZADARMO pre všetkých!</b> Ak sa ti zapáčia, nižšie si vieš vybrať online členstvo — a cvičíš z domu každý týždeň.';
+    container.parentElement.prepend(fb);
+  }
   if(data.access_mode==='entry'){
     const note=document.createElement('div');
     note.style.cssText='background:rgba(255,152,0,.1);border:1px solid rgba(255,152,0,.4);border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:.85rem;color:#ffcc80';
