@@ -8839,7 +8839,7 @@ app.get('/api/shop/overview', auth, async(req,res)=>{
       rec.push({key:'membership_worth', title:'Pri tvojom tempe sa oplatí členstvo',
         text:'Za posledný mesiac si bola na '+visits30+' hodinách — na vstupoch je to ~'+(visits30*10)+' €. Bronze členstvo stojí 50 €/mes.', plan_id:'bronze'});
     if(!m && entries<=0 && visits30===0 && !pending.length)
-      rec.push({key:'start', title:'Začni členstvom alebo permanentkou', text:'Vyber si, čo ti sedí — mesačné členstvo od 12,90 € alebo 10 vstupov za 80 €.'});
+      rec.push({key:'start', title:'Začni členstvom alebo permanentkou', text:'Vyber si, čo ti sedí — mesačné členstvo Bronze za 50 € alebo 10 vstupov za 80 €.'});
     if((u.referral_credit||0)>=10)
       rec.push({key:'credit', title:'Máš '+(+u.referral_credit).toFixed(2)+' € Fusion kreditu 🎉', text:'Môžeš ho použiť ako zľavu pri nákupe členstva alebo permanentky.'});
     res.json({ok:true,
