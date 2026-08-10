@@ -1561,6 +1561,13 @@ async function seedData() {
     }catch(e){ console.error('refund v2:', e.message); }
   }
 
+  // Vyčistenie: overovacie kliknutia z nasadenia 10.8. (Claude testoval prod bez ?test=1)
+  if(!(await q.one(db.settings,{key:'cleanup_invite_verify_20260810'}))){
+    await q.insert(db.settings,{key:'cleanup_invite_verify_20260810', value:true, at:nowISO()});
+    try{ const n=await q.remove(db.referral_events,{day:'2026-08-10', type:{$in:['click','city']}},{multi:true});
+      console.log('🧹 INVITE VERIFY CLEANUP: zmazaných '+n+' overovacích eventov'); }catch(e){}
+  }
+
   if(!(await q.one(db.settings,{key:'cleanup_qa_online_test_v1'}))){
     await q.insert(db.settings,{key:'cleanup_qa_online_test_v1', value:true, at:nowISO()});
     try{
