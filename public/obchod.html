@@ -156,13 +156,12 @@ const PLAN_FEATURES={
   bronze:['Neobmedzené skupinové hodiny v 1 meste','Rezervácie v appke','Komunita a odmeny'],
   silver:['Všetky mestá + ONLINE hodiny','📊 Metabolické meranie (Tanita) mesačne','Prednostné rezervácie','Všetko z Bronze'],
   gold:['Všetko zo Silver','🍽️ Jedálniček na mieru','Pravidelné check-iny s trénerom','20 % zľava na súkromné hodiny a eventy'],
-  kids:['Detské hodiny Zumba Kids','Rodič vidí dochádzku v appke'],
   online_basic:['Živé ONLINE hodiny','Prístup k záznamom'],
   online_premium:['Všetko z Online Basic','🍽️ Jedálniček na mieru','📊 Mesačná metabolická analýza (online)','Podpora trénera'],
 };
 function renderPlans(){
   const my=OV.membership?.plan_id;
-  const order=['bronze','silver','gold','kids','online_basic','online_premium'];
+  const order=['bronze','silver','gold','online_basic','online_premium']; // kids zrušené — deti fungujú na bežných členstvách
   document.getElementById('p-clenstva').innerHTML=order.map(id=>{
     const p=PLANS[id]; if(!p) return '';
     const owned=my===id;
