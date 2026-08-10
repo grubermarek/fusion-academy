@@ -14,6 +14,7 @@ const ICON = {
   users:'<circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c0-3.6 3-6 6.5-6s6.5 2.4 6.5 6"/><path d="M17 5.2a3.2 3.2 0 0 1 0 5.9M22 20c0-2.6-1.4-4.6-3.6-5.5"/>',
   user:'<circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c0-3.9 3.3-6.5 7.5-6.5s7.5 2.6 7.5 6.5"/>',
   swap:'<path d="M7 4 3 8l4 4"/><path d="M3 8h13a4 4 0 0 1 4 4"/><path d="M17 20l4-4-4-4"/><path d="M21 16H8a4 4 0 0 1-4-4"/>',
+  bag:'<path d="M6 7h12l1.2 13.2a1.6 1.6 0 0 1-1.6 1.8H6.4a1.6 1.6 0 0 1-1.6-1.8L6 7z"/><path d="M9 10V6a3 3 0 0 1 6 0v4"/>',
   help:'<path d="M4 12a8 8 0 0 1 16 0v5a2 2 0 0 1-2 2h-1v-6h3"/><path d="M4 12v5a2 2 0 0 0 2 2h1v-6H4"/>',
 };
 function svg(name){
@@ -23,6 +24,7 @@ function svg(name){
 const items = [
   { key:'home',  label:'Domov',      icon:'home',     href:'/client-dashboard', match:['/client-dashboard','/dashboard'] },
   { key:'book',  label:'Rezervovať', icon:'calendar', href:'/client-dashboard#bookSection', match:['#book'] },
+  { key:'shop',  label:'Obchod',     icon:'bag',      href:'/obchod', match:['/obchod','/pricing','/shop'] },
   { key:'comm',  label:'Komunita',   icon:'users',    href:'/community', match:['/community'] },
   { key:'prof',  label:'Profil',     icon:'user',     href:'/u/', match:['/u/'] },
   { key:'help',  label:'Podpora',    icon:'help',     href:'/support', match:['/support'] },

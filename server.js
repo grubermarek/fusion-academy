@@ -8730,6 +8730,56 @@ app.post('/api/admin/bookings/:id/collect', (req,res,next)=>trainerAuth(req,res,
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ── SHOP HUB: jeden prehľad pre /obchod — čo mám, čo mi končí, čo sa mi oplatí ──
+// Len UI vrstva nad existujúcimi systémami (memberships, vstupy, kredit, transakcie).
+app.get('/api/shop/overview', auth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.session.uid});
+    const m=await checkMembership(u._id);
+    const plan=m?MEMBERSHIP_PLANS[m.plan_id]:null;
+    // posledná permanentka (bundle) — kvôli celkovému počtu a expirácii
+    const bundles=(await q.find(db.memberships,{user_id:u._id, status:'bundle'}))
+      .sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+    const lastBundle=bundles[0]||null;
+    const bundlePlan=lastBundle?MEMBERSHIP_PLANS[lastBundle.plan_id]:null;
+    // reálna návštevnosť za 30 dní (pre poctivé odporúčania)
+    const since=new Date(Date.now()-30*24*3600*1000).toISOString().slice(0,10);
+    const visits30=(await q.find(db.bookings,{user_id:u._id, status:'attended'}))
+      .filter(b=>String(b.booking_date||'')>=since).length;
+    const pending=(await q.find(db.payments,{user_id:u._id, status:'pending_manual'}))
+      .map(p=>({id:p._id, description:p.description, amount:p.amount, created_at:p.created_at}));
+    const tx=(await q.find(db.transactions,{user_id:u._id}))
+      .sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))).slice(0,20)
+      .map(t=>({date:t.created_at, note:t.note||t.type, amount:t.amount, method:t.payment_method||'', type:t.type}));
+    const invoices=(await q.find(db.invoices,{user_id:u._id}))
+      .sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||''))).slice(0,20)
+      .map(i=>({number:i.number, total:i.total, date:i.issued_at||i.created_at}));
+    const entries=u.single_entries||0;
+    const daysLeft=m?Math.ceil((new Date(m.expires_at)-Date.now())/86400000):null;
+    // Odporúčania: max 3, len z reálnych dát — žiadny billboard
+    const rec=[];
+    if(pending.length) rec.push({key:'pay_pending', title:'Čaká ťa nedokončená platba',
+      text:'Máš objednávku na '+pending[0].description+' — zaplať v hotovosti na hodine alebo prevodom a hneď ti ju aktivujeme.'});
+    if(m && daysLeft!==null && daysLeft<=5 && !u.stripe_subscription_id)
+      rec.push({key:'renew', title:'Členstvo ti čoskoro končí', text:plan?.name+' vyprší o '+daysLeft+' dní. Predĺž si ho, nech nestratíš prístup.', plan_id:m.plan_id});
+    if(!m && entries>0 && entries<=2)
+      rec.push({key:'entries_low', title:'Dochádza ti permanentka', text:'Zostáva ti '+entries+' '+(entries===1?'vstup':'vstupy')+'. Kúp si ďalšiu, nech nemusíš riešiť platby na hodine.', plan_id:'permanentka10'});
+    if(!m && visits30>=5)
+      rec.push({key:'membership_worth', title:'Pri tvojom tempe sa oplatí členstvo',
+        text:'Za posledný mesiac si bola na '+visits30+' hodinách — na vstupoch je to ~'+(visits30*10)+' €. Bronze členstvo stojí 50 €/mes.', plan_id:'bronze'});
+    if(!m && entries<=0 && visits30===0 && !pending.length)
+      rec.push({key:'start', title:'Začni členstvom alebo permanentkou', text:'Vyber si, čo ti sedí — mesačné členstvo od 12,90 € alebo 10 vstupov za 80 €.'});
+    if((u.referral_credit||0)>=10)
+      rec.push({key:'credit', title:'Máš '+(+u.referral_credit).toFixed(2)+' € Fusion kreditu 🎉', text:'Môžeš ho použiť ako zľavu pri nákupe členstva alebo permanentky.'});
+    res.json({ok:true,
+      membership: m?{plan_id:m.plan_id, plan_name:m.plan_name, expires_at:m.expires_at, days_left:daysLeft,
+        price:plan?.price||m.price, auto_renew:!!u.stripe_subscription_id, status:m.status}:null,
+      entries:{left:entries, total:bundlePlan?.entries||((entries>0&&!bundlePlan)?entries:10), expires_at:lastBundle?.expires_at||null},
+      free_credits:u.free_credits||0, credit:+(u.referral_credit||0),
+      visits30, pending, purchases:tx, invoices, recommendations:rec.slice(0,3)});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ── Testovací účet: admin sa prepne do čistého klientskeho účtu (vzhľad + funkčnosť) ──
 // Účet je @test-fa-qa.local → mimo Business Ranku, predajných notifikácií aj kampaní.
 // Pri každom vstupe sa vyresetuje na prázdno. Návrat cez /api/test-account/back.
@@ -12671,8 +12721,10 @@ app.get('/shop',       (req,res)=>res.sendFile(path.join(__dirname,'public','sho
 app.get('/schedule',   (req,res)=>res.sendFile(path.join(__dirname,'public','schedule.html')));
 app.get('/community',  (req,res)=>res.sendFile(path.join(__dirname,'public','community.html')));
 app.get('/support',    (req,res)=>res.sendFile(path.join(__dirname,'public','support.html')));
-app.get('/cennik',     (req,res)=>res.redirect(301,'/pricing'));
-app.get('/pricing',    (req,res)=>res.sendFile(path.join(__dirname,'public','pricing.html')));
+app.get('/cennik',     (req,res)=>res.redirect(302,'/obchod'));
+app.get('/obchod',     (req,res)=>res.sendFile(path.join(__dirname,'public','obchod.html')));
+// Jeden obchod: cenník žije v /obchod (staré linky v mailoch/na webe presmerujeme)
+app.get('/pricing',    (req,res)=>res.redirect(302,'/obchod'+(req.originalUrl.includes('?')?'?'+req.originalUrl.split('?')[1]:'')));
 app.get('/u/:id',      (req,res)=>res.sendFile(path.join(__dirname,'public','profile.html')));
 app.get('/vencek',     (req,res)=>res.sendFile(path.join(__dirname,'public','vencek.html')));
 app.get('/vencek-booking', (req,res)=>res.sendFile(path.join(__dirname,'public','vencek-booking.html')));
