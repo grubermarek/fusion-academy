@@ -162,7 +162,16 @@ const PLAN_FEATURES={
 };
 function renderPlans(){
   const my=OV.membership?.plan_id;
-  const order=['bronze','silver','gold','online_basic','online_premium']; // kids zrušené — deti fungujú na bežných členstvách
+  // Nikdy neukazuj nižší plán, než klientka má — len jej plán + upsell.
+  // Silver/Gold už majú online v cene → online plány sa im neponúkajú.
+  const VISIBLE={
+    bronze:['bronze','silver','gold'],
+    silver:['silver','gold'],
+    gold:['gold'],
+    online_basic:['online_basic','online_premium','silver','gold'],
+    online_premium:['online_premium','gold'],
+  };
+  const order=(my&&VISIBLE[my])?VISIBLE[my]:['bronze','silver','gold','online_basic','online_premium']; // kids zrušené — deti fungujú na bežných členstvách
   document.getElementById('p-clenstva').innerHTML=order.map(id=>{
     const p=PLANS[id]; if(!p) return '';
     const owned=my===id;
