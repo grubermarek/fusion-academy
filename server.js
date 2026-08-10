@@ -1563,6 +1563,19 @@ async function seedData() {
     }catch(e){ console.error('refund v2:', e.message); }
   }
 
+  // Popisy trénerov pri súkromných hodinách (dá sa zmeniť v DB: users.private_specialty)
+  if(!(await q.one(db.settings,{key:'private_specialty_seed_v1'}))){
+    await q.insert(db.settings,{key:'private_specialty_seed_v1', value:true, at:nowISO()});
+    try{
+      const all=await q.find(db.users,{});
+      const nel=all.find(u=>/kyse[ľl]ov/i.test(u.name||''));
+      if(nel) await q.update(db.users,{_id:nel._id},{$set:{private_specialty:'Zumba choreografie'}});
+      const mar=all.find(u=>u.email==='gruber.marek@gmail.com');
+      if(mar) await q.update(db.users,{_id:mar._id},{$set:{private_specialty:'Latinsko-americké tance · svadobný tanec · Pro-Am'}});
+      console.log('🎭 SPECIALTY seed hotový');
+    }catch(e){}
+  }
+
   // Vyčistenie: overovacie kliknutia z nasadenia 10.8. (Claude testoval prod bez ?test=1)
   if(!(await q.one(db.settings,{key:'cleanup_invite_verify_20260810'}))){
     await q.insert(db.settings,{key:'cleanup_invite_verify_20260810', value:true, at:nowISO()});
@@ -9769,7 +9782,7 @@ app.get('/api/private/trainers', auth, async(req,res)=>{
     for(const t of users){
       const slots=(await q.find(db.private_slots,{trainer_id:t._id, status:'open'})).filter(s=>s.date>=today());
       if(!slots.length) continue;
-      out.push({ id:t._id, name:t.name, av:!!t.avatar, rate:privateSettings(t).rate,
+      out.push({ id:t._id, name:t.name, av:!!t.avatar, rate:privateSettings(t).rate, specialty:t.private_specialty||'',
         cities:[...new Set(slots.map(s=>s.city))], slot_count:slots.length });
     }
     res.json({ok:true, trainers:out});
