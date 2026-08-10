@@ -1568,6 +1568,26 @@ async function seedData() {
       console.log('🧹 INVITE VERIFY CLEANUP: zmazaných '+n+' overovacích eventov'); }catch(e){}
   }
 
+  // Vyčistenie: Marekov vlastný test invite funnelu (10.8. večer) — event, guest lead aj booking
+  if(!(await q.one(db.settings,{key:'cleanup_invite_verify_20260810_v2'}))){
+    await q.insert(db.settings,{key:'cleanup_invite_verify_20260810_v2', value:true, at:nowISO()});
+    try{
+      const evs=(await q.find(db.referral_events,{day:'2026-08-10'})).filter(e=>!e.test);
+      let removedGuests=0;
+      for(const e of evs){
+        if(e.guest_id){
+          const gu=await q.one(db.users,{_id:e.guest_id});
+          if(gu && gu.guest && gu.created_at==='2026-08-10'){
+            for(const col of ['bookings','notifications']) await q.remove(db[col],{user_id:gu._id},{multi:true}).catch(()=>{});
+            await q.remove(db.users,{_id:gu._id},{multi:true}); removedGuests++;
+          } else if(e.booking_id){ await q.remove(db.bookings,{_id:e.booking_id},{multi:true}).catch(()=>{}); }
+        }
+      }
+      const n=await q.remove(db.referral_events,{day:'2026-08-10'},{multi:true});
+      console.log('🧹 INVITE CLEANUP v2: '+n+' eventov, '+removedGuests+' test guest leadov zmazaných');
+    }catch(e){ console.error('invite cleanup v2:', e.message); }
+  }
+
   if(!(await q.one(db.settings,{key:'cleanup_qa_online_test_v1'}))){
     await q.insert(db.settings,{key:'cleanup_qa_online_test_v1', value:true, at:nowISO()});
     try{
