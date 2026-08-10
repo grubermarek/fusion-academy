@@ -210,9 +210,10 @@ async function manageScreen(){
       <div class="row">💃 <b>${esc(b.class_name)}</b></div>
       <div class="row">📍 ${esc(b.city)} · 📅 ${esc(b.date.split('-').reverse().join('.'))} · 🕐 ${esc(b.time)}</div>
       <button class="ghost" onclick="mCancel('${b.id}')">Nemôžem prísť — zrušiť a vybrať iný termín</button>
-    </div>`).join('') : '<p class="sub">Nemáš aktívnu rezerváciu.</p><button class="cta" onclick="localStorage.removeItem(\\'fa_invite_state\\');location.href=\\'/invite/'+esc(CODE)+'\\'">Vybrať si termín</button>'}
+    </div>`).join('') : `<p class="sub">Nemáš aktívnu rezerváciu.</p><button class="cta" onclick="mRestart()">Vybrať si termín</button>`}
   </div>`;
 }
+function mRestart(){ localStorage.removeItem(ST_KEY); location.href='/invite/'+CODE; }
 async function mCancel(id){
   if(!confirm('Zrušiť túto rezerváciu? Hneď si budeš môcť vybrať iný termín.')) return;
   const d=await j('/api/invite-manage/'+encodeURIComponent(MANAGE)+'/cancel',{method:'POST',body:JSON.stringify({booking_id:id})});
