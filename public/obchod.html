@@ -109,13 +109,14 @@ function toast(t){ const x=document.createElement('div'); x.className='toast'; x
 
 async function boot(){
   const [me,ov,plans,cfg,prods]=await Promise.all([
-    api('/api/me'), api('/api/shop/overview'), api('/api/membership/plans'), api('/api/config'), api('/api/shop/products')]);
+    api('/api/me'), api('/api/shop/overview'), api('/api/membership/plans'), api('/api/config'),
+    fetch('/api/shop/products',{credentials:'include'}).then(r=>r.json()).catch(()=>[])]);
   if(!me?.id){ location.href='/?next=/obchod'; return; }
   ME=me; OV=ov; PLANS=plans; STRIPE=!!cfg.stripe_enabled; PRODUCTS=Array.isArray(prods)?prods:[];
   renderMyf(); renderRecs(); renderTabs();
   api('/api/shop/event',{method:'POST',body:JSON.stringify({type:'shop_open'})});
   const want=new URLSearchParams(location.search).get('tab')||location.hash.replace('#','');
-  showTab(['clenstva','vstupy','merch','eventy','nakupy'].includes(want)?want:'clenstva');
+  showTab(['clenstva','vstupy','sukromne','merch','eventy','nakupy'].includes(want)?want:'clenstva');
 }
 function renderMyf(){
   const m=OV.membership, e=OV.entries;
@@ -139,7 +140,7 @@ function renderRecs(){
   el.innerHTML=(OV.recommendations||[]).map(r=>`<div class="rec" onclick="${r.plan_id?`openPlan('${r.plan_id}')`:(r.key==='pay_pending'?`showTab('nakupy')`:`showTab('clenstva')`)}">
     <b>${esc(r.title)}</b><p>${esc(r.text)}</p></div>`).join('');
 }
-const TABS=[['clenstva','🏅 Členstvá'],['vstupy','🎟️ Vstupy'],['merch','👕 Merch'],['eventy','🎉 Eventy'],['nakupy','🧾 Moje nákupy']];
+const TABS=[['clenstva','🏅 Členstvá'],['vstupy','🎟️ Vstupy'],['sukromne','🎭 Súkromné'],['merch','👕 Merch'],['eventy','🎉 Eventy'],['nakupy','🧾 Moje nákupy']];
 function renderTabs(){
   document.getElementById('tabs').innerHTML=TABS.map(([k,l])=>`<button class="tab" id="tab-${k}" onclick="showTab('${k}')">${l}</button>`).join('');
   document.getElementById('panels').innerHTML=TABS.map(([k])=>`<div class="panel" id="p-${k}"></div>`).join('');
@@ -147,7 +148,7 @@ function renderTabs(){
 function showTab(k){
   TABS.forEach(([t])=>{ document.getElementById('tab-'+t).classList.toggle('active',t===k);
     document.getElementById('p-'+t).classList.toggle('active',t===k); });
-  ({clenstva:renderPlans, vstupy:renderVstupy, merch:renderMerch, eventy:renderEventy, nakupy:renderNakupy})[k]();
+  ({clenstva:renderPlans, vstupy:renderVstupy, sukromne:renderSukromne, merch:renderMerch, eventy:renderEventy, nakupy:renderNakupy})[k]();
   history.replaceState(null,'','/obchod?tab='+k);
 }
 
@@ -191,7 +192,75 @@ function renderVstupy(){
       <button class="buy" onclick="openPlan('permanentka10')">Kúpiť permanentku</button></div>
     <button class="howto" onclick="howTo('entries')">? Ako fungujú vstupy a permanentky</button>`;
 }
-/* ── MERCH & EVENTY ── */
+/* ── SÚKROMNÉ HODINY — existujúci booking systém (/api/private/*) ── */
+let PV={trainers:null, sel:null, slots:[], disc:0, plan:null};
+async function renderSukromne(){
+  const el=document.getElementById('p-sukromne');
+  if(!PV.trainers){
+    el.innerHTML='<p style="color:var(--muted)">Načítavam trénerov…</p>';
+    const t=await api('/api/private/trainers'); PV.trainers=(t&&t.trainers)||[];
+  }
+  if(!PV.trainers.length){ el.innerHTML='<p style="color:var(--muted)">Momentálne nie sú vypísané žiadne voľné termíny — skús neskôr. 💛</p>'; return; }
+  el.innerHTML=`
+    <div class="pcard hl"><h3>🎭 Súkromná hodina 1:1</h3>
+      <p>Individuálny tréning presne podľa teba — technika, choreografia, svadobný tanec. <b class="gold">100 €/h</b> · členovia majú zľavu: Bronze −10 %, Silver −20 %, Gold −30 %.</p></div>
+    <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px">Vyber trénera:</div>
+    ${PV.trainers.map(tr=>`<button class="pcard" style="width:100%;text-align:left;cursor:pointer;border-color:${PV.sel===tr.id?'var(--gold)':'var(--line)'}" onclick="pvSelect('${tr.id}')">
+      <b>${esc(tr.name)}</b> <span style="color:var(--muted);font-size:.8rem">od ${(+tr.rate).toFixed(0)} €/h · ${esc((tr.cities||[]).join(', '))}</span></button>`).join('')}
+    <div id="pvSlotsBox"></div>`;
+  if(PV.sel) pvRenderSlots();
+}
+async function pvSelect(tid){
+  PV.sel=tid;
+  const box=()=>document.getElementById('pvSlotsBox');
+  renderSukromne(); box().innerHTML='<p style="color:var(--muted)">Načítavam termíny…</p>';
+  const d=await api('/api/private/slots?trainer_id='+tid);
+  PV.slots=(d&&d.slots)||[]; PV.disc=(d&&d.discount_pct)||0; PV.plan=(d&&d.discount_plan)||null;
+  pvRenderSlots();
+}
+function pvRenderSlots(){
+  const box=document.getElementById('pvSlotsBox'); if(!box) return;
+  if(!PV.slots.length){ box.innerHTML='<p style="color:var(--muted)">Tento tréner nemá voľné termíny.</p>'; return; }
+  const byDay={}; PV.slots.forEach(s=>{(byDay[s.date]=byDay[s.date]||[]).push(s);});
+  box.innerHTML=(PV.disc?`<div class="rec"><b>🎁 Tvoje členstvo ${esc(PV.plan||'')} = −${PV.disc} % na súkromné hodiny</b></div>`:'')
+    +Object.entries(byDay).slice(0,10).map(([d,ss])=>`<div style="margin:10px 0 4px;font-size:.85rem;color:var(--gold);font-weight:800">📅 ${d.split('-').reverse().join('.')}</div>
+      ${ss.map(s=>{const my=s.my_price!=null?s.my_price:s.price;
+        return `<button class="tab" style="margin:0 6px 6px 0" onclick='pvOpenBook(${JSON.stringify(s).replace(/'/g,"&#39;")})'>${s.time_start} · ${s.duration_min} min · ${esc(s.city)} · <b style="color:var(--gold)">${eur(my)}</b></button>`;}).join('')}`).join('');
+}
+function pvOpenBook(s){
+  const my=s.my_price!=null?s.my_price:s.price;
+  api('/api/shop/event',{method:'POST',body:JSON.stringify({type:'checkout_open',item:'private'})});
+  document.getElementById('mTitle').textContent='🎭 Súkromná hodina';
+  document.getElementById('mBody').innerHTML=`
+    <div class="mrow"><span class="mut">Termín</span><span><b>${s.date.split('-').reverse().join('.')} o ${s.time_start}</b></span></div>
+    <div class="mrow"><span class="mut">Dĺžka / miesto</span><span>${s.duration_min} min · ${esc(s.city)}</span></div>
+    ${PV.disc?`<div class="mrow"><span class="mut">Cena so zľavou −${PV.disc} %</span><span><s style="color:var(--muted)">${eur(s.price)}</s> <b class="gold">${eur(my)}</b></span></div>`
+      :`<div class="mrow"><span class="mut">Cena</span><span class="gold"><b>${eur(my)}</b></span></div>`}
+    ${(ME.free_private_lesson_credits||0)>0?`<button class="paybtn" onclick="pvBook('${s.id}','prize')">🎁 Zadarmo — výhra súťaže</button>`:''}
+    ${STRIPE?`<button class="paybtn" onclick="pvBook('${s.id}','card')">💳 Zaplatiť kartou teraz</button>`:''}
+    ${OV.credit>=my?`<button class="paybtn sec" onclick="pvBook('${s.id}','credit')">💛 Zaplatiť Fusion kreditom (${eur(OV.credit)})</button>`:''}
+    <button class="paybtn sec" onclick="pvBook('${s.id}','onsite')">💵 Zaplatím na mieste</button>
+    <p class="note">Bezplatné zrušenie do 24 h pred začiatkom. Potvrdenie príde do notifikácií aj na e-mail.</p>
+    <div class="err" id="mErr"></div>`;
+  document.getElementById('buyM').classList.add('open');
+}
+async function pvBook(slotId, pay){
+  const err=document.getElementById('mErr'); err.textContent='';
+  const r=await api('/api/private/book',{method:'POST',body:JSON.stringify({slot_id:slotId, pay})});
+  if(!r.ok){ err.textContent=r.error||'Skús to znova.'; return; }
+  if(pay==='card'){
+    const c=await api('/api/private/card-checkout',{method:'POST',body:JSON.stringify({booking_id:r.id})});
+    if(c.ok&&c.url){ location.href=c.url; return; }
+  }
+  closeM(); PV.sel=null; PV.trainers=null;
+  toast('🎭 Súkromná hodina rezervovaná ✅'+(pay==='credit'?' — zaplatené kreditom':pay==='prize'?' — výhra súťaže':' — platba na mieste'));
+  OV=await api('/api/shop/overview'); renderMyf(); renderSukromne();
+}
+
+/* ── MERCH & EVENTY + KOŠÍK (existujúci objednávkový systém /api/shop/order) ── */
+let CART=[]; // {product_id,name,emoji,price,qty,size,color}
+function cartCount(){ return CART.reduce((a,i)=>a+i.qty,0); }
+function cartTotal(){ return +CART.reduce((a,i)=>a+i.price*i.qty,0).toFixed(2); }
 function prodCard(p){
   const v=p.variants||null;
   return `<div class="pcard"><div class="top"><h3>${p.emoji||'🛍️'} ${esc(p.name)}</h3><span class="price">${eur(p.price)}</span></div>
@@ -199,16 +268,97 @@ function prodCard(p){
     ${v?`<div style="margin-bottom:6px">
       ${v.sizes?`<select id="sz-${p._id}">${v.sizes.map(s=>`<option>${s}</option>`).join('')}</select>`:''}
       ${v.colors?`<select id="cl-${p._id}">${v.colors.map(c=>`<option>${c}</option>`).join('')}</select>`:''}</div>`:''}
-    <button class="buy" onclick="openProduct('${p._id}')">Kúpiť teraz</button></div>`;
+    <button class="buy" onclick="addToCart('${p._id}')">🛒 Pridať do košíka</button></div>`;
 }
+function cartBar(){
+  return cartCount()?`<div class="pcard hl" style="position:sticky;bottom:96px;z-index:50;display:flex;justify-content:space-between;align-items:center;gap:10px">
+    <span>🛒 <b>${cartCount()}</b> ks · <b class="gold">${eur(cartTotal())}</b></span>
+    <button class="buy" style="width:auto;margin:0;padding:10px 20px" onclick="openCart()">Dokončiť objednávku</button></div>`:'';
+}
+function addToCart(id){
+  const p=PRODUCTS.find(x=>x._id===id); if(!p) return;
+  const size=document.getElementById('sz-'+id)?.value||null, color=document.getElementById('cl-'+id)?.value||null;
+  const ex=CART.find(i=>i.product_id===id&&i.size===size&&i.color===color);
+  if(ex) ex.qty++; else CART.push({product_id:id,name:p.name,emoji:p.emoji||'🛍️',price:p.price,qty:1,size,color});
+  toast('🛒 '+p.name+(size?' ('+size+(color?', '+color:'')+')':'')+' pridané do košíka');
+  refreshCartBars();
+}
+function refreshCartBars(){ ['cartbar-m','cartbar-e'].forEach(x=>{ const el=document.getElementById(x); if(el) el.innerHTML=cartBar(); }); }
+function cartQty(idx,d){ CART[idx].qty+=d; if(CART[idx].qty<=0) CART.splice(idx,1); if(cartCount()) openCart(); else { closeM(); refreshCartBars(); } }
 function renderMerch(){
   const items=PRODUCTS.filter(p=>p.active!==false && p.type!=='event' && !/členstvo|vstup|permanent/i.test(p.name));
   document.getElementById('p-merch').innerHTML=(items.length?items.map(prodCard).join(''):'<p style="color:var(--muted)">Merch čoskoro doplníme.</p>')
+    +`<div id="cartbar-m">${cartBar()}</div>`
     +`<button class="howto" onclick="howTo('merch')">? Ako prebieha nákup merchu</button>`;
 }
 function renderEventy(){
   const items=PRODUCTS.filter(p=>p.active!==false && p.type==='event');
-  document.getElementById('p-eventy').innerHTML=items.length?items.map(prodCard).join(''):'<p style="color:var(--muted)">Momentálne nie je vypísaný žiadny event — sleduj notifikácie. 🎉</p>';
+  document.getElementById('p-eventy').innerHTML=(items.length?items.map(prodCard).join(''):'<p style="color:var(--muted)">Momentálne nie je vypísaný žiadny event — sleduj notifikácie. 🎉</p>')
+    +`<div id="cartbar-e">${cartBar()}</div>`;
+}
+let ORDER_PROMO=null;
+function openCart(){
+  if(!cartCount()) return;
+  api('/api/shop/event',{method:'POST',body:JSON.stringify({type:'checkout_open',item:'cart'})});
+  const creditApply=Math.min(OV.credit, cartTotal());
+  document.getElementById('mTitle').textContent='🛒 Tvoja objednávka';
+  document.getElementById('mBody').innerHTML=`
+    ${CART.map((i,x)=>`<div class="mrow" style="align-items:center"><span>${i.emoji} ${esc(i.name)}${i.size?' · '+esc(i.size):''}${i.color?' · '+esc(i.color):''}</span>
+      <span style="white-space:nowrap"><button onclick="cartQty(${x},-1)" style="background:#221e16;border:1px solid var(--line);color:var(--cream);border-radius:8px;width:26px;height:26px;cursor:pointer">−</button>
+      <b style="margin:0 6px">${i.qty}</b>
+      <button onclick="cartQty(${x},1)" style="background:#221e16;border:1px solid var(--line);color:var(--cream);border-radius:8px;width:26px;height:26px;cursor:pointer">+</button>
+      <span class="gold" style="margin-left:8px">${eur(i.price*i.qty)}</span></span></div>`).join('')}
+    <div style="margin:12px 0 4px;font-size:.85rem;color:var(--muted)">Doručenie</div>
+    <label style="display:block;font-size:.88rem;margin-bottom:6px;cursor:pointer"><input type="radio" name="odel" value="pickup" checked onchange="document.getElementById('shipFields').style.display='none'" style="accent-color:#C9A84C"> 🏠 Vyzdvihnem si na hodine (zadarmo)</label>
+    <label style="display:block;font-size:.88rem;cursor:pointer"><input type="radio" name="odel" value="post" onchange="document.getElementById('shipFields').style.display='block'" style="accent-color:#C9A84C"> 📦 Poslať poštou</label>
+    <div id="shipFields" style="display:none;margin-top:8px">
+      <input id="shName" placeholder="Meno a priezvisko" value="${esc(ME.name||'')}" style="width:100%;background:#0f0d09;border:1px solid var(--line);color:var(--cream);border-radius:10px;padding:9px;margin-bottom:6px">
+      <input id="shStreet" placeholder="Ulica a číslo" style="width:100%;background:#0f0d09;border:1px solid var(--line);color:var(--cream);border-radius:10px;padding:9px;margin-bottom:6px">
+      <div style="display:flex;gap:6px"><input id="shZip" placeholder="PSČ" style="flex:1;background:#0f0d09;border:1px solid var(--line);color:var(--cream);border-radius:10px;padding:9px">
+      <input id="shCity" placeholder="Mesto" style="flex:2;background:#0f0d09;border:1px solid var(--line);color:var(--cream);border-radius:10px;padding:9px"></div>
+    </div>
+    ${OV.credit>0?`<label class="credit-row"><input type="checkbox" id="oCredit" checked onchange="cartRecalc()" style="accent-color:#C9A84C">💛 Použiť Fusion kredit (${eur(OV.credit)})</label>`:''}
+    <div class="promo-row"><input id="oPromo" placeholder="Promo kód"><button onclick="applyOrderPromo()">Použiť</button></div>
+    <div id="oPromoMsg" class="err" style="min-height:0"></div>
+    <div class="total"><span>Spolu</span><span class="gold" id="oTotal">${eur(Math.max(0,cartTotal()-creditApply))}</span></div>
+    <button class="paybtn" id="oSubmit" onclick="submitOrder()">Objednať</button>
+    <p class="note">Zaplatíš pri prevzatí (hotovosť/karta na hodine). Potvrdenie objednávky ti príde do notifikácií.</p>
+    <div class="err" id="oErr"></div>`;
+  ORDER_PROMO=null;
+  document.getElementById('buyM').classList.add('open');
+}
+function cartRecalc(){
+  const promoD=ORDER_PROMO?Math.min(ORDER_PROMO.discount,cartTotal()):0;
+  const base=Math.max(0,cartTotal()-promoD);
+  const cr=document.getElementById('oCredit')?.checked?Math.min(OV.credit,base):0;
+  document.getElementById('oTotal').textContent=eur(Math.max(0,+(base-cr).toFixed(2)));
+}
+async function applyOrderPromo(){
+  const code=document.getElementById('oPromo').value.trim(); if(!code) return;
+  const r=await api('/api/promo/validate',{method:'POST',body:JSON.stringify({code, amount:cartTotal(), applies_to:'merch'})});
+  const msg=document.getElementById('oPromoMsg');
+  if(r.ok){ ORDER_PROMO={code:r.code,discount:r.discount}; msg.style.color='#8bc34a'; msg.textContent='🎟️ '+r.code+' −'+eur(r.discount); }
+  else { ORDER_PROMO=null; msg.style.color='#ff8a80'; msg.textContent=r.reason||'Neplatný kód'; }
+  cartRecalc();
+}
+async function submitOrder(){
+  const err=document.getElementById('oErr'); err.textContent='';
+  const delivery=document.querySelector('input[name=odel]:checked').value;
+  const body={ client_name:ME.name, client_email:ME.email, client_phone:ME.phone||'',
+    items:CART.map(i=>({product_id:i.product_id, qty:i.qty, size:i.size||undefined, color:i.color||undefined})),
+    payment_method:'cash', delivery, notes:'Objednané cez Obchod v appke',
+    use_referral_credit:!!document.getElementById('oCredit')?.checked,
+    promo_code:ORDER_PROMO?.code };
+  if(delivery==='post'){ body.shipping={ name:document.getElementById('shName').value, street:document.getElementById('shStreet').value,
+    zip:document.getElementById('shZip').value, city:document.getElementById('shCity').value };
+    if(!body.shipping.street||!body.shipping.zip||!body.shipping.city){ err.textContent='Pri pošte vyplň celú adresu.'; return; } }
+  const b=document.getElementById('oSubmit'); b.disabled=true; b.textContent='⏳ Odosielam…';
+  const r=await api('/api/shop/order',{method:'POST', body:JSON.stringify(body)});
+  b.disabled=false; b.textContent='Objednať';
+  if(!r.ok&&!r.order_number){ err.textContent=r.error||'Skús to znova.'; return; }
+  CART=[]; refreshCartBars(); closeM();
+  toast('✅ Objednávka '+(r.order_number?('#'+r.order_number+' '):'')+'prijatá! '+(delivery==='post'?'Pošleme ti ju poštou.':'Odovzdáme ti ju na hodine.'));
+  OV=await api('/api/shop/overview'); renderMyf();
 }
 /* ── NÁKUPY ── */
 function renderNakupy(){
