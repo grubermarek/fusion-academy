@@ -172,8 +172,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
           <li><i class="fas fa-times cross"></i>Jedálniček na mieru</li>
         </ul>
         <div style="display:flex;flex-direction:column;gap:8px">
-          <button class="btn-plan btn-plan-outline" onclick="chooseBronze('sub')">🔄 Prihlásiť na odber</button>
-          <button style="background:none;border:none;color:#888;font-size:.8rem;cursor:pointer;padding:4px" onclick="chooseBronze('buy')">Jednorazová platba</button>
+          <button class="btn-plan btn-plan-outline" onclick="chooseBronze()">Kúpiť Bronze</button>
         </div>
       </div>
 
@@ -192,8 +191,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
           <li><i class="fas fa-times cross"></i>Jedálniček s porciami na mieru</li>
         </ul>
         <div style="display:flex;flex-direction:column;gap:8px">
-          <button class="btn-plan btn-plan-gold" onclick="openSubscribeModal('silver','🥈 Silver','75')">🔄 Prihlásiť na odber</button>
-          <button style="background:none;border:none;color:#888;font-size:.8rem;cursor:pointer;padding:4px" onclick="openBuyModal('silver','🥈 Silver','75')">Jednorazová platba</button>
+          <button class="btn-plan btn-plan-gold" onclick="openBuyModal('silver','🥈 Silver','75')">Kúpiť Silver</button>
         </div>
       </div>
 
@@ -210,8 +208,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
           <li><i class="fas fa-check check"></i>20 % zľava na súkromné hodiny & eventy</li>
         </ul>
         <div style="display:flex;flex-direction:column;gap:8px">
-          <button class="btn-plan btn-plan-gold" onclick="openSubscribeModal('gold','🥇 Gold','125')">🔄 Prihlásiť na odber</button>
-          <button style="background:none;border:none;color:#888;font-size:.8rem;cursor:pointer;padding:4px" onclick="openBuyModal('gold','🥇 Gold','125')">Jednorazová platba</button>
+          <button class="btn-plan btn-plan-gold" onclick="openBuyModal('gold','🥇 Gold','125')">Kúpiť Gold</button>
         </div>
       </div>
 
@@ -367,7 +364,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
           <li><i class="fas fa-times cross"></i>Nutričný plán na mieru</li>
           <li><i class="fas fa-times cross"></i>Osobný koučing</li>
         </ul>
-        <button class="btn-plan btn-plan-outline" onclick="window.location='/'">Pripojiť sa online</button>
+        <button class="btn-plan btn-plan-outline" onclick="openBuyModal('online_basic','🌐 Online Basic','12.90')">Kúpiť Online Basic</button>
       </div>
 
       <div class="plan-card featured">
@@ -382,7 +379,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
           <li><i class="fas fa-check check"></i>Mesačná metabolická analýza (online vyhodnotenie)</li>
           <li><i class="fas fa-check check"></i>Prístup do celej komunity</li>
         </ul>
-        <button class="btn-plan btn-plan-gold" onclick="window.location='/'">Vybrať Online Premium</button>
+        <button class="btn-plan btn-plan-gold" onclick="openBuyModal('online_premium','⭐ Online Premium','67.90')">Kúpiť Online Premium</button>
       </div>
 
     </div>
@@ -484,13 +481,10 @@ let _stripeEnabled = false;
 let _subPlanId = null;
 
 // Bronze výber → najprv ponúkni Silver za cenu Bronze (ak je oprávnená)
-let _bronzeMode = null;
 function bronzeProceed(){
-  if(_bronzeMode==='sub') openSubscribeModal('bronze','🥉 Bronze','50');
-  else openBuyModal('bronze','🥉 Bronze','50');
+  openBuyModal('bronze','🥉 Bronze','50');
 }
-function chooseBronze(mode){
-  _bronzeMode = mode;
+function chooseBronze(){
   // Neprihlásená, alebo už využila skúšku, alebo už má Silver/Gold → bez upsellu
   const m = _pricingMe && _pricingMe.membership;
   const hasHigher = m && (m.plan_id==='silver' || m.plan_id==='gold');
@@ -592,6 +586,9 @@ function openBuyModal(planId, planName, price, childId){
   _buyPlanId = planId;
   _buyChildId = childId || null;
   _buyPrice = parseFloat(price);
+  const isMonthly = !['vstup1','permanentka10'].includes(planId);
+  document.getElementById('buyRenewRow').style.display = (isMonthly && _stripeEnabled) ? 'flex' : 'none';
+  document.getElementById('buyRenewCheckbox').checked = isMonthly && _stripeEnabled;
   const credit = _pricingMe.referral_credit||0;
   const creditApply = Math.min(credit, _buyPrice);
   const finalPrice = Math.max(0, +(_buyPrice - creditApply).toFixed(2));
@@ -618,8 +615,9 @@ async function payWithStripe(){
   if(!_buyPlanId) return;
   const btn = document.getElementById('buyStripeBtn');
   btn.disabled = true; btn.innerHTML = '⏳ Presmerovávam na bezpečnú platbu…';
+  const renew = document.getElementById('buyRenewCheckbox').checked && document.getElementById('buyRenewRow').style.display!=='none';
   try {
-    const r = await fetch('/api/stripe/checkout',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+    const r = await fetch(renew ? '/api/stripe/subscribe' : '/api/stripe/checkout',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({plan_id:_buyPlanId, for_child_id:_buyChildId||undefined, promo_code:_buyPromo?_buyPromo.code:undefined})}).then(r=>r.json());
     if(r.ok && r.url){ window.location.href = r.url; return; }
     alert('Chyba: '+(r.error||'nepodarilo sa spustiť platbu'));
@@ -629,6 +627,11 @@ async function payWithStripe(){
 
 let _buyPromo = null; // {code, discount}
 function updateBuyTotal(){
+  const renewOn = document.getElementById('buyRenewRow').style.display!=='none' && document.getElementById('buyRenewCheckbox').checked;
+  const manualBtn = document.getElementById('buyConfirmBtn');
+  const manualTxt = document.getElementById('buyManualHint');
+  if(manualBtn) manualBtn.style.display = renewOn ? 'none' : 'block';
+  if(manualTxt) manualTxt.style.display = renewOn ? 'none' : 'block';
   const credit = _pricingMe?.referral_credit||0;
   const promoDisc = _buyPromo ? Math.min(_buyPromo.discount, _buyPrice) : 0;
   const base = Math.max(0, +(_buyPrice - promoDisc).toFixed(2));
@@ -668,8 +671,8 @@ async function confirmBuy(){
     document.getElementById('buyModal').style.display='none';
     if(r.ok){
       const msg = r.final_price===0
-        ? `✅ Členstvo aktivované pomocou referral kreditu!`
-        : `✅ Žiadosť odoslaná! ${r.credit_used>0?`Kredit ${r.credit_used.toFixed(2)} € uplatnený. `:''} Zostatok na úhradu: ${r.final_price?.toFixed(2)} €`;
+        ? `✅ Aktivované pomocou kreditu/zľavy!`
+        : `✅ Objednávka prijatá!\n\nZaplať ${r.final_price?.toFixed(2)} € v hotovosti na najbližšej hodine alebo prevodom.${r.credit_used>0?` (Kredit ${r.credit_used.toFixed(2)} € už je uplatnený.)`:''}\n\nHneď po prijatí platby ti všetko aktivujeme a príde ti potvrdenie do notifikácií aj na email.`;
       alert(msg);
       // Refresh credit in nav
       const me2 = await fetch('/api/me',{credentials:'include'}).then(r=>r.json());
@@ -739,7 +742,11 @@ async function confirmBuy(){
 <div id="buyModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center">
   <div style="background:#1a1a1a;border:1px solid rgba(201,168,76,.3);border-radius:1.2rem;padding:2rem;max-width:400px;width:92%;position:relative">
     <button onclick="document.getElementById('buyModal').style.display='none'" style="position:absolute;top:14px;right:14px;background:none;border:none;color:#888;font-size:1.3rem;cursor:pointer">✕</button>
-    <div style="font-size:1.1rem;font-weight:800;color:#F5EDD6;margin-bottom:20px" id="buyModalTitle">Členstvo</div>
+    <div style="font-size:1.1rem;font-weight:800;color:#F5EDD6;margin-bottom:14px" id="buyModalTitle">Členstvo</div>
+    <label id="buyRenewRow" style="display:none;align-items:center;gap:10px;background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.3);border-radius:.75rem;padding:10px 12px;margin-bottom:14px;cursor:pointer;font-size:.85rem;color:#EAE3D5">
+      <input type="checkbox" id="buyRenewCheckbox" checked onchange="updateBuyTotal()" style="accent-color:#C9A84C;width:17px;height:17px">
+      <span>🔄 <b>Obnovovať automaticky</b> každý mesiac kartou<br><small style="color:rgba(234,227,213,.55)">Žiadny záväzok — zrušíš jedným klikom v profile</small></span>
+    </label>
     <!-- Price breakdown -->
     <div style="background:#111;border-radius:.75rem;padding:14px;margin-bottom:16px">
       <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:.88rem">
@@ -772,7 +779,7 @@ async function confirmBuy(){
        Zaplatiť kartou &nbsp;·&nbsp; Apple Pay &nbsp;·&nbsp; Google Pay
     </button>
     <div id="buyStripeDivider" style="display:none;text-align:center;font-size:.72rem;color:rgba(234,227,213,.4);margin-bottom:10px;letter-spacing:.1em;text-transform:uppercase">alebo</div>
-    <p style="font-size:.78rem;color:rgba(234,227,213,.45);margin-bottom:14px">Platba prevodom na účet alebo v hotovosti na mieste. Členstvo aktivujeme po prijatí platby.</p>
+    <p id="buyManualHint" style="font-size:.78rem;color:rgba(234,227,213,.45);margin-bottom:14px">💵 Zaplatíš v hotovosti na hodine alebo prevodom — aktivujeme hneď po prijatí platby a príde ti potvrdenie.</p>
     <button id="buyConfirmBtn" onclick="confirmBuy()" style="width:100%;padding:.8rem;background:var(--dark-4,#221E19);border:1px solid var(--gold-border,rgba(201,162,76,.28));border-radius:.75rem;font-weight:700;color:var(--cream,#EAE3D5);cursor:pointer;font-size:.95rem">
       <span id="buyBtnLabel">Prevod / hotovosť</span>
     </button>

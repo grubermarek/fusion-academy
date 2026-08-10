@@ -186,6 +186,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- SALE -->
   <div id="s-sale" class="section">
+    <div id="manualPayQueue"></div>
     <h4 class="fw-bold mb-4">➕ Zaznamenať predaj (manuálne)</h4>
     <div class="row">
       <div class="col-md-6"><div class="card border-0 rounded-3 p-4">
@@ -4554,7 +4555,36 @@ async function loadUsersLite(force){
   _usersLiteMap = Object.fromEntries(_usersLite.map(u=>[u.id,u]));
   return _usersLite;
 }
+async function loadManualPayQueue(){
+  const box=document.getElementById('manualPayQueue'); if(!box) return;
+  try{
+    const d=await api('/api/admin/manual-payments');
+    if(!d?.payments?.length){ box.innerHTML=''; return; }
+    box.innerHTML=`<div class="card mb-4" style="background:#2a2410;border:1px solid #C9A84C"><div class="card-body">
+      <h6 class="fw-bold mb-2" style="color:#C9A84C">💰 Čakajúce platby z cenníka (hotovosť / prevod) — ${d.payments.length}</h6>
+      <div class="small text-muted mb-2">Klient si objednal v appke a zaplatí na mieste alebo prevodom. Po prijatí peňazí potvrď — členstvo/vstupy sa aktivujú automaticky, s dokladom aj notifikáciou.</div>
+      ${d.payments.map(p=>`<div class="d-flex justify-content-between align-items-center border-bottom border-secondary py-2 small flex-wrap gap-2">
+        <span><b>${p.user}</b> <span class="text-muted">${p.email}</span><br>
+          <small>${p.description} · <b style="color:#C9A84C">${eur(p.amount)}</b> · ${new Date(p.created_at).toLocaleString('sk')}</small></span>
+        <span class="d-flex gap-1">
+          <button class="btn btn-sm btn-success" onclick="mpConfirm('${p.id}','cash')">💶 Hotovosť</button>
+          <button class="btn btn-sm btn-outline-success" onclick="mpConfirm('${p.id}','transfer')">🏦 Prevod</button>
+          <button class="btn btn-sm btn-outline-danger" onclick="mpCancel('${p.id}')">✕</button>
+        </span></div>`).join('')}
+    </div></div>`;
+  }catch(e){ box.innerHTML=''; }
+}
+async function mpConfirm(id,method){
+  const r=await fetch('/api/admin/manual-payments/'+id+'/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({method})}).then(r=>r.json());
+  if(!r.ok) alert(r.error||'Chyba'); loadManualPayQueue();
+}
+async function mpCancel(id){
+  if(!confirm('Zrušiť žiadosť? Klientovi príde notifikácia a vráti sa mu použitý kredit.')) return;
+  await fetch('/api/admin/manual-payments/'+id+'/cancel',{method:'POST'});
+  loadManualPayQueue();
+}
 async function loadSaleForm(){
+  loadManualPayQueue();
   const [partners,prods,recent,users]=await Promise.all([api('/api/admin/partners'),api('/api/products'),api('/api/transactions'),loadUsersLite(true)]);
   if(!prods)return;
   partnersCache=partners||[];productsCache=prods;
@@ -5419,6 +5449,11 @@ async function openAttClass(classId){
       <td><span style="color:var(--gold);font-weight:700">${a.visit_count}</span></td>
       <td><small class="text-muted">${a.booking_date||'—'}</small></td>
       <td>
+        ${a.entry_collected
+          ? `<span class="badge" style="background:rgba(76,175,80,.18);color:#4ade80;font-size:.7rem">💶 Vstup vybraný (${(+a.entry_collected.amount).toFixed(0)} €)</span>`
+          : (a.pay_on_site || (!a.membership && a.free_credits<=0 && a.single_entries<=0 && a.access_method!=='free_class' && !['membership','free_credit','single_entry','parent_membership','parent_free_credit','parent_single_entry'].includes(a.access_method))
+            ? `<button class="btn btn-sm" style="background:rgba(76,175,80,.15);color:#4ade80;border:1px solid rgba(76,175,80,.35);font-size:.75rem;padding:2px 8px"
+                onclick="collectEntry('${a.booking_id}','${escJs(a.name)}')">💶 Vybrať 10 €</button> ` : '')}
         <button class="btn btn-sm" style="background:rgba(244,67,54,.12);color:#f87171;border:1px solid rgba(244,67,54,.25);font-size:.75rem;padding:2px 8px"
                 onclick="cancelAttBooking('${a.booking_id}','${escJs(a.name)}')">Zrušiť</button>
       </td>
@@ -5505,6 +5540,16 @@ function openManualBooking(){
   clearMbUser();
 }
 
+async function collectEntry(bookingId, name){
+  const method=prompt(`Vybrať vstupné od ${name}:\n\n1 = 💶 hotovosť 10 €\n2 = 💳 karta 10 €\n3 = 🏦 prevod 10 €\n\nZadaj číslo (alebo inú sumu napr. "1 15" = hotovosť 15 €):`,'1');
+  if(method===null) return;
+  const parts=method.trim().split(/\s+/);
+  const m={'1':'cash','2':'card','3':'transfer'}[parts[0]]||'cash';
+  const amount=+parts[1]||10;
+  const r=await api('/api/admin/bookings/'+bookingId+'/collect',{method:'POST',body:{method:m, amount}});
+  if(r&&r.ok){ showToast(`💶 ${amount} € vybraných od ${name} — zapísané s dokladom ✓`,'success'); openAttClass(_attSelectedClass._id); }
+  else showToast('Chyba: '+(r?.error||'?'),'error');
+}
 async function cancelAttBooking(bookingId, name){
   if(!confirm(`Zrušiť rezerváciu pre ${name}?`)) return;
   const d = await api(`/api/attendance/booking/${bookingId}`,{method:'DELETE'});
