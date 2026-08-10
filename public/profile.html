@@ -551,11 +551,10 @@ function render(){
   if(P.can_receive_tips) loadTips();
   window.ambCopyLink=async(btn)=>{
     try{
-      const r=await fetch('/api/client/referral',{credentials:'include'}); const d=await r.json();
-      const code=d.referral_code||String(d.ref_link||'').split('ref=')[1]||'';
-      const link=location.origin+'/?ref='+code;
-      await navigator.clipboard.writeText(link);
-      btn.textContent='✅ Odkaz skopírovaný — pošli ho kamoške!';
+      const r=await fetch('/api/invite-message',{credentials:'include'}); const d=await r.json();
+      if(navigator.share){ try{ await navigator.share({text:d.message}); return; }catch(e){ if(e.name==='AbortError') return; } }
+      await navigator.clipboard.writeText(d.message);
+      btn.textContent='✅ Pozvánka skopírovaná — pošli ju kamoške!';
     }catch(e){ btn.textContent='Odkaz nájdeš na nástenke v appke'; }
   };
   window.showAmbModal=()=>{

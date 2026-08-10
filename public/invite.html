@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prvá hodina zadarmo – Fusion Academy</title>
+<link rel="icon" type="image/png" href="/logo-mark.png">
+<meta name="robots" content="noindex">
+<style>
+:root{--gold:#C9A84C;--cream:#EAE3D5;--muted:#b9b3a6}
+*{box-sizing:border-box}
+body{background:#12100a;color:var(--cream);font-family:'Inter',system-ui,sans-serif;margin:0;min-height:100dvh;display:flex;flex-direction:column}
+.wrap{max-width:440px;margin:0 auto;padding:22px 18px 40px;width:100%;flex:1}
+.brand{font-weight:900;color:var(--gold);letter-spacing:.06em;text-align:center;padding:6px 0 18px;font-size:.9rem}
+h1{font-size:1.65rem;line-height:1.2;margin:0 0 8px;text-align:center}
+.sub{color:var(--muted);text-align:center;margin:0 0 26px;font-size:1rem}
+.gold{color:var(--gold)}
+.step-label{color:var(--gold);font-size:.75rem;font-weight:800;letter-spacing:.12em;text-align:center;margin-bottom:14px}
+.card-btn{display:flex;align-items:center;justify-content:space-between;width:100%;background:#1a1712;border:1px solid #3a3428;border-radius:16px;padding:18px;margin-bottom:12px;color:var(--cream);font-size:1.05rem;font-weight:700;cursor:pointer;transition:.15s;text-align:left}
+.card-btn:active,.card-btn:hover{border-color:var(--gold);background:#211c14}
+.card-btn small{display:block;color:var(--muted);font-weight:400;font-size:.82rem;margin-top:3px}
+.card-btn .go{color:var(--gold);font-size:1.2rem}
+.cta{display:block;width:100%;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;border:none;border-radius:16px;padding:17px;font-weight:900;font-size:1.05rem;cursor:pointer;margin-top:6px}
+.cta:disabled{opacity:.5}
+input{width:100%;background:#1d1a15;border:1px solid #3a3428;color:var(--cream);border-radius:14px;padding:15px;font-size:1rem;margin-bottom:12px}
+input:focus{outline:none;border-color:var(--gold)}
+label{font-size:.85rem;color:var(--muted);display:block;margin-bottom:6px}
+.back{background:none;border:none;color:var(--muted);font-size:.85rem;cursor:pointer;padding:8px;margin-bottom:6px}
+.err{color:#ff8a80;font-size:.88rem;text-align:center;margin-top:10px;min-height:1.2em}
+.success-card{background:#1a1712;border:1px solid rgba(201,168,76,.4);border-radius:18px;padding:22px;margin:14px 0}
+.success-card .row{display:flex;gap:10px;margin-bottom:10px;font-size:1rem}
+.divider{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:.78rem;margin:18px 0;text-transform:uppercase;letter-spacing:.1em}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:#3a3428}
+.gsi-wrap{display:flex;justify-content:center;margin-bottom:4px;min-height:44px}
+.ghost{display:block;width:100%;background:none;border:1px solid #3a3428;color:var(--muted);border-radius:14px;padding:13px;font-size:.9rem;cursor:pointer;margin-top:10px}
+.tiny{background:none;border:none;color:#6e685c;font-size:.8rem;cursor:pointer;display:block;margin:14px auto 0}
+.spin{display:inline-block;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.fade{animation:fin .35s ease-out}
+@keyframes fin{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">FUSION ACADEMY</div>
+  <div id="host"><div style="text-align:center;color:var(--muted);padding:60px 0">Načítavam…</div></div>
+</div>
+<script>
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const CODE=location.pathname.split('/').pop();
+const TEST=new URLSearchParams(location.search).get('test')==='1';
+const MANAGE=new URLSearchParams(location.search).get('manage');
+const host=document.getElementById('host');
+// stav prežije aj OAuth redirect / zatvorenie (first-party, atribučné okno 30 dní)
+const ST_KEY='fa_invite_state';
+let ST=(()=>{ try{ const x=JSON.parse(localStorage.getItem(ST_KEY)||'{}');
+  return (x.code===CODE && Date.now()-(x.at||0)<30*24*3600*1000)?x:{}; }catch(e){ return {}; } })();
+function saveST(patch){ ST={...ST, ...patch, code:CODE, at:Date.now()}; localStorage.setItem(ST_KEY, JSON.stringify(ST)); }
+localStorage.setItem('fa_ref_code', CODE); // atribúcia aj pre klasickú registráciu neskôr
+let INFO=null, GCID=null;
+
+async function j(url,opts){ const r=await fetch(url,{credentials:'include',...opts,headers:{'Content-Type':'application/json',...(opts&&opts.headers||{})}}); const d=await r.json().catch(()=>({})); return {status:r.status, ...d}; }
+const tq=TEST?'&test=1':'';
+
+async function boot(){
+  if(MANAGE) return manageScreen();
+  const first=ST.clicked?'':'&first=1'.replace('&','&');
+  INFO=await j('/api/invite/'+encodeURIComponent(CODE)+'/info?'+(ST.clicked?'':'first=1')+tq);
+  if(!INFO.ok){ host.innerHTML='<div style="text-align:center;padding:60px 0">Táto pozvánka už nie je platná.<br><br><a href="https://fusionacademy.sk" style="color:var(--gold)">fusionacademy.sk</a></div>'; return; }
+  saveST({clicked:true});
+  try{ const cfg=await j('/api/config'); GCID=cfg.google_client_id||null; }catch(e){}
+  if(ST.done) return successScreen(ST.done);
+  if(ST.class_pick) return contactScreen();
+  if(ST.city) return classScreen();
+  landing();
+}
+function landing(){
+  host.innerHTML=`<div class="fade">
+    <h1>💃 Poď si s nami zatancovať</h1>
+    <p class="sub">${INFO.inviter?esc(INFO.inviter)+' ťa pozýva — t':'T'}voja prvá hodina je <b class="gold">ZADARMO</b>. ❤️</p>
+    <button class="cta" onclick="cityScreen()">VYBRAŤ PRVÚ HODINU</button>
+  </div>`;
+}
+function cityScreen(){
+  host.innerHTML=`<div class="fade">
+    <div class="step-label">KROK 1 Z 3</div>
+    <h1>Kde chceš prísť?</h1>
+    <p class="sub">Vyber si svoje mesto</p>
+    ${INFO.cities.map(c=>`<button class="card-btn" onclick="pickCity('${esc(c)}')"><span>📍 ${esc(c)}</span><span class="go">→</span></button>`).join('')}
+  </div>`;
+}
+async function pickCity(city){
+  saveST({city, class_pick:null});
+  classScreen();
+}
+async function classScreen(){
+  host.innerHTML='<div style="text-align:center;color:var(--muted);padding:60px 0"><span class="spin">⏳</span></div>';
+  const d=await j('/api/invite/'+encodeURIComponent(CODE)+'/classes?city='+encodeURIComponent(ST.city)+'&picked=1'+tq);
+  if(!d.ok||!d.classes.length){
+    host.innerHTML=`<div class="fade"><button class="back" onclick="cityScreen()">← späť</button>
+      <h1>Kedy chceš prísť?</h1><p class="sub">V meste ${esc(ST.city)} teraz nie sú voľné termíny — vyber si iné mesto.</p>
+      <button class="cta" onclick="cityScreen()">Vybrať iné mesto</button></div>`; return;
+  }
+  host.innerHTML=`<div class="fade">
+    <button class="back" onclick="cityScreen()">← ${esc(ST.city)} · zmeniť mesto</button>
+    <div class="step-label">KROK 2 Z 3</div>
+    <h1>Kedy chceš prísť?</h1>
+    <p class="sub">Najbližšie hodiny · 1 klik = výber</p>
+    ${d.classes.map(c=>`<button class="card-btn" onclick='pickClass(${JSON.stringify(c).replace(/'/g,"&#39;")})'>
+      <span>${c.emoji} <b>${esc(c.day_name).toUpperCase()}</b> ${c.time_start}<small>${esc(c.name)} · ${c.date.split('-').reverse().join('.')}${c.spots_left<=5?' · posledné '+c.spots_left+' miesta':''}</small></span>
+      <span class="go">→</span></button>`).join('')}
+  </div>`;
+}
+function pickClass(c){ saveST({class_pick:c}); contactScreen(); }
+function contactScreen(){
+  const c=ST.class_pick;
+  host.innerHTML=`<div class="fade">
+    <button class="back" onclick="classScreen()">← ${c.emoji} ${esc(c.day_name)} ${c.time_start} · zmeniť</button>
+    <div class="step-label">KROK 3 Z 3 — UŽ LEN MENO</div>
+    <h1>Ešte ťa spoznáme 🙂</h1>
+    <p class="sub">Žiadna registrácia, žiadne heslo.</p>
+    <div class="gsi-wrap" id="gsiInvite"></div>
+    <div class="divider" id="gsiDiv" style="display:none">alebo bez registrácie</div>
+    <label>Ako sa voláš?</label>
+    <input id="gName" placeholder="Meno a priezvisko" autocomplete="name" value="${esc(ST.name||'')}">
+    <label>Telefón alebo e-mail</label>
+    <input id="gContact" placeholder="0900 123 456 alebo email" autocomplete="email" inputmode="email" value="${esc(ST.contact||'')}">
+    <button class="cta" id="bookBtn" onclick="doBook()">REZERVOVAŤ ZADARMO</button>
+    <div class="err" id="bookErr"></div>
+  </div>`;
+  initGsi('gsiInvite','gsiDiv', onGoogleBeforeBook);
+}
+function initGsi(elId, divId, cb){
+  if(!GCID) return;
+  const render=()=>{ try{
+    google.accounts.id.initialize({client_id:GCID, callback:cb});
+    const el=document.getElementById(elId);
+    if(el){ google.accounts.id.renderButton(el,{theme:'filled_black',size:'large',shape:'pill',text:'continue_with',locale:'sk',width:300});
+      const dv=document.getElementById(divId); if(dv) dv.style.display='flex'; }
+  }catch(e){} };
+  if(window.google?.accounts?.id) render();
+  else{ const sc=document.createElement('script'); sc.src='https://accounts.google.com/gsi/client'; sc.async=true; sc.onload=render; document.head.appendChild(sc); }
+}
+// Google PRED bookingom: prihlás/vytvor účet so sponzorom z linku, potom rezervuj cez authed API
+async function onGoogleBeforeBook(resp){
+  const err=document.getElementById('bookErr'); if(err) err.textContent='';
+  try{
+    const d=await j('/api/auth/google',{method:'POST',body:JSON.stringify({credential:resp.credential, sponsorCode:CODE})});
+    if(!d.ok){ if(err) err.textContent=d.error||'Google prihlásenie zlyhalo'; return; }
+    const c=ST.class_pick;
+    const b=await j('/api/bookings',{method:'POST',body:JSON.stringify({class_id:c.id, booking_date:c.date})});
+    if(b.ok){ finish({city:ST.city, class_name:c.name, address:c.address, day:c.day_name, date:c.date, time:c.time_start, via_google:true}); }
+    else if(b.status===402){ if(err) err.textContent='Tento účet už prvú hodinu zadarmo využil — prihlás sa do appky a rezervuj tam. 💛'; }
+    else if(err) err.textContent=b.error||'Rezervácia zlyhala';
+  }catch(e){ if(err) err.textContent='Chyba pripojenia'; }
+}
+async function doBook(){
+  const name=document.getElementById('gName').value.trim();
+  const contact=document.getElementById('gContact').value.trim();
+  saveST({name, contact});
+  const err=document.getElementById('bookErr'); err.textContent='';
+  const btn=document.getElementById('bookBtn'); btn.disabled=true; btn.innerHTML='<span class="spin">⏳</span> Rezervujem…';
+  const c=ST.class_pick;
+  const d=await j('/api/invite/'+encodeURIComponent(CODE)+'/book',{method:'POST',
+    body:JSON.stringify({class_id:c.id, booking_date:c.date, name, contact})});
+  btn.disabled=false; btn.textContent='REZERVOVAŤ ZADARMO';
+  if(!d.ok){ err.textContent=d.error||'Skús to znova'; return; }
+  finish({...d.detail, manage_token:d.manage_token});
+}
+function finish(done){ saveST({done}); successScreen(done); }
+function successScreen(d){
+  host.innerHTML=`<div class="fade">
+    <h1>🎉 Tešíme sa na teba!</h1>
+    <p class="sub">Tvoja prvá hodina je <b class="gold">ZADARMO</b>.</p>
+    <div class="success-card">
+      <div class="row">📍 <b>${esc(d.city)}</b></div>
+      <div class="row">💃 ${esc(d.class_name)}</div>
+      ${d.address?`<div class="row">📌 ${esc(d.address)}</div>`:''}
+      <div class="row">📅 <b>${esc(d.day)} ${esc(String(d.date).split('-').reverse().join('.'))}</b></div>
+      <div class="row">🕐 <b>${esc(d.time)}</b></div>
+    </div>
+    <div class="success-card" style="border-color:#2e2a20">
+      <b>Čo si priniesť?</b>
+      <div class="row" style="margin-top:8px">💧 fľašu vody</div>
+      <div class="row">👟 športovú obuv</div>
+      <div class="row">👕 pohodlné športové oblečenie</div>
+      <div style="color:var(--muted);font-size:.88rem">To je všetko. ❤️</div>
+    </div>
+    ${d.via_google?`<button class="cta" onclick="location.href='/client-dashboard'">Otvoriť moje rezervácie</button>`:`
+    <p class="sub" style="margin:18px 0 8px">Chceš mať svoje rezervácie vždy poruke?</p>
+    <div class="gsi-wrap" id="gsiAfter"></div>
+    <button class="ghost" onclick="location.href='/?claim=1'">Vytvoriť účet inak</button>
+    ${d.manage_token?`<button class="ghost" onclick="location.href='/invite/${esc(CODE)}?manage=${esc(d.manage_token)}'">Nemôžeš prísť? Zmeniť termín</button>`:''}
+    <button class="tiny" onclick="this.textContent='Rezervácia platí — vidíme sa! 💛'">Teraz nie</button>`}
+  </div>`;
+  if(!d.via_google) initGsi('gsiAfter', null, onGoogleAfterBook);
+}
+// Google PO bookingu: email z Googlu = email guest účtu → server ho prepojí (bez duplicít)
+async function onGoogleAfterBook(resp){
+  const d=await j('/api/auth/google',{method:'POST',body:JSON.stringify({credential:resp.credential, sponsorCode:CODE})});
+  if(d.ok) location.href='/client-dashboard';
+}
+// ── Správa rezervácie bez loginu ──
+async function manageScreen(){
+  const d=await j('/api/invite-manage/'+encodeURIComponent(MANAGE));
+  if(!d.ok){ host.innerHTML='<div style="text-align:center;padding:60px 0">Odkaz nie je platný.</div>'; return; }
+  host.innerHTML=`<div class="fade">
+    <h1>Tvoje rezervácie</h1>
+    <p class="sub">${esc(d.name)}</p>
+    ${d.bookings.length? d.bookings.map(b=>`<div class="success-card">
+      <div class="row">💃 <b>${esc(b.class_name)}</b></div>
+      <div class="row">📍 ${esc(b.city)} · 📅 ${esc(b.date.split('-').reverse().join('.'))} · 🕐 ${esc(b.time)}</div>
+      <button class="ghost" onclick="mCancel('${b.id}')">Nemôžem prísť — zrušiť a vybrať iný termín</button>
+    </div>`).join('') : '<p class="sub">Nemáš aktívnu rezerváciu.</p><button class="cta" onclick="localStorage.removeItem(\\'fa_invite_state\\');location.href=\\'/invite/'+esc(CODE)+'\\'">Vybrať si termín</button>'}
+  </div>`;
+}
+async function mCancel(id){
+  if(!confirm('Zrušiť túto rezerváciu? Hneď si budeš môcť vybrať iný termín.')) return;
+  const d=await j('/api/invite-manage/'+encodeURIComponent(MANAGE)+'/cancel',{method:'POST',body:JSON.stringify({booking_id:id})});
+  if(d.ok){ localStorage.removeItem(ST_KEY); location.href='/invite/'+CODE; }
+  else alert(d.error||'Chyba');
+}
+boot();
+</script>
+</body>
+</html>

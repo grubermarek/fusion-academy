@@ -984,6 +984,14 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
         <p class="text-muted small mb-0">Prehľad bežiacich súťaží pre klientky — kto vedie, aké odmeny rozdať a koľko ich objednať.</p></div>
       <button class="btn btn-sm btn-outline-light" onclick="loadRefGoalReport()"><i class="bi bi-arrow-clockwise me-1"></i>Obnoviť</button>
     </div>
+    <!-- Pozvánkový funnel /invite — kde ženy odpadajú + top pozývateľky -->
+    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+        <h6 class="fw-bold mb-0" style="color:#C9A84C">💌 Pozvánkový funnel (/invite)</h6>
+        <button class="btn btn-sm btn-outline-warning" onclick="refFunnelTest()">🧪 Testovací link</button>
+      </div>
+      <div id="refFunnel" class="small text-muted">Načítavam…</div>
+    </div></div>
     <!-- Augustová referral výzva — kto priviedol koľko platiacich + odmeny -->
     <div class="card bg-dark border-secondary mb-3"><div class="card-body">
       <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
@@ -3059,7 +3067,33 @@ async function vSaveProgress(cid,n){
   vClassDetail(cid); loadVenceky();
 }
 
+async function loadRefFunnel(){
+  const el=document.getElementById('refFunnel'); if(!el) return;
+  try{
+    const d=await api('/api/admin/referral-funnel');
+    if(!d?.ok){ el.textContent='Nepodarilo sa načítať.'; return; }
+    const max=Math.max(1,...d.steps.map(s=>s.n));
+    el.innerHTML=`
+      <div class="mb-3">${d.steps.map((s,i)=>{
+        const prev=i? d.steps[i-1].n : s.n;
+        const conv=prev? Math.round(s.n/prev*100) : 100;
+        return `<div class="d-flex align-items-center gap-2 mb-1">
+          <span style="width:170px">${s.label}</span>
+          <div style="flex:1;height:16px;background:#26221a;border-radius:5px;overflow:hidden"><div style="height:100%;width:${Math.round(s.n/max*100)}%;background:#C9A84C"></div></div>
+          <b style="width:44px;text-align:right">${s.n}</b>
+          <span class="text-muted" style="width:110px">${i?`${conv} % z kroku vyššie · odpadlo ${Math.max(0,prev-s.n)}`:''}</span>
+        </div>`; }).join('')}</div>
+      ${d.inviters.length?`<table class="table table-dark table-sm small mb-0"><thead><tr>
+        <th>Pozvala</th><th class="text-center">Kliknutia</th><th class="text-center">Bookingy</th><th class="text-center">Prišli</th><th class="text-center">Nakúpili</th></tr></thead><tbody>
+        ${d.inviters.map(v=>`<tr><td><b>${v.name}</b></td><td class="text-center">${v.clicks}</td><td class="text-center">${v.booked}</td><td class="text-center">${v.attended}</td><td class="text-center" style="color:#8bc34a"><b>${v.purchased}</b></td></tr>`).join('')}
+      </tbody></table>`:'<div class="text-muted">Zatiaľ žiadne pozvánky — funnel sa naplní, keď klientky začnú posielať linky.</div>'}`;
+  }catch(e){ el.textContent='Chyba.'; }
+}
+function refFunnelTest(){
+  prompt('Testovací funnel (nešpiní štatistiky ani neposiela maily):\n\n1. Otvor tento link s ?test=1\n2. Ako kontakt zadaj čokoľvek@test-fa-qa.local\n3. Testovacie dáta zmaže bežná QA čistiaca migrácia\n\nLink:', location.origin+'/invite/MAREK21?test=1');
+}
 async function loadRefGoalReport(){
+  loadRefFunnel();
   const el=document.getElementById('refGoalReport'); if(!el) return;
   try{
     const r=await fetch('/api/admin/referral-goal-report'); const d=await r.json();

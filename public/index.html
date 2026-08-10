@@ -1085,7 +1085,7 @@ if(_preview){
 // ── AUTO-FILL REF CODE FROM URL ──────────────────────────────────────────────
 (async function(){
   const el=document.getElementById('rCode');
-  const ref=new URLSearchParams(location.search).get('ref');
+  const ref=new URLSearchParams(location.search).get('ref')||localStorage.getItem('fa_ref_code');
   if(ref){
     document.getElementById('codeGroup').style.display='block';
     if(el) el.value=ref.toUpperCase();

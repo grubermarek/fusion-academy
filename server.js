@@ -189,6 +189,7 @@ const db = {
   venceky_costs:    new Datastore({ filename: path.join(DATA_DIR, 'venceky_costs.db'),    autoload: true }),
   venceky_attendance:new Datastore({ filename: path.join(DATA_DIR, 'venceky_attendance.db'), autoload: true }),
   venceky_slots:    new Datastore({ filename: path.join(DATA_DIR, 'venceky_slots.db'),    autoload: true }),
+  referral_events:  new Datastore({ filename: path.join(DATA_DIR, 'referral_events.db'),  autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -1895,12 +1896,13 @@ app.post('/api/register', rlSignup, async(req,res)=>{
     // ── Existujúci e-mail? Ak je to importovaný lead bez účtu, „claimni" ho ───────
     const existing=await q.one(db.users,{email:emailNorm});
     if(existing){
-      if(!existing.password && ((existing.imported && !existing.claimed) || existing.pw_reset)){
+      if(!existing.password && ((existing.imported && !existing.claimed) || existing.pw_reset || existing.guest)){
         const set={ password:await bcrypt.hash(password,10), claimed:true, pw_reset:false,
           name: (name||existing.name), phone: (phone||existing.phone||''),
           city: String(req.body.city||existing.city||'').trim().slice(0,60),
           consent_at: req.body.consent ? nowISO() : existing.consent_at,
-          free_credits: Math.max(existing.free_credits||0, 1) }; // aspoň 1 hodina zdarma za vytvorenie účtu (nestackuje)
+          free_credits: existing.guest ? (existing.free_credits||0) : Math.max(existing.free_credits||0, 1) }; // guest už má prvú hodinu cez booking — nestackovať
+        if(existing.guest){ set.guest=false; }
         await q.update(db.users,{_id:existing._id},{$set:set});
         req.session.uid=existing._id;
         req.session.sv=existing.sess_ver||0;
@@ -2231,6 +2233,204 @@ app.get('/api/shop/locations', (req,res)=>res.json(LOCATIONS));
 // Vracia týždenný rozvrh + najbližší termín každej hodiny s voľnými miestami,
 // aktuálnym trénerom (vrátane výmen) a príznakom zrušenia. Cache 5 minút.
 let pubSchedCache=null;
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🎟️ POZVÁNKOVÝ FUNNEL — /invite/:code
+// Kamoška pošle link → nová klientka si BEZ registrácie vyberie mesto a hodinu,
+// nechá meno + kontakt a má rezervovanú prvú hodinu zdarma. Guest účet (lead)
+// sa neskôr claimne registráciou/Googlom — žiadny paralelný systém, žiadne duplicity.
+// ═══════════════════════════════════════════════════════════════════════════════
+const INVITE_MSG = code =>
+  'Poď so mnou na Zumbu! 💃❤️\n' +
+  'Prvú hodinu máš úplne ZADARMO.\n' +
+  'Vyber si, kde a kedy chceš prísť 👇\n' +
+  APP_URL + '/invite/' + code;
+const isTestContact = c => /@test-fa-qa\.local$/i.test(String(c||''));
+async function refEvent(sponsor, type, extra={}){
+  try{ await q.insert(db.referral_events,{ code:sponsor.referral_code, sponsor_id:sponsor._id,
+    type, ...extra, test:!!extra.test, created_at:nowISO(), day:today() }); }catch(e){}
+}
+async function inviterByCode(code){
+  const c=String(code||'').replace(/[^a-zA-Z0-9]/g,'');
+  if(!c) return null;
+  return await q.one(db.users,{referral_code:new RegExp('^'+c+'$','i')});
+}
+// Info + mestá (log kliknutia raz na návštevu — klient pošle first=1)
+app.get('/api/invite/:code/info', async(req,res)=>{
+  try{
+    const sp=await inviterByCode(req.params.code);
+    if(!sp || sp.active===false) return res.status(404).json({error:'Pozvánka nie je platná'});
+    if(req.query.first==='1') refEvent(sp,'click',{test:req.query.test==='1'});
+    const classes=await q.find(db.classes,{active:true});
+    const cities=[...new Set(classes.filter(c=>c.location && c.location!=='Online' && !/súkromn/i.test(c.name)).map(c=>c.location))];
+    res.json({ok:true, inviter:String(sp.name||'').split(' ')[0], cities});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Najbližšie hodiny v meste (reálna kapacita, bez zrušených/plných/online/súkromných)
+app.get('/api/invite/:code/classes', async(req,res)=>{
+  try{
+    const sp=await inviterByCode(req.params.code);
+    if(!sp) return res.status(404).json({error:'Pozvánka nie je platná'});
+    const city=String(req.query.city||'');
+    if(req.query.picked==='1') refEvent(sp,'city',{city, test:req.query.test==='1'});
+    const classes=(await q.find(db.classes,{active:true}))
+      .filter(c=>c.location===city && c.category!=='Online' && !/súkromn/i.test(c.name));
+    const out=[];
+    for(const c of classes){
+      const date=displayNextDateForDay(c.day_of_week);
+      if(await q.one(db.class_cancellations,{class_id:c._id, date})) continue;
+      const booked=(await q.find(db.bookings,{class_id:c._id, booking_date:date})).filter(b=>b.status!=='cancelled').length;
+      const left=c.capacity? Math.max(0,(+c.capacity)-booked):99;
+      if(left<=0) continue;
+      out.push({ id:c._id, name:c.name, emoji:c.emoji||'💃', day_name:DAYS_SK[c.day_of_week],
+        date, time_start:c.time_start, time_end:c.time_end||'', address:c.address||'', spots_left:left,
+        instructor:c.instructor||'' });
+    }
+    out.sort((a,b)=>a.date.localeCompare(b.date)||a.time_start.localeCompare(b.time_start));
+    res.json({ok:true, classes:out.slice(0,8)});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Guest booking — len meno + kontakt (email ALEBO telefón)
+app.post('/api/invite/:code/book', rlPublic, async(req,res)=>{
+  try{
+    const sp=await inviterByCode(req.params.code);
+    if(!sp) return res.status(404).json({error:'Pozvánka nie je platná'});
+    const name=String(req.body.name||'').trim().slice(0,80);
+    const contact=String(req.body.contact||'').trim().slice(0,120);
+    if(name.length<2) return res.status(400).json({error:'Napíš nám svoje meno 🙂'});
+    const isEmail=/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(contact);
+    const isPhone=/^[+0-9][0-9 /-]{8,}$/.test(contact);
+    if(!isEmail && !isPhone) return res.status(400).json({error:'Zadaj platný e-mail alebo telefónne číslo'});
+    const test=isTestContact(contact);
+    const cls=await q.one(db.classes,{_id:String(req.body.class_id||'')});
+    if(!cls||!cls.active||cls.category==='Online') return res.status(404).json({error:'Hodina nenájdená'});
+    const bdate=String(req.body.booking_date||displayNextDateForDay(cls.day_of_week));
+    if(await q.one(db.class_cancellations,{class_id:cls._id, date:bdate})) return res.status(400).json({error:'Táto hodina je zrušená — vyber si prosím inú.'});
+    const booked=(await q.find(db.bookings,{class_id:cls._id, booking_date:bdate})).filter(b=>b.status!=='cancelled').length;
+    if(cls.capacity && booked>=cls.capacity) return res.status(400).json({error:'Hodina je už plná — vyber si prosím inú.'});
+    // Existujúci klient podľa kontaktu? Žiadna druhá „prvá zdarma", žiadny duplicitný lead.
+    let u = isEmail ? await q.one(db.users,{email:contact.toLowerCase()}) : null;
+    if(!u && isPhone){ const digits=contact.replace(/[^0-9]/g,'').slice(-9);
+      u=(await q.find(db.users,{})).find(x=>String(x.phone||'').replace(/[^0-9]/g,'').endsWith(digits)&&digits.length>=9); }
+    let isNew=false;
+    if(u){
+      if(u.free_class_used) return res.status(409).json({error:'Tento kontakt už u nás má účet a prvú hodinu zadarmo si už vyskúšal(a). Prihlás sa do appky a rezervuj si hodinu tam. 💛', existing:true});
+    } else {
+      isNew=true;
+      const base=name.split(' ')[0].toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8)||'GUEST';
+      let code=base+Math.floor(10+Math.random()*90);
+      while(await q.one(db.users,{referral_code:code})) code=base+Math.floor(100+Math.random()*900);
+      u=await q.insert(db.users,{ name, email:isEmail?contact.toLowerCase():('guest-'+Date.now().toString(36)+'@guest.fusionacademy.sk'),
+        phone:isPhone?contact:'', password:null, guest:true, referral_code:code, sponsor_id:sp._id,
+        rank:1, is_admin:false, active:true, user_type:'lead', lead_source:'referral',
+        visit_count:0, referral_credit:0, city:cls.location, consent_at:nowISO(), created_at:today(),
+        manage_token:'MG'+Math.random().toString(36).slice(2,12).toUpperCase() });
+    }
+    if(await q.one(db.bookings,{class_id:cls._id, user_id:u._id, booking_date:bdate, status:{$ne:'cancelled'}}))
+      return res.status(400).json({error:'Na túto hodinu už máš rezerváciu 🙂'});
+    if(!u.manage_token){ u.manage_token='MG'+Math.random().toString(36).slice(2,12).toUpperCase();
+      await q.update(db.users,{_id:u._id},{$set:{manage_token:u.manage_token}}); }
+    const booking=await q.insert(db.bookings,{
+      class_id:cls._id, class_name:cls.name, class_emoji:cls.emoji||'💃',
+      class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
+      day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
+      user_id:u._id, user_name:u.name, user_email:/@guest\./.test(u.email)?'':u.email, user_phone:u.phone||'',
+      booking_date:bdate, status:'confirmed', notes:'', free_class:!u.free_class_used,
+      access_method:'free_class', source:'invite', invited_by:sp._id, created_at:nowISO() });
+    await q.update(db.users,{_id:u._id},{$set:{free_class_used:true, winback_sent:false}});
+    refEvent(sp,'booked',{guest_id:u._id, class_id:cls._id, booking_id:booking._id, city:cls.location, test});
+    if(!test){
+      await q.insert(db.notifications,{user_id:sp._id, type:'referral',
+        title:'🎉 Tvoja kamoška sa prihlásila!',
+        body:name+' si cez tvoju pozvánku rezervovala prvú hodinu ('+cls.name+', '+bdate+'). Držíme palce, nech jej to chytí srdce! 💛',
+        read:false, created_at:nowISO()}).catch(()=>{});
+      try{ const admins=await q.find(db.users,{is_admin:true});
+        for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'new_lead',
+          title:'🆕 Guest booking cez pozvánku', body:name+' ('+contact+') → '+cls.name+' '+bdate+' · pozvala '+sp.name,
+          read:false, created_at:nowISO()}); }catch(e){}
+      if(isEmail) sendMail(contact, 'Tešíme sa na teba! 💃 Prvá hodina zdarma je rezervovaná',
+        emailTemplate('Tešíme sa na teba! 💃',
+        '<p>Tvoja prvá Zumba hodina <b>zadarmo</b> je rezervovaná:</p>'+
+        '<p>📍 <b>'+cls.location+'</b><br>📌 '+(cls.address||'')+'<br>📅 <b>'+DAYS_SK[cls.day_of_week]+' '+bdate.split('-').reverse().join('.')+'</b><br>🕐 <b>'+cls.time_start+'</b></p>'+
+        '<p>Priniesť si stačí 💧 vodu, 👟 športovú obuv a 👕 pohodlné oblečenie.</p>'+
+        '<p>Nemôžeš prísť? Termín zmeníš alebo zrušíš tu: <a href="'+APP_URL+'/invite/'+sp.referral_code+'?manage='+u.manage_token+'">zmeniť rezerváciu</a></p>',
+        '📍 Detaily rezervácie', APP_URL+'/invite/'+sp.referral_code+'?manage='+u.manage_token)).catch(()=>{});
+    }
+    res.json({ok:true, booking_id:booking._id, manage_token:u.manage_token, is_new:isNew,
+      detail:{ city:cls.location, class_name:cls.name, address:cls.address||'', day:DAYS_SK[cls.day_of_week],
+        date:bdate, time:cls.time_start } });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Správa guest rezervácie bez loginu (zmena termínu / zrušenie)
+app.get('/api/invite-manage/:token', async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{manage_token:req.params.token});
+    if(!u) return res.status(404).json({error:'Odkaz nie je platný'});
+    const bs=(await q.find(db.bookings,{user_id:u._id})).filter(b=>b.status==='confirmed' && b.booking_date>=today());
+    res.json({ok:true, name:u.name, bookings:bs.map(b=>({id:b._id, class_name:b.class_name, date:b.booking_date, time:b.class_time_start, city:b.class_location}))});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/invite-manage/:token/cancel', rlPublic, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{manage_token:req.params.token});
+    if(!u) return res.status(404).json({error:'Odkaz nie je platný'});
+    const b=await q.one(db.bookings,{_id:String(req.body.booking_id||''), user_id:u._id});
+    if(!b) return res.status(404).json({error:'Rezervácia nenájdená'});
+    await q.update(db.bookings,{_id:b._id},{$set:{status:'cancelled', cancelled_at:nowISO(), cancel_source:'invite_manage'}});
+    // prvá zdarma sa vracia, nech si vie vybrať iný termín
+    if(b.access_method==='free_class') await q.update(db.users,{_id:u._id},{$set:{free_class_used:false}});
+    await promoteWaitlist(b.class_id, b.booking_date).catch(()=>{});
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Text pozvánky pre „Pozvať kamošku" (jednotný v celej appke)
+app.get('/api/invite-message', auth, async(req,res)=>{
+  try{ const u=await q.one(db.users,{_id:req.session.uid});
+    res.json({ok:true, code:u.referral_code, link:APP_URL+'/invite/'+u.referral_code, message:INVITE_MSG(u.referral_code)});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Admin: referral funnel (kliky → mestá → hodiny → bookingy → prišli → kúpili)
+app.get('/api/admin/referral-funnel', adminAuth, async(req,res)=>{
+  try{
+    const ev=(await q.find(db.referral_events,{})).filter(e=>!e.test);
+    const cnt=t=>ev.filter(e=>e.type===t).length;
+    const bookedEv=ev.filter(e=>e.type==='booked');
+    const guestIds=[...new Set(bookedEv.map(e=>e.guest_id).filter(Boolean))];
+    let attended=0, purchased=0, second=0;
+    for(const gid of guestIds){
+      const bs=await q.find(db.bookings,{user_id:gid});
+      const att=bs.filter(b=>b.status==='attended').length;
+      if(att>=1) attended++;
+      if(att>=2) second++;
+      if(await q.one(db.transactions,{user_id:gid})) purchased++;
+    }
+    const steps=[
+      {label:'Otvorili pozvánku', n:cnt('click')},
+      {label:'Vybrali mesto', n:cnt('city')},
+      {label:'Rezervovali hodinu', n:cnt('booked')},
+      {label:'Prišli na 1. hodinu', n:attended},
+      {label:'Nakúpili', n:purchased},
+      {label:'Prišli na 2. hodinu', n:second},
+    ];
+    // per pozývajúca klientka
+    const bySp={};
+    for(const e of ev){ const k=e.sponsor_id; bySp[k]=bySp[k]||{clicks:0,booked:0,guests:new Set()};
+      if(e.type==='click') bySp[k].clicks++;
+      if(e.type==='booked'){ bySp[k].booked++; if(e.guest_id) bySp[k].guests.add(e.guest_id); } }
+    const users=await q.find(db.users,{});
+    const uMap=Object.fromEntries(users.map(x=>[x._id,x.name]));
+    const inviters=[];
+    for(const [sid,d] of Object.entries(bySp)){
+      let att=0, buy=0;
+      for(const gid of d.guests){ const bs=await q.find(db.bookings,{user_id:gid});
+        if(bs.some(b=>b.status==='attended')) att++;
+        if(await q.one(db.transactions,{user_id:gid})) buy++; }
+      inviters.push({name:uMap[sid]||'?', clicks:d.clicks, booked:d.booked, attended:att, purchased:buy});
+    }
+    inviters.sort((a,b)=>b.booked-a.booked);
+    res.json({ok:true, steps, inviters:inviters.slice(0,30)});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/public/schedule', async(req,res)=>{
   try{
     res.setHeader('Access-Control-Allow-Origin','*');
@@ -12412,6 +12612,7 @@ app.get('/pricing',    (req,res)=>res.sendFile(path.join(__dirname,'public','pri
 app.get('/u/:id',      (req,res)=>res.sendFile(path.join(__dirname,'public','profile.html')));
 app.get('/vencek',     (req,res)=>res.sendFile(path.join(__dirname,'public','vencek.html')));
 app.get('/vencek-booking', (req,res)=>res.sendFile(path.join(__dirname,'public','vencek-booking.html')));
+app.get('/invite/:code', (req,res)=>res.sendFile(path.join(__dirname,'public','invite.html')));
 app.get('/terms',      (req,res)=>res.sendFile(path.join(__dirname,'public','terms.html')));
 app.get('/dashboard',  (req,res)=>res.sendFile(path.join(__dirname,'public','dashboard.html')));
 app.get('/admin',      (req,res)=>res.sendFile(path.join(__dirname,'public','admin.html')));

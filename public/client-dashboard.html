@@ -2473,7 +2473,7 @@ async function loadRefGoal(){
         <div style="font-size:1.25rem;font-weight:900;color:#fff;line-height:1.25;margin-bottom:8px">Priveď kamošku, <span style="color:var(--gold)">taška je tvoja</span>.</div>
         <div style="font-size:.82rem;color:#b9b3a6;margin-bottom:6px">Pozvi kamošku cez svoj odkaz. Keď sa zaregistruje a kúpi si členstvo alebo permanentku, získavaš odmenu:</div>
         ${rewardRows}
-        <button onclick="window.copyMyRefLink()" style="margin-top:14px;background:linear-gradient(135deg,#C9A84C,#a5842f);color:#161310;border:none;border-radius:999px;padding:11px 22px;font-weight:800;font-size:.9rem;cursor:pointer">🔗 Skopírovať môj odkaz</button>
+        <button onclick="window.inviteFriend()" style="margin-top:14px;background:linear-gradient(135deg,#C9A84C,#a5842f);color:#161310;border:none;border-radius:999px;padding:12px 24px;font-weight:800;font-size:.95rem;cursor:pointer">❤️ POZVAŤ KAMOŠKU ZDARMA</button>
       </div>
       <img src="/promo-taska-fusion.jpg" alt="Športová taška Fusion — limitovaná edícia" loading="lazy"
         style="width:100%;border-radius:12px;border:1px solid rgba(201,168,76,.3);cursor:pointer" onclick="window.copyMyRefLink()">
@@ -2502,12 +2502,21 @@ async function loadRefGoal(){
       : `👑 Máš všetky odmeny — ozveme sa ti s odovzdaním. Každá ďalšia kamoška = ďalšie body do súťaže!`}</div>
   </div>`;
 }
+// Jednotná pozvánka (celá appka používa ten istý /invite link + text)
+async function getInviteMsg(){
+  try{ const d=await api('/api/invite-message'); if(d?.ok) return d; }catch(e){}
+  const code=_me?.referral_code||'';
+  return {message:'Poď so mnou na Zumbu! 💃❤️\nPrvú hodinu máš úplne ZADARMO.\nVyber si, kde a kedy chceš prísť 👇\n'+location.origin+'/invite/'+code, link:location.origin+'/invite/'+code};
+}
+window.inviteFriend=async()=>{
+  const inv=await getInviteMsg();
+  if(navigator.share){ try{ await navigator.share({text:inv.message}); return; }catch(e){ if(e.name==='AbortError') return; } }
+  copyMyRefLink();
+};
 window.copyMyRefLink=async()=>{
-  let code=_me?.referral_code;
-  if(!code){ try{ const r=await api('/api/client/referral'); code=r?.code||String(r?.ref_link||'').split('ref=')[1]||''; }catch(e){} }
-  const link=location.origin+'/?ref='+(code||'');
-  try{ await navigator.clipboard.writeText(link); showToast('🔗 Tvoj odkaz je skopírovaný — pošli ho kamoške!','success'); }
-  catch(e){ const i=document.createElement('input'); i.value=link; document.body.appendChild(i); i.select(); document.execCommand('copy'); i.remove(); showToast('🔗 Odkaz skopírovaný!','success'); }
+  const inv=await getInviteMsg();
+  try{ await navigator.clipboard.writeText(inv.message); showToast('💌 Pozvánka skopírovaná — pošli ju kamoške!','success'); }
+  catch(e){ const i=document.createElement('textarea'); i.value=inv.message; document.body.appendChild(i); i.select(); document.execCommand('copy'); i.remove(); showToast('💌 Pozvánka skopírovaná!','success'); }
 };
 // Rozpis vlastných bodov („Tvoje body" v súťažnom okne)
 window.mySpotBreakdown=()=>{
@@ -2568,7 +2577,7 @@ function renderSpotBoard(){
   // 🤝 Motivácia: pozvi kamošku = body do súťaže (nový mesiac začína od nuly)
   const refRow=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:rgba(139,195,74,.08);border:1px solid rgba(139,195,74,.35);border-radius:12px;padding:8px 13px;margin-bottom:10px">
     <span style="font-size:.82rem;color:#a5d6a7">🤝 <b>Pozvi kamošku</b> — +5 b. za privedenie a +30 b., keď sa stane členkou!</span>
-    <button onclick="event.stopPropagation();copyMyRefLink()" style="margin-left:auto;background:rgba(139,195,74,.15);border:1px solid #8bc34a;color:#8bc34a;border-radius:9px;padding:5px 11px;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap">🔗 Skopírovať môj odkaz</button>
+    <button onclick="event.stopPropagation();inviteFriend()" style="margin-left:auto;background:rgba(139,195,74,.15);border:1px solid #8bc34a;color:#8bc34a;border-radius:9px;padding:5px 11px;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap">❤️ Pozvať kamošku</button>
   </div><div id="refGoalWrap"></div>`;
   const header=`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
     <div class="sl-label" style="margin:0">${title}</div>${toggle}</div>${winnerCard}${countdown}${refRow}`;
