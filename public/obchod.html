@@ -172,7 +172,22 @@ function renderPlans(){
     online_premium:['online_premium','gold'],
   };
   const order=(my&&VISIBLE[my])?VISIBLE[my]:['bronze','silver','gold','online_basic','online_premium']; // kids zrušené — deti fungujú na bežných členstvách
-  document.getElementById('p-clenstva').innerHTML=order.map(id=>{
+  // Upsell CTA: čo NAVYŠE získa prechodom na vyšší plán (len rozdiel, žiadne opakovanie)
+  const UPSELL={
+    bronze:{to:'silver', gains:['🌍 Všetky 4 mestá namiesto jedného','🌐 ONLINE hodiny z domu v cene','📊 Metabolické meranie (Tanita) každý mesiac']},
+    silver:{to:'gold', gains:['🍽️ Jedálniček na mieru na celý týždeň','🤝 Pravidelné check-iny s trénerom','💸 20 % zľava na súkromné hodiny a eventy']},
+    online_basic:{to:'online_premium', gains:['🍽️ Jedálniček na mieru','📊 Mesačná metabolická analýza','🤝 Podpora osobného trénera']},
+    online_premium:{to:'gold', gains:['💃 Neobmedzené hodiny v štúdiu vo všetkých 4 mestách','🤝 Check-iny s trénerom naživo','💸 20 % zľava na súkromné hodiny a eventy']},
+  };
+  const up=my&&UPSELL[my];
+  const upsellCard=up?(()=>{const tp=PLANS[up.to]; const diff=+(tp.price-(PLANS[my]?.price||0)).toFixed(2);
+    return `<div class="pcard" style="border-color:var(--gold);background:linear-gradient(160deg,#241d10,#1a1712)">
+      <h3>✨ Prejdi na ${esc(tp.name)} a získaš navyše:</h3>
+      <ul>${up.gains.map(g=>`<li>${g}</li>`).join('')}</ul>
+      <p style="color:var(--muted)">Len o <b class="gold">${eur(diff)}</b> mesačne viac — a zvyšné dni tvojho ${esc(PLANS[my]?.name||'')} ti prerátame na kredit.</p>
+      <button class="buy" onclick="openPlan('${up.to}')">Prejsť na ${esc(tp.name)} →</button>
+    </div>`;})():'';
+  document.getElementById('p-clenstva').innerHTML=upsellCard+order.map(id=>{
     const p=PLANS[id]; if(!p) return '';
     const owned=my===id;
     return `<div class="pcard ${id==='silver'?'hl':''}">
