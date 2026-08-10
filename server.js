@@ -188,6 +188,7 @@ const db = {
   venceky_payments: new Datastore({ filename: path.join(DATA_DIR, 'venceky_payments.db'), autoload: true }),
   venceky_costs:    new Datastore({ filename: path.join(DATA_DIR, 'venceky_costs.db'),    autoload: true }),
   venceky_attendance:new Datastore({ filename: path.join(DATA_DIR, 'venceky_attendance.db'), autoload: true }),
+  venceky_slots:    new Datastore({ filename: path.join(DATA_DIR, 'venceky_slots.db'),    autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -12210,6 +12211,7 @@ app.get('/cennik',     (req,res)=>res.redirect(301,'/pricing'));
 app.get('/pricing',    (req,res)=>res.sendFile(path.join(__dirname,'public','pricing.html')));
 app.get('/u/:id',      (req,res)=>res.sendFile(path.join(__dirname,'public','profile.html')));
 app.get('/vencek',     (req,res)=>res.sendFile(path.join(__dirname,'public','vencek.html')));
+app.get('/vencek-booking', (req,res)=>res.sendFile(path.join(__dirname,'public','vencek-booking.html')));
 app.get('/terms',      (req,res)=>res.sendFile(path.join(__dirname,'public','terms.html')));
 app.get('/dashboard',  (req,res)=>res.sendFile(path.join(__dirname,'public','dashboard.html')));
 app.get('/admin',      (req,res)=>res.sendFile(path.join(__dirname,'public','admin.html')));
@@ -13221,6 +13223,94 @@ app.post('/api/admin/venceky/complete', adminAuth, async(req,res)=>{
         read:false, created_at:nowISO()}).catch(()=>{});
     }
     res.json({ok:true, students:students.length});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ═══ SAMOOBSLUŽNÉ BOOKOVANIE PRE ŠKOLY ═══
+// Admin definuje sloty (lekcie: mesto+deň+čas+lektor; večery: sobota+miesto).
+// Škola dostane booking link (token, bez účtu) a vyberie si ako letenku.
+app.post('/api/admin/venceky/slot', adminAuth, async(req,res)=>{
+  try{
+    const {kind, label, city, date, venue}=req.body;
+    if(!['lesson','evening'].includes(kind)) return res.status(400).json({error:'kind musí byť lesson/evening'});
+    if(!label) return res.status(400).json({error:'Zadaj popis slotu'});
+    const sl=await q.insert(db.venceky_slots,{kind, label:String(label).slice(0,120),
+      city:String(city||'').slice(0,60), date:String(date||'').slice(0,20),
+      venue:String(venue||'').slice(0,120), booked_by:null, created_at:nowISO()});
+    res.json({ok:true, slot:sl});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/venceky/slot-delete', adminAuth, async(req,res)=>{
+  try{
+    const sl=await q.one(db.venceky_slots,{_id:String(req.body.slot_id||'')});
+    if(sl?.booked_by) return res.status(400).json({error:'Slot je zabookovaný — najprv zruš booking'});
+    await q.remove(db.venceky_slots,{_id:String(req.body.slot_id||'')},{});
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/venceky/slot-unbook', adminAuth, async(req,res)=>{
+  try{ await q.update(db.venceky_slots,{_id:String(req.body.slot_id||'')},{$set:{booked_by:null,booked_at:null,booked_contact:null}});
+    res.json({ok:true}); }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.get('/api/admin/venceky/slots', adminAuth, async(req,res)=>{
+  try{
+    const slots=await q.find(db.venceky_slots,{});
+    const schools=await q.find(db.venceky_schools,{});
+    const byId=Object.fromEntries(schools.map(x=>[x._id,x.name]));
+    res.json({ok:true, slots:slots.map(sl=>({...sl, school_name:sl.booked_by?byId[sl.booked_by]||'?':null})),
+      schools:schools.map(x=>({id:x._id,name:x.name,booking_link:`${APP_URL}/vencek-booking?t=${x.booking_token||''}`,has_token:!!x.booking_token}))});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/venceky/booking-link', adminAuth, async(req,res)=>{
+  try{
+    const sch=await q.one(db.venceky_schools,{_id:String(req.body.school_id||'')});
+    if(!sch) return res.status(404).json({error:'Škola nenájdená'});
+    let token=sch.booking_token;
+    if(!token){ token='VB'+Math.random().toString(36).slice(2,10).toUpperCase();
+      await q.update(db.venceky_schools,{_id:sch._id},{$set:{booking_token:token}}); }
+    res.json({ok:true, link:`${APP_URL}/vencek-booking?t=${token}`});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Verejné (token) — škola vidí voľné sloty a bookuje
+app.get('/api/vencek-booking/:token', async(req,res)=>{
+  try{
+    const sch=await q.one(db.venceky_schools,{booking_token:req.params.token});
+    if(!sch) return res.status(404).json({error:'Neplatný booking odkaz'});
+    const slots=await q.find(db.venceky_slots,{});
+    const mine=slots.filter(sl=>sl.booked_by===sch._id);
+    res.json({ok:true, school:sch.name, year:sch.year,
+      my_lesson:mine.find(sl=>sl.kind==='lesson')||null,
+      my_evening:mine.find(sl=>sl.kind==='evening')||null,
+      lesson_slots:slots.filter(sl=>sl.kind==='lesson'&&!sl.booked_by).map(sl=>({id:sl._id,label:sl.label,city:sl.city})),
+      evening_slots:slots.filter(sl=>sl.kind==='evening'&&!sl.booked_by).map(sl=>({id:sl._id,label:sl.label,date:sl.date,venue:sl.venue}))});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/vencek-booking/:token', async(req,res)=>{
+  try{
+    const sch=await q.one(db.venceky_schools,{booking_token:req.params.token});
+    if(!sch) return res.status(404).json({error:'Neplatný booking odkaz'});
+    const sl=await q.one(db.venceky_slots,{_id:String(req.body.slot_id||'')});
+    if(!sl) return res.status(404).json({error:'Termín nenájdený'});
+    if(sl.booked_by) return res.status(409).json({error:'Tento termín si medzitým vybrala iná škola. Vyber si prosím iný.'});
+    const already=(await q.find(db.venceky_slots,{booked_by:sch._id})).find(x=>x.kind===sl.kind);
+    if(already) return res.status(400).json({error:'Tento typ termínu už máte vybraný. Ak ho chcete zmeniť, napíšte nám.'});
+    const contact=String(req.body.contact||'').slice(0,120);
+    await q.update(db.venceky_slots,{_id:sl._id},{$set:{booked_by:sch._id, booked_at:nowISO(), booked_contact:contact}});
+    // večer → zapíš event_date do všetkých tried školy (timeline pre žiakov/rodičov)
+    if(sl.kind==='evening' && sl.date)
+      await q.update(db.venceky_classes,{school_id:sch._id},{$set:{event_date:sl.date}},{multi:true});
+    try{ const admins=await q.find(db.users,{is_admin:true});
+      for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'venceky',
+        title:'📅 Škola si zabookovala termín',
+        body:`${sch.name}: ${sl.kind==='evening'?'venčekový večer':'lekcie'} — ${sl.label}${contact?' · kontakt: '+contact:''}`,
+        read:false, created_at:nowISO()}); }catch(e){}
+    if(contact && /@/.test(contact)) sendMail(contact,'📅 Potvrdenie termínu — Fusion Venčeky',
+      emailTemplate('Termín potvrdený',
+      `<p>Ďakujeme! Pre školu <b>${sch.name}</b> sme potvrdili ${sl.kind==='evening'?'<b>venčekový večer</b>':'<b>termín lekcií</b>'}: <b>${sl.label}</b>.</p>
+       <p>${sl.kind==='evening'?'Termín je zamknutý — rodičom pošleme save-the-date cez appku.':'Rezervácia platí na celý program. Tešíme sa na prvú lekciu! 💃'}</p>`,
+      '📱 Fusion Academy', APP_URL)).catch(()=>{});
+    res.json({ok:true});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 

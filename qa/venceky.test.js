@@ -125,6 +125,31 @@ const post = (jar, p, b) => call(jar, 'POST', p, b);
   const notifsF = ((await g('Z1', '/api/notifications')).data) || [];
   ok('absolventská notifikácia s kupónom VENCEKABS', notifsF.some(n => /VENCEKABS/.test(n.body || '')), notifsF.length);
 
+  // ── FÁZA 3: samoobslužný booking pre školy ──
+  const sl1 = await post('admin', '/api/admin/venceky/slot', { kind: 'lesson', label: 'Utorok 14:00 – 15:00', city: 'Zvolen' });
+  const sl2 = await post('admin', '/api/admin/venceky/slot', { kind: 'evening', label: 'Sobota 13.6.2027', date: '2027-06-13', venue: 'KD Zvolen' });
+  ok('sloty vytvorené', sl1.status === 200 && sl2.status === 200, { sl1: sl1.data, sl2: sl2.data });
+  const bl = await post('admin', '/api/admin/venceky/booking-link', { school_id: sch.data.school._id });
+  ok('booking link vygenerovaný', bl.status === 200 && /vencek-booking\?t=VB/.test(bl.data.link), bl.data);
+  const token = bl.data.link.split('t=')[1];
+  const pubGet = await g('pub', '/api/vencek-booking/' + token);
+  ok('škola vidí voľné sloty (bez účtu)', pubGet.data?.ok && pubGet.data.lesson_slots.length === 1 && pubGet.data.evening_slots.length === 1, pubGet.data);
+  const badTok = await g('pub', '/api/vencek-booking/VBNEEXISTUJE');
+  ok('neplatný token 404', badTok.status === 404, badTok.status);
+  const book1 = await post('pub', '/api/vencek-booking/' + token, { slot_id: sl1.data.slot._id, contact: 'riaditel@test-fa-qa.local' });
+  const book2 = await post('pub', '/api/vencek-booking/' + token, { slot_id: sl2.data.slot._id, contact: 'riaditel@test-fa-qa.local' });
+  ok('booking lekcií + večera prešiel', book1.status === 200 && book2.status === 200, { book1: book1.data, book2: book2.data });
+  const bookDup = await post('pub', '/api/vencek-booking/' + token, { slot_id: sl1.data.slot._id, contact: 'x@test-fa-qa.local' });
+  ok('kolízia/duplicita odmietnutá', bookDup.status === 409 || bookDup.status === 400, bookDup.status);
+  const pubGet2 = await g('pub', '/api/vencek-booking/' + token);
+  ok('škola vidí svoje potvrdené termíny', pubGet2.data?.my_lesson && pubGet2.data?.my_evening, pubGet2.data);
+  const detE = (await g('admin', '/api/admin/venceky/class/' + cid)).data;
+  ok('event_date sa zapísal do triedy', detE.class.event_date === '2027-06-13', detE.class.event_date);
+  const slots = (await g('admin', '/api/admin/venceky/slots')).data || {};
+  ok('admin vidí sloty so školou', slots.slots?.every(x => x.school_name === 'ZŠ QA Testová'), slots.slots);
+  const notifsAdm = ((await g('admin', '/api/notifications')).data) || [];
+  ok('admin notifikácia o bookingu', notifsAdm.some(n => /zabookovala termín/.test(n.title || '')), notifsAdm.slice(0, 2));
+
   console.log(`\n═══ VÝSLEDOK: ${PASS} ✓ / ${FAIL} ✗ ═══`);
   if (FAIL) { console.log(FAILS.map(f => f.name).join('\n')); process.exit(1); }
 })().catch(e => { console.error('FATAL', e); process.exit(1); });

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Výber termínov – Fusion Venčeky</title>
+<link rel="icon" type="image/png" href="/logo-mark.png">
+<style>
+:root{--gold:#C9A84C;--cream:#e8e2d4;--muted:#b9b3a6}
+body{background:#12100a;color:var(--cream);font-family:'Inter',system-ui,sans-serif;margin:0;min-height:100vh}
+.wrap{max-width:680px;margin:0 auto;padding:20px 16px 80px}
+.brand{font-weight:900;color:var(--gold);letter-spacing:.06em;padding:12px 0}
+.hero{background:linear-gradient(160deg,#241d10,#171310);border:1px solid rgba(201,168,76,.4);border-radius:18px;padding:22px;text-align:center;margin-bottom:16px}
+.hero h1{margin:6px 0 4px;font-size:1.35rem}
+.hero .sub{color:var(--muted);font-size:.9rem}
+.step{background:#1a1712;border:1px solid #2e2a20;border-radius:14px;padding:16px;margin-bottom:14px}
+.step h3{margin:0 0 4px;font-size:1rem;color:#fff}
+.step .hint{color:var(--muted);font-size:.82rem;margin-bottom:12px}
+.slot{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid #3a3428;border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:.15s}
+.slot:hover{border-color:var(--gold)}
+.slot.sel{border-color:var(--gold);background:rgba(201,168,76,.1)}
+.slot b{font-size:.95rem}
+.slot .meta{color:var(--muted);font-size:.8rem}
+.slot .pick{color:var(--gold);font-weight:800;font-size:.8rem;white-space:nowrap}
+.done{background:rgba(124,179,66,.12);border:1px solid rgba(124,179,66,.45);border-radius:12px;padding:12px 14px;font-size:.9rem}
+input{width:100%;box-sizing:border-box;background:#26221a;border:1px solid #3a3428;color:var(--cream);border-radius:10px;padding:12px;font-size:.95rem}
+.btn{display:block;width:100%;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;border:none;border-radius:12px;padding:14px;font-weight:900;font-size:1rem;cursor:pointer;margin-top:12px}
+.btn:disabled{opacity:.4;cursor:default}
+.empty{color:var(--muted);font-size:.85rem;padding:8px 0}
+.err{color:#ff8a80;font-size:.85rem;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">🎓 FUSION VENČEKY</div>
+  <div id="host"><div class="empty">Načítavam…</div></div>
+</div>
+<script>
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const T=new URLSearchParams(location.search).get('t')||'';
+let D=null, selLesson=null, selEvening=null;
+async function load(){
+  const host=document.getElementById('host');
+  let r; try{ r=await fetch('/api/vencek-booking/'+encodeURIComponent(T)); D=await r.json(); }catch(e){}
+  if(!D?.ok){ host.innerHTML='<div class="empty">Neplatný alebo expirovaný odkaz. Ozvite sa nám na fusionacademysk@gmail.com.</div>'; return; }
+  render();
+}
+function slotHtml(sl, kind){
+  const sel=(kind==='lesson'?selLesson:selEvening)===sl.id;
+  return `<div class="slot ${sel?'sel':''}" onclick="pick('${kind}','${sl.id}')">
+    <div><b>${esc(sl.label)}</b><div class="meta">${kind==='lesson'?esc(sl.city||''):esc(sl.venue||'')}</div></div>
+    <span class="pick">${sel?'✓ VYBRANÉ':'vybrať'}</span></div>`;
+}
+function pick(kind,id){ if(kind==='lesson') selLesson=selLesson===id?null:id; else selEvening=selEvening===id?null:id; render(); }
+function render(){
+  const host=document.getElementById('host');
+  const l=D.my_lesson, e=D.my_evening;
+  host.innerHTML=`
+  <div class="hero"><h1>${esc(D.school)}</h1>
+    <div class="sub">Vyberte si termíny ako letenku — dva kliky, žiadne telefonáty. ✈️</div></div>
+
+  <div class="step"><h3>1️⃣ Termín lekcií</h3>
+    <div class="hint">Opakuje sa každý týždeň počas celého programu (13 týždňov). Rezervácia sa zapíše do rozvrhu automaticky.</div>
+    ${l?`<div class="done">✅ Vybrané: <b>${esc(l.label)}</b> — rezervácia platí na celý program.</div>`
+      :(D.lesson_slots.length? D.lesson_slots.map(sl=>slotHtml(sl,'lesson')).join('') : '<div class="empty">Momentálne nie sú voľné termíny — ozveme sa vám s novými.</div>')}
+  </div>
+
+  <div class="step"><h3>2️⃣ Venčekový večer</h3>
+    <div class="hint">Veľké finále — maximálne jedno za víkend, preto termíny rýchlo miznú. Po potvrdení pošleme rodičom save-the-date.</div>
+    ${e?`<div class="done">✅ Vybrané: <b>${esc(e.label)}</b>${e.venue?' · '+esc(e.venue):''} — termín je zamknutý pre vašu školu.</div>`
+      :(D.evening_slots.length? D.evening_slots.map(sl=>slotHtml(sl,'evening')).join('') : '<div class="empty">Termíny večerov doplníme čoskoro.</div>')}
+  </div>
+
+  ${(!l&&selLesson)||(!e&&selEvening)?`
+  <div class="step"><h3>✉️ Potvrdenie</h3>
+    <div class="hint">Zadajte kontaktný e-mail — pošleme naň potvrdenie termínov.</div>
+    <input id="contact" type="email" placeholder="riaditel@skola.sk" value="${esc(window._c||'')}">
+    <button class="btn" onclick="submitBooking()">Potvrdiť vybrané termíny</button>
+    <div id="err" class="err"></div>
+  </div>`:''}`;
+}
+async function submitBooking(){
+  const contact=document.getElementById('contact').value.trim(); window._c=contact;
+  const err=document.getElementById('err');
+  if(!/@/.test(contact)){ err.textContent='Zadajte platný e-mail.'; return; }
+  for(const id of [selLesson,selEvening].filter(Boolean)){
+    const r=await fetch('/api/vencek-booking/'+encodeURIComponent(T),{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({slot_id:id, contact})});
+    const d=await r.json();
+    if(!d.ok){ err.textContent=d.error||'Chyba, skúste znova.'; await load(); return; }
+  }
+  selLesson=selEvening=null; await load();
+}
+load();
+</script>
+</body>
+</html>
