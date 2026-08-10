@@ -1528,6 +1528,38 @@ async function seedData() {
     }catch(e){ console.error('cash entries migration:', e.message); }
   }
 
+  // ── Korekcia 10.8. v2: Marek Monike 1 vstup vrátil ručne ešte pred migráciou →
+  // migrácia jej vrátila 2, spolu +3 namiesto +2. Strhni 1 späť. + dohľadaj Lenku.
+  if(!(await q.one(db.settings,{key:'fix_online_entry_refund_v2'}))){
+    await q.insert(db.settings,{key:'fix_online_entry_refund_v2', value:true, at:nowISO()});
+    try{
+      const mon=(await q.find(db.users,{})).find(u=>/uhrinov/i.test(u.name||'') && /monika/i.test(u.name||''));
+      if(mon){
+        await q.update(db.users,{_id:mon._id},{$set:{single_entries:Math.max(0,(mon.single_entries||0)-1)}});
+        console.log('🎟️ REFUND KOREKCIA: '+mon.name+' -1 vstup (ručné vrátenie + migrácia = duplicita), teraz '+Math.max(0,(mon.single_entries||0)-1));
+      }
+      const lenky=(await q.find(db.users,{})).filter(u=>/lenka/i.test(u.name||'') && !/@test-fa-qa\.local$/.test(u.email||''));
+      console.log('💶 LENKA KANDIDÁTKY: '+(lenky.map(u=>u.name+' <'+u.email+'> vstupy:'+(u.single_entries||0)).join(' | ')||'žiadne'));
+      const todayBookers=[];
+      for(const u of lenky){ const b=(await q.find(db.bookings,{user_id:u._id})).find(x=>x.booking_date==='2026-08-10'&&x.status!=='cancelled'); if(b) todayBookers.push({u,b}); }
+      if(todayBookers.length===1){
+        const {u,b}=todayBookers[0];
+        const dup=(await q.find(db.transactions,{user_id:u._id})).find(t=>t.created_at?.slice(0,10)==='2026-08-10'&&t.amount===10);
+        if(!dup){
+          await q.insert(db.transactions,{type:'single_entry', user_id:u._id, user_name:u.name, amount:10,
+            payment_method:'cash', note:'Jednorazový vstup — hotovosť (dodatočný zápis 10.8.)', created_at:nowISO(), month:'2026-08'});
+          trackPurchase(u._id,10);
+          createInvoice({user_id:u._id, client_name:u.name, client_email:u.email,
+            items:[{desc:'Jednorazový vstup (10.8.2026)', qty:1, total:10}], total:10, method:'hotovosť'});
+          await q.update(db.bookings,{_id:b._id},{$set:{entry_collected:{amount:10,method:'cash',at:nowISO(),by:'migration'}, pay_on_site:false}});
+          await q.insert(db.notifications,{user_id:u._id,type:'payment', title:'🧾 Potvrdenie o platbe — vstup',
+            body:'Prijali sme 10.00 € v hotovosti za dnešný vstup. Ďakujeme!', read:false, created_at:nowISO()}).catch(()=>{});
+          console.log('💶 CASH ENTRY zapísané (v2): '+u.name);
+        } else console.log('💶 CASH ENTRY: '+u.name+' už má dnes 10 € — preskakujem');
+      } else console.log('💶 LENKA: '+todayBookers.length+' kandidátok s dnešnou rezerváciou — nezapisujem automaticky, treba ručne');
+    }catch(e){ console.error('refund v2:', e.message); }
+  }
+
   if(!(await q.one(db.settings,{key:'cleanup_qa_online_test_v1'}))){
     await q.insert(db.settings,{key:'cleanup_qa_online_test_v1', value:true, at:nowISO()});
     try{
