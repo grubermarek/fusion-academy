@@ -126,6 +126,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('classes')"><i class="bi bi-calendar3 me-2"></i>Hodiny / Stream</a>
       <a class="nav-link" href="#" onclick="show('privatehours')"><i class="bi bi-person-heart me-2"></i>Súkromné hodiny 🎭</a>
       <a class="nav-link" href="#" onclick="show('kiosk')"><i class="bi bi-display me-2"></i>Kiosk / Recepcia</a>
+      <a class="nav-link" href="#" onclick="show('venceky')"><i class="bi bi-mortarboard me-2"></i><span style="color:#C9A84C;font-weight:700">Venčeky</span></a>
       <a class="nav-link" href="/jedalnicek" target="_blank"><i class="bi bi-egg-fried me-2"></i>Generátor jedálničkov <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></a>
       <a class="nav-link" href="#" onclick="show('products')"><i class="bi bi-box-seam me-2"></i>Produkty & objednávky <span id="pendingBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('rentals')"><i class="bi bi-building me-2"></i>Prenájmy</a>
@@ -136,7 +137,6 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('marketing')"><i class="bi bi-graph-up-arrow me-2"></i><span style="color:#C9A84C;font-weight:700">Marketing (CAC/LTV)</span></a>
       <a class="nav-link" href="#" onclick="show('campaigns')"><i class="bi bi-megaphone me-2"></i>Kampane</a>
       <a class="nav-link" href="#" onclick="show('sutaze')"><i class="bi bi-trophy me-2"></i>Súťaže</a>
-      <a class="nav-link" href="#" onclick="show('venceky')"><i class="bi bi-mortarboard me-2"></i><span style="color:#C9A84C;font-weight:700">Venčeky</span></a>
       <a class="nav-link" href="#" onclick="show('outreach')"><i class="bi bi-send me-2"></i>Hromadné správy</a>
       <a class="nav-link" href="#" onclick="show('automation')"><i class="bi bi-envelope-check me-2"></i>Automatizácia</a>
       <a class="nav-link" href="#" onclick="show('promos')"><i class="bi bi-ticket-perforated me-2"></i>Promo kódy</a>
@@ -1681,7 +1681,7 @@ const GROUP_TITLES={manage:'Správa',marketing:'Marketing',reports:'Financie & r
 const SECTION_GROUP={attendance:'manage',sale:'reports',
   leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',staff:'manage',classes:'manage',privatehours:'manage',kiosk:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',
   marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
-  sutaze:'marketing',venceky:'marketing',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
+  sutaze:'marketing',venceky:'manage',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
   partners:'partners',addpartner:'partners',commissions:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
