@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Venčeky – Fusion Academy</title>
+<link rel="stylesheet" href="/fa-theme.css">
+<link rel="icon" type="image/png" href="/logo-mark.png">
+<style>
+:root{--gold:#C9A84C;--cream:#e8e2d4;--muted:#b9b3a6}
+body{background:#12100a;color:var(--cream);font-family:'Inter',system-ui,sans-serif;margin:0;min-height:100vh}
+.wrap{max-width:760px;margin:0 auto;padding:16px 14px 90px}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 0}
+.brand{font-weight:900;color:var(--gold);letter-spacing:.06em}
+.switch{background:#1d1a15;border:1px solid rgba(201,168,76,.45);color:var(--gold);border-radius:999px;padding:8px 16px;font-weight:800;font-size:.82rem;text-decoration:none}
+.hero{background:linear-gradient(160deg,#241d10,#171310);border:1px solid rgba(201,168,76,.4);border-radius:18px;padding:22px;text-align:center;margin-bottom:14px}
+.hero .badge{display:inline-block;background:rgba(201,168,76,.15);border:1px solid rgba(201,168,76,.45);border-radius:999px;padding:4px 14px;font-size:.72rem;font-weight:800;letter-spacing:.12em;color:var(--gold)}
+.hero h1{margin:10px 0 2px;font-size:1.5rem}
+.hero .sub{color:var(--muted);font-size:.9rem}
+.bigbar{height:16px;background:#26221a;border-radius:10px;overflow:hidden;border:1px solid #3a3428;margin:16px 0 6px}
+.bigbar i{display:block;height:100%;background:linear-gradient(90deg,#8bc34a,#C9A84C);border-radius:10px;transition:width 1s}
+.card{background:#1a1712;border:1px solid #2e2a20;border-radius:14px;padding:16px;margin-bottom:12px}
+.card h3{margin:0 0 10px;font-size:1rem;color:#fff}
+.dance{margin-bottom:10px}
+.dance .row{display:flex;justify-content:space-between;font-size:.88rem;margin-bottom:4px}
+.dance .lvl{color:var(--muted);font-size:.78rem}
+.dance .bar{height:9px;background:#26221a;border-radius:6px;overflow:hidden}
+.dance .bar i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,#C9A84C,#e8d18a)}
+.dance.done .bar i{background:linear-gradient(90deg,#7cb342,#aed581)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:#1d1a15;border:1px solid #2e2a20;border-radius:12px;padding:12px;text-align:center}
+.stat b{display:block;font-size:1.3rem;color:#fff}
+.stat span{font-size:.75rem;color:var(--muted)}
+.pay-ok{background:rgba(124,179,66,.12);border:1px solid rgba(124,179,66,.45);border-radius:12px;padding:12px 14px;font-size:.88rem}
+.pay-no{background:rgba(255,152,0,.1);border:1px solid rgba(255,152,0,.4);border-radius:12px;padding:12px 14px;font-size:.88rem;color:#ffcc80}
+.cls{border:1px solid #2e2a20;border-radius:12px;padding:12px;margin-bottom:10px;background:#1d1a15}
+.cls .head{display:flex;justify-content:space-between;align-items:center;font-weight:800}
+.muted{color:var(--muted);font-size:.82rem}
+.empty{text-align:center;padding:60px 20px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">🎓 FUSION VENČEKY</div>
+    <a class="switch" href="/client-dashboard">↔ Bežná appka</a>
+  </div>
+  <div id="host"><div class="empty">Načítavam…</div></div>
+</div>
+<script>
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmtD=d=>d?d.split('-').reverse().join('.'):null;
+function danceHtml(d){
+  return `<div class="dance ${d.level>=4?'done':''}">
+    <div class="row"><span>${d.level>=4?'✅':'💃'} <b>${esc(d.name)}</b></span><span class="lvl">${d.level>=4?'ZVLÁDNUTÉ':esc(d.level_label)} · ${d.pct} %</span></div>
+    <div class="bar"><i style="width:${d.pct}%"></i></div>
+  </div>`;
+}
+function classCard(c, extra=''){
+  return `<div class="hero">
+    <span class="badge">${esc(c.year)} · TRIEDA ${esc(c.name)}</span>
+    <h1>Naša cesta k venčeku</h1>
+    <div class="sub">Lekcia ${c.lessons_done} z ${c.lessons_total}${c.event_date?` · ✨ Venčekový večer: <b style="color:var(--gold)">${esc(fmtD(c.event_date))}</b>`:''}</div>
+    <div class="bigbar"><i style="width:${c.progress}%"></i></div>
+    <div style="font-weight:900;color:var(--gold)">${c.progress} %</div>
+  </div>
+  ${extra}
+  <div class="card"><h3>💃 Naše tance</h3>${c.dances.map(danceHtml).join('')}
+    ${c.note?`<div class="muted" style="margin-top:8px">📝 ${esc(c.note)}</div>`:''}</div>
+  <div class="grid">
+    <div class="stat"><b>${c.members}</b><span>žiakov v triede</span></div>
+    <div class="stat"><b>${c.lessons_total-c.lessons_done}</b><span>lekcií do venčeka</span></div>
+  </div>`;
+}
+(async()=>{
+  const host=document.getElementById('host');
+  let d; try{ d=await (await fetch('/api/vencek/mine',{credentials:'include'})).json(); }
+  catch(e){ host.innerHTML='<div class="empty">Nepodarilo sa načítať. Skús to znova.</div>'; return; }
+  if(!d.ok || !d.role){
+    host.innerHTML=`<div class="empty">🎓 Tvoj účet zatiaľ nie je priradený k venčekovej triede.<br><br>
+      Ak máš QR kód od školy, naskenuj ho znova — alebo napíš svojmu lektorovi.<br><br>
+      <a class="switch" href="/client-dashboard">Prejsť do appky</a></div>`; return;
+  }
+  if(d.role==='director' || d.role==='admin'){
+    host.innerHTML=(d.schools||[]).map(s=>`
+      <div class="card"><h3>🏫 ${esc(s.school)} · ${esc(s.year)}</h3>
+      ${s.classes.map(c=>`<div class="cls">
+        <div class="head"><span>${esc(c.name)}</span><span style="color:var(--gold)">${c.progress} %</span></div>
+        <div class="bigbar" style="margin:8px 0 4px"><i style="width:${c.progress}%"></i></div>
+        <div class="muted">Lekcia ${c.lessons_done}/${c.lessons_total} · ${c.members} žiakov · uhradené ${c.paid_count}/${c.members}${c.event_date?` · večer ${esc(fmtD(c.event_date))}`:''}</div>
+      </div>`).join('')||'<div class="muted">Zatiaľ žiadne triedy.</div>'}</div>`).join('')
+      ||'<div class="empty">Žiadne školy.</div>';
+    return;
+  }
+  if(d.role==='teacher'){
+    host.innerHTML=`<div class="card"><h3>👩‍🏫 Vaša trieda — ${esc(d.class.name)} · ${esc(d.school)}</h3></div>`
+      +classCard(d.class, `<div class="card"><div class="muted">Uhradené: <b style="color:#aed581">${d.class.paid_count}/${d.class.members}</b> žiakov (menný zoznam spravuje Fusion Academy — nemusíte vyberať nič).</div></div>`);
+    return;
+  }
+  // žiak / rodič
+  const pay = d.my_payment
+    ? `<div class="pay-ok">🧾 <b>Zaplatené</b> — ${(+d.my_payment.amount).toFixed(2)} € (${d.my_payment.method==='transfer'?'prevodom':'v hotovosti'}, ${new Date(d.my_payment.paid_at).toLocaleDateString('sk')}). Potvrdenie máš v notifikáciách a na emaili.</div>`
+    : `<div class="pay-no">💳 Kurz ešte nie je uhradený (${(+d.price).toFixed(2)} €). Platba v hotovosti na hodine alebo prevodom — info u lektora.</div>`;
+  host.innerHTML=`<div class="muted" style="margin-bottom:8px">🏫 ${esc(d.school)}</div>`+classCard(d.class, `<div class="card">${pay}</div>`);
+})();
+</script>
+</body>
+</html>

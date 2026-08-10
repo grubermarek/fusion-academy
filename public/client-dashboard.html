@@ -2816,6 +2816,25 @@ init();
   window.addEventListener('appinstalled', ()=>{ const b=document.getElementById('a2hsBar'); if(b) b.remove(); if(installBtn) installBtn.style.display='none'; });
 })();
 
+// 🎓 Venčekári/učitelia/riaditelia: prepínač do venčekového prehľadu
+(async function(){
+  try{
+    const d=await (await fetch('/api/vencek/mine',{credentials:'include'})).json();
+    if(!d.ok || !d.role || d.role==='admin') return;
+    const main=document.getElementById('dashMain'); if(!main) return;
+    const card=document.createElement('a');
+    card.href='/vencek';
+    card.style.cssText='display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,rgba(201,168,76,.16),rgba(201,168,76,.05));border:1px solid rgba(201,168,76,.5);border-radius:14px;padding:13px 16px;margin-bottom:12px;text-decoration:none;color:inherit';
+    const sub = d.role==='director' ? 'Prehľad všetkých tried vašej školy'
+      : d.role==='teacher' ? `Vaša trieda ${d.class?.name||''} — progress a dochádzka`
+      : `Trieda ${d.class?.name||''} · ${d.class?.progress??0} % · lekcia ${d.class?.lessons_done??0}/${d.class?.lessons_total??13}`;
+    card.innerHTML=`<span style="font-size:1.6rem">🎓</span>
+      <span style="flex:1"><b style="color:#F0DFA8">FUSION VENČEKY</b><br><small style="color:#b9b3a6">${sub}</small></span>
+      <span style="background:linear-gradient(135deg,#C9A84C,#a5842f);color:#161310;border-radius:999px;padding:8px 16px;font-weight:800;font-size:.8rem;white-space:nowrap">Otvoriť ↗</span>`;
+    main.prepend(card);
+  }catch(e){}
+})();
+
 // Info o novej adrese pre klientky na starej doméne — ikonka aj prihlásenie fungujú ďalej
 (function(){
   if(location.hostname!=='app.latindancefusion.art') return;

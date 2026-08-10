@@ -540,6 +540,20 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
 <script src="/fa-track.js"></script>
 <script async src="https://www.googletagmanager.com/gtag/js?id=AW-734724861"></script>
 <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag("js",new Date());gtag("config","AW-734724861");</script>
+<script>
+/* Venčekový registračný kód z QR (?vencek=VEN-XXXXX) — uloží sa a použije pri registrácii */
+(function(){
+  var p=new URLSearchParams(location.search), vc=p.get('vencek');
+  if(vc){ localStorage.setItem('fa_vencek_code', vc.toUpperCase());
+    document.addEventListener('DOMContentLoaded', function(){
+      var b=document.createElement('div');
+      b.style.cssText='position:sticky;top:0;z-index:1000;background:linear-gradient(90deg,#C9A84C,#a5842f);color:#161310;font-weight:800;text-align:center;padding:10px 14px;font-size:.92rem';
+      b.textContent='🎓 Registruješ sa do FUSION VENČEKOV — po registrácii ťa automaticky priradíme k tvojej triede ('+vc.toUpperCase()+').';
+      document.body.prepend(b);
+    });
+  }
+})();
+</script>
 </head>
 <body>
 
@@ -1139,7 +1153,7 @@ async function doRegister(){
   try{
     const lead_source=document.getElementById('rLeadSource')?.value||'';
     const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name,email,password:pass,phone,sponsorCode:code,user_type:'client',lead_source,consent:true,attribution:window.faGetAttribution?window.faGetAttribution():{}}),credentials:'include'});
+      body:JSON.stringify({name,email,password:pass,phone,sponsorCode:code,user_type:'client',lead_source,consent:true,vencek_code:localStorage.getItem('fa_vencek_code')||undefined,attribution:window.faGetAttribution?window.faGetAttribution():{}}),credentials:'include'});
     const d=await r.json();
     if(!r.ok){
       showErr('regErr',d.error||'Chyba registrácie');

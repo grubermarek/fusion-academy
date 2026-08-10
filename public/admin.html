@@ -136,6 +136,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('marketing')"><i class="bi bi-graph-up-arrow me-2"></i><span style="color:#C9A84C;font-weight:700">Marketing (CAC/LTV)</span></a>
       <a class="nav-link" href="#" onclick="show('campaigns')"><i class="bi bi-megaphone me-2"></i>Kampane</a>
       <a class="nav-link" href="#" onclick="show('sutaze')"><i class="bi bi-trophy me-2"></i>Súťaže</a>
+      <a class="nav-link" href="#" onclick="show('venceky')"><i class="bi bi-mortarboard me-2"></i><span style="color:#C9A84C;font-weight:700">Venčeky</span></a>
       <a class="nav-link" href="#" onclick="show('outreach')"><i class="bi bi-send me-2"></i>Hromadné správy</a>
       <a class="nav-link" href="#" onclick="show('automation')"><i class="bi bi-envelope-check me-2"></i>Automatizácia</a>
       <a class="nav-link" href="#" onclick="show('promos')"><i class="bi bi-ticket-perforated me-2"></i>Promo kódy</a>
@@ -960,6 +961,20 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div id="campaignsList"><div class="text-muted py-4 text-center">Načítavam…</div></div>
   </div>
 
+  <!-- VENČEKY -->
+  <div class="section" id="s-venceky" style="max-width:1100px">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <div><h4 class="fw-bold mb-0">🎓 Venčeky</h4>
+        <p class="text-muted small mb-0">Školy, triedy, žiaci, platby, náklady a progress tancov. Registrácia žiakov cez QR/odkaz triedy.</p></div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-outline-light" onclick="loadVenceky()"><i class="bi bi-arrow-clockwise me-1"></i>Obnoviť</button>
+        <button class="btn btn-sm btn-brand" onclick="vAddSchool()"><i class="bi bi-plus-lg me-1"></i>Nová škola</button>
+      </div>
+    </div>
+    <div id="vencekyTotals" class="mb-3"></div>
+    <div id="vencekyList"><div class="text-muted py-4 text-center">Načítavam…</div></div>
+  </div>
+
   <!-- SÚŤAŽE -->
   <div class="section" id="s-sutaze" style="max-width:1100px">
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -1665,7 +1680,7 @@ const GROUP_TITLES={manage:'Správa',marketing:'Marketing',reports:'Financie & r
 const SECTION_GROUP={attendance:'manage',sale:'reports',
   leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',staff:'manage',classes:'manage',privatehours:'manage',kiosk:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',
   marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
-  sutaze:'marketing',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
+  sutaze:'marketing',venceky:'marketing',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
   partners:'partners',addpartner:'partners',commissions:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
@@ -1850,6 +1865,7 @@ function show(sec){
   if(SECTION_GROUP[sec]) selectGroup(SECTION_GROUP[sec]);
   if(sec==='bizrank')loadBizRank();
   if(sec==='sutaze')loadRefGoalReport();
+  if(sec==='venceky')loadVenceky();
   if(sec==='orders')loadOrders();
   if(sec==='partners')loadPartners();
   if(sec==='commissions')loadCommissions();
@@ -2782,6 +2798,160 @@ async function loadLeadFunnel(){
     <div class="d-flex gap-2 flex-wrap mt-1">${Object.entries(d.byCity).map(([c,v])=>`<span class="badge bg-secondary">${CITY_LBL[c]||c}: ${v.registered} reg · ${v.paying} plat · ${v.revenue.toFixed(0)} €</span>`).join('')}</div>
     ${(d.payers||[]).length?`<div class="mt-2 text-muted">Zaplatili: ${d.payers.map(p=>`<a href="/u/${p.id}" style="color:#C9A24C;text-decoration:none">${escHtml(p.name)}</a> (${p.revenue.toFixed(2)} €)`).join(' · ')}</div>`:''}`;
 }
+/* ═══ VENČEKY ═══ */
+let VEN=null;
+const vEur=v=>(+v||0).toFixed(2)+' €';
+async function vApi(path, body){
+  const r=await fetch('/api/admin/venceky/'+path, body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){ alert(d.error||'Chyba'); throw new Error(d.error||'err'); }
+  return d;
+}
+async function loadVenceky(){
+  const list=document.getElementById('vencekyList');
+  try{ VEN=await vApi('overview'); }catch(e){ list.innerHTML='<div class="text-danger py-3">Nepodarilo sa načítať.</div>'; return; }
+  document.getElementById('vencekyTotals').innerHTML=`<div class="d-flex gap-2 flex-wrap">
+    <span class="badge bg-secondary p-2">👥 žiakov: <b>${VEN.totals.students}</b></span>
+    <span class="badge bg-secondary p-2">🧾 zaplatilo: <b>${VEN.totals.paid}/${VEN.totals.students}</b></span>
+    <span class="badge p-2" style="background:#2e5230">💶 príjmy: <b>${vEur(VEN.totals.income)}</b></span>
+    <span class="badge p-2" style="background:#5a3423">📉 náklady: <b>${vEur(VEN.totals.costs)}</b></span>
+    <span class="badge p-2" style="background:${VEN.totals.profit>=0?'#C9A84C':'#8a2f2f'};color:${VEN.totals.profit>=0?'#161310':'#fff'}">📈 zisk: <b>${vEur(VEN.totals.profit)}</b></span>
+  </div>`;
+  if(!VEN.schools.length){ list.innerHTML='<div class="text-muted py-4 text-center">Zatiaľ žiadne školy. Začni tlačidlom „Nová škola".</div>'; return; }
+  list.innerHTML=VEN.schools.map(s=>`
+    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+        <h6 class="fw-bold mb-0">🏫 ${s.name} <span class="text-muted small">· ${s.city||''} · ${s.year}</span></h6>
+        <div class="d-flex gap-2 align-items-center">
+          <span class="small">💶 ${vEur(s.income)} · 📉 ${vEur(s.costs)} · <b style="color:${s.profit>=0?'#8bc34a':'#f87171'}">📈 ${vEur(s.profit)}</b></span>
+          <button class="btn btn-sm btn-outline-light" onclick="vAddClass('${s.id}')">+ Trieda</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="vAssignRole('${s.id}')">👩‍🏫 Rola</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="vAddCost('${s.id}','')">+ Náklad školy</button>
+        </div>
+      </div>
+      ${s.staff?.length?`<div class="small text-muted mb-2">Personál: ${s.staff.map(t=>`${t.role==='director'?'🏫':'👩‍🏫'} ${t.name}`).join(' · ')}</div>`:''}
+      ${s.classes.length?`<table class="table table-dark table-sm small mb-0"><thead><tr>
+        <th>Trieda</th><th>Progress</th><th>Lekcie</th><th class="text-center">Žiaci</th><th class="text-center">🧾 Zaplatené</th><th class="text-end">Príjem</th><th class="text-end">Zisk</th><th>Registrácia</th><th></th></tr></thead><tbody>
+        ${s.classes.map(c=>`<tr>
+          <td><b>${c.name}</b>${c.event_date?`<br><small class="text-muted">✨ ${c.event_date}</small>`:''}</td>
+          <td style="min-width:110px"><div style="height:8px;background:#26221a;border-radius:5px;overflow:hidden"><div style="height:100%;width:${c.progress}%;background:#C9A84C"></div></div><small class="text-muted">${c.progress} %</small></td>
+          <td>${c.lessons_done}/${c.lessons_total}</td>
+          <td class="text-center">${c.members}</td>
+          <td class="text-center">${c.paid}/${c.members}${c.unpaid?` <span class="text-warning">(${c.unpaid} chýba)</span>`:' ✅'}</td>
+          <td class="text-end">${vEur(c.income)}</td>
+          <td class="text-end" style="color:${c.profit>=0?'#8bc34a':'#f87171'}">${vEur(c.profit)}</td>
+          <td><button class="btn btn-sm btn-outline-secondary" onclick="vShowQR('${c.code}','${c.name}')">QR / odkaz</button></td>
+          <td><button class="btn btn-sm btn-brand" onclick="vClassDetail('${c.id}')">Detail</button></td>
+        </tr>`).join('')}
+      </tbody></table>`:'<div class="text-muted small">Žiadne triedy — pridaj prvú.</div>'}
+    </div></div>`).join('');
+}
+async function vAddSchool(){
+  const name=prompt('Názov školy (napr. ZŠ Jána Nováka):'); if(!name) return;
+  const city=prompt('Mesto:')||'';
+  const year=prompt('Školský rok:','2026/27')||'2026/27';
+  await vApi('schools',{name,city,year}); loadVenceky();
+}
+async function vAddClass(sid){
+  const name=prompt('Názov triedy (napr. 9.A):'); if(!name) return;
+  const price=prompt('Cena za žiaka (€):','49.90')||'49.90';
+  const lecturer=prompt('Lektor:','Marek Gruber')||'';
+  const d=await vApi('classes',{school_id:sid,name,price:+price,lecturer});
+  alert('Trieda vytvorená.\n\nRegistračný odkaz pre žiakov:\n'+d.join_link+'\n\n(QR nájdeš pri triede.)');
+  loadVenceky();
+}
+function vShowQR(code,name){
+  const link=location.origin+'/?vencek='+code;
+  const m=document.createElement('div');
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  m.onclick=e=>{if(e.target===m)m.remove();};
+  m.innerHTML=`<div style="background:#fff;border-radius:16px;padding:26px;text-align:center;max-width:340px">
+    <div style="font-weight:900;color:#161310;font-size:1.1rem;margin-bottom:4px">FUSION VENČEKY — ${name}</div>
+    <div style="color:#666;font-size:.8rem;margin-bottom:12px">Naskenuj a zaregistruj sa — trieda sa priradí automaticky</div>
+    <img src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(link)}" width="240" height="240" alt="QR">
+    <div style="font-family:monospace;font-weight:800;margin-top:10px;color:#161310">${code}</div>
+    <input value="${link}" readonly onclick="this.select()" style="width:100%;margin-top:8px;padding:6px;font-size:.75rem;border:1px solid #ccc;border-radius:8px">
+    <button onclick="navigator.clipboard.writeText('${link}');this.textContent='✅ Skopírované'" style="margin-top:10px;background:#C9A84C;border:none;border-radius:10px;padding:9px 18px;font-weight:800;cursor:pointer">Kopírovať odkaz</button>
+  </div>`;
+  document.body.appendChild(m);
+}
+async function vAssignRole(sid){
+  const email=prompt('Email učiteľa/riaditeľa (musí už mať účet v appke):'); if(!email) return;
+  const role=prompt('Rola: teacher / director / none (odobrať):','teacher'); if(!role) return;
+  let class_id='';
+  if(role==='teacher'){
+    const s=VEN.schools.find(x=>x.id===sid);
+    class_id=prompt('Trieda pre učiteľa:\n'+s.classes.map((c,i)=>`${i+1} = ${c.name}`).join('\n')+'\n\nZadaj číslo:');
+    class_id=s.classes[(+class_id||0)-1]?.id||''; if(!class_id) return alert('Neplatná trieda');
+  }
+  await vApi('assign-role',{email,role,school_id:sid,class_id}); alert('Rola pridelená ✅'); loadVenceky();
+}
+async function vAddCost(sid,cid){
+  const label=prompt('Popis nákladu (napr. prenájom sály, ozvučenie):'); if(!label) return;
+  const amount=prompt('Suma (€):'); if(!(+amount)) return;
+  await vApi('cost',{school_id:sid,class_id:cid,label,amount:+amount});
+  if(document.getElementById('vClassModal')) vClassDetail(cid); else loadVenceky();
+}
+async function vClassDetail(cid){
+  const d=await vApi('class/'+cid);
+  document.getElementById('vClassModal')?.remove();
+  const c=d.class;
+  const m=document.createElement('div'); m.id='vClassModal';
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9998;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow:auto';
+  m.onclick=e=>{if(e.target===m)m.remove();};
+  m.innerHTML=`<div style="background:#1e1e1e;border:1px solid #333;border-radius:14px;padding:22px;width:min(760px,96vw)">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h5 class="fw-bold mb-0" style="color:#C9A24C">🎓 ${c.name} — ${d.school}</h5>
+      <button onclick="document.getElementById('vClassModal').remove()" style="background:none;border:none;color:#888;font-size:1.3rem;cursor:pointer">✕</button>
+    </div>
+    <div class="small text-muted mb-3">Progress ${c.progress} % · lekcia ${c.lessons_done}/${c.lessons_total} · cena ${vEur(c.price)}${c.event_date?` · ✨ večer ${c.event_date}`:''}</div>
+
+    <h6 class="fw-bold">💃 Zápis hodiny (tance + lekcia)</h6>
+    <div class="mb-2">${(c.dances||[]).map((dn,i)=>`
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span style="width:180px" class="small">${dn.name}</span>
+        <select id="vd_${i}" class="form-select form-select-sm bg-dark text-light" style="max-width:220px">
+          ${d.levels.map((l,li)=>`<option value="${li}" ${li===dn.level?'selected':''}>${'●'.repeat(li)}${'○'.repeat(4-li)} ${l}</option>`).join('')}
+        </select></div>`).join('')}
+      <div class="d-flex gap-2 mt-2 flex-wrap">
+        <input id="vLessons" type="number" min="0" max="${c.lessons_total}" value="${c.lessons_done}" class="form-control form-control-sm bg-dark text-light" style="max-width:90px" title="odučené lekcie">
+        <input id="vEvent" type="date" value="${c.event_date||''}" class="form-control form-control-sm bg-dark text-light" style="max-width:170px" title="dátum venčekového večera">
+        <input id="vNote" value="${(c.note||'').replace(/"/g,'&quot;')}" placeholder="poznámka (napr. dokončíme tango)" class="form-control form-control-sm bg-dark text-light" style="flex:1;min-width:180px">
+        <button class="btn btn-sm btn-brand" onclick="vSaveProgress('${c._id}',${(c.dances||[]).length})">💾 Uložiť hodinu</button>
+      </div></div>
+
+    <h6 class="fw-bold mt-3">🧾 Žiaci a platby (${d.members.filter(x=>x.paid).length}/${d.members.length} zaplatené)</h6>
+    <table class="table table-dark table-sm small"><tbody>
+      ${d.members.map(mm=>`<tr>
+        <td>${mm.paid?'✅':'⏳'} <b>${mm.name}</b><br><small class="text-muted">${mm.email||''} ${mm.phone||''}</small></td>
+        <td class="text-end">${mm.paid
+          ? `${vEur(mm.amount)} <small class="text-muted">(${mm.method==='transfer'?'prevod':'hotovosť'})</small><br><button class="btn btn-sm btn-outline-danger mt-1" onclick="vApi('payment-delete',{class_id:'${c._id}',user_id:'${mm.id}'}).then(()=>vClassDetail('${c._id}'))">zrušiť</button>`
+          : `<button class="btn btn-sm btn-brand" onclick="vMarkPaid('${c._id}','${mm.id}','cash')">💶 hotovosť</button>
+             <button class="btn btn-sm btn-outline-light" onclick="vMarkPaid('${c._id}','${mm.id}','transfer')">🏦 prevod</button>`}</td>
+      </tr>`).join('')||'<tr><td class="text-muted">Zatiaľ žiadni žiaci — pošli triede QR/odkaz na registráciu.</td></tr>'}
+    </tbody></table>
+
+    <h6 class="fw-bold mt-2">📉 Náklady triedy <button class="btn btn-sm btn-outline-secondary ms-2" onclick="vAddCost('','${c._id}')">+ pridať</button></h6>
+    <div class="small">${(d.costs||[]).map(k=>`<div class="d-flex justify-content-between border-bottom border-secondary py-1"><span>${k.label} <span class="text-muted">${k.date}</span></span><b>${vEur(k.amount)}</b></div>`).join('')||'<span class="text-muted">Žiadne náklady.</span>'}</div>
+  </div>`;
+  document.body.appendChild(m);
+}
+async function vMarkPaid(cid,uid,method){
+  await vApi('payment',{class_id:cid,user_id:uid,method});
+  vClassDetail(cid); loadVenceky();
+}
+async function vSaveProgress(cid,n){
+  const c=VEN.schools.flatMap(s=>s.classes).find(x=>x.id===cid);
+  const detail=await vApi('class/'+cid);
+  const dances=detail.class.dances.map((d,i)=>({name:d.name, level:+document.getElementById('vd_'+i).value}));
+  await vApi('progress',{class_id:cid, dances,
+    lessons_done:+document.getElementById('vLessons').value,
+    event_date:document.getElementById('vEvent').value,
+    note:document.getElementById('vNote').value});
+  alert('Hodina uložená ✅ — žiakom sa aktualizoval progress.');
+  vClassDetail(cid); loadVenceky();
+}
+
 async function loadRefGoalReport(){
   const el=document.getElementById('refGoalReport'); if(!el) return;
   try{

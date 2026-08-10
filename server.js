@@ -183,6 +183,10 @@ const db = {
   private_recurring: new Datastore({ filename: path.join(DATA_DIR, 'private_recurring.db'), autoload: true }),
   business_snapshots: new Datastore({ filename: path.join(DATA_DIR, 'business_snapshots.db'), autoload: true }),
   mail_log:     new Datastore({ filename: path.join(DATA_DIR, 'mail_log.db'), autoload: true }),
+  venceky_schools:  new Datastore({ filename: path.join(DATA_DIR, 'venceky_schools.db'),  autoload: true }),
+  venceky_classes:  new Datastore({ filename: path.join(DATA_DIR, 'venceky_classes.db'),  autoload: true }),
+  venceky_payments: new Datastore({ filename: path.join(DATA_DIR, 'venceky_payments.db'), autoload: true }),
+  venceky_costs:    new Datastore({ filename: path.join(DATA_DIR, 'venceky_costs.db'),    autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -1851,7 +1855,19 @@ app.post('/api/register', rlSignup, async(req,res)=>{
       else if(utm_source) lead_source=utm_source.toLowerCase();
       else if(sponsor_id) lead_source='referral';
     }
-    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',city:String(req.body.city||'').trim().slice(0,60),referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,referral_credit:0,lead_source,utm_source,utm_medium,utm_campaign,fbclid,gclid,landing_page:clean(attr.landing),referrer:clean(attr.referrer),consent_at: req.body.consent ? nowISO() : null,created_at:today()});
+    // ── Venčekový registračný kód (QR triedy): priradí účet ku škole a triede ──
+    let vencekClass=null;
+    if(req.body.vencek_code){
+      vencekClass=await q.one(db.venceky_classes,{code:String(req.body.vencek_code).toUpperCase().trim()});
+      if(!vencekClass) return res.status(400).json({error:'Venčekový kód triedy neexistuje. Skontroluj QR/kód od školy.'});
+    }
+    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',city:String(req.body.city||'').trim().slice(0,60),referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,referral_credit:0,lead_source,utm_source,utm_medium,utm_campaign,fbclid,gclid,landing_page:clean(attr.landing),referrer:clean(attr.referrer),consent_at: req.body.consent ? nowISO() : null,created_at:today(),
+      ...(vencekClass?{venceky_class_id:vencekClass._id, venceky_school_id:vencekClass.school_id, venceky_role:'student'}:{})});
+    if(vencekClass){
+      try{ const admins=await q.find(db.users,{is_admin:true});
+        for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'venceky',
+          title:'🎓 Nový venčekár', body:`${name} sa pridal(a) do triedy ${vencekClass.name}`, read:false, created_at:nowISO()}); }catch(e){}
+    }
     req.session.uid=u._id;
     req.session.sv=0;
     // ── Referral: za SAMOTNÚ registráciu už NIE JE odmena (zneužívalo by sa) ───
@@ -12173,6 +12189,7 @@ app.get('/support',    (req,res)=>res.sendFile(path.join(__dirname,'public','sup
 app.get('/cennik',     (req,res)=>res.redirect(301,'/pricing'));
 app.get('/pricing',    (req,res)=>res.sendFile(path.join(__dirname,'public','pricing.html')));
 app.get('/u/:id',      (req,res)=>res.sendFile(path.join(__dirname,'public','profile.html')));
+app.get('/vencek',     (req,res)=>res.sendFile(path.join(__dirname,'public','vencek.html')));
 app.get('/terms',      (req,res)=>res.sendFile(path.join(__dirname,'public','terms.html')));
 app.get('/dashboard',  (req,res)=>res.sendFile(path.join(__dirname,'public','dashboard.html')));
 app.get('/admin',      (req,res)=>res.sendFile(path.join(__dirname,'public','admin.html')));
@@ -12981,6 +12998,226 @@ async function runFriendEventsDaily(){
     }
   }
 }
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🎓 VENČEKY — školy, triedy, žiaci, platby, náklady, progress tancov
+// Venčekár/učiteľ/riaditeľ = bežný účet appky s rolou navyše (venceky_role).
+// ═══════════════════════════════════════════════════════════════════════════════
+const VENCEK_DEFAULT_DANCES=['Waltz','Polka','Čardáš','Cha-cha','Salsa','Tango','Moderný spoločný tanec'];
+const VENCEK_LEVELS=['nezačaté','základy','poznáme kroky','vieme zatancovať','zvládnuté']; // 0–4
+const vencekPct=ds=>ds&&ds.length? Math.round(ds.reduce((s,d)=>s+(d.level||0),0)/(ds.length*4)*100):0;
+
+// ── Admin: školy ──
+app.post('/api/admin/venceky/schools', adminAuth, async(req,res)=>{
+  try{
+    const {name, city, year}=req.body;
+    if(!String(name||'').trim()) return res.status(400).json({error:'Zadaj názov školy'});
+    const s=await q.insert(db.venceky_schools,{name:String(name).trim(), city:String(city||'').trim(),
+      year:String(year||'2026/27'), created_at:nowISO()});
+    res.json({ok:true, school:s});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/venceky/classes', adminAuth, async(req,res)=>{
+  try{
+    const {school_id, name, price, lessons_total, lecturer, event_date}=req.body;
+    const school=await q.one(db.venceky_schools,{_id:String(school_id||'')});
+    if(!school) return res.status(404).json({error:'Škola nenájdená'});
+    if(!String(name||'').trim()) return res.status(400).json({error:'Zadaj názov triedy (napr. 9.A)'});
+    let code; do{ code='VEN-'+Math.random().toString(36).slice(2,7).toUpperCase(); }
+    while(await q.one(db.venceky_classes,{code}));
+    const c=await q.insert(db.venceky_classes,{school_id:school._id, name:String(name).trim(),
+      year:school.year, code, price:+price||49.90, lessons_total:+lessons_total||13, lessons_done:0,
+      lecturer:String(lecturer||'').trim(), event_date:String(event_date||''), note:'',
+      dances:VENCEK_DEFAULT_DANCES.map(n=>({name:n, level:0})), created_at:nowISO()});
+    res.json({ok:true, class:c, join_link:`${APP_URL}/?vencek=${code}`});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Admin: celkový prehľad (školy → triedy → členovia/platby/náklady/zisk) ──
+app.get('/api/admin/venceky/overview', adminAuth, async(req,res)=>{
+  try{
+    const schools=await q.find(db.venceky_schools,{});
+    const classes=await q.find(db.venceky_classes,{});
+    const users=(await q.find(db.users,{})).filter(u=>u.venceky_class_id);
+    const pays=await q.find(db.venceky_payments,{});
+    const costs=await q.find(db.venceky_costs,{});
+    const out=schools.map(s=>{
+      const cls=classes.filter(c=>c.school_id===s._id).map(c=>{
+        const members=users.filter(u=>u.venceky_class_id===c._id && u.venceky_role==='student');
+        const cp=pays.filter(p=>p.class_id===c._id);
+        const paidIds=new Set(cp.map(p=>p.user_id));
+        const income=cp.reduce((x,p)=>x+(+p.amount||0),0);
+        const ccosts=costs.filter(k=>k.class_id===c._id).reduce((x,k)=>x+(+k.amount||0),0);
+        return { id:c._id, name:c.name, code:c.code, join_link:`${APP_URL}/?vencek=${c.code}`,
+          lecturer:c.lecturer, event_date:c.event_date, price:c.price,
+          lessons_done:c.lessons_done||0, lessons_total:c.lessons_total||13,
+          progress:vencekPct(c.dances), members:members.length,
+          paid:members.filter(m=>paidIds.has(m._id)).length,
+          unpaid:members.filter(m=>!paidIds.has(m._id)).length,
+          income:+income.toFixed(2), costs:+ccosts.toFixed(2), profit:+(income-ccosts).toFixed(2) };
+      });
+      const scosts=costs.filter(k=>k.school_id===s._id && !k.class_id).reduce((x,k)=>x+(+k.amount||0),0);
+      const income=cls.reduce((x,c)=>x+c.income,0), ccost=cls.reduce((x,c)=>x+c.costs,0)+scosts;
+      const teachers=(users.filter(u=>u.venceky_school_id===s._id && ['teacher','director'].includes(u.venceky_role)))
+        .map(u=>({name:u.name,email:u.email,role:u.venceky_role,class_id:u.venceky_class_id||null}));
+      return { id:s._id, name:s.name, city:s.city, year:s.year, classes:cls, staff:teachers,
+        school_costs:+scosts.toFixed(2), income:+income.toFixed(2), costs:+ccost.toFixed(2), profit:+(income-ccost).toFixed(2) };
+    });
+    const tot={ income:+out.reduce((x,s)=>x+s.income,0).toFixed(2), costs:+out.reduce((x,s)=>x+s.costs,0).toFixed(2),
+      students:out.reduce((x,s)=>x+s.classes.reduce((y,c)=>y+c.members,0),0),
+      paid:out.reduce((x,s)=>x+s.classes.reduce((y,c)=>y+c.paid,0),0) };
+    tot.profit=+(tot.income-tot.costs).toFixed(2);
+    res.json({ok:true, schools:out, totals:tot, levels:VENCEK_LEVELS});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Admin: detail triedy (menovite kto zaplatil / nezaplatil) ──
+app.get('/api/admin/venceky/class/:id', adminAuth, async(req,res)=>{
+  try{
+    const c=await q.one(db.venceky_classes,{_id:req.params.id});
+    if(!c) return res.status(404).json({error:'Trieda nenájdená'});
+    const school=await q.one(db.venceky_schools,{_id:c.school_id});
+    const members=(await q.find(db.users,{venceky_class_id:c._id})).filter(u=>u.venceky_role==='student');
+    const pays=await q.find(db.venceky_payments,{class_id:c._id});
+    const payBy=Object.fromEntries(pays.map(p=>[p.user_id,p]));
+    const costs=await q.find(db.venceky_costs,{class_id:c._id});
+    res.json({ok:true, school:school?.name||'', class:{...c, progress:vencekPct(c.dances)},
+      members:members.map(m=>({id:m._id,name:m.name,email:m.email,phone:m.phone||'',
+        paid:!!payBy[m._id], amount:payBy[m._id]?.amount||null, paid_at:payBy[m._id]?.paid_at||null, method:payBy[m._id]?.method||null})),
+      costs, levels:VENCEK_LEVELS});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Admin: zaznamenať platbu žiaka (hotovosť/prevod) + potvrdenie rodičovi ──
+app.post('/api/admin/venceky/payment', adminAuth, async(req,res)=>{
+  try{
+    const {class_id, user_id, amount, method}=req.body;
+    const c=await q.one(db.venceky_classes,{_id:String(class_id||'')});
+    const u=await q.one(db.users,{_id:String(user_id||'')});
+    if(!c||!u) return res.status(404).json({error:'Trieda alebo žiak nenájdený'});
+    if(await q.one(db.venceky_payments,{class_id:c._id,user_id:u._id}))
+      return res.status(400).json({error:'Platba už je zaznamenaná'});
+    const amt=+amount||c.price||49.90;
+    await q.insert(db.venceky_payments,{class_id:c._id, school_id:c.school_id, user_id:u._id,
+      user_name:u.name, amount:amt, method:String(method||'cash'), paid_at:nowISO(),
+      recorded_by:req.session.uid, created_at:nowISO()});
+    // Potvrdenie o platbe — notifikácia + email (rodič/žiak)
+    await q.insert(db.notifications,{user_id:u._id,type:'venceky',
+      title:'🧾 Potvrdenie o platbe — Fusion Venčeky',
+      body:`Prijali sme platbu ${amt.toFixed(2)} € za venčekový kurz (${c.name}). Ďakujeme!`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+    if(u.email && /@/.test(u.email)) sendMail(u.email,'🧾 Potvrdenie o platbe — Fusion Venčeky',
+      emailTemplate('Potvrdenie o platbe',
+      `<p>Potvrdzujeme prijatie platby <b>${amt.toFixed(2)} €</b> za venčekový kurz <b>Fusion Venčeky ${c.year}</b>, trieda <b>${c.name}</b>.</p>
+       <p>Spôsob platby: ${method==='transfer'?'prevod na účet':'hotovosť'} · Dátum: ${today()}</p>
+       <p>Toto potvrdenie si uschovajte. Ďakujeme! 💛</p>`,
+      '📱 Otvoriť appku', `${APP_URL}/vencek`)).catch(()=>{});
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/venceky/payment-delete', adminAuth, async(req,res)=>{
+  try{ await q.remove(db.venceky_payments,{class_id:String(req.body.class_id||''),user_id:String(req.body.user_id||'')},{multi:true});
+    res.json({ok:true}); }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Admin: náklady (per trieda alebo per škola) ──
+app.post('/api/admin/venceky/cost', adminAuth, async(req,res)=>{
+  try{
+    const {school_id, class_id, label, amount}=req.body;
+    if(!(+amount)) return res.status(400).json({error:'Zadaj sumu'});
+    await q.insert(db.venceky_costs,{school_id:String(school_id||'')||null, class_id:String(class_id||'')||null,
+      label:String(label||'Náklad').slice(0,120), amount:+amount, date:today(), created_at:nowISO()});
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Lektor/Admin: zápis hodiny (30-sekundový formulár → progress) ──
+app.post('/api/admin/venceky/progress', trainerAuth, async(req,res)=>{
+  try{
+    const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});
+    if(!c) return res.status(404).json({error:'Trieda nenájdená'});
+    const set={};
+    if(Array.isArray(req.body.dances))
+      set.dances=req.body.dances.map(d=>({name:String(d.name).slice(0,60), level:Math.max(0,Math.min(4,+d.level||0))}));
+    if(req.body.lessons_done!=null) set.lessons_done=Math.max(0,Math.min(+c.lessons_total||13,+req.body.lessons_done||0));
+    if(req.body.note!=null) set.note=String(req.body.note).slice(0,300);
+    if(req.body.event_date!=null) set.event_date=String(req.body.event_date).slice(0,20);
+    await q.update(db.venceky_classes,{_id:c._id},{$set:set});
+    // Notifikácia triede pri novom zvládnutom tanci
+    if(set.dances){
+      const before=new Set((c.dances||[]).filter(d=>d.level>=4).map(d=>d.name));
+      const newly=set.dances.filter(d=>d.level>=4 && !before.has(d.name));
+      if(newly.length){
+        const members=(await q.find(db.users,{venceky_class_id:c._id}));
+        for(const m of members) await q.insert(db.notifications,{user_id:m._id,type:'venceky',
+          title:`🔥 ${newly.map(d=>d.name).join(' + ')} zvládnut${newly.length>1?'é':'ý'}!`,
+          body:`Vaša trieda ${c.name} už vie ${set.dances.filter(d=>d.level>=4).length} z ${set.dances.length} tancov. Len tak ďalej! 💃`,
+          read:false, created_at:nowISO()}).catch(()=>{});
+      }
+    }
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Admin: prideliť rolu učiteľ/riaditeľ existujúcemu účtu ──
+app.post('/api/admin/venceky/assign-role', adminAuth, async(req,res)=>{
+  try{
+    const {email, role, school_id, class_id}=req.body;
+    if(!['teacher','director','none'].includes(role)) return res.status(400).json({error:'Rola musí byť teacher/director/none'});
+    const u=await q.one(db.users,{email:String(email||'').toLowerCase().trim()});
+    if(!u) return res.status(404).json({error:'Používateľ s týmto emailom nemá účet v appke. Nech sa najprv zaregistruje (stačí bežná registrácia), potom mu rolu pridelíš.'});
+    if(role==='none'){ await q.update(db.users,{_id:u._id},{$unset:{venceky_role:true,venceky_school_id:true,venceky_class_id:true}}); return res.json({ok:true}); }
+    const school=await q.one(db.venceky_schools,{_id:String(school_id||'')});
+    if(!school) return res.status(404).json({error:'Škola nenájdená'});
+    const set={venceky_role:role, venceky_school_id:school._id};
+    if(role==='teacher'){ const c=await q.one(db.venceky_classes,{_id:String(class_id||'')});
+      if(!c) return res.status(400).json({error:'Učiteľovi vyber triedu'}); set.venceky_class_id=c._id; }
+    else set.venceky_class_id=null;
+    await q.update(db.users,{_id:u._id},{$set:set});
+    await q.insert(db.notifications,{user_id:u._id,type:'venceky',
+      title: role==='director'?'🏫 Prístup riaditeľa — Fusion Venčeky':'🎓 Prístup učiteľa — Fusion Venčeky',
+      body:`Máte prístup k venčekovému prehľadu ${role==='director'?'školy':'triedy'} ${school.name}. Nájdete ho v appke v sekcii Venčeky.`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Člen/učiteľ/riaditeľ: môj venčekový prehľad (rovnaké dáta, iný rozsah) ──
+app.get('/api/vencek/mine', auth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.session.uid});
+    if(!u || (!u.venceky_class_id && !u.venceky_school_id && !u.is_admin))
+      return res.json({ok:true, role:null});
+    const role=u.is_admin?'admin':(u.venceky_role||'student');
+    const classView=async c=>{
+      const members=(await q.find(db.users,{venceky_class_id:c._id})).filter(x=>x.venceky_role==='student');
+      const pays=await q.find(db.venceky_payments,{class_id:c._id});
+      return { id:c._id, name:c.name, year:c.year, progress:vencekPct(c.dances),
+        dances:(c.dances||[]).map(d=>({name:d.name, level:d.level, level_label:VENCEK_LEVELS[d.level||0], pct:Math.round((d.level||0)/4*100)})),
+        lessons_done:c.lessons_done||0, lessons_total:c.lessons_total||13,
+        event_date:c.event_date||null, note:c.note||'', members:members.length,
+        paid_count:new Set(pays.map(p=>p.user_id)).size };
+    };
+    if(role==='director' || role==='admin'){
+      const sid=u.venceky_school_id;
+      const schools=role==='admin'? await q.find(db.venceky_schools,{}) : [await q.one(db.venceky_schools,{_id:sid})].filter(Boolean);
+      const out=[];
+      for(const s of schools){
+        const cls=await q.find(db.venceky_classes,{school_id:s._id});
+        out.push({school:s.name, year:s.year, classes:await Promise.all(cls.map(classView))});
+      }
+      return res.json({ok:true, role, schools:out});
+    }
+    const c=await q.one(db.venceky_classes,{_id:u.venceky_class_id});
+    if(!c) return res.json({ok:true, role:null});
+    const school=await q.one(db.venceky_schools,{_id:c.school_id});
+    const view=await classView(c);
+    const myPay=await q.one(db.venceky_payments,{class_id:c._id, user_id:u._id});
+    res.json({ok:true, role, school:school?.name||'', class:view,
+      my_payment: myPay?{amount:myPay.amount, paid_at:myPay.paid_at, method:myPay.method}:null,
+      price:c.price||49.90 });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // 🏆 BUSINESS RANK — gamifikovaný rank podnikania (len admin)
 // Rank sa prepočítava z reálnych dát (rovnaké zdroje ako Financie): môže stúpať
