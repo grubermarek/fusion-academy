@@ -394,3 +394,19 @@ if(document.readyState === 'loading'){
   gtag('js', new Date());
   gtag('config', 'AW-734724861');
 })();
+
+/* Testovací účet: plávajúce tlačidlo na návrat do admina (zobrazí sa len adminovi v teste) */
+(function(){
+  if(location.pathname==='/admin') return;
+  fetch('/api/me',{credentials:'include'}).then(r=>r.json()).then(me=>{
+    if(!me || !me.test_account) return;
+    var b=document.createElement('div');
+    b.style.cssText='position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:99999;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;border-radius:999px;padding:9px 18px;font-weight:800;font-size:.85rem;box-shadow:0 8px 30px rgba(0,0,0,.5);cursor:pointer;font-family:Inter,system-ui,sans-serif;white-space:nowrap';
+    b.textContent='🕵️ TESTOVACÍ ÚČET · ↩ Späť do admina';
+    b.onclick=async function(){
+      var r=await fetch('/api/test-account/back',{method:'POST',credentials:'include'}).then(function(x){return x.json()});
+      if(r.ok) location.href=r.redirect_to; else alert(r.error||'Chyba');
+    };
+    document.body.appendChild(b);
+  }).catch(function(){});
+})();

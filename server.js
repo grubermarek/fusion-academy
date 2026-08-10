@@ -8710,6 +8710,42 @@ app.post('/api/admin/bookings/:id/collect', (req,res,next)=>trainerAuth(req,res,
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ── Testovací účet: admin sa prepne do čistého klientskeho účtu (vzhľad + funkčnosť) ──
+// Účet je @test-fa-qa.local → mimo Business Ranku, predajných notifikácií aj kampaní.
+// Pri každom vstupe sa vyresetuje na prázdno. Návrat cez /api/test-account/back.
+const TEST_ACC_EMAIL='test-ucet@test-fa-qa.local';
+app.post('/api/admin/test-account', adminAuth, async(req,res)=>{
+  try{
+    let t=await q.one(db.users,{email:TEST_ACC_EMAIL});
+    if(!t){
+      t=await q.insert(db.users,{name:'Test Klientka', email:TEST_ACC_EMAIL, password:null,
+        phone:'', referral_code:'TESTUCET1', sponsor_id:null, rank:1, is_admin:false, active:true,
+        user_type:'client', visit_count:0, referral_credit:0, lead_source:'test',
+        consent_at:nowISO(), created_at:today()});
+    }
+    // reset na prázdny účet
+    for(const col of ['bookings','notifications','memberships','transactions','payments','invoices','promo_redemptions','spins','mail_log']){
+      try{ await q.remove(db[col],{user_id:t._id},{multi:true}); }catch(e){}
+    }
+    await q.update(db.users,{_id:t._id},{$set:{visit_count:0, free_class_used:false, free_credits:0,
+      single_entries:0, referral_credit:0, membership_plan:null, membership_expires:null, avatar:null,
+      gender:null, nickname:'', status:''},
+      $unset:{venceky_class_id:true, venceky_role:true, venceky_school_id:true, vencek_alumni:true}});
+    req.session.admin_uid=req.session.uid;   // cesta späť
+    req.session.uid=t._id; req.session.sv=t.sess_ver||0;
+    res.json({ok:true, redirect_to:'/client-dashboard'});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/test-account/back', async(req,res)=>{
+  try{
+    if(!req.session.admin_uid) return res.status(400).json({error:'Nie si v testovacom účte'});
+    const adm=await q.one(db.users,{_id:req.session.admin_uid});
+    if(!adm?.is_admin) return res.status(403).json({error:'Chyba návratu'});
+    req.session.uid=adm._id; req.session.sv=adm.sess_ver||0; delete req.session.admin_uid;
+    res.json({ok:true, redirect_to:'/admin'});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/admin/memberships', adminAuth, async(req,res)=>{
   const memberships = await q.find(db.memberships,{});
   const allU = await q.find(db.users,{});
@@ -11895,6 +11931,7 @@ app.get('/api/me', async(req,res)=>{
   res.json({
     id:u._id, name:u.name, email:u.email, phone:u.phone||'', is_admin:u.is_admin,
     user_type:u.user_type||'partner', referral_code:u.referral_code,
+    test_account: !!req.session.admin_uid,
     is_assistant: !!u.is_assistant, assistant_of: u.assistant_of||null,
     membership: m ? {plan_id:m.plan_id,plan_name:m.plan_name,expires_at:m.expires_at,status:m.status||'active'} : null,
     notif_count: notifCount, loyalty, visit_count: u.visit_count||0,

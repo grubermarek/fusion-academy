@@ -104,6 +104,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <button class="rail-btn" id="rail-reports" onclick="selectGroup('reports')" title="Financie a reporty"><i class="bi bi-bar-chart"></i></button>
     <button class="rail-btn" id="rail-partners" onclick="selectGroup('partners')" title="Partneri (MLM)"><i class="bi bi-people"></i></button>
     <div class="mt-auto d-flex flex-column gap-1">
+      <button class="rail-btn" onclick="enterTestAccount()" title="Testovací účet — prepnúť sa do prázdneho klientskeho účtu"><i class="bi bi-incognito"></i></button>
       <a class="rail-btn" href="/shop" target="_blank" title="E-shop"><i class="bi bi-shop"></i></a>
       <button class="rail-btn" onclick="logout()" title="Odhlásiť"><i class="bi bi-box-arrow-left"></i></button>
     </div>
@@ -4915,6 +4916,11 @@ async function addPartner(){
 }
 
 async function logout(){await fetch('/api/logout',{method:'POST'});window.location.href='/';}
+async function enterTestAccount(){
+  if(!confirm('Prepnúť sa do TESTOVACIEHO ÚČTU?\n\nÚčet sa vždy vyresetuje na prázdno (žiadne členstvo, rezervácie ani história) a je mimo všetkých štatistík. Späť sa vrátiš plávajúcim tlačidlom v appke.')) return;
+  const r=await fetch('/api/admin/test-account',{method:'POST'}).then(r=>r.json());
+  if(r.ok) window.location.href=r.redirect_to; else alert(r.error||'Chyba');
+}
 async function goMyProfile(){ try{ const me=await api('/api/me'); if(me&&me.id) window.open('/u/'+me.id,'_blank'); }catch(e){} }
 
 // ── Memberships ──────────────────────────────────────────────
