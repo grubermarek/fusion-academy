@@ -1871,16 +1871,21 @@ app.post('/api/register', rlSignup, async(req,res)=>{
       try{ const admins=await q.find(db.users,{is_admin:true});
         for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'venceky',
           title:'🎓 Nový venčekár', body:`${name} sa pridal(a) do triedy ${vencekClass.name}`, read:false, created_at:nowISO()}); }catch(e){}
-      // Uvítacie benefity: 1× Zumba zdarma + rodičovský kupón −50 % na členstvo
+      // Uvítacie benefity: 1× Zumba zdarma hneď + kupón VENCEKRODIC = 1. mesiac Zumby ZADARMO
+      // (poďakovanie rodičom aj zamestnancom školy, že si vybrali práve nás)
       try{
-        if(!await q.one(db.promo_codes,{code:'VENCEKRODIC'}))
-          await q.insert(db.promo_codes,{ code:'VENCEKRODIC', type:'percent', value:50, applies_to:'membership',
+        const vrp=await q.one(db.promo_codes,{code:'VENCEKRODIC'});
+        if(!vrp)
+          await q.insert(db.promo_codes,{ code:'VENCEKRODIC', type:'percent', value:100, applies_to:'membership',
             max_uses:0, once_per_user:true, min_amount:0, expires_at:null, active:true, used_count:0,
-            note:'Venčeky — kupón pre rodičov (−50 % na prvé členstvo)', created_at:nowISO() });
+            note:'Venčeky — mesiac Zumby zadarmo pre rodičov a zamestnancov školy', created_at:nowISO() });
+        else if(vrp.value!==100)
+          await q.update(db.promo_codes,{_id:vrp._id},{$set:{value:100,
+            note:'Venčeky — mesiac Zumby zadarmo pre rodičov a zamestnancov školy'}});
         await q.update(db.users,{_id:u._id},{$set:{free_credits:1}});
         await q.insert(db.notifications,{user_id:u._id,type:'venceky',
           title:'🎁 Vitaj vo Fusion Venčekoch!',
-          body:'Máš u nás 1× vstup na Zumbu ZDARMA (aj pre rodiča) a kupón VENCEKRODIC na −50 % z prvého členstva. Tešíme sa na teba! 💛',
+          body:'Máš u nás 1× vstup na Zumbu ZDARMA a kupón VENCEKRODIC = celý 1. MESIAC Zumby zadarmo (platí aj pre rodičov) — poďakovanie, že ste si vybrali práve nás. 💛',
           read:false, created_at:nowISO()});
       }catch(e){}
     }
@@ -13331,7 +13336,7 @@ app.post('/api/admin/venceky/assign-role', adminAuth, async(req,res)=>{
     await q.update(db.users,{_id:u._id},{$set:set});
     await q.insert(db.notifications,{user_id:u._id,type:'venceky',
       title: role==='director'?'🏫 Prístup riaditeľa — Fusion Venčeky':'🎓 Prístup učiteľa — Fusion Venčeky',
-      body:`Máte prístup k venčekovému prehľadu ${role==='director'?'školy':'triedy'} ${school.name}. Nájdete ho v appke v sekcii Venčeky.`,
+      body:`Máte prístup k venčekovému prehľadu ${role==='director'?'školy':'triedy'} ${school.name}. Nájdete ho v appke v sekcii Venčeky. Darček od nás: kupón VENCEKRODIC = 1. mesiac Zumby ZADARMO — poďakovanie, že ste si vybrali práve nás. 💛`,
       read:false, created_at:nowISO()}).catch(()=>{});
     res.json({ok:true});
   }catch(e){ res.status(500).json({error:e.message}); }
