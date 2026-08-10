@@ -106,7 +106,9 @@ function attCard(d){
   // žiak / rodič
   const done = d.class.completed
     ? `<div class="hero" style="border-color:rgba(124,179,66,.6)"><span class="badge" style="color:#aed581;border-color:rgba(124,179,66,.5);background:rgba(124,179,66,.12)">🏅 ABSOLVENT</span><h1>Venček máte za sebou!</h1><div class="sub">Odznak absolventa svieti na tvojom profile. Kupón <b style="color:var(--gold)">VENCEKABS</b> = 1. mesiac členstva zdarma. 💛</div></div>` : '';
-  const pay = d.my_payment
+  const pay = d.is_parent
+    ? `<div class="pay-ok" style="background:rgba(201,168,76,.1);border-color:rgba(201,168,76,.4);color:var(--cream)">👨‍👩‍👧 Sledujete triedu${d.child_name?` — dieťa <b>${esc(d.child_name)}</b>`:''}. Kurz (${(+d.price).toFixed(2)} €) sa uhrádza cez účet žiaka — po platbe príde potvrdenie na email.</div>`
+    : d.my_payment
     ? `<div class="pay-ok">🧾 <b>Zaplatené</b> — ${(+d.my_payment.amount).toFixed(2)} € (${d.my_payment.method==='transfer'?'prevodom':'v hotovosti'}, ${new Date(d.my_payment.paid_at).toLocaleDateString('sk')}). Potvrdenie máš v notifikáciách a na emaili.</div>`
     : `<div class="pay-no">💳 Kurz ešte nie je uhradený (${(+d.price).toFixed(2)} €). Platba v hotovosti na hodine alebo prevodom — info u lektora.</div>`;
   host.innerHTML=done+`<div class="muted" style="margin-bottom:8px">🏫 ${esc(d.school)}</div>`+classCard(d.class, `<div class="card">${pay}</div>`+attCard(d));

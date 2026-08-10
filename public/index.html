@@ -552,6 +552,11 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
       document.body.prepend(b);
     });
   }
+  document.addEventListener('DOMContentLoaded', function(){
+    if(localStorage.getItem('fa_vencek_code')){
+      var g=document.getElementById('venRoleGroup'); if(g) g.style.display='block';
+    }
+  });
 })();
 </script>
 </head>
@@ -655,6 +660,21 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
         <div class="form-group" id="codeGroup">
           <label>Kód sponzora <span class="optional">(ak ťa niekto pozval)</span></label>
           <input type="text" id="rCode" placeholder="napr. MAREK21" style="text-transform:uppercase">
+        </div>
+        <div id="venRoleGroup" style="display:none">
+          <div class="form-group">
+            <label style="color:#C9A24C">🎓 Venčeky — kto sa registruje?</label>
+            <select id="rVenRole" style="width:100%;padding:12px;border-radius:10px;background:#1d1a15;border:1px solid #3a3428;color:#e8e2d4" onchange="document.getElementById('venChildGroup').style.display=this.value==='parent'?'block':'none'">
+              <option value="student">🧑‍🎓 Žiak / žiačka (deviatak)</option>
+              <option value="parent">👨‍👩‍👧 Rodič žiaka</option>
+              <option value="teacher">👩‍🏫 Triedny učiteľ / učiteľka</option>
+              <option value="director">🏫 Riaditeľ / riaditeľka školy</option>
+            </select>
+          </div>
+          <div class="form-group" id="venChildGroup" style="display:none">
+            <label>Meno vášho dieťaťa <span class="optional">(aby sme vás spárovali s triedou)</span></label>
+            <input type="text" id="rVenChild" placeholder="napr. Ema Nováková">
+          </div>
         </div>
         <div class="form-group">
           <label>Kde si sa o nás dozvedela? <span class="optional">(voliteľné)</span></label>
@@ -1153,7 +1173,7 @@ async function doRegister(){
   try{
     const lead_source=document.getElementById('rLeadSource')?.value||'';
     const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name,email,password:pass,phone,sponsorCode:code,user_type:'client',lead_source,consent:true,vencek_code:localStorage.getItem('fa_vencek_code')||undefined,attribution:window.faGetAttribution?window.faGetAttribution():{}}),credentials:'include'});
+      body:JSON.stringify({name,email,password:pass,phone,sponsorCode:code,user_type:'client',lead_source,consent:true,vencek_code:localStorage.getItem('fa_vencek_code')||undefined,vencek_role:document.getElementById('rVenRole')?.value||undefined,vencek_child_name:document.getElementById('rVenChild')?.value.trim()||undefined,attribution:window.faGetAttribution?window.faGetAttribution():{}}),credentials:'include'});
     const d=await r.json();
     if(!r.ok){
       showErr('regErr',d.error||'Chyba registrácie');

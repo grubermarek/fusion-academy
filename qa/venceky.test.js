@@ -150,6 +150,43 @@ const post = (jar, p, b) => call(jar, 'POST', p, b);
   const notifsAdm = ((await g('admin', '/api/notifications')).data) || [];
   ok('admin notifikácia o bookingu', notifsAdm.some(n => /zabookovala termín/.test(n.title || '')), notifsAdm.slice(0, 2));
 
+  // ── ROLY PRI REGISTRÁCII CEZ KÓD ──
+  // rodič: priradený, nepočíta sa medzi žiakov, vidí triedu
+  await post('P1', '/api/register', { name: 'VEN Mama', email: 'ven-p1-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', consent: true, vencek_code: code, vencek_role: 'parent', vencek_child_name: 'VEN Ziacka' });
+  const mineP = (await g('P1', '/api/vencek/mine')).data || {};
+  ok('rodič vidí triedu ako parent', mineP.role === 'parent' && mineP.is_parent === true && mineP.child_name === 'VEN Ziacka', mineP);
+  const ovP = (await g('admin', '/api/admin/venceky/overview')).data || {};
+  const ocP = ovP.schools?.[0]?.classes?.[0];
+  ok('rodič sa nepočíta medzi žiakov (stále 1 žiak, 1 rodič)', ocP?.members === 1 && ocP?.parents === 1, ocP);
+  const chP = (await g('P1', '/api/community/channels')).data || [];
+  ok('rodič vidí VIP kanál', chP.some(c => c.id === 'venceky_vip'), chP.length);
+  const meP = (await g('P1', '/api/me')).data || {};
+  ok('rodič dostal 1× vstup zdarma', meP.free_credits === 1, meP.free_credits);
+
+  // učiteľ cez kód: pending, bez prístupu, potom schválenie
+  await post('T2', '/api/register', { name: 'VEN Ucitel QR', email: 'ven-t2-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', consent: true, vencek_code: code, vencek_role: 'teacher' });
+  const mineT2 = (await g('T2', '/api/vencek/mine')).data || {};
+  ok('učiteľ cez QR nemá prístup pred schválením', mineT2.role === null, mineT2);
+  const chT2 = (await g('T2', '/api/community/channels')).data || [];
+  ok('pending učiteľ nevidí VIP kanál', !chT2.some(c => c.id === 'venceky_vip'), chT2.length);
+  const ovT = (await g('admin', '/api/admin/venceky/overview')).data || {};
+  const pend = (ovT.pending || []).find(p => p.name === 'VEN Ucitel QR');
+  ok('admin vidí čakajúceho učiteľa', !!pend && pend.role === 'teacher' && pend.school === 'ZŠ QA Testová', ovT.pending);
+  const apr = await post('admin', '/api/admin/venceky/approve', { user_id: pend.id, approve: true });
+  ok('schválenie prešlo', apr.status === 200, apr);
+  const mineT3 = (await g('T2', '/api/vencek/mine')).data || {};
+  ok('po schválení má učiteľ prístup k triede', mineT3.role === 'teacher' && mineT3.class?.name === '9.A', mineT3);
+  const notifsT2 = ((await g('T2', '/api/notifications')).data) || [];
+  ok('učiteľ dostal notifikáciu o schválení + kupón', notifsT2.some(n => /Prístup schválený/.test(n.title || '') && /VENCEKRODIC/.test(n.body || '')), notifsT2.slice(0, 3));
+
+  // riaditeľ cez kód: pending + zamietnutie
+  await post('R2', '/api/register', { name: 'VEN Riaditel QR', email: 'ven-r2-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', consent: true, vencek_code: code, vencek_role: 'director' });
+  const ovR = (await g('admin', '/api/admin/venceky/overview')).data || {};
+  const pendR = (ovR.pending || []).find(p => p.name === 'VEN Riaditel QR');
+  const rej = await post('admin', '/api/admin/venceky/approve', { user_id: pendR.id, approve: false });
+  const mineR2 = (await g('R2', '/api/vencek/mine')).data || {};
+  ok('zamietnutý riaditeľ nemá prístup', rej.status === 200 && mineR2.role === null, mineR2);
+
   console.log(`\n═══ VÝSLEDOK: ${PASS} ✓ / ${FAIL} ✗ ═══`);
   if (FAIL) { console.log(FAILS.map(f => f.name).join('\n')); process.exit(1); }
 })().catch(e => { console.error('FATAL', e); process.exit(1); });

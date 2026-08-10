@@ -2818,8 +2818,19 @@ async function loadVenceky(){
     <span class="badge p-2" style="background:#5a3423">📉 náklady: <b>${vEur(VEN.totals.costs)}</b></span>
     <span class="badge p-2" style="background:${VEN.totals.profit>=0?'#C9A84C':'#8a2f2f'};color:${VEN.totals.profit>=0?'#161310':'#fff'}">📈 zisk: <b>${vEur(VEN.totals.profit)}</b></span>
   </div>`;
-  if(!VEN.schools.length){ list.innerHTML='<div class="text-muted py-4 text-center">Zatiaľ žiadne školy. Začni tlačidlom „Nová škola".</div>'; return; }
-  list.innerHTML=VEN.schools.map(s=>`
+  const pendingHtml=(VEN.pending||[]).length?`
+    <div class="card mb-3" style="background:#2a2410;border:1px solid #C9A84C"><div class="card-body py-2">
+      <h6 class="fw-bold mb-2" style="color:#C9A84C">⏳ Čakajú na schválenie (registrácia cez QR kód)</h6>
+      ${VEN.pending.map(p=>`<div class="d-flex justify-content-between align-items-center border-bottom border-secondary py-2 small flex-wrap gap-2">
+        <span>${p.role==='director'?'🏫':'👩‍🏫'} <b>${p.name}</b> <span class="text-muted">${p.email}</span><br>
+          <small class="text-muted">${p.role==='director'?'riaditeľ':'učiteľ'} · ${p.school}${p.class?' · '+p.class:''}</small></span>
+        <span>
+          <button class="btn btn-sm btn-success" onclick="vApprove('${p.id}',true)">✅ Schváliť</button>
+          <button class="btn btn-sm btn-outline-danger" onclick="vApprove('${p.id}',false)">Zamietnuť</button>
+        </span></div>`).join('')}
+    </div></div>`:'';
+  if(!VEN.schools.length){ list.innerHTML=pendingHtml+'<div class="text-muted py-4 text-center">Zatiaľ žiadne školy. Začni tlačidlom „Nová škola".</div>'; return; }
+  list.innerHTML=pendingHtml+VEN.schools.map(s=>`
     <div class="card bg-dark border-secondary mb-3"><div class="card-body">
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
         <h6 class="fw-bold mb-0">🏫 ${s.name} <span class="text-muted small">· ${s.city||''} · ${s.year}</span></h6>
@@ -2847,6 +2858,11 @@ async function loadVenceky(){
         </tr>`).join('')}
       </tbody></table>`:'<div class="text-muted small">Žiadne triedy — pridaj prvú.</div>'}
     </div></div>`).join('');
+}
+async function vApprove(uid,ok){
+  if(!ok && !confirm('Zamietnuť prístup? Používateľ dostane notifikáciu.')) return;
+  await vApi('approve',{user_id:uid,approve:ok});
+  loadVenceky();
 }
 async function vBookingLink(sid){
   const d=await vApi('booking-link',{school_id:sid});
@@ -2977,6 +2993,9 @@ async function vClassDetail(cid){
              <button class="btn btn-sm btn-outline-light" onclick="vMarkPaid('${c._id}','${mm.id}','transfer')">🏦 prevod</button>`}</td>
       </tr>`).join('')||'<tr><td class="text-muted">Zatiaľ žiadni žiaci — pošli triede QR/odkaz na registráciu.</td></tr>'}
     </tbody></table>
+
+    ${(d.parents||[]).length?`<h6 class="fw-bold mt-2">👨‍👩‍👧 Rodičia v triede (${d.parents.length})</h6>
+    <div class="small mb-2">${d.parents.map(p=>`<div class="border-bottom border-secondary py-1"><b>${p.name}</b> <span class="text-muted">${p.email||''}</span>${p.child?` · dieťa: <b>${p.child}</b>`:''}</div>`).join('')}</div>`:''}
 
     <h6 class="fw-bold mt-3">🙋 Dochádzka <small class="text-muted fw-normal">(vidia ju rodičia aj riaditeľ)</small></h6>
     <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
