@@ -50,6 +50,33 @@ const g=(j,p)=>call(j,'GET',p), post=(j,p,b)=>call(j,'POST',p,b), put=(j,p,b)=>c
   const ord=await post('A','/api/shop/order',{client_name:'OB Nova',client_email:'ob-a-'+uniq+'@test-fa-qa.local',
     items:[{product_id:merch._id,qty:1}],payment_method:'cash',delivery:'pickup'});
   ok('merch objednávka prešla', ord.status===200, ord.data);
+
+  // ── FÁZA 2: ledger, smart upgrade, analytics ──
+  await post('A','/api/membership/buy',{plan_id:'vstup1',payment_method:'manual',use_referral_credit:true});
+  const ch=(await g('A','/api/credit-history')).data||{};
+  ok('ledger: použitie kreditu zapísané', (ch.rows||[]).some(r=>r.delta===-10 && /vstup/i.test(r.reason)), ch.rows);
+
+  await post('B','/api/register',{name:'OB Upgrade',email:'ob-b-'+uniq+'@test-fa-qa.local',password:'AuditPass123!',consent:true});
+  await post('B','/api/membership/buy',{plan_id:'bronze',payment_method:'manual'});
+  let q2=(await g('admin','/api/admin/manual-payments')).data||{};
+  let payB=(q2.payments||[]).find(p=>p.user==='OB Upgrade');
+  await post('admin','/api/admin/manual-payments/'+payB.id+'/confirm',{method:'cash'});
+  await post('B','/api/membership/buy',{plan_id:'silver',payment_method:'manual'});
+  q2=(await g('admin','/api/admin/manual-payments')).data||{};
+  payB=(q2.payments||[]).find(p=>p.user==='OB Upgrade');
+  await post('admin','/api/admin/manual-payments/'+payB.id+'/confirm',{method:'cash'});
+  const memB=((await g('B','/api/membership')).data||{}).membership;
+  const meB=(await g('B','/api/me')).data||{};
+  ok('upgrade: silver aktívne hneď', memB?.plan_id==='silver', memB);
+  ok('upgrade: zvyšok bronze prerátaný na kredit (~50 €)', meB.referral_credit>=45 && meB.referral_credit<=50, meB.referral_credit);
+  const chB=(await g('B','/api/credit-history')).data||{};
+  ok('upgrade v ledgeri', (chB.rows||[]).some(r=>/Prerátanie zvyšku/i.test(r.reason)), chB.rows);
+
+  await post('A','/api/shop/event',{type:'shop_open'});
+  const an=(await g('admin','/api/admin/shop-analytics')).data||{};
+  ok('analytics: funnel + revenue štruktúra', an.ok && an.funnel && an.revenue && typeof an.revenue.total==='number', an);
+  ok('analytics: test účty vylúčené (0 nákupov, 0 eventov)', an.revenue.orders===0 && an.funnel.shop_open===0, {o:an.revenue.orders,f:an.funnel});
+
   console.log(`\n═══ VÝSLEDOK: ${PASS} ✓ / ${FAIL} ✗ ═══`);
   if(FAIL) process.exit(1);
 })().catch(e=>{console.error('FATAL',e);process.exit(1);});

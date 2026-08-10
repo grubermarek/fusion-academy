@@ -866,6 +866,12 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <h4 class="fw-bold mb-1">📈 Marketing — CAC &amp; LTV</h4>
     <p class="text-muted small mb-3">Odkiaľ prichádzajú klienti, koľko stoja a koľko prinesú. Výdavky na reklamu zadávaj nižšie — CAC sa počíta automaticky.</p>
 
+    <!-- Obchod analytics -->
+    <div class="card bg-dark border-secondary mb-3"><div class="card-body py-3">
+      <h6 class="fw-bold mb-2" style="color:#C9A84C">🛍️ Obchod — tento mesiac</h6>
+      <div id="shopAnalytics" class="small text-muted">Načítavam…</div>
+    </div></div>
+
     <!-- KPI cards -->
     <div class="row g-2 mb-3" id="mkKpis"></div>
 
@@ -3594,7 +3600,25 @@ async function loadRetention(){
 /* ─── MARKETING ─────────────────────────────────────────────── */
 const SRC_LABEL={meta:'📘 Meta (FB/IG)',google:'🔎 Google',tiktok:'🎵 TikTok',referral:'🤝 Referral',organic:'🌱 Organika',other:'Iné'};
 function srcLabel(s){return SRC_LABEL[s]||s;}
+async function loadShopAnalytics(){
+  const el=document.getElementById('shopAnalytics'); if(!el) return;
+  try{
+    const d=await api('/api/admin/shop-analytics');
+    if(!d?.ok){ el.textContent='Nepodarilo sa načítať.'; return; }
+    const f=d.funnel, conv=(a,b)=>b?Math.round(a/b*100)+' %':'—';
+    el.innerHTML=`<div class="d-flex gap-3 flex-wrap mb-2">
+      <span class="badge bg-secondary p-2">💶 tržby: <b>${eur(d.revenue.total)}</b></span>
+      <span class="badge bg-secondary p-2">🧾 nákupov: <b>${d.revenue.orders}</b></span>
+      <span class="badge bg-secondary p-2">⌀ objednávka: <b>${eur(d.revenue.avg)}</b></span>
+      ${d.pending_manual?`<span class="badge bg-warning text-dark p-2">⏳ čaká hotovosť: <b>${d.pending_manual}</b></span>`:''}
+      ${d.failed_payments?`<span class="badge bg-danger p-2">✕ zlyhané platby: <b>${d.failed_payments}</b></span>`:''}
+    </div>
+    <div class="mb-2">Funnel: otvorili Obchod <b>${f.shop_open}</b> → otvorili checkout <b>${f.checkout_open}</b> (${conv(f.checkout_open,f.shop_open)}) → nakúpili <b style="color:#8bc34a">${f.purchased}</b> (${conv(f.purchased,f.checkout_open)})</div>
+    <div class="d-flex gap-3 flex-wrap">${Object.entries(d.revenue.by_category).map(([k,v])=>`<span>${k}: <b>${eur(v.sum)}</b> <span class="text-muted">(${v.n}×)</span></span>`).join('')}</div>`;
+  }catch(e){ el.textContent='Chyba.'; }
+}
 async function loadMarketing(){
+  loadShopAnalytics();
   const d = await api('/api/admin/marketing/stats');
   if(!d||d.error){ showToast('Chyba: '+(d?.error||'?'),'error'); return; }
   const t=d.totals;

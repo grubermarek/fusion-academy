@@ -190,6 +190,8 @@ const db = {
   venceky_attendance:new Datastore({ filename: path.join(DATA_DIR, 'venceky_attendance.db'), autoload: true }),
   venceky_slots:    new Datastore({ filename: path.join(DATA_DIR, 'venceky_slots.db'),    autoload: true }),
   referral_events:  new Datastore({ filename: path.join(DATA_DIR, 'referral_events.db'),  autoload: true }),
+  credit_ledger:    new Datastore({ filename: path.join(DATA_DIR, 'credit_ledger.db'),    autoload: true }),
+  shop_events:      new Datastore({ filename: path.join(DATA_DIR, 'shop_events.db'),      autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -6054,6 +6056,11 @@ const MEMBERSHIP_PLANS = {
   'permanentka10':  { name:'10-vstupová permanentka', price:80, duration_days:90, online:false, color:'#FF9800', type:'bundle', entries:10 },
 };
 
+async function logCredit(userId, delta, reason){
+  try{ const u=await q.one(db.users,{_id:userId});
+    await q.insert(db.credit_ledger,{user_id:userId, delta:+(+delta).toFixed(2), reason:String(reason).slice(0,160),
+      balance:+(u?.referral_credit||0), created_at:nowISO()}); }catch(e){}
+}
 async function activateMembership(userId, planId, durationDays){
   const plan = MEMBERSHIP_PLANS[planId];
   if(!plan) return;
@@ -6080,6 +6087,7 @@ async function activateMembership(userId, planId, durationDays){
       if(sponsor && !sponsor.is_admin && !['trainer','manager'].includes(sponsor.user_type)){
         const newCredit = +((sponsor.referral_credit||0)+bonus).toFixed(2);
         await q.update(db.users,{_id:u0b.sponsor_id},{$set:{referral_credit:newCredit}});
+        logCredit(u0b.sponsor_id, bonus, 'Referral odmena — '+u0b.name+' kúpil/a permanentku');
         await q.insert(db.notifications,{user_id:u0b.sponsor_id,type:'referral_credit',title:`+${bonus} € referral kredit! 💰`,body:`${u0b.name} kúpil/a permanentku. Zostatok: ${newCredit} €`,read:false,created_at:nowISO()});
       }
     }
@@ -6088,9 +6096,25 @@ async function activateMembership(userId, planId, durationDays){
 
   // Check existing active membership
   const existing = await q.one(db.memberships,{user_id:userId,status:'active'});
-  const startDate = existing && new Date(existing.expires_at) > now
-    ? new Date(existing.expires_at)  // extend from current expiry
-    : now;
+  // Upgrade/zmena plánu: zvyšné dni starého plánu vrátime ako Fusion kredit a nový
+  // plán začína hneď. Rovnaký plán = predĺženie od aktuálnej expirácie (pôvodné správanie).
+  if(existing && existing.plan_id!==planId && new Date(existing.expires_at)>now){
+    const oldPlan=MEMBERSHIP_PLANS[existing.plan_id];
+    const remDays=Math.max(0,Math.min(30,(new Date(existing.expires_at)-now)/86400000));
+    const refundVal=oldPlan?+((oldPlan.price||existing.price||0)*remDays/30).toFixed(2):0;
+    if(refundVal>=0.5){
+      const uu=await q.one(db.users,{_id:userId});
+      const nb=+((uu?.referral_credit||0)+refundVal).toFixed(2);
+      await q.update(db.users,{_id:userId},{$set:{referral_credit:nb}});
+      logCredit(userId, refundVal, 'Prerátanie zvyšku členstva '+(oldPlan?.name||existing.plan_name)+' ('+Math.round(remDays)+' dní) pri zmene plánu');
+      await q.insert(db.notifications,{user_id:userId,type:'credit',
+        title:'💛 +'+refundVal.toFixed(2)+' € Fusion kredit',
+        body:'Zvyšných '+Math.round(remDays)+' dní členstva '+(oldPlan?.name||existing.plan_name)+' sme ti prerátali na kredit. Nové členstvo platí od dnes.',
+        read:false, created_at:nowISO()}).catch(()=>{});
+    }
+  }
+  const samePlanExtend = existing && existing.plan_id===planId && new Date(existing.expires_at)>now;
+  const startDate = samePlanExtend ? new Date(existing.expires_at) : now;
   const expiresAt = new Date(startDate.getTime() + (durationDays||plan.duration_days)*24*60*60*1000);
   if(existing){
     await q.update(db.memberships,{_id:existing._id},{$set:{plan_id:planId,plan_name:plan.name,expires_at:expiresAt.toISOString(),updated_at:nowISO()}});
@@ -6523,6 +6547,7 @@ app.post('/api/membership/buy', auth, async(req,res)=>{
       creditUsed = Math.min(u.referral_credit, basePrice);
       finalPrice = Math.max(0, +(basePrice - creditUsed).toFixed(2));
       await q.update(db.users,{_id:u._id},{$set:{referral_credit: +(u.referral_credit - creditUsed).toFixed(2)}});
+      logCredit(u._id, -creditUsed, 'Použitý pri nákupe '+plan.name);
       await q.insert(db.notifications,{user_id:u._id,type:'credit',title:`Referral kredit použitý 💳`,body:`${creditUsed.toFixed(2)} € zľava na ${plan.name}${forWhom}. Nový zostatok: ${(u.referral_credit-creditUsed).toFixed(2)} €`,read:false,created_at:nowISO()});
     }
 
@@ -8693,7 +8718,8 @@ app.post('/api/admin/manual-payments/:id/cancel', adminAuth, async(req,res)=>{
     if(!p) return res.status(404).json({error:'Platba nenájdená'});
     // vráť použitý kredit, nech oň klient nepríde
     if(p.credit_used>0){ const u=await q.one(db.users,{_id:p.user_id});
-      if(u) await q.update(db.users,{_id:u._id},{$set:{referral_credit:+((u.referral_credit||0)+p.credit_used).toFixed(2)}}); }
+      if(u){ await q.update(db.users,{_id:u._id},{$set:{referral_credit:+((u.referral_credit||0)+p.credit_used).toFixed(2)}});
+        logCredit(u._id, p.credit_used, 'Vrátený kredit — zrušená žiadosť '+p.description); } }
     await q.update(db.payments,{_id:p._id},{$set:{status:'cancelled', cancelled_at:nowISO(), cancelled_by:req.session.uid}});
     await q.insert(db.notifications,{user_id:p.user_id,type:'membership',
       title:'Žiadosť o členstvo zrušená', body:'Tvoja žiadosť o '+p.description+' bola zrušená. Ak ide o omyl, ozvi sa nám.',
@@ -8732,6 +8758,51 @@ app.post('/api/admin/bookings/:id/collect', (req,res,next)=>trainerAuth(req,res,
 
 // ── SHOP HUB: jeden prehľad pre /obchod — čo mám, čo mi končí, čo sa mi oplatí ──
 // Len UI vrstva nad existujúcimi systémami (memberships, vstupy, kredit, transakcie).
+app.get('/api/credit-history', auth, async(req,res)=>{
+  try{
+    const rows=(await q.find(db.credit_ledger,{user_id:req.session.uid}))
+      .sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))).slice(0,50);
+    res.json({ok:true, rows});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Shop funnel eventy (view/checkout) — nákupy sa berú z transakcií, nie z frontendu
+app.post('/api/shop/event', auth, async(req,res)=>{
+  try{
+    const type=String(req.body.type||'');
+    if(!['shop_open','checkout_open'].includes(type)) return res.json({ok:true});
+    const u=await q.one(db.users,{_id:req.session.uid});
+    if(/@test-fa-qa\.local$/.test(u?.email||'')) return res.json({ok:true, test:true});
+    // max 1 event daného typu na deň a osobu — žiadny spam v štatistikách
+    const key='shopq_'+type+'_'+req.session.uid+'_'+today();
+    if(!(await q.one(db.settings,{key}))){
+      await q.insert(db.settings,{key, value:1, at:nowISO()});
+      await q.insert(db.shop_events,{user_id:req.session.uid, type, item:String(req.body.item||'').slice(0,60), day:today(), created_at:nowISO()});
+    }
+    res.json({ok:true});
+  }catch(e){ res.json({ok:false}); }
+});
+app.get('/api/admin/shop-analytics', adminAuth, async(req,res)=>{
+  try{
+    const month=String(req.query.month||today().slice(0,7));
+    const ev=(await q.find(db.shop_events,{})).filter(e=>String(e.day||'').startsWith(month));
+    const users=await q.find(db.users,{});
+    const testIds=new Set(users.filter(u=>/@test-fa-qa\.local$/.test(u.email||'')).map(u=>u._id));
+    const tx=(await q.find(db.transactions,{})).filter(t=>t.month===month && !testIds.has(t.user_id));
+    const buyers=new Set(tx.map(t=>t.user_id));
+    const cat=t=>t.type==='membership'||t.type==='subscription'?'Členstvá':(t.type==='single_entry'?'Vstupy/permanentky':(t.type==='order'||/tričko|taška|tielko|merch/i.test(t.note||'')?'Merch':(/event|masterclass|workshop/i.test(t.note||'')?'Eventy':'Ostatné')));
+    const byCat={};
+    for(const t of tx){ const c=cat(t); byCat[c]=byCat[c]||{n:0,sum:0}; byCat[c].n++; byCat[c].sum=+(byCat[c].sum+(+t.amount||0)).toFixed(2); }
+    const total=+tx.reduce((a,t)=>a+(+t.amount||0),0).toFixed(2);
+    const failed=(await q.find(db.payments,{})).filter(p=>String(p.created_at||'').startsWith(month)&&['failed','cancelled'].includes(p.status)).length;
+    const pendingNow=(await q.find(db.payments,{status:'pending_manual'})).length;
+    res.json({ok:true, month,
+      funnel:{ shop_open:new Set(ev.filter(e=>e.type==='shop_open').map(e=>e.user_id)).size,
+        checkout_open:new Set(ev.filter(e=>e.type==='checkout_open').map(e=>e.user_id)).size,
+        purchased:buyers.size },
+      revenue:{total, orders:tx.length, avg:tx.length?+(total/tx.length).toFixed(2):0, by_category:byCat},
+      failed_payments:failed, pending_manual:pendingNow});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 app.get('/api/shop/overview', auth, async(req,res)=>{
   try{
     const u=await q.one(db.users,{_id:req.session.uid});
@@ -14278,6 +14349,39 @@ app.get('/api/admin/business-rank', adminAuth, async(req,res)=>{
 });
 
 async function runDailyJobs(){
+  // ── Reconciliation: zaplatené ↔ pridelené. Nikdy „peniaze odišli, produkt nemám". ──
+  try{
+    const since=new Date(Date.now()-3*86400000).toISOString();
+    const paid=(await q.find(db.payments,{status:'completed'})).filter(p=>String(p.captured_at||p.created_at||'')>=since && p.ref_type==='membership' && !p.reconciled_ok && !p.reconciled_flagged);
+    for(const p of paid){
+      const memberId=p.member_id||p.user_id;
+      const mm=(await q.find(db.memberships,{user_id:memberId})).some(m=>String(m.created_at||'')>=String(p.created_at||'').slice(0,10));
+      const uu=await q.one(db.users,{_id:memberId});
+      const plan=MEMBERSHIP_PLANS[p.ref_id];
+      const okEnt=plan?.type==='bundle' ? ((uu?.single_entries||0)>0 || mm) : mm;
+      if(okEnt){ await q.update(db.payments,{_id:p._id},{$set:{reconciled_ok:true}}); }
+      else{
+        await q.update(db.payments,{_id:p._id},{$set:{reconciled_flagged:true}});
+        const admins=await q.find(db.users,{is_admin:true});
+        for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'reconciliation',
+          title:'⚠️ Platba bez produktu!',
+          body:(uu?.name||'?')+' zaplatil(a) '+(+p.amount).toFixed(2)+' € ('+p.description+'), ale produkt nie je pridelený. Skontroluj v admine → Všetky predaje / klientov profil.',
+          read:false, created_at:nowISO()}).catch(()=>{});
+        console.error('⚠️ RECONCILIATION: payment '+p._id+' bez entitlementu ('+p.description+')');
+      }
+    }
+    // hotovostné žiadosti staršie ako 3 dni → pripomienka adminovi (raz)
+    const stale=(await q.find(db.payments,{status:'pending_manual'})).filter(p=>String(p.created_at)<new Date(Date.now()-3*86400000).toISOString() && !p.stale_notified);
+    for(const p of stale){
+      await q.update(db.payments,{_id:p._id},{$set:{stale_notified:true}});
+      const admins=await q.find(db.users,{is_admin:true});
+      const uu=await q.one(db.users,{_id:p.user_id});
+      for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'reconciliation',
+        title:'⏳ Hotovostná objednávka čaká už 3+ dni',
+        body:(uu?.name||'?')+' — '+p.description+' ('+(+p.amount).toFixed(2)+' €). Vybrať platbu, alebo zrušiť v admine → Všetky predaje.',
+        read:false, created_at:nowISO()}).catch(()=>{});
+    }
+  }catch(e){ console.error('reconciliation:', e.message); }
   const d3 = new Date(Date.now()+3*86400000).toISOString().slice(0,10);
   const d7 = new Date(Date.now()+7*86400000).toISOString().slice(0,10);
   const todayStr = today();

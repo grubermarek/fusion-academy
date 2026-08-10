@@ -113,6 +113,7 @@ async function boot(){
   if(!me?.id){ location.href='/?next=/obchod'; return; }
   ME=me; OV=ov; PLANS=plans; STRIPE=!!cfg.stripe_enabled; PRODUCTS=Array.isArray(prods)?prods:[];
   renderMyf(); renderRecs(); renderTabs();
+  api('/api/shop/event',{method:'POST',body:JSON.stringify({type:'shop_open'})});
   const want=new URLSearchParams(location.search).get('tab')||location.hash.replace('#','');
   showTab(['clenstva','vstupy','merch','eventy','nakupy'].includes(want)?want:'clenstva');
 }
@@ -130,7 +131,7 @@ function renderMyf(){
     rows+=`<div class="row"><span>Permanentka / vstupy</span><span style="text-align:right"><b>${e.left}</b> ${e.left===1?'vstup':'vstupov'}<div class="dots" style="margin-top:5px;justify-content:flex-end">${dots}</div>${e.expires_at?`<small style="color:var(--muted);font-size:.72rem">platí do ${dstr(e.expires_at)}</small>`:''}</span></div>`;
   }
   if(OV.free_credits>0) rows+=`<div class="row"><span>🎁 Hodiny zdarma</span><span><b>${OV.free_credits}</b></span></div>`;
-  rows+=`<div class="row"><span>💛 Fusion kredit</span><span><b class="big gold">${eur(OV.credit)}</b></span></div>`;
+  rows+=`<div class="row" style="cursor:pointer" onclick="creditHistory()"><span>💛 Fusion kredit <small style="color:var(--muted);font-size:.72rem">(klikni na históriu)</small></span><span><b class="big gold">${eur(OV.credit)}</b></span></div>`;
   document.getElementById('myf').innerHTML=`<div class="myf"><div style="font-size:.72rem;font-weight:800;letter-spacing:.12em;color:var(--gold);margin-bottom:4px">MOJE FUSION</div>${rows}</div>`;
 }
 function renderRecs(){
@@ -229,6 +230,7 @@ function openPlan(id){
   document.getElementById('mBody').innerHTML=`
     ${monthly&&STRIPE?`<label class="renew"><input type="checkbox" id="mRenew" checked onchange="recalc()" style="accent-color:#C9A84C;width:17px;height:17px">
       <span>🔄 <b>Obnovovať automaticky</b> každý mesiac kartou<br><small style="color:var(--muted)">Žiadny záväzok — zrušíš jedným klikom v profile</small></span></label>`:''}
+    ${(OV.membership && OV.membership.plan_id!==id && monthly)?`<p class="note" style="margin:0 0 10px;color:var(--gold)">🔄 Máš aktívne ${esc(OV.membership.plan_name)} do ${dstr(OV.membership.expires_at)}. Nový plán začne platiť hneď a zvyšné dni (~${Math.max(0,Math.round((OV.membership.price||0)*Math.max(0,OV.membership.days_left)/30*100)/100).toFixed(2)} €) ti prerátame na Fusion kredit.</p>`:''}
     <div class="mrow"><span class="mut">Cena</span><span>${eur(p.price)}</span></div>
     ${OV.credit>0?`<label class="credit-row"><input type="checkbox" id="mCredit" checked onchange="recalc()" style="accent-color:#C9A84C">💛 Použiť Fusion kredit (${eur(OV.credit)})</label>`:''}
     <div class="promo-row"><input id="mPromo" placeholder="Promo kód"><button onclick="applyPromo()">Použiť</button></div>
@@ -238,6 +240,7 @@ function openPlan(id){
     <button class="paybtn sec" id="mManual" onclick="payManual()">💵 Zaplatím v hotovosti / prevodom</button>
     <p class="note" id="mManualNote">Hotovosť odovzdáš trénerke na hodine alebo pošleš prevodom — ${p.type==='bundle'?'vstupy':'členstvo'} ti aktivujeme hneď po prijatí platby a príde ti potvrdenie.</p>
     <div class="err" id="mErr"></div>`;
+  api('/api/shop/event',{method:'POST',body:JSON.stringify({type:'checkout_open', item:id})});
   document.getElementById('buyM').classList.add('open');
   recalc();
 }
@@ -316,6 +319,16 @@ const HOWTO={
   entries:'Permanentka = 10 vstupov na 90 dní na ľubovoľné skupinové hodiny. Vstup sa odpočíta pri rezervácii hodiny; ak rezerváciu zrušíš včas, vstup sa ti vráti. Online hodiny stoja 1 vstup za deň sledovania.',
   merch:'Merch objednáš v appke a zaplatíš pri prevzatí na hodine. Nič neplatíš vopred.',
 };
+async function creditHistory(){
+  const d=await api('/api/credit-history');
+  document.getElementById('mTitle').textContent='💛 Fusion kredit — história';
+  document.getElementById('mBody').innerHTML=(d.rows||[]).length
+    ? d.rows.map(r=>`<div class="txrow"><span>${esc(r.reason)}<small>${dstr(r.created_at)}</small></span><span class="amt" style="color:${r.delta>=0?'#8bc34a':'#f87171'}">${r.delta>=0?'+':''}${eur(r.delta)}</span></div>`).join('')
+      +`<p class="note">Kredit môžeš použiť ako zľavu pri nákupe členstva, permanentky alebo vstupu.</p>`
+    : `<p style="color:var(--muted);font-size:.9rem">Zatiaľ žiadne pohyby. Kredit získaš napríklad za pozvanie kamošky — za každý jej nákup dostaneš 10 %. ❤️</p>
+       <button class="paybtn" onclick="closeM();location.href='/client-dashboard#invite'">❤️ Pozvať kamošku zdarma</button>`;
+  document.getElementById('buyM').classList.add('open');
+}
 function howTo(k){
   document.getElementById('mTitle').textContent='? Ako to funguje';
   document.getElementById('mBody').innerHTML=`<p style="font-size:.9rem;line-height:1.7;color:var(--cream)">${HOWTO[k]||''}</p>`;
