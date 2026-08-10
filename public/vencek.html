@@ -71,6 +71,13 @@ function classCard(c, extra=''){
     <div class="stat"><b>${c.lessons_total-c.lessons_done}</b><span>lekcií do venčeka</span></div>
   </div>`;
 }
+function attCard(d){
+  if(d.my_attendance) return `<div class="card"><h3>🙋 Moja dochádzka</h3>
+    <div class="row" style="display:flex;justify-content:space-between;font-size:.9rem"><span>Bol/a som na <b>${d.my_attendance.attended}</b> z ${d.my_attendance.recorded} zapísaných lekcií</span><span style="color:var(--gold);font-weight:900">${Math.round(d.my_attendance.attended/d.my_attendance.recorded*100)} %</span></div></div>`;
+  if(d.class?.attendance) return `<div class="card"><h3>🙋 Dochádzka triedy</h3>
+    <div class="muted">Priemerná účasť <b style="color:var(--gold)">${d.class.attendance.avg_pct} %</b> · zapísaných ${d.class.attendance.lessons_recorded} lekcií</div></div>`;
+  return '';
+}
 (async()=>{
   const host=document.getElementById('host');
   let d; try{ d=await (await fetch('/api/vencek/mine',{credentials:'include'})).json(); }
@@ -93,14 +100,16 @@ function classCard(c, extra=''){
   }
   if(d.role==='teacher'){
     host.innerHTML=`<div class="card"><h3>👩‍🏫 Vaša trieda — ${esc(d.class.name)} · ${esc(d.school)}</h3></div>`
-      +classCard(d.class, `<div class="card"><div class="muted">Uhradené: <b style="color:#aed581">${d.class.paid_count}/${d.class.members}</b> žiakov (menný zoznam spravuje Fusion Academy — nemusíte vyberať nič).</div></div>`);
+      +classCard(d.class, `<div class="card"><div class="muted">Uhradené: <b style="color:#aed581">${d.class.paid_count}/${d.class.members}</b> žiakov (menný zoznam spravuje Fusion Academy — nemusíte vyberať nič).</div></div>`+attCard(d));
     return;
   }
   // žiak / rodič
+  const done = d.class.completed
+    ? `<div class="hero" style="border-color:rgba(124,179,66,.6)"><span class="badge" style="color:#aed581;border-color:rgba(124,179,66,.5);background:rgba(124,179,66,.12)">🏅 ABSOLVENT</span><h1>Venček máte za sebou!</h1><div class="sub">Odznak absolventa svieti na tvojom profile. Kupón <b style="color:var(--gold)">VENCEKABS</b> = 1. mesiac členstva zdarma. 💛</div></div>` : '';
   const pay = d.my_payment
     ? `<div class="pay-ok">🧾 <b>Zaplatené</b> — ${(+d.my_payment.amount).toFixed(2)} € (${d.my_payment.method==='transfer'?'prevodom':'v hotovosti'}, ${new Date(d.my_payment.paid_at).toLocaleDateString('sk')}). Potvrdenie máš v notifikáciách a na emaili.</div>`
     : `<div class="pay-no">💳 Kurz ešte nie je uhradený (${(+d.price).toFixed(2)} €). Platba v hotovosti na hodine alebo prevodom — info u lektora.</div>`;
-  host.innerHTML=`<div class="muted" style="margin-bottom:8px">🏫 ${esc(d.school)}</div>`+classCard(d.class, `<div class="card">${pay}</div>`);
+  host.innerHTML=done+`<div class="muted" style="margin-bottom:8px">🏫 ${esc(d.school)}</div>`+classCard(d.class, `<div class="card">${pay}</div>`+attCard(d));
 })();
 </script>
 </body>

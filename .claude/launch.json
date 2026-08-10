@@ -4,9 +4,20 @@
     {
       "name": "fusion",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["server.js"],
+      "runtimeArgs": [
+        "server.js"
+      ],
       "cwd": "C:\\Fusion Academy\\MLM\\app",
       "port": 3000
+    },
+    {
+      "name": "fusion-qa",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/user/AppData/Local/Temp/claude/C--Users-user-Documents-Claude-AI-RTMP-server/8d31a9f4-406b-4b7b-af87-34bd65b38450/scratchpad/preview-sandbox.js"
+      ],
+      "cwd": "C:/Fusion Academy/MLM/app",
+      "port": 4190
     }
   ]
 }

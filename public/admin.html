@@ -2931,10 +2931,50 @@ async function vClassDetail(cid){
       </tr>`).join('')||'<tr><td class="text-muted">Zatiaľ žiadni žiaci — pošli triede QR/odkaz na registráciu.</td></tr>'}
     </tbody></table>
 
+    <h6 class="fw-bold mt-3">🙋 Dochádzka <small class="text-muted fw-normal">(vidia ju rodičia aj riaditeľ)</small></h6>
+    <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+      <span class="small">Lekcia č.</span>
+      <input id="vAttLesson" type="number" min="1" max="${c.lessons_total}" value="${Math.max(1,c.lessons_done||1)}" class="form-control form-control-sm bg-dark text-light" style="max-width:80px" onchange="vAttLoad('${c._id}')">
+      <button class="btn btn-sm btn-brand" onclick="vAttSave('${c._id}')">💾 Uložiť dochádzku</button>
+      <span id="vAttInfo" class="small text-muted"></span>
+    </div>
+    <div id="vAttList" class="mb-2">${d.members.map(mm=>`<label class="d-inline-flex align-items-center gap-1 me-3 small"><input type="checkbox" class="vAttCb" value="${mm.id}"> ${mm.name}</label>`).join('')||'<span class="small text-muted">Žiadni žiaci.</span>'}</div>
+
     <h6 class="fw-bold mt-2">📉 Náklady triedy <button class="btn btn-sm btn-outline-secondary ms-2" onclick="vAddCost('','${c._id}')">+ pridať</button></h6>
     <div class="small">${(d.costs||[]).map(k=>`<div class="d-flex justify-content-between border-bottom border-secondary py-1"><span>${k.label} <span class="text-muted">${k.date}</span></span><b>${vEur(k.amount)}</b></div>`).join('')||'<span class="text-muted">Žiadne náklady.</span>'}</div>
+
+    <div class="mt-3 pt-2 border-top border-secondary text-end">
+      ${c.completed
+        ? `<span class="badge bg-success">🏅 Venček ukončený — žiaci majú odznak absolventa</span>`
+        : `<button class="btn btn-sm btn-outline-warning" onclick="vComplete('${c._id}')">🏅 Ukončiť venček (odznaky + kupóny absolventom)</button>`}
+    </div>
   </div>`;
   document.body.appendChild(m);
+  vAttLoad(cid);
+}
+let VATT={};
+async function vAttLoad(cid){
+  try{
+    const r=await fetch('/api/admin/venceky/attendance/'+cid); const d=await r.json();
+    VATT={}; (d.records||[]).forEach(rec=>VATT[rec.lesson_no]=rec.present||[]);
+    const les=+document.getElementById('vAttLesson').value;
+    const pres=new Set(VATT[les]||[]);
+    document.querySelectorAll('.vAttCb').forEach(cb=>cb.checked=pres.has(cb.value));
+    document.getElementById('vAttInfo').textContent=Object.keys(VATT).length
+      ? `zapísané lekcie: ${Object.keys(VATT).sort((a,b)=>a-b).join(', ')}` : 'zatiaľ žiadna dochádzka';
+  }catch(e){}
+}
+async function vAttSave(cid){
+  const les=+document.getElementById('vAttLesson').value;
+  const present=[...document.querySelectorAll('.vAttCb:checked')].map(cb=>cb.value);
+  await vApi('attendance',{class_id:cid, lesson_no:les, present});
+  vAttLoad(cid);
+}
+async function vComplete(cid){
+  if(!confirm('Ukončiť venček? Žiaci dostanú odznak absolventa 🏅 + kupón VENCEKABS (1. mesiac členstva zdarma).')) return;
+  const r=await vApi('complete',{class_id:cid});
+  if(r?.ok) alert(`Hotovo 🏅 — odznak a kupón dostalo ${r.students} žiakov.`);
+  vClassDetail(cid); loadVenceky();
 }
 async function vMarkPaid(cid,uid,method){
   await vApi('payment',{class_id:cid,user_id:uid,method});

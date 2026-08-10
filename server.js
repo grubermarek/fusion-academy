@@ -187,6 +187,7 @@ const db = {
   venceky_classes:  new Datastore({ filename: path.join(DATA_DIR, 'venceky_classes.db'),  autoload: true }),
   venceky_payments: new Datastore({ filename: path.join(DATA_DIR, 'venceky_payments.db'), autoload: true }),
   venceky_costs:    new Datastore({ filename: path.join(DATA_DIR, 'venceky_costs.db'),    autoload: true }),
+  venceky_attendance:new Datastore({ filename: path.join(DATA_DIR, 'venceky_attendance.db'), autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -275,6 +276,8 @@ const CHANNELS    = [
   { id:'mesto_zvolen', name:'Zvolen',          emoji:'📍', city:true },
   { id:'mesto_bb',     name:'Banská Bystrica', emoji:'📍', city:true },
   { id:'mesto_brezno', name:'Brezno',          emoji:'📍', city:true },
+  // VIP miestnosť len pre venčekárov (žiaci/učitelia/riaditelia + Fusion tím)
+  { id:'venceky_vip', name:'Venčeky VIP', emoji:'🎓', vip:'venceky' },
 ];
 
 // ─── Member Badge (Twitch-style) ──────────────────────────────────────────────
@@ -1867,6 +1870,18 @@ app.post('/api/register', rlSignup, async(req,res)=>{
       try{ const admins=await q.find(db.users,{is_admin:true});
         for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'venceky',
           title:'🎓 Nový venčekár', body:`${name} sa pridal(a) do triedy ${vencekClass.name}`, read:false, created_at:nowISO()}); }catch(e){}
+      // Uvítacie benefity: 1× Zumba zdarma + rodičovský kupón −50 % na členstvo
+      try{
+        if(!await q.one(db.promo_codes,{code:'VENCEKRODIC'}))
+          await q.insert(db.promo_codes,{ code:'VENCEKRODIC', type:'percent', value:50, applies_to:'membership',
+            max_uses:0, once_per_user:true, min_amount:0, expires_at:null, active:true, used_count:0,
+            note:'Venčeky — kupón pre rodičov (−50 % na prvé členstvo)', created_at:nowISO() });
+        await q.update(db.users,{_id:u._id},{$set:{free_credits:1}});
+        await q.insert(db.notifications,{user_id:u._id,type:'venceky',
+          title:'🎁 Vitaj vo Fusion Venčekoch!',
+          body:'Máš u nás 1× vstup na Zumbu ZDARMA (aj pre rodiča) a kupón VENCEKRODIC na −50 % z prvého členstva. Tešíme sa na teba! 💛',
+          read:false, created_at:nowISO()});
+      }catch(e){}
     }
     req.session.uid=u._id;
     req.session.sv=0;
@@ -2260,10 +2275,14 @@ app.get('/api/my-bookings', auth, async(req,res)=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMMUNITY – REST (Socket.io handles realtime)
 // ═══════════════════════════════════════════════════════════════════════════════
-app.get('/api/community/channels', (req,res)=>res.json(CHANNELS));
+const canSeeVencekChannel=u=>!!(u && (u.venceky_class_id || u.venceky_role || u.is_admin || u.user_type==='trainer'));
+const channelsFor=u=>CHANNELS.filter(c=>!c.vip || (c.vip==='venceky' && canSeeVencekChannel(u)));
+app.get('/api/community/channels', async(req,res)=>{ const u=req.session?.uid? await q.one(db.users,{_id:req.session.uid}):null; res.json(channelsFor(u)); });
 
 app.get('/api/community/messages/:channel', auth, async(req,res)=>{
   const {channel}=req.params;
+  const ch=CHANNELS.find(c=>c.id===channel);
+  if(ch?.vip){ const u=await q.one(db.users,{_id:req.session.uid}); if(!canSeeVencekChannel(u)) return res.status(403).json({error:'VIP miestnosť len pre venčekárov'}); }
   const msgs=await q.find(db.messages,{channel},{created_at:1});
   const last100=msgs.slice(-100);
   res.json(last100);
@@ -3013,6 +3032,7 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
       anonymous: !!u.anonymous, is_self:isSelf, gender,
       // Ambasádorský odznak: rátajú sa len ľudia z línie, ktorí REÁLNE začali
       // tancovať (majú aspoň 1 návštevu) — nie mŕtve registrácie.
+      vencek_alumni: u.vencek_alumni||null,
       ambassador_count: await (async()=>{ const ids=await getAllDescendants(u._id); let n=0;
         for(const id of ids){ const d=await q.one(db.users,{_id:id}); if(d && (d.visit_count||0)>0) n++; } return n; })(),
       avatar: u.anonymous&&!isSelf ? null : (u.avatar||null),
@@ -12280,13 +12300,15 @@ io.on('connection', async(socket)=>{
   socket.join('user:'+u._id);
 
   // Send user their info + channels
-  socket.emit('welcome', { user: userInfo, channels: CHANNELS });
+  socket.emit('welcome', { user: userInfo, channels: channelsFor(u) });
 
   // Broadcast updated online list
   io.emit('online_users', Array.from(onlineUsers.values()));
 
   // Join a channel
   socket.on('join_channel', async(channelId)=>{
+    const chDef=CHANNELS.find(c=>c.id===channelId);
+    if(chDef?.vip && !canSeeVencekChannel(u)) return;
     // Leave old rooms
     socket.rooms.forEach(room=>{ if(room!==socket.id) socket.leave(room); });
     socket.join(channelId);
@@ -12303,6 +12325,8 @@ io.on('connection', async(socket)=>{
   socket.on('send_message', async(data)=>{
     const {channel, text} = data;
     if(!text?.trim()||text.trim().length>500) return;
+    const chDef=CHANNELS.find(c=>c.id===channel);
+    if(chDef?.vip && !canSeeVencekChannel(u)) return;
     const info = onlineUsers.get(socket.id);
     const msg = await q.insert(db.messages, {
       channel: channel||'general',
@@ -13158,6 +13182,48 @@ app.post('/api/admin/venceky/progress', trainerAuth, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ── Lektor/Admin: dochádzka na lekcii (zoznam prítomných žiakov) ──
+app.post('/api/admin/venceky/attendance', trainerAuth, async(req,res)=>{
+  try{
+    const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});
+    if(!c) return res.status(404).json({error:'Trieda nenájdená'});
+    const lesson=Math.max(1,Math.min(+c.lessons_total||13,+req.body.lesson_no||1));
+    const present=Array.isArray(req.body.present)?req.body.present.map(String):[];
+    const existing=await q.one(db.venceky_attendance,{class_id:c._id, lesson_no:lesson});
+    if(existing) await q.update(db.venceky_attendance,{_id:existing._id},{$set:{present, updated_at:nowISO()}});
+    else await q.insert(db.venceky_attendance,{class_id:c._id, school_id:c.school_id, lesson_no:lesson,
+      present, date:today(), recorded_by:req.session.uid, created_at:nowISO()});
+    res.json({ok:true, lesson_no:lesson, present:present.length});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.get('/api/admin/venceky/attendance/:class_id', trainerAuth, async(req,res)=>{
+  try{ res.json({ok:true, records:await q.find(db.venceky_attendance,{class_id:req.params.class_id},{lesson_no:1})}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Admin: ukončiť venček → trieda completed, žiaci dostanú odznak absolventa + kupón ──
+app.post('/api/admin/venceky/complete', adminAuth, async(req,res)=>{
+  try{
+    const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});
+    if(!c) return res.status(404).json({error:'Trieda nenájdená'});
+    if(c.completed) return res.status(400).json({error:'Venček je už ukončený'});
+    await q.update(db.venceky_classes,{_id:c._id},{$set:{completed:true, completed_at:nowISO()}});
+    if(!await q.one(db.promo_codes,{code:'VENCEKABS'}))
+      await q.insert(db.promo_codes,{ code:'VENCEKABS', type:'percent', value:100, applies_to:'membership',
+        max_uses:0, once_per_user:true, min_amount:0, expires_at:null, active:true, used_count:0,
+        note:'Venčeky — absolventský mesiac členstva zdarma', created_at:nowISO() });
+    const students=(await q.find(db.users,{venceky_class_id:c._id})).filter(x=>x.venceky_role==='student');
+    for(const m of students){
+      await q.update(db.users,{_id:m._id},{$set:{vencek_alumni:c.year||'2026/27'}});
+      await q.insert(db.notifications,{user_id:m._id,type:'venceky',
+        title:'🏅 Gratulujeme, absolvoval(a) si FUSION VENČEKY!',
+        body:'Na profile ti svieti exkluzívny odznak absolventa. Darček od nás: kupón VENCEKABS = 1. mesiac členstva ZDARMA. Tancuj s nami ďalej! 💛',
+        read:false, created_at:nowISO()}).catch(()=>{});
+    }
+    res.json({ok:true, students:students.length});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ── Admin: prideliť rolu učiteľ/riaditeľ existujúcemu účtu ──
 app.post('/api/admin/venceky/assign-role', adminAuth, async(req,res)=>{
   try{
@@ -13195,7 +13261,12 @@ app.get('/api/vencek/mine', auth, async(req,res)=>{
         dances:(c.dances||[]).map(d=>({name:d.name, level:d.level, level_label:VENCEK_LEVELS[d.level||0], pct:Math.round((d.level||0)/4*100)})),
         lessons_done:c.lessons_done||0, lessons_total:c.lessons_total||13,
         event_date:c.event_date||null, note:c.note||'', members:members.length,
-        paid_count:new Set(pays.map(p=>p.user_id)).size };
+        completed:!!c.completed,
+        paid_count:new Set(pays.map(p=>p.user_id)).size,
+        attendance:await (async()=>{ const recs=await q.find(db.venceky_attendance,{class_id:c._id});
+          if(!recs.length||!members.length) return null;
+          const tot=recs.reduce((s,r)=>s+(r.present||[]).length,0);
+          return { lessons_recorded:recs.length, avg_pct:Math.round(tot/(recs.length*members.length)*100) }; })() };
     };
     if(role==='director' || role==='admin'){
       const sid=u.venceky_school_id;
@@ -13212,8 +13283,11 @@ app.get('/api/vencek/mine', auth, async(req,res)=>{
     const school=await q.one(db.venceky_schools,{_id:c.school_id});
     const view=await classView(c);
     const myPay=await q.one(db.venceky_payments,{class_id:c._id, user_id:u._id});
+    const myRecs=await q.find(db.venceky_attendance,{class_id:c._id});
     res.json({ok:true, role, school:school?.name||'', class:view,
       my_payment: myPay?{amount:myPay.amount, paid_at:myPay.paid_at, method:myPay.method}:null,
+      my_attendance: myRecs.length?{attended:myRecs.filter(r=>(r.present||[]).includes(u._id)).length, recorded:myRecs.length}:null,
+      alumni: u.vencek_alumni||null,
       price:c.price||49.90 });
   }catch(e){ res.status(500).json({error:e.message}); }
 });

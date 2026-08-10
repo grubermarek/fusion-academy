@@ -89,6 +89,42 @@ const post = (jar, p, b) => call(jar, 'POST', p, b);
   const guard = await g('C0', '/api/admin/venceky/overview');
   ok('admin API chránené (403)', guard.status === 403, guard.status);
 
+  // ── FÁZA 2 ──
+  // uvítacie benefity žiaka: 1 free kredit + notifikácia s kupónom
+  const me1 = (await g('Z1', '/api/me')).data || {};
+  ok('žiačka má 1× vstup zdarma', me1.free_credits === 1, me1.free_credits);
+  const notifsW = ((await g('Z1', '/api/notifications')).data) || [];
+  ok('uvítacia notifikácia s kupónom VENCEKRODIC', notifsW.some(n => /VENCEKRODIC/.test(n.body || '')), notifsW.length);
+
+  // VIP kanál: venčekárka ho vidí, bežný klient nie
+  const chV = (await g('Z1', '/api/community/channels')).data || [];
+  const chC = (await g('C0', '/api/community/channels')).data || [];
+  ok('venčekárka vidí Venčeky VIP kanál', chV.some(c => c.id === 'venceky_vip'), chV.map(c => c.id));
+  ok('bežný klient VIP kanál nevidí', !chC.some(c => c.id === 'venceky_vip'), chC.map(c => c.id));
+  const msgGuard = await g('C0', '/api/community/messages/venceky_vip');
+  ok('VIP správy chránené (403 pre bežného klienta)', msgGuard.status === 403, msgGuard.status);
+  const msgOk = await g('Z1', '/api/community/messages/venceky_vip');
+  ok('venčekárka VIP správy načíta', msgOk.status === 200, msgOk.status);
+
+  // dochádzka
+  const att = await post('admin', '/api/admin/venceky/attendance', { class_id: cid, lesson_no: 3, present: [z1.id] });
+  ok('dochádzka zapísaná', att.status === 200 && att.data.present === 1, att);
+  await post('admin', '/api/admin/venceky/attendance', { class_id: cid, lesson_no: 4, present: [] });
+  const mineA = (await g('Z1', '/api/vencek/mine')).data || {};
+  ok('žiačka vidí dochádzku 1/2', mineA.my_attendance?.attended === 1 && mineA.my_attendance?.recorded === 2, mineA.my_attendance);
+  const mineRA = (await g('R1', '/api/vencek/mine')).data || {};
+  ok('riaditeľ vidí priemernú účasť 50 %', mineRA.schools?.[0]?.classes?.[0]?.attendance?.avg_pct === 50, mineRA.schools?.[0]?.classes?.[0]?.attendance);
+
+  // ukončenie venčeka → odznak absolventa + kupón
+  const comp = await post('admin', '/api/admin/venceky/complete', { class_id: cid });
+  ok('venček ukončený (1 žiak)', comp.status === 200 && comp.data.students === 1, comp);
+  const compDup = await post('admin', '/api/admin/venceky/complete', { class_id: cid });
+  ok('opakované ukončenie odmietnuté', compDup.status === 400, compDup.status);
+  const prof = (await g('Z1', '/api/profile/' + z1.id)).data || {};
+  ok('profil má odznak absolventa', prof.vencek_alumni === '2026/27', prof.vencek_alumni);
+  const notifsF = ((await g('Z1', '/api/notifications')).data) || [];
+  ok('absolventská notifikácia s kupónom VENCEKABS', notifsF.some(n => /VENCEKABS/.test(n.body || '')), notifsF.length);
+
   console.log(`\n═══ VÝSLEDOK: ${PASS} ✓ / ${FAIL} ✗ ═══`);
   if (FAIL) { console.log(FAILS.map(f => f.name).join('\n')); process.exit(1); }
 })().catch(e => { console.error('FATAL', e); process.exit(1); });
