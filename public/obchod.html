@@ -187,7 +187,8 @@ function renderPlans(){
       <p style="color:var(--muted)">Len o <b class="gold">${eur(diff)}</b> mesačne viac — a zvyšné dni tvojho ${esc(PLANS[my]?.name||'')} ti prerátame na kredit.</p>
       <button class="buy" onclick="openPlan('${up.to}')">Prejsť na ${esc(tp.name)} →</button>
     </div>`;})():'';
-  document.getElementById('p-clenstva').innerHTML=upsellCard+order.map(id=>{
+  const shown=up?order.filter(id=>id!==up.to):order; // upsell karta nahrádza kartu cieľového plánu — žiadna duplicita
+  document.getElementById('p-clenstva').innerHTML=upsellCard+shown.map(id=>{
     const p=PLANS[id]; if(!p) return '';
     const owned=my===id;
     return `<div class="pcard ${id==='silver'?'hl':''}">
