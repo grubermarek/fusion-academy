@@ -160,8 +160,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('leaderboard')"><i class="bi bi-trophy me-2"></i>Leaderboard dochádzky</a>
       <a class="nav-link" href="#" onclick="show('classhistory')"><i class="bi bi-clock-history me-2"></i>História hodín & zárobky</a>
       <a class="nav-link" href="#" onclick="show('tasktracker')"><i class="bi bi-check2-square me-2"></i>Úlohy trénerov ✅</a>
-      <a class="nav-link" href="#" onclick="show('trainers')"><i class="bi bi-person-badge me-2"></i>Výkon trénerov</a>
-      <a class="nav-link" href="#" onclick="show('payouts')"><i class="bi bi-cash-stack me-2"></i>Výplaty trénerov</a>
+      <a class="nav-link" href="#" onclick="show('trainers')"><i class="bi bi-person-badge me-2"></i>Tréneri — výkon &amp; výplaty</a>
       <div class="nav-group-label">Systém</div>
       <a class="nav-link" href="#" onclick="show('alerts')"><i class="bi bi-bell me-2"></i>Alerty <span id="alertsBadge" class="badge bg-danger" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('exports')"><i class="bi bi-download me-2"></i>Exporty</a>
@@ -1357,7 +1356,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- VÝPLATY TRÉNEROV -->
   <div class="section" id="s-payouts">
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
+    <div class="d-flex gap-2 mb-3"><button class="btn btn-sm btn-outline-secondary" onclick="show('trainers')">🏅 Výkon</button><button class="btn btn-sm btn-warning" onclick="show('payouts')">💵 Výplaty</button></div><div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
       <h4 class="fw-bold mb-0">💵 Výplaty trénerov</h4>
       <div class="d-flex gap-2 align-items-center">
         <input type="month" id="poMonth" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:150px" onchange="loadPayouts()">
@@ -1456,7 +1455,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- VÝKON TRÉNEROV -->
   <div class="section" id="s-trainers">
-    <h4 class="fw-bold mb-1">🏅 Výkon trénerov</h4>
+    <div class="d-flex gap-2 mb-3"><button class="btn btn-sm btn-warning" onclick="show('trainers')">🏅 Výkon</button><button class="btn btn-sm btn-outline-secondary" onclick="show('payouts')">💵 Výplaty</button></div><h4 class="fw-bold mb-1">🏅 Výkon trénerov</h4>
     <p class="text-muted small mb-3">Odučené hodiny, obsadenosť, klienti, tržby a porovnanie s predošlým obdobím.</p>
     <div class="d-flex gap-2 align-items-end flex-wrap mb-3">
       <div><label class="text-muted small">Od</label><input type="date" id="trFrom" class="form-control form-control-sm bg-dark text-light border-secondary"></div>

@@ -7404,13 +7404,14 @@ app.get('/api/admin/trainers/performance', adminAuth, async(req,res)=>{
         const s=stats[ins]=stats[ins]||{instructor:ins, sessions:new Set(), attendances:0, noShows:0, cancels:0, clients:new Set(), revenue:0, capSum:0};
         const cls=clsMap[b.class_id];
         const sessKey=b.class_id+'|'+d;
+        if(cls?.category==='Online') continue; // konzistentné s Výplatami — online netvorí odučené hodiny
         if(b.status==='cancelled'){ s.cancels++; continue; }
         if(b.status==='no_show'){ s.noShows++; }
-        // attended or confirmed count as a held-seat
-        if(['attended','confirmed','no_show'].includes(b.status)){
+        // Ráta sa len reálne ODUČENÉ (attended) — 'confirmed' je len rezervácia,
+        // predtým nafukovala výkon oproti výplatám, ktoré rátajú attended.
+        if(['attended','no_show'].includes(b.status)){
           if(!s.sessions.has(sessKey)){ s.sessions.add(sessKey); s.capSum+=(cls?.capacity||20); }
-          if(b.status!=='no_show'){ s.attendances++; s.revenue+=(+cls?.price||10); }
-          if(b.user_id) s.clients.add(b.user_id);
+          if(b.status==='attended'){ s.attendances++; s.revenue+=(+cls?.price||10); if(b.user_id) s.clients.add(b.user_id); }
         }
       }
       return stats;
