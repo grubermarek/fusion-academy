@@ -6863,8 +6863,9 @@ app.get('/api/admin/memberships-overview', adminAuth, async(req,res)=>{
     const users = await q.find(db.users,{});
     const uMap = Object.fromEntries(users.map(u=>[u._id,u]));
     // Aktívne členstvá: status active a platnosť do budúcna; jeden (najneskôr expirujúci) na usera
+    const adminIdsMo=new Set(users.filter(u=>u.is_admin).map(u=>u._id));
     const membs = (await q.find(db.memberships,{status:'active'}))
-      .filter(m=> (m.expires_at||'') > nowISOv && MEMBERSHIP_PLANS[m.plan_id] && MEMBERSHIP_PLANS[m.plan_id].type!=='bundle');
+      .filter(m=> !adminIdsMo.has(m.user_id) && (m.expires_at||'') > nowISOv && MEMBERSHIP_PLANS[m.plan_id] && MEMBERSHIP_PLANS[m.plan_id].type!=='bundle');
     const bestByUser = {};
     for(const m of membs){
       const cur = bestByUser[m.user_id];
@@ -7008,8 +7009,10 @@ app.get('/api/admin/finance/stats', adminAuth, async(req,res)=>{
     const {from, to} = req.query; // YYYY-MM-DD inclusive
     const fromISO = from ? from+'T00:00:00' : '0000';
     const toISO   = to   ? to+'T23:59:59'   : '9999';
-    const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status));
-    const membs=(await q.find(db.memberships,{})).filter(m=>!m._type);
+    const adminIdsF=new Set((await q.find(db.users,{is_admin:true})).map(u=>u._id));
+    const notAdminF=x=>!adminIdsF.has(x.user_id);
+    const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status) && !p.accounting_skip && notAdminF(p));
+    const membs=(await q.find(db.memberships,{})).filter(m=>!m._type && notAdminF(m));
     const cashMembs=membs.filter(m=>m.payment_method);
     const orders=(await q.find(db.orders,{})).filter(o=>o.status==='paid');
     const users=(await q.find(db.users,{is_admin:{$ne:true}})).filter(u=>u.user_type!=='trainer' && !u.is_child);
@@ -7254,15 +7257,18 @@ async function accountingData(from, to){
   const fromISO=from?from+'T00:00:00':'0000';
   const toISO=to?to+'T23:59:59':'9999';
   const inRange=d=>d>=fromISO && d<=toISO;
-  const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status));
-  const membs=(await q.find(db.memberships,{})).filter(m=>!m._type);
+  // Admini (Marek, Beatka…) neplatia za vlastné členstvá — do tržieb nepatria.
+  const adminIds=new Set((await q.find(db.users,{is_admin:true})).map(u=>u._id));
+  const notAdmin=x=>!adminIds.has(x.user_id);
+  const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status) && !p.accounting_skip && notAdmin(p));
+  const membs=(await q.find(db.memberships,{})).filter(m=>!m._type && notAdmin(m));
   const orders=(await q.find(db.orders,{})).filter(o=>o.status==='paid');
-  const singleEntries=await q.find(db.transactions,{type:'single_entry'});
+  const singleEntries=(await q.find(db.transactions,{type:'single_entry'})).filter(notAdmin);
   // Hotovostné/kartové predaje členstiev z transakcií — záznam členstva sa pri
   // upgrade PREPÍŠE (Bronze→Silver), takže bez transakcií by stará tržba zmizla.
   // Stripe/PayPal/free/kredit sa vynechajú (tie už sedia v payments / nie sú tržba).
   const memTxs=(await q.find(db.transactions,{type:'membership'}))
-    .filter(t=>+t.amount>0 && !/stripe|paypal|free|referral_credit|demo/i.test(String(t.payment_method||t.method||'')));
+    .filter(t=>+t.amount>0 && notAdmin(t) && !/stripe|paypal|free|referral_credit|demo/i.test(String(t.payment_method||t.method||'')));
   const memTxKeys=new Set(memTxs.map(t=>`${t.user_id}|${(+t.amount).toFixed(2)}`));
   const bookings=await q.find(db.bookings,{});
   const invoices=(await q.find(db.invoices,{}));
@@ -8694,17 +8700,26 @@ app.get('/api/admin/manual-payments', adminAuth, async(req,res)=>{
     const users=await q.find(db.users,{});
     const uMap=Object.fromEntries(users.map(x=>[x._id,x]));
     pend.sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+    // Má klientka členstvo aktivované inou cestou? Pomáha rozhodnúť potvrdiť vs. zrušiť.
+    const nowI=new Date().toISOString();
+    const activeMemByUser={};
+    for(const m of await q.find(db.memberships,{status:'active'}))
+      if((m.expires_at||'')>nowI) activeMemByUser[m.user_id]=m.plan_name;
     res.json({ok:true, payments:pend.map(p=>({id:p._id, user:uMap[p.user_id]?.name||'?', email:uMap[p.user_id]?.email||'',
       member:p.member_id&&p.member_id!==p.user_id?(uMap[p.member_id]?.name||''):null,
-      amount:p.amount, description:p.description, plan_id:p.ref_id, created_at:p.created_at}))});
+      amount:p.amount, description:p.description, plan_id:p.ref_id, created_at:p.created_at,
+      has_active:activeMemByUser[p.member_id||p.user_id]||null,
+      entries:uMap[p.member_id||p.user_id]?.single_entries||0}))});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 app.post('/api/admin/manual-payments/:id/confirm', adminAuth, async(req,res)=>{
   try{
     const method=req.body.method==='transfer'?'transfer':'cash';
     // atomický claim — dvojklik nesmie aktivovať dvakrát
+    // accounting_skip: tržba sa zapíše ako transakcia nižšie — payment sa v účtovníctve
+    // preskočí, inak by sa ten istý nákup rátal dvakrát (payments + transactions).
     const claimed=await q.update(db.payments,{_id:req.params.id, status:'pending_manual'},
-      {$set:{status:'completed', payment_method:method, captured_at:nowISO(), confirmed_by:req.session.uid}});
+      {$set:{status:'completed', payment_method:method, captured_at:nowISO(), confirmed_by:req.session.uid, accounting_skip:true}});
     if(!claimed) return res.status(400).json({error:'Platba už bola spracovaná'});
     const p=await q.one(db.payments,{_id:req.params.id});
     const plan=MEMBERSHIP_PLANS[p.ref_id];
