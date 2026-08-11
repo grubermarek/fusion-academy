@@ -13947,6 +13947,32 @@ app.post('/api/admin/venceky/approve', adminAuth, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ── Admin: priradiť EXISTUJÚCI účet (lead/klient) ako žiaka/rodiča do triedy ──
+// Pre prípady, keď si niekto vytvoril účet sám bez triedneho linku.
+app.post('/api/admin/venceky/assign-student', adminAuth, async(req,res)=>{
+  try{
+    const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});
+    if(!c) return res.status(404).json({error:'Trieda nenájdená'});
+    const needle=String(req.body.query||'').toLowerCase().trim();
+    if(needle.length<3) return res.status(400).json({error:'Zadaj email alebo meno (min. 3 znaky)'});
+    const all=await q.find(db.users,{});
+    const matches=all.filter(u=>!u.is_admin && (String(u.email||'').toLowerCase().includes(needle) || String(u.name||'').toLowerCase().includes(needle)));
+    if(!matches.length) return res.status(404).json({error:'Nenašiel sa žiadny účet pre „'+needle+'"'});
+    if(matches.length>1 && !req.body.user_id)
+      return res.json({ok:true, pick:matches.slice(0,8).map(u=>({id:u._id,name:u.name,email:u.email}))});
+    const u=req.body.user_id? matches.find(x=>x._id===req.body.user_id) : matches[0];
+    if(!u) return res.status(404).json({error:'Účet nenájdený'});
+    if(u.venceky_class_id===c._id) return res.status(400).json({error:u.name+' už v tejto triede je'});
+    const role=req.body.role==='parent'?'parent':'student';
+    await q.update(db.users,{_id:u._id},{$set:{venceky_class_id:c._id, venceky_school_id:c.school_id, venceky_role:role}});
+    await q.insert(db.notifications,{user_id:u._id,type:'venceky',
+      title:'🎓 Vitaj vo Fusion Venčekoch!',
+      body:'Priradili sme ťa do triedy '+c.name+'. Celý venčekový prehľad (tance, dochádzka, platby) nájdeš v appke v sekcii Venčeky.',
+      read:false, created_at:nowISO()}).catch(()=>{});
+    res.json({ok:true, assigned:{id:u._id,name:u.name,email:u.email,role}});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ── Admin: prideliť rolu učiteľ/riaditeľ existujúcemu účtu ──
 app.post('/api/admin/venceky/assign-role', adminAuth, async(req,res)=>{
   try{

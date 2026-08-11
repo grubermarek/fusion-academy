@@ -2875,6 +2875,17 @@ async function loadVenceky(){
       </tbody></table>`:'<div class="text-muted small">Žiadne triedy — pridaj prvú.</div>'}
     </div></div>`).join('');
 }
+async function vAssignStudent(cid){
+  const query=prompt('Email alebo meno existujúceho účtu (lead/klient), ktorý chceš priradiť do triedy:'); if(!query) return;
+  const role=prompt('Rola: 1 = žiak, 2 = rodič','1')==='2'?'parent':'student';
+  let r=await vApi('assign-student',{class_id:cid, query, role});
+  if(r?.pick){
+    const pick=prompt('Našlo sa viac účtov:\n'+r.pick.map((u,i)=>`${i+1} = ${u.name} <${u.email}>`).join('\n')+'\n\nZadaj číslo:');
+    const sel=r.pick[(+pick||0)-1]; if(!sel) return;
+    r=await vApi('assign-student',{class_id:cid, query, role, user_id:sel.id});
+  }
+  if(r?.ok&&r.assigned){ showToast(`✅ ${r.assigned.name} priradený(á) ako ${r.assigned.role==='parent'?'rodič':'žiak'}`,'success'); vClassDetail(cid); loadVenceky(); }
+}
 async function vApprove(uid,ok){
   if(!ok && !confirm('Zamietnuť prístup? Používateľ dostane notifikáciu.')) return;
   await vApi('approve',{user_id:uid,approve:ok});
@@ -2999,7 +3010,8 @@ async function vClassDetail(cid){
         <button class="btn btn-sm btn-brand" onclick="vSaveProgress('${c._id}',${(c.dances||[]).length})">💾 Uložiť hodinu</button>
       </div></div>
 
-    <h6 class="fw-bold mt-3">🧾 Žiaci a platby (${d.members.filter(x=>x.paid).length}/${d.members.length} zaplatené)</h6>
+    <h6 class="fw-bold mt-3">🧾 Žiaci a platby (${d.members.filter(x=>x.paid).length}/${d.members.length} zaplatené)
+      <button class="btn btn-sm btn-outline-warning ms-2" onclick="vAssignStudent('${c._id}')">+ Priradiť existujúci účet</button></h6>
     <table class="table table-dark table-sm small"><tbody>
       ${d.members.map(mm=>`<tr>
         <td>${mm.paid?'✅':'⏳'} <b>${mm.name}</b><br><small class="text-muted">${mm.email||''} ${mm.phone||''}</small></td>
