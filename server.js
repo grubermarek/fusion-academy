@@ -10753,6 +10753,7 @@ app.get('/api/attendance/schedule', trainerAuth, async(req,res)=>{
     const u = req.trainerUser;
     // Tréner vidí VŠETKY hodiny (aby sa mohol prihlásiť, že učí), nielen svoje.
     const classes = await q.find(db.classes, {active:true});
+    const cxls = await q.find(db.class_cancellations,{ date:{$gte:today()} });
     const result = [];
     for(const c of classes){
       // Obsadenosť pre NAJBLIŽŠÍ termín (rovnako ako to vidí klient), nie súčet cez všetky dátumy
@@ -10762,6 +10763,7 @@ app.get('/api/attendance/schedule', trainerAuth, async(req,res)=>{
       const si = await sessionInstructor(c, bdate);
       result.push({...c, confirmed, waitlist, next_date:bdate, spotsLeft:Math.max(0,c.capacity-confirmed), dayName:DAYS_SK[c.day_of_week],
         session_instructor:si.instructor, session_instructor_id:si.instructor_id, instructor_overridden:si.overridden,
+        cancelled_next: cxls.some(x=>x.class_id===c._id && x.date===bdate),
         viewer_id:u._id, viewer_is_admin:!!u.is_admin });
     }
     result.sort((a,b)=>a.day_of_week-b.day_of_week||a.time_start.localeCompare(b.time_start));

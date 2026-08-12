@@ -911,7 +911,7 @@ async function loadSchedule(){
         return `<div class="today-class-item" onclick="openAttendance('${c._id}')">
           <div class="tci-emoji">${c.emoji||'💃'}</div>
           <div class="tci-info">
-            <div class="tci-name">${esc(c.name)}</div>
+            <div class="tci-name">${esc(c.name)}${c.cancelled_next?' <span style="background:rgba(224,86,86,.25);color:#ff8a8a;border:1px solid rgba(224,86,86,.6);border-radius:8px;padding:1px 8px;font-size:.68rem;font-weight:800">❌ ZRUŠENÁ</span>':''}</div>
             <div class="tci-meta">⏰ ${c.time_start}${c.time_end?'–'+c.time_end:''} · 📍 ${esc(c.location||'')}</div>
           </div>
           <div class="tci-right">
@@ -932,12 +932,12 @@ async function loadSchedule(){
       const pct = c.capacity ? Math.round(c.confirmed/c.capacity*100) : 0;
       const isToday = c.day_of_week === todayDow;
       const fillClass = pct>80?'fill-high':pct>50?'fill-med':'fill-low';
-      return `<div class="class-card${isToday?' today-highlight':''}" onclick="openAttendance('${c._id}')" style="${isToday?'border-color:var(--gold-border)':''}">
+      return `<div class="class-card${isToday?' today-highlight':''}" onclick="openAttendance('${c._id}')" style="${isToday?'border-color:var(--gold-border);':''}${c.cancelled_next?'opacity:.55;border-color:rgba(224,86,86,.5)':''}">
         ${isToday?'<div style="position:absolute;top:10px;right:10px;background:var(--grad-gold);color:#111;font-size:.65rem;font-weight:800;padding:2px 10px;border-radius:20px">DNES</div>':''}
         <div class="cc-head">
           <div class="cc-emoji">${c.emoji||'💃'}</div>
           <div>
-            <div class="cc-name">${esc(c.name)}</div>
+            <div class="cc-name">${esc(c.name)}${c.cancelled_next?' <span style="background:rgba(224,86,86,.25);color:#ff8a8a;border:1px solid rgba(224,86,86,.6);border-radius:8px;padding:1px 8px;font-size:.68rem;font-weight:800">❌ NAJBLIŽŠIA ZRUŠENÁ</span>':''}</div>
             <div class="cc-day">${DAYS[c.day_of_week]||''}${c.next_date?` · <b style="color:var(--gold)">${(''+c.next_date).slice(8,10)}. ${(+(''+c.next_date).slice(5,7))}.</b>`:''}</div>
           </div>
         </div>
@@ -955,7 +955,7 @@ async function loadSchedule(){
             <i class="bi bi-clipboard-check"></i> Dochádzka →
           </span>
         </div>
-        <button onclick="event.stopPropagation();trCancelSession('${c._id}','${esc((c.name||'').replace(/'/g,''))}')" style="width:100%;margin-top:8px;background:none;border:1px solid rgba(229,115,115,.5);color:#e57373;border-radius:8px;padding:6px;font-size:.78rem;cursor:pointer"><i class="bi bi-x-circle"></i> Zrušiť najbližšiu hodinu</button>
+        ${c.cancelled_next?'':`<button onclick="event.stopPropagation();trCancelSession('${c._id}','${esc((c.name||'').replace(/'/g,''))}')" style="width:100%;margin-top:8px;background:none;border:1px solid rgba(229,115,115,.5);color:#e57373;border-radius:8px;padding:6px;font-size:.78rem;cursor:pointer"><i class="bi bi-x-circle"></i> Zrušiť najbližšiu hodinu</button>`}
       </div>`;
     }).join('');
   } catch(e){
