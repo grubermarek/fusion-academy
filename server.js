@@ -15008,6 +15008,9 @@ seedData().then(backfillDefaultSponsor).then(reconcileGlofoxVisits).then(fixClas
   });
 }).catch(e=>{console.error('Chyba pri spustení:', e); process.exit(1);});
 
+// ── Coach Growth System (Úlohy pre trénerov) ────────────────────────────────
+require('./coach')({ app, db, q, Datastore, DATA_DIR, trainerAuth, adminAuth, APP_URL, isTestContact });
+
 // ── 404 page ──────────────────────────────────────────────────────────────────
 app.use((req,res,next)=>{
   if(req.path.startsWith('/api')) return next();

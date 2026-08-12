@@ -313,7 +313,11 @@ select.form-control option{background:var(--dark3)}
 
   <!-- SIDEBAR -->
   <nav class="sidebar" id="sidebar">
-    <button class="nav-item active" onclick="switchTab('schedule',this)" id="tab-schedule">
+    <button class="nav-item active" onclick="switchTab('coach',this)" id="tab-coach">
+      <i class="bi bi-bullseye"></i>
+      <span class="nav-label">Môj deň</span>
+    </button>
+    <button class="nav-item" onclick="switchTab('schedule',this)" id="tab-schedule">
       <i class="bi bi-calendar3"></i>
       <span class="nav-label">Hodiny</span>
     </button>
@@ -355,8 +359,13 @@ select.form-control option{background:var(--dark3)}
       <iframe id="calFrame" src="about:blank" style="width:100%;height:calc(100vh - 130px);min-height:520px;border:0;border-radius:12px;background:var(--dark)"></iframe>
     </div>
 
+    <!-- ═══════════ COACH GROWTH – MÔJ DEŇ ═══════════ -->
+    <div class="panel active" id="panel-coach">
+      <div id="coachBody"><div class="loading">Načítavam tvoj deň…</div></div>
+    </div>
+
     <!-- ═══════════ SCHEDULE / HODINY PANEL ═══════════ -->
-    <div class="panel active" id="panel-schedule">
+    <div class="panel" id="panel-schedule">
       <!-- Asistent (len skutočný tréner/admin) -->
       <div id="assistantCard" style="display:none;background:var(--card);border:1px solid var(--gold-border);border-radius:14px;padding:14px 16px;margin-bottom:16px">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
@@ -840,6 +849,7 @@ setInterval(updateClock, 15000);
     loadTrainerNotifCount();
     setInterval(loadTrainerNotifCount, 60000);
     await Promise.all([loadSchedule(), loadStudents(), loadAssistant()]);
+    coachLoad();
   } catch(e){ document.getElementById('loginWall').style.display='flex'; }
 })();
 
@@ -1581,6 +1591,167 @@ let _qrScanner = null;
 let _qrLastScan = '';
 let _qrScanLog = [];
 
+// ── COACH GROWTH – MÔJ DEŇ ───────────────────────────────────────────────────
+let _coach=null;
+const OUT_LBL={contacted:'Kontaktovaná',replied:'Odpísala',interested:'Má záujem',not_interested:'Nemá záujem',will_come:'Príde na hodinu',later:'Ozvať sa neskôr',no_reply:'Bez odpovede'};
+async function coachLoad(){
+  const box=document.getElementById('coachBody');
+  const d=await api('/api/coach/today').catch(()=>null);
+  if(!d||!d.ok){ box.innerHTML='<div class="loading">Nepodarilo sa načítať. Skús obnoviť.</div>'; return; }
+  _coach=d;
+  const doneAll=d.tasks.filter(t=>t.done).length, total=d.tasks.length;
+  const dateFmt=new Date().toLocaleDateString('sk-SK',{weekday:'long',day:'numeric',month:'long'});
+  let h=`
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+    <div class="section-title" style="margin:0"><i class="bi bi-bullseye" style="color:var(--gold)"></i> Dnes · ${esc(dateFmt)}</div>
+    <div style="display:flex;gap:10px;align-items:center">
+      ${d.streak?`<span style="font-weight:800;color:#ff9f43">🔥 ${d.streak} dní</span>`:''}
+      <span style="font-weight:800;color:var(--gold)">${d.points_today} b.</span>
+    </div>
+  </div>
+  <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px 16px;margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;font-size:.85rem;color:var(--muted);margin-bottom:6px">
+      <span>Splnené ${doneAll}/${total} úloh</span><span>${d.progress} %</span></div>
+    <div style="height:8px;background:#242424;border-radius:6px;overflow:hidden">
+      <div style="height:100%;width:${d.progress}%;background:var(--grad-gold,linear-gradient(90deg,#C9A24C,#e8c97a));transition:width .4s"></div></div>
+    ${d.day_complete?`<div style="margin-top:10px;font-weight:800;color:#7bd88f">✅ DNEŠOK HOTOVÝ — všetky povinné aktivity splnené!</div>`:''}
+    <div style="margin-top:10px;font-size:.85rem;color:var(--muted);font-style:italic">${esc(d.motivation)}</div>
+  </div>`;
+  // úlohy
+  h+=`<div style="display:grid;gap:8px;margin-bottom:16px">`;
+  for(const t of d.tasks){
+    const auto=t.auto?` <span style="font-size:.7rem;color:var(--muted)">(plní sa automaticky${t.auto==='contacts'?` — ${d.contacts_today}/${d.min_contacts}`:''})</span>`:'';
+    h+=`<div style="display:flex;align-items:center;gap:10px;background:#151515;border:1px solid ${t.done?'#2f4a35':'#2a2a2a'};border-radius:12px;padding:10px 12px;${t.done?'opacity:.75':''}">
+      <button onclick="coachToggle('${t._id}',${t.done?1:0},${t.auto?1:0})" style="width:26px;height:26px;border-radius:8px;border:2px solid ${t.done?'#7bd88f':'var(--gold)'};background:${t.done?'#1d3524':'transparent'};color:#7bd88f;font-weight:900;cursor:pointer;flex:none">${t.done?'✓':''}</button>
+      <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:.9rem">${t.icon} ${esc(t.label)}${t.mandatory?' <span style="color:#e0577b;font-size:.7rem;font-weight:800">POVINNÁ</span>':''}${auto}</div></div>
+      <span style="color:var(--gold);font-weight:800;font-size:.8rem;flex:none">+${t.points}</span>
+    </div>`;
+  }
+  h+=`</div>`;
+  // referral
+  h+=`<div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px 16px;margin-bottom:16px">
+    <div style="font-weight:800;margin-bottom:8px">🔗 Tvoj pozývací link</div>
+    <div style="font-size:.8rem;color:var(--gold);word-break:break-all;margin-bottom:8px">${esc(d.referral.link)}</div>
+    <textarea id="coachInvTxt" rows="3" style="width:100%;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:10px;color:var(--cream);padding:8px;font-size:.85rem" placeholder="Vlastný text pozvánky…">${esc(d.referral.custom_text)}</textarea>
+    <div style="font-size:.7rem;color:var(--muted);margin:4px 0 8px">Link sa k správe pripája automaticky — nedá sa z nej stratiť.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn-gold" onclick="coachCopyInvite()" style="background:var(--gold);color:#111;border:0;border-radius:10px;padding:8px 14px;font-weight:800;cursor:pointer">📋 KOPÍROVAŤ POZVÁNKU</button>
+      <button onclick="coachSaveInvite()" style="background:transparent;border:1px solid #2a2a2a;border-radius:10px;color:var(--cream);padding:8px 14px;cursor:pointer">Uložiť môj text</button>
+    </div></div>`;
+  // leady
+  h+=`<div class="section-title"><i class="bi bi-telephone-outbound" style="color:var(--gold)"></i> Dnes kontaktuj <span style="color:var(--muted);font-weight:400;font-size:.8rem">(${d.contacts_today}/${d.min_contacts} hotovo)</span></div>`;
+  if(!d.leads.length) h+=`<div style="color:var(--muted);padding:10px">Žiadne prioritné leady na dnes. 🎉</div>`;
+  h+=`<div style="display:grid;gap:10px;margin-bottom:16px">`;
+  for(const L of d.leads){
+    const pr=L.priority==='hot'?'🔥':L.priority==='warm'?'🟠':'🔵';
+    const wa=L.phone?('https://wa.me/'+L.phone.replace(/[^0-9]/g,'').replace(/^0/, '421')):'';
+    h+=`<div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:12px 14px" id="lead-${L.id}">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <div><span style="font-weight:800">${pr} ${esc(L.name)}</span>
+          <span style="color:var(--muted);font-size:.75rem"> · ${esc(L.city||'')} ${L.visits?` · ${L.visits} návštev`:''}</span></div>
+        <div style="font-size:.75rem;color:var(--muted)">${L.last_contact_days!=null?`kontakt pred ${L.last_contact_days} d`:'nikdy nekontaktovaná'}</div></div>
+      <div style="font-size:.8rem;color:#e8c97a;margin:4px 0">${esc(L.reason)}</div>
+      <div style="font-size:.82rem;color:var(--muted);margin-bottom:8px">💡 ${esc(L.action)}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        ${L.phone?`<a href="tel:${esc(L.phone)}" style="text-decoration:none;background:#1d2b1f;border:1px solid #2f4a35;color:#7bd88f;border-radius:9px;padding:5px 10px;font-size:.78rem">📞 Zavolať</a>`:''}
+        ${L.phone?`<a href="sms:${esc(L.phone)}" style="text-decoration:none;background:#1a2333;border:1px solid #2a3a55;color:#8ab8ff;border-radius:9px;padding:5px 10px;font-size:.78rem">💬 SMS</a>`:''}
+        ${wa?`<a href="${wa}" target="_blank" style="text-decoration:none;background:#12301f;border:1px solid #1f5237;color:#5fd08a;border-radius:9px;padding:5px 10px;font-size:.78rem">🟢 WhatsApp</a>`:''}
+        ${L.phone?`<button onclick="navigator.clipboard.writeText('${esc(L.phone)}');toast('Skopírované 📋')" style="background:transparent;border:1px solid #2a2a2a;border-radius:9px;color:var(--muted);padding:5px 10px;font-size:.78rem;cursor:pointer">Kopírovať číslo</button>`:''}
+        <button onclick="coachLeadDetail('${L.id}')" style="background:transparent;border:1px solid #2a2a2a;border-radius:9px;color:var(--muted);padding:5px 10px;font-size:.78rem;cursor:pointer">🗂 Detail</button>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <select id="out-${L.id}" style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:9px;color:var(--cream);padding:5px 8px;font-size:.78rem">
+          <option value="">Výsledok…</option>${d.outcomes.map(o=>`<option value="${o}">${OUT_LBL[o]||o}</option>`).join('')}</select>
+        <input id="note-${L.id}" placeholder="Poznámka (voliteľná)" style="flex:1;min-width:120px;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:9px;color:var(--cream);padding:5px 8px;font-size:.78rem">
+        <input id="fu-${L.id}" type="date" title="Ozvať sa znovu" style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:9px;color:var(--muted);padding:4px 6px;font-size:.75rem">
+        <button onclick="coachContact('${L.id}')" style="background:var(--gold);color:#111;border:0;border-radius:9px;padding:6px 12px;font-weight:800;font-size:.78rem;cursor:pointer">Zapísať</button>
+      </div></div>`;
+  }
+  h+=`</div>`;
+  // spodok: kalendár + leaderboard
+  h+=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">
+    <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px"><div style="font-weight:800;margin-bottom:8px">📆 Kalendár disciplíny</div><div id="coachCal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px"></div></div>
+    <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px"><div style="font-weight:800;margin-bottom:8px">🏆 Tím — tento týždeň</div><div id="coachBoard"></div></div>
+  </div><div id="coachModal"></div>`;
+  box.innerHTML=h;
+  coachCal(); coachBoard();
+}
+async function coachToggle(id, done, isAuto){
+  if(isAuto){ toast('Táto úloha sa plní automaticky podľa reálnej aktivity',true); return; }
+  const r=await api('/api/coach/task-done',{method:'POST',body:{id, undo:!!done}});
+  if(r?.ok) coachLoad(); else toast(r?.error||'Chyba',true);
+}
+async function coachContact(id){
+  const outcome=document.getElementById('out-'+id).value;
+  if(!outcome){ toast('Vyber výsledok kontaktu',true); return; }
+  const r=await api('/api/coach/contact',{method:'POST',body:{lead_id:id, outcome,
+    note:document.getElementById('note-'+id).value, followup_date:document.getElementById('fu-'+id).value||null}});
+  if(r?.ok){ toast(r.duplicate?'Výsledok upravený (dnes už zapísaná)':'Kontakt zapísaný ✅'); coachLoad(); }
+  else toast(r?.error||'Chyba',true);
+}
+async function coachCopyInvite(){
+  const custom=document.getElementById('coachInvTxt').value.trim();
+  const msg=(custom||_coach.referral.message.replace(_coach.referral.link,'').trim()).replace(/https?:\/\/\S+/g,'').trim()+' '+_coach.referral.link;
+  await navigator.clipboard.writeText(msg);
+  toast('Pozvánka skopírovaná 📋');
+  api('/api/coach/copied',{method:'POST',body:{}}).then(()=>coachLoad());
+}
+async function coachSaveInvite(){
+  const r=await api('/api/coach/invite-text',{method:'POST',body:{text:document.getElementById('coachInvTxt').value}});
+  if(r?.ok) toast('Text uložený ✅');
+}
+async function coachCal(){
+  const d=await api('/api/coach/calendar').catch(()=>null); if(!d?.ok) return;
+  const el=document.getElementById('coachCal'); if(!el) return;
+  const [y,m]=d.month.split('-').map(Number);
+  const days=new Date(y,m,0).getDate();
+  let h='';
+  for(let i=1;i<=days;i++){
+    const key=d.month+'-'+String(i).padStart(2,'0');
+    const info=d.days[key];
+    const col=!info?'#242424':info.color==='green'?'#2f7a45':info.color==='orange'?'#a8742a':'#7a2f35';
+    h+=`<div title="${key}${info?` · ${info.done}/${info.total} úloh · ${info.points} b.`:''}" style="height:26px;border-radius:6px;background:${col};display:flex;align-items:center;justify-content:center;font-size:.62rem;color:rgba(255,255,255,.7)">${i}</div>`;
+  }
+  el.innerHTML=h;
+}
+async function coachBoard(){
+  const d=await api('/api/coach/board?range=week').catch(()=>null); if(!d?.ok) return;
+  const el=document.getElementById('coachBoard'); if(!el) return;
+  el.innerHTML=d.rows.length?d.rows.map((r,i)=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #222;font-size:.85rem">
+    <span>${['🥇','🥈','🥉'][i]||(i+1)+'.'} ${esc(r.name)}</span>
+    <span style="color:var(--muted)">${r.contacts} kont. · ${r.completion}% · <b style="color:var(--gold)">${r.points} b.</b></span></div>`).join('')
+    :'<div style="color:var(--muted);font-size:.85rem">Zatiaľ žiadna aktivita.</div>';
+}
+async function coachLeadDetail(id){
+  const d=await api('/api/coach/lead/'+id).catch(()=>null);
+  if(!d?.ok){ toast('Nepodarilo sa načítať',true); return; }
+  const L=d.lead;
+  const mod=document.getElementById('coachModal');
+  mod.innerHTML=`<div onclick="if(event.target===this)this.innerHTML=''" style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:900;display:flex;align-items:center;justify-content:center;padding:14px">
+    <div style="background:#161616;border:1px solid #2a2a2a;border-radius:16px;max-width:520px;width:100%;max-height:85vh;overflow:auto;padding:18px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px"><b style="font-size:1.05rem">${esc(L.name)}</b>
+        <button onclick="document.getElementById('coachModal').innerHTML=''" style="background:none;border:0;color:var(--muted);font-size:1.2rem;cursor:pointer">✕</button></div>
+      <div style="font-size:.82rem;color:var(--muted);margin-bottom:10px">${esc(L.phone||'—')} · ${esc(L.email||'—')} · ${esc(L.city||'')}<br>
+        Zdroj: ${esc(L.lead_source||'—')} · Status: ${esc(L.lead_status||'—')} · Vytvorený: ${(L.created_at||'').slice(0,10)}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;font-size:.82rem">
+        <div style="background:#101010;border-radius:10px;padding:8px">Návštevy: <b>${L.visits}</b> · No-show: <b>${L.no_shows}</b></div>
+        <div style="background:#101010;border-radius:10px;padding:8px">${L.membership?`Členstvo: <b>${esc(L.membership.plan)}</b><br>do ${(L.membership.expires||'').slice(0,10)}`:L.entries_left?`Vstupy: <b>${L.entries_left}</b>`:L.had_membership?'Členstvo mala, už nemá':'Bez členstva'}${L.free_class_used?'<br>1. hodina zdarma: ✔':''}</div>
+      </div>
+      ${d.bookings.length?`<div style="font-weight:700;font-size:.85rem;margin-bottom:4px">Návštevy</div><div style="font-size:.78rem;color:var(--muted);margin-bottom:10px">${d.bookings.slice(0,8).map(b=>`${b.date} · ${esc(b.name)} (${esc(b.loc||'')}) — ${b.status==='attended'?'✅':b.status==='no_show'?'❌ no-show':b.status}`).join('<br>')}</div>`:''}
+      ${d.emails.length?`<div style="font-weight:700;font-size:.85rem;margin-bottom:4px">Automatické e-maily</div><div style="font-size:.78rem;color:var(--muted);margin-bottom:10px">${d.emails.slice(0,6).map(m=>`${(m.sent_at||'').slice(0,10)} · ${esc(m.sequence)}`).join('<br>')}</div>`:''}
+      ${d.contacts.length?`<div style="font-weight:700;font-size:.85rem;margin-bottom:4px">Kontakty trénerov</div><div style="font-size:.78rem;color:var(--muted);margin-bottom:10px">${d.contacts.map(c=>`${c.date} · ${esc(c.trainer)} — ${OUT_LBL[c.outcome]||c.outcome}${c.note?' · '+esc(c.note):''}`).join('<br>')}</div>`:''}
+      <div style="font-weight:700;font-size:.85rem;margin-bottom:4px">Poznámky</div>
+      <div style="font-size:.78rem;color:var(--muted);margin-bottom:8px">${d.notes.length?d.notes.map(n=>`${(n.created_at||'').slice(0,16).replace('T',' ')} · <b>${esc(n.author_name)}</b>: ${esc(n.text)}`).join('<br>'):'Žiadne.'}</div>
+      <div style="display:flex;gap:6px"><input id="cmNote" placeholder="Nová poznámka…" style="flex:1;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:9px;color:var(--cream);padding:6px 8px;font-size:.8rem">
+        <button onclick="coachAddNote('${L.id}')" style="background:var(--gold);color:#111;border:0;border-radius:9px;padding:6px 12px;font-weight:800;cursor:pointer">Uložiť</button></div>
+    </div></div>`;
+}
+async function coachAddNote(id){
+  const t=document.getElementById('cmNote').value.trim(); if(!t) return;
+  const r=await api('/api/coach/lead/'+id+'/note',{method:'POST',body:{text:t}});
+  if(r?.ok){ toast('Poznámka uložená ✅'); coachLeadDetail(id); } else toast(r?.error||'Chyba',true);
+}
+
 function switchTab(id, btn){
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -1589,6 +1760,7 @@ function switchTab(id, btn){
   if(id==='calendar') loadCalFrame();
   if(id==='notes') populateNoteClasses();
   if(id==='tasks') loadTasks();
+  if(id==='coach') coachLoad();
   if(id==='earnings') loadTrainerEarnings();
   if(id==='sell') loadSellOptions();
   if(id==='private') loadTrainerPrivate();
