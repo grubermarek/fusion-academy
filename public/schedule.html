@@ -446,6 +446,15 @@ async function confirmBooking() {
     });
     const d = await r.json();
     if (!r.ok) {
+      if (d && d.stale) { // hodina medzičasom zmenená/zrušená → obnov rozvrh
+        closeBookModal();
+        showToast('Rozvrh sa medzičasom zmenil — obnovili sme ho, skús to znova 🙏', 'error');
+        const resp2 = await fetch('/api/classes');
+        allClasses = filterSchedule(await resp2.json());
+        if (currentDay !== null) showDay(currentDay);
+        btn.disabled = false; btn.innerHTML = '<i class="bi bi-check2-circle me-2"></i>'+FA_T('sched.confirm');
+        return;
+      }
       document.getElementById('bookError').textContent = d.error || d.message;
       document.getElementById('bookError').classList.remove('d-none');
       btn.disabled = false; btn.innerHTML = '<i class="bi bi-check2-circle me-2"></i>'+FA_T('sched.confirm');

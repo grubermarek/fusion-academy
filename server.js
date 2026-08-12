@@ -11510,7 +11510,11 @@ app.post('/api/bookings', auth, async(req,res)=>{
     const {class_id, booking_date, notes, override_free, for_child_id}=req.body;
     if(!class_id) return res.status(400).json({error:'Chýba trieda'});
     const cls=await q.one(db.classes,{_id:class_id});
-    if(!cls||!cls.active) return res.status(404).json({error:'Hodina nenájdená'});
+    if(!cls||!cls.active){
+      const who=await q.one(db.users,{_id:req.session.uid});
+      console.warn('⚠️ booking 404: class_id='+class_id+' user='+(who&&who.email)+' exists='+!!cls+(cls?' active='+cls.active:''));
+      return res.status(404).json({error:'Hodina nenájdená', stale:true});
+    }
     const parent=await q.one(db.users,{_id:req.session.uid});
     // ── Booking for a child profile? ────────────────────────────────────────────
     let target = parent;

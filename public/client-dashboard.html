@@ -1645,6 +1645,7 @@ async function doPayOnSite(classId){
   document.getElementById('posModal').style.display='none';
   const d=await api('/api/bookings',{method:'POST',body:{class_id:classId, pay_on_site:true}});
   if(d?.ok){ showToast('✅ Rezervované — vstup zaplatíš na mieste 💵','success'); loadMyBookings(); loadClasses(); }
+  else if(d?.stale){ showToast('Rozvrh sa medzičasom zmenil — obnovili sme zoznam, skús to znova 🙏','error'); loadClasses(); }
   else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 function openBookModal(classId, className, dateStr, type){
@@ -1681,6 +1682,9 @@ async function confirmBooking(){
       setTimeout(()=>{window.location.href='/pricing';},1500); }
   } else if(d?.error==='already_booked'){
     showToast('Na túto hodinu si už prihlásený/á.','error');
+  } else if(d?.stale){
+    showToast('Rozvrh sa medzičasom zmenil — obnovili sme zoznam, skús to znova 🙏','error');
+    loadClasses();
   } else {
     showToast('Chyba: '+(d?.message||d?.error||'?'),'error');
   }
