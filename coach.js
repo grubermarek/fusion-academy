@@ -184,6 +184,7 @@ module.exports = function initCoach(ctx){
     const recentCases = (await q.find(db.coach_cases,{})).filter(c=>(Date.now()-new Date(c.created_at).getTime()) < 14*86400000);
     const caseCooldown = new Set(recentCases.map(c=>c.lead_id));
 
+    const uById = Object.fromEntries(users.map(x=>[x._id,x]));
     const rows=[];
     for(const u of users){
       if(u.is_admin || ['trainer','manager','admin'].includes(u.user_type)) continue;
@@ -221,6 +222,8 @@ module.exports = function initCoach(ctx){
         has_membership: activeMem.has(u._id), entries_left: u.single_entries||0,
         last_contact_days: lc?Math.floor((now-lc)/86400000):null, priority: score>=80?'hot':score>=50?'warm':'cold',
         is_client: u.user_type==='client',
+        sponsor_name: u.sponsor_id && uById[u.sponsor_id] ? uById[u.sponsor_id].name : null,
+        sponsor_real: !!(u.sponsor_id && uById[u.sponsor_id] && !uById[u.sponsor_id].is_admin),
         claimed: claimedMine, claimed_at: claimedMine?(u.coach_claimed_at||'').slice(0,10):null });
     }
     rows.sort((a,b)=>b.score-a.score || (b.last_contact_days||999)-(a.last_contact_days||999));
