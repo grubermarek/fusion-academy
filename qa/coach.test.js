@@ -230,6 +230,13 @@ const put = (jar, p, b) => call(jar, 'PUT', p, b);
   const amb2 = (await g('A', '/api/coach/today')).data;
   ok('ambasádor má po schválení viac leadov + dávka č. 2', amb2.my_leads.length > amb.my_leads.length && amb2.batch.batch_no === 2, { before: amb.my_leads.length, after: amb2.my_leads.length, no: amb2.batch.batch_no });
 
+  // 13) uzavretie case-u bez zapísaného kontaktu sa počíta do denných kontaktov
+  const ambBefore = (await g('A', '/api/coach/today')).data;
+  const relLead = ambBefore.my_leads[0];
+  await post('A', '/api/coach/lead/' + relLead.id + '/release', { lead_status: 'not_interested' });
+  const ambAfter = (await g('A', '/api/coach/today')).data;
+  ok('release bez kontaktu = +1 kontakt dnes', ambAfter.contacts_today === (ambBefore.contacts_today + 1), { pred: ambBefore.contacts_today, po: ambAfter.contacts_today });
+
   // 11) bezpečnosť: klient sa nedostane do coach API
   const cl = await g('L', '/api/coach/today');
   ok('bežný klient nemá prístup do /api/coach', cl.status === 401 || cl.status === 403, cl.status);

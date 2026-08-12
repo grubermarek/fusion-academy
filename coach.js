@@ -471,6 +471,15 @@ module.exports = function initCoach(ctx){
       resolution: st||'released', converted, prev_sponsor: converted?prevSponsor:undefined,
       claimed_at: claimedAt, duration_h: durationH, contacts_count: myContacts.length, notes_count: myNotes.length,
       date: todayStr(), created_at: nowISO()});
+    // uzavretie case-u je práca s leadom → počíta sa ako dnešný kontakt (max 1/lead/deň)
+    const todayContact = await q.one(db.coach_contacts,{trainer_id:me._id, lead_id:lead._id, date:todayStr()});
+    if(!todayContact){
+      const outcomeMap = { trial:'will_come', interested:'interested', not_interested:'not_interested' };
+      await q.insert(db.coach_contacts,{trainer_id:me._id, trainer_name:me.name, lead_id:lead._id,
+        lead_name:lead.name, outcome: outcomeMap[st]||'contacted', note:'(z uzavretia case-u)', date:todayStr(),
+        followup_hit:false, created_at:nowISO()});
+      await q.update(db.users,{_id:lead._id},{$set:{last_contacted_at:nowISO()}});
+    }
     const note = (req.body||{}).note;
     if(note) await q.insert(db.lead_notes,{client_id:lead._id, client_name:lead.name, author_id:me._id,
       author_name:me.name, text:'Case uzavretý: '+String(note).slice(0,300), source:'coach_release', created_at:nowISO()});
