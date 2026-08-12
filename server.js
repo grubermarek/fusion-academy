@@ -1531,6 +1531,34 @@ async function seedData() {
     }catch(e){ console.error('cash entries migration:', e.message); }
   }
 
+  // ── 12.8.: Ľubomíra Trulik — jednorazový vstup z 10.8. uhradí prevodom na účet
+  if(!(await q.one(db.settings,{key:'record_transfer_lubomira_20260812'}))){
+    await q.insert(db.settings,{key:'record_transfer_lubomira_20260812', value:true, at:nowISO()});
+    try{
+      const u=await q.one(db.users,{email:'lubomira.trulik@gmail.com'});
+      if(!u){ console.log('💶 TRANSFER ENTRY: Ľubomíra nenájdená'); }
+      else {
+        const dup=(await q.find(db.transactions,{user_id:u._id})).find(t=>t.amount===10 && /vstup/i.test(t.note||''));
+        if(dup){ console.log('💶 TRANSFER ENTRY: '+u.name+' už má vstup zapísaný — preskakujem'); }
+        else {
+          await q.insert(db.transactions,{type:'single_entry', user_id:u._id, user_name:u.name, amount:10,
+            payment_method:'transfer', note:'Jednorazový vstup 10.8. — prevod na účet (dohodnuté 12.8.)',
+            created_at:nowISO(), month:'2026-08'});
+          trackPurchase(u._id,10);
+          createInvoice({user_id:u._id, client_name:u.name, client_email:u.email,
+            items:[{desc:'Jednorazový vstup (10.8.2026)', qty:1, total:10}], total:10, method:'prevod na účet'});
+          const b=(await q.find(db.bookings,{user_id:u._id})).find(x=>x.booking_date==='2026-08-10' && x.status==='attended');
+          if(b) await q.update(db.bookings,{_id:b._id},{$set:{entry_collected:{amount:10,method:'transfer',at:nowISO(),by:'migration'}, pay_on_site:false}});
+          await q.insert(db.notifications,{user_id:u._id,type:'payment',
+            title:'🧾 Potvrdenie — vstup 10.8.',
+            body:'Zaevidovali sme úhradu 10.00 € prevodom za vstup z 10.8. Ďakujeme! ❤️',
+            read:false, created_at:nowISO()}).catch(()=>{});
+          console.log('💶 TRANSFER ENTRY zapísané:', u.name);
+        }
+      }
+    }catch(e){ console.error('transfer entry migration:', e.message); }
+  }
+
   // ── Korekcia 10.8. v2: Marek Monike 1 vstup vrátil ručne ešte pred migráciou →
   // migrácia jej vrátila 2, spolu +3 namiesto +2. Strhni 1 späť. + dohľadaj Lenku.
   if(!(await q.one(db.settings,{key:'fix_online_entry_refund_v2'}))){

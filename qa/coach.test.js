@@ -192,6 +192,18 @@ const put = (jar, p, b) => call(jar, 'PUT', p, b);
   const gCase = wk2.goals.find(x => x.key === 'cases');
   ok('týždenný cieľ case-ov (1 doriešený / cieľ 10)', gCase && gCase.actual === 1 && gCase.goal === 10, gCase);
 
+  // 11b) história case-ov + konverzia (antifraud)
+  const hist = (await g('T', '/api/coach/cases')).data;
+  ok('história mojich case-ov obsahuje uzavretý case', hist && hist.rows.some(c => c.lead_id === meL2.id && c.resolution === 'trial'), hist && hist.rows.length);
+  ok('case má metriky (kontakty, trvanie)', hist.rows[0] && 'contacts_count' in hist.rows[0] && 'duration_h' in hist.rows[0], hist.rows[0]);
+  // pokus o podvodnú konverziu: claim → okamžitý release s convert
+  await post('T', '/api/coach/lead/' + meL.id + '/claim', {});
+  const fraud = await post('T', '/api/coach/lead/' + meL.id + '/release', { lead_status: 'trial', convert: true });
+  ok('okamžitá konverzia neuznaná (antifraud)', fraud.data && fraud.data.ok && fraud.data.converted === false && !!fraud.data.convert_error, fraud.data);
+  const acases = (await g('admin', '/api/admin/coach/cases')).data;
+  ok('admin vidí všetky case-y s metrikami', acases && acases.ok && acases.rows.length >= 2 && 'suspicious' in acases.rows[0], acases && acases.rows.length);
+  ok('revoke na nekonvertovanom case = 404', (await post('admin', '/api/admin/coach/cases/' + acases.rows[0]._id + '/revoke-conversion', {})).status === 404 || acases.rows[0].converted === true);
+
   // 12) ambasádor: dávky po 10 leadov
   for(let i=0;i<13;i++) await post('X'+i, '/api/register', { name: 'Batch Leadka '+i, email: 'coach-b'+i+'-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', consent: true, phone: '09001111'+String(10+i) });
   await post('A', '/api/register', { name: 'Ambasádorka QA', email: 'coach-amb-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', consent: true });

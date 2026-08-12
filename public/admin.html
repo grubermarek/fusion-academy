@@ -2434,6 +2434,19 @@ async function cgLoad(){
       <td>${r.streak?'🔥 '+r.streak:'—'}</td>
       <td>${r.overdue_followups?`<span class="badge bg-danger">${r.overdue_followups}</span>`:'✅'}</td></tr>`).join('')}
     </tbody></table></div>`;
+  const cs=await api('/api/admin/coach/cases?limit=40');
+  if(cs&&cs.ok&&cs.rows.length){
+    box.innerHTML+=`<div class="card border-0 rounded-3 p-3 mt-3"><div class="fw-semibold mb-2">🗂 Uzavreté case-y <span class="text-muted small">(⚠️ = konverzia s podozrivo krátkym case-om alebo bez kontaktov)</span></div>
+      <div style="overflow-x:auto"><table class="table table-dark table-sm align-middle mb-0" style="min-width:700px">
+      <thead><tr class="text-muted small"><th>Kto</th><th>Lead</th><th>Výsledok</th><th>Trvanie</th><th>Kontakty</th><th>Poznámky</th><th>Konverzia</th><th></th></tr></thead><tbody>
+      ${cs.rows.map(c=>`<tr class="${c.suspicious?'table-danger':''}">
+        <td>${c.trainer_name}</td><td><a href="#" onclick="showLeadEmails('${c.lead_id}','${(c.lead_name||'').replace(/'/g,'')}');return false" class="link-warning">${c.lead_name}</a></td>
+        <td class="small">${c.resolution}</td><td>${c.duration_h!=null?c.duration_h+' h':'—'}</td>
+        <td>${c.contacts_count||0}</td><td>${c.notes_count||0}</td>
+        <td>${c.converted?(c.suspicious?'⚠️ 🤝':'✅ 🤝'):(c.conversion_revoked_at?'🚫 zrušená':'—')}</td>
+        <td>${c.converted?`<button class="btn btn-sm btn-outline-danger py-0" onclick="cgRevoke('${c._id}')">Zrušiť konverziu</button>`:''}</td></tr>`).join('')}
+      </tbody></table></div></div>`;
+  }
   const br=await api('/api/admin/coach/batch-requests');
   if(br&&br.ok&&br.rows.length){
     box.innerHTML+=`<div class="card border-0 rounded-3 p-3 mt-3"><div class="fw-semibold mb-2">📥 Žiadosti o ďalšie leady (po 10)</div>
@@ -2454,6 +2467,11 @@ async function cgLoad(){
           <button class="btn btn-sm btn-outline-danger py-0" onclick="cgApprove('${r._id}',false)">Zamietnuť</button>
         </div></div>`).join('')}</div>`;
   }
+}
+async function cgRevoke(id){
+  if(!confirm('Zrušiť konverziu? Sponzor sa vráti na pôvodného.')) return;
+  const d=await api('/api/admin/coach/cases/'+id+'/revoke-conversion',{method:'POST',body:JSON.stringify({})});
+  if(d&&d.ok){ showToast('Konverzia zrušená'); cgLoad(); } else alert(d&&d.error||'Chyba');
 }
 async function cgBatch(id, approve){
   const d=await api('/api/admin/coach/batch-requests/'+id,{method:'POST',body:JSON.stringify({approve})});

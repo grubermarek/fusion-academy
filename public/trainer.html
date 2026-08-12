@@ -1678,7 +1678,7 @@ async function coachLoad(){
   }
   h+=coachBottom();
   box.innerHTML=h;
-  coachCal(); coachBoard(); coachWeek(); coachRankLoad(); coachLines();
+  coachCal(); coachBoard(); coachWeek(); coachRankLoad(); coachLines(); coachCases();
 }
 async function coachLines(){
   const el=document.getElementById('coachLines'); if(!el) return;
@@ -1750,6 +1750,7 @@ function coachBottom(){
       <div id="coachCalSum" style="font-size:.78rem;color:var(--muted);margin-top:8px"></div>
     </div>
     <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px"><div style="font-weight:800;margin-bottom:8px">🏆 Tím — tento týždeň</div><div id="coachBoard"></div></div>
+    <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px"><div style="font-weight:800;margin-bottom:8px">🗂 História mojich case-ov</div><div id="coachCases"></div></div>
   </div><div id="coachModal"></div>`;
 }
 async function coachRequestBatch(){
@@ -1772,8 +1773,25 @@ async function coachRelease(id){
   if(opt===null) return;
   const map={'1':'trial','2':'interested','3':'not_interested'};
   const note=prompt('Krátke zhrnutie case-u (voliteľné, uloží sa ako poznámka)')||'';
-  const r=await api('/api/coach/lead/'+id+'/release',{method:'POST',body:{lead_status:map[opt]||null, note}});
-  if(r?.ok){ toast('Case uzavretý ✅'); coachLoad(); } else toast(r?.error||'Chyba',true);
+  let convert=false;
+  if(opt==='1') convert=confirm('Konvertoval/a si ju ty? Ak áno, staneš sa jej sponzorom a budeš mať z nej affiliate odmeny.\n(Uzná sa len, ak reálne prišla na hodinu alebo zaplatila po tvojom prevzatí — admin každú konverziu vidí.)');
+  const r=await api('/api/coach/lead/'+id+'/release',{method:'POST',body:{lead_status:map[opt]||null, note, convert}});
+  if(r?.ok){
+    if(convert && r.converted) toast('Case uzavretý ✅ Si jej sponzorom 🤝');
+    else if(convert && r.convert_error) toast('Case uzavretý, ale konverzia neuznaná: '+r.convert_error, true);
+    else toast('Case uzavretý ✅');
+    coachLoad();
+  } else toast(r?.error||'Chyba',true);
+}
+const RES_LBL={trial:'Prišla na hodinu 🎉',interested:'Má záujem',not_interested:'Nemá záujem',released:'Uvoľnený',contacted:'Kontaktovaná',new:'Nová'};
+async function coachCases(){
+  const el=document.getElementById('coachCases'); if(!el) return;
+  const d=await api('/api/coach/cases').catch(()=>null);
+  if(!d?.ok || !d.rows.length){ el.innerHTML='<div style="color:var(--muted);font-size:.82rem">Zatiaľ žiadne uzavreté case-y.</div>'; return; }
+  el.innerHTML=d.rows.slice(0,15).map(c=>`<div onclick="coachLeadDetail('${c.lead_id}')" style="cursor:pointer;display:flex;justify-content:space-between;gap:6px;padding:5px 0;border-bottom:1px solid #222;font-size:.8rem">
+    <span><b>${esc(c.lead_name)}</b> <span style="color:var(--muted)">· ${c.date}</span></span>
+    <span style="color:var(--muted)">${RES_LBL[c.resolution]||c.resolution}${c.converted?' · <b style=\"color:#7bd88f\">🤝 môj klient</b>':''}${c.duration_h!=null?` · ${c.duration_h} h`:''} · ${c.contacts_count||0} kont.</span></div>`).join('')
+    +'<div style="font-size:.7rem;color:var(--muted);margin-top:6px">Klikni na case a uvidíš celý priebeh — kontakty, poznámky, návštevy.</div>';
 }
 async function coachRankLoad(){
   const d=await api('/api/coach/rank').catch(()=>null); if(!d?.ok) return;

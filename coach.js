@@ -433,15 +433,70 @@ module.exports = function initCoach(ctx){
     const lead = await q.one(db.users,{_id:req.params.id});
     if(!lead) return res.status(404).json({error:'Nenájdený'});
     if(lead.coach_claimed_by !== me._id && !me.is_admin) return res.status(403).json({error:'Lead nemáš prevzatý'});
-    const set = { coach_claimed_by:null, coach_claimed_at:null };
+    const claimedAt = lead.coach_claimed_at || null;
+    const durationH = claimedAt ? Math.round((Date.now()-new Date(claimedAt).getTime())/3600000*10)/10 : null;
+    const myContacts = await q.find(db.coach_contacts,{trainer_id:me._id, lead_id:lead._id});
+    const myNotes = await q.find(db.lead_notes,{client_id:lead._id, author_id:me._id});
     const st = (req.body||{}).lead_status;
+    const wantConvert = (req.body||{}).convert === true;
+
+    // konverzia na svojho klienta (sponzorstvo + affiliate) — len pri reálnom výsledku
+    let converted = false, prevSponsor = lead.sponsor_id || null, convertError = null;
+    if(wantConvert){
+      const claimedTs = claimedAt ? new Date(claimedAt).getTime() : 0;
+      const bks = await q.find(db.bookings,{user_id:lead._id});
+      const attendedAfter = bks.some(b=>b.status==='attended' && claimedTs && new Date(b.booking_date+'T23:59:00').getTime()>=claimedTs);
+      const pays = await q.find(db.payments,{user_id:lead._id});
+      const paidAfter = pays.some(p=>claimedTs && new Date(p.created_at||0).getTime()>=claimedTs && p.status!=='pending_manual');
+      if(!myContacts.length) convertError = 'Bez jediného zapísaného kontaktu sa konverzia nedá uznať.';
+      else if(!claimedTs || durationH < 1) convertError = 'Case bol otvorený príliš krátko — konverzia sa neuznáva.';
+      else if(!attendedAfter && !paidAfter) convertError = 'Konverzia sa uzná, až keď človek reálne príde na hodinu alebo zaplatí (po prevzatí case-u).';
+      else {
+        // sponzora nesmieš nikomu ukradnúť — len ak ho nemá, alebo je to admin/default
+        const curSponsor = prevSponsor ? await q.one(db.users,{_id:prevSponsor}) : null;
+        if(curSponsor && !curSponsor.is_admin && curSponsor._id!==me._id) convertError = 'Tento človek už má sponzora ('+curSponsor.name+') — konverzia nie je možná.';
+        else { converted = true; }
+      }
+    }
+    const set = { coach_claimed_by:null, coach_claimed_at:null };
     if(st && RELEASE_STATUSES.includes(st) && lead.user_type==='lead') set.lead_status = st;
+    if(converted) set.sponsor_id = me._id;
     await q.update(db.users,{_id:lead._id},{$set:set});
     await q.insert(db.coach_cases,{trainer_id:me._id, trainer_name:me.name, lead_id:lead._id, lead_name:lead.name,
-      resolution: st||'released', date: todayStr(), created_at: nowISO()});
+      resolution: st||'released', converted, prev_sponsor: converted?prevSponsor:undefined,
+      claimed_at: claimedAt, duration_h: durationH, contacts_count: myContacts.length, notes_count: myNotes.length,
+      date: todayStr(), created_at: nowISO()});
     const note = (req.body||{}).note;
     if(note) await q.insert(db.lead_notes,{client_id:lead._id, client_name:lead.name, author_id:me._id,
       author_name:me.name, text:'Case uzavretý: '+String(note).slice(0,300), source:'coach_release', created_at:nowISO()});
+    if(converted){
+      const admins = (await q.find(db.users,{is_admin:true})).filter(a=>!isTest(a));
+      for(const a of admins) await q.insert(db.notifications,{user_id:a._id, type:'coach_convert',
+        title:'Konverzia leadu 🤝', body:`${me.name} konvertoval(a) ${lead.name} a stal(a) sa sponzorom (case ${durationH} h, ${myContacts.length} kontaktov). Skontroluj v admin → Úlohy trénerov.`,
+        read:false, created_at:nowISO()}).catch(()=>{});
+    }
+    res.json({ok:true, converted, convert_error: convertError});
+  });
+
+  // história mojich uzavretých case-ov
+  app.get('/api/coach/cases', trainerAuth, async (req,res)=>{
+    const me = coachUser(req);
+    const rows = (await q.find(db.coach_cases,{trainer_id:me._id})).sort((a,b)=>a.created_at<b.created_at?1:-1).slice(0,100);
+    res.json({ok:true, rows});
+  });
+  // admin: všetky case-y s antifraud príznakom
+  app.get('/api/admin/coach/cases', adminAuth, async (req,res)=>{
+    const rows = (await q.find(db.coach_cases,{})).sort((a,b)=>a.created_at<b.created_at?1:-1).slice(0, +req.query.limit||60)
+      .map(c=>({...c, suspicious: !!c.converted && ((c.duration_h!=null && c.duration_h<24) || !(c.contacts_count>0))}));
+    res.json({ok:true, rows});
+  });
+  app.post('/api/admin/coach/cases/:id/revoke-conversion', adminAuth, async (req,res)=>{
+    const c = await q.one(db.coach_cases,{_id:req.params.id});
+    if(!c || !c.converted) return res.status(404).json({error:'Case nenájdený alebo bez konverzie'});
+    await q.update(db.users,{_id:c.lead_id},{$set:{sponsor_id: c.prev_sponsor||null}});
+    await q.update(db.coach_cases,{_id:c._id},{$set:{converted:false, conversion_revoked_at:nowISO()}});
+    await q.insert(db.notifications,{user_id:c.trainer_id, type:'coach_convert', title:'Konverzia zrušená',
+      body:`Admin zrušil tvoju konverziu leadu ${c.lead_name}.`, read:false, created_at:nowISO()}).catch(()=>{});
     res.json({ok:true});
   });
   // zmena statusu leadu priamo z Mojich leadov
