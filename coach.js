@@ -49,12 +49,12 @@ module.exports = function initCoach(ctx){
     rank_target_points: 400,     // 30-dňový bodový cieľ pre plné aktivity skóre
     alert_overdue_followups: 5,  // admin alert od tohto počtu zameškaných follow-upov
     templates: {
-      after_first: 'Ahoj {meno}, ako sa ti včera páčilo? ❤️ Budeme radi, ak prídeš znova. Ak chceš, pošlem ti najbližšie termíny.',
-      no_show: 'Ahoj {meno}, dnes sme ťa čakali 😊 Ak ti termín nevyšiel, nič sa nedeje. Môžem ti poslať ďalší?',
-      winback: 'Ahoj {meno}, už sme ťa chvíľu nevideli na hodine ❤️ Ako sa máš? Ak máš chuť, pošlem ti termíny na tento týždeň.',
-      new_lead: 'Ahoj {meno} ❤️ Ak máš chuť skúsiť Zumbu, prvú hodinu máš zdarma. Vyber si miesto a termín tu: {link}',
-      expired: 'Ahoj {meno}, členstvo ti skončilo — ak chceš pokračovať, rada ti ho obnovím alebo poradím s výberom 😊',
-      followup: 'Ahoj {meno}, ozývam sa, ako sme sa dohodli 😊',
+      after_first: 'Ahojky {meno} ❤️ ako sa ti u nás páčilo? Teším sa, že si prišla. Ak by si chcela prísť znova, kľudne mi napíš a pošlem ti termíny 😊 - {trener}',
+      no_show: 'Ahojky {meno} 😊 dnes sme ťa čakali na hodine — nič sa nedeje, každému niekedy nevyjde. Ak chceš, pošlem ti ďalší termín, nech ti to vyjde ❤️ - {trener}',
+      winback: 'Ahojky {meno} ❤️ už sme sa dlhšie nevideli na hodine a chýbaš nám. Ako sa máš? Ak máš chuť prísť, napíš mi a pošlem ti termíny 😊 - {trener}',
+      new_lead: 'Ahojky {meno} ❤️ vidím, že si registrovaná na Zumbu, ale ešte si nebola na hodine. Chcem sa opýtať, či ti viem s niečím pomôcť 😊 Kľudne mi napíš - {trener} :) Tu si vieš rezervovať prvú hodinu (je zdarma): {link}',
+      expired: 'Ahojky {meno} 😊 všimla som si, že ti skončilo členstvo. Ak chceš pokračovať, kľudne mi napíš, poradím ti s výberom ❤️ - {trener}',
+      followup: 'Ahojky {meno} 😊 ozývam sa, ako sme sa dohodli. Ako sa máš? - {trener}',
     },
     motivation: [
       'Prázdna hodina sa nenaplní sama. Každá správa, story a follow-up zvyšujú šancu, že na ďalšej hodine bude o jedného človeka viac.',
@@ -238,7 +238,8 @@ module.exports = function initCoach(ctx){
       const { list: leads, mine: my_leads } = await smartLeads(me, date);
       const code = me.referral_code||'';
       const link = APP_URL + '/invite/' + code;
-      const custom = me.coach_invite_text || `Ahoj ❤️ Ak máš chuť skúsiť Zumbu, prvú hodinu máš zdarma. Vyber si miesto a termín tu:`;
+      const fn = (me.name||'').split(' ')[0];
+      const custom = me.coach_invite_text || `Ahojky ❤️ ak máš chuť skúsiť Zumbu, prvá hodina je úplne zdarma. Keby si mala akékoľvek otázky, kľudne mi napíš, veľmi rada ti pomôžem 😊 - ${fn} :) Termín si vieš vybrať tu:`;
       // link vždy pripájame server-side — attribution sa nedá omylom zmazať
       const message = custom.replace(/https?:\/\/\S+/g,'').trim() + ' ' + link;
       res.json({ ok:true, date, tasks:tasks.sort((a,b)=>(b.mandatory?1:0)-(a.mandatory?1:0)),
@@ -246,7 +247,8 @@ module.exports = function initCoach(ctx){
         due_followups: due_followups.map(f=>({id:f._id, client_id:f.client_id, name:f.client_name, title:f.title, due:f.due_date})),
         points_today: pts, day_complete: allMand,
         progress: tasks.length ? Math.round(doneCount/tasks.length*100) : 0,
-        streak, leads, my_leads, outcomes: OUTCOMES, templates: cfg.templates,
+        streak, leads, my_leads, outcomes: OUTCOMES,
+        templates: Object.fromEntries(Object.entries(cfg.templates).map(([k,v])=>[k, String(v).replace(/{trener}/g, fn)])),
         referral: { code, link, message, custom_text: custom },
         motivation: smartMotivation(cfg, {streak, remaining: tasks.length-doneCount, doneCount}) });
     }catch(e){ console.error('coach/today',e); res.status(500).json({error:'Chyba'}); }
