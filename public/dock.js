@@ -21,13 +21,15 @@ function svg(name){
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" width="24" height="24">${ICON[name]}</svg>`;
 }
 
+const DL={home:'Domov',book:'Rezervovať',shop:'Obchod',comm:'Komunita',prof:'Profil',help:'Podpora',role_client:'Osobný',role_admin:'Firemný',role_trainer:'Trénerský',role_assist:'Asistent'};
+const dt=k=>window.FA_T?window.FA_T('dock.'+k):DL[k]; // fallback SK, keď i18n nie je na stránke
 const items = [
-  { key:'home',  label:'Domov',      icon:'home',     href:'/client-dashboard', match:['/client-dashboard','/dashboard'] },
-  { key:'book',  label:'Rezervovať', icon:'calendar', href:'/client-dashboard#bookSection', match:['#book'] },
-  { key:'shop',  label:'Obchod',     icon:'bag',      href:'/obchod', match:['/obchod','/pricing','/shop'] },
-  { key:'comm',  label:'Komunita',   icon:'users',    href:'/community', match:['/community'] },
-  { key:'prof',  label:'Profil',     icon:'user',     href:'/u/', match:['/u/'] },
-  { key:'help',  label:'Podpora',    icon:'help',     href:'/support', match:['/support'] },
+  { key:'home',  label:dt('home'),      icon:'home',     href:'/client-dashboard', match:['/client-dashboard','/dashboard'] },
+  { key:'book',  label:dt('book'), icon:'calendar', href:'/client-dashboard#bookSection', match:['#book'] },
+  { key:'shop',  label:dt('shop'),     icon:'bag',      href:'/obchod', match:['/obchod','/pricing','/shop'] },
+  { key:'comm',  label:dt('comm'),   icon:'users',    href:'/community', match:['/community'] },
+  { key:'prof',  label:dt('prof'),     icon:'user',     href:'/u/', match:['/u/'] },
+  { key:'help',  label:dt('help'),    icon:'help',     href:'/support', match:['/support'] },
 ];
 
 const css = `
@@ -84,10 +86,10 @@ async function build(){
   const dock = document.createElement('nav'); dock.id = 'fa-dock'; dock.setAttribute('aria-label','Rýchla navigácia');
 
   // Dostupné role/dashboardy (prepínanie na jednom mieste)
-  const roles = [{ key:'client', label:'Osobný', icon:'🏠', href:'/client-dashboard' }];
-  if (me.is_admin) roles.push({ key:'admin', label:'Firemný', icon:'💼', href:'/admin' });
-  if (me.is_admin || me.user_type==='trainer' || me.user_type==='manager') roles.push({ key:'trainer', label:'Trénerský', icon:'📋', href:'/trainer' });
-  else if (me.is_assistant) roles.push({ key:'assistant', label:'Asistent', icon:'🤝', href:'/trainer' });
+  const roles = [{ key:'client', label:dt('role_client'), icon:'🏠', href:'/client-dashboard' }];
+  if (me.is_admin) roles.push({ key:'admin', label:dt('role_admin'), icon:'💼', href:'/admin' });
+  if (me.is_admin || me.user_type==='trainer' || me.user_type==='manager') roles.push({ key:'trainer', label:dt('role_trainer'), icon:'📋', href:'/trainer' });
+  else if (me.is_assistant) roles.push({ key:'assistant', label:dt('role_assist'), icon:'🤝', href:'/trainer' });
   const showSwitch = roles.length > 1;
 
   const navHtml = items.map(it=>{

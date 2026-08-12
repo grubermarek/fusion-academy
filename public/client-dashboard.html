@@ -5,6 +5,8 @@
   <link rel="icon" type="image/png" href="/logo-mark.png">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Môj profil – Fusion Academy</title>
+<script src="/i18n.js"></script>
+<script src="/i18n-pages.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -443,9 +445,9 @@
     <!-- Permanentkové vstupy + darované hodiny — viditeľné VŽDY keď nejaké sú (aj popri členstve) -->
     <div id="mcEntriesRow" style="display:none;margin-top:10px;background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.3);border-radius:12px;padding:10px 14px;font-size:.88rem"></div>
     <button class="mc-buy-btn" id="mcBuyBtn" onclick="window.location.href='/pricing'">
-      <i class="bi bi-cart-plus"></i> Kúpiť / obnoviť členstvo
+      <i class="bi bi-cart-plus"></i> <span data-i18n="dash.mc_buy">Kúpiť / obnoviť členstvo</span>
     </button>
-    <a id="mcCancelSub" onclick="cancelStripeSub()" style="display:none;margin-top:10px;font-size:.78rem;color:var(--muted);text-decoration:underline;cursor:pointer;text-align:center">Zrušiť automatický mesačný odber</a>
+    <a id="mcCancelSub" onclick="cancelStripeSub()" style="display:none;margin-top:10px;font-size:.78rem;color:var(--muted);text-decoration:underline;cursor:pointer;text-align:center"><span data-i18n="dash.mc_cancel_sub">Zrušiť automatický mesačný odber</span></a>
   </div>
 
   <!-- Community spotlight: klient mesiaca + narodeniny + meniny -->
@@ -464,7 +466,7 @@
   <div class="book-section anim anim-d3" id="bookSection">
     <div class="section-heading">
       <span class="sh-icon">💃</span>
-      <h2>Zarezervovať hodinu</h2>
+      <h2 data-i18n="dash.book_h">Zarezervovať hodinu</h2>
     </div>
 
     <!-- City filter (Zumba only – online má vlastnú sekciu) -->
@@ -496,7 +498,7 @@
   ════════════════════════════════════════════════════════ -->
   <div class="card anim anim-d5" style="margin-bottom:20px">
     <div class="card-title" style="justify-content:space-between">
-      <span><i class="bi bi-calendar-check"></i> Moje aktívne rezervácie</span>
+      <span><i class="bi bi-calendar-check"></i> <span data-i18n="dash.my_bookings">Moje aktívne rezervácie</span></span>
       <a href="/" style="font-size:.78rem;color:var(--gold);text-decoration:none;opacity:.8"><i class="bi bi-plus"></i> Pridať</a>
     </div>
     <div id="bookingsList"><div class="empty-state"><i class="bi bi-calendar-x"></i>Žiadne rezervácie</div></div>
@@ -639,7 +641,7 @@
   ════════════════════════════════════════════════════════ -->
   <div class="card anim anim-d6" id="qrCard" style="margin-bottom:20px;display:none">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <div class="card-title" style="margin:0"><i class="bi bi-qr-code"></i> Môj QR Check-in</div>
+      <div class="card-title" style="margin:0"><i class="bi bi-qr-code"></i> <span data-i18n="dash.qr">Môj QR Check-in</span></div>
       <span style="font-size:.75rem;color:var(--muted)">Ukáž trénerovi pri vstupe</span>
     </div>
     <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
@@ -659,7 +661,7 @@
   <!-- Súkromné hodiny -->
   <div class="card anim anim-d6" id="privateCard" style="margin-bottom:20px">
     <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
-      <span><i class="bi bi-person-heart"></i> Súkromné hodiny</span>
+      <span><i class="bi bi-person-heart"></i> <span data-i18n="dash.private">Súkromné hodiny</span></span>
     </div>
     <p style="color:var(--muted,#999);font-size:.82rem;margin:4px 0 12px">Hodina len pre teba — tréner sa ti venuje 1:1. Termíny, ceny aj rezervácia sú v Obchode. <b>Bezplatné zrušenie do 24 h pred začiatkom.</b></p>
     <div id="pvMine"></div>
@@ -671,7 +673,7 @@
   <!-- Friends & public profile -->
   <div class="card anim anim-d6" id="friendsCard" style="margin-bottom:20px">
     <div class="card-title" style="margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
-      <span><i class="bi bi-people-fill"></i> Priatelia & profil</span>
+      <span><i class="bi bi-people-fill"></i> <span data-i18n="dash.friends">Priatelia &amp; profil</span></span>
       <a id="myProfileLink" href="#" style="font-size:.82rem;color:var(--gold);text-decoration:none">Môj verejný profil →</a>
     </div>
     <!-- Vyhľadať ľudí a pridať do priateľov -->
@@ -688,27 +690,27 @@
   <div class="quick-actions anim anim-d7">
     <a class="qa-btn" href="/schedule">
       <i class="bi bi-calendar-week"></i>
-      <span>Rozvrh hodín</span>
+      <span data-i18n="dash.qa_sched">Rozvrh hodín</span>
     </a>
     <a class="qa-btn" href="/pricing">
       <i class="bi bi-credit-card"></i>
-      <span>Kúpiť členstvo</span>
+      <span data-i18n="dash.qa_buy">Kúpiť členstvo</span>
     </a>
     <a class="qa-btn" href="/shop">
       <i class="bi bi-bag"></i>
-      <span>E-shop</span>
+      <span data-i18n="dash.qa_shop">E-shop</span>
     </a>
     <a class="qa-btn" href="/online">
       <i class="bi bi-camera-video"></i>
-      <span>Online hodiny</span>
+      <span data-i18n="dash.qa_online">Online hodiny</span>
     </a>
     <a class="qa-btn" href="https://latindancefusion.art/jedalnicek" target="_blank" rel="noopener">
       <i class="bi bi-egg-fried"></i>
-      <span>Jedálny plán</span>
+      <span data-i18n="dash.qa_meal">Jedálny plán</span>
     </a>
     <a class="qa-btn" href="/community">
       <i class="bi bi-people"></i>
-      <span>Komunita</span>
+      <span data-i18n="dash.qa_comm">Komunita</span>
     </a>
   </div>
 
@@ -1039,7 +1041,7 @@ function renderBookings(bookings){
   _bookedMap={};
   active.forEach(b=>{ if(b.class_id&&b.booking_date) _bookedMap[b.class_id+'|'+b.booking_date]=b._id; });
   if(typeof _allClasses!=='undefined' && _allClasses.length) renderClassCards();
-  if(!active.length){el.innerHTML=`<div class="empty-state"><i class="bi bi-calendar-x"></i>Zatiaľ žiadne rezervácie – zarezervuj si hodinu hore!</div>`;return;}
+  if(!active.length){el.innerHTML=`<div class="empty-state"><i class="bi bi-calendar-x"></i><span data-i18n="dash.no_bookings">Zatiaľ žiadne rezervácie – zarezervuj si hodinu hore!</span></div>`;return;}
   el.innerHTML=active.map(b=>{
     const insHtml = b.instructor && b.instructor!=='—'
       ? (b.instructor_id

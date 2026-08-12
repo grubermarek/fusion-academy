@@ -157,6 +157,18 @@ sk:{
   'onl.b1':'Prístup k živým prenosom','onl.b2':'Komunita – všetky kanály','onl.b3':'Offline hodiny nezahrnuté',
   'onl.p1':'Všetky živé prenosy','onl.p2':'Jedálniček na mieru na celý týždeň','onl.p3':'Komunita + Blog prístup',
   'onl.s0':'Silver+ (fyzické + online)','onl.s1':'Neobmedzené hodiny v štúdiu','onl.s2':'Online prístup zahrnutý','onl.s3':'Plný prístup do komunity','onl.s4':'Prednostné rezervácie',
+
+  /* ── Dock + nástenka (jadro) ── */
+  'dock.home':'Domov','dock.book':'Rezervovať','dock.shop':'Obchod','dock.comm':'Komunita','dock.prof':'Profil','dock.help':'Podpora',
+  'dock.role_client':'Osobný','dock.role_admin':'Firemný','dock.role_trainer':'Trénerský','dock.role_assist':'Asistent',
+  'dash.book_h':'Zarezervovať hodinu','dash.my_bookings':'Moje aktívne rezervácie','dash.qr':'Môj QR Check-in',
+  'dash.private':'Súkromné hodiny','dash.friends':'Priatelia & profil',
+  'dash.qa_sched':'Rozvrh hodín','dash.qa_buy':'Kúpiť členstvo','dash.qa_shop':'E-shop','dash.qa_online':'Online hodiny','dash.qa_meal':'Jedálny plán','dash.qa_comm':'Komunita',
+  'dash.mc_buy':'Kúpiť / obnoviť členstvo','dash.mc_cancel_sub':'Zrušiť automatický mesačný odber',
+  'dash.no_bookings':'Zatiaľ žiadne rezervácie – zarezervuj si hodinu hore!',
+  'dash.no_notifs':'Žiadne notifikácie','dash.show_all':'Zobraziť všetky',
+  'dash.loading':'Načítavam…','dash.cancel':'Zrušiť','dash.load_err':'Chyba pri načítaní.',
+  'dash.welcome':'Vitaj vo Fusion Academy!',
 },
 
 en:{
@@ -309,6 +321,17 @@ en:{
   'onl.b1':'Access to live streams','onl.b2':'Community – all channels','onl.b3':'In-studio classes not included',
   'onl.p1':'All live streams','onl.p2':'Personal weekly meal plan','onl.p3':'Community + Blog access',
   'onl.s0':'Silver+ (studio + online)','onl.s1':'Unlimited studio classes','onl.s2':'Online access included','onl.s3':'Full community access','onl.s4':'Priority booking',
+
+  'dock.home':'Home','dock.book':'Book','dock.shop':'Shop','dock.comm':'Community','dock.prof':'Profile','dock.help':'Support',
+  'dock.role_client':'Personal','dock.role_admin':'Business','dock.role_trainer':'Trainer','dock.role_assist':'Assistant',
+  'dash.book_h':'Book a class','dash.my_bookings':'My active bookings','dash.qr':'My QR check-in',
+  'dash.private':'Private lessons','dash.friends':'Friends & profile',
+  'dash.qa_sched':'Class schedule','dash.qa_buy':'Buy membership','dash.qa_shop':'E-shop','dash.qa_online':'Online classes','dash.qa_meal':'Meal plan','dash.qa_comm':'Community',
+  'dash.mc_buy':'Buy / renew membership','dash.mc_cancel_sub':'Cancel monthly auto-renewal',
+  'dash.no_bookings':'No bookings yet – book a class above!',
+  'dash.no_notifs':'No notifications','dash.show_all':'Show all',
+  'dash.loading':'Loading…','dash.cancel':'Cancel','dash.load_err':'Failed to load.',
+  'dash.welcome':'Welcome to Fusion Academy!',
 },
 uk:{
   'inv.landing_h':'💃 Приходь потанцювати з нами',
@@ -460,5 +483,16 @@ uk:{
   'onl.b1':'Доступ до прямих трансляцій','onl.b2':'Спільнота – усі канали','onl.b3':'Заняття в студії не включені',
   'onl.p1':'Усі прямі трансляції','onl.p2':'Персональний тижневий план харчування','onl.p3':'Спільнота + доступ до блогу',
   'onl.s0':'Silver+ (студія + online)','onl.s1':'Необмежені заняття в студії','onl.s2':'Online доступ включено','onl.s3':'Повний доступ до спільноти','onl.s4':'Пріоритетне бронювання',
+
+  'dock.home':'Головна','dock.book':'Бронювати','dock.shop':'Магазин','dock.comm':'Спільнота','dock.prof':'Профіль','dock.help':'Підтримка',
+  'dock.role_client':'Особистий','dock.role_admin':'Бізнес','dock.role_trainer':'Тренерський','dock.role_assist':'Асистент',
+  'dash.book_h':'Забронювати заняття','dash.my_bookings':'Мої активні бронювання','dash.qr':'Мій QR check-in',
+  'dash.private':'Приватні заняття','dash.friends':'Друзі та профіль',
+  'dash.qa_sched':'Розклад занять','dash.qa_buy':'Купити абонемент','dash.qa_shop':'E-shop','dash.qa_online':'Online заняття','dash.qa_meal':'План харчування','dash.qa_comm':'Спільнота',
+  'dash.mc_buy':'Купити / продовжити абонемент','dash.mc_cancel_sub':'Скасувати щомісячне автопродовження',
+  'dash.no_bookings':'Поки що немає бронювань – забронюй заняття вище!',
+  'dash.no_notifs':'Немає сповіщень','dash.show_all':'Показати всі',
+  'dash.loading':'Завантаження…','dash.cancel':'Скасувати','dash.load_err':'Не вдалося завантажити.',
+  'dash.welcome':'Вітаємо у Fusion Academy!',
 },
 });
