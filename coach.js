@@ -43,6 +43,15 @@ module.exports = function initCoach(ctx){
       6:[{key:'react_comments',label:'Reaguj na komentáre a správy',icon:'💬',cat:'community'}],
       0:[{key:'week_review',label:'Zhodnoť týždeň a naplánuj ďalší',icon:'📝',cat:'education'}],
     },
+    weekly: { contacts: 21, content: 3, community: 3, referral_shares: 1 },
+    templates: {
+      after_first: 'Ahoj {meno}, ako sa ti včera páčilo? ❤️ Budeme radi, ak prídeš znova. Ak chceš, pošlem ti najbližšie termíny.',
+      no_show: 'Ahoj {meno}, dnes sme ťa čakali 😊 Ak ti termín nevyšiel, nič sa nedeje. Môžem ti poslať ďalší?',
+      winback: 'Ahoj {meno}, už sme ťa chvíľu nevideli na hodine ❤️ Ako sa máš? Ak máš chuť, pošlem ti termíny na tento týždeň.',
+      new_lead: 'Ahoj {meno} ❤️ Ak máš chuť skúsiť Zumbu, prvú hodinu máš zdarma. Vyber si miesto a termín tu: {link}',
+      expired: 'Ahoj {meno}, členstvo ti skončilo — ak chceš pokračovať, rada ti ho obnovím alebo poradím s výberom 😊',
+      followup: 'Ahoj {meno}, ozývam sa, ako sme sa dohodli 😊',
+    },
     motivation: [
       'Prázdna hodina sa nenaplní sama. Každá správa, story a follow-up zvyšujú šancu, že na ďalšej hodine bude o jedného človeka viac.',
       'Tvojou prácou nie je iba viesť hodinu. Tvojou prácou je vytvoriť dôvod, aby na ňu ľudia vôbec prišli.',
@@ -55,7 +64,8 @@ module.exports = function initCoach(ctx){
     const row = await q.one(db.settings,{key:'coach_config'});
     if(!row || !row.value) return DEFAULT_CONFIG;
     const c = row.value;
-    return { ...DEFAULT_CONFIG, ...c, points:{...DEFAULT_CONFIG.points, ...(c.points||{})} };
+    return { ...DEFAULT_CONFIG, ...c, points:{...DEFAULT_CONFIG.points, ...(c.points||{})},
+      weekly:{...DEFAULT_CONFIG.weekly, ...(c.weekly||{})}, templates:{...DEFAULT_CONFIG.templates, ...(c.templates||{})} };
   }
 
   const OUTCOMES = ['contacted','replied','interested','not_interested','will_come','later','no_reply'];
@@ -162,16 +172,16 @@ module.exports = function initCoach(ctx){
       const lastVisit = attended[0] ? new Date(attended[0].booking_date+'T12:00:00').getTime() : 0;
       const daysSinceVisit = lastVisit ? Math.floor((now-lastVisit)/86400000) : null;
       const recentNoShow = bks.find(b=>b.status==='no_show' && (now-new Date(b.booking_date+'T12:00:00').getTime())<7*86400000);
-      let score=0, reason='', action='';
-      if(followupToday.has(u._id)){ score=100; reason='Naplánovaný follow-up'; action='Ozvi sa dnes — máš to v pláne.'; }
-      else if(attended.length && daysSinceVisit<=2 && !activeMem.has(u._id) && !(u.single_entries>0)){ score=90; reason='Bola na hodine pred '+daysSinceVisit+' d, nič nekúpila'; action='Napíš jej dnes — spýtaj sa, ako sa jej páčilo a pošli termíny.'; }
-      else if(recentNoShow){ score=80; reason='No-show '+recentNoShow.booking_date; action='Ponúkni jej nový termín.'; }
-      else if(u.user_type==='lead' && !bks.length){ const age=Math.floor((now-new Date(u.created_at).getTime())/86400000); if(age>180) { score=20; reason='Starý lead ('+age+' d)'; action='Win-back kontakt.'; } else { score=70; reason='Nový lead bez rezervácie'; action='Pozvi ju na prvú hodinu zadarmo.'; } }
-      else if(expiredMem[u._id] && !activeMem.has(u._id) && (now-expiredMem[u._id])<60*86400000){ score=60; reason='Členstvo expirovalo'; action='Spýtaj sa, či chce pokračovať — ponúkni obnovenie.'; }
-      else if(attended.length && daysSinceVisit>=21 && daysSinceVisit<=120 && !activeMem.has(u._id)){ score=50; reason='Nebola '+daysSinceVisit+' dní'; action='Win-back: „Už sme ťa dlhšie nevideli ❤️"'; }
+      let score=0, reason='', action='', tpl='';
+      if(followupToday.has(u._id)){ score=100; reason='Naplánovaný follow-up'; action='Ozvi sa dnes — máš to v pláne.'; tpl='followup'; }
+      else if(attended.length && daysSinceVisit<=2 && !activeMem.has(u._id) && !(u.single_entries>0)){ score=90; reason='Bola na hodine pred '+daysSinceVisit+' d, nič nekúpila'; action='Napíš jej dnes — spýtaj sa, ako sa jej páčilo a pošli termíny.'; tpl='after_first'; }
+      else if(recentNoShow){ score=80; reason='No-show '+recentNoShow.booking_date; action='Ponúkni jej nový termín.'; tpl='no_show'; }
+      else if(u.user_type==='lead' && !bks.length){ const age=Math.floor((now-new Date(u.created_at).getTime())/86400000); if(age>180) { score=20; reason='Starý lead ('+age+' d)'; action='Win-back kontakt.'; tpl='winback'; } else { score=70; reason='Nový lead bez rezervácie'; action='Pozvi ju na prvú hodinu zadarmo.'; tpl='new_lead'; } }
+      else if(expiredMem[u._id] && !activeMem.has(u._id) && (now-expiredMem[u._id])<60*86400000){ score=60; reason='Členstvo expirovalo'; action='Spýtaj sa, či chce pokračovať — ponúkni obnovenie.'; tpl='expired'; }
+      else if(attended.length && daysSinceVisit>=21 && daysSinceVisit<=120 && !activeMem.has(u._id)){ score=50; reason='Nebola '+daysSinceVisit+' dní'; action='Win-back kontakt.'; tpl='winback'; }
       else continue;
       rows.push({ id:u._id, name:u.name, phone:u.phone||'', email:u.email&&!/@import\.local|@test/.test(u.email)?u.email:'',
-        city:u.city||'', lead_source:u.lead_source||'', lead_status:u.lead_status||'', score, reason, action,
+        city:u.city||'', lead_source:u.lead_source||'', lead_status:u.lead_status||'', score, reason, action, tpl,
         visits: attended.length + (u.glofox_attendances||0), last_visit_days: daysSinceVisit,
         has_membership: activeMem.has(u._id), entries_left: u.single_entries||0,
         last_contact_days: lc?Math.floor((now-lc)/86400000):null, priority: score>=80?'hot':score>=50?'warm':'cold' });
@@ -211,7 +221,7 @@ module.exports = function initCoach(ctx){
         due_followups: due_followups.map(f=>({id:f._id, client_id:f.client_id, name:f.client_name, title:f.title, due:f.due_date})),
         points_today: pts, day_complete: allMand,
         progress: tasks.length ? Math.round(doneCount/tasks.length*100) : 0,
-        streak, leads, outcomes: OUTCOMES,
+        streak, leads, outcomes: OUTCOMES, templates: cfg.templates,
         referral: { code, link, message, custom_text: me.coach_invite_text||'' },
         motivation: smartMotivation(cfg, {streak, remaining: tasks.length-doneCount, doneCount}) });
     }catch(e){ console.error('coach/today',e); res.status(500).json({error:'Chyba'}); }
@@ -367,6 +377,29 @@ module.exports = function initCoach(ctx){
     }catch(e){ res.status(500).json({error:'Chyba'}); }
   });
 
+  // týždenný prehľad + weekly score
+  app.get('/api/coach/week', trainerAuth, async (req,res)=>{
+    try{
+      const me = req.effectiveTrainer || req.trainerUser;
+      const cfg = await getConfig();
+      const since = new Date(Date.now()-6*86400000).toISOString().slice(0,10);
+      const tasks = (await q.find(db.coach_tasks,{trainer_id:me._id})).filter(t=>t.date>=since);
+      const contacts = (await q.find(db.coach_contacts,{trainer_id:me._id})).filter(c=>c.date>=since);
+      const doneCat = cat => tasks.filter(t=>t.cat===cat && t.done).length;
+      const refShares = tasks.filter(t=>t.key==='referral_share' && t.done).length;
+      const goals = [
+        { key:'contacts', label:'Kontaktovaní ľudia', actual:contacts.length, goal:cfg.weekly.contacts },
+        { key:'content', label:'Obsah (videá / story)', actual:doneCat('content'), goal:cfg.weekly.content },
+        { key:'community', label:'Community aktivity', actual:doneCat('community'), goal:cfg.weekly.community },
+        { key:'referral', label:'Poslané pozvánky (dni)', actual:refShares, goal:cfg.weekly.referral_shares },
+      ];
+      const score = Math.round(goals.reduce((s,g)=>s+Math.min(1, g.goal? g.actual/g.goal : 1),0)/goals.length*100);
+      const replied = contacts.filter(c=>['replied','interested','will_come'].includes(c.outcome)).length;
+      res.json({ok:true, since, goals, score,
+        quality:{ contacted:contacts.length, replied, interested:contacts.filter(c=>c.outcome==='interested'||c.outcome==='will_come').length }});
+    }catch(e){ res.status(500).json({error:'Chyba'}); }
+  });
+
   // ════════ ADMIN API ════════
   app.get('/api/admin/coach/overview', adminAuth, async (req,res)=>{
     try{
@@ -394,7 +427,9 @@ module.exports = function initCoach(ctx){
     const cur = await getConfig();
     const b = req.body||{};
     const next = { ...cur, ...(b.min_contacts?{min_contacts:+b.min_contacts}:{}) ,
-      points:{...cur.points, ...(b.points||{})}, rotation: b.rotation||cur.rotation, motivation: b.motivation||cur.motivation };
+      points:{...cur.points, ...(b.points||{})}, weekly:{...cur.weekly, ...(b.weekly||{})},
+      templates:{...cur.templates, ...(b.templates||{})},
+      rotation: b.rotation||cur.rotation, motivation: b.motivation||cur.motivation };
     await q.update(db.settings,{key:'coach_config'},{$set:{key:'coach_config', value:next}},{upsert:true});
     res.json({ok:true, config:next});
   });

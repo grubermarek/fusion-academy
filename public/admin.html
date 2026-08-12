@@ -1402,7 +1402,35 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- ÚLOHY TRÉNEROV -->
   <div class="section" id="s-tasktracker">
-    <h4 class="fw-bold mb-1">✅ Úlohy trénerov</h4>
+    <h4 class="fw-bold mb-1">🎯 Coach Growth — denný plán trénerov</h4>
+    <p class="text-muted small mb-3">Povinné denné úlohy, kontakty leadov, streak a completion. Konfigurácia bodov a vlastné úlohy.</p>
+    <div id="cgOverview" class="mb-3"><div class="text-muted small">Načítavam…</div></div>
+    <div class="row g-3 mb-4">
+      <div class="col-lg-6">
+        <div class="card border-0 rounded-3 p-3 h-100">
+          <div class="fw-semibold mb-2">⚙️ Konfigurácia</div>
+          <div class="d-flex gap-2 flex-wrap align-items-end">
+            <div><label class="text-muted small">Min. kontaktov/deň</label><input type="number" id="cgMinC" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:90px"></div>
+            <div><label class="text-muted small">Completion bonus</label><input type="number" id="cgBonus" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:90px"></div>
+            <div><label class="text-muted small">Kontakty (týž. cieľ)</label><input type="number" id="cgWContacts" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:90px"></div>
+            <button class="btn btn-sm btn-outline-warning" onclick="cgSaveCfg()">Uložiť</button>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="card border-0 rounded-3 p-3 h-100">
+          <div class="fw-semibold mb-2">📌 Nová úloha pre trénerov</div>
+          <div class="d-flex gap-2 flex-wrap align-items-end">
+            <div style="flex:1;min-width:180px"><label class="text-muted small">Názov</label><input id="cgTLabel" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="napr. Natoč reels z hodiny vo Zvolene"></div>
+            <div><label class="text-muted small">Body</label><input type="number" id="cgTPts" value="5" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:70px"></div>
+            <div><label class="text-muted small">Dátum</label><input type="date" id="cgTDate" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+            <div class="form-check"><input type="checkbox" id="cgTMand" class="form-check-input"><label class="form-check-label small" for="cgTMand">Povinná</label></div>
+            <button class="btn btn-sm btn-warning" onclick="cgAddTask()">Pridať</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <h4 class="fw-bold mb-1">✅ Bodovanie obsahu (staršie)</h4>
     <p class="text-muted small mb-3">Kto ako plní denné marketingové úlohy. Body podľa náročnosti (video najviac). Nastav mesačnú cenu pre víťaza.</p>
     <div class="d-flex gap-2 align-items-end flex-wrap mb-3">
       <div><label class="text-muted small">Mesiac</label><input type="month" id="ttMonth" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
@@ -2387,7 +2415,42 @@ const SK_MON=['január','február','marec','apríl','máj','jún','júl','august
 function ttMonLbl(m){ return SK_MON[+m.slice(5,7)-1]+' '+m.slice(0,4); }
 function initTaskTracker(){
   if(!_ttInit){ _ttInit=true; document.getElementById('ttMonth').value=new Date().toISOString().slice(0,7); }
-  loadTaskTracker();
+  loadTaskTracker(); cgLoad();
+}
+async function cgLoad(){
+  const box=document.getElementById('cgOverview');
+  const d=await api('/api/admin/coach/overview');
+  if(!d||!d.ok){ box.innerHTML='<div class="text-danger small">Chyba načítania.</div>'; return; }
+  document.getElementById('cgMinC').value=d.config.min_contacts;
+  document.getElementById('cgBonus').value=d.config.points.mandatory_all;
+  document.getElementById('cgWContacts').value=d.config.weekly.contacts;
+  if(!d.rows.length){ box.innerHTML='<div class="text-muted small">Zatiaľ žiadni aktívni tréneri v systéme.</div>'; return; }
+  box.innerHTML=`<div class="card border-0 rounded-3 p-0" style="overflow-x:auto"><table class="table table-dark table-hover align-middle mb-0" style="min-width:760px">
+    <thead><tr class="text-muted small"><th>Tréner</th><th>Dnes</th><th>Týždeň</th><th>Kontakty (7 d)</th><th>Body (7 d)</th><th>Streak</th><th>Zameškané follow-upy</th></tr></thead><tbody>
+    ${d.rows.map(r=>`<tr><td class="fw-semibold">${r.name}</td>
+      <td>${r.today_total?r.today_done+'/'+r.today_total:'—'}</td>
+      <td>${r.week_completion==null?'—':`<span class="badge ${r.week_completion>=80?'bg-success':r.week_completion>=50?'bg-warning text-dark':'bg-danger'}">${r.week_completion} %</span>`}</td>
+      <td>${r.week_contacts}</td><td class="text-warning fw-bold">${r.week_points}</td>
+      <td>${r.streak?'🔥 '+r.streak:'—'}</td>
+      <td>${r.overdue_followups?`<span class="badge bg-danger">${r.overdue_followups}</span>`:'✅'}</td></tr>`).join('')}
+    </tbody></table></div>`;
+}
+async function cgSaveCfg(){
+  const d=await api('/api/admin/coach/config',{method:'PUT',body:JSON.stringify({
+    min_contacts:+document.getElementById('cgMinC').value||3,
+    points:{mandatory_all:+document.getElementById('cgBonus').value||20},
+    weekly:{contacts:+document.getElementById('cgWContacts').value||21}})});
+  if(d&&d.ok){ showToast('Konfigurácia uložená ✅'); } else alert(d&&d.error||'Chyba');
+}
+async function cgAddTask(){
+  const label=document.getElementById('cgTLabel').value.trim();
+  if(!label){ alert('Zadaj názov úlohy'); return; }
+  const d=await api('/api/admin/coach/task',{method:'POST',body:JSON.stringify({label,
+    points:+document.getElementById('cgTPts').value||5,
+    date:document.getElementById('cgTDate').value||undefined,
+    mandatory:document.getElementById('cgTMand').checked})});
+  if(d&&d.ok){ showToast('Úloha pridaná ✅'); document.getElementById('cgTLabel').value=''; }
+  else alert(d&&d.error||'Chyba');
 }
 async function loadTaskTracker(){
   const month=document.getElementById('ttMonth').value||new Date().toISOString().slice(0,7);
@@ -3877,6 +3940,12 @@ async function showLeadEmails(id,name){
       return `<tr ${clickable}><td class="text-nowrap">${dt}</td><td class="small">${escHtml(r.sequence_label)}</td><td class="small" style="color:#C9A84C">${escHtml(r.subject||r.label)}${eye}</td><td>${stBadge(r.status)}${reason}</td></tr>`;
     }).join('');
     html+='</tbody></table></div>';
+  }
+  // poznámky trénerov (Coach Growth — jednotná vrstva)
+  const nd=await api('/api/admin/lead-notes/'+id);
+  if(nd&&nd.ok&&nd.notes.length){
+    html+='<div class="fw-semibold mt-3 mb-1">📝 Poznámky trénerov</div>'+nd.notes.map(n=>
+      `<div class="small mb-1"><span class="text-muted">${(n.created_at||'').slice(0,16).replace('T',' ')}</span> · <b>${escHtml(n.author_name)}</b>: ${escHtml(n.text)}</div>`).join('');
   }
   document.getElementById('leadEmailsList').innerHTML=html;
   document.getElementById('leadEmailsList').style.display='block';

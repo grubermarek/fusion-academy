@@ -1657,6 +1657,7 @@ async function coachLoad(){
         ${L.phone?`<a href="sms:${esc(L.phone)}" style="text-decoration:none;background:#1a2333;border:1px solid #2a3a55;color:#8ab8ff;border-radius:9px;padding:5px 10px;font-size:.78rem">💬 SMS</a>`:''}
         ${wa?`<a href="${wa}" target="_blank" style="text-decoration:none;background:#12301f;border:1px solid #1f5237;color:#5fd08a;border-radius:9px;padding:5px 10px;font-size:.78rem">🟢 WhatsApp</a>`:''}
         ${L.phone?`<button onclick="navigator.clipboard.writeText('${esc(L.phone)}');toast('Skopírované 📋')" style="background:transparent;border:1px solid #2a2a2a;border-radius:9px;color:var(--muted);padding:5px 10px;font-size:.78rem;cursor:pointer">Kopírovať číslo</button>`:''}
+        ${L.tpl?`<button onclick="coachCopyTpl('${L.id}','${L.tpl}')" style="background:#2a2140;border:1px solid #4a3a70;border-radius:9px;color:#c4a8ff;padding:5px 10px;font-size:.78rem;cursor:pointer">✉️ Šablóna</button>`:''}
         <button onclick="coachLeadDetail('${L.id}')" style="background:transparent;border:1px solid #2a2a2a;border-radius:9px;color:var(--muted);padding:5px 10px;font-size:.78rem;cursor:pointer">🗂 Detail</button>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
@@ -1668,13 +1669,32 @@ async function coachLoad(){
       </div></div>`;
   }
   h+=`</div>`;
-  // spodok: kalendár + leaderboard
+  // spodok: týždeň + kalendár + leaderboard
   h+=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">
+    <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px"><div style="font-weight:800;margin-bottom:8px">📊 Tento týždeň <span id="coachWeekScore" style="color:var(--gold)"></span></div><div id="coachWeek"></div></div>
     <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px"><div style="font-weight:800;margin-bottom:8px">📆 Kalendár disciplíny</div><div id="coachCal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px"></div></div>
     <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px"><div style="font-weight:800;margin-bottom:8px">🏆 Tím — tento týždeň</div><div id="coachBoard"></div></div>
   </div><div id="coachModal"></div>`;
   box.innerHTML=h;
-  coachCal(); coachBoard();
+  coachCal(); coachBoard(); coachWeek();
+}
+function coachCopyTpl(id, tplKey){
+  const L=_coach.leads.find(x=>x.id===id); if(!L) return;
+  const first=(L.name||'').split(' ')[0];
+  const msg=(_coach.templates[tplKey]||'').replace(/\{meno\}/g, first).replace(/\{link\}/g, _coach.referral.link);
+  navigator.clipboard.writeText(msg);
+  toast('Šablóna skopírovaná 📋 — uprav a pošli');
+}
+async function coachWeek(){
+  const d=await api('/api/coach/week').catch(()=>null); if(!d?.ok) return;
+  const sc=document.getElementById('coachWeekScore'), el=document.getElementById('coachWeek');
+  if(!el) return;
+  if(sc) sc.textContent=d.score+' %';
+  el.innerHTML=d.goals.map(g=>{
+    const pct=Math.min(100, g.goal? Math.round(g.actual/g.goal*100):100);
+    return `<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:.8rem"><span>${esc(g.label)}</span><span style="color:var(--muted)">${g.actual}/${g.goal}</span></div>
+      <div style="height:6px;background:#242424;border-radius:5px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${pct>=100?'#4a9d5f':'var(--gold)'}"></div></div></div>`;
+  }).join('')+`<div style="font-size:.75rem;color:var(--muted);margin-top:6px">Z ${d.quality.contacted} kontaktovaných odpovedalo ${d.quality.replied}, záujem má ${d.quality.interested}.</div>`;
 }
 async function coachToggle(id, done, isAuto){
   if(isAuto){ toast('Táto úloha sa plní automaticky podľa reálnej aktivity',true); return; }

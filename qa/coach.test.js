@@ -118,6 +118,18 @@ const put = (jar, p, b) => call(jar, 'PUT', p, b);
   const t6 = (await g('T', '/api/coach/today')).data;
   ok('admin úloha sa objavila trénerke', t6.tasks.some(x => x.label === 'QA admin úloha'), t6.tasks.map(x=>x.label));
 
+  // 10b) fáza 2: šablóny + týždenný prehľad
+  const t7 = (await g('T', '/api/coach/today')).data;
+  ok('šablóny v today (after_first, no_show, winback…)', t7.templates && ['after_first','no_show','winback','new_lead'].every(k => (t7.templates[k]||'').length > 10));
+  const wk = (await g('T', '/api/coach/week')).data;
+  ok('týždenný prehľad: goals + score', wk && wk.ok && wk.goals.length === 4 && wk.score >= 0 && wk.score <= 100, wk);
+  const gC = wk.goals.find(x => x.key === 'contacts');
+  ok('týždeň počíta kontakty (1)', gC && gC.actual === 1, gC);
+  ok('follow-up quality: contacted/replied/interested', wk.quality && wk.quality.contacted === 1 && wk.quality.interested === 1, wk.quality);
+  const wcfg = await put('admin', '/api/admin/coach/config', { weekly: { contacts: 25 } });
+  ok('config: weekly merge (contacts=25, content ostáva)', wcfg.data && wcfg.data.config.weekly.contacts === 25 && wcfg.data.config.weekly.content > 0, wcfg.data && wcfg.data.config.weekly);
+  await put('admin', '/api/admin/coach/config', { weekly: { contacts: 21 } });
+
   // 11) bezpečnosť: klient sa nedostane do coach API
   const cl = await g('L', '/api/coach/today');
   ok('bežný klient nemá prístup do /api/coach', cl.status === 401 || cl.status === 403, cl.status);
