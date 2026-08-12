@@ -1711,7 +1711,11 @@ function coachLeadCard(L, d, mine){
     // personalizovaná šablóna sa predvyplní do SMS/WhatsApp a zároveň skopíruje
     const first=(L.name||'').split(' ')[0];
     const tplMsg=L.tpl?((d.templates[L.tpl]||'').replace(/\{meno\}/g,first).replace(/\{link\}/g,d.referral.link)):'';
-    const enc=encodeURIComponent(tplMsg);
+    // WhatsApp na Windowse rozbíja emoji z URL na � — na desktope prefill bez emoji,
+    // plná verzia so smajlíkmi ide vždy do schránky (coachCopyTpl)
+    const isMobile=/Android|iPhone|iPad/i.test(navigator.userAgent);
+    const urlMsg=isMobile?tplMsg:tplMsg.replace(/[\p{Extended_Pictographic}️‍]/gu,'').replace(/ {2,}/g,' ');
+    const enc=encodeURIComponent(urlMsg);
     const wa=L.phone?('https://wa.me/'+L.phone.replace(/[^0-9]/g,'').replace(/^0/, '421')+(tplMsg?'?text='+enc:'')):'';
     const smsHref=L.phone?('sms:'+L.phone+(tplMsg?'?body='+enc:'')):'';
     let h='';
@@ -1843,7 +1847,7 @@ function coachCopyTpl(id, tplKey){
   const first=(L.name||'').split(' ')[0];
   const msg=(_coach.templates[tplKey]||'').replace(/\{meno\}/g, first).replace(/\{link\}/g, _coach.referral.link);
   navigator.clipboard.writeText(msg);
-  toast('Šablóna skopírovaná 📋 — uprav a pošli');
+  toast('Šablóna so smajlíkmi je v schránke 📋 — ak sa appka neotvorila alebo chýbajú emoji, vlož text cez Ctrl+V');
 }
 async function coachWeek(){
   const d=await api('/api/coach/week').catch(()=>null); if(!d?.ok) return;
