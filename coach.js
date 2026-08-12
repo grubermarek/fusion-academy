@@ -197,7 +197,10 @@ module.exports = function initCoach(ctx){
       else if(u.user_type==='lead' && !bks.length){ const age=Math.floor((now-new Date(u.created_at).getTime())/86400000); if(age>180) { score=20; reason='Starý lead ('+age+' d)'; action='Win-back kontakt.'; tpl='winback'; } else { score=70; reason='Nový lead bez rezervácie'; action='Pozvi ju na prvú hodinu zadarmo.'; tpl='new_lead'; } }
       else if(expiredMem[u._id] && !activeMem.has(u._id) && (now-expiredMem[u._id])<60*86400000){ score=60; reason='Členstvo expirovalo'; action='Spýtaj sa, či chce pokračovať — ponúkni obnovenie.'; tpl='expired'; }
       else if(attended.length && daysSinceVisit>=21 && daysSinceVisit<=120 && !activeMem.has(u._id)){ score=50; reason='Nebola '+daysSinceVisit+' dní'; action='Win-back kontakt.'; tpl='winback'; }
-      else if(claimedMine){ score=40; reason='Rozpracovaný lead'; action='Pokračuj v komunikácii a doveď ju na hodinu.'; tpl='followup'; }
+      else if(claimedMine){ score=40;
+        if(u.user_type==='client' && daysSinceVisit>=30){ reason='Klientka — nebola '+daysSinceVisit+' dní'; action='Pozná hodiny — osobný winback tón, žiadny predajný text.'; tpl='winback'; }
+        else { reason='Rozpracovaný lead'; action='Pokračuj v komunikácii a doveď ju na hodinu.'; tpl='followup'; }
+      }
       else continue;
       rows.push({ id:u._id, name:u.name, phone:u.phone||'', email:u.email&&!/@import\.local|@test/.test(u.email)?u.email:'',
         city:u.city||'', lead_source:u.lead_source||'', lead_status:u.lead_status||'', score, reason, action, tpl,
@@ -207,6 +210,7 @@ module.exports = function initCoach(ctx){
         last_note: lastNote[u._id] ? {date:(lastNote[u._id].created_at||'').slice(0,10), author:lastNote[u._id].author_name, text:String(lastNote[u._id].text||'').slice(0,120)} : null,
         has_membership: activeMem.has(u._id), entries_left: u.single_entries||0,
         last_contact_days: lc?Math.floor((now-lc)/86400000):null, priority: score>=80?'hot':score>=50?'warm':'cold',
+        is_client: u.user_type==='client',
         claimed: claimedMine, claimed_at: claimedMine?(u.coach_claimed_at||'').slice(0,10):null });
     }
     rows.sort((a,b)=>b.score-a.score || (b.last_contact_days||999)-(a.last_contact_days||999));
@@ -229,14 +233,25 @@ module.exports = function initCoach(ctx){
     const lastContact = {};
     for(const c of contacts){ const t=new Date(c.created_at).getTime(); if(!lastContact[c.lead_id]||t>lastContact[c.lead_id]) lastContact[c.lead_id]=t; }
     const now = Date.now();
-    const fresh = users.filter(u=>{
-      if(u.user_type!=='lead' || u.coach_claimed_by || u.hidden_lead || u.guest) return false;
-      if(isTest(u) && !isTest(user)) return false;
-      if(u.lead_status==='do_not_contact' || u.lead_status==='not_interested') return false;
-      if(!u.phone && !u.email) return false;
-      const lc = lastContact[u._id] || (u.last_contacted_at ? new Date(u.last_contacted_at).getTime() : 0);
-      return !lc || (now-lc) > 3*86400000; // potrebuje kontakt
-    }).sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0, BATCH_SIZE);
+    const needsContact = u => { const lc = lastContact[u._id] || (u.last_contacted_at ? new Date(u.last_contacted_at).getTime() : 0);
+      return !lc || (now-lc) > 3*86400000; };
+    const base = u => !u.coach_claimed_by && !u.hidden_lead && !u.guest && (!isTest(u) || isTest(user))
+      && u.lead_status!=='do_not_contact' && u.lead_status!=='not_interested' && (u.phone || u.email) && needsContact(u);
+    const freshLeads = users.filter(u=>u.user_type==='lead' && base(u))
+      .sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+    // klientky, čo neboli 30+ dní — poznajú hodiny, iný (winback) tón komunikácie
+    const bkAll = await q.find(db.bookings,{});
+    const lastVisit = {};
+    for(const b of bkAll){ if(b.status!=='attended') continue; const t=new Date(b.booking_date+'T12:00:00').getTime();
+      if(!lastVisit[b.user_id]||t>lastVisit[b.user_id]) lastVisit[b.user_id]=t; }
+    const winback = users.filter(u=>u.user_type==='client' && !u.is_admin && base(u)
+        && lastVisit[u._id] && (now-lastVisit[u._id]) > 30*86400000 && (now-lastVisit[u._id]) < 365*86400000)
+      .sort((a,b)=>(lastVisit[a._id]||0)-(lastVisit[b._id]||0)===0?0:(lastVisit[b._id]-lastVisit[a._id])); // najskôr čerstvo stratené
+    const fresh = [...freshLeads.slice(0,6), ...winback];
+    while(fresh.length < Math.min(BATCH_SIZE, freshLeads.length+winback.length)){
+      const nxt = freshLeads.find(u=>!fresh.includes(u)); if(!nxt) break; fresh.push(nxt);
+    }
+    fresh.splice(BATCH_SIZE);
     if(!fresh.length) return { count:0 };
     for(const u of fresh) await q.update(db.users,{_id:u._id},{$set:{coach_claimed_by:user._id, coach_claimed_at:nowISO()}});
     const prev = await q.count(db.coach_batches,{user_id:user._id, status:'granted'});
