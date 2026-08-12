@@ -1559,6 +1559,27 @@ async function seedData() {
     }catch(e){ console.error('transfer entry migration:', e.message); }
   }
 
+  // ── 12.8. v2: Ľubkin vstup bol zapísaný už 10.8. (faktúra 20260032) — oprav len metódu na prevod
+  if(!(await q.one(db.settings,{key:'record_transfer_lubomira_20260812_v2'}))){
+    await q.insert(db.settings,{key:'record_transfer_lubomira_20260812_v2', value:true, at:nowISO()});
+    try{
+      const u=await q.one(db.users,{email:'lubomira.trulik@gmail.com'});
+      if(u){
+        const tx=(await q.find(db.transactions,{user_id:u._id})).find(t=>t.amount===10 && t.type==='single_entry');
+        if(tx && tx.payment_method!=='transfer'){
+          await q.update(db.transactions,{_id:tx._id},{$set:{payment_method:'transfer', note:(tx.note||'')+' · uhradené prevodom na účet (dohodnuté 12.8.)'}});
+          console.log('💶 TRANSFER FIX: metóda transakcie zmenená na prevod ('+u.name+')');
+        }
+        const b=(await q.find(db.bookings,{user_id:u._id})).find(x=>x.booking_date==='2026-08-10' && x.status==='attended');
+        if(b && !b.entry_collected) await q.update(db.bookings,{_id:b._id},{$set:{entry_collected:{amount:10,method:'transfer',at:nowISO(),by:'migration'}, pay_on_site:false}});
+        await q.insert(db.notifications,{user_id:u._id,type:'payment',
+          title:'🧾 Potvrdenie — vstup 10.8.',
+          body:'Evidujeme úhradu 10.00 € prevodom za vstup z 10.8. Ďakujeme! ❤️',
+          read:false, created_at:nowISO()}).catch(()=>{});
+      }
+    }catch(e){ console.error('transfer fix migration:', e.message); }
+  }
+
   // ── Korekcia 10.8. v2: Marek Monike 1 vstup vrátil ručne ešte pred migráciou →
   // migrácia jej vrátila 2, spolu +3 namiesto +2. Strhni 1 späť. + dohľadaj Lenku.
   if(!(await q.one(db.settings,{key:'fix_online_entry_refund_v2'}))){
