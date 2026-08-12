@@ -58,6 +58,9 @@ window.faTrack = function(event, data={}){
     if(window.gtag){
       const map={CompleteRegistration:'sign_up', Purchase:'purchase', Lead:'generate_lead'};
       window.gtag('event', map[event]||event, data.value?{value:data.value,currency:'EUR'}:{});
+      if(event==='CompleteRegistration'){
+        window.gtag('event','conversion',{send_to:'AW-18386367227/LGSOCIrm2OAcEPvlpr9E',value:1.0,currency:'EUR'});
+      }
     }
   } catch(e){}
 };

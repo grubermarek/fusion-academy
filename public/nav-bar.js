@@ -383,16 +383,16 @@ if(document.readyState === 'loading'){
 
 })();
 
-/* Google tag (AW-734724861) — meranie konverzií Google Ads v celej appke */
+/* Google tag (AW-18386367227) — meranie konverzií Google Ads v celej appke */
 (function(){
   if (window.gtag) return;
   var s=document.createElement('script'); s.async=true;
-  s.src='https://www.googletagmanager.com/gtag/js?id=AW-734724861';
+  s.src='https://www.googletagmanager.com/gtag/js?id=AW-18386367227';
   document.head.appendChild(s);
   window.dataLayer=window.dataLayer||[];
   window.gtag=function(){dataLayer.push(arguments);};
   gtag('js', new Date());
-  gtag('config', 'AW-734724861');
+  gtag('config', 'AW-18386367227');
 })();
 
 /* Testovací účet: plávajúce tlačidlo na návrat do admina (zobrazí sa len adminovi v teste) */
