@@ -122,7 +122,7 @@ const put = (jar, p, b) => call(jar, 'PUT', p, b);
   const t7 = (await g('T', '/api/coach/today')).data;
   ok('šablóny v today (after_first, no_show, winback…)', t7.templates && ['after_first','no_show','winback','new_lead'].every(k => (t7.templates[k]||'').length > 10));
   const wk = (await g('T', '/api/coach/week')).data;
-  ok('týždenný prehľad: goals + score', wk && wk.ok && wk.goals.length === 4 && wk.score >= 0 && wk.score <= 100, wk);
+  ok('týždenný prehľad: goals + score', wk && wk.ok && wk.goals.length === 5 && wk.score >= 0 && wk.score <= 100, wk);
   const gC = wk.goals.find(x => x.key === 'contacts');
   ok('týždeň počíta kontakty (1)', gC && gC.actual === 1, gC);
   ok('follow-up quality: contacted/replied/interested', wk.quality && wk.quality.contacted === 1 && wk.quality.interested === 1, wk.quality);
@@ -188,6 +188,11 @@ const put = (jar, p, b) => call(jar, 'PUT', p, b);
   // 10h) prednastavený pozývací text pre každého trénera
   const t2ref = (await g('T2', '/api/coach/today')).data.referral;
   ok('nový tréner má prednastavený text pozvánky', t2ref && t2ref.custom_text.length > 20, t2ref && t2ref.custom_text);
+
+  // 10i) týždenný cieľ: doriešené case-y
+  const wk2 = (await g('T', '/api/coach/week')).data;
+  const gCase = wk2.goals.find(x => x.key === 'cases');
+  ok('týždenný cieľ case-ov (1 doriešený / cieľ 10)', gCase && gCase.actual === 1 && gCase.goal === 10, gCase);
 
   // 11) bezpečnosť: klient sa nedostane do coach API
   const cl = await g('L', '/api/coach/today');

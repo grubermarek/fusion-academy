@@ -14,6 +14,7 @@ module.exports = function initCoach(ctx){
   db.coach_tasks    = new Datastore({ filename: path.join(DATA_DIR,'coach_tasks.db'),    autoload:true });
   db.coach_contacts = new Datastore({ filename: path.join(DATA_DIR,'coach_contacts.db'), autoload:true });
   db.lead_notes     = new Datastore({ filename: path.join(DATA_DIR,'lead_notes.db'),     autoload:true });
+  db.coach_cases    = new Datastore({ filename: path.join(DATA_DIR,'coach_cases.db'),    autoload:true });
   db.coach_tasks.ensureIndex({ fieldName:'date' });
   db.coach_contacts.ensureIndex({ fieldName:'date' });
 
@@ -43,7 +44,7 @@ module.exports = function initCoach(ctx){
       6:[{key:'react_comments',label:'Reaguj na komentáre a správy',icon:'💬',cat:'community'}],
       0:[{key:'week_review',label:'Zhodnoť týždeň a naplánuj ďalší',icon:'📝',cat:'education'}],
     },
-    weekly: { contacts: 21, content: 3, community: 3, referral_shares: 1 },
+    weekly: { contacts: 21, content: 3, community: 3, referral_shares: 1, cases: 10 },
     own_auto_points: 5,          // vlastné aktivity do tejto hodnoty sa schvaľujú automaticky
     rank_weights: { consistency: 40, activity: 30, results: 20, learning: 10 },
     rank_target_points: 400,     // 30-dňový bodový cieľ pre plné aktivity skóre
@@ -355,6 +356,8 @@ module.exports = function initCoach(ctx){
     const st = (req.body||{}).lead_status;
     if(st && RELEASE_STATUSES.includes(st) && lead.user_type==='lead') set.lead_status = st;
     await q.update(db.users,{_id:lead._id},{$set:set});
+    await q.insert(db.coach_cases,{trainer_id:me._id, trainer_name:me.name, lead_id:lead._id, lead_name:lead.name,
+      resolution: st||'released', date: todayStr(), created_at: nowISO()});
     const note = (req.body||{}).note;
     if(note) await q.insert(db.lead_notes,{client_id:lead._id, client_name:lead.name, author_id:me._id,
       author_name:me.name, text:'Case uzavretý: '+String(note).slice(0,300), source:'coach_release', created_at:nowISO()});
@@ -457,6 +460,7 @@ module.exports = function initCoach(ctx){
         { key:'content', label:'Obsah (videá / story)', actual:doneCat('content'), goal:cfg.weekly.content },
         { key:'community', label:'Community aktivity', actual:doneCat('community'), goal:cfg.weekly.community },
         { key:'referral', label:'Poslané pozvánky (dni)', actual:refShares, goal:cfg.weekly.referral_shares },
+        { key:'cases', label:'Prevzaté a doriešené leady', actual:(await q.find(db.coach_cases,{trainer_id:me._id})).filter(c=>c.date>=since).length, goal:cfg.weekly.cases },
       ];
       const score = Math.round(goals.reduce((s,g)=>s+Math.min(1, g.goal? g.actual/g.goal : 1),0)/goals.length*100);
       const replied = contacts.filter(c=>['replied','interested','will_come'].includes(c.outcome)).length;
