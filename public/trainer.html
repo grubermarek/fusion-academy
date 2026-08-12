@@ -1615,6 +1615,10 @@ async function coachLoad(){
       <span>Splnené ${doneAll}/${total} úloh</span><span>${d.progress} %</span></div>
     <div style="height:8px;background:#242424;border-radius:6px;overflow:hidden">
       <div style="height:100%;width:${d.progress}%;background:var(--grad-gold,linear-gradient(90deg,#C9A24C,#e8c97a));transition:width .4s"></div></div>
+    <div style="margin-top:8px;font-size:.85rem;color:var(--cream)">
+      📞 Dnes kontaktovaných: <b>${d.contacts_today}</b> <span style="color:var(--gold)">(+${d.contacts_today*(d.pts_cfg?.contact_each||0)} b.)</span>
+      &nbsp;·&nbsp; ✅ Uzavreté case-y: <b>${d.cases_today||0}</b> <span style="color:var(--gold)">(+min. ${(d.cases_today||0)*(d.pts_cfg?.case_closed||0)} b.)</span>
+    </div>
     ${d.day_complete?`<div style="margin-top:10px;font-weight:800;color:#7bd88f">✅ DNEŠOK HOTOVÝ — všetky povinné aktivity splnené!</div>`:''}
     <div style="margin-top:10px;font-size:.85rem;color:var(--muted);font-style:italic">${esc(d.motivation)}</div>
   </div>`;

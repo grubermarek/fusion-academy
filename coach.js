@@ -34,6 +34,9 @@ module.exports = function initCoach(ctx){
       followup_ontime: 3,     // follow-up spravený v deň, na ktorý bol naplánovaný
       content: 8, community: 5, motivation: 6, education: 4,
       referral_share: 3,
+      contact_each: 2,        // kazdy dnesny kontakt
+      case_closed: 5,         // uzavrety case
+      case_converted: 10,     // uzavrety s uznanou konverziou
     },
     // rotácia podľa dňa v týždni (0=Ne … 6=So)
     rotation: {
@@ -134,7 +137,9 @@ module.exports = function initCoach(ctx){
     const contacts = await q.find(db.coach_contacts,{trainer_id:trainerId, date});
     let pts = 0;
     for(const t of tasks) if(t.done && !(t.cat==='own' && t.approved===false)) pts += t.points||0;
-    pts += Math.max(0, contacts.length - cfg.min_contacts) * cfg.points.extra_contact;
+    pts += contacts.length * (cfg.points.contact_each||0);
+    const casesToday = await q.find(db.coach_cases,{trainer_id:trainerId, date});
+    for(const c of casesToday) pts += c.converted ? (cfg.points.case_converted||0) : (cfg.points.case_closed||0);
     pts += contacts.filter(c=>c.followup_hit).length * cfg.points.followup_ontime;
     const mand = tasks.filter(t=>t.mandatory);
     const allMand = mand.length>0 && mand.every(t=>t.done);
@@ -335,6 +340,8 @@ module.exports = function initCoach(ctx){
       const message = custom.replace(/https?:\/\/\S+/g,'').trim() + ' ' + link;
       res.json({ ok:true, date, tasks:tasks.sort((a,b)=>(b.mandatory?1:0)-(a.mandatory?1:0)),
         contacts_today, min_contacts: cfg.min_contacts,
+        cases_today: await q.count(db.coach_cases,{trainer_id:me._id, date}),
+        pts_cfg: { contact_each: cfg.points.contact_each||0, case_closed: cfg.points.case_closed||0, case_converted: cfg.points.case_converted||0 },
         due_followups: due_followups.map(f=>({id:f._id, client_id:f.client_id, name:f.client_name, title:f.title, due:f.due_date})),
         points_today: pts, day_complete: allMand,
         progress: tasks.length ? Math.round(doneCount/tasks.length*100) : 0,
@@ -587,7 +594,9 @@ module.exports = function initCoach(ctx){
       const byDay={};
       for(const t of tasks){ if(!t.mandatory) continue; const k=t.trainer_id+'|'+t.date; (byDay[k]=byDay[k]||[]).push(t); }
       for(const [k,ts] of Object.entries(byDay)){ if(ts.every(t=>t.done)) P(k.split('|')[0]).points += cfg.points.mandatory_all; }
-      for(const c of contacts){ const p=P(c.trainer_id); p.name=c.trainer_name||p.name; p.contacts++; if(c.followup_hit) p.points+=cfg.points.followup_ontime; }
+      for(const c of contacts){ const p=P(c.trainer_id); p.name=c.trainer_name||p.name; p.contacts++; p.points+=(cfg.points.contact_each||0); if(c.followup_hit) p.points+=cfg.points.followup_ontime; }
+      const casesB=(await q.find(db.coach_cases,{})).filter(c=>c.date>=since);
+      for(const c of casesB){ const p=P(c.trainer_id); p.name=c.trainer_name||p.name; p.points+= c.converted?(cfg.points.case_converted||0):(cfg.points.case_closed||0); }
       const rows = Object.entries(per).map(([id,p])=>({trainer_id:id, name:p.name, points:p.points,
         completion: p.total?Math.round(p.done/p.total*100):0, contacts:p.contacts}))
         .sort((a,b)=>b.points-a.points);
