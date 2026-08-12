@@ -15,6 +15,7 @@ module.exports = function initCoach(ctx){
   db.coach_contacts = new Datastore({ filename: path.join(DATA_DIR,'coach_contacts.db'), autoload:true });
   db.lead_notes     = new Datastore({ filename: path.join(DATA_DIR,'lead_notes.db'),     autoload:true });
   db.coach_cases    = new Datastore({ filename: path.join(DATA_DIR,'coach_cases.db'),    autoload:true });
+  db.coach_batches  = new Datastore({ filename: path.join(DATA_DIR,'coach_batches.db'),  autoload:true });
   db.coach_tasks.ensureIndex({ fieldName:'date' });
   db.coach_contacts.ensureIndex({ fieldName:'date' });
 
@@ -75,11 +76,8 @@ module.exports = function initCoach(ctx){
   }
 
   // Coach koná vždy sám za seba (asistentský redirect len pre čistých asistentov)
-  const coachUser = req => {
-    const u = req.trainerUser;
-    const pureAssistant = u.is_assistant && !u.is_admin && u.user_type!=='trainer' && u.user_type!=='manager';
-    return pureAssistant ? (req.effectiveTrainer || u) : u;
-  };
+  const coachUser = req => req.trainerUser; // coach je vždy osobný — aj asistent (ambasádor) koná sám za seba
+  const isAmbassador = u => u.is_assistant && !u.is_admin && u.user_type!=='trainer' && u.user_type!=='manager';
 
   const OUTCOMES = ['contacted','replied','interested','not_interested','will_come','later','no_reply'];
   const OUTCOME_TO_LEAD_STATUS = { interested:'interested', not_interested:'not_interested', will_come:'interested' };
@@ -224,6 +222,68 @@ module.exports = function initCoach(ctx){
     return cfg.motivation[new Date().getDate()%cfg.motivation.length];
   }
 
+  // ── ambasádorske dávky leadov (ochrana pred exportom celého poolu) ──────────
+  const BATCH_SIZE = 10;
+  async function allocateBatch(user, source){
+    const users = await q.find(db.users,{});
+    const contacts = await q.find(db.coach_contacts,{});
+    const lastContact = {};
+    for(const c of contacts){ const t=new Date(c.created_at).getTime(); if(!lastContact[c.lead_id]||t>lastContact[c.lead_id]) lastContact[c.lead_id]=t; }
+    const now = Date.now();
+    const fresh = users.filter(u=>{
+      if(u.user_type!=='lead' || u.coach_claimed_by || u.hidden_lead || u.guest) return false;
+      if(isTest(u) && !isTest(user)) return false;
+      if(u.lead_status==='do_not_contact' || u.lead_status==='not_interested') return false;
+      if(!u.phone && !u.email) return false;
+      const lc = lastContact[u._id] || (u.last_contacted_at ? new Date(u.last_contacted_at).getTime() : 0);
+      return !lc || (now-lc) > 3*86400000; // potrebuje kontakt
+    }).sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0, BATCH_SIZE);
+    if(!fresh.length) return { count:0 };
+    for(const u of fresh) await q.update(db.users,{_id:u._id},{$set:{coach_claimed_by:user._id, coach_claimed_at:nowISO()}});
+    const prev = await q.count(db.coach_batches,{user_id:user._id, status:'granted'});
+    await q.insert(db.coach_batches,{user_id:user._id, user_name:user.name, no:prev+1, size:fresh.length,
+      lead_ids:fresh.map(u=>u._id), status:'granted', source, created_at:nowISO()});
+    return { count:fresh.length, no:prev+1 };
+  }
+  async function batchState(user){
+    const batches = (await q.find(db.coach_batches,{user_id:user._id, status:'granted'})).sort((a,b)=>b.no-a.no);
+    const open = (await q.find(db.users,{coach_claimed_by:user._id})).length;
+    const closed = (await q.count(db.coach_cases,{trainer_id:user._id}));
+    const pending = await q.one(db.coach_batches,{user_id:user._id, status:'requested'});
+    return { batch_no: batches[0]?batches[0].no:0, open, closed, requested: !!pending };
+  }
+
+  // ambasádor si vyžiada ďalšiu dávku (admin schvaľuje)
+  app.post('/api/coach/request-batch', trainerAuth, async (req,res)=>{
+    const me = coachUser(req);
+    const dup = await q.one(db.coach_batches,{user_id:me._id, status:'requested'});
+    if(dup) return res.json({ok:true, already:true});
+    await q.insert(db.coach_batches,{user_id:me._id, user_name:me.name, status:'requested', created_at:nowISO()});
+    const admins = (await q.find(db.users,{is_admin:true})).filter(a=>!isTest(a));
+    for(const a of admins) await q.insert(db.notifications,{user_id:a._id, type:'coach_batch',
+      title:'Žiadosť o ďalšie leady 📥', body:`${me.name} si žiada ďalších ${BATCH_SIZE} leadov. Schváliš v admin → Úlohy trénerov.`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+    res.json({ok:true});
+  });
+  app.get('/api/admin/coach/batch-requests', adminAuth, async (req,res)=>{
+    const rows = (await q.find(db.coach_batches,{status:'requested'})).sort((a,b)=>a.created_at<b.created_at?1:-1);
+    res.json({ok:true, rows});
+  });
+  app.post('/api/admin/coach/batch-requests/:id', adminAuth, async (req,res)=>{
+    const r = await q.one(db.coach_batches,{_id:req.params.id, status:'requested'});
+    if(!r) return res.status(404).json({error:'Žiadosť nenájdená'});
+    const approve = (req.body||{}).approve !== false;
+    if(!approve){ await q.update(db.coach_batches,{_id:r._id},{$set:{status:'denied'}});
+      await q.insert(db.notifications,{user_id:r.user_id, type:'coach_batch', title:'Žiadosť o leady zamietnutá', body:'Ozvi sa adminovi.', read:false, created_at:nowISO()}).catch(()=>{});
+      return res.json({ok:true}); }
+    const user = await q.one(db.users,{_id:r.user_id});
+    const got = await allocateBatch(user, 'admin_approved');
+    await q.update(db.coach_batches,{_id:r._id},{$set:{status:'approved', approved_at:nowISO()}});
+    await q.insert(db.notifications,{user_id:r.user_id, type:'coach_batch',
+      title:'Nové leady pridelené 🎉', body:`Máš ďalších ${got.count} leadov v Moje leady. Poď na to!`, read:false, created_at:nowISO()}).catch(()=>{});
+    res.json({ok:true, granted:got.count});
+  });
+
   // ════════ TRÉNERSKÉ API ════════
   app.get('/api/coach/today', trainerAuth, async (req,res)=>{
     try{
@@ -236,7 +296,18 @@ module.exports = function initCoach(ctx){
       const { pts, allMand } = await pointsForDay(me._id, date, cfg);
       const streak = await streakOf(me._id, cfg);
       const doneCount = tasks.filter(t=>t.done).length;
-      const { list: leads, mine: my_leads } = await smartLeads(me, date);
+      let { list: leads, mine: my_leads } = await smartLeads(me, date);
+      let batch = null;
+      if(isAmbassador(me)){
+        let st = await batchState(me);
+        // prvá dávka automaticky; ďalšia automaticky po uzavretí celej dávky
+        if(st.batch_no===0 || (st.open===0 && !st.requested)){
+          const got = await allocateBatch(me, st.batch_no===0?'initial':'auto_completed');
+          if(got.count){ ({ list:leads, mine:my_leads } = await smartLeads(me, date)); st = await batchState(me); }
+        }
+        leads = []; // ambasádor vidí len svoju pridelenú dávku (ochrana lead poolu)
+        batch = st;
+      }
       const code = me.referral_code||'';
       const link = APP_URL + '/invite/' + code;
       const fn = (me.name||'').split(' ')[0];
@@ -248,7 +319,7 @@ module.exports = function initCoach(ctx){
         due_followups: due_followups.map(f=>({id:f._id, client_id:f.client_id, name:f.client_name, title:f.title, due:f.due_date})),
         points_today: pts, day_complete: allMand,
         progress: tasks.length ? Math.round(doneCount/tasks.length*100) : 0,
-        streak, leads, my_leads, outcomes: OUTCOMES,
+        streak, leads, my_leads, batch, ambassador: isAmbassador(me), outcomes: OUTCOMES,
         templates: Object.fromEntries(Object.entries(cfg.templates).map(([k,v])=>[k, String(v).replace(/{trener}/g, fn)])),
         referral: { code, link, message, custom_text: custom },
         motivation: smartMotivation(cfg, {streak, remaining: tasks.length-doneCount, doneCount}) });

@@ -1647,15 +1647,38 @@ async function coachLoad(){
     for(const L of d.my_leads) h+=coachLeadCard(L, d, true);
     h+=`</div>`;
   }
-  // leady
-  h+=`<div class="section-title"><i class="bi bi-telephone-outbound" style="color:var(--gold)"></i> Dnes kontaktuj <span style="color:var(--muted);font-weight:400;font-size:.8rem">(${d.contacts_today}/${d.min_contacts} hotovo)</span></div>`;
-  if(!d.leads.length) h+=`<div style="color:var(--muted);padding:10px">Žiadne prioritné leady na dnes. 🎉</div>`;
-  h+=`<div style="display:grid;gap:10px;margin-bottom:16px">`;
-  for(const L of d.leads) h+=coachLeadCard(L, d, false);
-  h+=`</div>`;
+  // leady (ambasádor vidí len svoju dávku)
+  if(d.ambassador){
+    const b=d.batch||{};
+    h+=`<div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:12px 14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:center">
+        <div><b>📦 Dávka č. ${b.batch_no||1}</b> <span style="color:var(--muted);font-size:.8rem">· rozpracované: ${b.open||0} · uzavreté celkovo: ${b.closed||0}</span></div>
+        ${b.requested?`<span style="color:#e8c97a;font-size:.8rem">⏳ Žiadosť o ďalšie leady čaká na schválenie</span>`
+        :`<button onclick="coachRequestBatch()" style="background:#2a2140;border:1px solid #4a3a70;border-radius:9px;color:#c4a8ff;padding:6px 12px;font-size:.78rem;font-weight:800;cursor:pointer">📥 Vyžiadať ďalších 10 leadov</button>`}
+      </div>
+      <div style="font-size:.75rem;color:var(--muted);margin-top:4px">Uzavri všetkých z dávky a ďalších 10 dostaneš automaticky.</div>
+    </div>`;
+  } else {
+    h+=`<div class="section-title"><i class="bi bi-telephone-outbound" style="color:var(--gold)"></i> Dnes kontaktuj <span style="color:var(--muted);font-weight:400;font-size:.8rem">(${d.contacts_today}/${d.min_contacts} hotovo)</span></div>`;
+    if(!d.leads.length) h+=`<div style="color:var(--muted);padding:10px">Žiadne prioritné leady na dnes. 🎉</div>`;
+    h+=`<div style="display:grid;gap:10px;margin-bottom:16px">`;
+    for(const L of d.leads) h+=coachLeadCard(L, d, false);
+    h+=`</div>`;
+  }
   h+=coachBottom();
   box.innerHTML=h;
-  coachCal(); coachBoard(); coachWeek(); coachRankLoad();
+  coachCal(); coachBoard(); coachWeek(); coachRankLoad(); coachLines();
+}
+async function coachLines(){
+  const el=document.getElementById('coachLines'); if(!el) return;
+  const d=await api('/api/client/network').catch(()=>null);
+  if(!d||!d.lines){ el.textContent='Zatiaľ žiadna štruktúra — pozvi prvého človeka svojím linkom.'; return; }
+  const tot=d.lines.reduce((s,l)=>s+l.earned,0), pend=d.lines.reduce((s,l)=>s+l.pending,0);
+  el.innerHTML=d.lines.map(l=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #222">
+      <span>Línia ${l.line} <span style="color:var(--muted)">(${Math.round(l.rate*100)} %)</span> · ${l.count} ľudí</span>
+      <span><b style="color:#7bd88f">${l.earned.toFixed(2)} €</b>${l.pending?` <span style="color:#e8c97a">+${l.pending.toFixed(2)} € čaká</span>`:''}</span></div>`).join('')
+    +`<div style="display:flex;justify-content:space-between;margin-top:8px;font-weight:800"><span>Spolu ${d.total_people} ľudí</span><span style="color:var(--gold)">${tot.toFixed(2)} €${pend?` (+${pend.toFixed(2)} €)`:''}</span></div>
+    <div style="font-size:.72rem;color:var(--muted);margin-top:6px">Provízie z línií 1–5. Detail výplat nájdeš v tabe Zárobky.</div>`;
 }
 function coachLeadCard(L, d, mine){
     const pr=mine?'🗂':L.priority==='hot'?'🔥':L.priority==='warm'?'🟠':'🔵';
@@ -1703,10 +1726,16 @@ function coachLeadCard(L, d, mine){
 }
 function coachBottom(){
   return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">
+    <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px"><div style="font-weight:800;margin-bottom:8px">💶 Môj zárobok &amp; línie</div><div id="coachLines" style="color:var(--muted);font-size:.85rem">Načítavam…</div></div>
     <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px"><div style="font-weight:800;margin-bottom:8px">📊 Tento týždeň <span id="coachWeekScore" style="color:var(--gold)"></span></div><div id="coachWeek"></div></div>
     <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px"><div style="font-weight:800;margin-bottom:8px">📆 Kalendár disciplíny</div><div id="coachCal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px"></div></div>
     <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px"><div style="font-weight:800;margin-bottom:8px">🏆 Tím — tento týždeň</div><div id="coachBoard"></div></div>
   </div><div id="coachModal"></div>`;
+}
+async function coachRequestBatch(){
+  const r=await api('/api/coach/request-batch',{method:'POST',body:{}});
+  if(r?.ok){ toast(r.already?'Žiadosť už čaká na schválenie ⏳':'Žiadosť poslaná adminovi 📥'); coachLoad(); }
+  else toast(r?.error||'Chyba',true);
 }
 async function coachClaim(id){
   const r=await api('/api/coach/lead/'+id+'/claim',{method:'POST',body:{}});

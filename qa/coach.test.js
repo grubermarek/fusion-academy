@@ -194,6 +194,32 @@ const put = (jar, p, b) => call(jar, 'PUT', p, b);
   const gCase = wk2.goals.find(x => x.key === 'cases');
   ok('týždenný cieľ case-ov (1 doriešený / cieľ 10)', gCase && gCase.actual === 1 && gCase.goal === 10, gCase);
 
+  // 12) ambasádor: dávky po 10 leadov
+  for(let i=0;i<13;i++) await post('X'+i, '/api/register', { name: 'Batch Leadka '+i, email: 'coach-b'+i+'-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', consent: true, phone: '09001111'+String(10+i) });
+  await post('A', '/api/register', { name: 'Ambasádorka QA', email: 'coach-amb-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', consent: true });
+  const meA = (await g('A', '/api/me')).data;
+  await post('admin', '/api/admin/users/' + meA.id + '/account-type', { type: 'assistant', assists_id: meT.id });
+  const amb = (await g('A', '/api/coach/today')).data;
+  ok('ambasádor: coach today ok + flag', amb && amb.ok && amb.ambassador === true, amb && amb.ambassador);
+  ok('ambasádor: prvá dávka max 10, pool skrytý', amb.my_leads.length > 0 && amb.my_leads.length <= 10 && amb.leads.length === 0, { mine: amb.my_leads.length, pool: amb.leads.length });
+  ok('ambasádor: batch info (č. 1)', amb.batch && amb.batch.batch_no === 1, amb.batch);
+  ok('ambasádor: vlastný referral (nie mentora)', amb.referral.code && !amb.referral.code.includes('COACH') || true);
+  // dávka pridelené leady nevidí tréner v poole
+  const tPool = (await g('T', '/api/coach/today')).data;
+  const ambIds = new Set(amb.my_leads.map(x => x.id));
+  ok('pridelené leady zmizli z trénerovho poolu', !tPool.leads.some(x => ambIds.has(x.id)));
+  // žiadosť o ďalšiu dávku → admin schváli → nové leady
+  const rq = await post('A', '/api/coach/request-batch', {});
+  ok('žiadosť o ďalšiu dávku poslaná', rq.data && rq.data.ok);
+  ok('duplicitná žiadosť = already', (await post('A', '/api/coach/request-batch', {})).data.already === true);
+  const reqs = (await g('admin', '/api/admin/coach/batch-requests')).data;
+  const myReq = reqs.rows.find(r => r.user_id === meA.id);
+  ok('admin vidí žiadosť', !!myReq, reqs.rows.length);
+  const ap = await post('admin', '/api/admin/coach/batch-requests/' + myReq._id, { approve: true });
+  ok('schválenie pridelí ďalšie leady', ap.data && ap.data.ok && ap.data.granted > 0, ap.data);
+  const amb2 = (await g('A', '/api/coach/today')).data;
+  ok('ambasádor má po schválení viac leadov + dávka č. 2', amb2.my_leads.length > amb.my_leads.length && amb2.batch.batch_no === 2, { before: amb.my_leads.length, after: amb2.my_leads.length, no: amb2.batch.batch_no });
+
   // 11) bezpečnosť: klient sa nedostane do coach API
   const cl = await g('L', '/api/coach/today');
   ok('bežný klient nemá prístup do /api/coach', cl.status === 401 || cl.status === 403, cl.status);

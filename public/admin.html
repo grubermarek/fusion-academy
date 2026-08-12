@@ -2434,6 +2434,16 @@ async function cgLoad(){
       <td>${r.streak?'🔥 '+r.streak:'—'}</td>
       <td>${r.overdue_followups?`<span class="badge bg-danger">${r.overdue_followups}</span>`:'✅'}</td></tr>`).join('')}
     </tbody></table></div>`;
+  const br=await api('/api/admin/coach/batch-requests');
+  if(br&&br.ok&&br.rows.length){
+    box.innerHTML+=`<div class="card border-0 rounded-3 p-3 mt-3"><div class="fw-semibold mb-2">📥 Žiadosti o ďalšie leady (po 10)</div>
+      ${br.rows.map(r=>`<div class="d-flex justify-content-between align-items-center gap-2 py-1 border-bottom border-secondary small">
+        <div><b>${r.user_name}</b> · žiada ďalších 10 leadov · ${(r.created_at||'').slice(0,16).replace('T',' ')}</div>
+        <div class="d-flex gap-1">
+          <button class="btn btn-sm btn-success py-0" onclick="cgBatch('${r._id}',true)">Schváliť +10</button>
+          <button class="btn btn-sm btn-outline-danger py-0" onclick="cgBatch('${r._id}',false)">Zamietnuť</button>
+        </div></div>`).join('')}</div>`;
+  }
   const ad=await api('/api/admin/coach/activities');
   if(ad&&ad.ok&&ad.rows.length){
     box.innerHTML+=`<div class="card border-0 rounded-3 p-3 mt-3"><div class="fw-semibold mb-2">💡 Vlastné aktivity na schválenie</div>
@@ -2444,6 +2454,10 @@ async function cgLoad(){
           <button class="btn btn-sm btn-outline-danger py-0" onclick="cgApprove('${r._id}',false)">Zamietnuť</button>
         </div></div>`).join('')}</div>`;
   }
+}
+async function cgBatch(id, approve){
+  const d=await api('/api/admin/coach/batch-requests/'+id,{method:'POST',body:JSON.stringify({approve})});
+  if(d&&d.ok){ showToast(approve?('Schválené — pridelených '+(d.granted??10)+' leadov ✅'):'Zamietnuté'); cgLoad(); } else alert(d&&d.error||'Chyba');
 }
 async function cgApprove(id, approve){
   const d=await api('/api/admin/coach/activities/'+id,{method:'POST',body:JSON.stringify({approve})});
