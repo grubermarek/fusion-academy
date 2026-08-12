@@ -41,7 +41,7 @@ module.exports = function initCoach(ctx){
     // rotácia podľa dňa v týždni (0=Ne … 6=So)
     rotation: {
       1:[{key:'video_motiv',label:'Natoč krátke motivačné video',icon:'🎥',cat:'content'},{key:'plan_week',label:'Pozri si týždenný plán a leady',icon:'🗓️',cat:'education'}],
-      2:[{key:'video_dance',label:'Natoč 15–30 s tanečné video',icon:'💃',cat:'content'},{key:'comm3',label:'Napíš 3 existujúcim klientkam',icon:'💬',cat:'community'}],
+      2:[{key:'video_dance',label:'Natoč 15–30 s tanečné video',icon:'💃',cat:'content'},{key:'bts_story',label:'Zverejni zákulisnú story (príprava, playlist, outfit)',icon:'🎬',cat:'content'}],
       3:[{key:'story_class',label:'Zverejni story z hodiny',icon:'📸',cat:'content'},{key:'react_dm',label:'Odpovedz na komentáre a správy na sociálnych sieťach',icon:'💬',cat:'community'}],
       4:[{key:'edu_content',label:'Vytvor edukatívny obsah (benefit tanca / námietka „neviem tancovať")',icon:'🎓',cat:'content'},{key:'tip_read',label:'Prečítaj si marketingový tip',icon:'📖',cat:'education'}],
       5:[{key:'ask_referral',label:'Požiadaj spokojnú klientku o odporúčanie',icon:'⭐',cat:'community'},{key:'video_vibe',label:'Natoč video z atmosféry hodiny',icon:'🎬',cat:'content'}],
@@ -88,7 +88,7 @@ module.exports = function initCoach(ctx){
   // ── generovanie denných úloh (lazy + idempotentné) ──────────────────────────
   async function ensureDay(trainer, date){
     const cfg = await getConfig();
-    await q.remove(db.coach_tasks,{trainer_id:trainer._id, date, key:{$in:['followup','referral_share']}},{multi:true});
+    await q.remove(db.coach_tasks,{trainer_id:trainer._id, date, key:{$in:['followup','referral_share','winback','comm3']}, done:false},{multi:true});
     const existing = await q.find(db.coach_tasks,{trainer_id:trainer._id, date});
     if(existing.length) return existing;
     const dow = dayOfWeek(date);
