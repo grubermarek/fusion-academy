@@ -1680,9 +1680,24 @@ async function coachLoad(){
   box.innerHTML=h;
   coachCal(); coachBoard(); coachWeek(); coachRankLoad(); coachLines(); coachCases();
 }
+let _coachLinesMonth=null; // null = celkovo
+function coachLinesNav(delta){
+  const cur=_coachLinesMonth||new Date().toISOString().slice(0,7);
+  if(_coachLinesMonth===null && delta===1) return; // z „celkovo" dopredu niet kam
+  if(_coachLinesMonth===null){ _coachLinesMonth=cur; } // prvý klik dozadu = aktuálny mesiac
+  else {
+    const [y,m]=_coachLinesMonth.split('-').map(Number);
+    const dt=new Date(y, m-1+delta, 1);
+    const nx=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0');
+    _coachLinesMonth = (delta===1 && nx>new Date().toISOString().slice(0,7)) ? null : nx; // za aktuálny mesiac → späť na celkovo
+  }
+  coachLines();
+}
 async function coachLines(){
   const el=document.getElementById('coachLines'); if(!el) return;
-  const d=await api('/api/client/network').catch(()=>null);
+  const tt=document.getElementById('coachLinesTitle');
+  if(tt) tt.textContent=_coachLinesMonth?('Zárobok · '+SK_MONS[+_coachLinesMonth.slice(5)-1]+' '+_coachLinesMonth.slice(0,4)):'Môj zárobok & línie (celkovo)';
+  const d=await api('/api/client/network'+(_coachLinesMonth?'?month='+_coachLinesMonth:'')).catch(()=>null);
   if(!d||!d.lines){ el.textContent='Zatiaľ žiadna štruktúra — pozvi prvého človeka svojím linkom.'; return; }
   const tot=d.lines.reduce((s,l)=>s+l.earned,0), pend=d.lines.reduce((s,l)=>s+l.pending,0);
   el.innerHTML=d.lines.map(l=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #222">
@@ -1697,9 +1712,14 @@ function coachLeadCard(L, d, mine){
     let h='';
     h+=`<div style="background:#151515;border:1px solid ${mine?'#4a3a70':'#2a2a2a'};border-radius:14px;padding:12px 14px" id="lead-${L.id}">
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
-        <div><span style="font-weight:800">${pr} ${esc(L.name)}</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="position:relative;width:34px;height:34px;flex:none">
+            <span style="position:absolute;inset:0;border-radius:50%;background:#2a2417;color:var(--gold);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.8rem;border:1px solid #3a3220">${esc((L.name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2))}</span>
+            <img src="/api/avatar/${L.id}" alt="" onerror="this.remove()" style="position:absolute;inset:0;width:34px;height:34px;border-radius:50%;object-fit:cover;border:1px solid #3a3220">
+          </span>
+          <span><span style="font-weight:800">${pr} ${esc(L.name)}</span>
           ${L.is_client?`<span style="background:#3a2a14;border:1px solid #8a6a2a;color:#e8c97a;border-radius:7px;padding:1px 7px;font-size:.68rem;font-weight:800;margin-left:4px">🔁 KLIENTKA — pozná hodiny, winback tón</span>`:''}
-          <span style="color:var(--muted);font-size:.75rem"> · ${esc(L.city||'')} ${L.visits?` · ${L.visits} návštev`:''}</span></div>
+          <span style="color:var(--muted);font-size:.75rem"> · ${esc(L.city||'')} ${L.visits?` · ${L.visits} návštev`:''}</span></span></div>
         <div style="font-size:.75rem;color:var(--muted)">${L.last_contact_days!=null?`kontakt pred ${L.last_contact_days} d`:'nikdy nekontaktovaná'}</div></div>
       <div style="font-size:.76rem;color:var(--muted);margin:3px 0">
         ${L.phone?`📞 ${esc(L.phone)} · `:''}${L.email?`✉️ ${esc(L.email)}`:''}<br>
@@ -1738,7 +1758,14 @@ function coachLeadCard(L, d, mine){
 }
 function coachBottom(){
   return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">
-    <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px"><div style="font-weight:800;margin-bottom:8px">💶 Môj zárobok &amp; línie</div><div id="coachLines" style="color:var(--muted);font-size:.85rem">Načítavam…</div></div>
+    <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <button onclick="coachLinesNav(-1)" style="background:transparent;border:1px solid #2a2a2a;border-radius:8px;color:var(--cream);padding:2px 10px;cursor:pointer">◀</button>
+        <div style="font-weight:800">💶 <span id="coachLinesTitle">Môj zárobok &amp; línie</span></div>
+        <button onclick="coachLinesNav(1)" style="background:transparent;border:1px solid #2a2a2a;border-radius:8px;color:var(--cream);padding:2px 10px;cursor:pointer">▶</button>
+      </div>
+      <div id="coachLines" style="color:var(--muted);font-size:.85rem">Načítavam…</div>
+    </div>
     <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px"><div style="font-weight:800;margin-bottom:8px">📊 Tento týždeň <span id="coachWeekScore" style="color:var(--gold)"></span></div><div id="coachWeek"></div></div>
     <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">

@@ -12248,10 +12248,14 @@ app.get('/api/client/network', auth, async(req,res)=>{
       }
       frontier=next;
     }
-    const myComms=await q.find(db.commissions,{partner_id:me});
+    let myComms=await q.find(db.commissions,{partner_id:me});
+    // voliteľný mesačný filter provízií (?month=YYYY-MM), štruktúra ostáva celková
+    const monthQ = /^\d{4}-\d{2}$/.test(req.query.month||'') ? req.query.month : null;
+    if(monthQ) myComms = myComms.filter(c=>(c.created_at||'').slice(0,7)===monthQ);
     const earned=[0,0,0,0,0], pending=[0,0,0,0,0];
     myComms.forEach(c=>{ const l=c.level||0; if(l<5){ if(c.status==='paid') earned[l]+=(+c.amount||0); else pending[l]+=(+c.amount||0); } });
     res.json({
+      month: monthQ,
       lines: lines.map((members,i)=>({ line:i+1, rate:LINE_RATES[i], count:members.length,
         earned:+earned[i].toFixed(2), pending:+pending[i].toFixed(2), members })),
       total_people: lines.reduce((s,l)=>s+l.length,0)

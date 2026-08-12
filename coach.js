@@ -175,6 +175,9 @@ module.exports = function initCoach(ctx){
     const expiredMem = {};
     for(const m of memberships){ if(m.status!=='active' && m.expires_at){ const t=new Date(m.expires_at).getTime(); if(!expiredMem[m.user_id]||t>expiredMem[m.user_id]) expiredMem[m.user_id]=t; } }
     const followupToday = new Set(myFollowups.filter(t=>t.due_date && t.due_date<=date).map(t=>t.client_id));
+    // nedávno uzavreté case-y (kohokoľvek) → 14 dní pokoj, nech sa lead hneď nevracia do zoznamu
+    const recentCases = (await q.find(db.coach_cases,{})).filter(c=>(Date.now()-new Date(c.created_at).getTime()) < 14*86400000);
+    const caseCooldown = new Set(recentCases.map(c=>c.lead_id));
 
     const rows=[];
     for(const u of users){
@@ -185,6 +188,7 @@ module.exports = function initCoach(ctx){
       if(!u.phone && !u.email) continue;
       const lc = lastContact[u._id] || (u.last_contacted_at ? new Date(u.last_contacted_at).getTime() : 0);
       if(!claimedMine && lc && (now-lc) < 3*86400000 && !followupToday.has(u._id)) continue; // kontaktovaný za posledné 3 dni
+      if(!claimedMine && caseCooldown.has(u._id) && !followupToday.has(u._id)) continue; // case nedávno uzavretý → do histórie, nie späť do zoznamu
       const bks = (byUserBk[u._id]||[]).filter(b=>!['cancelled','waitlist'].includes(b.status));
       const attended = bks.filter(b=>b.status==='attended').sort((a,b)=>(a.booking_date<b.booking_date?1:-1));
       const lastVisit = attended[0] ? new Date(attended[0].booking_date+'T12:00:00').getTime() : 0;
@@ -235,7 +239,8 @@ module.exports = function initCoach(ctx){
     const now = Date.now();
     const needsContact = u => { const lc = lastContact[u._id] || (u.last_contacted_at ? new Date(u.last_contacted_at).getTime() : 0);
       return !lc || (now-lc) > 3*86400000; };
-    const base = u => !u.coach_claimed_by && !u.hidden_lead && !u.guest && (!isTest(u) || isTest(user))
+    const recentCaseIds = new Set((await q.find(db.coach_cases,{})).filter(c=>(now-new Date(c.created_at).getTime()) < 14*86400000).map(c=>c.lead_id));
+    const base = u => !u.coach_claimed_by && !recentCaseIds.has(u._id) && !u.hidden_lead && !u.guest && (!isTest(u) || isTest(user))
       && u.lead_status!=='do_not_contact' && u.lead_status!=='not_interested' && (u.phone || u.email) && needsContact(u);
     const freshLeads = users.filter(u=>u.user_type==='lead' && base(u))
       .sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
