@@ -1118,7 +1118,8 @@ function renderAttendees(list){
     const hasFree = !b.free_class_used && (b.visit_count||0)===0;
     const hasSingle = (b.single_entries||0)>0;
     let badgeHtml = '';
-    if(b.pay_on_site) badgeHtml += `<span class="att-badge" style="background:rgba(224,86,86,.2);color:#ff8a8a;border:1px solid rgba(224,86,86,.5);font-weight:800">💵 PLATÍ NA MIESTE — vybrať vstupné</span>`;
+    if(b.entry_collected) badgeHtml += `<span class="att-badge" style="background:rgba(74,222,128,.15);color:#4ade80;border:1px solid rgba(74,222,128,.35)">💵 Vstupné vybraté ✓</span>`;
+    else if(b.pay_on_site) badgeHtml += `<span class="att-badge" onclick="collectEntry('${b.booking_id}','${esc(b.name||'').replace(/'/g,'')}')" style="background:rgba(224,86,86,.2);color:#ff8a8a;border:1px solid rgba(224,86,86,.5);font-weight:800;cursor:pointer" title="Klikni a zapíš vybratých 10 €">💵 PLATÍ NA MIESTE — klikni a vyber vstupné</span>`;
     if(b.is_child_booking) badgeHtml += `<span class="att-badge" style="background:rgba(126,200,227,.15);color:#7ec8e3;border:1px solid rgba(126,200,227,.4)">👧 Dieťa${b.booked_by_name?' — booknuté z rodičovského účtu ('+esc(b.booked_by_name)+')':''}${String(b.access_method||'').startsWith('parent_')?' · kryté členstvom/vstupom rodiča':''}</span>`;
     if(b.status==='attended') badgeHtml += `<span class="att-badge" style="background:rgba(74,222,128,.18);color:#4ade80;border:1px solid rgba(74,222,128,.35)"><i class="bi bi-check-circle-fill"></i>Absolvoval</span>`;
     if(hasMem) badgeHtml += `<span class="att-badge badge-mem"><i class="bi bi-credit-card-fill"></i>${esc(b.membership)}</span>`;
@@ -1796,6 +1797,15 @@ function coachBottom(){
 async function coachRequestBatch(){
   const r=await api('/api/coach/request-batch',{method:'POST',body:{}});
   if(r?.ok){ toast(r.already?'Žiadosť už čaká na schválenie ⏳':'Žiadosť poslaná adminovi 📥'); coachLoad(); }
+  else toast(r?.error||'Chyba',true);
+}
+// vybratie vstupného priamo z badge v zozname účastníkov
+async function collectEntry(bookingId, name){
+  const amt=prompt('Vybraté vstupné od '+name+' (€):','10'); if(amt===null) return;
+  const m=prompt('Spôsob platby: 1 = hotovosť, 2 = karta, 3 = prevod','1');
+  const method=m==='2'?'card':(m==='3'?'transfer':'cash');
+  const r=await api('/api/admin/bookings/'+bookingId+'/collect',{method:'POST',body:{amount:+amt||10, method}});
+  if(r?.ok){ toast('💵 Vstupné '+(+amt||10)+' € zapísané ✅'); if(typeof _currentClassId!=='undefined'&&_currentClassId) loadAttendees(_currentClassId); }
   else toast(r?.error||'Chyba',true);
 }
 // klik na Zavolať/SMS/WhatsApp = reálny kontakt → zapíš automaticky (1×/deň/lead)
