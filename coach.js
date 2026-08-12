@@ -247,7 +247,7 @@ module.exports = function initCoach(ctx){
         points_today: pts, day_complete: allMand,
         progress: tasks.length ? Math.round(doneCount/tasks.length*100) : 0,
         streak, leads, my_leads, outcomes: OUTCOMES, templates: cfg.templates,
-        referral: { code, link, message, custom_text: me.coach_invite_text||'' },
+        referral: { code, link, message, custom_text: custom },
         motivation: smartMotivation(cfg, {streak, remaining: tasks.length-doneCount, doneCount}) });
     }catch(e){ console.error('coach/today',e); res.status(500).json({error:'Chyba'}); }
   });

@@ -1773,9 +1773,11 @@ async function coachContact(id){
 }
 async function coachCopyInvite(){
   const custom=document.getElementById('coachInvTxt').value.trim();
-  const msg=(custom||_coach.referral.message.replace(_coach.referral.link,'').trim()).replace(/https?:\/\/\S+/g,'').trim()+' '+_coach.referral.link;
+  const msg=(custom||_coach.referral.custom_text).replace(/https?:\/\/\S+/g,'').trim()+' '+_coach.referral.link;
   await navigator.clipboard.writeText(msg);
   toast('Pozvánka skopírovaná 📋');
+  // ulož aktuálny text, aby po prerenderovaní nezmizol
+  if(custom && custom!==_coach.referral.custom_text) await api('/api/coach/invite-text',{method:'POST',body:{text:custom}});
   api('/api/coach/copied',{method:'POST',body:{}}).then(()=>coachLoad());
 }
 async function coachSaveInvite(){

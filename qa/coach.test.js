@@ -185,6 +185,10 @@ const put = (jar, p, b) => call(jar, 'PUT', p, b);
   const relNotes = (await g('admin', '/api/admin/lead-notes/' + meL2.id)).data;
   ok('release poznámka uložená', relNotes.notes.some(n => (n.text||'').includes('Case uzavretý')), relNotes.notes.length);
 
+  // 10h) prednastavený pozývací text pre každého trénera
+  const t2ref = (await g('T2', '/api/coach/today')).data.referral;
+  ok('nový tréner má prednastavený text pozvánky', t2ref && t2ref.custom_text.length > 20, t2ref && t2ref.custom_text);
+
   // 11) bezpečnosť: klient sa nedostane do coach API
   const cl = await g('L', '/api/coach/today');
   ok('bežný klient nemá prístup do /api/coach', cl.status === 401 || cl.status === 403, cl.status);
