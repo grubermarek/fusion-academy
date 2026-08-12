@@ -1708,7 +1708,12 @@ async function coachLines(){
 }
 function coachLeadCard(L, d, mine){
     const pr=mine?'🗂':L.priority==='hot'?'🔥':L.priority==='warm'?'🟠':'🔵';
-    const wa=L.phone?('https://wa.me/'+L.phone.replace(/[^0-9]/g,'').replace(/^0/, '421')):'';
+    // personalizovaná šablóna sa predvyplní do SMS/WhatsApp a zároveň skopíruje
+    const first=(L.name||'').split(' ')[0];
+    const tplMsg=L.tpl?((d.templates[L.tpl]||'').replace(/\{meno\}/g,first).replace(/\{link\}/g,d.referral.link)):'';
+    const enc=encodeURIComponent(tplMsg);
+    const wa=L.phone?('https://wa.me/'+L.phone.replace(/[^0-9]/g,'').replace(/^0/, '421')+(tplMsg?'?text='+enc:'')):'';
+    const smsHref=L.phone?('sms:'+L.phone+(tplMsg?'?body='+enc:'')):'';
     let h='';
     h+=`<div style="background:#151515;border:1px solid ${mine?'#4a3a70':'#2a2a2a'};border-radius:14px;padding:12px 14px" id="lead-${L.id}">
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
@@ -1732,8 +1737,8 @@ function coachLeadCard(L, d, mine){
       <div style="font-size:.82rem;color:var(--muted);margin-bottom:8px">💡 ${esc(L.action)}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
         ${L.phone?`<a href="tel:${esc(L.phone)}" style="text-decoration:none;background:#1d2b1f;border:1px solid #2f4a35;color:#7bd88f;border-radius:9px;padding:5px 10px;font-size:.78rem">📞 Zavolať</a>`:''}
-        ${L.phone?`<a href="sms:${esc(L.phone)}" style="text-decoration:none;background:#1a2333;border:1px solid #2a3a55;color:#8ab8ff;border-radius:9px;padding:5px 10px;font-size:.78rem">💬 SMS</a>`:''}
-        ${wa?`<a href="${wa}" target="_blank" style="text-decoration:none;background:#12301f;border:1px solid #1f5237;color:#5fd08a;border-radius:9px;padding:5px 10px;font-size:.78rem">🟢 WhatsApp</a>`:''}
+        ${L.phone?`<a href="${smsHref}" ${L.tpl?`onclick="coachCopyTpl('${L.id}','${L.tpl}')"`:''} style="text-decoration:none;background:#1a2333;border:1px solid #2a3a55;color:#8ab8ff;border-radius:9px;padding:5px 10px;font-size:.78rem">💬 SMS</a>`:''}
+        ${wa?`<a href="${wa}" target="_blank" ${L.tpl?`onclick="coachCopyTpl('${L.id}','${L.tpl}')"`:''} style="text-decoration:none;background:#12301f;border:1px solid #1f5237;color:#5fd08a;border-radius:9px;padding:5px 10px;font-size:.78rem">🟢 WhatsApp</a>`:''}
         ${L.phone?`<button onclick="navigator.clipboard.writeText('${esc(L.phone)}');toast('Skopírované 📋')" style="background:transparent;border:1px solid #2a2a2a;border-radius:9px;color:var(--muted);padding:5px 10px;font-size:.78rem;cursor:pointer">Kopírovať číslo</button>`:''}
         ${L.tpl?`<button onclick="coachCopyTpl('${L.id}','${L.tpl}')" style="background:#2a2140;border:1px solid #4a3a70;border-radius:9px;color:#c4a8ff;padding:5px 10px;font-size:.78rem;cursor:pointer">✉️ Šablóna</button>`:''}
         <button onclick="coachLeadDetail('${L.id}')" style="background:transparent;border:1px solid #2a2a2a;border-radius:9px;color:var(--muted);padding:5px 10px;font-size:.78rem;cursor:pointer">🗂 Detail</button>
