@@ -41,10 +41,14 @@ label{font-size:.85rem;color:var(--muted);display:block;margin-bottom:6px}
 </head>
 <body>
 <div class="wrap">
-  <div class="brand">FUSION ACADEMY</div>
-  <div id="host"><div style="text-align:center;color:var(--muted);padding:60px 0">Načítavam…</div></div>
+  <div class="brand" style="display:flex;justify-content:space-between;align-items:center"><span>FUSION ACADEMY</span><span id="langSw"></span></div>
+  <div id="host"><div style="text-align:center;color:var(--muted);padding:60px 0">…</div></div>
 </div>
+<script src="/i18n.js"></script>
+<script src="/i18n-pages.js"></script>
 <script>
+FA_I18N.mount('langSw');
+document.addEventListener('fa-lang-changed',()=>location.reload());
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const CODE=location.pathname.split('/').pop();
 const TEST=new URLSearchParams(location.search).get('test')==='1';
@@ -65,7 +69,7 @@ async function boot(){
   if(MANAGE) return manageScreen();
   const first=ST.clicked?'':'&first=1'.replace('&','&');
   INFO=await j('/api/invite/'+encodeURIComponent(CODE)+'/info?'+(ST.clicked?'':'first=1')+tq);
-  if(!INFO.ok){ host.innerHTML='<div style="text-align:center;padding:60px 0">Táto pozvánka už nie je platná.<br><br><a href="https://fusionacademy.sk" style="color:var(--gold)">fusionacademy.sk</a></div>'; return; }
+  if(!INFO.ok){ host.innerHTML='<div style="text-align:center;padding:60px 0">'+FA_T('inv.invalid')+'<br><br><a href="https://fusionacademy.sk" style="color:var(--gold)">fusionacademy.sk</a></div>'; return; }
   saveST({clicked:true});
   try{ const cfg=await j('/api/config'); GCID=cfg.google_client_id||null; }catch(e){}
   if(ST.done) return successScreen(ST.done);
@@ -75,16 +79,16 @@ async function boot(){
 }
 function landing(){
   host.innerHTML=`<div class="fade">
-    <h1>💃 Poď si s nami zatancovať</h1>
-    <p class="sub">${INFO.inviter?esc(INFO.inviter)+' ťa pozýva — t':'T'}voja prvá hodina je <b class="gold">ZADARMO</b>. ❤️</p>
-    <button class="cta" onclick="cityScreen()">VYBRAŤ PRVÚ HODINU</button>
+    <h1>${FA_T('inv.landing_h')}</h1>
+    <p class="sub">${INFO.inviter?FA_T('inv.landing_sub_named',{name:esc(INFO.inviter)}):FA_T('inv.landing_sub')} <b class="gold">${FA_T('inv.free')}</b>. ❤️</p>
+    <button class="cta" onclick="cityScreen()">${FA_T('inv.cta')}</button>
   </div>`;
 }
 function cityScreen(){
   host.innerHTML=`<div class="fade">
-    <div class="step-label">KROK 1 Z 3</div>
-    <h1>Kde chceš prísť?</h1>
-    <p class="sub">Vyber si svoje mesto</p>
+    <div class="step-label">${FA_T('inv.step1')}</div>
+    <h1>${FA_T('inv.where_h')}</h1>
+    <p class="sub">${FA_T('inv.where_sub')}</p>
     ${INFO.cities.map(c=>`<button class="card-btn" onclick="pickCity('${esc(c)}')"><span>📍 ${esc(c)}</span><span class="go">→</span></button>`).join('')}
   </div>`;
 }
@@ -96,17 +100,17 @@ async function classScreen(){
   host.innerHTML='<div style="text-align:center;color:var(--muted);padding:60px 0"><span class="spin">⏳</span></div>';
   const d=await j('/api/invite/'+encodeURIComponent(CODE)+'/classes?city='+encodeURIComponent(ST.city)+'&picked=1'+tq);
   if(!d.ok||!d.classes.length){
-    host.innerHTML=`<div class="fade"><button class="back" onclick="cityScreen()">← späť</button>
-      <h1>Kedy chceš prísť?</h1><p class="sub">V meste ${esc(ST.city)} teraz nie sú voľné termíny — vyber si iné mesto.</p>
-      <button class="cta" onclick="cityScreen()">Vybrať iné mesto</button></div>`; return;
+    host.innerHTML=`<div class="fade"><button class="back" onclick="cityScreen()">← ${FA_T('inv.back')}</button>
+      <h1>${FA_T('inv.when_h')}</h1><p class="sub">${FA_T('inv.no_slots',{city:esc(ST.city)})}</p>
+      <button class="cta" onclick="cityScreen()">${FA_T('inv.other_city')}</button></div>`; return;
   }
   host.innerHTML=`<div class="fade">
-    <button class="back" onclick="cityScreen()">← ${esc(ST.city)} · zmeniť mesto</button>
-    <div class="step-label">KROK 2 Z 3</div>
-    <h1>Kedy chceš prísť?</h1>
-    <p class="sub">Najbližšie hodiny · 1 klik = výber</p>
+    <button class="back" onclick="cityScreen()">← ${esc(ST.city)} · ${FA_T('inv.change_city')}</button>
+    <div class="step-label">${FA_T('inv.step2')}</div>
+    <h1>${FA_T('inv.when_h')}</h1>
+    <p class="sub">${FA_T('inv.when_sub')}</p>
     ${d.classes.map(c=>`<button class="card-btn" onclick='pickClass(${JSON.stringify(c).replace(/'/g,"&#39;")})'>
-      <span>${c.emoji} <b>${esc(c.day_name).toUpperCase()}</b> ${c.time_start}<small>${esc(c.name)} · ${c.date.split('-').reverse().join('.')}${c.spots_left<=5?' · posledné '+c.spots_left+' miesta':''}</small></span>
+      <span>${c.emoji} <b>${esc(c.day_name).toUpperCase()}</b> ${c.time_start}<small>${esc(c.name)} · ${c.date.split('-').reverse().join('.')}${c.spots_left<=5?' · '+FA_T('inv.last_spots',{n:c.spots_left}):''}</small></span>
       <span class="go">→</span></button>`).join('')}
   </div>`;
 }
@@ -114,17 +118,17 @@ function pickClass(c){ saveST({class_pick:c}); contactScreen(); }
 function contactScreen(){
   const c=ST.class_pick;
   host.innerHTML=`<div class="fade">
-    <button class="back" onclick="classScreen()">← ${c.emoji} ${esc(c.day_name)} ${c.time_start} · zmeniť</button>
-    <div class="step-label">KROK 3 Z 3 — UŽ LEN MENO</div>
-    <h1>Ešte ťa spoznáme 🙂</h1>
-    <p class="sub">Žiadna registrácia, žiadne heslo.</p>
+    <button class="back" onclick="classScreen()">← ${c.emoji} ${esc(c.day_name)} ${c.time_start} · ${FA_T('inv.change')}</button>
+    <div class="step-label">${FA_T('inv.step3')}</div>
+    <h1>${FA_T('inv.contact_h')}</h1>
+    <p class="sub">${FA_T('inv.contact_sub')}</p>
     <div class="gsi-wrap" id="gsiInvite"></div>
-    <div class="divider" id="gsiDiv" style="display:none">alebo bez registrácie</div>
-    <label>Ako sa voláš?</label>
-    <input id="gName" placeholder="Meno a priezvisko" autocomplete="name" value="${esc(ST.name||'')}">
-    <label>Telefón alebo e-mail</label>
-    <input id="gContact" placeholder="0900 123 456 alebo email" autocomplete="email" inputmode="email" value="${esc(ST.contact||'')}">
-    <button class="cta" id="bookBtn" onclick="doBook()">REZERVOVAŤ ZADARMO</button>
+    <div class="divider" id="gsiDiv" style="display:none">${FA_T('inv.or_guest')}</div>
+    <label>${FA_T('inv.name_l')}</label>
+    <input id="gName" placeholder="${FA_T('inv.name_ph')}" autocomplete="name" value="${esc(ST.name||'')}">
+    <label>${FA_T('inv.contact_l')}</label>
+    <input id="gContact" placeholder="${FA_T('inv.contact_ph')}" autocomplete="email" inputmode="email" value="${esc(ST.contact||'')}">
+    <button class="cta" id="bookBtn" onclick="doBook()">${FA_T('inv.book')}</button>
     <div class="err" id="bookErr"></div>
   </div>`;
   initGsi('gsiInvite','gsiDiv', onGoogleBeforeBook);
@@ -149,28 +153,28 @@ async function onGoogleBeforeBook(resp){
     const c=ST.class_pick;
     const b=await j('/api/bookings',{method:'POST',body:JSON.stringify({class_id:c.id, booking_date:c.date})});
     if(b.ok){ finish({city:ST.city, class_name:c.name, address:c.address, day:c.day_name, date:c.date, time:c.time_start, via_google:true}); }
-    else if(b.status===402){ if(err) err.textContent='Tento účet už prvú hodinu zadarmo využil — prihlás sa do appky a rezervuj tam. 💛'; }
+    else if(b.status===402){ if(err) err.textContent=FA_T('inv.err_used'); }
     else if(err) err.textContent=b.error||'Rezervácia zlyhala';
-  }catch(e){ if(err) err.textContent='Chyba pripojenia'; }
+  }catch(e){ if(err) err.textContent=FA_T('inv.err_conn'); }
 }
 async function doBook(){
   const name=document.getElementById('gName').value.trim();
   const contact=document.getElementById('gContact').value.trim();
   saveST({name, contact});
   const err=document.getElementById('bookErr'); err.textContent='';
-  const btn=document.getElementById('bookBtn'); btn.disabled=true; btn.innerHTML='<span class="spin">⏳</span> Rezervujem…';
+  const btn=document.getElementById('bookBtn'); btn.disabled=true; btn.innerHTML='<span class="spin">⏳</span> '+FA_T('inv.booking');
   const c=ST.class_pick;
   const d=await j('/api/invite/'+encodeURIComponent(CODE)+'/book',{method:'POST',
     body:JSON.stringify({class_id:c.id, booking_date:c.date, name, contact})});
-  btn.disabled=false; btn.textContent='REZERVOVAŤ ZADARMO';
-  if(!d.ok){ err.textContent=d.error||'Skús to znova'; return; }
+  btn.disabled=false; btn.textContent=FA_T('inv.book');
+  if(!d.ok){ err.textContent=d.error||FA_T('inv.err_retry'); return; }
   finish({...d.detail, manage_token:d.manage_token});
 }
 function finish(done){ saveST({done}); successScreen(done); }
 function successScreen(d){
   host.innerHTML=`<div class="fade">
-    <h1>🎉 Tešíme sa na teba!</h1>
-    <p class="sub">Tvoja prvá hodina je <b class="gold">ZADARMO</b>.</p>
+    <h1>${FA_T('inv.success_h')}</h1>
+    <p class="sub">${FA_T('inv.success_sub')} <b class="gold">${FA_T('inv.free')}</b>.</p>
     <div class="success-card">
       <div class="row">📍 <b>${esc(d.city)}</b></div>
       <div class="row">💃 ${esc(d.class_name)}</div>
@@ -179,18 +183,18 @@ function successScreen(d){
       <div class="row">🕐 <b>${esc(d.time)}</b></div>
     </div>
     <div class="success-card" style="border-color:#2e2a20">
-      <b>Čo si priniesť?</b>
-      <div class="row" style="margin-top:8px">💧 fľašu vody</div>
-      <div class="row">👟 športovú obuv</div>
-      <div class="row">👕 pohodlné športové oblečenie</div>
-      <div style="color:var(--muted);font-size:.88rem">To je všetko. ❤️</div>
+      <b>${FA_T('inv.bring_h')}</b>
+      <div class="row" style="margin-top:8px">${FA_T('inv.bring_water')}</div>
+      <div class="row">${FA_T('inv.bring_shoes')}</div>
+      <div class="row">${FA_T('inv.bring_clothes')}</div>
+      <div style="color:var(--muted);font-size:.88rem">${FA_T('inv.bring_done')}</div>
     </div>
-    ${d.via_google?`<button class="cta" onclick="location.href='/client-dashboard'">Otvoriť moje rezervácie</button>`:`
-    <p class="sub" style="margin:18px 0 8px">Chceš mať svoje rezervácie vždy poruke?</p>
+    ${d.via_google?`<button class="cta" onclick="location.href='/client-dashboard'">${FA_T('inv.open_bookings')}</button>`:`
+    <p class="sub" style="margin:18px 0 8px">${FA_T('inv.account_q')}</p>
     <div class="gsi-wrap" id="gsiAfter"></div>
-    <button class="ghost" onclick="location.href='/?claim=1'">Vytvoriť účet inak</button>
-    ${d.manage_token?`<button class="ghost" onclick="location.href='/invite/${esc(CODE)}?manage=${esc(d.manage_token)}'">Nemôžeš prísť? Zmeniť termín</button>`:''}
-    <button class="tiny" onclick="this.textContent='Rezervácia platí — vidíme sa! 💛'">Teraz nie</button>`}
+    <button class="ghost" onclick="location.href='/?claim=1'">${FA_T('inv.account_other')}</button>
+    ${d.manage_token?`<button class="ghost" onclick="location.href='/invite/${esc(CODE)}?manage=${esc(d.manage_token)}'">${FA_T('inv.cant_come')}</button>`:''}
+    <button class="tiny" onclick="this.textContent=FA_T('inv.stays')">${FA_T('inv.not_now')}</button>`}
   </div>`;
   if(!d.via_google) initGsi('gsiAfter', null, onGoogleAfterBook);
 }
@@ -202,23 +206,23 @@ async function onGoogleAfterBook(resp){
 // ── Správa rezervácie bez loginu ──
 async function manageScreen(){
   const d=await j('/api/invite-manage/'+encodeURIComponent(MANAGE));
-  if(!d.ok){ host.innerHTML='<div style="text-align:center;padding:60px 0">Odkaz nie je platný.</div>'; return; }
+  if(!d.ok){ host.innerHTML='<div style="text-align:center;padding:60px 0">'+FA_T('inv.manage_invalid')+'</div>'; return; }
   host.innerHTML=`<div class="fade">
-    <h1>Tvoje rezervácie</h1>
+    <h1>${FA_T('inv.manage_h')}</h1>
     <p class="sub">${esc(d.name)}</p>
     ${d.bookings.length? d.bookings.map(b=>`<div class="success-card">
       <div class="row">💃 <b>${esc(b.class_name)}</b></div>
       <div class="row">📍 ${esc(b.city)} · 📅 ${esc(b.date.split('-').reverse().join('.'))} · 🕐 ${esc(b.time)}</div>
-      <button class="ghost" onclick="mCancel('${b.id}')">Nemôžem prísť — zrušiť a vybrať iný termín</button>
-    </div>`).join('') : `<p class="sub">Nemáš aktívnu rezerváciu.</p><button class="cta" onclick="mRestart()">Vybrať si termín</button>`}
+      <button class="ghost" onclick="mCancel('${b.id}')">${FA_T('inv.manage_cancel')}</button>
+    </div>`).join('') : `<p class="sub">${FA_T('inv.manage_none')}</p><button class="cta" onclick="mRestart()">${FA_T('inv.manage_pick')}</button>`}
   </div>`;
 }
 function mRestart(){ localStorage.removeItem(ST_KEY); location.href='/invite/'+CODE; }
 async function mCancel(id){
-  if(!confirm('Zrušiť túto rezerváciu? Hneď si budeš môcť vybrať iný termín.')) return;
+  if(!confirm(FA_T('inv.cancel_q'))) return;
   const d=await j('/api/invite-manage/'+encodeURIComponent(MANAGE)+'/cancel',{method:'POST',body:JSON.stringify({booking_id:id})});
   if(d.ok){ localStorage.removeItem(ST_KEY); location.href='/invite/'+CODE; }
-  else alert(d.error||'Chyba');
+  else alert(d.error||FA_T('inv.err_retry'));
 }
 boot();
 </script>

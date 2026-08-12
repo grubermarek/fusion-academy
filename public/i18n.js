@@ -7,13 +7,12 @@
    Language priority: logged-in profile.lang → localStorage 'fa_lang' → browser → 'sk'
 */
 (function(){
+  // Ponúkame len jazyky, ktoré sú preložené KOMPLETNE (CS/HU/DE slovníky ostávajú
+  // v kóde pre budúcnosť, ale v prepínači nie sú, kým nebudú pokryté celé).
   const LANGS = [
     { code:'sk', flag:'🇸🇰', label:'Slovenčina' },
-    { code:'cs', flag:'🇨🇿', label:'Čeština' },
     { code:'en', flag:'🇬🇧', label:'English' },
     { code:'uk', flag:'🇺🇦', label:'Українська' },
-    { code:'hu', flag:'🇭🇺', label:'Magyar' },
-    { code:'de', flag:'🇩🇪', label:'Deutsch' },
   ];
 
   const DICT = {
@@ -56,8 +55,7 @@
       'settings.anonymous':'Anonymný profil','settings.anon_hint':'Skryje tvoje meno, odznaky a štatistiky pred ostatnými.',
       'settings.status':'Status profilu','settings.status_hint':'Tip: napíš si obľúbenú motivačnú hlášku alebo čokoľvek, čo ťa vystihuje 💛',
       'settings.status_ph':'Napr. „Tanec je môj liek."',
-      'profile.status_none':'',
-      'bg.bronze':'Bronzové','bg.silver':'Strieborné','bg.gold':'Zlaté','bg.legend':'Legendárne',
+      'profile.status_none':'', 'bg.bronze':'Bronzové','bg.silver':'Strieborné','bg.gold':'Zlaté','bg.legend':'Legendárne',
       'profile.points_title':'Body tento mesiac','profile.points_total':'Spolu',
     },
     cs:{
@@ -99,7 +97,7 @@
       'settings.anonymous':'Anonymní profil','settings.anon_hint':'Skryje tvé jméno, odznaky a statistiky před ostatními.',
       'settings.status':'Status profilu','settings.status_hint':'Tip: napiš si oblíbenou motivační hlášku nebo cokoli, co tě vystihuje 💛',
       'settings.status_ph':'Např. „Tanec je můj lék."',
-      'bg.bronze':'Bronzové','bg.silver':'Stříbrné','bg.gold':'Zlaté','bg.legend':'Legendární',
+      'profile.status_none':'', 'bg.bronze':'Bronzové','bg.silver':'Stříbrné','bg.gold':'Zlaté','bg.legend':'Legendární',
       'profile.points_title':'Body tento měsíc','profile.points_total':'Celkem',
     },
     en:{
@@ -141,7 +139,7 @@
       'settings.anonymous':'Anonymous profile','settings.anon_hint':'Hides your name, badges and stats from others.',
       'settings.status':'Profile status','settings.status_hint':'Tip: write your favourite motivational quote or anything that describes you 💛',
       'settings.status_ph':'e.g. “Dance is my medicine.”',
-      'bg.bronze':'Bronze','bg.silver':'Silver','bg.gold':'Gold','bg.legend':'Legendary',
+      'profile.status_none':'', 'bg.bronze':'Bronze','bg.silver':'Silver','bg.gold':'Gold','bg.legend':'Legendary',
       'profile.points_title':'Points this month','profile.points_total':'Total',
     },
     uk:{
@@ -183,7 +181,7 @@
       'settings.anonymous':'Анонімний профіль','settings.anon_hint':'Приховує твоє імʼя, відзнаки та статистику від інших.',
       'settings.status':'Статус профілю','settings.status_hint':'Порада: напиши улюблену мотиваційну фразу або будь-що, що тебе описує 💛',
       'settings.status_ph':'Напр. «Танець — це мої ліки.»',
-      'bg.bronze':'Бронзовий','bg.silver':'Срібний','bg.gold':'Золотий','bg.legend':'Легендарний',
+      'profile.status_none':'', 'bg.bronze':'Бронзовий','bg.silver':'Срібний','bg.gold':'Золотий','bg.legend':'Легендарний',
       'profile.points_title':'Бали цього місяця','profile.points_total':'Разом',
     },
     hu:{
@@ -225,7 +223,7 @@
       'settings.anonymous':'Névtelen profil','settings.anon_hint':'Elrejti a neved, jelvényeid és statisztikáid mások elől.',
       'settings.status':'Profil státusz','settings.status_hint':'Tipp: írd ide kedvenc motivációs mondatod vagy bármit, ami jellemez 💛',
       'settings.status_ph':'Pl. „A tánc az én gyógyszerem.”',
-      'bg.bronze':'Bronz','bg.silver':'Ezüst','bg.gold':'Arany','bg.legend':'Legendás',
+      'profile.status_none':'', 'bg.bronze':'Bronz','bg.silver':'Ezüst','bg.gold':'Arany','bg.legend':'Legendás',
       'profile.points_title':'Pontok e hónapban','profile.points_total':'Összesen',
     },
     de:{
@@ -267,7 +265,7 @@
       'settings.anonymous':'Anonymes Profil','settings.anon_hint':'Verbirgt deinen Namen, Abzeichen und Statistiken vor anderen.',
       'settings.status':'Profil-Status','settings.status_hint':'Tipp: Schreib deinen Lieblings-Motivationsspruch oder was dich ausmacht 💛',
       'settings.status_ph':'z. B. „Tanzen ist meine Medizin.“',
-      'bg.bronze':'Bronze','bg.silver':'Silber','bg.gold':'Gold','bg.legend':'Legendär',
+      'profile.status_none':'', 'bg.bronze':'Bronze','bg.silver':'Silber','bg.gold':'Gold','bg.legend':'Legendär',
       'profile.points_title':'Punkte diesen Monat','profile.points_total':'Gesamt',
     },
   };
@@ -314,7 +312,13 @@
   cur = (window.FA_USER_LANG && DICT[window.FA_USER_LANG]) ? window.FA_USER_LANG : detect();
   document.documentElement.setAttribute('lang', cur);
 
-  window.FA_I18N = { t, apply, setLang, mount, langs:LANGS, get lang(){return cur;} };
+  // Modulárne slovníky: stránka si načíta /i18n.js + vlastný balík (napr. /i18n-pages.js),
+  // ktorý zavolá FA_I18N.extend({sk:{...},en:{...}}) — kľúče sa zlejú do hlavného DICT.
+  function extend(extra){
+    for(const l in extra){ DICT[l]=DICT[l]||{}; Object.assign(DICT[l], extra[l]); }
+    apply();
+  }
+  window.FA_I18N = { t, apply, setLang, mount, extend, langs:LANGS, get lang(){return cur;} };
   window.FA_T = t;
   document.addEventListener('DOMContentLoaded', ()=>apply());
 })();

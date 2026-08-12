@@ -85,7 +85,7 @@ select{background:#1d1a15;border:1px solid var(--line);color:var(--cream);border
 </head>
 <body>
 <div class="wrap">
-  <h1>🛍️ Obchod<small>Všetko na jednom mieste — členstvá, vstupy, merch aj tvoje nákupy</small></h1>
+  <h1><span style="display:flex;justify-content:space-between;align-items:center"><span data-i18n="shop.title">🛍️ Obchod</span><span id="langSw"></span></span><small data-i18n="shop.sub">Všetko na jednom mieste — členstvá, vstupy, merch aj tvoje nákupy</small></h1>
   <div id="myf"></div>
   <div id="recs"></div>
   <div class="tabs" id="tabs"></div>
@@ -99,12 +99,16 @@ select{background:#1d1a15;border:1px solid var(--line);color:var(--cream);border
 </div></div>
 
 <script src="/nav-bar.js"></script>
+<script src="/i18n.js"></script>
+<script src="/i18n-pages.js"></script>
 <script>
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const eur=n=>(+n).toFixed(2).replace('.',',')+' €';
 const dstr=d=>d?new Date(d).toLocaleDateString('sk'):'';
 let ME=null, OV=null, PLANS=null, PRODUCTS=null, STRIPE=false;
 const api=(p,o)=>fetch(p,{credentials:'include',...(o||{}),headers:{'Content-Type':'application/json',...(o&&o.headers||{})}}).then(r=>r.json().then(d=>({status:r.status,...d}))).catch(()=>({}));
+FA_I18N.mount('langSw');
+document.addEventListener('fa-lang-changed',()=>location.reload());
 function toast(t){ const x=document.createElement('div'); x.className='toast'; x.textContent=t; document.body.appendChild(x); setTimeout(()=>x.remove(),3800); }
 
 async function boot(){
@@ -122,27 +126,27 @@ function renderMyf(){
   const m=OV.membership, e=OV.entries;
   let rows='';
   if(m){
-    rows+=`<div class="row"><span>Aktívne členstvo</span><span><b class="big gold">${esc(m.plan_name)}</b></span></div>
-    <div class="row"><span>${m.auto_renew?'Ďalšia platba':'Platné do'}</span><span><b>${dstr(m.expires_at)}</b> ${m.days_left<=5?'<span class="badge warn">o '+m.days_left+' dní</span>':''}</span></div>
-    <div class="row"><span>Automatické obnovenie</span><span class="badge ${m.auto_renew?'on':'off'}">${m.auto_renew?'ZAPNUTÉ':'VYPNUTÉ'}</span></div>`;
-  } else rows+=`<div class="row"><span>Členstvo</span><span class="badge off">ŽIADNE AKTÍVNE</span></div>`;
+    rows+=`<div class="row"><span>${FA_T('shop.mem_active')}</span><span><b class="big gold">${esc(m.plan_name)}</b></span></div>
+    <div class="row"><span>${m.auto_renew?FA_T('shop.next_pay'):FA_T('shop.valid_until')}</span><span><b>${dstr(m.expires_at)}</b> ${m.days_left<=5?'<span class="badge warn">'+FA_T('shop.in_days',{n:m.days_left})+'</span>':''}</span></div>
+    <div class="row"><span>${FA_T('shop.autorenew')}</span><span class="badge ${m.auto_renew?'on':'off'}">${m.auto_renew?FA_T('shop.on'):FA_T('shop.off')}</span></div>`;
+  } else rows+=`<div class="row"><span>${FA_T('shop.membership')}</span><span class="badge off">${FA_T('shop.mem_none')}</span></div>`;
   if(e.left>0 || e.expires_at){
     const total=Math.max(e.total||10, e.left);
     const dots=Array.from({length:Math.min(total,12)},(_,i)=>`<span class="dot ${i<e.left?'full':'used'}"></span>`).join('');
-    rows+=`<div class="row"><span>Permanentka / vstupy</span><span style="text-align:right"><b>${e.left}</b> ${e.left===1?'vstup':'vstupov'}<div class="dots" style="margin-top:5px;justify-content:flex-end">${dots}</div>${e.expires_at?`<small style="color:var(--muted);font-size:.72rem">platí do ${dstr(e.expires_at)}</small>`:''}</span></div>`;
+    rows+=`<div class="row"><span>${FA_T('shop.pass_entries')}</span><span style="text-align:right"><b>${e.left}</b> ${e.left===1?FA_T('shop.entry1'):FA_T('shop.entryN')}<div class="dots" style="margin-top:5px;justify-content:flex-end">${dots}</div>${e.expires_at?`<small style="color:var(--muted);font-size:.72rem">${FA_T('shop.pass_until',{d:dstr(e.expires_at)})}</small>`:''}</span></div>`;
   }
-  if(OV.free_credits>0) rows+=`<div class="row"><span>🎁 Hodiny zdarma</span><span><b>${OV.free_credits}</b></span></div>`;
-  rows+=`<div class="row" style="cursor:pointer" onclick="creditHistory()"><span>💛 Fusion kredit <small style="color:var(--muted);font-size:.72rem">(klikni na históriu)</small></span><span><b class="big gold">${eur(OV.credit)}</b></span></div>`;
-  document.getElementById('myf').innerHTML=`<div class="myf"><div style="font-size:.72rem;font-weight:800;letter-spacing:.12em;color:var(--gold);margin-bottom:4px">MOJE FUSION</div>${rows}</div>`;
+  if(OV.free_credits>0) rows+=`<div class="row"><span>${FA_T('shop.free_hours')}</span><span><b>${OV.free_credits}</b></span></div>`;
+  rows+=`<div class="row" style="cursor:pointer" onclick="creditHistory()"><span>${FA_T('shop.credit')} <small style="color:var(--muted);font-size:.72rem">${FA_T('shop.credit_hint')}</small></span><span><b class="big gold">${eur(OV.credit)}</b></span></div>`;
+  document.getElementById('myf').innerHTML=`<div class="myf"><div style="font-size:.72rem;font-weight:800;letter-spacing:.12em;color:var(--gold);margin-bottom:4px">${FA_T('shop.myf')}</div>${rows}</div>`;
 }
 function renderRecs(){
   const el=document.getElementById('recs');
   el.innerHTML=(OV.recommendations||[]).map(r=>`<div class="rec" onclick="${r.plan_id?`openPlan('${r.plan_id}')`:(r.key==='pay_pending'?`showTab('nakupy')`:`showTab('clenstva')`)}">
     <b>${esc(r.title)}</b><p>${esc(r.text)}</p></div>`).join('');
 }
-const TABS=[['clenstva','🏅 Členstvá'],['vstupy','🎟️ Vstupy'],['sukromne','🎭 Súkromné'],['merch','👕 Merch'],['eventy','🎉 Eventy'],['nakupy','🧾 Moje nákupy']];
+const TABS=[['clenstva','shop.tab_mem'],['vstupy','shop.tab_entries'],['sukromne','shop.tab_private'],['merch','shop.tab_merch'],['eventy','shop.tab_events'],['nakupy','shop.tab_purch']];
 function renderTabs(){
-  document.getElementById('tabs').innerHTML=TABS.map(([k,l])=>`<button class="tab" id="tab-${k}" onclick="showTab('${k}')">${l}</button>`).join('');
+  document.getElementById('tabs').innerHTML=TABS.map(([k,l])=>`<button class="tab" id="tab-${k}" onclick="showTab('${k}')">${FA_T(l)}</button>`).join('');
   document.getElementById('panels').innerHTML=TABS.map(([k])=>`<div class="panel" id="p-${k}"></div>`).join('');
 }
 function showTab(k){
@@ -154,11 +158,11 @@ function showTab(k){
 
 /* ── ČLENSTVÁ ── */
 const PLAN_FEATURES={
-  bronze:['Neobmedzené skupinové hodiny v 1 meste','Rezervácie v appke','Komunita a odmeny'],
-  silver:['Všetky mestá + ONLINE hodiny','📊 Metabolické meranie (Tanita) mesačne','Prednostné rezervácie','Všetko z Bronze'],
-  gold:['Všetko zo Silver','🍽️ Jedálniček na mieru','Pravidelné check-iny s trénerom','20 % zľava na súkromné hodiny a eventy'],
-  online_basic:['Živé ONLINE hodiny','Prístup k záznamom'],
-  online_premium:['Všetko z Online Basic','🍽️ Jedálniček na mieru','📊 Mesačná metabolická analýza (online)','Podpora trénera'],
+  bronze:['shop.f_b1','shop.f_b2','shop.f_b3'],
+  silver:['shop.f_s1','shop.f_s2','shop.f_s3','shop.f_s4'],
+  gold:['shop.f_g1','shop.f_g2','shop.f_g3','shop.f_g4'],
+  online_basic:['shop.f_ob1','shop.f_ob2'],
+  online_premium:['shop.f_op1','shop.f_op2','shop.f_op3','shop.f_op4'],
 };
 function renderPlans(){
   const my=OV.membership?.plan_id;
@@ -174,81 +178,81 @@ function renderPlans(){
   const order=(my&&VISIBLE[my])?VISIBLE[my]:['bronze','silver','gold','online_basic','online_premium']; // kids zrušené — deti fungujú na bežných členstvách
   // Upsell CTA: čo NAVYŠE získa prechodom na vyšší plán (len rozdiel, žiadne opakovanie)
   const UPSELL={
-    bronze:{to:'silver', gains:['🌍 Všetky 4 mestá namiesto jedného','🌐 ONLINE hodiny z domu v cene','📊 Metabolické meranie (Tanita) každý mesiac']},
-    silver:{to:'gold', gains:['🍽️ Jedálniček na mieru na celý týždeň','🤝 Pravidelné check-iny s trénerom','💸 20 % zľava na súkromné hodiny a eventy']},
-    online_basic:{to:'online_premium', gains:['🍽️ Jedálniček na mieru','📊 Mesačná metabolická analýza','🤝 Podpora osobného trénera']},
-    online_premium:{to:'gold', gains:['💃 Neobmedzené hodiny v štúdiu vo všetkých 4 mestách','🤝 Check-iny s trénerom naživo','💸 20 % zľava na súkromné hodiny a eventy']},
+    bronze:{to:'silver', gains:['🌍 '+FA_T('shop.f_s1'),'🌐 '+FA_T('shop.f_ob1'),FA_T('shop.f_s2')]},
+    silver:{to:'gold', gains:[FA_T('shop.f_g2'),'🤝 '+FA_T('shop.f_g3'),'💸 '+FA_T('shop.f_g4')]},
+    online_basic:{to:'online_premium', gains:[FA_T('shop.f_op2'),FA_T('shop.f_op3'),'🤝 '+FA_T('shop.f_op4')]},
+    online_premium:{to:'gold', gains:['💃 '+FA_T('shop.f_b1'),'🤝 '+FA_T('shop.f_g3'),'💸 '+FA_T('shop.f_g4')]},
   };
   const up=my&&UPSELL[my];
   const upsellCard=up?(()=>{const tp=PLANS[up.to]; const diff=+(tp.price-(PLANS[my]?.price||0)).toFixed(2);
     return `<div class="pcard" style="border-color:var(--gold);background:linear-gradient(160deg,#241d10,#1a1712)">
-      <h3>✨ Prejdi na ${esc(tp.name)} a získaš navyše:</h3>
+      <h3>${FA_T('shop.upsell_h',{name:esc(tp.name)})}</h3>
       <ul>${up.gains.map(g=>`<li>${g}</li>`).join('')}</ul>
-      <p style="color:var(--muted)">Len o <b class="gold">${eur(diff)}</b> mesačne viac — a zvyšné dni tvojho ${esc(PLANS[my]?.name||'')} ti prerátame na kredit.</p>
-      <button class="buy" onclick="openPlan('${up.to}')">Prejsť na ${esc(tp.name)} →</button>
+      <p style="color:var(--muted)">${FA_T('shop.upsell_note',{price:'<b class="gold">'+eur(diff)+'</b>', old:esc(PLANS[my]?.name||'')})}</p>
+      <button class="buy" onclick="openPlan('${up.to}')">${FA_T('shop.upsell_cta',{name:esc(tp.name)})}</button>
     </div>`;})():'';
   const shown=up?order.filter(id=>id!==up.to):order; // upsell karta nahrádza kartu cieľového plánu — žiadna duplicita
   document.getElementById('p-clenstva').innerHTML=upsellCard+shown.map(id=>{
     const p=PLANS[id]; if(!p) return '';
     const owned=my===id;
     return `<div class="pcard ${id==='silver'?'hl':''}">
-      <div class="top"><h3>${owned?'✅ ':''}${esc(p.name)}</h3><span class="price">${eur(p.price)}<small> /mes</small></span></div>
-      <ul>${(PLAN_FEATURES[id]||[]).map(f=>`<li>${f}</li>`).join('')}</ul>
+      <div class="top"><h3>${owned?'✅ ':''}${esc(p.name)}</h3><span class="price">${eur(p.price)}<small> ${FA_T('shop.per_month')}</small></span></div>
+      <ul>${(PLAN_FEATURES[id]||[]).map(f=>`<li>${FA_T(f)}</li>`).join('')}</ul>
       ${owned
-        ? `<button class="buy owned">TVOJE AKTÍVNE ČLENSTVO · do ${dstr(OV.membership.expires_at)}</button>
-           <button class="howto" onclick="openPlan('${id}')">Predĺžiť / spravovať</button>`
-        : `<button class="buy" onclick="openPlan('${id}')">Kúpiť ${esc(p.name)}</button>`}
+        ? `<button class="buy owned">${FA_T('shop.owned',{d:dstr(OV.membership.expires_at)})}</button>
+           <button class="howto" onclick="openPlan('${id}')">${FA_T('shop.manage')}</button>`
+        : `<button class="buy" onclick="openPlan('${id}')">${FA_T('shop.buy',{name:esc(p.name)})}</button>`}
     </div>`;
-  }).join('')+`<button class="howto" onclick="howTo('membership')">? Ako fungujú členstvá</button>`;
+  }).join('')+`<button class="howto" onclick="howTo('membership')">${FA_T('shop.howto_mem')}</button>`;
 }
 /* ── VSTUPY ── */
 function renderVstupy(){
   const e=OV.entries;
   document.getElementById('p-vstupy').innerHTML=`
-    ${e.left>0?`<div class="pcard hl"><div class="top"><h3>Tvoja permanentka</h3><span class="price">${e.left} <small>vstupov</small></span></div>
+    ${e.left>0?`<div class="pcard hl"><div class="top"><h3>${FA_T('shop.your_pass')}</h3><span class="price">${e.left} <small>${FA_T('shop.entryN')}</small></span></div>
       <div class="dots" style="margin:8px 0">${Array.from({length:Math.min(Math.max(e.total,e.left),12)},(_,i)=>`<span class="dot ${i<e.left?'full':'used'}"></span>`).join('')}</div>
-      ${e.expires_at?`<p>Platná do ${dstr(e.expires_at)}</p>`:''}
-      ${e.left<=2?`<button class="buy" onclick="openPlan('permanentka10')">Dochádza ti — kúpiť ďalšiu</button>`:''}</div>`:''}
-    <div class="pcard"><div class="top"><h3>🎫 Jednorazový vstup</h3><span class="price">${eur(PLANS.vstup1.price)}</span></div>
-      <p>Jedna hodina kdekoľvek. Bez záväzkov.</p>
-      <button class="buy" onclick="openPlan('vstup1')">Kúpiť vstup</button></div>
-    <div class="pcard hl"><div class="top"><h3>🎟️ 10-vstupová permanentka</h3><span class="price">${eur(PLANS.permanentka10.price)}</span></div>
-      <p>10 vstupov na 90 dní · <b class="gold">ušetríš 20 %</b> oproti jednorazovým (8 € / vstup).</p>
-      <button class="buy" onclick="openPlan('permanentka10')">Kúpiť permanentku</button></div>
-    <button class="howto" onclick="howTo('entries')">? Ako fungujú vstupy a permanentky</button>`;
+      ${e.expires_at?`<p>${FA_T('shop.valid_until')} ${dstr(e.expires_at)}</p>`:''}
+      ${e.left<=2?`<button class="buy" onclick="openPlan('permanentka10')">${FA_T('shop.pass_low')}</button>`:''}</div>`:''}
+    <div class="pcard"><div class="top"><h3>${FA_T('shop.single_h')}</h3><span class="price">${eur(PLANS.vstup1.price)}</span></div>
+      <p>${FA_T('shop.single_d')}</p>
+      <button class="buy" onclick="openPlan('vstup1')">${FA_T('shop.single_buy')}</button></div>
+    <div class="pcard hl"><div class="top"><h3>${FA_T('shop.pass10_h')}</h3><span class="price">${eur(PLANS.permanentka10.price)}</span></div>
+      <p>${FA_T('shop.pass10_d')}</p>
+      <button class="buy" onclick="openPlan('permanentka10')">${FA_T('shop.pass10_buy')}</button></div>
+    <button class="howto" onclick="howTo('entries')">${FA_T('shop.howto_entries')}</button>`;
 }
 /* ── SÚKROMNÉ HODINY — existujúci booking systém (/api/private/*) ── */
 let PV={trainers:null, sel:null, slots:[], disc:0, plan:null};
 async function renderSukromne(){
   const el=document.getElementById('p-sukromne');
   if(!PV.trainers){
-    el.innerHTML='<p style="color:var(--muted)">Načítavam trénerov…</p>';
+    el.innerHTML='<p style="color:var(--muted)">'+FA_T('shop.pv_loading')+'</p>';
     const t=await api('/api/private/trainers'); PV.trainers=(t&&t.trainers)||[];
   }
-  if(!PV.trainers.length){ el.innerHTML='<p style="color:var(--muted)">Momentálne nie sú vypísané žiadne voľné termíny — skús neskôr. 💛</p>'; return; }
+  if(!PV.trainers.length){ el.innerHTML='<p style="color:var(--muted)">'+FA_T('shop.pv_none')+'</p>'; return; }
   el.innerHTML=`
-    <div class="pcard hl"><h3>🎭 Súkromná hodina 1:1</h3>
-      <p>Individuálny tréning presne podľa teba — technika, choreografia, svadobný tanec. <b class="gold">100 €/h</b> · členovia majú zľavu: Bronze −10 %, Silver −20 %, Gold −30 %.</p></div>
-    <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px">Vyber trénera:</div>
+    <div class="pcard hl"><h3>${FA_T('shop.pv_h')}</h3>
+      <p>${FA_T('shop.pv_d')}</p></div>
+    <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px">${FA_T('shop.pv_pick')}</div>
     ${PV.trainers.map(tr=>`<button class="pcard" style="width:100%;text-align:left;cursor:pointer;display:flex;align-items:center;gap:12px;border-color:${PV.sel===tr.id?'var(--gold)':'var(--line)'}" onclick="pvSelect('${tr.id}')">
       ${tr.av?`<img src="/api/avatar/${tr.id}" style="width:46px;height:46px;border-radius:50%;object-fit:cover;border:2px solid rgba(201,168,76,.5);flex-shrink:0">`:`<span style="width:46px;height:46px;border-radius:50%;background:#2a2410;display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0">🎓</span>`}
-      <span><b style="color:var(--cream);font-size:1rem">${esc(tr.name)}</b><br>${tr.specialty?`<span style="color:var(--gold);font-size:.78rem">${esc(tr.specialty)}</span><br>`:''}<span style="color:var(--muted);font-size:.8rem">od ${(+tr.rate).toFixed(0)} €/h · ${esc((tr.cities||[]).join(', '))}</span></span></button>`).join('')}
+      <span><b style="color:var(--cream);font-size:1rem">${esc(tr.name)}</b><br>${tr.specialty?`<span style="color:var(--gold);font-size:.78rem">${esc(tr.specialty)}</span><br>`:''}<span style="color:var(--muted);font-size:.8rem">${FA_T('shop.pv_from',{r:(+tr.rate).toFixed(0)})} · ${esc((tr.cities||[]).join(', '))}</span></span></button>`).join('')}
     <div id="pvSlotsBox"></div>`;
   if(PV.sel) pvRenderSlots();
 }
 async function pvSelect(tid){
   PV.sel=tid;
   const box=()=>document.getElementById('pvSlotsBox');
-  renderSukromne(); box().innerHTML='<p style="color:var(--muted)">Načítavam termíny…</p>';
+  renderSukromne(); box().innerHTML='<p style="color:var(--muted)">'+FA_T('shop.pv_slots_loading')+'</p>';
   const d=await api('/api/private/slots?trainer_id='+tid);
   PV.slots=(d&&d.slots)||[]; PV.disc=(d&&d.discount_pct)||0; PV.plan=(d&&d.discount_plan)||null;
   pvRenderSlots();
 }
 function pvRenderSlots(){
   const box=document.getElementById('pvSlotsBox'); if(!box) return;
-  if(!PV.slots.length){ box.innerHTML='<p style="color:var(--muted)">Tento tréner nemá voľné termíny.</p>'; return; }
+  if(!PV.slots.length){ box.innerHTML='<p style="color:var(--muted)">'+FA_T('shop.pv_no_slots')+'</p>'; return; }
   const byDay={}; PV.slots.forEach(s=>{(byDay[s.date]=byDay[s.date]||[]).push(s);});
-  box.innerHTML=(PV.disc?`<div class="rec"><b>🎁 Tvoje členstvo ${esc(PV.plan||'')} = −${PV.disc} % na súkromné hodiny</b></div>`:'')
+  box.innerHTML=(PV.disc?`<div class="rec"><b>${FA_T('shop.pv_disc',{plan:esc(PV.plan||''),p:PV.disc})}</b></div>`:'')
     +Object.entries(byDay).slice(0,10).map(([d,ss])=>`<div style="margin:10px 0 4px;font-size:.85rem;color:var(--gold);font-weight:800">📅 ${d.split('-').reverse().join('.')}</div>
       ${ss.map(s=>{const my=s.my_price!=null?s.my_price:s.price;
         return `<button class="tab" style="margin:0 6px 6px 0" onclick='pvOpenBook(${JSON.stringify(s).replace(/'/g,"&#39;")})'>${s.time_start} · ${s.duration_min} min · ${esc(s.city)} · <b style="color:var(--gold)">${eur(my)}</b></button>`;}).join('')}`).join('');
@@ -256,17 +260,17 @@ function pvRenderSlots(){
 function pvOpenBook(s){
   const my=s.my_price!=null?s.my_price:s.price;
   api('/api/shop/event',{method:'POST',body:JSON.stringify({type:'checkout_open',item:'private'})});
-  document.getElementById('mTitle').textContent='🎭 Súkromná hodina';
+  document.getElementById('mTitle').textContent=FA_T('shop.pv_h');
   document.getElementById('mBody').innerHTML=`
-    <div class="mrow"><span class="mut">Termín</span><span><b>${s.date.split('-').reverse().join('.')} o ${s.time_start}</b></span></div>
-    <div class="mrow"><span class="mut">Dĺžka / miesto</span><span>${s.duration_min} min · ${esc(s.city)}</span></div>
-    ${PV.disc?`<div class="mrow"><span class="mut">Cena so zľavou −${PV.disc} %</span><span><s style="color:var(--muted)">${eur(s.price)}</s> <b class="gold">${eur(my)}</b></span></div>`
-      :`<div class="mrow"><span class="mut">Cena</span><span class="gold"><b>${eur(my)}</b></span></div>`}
-    ${(ME.free_private_lesson_credits||0)>0?`<button class="paybtn" onclick="pvBook('${s.id}','prize')">🎁 Zadarmo — výhra súťaže</button>`:''}
-    ${STRIPE?`<button class="paybtn" onclick="pvBook('${s.id}','card')">💳 Zaplatiť kartou teraz</button>`:''}
-    ${OV.credit>=my?`<button class="paybtn sec" onclick="pvBook('${s.id}','credit')">💛 Zaplatiť Fusion kreditom (${eur(OV.credit)})</button>`:''}
-    <button class="paybtn sec" onclick="pvBook('${s.id}','onsite')">💵 Zaplatím na mieste</button>
-    <p class="note">Bezplatné zrušenie do 24 h pred začiatkom. Potvrdenie príde do notifikácií aj na e-mail.</p>
+    <div class="mrow"><span class="mut">${FA_T('shop.pv_when')}</span><span><b>${s.date.split('-').reverse().join('.')} · ${s.time_start}</b></span></div>
+    <div class="mrow"><span class="mut">${FA_T('shop.pv_len')}</span><span>${s.duration_min} min · ${esc(s.city)}</span></div>
+    ${PV.disc?`<div class="mrow"><span class="mut">${FA_T('shop.pv_price_disc',{p:PV.disc})}</span><span><s style="color:var(--muted)">${eur(s.price)}</s> <b class="gold">${eur(my)}</b></span></div>`
+      :`<div class="mrow"><span class="mut">${FA_T('shop.price')}</span><span class="gold"><b>${eur(my)}</b></span></div>`}
+    ${(ME.free_private_lesson_credits||0)>0?`<button class="paybtn" onclick="pvBook('${s.id}','prize')">${FA_T('shop.pv_prize')}</button>`:''}
+    ${STRIPE?`<button class="paybtn" onclick="pvBook('${s.id}','card')">${FA_T('shop.pv_card')}</button>`:''}
+    ${OV.credit>=my?`<button class="paybtn sec" onclick="pvBook('${s.id}','credit')">${FA_T('shop.pv_credit',{c:eur(OV.credit)})}</button>`:''}
+    <button class="paybtn sec" onclick="pvBook('${s.id}','onsite')">${FA_T('shop.pv_onsite')}</button>
+    <p class="note">${FA_T('shop.pv_note')}</p>
     <div class="err" id="mErr"></div>`;
   document.getElementById('buyM').classList.add('open');
 }
@@ -279,7 +283,7 @@ async function pvBook(slotId, pay){
     if(c.ok&&c.url){ location.href=c.url; return; }
   }
   closeM(); PV.sel=null; PV.trainers=null;
-  toast('🎭 Súkromná hodina rezervovaná ✅'+(pay==='credit'?' — zaplatené kreditom':pay==='prize'?' — výhra súťaže':' — platba na mieste'));
+  toast(FA_T('shop.pv_ok')+(pay==='credit'?FA_T('shop.pv_ok_credit'):pay==='prize'?FA_T('shop.pv_ok_prize'):FA_T('shop.pv_ok_onsite')));
   OV=await api('/api/shop/overview'); renderMyf(); renderSukromne();
 }
 
@@ -294,32 +298,32 @@ function prodCard(p){
     ${v?`<div style="margin-bottom:6px">
       ${v.sizes?`<select id="sz-${p._id}">${v.sizes.map(s=>`<option>${s}</option>`).join('')}</select>`:''}
       ${v.colors?`<select id="cl-${p._id}">${v.colors.map(c=>`<option>${c}</option>`).join('')}</select>`:''}</div>`:''}
-    <button class="buy" onclick="addToCart('${p._id}')">🛒 Pridať do košíka</button></div>`;
+    <button class="buy" onclick="addToCart('${p._id}')">${FA_T('shop.add_cart')}</button></div>`;
 }
 function cartBar(){
   return cartCount()?`<div class="pcard hl" style="position:sticky;bottom:96px;z-index:50;display:flex;justify-content:space-between;align-items:center;gap:10px">
-    <span>🛒 <b>${cartCount()}</b> ks · <b class="gold">${eur(cartTotal())}</b></span>
-    <button class="buy" style="width:auto;margin:0;padding:10px 20px" onclick="openCart()">Dokončiť objednávku</button></div>`:'';
+    <span>🛒 <b>${cartCount()}</b> ${FA_T('shop.cart_pcs')} · <b class="gold">${eur(cartTotal())}</b></span>
+    <button class="buy" style="width:auto;margin:0;padding:10px 20px" onclick="openCart()">${FA_T('shop.cart_checkout')}</button></div>`:'';
 }
 function addToCart(id){
   const p=PRODUCTS.find(x=>x._id===id); if(!p) return;
   const size=document.getElementById('sz-'+id)?.value||null, color=document.getElementById('cl-'+id)?.value||null;
   const ex=CART.find(i=>i.product_id===id&&i.size===size&&i.color===color);
   if(ex) ex.qty++; else CART.push({product_id:id,name:p.name,emoji:p.emoji||'🛍️',price:p.price,qty:1,size,color});
-  toast('🛒 '+p.name+(size?' ('+size+(color?', '+color:'')+')':'')+' pridané do košíka');
+  toast(FA_T('shop.cart_added',{name:p.name+(size?' ('+size+(color?', '+color:'')+')':'')}));
   refreshCartBars();
 }
 function refreshCartBars(){ ['cartbar-m','cartbar-e'].forEach(x=>{ const el=document.getElementById(x); if(el) el.innerHTML=cartBar(); }); }
 function cartQty(idx,d){ CART[idx].qty+=d; if(CART[idx].qty<=0) CART.splice(idx,1); if(cartCount()) openCart(); else { closeM(); refreshCartBars(); } }
 function renderMerch(){
   const items=PRODUCTS.filter(p=>p.active!==false && p.type!=='event' && !/členstvo|vstup|permanent/i.test(p.name));
-  document.getElementById('p-merch').innerHTML=(items.length?items.map(prodCard).join(''):'<p style="color:var(--muted)">Merch čoskoro doplníme.</p>')
+  document.getElementById('p-merch').innerHTML=(items.length?items.map(prodCard).join(''):'<p style="color:var(--muted)">'+FA_T('shop.merch_soon')+'</p>')
     +`<div id="cartbar-m">${cartBar()}</div>`
-    +`<button class="howto" onclick="howTo('merch')">? Ako prebieha nákup merchu</button>`;
+    +`<button class="howto" onclick="howTo('merch')">${FA_T('shop.howto_merch')}</button>`;
 }
 function renderEventy(){
   const items=PRODUCTS.filter(p=>p.active!==false && p.type==='event');
-  document.getElementById('p-eventy').innerHTML=(items.length?items.map(prodCard).join(''):'<p style="color:var(--muted)">Momentálne nie je vypísaný žiadny event — sleduj notifikácie. 🎉</p>')
+  document.getElementById('p-eventy').innerHTML=(items.length?items.map(prodCard).join(''):'<p style="color:var(--muted)">'+FA_T('shop.events_none')+'</p>')
     +`<div id="cartbar-e">${cartBar()}</div>`;
 }
 let ORDER_PROMO=null;
@@ -327,28 +331,28 @@ function openCart(){
   if(!cartCount()) return;
   api('/api/shop/event',{method:'POST',body:JSON.stringify({type:'checkout_open',item:'cart'})});
   const creditApply=Math.min(OV.credit, cartTotal());
-  document.getElementById('mTitle').textContent='🛒 Tvoja objednávka';
+  document.getElementById('mTitle').textContent=FA_T('shop.cart_h');
   document.getElementById('mBody').innerHTML=`
     ${CART.map((i,x)=>`<div class="mrow" style="align-items:center"><span>${i.emoji} ${esc(i.name)}${i.size?' · '+esc(i.size):''}${i.color?' · '+esc(i.color):''}</span>
       <span style="white-space:nowrap"><button onclick="cartQty(${x},-1)" style="background:#221e16;border:1px solid var(--line);color:var(--cream);border-radius:8px;width:26px;height:26px;cursor:pointer">−</button>
       <b style="margin:0 6px">${i.qty}</b>
       <button onclick="cartQty(${x},1)" style="background:#221e16;border:1px solid var(--line);color:var(--cream);border-radius:8px;width:26px;height:26px;cursor:pointer">+</button>
       <span class="gold" style="margin-left:8px">${eur(i.price*i.qty)}</span></span></div>`).join('')}
-    <div style="margin:12px 0 4px;font-size:.85rem;color:var(--muted)">Doručenie</div>
-    <label style="display:block;font-size:.88rem;margin-bottom:6px;cursor:pointer"><input type="radio" name="odel" value="pickup" checked onchange="document.getElementById('shipFields').style.display='none'" style="accent-color:#C9A84C"> 🏠 Vyzdvihnem si na hodine (zadarmo)</label>
-    <label style="display:block;font-size:.88rem;cursor:pointer"><input type="radio" name="odel" value="post" onchange="document.getElementById('shipFields').style.display='block'" style="accent-color:#C9A84C"> 📦 Poslať poštou</label>
+    <div style="margin:12px 0 4px;font-size:.85rem;color:var(--muted)">${FA_T('shop.delivery')}</div>
+    <label style="display:block;font-size:.88rem;margin-bottom:6px;cursor:pointer"><input type="radio" name="odel" value="pickup" checked onchange="document.getElementById('shipFields').style.display='none'" style="accent-color:#C9A84C"> ${FA_T('shop.del_pickup')}</label>
+    <label style="display:block;font-size:.88rem;cursor:pointer"><input type="radio" name="odel" value="post" onchange="document.getElementById('shipFields').style.display='block'" style="accent-color:#C9A84C"> ${FA_T('shop.del_post')}</label>
     <div id="shipFields" style="display:none;margin-top:8px">
-      <input id="shName" placeholder="Meno a priezvisko" value="${esc(ME.name||'')}" style="width:100%;background:#0f0d09;border:1px solid var(--line);color:var(--cream);border-radius:10px;padding:9px;margin-bottom:6px">
-      <input id="shStreet" placeholder="Ulica a číslo" style="width:100%;background:#0f0d09;border:1px solid var(--line);color:var(--cream);border-radius:10px;padding:9px;margin-bottom:6px">
-      <div style="display:flex;gap:6px"><input id="shZip" placeholder="PSČ" style="flex:1;background:#0f0d09;border:1px solid var(--line);color:var(--cream);border-radius:10px;padding:9px">
-      <input id="shCity" placeholder="Mesto" style="flex:2;background:#0f0d09;border:1px solid var(--line);color:var(--cream);border-radius:10px;padding:9px"></div>
+      <input id="shName" placeholder="${FA_T('shop.sh_name')}" value="${esc(ME.name||'')}" style="width:100%;background:#0f0d09;border:1px solid var(--line);color:var(--cream);border-radius:10px;padding:9px;margin-bottom:6px">
+      <input id="shStreet" placeholder="${FA_T('shop.sh_street')}" style="width:100%;background:#0f0d09;border:1px solid var(--line);color:var(--cream);border-radius:10px;padding:9px;margin-bottom:6px">
+      <div style="display:flex;gap:6px"><input id="shZip" placeholder="${FA_T('shop.sh_zip')}" style="flex:1;background:#0f0d09;border:1px solid var(--line);color:var(--cream);border-radius:10px;padding:9px">
+      <input id="shCity" placeholder="${FA_T('shop.sh_city')}" style="flex:2;background:#0f0d09;border:1px solid var(--line);color:var(--cream);border-radius:10px;padding:9px"></div>
     </div>
     ${OV.credit>0?`<label class="credit-row"><input type="checkbox" id="oCredit" checked onchange="cartRecalc()" style="accent-color:#C9A84C">💛 Použiť Fusion kredit (${eur(OV.credit)})</label>`:''}
     <div class="promo-row"><input id="oPromo" placeholder="Promo kód"><button onclick="applyOrderPromo()">Použiť</button></div>
     <div id="oPromoMsg" class="err" style="min-height:0"></div>
-    <div class="total"><span>Spolu</span><span class="gold" id="oTotal">${eur(Math.max(0,cartTotal()-creditApply))}</span></div>
-    <button class="paybtn" id="oSubmit" onclick="submitOrder()">Objednať</button>
-    <p class="note">Zaplatíš pri prevzatí (hotovosť/karta na hodine). Potvrdenie objednávky ti príde do notifikácií.</p>
+    <div class="total"><span>${FA_T('shop.total_sum')}</span><span class="gold" id="oTotal">${eur(Math.max(0,cartTotal()-creditApply))}</span></div>
+    <button class="paybtn" id="oSubmit" onclick="submitOrder()">${FA_T('shop.order')}</button>
+    <p class="note">${FA_T('shop.order_note')}</p>
     <div class="err" id="oErr"></div>`;
   ORDER_PROMO=null;
   document.getElementById('buyM').classList.add('open');
@@ -377,22 +381,22 @@ async function submitOrder(){
     promo_code:ORDER_PROMO?.code };
   if(delivery==='post'){ body.shipping={ name:document.getElementById('shName').value, street:document.getElementById('shStreet').value,
     zip:document.getElementById('shZip').value, city:document.getElementById('shCity').value };
-    if(!body.shipping.street||!body.shipping.zip||!body.shipping.city){ err.textContent='Pri pošte vyplň celú adresu.'; return; } }
-  const b=document.getElementById('oSubmit'); b.disabled=true; b.textContent='⏳ Odosielam…';
+    if(!body.shipping.street||!body.shipping.zip||!body.shipping.city){ err.textContent=FA_T('shop.sh_need'); return; } }
+  const b=document.getElementById('oSubmit'); b.disabled=true; b.textContent=FA_T('shop.sending');
   const r=await api('/api/shop/order',{method:'POST', body:JSON.stringify(body)});
-  b.disabled=false; b.textContent='Objednať';
-  if(!r.ok&&!r.order_number){ err.textContent=r.error||'Skús to znova.'; return; }
+  b.disabled=false; b.textContent=FA_T('shop.order');
+  if(!r.ok&&!r.order_number){ err.textContent=r.error||FA_T('shop.try_again'); return; }
   CART=[]; refreshCartBars(); closeM();
-  toast('✅ Objednávka '+(r.order_number?('#'+r.order_number+' '):'')+'prijatá! '+(delivery==='post'?'Pošleme ti ju poštou.':'Odovzdáme ti ju na hodine.'));
+  toast(FA_T(delivery==='post'?'shop.order_ok_post':'shop.order_ok_pickup',{n:(r.order_number?('#'+r.order_number+' '):'')}));
   OV=await api('/api/shop/overview'); renderMyf();
 }
 /* ── NÁKUPY ── */
 function renderNakupy(){
-  const rows=(OV.purchases||[]).map(t=>`<div class="txrow"><span>${esc(t.note)}<small>${dstr(t.date)} · ${t.method==='cash'?'hotovosť':t.method==='stripe'?'karta':esc(t.method||'')}</small></span><span class="amt">${eur(t.amount)}</span></div>`).join('');
-  const pend=(OV.pending||[]).map(p=>`<div class="txrow"><span>⏳ ${esc(p.description)}<small>Čaká na platbu — zaplať v hotovosti na hodine alebo prevodom</small></span><span class="amt">${eur(p.amount)}</span></div>`).join('');
-  document.getElementById('p-nakupy').innerHTML=(pend?`<h3 style="font-size:.9rem;color:#ffb74d">Čaká na platbu</h3>${pend}`:'')
-    +(rows?`<h3 style="font-size:.9rem;margin-top:14px">História</h3>${rows}`:'<p style="color:var(--muted)">Zatiaľ žiadne nákupy.</p>')
-    +((OV.invoices||[]).length?`<p class="note">🧾 Faktúry ti chodia e-mailom pri každej platbe (${OV.invoices.length} vystavených).</p>`:'');
+  const rows=(OV.purchases||[]).map(t=>`<div class="txrow"><span>${esc(t.note)}<small>${dstr(t.date)} · ${t.method==='cash'?FA_T('shop.pu_cash'):t.method==='stripe'?FA_T('shop.pu_card'):esc(t.method||'')}</small></span><span class="amt">${eur(t.amount)}</span></div>`).join('');
+  const pend=(OV.pending||[]).map(p=>`<div class="txrow"><span>⏳ ${esc(p.description)}<small>${FA_T('shop.pu_pending_note')}</small></span><span class="amt">${eur(p.amount)}</span></div>`).join('');
+  document.getElementById('p-nakupy').innerHTML=(pend?`<h3 style="font-size:.9rem;color:#ffb74d">${FA_T('shop.pu_pending')}</h3>${pend}`:'')
+    +(rows?`<h3 style="font-size:.9rem;margin-top:14px">${FA_T('shop.pu_history')}</h3>${rows}`:'<p style="color:var(--muted)">'+FA_T('shop.pu_none')+'</p>')
+    +((OV.invoices||[]).length?`<p class="note">${FA_T('shop.pu_inv',{n:OV.invoices.length})}</p>`:'');
 }
 
 /* ── NÁKUPNÝ MODÁL (plány) — rovnaké API ako cenník: Stripe / odber / hotovosť / kredit / promo ── */
@@ -404,16 +408,16 @@ function openPlan(id){
   document.getElementById('mTitle').textContent=p.name;
   document.getElementById('mBody').innerHTML=`
     ${monthly&&STRIPE?`<label class="renew"><input type="checkbox" id="mRenew" checked onchange="recalc()" style="accent-color:#C9A84C;width:17px;height:17px">
-      <span>🔄 <b>Obnovovať automaticky</b> každý mesiac kartou<br><small style="color:var(--muted)">Žiadny záväzok — zrušíš jedným klikom v profile</small></span></label>`:''}
-    ${(OV.membership && OV.membership.plan_id!==id && monthly)?`<p class="note" style="margin:0 0 10px;color:var(--gold)">🔄 Máš aktívne ${esc(OV.membership.plan_name)} do ${dstr(OV.membership.expires_at)}. Nový plán začne platiť hneď a zvyšné dni (~${Math.max(0,Math.round((OV.membership.price||0)*Math.max(0,OV.membership.days_left)/30*100)/100).toFixed(2)} €) ti prerátame na Fusion kredit.</p>`:''}
-    <div class="mrow"><span class="mut">Cena</span><span>${eur(p.price)}</span></div>
-    ${OV.credit>0?`<label class="credit-row"><input type="checkbox" id="mCredit" checked onchange="recalc()" style="accent-color:#C9A84C">💛 Použiť Fusion kredit (${eur(OV.credit)})</label>`:''}
-    <div class="promo-row"><input id="mPromo" placeholder="Promo kód"><button onclick="applyPromo()">Použiť</button></div>
+      <span>${FA_T('shop.renew_toggle')}<br><small style="color:var(--muted)">${FA_T('shop.renew_hint')}</small></span></label>`:''}
+    ${(OV.membership && OV.membership.plan_id!==id && monthly)?`<p class="note" style="margin:0 0 10px;color:var(--gold)">${FA_T('shop.upgrade_note',{old:esc(OV.membership.plan_name), d:dstr(OV.membership.expires_at), val:Math.max(0,Math.round((OV.membership.price||0)*Math.max(0,OV.membership.days_left)/30*100)/100).toFixed(2)+' €'})}</p>`:''}
+    <div class="mrow"><span class="mut">${FA_T('shop.price')}</span><span>${eur(p.price)}</span></div>
+    ${OV.credit>0?`<label class="credit-row"><input type="checkbox" id="mCredit" checked onchange="recalc()" style="accent-color:#C9A84C">${FA_T('shop.use_credit',{c:eur(OV.credit)})}</label>`:''}
+    <div class="promo-row"><input id="mPromo" placeholder="${FA_T('shop.promo_ph')}"><button onclick="applyPromo()">${FA_T('shop.apply')}</button></div>
     <div id="mPromoMsg" class="err" style="min-height:0"></div>
-    <div class="total"><span>Zaplatíš</span><span class="gold" id="mTotal">${eur(p.price)}</span></div>
-    ${STRIPE?`<button class="paybtn" id="mStripe" onclick="payStripe()">💳 Zaplatiť kartou · Apple Pay · Google Pay</button>`:''}
-    <button class="paybtn sec" id="mManual" onclick="payManual()">💵 Zaplatím v hotovosti / prevodom</button>
-    <p class="note" id="mManualNote">Hotovosť odovzdáš trénerke na hodine alebo pošleš prevodom — ${p.type==='bundle'?'vstupy':'členstvo'} ti aktivujeme hneď po prijatí platby a príde ti potvrdenie.</p>
+    <div class="total"><span>${FA_T('shop.total')}</span><span class="gold" id="mTotal">${eur(p.price)}</span></div>
+    ${STRIPE?`<button class="paybtn" id="mStripe" onclick="payStripe()">${FA_T('shop.pay_card')}</button>`:''}
+    <button class="paybtn sec" id="mManual" onclick="payManual()">${FA_T('shop.pay_cash')}</button>
+    <p class="note" id="mManualNote">${FA_T('shop.cash_note',{what:p.type==='bundle'?FA_T('shop.what_entries'):FA_T('shop.what_mem')})}</p>
     <div class="err" id="mErr"></div>`;
   api('/api/shop/event',{method:'POST',body:JSON.stringify({type:'checkout_open', item:id})});
   document.getElementById('buyM').classList.add('open');
@@ -431,7 +435,7 @@ function recalc(){
   const man=document.getElementById('mManual'), note=document.getElementById('mManualNote');
   if(man) man.style.display=renew?'none':'block';
   if(note) note.style.display=renew?'none':'block';
-  if(man) man.textContent=total===0?'✨ Aktivovať kreditom/zľavou':'💵 Zaplatím v hotovosti / prevodom';
+  if(man) man.textContent=total===0?FA_T('shop.pay_credit_only'):FA_T('shop.pay_cash');
   return {renew,total,useCr};
 }
 async function applyPromo(){
@@ -439,26 +443,26 @@ async function applyPromo(){
   const r=await api('/api/promo/validate',{method:'POST',body:JSON.stringify({code,plan_id:CUR.id})});
   const msg=document.getElementById('mPromoMsg');
   if(r.ok){ PROMO={code:r.code,discount:r.discount}; msg.style.color='#8bc34a'; msg.textContent='🎟️ '+r.code+' −'+eur(r.discount); }
-  else { PROMO=null; msg.style.color='#ff8a80'; msg.textContent=r.reason||'Neplatný kód'; }
+  else { PROMO=null; msg.style.color='#ff8a80'; msg.textContent=r.reason||FA_T('shop.promo_bad'); }
   recalc();
 }
 async function payStripe(){
   const {renew}=recalc(); const err=document.getElementById('mErr'); err.textContent='';
-  const b=document.getElementById('mStripe'); b.disabled=true; b.textContent='⏳ Presmerovávam…';
+  const b=document.getElementById('mStripe'); b.disabled=true; b.textContent=FA_T('shop.pay_redirect');
   const r=await api(renew?'/api/stripe/subscribe':'/api/stripe/checkout',{method:'POST',
     body:JSON.stringify({plan_id:CUR.id, promo_code:PROMO?.code})});
   if(r.ok&&r.url){ location.href=r.url; return; }
-  err.textContent=r.error||'Platbu sa nepodarilo spustiť — skús to znova.'; b.disabled=false; b.textContent='💳 Zaplatiť kartou · Apple Pay · Google Pay';
+  err.textContent=r.error||FA_T('shop.pay_fail'); b.disabled=false; b.textContent=FA_T('shop.pay_card');
 }
 async function payManual(){
   const {useCr}=recalc(); const err=document.getElementById('mErr'); err.textContent='';
-  const b=document.getElementById('mManual'); b.disabled=true; b.textContent='⏳ Odosielam…';
+  const b=document.getElementById('mManual'); b.disabled=true; b.textContent=FA_T('shop.sending');
   const r=await api('/api/membership/buy',{method:'POST',
     body:JSON.stringify({plan_id:CUR.id, payment_method:'manual', use_referral_credit:!!useCr, promo_code:PROMO?.code})});
   b.disabled=false;
-  if(!r.ok){ err.textContent=r.error||'Skús to znova.'; b.textContent='💵 Zaplatím v hotovosti / prevodom'; return; }
+  if(!r.ok){ err.textContent=r.error||FA_T('shop.try_again'); b.textContent=FA_T('shop.pay_cash'); return; }
   closeM();
-  toast(r.final_price===0?'✅ Aktivované pomocou kreditu!':'✅ Objednávka prijatá — zaplať '+eur(r.final_price)+' na hodine alebo prevodom. Po prijatí platby všetko aktivujeme.');
+  toast(r.final_price===0?FA_T('shop.ok_credit'):FA_T('shop.ok_manual',{p:eur(r.final_price)}));
   OV=await api('/api/shop/overview'); renderMyf(); renderRecs(); renderNakupy();
 }
 /* ── Merch/event nákup — existujúci objednávkový systém ── */
@@ -469,11 +473,11 @@ function openProduct(id){
   document.getElementById('mTitle').textContent=(p.emoji||'🛍️')+' '+p.name;
   document.getElementById('mBody').innerHTML=`
     <div class="mrow"><span class="mut">Cena</span><span>${eur(p.price)}</span></div>
-    ${size?`<div class="mrow"><span class="mut">Veľkosť</span><span>${esc(size)}</span></div>`:''}
-    ${color?`<div class="mrow"><span class="mut">Farba</span><span>${esc(color)}</span></div>`:''}
-    <div class="total"><span>Spolu</span><span class="gold">${eur(p.price)}</span></div>
-    <button class="paybtn" onclick="orderProduct()">Objednať — zaplatím na hodine</button>
-    <p class="note">Objednávku ti pripravíme a odovzdáme na hodine, kde ju aj zaplatíš (hotovosť/karta). Potvrdenie príde do notifikácií.</p>
+    ${size?`<div class="mrow"><span class="mut">${FA_T('shop.size')}</span><span>${esc(size)}</span></div>`:''}
+    ${color?`<div class="mrow"><span class="mut">${FA_T('shop.color')}</span><span>${esc(color)}</span></div>`:''}
+    <div class="total"><span>${FA_T('shop.total_sum')}</span><span class="gold">${eur(p.price)}</span></div>
+    <button class="paybtn" onclick="orderProduct()">${FA_T('shop.order_now')}</button>
+    <p class="note">${FA_T('shop.order_note')}</p>
     <div class="err" id="mErr"></div>`;
   document.getElementById('buyM').classList.add('open');
 }
@@ -483,30 +487,30 @@ async function orderProduct(){
     client_name:ME.name, client_email:ME.email, client_phone:ME.phone||'',
     items:[{product_id:CUR.id, qty:1, size:CUR.size, color:CUR.color}],
     payment_method:'cash', delivery:'pickup', notes:'Objednané cez Obchod v appke'})});
-  if(!r.ok&&!r.order_number){ err.textContent=r.error||'Skús to znova.'; return; }
-  closeM(); toast('✅ Objednané! '+CUR.p.name+' ti odovzdáme na hodine.');
+  if(!r.ok&&!r.order_number){ err.textContent=r.error||FA_T('shop.try_again'); return; }
+  closeM(); toast(FA_T('shop.order_ok_pickup',{n:CUR.p.name+' '}));
 }
 function closeM(){ document.getElementById('buyM').classList.remove('open'); }
 document.getElementById('buyM').addEventListener('click',e=>{ if(e.target.id==='buyM') closeM(); });
 /* ── Ako to funguje ── */
 const HOWTO={
-  membership:'Členstvo platí 30 dní od aktivácie. So zapnutou automatickou obnovou sa platba spraví sama kartou — zrušíš ju kedykoľvek v profile, bez viazanosti. Pri platbe v hotovosti ti členstvo aktivujeme hneď, ako platbu prijmeme.',
-  entries:'Permanentka = 10 vstupov na 90 dní na ľubovoľné skupinové hodiny. Vstup sa odpočíta pri rezervácii hodiny; ak rezerváciu zrušíš včas, vstup sa ti vráti. Online hodiny stoja 1 vstup za deň sledovania.',
-  merch:'Merch objednáš v appke a zaplatíš pri prevzatí na hodine. Nič neplatíš vopred.',
+  membership:'shop.ht_mem',
+  entries:'shop.ht_entries',
+  merch:'shop.ht_merch',
 };
 async function creditHistory(){
   const d=await api('/api/credit-history');
-  document.getElementById('mTitle').textContent='💛 Fusion kredit — história';
+  document.getElementById('mTitle').textContent=FA_T('shop.ch_h');
   document.getElementById('mBody').innerHTML=(d.rows||[]).length
     ? d.rows.map(r=>`<div class="txrow"><span>${esc(r.reason)}<small>${dstr(r.created_at)}</small></span><span class="amt" style="color:${r.delta>=0?'#8bc34a':'#f87171'}">${r.delta>=0?'+':''}${eur(r.delta)}</span></div>`).join('')
-      +`<p class="note">Kredit môžeš použiť ako zľavu pri nákupe členstva, permanentky alebo vstupu.</p>`
-    : `<p style="color:var(--muted);font-size:.9rem">Zatiaľ žiadne pohyby. Kredit získaš napríklad za pozvanie kamošky — za každý jej nákup dostaneš 10 %. ❤️</p>
-       <button class="paybtn" onclick="closeM();location.href='/client-dashboard#invite'">❤️ Pozvať kamošku zdarma</button>`;
+      +`<p class="note">${FA_T('shop.ch_note')}</p>`
+    : `<p style="color:var(--muted);font-size:.9rem">${FA_T('shop.ch_none')}</p>
+       <button class="paybtn" onclick="closeM();location.href='/client-dashboard#invite'">${FA_T('shop.ch_invite')}</button>`;
   document.getElementById('buyM').classList.add('open');
 }
 function howTo(k){
-  document.getElementById('mTitle').textContent='? Ako to funguje';
-  document.getElementById('mBody').innerHTML=`<p style="font-size:.9rem;line-height:1.7;color:var(--cream)">${HOWTO[k]||''}</p>`;
+  document.getElementById('mTitle').textContent=FA_T('shop.howto_h');
+  document.getElementById('mBody').innerHTML=`<p style="font-size:.9rem;line-height:1.7;color:var(--cream)">${HOWTO[k]?FA_T(HOWTO[k]):''}</p>`;
   document.getElementById('buyM').classList.add('open');
 }
 boot();
