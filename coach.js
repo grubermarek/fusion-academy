@@ -73,6 +73,13 @@ module.exports = function initCoach(ctx){
       rank_weights:{...DEFAULT_CONFIG.rank_weights, ...(c.rank_weights||{})} };
   }
 
+  // Coach koná vždy sám za seba (asistentský redirect len pre čistých asistentov)
+  const coachUser = req => {
+    const u = req.trainerUser;
+    const pureAssistant = u.is_assistant && !u.is_admin && u.user_type!=='trainer' && u.user_type!=='manager';
+    return pureAssistant ? (req.effectiveTrainer || u) : u;
+  };
+
   const OUTCOMES = ['contacted','replied','interested','not_interested','will_come','later','no_reply'];
   const OUTCOME_TO_LEAD_STATUS = { interested:'interested', not_interested:'not_interested', will_come:'interested' };
 
@@ -174,10 +181,12 @@ module.exports = function initCoach(ctx){
     const rows=[];
     for(const u of users){
       if(u.is_admin || ['trainer','manager','admin'].includes(u.user_type)) continue;
+      const claimedMine = u.coach_claimed_by === trainer._id;
+      if(u.coach_claimed_by && !claimedMine) continue; // prevzatý iným trénerom
       if(u.hidden_lead || (isTest(u) && !isTest(trainer)) || u.lead_status==='do_not_contact' || u.sms_only===false&&false) continue;
       if(!u.phone && !u.email) continue;
       const lc = lastContact[u._id] || (u.last_contacted_at ? new Date(u.last_contacted_at).getTime() : 0);
-      if(lc && (now-lc) < 3*86400000 && !followupToday.has(u._id)) continue; // kontaktovaný za posledné 3 dni
+      if(!claimedMine && lc && (now-lc) < 3*86400000 && !followupToday.has(u._id)) continue; // kontaktovaný za posledné 3 dni
       const bks = (byUserBk[u._id]||[]).filter(b=>!['cancelled','waitlist'].includes(b.status));
       const attended = bks.filter(b=>b.status==='attended').sort((a,b)=>(a.booking_date<b.booking_date?1:-1));
       const lastVisit = attended[0] ? new Date(attended[0].booking_date+'T12:00:00').getTime() : 0;
@@ -190,6 +199,7 @@ module.exports = function initCoach(ctx){
       else if(u.user_type==='lead' && !bks.length){ const age=Math.floor((now-new Date(u.created_at).getTime())/86400000); if(age>180) { score=20; reason='Starý lead ('+age+' d)'; action='Win-back kontakt.'; tpl='winback'; } else { score=70; reason='Nový lead bez rezervácie'; action='Pozvi ju na prvú hodinu zadarmo.'; tpl='new_lead'; } }
       else if(expiredMem[u._id] && !activeMem.has(u._id) && (now-expiredMem[u._id])<60*86400000){ score=60; reason='Členstvo expirovalo'; action='Spýtaj sa, či chce pokračovať — ponúkni obnovenie.'; tpl='expired'; }
       else if(attended.length && daysSinceVisit>=21 && daysSinceVisit<=120 && !activeMem.has(u._id)){ score=50; reason='Nebola '+daysSinceVisit+' dní'; action='Win-back kontakt.'; tpl='winback'; }
+      else if(claimedMine){ score=40; reason='Rozpracovaný lead'; action='Pokračuj v komunikácii a doveď ju na hodinu.'; tpl='followup'; }
       else continue;
       rows.push({ id:u._id, name:u.name, phone:u.phone||'', email:u.email&&!/@import\.local|@test/.test(u.email)?u.email:'',
         city:u.city||'', lead_source:u.lead_source||'', lead_status:u.lead_status||'', score, reason, action, tpl,
@@ -198,10 +208,11 @@ module.exports = function initCoach(ctx){
         last_email: lastMail[u._id] ? {date:(lastMail[u._id].sent_at||'').slice(0,10), seq:lastMail[u._id].sequence} : null,
         last_note: lastNote[u._id] ? {date:(lastNote[u._id].created_at||'').slice(0,10), author:lastNote[u._id].author_name, text:String(lastNote[u._id].text||'').slice(0,120)} : null,
         has_membership: activeMem.has(u._id), entries_left: u.single_entries||0,
-        last_contact_days: lc?Math.floor((now-lc)/86400000):null, priority: score>=80?'hot':score>=50?'warm':'cold' });
+        last_contact_days: lc?Math.floor((now-lc)/86400000):null, priority: score>=80?'hot':score>=50?'warm':'cold',
+        claimed: claimedMine, claimed_at: claimedMine?(u.coach_claimed_at||'').slice(0,10):null });
     }
     rows.sort((a,b)=>b.score-a.score || (b.last_contact_days||999)-(a.last_contact_days||999));
-    return rows.slice(0,limit);
+    return { list: rows.filter(r=>!r.claimed).slice(0,limit), mine: rows.filter(r=>r.claimed) };
   }
 
   function smartMotivation(cfg, state){
@@ -215,7 +226,7 @@ module.exports = function initCoach(ctx){
   // ════════ TRÉNERSKÉ API ════════
   app.get('/api/coach/today', trainerAuth, async (req,res)=>{
     try{
-      const me = req.effectiveTrainer || req.trainerUser;
+      const me = coachUser(req);
       const cfg = await getConfig();
       const date = todayStr();
       let tasks = await ensureDay(me, date);
@@ -224,7 +235,7 @@ module.exports = function initCoach(ctx){
       const { pts, allMand } = await pointsForDay(me._id, date, cfg);
       const streak = await streakOf(me._id, cfg);
       const doneCount = tasks.filter(t=>t.done).length;
-      const leads = await smartLeads(me, date);
+      const { list: leads, mine: my_leads } = await smartLeads(me, date);
       const code = me.referral_code||'';
       const link = APP_URL + '/invite/' + code;
       const custom = me.coach_invite_text || `Ahoj ❤️ Ak máš chuť skúsiť Zumbu, prvú hodinu máš zdarma. Vyber si miesto a termín tu:`;
@@ -235,7 +246,7 @@ module.exports = function initCoach(ctx){
         due_followups: due_followups.map(f=>({id:f._id, client_id:f.client_id, name:f.client_name, title:f.title, due:f.due_date})),
         points_today: pts, day_complete: allMand,
         progress: tasks.length ? Math.round(doneCount/tasks.length*100) : 0,
-        streak, leads, outcomes: OUTCOMES, templates: cfg.templates,
+        streak, leads, my_leads, outcomes: OUTCOMES, templates: cfg.templates,
         referral: { code, link, message, custom_text: me.coach_invite_text||'' },
         motivation: smartMotivation(cfg, {streak, remaining: tasks.length-doneCount, doneCount}) });
     }catch(e){ console.error('coach/today',e); res.status(500).json({error:'Chyba'}); }
@@ -244,7 +255,7 @@ module.exports = function initCoach(ctx){
   // kontakt leadu s výsledkom (anti-gaming: 1 lead = 1 kontakt/deň)
   app.post('/api/coach/contact', trainerAuth, async (req,res)=>{
     try{
-      const me = req.effectiveTrainer || req.trainerUser;
+      const me = coachUser(req);
       const { lead_id, outcome, note, followup_date } = req.body||{};
       if(!lead_id || !OUTCOMES.includes(outcome)) return res.status(400).json({error:'Neplatný výsledok'});
       const lead = await q.one(db.users,{_id:lead_id});
@@ -283,7 +294,7 @@ module.exports = function initCoach(ctx){
   // odkliknutie neautomatickej úlohy
   app.post('/api/coach/task-done', trainerAuth, async (req,res)=>{
     try{
-      const me = req.effectiveTrainer || req.trainerUser;
+      const me = coachUser(req);
       const { id, proof, undo } = req.body||{};
       const t = await q.one(db.coach_tasks,{_id:id, trainer_id:me._id});
       if(!t) return res.status(404).json({error:'Úloha nenájdená'});
@@ -295,14 +306,14 @@ module.exports = function initCoach(ctx){
 
   // kopírovanie pozvánky = splnenie referral úlohy
   app.post('/api/coach/copied', trainerAuth, async (req,res)=>{
-    const me = req.effectiveTrainer || req.trainerUser;
+    const me = coachUser(req);
     await q.update(db.coach_tasks,{trainer_id:me._id, date:todayStr(), key:'referral_share'},{$set:{done:true, done_at:nowISO()}});
     res.json({ok:true});
   });
 
   // vlastný text pozvánky (link sa pripája vždy server-side)
   app.post('/api/coach/invite-text', trainerAuth, async (req,res)=>{
-    const me = req.effectiveTrainer || req.trainerUser;
+    const me = coachUser(req);
     const text = String((req.body||{}).text||'').slice(0,500);
     await q.update(db.users,{_id:me._id},{$set:{coach_invite_text:text}});
     res.json({ok:true});
@@ -310,7 +321,7 @@ module.exports = function initCoach(ctx){
 
   // poznámka k leadu (jednotná vrstva — vidí aj admin)
   app.post('/api/coach/lead/:id/note', trainerAuth, async (req,res)=>{
-    const me = req.effectiveTrainer || req.trainerUser;
+    const me = coachUser(req);
     const text = String((req.body||{}).text||'').trim().slice(0,1000);
     if(!text) return res.status(400).json({error:'Prázdna poznámka'});
     const lead = await q.one(db.users,{_id:req.params.id});
@@ -318,6 +329,44 @@ module.exports = function initCoach(ctx){
     const n = await q.insert(db.lead_notes,{client_id:lead._id, client_name:lead.name, author_id:me._id,
       author_name:me.name, text, source:'manual', created_at:nowISO()});
     res.json({ok:true, note:n});
+  });
+
+  // prevzatie leadu — ostáva v „Moje leady", kým tréner case neuzavrie
+  app.post('/api/coach/lead/:id/claim', trainerAuth, async (req,res)=>{
+    const me = coachUser(req);
+    const lead = await q.one(db.users,{_id:req.params.id});
+    if(!lead) return res.status(404).json({error:'Nenájdený'});
+    if(lead.coach_claimed_by && lead.coach_claimed_by!==me._id){
+      const other = await q.one(db.users,{_id:lead.coach_claimed_by});
+      return res.status(409).json({error:'Lead už prevzal '+(other?other.name:'iný tréner')});
+    }
+    await q.update(db.users,{_id:lead._id},{$set:{coach_claimed_by:me._id, coach_claimed_at:nowISO()}});
+    res.json({ok:true});
+  });
+  const RELEASE_STATUSES = ['trial','interested','not_interested','contacted','new'];
+  app.post('/api/coach/lead/:id/release', trainerAuth, async (req,res)=>{
+    const me = coachUser(req);
+    const lead = await q.one(db.users,{_id:req.params.id});
+    if(!lead) return res.status(404).json({error:'Nenájdený'});
+    if(lead.coach_claimed_by !== me._id && !me.is_admin) return res.status(403).json({error:'Lead nemáš prevzatý'});
+    const set = { coach_claimed_by:null, coach_claimed_at:null };
+    const st = (req.body||{}).lead_status;
+    if(st && RELEASE_STATUSES.includes(st) && lead.user_type==='lead') set.lead_status = st;
+    await q.update(db.users,{_id:lead._id},{$set:set});
+    const note = (req.body||{}).note;
+    if(note) await q.insert(db.lead_notes,{client_id:lead._id, client_name:lead.name, author_id:me._id,
+      author_name:me.name, text:'Case uzavretý: '+String(note).slice(0,300), source:'coach_release', created_at:nowISO()});
+    res.json({ok:true});
+  });
+  // zmena statusu leadu priamo z Mojich leadov
+  app.put('/api/coach/lead/:id/status', trainerAuth, async (req,res)=>{
+    const st = (req.body||{}).lead_status;
+    if(!RELEASE_STATUSES.includes(st)) return res.status(400).json({error:'Neplatný status'});
+    const lead = await q.one(db.users,{_id:req.params.id});
+    if(!lead) return res.status(404).json({error:'Nenájdený'});
+    if(lead.user_type!=='lead') return res.status(400).json({error:'Nie je lead'});
+    await q.update(db.users,{_id:lead._id},{$set:{lead_status:st}});
+    res.json({ok:true});
   });
 
   // detail leadu pre trénera (história, produkty, poznámky, kontakty)
@@ -348,7 +397,7 @@ module.exports = function initCoach(ctx){
   // kalendár disciplíny (heatmapa)
   app.get('/api/coach/calendar', trainerAuth, async (req,res)=>{
     try{
-      const me = req.effectiveTrainer || req.trainerUser;
+      const me = coachUser(req);
       const month = /^\d{4}-\d{2}$/.test(req.query.month||'') ? req.query.month : todayStr().slice(0,7);
       const all = await q.find(db.coach_tasks,{trainer_id:me._id});
       const cfg = await getConfig();
@@ -394,7 +443,7 @@ module.exports = function initCoach(ctx){
   // týždenný prehľad + weekly score
   app.get('/api/coach/week', trainerAuth, async (req,res)=>{
     try{
-      const me = req.effectiveTrainer || req.trainerUser;
+      const me = coachUser(req);
       const cfg = await getConfig();
       const since = new Date(Date.now()-6*86400000).toISOString().slice(0,10);
       const tasks = (await q.find(db.coach_tasks,{trainer_id:me._id})).filter(t=>t.date>=since);
@@ -437,7 +486,7 @@ module.exports = function initCoach(ctx){
   // vlastná iniciatíva (+ PRIDAŤ VLASTNÚ AKTIVITU)
   app.post('/api/coach/activity', trainerAuth, async (req,res)=>{
     try{
-      const me = req.effectiveTrainer || req.trainerUser;
+      const me = coachUser(req);
       const cfg = await getConfig();
       const { label, desc, minutes, link, points } = req.body||{};
       if(!label || !String(label).trim()) return res.status(400).json({error:'Napíš, čo si spravil/a'});
@@ -475,7 +524,7 @@ module.exports = function initCoach(ctx){
 
   // môj rank
   app.get('/api/coach/rank', trainerAuth, async (req,res)=>{
-    const me = req.effectiveTrainer || req.trainerUser;
+    const me = coachUser(req);
     res.json({ok:true, ...(await computeRank(me._id, await getConfig()))});
   });
 

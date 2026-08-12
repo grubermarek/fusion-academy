@@ -158,6 +158,33 @@ const put = (jar, p, b) => call(jar, 'PUT', p, b);
   const rj = await post('admin', '/api/admin/coach/run-jobs', {});
   ok('coach daily jobs zbehli', rj.data && rj.data.ok, rj);
 
+  // 10g) prevzatie leadu (claim → ostáva po kontakte → release)
+  const cl1 = await post('T', '/api/coach/lead/' + meL2.id + '/claim', {});
+  ok('claim leadu ok', cl1.data && cl1.data.ok, cl1);
+  await post('T', '/api/coach/contact', { lead_id: meL2.id, outcome: 'contacted' });
+  const tc = (await g('T', '/api/coach/today')).data;
+  ok('prevzatý lead ostáva v my_leads aj po kontakte', tc.my_leads.some(x => x.id === meL2.id), tc.my_leads.map(x=>x.name));
+  ok('prevzatý lead nie je v bežnom zozname', !tc.leads.some(x => x.id === meL2.id));
+  // iný tréner ho nevidí a nemôže prevziať
+  await post('T2', '/api/register', { name: 'Coach Trénerka Dva', email: 'coach-t2-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', consent: true });
+  const meT2 = (await g('T2', '/api/me')).data;
+  await put('admin', '/api/admin/users/' + meT2.id + '/role', { user_type: 'trainer' });
+  const t2day = (await g('T2', '/api/coach/today')).data;
+  ok('iný tréner prevzatý lead nevidí', !t2day.leads.some(x => x.id === meL2.id) && !t2day.my_leads.some(x => x.id === meL2.id));
+  const cl2 = await post('T2', '/api/coach/lead/' + meL2.id + '/claim', {});
+  ok('iný tréner nemôže prevziať (409)', cl2.status === 409, cl2);
+  // zmena statusu z Mojich leadov
+  const stR = await put('T', '/api/coach/lead/' + meL2.id + '/status', { lead_status: 'interested' });
+  ok('zmena statusu leadu', stR.data && stR.data.ok, stR);
+  ok('neplatný status odmietnutý', (await put('T', '/api/coach/lead/' + meL2.id + '/status', { lead_status: 'hack' })).status === 400);
+  // release s poznámkou + statusom
+  const rel = await post('T', '/api/coach/lead/' + meL2.id + '/release', { lead_status: 'trial', note: 'Prišla na hodinu vo Zvolene' });
+  ok('release ok', rel.data && rel.data.ok, rel);
+  const tr = (await g('T', '/api/coach/today')).data;
+  ok('po release už nie je v my_leads', !tr.my_leads.some(x => x.id === meL2.id));
+  const relNotes = (await g('admin', '/api/admin/lead-notes/' + meL2.id)).data;
+  ok('release poznámka uložená', relNotes.notes.some(n => (n.text||'').includes('Case uzavretý')), relNotes.notes.length);
+
   // 11) bezpečnosť: klient sa nedostane do coach API
   const cl = await g('L', '/api/coach/today');
   ok('bežný klient nemá prístup do /api/coach', cl.status === 401 || cl.status === 403, cl.status);
