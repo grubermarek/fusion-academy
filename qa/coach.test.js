@@ -255,6 +255,18 @@ const put = (jar, p, b) => call(jar, 'PUT', p, b);
   const detA = (await g('T', '/api/coach/lead/' + meL.id)).data;
   ok('auto-kontakt neprepísal ručný výsledok', detA.contacts[0] && detA.contacts[0].outcome !== 'contacted', detA.contacts[0]);
 
+  // 16) odloženie leadu (snooze) — zmizne z my_leads aj poolu, vráti sa po termíne
+  const ambS = (await g('A', '/api/coach/today')).data;
+  const snLead = ambS.my_leads[0];
+  const sn = await post('A', '/api/coach/lead/' + snLead.id + '/snooze', { days: 14, reason: 'dovolenka' });
+  ok('snooze ok + dátum návratu', sn.data && sn.data.ok && /^\d{4}-\d{2}-\d{2}$/.test(sn.data.until), sn.data);
+  const ambS2 = (await g('A', '/api/coach/today')).data;
+  ok('odložená zmizla z my_leads', !ambS2.my_leads.some(x => x.id === snLead.id));
+  const tS = (await g('T', '/api/coach/today')).data;
+  ok('odložená nie je ani v trénerskom poole', !tS.leads.some(x => x.id === snLead.id));
+  const snNotes = (await g('admin', '/api/admin/lead-notes/' + snLead.id)).data;
+  ok('snooze poznámka zapísaná', snNotes.notes.some(n => (n.text||'').includes('Odložená do')), snNotes.notes.length);
+
   // 11) bezpečnosť: klient sa nedostane do coach API
   const cl = await g('L', '/api/coach/today');
   ok('bežný klient nemá prístup do /api/coach', cl.status === 401 || cl.status === 403, cl.status);

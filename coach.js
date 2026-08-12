@@ -194,6 +194,7 @@ module.exports = function initCoach(ctx){
       const lc = lastContact[u._id] || (u.last_contacted_at ? new Date(u.last_contacted_at).getTime() : 0);
       if(!claimedMine && lc && (now-lc) < 3*86400000 && !followupToday.has(u._id)) continue; // kontaktovaný za posledné 3 dni
       if(!claimedMine && caseCooldown.has(u._id) && !followupToday.has(u._id)) continue; // case nedávno uzavretý → do histórie, nie späť do zoznamu
+      if(!claimedMine && u.coach_snooze_until && u.coach_snooze_until > date && !followupToday.has(u._id)) continue; // odložená (dovolenka/chorá/neodpovedá)
       const bks = (byUserBk[u._id]||[]).filter(b=>!['cancelled','waitlist'].includes(b.status));
       const attended = bks.filter(b=>b.status==='attended').sort((a,b)=>(a.booking_date<b.booking_date?1:-1));
       const lastVisit = attended[0] ? new Date(attended[0].booking_date+'T12:00:00').getTime() : 0;
@@ -245,7 +246,7 @@ module.exports = function initCoach(ctx){
     const needsContact = u => { const lc = lastContact[u._id] || (u.last_contacted_at ? new Date(u.last_contacted_at).getTime() : 0);
       return !lc || (now-lc) > 3*86400000; };
     const recentCaseIds = new Set((await q.find(db.coach_cases,{})).filter(c=>(now-new Date(c.created_at).getTime()) < 14*86400000).map(c=>c.lead_id));
-    const base = u => !u.coach_claimed_by && !recentCaseIds.has(u._id) && !u.hidden_lead && !u.guest && (!isTest(u) || isTest(user))
+    const base = u => !u.coach_claimed_by && !recentCaseIds.has(u._id) && !(u.coach_snooze_until && u.coach_snooze_until > todayStr()) && !u.hidden_lead && !u.guest && (!isTest(u) || isTest(user))
       && u.lead_status!=='do_not_contact' && u.lead_status!=='not_interested' && (u.phone || u.email) && needsContact(u);
     const freshLeads = users.filter(u=>u.user_type==='lead' && base(u))
       .sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
@@ -521,6 +522,21 @@ module.exports = function initCoach(ctx){
       body:`Admin zrušil tvoju konverziu leadu ${c.lead_name}.`, read:false, created_at:nowISO()}).catch(()=>{});
     res.json({ok:true});
   });
+  // odloženie leadu (neodpovedá / chorá / dovolenka) — vráti sa do poolu po termíne
+  app.post('/api/coach/lead/:id/snooze', trainerAuth, async (req,res)=>{
+    const me = coachUser(req);
+    const lead = await q.one(db.users,{_id:req.params.id});
+    if(!lead) return res.status(404).json({error:'Nenájdený'});
+    if(lead.coach_claimed_by && lead.coach_claimed_by!==me._id && !me.is_admin) return res.status(403).json({error:'Lead má prevzatý niekto iný'});
+    const days = Math.max(1, Math.min(90, +(req.body||{}).days || 7));
+    const until = new Date(Date.now()+days*86400000).toISOString().slice(0,10);
+    const reason = String((req.body||{}).reason||'').slice(0,120);
+    await q.update(db.users,{_id:lead._id},{$set:{coach_claimed_by:null, coach_claimed_at:null, coach_snooze_until:until}});
+    await q.insert(db.lead_notes,{client_id:lead._id, client_name:lead.name, author_id:me._id, author_name:me.name,
+      text:`Odložená do ${until}${reason?' — '+reason:''}`, source:'coach_snooze', created_at:nowISO()});
+    res.json({ok:true, until});
+  });
+
   // zmena statusu leadu priamo z Mojich leadov
   app.put('/api/coach/lead/:id/status', trainerAuth, async (req,res)=>{
     const st = (req.body||{}).lead_status;

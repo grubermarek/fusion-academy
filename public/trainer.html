@@ -1761,10 +1761,9 @@ function coachLeadCard(L, d, mine){
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
         ${mine?`
-        <select id="st-${L.id}" onchange="coachSetStatus('${L.id}')" style="background:#0f0f0f;border:1px solid #4a3a70;border-radius:9px;color:#c4a8ff;padding:5px 8px;font-size:.78rem">
-          ${['','new','contacted','interested','not_interested','trial'].map(s=>`<option value="${s}" ${s===L.lead_status?'selected':''}>${s?({new:'Nová',contacted:'Kontaktovaná',interested:'Má záujem',not_interested:'Nemá záujem',trial:'Prišla na hodinu'}[s]):'Zmeniť status…'}</option>`).join('')}</select>
         <span style="font-size:.72rem;color:var(--muted)">prevzaté ${L.claimed_at||''}</span>
-        <button onclick="coachRelease('${L.id}')" style="margin-left:auto;background:#1d2b1f;border:1px solid #2f4a35;color:#7bd88f;border-radius:9px;padding:5px 12px;font-size:.78rem;font-weight:800;cursor:pointer">✅ Uzavrieť case</button>`
+        <button onclick="coachSnooze('${L.id}')" title="Neodpovedá / chorá / dovolenka — vráti sa do poolu neskôr" style="margin-left:auto;background:#2a2416;border:1px solid #6a5a2a;color:#e8c97a;border-radius:9px;padding:5px 12px;font-size:.78rem;font-weight:800;cursor:pointer">⏸ Odložiť</button>
+        <button onclick="coachRelease('${L.id}')" style="background:#1d2b1f;border:1px solid #2f4a35;color:#7bd88f;border-radius:9px;padding:5px 12px;font-size:.78rem;font-weight:800;cursor:pointer">✅ Uzavrieť case</button>`
         :`<button onclick="coachClaim('${L.id}')" style="background:#2a2140;border:1px solid #4a3a70;border-radius:9px;color:#c4a8ff;padding:5px 12px;font-size:.78rem;font-weight:800;cursor:pointer">🤝 Prevziať lead</button>
         <span style="font-size:.72rem;color:var(--muted)">Prevzatý lead ti ostane v „Moje leady", kým case neuzavrieš.</span>`}
       </div></div>`;
@@ -1816,6 +1815,17 @@ async function coachAutoContact(id){
 async function coachClaim(id){
   const r=await api('/api/coach/lead/'+id+'/claim',{method:'POST',body:{}});
   if(r?.ok){ toast('Lead je tvoj 🤝 — nájdeš ho v „Moje leady"'); coachLoad(); }
+  else toast(r?.error||'Chyba',true);
+}
+async function coachSnooze(id){
+  const opt=prompt('Odložiť lead — vráti sa do zoznamu neskôr:\n1 = Neodpovedá (7 dní)\n2 = Je chorá (14 dní)\n3 = Dovolenka (21 dní)\n4 = Vlastný počet dní','1');
+  if(opt===null) return;
+  const map={'1':{days:7,reason:'neodpovedá'},'2':{days:14,reason:'chorá'},'3':{days:21,reason:'dovolenka'}};
+  let sel=map[opt];
+  if(!sel){ const d=+(prompt('O koľko dní sa má vrátiť do zoznamu?','10')||10); sel={days:d, reason:''}; }
+  const note=prompt('Poznámka (voliteľná, napr. „ozvať sa po dovolenke")')||sel.reason;
+  const r=await api('/api/coach/lead/'+id+'/snooze',{method:'POST',body:{days:sel.days, reason:note}});
+  if(r?.ok){ toast('⏸ Odložená do '+r.until+' — potom sa vráti do zoznamu'); coachLoad(); }
   else toast(r?.error||'Chyba',true);
 }
 async function coachSetStatus(id){
