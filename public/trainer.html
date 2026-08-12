@@ -1605,6 +1605,7 @@ async function coachLoad(){
   <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
     <div class="section-title" style="margin:0"><i class="bi bi-bullseye" style="color:var(--gold)"></i> Dnes · ${esc(dateFmt)}</div>
     <div style="display:flex;gap:10px;align-items:center">
+      <span id="coachRank" style="font-weight:800;color:#c4a8ff;font-size:.85rem"></span>
       ${d.streak?`<span style="font-weight:800;color:#ff9f43">🔥 ${d.streak} dní</span>`:''}
       <span style="font-weight:800;color:var(--gold)">${d.points_today} b.</span>
     </div>
@@ -1627,7 +1628,8 @@ async function coachLoad(){
       <span style="color:var(--gold);font-weight:800;font-size:.8rem;flex:none">+${t.points}</span>
     </div>`;
   }
-  h+=`</div>`;
+  h+=`</div>
+  <div style="margin:-8px 0 16px"><button onclick="coachOwnActivity()" style="background:transparent;border:1px dashed #4a3a70;border-radius:10px;color:#c4a8ff;padding:7px 14px;font-size:.82rem;cursor:pointer">💡 + Pridať vlastnú aktivitu (letáky, spolupráce, extra obsah…)</button></div>`;
   // referral
   h+=`<div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px 16px;margin-bottom:16px">
     <div style="font-weight:800;margin-bottom:8px">🔗 Tvoj pozývací link</div>
@@ -1650,6 +1652,13 @@ async function coachLoad(){
         <div><span style="font-weight:800">${pr} ${esc(L.name)}</span>
           <span style="color:var(--muted);font-size:.75rem"> · ${esc(L.city||'')} ${L.visits?` · ${L.visits} návštev`:''}</span></div>
         <div style="font-size:.75rem;color:var(--muted)">${L.last_contact_days!=null?`kontakt pred ${L.last_contact_days} d`:'nikdy nekontaktovaná'}</div></div>
+      <div style="font-size:.76rem;color:var(--muted);margin:3px 0">
+        ${L.phone?`📞 ${esc(L.phone)} · `:''}${L.email?`✉️ ${esc(L.email)}`:''}<br>
+        Zdroj: ${esc(L.lead_source||'—')} · Status: ${esc(L.lead_status||'—')} · Návštevy: <b>${L.visits}</b>${L.no_shows?` · No-show: ${L.no_shows}`:''}
+        · ${L.has_membership?'Členstvo ✅':L.entries_left?`Vstupy: ${L.entries_left}`:'Bez členstva'}
+        ${L.last_email?`<br>Posledný automat. e-mail: ${L.last_email.date} (${esc(L.last_email.seq||'')})`:''}
+        ${L.last_note?`<br>📝 ${L.last_note.date} · ${esc(L.last_note.author)}: ${esc(L.last_note.text)}`:''}
+      </div>
       <div style="font-size:.8rem;color:#e8c97a;margin:4px 0">${esc(L.reason)}</div>
       <div style="font-size:.82rem;color:var(--muted);margin-bottom:8px">💡 ${esc(L.action)}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
@@ -1676,7 +1685,21 @@ async function coachLoad(){
     <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px"><div style="font-weight:800;margin-bottom:8px">🏆 Tím — tento týždeň</div><div id="coachBoard"></div></div>
   </div><div id="coachModal"></div>`;
   box.innerHTML=h;
-  coachCal(); coachBoard(); coachWeek();
+  coachCal(); coachBoard(); coachWeek(); coachRankLoad();
+}
+async function coachRankLoad(){
+  const d=await api('/api/coach/rank').catch(()=>null); if(!d?.ok) return;
+  const el=document.getElementById('coachRank'); if(!el) return;
+  el.textContent='🏅 '+d.rank+' · '+d.total;
+  el.title=`Konzistentnosť ${d.breakdown.consistency} % · Aktivita ${d.breakdown.activity} % · Výsledky ${d.breakdown.results} % · Učenie ${d.breakdown.learning} %`;
+}
+async function coachOwnActivity(){
+  const label=prompt('Čo si spravil/a? (napr. „Rozdala som letáky na evente")'); if(!label) return;
+  const desc=prompt('Krátky popis / link na dôkaz (voliteľné)')||'';
+  const pts=+(prompt('Koľko bodov navrhuješ? (1–50, vyššie schvaľuje admin)','5')||5);
+  const r=await api('/api/coach/activity',{method:'POST',body:{label, desc, points:pts}});
+  if(r?.ok){ toast(r.pending?'Poslané adminovi na schválenie 💡':'Aktivita zapísaná ✅ +'+pts+' b.'); coachLoad(); }
+  else toast(r?.error||'Chyba',true);
 }
 function coachCopyTpl(id, tplKey){
   const L=_coach.leads.find(x=>x.id===id); if(!L) return;

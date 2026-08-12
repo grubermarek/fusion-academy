@@ -44,6 +44,10 @@ module.exports = function initCoach(ctx){
       0:[{key:'week_review',label:'Zhodnoť týždeň a naplánuj ďalší',icon:'📝',cat:'education'}],
     },
     weekly: { contacts: 21, content: 3, community: 3, referral_shares: 1 },
+    own_auto_points: 5,          // vlastné aktivity do tejto hodnoty sa schvaľujú automaticky
+    rank_weights: { consistency: 40, activity: 30, results: 20, learning: 10 },
+    rank_target_points: 400,     // 30-dňový bodový cieľ pre plné aktivity skóre
+    alert_overdue_followups: 5,  // admin alert od tohto počtu zameškaných follow-upov
     templates: {
       after_first: 'Ahoj {meno}, ako sa ti včera páčilo? ❤️ Budeme radi, ak prídeš znova. Ak chceš, pošlem ti najbližšie termíny.',
       no_show: 'Ahoj {meno}, dnes sme ťa čakali 😊 Ak ti termín nevyšiel, nič sa nedeje. Môžem ti poslať ďalší?',
@@ -65,7 +69,8 @@ module.exports = function initCoach(ctx){
     if(!row || !row.value) return DEFAULT_CONFIG;
     const c = row.value;
     return { ...DEFAULT_CONFIG, ...c, points:{...DEFAULT_CONFIG.points, ...(c.points||{})},
-      weekly:{...DEFAULT_CONFIG.weekly, ...(c.weekly||{})}, templates:{...DEFAULT_CONFIG.templates, ...(c.templates||{})} };
+      weekly:{...DEFAULT_CONFIG.weekly, ...(c.weekly||{})}, templates:{...DEFAULT_CONFIG.templates, ...(c.templates||{})},
+      rank_weights:{...DEFAULT_CONFIG.rank_weights, ...(c.rank_weights||{})} };
   }
 
   const OUTCOMES = ['contacted','replied','interested','not_interested','will_come','later','no_reply'];
@@ -123,7 +128,7 @@ module.exports = function initCoach(ctx){
     const tasks = await q.find(db.coach_tasks,{trainer_id:trainerId, date});
     const contacts = await q.find(db.coach_contacts,{trainer_id:trainerId, date});
     let pts = 0;
-    for(const t of tasks) if(t.done) pts += t.points||0;
+    for(const t of tasks) if(t.done && !(t.cat==='own' && t.approved===false)) pts += t.points||0;
     pts += Math.max(0, contacts.length - cfg.min_contacts) * cfg.points.extra_contact;
     pts += contacts.filter(c=>c.followup_hit).length * cfg.points.followup_ontime;
     const mand = tasks.filter(t=>t.mandatory);
@@ -150,6 +155,12 @@ module.exports = function initCoach(ctx){
     const memberships = await q.find(db.memberships,{});
     const contacts = await q.find(db.coach_contacts,{}); // malý objem
     const myFollowups = await q.find(db.crm_tasks,{assigned_to:trainer._id, status:'open'});
+    const sentMails = (await q.find(db.email_queue,{status:'sent'}));
+    const lastMail = {};
+    for(const m of sentMails){ if(!lastMail[m.user_id] || (m.sent_at||'')>(lastMail[m.user_id].sent_at||'')) lastMail[m.user_id]=m; }
+    const allNotes = await q.find(db.lead_notes,{});
+    const lastNote = {};
+    for(const n of allNotes){ if(!lastNote[n.client_id] || (n.created_at||'')>(lastNote[n.client_id].created_at||'')) lastNote[n.client_id]=n; }
     const now = Date.now();
     const lastContact = {}; // lead_id -> ts (ktorýkoľvek tréner)
     for(const c of contacts){ const t=new Date(c.created_at).getTime(); if(!lastContact[c.lead_id]||t>lastContact[c.lead_id]) lastContact[c.lead_id]=t; }
@@ -163,7 +174,7 @@ module.exports = function initCoach(ctx){
     const rows=[];
     for(const u of users){
       if(u.is_admin || ['trainer','manager','admin'].includes(u.user_type)) continue;
-      if(u.hidden_lead || isTest(u) || u.lead_status==='do_not_contact' || u.sms_only===false&&false) continue;
+      if(u.hidden_lead || (isTest(u) && !isTest(trainer)) || u.lead_status==='do_not_contact' || u.sms_only===false&&false) continue;
       if(!u.phone && !u.email) continue;
       const lc = lastContact[u._id] || (u.last_contacted_at ? new Date(u.last_contacted_at).getTime() : 0);
       if(lc && (now-lc) < 3*86400000 && !followupToday.has(u._id)) continue; // kontaktovaný za posledné 3 dni
@@ -183,6 +194,9 @@ module.exports = function initCoach(ctx){
       rows.push({ id:u._id, name:u.name, phone:u.phone||'', email:u.email&&!/@import\.local|@test/.test(u.email)?u.email:'',
         city:u.city||'', lead_source:u.lead_source||'', lead_status:u.lead_status||'', score, reason, action, tpl,
         visits: attended.length + (u.glofox_attendances||0), last_visit_days: daysSinceVisit,
+        no_shows: u.no_show_count||bks.filter(b=>b.status==='no_show').length||0, created: (u.created_at||'').slice(0,10),
+        last_email: lastMail[u._id] ? {date:(lastMail[u._id].sent_at||'').slice(0,10), seq:lastMail[u._id].sequence} : null,
+        last_note: lastNote[u._id] ? {date:(lastNote[u._id].created_at||'').slice(0,10), author:lastNote[u._id].author_name, text:String(lastNote[u._id].text||'').slice(0,120)} : null,
         has_membership: activeMem.has(u._id), entries_left: u.single_entries||0,
         last_contact_days: lc?Math.floor((now-lc)/86400000):null, priority: score>=80?'hot':score>=50?'warm':'cold' });
     }
@@ -400,6 +414,71 @@ module.exports = function initCoach(ctx){
     }catch(e){ res.status(500).json({error:'Chyba'}); }
   });
 
+  // ── ranky (STARTER → ELITE): konzistentnosť + aktivita + výsledky + učenie ──
+  const RANK_NAMES = ['STARTER','ACTIVE','GROWTH','PRO','ELITE'];
+  async function computeRank(trainerId, cfg){
+    const since = new Date(Date.now()-29*86400000).toISOString().slice(0,10);
+    const tasks = (await q.find(db.coach_tasks,{trainer_id:trainerId})).filter(t=>t.date>=since);
+    const days = {};
+    for(const t of tasks){ if(t.mandatory) (days[t.date]=days[t.date]||[]).push(t); }
+    const dKeys = Object.keys(days);
+    const consistency = dKeys.length ? dKeys.filter(d=>days[d].every(t=>t.done)).length / dKeys.length : 0;
+    let pts=0; for(let i=0;i<30;i++){ const d=new Date(Date.now()-i*86400000).toISOString().slice(0,10); pts+=(await pointsForDay(trainerId,d,cfg)).pts; }
+    const activity = Math.min(1, pts / (cfg.rank_target_points||400));
+    const refBookings = (await q.find(db.referral_events,{sponsor_id:trainerId, type:'booked'})).filter(e=>!e.test && (e.created_at||'')>=since).length;
+    const results = Math.min(1, refBookings / 2);
+    const learning = Math.min(1, tasks.filter(t=>t.cat==='education' && t.done).length / 4);
+    const w = cfg.rank_weights;
+    const total = Math.round(consistency*w.consistency + activity*w.activity + results*w.results + learning*w.learning);
+    const rank = RANK_NAMES[ total>=80?4 : total>=60?3 : total>=40?2 : total>=20?1 : 0 ];
+    return { total, rank, breakdown:{ consistency:Math.round(consistency*100), activity:Math.round(activity*100), results:Math.round(results*100), learning:Math.round(learning*100) } };
+  }
+
+  // vlastná iniciatíva (+ PRIDAŤ VLASTNÚ AKTIVITU)
+  app.post('/api/coach/activity', trainerAuth, async (req,res)=>{
+    try{
+      const me = req.effectiveTrainer || req.trainerUser;
+      const cfg = await getConfig();
+      const { label, desc, minutes, link, points } = req.body||{};
+      if(!label || !String(label).trim()) return res.status(400).json({error:'Napíš, čo si spravil/a'});
+      const wanted = Math.max(1, Math.min(50, +points||cfg.own_auto_points));
+      const autoOk = wanted <= cfg.own_auto_points;
+      const t = await q.insert(db.coach_tasks,{trainer_id:me._id, trainer_name:me.name, date:todayStr(),
+        key:'own_'+Date.now(), label:String(label).slice(0,200), icon:'💡', cat:'own', points:wanted,
+        mandatory:false, auto:null, done:true, done_at:nowISO(),
+        proof:[desc,link].filter(Boolean).join(' · ').slice(0,500)||null, minutes:+minutes||null,
+        approved: autoOk ? true : false, source:'own', created_at:nowISO()});
+      if(!autoOk){
+        const admins = (await q.find(db.users,{is_admin:true})).filter(a=>!isTest(a));
+        for(const a of admins) await q.insert(db.notifications,{user_id:a._id, type:'coach_activity',
+          title:'Vlastná aktivita na schválenie 💡', body:`${me.name}: ${String(label).slice(0,120)} (+${wanted} b.)`,
+          read:false, created_at:nowISO()}).catch(()=>{});
+      }
+      res.json({ok:true, pending: !autoOk, activity:t});
+    }catch(e){ res.status(500).json({error:'Chyba'}); }
+  });
+  app.get('/api/admin/coach/activities', adminAuth, async (req,res)=>{
+    const rows = (await q.find(db.coach_tasks,{cat:'own', approved:false})).sort((a,b)=>a.created_at<b.created_at?1:-1);
+    res.json({ok:true, rows});
+  });
+  app.post('/api/admin/coach/activities/:id', adminAuth, async (req,res)=>{
+    const approve = (req.body||{}).approve !== false;
+    const t = await q.one(db.coach_tasks,{_id:req.params.id, cat:'own'});
+    if(!t) return res.status(404).json({error:'Nenájdená'});
+    if(approve) await q.update(db.coach_tasks,{_id:t._id},{$set:{approved:true}});
+    else await q.remove(db.coach_tasks,{_id:t._id});
+    await q.insert(db.notifications,{user_id:t.trainer_id, type:'coach_activity',
+      title: approve?'Aktivita schválená ✅':'Aktivita neschválená',
+      body:`${t.label} ${approve?`(+${t.points} b.)`:''}`, read:false, created_at:nowISO()}).catch(()=>{});
+    res.json({ok:true});
+  });
+
+  // môj rank
+  app.get('/api/coach/rank', trainerAuth, async (req,res)=>{
+    const me = req.effectiveTrainer || req.trainerUser;
+    res.json({ok:true, ...(await computeRank(me._id, await getConfig()))});
+  });
+
   // ════════ ADMIN API ════════
   app.get('/api/admin/coach/overview', adminAuth, async (req,res)=>{
     try{
@@ -417,7 +496,8 @@ module.exports = function initCoach(ctx){
           today_done: todayTasks.filter(x=>x.done).length, today_total: todayTasks.length,
           week_completion: weekTasks.length?Math.round(weekTasks.filter(x=>x.done).length/weekTasks.length*100):null,
           week_contacts: weekContacts.length, week_points: (await (async()=>{let s=0;for(let i=0;i<7;i++){const d=new Date(Date.now()-i*86400000).toISOString().slice(0,10); s+=(await pointsForDay(t._id,d,cfg)).pts;} return s;})()),
-          streak: await streakOf(t._id, cfg), overdue_followups: overdue.length });
+          streak: await streakOf(t._id, cfg), overdue_followups: overdue.length,
+          rank: (await computeRank(t._id, cfg)).rank });
       }
       res.json({ok:true, rows, config:cfg});
     }catch(e){ console.error('coach/overview',e); res.status(500).json({error:'Chyba'}); }
@@ -429,6 +509,9 @@ module.exports = function initCoach(ctx){
     const next = { ...cur, ...(b.min_contacts?{min_contacts:+b.min_contacts}:{}) ,
       points:{...cur.points, ...(b.points||{})}, weekly:{...cur.weekly, ...(b.weekly||{})},
       templates:{...cur.templates, ...(b.templates||{})},
+      rank_weights:{...cur.rank_weights, ...(b.rank_weights||{})},
+      ...(b.own_auto_points!=null?{own_auto_points:+b.own_auto_points}:{}),
+      ...(b.rank_target_points!=null?{rank_target_points:+b.rank_target_points}:{}),
       rotation: b.rotation||cur.rotation, motivation: b.motivation||cur.motivation };
     await q.update(db.settings,{key:'coach_config'},{$set:{key:'coach_config', value:next}},{upsert:true});
     res.json({ok:true, config:next});
@@ -456,6 +539,62 @@ module.exports = function initCoach(ctx){
   app.get('/api/admin/lead-notes/:id', adminAuth, async (req,res)=>{
     const notes = (await q.find(db.lead_notes,{client_id:req.params.id})).sort((a,b)=>a.created_at<b.created_at?1:-1);
     res.json({ok:true, notes});
+  });
+
+  // ── denné joby: admin alerty + pondelkový weekly report trénerom ────────────
+  async function coachDailyJobs(){
+    try{
+      const date = todayStr();
+      const guard = await q.one(db.settings,{key:'coach_jobs_last'});
+      if(guard && guard.value === date) return;
+      await q.update(db.settings,{key:'coach_jobs_last'},{$set:{key:'coach_jobs_last', value:date}},{upsert:true});
+      const cfg = await getConfig();
+      const trainers = (await q.find(db.users,{})).filter(u=>(u.user_type==='trainer'||u.user_type==='manager') && u.active!==false && !isTest(u));
+      const admins = (await q.find(db.users,{is_admin:true})).filter(a=>!isTest(a));
+      const alerts = [];
+      const isMonday = new Date().getDay()===1;
+      for(const t of trainers){
+        // outreach 3 dni po sebe nesplnený (dni s vygenerovanými úlohami, ale bez kontaktov)
+        let misses=0;
+        for(let i=1;i<=3;i++){
+          const d=new Date(Date.now()-i*86400000).toISOString().slice(0,10);
+          const gen = await q.count(db.coach_tasks,{trainer_id:t._id, date:d, key:'contact3'});
+          if(!gen) { misses=0; break; } // neotvoril appku → nealertuj (rieši completion nižšie)
+          const c = await q.count(db.coach_contacts,{trainer_id:t._id, date:d});
+          if(c===0) misses++; else { misses=0; break; }
+        }
+        if(misses===3) alerts.push(`${t.name}: 3 dni po sebe žiadny outreach`);
+        const overdue = (await q.find(db.crm_tasks,{assigned_to:t._id, status:'open'})).filter(x=>x.due_date && x.due_date<date).length;
+        if(overdue >= (cfg.alert_overdue_followups||5)) alerts.push(`${t.name}: ${overdue} zameškaných follow-upov`);
+        // pondelok: weekly report trénerovi + completion alert adminovi
+        if(isMonday){
+          const since = new Date(Date.now()-7*86400000).toISOString().slice(0,10);
+          const tasks = (await q.find(db.coach_tasks,{trainer_id:t._id})).filter(x=>x.date>=since && x.date<date);
+          const contacts = (await q.find(db.coach_contacts,{trainer_id:t._id})).filter(x=>x.date>=since && x.date<date);
+          if(tasks.length){
+            const completion = Math.round(tasks.filter(x=>x.done).length/tasks.length*100);
+            let pts=0; for(let i=1;i<=7;i++){ const d=new Date(Date.now()-i*86400000).toISOString().slice(0,10); pts+=(await pointsForDay(t._id,d,cfg)).pts; }
+            const replied = contacts.filter(c=>['replied','interested','will_come'].includes(c.outcome)).length;
+            const tip = contacts.length < cfg.weekly.contacts/2 ? 'Budúci týždeň prioritizuj outreach — kontakty sú základ plných hodín.'
+              : replied/Math.max(1,contacts.length) < 0.3 ? 'Skús osobnejšie správy — odpovedá ti málo ľudí. Použi šablóny a doplň niečo osobné.'
+              : 'Drž konzistentnosť — presne takto sa plnia hodiny. 💪';
+            await q.insert(db.notifications,{user_id:t._id, type:'coach_week',
+              title:'Tvoj týždeň 📊', body:`Completion ${completion} % · ${pts} b. · kontaktovaných ${contacts.length}, odpovedalo ${replied}. ${tip}`,
+              read:false, created_at:nowISO()}).catch(()=>{});
+            if(completion < 60) alerts.push(`${t.name}: completion za týždeň len ${completion} %`);
+          }
+        }
+      }
+      if(alerts.length){
+        for(const a of admins) await q.insert(db.notifications,{user_id:a._id, type:'coach_alert',
+          title:'Coach Growth — na pozretie ⚠️', body:alerts.slice(0,6).join(' · '), read:false, created_at:nowISO()}).catch(()=>{});
+      }
+    }catch(e){ console.error('coachDailyJobs', e.message); }
+  }
+  setInterval(()=>{ if(new Date().getHours()===9) coachDailyJobs(); }, 3600000);
+  app.post('/api/admin/coach/run-jobs', adminAuth, async (req,res)=>{
+    await q.remove(db.settings,{key:'coach_jobs_last'});
+    await coachDailyJobs(); res.json({ok:true});
   });
 
   console.log('🎯  Coach Growth System načítaný');

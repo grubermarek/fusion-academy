@@ -130,6 +130,34 @@ const put = (jar, p, b) => call(jar, 'PUT', p, b);
   ok('config: weekly merge (contacts=25, content ostáva)', wcfg.data && wcfg.data.config.weekly.contacts === 25 && wcfg.data.config.weekly.content > 0, wcfg.data && wcfg.data.config.weekly);
   await put('admin', '/api/admin/coach/config', { weekly: { contacts: 21 } });
 
+  // 10c) fáza 3: lead karta má všetko priamo (bez detailu)
+  await post('L2', '/api/register', { name: 'Coach Leadka Druhá', email: 'coach-l2-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', consent: true, phone: '0900654321' });
+  const meL2 = (await g('L2', '/api/me')).data;
+  const tL = (await g('T', '/api/coach/today')).data;
+  const cardLead = tL.leads.find(x => x.id === meL2.id) || tL.leads[0];
+  ok('lead karta: zdroj/status/návštevy/no-show polia', cardLead && 'lead_source' in cardLead && 'no_shows' in cardLead && 'last_email' in cardLead && 'last_note' in cardLead, cardLead && Object.keys(cardLead));
+
+  // 10d) fáza 3: vlastné aktivity + schvaľovanie
+  const a1 = await post('T', '/api/coach/activity', { label: 'Rozdala som letáky', points: 5 });
+  ok('malá aktivita auto-schválená', a1.data && a1.data.ok && a1.data.pending === false, a1);
+  const a2 = await post('T', '/api/coach/activity', { label: 'Spolupráca so školou', desc: 'stretnutie s riaditeľkou', points: 25 });
+  ok('veľká aktivita čaká na schválenie', a2.data && a2.data.ok && a2.data.pending === true, a2);
+  const ptsBefore = (await g('T', '/api/coach/today')).data.points_today;
+  const pend = (await g('admin', '/api/admin/coach/activities')).data;
+  const pRow = pend.rows.find(r => r.label === 'Spolupráca so školou');
+  ok('admin vidí pending aktivitu', !!pRow, pend.rows.length);
+  await post('admin', '/api/admin/coach/activities/' + pRow._id, { approve: true });
+  const ptsAfter = (await g('T', '/api/coach/today')).data.points_today;
+  ok('body pripísané až po schválení (+25)', ptsAfter === ptsBefore + 25, { ptsBefore, ptsAfter });
+
+  // 10e) fáza 3: rank
+  const rk = (await g('T', '/api/coach/rank')).data;
+  ok('rank: total + breakdown + názov', rk && rk.ok && ['STARTER','ACTIVE','GROWTH','PRO','ELITE'].includes(rk.rank) && rk.breakdown.consistency >= 0, rk);
+
+  // 10f) fáza 3: denné joby (alerty) bežia bez chyby + idempotentne
+  const rj = await post('admin', '/api/admin/coach/run-jobs', {});
+  ok('coach daily jobs zbehli', rj.data && rj.data.ok, rj);
+
   // 11) bezpečnosť: klient sa nedostane do coach API
   const cl = await g('L', '/api/coach/today');
   ok('bežný klient nemá prístup do /api/coach', cl.status === 401 || cl.status === 403, cl.status);

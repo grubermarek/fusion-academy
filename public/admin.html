@@ -2434,6 +2434,20 @@ async function cgLoad(){
       <td>${r.streak?'🔥 '+r.streak:'—'}</td>
       <td>${r.overdue_followups?`<span class="badge bg-danger">${r.overdue_followups}</span>`:'✅'}</td></tr>`).join('')}
     </tbody></table></div>`;
+  const ad=await api('/api/admin/coach/activities');
+  if(ad&&ad.ok&&ad.rows.length){
+    box.innerHTML+=`<div class="card border-0 rounded-3 p-3 mt-3"><div class="fw-semibold mb-2">💡 Vlastné aktivity na schválenie</div>
+      ${ad.rows.map(r=>`<div class="d-flex justify-content-between align-items-center gap-2 py-1 border-bottom border-secondary small">
+        <div><b>${r.trainer_name}</b> · ${r.label}${r.proof?` <span class="text-muted">(${r.proof})</span>`:''} · <span class="text-warning fw-bold">+${r.points} b.</span></div>
+        <div class="d-flex gap-1">
+          <button class="btn btn-sm btn-success py-0" onclick="cgApprove('${r._id}',true)">Schváliť</button>
+          <button class="btn btn-sm btn-outline-danger py-0" onclick="cgApprove('${r._id}',false)">Zamietnuť</button>
+        </div></div>`).join('')}</div>`;
+  }
+}
+async function cgApprove(id, approve){
+  const d=await api('/api/admin/coach/activities/'+id,{method:'POST',body:JSON.stringify({approve})});
+  if(d&&d.ok){ showToast(approve?'Schválené ✅':'Zamietnuté'); cgLoad(); } else alert(d&&d.error||'Chyba');
 }
 async function cgSaveCfg(){
   const d=await api('/api/admin/coach/config',{method:'PUT',body:JSON.stringify({
