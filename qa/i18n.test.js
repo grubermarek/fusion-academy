@@ -35,7 +35,7 @@ for(const l of ['en','uk']){
   ok(`parita ${l} (chýba 0, navyše 0)`, !missing.length && !extra.length, {missing:missing.slice(0,8), extra:extra.slice(0,8)});
 }
 // použité kľúče v stránkach existujú v sk
-for(const f of ['public/invite.html','public/obchod.html','public/profile.html']){
+for(const f of ['public/invite.html','public/obchod.html','public/profile.html','public/index.html']){
   const html=fs.readFileSync(f,'utf8');
   const used=new Set([...html.matchAll(/FA_T\('([a-z]+\.[a-z0-9_]+)'/g)].map(m=>m[1])
     .concat([...html.matchAll(/data-i18n(?:-ph)?="([a-z]+\.[a-z0-9_]+)"/g)].map(m=>m[1]))

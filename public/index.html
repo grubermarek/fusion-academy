@@ -538,9 +538,13 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <script>if("serviceWorker" in navigator)navigator.serviceWorker.register("/sw.js");</script>
 <script src="/fa-track.js"></script>
+<script src="/i18n.js"></script>
+<script src="/i18n-pages.js"></script>
 <script async src="https://www.googletagmanager.com/gtag/js?id=AW-734724861"></script>
 <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag("js",new Date());gtag("config","AW-734724861");</script>
 <script>
+document.addEventListener('DOMContentLoaded',function(){ if(window.FA_I18N){ FA_I18N.mount('langSwNav'); } });
+document.addEventListener('fa-lang-changed',()=>location.reload());
 /* Venčekový registračný kód z QR (?vencek=VEN-XXXXX) — uloží sa a použije pri registrácii */
 (function(){
   var p=new URLSearchParams(location.search), vc=p.get('vencek');
@@ -569,7 +573,7 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
     Fusion Academy
   </a>
   <div class="nav-right">
-    <button class="nav-link" id="navLoginBtn" onclick="openLogin()">Prihlásiť sa</button>
+    <span id="langSwNav" style="margin-right:8px"></span><button class="nav-link" id="navLoginBtn" onclick="openLogin()" data-i18n="auth.login_btn">Prihlásiť sa</button>
     <a class="nav-link gold" href="/client-dashboard" id="navDashBtn" style="display:none">
       <i class="bi bi-speedometer2"></i> Môj účet
     </a>
@@ -602,26 +606,23 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
   <!-- ── SCREEN 0: HERO LANDING ── -->
   <div class="screen active" id="s0">
     <div style="position:relative;z-index:1;text-align:center;max-width:820px;margin:0 auto">
-      <div class="hero-eyebrow">Fusion Academy · Tanečná škola roka</div>
+      <div class="hero-eyebrow" data-i18n="auth.hero_eyebrow">Fusion Academy · Tanečná škola roka</div>
       <h1 class="hero-title">
-        <span class="line1">Nájdi svoj</span>
-        <span class="foil">rytmus.</span>
+        <span class="line1" data-i18n="auth.hero_l1">Nájdi svoj</span>
+        <span class="foil" data-i18n="auth.hero_foil">rytmus.</span>
       </h1>
-      <p class="hero-sub" id="heroSub">
-        Latinskoamerické tance a Zumba v prémiovom štúdiu — pod vedením majstrov s 18-ročnou praxou.
-        Tvoja prvá hodina je na nás.
-      </p>
+      <p class="hero-sub" id="heroSub" data-i18n="auth.hero_sub">Latinskoamerické tance a Zumba v prémiovom štúdiu — pod vedením majstrov s 18-ročnou praxou. Tvoja prvá hodina je na nás.</p>
       <div class="hero-cta">
         <button class="btn-hero" onclick="startOnboarding()">
-          Rezervovať prvú hodinu <i class="bi bi-arrow-right"></i>
+          <span data-i18n="auth.hero_cta">Rezervovať prvú hodinu</span> <i class="bi bi-arrow-right"></i>
         </button>
-        <span class="hero-note">Zadarmo · bez záväzkov</span>
+        <span class="hero-note" data-i18n="auth.hero_note">Zadarmo · bez záväzkov</span>
       </div>
       <div class="proof-row">
-        <div class="proof-item"><strong>18</strong><span>rokov praxe</span></div>
-        <div class="proof-item"><strong>2000+</strong><span>tanečníkov</span></div>
+        <div class="proof-item"><strong>18</strong><span data-i18n="auth.proof_years">rokov praxe</span></div>
+        <div class="proof-item"><strong>2000+</strong><span data-i18n="auth.proof_dancers">tanečníkov</span></div>
         <div class="proof-item"><strong>5.0 ★</strong><span>Google</span></div>
-        <div class="proof-item"><strong>4</strong><span>mestá</span></div>
+        <div class="proof-item"><strong>4</strong><span data-i18n="auth.proof_cities">mestá</span></div>
       </div>
     </div>
   </div>
@@ -630,75 +631,75 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
   <div class="screen" id="s1">
     <div class="step-content">
       <div class="step-icon">👋</div>
-      <h2 class="step-title" id="s1Title">Vitaj v Fusion Academy!</h2>
-      <p class="step-sub" id="s1Sub">Prvá hodina je <span class="gold">zadarmo</span>. Stačí sa zaregistrovať — trvá to 30 sekúnd.</p>
+      <h2 class="step-title" id="s1Title" data-i18n="auth.reg_title">Vitaj v Fusion Academy!</h2>
+      <p class="step-sub" id="s1Sub" data-i18n-html="auth.reg_sub">Prvá hodina je <span class="gold">zadarmo</span>. Stačí sa zaregistrovať — trvá to 30 sekúnd.</p>
       <div class="form-card">
         <div class="auth-error" id="regErr"></div>
         <!-- Google-first: najrýchlejšia registrácia na 1 klik — maximalizuje dokončené registrácie -->
         <div id="gsiRegTopWrap" style="display:none;margin-bottom:14px">
           <div id="gsiReg" style="display:flex;justify-content:center;transform:scale(1.08);transform-origin:center"></div>
-          <p style="font-size:.72rem;color:#8d8676;text-align:center;margin-top:9px">Jedným klikom, bez hesla. Prihlásením súhlasíš so <a href="/terms" target="_blank" style="color:#bdb6a6">spracovaním údajov a podmienkami</a>.</p>
-          <div style="display:flex;align-items:center;gap:10px;margin:12px 0 2px;color:#8d8676;font-size:.78rem"><span style="flex:1;height:1px;background:rgba(255,255,255,.12)"></span>alebo vyplň údaje ručne<span style="flex:1;height:1px;background:rgba(255,255,255,.12)"></span></div>
+          <p style="font-size:.72rem;color:#8d8676;text-align:center;margin-top:9px" data-i18n-html="auth.google_hint">Jedným klikom, bez hesla.</p>
+          <div style="display:flex;align-items:center;gap:10px;margin:12px 0 2px;color:#8d8676;font-size:.78rem"><span style="flex:1;height:1px;background:rgba(255,255,255,.12)"></span><span data-i18n="auth.or_manual">alebo vyplň údaje ručne</span><span style="flex:1;height:1px;background:rgba(255,255,255,.12)"></span></div>
         </div>
         <div class="form-group">
-          <label>Celé meno</label>
-          <input type="text" id="rName" placeholder="Jana Nováková" autocomplete="name">
+          <label data-i18n="auth.name">Celé meno</label>
+          <input type="text" id="rName" placeholder="Jana Nováková" data-i18n-ph="auth.name_ph" autocomplete="name">
         </div>
         <div class="form-group">
-          <label>E-mail</label>
+          <label data-i18n="auth.email">E-mail</label>
           <input type="email" id="rEmail" placeholder="jana@email.sk" autocomplete="email" onblur="checkPreRegistered()">
         </div>
         <div id="preRegBanner" style="display:none;background:rgba(129,199,132,.12);border:1px solid rgba(129,199,132,.4);border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:.86rem;color:#c7e8c9;line-height:1.5"></div>
         <div class="form-group">
-          <label id="rPassLabel">Heslo</label>
-          <input type="password" id="rPass" placeholder="Minimálne 6 znakov">
+          <label id="rPassLabel" data-i18n="auth.pass">Heslo</label>
+          <input type="password" id="rPass" placeholder="Minimálne 6 znakov" data-i18n-ph="auth.pass_ph">
         </div>
         <div class="form-group">
-          <label>Telefón <span class="optional">(nepovinné)</span></label>
+          <label><span data-i18n="auth.phone">Telefón</span> <span class="optional" data-i18n="auth.optional">(nepovinné)</span></label>
           <input type="tel" id="rPhone" placeholder="+421 900 000 000" autocomplete="tel">
         </div>
         <div class="form-group" id="codeGroup">
-          <label>Kód sponzora <span class="optional">(ak ťa niekto pozval)</span></label>
-          <input type="text" id="rCode" placeholder="napr. MAREK21" style="text-transform:uppercase">
+          <label><span data-i18n="auth.sponsor">Kód sponzora</span> <span class="optional" data-i18n="auth.sponsor_opt">(ak ťa niekto pozval)</span></label>
+          <input type="text" id="rCode" placeholder="napr. MAREK21" data-i18n-ph="auth.sponsor_ph" style="text-transform:uppercase">
         </div>
         <div id="venRoleGroup" style="display:none">
           <div class="form-group">
-            <label style="color:#C9A24C">🎓 Venčeky — kto sa registruje?</label>
+            <label style="color:#C9A24C" data-i18n="auth.ven_q">🎓 Venčeky — kto sa registruje?</label>
             <select id="rVenRole" style="width:100%;padding:12px;border-radius:10px;background:#1d1a15;border:1px solid #3a3428;color:#e8e2d4" onchange="document.getElementById('venChildGroup').style.display=this.value==='parent'?'block':'none'">
-              <option value="student">🧑‍🎓 Žiak / žiačka (deviatak)</option>
-              <option value="parent">👨‍👩‍👧 Rodič žiaka</option>
-              <option value="teacher">👩‍🏫 Triedny učiteľ / učiteľka</option>
-              <option value="director">🏫 Riaditeľ / riaditeľka školy</option>
+              <option value="student" data-i18n="auth.ven_student">🧑‍🎓 Žiak / žiačka (deviatak)</option>
+              <option value="parent" data-i18n="auth.ven_parent">👨‍👩‍👧 Rodič žiaka</option>
+              <option value="teacher" data-i18n="auth.ven_teacher">👩‍🏫 Triedny učiteľ / učiteľka</option>
+              <option value="director" data-i18n="auth.ven_director">🏫 Riaditeľ / riaditeľka školy</option>
             </select>
           </div>
           <div class="form-group" id="venChildGroup" style="display:none">
-            <label>Meno vášho dieťaťa <span class="optional">(aby sme vás spárovali s triedou)</span></label>
-            <input type="text" id="rVenChild" placeholder="napr. Ema Nováková">
+            <label><span data-i18n="auth.ven_child">Meno vášho dieťaťa</span> <span class="optional" data-i18n="auth.ven_child_opt">(aby sme vás spárovali s triedou)</span></label>
+            <input type="text" id="rVenChild" placeholder="napr. Ema Nováková" data-i18n-ph="auth.ven_child_ph">
           </div>
         </div>
         <div class="form-group">
-          <label>Kde si sa o nás dozvedela? <span class="optional">(voliteľné)</span></label>
+          <label><span data-i18n="auth.lead_q">Kde si sa o nás dozvedela?</span> <span class="optional" data-i18n="auth.optional2">(voliteľné)</span></label>
           <select id="rLeadSource" style="width:100%;padding:.7rem .9rem;background:#1e1e1e;border:1px solid rgba(201,168,76,.3);border-radius:.6rem;color:#e8e8e8;font-size:.9rem">
-            <option value="">— Vyber možnosť —</option>
+            <option value="" data-i18n="auth.lead_pick">— Vyber možnosť —</option>
             <option value="instagram">Instagram</option>
             <option value="facebook">Facebook</option>
             <option value="tiktok">TikTok</option>
             <option value="google">Google</option>
-            <option value="friend">Odporúčanie od priateľky</option>
-            <option value="event">Event / akcia</option>
-            <option value="flyer">Leták / billboard</option>
-            <option value="other">Iné</option>
+            <option value="friend" data-i18n="auth.lead_friend">Odporúčanie od priateľky</option>
+            <option value="event" data-i18n="auth.lead_event">Event / akcia</option>
+            <option value="flyer" data-i18n="auth.lead_flyer">Leták / billboard</option>
+            <option value="other" data-i18n="auth.lead_other">Iné</option>
           </select>
         </div>
         <label style="display:flex;gap:9px;align-items:flex-start;margin:4px 0 14px;cursor:pointer;font-size:.82rem;color:#bdb6a6;line-height:1.5">
           <input type="checkbox" id="rConsent" style="margin-top:3px;width:17px;height:17px;flex-shrink:0;accent-color:#C9A24C">
-          <span>Súhlasím so <a href="/terms" target="_blank">spracovaním osobných údajov a podmienkami používania</a> a beriem na vedomie, že <strong style="color:#e0d4b0">refundácia je možná len do 48 hodín od uplatnenia členstva</strong>.</span>
+          <span data-i18n-html="auth.consent">Súhlasím so spracovaním osobných údajov.</span>
         </label>
         <button class="btn-primary" id="regBtn" onclick="doRegister()">
-          Pokračovať &nbsp;<i class="bi bi-arrow-right"></i>
+          <span data-i18n="auth.continue">Pokračovať</span> &nbsp;<i class="bi bi-arrow-right"></i>
         </button>
         <p class="form-footer">
-          Už máš účet? <a href="#" onclick="openLogin();return false">Prihlásiť sa</a>
+          <span data-i18n="auth.have_acct">Už máš účet?</span> <a href="#" onclick="openLogin();return false" data-i18n="auth.login_link">Prihlásiť sa</a>
         </p>
       </div>
     </div>
@@ -714,8 +715,8 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
       <!-- SUB-STEP A: choose the dance/program -->
       <div class="wiz-panel active" id="wizType">
         <div class="step-icon show">💃</div>
-        <h2 class="step-title">Čo ťa baví?</h2>
-        <p class="step-sub">Vyber si, aký tanec alebo cvičenie chceš skúsiť. Prvá hodina je <span class="gold">zadarmo</span>.</p>
+        <h2 class="step-title" data-i18n="auth.wiz_type">Čo ťa baví?</h2>
+        <p class="step-sub" data-i18n-html="auth.wiz_type_sub">Vyber si, aký tanec alebo cvičenie chceš skúsiť.</p>
         <div class="pick-grid" id="typeGrid">
           <div class="loading-spinner"><i class="bi bi-arrow-repeat spin"></i>&nbsp; Načítavam...</div>
         </div>
@@ -726,10 +727,10 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
         <div class="wiz-head">
           <button class="wiz-back" id="cityBackBtn" onclick="wizGoType()" title="Späť"><i class="bi bi-arrow-left"></i></button>
           <div>
-            <h2 class="step-title" style="margin:0">Kde chceš tancovať?</h2>
+            <h2 class="step-title" style="margin:0" data-i18n="auth.wiz_city">Kde chceš tancovať?</h2>
           </div>
         </div>
-        <p class="step-sub" id="citySub">Vyber si mesto, ktoré ti je najbližšie.</p>
+        <p class="step-sub" id="citySub" data-i18n="auth.wiz_city_sub">Vyber si mesto, ktoré ti je najbližšie.</p>
         <div class="pick-grid" id="cityGrid"></div>
       </div>
 
@@ -738,12 +739,12 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
         <div class="wiz-head">
           <button class="wiz-back" onclick="wizGoCity()" title="Späť"><i class="bi bi-arrow-left"></i></button>
           <div>
-            <h2 class="step-title" style="margin:0">Vyber si termín</h2>
+            <h2 class="step-title" style="margin:0" data-i18n="auth.wiz_date">Vyber si termín</h2>
           </div>
         </div>
         <div class="free-banner">
           <div class="fb-emoji">🎁</div>
-          <div class="fb-text">Tvoja <b>prvá hodina je úplne zadarmo!</b><br>Ťukni na deň označený zlatou farbou a máš rezervované.</div>
+          <div class="fb-text" data-i18n-html="auth.free_banner">Tvoja <b>prvá hodina je úplne zadarmo!</b></div>
         </div>
         <div class="cal-wrap">
           <div class="cal-head">
@@ -753,7 +754,7 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
           </div>
           <div class="cal-dow"><span>Po</span><span>Ut</span><span>St</span><span>Št</span><span>Pi</span><span>So</span><span>Ne</span></div>
           <div class="cal-grid" id="calGrid"></div>
-          <div class="cal-legend"><span class="lg-dot"></span> = voľná hodina, na ktorú sa môžeš prihlásiť</div>
+          <div class="cal-legend"><span class="lg-dot"></span> <span data-i18n="auth.cal_legend">= voľná hodina, na ktorú sa môžeš prihlásiť</span></div>
         </div>
       </div>
 
@@ -979,7 +980,7 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
 <div class="modal-bg" id="loginModal" onclick="if(event.target===this)closeLogin()">
   <div class="modal-card">
     <button class="modal-close" onclick="closeLogin()"><i class="bi bi-x-lg"></i></button>
-    <h3 class="modal-title">Prihlásiť sa</h3>
+    <h3 class="modal-title" data-i18n="auth.login_title">Prihlásiť sa</h3>
     <p class="modal-sub">Vitaj späť v Fusion Academy!</p>
     <div class="auth-error" id="loginErr"></div>
     <div id="gsiLogin" style="display:flex;justify-content:center;margin-bottom:6px;transform:scale(1.05);transform-origin:center"></div>
@@ -993,7 +994,7 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
       <input type="password" id="lPass" placeholder="Vaše heslo">
     </div>
     <button class="btn-primary" onclick="doLogin()">
-      <i class="bi bi-box-arrow-in-right"></i>&nbsp; Prihlásiť sa
+      <i class="bi bi-box-arrow-in-right"></i>&nbsp; <span data-i18n="auth.login_btn">Prihlásiť sa</span>
     </button>
     <div id="lResetBox" style="display:none;margin-top:14px;border-top:1px solid rgba(255,255,255,.1);padding-top:14px">
       <div class="form-group">
@@ -1160,11 +1161,11 @@ async function doRegister(){
   const code=document.getElementById('rCode').value.trim().toUpperCase();
   const btn=document.getElementById('regBtn');
   showErr('regErr','');
-  if(!name||!email||!pass){showErr('regErr','Vyplňte meno, email a heslo');return;}
-  if(pass.length<6){showErr('regErr','Heslo musí mať aspoň 6 znakov');return;}
-  if(!/\S+@\S+\.\S+/.test(email)){showErr('regErr','Neplatný email');return;}
-  if(!document.getElementById('rConsent').checked){showErr('regErr','Pre pokračovanie musíš súhlasiť so spracovaním údajov a podmienkami.');return;}
-  btn.disabled=true;btn.innerHTML='<i class="bi bi-arrow-repeat spin"></i>&nbsp; Registrujem...';
+  if(!name||!email||!pass){showErr('regErr',FA_T('auth.err_fill'));return;}
+  if(pass.length<6){showErr('regErr',FA_T('auth.err_pass'));return;}
+  if(!/\S+@\S+\.\S+/.test(email)){showErr('regErr',FA_T('auth.err_email'));return;}
+  if(!document.getElementById('rConsent').checked){showErr('regErr',FA_T('auth.err_consent'));return;}
+  btn.disabled=true;btn.innerHTML='<i class="bi bi-arrow-repeat spin"></i>&nbsp; '+FA_T('auth.registering');
   if(_preview){ // náhľad: účet sa nevytvára, len pokračuj vo flow
     await loadClasses(); goTo(2);
     btn.disabled=false;btn.innerHTML='Pokračovať &nbsp;<i class="bi bi-arrow-right"></i>';
@@ -1176,7 +1177,7 @@ async function doRegister(){
       body:JSON.stringify({name,email,password:pass,phone,sponsorCode:code,user_type:'client',lead_source,consent:true,vencek_code:localStorage.getItem('fa_vencek_code')||undefined,vencek_role:document.getElementById('rVenRole')?.value||undefined,vencek_child_name:document.getElementById('rVenChild')?.value.trim()||undefined,attribution:window.faGetAttribution?window.faGetAttribution():{}}),credentials:'include'});
     const d=await r.json();
     if(!r.ok){
-      showErr('regErr',d.error||'Chyba registrácie');
+      showErr('regErr',d.error||FA_T('auth.err_reg'));
       btn.disabled=false;btn.innerHTML='Pokračovať &nbsp;<i class="bi bi-arrow-right"></i>';
       return;
     }
