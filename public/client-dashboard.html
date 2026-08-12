@@ -1693,6 +1693,26 @@ async function confirmBooking(){
 /* ═══════════════════════════════════════════════════════════
    INIT
 ══════════════════════════════════════════════════════════ */
+function showNameFixModal(current){
+  let m=document.getElementById('nameFixModal');
+  if(!m){ m=document.createElement('div'); m.id='nameFixModal';
+    m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px';
+    document.body.appendChild(m); }
+  m.innerHTML=`<div style="background:#181818;border:1px solid var(--gold-border,#332a18);border-radius:16px;max-width:400px;width:100%;padding:22px">
+    <div style="font-weight:800;color:var(--gold,#C9A84C);font-size:1.05rem;margin-bottom:6px">Doplň si celé meno 🙏</div>
+    <div style="font-size:.88rem;color:var(--muted,#999);line-height:1.6;margin-bottom:14px">
+      Tvoje meno „<b style="color:#ddd">${escHtml(current||'')}</b>" nie je úplné. Aby ťa trénerky vedeli osloviť a zapísať na hodine, zadaj prosím meno aj priezvisko.</div>
+    <input id="nameFixInput" placeholder="napr. Erika Magurová" value="" style="width:100%;background:#0f0f0f;border:1px solid #333;border-radius:10px;color:#eee;padding:11px;font-size:.95rem;margin-bottom:10px">
+    <div id="nameFixErr" style="color:#e57373;font-size:.8rem;margin-bottom:8px;display:none"></div>
+    <button onclick="saveFixedName()" style="width:100%;background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);color:#111;font-weight:800;border:none;border-radius:12px;padding:12px;font-size:.95rem;cursor:pointer">Uložiť meno</button>
+  </div>`;
+  m.style.display='flex';
+}
+async function saveFixedName(){
+  const d=await api('/api/me/fix-name',{method:'POST',body:{name:document.getElementById('nameFixInput').value}});
+  if(d?.ok){ document.getElementById('nameFixModal').style.display='none'; showToast('Ďakujeme! Meno uložené ✅','success'); location.reload(); }
+  else { const e=document.getElementById('nameFixErr'); e.textContent=d?.error||'Chyba'; e.style.display='block'; }
+}
 async function init(){
   const me=await api('/api/me');
   if(!me?.id){
@@ -1701,6 +1721,7 @@ async function init(){
     return;
   }
   document.getElementById('dashMain').style.display='block';
+  if(me.name_needs_fix && !me.is_admin) showNameFixModal(me.name);
   // Prepínanie rolí (Firemný/Trénerský/Asistent) je centralizované v spodnom docku (dock.js)
   const initials=(me.name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
   _avatarInitials=initials;

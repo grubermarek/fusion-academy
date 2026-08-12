@@ -70,7 +70,7 @@ const del = (jar, p) => call(jar, 'DELETE', p);
   ok('access_method = parent_membership', row2 && row2.access_method === 'parent_membership', row2);
 
   // 2d: druhá mama len s permanentkou → odpočet vstupu mame + vrátenie pri storne
-  await post('M2', '/api/register', { name: 'AUDIT Mama2', email: 'audit-mama2-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', city: 'Zvolen', consent: true });
+  await post('M2', '/api/register', { name: 'AUDIT Mamula', email: 'audit-mama2-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', city: 'Zvolen', consent: true });
   const mom2 = (await g('M2', '/api/me')).data;
   await post('admin', '/api/admin/users/' + mom2.id + '/grant-membership', { entries: 3, gift: false, payment_method: 'cash' });
   const ch2 = await post('M2', '/api/family/children', { name: 'AUDIT Dcérka2', birth_date: '2016-06-06' });

@@ -1972,6 +1972,14 @@ app.get('/api/check-registration', rlLookup, async(req,res)=>{
   } catch(e){ res.json({pending:false}); }
 });
 
+// Celé meno: aspoň 2 slová po 2+ písmenách, bez bodiek/číslic (nie „erika.magurova" ani „zuzana")
+function validFullName(n){
+  const t=String(n||'').trim().replace(/\s+/g,' ');
+  if(t.length<5 || t.length>80) return false;
+  if(/[.@_\/0-9]/.test(t)) return false;
+  const words=t.split(' ').filter(w=>/^[A-Za-zÀ-ž\u0100-\u017F\u0400-\u04FF'-]{2,}$/.test(w));
+  return words.length>=2;
+}
 app.post('/api/register', rlSignup, async(req,res)=>{
   try {
     const {name,email,password,phone,sponsorCode,user_type}=req.body;
@@ -1983,6 +1991,8 @@ app.post('/api/register', rlSignup, async(req,res)=>{
     if(String(password).length<6) return res.status(400).json({error:'Heslo musí mať aspoň 6 znakov.'});
     if(String(name).trim().length<2 || String(name).length>80)
       return res.status(400).json({error:'Meno musí mať 2 až 80 znakov.'});
+    if(!validFullName(name))
+      return res.status(400).json({error:'Zadaj celé meno a priezvisko — napr. „Erika Magurová" (bez bodiek a skratiek).'});
     if(phone && String(phone).length>30) return res.status(400).json({error:'Telefónne číslo je príliš dlhé.'});
     // ── Existujúci e-mail? Ak je to importovaný lead bez účtu, „claimni" ho ───────
     const existing=await q.one(db.users,{email:emailNorm});
@@ -12143,6 +12153,14 @@ app.get('/api/client/winners-history', auth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// oprava neúplného mena (výzva „zadaj celé meno")
+app.post('/api/me/fix-name', auth, async(req,res)=>{
+  const name = String((req.body||{}).name||'').trim().replace(/\s+/g,' ');
+  if(!validFullName(name)) return res.status(400).json({error:'Zadaj celé meno a priezvisko — napr. „Erika Magurová".'});
+  await q.update(db.users,{_id:req.session.uid},{$set:{name}});
+  res.json({ok:true, name});
+});
+
 app.get('/api/me', async(req,res)=>{
   if(!req.session?.uid) return res.json({});
   const u = await q.one(db.users,{_id:req.session.uid});
@@ -12153,6 +12171,7 @@ app.get('/api/me', async(req,res)=>{
   const role = USER_ROLES[u.user_type] || USER_ROLES.client;
   res.json({
     id:u._id, name:u.name, email:u.email, phone:u.phone||'', is_admin:u.is_admin,
+    name_needs_fix: !u.guest && !u.is_child && !validFullName(u.name),
     user_type:u.user_type||'partner', referral_code:u.referral_code,
     test_account: !!req.session.admin_uid,
     is_assistant: !!u.is_assistant, assistant_of: u.assistant_of||null,

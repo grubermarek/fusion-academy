@@ -205,7 +205,7 @@ const put = (jar, p, b) => call(jar, 'PUT', p, b);
   ok('revoke na nekonvertovanom case = 404', (await post('admin', '/api/admin/coach/cases/' + acases.rows[0]._id + '/revoke-conversion', {})).status === 404 || acases.rows[0].converted === true);
 
   // 12) ambasádor: dávky po 10 leadov
-  for(let i=0;i<13;i++) await post('X'+i, '/api/register', { name: 'Batch Leadka '+i, email: 'coach-b'+i+'-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', consent: true, phone: '09001111'+String(10+i) });
+  for(let i=0;i<13;i++) await post('X'+i, '/api/register', { name: 'Batch Leadka '+String.fromCharCode(66+i)+'ová', email: 'coach-b'+i+'-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', consent: true, phone: '09001111'+String(10+i) });
   await post('A', '/api/register', { name: 'Ambasádorka QA', email: 'coach-amb-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', consent: true });
   const meA = (await g('A', '/api/me')).data;
   await post('admin', '/api/admin/users/' + meA.id + '/account-type', { type: 'assistant', assists_id: meT.id });
@@ -236,6 +236,18 @@ const put = (jar, p, b) => call(jar, 'PUT', p, b);
   await post('A', '/api/coach/lead/' + relLead.id + '/release', { lead_status: 'not_interested' });
   const ambAfter = (await g('A', '/api/coach/today')).data;
   ok('release bez kontaktu = +1 kontakt dnes', ambAfter.contacts_today === (ambBefore.contacts_today + 1), { pred: ambBefore.contacts_today, po: ambAfter.contacts_today });
+
+  // 14) validácia celého mena
+  ok('registrácia „zuzana" odmietnutá', (await post('N1', '/api/register', { name: 'zuzana', email: 'nm1-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', consent: true })).status === 400);
+  ok('registrácia „erika.magurova" odmietnutá', (await post('N2', '/api/register', { name: 'erika.magurova', email: 'nm2-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', consent: true })).status === 400);
+  const nOk = await post('N3', '/api/register', { name: 'Erika Magurová', email: 'nm3-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', consent: true });
+  ok('registrácia s celým menom prejde', nOk.data && (nOk.data.ok || nOk.data.id || nOk.status === undefined), nOk.status);
+  const meN = (await g('N3', '/api/me')).data;
+  ok('name_needs_fix=false pri dobrom mene', meN.name_needs_fix === false, meN.name_needs_fix);
+  const fixBad = await post('N3', '/api/me/fix-name', { name: 'zuz' });
+  ok('fix-name odmietne zlé meno', fixBad.status === 400);
+  const fixOk = await post('N3', '/api/me/fix-name', { name: 'Erika Magurová Nová' });
+  ok('fix-name uloží dobré meno', fixOk.data && fixOk.data.ok);
 
   // 11) bezpečnosť: klient sa nedostane do coach API
   const cl = await g('L', '/api/coach/today');
