@@ -1559,6 +1559,30 @@ async function seedData() {
     }catch(e){ console.error('transfer entry migration:', e.message); }
   }
 
+  // ── 12.8.: rekord „mesačný obrat" nasej skutočným historickým maximom —
+  // snapshoty bežia len pár dní, takže 340 € (august k 12.8.) falošne hlásil rekord,
+  // hoci máj mal 2 645 € a júl 1 821 €.
+  if(!(await q.one(db.settings,{key:'seed_revenue_record_20260812'}))){
+    await q.insert(db.settings,{key:'seed_revenue_record_20260812', value:true, at:nowISO()});
+    try{
+      const txAll=await q.find(db.transactions,{});
+      const byM={};
+      for(const t of txAll){ const m=(t.created_at||'').slice(0,7); if(m) byM[m]=(byM[m]||0)+(+t.amount||0); }
+      const curM=today().slice(0,7);
+      let best=0, bestM='';
+      for(const [m,v] of Object.entries(byM)){ if(m!==curM && v>best){ best=v; bestM=m; } }
+      if(best>0){
+        const ach=await q.one(db.settings,{key:'business_achievements'});
+        const records={...(ach?.records||{})};
+        if((records.revenue_month?.value||0) < best){
+          records.revenue_month={value:+best.toFixed(2), date:bestM+'-28'};
+          await q.update(db.settings,{key:'business_achievements'},{$set:{records}},{upsert:true});
+          console.log(`📈 REKORD SEED: mesačný obrat rekord nastavený na ${best.toFixed(2)} € (${bestM})`);
+        }
+      }
+    }catch(e){ console.error('record seed:', e.message); }
+  }
+
   // ── 12.8. v2: Ľubkin vstup bol zapísaný už 10.8. (faktúra 20260032) — oprav len metódu na prevod
   if(!(await q.one(db.settings,{key:'record_transfer_lubomira_20260812_v2'}))){
     await q.insert(db.settings,{key:'record_transfer_lubomira_20260812_v2', value:true, at:nowISO()});
