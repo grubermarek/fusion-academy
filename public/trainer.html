@@ -1740,7 +1740,15 @@ function coachBottom(){
   return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">
     <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px"><div style="font-weight:800;margin-bottom:8px">💶 Môj zárobok &amp; línie</div><div id="coachLines" style="color:var(--muted);font-size:.85rem">Načítavam…</div></div>
     <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px"><div style="font-weight:800;margin-bottom:8px">📊 Tento týždeň <span id="coachWeekScore" style="color:var(--gold)"></span></div><div id="coachWeek"></div></div>
-    <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px"><div style="font-weight:800;margin-bottom:8px">📆 Kalendár disciplíny</div><div id="coachCal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px"></div></div>
+    <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <button onclick="coachCalNav(-1)" style="background:transparent;border:1px solid #2a2a2a;border-radius:8px;color:var(--cream);padding:2px 10px;cursor:pointer">◀</button>
+        <div style="font-weight:800">📆 <span id="coachCalTitle">Kalendár</span></div>
+        <button onclick="coachCalNav(1)" style="background:transparent;border:1px solid #2a2a2a;border-radius:8px;color:var(--cream);padding:2px 10px;cursor:pointer">▶</button>
+      </div>
+      <div id="coachCal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px"></div>
+      <div id="coachCalSum" style="font-size:.78rem;color:var(--muted);margin-top:8px"></div>
+    </div>
     <div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px"><div style="font-weight:800;margin-bottom:8px">🏆 Tím — tento týždeň</div><div id="coachBoard"></div></div>
   </div><div id="coachModal"></div>`;
 }
@@ -1825,10 +1833,27 @@ async function coachSaveInvite(){
   const r=await api('/api/coach/invite-text',{method:'POST',body:{text:document.getElementById('coachInvTxt').value}});
   if(r?.ok) toast('Text uložený ✅');
 }
+let _coachCalMonth=null;
+function coachCalNav(delta){
+  const base=_coachCalMonth||new Date().toISOString().slice(0,7);
+  const [y,m]=base.split('-').map(Number);
+  const dt=new Date(y, m-1+delta, 1);
+  _coachCalMonth=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0');
+  coachCal();
+}
+const SK_MONS=['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
 async function coachCal(){
-  const d=await api('/api/coach/calendar').catch(()=>null); if(!d?.ok) return;
+  const qmon=_coachCalMonth?('?month='+_coachCalMonth):'';
+  const d=await api('/api/coach/calendar'+qmon).catch(()=>null); if(!d?.ok) return;
   const el=document.getElementById('coachCal'); if(!el) return;
   const [y,m]=d.month.split('-').map(Number);
+  _coachCalMonth=d.month;
+  const tt=document.getElementById('coachCalTitle'); if(tt) tt.textContent=SK_MONS[m-1]+' '+y;
+  const sum=document.getElementById('coachCalSum');
+  if(sum){ const vals=Object.values(d.days);
+    const pts=vals.reduce((s,x)=>s+(x.points||0),0);
+    const green=vals.filter(x=>x.color==='green').length;
+    sum.textContent=vals.length? `Za mesiac: ${pts} b. · ${green} kompletných dní z ${vals.length} aktívnych`:'V tomto mesiaci žiadna aktivita.'; }
   const days=new Date(y,m,0).getDate();
   let h='';
   for(let i=1;i<=days;i++){
