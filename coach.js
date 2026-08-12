@@ -357,6 +357,7 @@ module.exports = function initCoach(ctx){
     try{
       const me = coachUser(req);
       const { lead_id, outcome, note, followup_date } = req.body||{};
+      const isAuto = (req.body||{}).auto === true; // klik na Zavolat/SMS/WhatsApp
       if(!lead_id || !OUTCOMES.includes(outcome)) return res.status(400).json({error:'Neplatný výsledok'});
       const lead = await q.one(db.users,{_id:lead_id});
       if(!lead) return res.status(404).json({error:'Lead nenájdený'});
@@ -367,7 +368,7 @@ module.exports = function initCoach(ctx){
       const dueFu = openFu.filter(t=>t.due_date && t.due_date<=date);
       let doc;
       if(dup){
-        await q.update(db.coach_contacts,{_id:dup._id},{$set:{outcome, note:note||dup.note}});
+        if(!isAuto) await q.update(db.coach_contacts,{_id:dup._id},{$set:{outcome, note:note||dup.note}}); // auto klik neprepisuje rucny vysledok
         doc = {...dup, outcome, duplicate:true};
       } else {
         doc = await q.insert(db.coach_contacts,{trainer_id:me._id, trainer_name:me.name, lead_id,

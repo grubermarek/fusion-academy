@@ -1744,9 +1744,9 @@ function coachLeadCard(L, d, mine){
       <div style="font-size:.8rem;color:#e8c97a;margin:4px 0">${esc(L.reason)}</div>
       <div style="font-size:.82rem;color:var(--muted);margin-bottom:8px">💡 ${esc(L.action)}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-        ${L.phone?`<a href="tel:${esc(L.phone)}" style="text-decoration:none;background:#1d2b1f;border:1px solid #2f4a35;color:#7bd88f;border-radius:9px;padding:5px 10px;font-size:.78rem">📞 Zavolať</a>`:''}
-        ${L.phone?`<a href="${smsHref}" ${L.tpl?`onclick="coachCopyTpl('${L.id}','${L.tpl}')"`:''} style="text-decoration:none;background:#1a2333;border:1px solid #2a3a55;color:#8ab8ff;border-radius:9px;padding:5px 10px;font-size:.78rem">💬 SMS</a>`:''}
-        ${wa?`<a href="${wa}" target="_blank" ${L.tpl?`onclick="coachCopyTpl('${L.id}','${L.tpl}')"`:''} style="text-decoration:none;background:#12301f;border:1px solid #1f5237;color:#5fd08a;border-radius:9px;padding:5px 10px;font-size:.78rem">🟢 WhatsApp</a>`:''}
+        ${L.phone?`<a href="tel:${esc(L.phone)}" onclick="coachAutoContact('${L.id}')" style="text-decoration:none;background:#1d2b1f;border:1px solid #2f4a35;color:#7bd88f;border-radius:9px;padding:5px 10px;font-size:.78rem">📞 Zavolať</a>`:''}
+        ${L.phone?`<a href="${smsHref}" onclick="coachAutoContact('${L.id}')${L.tpl?`;coachCopyTpl('${L.id}','${L.tpl}')`:''}" style="text-decoration:none;background:#1a2333;border:1px solid #2a3a55;color:#8ab8ff;border-radius:9px;padding:5px 10px;font-size:.78rem">💬 SMS</a>`:''}
+        ${wa?`<a href="${wa}" target="_blank" onclick="coachAutoContact('${L.id}')${L.tpl?`;coachCopyTpl('${L.id}','${L.tpl}')`:''}" style="text-decoration:none;background:#12301f;border:1px solid #1f5237;color:#5fd08a;border-radius:9px;padding:5px 10px;font-size:.78rem">🟢 WhatsApp</a>`:''}
         ${L.phone?`<button onclick="navigator.clipboard.writeText('${esc(L.phone)}');toast('Skopírované 📋')" style="background:transparent;border:1px solid #2a2a2a;border-radius:9px;color:var(--muted);padding:5px 10px;font-size:.78rem;cursor:pointer">Kopírovať číslo</button>`:''}
         ${L.tpl?`<button onclick="coachCopyTpl('${L.id}','${L.tpl}')" style="background:#2a2140;border:1px solid #4a3a70;border-radius:9px;color:#c4a8ff;padding:5px 10px;font-size:.78rem;cursor:pointer">✉️ Šablóna</button>`:''}
         <button onclick="coachLeadDetail('${L.id}')" style="background:transparent;border:1px solid #2a2a2a;border-radius:9px;color:var(--muted);padding:5px 10px;font-size:.78rem;cursor:pointer">🗂 Detail</button>
@@ -1797,6 +1797,11 @@ async function coachRequestBatch(){
   const r=await api('/api/coach/request-batch',{method:'POST',body:{}});
   if(r?.ok){ toast(r.already?'Žiadosť už čaká na schválenie ⏳':'Žiadosť poslaná adminovi 📥'); coachLoad(); }
   else toast(r?.error||'Chyba',true);
+}
+// klik na Zavolať/SMS/WhatsApp = reálny kontakt → zapíš automaticky (1×/deň/lead)
+async function coachAutoContact(id){
+  const r=await api('/api/coach/contact',{method:'POST',body:{lead_id:id, outcome:'contacted', auto:true}}).catch(()=>null);
+  if(r?.ok && !r.duplicate){ toast('Kontakt zapísaný ✅ (výsledok môžeš upresniť cez Zapísať)'); setTimeout(coachLoad, 1200); }
 }
 async function coachClaim(id){
   const r=await api('/api/coach/lead/'+id+'/claim',{method:'POST',body:{}});

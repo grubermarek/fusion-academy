@@ -249,6 +249,12 @@ const put = (jar, p, b) => call(jar, 'PUT', p, b);
   const fixOk = await post('N3', '/api/me/fix-name', { name: 'Erika Magurová Nová' });
   ok('fix-name uloží dobré meno', fixOk.data && fixOk.data.ok);
 
+  // 15) auto-kontakt (klik na Zavolať/SMS/WhatsApp)
+  const ac1 = await post('T', '/api/coach/contact', { lead_id: meL.id, outcome: 'contacted', auto: true });
+  ok('auto-kontakt na už kontaktovanú = duplicate', ac1.data && ac1.data.duplicate === true);
+  const detA = (await g('T', '/api/coach/lead/' + meL.id)).data;
+  ok('auto-kontakt neprepísal ručný výsledok', detA.contacts[0] && detA.contacts[0].outcome !== 'contacted', detA.contacts[0]);
+
   // 11) bezpečnosť: klient sa nedostane do coach API
   const cl = await g('L', '/api/coach/today');
   ok('bežný klient nemá prístup do /api/coach', cl.status === 401 || cl.status === 403, cl.status);
