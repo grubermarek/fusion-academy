@@ -1769,12 +1769,11 @@ async function coachSetStatus(id){
   if(r?.ok) toast('Status zmenený ✅'); else toast(r?.error||'Chyba',true);
 }
 async function coachRelease(id){
-  const opt=prompt('Uzavrieť case ako:\n1 = Prišla na hodinu 🎉\n2 = Má záujem (odovzdávam)\n3 = Nemá záujem\n4 = Len uvoľniť bez zmeny statusu','1');
+  const opt=prompt('Uzavrieť case ako:\n1 = Prišla na hodinu 🎉\n2 = Má záujem (odovzdávam)\n3 = Nemá záujem\n4 = Len uvoľniť bez zmeny statusu\n5 = Konvertovaná 🤝 — stať sa jej sponzorom (affiliate odmeny; uzná sa len ak po tvojom prevzatí reálne prišla na hodinu alebo zaplatila)','1');
   if(opt===null) return;
-  const map={'1':'trial','2':'interested','3':'not_interested'};
+  const map={'1':'trial','2':'interested','3':'not_interested','5':'trial'};
   const note=prompt('Krátke zhrnutie case-u (voliteľné, uloží sa ako poznámka)')||'';
-  let convert=false;
-  if(opt==='1') convert=confirm('Konvertoval/a si ju ty? Ak áno, staneš sa jej sponzorom a budeš mať z nej affiliate odmeny.\n(Uzná sa len, ak reálne prišla na hodinu alebo zaplatila po tvojom prevzatí — admin každú konverziu vidí.)');
+  const convert=(opt==='5');
   const r=await api('/api/coach/lead/'+id+'/release',{method:'POST',body:{lead_status:map[opt]||null, note, convert}});
   if(r?.ok){
     if(convert && r.converted) toast('Case uzavretý ✅ Si jej sponzorom 🤝');
