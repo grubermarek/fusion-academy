@@ -1144,9 +1144,19 @@ async function toggleNotif(){
     if(!_notifs.length){list.innerHTML='<div class="empty-state"><i class="bi bi-bell-slash"></i>Žiadne notifikácie</div>';return;}
     list.innerHTML=_notifs.map((n,i)=>{
       const arrow=notifDest(n)?' <i class="bi bi-chevron-right" style="float:right;opacity:.4;font-size:.75rem"></i>':'';
-      return `<div class="notif-item ${n.read?'':'unread'}" onclick="openNotif(${i})"><div class="nt">${escHtml(n.title)}${arrow}</div><div class="nb">${escHtml(n.body||'')} <br><small style="opacity:.6">${new Date(n.created_at).toLocaleDateString('sk')}</small></div></div>`;
+      const friendBtns=(n.type==='friend_request'&&n.from_id)?`<div style="display:flex;gap:8px;margin-top:8px">
+        <button onclick="event.stopPropagation();friendRespond('${n.from_id}',true,${i})" style="background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);color:#111;font-weight:800;border:none;border-radius:9px;padding:6px 14px;font-size:.8rem;cursor:pointer">✓ Prijať</button>
+        <button onclick="event.stopPropagation();friendRespond('${n.from_id}',false,${i})" style="background:none;border:1px solid #444;color:var(--muted,#999);border-radius:9px;padding:6px 14px;font-size:.8rem;cursor:pointer">✕ Odmietnuť</button>
+      </div>`:'';
+      return `<div class="notif-item ${n.read?'':'unread'}" onclick="openNotif(${i})"><div class="nt">${escHtml(n.title)}${arrow}</div><div class="nb">${escHtml(n.body||'')}${friendBtns} <br><small style="opacity:.6">${new Date(n.created_at).toLocaleDateString('sk')}</small></div></div>`;
     }).join('');
   } else {panel.classList.remove('open');}
+}
+async function friendRespond(fromId, accept, idx){
+  const r=await api(accept?'/api/friends/accept':'/api/friends/remove',{method:'POST',body:accept?{from:fromId}:{user:fromId}});
+  if(r?.ok){ showToast(accept?'Priateľstvo prijaté 🎉':'Žiadosť odmietnutá','success');
+    notifOpen=false; toggleNotif(); }
+  else showToast(r?.error||'Chyba','error');
 }
 // Kam vedie notifikácia podľa typu (null = nikam)
 function notifDest(n){
