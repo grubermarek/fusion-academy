@@ -12,6 +12,8 @@
 <meta property="og:type" content="website">
 <link rel="canonical" href="https://latindancefusion.art/schedule">
 <title>Rozvrh hodín – Fusion Academy</title>
+<script src="/i18n.js"></script>
+<script src="/i18n-pages.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 <link rel="stylesheet" href="/fa-theme.css">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
@@ -124,21 +126,21 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans);-webkit
 <!-- Login banner (shown when not logged in) -->
 <div class="login-banner d-none" id="loginBanner">
   <span>💡 Prihláste sa pre rezerváciu hodín</span>
-  <a href="#" onclick="openLoginModal(event)">Prihlásiť sa</a>
-  <a href="#" onclick="openLoginModal(event,'register')">Registrovať zadarmo</a>
+  <span id="langSw" style="margin-right:6px"></span><a href="#" onclick="openLoginModal(event)" data-i18n="auth.login_btn">Prihlásiť sa</a>
+  <a href="#" onclick="openLoginModal(event,'register')" data-i18n="sched.reg_free">Registrovať zadarmo</a>
 </div>
 
 <!-- Hero -->
 <div class="hero">
-  <h1>Rozvrh <span>živých hodín</span></h1>
-  <p>Vyberte deň, mesto a prihláste sa na Zumbu</p>
+  <h1 data-i18n-html="sched.title">Rozvrh <span>živých hodín</span></h1>
+  <p data-i18n="sched.sub">Vyberte deň, mesto a prihláste sa na Zumbu</p>
 </div>
 
 <!-- Online separation banner (shown only if online classes exist) -->
 <div id="onlineBanner" style="display:none;max-width:900px;margin:0 auto 4px;padding:0 16px">
   <a href="/online" style="display:flex;align-items:center;gap:12px;text-decoration:none;background:linear-gradient(135deg,rgba(156,39,176,.14),rgba(156,39,176,.05));border:1px solid rgba(156,39,176,.35);border-radius:14px;padding:12px 16px;color:#eee">
     <span style="font-size:1.6rem">💻</span>
-    <span style="flex:1"><b style="color:#ce93d8">Online hodiny</b><br><span style="font-size:.82rem;color:rgba(255,255,255,.6)">Cvič z domu — sú oddelene v sekcii Online</span></span>
+    <span style="flex:1"><b style="color:#ce93d8" data-i18n="sched.online_t">Online hodiny</b><br><span style="font-size:.82rem;color:rgba(255,255,255,.6)" data-i18n="sched.online_s">Cvič z domu — sú oddelene v sekcii Online</span></span>
     <span style="color:#ce93d8;font-size:1.2rem">→</span>
   </a>
 </div>
@@ -148,7 +150,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans);-webkit
 
 <!-- Classes grid -->
 <div class="classes-grid" id="classesGrid">
-  <div class="text-center py-5 text-muted w-100">Načítavam rozvrh…</div>
+  <div class="text-center py-5 text-muted w-100" data-i18n="sched.loading">Načítavam rozvrh…</div>
 </div>
 
 <!-- ── Book Modal ── -->
@@ -156,7 +158,7 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans);-webkit
   <div class="modal-box">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.5rem;">
       <div>
-        <div class="modal-title" id="modalTitle">Rezervácia</div>
+        <div class="modal-title" id="modalTitle" data-i18n="sched.res_title">Rezervácia</div>
         <div class="modal-sub" id="modalSub"></div>
       </div>
       <button onclick="closeBookModal()" style="background:none;border:none;font-size:1.3rem;color:#aaa;cursor:pointer;"><i class="bi bi-x-lg"></i></button>
@@ -164,9 +166,9 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans);-webkit
     <div class="booking-summary" id="bookingSummary"></div>
     <div id="bookError" class="alert alert-danger d-none py-2 small mb-3"></div>
     <button class="btn-confirm" onclick="confirmBooking()">
-      <i class="bi bi-check2-circle me-2"></i>Potvrdiť rezerváciu
+      <i class="bi bi-check2-circle me-2"></i><span data-i18n="sched.confirm">Potvrdiť rezerváciu</span>
     </button>
-    <p class="text-center mt-2 mb-0 small text-muted">Bezplatné zrušenie 2 hodiny pred hodinou</p>
+    <p class="text-center mt-2 mb-0 small text-muted" data-i18n="sched.cancel_note">Bezplatné zrušenie 2 hodiny pred hodinou</p>
   </div>
 </div>
 
@@ -174,25 +176,25 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans);-webkit
 <div class="modal-backdrop-custom" id="loginModal" onclick="closeLoginOnBackdrop(event)">
   <div class="modal-box">
     <button onclick="closeLoginModal()" style="position:absolute;top:1rem;right:1rem;background:none;border:none;font-size:1.3rem;color:#aaa;cursor:pointer;"><i class="bi bi-x-lg"></i></button>
-    <div class="modal-title">Prihlásenie / Registrácia</div>
-    <div class="modal-sub">Pre rezerváciu hodiny potrebujete účet</div>
+    <div class="modal-title" data-i18n="sched.auth_title">Prihlásenie / Registrácia</div>
+    <div class="modal-sub" data-i18n="sched.auth_sub">Pre rezerváciu hodiny potrebujete účet</div>
     <ul class="nav nav-pills nav-fill mb-3" id="authTab2">
-      <li class="nav-item"><button class="nav-link active" data-tab2="login">Prihlásenie</button></li>
-      <li class="nav-item"><button class="nav-link" data-tab2="register">Registrácia</button></li>
+      <li class="nav-item"><button class="nav-link active" data-tab2="login" data-i18n="sched.tab_login">Prihlásenie</button></li>
+      <li class="nav-item"><button class="nav-link" data-tab2="register" data-i18n="sched.tab_reg">Registrácia</button></li>
     </ul>
     <div id="loginF2">
       <div id="loginErr2" class="alert alert-danger d-none py-2 small mb-3"></div>
-      <div class="mb-2"><label class="form-label small fw-semibold">Email</label><input type="email" id="lEmail2" class="form-control"></div>
-      <div class="mb-3"><label class="form-label small fw-semibold">Heslo</label><input type="password" id="lPwd2" class="form-control"></div>
-      <button class="btn-confirm" onclick="doLogin2()"><i class="bi bi-box-arrow-in-right me-2"></i>Prihlásiť sa</button>
+      <div class="mb-2"><label class="form-label small fw-semibold" data-i18n="auth.email">Email</label><input type="email" id="lEmail2" class="form-control"></div>
+      <div class="mb-3"><label class="form-label small fw-semibold" data-i18n="auth.pass">Heslo</label><input type="password" id="lPwd2" class="form-control"></div>
+      <button class="btn-confirm" onclick="doLogin2()"><i class="bi bi-box-arrow-in-right me-2"></i><span data-i18n="auth.login_btn">Prihlásiť sa</span></button>
     </div>
     <div id="regF2" class="d-none">
       <div id="regErr2" class="alert alert-danger d-none py-2 small mb-3"></div>
-      <div class="mb-2"><label class="form-label small fw-semibold">Meno *</label><input type="text" id="rName2" class="form-control"></div>
-      <div class="mb-2"><label class="form-label small fw-semibold">Email *</label><input type="email" id="rEmail2" class="form-control"></div>
-      <div class="mb-2"><label class="form-label small fw-semibold">Heslo *</label><input type="password" id="rPwd2" class="form-control"></div>
-      <div class="mb-3"><label class="form-label small fw-semibold">Telefón</label><input type="tel" id="rPhone2" class="form-control"></div>
-      <button class="btn-confirm" onclick="doRegister2()"><i class="bi bi-person-plus me-2"></i>Zaregistrovať sa</button>
+      <div class="mb-2"><label class="form-label small fw-semibold" data-i18n="sched.name_req">Meno *</label><input type="text" id="rName2" class="form-control"></div>
+      <div class="mb-2"><label class="form-label small fw-semibold" data-i18n="sched.email_req">Email *</label><input type="email" id="rEmail2" class="form-control"></div>
+      <div class="mb-2"><label class="form-label small fw-semibold" data-i18n="sched.pass_req">Heslo *</label><input type="password" id="rPwd2" class="form-control"></div>
+      <div class="mb-3"><label class="form-label small fw-semibold" data-i18n="auth.phone">Telefón</label><input type="tel" id="rPhone2" class="form-control"></div>
+      <button class="btn-confirm" onclick="doRegister2()"><i class="bi bi-person-plus me-2"></i><span data-i18n="sched.reg_btn">Zaregistrovať sa</span></button>
     </div>
   </div>
 </div>
@@ -228,7 +230,7 @@ async function setClassInstructor(classId, instructorId){
       if(c){ c.instructor_id = d.instructor_id; c.instructor = d.instructor; }
       showToast('✅ Tréner hodiny nastavený: '+(d.instructor||'nezadané'), 'success');
     } else { showToast('❌ '+(d.error||'Chyba'), 'error'); }
-  } catch { showToast('❌ Chyba pripojenia', 'error'); }
+  } catch { showToast('❌ '+FA_T('sched.err_conn'), 'error'); }
 }
 
 // ── Schedule shows only live classes of one focus program (Zumba). ──────────────
@@ -239,7 +241,7 @@ function filterSchedule(list){
   return list.filter(c => !isOnline(c) && (!FOCUS_CATEGORY || (c.category||'').toLowerCase()===FOCUS_CATEGORY));
 }
 
-const DAYS = ['Nedeľa','Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota'];
+const DAYS = FA_T('sched.days').split(',');
 const DAYS_SHORT = ['Ned','Pon','Uto','Str','Štv','Pia','Sob'];
 
 async function init() {
@@ -303,7 +305,7 @@ function showDay(dow) {
 function renderClasses(classes) {
   const grid = document.getElementById('classesGrid');
   if (!classes.length) {
-    grid.innerHTML = `<div class="empty-day w-100"><div class="emoji">🗓️</div><p>Tento deň nie sú naplánované hodiny</p></div>`;
+    grid.innerHTML = `<div class="empty-day w-100"><div class="emoji">🗓️</div><p>${FA_T('sched.empty_day')}</p></div>`;
     return;
   }
 
@@ -327,7 +329,7 @@ function renderClasses(classes) {
         <div style="margin-top:12px;background:rgba(224,86,86,.14);border:1px solid rgba(224,86,86,.4);border-radius:12px;padding:12px 14px">
           <b style="color:#ff8a8a">❌ Táto hodina sa ${c.next_date?c.next_date.slice(8,10).replace(/^0/,'')+'. '+c.next_date.slice(5,7).replace(/^0/,'')+'.':''} NEKONÁ</b>
           ${c.cancel_reason?`<div style="font-size:.82rem;color:#f3d9d9;margin-top:3px">${c.cancel_reason}</div>`:''}
-          <div style="font-size:.78rem;opacity:.7;margin-top:4px">Vidíme sa na najbližšom ďalšom termíne 💛</div>
+          <div style="font-size:.78rem;opacity:.7;margin-top:4px">${FA_T('sched.next_time')}</div>
         </div>
       </div>
     </div>`;
@@ -367,7 +369,7 @@ function renderClasses(classes) {
         </div>
         ${full
           ? `<button class="btn-book" style="background:rgba(255,152,0,.15);border:1px solid rgba(255,152,0,.4);color:#FF9800" onclick="joinWaitlist('${c._id}')">⏳ Čakací zoznam</button>`
-          : `<button class="btn-book" onclick="bookClass('${c._id}')"><i class="bi bi-calendar-check me-1"></i>Prihlásiť sa</button>`
+          : `<button class="btn-book" onclick="bookClass('${c._id}')"><i class="bi bi-calendar-check me-1"></i>${FA_T('sched.book')}</button>`
         }
       </div>
     </div>`;
@@ -387,11 +389,11 @@ async function joinWaitlist(classId) {
     });
     const d = await r.json();
     if (r.ok || d?.ok) {
-      showToast('⏳ Pridaní do čakacieho zoznamu pre ' + cls.name + '. Upozorníme vás, ak sa uvoľní miesto.', 'warning');
+      showToast(FA_T('sched.waitlist',{name:cls.name}), 'warning');
     } else {
       showToast('❌ ' + (d.error || 'Chyba'), 'error');
     }
-  } catch { showToast('❌ Chyba pripojenia', 'error'); }
+  } catch { showToast('❌ '+FA_T('sched.err_conn'), 'error'); }
 }
 
 function showToast(msg, type='info') {
@@ -414,16 +416,16 @@ function bookClass(classId) {
   document.getElementById('modalTitle').textContent = selectedClass.name + ' ' + selectedClass.emoji;
   document.getElementById('modalSub').textContent = 'Potvrďte svoju rezerváciu';
   document.getElementById('bookingSummary').innerHTML = `
-    <div class="row-item"><span>Hodina</span><span><strong>${selectedClass.name}</strong></span></div>
-    <div class="row-item"><span>Deň</span><span>${DAYS[selectedClass.day_of_week]}</span></div>
-    <div class="row-item"><span>Dátum</span><span>${formatted}</span></div>
+    <div class="row-item"><span>${FA_T('sched.row_class')}</span><span><strong>${selectedClass.name}</strong></span></div>
+    <div class="row-item"><span>${FA_T('sched.row_day')}</span><span>${DAYS[selectedClass.day_of_week]}</span></div>
+    <div class="row-item"><span>${FA_T('sched.row_date')}</span><span>${formatted}</span></div>
     <div class="row-item"><span>Čas</span><span>${selectedClass.time_start}${selectedClass.time_end?' – '+selectedClass.time_end:''}</span></div>
-    <div class="row-item"><span>Miesto</span><span>${selectedClass.location}</span></div>
-    <div class="row-item"><span>Cena</span><span><strong>${selectedClass.price}€</strong></span></div>
+    <div class="row-item"><span>${FA_T('sched.row_place')}</span><span>${selectedClass.location}</span></div>
+    <div class="row-item"><span>${FA_T('sched.row_price')}</span><span><strong>${selectedClass.price}€</strong></span></div>
     ${myChildren.length ? `<div class="row-item"><span>Pre koho</span><span><select id="bookForWhom" style="background:var(--card,#1a1a1a);color:var(--text,#eee);border:1px solid var(--border,#333);border-radius:8px;padding:5px 8px;font-size:.9rem">
         <option value="">${currentUser.name} (ja)</option>
         ${myChildren.map(c=>`<option value="${c.id}" ${c.id===preselectChild?'selected':''}>👧 ${c.name}</option>`).join('')}
-      </select></span></div>` : `<div class="row-item"><span>Prihlásený</span><span>${currentUser.name}</span></div>`}
+      </select></span></div>` : `<div class="row-item"><span>${FA_T('sched.row_who')}</span><span>${currentUser.name}</span></div>`}
   `;
   document.getElementById('bookError').classList.add('d-none');
   document.getElementById('bookModal').classList.add('show');
@@ -433,7 +435,7 @@ function bookClass(classId) {
 async function confirmBooking() {
   if (!selectedClass) return;
   const btn = document.querySelector('.btn-confirm');
-  btn.disabled = true; btn.textContent = 'Rezervujem…';
+  btn.disabled = true; btn.textContent = FA_T('sched.booking');
   const nextDate = getNextDate(selectedClass.day_of_week);
   const forChild = document.getElementById('bookForWhom')?.value || '';
   try {
@@ -446,21 +448,21 @@ async function confirmBooking() {
     if (!r.ok) {
       document.getElementById('bookError').textContent = d.error || d.message;
       document.getElementById('bookError').classList.remove('d-none');
-      btn.disabled = false; btn.innerHTML = '<i class="bi bi-check2-circle me-2"></i>Potvrdiť rezerváciu';
+      btn.disabled = false; btn.innerHTML = '<i class="bi bi-check2-circle me-2"></i>'+FA_T('sched.confirm');
       return;
     }
     // Success
     closeBookModal();
-    showToast('✅ Rezervácia potvrdená' + (d.for_child?' pre '+d.for_child:'') + ' – ' + selectedClass.name, 'success');
+    showToast(FA_T('sched.ok') + (d.for_child?FA_T('sched.for')+d.for_child:'') + ' – ' + selectedClass.name, 'success');
     showSuccess(selectedClass.name, fmtDate(nextDate));
     // Refresh class list
     const resp = await fetch('/api/classes');
     allClasses = filterSchedule(await resp.json());
     if (currentDay !== null) showDay(currentDay);
   } catch {
-    document.getElementById('bookError').textContent = 'Chyba pripojenia';
+    document.getElementById('bookError').textContent = FA_T('sched.err_conn');
     document.getElementById('bookError').classList.remove('d-none');
-    btn.disabled = false; btn.innerHTML = '<i class="bi bi-check2-circle me-2"></i>Potvrdiť rezerváciu';
+    btn.disabled = false; btn.innerHTML = '<i class="bi bi-check2-circle me-2"></i>'+FA_T('sched.confirm');
   }
 }
 
@@ -630,5 +632,6 @@ init();
 </footer>
 <script src="/nav-bar.js"></script>
 <script src="/dock.js"></script>
+<script>FA_I18N.mount('langSw');document.addEventListener('fa-lang-changed',()=>location.reload());</script>
 </body>
 </html>

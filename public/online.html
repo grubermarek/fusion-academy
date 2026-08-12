@@ -12,6 +12,8 @@
 <meta property="og:type" content="website">
 <link rel="canonical" href="https://latindancefusion.art/online">
 <title>Online Hodiny – Fusion Academy</title>
+<script src="/i18n.js"></script>
+<script src="/i18n-pages.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 <link rel="stylesheet" href="/fa-theme.css">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
@@ -66,8 +68,8 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
 
 <section class="hero">
   <div class="container">
-    <h1>Online <span>Fitness & Tanec</span></h1>
-    <p style="color:rgba(255,255,255,.6);margin:.5rem 0 1.5rem">Cvičte odkiaľkoľvek · Live stream · Záznamy hodín</p>
+    <h1 data-i18n-html="onl.title">Online <span>Fitness & Tanec</span></h1>
+    <p style="color:rgba(255,255,255,.6);margin:.5rem 0 1.5rem"><span data-i18n="onl.sub">Cvičte odkiaľkoľvek · Live stream · Záznamy hodín</span> <span id="langSw"></span></p>
     <div id="membershipStatus"></div>
   </div>
 </section>
@@ -76,8 +78,8 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
 
   <!-- Membership plans -->
   <div id="plansSection">
-    <h2 class="text-center fw-900 mb-1" style="color:var(--cream)">Vyberte si plán</h2>
-    <p class="text-center mb-4" style="color:var(--text-muted)">Prístup k online hodinám a živým prenosom</p>
+    <h2 class="text-center fw-900 mb-1" style="color:var(--cream)" data-i18n="onl.pick">Vyberte si plán</h2>
+    <p class="text-center mb-4" style="color:var(--text-muted)" data-i18n="onl.pick_sub">Prístup k online hodinám a živým prenosom</p>
     <div class="row g-3 justify-content-center mb-5">
       <div class="col-md-5 col-lg-4">
         <div class="plan-card h-100">
@@ -88,9 +90,9 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
             <div class="plan-period">/ mesiac</div>
           </div>
           <ul class="feature-list">
-            <li>Prístup k živým prenosom</li>
-            <li>Komunita – všetky kanály</li>
-            <li class="locked">Offline hodiny nezahrnuté</li>
+            <li data-i18n="onl.b1">Prístup k živým prenosom</li>
+            <li data-i18n="onl.b2">Komunita – všetky kanály</li>
+            <li class="locked" data-i18n="onl.b3">Offline hodiny nezahrnuté</li>
           </ul>
           <button class="btn-buy-outline" onclick="buyPlan('online_basic')">Kúpiť Online Basic</button>
         </div>
@@ -104,9 +106,9 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
             <div class="plan-period">/ mesiac</div>
           </div>
           <ul class="feature-list">
-            <li>Všetky živé prenosy</li>
-            <li>Jedálniček na mieru na celý týždeň</li>
-            <li>Komunita + Blog prístup</li>
+            <li data-i18n="onl.p1">Všetky živé prenosy</li>
+            <li data-i18n="onl.p2">Jedálniček na mieru na celý týždeň</li>
+            <li data-i18n="onl.p3">Komunita + Blog prístup</li>
           </ul>
           <button class="btn-buy" onclick="buyPlan('online_premium')">Kúpiť Online Premium</button>
         </div>
@@ -115,15 +117,15 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
         <div class="plan-card h-100">
           <div class="text-center mb-3">
             <div style="font-size:2.5rem">🥈</div>
-            <h3 style="font-size:1.3rem;font-weight:800;color:var(--cream)">Silver+ (fyzické + online)</h3>
+            <h3 style="font-size:1.3rem;font-weight:800;color:var(--cream)" data-i18n="onl.s0">Silver+ (fyzické + online)</h3>
             <div class="plan-price">€65</div>
             <div class="plan-period">/ mesiac</div>
           </div>
           <ul class="feature-list">
-            <li>Neobmedzené hodiny v štúdiu</li>
-            <li>Online prístup zahrnutý</li>
-            <li>Plný prístup do komunity</li>
-            <li>Prednostné rezervácie</li>
+            <li data-i18n="onl.s1">Neobmedzené hodiny v štúdiu</li>
+            <li data-i18n="onl.s2">Online prístup zahrnutý</li>
+            <li data-i18n="onl.s3">Plný prístup do komunity</li>
+            <li data-i18n="onl.s4">Prednostné rezervácie</li>
             <li>Jeden mestský klub</li>
           </ul>
           <button class="btn-buy-outline" onclick="buyPlan('silver')">Kúpiť Silver</button>
@@ -235,7 +237,7 @@ async function loadMembership(){
 function showMembershipStatus(data){
   const el = document.getElementById('membershipStatus');
   if(!data?.membership){
-    el.innerHTML = `<span class="badge-expired">Bez aktívneho členstva</span>`;
+    el.innerHTML = `<span class="badge-expired" data-i18n="onl.no_mem">Bez aktívneho členstva</span>`;
     return;
   }
   const m = data.membership;
@@ -272,7 +274,7 @@ async function loadOnlineClasses(){
   if(data.online_free_today && !data.membership){
     const fb=document.createElement('div');
     fb.style.cssText='background:linear-gradient(102deg,rgba(201,168,76,.18),rgba(201,168,76,.06));border:1px solid rgba(201,168,76,.5);border-radius:12px;padding:12px 16px;margin-bottom:12px;font-size:.9rem';
-    fb.innerHTML='🎁 <b>Dnes sú online hodiny ZADARMO pre všetkých!</b> Ak sa ti zapáčia, nižšie si vieš vybrať online členstvo — a cvičíš z domu každý týždeň.';
+    fb.innerHTML=FA_T('onl.free_day');
     container.parentElement.prepend(fb);
   }
   if(data.access_mode==='entry'){
@@ -297,20 +299,20 @@ async function loadOnlineClasses(){
     const isLive = key && liveSet.has(key);
     let action;
     if(locked){
-      action = `<span style="font-size:.8rem;color:var(--text-muted)">Vyžaduje členstvo</span>`;
+      action = `<span style="font-size:.8rem;color:var(--text-muted)">${FA_T('onl.needs_mem')}</span>`;
     } else if(data.access_mode==='entry' || data.access_mode==='pass'){
       // Permanentka (1 vstup) alebo výherná online hodina z kolesa — stream vydá server po odpočte
       const lbl = data.access_mode==='pass' ? '▶️ Pripojiť sa · 🎡 výherná hodina' : '▶️ Sledovať · 🎟️ 1 vstup';
       action = c.has_stream
         ? `<button class="btn-stream" onclick="entryWatch('${c._id}','${nm}')">${lbl}</button>`
-        : `<span style="font-size:.8rem;color:var(--text-muted)">Stream čoskoro</span>`;
+        : `<span style="font-size:.8rem;color:var(--text-muted)">${FA_T('onl.soon')}</span>`;
     } else {
       const parts=[];
       if(mediaBase && key){
-        if(isLive) parts.push(`<button class="btn-stream" onclick="watchLive('${key}','${nm}')"><span class="live-dot"></span>Naživo</button>`);
-        parts.push(`<button class="btn-arch" onclick="openArchive('${key}','${nm}')"><i class="bi bi-collection-play me-1"></i>Archív</button>`);
+        if(isLive) parts.push(`<button class="btn-stream" onclick="watchLive('${key}','${nm}')"><span class="live-dot"></span>${FA_T('onl.join_live')}</button>`);
+        parts.push(`<button class="btn-arch" onclick="openArchive('${key}','${nm}')"><i class="bi bi-collection-play me-1"></i>${FA_T('onl.archive')}</button>`);
       }
-      if(c.stream_url) parts.push(`<button class="btn-stream" onclick="watchStream('${encodeURIComponent(c.stream_url)}','${nm}')"><i class="bi bi-play-circle me-1"></i>Sledovať</button>`);
+      if(c.stream_url) parts.push(`<button class="btn-stream" onclick="watchStream('${encodeURIComponent(c.stream_url)}','${nm}')"><i class="bi bi-play-circle me-1"></i>${FA_T('onl.watch')}</button>`);
       action = parts.length ? parts.join(' ') : `<span style="font-size:.8rem;color:var(--text-muted)">Stream čoskoro</span>`;
     }
     return `<div class="class-card ${locked?'locked':''}">
@@ -506,5 +508,6 @@ init();
 </div>
 <script src="/nav-bar.js"></script>
 <script src="/dock.js"></script>
+<script>FA_I18N.mount('langSw');document.addEventListener('fa-lang-changed',()=>location.reload());</script>
 </body>
 </html>
