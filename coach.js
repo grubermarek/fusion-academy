@@ -393,7 +393,7 @@ module.exports = function initCoach(ctx){
         no_shows:u.no_show_count||0, entries_left:u.single_entries||0,
         membership: active?{plan:active.plan_name||active.plan_id, expires:active.expires_at}:null,
         had_membership: mems.length>0, last_contacted_at:u.last_contacted_at||null },
-        bookings: bks.map(b=>({date:b.booking_date, name:b.class_name, loc:b.class_location, status:b.status})),
+        bookings: bks.map(b=>({date:b.booking_date, name:b.class_name, loc:b.class_location, status:b.status, access:b.access_method||(b.free_class?'free_class':null), attended_by:b.attended_by||null})),
         notes, contacts: contacts.map(c=>({date:c.date, trainer:c.trainer_name, outcome:c.outcome, note:c.note})),
         emails: mailQ.map(m=>({sent_at:m.sent_at, sequence:m.sequence})) });
     }catch(e){ console.error('coach/lead',e); res.status(500).json({error:'Chyba'}); }
