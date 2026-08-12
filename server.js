@@ -9014,7 +9014,7 @@ app.get('/api/admin/memberships', adminAuth, async(req,res)=>{
 app.post('/api/waitlist', auth, async(req,res)=>{
   try {
     const {class_id, booking_date} = req.body;
-    if(!class_id) return res.status(400).json({error:'Chýba trieda'});
+    if(!class_id || class_id==='null' || class_id==='undefined') return res.status(400).json({error:'Chýba trieda'});
     const cls = await q.one(db.classes,{_id:class_id});
     if(!cls||!cls.active) return res.status(404).json({error:'Hodina nenájdená'});
     const u = await q.one(db.users,{_id:req.session.uid});
@@ -11542,7 +11542,7 @@ async function sendMail(to, subject, html){
 app.post('/api/bookings', auth, async(req,res)=>{
   try {
     const {class_id, booking_date, notes, override_free, for_child_id}=req.body;
-    if(!class_id) return res.status(400).json({error:'Chýba trieda'});
+    if(!class_id || class_id==='null' || class_id==='undefined') return res.status(400).json({error:'Chýba trieda'});
     const cls=await q.one(db.classes,{_id:class_id});
     if(!cls||!cls.active){
       const who=await q.one(db.users,{_id:req.session.uid});

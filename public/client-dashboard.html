@@ -1665,9 +1665,10 @@ function closeBookModal(){document.getElementById('bookModal').classList.remove(
 
 async function confirmBooking(){
   if(!_bookClassId) return;
+  const cid=_bookClassId; // closeBookModal() ho nuluje — pay-on-site vetva potrebuje kópiu
   const btn=document.getElementById('bookModalConfirm');
   btn.disabled=true;btn.textContent='Spracováva sa...';
-  const d=await api('/api/bookings',{method:'POST',body:{class_id:_bookClassId}});
+  const d=await api('/api/bookings',{method:'POST',body:{class_id:cid}});
   btn.disabled=false;
   closeBookModal();
   if(d?.ok||d?.booking_id||d?.id){
@@ -1677,7 +1678,7 @@ async function confirmBooking(){
   } else if(d?.error==='membership_required'){
     // Klientka bez členstva sa MÔŽE rezervovať dopredu a zaplatiť na mieste —
     // rezervácia sa všade viditeľne označí, aby tréner vedel vybrať vstupné.
-    if(d.can_pay_on_site) showPayOnSiteChoice(_bookClassId, className0||'');
+    if(d.can_pay_on_site) showPayOnSiteChoice(cid, className0||'');
     else { showToast('Najskôr si kúp členstvo alebo jednorazový vstup.','error');
       setTimeout(()=>{window.location.href='/pricing';},1500); }
   } else if(d?.error==='already_booked'){
