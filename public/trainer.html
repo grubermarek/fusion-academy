@@ -1629,7 +1629,18 @@ async function coachLoad(){
     </div>`;
   }
   h+=`</div>
-  <div style="margin:-8px 0 16px"><button onclick="coachOwnActivity()" style="background:transparent;border:1px dashed #4a3a70;border-radius:10px;color:#c4a8ff;padding:7px 14px;font-size:.82rem;cursor:pointer">💡 + Pridať vlastnú aktivitu (letáky, spolupráce, extra obsah…)</button></div>`;
+  <details style="background:#151515;border:1px solid #2a2a2a;border-radius:12px;padding:10px 14px;margin-bottom:10px">
+    <summary style="cursor:pointer;font-weight:700;font-size:.85rem;color:#e8c97a">💡 Ako splniť dennú úlohu — tipy na prácu s leadmi</summary>
+    <div style="font-size:.82rem;color:var(--muted);margin-top:8px;line-height:1.6">
+      Do denných kontaktov sa počíta <b>čokoľvek z tohto</b> (stačí zapísať výsledok pri leade):<br>
+      🔁 <b>Follow-up</b> — ozvi sa tým, čo máš naplánovaných (sú navrchu zoznamu s 🔥)<br>
+      🔗 <b>Pozvánka s linkom</b> — skopíruj svoju pozvánku a pošli ju známej alebo novému leadu<br>
+      🤗 <b>Klientka, čo dlhšie nebola</b> — použi šablónu ✉️, osobná správa funguje najlepšie<br>
+      📞 <b>Nový lead</b> — zavolaj alebo napíš, spýtaj sa, či nepotrebuje pomôcť s prvou hodinou<br><br>
+      Postup pri leade: <b>🤝 Prevezmi</b> ju → napíš / zavolaj → <b>zapíš výsledok</b> (+ poznámku, nech vieš nabudúce nadviazať) → ak treba, nastav <b>dátum follow-upu</b> → keď príde na hodinu alebo sa rozhodne, <b>✅ uzavri case</b>. Cieľ nie je jedna správa — cieľ je doviesť ju na hodinu. 💪
+    </div>
+  </details>
+  <div style="margin:0 0 16px"><button onclick="coachOwnActivity()" style="background:transparent;border:1px dashed #4a3a70;border-radius:10px;color:#c4a8ff;padding:7px 14px;font-size:.82rem;cursor:pointer">💡 + Pridať vlastnú aktivitu (letáky, spolupráce, extra obsah…)</button></div>`;
   // referral
   h+=`<div style="background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:14px 16px;margin-bottom:16px">
     <div style="font-weight:800;margin-bottom:8px">🔗 Tvoj pozývací link</div>

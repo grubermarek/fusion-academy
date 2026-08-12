@@ -39,7 +39,7 @@ module.exports = function initCoach(ctx){
     rotation: {
       1:[{key:'video_motiv',label:'Natoč krátke motivačné video',icon:'🎥',cat:'content'},{key:'plan_week',label:'Pozri si týždenný plán a leady',icon:'🗓️',cat:'education'}],
       2:[{key:'video_dance',label:'Natoč 15–30 s tanečné video',icon:'💃',cat:'content'},{key:'comm3',label:'Napíš 3 existujúcim klientkam',icon:'💬',cat:'community'}],
-      3:[{key:'winback',label:'Ozvi sa klientke, ktorá dlhšie nebola',icon:'🤗',cat:'community'},{key:'story_class',label:'Zverejni story z hodiny',icon:'📸',cat:'content'}],
+      3:[{key:'story_class',label:'Zverejni story z hodiny',icon:'📸',cat:'content'},{key:'react_dm',label:'Odpovedz na komentáre a správy na sociálnych sieťach',icon:'💬',cat:'community'}],
       4:[{key:'edu_content',label:'Vytvor edukatívny obsah (benefit tanca / námietka „neviem tancovať")',icon:'🎓',cat:'content'},{key:'tip_read',label:'Prečítaj si marketingový tip',icon:'📖',cat:'education'}],
       5:[{key:'ask_referral',label:'Požiadaj spokojnú klientku o odporúčanie',icon:'⭐',cat:'community'},{key:'video_vibe',label:'Natoč video z atmosféry hodiny',icon:'🎬',cat:'content'}],
       6:[{key:'react_comments',label:'Reaguj na komentáre a správy',icon:'💬',cat:'community'}],
@@ -85,13 +85,12 @@ module.exports = function initCoach(ctx){
   // ── generovanie denných úloh (lazy + idempotentné) ──────────────────────────
   async function ensureDay(trainer, date){
     const cfg = await getConfig();
+    await q.remove(db.coach_tasks,{trainer_id:trainer._id, date, key:{$in:['followup','referral_share']}},{multi:true});
     const existing = await q.find(db.coach_tasks,{trainer_id:trainer._id, date});
     if(existing.length) return existing;
     const dow = dayOfWeek(date);
     const defs = [
-      {key:'contact3', label:`Kontaktuj minimálne ${cfg.min_contacts} ľudí (leady / bývalé klientky)`, icon:'📞', cat:'mandatory', points:cfg.points.contact3, auto:'contacts'},
-      {key:'followup', label:'Sprav follow-up leadov na dnes', icon:'🔁', cat:'mandatory', points:cfg.points.followup_ontime, auto:'followups'},
-      {key:'referral_share', label:'Pošli aspoň 1 pozvánku so svojím linkom', icon:'🔗', cat:'mandatory', points:cfg.points.referral_share, auto:'copy'},
+      {key:'contact3', label:`Kontaktuj minimálne ${cfg.min_contacts} ľudí — follow-upy, pozvánky s linkom aj klientky, čo dlhšie neboli, všetko sa počíta`, icon:'📞', cat:'mandatory', points:cfg.points.contact3, auto:'contacts'},
       ...(cfg.rotation[dow]||[]).map(t=>({...t, points:cfg.points[t.cat]||5})),
     ];
     const out=[];
@@ -379,11 +378,7 @@ module.exports = function initCoach(ctx){
   });
 
   // kopírovanie pozvánky = splnenie referral úlohy
-  app.post('/api/coach/copied', trainerAuth, async (req,res)=>{
-    const me = coachUser(req);
-    await q.update(db.coach_tasks,{trainer_id:me._id, date:todayStr(), key:'referral_share'},{$set:{done:true, done_at:nowISO()}});
-    res.json({ok:true});
-  });
+  app.post('/api/coach/copied', trainerAuth, async (req,res)=>{ res.json({ok:true}); });
 
   // vlastný text pozvánky (link sa pripája vždy server-side)
   app.post('/api/coach/invite-text', trainerAuth, async (req,res)=>{
@@ -525,12 +520,10 @@ module.exports = function initCoach(ctx){
       const tasks = (await q.find(db.coach_tasks,{trainer_id:me._id})).filter(t=>t.date>=since);
       const contacts = (await q.find(db.coach_contacts,{trainer_id:me._id})).filter(c=>c.date>=since);
       const doneCat = cat => tasks.filter(t=>t.cat===cat && t.done).length;
-      const refShares = tasks.filter(t=>t.key==='referral_share' && t.done).length;
       const goals = [
         { key:'contacts', label:'Kontaktovaní ľudia', actual:contacts.length, goal:cfg.weekly.contacts },
         { key:'content', label:'Obsah (videá / story)', actual:doneCat('content'), goal:cfg.weekly.content },
         { key:'community', label:'Community aktivity', actual:doneCat('community'), goal:cfg.weekly.community },
-        { key:'referral', label:'Poslané pozvánky (dni)', actual:refShares, goal:cfg.weekly.referral_shares },
         { key:'cases', label:'Prevzaté a doriešené leady', actual:(await q.find(db.coach_cases,{trainer_id:me._id})).filter(c=>c.date>=since).length, goal:cfg.weekly.cases },
       ];
       const score = Math.round(goals.reduce((s,g)=>s+Math.min(1, g.goal? g.actual/g.goal : 1),0)/goals.length*100);

@@ -39,7 +39,7 @@ const put = (jar, p, b) => call(jar, 'PUT', p, b);
   // 1) dnešný plán
   let t = (await g('T', '/api/coach/today')).data;
   ok('GET /api/coach/today ok', t && t.ok, t);
-  ok('vygenerované povinné úlohy (contact3, followup, referral_share)', t && ['contact3','followup','referral_share'].every(k => t.tasks.some(x => x.key === k)));
+  ok('jedna povinná úloha contact3 (zlúčené)', t && t.tasks.some(x=>x.key==='contact3'&&x.mandatory) && !t.tasks.some(x=>['followup','referral_share'].includes(x.key)));
   ok('rotujúce úlohy podľa dňa', t && t.tasks.some(x => !x.mandatory));
   ok('referral link obsahuje môj kód', t && t.referral.link.includes(t.referral.code) && t.referral.code.length > 0, t && t.referral);
   ok('správa vždy končí linkom', t && t.referral.message.trim().endsWith(t.referral.link));
@@ -101,10 +101,8 @@ const put = (jar, p, b) => call(jar, 'PUT', p, b);
   const meRow = board.rows.find(r => r.trainer_id === meT.id);
   ok('leaderboard: som v ňom s kontaktami', meRow && meRow.contacts >= 1, meRow);
 
-  // 9) kopírovanie pozvánky splní referral úlohu
-  await post('T', '/api/coach/copied', {});
-  const t5 = (await g('T', '/api/coach/today')).data;
-  ok('referral_share splnená po kopírovaní', t5.tasks.find(x => x.key === 'referral_share').done === true);
+  // 9) kopírovanie pozvánky — endpoint ostáva funkčný (no-op)
+  ok('copied endpoint ok', (await post('T', '/api/coach/copied', {})).data.ok === true);
 
   // 10) admin: overview + config + vlastná úloha
   const ov = (await g('admin', '/api/admin/coach/overview')).data;
@@ -122,7 +120,7 @@ const put = (jar, p, b) => call(jar, 'PUT', p, b);
   const t7 = (await g('T', '/api/coach/today')).data;
   ok('šablóny v today (after_first, no_show, winback…)', t7.templates && ['after_first','no_show','winback','new_lead'].every(k => (t7.templates[k]||'').length > 10));
   const wk = (await g('T', '/api/coach/week')).data;
-  ok('týždenný prehľad: goals + score', wk && wk.ok && wk.goals.length === 5 && wk.score >= 0 && wk.score <= 100, wk);
+  ok('týždenný prehľad: goals + score', wk && wk.ok && wk.goals.length === 4 && wk.score >= 0 && wk.score <= 100, wk);
   const gC = wk.goals.find(x => x.key === 'contacts');
   ok('týždeň počíta kontakty (1)', gC && gC.actual === 1, gC);
   ok('follow-up quality: contacted/replied/interested', wk.quality && wk.quality.contacted === 1 && wk.quality.interested === 1, wk.quality);
