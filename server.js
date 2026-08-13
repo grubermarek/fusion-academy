@@ -357,6 +357,12 @@ function displayNextDateForDay(dow) {
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 
+// Jednorazový termín: `only_date` (YYYY-MM-DD) obmedzí hodinu na jediný dátum —
+// napr. mimoriadny online prenos. Rozvrh je inak čisto týždenný (day_of_week), takže
+// bez tohto by sa hodina opakovala každý týždeň. Po svojom dni ju klientky prestanú
+// vidieť a netreba ju ručne vypínať; admin ju v zozname hodín vidí ďalej.
+function classRunsOn(c, date){ return !c || !c.only_date || c.only_date === (date || today()); }
+
 // ─── MLM helpers ─────────────────────────────────────────────────────────────
 async function getAllDescendants(pid) {
   const seen=new Set([pid]); const queue=[pid]; const res=[];
@@ -1022,6 +1028,29 @@ async function seedData() {
     }
     await q.insert(db.settings,{key:'online_schedule_v2', value:true, at:nowISO()});
     console.log(`✅  Online rozvrh v2: ${added} hodín pridaných (Po/St/Pi/Ne)`);
+  }
+
+  // Mimoriadna online hodina z Brezna — štvrtok 13.8.2026 o 19:00 (test signálu).
+  // `only_date` ju drží na jedinom termíne, takže sa budúci štvrtok neopakuje.
+  if(!(await q.one(db.settings,{key:'online_brezno_20260813'}))){
+    const DATE='2026-08-13', DOW=4, START='19:00';
+    if(!(await q.one(db.classes,{category:'Online', only_date:DATE}))){
+      // Tréner: ak v Brezne beží v ten čas fyzická hodina, vysiela ju jej tréner;
+      // inak padáme na Beátu ako pri ostatných online hodinách.
+      const pair=(await q.find(db.classes,{active:true, day_of_week:DOW}))
+        .find(p=>p.category!=='Online' && p.time_start===START && (p.location||'')==='Brezno');
+      const beata=await q.one(db.users,{name:/Beáta Gruber/i}) || {};
+      await q.insert(db.classes,{ name:'Zumba ONLINE – LIVE', emoji:'🌐', category:'Online',
+        instructor:pair?.instructor || beata.name || 'Fusion Academy',
+        instructor_id:pair?.instructor_id || beata._id || null,
+        location:'Online', stream_city:'Brezno', address:'Živé vysielanie – Brezno',
+        day_of_week:DOW, time_start:START, time_end:'20:00', only_date:DATE,
+        capacity:100, level:'Všetky úrovne',
+        description:'Mimoriadna živá online Zumba z Brezna. Tancuj z obývačky — počíta sa do bodov aj odznakov!',
+        price:6, color:'#2196f3', active:true, created_at:nowISO() });
+      console.log('✅  Online hodina Brezno '+DATE+' '+START+' pridaná (jednorazovo)');
+    }
+    await q.insert(db.settings,{key:'online_brezno_20260813', value:true, at:nowISO()});
   }
 
   // Meta kampaň „FA — Zumba Leads — Jún 2026" — live čísla z Ads Manageru (27.7.2026)
@@ -2561,6 +2590,7 @@ app.get('/api/public/schedule', async(req,res)=>{
     res.setHeader('Access-Control-Allow-Origin','*');
     if(pubSchedCache && Date.now()-pubSchedCache.at<5*60*1000) return res.json(pubSchedCache.data);
     const classes=(await q.find(db.classes,{active:true}))
+      .filter(c=>classRunsOn(c, displayNextDateForDay(c.day_of_week)))
       .sort((a,b)=>(a.day_of_week-b.day_of_week)||String(a.time_start||'').localeCompare(b.time_start||''));
     const out=[];
     for(const c of classes){
@@ -2585,8 +2615,13 @@ app.get('/api/public/schedule', async(req,res)=>{
 
 app.get('/api/classes', async(req,res)=>{
   try {
-    const classes=await q.find(db.classes,{active:true});
     const loggedIn = !!(req.session && req.session.uid);
+    const viewer = loggedIn ? await q.one(db.users,{_id:req.session.uid}).catch(()=>null) : null;
+    // Jednorazové termíny po svojom dni miznú klientkam aj trénerom; admin ich vidí
+    // ďalej, aby ich vedel dočistiť.
+    const allCls = await q.find(db.classes,{active:true});
+    const classes = viewer?.is_admin ? allCls
+      : allCls.filter(c=>classRunsOn(c, displayNextDateForDay(c.day_of_week)));
     const result=[];
     for(const c of classes){
       const bdate = displayNextDateForDay(c.day_of_week);
@@ -5741,10 +5776,11 @@ async function sessionInstructorMap(){
 }
 
 app.post('/api/admin/classes', adminAuth, async(req,res)=>{
-  const{name,emoji,category,instructor,instructor_id,location,day_of_week,time_start,time_end,capacity,level,description,price,color}=req.body;
+  const{name,emoji,category,instructor,instructor_id,location,day_of_week,time_start,time_end,capacity,level,description,price,color,only_date,stream_city}=req.body;
   if(!name||day_of_week===undefined||!time_start) return res.status(400).json({error:'Vyplňte povinné polia'});
   const ins=await resolveInstructor(instructor_id,instructor);
-  const c=await q.insert(db.classes,{name,emoji:emoji||'💃',category:category||'Tanec',instructor:ins.instructor,instructor_id:ins.instructor_id,location:location||'Banská Bystrica',day_of_week:+day_of_week,time_start,time_end:time_end||'',capacity:+capacity||30,level:level||'Všetky úrovne',description:description||'',price:+price||10,color:color||'#e94560',active:true});
+  // only_date = jednorazový termín (mimoriadna hodina); prázdne = štandardné týždenné opakovanie
+  const c=await q.insert(db.classes,{name,emoji:emoji||'💃',category:category||'Tanec',instructor:ins.instructor,instructor_id:ins.instructor_id,location:location||'Banská Bystrica',day_of_week:+day_of_week,time_start,time_end:time_end||'',capacity:+capacity||30,level:level||'Všetky úrovne',description:description||'',price:+price||10,color:color||'#e94560',only_date:only_date||null,stream_city:stream_city||null,active:true});
   res.json({ok:true,id:c._id});
 });
 
@@ -5752,7 +5788,9 @@ app.put('/api/admin/classes/:id', adminAuth, async(req,res)=>{
   // Meň len POSLANÉ polia — čiastočný update (napr. len kapacita) predtým
   // prepísal ostatné polia na undefined/NaN a hodinu deaktivoval.
   const b=req.body, $set={};
-  for(const f of ['name','category','location','time_start','time_end','level','description','color']) if(b[f]!==undefined) $set[f]=b[f];
+  for(const f of ['name','category','location','time_start','time_end','level','description','color','stream_city']) if(b[f]!==undefined) $set[f]=b[f];
+  // Prázdny reťazec = zruš jednorazovosť (hodina sa vráti k týždennému opakovaniu)
+  if(b.only_date!==undefined) $set.only_date = b.only_date || null;
   if(b.emoji!==undefined) $set.emoji=b.emoji||'💃';
   if(b.day_of_week!==undefined) $set.day_of_week=+b.day_of_week;
   if(b.capacity!==undefined) $set.capacity=+b.capacity;
@@ -9167,7 +9205,8 @@ app.get('/api/online/classes', auth, async(req,res)=>{
   // Permanentkárka: prístup má, ale sledovanie ju stojí 1 vstup (odčíta /api/online/enter)
   const entryMode = !hasFull && !passMode && (mu?.single_entries||0)>0;
   const hasAccess = hasFull || passMode || entryMode;
-  const classes = await q.find(db.classes,{category:'Online',active:true});
+  const classes = (await q.find(db.classes,{category:'Online',active:true}))
+    .filter(c=>classRunsOn(c, nextOccurrence(c.day_of_week)));
   const result = await Promise.all(classes.map(async c=>({
     ...c,
     instructor: await onlineInstructorFor(c, nextOccurrence(c.day_of_week)),
@@ -9191,7 +9230,7 @@ app.post('/api/online/enter', auth, async(req,res)=>{
     const u=await q.one(db.users,{_id:req.session.uid});
     const m=await checkMembership(u._id);
     const cls=await q.one(db.classes,{_id:String(req.body.class_id||'')});
-    if(!cls || cls.category!=='Online') return res.status(404).json({error:'Online hodina nenájdená'});
+    if(!cls || cls.category!=='Online' || !classRunsOn(cls, today())) return res.status(404).json({error:'Online hodina nenájdená'});
     const stream={stream_url:cls.stream_url||null, stream_key:cls.stream_key||null};
     if(await onlineFreeToday()) return res.json({ok:true, charged:false, mode:'full', free_day:true, stream});
     if(hasOnlineAccess(m,u)) return res.json({ok:true, charged:false, mode:'full', stream});
@@ -9382,6 +9421,7 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
     const toMin=t=>{ const [h,m]=String(t||'0:0').split(':').map(Number); return h*60+m; };
     const nowMin=(d=>d.getHours()*60+d.getMinutes())(new Date());
     const classes=(await q.find(db.classes,{category:'Online', active:true, day_of_week:dow}))
+      .filter(c=>classRunsOn(c, today()))
       .sort((a,b)=>(a.time_start||'').localeCompare(b.time_start||''));
     const cls=classes.find(c=> nowMin>=toMin(c.time_start)-90 && nowMin<toMin(c.time_end||c.time_start)+5 );
     if(!cls) return res.json({ok:true, upcoming:null});
@@ -9412,7 +9452,8 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
 setInterval(async()=>{
   try{
     const dow=new Date().getDay(); const nowHM=new Date().toTimeString().slice(0,5);
-    const classes=await q.find(db.classes,{category:'Online', active:true, day_of_week:dow, time_start:nowHM});
+    const classes=(await q.find(db.classes,{category:'Online', active:true, day_of_week:dow, time_start:nowHM}))
+      .filter(c=>classRunsOn(c, today()));
     for(const cls of classes){
       const guardKey='online_live_'+cls._id+'_'+today();
       if(await q.one(db.settings,{key:guardKey})) continue;
@@ -11551,6 +11592,8 @@ app.post('/api/bookings', auth, async(req,res)=>{
       console.warn('⚠️ booking 404: class_id='+class_id+' user='+(who&&who.email)+' exists='+!!cls+(cls?' active='+cls.active:''));
       return res.status(404).json({error:'Hodina nenájdená', stale:true});
     }
+    // Jednorazový termín sa dá rezervovať len na svoj dátum
+    if(!classRunsOn(cls, booking_date||today())) return res.status(404).json({error:'Hodina nenájdená', stale:true});
     const parent=await q.one(db.users,{_id:req.session.uid});
     // ── Booking for a child profile? ────────────────────────────────────────────
     let target = parent;
