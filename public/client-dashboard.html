@@ -1634,7 +1634,8 @@ let _bookIsFitDay=false;
 
 let className0='';
 // Ponuka pre klientku bez členstva: rezervovať teraz, zaplatiť na mieste
-function showPayOnSiteChoice(classId, name){
+function showPayOnSiteChoice(classId, name, price){
+  price=+price||10;
   let m=document.getElementById('posModal');
   if(!m){ m=document.createElement('div'); m.id='posModal';
     m.style.cssText='display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center;padding:16px';
@@ -1645,7 +1646,7 @@ function showPayOnSiteChoice(classId, name){
     <div style="font-size:.88rem;color:var(--muted,#999);line-height:1.6;margin-bottom:16px">
       Miesto na hodinu <b style="color:#ddd">${escHtml(name)}</b> ti vieme podržať aj tak — vstup jednoducho zaplatíš v hotovosti priamo v štúdiu.
     </div>
-    <button onclick="doPayOnSite('${classId}')" style="width:100%;background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);color:#111;font-weight:800;border:none;border-radius:12px;padding:13px;font-size:.95rem;cursor:pointer;margin-bottom:8px">💵 Rezervovať a zaplatiť na mieste (10 €)</button>
+    <button onclick="doPayOnSite('${classId}')" style="width:100%;background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);color:#111;font-weight:800;border:none;border-radius:12px;padding:13px;font-size:.95rem;cursor:pointer;margin-bottom:8px">💵 Rezervovať a zaplatiť na mieste (${price} €)</button>
     <a href="/pricing" style="display:block;text-align:center;background:rgba(201,168,76,.1);border:1px solid var(--gold-border,#332a18);color:var(--gold,#C9A84C);border-radius:12px;padding:12px;font-size:.9rem;font-weight:700;text-decoration:none;margin-bottom:8px">✨ Pozrieť členstvá a permanentky</a>
     <button onclick="document.getElementById('posModal').style.display='none'" style="width:100%;background:none;border:1px solid #333;color:var(--muted,#888);border-radius:10px;padding:9px;font-size:.82rem;cursor:pointer">Zrušiť</button>
   </div>`;
@@ -1691,7 +1692,7 @@ async function confirmBooking(){
   } else if(d?.error==='membership_required'){
     // Klientka bez členstva sa MÔŽE rezervovať dopredu a zaplatiť na mieste —
     // rezervácia sa všade viditeľne označí, aby tréner vedel vybrať vstupné.
-    if(d.can_pay_on_site) showPayOnSiteChoice(cid, className0||'');
+    if(d.can_pay_on_site) showPayOnSiteChoice(cid, className0||'', d.tech_price);
     else { showToast('Najskôr si kúp členstvo alebo jednorazový vstup.','error');
       setTimeout(()=>{window.location.href='/pricing';},1500); }
   } else if(d?.error==='already_booked'){

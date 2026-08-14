@@ -1063,6 +1063,42 @@ async function seedData() {
     await q.insert(db.settings,{key:'purge_test_bookings_20260813', value:true, at:nowISO()});
   }
 
+  // 14.8.: Technický tréning v Detve — piatok + nedeľa 18:00–19:00 (pred Zumbou 19:00).
+  // Cenník: 10 € jednorazovo / Bronze 9 / Silver 8 / Gold zdarma; platí bežná permanentka.
+  // Beží aj online prenos. Dnešný (14.8.) tréning je zadarmo pre všetkých.
+  if(!(await q.one(db.settings,{key:'tech_training_detva_20260814'}))){
+    const marek=await q.one(db.users,{name:/Marek Gruber/i, is_admin:true}) || await q.one(db.users,{name:/Marek Gruber/i}) || {};
+    const DESC='Technika, izolácie a štýl — nadstavba k Zumbe. 💳 10 € jednorazový vstup · Bronze 9 € · Silver 8 € · Gold ZDARMA. Platí aj permanentka (1 vstup) — kúpiš kartou v Obchode, alebo zaplatíš na mieste. Pokračujeme Zumbou o 19:00. Beží aj online prenos!';
+    for(const dow of [5,0]){
+      if(await q.one(db.classes,{category:'Technika', location:'Detva', day_of_week:dow, time_start:'18:00', active:true})) continue;
+      await q.insert(db.classes,{ name:'Technický tréning', emoji:'🎯', category:'Technika',
+        instructor:marek.name||'Marek Gruber', instructor_id:marek._id||null,
+        location:'Detva', address:'Fusion Academy, Záhradná 7, Detva',
+        day_of_week:dow, time_start:'18:00', time_end:'19:00', capacity:20, level:'Všetky úrovne',
+        description:DESC, price:10, color:'#7ec8e3', active:true, created_at:nowISO() });
+    }
+    for(const dow of [5,0]){
+      if(await q.one(db.classes,{category:'Online', day_of_week:dow, time_start:'18:00', active:true})) continue;
+      await q.insert(db.classes,{ name:'Technický tréning ONLINE – LIVE', emoji:'🌐', category:'Online',
+        instructor:marek.name||'Marek Gruber', instructor_id:marek._id||null,
+        location:'Online', stream_city:'Detva', address:'Živé vysielanie – Detva',
+        day_of_week:dow, time_start:'18:00', time_end:'19:00', capacity:100, level:'Všetky úrovne',
+        description:'Živý prenos technického tréningu z Detvy. Technika a štýl z obývačky!',
+        price:6, color:'#2196f3', active:true, created_at:nowISO() });
+    }
+    if(!(await q.one(db.settings,{key:'tech_free_dates'})))
+      await q.insert(db.settings,{key:'tech_free_dates', value:['2026-08-14'], at:nowISO()});
+    // oznam všetkým klientkam (nie deti/test/admin)
+    const everyone=(await q.find(db.users,{})).filter(u2=>!u2.is_admin && !u2.is_child && u2.user_type==='client'
+      && !/@test-fa-qa\.local$|@qa-biz\.local$/i.test(String(u2.email||'')));
+    for(const u2 of everyone) await q.insert(db.notifications,{user_id:u2._id, type:'news',
+      title:'🎯 NOVINKA: Technický tréning v Detve!',
+      body:'Od tohto týždňa každý PIATOK a NEDEĽU 18:00–19:00 (pred Zumbou). Technika, izolácie, štýl. Dnes (piatok) ÚPLNE ZADARMO — príď to vyskúšať! Inak 10 € / Bronze 9 € / Silver 8 € / Gold zdarma, platí aj permanentka. Beží aj online prenos. 💃',
+      read:false, created_at:nowISO()}).catch(()=>{});
+    console.log('🎯 Technický tréning Detva pridaný (Pi+Ne 18:00) + notifikácie: '+everyone.length);
+    await q.insert(db.settings,{key:'tech_training_detva_20260814', value:true, at:nowISO()});
+  }
+
   // Meta kampaň „FA — Zumba Leads — Jún 2026" — live čísla z Ads Manageru (27.7.2026)
   // + priradenie meta-klientov registrovaných počas kampane, aby fungovalo ROAS/CAC.
   if(!(await q.one(db.settings,{key:'meta_campaign_sync_v1'}))){
@@ -11021,6 +11057,7 @@ app.get('/api/attendance/class/:classId', trainerAuth, async(req,res)=>{
         user_id: b.user_id,
         av: !!(u && u.avatar),
         pay_on_site: !!b.pay_on_site,
+        pay_amount: b.pay_amount||null,
         entry_collected: b.entry_collected||null,
         name: b.user_name||u?.name||'—',
         email: b.user_email||u?.email||'—',
@@ -11629,6 +11666,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
     // Private lessons are never free (category check)
     const isPrivate = /súkromn/i.test(cls.name) || /súkromn/i.test(cls.category||'');
     const isOnlineClass = cls.category==='Online';
+    const isTechClass = cls.category==='Technika';
     const visitCount = u.visit_count || 0;
     let payOnSite = false; // rezervácia bez členstva/kreditu so sľubom platby na mieste
     let deductPlan = null; // odpočet vstupu/kreditu sa vykoná až po úspešnej validácii
@@ -11638,7 +11676,31 @@ app.post('/api/bookings', auth, async(req,res)=>{
     // client profile shows. Do NOT also gate on visit_count, or a client whose free
     // class is still available (flag false) but has visits from other paths gets
     // wrongly redirected to buy membership.
-    if(!u.is_admin && u.user_type !== 'trainer' && !isOnlineClass){
+    // ── TECHNICKÝ TRÉNING (kategória Technika) — vlastný cenník ────────────────
+    // Členstvo hodinu NEkryje (iba Gold zdarma). Platí bežná permanentka/vstup,
+    // alebo platba na mieste podľa členstva: 10 € / Bronze 9 € / Silver 8 €.
+    // „Prvá hodina zadarmo" sa na technický tréning nevzťahuje ani nespotrebuje.
+    let techPrice=null;
+    if(isTechClass && !u.is_admin && u.user_type!=='trainer'){
+      const freeDates=(await q.one(db.settings,{key:'tech_free_dates'}))?.value||[];
+      const bdatePre=booking_date||displayNextDateForDay(cls.day_of_week);
+      if(freeDates.includes(bdatePre)){ accessMethod='promo_free'; }
+      else {
+        const m=await checkMembership(u._id);
+        const active=m && m.status==='active' && (!m.expires_at || m.expires_at>=today());
+        const plan=String((m?.plan_id||'')+' '+(m?.plan_name||'')).toLowerCase();
+        if(active && /gold/.test(plan)) accessMethod='membership';
+        else if((u.free_credits||0)>0){ deductPlan={uid:u._id, field:'free_credits', value:u.free_credits-1}; accessMethod='free_credit'; }
+        else if((u.single_entries||0)>0){ deductPlan={uid:u._id, field:'single_entries', value:u.single_entries-1}; accessMethod='single_entry'; }
+        else {
+          techPrice=active&&/silver/.test(plan)?8:(active&&/bronze/.test(plan)?9:10);
+          if(req.body.pay_on_site){ payOnSite=true; accessMethod='pay_on_site'; }
+          else return res.status(402).json({ error:'membership_required', can_pay_on_site:true, tech_price:techPrice,
+            message:`Technický tréning: ${techPrice} € jednorazovo${techPrice<10?' (zľava podľa členstva)':''}. Platí aj permanentka — vstup si kúpiš kartou v Obchode, alebo zaplatíš na mieste.` });
+        }
+      }
+    }
+    if(!u.is_admin && u.user_type !== 'trainer' && !isOnlineClass && !isTechClass){
       if(u.free_class_used){
         // Not first visit – need membership or single entry credit
         const m = await checkMembership(u._id);
@@ -11705,7 +11767,8 @@ app.post('/api/bookings', auth, async(req,res)=>{
       user_id:u._id, user_name:u.name, user_email:isChild?parent.email:u.email, user_phone:u.phone||parent.phone||'',
       booked_by:parent._id, booked_by_name:parent.name, is_child_booking:isChild, child_name:isChild?u.name:null,
       booking_date:bdate, status:'confirmed', pay_on_site:payOnSite, notes:notes||'',
-      free_class: !u.free_class_used, // 1. hodina zdarma — nepočíta sa do €/klient bonusu trénera
+      pay_amount: payOnSite ? (techPrice||10) : null, // koľko vybrať na mieste (technika má cenník podľa členstva)
+      free_class: !u.free_class_used && !isTechClass, // 1. hodina zdarma — nepočíta sa do €/klient bonusu trénera
       access_method: accessMethod,    // pre korektné vrátenie vstupu pri zrušení
       created_at:nowISO()
     });
@@ -11720,7 +11783,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
     // POTVRDÍ absolvovanie hodiny (QR alebo „potvrdiť hodinu"). Tu len spotrebuj 1. hodinu zdarma
     // (rezervácia miesta) a resetni winback príznak.
     const userUpd = {};
-    if(!u.free_class_used && !isOnlineClass) userUpd.free_class_used = true;
+    if(!u.free_class_used && !isOnlineClass && !isTechClass) userUpd.free_class_used = true;
     if(u.winback_sent) userUpd.winback_sent = false;
     if(Object.keys(userUpd).length) await q.update(db.users,{_id:u._id},{$set: userUpd});
     const notifUid = parent._id;
