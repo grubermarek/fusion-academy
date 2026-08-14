@@ -5680,7 +5680,9 @@ async function saveStreamUrl(classId){
 
 // Init
 document.getElementById('commMonth').value=new Date().toISOString().slice(0,7);
-show('attendance');
+// Deep link: /admin#sekcia otvorí konkrétnu sekciu (napr. z notifikácie #points)
+{ const h=(location.hash||'').replace('#',''); show(h && document.getElementById('s-'+h) ? h : 'attendance'); }
+window.addEventListener('hashchange',()=>{ const h=(location.hash||'').replace('#',''); if(h && document.getElementById('s-'+h)) show(h); });
 
 // ── EDIT USER MODAL ───────────────────────────────────────────────────────────
 let _editUserId = null;

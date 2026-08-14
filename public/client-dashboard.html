@@ -1168,7 +1168,10 @@ function notifDest(n){
     case 'achievement': return my?('/u/'+my):null;
     case 'commission': case 'referral_credit': case 'structure_growth': return '/client-dashboard#struktura';
     case 'support': return n.ticket_id ? ('/support?t='+n.ticket_id) : '/support';
-    case 'new_lead': return '/admin';
+    case 'new_lead': return '/admin#leads';
+    case 'review_claim': return '/admin#points';       // schválenie Google recenzie
+    case 'pay_on_site': return '/admin#bookings';
+    case 'manual_payment': return '/admin#invoices';   // potvrdenie platby → Všetky predaje
     case 'expiry_warning': case 'credit': case 'role_change': return '/pricing';
     case 'friend_purchase': case 'purchase': return '/shop';
     default: return null;
