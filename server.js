@@ -13060,6 +13060,12 @@ async function campaignRevenueMap(){
   return byCampaign;
 }
 
+// Automatický sync kampaní z Meta Ads API na POZADÍ — nečaká, kým admin otvorí
+// panel Kampane. Beží po štarte a potom každých 6 hodín (interná 6h cache
+// v syncMetaCampaignStats drží počet volaní API na uzde).
+setTimeout(()=>syncMetaCampaignStats(false).catch(()=>{}), 90*1000);
+setInterval(()=>syncMetaCampaignStats(false).catch(()=>{}), 6*3600*1000);
+
 // Meta Ads prehľad: klienti prišli z Meta (fbclid / utm_source / lead_source), ich tržby,
 // stav prepojenia (pixel + CAPI). Zdroj pravdy pre "ktorá klientka je z Meta Ads".
 const isMetaUser = u => !!(u.fbclid || /faceb|^fb$|meta|instagr|^ig$/i.test(String(u.utm_source||''))
