@@ -2416,11 +2416,13 @@ app.post('/api/admin/meta-fix-ids', adminAuth, async(req,res)=>{
     const tok=(await getMetaAdsToken()) || (await getMetaCapiToken());
     if(!tok) return res.status(400).json({error:'Chýba Meta token'});
     const gj=async u=>await (await fetch('https://graph.facebook.com/v21.0/'+u+(u.includes('?')?'&':'?')+'access_token='+encodeURIComponent(tok))).json();
-    const accs=await gj('me/adaccounts?fields=id,name&limit=25');
-    if(accs.error) return res.json({ok:false, step:'adaccounts', error:accs.error.message});
-    const report={accounts:(accs.data||[]).map(a=>a.id), campaigns:[], updated:[]};
+    let accs=await gj('me/adaccounts?fields=id,name&limit=25');
+    // token nemusí vedieť listovať účty (asset-level permission) — skús priamo známy účet
+    if(accs.error || !(accs.data||[]).length) accs={data:[{id:'act_51759494'}]};
+    const report={accounts:(accs.data||[]).map(a=>a.id), campaigns:[], updated:[], errors:[]};
     for(const acc of (accs.data||[])){
       const camps=await gj(acc.id+'/campaigns?fields=id,name&limit=100');
+      if(camps.error){ report.errors.push(acc.id+' campaigns: '+camps.error.message); continue; }
       for(const c of (camps.data||[])) report.campaigns.push({id:c.id, name:c.name});
       const ads=await gj(acc.id+'/ads?fields=id,name,campaign_id&limit=200');
       const findC=re=>(camps.data||[]).find(x=>re.test(x.name||''));
