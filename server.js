@@ -1169,6 +1169,29 @@ async function seedData() {
     await q.insert(db.settings,{key:'ab_card_fix_20260814', value:true, at:nowISO()});
   }
 
+  // 14.8. v2: ID z Meta MCP nesedia s Graph API (token hlásil „does not exist").
+  // Zisti si SPRÁVNE Graph ID sám — tokenom appky, párovaním podľa názvov.
+  if(!(await q.one(db.settings,{key:'meta_graph_ids_20260814'}))){
+    try{
+      const tok=(await getMetaAdsToken()) || (await getMetaCapiToken());
+      if(tok){
+        const gj=async u=>await (await fetch('https://graph.facebook.com/v21.0/'+u+'&access_token='+encodeURIComponent(tok))).json();
+        const camps=await gj('act_51759494/campaigns?fields=id,name&limit=100');
+        const ads=await gj('act_51759494/ads?fields=id,name,campaign_id&limit=200');
+        const findC=re=>(camps.data||[]).find(c=>re.test(c.name||''));
+        const cWebG=findC(/Zumba Web/i), cJunG=findC(/Zumba Leads/i);
+        const abAd=(ads.data||[]).find(a=>/Obrázok reklama marek/i.test(a.name||''));
+        const setId=async(nameRe,fields)=>{ const doc=await q.one(db.campaigns,{name:nameRe}); if(doc) await q.update(db.campaigns,{_id:doc._id},{$set:fields}); };
+        if(cWebG) await setId('FA — Zumba Web — Registrácia',{meta_campaign_id:cWebG.id});
+        if(cJunG) await setId('FA — Zumba Leads — Jún 2026',{meta_campaign_id:cJunG.id});
+        if(abAd) await setId(/Obrázok — A\/B test/,{meta_campaign_id:abAd.campaign_id||cWebG?.id, meta_ad_id:abAd.id});
+        await q.remove(db.settings,{key:'meta_sync_at'},{multi:true});
+        console.log(`🎯 Graph ID zistené: web=${cWebG?.id||'?'} jun=${cJunG?.id||'?'} abAd=${abAd?.id||'?'}`);
+        await q.insert(db.settings,{key:'meta_graph_ids_20260814', value:true, at:nowISO()});
+      } else console.log('🎯 Graph ID: chýba Meta token, preskakujem (skúsi sa pri ďalšom boote)');
+    }catch(e){ console.error('meta graph ids:', e.message); }
+  }
+
   // Meta kampaň „FA — Zumba Leads — Jún 2026" — live čísla z Ads Manageru (27.7.2026)
   // + priradenie meta-klientov registrovaných počas kampane, aby fungovalo ROAS/CAC.
   if(!(await q.one(db.settings,{key:'meta_campaign_sync_v1'}))){
