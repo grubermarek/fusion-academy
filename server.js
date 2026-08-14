@@ -1152,6 +1152,23 @@ async function seedData() {
     await q.insert(db.settings,{key:'google_campaign_20260814', value:true, at:nowISO()});
   }
 
+  // 14.8.: oprava A/B kariet — A/B karta nemala meta_ad_id, takže sync nemal čo
+  // stiahnuť (ukazovala nuly, hoci reklama minula 63 €). Nové mapovanie:
+  //  · Web karta = CELÁ kampaň 52538230154873 (všetky reklamy vrátane A/B)
+  //  · A/B karta = konkrétna nová obrázková reklama 52541740714473
+  if(!(await q.one(db.settings,{key:'ab_card_fix_20260814'}))){
+    const cWeb=await q.one(db.campaigns,{name:'FA — Zumba Web — Registrácia'});
+    if(cWeb) await q.update(db.campaigns,{_id:cWeb._id},{$set:{meta_campaign_id:'52538230154873',
+      note:'Spend/impresie/kliky = CELÁ kampaň z Meta Ads API (vrátane A/B reklamy). Registrácie/tržby živo cez utm. Detail novej obrázkovej reklamy má vlastnú kartu A/B test.'},
+      $unset:{meta_ad_id:true}});
+    const cAB=await q.one(db.campaigns,{name:/Obrázok — A\/B test/});
+    if(cAB) await q.update(db.campaigns,{_id:cAB._id},{$set:{meta_campaign_id:'52538230154873', meta_ad_id:'52541740714473',
+      note:'Detail novej obrázkovej reklamy (A/B) — spend/impresie/kliky len tejto reklamy z Meta Ads API. Pozor: jej čísla sú zahrnuté aj v karte Web — Registrácia (celá kampaň).'}});
+    await q.remove(db.settings,{key:'meta_sync_at'},{multi:true});
+    console.log('🎯 A/B karty premapované (Web=celá kampaň, A/B=reklama 52541740714473), sync vynútený');
+    await q.insert(db.settings,{key:'ab_card_fix_20260814', value:true, at:nowISO()});
+  }
+
   // Meta kampaň „FA — Zumba Leads — Jún 2026" — live čísla z Ads Manageru (27.7.2026)
   // + priradenie meta-klientov registrovaných počas kampane, aby fungovalo ROAS/CAC.
   if(!(await q.one(db.settings,{key:'meta_campaign_sync_v1'}))){
