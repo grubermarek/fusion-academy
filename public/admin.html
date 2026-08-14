@@ -1945,8 +1945,8 @@ async function loadReviewClaims(){
   const d=await api('/api/admin/review-claims'); if(!d?.ok) return;
   const pend=d.claims.filter(c=>c.status==='pending');
   const done=d.claims.filter(c=>c.status!=='pending').slice(0,10);
-  box.innerHTML=`<div class="card border-0 rounded-3 p-3">
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+  box.innerHTML=`<div class="card border-0 rounded-3 p-3" style="max-width:720px">
+    <div class="d-flex align-items-center flex-wrap gap-3 mb-2">
       <div class="fw-semibold" style="color:#7ec8e3">⭐ Google recenzie — schvaľovanie (+${d.points} b)${pend.length?` <span class="badge bg-danger">${pend.length}</span>`:''}</div>
       <a href="${d.url}" target="_blank" class="btn btn-sm btn-outline-info">🔗 Otvoriť naše recenzie na Googli</a>
     </div>
@@ -2963,6 +2963,7 @@ async function loadPointsSummary(){
     <span class="badge bg-secondary">🛍️ Merch: ${ct.merch||0} b.</span>
     <span class="badge bg-secondary">🛒 Merch v tíme: ${ct.merchline||0} b.</span>
     <span class="badge bg-secondary">💛 Členstvá: ${ct.membership||0} b.</span>
+    <span class="badge bg-secondary">⭐ Recenzie: ${ct.review||0} b.</span>
     <span class="badge bg-warning text-dark">Σ ${d.grandPoints||0} b. · ${d.count} klientov</span>
   </div>`;
   const rows=d.rows.map((r,i)=>{

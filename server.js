@@ -8005,8 +8005,9 @@ async function pointsSummaryData(from, to){
     (await q.find(db.orders,{})).filter(o=>o.status==='paid').forEach(o=>{ if(!inRange(o.paid_at||o.created_at)) return;
       const uid=emailToId[(o.client_email||'').toLowerCase()]; if(!uid) return;
       (o.items||[]).forEach(it=>{ if(isMerchItem(it)) merchMap[uid]=(merchMap[uid]||0)+(+it.qty||1); }); });
-    const rows=[]; const catTotals={hours:0, online:0, refs:0, membership:0, newmem:0, merch:0, merchline:0};
+    const rows=[]; const catTotals={hours:0, online:0, refs:0, membership:0, newmem:0, merch:0, merchline:0, review:0};
     const spinBy={}; (await q.find(db.spins,{})).forEach(s=>{ if(inRange(s.date)){ const b=spinBy[s.user_id]=spinBy[s.user_id]||{p:0,c:0}; b.p+=(+s.points||0); if(!s.milestone) b.c++; } });
+    const reviewBy={}; (await q.find(db.review_claims,{status:'approved'})).forEach(c=>{ if(inRange(c.decided_at||c.created_at)) reviewBy[c.user_id]=(reviewBy[c.user_id]||0)+1; });
     const paidTiers=await paidMembershipTierMap();
     for(const u of users){
       const bks=byUser[u._id]||[];
@@ -8019,11 +8020,12 @@ async function pointsSummaryData(from, to){
       const md=merchDownlinePointsFor(u._id, adjacency, merchMap);
       const merchCount=merchMap[u._id]||0;
       const effTier=hasMem?effectiveMemTier(paidTiers[u._id]||null, m.plan_id, !!m.gift):null;
-      const pi=buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, memTier:effTier, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, spinPoints:(spinBy[u._id]||{}).p||0, spinCount:(spinBy[u._id]||{}).c||0});
+      const pi=buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, memTier:effTier, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, spinPoints:(spinBy[u._id]||{}).p||0, spinCount:(spinBy[u._id]||{}).c||0, reviewCount:reviewBy[u._id]||0});
       if(pi.total<=0) continue;
       catTotals.hours+=hours*MP_WEIGHTS.hour; catTotals.online+=online*MP_WEIGHTS.hour;
       catTotals.refs+=refs*MP_WEIGHTS.referral; catTotals.membership+=hasMem?membershipPointsFor(effTier):0;
       catTotals.newmem+=nm.points; catTotals.merch+=merchCount*MP_WEIGHTS.merch; catTotals.merchline+=md.points;
+      catTotals.review+=(reviewBy[u._id]||0)*10;
       rows.push({ id:u._id, name:u.name, total:pi.total, hours, online, refs, hasMem,
         items:pi.items.filter(i=>i.points>0).map(i=>({label:i.label, count:i.count, points:i.points})) });
     }
