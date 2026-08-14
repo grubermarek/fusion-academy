@@ -12358,11 +12358,13 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
       const privMap=await privCountMapInPeriod(prefix);
       // body z kolesa dennej odmeny + míľniky série — bez nich rebríček nesedel s „Tvoje body"
       const spinBy={}; (await q.find(db.spins,{})).forEach(s=>{ if((s.date||'').startsWith(prefix)){ const b=spinBy[s.user_id]=spinBy[s.user_id]||{p:0,c:0}; b.p+=(+s.points||0); if(!s.milestone) b.c++; } });
+      // ⭐ schválené Google recenzie (+10 b) — musia sedieť s admin sumárom bodov
+      const reviewBySpot={}; (await q.find(db.review_claims,{status:'approved'})).forEach(c=>{ if(String(c.decided_at||c.created_at||'').startsWith(prefix)) reviewBySpot[c.user_id]=(reviewBySpot[c.user_id]||0)+1; });
       const ranked=[];
       for(const u of users){
         const nm=newMemberPointsFor(u._id, adjacency, buyerSet);
         const md=merchDownlinePointsFor(u._id, adjacency, merchMap);
-        const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null, memTier:memTier[u._id]||null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount:merchMap[u._id]||0, merchLineCount:md.count, merchLinePoints:md.points, privCount:privMap[u._id]||0, spinPoints:(spinBy[u._id]||{}).p||0, spinCount:(spinBy[u._id]||{}).c||0 }, prefix);
+        const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null, memTier:memTier[u._id]||null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount:merchMap[u._id]||0, merchLineCount:md.count, merchLinePoints:md.points, privCount:privMap[u._id]||0, spinPoints:(spinBy[u._id]||{}).p||0, spinCount:(spinBy[u._id]||{}).c||0, reviewCount:reviewBySpot[u._id]||0 }, prefix);
         if(bd.total>0) ranked.push({ id:u._id, name:u.name, avatar:u.avatar||null, refs:refCount[u._id]||0, hours:attCount[u._id]||0, score:bd.total, points:bd.total, breakdown:bd.items, badge:getMemberBadge(u.created_at, u) });
       }
       ranked.sort((a,b)=>b.points-a.points);
