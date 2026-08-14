@@ -476,6 +476,8 @@ async function confirmBooking() {
 }
 
 function showSuccess(className, dateStr) {
+  // Nový pop-up „vezmi kamošku" (taška zdarma); stará karta zostáva ako fallback
+  if(window.showBookingSuccess){ showBookingSuccess({className, dateStr}); return; }
   const grid = document.getElementById('classesGrid');
   const card = document.createElement('div');
   card.className = 'success-card';
@@ -640,6 +642,7 @@ init();
   </div>
 </footer>
 <script src="/nav-bar.js"></script>
+<script src="/booking-success.js"></script>
 <script src="/dock.js"></script>
 <script>FA_I18N.mount('langSw');document.addEventListener('fa-lang-changed',()=>location.reload());</script>
 </body>

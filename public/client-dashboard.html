@@ -1682,7 +1682,10 @@ async function confirmBooking(){
   btn.disabled=false;
   closeBookModal();
   if(d?.ok||d?.booking_id||d?.id){
-    showToast(_bookIsFitDay?'🎉 Prihlásený/á na FitDay!':'✅ Rezervácia potvrdená!','success');
+    // Úspech: pop-up „vezmi kamošku" (taška zdarma do konca mesiaca); FitDay má vlastný toast
+    if(_bookIsFitDay) showToast('🎉 Prihlásený/á na FitDay!','success');
+    else if(window.showBookingSuccess) showBookingSuccess({className:className0||''});
+    else showToast('✅ Rezervácia potvrdená!','success');
     loadMyBookings();loadClasses();
     if(_bookIsFitDay) checkFitDayBooked();
   } else if(d?.error==='membership_required'){
@@ -2897,6 +2900,7 @@ init();
 })();
 </script>
 <script src="/nav-bar.js"></script>
+<script src="/booking-success.js"></script>
 <script src="/dock.js"></script>
 </body>
 </html>
