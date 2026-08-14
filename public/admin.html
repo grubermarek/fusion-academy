@@ -145,6 +145,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </div>
 
     <div class="group-links" data-group="reports">
+      <a class="nav-link" href="#" onclick="show('fusionai')"><i class="bi bi-robot me-2"></i><span style="background:linear-gradient(90deg,#C9A84C,#e8d18a);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:800">Fusion AI 🤖</span></a>
       <a class="nav-link" href="#" onclick="show('bizrank')"><i class="bi bi-trophy me-2"></i><span style="background:linear-gradient(90deg,#C9A84C,#e8d18a);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:800">Business Rank</span></a>
       <div class="nav-group-label">Financie</div>
       <a class="nav-link" href="#" onclick="show('finance')"><i class="bi bi-graph-up me-2"></i><span style="color:#C9A24C;font-weight:700">Financie</span></a>
@@ -1400,6 +1401,42 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </div>
   </div>
 
+  <!-- FUSION AI — CEO dashboard (fáza 1, deterministický) -->
+  <div class="section" id="s-fusionai">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-1">
+      <h4 class="fw-bold mb-0">🤖 Fusion AI — Command Center</h4>
+      <button class="btn btn-sm btn-outline-warning" onclick="loadFusionAI(true)">↻ Prepočítať</button>
+    </div>
+    <p class="text-muted small mb-3">Každé číslo je vypočítané z reálnych dát (žiadne AI odhady). Ranný brief chodí adminom o 7:00 do notifikácií.</p>
+    <div id="faiToday" class="mb-3"><div class="text-muted small">Načítavam…</div></div>
+    <div class="row g-3">
+      <div class="col-lg-7">
+        <div class="card border-0 rounded-3 p-3 mb-3">
+          <div class="fw-semibold mb-2" style="color:#C9A84C">📋 Ranný brief</div>
+          <pre id="faiBrief" class="mb-0 small" style="white-space:pre-wrap;color:#ddd;background:none;font-family:inherit">…</pre>
+        </div>
+        <div class="card border-0 rounded-3 p-3 mb-3">
+          <div class="fw-semibold mb-2" style="color:#C9A84C">💰 Money left on the table <span id="faiMoneyTotal" class="badge" style="background:linear-gradient(135deg,#C9A84C,#a5842f);color:#161310"></span></div>
+          <div id="faiMoney" class="small"></div>
+        </div>
+      </div>
+      <div class="col-lg-5">
+        <div class="card border-0 rounded-3 p-3 mb-3">
+          <div class="fw-semibold mb-2">⚠️ Potrebuje pozornosť</div>
+          <div id="faiAttention" class="small"></div>
+        </div>
+        <div class="card border-0 rounded-3 p-3 mb-3">
+          <div class="fw-semibold mb-2">🏙️ Mestá — dochádzka 14 dní</div>
+          <div id="faiCities" class="small"></div>
+        </div>
+        <div class="card border-0 rounded-3 p-3 mb-3">
+          <div class="fw-semibold mb-2">📊 Obsadenosť hodín (najbližší termín)</div>
+          <div id="faiOcc" class="small" style="max-height:300px;overflow-y:auto"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ÚLOHY TRÉNEROV -->
   <div class="section" id="s-tasktracker">
     <h4 class="fw-bold mb-1">🎯 Coach Growth — denný plán trénerov</h4>
@@ -1724,7 +1761,7 @@ const GROUP_TITLES={manage:'Správa',marketing:'Marketing',reports:'Financie & r
 const SECTION_GROUP={attendance:'manage',sale:'reports',
   leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',staff:'manage',classes:'manage',privatehours:'manage',kiosk:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',
   marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
-  sutaze:'marketing',venceky:'manage',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
+  sutaze:'marketing',venceky:'manage',fusionai:'reports',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
   partners:'partners',addpartner:'partners',commissions:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
@@ -1899,6 +1936,60 @@ function brSim(){
   document.getElementById('simRank').textContent=best.icon+' '+best.label;
 }
 
+/* ── FUSION AI — CEO dashboard (fáza 1) ─────────────────────────────────── */
+async function loadFusionAI(force){
+  const d=await api('/api/admin/fusion-ai/dashboard'+(force?'?force=1':''));
+  if(!d?.ok){ document.getElementById('faiToday').innerHTML='<div class="text-danger small">Chyba: '+escHtml(d?.error||'?')+'</div>'; return; }
+  const eur=n=>n==null?'—':(Math.round(n*100)/100).toLocaleString('sk-SK')+' €';
+  // ↑↓→ porovnanie voči referencii (±5 % pásmo)
+  const trend=(v,ref)=>{ if(ref==null||!ref) return '';
+    const p=Math.round(100*(v-ref)/ref);
+    if(p>=5)  return `<span style="color:#57d98a;font-weight:700">↑ +${p} %</span>`;
+    if(p<=-5) return `<span style="color:#ff9f9f;font-weight:700">↓ ${p} %</span>`;
+    return `<span style="color:#9c9ca4">→ ${p>=0?'+':''}${p} %</span>`; };
+  const card=(label,val,sub)=>`<div class="card border-0 rounded-3 p-3 h-100"><div class="text-muted" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">${label}</div><div class="fs-4 fw-bold">${val}</div>${sub?`<div class="small">${sub}</div>`:''}</div>`;
+  const r=d.revenue;
+  document.getElementById('faiToday').innerHTML=`<div class="row g-2">
+    <div class="col-6 col-md-3">${card('Obrat dnes', eur(r.today), trend(r.today, r.avg30))}</div>
+    <div class="col-6 col-md-3">${card('Obrat včera', eur(r.yesterday), trend(r.yesterday, r.avg30))}</div>
+    <div class="col-6 col-md-3">${card('30-dňový priemer/deň', eur(r.avg30), '7 d: '+eur(r.avg7))}</div>
+    <div class="col-6 col-md-3">${card('Mesiac (odhad)', eur(r.month_forecast), 'zatiaľ '+eur(r.month_to_date))}</div>
+    <div class="col-6 col-md-3">${card('Aktívne členky', d.members.active, 'nové platiace dnes: '+d.members.new_paying_today)}</div>
+    <div class="col-6 col-md-3">${card('Nové leady dnes', d.leads.new_today, 'za 7 d: '+d.leads.new_7d)}</div>
+    <div class="col-6 col-md-3">${card('Konverzia 30 d', d.conversion_30d==null?'—':d.conversion_30d+' %', 'registrácia → návšteva/nákup')}</div>
+    <div class="col-6 col-md-3">${card('Dnešné rezervácie', d.bookings_today, 'očakávaná návštevnosť')}</div>
+  </div>`;
+  // brief
+  const b=await api('/api/admin/fusion-ai/brief');
+  document.getElementById('faiBrief').textContent=b?.text||'—';
+  // money left — rozklikateľné zoznamy mien
+  document.getElementById('faiMoneyTotal').textContent='~'+eur(d.money_left.total);
+  const oppList=k=>({winback:d.opportunities.winback.list.map(w=>`${escHtml(w.name)} — ${w.days} d bez návštevy (Ø ${eur(w.monthly_spend)}/mes)`),
+    expiring:d.opportunities.expiring.list.map(e=>`${escHtml(e.name)} — ${escHtml(e.plan)} do ${e.expires} (~${eur(e.renewal_value)})`),
+    lapsed:d.opportunities.lapsed.list.map(l=>`${escHtml(l.name)} — expirovalo ${l.expired} (~${eur(l.renewal_value)})`),
+    leads:d.opportunities.uncontacted.list.map(u=>`${escHtml(u.name)} — ${u.days} d bez kontaktu${u.source?' ('+escHtml(u.source)+')':''}`),
+    upsell:d.opportunities.upsell.list.map(u=>`${escHtml(u.name)} — ${u.entries_60d} vstupov za 60 d`)}[k]||[]);
+  document.getElementById('faiMoney').innerHTML=d.money_left.breakdown.map(x=>{
+    const rows=oppList(x.key);
+    return `<details class="mb-2" style="border:1px solid #2a2a2a;border-radius:9px;padding:8px 12px">
+      <summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:8px">
+        <span>${escHtml(x.label)} <span class="badge bg-secondary">${x.count}</span></span>
+        <b style="color:#C9A84C;white-space:nowrap">${x.value==null?'—':'~'+eur(x.value)}</b></summary>
+      <div class="text-muted mt-2" style="font-size:.74rem">Výpočet: ${escHtml(x.how)}</div>
+      ${rows.length?`<div class="mt-1" style="max-height:180px;overflow-y:auto">${rows.map(t=>'<div style="padding:2px 0;border-bottom:1px solid #1e1e1e">'+t+'</div>').join('')}</div>`:''}
+    </details>`;}).join('');
+  document.getElementById('faiAttention').innerHTML=d.attention.length
+    ? d.attention.map(a=>`<div class="mb-2">${a.icon} ${escHtml(a.text)}</div>`).join('')
+    : '<div class="text-muted">Nič kritické — všetko v norme. ✅</div>';
+  document.getElementById('faiCities').innerHTML=d.cities.map(c=>`<div class="d-flex justify-content-between" style="padding:3px 0;border-bottom:1px solid #1e1e1e">
+    <span>${escHtml(c.city)}</span><span>${c.attendance_14d} <span class="text-muted">(pred: ${c.attendance_prev_14d})</span> ${c.change_pct!=null?trend(c.attendance_14d,c.attendance_prev_14d):''}</span></div>`).join('')||'<div class="text-muted">Žiadne dáta</div>';
+  document.getElementById('faiOcc').innerHTML=d.occupancy.all.map(o=>{
+    const col=o.pct>=90?'#ff9f9f':(o.pct>=60?'#C9A84C':(o.pct<=25?'#9c9ca4':'#57d98a'));
+    return `<div class="d-flex justify-content-between align-items-center" style="padding:3px 0;border-bottom:1px solid #1e1e1e">
+      <span>${escHtml(o.city)} ${['Ne','Po','Ut','St','Št','Pi','So'][o.day]} ${o.time}</span>
+      <span style="color:${col};font-weight:700">${o.booked}/${o.capacity} · ${o.pct} %</span></div>`;}).join('')||'<div class="text-muted">Žiadne hodiny</div>';
+}
+
 function show(sec){
   // Predaje sú zlúčené s faktúrami do jedného okna (záložka v sekcii Faktúry)
   if(sec==='transactions'){ show('invoices'); invTab('sales'); return; }
@@ -1907,6 +1998,7 @@ function show(sec){
   document.querySelectorAll('.nav-link').forEach(a=>a.classList.remove('active'));
   document.querySelector(`.nav-link[onclick*="'${sec}'"]`)?.classList.add('active');
   if(SECTION_GROUP[sec]) selectGroup(SECTION_GROUP[sec]);
+  if(sec==='fusionai')loadFusionAI();
   if(sec==='bizrank')loadBizRank();
   if(sec==='sutaze')loadRefGoalReport();
   if(sec==='venceky')loadVenceky();
