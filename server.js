@@ -1124,6 +1124,17 @@ async function seedData() {
     await q.insert(db.settings,{key:'meta_attrib_strict_20260814', value:true, at:nowISO()});
   }
 
+  // 14.8. v2: Jún form-lead kampaň MÁ presnú atribúciu — importované leady nesú
+  // lead_source='meta_leadform'. Kampaň sa vyhodnocuje živo z týchto ľudí
+  // (registrácie/claimy/návštevy/členstvá/tržby), žiadne odhady.
+  if(!(await q.one(db.settings,{key:'meta_leadform_attrib_20260814'}))){
+    const cJun=await q.one(db.campaigns,{name:'FA — Zumba Leads — Jún 2026'});
+    if(cJun) await q.update(db.campaigns,{_id:cJun._id},{$set:{lead_source_key:'meta_leadform',
+      note:'Spend/impresie/kliky sa synchronizujú z Meta Ads API. Tržby a čísla = živá atribúcia cez importované form-leady (lead_source meta_leadform) — počíta sa každý, kto si claimol účet a zaplatil. Leady sú v CRM poole trénerov na konvertovanie.'}});
+    console.log('🎯 Jún kampaň napojená na lead_source meta_leadform');
+    await q.insert(db.settings,{key:'meta_leadform_attrib_20260814', value:true, at:nowISO()});
+  }
+
   // Meta kampaň „FA — Zumba Leads — Jún 2026" — live čísla z Ads Manageru (27.7.2026)
   // + priradenie meta-klientov registrovaných počas kampane, aby fungovalo ROAS/CAC.
   if(!(await q.one(db.settings,{key:'meta_campaign_sync_v1'}))){
@@ -13052,11 +13063,17 @@ async function campaignRevenueMap(){
   const rev={}; payments.forEach(p=>{ rev[p.user_id]=(rev[p.user_id]||0)+(+p.amount||0); });
   membs.forEach(m=>{ rev[m.user_id]=(rev[m.user_id]||0)+(+m.price||0); });
   const byCampaign={}; // campaignName(lower) -> {revenue, payers}
+  const byLeadSource={}; // lead_source(lower) -> {revenue, payers} — pre form-lead kampane (import má presný zdroj)
   users.forEach(u=>{
-    const key=(u.utm_campaign||'').toLowerCase().trim(); if(!key) return;
-    if(!byCampaign[key]) byCampaign[key]={revenue:0, payers:0};
-    const r=rev[u._id]||0; byCampaign[key].revenue+=r; if(r>0) byCampaign[key].payers++;
+    const r=rev[u._id]||0;
+    const key=(u.utm_campaign||'').toLowerCase().trim();
+    if(key){ if(!byCampaign[key]) byCampaign[key]={revenue:0, payers:0};
+      byCampaign[key].revenue+=r; if(r>0) byCampaign[key].payers++; }
+    const ls=(u.lead_source||'').toLowerCase().trim();
+    if(ls){ if(!byLeadSource[ls]) byLeadSource[ls]={revenue:0, payers:0};
+      byLeadSource[ls].revenue+=r; if(r>0) byLeadSource[ls].payers++; }
   });
+  byCampaign.__byLeadSource=byLeadSource;
   return byCampaign;
 }
 
@@ -13102,9 +13119,18 @@ app.get('/api/admin/campaigns', adminAuth, async(req,res)=>{
     const out=list.map(c=>{
       const key=(c.name||'').toLowerCase().trim();
       const ukey=(c.utm_key||'').toLowerCase().trim();
-      const attr=revMap[key]||revMap[ukey]||{revenue:0,payers:0};
+      // Form-lead kampane: presná atribúcia cez lead_source importovaných leadov
+      // (napr. meta_leadform) — tržby aj čísla sa počítajú živo z týchto ľudí.
+      const lsk=(c.lead_source_key||'').toLowerCase().trim();
+      const attr=(lsk && revMap.__byLeadSource?.[lsk]) || revMap[key]||revMap[ukey]||{revenue:0,payers:0};
       let cc={...c};
-      if(ukey){
+      if(lsk){
+        const mine=allUsers.filter(u=>String(u.lead_source||'').toLowerCase().trim()===lsk);
+        cc.registrations=mine.length;
+        cc.claimed=mine.filter(u=>u.claimed!==false).length; // reálne si aktivovali účet
+        cc.first_visits=mine.filter(u=>(u.visit_count||0)>0).length;
+        cc.memberships=mine.filter(u=>activeMembIds.has(u._id)).length;
+      } else if(ukey){
         const mine=allUsers.filter(u=>{ const uc=(u.utm_campaign||'').toLowerCase().trim(); return uc===ukey||uc===key; });
         cc.registrations=mine.length;
         cc.first_visits=mine.filter(u=>(u.visit_count||0)>0).length;
