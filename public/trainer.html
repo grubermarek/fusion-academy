@@ -1761,6 +1761,7 @@ function coachLeadCard(L, d, mine){
         ${mine?`
         <span style="font-size:.72rem;color:var(--muted)">prevzaté ${L.claimed_at||''}</span>
         <button onclick="coachSnooze('${L.id}')" title="Neodpovedá / chorá / dovolenka — vráti sa do poolu neskôr" style="margin-left:auto;background:#2a2416;border:1px solid #6a5a2a;color:#e8c97a;border-radius:9px;padding:5px 12px;font-size:.78rem;font-weight:800;cursor:pointer">⏸ Odložiť</button>
+        <button onclick="coachNoContact('${L.id}','${esc(L.name||'').replace(/'/g,'')}')" title="Výslovne povedala, že nechce byť kontaktovaná — zmizne NAVŽDY zo všetkých zoznamov, mailov aj SMS" style="background:#2a1616;border:1px solid #6a2a2a;color:#ff9f9f;border-radius:9px;padding:5px 12px;font-size:.78rem;font-weight:800;cursor:pointer">🚫 Nekontaktovať</button>
         <button onclick="coachRelease('${L.id}')" style="background:#1d2b1f;border:1px solid #2f4a35;color:#7bd88f;border-radius:9px;padding:5px 12px;font-size:.78rem;font-weight:800;cursor:pointer">✅ Uzavrieť case</button>`
         :`<button onclick="coachClaim('${L.id}')" style="background:#2a2140;border:1px solid #4a3a70;border-radius:9px;color:#c4a8ff;padding:5px 12px;font-size:.78rem;font-weight:800;cursor:pointer">🤝 Prevziať lead</button>
         <span style="font-size:.72rem;color:var(--muted)">Prevzatý lead ti ostane v „Moje leady", kým case neuzavrieš.</span>`}
@@ -1813,6 +1814,14 @@ async function coachAutoContact(id){
 async function coachClaim(id){
   const r=await api('/api/coach/lead/'+id+'/claim',{method:'POST',body:{}});
   if(r?.ok){ toast('Lead je tvoj 🤝 — nájdeš ho v „Moje leady"'); coachLoad(); }
+  else toast(r?.error||'Chyba',true);
+}
+// 🚫 „Neotravujte ma" — trvalé vyradenie (iba ak to výslovne povedala!)
+async function coachNoContact(id, name){
+  if(!confirm('POZOR: '+name+' zmizne NAVŽDY zo všetkých zoznamov, mailov aj SMS.\nPouži len ak výslovne povedala, že nechce byť kontaktovaná.\n\nPotvrdiť?')) return;
+  const reason=prompt('Čo presne povedala? (zapíše sa k nej ako poznámka)','')||'';
+  const r=await api('/api/coach/lead/'+id+'/no-contact',{method:'POST',body:{reason}});
+  if(r?.ok){ toast('🚫 Označená ako Nekontaktovať — už sa nikde nezobrazí'); coachLoad(); }
   else toast(r?.error||'Chyba',true);
 }
 async function coachSnooze(id){

@@ -190,7 +190,7 @@ module.exports = function initCoach(ctx){
       if(u.is_admin || ['trainer','manager','admin'].includes(u.user_type)) continue;
       const claimedMine = u.coach_claimed_by === trainer._id;
       if(u.coach_claimed_by && !claimedMine) continue; // prevzatý iným trénerom
-      if(u.hidden_lead || (isTest(u) && !isTest(trainer)) || u.lead_status==='do_not_contact' || u.sms_only===false&&false) continue;
+      if(u.hidden_lead || (isTest(u) && !isTest(trainer)) || u.lead_status==='do_not_contact' || u.do_not_contact) continue;
       if(!u.phone && !u.email) continue;
       const lc = lastContact[u._id] || (u.last_contacted_at ? new Date(u.last_contacted_at).getTime() : 0);
       if(!claimedMine && lc && (now-lc) < 3*86400000 && !followupToday.has(u._id)) continue; // kontaktovaný za posledné 3 dni
@@ -250,7 +250,7 @@ module.exports = function initCoach(ctx){
       return !lc || (now-lc) > 3*86400000; };
     const recentCaseIds = new Set((await q.find(db.coach_cases,{})).filter(c=>(now-new Date(c.created_at).getTime()) < 14*86400000).map(c=>c.lead_id));
     const base = u => !u.coach_claimed_by && !recentCaseIds.has(u._id) && !(u.coach_snooze_until && u.coach_snooze_until > todayStr()) && !u.hidden_lead && !u.guest && (!isTest(u) || isTest(user))
-      && u.lead_status!=='do_not_contact' && u.lead_status!=='not_interested' && (u.phone || u.email) && needsContact(u);
+      && u.lead_status!=='do_not_contact' && u.lead_status!=='not_interested' && !u.do_not_contact && (u.phone || u.email) && needsContact(u);
     const freshLeads = users.filter(u=>u.user_type==='lead' && base(u))
       .sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
     // klientky, čo neboli 30+ dní — poznajú hodiny, iný (winback) tón komunikácie
@@ -541,6 +541,27 @@ module.exports = function initCoach(ctx){
   });
 
   // zmena statusu leadu priamo z Mojich leadov
+  // 🚫 „Neotravujte ma" — TRVALÉ vyradenie z kontaktovania. Lead zmizne zo
+  // všetkých poolov/dávok, zastavia sa mu mailové sekvencie aj SMS blasty a
+  // presunie sa do zložky „Nekontaktovať" v admin Leadoch. Zapíše sa poznámka,
+  // takže dôvod vidí každý (tréner aj admin). Vrátiť ho vie len admin.
+  app.post('/api/coach/lead/:id/no-contact', trainerAuth, async (req,res)=>{
+    try{
+      const u = await q.one(db.users,{_id:req.params.id});
+      if(!u) return res.status(404).json({error:'Nenájdený'});
+      if(u.is_admin || ['trainer','manager'].includes(u.user_type)) return res.status(400).json({error:'Toto nie je lead/klientka'});
+      const reason = String(req.body?.reason||'').slice(0,300);
+      await q.update(db.users,{_id:u._id},{$set:{do_not_contact:true, dnc_at:nowISO(),
+        dnc_by:req.trainerUser._id, dnc_by_name:req.trainerUser.name,
+        lead_status:'do_not_contact', sms_opt_out:true, offers_optout:true,
+        coach_claimed_by:null, coach_claimed_at:null}});
+      await q.remove(db.email_queue,{user_id:u._id, status:'pending'},{multi:true}).catch(()=>{});
+      await q.insert(db.lead_notes,{client_id:u._id, author_id:req.trainerUser._id, author_name:req.trainerUser.name,
+        text:'🚫 NEKONTAKTOVAŤ — výslovne si to neželá.'+(reason?' Dôvod: '+reason:''), created_at:nowISO()});
+      res.json({ok:true});
+    }catch(e){ res.status(500).json({error:e.message}); }
+  });
+
   app.put('/api/coach/lead/:id/status', trainerAuth, async (req,res)=>{
     const st = (req.body||{}).lead_status;
     if(!RELEASE_STATUSES.includes(st)) return res.status(400).json({error:'Neplatný status'});
@@ -770,7 +791,9 @@ module.exports = function initCoach(ctx){
   // poznámky leadov pre admin CRM (jednotná vrstva)
   app.get('/api/admin/lead-notes/:id', adminAuth, async (req,res)=>{
     const notes = (await q.find(db.lead_notes,{client_id:req.params.id})).sort((a,b)=>a.created_at<b.created_at?1:-1);
-    res.json({ok:true, notes});
+    // + história kontaktov trénerov (kedy, kto, výsledok) — jednotná vrstva pre admin aj trénerov
+    const contacts = (await q.find(db.coach_contacts,{lead_id:req.params.id})).sort((a,b)=>a.created_at<b.created_at?1:-1).slice(0,50);
+    res.json({ok:true, notes, contacts});
   });
 
   // ── denné joby: admin alerty + pondelkový weekly report trénerom ────────────

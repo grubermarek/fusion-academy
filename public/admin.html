@@ -690,6 +690,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   <!-- LEADS – detailný zoznam (Glofox štýl) -->
   <div id="s-leads" class="section">
     <div id="leadsFaiMoney"></div>
+    <div id="leadFolderBar"></div>
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <h4 class="fw-bold mb-0"><i class="bi bi-person-plus me-2 text-warning"></i><span id="leadsCount">0</span> Leady</h4>
       <div class="d-flex gap-2 flex-wrap">
@@ -1317,6 +1318,20 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   <div class="section" id="s-outreach">
     <h4 class="fw-bold mb-1">📨 Hromadné správy</h4>
     <p class="text-muted small mb-3">Pošli email a/alebo notifikáciu vyfiltrovanej skupine (segmentu) — napr. na event, akciu, pripomienku. E-mail chodí len tým, čo dali súhlas; notifikácia všetkým v segmente.</p>
+    <div class="card bg-dark border-secondary mb-3" style="max-width:720px"><div class="card-body">
+      <div class="fw-semibold mb-1" style="color:#7bd88f">📲 SMS brána <span id="smsCfgBadge" class="badge bg-secondary">…</span></div>
+      <p class="text-muted small mb-2">Hromadná SMS na leady s telefónom (importy majú súhlas z formulára). <b>{meno}</b> = krstné meno. Do 160 znakov = 1 SMS (~0,045 €).</p>
+      <div class="d-flex gap-2 flex-wrap align-items-end mb-2">
+        <div><label class="text-muted small">Komu</label><select id="smsAud" class="form-select form-select-sm bg-dark text-light border-secondary" style="min-width:260px"></select></div>
+        <button class="btn btn-sm btn-outline-info" onclick="smsTest()">📱 Test na moje číslo</button>
+      </div>
+      <textarea id="smsText" class="form-control form-control-sm bg-dark text-light border-secondary mb-1" rows="3" oninput="document.getElementById('smsLen').textContent=this.value.length+' znakov ('+(this.value.length>160?2:1)+' SMS)'">Ahoj {meno}! 💃 Tvoja PRVÁ hodina Zumby je stále ZADARMO. Vyber si termín a príď: https://app.fusionacademy.sk/schedule — tešíme sa! Fusion Academy</textarea>
+      <div class="d-flex justify-content-between align-items-center">
+        <span id="smsLen" class="text-muted small"></span>
+        <button class="btn btn-sm btn-warning fw-bold" onclick="smsBlast()">📤 Odoslať SMS</button>
+      </div>
+      <div id="smsMsg" class="small mt-2"></div>
+    </div></div>
     <div class="row g-3">
       <div class="col-lg-7">
         <div class="card bg-dark border-secondary"><div class="card-body">
@@ -1939,6 +1954,36 @@ function brSim(){
   document.getElementById('simRank').textContent=best.icon+' '+best.label;
 }
 
+/* ── 📲 SMS brána (BudgetSMS) ────────────────────────────────────────────── */
+async function smsInit(){
+  const d=await api('/api/admin/sms/overview'); if(!d?.ok) return;
+  const b=document.getElementById('smsCfgBadge');
+  b.textContent=d.configured?('aktívna · odosielateľ '+d.from):'nenakonfigurovaná';
+  b.className='badge '+(d.configured?'bg-success':'bg-danger');
+  document.getElementById('smsAud').innerHTML=d.audiences.map(a=>`<option value="${a.key}">${a.label} — ${a.count} ľudí</option>`).join('');
+  if(!d.configured) document.getElementById('smsMsg').innerHTML='<span class="text-warning">⚠️ Nastav v Railway env: SMS_USERNAME, SMS_USERID, SMS_HANDLE (BudgetSMS API), voliteľne SMS_FROM. Potom obnov stránku.</span>';
+}
+async function smsTest(){
+  const r=await api('/api/admin/sms/test',{method:'POST',body:JSON.stringify({text:document.getElementById('smsText').value})});
+  document.getElementById('smsMsg').innerHTML=r?.ok?'<span class="text-success">✅ Test SMS odoslaná na tvoje číslo.</span>':'<span class="text-danger">'+escHtml(r?.error||'Chyba')+'</span>';
+}
+async function smsBlast(){
+  const audience=document.getElementById('smsAud').value, text=document.getElementById('smsText').value;
+  const dry=await api('/api/admin/sms/blast',{method:'POST',body:JSON.stringify({audience,text})});
+  if(!dry?.ok){ document.getElementById('smsMsg').innerHTML='<span class="text-danger">'+escHtml(dry?.error||'Chyba')+'</span>'; return; }
+  if(!confirm(`Odoslať SMS ${dry.count} ľuďom? Odhad ceny ~${dry.cost_estimate} €. (Kto dostal blast za posledných 7 dní, preskočí sa.)`)) return;
+  const r=await api('/api/admin/sms/blast',{method:'POST',body:JSON.stringify({audience,text,confirm:true})});
+  if(!r?.ok){ document.getElementById('smsMsg').innerHTML='<span class="text-danger">'+escHtml(r?.error||'Chyba')+'</span>'; return; }
+  // beží na pozadí servera — priebeh sa dá sledovať, okno môžeš aj zavrieť
+  const tick=async()=>{
+    const p=await api('/api/admin/sms/progress');
+    if(!p) return;
+    document.getElementById('smsMsg').innerHTML=`<span class="${p.running?'text-muted':'text-success'}">${p.running?'⏳ Odosielam':'✅ Hotovo'}: ${p.sent||0}/${p.total||0} · zlyhané ${p.failed||0} · preskočené ${p.skipped||0}</span>`;
+    if(p.running) setTimeout(tick, 3000);
+  };
+  tick();
+}
+
 /* ── ⭐ Google recenzie — schvaľovanie (+10 b/mesiac) ────────────────────── */
 async function loadReviewClaims(){
   const box=document.getElementById('reviewClaimsBox'); if(!box) return;
@@ -2101,7 +2146,7 @@ function show(sec){
   if(sec==='failed')loadFailed();
   if(sec==='promos')loadPromos();
   if(sec==='tasks')initTasks();
-  if(sec==='outreach')initOutreach();
+  if(sec==='outreach'){initOutreach();smsInit();}
   if(sec==='alerts')loadAlerts();
   if(sec==='exports')loadExports();
 }
@@ -4021,12 +4066,20 @@ function sortLeads(key){
   _leadSort = { key, dir: _leadSort.key===key ? -_leadSort.dir : (asc?1:-1) };
   renderLeads();
 }
+let _leadFolder='active';
+window.setLeadFolder=(f)=>{ _leadFolder=f; loadLeads(); };
 async function loadLeads(){
   const body=document.getElementById('leadsTableBody');
   body.innerHTML='<tr><td colspan="12" class="text-center py-4 text-muted">Načítavam...</td></tr>';
   const s=document.getElementById('leadsSearch').value.trim();
-  const d=await api('/api/admin/leads'+(s?('?search='+encodeURIComponent(s)):''));
+  const d=await api('/api/admin/leads?folder='+(_leadFolder==='dnc'?'dnc':'')+(s?('&search='+encodeURIComponent(s)):''));
   if(!d||d.error){ body.innerHTML='<tr><td colspan="12" class="text-center text-danger py-4">Chyba pri načítaní.</td></tr>'; return; }
+  // prepínač zložiek: Aktívne / 🚫 Nekontaktovať („neotravujte ma")
+  const fb=document.getElementById('leadFolderBar');
+  if(fb) fb.innerHTML=`<div class="d-inline-flex gap-1 mb-2" style="background:#161616;border:1px solid #2a2a2a;border-radius:20px;padding:3px">
+    <button class="btn btn-sm ${_leadFolder!=='dnc'?'btn-warning fw-bold':'btn-dark'}" style="border-radius:16px" onclick="setLeadFolder('active')">Aktívne leady</button>
+    <button class="btn btn-sm ${_leadFolder==='dnc'?'btn-warning fw-bold':'btn-dark'}" style="border-radius:16px" onclick="setLeadFolder('dnc')">🚫 Nekontaktovať${d.dnc_count?` (${d.dnc_count})`:''}</button>
+  </div>${_leadFolder==='dnc'?'<div class="small text-muted mb-2">Ľudia, ktorí výslovne povedali „neotravujte ma" — sú vyradení z volania, mailov aj SMS. Vrátiť ich vie len admin.</div>':''}`;
   document.getElementById('leadsCount').textContent=d.total;
   const nav=document.getElementById('leadsNavBadge'); if(d.total>0){ nav.textContent=d.total; nav.style.display='inline'; } else nav.style.display='none';
   _leadsData=d.leads||[];
@@ -4076,14 +4129,24 @@ function renderLeads(){
     return `<div onclick="openLeadNote('${l.id}')" style="cursor:pointer;max-width:230px;font-size:.76rem;color:#d8d0be;white-space:normal;line-height:1.25" title="Klikni pre úpravu">${escHtml(n.length>110?n.slice(0,110)+'…':n)} <i class="bi bi-pencil" style="opacity:.45;font-size:.7rem"></i></div>`;
   };
   const rowTint=st=>{ const c=(LEAD_STATUS[st]||{}).color; return c?`style="background:linear-gradient(90deg, ${c}22, transparent 60%)"`:''; };
+  const OUTL={contacted:'📞 kontaktovaná',interested:'🙂 záujem',no_answer:'📵 nedvíha',call_later:'⏰ neskôr',not_interested:'🙅 nezáujem',booked:'📅 rezervovala'};
+  // Zdieľaná história z Coach systému: posledný kontakt (kedy/kto/výsledok) + posledná poznámka trénera
+  const contactCell=l=>{
+    const parts=[];
+    if(l.last_contact) parts.push(`<div class="text-nowrap">${fmtD(l.last_contact.at)} · ${OUTL[l.last_contact.outcome]||escHtml(l.last_contact.outcome||'')} <span class="text-muted">(${escHtml((l.last_contact.by||'').split(' ')[0])})</span></div>`);
+    else parts.push(`<span class="${l.last_contacted_days===null?'text-muted':''}">${agoTxt(l.last_contacted_days)}</span>`);
+    if(l.last_note && (!l.last_contact || l.last_note.text.slice(0,30)!==(l.last_contact.note||'').slice(0,30)))
+      parts.push(`<div class="text-muted" style="font-size:.72rem;max-width:220px;white-space:normal;line-height:1.2" title="${escHtml(l.last_note.by||'')}">📝 ${escHtml(l.last_note.text.length>90?l.last_note.text.slice(0,90)+'…':l.last_note.text)}</div>`);
+    return parts.join('');
+  };
   body.innerHTML=rows.map(l=>`<tr ${rowTint(l.lead_status)}>
     <td class="ps-3 text-nowrap"><i class="bi bi-clock text-muted me-1"></i>${agoTxt(l.added_days)}</td>
-    <td><a href="/u/${l.id}" target="_blank" style="color:#C9A84C;text-decoration:none;font-weight:700" title="Zobraziť profil">${escHtml(l.name||'—')} <i class="bi bi-box-arrow-up-right" style="font-size:.68rem;opacity:.6"></i></a>${l.imported?`<span class="badge bg-secondary ms-1" title="Importované z Glofox${l.claimed?' · účet vytvorený':''}">🗂️${l.claimed?'✓':''}</span>`:''}${l.sponsor?`<div class="small text-muted">👤 ${escHtml(l.sponsor)}</div>`:''}</td>
-    <td>${leadStatusSelect(l)}</td>
+    <td><a href="/u/${l.id}" target="_blank" style="color:#C9A84C;text-decoration:none;font-weight:700" title="Zobraziť profil">${escHtml(l.name||'—')} <i class="bi bi-box-arrow-up-right" style="font-size:.68rem;opacity:.6"></i></a>${l.imported?`<span class="badge bg-secondary ms-1" title="Importované z Glofox${l.claimed?' · účet vytvorený':''}">🗂️${l.claimed?'✓':''}</span>`:''}${l.do_not_contact?`<span class="badge bg-danger ms-1" title="Nekontaktovať od ${fmtD(l.dnc_at)} (${escHtml(l.dnc_by_name||'')})">🚫</span>`:''}${l.sponsor?`<div class="small text-muted">👤 ${escHtml(l.sponsor)}</div>`:''}</td>
+    <td>${l.do_not_contact?`<button class="btn btn-sm btn-outline-success" onclick="allowContact('${l.id}')" title="Vrátiť medzi kontaktovateľné">✅ Povoliť kontakt</button>`:leadStatusSelect(l)}</td>
     <td>${noteCell(l)}</td>
     <td class="small">${escHtml(l.email||'—')}</td>
     <td class="text-nowrap">${l.phone?`<a href="tel:${escHtml(l.phone)}" class="text-decoration-none">${escHtml(l.phone)}</a>`:'—'}</td>
-    <td class="text-nowrap ${l.last_contacted_days===null?'text-muted':''}">${agoTxt(l.last_contacted_days)}</td>
+    <td>${contactCell(l)}</td>
     <td class="text-center">${l.bookings}</td>
     <td class="small text-muted">${escHtml(l.lead_source||'—')}</td>
     <td class="text-center">${l.attendances}</td>
@@ -4093,6 +4156,11 @@ function renderLeads(){
       <button class="btn btn-sm btn-outline-secondary" title="Zobraziť profil" onclick="window.open('/u/${l.id}','_blank')"><i class="bi bi-box-arrow-up-right"></i></button>
     </td>
   </tr>`).join('');
+}
+async function allowContact(id){
+  if(!confirm('Vrátiť tohto človeka medzi kontaktovateľné leady?')) return;
+  const r=await api('/api/admin/leads/'+id+'/allow-contact',{method:'POST',body:JSON.stringify({})});
+  if(r?.ok){ showToast('Vrátená medzi leady ✅','success'); loadLeads(); } else showToast(r?.error||'Chyba','error');
 }
 function openLeadNote(id){
   const l=_leadsData.find(x=>x.id===id); if(!l) return;
@@ -4143,6 +4211,11 @@ async function showLeadEmails(id,name){
   }
   // poznámky trénerov (Coach Growth — jednotná vrstva)
   const nd=await api('/api/admin/lead-notes/'+id);
+  if(nd&&nd.ok&&(nd.contacts||[]).length){
+    const OUT={contacted:'📞 kontaktovaná',interested:'🙂 záujem',no_answer:'📵 nedvíha',call_later:'⏰ zavolať neskôr',not_interested:'🙅 nezáujem',booked:'📅 rezervovala'};
+    html+='<div class="fw-semibold mt-3 mb-1">📞 Kontakty trénerov</div>'+nd.contacts.map(c=>
+      `<div class="small mb-1"><span class="text-muted">${(c.created_at||'').slice(0,16).replace('T',' ')}</span> · <b>${escHtml(c.trainer_name||'')}</b> · ${OUT[c.outcome]||escHtml(c.outcome||'')}${c.auto?' <span class="text-muted">(auto pri kliku)</span>':''}${c.note?': '+escHtml(c.note):''}</div>`).join('');
+  }
   if(nd&&nd.ok&&nd.notes.length){
     html+='<div class="fw-semibold mt-3 mb-1">📝 Poznámky trénerov</div>'+nd.notes.map(n=>
       `<div class="small mb-1"><span class="text-muted">${(n.created_at||'').slice(0,16).replace('T',' ')}</span> · <b>${escHtml(n.author_name)}</b>: ${escHtml(n.text)}</div>`).join('');

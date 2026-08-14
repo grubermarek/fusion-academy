@@ -178,6 +178,7 @@ const db = {
   session_instructors: new Datastore({ filename: path.join(DATA_DIR, 'session_instructors.db'), autoload: true }),
   birthday_wishes: new Datastore({ filename: path.join(DATA_DIR, 'birthday_wishes.db'), autoload: true }),
   review_claims: new Datastore({ filename: path.join(DATA_DIR, 'review_claims.db'), autoload: true }),
+  sms_log:      new Datastore({ filename: path.join(DATA_DIR, 'sms_log.db'),      autoload: true }),
   settings:     new Datastore({ filename: path.join(DATA_DIR, 'settings.db'),     autoload: true }),
   private_slots:    new Datastore({ filename: path.join(DATA_DIR, 'private_slots.db'),    autoload: true }),
   private_bookings: new Datastore({ filename: path.join(DATA_DIR, 'private_bookings.db'), autoload: true }),
@@ -4515,6 +4516,16 @@ app.get('/api/admin/leads', adminAuth, async(req,res)=>{
     // Skry leady, ktorých email je už medzi klientmi (duplicitné záznamy)
     const clientEmails = new Set((await q.find(db.users,{user_type:'client'})).map(c=>(c.email||'').toLowerCase()).filter(Boolean));
     leads = leads.filter(u=>!(u.email && clientEmails.has(u.email.toLowerCase())));
+    // Zložka 🚫 Nekontaktovať — trvale vyradení („neotravujte ma") sú oddelení,
+    // v bežnom zozname sa už nikdy nezobrazia
+    const dncCount = leads.filter(u=>u.do_not_contact).length;
+    leads = (req.query.folder==='dnc') ? leads.filter(u=>u.do_not_contact) : leads.filter(u=>!u.do_not_contact);
+    // Zdieľaná história: posledný kontakt trénera + posledná poznámka pri každom leade
+    const allContacts = db.coach_contacts ? await q.find(db.coach_contacts,{}) : [];
+    const allNotes = db.lead_notes ? await q.find(db.lead_notes,{}) : [];
+    const lastContactBy={}, lastNoteBy={};
+    for(const c of allContacts){ const p=lastContactBy[c.lead_id]; if(!p || String(c.created_at)>String(p.created_at)) lastContactBy[c.lead_id]=c; }
+    for(const n of allNotes){ const p=lastNoteBy[n.client_id]; if(!p || String(n.created_at)>String(p.created_at)) lastNoteBy[n.client_id]=n; }
     if(search){ const s=search.toLowerCase(); leads = leads.filter(u=>u.name?.toLowerCase().includes(s)||u.email?.toLowerCase().includes(s)||(u.phone||'').includes(s)); }
     const daysAgo = iso => { if(!iso) return null; return Math.max(0, Math.floor((Date.now()-new Date(iso).getTime())/86400000)); };
     const result = await Promise.all(leads.map(async u => {
@@ -4538,6 +4549,9 @@ app.get('/api/admin/leads', adminAuth, async(req,res)=>{
         notes: u.notes || '',
         consent: !!u.consent_at,
         imported: !!u.imported, claimed: !!u.claimed,
+        do_not_contact: !!u.do_not_contact, dnc_at: u.dnc_at||null, dnc_by_name: u.dnc_by_name||null,
+        last_contact: lastContactBy[u._id] ? { at:lastContactBy[u._id].created_at, outcome:lastContactBy[u._id].outcome||'', by:lastContactBy[u._id].trainer_name||'', note:(lastContactBy[u._id].note||'').slice(0,140) } : null,
+        last_note: lastNoteBy[u._id] ? { at:lastNoteBy[u._id].created_at, by:lastNoteBy[u._id].author_name||'', text:(lastNoteBy[u._id].text||'').slice(0,200) } : null,
       };
     }));
     // Konverzia lead → klient + rozklad podľa stavu
@@ -4553,8 +4567,22 @@ app.get('/api/admin/leads', adminAuth, async(req,res)=>{
       trial: (byStatus.trial||0),
       by_status: byStatus,
     };
-    res.json({ leads: result, total: result.length, stats });
+    res.json({ leads: result, total: result.length, stats, dnc_count:dncCount, folder:req.query.folder==='dnc'?'dnc':'active' });
   } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Admin: vrátiť leada zo zložky 🚫 Nekontaktovať (jediná cesta späť)
+app.post('/api/admin/leads/:id/allow-contact', adminAuth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.params.id});
+    if(!u) return res.status(404).json({error:'Nenájdený'});
+    await q.update(db.users,{_id:u._id},{$set:{do_not_contact:false, lead_status:'new', sms_opt_out:false, offers_optout:false},
+      $unset:{dnc_at:true, dnc_by:true, dnc_by_name:true}});
+    await q.insert(db.lead_notes,{client_id:u._id, author_id:req.session.uid, author_name:'Admin',
+      text:'✅ Vrátená medzi kontaktovateľné leady (admin).', created_at:nowISO()}).catch(()=>{});
+    await auditLog(req,'lead_allow_contact',u._id,{},{name:u.name},'');
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // Vymaž duplicitné leady — lead záznamy, ktorých email už patrí klientovi
@@ -13083,6 +13111,100 @@ async function campaignRevenueMap(){
 setTimeout(()=>syncMetaCampaignStats(false).catch(()=>{}), 90*1000);
 setInterval(()=>syncMetaCampaignStats(false).catch(()=>{}), 6*3600*1000);
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// SMS BRÁNA (BudgetSMS) — hromadné SMS na leady/segmenty z admin → Hromadné správy.
+// Konfigurácia cez Railway env: SMS_USERNAME, SMS_USERID, SMS_HANDLE (API kľúč),
+// SMS_FROM (odosielateľ, max 11 znakov, default FusionAcad). Bez nich sa nič
+// neodošle — endpoint vráti zrozumiteľnú chybu. Každá SMS sa loguje (sms_log).
+// ═══════════════════════════════════════════════════════════════════════════════
+const smsConfigured=()=>!!(process.env.SMS_USERNAME&&process.env.SMS_USERID&&process.env.SMS_HANDLE);
+const smsNumber=v=>{ let s=String(v||'').replace(/[^\d]/g,''); if(s.startsWith('00'))s=s.slice(2);
+  if(s.startsWith('421')) return s.length===12?s:null;
+  if(s.startsWith('0')&&s.length===10) return '421'+s.slice(1);
+  return s.length===9?'421'+s:null; };
+async function sendSms(to, msg){
+  if(!smsConfigured()) return {ok:false, error:'SMS brána nie je nakonfigurovaná (SMS_USERNAME/SMS_USERID/SMS_HANDLE v Railway env)'};
+  const num=smsNumber(to); if(!num) return {ok:false, error:'Neplatné číslo: '+to};
+  const u=new URL('https://api.budgetsms.net/sendsms/');
+  u.searchParams.set('username',process.env.SMS_USERNAME);
+  u.searchParams.set('userid',process.env.SMS_USERID);
+  u.searchParams.set('handle',process.env.SMS_HANDLE);
+  u.searchParams.set('from',(process.env.SMS_FROM||'FusionAcad').slice(0,11));
+  u.searchParams.set('to',num);
+  u.searchParams.set('msg',msg);
+  try{
+    const t=(await (await fetch(u)).text()).trim();
+    return t.startsWith('OK') ? {ok:true, id:t.split(' ')[1]||''} : {ok:false, error:'BudgetSMS: '+t};
+  }catch(e){ return {ok:false, error:e.message}; }
+}
+// publiká pre SMS blast — vždy len ľudia s telefónom, bez opt-outu, bez test účtov
+async function smsAudience(key){
+  const users=(await q.find(db.users,{})).filter(u=>!u.is_admin && !u.is_child && !u.sms_opt_out
+    && smsNumber(u.phone) && !/@test-fa-qa\.local$|@qa-biz\.local$/i.test(String(u.email||'')));
+  if(key==='meta_leadform') return users.filter(u=>u.lead_source==='meta_leadform' && u.claimed===false);
+  if(key==='unclaimed_leads') return users.filter(u=>u.user_type==='lead' && u.imported && u.claimed===false);
+  if(key==='oldlist') return users.filter(u=>u.oldlist && u.claimed===false);
+  return [];
+}
+const SMS_AUDIENCES=[
+  {key:'meta_leadform', label:'Meta form-leady (neclaimnuté)'},
+  {key:'unclaimed_leads', label:'Všetky importované leady bez účtu'},
+  {key:'oldlist', label:'Starý zoznam (len SMS kontakty)'},
+];
+app.get('/api/admin/sms/overview', adminAuth, async(req,res)=>{
+  try{
+    const out=[];
+    for(const a of SMS_AUDIENCES) out.push({...a, count:(await smsAudience(a.key)).length});
+    const sent=(await q.find(db.sms_log,{})).length;
+    res.json({ok:true, configured:smsConfigured(), from:(process.env.SMS_FROM||'FusionAcad').slice(0,11), audiences:out, total_sent:sent});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/sms/test', adminAuth, async(req,res)=>{
+  try{
+    const me=await q.one(db.users,{_id:req.session.uid});
+    const to=req.body.phone||me?.phone;
+    if(!to) return res.status(400).json({error:'Nemáš v profile telefón — zadaj číslo'});
+    const r=await sendSms(to, String(req.body.text||'Test SMS z Fusion Academy'));
+    await q.insert(db.sms_log,{to:smsNumber(to), text:String(req.body.text||'').slice(0,500), kind:'test', ok:r.ok, error:r.error||null, by:req.session.uid, created_at:nowISO()});
+    r.ok?res.json({ok:true}):res.status(400).json({error:r.error});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/sms/blast', adminAuth, async(req,res)=>{
+  try{
+    if(!smsConfigured()) return res.status(400).json({error:'SMS brána nie je nakonfigurovaná (SMS_USERNAME/SMS_USERID/SMS_HANDLE v Railway env)'});
+    const text=String(req.body.text||'').trim();
+    if(!text||text.length>320) return res.status(400).json({error:'Text 1–320 znakov (2 SMS)'});
+    const audience=await smsAudience(String(req.body.audience||''));
+    if(!audience.length) return res.status(400).json({error:'Prázdne publikum'});
+    if(req.body.confirm!==true) return res.json({ok:true, dry_run:true, count:audience.length,
+      cost_estimate:+(audience.length*(text.length>160?2:1)*0.045).toFixed(2)});
+    if(global.__smsBlast?.running) return res.status(400).json({error:'Blast už beží — počkaj, kým dobehne'});
+    // Beží na POZADÍ (stovky SMS = minúty, HTTP request by vytimeoutoval); stav cez /api/admin/sms/progress.
+    // Dedup: každému max 1 blast SMS za 7 dní.
+    const since=new Date(Date.now()-7*86400000).toISOString();
+    const recent=new Set((await q.find(db.sms_log,{kind:'blast'})).filter(l=>l.created_at>=since&&l.ok).map(l=>l.to));
+    const st=global.__smsBlast={running:true, total:audience.length, sent:0, failed:0, skipped:0, started_at:nowISO()};
+    const by=req.session.uid, audKey=req.body.audience;
+    (async()=>{
+      for(const u of audience){
+        const num=smsNumber(u.phone);
+        if(recent.has(num)){ st.skipped++; continue; }
+        const msg=text.replace(/\{meno\}/g,(u.name||'').split(' ')[0]||'');
+        const r=await sendSms(u.phone, msg);
+        await q.insert(db.sms_log,{to:num, user_id:u._id, text:msg.slice(0,500), kind:'blast',
+          audience:audKey, ok:r.ok, error:r.error||null, by, created_at:nowISO()}).catch(()=>{});
+        r.ok?st.sent++:st.failed++;
+        await new Promise(r2=>setTimeout(r2,250)); // šetrný rate limit
+      }
+      st.running=false; st.finished_at=nowISO();
+      console.log(`📲 SMS blast (${audKey}): ${st.sent} odoslaných, ${st.failed} zlyhaných, ${st.skipped} preskočených`);
+    })().catch(e=>{ st.running=false; st.error=e.message; });
+    await auditLog(req,'sms_blast_start',audKey,{},{count:audience.length,text:text.slice(0,160)},'');
+    res.json({ok:true, started:true, count:audience.length});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.get('/api/admin/sms/progress', adminAuth, (req,res)=>res.json({ok:true, ...(global.__smsBlast||{running:false})}));
+
 // Meta Ads prehľad: klienti prišli z Meta (fbclid / utm_source / lead_source), ich tržby,
 // stav prepojenia (pixel + CAPI). Zdroj pravdy pre "ktorá klientka je z Meta Ads".
 const isMetaUser = u => !!(u.fbclid || /faceb|^fb$|meta|instagr|^ig$/i.test(String(u.utm_source||''))
@@ -13545,6 +13667,8 @@ async function processEmailQueue(){
       const u = await q.one(db.users, {_id: item.user_id});
       if(!u?.email){ await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped'}}); continue; }
 
+      // 🚫 „Neotravujte ma" — žiadne e-maily, ani servisné (výslovné želanie)
+      if(u.do_not_contact){ await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'do_not_contact'}}); continue; }
       // Opt-out: marketingové sekvencie sa NEposielajú tomu, kto si vypol ponuky.
       // Servisné (privítanie po kúpe, expirácia členstva) idú vždy.
       const MARKETING_SEQS=['lead_nurture','winback','trial_followup','bronze_upsell','gold_upsell','meta_lead_zumba','app_launch','reengagement','post_first_class'];
