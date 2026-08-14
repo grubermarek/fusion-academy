@@ -4079,7 +4079,16 @@ async function loadLeads(){
   if(fb) fb.innerHTML=`<div class="d-inline-flex gap-1 mb-2" style="background:#161616;border:1px solid #2a2a2a;border-radius:20px;padding:3px">
     <button class="btn btn-sm ${_leadFolder!=='dnc'?'btn-warning fw-bold':'btn-dark'}" style="border-radius:16px" onclick="setLeadFolder('active')">Aktívne leady</button>
     <button class="btn btn-sm ${_leadFolder==='dnc'?'btn-warning fw-bold':'btn-dark'}" style="border-radius:16px" onclick="setLeadFolder('dnc')">🚫 Nekontaktovať${d.dnc_count?` (${d.dnc_count})`:''}</button>
-  </div>${_leadFolder==='dnc'?'<div class="small text-muted mb-2">Ľudia, ktorí výslovne povedali „neotravujte ma" — sú vyradení z volania, mailov aj SMS. Vrátiť ich vie len admin.</div>':''}`;
+  </div>${_leadFolder==='dnc'?`<div class="small text-muted mb-2">Ľudia, ktorí výslovne povedali „neotravujte ma" — sú vyradení z volania, mailov aj SMS. Vrátiť ich vie len admin.</div>
+  <div class="card border-0 rounded-3 p-3 mb-3" style="max-width:640px">
+    <div class="fw-semibold mb-1">📵 Hromadné vyradenie čísel (odpovede na SMS)</div>
+    <div class="text-muted small mb-2">Vlož čísla v ľubovoľnom formáte (0905…, +421905…), oddelené čiarkou alebo novým riadkom — spárujú sa s ľuďmi v appke a vyradia sa navždy.</div>
+    <textarea id="bulkDncNums" class="form-control form-control-sm bg-dark text-light border-secondary mb-2" rows="3" placeholder="+421905123456, 0907 111 222&#10;0908333444"></textarea>
+    <div class="d-flex justify-content-between align-items-center">
+      <span id="bulkDncMsg" class="small"></span>
+      <button class="btn btn-sm btn-danger fw-bold" onclick="bulkDnc()">🚫 Vyradiť čísla</button>
+    </div>
+  </div>`:''}`;
   document.getElementById('leadsCount').textContent=d.total;
   const nav=document.getElementById('leadsNavBadge'); if(d.total>0){ nav.textContent=d.total; nav.style.display='inline'; } else nav.style.display='none';
   _leadsData=d.leads||[];
@@ -4156,6 +4165,17 @@ function renderLeads(){
       <button class="btn btn-sm btn-outline-secondary" title="Zobraziť profil" onclick="window.open('/u/${l.id}','_blank')"><i class="bi bi-box-arrow-up-right"></i></button>
     </td>
   </tr>`).join('');
+}
+async function bulkDnc(){
+  const nums=document.getElementById('bulkDncNums').value.trim();
+  if(!nums) return;
+  if(!confirm('Vyradiť všetky zadané čísla natrvalo z kontaktovania?')) return;
+  const r=await api('/api/admin/leads/bulk-no-contact',{method:'POST',body:JSON.stringify({numbers:nums})});
+  if(r?.ok){
+    // alert namiesto toastu — loadLeads() prekreslí panel a správu by zmazal
+    alert(`✅ Vyradených ${r.updated} ľudí.`+(r.not_found.length?`\n\nNenájdené v appke (${r.not_found.length}): ${r.not_found.join(', ')}`:''));
+    loadLeads();
+  } else document.getElementById('bulkDncMsg').innerHTML='<span class="text-danger">'+escHtml(r?.error||'Chyba')+'</span>';
 }
 async function allowContact(id){
   if(!confirm('Vrátiť tohto človeka medzi kontaktovateľné leady?')) return;

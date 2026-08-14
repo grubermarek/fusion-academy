@@ -4656,6 +4656,35 @@ app.get('/api/admin/leads', adminAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Admin: hromadné vyradenie podľa telefónnych čísel (napr. odpovede na masovú SMS
+// „nemám záujem"). Čísla v ľubovoľnom formáte, oddelené čiarkou/novým riadkom.
+app.post('/api/admin/leads/bulk-no-contact', adminAuth, async(req,res)=>{
+  try{
+    const p9=v=>{ let s=String(v||'').replace(/[^\d]/g,''); if(s.startsWith('00'))s=s.slice(2); if(s.startsWith('421'))s=s.slice(3); if(s.startsWith('0'))s=s.slice(1); return s.length===9?s:null; };
+    const nums=[...new Set(String(req.body.numbers||'').split(/[\s,;]+/).map(p9).filter(Boolean))];
+    if(!nums.length) return res.status(400).json({error:'Žiadne platné čísla'});
+    const users=await q.find(db.users,{});
+    const byPhone={}; for(const u of users){ const k=p9(u.phone); if(k && !u.is_admin) (byPhone[k]=byPhone[k]||[]).push(u); }
+    let updated=0; const notFound=[], names=[];
+    for(const n of nums){
+      const matches=byPhone[n]||[];
+      if(!matches.length){ notFound.push('0'+n); continue; }
+      for(const u of matches){
+        if(u.do_not_contact) continue;
+        await q.update(db.users,{_id:u._id},{$set:{do_not_contact:true, dnc_at:nowISO(),
+          dnc_by:req.session.uid, dnc_by_name:'Admin (SMS odpoveď)', lead_status:'do_not_contact',
+          sms_opt_out:true, offers_optout:true, coach_claimed_by:null}});
+        await q.remove(db.email_queue,{user_id:u._id, status:'pending'},{multi:true}).catch(()=>{});
+        await q.insert(db.lead_notes,{client_id:u._id, author_id:req.session.uid, author_name:'Admin',
+          text:'🚫 NEKONTAKTOVAŤ — odpovedala na SMS, že nemá záujem.', created_at:nowISO()}).catch(()=>{});
+        updated++; names.push(u.name);
+      }
+    }
+    await auditLog(req,'bulk_no_contact',null,{},{count:nums.length, updated, not_found:notFound.length},'');
+    res.json({ok:true, input:nums.length, updated, names:names.slice(0,50), not_found:notFound});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Admin: vrátiť leada zo zložky 🚫 Nekontaktovať (jediná cesta späť)
 app.post('/api/admin/leads/:id/allow-contact', adminAuth, async(req,res)=>{
   try{
