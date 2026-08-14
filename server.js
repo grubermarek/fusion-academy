@@ -11981,10 +11981,10 @@ const REVIEW_URL='https://g.page/r/CYny9ciJO4ZFEAE/review';
 const REVIEW_POINTS=10;
 app.get('/api/review-status', auth, async(req,res)=>{
   try{
-    const month=today().slice(0,7);
-    const claim=(await q.find(db.review_claims,{user_id:req.session.uid, month}))
+    // Jednorazová odmena — Google aj tak dovolí 1 recenziu/osobu, prepisovať nemá zmysel.
+    const claim=(await q.find(db.review_claims,{user_id:req.session.uid}))
       .find(c=>c.status==='pending'||c.status==='approved');
-    res.json({ok:true, url:REVIEW_URL, points:REVIEW_POINTS, month,
+    res.json({ok:true, url:REVIEW_URL, points:REVIEW_POINTS,
       status:claim?claim.status:'none'});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -11993,11 +11993,12 @@ app.post('/api/review-claim', auth, async(req,res)=>{
     const u=await q.one(db.users,{_id:req.session.uid});
     if(!u || u.is_admin || u.user_type==='trainer') return res.status(400).json({error:'Len pre klientky'});
     const month=today().slice(0,7);
-    const existing=(await q.find(db.review_claims,{user_id:u._id, month}))
+    // jednorazovo za život účtu (zamietnutá žiadosť nový pokus nedovolí zablokovať)
+    const existing=(await q.find(db.review_claims,{user_id:u._id}))
       .find(c=>c.status==='pending'||c.status==='approved');
     if(existing) return res.status(400).json({error:existing.status==='pending'
       ? 'Tvoja recenzia už čaká na schválenie — body prídu čoskoro. 🙏'
-      : 'Body za recenziu máš tento mesiac už pripísané. Ďakujeme! ⭐'});
+      : 'Body za recenziu máš už pripísané. Ďakujeme! ⭐'});
     await q.insert(db.review_claims,{user_id:u._id, user_name:u.name, month,
       status:'pending', created_at:nowISO()});
     const admins=await q.find(db.users,{is_admin:true});

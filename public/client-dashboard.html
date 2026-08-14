@@ -2472,7 +2472,7 @@ async function loadReviewCard(){
   const host=document.getElementById('reviewCard'); if(!host) return;
   const d=await api('/api/review-status').catch(()=>null); if(!d?.ok) return;
   const base='background:linear-gradient(135deg,rgba(126,200,227,.10),rgba(126,200,227,.03));border:1px solid rgba(126,200,227,.35);border-radius:14px;padding:14px 16px;margin-top:12px';
-  if(d.status==='approved'){ host.innerHTML=`<div style="${base}"><b style="color:#7ec8e3">⭐ +${d.points} b za recenziu pripísaných.</b> <span style="color:var(--muted);font-size:.85rem">Ďakujeme! Ďalšie body za recenziu zas o mesiac. 💛</span></div>`; return; }
+  if(d.status==='approved'){ host.innerHTML=''; return; } // jednorazová odmena — po schválení karta zmizne
   if(d.status==='pending'){ host.innerHTML=`<div style="${base}"><b style="color:#7ec8e3">⭐ Recenzia čaká na schválenie</b> <span style="color:var(--muted);font-size:.85rem">— +${d.points} b ti pripíšeme hneď, ako ju skontrolujeme.</span></div>`; return; }
   host.innerHTML=`<div style="${base}">
     <div style="font-weight:800;color:#7ec8e3;margin-bottom:4px">⭐ Ohodnoť nás na Googli = +${d.points} bodov</div>
