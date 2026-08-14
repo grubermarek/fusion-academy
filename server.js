@@ -1100,6 +1100,30 @@ async function seedData() {
     await q.insert(db.settings,{key:'tech_training_detva_20260814', value:true, at:nowISO()});
   }
 
+  // 14.8.: STRIKTNÁ ATRIBÚCIA KAMPANÍ — žiadne domyslené tržby.
+  // Júlová migrácia (meta_campaign_sync_v1) otagovala utm_campaign='FA — Zumba
+  // Leads — Jún 2026' VŠETKÝM používateľom s meta stopou — vrátane Glofox
+  // klientok, ktoré len v dotazníku uviedli „z Facebooku". Ich členské platby
+  // potom kampani ukazovali tržby 2 500 €+, ktoré reklama nezarobila.
+  // Presný reťazec s pomlčkami nastavila LEN migrácia (reálne UTM z reklám má
+  // tvar utm_key), takže sa dá bezpečne odstrániť. Tržby kampane odteraz = len
+  // klienti s dokázateľným klikom (utm_campaign z URL reklamy).
+  // Zároveň: meta_campaign_id na oboch kampaniach → spend/impresie/kliky sa
+  // ťahajú automaticky z Meta Ads API (syncMetaCampaignStats), nie ručne.
+  if(!(await q.one(db.settings,{key:'meta_attrib_strict_20260814'}))){
+    const CAMP='FA — Zumba Leads — Jún 2026';
+    const tagged=(await q.find(db.users,{utm_campaign:CAMP}));
+    for(const u of tagged) await q.update(db.users,{_id:u._id},{$unset:{utm_campaign:true}});
+    const cJun=await q.one(db.campaigns,{name:CAMP});
+    if(cJun) await q.update(db.campaigns,{_id:cJun._id},{$set:{meta_campaign_id:'52509246681873',
+      note:'Čísla (spend/impresie/kliky/leady) sa synchronizujú z Meta Ads API. Tržby: form-leady sa nedajú spárovať s registráciami v appke, preto kampaň neukazuje domyslené tržby — 14.8. odstránená plošná atribúcia '+tagged.length+' používateľov (boli medzi nimi aj Glofox klientky, ktoré len uviedli „z Facebooku").'}});
+    const cWeb=await q.one(db.campaigns,{name:'FA — Zumba Web — Registrácia'});
+    if(cWeb) await q.update(db.campaigns,{_id:cWeb._id},{$set:{meta_campaign_id:'52538230154873'}});
+    await q.remove(db.settings,{key:'meta_sync_at'},{multi:true}); // vynúť čerstvý sync
+    console.log('🎯 Striktná atribúcia: odtagovaných '+tagged.length+' používateľov, meta_campaign_id nastavené (Jún + Web), sync vynútený');
+    await q.insert(db.settings,{key:'meta_attrib_strict_20260814', value:true, at:nowISO()});
+  }
+
   // Meta kampaň „FA — Zumba Leads — Jún 2026" — live čísla z Ads Manageru (27.7.2026)
   // + priradenie meta-klientov registrovaných počas kampane, aby fungovalo ROAS/CAC.
   if(!(await q.one(db.settings,{key:'meta_campaign_sync_v1'}))){
