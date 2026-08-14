@@ -1578,6 +1578,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <button class="btn btn-sm btn-outline-light" onclick="const r=pointsRange();window.open('/api/admin/points-summary.csv?from='+r.from+'&to='+r.to,'_blank')" title="Stiahnuť body klientov (CSV)"><i class="bi bi-download"></i> CSV</button>
     </div>
     <p class="text-muted small mb-3">Kto koľko bodov získal a za čo (hodiny, online, odporúčania, členstvá). Prepínaj <b>Mesiac / Rok</b>. Klik na klienta otvorí jeho profil.</p>
+    <div id="reviewClaimsBox" class="mb-3"></div>
     <div class="card bg-dark border-secondary mb-3"><div class="card-body py-3">
       <div class="fw-semibold mb-2" style="color:#C9A84C"><i class="bi bi-gift me-1"></i>Ceny za klientku mesiaca a roka</div>
       <div class="row g-2">
@@ -1938,6 +1939,35 @@ function brSim(){
   document.getElementById('simRank').textContent=best.icon+' '+best.label;
 }
 
+/* ── ⭐ Google recenzie — schvaľovanie (+10 b/mesiac) ────────────────────── */
+async function loadReviewClaims(){
+  const box=document.getElementById('reviewClaimsBox'); if(!box) return;
+  const d=await api('/api/admin/review-claims'); if(!d?.ok) return;
+  const pend=d.claims.filter(c=>c.status==='pending');
+  const done=d.claims.filter(c=>c.status!=='pending').slice(0,10);
+  box.innerHTML=`<div class="card border-0 rounded-3 p-3">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+      <div class="fw-semibold" style="color:#7ec8e3">⭐ Google recenzie — schvaľovanie (+${d.points} b)${pend.length?` <span class="badge bg-danger">${pend.length}</span>`:''}</div>
+      <a href="${d.url}" target="_blank" class="btn btn-sm btn-outline-info">🔗 Otvoriť naše recenzie na Googli</a>
+    </div>
+    ${pend.length?pend.map(c=>`<div class="d-flex justify-content-between align-items-center flex-wrap gap-2" style="padding:6px 0;border-bottom:1px solid #222">
+      <span><a href="#" onclick="event.preventDefault();openClientDetail('${c.user_id}')" style="color:#e8cf8a;text-decoration:none;font-weight:600">${escHtml(c.user_name)}</a>
+        <span class="text-muted small"> — nahlásila ${new Date(c.created_at).toLocaleDateString('sk-SK')} (${c.month})</span></span>
+      <span class="d-flex gap-2">
+        <button class="btn btn-sm btn-success" onclick="decideReview('${c._id}',true)">✅ Schváliť +${d.points} b</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="decideReview('${c._id}',false)">✕ Zamietnuť</button>
+      </span></div>`).join('')
+    :'<div class="text-muted small">Žiadne čakajúce žiadosti. Klientky nájdu tlačidlo „Ohodnoť nás na Googli" na dashboarde pri súťaži.</div>'}
+    ${done.length?`<details class="mt-2"><summary class="text-muted small" style="cursor:pointer">História (${done.length})</summary>
+      ${done.map(c=>`<div class="small text-muted" style="padding:2px 0">${c.status==='approved'?'✅':'✕'} ${escHtml(c.user_name)} · ${c.month}</div>`).join('')}</details>`:''}
+  </div>`;
+}
+async function decideReview(id, approve){
+  const r=await api('/api/admin/review-claims/'+id+'/decide',{method:'POST',body:JSON.stringify({approve})});
+  if(r?.ok){ showToast(approve?'Body pripísané ⭐':'Zamietnuté','success'); loadReviewClaims(); }
+  else showToast(r?.error||'Chyba','error');
+}
+
 /* ── FUSION AI — CEO dashboard (fáza 1) ─────────────────────────────────── */
 // Riadok klientky v „Money left": klik na meno = CRM detail, + 📞/SMS/WhatsApp
 function faiPersonRow(p, info){
@@ -2062,7 +2092,7 @@ function show(sec){
   if(sec==='campaigns')loadCampaigns();
   if(sec==='retention')loadRetention();
   if(sec==='accounting')initAccounting();
-  if(sec==='points')initPoints();
+  if(sec==='points'){initPoints();loadReviewClaims();}
   if(sec==='classhistory')initClassHistory();
   if(sec==='tasktracker')initTaskTracker();
   if(sec==='trainers')initTrainers();

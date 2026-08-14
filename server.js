@@ -177,6 +177,7 @@ const db = {
   class_cancellations: new Datastore({ filename: path.join(DATA_DIR, 'class_cancellations.db'), autoload: true }),
   session_instructors: new Datastore({ filename: path.join(DATA_DIR, 'session_instructors.db'), autoload: true }),
   birthday_wishes: new Datastore({ filename: path.join(DATA_DIR, 'birthday_wishes.db'), autoload: true }),
+  review_claims: new Datastore({ filename: path.join(DATA_DIR, 'review_claims.db'), autoload: true }),
   settings:     new Datastore({ filename: path.join(DATA_DIR, 'settings.db'),     autoload: true }),
   private_slots:    new Datastore({ filename: path.join(DATA_DIR, 'private_slots.db'),    autoload: true }),
   private_bookings: new Datastore({ filename: path.join(DATA_DIR, 'private_bookings.db'), autoload: true }),
@@ -6757,12 +6758,10 @@ app.post('/api/membership/buy', auth, async(req,res)=>{
     }
     // Bank transfer / cash – admin will confirm
     const manualPay=await q.insert(db.payments,{user_id:req.session.uid,member_id:memberId,amount:finalPrice,currency:'EUR',description:`Členstvo ${plan.name}${forWhom}${creditUsed?` (kredit: -${creditUsed}€)`:''}${promoNote}`,ref_id:plan_id,ref_type:'membership',status:'pending_manual',payment_method:'manual',created_at:nowISO(),credit_used:creditUsed,promo_code:promoCode});
-    // Admin MUSÍ o žiadosti vedieť — predtým padala do čiernej diery a členstvo sa nikdy neaktivovalo
-    try{ const admins=await q.find(db.users,{is_admin:true});
-      for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'manual_payment',
-        title:'💰 Čaká platba: '+plan.name,
-        body:`${u.name} chce ${plan.name}${forWhom} za ${finalPrice.toFixed(2)} € (hotovosť/prevod). Po prijatí peňazí potvrď v admine → Všetky predaje.`,
-        read:false, created_at:nowISO()}); }catch(e){}
+    // Admin MUSÍ o žiadosti vedieť — predtým padala do čiernej diery a členstvo sa nikdy neaktivovalo.
+    // Zlúčené s prípadnou „Rezervácia s platbou na mieste" tej istej klientky (jedna karta, nie dve).
+    try{ await adminPayNotify(u, 'manual_payment', '💰 Čaká platba: '+plan.name,
+      `${u.name} chce ${plan.name}${forWhom} za ${finalPrice.toFixed(2)} € (hotovosť/prevod). Po prijatí peňazí potvrď v admine → Všetky predaje.`); }catch(e){}
     await q.insert(db.notifications,{user_id:u._id,type:'membership',
       title:'🧾 Žiadosť prijatá — '+plan.name,
       body:`Zaplať ${finalPrice.toFixed(2)} € v hotovosti na hodine alebo prevodom. Hneď ako platbu prijmeme, ${plan.type==='bundle'?'vstupy ti pripíšeme':'členstvo ti aktivujeme'} a príde ti potvrdenie.`,
@@ -8924,6 +8923,28 @@ app.post('/api/admin/manual-payments/:id/cancel', adminAuth, async(req,res)=>{
     res.json({ok:true});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
+
+// Admin notifikácia o platbe klientky — ZLÚČENÁ: ak už visí neprečítaná karta
+// „platba na mieste"/„čaká platba" tej istej osoby (24 h), druhá udalosť ju len
+// doplní namiesto novej karty. (Klientka si často rezervuje pay-on-site A ZÁROVEŇ
+// požiada o vstup v obchode — je to tá istá desiatka, admin má vidieť jednu vec.)
+async function adminPayNotify(user, kind, title, body){
+  const admins=await q.find(db.users,{is_admin:true});
+  const since=new Date(Date.now()-24*3600*1000).toISOString();
+  for(const a of admins){
+    const dup=(await q.find(db.notifications,{user_id:a._id, read:false}))
+      .find(n=>['pay_on_site','manual_payment'].includes(n.type)
+        && String(n.body||'').includes(user.name) && String(n.created_at||'')>=since);
+    if(dup){
+      await q.update(db.notifications,{_id:dup._id},{$set:{
+        title:'💵 '+user.name+' — platba za vstup/hodinu',
+        body:`${user.name} má rezerváciu s platbou na mieste a zároveň žiada jednorazový vstup — je to JEDNA platba. Vyber peniaze raz a potvrď: v dochádzke (PLATÍ NA MIESTE) pri hotovosti, alebo vo Všetky predaje pri prevode.`,
+        created_at:nowISO()}});
+    } else {
+      await q.insert(db.notifications,{user_id:a._id, type:kind, title, body, read:false, created_at:nowISO()});
+    }
+  }
+}
 
 // Vybrať vstupné na mieste k rezervácii (pay_on_site / bez členstva) — zapíše predaj,
 // vystaví doklad a označí rezerváciu ako zaplatenú. Rieši prípad „už je booknutá,
@@ -11773,11 +11794,10 @@ app.post('/api/bookings', auth, async(req,res)=>{
       created_at:nowISO()
     });
     if(payOnSite){
-      // Daj vedieť adminom, že príde klient bez členstva — vybrať vstupné/členské na mieste
-      const adminsPO = await q.find(db.users,{is_admin:true});
-      for(const a of adminsPO) await q.insert(db.notifications,{user_id:a._id, type:'pay_on_site',
-        title:'💵 Rezervácia s platbou na mieste', body:`${u.name} — ${cls.name} ${bdate}. Nemá členstvo ani vstupy, vybrať platbu na mieste.`,
-        read:false, created_at:nowISO()}).catch(()=>{});
+      // Daj vedieť adminom, že príde klient bez členstva — vybrať platbu na mieste.
+      // Zlúčené s prípadnou „Čaká platba" žiadosťou tej istej klientky z obchodu (jedna karta).
+      await adminPayNotify(u, 'pay_on_site', '💵 Rezervácia s platbou na mieste',
+        `${u.name} — ${cls.name} ${bdate}${techPrice?` (${techPrice} € podľa členstva)`:''}. Nemá členstvo ani vstupy, vybrať platbu na mieste.`).catch(()=>{});
     }
     // POZOR: rezervácia sama NEpripočíta návštevu ani body — pripíšu sa až keď tréner
     // POTVRDÍ absolvovanie hodiny (QR alebo „potvrdiť hodinu"). Tu len spotrebuj 1. hodinu zdarma
@@ -11924,8 +11944,9 @@ async function monthlyPointsFor(userId, month){
   const privCount = (await privCountMapInPeriod(month))[userId]||0;
   const spins=(await q.find(db.spins,{user_id:userId, month}));
   const spinPoints=spins.reduce((s,x)=>s+(+x.points||0),0), spinCount=spins.filter(x=>!x.milestone).length;
+  const reviewCount=(await q.find(db.review_claims,{user_id:userId, month, status:'approved'})).length;
   const paidTier=(await paidMembershipTierMap())[userId]||null;
-  return buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, memTier:hasMem?effectiveMemTier(paidTier, m.plan_id, !!m.gift):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, privCount, spinPoints, spinCount}, month);
+  return buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, memTier:hasMem?effectiveMemTier(paidTier, m.plan_id, !!m.gift):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, privCount, spinPoints, spinCount, reviewCount}, month);
 }
 function buildPointItems({hours, online, refs, hasMem, memName, memTier, newMemberCount, newMemberPoints, merchCount, merchLineCount, merchLinePoints, privCount}, month){
   privCount=privCount||0;
@@ -11942,10 +11963,73 @@ function buildPointItems({hours, online, refs, hasMem, memName, memTier, newMemb
     { icon:'🛒', label:'Merch v mojom tíme (aj v hĺbke)', count:merchLineCount, points:merchLinePoints, sub:`${merchLineCount} ${plur(merchLineCount,'kus','kusy','kusov')}` },
     { icon:'💛', label: hasMem?('Aktívne členstvo'+(memName?' ('+memName+')':'')):'Aktívne členstvo', count: hasMem?1:0, per:membershipPointsFor(memTier), points: hasMem?membershipPointsFor(memTier):0, sub: hasMem?'aktívne':'—' },
     { icon:'🎡', label:'Denné odmeny (koleso + séria)', count: arguments[0].spinCount||0, points: arguments[0].spinPoints||0, sub: (arguments[0].spinCount||0)+'× denná odmena' },
+    { icon:'⭐', label:'Google recenzia', count: arguments[0].reviewCount||0, per:10, points:(arguments[0].reviewCount||0)*10, sub: (arguments[0].reviewCount||0)?'schválená recenzia':'—' },
   ];
   const total = items.reduce((s,i)=>s+i.points,0);
   return { month, total, items };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GOOGLE RECENZIA → +10 BODOV (1× mesačne, so schválením admina)
+// Google API nevie overiť konkrétnu recenziu, preto: klientka nahlási „napísala
+// som", admin skontroluje na Googli a schváli. Body vstupujú do mesačného
+// rozpisu cez schválené review_claims (monthlyPointsFor).
+// ═══════════════════════════════════════════════════════════════════════════════
+const REVIEW_URL='https://g.page/r/CYny9ciJO4ZFEAE/review';
+const REVIEW_POINTS=10;
+app.get('/api/review-status', auth, async(req,res)=>{
+  try{
+    const month=today().slice(0,7);
+    const claim=(await q.find(db.review_claims,{user_id:req.session.uid, month}))
+      .find(c=>c.status==='pending'||c.status==='approved');
+    res.json({ok:true, url:REVIEW_URL, points:REVIEW_POINTS, month,
+      status:claim?claim.status:'none'});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/review-claim', auth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.session.uid});
+    if(!u || u.is_admin || u.user_type==='trainer') return res.status(400).json({error:'Len pre klientky'});
+    const month=today().slice(0,7);
+    const existing=(await q.find(db.review_claims,{user_id:u._id, month}))
+      .find(c=>c.status==='pending'||c.status==='approved');
+    if(existing) return res.status(400).json({error:existing.status==='pending'
+      ? 'Tvoja recenzia už čaká na schválenie — body prídu čoskoro. 🙏'
+      : 'Body za recenziu máš tento mesiac už pripísané. Ďakujeme! ⭐'});
+    await q.insert(db.review_claims,{user_id:u._id, user_name:u.name, month,
+      status:'pending', created_at:nowISO()});
+    const admins=await q.find(db.users,{is_admin:true});
+    for(const a of admins) await q.insert(db.notifications,{user_id:a._id, type:'review_claim',
+      title:'⭐ Nová Google recenzia na schválenie',
+      body:`${u.name} napísala recenziu na Googli (+${REVIEW_POINTS} b po schválení). Skontroluj a schváľ v admine → Body klientov.`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+    res.json({ok:true, status:'pending'});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.get('/api/admin/review-claims', adminAuth, async(req,res)=>{
+  try{
+    const rows=(await q.find(db.review_claims,{}))
+      .sort((a,b)=>(a.status==='pending'?0:1)-(b.status==='pending'?0:1) || String(b.created_at).localeCompare(String(a.created_at)));
+    res.json({ok:true, url:REVIEW_URL, points:REVIEW_POINTS, claims:rows.slice(0,50)});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/review-claims/:id/decide', adminAuth, async(req,res)=>{
+  try{
+    const c=await q.one(db.review_claims,{_id:req.params.id});
+    if(!c) return res.status(404).json({error:'Žiadosť nenájdená'});
+    if(c.status!=='pending') return res.status(400).json({error:'Už rozhodnuté'});
+    const approve=req.body.approve!==false;
+    await q.update(db.review_claims,{_id:c._id},{$set:{status:approve?'approved':'rejected',
+      decided_by:req.session.uid, decided_at:nowISO()}});
+    await q.insert(db.notifications,{user_id:c.user_id, type:'review',
+      title:approve?('⭐ +'+REVIEW_POINTS+' bodov za recenziu!'):'⭐ Recenzia neschválená',
+      body:approve?`Ďakujeme za hodnotenie na Googli! Pripísali sme ti +${REVIEW_POINTS} bodov do mesačnej súťaže. 💛`
+        :'Tvoju recenziu sme na Googli nenašli. Ak si ju písala pod iným menom, ozvi sa nám v appke a vyriešime to. 🙏',
+      read:false, created_at:nowISO()}).catch(()=>{});
+    await auditLog(req,'review_claim_'+(approve?'approve':'reject'),c.user_id,{},{claim:c._id, month:c.month},'');
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // KOLESO DENNEJ ODMENY + LOGIN STREAK
