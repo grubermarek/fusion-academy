@@ -110,8 +110,8 @@ async function inviteMsg(){
 }
 const MONTH_GEN=['januára','februára','marca','apríla','mája','júna','júla','augusta','septembra','októbra','novembra','decembra'];
 function promoLine(){
-  const n=new Date(), last=new Date(n.getFullYear(), n.getMonth()+1, 0);
-  return `\n\nPS: Keď sa pridáš, dostaneš športovú tašku ZDARMA 🎁 — akcia platí len do ${last.getDate()}. ${MONTH_GEN[n.getMonth()]}!`;
+  // Kamoška má prvú hodinu zadarmo (to už hovorí samotná pozvánka) — pripomenieme to.
+  return `\n\nPrvú hodinu máš u nás ZADARMO — len príď! 😍`;
 }
 
 /* ── verejné API ── */
@@ -133,8 +133,8 @@ window.showBookingSuccess=async function(opts){
       <p class="bs-sub">${opts.className?`<b style="color:#ddd">${String(opts.className).replace(/</g,'&lt;')}</b>${opts.dateStr?' · '+String(opts.dateStr).replace(/</g,'&lt;'):''}<br>`:''}Vidíme sa na hodine — a vieš čo je ešte lepšie? Tancovať s kamoškou! 💃💃</p>
       <div class="bs-promo">
         <span class="bs-gift" aria-hidden="true">🎁</span>
-        <div class="bs-promo-t">Vezmi kamošku — dostane športovú tašku ZDARMA!</div>
-        <p class="bs-promo-s">Každá <b>nová kamoška</b>, ktorá sa cez tvoj odkaz pridá k nám, získava <b style="color:#e8cf8a">športovú tašku zadarmo</b>. Akcia platí už len do <b>${lastDay}. ${monthGen}</b>!</p>
+        <div class="bs-promo-t">Vezmi kamošku — a športová taška je TVOJA!</div>
+        <p class="bs-promo-s">Keď sa <b>nová kamoška</b> pridá k nám cez tvoj odkaz, <b style="color:#e8cf8a">ty získavaš športovú tašku ZDARMA</b> — a ona má <b>prvú hodinu zadarmo</b>. Akcia platí už len do <b>${lastDay}. ${monthGen}</b>!</p>
         <div class="bs-count-label">🔥 Do konca akcie zostáva</div>
         <div class="bs-count" id="bsCount" aria-live="off"></div>
       </div>
