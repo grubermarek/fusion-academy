@@ -2409,6 +2409,33 @@ app.get('/api/admin/meta-ads-token', adminAuth, async(req,res)=>{
   const t=await getMetaAdsToken();
   res.json({ok:true, configured:!!t});
 });
+// Diagnostika + oprava napojenia kariet na Meta Graph: server si tokenom zistí
+// účty/kampane/reklamy, spáruje podľa názvov a uloží správne ID. Token neopúšťa server.
+app.post('/api/admin/meta-fix-ids', adminAuth, async(req,res)=>{
+  try{
+    const tok=(await getMetaAdsToken()) || (await getMetaCapiToken());
+    if(!tok) return res.status(400).json({error:'Chýba Meta token'});
+    const gj=async u=>await (await fetch('https://graph.facebook.com/v21.0/'+u+(u.includes('?')?'&':'?')+'access_token='+encodeURIComponent(tok))).json();
+    const accs=await gj('me/adaccounts?fields=id,name&limit=25');
+    if(accs.error) return res.json({ok:false, step:'adaccounts', error:accs.error.message});
+    const report={accounts:(accs.data||[]).map(a=>a.id), campaigns:[], updated:[]};
+    for(const acc of (accs.data||[])){
+      const camps=await gj(acc.id+'/campaigns?fields=id,name&limit=100');
+      for(const c of (camps.data||[])) report.campaigns.push({id:c.id, name:c.name});
+      const ads=await gj(acc.id+'/ads?fields=id,name,campaign_id&limit=200');
+      const findC=re=>(camps.data||[]).find(x=>re.test(x.name||''));
+      const cWebG=findC(/Zumba Web/i), cJunG=findC(/Zumba Leads/i);
+      const abAd=(ads.data||[]).find(a=>/Obrázok reklama marek/i.test(a.name||''));
+      const setId=async(nameRe,fields)=>{ const doc=await q.one(db.campaigns,{name:nameRe}); if(doc){ await q.update(db.campaigns,{_id:doc._id},{$set:fields}); report.updated.push({card:doc.name, ...fields}); } };
+      if(cWebG) await setId('FA — Zumba Web — Registrácia',{meta_campaign_id:cWebG.id.replace(/^act_/,'')});
+      if(cJunG) await setId('FA — Zumba Leads — Jún 2026',{meta_campaign_id:cJunG.id});
+      if(abAd) await setId(/Obrázok — A\/B test/,{meta_campaign_id:abAd.campaign_id, meta_ad_id:abAd.id});
+    }
+    await q.remove(db.settings,{key:'meta_sync_at'},{multi:true});
+    const sync=await syncMetaCampaignStats(true);
+    res.json({ok:true, ...report, sync});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 async function metaCapi(eventName, {email, value, currency='EUR', fbclid, fbp}={}){
   const pixel=process.env.META_PIXEL_ID, token=await getMetaCapiToken();
   if(!pixel||!token) return;
