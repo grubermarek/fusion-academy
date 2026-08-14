@@ -1136,6 +1136,22 @@ async function seedData() {
     await q.insert(db.settings,{key:'meta_leadform_attrib_20260814', value:true, at:nowISO()});
   }
 
+  // 14.8.: Google Ads kampaň FA Zumba Search 3.0 ako karta v admin Kampaniach.
+  // Tržby/registrácie živo cez gclid (auto-tagging); spend sa dopĺňa ručne
+  // z Google Ads (API prepojenie neexistuje — Google vyžaduje developer token).
+  if(!(await q.one(db.settings,{key:'google_campaign_20260814'}))){
+    if(!(await q.one(db.campaigns,{name:'FA Zumba Search 3.0'}))){
+      await q.insert(db.campaigns,{ name:'FA Zumba Search 3.0', platform:'google', gclid_attr:true,
+        date_from:'2026-08-12', date_to:'', budget:5,
+        goal:'Vyhľadávanie: zumba/tanec Zvolen·BB·Detva·Brezno → registrácie v appke',
+        note:'Nový Google Ads účet 347-191-7595. Registrácie/tržby sa počítajú živo cez gclid. Spend/impresie/kliky dopĺňaj ručne z Google Ads (tlačidlo Upraviť) — Google nemá API prepojenie.',
+        spend:3.89, impressions:56, clicks:9, registrations:0, first_visits:0, memberships:0,
+        created_at:nowISO() });
+      console.log('🎯 Google kampaň FA Zumba Search 3.0 pridaná (gclid atribúcia)');
+    }
+    await q.insert(db.settings,{key:'google_campaign_20260814', value:true, at:nowISO()});
+  }
+
   // Meta kampaň „FA — Zumba Leads — Jún 2026" — live čísla z Ads Manageru (27.7.2026)
   // + priradenie meta-klientov registrovaných počas kampane, aby fungovalo ROAS/CAC.
   if(!(await q.one(db.settings,{key:'meta_campaign_sync_v1'}))){
@@ -5000,8 +5016,8 @@ app.post('/api/import-meta-leads/report', async(req,res)=>{
 
 // ── Živý lievik leadovej kampane pre admin Kampane — počíta sa z DB pri každom
 // otvorení, takže sa „aktualizuje sám" pri každej zmene (registrácia/platba/…)
-app.get('/api/admin/meta-lead-funnel', adminAuth, async(req,res)=>{
-  try{
+// Rovnakú funkciu používa aj karta kampane, aby lievik a karta NIKDY nenesedeli.
+async function metaLeadFunnelData(){
     const users=(await q.find(db.users,{})).filter(u=>u.meta_lead || u.lead_source==='meta_leadform');
     const totalSetting=await q.one(db.settings,{key:'meta_lead_total'});
     const total=Math.max(+(totalSetting?.value)||0, users.length);
@@ -5033,8 +5049,11 @@ app.get('/api/admin/meta-lead-funnel', adminAuth, async(req,res)=>{
       if(m) out.active_membership++;
     }
     out.payers.sort((a,b)=>b.revenue-a.revenue);
-    res.json({ok:true, ...out});
-  }catch(e){ res.status(500).json({error:e.message}); }
+    return out;
+}
+app.get('/api/admin/meta-lead-funnel', adminAuth, async(req,res)=>{
+  try{ res.json({ok:true, ...(await metaLeadFunnelData())}); }
+  catch(e){ res.status(500).json({error:e.message}); }
 });
 
 app.post('/api/admin/import-leads', adminAuth, async(req,res)=>{
@@ -13102,6 +13121,7 @@ async function campaignRevenueMap(){
       byLeadSource[ls].revenue+=r; if(r>0) byLeadSource[ls].payers++; }
   });
   byCampaign.__byLeadSource=byLeadSource;
+  byCampaign.__rev=rev; // uid -> celkové tržby (pre gclid/inú per-user atribúciu)
   return byCampaign;
 }
 
@@ -13235,6 +13255,7 @@ app.get('/api/admin/campaigns', adminAuth, async(req,res)=>{
     const list=await q.find(db.campaigns,{});
     syncMetaCampaignStats(false).catch(()=>{}); // na pozadí, výsledok vidno pri ďalšom načítaní
     const revMap=await campaignRevenueMap();
+    const funnel=list.some(c=>c.lead_source_key==='meta_leadform') ? await metaLeadFunnelData().catch(()=>null) : null;
     // Kampane s utm_key majú registrácie/návštevy/členstvá počítané ŽIVO z používateľov
     const allUsers=(await q.find(db.users,{is_admin:{$ne:true}})).filter(u=>!u.is_child);
     const activeMembIds=new Set((await q.find(db.memberships,{status:'active'})).map(m=>m.user_id));
@@ -13244,9 +13265,23 @@ app.get('/api/admin/campaigns', adminAuth, async(req,res)=>{
       // Form-lead kampane: presná atribúcia cez lead_source importovaných leadov
       // (napr. meta_leadform) — tržby aj čísla sa počítajú živo z týchto ľudí.
       const lsk=(c.lead_source_key||'').toLowerCase().trim();
-      const attr=(lsk && revMap.__byLeadSource?.[lsk]) || revMap[key]||revMap[ukey]||{revenue:0,payers:0};
+      let attr=(lsk && revMap.__byLeadSource?.[lsk]) || revMap[key]||revMap[ukey]||{revenue:0,payers:0};
       let cc={...c};
-      if(lsk){
+      if(lsk==='meta_leadform' && funnel){
+        // ROVNAKÉ čísla ako Lievik leadov (párovanie meta_lead + lead_source, plná
+        // tržbová logika) — karta a lievik nesmú ukazovať dve rôzne pravdy
+        attr={revenue:funnel.revenue, payers:funnel.paying};
+        cc.registrations=funnel.total; cc.claimed=funnel.registered;
+        cc.first_visits=funnel.attended; cc.memberships=funnel.active_membership;
+      } else if(c.gclid_attr){
+        // Google Ads: atribúcia cez gclid (auto-tagging) od štartu kampane
+        const mine=allUsers.filter(u=>u.gclid && String(u.created_at||'')>=String(c.date_from||''));
+        const revs=mine.map(u=>revMap.__rev?.[u._id]||0);
+        attr={revenue:+revs.reduce((s,x)=>s+x,0).toFixed(2), payers:revs.filter(x=>x>0).length};
+        cc.registrations=mine.length;
+        cc.first_visits=mine.filter(u=>(u.visit_count||0)>0).length;
+        cc.memberships=mine.filter(u=>activeMembIds.has(u._id)).length;
+      } else if(lsk){
         const mine=allUsers.filter(u=>String(u.lead_source||'').toLowerCase().trim()===lsk);
         cc.registrations=mine.length;
         cc.claimed=mine.filter(u=>u.claimed!==false).length; // reálne si aktivovali účet
