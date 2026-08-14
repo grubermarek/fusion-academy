@@ -1053,6 +1053,16 @@ async function seedData() {
     await q.insert(db.settings,{key:'online_brezno_20260813', value:true, at:nowISO()});
   }
 
+  // 13.8.: rezervácia z 🕵️ test účtu ostala po odchode z testu visieť v zozname
+  // účastníčok (reset bežal len pri vstupe). Zmaž všetky rezervácie test účtov.
+  if(!(await q.one(db.settings,{key:'purge_test_bookings_20260813'}))){
+    const testIds=(await q.find(db.users,{})).filter(u=>/@test-fa-qa\.local$/i.test(String(u.email||''))).map(u=>u._id);
+    let n=0;
+    for(const id of testIds) n+=await q.remove(db.bookings,{user_id:id},{multi:true});
+    if(n) console.log('🧹 Zmazaných '+n+' rezervácií test účtov');
+    await q.insert(db.settings,{key:'purge_test_bookings_20260813', value:true, at:nowISO()});
+  }
+
   // Meta kampaň „FA — Zumba Leads — Jún 2026" — live čísla z Ads Manageru (27.7.2026)
   // + priradenie meta-klientov registrovaných počas kampane, aby fungovalo ROAS/CAC.
   if(!(await q.one(db.settings,{key:'meta_campaign_sync_v1'}))){
@@ -2639,6 +2649,7 @@ app.get('/api/classes', async(req,res)=>{
           for(const r of rows){
             if(r.is_child_booking){ attendees.push({name:r.child_name||'dieťa', child:true, parent:r.booked_by_name||null}); continue; }
             const ru=await q.one(db.users,{_id:r.user_id});
+            if(isTestContact(ru?.email)) continue; // 🕵️ test účet nikdy nezobrazovať klientkam
             attendees.push({id:r.user_id, name:r.user_name||ru?.name||'Člen', av:!!(ru&&ru.avatar)});
           }
         }
@@ -9032,6 +9043,14 @@ app.post('/api/test-account/back', async(req,res)=>{
     if(!req.session.admin_uid) return res.status(400).json({error:'Nie si v testovacom účte'});
     const adm=await q.one(db.users,{_id:req.session.admin_uid});
     if(!adm?.is_admin) return res.status(403).json({error:'Chyba návratu'});
+    // Uprac po teste aj PRI ODCHODE — reset pri vstupe nestačí: rezervácia z testu
+    // by dovtedy visela reálnym klientkam v zozname účastníčok hodiny.
+    try{
+      const t=await q.one(db.users,{email:TEST_ACC_EMAIL});
+      if(t) for(const col of ['bookings','notifications','memberships','transactions','payments','invoices','promo_redemptions','spins','mail_log']){
+        try{ await q.remove(db[col],{user_id:t._id},{multi:true}); }catch(e){}
+      }
+    }catch(e){}
     req.session.uid=adm._id; req.session.sv=adm.sess_ver||0; delete req.session.admin_uid;
     res.json({ok:true, redirect_to:'/admin'});
   }catch(e){ res.status(500).json({error:e.message}); }
