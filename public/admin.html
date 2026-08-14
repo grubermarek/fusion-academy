@@ -689,6 +689,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- LEADS – detailný zoznam (Glofox štýl) -->
   <div id="s-leads" class="section">
+    <div id="leadsFaiMoney"></div>
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <h4 class="fw-bold mb-0"><i class="bi bi-person-plus me-2 text-warning"></i><span id="leadsCount">0</span> Leady</h4>
       <div class="d-flex gap-2 flex-wrap">
@@ -725,6 +726,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- KLIENTI – platiaci členovia (leady majú vlastný tab) -->
   <div id="s-crm" class="section">
+    <div id="crmFaiMoney"></div>
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <h4 class="fw-bold mb-0"><i class="bi bi-people-fill me-2 text-warning"></i><span id="clientsCount">0</span> Klienti</h4>
       <div class="d-flex gap-2 flex-wrap">
@@ -1937,6 +1939,48 @@ function brSim(){
 }
 
 /* ── FUSION AI — CEO dashboard (fáza 1) ─────────────────────────────────── */
+// Riadok klientky v „Money left": klik na meno = CRM detail, + 📞/SMS/WhatsApp
+function faiPersonRow(p, info){
+  const eur=n=>n==null?'—':(Math.round(n*100)/100).toLocaleString('sk-SK')+' €';
+  const tel=String(p.phone||'').replace(/\s+/g,'');
+  const wa=tel?('https://wa.me/'+tel.replace(/[^0-9]/g,'').replace(/^0/,'421')):'';
+  const btn=(href,txt,col)=>`<a href="${href}" ${href.startsWith('http')?'target="_blank"':''} onclick="event.stopPropagation()" style="text-decoration:none;border:1px solid ${col}44;background:${col}18;color:${col};border-radius:8px;padding:2px 8px;font-size:.72rem;white-space:nowrap">${txt}</a>`;
+  return `<div class="d-flex justify-content-between align-items-center flex-wrap gap-1" style="padding:5px 0;border-bottom:1px solid #1e1e1e">
+    <span style="min-width:0"><a href="#" onclick="event.preventDefault();openClientDetail('${p.id}')" style="color:#e8cf8a;text-decoration:none;font-weight:600">${escHtml(p.name)}</a>
+      <span class="text-muted" style="font-size:.76rem"> — ${info}</span></span>
+    <span class="d-flex gap-1">${tel?btn('tel:'+escHtml(tel),'📞 Zavolať','#7bd88f')+btn('sms:'+escHtml(tel),'💬 SMS','#7ec8e3')+btn(wa,'🟢 WhatsApp','#57d98a'):(p.email?btn('mailto:'+escHtml(p.email),'✉️ E-mail','#C9A84C'):'<span class="text-muted" style="font-size:.72rem">bez kontaktu</span>')}</span>
+  </div>`;
+}
+function faiMoneyHtml(d){
+  const eur=n=>n==null?'—':(Math.round(n*100)/100).toLocaleString('sk-SK')+' €';
+  const oppRows=k=>({
+    winback:d.opportunities.winback.list.map(w=>faiPersonRow(w, `${w.days} d bez návštevy (Ø ${eur(w.monthly_spend)}/mes)`)),
+    expiring:d.opportunities.expiring.list.map(e=>faiPersonRow(e, `${escHtml(e.plan)} do ${e.expires} (~${eur(e.renewal_value)})`)),
+    lapsed:d.opportunities.lapsed.list.map(l=>faiPersonRow(l, `expirovalo ${l.expired} (~${eur(l.renewal_value)})`)),
+    leads:d.opportunities.uncontacted.list.map(u=>faiPersonRow(u, `${u.days} d bez kontaktu${u.source?' ('+escHtml(u.source)+')':''}`)),
+    upsell:d.opportunities.upsell.list.map(u=>faiPersonRow(u, `${u.entries_60d} vstupov za 60 d`))}[k]||[]);
+  return d.money_left.breakdown.map(x=>{
+    const rows=oppRows(x.key);
+    return `<details class="mb-2" style="border:1px solid #2a2a2a;border-radius:9px;padding:8px 12px">
+      <summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:8px">
+        <span>${escHtml(x.label)} <span class="badge bg-secondary">${x.count}</span></span>
+        <b style="color:#C9A84C;white-space:nowrap">${x.value==null?'—':'~'+eur(x.value)}</b></summary>
+      <div class="text-muted mt-2" style="font-size:.74rem">Výpočet: ${escHtml(x.how)}</div>
+      ${rows.length?`<div class="mt-1" style="max-height:220px;overflow-y:auto">${rows.join('')}</div>`:''}
+    </details>`;}).join('');
+}
+// Rovnaká tabuľka v sekciách Leady a Klienti (načíta sa raz, server cache 5 min)
+async function faiMoneyInto(elId){
+  const el=document.getElementById(elId);
+  if(!el||el.dataset.loaded) return;
+  el.dataset.loaded='1';
+  const d=await api('/api/admin/fusion-ai/dashboard');
+  if(d?.ok) el.innerHTML=`<details class="card border-0 rounded-3 p-3 mb-3" open>
+    <summary style="cursor:pointer;list-style:none" class="fw-semibold"><span style="color:#C9A84C">💰 Money left on the table</span>
+      <span class="badge" style="background:linear-gradient(135deg,#C9A84C,#a5842f);color:#161310">~${(Math.round(d.money_left.total*100)/100).toLocaleString('sk-SK')} €</span>
+      <span class="text-muted small ms-1">(z Fusion AI — klikni na meno alebo rovno volaj/píš)</span></summary>
+    <div class="small mt-2">${faiMoneyHtml(d)}</div></details>`;
+}
 async function loadFusionAI(force){
   const d=await api('/api/admin/fusion-ai/dashboard'+(force?'?force=1':''));
   if(!d?.ok){ document.getElementById('faiToday').innerHTML='<div class="text-danger small">Chyba: '+escHtml(d?.error||'?')+'</div>'; return; }
@@ -1962,22 +2006,9 @@ async function loadFusionAI(force){
   // brief
   const b=await api('/api/admin/fusion-ai/brief');
   document.getElementById('faiBrief').textContent=b?.text||'—';
-  // money left — rozklikateľné zoznamy mien
+  // money left — rozklikateľné zoznamy mien + kontaktné akcie
   document.getElementById('faiMoneyTotal').textContent='~'+eur(d.money_left.total);
-  const oppList=k=>({winback:d.opportunities.winback.list.map(w=>`${escHtml(w.name)} — ${w.days} d bez návštevy (Ø ${eur(w.monthly_spend)}/mes)`),
-    expiring:d.opportunities.expiring.list.map(e=>`${escHtml(e.name)} — ${escHtml(e.plan)} do ${e.expires} (~${eur(e.renewal_value)})`),
-    lapsed:d.opportunities.lapsed.list.map(l=>`${escHtml(l.name)} — expirovalo ${l.expired} (~${eur(l.renewal_value)})`),
-    leads:d.opportunities.uncontacted.list.map(u=>`${escHtml(u.name)} — ${u.days} d bez kontaktu${u.source?' ('+escHtml(u.source)+')':''}`),
-    upsell:d.opportunities.upsell.list.map(u=>`${escHtml(u.name)} — ${u.entries_60d} vstupov za 60 d`)}[k]||[]);
-  document.getElementById('faiMoney').innerHTML=d.money_left.breakdown.map(x=>{
-    const rows=oppList(x.key);
-    return `<details class="mb-2" style="border:1px solid #2a2a2a;border-radius:9px;padding:8px 12px">
-      <summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:8px">
-        <span>${escHtml(x.label)} <span class="badge bg-secondary">${x.count}</span></span>
-        <b style="color:#C9A84C;white-space:nowrap">${x.value==null?'—':'~'+eur(x.value)}</b></summary>
-      <div class="text-muted mt-2" style="font-size:.74rem">Výpočet: ${escHtml(x.how)}</div>
-      ${rows.length?`<div class="mt-1" style="max-height:180px;overflow-y:auto">${rows.map(t=>'<div style="padding:2px 0;border-bottom:1px solid #1e1e1e">'+t+'</div>').join('')}</div>`:''}
-    </details>`;}).join('');
+  document.getElementById('faiMoney').innerHTML=faiMoneyHtml(d);
   document.getElementById('faiAttention').innerHTML=d.attention.length
     ? d.attention.map(a=>`<div class="mb-2">${a.icon} ${escHtml(a.text)}</div>`).join('')
     : '<div class="text-muted">Nič kritické — všetko v norme. ✅</div>';
@@ -2019,8 +2050,8 @@ function show(sec){
   if(sec==='articles')loadArticles();
   if(sec==='rentals')loadRentals();
   if(sec==='payments')loadPayments();
-  if(sec==='leads')loadLeads();
-  if(sec==='crm')loadCrm();
+  if(sec==='leads'){loadLeads();faiMoneyInto('leadsFaiMoney');}
+  if(sec==='crm'){loadCrm();faiMoneyInto('crmFaiMoney');}
   if(sec==='churn')loadChurn();
   if(sec==='leaderboard')loadLeaderboard('alltime');
   if(sec==='automation')loadAutomation();

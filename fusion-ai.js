@@ -122,7 +122,7 @@ module.exports = function initFusionAI(ctx){
     const winback=realPeople.filter(u=>{
       if(u.user_type!=='client'||activeMemUsers.has(u._id)||(u.single_entries||0)>0) return false;
       const lv=lastVisit[u._id]; if(!lv) return false; const ds=daysSince(lv); return ds>=14&&ds<=120;
-    }).map(u=>({id:u._id, name:u.name, days:daysSince(lastVisit[u._id]), monthly_spend:round2(monthlySpend(u))}))
+    }).map(u=>({id:u._id, name:u.name, phone:u.phone||'', email:u.email||'', days:daysSince(lastVisit[u._id]), monthly_spend:round2(monthlySpend(u))}))
       .sort((a,b)=>a.days-b.days);
     const winbackPotential=round2(winback.reduce((s,w)=>s+(w.monthly_spend||10),0));
 
@@ -135,7 +135,8 @@ module.exports = function initFusionAI(ctx){
     const expiring=memberships.filter(m=>{
       if(m.status!=='active'||!m.expires_at||!okUser(m.user_id)) return false;
       const e=String(m.expires_at).slice(0,10); return e>=T && e<=daysAgo(-7);
-    }).map(m=>({id:m.user_id, name:uById[m.user_id]?.name||'?', plan:m.plan_name||m.plan_id||'', expires:String(m.expires_at).slice(0,10),
+    }).map(m=>({id:m.user_id, name:uById[m.user_id]?.name||'?', phone:uById[m.user_id]?.phone||'', email:uById[m.user_id]?.email||'',
+      plan:m.plan_name||m.plan_id||'', expires:String(m.expires_at).slice(0,10),
       renewal_value:round2(lastMemTx[m.user_id]?.amount||medianMem)})).sort((a,b)=>a.expires<b.expires?-1:1);
     const expiringPotential=round2(expiring.reduce((s,e)=>s+e.renewal_value,0));
 
@@ -145,7 +146,7 @@ module.exports = function initFusionAI(ctx){
       if(u.user_type!=='lead'||contactedIds.has(u._id)||attendedSet.has(u._id)) return false;
       const created=String(u.created_at||'').slice(0,10);
       return created<T && created>=daysAgo(60);
-    }).map(u=>({id:u._id, name:u.name, days:daysSince(String(u.created_at).slice(0,10)), source:u.lead_source||u.utm_source||''}))
+    }).map(u=>({id:u._id, name:u.name, phone:u.phone||'', email:u.email||'', days:daysSince(String(u.created_at).slice(0,10)), source:u.lead_source||u.utm_source||''}))
       .sort((a,b)=>a.days-b.days);
     // potenciál leadov = počet × konverzia 30d × mediánová prvá platba
     const firstAmounts=[];
@@ -159,7 +160,7 @@ module.exports = function initFusionAI(ctx){
     for(const t of txs){ if(t.type!=='single_entry'||!(+t.amount>0)||!okUser(t.user_id)) continue;
       if(txDate(t)>=daysAgo(60)) entryCnt[t.user_id]=(entryCnt[t.user_id]||0)+1; }
     const upsell=Object.entries(entryCnt).filter(([uid,n])=>n>=3&&!activeMemUsers.has(uid))
-      .map(([uid,n])=>({id:uid, name:uById[uid]?.name||'?', entries_60d:n, spent_60d:round2(n*10)}))
+      .map(([uid,n])=>({id:uid, name:uById[uid]?.name||'?', phone:uById[uid]?.phone||'', email:uById[uid]?.email||'', entries_60d:n, spent_60d:round2(n*10)}))
       .sort((a,b)=>b.entries_60d-a.entries_60d);
     const upsellPotential=round2(upsell.length*medianMem);
 
@@ -170,7 +171,8 @@ module.exports = function initFusionAI(ctx){
       const e=String(m.expires_at).slice(0,10);
       if(!(e<T && e>=daysAgo(30))) return false;
       return !activeMemUsers.has(m.user_id); // neobnovila
-    }).map(m=>({id:m.user_id, name:uById[m.user_id]?.name||'?', expired:String(m.expires_at).slice(0,10),
+    }).map(m=>({id:m.user_id, name:uById[m.user_id]?.name||'?', phone:uById[m.user_id]?.phone||'', email:uById[m.user_id]?.email||'',
+      expired:String(m.expires_at).slice(0,10),
       renewal_value:round2(lastMemTx[m.user_id]?.amount||medianMem)}));
     const lapsedPotential=round2(lapsed.reduce((s,l)=>s+l.renewal_value,0));
     const moneyLeft={ total:round2(winbackPotential+expiringPotential+(leadPotential||0)+upsellPotential+lapsedPotential),
