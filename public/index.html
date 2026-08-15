@@ -633,6 +633,11 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
       <div class="step-icon">👋</div>
       <h2 class="step-title" id="s1Title" data-i18n="auth.reg_title">Vitaj v Fusion Academy!</h2>
       <p class="step-sub" id="s1Sub" data-i18n-html="auth.reg_sub">Prvá hodina je <span class="gold">zadarmo</span>. Stačí sa zaregistrovať — trvá to 30 sekúnd.</p>
+      <!-- Výrazné prihlásenie pre existujúce klientky — po odhlásení nevideli malý
+           odkaz hore a vypisovali registráciu odznova -->
+      <button onclick="openLogin()" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;max-width:420px;margin:0 auto 16px;background:rgba(201,162,76,.10);border:1.5px solid rgba(201,162,76,.55);color:#E7C878;font-weight:700;font-size:.95rem;padding:12px 18px;border-radius:14px;cursor:pointer">
+        🔑 <span data-i18n="auth.have_acct_big">Už máš u nás účet? Prihlás sa tu</span>
+      </button>
       <div class="form-card">
         <div class="auth-error" id="regErr"></div>
         <!-- Google-first: najrýchlejšia registrácia na 1 klik — maximalizuje dokončené registrácie -->
@@ -1618,6 +1623,9 @@ function scrollToTop(){
   document.head.appendChild(s);
 })();
 function openLogin(){document.getElementById('loginModal').style.display='flex';setTimeout(()=>document.getElementById('lEmail')?.focus(),120);}
+// Po odhlásení (/?login=1) otvor rovno prihlasovacie okno — klientky nevideli
+// malý odkaz hore a vypisovali registráciu odznova.
+if(new URLSearchParams(location.search).get('login')==='1'){ window.addEventListener('load',()=>setTimeout(openLogin,300)); }
 function closeLogin(){document.getElementById('loginModal').style.display='none';}
 
 async function doLogin(){

@@ -838,7 +838,7 @@ function fmtDMY(d){
   const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   return m ? `${m[3]}-${m[2]}-${m[1]}` : s;
 }
-async function logout(){await api('/api/logout',{method:'POST'});window.location.href='/';}
+async function logout(){await api('/api/logout',{method:'POST'});window.location.href='/?login=1';}
 async function cancelStripeSub(){
   if(!confirm('Zrušiť automatický mesačný odber? Členstvo ti zostane aktívne do konca zaplateného obdobia.')) return;
   const d=await api('/api/stripe/subscribe/cancel',{method:'POST'});
