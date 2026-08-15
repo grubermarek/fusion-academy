@@ -2435,8 +2435,9 @@ async function computeUrgentTasks(){
   const tasks=[];
   const contact=u=>({name:u.name||'—', phone:u.phone||'', email:u.email||''});
   // 1) Nová registrácia bez rezervácie (posledných 14 dní)
+  const isTest=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'')||u.lead_source==='test'||u.is_test;
   for(const u of users){
-    if(u.is_admin||u.hidden_lead) continue;
+    if(u.is_admin||u.hidden_lead||isTest(u)) continue;
     const created=(u.created_at||'').slice(0,10);
     if(!created || created<d(-14) || created>todayS) continue;
     if(bookedUsers.has(u._id) || memByUser[u._id]) continue;
