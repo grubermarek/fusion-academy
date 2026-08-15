@@ -2574,8 +2574,12 @@ async function refEvent(sponsor, type, extra={}){
 async function inviterByCode(code){
   const c=String(code||'').replace(/[^a-zA-Z0-9]/g,'');
   if(!c) return null;
-  // „domáci" kód pre reklamy — pozvánka priamo od štúdia, bez sponzora
-  if(c.toUpperCase()==='FUSION') return {_id:'house', name:'Fusion Academy', referral_code:'FUSION', active:true};
+  // „domáci" kód pre reklamy — sponzorom je automaticky majiteľ (Marek)
+  if(c.toUpperCase()==='FUSION'){
+    const owner=await q.one(db.users,{email:'gruber.marek@gmail.com'});
+    if(owner) return {...owner, referral_code:'FUSION'};
+    return {_id:'house', name:'Fusion Academy', referral_code:'FUSION', active:true};
+  }
   return await q.one(db.users,{referral_code:new RegExp('^'+c+'$','i')});
 }
 // Info + mestá (log kliknutia raz na návštevu — klient pošle first=1)
@@ -9439,11 +9443,14 @@ async function onlineInstructorFor(cls, date){
   try{
     const si=await sessionInstructor(cls, date).catch(()=>null);
     if(si?.overridden) return si.instructor;
-    const pair=(await q.find(db.classes,{active:true, day_of_week:cls.day_of_week}))
-      .find(p=>p.category!=='Online' && p.time_start===cls.time_start && (p.location||'')===(cls.stream_city||''));
+    const sameSlot=(await q.find(db.classes,{active:true, day_of_week:cls.day_of_week}))
+      .filter(p=>p.category!=='Online' && p.time_start===cls.time_start);
+    // najprv presné párovanie podľa mesta streamu, inak hocijaká fyzická hodina v rovnakom čase
+    const pair=sameSlot.find(p=>(p.location||'')===(cls.stream_city||'')) || sameSlot[0];
     if(pair){
       const psi=await sessionInstructor(pair, date).catch(()=>null);
-      return psi?.overridden ? psi.instructor : (cls.instructor||pair.instructor||'');
+      // aktuálny tréner fyzickej hodiny má prednosť pred zastaraným menom na online zázname
+      return psi?.overridden ? psi.instructor : (pair.instructor||cls.instructor||'');
     }
     return cls.instructor||'';
   }catch(e){ return cls.instructor||''; }
