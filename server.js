@@ -9690,7 +9690,15 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
     const classes=(await q.find(db.classes,{category:'Online', active:true, day_of_week:dow}))
       .filter(c=>classRunsOn(c, today()))
       .sort((a,b)=>(a.time_start||'').localeCompare(b.time_start||''));
-    const cls=classes.find(c=> nowMin>=toMin(c.time_start)-90 && nowMin<toMin(c.time_end||c.time_start)+5 );
+    // koniec hodiny: ak time_end chýba, počítaj 60 minút (nie 0 — banner mizol 5 min po štarte)
+    const endMin=c=>{ const e=toMin(c.time_end); const s=toMin(c.time_start); return e>s?e:s+60; };
+    const inWin=c=> nowMin>=toMin(c.time_start)-90 && nowMin<endMin(c)+5;
+    const isRun=c=> nowMin>=toMin(c.time_start) && nowMin<endMin(c)+5;
+    // pri viacerých hodinách v okne má prednosť tá, ktorá PRÁVE beží (s najneskorším štartom),
+    // inak najbližšia nadchádzajúca — predtým .find() vracal vždy prvú a 19:00 Zumba sa nedostala na rad
+    const cands=classes.filter(inWin);
+    const cls=cands.filter(isRun).sort((a,b)=>toMin(b.time_start)-toMin(a.time_start))[0]
+           || cands.filter(c=>!isRun(c)).sort((a,b)=>toMin(a.time_start)-toMin(b.time_start))[0];
     if(!cls) return res.json({ok:true, upcoming:null});
     const m=await checkMembership(req.session.uid);
     const upcU=await q.one(db.users,{_id:req.session.uid});
