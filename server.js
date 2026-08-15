@@ -2405,6 +2405,109 @@ app.post('/api/admin/meta-ads-token', adminAuth, async(req,res)=>{
     res.json({ok:true, len:t.length, sync:test});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
+// ─── Záloha databázy (gzip JSON dump všetkých kolekcií) ─────────────────────
+// GET /api/admin/db-backup?token=BACKUP_TOKEN — na automatické denné zálohy (curl bez session).
+app.get('/api/admin/db-backup', async(req,res)=>{
+  try{
+    const tok=process.env.BACKUP_TOKEN||'';
+    const isAdmin = req.session?.uid && (await q.one(db.users,{_id:req.session.uid}))?.is_admin;
+    if(!isAdmin && (!tok || req.query.token!==tok)) return res.status(403).json({error:'forbidden'});
+    const dump={_at:nowISO()};
+    for(const [name,ds] of Object.entries(db)) dump[name]=await q.find(ds,{});
+    const gz=require('zlib').gzipSync(Buffer.from(JSON.stringify(dump)));
+    res.setHeader('Content-Type','application/gzip');
+    res.setHeader('Content-Disposition','attachment; filename="fusion-backup-'+today()+'.json.gz"');
+    res.send(gz);
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ─── Neodkladné úlohy pre adminov ────────────────────────────────────────────
+// Agreguje veci, ktoré treba vybaviť HNEĎ: koho kontaktovať a prečo.
+async function computeUrgentTasks(){
+  const now=new Date(); const todayS=today();
+  const d=(days)=>new Date(now.getTime()+days*86400000).toISOString().slice(0,10);
+  const users=await q.find(db.users,{});
+  const byId=Object.fromEntries(users.map(u=>[u._id,u]));
+  const activeMems=await q.find(db.memberships,{status:'active'});
+  const memByUser={}; for(const m of activeMems){ if(!memByUser[m.user_id]||(m.expires_at||'')>(memByUser[m.user_id].expires_at||'')) memByUser[m.user_id]=m; }
+  const allBookings=await q.find(db.bookings,{});
+  const bookedUsers=new Set(allBookings.filter(b=>b.status!=='cancelled').map(b=>b.user_id));
+  const tasks=[];
+  const contact=u=>({name:u.name||'—', phone:u.phone||'', email:u.email||''});
+  // 1) Nová registrácia bez rezervácie (posledných 14 dní)
+  for(const u of users){
+    if(u.is_admin||u.hidden_lead) continue;
+    const created=(u.created_at||'').slice(0,10);
+    if(!created || created<d(-14) || created>todayS) continue;
+    if(bookedUsers.has(u._id) || memByUser[u._id]) continue;
+    tasks.push({key:'lead:'+u._id, type:'lead', prio:1, title:'Nová registrácia bez rezervácie',
+      why:`${u.name} sa zaregistrovala ${created}${u.lead_source?' (zdroj: '+u.lead_source+')':''}, ale ešte si nerezervovala hodinu — zavolaj/napíš a pomôž jej vybrať termín.`, ...contact(u)});
+  }
+  // 2) Hosťovská rezervácia z pozvánky na dnes/zajtra — privítať
+  for(const b of allBookings){
+    if(b.status==='cancelled') continue;
+    if(b.booking_date!==todayS && b.booking_date!==d(1)) continue;
+    const u=byId[b.user_id]; if(!u||!u.guest) continue;
+    tasks.push({key:'guest:'+b._id, type:'guest', prio:1, title:'Prvá hodina hostky '+(b.booking_date===todayS?'DNES':'zajtra'),
+      why:`${u.name} príde ${b.booking_date===todayS?'dnes':'zajtra'} prvýkrát (pozvánka). Krátke privítanie/SMS výrazne zvyšuje šancu, že príde.`, ...contact(u)});
+  }
+  // 3) Členstvo končí do 5 dní
+  for(const m of activeMems){
+    const exp=(m.expires_at||'').slice(0,10); if(!exp||exp<todayS||exp>d(5)) continue;
+    const u=byId[m.user_id]; if(!u) continue;
+    tasks.push({key:'expiring:'+m._id+':'+exp, type:'expiring', prio:2, title:'Členstvo končí '+exp,
+      why:`${u.name} — ${m.plan_name||m.plan_id||'členstvo'} končí ${exp}. Pripomeň obnovu skôr, než vyprší.`, ...contact(u)});
+  }
+  // 4) Členstvo vypršalo za posledných 7 dní a neobnovila
+  const expired=await q.find(db.memberships,{status:'expired'});
+  const seen=new Set();
+  for(const m of expired){
+    const exp=(m.expires_at||'').slice(0,10); if(!exp||exp<d(-7)||exp>=todayS) continue;
+    if(memByUser[m.user_id]||seen.has(m.user_id)) continue; seen.add(m.user_id);
+    const u=byId[m.user_id]; if(!u) continue;
+    tasks.push({key:'lapsed:'+m.user_id+':'+exp, type:'lapsed', prio:2, title:'Neobnovené členstvo',
+      why:`${u.name} — členstvo vypršalo ${exp} a nemá nové. Ozvi sa, kým je ešte „teplá".`, ...contact(u)});
+  }
+  // 5) Včerajšie no-show
+  const yest=d(-1);
+  for(const b of allBookings){
+    if(b.status!=='no_show'||b.booking_date!==yest) continue;
+    const u=byId[b.user_id]; if(!u) continue;
+    tasks.push({key:'noshow:'+b._id, type:'noshow', prio:3, title:'Včera neprišla na hodinu',
+      why:`${u.name} mala včera rezervovanú hodinu a neprišla. Krátke „chýbala si nám" drží vzťah.`, ...contact(u)});
+  }
+  // odfiltruj vybavené
+  const done=await q.find(db.settings,{key:{$regex:/^utask_done_/}});
+  const doneKeys=new Set(done.map(s=>s.key.slice('utask_done_'.length)));
+  return tasks.filter(t=>!doneKeys.has(t.key)).sort((a,b)=>a.prio-b.prio);
+}
+app.get('/api/admin/urgent-tasks', adminAuth, async(req,res)=>{
+  try{ res.json({ok:true, tasks:await computeUrgentTasks()}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/urgent-tasks/dismiss', adminAuth, async(req,res)=>{
+  try{ const key=String(req.body.key||'').slice(0,200); if(!key) return res.status(400).json({error:'key?'});
+    await q.insert(db.settings,{key:'utask_done_'+key, value:true, by:req.session.uid, at:nowISO()});
+    res.json({ok:true}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+// Denná notifikácia adminom o 8:00 (guard raz/deň)
+setInterval(async()=>{
+  try{
+    if(new Date().getHours()!==8) return;
+    const guard='utask_notify_'+today();
+    if(await q.one(db.settings,{key:guard})) return;
+    await q.insert(db.settings,{key:guard, value:true, at:nowISO()});
+    const tasks=await computeUrgentTasks();
+    if(!tasks.length) return;
+    const admins=await q.find(db.users,{is_admin:true});
+    const top=tasks.slice(0,3).map(t=>t.title+' — '+t.name).join(' · ');
+    for(const a of admins) await q.insert(db.notifications,{user_id:a._id, type:'urgent_tasks',
+      title:`🔥 ${tasks.length} neodkladných úloh`, body:top+(tasks.length>3?` … a ďalšie (${tasks.length-3})`:''),
+      link:'/admin#urgent', read:false, created_at:nowISO()});
+  }catch(e){}
+}, 10*60*1000);
+
 app.get('/api/admin/meta-ads-token', adminAuth, async(req,res)=>{
   const t=await getMetaAdsToken();
   res.json({ok:true, configured:!!t});

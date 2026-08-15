@@ -115,6 +115,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div class="group-title" id="groupTitle">Správa</div>
 
     <div class="group-links active" data-group="manage">
+      <a class="nav-link" href="#" onclick="show('urgent')"><i class="bi bi-fire me-2"></i><span style="color:#ff6b6b;font-weight:800">Neodkladné</span> <span id="urgentBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
       <a class="nav-link active" href="#" onclick="show('attendance')"><i class="bi bi-calendar-heart me-2"></i><span style="color:#4ade80;font-weight:700">Kalendár rezervácií</span></a>
       <div class="nav-group-label">Klienti</div>
       <a class="nav-link" href="#" onclick="show('leads')"><i class="bi bi-person-plus me-2"></i>Leady <span id="leadsNavBadge" class="badge ms-1" style="background:#C9A84C;color:#111;display:none"></span></a>
@@ -177,6 +178,16 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 </div>
 
 <div class="main p-4">
+
+  <!-- URGENT TASKS -->
+  <div id="s-urgent" class="section">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+      <h4 class="fw-bold mb-0">🔥 Neodkladné úlohy</h4>
+      <button class="btn btn-sm btn-outline-secondary" onclick="loadUrgent()"><i class="bi bi-arrow-clockwise me-1"></i>Obnoviť</button>
+    </div>
+    <p class="text-muted" style="font-size:.9rem">Koho a prečo treba kontaktovať hneď — nové registrácie bez rezervácie, hostky pred prvou hodinou, končiace a neobnovené členstvá, včerajšie no-show. Vybavené úlohy zmiznú.</p>
+    <div id="urgentList"><div class="text-muted p-3">Načítavam…</div></div>
+  </div>
 
   <!-- ORDERS -->
   <div id="s-orders" class="section">
@@ -2104,6 +2115,7 @@ function show(sec){
   document.querySelectorAll('.nav-link').forEach(a=>a.classList.remove('active'));
   document.querySelector(`.nav-link[onclick*="'${sec}'"]`)?.classList.add('active');
   if(SECTION_GROUP[sec]) selectGroup(SECTION_GROUP[sec]);
+  if(sec==='urgent')loadUrgent();
   if(sec==='fusionai')loadFusionAI();
   if(sec==='bizrank')loadBizRank();
   if(sec==='sutaze')loadRefGoalReport();
@@ -6096,6 +6108,37 @@ async function doGiveFree(){
   if(d?.ok){ showToast('Hodina zadarmo udelená 🎁','success'); clearGfUser(); document.getElementById('gfNote').value=''; }
   else showToast('Chyba: '+(d?.error||'?'),'error');
 }
+
+// ── Neodkladné úlohy ──
+const URGENT_ICON={lead:'🆕',guest:'💃',expiring:'⏳',lapsed:'🔁',noshow:'🙈'};
+async function loadUrgent(){
+  const box=document.getElementById('urgentList');
+  const d=await api('/api/admin/urgent-tasks');
+  if(!d?.ok){ box.innerHTML='<div class="text-danger p-3">Chyba: '+(d?.error||'?')+'</div>'; return; }
+  updateUrgentBadge(d.tasks.length);
+  if(!d.tasks.length){ box.innerHTML='<div class="p-4 text-center text-muted">Všetko vybavené 🎉 Žiadne neodkladné úlohy.</div>'; return; }
+  box.innerHTML=d.tasks.map(t=>`
+    <div class="card border-0 rounded-3 p-3 mb-2" style="border-left:4px solid ${t.prio===1?'#ff6b6b':t.prio===2?'#C9A84C':'#8a8a8a'} !important">
+      <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+        <div style="min-width:240px;flex:1">
+          <div class="fw-bold">${URGENT_ICON[t.type]||'🔥'} ${t.title} — ${t.name}</div>
+          <div class="text-muted" style="font-size:.88rem">${t.why}</div>
+        </div>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          ${t.phone?`<a class="btn btn-sm btn-success" href="tel:${t.phone}"><i class="bi bi-telephone me-1"></i>${t.phone}</a>`:''}
+          ${t.email?`<a class="btn btn-sm btn-outline-light" href="mailto:${t.email}"><i class="bi bi-envelope me-1"></i>Mail</a>`:''}
+          <button class="btn btn-sm btn-outline-secondary" onclick="dismissUrgent('${t.key.replace(/'/g,'')}')">✓ Vybavené</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+function updateUrgentBadge(n){ const b=document.getElementById('urgentBadge'); if(n>0){ b.textContent=n; b.style.display='inline'; } else b.style.display='none'; }
+async function dismissUrgent(key){
+  const d=await api('/api/admin/urgent-tasks/dismiss',{method:'POST',body:{key}});
+  if(d?.ok) loadUrgent(); else showToast('Chyba: '+(d?.error||'?'),'error');
+}
+// badge pri štarte + ak je v URL #urgent, otvor rovno sekciu
+(async()=>{ try{ const d=await api('/api/admin/urgent-tasks'); if(d?.ok) updateUrgentBadge(d.tasks.length); if(location.hash==='#urgent') show('urgent'); }catch(e){} })();
 
 // Close dropdowns on outside click
 document.addEventListener('click', e => {
