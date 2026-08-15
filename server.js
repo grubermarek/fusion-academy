@@ -2574,6 +2574,8 @@ async function refEvent(sponsor, type, extra={}){
 async function inviterByCode(code){
   const c=String(code||'').replace(/[^a-zA-Z0-9]/g,'');
   if(!c) return null;
+  // „domáci" kód pre reklamy — pozvánka priamo od štúdia, bez sponzora
+  if(c.toUpperCase()==='FUSION') return {_id:'house', name:'Fusion Academy', referral_code:'FUSION', active:true};
   return await q.one(db.users,{referral_code:new RegExp('^'+c+'$','i')});
 }
 // Info + mestá (log kliknutia raz na návštevu — klient pošle first=1)
@@ -13455,6 +13457,7 @@ app.get('/pricing',    (req,res)=>res.redirect(302,'/obchod'+(req.originalUrl.in
 app.get('/u/:id',      (req,res)=>res.sendFile(path.join(__dirname,'public','profile.html')));
 app.get('/vencek',     (req,res)=>res.sendFile(path.join(__dirname,'public','vencek.html')));
 app.get('/vencek-booking', (req,res)=>res.sendFile(path.join(__dirname,'public','vencek-booking.html')));
+app.get('/invite', (req,res)=>{ const qs=req.url.includes('?')?req.url.slice(req.url.indexOf('?')):''; res.redirect('/invite/FUSION'+qs); });
 app.get('/invite/:code', (req,res)=>res.sendFile(path.join(__dirname,'public','invite.html')));
 app.get('/terms',      (req,res)=>res.sendFile(path.join(__dirname,'public','terms.html')));
 app.get('/dashboard',  (req,res)=>res.sendFile(path.join(__dirname,'public','dashboard.html')));
