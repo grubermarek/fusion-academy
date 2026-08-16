@@ -2571,7 +2571,9 @@ setInterval(async()=>{
 // Denná notifikácia adminom o 8:00 (guard raz/deň)
 setInterval(async()=>{
   try{
-    if(new Date().getHours()!==8) return;
+    // Hodina v SK čase (server beží v UTC) + samoliečba: spusti sa hocikedy po 8:00, ak dnes ešte nebežalo
+    const hSK=+new Intl.DateTimeFormat('sk-SK',{hour:'numeric',hour12:false,timeZone:'Europe/Bratislava'}).format(new Date());
+    if(hSK<8||hSK>21) return;
     const guard='utask_notify_'+today();
     if(await q.one(db.settings,{key:guard})) return;
     await q.insert(db.settings,{key:guard, value:true, at:nowISO()});
