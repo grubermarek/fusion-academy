@@ -1136,6 +1136,23 @@ async function seedData() {
     }
     await q.insert(db.settings,{key:'manual_ops_20260816_vecer', value:true, at:nowISO()});
   }
+  // 16.8. večer 2: Soňa M., Barbora K., Olinka K. majú byť LEN na Zumbe — zruš ich technika bookingy
+  if(!(await q.one(db.settings,{key:'manual_ops_20260816_vecer2'}))){
+    const IDS=['2AyK5gAb7xH8Fqai','g3zkQ89A7TVnNG3x','2PGtFwcJiRDdRsVz'];
+    const techIds=new Set((await q.find(db.classes,{category:'Technika'})).map(c=>c._id)
+      .concat((await q.find(db.classes,{category:'Online'})).filter(c=>/technick/i.test(c.name)).map(c=>c._id)));
+    for(const uid of IDS){
+      const bks=(await q.find(db.bookings,{user_id:uid, booking_date:'2026-08-16'})).filter(b=>b.status!=='cancelled'&&techIds.has(b.class_id));
+      for(const b of bks){
+        await q.update(db.bookings,{_id:b._id},{$set:{status:'cancelled', cancelled_at:nowISO(), notes:((b.notes||'')+' | Zrušené štúdiom — má byť len Zumba').trim()}});
+        // vráť vstup/kredit, ak ním bolo platené
+        if(b.access_method==='single_entry'){ const u=await q.one(db.users,{_id:uid}); await q.update(db.users,{_id:uid},{$set:{single_entries:(u.single_entries||0)+1}}); }
+        if(b.access_method==='free_credit'){ const u=await q.one(db.users,{_id:uid}); await q.update(db.users,{_id:uid},{$set:{free_credits:(u.free_credits||0)+1}}); }
+        if(b.access_method==='free_class'){ await q.update(db.users,{_id:uid},{$set:{free_class_used:false}}); }
+      }
+    }
+    await q.insert(db.settings,{key:'manual_ops_20260816_vecer2', value:true, at:nowISO()});
+  }
   // 16.8.: prvá hodina zadarmo platí aj na techniku — doplň do popisu
   if(!(await q.one(db.settings,{key:'tech_freeclass_20260816'}))){
     const NEWDESC2='Technika, izolácie a štýl — nadstavba k Zumbe. 🎁 Prvá hodina zadarmo! Inak 💳 10 € jednorazový vstup · Bronze 9 € · Silver 8 € · Gold 7 €. Platí aj permanentka (1 vstup) — kúpiš kartou v Obchode, alebo zaplatíš na mieste. Pokračujeme Zumbou o 19:00. Beží aj online prenos!';
