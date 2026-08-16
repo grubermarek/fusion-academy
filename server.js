@@ -2575,13 +2575,19 @@ setInterval(async()=>{
     const hSK=+new Intl.DateTimeFormat('sk-SK',{hour:'numeric',hour12:false,timeZone:'Europe/Bratislava'}).format(new Date());
     if(hSK<8||hSK>21) return;
     const guard='utask_notify_'+today();
-    if(await q.one(db.settings,{key:guard})) return;
-    await q.insert(db.settings,{key:guard, value:true, at:nowISO()});
+    const guardAssign='utask_assign_'+today();
+    const notifDone=await q.one(db.settings,{key:guard});
+    const assignDone=await q.one(db.settings,{key:guardAssign});
+    if(notifDone && assignDone) return;
     const tasks=await computeUrgentTasks();
-    if(!tasks.length) return;
+    if(!tasks.length){ // aj tak označ, nech sa necyklí
+      if(!notifDone) await q.insert(db.settings,{key:guard, value:true, at:nowISO()});
+      if(!assignDone) await q.insert(db.settings,{key:guardAssign, value:true, at:nowISO()});
+      return;
+    }
     // Rozdeľ neodkladné úlohy trénerom (round-robin) ako denné coach úlohy s bodmi —
     // v ich dennom pláne sa objaví „Kontaktuj X — dôvod" a po odkliknutí dostanú body.
-    try{
+    if(!assignDone) try{
       const isTestU=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'');
       const trainers=(await q.find(db.users,{})).filter(u=>(u.user_type==='trainer'||u.user_type==='manager') && u.active!==false && !isTestU(u));
       if(trainers.length){
@@ -2595,11 +2601,15 @@ setInterval(async()=>{
         }
       }
     }catch(e){}
-    const admins=await q.find(db.users,{is_admin:true});
-    const top=tasks.slice(0,3).map(t=>t.title+' — '+t.name).join(' · ');
-    for(const a of admins) await q.insert(db.notifications,{user_id:a._id, type:'urgent_tasks',
-      title:`🔥 ${tasks.length} neodkladných úloh`, body:top+(tasks.length>3?` … a ďalšie (${tasks.length-3})`:''),
-      link:'/admin#urgent', read:false, created_at:nowISO()});
+    if(!assignDone) await q.insert(db.settings,{key:guardAssign, value:true, at:nowISO()});
+    if(!notifDone){
+      await q.insert(db.settings,{key:guard, value:true, at:nowISO()});
+      const admins=await q.find(db.users,{is_admin:true});
+      const top=tasks.slice(0,3).map(t=>t.title+' — '+t.name).join(' · ');
+      for(const a of admins) await q.insert(db.notifications,{user_id:a._id, type:'urgent_tasks',
+        title:`🔥 ${tasks.length} neodkladných úloh`, body:top+(tasks.length>3?` … a ďalšie (${tasks.length-3})`:''),
+        link:'/admin#urgent', read:false, created_at:nowISO()});
+    }
   }catch(e){}
 }, 10*60*1000);
 
