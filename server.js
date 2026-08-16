@@ -2589,7 +2589,8 @@ setInterval(async()=>{
     // v ich dennom pláne sa objaví „Kontaktuj X — dôvod" a po odkliknutí dostanú body.
     if(!assignDone) try{
       const isTestU=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'');
-      const trainers=(await q.find(db.users,{})).filter(u=>(u.user_type==='trainer'||u.user_type==='manager') && u.active!==false && !isTestU(u));
+      // Rotácia: tréneri + manažéri + admini (Marek, Beáta) — všetci kontaktujú klientky
+      const trainers=(await q.find(db.users,{})).filter(u=>(u.user_type==='trainer'||u.user_type==='manager'||u.is_admin) && u.active!==false && !isTestU(u));
       if(trainers.length){
         for(let i=0;i<tasks.length;i++){
           const t=tasks[i]; const tr=trainers[i%trainers.length];
