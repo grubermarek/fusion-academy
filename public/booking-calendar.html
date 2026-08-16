@@ -178,12 +178,12 @@ async function renderDay(){
   const classes = _schedule.filter(c=>{
     const cat=(c.category||'').toLowerCase(), loc=(c.location||'').toLowerCase();
     if(loc==='online'||cat==='online') return false;  // online is separate
-    if(cat!=='zumba') return false;                    // focus: only Zumba
+    if(cat!=='zumba'&&cat!=='technika') return false;  // Zumba + technický tréning
     return c.day_of_week===dow && c.active!==false;
   }).sort((a,b)=>(a.time_start||'').localeCompare(b.time_start||''));
   const host = document.getElementById('dayClasses');
   if(!classes.length){
-    host.innerHTML = `<div class="empty-day"><div class="e-emoji">🌙</div>V ${DAYS_FULL[dow].toLowerCase()} nie sú naplánované žiadne Zumba hodiny.</div>`;
+    host.innerHTML = `<div class="empty-day"><div class="e-emoji">🌙</div>V ${DAYS_FULL[dow].toLowerCase()} nie sú naplánované žiadne hodiny.</div>`;
     return;
   }
   // Load date-specific attendees + instructor for each class in parallel (+ zrušené termíny)

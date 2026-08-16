@@ -1623,7 +1623,7 @@ async function loadClasses(){
       if(c.deleted) return false;
       const cat=(c.category||'').toLowerCase(), loc=(c.location||'').toLowerCase();
       if(loc==='online'||cat==='online') return false;
-      return cat==='zumba';
+      return cat==='zumba'||cat==='technika';
     });
     renderClassCards();
   } catch(e){
