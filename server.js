@@ -1107,6 +1107,12 @@ async function seedData() {
     for(const c of techCls) await q.update(db.classes,{_id:c._id},{$set:{description:NEWDESC}});
     await q.insert(db.settings,{key:'tech_price_gold7_20260815', value:true, at:nowISO()});
   }
+  // 16.8.: prvá hodina zadarmo platí aj na techniku — doplň do popisu
+  if(!(await q.one(db.settings,{key:'tech_freeclass_20260816'}))){
+    const NEWDESC2='Technika, izolácie a štýl — nadstavba k Zumbe. 🎁 Prvá hodina zadarmo! Inak 💳 10 € jednorazový vstup · Bronze 9 € · Silver 8 € · Gold 7 €. Platí aj permanentka (1 vstup) — kúpiš kartou v Obchode, alebo zaplatíš na mieste. Pokračujeme Zumbou o 19:00. Beží aj online prenos!';
+    for(const c of await q.find(db.classes,{category:'Technika'})) await q.update(db.classes,{_id:c._id},{$set:{description:NEWDESC2}});
+    await q.insert(db.settings,{key:'tech_freeclass_20260816', value:true, at:nowISO()});
+  }
 
   // 14.8.: STRIKTNÁ ATRIBÚCIA KAMPANÍ — žiadne domyslené tržby.
   // Júlová migrácia (meta_campaign_sync_v1) otagovala utm_campaign='FA — Zumba
@@ -2499,6 +2505,33 @@ app.post('/api/admin/urgent-tasks/dismiss', adminAuth, async(req,res)=>{
     res.json({ok:true}); }
   catch(e){ res.status(500).json({error:e.message}); }
 });
+// ── Pripomienka trénerovi ~30 min pred hodinou: koho vybrať na mieste ────────
+setInterval(async()=>{
+  try{
+    const now=new Date(); const dow=now.getDay(); const nowMin=now.getHours()*60+now.getMinutes();
+    const toMin=t=>{ const [h,m]=String(t||'0:0').split(':').map(Number); return h*60+m; };
+    const classes=(await q.find(db.classes,{active:true, day_of_week:dow})).filter(c=>c.category!=='Online');
+    for(const cls of classes){
+      const diff=toMin(cls.time_start)-nowMin;
+      if(diff<25||diff>35) continue;                       // okno ~30 min pred štartom
+      const guard='paysite_remind_'+cls._id+'_'+today();
+      if(await q.one(db.settings,{key:guard})) continue;
+      await q.insert(db.settings,{key:guard, value:true, at:nowISO()});
+      const toCollect=(await q.find(db.bookings,{class_id:cls._id, booking_date:today(), status:{$ne:'cancelled'}}))
+        .filter(b=>b.pay_on_site && !b.entry_collected);
+      if(!toCollect.length) continue;
+      const lines=toCollect.map(b=>`${b.user_name} — ${(b.pay_amount||10).toFixed(0)} €`).join(' · ');
+      const recipients=new Set();
+      if(cls.instructor_id) recipients.add(cls.instructor_id);
+      for(const a of await q.find(db.users,{is_admin:true})) recipients.add(a._id);
+      for(const uid of recipients) await q.insert(db.notifications,{user_id:uid, type:'pay_on_site',
+        title:`💵 ${cls.name} ${cls.time_start} — vybrať na mieste (${toCollect.length})`,
+        body:lines+' — po vybraní klikni v kalendári „Vybrať vstup", zapíše sa predaj aj faktúra.',
+        read:false, created_at:nowISO()}).catch(()=>{});
+    }
+  }catch(e){}
+}, 5*60*1000);
+
 // Denná notifikácia adminom o 8:00 (guard raz/deň)
 setInterval(async()=>{
   try{
@@ -12040,14 +12073,15 @@ app.post('/api/bookings', auth, async(req,res)=>{
     // class is still available (flag false) but has visits from other paths gets
     // wrongly redirected to buy membership.
     // ── TECHNICKÝ TRÉNING (kategória Technika) — vlastný cenník ────────────────
-    // Členstvo hodinu NEkryje (iba Gold zdarma). Platí bežná permanentka/vstup,
-    // alebo platba na mieste podľa členstva: 10 € / Bronze 9 € / Silver 8 €.
-    // „Prvá hodina zadarmo" sa na technický tréning nevzťahuje ani nespotrebuje.
+    // Členstvo hodinu NEkryje. Platí bežná permanentka/vstup, alebo platba na mieste
+    // podľa členstva: 10 € / Bronze 9 € / Silver 8 € / Gold 7 €.
+    // „Prvá hodina zadarmo" platí aj na techniku (spotrebuje sa rovnako ako pri Zumbe).
     let techPrice=null;
     if(isTechClass && !u.is_admin && u.user_type!=='trainer'){
       const freeDates=(await q.one(db.settings,{key:'tech_free_dates'}))?.value||[];
       const bdatePre=booking_date||displayNextDateForDay(cls.day_of_week);
       if(freeDates.includes(bdatePre)){ accessMethod='promo_free'; }
+      else if(!u.free_class_used){ accessMethod='free_class'; }
       else {
         const m=await checkMembership(u._id);
         const active=m && m.status==='active' && (!m.expires_at || m.expires_at>=today());
@@ -12131,7 +12165,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
       booked_by:parent._id, booked_by_name:parent.name, is_child_booking:isChild, child_name:isChild?u.name:null,
       booking_date:bdate, status:'confirmed', pay_on_site:payOnSite, notes:notes||'',
       pay_amount: payOnSite ? (techPrice||10) : null, // koľko vybrať na mieste (technika má cenník podľa členstva)
-      free_class: !u.free_class_used && !isTechClass, // 1. hodina zdarma — nepočíta sa do €/klient bonusu trénera
+      free_class: !u.free_class_used, // 1. hodina zdarma (aj technika) — nepočíta sa do €/klient bonusu trénera
       access_method: accessMethod,    // pre korektné vrátenie vstupu pri zrušení
       created_at:nowISO()
     });
@@ -12145,7 +12179,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
     // POTVRDÍ absolvovanie hodiny (QR alebo „potvrdiť hodinu"). Tu len spotrebuj 1. hodinu zdarma
     // (rezervácia miesta) a resetni winback príznak.
     const userUpd = {};
-    if(!u.free_class_used && !isOnlineClass && !isTechClass) userUpd.free_class_used = true;
+    if(!u.free_class_used && !isOnlineClass) userUpd.free_class_used = true; // platí aj pre techniku
     if(u.winback_sent) userUpd.winback_sent = false;
     if(Object.keys(userUpd).length) await q.update(db.users,{_id:u._id},{$set: userUpd});
     const notifUid = parent._id;
