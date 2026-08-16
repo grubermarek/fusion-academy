@@ -2501,6 +2501,22 @@ setInterval(async()=>{
     await q.insert(db.settings,{key:guard, value:true, at:nowISO()});
     const tasks=await computeUrgentTasks();
     if(!tasks.length) return;
+    // Rozdeľ neodkladné úlohy trénerom (round-robin) ako denné coach úlohy s bodmi —
+    // v ich dennom pláne sa objaví „Kontaktuj X — dôvod" a po odkliknutí dostanú body.
+    try{
+      const isTestU=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'');
+      const trainers=(await q.find(db.users,{})).filter(u=>(u.user_type==='trainer'||u.user_type==='manager') && u.active!==false && !isTestU(u));
+      if(trainers.length){
+        for(let i=0;i<tasks.length;i++){
+          const t=tasks[i]; const tr=trainers[i%trainers.length];
+          const key='urgent_'+t.key.replace(/[^a-zA-Z0-9]/g,'_');
+          if(await q.one(db.coach_tasks,{trainer_id:tr._id, date:today(), key})) continue;
+          await q.insert(db.coach_tasks,{trainer_id:tr._id, trainer_name:tr.name, date:today(),
+            key, label:`${t.title} — ${t.name}: ${t.why}${t.phone?' 📞 '+t.phone:''}`, icon:'🔥', cat:'custom',
+            points:8, mandatory:false, auto:null, done:false, done_at:null, proof:null, source:'admin', created_at:nowISO()});
+        }
+      }
+    }catch(e){}
     const admins=await q.find(db.users,{is_admin:true});
     const top=tasks.slice(0,3).map(t=>t.title+' — '+t.name).join(' · ');
     for(const a of admins) await q.insert(db.notifications,{user_id:a._id, type:'urgent_tasks',

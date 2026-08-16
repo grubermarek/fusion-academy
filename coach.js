@@ -90,13 +90,16 @@ module.exports = function initCoach(ctx){
     const cfg = await getConfig();
     await q.remove(db.coach_tasks,{trainer_id:trainer._id, date, key:{$in:['followup','referral_share','winback','comm3']}, done:false},{multi:true});
     const existing = await q.find(db.coach_tasks,{trainer_id:trainer._id, date});
-    if(existing.length) return existing;
+    // Deň je vygenerovaný, len ak existuje povinná kotva (contact3) — samotné 🔥 urgent
+    // úlohy z rána nesmú zablokovať vygenerovanie zvyšku denného plánu.
+    if(existing.some(t=>t.key==='contact3')) return existing;
+    const out0=[...existing];
     const dow = dayOfWeek(date);
     const defs = [
       {key:'contact3', label:`Kontaktuj minimálne ${cfg.min_contacts} ľudí — follow-upy, pozvánky s linkom aj klientky, čo dlhšie neboli, všetko sa počíta`, icon:'📞', cat:'mandatory', points:cfg.points.contact3, auto:'contacts'},
       ...(cfg.rotation[dow]||[]).map(t=>({...t, points:cfg.points[t.cat]||5})),
     ];
-    const out=[];
+    const out=out0;
     for(const d of defs){
       out.push(await q.insert(db.coach_tasks,{trainer_id:trainer._id, trainer_name:trainer.name, date,
         key:d.key, label:d.label, icon:d.icon||'✅', cat:d.cat, points:d.points||5,
@@ -107,6 +110,7 @@ module.exports = function initCoach(ctx){
     const adminTasks = await q.find(db.coach_tasks,{date, source:'admin', trainer_id:'__template__'});
     for(const t of adminTasks){
       if(t.only_trainer && t.only_trainer!==trainer._id) continue;
+      if(out.some(x=>x.key==='custom_'+t._id)) continue;
       out.push(await q.insert(db.coach_tasks,{trainer_id:trainer._id, trainer_name:trainer.name, date,
         key:'custom_'+t._id, label:t.label, icon:t.icon||'📌', cat:'custom', points:t.points||5,
         mandatory: !!t.mandatory, auto:null, done:false, done_at:null, proof:null, source:'admin', created_at:nowISO()}));
