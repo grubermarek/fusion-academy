@@ -1153,6 +1153,12 @@ async function seedData() {
     }
     await q.insert(db.settings,{key:'manual_ops_20260816_vecer2', value:true, at:nowISO()});
   }
+  // 16.8. večer 3: Soňa Moskálová má len Online Basic — dnešná Zumba je platba na mieste
+  if(!(await q.one(db.settings,{key:'manual_ops_20260816_vecer3'}))){
+    const b=await q.one(db.bookings,{user_id:'2AyK5gAb7xH8Fqai', booking_date:'2026-08-16', class_name:'Zumba', status:{$ne:'cancelled'}});
+    if(b && !b.entry_collected) await q.update(db.bookings,{_id:b._id},{$set:{pay_on_site:true, pay_amount:10, access_method:'pay_on_site'}});
+    await q.insert(db.settings,{key:'manual_ops_20260816_vecer3', value:true, at:nowISO()});
+  }
   // 16.8.: prvá hodina zadarmo platí aj na techniku — doplň do popisu
   if(!(await q.one(db.settings,{key:'tech_freeclass_20260816'}))){
     const NEWDESC2='Technika, izolácie a štýl — nadstavba k Zumbe. 🎁 Prvá hodina zadarmo! Inak 💳 10 € jednorazový vstup · Bronze 9 € · Silver 8 € · Gold 7 €. Platí aj permanentka (1 vstup) — kúpiš kartou v Obchode, alebo zaplatíš na mieste. Pokračujeme Zumbou o 19:00. Beží aj online prenos!';
@@ -10151,8 +10157,10 @@ app.post('/api/kiosk/checkin', async(req,res)=>{
       if(!already && !exists.is_child_booking) vc=await creditAttendance(u);
     } else {
       const mem=await checkMembership(u._id);
-      const hasMem=mem&&mem.status==='active', hasFree=!u.free_class_used, hasSingle=(u.single_entries||0)>0, hasCredit=(u.free_credits||0)>0;
-      if(!hasMem&&!hasFree&&!hasSingle&&!hasCredit) return res.status(402).json({error:'Nemáš aktívne členstvo ani vstup — ozvi sa prosím trénerovi na hodine. 💛', name:u.name});
+      // Online-only plán nekryje živú hodinu — kiosk musí upozorniť, že treba vybrať vstupné
+      const onlineOnly=mem&&/online/.test(String((mem.plan_id||'')+' '+(mem.plan_name||'')).toLowerCase());
+      const hasMem=mem&&mem.status==='active'&&!onlineOnly, hasFree=!u.free_class_used, hasSingle=(u.single_entries||0)>0, hasCredit=(u.free_credits||0)>0;
+      if(!hasMem&&!hasFree&&!hasSingle&&!hasCredit) return res.status(402).json({error:(onlineOnly?'Máš len ONLINE členstvo — živú hodinu nekryje. ':'Nemáš aktívne členstvo ani vstup — ')+'ozvi sa prosím trénerovi na hodine. 💛', name:u.name});
       const upd={};
       if(!hasMem){ if(hasFree) upd.free_class_used=true; else if(hasCredit) upd.free_credits=(u.free_credits||0)-1; else if(hasSingle) upd.single_entries=(u.single_entries||0)-1; }
       if(Object.keys(upd).length) await q.update(db.users,{_id:u._id},{$set:upd});
@@ -12196,7 +12204,10 @@ app.post('/api/bookings', auth, async(req,res)=>{
       if(u.free_class_used){
         // Not first visit – need membership or single entry credit
         const m = await checkMembership(u._id);
-        const hasMembership = m && (m.status==='active') && (!m.expires_at || m.expires_at >= today());
+        // Online-only plány (Online Basic/Premium) NEkryjú živé hodiny — inak by Online Basic
+        // klientka prešla ako „membership" a nikto by od nej nevybral vstupné.
+        const isOnlineOnlyPlan = m && /online/.test(String((m.plan_id||'')+' '+(m.plan_name||'')).toLowerCase());
+        const hasMembership = m && (m.status==='active') && (!m.expires_at || m.expires_at >= today()) && !isOnlineOnlyPlan;
         const singleEntries = u.single_entries || 0;
         const freeCredits = u.free_credits || 0;
         // ── Dieťa bez vlastného členstva/vstupov → skús ČLENSTVO/VSTUPY RODIČA ──
