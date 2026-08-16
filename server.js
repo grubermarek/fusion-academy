@@ -1100,6 +1100,13 @@ async function seedData() {
     console.log('🎯 Technický tréning Detva pridaný (Pi+Ne 18:00) + notifikácie: '+everyone.length);
     await q.insert(db.settings,{key:'tech_training_detva_20260814', value:true, at:nowISO()});
   }
+  // 15.8.: nový cenník techniky — Gold už nie je zdarma (7 €); aktualizuj popisy hodín
+  if(!(await q.one(db.settings,{key:'tech_price_gold7_20260815'}))){
+    const NEWDESC='Technika, izolácie a štýl — nadstavba k Zumbe. 💳 10 € jednorazový vstup · Bronze 9 € · Silver 8 € · Gold 7 €. Platí aj permanentka (1 vstup) — kúpiš kartou v Obchode, alebo zaplatíš na mieste. Pokračujeme Zumbou o 19:00. Beží aj online prenos!';
+    const techCls=await q.find(db.classes,{category:'Technika'});
+    for(const c of techCls) await q.update(db.classes,{_id:c._id},{$set:{description:NEWDESC}});
+    await q.insert(db.settings,{key:'tech_price_gold7_20260815', value:true, at:nowISO()});
+  }
 
   // 14.8.: STRIKTNÁ ATRIBÚCIA KAMPANÍ — žiadne domyslené tržby.
   // Júlová migrácia (meta_campaign_sync_v1) otagovala utm_campaign='FA — Zumba
@@ -12029,11 +12036,11 @@ app.post('/api/bookings', auth, async(req,res)=>{
         const m=await checkMembership(u._id);
         const active=m && m.status==='active' && (!m.expires_at || m.expires_at>=today());
         const plan=String((m?.plan_id||'')+' '+(m?.plan_name||'')).toLowerCase();
-        if(active && /gold/.test(plan)) accessMethod='membership';
-        else if((u.free_credits||0)>0){ deductPlan={uid:u._id, field:'free_credits', value:u.free_credits-1}; accessMethod='free_credit'; }
+        if((u.free_credits||0)>0){ deductPlan={uid:u._id, field:'free_credits', value:u.free_credits-1}; accessMethod='free_credit'; }
         else if((u.single_entries||0)>0){ deductPlan={uid:u._id, field:'single_entries', value:u.single_entries-1}; accessMethod='single_entry'; }
         else {
-          techPrice=active&&/silver/.test(plan)?8:(active&&/bronze/.test(plan)?9:10);
+          // Cenník podľa členstva: Gold 7 / Silver 8 / Bronze 9 / bez členstva 10 (Gold už NIE JE zdarma)
+          techPrice=active&&/gold/.test(plan)?7:(active&&/silver/.test(plan)?8:(active&&/bronze/.test(plan)?9:10));
           if(req.body.pay_on_site){ payOnSite=true; accessMethod='pay_on_site'; }
           else return res.status(402).json({ error:'membership_required', can_pay_on_site:true, tech_price:techPrice,
             message:`Technický tréning: ${techPrice} € jednorazovo${techPrice<10?' (zľava podľa členstva)':''}. Platí aj permanentka — vstup si kúpiš kartou v Obchode, alebo zaplatíš na mieste.` });
