@@ -6693,7 +6693,18 @@ app.get('/api/membership', auth, async(req,res)=>{
   res.json({ membership:m, plan, has_online: plan?.online||false });
 });
 
-app.get('/api/membership/plans', (req,res)=>res.json(MEMBERSHIP_PLANS));
+app.get('/api/membership/plans', async(req,res)=>{
+  // Gold benefit: permanentka10 za 70 € — cenu personalizuj podľa prihláseného člena
+  try{
+    if(req.session?.uid){
+      const gm=await checkMembership(req.session.uid);
+      if(gm && gm.status==='active' && /gold/.test(String((gm.plan_id||'')+' '+(gm.plan_name||'')).toLowerCase())){
+        return res.json({...MEMBERSHIP_PLANS, permanentka10:{...MEMBERSHIP_PLANS.permanentka10, price:70, gold_price:true}});
+      }
+    }
+  }catch(e){}
+  res.json(MEMBERSHIP_PLANS);
+});
 
 // ── Create PayPal Subscription ─────────────────────────────────────────────────
 app.post('/api/membership/subscribe', auth, async(req,res)=>{
@@ -8837,6 +8848,11 @@ app.post('/api/stripe/checkout', auth, async(req,res)=>{
     }
     // Promo kód → zľava z ceny plánu
     let price = plan.price, promoCode = null, promoDiscount = 0;
+    // Gold benefit: 10-vstupová permanentka za 70 € (ostatní 80 €)
+    if(plan_id==='permanentka10'){
+      const gm=await checkMembership(memberId);
+      if(gm && gm.status==='active' && /gold/.test(String((gm.plan_id||'')+' '+(gm.plan_name||'')).toLowerCase())) price=70;
+    }
     if(promo_code){
       const v = await validatePromo(promo_code, plan.price, req.session.uid, 'membership');
       if(!v.ok) return res.status(400).json({error:'Promo kód: '+v.reason});
