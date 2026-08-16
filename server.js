@@ -2434,6 +2434,42 @@ app.get('/api/admin/db-backup', async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ─── Story eventy pre automatizáciu (výmena trénera / zrušená hodina) ────────
+// GET /api/story-events?token=BACKUP_TOKEN → nespracované udalosti na dnes+zajtra;
+// POST /api/story-events/mark {kind,id} označí spracované (story postnutá).
+app.get('/api/story-events', async(req,res)=>{
+  try{
+    const tok=process.env.BACKUP_TOKEN||'';
+    if(!tok || req.query.token!==tok) return res.status(403).json({error:'forbidden'});
+    const d1=today(); const d2=new Date(Date.now()+86400000).toISOString().slice(0,10);
+    const events=[];
+    for(const ov of await q.find(db.session_instructors,{date:{$in:[d1,d2]}})){
+      if(ov.story_posted) continue;
+      const cls=await q.one(db.classes,{_id:ov.class_id}); if(!cls||cls.active===false||cls.category==='Online') continue;
+      if(ov.instructor_id===cls.instructor_id) continue; // nie je to reálna výmena
+      events.push({kind:'substitution', id:ov._id, date:ov.date, class_name:cls.name, time_start:cls.time_start,
+        location:cls.location, new_instructor:ov.instructor_name, regular_instructor:cls.instructor});
+    }
+    for(const cn of await q.find(db.class_cancellations,{date:{$in:[d1,d2]}})){
+      if(cn.story_posted) continue;
+      const cls=await q.one(db.classes,{_id:cn.class_id});
+      if(cls && cls.category==='Online') continue; // online zrušenia neriešime storkou
+      events.push({kind:'cancellation', id:cn._id, date:cn.date, class_name:cn.class_name,
+        time_start:cls?.time_start||'', location:cn.location, reason:cn.reason||''});
+    }
+    res.json({ok:true, events});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/story-events/mark', async(req,res)=>{
+  try{
+    const tok=process.env.BACKUP_TOKEN||'';
+    if(!tok || req.body.token!==tok) return res.status(403).json({error:'forbidden'});
+    const col=req.body.kind==='substitution'?db.session_instructors:db.class_cancellations;
+    await q.update(col,{_id:req.body.id},{$set:{story_posted:true, story_posted_at:nowISO()}});
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ─── Neodkladné úlohy pre adminov ────────────────────────────────────────────
 // Agreguje veci, ktoré treba vybaviť HNEĎ: koho kontaktovať a prečo.
 async function computeUrgentTasks(){
