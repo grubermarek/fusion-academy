@@ -1107,6 +1107,35 @@ async function seedData() {
     for(const c of techCls) await q.update(db.classes,{_id:c._id},{$set:{description:NEWDESC}});
     await q.insert(db.settings,{key:'tech_price_gold7_20260815', value:true, at:nowISO()});
   }
+  // 16.8. večer: ručné zápisy od Mareka — hotovosť za techniku + dobookovanie na Zumbu
+  if(!(await q.one(db.settings,{key:'manual_ops_20260816_vecer'}))){
+    const D='2026-08-16', ZUMBA_ID='HpbbG6bX7p8bjyBP', TECH_NAME='Technický tréning';
+    // 1) Hotovosť za technický tréning (Gold 7 € / Bronze 9 €)
+    for(const p of [{id:'qWoTntKnt6BRPkqN', amount:7},{id:'3Vi2bZUNxzkvbhze', amount:9}]){
+      const u=await q.one(db.users,{_id:p.id}); if(!u) continue;
+      await q.insert(db.transactions,{type:'single_entry', user_id:u._id, user_name:u.name,
+        amount:p.amount, payment_method:'cash', note:`Jednorazový vstup — ${TECH_NAME} ${D} (hotovosť, zapísal Marek)`,
+        created_at:nowISO(), month:D.slice(0,7)});
+      trackPurchase(u._id, p.amount);
+      createInvoice({user_id:u._id, client_name:u.name, client_email:u.email,
+        items:[{desc:`Jednorazový vstup — ${TECH_NAME} (${D})`, qty:1, total:p.amount}], total:p.amount, method:'hotovosť'});
+    }
+    // 2) Dobookovanie na dnešnú Zumbu 19:00 Detva
+    const zc=await q.one(db.classes,{_id:ZUMBA_ID});
+    if(zc){
+      const adds=[{id:'2AyK5gAb7xH8Fqai', access:'pay_on_site'},{id:'g3zkQ89A7TVnNG3x', access:'membership'}];
+      for(const a of adds){
+        const u=await q.one(db.users,{_id:a.id}); if(!u) continue;
+        if(await q.one(db.bookings,{class_id:ZUMBA_ID, user_id:u._id, booking_date:D, status:{$ne:'cancelled'}})) continue;
+        await q.insert(db.bookings,{class_id:ZUMBA_ID, class_name:zc.name, user_id:u._id, user_name:u.name,
+          booking_date:D, status:'confirmed', pay_on_site:a.access==='pay_on_site', pay_amount:a.access==='pay_on_site'?10:null,
+          access_method:a.access, notes:'Dobooknuté štúdiom na žiadosť', created_at:nowISO()});
+        await q.insert(db.notifications,{user_id:u._id, type:'booking', title:'Rezervácia potvrdená ✅',
+          body:`${zc.name} – ${D} o ${zc.time_start}`, read:false, created_at:nowISO()}).catch(()=>{});
+      }
+    }
+    await q.insert(db.settings,{key:'manual_ops_20260816_vecer', value:true, at:nowISO()});
+  }
   // 16.8.: prvá hodina zadarmo platí aj na techniku — doplň do popisu
   if(!(await q.one(db.settings,{key:'tech_freeclass_20260816'}))){
     const NEWDESC2='Technika, izolácie a štýl — nadstavba k Zumbe. 🎁 Prvá hodina zadarmo! Inak 💳 10 € jednorazový vstup · Bronze 9 € · Silver 8 € · Gold 7 €. Platí aj permanentka (1 vstup) — kúpiš kartou v Obchode, alebo zaplatíš na mieste. Pokračujeme Zumbou o 19:00. Beží aj online prenos!';
