@@ -12330,7 +12330,8 @@ app.get('/api/admin/review-claims', adminAuth, async(req,res)=>{
   try{
     const rows=(await q.find(db.review_claims,{}))
       .sort((a,b)=>(a.status==='pending'?0:1)-(b.status==='pending'?0:1) || String(b.created_at).localeCompare(String(a.created_at)));
-    res.json({ok:true, url:REVIEW_URL, points:REVIEW_POINTS, claims:rows.slice(0,50)});
+    // url pre admina = zoznam recenzií (biznis profil), nie formulár na napísanie recenzie
+    res.json({ok:true, url:REVIEW_URL.replace(/\/review$/,''), points:REVIEW_POINTS, claims:rows.slice(0,50)});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 app.post('/api/admin/review-claims/:id/decide', adminAuth, async(req,res)=>{
