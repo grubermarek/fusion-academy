@@ -192,7 +192,11 @@ function renderPlans(){
       <button class="buy" onclick="openPlan('${up.to}')">${FA_T('shop.upsell_cta',{name:esc(tp.name)})}</button>
     </div>`;})():'';
   const shown=up?order.filter(id=>id!==up.to):order; // upsell karta nahrádza kartu cieľového plánu — žiadna duplicita
-  document.getElementById('p-clenstva').innerHTML=upsellCard+shown.map(id=>{
+  const welcomeCard = my ? '' : `<div class="rec" style="display:flex;gap:14px;align-items:center;border:1px solid #3a3020;border-radius:14px;padding:12px;margin-bottom:12px;cursor:default">
+    <img src="/welcome-balicek.png" alt="Welcome balíček" style="width:86px;border-radius:10px;flex:none">
+    <div><b style="color:var(--gold,#C9A84C)">🎁 Welcome balíček k prvému členstvu</b><div style="font-size:.87rem;opacity:.85;margin-top:4px">Ku každému prvému mesačnému členstvu dostaneš tričko Fusion a ruksak na veci. Vitaj v rodine ❤️</div></div>
+  </div>`;
+  document.getElementById('p-clenstva').innerHTML=welcomeCard+upsellCard+shown.map(id=>{
     const p=PLANS[id]; if(!p) return '';
     const owned=my===id;
     return `<div class="pcard ${id==='silver'?'hl':''}">

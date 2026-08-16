@@ -194,6 +194,11 @@ function successScreen(d){
       <div class="row">${FA_T('inv.bring_clothes')}</div>
       <div style="color:var(--muted);font-size:.88rem">${FA_T('inv.bring_done')}</div>
     </div>
+    <div class="success-card" style="border-color:#3a3020;text-align:center">
+      <img src="/welcome-balicek.png" alt="Welcome balíček" style="max-width:230px;width:100%;border-radius:14px;margin-bottom:10px">
+      <b style="color:var(--gold)">🎁 Bonus k prvému členstvu</b>
+      <div style="font-size:.9rem;margin-top:6px">Keď sa po prvej hodine rozhodneš pre mesačné členstvo, dostaneš <b>Welcome balíček</b> — tričko Fusion a ruksak na veci. Vitaj v rodine ❤️</div>
+    </div>
     ${d.via_google?`<button class="cta" onclick="location.href='/client-dashboard'">${FA_T('inv.open_bookings')}</button>`:`
     <p class="sub" style="margin:18px 0 8px">${FA_T('inv.account_q')}</p>
     <div class="gsi-wrap" id="gsiAfter"></div>
