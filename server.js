@@ -14700,6 +14700,45 @@ app.post('/api/admin/venceky/payment-delete', adminAuth, async(req,res)=>{
     res.json({ok:true}); }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ── Admin: zmazanie triedy / školy (s kompletným upratanim naviazanych dat) ──
+app.post('/api/admin/venceky/class-delete', adminAuth, async(req,res)=>{
+  try{
+    const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});
+    if(!c) return res.status(404).json({error:'Trieda nenájdená'});
+    const members=await q.find(db.users,{venceky_class_id:c._id});
+    for(const m of members) await q.update(db.users,{_id:m._id},{$unset:{venceky_class_id:true, venceky_role:true, venceky_school_id:true}});
+    await q.remove(db.venceky_payments,{class_id:c._id},{multi:true});
+    await q.remove(db.venceky_attendance,{class_id:c._id},{multi:true});
+    await q.remove(db.venceky_costs,{class_id:c._id},{multi:true});
+    await q.remove(db.venceky_classes,{_id:c._id},{});
+    await auditLog(req,'vencek_class_delete',c._id,{name:c.name},{members:members.length},'');
+    res.json({ok:true, unassigned:members.length});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/venceky/school-delete', adminAuth, async(req,res)=>{
+  try{
+    const s=await q.one(db.venceky_schools,{_id:String(req.body.school_id||'')});
+    if(!s) return res.status(404).json({error:'Škola nenájdená'});
+    const cls=await q.find(db.venceky_classes,{school_id:s._id});
+    if(cls.length && !req.body.cascade)
+      return res.status(400).json({error:'Škola má '+cls.length+' tried. Pošli cascade:true na zmazanie aj s triedami.'});
+    for(const c of cls){
+      const members=await q.find(db.users,{venceky_class_id:c._id});
+      for(const m of members) await q.update(db.users,{_id:m._id},{$unset:{venceky_class_id:true, venceky_role:true, venceky_school_id:true}});
+      await q.remove(db.venceky_payments,{class_id:c._id},{multi:true});
+      await q.remove(db.venceky_attendance,{class_id:c._id},{multi:true});
+      await q.remove(db.venceky_costs,{class_id:c._id},{multi:true});
+      await q.remove(db.venceky_classes,{_id:c._id},{});
+    }
+    for(const u of await q.find(db.users,{venceky_school_id:s._id}))
+      await q.update(db.users,{_id:u._id},{$unset:{venceky_school_id:true, venceky_role:true, venceky_class_id:true}});
+    await q.remove(db.venceky_costs,{school_id:s._id},{multi:true});
+    await q.remove(db.venceky_schools,{_id:s._id},{});
+    await auditLog(req,'vencek_school_delete',s._id,{name:s.name},{classes:cls.length},'');
+    res.json({ok:true, classes_deleted:cls.length});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ── Admin: náklady (per trieda alebo per škola) ──
 app.post('/api/admin/venceky/cost', adminAuth, async(req,res)=>{
   try{
