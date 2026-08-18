@@ -13725,6 +13725,12 @@ app.post('/api/admin/campaigns', adminAuth, async(req,res)=>{
       goal:b.goal||'', note:b.note||'',
       spend:+b.spend||0, impressions:+b.impressions||0, clicks:+b.clicks||0,
       registrations:+b.registrations||0, first_visits:+b.first_visits||0, memberships:+b.memberships||0,
+      // napojenie na Meta a atribúciu (utm_key môže končiť * = prefixová zhoda)
+      meta_campaign_id:String(b.meta_campaign_id||'').trim()||undefined,
+      meta_ad_id:String(b.meta_ad_id||'').trim()||undefined,
+      utm_key:String(b.utm_key||'').toLowerCase().trim()||undefined,
+      lead_source_key:String(b.lead_source_key||'').toLowerCase().trim()||undefined,
+      gclid_attr:b.gclid_attr?true:undefined,
       created_at:nowISO()
     };
     const c=await q.insert(db.campaigns, doc);
@@ -13738,7 +13744,8 @@ app.put('/api/admin/campaigns/:id', adminAuth, async(req,res)=>{
     const c=await q.one(db.campaigns,{_id:req.params.id});
     if(!c) return res.status(404).json({error:'Kampaň nenájdená'});
     const b=req.body; const upd={};
-    ['name','goal','note','date_from','date_to'].forEach(k=>{ if(b[k]!==undefined) upd[k]=b[k]; });
+    ['name','goal','note','date_from','date_to','meta_campaign_id','meta_ad_id','utm_key','lead_source_key'].forEach(k=>{ if(b[k]!==undefined) upd[k]=b[k]; });
+    if(b.gclid_attr!==undefined) upd.gclid_attr=!!b.gclid_attr;
     ['budget','spend','impressions','clicks','registrations','first_visits','memberships'].forEach(k=>{ if(b[k]!==undefined) upd[k]=+b[k]||0; });
     if(b.platform!==undefined){ const p=(b.platform||'other').toLowerCase(); upd.platform=CAMPAIGN_PLATFORMS.includes(p)?p:'other'; }
     await q.update(db.campaigns,{_id:c._id},{$set:upd});
