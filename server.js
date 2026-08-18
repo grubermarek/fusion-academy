@@ -9903,6 +9903,17 @@ app.get('/api/notifications', auth, async(req,res)=>{
   res.json(notifs.slice(0,50));
 });
 
+// Admin: vymazanie notifikacii uzivatela (upratanie po testoch / na ziadost)
+app.post('/api/admin/users/:id/notifications-purge', adminAuth, async(req,res)=>{
+  try{
+    const filter={user_id:String(req.params.id)};
+    if(req.body && req.body.type) filter.type=String(req.body.type);
+    const n=await q.count(db.notifications, filter);
+    await q.remove(db.notifications, filter, {multi:true});
+    await auditLog(req,'notifications_purge',req.params.id,{count:n},{type:req.body&&req.body.type||'all'},'');
+    res.json({ok:true, removed:n});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 app.post('/api/notifications/read', auth, async(req,res)=>{
   const {ids} = req.body;
   const filter = ids?.length ? {_id:{$in:ids},user_id:req.session.uid} : {user_id:req.session.uid,read:false};
