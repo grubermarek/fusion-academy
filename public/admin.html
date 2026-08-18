@@ -91,6 +91,10 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   .group-panel{width:100%;border-right:none;border-bottom:1px solid var(--gold-border);}
   .main{margin-left:0;}
 }
+.adm-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px}
+.adm-tab{background:rgba(255,255,255,.04);border:1px solid #2a2a2a;color:#bbb;border-radius:10px;padding:8px 14px;font-size:.85rem;font-weight:600;cursor:pointer;transition:.15s}
+.adm-tab:hover{border-color:#C9A84C;color:#eee}
+.adm-tab.on{background:rgba(201,168,76,.14);border-color:rgba(201,168,76,.55);color:#e8cf8a}
 </style>
 </head>
 <body>
@@ -152,21 +156,13 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('finance')"><i class="bi bi-graph-up me-2"></i><span style="color:#C9A24C;font-weight:700">Financie</span></a>
       <a class="nav-link" href="#" onclick="show('accounting')"><i class="bi bi-calculator me-2"></i>Účtovníctvo</a>
       <a class="nav-link" href="#" onclick="show('invoices')"><i class="bi bi-file-earmark-text me-2"></i>Predaje &amp; faktúry</a>
-      <a class="nav-link" href="#" onclick="show('refunds')"><i class="bi bi-arrow-counterclockwise me-2"></i>Refundácie</a>
-      <a class="nav-link" href="#" onclick="show('failed')"><i class="bi bi-credit-card-2-front me-2"></i>Neúspešné platby <span id="failedBadge" class="badge bg-danger" style="display:none"></span></a>
-      <a class="nav-link" href="#" onclick="show('sale')"><i class="bi bi-plus-circle me-2"></i>Zaznamenať predaj</a>
-      <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby kartou</a>
-      <div class="nav-group-label">Výkon & retencia</div>
-      <a class="nav-link" href="#" onclick="show('retention')"><i class="bi bi-people-fill me-2"></i>Retencia & LTV</a>
-      <a class="nav-link" href="#" onclick="show('points')"><i class="bi bi-star me-2"></i>Body klientov</a>
-      <a class="nav-link" href="#" onclick="show('leaderboard')"><i class="bi bi-trophy me-2"></i>Leaderboard dochádzky</a>
-      <a class="nav-link" href="#" onclick="show('classhistory')"><i class="bi bi-clock-history me-2"></i>História hodín & zárobky</a>
-      <a class="nav-link" href="#" onclick="show('tasktracker')"><i class="bi bi-check2-square me-2"></i>Úlohy trénerov ✅</a>
-      <a class="nav-link" href="#" onclick="show('trainers')"><i class="bi bi-person-badge me-2"></i>Tréneri — výkon &amp; výplaty</a>
+      <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby <span id="failedBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
+      <div class="nav-group-label">Výkon</div>
+      <a class="nav-link" href="#" onclick="show('retention')"><i class="bi bi-people-fill me-2"></i>Klienti — výkon</a>
+      <a class="nav-link" href="#" onclick="show('trainers')"><i class="bi bi-person-badge me-2"></i>Tréneri</a>
       <div class="nav-group-label">Systém</div>
       <a class="nav-link" href="#" onclick="show('alerts')"><i class="bi bi-bell me-2"></i>Alerty <span id="alertsBadge" class="badge bg-danger" style="display:none"></span></a>
-      <a class="nav-link" href="#" onclick="show('exports')"><i class="bi bi-download me-2"></i>Exporty</a>
-      <a class="nav-link" href="#" onclick="show('audit')"><i class="bi bi-shield-lock me-2"></i>Audit log</a>
+      <a class="nav-link" href="#" onclick="show('exports')"><i class="bi bi-download me-2"></i>Exporty &amp; audit</a>
     </div>
 
     <div class="group-links" data-group="partners">
@@ -198,6 +194,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- SALE -->
   <div id="s-sale" class="section">
+    <div class="adm-tabs"><button class="adm-tab" onclick="show('invoices')">🧾 Predaje &amp; faktúry</button><button class="adm-tab on" onclick="show('sale')">➕ Zaznamenať predaj</button></div>
     <div id="manualPayQueue"></div>
     <h4 class="fw-bold mb-4">➕ Zaznamenať predaj (manuálne)</h4>
     <div class="row">
@@ -684,6 +681,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- PAYMENTS -->
   <div id="s-payments" class="section">
+    <div class="adm-tabs"><button class="adm-tab on" onclick="show('payments')">💳 Platby kartou</button><button class="adm-tab" onclick="show('failed')">⚠️ Neúspešné platby</button><button class="adm-tab" onclick="show('refunds')">↩️ Refundácie</button></div>
     <div class="d-flex justify-content-between align-items-center mb-4">
       <h4 class="fw-bold mb-0">Platby kartou (Stripe)</h4>
       <button class="btn btn-sm btn-brand" onclick="loadPayments()"><i class="bi bi-arrow-clockwise"></i></button>
@@ -788,6 +786,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- ─── LEADERBOARD ─── -->
   <div id="s-leaderboard" class="section">
+    <div class="adm-tabs"><button class="adm-tab" onclick="show('retention')">📈 Retencia &amp; LTV</button><button class="adm-tab" onclick="show('points')">⭐ Body klientov</button><button class="adm-tab on" onclick="show('leaderboard')">🏆 Leaderboard</button></div>
     <h4 class="fw-bold mb-1"><i class="bi bi-trophy me-2 text-warning"></i>Leaderboard – Dochádzka</h4>
     <div class="d-flex gap-2 mb-3">
       <button class="btn btn-sm btn-outline-warning active" id="lbBtnAll" onclick="loadLeaderboard('alltime')">Celkovo</button>
@@ -1130,6 +1129,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- INVOICES -->
   <div class="section" id="s-invoices">
+    <div class="adm-tabs"><button class="adm-tab on" onclick="show('invoices')">🧾 Predaje &amp; faktúry</button><button class="adm-tab" onclick="show('sale')">➕ Zaznamenať predaj</button></div>
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <h4 class="fw-bold mb-0">🧾 Predaje &amp; faktúry</h4>
       <div class="d-flex gap-2">
@@ -1228,6 +1228,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- AUDIT LOG -->
   <div class="section" id="s-audit">
+    <div class="adm-tabs"><button class="adm-tab" onclick="show('exports')">⬇️ Exporty</button><button class="adm-tab on" onclick="show('audit')">🛡️ Audit log</button></div>
     <h4 class="fw-bold mb-1">🛡️ Audit log</h4>
     <p class="text-muted small mb-3">Nemenný záznam všetkých finančných akcií — kto, kedy, čo a prečo.</p>
     <div class="table-responsive"><table class="table table-dark table-hover align-middle" style="font-size:.82rem">
@@ -1240,6 +1241,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- EXPORTY JEDNÝM KLIKOM -->
   <div class="section" id="s-exports">
+    <div class="adm-tabs"><button class="adm-tab on" onclick="show('exports')">⬇️ Exporty</button><button class="adm-tab" onclick="show('audit')">🛡️ Audit log</button></div>
     <h4 class="fw-bold mb-1">📤 Exporty jedným klikom</h4>
     <p class="text-muted small mb-3">Stiahni dáta pre účtovníka alebo analýzu — CSV (Excel-friendly) alebo XLSX. Účtovníctvo a výplaty majú vlastné filtre v príslušných sekciách.</p>
     <div id="exportGrid" class="row g-3"></div>
@@ -1260,6 +1262,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- REFUNDÁCIE -->
   <div class="section" id="s-refunds">
+    <div class="adm-tabs"><button class="adm-tab" onclick="show('payments')">💳 Platby kartou</button><button class="adm-tab" onclick="show('failed')">⚠️ Neúspešné platby</button><button class="adm-tab on" onclick="show('refunds')">↩️ Refundácie</button></div>
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
       <h4 class="fw-bold mb-0">↩️ Refundácie</h4>
       <button class="btn btn-sm btn-warning" onclick="openRefund()"><i class="bi bi-plus-lg"></i> Nová refundácia</button>
@@ -1274,6 +1277,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   </div>
 
   <div class="section" id="s-failed">
+    <div class="adm-tabs"><button class="adm-tab" onclick="show('payments')">💳 Platby kartou</button><button class="adm-tab on" onclick="show('failed')">⚠️ Neúspešné platby</button><button class="adm-tab" onclick="show('refunds')">↩️ Refundácie</button></div>
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
       <h4 class="fw-bold mb-0">💳 Neúspešné platby / dlžníci</h4>
       <button class="btn btn-sm btn-outline-secondary" onclick="loadFailed()"><i class="bi bi-arrow-clockwise"></i></button>
@@ -1467,6 +1471,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- ÚLOHY TRÉNEROV -->
   <div class="section" id="s-tasktracker">
+    <div class="adm-tabs"><button class="adm-tab" onclick="show('trainers')">👤 Výkon &amp; výplaty</button><button class="adm-tab on" onclick="show('tasktracker')">✅ Úlohy trénerov</button><button class="adm-tab" onclick="show('classhistory')">🕘 História hodín</button></div>
     <h4 class="fw-bold mb-1">🎯 Coach Growth — denný plán trénerov</h4>
     <p class="text-muted small mb-3">Povinné denné úlohy, kontakty leadov, streak a completion. Konfigurácia bodov a vlastné úlohy.</p>
     <div id="cgOverview" class="mb-3"><div class="text-muted small">Načítavam…</div></div>
@@ -1521,6 +1526,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   <!-- TIPY (DANK) -->
   <!-- HISTÓRIA HODÍN & ZÁROBKY -->
   <div class="section" id="s-classhistory">
+    <div class="adm-tabs"><button class="adm-tab" onclick="show('trainers')">👤 Výkon &amp; výplaty</button><button class="adm-tab" onclick="show('tasktracker')">✅ Úlohy trénerov</button><button class="adm-tab on" onclick="show('classhistory')">🕘 História hodín</button></div>
     <h4 class="fw-bold mb-1">🕘 História hodín & zárobky</h4>
     <p class="text-muted small mb-3">Jednotlivé odučené hodiny — kto učil, kto bol na hodine, tržba a zárobok trénera. Klikni na riadok pre rozpis, na hlavičku pre zoradenie, na meno/trénera pre profil a zárobky.</p>
     <div class="d-flex gap-2 align-items-end flex-wrap mb-3">
@@ -1548,6 +1554,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- VÝKON TRÉNEROV -->
   <div class="section" id="s-trainers">
+    <div class="adm-tabs"><button class="adm-tab on" onclick="show('trainers')">👤 Výkon &amp; výplaty</button><button class="adm-tab" onclick="show('tasktracker')">✅ Úlohy trénerov</button><button class="adm-tab" onclick="show('classhistory')">🕘 História hodín</button></div>
     <div class="d-flex gap-2 mb-3"><button class="btn btn-sm btn-warning" onclick="show('trainers')">🏅 Výkon</button><button class="btn btn-sm btn-outline-secondary" onclick="show('payouts')">💵 Výplaty</button></div><h4 class="fw-bold mb-1">🏅 Výkon trénerov</h4>
     <p class="text-muted small mb-3">Odučené hodiny, obsadenosť, klienti, tržby a porovnanie s predošlým obdobím.</p>
     <div class="d-flex gap-2 align-items-end flex-wrap mb-3">
@@ -1599,6 +1606,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- BODY KLIENTOV (vlastná záložka) -->
   <div class="section" id="s-points">
+    <div class="adm-tabs"><button class="adm-tab" onclick="show('retention')">📈 Retencia &amp; LTV</button><button class="adm-tab on" onclick="show('points')">⭐ Body klientov</button><button class="adm-tab" onclick="show('leaderboard')">🏆 Leaderboard</button></div>
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
       <h4 class="fw-bold mb-0">🏆 Body klientov</h4>
       <button class="btn btn-sm btn-outline-light" onclick="const r=pointsRange();window.open('/api/admin/points-summary.csv?from='+r.from+'&to='+r.to,'_blank')" title="Stiahnuť body klientov (CSV)"><i class="bi bi-download"></i> CSV</button>
@@ -1633,6 +1641,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- RETENTION & LTV -->
   <div class="section" id="s-retention">
+    <div class="adm-tabs"><button class="adm-tab on" onclick="show('retention')">📈 Retencia &amp; LTV</button><button class="adm-tab" onclick="show('points')">⭐ Body klientov</button><button class="adm-tab" onclick="show('leaderboard')">🏆 Leaderboard</button></div>
     <h4 class="fw-bold mb-1">📈 Retencia, Churn & LTV</h4>
     <p class="text-muted small mb-3">Kohortná analýza udržateľnosti klientov, celoživotná hodnota a doba návratnosti akvizície.</p>
     <div id="retKpis" class="row g-3 mb-4"></div>
