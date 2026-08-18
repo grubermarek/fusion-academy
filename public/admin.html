@@ -5042,7 +5042,17 @@ async function loadSaleForm(){
   document.getElementById('saleDate').value=new Date().toISOString().slice(0,10);
   document.getElementById('saleClientId').value='';document.getElementById('saleClientPick').value='';
   document.getElementById('saleSponsorInfo').style.display='none';document.getElementById('salePartnerWrap').style.display='none';
-  if(recent) document.getElementById('recentSales').innerHTML=recent.slice(0,6).map(t=>`<div class="d-flex justify-content-between py-1 border-bottom"><div><span class="fw-semibold">${t.partner_name||'— (bez provízie)'}</span> → ${t.client_name}</div><div>${eur(t.amount)} <span class="text-muted">${dateStr(t.date)}</span></div></div>`).join('');
+  if(recent) document.getElementById('recentSales').innerHTML=recent.slice(0,6).map(t=>{
+    // transakcie majú dva tvary: manuálny predaj (client_name/date) aj automatické (user_name/created_at)
+    const who=t.client_name||t.user_name||'—';
+    const part=(t.partner_name&&t.partner_name!=='—')?t.partner_name:'';
+    const what=t.product_name||({membership:'Členstvo',single_entry:'Vstup',bundle:'Permanentka'}[t.type])||'';
+    const d=t.date||t.created_at||'';
+    return '<div class="d-flex justify-content-between py-1 border-bottom"><div><span class="fw-semibold">'+escHtml(who)+'</span>'
+      +(what?' · <span class="text-muted">'+escHtml(String(what).slice(0,34))+'</span>':'')
+      +(part?' <span class="text-muted">(prov. '+escHtml(part)+')</span>':'')
+      +'</div><div>'+eur(t.amount)+' <span class="text-muted">'+(d?dateStr(d):'')+'</span></div></div>';
+  }).join('');
 }
 // When a client is picked, resolve their sponsor and show who gets the commission
 function onSaleClientPick(){
