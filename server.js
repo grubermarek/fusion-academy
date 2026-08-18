@@ -13700,7 +13700,10 @@ app.get('/api/admin/campaigns', adminAuth, async(req,res)=>{
         cc.first_visits=mine.filter(u=>(u.visit_count||0)>0).length;
         cc.memberships=mine.filter(u=>activeMembIds.has(u._id)).length;
       } else if(ukey){
-        const mine=allUsers.filter(u=>{ const uc=(u.utm_campaign||'').toLowerCase().trim(); return uc===ukey||uc===key; });
+        // utm_key môže končiť * → prefixová zhoda (napr. "fa-test-*" pokryje fa-test-01..28)
+        const pref=ukey.endsWith('*')?ukey.slice(0,-1):null;
+        const mine=allUsers.filter(u=>{ const uc=(u.utm_campaign||'').toLowerCase().trim();
+          return pref? uc.startsWith(pref) : (uc===ukey||uc===key); });
         cc.registrations=mine.length;
         cc.first_visits=mine.filter(u=>(u.visit_count||0)>0).length;
         cc.memberships=mine.filter(u=>activeMembIds.has(u._id)).length;
