@@ -345,11 +345,49 @@
 <div class="container" id="dashMain" style="display:none">
 
   <!-- Greeting + membership (merged) -->
+  <!-- EVENT — predaj vstupeniek (najvyššia priorita) -->
+  <div id="eventBanner" style="display:none;margin-bottom:16px"></div>
+  <div id="myTickets" style="display:none;margin-bottom:16px"></div>
+  <div id="ambEntry" style="display:none;margin-bottom:16px"></div>
+
+
   <!-- ONLINE hodina — blíži sa / LIVE -->
   <div id="onlineBanner" style="display:none;margin-bottom:16px"></div>
 
   <!-- Denná odmena: koleso + login streak (vernostný program — vždy niečo vyhráš) -->
   <style>
+    @keyframes evSweep{to{background-position:-200% center}}
+    @keyframes evPulse{0%,100%{box-shadow:0 0 16px -4px rgba(201,168,76,.5)}50%{box-shadow:0 0 44px 2px rgba(201,168,76,.95)}}
+    .ev-banner{position:relative;display:block;text-decoration:none;border-radius:18px;overflow:hidden;
+      border:1.5px solid var(--gold,#C9A84C);background:linear-gradient(105deg,#241a08,#4a3711,#241a08);
+      background-size:200% auto;animation:evSweep 4s linear infinite,evPulse 2.4s ease-in-out infinite;padding:16px 18px}
+    .ev-banner .kick{font-size:.68rem;font-weight:900;letter-spacing:.16em;color:#ffe9a8}
+    .ev-banner h3{margin:6px 0 4px;color:#fff;font-size:1.08rem;line-height:1.25}
+    .ev-banner .when{color:#e2d3a6;font-size:.84rem}
+    .ev-banner .save{display:inline-block;margin-top:10px;background:#ffe9a8;color:#2a1f06;font-weight:900;
+      border-radius:999px;padding:6px 13px;font-size:.8rem}
+    .ev-price{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:12px 0 2px}
+    .ev-price b{font-size:1.9rem;color:#ffe9a8;line-height:1}
+    .ev-price .now{font-size:.7rem;font-weight:800;letter-spacing:.1em;color:#e0cf9a;align-self:center}
+    .ev-price .then{color:#c9b98c;font-size:.85rem;align-self:center}
+    .ev-price .then s{color:#fff;font-weight:800;text-decoration:none;border-bottom:2px solid #ff8a80;padding-bottom:1px}
+    .ev-cdlab{font-size:.72rem;font-weight:900;letter-spacing:.1em;color:#ffd98a;margin-top:12px;
+      padding-top:10px;border-top:1px solid rgba(255,233,168,.25)}
+    .ev-btn{display:block;text-align:center;background:#ffe9a8;color:#2a1f06;font-weight:900;
+      border-radius:10px;padding:11px;margin-top:12px;font-size:.95rem}
+    .ev-cd{display:flex;gap:6px;margin-top:10px}
+    .ev-cd div{background:rgba(0,0,0,.35);border:1px solid rgba(255,233,168,.3);border-radius:8px;padding:4px 8px;min-width:44px;text-align:center}
+    .ev-cd b{display:block;font-size:1rem;line-height:1.1;color:#fff;font-variant-numeric:tabular-nums}
+    .ev-cd span{font-size:.55rem;letter-spacing:.08em;color:#e0cf9a;font-weight:800}
+    .ev-tick{background:#1a1712;border:1px solid #2e2a20;border-radius:16px;padding:14px 16px}
+    .ev-tick h4{margin:0 0 8px;font-size:.95rem;color:#C9A84C;letter-spacing:.05em}
+    .ev-tick .t{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;
+      border-top:1px solid rgba(255,255,255,.06);font-size:.9rem}
+    .ev-tick .t:first-of-type{border-top:none}
+    .ev-tick .t b{color:#fff}
+    .ev-tick .st{font-size:.72rem;font-weight:800;border-radius:999px;padding:3px 9px}
+    .ev-tick .st.ok{background:rgba(139,195,74,.15);color:#8bc34a}
+    .ev-tick .st.used{background:rgba(255,152,0,.14);color:#ffb74d}
     @keyframes spinGlow{0%,100%{box-shadow:0 0 24px -4px rgba(201,168,76,.55)}50%{box-shadow:0 0 52px 2px rgba(201,168,76,.95)}}
     @keyframes prizePop{0%{transform:scale(.2);opacity:0}55%{transform:scale(1.14);opacity:1}75%{transform:scale(.96)}100%{transform:scale(1)}}
     @keyframes prizeGlow{0%,100%{box-shadow:0 0 22px -2px rgba(129,199,132,.65)}50%{box-shadow:0 0 44px 4px rgba(129,199,132,.95)}}
@@ -592,7 +630,8 @@
           <span style="font-size:1.4rem">🏷️</span>
           <div>
             <div style="font-size:.85rem;font-weight:600">Členstvá, vstupenky, súkromné hodiny</div>
-            <div style="font-size:.75rem;color:var(--muted)">Kredit využiješ na členstvo, vstupenky na eventy aj súkromné lekcie</div>
+            <div style="font-size:.75rem;color:var(--muted)">Kredit využiješ na členstvo, vstupenky na eventy aj súkromné lekcie.
+     Ak si ho chceš dať vyplatiť na účet, príď na <a href="/skolenie" style="color:var(--gold)">ambasádorské školenie</a>.</div>
           </div>
         </a>
         <a href="/shop" style="display:flex;align-items:center;gap:10px;background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:11px 14px;text-decoration:none;color:var(--text);transition:border-color .2s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='#333'">
@@ -634,6 +673,17 @@
       <div style="font-size:.78rem;color:var(--muted);margin-top:4px">Zarábaš z 5 línií pod sebou — čím väčšia štruktúra, tým väčší pasívny príjem.</div>
       <div id="networkPanel" style="display:none;margin-top:12px"></div>
     </div>
+
+    <!-- Ambasádorský program — patrí k štruktúre a odmenám, nie navrch dashboardu -->
+    <a href="/skolenie" style="display:block;text-decoration:none;margin-top:14px;padding-top:14px;
+       border-top:1px solid #2a2a2a">
+      <div style="color:var(--gold);font-size:.68rem;font-weight:800;letter-spacing:.12em">AMBASÁDORSKÝ PROGRAM</div>
+      <div style="color:#EAE3D5;font-weight:700;font-size:.92rem;margin-top:3px">
+        Chceš z toho urobiť viac než kredit?</div>
+      <div style="color:#9d9788;font-size:.79rem;margin-top:2px;line-height:1.5">
+        Vstupné školenie 28. augusta o 16:00 v Detve · 15 € · po ňom sa ti odomkne
+        ambasádorská sekcia s hodnosťami a províziami →</div>
+    </a>
   </div>
 
   <!-- ═══════════════════════════════════════════════════════
@@ -1775,6 +1825,9 @@ async function init(){
   document.getElementById('myProfileLink').href='/u/'+me.id;
   loadFriends();
   loadPrivate();
+  loadEventBanner();
+  loadMyTickets();
+  loadAmbEntry();
   loadOnlineBanner();
   loadDmBadge();
   loadSpin();
@@ -1970,6 +2023,103 @@ async function loadDmBadge(){
 setInterval(loadDmBadge, 60*1000);
 
 /* ─── Online hodina banner (blíži sa / LIVE) ─── */
+async function loadEventBanner(){
+  try{
+    const r=await fetch('/api/events/latin-tropical-2026',{credentials:'include'});
+    const d=await r.json(); if(!d.ok) return;
+    const host=document.getElementById('eventBanner'); if(!host) return;
+    const full=d.types.find(t=>t.key==='full');
+    const allSold=d.types.every(t=>t.sold_out);
+    const save=(full&&full.member_price!=null)?(full.door-full.member_price):null;
+    const kick = allSold ? 'VYPREDANÉ'
+      : (d.is_member && save ? 'MÁŠ ČLENSKÚ CENU — UŠETRÍŠ '+save+' €'
+                             : (save ? 'ČLENI FUSION ACADEMY UŠETRIA '+save+' €' : 'PREDPREDAJ BEŽÍ'));
+    const left = full && full.left!=null && full.left>0 && full.left<=10
+      ? '<span class="save">🔥 Posledných '+full.left+' miest na masterclass</span>' : '';
+    const priceBlock = (!allSold && full) ? (
+        '<div class="ev-price">'
+      +   '<b>'+String(full.price).replace('.',',')+' €</b>'
+      +   '<span class="now">TERAZ</span>'
+      +   '<span class="then">od 1. septembra <s>'+String(full.door).replace('.',',')+' €</s></span>'
+      + '</div>'
+      + '<div style="color:#e2d3a6;font-size:.78rem">Full Experience — obe masterclass, Zumba, CIRCL, jedlo aj párty</div>'
+      ) : '';
+    host.innerHTML = '<a class="ev-banner" href="/event/'+d.event.slug+'?src=app">'
+      + '<div class="kick">'+kick+'</div>'
+      + '<h3>'+d.event.name+'</h3>'
+      + '<div class="when">'+d.event.date_label+' · '+d.event.venue+(d.event.subtitle?' · '+d.event.subtitle:'')+'</div>'
+      + priceBlock
+      + (allSold?'':'<div class="ev-cdlab">DO ZDRAŽENIA ZOSTÁVA</div><div class="ev-cd" id="evCd"></div>')
+      + left
+      + (allSold?'':'<span class="ev-btn">Kúpiť vstupenky →</span>')
+      + '</a>';
+    host.style.display='block';
+    if(!allSold && full && full.presale_until) evCountdown(new Date(full.presale_until).getTime());
+  }catch(e){}
+}
+
+function evCountdown(end){
+  const box=document.getElementById('evCd'); if(!box) return;
+  const p=n=>String(n).padStart(2,'0');
+  (function tick(){
+    let d=Math.floor((end-Date.now())/1000);
+    if(d<=0){ box.innerHTML='<div style="min-width:auto"><b style="font-size:.8rem">Zvýhodnená cena skončila — platí plná suma</b></div>'; return; }
+    const dd=Math.floor(d/86400); d-=dd*86400;
+    const hh=Math.floor(d/3600);  d-=hh*3600;
+    const mm=Math.floor(d/60);    const ss=d-mm*60;
+    box.innerHTML='<div><b>'+dd+'</b><span>DNÍ</span></div><div><b>'+p(hh)+'</b><span>HOD</span></div>'
+                 +'<div><b>'+p(mm)+'</b><span>MIN</span></div><div><b>'+p(ss)+'</b><span>SEK</span></div>';
+    setTimeout(tick,1000);
+  })();
+}
+
+// Vstup do ambasádorskej sekcie sa ukáže len tomu, kto na ňu má právo.
+async function loadAmbEntry(){
+  try{
+    const r = await fetch('/api/ambassador/me',{credentials:'include'});
+    if(!r.ok) return;
+    const d = await r.json(); if(!d.ok) return;
+    // Ambasádorka rieši štruktúru, kredit aj provízie vo svojej sekcii —
+    // na dashboarde by to bolo dvakrát to isté.
+    const refSec=document.getElementById('referralSection');
+    if(refSec) refSec.style.display='none';
+    const host = document.getElementById('ambEntry'); if(!host) return;
+    const R = d.rank||{};
+    host.innerHTML = '<a href="/ambasador" style="display:flex;align-items:center;gap:12px;text-decoration:none;'
+      + 'background:linear-gradient(160deg,#241d10,#171310);border:1px solid rgba(201,168,76,.45);'
+      + 'border-radius:16px;padding:12px 14px">'
+      + (R.rank ? '<img src="/img/ranks/rank-'+R.rank+'.png" alt="" style="width:44px;height:44px;object-fit:contain">'
+                : '<div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:1.5rem">🔥</div>')
+      + '<div style="flex:1;min-width:0">'
+      +   '<div style="color:#9d9788;font-size:.66rem;font-weight:800;letter-spacing:.12em">AMBASÁDORSKÁ SEKCIA</div>'
+      +   '<div style="color:#EAE3D5;font-weight:700;font-size:.95rem">'+(R.name||'Začínaš')+'</div>'
+      +   '<div style="color:#9d9788;font-size:.78rem">'+d.clients_started+' privedených · '+d.clients_paying+' platí členstvo</div>'
+      + '</div><div style="color:#C9A84C;font-weight:800">→</div></a>';
+    host.style.display='block';
+  }catch(e){}
+}
+
+async function loadMyTickets(){
+  try{
+    const r=await fetch('/api/my/tickets',{credentials:'include'});
+    const d=await r.json(); if(!d.ok||!d.events.length) return;
+    const host=document.getElementById('myTickets'); if(!host) return;
+    host.innerHTML = d.events.map(function(ev){
+      return '<div class="ev-tick"><h4>🎟️ MOJE VSTUPENKY</h4>'
+        + '<div style="color:#fff;font-weight:700;font-size:.95rem">'+ev.event.name+'</div>'
+        + '<div style="color:#9d9788;font-size:.82rem;margin-bottom:6px">'+(ev.event.date_label||'')+' · '+(ev.event.venue||'')+'</div>'
+        + ev.tickets.map(function(t){
+            return '<div class="t"><b>'+t.type_name+'</b>'
+              + '<span style="color:#9d9788;font-size:.8rem;flex:1;text-align:right">'+t.holder_name+'</span>'
+              + '<span class="st '+(t.status==='used'?'used':'ok')+'">'+(t.status==='used'?'POUŽITÁ':'PLATNÁ')+'</span>'
+              + '<a href="/t/'+t.code+'" style="color:#C9A84C;font-weight:800;text-decoration:none">QR →</a></div>';
+          }).join('')
+        + '</div>';
+    }).join('');
+    host.style.display='block';
+  }catch(e){}
+}
+
 async function loadOnlineBanner(){
   const host=document.getElementById('onlineBanner'); if(!host) return;
   const d=await api('/api/online/upcoming');

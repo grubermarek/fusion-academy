@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vstupenka – Fusion Academy</title>
+<link rel="icon" type="image/png" href="/logo-mark.png">
+<style>
+:root{--gold:#C9A84C;--cream:#EAE3D5;--muted:#9d9788;--card:#1a1712;--line:#2e2a20}
+*{box-sizing:border-box}
+body{background:#12100a;color:var(--cream);font-family:'Inter',system-ui,sans-serif;margin:0;padding:20px 16px 50px}
+.back{display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--cream);
+  font-size:.95rem;font-weight:700;cursor:pointer;padding:6px 0;margin-bottom:8px}
+.wrap{max-width:520px;margin:0 auto}
+.state{border-radius:16px;padding:24px 18px;text-align:center;font-weight:900;font-size:1.4rem;letter-spacing:.03em;line-height:1.3}
+.state.ok{background:#12300f;border:2px solid #4caf50;color:#9cef8f}
+.state.used{background:#3a2a0c;border:2px solid #ffb74d;color:#ffd699}
+.state.unpaid,.state.invalid{background:#3a1414;border:2px solid #e57373;color:#ff9f95}
+.state small{display:block;font-size:.85rem;font-weight:600;margin-top:8px;opacity:.85}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:14px}
+.row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:.95rem}
+.row:last-child{border:none}
+.row span{color:var(--muted)}
+.row b{text-align:right}
+.qr{display:block;margin:16px auto 0;background:#fff;padding:10px;border-radius:12px;width:260px;height:260px}
+.btn{width:100%;background:linear-gradient(135deg,#e0be5c,#b8912f);color:#191408;border:none;border-radius:12px;
+  padding:16px;font-weight:900;font-size:1.05rem;cursor:pointer;margin-top:16px}
+.btn:disabled{opacity:.5}
+.muted{color:var(--muted);font-size:.85rem;text-align:center;margin-top:14px;line-height:1.6}
+h1{font-size:1.2rem;margin:16px 0 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <button class="back" onclick="history.length>1?history.back():location.href='/client-dashboard'">← Späť</button>
+</div>
+<div class="wrap" id="app"><p class="muted">Načítavam vstupenku…</p></div>
+<script>
+const CODE = (location.pathname.split('/')[2]||'').toUpperCase();
+const K = new URLSearchParams(location.search).get('k') || '';
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function dt(s){ return s ? String(s).slice(0,16).replace('T',' ') : '—'; }
+
+async function load(){
+  const url = '/api/tickets/'+encodeURIComponent(CODE)+(K?('?k='+encodeURIComponent(K)):'');
+  const r = await fetch(url,{credentials:'include'});
+  if(r.status===403) return renderGuest();
+  const j = await r.json();
+  if(!j.ok && j.state==='invalid') return render({state:'invalid', message:'NEPLATNÝ QR KÓD'});
+  render(j);
+}
+
+// Bežný návštevník (nie personál) — ukážeme mu jeho vstupenku, nie check-in.
+function renderGuest(){
+  document.getElementById('app').innerHTML =
+    '<h1>Vstupenka Fusion Academy</h1>'
+    + '<img class="qr" src="/api/tickets/'+esc(CODE)+'/qr.png" alt="QR kód vstupenky">'
+    + '<div class="card"><div class="row"><span>Kód vstupenky</span><b>'+esc(CODE)+'</b></div></div>'
+    + '<p class="muted">Tento QR kód ukáž pri vstupe. Detaily vstupenky vidíš v aplikácii v sekcii <b>Moje vstupenky</b>.</p>';
+}
+
+function render(j){
+  const t = j.ticket||{};
+  const map = { valid:['ok','VSTUPENKA JE PLATNÁ'], used:['used','VSTUPENKA UŽ BOLA POUŽITÁ'],
+                unpaid:['unpaid','PLATBA NEBOLA POTVRDENÁ'], invalid:['invalid','NEPLATNÝ QR KÓD'],
+                ok:['ok','VSTUP POVOLENÝ — ZAPLATENÉ'] };
+  const [cls,label] = map[j.state] || map.invalid;
+  let h = '<div class="state '+cls+'">'+(j.message||label);
+  if(j.state==='used' && t.checked_in_at) h += '<small>Prvý vstup: '+dt(t.checked_in_at)+(t.checkin_place?' · '+esc(t.checkin_place):'')+'</small>';
+  h += '</div>';
+  if(t.code){
+    h += '<div class="card">'
+      + '<div class="row"><span>Držiteľ</span><b>'+esc(t.holder_name||'—')+'</b></div>'
+      + '<div class="row"><span>Typ vstupenky</span><b>'+esc(t.type_name||'—')+'</b></div>'
+      + '<div class="row"><span>Event</span><b>'+esc(t.event_name||'—')+'</b></div>'
+      + '<div class="row"><span>Zakúpené</span><b>'+dt(t.created_at)+'</b></div>'
+      + '<div class="row"><span>Kód</span><b>'+esc(t.code)+'</b></div>'
+      + '</div>';
+  }
+  if(j.state==='valid') h += '<button class="btn" id="ciBtn" onclick="checkin()">✅ Označiť ako použitú (check-in)</button>';
+  h += '<p class="muted">Fusion Academy · check-in vstupeniek</p>';
+  document.getElementById('app').innerHTML = h;
+}
+
+async function checkin(){
+  const b=document.getElementById('ciBtn'); b.disabled=true; b.textContent='Zapisujem…';
+  const url='/api/tickets/'+encodeURIComponent(CODE)+'/checkin'+(K?('?k='+encodeURIComponent(K)):'');
+  const r=await fetch(url,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'});
+  render(await r.json());
+}
+load();
+</script>
+</body>
+</html>

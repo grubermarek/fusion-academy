@@ -557,8 +557,34 @@ function render(){
       btn.textContent='✅ Pozvánka skopírovaná — pošli ju kamoške!';
     }catch(e){ btn.textContent='Odkaz nájdeš na nástenke v appke'; }
   };
+  // Medaila hodnosti: obrázok /img/ranks/rank-N.png, kým nie je nahraný,
+  // ukážeme jednoduchý zlatý štít s číslom — nič sa nerozbije.
+  window.rankMedal=(R, size)=>{
+    const px=size||96;
+    if(!R || !R.rank) return `<div style="width:${px}px;height:${px}px;margin:0 auto;border-radius:50%;
+      background:radial-gradient(circle at 50% 35%,#3a3428,#1a1712);border:2px solid #4a4436;
+      display:flex;align-items:center;justify-content:center;font-size:${px*0.4}px;opacity:.7">🕯️</div>`;
+    const stars = R.top
+      ? '<div style="color:#F0DFA8;font-weight:900;font-size:.9rem;letter-spacing:.06em;margin-top:4px">NAJVYŠŠIA HODNOSŤ</div>'
+      : '<div style="margin-top:4px;letter-spacing:2px;font-size:'+Math.round(px*0.16)+'px">'
+        + '<span style="color:#F7E7B8;text-shadow:0 0 8px rgba(247,231,184,.7)">'+'★'.repeat(R.stars)+'</span>'
+        + '<span style="color:#4a4436">'+'★'.repeat(Math.max(0,5-R.stars))+'</span></div>';
+    return `<div style="text-align:center">
+      <div style="width:${px}px;height:${px}px;margin:0 auto;position:relative">
+        <img src="/img/ranks/rank-${R.rank}.png" alt="${R.name}" style="width:100%;height:100%;object-fit:contain;
+          filter:drop-shadow(0 0 14px rgba(231,200,120,.55))"
+          onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+        <div style="display:none;position:absolute;inset:0;border-radius:50%;
+          background:radial-gradient(circle at 50% 35%,#C9A84C,#6b5417);border:2px solid #F0DFA8;
+          align-items:center;justify-content:center;font-weight:900;color:#231A08;font-size:${px*0.4}px">${R.rank}</div>
+      </div>
+      ${stars}
+    </div>`;
+  };
+
   window.showAmbModal=()=>{
     const n=P.ambassador_count||0, fem=P.gender!=='male';
+    const R=P.amb_rank||null;
     const TIERS=fem
       ?[{need:1,icon:'🥇',name:'Zlatá ambasádorka'},{need:10,icon:'✨',name:'Elitná ambasádorka'},{need:25,icon:'💎',name:'Diamantová ambasádorka'}]
       :[{need:1,icon:'🥇',name:'Zlatý ambasádor'},{need:10,icon:'✨',name:'Elitný ambasádor'},{need:25,icon:'💎',name:'Diamantový ambasádor'}];
@@ -569,15 +595,18 @@ function render(){
     m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px';
     m.onclick=e=>{ if(e.target===m) m.remove(); };
     m.innerHTML=`<div style="background:linear-gradient(160deg,#1c1608,#12100a);border:1px solid rgba(231,200,120,.5);border-radius:20px;max-width:400px;width:100%;padding:26px;text-align:center;box-shadow:0 0 60px -10px rgba(231,200,120,.4)">
-      <div style="font-size:2.6rem;filter:drop-shadow(0 0 16px rgba(231,200,120,.6))">${cur?cur.icon:'🌱'}</div>
-      <div style="font-weight:900;font-size:1.15rem;color:#F0DFA8;letter-spacing:.08em;margin:6px 0 2px">${cur?cur.name.toUpperCase():'TVOJA CESTA AMBASÁDOR'+(fem?'KY':'A')}</div>
+      ${rankMedal(R,110)}
+      <div style="font-weight:900;font-size:1.15rem;color:#F0DFA8;letter-spacing:.08em;margin:10px 0 2px">${R&&R.name?R.name.toUpperCase():'TVOJA CESTA'}</div>
       <div style="font-size:2.2rem;font-weight:900;color:#fff;margin:8px 0 2px">${n}</div>
       <div style="color:#b9a76b;font-size:.85rem;margin-bottom:16px">${n===1?'človek, ktorému si '+(fem?'pomohla':'pomohol')+' zamilovať si tanec':'ľudí, ktorým si '+(fem?'pomohla':'pomohol')+' zamilovať si tanec a pohyb'}</div>
-      ${next?`
+      ${(R&&R.next)?`
       <div style="height:12px;background:#26221a;border-radius:8px;overflow:hidden;border:1px solid #3a3428;margin-bottom:8px">
-        <div style="height:100%;width:${prog}%;background:linear-gradient(90deg,#C9A84C,#F7E7B8);border-radius:8px;transition:width .8s"></div></div>
-      <div style="color:#E7C878;font-weight:800;font-size:.95rem;margin-bottom:14px">Ešte ${next.need-n} ${next.need-n===1?'človek':(next.need-n<=4?'ľudia':'ľudí')} do odznaku ${next.icon} ${next.name}</div>`
-      :`<div style="color:#dfeeff;font-weight:800;margin-bottom:14px">💎 Najvyšší odznak — legenda Fusion Academy!</div>`}
+        <div style="height:100%;width:${R.progress}%;background:linear-gradient(90deg,#C9A84C,#F7E7B8);border-radius:8px;transition:width .8s"></div></div>
+      <div style="color:#E7C878;font-weight:800;font-size:.95rem;margin-bottom:14px">
+        Ešte ${R.next.missing} ${R.next.missing===1?'človek':(R.next.missing<=4?'ľudia':'ľudí')}
+        ${R.next.rank===R.rank ? ('do \u2605 '+R.next.star+'. hviezdy') : ('do hodnosti '+R.next.name)}
+      </div>`
+      :`<div style="color:#dfeeff;font-weight:800;margin-bottom:14px">🏆 Najvyššia hodnosť — ${R&&R.name?R.name:'legenda'} Fusion Academy!</div>`}
       <div style="text-align:left;background:rgba(201,168,76,.07);border:1px solid rgba(201,168,76,.25);border-radius:12px;padding:12px 14px;font-size:.82rem;color:#cfc9bb;line-height:1.6">
         <b style="color:#F0DFA8">Ako sa počíta?</b><br>
         Rátajú sa ľudia z tvojej línie, ktorí sa <b style="color:#E7C878">stali aktívnymi a prišli tancovať</b> — priamo tvoje pozvania aj kamošky tvojich kamošiek. Samotná registrácia nestačí, počíta sa skutočný tanec. 💃
@@ -926,6 +955,7 @@ function renderAdmin(){
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <select id="admPlan" onchange="admPlanChange()" style="flex:1;min-width:150px;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:9px 12px;font-family:'Manrope'"><option value="">— Bez členstva —</option>${planOpts||''}</select>
           <input type="number" id="admPlanPrice" min="0" step="0.01" style="width:90px;background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:9px 10px" title="Suma €">
+          <div id="admCustomNote" style="flex-basis:100%;font-size:.82rem;color:#C9A84C;margin-top:2px"></div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
           <label class="set-hint" style="margin:0">Platné do:</label>
@@ -1232,7 +1262,15 @@ async function saveTaught(field,inputId){
 let _admMode='gift';
 function admPlanChange(){
   const sel=document.getElementById('admPlan'); const opt=sel.options[sel.selectedIndex];
-  const el=document.getElementById('admPlanPrice'); if(el&&opt) el.value=opt.dataset.price||'';
+  const el=document.getElementById('admPlanPrice');
+  // Individuálna dohodnutá cena má prednosť pred cenníkovou.
+  const cp=(_awards&&_awards.custom_prices)||{};
+  const special=opt&&opt.value&&cp[opt.value]!=null ? cp[opt.value] : null;
+  if(el&&opt) el.value = special!=null ? special : (opt.dataset.price||'');
+  const note=document.getElementById('admCustomNote');
+  if(note) note.innerHTML = special!=null
+    ? '💛 <b>Individuálna cena:</b> '+opt.text.split('—')[0].trim()+' za <b>'+special+' €</b> — dohodnutá výnimka len pre túto klientku.'
+    : '';
   // Dátum platnosti sa predvyplní automaticky podľa dĺžky plánu (30 dní členstvo, 90 permanentka).
   // Ak už členstvo beží, nadviaže sa na jeho koniec, aby sa predplatné nekrátilo.
   const exp=document.getElementById('admExpiry');

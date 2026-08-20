@@ -155,6 +155,24 @@ html,body{height:100%;font-family:'Segoe UI',system-ui,sans-serif;background:var
 .att-name{font-weight:700;font-size:.88rem;color:var(--cream)}
 .att-sub{font-size:.74rem;color:var(--muted);margin-top:2px;display:flex;gap:8px;flex-wrap:wrap}
 .att-badge{display:inline-flex;align-items:center;gap:3px;font-size:.7rem;font-weight:700;padding:2px 8px;border-radius:20px}
+/* Prehľadné stĺpce: kto · návštevy · či prišiel · čím platí · členstvo */
+.att-head{display:none}
+@media(min-width:900px){
+  .att-head,.attendee-item{display:grid;grid-template-columns:minmax(190px,1.5fr) 92px 116px 210px 132px 44px;
+    align-items:center;gap:12px}
+  .att-head{padding:8px 14px;border-bottom:1px solid var(--border);font-size:.68rem;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--muted);font-weight:800}
+  .att-who{display:flex;align-items:center;gap:10px;min-width:0}
+  .att-who .att-info{min-width:0}
+  .att-sub{flex-direction:column;gap:1px}
+  .att-cell{min-width:0}
+  .att-cell .att-badge{max-width:100%}
+  .att-actions{justify-self:end}
+}
+@media(max-width:899px){
+  .att-who{display:flex;align-items:center;gap:10px}
+  .att-cell{display:inline-block;margin:4px 6px 0 0}
+}
 .badge-mem{background:rgba(201,168,76,.12);border:1px solid var(--gold-border);color:var(--gold)}
 .badge-free{background:rgba(76,175,80,.12);border:1px solid rgba(76,175,80,.25);color:var(--green)}
 .badge-single{background:rgba(33,150,243,.12);border:1px solid rgba(33,150,243,.25);color:var(--blue)}
@@ -1103,26 +1121,53 @@ async function loadAttendees(classId){
   }
 }
 
+
+// Ako sa človek na hodinu dostal — berieme to zo samotného bookingu, nie z toho,
+// čo má na účte dnes. Tréner tak vidí, či prišla na kupón, permanentku či platí.
+const ACCESS_LABELS = {
+  membership:          ['💎 Členstvom',              '#C9A84C'],
+  free_class:          ['🎁 Prvá hodina zdarma',      '#fbbf24'],
+  promo_free:          ['🎁 Akciová hodina zdarma',   '#fbbf24'],
+  free_credit:         ['🎟️ Kupón na hodinu zdarma', '#fbbf24'],
+  single_entry:        ['🎫 Permanentka (−1 vstup)',  '#60a5fa'],
+  pay_on_site:         ['💵 Platí na mieste',         '#ff8a8a'],
+  parent_membership:   ['👪 Členstvom rodiča',        '#7ec8e3'],
+  parent_single_entry: ['👪 Vstupom rodiča',          '#7ec8e3'],
+  online_refunded:     ['↩️ Online — vstup vrátený',  '#9d9788']
+};
+function accessLabel(m){ return ACCESS_LABELS[m] || null; }
+
 function renderAttendees(list){
   const el = document.getElementById('attendeeItems');
   if(!list.length){
     el.innerHTML='<div class="empty">📋 Žiadni prihlásení účastníci.<br><small>Môžete pridať klienta manuálne nižšie.</small></div>';
     return;
   }
-  el.innerHTML = list.map(b=>{
+  const head = '<div class="att-head"><div>Klientka</div><div>Návštevy</div><div>Dochádzka</div>'
+             + '<div>Čím platí</div><div>Členstvo</div><div></div></div>';
+  el.innerHTML = head + list.map(b=>{
     const initials = (b.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    const acc = accessLabel(b.access_method);
     const hasMem = !!b.membership;
     const hasFree = !b.free_class_used && (b.visit_count||0)===0;
     const hasSingle = (b.single_entries||0)>0;
-    let badgeHtml = '';
-    if(b.entry_collected) badgeHtml += `<span class="att-badge" style="background:rgba(74,222,128,.15);color:#4ade80;border:1px solid rgba(74,222,128,.35)">💵 Vstupné vybraté ✓</span>`;
-    else if(b.pay_on_site) badgeHtml += `<span class="att-badge" onclick="collectEntry('${b.booking_id}','${esc(b.name||'').replace(/'/g,'')}',${+b.pay_amount||10})" style="background:rgba(224,86,86,.2);color:#ff8a8a;border:1px solid rgba(224,86,86,.5);font-weight:800;cursor:pointer" title="Klikni a zapíš vybratých ${+b.pay_amount||10} €">💵 PLATÍ NA MIESTE ${+b.pay_amount&&+b.pay_amount!==10?(+b.pay_amount)+' € ':''}— klikni a vyber vstupné</span>`;
-    if(b.is_child_booking) badgeHtml += `<span class="att-badge" style="background:rgba(126,200,227,.15);color:#7ec8e3;border:1px solid rgba(126,200,227,.4)">👧 Dieťa${b.booked_by_name?' — booknuté z rodičovského účtu ('+esc(b.booked_by_name)+')':''}${String(b.access_method||'').startsWith('parent_')?' · kryté členstvom/vstupom rodiča':''}</span>`;
-    if(b.status==='attended') badgeHtml += `<span class="att-badge" style="background:rgba(74,222,128,.18);color:#4ade80;border:1px solid rgba(74,222,128,.35)"><i class="bi bi-check-circle-fill"></i>Absolvoval</span>`;
-    if(hasMem) badgeHtml += `<span class="att-badge badge-mem"><i class="bi bi-credit-card-fill"></i>${esc(b.membership)}</span>`;
-    else if(hasFree) badgeHtml += `<span class="att-badge badge-free"><i class="bi bi-gift-fill"></i>Prvá zadarmo</span>`;
-    else if(hasSingle) badgeHtml += `<span class="att-badge badge-single"><i class="bi bi-ticket-perforated-fill"></i>${b.single_entries} vstup(ov)</span>`;
-    else badgeHtml += `<span class="att-badge badge-noplan">Bez plánu</span>`;
+    let payHtml = '', extraHtml = '', statusHtml = '', accHtml = '', memHtml = '';
+    if(b.entry_collected) payHtml += `<span class="att-badge" style="background:rgba(74,222,128,.15);color:#4ade80;border:1px solid rgba(74,222,128,.35)">💵 Vstupné vybraté ✓</span>`;
+    else if(b.pay_on_site) payHtml += `<span class="att-badge" onclick="collectEntry('${b.booking_id}','${esc(b.name||'').replace(/'/g,'')}',${+b.pay_amount||10})" style="background:rgba(224,86,86,.2);color:#ff8a8a;border:1px solid rgba(224,86,86,.5);font-weight:800;cursor:pointer" title="Klikni a zapíš vybratých ${+b.pay_amount||10} €">💵 PLATÍ NA MIESTE ${+b.pay_amount&&+b.pay_amount!==10?(+b.pay_amount)+' € ':''}— klikni a vyber vstupné</span>`;
+    if(b.is_child_booking) extraHtml += `<span class="att-badge" style="background:rgba(126,200,227,.15);color:#7ec8e3;border:1px solid rgba(126,200,227,.4)">👧 Dieťa${b.booked_by_name?' — booknuté z rodičovského účtu ('+esc(b.booked_by_name)+')':''}${String(b.access_method||'').startsWith('parent_')?' · kryté členstvom/vstupom rodiča':''}</span>`;
+    statusHtml = b.status==='attended'
+      ? `<span class="att-badge" style="background:rgba(74,222,128,.18);color:#4ade80;border:1px solid rgba(74,222,128,.35)"><i class="bi bi-check-circle-fill"></i>Absolvoval</span>`
+      : `<span class="att-badge" style="background:rgba(255,255,255,.05);color:var(--muted)">Ešte neprišla</span>`;
+    // Čím je hodina uhradená (zo samotnej rezervácie).
+    accHtml = acc
+      ? `<span class="att-badge" style="background:${acc[1]}22;color:${acc[1]};border:1px solid ${acc[1]}66;font-weight:700">${acc[0]}</span>`
+      : (hasFree ? `<span class="att-badge badge-free"><i class="bi bi-gift-fill"></i>Prvá zadarmo</span>`
+        : (hasSingle ? `<span class="att-badge badge-single"><i class="bi bi-ticket-perforated-fill"></i>${b.single_entries} vstup(ov)</span>`
+          : `<span class="att-badge badge-noplan">—</span>`));
+    // Čo má na účte dnes (informatívne).
+    memHtml = hasMem
+      ? `<span class="att-badge badge-mem"><i class="bi bi-credit-card-fill"></i>${esc(b.membership)}</span>`
+      : `<span class="att-badge badge-noplan">Bez členstva</span>`;
 
     const canProfile = b.user_id && !b.is_child_booking;
     const nameHtml = canProfile
@@ -1139,16 +1184,20 @@ function renderAttendees(list){
       ? `<a href="/u/${b.user_id}" target="_blank" class="att-avatar" style="text-decoration:none;color:inherit;overflow:hidden">${avInner}</a>`
       : `<div class="att-avatar" style="overflow:hidden">${avInner}</div>`;
     return `<div class="attendee-item">
-      ${avatarHtml}
-      <div class="att-info">
-        ${nameHtml}
-        <div class="att-sub">
-          <span>${esc(b.email||'—')}</span>
-          ${phoneHtml}
-          <span>👣 ${b.visit_count||0} návštev</span>
-          ${badgeHtml}
+      <div class="att-who">
+        ${avatarHtml}
+        <div class="att-info">
+          ${nameHtml}
+          <div class="att-sub">
+            <span>${esc(b.email||'—')}</span>
+            ${phoneHtml}
+          </div>
         </div>
       </div>
+      <div class="att-cell" style="color:#8bc34a;font-size:.78rem;font-weight:700">👣 ${b.visit_count||0}</div>
+      <div class="att-cell">${statusHtml}</div>
+      <div class="att-cell">${accHtml}${payHtml}${extraHtml}</div>
+      <div class="att-cell">${memHtml}</div>
       <div class="att-actions">
         <button class="btn-sm danger" onclick="confirmCancelBook('${b.booking_id}','${escJs(b.name||'')}')" title="Zrušiť rezerváciu">
           <i class="bi bi-x-circle"></i>

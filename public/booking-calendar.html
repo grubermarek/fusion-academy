@@ -271,15 +271,37 @@ async function setSessionIns(classId, dateStr, instructorId){
   if(r&&r.ok){ toast('✅ Tréner hodiny nastavený'); renderDay(); } else toast(r?.error||'Chyba', true);
 }
 
+
+// Ako sa človek na hodinu dostal — zo samotnej rezervácie, nie z toho, čo má
+// na účte dnes. Doteraz sa po zapísaní dochádzky zobrazovalo len „✓ prišiel"
+// a spôsob úhrady zmizol.
+const ACCESS_LABELS = {
+  membership:          ['💎 Členstvom',              '#C9A84C'],
+  free_class:          ['🎁 Prvá hodina zdarma',      '#fbbf24'],
+  promo_free:          ['🎁 Akciová hodina zdarma',   '#fbbf24'],
+  free_credit:         ['🎟️ Kupón na hodinu zdarma', '#fbbf24'],
+  single_entry:        ['🎫 Permanentka (−1 vstup)',  '#60a5fa'],
+  pay_on_site:         ['💵 Platí na mieste',         '#ff8a8a'],
+  parent_membership:   ['👪 Členstvom rodiča',        '#7ec8e3'],
+  parent_single_entry: ['👪 Vstupom rodiča',          '#7ec8e3'],
+  online_refunded:     ['↩️ Online — vstup vrátený',  '#9d9788']
+};
+function accessLabel(m){ return ACCESS_LABELS[m] || null; }
+
 function renderAtt(att, classId, dateStr){
   const rows = att.length ? att.map(a=>{
-    const badge = a.status==='attended'
-      ? '<span class="a-badge" style="background:rgba(74,222,128,.15);color:#4ade80">✓ prišiel</span>'
+    // Prítomnosť a spôsob úhrady sú dve rôzne veci — ukazujeme obe naraz.
+    const acc = accessLabel(a.access_method);
+    const accBadge = acc
+      ? `<span class="a-badge" style="background:${acc[1]}22;color:${acc[1]};border:1px solid ${acc[1]}55;font-weight:700">${acc[0]}</span>`
       : (a.membership
         ? `<span class="a-badge" style="background:rgba(201,168,76,.2);color:#C9A84C">${esc(a.membership)}</span>`
         : (a.single_entries>0?'<span class="a-badge" style="background:rgba(96,165,250,.15);color:#60a5fa">🎟 vstup</span>'
           : (a.free_credits>0?'<span class="a-badge" style="background:rgba(251,191,36,.15);color:#fbbf24">🎁 free</span>'
             :'<span class="a-badge" style="background:rgba(244,67,54,.15);color:#f87171">⚠ bez členstva</span>')));
+    const attBadge = a.status==='attended'
+      ? '<span class="a-badge" style="background:rgba(74,222,128,.15);color:#4ade80">✓ prišiel</span>' : '';
+    const badge = attBadge + accBadge;
     const vc=a.visit_count||0;
     const who = a.is_child_booking
       ? `${esc(a.child_name||'dieťa')} <span style="color:#8a8a8a;font-weight:400">(dieťa)</span>`

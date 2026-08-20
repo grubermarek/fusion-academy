@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ambasádorská sekcia – Fusion Academy</title>
+<link rel="icon" type="image/png" href="/logo-mark.png">
+<style>
+:root{--gold:#C9A84C;--cream:#EAE3D5;--muted:#9d9788;--card:#1a1712;--line:#2e2a20}
+*{box-sizing:border-box}
+body{background:#12100a;color:var(--cream);font-family:'Inter',system-ui,sans-serif;margin:0;padding:0 0 60px}
+.topbar{position:sticky;top:0;z-index:30;background:rgba(12,10,6,.96);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--line);height:52px;display:flex;align-items:center;padding:0 12px;gap:10px}
+.topbar button{background:none;border:none;color:var(--cream);font-size:.95rem;font-weight:700;cursor:pointer;padding:8px 10px}
+.topbar .ttl{color:var(--muted);font-size:.85rem;margin-left:auto;padding-right:6px}
+.wrap{max-width:640px;margin:0 auto;padding:18px 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin:14px 0}
+.card h2{font-size:1rem;margin:0 0 12px;color:var(--gold);letter-spacing:.05em}
+a{color:var(--gold)}
+
+/* hodnosť — čierne pozadie, aby medaila splynula (jej PNG má čiernu plochu) */
+.rank{text-align:center;background:#070707;border-color:#241f16}
+.rank img{width:132px;height:132px;object-fit:contain;display:block;margin:0 auto;image-rendering:auto}
+.rank .fallback{width:150px;height:150px;margin:0 auto;border-radius:50%;display:none;align-items:center;
+  justify-content:center;background:#070707;border:1px solid #1e1e1e;font-size:2.6rem}
+.rank .name{font-weight:900;font-size:1.25rem;color:#F0DFA8;letter-spacing:.08em;margin-top:6px}
+.stars{letter-spacing:3px;font-size:1.3rem;margin-top:4px}
+.stars .on{color:#F7E7B8;text-shadow:0 0 10px rgba(247,231,184,.7)}
+.stars .off{color:#3a3630}
+.bar{height:12px;background:#1a1a1a;border-radius:8px;overflow:hidden;border:1px solid #2a2a2a;margin:14px 0 8px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,#C9A84C,#F7E7B8)}
+.togo{color:#E7C878;font-weight:800;font-size:.95rem}
+
+/* čísla */
+.nums{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center}
+.nums div b{display:block;font-size:1.5rem;color:#fff;line-height:1.1}
+.nums div span{font-size:.7rem;color:var(--muted);letter-spacing:.04em}
+.big{font-size:2.4rem!important;color:var(--gold)!important}
+
+/* odkaz */
+.link{background:#0f0d08;border:1px solid var(--line);border-radius:10px;padding:11px 13px;
+  word-break:break-all;font-size:.88rem;color:#ddd6c6}
+.btn{background:linear-gradient(135deg,#e0be5c,#b8912f);color:#191408;border:none;border-radius:10px;
+  padding:11px 16px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:inherit;font-size:.92rem}
+.btn.ghost{background:#221d14;color:var(--cream);border:1px solid var(--line)}
+.qr{display:block;margin:14px auto 0;background:#fff;padding:10px;border-radius:12px;width:190px;height:190px}
+
+/* klientky */
+.cli{display:flex;align-items:center;gap:10px;padding:11px 0;border-top:1px solid rgba(255,255,255,.06);
+  cursor:pointer;text-align:left;width:100%;background:none;border-left:none;border-right:none;border-bottom:none;
+  color:inherit;font-family:inherit}
+.cli:first-of-type{border-top:none}
+.cli .n{flex:1;min-width:0}
+.cli .n b{display:block;color:#fff;font-size:.93rem}
+.cli .n small{color:var(--muted);font-size:.76rem}
+.cli .warn{color:#ff9f43;font-weight:700}
+.tag{font-size:.66rem;font-weight:800;border-radius:999px;padding:3px 9px;white-space:nowrap}
+.tag.pay{background:rgba(201,168,76,.16);color:var(--gold)}
+.tag.act{background:rgba(139,195,74,.15);color:#8bc34a}
+.tag.new{background:rgba(255,255,255,.06);color:var(--muted)}
+.tag.gone{background:rgba(255,138,128,.14);color:#ff8a80}
+.hint{color:var(--muted);font-size:.82rem;line-height:1.6}
+
+/* cesta hodností */
+.step{display:flex;gap:12px;padding:13px 0;border-top:1px solid rgba(255,255,255,.06)}
+.step:first-of-type{border-top:none}
+.step .thumb{width:54px;height:54px;flex:0 0 auto;background:#070707;border-radius:10px;overflow:hidden;
+  display:flex;align-items:center;justify-content:center}
+.step .thumb img{width:100%;height:100%;object-fit:contain}
+.step.locked .thumb img{filter:grayscale(1) brightness(.55)}
+.step .t{flex:1;min-width:0}
+.step .t b{display:block;color:#fff;font-size:.95rem;letter-spacing:.03em}
+.step.locked .t b{color:#8d8878}
+.step .need{font-size:.8rem;color:var(--gold);font-weight:700;margin-top:1px}
+.step.locked .need{color:#9d9788;font-weight:600}
+.step .perk{font-size:.79rem;color:#c3bcaa;margin-top:4px;line-height:1.5}
+.step.current{background:linear-gradient(100deg,rgba(201,168,76,.14),transparent 70%);
+  border-radius:12px;padding:13px 12px;border-top:none;margin:6px 0}
+.step .mark{font-size:.64rem;font-weight:900;letter-spacing:.08em;border-radius:999px;padding:3px 9px;
+  align-self:flex-start;white-space:nowrap}
+.mark.now{background:var(--gold);color:#191408}
+.mark.done{background:rgba(139,195,74,.16);color:#8bc34a}
+
+/* rozpis a kalkulačka */
+.row{display:flex;justify-content:space-between;gap:10px;padding:9px 0;
+  border-top:1px solid rgba(255,255,255,.06);font-size:.9rem}
+.row:first-of-type{border-top:none}
+.row b{color:#fff}
+label{display:block;font-size:.82rem;color:#cfc7b6;font-weight:600;margin:12px 0 0}
+select,input{width:100%;margin-top:6px;padding:11px 13px;background:#0f0d08;border:1px solid var(--line);
+  border-radius:10px;color:#fff;font-family:inherit;font-size:1rem}
+select:focus,input:focus{outline:none;border-color:var(--gold)}
+.calcout{background:linear-gradient(160deg,#241d10,#171310);border:1px solid rgba(201,168,76,.45);
+  border-radius:14px;padding:16px;margin-top:14px;text-align:center}
+.calcout b{display:block;font-size:2rem;color:var(--gold);line-height:1.1}
+.calcout span{font-size:.78rem;color:#c3bcaa}
+
+/* modál klientky */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:100;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:#171310;border:1px solid var(--line);border-radius:18px 18px 0 0;width:100%;max-width:640px;padding:20px 18px 28px}
+.sheet h3{margin:0 0 4px;font-size:1.15rem;color:#fff}
+.acts{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:16px}
+.acts a{display:block;text-align:center;text-decoration:none;background:#221d14;border:1px solid var(--line);
+  border-radius:12px;padding:14px 10px;color:var(--cream);font-weight:700;font-size:.9rem}
+.acts a.pri{background:linear-gradient(135deg,#e0be5c,#b8912f);color:#191408;border:none}
+.skel{color:var(--muted);text-align:center;padding:60px 0}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <button onclick="location.href='/client-dashboard'">← Späť</button>
+  <span class="ttl">Ambasádorská sekcia</span>
+</div>
+<div class="wrap" id="app"><div class="skel">Načítavam…</div></div>
+<script>
+let D=null, CFILTER='';
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function eur(n){ return (Math.round(n*100)/100).toFixed(2).replace('.',',')+' €'; }
+function ob(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g,' '); }
+function zien(n){ return n===1?'žena':(n>=2&&n<=4?'ženy':'žien'); }
+function bodov(n){ return n===1?'bod':(n>=2&&n<=4?'body':'bodov'); }
+
+async function load(){
+  let d;
+  try{ d = await (await fetch('/api/ambassador/me',{credentials:'include'})).json(); }
+  catch(e){ d = {error:'Nepodarilo sa načítať'}; }
+  if(!d.ok){
+    document.getElementById('app').innerHTML =
+      '<div class="card"><h2>Táto časť je zamknutá</h2><p class="hint">'+esc(d.error||'Bez prístupu')+'</p>'
+      +'<p class="hint">Ambasádorská sekcia sa odomkne po vstupnom školení. '
+      +'<a href="/skolenie">Zisti viac →</a></p></div>';
+    return;
+  }
+  D=d; render();
+}
+
+function render(){
+  const d=D, R=d.rank||{rank:0,stars:0}, V=d.volume||{total:0,own:0,team:0,breakdown:[]};
+  const stars = R.top ? '<div class="hint" style="margin-top:6px">Najvyššia hodnosť</div>'
+    : '<div class="stars"><span class="on">'+'★'.repeat(R.stars||0)+'</span>'
+      +'<span class="off">'+'★'.repeat(Math.max(0,5-(R.stars||0)))+'</span></div>';
+
+  let h='';
+  // ── hodnosť ──────────────────────────────────────────────────────────────
+  h += '<div class="card rank">'
+     + (R.rank ? '<img src="/img/ranks/rank-'+R.rank+'.png" alt="'+esc(R.name||'')+'"'
+                 +' onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
+                 +'<div class="fallback">🔥</div>'
+               : '<div class="fallback" style="display:flex">🕯️</div>')
+     + '<div class="name">'+esc(R.name || 'ZAČÍNAŠ')+'</div>' + stars
+     + (R.next ? '<div class="bar"><i style="width:'+(R.progress||0)+'%"></i></div>'
+                 +'<div class="togo">Ešte '+ob(R.next.missing)+' '+bodov(R.next.missing)+' '
+                 +(R.next.rank===R.rank ? ('do ★ '+R.next.star+'. hviezdy') : ('do hodnosti '+esc(R.next.name)))
+                 +'</div>' : '')
+     + '</div>';
+
+  // ── súťaž o Rím ─────────────────────────────────────────────────────────
+  const CT=d.contest;
+  if(CT){
+    h += '<div class="card" style="background:linear-gradient(160deg,#241d10,#171310);border-color:rgba(201,168,76,.55)">'
+      + '<h2>🏛️ SÚŤAŽ: RÍM PRE DVE OSOBY</h2>'
+      + '<p class="hint" style="margin-top:-4px;color:#ddd6c6">Vyrob <b style="color:var(--gold)">'
+      +   ob(CT.target)+' bodov</b> do 31. decembra a vyhrávaš '
+      + '<b style="color:#fff">2 letenky do Ríma + vstup do Kolosea pre 2 osoby</b>. '
+      + 'Nie je to rebríček — cenu získa každá, ktorá métu splní.</p>'
+      + (CT.won
+        ? '<div style="text-align:center;padding:10px 0"><div style="font-size:2rem">🎉</div>'
+          +'<b style="color:var(--gold);font-size:1.1rem">SPLNENÉ — Rím je tvoj!</b>'
+          +'<p class="hint">Ozveme sa ti s detailmi. Body môžeš pokojne robiť ďalej.</p></div>'
+        : '<div class="bar"><i style="width:'+CT.progress+'%"></i></div>'
+          +'<div class="togo">'+ob(CT.done)+' / '+ob(CT.target)+' bodov · chýba '+ob(CT.missing)+'</div>'
+          +(function(){
+            // Prepočet na ženy: Bronze 50 € × počet mesiacov, ktoré do konca roka
+            // ešte zaplatia (september–december = 4; každý ďalší mesiac o 1 menej).
+            var monthsLeft=Math.max(1, 12 - new Date().getMonth() - 1);
+            var women=Math.ceil(CT.missing/(50*monthsLeft));
+            return '<p class="hint" style="margin-top:8px">Stačí '
+              +women+' '+(women===1?'žena':(women<=4?'ženy':'žien'))
+              +', ktoré budú platiť Bronze (50 €) do konca roka — '
+              +women+' × 50 € × '+monthsLeft+' '+(monthsLeft===1?'mesiac':'mesiace')+' = '
+              +ob(women*50*monthsLeft)+' bodov. S vyššími členstvami ich treba ešte menej.</p>';
+          })())
+      + '</div>';
+  }
+
+  // ── čo dnes spraviť ─────────────────────────────────────────────────────
+  h += '<div class="card" id="tasksCard" style="display:none"><h2>ČO DNES SPRAVIŤ</h2><div id="tasksBox"></div></div>';
+
+  // ── objemové body tento mesiac ───────────────────────────────────────────
+  h += '<div class="card"><h2>OBJEMOVÉ BODY — '+esc(V.month||'')+'</h2>'
+     + '<div style="text-align:center;margin:4px 0 14px"><b class="big" style="display:block;font-weight:900">'+ob(V.total)+'</b>'
+     +   '<span class="hint">bodov tento mesiac'
+     +   (d.volume_prev ? ' · minulý mesiac '+ob(d.volume_prev.total) : '')+'</span></div>'
+     + '<div class="row"><span>Moje vlastné nákupy</span><b>'+ob(V.own)+' b</b></div>'
+     + '<div class="row"><span>Moja línia</span><b>'+ob(V.team)+' b</b></div>'
+     + V.breakdown.map(function(x){
+         return '<div class="row"><span>'+esc(x.label)+'</span><b>'+ob(x.ob)+' b</b></div>'; }).join('')
+     + (V.total? '' : '<p class="hint" style="margin-top:10px">Tento mesiac zatiaľ žiadne body. Body vzniknú, keď niekto z tvojej línie zaplatí členstvo, vstup alebo vstupenku.</p>')
+     + '<button class="btn ghost" style="width:100%;margin-top:14px" onclick="toggleRules()">Ako sa body počítajú?</button>'
+     + '<div id="rules" style="display:none;margin-top:12px">'
+     +   (d.ob_rules||[]).map(function(r){
+           return '<div class="row"><span>'+esc(r.label)+'</span><b>'
+             +(r.factor===1?'1 bod za 1 €':(Math.round(r.factor*100)+' % z ceny'))+'</b></div>'; }).join('')
+     +   '<p class="hint" style="margin-top:8px">Eventy, venčeky a merch majú menej bodov — sú v nich náklady na DJ, sálu, odmenu škole či nákup tovaru.</p>'
+     + '</div></div>';
+
+  // ── rebríček mesiaca ────────────────────────────────────────────────────
+  h += '<div class="card" id="lbCard" style="display:none"><h2>REBRÍČEK MESIACA</h2>'
+     + '<p class="hint" style="margin-top:-4px">Podľa objemových bodov — rovnaká metrika ako hodnosti.</p>'
+     + '<div id="lbBox"></div></div>';
+
+  // ── provízie podľa hodnosti ──────────────────────────────────────────────
+  const teamFrom = d.team_from || 4;
+  const teamRow = (d.ladder||[]).find(function(r){ return r.rank===teamFrom; });
+  h += '<div class="card"><h2>AKO SA POČÍTA PROVÍZIA</h2>'
+
+     + '<p class="hint" style="margin-top:-4px"><b style="color:#fff">Jedna sadzba, päť úrovní hlboko</b><br>'
+     + 'Ráta sa ti obrat celej tvojej skupiny — až päť úrovní pod tebou. Z neho dostaneš '
+     + 'percento podľa svojej hodnosti. Čím vyššia hodnosť, tým vyššie percento z toho istého obratu.</p>'
+
+     + (d.ladder||[]).map(function(r){
+         return '<div class="row"><span style="display:flex;align-items:center;gap:10px'
+           +(r.current?';color:var(--gold);font-weight:700':'')+'">'
+           +'<img src="/img/ranks/rank-'+r.rank+'.png" alt="" style="width:32px;height:32px;object-fit:contain;'
+           +  'background:#070707;border-radius:7px;flex:0 0 auto'+(r.done?'':';filter:grayscale(1) brightness(.55)')+'"'
+           +  ' onerror="this.style.visibility=\'hidden\'">'
+           +esc(r.name)+'</span><b>'+Math.round(r.rate*100)+' %</b></div>'; }).join('')
+
+     + '<p class="hint" style="margin-top:14px"><b style="color:#fff">Rozdiel namiesto dvojitej výplaty</b><br>'
+     + 'Ak je pod tebou niekto, kto už tiež poberá províziu zo svojej skupiny, dostaneš '
+     + '<b style="color:#fff">len rozdiel</b> medzi svojím a jej percentom. Nič sa nevypláca dvakrát '
+     + 'a celá línia dokopy nikdy nepresiahne percento najvyššej hodnosti.</p>'
+     + '<p class="hint">Príklad: si Regional Leader (15 %) a pod tebou je Leader (13 %). '
+     + 'Z jej skupiny dostaneš rozdiel <b style="color:#fff">2 %</b>, ona si nechá svojich 13 %. '
+     + 'Spolu 15 % — nikdy viac.</p>'
+     + '<p class="hint">Tímové percento sa počíta od hodnosti <b style="color:#fff">'
+     +   esc(teamRow?teamRow.name:'Leader')+'</b>. Pod ňou zarábaš z vlastných klientok.</p>'
+     + '</div>';
+
+  // ── kalkulačka ───────────────────────────────────────────────────────────
+  h += '<div class="card"><h2>KALKULAČKA PRÍJMU</h2>'
+     + '<p class="hint" style="margin-top:-4px">Zadaj dve čísla — všetko ostatné dopočítame.</p>'
+     + '<label>Koľko žien privedieš<input id="cCount" type="number" min="0" max="500" value="'
+     +   (d.clients_paying||10)+'" oninput="calc()"></label>'
+     + '<label>Koľko žien privedie celý tvoj tím<input id="cTeam" type="number" min="0" max="5000" value="0" oninput="calc()"></label>'
+     + '<button class="btn ghost" style="width:100%;margin-top:14px" onclick="simulate()">'
+     +   '🔮 Čo keby každá pozvala jednu kamošku?</button>'
+     + '<div class="calcout" id="calcCard">'
+     +   '<div id="cMedal" style="margin-bottom:8px"></div>'
+     +   '<b id="cOut">—</b><span id="cSub"></span>'
+     + '</div>'
+     + '<p class="hint" id="cNote" style="text-align:center"></p>'
+     + '<p class="hint">Počítame s priemerným členstvom 75 € mesačne. Skutočná suma závisí od toho, '
+     + 'čo tvoje klientky reálne platia, a je nižšia, ak má niekto v tvojom tíme vlastnú hodnosť.</p></div>';
+
+  // ── koľko sa dá zarobiť na ktorej hodnosti ───────────────────────────────
+  const LAD = d.ladder || [];
+  if(LAD.length){
+    h += '<div class="card"><h2>KOĽKO SA DÁ ZAROBIŤ</h2>'
+       + '<p class="hint" style="margin-top:-4px">Rozsah pre každú hodnosť — od minima, ktoré na ňu treba, '
+       + 'po hranicu, kde postupuješ vyššie. Body sa rátajú z piatich úrovní pod tebou.</p>';
+    h += LAD.map(function(r,i){
+      const next = LAD[i+1];
+      const from = Math.max(r.need, 1) * r.rate;
+      const to   = next ? next.need * r.rate : null;
+      const val  = to ? (eur(from)+' – '+eur(to)) : ('od '+eur(from));
+      const vol  = next ? (ob(r.need)+' – '+ob(next.need)+' b') : (ob(r.need)+'+ b');
+      return '<div class="row"'+(r.current?' style="background:rgba(201,168,76,.10);border-radius:8px;padding-left:8px;padding-right:8px"':'')+' >'
+        + '<span style="display:flex;align-items:center;gap:10px'+(r.current?';color:var(--gold);font-weight:700':'')+'">'
+        +   '<img src="/img/ranks/rank-'+r.rank+'.png" alt="" style="width:40px;height:40px;object-fit:contain;'
+        +     'background:#070707;border-radius:8px;flex:0 0 auto'+(r.done?'':';filter:grayscale(1) brightness(.55)')+'"'
+        +     ' onerror="this.style.visibility=\'hidden\'">'
+        +   '<span>'+esc(r.name)
+        +   '<br><small style="color:var(--muted)">'+vol+' · '+Math.round(r.rate*100)+' %</small></span></span>'
+        + '<b style="white-space:nowrap">'+val+'</b></div>';
+    }).join('');
+    h += '<p class="hint" style="margin-top:12px">Sú to hrubé sumy z celej skupiny. Ak je pod tebou '
+       + 'ambasádorka, ktorá už tiež poberá províziu, tvoja časť je o jej percento nižšia — '
+       + 'preto sa oplatí rásť vyššie, nie len naberať.</p></div>';
+  }
+
+  // ── kredit a výplata ─────────────────────────────────────────────────────
+  // Tréner: jeho provízie z línie sú už súčasťou trénerskej výplaty — tu ich
+  // neukazujeme druhýkrát, len naňho odkážeme. Jedna výplata, jedno miesto.
+  if(d.is_trainer){
+    h += '<div class="card"><h2>MOJA VÝPLATA</h2>'
+       + '<p class="hint" style="margin-top:-4px">Tvoje provízie z línie sú súčasťou '
+       + '<b style="color:#fff">trénerskej výplaty</b> — v rozpise ich nájdeš ako riadok '
+       + '„Affiliate provízie (moja línia)". Všetko sa vypláca spolu, raz mesačne.</p>'
+       + '<a class="btn" style="display:block;text-align:center;text-decoration:none;margin-top:12px" '
+       +   'href="/trainer#earnings">Otvoriť moju výplatu →</a></div>';
+  } else {
+  const credit=+(d.credit||0), pend=+(d.credit_pending||0), avail=credit+pend;
+  h += '<div class="card"><h2>MÔJ KREDIT A VÝPLATA</h2>'
+     + '<div style="text-align:center;margin:2px 0 12px"><b class="big" style="display:block;font-weight:900">'
+     +   eur(avail)+'</b><span class="hint">dostupné</span></div>'
+     + '<div class="row"><span>Pripísaný kredit</span><b>'+eur(credit)+'</b></div>'
+     + (pend? '<div class="row"><span>Čakajúce provízie</span><b>'+eur(pend)+'</b></div>' : '')
+     + '<p class="hint" style="margin-top:12px">Kredit môžeš kedykoľvek použiť v appke — na členstvá, '
+     + 'permanentky, merch, vstupenky na eventy či súkromné hodiny. '
+     + (avail>=100
+        ? 'Alebo si ho nechaj vyplatiť na účet.'
+        : 'Na výplatu na účet potrebuješ aspoň 100 € — teraz máš '+eur(avail)+'.')
+     + '</p>'
+     + (avail>=100
+        ? '<a class="btn" style="display:block;text-align:center;text-decoration:none;margin-top:12px" '
+          +'href="/client-dashboard#struktura">Požiadať o výplatu</a>'
+        : '')
+     + '</div>';
+  }
+
+  // ── zárobky po mesiacoch ────────────────────────────────────────────────
+  if(!d.is_trainer){
+  const E = d.earnings || [];
+  h += '<div class="card"><h2>MOJE ZÁROBKY PO MESIACOCH</h2>';
+  if(!E.length){
+    h += '<p class="hint">Zatiaľ žiadne provízie. Prvá pribudne, keď niekto z tvojej línie zaplatí.</p>';
+  } else {
+    const sum=E.reduce((s,x)=>s+x.earned,0), sumPaid=E.reduce((s,x)=>s+x.paid,0);
+    h += '<div class="row"><span>Spolu zarobené (12 mesiacov)</span><b>'+eur(sum)+'</b></div>'
+       + '<div class="row"><span>Z toho už vyplatené</span><b style="color:#8bc34a">'+eur(sumPaid)+'</b></div>'
+       + '<div style="margin-top:10px">'
+       + E.map(function(m){
+           return '<div class="row"><span>'+esc(m.month)+'</span><b>'+eur(m.earned)
+             + (m.pending? '<br><small style="color:var(--muted);font-weight:600">čaká '+eur(m.pending)+'</small>':'')
+             + '</b></div>'; }).join('')
+       + '</div>';
+  }
+  h += '</div>';
+
+  // ── história výplat ─────────────────────────────────────────────────────
+  const P = d.payouts || [];
+  h += '<div class="card"><h2>HISTÓRIA VÝPLAT</h2>';
+  if(!P.length){
+    h += '<p class="hint">Zatiaľ žiadna výplata. Kredit si môžeš dať vyplatiť od 100 €.</p>';
+  } else {
+    h += P.map(function(p){
+      const st = p.status==='paid'
+        ? '<span class="tag pay">VYPLATENÉ</span>'
+        : '<span class="tag new">ČAKÁ NA SCHVÁLENIE</span>';
+      return '<div class="row"><span>'+esc(p.date)+'<br><small style="color:var(--muted)">'
+        + esc(p.iban||'')+'</small></span><b>'+eur(p.amount)+'<br>'+st+'</b></div>';
+    }).join('');
+  }
+  h += '</div>';
+
+  // ── notifikácie k programu ──────────────────────────────────────────────
+  const N = d.notifications || [];
+  if(N.length){
+    h += '<div class="card"><h2>ČO SA DIALO</h2>'
+       + N.map(function(n){
+           return '<div class="row" style="align-items:flex-start">'
+             + '<span><b style="color:#fff;display:block">'+esc(n.title)+'</b>'
+             +   '<small style="color:var(--muted)">'+esc(n.body)+'</small></span>'
+             + '<b style="color:var(--muted);font-weight:600;white-space:nowrap">'+esc(n.date)+'</b></div>';
+         }).join('')
+       + '</div>';
+  }
+
+  // ── faktúry na stiahnutie ───────────────────────────────────────────────
+  h += '<div class="card"><h2>MOJE FAKTÚRY</h2><div id="invBox"><p class="hint">Načítavam…</p></div></div>';
+
+  }
+  // ── odkaz + QR ───────────────────────────────────────────────────────────
+  h += '<div class="card"><h2>MÔJ ODKAZ</h2>'
+     + '<div class="link" id="lnk">'+esc(d.link)+'</div>'
+     + '<div style="display:flex;gap:8px;margin-top:10px">'
+     +   '<button class="btn" style="flex:1" onclick="copyLink()">Kopírovať</button>'
+     +   '<button class="btn ghost" style="flex:1" onclick="shareLink()">Zdieľať</button></div>'
+     + '<img class="qr" src="/api/qr/invite.png?code='+encodeURIComponent(d.referral_code)+'" alt="QR kód"'
+     +   ' onerror="this.style.display=\'none\'">'
+     + '<p class="hint" style="text-align:center">Ukáž QR kód a kamoška sa zaregistruje pod tebou.</p></div>';
+
+  // ── zdieľanie: hotové materiály ─────────────────────────────────────────
+  h += '<div class="card" id="matCard" style="display:none"><h2>HOTOVÉ TEXTY A GRAFIKA</h2>'
+     + '<p class="hint" style="margin-top:-4px">Skopíruj a pošli — tvoj odkaz je v texte už vložený.</p>'
+     + '<div id="matBox"></div></div>';
+
+  // ── Academy ─────────────────────────────────────────────────────────────
+  h += '<div class="card" id="acadCard" style="display:none"><h2>TIPY, AKO TO ROBIŤ DOBRE</h2>'
+     + '<p class="hint" style="margin-top:-4px">Krátke a k veci. Od hodnosti Leader sa odomknú leadrovské.</p>'
+     + '<div id="acadBox"></div></div>';
+
+  // ── cesta hodností ───────────────────────────────────────────────────────
+  const L=d.ladder||[];
+  if(L.length){
+    h += '<div class="card"><h2>CESTA HODNOSTÍ</h2>'
+       + '<p class="hint" style="margin-top:-4px">Hodnosť sa počíta z objemových bodov, ktoré tvoja skupina '
+       + 'vyrobí za mesiac — nie z počtu ľudí. Kto neplatí a nechodí, body nerobí.</p>';
+    h += L.map(function(r){
+      const cls = r.current ? 'step current' : (r.done ? 'step' : 'step locked');
+      const mark = r.current ? '<span class="mark now">TU SI</span>' : (r.done ? '<span class="mark done">✓</span>' : '');
+      const need = r.done
+        ? (r.current && R.next ? 'Ešte '+ob(R.next.missing)+' '+bodov(R.next.missing)+' '
+            +(R.next.rank===r.rank?'do ďalšej hviezdy':'do postupu') : 'Splnené')
+        : 'Treba '+ob(r.need)+' '+bodov(r.need)+' mesačne — chýba '+ob(r.missing);
+      return '<div class="'+cls+'"><div class="thumb"><img src="/img/ranks/rank-'+r.rank+'.png" alt=""'
+        + ' onerror="this.style.visibility=\'hidden\'"></div>'
+        + '<div class="t"><b>'+esc(r.name)+' · '+Math.round(r.rate*100)+' %</b>'
+        +   '<div class="need">'+need+'</div>'
+        +   '<div class="perk">🎁 '+esc(r.perk)+'</div></div>'+mark+'</div>';
+    }).join('');
+    h += '</div>';
+  }
+
+  // ── moje klientky ────────────────────────────────────────────────────────
+  h += '<div class="card"><h2>MOJE KLIENTKY</h2>';
+  if(d.clients.length){
+    const f=[['','Všetky'],['pay','Platia členstvo'],['pass','Majú vstupy'],
+             ['none','Bez ničoho'],['gone','Dlho neboli']];
+    h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:-4px 0 10px">'
+      + f.map(function(x){
+          return '<button class="btn '+(CFILTER===x[0]?'':'ghost')+'" style="padding:6px 11px;font-size:.78rem"'
+            +' onclick="CFILTER=&quot;'+x[0]+'&quot;;render()">'+x[1]+'</button>'; }).join('')
+      + '</div>';
+  }
+  if(!d.clients.length){
+    h += '<p class="hint">Zatiaľ žiadne. Pošli svoj odkaz prvej kamoške.</p>';
+  } else {
+    // Poradie: kto potrebuje pozornosť hore. Najprv dlho nebola, potom bez ničoho,
+    // potom permanentky a nakoniec spokojné platiace členky.
+    const val=function(c){
+      if(c.days_since!=null && c.days_since>30) return 0;
+      if(!c.membership_active && !c.entries)    return 1;
+      if(!c.membership_active && c.entries)     return 2;
+      return 3;
+    };
+    let sorted=d.clients.slice().sort(function(a,b){
+      return (val(a)-val(b)) || (b.visits-a.visits);
+    });
+    if(CFILTER==='pay')  sorted=sorted.filter(c=>c.membership_active);
+    if(CFILTER==='pass') sorted=sorted.filter(c=>!c.membership_active && c.entries>0);
+    if(CFILTER==='none') sorted=sorted.filter(c=>!c.membership_active && !c.entries);
+    if(CFILTER==='gone') sorted=sorted.filter(c=>c.days_since!=null && c.days_since>30);
+    if(!sorted.length) h += '<p class="hint">V tomto filtri nikto nie je.</p>';
+    h += sorted.map(function(c,i){
+      const gone = c.days_since!=null && c.days_since>30;
+      const tag = gone ? '<span class="tag gone">NEBOLA '+c.days_since+' DNÍ</span>'
+        : (c.membership_active ? '<span class="tag pay">ČLENSTVO</span>'
+          : (c.entries ? '<span class="tag act">PERMANENTKA</span>'
+            : (c.days_since==null && c.active ? '<span class="tag new">NEVIEME KEDY</span>'
+              : (c.active ? '<span class="tag new">BEZ ČLENSTVA</span>'
+                : '<span class="tag new">EŠTE NEPRIŠLA</span>'))));
+      const stav = c.membership_name ? ('🏅 '+c.membership_name+(c.membership_until?' do '+c.membership_until:''))
+        : (c.entries ? ('🎫 '+c.entries+' '+(c.entries===1?'vstup':(c.entries<=4?'vstupy':'vstupov'))+' na permanentke')
+          : '⚪ bez členstva aj vstupov');
+      const sub = stav + '<br>' + (c.visits? (c.visits+' návštev') : 'zatiaľ bez návštevy')
+        + (c.last_visit ? ' · naposledy '+c.last_visit : '');
+      return '<button class="cli" onclick="openCli('+i+')"><div class="n"><b>'+esc(c.name)+'</b>'
+        + '<small'+(gone?' class="warn"':'')+'>'+sub+'</small></div>'+tag
+        + '<span style="color:var(--gold);font-weight:800">›</span></button>';
+    }).join('');
+    window._sorted = sorted;
+  }
+  h += '</div>';
+
+
+  h += '<p class="hint" style="text-align:center">Presné sumy provízií doladíme na školení.</p>';
+  document.getElementById('app').innerHTML = h;
+  calc();
+  loadInvoices();
+  loadTasks(); loadLeaderboard(); loadMaterials(); loadAcademy();
+}
+
+async function loadTasks(){
+  try{
+    const d=await (await fetch('/api/ambassador/tasks',{credentials:'include'})).json();
+    if(!d.ok||!d.tasks.length) return;
+    document.getElementById('tasksBox').innerHTML=d.tasks.map(function(t){
+      return '<div class="row" style="align-items:flex-start"><span style="font-size:1.1rem;flex:0 0 auto">'+t.icon+'</span>'
+        + '<span style="flex:1;text-align:left;color:#ddd6c6">'+esc(t.text)+'</span></div>'; }).join('');
+    document.getElementById('tasksCard').style.display='block';
+  }catch(e){}
+}
+
+async function loadLeaderboard(){
+  try{
+    const d=await (await fetch('/api/ambassador/leaderboard',{credentials:'include'})).json();
+    if(!d.ok) return;
+    const box=document.getElementById('lbBox');
+    if(!d.top.length){ box.innerHTML='<p class="hint">Tento mesiac ešte nikto nemá body — buď prvá!</p>'; }
+    else{
+      box.innerHTML=d.top.map(function(r){
+        const me=r.id===d.me_id;
+        return '<div class="row"'+(me?' style="background:rgba(201,168,76,.10);border-radius:8px;padding-left:8px;padding-right:8px"':'')+'>'
+          +'<span style="display:flex;align-items:center;gap:10px'+(me?';color:var(--gold);font-weight:700':'')+'">'
+          +'<b style="min-width:22px;color:'+(r.pos<=3?'var(--gold)':'var(--muted)')+'">'+r.pos+'.</b>'
+          +'<img src="/img/ranks/rank-'+(r.rank||1)+'.png" alt="" style="width:32px;height:32px;object-fit:contain;background:#070707;border-radius:7px" onerror="this.style.visibility=\'hidden\'">'
+          +'<span>'+esc(r.name)+(me?' (ty)':'')+'<br><small style="color:var(--muted)">'+esc(r.rank_name||'')+'</small></span></span>'
+          +'<b>'+ob(r.ob)+' b</b></div>';
+      }).join('');
+      const mine=d.positions[d.me_id];
+      if(mine && mine.pos>10) box.innerHTML+='<p class="hint" style="text-align:center;margin-top:10px">Ty si '+mine.pos+'. z '+d.total+' — '+ob(mine.ob)+' bodov.</p>';
+    }
+    document.getElementById('lbCard').style.display='block';
+  }catch(e){}
+}
+
+async function loadMaterials(){
+  try{
+    const d=await (await fetch('/api/ambassador/materials',{credentials:'include'})).json();
+    if(!d.ok) return;
+    window._mats=d.materials;
+    document.getElementById('matBox').innerHTML=d.materials.map(function(m,i){
+      if(m.kind==='image')
+        return '<div class="row"><span>🖼️ '+esc(m.name)+'</span>'
+          +'<a class="btn ghost" style="padding:8px 14px;font-size:.82rem;text-decoration:none" href="'+esc(m.url)+'" target="_blank" rel="noopener">Otvoriť</a></div>';
+      return '<div class="row" style="align-items:flex-start"><span style="flex:1;text-align:left">'
+        +'<b style="color:#fff;display:block">'+esc(m.name)+'</b>'
+        +'<small style="color:var(--muted)">'+esc(m.text.slice(0,90))+'…</small></span>'
+        +'<button class="btn ghost" style="padding:8px 14px;font-size:.82rem" onclick="copyMat('+i+')">Kopírovať</button></div>';
+    }).join('');
+    document.getElementById('matCard').style.display='block';
+  }catch(e){}
+}
+function copyMat(i){
+  const m=(window._mats||[])[i]; if(!m) return;
+  navigator.clipboard.writeText(m.text).then(()=>alert('Skopírované — môžeš poslať.'),()=>prompt('Skopíruj text:', m.text));
+}
+
+async function loadAcademy(){
+  try{
+    const d=await (await fetch('/api/ambassador/academy',{credentials:'include'})).json();
+    if(!d.ok) return;
+    window._acad=d.courses;
+    renderAcademy();
+    document.getElementById('acadCard').style.display='block';
+  }catch(e){}
+}
+function renderAcademy(){
+  const cs=window._acad||[];
+  const doneN=cs.filter(c=>c.done).length;
+  document.getElementById('acadBox').innerHTML =
+    '<p class="hint" style="margin-top:0">Prečítané: <b style="color:var(--gold)">'+doneN+' / '+cs.length+'</b></p>'
+    + cs.map(function(c,i){
+      if(c.locked)
+        return '<div class="row" style="opacity:.55"><span>🔒 '+esc(c.name)+'</span>'
+          +'<small style="color:var(--muted)">od hodnosti Leader</small></div>';
+      return '<div style="border-top:1px solid rgba(255,255,255,.06);padding:10px 0">'
+        +'<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;cursor:pointer" onclick="toggleLesson('+i+')">'
+        +'<b style="color:'+(c.done?'#8bc34a':'#fff')+'">'+(c.done?'✅ ':'📖 ')+esc(c.name)+'</b>'
+        +'<span style="color:var(--gold)">›</span></div>'
+        +'<div id="les'+i+'" style="display:none;margin-top:8px">'
+        +'<p class="hint" style="margin:0">'+esc(c.body||'')+'</p>'
+        +'<button class="btn ghost" style="width:100%;margin-top:10px;padding:9px" onclick="doneLesson(\''+c.id+'\')">'
+        +(c.done?'Označiť ako neprečítané':'✓ Prečítala som')+'</button></div></div>';
+    }).join('');
+}
+function toggleLesson(i){
+  const el=document.getElementById('les'+i);
+  el.style.display = el.style.display==='none' ? 'block' : 'none';
+}
+async function doneLesson(id){
+  await fetch('/api/ambassador/academy/'+id+'/done',{method:'POST',credentials:'include'});
+  const d=await (await fetch('/api/ambassador/academy',{credentials:'include'})).json();
+  if(d.ok){ window._acad=d.courses; renderAcademy(); }
+}
+
+// Faktúry z archívu — otvoria sa v prehliadači a dajú sa uložiť ako PDF (tlač).
+async function loadInvoices(){
+  const box=document.getElementById('invBox'); if(!box) return;
+  try{
+    const list=await (await fetch('/api/my-invoices',{credentials:'include'})).json();
+    if(!Array.isArray(list) || !list.length){
+      box.innerHTML='<p class="hint">Zatiaľ žiadne faktúry. Vystavia sa automaticky pri každom nákupe aj výplate.</p>';
+      return;
+    }
+    box.innerHTML = list.slice(0,20).map(function(f){
+      const paid = f.status==='paid';
+      return '<a class="row" style="text-decoration:none;color:inherit" href="/invoice/'
+        + encodeURIComponent(f.number)+'" target="_blank" rel="noopener">'
+        + '<span><b style="color:#fff;display:block">'+esc(f.number)+'</b>'
+        +   '<small style="color:var(--muted)">'+esc(String(f.issued_at||f.created_at||'').slice(0,10))+'</small></span>'
+        + '<b style="white-space:nowrap">'+eur(+f.total||0)+' '
+        +   (paid ? '<span class="tag pay">UHRADENÁ</span>' : '<span class="tag new">NEUHRADENÁ</span>')
+        + ' &#11015;</b></a>';
+    }).join('');
+  }catch(e){ box.innerHTML='<p class="hint">Faktúry sa nepodarilo načítať.</p>'; }
+}
+
+function toggleRules(){
+  const el=document.getElementById('rules');
+  el.style.display = el.style.display==='none' ? 'block' : 'none';
+}
+
+// ── kalkulačka: hodnosť × počet klientok × priemerná platba ───────────────
+function calc(){
+  const el=document.getElementById('cCount'); if(!el) return;
+  const AVG=75;                                        // priemerné členstvo
+  const mine=+el.value||0;
+  const team=+document.getElementById('cTeam').value||0;
+  const groupVol=(mine+team)*AVG;
+
+  // hodnosť vyplýva z bodov
+  const LADS=(D.ladder||[]).slice().sort((a,b)=>a.need-b.need);
+  let me=null;
+  for(const x of LADS) if(groupVol>=x.need) me=x;
+  const rate=me?me.rate:LADS[0].rate;
+
+  const income=groupVol*rate;
+  document.getElementById('cOut').textContent=eur(income)+' / mesiac';
+  document.getElementById('cSub').textContent=(mine+team)+' '+zien(mine+team)
+    +' × 75 € = '+ob(groupVol)+' bodov · sadzba '+Math.round(rate*100)+' %';
+
+  // medaila k dosiahnutej hodnosti
+  const medal=document.getElementById('cMedal');
+  if(medal){
+    medal.innerHTML = me
+      ? '<img src="/img/ranks/rank-'+me.rank+'.png" alt="" style="width:72px;height:72px;object-fit:contain;'
+        +'background:#070707;border-radius:12px" onerror="this.style.display=\'none\'">'
+        +'<div style="color:#F0DFA8;font-weight:900;letter-spacing:.06em;margin-top:4px">'+esc(me.name).toUpperCase()+'</div>'
+      : '<div style="color:var(--muted);font-size:.85rem">zatiaľ bez hodnosti</div>';
+  }
+
+  const nextRank=LADS.find(x=>x.need>groupVol);
+  document.getElementById('cNote').innerHTML = !me
+    ? 'Na prvú hodnosť stačí, aby jedna žena čokoľvek zaplatila.'
+    : (nextRank
+        ? 'Na hodnosť <b style="color:var(--gold)">'+esc(nextRank.name)+'</b> ('+Math.round(nextRank.rate*100)
+          +' %) chýba ešte '+ob(nextRank.need-groupVol)+' bodov — to je asi '
+          +Math.ceil((nextRank.need-groupVol)/AVG)+' platiacich žien navyše.'
+        : 'Najvyššia hodnosť — vyššie sa už ísť nedá. 👑');
+}
+
+// Simulácia: každá žena v skupine privedie jednu kamošku.
+function simulate(){
+  const mine=+document.getElementById('cCount').value||10;
+  document.getElementById('cCount').value=mine;
+  const team=+document.getElementById('cTeam').value||0;
+  document.getElementById('cTeam').value=team+mine+team;   // každá doterajšia pozve jednu
+  calc();
+}
+
+// ── detail klientky + kontakt ─────────────────────────────────────────────
+function openCli(i){
+  const c=(window._sorted||[])[i]; if(!c) return;
+  const tel=String(c.phone||'').replace(/[^\d+]/g,'');
+  const wa=tel.replace(/^0/,'421').replace(/\+/,'');
+  const gone = c.days_since!=null && c.days_since>30;
+  const m=document.createElement('div');
+  m.className='modal';
+  m.onclick=e=>{ if(e.target===m) m.remove(); };
+  m.innerHTML='<div class="sheet">'
+    + '<h3>'+esc(c.name)+'</h3>'
+    + '<p class="hint" style="margin:0">'+(c.visits?c.visits+' návštev':'zatiaľ bez návštevy')
+    +   (c.last_visit?' · naposledy '+c.last_visit:'')+'</p>'
+    + (gone ? '<p style="color:#ff9f43;font-weight:700;margin:10px 0 0">⚠ Nebola '+c.days_since+' dní — ozvi sa jej.</p>' : '')
+    + '<p class="hint" style="margin:6px 0 0">'
+    +   (c.membership_name ? '🏅 '+esc(c.membership_name)+(c.membership_until?' — platí do '+esc(c.membership_until):'')
+        : (c.entries ? '🎫 Permanentka: zostáva '+c.entries+' '+(c.entries===1?'vstup':(c.entries<=4?'vstupy':'vstupov'))
+          : '⚪ Bez členstva aj bez vstupov — toto je príležitosť.'))
+    + '</p>'
+    + '<div class="acts">'
+    +   (tel ? '<a class="pri" href="tel:'+esc(tel)+'">📞 Zavolať</a>' : '')
+    +   (tel ? '<a href="sms:'+esc(tel)+'">💬 SMS</a>' : '')
+    +   (tel ? '<a href="https://wa.me/'+esc(wa)+'" target="_blank" rel="noopener">🟢 WhatsApp</a>' : '')
+    +   '<a href="/community?to='+encodeURIComponent(c.id)+'">✉️ Správa v appke</a>'
+    + '</div>'
+    + '<a href="/u/'+encodeURIComponent(c.id)+'" style="display:block;text-align:center;text-decoration:none;'
+    +   'margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:12px;color:var(--gold);font-weight:700">'
+    +   '👤 Otvoriť jej profil</a>'
+    + (tel ? '' : '<p class="hint" style="margin-top:10px">Nemá vyplnené telefónne číslo — napíš jej v appke.</p>')
+    + '<button class="btn ghost" style="width:100%;margin-top:14px" onclick="this.closest(\'.modal\').remove()">Zavrieť</button>'
+    + '</div>';
+  document.body.appendChild(m);
+}
+
+function copyLink(){
+  const t=document.getElementById('lnk').textContent;
+  navigator.clipboard.writeText(t).then(()=>alert('Odkaz skopírovaný:\n'+t),()=>prompt('Skopíruj odkaz:',t));
+}
+function shareLink(){
+  const t=document.getElementById('lnk').textContent;
+  if(navigator.share) navigator.share({title:'Fusion Academy', text:'Poď si so mnou zatancovať 💃', url:t}).catch(()=>{});
+  else copyLink();
+}
+load();
+</script>
+</body>
+</html>

@@ -210,6 +210,24 @@ async function closeScan(){
   paused=false; startShow();
 }
 async function onScan(txt){
+  // Vstupenka na event? QR vedie na /t/KOD — rozpoznáme a spravíme check-in vstupenky.
+  const m=String(txt||'').match(/\/t\/([A-Z0-9]{6,})/i);
+  if(m){
+    if(scanBusy) return; scanBusy=true;
+    $('scanMsg').textContent='⏳ Overujem vstupenku…';
+    try{
+      const r=await fetch('/api/tickets/'+m[1].toUpperCase()+'/checkin?k='+encodeURIComponent(KEY),
+        {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({place:SLUG})});
+      const d=await r.json();
+      const t=d.ticket||{};
+      $('scanMsg').innerHTML='<div style="font-weight:900;font-size:1.4em;color:'+(d.ok?'#8bc34a':'#ff8a80')+'">'+(d.message||'')+'</div>'
+        +(t.holder_name?'<div style="margin-top:6px">'+t.holder_name+' · '+(t.type_name||'')+'</div>':'')
+        +(t.checked_in_at?'<div style="opacity:.7;font-size:.9em">Prvý vstup: '+String(t.checked_in_at).slice(11,16)+'</div>':'');
+      setTimeout(()=>{scanBusy=false; $('scanMsg').textContent='Ukáž kamere svoj QR kód z appky 📱';}, 4500);
+    }catch(e){ $('scanMsg').textContent='⚠️ Chyba spojenia — skús znova.'; scanBusy=false; }
+    return;
+  }
+
   if(scanBusy) return; scanBusy=true;
   $('scanMsg').textContent='⏳ Overujem…';
   try{

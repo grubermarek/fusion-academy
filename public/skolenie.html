@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ambasádorské školenie – Fusion Academy</title>
+<link rel="icon" type="image/png" href="/logo-mark.png">
+<style>
+:root{--gold:#C9A84C;--cream:#EAE3D5;--muted:#9d9788;--card:#1a1712;--line:#2e2a20}
+*{box-sizing:border-box}
+body{background:#12100a;color:var(--cream);font-family:'Inter',system-ui,sans-serif;margin:0;padding:0 0 60px}
+.topbar{position:sticky;top:0;z-index:30;background:rgba(12,10,6,.96);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--line);height:52px;display:flex;align-items:center;padding:0 12px}
+.topbar button{background:none;border:none;color:var(--cream);font-size:.95rem;font-weight:700;cursor:pointer;padding:8px 10px}
+.wrap{max-width:620px;margin:0 auto;padding:20px 16px}
+h1{font-size:1.55rem;line-height:1.25;margin:14px 0 6px}
+.eyebrow{color:var(--gold);font-size:.78rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+.lead{color:#ddd6c6;line-height:1.75;font-size:1.02rem}
+.meta{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:18px 0;
+  color:#ddd6c6;line-height:1.9}
+.meta b{color:#fff}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin:16px 0}
+.card h2{font-size:1.05rem;margin:0 0 10px;color:#fff}
+ul{list-style:none;padding:0;margin:0}
+ul li{padding:7px 0 7px 24px;position:relative;color:#ddd6c6;line-height:1.6}
+ul li::before{content:'✓';position:absolute;left:0;color:var(--gold);font-weight:800}
+label{display:block;font-size:.85rem;color:#cfc7b6;font-weight:600;margin:12px 0 0}
+input,textarea{width:100%;margin-top:6px;padding:12px 14px;background:#0f0d08;border:1px solid var(--line);
+  border-radius:10px;color:#fff;font-family:inherit;font-size:1rem}
+input:focus,textarea:focus{outline:none;border-color:var(--gold)}
+.btn{width:100%;background:linear-gradient(135deg,#e0be5c,#b8912f);color:#191408;border:none;border-radius:12px;
+  padding:15px;font-weight:800;font-size:1rem;cursor:pointer;margin-top:16px}
+.btn:disabled{opacity:.5}
+.msg{margin-top:12px;font-weight:700;min-height:1.2em}
+.msg.err{color:#ff8a80}
+.hint{color:var(--muted);font-size:.82rem;line-height:1.6;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="topbar"><button onclick="history.length>1?history.back():location.href='/client-dashboard'">← Späť</button></div>
+<div class="wrap">
+  <div class="eyebrow">Ambasádorský program</div>
+  <h1>Chceš robiť tento svet zdravším miestom?</h1>
+  <p class="lead">Ambasádorka Fusion Academy nie je predajkyňa. Je to žena, ktorá pomáha ďalším
+  objaviť tanec, buduje komunitu vo svojom meste — a za svoju prácu dostáva podiel.
+  Vstupné školenie vedieme spolu s Beátkou a je podmienkou, aby sa ti ambasádorská sekcia odomkla.</p>
+
+  <div class="meta">
+    📅 <b>28. augusta 2026 · 16:00</b><br>
+    📍 <b>Fusion Academy Detva</b>, Záhradná 7<br>
+    👥 Vedú <b>Marek Gruber</b> a <b>Beáta Gruber Buňová</b><br>
+    💶 <b>15 €</b> — v cene školenie, tréning, občerstvenie aj nápoje
+  </div>
+
+  <div class="card">
+    <h2>Čo sa na školení dozvieš</h2>
+    <ul>
+      <li>Ako funguje ambasádorský program a z čoho sa počíta odmena</li>
+      <li>Ako pracovať s vlastným odkazom a QR kódom</li>
+      <li>Ako hovoriť o Fusion Academy bez tlaku a bez presviedčania</li>
+      <li>Ako sa starať o klientky, aby ostali — nie len prišli</li>
+      <li>Ako si vybudovať komunitu vo svojom meste</li>
+      <li>Kariérny rebríček, hodnosti a čo sa dá získať</li>
+      <li>Spoločný tréning, občerstvenie a nápoje</li>
+    </ul>
+  </div>
+
+  <div class="card" style="border-color:rgba(201,168,76,.5)">
+    <h2>Prihlásiť sa — 15 €</h2>
+    <p class="hint" style="margin-top:0">Zaplať kartou v aplikácii a miesto máš isté.
+    Príde ti vstupenka s QR kódom, ktorý ukážeš pri príchode.</p>
+    <a class="btn" style="display:block;text-align:center;text-decoration:none;line-height:1.2"
+       href="/event/skolenie-ambasador-2026?src=app">Kúpiť miesto na školení →</a>
+    <p class="hint">Platiť môžeš aj <b>v hotovosti priamo nám</b> — vtedy nám daj vedieť
+    na <a href="tel:+421904315151" style="color:var(--gold)">0904 31 51 51</a>, zapíšeme ťa ručne.</p>
+  </div>
+
+  <div class="card" id="form">
+    <h2>Chceš sa najprv opýtať?</h2>
+    <p class="hint">Nechaj kontakt a ozveme sa ti — bez záväzku.</p>
+    <label>Meno a priezvisko *<input id="fName" autocomplete="name"></label>
+    <label>Telefón *<input id="fPhone" type="tel" autocomplete="tel"></label>
+    <label>E-mail<input id="fMail" type="email" autocomplete="email"></label>
+    <label>Mesto<input id="fCity" placeholder="Detva / Zvolen / B. Bystrica / Brezno"></label>
+    <label>Prečo to chceš robiť? <textarea id="fNote" rows="3" placeholder="Nepovinné"></textarea></label>
+    <button class="btn" id="btn" onclick="send()" style="background:#221d14;color:var(--cream);border:1px solid var(--line)">Ozvite sa mi</button>
+    <div class="msg" id="msg"></div>
+  </div>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+async function send(){
+  const msg=document.getElementById('msg'), btn=document.getElementById('btn');
+  msg.className='msg'; msg.textContent='';
+  const name=document.getElementById('fName').value.trim();
+  const phone=document.getElementById('fPhone').value.trim();
+  if(!name||!phone){ msg.className='msg err'; msg.textContent='Vyplň meno a telefón.'; return; }
+  btn.disabled=true; btn.textContent='Odosielam…';
+  try{
+    const r=await fetch('/api/public/ambassador-training',{method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name, phone, email:document.getElementById('fMail').value.trim(),
+        city:document.getElementById('fCity').value.trim(), note:document.getElementById('fNote').value.trim()})});
+    const j=await r.json();
+    if(!r.ok||j.error) throw new Error(j.error||'Nepodarilo sa odoslať.');
+    document.getElementById('form').innerHTML='<div style="text-align:center;padding:20px 0">'
+      +'<div style="font-size:2.4rem">🔥</div><h2 style="margin:10px 0">Sme dohodnutí!</h2>'
+      +'<p style="color:#c3c3c3;line-height:1.7">Ozveme sa ti s presným časom a miestom. '
+      +'Ak to súri, zavolaj na <a href="tel:+421904315151" style="color:#C9A84C">0904 31 51 51</a>.</p></div>';
+  }catch(e){
+    msg.className='msg err'; msg.textContent=e.message;
+    btn.disabled=false; btn.textContent='Ozvite sa mi';
+  }
+}
+</script>
+</body>
+</html>

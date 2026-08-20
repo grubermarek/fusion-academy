@@ -133,6 +133,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('privatehours')"><i class="bi bi-person-heart me-2"></i>Súkromné hodiny 🎭</a>
       <a class="nav-link" href="#" onclick="show('kiosk')"><i class="bi bi-display me-2"></i>Kiosk / Recepcia</a>
       <a class="nav-link" href="#" onclick="show('venceky')"><i class="bi bi-mortarboard me-2"></i><span style="color:#C9A84C;font-weight:700">Venčeky</span></a>
+      <a class="nav-link" href="#" onclick="show('eventy')"><i class="bi bi-ticket-perforated me-2"></i><span style="color:#C9A84C;font-weight:700">Eventy &amp; vstupenky</span></a>
       <a class="nav-link" href="/jedalnicek" target="_blank"><i class="bi bi-egg-fried me-2"></i>Generátor jedálničkov <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></a>
       <a class="nav-link" href="#" onclick="show('products')"><i class="bi bi-box-seam me-2"></i>Produkty & objednávky <span id="pendingBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('rentals')"><i class="bi bi-building me-2"></i>Prenájmy</a>
@@ -983,6 +984,29 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   </div>
 
   <!-- VENČEKY -->
+  <div class="section" id="s-eventy" style="max-width:1200px">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <h4 class="fw-bold mb-0">🎟️ Eventy &amp; vstupenky</h4>
+        <select id="evPicker" class="form-select form-select-sm bg-dark text-light border-secondary"
+                style="width:auto" onchange="EV_SLUG=this.value; loadEventy()"></select>
+      </div>
+      <div class="d-flex gap-2">
+        <a class="btn btn-sm btn-outline-warning" id="evCsv" href="#" target="_blank">⬇ Export CSV</a>
+        <button class="btn btn-sm btn-success" onclick="evScanOpen()">📷 Skenovať QR</button>
+        <button class="btn btn-sm btn-warning" onclick="evOnsiteOpen()">+ Predaj na mieste</button>
+      </div>
+    </div>
+    <div id="evStats" class="row g-2 mb-3"></div>
+    <div id="evAff" class="mb-3"></div>
+    <div id="evTables" class="mb-3"></div>
+    <div class="d-flex gap-2 flex-wrap mb-2" id="evFilters"></div>
+    <div class="table-responsive"><table class="table table-dark table-sm align-middle">
+      <thead><tr><th>Meno</th><th>Kontakt</th><th>Typ</th><th>Cena</th><th>Zdroj</th><th>Partner</th><th>Platba</th><th>Check-in</th><th>Kód</th></tr></thead>
+      <tbody id="evRows"><tr><td colspan="9" class="text-muted">Načítavam…</td></tr></tbody>
+    </table></div>
+  </div>
+
   <div class="section" id="s-venceky" style="max-width:1100px">
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <div><h4 class="fw-bold mb-0">🎓 Venčeky</h4>
@@ -1796,10 +1820,339 @@ function showToast(msg,type='success'){
 }
 
 const GROUP_TITLES={manage:'Správa',marketing:'Marketing',reports:'Financie & reporty',partners:'Partneri (MLM)'};
+// ── Eventy & vstupenky ──────────────────────────────────────────────────────
+let EV_SLUG='latin-tropical-2026';
+let evFilter='';
+let _evList=null;
+async function loadEventy(){
+  // Prepínač eventov — naplní sa raz, potom si pamätá výber.
+  if(!_evList){
+    try{
+      const d=await (await fetch('/api/admin/events')).json();
+      _evList=d.events||[];
+      if(_evList.length && !_evList.some(e=>e.slug===EV_SLUG)) EV_SLUG=_evList[0].slug;
+    }catch(e){ _evList=[]; }
+  }
+  const pick=document.getElementById('evPicker');
+  if(pick && _evList.length){
+    pick.innerHTML=_evList.map(e=>'<option value="'+e.slug+'"'+(e.slug===EV_SLUG?' selected':'')+'>'
+      +e.name+' — '+(e.date_label||e.date||'')+'</option>').join('');
+  }
+  EV_PRICES=null;   // ceny sa načítajú pre zvolený event
+  document.getElementById('evCsv').href='/api/admin/events/'+EV_SLUG+'/export.csv';
+  try{
+    const st=await (await fetch('/api/admin/events/'+EV_SLUG+'/stats')).json();
+    if(!st.ok) throw new Error(st.error||'Chyba');
+    const box=(label,val,sub,color)=>'<div class="col-6 col-md-3"><div class="card bg-dark border-secondary h-100"><div class="card-body py-2 px-3">'
+      +'<div class="small text-muted">'+label+'</div><div class="fw-bold" style="font-size:1.25rem;color:'+(color||'#fff')+'">'+val+'</div>'
+      +(sub?'<div class="small text-muted">'+sub+'</div>':'')+'</div></div></div>';
+    const types=Object.keys(st.per_type||{});
+    let html='';
+    types.forEach(function(k){
+      const x=st.per_type[k];
+      html += box(x.name, (x.sold||0)+' ks',
+        (x.revenue||0).toFixed(2)+' € · prišlo '+(x.checked_in||0)
+        + (x.capacity!=null ? (' · zostáva '+x.left) : ''), '#C9A84C');
+    });
+    html += box('Celková tržba', (st.total_revenue||0).toFixed(2)+' €',
+      st.total_sold+' vstupeniek · '+st.checked_in+' prišlo', '#8bc34a');
+    document.getElementById('evStats').innerHTML = html;
+    const affBox=document.getElementById('evAff');
+    affBox.innerHTML = (st.affiliates||[]).map(function(a){
+      return '<div class="card bg-dark border-warning mb-2"><div class="card-body py-2 px-3">'
+        +'<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">'
+        +'<div class="fw-bold" style="color:#C9A84C">🤝 '+a.name+' — provízia '+Math.round(a.rate*100)+' %</div>'
+        +'<div class="d-flex gap-2">'
+        +'<button class="btn btn-sm btn-outline-secondary" onclick="evAffCopy(&quot;'+a.link+'&quot;)">📋 Kopírovať odkaz</button>'
+        +'<button class="btn btn-sm btn-outline-warning" onclick="evFilter=&quot;aff:'+a.code+'&quot;;loadEventy()">Zobraziť jeho predaje</button>'
+        +'<button class="btn btn-sm btn-success" onclick="evAffPayout(&quot;'+a.code+'&quot;,'+a.to_pay+')"'+(a.to_pay>0?'':' disabled')+'>💶 Označiť za vyplatené</button>'
+        +'</div></div>'
+        +'<div class="small text-muted mt-1" style="word-break:break-all">'+a.link+'</div>'
+        +'<div class="row g-2 mt-1">'
+        +'<div class="col-6 col-md-3"><div class="small text-muted">Predaných vstupeniek</div><div class="fw-bold" style="font-size:1.15rem">'+a.sold+'</div></div>'
+        +'<div class="col-6 col-md-3"><div class="small text-muted">Tržba cez neho</div><div class="fw-bold" style="font-size:1.15rem">'+a.revenue.toFixed(2)+' \u20AC</div></div>'
+        +'<div class="col-6 col-md-3"><div class="small text-muted">Na výplatu</div><div class="fw-bold" style="font-size:1.15rem;color:'+(a.to_pay>0?'#ff9f43':'#8bc34a')+'">'+a.to_pay.toFixed(2)+' \u20AC</div><div class="small text-muted">'+a.unpaid_tickets+' nevyplatených</div></div>'
+        +'<div class="col-6 col-md-3"><div class="small text-muted">Už vyplatené</div><div class="fw-bold" style="font-size:1.15rem;color:#8bc34a">'+a.paid_out.toFixed(2)+' \u20AC</div></div>'
+        +'</div></div></div>';
+    }).join('');
+
+    const t=st.tables;
+    if(!(t.reserved+t.free)){ document.getElementById('evTables').innerHTML=''; }
+    else document.getElementById('evTables').innerHTML =
+      '<div class="card bg-dark border-secondary"><div class="card-body py-2 px-3">'
+      +'<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">'
+      +'<div class="fw-bold" style="color:#C9A84C">Rezervácie stolov — '+t.reserved+' z '+(t.reserved+t.free)+' (voľné '+t.free+', spolu '+t.persons+' osôb)</div>'
+      +'<button class="btn btn-sm btn-outline-warning" onclick="evTableOpen()">+ Zapísať rezerváciu (telefón)</button></div>'
+      +(t.list.length ? '<div class="table-responsive"><table class="table table-dark table-sm mb-0"><thead><tr><th>Meno</th><th>Telefón</th><th>E-mail</th><th>Osôb</th><th>Vstupeniek</th><th>Zdroj</th><th>Kedy</th><th></th></tr></thead><tbody>'
+          + t.list.map(r=>'<tr><td>'+r.name+'</td><td>'+(r.phone||'—')+'</td><td>'+(r.email||'—')+'</td><td>'+r.persons+'</td><td>'+r.tickets+'</td><td>'+(r.source||'').toUpperCase()+'</td><td>'+String(r.created_at||'').slice(0,16).replace('T',' ')+'</td>'
+              +'<td><button class="btn btn-sm btn-outline-danger py-0 px-2" onclick="evTableCancel(&quot;'+r.id+'&quot;)">Zrušiť</button></td></tr>').join('')
+          + '</tbody></table></div>' : '<div class="small text-muted">Zatiaľ žiadne rezervácie.</div>')
+      +'</div></div>';
+    const fl=[['','Všetci']]
+      .concat(Object.keys(st.per_type||{}).map(k=>[k, st.per_type[k].name]))
+      .concat([['in','Prišli'],['out','Neprišli']])
+      .concat((st.affiliates||[]).map(a=>['aff:'+a.code, a.name]));
+    document.getElementById('evFilters').innerHTML = fl.map(function(x){
+      return '<button class="btn btn-sm '+(evFilter===x[0]?'btn-warning':'btn-outline-secondary')+'" onclick="evFilter=&quot;'+x[0]+'&quot;;loadEventy()">'+x[1]+'</button>'; }).join('');
+  }catch(e){ document.getElementById('evStats').innerHTML='<div class="text-danger small">'+e.message+'</div>'; }
+
+  try{
+    const d=await (await fetch('/api/admin/events/'+EV_SLUG+'/attendees'+(evFilter?('?filter='+evFilter):''))).json();
+    document.getElementById('evRows').innerHTML = d.attendees.length ? d.attendees.map(a=>
+      '<tr><td>'+a.name+'</td><td class="small text-muted">'+(a.email||'—')+'<br>'+(a.phone||'')+'</td>'
+      +'<td>'+a.type_name+'</td><td>'+(+a.price).toFixed(2)+' €</td>'
+      +'<td><span class="badge bg-secondary">'+(a.source||'').toUpperCase()+'</span></td>'
+      +'<td>'+(a.aff_code?('<span class="badge bg-warning text-dark">'+a.aff_code+'</span>'
+              +(a.aff_commission?'<div class="small text-muted">'+(+a.aff_commission).toFixed(2)+' \u20AC'+(a.aff_paid_out?' ✔':'')+'</div>':'')):'<span class="text-muted small">—</span>')+'</td>'
+      +'<td>'+(a.paid?'<span class="badge bg-success">Zaplatené</span>':'<span class="badge bg-danger">Nezaplatené</span>')+'</td>'
+      +'<td>'+(a.status==='used'?'<span class="badge bg-warning text-dark">'+String(a.checked_in_at||'').slice(11,16)+'</span>':'<span class="text-muted small">—</span>')+'</td>'
+      +'<td class="small text-muted">'+a.code+'</td></tr>').join('')
+      : '<tr><td colspan="9" class="text-muted">Zatiaľ žiadne vstupenky.</td></tr>';
+  }catch(e){ document.getElementById('evRows').innerHTML='<tr><td colspan="9" class="text-danger">'+e.message+'</td></tr>'; }
+}
+// Jednoduchý modál — bez prompt() okienok.
+function evModal(title, inner, onOk){
+  const wrap=document.createElement('div');
+  wrap.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  wrap.innerHTML='<div class="card bg-dark border-warning" style="max-width:440px;width:100%">'
+    +'<div class="card-body">'
+    +'<h5 class="fw-bold mb-3" style="color:#C9A84C">'+title+'</h5>'
+    +'<div id="evmBody">'+inner+'</div>'
+    +'<div class="text-danger small mt-2" id="evmErr"></div>'
+    +'<div class="d-flex gap-2 justify-content-end mt-3">'
+    +'<button class="btn btn-sm btn-outline-secondary" id="evmCancel">Zavrieť</button>'
+    +'<button class="btn btn-sm btn-warning" id="evmOk">Uložiť</button>'
+    +'</div></div></div>';
+  document.body.appendChild(wrap);
+  const close=()=>wrap.remove();
+  wrap.querySelector('#evmCancel').onclick=close;
+  wrap.addEventListener('click',e=>{ if(e.target===wrap) close(); });
+  wrap.querySelector('#evmOk').onclick=async()=>{
+    const btn=wrap.querySelector('#evmOk'); btn.disabled=true; btn.textContent='Ukladám…';
+    try{ await onOk(wrap, close); }
+    catch(err){ wrap.querySelector('#evmErr').textContent=err.message; btn.disabled=false; btn.textContent='Uložiť'; }
+  };
+  return wrap;
+}
+
+let EV_PRICES=null;
+async function evOnsiteOpen(){
+  if(!EV_PRICES){
+    try{ const d=await (await fetch('/api/events/'+EV_SLUG)).json(); EV_PRICES=d.types||[]; }
+    catch(e){ EV_PRICES=[]; }
+  }
+  const TYPES = EV_PRICES.length ? EV_PRICES : [{key:'full',name:'VSTUPENKA'}];
+  const t=k=>EV_PRICES.find(x=>x.key===k)||{};
+  // Cena podľa typu, členstva a toho, či ešte beží predpredaj.
+  const priceOf=(key,member)=>{
+    const x=t(key); if(!x.key) return 0;
+    if(member && x.member_price!=null && x.tier!=='door') return x.member_price;
+    return x.price;
+  };
+
+  evModal('Ručný predaj vstupenky',
+    '<label class="small text-muted">Koľko vstupeniek</label>'
+   + TYPES.map(function(t,i){
+       return '<div class="d-flex align-items-center gap-2 mb-2 p-2 rounded" style="background:rgba(255,255,255,.04)">'
+        +'<div class="flex-fill"><b>'+t.name+'</b><br><small class="text-muted evm-p" data-t="'+t.key+'"></small></div>'
+        +'<input id="evmQty_'+t.key+'" type="number" min="0" max="20" value="'+(TYPES.length===1||i===TYPES.length-1?1:0)+'" '
+        +'style="width:74px" class="form-control form-control-sm bg-dark text-light border-secondary">'
+        +'</div>'; }).join('')
+   +'<div class="form-check form-check-inline mb-2"><input class="form-check-input" type="checkbox" id="evmMember">'
+   +'<label class="form-check-label small" for="evmMember">Je členka Fusion Academy (členská cena)</label></div>'
+   +'<label class="small text-muted">Spôsob platby</label>'
+   +'<div class="d-flex gap-2 mb-3" id="evmPay">'
+   +'<button type="button" class="btn btn-warning flex-fill" data-p="cash">💶 Hotovosť</button>'
+   +'<button type="button" class="btn btn-outline-warning flex-fill" data-p="transfer">🏦 Prevodom</button>'
+   +'</div>'
+   +'<label class="small text-muted">Meno kupujúcej *</label>'
+   +'<input id="evmName" class="form-control form-control-sm bg-dark text-light border-secondary mb-2" placeholder="Meno a priezvisko">'
+   +'<label class="small text-muted">E-mail — pošleme naň vstupenku s QR</label>'
+   +'<input id="evmMail" type="email" class="form-control form-control-sm bg-dark text-light border-secondary mb-2" placeholder="meno@email.sk">'
+   +'<div class="small text-muted mb-2">Ak je pod týmto e-mailom registrovaná, vstupenka sa jej ukáže aj v aplikácii.</div>'
+   +'<label class="small text-muted">Cena za kus v € (prázdne = automaticky, platí pre oba typy)</label>'
+   +'<input id="evmPrice" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="automaticky">'
+   +'<div class="mt-2 p-2 rounded" style="background:rgba(201,168,76,.12)"><b id="evmTotal" style="color:#C9A84C"></b></div>',
+    async (wrap, close)=>{
+      const pay=wrap.querySelector('#evmPay .btn-warning')?.dataset.p||'cash';
+      const name=wrap.querySelector('#evmName').value.trim();
+      if(!name) throw new Error('Zadaj meno kupujúcej.');
+      const p=wrap.querySelector('#evmPrice').value.trim();
+      const items=[];
+      TYPES.forEach(function(t){
+        const n=+((wrap.querySelector('#evmQty_'+t.key)||{}).value)||0;
+        if(n) items.push({type:t.key, qty:n, price: p? +p.replace(',','.') : undefined});
+      });
+      if(!items.length) throw new Error('Zadaj aspoň jednu vstupenku.');
+      const body={ items:items, name:name,
+        email:wrap.querySelector('#evmMail').value.trim(),
+        member:wrap.querySelector('#evmMember').checked, method:pay };
+      const r=await fetch('/api/admin/events/'+EV_SLUG+'/onsite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const j=await r.json(); if(!j.ok) throw new Error(j.error||'Nepodarilo sa uložiť');
+      close();
+      alert('Predané: '+j.summary+' za '+j.total.toFixed(2)+' €.'
+        + (j.emailed?'\nVstupenka s QR odoslaná e-mailom.':'\nBez e-mailu — kód: '+j.tickets.join(', '))
+        + (j.linked?'\nSpárované s jej účtom — vidí to v aplikácii.':''));
+      loadEventy();
+    });
+
+  const eu=n=>n.toFixed(2).replace('.',',')+' €';
+  const refresh=()=>{
+    const member=document.getElementById('evmMember').checked;
+    const manual=document.getElementById('evmPrice').value.trim();
+    const unitOf=k=> manual? +manual.replace(',','.') : priceOf(k,member);
+    document.querySelectorAll('.evm-p').forEach(el=>{ el.textContent=eu(unitOf(el.dataset.t))+' / ks'; });
+    const parts=[]; let sum=0;
+    TYPES.forEach(function(t){
+      const el=document.getElementById('evmQty_'+t.key); const n=el?(+el.value||0):0;
+      if(n){ sum+=n*unitOf(t.key); parts.push(n+'× '+t.name.split(' ')[0]+' '+eu(n*unitOf(t.key))); }
+    });
+    document.getElementById('evmTotal').textContent =
+      parts.length ? (parts.join('  ·  ')+'   =   '+eu(sum)) : 'Zadaj počet vstupeniek';
+  };
+  document.querySelectorAll('#evmPay .btn').forEach(b=>b.onclick=()=>{
+    document.querySelectorAll('#evmPay .btn').forEach(x=>x.className='btn btn-outline-warning flex-fill');
+    b.className='btn btn-warning flex-fill';
+  });
+  ['evmMember','evmPrice'].concat(TYPES.map(t=>'evmQty_'+t.key)).forEach(id=>{
+    const el=document.getElementById(id);
+    el.addEventListener('change',refresh); el.addEventListener('input',refresh);
+  });
+  refresh();
+}
+
+function evAffCopy(link){
+  navigator.clipboard.writeText(link).then(
+    ()=>alert('Odkaz skopírovaný:\n'+link),
+    ()=>prompt('Skopíruj odkaz:', link));
+}
+
+async function evAffPayout(code, amount){
+  if(!confirm('Označiť '+amount.toFixed(2)+' € ako vyplatené?\n\nZapíše sa to aj do účtovníctva ako výdavok.')) return;
+  const method=prompt('Ako si to vyplatil? (hotovosť / prevod)','hotovosť')||'hotovosť';
+  const r=await fetch('/api/admin/events/'+EV_SLUG+'/affiliate/payout',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code, method:method})});
+  const j=await r.json();
+  alert(j.ok ? ('Vyplatené: '+j.amount.toFixed(2)+' € za '+j.tickets+' vstupeniek.') : ('Chyba: '+(j.error||'')));
+  loadEventy();
+}
+
+async function evTableOpen(){
+  evModal('Zapísať rezerváciu stola',
+    '<label class="small text-muted">Meno hosťa *</label>'
+   +'<input id="evtName" class="form-control form-control-sm bg-dark text-light border-secondary mb-2" placeholder="Meno a priezvisko">'
+   +'<label class="small text-muted">Telefón</label>'
+   +'<input id="evtPhone" class="form-control form-control-sm bg-dark text-light border-secondary mb-2" placeholder="09xx xxx xxx">'
+   +'<label class="small text-muted">E-mail</label>'
+   +'<input id="evtMail" type="email" class="form-control form-control-sm bg-dark text-light border-secondary mb-2">'
+   +'<label class="small text-muted">Počet osôb pri stole (max 8)</label>'
+   +'<input id="evtPersons" type="number" min="1" max="8" value="4" class="form-control form-control-sm bg-dark text-light border-secondary mb-2">'
+   +'<label class="small text-muted">Poznámka</label>'
+   +'<input id="evtNote" class="form-control form-control-sm bg-dark text-light border-secondary">',
+    async (wrap, close)=>{
+      const body={ name:wrap.querySelector('#evtName').value.trim(),
+        phone:wrap.querySelector('#evtPhone').value.trim(),
+        email:wrap.querySelector('#evtMail').value.trim(),
+        persons:+wrap.querySelector('#evtPersons').value||1,
+        note:wrap.querySelector('#evtNote').value.trim() };
+      if(!body.name) throw new Error('Meno je povinné.');
+      const r=await fetch('/api/admin/events/'+EV_SLUG+'/table',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const j=await r.json(); if(!j.ok) throw new Error(j.error||'Nepodarilo sa uložiť');
+      close(); loadEventy();
+    });
+}
+
+// QR skener pri vstupe — kamera + ručné zadanie kódu, keď kamera nie je po ruke.
+function evScanOpen(){
+  const wrap=document.createElement('div');
+  wrap.style.cssText='position:fixed;inset:0;background:#000;z-index:99999;display:flex;flex-direction:column';
+  wrap.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#111">'
+    +'<b style="color:#C9A84C">Check-in vstupeniek</b>'
+    +'<button class="btn btn-sm btn-outline-light" id="evsClose">Zavrieť</button></div>'
+    +'<div id="evsBox" style="flex:1;min-height:0;display:flex;align-items:center;justify-content:center;background:#000"></div>'
+    +'<div id="evsState" style="padding:16px;text-align:center;font-weight:900;font-size:1.3rem;color:#fff;background:#111;min-height:70px"></div>'
+    +'<div style="padding:12px 16px;background:#111;display:flex;gap:8px">'
+    +'<input id="evsCode" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="Alebo zadaj kód vstupenky ručne">'
+    +'<button class="btn btn-sm btn-warning" id="evsManual">Overiť</button></div>';
+  document.body.appendChild(wrap);
+
+  let reader=null, busy=false;
+  const state=(txt,color,sub)=>{
+    wrap.querySelector('#evsState').innerHTML='<div style="color:'+color+'">'+txt+'</div>'
+      +(sub?'<div style="font-size:.85rem;font-weight:600;color:#bbb;margin-top:4px">'+sub+'</div>':'');
+  };
+  const close=async()=>{ if(reader){ try{ await reader.stop(); reader.clear(); }catch(e){} } wrap.remove(); loadEventy(); };
+  wrap.querySelector('#evsClose').onclick=close;
+
+  const checkin=async(code)=>{
+    if(busy) return; busy=true;
+    state('⏳ Overujem…','#fff');
+    try{
+      const r=await fetch('/api/tickets/'+encodeURIComponent(code)+'/checkin',
+        {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({place:'Fusion Club Detva'})});
+      const d=await r.json(); const t=d.ticket||{};
+      const col = d.ok ? '#8bc34a' : (d.state==='used' ? '#ffb74d' : '#ff8a80');
+      state(d.message||'—', col,
+        (t.holder_name? t.holder_name+' · '+(t.type_name||'') : '')
+        + (t.checked_in_at? ' · prvý vstup '+String(t.checked_in_at).slice(11,16) : ''));
+    }catch(e){ state('⚠️ Chyba spojenia','#ff8a80'); }
+    setTimeout(()=>{ busy=false; }, 2500);
+  };
+
+  wrap.querySelector('#evsManual').onclick=()=>{
+    const c=wrap.querySelector('#evsCode').value.trim().toUpperCase();
+    if(c) checkin(c);
+  };
+
+  const start=()=>{
+    const box=wrap.querySelector('#evsBox');
+    box.innerHTML='<div id="evsQr" style="width:min(90vw,420px)"></div>';
+    reader=new Html5Qrcode('evsQr');
+    reader.start({facingMode:'environment'},{fps:10,qrbox:250},txt=>{
+      const m=String(txt||'').match(/\/t\/([A-Z0-9]{6,})/i);
+      checkin(m ? m[1].toUpperCase() : String(txt).trim().toUpperCase());
+    },()=>{}).catch(()=>{
+      box.innerHTML='<div style="color:#bbb;padding:20px;text-align:center">Kamera sa nedá spustiť — zadaj kód ručne dole.</div>';
+    });
+  };
+
+  if(window.Html5Qrcode) start();
+  else{
+    const sc=document.createElement('script');
+    sc.src='https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js';
+    sc.onload=start;
+    sc.onerror=()=>{ wrap.querySelector('#evsBox').innerHTML='<div style="color:#bbb;padding:20px">Skener sa nepodarilo načítať — zadaj kód ručne.</div>'; };
+    document.head.appendChild(sc);
+  }
+  state('Namier kameru na QR kód vstupenky','#C9A84C');
+}
+
+async function evTableCancel(id){
+  if(!confirm('Naozaj zrušiť túto rezerváciu stola?')) return;
+  await fetch('/api/admin/events/'+EV_SLUG+'/table/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})});
+  loadEventy();
+}
+
+
+// Ako sa človek na hodinu dostal — berieme to zo samotného bookingu, nie z toho,
+// čo má na účte dnes. Tréner tak vidí, či prišla na kupón, permanentku či platí.
+const ACCESS_LABELS = {
+  membership:          ['💎 Členstvom',              '#C9A84C'],
+  free_class:          ['🎁 Prvá hodina zdarma',      '#fbbf24'],
+  promo_free:          ['🎁 Akciová hodina zdarma',   '#fbbf24'],
+  free_credit:         ['🎟️ Kupón na hodinu zdarma', '#fbbf24'],
+  single_entry:        ['🎫 Permanentka (−1 vstup)',  '#60a5fa'],
+  pay_on_site:         ['💵 Platí na mieste',         '#ff8a8a'],
+  parent_membership:   ['👪 Členstvom rodiča',        '#7ec8e3'],
+  parent_single_entry: ['👪 Vstupom rodiča',          '#7ec8e3'],
+  online_refunded:     ['↩️ Online — vstup vrátený',  '#9d9788']
+};
+function accessLabel(m){ return ACCESS_LABELS[m] || null; }
+
 const SECTION_GROUP={attendance:'manage',sale:'reports',
   leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',staff:'manage',classes:'manage',privatehours:'manage',kiosk:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',
   marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
-  sutaze:'marketing',venceky:'manage',fusionai:'reports',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
+  sutaze:'marketing',venceky:'manage',eventy:'manage',fusionai:'reports',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
   partners:'partners',addpartner:'partners',commissions:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
@@ -2129,6 +2482,7 @@ function show(sec){
   if(sec==='bizrank')loadBizRank();
   if(sec==='sutaze')loadRefGoalReport();
   if(sec==='venceky')loadVenceky();
+  if(sec==='eventy')loadEventy();
   if(sec==='orders')loadOrders();
   if(sec==='partners')loadPartners();
   if(sec==='commissions')loadCommissions();
@@ -5635,9 +5989,11 @@ async function loadAdminClasses(){
   rows=rows.filter(c=>c.category==='Online');
   const todayDow=new Date().getDay();
   const todays=rows.filter(c=>c.day_of_week===todayDow);
-  const shown=adminClassesWholeWeek?rows:todays;
+  // Keď dnes žiadna online hodina nie je, netvárime sa, že sa nedá nič robiť —
+  // rovno ukážeme celý týždeň, nech je kam vložiť link.
+  const shown=(adminClassesWholeWeek||!todays.length)?rows:todays;
   const toggle=`<tr><td colspan="6" class="text-center py-2">
-    ${!adminClassesWholeWeek&&!todays.length?'<div class="text-muted small mb-2">🌐 Dnes nie je žiadna online hodina</div>':''}
+    ${!todays.length?'<div class="text-warning small mb-2">🌐 Dnes nie je naplánovaná online hodina — nižšie je celý týždeň.</div>':''}
     <button class="btn btn-sm btn-outline-secondary" onclick="toggleAdminClassesWeek()">${adminClassesWholeWeek?'Zobraziť len dnešné':'Zobraziť celý týždeň'}</button>
   </td></tr>`;
   if(!shown.length){tb.innerHTML=toggle;return;}
@@ -5901,6 +6257,10 @@ async function openAttClass(classId){
     return;
   }
   tbody.innerHTML = attendees.map(a => {
+    const acc = accessLabel(a.access_method);
+    const accTag = acc
+      ? `<div><span class="badge" style="background:${acc[1]}22;color:${acc[1]};font-size:.7rem;font-weight:700">${acc[0]}</span></div>`
+      : '';
     const mTag = a.membership
       ? `<span class="badge" style="background:rgba(201,168,76,.2);color:#C9A84C;font-size:.7rem">${escHtml(a.membership)}</span>`
       : (a.free_credits > 0
@@ -5908,6 +6268,7 @@ async function openAttClass(classId){
           : (a.single_entries > 0
               ? `<span class="badge" style="background:rgba(96,165,250,.15);color:#60a5fa;font-size:.7rem">🎟 x${a.single_entries}</span>`
               : `<span class="badge" style="background:rgba(244,67,54,.15);color:#f87171;font-size:.7rem">⚠ Bez členstva</span>`));
+    const statusCell = accTag + mTag;
     const nameCell = a.user_id
       ? `<a href="/u/${a.user_id}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none"><strong>${escHtml(a.name)}</strong> <i class="bi bi-box-arrow-up-right" style="font-size:.6rem;opacity:.55"></i></a>`
       : `<strong>${escHtml(a.name)}</strong>`;
@@ -5917,7 +6278,7 @@ async function openAttClass(classId){
     return `<tr>
       <td class="ps-2">${nameCell}</td>
       <td onclick="event.stopPropagation()"><small class="text-muted">${emailLink}${emailLink&&phoneLink?'<br>':''}${phoneLink}</small></td>
-      <td>${mTag}</td>
+      <td>${statusCell}</td>
       <td><span style="color:var(--gold);font-weight:700">${a.visit_count}</span></td>
       <td><small class="text-muted">${a.booking_date||'—'}</small></td>
       <td>

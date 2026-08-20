@@ -194,6 +194,13 @@ const db = {
   referral_events:  new Datastore({ filename: path.join(DATA_DIR, 'referral_events.db'),  autoload: true }),
   credit_ledger:    new Datastore({ filename: path.join(DATA_DIR, 'credit_ledger.db'),    autoload: true }),
   shop_events:      new Datastore({ filename: path.join(DATA_DIR, 'shop_events.db'),      autoload: true }),
+  ev_events:         new Datastore({ filename: path.join(DATA_DIR, 'ev_events.db'), autoload: true }),
+  ev_tickets:        new Datastore({ filename: path.join(DATA_DIR, 'ev_tickets.db'), autoload: true }),
+  ev_orders:         new Datastore({ filename: path.join(DATA_DIR, 'ev_orders.db'), autoload: true }),
+  ev_tables:         new Datastore({ filename: path.join(DATA_DIR, 'ev_tables.db'), autoload: true }),
+  amb_volume_months: new Datastore({ filename: path.join(DATA_DIR, 'amb_volume_months.db'), autoload: true }),
+  amb_rank_history:  new Datastore({ filename: path.join(DATA_DIR, 'amb_rank_history.db'),  autoload: true }),
+  commission_adjustments: new Datastore({ filename: path.join(DATA_DIR, 'commission_adjustments.db'), autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -238,6 +245,7 @@ const USER_ROLES = {
   client:  { label:'Klient',        icon:'🟢', access:'client',  dashUrl:'/client-dashboard' },
   trainer: { label:'Tréner',        icon:'🟡', access:'trainer', dashUrl:'/trainer'          },
   partner: { label:'Partner',       icon:'🟠', access:'partner', dashUrl:'/dashboard'        },
+  ambassador:{label:'Ambasádorka',  icon:'🔥', access:'ambassador', dashUrl:'/ambasador'      },
   manager: { label:'Manager',       icon:'🔴', access:'manager', dashUrl:'/dashboard'        },
   admin:   { label:'Admin',         icon:'⚫', access:'admin',   dashUrl:'/admin'            },
 };
@@ -359,6 +367,17 @@ function displayNextDateForDay(dow) {
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 
+// Pre trénerský panel platí dnešok, kým je naozaj dnes. displayNextDateForDay()
+// preklápa na ďalší týždeň už o 22:00 (aby si klientka nebookla hodinu, ktorá
+// práve skončila) — lenže tréner po hodine ešte zapisuje dochádzku a zoznam
+// ľudí mu takto o desiatej večer zmizol.
+function sessionDateFor(c){
+  if(!c) return today();
+  if(c.only_date) return c.only_date;
+  if(c.day_of_week === new Date().getDay()) return today();
+  return displayNextDateForDay(c.day_of_week);
+}
+
 // Jednorazový termín: `only_date` (YYYY-MM-DD) obmedzí hodinu na jediný dátum —
 // napr. mimoriadny online prenos. Rozvrh je inak čisto týždenný (day_of_week), takže
 // bez tohto by sa hodina opakovala každý týždeň. Po svojom dni ju klientky prestanú
@@ -395,21 +414,29 @@ async function calcRank(uid){
 async function saveCommissions(txId,partnerId,amount){
   const month=currentMonth();
   const awarded=[]; // {user_id, amount, level}
-  // Distribute up to 5 lines: partnerId = line 1 (direct), then each sponsor above.
-  let curId=partnerId;
-  for(let line=0; line<LINE_RATES.length; line++){
+  // ROZDIELOVÝ MODEL (pravidlá v2, od 20. 8. 2026): každý v línii dostane rozdiel
+  // medzi percentom svojej hodnosti a najvyšším percentom už vyplateným pod ním.
+  // Priama sponzorka dostane plné percento; súčet línie nikdy neprekročí 20 %.
+  // Hodnosť sa berie z mesačnej uzávierky (u.amb_rank), noví začínajú ako Starter.
+  // Pôvodný sčítavací model 10/5/3/2/1 (spolu 21 %) je týmto nahradený;
+  // staré provízie sa spätne neprepočítavajú.
+  let curId=partnerId, paidRate=0;
+  for(let line=0; line<5 && curId; line++){
     const cur=await q.one(db.users,{_id:curId});
     if(!cur) break;
-    const rate=LINE_RATES[line];
-    const amt=+(amount*rate).toFixed(2);
+    const myRate = ambRate(cur.amb_rank || 1);
+    const diff = Math.max(0, +(myRate - paidRate).toFixed(4));
+    const amt = +(amount*diff).toFixed(2);
     if(amt>0){
-      await q.insert(db.commissions,{transaction_id:txId,partner_id:cur._id,source_partner_id:partnerId,level:line,percentage:rate,amount:amt,status:'pending',month,created_at:nowISO()});
+      await q.insert(db.commissions,{transaction_id:txId,partner_id:cur._id,source_partner_id:partnerId,
+        level:line,percentage:diff,rate_rank:cur.amb_rank||1,rules_version:2,
+        amount:amt,status:'pending',month,created_at:nowISO()});
       awarded.push({user_id:cur._id, amount:amt, level:line});
+      paidRate = Math.max(paidRate, myRate);
     }
-    if(!cur.sponsor_id) break;
-    curId=cur.sponsor_id;
+    if(paidRate>=0.20) break;
+    curId=cur.sponsor_id||null;
   }
-  // Notify every commission recipient (in-app + email)
   notifyCommissionRecipients(txId, awarded).catch(e=>console.error('Commission notify:',e.message));
 }
 
@@ -493,6 +520,19 @@ const adminAuth = async(req,res,next) => {
   if(!u?.is_admin) return res.status(403).json({error:'Nemáte oprávnenie'});
   req.user=u; req._auditActor=u.name; next();
 };
+
+// Ambasádorská sekcia — odomkne sa až tomu, komu rolu pridelí admin.
+const ambassadorAuth = async(req,res,next)=>{
+  if(!req.session?.uid) return res.status(401).json({error:'Nie ste prihlásený'});
+  const u = await q.one(db.users,{_id:req.session.uid});
+  // Tréner je automaticky ambasádor — reprezentuje firmu a privádza ľudí,
+  // takže sekciu má sprístupnenú bez prepínania.
+  if(!u || !(u.is_admin || u.user_type==='ambassador' || u.user_type==='trainer'))
+    return res.status(403).json({error:'Táto časť je len pre ambasádorky Fusion Academy'});
+  req.ambUser = u;
+  next();
+};
+
 
 // ─── Seed ─────────────────────────────────────────────────────────────────────
 async function seedData() {
@@ -1030,6 +1070,87 @@ async function seedData() {
     }
     await q.insert(db.settings,{key:'online_schedule_v2', value:true, at:nowISO()});
     console.log(`✅  Online rozvrh v2: ${added} hodín pridaných (Po/St/Pi/Ne)`);
+  }
+
+  // 19.8.: rezervácie zapísané trénerom po 22:00 padli na budúci týždeň (26.8.),
+  // hoci išlo o dnešnú hodinu — presunieme ich späť na dnešok.
+  if(!(await q.one(db.settings,{key:'fix_late_bookings_20260819'}))){
+    try{
+      let moved=0;
+      for(const b of await q.find(db.bookings,{booking_date:'2026-08-26'})){
+        if(!String(b.created_at||'').startsWith('2026-08-19')) continue;
+        const cls = await q.one(db.classes,{_id:b.class_id});
+        if(!cls || cls.day_of_week!==3) continue;          // len stredajšie hodiny
+        await q.update(db.bookings,{_id:b._id},{$set:{booking_date:'2026-08-19'}});
+        moved++;
+        console.log('📅  Rezervácia presunutá na dnešok:', b.user_name||b.user_id, '·', cls.name, cls.location||'');
+      }
+      await q.insert(db.settings,{key:'fix_late_bookings_20260819', value:true, at:nowISO()});
+      console.log('📅  Opravených rezervácií: '+moved);
+    }catch(e){ console.error('fix late bookings:', e.message); }
+  }
+
+  // 19.8. (oprava): detskú zľavu Bronze 30 € má Vivien Páločná, nie Ferkovičová —
+  // pôvodná migrácia trafila podľa mena nesprávnu klientku.
+  if(!(await q.one(db.settings,{key:'custom_price_palocna_20260819'}))){
+    try{
+      const wrong = await q.one(db.users,{name:/Vivien.*Ferkovi/i});
+      if(wrong && wrong.custom_prices && wrong.custom_prices.bronze===30){
+        const cp = {...wrong.custom_prices}; delete cp.bronze;
+        await q.update(db.users,{_id:wrong._id},{$set:{custom_prices:Object.keys(cp).length?cp:null}});
+        console.log('↩️  Individuálna cena odobraná: '+wrong.name);
+      }
+      const right = await q.one(db.users,{name:/Vivien.*P[áa]lo[čc]n/i});
+      if(right){
+        await q.update(db.users,{_id:right._id},{$set:{custom_prices:{...(right.custom_prices||{}), bronze:30}}});
+        console.log('✅  Individuálna cena nastavená: '+right.name+' — Bronze 30 €');
+      } else console.log('⚠️  Vivien Páločná sa nenašla — cena nenastavená');
+      await q.insert(db.settings,{key:'custom_price_palocna_20260819', value:true, at:nowISO()});
+    }catch(e){ console.error('custom price palocna:', e.message); }
+  }
+
+  // 19.8.: Vivien Ferkovičová má ako dieťa dohodnutú individuálnu cenu Bronze 30 €.
+  // Platí len pre ňu — ostatným ostáva bežná cena.
+  if(!(await q.one(db.settings,{key:'custom_price_vivien_20260819'}))){
+    try{
+      const v=await q.one(db.users,{name:/Vivien.*Ferkovi/i});
+      if(v){
+        await q.update(db.users,{_id:v._id},{$set:{custom_prices:{...(v.custom_prices||{}), bronze:30}}});
+        console.log('✅  Individuálna cena nastavená: '+v.name+' — Bronze 30 €');
+      } else console.log('⚠️  Vivien Ferkovičová sa nenašla — individuálna cena nenastavená');
+      await q.insert(db.settings,{key:'custom_price_vivien_20260819', value:true, at:nowISO()});
+    }catch(e){ console.error('custom price vivien:', e.message); }
+  }
+
+  // 19.8.: v stredu bežia fyzické hodiny vo Zvolene (17:00) a v B. Bystrici (19:00),
+  // ale online dvojička k nim chýbala — appka preto hlásila, že dnes online nie je,
+  // a nebolo kam vložiť YouTube link.
+  if(!(await q.one(db.settings,{key:'online_streda_20260819'}))){
+    try{
+      const WED = [
+        { start:'17:00', end:'18:00', city:'Zvolen' },
+        { start:'19:00', end:'20:00', city:'Banská Bystrica' }
+      ];
+      const beata = await q.one(db.users,{name:/Beáta Gruber/i}) || {};
+      let added=0;
+      for(const o of WED){
+        const dup = await q.one(db.classes,{category:'Online', day_of_week:3, time_start:o.start, active:true});
+        if(dup){ await q.update(db.classes,{_id:dup._id},{$set:{stream_city:o.city}}); continue; }
+        // Tréner podľa fyzickej hodiny, z ktorej sa vysiela.
+        const pair=(await q.find(db.classes,{active:true, day_of_week:3}))
+          .find(p=>p.category!=='Online' && p.time_start===o.start && (p.location||'')===o.city);
+        await q.insert(db.classes,{ name:'Zumba ONLINE – LIVE', emoji:'🌐', category:'Online',
+          instructor: pair?.instructor || beata.name || 'Fusion Academy',
+          instructor_id: pair?.instructor_id || beata._id || null,
+          location:'Online', stream_city:o.city, address:'Živé vysielanie – '+o.city,
+          day_of_week:3, time_start:o.start, time_end:o.end, capacity:100, level:'Všetky úrovne',
+          description:'Živá online Zumba z mesta '+o.city+'. Tancuj z obývačky — počíta sa do bodov aj odznakov!',
+          price:6, color:'#2196f3', active:true, created_at:nowISO() });
+        added++;
+      }
+      await q.insert(db.settings,{key:'online_streda_20260819', value:true, at:nowISO()});
+      console.log('✅  Stredajšie online hodiny: '+added+' pridaných (Zvolen 17:00, B. Bystrica 19:00)');
+    }catch(e){ console.error('online streda:', e.message); }
   }
 
   // Mimoriadna online hodina z Brezna — štvrtok 13.8.2026 o 19:00 (test signálu).
@@ -1762,6 +1883,59 @@ async function seedData() {
         console.log('💶 CASH ENTRY zapísané:', u.name);
       }
     }catch(e){ console.error('cash entries migration:', e.message); }
+  }
+
+  // ── 19.8.: Marekov testovací nákup vstupenky — zmazať vstupenku, objednávku,
+  // transakciu aj faktúru, nech to nekazí štatistiky eventu a účtovníctvo.
+  if(!(await q.one(db.settings,{key:'purge_marek_ticket_test_20260819'}))){
+    try{
+      const mail='gruber.marek@gmail.com';
+      const orders=(await q.find(db.ev_orders,{event_slug:'latin-tropical-2026'}))
+        .filter(o=>String(o.buyer_email||'').toLowerCase()===mail && String(o.created_at||'').startsWith('2026-08-19'));
+      let tk=0, tx=0, inv=0, tbl=0;
+      for(const o of orders){
+        for(const t of await q.find(db.ev_tickets,{order_number:o.order_number})){ await q.remove(db.ev_tickets,{_id:t._id}); tk++; }
+        for(const t of await q.find(db.ev_tables,{order_number:o.order_number})){ await q.remove(db.ev_tables,{_id:t._id}); tbl++; }
+        for(const t of (await q.find(db.transactions,{type:'event_ticket'}))
+              .filter(x=>String(x.created_at||'').startsWith('2026-08-19') && +x.amount===+o.total)){
+          await q.remove(db.transactions,{_id:t._id}); tx++;
+        }
+        for(const i of (await q.find(db.invoices,{client_email:mail}))
+              .filter(x=>String(x.created_at||x.issued_at||'').startsWith('2026-08-19') && +x.total===+o.total)){
+          await q.remove(db.invoices,{_id:i._id}); inv++;
+        }
+        await q.remove(db.ev_orders,{_id:o._id});
+      }
+      for(const n of await q.find(db.notifications,{type:'ticket'})) await q.remove(db.notifications,{_id:n._id});
+      await q.insert(db.settings,{key:'purge_marek_ticket_test_20260819',value:true,at:nowISO()});
+      console.log('🧹 Test vstupenky: objednávok '+orders.length+', vstupeniek '+tk+', stolov '+tbl+', transakcií '+tx+', faktúr '+inv);
+    }catch(e){ console.error('purge marek ticket test:', e.message); }
+  }
+
+  // ── 19.8.: upratať nezaplatené testovacie objednávky z overenia predaja vstupeniek
+  if(!(await q.one(db.settings,{key:'purge_test_event_orders_20260819'}))){
+    try{
+      let n=0;
+      for(const o of await q.find(db.ev_orders,{status:'pending'})){
+        if(/^TEST /i.test(String(o.buyer_name||''))){ await q.remove(db.ev_orders,{_id:o._id}); n++; }
+      }
+      await q.insert(db.settings,{key:'purge_test_event_orders_20260819',value:true,at:nowISO()});
+      if(n) console.log('🧹 Testovacie objednávky vstupeniek odstránené:', n);
+    }catch(e){ console.error('purge test event orders:', e.message); }
+  }
+
+  // ── 19.8.: zmazať testovací dopyt školy z overenia formulára Posledný tanec
+  if(!(await q.one(db.settings,{key:'purge_test_school_lead_20260819c'}))){
+    try{
+      for(const l of await q.find(db.rentals,{_type:'school_lead'})){
+        if(/^TEST /i.test(String(l.school||''))) await q.remove(db.rentals,{_id:l._id});
+      }
+      for(const n of await q.find(db.notifications,{type:'school_lead'})){
+        if(/TEST /i.test(String(n.body||''))) await q.remove(db.notifications,{_id:n._id});
+      }
+      await q.insert(db.settings,{key:'purge_test_school_lead_20260819c',value:true,at:nowISO()});
+      console.log('🧹 Testovací školský dopyt odstránený');
+    }catch(e){ console.error('purge test school lead:', e.message); }
   }
 
   // ── 12.8.: Ľubomíra Trulik — jednorazový vstup z 10.8. uhradí prevodom na účet
@@ -3554,7 +3728,7 @@ const ACHIEVEMENTS = [
   {id:'v75',  cat:'visits', need:75,   icon:'⭐', name:'Stálica',       desc:'75 hodín'},
   {id:'v150', cat:'visits', need:150,  icon:'🔥', name:'Vášeň',         desc:'150 hodín'},
   {id:'v350', cat:'visits', need:350,  icon:'🏆', name:'Šampiónka',     name_m:'Šampión', desc:'350 hodín'},
-  {id:'v600', cat:'visits', need:600,  icon:'🦋', name:'Ikona',         desc:'600 hodín'},
+  {id:'v600', cat:'visits', need:600,  icon:'🦋', name:'Elite Director',         desc:'600 hodín'},
   {id:'v1000',cat:'visits', need:1000, icon:'🌟', name:'Legenda',       desc:'1000 hodín'},
   // Mestá — prvá odchodená hodina v danom meste (zberateľské odznaky)
   {id:'city_detva',  cat:'city', city:'Detva',            icon:'🌲', name:'Detva',            desc:'Prvá hodina v Detve'},
@@ -3664,6 +3838,268 @@ async function getAllAncestors(uid){
   }
   return out;
 }
+// Koľko ľudí z celej línie naozaj začalo tancovať (aspoň 1 návšteva).
+// Toto je jediná metrika, na ktorej stoja ambasádorské odmeny — mŕtve
+// registrácie sa nerátajú, inak by sa rebríček dal nafúknuť.
+async function activeDownlineCount(uid){
+  const ids = await getAllDescendants(uid);
+  let n=0;
+  for(const id of ids){ const d=await q.one(db.users,{_id:id}); if(d && (d.visit_count||0)>0) n++; }
+  return n;
+}
+
+// ── PROVÍZIE: životný cyklus ─────────────────────────────────────────────────
+// pending → (14 dní bez refundácie) → approved → (výplata) → paid
+// Vetvy: reversed (refundácia — cez korekciu, pôvodná sa NIKDY needituje).
+const COMMISSION_HOLD_DAYS = 14;
+
+// Denne: provízie staršie než refund lehota sa schvália.
+async function approveMaturedCommissions(){
+  const cutoff = new Date(Date.now() - COMMISSION_HOLD_DAYS*86400000).toISOString();
+  const rows = (await q.find(db.commissions,{status:'pending'}))
+    .filter(c=>String(c.created_at||'')<cutoff);
+  for(const c of rows){
+    await q.update(db.commissions,{_id:c._id, status:'pending'},{$set:{status:'approved', approved_at:nowISO()}});
+  }
+  if(rows.length) console.log('💠 Provízie schválené po refund lehote:', rows.length);
+  return rows.length;
+}
+
+// Refundácia → korekčná položka. Pôvodný záznam ostáva netknutý.
+async function reverseCommissionsForTx(transaction_id, reason){
+  const comms = await q.find(db.commissions,{transaction_id});
+  let total=0;
+  for(const c of comms){
+    if(c.status==='reversed') continue;
+    const prevStatus = c.status;   // stav PRED prepísaním — rozhoduje o vrátení kreditu
+    await q.insert(db.commission_adjustments,{
+      commission_id:c._id, transaction_id, partner_id:c.partner_id,
+      amount:-(+c.amount||0), reason:String(reason||'refundácia').slice(0,200),
+      created_at:nowISO(), month:today().slice(0,7)});
+    await q.update(db.commissions,{_id:c._id},{$set:{status:'reversed', reversed_at:nowISO()}});
+    // ak už bola vyplatená / v kredite, odpočítať z kreditu partnera
+    const p=await q.one(db.users,{_id:c.partner_id});
+    if(p && (prevStatus==='paid' || prevStatus==='approved')){
+      await q.update(db.users,{_id:p._id},{$set:{referral_credit:Math.max(0,+(p.referral_credit||0)-(+c.amount||0))}});
+    }
+    await q.insert(db.notifications,{user_id:c.partner_id,type:'commission',
+      title:'↩️ Korekcia provízie',
+      body:'Objednávka bola refundovaná — provízia '+(+c.amount||0).toFixed(2)+' € bola stiahnutá.',
+      read:false, created_at:nowISO()}).catch(()=>{});
+    total+=+c.amount||0;
+  }
+  return total;
+}
+
+// ── MESAČNÁ UZÁVIERKA OB ─────────────────────────────────────────────────────
+// Po skončení mesiaca sa objem každej ambasádorky zapíše nemenne. História
+// hodností sa loguje; ambVolume() ostáva pre bežiaci mesiac.
+async function closeVolumeMonth(month){
+  const m = month; // 'YYYY-MM'
+  const ambs = await q.find(db.users,{});
+  let n=0;
+  for(const u of ambs){
+    if(!(u.user_type==='ambassador'||u.user_type==='trainer'||u.is_admin)) continue;
+    if(await q.one(db.amb_volume_months,{user_id:u._id, month:m})) continue;  // idempotentné
+    const vol = await ambVolume(u._id, m);
+    const R = ambRank(vol.total);
+    await q.insert(db.amb_volume_months,{ user_id:u._id, user_name:u.name, month:m,
+      own_ob:vol.own, team_ob:vol.team, group_ob:vol.total,
+      rank_id:R.rank, rank_name:R.name, stars:R.stars,
+      closed_at:nowISO() });
+    // hodnosť na účte — z nej sa počítajú provízie budúceho mesiaca
+    await q.update(db.users,{_id:u._id},{$set:{amb_rank:R.rank||1}});
+    // história hodností: porovnaj s predchádzajúcim mesiacom
+    const prev = (await q.find(db.amb_volume_months,{user_id:u._id}))
+      .filter(x=>x.month<m).sort((a,b)=>b.month.localeCompare(a.month))[0];
+    if(prev && prev.rank_id!==R.rank){
+      await q.insert(db.amb_rank_history,{ user_id:u._id, user_name:u.name,
+        from_rank:prev.rank_id, to_rank:R.rank,
+        reason:R.rank>prev.rank_id?'promotion':'demotion', month:m, at:nowISO() });
+      await q.insert(db.notifications,{user_id:u._id, type:'ambassador',
+        title: R.rank>prev.rank_id ? '🏆 Postúpila si na '+R.name+'!' : '📉 Hodnosť klesla na '+(R.name||'začiatok'),
+        body: R.rank>prev.rank_id
+          ? 'Skupina urobila '+vol.total+' bodov za '+m+'. Gratulujeme!'
+          : 'Za '+m+' bolo '+vol.total+' bodov. Ďalší mesiac sa dá vrátiť späť.',
+        read:false, created_at:nowISO()}).catch(()=>{});
+    }
+    n++;
+  }
+  if(n) console.log('📕 Uzávierka OB za '+m+': '+n+' záznamov');
+  return n;
+}
+
+// Ticker: raz denne schváliť dozreté provízie + uzavrieť minulý mesiac (1.–3. deň).
+setInterval(async()=>{
+  try{
+    const h=new Date().getHours();
+    if(h!==3) return;                          // beží raz denne o tretej ráno
+    const guard='amb_daily_'+today();
+    if(await q.one(db.settings,{key:guard})) return;
+    await q.insert(db.settings,{key:guard, value:true, at:nowISO()});
+    await approveMaturedCommissions();
+    const d=new Date();
+    if(d.getDate()<=3){
+      const prev=new Date(d); prev.setDate(0);  // posledný deň minulého mesiaca
+      await closeVolumeMonth(prev.toISOString().slice(0,7));
+    }
+  }catch(e){ console.error('amb daily:', e.message); }
+}, 10*60*1000);
+
+// ── AMBASÁDORSKÝ REBRÍČEK ────────────────────────────────────────────────────
+// 10 hodností, každá s 5 hviezdami. Hviezda pribudne pri každom prahu vnútri
+// hodnosti; po piatej nasleduje postup vyššie. Najvyššia hodnosť nemá hviezdy —
+// namiesto nich ukazuje poradie v celkovom rebríčku (ako Immortal v Dote).
+// Prahy sú MESAČNÉ OBJEMOVÉ BODY skupiny (vlastné + línia). Počet ľudí je mŕtve
+// číslo — kto neplatí a nechodí, nemá firme čo priniesť.
+const AMB_RANKS = [
+  { id:1,  name:'Starter',          stars:[1, 100, 200, 300, 400],
+    perk:'Vlastný odkaz, QR kód a prehľad tvojich klientok' },
+  { id:2,  name:'Partner',          stars:[500, 700, 900, 1100, 1300],
+    perk:'Rozpis príjmov podľa produktov a denné úlohy' },
+  { id:3,  name:'Senior Partner',   stars:[1500, 1800, 2100, 2400, 2700],
+    perk:'Stromová štruktúra tvojej línie a prioritná podpora' },
+  { id:4,  name:'Leader',           stars:[3000, 3600, 4200, 4800, 5400],
+    perk:'Vlastná skupina v komunite a mestský rebríček' },
+  { id:5,  name:'Team Leader',      stars:[6000, 6800, 7600, 8400, 9200],
+    perk:'Tímové štatistiky a rozšírené prehľady tímu' },
+  { id:6,  name:'Regional Leader',  stars:[10000, 11000, 12000, 13000, 14000],
+    perk:'Mapa miest, regionálny rebríček a leadership stretnutia' },
+  { id:7,  name:'Director',         stars:[15000, 17000, 19000, 21000, 23000],
+    perk:'Účasť v Leader Poole a kvartálne výzvy' },
+  { id:8,  name:'Elite Director',   stars:[25000, 28000, 31000, 34000, 37000],
+    perk:'VIP eventy, vstupy zdarma a špeciálny merch' },
+  { id:9,  name:'Master Director',  stars:[40000, 47000, 54000, 61000, 68000],
+    perk:'Mentorský program a vlastné misie pre tvoj tím' },
+  { id:10, name:'President',        stars:[75000], top:true,
+    perk:'Hall of Fame, dovolenka s Fusion Academy a doživotná medaila' }
+];
+
+// Celý rebríček pre appku — čo už má, kde je a čo ju čaká.
+// Provízna štruktúra stojí na dvoch veciach:
+//
+// 1) PÄŤ LÍNIÍ — presne tie sadzby, ktoré appka používa od začiatku (LINE_RATES):
+//    10 % z priamej línie, potom 5 %, 3 %, 2 % a 1 %. Platí pre každého.
+//
+// 2) TÍMOVÝ ROZDIELOVÝ BONUS — až od hodnosti Leader. Ambasádorka dostane z obratu
+//    svojho tímu ROZDIEL medzi svojím percentom a percentom toho, kto je pod ňou.
+//    Ak pod ňou nikto províziu neberie, dostane celé svoje percento. Vďaka tomu
+//    celá línia dokopy nikdy nevyplatí viac než percento najvyššej hodnosti.
+const AMB_RATES = {1:0.10, 2:0.11, 3:0.12, 4:0.13, 5:0.14, 6:0.15, 7:0.16, 8:0.17, 9:0.18, 10:0.20};
+const AMB_TEAM_FROM = 4;   // Leader a vyššie
+function ambRate(rank){ return AMB_RATES[rank] || AMB_RATES[1]; }
+function ambTeamBonus(rank){ return (rank||0) >= AMB_TEAM_FROM ? ambRate(rank) : 0; }
+// Koľko reálne dostane z tímu, keď je pod ňou niekto s vlastným percentom.
+function ambDifferential(myRank, belowRank){
+  const mine = ambTeamBonus(myRank);
+  if(!mine) return 0;
+  const below = ambTeamBonus(belowRank);
+  return Math.max(0, +(mine - below).toFixed(4));
+}
+
+// Koľko objemových bodov vyrobí ktorý typ platby. Položky s vlastnými nákladmi
+// (eventy, venčeky, merch) majú koeficient nižší — firme z nich ostáva menej.
+const OB_FACTORS = {
+  membership:1, subscription:1, subscription_renewal:1, single_entry:1,
+  private_lesson:1, venceky:0.5, event_ticket:0.5, product:0.3, merch:0.3
+};
+const OB_LABELS = {
+  membership:'Členstvá', subscription:'Členstvá', subscription_renewal:'Členstvá',
+  single_entry:'Vstupy a permanentky', private_lesson:'Súkromné hodiny',
+  venceky:'Venčeky', event_ticket:'Eventy a workshopy', product:'Merch', merch:'Merch'
+};
+
+// Objemové body za mesiac: vlastné nákupy + nákupy celej línie.
+async function ambVolume(uid, month){
+  const m = month || today().slice(0,7);
+  const ids = new Set([uid, ...(await getAllDescendants(uid))]);
+  const rows = await q.find(db.transactions,{});
+  const by = {}; let total = 0;
+  for(const t of rows){
+    if(!t.user_id || !ids.has(t.user_id)) continue;
+    const when = t.month || String(t.date||t.created_at||'').slice(0,7);
+    if(when !== m) continue;
+    const amt = +t.amount || 0;
+    if(amt <= 0) continue;                       // výplaty a storná sa nerátajú
+    const factor = OB_FACTORS[t.type];
+    if(factor === undefined) continue;           // kredit, tipy a pod. body nedávajú
+    const ob = Math.round(amt * factor);
+    if(!ob) continue;
+    const label = OB_LABELS[t.type] || 'Ostatné';
+    by[label] = (by[label]||0) + ob;
+    total += ob;
+    if(t.user_id === uid) by['_own'] = (by['_own']||0) + ob;
+  }
+  const own = by['_own'] || 0; delete by['_own'];
+  return { month:m, total, own, team: total-own,
+    breakdown: Object.entries(by).map(([label,ob])=>({label, ob})).sort((a,b)=>b.ob-a.ob) };
+}
+
+// Objemové body za ľubovoľné obdobie (súťaže). Rovnaké koeficienty ako mesačný výpočet.
+async function ambVolumeRange(uid, fromDate, toDate){
+  const ids = new Set([uid, ...(await getAllDescendants(uid))]);
+  const rows = await q.find(db.transactions,{});
+  let total=0;
+  for(const t of rows){
+    if(!t.user_id || !ids.has(t.user_id)) continue;
+    const when = String(t.date||t.created_at||'').slice(0,10);
+    if(!when || when<fromDate || when>toDate) continue;
+    const amt=+t.amount||0; if(amt<=0) continue;
+    const factor=OB_FACTORS[t.type]; if(factor===undefined) continue;
+    total += Math.round(amt*factor);
+  }
+  return total;
+}
+
+// SÚŤAŽ O RÍM: kto od 20. 8. do 31. 12. 2026 vyrobí 1 000 OB (≈ 1 000 € obratu
+// z členstiev), získa 2 letenky do Ríma + vstup do Kolosea pre 2 osoby.
+// Splniť ju môže každá — nie je to rebríček, ale méta.
+const AMB_CONTEST = { id:'rim2026', name:'Rím pre dve osoby',
+  target:1000, from:'2026-08-20', to:'2026-12-31',
+  prize:'2 letenky do Ríma + vstup do Kolosea pre 2 osoby' };
+
+function ambLadder(count){
+  const n = Math.max(0, +count||0);
+  const cur = ambRank(n);
+  return AMB_RANKS.map(r=>{
+    const need = r.stars[0];
+    const done = n >= need;
+    return { rank:r.id, name:r.name, need, perk:r.perk,
+      done, current: cur.rank===r.id,
+      missing: done ? 0 : need-n,
+      stars: done ? r.stars.filter(t=>n>=t).length : 0 };
+  });
+}
+
+// Vráti hodnosť, počet hviezd a koľko ľudí chýba do ďalšieho stupňa.
+function ambRank(count){
+  const n = Math.max(0, +count||0);
+  if(n < AMB_RANKS[0].stars[0]){
+    return { rank:0, name:null, stars:0, count:n,
+             next:{ rank:1, name:AMB_RANKS[0].name, need:AMB_RANKS[0].stars[0], missing:AMB_RANKS[0].stars[0]-n },
+             progress:0, top:false };
+  }
+  // Posledná hodnosť, ktorej prvý prah je splnený.
+  let r = AMB_RANKS[0];
+  for(const x of AMB_RANKS) if(n >= x.stars[0]) r = x;
+  const stars = r.stars.filter(t=>n>=t).length;
+  if(r.top) return { rank:r.id, name:r.name, stars:0, count:n, next:null, progress:100, top:true };
+
+  // Ďalší stupeň: buď ďalšia hviezda v tejto hodnosti, alebo prvá v ďalšej.
+  const nextStar = r.stars.find(t=>n<t);
+  const nextRank = AMB_RANKS.find(x=>x.id===r.id+1);
+  const target = nextStar!=null ? nextStar : nextRank.stars[0];
+  const prevTarget = nextStar!=null ? (r.stars[r.stars.indexOf(nextStar)-1] ?? r.stars[0]) : r.stars[r.stars.length-1];
+  const span = Math.max(1, target - prevTarget);
+  return {
+    rank:r.id, name:r.name, stars, count:n, top:false,
+    next: nextStar!=null
+      ? { rank:r.id, name:r.name, star:stars+1, need:target, missing:target-n }
+      : { rank:nextRank.id, name:nextRank.name, star:1, need:target, missing:target-n },
+    progress: Math.min(100, Math.round((n-prevTarget)/span*100))
+  };
+}
+
 // Visual reward for bringing new people: an emoji title shown before the name
 const REFERRAL_BADGES = [
   {need:10000,emoji:'🚀', title:'SKY IS THE LIMIT'},
@@ -3902,8 +4338,11 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     // Pozadie celého profilu = odmena za počet privedených ľudí do štruktúry (1→10000).
     // Admin/zakladateľ si môže nastaviť vlastné (custom_bg), inak zakladateľ = founder.
     const canCustomBg = !!(u.is_admin || u.is_founder);
-    const bgTier = (canCustomBg && u.custom_bg) ? u.custom_bg : (u.is_founder ? 'founder' : refBgTier(refCount));
-    const nextBg = u.is_founder ? null : nextBgTier(refCount);
+    // Pozadia sa rátajú z rovnakej metriky ako ambasádorský odznak — teda len
+    // z ľudí, ktorí naozaj prišli na hodinu.
+    const activeRefs = await activeDownlineCount(u._id);
+    const bgTier = (canCustomBg && u.custom_bg) ? u.custom_bg : (u.is_founder ? 'founder' : refBgTier(activeRefs));
+    const nextBg = u.is_founder ? null : nextBgTier(activeRefs);
     const nameBadge=referralBadge(refCount, gender);
     // Membership-level glow — visible to everyone on the public profile
     const mem=await checkMembership(u._id);
@@ -3936,8 +4375,8 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
       // Ambasádorský odznak: rátajú sa len ľudia z línie, ktorí REÁLNE začali
       // tancovať (majú aspoň 1 návštevu) — nie mŕtve registrácie.
       vencek_alumni: u.vencek_alumni||null,
-      ambassador_count: await (async()=>{ const ids=await getAllDescendants(u._id); let n=0;
-        for(const id of ids){ const d=await q.one(db.users,{_id:id}); if(d && (d.visit_count||0)>0) n++; } return n; })(),
+      ambassador_count: activeRefs,
+      amb_rank: ambRank(activeRefs),
       avatar: u.anonymous&&!isSelf ? null : (u.avatar||null),
       member_badge:badge, loyalty_label: loyalty.current?.label||'Nováčik',
       visits: u.visit_count||0, referrals: refCount, direct_refs: directRefs,
@@ -3950,7 +4389,7 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
       bg_tier: bgTier, next_bg: nextBg, name_badge: nameBadge,
       can_custom_bg: canCustomBg, custom_bg: u.custom_bg||'',
       bg_tiers: (canCustomBg ? [...PROFILE_BG_TIERS, {need:0,key:'founder',name:'👑 Zakladateľ'}] : PROFILE_BG_TIERS)
-        .map(t=>({need:t.need,key:t.key,name:t.name,unlocked: canCustomBg?true:(refCount>=t.need), current: t.key===bgTier})),
+        .map(t=>({need:t.need,key:t.key,name:t.name,unlocked: canCustomBg?true:(activeRefs>=t.need), current: t.key===bgTier})),
       friend_state: isSelf ? 'self' : await friendState(me, u._id),
       friends_count: await q.count(db.friends,{users:u._id, status:'accepted'})
     });
@@ -4071,6 +4510,7 @@ app.get('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
     achievements: computeAchievements(u, refCount, memberMonths),
     merch_owned: u.merch_owned||[], manual_achievements: u.manual_achievements||[],
     merch_list: Object.keys(MERCH_KEYWORDS),
+    custom_prices: u.custom_prices||null,
     sponsor_id: u.sponsor_id||null, sponsor_name: sponsor?.name||null, sponsor_code: sponsor?.referral_code||null });
 });
 
@@ -4386,6 +4826,282 @@ app.post('/api/admin/users/:id/entries', adminAuth, async(req,res)=>{
     await auditLog(req,'entries_adjust',u._id,{old:cur},{op,val,new:ne},'');
     res.json({ ok:true, single_entries:ne });
   } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Admin: zapnúť/vypnúť ambasádorku. Rola odomyká celú ambasádorskú sekciu.
+app.post('/api/admin/users/:id/ambassador', adminAuth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
+    const on = req.body.enabled!==false;
+    if(on){
+      if(u.user_type==='trainer'||u.user_type==='admin'||u.is_admin)
+        return res.json({ok:true, user_type:u.user_type, note:'Tréner aj admin majú ambasádorskú sekciu automaticky — prepínať netreba.'});
+      await q.update(db.users,{_id:u._id},{$set:{user_type:'ambassador', ambassador_since:u.ambassador_since||nowISO()}});
+      await q.insert(db.notifications,{user_id:u._id,type:'ambassador',
+        title:'🔥 Si ambasádorka Fusion Academy!',
+        body:'Odomkli sme ti ambasádorskú sekciu — vlastný odkaz, klientky, provízie aj rebríček.',
+        read:false, created_at:nowISO()}).catch(()=>{});
+    } else {
+      await q.update(db.users,{_id:u._id},{$set:{user_type:'client'}});
+    }
+    await auditLog(req,'ambassador_toggle',u._id,{old:u.user_type},{new:on?'ambassador':'client'},'');
+    res.json({ok:true, user_type: on?'ambassador':'client'});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Prehľad pre ambasádorku — zatiaľ jadro: hodnosť, klientky, objem.
+app.get('/api/ambassador/me', ambassadorAuth, async(req,res)=>{
+  try{
+    const u = req.ambUser;
+    const ids = await getAllDescendants(u._id);
+    const todayS = today();
+    const daysBetween = (a,b)=>Math.round((new Date(b)-new Date(a))/86400000);
+    const clients = [];
+    for(const id of ids){
+      const d = await q.one(db.users,{_id:id});
+      if(!d) continue;
+      // Posledná hodina, na ktorej reálne bola. Staršie rezervácie nemajú stav
+      // 'attended' (dochádzka sa vtedy nezapisovala), preto berieme každú
+      // nezrušenú rezerváciu s dátumom, ktorý už prebehol.
+      const bk = (await q.find(db.bookings,{user_id:id}))
+        .filter(b=>b.status!=='cancelled' && b.booking_date && b.booking_date<=todayS)
+        .map(b=>b.booking_date).sort();
+      const last = bk.length ? bk[bk.length-1] : null;
+      const mActive = !!(d.membership_expires && new Date(d.membership_expires)>new Date());
+      clients.push({ id:d._id, name:d.name, visits:d.visit_count||0,
+        active: (d.visit_count||0)>0,
+        phone: d.phone||'', email: d.email||'',
+        membership: d.membership_plan||null,
+        membership_name: mActive && d.membership_plan
+          ? (MEMBERSHIP_PLANS[d.membership_plan]?.name || d.membership_plan) : null,
+        membership_until: mActive ? String(d.membership_expires).slice(0,10) : null,
+        entries: +(d.single_entries||0),
+        membership_active: mActive,
+        last_visit: last, days_since: last ? daysBetween(last, todayS) : null,
+        joined:(d.created_at||'').slice(0,10) });
+    }
+    const started = clients.filter(c=>c.active).length;
+    const vol = await ambVolume(u._id);
+    const prevMonth = (()=>{ const d=new Date(todayS+'T12:00:00'); d.setMonth(d.getMonth()-1);
+      return d.toISOString().slice(0,7); })();
+    const volPrev = await ambVolume(u._id, prevMonth);
+    const R = ambRank(vol.total);
+    res.json({ ok:true,
+      name:u.name, since:(u.ambassador_since||'').slice(0,10),
+      referral_code:u.referral_code,
+      link: APP_URL.replace(/\/$/,'')+'/invite/'+u.referral_code,
+      rank: R,
+      ladder: ambLadder(vol.total).map(r=>({...r, rate: ambRate(r.rank)})),
+      volume: vol, volume_prev: {month:volPrev.month, total:volPrev.total},
+      rate: ambRate(R.rank||1),
+      contest: await (async()=>{
+        const c=AMB_CONTEST;
+        if(today()>c.to) return null;
+        const done=await ambVolumeRange(u._id, c.from, c.to);
+        return { ...c, done, missing:Math.max(0,c.target-done),
+          progress:Math.min(100,Math.round(done/c.target*100)), won:done>=c.target };
+      })(),
+      // Tréner má provízie z línie zarátané v TRÉNERSKEJ výplate
+      // (/api/trainer/earnings riadok „Affiliate provízie") — ambasádorská
+      // sekcia mu ich nesmie ukazovať ako druhú, samostatnú výplatu.
+      is_trainer: u.user_type==='trainer' || !!u.is_admin,
+      // Zárobky po mesiacoch + história výplat — ambasádorka musí vidieť,
+      // čo jej za ktorý mesiac pribudlo a čo už dostala na účet.
+      earnings: await (async()=>{
+        const comms = await q.find(db.commissions,{partner_id:u._id});
+        const by = {};
+        for(const c of comms){
+          const m = c.month || String(c.created_at||'').slice(0,7);
+          if(!m) continue;
+          by[m] = by[m] || {month:m, earned:0, paid:0, pending:0};
+          const a = +c.amount||0;
+          by[m].earned += a;
+          if(c.status==='paid') by[m].paid += a; else by[m].pending += a;
+        }
+        return Object.values(by)
+          .map(x=>({month:x.month, earned:+x.earned.toFixed(2), paid:+x.paid.toFixed(2), pending:+x.pending.toFixed(2)}))
+          .sort((a,b)=>b.month.localeCompare(a.month)).slice(0,12);
+      })(),
+      payouts: await (async()=>{
+        const rows = await q.find(db.transactions,{user_id:u._id, type:'referral_payout_request'});
+        return rows.sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')))
+          .slice(0,12).map(r=>({ date:String(r.created_at||'').slice(0,10), amount:+r.amount||0,
+            status:r.status||'pending', iban:r.bank_account||'' }));
+      })(),
+      notifications: await (async()=>{
+        const kinds = ['commission','referral_credit','structure_growth','payout','ambassador',
+                       'ticket','event_sale','credit'];
+        const rows = (await q.find(db.notifications,{user_id:u._id}))
+          .filter(n=>kinds.includes(n.type));
+        return rows.sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')))
+          .slice(0,15).map(n=>({ title:n.title||'', body:n.body||'', read:!!n.read,
+            date:String(n.created_at||'').slice(0,10) }));
+      })(),
+      credit: +(u.referral_credit||0).toFixed(2),
+      credit_pending: +((await q.find(db.commissions,{partner_id:u._id,status:'pending'}))
+        .reduce((s,c)=>s+(c.amount||0),0)).toFixed(2),
+      line_rates: LINE_RATES,
+      team_from: AMB_TEAM_FROM,
+      team_bonus: ambTeamBonus(R.rank||1),
+      ob_rules: Object.entries(OB_LABELS)
+        .filter(([k])=>OB_FACTORS[k]!=null)
+        .map(([k,label])=>({key:k, label, factor:OB_FACTORS[k]}))
+        .filter((x,i,a)=>a.findIndex(y=>y.label===x.label)===i),
+      clients_total: clients.length,
+      clients_started: started,
+      clients_paying: clients.filter(c=>c.membership_active).length,
+      clients });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AMBASÁDORI — FÁZA 5: rebríček, denné úlohy, materiály, Academy (bez XP —
+// jediná metrika výkonu sú objemové body, presne ako hodnosti)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Rebríček mesiaca podľa OB. Výpočet je drahý → cache na 10 minút.
+let _ambLbCache=null;
+app.get('/api/ambassador/leaderboard', ambassadorAuth, async(req,res)=>{
+  try{
+    const m = today().slice(0,7);
+    if(_ambLbCache && _ambLbCache.month===m && Date.now()-_ambLbCache.at<10*60*1000)
+      return res.json({..._ambLbCache.data, me_id:req.ambUser._id});
+    const all = await q.find(db.users,{});
+    const rows=[];
+    for(const u of all){
+      if(!(u.user_type==='ambassador'||u.user_type==='trainer'||u.is_admin)) continue;
+      const vol = await ambVolume(u._id, m);
+      if(!vol.total) continue;
+      const R = ambRank(vol.total);
+      rows.push({ id:u._id, name:u.name, ob:vol.total, rank:R.rank, rank_name:R.name, stars:R.stars });
+    }
+    rows.sort((a,b)=>b.ob-a.ob);
+    rows.forEach((r,i)=>r.pos=i+1);
+    const data={ ok:true, month:m, top:rows.slice(0,10), total:rows.length,
+      positions:Object.fromEntries(rows.map(r=>[r.id,{pos:r.pos, ob:r.ob}])) };
+    _ambLbCache={month:m, at:Date.now(), data};
+    res.json({...data, me_id:req.ambUser._id});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Denné úlohy — bez bodov, len konkrétne kroky vyplývajúce z jej dát.
+app.get('/api/ambassador/tasks', ambassadorAuth, async(req,res)=>{
+  try{
+    const u=req.ambUser;
+    const ids=await getAllDescendants(u._id);
+    const todayS=today();
+    const days=(a,b)=>Math.round((new Date(b)-new Date(a))/86400000);
+    let gone=[], noPlan=0, expiring=[];
+    for(const id of ids){
+      const d=await q.one(db.users,{_id:id}); if(!d) continue;
+      const mActive=!!(d.membership_expires && new Date(d.membership_expires)>new Date());
+      if(mActive && days(todayS, String(d.membership_expires).slice(0,10))<=5)
+        expiring.push({name:d.name, days:days(todayS, String(d.membership_expires).slice(0,10))});
+      if(!mActive && !(d.single_entries>0) && (d.visit_count||0)>0) noPlan++;
+      const bk=(await q.find(db.bookings,{user_id:id}))
+        .filter(b=>b.status!=='cancelled'&&b.booking_date&&b.booking_date<=todayS)
+        .map(b=>b.booking_date).sort();
+      const last=bk[bk.length-1];
+      if(last && days(last,todayS)>30) gone.push({name:d.name, days:days(last,todayS)});
+    }
+    const tasks=[];
+    gone.slice(0,3).forEach(g=>tasks.push({icon:'📞', text:g.name+' nebola '+g.days+' dní — ozvi sa jej.'}));
+    expiring.slice(0,2).forEach(x=>tasks.push({icon:'⏳', text:x.name+' končí členstvo o '+x.days+' '+(x.days===1?'deň':(x.days<=4?'dni':'dní'))+' — priprav ju na obnovu.'}));
+    if(noPlan) tasks.push({icon:'💡', text:noPlan+' '+(noPlan===1?'klientka chodí':'klientky chodia')+' bez členstva — ponúkni permanentku alebo členstvo.'});
+    const vol=await ambVolume(u._id);
+    if(!vol.own) tasks.push({icon:'💃', text:'Tento mesiac ešte nemáš vlastnú návštevu — príď si zatancovať.'});
+    if(!tasks.length) tasks.push({icon:'🌟', text:'Všetko v poriadku! Pošli odkaz jednej novej žene — nikdy nevieš, komu zmeníš život.'});
+    res.json({ok:true, tasks});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Marketingové materiály — hotové texty a grafika s jej vlastným odkazom.
+app.get('/api/ambassador/materials', ambassadorAuth, async(req,res)=>{
+  try{
+    const u=req.ambUser;
+    const link=APP_URL.replace(/\/$/,'')+'/invite/'+u.referral_code;
+    res.json({ok:true, materials:[
+      { id:'story-prva', name:'Story — prvá hodina zadarmo', kind:'text',
+        text:'Poď si so mnou zatancovať 💃 Prvá hodina je úplne zadarmo — Zumba vo Zvolene, Detve, B. Bystrici aj Brezne. Registrácia za 30 sekúnd: '+link },
+      { id:'sprava-kamoske', name:'Správa kamoške', kind:'text',
+        text:'Ahoj! Chodím na Zumbu do Fusion Academy a je to najlepšia časť môjho týždňa 🧡 Prvú hodinu máš zadarmo — poď to skúsiť so mnou: '+link },
+      { id:'post-fb', name:'Príspevok na Facebook', kind:'text',
+        text:'Hľadala som pohyb, pri ktorom nebudem pozerať na hodinky — a našla som Zumbu vo Fusion Academy. Super hudba, žiadny tlak, skvelá partia žien. Prvá hodina je zadarmo, tak ak rozmýšľaš, toto je znamenie 😄 '+link },
+      { id:'event-latin', name:'Latin Tropical Party — pozvánka', kind:'text',
+        text:'5. septembra bude v Detve LATIN TROPICAL PARTY 🌴 Masterclass s Marekom Gruberom a Ivanom Ligártom, potom párty s welcome drinkom. Lístky: '+APP_URL.replace(/\/$/,'')+'/event/latin-tropical-2026' },
+      { id:'plagat-event', name:'Plagát Latin Tropical (na stiahnutie)', kind:'image',
+        url:'/img/events/latin-tropical.jpg' },
+      { id:'qr', name:'Môj QR kód (na vytlačenie)', kind:'image',
+        url:'/api/qr/invite.png?code='+encodeURIComponent(u.referral_code) }
+    ]});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Tipy pre ambasádorky — krátke praktické rady priamo v appke.
+// Leadrovské sa odomknú od hodnosti Leader.
+const AMB_COURSES = [
+  { id:'zaklad-1', tier:'basic', name:'Ako funguje ambasádorský program',
+    body:'Tvoja odmena vzniká z objemových bodov — 1 bod za každé euro, ktoré tvoja skupina zaplatí (členstvá, vstupy, permanentky; eventy a venčeky polovicu, merch tretinu). Percento máš podľa hodnosti: Starter 10 %, President 20 %. Hodnosť sa počíta každý mesiac nanovo z bodov celej tvojej skupiny do piatej úrovne. Provízia čaká 14 dní (ochrana pred vrátením platby) a potom sa pripíše do kreditu.' },
+  { id:'zaklad-2', tier:'basic', name:'Ako pozvať prvú ženu',
+    body:'Nepresviedčaj — pozvi. Najlepšie funguje úprimná veta: „Chodím na Zumbu, je to super, poď raz so mnou — prvú hodinu máš zadarmo." Pošli svoj odkaz zo sekcie Môj odkaz, alebo jej ukáž QR kód priamo z mobilu. Keď sa registruje cez tvoj odkaz, je navždy tvoja klientka.' },
+  { id:'zaklad-3', tier:'basic', name:'Ako komunikovať bez spamovania',
+    body:'Pravidlo: hovor o svojom zážitku, nie o "príležitosti". Zdieľaj storky z hodín, ako sa cítiš, čo ti to dalo. Nikdy neposielaj ten istý text desiatim ženám naraz — každej píš osobne a len raz. Ak neodpovie, nechaj to tak; vráti sa, keď bude pripravená.' },
+  { id:'zaklad-4', tier:'basic', name:'Udržanie je viac než nábor',
+    body:'Priviesť ženu je začiatok — skutočná hodnota je, keď ostane. Sekcia Moje klientky ti ukáže, kto dlho nebol: ozvi sa jej skôr, než úplne vypadne. Stačí „chýbala si mi na hodine, prídeš v stredu?". Klientka, ktorá chodí rok, ti zarobí viac než päť, ktoré prišli raz.' },
+  { id:'zaklad-5', tier:'basic', name:'Ako čítať svoje čísla',
+    body:'Objemové body = koľko tvoja skupina reálne zaplatila tento mesiac. Vlastné vs. línia ti povie, či rastieš ty alebo tvoj tím. Kalkulačka ti ukáže, čo sa stane, keď každá pozve jednu kamošku. Sleduj kartu Čo dnes spraviť — tam sú kroky, ktoré majú najväčší dopad.' },
+  { id:'leader-1', tier:'leader', name:'Vedenie tímu (od hodnosti Leader)',
+    body:'Ako Leaderka už nezarábaš len na klientkach — pomáhaš ambasádorkám pod sebou rásť. Tvoj rozdielový bonus rastie vtedy, keď rastú ONY. Raz týždenne si prejdi ich čísla: kto stagnuje, tej zavolaj a spýtaj sa, kde sa zasekla. Neprikazuj — pýtaj sa.' },
+  { id:'leader-2', tier:'leader', name:'Ako urobiť z klientky ambasádorku',
+    body:'Najlepšie ambasádorky sú spokojné klientky, ktoré aj tak všetkým hovoria o tanci. Také spoznáš: vodí kamošky, chváli hodiny, má energiu. Ponúkni jej školenie osobne — „robíš to už aj tak, poď za to dostávať odmenu." Nikdy nelákaj ženy, ktoré ešte samé nechodia.' },
+  { id:'leader-3', tier:'leader', name:'Leadrovské školenia s Marekom a Beátkou',
+    body:'Od hodnosti Leader máš prístup na špeciálne leadrovské školenia — stratégia, vedenie ľudí, budovanie mesta. Termíny sa oznamujú v notifikáciách a na tejto stránke. Účasť sa počíta k ročnej obhajobe hodnosti.' }
+];
+
+app.get('/api/ambassador/academy', ambassadorAuth, async(req,res)=>{
+  try{
+    const u=req.ambUser;
+    const done=new Set(u.academy_done||[]);
+    const vol=await ambVolume(u._id);
+    const liveRank=ambRank(vol.total).rank||0;
+    const myRank=Math.max(liveRank, u.amb_rank||0, u.is_admin?10:0);
+    res.json({ok:true, my_rank:myRank, leader_from:4,
+      courses:AMB_COURSES.map(c=>({ id:c.id, tier:c.tier, name:c.name,
+        body: (c.tier==='leader'&&myRank<4)?null:c.body,
+        locked: c.tier==='leader'&&myRank<4,
+        done: done.has(c.id) }))});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.post('/api/ambassador/academy/:id/done', ambassadorAuth, async(req,res)=>{
+  try{
+    const u=req.ambUser;
+    const c=AMB_COURSES.find(x=>x.id===req.params.id);
+    if(!c) return res.status(404).json({error:'Kurz nenájdený'});
+    const done=new Set(u.academy_done||[]);
+    done.has(c.id) ? done.delete(c.id) : done.add(c.id);
+    await q.update(db.users,{_id:u._id},{$set:{academy_done:[...done]}});
+    res.json({ok:true, done:done.has(c.id)});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Admin: individuálna cena členstva pre jednu klientku (výnimka, nie plošná zľava)
+app.post('/api/admin/users/:id/custom-price', adminAuth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
+    const plan_id=String(req.body.plan_id||'');
+    if(!MEMBERSHIP_PLANS[plan_id]) return res.status(400).json({error:'Neplatný plán'});
+    const cp={...(u.custom_prices||{})};
+    if(req.body.price===null || req.body.price==='') delete cp[plan_id];
+    else {
+      const p=+req.body.price;
+      if(isNaN(p)||p<0) return res.status(400).json({error:'Neplatná cena'});
+      cp[plan_id]=p;
+    }
+    await q.update(db.users,{_id:u._id},{$set:{custom_prices:Object.keys(cp).length?cp:null}});
+    await auditLog(req,'custom_price',u._id,{old:u.custom_prices||null},{new:cp},'');
+    res.json({ok:true, custom_prices:Object.keys(cp).length?cp:null});
+  }catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // Admin: darovať / nastaviť členstvo s vlastnou platnosťou + prípadne vstupy (migrácia z Glofoxu)
@@ -8982,6 +9698,10 @@ app.post('/api/stripe/checkout', auth, async(req,res)=>{
     }
     // Promo kód → zľava z ceny plánu
     let price = plan.price, promoCode = null, promoDiscount = 0;
+    // Individuálna dohodnutá cena (napr. detská zľava) — nastavuje sa na profile
+    // konkrétnej klientky, netýka sa nikoho iného.
+    const buyer = await q.one(db.users,{_id:memberId});
+    if(buyer?.custom_prices && buyer.custom_prices[plan_id]!=null) price = +buyer.custom_prices[plan_id];
     // Gold benefit: 10-vstupová permanentka za 70 € (ostatní 80 €)
     if(plan_id==='permanentka10'){
       const gm=await checkMembership(memberId);
@@ -9254,7 +9974,9 @@ app.post('/api/stripe/webhook', async(req,res)=>{
       if(u) await q.update(db.users,{_id:u._id},{$set:{stripe_subscription_id:null}});
     } else if(event.type==='checkout.session.completed'){
       const s = event.data.object;
-      if(s.metadata?.type==='order' && s.metadata.order_number && s.payment_status==='paid'){
+      if(s.metadata?.type==='event_order' && s.metadata.order_number && s.payment_status==='paid'){
+        await EVENTS.fulfillEventOrder(s.metadata.order_number).catch(e=>console.error('Event fulfil:',e.message));
+      } else if(s.metadata?.type==='order' && s.metadata.order_number && s.payment_status==='paid'){
         await q.update(db.orders,{order_number:s.metadata.order_number,status:{$ne:'paid'}},{$set:{status:'paid',paid_at:nowISO(),payment_method:'stripe'}});
         const ord=await q.one(db.orders,{order_number:s.metadata.order_number}); if(ord) grantMerchFromOrder(ord);
       } else {
@@ -10231,6 +10953,80 @@ app.post('/api/contact', rlPublic, async(req,res)=>{
     if(admin) await q.insert(db.notifications,{user_id:admin._id,type:'contact',title:'Nová správa z kontaktného formulára',body:`${name} (${email}): ${subject||message.slice(0,60)}`,read:false,created_at:nowISO()});
     res.json({ok:true});
   } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// POSLEDNÝ TANEC – dopyt školy z landing page (www.fusionacademy.sk)
+// Verejný endpoint volaný z iného originu, preto CORS + rate limit.
+// ═══════════════════════════════════════════════════════════════════════════════
+const SCHOOL_LEAD_MAILS = ['gruber.marek@gmail.com','beatabunova22@gmail.com'];
+function schoolLeadCors(req,res){
+  res.setHeader('Access-Control-Allow-Origin','*');
+  res.setHeader('Access-Control-Allow-Headers','Content-Type');
+  res.setHeader('Access-Control-Allow-Methods','POST,OPTIONS');
+}
+app.options('/api/public/school-lead',(req,res)=>{ schoolLeadCors(req,res); res.sendStatus(204); });
+// Prihláška na vstupné ambasádorské školenie (29. 8. 2026).
+app.options('/api/public/ambassador-training',(req,res)=>{
+  res.setHeader('Access-Control-Allow-Origin','*');
+  res.setHeader('Access-Control-Allow-Headers','Content-Type');
+  res.setHeader('Access-Control-Allow-Methods','POST,OPTIONS');
+  res.sendStatus(204);
+});
+app.post('/api/public/ambassador-training', rlPublic, async(req,res)=>{
+  res.setHeader('Access-Control-Allow-Origin','*');
+  try{
+    const esc=s=>String(s||'').slice(0,400).replace(/[<>]/g,'');
+    const name=esc(req.body.name), phone=esc(req.body.phone);
+    if(!name||!phone) return res.status(400).json({error:'Meno a telefón sú povinné.'});
+    const email=esc(req.body.email).toLowerCase(), city=esc(req.body.city), note=esc(req.body.note);
+    await q.insert(db.rentals,{_type:'amb_training', training_date:'2026-08-29',
+      name, phone, email, city, note, user_id:req.session?.uid||null,
+      status:'new', created_at:nowISO()});
+    const html=`<!doctype html><html><body style="font-family:Arial,sans-serif;background:#0a0a0a;color:#eee;padding:20px">
+      <h2 style="color:#C9A84C;margin:0 0 10px">🔥 Prihláška na ambasádorské školenie</h2>
+      <p><b>${name}</b><br>Telefón: <a href="tel:${phone}">${phone}</a><br>
+      E-mail: ${email||'—'}<br>Mesto: ${city||'—'}</p>
+      <p>Prečo to chce robiť:<br>${note||'—'}</p>
+      <p style="color:#888;font-size:12px">Školenie 29. 8. 2026</p></body></html>`;
+    for(const to of ['gruber.marek@gmail.com','beatabunova22@gmail.com']){
+      try{ await sendMail(to,'🔥 Prihláška na školenie: '+name, html); }catch(e){}
+    }
+    for(const a of await q.find(db.users,{is_admin:true})){
+      await q.insert(db.notifications,{user_id:a._id, type:'amb_training',
+        title:'🔥 Prihláška na ambasádorské školenie',
+        body:name+' · '+phone+(city?' · '+city:''), read:false, created_at:nowISO()}).catch(()=>{});
+    }
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.post('/api/public/school-lead', rlPublic, async(req,res)=>{
+  schoolLeadCors(req,res);
+  try{
+    const esc=s=>String(s||'').slice(0,500).replace(/[<>]/g,'');
+    const school=esc(req.body.school), name=esc(req.body.name), phone=esc(req.body.phone);
+    const email=esc(req.body.email), role=esc(req.body.role), note=esc(req.body.note);
+    if(!school||!name||!phone) return res.status(400).json({error:'Škola, meno a telefón sú povinné.'});
+    const lead=await q.insert(db.rentals,{_type:'school_lead',program:'posledny_tanec',
+      school,name,role,phone,email,note,status:'new',
+      utm:esc(req.body.utm), created_at:nowISO()});
+    const html=`<!doctype html><html><body style="font-family:Arial,sans-serif">
+      <h2 style="color:#c9a227">Nový dopyt školy – Posledný tanec</h2>
+      <p><b>Škola:</b> ${school}<br><b>Kontakt:</b> ${name}${role?' ('+role+')':''}<br>
+      <b>Telefón:</b> <a href="tel:${phone}">${phone}</a><br>
+      <b>E-mail:</b> ${email||'—'}<br>
+      <b>Poznámka:</b> ${note||'—'}</p>
+      <p style="color:#888;font-size:12px">Prišlo z fusionacademy.sk/programy/posledny-tanec.html${req.body.utm?' · '+esc(req.body.utm):''}</p>
+      </body></html>`;
+    for(const to of SCHOOL_LEAD_MAILS){ try{ await sendMail(to,`🎓 Posledný tanec – dopyt: ${school}`,html); }catch(e){} }
+    for(const a of await q.find(db.users,{is_admin:true})){
+      await q.insert(db.notifications,{user_id:a._id,type:'school_lead',
+        title:'Nový dopyt školy – Posledný tanec',
+        body:`${school} · ${name} · ${phone}`,read:false,created_at:nowISO()});
+    }
+    res.json({ok:true,id:lead._id});
+  }catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -11363,7 +12159,7 @@ app.get('/api/attendance/schedule', trainerAuth, async(req,res)=>{
     const result = [];
     for(const c of classes){
       // Obsadenosť pre NAJBLIŽŠÍ termín (rovnako ako to vidí klient), nie súčet cez všetky dátumy
-      const bdate = displayNextDateForDay(c.day_of_week);
+      const bdate = sessionDateFor(c);
       const confirmed = await q.count(db.bookings,{class_id:c._id, booking_date:bdate, status:{$in:['confirmed','attended']}});
       const waitlist  = await q.count(db.bookings,{class_id:c._id, booking_date:bdate, status:'waitlist'});
       const si = await sessionInstructor(c, bdate);
@@ -11381,7 +12177,7 @@ app.get('/api/attendance/schedule', trainerAuth, async(req,res)=>{
 app.get('/api/attendance/session-instructor', trainerAuth, async(req,res)=>{
   const cls=await q.one(db.classes,{_id:String(req.query.class_id||'')});
   if(!cls) return res.status(404).json({error:'Hodina nenájdená'});
-  const date=/^\d{4}-\d{2}-\d{2}$/.test(req.query.date||'') ? req.query.date : displayNextDateForDay(cls.day_of_week);
+  const date=/^\d{4}-\d{2}-\d{2}$/.test(req.query.date||'') ? req.query.date : sessionDateFor(cls);
   const si=await sessionInstructor(cls, date);
   res.json({ ...si, date, viewer_id:req.trainerUser._id, viewer_is_admin:!!req.trainerUser.is_admin });
 });
@@ -11400,7 +12196,7 @@ app.post('/api/attendance/session-instructor', trainerAuth, async(req,res)=>{
     const class_id=String(req.body.class_id||'');
     const cls=await q.one(db.classes,{_id:class_id});
     if(!cls) return res.status(404).json({error:'Hodina nenájdená'});
-    const date=/^\d{4}-\d{2}-\d{2}$/.test(req.body.date||'') ? req.body.date : displayNextDateForDay(cls.day_of_week);
+    const date=/^\d{4}-\d{2}-\d{2}$/.test(req.body.date||'') ? req.body.date : sessionDateFor(cls);
     let instructor_id = String(req.body.instructor_id||'');
     if(!instructor_id){
       // Prázdne id: ADMIN = vráť pôvodného trénera; TRÉNER = prihlás sám seba („učím ja")
@@ -11450,7 +12246,7 @@ app.post('/api/attendance/cancel-session', trainerAuth, async(req,res)=>{
     let { date, reason } = req.body;
     const cls = await q.one(db.classes,{_id:class_id});
     if(!cls) return res.status(404).json({error:'Hodina nenájdená'});
-    date = date || displayNextDateForDay(cls.day_of_week);
+    date = date || sessionDateFor(cls);
     reason = (reason||'').slice(0,300);
     // Idempotencia
     if(await q.one(db.class_cancellations,{class_id, date}))
@@ -11550,7 +12346,7 @@ app.get('/api/attendance/class/:classId', trainerAuth, async(req,res)=>{
     // bez explicitného ?date zobraz účastníkov NAJBLIŽŠIEHO termínu (zhodné s počtom pre klienta),
     // ?date=all zobrazí naprieč všetkými termínmi
     if(req.query.date && req.query.date!=='all') query.booking_date = req.query.date;
-    else if(!req.query.date){ const cls=await q.one(db.classes,{_id:req.params.classId}); if(cls) query.booking_date = displayNextDateForDay(cls.day_of_week); }
+    else if(!req.query.date){ const cls=await q.one(db.classes,{_id:req.params.classId}); if(cls) query.booking_date = sessionDateFor(cls); }
     const bookings = await q.find(db.bookings, query, {booking_date:-1});
     const result = [];
     for(const b of bookings){
@@ -11597,7 +12393,7 @@ app.post('/api/attendance/manual-booking', trainerAuth, async(req,res)=>{
     if(!cls) return res.status(404).json({error:'Hodina nenájdená'});
     const u = await q.one(db.users,{_id:user_id});
     if(!u) return res.status(404).json({error:'Používateľ nenájdený'});
-    const bdate = booking_date || displayNextDateForDay(cls.day_of_week);
+    const bdate = booking_date || sessionDateFor(cls);
     const exists = await q.one(db.bookings,{class_id,user_id,booking_date:bdate,status:{$ne:'cancelled'}});
     if(exists) return res.status(400).json({error:'Tento klient je už prihlásený na túto hodinu'});
 
@@ -11857,7 +12653,7 @@ app.post('/api/attendance/confirm-session', trainerAuth, async(req,res)=>{
     const cls=await q.one(db.classes,{_id:String(req.body.class_id||'')});
     if(!cls) return res.status(404).json({error:'Hodina nenájdená'});
     if(cls.category==='Online') return res.status(400).json({error:'Online hodiny sa potvrdzujú automaticky pri štarte vysielania — účasť aj body dostanú klientky samé, tréner za ne výplatu nemá.'});
-    const date=/^\d{4}-\d{2}-\d{2}$/.test(req.body.date||'') ? req.body.date : displayNextDateForDay(cls.day_of_week);
+    const date=/^\d{4}-\d{2}-\d{2}$/.test(req.body.date||'') ? req.body.date : sessionDateFor(cls);
     const rows=await q.find(db.bookings,{class_id:cls._id, booking_date:date, status:'confirmed'});
     let credited=0;
     for(const b of rows){
@@ -11913,7 +12709,7 @@ app.post('/api/attendance/qr-checkin', trainerAuth, async(req,res)=>{
     if(class_id){
       const cls = await q.one(db.classes,{_id:class_id});
       if(!cls) return res.json({ok:true, user:userData, booking:null, note:'Hodina nenájdená'});
-      const bdate = displayNextDateForDay(cls.day_of_week);
+      const bdate = sessionDateFor(cls);
       const exists = await q.one(db.bookings,{class_id,user_id:u._id,booking_date:bdate,status:{$ne:'cancelled'}});
       if(exists){
         // Mark physical attendance na existujúcej rezervácii + pripíš návštevu/body (ak už nebola attended)
@@ -13087,6 +13883,12 @@ app.post('/api/client/referral-credit/payout', auth, async(req,res)=>{
   try {
     const u = await q.one(db.users,{_id:req.session.uid});
     if(!u) return res.status(404).json({error:'Nenájdený'});
+    // Kredit môže míňať v appke ktokoľvek, ale VYPLATIŤ na účet až ambasádorka.
+    // Kto chce peniaze na účet, musí prejsť vstupným školením.
+    const isAmb = !!(u.is_admin || u.user_type==='ambassador' || u.user_type==='trainer');
+    if(!isAmb) return res.status(403).json({
+      error:'Kredit si môžeš hneď použiť v appke — na členstvá, permanentky, merch, vstupenky aj súkromné hodiny. Na výplatu na účet treba absolvovať vstupné ambasádorské školenie.',
+      need_training:true, training_url:'/skolenie' });
     // Dostupný kredit = referral kredit + čakajúce provízie (jeden pohár)
     const pendComms = await q.find(db.commissions,{partner_id:u._id,status:'pending'});
     const pendSum = +pendComms.reduce((s,c)=>s+(c.amount||0),0).toFixed(2);
@@ -13771,6 +14573,7 @@ app.get('/schedule',   (req,res)=>res.sendFile(path.join(__dirname,'public','sch
 app.get('/community',  (req,res)=>res.sendFile(path.join(__dirname,'public','community.html')));
 app.get('/support',    (req,res)=>res.sendFile(path.join(__dirname,'public','support.html')));
 app.get('/cennik',     (req,res)=>res.redirect(302,'/obchod'));
+
 app.get('/obchod',     (req,res)=>res.sendFile(path.join(__dirname,'public','obchod.html')));
 // Jeden obchod: cenník žije v /obchod (staré linky v mailoch/na webe presmerujeme)
 app.get('/pricing',    (req,res)=>res.redirect(302,'/obchod'+(req.originalUrl.includes('?')?'?'+req.originalUrl.split('?')[1]:'')));
@@ -13778,6 +14581,14 @@ app.get('/u/:id',      (req,res)=>res.sendFile(path.join(__dirname,'public','pro
 app.get('/vencek',     (req,res)=>res.sendFile(path.join(__dirname,'public','vencek.html')));
 app.get('/vencek-booking', (req,res)=>res.sendFile(path.join(__dirname,'public','vencek-booking.html')));
 app.get('/invite', (req,res)=>{ const qs=req.url.includes('?')?req.url.slice(req.url.indexOf('?')):''; res.redirect('/invite/FUSION'+qs); });
+// Registračné aliasy — reklamy a staré odkazy mieria na rôzne varianty ("Sign Up",
+// /registracia, /vitaj). Bez nich padali na 404 a platený klik prišiel navnivoč.
+const SIGNUP_ALIASES = ['/registracia','/register','/signup','/sign-up','/vitaj','/zaciatok','/start'];
+SIGNUP_ALIASES.forEach(p=>app.get(p,(req,res)=>{
+  const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+  res.redirect(302, '/invite/FUSION'+qs);
+}));
+
 app.get('/invite/:code', (req,res)=>res.sendFile(path.join(__dirname,'public','invite.html')));
 app.get('/terms',      (req,res)=>res.sendFile(path.join(__dirname,'public','terms.html')));
 app.get('/dashboard',  (req,res)=>res.sendFile(path.join(__dirname,'public','dashboard.html')));
@@ -14085,6 +14896,33 @@ let APP_URL = process.env.APP_URL || 'https://app.fusionacademy.sk';
 // Ak je APP_URL omylom nastavená na apex, oprav ju na app. subdoménu, nech maily nevedú na 404.
 if(/^https?:\/\/(www\.)?latindancefusion\.art/i.test(APP_URL)) APP_URL = 'https://app.fusionacademy.sk';
 if(/^https?:\/\/(www\.)?fusionacademy\.sk/i.test(APP_URL)) APP_URL = 'https://app.fusionacademy.sk';
+
+// ── EVENT VSTUPENKY ──────────────────────────────────────────────────────────
+const isMemberActive = u => !!(u && u.membership_plan && u.membership_expires && new Date(u.membership_expires) > new Date());
+const EVENTS = require('./event-tickets')({
+  app, db, q, auth, adminAuth, rlPublic, nowISO, today, APP_URL,
+  sendMail, createInvoice, stripeApi, STRIPE_SECRET, isMemberActive
+});
+EVENTS.ensureEvent().then(e=>console.log('🎟️  Event pripravený:', e?.name)).catch(e=>console.error('event seed:', e.message));
+
+app.get('/skolenie',           (req,res)=>res.sendFile(path.join(__dirname,'public','skolenie.html')));
+app.get('/ambasador',          (req,res)=>res.sendFile(path.join(__dirname,'public','ambasador.html')));
+
+// QR kód na pozvánku ambasádorky — rovnaká knižnica ako pri vstupenkách.
+app.get('/api/qr/invite.png', async(req,res)=>{
+  try{
+    const code = String(req.query.code||'').replace(/[^A-Za-z0-9_-]/g,'').slice(0,32);
+    if(!code) return res.status(400).end();
+    const png = await require('qrcode').toBuffer(APP_URL.replace(/\/$/,'')+'/invite/'+code,
+      {width:600, margin:1, color:{dark:'#000000', light:'#FFFFFF'}, errorCorrectionLevel:'M'});
+    res.setHeader('Content-Type','image/png');
+    res.setHeader('Cache-Control','public, max-age=86400');
+    res.end(png);
+  }catch(e){ res.status(500).end(); }
+});
+app.get('/event/:slug',        (req,res)=>res.sendFile(path.join(__dirname,'public','event.html')));
+app.get('/event/:slug/hotovo', (req,res)=>res.sendFile(path.join(__dirname,'public','event-hotovo.html')));
+app.get('/t/:code',            (req,res)=>res.sendFile(path.join(__dirname,'public','ticket.html')));
 
 // Enqueue all steps of a sequence for a user, starting from today + step.day
 async function enqueueSequence(userId, sequenceName, anchorDate){

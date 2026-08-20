@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vstupenky – Fusion Academy</title>
+<link rel="icon" type="image/png" href="/logo-mark.png">
+<style>
+:root{--gold:#C9A84C;--cream:#EAE3D5;--muted:#9d9788;--card:#1a1712;--line:#2e2a20}
+*{box-sizing:border-box}
+body{background:#12100a;color:var(--cream);font-family:'Inter',system-ui,sans-serif;margin:0;min-height:100dvh;padding-bottom:120px;padding-top:52px}
+.topbar{position:fixed;top:0;left:0;right:0;z-index:30;background:rgba(12,10,6,.96);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--line);height:52px;display:flex;align-items:center;padding:0 12px;gap:10px}
+.topbar button{background:none;border:none;color:var(--cream);font-size:.95rem;font-weight:700;
+  cursor:pointer;padding:8px 10px;display:flex;align-items:center;gap:6px}
+.topbar .ttl{color:var(--muted);font-size:.85rem;margin-left:auto;padding-right:6px}
+.wrap{max-width:600px;margin:0 auto;padding:16px}
+a{color:var(--gold)}
+.poster{width:100%;border-radius:16px;display:block;border:1px solid var(--line)}
+h1{font-size:1.5rem;margin:16px 0 4px;line-height:1.25}
+.sub{color:var(--gold);font-size:.85rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.meta{color:var(--muted);font-size:.92rem;margin:8px 0 0;line-height:1.7}
+
+/* svietiaci pás pre členov */
+.glow{margin:16px 0;padding:14px 16px;border-radius:14px;text-align:center;font-weight:800;
+  background:linear-gradient(100deg,#3a2d0f,#5a4415,#3a2d0f);background-size:200% auto;
+  border:1px solid var(--gold);color:#ffe9a8;animation:sweep 3.5s linear infinite,pulse 2.2s ease-in-out infinite}
+@keyframes sweep{to{background-position:-200% center}}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 rgba(201,168,76,.0)}50%{box-shadow:0 0 26px rgba(201,168,76,.45)}}
+.cdbox{margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,233,168,.25)}
+.cdlab{font-size:.72rem;font-weight:900;letter-spacing:.1em;color:#ffd98a;margin-bottom:6px}
+.pricejump{margin-top:10px;font-size:.9rem;color:#e6d9ac}
+.pricejump b{color:#fff;font-size:1.15rem}
+.pricejump s{color:#fff;text-decoration:none;border-bottom:2px solid #ff8a80}
+.cdown{display:flex;gap:8px;justify-content:center;margin-top:8px}
+.cdown div{background:rgba(0,0,0,.35);border:1px solid rgba(255,233,168,.35);border-radius:10px;
+  padding:6px 10px;min-width:56px}
+.cdown b{display:block;font-size:1.25rem;line-height:1;color:#fff;font-variant-numeric:tabular-nums}
+.cdown span{font-size:.62rem;letter-spacing:.1em;color:#e0cf9a;font-weight:700}
+.glow small{display:block;font-weight:600;color:#d9c98f;font-size:.78rem;margin-top:4px;letter-spacing:.04em}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin:14px 0}
+.card.hl{border-color:rgba(201,168,76,.55)}
+.card h3{margin:0 0 4px;font-size:1.05rem;color:#fff}
+.price{display:flex;align-items:baseline;gap:10px;margin:8px 0}
+.price b{font-size:1.7rem;color:var(--gold)}
+.price s{color:var(--muted);font-size:1rem}
+.tierlab{font-size:.72rem;font-weight:800;letter-spacing:.05em;padding:3px 9px;border-radius:999px;
+  background:rgba(201,168,76,.15);color:var(--gold);border:1px solid rgba(201,168,76,.4)}
+ul.inc{list-style:none;padding:0;margin:10px 0 0}
+ul.inc li{padding:5px 0 5px 22px;position:relative;font-size:.92rem;color:#ddd6c6}
+ul.inc li::before{content:'✓';position:absolute;left:0;color:var(--gold);font-weight:800}
+.left{margin-top:10px;font-size:.85rem;font-weight:700}
+.left.ok{color:#8bc34a}.left.warn{color:#ffb74d}.left.hot{color:#ff8a80}
+.soldout{display:inline-block;margin-top:10px;background:#3a1414;color:#ff8a80;border:1px solid #7a2626;
+  padding:6px 14px;border-radius:999px;font-weight:800;letter-spacing:.08em}
+
+.step{display:flex;align-items:center;gap:14px;margin-top:14px}
+.step button{width:42px;height:42px;border-radius:12px;border:1px solid var(--line);background:#221d14;
+  color:var(--cream);font-size:1.3rem;cursor:pointer}
+.step button:disabled{opacity:.35;cursor:not-allowed}
+.step .n{min-width:34px;text-align:center;font-size:1.25rem;font-weight:800}
+.step .sum{margin-left:auto;color:var(--gold);font-weight:800}
+
+label{display:block;font-size:.85rem;color:#cfc7b6;font-weight:600;margin:12px 0 0}
+input,textarea{width:100%;margin-top:6px;padding:12px 14px;background:#0f0d08;border:1px solid var(--line);
+  border-radius:10px;color:#fff;font-family:inherit;font-size:1rem}
+input:focus,textarea:focus{outline:none;border-color:var(--gold)}
+.holders{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
+.holders .h{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media(max-width:520px){.holders .h{grid-template-columns:1fr}}
+.hint{color:var(--muted);font-size:.8rem;margin-top:6px;line-height:1.55}
+.chk{display:flex;gap:10px;align-items:flex-start;margin-top:14px;cursor:pointer}
+.chk input{width:20px;height:20px;margin:2px 0 0;flex:0 0 auto}
+
+.bar{position:fixed;left:0;right:0;bottom:0;background:rgba(12,10,6,.97);border-top:1px solid var(--line);
+  padding:12px 16px calc(12px + env(safe-area-inset-bottom));backdrop-filter:blur(8px);z-index:20}
+.bar .in{max-width:600px;margin:0 auto;display:flex;align-items:center;gap:12px}
+.bar .tot{font-size:1.15rem;font-weight:800}
+.bar .tot small{display:block;color:var(--muted);font-size:.72rem;font-weight:600}
+.btn{background:linear-gradient(135deg,#e0be5c,#b8912f);color:#191408;border:none;border-radius:12px;
+  padding:14px 22px;font-weight:800;font-size:1rem;cursor:pointer;flex:1}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.prog{list-style:none;padding:0;margin:8px 0 0}
+.prog li{display:flex;gap:14px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:.92rem}
+.prog li:last-child{border:none}
+.prog b{color:var(--gold);min-width:104px;font-variant-numeric:tabular-nums}
+.prog li{position:relative;padding-left:12px}
+.prog li.p-full{border-left:3px solid var(--gold);background:linear-gradient(90deg,rgba(201,168,76,.09),transparent 60%)}
+.prog li.p-both{border-left:3px solid #7ec8ff;background:linear-gradient(90deg,rgba(126,200,255,.12),transparent 60%)}
+.prog .tag{font-size:.62rem;font-weight:900;letter-spacing:.06em;border-radius:999px;padding:3px 8px;white-space:nowrap;margin-left:auto}
+.prog .tag.full{background:rgba(201,168,76,.18);color:var(--gold);border:1px solid rgba(201,168,76,.45)}
+.prog .tag.both{background:rgba(126,200,255,.15);color:#7ec8ff;border:1px solid rgba(126,200,255,.45)}
+.leg{display:flex;flex-direction:column;gap:8px;margin:12px 0 4px}
+.leg div{font-size:.84rem;color:#ddd6c6;line-height:1.5;padding-left:12px}
+.leg .l1{border-left:3px solid var(--gold)}
+.leg .l2{border-left:3px solid #7ec8ff}
+.leg b{color:#fff}
+.msg{margin-top:10px;font-weight:700;min-height:1.2em}
+.msg.err{color:#ff8a80}
+.skel{color:var(--muted);text-align:center;padding:60px 0}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <button onclick="goBack()" aria-label="Späť">← Späť</button>
+  <span class="ttl">Vstupenky</span>
+</div>
+<div class="wrap" id="app"><div class="skel">Načítavam event…</div></div>
+
+<div class="bar" id="bar" style="display:none"><div class="in">
+  <div class="tot"><span id="totVal">0,00 €</span><small id="totCnt">0 vstupeniek</small></div>
+  <button class="btn" id="buyBtn" onclick="buy()">Kúpiť vstupenky</button>
+</div></div>
+
+<script>
+const SLUG = location.pathname.split('/')[2] || 'latin-tropical-2026';
+const IN_APP = new URLSearchParams(location.search).get('src')==='app';
+// Affiliate kód z odkazu si podržíme, aj keď človek medzitým klikne inam.
+const AFF = (function(){
+  const q = new URLSearchParams(location.search).get('a');
+  if(q){ try{ sessionStorage.setItem('fa_aff', q.toUpperCase()); }catch(e){} return q.toUpperCase(); }
+  try{ return sessionStorage.getItem('fa_aff')||''; }catch(e){ return ''; }
+})();
+let EV=null, QTY={}, TABLE=false, MEMBER_EMAIL='', ME=null;
+
+// Späť: ak sme prišli z appky, vrátime sa na dashboard; inak o krok späť v histórii.
+function goBack(){
+  if(IN_APP) { location.href='/client-dashboard'; return; }
+  if(history.length>1) history.back();
+  else location.href='/client-dashboard';
+}
+
+function eur(n){ return n.toFixed(2).replace('.',',')+' €'; }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function load(){
+  try{
+    // Kto je prihlásený — jeho údaje už poznáme, nemá ich prečo písať znova.
+    if(!ME){ try{ ME = await (await fetch('/api/me',{credentials:'include'})).json(); }catch(e){ ME={}; } }
+    const qs = [];
+    if(AFF) qs.push('a='+encodeURIComponent(AFF));
+    if(MEMBER_EMAIL) qs.push('email='+encodeURIComponent(MEMBER_EMAIL));
+    const r = await fetch('/api/events/'+SLUG+(qs.length?('?'+qs.join('&')):''),{credentials:'include'});
+    EV = await r.json();
+    if(!EV.ok) throw new Error(EV.error||'Event sa nepodarilo načítať');
+    EV.types.forEach(t=>QTY[t.key]=0);
+    render();
+  }catch(e){ document.getElementById('app').innerHTML='<div class="skel">'+esc(e.message)+'</div>'; }
+}
+
+function leftLine(t){
+  if(t.left==null) return '';
+  if(t.left<=0) return '<div class="soldout">VYPREDANÉ</div>';
+  if(t.left<=5)  return '<div class="left hot">🔥 Posledných '+t.left+'  '+(t.left===1?'miesto':'miest')+'</div>';
+  if(t.left<=10) return '<div class="left warn">Zostáva '+t.left+' miest</div>';
+  if(t.left<=20) return '<div class="left warn">Zostáva '+t.left+' miest</div>';
+  return '<div class="left ok">Zostáva '+t.left+' miest</div>';
+}
+
+function render(){
+  const e = EV.event;
+  const memberSaving = (()=>{ const f=EV.types.find(x=>x.key==='full');
+    return f && f.member_price!=null ? (f.door - f.member_price) : null; })();
+
+  let h = '';
+  if(e.poster) h += '<img class="poster" src="'+esc(e.poster)+'" alt="Plagát '+esc(e.name)+'">';
+  if(e.subtitle) h += '<div class="sub" style="margin-top:16px">'+esc(e.subtitle)+'</div>';
+  h += '<h1>'+esc(e.name)+'</h1>';
+  h += '<p class="meta">📅 '+esc(e.date_label)+'<br>📍 '+esc(e.venue)+', '+esc(e.address)+'</p>';
+
+  const fullT = EV.types.find(x=>x.key==='full');
+  const jump = fullT ? ('<div class="pricejump">Full Experience teraz <b>'+String(fullT.price).replace('.',',')
+      +' €</b> · od 1. septembra <s>'+String(fullT.door).replace('.',',')+' €</s></div>') : '';
+  const cdBox = jump + '<div class="cdbox" id="cdwrap"><div class="cdlab">DO ZDRAŽENIA ZOSTÁVA</div>'
+              + '<div class="cdown" id="cdown"></div></div>';
+  // Cez partnerský odkaz má človek členskú cenu, hoci členom nie je.
+  const affDeal = EV.affiliate && EV.types.some(x=>x.tier==='aff');
+  if(memberSaving && EV.member_price)
+    h += '<div class="glow">MÁŠ ČLENSKÚ CENU — UŠETRÍŠ '+memberSaving+' €'
+       + '<small>Členstvo overené · platí len do 31. augusta</small>'
+       + cdBox + '</div>';
+  else if(affDeal)
+    h += '<div class="glow">ZĽAVA PRE KLIENTKY '+esc(EV.affiliate.name.toUpperCase())+' — UŠETRÍŠ '+memberSaving+' €'
+       + '<small>Rovnaká cena ako majú členky Fusion Academy · platí len do 31. augusta</small>'
+       + cdBox + '</div>';
+  else if(memberSaving && !EV.is_member)
+    h += '<div class="glow">ČLENI FUSION ACADEMY UŠETRIA '+memberSaving+' €'
+       + '<small>Špeciálna cena pre členov len do 31. augusta — prihlás sa v aplikácii</small>'
+       + cdBox + '</div>';
+  if(EV.is_member)
+    h += '<div class="glow">MÁŠ ČLENSKÚ CENU — UŠETRÍŠ '+memberSaving+' €'
+       + '<small>Platí do 31. augusta · VIP stoly pre členov máme zabezpečené</small>'
+       + cdBox + '</div>';
+
+  EV.types.forEach(t=>{
+    h += '<div class="card hl" id="c-'+t.key+'">';
+    h += '<h3>'+esc(t.name)+'</h3>';
+    h += '<div class="price"><b>'+eur(t.price)+'</b>';
+    if(t.tier==='member') h += '<s>'+eur(t.presale)+'</s><span class="tierlab">ČLENSKÁ CENA</span>';
+    else if(t.tier==='aff') h += '<s>'+eur(t.presale)+'</s><span class="tierlab">ZĽAVA OD '+esc((EV.affiliate?EV.affiliate.name:'').toUpperCase())+'</span>';
+    else if(t.tier==='presale') h += '<s>'+eur(t.door)+'</s><span class="tierlab">PREDPREDAJ</span>';
+    else h += '<span class="tierlab">NA MIESTE</span>';
+    h += '</div>';
+    h += '<ul class="inc">'+t.includes.map(i=>'<li>'+esc(i)+'</li>').join('')+'</ul>';
+    h += leftLine(t);
+    if(!t.sold_out){
+      h += '<div class="step">'
+         +   '<button onclick="chg(\''+t.key+'\',-1)" aria-label="Ubrať">−</button>'
+         +   '<span class="n" id="n-'+t.key+'">0</span>'
+         +   '<button onclick="chg(\''+t.key+'\',1)" aria-label="Pridať">+</button>'
+         +   '<span class="sum" id="s-'+t.key+'"></span>'
+         + '</div>'
+         + '<div class="holders" id="h-'+t.key+'"></div>';
+    }
+    h += '</div>';
+  });
+
+  // Rezervácia stola — len k párty a len pre nečlenov
+  const party = EV.types.find(t=>t.tables);
+  if(party){
+    h += '<div class="card"><h3>Rezervácia stola</h3>';
+    const phone = '<p class="hint" style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">'
+      + '📞 Pre hostí treba stôl rezervovať telefonicky: <a href="tel:+421904315151" style="font-weight:800">0904 31 51 51</a>'
+      + ' — <b style="color:#ddd6c6">Beáta Gruber Buňová</b>.</p>';
+    if(EV.is_member){
+      h += '<p class="hint">VIP stoly pre členov Fusion Academy sú zabezpečené organizátorom — rezerváciu vytvárať nemusíš.</p>' + phone;
+    } else if(EV.tables.left<=0){
+      h += '<p class="hint">Všetky stoly pre verejnosť sú už rezervované. Vstupenky si však stále kúpiť môžeš.</p>' + phone;
+    } else {
+      h += '<p class="hint">Pre verejnosť sú dostupné iba '+EV.event.tables_public_max+' stoly. Voľné: <b style="color:var(--gold)">'+EV.tables.left+'</b>.</p>'
+        +  '<label class="chk"><input type="checkbox" id="tblChk" onchange="toggleTable()"><span>Chcem rezervovať stôl</span></label>'
+        +  '<div id="tblForm" style="display:none">'
+        +    '<label>Počet osôb pri stole<input type="number" id="tblPersons" min="1" max="'+EV.event.tables_persons_max+'" value="4"></label>'
+        +    '<p class="hint">Napíšte celkový počet osôb, ktoré budú sedieť pri stole.</p>'
+        +    '<label>Poznámka<textarea id="tblNote" rows="2" placeholder="Nepovinné"></textarea></label>'
+        +  '</div>'
+        +  phone;
+    }
+    h += '</div>';
+  }
+
+  h += '<div class="card"><h3>Program</h3>'
+     + '<div class="leg">'
+     +   '<div class="l1"><b>FULL EXPERIENCE</b> — platíš celý večer: obe masterclass, Zumbu, CIRCL Mobility, jedlo aj párty.</div>'
+     +   '<div class="l2"><b>LATIN TROPICAL PARTY</b> — platíš len párty od 21:00 s welcome drinkom.</div>'
+     + '</div>'
+     + '<ul class="prog">'
+     + e.program.map(function(p){
+         const both = p.ticket==='both';
+         return '<li class="'+(both?'p-both':'p-full')+'"><b>'+esc(p.time)+'</b><span>'+esc(p.what)+'</span>'
+              + '<span class="tag '+(both?'both':'full')+'">'+(both?'OBE VSTUPENKY':'LEN FULL')+'</span></li>';
+       }).join('')
+     + '</ul></div>';
+
+  const logged = !!(ME && ME.id);
+  if(logged){
+    h += '<div class="card"><h3>Kupuješ ako</h3>'
+       + '<div style="display:flex;align-items:center;gap:10px;margin-top:6px">'
+       +   '<div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#e0be5c,#b8912f);'
+       +   'color:#191408;display:flex;align-items:center;justify-content:center;font-weight:900">'
+       +   esc((ME.name||'?').trim().charAt(0).toUpperCase())+'</div>'
+       +   '<div><div style="color:#fff;font-weight:700">'+esc(ME.name||'')+'</div>'
+       +   '<div class="hint" style="margin:0">'+esc(ME.email||'')+(ME.phone?(' · '+esc(ME.phone)):'')+'</div></div>'
+       + '</div>'
+       + '<input id="bName" type="hidden" value="'+esc(ME.name||'')+'">'
+       + '<input id="bEmail" type="hidden" value="'+esc(ME.email||'')+'">'
+       + '<input id="bPhone" type="hidden" value="'+esc(ME.phone||'')+'">'
+       + '<p class="hint">Vstupenky s QR kódmi ti pošleme na tento e-mail a nájdeš ich aj tu v aplikácii v sekcii Moje vstupenky.</p>'
+       + '<div class="msg" id="msg"></div></div>';
+  } else {
+    h += '<div class="card"><h3>Kontaktné údaje</h3>'
+       + '<label>Meno a priezvisko *<input id="bName" autocomplete="name"></label>'
+       + '<label>E-mail *<input id="bEmail" type="email" autocomplete="email" oninput="onEmail()"></label>'
+       + '<div class="hint" id="memberMsg" style="min-height:1.1em"></div>'
+       + '<label>Telefón<input id="bPhone" type="tel" autocomplete="tel"></label>'
+       + '<p class="hint">Vstupenky s QR kódmi ti pošleme na tento e-mail. Ak máš účet vo Fusion Academy s rovnakým e-mailom, nájdeš ich aj v aplikácii v sekcii Moje vstupenky — a členská cena sa ti dopočíta automaticky.</p>'
+       + '<div class="msg" id="msg"></div></div>';
+  }
+
+  if(EV.affiliate)
+    h += '<p class="hint" style="text-align:center;color:var(--gold)">Prišla si cez pozvánku od <b>'+esc(EV.affiliate.name)+'</b> 💛</p>';
+  h += '<p class="hint" style="text-align:center">Vstupenka na podujatie s pevným termínom sa nedá vrátiť do 14 dní — platí výnimka podľa zákona o ochrane spotrebiteľa. Otázky: <a href="tel:+421904315151">0904 31 51 51</a>.</p>';
+
+  document.getElementById('app').innerHTML = h;
+  document.getElementById('bar').style.display='block';
+  startCountdown();
+  recalc();
+}
+
+// Odpočet do konca členskej ceny — beží podľa deadlinu zo servera.
+function startCountdown(){
+  const box=document.getElementById('cdown'); if(!box) return;
+  const full=EV.types.find(t=>t.key==='full');
+  const end=new Date((full&&full.presale_until)||EV.types[0].presale_until).getTime();
+  const tick=()=>{
+    let d=Math.floor((end-Date.now())/1000);
+    if(d<=0){
+      const w=document.getElementById('cdwrap');
+      if(w) w.innerHTML='<div class="cdlab" style="margin:0">ZVÝHODNENÁ CENA SKONČILA — PLATÍ PLNÁ SUMA</div>';
+      return;
+    }
+    const dd=Math.floor(d/86400); d-=dd*86400;
+    const hh=Math.floor(d/3600);  d-=hh*3600;
+    const mm=Math.floor(d/60);    const ss=d-mm*60;
+    const p=n=>String(n).padStart(2,'0');
+    box.innerHTML = '<div><b>'+dd+'</b><span>DNÍ</span></div>'
+                  + '<div><b>'+p(hh)+'</b><span>HOD</span></div>'
+                  + '<div><b>'+p(mm)+'</b><span>MIN</span></div>'
+                  + '<div><b>'+p(ss)+'</b><span>SEK</span></div>';
+    setTimeout(tick, 1000);
+  };
+  tick();
+}
+
+// Členská cena sa odomkne až po zadaní e-mailu, pod ktorým má človek
+// v appke aktívne členstvo. Bez toho platí bežná predpredajová cena.
+let emailTimer=null;
+function onEmail(){
+  clearTimeout(emailTimer);
+  emailTimer = setTimeout(checkMember, 600);
+}
+async function checkMember(){
+  const el=document.getElementById('bEmail'); if(!el) return;
+  const email=el.value.trim().toLowerCase();
+  const msg=document.getElementById('memberMsg');
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ msg.textContent=''; return; }
+  if(email===MEMBER_EMAIL) return;
+  try{
+    const r=await fetch('/api/events/'+SLUG+'/check-member',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+    const d=await r.json();
+    if(d.member){
+      MEMBER_EMAIL=email;
+      msg.innerHTML='<span style="color:#8bc34a;font-weight:700">✓ Členstvo overené — máš členskú cenu.</span>';
+      const keep={...QTY};
+      await load();                       // prepočítame ceny
+      Object.keys(keep).forEach(k=>{ QTY[k]=keep[k];
+        const n=document.getElementById('n-'+k); if(n) n.textContent=keep[k];
+        renderHolders(k); });
+      recalc();
+      const e2=document.getElementById('bEmail'); if(e2) e2.value=email;
+      const m2=document.getElementById('memberMsg');
+      if(m2) m2.innerHTML='<span style="color:#8bc34a;font-weight:700">✓ Členstvo overené — máš členskú cenu.</span>';
+    } else {
+      msg.innerHTML='<span style="color:var(--muted)">Tento e-mail nemáme medzi aktívnymi členkami — platí bežná cena.</span>';
+    }
+  }catch(e){}
+}
+
+function chg(key, d){
+  const t = EV.types.find(x=>x.key===key);
+  const max = t.left==null ? 20 : Math.min(20, t.left);
+  QTY[key] = Math.max(0, Math.min(max, (QTY[key]||0)+d));
+  document.getElementById('n-'+key).textContent = QTY[key];
+  renderHolders(key);
+  recalc();
+}
+
+// Prvá vstupenka patrí kupujúcemu (údaje zadáva dole), preto pýtame mená
+// až od druhého kusa — inak by to isté meno písal dvakrát.
+function renderHolders(key){
+  const box = document.getElementById('h-'+key); if(!box) return;
+  const n = QTY[key];
+  if(n<=1){ box.innerHTML=''; return; }
+  let h = '<p class="hint">Ideš pre viacerých? Napíš mená ďalších vstupeniek (nepovinné) — prvá ostáva na teba.</p>';
+  for(let i=1;i<n;i++){
+    const old = (window['H_'+key] && window['H_'+key][i]) || {};
+    h += '<div class="h">'
+       +  '<input placeholder="Meno '+(i+1)+'. vstupenky" data-h="'+key+'" data-i="'+i+'" data-f="name" value="'+esc(old.name||'')+'">'
+       +  '<input placeholder="E-mail (nepovinné)" type="email" data-h="'+key+'" data-i="'+i+'" data-f="email" value="'+esc(old.email||'')+'">'
+       + '</div>';
+  }
+  box.innerHTML = h;
+}
+
+function collectHolders(key){
+  const out=[];
+  document.querySelectorAll('[data-h="'+key+'"]').forEach(el=>{
+    const i=+el.dataset.i; out[i]=out[i]||{};
+    out[i][el.dataset.f]=el.value.trim();
+  });
+  window['H_'+key]=out;
+  // index 0 = kupujúci; server doplní jeho meno sám
+  return out.map(x=>x||{});
+}
+
+function toggleTable(){
+  TABLE = document.getElementById('tblChk').checked;
+  document.getElementById('tblForm').style.display = TABLE ? 'block' : 'none';
+}
+
+function recalc(){
+  let total=0, cnt=0;
+  EV.types.forEach(t=>{
+    const n=QTY[t.key]||0, sub=n*t.price;
+    total+=sub; cnt+=n;
+    const el=document.getElementById('s-'+t.key);
+    if(el) el.textContent = n ? eur(sub) : '';
+  });
+  document.getElementById('totVal').textContent = eur(total);
+  document.getElementById('totCnt').textContent = cnt+' '+(cnt===1?'vstupenka':(cnt>=2&&cnt<=4?'vstupenky':'vstupeniek'));
+  document.getElementById('buyBtn').disabled = cnt===0;
+}
+
+async function buy(){
+  const msg=document.getElementById('msg'), btn=document.getElementById('buyBtn');
+  msg.className='msg'; msg.textContent='';
+  const name=document.getElementById('bName').value.trim();
+  const email=document.getElementById('bEmail').value.trim();
+  if(!name||!email){ msg.className='msg err'; msg.textContent='Vyplň meno a e-mail.';
+    const el=document.getElementById('bName'); if(el && el.type!=='hidden') el.scrollIntoView({block:'center',behavior:'smooth'});
+    return; }
+  const items = EV.types.filter(t=>QTY[t.key]>0).map(t=>({type:t.key, qty:QTY[t.key], holders:collectHolders(t.key)}));
+  const body = { buyer_name:name, buyer_email:email, buyer_phone:document.getElementById('bPhone').value.trim(),
+                 items, source: IN_APP ? 'app' : 'web', aff: AFF || undefined };
+  if(TABLE) body.table = { persons:+document.getElementById('tblPersons').value||1,
+                           note:document.getElementById('tblNote').value.trim() };
+  btn.disabled=true; btn.textContent='Pripravujem platbu…';
+  try{
+    const r = await fetch('/api/events/'+SLUG+'/order',{method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j = await r.json();
+    if(!r.ok||j.error) throw new Error(j.error||'Platbu sa nepodarilo založiť');
+    location.href = j.url;
+  }catch(e){
+    msg.className='msg err'; msg.textContent=e.message;
+    btn.disabled=false; btn.textContent='Kúpiť vstupenky';
+  }
+}
+load();
+</script>
+</body>
+</html>
