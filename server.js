@@ -1090,6 +1090,25 @@ async function seedData() {
     }catch(e){ console.error('fix late bookings:', e.message); }
   }
 
+  // 20.8.: Brezno — hodiny od 4.8. nebežali (nízka účasť, rušenia 6.8.–18.8.).
+  // Kompenzácia: klientkám z Brezna s aktívnym mesačným členstvom sa expirácia
+  // predlžuje o 16 dní (4.8. → 20.8. = doba bez hodiny).
+  if(!(await q.one(db.settings,{key:'brezno_extend_20260820'}))){
+    try{
+      const MIDS=['xcArmwcBonNwe3C2','plsjvPQQLcaPPeGR','TM86fM8iA74H9GA7','MxJKSJCjgGzbgryn'];
+      for(const mid of MIDS){
+        const m=await q.one(db.memberships,{_id:mid});
+        if(!m||m.status!=='active') { console.log('⚠️ Brezno extend: '+mid+' preskočené'); continue; }
+        const exp=new Date(m.expires_at); exp.setDate(exp.getDate()+16);
+        await q.update(db.memberships,{_id:mid},{$set:{expires_at:exp.toISOString(), brezno_extension_days:16}});
+        const u=await q.one(db.users,{_id:m.user_id});
+        console.log('✅ Brezno kompenzácia: '+(u&&u.name)+' '+m.plan_name+' +16 dní → '+exp.toISOString().slice(0,10));
+        if(u) await q.insert(db.notifications,{user_id:u._id,type:'membership',title:'🎁 Členstvo predĺžené',body:'Hodiny v Brezne od 4. 8. nebežali, preto sme ti členstvo '+m.plan_name+' predĺžili o 16 dní — platí do '+exp.toLocaleDateString('sk-SK')+'. Ďakujeme za trpezlivosť! 💛',read:false,created_at:nowISO()});
+      }
+      await q.insert(db.settings,{key:'brezno_extend_20260820', value:true, at:nowISO()});
+    }catch(e){ console.error('brezno extend:', e.message); }
+  }
+
   // 19.8. (oprava): detskú zľavu Bronze 30 € má Vivien Páločná, nie Ferkovičová —
   // pôvodná migrácia trafila podľa mena nesprávnu klientku.
   if(!(await q.one(db.settings,{key:'custom_price_palocna_20260819'}))){
