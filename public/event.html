@@ -90,6 +90,16 @@ input:focus,textarea:focus{outline:none;border-color:var(--gold)}
 .prog .tag{font-size:.62rem;font-weight:900;letter-spacing:.06em;border-radius:999px;padding:3px 8px;white-space:nowrap;margin-left:auto}
 .prog .tag.full{background:rgba(201,168,76,.18);color:var(--gold);border:1px solid rgba(201,168,76,.45)}
 .prog .tag.both{background:rgba(126,200,255,.15);color:#7ec8ff;border:1px solid rgba(126,200,255,.45)}
+.starts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0 4px}
+@media(max-width:520px){.starts{grid-template-columns:1fr}}
+.starts .s{border-radius:12px;padding:12px 14px;border:1px solid rgba(255,255,255,.10)}
+.starts .s.full{background:linear-gradient(160deg,rgba(201,168,76,.16),rgba(201,168,76,.04));border-color:rgba(201,168,76,.45)}
+.starts .s.party{background:linear-gradient(160deg,rgba(126,200,255,.16),rgba(126,200,255,.04));border-color:rgba(126,200,255,.45)}
+.starts .k{font-size:.62rem;font-weight:900;letter-spacing:.07em;opacity:.85}
+.starts .s.full .k{color:var(--gold)}
+.starts .s.party .k{color:#7ec8ff}
+.starts .t{font-size:1.5rem;font-weight:900;color:#fff;line-height:1.15;margin:2px 0 3px}
+.starts .d{font-size:.78rem;color:#ddd6c6;line-height:1.45}
 .leg{display:flex;flex-direction:column;gap:8px;margin:12px 0 4px}
 .leg div{font-size:.84rem;color:#ddd6c6;line-height:1.5;padding-left:12px}
 .leg .l1{border-left:3px solid var(--gold)}
@@ -239,11 +249,26 @@ function render(){
     h += '</div>';
   }
 
+  // Časy štartu oboch častí — vyrátané z programu, nech je hneď jasné,
+  // odkedy beží masterclass a odkedy samotná párty.
+  const firstOf = function(kind){
+    for(var i=0;i<e.program.length;i++){
+      var p=e.program[i];
+      if(kind==='full' ? p.ticket==='full' : p.ticket==='both') return String(p.time).split('–')[0].trim();
+    }
+    return '';
+  };
+  const startFull = firstOf('full'), startParty = firstOf('both');
+
   h += '<div class="card"><h3>Program</h3>'
-     + '<div class="leg">'
-     +   '<div class="l1"><b>FULL EXPERIENCE</b> — platíš celý večer: obe masterclass, Zumbu, CIRCL Mobility, jedlo aj párty.</div>'
-     +   '<div class="l2"><b>LATIN TROPICAL PARTY</b> — platíš len párty od 21:00 s welcome drinkom.</div>'
-     + '</div>'
+     + (startParty ? '<div class="starts">'
+     +   '<div class="s full"><div class="k">FULL EXPERIENCE — MASTERCLASS</div>'
+     +     '<div class="t">od '+esc(startFull)+'</div>'
+     +     '<div class="d">Obe masterclass, Zumba, CIRCL Mobility, jedlo, welcome drink <b style="color:#fff">a k tomu aj celá párty</b>.</div></div>'
+     +   '<div class="s party"><div class="k">LATIN TROPICAL PARTY</div>'
+     +     '<div class="t">od '+esc(startParty)+'</div>'
+     +     '<div class="d">Len samotná párty s welcome drinkom. <b style="color:#fff">Masterclass v nej nie je.</b></div></div>'
+     + '</div>' : '')
      + '<ul class="prog">'
      + e.program.map(function(p){
          const both = p.ticket==='both';
