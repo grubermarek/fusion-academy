@@ -2867,6 +2867,66 @@ setInterval(async()=>{
   }catch(e){}
 }, 5*60*1000);
 
+// ── Event mail: LATIN TROPICAL PARTY — členky + klientky, dávkovanie po dňoch ──
+// Brevo má limit 300 mailov/deň, preto ticker posiela len do denného budžetu
+// (rezerva na transakčné maily) a pokračuje ďalší deň. Dedup cez mail_log.
+const EV_MAIL_SUBJ = '🌴 5. 9. LATIN TROPICAL PARTY & MASTERCLASS — oslavujeme 1. výročie, predpredaj beží!';
+setInterval(async()=>{
+  try{
+    if(!process.env.BREVO_API_KEY) return;
+    if(await q.one(db.settings,{key:'event_mail_lt2026_done'})) return;
+    const hSK=+new Intl.DateTimeFormat('sk-SK',{hour:'numeric',hour12:false,timeZone:'Europe/Bratislava'}).format(new Date());
+    if(hSK<9||hSK>20) return;
+    const sentToday=(await q.find(db.mail_log,{})).filter(m=>(m.created_at||'').startsWith(today())).length;
+    let budget=Math.min(60, 240-sentToday);       // max 60 na tick, spolu max ~240/deň
+    if(budget<=0) return;
+    const isTestU=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'')||u.lead_source==='test'||u.is_test;
+    const activeMem=new Set((await q.find(db.memberships,{status:'active'}))
+      .filter(m=>!m.expires_at||new Date(m.expires_at)>new Date()).map(m=>m.user_id));
+    const already=new Set((await q.find(db.mail_log,{subject:EV_MAIL_SUBJ})).map(m=>String(m.to).toLowerCase()));
+    const users=(await q.find(db.users,{}))
+      .filter(u=>['client','ambassador'].includes(u.user_type) && !u.is_admin && !u.is_child
+        && u.active!==false && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u)
+        && u.email && /@/.test(u.email) && !/@import\.local$|@guest\./i.test(u.email)
+        && !already.has(String(u.email).toLowerCase()))
+      .sort((a,b)=>(activeMem.has(b._id)?1:0)-(activeMem.has(a._id)?1:0)); // členky prvé
+    if(!users.length){
+      await q.insert(db.settings,{key:'event_mail_lt2026_done', value:true, at:nowISO()});
+      const admins=await q.find(db.users,{is_admin:true});
+      const total=(await q.find(db.mail_log,{subject:EV_MAIL_SUBJ})).length;
+      for(const a of admins) await q.insert(db.notifications,{user_id:a._id, type:'campaign',
+        title:'📧 Event mail rozoslaný', body:'Pozvánka na Latin Tropical Party odišla '+total+' klientkam.',
+        read:false, created_at:nowISO()});
+      console.log('📧 EVENT MAIL LT2026: hotovo, spolu '+total);
+      return;
+    }
+    let n=0;
+    for(const u of users){
+      if(n>=budget) break;
+      const first=String(u.name||'').split(' ')[0]||'tanečníčka';
+      const member=activeMem.has(u._id);
+      const cena=member
+        ? '<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">⭐ <b style="color:#C9A84C">Tvoja členská cena: 45 €</b> namiesto 55 € — appka ti ju po prihlásení ukáže automaticky. Od 1. septembra platí pre všetkých plná cena 65 €!</p>'
+        : '<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">🎟️ <b style="color:#C9A84C">Predpredaj: 55 €</b> — len do 31. augusta, potom 65 €. Kapacita je len <b>30 miest</b>!</p>';
+      const ok=await sendMail(u.email, EV_MAIL_SUBJ,
+        emailTemplate('Ahoj '+first+'! 💛',
+        '<div style="text-align:center;margin:6px 0 16px"><img src="'+APP_URL+'/img/events/latin-tropical.jpg" alt="Latin Tropical Party & Masterclass" style="width:100%;max-width:520px;border-radius:14px"></div>'
+        +'<p><b>5. septembra</b> oslavujeme 1. výročie tanečnej školy v Detve — a bude to najväčšia párty roka! 🌴</p>'
+        +'<p style="line-height:1.9"><b style="color:#C9A84C">FULL EXPERIENCE (od 18:15):</b><br>'
+        +'💃 Masterclass Marek Gruber &amp; Ivan Ligárt<br>🎵 Zumba + CIRCL Mobility<br>🍽️ Jedlo a welcome drink<br>🍹 + celá Latin Tropical Party</p>'
+        +cena
+        +'<p>🍹 <b>Len párty od 21:00?</b> Vstupenka s welcome drinkom za <b>5 €</b> v predpredaji (na mieste 10 €).</p>'
+        +'<p>🪑 Rezervácia stola: <b>0904 31 51 51</b> — Beáta Gruber Buňová</p>'
+        +'<p>📍 Fusion Club Detva, Záhradná 7 · sobota 5. 9. 2026</p>'
+        +'<p>Vidíme sa na parkete!<br>Tím Fusion Academy</p>',
+        '🎟️ Kúpiť vstupenku', APP_URL+'/event/latin-tropical-2026?utm_source=email&utm_medium=email&utm_campaign=fa-masterclass-01')).catch(()=>false);
+      if(ok) n++;
+      await new Promise(r=>setTimeout(r,400));
+    }
+    if(n) console.log('📧 EVENT MAIL LT2026: odoslaných '+n+' (zostáva '+(users.length-n)+')');
+  }catch(e){ console.error('event mail lt2026:', e.message); }
+}, 8*60*1000);
+
 // Denná notifikácia adminom o 8:00 (guard raz/deň)
 setInterval(async()=>{
   try{
