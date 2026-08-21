@@ -1090,6 +1090,55 @@ async function seedData() {
     }catch(e){ console.error('fix late bookings:', e.message); }
   }
 
+  // 21.8.: kópia event mailu Marekovi a Beáte na preposielanie
+  if(process.env.BREVO_API_KEY && !(await q.one(db.settings,{key:'event_mail_lt2026_admin_copy'}))){
+    await q.insert(db.settings,{key:'event_mail_lt2026_admin_copy', value:true, at:nowISO()});
+    (async()=>{
+      for(const to of ['gruber.marek@gmail.com','beatabunova22@gmail.com']){
+        await sendMail(to,'🌴 5. 9. LATIN TROPICAL PARTY & MASTERCLASS — oslavujeme 1. výročie, predpredaj beží!',
+          emailTemplate('Ahoj! 💛 (kópia na preposielanie)',
+          '<div style="text-align:center;margin:6px 0 16px"><img src="'+APP_URL+'/img/events/latin-tropical.jpg" alt="Latin Tropical Party & Masterclass" style="width:100%;max-width:520px;border-radius:14px"></div>'
+          +'<p><b>5. septembra</b> oslavujeme 1. výročie tanečnej školy v Detve — a bude to najväčšia párty roka! 🌴</p>'
+          +'<p style="line-height:1.9"><b style="color:#C9A84C">FULL EXPERIENCE (od 18:15):</b><br>'
+          +'💃 Masterclass Marek Gruber &amp; Ivan Ligárt<br>🎵 Zumba + CIRCL Mobility<br>🍽️ Jedlo a welcome drink<br>🍹 + celá Latin Tropical Party</p>'
+          +'<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">🎟️ <b style="color:#C9A84C">Predpredaj: 55 €</b> (členky Fusion Academy <b>45 €</b>) — len do 31. augusta, potom 65 €. Kapacita len <b>30 miest</b>!</p>'
+          +'<p>🍹 <b>Len párty od 21:00?</b> Vstupenka s welcome drinkom za <b>5 €</b> v predpredaji (na mieste 10 €).</p>'
+          +'<p>🪑 Rezervácia stola: <b>0904 31 51 51</b> — Beáta Gruber Buňová</p>'
+          +'<p>📍 Fusion Club Detva, Záhradná 7 · sobota 5. 9. 2026</p>'
+          +'<p>Vidíme sa na parkete!<br>Tím Fusion Academy</p>',
+          '🎟️ Kúpiť vstupenku', APP_URL+'/event/latin-tropical-2026?utm_source=email&utm_medium=email&utm_campaign=fa-masterclass-01')).catch(()=>{});
+        await new Promise(r=>setTimeout(r,400));
+      }
+      console.log('📧 Event mail: kópie Marekovi a Beáte odoslané');
+    })().catch(()=>{});
+  }
+
+  // 21.8. večer: kiosk v Detve zapísal ženy prichádzajúce na Zumbu 19:00 na
+  // Technický tréning 18:00 (bral prvú „bežiacu" hodinu). Podľa Mareka boli na
+  // technike len Oľga K., Monika M. a Michaela Ď. — týmto trom účasť rušíme
+  // a vraciame, čo kiosk strhol (Olinka vstup, Soňa kredit).
+  if(!(await q.one(db.settings,{key:'fix_kiosk_technika_20260821'}))){
+    try{
+      const FIX=[
+        {bk:'LPTs0WFC1COXUBfb', name:'Barbora Kováčiková', refund:null},
+        {bk:'ydHMd77vnQZWKDcp', name:'Olinka Kováčiková', refund:'single_entries'},
+        {bk:'ylIUPwtRYb8ajn8e', name:'Soňa Moskálová', refund:'free_credits'} ];
+      for(const f of FIX){
+        const b=await q.one(db.bookings,{_id:f.bk});
+        if(!b || b.status!=='attended') { console.log('⚠️ kiosk fix: '+f.name+' preskočená'); continue; }
+        await q.update(db.bookings,{_id:f.bk},{$set:{status:'cancelled', cancel_reason:'kiosk zapísal omylom — prišla na Zumbu', cancelled_at:nowISO()}});
+        const u=await q.one(db.users,{_id:b.user_id});
+        if(u){
+          const upd={visit_count:Math.max(0,(u.visit_count||0)-1)};
+          if(f.refund) upd[f.refund]=(u[f.refund]||0)+1;
+          await q.update(db.users,{_id:u._id},{$set:upd});
+        }
+        console.log('↩️ Kiosk oprava: '+f.name+' — technika zrušená'+(f.refund?' + vrátený '+(f.refund==='single_entries'?'1 vstup':'1 kredit'):''));
+      }
+      await q.insert(db.settings,{key:'fix_kiosk_technika_20260821', value:true, at:nowISO()});
+    }catch(e){ console.error('fix kiosk technika:', e.message); }
+  }
+
   // 21.8.: Leadi, ktoré už boli na hodine alebo zaplatili (jednorazový vstup a pod.),
   // patria do zoznamu klientov — prekladanie fungovalo len pri kúpe členstva.
   if(!(await q.one(db.settings,{key:'promote_active_leads_20260821'}))){
@@ -11016,9 +11065,21 @@ app.post('/api/kiosk/checkin', async(req,res)=>{
     const classes=(await q.find(db.classes,{active:true, day_of_week:dow}))
       .filter(c=>(c.location||'').toLowerCase().includes(city.toLowerCase().split(' ')[0].toLowerCase()))
       .sort((x,y)=>(x.time_start||'').localeCompare(y.time_start||''));
-    let cls=classes.find(c=>nowMin>=toMin(c.time_start)-15 && nowMin<toMin(c.time_end||c.time_start)+60);
-    if(!cls) cls=classes.find(c=>toMin(c.time_start)>nowMin && toMin(c.time_start)-nowMin<=90);
-    if(!cls) return res.status(400).json({error:'Dnes tu už nie je žiadna hodina na check-in.'});
+    // Kandidáti: hodina, ktorá práve beží (15 min pred až 15 min po konci) + najbližšia
+    // do 90 min. Ak sedí viac hodín (napr. technika 18:00 + Zumba 19:00), kiosk sa PÝTA —
+    // predtým bral prvú a ženy prichádzajúce na Zumbu končili zapísané na technike.
+    const endOf=c=>{ const e=toMin(c.time_end); const st=toMin(c.time_start); return e>st?e:st+60; };
+    const cands=classes.filter(c=>(nowMin>=toMin(c.time_start)-15 && nowMin<endOf(c)+15)
+      || (toMin(c.time_start)>nowMin && toMin(c.time_start)-nowMin<=90));
+    if(!cands.length) return res.status(400).json({error:'Dnes tu už nie je žiadna hodina na check-in.'});
+    let cls;
+    const pick=String(req.body.class_id||'');
+    if(pick) cls=cands.find(c=>c._id===pick);
+    if(!cls && cands.length===1) cls=cands[0];
+    if(!cls){
+      return res.json({ ok:true, choose:true, first:(u.name||'').split(' ')[0],
+        options:cands.map(c=>({id:c._id, name:c.name, emoji:c.emoji||'💃', time_start:c.time_start, time_end:c.time_end||''})) });
+    }
     // Zapíš účasť (rovnaká logika ako trénerský QR check-in)
     const exists=await q.one(db.bookings,{class_id:cls._id, user_id:u._id, booking_date:todayS, status:{$ne:'cancelled'}});
     let already=false, vc=u.visit_count||0;
