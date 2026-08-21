@@ -1107,6 +1107,22 @@ async function seedData() {
     }catch(e){ console.error('fix zumba attend:', e.message); }
   }
 
+  // 21.8. večer (3. časť): Elena Krkošková prišla na Zumbu s kupónom na hodinu
+  // zdarma, ale kiosk jej QR pároval na techniku (bez rezervácie) a odmietol ju.
+  // Kredit sa strhol už pri rezervácii — stačí zapísať účasť.
+  if(!(await q.one(db.settings,{key:'fix_elena_zumba_20260821'}))){
+    try{
+      const b=await q.one(db.bookings,{_id:'yqjSJnimwlyPbmNj'});
+      if(b && b.status!=='attended'){
+        await q.update(db.bookings,{_id:b._id},{$set:{status:'attended', attended_at:nowISO(), attended_by:'admin_fix'}});
+        const u=await q.one(db.users,{_id:b.user_id});
+        if(u) await q.update(db.users,{_id:u._id},{$set:{visit_count:(u.visit_count||0)+1}});
+        console.log('✅ Zumba účasť zapísaná: Elena Krkošková (kupón)');
+      }
+      await q.insert(db.settings,{key:'fix_elena_zumba_20260821', value:true, at:nowISO()});
+    }catch(e){ console.error('fix elena:', e.message); }
+  }
+
   // 21.8.: kópia event mailu Marekovi a Beáte na preposielanie
   if(process.env.BREVO_API_KEY && !(await q.one(db.settings,{key:'event_mail_lt2026_admin_copy'}))){
     await q.insert(db.settings,{key:'event_mail_lt2026_admin_copy', value:true, at:nowISO()});
@@ -11092,6 +11108,12 @@ app.post('/api/kiosk/checkin', async(req,res)=>{
     let cls;
     const pick=String(req.body.class_id||'');
     if(pick) cls=cands.find(c=>c._id===pick);
+    if(!cls){
+      // Rezervácia rozhoduje: kiosk uprednostní hodinu, na ktorú je prihlásená
+      const myBks=await q.find(db.bookings,{user_id:u._id, booking_date:todayS, status:{$ne:'cancelled'}});
+      const booked=cands.filter(c=>myBks.some(b=>b.class_id===c._id));
+      if(booked.length===1) cls=booked[0];
+    }
     if(!cls && cands.length===1) cls=cands[0];
     if(!cls){
       return res.json({ ok:true, choose:true, first:(u.name||'').split(' ')[0],
