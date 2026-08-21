@@ -1090,6 +1090,23 @@ async function seedData() {
     }catch(e){ console.error('fix late bookings:', e.message); }
   }
 
+  // 21.8.: Leadi, ktoré už boli na hodine alebo zaplatili (jednorazový vstup a pod.),
+  // patria do zoznamu klientov — prekladanie fungovalo len pri kúpe členstva.
+  if(!(await q.one(db.settings,{key:'promote_active_leads_20260821'}))){
+    try{
+      const isTestU=x=>/test/i.test(x.name||'')||/test/i.test(x.email||'')||x.lead_source==='test'||x.is_test;
+      const att=new Set((await q.find(db.bookings,{status:'attended'})).map(b=>b.user_id));
+      const paid=new Set((await q.find(db.transactions,{})).filter(t=>+t.amount>0).map(t=>t.user_id));
+      const leads=(await q.find(db.users,{user_type:'lead'})).filter(x=>!x.is_admin&&!isTestU(x)&&(att.has(x._id)||paid.has(x._id)));
+      for(const l of leads){
+        await q.update(db.users,{_id:l._id},{$set:{user_type:'client'}});
+        console.log('👥 Lead → klientka: '+l.name+(att.has(l._id)?' (dochádzka)':' (platba)'));
+      }
+      console.log('👥 Preložených leadov do klientov: '+leads.length);
+      await q.insert(db.settings,{key:'promote_active_leads_20260821', value:true, at:nowISO()});
+    }catch(e){ console.error('promote leads:', e.message); }
+  }
+
   // 21.8.: Piatok večer je jeden súvislý prenos: 18:00 technika + 19:00 Zumba (Detva).
   // Zumba bola vypnutá — zapni ju a nech zdieľa stream link s technikou (jeden link).
   if(!(await q.one(db.settings,{key:'fri_online_zumba_20260821'}))){
@@ -12692,6 +12709,7 @@ async function creditAttendance(u){
   if(!u) return 0;
   const newCount=(u.visit_count||0)+1;
   const upd={visit_count:newCount};
+  if(u.user_type==='lead') upd.user_type='client'; // bola na hodine → už je klientka, nie lead
   if(u.winback_sent) upd.winback_sent=false;
   try{ applyLeadTrial(upd, u); }catch(e){}
   await q.update(db.users,{_id:u._id},{$set:upd});
