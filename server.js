@@ -1090,6 +1090,16 @@ async function seedData() {
     }catch(e){ console.error('fix late bookings:', e.message); }
   }
 
+  // 21.8.: Zrušené úlohy „Členstvo končí" — klientky pred vypršaním neotravujeme.
+  // Odstráň už rozdané nesplnené pripomienky; nový model rieši až mesiac po skončení.
+  if(!(await q.one(db.settings,{key:'drop_expiring_tasks_20260821'}))){
+    try{
+      const gone = await q.remove(db.coach_tasks,{key:{$regex:/^urgent_expiring_/}, done:false},{multi:true});
+      console.log('🧹 Zrušené pripomienky „Členstvo končí": '+gone);
+      await q.insert(db.settings,{key:'drop_expiring_tasks_20260821', value:true, at:nowISO()});
+    }catch(e){ console.error('drop expiring tasks:', e.message); }
+  }
+
   // 20.8.: Brezno — hodiny od 4.8. nebežali (nízka účasť, rušenia 6.8.–18.8.).
   // Kompenzácia: klientkám z Brezna s aktívnym mesačným členstvom sa expirácia
   // predlžuje o 16 dní (4.8. → 20.8. = doba bez hodiny).
@@ -2746,24 +2756,37 @@ async function computeUrgentTasks(){
     tasks.push({key:'guest:'+b._id, type:'guest', prio:1, title:'Prvá hodina hostky '+(b.booking_date===todayS?'DNES':'zajtra'),
       why:`${u.name} príde ${b.booking_date===todayS?'dnes':'zajtra'} prvýkrát (pozvánka). Krátke privítanie/SMS výrazne zvyšuje šancu, že príde.`, ...contact(u)});
   }
-  // 3) Členstvo končí do 5 dní
-  for(const m of activeMems){
-    const exp=(m.expires_at||'').slice(0,10); if(!exp||exp<todayS||exp>d(5)) continue;
-    const u=byId[m.user_id]; if(!u) continue;
-    tasks.push({key:'expiring:'+m._id+':'+exp, type:'expiring', prio:2, title:'Členstvo končí '+exp,
-      why:`${u.name} — ${m.plan_name||m.plan_id||'členstvo'} končí ${exp}. Pripomeň obnovu skôr, než vyprší.`, ...contact(u)});
+  // 3) Skončené členstvo + mesiac bez návštevy → až vtedy sa ozývame.
+  // Pred vypršaním klientky NEotravujeme pripomienkami na obnovu; riešime až tie,
+  // ktoré reálne prestali chodiť (posledná návšteva ≥ 30 dní).
+  const lastVisitByUser={};
+  for(const b of allBookings){
+    if(b.status!=='attended') continue;
+    const dt=(b.booking_date||'').slice(0,10); if(!dt) continue;
+    if(!lastVisitByUser[b.user_id]||dt>lastVisitByUser[b.user_id]) lastVisitByUser[b.user_id]=dt;
   }
-  // 4) Členstvo vypršalo za posledných 7 dní a neobnovila
+  // koho už niekto z tímu kontaktoval za posledný mesiac, znova nenaháňame
+  const recentContact={};
+  for(const c of await q.find(db.coach_contacts,{})){
+    const dt=(c.date||(c.created_at||'').slice(0,10)); if(!dt||!c.lead_id) continue;
+    if(!recentContact[c.lead_id]||dt>recentContact[c.lead_id]) recentContact[c.lead_id]=dt;
+  }
   const expired=await q.find(db.memberships,{status:'expired'});
   const seen=new Set();
   for(const m of expired){
-    const exp=(m.expires_at||'').slice(0,10); if(!exp||exp<d(-7)||exp>=todayS) continue;
-    if(memByUser[m.user_id]||seen.has(m.user_id)) continue; seen.add(m.user_id);
-    const u=byId[m.user_id]; if(!u) continue;
-    tasks.push({key:'lapsed:'+m.user_id+':'+exp, type:'lapsed', prio:2, title:'Neobnovené členstvo',
-      why:`${u.name} — členstvo vypršalo ${exp} a nemá nové. Ozvi sa, kým je ešte „teplá".`, ...contact(u)});
+    const exp=(m.expires_at||'').slice(0,10);
+    if(!exp||exp>=todayS||exp<d(-180)) continue;            // skončilo, ale nie pradávno
+    if(memByUser[m.user_id]||seen.has(m.user_id)) continue; // už má nové členstvo
+    const u=byId[m.user_id]; if(!u||u.is_admin||u.hidden_lead||isTest(u)) continue;
+    const lv=lastVisitByUser[m.user_id]||null;
+    if(lv && lv>d(-30)) continue;                           // ešte chodí → nechaj ju tancovať
+    if(recentContact[m.user_id] && recentContact[m.user_id]>d(-30)) continue; // nedávno oslovená
+    seen.add(m.user_id);
+    const kedy = lv ? ('naposledy bola na hodine '+lv) : 'návštevu nemáme zaznamenanú';
+    tasks.push({key:'lapsed:'+m.user_id+':'+exp, type:'lapsed', prio:2, title:'Mesiac nebola po skončení členstva',
+      why:`${u.name} — ${m.plan_name||m.plan_id||'členstvo'} skončilo ${exp} a ${kedy}. Ozvi sa jej a zisti, či sa chce vrátiť.`, ...contact(u)});
   }
-  // 5) Včerajšie no-show
+  // 4) Včerajšie no-show
   const yest=d(-1);
   for(const b of allBookings){
     if(b.status!=='no_show'||b.booking_date!==yest) continue;
