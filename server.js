@@ -1090,6 +1090,20 @@ async function seedData() {
     }catch(e){ console.error('fix late bookings:', e.message); }
   }
 
+  // 21.8.: Piatok večer je jeden súvislý prenos: 18:00 technika + 19:00 Zumba (Detva).
+  // Zumba bola vypnutá — zapni ju a nech zdieľa stream link s technikou (jeden link).
+  if(!(await q.one(db.settings,{key:'fri_online_zumba_20260821'}))){
+    try{
+      const tech=await q.one(db.classes,{_id:'OellsnmsMQOUBJPo'});
+      await q.update(db.classes,{_id:'Odc0deoqaoJxv7w9'},{$set:{
+        active:true,
+        stream_url:(tech&&tech.stream_url)||'',
+        stream_platform:(tech&&tech.stream_platform)||'' }});
+      console.log('🌐 Piatková online Zumba 19:00 aktivovaná — jeden stream s technikou');
+      await q.insert(db.settings,{key:'fri_online_zumba_20260821', value:true, at:nowISO()});
+    }catch(e){ console.error('fri online zumba:', e.message); }
+  }
+
   // 21.8.: Zrušené úlohy „Členstvo končí" — klientky pred vypršaním neotravujeme.
   // Odstráň už rozdané nesplnené pripomienky; nový model rieši až mesiac po skončení.
   if(!(await q.one(db.settings,{key:'drop_expiring_tasks_20260821'}))){
@@ -10767,7 +10781,12 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
     // ALEBO na párovej fyzickej hodine (rovnaký deň/čas, mesto = stream_city), z ktorej
     // sa vysiela. Override má vždy prednosť pred štandardným inštruktorom.
     const insName = await onlineInstructorFor(cls, today());
+    // Nadväzujúca online hodina z toho istého mesta (18:00 technika → 19:00 Zumba):
+    // jeden prenos, klientka má vedieť, že môže ostať pripojená.
+    const nxt = classes.find(c=>c._id!==cls._id && (c.stream_city||'')===(cls.stream_city||'')
+      && c.time_start===cls.time_end);
     res.json({ok:true, upcoming:{ id:cls._id, name:cls.name, time_start:cls.time_start, time_end:cls.time_end,
+      next_part: nxt?{name:nxt.name, time_start:nxt.time_start, time_end:nxt.time_end}:null,
       src:cls.stream_city||'', starts_in_min:Math.max(0,toMin(cls.time_start)-nowMin), running, live,
       instructor:insName, free_today:freeDay,
       has_access:hasAccess, access_mode: hasFull?'full':(passMode?'pass':(entryMode?'entry':null)), entries:upcU?.single_entries||0,
@@ -10812,7 +10831,7 @@ setInterval(async()=>{
         if(!hasOnlineAccess(m,null)||notified.has(m.user_id)) continue;
         notified.add(m.user_id);
         await q.insert(db.notifications,{user_id:m.user_id, type:'online_live',
-          title:'🔴 Online Zumba PRÁVE ZAČÍNA!', body:`Živé vysielanie z mesta ${cls.stream_city||''} beží. Pripoj sa jedným klikom!`,
+          title:'🔴 '+String(cls.name||'Online hodina').replace(/s*ONLINE.*$/i,'')+' ONLINE PRÁVE ZAČÍNA!', body:`Živé vysielanie z mesta ${cls.stream_city||''} beží. Pripoj sa jedným klikom!`,
           link:'/online', read:false, created_at:nowISO()}).catch(()=>{});
       }
       console.log(`🔴 Online LIVE notifikácie: ${notified.size} členov (${cls.time_start} ${cls.stream_city||''})`);
@@ -12184,6 +12203,19 @@ app.put('/api/admin/classes/:id/stream', adminAuth, async(req,res)=>{
   const $set = {stream_url:stream_url||'',stream_platform:stream_platform||'',stream_notes:stream_notes||''};
   if(stream_key!==undefined) $set.stream_key = String(stream_key||'').replace(/[^a-zA-Z0-9_-]/g,'');
   await q.update(db.classes,{_id:req.params.id},{$set});
+  // Jeden večer = jeden prenos: ďalšie aktívne online hodiny z toho istého mesta
+  // v ten istý deň dostanú rovnaký link (napr. piatok 18:00 technika + 19:00 Zumba).
+  try{
+    const cls=await q.one(db.classes,{_id:req.params.id});
+    if(cls && cls.category==='Online' && stream_url){
+      const siblings=(await q.find(db.classes,{category:'Online', active:true,
+        day_of_week:cls.day_of_week}))
+        .filter(c=>c._id!==cls._id && (c.stream_city||'')===(cls.stream_city||''));
+      for(const sib of siblings)
+        await q.update(db.classes,{_id:sib._id},{$set:{stream_url:stream_url||'', stream_platform:stream_platform||''}});
+      if(siblings.length) console.log('🌐 Stream link zdieľaný s '+siblings.length+' online hodinou/ami v ten deň');
+    }
+  }catch(e){}
   res.json({ok:true, stream_key:$set.stream_key});
 });
 
