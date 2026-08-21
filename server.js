@@ -1090,6 +1090,23 @@ async function seedData() {
     }catch(e){ console.error('fix late bookings:', e.message); }
   }
 
+  // 21.8. večer (2. časť): tie tri ženy na Zumbe 19:00 reálne boli — zapíš účasť
+  // na ich existujúce rezervácie (vstupy/kredity sa strhli už pri rezervácii).
+  if(!(await q.one(db.settings,{key:'fix_kiosk_zumba_attend_20260821'}))){
+    try{
+      const BKS=[['j6FM44DbTyfXCMlV','Barbora Kováčiková'],['qnvcP5saWnND82FQ','Olinka Kováčiková'],['hlQ4HERiwbfwpBI2','Soňa Moskálová']];
+      for(const [id,name] of BKS){
+        const b=await q.one(db.bookings,{_id:id});
+        if(!b || b.status==='attended'){ console.log('⚠️ zumba zapis: '+name+' preskočená ('+(b?b.status:'nenájdená')+')'); continue; }
+        await q.update(db.bookings,{_id:id},{$set:{status:'attended', attended_at:nowISO(), attended_by:'admin_fix'}});
+        const u=await q.one(db.users,{_id:b.user_id});
+        if(u) await q.update(db.users,{_id:u._id},{$set:{visit_count:(u.visit_count||0)+1}});
+        console.log('✅ Zumba účasť zapísaná: '+name);
+      }
+      await q.insert(db.settings,{key:'fix_kiosk_zumba_attend_20260821', value:true, at:nowISO()});
+    }catch(e){ console.error('fix zumba attend:', e.message); }
+  }
+
   // 21.8.: kópia event mailu Marekovi a Beáte na preposielanie
   if(process.env.BREVO_API_KEY && !(await q.one(db.settings,{key:'event_mail_lt2026_admin_copy'}))){
     await q.insert(db.settings,{key:'event_mail_lt2026_admin_copy', value:true, at:nowISO()});
