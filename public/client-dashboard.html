@@ -1096,7 +1096,7 @@ function privBookingHtml(b){
     <div class="booking-item" style="flex-wrap:wrap">
       <div class="booking-emoji">🎭</div>
       <div class="booking-info">
-        <strong>Súkromná hodina <span style="font-size:.7rem;background:rgba(201,168,76,.18);color:var(--gold);padding:1px 8px;border-radius:20px;vertical-align:middle">1:1</span>${b.paid?'':` <span style="font-size:.7rem;background:rgba(224,86,86,.2);color:#ff8a8a;border:1px solid rgba(224,86,86,.5);padding:1px 8px;border-radius:20px;vertical-align:middle;font-weight:800">💵 platíš na mieste</span>`}</strong>
+        <strong>Súkromná hodina <span style="font-size:.7rem;background:rgba(201,168,76,.18);color:var(--gold);padding:1px 8px;border-radius:20px;vertical-align:middle">1:1</span>${b.paid?'':` <span style="font-size:.7rem;background:rgba(224,86,86,.2);color:#ff8a8a;border:1px solid rgba(224,86,86,.5);padding:1px 8px;border-radius:20px;vertical-align:middle;font-weight:800">💵 platíš v hotovosti</span>`}</strong>
         <span>${skDate(b.date)} • ${escHtml(b.time_start)} ${where?'• '+where:''} • <b style="color:var(--gold)">${(+b.price).toFixed(2)} €</b></span>
         <span style="font-size:.78rem;color:var(--muted)">🎓 Tréner: <a href="/u/${b.trainer_id}" style="color:var(--gold);text-decoration:none;font-weight:600">${escHtml(b.trainer_name)}</a>${late?' • <span style="color:#ff8a8a">zmena je už spoplatnená (menej než 24 h)</span>':' • bezplatná zmena do 24 h pred začiatkom'}</span>
       </div>
@@ -2224,7 +2224,7 @@ async function loadPrivate(){
     const when=`${b.date.split('-').reverse().join('.')} o ${b.time_start} · ${escHtml(b.city)}`;
     const hoursLeft=(new Date(`${b.date}T${b.time_start}:00`)-Date.now())/36e5;
     return `<div style="background:rgba(201,168,76,.07);border:1px solid var(--gold-border,#332a18);border-radius:12px;padding:12px;margin-bottom:10px">
-      <div style="font-size:.9rem"><b>✨ ${escHtml(b.trainer_name)}</b> · ${when} · <b style="color:var(--gold)">${(+b.price).toFixed(2)} €</b> ${b.paid?'<span style="color:#4ade80;font-size:.72rem">✓ zaplatené</span>':'<span style="color:#fbbf24;font-size:.72rem">💵 na mieste</span>'}</div>
+      <div style="font-size:.9rem"><b>✨ ${escHtml(b.trainer_name)}</b> · ${when} · <b style="color:var(--gold)">${(+b.price).toFixed(2)} €</b> ${b.paid?'<span style="color:#4ade80;font-size:.72rem">✓ zaplatené</span>':'<span style="color:#fbbf24;font-size:.72rem">💵 hotovosť na mieste</span>'}</div>
       <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;align-items:center">
         ${b.trainer_phone?`<a href="tel:${escHtml(b.trainer_phone.replace(/\s+/g,''))}" style="color:#4ade80;text-decoration:none;font-size:.8rem">📞 Zavolať trénerovi</a>`:''}
         <a href="/community?dm=${b.trainer_id}" style="color:var(--gold);text-decoration:none;font-size:.8rem">✉️ Napísať</a>
@@ -2321,7 +2321,7 @@ function pvBook(slotId, price, date, time){
       ${(+(_me&&_me.free_private_lesson_credits||0))>0?`<button onclick="pvDoBook('${slotId}','prize',${price})" style="background:linear-gradient(135deg,#7ec8e3,#4a9eda);border:none;color:#0a1a24;font-weight:800;padding:12px;border-radius:11px;cursor:pointer">🎁 Zadarmo — výhra súťaže</button>`:''}
       <button onclick="pvDoBook('${slotId}','card',${price})" style="background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);border:none;color:#111;font-weight:800;padding:12px;border-radius:11px;cursor:pointer">💳 Zaplatiť kartou online</button>
       ${credit>=price?`<button onclick="pvDoBook('${slotId}','credit',${price})" style="background:rgba(74,222,128,.14);border:1px solid #4ade80;color:#4ade80;font-weight:700;padding:11px;border-radius:11px;cursor:pointer">💛 Zaplatiť kreditom (${credit.toFixed(2)} €)</button>`:''}
-      <button onclick="pvDoBook('${slotId}','onsite',${price})" style="background:#161616;border:1px solid #333;color:var(--cream,#eee);font-weight:700;padding:11px;border-radius:11px;cursor:pointer">💵 Zaplatím na mieste</button>
+      <button onclick="pvDoBook('${slotId}','onsite',${price})" style="background:#161616;border:1px solid #333;color:var(--cream,#eee);font-weight:700;padding:11px;border-radius:11px;cursor:pointer">💵 Zaplatím v hotovosti na mieste</button>
       <button onclick="document.getElementById('pvPayModal').remove()" style="background:none;border:none;color:var(--muted,#999);padding:6px;cursor:pointer;font-size:.82rem">Zrušiť</button>
     </div>
     <div style="color:var(--muted,#999);font-size:.7rem;margin-top:10px">Storno zdarma do 24 h pred začiatkom — neskôr suma prepadá trénerovi.</div>

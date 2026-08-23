@@ -11832,11 +11832,26 @@ app.post('/api/private/complete', trainerAuth, async(req,res)=>{
     if(!b||b.status!=='booked') return res.status(400).json({error:'Rezervácia sa nedá potvrdiť'});
     if(b.trainer_id!==req.trainerUser._id && !req.trainerUser.is_admin) return res.status(403).json({error:'Nie je tvoja hodina'});
     const cut=+((+b.price||0)*((+b.split||PRIVATE_DEFAULT_SPLIT)/100)).toFixed(2);
-    await q.update(db.private_bookings,{_id:b._id},{$set:{status:'completed', completed_at:nowISO(), trainer_cut:cut}});
+    // Hotovosť na mieste: trénerka pri potvrdení označí, že peniaze reálne prevzala.
+    // Bez toho by držala celú sumu v ruke a vo výplate by dostala ešte svoj podiel —
+    // preto ide hotovosť do jej evidencie a zúčtuje sa (rovnako ako pri predaji).
+    const cashReceived = req.body.cash_received===true && !b.paid && b.pay_method!=='prize' && +b.price>0;
+    await q.update(db.private_bookings,{_id:b._id},{$set:{status:'completed', completed_at:nowISO(), trainer_cut:cut,
+      ...(cashReceived ? {paid:true, paid_at:nowISO(), pay_method:'cash'} : {})}});
     // Účtovníctvo: tržba za súkromnú hodinu — výherná hodina (pay_method 'prize')
     // sa NEPOČÍTA do tržieb, klientka za ňu neplatila (cenu preplatilo štúdio, tréner
     // dostáva svoj podiel normálne z trainer_cut vyššie).
-    if(b.pay_method!=='prize') await q.insert(db.transactions,{type:'private_lesson', amount:+b.price, user_id:b.client_id, user_name:b.client_name, date:today(), method:b.pay_method, note:`Súkromná hodina ${b.trainer_name} ${b.date} ${b.time_start}`, created_at:nowISO()}).catch(()=>{});
+    if(b.pay_method!=='prize') await q.insert(db.transactions,{type:'private_lesson', amount:+b.price, user_id:b.client_id, user_name:b.client_name, date:today(), method:cashReceived?'cash':b.pay_method, ...(cashReceived?{payment_method:'cash'}:{}), note:`Súkromná hodina ${b.trainer_name} ${b.date} ${b.time_start}${cashReceived?' (hotovosť)':''}`, created_at:nowISO()}).catch(()=>{});
+    if(cashReceived){
+      await q.insert(db.payouts,{_type:'cash_collected', trainer_id:b.trainer_id, trainer_name:b.trainer_name,
+        amount:+(+b.price).toFixed(2), note:`Súkromná hodina — ${b.client_name}`, month:today().slice(0,7),
+        date:today(), status:'held', created_at:nowISO()});
+      for(const a of await q.find(db.users,{is_admin:true}))
+        await q.insert(db.notifications,{user_id:a._id, type:'cash_collected',
+          title:`💵 ${b.trainer_name}: súkromná hodina ${(+b.price).toFixed(2)} €`,
+          body:`${b.client_name} zaplatila v hotovosti — peniaze má trénerka, zúčtujú sa s výplatou.`,
+          read:false, created_at:nowISO()}).catch(()=>{});
+    }
     // Klient: návšteva + súkromné odznaky
     const c=await q.one(db.users,{_id:b.client_id});
     // Faktúra za súkromnú hodinu (pri platbe kartou vopred ju už vystavil Stripe; výherná hodina fakturu nemá)
@@ -11854,7 +11869,7 @@ app.post('/api/private/complete', trainerAuth, async(req,res)=>{
       checkNewAchievements(t._id).catch(()=>{});
       await q.insert(db.notifications,{user_id:t._id,type:'private_done',title:`💰 Súkromná hodina: +${cut.toFixed(2)} €`,body:`${b.client_name} · ${b.date.split('-').reverse().join('.')} ${b.time_start}. Tvoj podiel ${b.split||PRIVATE_DEFAULT_SPLIT} % z ${(+b.price).toFixed(2)} € — uvidíš ho vo výplate.`,read:false,created_at:nowISO()}).catch(()=>{});
     }
-    res.json({ok:true, trainer_cut:cut});
+    res.json({ok:true, trainer_cut:cut, cash_recorded:cashReceived});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 

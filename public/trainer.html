@@ -2399,13 +2399,16 @@ async function loadTrainerPrivate(){
     if(sl.booking && sl.booking.status==='booked'){
       const b=sl.booking;
       return `<div style="background:var(--card);border:1px solid rgba(201,168,76,.4);border-radius:12px;padding:12px;margin-bottom:8px">
-        <div style="font-size:.88rem">${when} · <b style="color:var(--gold)">${sl.price.toFixed(2)} €</b> ${b.paid?'<span style="color:#4ade80;font-size:.72rem">✓ zaplatené kreditom</span>':'<span style="color:#fbbf24;font-size:.72rem">💵 platba na mieste</span>'}</div>
+        <div style="font-size:.88rem">${when} · <b style="color:var(--gold)">${sl.price.toFixed(2)} €</b> ${b.paid?'<span style="color:#4ade80;font-size:.72rem">✓ zaplatené vopred</span>':'<span style="color:#fbbf24;font-size:.72rem">💵 platí v hotovosti na mieste</span>'}</div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px">
           <a href="/u/${b.client_id}" target="_blank" style="color:var(--cream);font-weight:700;text-decoration:none">👤 ${esc(b.client_name)}</a>
           ${b.client_phone?`<a href="tel:${esc(b.client_phone.replace(/\s+/g,''))}" style="color:#4ade80;text-decoration:none;font-size:.82rem">📞 Zavolať</a>`:''}
           <a href="/community?dm=${b.client_id}" target="_blank" style="color:var(--gold);text-decoration:none;font-size:.82rem">✉️ Napísať</a>
           <span style="flex:1"></span>
-          <button onclick="completePriv('${b.id}')" style="background:rgba(74,222,128,.15);border:1px solid #4ade80;color:#4ade80;border-radius:8px;padding:5px 12px;font-size:.78rem;font-weight:700;cursor:pointer">✅ Absolvovaná</button>
+          ${b.paid
+            ? `<button onclick="completePriv('${b.id}',0,false)" style="background:rgba(74,222,128,.15);border:1px solid #4ade80;color:#4ade80;border-radius:8px;padding:5px 12px;font-size:.78rem;font-weight:700;cursor:pointer">✅ Absolvovaná</button>`
+            : `<button onclick="completePriv('${b.id}',${sl.price},true)" style="background:rgba(74,222,128,.15);border:1px solid #4ade80;color:#4ade80;border-radius:8px;padding:5px 12px;font-size:.78rem;font-weight:700;cursor:pointer">✅ Absolvovaná · prevzala som ${sl.price.toFixed(2)} €</button>
+               <button onclick="completePriv('${b.id}',${sl.price},false)" title="Hodina prebehla, ale klientka ešte nezaplatila" style="background:none;border:1px solid #555;color:#999;border-radius:8px;padding:5px 10px;font-size:.75rem;cursor:pointer">✅ bez platby</button>`}
           <button onclick="cancelPriv('${b.id}')" style="background:none;border:1px solid rgba(229,115,115,.5);color:#e57373;border-radius:8px;padding:5px 12px;font-size:.78rem;cursor:pointer">✕ Zrušiť</button>
         </div></div>`;
     }
@@ -2473,10 +2476,15 @@ async function delPrivSlot(id){
   const r=await api('/api/trainer/private-slots/'+id,{method:'DELETE'});
   if(r&&r.ok){ toast('Termín odstránený'); loadTrainerPrivate(); } else toast((r&&r.error)||'Chyba', true);
 }
-async function completePriv(id){
-  if(!confirm('Potvrdiť hodinu ako ABSOLVOVANÚ?\n\nKlientovi sa pripíše návšteva + odznaky, tebe podiel do výplaty a tržba do účtovníctva.')) return;
-  const r=await api('/api/private/complete',{method:'POST',body:{booking_id:id}});
-  if(r&&r.ok){ toast(`✅ Absolvovaná · +${(r.trainer_cut||0).toFixed(2)} € do výplaty`); loadTrainerPrivate(); } else toast((r&&r.error)||'Chyba', true);
+async function completePriv(id, price, cash){
+  const msg = cash
+    ? `Potvrdiť hodinu ako ABSOLVOVANÚ a prevzatie ${(+price).toFixed(2)} € v hotovosti?\n\nKlientke sa pripíše návšteva + odznaky, tebe podiel do výplaty.\nHotovosť ti pribudne do evidencie — odovzdáš ju, alebo sa zúčtuje s výplatou.`
+    : (price ? 'Potvrdiť hodinu ako ABSOLVOVANÚ BEZ platby?\n\nKlientka za ňu ešte nezaplatila — tržba sa zapíše, ale hotovosť ti do evidencie nepribudne.'
+             : 'Potvrdiť hodinu ako ABSOLVOVANÚ?\n\nKlientke sa pripíše návšteva + odznaky, tebe podiel do výplaty a tržba do účtovníctva.');
+  if(!confirm(msg)) return;
+  const r=await api('/api/private/complete',{method:'POST',body:{booking_id:id, cash_received:!!cash}});
+  if(r&&r.ok){ toast(`✅ Absolvovaná · +${(r.trainer_cut||0).toFixed(2)} € do výplaty${r.cash_recorded?` · hotovosť ${(+price).toFixed(2)} € v evidencii`:''}`); loadTrainerPrivate(); }
+  else toast((r&&r.error)||'Chyba', true);
 }
 async function cancelPriv(id){
   const reason=prompt('Zrušiť súkromnú hodinu?\n\nKlientovi pošleme ospravedlnenie a vrátime platbu (ak platil kreditom).\n\nDôvod (nepovinné):','');
