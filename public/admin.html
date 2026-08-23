@@ -5586,7 +5586,7 @@ function invTab(t){
 }
 // Rôzne typy transakcií nesú meno/produkt v rôznych poliach (client_name vs user_name,
 // product_name vs note) — zjednoť, nech sa nikde neukazuje "undefined".
-const TX_TYPE_LBL={membership:'Členstvo', single_entry:'Jednorazový vstup', private_lesson:'Súkromná hodina', subscription:'Predplatné', subscription_renewal:'Obnova predplatného', gift_credit:'Darček kreditu', shop:'E-shop', merch:'Merch', tip:'Tip'};
+const TX_TYPE_LBL={membership:'Členstvo', single_entry:'Jednorazový vstup', event_ticket:'Vstupenky (event)', event_affiliate_payout:'Affiliate provízia (event)', private_lesson:'Súkromná hodina', subscription:'Predplatné', subscription_renewal:'Obnova predplatného', gift_credit:'Darček kreditu', shop:'E-shop', merch:'Merch', tip:'Tip'};
 let _allTxRows=[];
 async function loadAllTx(){
   const rows=await api('/api/transactions');if(!rows)return;

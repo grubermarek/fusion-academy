@@ -1107,6 +1107,15 @@ async function seedData() {
     }catch(e){ console.error('fix zumba attend:', e.message); }
   }
 
+  // 21.8.: zvyšná testovacia event objednávka z 19.8. (kupujúci „T", 1 100 €, nikdy nezaplatená)
+  if(!(await q.one(db.settings,{key:'purge_test_event_order_T_20260821'}))){
+    try{
+      const n=await q.remove(db.ev_orders,{order_number:'EVMT01CLKS200F', status:'pending'},{multi:true});
+      if(n) console.log('🧹 Test event objednávka „T" zmazaná');
+      await q.insert(db.settings,{key:'purge_test_event_order_T_20260821', value:true, at:nowISO()});
+    }catch(e){}
+  }
+
   // 21.8. večer (3. časť): Elena Krkošková prišla na Zumbu s kupónom na hodinu
   // zdarma, ale kiosk jej QR pároval na techniku (bez rezervácie) a odmietol ju.
   // Kredit sa strhol už pri rezervácii — stačí zapísať účasť.
@@ -8578,12 +8587,16 @@ app.get('/api/admin/finance/stats', adminAuth, async(req,res)=>{
     const inRange = (d)=> d>=fromISO && d<=toISO;
     const singleEntries = (await q.find(db.transactions,{type:'single_entry'}));
     const privateLessons = (await q.find(db.transactions,{type:'private_lesson'}));
+    // Vstupenky na eventy (Stripe aj hotovosť/prevod na mieste) — event modul ich
+    // zapisuje ako transactions.event_ticket; do payments nejdú, preto sem.
+    const eventTickets = (await q.find(db.transactions,{type:'event_ticket'})).filter(t=>+t.amount>0);
     const allEvents = [
       ...payments.map(p=>({d:payDate(p), a:+p.amount||0})),
       ...cashMembs.map(m=>({d:m.created_at||'', a:+m.price||0})),
       ...orders.map(o=>({d:o.paid_at||o.created_at||'', a:+o.total||0})),
       ...singleEntries.map(t=>({d:t.created_at||'', a:+t.amount||0})),
-      ...privateLessons.map(t=>({d:t.created_at||'', a:+t.amount||0}))
+      ...privateLessons.map(t=>({d:t.created_at||'', a:+t.amount||0})),
+      ...eventTickets.map(t=>({d:t.created_at||'', a:+t.amount||0}))
     ];
     const period = allEvents.filter(e=>inRange(e.d));
     const revenuePeriod = +period.reduce((s,e)=>s+e.a,0).toFixed(2);
@@ -8820,6 +8833,7 @@ async function accountingData(from, to){
   const membs=(await q.find(db.memberships,{})).filter(m=>!m._type && notAdmin(m));
   const orders=(await q.find(db.orders,{})).filter(o=>o.status==='paid');
   const singleEntries=(await q.find(db.transactions,{type:'single_entry'})).filter(notAdmin);
+  const eventTxs=(await q.find(db.transactions,{type:'event_ticket'})).filter(t=>+t.amount>0 && notAdmin(t));
   // Hotovostné/kartové predaje členstiev z transakcií — záznam členstva sa pri
   // upgrade PREPÍŠE (Bronze→Silver), takže bez transakcií by stará tržba zmizla.
   // Stripe/PayPal/free/kredit sa vynechajú (tie už sedia v payments / nie sú tržba).
@@ -8840,6 +8854,9 @@ async function accountingData(from, to){
     ...memTxs.map(t=>({date:t.created_at||t.date||'',amount:+t.amount||0,plan:(MEMBERSHIP_PLANS[t.plan_id]?.name)||'Členstvo',user_id:t.user_id,method:t.payment_method||t.method||'cash'})),
     ...orders.map(o=>({date:o.paid_at||o.created_at||'',amount:+o.total||0,plan:'E-shop',user_id:o.partner_id,method:o.payment_method||'cash'})),
     ...singleEntries.map(t=>({date:t.created_at||'',amount:+t.amount||0,plan:'Jednorazový vstup',user_id:t.user_id,method:t.method||'cash'})),
+    // Vstupenky na eventy (faktúra sa vystavuje automaticky, ale nie je „manual" —
+    // preto sa tržba berie z transakcie, nie z faktúry, aby sa nepočítala dvakrát)
+    ...eventTxs.map(t=>({date:t.created_at||'',amount:+t.amount||0,plan:'Vstupenky — '+String(t.note||'event').split(' — ')[0].slice(0,40),user_id:t.user_id,method:t.payment_method||'stripe'})),
     // Manuálne faktúry (eventy, prenájmy…) — do tržieb až keď sú UHRADENÉ
     ...invoices.filter(i=>i.manual && i.status==='paid').map(i=>({date:i.paid_at||i.issued_at||'',amount:+i.total||0,plan:'Faktúra (event/manuál)',user_id:i.user_id,method:i.payment_method||'prevod'}))
   ].filter(e=>inRange(e.date));
@@ -16225,6 +16242,7 @@ async function brRevenueEvents(){
   const orders=(await q.find(db.orders,{})).filter(o=>o.status==='paid' && !testIds.has(o.user_id));
   const singleEntries=(await q.find(db.transactions,{type:'single_entry'})).filter(t=>!testIds.has(t.buyer_id||t.user_id));
   const privateLessons=(await q.find(db.transactions,{type:'private_lesson'})).filter(t=>!testIds.has(t.buyer_id||t.user_id));
+  const eventTickets=(await q.find(db.transactions,{type:'event_ticket'})).filter(t=>+t.amount>0 && !testIds.has(t.user_id));
   const payDate=p=>p.captured_at||p.activated_at||p.created_at||'';
   const catOfPayment=p=>{ const d=String(p.description||'').toLowerCase();
     if(/permanentk|vstupov/.test(d)) return 'passes';
@@ -16240,6 +16258,7 @@ async function brRevenueEvents(){
     ...singleEntries.map(t=>({d:t.created_at||'', a:+t.amount||0,
       cat:((MEMBERSHIP_PLANS[t.plan_id]?.entries||1)>1 || (+t.entries||1)>1 || /permanentk/i.test(String(t.note||''))) ? 'passes':'entries'})),
     ...privateLessons.map(t=>({d:t.created_at||'', a:+t.amount||0, cat:'private'})),
+    ...eventTickets.map(t=>({d:t.created_at||'', a:+t.amount||0, cat:'events'})),
   ];
   return { events, testIds, membs, payments };
 }
