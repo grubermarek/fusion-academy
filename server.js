@@ -1121,8 +1121,8 @@ async function seedData() {
         let t, extra={};
         const ls=String(u.lead_source||'');
         if(u.is_child) { t='child'; n.child++; }
-        else if(u.imported||u.hidden_lead||/^(oldlist_xlsx|glofox)$/.test(ls)) { t='import'; n.imp++; }
         else if(u.meta_lead||ls==='meta_leadform') { t='meta_leadform'; extra={lead_at:u.created_at||null}; n.lead++; }
+        else if(u.imported||u.hidden_lead||/^(oldlist_xlsx|glofox)$/.test(ls)) { t='import'; n.imp++; }
         else if(u.guest) { t='guest_invite'; extra={registration_at:u.created_at||null, registration_at_source:'backfill_created_at'}; n.guest++; }
         else if(u.is_admin||['trainer','manager','admin'].includes(u.user_type)) { t='admin'; n.adm++; }
         else { t='self_registration'; extra={registration_at:u.created_at||null, registration_at_source:'backfill_created_at'}; n.self++; }
@@ -1131,6 +1131,18 @@ async function seedData() {
       console.log('🏷️ Klasifikácia kont: self='+n.self+' leadform='+n.lead+' import='+n.imp+' guest='+n.guest+' admin='+n.adm+' deti='+n.child);
       await q.insert(db.settings,{key:'acct_classification_backfill_v1', value:true, at:nowISO()});
     }catch(e){ console.error('acct backfill:', e.message); }
+  }
+
+  // 23.8. v2: leadform importy sa v prvom behu klasifikovali ako import — oprava
+  // poradia podmienok (meta leadform = lead, patrí do akvizičnej kohorty kampane).
+  if(!(await q.one(db.settings,{key:'acct_classification_backfill_v2'}))){
+    try{
+      const wrong=(await q.find(db.users,{account_creation_type:'import'}))
+        .filter(u=>u.meta_lead||String(u.lead_source||'')==='meta_leadform');
+      for(const u of wrong) await q.update(db.users,{_id:u._id},{$set:{account_creation_type:'meta_leadform', lead_at:u.created_at||null}});
+      if(wrong.length) console.log('🏷️ Reklasifikácia leadform: '+wrong.length+' kont import → meta_leadform');
+      await q.insert(db.settings,{key:'acct_classification_backfill_v2', value:true, at:nowISO()});
+    }catch(e){ console.error('acct backfill v2:', e.message); }
   }
 
   // 21.8.: zvyšná testovacia event objednávka z 19.8. (kupujúci „T", 1 100 €, nikdy nezaplatená)
