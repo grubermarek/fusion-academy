@@ -9,6 +9,7 @@ Bežia proti **izolovanej lokálnej inštancii**, nikdy nie proti produkcii.
 # 1) izolovaná inštancia (vlastná DB, vypnutý rate limit)
 cd "C:/Fusion Academy/MLM/app"
 RATE_LIMIT_OFF=1 DATA_DIR=/tmp/fa-qa PORT=3991 node server.js
+# maily sú mimo produkcie automaticky VYPNUTÉ (MAIL_ON=1 by ich zapol — nerob to)
 
 # 2) v druhom okne
 node qa/security.test.js       # 39 kontrol: autorizácia, IDOR, escalation, validácie

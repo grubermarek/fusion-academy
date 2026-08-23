@@ -4785,8 +4785,78 @@ async function openClientDetail(id){
     <div class="cd-tab" data-i="2" style="display:none">${list(d.bookings,['Dátum','Hodina','Miesto','Stav'],r=>`<tr><td>${fmtDate(r.date)}</td><td>${escHtml(r.class_name||'')}</td><td>${escHtml(r.location||'')}</td><td>${escHtml(r.status||'')}</td></tr>`)}</div>
     <div class="cd-tab" data-i="3" style="display:none">${list(d.invoices,['Číslo','Suma','Stav','Vystavená'],r=>`<tr><td><a href="/invoice/${r.number}" target="_blank" style="color:#C9A84C">${r.number}</a></td><td>${r.total.toFixed(2)} €</td><td>${escHtml(r.status||'')}</td><td>${fmtDate(r.issued_at)}</td></tr>`)}</div>
     <div class="cd-tab" data-i="4" style="display:none" id="cdEmailsTab"><div class="text-muted small py-2">Klikni na záložku pre načítanie…</div></div>
+    <div id="cdEventSale" class="mt-3 pt-3" style="border-top:1px solid #2a2a2a"></div>
     <div id="cdAwards" class="mt-3 pt-3" style="border-top:1px solid #2a2a2a"><div class="text-muted small">Načítavam odznaky…</div></div>`;
   loadAwards(id);
+  loadCdEventSale(p, !!k.activeMembership);
+}
+
+// ── Predaj vstupenky priamo z profilu klientky (hotovosť/prevod) ─────────────
+// Vstupenku aj QR dostane e-mailom a padne jej rovno do appky. Ceny sa rátajú
+// rovnako ako v e-shope: členská / predpredaj / na mieste.
+let _cdEvClient=null, _cdEvMember=false, _cdEvTypes=[];
+async function loadCdEventSale(p, isMember){
+  _cdEvClient=p; _cdEvMember=isMember;
+  const box=document.getElementById('cdEventSale'); if(!box) return;
+  const d=await api('/api/admin/events');
+  const today=new Date().toISOString().slice(0,10);
+  const evs=((d&&d.events)||[]).filter(e=>e.active && (!e.date || e.date>=today));
+  if(!evs.length){ box.innerHTML=''; return; }
+  box.innerHTML=`
+    <div class="fw-bold mb-2" style="color:#C9A84C"><i class="bi bi-ticket-perforated"></i> Predať vstupenku na event</div>
+    <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+      <select id="cdEvSlug" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:auto" onchange="cdEvLoadTypes()">
+        ${evs.map(e=>`<option value="${e.slug}">${escHtml(e.name)}${e.date_label?' · '+escHtml(e.date_label):''}</option>`).join('')}
+      </select>
+      <span class="small text-muted">${isMember?'✅ má aktívne členstvo → členská cena':'bez členstva → bežná cena'}</span>
+    </div>
+    <div id="cdEvTypes" class="text-muted small">Načítavam vstupenky…</div>`;
+  cdEvLoadTypes();
+}
+async function cdEvLoadTypes(){
+  const host=document.getElementById('cdEvTypes');
+  const slug=document.getElementById('cdEvSlug').value;
+  const d=await api('/api/events/'+slug);
+  if(!d||!d.types){ host.innerHTML='<span class="text-danger">Vstupenky sa nepodarilo načítať.</span>'; return; }
+  _cdEvTypes=d.types;
+  const now=new Date();
+  host.innerHTML=`
+    ${d.types.map((t,i)=>{
+      const presaleOpen = !t.presale_until || now <= new Date(t.presale_until);
+      const price = (_cdEvMember && t.member_price!=null && presaleOpen) ? t.member_price : (presaleOpen ? t.presale : t.door);
+      const tier = (_cdEvMember && t.member_price!=null && presaleOpen) ? 'členská' : (presaleOpen ? 'predpredaj' : 'na mieste');
+      const left = t.left==null ? '' : (t.left<=0 ? '<span class="text-danger">vypredané</span>' : `<span class="text-muted">ostáva ${t.left}</span>`);
+      return `<div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+        <input type="number" class="form-control form-control-sm bg-dark text-light border-secondary cd-ev-qty" data-key="${t.key}" data-price="${price}" value="0" min="0" max="20" style="width:70px" ${t.sold_out?'disabled':''}>
+        <b style="color:#eee">${escHtml(t.name)}</b>
+        <span style="color:#C9A84C">${(+price).toFixed(2)} €</span>
+        <span class="text-muted small">(${tier})</span> ${left}
+      </div>`;
+    }).join('')}
+    <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
+      <select id="cdEvPay" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:auto">
+        <option value="cash">💵 Hotovosť</option><option value="transfer">🏦 Prevod</option>
+      </select>
+      <button class="btn btn-sm btn-warning" onclick="cdEvSell()"><i class="bi bi-ticket-perforated"></i> Predať a poslať vstupenku</button>
+      <span class="text-muted small">Vstupenka s QR jej príde e-mailom a zobrazí sa jej v appke.</span>
+    </div>`;
+}
+async function cdEvSell(){
+  const slug=document.getElementById('cdEvSlug').value;
+  const items=[...document.querySelectorAll('.cd-ev-qty')].map(i=>({type:i.dataset.key, qty:+i.value||0, price:+i.dataset.price}))
+    .filter(i=>i.qty>0);
+  if(!items.length){ showToast('Zadaj počet aspoň pri jednej vstupenke','error'); return; }
+  const total=items.reduce((s,i)=>s+i.qty*i.price,0);
+  const what=items.map(i=>i.qty+'× '+(_cdEvTypes.find(t=>t.key===i.type)?.name||i.type)).join(', ');
+  const pay=document.getElementById('cdEvPay').value;
+  if(!confirm(`Predať ${_cdEvClient.name}?\n\n${what}\nSpolu: ${total.toFixed(2)} € (${pay==='cash'?'hotovosť':'prevod'})\n\nVstupenka jej príde e-mailom aj do appky.`)) return;
+  const r=await api('/api/admin/events/'+slug+'/onsite',{method:'POST',body:JSON.stringify({
+    items, member:_cdEvMember, method:pay,
+    name:_cdEvClient.name, email:_cdEvClient.email, phone:_cdEvClient.phone||'' })});
+  if(r&&r.ok){
+    showToast(`Predané ✓ ${r.summary} · ${(+r.total).toFixed(2)} €${r.emailed?' · vstupenka odoslaná e-mailom':''}`,'success');
+    openClientDetail(_cdClientId);
+  } else showToast('Chyba: '+((r&&r.error)||'?'),'error');
 }
 
 async function cdEditMemberSince(id, current){

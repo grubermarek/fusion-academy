@@ -1,4 +1,4 @@
-﻿const CACHE = 'fa-v485';
+﻿const CACHE = 'fa-v486';
 const STATIC = ['/fa-theme.css','/logo-mark.png','/logo-wordmark.png'];
 
 self.addEventListener('install', e=>{

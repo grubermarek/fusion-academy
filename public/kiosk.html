@@ -136,7 +136,7 @@ function buildSlides(){
   if(DATA.running) add(sl('Práve prebieha','🤫',
     '<div class="big">Hodina práve prebieha<br><span class="g">'+esc(DATA.running.emoji+' '+DATA.running.name)+'</span></div>'+
     (DATA.next?'<div class="sub">Ďalšia hodina: <b style="color:var(--cream)">'+esc(DATA.next.time_start)+' '+esc(DATA.next.name)+'</b></div>':'')+
-    '<div class="sub">Ďakujeme, že netlačíš na dvere 💛</div>'));
+    '<div class="sub">Ak si prišla skôr, počkaj prosím v šatni — nerušme tie, čo práve tancujú 💛</div>'));
   if(W.program!==false && DATA.program.length){
     add(sl('Dnešný program','🗓️','<div class="big">Dnes v štúdiu <span class="g">'+esc(DATA.city)+'</span></div>'+
       DATA.program.map(p=>'<div class="progrow"><span>'+esc(p.emoji)+' <b>'+esc(p.name)+'</b> · '+esc(p.instructor)+'</span><span>'+esc(p.time_start)+'–'+esc(p.time_end||'')+' · <span class="cap">'+p.booked+'/'+p.capacity+'</span></span></div>').join('')));

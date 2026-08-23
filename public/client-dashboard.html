@@ -1084,15 +1084,43 @@ function renderLoyalty(loyalty,milestones){
 
 /* ─── Bookings ─── */
 let _bookedMap={}; // "class_id|booking_date" -> booking _id
+let _lastBookings=[];   // posledný zoznam zo servera — na prekreslenie po načítaní súkromných
+let _privMine=[];       // moje súkromné rezervácie (patria do toho istého zoznamu)
+// Súkromnú hodinu musí klientka nájsť tam, kde hľadá ostatné rezervácie —
+// nielen v karte „Súkromné hodiny" nižšie.
+function privBookingHtml(b){
+  const hoursLeft=(new Date(`${b.date}T${b.time_start}:00`)-Date.now())/36e5;
+  const late=hoursLeft<24;
+  const where=[b.city, b.location].filter(Boolean).map(escHtml).join(' • ');
+  return `
+    <div class="booking-item" style="flex-wrap:wrap">
+      <div class="booking-emoji">🎭</div>
+      <div class="booking-info">
+        <strong>Súkromná hodina <span style="font-size:.7rem;background:rgba(201,168,76,.18);color:var(--gold);padding:1px 8px;border-radius:20px;vertical-align:middle">1:1</span>${b.paid?'':` <span style="font-size:.7rem;background:rgba(224,86,86,.2);color:#ff8a8a;border:1px solid rgba(224,86,86,.5);padding:1px 8px;border-radius:20px;vertical-align:middle;font-weight:800">💵 platíš na mieste</span>`}</strong>
+        <span>${skDate(b.date)} • ${escHtml(b.time_start)} ${where?'• '+where:''} • <b style="color:var(--gold)">${(+b.price).toFixed(2)} €</b></span>
+        <span style="font-size:.78rem;color:var(--muted)">🎓 Tréner: <a href="/u/${b.trainer_id}" style="color:var(--gold);text-decoration:none;font-weight:600">${escHtml(b.trainer_name)}</a>${late?' • <span style="color:#ff8a8a">zmena je už spoplatnená (menej než 24 h)</span>':' • bezplatná zmena do 24 h pred začiatkom'}</span>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start">
+        <button class="booking-cancel" style="border-color:var(--gold-border,#332a18);color:var(--gold)" onclick="pvReschedule('${b.id}','${b.trainer_id}',${late})">
+          <i class="bi bi-arrow-repeat"></i> Zmeniť termín
+        </button>
+        <button class="booking-cancel" onclick="pvCancelMine('${b.id}',${late})">
+          <i class="bi bi-x"></i> Zrušiť
+        </button>
+      </div>
+    </div>`;
+}
 function renderBookings(bookings){
   const el=document.getElementById('bookingsList');
-  const active=(bookings||[]).filter(b=>b.status==='confirmed');
+  if(bookings) _lastBookings=bookings;
+  const active=(_lastBookings||[]).filter(b=>b.status==='confirmed');
   // Track which classes/dates are booked so the schedule button can light up
   _bookedMap={};
   active.forEach(b=>{ if(b.class_id&&b.booking_date) _bookedMap[b.class_id+'|'+b.booking_date]=b._id; });
   if(typeof _allClasses!=='undefined' && _allClasses.length) renderClassCards();
-  if(!active.length){el.innerHTML=`<div class="empty-state"><i class="bi bi-calendar-x"></i><span data-i18n="dash.no_bookings">Zatiaľ žiadne rezervácie – zarezervuj si hodinu hore!</span></div>`;return;}
-  el.innerHTML=active.map(b=>{
+  const privHtml=(_privMine||[]).map(privBookingHtml).join('');
+  if(!active.length && !privHtml){el.innerHTML=`<div class="empty-state"><i class="bi bi-calendar-x"></i><span data-i18n="dash.no_bookings">Zatiaľ žiadne rezervácie – zarezervuj si hodinu hore!</span></div>`;return;}
+  el.innerHTML=privHtml+active.map(b=>{
     const insHtml = b.instructor && b.instructor!=='—'
       ? (b.instructor_id
           ? `<a href="/u/${b.instructor_id}" style="color:var(--gold);text-decoration:none;font-weight:600">${escHtml(b.instructor)}</a>`
@@ -2191,6 +2219,7 @@ async function loadPrivate(){
   // Moje rezervácie
   const mineHost=document.getElementById('pvMine');
   const upcoming=((my&&my.bookings)||[]).filter(b=>b.status==='booked');
+  _privMine=upcoming; renderBookings(); // nech ich vidí aj v „Moje aktívne rezervácie"
   mineHost.innerHTML = upcoming.map(b=>{
     const when=`${b.date.split('-').reverse().join('.')} o ${b.time_start} · ${escHtml(b.city)}`;
     const hoursLeft=(new Date(`${b.date}T${b.time_start}:00`)-Date.now())/36e5;
@@ -2311,6 +2340,21 @@ async function pvDoBook(slotId, pay, price){
   else if(pay==='prize'&&_me){ _me.free_private_lesson_credits=Math.max(0,(+_me.free_private_lesson_credits||0)-1); }
   showToast(pay==='prize'?'🎁 Výherná hodina rezervovaná — teší sa na teba!':'✨ Súkromná hodina rezervovaná!','success');
   _pvSel=null; document.getElementById('pvSlots').style.display='none'; loadPrivate();
+}
+// Zmena termínu = zrušenie pôvodnej hodiny + hneď otvorený kalendár toho istého
+// trénera. Robí sa v tomto poradí zámerne — inak by mala klientka chvíľu dve
+// rezervácie a trénerovi by zmizol voľný termín, ktorý si práve uvoľnila.
+async function pvReschedule(id, trainerId, late){
+  const msg = late
+    ? 'POZOR: do začiatku hodiny je menej než 24 hodín.\n\nPri zmene termínu takto neskoro suma podľa storno podmienok PREPADÁ trénerovi — nový termín si platíš znova.\n\nRadšej mu najprv zavolaj. Naozaj pokračovať?'
+    : 'Zmeniť termín súkromnej hodiny?\n\nPôvodný termín sa zruší (bezplatne, viac než 24 h vopred) a hneď si vyberieš nový z voľných termínov toho istého trénera.';
+  if(!confirm(msg)) return;
+  const r=await api('/api/private/cancel',{method:'POST',body:{booking_id:id}});
+  if(!(r&&r.ok)){ showToast((r&&r.error)||'Zrušenie sa nepodarilo','error'); return; }
+  showToast('Pôvodný termín zrušený — vyber si nový 👇','success');
+  await loadPrivate();
+  scrollToPrivate();
+  pvPick(trainerId);
 }
 async function pvCancelMine(id, late){
   const msg = late

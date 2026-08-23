@@ -8825,9 +8825,14 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
     const membs=(await q.find(db.memberships,{user_id:u._id})).filter(m=>!m._type);
     const bookings=(await q.find(db.bookings,{user_id:u._id}));
     const invoices=(await q.find(db.invoices,{user_id:u._id})).filter(i=>i.type!=='credit_note');
+    // Vstupenky na eventy a súkromné hodiny nemajú záznam v db.payments (sedia len
+    // v transakciách) — bez nich by na profile chýbali aj v platbách, aj v LTV.
+    const extraTx=(await q.find(db.transactions,{user_id:u._id}))
+      .filter(t=>['event_ticket','private_lesson'].includes(t.type) && (+t.amount||0)>0);
 
     const totalPaid = +([
       ...payments.map(p=>+p.amount||0),
+      ...extraTx.map(t=>+t.amount||0),
       ...membs.filter(m=>m.payment_method).map(m=>+m.price||0)
     ].reduce((s,x)=>s+x,0)).toFixed(2);
 
@@ -8868,7 +8873,12 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
           gateway: p.stripe_payment_intent ? 'stripe' : (p.paypal_capture_id ? 'paypal' : 'manual'),
           refundable: !r && (+p.amount||0)>0,
           refunded: r ? {amount:+r.amount||0, type:r.type, date:(r.created_at||'').slice(0,10), credit_note:r.credit_note||null} : null };
-      }).sort((a,b)=>(b.date||'').localeCompare(a.date||'')),
+      }).concat(extraTx.map(t=>({
+        id:t._id, date:t.date||t.created_at, amount:+t.amount||0,
+        method:t.payment_method||t.method||'—', type:t.type,
+        note:t.note||(t.type==='event_ticket'?'Vstupenka na event':'Súkromná hodina'),
+        status:'completed', gateway:'manual', refundable:false, refunded:null
+      }))).sort((a,b)=>(b.date||'').localeCompare(a.date||'')),
       memberships: membs.map(m=>({plan_name:m.plan_name, price:+m.price||0, status:m.status, started_at:m.started_at, expires_at:m.expires_at, method:m.payment_method||'—'}))
         .sort((a,b)=>(b.started_at||'').localeCompare(a.started_at||'')),
       bookings: attended.map(b=>({date:b.booking_date||b.created_at, class_name:b.class_name, location:b.class_location, status:b.status, access:b.access_method||(b.free_class?'free_class':null), attended_by:b.attended_by||null}))
@@ -13285,10 +13295,21 @@ let brevoApiKey = null;
   } catch(e){ /* nodemailer not installed – silent fallback */ }
 })();
 
+// Maily sa reálne odosielajú LEN z produkcie. Lokálny beh a QA testy generujú
+// desiatky notifikácií (predaje, rezervácie, vstupenky) — tie končili v schránke
+// majiteľa ako spam. MAIL_ON=1 zapne odosielanie aj mimo produkcie, ak treba
+// odladiť konkrétny mail.
+// RAILWAY_ENVIRONMENT je poistka: aj keby sa raz stratilo NODE_ENV=production zo
+// štartovacieho príkazu, produkcia na Railway maily posielať nesmie prestať.
+const MAIL_ENABLED = process.env.MAIL_OFF==='1' ? false
+  : (process.env.MAIL_ON==='1' || process.env.NODE_ENV==='production' || !!process.env.RAILWAY_ENVIRONMENT);
+if(!MAIL_ENABLED) console.log('✉️  Odosielanie mailov VYPNUTÉ (nie je produkcia) — MAIL_ON=1 ho zapne');
+
 async function sendMail(to, subject, html){
   // @import.local = syntetické adresy klientov zo starého zoznamu (majú len telefón,
   // kontaktujú sa SMSkou) — nikdy na ne nič neposielaj.
   if(/@import\.local$/i.test(String(to||''))) return false;
+  if(!MAIL_ENABLED){ console.log(`✉️  [mail vypnutý] ${to} · ${subject}`); return false; }
   // Mail log + tracking pixel (CRM P3): každý odoslaný mail sa zaloguje a otvorenie
   // sa zaznamená cez 1×1 pixel — open rate vidno v /api/admin/mail-log/stats.
   try{
@@ -17076,6 +17097,7 @@ app.get('/api/admin/mail-log/stats', adminAuth, async(req,res)=>{
     const bySubject={};
     logs.forEach(l=>{ const k=l.subject; (bySubject[k]=bySubject[k]||{sent:0,opened:0}).sent++; if(l.opened_at) bySubject[k].opened++; });
     res.json({days:30, sent:logs.length, opened, open_rate:logs.length?+(opened/logs.length*100).toFixed(1):0,
+      mail_enabled: MAIL_ENABLED, // kontrola, že produkcia reálne odosiela
       by_subject:Object.entries(bySubject).map(([subject,v])=>({subject,...v, rate:v.sent?+(v.opened/v.sent*100).toFixed(1):0})).sort((a,b)=>b.sent-a.sent).slice(0,30)});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
