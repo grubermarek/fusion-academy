@@ -1109,6 +1109,30 @@ async function seedData() {
     }catch(e){ console.error('fix zumba attend:', e.message); }
   }
 
+  // 23.8.: Backfill klasifikácie kont (audit merania — dohodnuté s ChatGPT).
+  // Glofox/oldlist=import (mimo akvizičných kohort), meta leadform=lead,
+  // ostatné=self registrácia s registration_at_source='backfill_created_at'.
+  if(!(await q.one(db.settings,{key:'acct_classification_backfill_v1'}))){
+    try{
+      const all=await q.find(db.users,{});
+      let n={self:0,lead:0,imp:0,guest:0,adm:0,child:0};
+      for(const u of all){
+        if(u.account_creation_type) continue;
+        let t, extra={};
+        const ls=String(u.lead_source||'');
+        if(u.is_child) { t='child'; n.child++; }
+        else if(u.imported||u.hidden_lead||/^(oldlist_xlsx|glofox)$/.test(ls)) { t='import'; n.imp++; }
+        else if(u.meta_lead||ls==='meta_leadform') { t='meta_leadform'; extra={lead_at:u.created_at||null}; n.lead++; }
+        else if(u.guest) { t='guest_invite'; extra={registration_at:u.created_at||null, registration_at_source:'backfill_created_at'}; n.guest++; }
+        else if(u.is_admin||['trainer','manager','admin'].includes(u.user_type)) { t='admin'; n.adm++; }
+        else { t='self_registration'; extra={registration_at:u.created_at||null, registration_at_source:'backfill_created_at'}; n.self++; }
+        await q.update(db.users,{_id:u._id},{$set:{account_creation_type:t, ...extra}});
+      }
+      console.log('🏷️ Klasifikácia kont: self='+n.self+' leadform='+n.lead+' import='+n.imp+' guest='+n.guest+' admin='+n.adm+' deti='+n.child);
+      await q.insert(db.settings,{key:'acct_classification_backfill_v1', value:true, at:nowISO()});
+    }catch(e){ console.error('acct backfill:', e.message); }
+  }
+
   // 21.8.: zvyšná testovacia event objednávka z 19.8. (kupujúci „T", 1 100 €, nikdy nezaplatená)
   if(!(await q.one(db.settings,{key:'purge_test_event_order_T_20260821'}))){
     try{
@@ -2491,7 +2515,8 @@ app.post('/api/auth/google', rlLogin, async(req,res)=>{
       bank_account:'', notes:'', visit_count:0, referral_credit:0, lead_source,
       utm_source:clean(attr.utm_source), utm_medium:clean(attr.utm_medium), utm_campaign:clean(attr.utm_campaign),
       fbclid:clean(attr.fbclid), gclid:clean(attr.gclid), landing_page:clean(attr.landing), referrer:clean(attr.referrer),
-      consent_at:nowISO(), created_at:today()});
+      consent_at:nowISO(), created_at:today(),
+      account_creation_type:'self_registration', registration_at:nowISO(), registration_at_source:'actual'});
     req.session.uid=u._id; req.session.sv=0;
     try{ const admins=await q.find(db.users,{is_admin:true});
       for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'new_lead',title:'🆕 Nová registrácia cez Google',body:`${name} · ${email}`,read:false,created_at:nowISO()}); }catch(e){}
@@ -2648,7 +2673,7 @@ app.post('/api/register', rlSignup, async(req,res)=>{
       if(!vencekClass) return res.status(400).json({error:'Venčekový kód triedy neexistuje. Skontroluj QR/kód od školy.'});
       vencekRole=['student','parent','teacher','director'].includes(req.body.vencek_role)?req.body.vencek_role:'student';
     }
-    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',city:String(req.body.city||'').trim().slice(0,60),referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,referral_credit:0,lead_source,utm_source,utm_medium,utm_campaign,fbclid,gclid,landing_page:clean(attr.landing),referrer:clean(attr.referrer),consent_at: req.body.consent ? nowISO() : null,created_at:today(),
+    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',city:String(req.body.city||'').trim().slice(0,60),referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,referral_credit:0,lead_source,utm_source,utm_medium,utm_campaign,fbclid,gclid,landing_page:clean(attr.landing),referrer:clean(attr.referrer),consent_at: req.body.consent ? nowISO() : null,created_at:today(),account_creation_type:'self_registration',registration_at:nowISO(),registration_at_source:'actual',
       ...(vencekClass? (['student','parent'].includes(vencekRole)
         ? {venceky_class_id:vencekClass._id, venceky_school_id:vencekClass.school_id, venceky_role:vencekRole,
            ...(vencekRole==='parent'?{vencek_child_name:String(req.body.vencek_child_name||'').slice(0,80)}:{})}
@@ -3318,6 +3343,7 @@ app.post('/api/invite/:code/book', rlPublic, async(req,res)=>{
       while(await q.one(db.users,{referral_code:code})) code=base+Math.floor(100+Math.random()*900);
       u=await q.insert(db.users,{ name, email:isEmail?contact.toLowerCase():('guest-'+Date.now().toString(36)+'@guest.fusionacademy.sk'),
         phone:isPhone?contact:'', password:null, guest:true, referral_code:code, sponsor_id:sp._id,
+        account_creation_type:'guest_invite', registration_at:nowISO(), registration_at_source:'actual',
         rank:1, is_admin:false, active:true, user_type:'lead', lead_source:'referral',
         visit_count:0, referral_credit:0, city:cls.location, consent_at:nowISO(), created_at:today(),
         manage_token:'MG'+Math.random().toString(36).slice(2,12).toUpperCase() });
@@ -5764,7 +5790,7 @@ app.post('/api/admin/partners', adminAuth, async(req,res)=>{
   let sid = sponsor_id||null;
   if(!sid){ const founder=await q.one(db.users,{email:'gruber.marek@gmail.com'}); if(founder && founder.email!==email.toLowerCase().trim()) sid=founder._id; }
   try {
-    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',referral_code:code,sponsor_id:sid,bank_account:bank_account||'',rank:1,is_admin:false,active:true,user_type:user_type||'partner',notes:'',created_at:today()});
+    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',referral_code:code,sponsor_id:sid,bank_account:bank_account||'',rank:1,is_admin:false,active:true,user_type:user_type||'partner',notes:'',created_at:today(),account_creation_type:'admin'});
     res.json({ok:true,id:u._id,referral_code:code});
   } catch(e){
     if(e.message?.includes('unique')) return res.status(400).json({error:'Email je už zaregistrovaný'});
@@ -6241,6 +6267,7 @@ app.post('/api/import-oldlist', async(req,res)=>{
       const nu={ name, email, phone: ph?('0'+ph):'', city:p.city||null,
         user_type: p.attended?'client':'lead', is_admin:false, active:true,
         imported:true, claimed:false, oldlist:true, lead_source:'oldlist_xlsx',
+        account_creation_type:'import',
         sms_only:true, visit_count:visits, free_class_used:!!p.attended,
         last_visit_at:lastISO, referral_credit:0, single_entries:0, rank:1,
         created_at:nowISO() };
@@ -6276,7 +6303,7 @@ app.post('/api/import-meta-leads', async(req,res)=>{
       const name=String(p.name||'').trim()||email.split('@')[0];
       let code=(name.replace(/[^a-zA-Z]/g,'').toUpperCase().slice(0,5)||'LEAD')+Math.floor(100+Math.random()*900);
       while(await q.one(db.users,{referral_code:code})) code='LEAD'+Math.floor(1000+Math.random()*9000);
-      const u=await q.insert(db.users,{
+      const u=await q.insert(db.users,{ account_creation_type:'meta_leadform', lead_at:nowISO(),
         name, email, phone: ph?('0'+ph):'', referral_code:code,
         sponsor_id:null, rank:1, is_admin:false, active:true, user_type:'lead',
         password:null, imported:true, claimed:false,
@@ -13539,7 +13566,7 @@ app.post('/api/family/children', auth, async(req,res)=>{
     // Children get a unique (unused) referral_code to satisfy the unique index
     let childCode = 'CHILD-'+token.toUpperCase();
     while(await q.one(db.users,{referral_code:childCode})) childCode = 'CHILD-'+Math.random().toString(36).slice(2,10).toUpperCase();
-    const child = await q.insert(db.users,{
+    const child = await q.insert(db.users,{ account_creation_type:'child',
       name, email:internalEmail, referral_code:childCode, parent_id:req.session.uid, is_child:true, birth_date, birth_year,
       user_type:'client', is_admin:false, active:true,
       visit_count:0, free_class_used:false, single_entries:0, free_credits:0, referral_credit:0,
@@ -15197,6 +15224,91 @@ app.get('/api/admin/meta-stats', adminAuth, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ── CAC → LTV dashboard (audit merania 23.8., navrhnuté s ChatGPT) ──────────
+// Jeden riadok = kampaň + jej akvizičná kohorta. Definície:
+//  lead = meta_leadform konto · registration = vedomá registrácia (self/guest/google)
+//  activated = 1. reálna účasť · payer = 1. nenulová platba · member = platené členstvo
+//  acquisition_at = registration_at || lead_at || created_at
+//  Revenue30/90 = reálne zaplatené peniaze kohorty do 30/90 dní od akvizície
+//  Status: MATURE keď má celá kohorta odžitých 90 dní, inak INCOMPLETE.
+app.get('/api/admin/cac-ltv', adminAuth, async(req,res)=>{
+  try{
+    const camps=await q.find(db.campaigns,{});
+    const acc=await accountingData(); // events[]: {date, amount, user_id} — všetky reálne tržby
+    const revByUser={};
+    for(const e of acc.events){ if(!e.user_id) continue; (revByUser[e.user_id]=revByUser[e.user_id]||[]).push({d:String(e.date||'').slice(0,10), a:+e.amount||0}); }
+    const users=(await q.find(db.users,{})).filter(u=>!u.is_admin && !u.is_child
+      && !['trainer','manager','admin'].includes(u.user_type)
+      && u.account_creation_type!=='import' && u.account_creation_type!=='admin' && u.account_creation_type!=='child'
+      && !/test/i.test(u.name||'') && !/test/i.test(u.email||''));
+    const bks=await q.find(db.bookings,{});
+    const bkByU={}; for(const b of bks){ if(b.user_id && b.status!=='cancelled') (bkByU[b.user_id]=bkByU[b.user_id]||[]).push(b); }
+    const paidMemUsers=new Set((await q.find(db.memberships,{})).filter(m=>!m._type && !m.gift && !m.migrated && +m.price>0).map(m=>m.user_id));
+    const evOrders=(await q.find(db.ev_orders,{status:'paid'}));
+    const today10=today();
+    const addDays=(d,n)=>{ const t=Date.parse(String(d).slice(0,10)); return Number.isFinite(t)?new Date(t+n*864e5).toISOString().slice(0,10):'9999'; };
+
+    const matchFor=c=>{
+      const key=String(c.utm_key||'').replace(/\*+$/,'');
+      return u=>{
+        if(key) return String(u.utm_campaign||'').startsWith(key);
+        if(c.lead_source_key) return String(u.lead_source||'')===c.lead_source_key;
+        if(c.gclid_attr) return !!u.gclid;
+        return false;
+      };
+    };
+    const rows=[];
+    for(const c of camps){
+      const m=matchFor(c);
+      const cohort=users.filter(m);
+      const acqAt=u=>String(u.registration_at||u.lead_at||u.created_at||'').slice(0,10);
+      const leads=cohort.filter(u=>u.account_creation_type==='meta_leadform');
+      const regs=cohort.filter(u=>u.registration_at);
+      const acquired=cohort.length;
+      const attendedOf=u=>(bkByU[u._id]||[]).filter(b=>b.status==='attended').length;
+      const booked=cohort.filter(u=>(bkByU[u._id]||[]).length>0).length;
+      const attended=cohort.filter(u=>attendedOf(u)>=1);
+      const second=cohort.filter(u=>attendedOf(u)>=2).length;
+      const revIn=(u,days)=>{ const a=acqAt(u); const lim=addDays(a,days);
+        return (revByUser[u._id]||[]).filter(r=>r.d>=a && r.d<=lim).reduce((x,r)=>x+r.a,0); };
+      const payers=cohort.filter(u=>(revByUser[u._id]||[]).some(r=>r.a>0));
+      const members=cohort.filter(u=>paidMemUsers.has(u._id)).length;
+      const rev30=+cohort.reduce((x,u)=>x+revIn(u,30),0).toFixed(2);
+      const rev90=+cohort.reduce((x,u)=>x+revIn(u,90),0).toFixed(2);
+      // Vstupenky na event priradené kampani cez UTM snapshot objednávky (aj bez konta)
+      const key=String(c.utm_key||'').replace(/\*+$/,'');
+      const ticketRev = key ? +evOrders.filter(o=>String(o.attr?.utm_campaign||o.attr?.first?.utm_campaign||'').startsWith(key))
+        .reduce((x,o)=>x+(+o.total||0),0).toFixed(2) : 0;
+      const spend=+c.spend||0;
+      const mature=cohort.length ? cohort.every(u=>addDays(acqAt(u),90)<=today10) : false;
+      const spendStale = spend>0 && (!c.spend_updated_at || (Date.now()-Date.parse(c.spend_updated_at))>7*864e5);
+      const pct=(a,b)=>b?+(a/b*100).toFixed(1):null;
+      rows.push({ id:c._id, name:c.name, platform:c.platform||'other',
+        spend, spend_updated_at:c.spend_updated_at||null, spend_stale:spendStale,
+        leads:leads.length, registrations:regs.length, acquired,
+        booked, attended:attended.length, second, payers:payers.length, members,
+        acq_to_attend_pct:pct(attended.length, acquired),
+        attend_to_payer_pct:pct(payers.length, attended.length),
+        attend_to_member_pct:pct(members, attended.length),
+        cac_payer: payers.length?+(spend/payers.length).toFixed(2):null,
+        cac_member: members?+(spend/members).toFixed(2):null,
+        revenue30:rev30, revenue90:rev90, ticket_revenue:ticketRev,
+        rev90_per_acquired: acquired?+((rev90+ticketRev)/acquired).toFixed(2):null,
+        rev90_per_payer: payers.length?+(rev90/payers.length).toFixed(2):null,
+        roas90: spend?+(((rev90+ticketRev))/spend).toFixed(2):null,
+        status: mature?'MATURE':'INCOMPLETE' });
+    }
+    rows.sort((a,b)=>b.spend-a.spend);
+    const tot={ spend:+rows.reduce((x,r)=>x+r.spend,0).toFixed(2),
+      acquired:rows.reduce((x,r)=>x+r.acquired,0),
+      attended:rows.reduce((x,r)=>x+r.attended,0),
+      payers:rows.reduce((x,r)=>x+r.payers,0),
+      revenue90:+rows.reduce((x,r)=>x+r.revenue90+r.ticket_revenue,0).toFixed(2) };
+    tot.roas90 = tot.spend?+(tot.revenue90/tot.spend).toFixed(2):null;
+    res.json({ok:true, rows, totals:tot});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/admin/campaigns', adminAuth, async(req,res)=>{
   try {
     const list=await q.find(db.campaigns,{});
@@ -15282,6 +15394,8 @@ app.put('/api/admin/campaigns/:id', adminAuth, async(req,res)=>{
     ['name','goal','note','date_from','date_to','meta_campaign_id','meta_ad_id','utm_key','lead_source_key'].forEach(k=>{ if(b[k]!==undefined) upd[k]=b[k]; });
     if(b.gclid_attr!==undefined) upd.gclid_attr=!!b.gclid_attr;
     ['budget','spend','impressions','clicks','registrations','first_visits','memberships'].forEach(k=>{ if(b[k]!==undefined) upd[k]=+b[k]||0; });
+    // Spend sa dopĺňa ručne — časová pečiatka, nech dashboard vie zakričať SPEND STALE
+    if(b.spend!==undefined && (+b.spend||0)!==(+c.spend||0)) upd.spend_updated_at=nowISO();
     if(b.platform!==undefined){ const p=(b.platform||'other').toLowerCase(); upd.platform=CAMPAIGN_PLATFORMS.includes(p)?p:'other'; }
     await q.update(db.campaigns,{_id:c._id},{$set:upd});
     await auditLog(req,'campaign_update',c.name,{spend:c.spend},{spend:upd.spend??c.spend},'');

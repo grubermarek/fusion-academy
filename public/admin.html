@@ -888,7 +888,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </div></div>
 
     <!-- KPI cards -->
-    <div class="row g-2 mb-3" id="mkKpis"></div>
+    <div id="cacLtv2" style="margin-bottom:14px"></div><div class="row g-2 mb-3" id="mkKpis"></div>
 
     <!-- Funnel -->
     <div class="card bg-dark border-secondary mb-3">
@@ -981,6 +981,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       </div>
       <div id="leadFunnelPanel" class="small text-muted">Načítavam…</div>
     </div></div>
+    <div id="cacLtv" style="margin-bottom:18px"></div>
     <div id="campaignsList"><div class="text-muted py-4 text-center">Načítavam…</div></div>
   </div>
 
@@ -3936,9 +3937,55 @@ async function loadRefGoalReport(){
     <div class="text-muted mt-1">💰 = kamoška si už kúpila členstvo/permanentku (ráta sa do odmien) · 📝 = zatiaľ len registrácia. Súčty hore = koľko tašiek objednať a komu dať zľavy.</div>`;
   }catch(e){ el.textContent='Chyba: '+e.message; }
 }
+
+/* ── CAC → LTV dashboard (definície: audit merania 23.8.) ─────────────────── */
+async function loadCacLtv(hostId){
+  const host=document.getElementById(hostId||'cacLtv'); if(!host) return;
+  const d=await api('/api/admin/cac-ltv');
+  if(!d||!d.ok){ host.innerHTML=''; return; }
+  const t=d.totals||{};
+  const eur=v=>v==null?'—':(+v).toFixed(2).replace('.',',')+' €';
+  const num=v=>v==null?'—':v;
+  const pct=v=>v==null?'—':v+' %';
+  const big=(label,val,color)=>`<div style="flex:1;min-width:120px;background:#141414;border:1px solid #2a2a2a;border-radius:12px;padding:12px 14px;text-align:center">
+    <div style="font-size:1.35rem;font-weight:900;color:${color||'var(--gold,#C9A84C)'}">${val}</div>
+    <div style="font-size:.68rem;color:#888;letter-spacing:.05em;text-transform:uppercase">${label}</div></div>`;
+  const rows=(d.rows||[]).filter(r=>r.spend>0||r.acquired>0);
+  host.innerHTML=`
+  <div class="card" style="background:#101010;border:1px solid #2a2a2a;border-radius:14px">
+    <div class="card-body">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <h5 style="margin:0">📐 CAC → LTV <span class="text-muted" style="font-size:.75rem">kohorty podľa akvizície · Revenue = reálne zaplatené do 30/90 dní</span></h5>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin:12px 0">
+        ${big('Spend',eur(t.spend))}${big('Získané',num(t.acquired),'#e8e2d2')}${big('Prišli',num(t.attended),'#e8e2d2')}${big('Platiace',num(t.payers),'#9fd894')}${big('Rev90 / Spend',t.roas90==null?'—':t.roas90+'×',t.roas90>=1?'#9fd894':'#e57373')}
+      </div>
+      <div style="overflow-x:auto"><table class="table table-dark table-sm align-middle" style="font-size:.78rem;min-width:1150px">
+        <thead><tr class="text-muted">
+          <th>Kampaň</th><th>Spend</th><th>Leady</th><th>Registrácie</th><th>Rezervovali</th><th>Prišli</th><th>2. návšteva</th><th>Platiace</th><th>Členky</th>
+          <th>Akv→Prišla</th><th>Prišla→Platí</th><th>CAC platiaca</th><th>CAC členka</th><th>Rev 30d</th><th>Rev 90d</th><th>Vstupenky</th><th>Rev90/získanú</th><th>ROAS90</th><th>Stav</th>
+        </tr></thead>
+        <tbody>${rows.map(r=>`<tr>
+          <td style="max-width:190px"><b>${escHtml(r.name)}</b>${r.spend_stale?' <span title="Spend nebol aktualizovaný — doplň ho z Ads Manageru" style="background:rgba(229,115,115,.15);border:1px solid rgba(229,115,115,.5);color:#e57373;border-radius:6px;padding:1px 6px;font-size:.62rem;font-weight:800">⚠ SPEND STALE</span>':''}</td>
+          <td>${eur(r.spend)}</td><td>${r.leads||'—'}</td><td>${r.registrations||'—'}</td><td>${num(r.booked)}</td><td>${num(r.attended)}</td><td>${num(r.second)}</td>
+          <td>${num(r.payers)}</td><td>${num(r.members)}</td>
+          <td>${pct(r.acq_to_attend_pct)}</td><td>${pct(r.attend_to_payer_pct)}</td>
+          <td>${eur(r.cac_payer)}</td><td>${eur(r.cac_member)}</td>
+          <td>${eur(r.revenue30)}</td><td>${eur(r.revenue90)}</td><td>${r.ticket_revenue?eur(r.ticket_revenue):'—'}</td>
+          <td>${eur(r.rev90_per_acquired)}</td>
+          <td>${r.roas90==null?'—':`<b style="color:${r.roas90>=1?'#9fd894':'#e57373'}">${r.roas90}×</b>`}</td>
+          <td><span style="font-size:.66rem;font-weight:800;color:${r.status==='MATURE'?'#9fd894':'#e0b84c'}">${r.status==='MATURE'?'MATURE':'⏳ INCOMPLETE'}</span></td>
+        </tr>`).join('')||'<tr><td colspan="19" class="text-muted text-center py-3">Žiadne kampane so spendom.</td></tr>'}</tbody>
+      </table></div>
+      <div class="text-muted" style="font-size:.68rem">Leady = kontá z Meta leadformov (nie sú registrácie) · Importy (Glofox, starý zoznam) v kohortách nie sú · INCOMPLETE = kohorta ešte nemá odžitých 90 dní, LTV bude rásť · Vstupenky = event predaje priradené cez UTM objednávky.</div>
+    </div>
+  </div>`;
+}
+
 async function loadCampaigns(){
   loadMetaStats();
   loadLeadFunnel();
+  loadCacLtv();
   const list=await api('/api/admin/campaigns');
   const host=document.getElementById('campaignsList');
   if(!Array.isArray(list)||!list.length){ host.innerHTML='<div class="text-muted text-center py-5">Zatiaľ žiadne kampane. Klikni „Nová kampaň" a začni merať návratnosť.</div>'; return; }
@@ -4434,6 +4481,7 @@ async function loadShopAnalytics(){
 }
 async function loadMarketing(){
   loadShopAnalytics();
+  loadCacLtv('cacLtv2');
   const d = await api('/api/admin/marketing/stats');
   if(!d||d.error){ showToast('Chyba: '+(d?.error||'?'),'error'); return; }
   const t=d.totals;

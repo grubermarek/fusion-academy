@@ -109,6 +109,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--gold)}
 .msg.err{color:#ff8a80}
 .skel{color:var(--muted);text-align:center;padding:60px 0}
 </style>
+<script src="/fa-track.js"></script>
 </head>
 <body>
 <div class="topbar">
@@ -436,8 +437,13 @@ async function buy(){
     const el=document.getElementById('bName'); if(el && el.type!=='hidden') el.scrollIntoView({block:'center',behavior:'smooth'});
     return; }
   const items = EV.types.filter(t=>QTY[t.key]>0).map(t=>({type:t.key, qty:QTY[t.key], holders:collectHolders(t.key)}));
+  // Atribúcia predaja: aktuálne UTM z URL (registration-touch) + first-touch z fa_attr.
+  const _p=new URLSearchParams(location.search); const _cur={};
+  ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid'].forEach(k=>{ if(_p.get(k)) _cur[k]=_p.get(k); });
+  _cur.landing=location.pathname+location.search; _cur.referrer=document.referrer||'';
+  _cur.first = window.faGetAttribution ? window.faGetAttribution() : {};
   const body = { buyer_name:name, buyer_email:email, buyer_phone:document.getElementById('bPhone').value.trim(),
-                 items, source: IN_APP ? 'app' : 'web', aff: AFF || undefined };
+                 items, source: IN_APP ? 'app' : 'web', aff: AFF || undefined, attribution:_cur };
   if(TABLE) body.table = { persons:+document.getElementById('tblPersons').value||1,
                            note:document.getElementById('tblNote').value.trim() };
   btn.disabled=true; btn.textContent='Pripravujem platbu…';

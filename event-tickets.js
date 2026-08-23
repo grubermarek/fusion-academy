@@ -286,9 +286,16 @@ module.exports = function mountEventTickets(ctx){
       if(!STRIPE_SECRET) return res.status(400).json({error:'Platby nie sú nakonfigurované'});
       const order_number = 'EV'+Date.now().toString(36).toUpperCase()+crypto.randomBytes(2).toString('hex').toUpperCase();
       const source = req.body.source==='app' ? 'app' : 'web';
+      // UTM snapshot v momente objednávky — spätne sa nedá dorobiť (audit merania 23.8.).
+      const rawAttr=req.body.attribution||{}; const cl=v=>String(v||'').slice(0,300);
+      const attr={};
+      ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid','landing','referrer'].forEach(k=>{ if(rawAttr[k]) attr[k]=cl(rawAttr[k]); });
+      if(rawAttr.first&&typeof rawAttr.first==='object'){ const f={};
+        ['utm_source','utm_medium','utm_campaign','fbclid','gclid','landing','referrer','captured_at'].forEach(k=>{ if(rawAttr.first[k]) f[k]=cl(rawAttr.first[k]); });
+        if(Object.keys(f).length) attr.first=f; }
       const order = await q.insert(db.ev_orders,{
         order_number, event_slug:ev.slug, buyer_name, buyer_email, buyer_phone,
-        user_id: me?._id || null, items, total, table, source,
+        user_id: me?._id || null, items, total, table, source, attr: Object.keys(attr).length?attr:null,
         aff_code: aff?.code || null, aff_name: aff?.name || null, aff_rate: aff?.rate || null,
         status:'pending', created_at:nowISO(), paid_at:null
       });
@@ -715,7 +722,7 @@ module.exports = function mountEventTickets(ctx){
           checked_in_at:null, checked_in_by:null, checkin_place:null, created_at:nowISO()}));
       }
       const summary = lines.map(l=>l.qty+'× '+l.t.name).join(', ');
-      await q.insert(db.transactions,{type:'event_ticket', user_id:acct?._id||null, user_name:name,
+      await q.insert(db.transactions,{type:'event_ticket', user_id:acct?._id||null, user_name:name, channel:'onsite',
         amount:total, payment_method:method,
         note:`${ev.name} — ${summary} (ručný predaj, ${method})`, created_at:nowISO(), month:today().slice(0,7)});
       try{
