@@ -204,7 +204,9 @@ module.exports = function initCoach(ctx){
       const attended = bks.filter(b=>b.status==='attended').sort((a,b)=>(a.booking_date<b.booking_date?1:-1));
       const lastVisit = attended[0] ? new Date(attended[0].booking_date+'T12:00:00').getTime() : 0;
       const daysSinceVisit = lastVisit ? Math.floor((now-lastVisit)/86400000) : null;
-      const recentNoShow = bks.find(b=>b.status==='no_show' && (now-new Date(b.booking_date+'T12:00:00').getTime())<7*86400000);
+      // No-show sedí v attendance_status, nie v status — predošlý pokus dať ho do
+      // `status` skryl prihlásené klientky trénerovi a musel sa vracať migráciou.
+      const recentNoShow = bks.find(b=>b.attendance_status==='no_show' && (now-new Date(b.booking_date+'T12:00:00').getTime())<7*86400000);
       let score=0, reason='', action='', tpl='';
       if(followupToday.has(u._id)){ score=100; reason='Naplánovaný follow-up'; action='Ozvi sa dnes — máš to v pláne.'; tpl='followup'; }
       else if(attended.length && daysSinceVisit<=2 && !activeMem.has(u._id) && !(u.single_entries>0)){ score=90; reason='Bola na hodine pred '+daysSinceVisit+' d, nič nekúpila'; action='Napíš jej dnes — spýtaj sa, ako sa jej páčilo a pošli termíny.'; tpl='after_first'; }
@@ -220,7 +222,7 @@ module.exports = function initCoach(ctx){
       rows.push({ id:u._id, name:u.name, phone:u.phone||'', email:u.email&&!/@import\.local|@test/.test(u.email)?u.email:'',
         city:u.city||'', lead_source:u.lead_source||'', lead_status:u.lead_status||'', score, reason, action, tpl,
         visits: attended.length + (u.glofox_attendances||0), last_visit_days: daysSinceVisit,
-        no_shows: u.no_show_count||bks.filter(b=>b.status==='no_show').length||0, created: (u.created_at||'').slice(0,10),
+        no_shows: bks.filter(b=>b.attendance_status==='no_show').length, created: (u.created_at||'').slice(0,10),
         last_email: lastMail[u._id] ? {date:(lastMail[u._id].sent_at||'').slice(0,10), seq:lastMail[u._id].sequence} : null,
         last_note: lastNote[u._id] ? {date:(lastNote[u._id].created_at||'').slice(0,10), author:lastNote[u._id].author_name, text:String(lastNote[u._id].text||'').slice(0,120)} : null,
         has_membership: activeMem.has(u._id), entries_left: u.single_entries||0,

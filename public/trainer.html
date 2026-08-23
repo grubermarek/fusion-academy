@@ -1748,11 +1748,21 @@ async function coachLoad(){
       <div style="font-size:.75rem;color:var(--muted);margin-top:4px">Uzavri všetkých z dávky a ďalších 10 dostaneš automaticky.</div>
     </div>`;
   } else {
-    h+=`<div class="section-title"><i class="bi bi-telephone-outbound" style="color:var(--gold)"></i> Dnes kontaktuj <span style="color:var(--muted);font-weight:400;font-size:.8rem">(${d.contacts_today}/${d.min_contacts} hotovo)</span></div>`;
+    // Zoznam 10 mien nikto neobvolá. Tri najhorúcejšie hore, zvyšok schovaný —
+    // trénerka má odísť s jasným „dnes toto".
+    const hot=(d.leads||[]).slice(0,3), rest=(d.leads||[]).slice(3);
+    h+=`<div class="section-title"><i class="bi bi-telephone-outbound" style="color:var(--gold)"></i> Dnes kontaktuj tieto ${hot.length||''} <span style="color:var(--muted);font-weight:400;font-size:.8rem">(${d.contacts_today}/${d.min_contacts} hotovo)</span></div>`;
     if(!d.leads.length) h+=`<div style="color:var(--muted);padding:10px">Žiadne prioritné leady na dnes. 🎉</div>`;
-    h+=`<div style="display:grid;gap:10px;margin-bottom:16px">`;
-    for(const L of d.leads) h+=coachLeadCard(L, d, false);
+    else h+=`<div style="font-size:.78rem;color:var(--muted);margin:-6px 0 10px">Zoradené podľa toho, kde má tvoj kontakt najväčšiu šancu niečo zmeniť. Stačia tieto tri — zvyšok počká.</div>`;
+    h+=`<div style="display:grid;gap:10px;margin-bottom:12px">`;
+    for(const L of hot) h+=coachLeadCard(L, d, false);
     h+=`</div>`;
+    if(rest.length){
+      h+=`<details style="margin-bottom:16px"><summary style="cursor:pointer;color:var(--muted);font-size:.82rem;padding:6px 0">Ďalších ${rest.length} v poradí →</summary>
+        <div style="display:grid;gap:10px;margin-top:10px">`;
+      for(const L of rest) h+=coachLeadCard(L, d, false);
+      h+=`</div></details>`;
+    }
   }
   h+=coachBottom();
   box.innerHTML=h;

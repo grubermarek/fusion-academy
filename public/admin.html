@@ -3457,6 +3457,7 @@ async function loadFunnel(){
         ${bar('Registrácie', s.registered, s.registered, null, '#60a5fa')}
         ${bar('Rezervovali si hodinu', s.booked, s.registered, r.to_booked, '#7ec8e3', m.to_booking!=null?`· medián ${m.to_booking} dní`:'')}
         ${bar('Prišli na hodinu', s.attended, s.registered, r.to_attended, '#4ade80', m.to_attend!=null?`· medián ${m.to_attend} dní`:'')}
+        ${bar('Prišli aj druhýkrát', s.returned, s.registered, r.to_returned, '#22c55e', m.to_back!=null?`· medián ${m.to_back} dní po prvej`:'')}
         ${bar('Zaplatili', s.paid, s.registered, null, '#C9A84C', `${m.to_pay!=null?`· medián ${m.to_pay} dní`:''}${s.paid>s.paid_after_attend?` · z toho ${s.paid-s.paid_after_attend} kúpila bez toho, aby prišla`:''}`)}
         ${bar('Prišli a potom zaplatili', s.paid_after_attend, s.registered, r.to_paid, '#f0b429', '')}
         ${bar('Z toho platené členstvo', s.membership, s.registered, null, '#a07830')}
@@ -3480,9 +3481,10 @@ async function loadFunnel(){
       <div class="col-lg-6">${tbl(d.by_city||[],'Podľa mesta')}</div>
     </div>
     <div class="row g-3">
-      <div class="col-lg-4">${list(d.stuck.no_booking,'Registrovala, nerezervovala','Zaplatil si za ňu reklamu — stačí pripomienka s konkrétnou hodinou.')}</div>
-      <div class="col-lg-4">${list(d.stuck.booked_not_attended,'Rezervovala, neprišla','Najdrahšia strata — bola krok od sály.')}</div>
-      <div class="col-lg-4">${list(d.stuck.attended_not_paid,'Prišla, nekúpila','Ozvi sa do 48 h, kým má zážitok čerstvý.')}</div>
+      <div class="col-lg-3">${list(d.stuck.no_booking,'Registrovala, nerezervovala','Zaplatil si za ňu reklamu — stačí pripomienka s konkrétnou hodinou.')}</div>
+      <div class="col-lg-3">${list(d.stuck.booked_not_attended,'Rezervovala, neprišla','Najdrahšia strata — bola krok od sály.')}</div>
+      <div class="col-lg-3">${list(d.stuck.attended_not_returned||[],'Bola raz, nevrátila sa','O zostatku rozhoduje druhá návšteva viac než cena.')}</div>
+      <div class="col-lg-3">${list(d.stuck.attended_not_paid,'Prišla, nekúpila','Ozvi sa do 48 h, kým má zážitok čerstvý.')}</div>
     </div>`;
 }
 

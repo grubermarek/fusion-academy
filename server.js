@@ -984,10 +984,12 @@ async function seedData() {
         subject:'Prvá hodina je za tebou. Vieš, čo príde po tretej? ✨',
         body:`<p>Ahoj <b>{meno}</b>,</p><p>prvá hodina je zoznámenie. <b>Po tretej</b> sa telo rozpamätá, kroky sadnú a začne tá najlepšia časť — keď tanec prestane byť cvičenie a začne byť radosť.</p><p>Beátka k nám tiež prišla „len vyskúšať". Dnes je o <b>17 kg ľahšia</b> a nevynechá ani týždeň. 💛</p><p>Tvoje miesto na parkete čaká — stačí si vybrať, ako chceš chodiť.</p>`,
         cta:'🗓️ Chcem pokračovať', cta_url:`${APP2}/pricing`, created_at:nowISO() },
-      { sequence:'trial_followup', day:9, label:'10% zľava na prvé členstvo', active:true,
-        subject:'🎁 {meno}, 10% zľava na tvoje prvé členstvo',
-        body:`<p>Ahoj <b>{meno}</b>,</p><p>páčilo sa ti u nás? Poďme to spečatiť: máš od nás <b>10% zľavu na prvé členstvo</b>.</p><p>S členstvom máš <b>neobmedzené hodiny</b> vo všetkých našich mestách — čím viac chodíš, tým menej ťa jedna hodina stojí. 😉</p><p>Zľava platí do konca týždňa.</p>`,
-        cta:'💳 Aktivovať zľavu', cta_url:`${APP2}/pricing`, created_at:nowISO() },
+      // ŽIADNA zľava — 20 % kupón po prvej hodine stačí. Ďalšia zľava o pár dní by
+      // klientky naučila nekupovať a čakať na lacnejšiu ponuku.
+      { sequence:'trial_followup', day:9, label:'Druhá hodina — návyk', active:true,
+        subject:'{meno}, kedy ťa čakáme druhýkrát? 💃',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>prvá hodina je vždy o zoznámení. <b>Tá druhá je tá, po ktorej to väčšinou klapne</b> — už vieš, kde si vyzuješ topánky, poznáš tvár trénerky a telo si pamätá kroky.</p><p>Baby, ktoré prídu druhýkrát do dvoch týždňov, zostávajú s nami najčastejšie. Tak si vyber termín, ktorý ti sadne — a uvidíme sa na parkete. 💛</p>`,
+        cta:'🗓️ Vybrať si druhú hodinu', cta_url:`${APP2}/schedule`, created_at:nowISO() },
       { sequence:'trial_followup', day:16, label:'Permanentka bez záväzku', active:true,
         subject:'Nechceš záväzok? Rozumieme. Preto máme permanentku 🎟️',
         body:`<p>Ahoj <b>{meno}</b>,</p><p>nie každému vyhovuje mesačné členstvo — a to je úplne v poriadku.</p><p><b>10-vstupová permanentka za 80 €:</b></p><ul style="color:#ccc"><li>✅ žiadny mesačný záväzok</li><li>✅ chodíš, kedy chceš (platí 3 mesiace)</li><li>✅ ušetríš 20 % oproti jednorazovým vstupom</li></ul><p>Alebo príď len tak — vstup 10 € zaplatíš aj v hotovosti na mieste.</p>`,
@@ -2347,6 +2349,14 @@ async function seedData() {
   // welcome — už nemáme „Fit Premena" (nahradené súkromnou hodinou), BB → Banská Bystrica
   await up('welcome',0,{ cta:'🗓️ Rezervovať prvú hodinu zadarmo', cta_url:`${APP_URL}/schedule`, body:`<p>Sme nadšení, že si tu!</p><p>Vo Fusion Academy ťa čaká:</p><ul><li>💃 Zumba, spoločenské tance, súkromné hodiny</li><li>📍 4 mestá: Detva, Zvolen, Banská Bystrica, Brezno</li><li>👥 Komunita stoviek spokojných klientok</li></ul><p>Ako začať? <b>Prvá hodina je ZADARMO</b> — bez záväzku, bez platby.</p><p>👉 <b><a href="${APP_URL}/schedule" style="color:#C9A84C">Rezervuj si prvú hodinu hneď tu →</a></b> — vyber mesto aj termín a je to. 💃</p><p style="margin-top:12px">Máš otázku? Rady ti pomôžeme — <a href="mailto:fusionacademysk@gmail.com" style="color:#C9A84C">napíš nám</a> alebo zavolaj na <a href="tel:+421904315151" style="color:#C9A84C">+421 904 315 151</a>. 💛</p>` });
   await up('welcome',3,{ body:`<p>Nevieš, čia hodina je pre teba? Poradíme!</p><ul><li><b>Zumba</b> – chudnutie, energia, zábava. Ideálne pre začiatočníkov.</li><li><b>Spoločenské tance</b> – elegancia, plesová príprava, páry aj jednotlivci.</li><li><b>Súkromná hodina</b> – individuálny tréning jeden na jedného, tempo aj zameranie podľa teba.</li></ul><p>Zapíš sa na tú, čo ťa zaujíma – <b>prvá je zadarmo</b>.</p>` });
+  // trial_followup deň 9 — PREČ so zľavou. Po 20 % kupóne z prvej hodiny nasledovala
+  // o pár dní ďalšia (10 %), čo klientky učí nekupovať a čakať na lacnejšiu ponuku.
+  // Deň 9 teraz tlačí druhú návštevu — tá rozhoduje o tom, či zostane, viac než cena.
+  await up('trial_followup',9,{ label:'Druhá hodina — návyk',
+    subject:'{meno}, kedy ťa čakáme druhýkrát? 💃',
+    body:`<p>Ahoj <b>{meno}</b>,</p><p>prvá hodina je vždy o zoznámení. <b>Tá druhá je tá, po ktorej to väčšinou klapne</b> — už vieš, kde si vyzuješ topánky, poznáš tvár trénerky a telo si pamätá kroky.</p><p>Baby, ktoré prídu druhýkrát do dvoch týždňov, zostávajú s nami najčastejšie. Tak si vyber termín, ktorý ti sadne — a uvidíme sa na parkete. 💛</p>`,
+    cta:'🗓️ Vybrať si druhú hodinu', cta_url:`${APP_URL}/schedule` });
+
   // bronze day3 — bez konfliktu s reálnou Miškou (tá je F1 príbeh), + odkaz na článok
   await up('bronze_upsell',3,{ body:`<p>{meno}, sľúbili sme príbeh — tu je.</p><p>Jedna z našich báb chodila 8 týždňov na Zumbu. Postavila sa na váhu: <b>rovnaké číslo ako na začiatku.</b> Sklamanie, však?</p><p>Lenže <b>analýza zloženia tela</b> ukázala pravdu: <b>tuku ubudlo, svalu pribudlo.</b> Rovnaká váha — úplne iné telo. Pevnejšie, silnejšie, s rýchlejším metabolizmom, čo páli kalórie aj na gauči.</p><p>Keby verila len váhe, možno to vzdá. <b>Namiesto toho videla pravdu — a pokračovala.</b></p><p><a href="${BLOG}/metabolicka-analyza-fit-premena">📖 Čo všetko ti analýza prezradí →</a></p>` });
   await up('bronze_upsell',7,{ body:`<p>{meno}, zrkadlo ti ukáže <i>ako vyzeráš</i>. Analýza tela ti ukáže <b>prečo</b> — a čo s tým.</p><p>Za pár sekúnd zistíš:</p><ul><li>📉 <b>% telesného tuku</b> a <b>bazálny metabolizmus</b> — koľko kalórií reálne potrebuješ</li><li>💪 <b>svalovú hmotu</b> — či cvičíš správne</li><li>💧 <b>hydratáciu</b> a <b>viscerálny tuk</b> (ten najnebezpečnejší, okolo orgánov)</li></ul><p>A najlepšie? <b>Máš to celé v mobile</b>, týždeň po týždni. Žiadne hádanie „funguje to alebo nie".</p><p><a href="${BLOG}/metabolicka-analyza-fit-premena">📖 Metabolická analýza — čo o tebe prezradí →</a></p>` });
@@ -9549,14 +9559,15 @@ app.get('/api/admin/funnel', adminAuth, async(req,res)=>{
     // Funnel musí byť monotónny: kto prišiel, ten sa aj prihlásil (aj keď rezerváciu
     // vytvoril kiosk pri príchode alebo išlo o súkromnú hodinu bez skupinovej rezervácie).
     // Bez toho vychádzali kroky >100 %.
-    const step={registered:users.length, booked:0, attended:0, paid:0, paid_after_attend:0, membership:0};
-    const lag={booking:[], attend:[], pay:[]};
+    const step={registered:users.length, booked:0, attended:0, returned:0, paid:0, paid_after_attend:0, membership:0};
+    const lag={booking:[], attend:[], back:[], pay:[]};
     const rows=[];
     for(const u of users){
-      const a=u.first_attended_at, p=u.first_paid_at;
+      const a=u.first_attended_at, a2=u.second_attended_at, p=u.first_paid_at;
       const b=u.first_booking_at || a;
       if(b){ step.booked++; const d=days(u.created_at,b); if(d!=null) lag.booking.push(d); }
       if(a){ step.attended++; const d=days(b||u.created_at,a); if(d!=null) lag.attend.push(d); }
+      if(a2){ step.returned++; const d=days(a,a2); if(d!=null) lag.back.push(d); }
       if(p){ step.paid++; const d=days(a||u.created_at,p); if(d!=null) lag.pay.push(d); }
       // „účasť → platba" sa ráta len z tých, čo naozaj prišli; kto kúpil členstvo
       // online bez toho, aby prišiel, patrí do tržieb, nie do tejto konverzie
@@ -9564,7 +9575,7 @@ app.get('/api/admin/funnel', adminAuth, async(req,res)=>{
       if(u.first_membership_at) step.membership++;
       rows.push({ id:u._id, name:u.name, registered:String(u.created_at||'').slice(0,10),
         city:firstCity[u._id]||u.city||'—', campaign:u.utm_campaign||'(bez kampane)', source:u.utm_source||u.lead_source||'—',
-        booked:!!b, attended:!!a, paid:!!p, paid_after_attend:!!(a&&p) });
+        booked:!!b, attended:!!a, returned:!!a2, paid:!!p, paid_after_attend:!!(a&&p) });
     }
     const med=a=>{ if(!a.length) return null; const s=[...a].sort((x,y)=>x-y); return s[Math.floor(s.length/2)]; };
     const pct=(n,d)=>d?+(n/d*100).toFixed(1):0;
@@ -9586,8 +9597,9 @@ app.get('/api/admin/funnel', adminAuth, async(req,res)=>{
     res.json({ ok:true, from, to,
       steps:step,
       rates:{ to_booked:pct(step.booked,step.registered), to_attended:pct(step.attended,step.booked),
+        to_returned:pct(step.returned,step.attended),
         to_paid:pct(step.paid_after_attend,step.attended), reg_to_attended:pct(step.attended,step.registered) },
-      median_days:{ to_booking:med(lag.booking), to_attend:med(lag.attend), to_pay:med(lag.pay) },
+      median_days:{ to_booking:med(lag.booking), to_attend:med(lag.attend), to_back:med(lag.back), to_pay:med(lag.pay) },
       no_show:{ attended:att, no_show:ns, rate:pct(ns, att+ns), since:await noShowFrom() },
       by_campaign:by(r=>r.campaign), by_city:by(r=>r.city),
       cities:[...new Set(rows.map(r=>r.city))].sort(),
@@ -9595,6 +9607,7 @@ app.get('/api/admin/funnel', adminAuth, async(req,res)=>{
       stuck:{
         no_booking: rows.filter(r=>!r.booked).slice(0,50),
         booked_not_attended: rows.filter(r=>r.booked&&!r.attended).slice(0,50),
+        attended_not_returned: rows.filter(r=>r.attended&&!r.returned).slice(0,50),
         attended_not_paid: rows.filter(r=>r.attended&&!r.paid).slice(0,50)
       }});
   }catch(e){ res.status(500).json({error:e.message}); }
@@ -11312,6 +11325,9 @@ async function markNoShows(){
     const endMs = classEndMs(b, clsCache[b.class_id]);
     if(!Number.isFinite(endMs) || now < endMs + 60*60000) continue;
     await q.update(db.bookings,{_id:b._id},{$set:{attendance_status:'no_show', attendance_source:'auto', no_show_at:nowISO()}});
+    // počítadlo pre skórovanie leadov v trénerskom paneli
+    if(b.user_id && !b.is_child_booking){ const u=await q.one(db.users,{_id:b.user_id});
+      if(u) await q.update(db.users,{_id:u._id},{$set:{no_show_count:(u.no_show_count||0)+1}}); }
     n++;
     // Recovery ide notifikáciou v appke, nie mailom — mailový limit je vzácny.
     if(b.user_id && !b.is_child_booking) await q.insert(db.notifications,{user_id:b.user_id, type:'no_show',
@@ -11341,10 +11357,21 @@ async function rebuildFunnelStamps(){
   const pays = (await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status));
   const first = {};
   const put=(uid,f,v)=>{ if(!uid||!v) return; const o=first[uid]=first[uid]||{}; if(!o[f]||String(v)<String(o[f])) o[f]=v; };
+  // Druhá návšteva je vlastný krok: väčšina ľudí neodíde kvôli cene, ale preto,
+  // že sa druhýkrát nedostane do sály. Bez tohto kroku nevidno, kde to padá.
+  const attDates={};
   for(const b of bks){
     if(!b.user_id || b.status==='cancelled') continue;
     put(b.user_id,'first_booking_at', b.created_at||b.booking_date);
-    if(b.status==='attended') put(b.user_id,'first_attended_at', b.attended_at||b.booking_date);
+    if(b.status==='attended'){
+      put(b.user_id,'first_attended_at', b.attended_at||b.booking_date);
+      (attDates[b.user_id]=attDates[b.user_id]||[]).push(b.attended_at||b.booking_date);
+    }
+  }
+  for(const [uid,list] of Object.entries(attDates)){
+    if(list.length<2) continue;
+    const sorted=list.map(String).sort();
+    put(uid,'second_attended_at', sorted[1]);
   }
   for(const t of txs){ if((+t.amount||0)>0) put(t.user_id,'first_paid_at', t.created_at||t.date); }
   for(const p of pays){ if((+p.amount||0)>0) put(p.user_id,'first_paid_at', p.captured_at||p.activated_at||p.created_at); }
@@ -11359,7 +11386,7 @@ async function rebuildFunnelStamps(){
   for(const u of users){
     const f = first[u._id] || {};
     const set = {};
-    for(const k of ['first_booking_at','first_attended_at','first_paid_at','first_membership_at'])
+    for(const k of ['first_booking_at','first_attended_at','second_attended_at','first_paid_at','first_membership_at'])
       if(f[k] && u[k]!==f[k]) set[k]=f[k];
     if(Object.keys(set).length){ await q.update(db.users,{_id:u._id},{$set:set}); n++; }
   }
@@ -11458,6 +11485,8 @@ app.post('/api/kiosk/checkin', async(req,res)=>{
       already = exists.status==='attended';
       // Prišla neskôr, než job stihol označiť no-show? QR má prednosť — opravíme to.
       const fix = exists.attendance_status==='no_show' ? {no_show_corrected_at:nowISO(), no_show_corrected_by:'kiosk_'+a.slug} : {};
+      if(exists.attendance_status==='no_show' && (u.no_show_count||0)>0)
+        await q.update(db.users,{_id:u._id},{$set:{no_show_count:Math.max(0,(u.no_show_count||0)-1)}});
       await q.update(db.bookings,{_id:exists._id},{$set:{status:'attended', attended_at:nowISO(), attended_by:'kiosk_'+a.slug,
         attendance_status:'attended', attendance_source:'qr', ...fix}});
       if(!already && !exists.is_child_booking) vc=await creditAttendance(u);
@@ -13337,17 +13366,23 @@ app.post('/api/attendance/confirm-session', trainerAuth, async(req,res)=>{
         await q.update(db.bookings,{_id:b._id},{$set:{attendance_status:'no_show', attendance_source:'trainer',
           no_show_at:nowISO(), no_show_by:req.trainerUser._id}});
         noShows++;
+        if(b.user_id && !b.is_child_booking){ const nu=await q.one(db.users,{_id:b.user_id});
+          if(nu) await q.update(db.users,{_id:nu._id},{$set:{no_show_count:(nu.no_show_count||0)+1}}); }
         if(b.user_id && !b.is_child_booking) await q.insert(db.notifications,{user_id:b.user_id, type:'no_show',
           title:'Nezachytili sme ťa na hodine 💛',
           body:`${b.class_name||'Hodina'} ${String(b.booking_date||'').split('-').reverse().join('.')} — vyber si prosím náhradný termín, tešíme sa na teba!`,
           read:false, created_at:nowISO()}).catch(()=>{});
         continue;
       }
+      const wasNoShow = b.attendance_status==='no_show';
       await q.update(db.bookings,{_id:b._id},{$set:{status:'attended', attended_at:nowISO(), attended_by:req.trainerUser._id,
-        attendance_status:'attended', attendance_source:'trainer'}});
+        attendance_status:'attended', attendance_source:'trainer',
+        ...(wasNoShow?{no_show_corrected_at:nowISO(), no_show_corrected_by:req.trainerUser._id}:{})}});
       if(!b.is_child_booking && b.user_id){
         const u=await q.one(db.users,{_id:b.user_id});
-        if(u){ await creditAttendance(u); credited++; }
+        if(u){ await creditAttendance(u); credited++;
+          if(wasNoShow && (u.no_show_count||0)>0) await q.update(db.users,{_id:u._id},{$set:{no_show_count:Math.max(0,(u.no_show_count||0)-1)}});
+        }
       } else credited++;
     }
     // Zárobok trénera za túto hodinu (základ + € za klienta nad limit) — informatívne
