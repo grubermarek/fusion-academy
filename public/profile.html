@@ -524,6 +524,7 @@ function render(){
       <div class="stat" role="button" tabindex="0" style="cursor:pointer" onclick="openFriendsList()" title="Zobraziť priateľov"><div class="n">${P.friends_count||0}</div><div class="l">${(P.friends_count===1)?'priateľ':((P.friends_count>=2&&P.friends_count<=4)?'priatelia':'priateľov')}</div></div>
     </div>
     ${friendBtn()}
+    ${P.is_self ? `<button class="report-btn" style="background:linear-gradient(102deg,#2a2410,#3a3014);border-color:rgba(201,168,76,.5);color:#E7C878;font-weight:800" onclick="openHistory()">📜 Moja história — hodiny, eventy, členstvá</button>` : ''}
     ${(!P.is_self && !P.anonymous) ? `<a class="msg-btn" href="/community?dm=${P.id}"><i class="bi bi-chat-dots-fill"></i> ${T('profile.msg')}</a>` : ''}
     ${(!P.is_self && !P.anonymous && P.viewer_logged_in && !P.can_receive_tips) ? `<button class="report-btn" style="background:#2a2410;border-color:#5a4a20;color:#e0b84c" onclick="openGiftCredit()"><i class="bi bi-gift"></i> Darovať kredit</button>` : ''}
     ${(P.can_receive_tips && !P.is_self && P.viewer_logged_in) ? `<button class="report-btn" style="background:linear-gradient(102deg,#3a2a10,#5a4520);border-color:#C9A84C;color:#E7C878;font-weight:800" onclick="openTip()">💛 Pošli tip trénerovi</button>` : ''}
@@ -794,6 +795,48 @@ async function loadComments(){
 }
 let _reportType='question';
 let _giftAmount=10;
+/* ── Moja história: odchodené hodiny, eventy, členstvá (len vlastný profil) ── */
+async function openHistory(){
+  let ov=document.getElementById('histOv');
+  if(!ov){ ov=document.createElement('div'); ov.id='histOv';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:18px;overflow:auto';
+    ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML='<div style="background:#161512;border:1px solid var(--border);border-radius:16px;max-width:560px;width:100%;padding:22px;color:#F5EDD6">⏳ Načítavam históriu…</div>';
+  const d=await fetch('/api/me/history').then(r=>r.json()).catch(()=>null);
+  if(!d||!d.ok){ ov.innerHTML='<div style="background:#161512;border:1px solid var(--border);border-radius:16px;max-width:560px;width:100%;padding:22px;color:#F5EDD6">Históriu sa nepodarilo načítať.</div>'; return; }
+  const fmt=s=>{ if(!s) return ''; const [y,m,dd]=String(s).slice(0,10).split('-'); return dd+'. '+m+'. '+y; };
+  const MON=['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
+  const groups={};
+  for(const v of d.visits){ const k=String(v.date||'').slice(0,7); (groups[k]=groups[k]||[]).push(v); }
+  const cities=Object.entries(d.by_city||{}).sort((x,y)=>y[1]-x[1]).map(([c,n])=>'<span style="background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.3);border-radius:999px;padding:3px 10px;font-size:.78rem">'+esc(c)+' <b style="color:var(--gold)">'+n+'</b></span>').join(' ');
+  const tab=(id,lbl,on)=>'<button onclick="histTab(\''+id+'\')" data-t="'+id+'" style="flex:1;padding:9px 4px;border-radius:10px;border:1px solid '+(on?'var(--gold)':'var(--border)')+';background:'+(on?'rgba(201,168,76,.18)':'transparent')+';color:'+(on?'var(--gold)':'#bbb')+';font-weight:700;font-size:.82rem;cursor:pointer">'+lbl+'</button>';
+  const visitsHtml = d.visits.length ? Object.keys(groups).sort().reverse().map(k=>{
+      const [y,m]=k.split('-'); const rows=groups[k];
+      return '<div style="margin-top:14px"><div style="color:var(--gold);font-weight:800;font-size:.85rem;letter-spacing:.04em;text-transform:uppercase">'+MON[+m-1]+' '+y+' <span style="color:#888;font-weight:600">· '+rows.length+'</span></div>'
+        + rows.map(v=>'<div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:.88rem"><span style="font-size:1.15rem">'+(v.online?'🌐':esc(v.emoji))+'</span><div style="flex:1"><b>'+esc(v.name)+'</b>'+(v.child?' <span style="font-size:.72rem;color:#f9c">👧 '+esc(v.child_name||'dieťa')+'</span>':'')+'<div style="color:#999;font-size:.76rem">'+fmt(v.date)+(v.time?' · '+esc(v.time):'')+' · '+esc(v.online?'Online':v.location)+(v.instructor?' · '+esc(v.instructor):'')+'</div></div></div>').join('')
+        + '</div>'; }).join('')
+    : '<p style="color:#999;margin-top:14px">Zatiaľ tu nie sú žiadne zapísané hodiny. Pri ďalšej návšteve sa nechaj zapísať QR kódom v kiosku alebo trénerom. 💛</p>';
+  const eventsHtml = d.events.length ? d.events.map(e=>'<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:.88rem"><b>🎟️ '+esc(e.name)+'</b><div style="color:#999;font-size:.76rem">'+esc(e.date_label||fmt(e.date))+(e.venue?' · '+esc(e.venue):'')+' · '+e.tickets+'× vstupenka'+(e.used?' · '+e.used+'× použitá':'')+'</div></div>').join('')
+    : '<p style="color:#999;margin-top:14px">Zatiaľ žiadne vstupenky na eventy.</p>';
+  const memsHtml = d.memberships.length ? d.memberships.map(m=>'<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:.88rem;display:flex;justify-content:space-between;gap:10px"><div><b>'+esc(m.plan)+'</b><div style="color:#999;font-size:.76rem">'+fmt(m.from)+(m.to?' – '+fmt(m.to):'')+'</div></div><span style="font-size:.74rem;align-self:center;color:'+(m.active?'#9fd894':'#888')+'">'+(m.active?'● aktívne':'skončené')+'</span></div>').join('')
+    : '<p style="color:#999;margin-top:14px">Zatiaľ žiadne členstvo.</p>';
+  window._histPanes={visits:visitsHtml, events:eventsHtml, mems:memsHtml};
+  ov.innerHTML='<div style="background:#161512;border:1px solid var(--border);border-radius:16px;max-width:560px;width:100%;padding:22px;color:#F5EDD6;margin:auto">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="color:var(--gold);font-size:1.1rem">📜 Moja história</b><button onclick="document.getElementById(\'histOv\').remove()" style="background:none;border:none;color:var(--muted);font-size:1.5rem;cursor:pointer">×</button></div>'
+    +'<div style="display:flex;gap:14px;margin:8px 0 10px;flex-wrap:wrap"><div><div style="font-size:1.6rem;font-weight:900;color:var(--gold);line-height:1">'+d.total+'</div><div style="font-size:.72rem;color:#999">hodín celkovo</div></div>'
+    +(d.before_app?'<div><div style="font-size:1.6rem;font-weight:900;line-height:1">'+d.in_app+'</div><div style="font-size:.72rem;color:#999">v appke · '+d.before_app+' ešte pred ňou</div></div>':'')
+    +(d.first_visit?'<div><div style="font-size:1.05rem;font-weight:800;line-height:1.5">'+fmt(d.first_visit)+'</div><div style="font-size:.72rem;color:#999">prvá hodina v appke</div></div>':'')+'</div>'
+    +(cities?'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'+cities+'</div>':'')
+    +'<div style="display:flex;gap:6px">'+tab('visits','💃 Hodiny ('+d.in_app+')',true)+tab('events','🎟️ Eventy ('+d.events.length+')',false)+tab('mems','💳 Členstvá ('+d.memberships.length+')',false)+'</div>'
+    +'<div id="histPane">'+visitsHtml+'</div></div>';
+}
+function histTab(id){
+  document.getElementById('histPane').innerHTML=window._histPanes[id]||'';
+  document.querySelectorAll('#histOv [data-t]').forEach(b=>{ const on=b.dataset.t===id; b.style.borderColor=on?'var(--gold)':'var(--border)'; b.style.background=on?'rgba(201,168,76,.18)':'transparent'; b.style.color=on?'var(--gold)':'#bbb'; });
+}
+
 function openGiftCredit(){
   let ov=document.getElementById('giftOv');
   if(!ov){ ov=document.createElement('div'); ov.id='giftOv';

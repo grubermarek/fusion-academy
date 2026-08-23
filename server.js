@@ -4740,6 +4740,42 @@ app.get('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
 
 // Admin: nastaviť narodeniny klientovi (zobrazí sa na Dashboarde v deň narodenín)
 // Klient si sám nastaví narodeniny (welcome guide + profil) — nech vieme kedy gratulovať
+// Moja história — odchodené hodiny (vrátane online), vstupenky na eventy, členstvá.
+// Klientka si ju otvorí na svojom profile tlačidlom „Moja história".
+app.get('/api/me/history', auth, async(req,res)=>{
+  try{
+    const uid=req.session.uid;
+    const u=await q.one(db.users,{_id:uid}); if(!u) return res.status(404).json({error:'?'});
+    const classes=await q.find(db.classes,{});
+    const cById=Object.fromEntries(classes.map(c=>[c._id,c]));
+    const bks=(await q.find(db.bookings,{user_id:uid, status:'attended'}))
+      .sort((a,b)=>String(b.booking_date).localeCompare(String(a.booking_date)) || String(b.class_time_start||'').localeCompare(String(a.class_time_start||'')));
+    const visits=bks.map(b=>{ const c=cById[b.class_id]||{};
+      return { date:b.booking_date, time:b.class_time_start||c.time_start||'', name:b.class_name||c.name||'Hodina',
+        emoji:b.class_emoji||c.emoji||'💃', location:b.class_location||c.location||'', online:/online/i.test(String(b.class_location||c.location||'')),
+        instructor:c.instructor||'', child:!!b.is_child_booking, child_name:b.child_name||null }; });
+    // štatistiky
+    const byCity={}; for(const v of visits){ const k=v.online?'Online':(v.location||'—'); byCity[k]=(byCity[k]||0)+1; }
+    const byYear={}; for(const v of visits){ const y=String(v.date||'').slice(0,4); byYear[y]=(byYear[y]||0)+1; }
+    const first=visits.length?visits[visits.length-1].date:null;
+    // eventy (vstupenky)
+    const tix=await q.find(db.ev_tickets,{user_id:uid});
+    const evs={}; for(const t of tix){ (evs[t.event_slug]=evs[t.event_slug]||[]).push(t); }
+    const events=[];
+    for(const slug of Object.keys(evs)){ const ev=await q.one(db.ev_events,{slug});
+      events.push({ slug, name:ev?.name||slug, date:ev?.date||'', date_label:ev?.date_label||'', venue:ev?.venue||'',
+        tickets:evs[slug].length, used:evs[slug].filter(t=>t.status==='used').length }); }
+    events.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+    // členstvá (bez bundle permanentiek = tie sú vstupy)
+    const mems=(await q.find(db.memberships,{user_id:uid})).filter(m=>!m._type)
+      .sort((a,b)=>String(b.started_at||b.created_at||'').localeCompare(String(a.started_at||a.created_at||'')))
+      .map(m=>({ plan:m.plan_name||MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_id, from:String(m.started_at||m.created_at||'').slice(0,10),
+        to:String(m.expires_at||'').slice(0,10), status:m.status, active:m.status==='active'&&(!m.expires_at||new Date(m.expires_at)>new Date()) }));
+    res.json({ ok:true, total:visits.length + (u.glofox_attendances||0), in_app:visits.length, before_app:u.glofox_attendances||0,
+      first_visit:first, by_city:byCity, by_year:byYear, visits:visits.slice(0,400), events, memberships:mems });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.put('/api/me/birthday', auth, async(req,res)=>{
   try {
     const b=String(req.body.birthday||'');
@@ -5800,6 +5836,22 @@ async function autoPromoteMembers(){
   return n;
 }
 
+// Telefón na porovnanie: len číslice, bez predvoľby (+421 / 00421 / 0) — nech sa
+// dá hľadať v akomkoľvek formáte, s medzerami aj bez.
+function phoneCore(v){
+  let d=String(v||'').replace(/\D/g,'');
+  if(d.startsWith('00')) d=d.slice(2);
+  if(d.startsWith('421')) d=d.slice(3);
+  else if(d.startsWith('420')) d=d.slice(3);
+  if(d.startsWith('0')) d=d.slice(1);
+  return d;
+}
+function userMatchesSearch(u, term){
+  const s=String(term||'').toLowerCase().trim(); if(!s) return true;
+  if(u.name?.toLowerCase().includes(s) || u.email?.toLowerCase().includes(s) || (u.phone||'').includes(s)) return true;
+  const pd=phoneCore(s);
+  return pd.length>=3 && phoneCore(u.phone).includes(pd);
+}
 app.get('/api/admin/leads', adminAuth, async(req,res)=>{
   try {
     await autoPromoteMembers();
@@ -5818,7 +5870,7 @@ app.get('/api/admin/leads', adminAuth, async(req,res)=>{
     const lastContactBy={}, lastNoteBy={};
     for(const c of allContacts){ const p=lastContactBy[c.lead_id]; if(!p || String(c.created_at)>String(p.created_at)) lastContactBy[c.lead_id]=c; }
     for(const n of allNotes){ const p=lastNoteBy[n.client_id]; if(!p || String(n.created_at)>String(p.created_at)) lastNoteBy[n.client_id]=n; }
-    if(search){ const s=search.toLowerCase(); leads = leads.filter(u=>u.name?.toLowerCase().includes(s)||u.email?.toLowerCase().includes(s)||(u.phone||'').includes(s)); }
+    if(search){ leads = leads.filter(u=>userMatchesSearch(u, search)); }
     const daysAgo = iso => { if(!iso) return null; return Math.max(0, Math.floor((Date.now()-new Date(iso).getTime())/86400000)); };
     const result = await Promise.all(leads.map(async u => {
       const bks = await q.find(db.bookings, {user_id:u._id});
@@ -6709,7 +6761,7 @@ app.get('/api/admin/clients', adminAuth, async(req,res)=>{
     await autoPromoteMembers();
     const {search} = req.query;
     let clients = await q.find(db.users, {user_type:'client', is_admin:{$ne:true}}, {created_at:-1});
-    if(search){ const s=search.toLowerCase(); clients = clients.filter(u=>u.name?.toLowerCase().includes(s)||u.email?.toLowerCase().includes(s)||(u.phone||'').includes(s)); }
+    if(search){ clients = clients.filter(u=>userMatchesSearch(u, search)); }
     // Load all bookings once and group (avoid N queries)
     const allB = await q.find(db.bookings, {});
     const byUser = {};
