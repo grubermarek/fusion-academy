@@ -3378,6 +3378,7 @@ async function loadPointsSummary(){
   const chips=`<div class="d-flex flex-wrap gap-2 mb-3">
     <span class="badge bg-secondary">🔥 Hodiny: ${ct.hours||0} b.</span>
     <span class="badge bg-secondary">💻 Online: ${ct.online||0} b.</span>
+    <span class="badge bg-secondary">🎭 Súkromné: ${ct.private||0} b.</span>
     <span class="badge bg-secondary">🤝 Odporúčania: ${ct.refs||0} b.</span>
     <span class="badge bg-secondary">🏅 Noví platiaci: ${ct.newmem||0} b.</span>
     <span class="badge bg-secondary">🛍️ Merch: ${ct.merch||0} b.</span>
@@ -5272,10 +5273,10 @@ async function loadAdminPrivate(){
   document.getElementById('phBookings').innerHTML=(d.bookings||[]).map(b=>`<tr>
     <td>${fmtDate(b.date)} ${b.time_start}</td>
     <td>${escHtml(b.trainer_name)}</td>
-    <td><a href="#" onclick="openClientDetail('${b.client_id}');return false" style="color:#C9A84C">${escHtml(b.client_name)}</a></td>
+    <td>${b.manual?`${escHtml(b.client_name)} <span class="badge bg-secondary" style="font-size:.62rem">hosť</span>`:`<a href="#" onclick="openClientDetail('${b.client_id}');return false" style="color:#C9A84C">${escHtml(b.client_name)}</a>`}</td>
     <td>${escHtml(b.city||'')}</td>
     <td>${(+b.price).toFixed(2)} € <span class="text-muted" style="font-size:.68rem">(tréner ${b.split||70}%)</span></td>
-    <td>${b.paid?'<span class="badge bg-success">kredit ✓</span>':'<span class="badge bg-warning text-dark">na mieste</span>'}</td>
+    <td>${b.manual?`<span class="badge bg-secondary">${b.pay_method==='cash'?'hotovosť':b.pay_method==='transfer'?'prevod':'zdarma'}</span>`:(b.paid?'<span class="badge bg-success">kredit ✓</span>':'<span class="badge bg-warning text-dark">na mieste</span>')}</td>
     <td>${PH_STATUS[b.status]||escHtml(b.status)}</td>
     <td>${b.status==='booked'?`<button class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:.7rem" onclick="adminCancelPriv('${b.id}')">✕ Zrušiť</button>`:''}</td>
   </tr>`).join('')||'<tr><td colspan="8" class="text-muted py-2">Zatiaľ žiadne rezervácie.</td></tr>';

@@ -543,6 +543,23 @@ select.form-control option{background:var(--dark3)}
           <button onclick="addPrivSlot()" style="background:linear-gradient(135deg,var(--gold),#a07830);border:none;color:#111;font-weight:800;padding:10px 18px;border-radius:10px;cursor:pointer">Pridať</button>
         </div>
       </div>
+      <div id="privManual" style="display:none;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:16px">
+        <div style="font-weight:700;margin-bottom:4px;color:var(--cream)">✍️ Zapísať odučenú hodinu (neregistrovaný)</div>
+        <div style="font-size:.75rem;color:var(--muted);margin-bottom:10px">Svadobný tanec, jednorazovka — človek bez účtu v appke. Meno napíš ručne. Zapíše sa tržba aj tvoj podiel; body a odznaky nie (nie je komu).</div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
+          <div style="flex:1;min-width:150px"><label style="font-size:.72rem;color:var(--muted)">Meno *</label><br><input id="pmName" placeholder="napr. Jana a Peter (svadba)" style="width:100%;background:#161310;border:1px solid var(--border);color:var(--cream);border-radius:8px;padding:8px"></div>
+          <div><label style="font-size:.72rem;color:var(--muted)">Telefón</label><br><input id="pmPhone" placeholder="0904…" style="width:120px;background:#161310;border:1px solid var(--border);color:var(--cream);border-radius:8px;padding:8px"></div>
+          <div><label style="font-size:.72rem;color:var(--muted)">Dátum</label><br><input type="date" id="pmDate" style="background:#161310;border:1px solid var(--border);color:var(--cream);border-radius:8px;padding:8px;color-scheme:dark"></div>
+          <div><label style="font-size:.72rem;color:var(--muted)">Čas</label><br><input type="time" id="pmTime" style="background:#161310;border:1px solid var(--border);color:var(--cream);border-radius:8px;padding:8px;color-scheme:dark"></div>
+          <div><label style="font-size:.72rem;color:var(--muted)">Trvanie</label><br><select id="pmDur" onchange="pmSuggestPrice()" style="background:#161310;border:1px solid var(--border);color:var(--cream);border-radius:8px;padding:9px"><option value="30">30 min</option><option value="45">45 min</option><option value="60" selected>60 min</option><option value="90">90 min</option><option value="120">120 min</option></select></div>
+          <div><label style="font-size:.72rem;color:var(--muted)">Cena €</label><br><input type="number" id="pmPrice" min="0" max="1000" step="0.5" style="width:90px;background:#161310;border:1px solid var(--border);color:var(--cream);border-radius:8px;padding:8px"></div>
+          <div><label style="font-size:.72rem;color:var(--muted)">Platba</label><br><select id="pmPay" style="background:#161310;border:1px solid var(--border);color:var(--cream);border-radius:8px;padding:9px"><option value="cash">💵 Hotovosť</option><option value="transfer">🏦 Prevodom</option><option value="free">🎁 Zadarmo</option></select></div>
+          <div><label style="font-size:.72rem;color:var(--muted)">Mesto</label><br><select id="pmCity" style="background:#161310;border:1px solid var(--border);color:var(--cream);border-radius:8px;padding:9px"><option>Detva</option><option>Zvolen</option><option>Banská Bystrica</option><option>Brezno</option><option>Podbrezová</option></select></div>
+          <div style="flex:1;min-width:140px"><label style="font-size:.72rem;color:var(--muted)">Poznámka</label><br><input id="pmNote" placeholder="napr. 1. tréning na svadbu" style="width:100%;background:#161310;border:1px solid var(--border);color:var(--cream);border-radius:8px;padding:8px"></div>
+          <button onclick="addPrivManual()" style="background:linear-gradient(135deg,var(--gold),#a07830);border:none;color:#111;font-weight:800;padding:10px 18px;border-radius:10px;cursor:pointer">Zapísať</button>
+        </div>
+        <div id="pmList" style="margin-top:12px"></div>
+      </div>
       <div id="privSlots"><div class="loading"><i class="bi bi-arrow-repeat spin"></i>&nbsp; Načítavam…</div></div>
     </div>
 
@@ -2351,7 +2368,8 @@ async function loadTrainerPrivate(){
   const s=d.settings;
   if(!s.enabled){
     info.innerHTML=`<div style="background:rgba(224,86,86,.08);border:1px solid rgba(224,86,86,.35);border-radius:12px;padding:14px;font-size:.88rem;color:var(--muted)">🔒 Súkromné hodiny ti zatiaľ nie sú povolené. Požiadaj admina (Marek) — nastaví ti sadzbu a podiel.</div>`;
-    document.getElementById('privCreate').style.display='none'; host.innerHTML=''; return;
+    document.getElementById('privCreate').style.display='none';
+    document.getElementById('privManual').style.display='none'; host.innerHTML=''; return;
   }
   info.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:10px">
     <span style="background:rgba(201,168,76,.1);border:1px solid var(--gold-border);border-radius:10px;padding:8px 14px;font-size:.85rem">💶 Sadzba: <b style="color:var(--gold)">${s.rate.toFixed(2)} €/h</b></span>
@@ -2359,6 +2377,12 @@ async function loadTrainerPrivate(){
     <span style="background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.3);border-radius:10px;padding:8px 14px;font-size:.85rem">📅 Tento mesiac: <b style="color:#4ade80">${(d.month_earn||0).toFixed(2)} €</b> (${d.month_count||0} hodín)</span>
   </div>`;
   document.getElementById('privCreate').style.display='block';
+  // ✍️ Ručný zápis (neregistrovaní) — predvyplň dnešok a cenu podľa sadzby
+  document.getElementById('privManual').style.display='block';
+  _privRate=s.rate;
+  if(!document.getElementById('pmDate').value) document.getElementById('pmDate').value=new Date().toISOString().slice(0,10);
+  if(!document.getElementById('pmPrice').value) pmSuggestPrice();
+  renderPrivGuests(d.guests||[]);
   // ♾️ Týždenné pravidlá (navždy)
   if((d.recurring||[]).length){
     info.innerHTML+=`<div style="margin-top:10px;background:var(--card);border:1px solid var(--gold-border);border-radius:12px;padding:12px">
@@ -2395,6 +2419,40 @@ async function loadTrainerPrivate(){
     </div>`;
   }).join('');
   host.innerHTML=rows||'<div class="empty">🗓️ Zatiaľ žiadne termíny — pridaj prvý hore.</div>';
+}
+let _privRate=0;
+function pmSuggestPrice(){
+  const dur=+document.getElementById('pmDur').value||60;
+  document.getElementById('pmPrice').value=(_privRate*(dur/60)).toFixed(2);
+}
+const PM_PAY={cash:'💵 hotovosť', transfer:'🏦 prevod', free:'🎁 zadarmo'};
+function renderPrivGuests(list){
+  const box=document.getElementById('pmList');
+  if(!list.length){ box.innerHTML='<div style="font-size:.76rem;color:var(--muted)">Tento mesiac zatiaľ žiadny ručný zápis.</div>'; return; }
+  const sum=list.reduce((s,g)=>s+(+g.cut||0),0);
+  box.innerHTML=`<div style="font-size:.76rem;color:var(--muted);margin-bottom:6px">Tento mesiac ručne zapísané (${list.length}) · tvoj podiel <b style="color:#4ade80">${sum.toFixed(2)} €</b></div>`+
+    list.map(g=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;font-size:.82rem;border-top:1px solid rgba(201,168,76,.08)">
+      <span><b>${g.date.split('-').reverse().join('.')}</b>${g.time_start?' '+g.time_start:''} · 👤 ${esc(g.name)}${g.phone?` <a href="tel:${esc(g.phone.replace(/\s+/g,''))}" style="color:#4ade80;text-decoration:none">📞</a>`:''} · <b style="color:var(--gold)">${g.price.toFixed(2)} €</b> <span style="color:var(--muted);font-size:.72rem">${PM_PAY[g.pay_method]||''} · tebe ${g.cut.toFixed(2)} €</span></span>
+      ${g.can_delete?`<button onclick="delPrivManual('${g.id}')" style="background:none;border:1px solid rgba(229,115,115,.5);color:#e57373;border-radius:8px;padding:3px 9px;font-size:.72rem;cursor:pointer">🗑</button>`:''}
+    </div>`).join('');
+}
+async function addPrivManual(){
+  const body={ name:document.getElementById('pmName').value.trim(), phone:document.getElementById('pmPhone').value.trim(),
+    date:document.getElementById('pmDate').value, time_start:document.getElementById('pmTime').value,
+    duration_min:+document.getElementById('pmDur').value, price:+document.getElementById('pmPrice').value,
+    pay_method:document.getElementById('pmPay').value, city:document.getElementById('pmCity').value,
+    note:document.getElementById('pmNote').value.trim() };
+  if(body.name.length<2){ toast('Zadaj meno klienta', true); return; }
+  if(!confirm(`Zapísať odučenú hodinu?\n\n${body.name} · ${body.date} · ${body.price.toFixed(2)} € (${PM_PAY[body.pay_method]})\n\nZapíše sa tržba aj tvoj podiel do výplaty.`)) return;
+  const r=await api('/api/trainer/private-manual',{method:'POST',body});
+  if(r&&r.ok){ toast(`✅ Zapísané · +${(r.trainer_cut||0).toFixed(2)} € do výplaty`);
+    document.getElementById('pmName').value=''; document.getElementById('pmPhone').value=''; document.getElementById('pmNote').value='';
+    loadTrainerPrivate(); } else toast((r&&r.error)||'Chyba', true);
+}
+async function delPrivManual(id){
+  if(!confirm('Zmazať tento zápis? Odstráni sa aj tržba a hotovostná evidencia.')) return;
+  const r=await api('/api/trainer/private-manual/'+id,{method:'DELETE'});
+  if(r&&r.ok){ toast('Zápis zmazaný'); loadTrainerPrivate(); } else toast((r&&r.error)||'Chyba', true);
 }
 async function addPrivSlot(){
   const repVal=document.getElementById('pvRep').value;

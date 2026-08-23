@@ -4754,6 +4754,12 @@ app.get('/api/me/history', auth, async(req,res)=>{
       return { date:b.booking_date, time:b.class_time_start||c.time_start||'', name:b.class_name||c.name||'Hodina',
         emoji:b.class_emoji||c.emoji||'💃', location:b.class_location||c.location||'', online:/online/i.test(String(b.class_location||c.location||'')),
         instructor:c.instructor||'', child:!!b.is_child_booking, child_name:b.child_name||null }; });
+    // Súkromné hodiny patria do histórie rovnako ako skupinové (sedia v inej kolekcii)
+    const privs=(await q.find(db.private_bookings,{client_id:uid, status:'completed'}))
+      .map(b=>({ date:b.date, time:b.time_start||'', name:'Súkromná hodina', emoji:'🎭',
+        location:b.city||b.location||'', online:false, instructor:b.trainer_name||'', child:false, child_name:null, private:true }));
+    if(privs.length){ visits.push(...privs);
+      visits.sort((a,b)=>String(b.date).localeCompare(String(a.date)) || String(b.time||'').localeCompare(String(a.time||''))); }
     // štatistiky
     const byCity={}; for(const v of visits){ const k=v.online?'Online':(v.location||'—'); byCity[k]=(byCity[k]||0)+1; }
     const byYear={}; for(const v of visits){ const y=String(v.date||'').slice(0,4); byYear[y]=(byYear[y]||0)+1; }
@@ -9463,7 +9469,9 @@ async function pointsSummaryData(from, to){
     (await q.find(db.orders,{})).filter(o=>o.status==='paid').forEach(o=>{ if(!inRange(o.paid_at||o.created_at)) return;
       const uid=emailToId[(o.client_email||'').toLowerCase()]; if(!uid) return;
       (o.items||[]).forEach(it=>{ if(isMerchItem(it)) merchMap[uid]=(merchMap[uid]||0)+(+it.qty||1); }); });
-    const rows=[]; const catTotals={hours:0, online:0, refs:0, membership:0, newmem:0, merch:0, merchline:0, review:0};
+    const rows=[]; const catTotals={hours:0, online:0, refs:0, membership:0, newmem:0, merch:0, merchline:0, review:0, private:0};
+    // Absolvované súkromné hodiny v období (rátajú sa do súťaže rovnako ako skupinové)
+    const privBy={}; (await q.find(db.private_bookings,{status:'completed'})).forEach(b=>{ if(b.client_id && inRange(b.date)) privBy[b.client_id]=(privBy[b.client_id]||0)+1; });
     const spinBy={}; (await q.find(db.spins,{})).forEach(s=>{ if(inRange(s.date)){ const b=spinBy[s.user_id]=spinBy[s.user_id]||{p:0,c:0}; b.p+=(+s.points||0); if(!s.milestone) b.c++; } });
     const reviewBy={}; (await q.find(db.review_claims,{status:'approved'})).forEach(c=>{ if(inRange(c.decided_at||c.created_at)) reviewBy[c.user_id]=(reviewBy[c.user_id]||0)+1; });
     const paidTiers=await paidMembershipTierMap();
@@ -9478,13 +9486,14 @@ async function pointsSummaryData(from, to){
       const md=merchDownlinePointsFor(u._id, adjacency, merchMap);
       const merchCount=merchMap[u._id]||0;
       const effTier=hasMem?effectiveMemTier(paidTiers[u._id]||null, m.plan_id, !!m.gift):null;
-      const pi=buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, memTier:effTier, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, spinPoints:(spinBy[u._id]||{}).p||0, spinCount:(spinBy[u._id]||{}).c||0, reviewCount:reviewBy[u._id]||0});
+      const privCount=privBy[u._id]||0;
+      const pi=buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, memTier:effTier, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, privCount, spinPoints:(spinBy[u._id]||{}).p||0, spinCount:(spinBy[u._id]||{}).c||0, reviewCount:reviewBy[u._id]||0});
       if(pi.total<=0) continue;
       catTotals.hours+=hours*MP_WEIGHTS.hour; catTotals.online+=online*MP_WEIGHTS.hour;
       catTotals.refs+=refs*MP_WEIGHTS.referral; catTotals.membership+=hasMem?membershipPointsFor(effTier):0;
       catTotals.newmem+=nm.points; catTotals.merch+=merchCount*MP_WEIGHTS.merch; catTotals.merchline+=md.points;
-      catTotals.review+=(reviewBy[u._id]||0)*10;
-      rows.push({ id:u._id, name:u.name, total:pi.total, hours, online, refs, hasMem,
+      catTotals.review+=(reviewBy[u._id]||0)*10; catTotals.private+=privCount*MP_WEIGHTS.private;
+      rows.push({ id:u._id, name:u.name, total:pi.total, hours, online, refs, hasMem, private_hours:privCount,
         items:pi.items.filter(i=>i.points>0).map(i=>({label:i.label, count:i.count, points:i.points})) });
     }
     rows.sort((a,b)=>b.total-a.total);
@@ -9503,10 +9512,10 @@ app.get('/api/admin/points-summary.csv', adminAuth, async(req,res)=>{
     const from=req.query.from||'', to=req.query.to||'';
     const d=await pointsSummaryData(from, to);
     const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
-    const rows=[['Klient','Hodiny','Online','Odporúčania','Členstvo','Spolu body','Za čo'].join(';')];
+    const rows=[['Klient','Hodiny','Online','Súkromné','Odporúčania','Členstvo','Spolu body','Za čo'].join(';')];
     for(const u of (d.rows||[])){
       const za=u.items.map(i=>`${i.label} ${i.points}b`).join(' | ');
-      rows.push([u.name,u.hours,u.online,u.refs,u.hasMem?'áno':'nie',u.total,za].map(esc).join(';'));
+      rows.push([u.name,u.hours,u.online,u.private_hours||0,u.refs,u.hasMem?'áno':'nie',u.total,za].map(esc).join(';'));
     }
     res.setHeader('Content-Type','text/csv; charset=utf-8');
     res.setHeader('Content-Disposition',`attachment; filename=body_klientov_${from||'vse'}_${to||''}.csv`);
@@ -11494,7 +11503,74 @@ app.get('/api/trainer/private', trainerAuth, async(req,res)=>{
     const DAYS_W=['Nedeľa','Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota'];
     const recurring=(await q.find(db.private_recurring,{trainer_id:t._id, active:{$ne:false}}))
       .map(r=>({id:r._id, weekday:r.weekday, weekday_name:DAYS_W[r.weekday], time_start:r.time_start, duration_min:r.duration_min||60, city:r.city, location:r.location||''}));
-    res.json({ ok:true, settings:privateSettings(t), slots:out, recurring, month_earn:earn.amount, month_count:earn.count });
+    // Ručne zapísané hodiny s neregistrovanými (svadobný tanec a pod.) — tento mesiac
+    const guests=bookings.filter(b=>b.manual && String(b.date||'').startsWith(m))
+      .sort((a,b)=>(b.date+(b.time_start||'')).localeCompare(a.date+(a.time_start||'')))
+      .map(b=>({ id:b._id, date:b.date, time_start:b.time_start||'', duration_min:b.duration_min||60, city:b.city||'',
+        name:b.client_name, phone:b.client_phone||'', price:+b.price||0, pay_method:b.pay_method,
+        cut:+b.trainer_cut||0, can_delete: b.date===today() }));
+    res.json({ ok:true, settings:privateSettings(t), slots:out, recurring, guests, month_earn:earn.amount, month_count:earn.count });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Tréner: RUČNÝ ZÁPIS súkromnej hodiny s neregistrovaným človekom ──────────
+// Svadobný tanec, jednorazovky, ľudia bez účtu v appke. Zapíše sa rovno ako
+// ABSOLVOVANÁ (nejde cez rezerváciu), meno sa píše ručne. Vznikne tržba, podiel
+// trénera aj hotovostná evidencia — návšteva/body/odznaky NIE (nie je komu).
+app.post('/api/trainer/private-manual', trainerAuth, async(req,res)=>{
+  try{
+    const t=req.trainerUser;
+    const st=privateSettings(t);
+    if(!st.enabled && !t.is_admin) return res.status(403).json({error:'Súkromné hodiny ti musí najprv povoliť admin.'});
+    const name=String(req.body.name||'').trim().slice(0,80);
+    if(name.length<2) return res.status(400).json({error:'Zadaj meno klienta'});
+    const phone=String(req.body.phone||'').trim().slice(0,30);
+    const date=/^\d{4}-\d{2}-\d{2}$/.test(req.body.date||'') ? req.body.date : today();
+    if(date>today()) return res.status(400).json({error:'Zapisuj len už odučené hodiny (dnes alebo v minulosti)'});
+    if(date<'2020-01-01') return res.status(400).json({error:'Neplatný dátum'});
+    const time_start=/^\d{2}:\d{2}$/.test(req.body.time_start||'') ? req.body.time_start : '';
+    const duration_min=[30,45,60,90,120].includes(+req.body.duration_min) ? +req.body.duration_min : 60;
+    const price=+(+req.body.price>=0 ? +req.body.price : st.rate*(duration_min/60)).toFixed(2);
+    if(!(price>=0 && price<=1000)) return res.status(400).json({error:'Neplatná cena (0–1000 €)'});
+    const pay_method=['cash','transfer','free'].includes(req.body.pay_method) ? req.body.pay_method : 'cash';
+    const city=String(req.body.city||'').trim().slice(0,60);
+    const note=String(req.body.note||'').trim().slice(0,200);
+    const split=+st.split||PRIVATE_DEFAULT_SPLIT;
+    const cut=+(price*(split/100)).toFixed(2);
+    const bk=await q.insert(db.private_bookings,{ slot_id:null, manual:true, trainer_id:t._id, trainer_name:t.name,
+      client_id:null, client_name:name, client_phone:phone, date, time_start, duration_min, city, location:'',
+      price, split, pay_method, paid: pay_method!=='transfer', note, status:'completed',
+      trainer_cut:cut, completed_at:nowISO(), recorded_by:t._id, created_at:nowISO() });
+    // Tržba — hodina zadarmo (napr. ukážková) sa do tržieb neráta
+    if(price>0) await q.insert(db.transactions,{type:'private_lesson', amount:price, user_id:null, user_name:name,
+      date, method:pay_method, note:`Súkromná hodina (ručne, ${t.name}) ${date}${time_start?' '+time_start:''}${note?' — '+note:''}`,
+      recorded_by:t._id, created_at:nowISO()}).catch(()=>{});
+    // Hotovosť u trénera → rovnaká automatizácia ako pri predaji na mieste
+    if(pay_method==='cash' && price>0){
+      await q.insert(db.payouts,{_type:'cash_collected', trainer_id:t._id, trainer_name:t.name, amount:price,
+        note:`Súkromná hodina — ${name}`, month:today().slice(0,7), date:today(), status:'held', created_at:nowISO()});
+      const admins=await q.find(db.users,{is_admin:true});
+      for(const a of admins) await q.insert(db.notifications,{user_id:a._id, type:'cash_collected',
+        title:`💵 ${t.name}: súkromná hodina ${price.toFixed(2)} €`,
+        body:`${name} (neregistrovaný/á) · ${date.split('-').reverse().join('.')} — hotovosť u trénera.`,
+        read:false, created_at:nowISO()}).catch(()=>{});
+    }
+    await auditLog(req,'private_manual',`${t.name}: súkromná hodina ${name} ${date} (${price.toFixed(2)} €)`,null,{price, pay_method},'');
+    res.json({ok:true, id:bk._id, price, trainer_cut:cut});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Zmazať ručný zápis — len vlastný a len dnešný (preklep), rovnako ako pri hotovosti
+app.delete('/api/trainer/private-manual/:id', trainerAuth, async(req,res)=>{
+  try{
+    const b=await q.one(db.private_bookings,{_id:req.params.id, manual:true});
+    if(!b || (b.trainer_id!==req.trainerUser._id && !req.trainerUser.is_admin)) return res.status(404).json({error:'Nenájdené'});
+    if(b.date!==today()) return res.status(400).json({error:'Zmazať sa dá len dnešný zápis — starší nechaj opraviť admina'});
+    await q.remove(db.private_bookings,{_id:b._id},{});
+    await q.remove(db.transactions,{type:'private_lesson', user_id:null, user_name:b.client_name, date:b.date, recorded_by:b.trainer_id},{});
+    if(b.pay_method==='cash' && +b.price>0)
+      await q.remove(db.payouts,{_type:'cash_collected', trainer_id:b.trainer_id, date:b.date, amount:+b.price, status:'held', note:`Súkromná hodina — ${b.client_name}`},{});
+    await auditLog(req,'private_manual_delete',`${b.trainer_name}: zmazaný zápis ${b.client_name} ${b.date}`,b,null,'');
+    res.json({ok:true});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -11797,7 +11873,7 @@ app.get('/api/admin/private', adminAuth, async(req,res)=>{
       trainers.push({ id:t._id, name:t.name, enabled:st.enabled, rate:st.rate, split:st.split, open_slots:openCnt, month_earn:earn.amount, month_count:earn.count });
     }
     const all=(await q.find(db.private_bookings,{})).sort((a,b)=>(b.date+b.time_start).localeCompare(a.date+a.time_start)).slice(0,60);
-    res.json({ok:true, trainers, bookings:all.map(b=>({id:b._id, date:b.date, time_start:b.time_start, city:b.city, trainer_name:b.trainer_name, client_id:b.client_id, client_name:b.client_name, price:b.price, split:b.split, pay_method:b.pay_method, paid:!!b.paid, status:b.status}))});
+    res.json({ok:true, trainers, bookings:all.map(b=>({id:b._id, date:b.date, time_start:b.time_start, city:b.city, trainer_name:b.trainer_name, client_id:b.client_id, client_name:b.client_name, price:b.price, split:b.split, pay_method:b.pay_method, paid:!!b.paid, status:b.status, manual:!!b.manual}))});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -13459,9 +13535,9 @@ const stripDia = s => (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCas
 // ── Bodový systém „Klient mesiaca" ────────────────────────────────────────────
 // 5 b za odchodenú hodinu (aj online), 5 b za privedeného člena, 10 b za aktívne
 // členstvo. Za príspevky/správy v komunite ZÁMERNE žiadne body (dá sa zneužiť).
-// 5 b hodina, 5 b privedený člen (registrácia), 10 b aktívne členstvo,
-// 30/15/10/5/5 b za nového PLATIACEHO člena v 1.–5. línii, 15 b za kus merchu.
-const MP_WEIGHTS = { hour:5, referral:5, membership:10, newMemberLine:[30,15,10,5,5], merch:15, merchLine:[10,5,3,2,1], private:8 };
+// 5 b hodina, 20 b súkromná hodina, 5 b privedený člen (registrácia), 10 b aktívne
+// členstvo, 30/15/10/5/5 b za nového PLATIACEHO člena v 1.–5. línii, 15 b za kus merchu.
+const MP_WEIGHTS = { hour:5, referral:5, membership:10, newMemberLine:[30,15,10,5,5], merch:15, merchLine:[10,5,3,2,1], private:20 };
 // Body za aktívne členstvo podľa úrovne (iné plány, napr. Online, majú default MP_WEIGHTS.membership)
 const MEMBERSHIP_TIER_POINTS = { bronze:10, silver:20, gold:40 };
 const membershipPointsFor = planId => MEMBERSHIP_TIER_POINTS[planId] ?? MP_WEIGHTS.membership;
@@ -13530,7 +13606,7 @@ async function merchCountMapInPeriod(prefix){
 // Absolvované súkromné hodiny v období (prefix YYYY-MM alebo YYYY) → client_id → počet
 async function privCountMapInPeriod(prefix){
   const map={};
-  (await q.find(db.private_bookings,{status:'completed'})).forEach(b=>{ if((b.date||'').startsWith(prefix)) map[b.client_id]=(map[b.client_id]||0)+1; });
+  (await q.find(db.private_bookings,{status:'completed'})).forEach(b=>{ if(b.client_id && (b.date||'').startsWith(prefix)) map[b.client_id]=(map[b.client_id]||0)+1; });
   return map;
 }
 // Rozpis bodov jedného používateľa za daný mesiac (YYYY-MM)
