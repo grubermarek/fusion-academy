@@ -159,6 +159,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('invoices')"><i class="bi bi-file-earmark-text me-2"></i>Predaje &amp; faktúry</a>
       <a class="nav-link" href="#" onclick="show('payments')"><i class="bi bi-credit-card me-2"></i>Platby <span id="failedBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
       <div class="nav-group-label">Výkon</div>
+      <a class="nav-link" href="#" onclick="show('funnel')"><i class="bi bi-funnel-fill me-2"></i>Funnel</a>
       <a class="nav-link" href="#" onclick="show('retention')"><i class="bi bi-people-fill me-2"></i>Klienti — výkon</a>
       <a class="nav-link" href="#" onclick="show('trainers')"><i class="bi bi-person-badge me-2"></i>Tréneri</a>
       <div class="nav-group-label">Systém</div>
@@ -787,7 +788,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- ─── LEADERBOARD ─── -->
   <div id="s-leaderboard" class="section">
-    <div class="adm-tabs"><button class="adm-tab" onclick="show('retention')">📈 Retencia &amp; LTV</button><button class="adm-tab" onclick="show('points')">⭐ Body klientov</button><button class="adm-tab on" onclick="show('leaderboard')">🏆 Leaderboard</button></div>
+    <div class="adm-tabs"><button class="adm-tab" onclick="show('funnel')">🎯 Funnel</button><button class="adm-tab" onclick="show('retention')">📈 Retencia &amp; LTV</button><button class="adm-tab" onclick="show('points')">⭐ Body klientov</button><button class="adm-tab on" onclick="show('leaderboard')">🏆 Leaderboard</button></div>
     <h4 class="fw-bold mb-1"><i class="bi bi-trophy me-2 text-warning"></i>Leaderboard – Dochádzka</h4>
     <div class="d-flex gap-2 mb-3">
       <button class="btn btn-sm btn-outline-warning active" id="lbBtnAll" onclick="loadLeaderboard('alltime')">Celkovo</button>
@@ -1630,7 +1631,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- BODY KLIENTOV (vlastná záložka) -->
   <div class="section" id="s-points">
-    <div class="adm-tabs"><button class="adm-tab" onclick="show('retention')">📈 Retencia &amp; LTV</button><button class="adm-tab on" onclick="show('points')">⭐ Body klientov</button><button class="adm-tab" onclick="show('leaderboard')">🏆 Leaderboard</button></div>
+    <div class="adm-tabs"><button class="adm-tab" onclick="show('funnel')">🎯 Funnel</button><button class="adm-tab" onclick="show('retention')">📈 Retencia &amp; LTV</button><button class="adm-tab on" onclick="show('points')">⭐ Body klientov</button><button class="adm-tab" onclick="show('leaderboard')">🏆 Leaderboard</button></div>
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
       <h4 class="fw-bold mb-0">🏆 Body klientov</h4>
       <button class="btn btn-sm btn-outline-light" onclick="const r=pointsRange();window.open('/api/admin/points-summary.csv?from='+r.from+'&to='+r.to,'_blank')" title="Stiahnuť body klientov (CSV)"><i class="bi bi-download"></i> CSV</button>
@@ -1664,8 +1665,29 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   </div>
 
   <!-- RETENTION & LTV -->
+  <!-- FUNNEL: registrácia → rezervácia → účasť → platba -->
+  <div class="section" id="s-funnel">
+    <div class="adm-tabs"><button class="adm-tab on" onclick="show('funnel')">🎯 Funnel</button><button class="adm-tab" onclick="show('retention')">📈 Retencia &amp; LTV</button><button class="adm-tab" onclick="show('points')">⭐ Body klientov</button><button class="adm-tab" onclick="show('leaderboard')">🏆 Leaderboard</button></div>
+    <h4 class="fw-bold mb-1">🎯 Funnel — kde strácame klientky</h4>
+    <p class="text-muted small mb-3">Kohorta = klientky <b>registrované</b> vo zvolenom období; ich ďalšie kroky sa rátajú, aj keď nastali neskôr. Importované z Glofoxu a detské profily sa nerátajú.</p>
+    <div class="d-flex gap-2 align-items-end flex-wrap mb-3">
+      <div><label class="text-muted small">Od</label><input type="date" id="fnFrom" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+      <div><label class="text-muted small">Do</label><input type="date" id="fnTo" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+      <div><label class="text-muted small">Mesto</label><select id="fnCity" class="form-select form-select-sm bg-dark text-light border-secondary"><option value="">všetky</option></select></div>
+      <div><label class="text-muted small">Kampaň</label><select id="fnCamp" class="form-select form-select-sm bg-dark text-light border-secondary"><option value="">všetky</option></select></div>
+      <button class="btn btn-sm btn-warning" onclick="loadFunnel()">Zobraziť</button>
+      <div class="btn-group btn-group-sm ms-1">
+        <button class="btn btn-outline-secondary" onclick="fnQuick(30)">30 dní</button>
+        <button class="btn btn-outline-secondary" onclick="fnQuick(90)">90 dní</button>
+        <button class="btn btn-outline-secondary" onclick="fnQuick(0)">Celé</button>
+      </div>
+      <button class="btn btn-sm btn-outline-light ms-auto" onclick="rebuildFunnel()" title="Prepočíta timestampy z rezervácií a platieb"><i class="bi bi-arrow-repeat"></i> Prepočítať</button>
+    </div>
+    <div id="fnBody"><div class="text-muted small">Načítavam…</div></div>
+  </div>
+
   <div class="section" id="s-retention">
-    <div class="adm-tabs"><button class="adm-tab on" onclick="show('retention')">📈 Retencia &amp; LTV</button><button class="adm-tab" onclick="show('points')">⭐ Body klientov</button><button class="adm-tab" onclick="show('leaderboard')">🏆 Leaderboard</button></div>
+    <div class="adm-tabs"><button class="adm-tab" onclick="show('funnel')">🎯 Funnel</button><button class="adm-tab on" onclick="show('retention')">📈 Retencia &amp; LTV</button><button class="adm-tab" onclick="show('points')">⭐ Body klientov</button><button class="adm-tab" onclick="show('leaderboard')">🏆 Leaderboard</button></div>
     <h4 class="fw-bold mb-1">📈 Retencia, Churn & LTV</h4>
     <p class="text-muted small mb-3">Kohortná analýza udržateľnosti klientov, celoživotná hodnota a doba návratnosti akvizície.</p>
     <div id="retKpis" class="row g-3 mb-4"></div>
@@ -2152,7 +2174,7 @@ function accessLabel(m){ return ACCESS_LABELS[m] || null; }
 const SECTION_GROUP={attendance:'manage',sale:'reports',
   leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',staff:'manage',classes:'manage',privatehours:'manage',kiosk:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',
   marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
-  sutaze:'marketing',venceky:'manage',eventy:'manage',fusionai:'reports',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
+  sutaze:'marketing',venceky:'manage',eventy:'manage',fusionai:'reports',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',funnel:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
   partners:'partners',addpartner:'partners',commissions:'partners'};
 function selectGroup(g){
   document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
@@ -2510,6 +2532,7 @@ function show(sec){
   if(sec==='invoices')initInvoices();
   if(sec==='audit')loadAudit();
   if(sec==='campaigns')loadCampaigns();
+  if(sec==='funnel')loadFunnel();
   if(sec==='retention')loadRetention();
   if(sec==='accounting')initAccounting();
   if(sec==='points'){initPoints();loadReviewClaims();}
@@ -3368,6 +3391,101 @@ async function importIncomeCsv(input){
   if(r&&r.ok){ showToast(`Hotovo ✓ Pridaných ${r.imported} platieb · ${(r.totalEur||0).toFixed(2)} € · duplicít ${r.dupes}`,'success'); loadAccounting(); }
   else showToast('Chyba pri importe: '+(r?.error||'?'),'error');
 }
+// ── FUNNEL ──────────────────────────────────────────────────────────────────
+function fnQuick(days){
+  const to=new Date(), from=new Date();
+  if(days) from.setDate(to.getDate()-days); else from.setFullYear(2020,0,1);
+  document.getElementById('fnFrom').value=from.toISOString().slice(0,10);
+  document.getElementById('fnTo').value=to.toISOString().slice(0,10);
+  loadFunnel();
+}
+async function rebuildFunnel(){
+  showToast('Prepočítavam…','success');
+  const r=await api('/api/admin/funnel/rebuild',{method:'POST'});
+  if(r?.ok){ showToast(`Prepočítané ✓ ${r.users} klientok, ${r.bookings} rezervácií`,'success'); loadFunnel(); }
+  else showToast('Chyba: '+((r&&r.error)||'?'),'error');
+}
+async function loadFunnel(){
+  const box=document.getElementById('fnBody'); if(!box) return;
+  if(!document.getElementById('fnFrom').value){
+    const to=new Date(), from=new Date(); from.setDate(to.getDate()-90);
+    document.getElementById('fnFrom').value=from.toISOString().slice(0,10);
+    document.getElementById('fnTo').value=to.toISOString().slice(0,10);
+  }
+  const qs=new URLSearchParams({from:document.getElementById('fnFrom').value, to:document.getElementById('fnTo').value,
+    city:document.getElementById('fnCity').value||'', campaign:document.getElementById('fnCamp').value||''});
+  const d=await api('/api/admin/funnel?'+qs);
+  if(!d||!d.ok){ box.innerHTML='<div class="text-danger small">Chyba načítania.</div>'; return; }
+  const fill=(id,vals)=>{ const el=document.getElementById(id), cur=el.value;
+    el.innerHTML='<option value="">všetky</option>'+vals.map(v=>`<option${v===cur?' selected':''}>${escHtml(v)}</option>`).join(''); };
+  fill('fnCity', d.cities||[]); fill('fnCamp', d.campaigns||[]);
+
+  const s=d.steps, r=d.rates, m=d.median_days;
+  const bar=(label,count,base,rate,color,note)=>{
+    const w=base?Math.max(3,Math.round(count/base*100)):3;
+    return `<div class="mb-2">
+      <div class="d-flex justify-content-between small"><span>${label}</span><span><b style="color:${color}">${count}</b>${rate!=null?` <span class="text-muted">· ${rate} %</span>`:''}${note?` <span class="text-muted">${note}</span>`:''}</span></div>
+      <div style="background:#222;border-radius:6px;height:22px;overflow:hidden"><div style="width:${w}%;height:100%;background:${color};opacity:.75"></div></div>
+    </div>`;
+  };
+  const warn=(v,min)=>v!=null&&v<min?'<span class="badge bg-danger ms-1">slabé</span>':'';
+  const tbl=(rows,title)=>`
+    <div class="card bg-dark border-secondary h-100"><div class="card-body p-3">
+      <div class="fw-semibold mb-2" style="color:#C9A84C">${title}</div>
+      <div class="table-responsive"><table class="table table-sm table-dark mb-0" style="font-size:.8rem">
+        <thead><tr><th></th><th class="text-end">Reg.</th><th class="text-end">→ rezerv.</th><th class="text-end">→ účasť</th><th class="text-end">→ platba</th></tr></thead>
+        <tbody>${rows.map(x=>`<tr><td>${escHtml(x.key)}</td><td class="text-end">${x.registered}</td>
+          <td class="text-end">${x.booked} <span class="text-muted">${x.to_booked} %</span></td>
+          <td class="text-end">${x.attended} <span class="text-muted">${x.to_attended} %</span></td>
+          <td class="text-end"><b>${x.paid}</b> <span class="text-muted">${x.to_paid} %</span></td></tr>`).join('')
+          ||'<tr><td colspan="5" class="text-muted">Žiadne dáta</td></tr>'}</tbody>
+      </table></div>
+    </div></div>`;
+  const list=(rows,title,hint)=>`
+    <div class="card bg-dark border-secondary h-100"><div class="card-body p-3">
+      <div class="fw-semibold mb-1" style="color:#C9A84C">${title} <span class="badge bg-secondary">${rows.length}</span></div>
+      <div class="text-muted small mb-2">${hint}</div>
+      <div style="max-height:230px;overflow:auto">${rows.map(x=>`<div style="padding:4px 0;border-bottom:1px solid #222;font-size:.82rem">
+        <a href="#" onclick="openClientDetail('${x.id}');return false" style="color:#C9A84C">${escHtml(x.name)}</a>
+        <span class="text-muted"> · ${escHtml(x.city)} · ${escHtml(x.campaign)} · reg. ${fmtDate(x.registered)}</span></div>`).join('')
+        ||'<div class="text-muted small">Nikto — super 👌</div>'}</div>
+    </div></div>`;
+
+  box.innerHTML=`
+    <div class="row g-3 mb-3">
+      <div class="col-lg-7"><div class="card bg-dark border-secondary h-100"><div class="card-body p-3">
+        ${bar('Registrácie', s.registered, s.registered, null, '#60a5fa')}
+        ${bar('Rezervovali si hodinu', s.booked, s.registered, r.to_booked, '#7ec8e3', m.to_booking!=null?`· medián ${m.to_booking} dní`:'')}
+        ${bar('Prišli na hodinu', s.attended, s.registered, r.to_attended, '#4ade80', m.to_attend!=null?`· medián ${m.to_attend} dní`:'')}
+        ${bar('Zaplatili', s.paid, s.registered, null, '#C9A84C', `${m.to_pay!=null?`· medián ${m.to_pay} dní`:''}${s.paid>s.paid_after_attend?` · z toho ${s.paid-s.paid_after_attend} kúpila bez toho, aby prišla`:''}`)}
+        ${bar('Prišli a potom zaplatili', s.paid_after_attend, s.registered, r.to_paid, '#f0b429', '')}
+        ${bar('Z toho platené členstvo', s.membership, s.registered, null, '#a07830')}
+        <div class="mt-3 small">
+          <span class="me-3">Registrácia → účasť: <b style="color:${r.reg_to_attended>=30?'#4ade80':'#ff8a8a'}">${r.reg_to_attended} %</b>${warn(r.reg_to_attended,30)} <span class="text-muted">(orientačný cieľ 30–50 %)</span></span>
+          <span>Účasť → platba: <b style="color:${r.to_paid>=40?'#4ade80':'#ff8a8a'}">${r.to_paid} %</b>${warn(r.to_paid,40)} <span class="text-muted">(orientačný cieľ 40 %+)</span></span>
+        </div>
+      </div></div></div>
+      <div class="col-lg-5"><div class="card bg-dark border-secondary h-100"><div class="card-body p-3">
+        <div class="fw-semibold mb-2" style="color:#C9A84C">🚫 No-show v období</div>
+        <div class="d-flex gap-3 flex-wrap">
+          <div><div class="h4 mb-0" style="color:#4ade80">${d.no_show.attended}</div><div class="text-muted small">prišli</div></div>
+          <div><div class="h4 mb-0" style="color:#ff8a8a">${d.no_show.no_show}</div><div class="text-muted small">neprišli</div></div>
+          <div><div class="h4 mb-0">${d.no_show.rate} %</div><div class="text-muted small">no-show rate</div></div>
+        </div>
+        <div class="text-muted small mt-2">Meria sa od ${fmtDate(d.no_show.since)} — staršie rezervácie nemáme ako posúdiť, ostávajú ako „unknown".</div>
+      </div></div></div>
+    </div>
+    <div class="row g-3 mb-3">
+      <div class="col-lg-6">${tbl(d.by_campaign||[],'Podľa kampane')}</div>
+      <div class="col-lg-6">${tbl(d.by_city||[],'Podľa mesta')}</div>
+    </div>
+    <div class="row g-3">
+      <div class="col-lg-4">${list(d.stuck.no_booking,'Registrovala, nerezervovala','Zaplatil si za ňu reklamu — stačí pripomienka s konkrétnou hodinou.')}</div>
+      <div class="col-lg-4">${list(d.stuck.booked_not_attended,'Rezervovala, neprišla','Najdrahšia strata — bola krok od sály.')}</div>
+      <div class="col-lg-4">${list(d.stuck.attended_not_paid,'Prišla, nekúpila','Ozvi sa do 48 h, kým má zážitok čerstvý.')}</div>
+    </div>`;
+}
+
 async function loadPointsSummary(){
   const {from,to}=pointsRange();
   const box=document.getElementById('accPoints');

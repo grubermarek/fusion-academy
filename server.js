@@ -9511,6 +9511,105 @@ async function pointsSummaryData(from, to){
       grandPoints: rows.reduce((s,r)=>s+r.total,0) };
   }
 }
+// ═══════════════════════════════════════════════════════════════════════════════
+// FUNNEL: registrácia → rezervácia → účasť → platba
+// ═══════════════════════════════════════════════════════════════════════════════
+// Kohorta = klientky, ktoré sa REGISTROVALI v danom období. Ich kroky sa rátajú
+// aj keď nastali neskôr — inak by posledný týždeň vyzeral vždy katastrofálne.
+// Importované z Glofoxu sem nepatria (prišli mimo appky, skresľovali by akvizíciu),
+// detské profily tiež nie (konverziu rieši rodičovský účet).
+app.get('/api/admin/funnel', adminAuth, async(req,res)=>{
+  try{
+    // Timestampy sú len cache — pred zobrazením ich prepočítame z rezervácií a platieb,
+    // aby dashboard sedel aj po ručnej oprave dát alebo importe.
+    await rebuildFunnelStamps().catch(()=>{});
+    const from=(req.query.from||'').slice(0,10) || '0000-01-01';
+    const to=(req.query.to||'').slice(0,10) || '9999-12-31';
+    const city=String(req.query.city||'');
+    const campaign=String(req.query.campaign||'');
+    const inRange=d=>{ d=String(d||'').slice(0,10); return d>=from && d<=to; };
+
+    let users=(await q.find(db.users,{is_admin:{$ne:true}, is_child:{$ne:true}}))
+      .filter(u=>!u.anonymous && !u.imported && !(u.glofox_attendances>0) && u.user_type!=='trainer')
+      .filter(u=>inRange(u.created_at));
+    if(campaign) users=users.filter(u=>(u.utm_campaign||'(bez kampane)')===campaign);
+
+    // mesto klientky = mesto jej prvej rezervácie (u.city je len to, čo si vyplnila)
+    const bks=await q.find(db.bookings,{});
+    const firstCity={}, firstBk={};
+    for(const b of bks){
+      if(!b.user_id || b.status==='cancelled') continue;
+      const d=b.created_at||b.booking_date;
+      if(!firstBk[b.user_id] || String(d)<String(firstBk[b.user_id])){ firstBk[b.user_id]=d; firstCity[b.user_id]=b.class_location||''; }
+    }
+    if(city) users=users.filter(u=>(firstCity[u._id]||u.city||'—')===city);
+
+    const days=(a,b)=>{ const x=Date.parse(String(a).slice(0,10)), y=Date.parse(String(b).slice(0,10));
+      return (Number.isFinite(x)&&Number.isFinite(y)) ? Math.round((y-x)/864e5) : null; };
+    // Funnel musí byť monotónny: kto prišiel, ten sa aj prihlásil (aj keď rezerváciu
+    // vytvoril kiosk pri príchode alebo išlo o súkromnú hodinu bez skupinovej rezervácie).
+    // Bez toho vychádzali kroky >100 %.
+    const step={registered:users.length, booked:0, attended:0, paid:0, paid_after_attend:0, membership:0};
+    const lag={booking:[], attend:[], pay:[]};
+    const rows=[];
+    for(const u of users){
+      const a=u.first_attended_at, p=u.first_paid_at;
+      const b=u.first_booking_at || a;
+      if(b){ step.booked++; const d=days(u.created_at,b); if(d!=null) lag.booking.push(d); }
+      if(a){ step.attended++; const d=days(b||u.created_at,a); if(d!=null) lag.attend.push(d); }
+      if(p){ step.paid++; const d=days(a||u.created_at,p); if(d!=null) lag.pay.push(d); }
+      // „účasť → platba" sa ráta len z tých, čo naozaj prišli; kto kúpil členstvo
+      // online bez toho, aby prišiel, patrí do tržieb, nie do tejto konverzie
+      if(a && p) step.paid_after_attend++;
+      if(u.first_membership_at) step.membership++;
+      rows.push({ id:u._id, name:u.name, registered:String(u.created_at||'').slice(0,10),
+        city:firstCity[u._id]||u.city||'—', campaign:u.utm_campaign||'(bez kampane)', source:u.utm_source||u.lead_source||'—',
+        booked:!!b, attended:!!a, paid:!!p, paid_after_attend:!!(a&&p) });
+    }
+    const med=a=>{ if(!a.length) return null; const s=[...a].sort((x,y)=>x-y); return s[Math.floor(s.length/2)]; };
+    const pct=(n,d)=>d?+(n/d*100).toFixed(1):0;
+
+    // rozpad podľa kampane a mesta — kde presne padá
+    const by=(keyFn)=>{
+      const m={};
+      for(const r of rows){ const k=keyFn(r); const o=m[k]=m[k]||{key:k, registered:0, booked:0, attended:0, paid:0, paid_after_attend:0};
+        o.registered++; if(r.booked)o.booked++; if(r.attended)o.attended++; if(r.paid)o.paid++; if(r.paid_after_attend)o.paid_after_attend++; }
+      return Object.values(m).map(o=>({...o, to_booked:pct(o.booked,o.registered), to_attended:pct(o.attended,o.booked), to_paid:pct(o.paid_after_attend,o.attended)}))
+        .sort((x,y)=>y.registered-x.registered);
+    };
+
+    // no-show za rovnaké obdobie (podľa dátumu hodiny, nie registrácie)
+    const period=bks.filter(b=>inRange(b.booking_date));
+    const att=period.filter(b=>b.attendance_status==='attended').length;
+    const ns=period.filter(b=>b.attendance_status==='no_show').length;
+
+    res.json({ ok:true, from, to,
+      steps:step,
+      rates:{ to_booked:pct(step.booked,step.registered), to_attended:pct(step.attended,step.booked),
+        to_paid:pct(step.paid_after_attend,step.attended), reg_to_attended:pct(step.attended,step.registered) },
+      median_days:{ to_booking:med(lag.booking), to_attend:med(lag.attend), to_pay:med(lag.pay) },
+      no_show:{ attended:att, no_show:ns, rate:pct(ns, att+ns), since:await noShowFrom() },
+      by_campaign:by(r=>r.campaign), by_city:by(r=>r.city),
+      cities:[...new Set(rows.map(r=>r.city))].sort(),
+      campaigns:[...new Set(rows.map(r=>r.campaign))].sort(),
+      stuck:{
+        no_booking: rows.filter(r=>!r.booked).slice(0,50),
+        booked_not_attended: rows.filter(r=>r.booked&&!r.attended).slice(0,50),
+        attended_not_paid: rows.filter(r=>r.attended&&!r.paid).slice(0,50)
+      }});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Ručné spustenie dochádzkového jobu (inak beží každú hodinu) — na overenie aj
+// keď treba dobehnúť po výpadku.
+app.post('/api/admin/attendance/run-noshow', adminAuth, async(req,res)=>{
+  try{ const n=await markNoShows(); res.json({ok:true, marked:n}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/funnel/rebuild', adminAuth, async(req,res)=>{
+  try{ const n=await rebuildFunnelStamps(); const a=await normalizeAttendance(); res.json({ok:true, users:n, bookings:a}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/admin/points-summary', adminAuth, async(req,res)=>{
   try { res.json(await pointsSummaryData(req.query.from, req.query.to)); }
   catch(e){ res.status(500).json({error:e.message}); }
@@ -11123,6 +11222,151 @@ async function visitStreakWeeks(userId){
   return streak;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// DOCHÁDZKA: attendance_status — pravda o tom, kto naozaj prišiel
+// ═══════════════════════════════════════════════════════════════════════════════
+// `status` (confirmed/attended/cancelled) riadi rezerváciu a kapacitu, preto doň
+// no_show NEPRIDÁVAME — polovica kódu filtruje na status:'confirmed'. Účasť má
+// vlastné pole, takže sa dá opraviť bez dopadu na rezervačnú logiku.
+//   pending  — termín ešte nebol / nevieme
+//   attended — potvrdená účasť (QR, tréner, online)
+//   no_show  — termín prebehol a neprišla
+//   unknown  — historické dáta spred zavedenia (NIE no_show, nemáme dôkaz)
+const ATT_SOURCES = ['qr','trainer','admin','online_auto','auto'];
+// Server beží v UTC, hodiny sú v SK čase — bez toho by sa no-show označoval o hodinu-dve vedľa.
+function skOffsetMs(dateStr){
+  const d = new Date(dateStr + 'T12:00:00Z');
+  const sk = new Date(d.toLocaleString('en-US',{timeZone:'Europe/Bratislava'}));
+  const utc = new Date(d.toLocaleString('en-US',{timeZone:'UTC'}));
+  return sk.getTime() - utc.getTime();
+}
+function skDateTimeMs(dateStr, timeStr){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(dateStr||'') || !/^\d{2}:\d{2}/.test(timeStr||'')) return NaN;
+  return Date.parse(`${dateStr}T${timeStr.slice(0,5)}:00Z`) - skOffsetMs(dateStr);
+}
+// Koniec hodiny: time_end, inak time_start + 60 min. Hodina cez polnoc = ďalší deň.
+function classEndMs(booking, cls){
+  const start = booking.class_time_start || cls?.time_start;
+  const end = cls?.time_end || booking.class_time_end;
+  if(!start) return NaN;
+  const startMs = skDateTimeMs(booking.booking_date, start);
+  if(!end) return startMs + 60*60000;
+  let endMs = skDateTimeMs(booking.booking_date, end);
+  if(endMs <= startMs) endMs += 24*60*60000;
+  return endMs;
+}
+function attSourceFrom(attended_by){
+  const v = String(attended_by||'');
+  if(/^kiosk_/.test(v)) return 'qr';
+  if(v==='online_auto') return 'online_auto';
+  if(/admin_fix|system_retro/.test(v)) return 'admin';
+  return v ? 'trainer' : 'admin';
+}
+// Odkedy sa no-show vôbec vyhodnocuje. Staré 'confirmed' rezervácie nemáme ako
+// posúdiť (chýbal QR aj potvrdzovanie) — tie ostanú 'unknown', nie no_show.
+let NO_SHOW_FROM = null;
+async function noShowFrom(){
+  if(NO_SHOW_FROM) return NO_SHOW_FROM;
+  const s = await q.one(db.settings,{key:'no_show_from'});
+  if(s?.value){ NO_SHOW_FROM = s.value; return NO_SHOW_FROM; }
+  NO_SHOW_FROM = today();
+  await q.insert(db.settings,{key:'no_show_from', value:NO_SHOW_FROM, at:nowISO()}).catch(()=>{});
+  return NO_SHOW_FROM;
+}
+// Doplní attendance_status tam, kde chýba (staré záznamy aj nové z ciest, ktoré
+// ho ešte nenastavujú). Idempotentné — beží pri štarte aj pred no-show jobom.
+async function normalizeAttendance(){
+  const from = await noShowFrom();
+  const rows = await q.find(db.bookings,{attendance_status:{$exists:false}});
+  if(!rows.length) return 0;
+  const clsCache = {};
+  let n = 0;
+  for(const b of rows){
+    let st, src = null;
+    if(b.status==='attended'){ st='attended'; src=attSourceFrom(b.attended_by); }
+    else if(b.status==='cancelled'){ st='cancelled'; }
+    else {
+      if(!(b.class_id in clsCache)) clsCache[b.class_id] = await q.one(db.classes,{_id:b.class_id});
+      const endMs = classEndMs(b, clsCache[b.class_id]);
+      const ended = Number.isFinite(endMs) ? endMs < Date.now() : String(b.booking_date||'') < today();
+      st = !ended ? 'pending' : (String(b.booking_date||'') >= from ? 'pending' : 'unknown');
+    }
+    await q.update(db.bookings,{_id:b._id},{$set:{attendance_status:st, ...(src?{attendance_source:src}:{})}});
+    n++;
+  }
+  if(n) console.log(`📋 Dochádzka: doplnený attendance_status pri ${n} rezerváciách`);
+  return n;
+}
+// Označí neprítomné. Beží každú hodinu, takže reálne označí 60–120 min po hodine.
+async function markNoShows(){
+  const from = await noShowFrom();
+  await normalizeAttendance();
+  const rows = (await q.find(db.bookings,{attendance_status:'pending', status:'confirmed'}))
+    .filter(b => String(b.booking_date||'') >= from);
+  if(!rows.length) return 0;
+  const clsCache = {};
+  const now = Date.now();
+  let n = 0;
+  for(const b of rows){
+    if(!(b.class_id in clsCache)) clsCache[b.class_id] = await q.one(db.classes,{_id:b.class_id});
+    const endMs = classEndMs(b, clsCache[b.class_id]);
+    if(!Number.isFinite(endMs) || now < endMs + 60*60000) continue;
+    await q.update(db.bookings,{_id:b._id},{$set:{attendance_status:'no_show', attendance_source:'auto', no_show_at:nowISO()}});
+    n++;
+    // Recovery ide notifikáciou v appke, nie mailom — mailový limit je vzácny.
+    if(b.user_id && !b.is_child_booking) await q.insert(db.notifications,{user_id:b.user_id, type:'no_show',
+      title:'Nezachytili sme ťa na hodine 💛',
+      body:`${b.class_name||'Hodina'} ${String(b.booking_date||'').split('-').reverse().join('.')} — ak si sa nestihla pípnuť, napíš trénerke. Inak si vyber náhradný termín, tešíme sa na teba!`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+  }
+  if(n) console.log(`📋 Dochádzka: ${n}× označené ako no-show`);
+  return n;
+}
+
+// ── Funnel timestampy na klientke ────────────────────────────────────────────
+// Sú to len CACHE pre rýchly dashboard — pravdou ostávajú bookings a transakcie.
+// Preto sa dajú kedykoľvek prepočítať (rebuildFunnelStamps) a nikdy sa neprepisujú
+// smerom nahor (raz nastavený prvý dátum sa nemení).
+async function stampFirst(userId, field, when){
+  if(!userId || !when) return;
+  const u = await q.one(db.users,{_id:userId});
+  if(!u) return;
+  const cur = u[field];
+  if(!cur || String(when) < String(cur)) await q.update(db.users,{_id:userId},{$set:{[field]:when}});
+}
+async function rebuildFunnelStamps(){
+  const users = await q.find(db.users,{is_child:{$ne:true}});
+  const bks = await q.find(db.bookings,{});
+  const txs = await q.find(db.transactions,{});
+  const pays = (await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status));
+  const first = {};
+  const put=(uid,f,v)=>{ if(!uid||!v) return; const o=first[uid]=first[uid]||{}; if(!o[f]||String(v)<String(o[f])) o[f]=v; };
+  for(const b of bks){
+    if(!b.user_id || b.status==='cancelled') continue;
+    put(b.user_id,'first_booking_at', b.created_at||b.booking_date);
+    if(b.status==='attended') put(b.user_id,'first_attended_at', b.attended_at||b.booking_date);
+  }
+  for(const t of txs){ if((+t.amount||0)>0) put(t.user_id,'first_paid_at', t.created_at||t.date); }
+  for(const p of pays){ if((+p.amount||0)>0) put(p.user_id,'first_paid_at', p.captured_at||p.activated_at||p.created_at); }
+  // Prvé PLATENÉ členstvo — permanentka ani jednorazový vstup sa sem nerátajú
+  for(const m of await q.find(db.memberships,{})){
+    const plan=MEMBERSHIP_PLANS[m.plan_id];
+    if(plan && plan.type==='bundle') continue;
+    if(!(+m.price>0 || m.payment_method)) continue;
+    put(m.user_id,'first_membership_at', m.started_at||m.start_date||m.created_at);
+  }
+  let n=0;
+  for(const u of users){
+    const f = first[u._id] || {};
+    const set = {};
+    for(const k of ['first_booking_at','first_attended_at','first_paid_at','first_membership_at'])
+      if(f[k] && u[k]!==f[k]) set[k]=f[k];
+    if(Object.keys(set).length){ await q.update(db.users,{_id:u._id},{$set:set}); n++; }
+  }
+  if(n) console.log(`📊 Funnel: prepočítané timestampy pri ${n} klientkach`);
+  return n;
+}
+
 // Obsah pre kiosk (slideshow dáta) — token-auth, žiadne osobné citlivé údaje
 app.get('/api/kiosk/content', async(req,res)=>{
   try{
@@ -11212,7 +11456,10 @@ app.post('/api/kiosk/checkin', async(req,res)=>{
     let already=false, vc=u.visit_count||0;
     if(exists){
       already = exists.status==='attended';
-      await q.update(db.bookings,{_id:exists._id},{$set:{status:'attended', attended_at:nowISO(), attended_by:'kiosk_'+a.slug}});
+      // Prišla neskôr, než job stihol označiť no-show? QR má prednosť — opravíme to.
+      const fix = exists.attendance_status==='no_show' ? {no_show_corrected_at:nowISO(), no_show_corrected_by:'kiosk_'+a.slug} : {};
+      await q.update(db.bookings,{_id:exists._id},{$set:{status:'attended', attended_at:nowISO(), attended_by:'kiosk_'+a.slug,
+        attendance_status:'attended', attendance_source:'qr', ...fix}});
       if(!already && !exists.is_child_booking) vc=await creditAttendance(u);
     } else {
       const mem=await checkMembership(u._id);
@@ -11227,7 +11474,8 @@ app.post('/api/kiosk/checkin', async(req,res)=>{
         free_class: !hasMem&&hasFree,
         class_location:cls.location, class_time_start:cls.time_start, day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
         user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||'',
-        booking_date:todayS, status:'attended', attended_at:nowISO(), attended_by:'kiosk_'+a.slug, notes:'kiosk', created_at:nowISO() });
+        booking_date:todayS, status:'attended', attended_at:nowISO(), attended_by:'kiosk_'+a.slug,
+        attendance_status:'attended', attendance_source:'qr', notes:'kiosk', created_at:nowISO() });
       vc=await creditAttendance(u);
     }
     const streak=await visitStreakWeeks(u._id);
@@ -12777,6 +13025,7 @@ app.get('/api/attendance/class/:classId', trainerAuth, async(req,res)=>{
         booking_id: b._id,
         booking_date: b.booking_date,
         status: b.status,
+        attendance_status: b.attendance_status||'pending',
         is_child_booking: !!b.is_child_booking,
         child_name: b.child_name||null,
         booked_by_name: b.booked_by_name||null,
@@ -13049,6 +13298,7 @@ async function creditAttendance(u){
     await q.insert(db.notifications,{user_id:notifUid,type:'loyalty',title:`🏆 Nový odznak: ${milestone.label}`,
       body:`Gratulujeme! ${newCount} návštev — ${milestone.label}.`,read:false,created_at:nowISO()}).catch(()=>{});
   }
+  stampFirst(u._id, 'first_attended_at', nowISO()).catch(()=>{}); // funnel cache — pravdou ostávajú bookings
   if(!u.is_child) sendFirstClassEmail(u._id).catch(()=>{});
   checkNewAchievements(u._id).catch(()=>{}); // odznaky za návštevy/mestá + notif priateľom
   // Bola na hodine (zdarma), ale ešte nič nekúpila → prepni maily z „príď zadarmo"
@@ -13077,9 +13327,24 @@ app.post('/api/attendance/confirm-session', trainerAuth, async(req,res)=>{
     if(cls.category==='Online') return res.status(400).json({error:'Online hodiny sa potvrdzujú automaticky pri štarte vysielania — účasť aj body dostanú klientky samé, tréner za ne výplatu nemá.'});
     const date=/^\d{4}-\d{2}-\d{2}$/.test(req.body.date||'') ? req.body.date : sessionDateFor(cls);
     const rows=await q.find(db.bookings,{class_id:cls._id, booking_date:date, status:'confirmed'});
-    let credited=0;
+    // Tréner najprv odškrtne, kto NEPRIŠIEL — bez toho by sa každý prihlásený
+    // zapísal ako prítomný a no-show dáta by neexistovali (a body by dostal aj ten,
+    // kto tam nebol). absent_ids = _id rezervácií.
+    const absent=new Set((Array.isArray(req.body.absent_ids)?req.body.absent_ids:[]).map(String));
+    let credited=0, noShows=0;
     for(const b of rows){
-      await q.update(db.bookings,{_id:b._id},{$set:{status:'attended', attended_at:nowISO(), attended_by:req.trainerUser._id}});
+      if(absent.has(String(b._id))){
+        await q.update(db.bookings,{_id:b._id},{$set:{attendance_status:'no_show', attendance_source:'trainer',
+          no_show_at:nowISO(), no_show_by:req.trainerUser._id}});
+        noShows++;
+        if(b.user_id && !b.is_child_booking) await q.insert(db.notifications,{user_id:b.user_id, type:'no_show',
+          title:'Nezachytili sme ťa na hodine 💛',
+          body:`${b.class_name||'Hodina'} ${String(b.booking_date||'').split('-').reverse().join('.')} — vyber si prosím náhradný termín, tešíme sa na teba!`,
+          read:false, created_at:nowISO()}).catch(()=>{});
+        continue;
+      }
+      await q.update(db.bookings,{_id:b._id},{$set:{status:'attended', attended_at:nowISO(), attended_by:req.trainerUser._id,
+        attendance_status:'attended', attendance_source:'trainer'}});
       if(!b.is_child_booking && b.user_id){
         const u=await q.one(db.users,{_id:b.user_id});
         if(u){ await creditAttendance(u); credited++; }
@@ -13105,7 +13370,7 @@ app.post('/api/attendance/confirm-session', trainerAuth, async(req,res)=>{
         read:false, created_at:nowISO() }).catch(()=>{});
     }
     if(credited>0) await auditLog(req,'confirm_session',cls._id,{date},{credited, earn:sessionEarn},'');
-    res.json({ ok:true, credited, already:credited===0, date, class_name:cls.name, instructor:si.instructor, attended:totalAttended, session_earn:sessionEarn });
+    res.json({ ok:true, credited, no_shows:noShows, already:credited===0, date, class_name:cls.name, instructor:si.instructor, attended:totalAttended, session_earn:sessionEarn });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -17172,14 +17437,23 @@ app.post('/api/admin/run-first-class-followup', adminAuth, async(req,res)=>{
 // Run daily at ~08:00 server time (check every hour)
 setInterval(async()=>{
   const h = new Date().getHours();
+  // Dochádzka sa vyhodnocuje každú hodinu — no-show musí zbehnúť krátko po hodine,
+  // nie až ráno, inak je recovery notifikácia zbytočne stará.
+  try{ await markNoShows(); }catch(e){ console.error('No-show job error:',e.message); }
   if(h === 8){
     try{ await runDailyJobs(); }catch(e){ console.error('Cron error:',e); }
     try{ await processEmailQueue(); }catch(e){ console.error('Email queue error:',e); }
+    try{ await rebuildFunnelStamps(); }catch(e){ console.error('Funnel stamps error:',e.message); }
   }
   if(h === 20){
     try{ await runFirstClassFollowup(); }catch(e){ console.error('First class followup error:',e); }
   }
 }, 3600000);
+// Po štarte raz dobehni dochádzku aj funnel timestampy (obe sú idempotentné).
+setTimeout(async()=>{
+  try{ await markNoShows(); }catch(e){ console.error('no-show at boot:', e.message); }
+  try{ await rebuildFunnelStamps(); }catch(e){ console.error('funnel stamps at boot:', e.message); }
+}, 25000);
 // Korunovanie víťaziek nesmie čakať na 8:00 ani prežiť reštart bez behu —
 // obe funkcie sú idempotentné, takže ich pri štarte pokojne skúsime hneď.
 setTimeout(async()=>{

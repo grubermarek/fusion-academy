@@ -1089,11 +1089,15 @@ async function loadTrainerInstructor(classId){
 }
 async function confirmTrainerSession(){
   if(!_currentClassId) return;
-  if(!confirm('Potvrdiť túto hodinu ako ABSOLVOVANÚ?\n\nVšetkým prihláseným sa pripíše návšteva + body a hodina sa započíta do tvojej výplaty.')) return;
-  const r=await api('/api/attendance/confirm-session',{method:'POST',body:{class_id:_currentClassId}});
+  const absent=[...document.querySelectorAll('.att-absent:checked')].map(c=>c.value);
+  const msg = absent.length
+    ? `Potvrdiť hodinu?\n\n${absent.length}× označená ako NEPRIŠLA — tým sa nepripíše návšteva ani body.\nOstatným prihláseným sa pripíše návšteva + body a hodina sa započíta do tvojej výplaty.`
+    : 'Potvrdiť túto hodinu ako ABSOLVOVANÚ?\n\nVšetkým prihláseným sa pripíše návšteva + body a hodina sa započíta do tvojej výplaty.\n\nAk niekto neprišiel, najprv ho zaškrtni ako „neprišla".';
+  if(!confirm(msg)) return;
+  const r=await api('/api/attendance/confirm-session',{method:'POST',body:{class_id:_currentClassId, absent_ids:absent}});
   if(r&&r.ok){
-    if(r.already) toast(`ℹ️ Hodina už bola potvrdená (${r.attended} účastníkov) — nič sa nepripísalo znova.`);
-    else toast(`✅ Hodina potvrdená · ${r.credited} nových · zarobil/a si ${(r.session_earn||0).toFixed(2)} € 💰`);
+    if(r.already && !r.no_shows) toast(`ℹ️ Hodina už bola potvrdená (${r.attended} účastníkov) — nič sa nepripísalo znova.`);
+    else toast(`✅ Hodina potvrdená · ${r.credited} nových${r.no_shows?` · ${r.no_shows}× neprišla`:''} · zarobil/a si ${(r.session_earn||0).toFixed(2)} € 💰`);
     loadAttendees(_currentClassId); loadSchedule&&loadSchedule();
     if(typeof loadTrainerEarnings==='function') loadTrainerEarnings();
   } else toast(r?.error||'Chyba', true);
@@ -1172,9 +1176,15 @@ function renderAttendees(list){
     if(b.entry_collected) payHtml += `<span class="att-badge" style="background:rgba(74,222,128,.15);color:#4ade80;border:1px solid rgba(74,222,128,.35)">💵 Vstupné vybraté ✓</span>`;
     else if(b.pay_on_site) payHtml += `<span class="att-badge" onclick="collectEntry('${b.booking_id}','${esc(b.name||'').replace(/'/g,'')}',${+b.pay_amount||10})" style="background:rgba(224,86,86,.2);color:#ff8a8a;border:1px solid rgba(224,86,86,.5);font-weight:800;cursor:pointer" title="Klikni a zapíš vybratých ${+b.pay_amount||10} €">💵 PLATÍ NA MIESTE ${+b.pay_amount&&+b.pay_amount!==10?(+b.pay_amount)+' € ':''}— klikni a vyber vstupné</span>`;
     if(b.is_child_booking) extraHtml += `<span class="att-badge" style="background:rgba(126,200,227,.15);color:#7ec8e3;border:1px solid rgba(126,200,227,.4)">👧 Dieťa${b.booked_by_name?' — booknuté z rodičovského účtu ('+esc(b.booked_by_name)+')':''}${String(b.access_method||'').startsWith('parent_')?' · kryté členstvom/vstupom rodiča':''}</span>`;
+    // Neprítomné treba odškrtnúť PRED potvrdením hodiny — inak by dostali návštevu
+    // aj body ľudia, ktorí neprišli, a no-show by sa nikdy nedal zmerať.
     statusHtml = b.status==='attended'
       ? `<span class="att-badge" style="background:rgba(74,222,128,.18);color:#4ade80;border:1px solid rgba(74,222,128,.35)"><i class="bi bi-check-circle-fill"></i>Absolvoval</span>`
-      : `<span class="att-badge" style="background:rgba(255,255,255,.05);color:var(--muted)">Ešte neprišla</span>`;
+      : (b.attendance_status==='no_show'
+        ? `<span class="att-badge" style="background:rgba(224,86,86,.15);color:#ff8a8a;border:1px solid rgba(224,86,86,.4)">🚫 Neprišla</span>`
+        : `<label class="att-badge" style="background:rgba(255,255,255,.05);color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;gap:6px" title="Zaškrtni, ak dnes neprišla — pri potvrdení hodiny sa jej nepripíše návšteva">
+             <input type="checkbox" class="att-absent" value="${b.booking_id}" style="accent-color:#e57373"> neprišla
+           </label>`);
     // Čím je hodina uhradená (zo samotnej rezervácie).
     accHtml = acc
       ? `<span class="att-badge" style="background:${acc[1]}22;color:${acc[1]};border:1px solid ${acc[1]}66;font-weight:700">${acc[0]}</span>`
