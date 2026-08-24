@@ -15481,6 +15481,28 @@ app.get('/api/admin/meta/inventory', adminAuth, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Pokus doplniť URL parametre (utm_*) priamo do reklamy. Bez nich sa registrácie
+// z reklamy nedajú priradiť ku kampani. Vyžaduje token s ads_management — s
+// ads_read Meta zápis odmietne a vráti to sem, nech je jasné, že to treba klikom.
+app.post('/api/admin/meta/url-tags', adminAuth, async(req,res)=>{
+  try{
+    const tok=(await getMetaAdsToken()) || (await getMetaCapiToken());
+    if(!tok) return res.status(400).json({error:'Chýba Meta Ads token'});
+    const ad_id=String(req.body.ad_id||'').trim();
+    const tags=String(req.body.tags||'').trim();
+    if(!/^\d+$/.test(ad_id) || !tags) return res.status(400).json({error:'Zadaj ad_id a tags'});
+    const g=async(u,init)=>await (await fetch('https://graph.facebook.com/v21.0/'+u, init)).json();
+    const ad=await g(`${ad_id}?fields=creative{id,url_tags}&access_token=${encodeURIComponent(tok)}`);
+    if(ad.error) return res.status(400).json({error:ad.error.message});
+    const creativeId=ad.creative?.id;
+    if(!creativeId) return res.status(400).json({error:'Reklama nemá kreatívu'});
+    const body=new URLSearchParams({url_tags:tags, access_token:tok});
+    const upd=await g(String(creativeId), {method:'POST', body});
+    res.json({ ok:!upd.error, creative_id:creativeId, before:ad.creative?.url_tags||null,
+      result:upd, hint: upd.error ? 'Token zrejme nemá ads_management — doplň parametre ručne v Ads Manageri (pole „Parametre URL").' : null });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Vynútená synchronizácia z Meta Ads (inak beží max. raz za 6 h)
 app.post('/api/admin/campaigns/sync', adminAuth, async(req,res)=>{
   try{ res.json(await syncMetaCampaignStats(true)); }
