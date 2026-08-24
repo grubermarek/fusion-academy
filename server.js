@@ -15450,6 +15450,26 @@ app.get('/api/admin/campaigns', adminAuth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Čo reálne existuje v Meta Ads účte — kampane, reklamy, ich stav a URL parametre.
+// Slúži na napárovanie kariet (meta_campaign_id / meta_ad_id) a na kontrolu, či
+// odkaz v reklame vôbec nesie utm_campaign — bez neho sa registrácie nedajú priradiť.
+const META_ACT='act_51759494';
+app.get('/api/admin/meta/inventory', adminAuth, async(req,res)=>{
+  try{
+    const tok=(await getMetaAdsToken()) || (await getMetaCapiToken());
+    if(!tok) return res.status(400).json({error:'Chýba Meta Ads token'});
+    const gj=async u=>await (await fetch('https://graph.facebook.com/v21.0/'+u+'&access_token='+encodeURIComponent(tok))).json();
+    const camps=await gj(`${META_ACT}/campaigns?fields=id,name,effective_status,created_time&limit=200`);
+    if(camps.error) return res.status(400).json({error:camps.error.message});
+    const ads=await gj(`${META_ACT}/ads?fields=id,name,campaign_id,adset_id,effective_status,creative{id,url_tags,object_story_spec{link_data{link}}}&limit=300`);
+    res.json({ ok:true,
+      campaigns:(camps.data||[]).map(c=>({id:c.id, name:c.name, status:c.effective_status, created:(c.created_time||'').slice(0,10)})),
+      ads:(ads.data||[]).map(a=>({ id:a.id, name:a.name, campaign_id:a.campaign_id, status:a.effective_status,
+        creative_id:a.creative?.id||null, url_tags:a.creative?.url_tags||null,
+        link:a.creative?.object_story_spec?.link_data?.link||null })) });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Vynútená synchronizácia z Meta Ads (inak beží max. raz za 6 h)
 app.post('/api/admin/campaigns/sync', adminAuth, async(req,res)=>{
   try{ res.json(await syncMetaCampaignStats(true)); }
