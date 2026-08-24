@@ -963,6 +963,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <div><h4 class="fw-bold mb-0">📣 Marketingové kampane</h4>
         <p class="text-muted small mb-0">Zadaj investíciu a čísla — metriky (CTR, CPC, ROAS, ROI, CAC…) sa počítajú automaticky. Tržby sa priradia podľa <code>utm_campaign</code>.</p></div>
+      <button class="btn btn-sm btn-outline-light me-2" onclick="syncCampaigns()" title="Stiahne z Meta Ads aktuálny výdaj a stav kampaní"><i class="bi bi-arrow-repeat me-1"></i>Obnoviť z Meta</button>
       <button class="btn btn-sm btn-brand" onclick="openCampaign()"><i class="bi bi-plus-lg me-1"></i>Nová kampaň</button>
     </div>
     <!-- META ADS prehľad -->
@@ -3982,6 +3983,13 @@ async function loadCacLtv(hostId){
   </div>`;
 }
 
+async function syncCampaigns(){
+  showToast('Sťahujem z Meta Ads…','success');
+  const r=await api('/api/admin/campaigns/sync',{method:'POST'});
+  if(r?.ok) showToast(r.cached?'Dáta sú čerstvé (sync beží max. raz za 6 h)':`Aktualizovaných ${r.updated||0} kampaní ✓`,'success');
+  else showToast('Sync zlyhal: '+((r&&r.error)||'?'),'error');
+  loadCampaigns();
+}
 async function loadCampaigns(){
   loadMetaStats();
   loadLeadFunnel();
@@ -4019,6 +4027,17 @@ async function loadCampaigns(){
       </div>
       <div class="text-muted small mt-2">Reg: ${c.registrations} · Prvé návštevy: ${c.first_visits} · Členstvá: ${c.memberships} · Platiaci klienti z kampane: ${c.attributed_payers||0}</div>
       ${c.meta_leads?`<div class="small mt-1" style="color:#7ea6d9">📘 Meta Ads: ${c.meta_leads} leadov (formulár) · ${(+c.meta_cost_per_lead).toFixed(2)} €/lead · dosah ${(+c.meta_reach).toLocaleString('sk')} ľudí${c.meta_daily_budget?` · denný rozpočet ${(+c.meta_daily_budget).toFixed(0)} €`:''}</div>`:(c.meta_reach?`<div class="small mt-1" style="color:#7ea6d9">📘 Meta Ads: dosah ${(+c.meta_reach).toLocaleString('sk')} ľudí</div>`:'')}
+      ${c.meta_status?(()=>{
+        // Kumulatívne čísla vyzerajú rovnako pri živej aj vypnutej kampani —
+        // preto stav + výdaj za 7 dní priamo na karte.
+        const live=c.meta_status==='ACTIVE';
+        const label={ACTIVE:'beží',PAUSED:'pozastavená',CAMPAIGN_PAUSED:'kampaň pozastavená',
+          ADSET_PAUSED:'ad set pozastavený',ARCHIVED:'archivovaná',DELETED:'zmazaná',
+          IN_PROCESS:'spracováva sa',WITH_ISSUES:'má problém',PENDING_REVIEW:'čaká na schválenie',
+          DISAPPROVED:'zamietnutá'}[c.meta_status]||c.meta_status;
+        const col=live?'#4ade80':(/ISSUE|DISAPPROVED/.test(c.meta_status)?'#ff8a8a':'#9d9788');
+        return `<div class="small mt-1" style="color:${col}">${live?'🟢':'⏸️'} ${label}${c.spend_7d!=null?` · za 7 dní minula ${(+c.spend_7d).toFixed(2)} €`:''}</div>`;
+      })():''}
       ${c.meta_synced_at?`<div class="small" style="color:#5a7d5a;font-size:.7rem">🔄 Automaticky synchronizované z Meta Ads · ${fmtDate(c.meta_synced_at)}</div>`:''}
     </div></div>`;
   }).join('');

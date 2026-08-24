@@ -1527,6 +1527,23 @@ async function seedData() {
     await q.insert(db.settings,{key:'google_campaign_20260814', value:true, at:nowISO()});
   }
 
+  // 24.8.: kampane bez utm_key sa nedali merať — platili sme za kliky, ktoré nemali
+  // kam zapadnúť (Video HEJ BABY 141 klikov, Kreatívny test 423 klikov, obe 0 registrácií
+  // na karte, hoci vo funneli boli registrácie s utm_campaign fa-test-*).
+  // Odkaz v reklame musí niesť rovnaký ?utm_campaign= ako je tu utm_key.
+  if(!(await q.one(db.settings,{key:'utm_keys_20260824'}))){
+    const fix=[
+      ['FA — Video HEJ BABY',            'fa-video-hej-baby'],
+      ['FA — Kreatívny test (Hormozi 28)','fa-test-*'],
+    ];
+    for(const [name,key] of fix){
+      const c=await q.one(db.campaigns,{name});
+      if(c && !c.utm_key) await q.update(db.campaigns,{_id:c._id},{$set:{utm_key:key}});
+    }
+    await q.insert(db.settings,{key:'utm_keys_20260824', value:true, at:nowISO()});
+    console.log('🎯 Doplnené utm_key pre Video HEJ BABY a Kreatívny test');
+  }
+
   // 14.8.: oprava A/B kariet — A/B karta nemala meta_ad_id, takže sync nemal čo
   // stiahnuť (ukazovala nuly, hoci reklama minula 63 €). Nové mapovanie:
   //  · Web karta = CELÁ kampaň 52538230154873 (všetky reklamy vrátane A/B)
@@ -15130,6 +15147,16 @@ async function syncMetaCampaignStats(force){
           meta_reach:+row.reach||0, meta_synced_at:nowISO()};
         const leads=(row.actions||[]).find(a=>a.action_type==='lead');
         if(leads){ upd.meta_leads=+leads.value||0; if(upd.spend&&upd.meta_leads) upd.meta_cost_per_lead=+(upd.spend/upd.meta_leads).toFixed(2); }
+        // Beží kampaň ešte? Bez toho sa z karty nedá zistiť — čísla sú kumulatívne
+        // od štartu, takže vypnutá kampaň vyzerá presne ako živá.
+        try{
+          const st=await (await fetch(`https://graph.facebook.com/v21.0/${targetId}?fields=effective_status&access_token=${encodeURIComponent(tok)}`)).json();
+          if(!st.error && st.effective_status) upd.meta_status=st.effective_status;
+        }catch(e){}
+        try{
+          const w=await (await fetch(`https://graph.facebook.com/v21.0/${targetId}/insights?fields=spend&date_preset=last_7d&access_token=${encodeURIComponent(tok)}`)).json();
+          upd.spend_7d = (!w.error && w.data && w.data[0]) ? +w.data[0].spend||0 : 0;
+        }catch(e){}
         await q.update(db.campaigns,{_id:c._id},{$set:upd}); updated++;
       }catch(e){ console.error('meta sync', c.name, e.message); }
     }
@@ -15421,6 +15448,12 @@ app.get('/api/admin/campaigns', adminAuth, async(req,res)=>{
     }).sort((a,b)=>(b.date_from||'').localeCompare(a.date_from||''));
     res.json(out);
   } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Vynútená synchronizácia z Meta Ads (inak beží max. raz za 6 h)
+app.post('/api/admin/campaigns/sync', adminAuth, async(req,res)=>{
+  try{ res.json(await syncMetaCampaignStats(true)); }
+  catch(e){ res.status(500).json({error:e.message}); }
 });
 
 app.post('/api/admin/campaigns', adminAuth, async(req,res)=>{
