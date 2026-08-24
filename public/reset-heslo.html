@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nové heslo – Fusion Academy</title>
+<link rel="icon" type="image/png" href="/logo-mark.png">
+<meta name="robots" content="noindex">
+<style>
+:root{--gold:#C9A84C;--cream:#EAE3D5;--muted:#b9b3a6}
+*{box-sizing:border-box}
+body{background:#12100a;color:var(--cream);font-family:'Segoe UI',system-ui,sans-serif;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:18px}
+.card{background:#1a1712;border:1px solid rgba(201,168,76,.35);border-radius:18px;max-width:420px;width:100%;padding:28px}
+h1{font-size:1.25rem;margin:0 0 6px;color:var(--gold)}
+p{color:var(--muted);font-size:.88rem;line-height:1.55;margin:0 0 16px}
+label{display:block;font-size:.8rem;color:var(--muted);margin:12px 0 5px}
+input{width:100%;background:#0f0d09;border:1px solid rgba(255,255,255,.14);border-radius:11px;color:var(--cream);padding:12px 14px;font-size:1rem}
+input:focus{outline:none;border-color:var(--gold)}
+button{width:100%;margin-top:18px;background:linear-gradient(102deg,#C9A84C,#E7C878);color:#1a1206;border:none;border-radius:12px;padding:13px;font-weight:800;font-size:1rem;cursor:pointer}
+button:disabled{opacity:.6;cursor:default}
+.msg{margin-top:12px;font-size:.85rem;display:none;border-radius:10px;padding:10px 12px}
+.msg.err{display:block;background:rgba(229,115,115,.12);border:1px solid rgba(229,115,115,.4);color:#f0a9a9}
+.msg.ok{display:block;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.4);color:#9fd894}
+.logo{display:block;margin:0 auto 14px;width:56px}
+a{color:var(--gold)}
+</style>
+</head>
+<body>
+<div class="card">
+  <img src="/logo-mark.png" alt="Fusion Academy" class="logo">
+  <h1>🔐 Nastav si nové heslo</h1>
+  <p>Zadaj nové heslo k svojmu účtu Fusion Academy. Po uložení ťa rovno prihlásime.</p>
+  <label>Nové heslo</label>
+  <input type="password" id="p1" placeholder="Aspoň 6 znakov" autocomplete="new-password">
+  <label>Nové heslo ešte raz</label>
+  <input type="password" id="p2" placeholder="Zopakuj heslo" autocomplete="new-password">
+  <button id="btn" onclick="go()">Uložiť nové heslo</button>
+  <div class="msg" id="msg"></div>
+</div>
+<script>
+const TOKEN=new URLSearchParams(location.search).get('t')||'';
+const msg=document.getElementById('msg');
+if(!/^[a-f0-9]{64}$/.test(TOKEN)){
+  msg.className='msg err';
+  msg.textContent='Odkaz je neúplný — otvor ho prosím priamo z e-mailu, ktorý sme ti poslali.';
+  document.getElementById('btn').disabled=true;
+}
+async function go(){
+  const p1=document.getElementById('p1').value, p2=document.getElementById('p2').value;
+  msg.className='msg'; msg.textContent='';
+  if(p1.length<6){ msg.className='msg err'; msg.textContent='Heslo musí mať aspoň 6 znakov.'; return; }
+  if(p1!==p2){ msg.className='msg err'; msg.textContent='Heslá sa nezhodujú.'; return; }
+  const btn=document.getElementById('btn'); btn.disabled=true; btn.textContent='Ukladám…';
+  try{
+    const r=await fetch('/api/reset-password',{method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TOKEN,password:p1})});
+    const d=await r.json();
+    if(!r.ok||d.error) throw new Error(d.error||'Nepodarilo sa uložiť heslo.');
+    msg.className='msg ok'; msg.textContent='Heslo uložené — presmerúvam ťa do appky…';
+    setTimeout(()=>{ location.href=d.redirect_to||'/client-dashboard'; }, 1200);
+  }catch(e){
+    msg.className='msg err'; msg.textContent=e.message;
+    btn.disabled=false; btn.textContent='Uložiť nové heslo';
+  }
+}
+document.getElementById('p2').addEventListener('keydown',e=>{ if(e.key==='Enter') go(); });
+</script>
+</body>
+</html>

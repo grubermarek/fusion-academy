@@ -2553,6 +2553,56 @@ app.post('/api/login', rlLogin, async(req,res)=>{
 
 app.post('/api/logout',(req,res)=>{ req.session.destroy(); res.json({ok:true}); });
 
+// ── Zabudnuté heslo: klientka si ho resetne sama cez e-mail ──────────────────
+// Bez potvrdzovania existencie účtu (žiadne user-enumeration), token platí 60 min,
+// v DB je len jeho SHA-256 hash. Po resete sa zneplatnia staré prihlásenia (sess_ver).
+const rlForgot = rateLimit({max:5, windowMs:15*60*1000, message:'Priveľa žiadostí o reset hesla. Skús to o 15 minút.'});
+app.post('/api/forgot-password', rlForgot, async(req,res)=>{
+  try{
+    const email=String(req.body.email||'').toLowerCase().trim();
+    res.json({ok:true, message:'Ak účet existuje, poslali sme naň e-mail s odkazom na reset hesla.'});
+    if(!email || !/@/.test(email) || /@import\.local$|@guest\./i.test(email)) return;
+    const u=await q.one(db.users,{email});
+    if(!u || u.active===false) return;
+    if(!u.password && u.google_id){
+      await sendMail(email,'Prihlásenie do Fusion Academy',
+        emailTemplate('Tvoj účet používa Google 💛',
+        '<p>Chcela si si resetovať heslo, ale tvoj účet nemá heslo — prihlasuješ sa tlačidlom <b>Prihlásiť sa cez Google</b> (účet '+email+').</p><p>Ak si o reset nežiadala ty, tento e-mail pokojne ignoruj.</p>',
+        '🔑 Prihlásiť sa', APP_URL+'/')).catch(()=>{});
+      return;
+    }
+    const crypto=require('crypto');
+    const token=crypto.randomBytes(32).toString('hex');
+    const hash=crypto.createHash('sha256').update(token).digest('hex');
+    await q.update(db.users,{_id:u._id},{$set:{pw_reset_token_hash:hash, pw_reset_expires:new Date(Date.now()+60*60*1000).toISOString()}});
+    const first=String(u.name||'').split(' ')[0]||'tanečníčka';
+    await sendMail(email,'Reset hesla — Fusion Academy',
+      emailTemplate('Ahoj '+first+'! 🔑',
+      '<p>Prišla nám žiadosť o reset hesla k tvojmu účtu. Nové heslo si nastavíš kliknutím na tlačidlo — odkaz platí <b>60 minút</b>.</p><p>Ak si o reset nežiadala ty, tento e-mail ignoruj — heslo zostáva nezmenené.</p>',
+      '🔐 Nastaviť nové heslo', APP_URL+'/reset-heslo?t='+token)).catch(()=>{});
+  }catch(e){ console.error('forgot-password:', e.message); }
+});
+
+app.post('/api/reset-password', rlLogin, async(req,res)=>{
+  try{
+    const token=String(req.body.token||''); const password=String(req.body.password||'');
+    if(!/^[a-f0-9]{64}$/.test(token)) return res.status(400).json({error:'Neplatný odkaz na reset hesla.'});
+    if(password.length<6) return res.status(400).json({error:'Heslo musí mať aspoň 6 znakov.'});
+    const crypto=require('crypto');
+    const hash=crypto.createHash('sha256').update(token).digest('hex');
+    const u=await q.one(db.users,{pw_reset_token_hash:hash});
+    if(!u || !u.pw_reset_expires || u.pw_reset_expires < nowISO())
+      return res.status(400).json({error:'Odkaz je neplatný alebo vypršal (platí 60 minút). Požiadaj o reset znova.'});
+    const newVer=(u.sess_ver||0)+1;
+    await q.update(db.users,{_id:u._id},{$set:{password:await bcrypt.hash(password,10), sess_ver:newVer},
+      $unset:{pw_reset_token_hash:true, pw_reset_expires:true, pw_reset:true}});
+    req.session.uid=u._id; req.session.sv=newVer; // rovno ju prihlás
+    await q.insert(db.notifications,{user_id:u._id,type:'security',title:'🔐 Heslo zmenené',
+      body:'Tvoje heslo bolo práve zmenené cez e-mailový reset. Ak si to nebola ty, ozvi sa nám.',read:false,created_at:nowISO()}).catch(()=>{});
+    res.json({ok:true, redirect_to:dashUrlFor(u)});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Klient si po admin resete vytvorí nové heslo (bez starého). Funguje len ak má nastavený pw_reset.
 app.post('/api/set-new-password', rlLogin, async(req,res)=>{
   try {
@@ -15437,6 +15487,7 @@ app.get('/obchod',     (req,res)=>res.sendFile(path.join(__dirname,'public','obc
 // Jeden obchod: cenník žije v /obchod (staré linky v mailoch/na webe presmerujeme)
 app.get('/pricing',    (req,res)=>res.redirect(302,'/obchod'+(req.originalUrl.includes('?')?'?'+req.originalUrl.split('?')[1]:'')));
 app.get('/u/:id',      (req,res)=>res.sendFile(path.join(__dirname,'public','profile.html')));
+app.get('/reset-heslo', (req,res)=>res.sendFile(path.join(__dirname,'public','reset-heslo.html')));
 app.get('/vencek',     (req,res)=>res.sendFile(path.join(__dirname,'public','vencek.html')));
 app.get('/vencek-booking', (req,res)=>res.sendFile(path.join(__dirname,'public','vencek-booking.html')));
 app.get('/invite', (req,res)=>{ const qs=req.url.includes('?')?req.url.slice(req.url.indexOf('?')):''; res.redirect('/invite/FUSION'+qs); });

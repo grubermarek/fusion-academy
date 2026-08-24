@@ -1000,6 +1000,7 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
     <div class="form-group">
       <label>Heslo</label>
       <input type="password" id="lPass" placeholder="Vaše heslo">
+      <div style="text-align:right;margin-top:5px"><a href="#" onclick="forgotPw();return false" style="color:#C9A84C;font-size:.78rem;text-decoration:none">Zabudnuté heslo?</a></div>
     </div>
     <button class="btn-primary" onclick="doLogin()">
       <i class="bi bi-box-arrow-in-right"></i>&nbsp; <span data-i18n="auth.login_btn">Prihlásiť sa</span>
@@ -1013,7 +1014,7 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
         <i class="bi bi-key"></i>&nbsp; Vytvoriť nové heslo
       </button>
     </div>
-    <p style="text-align:center;margin-top:14px;font-size:.86rem"><a href="#" id="lForgot" onclick="showResetBox();return false" style="color:var(--gold)">Zabudli ste heslo?</a></p>
+    
   </div>
 </div>
 
@@ -1631,6 +1632,17 @@ function openLogin(){document.getElementById('loginModal').style.display='flex';
 if(new URLSearchParams(location.search).get('login')==='1'){ window.addEventListener('load',()=>setTimeout(openLogin,300)); }
 function closeLogin(){document.getElementById('loginModal').style.display='none';}
 
+async function forgotPw(){
+  const email=(document.getElementById('lEmail').value||'').trim();
+  const err=document.getElementById('loginErr');
+  if(!email||!/@/.test(email)){ err.textContent='Napíš hore svoj e-mail a klikni na Zabudnuté heslo znova.'; err.style.display='block'; document.getElementById('lEmail').focus(); return; }
+  err.style.display='none';
+  try{
+    await fetch('/api/forgot-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+  }catch(e){}
+  err.style.display='block'; err.style.background='rgba(74,222,128,.1)'; err.style.borderColor='rgba(74,222,128,.4)'; err.style.color='#9fd894';
+  err.textContent='📧 Ak účet s týmto e-mailom existuje, poslali sme naň odkaz na reset hesla (platí 60 minút). Skontroluj aj spam.';
+}
 async function doLogin(){
   const email=document.getElementById('lEmail').value.trim();
   const pass=document.getElementById('lPass').value;
