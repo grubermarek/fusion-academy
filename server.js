@@ -15462,8 +15462,19 @@ app.get('/api/admin/meta/inventory', adminAuth, async(req,res)=>{
     const camps=await gj(`${META_ACT}/campaigns?fields=id,name,effective_status,created_time&limit=200`);
     if(camps.error) return res.status(400).json({error:camps.error.message});
     const ads=await gj(`${META_ACT}/ads?fields=id,name,campaign_id,adset_id,effective_status,creative{id,url_tags,object_story_spec{link_data{link}}}&limit=300`);
+    // Ktoré kampane reálne míňajú — „ACTIVE" pri doboostovanom príspevku ešte
+    // neznamená, že tečú peniaze, a naopak.
+    let spend7={}, spend30={};
+    if(req.query.insights){
+      const ins=async preset=>{
+        const r=await gj(`${META_ACT}/insights?level=campaign&fields=campaign_id,campaign_name,spend&date_preset=${preset}&limit=500`);
+        const m={}; (r.data||[]).forEach(x=>{ m[x.campaign_id]=+x.spend||0; }); return m;
+      };
+      spend7=await ins('last_7d'); spend30=await ins('last_30d');
+    }
     res.json({ ok:true,
-      campaigns:(camps.data||[]).map(c=>({id:c.id, name:c.name, status:c.effective_status, created:(c.created_time||'').slice(0,10)})),
+      campaigns:(camps.data||[]).map(c=>({id:c.id, name:c.name, status:c.effective_status, created:(c.created_time||'').slice(0,10),
+        spend_7d:spend7[c.id]??null, spend_30d:spend30[c.id]??null})),
       ads:(ads.data||[]).map(a=>({ id:a.id, name:a.name, campaign_id:a.campaign_id, status:a.effective_status,
         creative_id:a.creative?.id||null, url_tags:a.creative?.url_tags||null,
         link:a.creative?.object_story_spec?.link_data?.link||null })) });
