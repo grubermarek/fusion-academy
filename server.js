@@ -185,6 +185,7 @@ const db = {
   private_recurring: new Datastore({ filename: path.join(DATA_DIR, 'private_recurring.db'), autoload: true }),
   business_snapshots: new Datastore({ filename: path.join(DATA_DIR, 'business_snapshots.db'), autoload: true }),
   mail_log:     new Datastore({ filename: path.join(DATA_DIR, 'mail_log.db'), autoload: true }),
+  feedback:     new Datastore({ filename: path.join(DATA_DIR, 'feedback.db'), autoload: true }),
   venceky_schools:  new Datastore({ filename: path.join(DATA_DIR, 'venceky_schools.db'),  autoload: true }),
   venceky_classes:  new Datastore({ filename: path.join(DATA_DIR, 'venceky_classes.db'),  autoload: true }),
   venceky_payments: new Datastore({ filename: path.join(DATA_DIR, 'venceky_payments.db'), autoload: true }),
@@ -2811,6 +2812,81 @@ app.get('/api/next-class/suggestions', auth, async(req,res)=>{
       .some(b=>b.status!=='cancelled' && String(b.booking_date||'')>=today());
     if(future) return res.json({ok:true, eligible:false, items:[]});
     res.json({ok:true, eligible:true, items:await firstClassSuggestions(u,4)});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── FUNNEL-010: hviezdičky po 1. hodine — 1 otázka, vetvenie low/high ──
+// Zobrazí sa max 21 dní od prvej odchodenej hodiny (first_attended_at), 1× na osobu.
+// Import účty (Glofox) sa nepýtame — „prvá hodina" u nich nedáva zmysel.
+app.get('/api/feedback/first-class', auth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.session.uid});
+    const no={ok:true, eligible:false};
+    if(!u || u.is_admin || u.is_child || ['trainer','manager','admin'].includes(u.user_type)) return res.json(no);
+    if(u.account_creation_type==='import') return res.json(no);
+    if(!u.first_attended_at) return res.json(no);
+    const ageD=(Date.now()-Date.parse(u.first_attended_at))/864e5;
+    if(!(ageD>=0 && ageD<=21)) return res.json(no);
+    if(await q.one(db.feedback,{user_id:u._id, type:'first_class'})) return res.json(no);
+    res.json({ok:true, eligible:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.post('/api/feedback/first-class', auth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.session.uid});
+    if(!u) return res.status(401).json({error:'Neprihlásená'});
+    const rating=Math.round(+req.body.rating);
+    if(!(rating>=1 && rating<=5)) return res.status(400).json({error:'Hodnotenie musí byť 1–5 hviezdičiek.'});
+    const comment=String(req.body.comment||'').slice(0,600).trim();
+    if(await q.one(db.feedback,{user_id:u._id, type:'first_class'})) return res.json({ok:true, already:true});
+    await q.insert(db.feedback,{user_id:u._id, user_name:u.name, type:'first_class', rating,
+      comment:comment||null, city:u.city||'', first_attended_at:u.first_attended_at||null, created_at:nowISO()});
+    const admins=await q.find(db.users,{is_admin:true});
+    const escH=s=>String(s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+    if(rating<=3){
+      // slabé hodnotenie → Marek reaguje osobne, kým sa klientka dá zachrániť
+      for(const a of admins){
+        await q.insert(db.notifications,{user_id:a._id, type:'feedback_low',
+          title:`⚠️ Prvá hodina len ${rating}★ — ${u.name}`,
+          body:(comment?`„${comment}"`:'Bez komentára')+` · ${u.city||'—'} · ${u.phone||u.email||''}`,
+          read:false, created_at:nowISO()}).catch(()=>{});
+        if(a.email) sendMail(a.email, `⚠️ Slabé hodnotenie prvej hodiny: ${rating}★ — ${u.name}`,
+          emailTemplate('Rýchla reakcia môže klientku zachrániť',
+            `<p><b>${u.name}</b> (${u.city||'—'}) ohodnotila svoju prvú hodinu na <b>${rating}★</b>.</p>
+             <p>${comment?('Komentár: <i>„'+escH(comment)+'"</i>'):'Bez komentára.'}</p>
+             <p>Kontakt: ${u.phone||'—'} · ${u.email||'—'}</p>
+             <p>Zavolaj jej dnes — osobný záujem po zlej skúsenosti je najsilnejší záchranný krok.</p>`,
+            '📋 Otvoriť CRM', `${APP_URL}/admin`), {priority:4}).catch(()=>{});
+      }
+    } else {
+      for(const a of admins) await q.insert(db.notifications,{user_id:a._id, type:'feedback',
+        title:`🌟 Prvá hodina ${rating}★ — ${u.name}`,
+        body:(comment?`„${comment}" · `:'')+(u.city||'—'),
+        read:false, created_at:nowISO()}).catch(()=>{});
+    }
+    res.json({ok:true, rating});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Response rate + rozloženie hodnotení (default okno 30 dní)
+app.get('/api/admin/feedback/summary', adminAuth, async(req,res)=>{
+  try{
+    const days=Math.min(365, Math.max(1, +req.query.days||30));
+    const cutoff=new Date(Date.now()-days*864e5).toISOString();
+    const rows=(await q.find(db.feedback,{type:'first_class'})).filter(r=>String(r.created_at||'')>=cutoff);
+    const base=(await q.find(db.users,{})).filter(x=>!x.is_child && !x.is_admin
+      && !['trainer','manager','admin'].includes(x.user_type)
+      && x.account_creation_type!=='import'
+      && String(x.first_attended_at||'')>=cutoff);
+    const dist={1:0,2:0,3:0,4:0,5:0};
+    rows.forEach(r=>{ dist[r.rating]=(dist[r.rating]||0)+1; });
+    const avg=rows.length? +(rows.reduce((s,r)=>s+r.rating,0)/rows.length).toFixed(2) : null;
+    res.json({ok:true, days, responses:rows.length, eligible_base:base.length,
+      response_rate: base.length? +(rows.length/base.length*100).toFixed(1) : null,
+      avg, dist, low:rows.filter(r=>r.rating<=3).length,
+      latest:rows.sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))).slice(0,15)
+        .map(r=>({name:r.user_name, rating:r.rating, comment:r.comment, city:r.city, at:r.created_at}))});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -13567,8 +13643,10 @@ app.post('/api/attendance/manual-booking', trainerAuth, async(req,res)=>{
       methodNote = '🏅 Členstvo';
     }
     upd.visit_count = (u.visit_count||0) + 1;
-    if((u.visit_count||0)===0 && !u.is_child) // 1. odchodená hodina — event_id fca_<uid> dedupne s creditAttendance
+    if((u.visit_count||0)===0 && !u.is_child){ // 1. odchodená hodina — event_id fca_<uid> dedupne s creditAttendance
       metaCapi('FirstClassAttended',{email:u.email, fbclid:u.fbclid, event_id:'fca_'+u._id}).catch(()=>{});
+      stampFirst(u._id, 'first_attended_at', nowISO()).catch(()=>{});
+    }
     if(u.winback_sent) upd.winback_sent = false;
     applyLeadTrial(upd, u); // lead → automaticky „Bola na hodine"
 

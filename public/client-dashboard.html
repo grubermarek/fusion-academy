@@ -352,6 +352,7 @@
 
 
   <!-- ONLINE hodina — blíži sa / LIVE -->
+  <div id="fbCard" style="display:none;margin-bottom:16px"></div>
   <div id="stateStrip" style="display:none;margin-bottom:16px"></div>
   <div id="firstClassHero" style="display:none;margin-bottom:16px"></div>
   <div id="nextClassCard" style="display:none;margin-bottom:16px"></div>
@@ -1833,6 +1834,53 @@ async function loadFirstClassHero(me){
   host.style.display='block';
 }
 /* ── FUNNEL-007: NEXT BEST ACTION podľa customer state ─────────────────── */
+/* ── FUNNEL-010: hviezdičky po 1. hodine (1 otázka, low/high vetvenie) ── */
+async function loadFeedbackCard(me){
+  const host=document.getElementById('fbCard'); if(!host) return;
+  if(me.is_admin || me.is_child) return;
+  const d=await api('/api/feedback/first-class').catch(()=>null);
+  if(!d || !d.eligible){ host.style.display='none'; return; }
+  const stars=[1,2,3,4,5].map(n=>'<button class="fbStar" data-n="'+n+'" onclick="fbRate('+n+')" '
+    +'style="background:none;border:none;font-size:2rem;cursor:pointer;filter:grayscale(1);opacity:.45;transition:all .15s;padding:2px 4px">⭐</button>').join('');
+  host.innerHTML='<div style="background:linear-gradient(135deg,rgba(201,168,76,.14),rgba(201,168,76,.04));border:1px solid rgba(201,168,76,.5);border-radius:16px;padding:16px 18px">'
+    +'<div style="font-weight:900;color:#fff;font-size:1rem">Ako ti sadla tvoja prvá hodina? 💃</div>'
+    +'<div style="font-size:.8rem;color:var(--muted,#999);margin:2px 0 6px">Jedno klepnutie — pomôže nám to robiť hodiny lepšie.</div>'
+    +'<div id="fbStars" style="text-align:center">'+stars+'</div>'
+    +'<div id="fbLow" style="display:none;margin-top:8px">'
+    +'<textarea id="fbComment" maxlength="600" placeholder="Čo môžeme zlepšiť? (nepovinné)" style="width:100%;min-height:70px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:10px;color:#fff;padding:10px;font-family:inherit;font-size:.85rem"></textarea>'
+    +'<button onclick="fbSubmitLow()" style="width:100%;margin-top:6px;background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);border:none;color:#161310;font-weight:900;padding:11px;border-radius:10px;cursor:pointer">ODOSLAŤ</button>'
+    +'</div></div>';
+  host.style.display='block';
+}
+let FB_RATING=0;
+function fbPaint(n){
+  document.querySelectorAll('.fbStar').forEach(b=>{
+    const on=+b.dataset.n<=n;
+    b.style.filter=on?'none':'grayscale(1)'; b.style.opacity=on?'1':'.45';
+    b.style.transform=on?'scale(1.12)':'scale(1)';
+  });
+}
+async function fbRate(n){
+  FB_RATING=n; fbPaint(n);
+  if(n>=4){ // spokojná → poďakovanie + ďalší krok
+    await api('/api/feedback/first-class',{method:'POST',body:{rating:n}}).catch(()=>null);
+    document.getElementById('fbCard').innerHTML='<div style="background:linear-gradient(135deg,rgba(74,222,128,.10),rgba(201,168,76,.07));border:1px solid rgba(201,168,76,.5);border-radius:16px;padding:16px 18px;text-align:center">'
+      +'<div style="font-weight:900;color:#fff">Ďakujeme! 💛 Sme radi, že sa ti u nás páčilo.</div>'
+      +'<div style="font-size:.8rem;color:var(--muted,#999);margin:4px 0 8px">Najlepší ďalší krok? Rezervuj si rovno ďalšiu hodinu.</div>'
+      +'<a href="/schedule" style="display:inline-block;background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);color:#161310;font-weight:900;padding:10px 22px;border-radius:10px;text-decoration:none">POZRIEŤ ROZVRH →</a></div>';
+  } else { // nespokojná → priestor na komentár, admin dostane echo
+    document.getElementById('fbLow').style.display='block';
+    document.getElementById('fbComment').focus();
+  }
+}
+async function fbSubmitLow(){
+  const c=document.getElementById('fbComment').value.trim();
+  await api('/api/feedback/first-class',{method:'POST',body:{rating:FB_RATING,comment:c}}).catch(()=>null);
+  document.getElementById('fbCard').innerHTML='<div style="background:linear-gradient(135deg,rgba(201,168,76,.14),rgba(201,168,76,.04));border:1px solid rgba(201,168,76,.5);border-radius:16px;padding:16px 18px;text-align:center">'
+    +'<div style="font-weight:900;color:#fff">Ďakujeme za úprimnosť 🙏</div>'
+    +'<div style="font-size:.82rem;color:var(--muted,#999);margin-top:4px">Mrzí nás to — pozrieme sa na to a ozveme sa ti osobne.</div></div>';
+}
+
 async function loadStateStrip(me){
   const host=document.getElementById('stateStrip'); if(!host) return;
   if(me.is_admin || me.is_child) return;
@@ -1949,6 +1997,7 @@ async function init(){
   loadFirstClassHero(me);
   loadNextClassCard(me);
   loadStateStrip(me);
+  loadFeedbackCard(me);
   if(me.notif_count>0){const b=document.getElementById('notifBadge');b.textContent=me.notif_count>9?'9+':me.notif_count;b.style.display='flex';}
   if(me.user_type==='partner'||me.user_type==='manager'){document.getElementById('partnerDashLink').style.display='block';}
   // Load profile (loyalty, visits)
