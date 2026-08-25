@@ -2601,6 +2601,101 @@ async function firstBookingEligible(u){
   if(mem) return false;
   return true;
 }
+// FUNNEL-002: verejný rozvrh pre acquisition landing — najbližšie prezenčné
+// termíny podľa mesta (bez prihlásenia, bez osobných dát; len kapacita voľné/plné).
+app.get('/api/first-class/schedule', rlPublic, async(req,res)=>{
+  try{
+    const CITY_SLUGS={'detva':'Detva','zvolen':'Zvolen','banska-bystrica':'Banská Bystrica','bb':'Banská Bystrica','brezno':'Brezno'};
+    const city=CITY_SLUGS[String(req.query.city||'').toLowerCase()]||null;
+    const classes=(await q.find(db.classes,{active:true}))
+      .filter(c=>c.category!=='Online' && !/rezervácia/i.test(String(c.name||'')));
+    const out=[];
+    for(const c of classes){
+      const date=displayNextDateForDay(c.day_of_week);
+      if(!date || !classRunsOn(c,date)) continue;
+      if(await q.one(db.class_cancellations,{class_id:c._id, date})) continue;
+      const booked=(await q.find(db.bookings,{class_id:c._id, booking_date:date})).filter(b=>b.status!=='cancelled').length;
+      out.push({ class_id:c._id, name:c.name, emoji:c.emoji||'💃', city:c.location||'', address:c.address||'',
+        date, day_name:DAYS_SK[c.day_of_week]||'', time_start:c.time_start||'', time_end:c.time_end||'',
+        full: !!(c.capacity && booked>=c.capacity) });
+    }
+    out.sort((a,b)=>(a.date+a.time_start).localeCompare(b.date+b.time_start));
+    res.json({ok:true, city, items: city? out.filter(i=>i.city===city) : out,
+      cities:[...new Set(out.map(i=>i.city))]});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// FUNNEL-002: rezervácia prvej hodiny z landingu — konto vznikne na pozadí
+// (self_registration, registration_at=teraz, atribúcia first-touch + current UTM).
+// Zrkadlí guest-invite flow: dedupe podľa kontaktu, kapacita, potvrdenie mailom.
+app.post('/api/first-class/book', rlPublic, async(req,res)=>{
+  try{
+    const name=String(req.body.name||'').trim().slice(0,80);
+    const email=String(req.body.email||'').trim().toLowerCase().slice(0,120);
+    const phone=String(req.body.phone||'').trim().slice(0,30);
+    if(name.length<2) return res.status(400).json({error:'Napíš nám svoje meno 🙂'});
+    if(!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return res.status(400).json({error:'Zadaj platný e-mail — pošleme ti naň potvrdenie rezervácie.'});
+    const cls=await q.one(db.classes,{_id:String(req.body.class_id||'')});
+    if(!cls||!cls.active||cls.category==='Online') return res.status(404).json({error:'Hodina nenájdená'});
+    const bdate=String(req.body.booking_date||displayNextDateForDay(cls.day_of_week));
+    if(await q.one(db.class_cancellations,{class_id:cls._id, date:bdate})) return res.status(400).json({error:'Táto hodina je zrušená — vyber si prosím inú.'});
+    const booked=(await q.find(db.bookings,{class_id:cls._id, booking_date:bdate})).filter(b=>b.status!=='cancelled').length;
+    if(cls.capacity && booked>=cls.capacity) return res.status(400).json({error:'Hodina je už plná — vyber si prosím inú.'});
+
+    const attr=req.body.attribution||{}; const clean=v=>String(v||'').slice(0,300);
+    let u=await q.one(db.users,{email});
+    const isNew=!u;
+    if(u){
+      if(await q.one(db.bookings,{user_id:u._id, class_id:cls._id, booking_date:bdate, status:{$ne:'cancelled'}}))
+        return res.status(409).json({error:'Na tento termín už máš rezerváciu. 💛'});
+      if(u.free_class_used) return res.status(409).json({error:'Tento e-mail už u nás má účet a prvú hodinu zadarmo si už vyskúšal(a). Prihlás sa do appky a rezervuj si hodinu tam. 💛', existing:true});
+    } else {
+      let lead_source='landing';
+      if(clean(attr.gclid)) lead_source='google'; else if(clean(attr.fbclid)) lead_source='meta';
+      else if(clean(attr.utm_source)) lead_source=clean(attr.utm_source).toLowerCase();
+      const code='FC'+Math.random().toString(36).slice(2,8).toUpperCase();
+      u=await q.insert(db.users,{ name, email, phone, password:null, referral_code:code, sponsor_id:null,
+        rank:1, is_admin:false, active:true, user_type:'lead', bank_account:'', notes:'', visit_count:0,
+        referral_credit:0, lead_source, city:cls.location||'',
+        utm_source:clean(attr.utm_source), utm_medium:clean(attr.utm_medium), utm_campaign:clean(attr.utm_campaign),
+        fbclid:clean(attr.fbclid), gclid:clean(attr.gclid), landing_page:clean(attr.landing), referrer:clean(attr.referrer),
+        consent_at:nowISO(), created_at:today(),
+        account_creation_type:'self_registration', registration_at:nowISO(), registration_at_source:'actual',
+        manage_token:'MG'+Math.random().toString(36).slice(2,12).toUpperCase() });
+      announceNewMember(u._id).catch(()=>{});
+      enqueueSequence(u._id,'welcome').then(()=>processEmailQueue()).catch(()=>{});
+    }
+    if(!u.manage_token){ u.manage_token='MG'+Math.random().toString(36).slice(2,12).toUpperCase();
+      await q.update(db.users,{_id:u._id},{$set:{manage_token:u.manage_token}}); }
+    const booking=await q.insert(db.bookings,{
+      class_id:cls._id, class_name:cls.name, class_emoji:cls.emoji||'💃',
+      class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
+      day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
+      user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||phone||'',
+      booked_by:u._id, booked_by_name:u.name, is_child_booking:false, child_name:null,
+      booking_date:bdate, status:'confirmed', notes:'', free_class:!u.free_class_used,
+      access_method:'free_class', source:'prva-hodina', created_at:nowISO() });
+    await q.update(db.users,{_id:u._id},{$set:{free_class_used:true, winback_sent:false, ...(phone&&!u.phone?{phone}:{})}});
+    try{
+      const admins=await q.find(db.users,{is_admin:true});
+      for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'new_lead',
+        title:'🆕 Prvá hodina z landing page', body:`${name} · ${cls.name} ${cls.location} ${bdate} ${cls.time_start}`,
+        read:false, created_at:nowISO()});
+    }catch(e){}
+    sendMail(email, 'Tešíme sa na teba! 💃 Prvá hodina zdarma je rezervovaná',
+      emailTemplate('Máš to! 🎉',
+      '<p>Ahoj '+String(name).split(' ')[0]+', tvoje miesto je rezervované:</p>'
+      +'<p style="line-height:1.9">'+ (cls.emoji||'💃') +' <b>'+cls.name+'</b><br>📍 '+cls.location+' — '+(cls.address||'')+'<br>📅 '+DAYS_SK[cls.day_of_week]+' '+bdate.slice(8,10)+'. '+bdate.slice(5,7)+'.<br>⏰ '+cls.time_start+'–'+(cls.time_end||'')+'</p>'
+      +'<p>Na hodinu si stačí priniesť: 💧 vodu · 👟 tenisky · 🧣 malý uterák · 👕 športové oblečenie.</p>'
+      +'<p>Nemusíš vedieť tancovať ani poznať kroky — trénerka ťa prevedie hodinou. <b>Prvá hodina je zdarma.</b></p>'
+      +'<p>Nemôžeš prísť? Termín zmeníš alebo zrušíš cez odkaz nižšie.</p>',
+      '📍 Detaily / zmena rezervácie', APP_URL+'/invite/FUSION?manage='+u.manage_token)).catch(()=>{});
+    res.json({ok:true, booking_id:booking._id, is_new:isNew, manage_token:u.manage_token,
+      detail:{ name:cls.name, emoji:cls.emoji||'💃', city:cls.location, address:cls.address||'',
+        date:bdate, day_name:DAYS_SK[cls.day_of_week], time_start:cls.time_start, time_end:cls.time_end||'' }});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/first-class/suggestions', auth, async(req,res)=>{
   try{
     const u=await q.one(db.users,{_id:req.session.uid});
@@ -15659,6 +15754,7 @@ app.get('/obchod',     (req,res)=>res.sendFile(path.join(__dirname,'public','obc
 app.get('/pricing',    (req,res)=>res.redirect(302,'/obchod'+(req.originalUrl.includes('?')?'?'+req.originalUrl.split('?')[1]:'')));
 app.get('/u/:id',      (req,res)=>res.sendFile(path.join(__dirname,'public','profile.html')));
 app.get('/reset-heslo', (req,res)=>res.sendFile(path.join(__dirname,'public','reset-heslo.html')));
+app.get('/prva-hodina', (req,res)=>res.sendFile(path.join(__dirname,'public','prva-hodina.html')));
 app.get('/vencek',     (req,res)=>res.sendFile(path.join(__dirname,'public','vencek.html')));
 app.get('/vencek-booking', (req,res)=>res.sendFile(path.join(__dirname,'public','vencek-booking.html')));
 app.get('/invite', (req,res)=>{ const qs=req.url.includes('?')?req.url.slice(req.url.indexOf('?')):''; res.redirect('/invite/FUSION'+qs); });
