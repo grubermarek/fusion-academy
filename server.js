@@ -2698,6 +2698,54 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
 
 // FUNNEL-004: „Členstvo máš aktívne 🎉 — vyber si, kedy prídeš najbližšie."
 // Karta pre platiacu klientku (členstvo alebo vstupy), ktorá nemá ŽIADNU budúcu rezerváciu.
+// FUNNEL-007: customer state (NEXT BEST ACTION). Neukladá sa — počíta sa z bookings,
+// memberships a promo kódov pri každom volaní (source-of-truth timestampy).
+app.get('/api/my-state', auth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.session.uid});
+    if(!u || u.is_admin || u.is_child || ['trainer','manager','admin'].includes(u.user_type))
+      return res.json({ok:true, state:'STAFF'});
+    const todayS=today();
+    const bks=(await q.find(db.bookings,{user_id:u._id})).filter(b=>b.status!=='cancelled');
+    const attended=bks.filter(b=>b.status==='attended');
+    const futureBk=bks.filter(b=>b.status!=='attended' && String(b.booking_date||'')>=todayS)
+      .sort((a,b)=>String(a.booking_date+a.class_time_start).localeCompare(String(b.booking_date+b.class_time_start)))[0]||null;
+    const mems=(await q.find(db.memberships,{user_id:u._id})).filter(m=>!m._type);
+    const activeMem=mems.find(m=>m.status==='active' && (!m.expires_at || new Date(m.expires_at)>new Date()));
+    const payer=!!activeMem || (u.single_entries||0)>0;
+    const hadMem=mems.length>0;
+    const lastAtt=attended.map(b=>b.booking_date).sort().pop()||null;
+    const daysSince=lastAtt?Math.floor((Date.parse(todayS)-Date.parse(lastAtt))/864e5):null;
+    const nb=futureBk?{ name:futureBk.class_name, emoji:futureBk.class_emoji||'💃', city:futureBk.class_location||'',
+      date:futureBk.booking_date, day_name:futureBk.day_name||'', time_start:futureBk.class_time_start||'' }:null;
+
+    let state, extra={};
+    if(!attended.length){
+      if(!bks.length) state='REGISTERED_NO_BOOKING';                       // hero to rieši
+      else if(futureBk){ state='FIRST_BOOKED'; extra.next_booking=nb; }
+      else state='FIRST_NO_SHOW';                                          // mala termín, účasť nevznikla
+    } else if(!payer && !hadMem){
+      state='FIRST_ATTENDED_NO_PURCHASE';
+      // 48h kupón z post-class mailu — countdown je serverový (expires_at), nie JS časovač
+      const c=(await q.find(db.promo_codes,{active:true}))
+        .find(p=>String(p.note||'')===('Follow-up po 1. hodine — '+u.name) && (p.used_count||0)<(p.max_uses||1) && String(p.expires_at||'')>nowISO());
+      if(c) extra.coupon={code:c.code, value:c.value, expires_at:c.expires_at};
+    } else if(attended.length<2 && payer){
+      state='NEW_CUSTOMER';                                                // nextClassCard to rieši
+    } else if(futureBk){
+      state='ACTIVE'; extra.next_booking=nb;
+    } else if(activeMem && daysSince!=null && daysSince>=14){
+      state='AT_RISK';
+    } else if(!activeMem && hadMem && (daysSince==null || daysSince>30)){
+      state='CHURNED';
+    } else {
+      state='ACTIVE';
+    }
+    if(['FIRST_NO_SHOW','AT_RISK','CHURNED'].includes(state)) extra.items=await firstClassSuggestions(u,3);
+    res.json({ok:true, state, last_attended:lastAtt, days_since:daysSince, city:u.city||'', ...extra});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/next-class/suggestions', auth, async(req,res)=>{
   try{
     const u=await q.one(db.users,{_id:req.session.uid});

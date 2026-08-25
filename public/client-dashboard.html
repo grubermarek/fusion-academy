@@ -352,6 +352,7 @@
 
 
   <!-- ONLINE hodina — blíži sa / LIVE -->
+  <div id="stateStrip" style="display:none;margin-bottom:16px"></div>
   <div id="firstClassHero" style="display:none;margin-bottom:16px"></div>
   <div id="nextClassCard" style="display:none;margin-bottom:16px"></div>
   <div id="onlineBanner" style="display:none;margin-bottom:16px"></div>
@@ -1831,6 +1832,58 @@ async function loadFirstClassHero(me){
     +'</div>';
   host.style.display='block';
 }
+/* ── FUNNEL-007: NEXT BEST ACTION podľa customer state ─────────────────── */
+async function loadStateStrip(me){
+  const host=document.getElementById('stateStrip'); if(!host) return;
+  if(me.is_admin || me.is_child) return;
+  const d=await api('/api/my-state').catch(()=>null);
+  if(!d || !d.ok){ host.style.display='none'; return; }
+  const fmtD=s=>s?s.slice(8,10)+'. '+s.slice(5,7)+'.':'';
+  const box=(inner,border)=>'<div style="background:linear-gradient(135deg,rgba(201,168,76,.14),rgba(201,168,76,.04));border:1px solid '+(border||'rgba(201,168,76,.5)')+';border-radius:16px;padding:16px 18px">'+inner+'</div>';
+  const rows=items=>(items||[]).map(i=>'<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid rgba(255,255,255,.07)">'
+    +'<span style="font-size:1.2rem">'+i.emoji+'</span>'
+    +'<div style="flex:1;min-width:0"><b>'+escHtml(i.name)+'</b> <span style="color:var(--gold,#C9A84C);font-weight:700">'+escHtml(i.city)+'</span>'
+    +'<div style="font-size:.75rem;color:var(--muted,#999)">'+escHtml(i.day_name)+' '+fmtD(i.date)+' · '+escHtml(i.time_start)+'</div></div>'
+    +'<button onclick="ncBook(\''+i.class_id+'\',this)" style="background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);border:none;color:#161310;font-weight:800;padding:8px 15px;border-radius:10px;cursor:pointer;white-space:nowrap">Rezervovať</button></div>').join('');
+  let html='';
+  if(d.state==='FIRST_BOOKED' && d.next_booking){
+    const n=d.next_booking;
+    html=box('<div style="font-weight:900;color:#fff;font-size:1rem">'+n.emoji+' Tvoja prvá hodina je rezervovaná ✓</div>'
+      +'<div style="margin:6px 0;color:var(--gold,#C9A84C);font-weight:800">'+escHtml(n.name)+' · '+escHtml(n.day_name)+' '+fmtD(n.date)+' o '+escHtml(n.time_start)+' · '+escHtml(n.city)+'</div>'
+      +'<div style="font-size:.8rem;color:var(--muted,#999)">Priniesť si stačí: 💧 vodu · 👟 tenisky · 🧣 uterák · 👕 športové oblečenie. Nemusíš vedieť tancovať — trénerka ťa prevedie hodinou. 💛</div>');
+  }
+  else if(d.state==='FIRST_NO_SHOW'){
+    html=box('<div style="font-weight:900;color:#fff;font-size:1rem">Nevyšlo to? Vyber si nový termín 💃</div>'
+      +'<div style="font-size:.8rem;color:var(--muted,#999);margin:4px 0 6px">Nič sa nedeje — tvoja prvá hodina zadarmo stále platí.</div>'
+      +rows(d.items));
+  }
+  else if(d.state==='FIRST_ATTENDED_NO_PURCHASE'){
+    let cup='';
+    if(d.coupon){
+      const left=Math.max(0, Date.parse(d.coupon.expires_at)-Date.now());
+      const h=Math.floor(left/36e5), m=Math.floor(left%36e5/6e4);
+      cup='<div style="margin:8px 0;padding:10px 12px;background:rgba(201,168,76,.14);border:1px dashed var(--gold,#C9A84C);border-radius:12px;font-size:.86rem">'
+        +'🎁 Ako nová klientka máš <b>'+d.coupon.value+' % zľavu na prvý mesiac</b> — kód <b style="font-family:monospace">'+escHtml(d.coupon.code)+'</b>'
+        +'<div style="color:#e0b84c;font-size:.78rem;margin-top:2px">Platí ešte '+(h>0?h+' h ':'')+m+' min</div></div>';
+    }
+    html=box('<div style="font-weight:900;color:#fff;font-size:1rem">Páčila sa ti prvá hodina? 💛</div>'
+      +'<div style="font-size:.82rem;color:var(--muted,#999);margin:4px 0">Pokračuj s nami pravidelne — vyber si členstvo alebo permanentku.</div>'
+      +cup
+      +'<a href="/pricing" style="display:block;text-align:center;background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);color:#161310;font-weight:900;padding:12px;border-radius:12px;text-decoration:none;margin-top:6px">VYBRAŤ ČLENSTVO →</a>');
+  }
+  else if(d.state==='AT_RISK'){
+    html=box('<div style="font-weight:900;color:#fff;font-size:1rem">Už je to '+(d.days_since||'pár')+' dní od tvojej poslednej hodiny 💃</div>'
+      +'<div style="font-size:.8rem;color:var(--muted,#999);margin:4px 0 6px">Parket ti drží miesto — pozri si najbližšie termíny'+(d.city?' v meste '+escHtml(d.city):'')+':</div>'
+      +rows(d.items),'rgba(224,180,76,.55)');
+  }
+  else if(d.state==='CHURNED'){
+    html=box('<div style="font-weight:900;color:#fff;font-size:1rem">Chýbaš nám na parkete 💛</div>'
+      +'<div style="font-size:.8rem;color:var(--muted,#999);margin:4px 0 6px">Už je to chvíľa od tvojej poslednej Zumby — najbližšie termíny'+(d.city?' v meste '+escHtml(d.city):'')+':</div>'
+      +rows(d.items),'rgba(255,255,255,.18)');
+  }
+  if(html){ host.innerHTML=html; host.style.display='block'; } else host.style.display='none';
+}
+
 /* ── FUNNEL-004: po aktivácii členstva bez ďalšej rezervácie ── */
 async function loadNextClassCard(me){
   const host=document.getElementById('nextClassCard'); if(!host) return;
@@ -1895,6 +1948,7 @@ async function init(){
   renderAccessBar(me);
   loadFirstClassHero(me);
   loadNextClassCard(me);
+  loadStateStrip(me);
   if(me.notif_count>0){const b=document.getElementById('notifBadge');b.textContent=me.notif_count>9?'9+':me.notif_count;b.style.display='flex';}
   if(me.user_type==='partner'||me.user_type==='manager'){document.getElementById('partnerDashLink').style.display='block';}
   // Load profile (loyalty, visits)
