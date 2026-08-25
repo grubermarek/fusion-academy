@@ -72,7 +72,8 @@ const ics = async id => { const r = await fetch(BASE + '/cal/booking/' + id + '.
     // ── 4) statické kontroly: linky v mailoch ──
     const src = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
     const sites = (src.match(/\/cal\/booking\//g) || []).length;
-    ok('link v 4 mailoch + endpoint (5 výskytov)', sites === 5, String(sites));
+    ok('link v 5 mailoch + endpoint (6 výskytov)', sites === 6, String(sites));
+    ok('first-booking welcome mail má kalendárny link', /sendFirstBookingWelcome[\s\S]{0,3000}\/cal\/booking\//.test(src));
     ok('reminder mail má kalendárny link', /Zajtra máš hodinu[\s\S]{0,900}\/cal\/booking\//.test(src));
     ok('landing confirm mail má kalendárny link', /Prvá hodina zdarma je rezervovaná[\s\S]{0,1400}\/cal\/booking\//.test(src));
     ok('in-app booking mail má kalendárny link', /Rezervácia potvrdená – \$\{cls\.name\}[\s\S]{0,900}\/cal\/booking\//.test(src));
