@@ -2693,6 +2693,7 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
       +'<p style="line-height:1.9">'+ (cls.emoji||'💃') +' <b>'+cls.name+'</b><br>📍 '+cls.location+' — '+(cls.address||'')+'<br>📅 '+DAYS_SK[cls.day_of_week]+' '+bdate.slice(8,10)+'. '+bdate.slice(5,7)+'.<br>⏰ '+cls.time_start+'–'+(cls.time_end||'')+'</p>'
       +'<p>Na hodinu si stačí priniesť: 💧 vodu · 👟 tenisky · 🧣 malý uterák · 👕 športové oblečenie.</p>'
       +'<p>Nemusíš vedieť tancovať ani poznať kroky — trénerka ťa prevedie hodinou. <b>Prvá hodina je zdarma.</b></p>'
+      +'<p>📅 <a href="'+APP_URL+'/cal/booking/'+booking._id+'.ics" style="color:#C9A84C;font-weight:bold">Pridať do kalendára</a> — jeden klik a telefón ti hodinu pripomenie sám.</p>'
       +'<p>Nemôžeš prísť? Termín zmeníš alebo zrušíš cez odkaz nižšie.</p>',
       '📍 Detaily / zmena rezervácie', APP_URL+'/invite/FUSION?manage='+u.manage_token)).catch(()=>{});
     res.json({ok:true, booking_id:booking._id, is_new:isNew, manage_token:u.manage_token,
@@ -3879,6 +3880,7 @@ app.post('/api/invite/:code/book', rlPublic, async(req,res)=>{
         '<p>Tvoja prvá Zumba hodina <b>zadarmo</b> je rezervovaná:</p>'+
         '<p>📍 <b>'+cls.location+'</b><br>📌 '+(cls.address||'')+'<br>📅 <b>'+DAYS_SK[cls.day_of_week]+' '+bdate.split('-').reverse().join('.')+'</b><br>🕐 <b>'+cls.time_start+'</b></p>'+
         '<p>Priniesť si stačí 💧 vodu, 👟 športovú obuv a 👕 pohodlné oblečenie.</p>'+
+        '<p>📅 <a href="'+APP_URL+'/cal/booking/'+booking._id+'.ics" style="color:#C9A84C;font-weight:bold">Pridať do kalendára</a></p>'+
         '<p>Nemôžeš prísť? Termín zmeníš alebo zrušíš tu: <a href="'+APP_URL+'/invite/'+sp.referral_code+'?manage='+u.manage_token+'">zmeniť rezerváciu</a></p>',
         '📍 Detaily rezervácie', APP_URL+'/invite/'+sp.referral_code+'?manage='+u.manage_token)).catch(()=>{});
     }
@@ -4079,6 +4081,42 @@ app.get('/api/classes/:id', async(req,res)=>{
 
 // ─── Bookings ─────────────────────────────────────────────────────────────────
 // (Full booking route with email confirmation is below in EMAIL NOTIFICATIONS section)
+
+// ── FUNNEL-011: „Pridať do kalendára" — .ics súbor rezervácie ──
+// Verejný link cez nespoznateľné booking _id (rovnaký kapabilitný princíp ako manage_token);
+// obsah = názov hodiny + čas + adresa, žiadne osobné dáta. Zrušená rezervácia → 404.
+app.get('/cal/booking/:id.ics', rlPublic, async(req,res)=>{
+  try{
+    const b=await q.one(db.bookings,{_id:String(req.params.id||'')});
+    if(!b || b.status==='cancelled') return res.status(404).send('Rezervácia neexistuje');
+    const cls=await q.one(db.classes,{_id:b.class_id});
+    const esc=s=>String(s||'').replace(/\\/g,'\\\\').replace(/[,;]/g,m=>'\\'+m).replace(/\r?\n/g,'\\n');
+    const d=String(b.booking_date||'').replace(/-/g,'');
+    if(!/^\d{8}$/.test(d)) return res.status(404).send('Rezervácia neexistuje');
+    const t1=String(b.class_time_start||cls?.time_start||'19:00').replace(':','').padEnd(4,'0')+'00';
+    let t2=String(b.class_time_end||cls?.time_end||'').replace(':','');
+    if(!/^\d{4}$/.test(t2)){ // bez konca → +60 min
+      const h=+t1.slice(0,2), m=+t1.slice(2,4), end=(h*60+m+60)%1440;
+      t2=String(Math.floor(end/60)).padStart(2,'0')+String(end%60).padStart(2,'0');
+    }
+    const loc=[cls?.address, b.class_location||cls?.location].filter(Boolean).join(', ');
+    const ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Fusion Academy//SK','METHOD:PUBLISH',
+      'BEGIN:VEVENT',
+      'UID:'+b._id+'@fusionacademy.sk',
+      'DTSTAMP:'+new Date().toISOString().replace(/[-:]/g,'').slice(0,15)+'Z',
+      'DTSTART:'+d+'T'+t1,
+      'DTEND:'+d+'T'+t2+'00',
+      'SUMMARY:'+esc((b.class_name||cls?.name||'Hodina')+' – Fusion Academy'),
+      'LOCATION:'+esc(loc),
+      'DESCRIPTION:'+esc('Priniesť: voda, tenisky, uterák, športové oblečenie. Rezervácie a zmeny: '+APP_URL),
+      'BEGIN:VALARM','TRIGGER:-PT2H','ACTION:DISPLAY',
+      'DESCRIPTION:'+esc('O 2 hodiny: '+(b.class_name||'hodina')+' ('+(b.class_time_start||'')+')'),
+      'END:VALARM','END:VEVENT','END:VCALENDAR'].join('\r\n');
+    res.set({'Content-Type':'text/calendar; charset=utf-8',
+      'Content-Disposition':'attachment; filename="fusion-hodina.ics"'});
+    res.send(ics);
+  }catch(e){ res.status(500).send('Chyba'); }
+});
 
 app.get('/api/my-bookings', auth, async(req,res)=>{
   // Own bookings + bookings for my children
@@ -14393,7 +14431,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
     if(isFirstBooking){
       await sendFirstBookingWelcome(u, cls, bdate);
     } else if(parent.email){
-      sendMail(parent.email,`Rezervácia potvrdená – ${cls.name}`,`<h2>Rezervácia potvrdená ✅</h2><p>Ahoj <b>${parent.name}</b>,</p><p>Rezervácia ${isChild?`pre <b>${u.name}</b> `:''}na hodinu <b>${cls.name}</b> bola úspešne zaznamenaná.</p><ul><li>Dátum: <b>${bdate}</b></li><li>Čas: <b>${cls.time_start}–${cls.time_end||''}</b></li><li>Miesto: <b>${cls.location}</b></li></ul><p>Tešíme sa na vás!</p><p><i>Fusion Academy</i></p>`).catch(()=>{});
+      sendMail(parent.email,`Rezervácia potvrdená – ${cls.name}`,`<h2>Rezervácia potvrdená ✅</h2><p>Ahoj <b>${parent.name}</b>,</p><p>Rezervácia ${isChild?`pre <b>${u.name}</b> `:''}na hodinu <b>${cls.name}</b> bola úspešne zaznamenaná.</p><ul><li>Dátum: <b>${bdate}</b></li><li>Čas: <b>${cls.time_start}–${cls.time_end||''}</b></li><li>Miesto: <b>${cls.location}</b></li></ul><p>📅 <a href="${APP_URL}/cal/booking/${booking._id}.ics" style="color:#C9A84C;font-weight:bold">Pridať do kalendára</a></p><p>Tešíme sa na vás!</p><p><i>Fusion Academy</i></p>`).catch(()=>{});
     }
     // Rezervácia na dnešok = ranný pripomienkový mail by už nebehol → pošli hneď
     if(bdate===today()) sendFirstClassDayReminder(booking).catch(()=>{});
@@ -17810,7 +17848,7 @@ async function runDailyJobs(){
       if(!(await mailBudgetOk(3))) break;
       await sendMail(u.email,`🗓️ Zajtra máš hodinu – ${cls.name}`,
         emailTemplate(`Zajtra: ${cls.name}`,
-          `<p>Ahoj <b>${u.name}</b>,</p><p>Pripomíname, že zajtra máš hodinu:</p><ul style="color:#ccc"><li><b>${cls.name}</b></li><li>🕐 ${cls.time_start||''}–${cls.time_end||''}</li><li>📍 ${cls.location||''}</li></ul><p>Tešíme sa na teba! 💃</p>`,
+          `<p>Ahoj <b>${u.name}</b>,</p><p>Pripomíname, že zajtra máš hodinu:</p><ul style="color:#ccc"><li><b>${cls.name}</b></li><li>🕐 ${cls.time_start||''}–${cls.time_end||''}</li><li>📍 ${cls.location||''}</li></ul><p>📅 <a href="${APP_URL}/cal/booking/${bk._id}.ics" style="color:#C9A84C;font-weight:bold">Pridať do kalendára</a></p><p>Tešíme sa na teba! 💃</p>`,
           '📍 Zobraziť rozvrh',`${APP_URL}/schedule`)).catch(()=>{});
       await q.insert(db.notifications,{user_id:u._id,type:'class_reminder',ref_id:cls._id,title:`🗓️ Zajtra: ${cls.name}`,body:`${cls.time_start} · ${cls.location}`,read:false,created_at:nowISO()});
     }
