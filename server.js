@@ -2700,6 +2700,55 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
 // Karta pre platiacu klientku (členstvo alebo vstupy), ktorá nemá ŽIADNU budúcu rezerváciu.
 // FUNNEL-007: customer state (NEXT BEST ACTION). Neukladá sa — počíta sa z bookings,
 // memberships a promo kódov pri každom volaní (source-of-truth timestampy).
+// FUNNEL-008: nedokončený Stripe checkout členstva — 1 mail po ~3 h, s revalidáciou
+// (ak medzitým zaplatila alebo má aktívne členstvo, mail nejde). Dedupe na zázname platby.
+async function abandonedCheckoutTick(){
+  const out={checked:0, selected:[], sent:0};
+  if(!(await mailBudgetOk(6))) return out;
+  const MINM=+(process.env.ABANDON_MIN_MIN||180), MAXM=48*60;
+  const isTestU=x=>/test/i.test(x.name||'')||/test/i.test(x.email||'');
+  const pend=(await q.find(db.payments,{status:'pending', ref_type:'membership'}))
+    .filter(p=>p.provider==='stripe' && !p.abandoned_mail_at);
+  for(const p of pend){
+    const ageMin=(Date.now()-Date.parse(p.created_at||0))/60000;
+    if(!(ageMin>=MINM && ageMin<=MAXM)) continue;
+    const u=await q.one(db.users,{_id:p.user_id});
+    if(!u || !u.email || !/@/.test(u.email) || /@import\.local$|@guest\./i.test(u.email)) continue;
+    if(u.do_not_contact || isTestU(u)) continue;
+    out.checked++;
+    // revalidácia: zaplatila medzitým? (dokončená platba po vzniku checkoutu / aktívne členstvo)
+    const paidAfter=(await q.find(db.payments,{user_id:u._id}))
+      .some(x=>['completed','active'].includes(x.status) && String(x.created_at||'')>=String(p.created_at||''));
+    const mem=await q.one(db.memberships,{user_id:u._id, status:'active'});
+    if(paidAfter || (mem && (!mem.expires_at || new Date(mem.expires_at)>new Date()))){
+      await q.update(db.payments,{_id:p._id},{$set:{abandoned_mail_at:'skipped_paid'}});
+      continue;
+    }
+    out.selected.push(u.email);
+    const first=String(u.name||'').split(' ')[0]||'tanečníčka';
+    const ok=await sendMail(u.email,'Tvoje členstvo ešte nie je dokončené 💳',
+      emailTemplate('Ahoj '+first+'!',
+      '<p>Vyzerá to, že si začala objednávku <b>'+String(p.description||'členstva')+'</b>, ale platba nebola dokončená.</p>'
+      +'<p>Ak chceš pokračovať, objednávku dokončíš jedným klikom — a ak si to rozmyslela, tento mail pokojne ignoruj. 💛</p>',
+      '💳 DOKONČIŤ OBJEDNÁVKU', APP_URL+'/pricing?utm_source=email&utm_medium=activation&utm_campaign=abandoned-checkout'),{priority:6}).catch(()=>false);
+    if(ok){ out.sent++; await q.update(db.payments,{_id:p._id},{$set:{abandoned_mail_at:nowISO()}}); }
+  }
+  return out;
+}
+setInterval(()=>{ abandonedCheckoutTick().catch(e=>console.error('abandoned checkout:',e.message)); }, 30*60*1000);
+app.post('/api/admin/qa/run-abandoned-checkout', adminAuth, async(req,res)=>{
+  try{ res.json({ok:true, ...(await abandonedCheckoutTick())}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+// QA: matica mail budžetu pri simulovanom počte odoslaných (bez reálneho posielania)
+app.get('/api/admin/qa/mail-budget', adminAuth, async(req,res)=>{
+  try{
+    const sent=+(req.query.sent||0); const outM={};
+    for(const p of [1,2,3,4,5,6,8,10]) outM['p'+p]=await mailBudgetOk(p, sent);
+    res.json({ok:true, sent, allowed:outM});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/my-state', auth, async(req,res)=>{
   try{
     const u=await q.one(db.users,{_id:req.session.uid});
@@ -2764,10 +2813,9 @@ app.get('/api/next-class/suggestions', auth, async(req,res)=>{
 // FUNNEL-004: mail po aktivácii PRVÉHO členstva, ak do ~3 h nevznikla ďalšia rezervácia.
 // Revalidácia stavu pred odoslaním, dedupe next_booking_nudge_at, denný mail budžet.
 async function nextBookingNudgeTick(){
-  const sentToday=(await q.find(db.mail_log,{})).filter(m=>(m.created_at||'').startsWith(today())).length;
-  let budget=Math.min(20, 240-sentToday);
+  let budget=20;
   const out={checked:0, selected:[], sent:0};
-  if(budget<=0) return out;
+  if(!(await mailBudgetOk(5))) return out;
   const isTestU=x=>/test/i.test(x.name||'')||/test/i.test(x.email||'');
   const MINH=+(process.env.NEXT_NUDGE_MIN_MIN||180), MAXH=48*60;
   const mems=(await q.find(db.memberships,{status:'active'})).filter(m=>!m._type && !m.gift && !m.migrated && +m.price>0);
@@ -2792,7 +2840,7 @@ async function nextBookingNudgeTick(){
     const ok=await sendMail(u.email,'Členstvo máš aktívne 🎉 Kedy prídeš najbližšie?',
       emailTemplate('Vitaj vo Fusion Academy, '+first+'! ✨',
       '<p>Tvoje členstvo <b>'+(m.plan_name||'')+'</b> je aktívne. Najlepší ďalší krok? Rovno si rezervuj hodinu — pravidelnosť je celé tajomstvo. 💛</p><p>Najbližšie termíny:</p><ul style="line-height:1.9">'+list+'</ul>',
-      '🗓️ REZERVOVAŤ ĎALŠIU HODINU', APP_URL+'/client-dashboard?utm_source=email&utm_medium=activation&utm_campaign=next-booking-nudge')).catch(()=>false);
+      '🗓️ REZERVOVAŤ ĎALŠIU HODINU', APP_URL+'/client-dashboard?utm_source=email&utm_medium=activation&utm_campaign=next-booking-nudge'),{priority:5}).catch(()=>false);
     if(ok){ out.sent++; budget--; await q.update(db.users,{_id:u._id},{$set:{next_booking_nudge_at:nowISO()}}); }
   }
   return out;
@@ -2817,10 +2865,9 @@ app.get('/api/first-class/suggestions', auth, async(req,res)=>{
 async function firstBookingNudgeTick(){
   const MIN1=+(process.env.FIRST_NUDGE_MIN_MIN||180);       // +3 h
   const MIN2=+(process.env.FIRST_NUDGE2_MIN_MIN||2*24*60);  // D2
-  const sentToday=(await q.find(db.mail_log,{})).filter(m=>(m.created_at||'').startsWith(today())).length;
-  let budget=Math.min(30, 240-sentToday);
+  let budget=30;
   const out={checked:0, selected:[], sent:0};
-  if(budget<=0) return out;
+  if(!(await mailBudgetOk(5))) return out;
   const isTestU=x=>/test/i.test(x.name||'')||/test/i.test(x.email||'');
   const now=Date.now();
   const users=(await q.find(db.users,{account_creation_type:'self_registration'}))
@@ -2845,7 +2892,7 @@ async function firstBookingNudgeTick(){
     const body = which===1
       ? '<p>registráciu už máš hotovú — teraz si už len vyber hodinu, na ktorú chceš prísť. <b>Prvá návšteva je zadarmo.</b></p><p>Najbližšie termíny:</p><ul style="line-height:1.9">'+list+'</ul><p>Rezervácia zaberie pár sekúnd a nič ťa nestojí.</p>'
       : '<p>tvoja <b>prvá hodina zadarmo</b> stále čaká. Nemusíš vedieť tancovať — stačí prísť, trénerka ťa prevedie hodinou.</p><p>Najbližšie termíny:</p><ul style="line-height:1.9">'+list+'</ul>';
-    const ok=await sendMail(u.email, subj, emailTemplate('Ahoj '+first+'! 💛', body, '🗓️ Vybrať si hodinu', cta)).catch(()=>false);
+    const ok=await sendMail(u.email, subj, emailTemplate('Ahoj '+first+'! 💛', body, '🗓️ Vybrať si hodinu', cta), {priority:5}).catch(()=>false);
     if(ok){ out.sent++; budget--; await q.update(db.users,{_id:u._id},{$set:{['booking_nudge'+which+'_at']:nowISO()}}); }
   }
   return out;
@@ -2883,7 +2930,7 @@ app.post('/api/forgot-password', rlForgot, async(req,res)=>{
     await sendMail(email,'Reset hesla — Fusion Academy',
       emailTemplate('Ahoj '+first+'! 🔑',
       '<p>Prišla nám žiadosť o reset hesla k tvojmu účtu. Nové heslo si nastavíš kliknutím na tlačidlo — odkaz platí <b>60 minút</b>.</p><p>Ak si o reset nežiadala ty, tento e-mail ignoruj — heslo zostáva nezmenené.</p>',
-      '🔐 Nastaviť nové heslo', APP_URL+'/reset-heslo?t='+token)).catch(()=>{});
+      '🔐 Nastaviť nové heslo', APP_URL+'/reset-heslo?t='+token),{priority:2}).catch(()=>{});
   }catch(e){ console.error('forgot-password:', e.message); }
 });
 
@@ -3369,9 +3416,8 @@ setInterval(async()=>{
     if(await q.one(db.settings,{key:'event_mail_lt2026_done'})) return;
     const hSK=+new Intl.DateTimeFormat('sk-SK',{hour:'numeric',hour12:false,timeZone:'Europe/Bratislava'}).format(new Date());
     if(hSK<9||hSK>20) return;
-    const sentToday=(await q.find(db.mail_log,{})).filter(m=>(m.created_at||'').startsWith(today())).length;
-    let budget=Math.min(60, 240-sentToday);       // max 60 na tick, spolu max ~240/deň
-    if(budget<=0) return;
+    if(!(await mailBudgetOk(10))) return;         // globálny denný budžet (p10 = marketing)
+    let budget=60;                                // max 60 na tick
     const isTestU=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'')||u.lead_source==='test'||u.is_test;
     const activeMem=new Set((await q.find(db.memberships,{status:'active'}))
       .filter(m=>!m.expires_at||new Date(m.expires_at)>new Date()).map(m=>m.user_id));
@@ -3400,6 +3446,7 @@ setInterval(async()=>{
       const cena=member
         ? '<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">⭐ <b style="color:#C9A84C">Tvoja členská cena: 45 €</b> namiesto 55 € — appka ti ju po prihlásení ukáže automaticky. Od 1. septembra platí pre všetkých plná cena 65 €!</p>'
         : '<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">🎟️ <b style="color:#C9A84C">Predpredaj: 55 €</b> — len do 31. augusta, potom 65 €. Kapacita je len <b>30 miest</b>!</p>';
+      if(!(await mailBudgetOk(10))) break;
       const ok=await sendMail(u.email, EV_MAIL_SUBJ,
         emailTemplate('Ahoj '+first+'! 💛',
         '<div style="text-align:center;margin:6px 0 16px"><img src="'+APP_URL+'/img/events/latin-tropical.jpg" alt="Latin Tropical Party & Masterclass" style="width:100%;max-width:520px;border-radius:14px"></div>'
@@ -7358,7 +7405,7 @@ app.post('/api/admin/crm/send-expiry-warnings', adminAuth, async(req,res)=>{
     for(const m of expiring){
       const u = await q.one(db.users,{_id:m.user_id});
       if(u?.email){
-        await sendMail(u.email,'⚠️ Tvoje členstvo čoskoro vyprší',`<h2>Ahoj ${u.name}!</h2><p>Tvoje členstvo <b>${m.plan_name}</b> vyprší <b>${m.expires_at}</b>.</p><p>👉 <a href="${APP_URL}/pricing">Obnov si členstvo</a> a neprerušuj svoju cestu!</p><p><i>Fusion Academy tím 💃</i></p>`).catch(()=>{});
+        await sendMail(u.email,'⚠️ Tvoje členstvo čoskoro vyprší',`<h2>Ahoj ${u.name}!</h2><p>Tvoje členstvo <b>${m.plan_name}</b> vyprší <b>${m.expires_at}</b>.</p><p>👉 <a href="${APP_URL}/pricing">Obnov si členstvo</a> a neprerušuj svoju cestu!</p><p><i>Fusion Academy tím 💃</i></p>`,{priority:4}).catch(()=>{});
         await q.insert(db.notifications,{user_id:u._id,type:'expiry_warning',title:'⚠️ Členstvo čoskoro vyprší',body:`${m.plan_name} vyprší ${m.expires_at}`,read:false,created_at:nowISO()});
         sent++;
       }
@@ -14013,11 +14060,26 @@ const MAIL_ENABLED = process.env.MAIL_OFF==='1' ? false
   : (process.env.MAIL_ON==='1' || process.env.NODE_ENV==='production' || !!process.env.RAILWAY_ENVIRONMENT);
 if(!MAIL_ENABLED) console.log('✉️  Odosielanie mailov VYPNUTÉ (nie je produkcia) — MAIL_ON=1 ho zapne');
 
-async function sendMail(to, subject, html){
+// Stropy podľa priority: kým transakčné (1–2) môžu do 295/deň, marketing (10) len do 200.
+// Vyššie číslo = nižšia priorita = skorší stop. (FUNNEL-006, spec AJ.)
+const MAIL_TIER_CAPS={1:295,2:295,3:285,4:270,5:255,6:240,7:240,8:225,9:225,10:200};
+async function mailBudgetOk(priority, sentOverride){
+  const p=Math.min(10,Math.max(1,Math.round(+priority||4)));
+  const cap=MAIL_TIER_CAPS[p];
+  const sent = sentOverride!==undefined ? +sentOverride
+    : (await q.find(db.mail_log,{})).filter(m=>(m.created_at||'').startsWith(today())).length;
+  return sent < cap;
+}
+async function sendMail(to, subject, html, opts){
   // @import.local = syntetické adresy klientov zo starého zoznamu (majú len telefón,
   // kontaktujú sa SMSkou) — nikdy na ne nič neposielaj.
   if(/@import\.local$/i.test(String(to||''))) return false;
   if(!MAIL_ENABLED){ console.log(`✉️  [mail vypnutý] ${to} · ${subject}`); return false; }
+  const priority=(opts&&+opts.priority)||4;
+  if(!(await mailBudgetOk(priority))){
+    console.log(`✉️  [mail budžet] preskočené p${priority} · ${to} · ${subject}`);
+    return false;
+  }
   // Mail log + tracking pixel (CRM P3): každý odoslaný mail sa zaloguje a otvorenie
   // sa zaznamená cez 1×1 pixel — open rate vidno v /api/admin/mail-log/stats.
   try{
@@ -16310,8 +16372,10 @@ async function processEmailQueue(){
       const mesto = (u.city||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())||'tvojom meste';
       const subj = (step.subject||'').replace(/\{meno\}/g, meno).replace(/\{mesto\}/g, mesto);
       const bodyP = (step.body||'').replace(/\{meno\}/g, meno).replace(/\{mesto\}/g, mesto);
-      await sendMail(u.email, subj,
-        emailTemplate(subj.replace(/^[^\w]*/,''), bodyP, step.cta||null, step.cta_url||APP_URL));
+      const seqPrio = ['lead_nurture','winback','trial_followup','bronze_upsell','gold_upsell','meta_lead_zumba','app_launch','reengagement','post_first_class'].includes(step.sequence) ? 8 : 4;
+      const okSend = await sendMail(u.email, subj,
+        emailTemplate(subj.replace(/^[^\w]*/,''), bodyP, step.cta||null, step.cta_url||APP_URL), {priority:seqPrio});
+      if(okSend===false && !(await mailBudgetOk(seqPrio))) break; // denný budžet vyčerpaný — pokračuj zajtra
       await q.update(db.email_queue,{_id:item._id},{$set:{status:'sent', sent_at: nowISO()}});
       sent++;
     } catch(e){
@@ -17644,6 +17708,7 @@ async function runDailyJobs(){
       if(!u?.email) continue;
       const alreadySent = await q.one(db.notifications,{user_id:u._id,type:'class_reminder',ref_id:cls._id,created_at:{$gte:todayStr}});
       if(alreadySent) continue;
+      if(!(await mailBudgetOk(3))) break;
       await sendMail(u.email,`🗓️ Zajtra máš hodinu – ${cls.name}`,
         emailTemplate(`Zajtra: ${cls.name}`,
           `<p>Ahoj <b>${u.name}</b>,</p><p>Pripomíname, že zajtra máš hodinu:</p><ul style="color:#ccc"><li><b>${cls.name}</b></li><li>🕐 ${cls.time_start||''}–${cls.time_end||''}</li><li>📍 ${cls.location||''}</li></ul><p>Tešíme sa na teba! 💃</p>`,
