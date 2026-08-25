@@ -1042,6 +1042,25 @@ async function seedData() {
     console.log(`✅  Rolové odznaky personálu: aktualizovaných ${fixed} starých správ/príspevkov`);
   }
 
+  // Pozvánka na Latin Tropical Party 5. 9. do komunitných kanálov (Všeobecné + Eventy) — Marekovo zadanie 25.8.
+  if(!(await q.one(db.settings,{key:'party_invite_msgs_v1'}))){
+    const marek=await q.one(db.users,{is_admin:true, name:/marek/i}) || await q.one(db.users,{is_admin:true});
+    if(marek){
+      const txt='🌴 LATIN TROPICAL PARTY & MASTERCLASS — piatok 5. 9., Detva! Oslavujeme 1. výročie tanečnej školy 🎉\n\n'
+        +'💃 FULL EXPERIENCE od 18:15: masterclass Marek Gruber & Ivan Ligárt, Zumba + CIRCL Mobility, jedlo a welcome drink — a potom celá Latin Tropical Party.\n'
+        +'🍹 Vstup len na latino párty od 21:00.\n\n'
+        +'🎟️ Vstupenky: https://app.fusionacademy.sk/event/latin-tropical-2026?utm_source=komunita&utm_medium=chat&utm_campaign=fa-masterclass-01\n'
+        +'Miesta sa míňajú — kúp si lístok včas! 💜';
+      const badge=getMemberBadge(marek.created_at, marek);
+      for(const ch of ['general','eventy']){
+        await q.insert(db.messages,{channel:ch, user_id:marek._id, user_name:marek.name,
+          text:txt, memberBadge:badge, created_at:nowISO()});
+      }
+      await q.insert(db.settings,{key:'party_invite_msgs_v1', value:true, at:nowISO()});
+      console.log('✅  Pozvánka na Latin Tropical Party vložená do kanálov general + eventy (autor '+marek.name+')');
+    }
+  }
+
   // HEJ BABY: reklama historicky posielala utm_campaign=fa-video-hejbaby (bez pomlčky),
   // kampaň v admine má kľúč fa-video-hej-baby → kliky sa nepárovali. Prefix fa-video-hej
   // chytí obe podoby (startsWith), nová reklama z 25.8. posiela fa-video-hej-baby.

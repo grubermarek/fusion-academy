@@ -582,7 +582,7 @@ function appendMessage(msg, animate) {
       ${avatarInner}
       <div class="bub">
         ${whoRow}
-        <div class="msg-text">${escHtml(msg.text||'').replace(/\n/g,'<br>')}</div>
+        <div class="msg-text">${escHtml(msg.text||'').replace(/\n/g,'<br>').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" style="color:inherit;text-decoration:underline;word-break:break-all">$1</a>')}</div>
         <div class="btime">${timeStr}</div>
       </div>`;
   }
