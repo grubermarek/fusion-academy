@@ -2696,6 +2696,65 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// FUNNEL-004: „Členstvo máš aktívne 🎉 — vyber si, kedy prídeš najbližšie."
+// Karta pre platiacu klientku (členstvo alebo vstupy), ktorá nemá ŽIADNU budúcu rezerváciu.
+app.get('/api/next-class/suggestions', auth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.session.uid});
+    if(!u || u.is_admin || u.is_child || ['trainer','manager','admin'].includes(u.user_type))
+      return res.json({ok:true, eligible:false, items:[]});
+    const mem=await q.one(db.memberships,{user_id:u._id, status:'active'});
+    const paid=(mem && (!mem.expires_at || new Date(mem.expires_at)>new Date())) || (u.single_entries||0)>0;
+    if(!paid) return res.json({ok:true, eligible:false, items:[]});
+    const future=(await q.find(db.bookings,{user_id:u._id}))
+      .some(b=>b.status!=='cancelled' && String(b.booking_date||'')>=today());
+    if(future) return res.json({ok:true, eligible:false, items:[]});
+    res.json({ok:true, eligible:true, items:await firstClassSuggestions(u,4)});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// FUNNEL-004: mail po aktivácii PRVÉHO členstva, ak do ~3 h nevznikla ďalšia rezervácia.
+// Revalidácia stavu pred odoslaním, dedupe next_booking_nudge_at, denný mail budžet.
+async function nextBookingNudgeTick(){
+  const sentToday=(await q.find(db.mail_log,{})).filter(m=>(m.created_at||'').startsWith(today())).length;
+  let budget=Math.min(20, 240-sentToday);
+  const out={checked:0, selected:[], sent:0};
+  if(budget<=0) return out;
+  const isTestU=x=>/test/i.test(x.name||'')||/test/i.test(x.email||'');
+  const MINH=+(process.env.NEXT_NUDGE_MIN_MIN||180), MAXH=48*60;
+  const mems=(await q.find(db.memberships,{status:'active'})).filter(m=>!m._type && !m.gift && !m.migrated && +m.price>0);
+  const byUser={}; for(const m of mems){ const k=m.user_id; if(!byUser[k]||(m.created_at||'')<(byUser[k].created_at||'')) byUser[k]=m; }
+  for(const [uid,m] of Object.entries(byUser)){
+    if(budget<=0) break;
+    const ageMin=(Date.now()-Date.parse(m.created_at||0))/60000;
+    if(!(ageMin>=MINH && ageMin<=MAXH)) continue;
+    const u=await q.one(db.users,{_id:uid});
+    if(!u || u.next_booking_nudge_at || u.is_admin || u.is_child || ['trainer','manager','admin'].includes(u.user_type)) continue;
+    if(!u.email || !/@/.test(u.email) || /@import\.local$|@guest\./i.test(u.email)) continue;
+    if(u.do_not_contact || u.offers_optout || isTestU(u)) continue;
+    out.checked++;
+    const future=(await q.find(db.bookings,{user_id:u._id}))
+      .some(b=>b.status!=='cancelled' && String(b.booking_date||'')>=today());
+    if(future) continue;                                  // už si rezervovala — nič neposielať
+    const items=await firstClassSuggestions(u,3);
+    if(!items.length) continue;
+    out.selected.push(u.email);
+    const first=String(u.name||'').split(' ')[0]||'tanečníčka';
+    const list=items.map(i=>'<li><b>'+i.day_name+' '+i.date.slice(8,10)+'. '+i.date.slice(5,7)+'.</b> · '+i.time_start+' · '+i.name+' · '+i.city+'</li>').join('');
+    const ok=await sendMail(u.email,'Členstvo máš aktívne 🎉 Kedy prídeš najbližšie?',
+      emailTemplate('Vitaj vo Fusion Academy, '+first+'! ✨',
+      '<p>Tvoje členstvo <b>'+(m.plan_name||'')+'</b> je aktívne. Najlepší ďalší krok? Rovno si rezervuj hodinu — pravidelnosť je celé tajomstvo. 💛</p><p>Najbližšie termíny:</p><ul style="line-height:1.9">'+list+'</ul>',
+      '🗓️ REZERVOVAŤ ĎALŠIU HODINU', APP_URL+'/client-dashboard?utm_source=email&utm_medium=activation&utm_campaign=next-booking-nudge')).catch(()=>false);
+    if(ok){ out.sent++; budget--; await q.update(db.users,{_id:u._id},{$set:{next_booking_nudge_at:nowISO()}}); }
+  }
+  return out;
+}
+setInterval(()=>{ nextBookingNudgeTick().catch(e=>console.error('next booking nudge:',e.message)); }, 30*60*1000);
+app.post('/api/admin/qa/run-next-booking-nudge', adminAuth, async(req,res)=>{
+  try{ res.json({ok:true, ...(await nextBookingNudgeTick())}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/first-class/suggestions', auth, async(req,res)=>{
   try{
     const u=await q.one(db.users,{_id:req.session.uid});
@@ -17524,9 +17583,14 @@ async function runDailyJobs(){
   // ── 2. Day-before class reminders ─────────────────────────────────────────
   const tomorrow = new Date(Date.now()+86400000);
   const tomorrowDow = tomorrow.getDay();
+  const tomorrowStr = tomorrow.toISOString().slice(0,10);
   const allClasses = await q.find(db.classes,{day_of_week:tomorrowDow,active:true});
   for(const cls of allClasses){
-    const bookings = await q.find(db.bookings,{class_id:cls._id,status:{$ne:'cancelled'}});
+    if(await q.one(db.class_cancellations,{class_id:cls._id, date:tomorrowStr})) continue;
+    // len rezervácie NA ZAJTRA (predtým sa brali všetky rezervácie hodiny bez dátumu
+    // a pripomienka chodila aj ľuďom so starou absolvovanou rezerváciou)
+    const bookings = (await q.find(db.bookings,{class_id:cls._id, booking_date:tomorrowStr}))
+      .filter(b=>!['cancelled','attended'].includes(b.status));
     for(const bk of bookings){
       const u = await q.one(db.users,{_id:bk.user_id});
       if(!u?.email) continue;
@@ -17539,6 +17603,26 @@ async function runDailyJobs(){
       await q.insert(db.notifications,{user_id:u._id,type:'class_reminder',ref_id:cls._id,title:`🗓️ Zajtra: ${cls.name}`,body:`${cls.time_start} · ${cls.location}`,read:false,created_at:nowISO()});
     }
   }
+
+  // ── 2b. Deň hodiny: in-app notifikácia „Dnes tancuješ 💃" (bez mailu — mail šiel včera) ──
+  try{
+    const todayDow=new Date().getDay();
+    const todayClasses=await q.find(db.classes,{day_of_week:todayDow,active:true});
+    for(const cls of todayClasses){
+      if(await q.one(db.class_cancellations,{class_id:cls._id, date:todayStr})) continue;
+      const bks=(await q.find(db.bookings,{class_id:cls._id, booking_date:todayStr}))
+        .filter(b=>!['cancelled','attended'].includes(b.status));
+      for(const bk of bks){
+        if(!bk.user_id) continue;
+        const dup=await q.one(db.notifications,{user_id:bk.user_id,type:'class_today',ref_id:bk._id});
+        if(dup) continue;
+        await q.insert(db.notifications,{user_id:bk.user_id,type:'class_today',ref_id:bk._id,
+          title:'💃 Dnes tancuješ!',
+          body:`${cls.name} začína o ${cls.time_start}${cls.location?' · '+cls.location:''}. Tešíme sa na teba!`,
+          link:'/client-dashboard', read:false, created_at:nowISO()});
+      }
+    }
+  }catch(e){ console.error('class_today notif:', e.message); }
 
   // ── Klientka mesiaca: korunovanie a odovzdanie cien (1. deň v mesiaci) ──
   if(new Date().getDate()===1){ try{ await crownMonthlyWinner(); }catch(e){ console.error('crown winner daily:', e.message); } }

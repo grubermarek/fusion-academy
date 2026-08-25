@@ -353,6 +353,7 @@
 
   <!-- ONLINE hodina — blíži sa / LIVE -->
   <div id="firstClassHero" style="display:none;margin-bottom:16px"></div>
+  <div id="nextClassCard" style="display:none;margin-bottom:16px"></div>
   <div id="onlineBanner" style="display:none;margin-bottom:16px"></div>
 
   <!-- Denná odmena: koleso + login streak (vernostný program — vždy niečo vyhráš) -->
@@ -1830,6 +1831,37 @@ async function loadFirstClassHero(me){
     +'</div>';
   host.style.display='block';
 }
+/* ── FUNNEL-004: po aktivácii členstva bez ďalšej rezervácie ── */
+async function loadNextClassCard(me){
+  const host=document.getElementById('nextClassCard'); if(!host) return;
+  if(me.is_admin || me.is_child) return;
+  const d=await api('/api/next-class/suggestions').catch(()=>null);
+  if(!d || !d.ok || !d.eligible || !d.items.length){ host.style.display='none'; return; }
+  const fmtD=s=>s.slice(8,10)+'. '+s.slice(5,7)+'.';
+  host.innerHTML='<div style="background:linear-gradient(135deg,rgba(74,222,128,.10),rgba(201,168,76,.07));border:1px solid rgba(201,168,76,.5);border-radius:16px;padding:18px">'
+    +'<div style="font-size:1.02rem;font-weight:900;color:#fff">Členstvo máš aktívne 🎉 — vyber si, kedy prídeš najbližšie</div>'
+    +'<div style="font-size:.8rem;color:var(--muted,#999);margin:4px 0 10px">Pravidelnosť je celé tajomstvo. Rezervácia na jeden klik:</div>'
+    +d.items.slice(0,3).map(i=>'<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid rgba(255,255,255,.07)">'
+      +'<span style="font-size:1.2rem">'+i.emoji+'</span>'
+      +'<div style="flex:1;min-width:0"><b>'+escHtml(i.name)+'</b> <span style="color:var(--gold,#C9A84C);font-weight:700">'+escHtml(i.city)+'</span>'
+      +'<div style="font-size:.75rem;color:var(--muted,#999)">'+escHtml(i.day_name)+' '+fmtD(i.date)+' · '+escHtml(i.time_start)+'</div></div>'
+      +'<button onclick="ncBook(\''+i.class_id+'\',this)" style="background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);border:none;color:#161310;font-weight:800;padding:8px 15px;border-radius:10px;cursor:pointer;white-space:nowrap">Rezervovať</button>'
+      +'</div>').join('')
+    +'</div>';
+  host.style.display='block';
+}
+async function ncBook(classId,btn){
+  btn.disabled=true; btn.textContent='⏳';
+  const d=await api('/api/bookings',{method:'POST',body:{class_id:classId}}).catch(()=>null);
+  if(d && (d.ok||d.id)){
+    showToast('🎉 Rezervované! Vidíme sa na parkete.','success');
+    document.getElementById('nextClassCard').style.display='none';
+    setTimeout(()=>location.reload(), 1200);
+  } else {
+    showToast((d&&(d.message||d.error))||'Rezervácia sa nepodarila, skús znova.','error');
+    btn.disabled=false; btn.textContent='Rezervovať';
+  }
+}
 async function fcBook(classId,btn){
   btn.disabled=true; btn.textContent='⏳';
   const d=await api('/api/bookings',{method:'POST',body:{class_id:classId}}).catch(()=>null);
@@ -1862,6 +1894,7 @@ async function init(){
   document.getElementById('mcCancelSub').style.display='none'; // vypnutie odberu je teraz v riadku Automatický odber
   renderAccessBar(me);
   loadFirstClassHero(me);
+  loadNextClassCard(me);
   if(me.notif_count>0){const b=document.getElementById('notifBadge');b.textContent=me.notif_count>9?'9+':me.notif_count;b.style.display='flex';}
   if(me.user_type==='partner'||me.user_type==='manager'){document.getElementById('partnerDashLink').style.display='block';}
   // Load profile (loyalty, visits)

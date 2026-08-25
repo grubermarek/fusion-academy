@@ -1175,6 +1175,8 @@ function renderAttendees(list){
     let payHtml = '', extraHtml = '', statusHtml = '', accHtml = '', memHtml = '';
     if(b.entry_collected) payHtml += `<span class="att-badge" style="background:rgba(74,222,128,.15);color:#4ade80;border:1px solid rgba(74,222,128,.35)">💵 Vstupné vybraté ✓</span>`;
     else if(b.pay_on_site) payHtml += `<span class="att-badge" onclick="collectEntry('${b.booking_id}','${esc(b.name||'').replace(/'/g,'')}',${+b.pay_amount||10})" style="background:rgba(224,86,86,.2);color:#ff8a8a;border:1px solid rgba(224,86,86,.5);font-weight:800;cursor:pointer" title="Klikni a zapíš vybratých ${+b.pay_amount||10} €">💵 PLATÍ NA MIESTE ${+b.pay_amount&&+b.pay_amount!==10?(+b.pay_amount)+' € ':''}— klikni a vyber vstupné</span>`;
+    // FUNNEL-009: prvýčka — tréner ju má privítať, previesť hodinou a po hodine osloviť
+    if((b.visit_count||0)===0 && !b.is_child_booking) extraHtml += `<span class="att-badge" style="background:rgba(255,111,165,.18);color:#ff9ec6;border:1px solid rgba(255,111,165,.5);font-weight:800">🌟 PRVÁ HODINA — privítaj ju</span>`;
     if(b.is_child_booking) extraHtml += `<span class="att-badge" style="background:rgba(126,200,227,.15);color:#7ec8e3;border:1px solid rgba(126,200,227,.4)">👧 Dieťa${b.booked_by_name?' — booknuté z rodičovského účtu ('+esc(b.booked_by_name)+')':''}${String(b.access_method||'').startsWith('parent_')?' · kryté členstvom/vstupom rodiča':''}</span>`;
     // Neprítomné treba odškrtnúť PRED potvrdením hodiny — inak by dostali návštevu
     // aj body ľudia, ktorí neprišli, a no-show by sa nikdy nedal zmerať.
