@@ -298,23 +298,36 @@ const CHANNELS    = [
 // ─── Member Badge (Twitch-style) ──────────────────────────────────────────────
 // Druhý parameter (user) je voliteľný: personál dostane ROLOVÝ odznak namiesto
 // veku členstva — majiteľ/tréner predsa nie je „Nováčik".
+// Odznaky = ROLA alebo AKTÍVNE ČLENSTVO (Marek 25.8.: vekové odznaky boli nezrozumiteľné).
+// u.member_tier udržiava refreshMemberTier() pri každej zmene členstva + denný job.
+const TIER_BADGES = {
+  bronze:         { emoji:'🥉', label:'Bronze', color:'#cd7f32' },
+  silver:         { emoji:'🥈', label:'Silver', color:'#a8a9ad' },
+  gold:           { emoji:'🥇', label:'Gold',   color:'#C9A84C' },
+  kids:           { emoji:'🧒', label:'Kids',   color:'#FF6B9D' },
+  online_basic:   { emoji:'💻', label:'Online', color:'#4CAF50' },
+  online_premium: { emoji:'💻', label:'Online', color:'#9C27B0' },
+};
 function getMemberBadge(createdAt, u) {
   if (u) {
     if (u.is_admin) return { emoji:'👑', label:'Majiteľ', months:0, color:'#C9A84C', staff:true };
     if (u.user_type==='trainer') return { emoji:'💃', label:'Tréner', months:0, color:'#e0a656', staff:true };
     if (u.is_assistant) return { emoji:'🤝', label:'Asistent', months:0, color:'#e0a656', staff:true };
+    const t = TIER_BADGES[u.member_tier];
+    if (t) return { ...t, months:0 };
   }
-  if (!createdAt) return { emoji:'🌱', label:'Nováčik', months:0, color:'#8bc34a' };
-  const ms   = Date.now() - new Date(createdAt).getTime();
-  const days = Math.floor(ms / (1000 * 60 * 60 * 24));
-  const months = Math.floor(days / 30);
-  if (months < 1)  return { emoji:'🌱', label:'Nováčik',    months:0,      color:'#8bc34a' };
-  if (months < 3)  return { emoji:'1️⃣', label:'1 mesiac',   months:1,      color:'#ffc107' };
-  if (months < 6)  return { emoji:'3️⃣', label:'3 mesiace',  months:3,      color:'#ff9800' };
-  if (months < 12) return { emoji:'6️⃣', label:'6 mesiacov', months:6,      color:'#ff5722' };
-  if (months < 24) return { emoji:'🏅', label:'1 rok',       months:12,     color:'#9c27b0' };
-  if (months < 36) return { emoji:'💎', label:'2 roky',      months:24,     color:'#2196f3' };
-  return               { emoji:'👑', label:'Legenda',     months:months, color:'#ffd700' };
+  return { emoji:'', label:'', months:0, color:'#666' }; // bez členstva → bez odznaku
+}
+async function refreshMemberTier(userId){
+  try{
+    if(!userId) return;
+    const t=today();
+    const mems=(await q.find(db.memberships,{user_id:userId, status:'active'}))
+      .filter(m=>!m._type && (!m.expires_at || String(m.expires_at)>=t) && TIER_BADGES[m.plan_id]);
+    const rank={gold:3, silver:2, online_premium:2, bronze:1, online_basic:1, kids:1};
+    mems.sort((a,b)=>(rank[b.plan_id]||0)-(rank[a.plan_id]||0));
+    await q.update(db.users,{_id:userId},{$set:{member_tier: mems[0]?mems[0].plan_id:null}});
+  }catch(e){}
 }
 
 function userPublic(u) {
@@ -1040,6 +1053,27 @@ async function seedData() {
     }
     await q.insert(db.settings,{key:'staff_badges_v1', value:true, at:nowISO()});
     console.log(`✅  Rolové odznaky personálu: aktualizovaných ${fixed} starých správ/príspevkov`);
+  }
+
+  // Odznaky v komunite = členstvo (Bronze/Silver/Gold), nie vek účtu — Marek 25.8.
+  // Backfill member_tier pre všetkých + prepis odznakov uložených v starých správach a feede.
+  if(!(await q.one(db.settings,{key:'member_tier_v1'}))){
+    const allU=await q.find(db.users,{});
+    for(const u of allU) await refreshMemberTier(u._id);
+    const uMap={}; for(const u of await q.find(db.users,{})) uMap[u._id]=u;
+    let nMsg=0, nFeed=0;
+    for(const m of await q.find(db.messages,{})){
+      if(!m.user_id || m.is_article) continue;
+      const b=getMemberBadge(uMap[m.user_id]?.created_at, uMap[m.user_id]);
+      await q.update(db.messages,{_id:m._id},{$set:{memberBadge:b}}); nMsg++;
+    }
+    for(const p of await q.find(db.feed,{})){
+      if(!p.author_id || p.system_event) continue;
+      const b=getMemberBadge(uMap[p.author_id]?.created_at, uMap[p.author_id]);
+      await q.update(db.feed,{_id:p._id},{$set:{author_badge:b}}); nFeed++;
+    }
+    await q.insert(db.settings,{key:'member_tier_v1', value:true, at:nowISO()});
+    console.log(`✅  Odznaky členstva: member_tier backfill (${allU.length} účtov), prepísané odznaky ${nMsg} správ + ${nFeed} príspevkov`);
   }
 
   // Pozvánka na Latin Tropical Party 5. 9. do komunitných kanálov (Všeobecné + Eventy) — Marekovo zadanie 25.8.
@@ -6009,6 +6043,7 @@ app.post('/api/admin/users/:id/grant-membership', adminAuth, async(req,res)=>{
       if(existing){ await q.update(db.memberships,{_id:existing._id},{$set:{plan_id,plan_name:plan.name,expires_at:expiresISO,price:gift?0:paidAmount,payment_method:payMethod,gift:!!gift,migrated:!!gift}}); }
       else { await q.insert(db.memberships,{...rec,created_at:nowISO()}); }
       await q.update(db.users,{_id:u._id},{$set:{membership_plan:plan_id,membership_expires:expiresISO}});
+      refreshMemberTier(u._id).catch(()=>{});
       if(!gift){ // reálna platba na mieste → tržba + faktúra + provízia
         await q.insert(db.transactions,{type:'membership',user_id:u._id,user_name:u.name,amount:paidAmount,date:today(),
           payment_method:payMethod, method:payMethod, note:`Členstvo ${plan.name} (admin)`,plan_id,recorded_by:req.session.uid,created_at:nowISO(),month:today().slice(0,7)});
@@ -8402,6 +8437,7 @@ async function activateMembership(userId, planId, durationDays){
       await q.update(db.users,{_id:userId},{$set:{pending_silver_upsell:false}}); // vyčisti nevyužitý flag
     }
   }
+  await refreshMemberTier(userId); // odznak členstva v komunite
 }
 
 async function checkMembership(userId){
@@ -8412,6 +8448,7 @@ async function checkMembership(userId){
   const valid=[], stale=[];
   for(const m of list) (new Date(m.expires_at) < now ? stale : valid).push(m);
   for(const m of stale) await q.update(db.memberships,{_id:m._id},{$set:{status:'expired'}});
+  if(stale.length) refreshMemberTier(userId).catch(()=>{});
   if(!valid.length){
     await q.update(db.users,{_id:userId},{$set:{membership_plan:null,membership_expires:null}});
     return null;
@@ -17925,6 +17962,7 @@ async function runDailyJobs(){
     const renewed = await q.one(db.memberships,{user_id:m.user_id,expires_at:{$gt:todayStr+'T00:00:00'}});
     if(renewed) continue;
     await q.update(db.memberships,{_id:m._id},{$set:{status:'expired'}});
+    refreshMemberTier(m.user_id).catch(()=>{});
     const already = await q.one(db.notifications,{user_id:u._id,type:'membership_ended',created_at:{$gte:yStart}});
     if(already) continue;
     await sendMail(u.email,'Tvoje členstvo skončilo – vráť sa na parket 💃',

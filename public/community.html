@@ -103,8 +103,8 @@ html[data-theme="aurora"] .ig-ringin{background:#181126;}
 .msg.msg-in,.article-card.msg-in{animation:msgIn .32s cubic-bezier(.22,1,.36,1);}
 @media(prefers-reduced-motion:reduce){.msg.msg-in,.article-card.msg-in{animation:none;}}
 .msg{display:flex;gap:8px;margin:3px 0;align-items:flex-end;max-width:100%;}
-.msg-avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.68rem;color:#fff;flex-shrink:0;cursor:pointer;overflow:hidden;}
-.msg-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%;}
+.msg-avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.68rem;color:#fff;flex-shrink:0;cursor:pointer;overflow:hidden;position:relative;}
+.msg-avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%;}
 .bub{max-width:78%;padding:8px 12px;border-radius:16px 16px 16px 5px;background:var(--ig-bub);border:1px solid var(--ig-border);font-size:.85rem;line-height:1.45;color:var(--cream);word-break:break-word;}
 html[data-theme="aurora"] .bub{-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);}
 .msg.own{flex-direction:row-reverse;}
@@ -163,8 +163,8 @@ html[data-theme="aurora"] .feed-composer{-webkit-backdrop-filter:blur(14px);back
 html[data-theme="aurora"] .post{-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);}
 .post.human{border-color:var(--ig-border);}
 .post-head{display:flex;align-items:center;gap:10px;padding:11px 14px 8px;}
-.post-av{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;}
-.post-av img{width:100%;height:100%;object-fit:cover;border-radius:50%;}
+.post-av{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;position:relative;}
+.post-av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%;}
 .post-name{font-weight:800;color:var(--cream);font-size:.85rem;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
 .post-time{font-size:.68rem;color:var(--text-muted);}
 .post-text{color:var(--cream);font-size:.9rem;line-height:1.5;white-space:pre-wrap;word-break:break-word;padding:0 14px;}
@@ -193,8 +193,8 @@ html[data-theme="aurora"] .post{-webkit-backdrop-filter:blur(14px);backdrop-filt
 html[data-theme="aurora"] .dm-card{-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);}
 .dm-item{display:flex;align-items:center;gap:11px;padding:11px 14px;cursor:pointer;transition:.15s;}
 .dm-item:hover{background:rgba(255,255,255,.04);}
-.dm-av{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.95rem;font-weight:800;color:#fff;flex-shrink:0;overflow:hidden;}
-.dm-av img{width:100%;height:100%;object-fit:cover;border-radius:50%;}
+.dm-av{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.95rem;font-weight:800;color:#fff;flex-shrink:0;overflow:hidden;position:relative;}
+.dm-av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%;}
 .dm-meta{flex:1;min-width:0;}
 .dm-nm{font-weight:700;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--cream);}
 .dm-last{font-size:.72rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -560,22 +560,21 @@ function appendMessage(msg, animate) {
       <div class="article-title">${escHtml(titleLine)}</div>
       <div class="article-meta">
         <span class="msg-name">${escHtml(msg.user_name||'Fusion Academy')}</span>
-        <span class="member-badge" style="${badgeStyle}" title="${badge.label||''}">${badge.emoji||'🌱'}</span>
+        ${badge.emoji?`<span class="member-badge" style="${badgeStyle}" title="${badge.label||''}">${badge.emoji}</span>`:''}
         <span class="msg-time">${msg.article_date?fmtDate(msg.article_date):timeStr}</span>
       </div>
       <div class="article-body">${formattedBody}</div>`;
   } else {
     div.className = 'msg' + (isOwn ? ' own' : '');
     const clickAttr = (!isOwn && msg.user_id) ? `onclick="openUserMenu(event,'${msg.user_id}','${escHtml(msg.nickname||msg.user_name||'').replace(/'/g,'')}')"` : '';
-    const av = msg.user_id ? _avatars[msg.user_id] : null;
     const profAttr = msg.user_id ? `onclick="location.href='/u/${msg.user_id}'" title="Zobraziť profil"` : '';
-    const avatarInner = isOwn ? '' : (av
-      ? `<div class="msg-avatar" ${profAttr}><img src="${av}" alt=""></div>`
-      : `<div class="msg-avatar" style="background:${avatarColor}" ${profAttr}>${initials}</div>`);
+    // Fotka cez /api/avatar (404 bez fotky → img zmizne a ostane farebná iniciálka)
+    const avatarInner = isOwn ? '' :
+      `<div class="msg-avatar" style="background:${avatarColor}" ${profAttr}>${msg.user_id?`<img src="/api/avatar/${msg.user_id}" onerror="this.remove()" alt="" loading="lazy">`:''}${initials}</div>`;
     const whoRow = isOwn ? '' : `
         <div class="who" ${clickAttr}>${escHtml(msg.nickname||msg.user_name||'?')}
           ${msg.nickname?`<span style="font-weight:500;color:var(--text-muted)">${escHtml(msg.user_name||'')}</span>`:''}
-          <span class="member-badge" style="${badgeStyle}" title="${badge.label||'Nováčik'}">${badge.emoji||'🌱'} ${badge.label||''}</span>
+          ${badge.emoji?`<span class="member-badge" style="${badgeStyle}" title="${badge.label||''}">${badge.emoji} ${badge.label||''}</span>`:''}
           <span class="rank-badge">${msg.rankBadge||''}</span>
         </div>`;
     div.innerHTML = `
@@ -766,7 +765,7 @@ function renderMemberPicker() {
   const list = allMembers.filter(m => m.id!==me.id && m.name.toLowerCase().includes(q));
   document.getElementById('mpList').innerHTML = list.map(m => `
     <div class="mp-item" onclick="openDM('${m.id}','${escHtml(m.name).replace(/'/g,'')}')">
-      <div class="dm-av" style="width:30px;height:30px;font-size:.72rem;background:${stringToColor(m.id)}">${m.name.charAt(0).toUpperCase()}</div>
+      <div class="dm-av" style="width:30px;height:30px;font-size:.72rem;background:${stringToColor(m.id)}"><img src="/api/avatar/${m.id}" onerror="this.remove()" alt="" loading="lazy">${m.name.charAt(0).toUpperCase()}</div>
       <div><div style="font-weight:600">${m.memberBadge?.emoji||''} ${escHtml(m.name)}</div></div>
     </div>`).join('') || '<div style="padding:12px;color:#888;font-size:.85rem">Nikto sa nenašiel.</div>';
 }
@@ -817,7 +816,7 @@ function renderPost(p) {
   return `<div class="post human" data-id="${p.id}">
     <div class="post-head">
       <div class="post-av" style="background:${av}"><img src="/api/avatar/${p.author_id}" onerror="this.remove()" alt="">${(p.author_name||'?').charAt(0).toUpperCase()}</div>
-      <div style="flex:1;min-width:0"><div class="post-name">${escHtml(p.author_name)} ${p.author_badge?`<span class="member-badge" style="background:${p.author_badge.color||'#8bc34a'}" title="${p.author_badge.label||''}">${p.author_badge.emoji||''} ${p.author_badge.label||''}</span>`:''}</div><div class="post-time">${time}</div></div>
+      <div style="flex:1;min-width:0"><div class="post-name">${escHtml(p.author_name)} ${p.author_badge?.emoji?`<span class="member-badge" style="background:${p.author_badge.color||'#8bc34a'}" title="${p.author_badge.label||''}">${p.author_badge.emoji} ${p.author_badge.label||''}</span>`:''}</div><div class="post-time">${time}</div></div>
       ${p.can_delete?`<button class="post-del" onclick="deletePost('${p.id}')"><i class="bi bi-trash"></i></button>`:''}
     </div>
     ${p.text?`<div class="post-text">${escHtml(p.text)}</div>`:''}
