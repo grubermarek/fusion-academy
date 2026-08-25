@@ -2570,6 +2570,91 @@ app.post('/api/login', rlLogin, async(req,res)=>{
 
 app.post('/api/logout',(req,res)=>{ req.session.destroy(); res.json({ok:true}); });
 
+// ── FUNNEL-001: najbližšie hodiny pre ženu bez prvej rezervácie ──────────────
+// Jedno miesto pravdy pre dashboard hero aj aktivačné maily. Vracia max `limit`
+// najbližších termínov prezenčných hodín, mesto klientky prvé (ak ho poznáme).
+async function firstClassSuggestions(u, limit=6){
+  const classes=(await q.find(db.classes,{active:true}))
+    .filter(c=>c.category!=='Online' && !/rezervácia/i.test(String(c.name||'')));
+  const items=[];
+  for(const c of classes){
+    const date=(typeof classNextDate==='function') ? classNextDate(c) : displayNextDateForDay(c.day_of_week);
+    if(!date || (typeof classRunsOn==='function' && !classRunsOn(c,date))) continue;
+    items.push({ class_id:c._id, name:c.name, emoji:c.emoji||'💃', city:c.location||'',
+      address:c.address||'', date, day_name:DAYS_SK[c.day_of_week]||'', time_start:c.time_start||'', time_end:c.time_end||'' });
+  }
+  items.sort((a,b)=>(a.date+a.time_start).localeCompare(b.date+b.time_start));
+  const myCity=String(u?.city||'').toLowerCase();
+  if(myCity){
+    const mine=items.filter(i=>i.city.toLowerCase().includes(myCity));
+    const rest=items.filter(i=>!i.city.toLowerCase().includes(myCity));
+    return mine.concat(rest).slice(0,limit);
+  }
+  return items.slice(0,limit);
+}
+async function firstBookingEligible(u){
+  if(!u || u.is_admin || u.is_child || ['trainer','manager','admin'].includes(u.user_type)) return false;
+  if((u.visit_count||0)>0) return false;
+  const bks=await q.find(db.bookings,{user_id:u._id});
+  if(bks.some(b=>b.status!=='cancelled')) return false;
+  const mem=await q.one(db.memberships,{user_id:u._id, status:'active'});
+  if(mem) return false;
+  return true;
+}
+app.get('/api/first-class/suggestions', auth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.session.uid});
+    const eligible=await firstBookingEligible(u);
+    if(!eligible) return res.json({ok:true, eligible:false, items:[]});
+    res.json({ok:true, eligible:true, items:await firstClassSuggestions(u,6)});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Aktivačné maily: +3 h („Ešte ti chýba jeden krok") a D2 („Stále chceš skúsiť Zumbu?").
+// Pred odoslaním sa stav vždy prepočíta zo zdrojových dát; dedupe cez booking_nudge*_at.
+async function firstBookingNudgeTick(){
+  const MIN1=+(process.env.FIRST_NUDGE_MIN_MIN||180);       // +3 h
+  const MIN2=+(process.env.FIRST_NUDGE2_MIN_MIN||2*24*60);  // D2
+  const sentToday=(await q.find(db.mail_log,{})).filter(m=>(m.created_at||'').startsWith(today())).length;
+  let budget=Math.min(30, 240-sentToday);
+  const out={checked:0, selected:[], sent:0};
+  if(budget<=0) return out;
+  const isTestU=x=>/test/i.test(x.name||'')||/test/i.test(x.email||'');
+  const now=Date.now();
+  const users=(await q.find(db.users,{account_creation_type:'self_registration'}))
+    .filter(u=>u.registration_at && u.email && /@/.test(u.email)
+      && !/@import\.local$|@guest\./i.test(u.email)
+      && !u.do_not_contact && !u.offers_optout && !isTestU(u) && u.active!==false);
+  for(const u of users){
+    if(budget<=0) break;
+    const ageMin=(now-Date.parse(u.registration_at))/60000;
+    if(!(ageMin>=MIN1 && ageMin<14*24*60)) continue;
+    const which = !u.booking_nudge1_at ? 1 : (!u.booking_nudge2_at && ageMin>=MIN2 ? 2 : 0);
+    if(!which) continue;
+    out.checked++;
+    if(!(await firstBookingEligible(u))) continue;   // revalidácia stavu tesne pred odoslaním
+    const items=await firstClassSuggestions(u,3);
+    if(!items.length) continue;
+    out.selected.push(u.email);
+    const first=String(u.name||'').split(' ')[0]||'tanečníčka';
+    const list=items.map(i=>'<li><b>'+i.day_name+' '+i.date.slice(8,10)+'. '+i.date.slice(5,7)+'.</b> · '+i.time_start+' · '+i.name+' · '+i.city+'</li>').join('');
+    const cta=APP_URL+'/client-dashboard?utm_source=email&utm_medium=activation&utm_campaign=first-booking-nudge'+which;
+    const subj = which===1 ? 'Ešte ti chýba jeden krok 💃' : 'Stále chceš skúsiť Zumbu? 💃';
+    const body = which===1
+      ? '<p>registráciu už máš hotovú — teraz si už len vyber hodinu, na ktorú chceš prísť. <b>Prvá návšteva je zadarmo.</b></p><p>Najbližšie termíny:</p><ul style="line-height:1.9">'+list+'</ul><p>Rezervácia zaberie pár sekúnd a nič ťa nestojí.</p>'
+      : '<p>tvoja <b>prvá hodina zadarmo</b> stále čaká. Nemusíš vedieť tancovať — stačí prísť, trénerka ťa prevedie hodinou.</p><p>Najbližšie termíny:</p><ul style="line-height:1.9">'+list+'</ul>';
+    const ok=await sendMail(u.email, subj, emailTemplate('Ahoj '+first+'! 💛', body, '🗓️ Vybrať si hodinu', cta)).catch(()=>false);
+    if(ok){ out.sent++; budget--; await q.update(db.users,{_id:u._id},{$set:{['booking_nudge'+which+'_at']:nowISO()}}); }
+  }
+  return out;
+}
+setInterval(()=>{ firstBookingNudgeTick().catch(e=>console.error('first booking nudge:',e.message)); }, 20*60*1000);
+// QA/ops: manuálne spustenie ticku (vráti koho vybral a koľkým reálne poslal)
+app.post('/api/admin/qa/run-first-booking-nudge', adminAuth, async(req,res)=>{
+  try{ res.json({ok:true, ...(await firstBookingNudgeTick())}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ── Zabudnuté heslo: klientka si ho resetne sama cez e-mail ──────────────────
 // Bez potvrdzovania existencie účtu (žiadne user-enumeration), token platí 60 min,
 // v DB je len jeho SHA-256 hash. Po resete sa zneplatnia staré prihlásenia (sess_ver).

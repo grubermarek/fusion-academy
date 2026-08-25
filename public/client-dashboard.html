@@ -352,6 +352,7 @@
 
 
   <!-- ONLINE hodina — blíži sa / LIVE -->
+  <div id="firstClassHero" style="display:none;margin-bottom:16px"></div>
   <div id="onlineBanner" style="display:none;margin-bottom:16px"></div>
 
   <!-- Denná odmena: koleso + login streak (vernostný program — vždy niečo vyhráš) -->
@@ -1809,6 +1810,38 @@ async function saveFixedName(){
   if(d?.ok){ document.getElementById('nameFixModal').style.display='none'; showToast('Ďakujeme! Meno uložené ✅','success'); location.reload(); }
   else { const e=document.getElementById('nameFixErr'); e.textContent=d?.error||'Chyba'; e.style.display='block'; }
 }
+
+/* ── FUNNEL-001: hero „Vyber si prvú hodinu" pre ženu bez rezervácie ──────── */
+async function loadFirstClassHero(me){
+  const host=document.getElementById('firstClassHero'); if(!host) return;
+  if(me.is_admin || me.is_child) return;
+  const d=await api('/api/first-class/suggestions').catch(()=>null);
+  if(!d || !d.ok || !d.eligible || !d.items.length){ host.style.display='none'; return; }
+  const fmtD=s=>s.slice(8,10)+'. '+s.slice(5,7)+'.';
+  host.innerHTML='<div style="background:linear-gradient(135deg,rgba(201,168,76,.16),rgba(201,168,76,.05));border:1px solid rgba(201,168,76,.55);border-radius:16px;padding:18px">'
+    +'<div style="font-size:1.05rem;font-weight:900;color:var(--gold,#C9A84C)">💃 VYBER SI SVOJU PRVÚ HODINU</div>'
+    +'<div style="font-size:.82rem;color:var(--muted,#999);margin:4px 0 12px">Prvá hodina je <b style="color:#9fd894">zadarmo</b> a rezervácia zaberie pár sekúnd. Nemusíš vedieť tancovať.</div>'
+    +d.items.slice(0,4).map(i=>'<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid rgba(255,255,255,.07)">'
+      +'<span style="font-size:1.25rem">'+i.emoji+'</span>'
+      +'<div style="flex:1;min-width:0"><b>'+escHtml(i.name)+'</b> <span style="color:var(--gold,#C9A84C);font-weight:700">'+escHtml(i.city)+'</span>'
+      +'<div style="font-size:.76rem;color:var(--muted,#999)">'+escHtml(i.day_name)+' '+fmtD(i.date)+' · '+escHtml(i.time_start)+(i.time_end?'–'+escHtml(i.time_end):'')+'</div></div>'
+      +'<button onclick="fcBook(\''+i.class_id+'\',this)" style="background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);border:none;color:#161310;font-weight:800;padding:9px 16px;border-radius:10px;cursor:pointer;white-space:nowrap">Rezervovať</button>'
+      +'</div>').join('')
+    +'</div>';
+  host.style.display='block';
+}
+async function fcBook(classId,btn){
+  btn.disabled=true; btn.textContent='⏳';
+  const d=await api('/api/bookings',{method:'POST',body:{class_id:classId}}).catch(()=>null);
+  if(d && (d.ok||d.id)){
+    showToast('🎉 Máš to! Miesto je rezervované — detaily nájdeš nižšie v Moje rezervácie.','success');
+    document.getElementById('firstClassHero').style.display='none';
+    setTimeout(()=>location.reload(), 1400);
+  } else {
+    showToast((d&&(d.message||d.error))||'Rezervácia sa nepodarila, skús znova.','error');
+    btn.disabled=false; btn.textContent='Rezervovať';
+  }
+}
 async function init(){
   const me=await api('/api/me');
   if(!me?.id){
@@ -1828,6 +1861,7 @@ async function init(){
   renderMembership(me);
   document.getElementById('mcCancelSub').style.display='none'; // vypnutie odberu je teraz v riadku Automatický odber
   renderAccessBar(me);
+  loadFirstClassHero(me);
   if(me.notif_count>0){const b=document.getElementById('notifBadge');b.textContent=me.notif_count>9?'9+':me.notif_count;b.style.display='flex';}
   if(me.user_type==='partner'||me.user_type==='manager'){document.getElementById('partnerDashLink').style.display='block';}
   // Load profile (loyalty, visits)
