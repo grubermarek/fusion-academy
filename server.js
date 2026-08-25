@@ -8487,6 +8487,7 @@ app.post('/api/membership/subscribe/cancel', auth, async(req,res)=>{
     const cancelRes = await ppApi('POST',`/v1/billing/subscriptions/${u.paypal_subscription_id}/cancel`,{reason:'Zrušenie na žiadosť klienta'});
     if(cancelRes.status!==204) return res.status(400).json({error:'Chyba zrušenia PayPal'});
     await q.update(db.users,{_id:u._id},{$set:{paypal_subscription_id:null, subscription_plan:null}});
+    await recordMembershipCancel(u, req.body.reason, req.body.note, 'paypal_self');
     await q.insert(db.notifications,{user_id:u._id,type:'membership',title:'Subscription zrušená',body:'Automatické obnovenie bolo zrušené. Členstvo zostáva aktívne do konca obdobia.',read:false,created_at:nowISO()});
     res.json({ok:true});
   } catch(e){ res.status(500).json({error:e.message}); }
@@ -10655,6 +10656,8 @@ app.get('/api/admin/refunds', adminAuth, async(req,res)=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || '';
 async function stripeApi(path, params, method='POST'){
+  // QA: STRIPE_FAKE=1 → žiadna sieť, úspešná odpoveď (lokálne testy cancel flowu a pod.)
+  if(process.env.STRIPE_FAKE==='1') return { status:200, body:{ id:'fake_'+path.split('/')[0], deleted:true } };
   const opts = { method, headers:{ 'Authorization':`Bearer ${STRIPE_SECRET}` } };
   if(method==='POST'){
     const body = new URLSearchParams();
@@ -10899,6 +10902,27 @@ app.post('/api/stripe/subscribe', auth, async(req,res)=>{
 });
 
 // Cancel the client's active Stripe subscription (membership stays until period end)
+// FUNNEL-013: dôvody rušenia — whitelist kódov + zápis do db.feedback (type membership_cancel)
+const CANCEL_REASONS={cas:'Nestíham časovo / nevyhovujú termíny', financie:'Finančné dôvody',
+  zdravie:'Zdravotné dôvody / tehotenstvo', stahovanie:'Sťahovanie / dochádzanie',
+  nevyhovuje:'Hodiny mi nesadli', ine:'Iný dôvod'};
+async function recordMembershipCancel(u, reason, note, source){
+  try{
+    const code=CANCEL_REASONS[reason]?reason:'ine';
+    const mem=await q.one(db.memberships,{user_id:u._id, status:'active'});
+    await q.insert(db.feedback,{user_id:u._id, user_name:u.name, type:'membership_cancel',
+      reason:code, reason_label:CANCEL_REASONS[code], note:String(note||'').slice(0,600).trim()||null,
+      plan_id:mem?.plan_id||u.stripe_sub_plan||u.subscription_plan||null, source:source||'stripe',
+      city:u.city||'', created_at:nowISO()});
+    // Marek sa má dozvedieť HNEĎ — kým je klientka „ešte teplá", dá sa zachrániť rozhovorom
+    const admins=await q.find(db.users,{is_admin:true});
+    for(const a of admins) await q.insert(db.notifications,{user_id:a._id, type:'membership_cancel',
+      title:`💔 Zrušené členstvo — ${u.name}`,
+      body:`Dôvod: ${CANCEL_REASONS[code]}${note?` · „${String(note).slice(0,140)}"`:''} · ${u.phone||u.email||''}`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+  }catch(e){}
+}
+
 app.post('/api/stripe/subscribe/cancel', auth, async(req,res)=>{
   try {
     if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
@@ -10906,9 +10930,25 @@ app.post('/api/stripe/subscribe/cancel', auth, async(req,res)=>{
     if(!u.stripe_subscription_id) return res.status(400).json({error:'Nemáš aktívny mesačný odber'});
     await stripeApi('subscriptions/'+encodeURIComponent(u.stripe_subscription_id), null, 'DELETE');
     await q.update(db.users,{_id:u._id},{$set:{stripe_subscription_id:null}});
+    await recordMembershipCancel(u, req.body.reason, req.body.note, 'stripe_self');
     await q.insert(db.notifications,{user_id:u._id,type:'membership',title:'Odber zrušený',body:'Automatické obnovenie bolo zrušené. Členstvo platí do konca obdobia.',read:false,created_at:nowISO()});
     res.json({ok:true});
   } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Rozpad dôvodov churnu za obdobie (default 90 dní)
+app.get('/api/admin/churn-reasons', adminAuth, async(req,res)=>{
+  try{
+    const days=Math.min(365, Math.max(1, +req.query.days||90));
+    const cutoff=new Date(Date.now()-days*864e5).toISOString();
+    const rows=(await q.find(db.feedback,{type:'membership_cancel'})).filter(r=>String(r.created_at||'')>=cutoff);
+    const by={}; rows.forEach(r=>{ by[r.reason]=(by[r.reason]||0)+1; });
+    res.json({ok:true, days, total:rows.length,
+      by_reason:Object.entries(by).map(([code,count])=>({code, label:CANCEL_REASONS[code]||code, count}))
+        .sort((a,b)=>b.count-a.count),
+      latest:rows.sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))).slice(0,20)
+        .map(r=>({name:r.user_name, reason:r.reason, label:r.reason_label, note:r.note, plan:r.plan_id, city:r.city, at:r.created_at}))});
+  }catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // Stripe webhook — subscription renewals + cancellations (raw body for signature verify)

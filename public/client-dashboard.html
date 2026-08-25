@@ -893,11 +893,35 @@ function fmtDMY(d){
   return m ? `${m[3]}-${m[2]}-${m[1]}` : s;
 }
 async function logout(){await api('/api/logout',{method:'POST'});window.location.href='/?login=1';}
-async function cancelStripeSub(){
-  if(!confirm('Zrušiť automatický mesačný odber? Členstvo ti zostane aktívne do konca zaplateného obdobia.')) return;
-  const d=await api('/api/stripe/subscribe/cancel',{method:'POST'});
-  if(d?.ok){ showToast('Odber zrušený. Členstvo platí do konca obdobia.','success'); if(_me){ _me.stripe_subscription=false; renderMembership(_me); } }
-  else showToast('Chyba: '+(d?.error||'?'),'error');
+/* ── FUNNEL-013: rušenie odberu s dôvodom (výber + voliteľná poznámka) ── */
+const CANCEL_REASONS_UI=[['cas','⏰ Nestíham časovo / termíny'],['financie','💶 Finančné dôvody'],
+  ['zdravie','🩺 Zdravotné dôvody / tehotenstvo'],['stahovanie','📦 Sťahovanie / dochádzanie'],
+  ['nevyhovuje','😕 Hodiny mi nesadli'],['ine','✍️ Iný dôvod']];
+function cancelStripeSub(){
+  let sel=null;
+  const old=document.getElementById('cancelModal'); if(old) old.remove();
+  const wrap=document.createElement('div'); wrap.id='cancelModal';
+  wrap.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  wrap.innerHTML='<div style="background:#1d1d1d;border:1px solid rgba(201,168,76,.5);border-radius:18px;padding:20px;max-width:430px;width:100%">'
+    +'<div style="font-weight:900;color:#fff;font-size:1.05rem">Škoda, že odchádzaš 💔</div>'
+    +'<div style="font-size:.82rem;color:#999;margin:4px 0 10px">Členstvo ti zostane aktívne do konca zaplateného obdobia. Povieš nám prečo? Pomôže nám to zlepšiť sa.</div>'
+    +'<div id="cnReasons">'+CANCEL_REASONS_UI.map(([c,l])=>'<button data-c="'+c+'" onclick="cnPick(\''+c+'\')" style="display:block;width:100%;text-align:left;margin:5px 0;padding:10px 12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:10px;color:#eee;cursor:pointer;font-size:.88rem">'+l+'</button>').join('')+'</div>'
+    +'<textarea id="cnNote" maxlength="600" placeholder="Chceš niečo dodať? (nepovinné)" style="width:100%;min-height:56px;margin-top:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:10px;color:#fff;padding:9px;font-family:inherit;font-size:.84rem"></textarea>'
+    +'<button id="cnGo" onclick="cnSubmit()" disabled style="width:100%;margin-top:8px;background:#7a2d2d;border:none;color:#fff;font-weight:900;padding:12px;border-radius:10px;cursor:pointer;opacity:.5">ZRUŠIŤ ODBER</button>'
+    +'<button onclick="document.getElementById(\'cancelModal\').remove()" style="width:100%;margin-top:6px;background:none;border:1px solid rgba(201,168,76,.5);color:var(--gold,#C9A84C);font-weight:800;padding:10px;border-radius:10px;cursor:pointer">OSTÁVAM 💛</button>'
+    +'</div>';
+  document.body.appendChild(wrap);
+  window.cnPick=c=>{ sel=c;
+    document.querySelectorAll('#cnReasons button').forEach(b=>{ const on=b.dataset.c===c;
+      b.style.borderColor=on?'var(--gold,#C9A84C)':'rgba(255,255,255,.14)'; b.style.background=on?'rgba(201,168,76,.16)':'rgba(255,255,255,.05)'; });
+    const go=document.getElementById('cnGo'); go.disabled=false; go.style.opacity='1'; };
+  window.cnSubmit=async()=>{
+    const go=document.getElementById('cnGo'); go.disabled=true; go.textContent='⏳';
+    const d=await api('/api/stripe/subscribe/cancel',{method:'POST',body:{reason:sel,note:document.getElementById('cnNote').value.trim()}});
+    document.getElementById('cancelModal').remove();
+    if(d?.ok){ showToast('Odber zrušený. Členstvo platí do konca obdobia.','success'); if(_me){ _me.stripe_subscription=false; renderMembership(_me); } }
+    else showToast('Chyba: '+(d?.error||'?'),'error');
+  };
 }
 
 /* ─── Odomkni viac (prémiové funkcie podľa členstva) ─── */
