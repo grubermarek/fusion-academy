@@ -60,6 +60,19 @@ body{background:var(--dark-1);color:var(--cream);font-size:.92rem;transition:bac
 .sb2-act{flex:1;height:32px;border-radius:8px;border:1px solid var(--gold-border);background:transparent;color:var(--text-muted);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.9rem;text-decoration:none;transition:.15s;}
 .sb2-act:hover{background:var(--adm-hover);color:var(--gold);}
 .main{margin-left:248px;min-height:100vh;background:var(--dark-1);}
+/* ── Ctrl-K hľadanie ── */
+.sb2-search{display:flex;align-items:center;gap:8px;margin:0 12px 8px;padding:7px 11px;background:var(--dark-3);border:1px solid var(--gold-border);border-radius:8px;color:var(--text-muted);font-size:.78rem;cursor:pointer;width:calc(100% - 24px);}
+.sb2-search:hover{border-color:var(--gold);}
+.sb2-kbd{margin-left:auto;font-size:.6rem;border:1px solid var(--gold-border);border-radius:5px;padding:1px 5px;}
+.cmdk-ov{position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(3px);z-index:1200;display:none;align-items:flex-start;justify-content:center;padding:12vh 16px 16px;}
+.cmdk{background:var(--dark-3);border:1px solid var(--gold-border);border-radius:14px;width:min(560px,96vw);max-height:66vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.5);}
+.cmdk input{background:none;border:none;outline:none;color:var(--cream);font-size:1rem;padding:15px 18px;border-bottom:1px solid var(--gold-border);font-family:inherit;}
+.cmdk-res{overflow-y:auto;padding:6px;}
+.cmdk-g{font-size:.62rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:700;padding:8px 12px 3px;}
+.cmdk-it{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;font-size:.86rem;color:var(--cream);}
+.cmdk-it:hover,.cmdk-it.sel{background:var(--adm-hover);}
+.cmdk-it .bi{color:var(--text-muted);}
+.cmdk-it small{color:var(--text-muted);margin-left:auto;font-size:.7rem;}
 .brand{font-size:1.2rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
 .nav-link{color:var(--cream)!important;opacity:.78;border-radius:8px;margin:1px 0;transition:all .15s;font-size:.84rem;font-weight:500;padding:.42rem .6rem!important;display:flex;align-items:center;}
 .nav-link .bi{color:var(--text-muted);font-size:.95rem;}
@@ -67,11 +80,10 @@ body{background:var(--dark-1);color:var(--cream);font-size:.92rem;transition:bac
 .nav-link.active{background:var(--adm-active)!important;opacity:1;font-weight:600;}
 .nav-link.active .bi{color:var(--gold);}
 .section{display:none;} .section.active{display:block;}
-.stat-card{border:1px solid var(--gold-border)!important;border-radius:1rem;background:var(--dark-3)!important;position:relative;overflow:hidden;}
-.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--grad-gold);}
+.stat-card{border:1px solid var(--gold-border)!important;border-radius:var(--adm-radius);background:var(--dark-3)!important;position:relative;overflow:hidden;box-shadow:var(--adm-shadow);}
 .stat-icon{width:48px;height:48px;border-radius:.75rem;display:flex;align-items:center;justify-content:center;font-size:1.4rem;}
-.table{--bs-table-bg:transparent;--bs-table-color:var(--cream);--bs-table-border-color:var(--gold-border);--bs-table-hover-bg:rgba(201,168,76,.05);}
-.table th{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--gold);font-weight:700;border-bottom:1px solid var(--gold-border)!important;}
+.table{--bs-table-bg:transparent;--bs-table-color:var(--cream);--bs-table-border-color:var(--gold-border);--bs-table-hover-bg:var(--adm-hover);}
+.table th{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;border-bottom:1px solid var(--gold-border)!important;}
 .table td{border-color:var(--gold-border)!important;color:var(--cream);}
 .table-light{--bs-table-bg:var(--dark-4);--bs-table-color:var(--gold);}
 th.sortable{cursor:pointer;user-select:none;white-space:nowrap;}
@@ -91,7 +103,7 @@ th.sortable:hover{color:#fff;}
 .card{background:var(--dark-3)!important;border:1px solid var(--gold-border)!important;color:var(--cream);}
 .card .fw-semibold,.card .fw-bold{color:var(--cream);}
 .text-muted{color:var(--text-muted)!important;}
-.fs-3.fw-bold,.fs-4.fw-bold{background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;display:inline-block;}
+.fs-3.fw-bold,.fs-4.fw-bold{color:var(--cream);letter-spacing:-.01em;}
 .form-control,.form-select{background:var(--dark-3)!important;border:1px solid var(--gold-border)!important;color:var(--cream)!important;}
 .form-control::placeholder{color:var(--text-muted)!important;}
 .form-control:focus,.form-select:focus{border-color:var(--gold)!important;box-shadow:0 0 0 2px rgba(201,168,76,.15)!important;}
@@ -130,6 +142,9 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <div class="sb2-logo"><img src="/logo-mark.png" alt="Fusion Academy"></div>
       <div><b>Fusion Admin</b><span>app.fusionacademy.sk</span></div>
     </div>
+    <button class="sb2-search" onclick="cmdkOpen()">
+      <i class="bi bi-search"></i> Hľadať… <span class="sb2-kbd">Ctrl K</span>
+    </button>
 
     <div class="grp2" data-grp="manage">
     <div class="grp2-h" onclick="toggleGrp(this)">Správa <span class="rail-dot" id="railDotManage"></span><i class="bi bi-chevron-down ms-auto"></i></div>
@@ -2222,6 +2237,75 @@ function selectGroup(g){
   if(grp) grp.classList.remove('closed');
 }
 function toggleGrp(h){ h.parentElement.classList.toggle('closed'); }
+/* ── Ctrl-K: sekcie + klientky + leady ── */
+let _ckT=null;
+function cmdkOpen(){
+  let ov=document.getElementById('cmdkOv');
+  if(!ov){
+    ov=document.createElement('div'); ov.id='cmdkOv'; ov.className='cmdk-ov';
+    ov.innerHTML='<div class="cmdk"><input id="cmdkIn" placeholder="Hľadaj sekciu, klientku, lead…" autocomplete="off"><div class="cmdk-res" id="cmdkRes"></div></div>';
+    ov.onclick=e=>{ if(e.target===ov) cmdkClose(); };
+    document.body.appendChild(ov);
+    document.getElementById('cmdkIn').addEventListener('input', ()=>{ clearTimeout(_ckT); _ckT=setTimeout(cmdkSearch, 220); });
+    document.getElementById('cmdkIn').addEventListener('keydown', e=>{
+      if(e.key==='Enter'){ const f=document.querySelector('#cmdkRes .cmdk-it'); if(f) f.click(); }
+      if(e.key==='Escape') cmdkClose();
+    });
+  }
+  ov.style.display='flex';
+  document.getElementById('cmdkIn').value='';
+  cmdkSearch();
+  setTimeout(()=>document.getElementById('cmdkIn').focus(), 30);
+}
+function cmdkClose(){ const ov=document.getElementById('cmdkOv'); if(ov) ov.style.display='none'; }
+function cmdkSections(q){
+  const out=[];
+  document.querySelectorAll('.sb2 .nav-link').forEach(a=>{
+    const t=a.textContent.trim().replace(/\s+/g,' ');
+    if(!q || t.toLowerCase().includes(q)) {
+      const m=(a.getAttribute('onclick')||'').match(/show\('([a-z-]+)'\)/);
+      out.push({t, sec:m?m[1]:null, href:a.getAttribute('href')});
+    }
+  });
+  return out.slice(0, q?7:6);
+}
+async function cmdkSearch(){
+  const q=(document.getElementById('cmdkIn').value||'').trim().toLowerCase();
+  const res=document.getElementById('cmdkRes');
+  const secs=cmdkSections(q);
+  let html='';
+  if(secs.length){
+    html+='<div class="cmdk-g">Sekcie</div>'+secs.map(s=>
+      `<div class="cmdk-it" onclick="cmdkGo('${s.sec||''}','${s.href&&s.href!=='#'?s.href:''}')"><i class="bi bi-grid"></i>${s.t}</div>`).join('');
+  }
+  res.innerHTML=html || '<div class="cmdk-g">Píš pre hľadanie…</div>';
+  if(q.length>=2){
+    try{
+      const [cl, ld]=await Promise.all([
+        api('/api/admin/clients?search='+encodeURIComponent(q)).catch(()=>null),
+        api('/api/admin/leads?search='+encodeURIComponent(q)).catch(()=>null),
+      ]);
+      if((document.getElementById('cmdkIn').value||'').trim().toLowerCase()!==q) return; // medzitým sa písalo
+      let extra='';
+      const cls=(cl&&(cl.clients||cl.rows||[])).slice(0,5);
+      if(cls.length) extra+='<div class="cmdk-g">Klientky</div>'+cls.map(c=>
+        `<div class="cmdk-it" onclick="cmdkPerson('crm','clientsSearch','${String(c.name||'').replace(/'/g,'')}')"><i class="bi bi-person"></i>${c.name}<small>${c.email||c.phone||''}</small></div>`).join('');
+      const lds=(ld&&(ld.leads||[])).slice(0,5);
+      if(lds.length) extra+='<div class="cmdk-g">Leady</div>'+lds.map(c=>
+        `<div class="cmdk-it" onclick="cmdkPerson('leads','leadsSearch','${String(c.name||'').replace(/'/g,'')}')"><i class="bi bi-person-plus"></i>${c.name}<small>${c.email||c.phone||''}</small></div>`).join('');
+      if(extra) res.innerHTML=(html||'')+extra;
+    }catch(e){}
+  }
+}
+function cmdkGo(sec, href){ cmdkClose(); if(sec) show(sec); else if(href) window.open(href,'_blank'); }
+function cmdkPerson(sec, inputId, name){
+  cmdkClose(); show(sec);
+  const i=document.getElementById(inputId);
+  if(i){ i.value=name; i.dispatchEvent(new Event('input')); }
+}
+document.addEventListener('keydown', e=>{
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); cmdkOpen(); }
+});
 function admToggleTheme(){
   const light=document.documentElement.classList.toggle('adm-light');
   try{ localStorage.setItem('fa_admin_theme', light?'light':'dark'); }catch(e){}
