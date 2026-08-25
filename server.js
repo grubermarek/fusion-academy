@@ -15915,7 +15915,39 @@ app.get('/api/admin/cac-ltv', adminAuth, async(req,res)=>{
       const mature=cohort.length ? cohort.every(u=>addDays(acqAt(u),90)<=today10) : false;
       const spendStale = spend>0 && (!c.spend_updated_at || (Date.now()-Date.parse(c.spend_updated_at))>7*864e5);
       const pct=(a,b)=>b?+(a/b*100).toFixed(1):null;
+      // v2 (FUNNEL-014): payback — kumulatívna tržba kohorty v 30-dňových krokoch vs spend
+      let payback_days=null;
+      if(spend>0){
+        for(const N of [30,60,90,120,150,180]){
+          const cum=+cohort.reduce((x,u)=>x+revIn(u,N),0).toFixed(2)+ticketRev;
+          if(cum>=spend){ payback_days=N; break; }
+        }
+      }
+      // v2: retention DN — z tých, čo prišli aspoň raz a majú odžitých N dní:
+      // bola na hodine v okne [N-30, N] dní od akvizície? (= stále chodí)
+      const retAt=N=>{
+        const eligible=attended.filter(u=>addDays(acqAt(u),N)<=today10);
+        if(!eligible.length) return {pct:null, n:0};
+        const active=eligible.filter(u=>{
+          const a=acqAt(u), from=addDays(a,N-30), to=addDays(a,N);
+          return (bkByU[u._id]||[]).some(b=>b.status==='attended' && String(b.booking_date||'')>=from && String(b.booking_date||'')<=to);
+        });
+        return {pct:+(active.length/eligible.length*100).toFixed(1), n:eligible.length};
+      };
+      const r30=retAt(30), r60=retAt(60), r90=retAt(90);
+      // v2: FREE|PAID offer dimenzia (FUNNEL-015 zapisuje acquisition_offer; zatiaľ všetko free)
+      const offerOf=u=>u.acquisition_offer==='paid_first_class'?'paid':'free';
+      const offers={};
+      for(const off of ['free','paid']){
+        const sub=cohort.filter(u=>offerOf(u)===off);
+        if(!sub.length) continue;
+        offers[off]={acquired:sub.length, attended:sub.filter(u=>attendedOf(u)>=1).length,
+          payers:sub.filter(u=>(revByUser[u._id]||[]).some(r=>r.a>0)).length,
+          rev90:+sub.reduce((x,u)=>x+revIn(u,90),0).toFixed(2)};
+      }
       rows.push({ id:c._id, name:c.name, platform:c.platform||'other',
+        payback_days, retention_d30:r30.pct, retention_d60:r60.pct, retention_d90:r90.pct,
+        retention_base:{d30:r30.n, d60:r60.n, d90:r90.n}, offers,
         spend, spend_updated_at:c.spend_updated_at||null, spend_stale:spendStale,
         leads:leads.length, registrations:regs.length, acquired,
         booked, attended:attended.length, second, payers:payers.length, members,
@@ -15937,7 +15969,31 @@ app.get('/api/admin/cac-ltv', adminAuth, async(req,res)=>{
       payers:rows.reduce((x,r)=>x+r.payers,0),
       revenue90:+rows.reduce((x,r)=>x+r.revenue90+r.ticket_revenue,0).toFixed(2) };
     tot.roas90 = tot.spend?+(tot.revenue90/tot.spend).toFixed(2):null;
-    res.json({ok:true, rows, totals:tot});
+    // v2: globálny FREE|PAID split cez všetky akvizičné kontá (nezávislé od kampaní)
+    const gAcq=u=>String(u.registration_at||u.lead_at||u.created_at||'').slice(0,10);
+    const gRev=(u,days)=>{ const a=gAcq(u); const lim=addDays(a,days);
+      return (revByUser[u._id]||[]).filter(r=>r.d>=a && r.d<=lim).reduce((x,r)=>x+r.a,0); };
+    const byOffer={};
+    for(const off of ['free','paid']){
+      const sub=users.filter(u=>(u.acquisition_offer==='paid_first_class'?'paid':'free')===off);
+      if(!sub.length) continue;
+      byOffer[off]={acquired:sub.length,
+        attended:sub.filter(u=>(bkByU[u._id]||[]).some(b=>b.status==='attended')).length,
+        payers:sub.filter(u=>(revByUser[u._id]||[]).some(r=>r.a>0)).length,
+        rev90:+sub.reduce((x,u)=>x+gRev(u,90),0).toFixed(2)};
+    }
+    // v2: korelácia hodnotenia 1. hodiny (FUNNEL-010) s konverziou na platiacu/členku
+    const fbByUser={};
+    for(const f of await q.find(db.feedback,{type:'first_class'})) fbByUser[f.user_id]=f.rating;
+    const rated=users.filter(u=>fbByUser[u._id]);
+    const corr={};
+    for(const [k,flt] of [['high',r=>r>=4],['low',r=>r<=3]]){
+      const grp=rated.filter(u=>flt(fbByUser[u._id]));
+      corr[k]={n:grp.length,
+        payer_pct:grp.length?+(grp.filter(u=>(revByUser[u._id]||[]).some(r=>r.a>0)).length/grp.length*100).toFixed(1):null,
+        member_pct:grp.length?+(grp.filter(u=>paidMemUsers.has(u._id)).length/grp.length*100).toFixed(1):null};
+    }
+    res.json({ok:true, rows, totals:tot, totals_by_offer:byOffer, rating_correlation:corr});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
