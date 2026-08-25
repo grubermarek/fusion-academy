@@ -1,0 +1,104 @@
+/* ═══════════════════════════════════════════════════════════════
+   FUSION ACADEMY — AURORA GLASS téma (voliteľná, data-theme="aurora")
+   Klasik (bez atribútu) ostáva nedotknutý — Couture Black & Gold.
+   Tokeny podľa schváleného návrhu: Podklady/design-navrhy/fusion-aurora-navrh.html
+   ═══════════════════════════════════════════════════════════════ */
+
+html[data-theme="aurora"]{
+  /* prepis základných tokenov stránok (dashboard :root aj fa-theme.css) */
+  --dark:#0B0714; --dark-1:#0B0714; --dark-2:#120B22; --dark-3:#1A1430;
+  --card:rgba(255,255,255,.07); --card-2:rgba(255,255,255,.10);
+  --border:rgba(255,255,255,.14); --gold-border:rgba(255,255,255,.16);
+  --text:#F1EDF7; --cream:#F1EDF7; --muted:rgba(241,237,247,.62);
+  --text-muted:rgba(241,237,247,.62);
+  /* aurora-specifické tokeny */
+  --au-accent:#E9B8FF;
+  --au-cta:linear-gradient(90deg,#A855F7,#EC4899);
+  --au-cta-shadow:0 8px 24px rgba(168,85,247,.35);
+  --au-ok:#7CFFB2; --au-ok-bg:rgba(52,211,153,.12); --au-ok-border:rgba(52,211,153,.4);
+  --au-glass:rgba(255,255,255,.07); --au-glass-border:rgba(255,255,255,.14);
+  --au-radius:22px;
+}
+
+/* ── Aurora pozadie: mäkké radiálne gradienty (bez filter:blur — šetrí GPU) ── */
+html[data-theme="aurora"] body{ background:#0B0714; }
+html[data-theme="aurora"] body::before{
+  content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
+  background:
+    radial-gradient(42% 32% at 12% 6%,  rgba(124,58,237,.42), transparent 70%),
+    radial-gradient(38% 30% at 94% 28%, rgba(219,39,119,.30), transparent 70%),
+    radial-gradient(44% 34% at 28% 98%, rgba(201,162,76,.20), transparent 70%);
+}
+
+/* ── Sklenené karty ── */
+html[data-theme="aurora"] .card{
+  background:var(--au-glass);
+  border:1px solid var(--au-glass-border);
+  border-radius:var(--au-radius);
+  -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+}
+@supports not (backdrop-filter:blur(14px)){
+  html[data-theme="aurora"] .card{ background:#171129; }
+}
+html[data-theme="aurora"] .card-title{ color:rgba(241,237,247,.62); }
+
+/* ── Topbar / navigácia ── */
+html[data-theme="aurora"] .topbar{
+  background:rgba(20,13,34,.72);
+  border-bottom:1px solid rgba(255,255,255,.10);
+  -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+}
+html[data-theme="aurora"] .topbar-logo{ color:var(--au-accent); }
+html[data-theme="aurora"] .fa-nav,
+html[data-theme="aurora"] .fa-bottom-nav{
+  background:rgba(20,13,34,.72);
+  border-color:rgba(255,255,255,.10);
+  -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+}
+html[data-theme="aurora"] .fa-nav-link:hover,
+html[data-theme="aurora"] .fa-nav-link.active{ color:var(--au-accent); background:rgba(233,184,255,.08); border-color:rgba(233,184,255,.3); }
+
+/* ═══ FA2 komponenty (zdieľané oboma témami — klasické hodnoty nižšie,
+       aurora prepisy tu; používajú ich booking hero, stateStrip, fbCard) ═══ */
+
+/* primárna akcia */
+html[data-theme="aurora"] .fa2-btn{
+  background:var(--au-cta); color:#fff; box-shadow:var(--au-cta-shadow);
+}
+/* sekundárne pill tlačidlo */
+html[data-theme="aurora"] .fa2-btn2{
+  background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.14); color:#F1EDF7;
+}
+/* karta */
+html[data-theme="aurora"] .fa2-card{
+  background:var(--au-glass); border:1px solid var(--au-glass-border);
+  border-radius:var(--au-radius);
+  -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+}
+@supports not (backdrop-filter:blur(14px)){
+  html[data-theme="aurora"] .fa2-card{ background:#171129; }
+}
+/* rezervované (úspech) */
+html[data-theme="aurora"] .fa2-card.fa2-ok{ border-color:var(--au-ok-border); }
+html[data-theme="aurora"] .fa2-okchip{
+  color:var(--au-ok); background:var(--au-ok-bg); border:1px solid var(--au-ok-border);
+}
+html[data-theme="aurora"] .fa2-oktext{ color:var(--au-ok); }
+/* zvýraznené číslo / akcent */
+html[data-theme="aurora"] .fa2-acc{ color:var(--au-accent); }
+/* zlatá ostáva na peniazoch aj v aurore (most k značke) */
+html[data-theme="aurora"] .fa2-gold{ color:#F3D27E; }
+
+/* prepínač témy */
+.fa2-theme-toggle{
+  background:none; border:1px solid var(--border,#2A241C); color:var(--muted,#999);
+  padding:6px 12px; border-radius:99px; cursor:pointer; font-size:.78rem; font-weight:700;
+  display:inline-flex; align-items:center; gap:6px; transition:all .2s;
+}
+.fa2-theme-toggle:hover{ border-color:var(--gold,#C9A24C); color:var(--gold,#C9A24C); }
+html[data-theme="aurora"] .fa2-theme-toggle{ border-color:rgba(233,184,255,.4); color:var(--au-accent); }
+
+/* jemnosť: menej pohybu = žiadne extra animácie aurory */
+@media (prefers-reduced-motion:reduce){
+  html[data-theme="aurora"] body::before{ background-attachment:scroll; }
+}

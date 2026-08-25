@@ -1,5 +1,5 @@
-﻿const CACHE = 'fa-v505';
-const STATIC = ['/fa-theme.css','/logo-mark.png','/logo-wordmark.png'];
+﻿const CACHE = 'fa-v506';
+const STATIC = ['/fa-theme.css','/aurora.css','/logo-mark.png','/logo-wordmark.png'];
 
 self.addEventListener('install', e=>{
   e.waitUntil(caches.open(CACHE).then(c=>c.addAll(STATIC)).then(()=>self.skipWaiting()));
