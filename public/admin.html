@@ -5,41 +5,67 @@
 <link rel="icon" type="image/png" href="/logo-mark.png">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fusion Academy – Admin Panel</title>
+<script>/* svetlý režim pred prvým renderom */try{if(localStorage.getItem('fa_admin_theme')==='light')document.documentElement.classList.add('adm-light')}catch(e){}</script>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 <link rel="stylesheet" href="/fa-theme.css">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
+/* ═══ Shadcn-style tokeny (Studio Admin vzor, Marek 25.8.) ═══
+   Rovnaké NÁZVY premenných ako doteraz → všetky sekcie sa pretémujú samé.
+   Default TMAVÝ; html.adm-light = svetlý režim (prepínač v sidebari). */
 :root{
   --brand1:#C9A84C;--brand2:#F0C060;
-  --gold:#C9A84C;--gold-light:#F0C060;
-  --dark-1:#0f0f0f;--dark-2:#141414;--dark-3:#1a1a1a;--dark-4:#222;--dark-5:#2c2c2c;
-  --cream:#F5EDD6;--text-muted:rgba(245,237,214,0.50);
-  --gold-border:rgba(201,168,76,0.22);--grad-gold:linear-gradient(135deg,#C9A84C,#F0C060,#C9A84C);
+  --gold:#C9A24C;--gold-light:#E7C878;
+  --dark-1:#0a0a0a;   /* pozadie stránky */
+  --dark-2:#0f0f0f;   /* sidebar */
+  --dark-3:#141414;   /* karty, inputy */
+  --dark-4:#1c1c1c;   /* zvýraznené plochy */
+  --dark-5:#262626;
+  --cream:#fafafa;--text-muted:#9d9a92;
+  --gold-border:#262626;                 /* KĽÚČ: neutrálne okraje namiesto zlatých */
+  --grad-gold:linear-gradient(135deg,#C9A24C,#E7C878,#C9A24C);
+  --adm-hover:#1a1a1a;--adm-active:#26221a;--adm-shadow:0 1px 2px rgba(0,0,0,.4);
+  --adm-radius:.625rem;
 }
-body{background:var(--dark-1);color:var(--cream);font-size:.92rem;}
-/* ── Two-tier sidebar (Glofox-style): icon rail + group panel ── */
+html.adm-light{
+  --dark-1:#fafafa; --dark-2:#fbfbfb; --dark-3:#ffffff; --dark-4:#f4f4f5; --dark-5:#e5e5e5;
+  --cream:#0a0a0a; --text-muted:#737373;
+  --gold-border:#e5e5e5;
+  --adm-hover:#f4f4f5; --adm-active:#f0ece1; --adm-shadow:0 1px 2px rgba(0,0,0,.05);
+}
+body{background:var(--dark-1);color:var(--cream);font-size:.92rem;transition:background .2s,color .2s;}
+/* ═══ Sidebar: jeden zoskupený panel so zbaliteľnými skupinami ═══ */
 .sidebar{min-height:100vh;position:fixed;left:0;top:0;z-index:100;display:flex;}
-.icon-rail{width:62px;background:#131313;border-right:1px solid #2a2a2a;display:flex;flex-direction:column;align-items:center;padding:12px 0;gap:4px;}
-.rail-logo{width:40px;height:40px;border-radius:11px;background:#15120c;display:flex;align-items:center;justify-content:center;margin-bottom:12px;overflow:hidden;}
-.rail-logo img{width:100%;height:100%;object-fit:contain;}
-.rail-btn{width:46px;height:46px;border-radius:13px;border:none;background:transparent;color:rgba(245,237,214,.5);font-size:1.25rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.18s;position:relative;}
-.rail-btn:hover{background:rgba(201,168,76,.1);color:var(--gold);}
-.rail-btn.active{background:rgba(201,168,76,.16);color:var(--gold);}
-.rail-btn.active::before{content:'';position:absolute;left:-12px;top:9px;bottom:9px;width:3px;border-radius:0 3px 3px 0;background:var(--gold);}
-.rail-btn .rail-dot{position:absolute;top:7px;right:8px;width:8px;height:8px;border-radius:50%;background:#f87171;display:none;}
-.group-panel{width:200px;background:var(--dark-2);border-right:1px solid var(--gold-border);padding:16px 12px;display:flex;flex-direction:column;overflow-y:auto;}
-.group-title{font-size:1.05rem;font-weight:800;color:var(--cream);margin:2px 6px 14px;}
-.group-links{display:none;flex-direction:column;gap:2px;}
-.group-links.active{display:flex;animation:grpIn .22s ease both;}
-.nav-group-label{font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;color:rgba(201,168,76,.6);font-weight:700;padding:.55rem .7rem .2rem;margin-top:.3rem;border-top:1px solid rgba(255,255,255,.05);}
-.nav-group-label:first-child{border-top:none;margin-top:0;}
-@keyframes grpIn{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:translateX(0)}}
-.main{margin-left:262px;min-height:100vh;background:var(--dark-1);}
+.sb2{width:248px;background:var(--dark-2);border-right:1px solid var(--gold-border);display:flex;flex-direction:column;height:100vh;overflow-y:auto;}
+.sb2::-webkit-scrollbar{width:4px;}.sb2::-webkit-scrollbar-thumb{background:var(--gold-border);border-radius:2px;}
+.sb2-head{display:flex;align-items:center;gap:10px;padding:16px 16px 12px;flex:none;}
+.sb2-logo{width:34px;height:34px;border-radius:9px;background:var(--grad-gold);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none;}
+.sb2-logo img{width:100%;height:100%;object-fit:contain;}
+.sb2-head b{font-size:.92rem;color:var(--cream);}
+.sb2-head span{display:block;font-size:.64rem;color:var(--text-muted);}
+.grp2{padding:6px 10px 2px;}
+.grp2-h{display:flex;align-items:center;justify-content:space-between;font-size:.64rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);padding:6px 8px;cursor:pointer;user-select:none;position:relative;}
+.grp2-h .bi-chevron-down{font-size:.6rem;transition:transform .2s;}
+.grp2.closed .grp2-h .bi-chevron-down{transform:rotate(-90deg);}
+.grp2.closed .nav-link, .grp2.closed .nav-group-label{display:none!important;}
+.group-links{display:flex;flex-direction:column;gap:1px;}
+.grp2-h .rail-dot{width:7px;height:7px;border-radius:50%;background:#f87171;display:none;margin-left:6px;}
+.nav-group-label{font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);opacity:.75;font-weight:700;padding:.55rem .7rem .15rem;margin-top:.25rem;}
+.sb2-foot{margin-top:auto;padding:10px 12px 12px;border-top:1px solid var(--gold-border);flex:none;}
+.sb2-user{display:flex;align-items:center;gap:9px;margin-bottom:8px;}
+.sb2-av{width:30px;height:30px;border-radius:50%;background:var(--grad-gold);display:flex;align-items:center;justify-content:center;color:#1b1509;font-weight:800;font-size:.75rem;flex:none;}
+.sb2-actions{display:flex;gap:6px;}
+.sb2-act{flex:1;height:32px;border-radius:8px;border:1px solid var(--gold-border);background:transparent;color:var(--text-muted);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.9rem;text-decoration:none;transition:.15s;}
+.sb2-act:hover{background:var(--adm-hover);color:var(--gold);}
+.main{margin-left:248px;min-height:100vh;background:var(--dark-1);}
 .brand{font-size:1.2rem;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
-.nav-link{color:rgba(245,237,214,.6)!important;border-radius:.5rem;margin:1px 0;transition:all .2s;font-size:.88rem;padding:.5rem .7rem!important;}
-.nav-link:hover,.nav-link.active{background:rgba(201,168,76,.12)!important;color:var(--gold)!important;}
+.nav-link{color:var(--cream)!important;opacity:.78;border-radius:8px;margin:1px 0;transition:all .15s;font-size:.84rem;font-weight:500;padding:.42rem .6rem!important;display:flex;align-items:center;}
+.nav-link .bi{color:var(--text-muted);font-size:.95rem;}
+.nav-link:hover{background:var(--adm-hover)!important;opacity:1;}
+.nav-link.active{background:var(--adm-active)!important;opacity:1;font-weight:600;}
+.nav-link.active .bi{color:var(--gold);}
 .section{display:none;} .section.active{display:block;}
 .stat-card{border:1px solid var(--gold-border)!important;border-radius:1rem;background:var(--dark-3)!important;position:relative;overflow:hidden;}
 .stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--grad-gold);}
@@ -80,44 +106,33 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 .border-bottom{border-color:var(--gold-border)!important;}
 .input-group-text{background:var(--dark-4);border-color:var(--gold-border);color:var(--text-muted);}
 @media(max-width:768px){
-  .sidebar{position:static;min-height:auto;width:100%;flex-direction:column;}
-  .icon-rail{flex-direction:row;align-items:center;width:100%;gap:2px;padding:8px 10px;overflow-x:auto;-webkit-overflow-scrolling:touch;}
-  .icon-rail::-webkit-scrollbar{display:none;}
-  .rail-logo{margin-bottom:0;margin-right:8px;flex-shrink:0;}
-  .rail-btn{flex-shrink:0;width:44px;height:44px;}
-  /* Spodná skupina (osobný/profil/shop/odhlásiť) → v riadku, zarovnaná doprava */
-  .icon-rail>.mt-auto{margin-top:0!important;margin-left:auto;flex-direction:row!important;gap:2px;flex-shrink:0;}
-  .rail-btn.active::before{left:9px;right:9px;top:auto;bottom:-6px;width:auto;height:3px;}
-  .group-panel{width:100%;border-right:none;border-bottom:1px solid var(--gold-border);}
+  .sidebar{position:static;min-height:auto;width:100%;}
+  .sb2{width:100%;height:auto;max-height:none;border-right:none;border-bottom:1px solid var(--gold-border);}
+  .grp2:not(.closed) .grp2-h{color:var(--gold);}
+  .sb2-foot{margin-top:0;}
   .main{margin-left:0;}
 }
 .adm-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px}
-.adm-tab{background:rgba(255,255,255,.04);border:1px solid #2a2a2a;color:#bbb;border-radius:10px;padding:8px 14px;font-size:.85rem;font-weight:600;cursor:pointer;transition:.15s}
-.adm-tab:hover{border-color:#C9A84C;color:#eee}
-.adm-tab.on{background:rgba(201,168,76,.14);border-color:rgba(201,168,76,.55);color:#e8cf8a}
+.adm-tab{background:var(--dark-3);border:1px solid var(--gold-border);color:var(--text-muted);border-radius:10px;padding:8px 14px;font-size:.85rem;font-weight:600;cursor:pointer;transition:.15s}
+.adm-tab:hover{border-color:var(--gold);color:var(--cream)}
+.adm-tab.on{background:var(--adm-active);border-color:var(--gold);color:var(--gold)}
+.card{box-shadow:var(--adm-shadow);border-radius:var(--adm-radius)!important;}
+.btn-outline-secondary{border-color:var(--gold-border)!important;color:var(--text-muted)!important;}
+.btn-outline-secondary:hover{background:var(--adm-hover)!important;color:var(--cream)!important;}
 </style>
 </head>
 <body>
 
 <div class="sidebar">
-  <!-- Icon rail -->
-  <div class="icon-rail">
-    <div class="rail-logo"><img src="/logo-mark.png" alt="Fusion Academy"></div>
-    <button class="rail-btn active" id="rail-manage" onclick="selectGroup('manage')" title="Správa"><i class="bi bi-grid-1x2"></i><span class="rail-dot" id="railDotManage"></span></button>
-    <button class="rail-btn" id="rail-marketing" onclick="selectGroup('marketing')" title="Marketing"><i class="bi bi-megaphone"></i></button>
-    <button class="rail-btn" id="rail-reports" onclick="selectGroup('reports')" title="Financie a reporty"><i class="bi bi-bar-chart"></i></button>
-    <button class="rail-btn" id="rail-partners" onclick="selectGroup('partners')" title="Partneri (MLM)"><i class="bi bi-people"></i></button>
-    <div class="mt-auto d-flex flex-column gap-1">
-      <button class="rail-btn" onclick="enterTestAccount()" title="Testovací účet — prepnúť sa do prázdneho klientskeho účtu"><i class="bi bi-incognito"></i></button>
-      <a class="rail-btn" href="/shop" target="_blank" title="E-shop"><i class="bi bi-shop"></i></a>
-      <button class="rail-btn" onclick="logout()" title="Odhlásiť"><i class="bi bi-box-arrow-left"></i></button>
+  <!-- Jeden zoskupený sidebar (Studio Admin vzor) -->
+  <div class="sb2">
+    <div class="sb2-head">
+      <div class="sb2-logo"><img src="/logo-mark.png" alt="Fusion Academy"></div>
+      <div><b>Fusion Admin</b><span>app.fusionacademy.sk</span></div>
     </div>
-  </div>
 
-  <!-- Group panel (links for the active rail group) -->
-  <div class="group-panel">
-    <div class="group-title" id="groupTitle">Správa</div>
-
+    <div class="grp2" data-grp="manage">
+    <div class="grp2-h" onclick="toggleGrp(this)">Správa <span class="rail-dot" id="railDotManage"></span><i class="bi bi-chevron-down ms-auto"></i></div>
     <div class="group-links active" data-group="manage">
       <a class="nav-link" href="#" onclick="show('urgent')"><i class="bi bi-fire me-2"></i><span style="color:#ff6b6b;font-weight:800">Neodkladné</span> <span id="urgentBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
       <a class="nav-link active" href="#" onclick="show('attendance')"><i class="bi bi-calendar-heart me-2"></i><span style="color:#4ade80;font-weight:700">Kalendár rezervácií</span></a>
@@ -139,7 +154,10 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('rentals')"><i class="bi bi-building me-2"></i>Prenájmy</a>
       <a class="nav-link" href="#" onclick="show('articles')"><i class="bi bi-newspaper me-2"></i>Blog / Články</a>
     </div>
+    </div>
 
+    <div class="grp2" data-grp="marketing">
+    <div class="grp2-h" onclick="toggleGrp(this)">Marketing <i class="bi bi-chevron-down ms-auto"></i></div>
     <div class="group-links" data-group="marketing">
       <a class="nav-link" href="#" onclick="show('marketing')"><i class="bi bi-graph-up-arrow me-2"></i><span style="color:#C9A84C;font-weight:700">Marketing (CAC/LTV)</span></a>
       <a class="nav-link" href="#" onclick="show('campaigns')"><i class="bi bi-megaphone me-2"></i>Kampane</a>
@@ -149,7 +167,10 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('promos')"><i class="bi bi-ticket-perforated me-2"></i>Promo kódy</a>
       <a class="nav-link" href="#" onclick="show('churn')"><i class="bi bi-person-dash me-2"></i>Churn Risk <span id="churnBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
     </div>
+    </div>
 
+    <div class="grp2" data-grp="reports">
+    <div class="grp2-h" onclick="toggleGrp(this)">Financie &amp; reporty <i class="bi bi-chevron-down ms-auto"></i></div>
     <div class="group-links" data-group="reports">
       <a class="nav-link" href="#" onclick="show('fusionai')"><i class="bi bi-robot me-2"></i><span style="background:linear-gradient(90deg,#C9A84C,#e8d18a);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:800">Fusion AI 🤖</span></a>
       <a class="nav-link" href="#" onclick="show('bizrank')"><i class="bi bi-trophy me-2"></i><span style="background:linear-gradient(90deg,#C9A84C,#e8d18a);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:800">Business Rank</span></a>
@@ -166,11 +187,28 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('alerts')"><i class="bi bi-bell me-2"></i>Alerty <span id="alertsBadge" class="badge bg-danger" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('exports')"><i class="bi bi-download me-2"></i>Exporty &amp; audit</a>
     </div>
+    </div>
 
+    <div class="grp2 closed" data-grp="partners">
+    <div class="grp2-h" onclick="toggleGrp(this)">Partneri <i class="bi bi-chevron-down ms-auto"></i></div>
     <div class="group-links" data-group="partners">
       <a class="nav-link" href="#" onclick="show('partners')"><i class="bi bi-people me-2"></i>Partneri</a>
       <a class="nav-link" href="#" onclick="show('addpartner')"><i class="bi bi-person-plus me-2"></i>Vytvoriť účet klienta</a>
       <a class="nav-link" href="#" onclick="show('commissions')"><i class="bi bi-cash-stack me-2"></i>Výplaty provízií</a>
+    </div>
+    </div>
+
+    <div class="sb2-foot">
+      <div class="sb2-user">
+        <div class="sb2-av">M</div>
+        <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:.8rem" id="admUserName">Admin</div><div style="font-size:.64rem;color:var(--text-muted)">Majiteľ</div></div>
+      </div>
+      <div class="sb2-actions">
+        <button class="sb2-act" onclick="admToggleTheme()" id="admThemeBtn" title="Svetlý / tmavý režim"><i class="bi bi-moon-stars"></i></button>
+        <button class="sb2-act" onclick="enterTestAccount()" title="Testovací účet"><i class="bi bi-incognito"></i></button>
+        <a class="sb2-act" href="/shop" target="_blank" title="E-shop"><i class="bi bi-shop"></i></a>
+        <button class="sb2-act" onclick="logout()" title="Odhlásiť"><i class="bi bi-box-arrow-left"></i></button>
+      </div>
     </div>
   </div>
 </div>
@@ -2179,11 +2217,19 @@ const SECTION_GROUP={attendance:'manage',sale:'reports',
   sutaze:'marketing',venceky:'manage',eventy:'manage',fusionai:'reports',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',funnel:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
   partners:'partners',addpartner:'partners',commissions:'partners'};
 function selectGroup(g){
-  document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
-  document.getElementById('rail-'+g)?.classList.add('active');
-  document.querySelectorAll('.group-links').forEach(el=>el.classList.toggle('active', el.dataset.group===g));
-  document.getElementById('groupTitle').textContent=GROUP_TITLES[g]||'';
+  // Nový sidebar: skupina aktívnej sekcie sa otvorí (zbalené ostatné nechávame tak)
+  const grp=document.querySelector('.grp2[data-grp="'+g+'"]');
+  if(grp) grp.classList.remove('closed');
 }
+function toggleGrp(h){ h.parentElement.classList.toggle('closed'); }
+function admToggleTheme(){
+  const light=document.documentElement.classList.toggle('adm-light');
+  try{ localStorage.setItem('fa_admin_theme', light?'light':'dark'); }catch(e){}
+  const b=document.getElementById('admThemeBtn');
+  if(b) b.innerHTML=light?'<i class="bi bi-sun"></i>':'<i class="bi bi-moon-stars"></i>';
+}
+(function(){ const b=document.getElementById('admThemeBtn');
+  if(b && document.documentElement.classList.contains('adm-light')) b.innerHTML='<i class="bi bi-sun"></i>'; })();
 /* ═══ BUSINESS RANK ═══ */
 let BR=null;
 const brEur=v=>(+v||0).toLocaleString('sk',{maximumFractionDigits:0})+' €';
@@ -5975,6 +6021,8 @@ async function enterTestAccount(){
   if(r.ok) window.location.href=r.redirect_to; else alert(r.error||'Chyba');
 }
 async function goMyProfile(){ try{ const me=await api('/api/me'); if(me&&me.id) window.open('/u/'+me.id,'_blank'); }catch(e){} }
+(async()=>{ try{ const me=await api('/api/me'); const el=document.getElementById('admUserName');
+  if(me&&me.name&&el){ el.textContent=me.name; const av=document.querySelector('.sb2-av'); if(av) av.textContent=me.name.charAt(0).toUpperCase(); } }catch(e){} })();
 
 // ── Memberships ──────────────────────────────────────────────
 let _memDetail=null, _memTab='active_monthly';
