@@ -9,7 +9,7 @@ const QR     = require('qrcode');
 
 module.exports = function mountEventTickets(ctx){
   const { app, db, q, auth, adminAuth, rlPublic, nowISO, today, APP_URL,
-          sendMail, createInvoice, stripeApi, STRIPE_SECRET, isMemberActive } = ctx;
+          sendMail, createInvoice, stripeApi, STRIPE_SECRET, isMemberActive, metaCapi } = ctx;
 
   // ── Pomocné ────────────────────────────────────────────────────────────────
   const cors = res => {
@@ -317,6 +317,9 @@ module.exports = function mountEventTickets(ctx){
       const r = await stripeApi('checkout/sessions', params, 'POST');
       if(r.status>=400) return res.status(400).json({error:r.body?.error?.message||'Platbu sa nepodarilo založiť'});
       await q.update(db.ev_orders,{_id:order._id},{$set:{stripe_session_id:r.body.id}});
+      // CAPI InitiateCheckout — event_id z čísla objednávky (Purchase pri fulfille má vlastné pur_…)
+      try{ if(metaCapi) metaCapi('InitiateCheckout',{email:buyer_email, value:+total||0,
+        fbclid:attr.fbclid||attr.first?.fbclid, event_id:'ic_'+order_number, source_url:attr.landing}).catch(()=>{}); }catch(e){}
       res.json({ok:true, url:r.body.url, order_number});
     }catch(e){ res.status(500).json({error:e.message}); }
   });
@@ -363,6 +366,10 @@ module.exports = function mountEventTickets(ctx){
       });
     }
 
+    // Meta CAPI Purchase — event_id = order_number, takže opakovaný fulfil (webhook +
+    // return page) Meta zdeduplikuje a konverzia sa nezaráta dvakrát.
+    try{ if(metaCapi) metaCapi('Purchase',{email:order.buyer_email, value:+order.total||0,
+      fbclid:order.attr?.fbclid||order.attr?.first?.fbclid, event_id:'pur_'+order.order_number}).catch(()=>{}); }catch(e){}
     // Účtovníctvo + faktúra
     try{
       await q.insert(db.transactions,{ type:'event_ticket', user_id:acct?._id||null,

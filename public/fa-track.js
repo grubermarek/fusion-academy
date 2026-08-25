@@ -24,13 +24,23 @@ function captureAttribution(){
   } catch(e){}
 }
 
+// Per-page-load event id — rovnaké ide do atribúcie (server CAPI) aj do Pixelu (eventID) → Meta dedup
+window.faEventId = function(){
+  if(!window.__faEid){
+    try { window.__faEid = [...crypto.getRandomValues(new Uint8Array(8))].map(b=>b.toString(16).padStart(2,'0')).join(''); }
+    catch(e){ window.__faEid = 'e'+Math.random().toString(36).slice(2,14); }
+  }
+  return window.__faEid;
+};
+
 window.faGetAttribution = function(){
   try {
     const a = JSON.parse(localStorage.getItem('fa_attr')||'{}');
     const fbp = (document.cookie.match(/_fbp=([^;]+)/)||[])[1];
     if(fbp) a.fbp = fbp;
+    a.event_id = window.faEventId();
     return a;
-  } catch(e){ return {}; }
+  } catch(e){ return {event_id:window.faEventId()}; }
 };
 
 async function loadPixels(){
@@ -54,7 +64,9 @@ async function loadPixels(){
 
 window.faTrack = function(event, data={}){
   try {
-    if(window.fbq) window.fbq('track', event, data.value?{value:data.value,currency:'EUR'}:{});
+    // eventID: explicitný (napr. 'pur_'+session_id) alebo pre CompleteRegistration page-load id (dedup s CAPI)
+    const eid = data.eventID || (event==='CompleteRegistration' ? window.faEventId() : null);
+    if(window.fbq) window.fbq('track', event, data.value?{value:data.value,currency:'EUR'}:{}, eid?{eventID:eid}:undefined);
     if(window.gtag){
       const map={CompleteRegistration:'sign_up', Purchase:'purchase', Lead:'generate_lead'};
       window.gtag('event', map[event]||event, data.value?{value:data.value,currency:'EUR'}:{});

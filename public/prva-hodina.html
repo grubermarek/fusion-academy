@@ -171,13 +171,15 @@ async function submitBooking(){
   ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid'].forEach(k=>{ if(p.get(k)) cur[k]=p.get(k); });
   cur.landing=location.pathname+location.search; cur.referrer=document.referrer||'';
   const first=window.faGetAttribution?window.faGetAttribution():{};
-  const attribution={...first, ...cur};
+  // event_id pre Lead/Schedule — rovnaké ide serveru (CAPI) aj Pixelu (eventID) → Meta dedup
+  const eidBase=(window.faEventId?window.faEventId():('e'+Math.random().toString(36).slice(2,14)));
+  const attribution={...first, ...cur, event_id_lead:'lead_'+eidBase, event_id_schedule:'sch_'+eidBase};
   try{
     const r=await fetch('/api/first-class/book',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({name,email,phone,class_id:PICK.class_id,booking_date:PICK.date,attribution})});
     const d=await r.json();
     if(!r.ok||d.error) throw new Error(d.error||'Rezervácia sa nepodarila');
-    try{ if(window.fbq){ fbq('track','Lead'); fbq('track','Schedule'); } }catch(e){}
+    try{ if(window.fbq){ fbq('track','Lead',{},{eventID:attribution.event_id_lead}); fbq('track','Schedule',{},{eventID:attribution.event_id_schedule}); } }catch(e){}
     const dd=d.detail;
     document.getElementById('doneDetail').innerHTML=dd.emoji+' <b>'+esc(dd.name)+'</b><br>📍 '+esc(dd.city)+(dd.address?' — '+esc(dd.address):'')+'<br>📅 '+esc(dd.day_name)+' '+dd.date.slice(8,10)+'. '+dd.date.slice(5,7)+'. · ⏰ '+esc(dd.time_start)+(dd.time_end?'–'+esc(dd.time_end):'');
     const dt=dd.date.replace(/-/g,''); const t1=(dd.time_start||'19:00').replace(':','')+'00'; const t2=(dd.time_end||dd.time_start||'20:00').replace(':','')+'00';

@@ -3119,7 +3119,7 @@ async function loadQR(){
   } else if(p.get('stripe')==='success' && p.get('session_id')){
     try{
       const r=await api('/api/stripe/verify',{method:'POST',body:{session_id:p.get('session_id')}});
-      if(r.ok){ showToast('🎉 Platba prijatá! Členstvo '+(r.plan_name||'')+' je aktívne.','success'); if(window.faTrack) window.faTrack('Purchase'); }
+      if(r.ok){ showToast('🎉 Platba prijatá! Členstvo '+(r.plan_name||'')+' je aktívne.','success'); if(window.faTrack) window.faTrack('Purchase',{eventID:'pur_'+p.get('session_id')}); }
       else showToast('Platbu sa nepodarilo overiť: '+(r.error||'kontaktuj nás'),'error');
     }catch(e){ showToast('Chyba pri overovaní platby','error'); }
     window.history.replaceState({},'','/client-dashboard');
@@ -3127,7 +3127,7 @@ async function loadQR(){
   } else if(p.get('stripe')==='private' && p.get('session_id')){
     try{
       const r=await api('/api/private/card-activate',{method:'POST',body:{session_id:p.get('session_id')}});
-      if(r&&r.ok){ showToast('💳 Súkromná hodina zaplatená! Vidíme sa na parkete ✨','success'); if(window.faTrack) window.faTrack('Purchase'); }
+      if(r&&r.ok){ showToast('💳 Súkromná hodina zaplatená! Vidíme sa na parkete ✨','success'); if(window.faTrack) window.faTrack('Purchase',{eventID:'pur_'+p.get('session_id')}); }
       else showToast('Platbu sa nepodarilo overiť: '+((r&&r.error)||'kontaktuj nás'),'error');
     }catch(e){ showToast('Chyba pri overovaní platby','error'); }
     window.history.replaceState({},'','/client-dashboard');

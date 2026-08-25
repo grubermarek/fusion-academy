@@ -2682,6 +2682,10 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
         title:'🆕 Prvá hodina z landing page', body:`${name} · ${cls.name} ${cls.location} ${bdate} ${cls.time_start}`,
         read:false, created_at:nowISO()});
     }catch(e){}
+    metaCapi('Lead',{email, fbclid:clean(attr.fbclid), fbp:clean(attr.fbp),
+      event_id:clean(attr.event_id_lead)||undefined, source_url:clean(attr.landing)||undefined}).catch(()=>{});
+    metaCapi('Schedule',{email, fbclid:clean(attr.fbclid),
+      event_id:clean(attr.event_id_schedule)||undefined, source_url:clean(attr.landing)||undefined}).catch(()=>{});
     sendMail(email, 'Tešíme sa na teba! 💃 Prvá hodina zdarma je rezervovaná',
       emailTemplate('Máš to! 🎉',
       '<p>Ahoj '+String(name).split(' ')[0]+', tvoje miesto je rezervované:</p>'
@@ -3173,7 +3177,8 @@ app.post('/api/register', rlSignup, async(req,res)=>{
     enqueueSequence(u._id, 'welcome').then(()=>processEmailQueue()).catch(()=>{});
     enqueueSequence(u._id, 'lead_nurture').catch(()=>{});
     // Server-side conversion tracking
-    metaCapi('CompleteRegistration',{email:u.email, fbclid, fbp:clean(attr.fbp)}).catch(()=>{});
+    metaCapi('CompleteRegistration',{email:u.email, fbclid, fbp:clean(attr.fbp),
+      event_id:clean(attr.event_id)||undefined, source_url:clean(attr.landing)||undefined}).catch(()=>{});
     announceNewMember(u._id).catch(()=>{});
     res.json({ok:true, userType:utype, redirect_to: dashUrlFor(u)});
   } catch(e){
@@ -3545,7 +3550,18 @@ app.post('/api/admin/meta-fix-ids', adminAuth, async(req,res)=>{
     res.json({ok:true, ...report, sync});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
-async function metaCapi(eventName, {email, value, currency='EUR', fbclid, fbp}={}){
+// event_id: keď browser Pixel aj server pošlú ten istý event s rovnakým event_id,
+// Meta ich deduplikuje (spec N/BG). Klient generuje id a posiela ho v attribution.
+async function metaCapi(eventName, {email, value, currency='EUR', fbclid, fbp, event_id, source_url}={}){
+  const payload={ event_name:eventName, event_time:Math.floor(Date.now()/1000),
+    action_source:'website',
+    ...(event_id?{event_id:String(event_id).slice(0,80)}:{}),
+    ...(source_url?{event_source_url:String(source_url).slice(0,300)}:{}) };
+  // QA: zapíš payload do súboru namiesto odoslania (bez tokenu, bez siete)
+  if(process.env.CAPI_DEBUG_FILE){
+    try{ fs.appendFileSync(process.env.CAPI_DEBUG_FILE, JSON.stringify({...payload, email:!!email, value:+value||0})+'\n'); }catch(e){}
+    return;
+  }
   const pixel=process.env.META_PIXEL_ID, token=await getMetaCapiToken();
   if(!pixel||!token) return;
   try {
@@ -3558,18 +3574,17 @@ async function metaCapi(eventName, {email, value, currency='EUR', fbclid, fbp}={
     const r=await fetch(`https://graph.facebook.com/v21.0/${pixel}/events?access_token=${token}`,{
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({data:[{
-        event_name:eventName, event_time:Math.floor(Date.now()/1000),
-        action_source:'website', user_data,
+        ...payload, user_data,
         ...(value?{custom_data:{value:+value, currency}}:{})
       }]})
     });
     if(!r.ok) console.error('Meta CAPI error:', (await r.text()).slice(0,300));
   } catch(e){ console.error('Meta CAPI error:', e.message); }
 }
-async function trackPurchase(userId, amount){
+async function trackPurchase(userId, amount, eventId){
   try {
     const u = userId ? await q.one(db.users,{_id:userId}) : null;
-    await metaCapi('Purchase',{email:u?.email, value:amount, fbclid:u?.fbclid, currency:'EUR'});
+    await metaCapi('Purchase',{email:u?.email, value:amount, fbclid:u?.fbclid, currency:'EUR', event_id:eventId||undefined});
   } catch(e){}
 }
 
@@ -10587,6 +10602,8 @@ app.post('/api/stripe/checkout', auth, async(req,res)=>{
     const r = await stripeApi('checkout/sessions', params, 'POST');
     if(r.status>=400 || !r.body?.url) return res.status(400).json({error:r.body?.error?.message||'Stripe chyba pri vytváraní platby'});
     await q.insert(db.payments,{stripe_session_id:r.body.id, user_id:req.session.uid, member_id:memberId, amount:price, currency:'EUR', description:`Členstvo ${plan.name}${childName?' – '+childName:''}${promoCode?` [promo ${promoCode} -${promoDiscount.toFixed(2)}€]`:''}`, ref_id:plan_id, ref_type:'membership', provider:'stripe', status:'pending', promo_code:promoCode, created_at:nowISO()});
+    { const cu=await q.one(db.users,{_id:req.session.uid});
+      metaCapi('InitiateCheckout',{email:cu?.email, value:price, fbclid:cu?.fbclid, event_id:'ic_'+r.body.id}).catch(()=>{}); }
     res.json({ok:true, url:r.body.url});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -10623,7 +10640,7 @@ async function fulfillStripeCheckout(s){
   const buyer = await q.one(db.users,{_id:meta.user_id});
   const via = meta.type==='subscription' ? 'Stripe mesačný odber' : 'Stripe · karta/Apple/Google Pay';
   await q.insert(db.transactions,{type:meta.type==='subscription'?'subscription':'membership',user_id:memberId,user_name:buyer?.name||'—',amount:plan.price,payment_method:'stripe',note:`${plan.name} (${via})`,plan_id:meta.plan_id,created_at:nowISO(),month:today().slice(0,7)});
-  trackPurchase(meta.user_id, plan.price);
+  trackPurchase(meta.user_id, plan.price, 'pur_'+s.id);
   createInvoice({user_id:meta.user_id, client_name:buyer?.name, client_email:buyer?.email,
     items:[{desc:`Členstvo ${plan.name}${meta.type==='subscription'?' (mesačný odber)':''}`, qty:1, total:plan.price}],
     total:plan.price, method:'Stripe (karta / Apple Pay / Google Pay)'});
@@ -13550,6 +13567,8 @@ app.post('/api/attendance/manual-booking', trainerAuth, async(req,res)=>{
       methodNote = '🏅 Členstvo';
     }
     upd.visit_count = (u.visit_count||0) + 1;
+    if((u.visit_count||0)===0 && !u.is_child) // 1. odchodená hodina — event_id fca_<uid> dedupne s creditAttendance
+      metaCapi('FirstClassAttended',{email:u.email, fbclid:u.fbclid, event_id:'fca_'+u._id}).catch(()=>{});
     if(u.winback_sent) upd.winback_sent = false;
     applyLeadTrial(upd, u); // lead → automaticky „Bola na hodine"
 
@@ -13757,6 +13776,8 @@ async function creditAttendance(u){
   if(!u) return 0;
   const newCount=(u.visit_count||0)+1;
   const upd={visit_count:newCount};
+  if(newCount===1 && !u.is_child)
+    metaCapi('FirstClassAttended',{email:u.email, fbclid:u.fbclid, event_id:'fca_'+u._id}).catch(()=>{});
   if(u.user_type==='lead') upd.user_type='client'; // bola na hodine → už je klientka, nie lead
   if(u.winback_sent) upd.winback_sent=false;
   try{ applyLeadTrial(upd, u); }catch(e){}
@@ -16247,7 +16268,7 @@ if(/^https?:\/\/(www\.)?fusionacademy\.sk/i.test(APP_URL)) APP_URL = 'https://ap
 const isMemberActive = u => !!(u && u.membership_plan && u.membership_expires && new Date(u.membership_expires) > new Date());
 const EVENTS = require('./event-tickets')({
   app, db, q, auth, adminAuth, rlPublic, nowISO, today, APP_URL,
-  sendMail, createInvoice, stripeApi, STRIPE_SECRET, isMemberActive
+  sendMail, createInvoice, stripeApi, STRIPE_SECRET, isMemberActive, metaCapi
 });
 EVENTS.ensureEvent().then(e=>console.log('🎟️  Event pripravený:', e?.name)).catch(e=>console.error('event seed:', e.message));
 
