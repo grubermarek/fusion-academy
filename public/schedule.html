@@ -15,7 +15,9 @@
 <script src="/i18n.js"></script>
 <script src="/i18n-pages.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<script>/* téma pred prvým renderom */try{if(localStorage.getItem('fa_theme')==='aurora')document.documentElement.dataset.theme='aurora'}catch(e){}</script>
 <link rel="stylesheet" href="/fa-theme.css">
+<link rel="stylesheet" href="/aurora.css">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <style>
 :root{
@@ -109,6 +111,36 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans);-webkit
 /* Success */
 .success-card{background:var(--dark-2);border:1px solid var(--gold-border);border-radius:1rem;padding:2rem;text-align:center;margin:2rem auto;max-width:400px;box-shadow:0 4px 20px rgba(0,0,0,.4);color:var(--cream);}
 .success-icon{font-size:3.5rem;margin-bottom:.75rem;}
+
+/* ── Stav rezervácie (obe témy): ✓ IDEM + dátumy + PLNÁ ── */
+.day-btn .day-date{font-size:.62rem;color:var(--text-muted);}
+.day-heading{grid-column:1/-1;display:flex;align-items:baseline;gap:10px;padding:2px 4px 0;}
+.day-heading b{font-size:1.05rem;color:var(--cream);}
+.day-heading span{font-size:.8rem;color:var(--text-muted);font-weight:600;}
+.class-card.booked{border-color:rgba(52,211,153,.55);}
+.class-card.booked .class-card-top{border-left-color:#34D399;}
+.idem-chip{display:inline-flex;align-items:center;gap:4px;font-size:.62rem;font-weight:800;letter-spacing:.04em;color:#7CFFB2;background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.45);border-radius:99px;padding:2px 9px;vertical-align:middle;margin-left:6px;}
+.btn-cancelbk{background:none;border:1px solid var(--gold-border);color:var(--text-muted);font-size:.72rem;font-weight:700;padding:.4rem .9rem;border-radius:50px;cursor:pointer;}
+.btn-cancelbk:hover{border-color:#e05656;color:#ff8a8a;}
+.btn-ics{background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.45);color:#7CFFB2;font-weight:700;font-size:.78rem;padding:.45rem 1rem;border-radius:50px;text-decoration:none;white-space:nowrap;}
+
+/* ── AURORA GLASS téma rozvrhu ── */
+html[data-theme="aurora"] .top-nav{background:rgba(20,13,34,.72);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-bottom-color:rgba(255,255,255,.1);}
+html[data-theme="aurora"] .hero{background:none;border-bottom-color:rgba(255,255,255,.1);}
+html[data-theme="aurora"] .hero h1 span{background:linear-gradient(90deg,#E9B8FF,#FF9EB8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+html[data-theme="aurora"] .day-tabs{background:rgba(20,13,34,.72);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-bottom-color:rgba(255,255,255,.1);}
+html[data-theme="aurora"] .day-btn.active{color:#E9B8FF;border-bottom-color:#E9B8FF;}
+html[data-theme="aurora"] .day-btn.active .count{background:rgba(233,184,255,.15);color:#E9B8FF;}
+html[data-theme="aurora"] .class-card{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.14);border-radius:22px;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);}
+html[data-theme="aurora"] .class-card.booked{border-color:rgba(52,211,153,.55);}
+html[data-theme="aurora"] .class-card-top{border-left:none;}
+html[data-theme="aurora"] .class-footer{background:rgba(255,255,255,.04);border-top-color:rgba(255,255,255,.1);}
+html[data-theme="aurora"] .meta-chip,html[data-theme="aurora"] .class-level{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14);}
+html[data-theme="aurora"] .btn-book{background:linear-gradient(90deg,#A855F7,#EC4899);color:#fff;box-shadow:0 6px 18px rgba(168,85,247,.35);}
+html[data-theme="aurora"] .btn-confirm{background:linear-gradient(90deg,#A855F7,#EC4899);color:#fff;}
+html[data-theme="aurora"] .price-tag{color:#F3D27E;}
+html[data-theme="aurora"] .modal-box,html[data-theme="aurora"] .booking-summary,html[data-theme="aurora"] .success-card{background:rgba(26,20,48,.9);border-color:rgba(255,255,255,.14);}
+@supports not (backdrop-filter:blur(14px)){ html[data-theme="aurora"] .class-card{background:#171129;} }
 </style>
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/logo-mark.png">
@@ -260,6 +292,7 @@ async function init() {
   if (!currentUser) document.getElementById('loginBanner').classList.remove('d-none');
 
   if (canManageClasses()) await loadInstructors();
+  await loadMyBookedMap();
 
   // Load classes
   const r = await fetch('/api/classes');
@@ -278,10 +311,35 @@ async function init() {
   showDay(startDay ?? 1);
 }
 
+/* ── Moje rezervácie: class_id|date → booking (pre ✓ IDEM na kartách) ── */
+let myBooked = {};
+async function loadMyBookedMap(){
+  myBooked = {};
+  if (!currentUser) return;
+  try{
+    const all = await (await fetch('/api/my-bookings')).json();
+    const today = new Date().toISOString().slice(0,10);
+    (Array.isArray(all)?all:[]).forEach(b=>{
+      if (['cancelled','attended'].includes(b.status)) return;
+      if (String(b.booking_date||'') < today) return;
+      myBooked[b.class_id+'|'+b.booking_date] = b;
+    });
+  }catch(e){}
+}
+function fmtShortDate(d){ return d ? (+d.slice(8,10))+'. '+(+d.slice(5,7))+'.' : ''; }
+function fmtRelative(d){
+  const t=new Date(); t.setHours(0,0,0,0);
+  const diff=Math.round((new Date(d+'T00:00:00')-t)/864e5);
+  return diff===0?'dnes':diff===1?'zajtra':'';
+}
+
 function buildDayTabs() {
   const tabs = document.getElementById('dayTabs');
-  const countPerDay = {};
-  allClasses.forEach(c => { countPerDay[c.day_of_week] = (countPerDay[c.day_of_week]||0)+1; });
+  const countPerDay = {}, datePerDay = {};
+  allClasses.forEach(c => {
+    countPerDay[c.day_of_week] = (countPerDay[c.day_of_week]||0)+1;
+    if (c.next_date && !datePerDay[c.day_of_week]) datePerDay[c.day_of_week] = c.next_date;
+  });
 
   // Order: Mon–Sun (1,2,3,4,5,6,0)
   const order = [1,2,3,4,5,6,0];
@@ -290,6 +348,7 @@ function buildDayTabs() {
     if (!cnt) return '';
     return `<button class="day-btn" data-day="${d}" onclick="showDay(${d})">
       <span class="day-name">${DAYS_SHORT[d]}</span>
+      <span class="day-date">${fmtShortDate(datePerDay[d])}</span>
       <span class="count">${cnt}</span>
     </button>`;
   }).join('');
@@ -309,9 +368,16 @@ function renderClasses(classes) {
     return;
   }
 
-  grid.innerHTML = classes.map(c => {
+  // Hlavička dňa s plným dátumom — „streda · 27. 8. (zajtra)"
+  const nd = classes[0]?.next_date;
+  const wd = nd ? new Date(nd+'T12:00:00').toLocaleDateString('sk-SK',{weekday:'long'}) : '';
+  const rel = nd ? fmtRelative(nd) : '';
+  const heading = nd ? `<div class="day-heading"><b>${wd.charAt(0).toUpperCase()+wd.slice(1)}</b><span>${fmtShortDate(nd)}${rel?' · '+rel:''}</span></div>` : '';
+
+  grid.innerHTML = heading + classes.map(c => {
     const full = c.spotsLeft <= 0;
     const low  = !full && c.spotsLeft <= 3;
+    const myBk = myBooked[c._id+'|'+c.next_date];
     // Zrušený najbližší termín — výrazná červená karta bez rezervácie
     if (c.cancelled) {
       return `
@@ -334,15 +400,15 @@ function renderClasses(classes) {
       </div>
     </div>`;
     }
-    const spotsText = full ? '🔴 Plne obsadené' : low ? `⚠️ Zostáva ${c.spotsLeft} miest` : `✅ ${c.spotsLeft} voľných miest`;
+    const spotsText = full ? `🔴 PLNÁ ${c.booking_count}/${c.capacity}` : low ? `⚠️ Zostáva ${c.spotsLeft} miest` : `✅ ${c.spotsLeft} voľných miest`;
     const spotsClass = full ? 'full' : low ? 'low' : '';
     return `
-    <div class="class-card" style="--color:${c.color||'#e94560'}">
+    <div class="class-card ${myBk?'booked':''}" style="--color:${c.color||'#e94560'}">
       <div class="class-card-top">
         <div class="class-header">
           <span class="class-emoji">${c.emoji}</span>
           <div>
-            <div class="class-title">${c.name}</div>
+            <div class="class-title">${c.name}${myBk?'<span class="idem-chip">✓ IDEM</span>':''}</div>
             <span class="class-level">${c.level}</span>
           </div>
         </div>
@@ -367,13 +433,27 @@ function renderClasses(classes) {
           <div class="price-tag">${c.price}€</div>
           <div class="spots ${spotsClass}">${spotsText}</div>
         </div>
-        ${full
+        ${myBk
+          ? `<span style="display:flex;gap:6px;align-items:center"><a class="btn-ics" href="/cal/booking/${myBk._id}.ics">📅 Do kalendára</a><button class="btn-cancelbk" onclick="cancelMyBooking('${myBk._id}')">Zrušiť</button></span>`
+          : full
           ? `<button class="btn-book" style="background:rgba(255,152,0,.15);border:1px solid rgba(255,152,0,.4);color:#FF9800" onclick="joinWaitlist('${c._id}')">⏳ Čakací zoznam</button>`
           : `<button class="btn-book" onclick="bookClass('${c._id}')"><i class="bi bi-calendar-check me-1"></i>${FA_T('sched.book')}</button>`
         }
       </div>
     </div>`;
   }).join('');
+}
+
+async function cancelMyBooking(bookingId){
+  if(!confirm('Zrušiť túto rezerváciu?')) return;
+  try{
+    const r=await fetch('/api/bookings/'+bookingId,{method:'DELETE'});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){ showToast('Rezervácia zrušená','success'); }
+    else { showToast(d.error||'Nepodarilo sa zrušiť','error'); }
+  }catch(e){ showToast('Nepodarilo sa zrušiť','error'); }
+  await loadMyBookedMap();
+  try{ const resp=await fetch('/api/classes'); allClasses=filterSchedule(await resp.json()); if(currentDay!==null) showDay(currentDay); }catch(e){}
 }
 
 async function joinWaitlist(classId) {
@@ -449,6 +529,7 @@ async function confirmBooking() {
       if (d && d.stale) { // hodina medzičasom zmenená/zrušená → obnov rozvrh
         closeBookModal();
         showToast('Rozvrh sa medzičasom zmenil — obnovili sme ho, skús to znova 🙏', 'error');
+        await loadMyBookedMap();
         const resp2 = await fetch('/api/classes');
         allClasses = filterSchedule(await resp2.json());
         if (currentDay !== null) showDay(currentDay);
@@ -465,6 +546,7 @@ async function confirmBooking() {
     showToast(FA_T('sched.ok') + (d.for_child?FA_T('sched.for')+d.for_child:'') + ' – ' + selectedClass.name, 'success');
     showSuccess(selectedClass.name, fmtDate(nextDate));
     // Refresh class list
+    await loadMyBookedMap();
     const resp = await fetch('/api/classes');
     allClasses = filterSchedule(await resp.json());
     if (currentDay !== null) showDay(currentDay);
