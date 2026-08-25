@@ -1042,6 +1042,15 @@ async function seedData() {
     console.log(`✅  Rolové odznaky personálu: aktualizovaných ${fixed} starých správ/príspevkov`);
   }
 
+  // HEJ BABY: reklama historicky posielala utm_campaign=fa-video-hejbaby (bez pomlčky),
+  // kampaň v admine má kľúč fa-video-hej-baby → kliky sa nepárovali. Prefix fa-video-hej
+  // chytí obe podoby (startsWith), nová reklama z 25.8. posiela fa-video-hej-baby.
+  if(!(await q.one(db.settings,{key:'hejbaby_utm_prefix_v1'}))){
+    const n=await q.update(db.campaigns,{utm_key:'fa-video-hej-baby'},{$set:{utm_key:'fa-video-hej'}});
+    await q.insert(db.settings,{key:'hejbaby_utm_prefix_v1', value:true, at:nowISO()});
+    console.log(`✅  HEJ BABY utm_key → prefix fa-video-hej (${n} kampaň)`);
+  }
+
   // Online rozvrh v2: Po 17 BB · Po 19 ZV · St 17 ZV · St 19 BB · Pi 19 DT · Ne 19 DT (všetko Zumba LIVE)
   if(!(await q.one(db.settings,{key:'online_schedule_v2'}))){
     const beata = await q.one(db.users,{name:/Beáta Gruber/i}) || {};
