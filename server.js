@@ -8120,11 +8120,12 @@ app.put('/api/admin/bookings/:id', adminAuth, async(req,res)=>{
   const {status} = req.body;
   const b = await q.one(db.bookings,{_id:req.params.id});
   if(!b) return res.status(404).json({error:'Rezervácia nenájdená'});
-  // Admin storno musí vrátiť vstup rovnako ako klientske — inak pri oprave
-  // omylom vytvorenej rezervácie klientke vstup z permanentky prepadne.
+  // Pri storne sa vstup vracia LEN na výslovnú žiadosť (refund:true). Pri no-show
+  // musí vstup prepadnúť, pri omylom vytvorenej rezervácii sa vráti.
   let refunded='';
+  const chceVratit = req.body.refund===true || req.body.refund==='1';
   if(status==='cancelled' && b.status==='confirmed'){
-    refunded = await refundBookingAccess(b);
+    if(chceVratit) refunded = await refundBookingAccess(b);
     await q.update(db.bookings,{_id:req.params.id},{$set:{status,cancelled_at:nowISO(),cancelled_by:'admin'}});
     await promoteWaitlist(b.class_id, b.booking_date);
   } else {
@@ -14183,8 +14184,13 @@ app.delete('/api/attendance/booking/:id', trainerAuth, async(req,res)=>{
     if(!b) return res.status(404).json({error:'Rezervácia nenájdená'});
     await q.update(db.bookings,{_id:req.params.id},{$set:{status:'cancelled',cancelled_at:nowISO(),cancelled_by:req.trainerUser._id}});
     if(b.status==='confirmed') await promoteWaitlist(b.class_id, b.booking_date);
+    // Vstup vraciame len keď o to admin/tréner výslovne požiada — pri no-show
+    // (klientka sa prihlásila a neprišla) musí vstup prepadnúť.
+    let vratene='';
+    const chceVratit = req.body?.refund===true || req.body?.refund==='1' || req.query?.refund==='1';
+    if(chceVratit && b.status==='confirmed') vratene = await refundBookingAccess(b);
     sendBookingCancelEmail(b, true).catch(()=>{});
-    res.json({ok:true});
+    res.json({ok:true, refunded:!!vratene, refund_note:vratene||null});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 

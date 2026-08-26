@@ -829,6 +829,7 @@ select.form-control option{background:var(--dark3)}
     <div class="modal-title">Zrušiť rezerváciu?</div>
     <div class="modal-sub" id="cancelBookSub">Táto akcia zruší prihlásenie klienta z hodiny.</div>
     <input type="hidden" id="cancelBookId">
+    <input type="hidden" id="cancelBookAcc">
     <button class="btn-block danger-btn" onclick="doCancelBook()"><i class="bi bi-x-circle"></i> Zrušiť rezerváciu</button>
     <button class="btn-block secondary" style="margin-top:8px" onclick="closeModal()">Späť</button>
   </div>
@@ -1312,16 +1313,26 @@ function covSellMembership(userId, name, classId){
 let _pendingBookUser=null, _pendingBookClass=null;
 
 // Cancel booking
-function confirmCancelBook(bookingId, name){
+// Pri rušení sa pýtame, či klientke vrátiť vstup. Pri omyle áno, pri no-show nie.
+const REFUNDABLE=['single_entry','free_credit','free_class','parent_single_entry','parent_free_credit'];
+function askRefund(accessMethod){
+  if(!REFUNDABLE.includes(String(accessMethod||''))) return false;  // členstvo — niet čo vracať
+  const co = accessMethod==='free_credit'||accessMethod==='parent_free_credit' ? 'hodinu zdarma'
+           : accessMethod==='free_class' ? 'prvú hodinu zadarmo' : 'vstup z permanentky';
+  return confirm('Vrátiť jej '+co+'?'+String.fromCharCode(10,10)+'OK = vrátiť (rezervácia bola omyl)'+String.fromCharCode(10)+'Zrušiť = vstup prepadne (prihlásila sa a neprišla)');
+}
+function confirmCancelBook(bookingId, name, accessMethod){
+  document.getElementById('cancelBookAcc').value = accessMethod||'';
   document.getElementById('cancelBookId').value = bookingId;
   document.getElementById('cancelBookSub').textContent = `Zruší prihlásenie klienta "${name}" z hodiny.`;
   openModal('cancelBook');
 }
 async function doCancelBook(){
   const id = document.getElementById('cancelBookId').value;
-  const r = await api('/api/attendance/booking/'+id,{method:'DELETE'});
+  const refund = askRefund(document.getElementById('cancelBookAcc').value);
+  const r = await api('/api/attendance/booking/'+id,{method:'DELETE',body:{refund}});
   closeModal();
-  if(r?.ok){ toast('✅ Rezervácia zrušená'); await loadAttendees(_currentClassId); await loadSchedule(); }
+  if(r?.ok){ toast('✅ Rezervácia zrušená'+(r.refunded?' · vstup vrátený ↩️':'')); await loadAttendees(_currentClassId); await loadSchedule(); }
   else toast(r?.error||'Chyba', true);
 }
 

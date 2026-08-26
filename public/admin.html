@@ -6733,7 +6733,7 @@ async function openAttClass(classId){
             ? `<button class="btn btn-sm" style="background:rgba(76,175,80,.15);color:#4ade80;border:1px solid rgba(76,175,80,.35);font-size:.75rem;padding:2px 8px"
                 onclick="collectEntry('${a.booking_id}','${escJs(a.name)}')">💶 Vybrať 10 €</button> ` : '')}
         <button class="btn btn-sm" style="background:rgba(244,67,54,.12);color:#f87171;border:1px solid rgba(244,67,54,.25);font-size:.75rem;padding:2px 8px"
-                onclick="cancelAttBooking('${a.booking_id}','${escJs(a.name)}')">Zrušiť</button>
+                onclick="cancelAttBooking('${a.booking_id}','${escJs(a.name)}','${a.access_method||''}')">Zrušiť</button>
       </td>
     </tr>`;
   }).join('');
@@ -6828,10 +6828,19 @@ async function collectEntry(bookingId, name){
   if(r&&r.ok){ showToast(`💶 ${amount} € vybraných od ${name} — zapísané s dokladom ✓`,'success'); openAttClass(_attSelectedClass._id); }
   else showToast('Chyba: '+(r?.error||'?'),'error');
 }
-async function cancelAttBooking(bookingId, name){
+// Pri rušení sa pýtame, či klientke vrátiť vstup. Pri omyle áno, pri no-show nie.
+const REFUNDABLE=['single_entry','free_credit','free_class','parent_single_entry','parent_free_credit'];
+function askRefund(accessMethod){
+  if(!REFUNDABLE.includes(String(accessMethod||''))) return false;  // členstvo — niet čo vracať
+  const co = accessMethod==='free_credit'||accessMethod==='parent_free_credit' ? 'hodinu zdarma'
+           : accessMethod==='free_class' ? 'prvú hodinu zadarmo' : 'vstup z permanentky';
+  return confirm('Vrátiť jej '+co+'?'+String.fromCharCode(10,10)+'OK = vrátiť (rezervácia bola omyl)'+String.fromCharCode(10)+'Zrušiť = vstup prepadne (prihlásila sa a neprišla)');
+}
+async function cancelAttBooking(bookingId, name, accessMethod){
   if(!confirm(`Zrušiť rezerváciu pre ${name}?`)) return;
-  const d = await api(`/api/attendance/booking/${bookingId}`,{method:'DELETE'});
-  if(d?.ok){ showToast('Rezervácia zrušená','success'); openAttClass(_attSelectedClass._id); }
+  const refund = askRefund(accessMethod);
+  const d = await api(`/api/attendance/booking/${bookingId}`,{method:'DELETE',body:{refund}});
+  if(d?.ok){ showToast('Rezervácia zrušená'+(d.refunded?' · vstup vrátený ↩️':''),'success'); openAttClass(_attSelectedClass._id); }
   else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 

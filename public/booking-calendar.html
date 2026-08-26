@@ -310,7 +310,7 @@ function renderAtt(att, classId, dateStr){
     const payBadge = a.pay_on_site ? '<span class="a-badge" style="background:rgba(224,86,86,.25);color:#ff8a8a;border:1px solid rgba(224,86,86,.6);font-weight:800">💵 PLATÍ NA MIESTE</span>' : '';
     return `<div class="att-row"${a.pay_on_site?' style="outline:1px solid rgba(224,86,86,.4);border-radius:8px"':''}>
       <span class="a-name">${who}${vcTag}</span>${payBadge}${badge}
-      <button class="a-del" onclick="cancelBk('${a.booking_id}','${escJs(a.name)}')">Zrušiť</button>
+      <button class="a-del" onclick="cancelBk('${a.booking_id}','${escJs(a.name)}','${a.access_method||''}')">Zrušiť</button>
     </div>`;
   }).join('') : '<div class="att-empty">Zatiaľ nikto — pridaj prvého klienta nižšie 👇</div>';
   const cls = _schedule.find(x=>x._id===classId);
@@ -422,10 +422,19 @@ async function refreshClass(classId, dateStr){
     numEl.textContent = att.length+(cap?'/'+cap:''); numEl.style.color=col; }
 }
 
-async function cancelBk(bookingId, name){
+// Pri rušení sa pýtame, či klientke vrátiť vstup. Pri omyle áno, pri no-show nie.
+const REFUNDABLE=['single_entry','free_credit','free_class','parent_single_entry','parent_free_credit'];
+function askRefund(accessMethod){
+  if(!REFUNDABLE.includes(String(accessMethod||''))) return false;  // členstvo — niet čo vracať
+  const co = accessMethod==='free_credit'||accessMethod==='parent_free_credit' ? 'hodinu zdarma'
+           : accessMethod==='free_class' ? 'prvú hodinu zadarmo' : 'vstup z permanentky';
+  return confirm('Vrátiť jej '+co+'?'+String.fromCharCode(10,10)+'OK = vrátiť (rezervácia bola omyl)'+String.fromCharCode(10)+'Zrušiť = vstup prepadne (prihlásila sa a neprišla)');
+}
+async function cancelBk(bookingId, name, accessMethod){
   if(!confirm('Zrušiť rezerváciu: '+name+'?')) return;
-  const d = await api('/api/attendance/booking/'+bookingId,{method:'DELETE'});
-  if(d && d.ok){ toast('Rezervácia zrušená'); const dateStr=fmtDate(_sel);
+  const refund = askRefund(accessMethod);
+  const d = await api('/api/attendance/booking/'+bookingId,{method:'DELETE',body:{refund}});
+  if(d && d.ok){ toast('Rezervácia zrušená'+(d.refunded?' · vstup vrátený ↩️':'')); const dateStr=fmtDate(_sel);
     // find which class this belonged to — simplest: re-render the whole day
     renderDay();
   } else toast('Chyba pri rušení', true);
