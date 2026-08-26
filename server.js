@@ -8117,9 +8117,20 @@ app.get('/api/admin/bookings', adminAuth, async(req,res)=>{
 });
 
 app.put('/api/admin/bookings/:id', adminAuth, async(req,res)=>{
-  const{status}=req.body;
-  await q.update(db.bookings,{_id:req.params.id},{$set:{status}});
-  res.json({ok:true});
+  const {status} = req.body;
+  const b = await q.one(db.bookings,{_id:req.params.id});
+  if(!b) return res.status(404).json({error:'Rezervácia nenájdená'});
+  // Admin storno musí vrátiť vstup rovnako ako klientske — inak pri oprave
+  // omylom vytvorenej rezervácie klientke vstup z permanentky prepadne.
+  let refunded='';
+  if(status==='cancelled' && b.status==='confirmed'){
+    refunded = await refundBookingAccess(b);
+    await q.update(db.bookings,{_id:req.params.id},{$set:{status,cancelled_at:nowISO(),cancelled_by:'admin'}});
+    await promoteWaitlist(b.class_id, b.booking_date);
+  } else {
+    await q.update(db.bookings,{_id:req.params.id},{$set:{status}});
+  }
+  res.json({ok:true, refunded:!!refunded, refund_note:refunded||null});
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -11594,6 +11605,36 @@ async function promoteWaitlist(class_id, booking_date){
 // Override the delete booking to trigger waitlist promotion
 // Storno policy (Glofox-style): cancellation only up to N hours before class start
 const CANCEL_DEADLINE_HOURS = +process.env.CANCEL_DEADLINE_HOURS || 3;
+// Vráti to, čím klientka za hodinu zaplatila (permanentka / hodina zdarma /
+// prvá hodina zadarmo / vstup rodiča). Volá sa z klientskeho aj admin storna,
+// aby vstup pri zrušení neprepadol. Vracia text do notifikácie, '' keď nebolo čo vrátiť.
+async function refundBookingAccess(b){
+  if(!b || b.status!=='confirmed') return '';
+  const cu = await q.one(db.users,{_id:b.user_id});
+  if(!cu) return '';
+  if(b.access_method==='single_entry'){
+    await q.update(db.users,{_id:cu._id},{$set:{single_entries:(cu.single_entries||0)+1}});
+    return ' Vstup z permanentky sme ti vrátili.';
+  }
+  if(b.access_method==='free_credit'){
+    await q.update(db.users,{_id:cu._id},{$set:{free_credits:(cu.free_credits||0)+1}});
+    return ' Hodinu zdarma sme ti vrátili.';
+  }
+  if(b.access_method==='free_class' || b.free_class){
+    await q.update(db.users,{_id:cu._id},{$set:{free_class_used:false}});
+    return ' Prvú hodinu zdarma máš stále k dispozícii.';
+  }
+  if(b.access_method==='parent_single_entry' && b.booked_by){
+    const pu=await q.one(db.users,{_id:b.booked_by});
+    if(pu){ await q.update(db.users,{_id:pu._id},{$set:{single_entries:(pu.single_entries||0)+1}}); return ' Vstup z tvojej permanentky sme ti vrátili.'; }
+  }
+  if(b.access_method==='parent_free_credit' && b.booked_by){
+    const pu=await q.one(db.users,{_id:b.booked_by});
+    if(pu){ await q.update(db.users,{_id:pu._id},{$set:{free_credits:(pu.free_credits||0)+1}}); return ' Hodinu zdarma sme ti vrátili.'; }
+  }
+  return '';
+}
+
 app.delete('/api/bookings/:id', auth, async(req,res)=>{
   let b = await q.one(db.bookings,{_id:req.params.id,user_id:req.session.uid});
   // Rodič môže stornovať aj rezerváciu svojho dieťaťa (user_id je dieťa, booked_by rodič)
@@ -11618,28 +11659,10 @@ app.delete('/api/bookings/:id', auth, async(req,res)=>{
   // bez tohto jej vstup z permanentky pri zrušení prepadol.
   let refundNote='';
   if(b.status==='confirmed'){
-    const cu=await q.one(db.users,{_id:b.user_id});
-    if(cu){
-      if(b.access_method==='single_entry'){
-        await q.update(db.users,{_id:cu._id},{$set:{single_entries:(cu.single_entries||0)+1}});
-        refundNote=' Vstup z permanentky sme ti vrátili.';
-      } else if(b.access_method==='free_credit'){
-        await q.update(db.users,{_id:cu._id},{$set:{free_credits:(cu.free_credits||0)+1}});
-        refundNote=' Hodinu zdarma sme ti vrátili.';
-      } else if(b.access_method==='free_class' || b.free_class){
-        await q.update(db.users,{_id:cu._id},{$set:{free_class_used:false}});
-        refundNote=' Prvú hodinu zdarma máš stále k dispozícii.';
-      } else if(b.access_method==='parent_single_entry' && b.booked_by){
-        const pu=await q.one(db.users,{_id:b.booked_by});
-        if(pu){ await q.update(db.users,{_id:pu._id},{$set:{single_entries:(pu.single_entries||0)+1}}); refundNote=' Vstup z tvojej permanentky sme ti vrátili.'; }
-      } else if(b.access_method==='parent_free_credit' && b.booked_by){
-        const pu=await q.one(db.users,{_id:b.booked_by});
-        if(pu){ await q.update(db.users,{_id:pu._id},{$set:{free_credits:(pu.free_credits||0)+1}}); refundNote=' Hodinu zdarma sme ti vrátili.'; }
-      }
-      if(refundNote) await q.insert(db.notifications,{user_id:(b.access_method||'').startsWith('parent_')?(b.booked_by||cu._id):cu._id, type:'booking',
-        title:'↩️ Rezervácia zrušená', body:`${b.class_name||'Hodina'} ${b.booking_date||''}.${refundNote}`,
-        read:false, created_at:nowISO()}).catch(()=>{});
-    }
+    refundNote = await refundBookingAccess(b);
+    if(refundNote) await q.insert(db.notifications,{user_id:(b.access_method||'').startsWith('parent_')?(b.booked_by||b.user_id):b.user_id, type:'booking',
+      title:'↩️ Rezervácia zrušená', body:`${b.class_name||'Hodina'} ${b.booking_date||''}.${refundNote}`,
+      read:false, created_at:nowISO()}).catch(()=>{});
     await promoteWaitlist(b.class_id, b.booking_date);
   }
   sendBookingCancelEmail(b).catch(()=>{});
