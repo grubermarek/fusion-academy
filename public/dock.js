@@ -8,6 +8,22 @@
 'use strict';
 if (window.__faDock) return; window.__faDock = true;
 
+// ── Téma (Klasik/Aurora) na KAŽDEJ stránke s dockom: aplikuj voľbu + zaisti aurora.css ──
+try{
+  if (localStorage.getItem('fa_theme')==='aurora') document.documentElement.dataset.theme='aurora';
+  if (!document.querySelector('link[href="/aurora.css"]')){
+    const l=document.createElement('link'); l.rel='stylesheet'; l.href='/aurora.css';
+    document.head.appendChild(l);
+  }
+}catch(e){}
+function faThemeToggle(){
+  const aurora=document.documentElement.dataset.theme==='aurora';
+  if(aurora){ delete document.documentElement.dataset.theme; try{localStorage.setItem('fa_theme','classic')}catch(e){} }
+  else { document.documentElement.dataset.theme='aurora'; try{localStorage.setItem('fa_theme','aurora')}catch(e){} }
+  const b=document.getElementById('fa-theme-btn');
+  if(b) b.querySelector('.fa-dock-emj').textContent = aurora ? '✨' : '🖤';
+}
+
 const ICON = {
   home:'<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/>',
   calendar:'<rect x="3" y="4.5" width="18" height="17" rx="2"/><path d="M3 9h18M8 2.5v4M16 2.5v4"/>',
@@ -64,6 +80,12 @@ const css = `
 @media(max-width:420px){#fa-dock a,#fa-dock button.fa-dock-item{width:50px}}
 /* Uvoľni priestor, aby dock neprekrýval obsah stránky */
 body.fa-has-dock{padding-bottom:86px;}
+#fa-dock .fa-dock-emj{font-size:1.1rem;line-height:1;}
+/* Aurora podoba docku */
+html[data-theme="aurora"] #fa-dock{background:rgba(20,13,34,.82);border-color:rgba(255,255,255,.14);}
+html[data-theme="aurora"] #fa-dock a.fa-dock-active{color:#E9B8FF;background:rgba(233,184,255,.12);}
+html[data-theme="aurora"] #fa-role-menu{background:rgba(24,17,38,.97);border-color:rgba(255,255,255,.16);}
+html[data-theme="aurora"] #fa-role-menu a:hover,html[data-theme="aurora"] #fa-role-menu a.cur{background:rgba(233,184,255,.12);color:#E9B8FF;}
 `;
 
 function currentKey(){
@@ -99,9 +121,12 @@ async function build(){
       ${svg(it.icon)}<span class="fa-dock-lbl">${it.label}</span></a>`;
   }).join('');
   const switchHtml = showSwitch ? `<button class="fa-dock-item" id="fa-switch" title="Prepnúť dashboard" aria-label="Prepnúť">${svg('swap')}<span class="fa-dock-lbl-s">Prepnúť</span></button>` : '';
-  dock.innerHTML = navHtml + switchHtml;
+  const isAurora = document.documentElement.dataset.theme==='aurora';
+  const themeHtml = `<button class="fa-dock-item" id="fa-theme-btn" title="Vzhľad: Klasik / Aurora" aria-label="Prepnúť vzhľad"><span class="fa-dock-emj">${isAurora?'🖤':'✨'}</span><span class="fa-dock-lbl-s">Vzhľad</span></button>`;
+  dock.innerHTML = navHtml + switchHtml + themeHtml;
   document.body.appendChild(dock);
   document.body.classList.add('fa-has-dock');
+  document.getElementById('fa-theme-btn').addEventListener('click', faThemeToggle);
 
   // Badge otvorených support ticketov pre staff
   const isStaff = me.is_admin || me.user_type==='trainer' || me.user_type==='manager';

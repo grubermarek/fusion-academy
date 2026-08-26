@@ -98,6 +98,17 @@ html[data-theme="aurora"] .fa2-gold{ color:#F3D27E; }
 .fa2-theme-toggle:hover{ border-color:var(--gold,#C9A24C); color:var(--gold,#C9A24C); }
 html[data-theme="aurora"] .fa2-theme-toggle{ border-color:rgba(233,184,255,.4); color:var(--au-accent); }
 
+/* ── Karta členstva (peňaženkový vzhľad z mockupu Profil) ── */
+html[data-theme="aurora"] .membership-card{
+  background:linear-gradient(135deg,rgba(168,85,247,.28),rgba(236,72,153,.2));
+  border-color:rgba(233,184,255,.35);
+  -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+}
+html[data-theme="aurora"] .membership-card::before,
+html[data-theme="aurora"] .membership-card::after{
+  background:radial-gradient(circle,rgba(233,184,255,.16),transparent 70%);
+}
+
 /* jemnosť: menej pohybu = žiadne extra animácie aurory */
 @media (prefers-reduced-motion:reduce){
   html[data-theme="aurora"] body::before{ background-attachment:scroll; }
