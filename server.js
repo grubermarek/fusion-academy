@@ -2808,6 +2808,13 @@ app.post('/api/admin/qa/run-abandoned-checkout', adminAuth, async(req,res)=>{
   try{ res.json({ok:true, ...(await abandonedCheckoutTick())}); }
   catch(e){ res.status(500).json({error:e.message}); }
 });
+// QA: event kampane (leady / urgencia) — bez čakania na 8-minútový tick
+app.post('/api/admin/qa/run-event-mail/:wave', adminAuth, async(req,res)=>{
+  try{
+    const fn = req.params.wave==='urgency' ? eventUrgencyTick : eventLeadTick;
+    res.json({ok:true, ...(await fn(true))});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 // QA: matica mail budžetu pri simulovanom počte odoslaných (bez reálneho posielania)
 app.get('/api/admin/qa/mail-budget', adminAuth, async(req,res)=>{
   try{
@@ -3609,6 +3616,124 @@ setInterval(async()=>{
     if(n) console.log('📧 EVENT MAIL LT2026: odoslaných '+n+' (zostáva '+(users.length-n)+')');
   }catch(e){ console.error('event mail lt2026:', e.message); }
 }, 8*60*1000);
+
+// ── VLNA A (Marek 26.8.): pozvánka na párty pre LEADY ────────────────────────
+// Ticker vyššie cielil len klientky — 571 leadov nedostalo nič. Párty za 5 € je
+// najnižší schod, cez ktorý sa dá vojsť; masterclass sa spomína len okrajovo.
+const EV_LEAD_SUBJ = '🌴 Poď sa pozrieť, ako tancujeme — párty 5. 9. za 5 €';
+async function eventLeadTick(qaMode){
+  try{
+    if(!process.env.BREVO_API_KEY) return;
+    if(await q.one(db.settings,{key:'event_lead_lt2026_done'})) return;
+    if(today() > '2026-09-05') return;            // po akcii už nikdy
+    const hSK=+new Intl.DateTimeFormat('sk-SK',{hour:'numeric',hour12:false,timeZone:'Europe/Bratislava'}).format(new Date());
+    if(hSK<9||hSK>20) return;
+    if(!(await mailBudgetOk(10))) return;
+    let budget=60;
+    const isTestU=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'')||u.lead_source==='test'||u.is_test;
+    const already=new Set((await q.find(db.mail_log,{subject:EV_LEAD_SUBJ})).map(m=>String(m.to).toLowerCase()));
+    const users=(await q.find(db.users,{}))
+      .filter(u=>u.user_type==='lead' && !u.is_admin && !u.is_child && u.active!==false
+        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u)
+        && u.email && /@/.test(u.email) && !/@import\.local$|@guest\./i.test(u.email)
+        && !already.has(String(u.email).toLowerCase()));
+    if(!users.length){
+      await q.insert(db.settings,{key:'event_lead_lt2026_done', value:true, at:nowISO()});
+      const total=(await q.find(db.mail_log,{subject:EV_LEAD_SUBJ})).length;
+      for(const a of await q.find(db.users,{is_admin:true}))
+        await q.insert(db.notifications,{user_id:a._id, type:'campaign',
+          title:'📧 Pozvánka pre leady rozoslaná', body:'Latin Tropical pozvánka odišla '+total+' leadom.',
+          read:false, created_at:nowISO()});
+      console.log('📧 EVENT LEAD MAIL LT2026: hotovo, spolu '+total);
+      return;
+    }
+    let n=0;
+    for(const u of users){
+      if(n>=budget) break;
+      if(!(await mailBudgetOk(10))) break;
+      const first=String(u.name||'').split(' ')[0]||'tanečníčka';
+      const ok=await sendMail(u.email, EV_LEAD_SUBJ,
+        emailTemplate('Ahoj '+first+'! 💛',
+        '<div style="text-align:center;margin:6px 0 16px"><img src="'+APP_URL+'/img/events/latin-tropical.jpg" alt="Latin Tropical Party" style="width:100%;max-width:520px;border-radius:14px"></div>'
+        +'<p>Raz si sa u nás zaujímala o tanec — a <b>5. septembra</b> máme najlepší dôvod, aby si nás spoznala naživo. Oslavujeme <b>1. výročie</b> tanečnej školy v Detve. 🌴</p>'
+        +'<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">🍹 <b style="color:#C9A84C">Vstup na párty: 5 €</b> v predpredaji (na mieste 10 €), welcome drink v cene. Nemusíš vedieť tancovať ani nikoho poznať — príď sa pozrieť, aká je u nás atmosféra.</p>'
+        +'<p>Ak si chceš aj zatancovať: pred párty od <b>18:15</b> je masterclass s <b>Marekom Gruberom a Ivanom Ligártom</b>, Zumba + CIRCL Mobility, jedlo a welcome drink — Full Experience <b>55 €</b> (kapacita 30 miest).</p>'
+        +'<p>📍 Fusion Club Detva, Záhradná 7 · piatok 5. 9. 2026 od 21:00</p>'
+        +'<p>Budeme sa tešiť!<br>Tím Fusion Academy</p>',
+        '🎟️ Chcem vstupenku', APP_URL+'/event/latin-tropical-2026?utm_source=email&utm_medium=email&utm_campaign=fa-masterclass-01'),
+        {priority:10, template:'event_campaign_leads'}).catch(()=>false);
+      if(ok) n++;
+      await new Promise(r=>setTimeout(r,400));
+    }
+    if(n) console.log('📧 EVENT LEAD MAIL LT2026: odoslaných '+n+' (zostáva '+(users.length-n)+')');
+    return {selected:users.slice(0,budget).map(u=>u.email), sent:n, remaining:users.length};
+  }catch(e){ console.error('event lead mail:', e.message); return {error:e.message}; }
+}
+setInterval(eventLeadTick, 8*60*1000);
+
+// ── VLNA B (Marek 26.8.): urgencia pre KLIENTKY, štart 29. 8. ────────────────
+// Predpredaj (členská cena 45 €) končí 31. 8. — potom platí 65 € pre všetkých.
+const EV_URG_SUBJ = '⏳ Posledné dni za členskú cenu — párty 5. 9.';
+async function eventUrgencyTick(qaMode){
+  try{
+    if(!process.env.BREVO_API_KEY) return;
+    const t=today();
+    if(!(qaMode && process.env.QA_EVENT_WINDOW==='1') && (t < '2026-08-29' || t > '2026-08-31')) return;   // presné okno urgencie
+    if(await q.one(db.settings,{key:'event_urg_lt2026_done'})) return;
+    const hSK=+new Intl.DateTimeFormat('sk-SK',{hour:'numeric',hour12:false,timeZone:'Europe/Bratislava'}).format(new Date());
+    if(hSK<9||hSK>20) return;
+    if(!(await mailBudgetOk(9))) return;
+    let budget=60;
+    const isTestU=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'')||u.lead_source==='test'||u.is_test;
+    const activeMem=new Set((await q.find(db.memberships,{status:'active'}))
+      .filter(m=>!m.expires_at||new Date(m.expires_at)>new Date()).map(m=>m.user_id));
+    // kto už má vstupenku, nedostane urgenciu
+    const buyers=new Set((await q.find(db.ev_orders,{event_slug:'latin-tropical-2026', status:'paid'}))
+      .map(o=>String(o.buyer_email||'').toLowerCase()));
+    const already=new Set((await q.find(db.mail_log,{subject:EV_URG_SUBJ})).map(m=>String(m.to).toLowerCase()));
+    const users=(await q.find(db.users,{}))
+      .filter(u=>['client','ambassador'].includes(u.user_type) && !u.is_admin && !u.is_child && u.active!==false
+        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u)
+        && u.email && /@/.test(u.email) && !/@import\.local$|@guest\./i.test(u.email)
+        && !already.has(String(u.email).toLowerCase()) && !buyers.has(String(u.email).toLowerCase()))
+      .sort((a,b)=>(activeMem.has(b._id)?1:0)-(activeMem.has(a._id)?1:0)); // členky prvé
+    if(!users.length){
+      await q.insert(db.settings,{key:'event_urg_lt2026_done', value:true, at:nowISO()});
+      console.log('📧 EVENT URGENCY LT2026: hotovo');
+      return;
+    }
+    // voľné miesta na masterclass — reálne číslo z objednávok
+    const soldFull=(await q.find(db.ev_orders,{event_slug:'latin-tropical-2026', status:'paid'}))
+      .flatMap(o=>o.items||[]).filter(i=>/full/i.test(i.type||i.type_name||'')).reduce((s,i)=>s+(+i.qty||1),0);
+    const volne=Math.max(0, 30-soldFull);
+    let n=0;
+    for(const u of users){
+      if(n>=budget) break;
+      if(!(await mailBudgetOk(9))) break;
+      const first=String(u.name||'').split(' ')[0]||'tanečníčka';
+      const member=activeMem.has(u._id);
+      const cena=member
+        ? '<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">⭐ <b style="color:#C9A84C">Tvoja členská cena 45 €</b> platí len do nedele <b>31. 8.</b> — od pondelka je Full Experience za 65 € pre všetkých.</p>'
+        : '<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">🎟️ <b style="color:#C9A84C">Predpredaj 55 €</b> končí v nedeľu <b>31. 8.</b> — potom platí 65 €.</p>';
+      const ok=await sendMail(u.email, EV_URG_SUBJ,
+        emailTemplate('Ahoj '+first+'! ⏳',
+        '<p>V piatok <b>5. septembra</b> oslavujeme rok tanečnej školy — a predpredaj sa nám chýli ku koncu.</p>'
+        +cena
+        +'<p>💃 Masterclass s <b>Marekom Gruberom a Ivanom Ligártom</b> má <b>30 miest</b>, voľných je ešte <b>'+volne+'</b>. Po naplnení sa dokúpiť nedá.</p>'
+        +'<p>🍹 Nechceš masterclass, len tancovať? Vstup na párty od 21:00 za <b>5 €</b> (na mieste 10 €).</p>'
+        +'<p>🪑 Rezervácia stola: <b>0904 31 51 51</b> — Beáta Gruber Buňová</p>'
+        +'<p>📍 Fusion Club Detva, Záhradná 7</p>'
+        +'<p>Vidíme sa na parkete!<br>Tím Fusion Academy</p>',
+        '🎟️ Kúpiť vstupenku', APP_URL+'/event/latin-tropical-2026?utm_source=email&utm_medium=email&utm_campaign=fa-masterclass-01'),
+        {priority:9, template:'event_campaign_urgency'}).catch(()=>false);
+      if(ok) n++;
+      await new Promise(r=>setTimeout(r,400));
+    }
+    if(n) console.log('📧 EVENT URGENCY LT2026: odoslaných '+n+' (zostáva '+(users.length-n)+')');
+    return {selected:users.slice(0,budget).map(u=>u.email), sent:n, remaining:users.length, volne};
+  }catch(e){ console.error('event urgency mail:', e.message); return {error:e.message}; }
+}
+setInterval(eventUrgencyTick, 8*60*1000);
 
 // Denná notifikácia adminom o 8:00 (guard raz/deň)
 setInterval(async()=>{
