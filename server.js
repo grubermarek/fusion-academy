@@ -5915,7 +5915,32 @@ app.get('/api/ambassador/tasks', ambassadorAuth, async(req,res)=>{
     expiring.slice(0,2).forEach(x=>tasks.push({icon:'⏳', text:x.name+' končí členstvo o '+x.days+' '+(x.days===1?'deň':(x.days<=4?'dni':'dní'))+' — priprav ju na obnovu.'}));
     if(noPlan) tasks.push({icon:'💡', text:noPlan+' '+(noPlan===1?'klientka chodí':'klientky chodia')+' bez členstva — ponúkni permanentku alebo členstvo.'});
     const vol=await ambVolume(u._id);
-    if(!vol.own) tasks.push({icon:'💃', text:'Tento mesiac ešte nemáš vlastnú návštevu — príď si zatancovať.'});
+    // Vlastná aktivita = vlastné body, ALEBO odchodená hodina, ALEBO ODUČENÁ hodina
+    // (Marek 26.8.: „keď učím, ráta sa tiež, že tancujem").
+    let ownActive = vol.own>0;
+    const mNow=todayS.slice(0,7);
+    if(!ownActive){
+      const att=await q.find(db.bookings,{user_id:u._id, status:'attended'});
+      ownActive = att.some(b=>String(b.booking_date||'').slice(0,7)===mNow);
+    }
+    if(!ownActive){ // potvrdila dochádzku ako trénerka tento mesiac
+      const taught=await q.find(db.bookings,{attended_by:u._id});
+      ownActive = taught.some(b=>String(b.booking_date||'').slice(0,7)===mNow);
+    }
+    if(!ownActive){ // override inštruktorky na termíne, ktorý už prebehol
+      const si=await q.find(db.session_instructors,{instructor_id:u._id});
+      ownActive = si.some(s=>{ const d=String(s.date||''); return d.slice(0,7)===mNow && d<=todayS; });
+    }
+    if(!ownActive){ // kmeňová inštruktorka hodiny, ktorej termín tento mesiac už bol
+      const myCls=(await q.find(db.classes,{active:true})).filter(c=>c.instructor_id===u._id);
+      const tDow=new Date(todayS+'T12:00:00').getDay();
+      ownActive = myCls.some(c=>{
+        const back=(tDow-c.day_of_week+7)%7;
+        const last=new Date(Date.parse(todayS)-back*864e5).toISOString().slice(0,10);
+        return last.slice(0,7)===mNow;
+      });
+    }
+    if(!ownActive) tasks.push({icon:'💃', text:'Tento mesiac ešte nemáš vlastnú návštevu — príď si zatancovať.'});
     if(!tasks.length) tasks.push({icon:'🌟', text:'Všetko v poriadku! Pošli odkaz jednej novej žene — nikdy nevieš, komu zmeníš život.'});
     res.json({ok:true, tasks});
   }catch(e){ res.status(500).json({error:e.message}); }

@@ -4,6 +4,8 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Obchod – Fusion Academy</title>
 <link rel="icon" type="image/png" href="/logo-mark.png">
+<script>/* téma pred prvým renderom */try{if(localStorage.getItem('fa_theme')==='aurora')document.documentElement.dataset.theme='aurora'}catch(e){}</script>
+<link rel="stylesheet" href="/aurora.css">
 <style>
 :root{--gold:#C9A84C;--cream:#EAE3D5;--muted:#9d9788;--card:#1a1712;--line:#2e2a20}
 *{box-sizing:border-box}
@@ -81,6 +83,21 @@ select{background:#1d1a15;border:1px solid var(--line);color:var(--cream);border
 .err{color:#ff8a80;font-size:.85rem;margin-top:8px;min-height:1.1em}
 .note{font-size:.78rem;color:var(--muted);margin:8px 0 0;line-height:1.5}
 .toast{position:fixed;bottom:120px;left:50%;transform:translateX(-50%);background:#1e2b16;border:1px solid #8bc34a;color:#c5e1a5;border-radius:12px;padding:11px 18px;font-size:.88rem;z-index:2000;max-width:90vw;text-align:center;animation:fin .3s}
+
+/* ── AURORA GLASS téma obchodu ── */
+html[data-theme="aurora"] body{background:#0B0714;}
+html[data-theme="aurora"] .myf{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.14);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);}
+html[data-theme="aurora"] .rec{background:rgba(168,85,247,.12);border-color:rgba(233,184,255,.35);}
+html[data-theme="aurora"] .rec b{color:#E9B8FF;}
+html[data-theme="aurora"] .tab{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.14);color:#B4ACC6;}
+html[data-theme="aurora"] .tab.active{background:linear-gradient(90deg,#A855F7,#EC4899);border-color:transparent;color:#fff;}
+html[data-theme="aurora"] .pcard{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.14);border-radius:20px;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);}
+html[data-theme="aurora"] .pcard.hl{border-color:rgba(233,184,255,.5);}
+html[data-theme="aurora"] .buy:not(.owned){background:linear-gradient(90deg,#A855F7,#EC4899);color:#fff;box-shadow:0 6px 18px rgba(168,85,247,.3);}
+html[data-theme="aurora"] select{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.16);}
+html[data-theme="aurora"] .txrow{border-color:rgba(255,255,255,.1);}
+html[data-theme="aurora"] .pcard .price, html[data-theme="aurora"] .gold{color:#F3D27E;}
+@supports not (backdrop-filter:blur(14px)){ html[data-theme="aurora"] .pcard, html[data-theme="aurora"] .myf{background:#171129;} }
 </style>
 </head>
 <body>

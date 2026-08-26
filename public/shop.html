@@ -13,7 +13,9 @@
 <link rel="canonical" href="https://latindancefusion.art/shop">
 <title>Fusion Academy – Shop</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<script>/* téma pred prvým renderom */try{if(localStorage.getItem('fa_theme')==='aurora')document.documentElement.dataset.theme='aurora'}catch(e){}</script>
 <link rel="stylesheet" href="/fa-theme.css">
+<link rel="stylesheet" href="/aurora.css">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <style>
 :root{
@@ -75,6 +77,17 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
 .form-text{color:var(--text-muted)!important;}
 .form-select option{background:var(--dark-3);color:var(--cream);}
 @media(max-width:576px){.offcanvas-end{width:100vw!important;}}
+
+/* ── AURORA GLASS téma e-shopu ── */
+html[data-theme="aurora"] .hero{background:none;border-bottom-color:rgba(255,255,255,.1);}
+html[data-theme="aurora"] .cat-pills{background:rgba(20,13,34,.72);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-bottom-color:rgba(255,255,255,.1);}
+html[data-theme="aurora"] .cat-btn.active,html[data-theme="aurora"] .cat-btn:hover{border-color:rgba(233,184,255,.5);background:rgba(168,85,247,.2);color:#E9B8FF;}
+html[data-theme="aurora"] .product-card{background:rgba(255,255,255,.07)!important;border-color:rgba(255,255,255,.14)!important;border-radius:20px;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);}
+html[data-theme="aurora"] .btn-add:not(.added){background:linear-gradient(90deg,#A855F7,#EC4899);color:#fff;}
+html[data-theme="aurora"] .cart-btn{background:linear-gradient(90deg,#A855F7,#EC4899);color:#fff;box-shadow:0 6px 22px rgba(168,85,247,.4);}
+html[data-theme="aurora"] .prod-price{background:none;-webkit-text-fill-color:#F3D27E;color:#F3D27E;}
+html[data-theme="aurora"] .badge-free{background:linear-gradient(90deg,#A855F7,#EC4899);color:#fff;}
+@supports not (backdrop-filter:blur(14px)){ html[data-theme="aurora"] .product-card{background:#171129!important;} }
 </style>
 </head>
 <body>
