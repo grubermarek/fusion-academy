@@ -5155,11 +5155,12 @@ async function cdEvLoadTypes(){
       const tier = (_cdEvMember && t.member_price!=null && presaleOpen) ? 'členská' : (presaleOpen ? 'predpredaj' : 'na mieste');
       const left = t.left==null ? '' : (t.left<=0 ? '<span class="text-danger">vypredané</span>' : `<span class="text-muted">ostáva ${t.left}</span>`);
       return `<div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
-        <input type="number" class="form-control form-control-sm bg-dark text-light border-secondary cd-ev-qty" data-key="${t.key}" data-default="${price}" value="0" min="0" max="20" style="width:70px" ${t.sold_out?'disabled':''}>
+        <input type="number" class="form-control form-control-sm bg-dark text-light border-secondary cd-ev-qty" data-key="${t.key}" data-default="${price}" value="0" min="0" max="20" style="width:70px" oninput="cdEvHolders(this)" ${t.sold_out?'disabled':''}>
         <b style="color:#eee">${escHtml(t.name)}</b>
         <input type="number" class="form-control form-control-sm bg-dark text-light border-secondary cd-ev-price" data-key="${t.key}" value="${(+price).toFixed(2)}" min="0" step="0.5" style="width:88px" title="Cena za kus - mozes ju prepisat">
         <span class="text-muted small">€ (${tier})</span> ${left}
-      </div>`;
+      </div>
+      <div class="cd-ev-holders ms-1 mb-2" data-key="${t.key}"></div>`;
     }).join('')}
     <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
       <select id="cdEvPay" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:auto">
@@ -5174,6 +5175,16 @@ async function cdEvLoadTypes(){
       <div class="text-muted small mt-1">Vstupenka s QR jej príde e-mailom a zobrazí sa jej v appke.</div>
     </div>`;
 }
+// Vstup pre viac osôb: pri počte > 1 sa doplnia mená ďalších — vstupenka potom znie na ne.
+function cdEvHolders(qtyEl){
+  const key=qtyEl.dataset.key, n=Math.max(0,Math.min(20,+qtyEl.value||0));
+  const box=document.querySelector('.cd-ev-holders[data-key="'+key+'"]'); if(!box) return;
+  if(n<2){ box.innerHTML=''; return; }
+  const prev=[...box.querySelectorAll('input')].map(i=>i.value);
+  let h='<div class="text-muted" style="font-size:.7rem;margin:2px 0 3px">Vstup pre '+n+' osoby — 1. vstupenka znie na '+escHtml(_cdEvClient.name)+', ostatné môžeš pomenovať:</div>';
+  for(let i=1;i<n;i++) h+='<input class="form-control form-control-sm bg-dark text-light border-secondary cd-ev-holder mb-1" data-key="'+key+'" data-i="'+i+'" style="max-width:280px" maxlength="120" placeholder="Meno '+(i+1)+'. osoby (voliteľné)" value="'+(prev[i-1]||'').replace(/"/g,'&quot;')+'">';
+  box.innerHTML=h;
+}
 function cdEvGiftToggle(){
   const gift=document.getElementById('cdEvGift').checked;
   document.querySelectorAll('.cd-ev-price').forEach(i=>{
@@ -5187,11 +5198,17 @@ async function cdEvSell(){
   const slug=document.getElementById('cdEvSlug').value;
   const gift=document.getElementById('cdEvGift').checked;
   const priceOf=k=>{ const el=document.querySelector('.cd-ev-price[data-key="'+k+'"]'); return el?(+el.value||0):0; };
-  const items=[...document.querySelectorAll('.cd-ev-qty')].map(i=>({type:i.dataset.key, qty:+i.value||0, price: gift?0:priceOf(i.dataset.key)}))
+  const holdersOf=k=>{ const out=[{name:_cdEvClient.name, email:_cdEvClient.email||'', phone:_cdEvClient.phone||''}];
+    document.querySelectorAll('.cd-ev-holder[data-key="'+k+'"]').forEach(el=>out.push({name:el.value.trim(), email:'', phone:''}));
+    return out; };
+  const items=[...document.querySelectorAll('.cd-ev-qty')].map(i=>({type:i.dataset.key, qty:+i.value||0, price: gift?0:priceOf(i.dataset.key), holders:holdersOf(i.dataset.key)}))
     .filter(i=>i.qty>0);
   if(!items.length){ showToast('Zadaj počet aspoň pri jednej vstupenke','error'); return; }
   const total=items.reduce((s,i)=>s+i.qty*i.price,0);
-  const what=items.map(i=>i.qty+'× '+(_cdEvTypes.find(t=>t.key===i.type)?.name||i.type)).join(', ');
+  const persons=items.reduce((s,i)=>s+i.qty,0);
+  const named=items.flatMap(i=>(i.holders||[]).slice(1).map(h=>h.name).filter(Boolean));
+  const what=items.map(i=>i.qty+'× '+(_cdEvTypes.find(t=>t.key===i.type)?.name||i.type)).join(', ')
+    +(persons>1?` (vstup pre ${persons} osoby${named.length?': '+_cdEvClient.name+', '+named.join(', '):''})`:'');
   const pay=document.getElementById('cdEvPay').value;
   const note=document.getElementById('cdEvNote').value.trim();
   const subject=document.getElementById('cdEvSubject').value.trim();

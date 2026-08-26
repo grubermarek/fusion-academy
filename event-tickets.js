@@ -704,7 +704,10 @@ module.exports = function mountEventTickets(ctx){
         const price = isGift ? 0 : ((w.price!=null && w.price!=='')
           ? Math.max(0,+w.price)
           : priceFor(t, isMemberSale).price);
-        lines.push({ t, qty, price });
+        // Mená ďalších osôb — vstupenka môže znieť na kamarátku, nielen na kupujúcu.
+        const holders=(Array.isArray(w.holders)?w.holders:[]).slice(0,qty).map(h=>({
+          name:esc(h&&h.name,120), email:esc(h&&h.email,120).toLowerCase(), phone:esc(h&&h.phone,40) }));
+        lines.push({ t, qty, price, holders });
       }
       if(!lines.length) return res.status(400).json({error:'Vyber aspoň jednu vstupenku.'});
       const total = +lines.reduce((s,l)=>s+l.price*l.qty,0).toFixed(2);
@@ -720,21 +723,21 @@ module.exports = function mountEventTickets(ctx){
         buyer_name:name, buyer_email:email, buyer_phone:esc(req.body.phone,40),
         user_id:acct?._id||null,
         items: lines.map(l=>({type:l.t.key, type_name:l.t.name, qty:l.qty, unit:l.price,
-          tier: isGift?'gift':(isMemberSale?'member':'door'), subtotal:+(l.price*l.qty).toFixed(2), holders:[]})),
+          tier: isGift?'gift':(isMemberSale?'member':'door'), subtotal:+(l.price*l.qty).toFixed(2), holders:l.holders||[]})),
         total, table:null, source:'admin', status:'paid', gift:isGift, admin_note:mailNote||null,
         created_at:nowISO(), paid_at:nowISO(), payment_method:method
       });
       const made=[];
       for(const l of lines){
-        for(let i=0;i<l.qty;i++) made.push(await q.insert(db.ev_tickets,{
+        for(let i=0;i<l.qty;i++){ const h=(l.holders||[])[i]||{}; made.push(await q.insert(db.ev_tickets,{
           code:newCode(), event_slug:ev.slug, type:l.t.key, type_name:l.t.name,
           order_id:order._id, order_number:order.order_number, price:l.price,
           tier: isGift?'gift':(isMemberSale?'member':'door'),
-          holder_name:name, holder_email:order.buyer_email, holder_phone:order.buyer_phone,
+          holder_name: h.name||name, holder_email: h.email||order.buyer_email, holder_phone: h.phone||order.buyer_phone,
           user_id:acct?._id||null, source:'admin', status:'valid',
           aff_code: affO?.code||null, aff_commission: affO? +(l.price*affO.rate).toFixed(2) : 0,
           aff_paid_out:false, aff_paid_at:null,
-          checked_in_at:null, checked_in_by:null, checkin_place:null, created_at:nowISO()}));
+          checked_in_at:null, checked_in_by:null, checkin_place:null, created_at:nowISO()})); }
       }
       const summary = lines.map(l=>l.qty+'× '+l.t.name).join(', ');
       await q.insert(db.transactions,{type:'event_ticket', user_id:acct?._id||null, user_name:name, channel:'onsite',
