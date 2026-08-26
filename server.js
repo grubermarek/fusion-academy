@@ -12028,7 +12028,7 @@ setInterval(async()=>{
 // KIOSK MODE — digitálna recepcia (fullscreen tablet pri vstupe do štúdia)
 // ═══════════════════════════════════════════════════════════════════════════════
 const KIOSK_STUDIOS = { detva:'Detva', zvolen:'Zvolen', bb:'Banská Bystrica', brezno:'Brezno' };
-const KIOSK_DEFAULT_WIDGETS = { program:true, stats:true, klient_mesiaca:true, birthdays:true, upsell:true, health:true, app_promo:true, referral:true, challenge:true, custom:true };
+const KIOSK_DEFAULT_WIDGETS = { program:true, stats:true, klient_mesiaca:true, birthdays:true, upsell:true, health:true, app_promo:true, referral:true, challenge:true, custom:true, events:true };
 async function kioskConfig(){
   let s = await q.one(db.settings,{key:'kiosk_config'});
   if(!s){
@@ -12258,12 +12258,37 @@ app.get('/api/kiosk/content', async(req,res)=>{
     }catch(e){}
     // Málo obsadené dnešné hodiny (promo)
     const promoClass=program.filter(p=>!running||p!==running).sort((x,y)=>(x.booked/x.capacity)-(y.booked/y.capacity))[0]||null;
+    // Nadchádzajúce eventy a masterclassy — pozvánka na kiosku (reálne dáta z ev_events)
+    const APP_BASE=String(APP_URL||"").replace(/[/]+$/,"");
+    let events=[];
+    try{
+      events=(await q.find(db.ev_events,{}))
+        .filter(e=>e.slug && e.name && e.active!==false && (e.date||'')>=todayS)
+        .sort((a,b)=>String(a.date).localeCompare(String(b.date)))
+        .slice(0,3)
+        .map(e=>({ slug:e.slug, name:e.name, subtitle:e.subtitle||'', date:e.date,
+                   date_label:e.date_label||'', venue:e.venue||'', address:e.address||'',
+                   url: APP_BASE + '/event/' + e.slug, types:e.types||[] }));
+      // Ku každému typu vstupenky doplň reálnu cenu a zostávajúce miesta
+      for(const ev of events){
+        const tickets=await q.find(db.ev_tickets,{event_slug:ev.slug});
+        ev.types=(ev.types||[]).map(t=>{
+          const sold=tickets.filter(x=>x.type===t.key && x.status!=='void').length;
+          const left=(t.capacity==null)?null:Math.max(0,t.capacity-sold);
+          const presaleOn=!t.presale_until || new Date(t.presale_until)>=new Date();
+          return { key:t.key, name:t.name, includes:(t.includes||[]).slice(0,4),
+                   presale:t.presale, door:t.door, member:t.member,
+                   presale_on:presaleOn, left, sold_out: left!=null && left<=0 };
+        });
+      }
+    }catch(e){}
     res.json({ ok:true, city, now:nowHM,
       config:{ interval_s:st.interval_s||12, idle_s:st.idle_s||15, night_off:st.night_off||'21:30', night_on:st.night_on||'07:30', widgets:st.widgets||KIOSK_DEFAULT_WIDGETS, announcement:st.announcement||'', custom_slides:st.custom_slides||[] },
       program, running, next,
       stats:{ today:todayAtt, week:weekAtt, total:totalAtt },
       spotlight, birthdays:bdays,
       promo_class:promoClass,
+      events,
       app_url:APP_URL });
   }catch(e){ res.status(500).json({error:e.message}); }
 });

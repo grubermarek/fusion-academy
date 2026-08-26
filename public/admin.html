@@ -5593,7 +5593,7 @@ async function dispatchOrder(id,val){
 // ── TÍM & ROLY ──
 let _staffMentors=[], _staffTimer=null;
 /* ─── Kiosk (admin) ─── */
-const KW_LABELS={program:'Dnešný program', stats:'Štatistiky komunity', klient_mesiaca:'Klientka mesiaca', birthdays:'Narodeniny', upsell:'Upsell (členstvá/merch)', health:'Zdravie & tipy', app_promo:'Promo appky', referral:'Referral program', challenge:'Výzva dňa', custom:'Vlastné slidy'};
+const KW_LABELS={program:'Dnešný program', stats:'Štatistiky komunity', klient_mesiaca:'Klientka mesiaca', birthdays:'Narodeniny', upsell:'Upsell (členstvá/merch)', health:'Zdravie & tipy', app_promo:'Promo appky', referral:'Referral program', challenge:'Výzva dňa', events:'Pozvánky na eventy a masterclassy', custom:'Vlastné slidy'};
 let _kioskData=null;
 async function loadKiosk(){
   const d=await api('/api/admin/kiosk');

@@ -133,6 +133,27 @@ function buildSlides(){
   const W=(CFG.widgets)||{}; const S=[];
   const add=(html)=>S.push(html);
   if(CFG.announcement) add(sl('Oznam','📢','<div class="big">'+esc(CFG.announcement)+'</div>'));
+  if(W.events!==false) (DATA.events||[]).forEach(ev=>{
+    const mc=/masterclass|workshop|master class/i.test(ev.name+' '+(ev.subtitle||''));
+    add(sl(mc?'Masterclass':'Pozvánka', mc?'🎓':'🎉',
+      '<div class="big">'+esc(ev.name)+(ev.subtitle?'<br><span class="g" style="font-size:5vmin">'+esc(ev.subtitle)+'</span>':'')+'</div>'+
+      '<div class="chiprow">'+
+        (ev.date_label||ev.date?'<span class="chip">📅 '+esc(ev.date_label||fmtDate(ev.date))+'</span>':'')+
+        (ev.venue?'<span class="chip">📍 '+esc(ev.venue)+'</span>':'')+
+      '</div>'+
+      '<div class="sub">Vstupenky a program nájdeš tu — naskenuj kód alebo sa spýtaj trénera 💛</div>'+
+      qrUrl(ev.url)));
+    // Samostatný slide pre každý typ vstupenky (masterclass / párty)
+    (ev.types||[]).filter(t=>!t.sold_out).forEach(t=>{
+      const tmc=/masterclass|workshop/i.test(t.name+' '+(t.includes||[]).join(' '));
+      add(sl(tmc?'Masterclass':'Vstupenka', tmc?'🎓':'🎟️',
+        '<div class="big" style="font-size:6.5vmin">'+esc(t.name)+'</div>'+
+        ((t.includes||[]).length?'<div class="chiprow">'+t.includes.map(x=>'<span class="chip">'+esc(x)+'</span>').join('')+'</div>':'')+
+        '<div class="sub">'+esc(priceLine(t))+'<br>'+esc(ev.date_label||fmtDate(ev.date))+' · '+esc(ev.venue||'')+
+        (t.left!=null&&t.left<=10?'<br><b style="color:var(--gold2)">Zostáva '+t.left+' miest</b>':'')+'</div>'+
+        qrUrl(ev.url)));
+    });
+  });
   if(DATA.running) add(sl('Práve prebieha','🤫',
     '<div class="big">Hodina práve prebieha<br><span class="g">'+esc(DATA.running.emoji+' '+DATA.running.name)+'</span></div>'+
     (DATA.next?'<div class="sub">Ďalšia hodina: <b style="color:var(--cream)">'+esc(DATA.next.time_start)+' '+esc(DATA.next.name)+'</b></div>':'')+
@@ -164,6 +185,15 @@ function buildSlides(){
 }
 function sl(kick, emoji, inner){ return '<div class="kicker">'+esc(emoji)+' '+esc(kick)+'</div>'+inner; }
 function card([e,t,d]){ return '<div style="font-size:10vmin">'+e+'</div><div class="big" style="font-size:6.5vmin">'+esc(t)+'</div><div class="sub">'+esc(d)+'</div>'; }
+function priceLine(t){
+  const p=[];
+  if(t.presale_on && t.presale!=null) p.push('v predpredaji '+t.presale+' €');
+  if(t.door!=null) p.push('na mieste '+t.door+' €');
+  if(t.member!=null) p.push('členky '+t.member+' €');
+  return p.join(' · ');
+}
+function qrUrl(u){ return '<img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&bgcolor=0B0A07&color=C9A84C&data='+encodeURIComponent(u)+'" style="margin-top:3vmin;border-radius:1.6vmin;border:1px solid rgba(201,168,76,.4);width:18vmin;height:18vmin" alt="QR">'; }
+function fmtDate(d){ try{ return new Date(d+'T00:00:00').toLocaleDateString('sk-SK',{day:'numeric',month:'long',year:'numeric'}); }catch(e){ return d||''; } }
 function qrApp(){ return '<img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&bgcolor=0B0A07&color=C9A84C&data='+encodeURIComponent(DATA.app_url)+'" style="margin-top:3vmin;border-radius:1.6vmin;border:1px solid rgba(201,168,76,.4);width:18vmin;height:18vmin" alt="QR">'; }
 
 /* ── Slideshow engine ── */
