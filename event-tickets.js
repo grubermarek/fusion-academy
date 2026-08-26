@@ -421,8 +421,11 @@ module.exports = function mountEventTickets(ctx){
     return {ok:true, order, tickets};
   }
 
-  async function sendTicketMail(order, tickets, ev){
+  async function sendTicketMail(order, tickets, ev, opts){
     const base = APP_URL.replace(/\/$/,'');
+    const gift = !!(opts && opts.gift);
+    const note = (opts && opts.note) ? String(opts.note).trim() : '';
+    const subject = (opts && opts.subject) ? String(opts.subject).trim() : '';
     const rows = tickets.map((t,i)=>`
       <tr><td style="padding:18px 0;border-top:1px solid #2a2a2a">
         <div style="color:#C9A84C;font-weight:700;font-size:15px">${t.type_name}</div>
@@ -434,10 +437,11 @@ module.exports = function mountEventTickets(ctx){
     const html = `<!doctype html><html><body style="margin:0;background:#0a0a0a;font-family:Arial,Helvetica,sans-serif">
       <div style="max-width:600px;margin:0 auto;background:#111;padding:28px">
         <div style="font-size:22px;color:#fff;font-weight:700;letter-spacing:.5px">FUSION <span style="color:#C9A84C">ACADEMY</span></div>
-        <div style="margin:22px 0 8px;color:#C9A84C;font-size:13px;letter-spacing:.12em">POTVRDENIE — ZAPLATENÉ</div>
+        <div style="margin:22px 0 8px;color:#C9A84C;font-size:13px;letter-spacing:.12em">${gift?'DARČEK PRE TEBA':'POTVRDENIE — ZAPLATENÉ'}</div>
         <h1 style="color:#fff;font-size:24px;margin:0 0 6px">${ev?.name||'Event'}</h1>
         <p style="color:#c8c8c8;margin:0 0 4px">${ev?.date_label||''} · ${ev?.venue||''}, ${ev?.address||''}</p>
-        <p style="color:#888;margin:0 0 18px;font-size:13px">Objednávka ${order.order_number} · zaplatené ${eur(order.total)} €</p>
+        <p style="color:#888;margin:0 0 18px;font-size:13px">Objednávka ${order.order_number}${gift?' · vstupenka ako darček od Fusion Academy 🎁':' · zaplatené '+eur(order.total)+' €'}</p>
+        ${note?`<div style="background:#191510;border-left:3px solid #C9A84C;padding:14px 16px;margin:0 0 18px;color:#e8e2d4;font-size:14px;line-height:1.6;white-space:pre-wrap">${note}</div>`:''}
         <table width="100%" cellspacing="0" cellpadding="0">${rows}</table>
         <p style="color:#c8c8c8;font-size:13px;line-height:1.7;margin-top:22px">
           QR kód ukáž pri vstupe priamo z telefónu — každá vstupenka má vlastný a platí len raz.
@@ -446,7 +450,7 @@ module.exports = function mountEventTickets(ctx){
            style="background:#C9A84C;color:#000;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:700">Detail eventu a program →</a></p>
         <p style="color:#666;font-size:12px;margin-top:26px">Otázky? Zavolaj na 0904 31 51 51.</p>
       </div></body></html>`;
-    await sendMail(order.buyer_email, `🎟️ Vstupenky — ${ev?.name||'Fusion Academy'}`, html);
+    await sendMail(order.buyer_email, subject || (gift ? `🎁 Darček pre teba — ${ev?.name||'Fusion Academy'}` : `🎟️ Vstupenky — ${ev?.name||'Fusion Academy'}`), html);
   }
 
   // Stav objednávky po návrate z platby (bez prihlásenia)
@@ -678,6 +682,10 @@ module.exports = function mountEventTickets(ctx){
       const ev = await q.one(db.ev_events,{slug:req.params.slug});
       if(!ev) return res.status(404).json({error:'Event nenájdený'});
       const isMemberSale = !!req.body.member;
+      // Dar: vstupenka zadarmo — 0 €, bez faktúry, mail znie ako darček.
+      const isGift = !!req.body.gift;
+      const mailNote = esc(req.body.note, 600);
+      const mailSubject = esc(req.body.subject, 160);
       // Prijmeme buď jeden typ (staršia forma), alebo rovno viac typov naraz.
       const wanted = Array.isArray(req.body.items) && req.body.items.length
         ? req.body.items
@@ -693,9 +701,9 @@ module.exports = function mountEventTickets(ctx){
         if(left!=null && qty>left) return res.status(400).json({error:`Pri „${t.name}" ostáva len ${left} miest.`});
         // Cena: ak ju nezadá, vypočíta sa sama — člen/nečlen a podľa toho,
         // či ešte beží predpredaj.
-        const price = (w.price!=null && w.price!=='')
+        const price = isGift ? 0 : ((w.price!=null && w.price!=='')
           ? Math.max(0,+w.price)
-          : priceFor(t, isMemberSale).price;
+          : priceFor(t, isMemberSale).price);
         lines.push({ t, qty, price });
       }
       if(!lines.length) return res.status(400).json({error:'Vyber aspoň jednu vstupenku.'});
@@ -704,7 +712,7 @@ module.exports = function mountEventTickets(ctx){
       const email = esc(req.body.email,120).toLowerCase();
       // Ak je pod týmto e-mailom registrovaná, vstupenka jej padne rovno do appky.
       const acct = email ? await q.one(db.users,{email}) : null;
-      const method = req.body.method==='transfer' ? 'prevod' : 'hotovosť';
+      const method = isGift ? 'dar' : (req.body.method==='transfer' ? 'prevod' : 'hotovosť');
       const affO = affFor(ev, req.body.aff);
       const order = await q.insert(db.ev_orders,{
         order_number:'EVX'+Date.now().toString(36).toUpperCase(), event_slug:ev.slug,
@@ -712,8 +720,8 @@ module.exports = function mountEventTickets(ctx){
         buyer_name:name, buyer_email:email, buyer_phone:esc(req.body.phone,40),
         user_id:acct?._id||null,
         items: lines.map(l=>({type:l.t.key, type_name:l.t.name, qty:l.qty, unit:l.price,
-          tier:isMemberSale?'member':'door', subtotal:+(l.price*l.qty).toFixed(2), holders:[]})),
-        total, table:null, source:'admin', status:'paid',
+          tier: isGift?'gift':(isMemberSale?'member':'door'), subtotal:+(l.price*l.qty).toFixed(2), holders:[]})),
+        total, table:null, source:'admin', status:'paid', gift:isGift, admin_note:mailNote||null,
         created_at:nowISO(), paid_at:nowISO(), payment_method:method
       });
       const made=[];
@@ -721,7 +729,7 @@ module.exports = function mountEventTickets(ctx){
         for(let i=0;i<l.qty;i++) made.push(await q.insert(db.ev_tickets,{
           code:newCode(), event_slug:ev.slug, type:l.t.key, type_name:l.t.name,
           order_id:order._id, order_number:order.order_number, price:l.price,
-          tier:isMemberSale?'member':'door',
+          tier: isGift?'gift':(isMemberSale?'member':'door'),
           holder_name:name, holder_email:order.buyer_email, holder_phone:order.buyer_phone,
           user_id:acct?._id||null, source:'admin', status:'valid',
           aff_code: affO?.code||null, aff_commission: affO? +(l.price*affO.rate).toFixed(2) : 0,
@@ -731,21 +739,21 @@ module.exports = function mountEventTickets(ctx){
       const summary = lines.map(l=>l.qty+'× '+l.t.name).join(', ');
       await q.insert(db.transactions,{type:'event_ticket', user_id:acct?._id||null, user_name:name, channel:'onsite',
         amount:total, payment_method:method,
-        note:`${ev.name} — ${summary} (ručný predaj, ${method})`, created_at:nowISO(), month:today().slice(0,7)});
+        note: isGift ? `${ev.name} — ${summary} (darček, 0 €)` : `${ev.name} — ${summary} (ručný predaj, ${method})`, created_at:nowISO(), month:today().slice(0,7)});
       try{
-        await createInvoice({ user_id:acct?._id||null, client_name:name, client_email:email,
+        if(!isGift) await createInvoice({ user_id:acct?._id||null, client_name:name, client_email:email,
           items: lines.map(l=>({desc:`${ev.name} — ${l.t.name}`, qty:l.qty, total:+(l.price*l.qty).toFixed(2)})),
           total, method });
       }catch(e){ console.error('onsite invoice:', e.message); }
       if(acct){
         await q.insert(db.notifications,{ user_id:acct._id, type:'ticket',
-          title:'🎟️ Vstupenky sú tvoje!',
+          title: isGift ? '🎁 Darček — vstupenky sú tvoje!' : '🎟️ Vstupenky sú tvoje!',
           body:`${ev.name} · ${summary}. Nájdeš ich na dashboarde v sekcii Moje vstupenky.`,
           read:false, created_at:nowISO() }).catch(()=>{});
       }
       // Mail s QR ide vždy, aj keď má appku — nech to má po ruke.
-      if(email) await sendTicketMail(order, made, ev).catch(()=>{});
-      res.json({ok:true, tickets:made.map(x=>x.code), total, summary,
+      if(email) await sendTicketMail(order, made, ev, {gift:isGift, note:mailNote, subject:mailSubject}).catch(()=>{});
+      res.json({ok:true, tickets:made.map(x=>x.code), total, summary, gift:isGift,
         linked: !!acct, emailed: !!email});
     }catch(e){ res.status(500).json({error:e.message}); }
   });
