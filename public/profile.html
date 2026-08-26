@@ -1386,7 +1386,6 @@ async function addFriend(){ const d=await post('/api/friends/request',{to:uid});
 async function accept(){ const d=await post('/api/friends/accept',{from:uid}); if(d.ok){P.friend_state=d.state;render();} }
 async function rmFriend(){ const d=await post('/api/friends/remove',{user:uid}); if(d.ok){P.friend_state='none';render();} }
 load();
-</script>
 /* ── Predaj / dar vstupenky priamo z osobného profilu klientky ──────────────
    Rovnaká serverová cesta ako v admin karte: ceny ráta server, dar nuluje server. */
 let _evTypes=[], _evClient=null, _evMember=false;
@@ -1491,6 +1490,7 @@ async function evSell(){
     const box=document.getElementById('evSaleBox'); box.dataset.done=''; box.innerHTML='<span class="set-hint">Načítavam…</span>'; loadEvSale();
   } else alert('Chyba: '+(d.error||'nepodarilo sa'));
 }
+</script>
 <script src="/dock.js"></script>
 </body>
 </html>
