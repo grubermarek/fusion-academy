@@ -986,6 +986,11 @@ function renderAdmin(){
       </div>
     </div>
 
+    ${canManage ? `<details class="set-row adm-sub" ontoggle="if(this.open)loadEvSale()">
+      ${dsum('🎟️','Predať alebo darovať vstupenku')}
+      <div id="evSaleBox" style="margin-top:12px"><span class="set-hint">Načítavam…</span></div>
+    </details>` : ''}
+
     ${P.is_trainer ? `<details class="set-row adm-sub" ontoggle="if(this.open)loadProfileEarnings()">
       ${dsum('<i class="bi bi-cash-coin"></i>','Zárobky trénera')}
       <div id="trEarnBox" style="margin-top:12px"><span class="set-hint">Načítavam…</span></div>
@@ -1382,6 +1387,110 @@ async function accept(){ const d=await post('/api/friends/accept',{from:uid}); i
 async function rmFriend(){ const d=await post('/api/friends/remove',{user:uid}); if(d.ok){P.friend_state='none';render();} }
 load();
 </script>
+/* ── Predaj / dar vstupenky priamo z osobného profilu klientky ──────────────
+   Rovnaká serverová cesta ako v admin karte: ceny ráta server, dar nuluje server. */
+let _evTypes=[], _evClient=null, _evMember=false;
+async function loadEvSale(){
+  const box=document.getElementById('evSaleBox'); if(!box || box.dataset.done) return;
+  box.dataset.done='1';
+  _evClient={ name:(_awards&&_awards.name)||P.name||'', email:(_awards&&_awards.email)||'', phone:(_awards&&_awards.phone)||'' };
+  _evMember=!!(_awards&&_awards.membership&&_awards.membership.active);
+  if(!_evClient.email){ box.innerHTML='<span class="set-hint">Klientka nemá e-mail — vstupenku nemáme kam poslať.</span>'; return; }
+  let evs=[];
+  try{
+    const d=await (await fetch('/api/admin/events',{credentials:'include'})).json();
+    const today=new Date().toISOString().slice(0,10);
+    evs=((d&&d.events)||[]).filter(e=>e.active && (!e.date || e.date>=today));
+  }catch(e){}
+  if(!evs.length){ box.innerHTML='<span class="set-hint">Momentálne nie je žiadny nadchádzajúci event.</span>'; return; }
+  const opts=evs.map(e=>'<option value="'+e.slug+'">'+esc(e.name)+(e.date_label?' · '+esc(e.date_label):'')+'</option>').join('');
+  box.innerHTML='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">'+
+    '<select id="evSlug" class="adm-input" onchange="evLoadTypes()">'+opts+'</select>'+
+    '<span class="set-hint" style="margin:0">'+(_evMember?'✅ má členstvo → členská cena':'bez členstva → bežná cena')+'</span></div>'+
+    '<div id="evTypes"><span class="set-hint">Načítavam vstupenky…</span></div>';
+  evLoadTypes();
+}
+async function evLoadTypes(){
+  const host=document.getElementById('evTypes');
+  const slug=document.getElementById('evSlug').value;
+  let d=null;
+  try{ d=await (await fetch('/api/events/'+encodeURIComponent(slug),{credentials:'include'})).json(); }catch(e){}
+  if(!d||!d.types){ host.innerHTML='<span class="set-hint">Vstupenky sa nepodarilo načítať.</span>'; return; }
+  _evTypes=d.types;
+  const now=new Date();
+  let h='';
+  d.types.forEach(t=>{
+    const presale = !t.presale_until || now<=new Date(t.presale_until);
+    const price = (_evMember && t.member_price!=null && presale) ? t.member_price : (presale ? t.presale : t.door);
+    const tier  = (_evMember && t.member_price!=null && presale) ? 'členská' : (presale ? 'predpredaj' : 'na mieste');
+    const left  = t.left==null ? '' : (t.left<=0 ? '<b style="color:#ef9a9a">vypredané</b>' : '<span class="set-hint" style="margin:0">ostáva '+t.left+'</span>');
+    h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">'+
+      '<input type="number" class="adm-input ev-qty" data-key="'+t.key+'" value="0" min="0" max="20" style="width:68px" oninput="evHolders(this)"'+(t.sold_out?' disabled':'')+'>'+
+      '<b>'+esc(t.name)+'</b>'+
+      '<input type="number" class="adm-input ev-price" data-key="'+t.key+'" value="'+(+price).toFixed(2)+'" min="0" step="0.5" style="width:86px" title="Cena za kus">'+
+      '<span class="set-hint" style="margin:0">€ ('+tier+')</span> '+left+'</div>'+
+      '<div class="ev-holders" data-key="'+t.key+'" style="margin:0 0 8px 4px"></div>';
+  });
+  h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">'+
+    '<select id="evPay" class="adm-input" style="width:auto"><option value="cash">💵 Hotovosť</option><option value="transfer">🏦 Prevod</option></select>'+
+    '<label style="display:flex;align-items:center;gap:6px;color:var(--gold);font-weight:700;cursor:pointer">'+
+    '<input type="checkbox" id="evGift" onchange="evGiftToggle()"> 🎁 Dar (zadarmo)</label></div>'+
+    '<input id="evSubject" class="adm-input" maxlength="160" placeholder="Predmet mailu (prázdne = štandardný)" style="width:100%;margin-top:8px">'+
+    '<textarea id="evNote" class="adm-input" rows="2" maxlength="600" placeholder="Osobný odkaz do mailu (voliteľné)" style="width:100%;margin-top:6px"></textarea>'+
+    '<button class="adm-btn" style="margin-top:10px" onclick="evSell()"><span id="evBtnTxt">Predať a poslať vstupenku</span></button>'+
+    '<div class="set-hint">Vstupenka s QR jej príde e-mailom a zobrazí sa jej v appke.</div>';
+  host.innerHTML=h;
+}
+function evHolders(el){
+  const key=el.dataset.key, n=Math.max(0,Math.min(20,+el.value||0));
+  const box=document.querySelector('.ev-holders[data-key="'+key+'"]'); if(!box) return;
+  if(n<2){ box.innerHTML=''; return; }
+  const prev=[].slice.call(box.querySelectorAll('input')).map(i=>i.value);
+  let h='<div class="set-hint" style="margin:0 0 4px">Vstup pre '+n+' osoby — 1. znie na '+esc(_evClient.name)+', ostatné môžeš pomenovať:</div>';
+  for(let i=1;i<n;i++) h+='<input class="adm-input ev-holder" data-key="'+key+'" style="max-width:280px;margin-bottom:4px" maxlength="120" placeholder="Meno '+(i+1)+'. osoby (voliteľné)" value="'+String(prev[i-1]||'').replace(/"/g,'&quot;')+'">';
+  box.innerHTML=h;
+}
+function evGiftToggle(){
+  const g=document.getElementById('evGift').checked;
+  document.querySelectorAll('.ev-price').forEach(i=>{
+    if(g){ if(!i.dataset.prev) i.dataset.prev=i.value; i.value='0.00'; i.disabled=true; }
+    else { i.value=i.dataset.prev||i.value; i.disabled=false; delete i.dataset.prev; }
+  });
+  document.getElementById('evPay').disabled=g;
+  document.getElementById('evBtnTxt').textContent = g ? 'Darovať a poslať vstupenku' : 'Predať a poslať vstupenku';
+}
+async function evSell(){
+  const slug=document.getElementById('evSlug').value;
+  const gift=document.getElementById('evGift').checked;
+  const priceOf=k=>{ const el=document.querySelector('.ev-price[data-key="'+k+'"]'); return el?(+el.value||0):0; };
+  const holdersOf=k=>{ const out=[{name:_evClient.name, email:_evClient.email, phone:_evClient.phone}];
+    document.querySelectorAll('.ev-holder[data-key="'+k+'"]').forEach(el=>out.push({name:el.value.trim(), email:'', phone:''}));
+    return out; };
+  const items=[].slice.call(document.querySelectorAll('.ev-qty')).map(i=>({type:i.dataset.key, qty:+i.value||0,
+    price: gift?0:priceOf(i.dataset.key), holders:holdersOf(i.dataset.key)})).filter(i=>i.qty>0);
+  if(!items.length){ alert('Zadaj počet aspoň pri jednej vstupenke.'); return; }
+  const total=items.reduce((s,i)=>s+i.qty*i.price,0);
+  const persons=items.reduce((s,i)=>s+i.qty,0);
+  const named=items.reduce((a,i)=>a.concat((i.holders||[]).slice(1).map(h=>h.name).filter(Boolean)),[]);
+  let what=items.map(i=>i.qty+'× '+((_evTypes.find(t=>t.key===i.type)||{}).name||i.type)).join(', ');
+  if(persons>1) what+=' (vstup pre '+persons+' osoby'+(named.length?': '+_evClient.name+', '+named.join(', '):'')+')';
+  const pay=document.getElementById('evPay').value;
+  const note=document.getElementById('evNote').value.trim();
+  const subject=document.getElementById('evSubject').value.trim();
+  const NLNL=String.fromCharCode(10,10), NL1=String.fromCharCode(10);
+  const head = gift ? 'Darovať '+_evClient.name+' zadarmo?'+NLNL+what+NL1+'Suma: 0.00 € (dar — faktúra sa nevystaví)'
+                    : 'Predať '+_evClient.name+'?'+NLNL+what+NL1+'Spolu: '+total.toFixed(2)+' € ('+(pay==='cash'?'hotovosť':'prevod')+')';
+  if(!confirm(head+(note?NLNL+'Odkaz v maile: '+note:'')+NLNL+'Vstupenka jej príde e-mailom aj do appky.')) return;
+  const r=await fetch('/api/admin/events/'+encodeURIComponent(slug)+'/onsite',{method:'POST',credentials:'include',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({items, member:_evMember, method:pay, gift, note, subject,
+      name:_evClient.name, email:_evClient.email, phone:_evClient.phone})});
+  let d={}; try{ d=await r.json(); }catch(e){}
+  if(r.ok && d.ok){
+    alert((d.gift?'Darované 🎁 ':'Predané ✓ ')+d.summary+' · '+(+d.total).toFixed(2)+' €'+(d.emailed?NL1+'Vstupenka odoslaná e-mailom.':''));
+    const box=document.getElementById('evSaleBox'); box.dataset.done=''; box.innerHTML='<span class="set-hint">Načítavam…</span>'; loadEvSale();
+  } else alert('Chyba: '+(d.error||'nepodarilo sa'));
+}
 <script src="/dock.js"></script>
 </body>
 </html>

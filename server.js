@@ -5491,7 +5491,7 @@ app.get('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
   const mm = activeMembs[0] || lastMemb || null;
   const membership = mm ? { plan_name:mm.plan_name||mm.plan_id||'Členstvo', expires_at:(mm.expires_at||'').slice(0,10)||null,
     active:(mm.expires_at||'')>nowIso, gift:!!mm.gift } : null;
-  res.json({ membership, name:u.name, visit_count:u.visit_count||0, private_hours:u.private_hours||0,
+  res.json({ membership, name:u.name, email:u.email||"", phone:u.phone||"", visit_count:u.visit_count||0, private_hours:u.private_hours||0,
     referral_credit:+(u.referral_credit||0), referral_credit_pending:+(u.referral_credit_pending||0),
     single_entries:+(u.single_entries||0), free_credits:+(u.free_credits||0),
     is_trainer:(u.user_type==='trainer')||!!u.is_admin, taught_group_hours:u.taught_group_hours||0, taught_private_hours:u.taught_private_hours||0,
