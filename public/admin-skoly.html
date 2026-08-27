@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Školy — Posledný tanec | Fusion Academy</title>
+<link rel="icon" type="image/png" href="/logo-mark.png">
+<style>
+:root{--gold:#C9A84C;--cream:#e8e2d4;--muted:#9d968a;--bg:#111010;--card:#1a1712;--line:#2e2a20}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--cream);font-family:system-ui,-apple-system,'Segoe UI',sans-serif;padding-bottom:60px}
+.wrap{max-width:1180px;margin:0 auto;padding:18px 16px}
+.top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 0 18px}
+.top h1{font-size:1.25rem;font-weight:800;flex:1;min-width:220px}
+.top a{color:var(--muted);text-decoration:none;font-size:.85rem}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:10px;margin-bottom:18px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center}
+.stat b{display:block;font-size:1.5rem;font-variant-numeric:tabular-nums}
+.stat span{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+.card h2{font-size:.95rem;margin-bottom:6px}
+.card p.hint{font-size:.8rem;color:var(--muted);line-height:1.6;margin-bottom:10px}
+textarea{width:100%;min-height:130px;background:#141210;color:var(--cream);border:1px solid var(--line);
+  border-radius:10px;padding:11px;font-family:ui-monospace,Consolas,monospace;font-size:.82rem;line-height:1.6;resize:vertical}
+input[type=number],input[type=text],select{background:#141210;color:var(--cream);border:1px solid var(--line);
+  border-radius:9px;padding:8px 10px;font-family:inherit;font-size:.85rem}
+button{font-family:inherit;font-weight:700;font-size:.85rem;border:none;border-radius:9px;padding:10px 16px;cursor:pointer}
+.btn{background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08}
+.btn-ghost{background:transparent;border:1px solid var(--line);color:var(--muted)}
+.btn-danger{background:rgba(229,115,115,.14);border:1px solid rgba(229,115,115,.5);color:#f0a9a9}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.msg{margin-top:10px;padding:10px 12px;border-radius:9px;font-size:.84rem;display:none;line-height:1.55}
+.msg.ok{display:block;background:rgba(76,175,80,.12);border:1px solid rgba(76,175,80,.4);color:#9fd894}
+.msg.err{display:block;background:rgba(229,115,115,.12);border:1px solid rgba(229,115,115,.45);color:#f0a9a9}
+.tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;font-size:.83rem;min-width:840px}
+th{text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);
+  padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid #221f19;vertical-align:top}
+tr:hover td{background:#1d1a15}
+.pill{display:inline-block;font-size:.68rem;font-weight:700;padding:3px 9px;border-radius:99px;white-space:nowrap}
+.s-new{background:rgba(255,255,255,.07);color:var(--muted)}
+.s-sent{background:rgba(96,165,250,.15);color:#93c5fd}
+.s-replied{background:rgba(201,168,76,.16);color:var(--gold)}
+.s-meeting{background:rgba(168,85,247,.16);color:#d8b4fe}
+.s-won{background:rgba(76,175,80,.16);color:#9fd894}
+.s-lost{background:rgba(229,115,115,.13);color:#e59595}
+.tick{color:#9fd894;font-weight:800}
+.no{color:#4a463d}
+.nm{font-weight:700;color:#fff}
+.sub{font-size:.74rem;color:var(--muted)}
+.empty{text-align:center;padding:36px;color:var(--muted);font-size:.88rem}
+.note{width:100%;background:transparent;border:1px dashed #2e2a20;border-radius:7px;color:var(--muted);
+  padding:5px 7px;font-family:inherit;font-size:.78rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>🎓 Školy — Posledný tanec</h1>
+    <a href="/admin">← Späť do adminu</a>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="card">
+    <h2>1. Nahraj zoznam škôl</h2>
+    <p class="hint">Jeden riadok = jedna škola. Oddeľovač je bodkočiarka, tabulátor alebo čiarka —
+      pokojne nalep priamo z Excelu. Poradie stĺpcov: <b>názov školy; mesto; riaditeľ; e-mail; telefón</b>.
+      E-mail a telefón si nájdem sám kdekoľvek v riadku. Riadok bez e-mailu preskočím,
+      rovnakú adresu druhýkrát nepridám.</p>
+    <textarea id="imp" placeholder="Základná škola Kukučínova; Detva; Mgr. Jana Nováková; skola@zskukucinova.sk; 045 123 4567
+Základná škola A. Sládkoviča; Zvolen; riaditel@zssladkovica.sk"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button class="btn" onclick="importuj()">Pridať do zoznamu</button>
+      <button class="btn-ghost" onclick="window.open('/api/admin/schools/preview','_blank')">Ukázať, ako mail vyzerá</button>
+    </div>
+    <div class="msg" id="impMsg"></div>
+  </div>
+
+  <div class="card">
+    <h2>2. Rozposlať</h2>
+    <p class="hint">Posiela sa len školám, ktoré ešte mail nedostali. Po dávkach, aby sme sa
+      zmestili do denného limitu Breva (marketingová priorita má strop 225 mailov/deň spolu s ostatnými).
+      Odporúčam prvú dávku 20–30 škôl, pozrieť otvorenosť, až potom zvyšok.</p>
+    <div class="row">
+      <label class="sub">Koľko odoslať teraz:</label>
+      <input type="number" id="limit" value="25" min="1" max="120" style="width:88px">
+      <button class="btn" onclick="odosli()">Odoslať dávku</button>
+      <span class="sub" id="zostava"></span>
+    </div>
+    <div class="msg" id="sendMsg"></div>
+  </div>
+
+  <div class="card">
+    <h2>3. Kto reagoval</h2>
+    <p class="hint">Otvorené a kliknuté sa načítajú samé z mailu. Stav meň po telefonáte —
+      podľa neho vieš, komu sa oplatí ozvať.</p>
+    <div class="row" style="margin-bottom:10px">
+      <input type="text" id="hladaj" placeholder="hľadať školu, mesto, e-mail…" oninput="render()" style="flex:1;min-width:180px">
+      <select id="filter" onchange="render()">
+        <option value="">všetky stavy</option>
+        <option value="new">čaká na odoslanie</option>
+        <option value="sent">odoslané</option>
+        <option value="klik">kliklo na stránku</option>
+        <option value="replied">odpovedali</option>
+        <option value="meeting">dohodnuté stretnutie</option>
+        <option value="won">venček dohodnutý</option>
+        <option value="lost">nemajú záujem</option>
+      </select>
+    </div>
+    <div class="tblwrap"><table id="tbl"></table></div>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const api=async(u,o)=>{const r=await fetch(u,{credentials:'include',headers:{'Content-Type':'application/json'},...o});return r.json().catch(()=>null)};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const den=d=>d?new Date(d).toLocaleDateString('sk-SK',{day:'numeric',month:'numeric'}):'';
+let DATA=[], TOT={};
+
+const STAV={new:['čaká','s-new'],sent:['odoslané','s-sent'],replied:['odpovedali','s-replied'],
+  meeting:['stretnutie','s-meeting'],won:['venček dohodnutý','s-won'],lost:['nezáujem','s-lost']};
+
+async function load(){
+  const d=await api('/api/admin/schools');
+  if(!d||!d.ok){ $('tbl').innerHTML='<tr><td class="empty">Nepodarilo sa načítať.</td></tr>'; return; }
+  DATA=d.schools; TOT=d.totals;
+  $('stats').innerHTML=[
+    ['spolu','škôl v zozname'],['cakaju','čaká na mail'],['poslane','odoslané'],
+    ['otvorene','otvorili'],['klikli','klikli na stránku'],['odpovedali','ozvali sa'],
+    ['dohodnute','venček dohodnutý'],['odhlasene','odhlásené'],
+  ].map(([k,l])=>`<div class="stat"><b>${TOT[k]??0}</b><span>${l}</span></div>`).join('');
+  $('zostava').textContent = TOT.cakaju ? ('čaká ešte '+TOT.cakaju+' škôl') : 'všetkým už bolo odoslané';
+  render();
+}
+
+function render(){
+  const h=($('hladaj').value||'').toLowerCase(), f=$('filter').value;
+  let rows=DATA.filter(s=>!h || [s.name,s.city,s.director,s.email].join(' ').toLowerCase().includes(h));
+  if(f==='klik') rows=rows.filter(s=>s.clicked_at);
+  else if(f) rows=rows.filter(s=>s.status===f);
+  if(!rows.length){ $('tbl').innerHTML='<tr><td class="empty">Zatiaľ nič — nahraj zoznam škôl vyššie.</td></tr>'; return; }
+  $('tbl').innerHTML='<thead><tr><th>Škola</th><th>Riaditeľ</th><th>E-mail</th><th>Odoslané</th>'
+    +'<th>Otv.</th><th>Klik</th><th>Stav</th><th>Poznámka</th><th></th></tr></thead><tbody>'
+    + rows.map(s=>{
+      const [lbl,cls]=STAV[s.status]||STAV.new;
+      return `<tr>
+        <td><div class="nm">${esc(s.name||'—')}</div><div class="sub">${esc(s.city||'')}</div></td>
+        <td>${esc(s.director||'—')}${s.phone?`<div class="sub">${esc(s.phone)}</div>`:''}</td>
+        <td class="sub">${esc(s.email)}${s.unsubscribed?'<div class="sub" style="color:#e59595">odhlásené</div>':''}</td>
+        <td class="sub">${den(s.sent_at)||'<span class="no">—</span>'}</td>
+        <td>${s.opened_at?'<span class="tick">✓</span>':'<span class="no">·</span>'}</td>
+        <td>${s.clicked_at?'<span class="tick">✓</span>':'<span class="no">·</span>'}</td>
+        <td><select onchange="zmen('${s._id}','status',this.value)" style="font-size:.74rem;padding:4px 6px">
+          ${Object.entries(STAV).map(([k,v])=>`<option value="${k}"${s.status===k?' selected':''}>${v[0]}</option>`).join('')}
+        </select><div><span class="pill ${cls}" style="margin-top:4px">${lbl}</span></div></td>
+        <td><input class="note" value="${esc(s.note||'')}" placeholder="čo povedali…"
+             onchange="zmen('${s._id}','note',this.value)"></td>
+        <td><button class="btn-danger" style="padding:5px 9px;font-size:.72rem" onclick="zmaz('${s._id}','${esc(s.name||s.email)}')">×</button></td>
+      </tr>`;}).join('') + '</tbody>';
+}
+
+async function importuj(){
+  const text=$('imp').value.trim();
+  if(!text) return flash('impMsg','err','Najprv nalep zoznam škôl.');
+  const d=await api('/api/admin/schools/import',{method:'POST',body:JSON.stringify({text})});
+  if(!d||d.error) return flash('impMsg','err',(d&&d.error)||'Nepodarilo sa.');
+  $('imp').value='';
+  flash('impMsg','ok','Pridaných '+d.pridane+' škôl.'+(d.preskocene?' Preskočených '+d.preskocene+' (už v zozname sú).':''));
+  load();
+}
+
+async function odosli(){
+  const limit=+$('limit').value||25;
+  const cakaju=TOT.cakaju||0;
+  if(!cakaju) return flash('sendMsg','err','Nie je komu posielať — všetky školy už mail dostali.');
+  const kolko=Math.min(limit,cakaju);
+  if(!confirm('Naozaj odoslať mail '+kolko+' školám?\n\nOdídu skutočné e-maily riaditeľom. Nedá sa to vrátiť.'))
+    return;
+  flash('sendMsg','ok','Odosielam… (pri '+kolko+' školách to trvá asi '+Math.ceil(kolko*0.4)+' s)');
+  const d=await api('/api/admin/schools/send',{method:'POST',body:JSON.stringify({limit})});
+  if(!d||d.error) return flash('sendMsg','err',(d&&d.error)||'Nepodarilo sa.');
+  flash('sendMsg', d.zlyhali?'err':'ok',
+    'Odoslané: '+d.poslane+(d.zlyhali?(' · zlyhalo '+d.zlyhali+' ('+(d.adresy_zlyhani||[]).join(', ')+')'):'')
+    +' · čaká ešte '+d.zostava);
+  load();
+}
+
+async function zmen(id,pole,hodnota){
+  await api('/api/admin/schools/'+id,{method:'POST',body:JSON.stringify({[pole]:hodnota})});
+  const s=DATA.find(x=>x._id===id); if(s) s[pole]=hodnota;
+  if(pole==='status') render();
+  load();
+}
+
+async function zmaz(id,nazov){
+  if(!confirm('Zmazať „'+nazov+'" zo zoznamu?')) return;
+  await api('/api/admin/schools/'+id,{method:'DELETE'});
+  load();
+}
+
+function flash(el,cls,txt){ const m=$(el); m.className='msg '+cls; m.textContent=txt; }
+load();
+</script>
+</body>
+</html>
