@@ -1828,6 +1828,24 @@ async function seedData() {
     await q.insert(db.settings,{key:'fix_ivana_pay_on_site_v1', value:true, at:nowISO()});
   }
 
+  // Diagnostika k Ivane: dve jej platby nemajú pole `date` (vyrobili ich staršie
+  // jednorazové migrácie), takže sa v účtovníctve nedajú spárovať s dňom hodiny.
+  // Najprv si pozrieme presné záznamy, až potom sa niečo opravuje.
+  if(!(await q.one(db.settings,{key:'diag_ivana_txs_v1'}))){
+    await q.insert(db.settings,{key:'diag_ivana_txs_v1', value:true, at:nowISO()});
+    try{
+      const iv=(await q.find(db.users,{})).find(x=>!x.is_child && /jasensk/i.test(x.name||'') && /ivan/i.test(x.name||''));
+      if(iv){
+        for(const t of await q.find(db.transactions,{user_id:iv._id}))
+          console.log('🧾 IVANA TX '+t._id+' | date='+(t.date||'CHÝBA')+' | created='+String(t.created_at||'').slice(0,16)
+            +' | '+t.type+' '+t.amount+'€ '+(t.payment_method||'?')+' | month='+(t.month||'—')+' | '+(t.note||'bez poznámky'));
+        for(const b of (await q.find(db.bookings,{user_id:iv._id})).filter(x=>x.attendance_status==='attended'))
+          console.log('🧾 IVANA HODINA '+b.booking_date+' | '+(b.class_name||'?')+' | '+(b.access_method||'?')
+            +' | vybrané='+(b.entry_collected?(b.entry_collected.amount+'€ '+b.entry_collected.method):'NIE'));
+      }
+    }catch(e){ console.error('diag_ivana:', e.message); }
+  }
+
   // Anna Debnárová 23. 7. — Marek 27. 8. potvrdil, že taká platba nikdy nebola,
   // takže v účtovníctve nič nechýba. Zatvárame otázku, nech prestane chodiť pripomienka.
   if(!(await q.one(db.settings,{key:'openq_done_anna_debnarova_23_07'}))){
