@@ -195,6 +195,7 @@ function onUp(){ drawing=false; }
 
 function startClock(){
   if(timer) return;
+  api('/api/puzzle/start',{method:'POST'}).catch(()=>{});   // čas beží na serveri
   startedAt=Date.now();
   timer=setInterval(()=>{ const c=$('clock'); if(c) c.textContent=fmtSec((Date.now()-startedAt)/1000); },1000);
 }

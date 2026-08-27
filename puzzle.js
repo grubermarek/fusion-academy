@@ -128,9 +128,10 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
   async function awardDayWinner(dateStr) {
     const c = await cfg();
     if (!c.enabled || !c.day_win_bonus) return null;
-    const rows = await q.find(db.puzzle_solves, { date: dateStr });
+    const all = await q.find(db.puzzle_solves, { date: dateStr });
+    if (all.some(r => r.day_win)) return null;                 // už vyhodnotené
+    const rows = all.filter(r => r.verified !== false);        // len serverom meraný čas
     if (rows.length < c.day_win_min_players) return null;      // sama proti sebe nesúťaží
-    if (rows.some(r => r.day_win)) return null;                // už vyhodnotené
     rows.sort((a, b) => (a.seconds || 0) - (b.seconds || 0)
       || String(a.created_at || '').localeCompare(String(b.created_at || '')));
     const w = rows[0];
@@ -184,6 +185,16 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── Štart merania času (beží na serveri, klientovi sa neverí) ──
+  app.post('/api/puzzle/start', auth, async (req, res) => {
+    const d = today();
+    // nový štart len ak ešte nemá rozbehnutý dnešok (opakovaný klik čas nenuluje)
+    if (!req.session.puzzle || req.session.puzzle.date !== d) {
+      req.session.puzzle = { date: d, at: Date.now() };
+    }
+    res.json({ ok: true });
+  });
+
   // ── Odoslanie riešenia ──
   app.post('/api/puzzle/solve', auth, async (req, res) => {
     try {
@@ -199,9 +210,13 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       const already = await q.one(db.puzzle_solves, { user_id: req.session.uid, date: d });
       if (already) return res.json({ ok: true, already: true, points: 0, message: 'Dnešnú hádanku už máš vyriešenú. 🎉' });
 
-      // Čas meriame zo serverového štartu, klientovi neveríme
-      const secondsRaw = Math.round((+req.body.seconds || 0));
-      const seconds = Math.max(1, Math.min(3600, secondsRaw));
+      // Čas meriame zo SERVEROVÉHO štartu. Bez neho (reštart, iné zariadenie)
+      // riešenie uznáme, ale nemôže vyhrať deň — inak by stačilo poslať "1 s".
+      const st = req.session.puzzle;
+      const verified = !!(st && st.date === d && st.at);
+      const seconds = verified
+        ? Math.max(1, Math.min(3600, Math.round((Date.now() - st.at) / 1000)))
+        : Math.max(1, Math.min(3600, Math.round(+req.body.seconds || 0)));
 
       const capLeft = Math.max(0, c.monthly_cap - await monthPoints(req.session.uid, d.slice(0, 7)));
       let points = c.points + (seconds <= c.fast_seconds ? c.fast_bonus : 0);
@@ -211,9 +226,10 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       const u = await q.one(db.users, { _id: req.session.uid });
       await q.insert(db.puzzle_solves, {
         user_id: req.session.uid, user_name: u ? u.name : '', date: d, month: d.slice(0, 7),
-        seconds, points, fast: seconds <= c.fast_seconds, created_at: nowISO(),
+        seconds, points, fast: seconds <= c.fast_seconds, verified, created_at: nowISO(),
       });
 
+      delete req.session.puzzle;
       const rank = await q.count(db.puzzle_solves, { date: d });
       res.json({
         ok: true, points, seconds, rank,
@@ -227,7 +243,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
   app.get('/api/puzzle/leaderboard', auth, async (req, res) => {
     try {
       const d = today();
-      const rows = (await q.find(db.puzzle_solves, { date: d }))
+      const rows = (await q.find(db.puzzle_solves, { date: d })).filter(r => r.verified !== false)
         .sort((a, b) => (a.seconds || 0) - (b.seconds || 0)).slice(0, 10)
         .map((r, i) => ({ pos: i + 1, name: r.user_name || 'Tanečníčka', seconds: r.seconds, me: r.user_id === req.session.uid, win: !!r.day_win }));
       res.json({ ok: true, date: d, rows });

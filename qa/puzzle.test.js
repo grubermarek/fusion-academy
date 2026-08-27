@@ -77,7 +77,11 @@ const mkid = () => Math.random().toString(36).slice(2, 10) + Math.random().toStr
     const dup = real._path.slice(); dup[35] = dup[33];
     await bad(dup, 'zdvojené políčko odmietnuté', 'raz');
 
+    // ── čas meria SERVER: klientský údaj sa ignoruje ──
+    await j('/api/puzzle/start', { method: 'POST' }, jar);
+    await new Promise(r => setTimeout(r, 2100));                    // reálne 2 s riešenia
     const solve = await j('/api/puzzle/solve', { method: 'POST', body: { cells: real._path, seconds: 45 } }, jar);
+    ok('čas je zo servera, nie z prehliadača', solve.d.seconds >= 2 && solve.d.seconds <= 6, 'poslal 45, server zmeral ' + solve.d.seconds);
     ok('správne riešenie prijaté', solve.d && solve.d.ok && !solve.d.error, JSON.stringify(solve.d));
     ok('body pripísané vrátane bonusu za rýchlosť', solve.d.points === 2 && solve.d.fast === true, JSON.stringify(solve.d));
 
@@ -87,7 +91,7 @@ const mkid = () => Math.random().toString(36).slice(2, 10) + Math.random().toStr
 
     // ── stav sa premietol ──
     const t2 = await j('/api/puzzle/today', {}, jar);
-    ok('stav ukazuje vyriešené + čas', t2.d.solved === true && t2.d.my_seconds === 45);
+    ok('stav ukazuje vyriešené + serverový čas', t2.d.solved === true && t2.d.my_seconds >= 2 && t2.d.my_seconds <= 6, String(t2.d.my_seconds));
     ok('mesačné body sa počítajú', t2.d.month_points === 2, String(t2.d.month_points));
 
     // ── rebríček ──
