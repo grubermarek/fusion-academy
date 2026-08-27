@@ -79,10 +79,12 @@ Základná škola A. Sládkoviča; Zvolen; riaditel@zssladkovica.sk"></textarea>
   </div>
 
   <div class="card">
-    <h2>2. Rozposlať</h2>
-    <p class="hint">Posiela sa len školám, ktoré ešte mail nedostali. Po dávkach, aby sme sa
-      zmestili do denného limitu Breva (marketingová priorita má strop 225 mailov/deň spolu s ostatnými).
-      Odporúčam prvú dávku 20–30 škôl, pozrieť otvorenosť, až potom zvyšok.</p>
+    <h2>2. Rozposielanie</h2>
+    <p class="hint">🤖 <b>Beží automatika:</b> každý pracovný deň medzi 9.–17. h sa samo odošle
+      25 čakajúcich škôl (kým sa zoznam neminie). Nemusíš nič stláčať — tlačidlo nižšie je len
+      na ručné poslanie navyše. Každá škola dostane mail s <b>osobným odkazom</b>: formulár
+      na webe sa jej predvyplní a záujem potvrdí jedným klikom.
+      Automatiku vypneš nastavením <code>school_outreach_autodrip=false</code> v settings.</p>
     <div class="row">
       <label class="sub">Koľko odoslať teraz:</label>
       <input type="number" id="limit" value="25" min="1" max="120" style="width:88px">
