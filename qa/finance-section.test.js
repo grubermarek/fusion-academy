@@ -14,9 +14,9 @@ const req = async (p, o = {}) => { const r = await fetch(B + p, { method: o.meth
 
   // ── Priprav reálne dáta: 3 predaje rôznymi cestami ──
   console.log('── príprava dát ──');
-  const c1 = await mk('FIN A ' + R, `fin.a.${R}@test-fa-qa.local`);
-  const c2 = await mk('FIN B ' + R, `fin.b.${R}@test-fa-qa.local`);
-  const c3 = await mk('FIN C ' + R, `fin.c.${R}@test-fa-qa.local`);
+  const c1 = await mk('Fiona Adamcova', `fin.a.${R}@test-fa-qa.local`);
+  const c2 = await mk('Fiona Bencova', `fin.b.${R}@test-fa-qa.local`);
+  const c3 = await mk('Fiona Cabanova', `fin.c.${R}@test-fa-qa.local`);
   await req(`/api/admin/users/${c1.id}/grant-membership`, { method: 'POST', cookie: A, body: { plan_id: 'silver', amount: 75, gift: false, payment_method: 'cash' } });
   await req(`/api/admin/users/${c2.id}/grant-membership`, { method: 'POST', cookie: A, body: { plan_id: 'permanentka10', amount: 80, gift: false, payment_method: 'cash' } });
   await req('/api/trainer/sell', { method: 'POST', cookie: A, body: { user_id: c3.id, kind: 'plan', plan_id: 'bronze', amount: 50 } });

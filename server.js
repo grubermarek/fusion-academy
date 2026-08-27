@@ -218,7 +218,14 @@ const q = {
     cursor.exec((e, v) => e ? j(e) : r(v));
   }),
   one:    (d, query)         => new Promise((r, j) => d.findOne(query,    (e, v) => e ? j(e) : r(v))),
-  insert: (d, doc)           => new Promise((r, j) => d.insert(doc,       (e, v) => e ? j(e) : r(v))),
+  insert: (d, doc)           => new Promise((r, j) => {
+    // Predaj bez dátumu je v účtovníctve slepý — doplň ho ešte pred zápisom.
+    if (d === db.transactions && doc && typeof doc === 'object' && !Array.isArray(doc) && !doc.date) {
+      const zo = String(doc.created_at || '').slice(0, 10);
+      doc = { ...doc, date: zo || today(), month: doc.month || (zo || today()).slice(0, 7) };
+    }
+    d.insert(doc, (e, v) => e ? j(e) : r(v));
+  }),
   update: (d, query, u, o={}) => new Promise((r, j) => d.update(query, u, o, (e, n) => e ? j(e) : r(n))),
   remove: (d, query, o={})   => new Promise((r, j) => d.remove(query, o, (e, n) => e ? j(e) : r(n))),
   count:  (d, query)         => new Promise((r, j) => d.count(query,      (e, n) => e ? j(e) : r(n))),
@@ -1687,6 +1694,21 @@ async function seedData() {
 
   // Staré transakcie bez poľa `date` (predaje cez tréner/admin cesty) — doplň ho
   // z created_at, nech sa v „Všetkých predajoch" zobrazuje dátum a dá sa triediť.
+  if(!(await q.one(db.settings,{key:'tx_date_backfill_v2'}))){
+    let fixed2=0;
+    for(const t of await q.find(db.transactions,{})){
+      if(t.date) continue;
+      // presný dátum býva v poznámke („… Zumba 2026-08-12 (hotovosť)"), inak created_at
+      const m=String(t.note||'').match(/(\d{4}-\d{2}-\d{2})/);
+      const d=m?m[1]:String(t.created_at||'').slice(0,10);
+      if(!d) continue;
+      await q.update(db.transactions,{_id:t._id},{$set:{date:d, month:d.slice(0,7)}});
+      fixed2++;
+    }
+    await q.insert(db.settings,{key:'tx_date_backfill_v2', value:true, at:nowISO()});
+    if(fixed2) console.log('✅  Doplnený dátum k '+fixed2+' predajom bez dátumu (backfill v2)');
+  }
+
   if(!(await q.one(db.settings,{key:'tx_date_backfill_v1'}))){
     let fixed=0;
     for(const t of await q.find(db.transactions,{})){
@@ -1844,6 +1866,51 @@ async function seedData() {
             +' | vybrané='+(b.entry_collected?(b.entry_collected.amount+'€ '+b.entry_collected.method):'NIE'));
       }
     }catch(e){ console.error('diag_ivana:', e.message); }
+  }
+
+  // Dorovnanie účtovníctva Ivany podľa diagnostiky (diag_ivana_txs_v1):
+  //  · dve jej hotovostné platby nemali pole `date` (vyrobili ich staršie migrácie),
+  //    hoci presný dátum hodiny majú v poznámke → doplníme, nech sa dajú spárovať;
+  //  · hodina 17. 8. nemá platbu vôbec → zapíšeme 10 € v hotovosti (Marek schválil 27. 8.);
+  //  · hodina 20. 7. tiež nemá platbu, ale je to starý záznam bez access_method —
+  //    peniaze tam naslepo nevymýšľame, len to vypíšeme a Marek rozhodne.
+  if(!(await q.one(db.settings,{key:'fix_ivana_ucto_v1'}))){
+    await q.insert(db.settings,{key:'fix_ivana_ucto_v1', value:true, at:nowISO()});
+    try{
+      const iv=(await q.find(db.users,{})).find(x=>!x.is_child && /jasensk/i.test(x.name||'') && /ivan/i.test(x.name||''));
+      if(iv){
+        // 1) doplniť chýbajúci dátum z poznámky
+        for(const t of await q.find(db.transactions,{user_id:iv._id})){
+          if(t.date) continue;
+          const m=String(t.note||'').match(/(\d{4}-\d{2}-\d{2})/);
+          const d=m?m[1]:String(t.created_at||'').slice(0,10);
+          if(!d) continue;
+          await q.update(db.transactions,{_id:t._id},{$set:{date:d, month:d.slice(0,7)}});
+          console.log('🧾 IVANA: platbe '+t._id+' doplnený dátum '+d+' ('+(m?'z poznámky':'z created_at')+')');
+        }
+        // 2) chýbajúca platba za 17. 8.
+        const CHYBA='2026-08-17';
+        const txs=await q.find(db.transactions,{user_id:iv._id});
+        if(!txs.some(t=>t.date===CHYBA && +t.amount>0)){
+          await q.insert(db.transactions,{type:'single_entry', user_id:iv._id, user_name:iv.name, amount:10,
+            date:CHYBA, payment_method:'cash', method:'cash',
+            note:'Jednorazový vstup — Zumba '+CHYBA+' (hotovosť, dodatočný zápis)',
+            created_at:nowISO(), month:CHYBA.slice(0,7)});
+          await trackPurchase(iv._id,10);
+          createInvoice({user_id:iv._id, client_name:iv.name, client_email:iv.email,
+            items:[{desc:'Jednorazový vstup (17.8.2026)', qty:1, total:10}], total:10,
+            method:'hotovosť', issued_at:CHYBA}).catch(()=>{});
+          const b=(await q.find(db.bookings,{user_id:iv._id})).find(x=>x.booking_date===CHYBA && x.status!=='cancelled');
+          if(b) await q.update(db.bookings,{_id:b._id},{$set:{entry_collected:{amount:10,method:'cash',at:nowISO(),by:'migration'}, pay_on_site:false}});
+          console.log('🧾 IVANA: dopísaná platba 10 € v hotovosti za '+CHYBA);
+        } else console.log('🧾 IVANA: platba za '+CHYBA+' už existuje — preskakujem');
+        // 3) čo ostáva nedoriešené
+        const txs2=await q.find(db.transactions,{user_id:iv._id});
+        const bez=(await q.find(db.bookings,{user_id:iv._id})).filter(b=>b.attendance_status==='attended')
+          .map(b=>b.booking_date).filter(d=>!txs2.some(t=>t.date===d && +t.amount>0)).sort();
+        console.log('🧾 IVANA: po oprave ostávajú BEZ platby ('+bez.length+'): '+(bez.join(', ')||'žiadne'));
+      }
+    }catch(e){ console.error('fix_ivana_ucto:', e.message); }
   }
 
   // Anna Debnárová 23. 7. — Marek 27. 8. potvrdil, že taká platba nikdy nebola,

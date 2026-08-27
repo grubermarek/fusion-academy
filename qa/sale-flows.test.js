@@ -15,7 +15,7 @@ const req = async (p, o = {}) => { const r = await fetch(B + p, { method: o.meth
   const invCount = async (email) => { const all = (await req('/api/admin/invoices', { cookie: A })).body; const list = Array.isArray(all) ? all : (all.invoices || []); return list.filter(i => (i.client_email||'').toLowerCase() === email.toLowerCase() && i.type !== 'credit_note').length; };
 
   console.log('\n══ 1. ADMIN → PROFIL KLIENTKY: mesačné členstvo (hotovosť) ══');
-  const u1 = await mk('SF Mem ' + R, `sf.mem.${R}@test-fa-qa.local`);
+  const u1 = await mk('Sofia Memcova', `sf.mem.${R}@test-fa-qa.local`);
   await req(`/api/admin/users/${u1.id}/grant-membership`, { method: 'POST', cookie: A, body: { plan_id: 'silver', amount: 75, gift: false, payment_method: 'cash' } });
   const s1 = await state(u1);
   s1.mem === 'Silver' ? ok('členstvo aktívne (Silver)') : bad('členstvo', 'nie je aktívne: ' + s1.mem);
@@ -23,7 +23,7 @@ const req = async (p, o = {}) => { const r = await fetch(B + p, { method: o.meth
   (await invCount(u1.email)) === 1 ? ok('faktúra vystavená') : bad('faktúra', 'nevystavená (' + await invCount(u1.email) + ')');
 
   console.log('\n══ 2. ADMIN → PROFIL: permanentka 10 vstupov (hotovosť) ══');
-  const u2 = await mk('SF Perm ' + R, `sf.perm.${R}@test-fa-qa.local`);
+  const u2 = await mk('Sofia Permanova', `sf.perm.${R}@test-fa-qa.local`);
   await req(`/api/admin/users/${u2.id}/grant-membership`, { method: 'POST', cookie: A, body: { plan_id: 'permanentka10', amount: 80, gift: false, payment_method: 'cash' } });
   const s2 = await state(u2);
   s2.entries === 10 ? ok('10 vstupov pripísaných') : bad('vstupy', 'má ' + s2.entries);
@@ -34,25 +34,25 @@ const req = async (p, o = {}) => { const r = await fetch(B + p, { method: o.meth
   (await invCount(u2.email)) === 1 ? ok('faktúra vystavená') : bad('faktúra', 'nevystavená');
 
   console.log('\n══ 3. TRÉNER → SEKCIA PREDAJ: členstvo ══');
-  const u3 = await mk('SF TrMem ' + R, `sf.trmem.${R}@test-fa-qa.local`);
+  const u3 = await mk('Sofia Trencova', `sf.trmem.${R}@test-fa-qa.local`);
   await req('/api/trainer/sell', { method: 'POST', cookie: A, body: { user_id: u3.id, kind: 'plan', plan_id: 'bronze', amount: 50 } });
   (await state(u3)).mem === 'Bronze' ? ok('členstvo aktívne (Bronze)') : bad('členstvo', 'nie je aktívne');
   (await invCount(u3.email)) === 1 ? ok('faktúra vystavená') : bad('faktúra', 'nevystavená');
 
   console.log('\n══ 4. TRÉNER → SEKCIA PREDAJ: permanentka ══');
-  const u4 = await mk('SF TrPerm ' + R, `sf.trperm.${R}@test-fa-qa.local`);
+  const u4 = await mk('Sofia Turcanova', `sf.trperm.${R}@test-fa-qa.local`);
   await req('/api/trainer/sell', { method: 'POST', cookie: A, body: { user_id: u4.id, kind: 'plan', plan_id: 'permanentka10', amount: 80 } });
   (await state(u4)).entries === 10 ? ok('10 vstupov pripísaných') : bad('vstupy', 'má ' + (await state(u4)).entries);
   (await invCount(u4.email)) === 1 ? ok('faktúra vystavená') : bad('faktúra', 'nevystavená');
 
   console.log('\n══ 5. TRÉNER → DOCHÁDZKA: record-membership ══');
-  const u5 = await mk('SF Rec ' + R, `sf.rec.${R}@test-fa-qa.local`);
+  const u5 = await mk('Sofia Recova', `sf.rec.${R}@test-fa-qa.local`);
   await req('/api/attendance/record-membership', { method: 'POST', cookie: A, body: { user_id: u5.id, plan_id: 'gold', amount: 125, payment_method: 'cash' } });
   (await state(u5)).mem === 'Gold' ? ok('členstvo aktívne (Gold)') : bad('členstvo', 'nie je aktívne');
   (await invCount(u5.email)) === 1 ? ok('faktúra vystavená') : bad('faktúra', 'nevystavená');
 
   console.log('\n══ 6. TRÉNER → DOCHÁDZKA: jednorazové vstupy ══');
-  const u6 = await mk('SF Ent ' + R, `sf.ent.${R}@test-fa-qa.local`);
+  const u6 = await mk('Sofia Entlova', `sf.ent.${R}@test-fa-qa.local`);
   await req('/api/attendance/single-entry', { method: 'POST', cookie: A, body: { user_id: u6.id, entries: 10, amount: 80, payment_method: 'cash' } });
   (await state(u6)).entries === 10 ? ok('10 vstupov pripísaných') : bad('vstupy', 'má ' + (await state(u6)).entries);
   (await invCount(u6.email)) === 1 ? ok('faktúra vystavená') : bad('faktúra', 'nevystavená');
@@ -60,7 +60,7 @@ const req = async (p, o = {}) => { const r = await fetch(B + p, { method: o.meth
   console.log('\n══ 7. TRÉNER → SEKCIA PREDAJ: merch ══');
   const prods = (await req('/api/trainer/sell-options', { cookie: A })).body.products || [];
   if (prods.length) {
-    const u7 = await mk('SF Merch ' + R, `sf.merch.${R}@test-fa-qa.local`);
+    const u7 = await mk('Sofia Merchova', `sf.merch.${R}@test-fa-qa.local`);
     const r7 = await req('/api/trainer/sell', { method: 'POST', cookie: A, body: { user_id: u7.id, kind: 'merch', product_id: prods[0].id, qty: 2 } });
     r7.status === 200 ? ok('merch predaný (' + r7.body.what + ', ' + r7.body.amount + ' €)') : bad('merch', JSON.stringify(r7.body));
     (await invCount(u7.email)) === 1 ? ok('faktúra vystavená') : bad('faktúra merch', 'nevystavená');
