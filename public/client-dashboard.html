@@ -1954,7 +1954,7 @@ async function loadBookingHero(me){
 /* ── Denný hlavolam: karta na dashboarde ── */
 async function loadPuzzleCard(me){
   const el=document.getElementById('puzzleCard'); if(!el) return;
-  if(me.is_admin||me.is_child) return;
+  if(me.is_child) return;   // hrať môžu všetci vrátane trénerov a admina
   const d=await api('/api/puzzle/today').catch(()=>null);
   if(!d||!d.ok||!d.enabled){ el.style.display='none'; return; }
   const sub=document.getElementById('puzzleSub'), bdg=document.getElementById('puzzleBadge');
