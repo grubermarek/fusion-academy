@@ -109,7 +109,8 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
   }
 
   // ── Nastavenia (admin ich vie zmeniť bez zásahu do kódu) ──
-  const DEFAULTS = { points: 1, fast_bonus: 1, fast_seconds: 90, monthly_cap: 20, enabled: true };
+  const DEFAULTS = { points: 1, fast_bonus: 1, fast_seconds: 90, monthly_cap: 40, enabled: true,
+                     day_win_bonus: 5, day_win_min_players: 2 };
   async function cfg() {
     const row = await q.one(db.settings, { key: 'puzzle_config' });
     return { ...DEFAULTS, ...(row && row.value || {}) };
@@ -120,6 +121,43 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     return rows.filter(r => String(r.date || '').startsWith(month))
       .reduce((s, r) => s + (+r.points || 0), 0);
   }
+
+
+  // ── Víťazka dňa: najrýchlejší čas dostane bonus. Vyhodnocuje sa až PO polnoci,
+  // aby sa poradie počas dňa nemenilo a nikto nemal bonus "dočasne". ──
+  async function awardDayWinner(dateStr) {
+    const c = await cfg();
+    if (!c.enabled || !c.day_win_bonus) return null;
+    const rows = await q.find(db.puzzle_solves, { date: dateStr });
+    if (rows.length < c.day_win_min_players) return null;      // sama proti sebe nesúťaží
+    if (rows.some(r => r.day_win)) return null;                // už vyhodnotené
+    rows.sort((a, b) => (a.seconds || 0) - (b.seconds || 0)
+      || String(a.created_at || '').localeCompare(String(b.created_at || '')));
+    const w = rows[0];
+    const month = dateStr.slice(0, 7);
+    const capLeft = Math.max(0, c.monthly_cap - await monthPoints(w.user_id, month));
+    const bonus = Math.min(c.day_win_bonus, capLeft);
+    await q.update(db.puzzle_solves, { _id: w._id },
+      { $set: { day_win: true, day_win_bonus: bonus, points: (+w.points || 0) + bonus } });
+    await q.insert(db.notifications, {
+      user_id: w.user_id, type: 'puzzle_win', title: '🏆 Vyhrala si denný hlavolam!',
+      body: 'Včerajšiu hádanku si zvládla najrýchlejšie zo všetkých (' + w.seconds + ' s)'
+        + (bonus ? ' — pripísali sme ti +' + bonus + ' bodov.' : '. Mesačný strop bodov máš už vyčerpaný.'),
+      read: false, created_at: nowISO(),
+    }).catch(() => {});
+    console.log('🏆 Hlavolam ' + dateStr + ': vyhrala ' + (w.user_name || w.user_id) + ' (' + w.seconds + ' s, +' + bonus + ' b)');
+    return { user_id: w.user_id, name: w.user_name, seconds: w.seconds, bonus };
+  }
+  // beží každých 20 minút; guard v settings zabezpečí jedno vyhodnotenie na deň
+  setInterval(async () => {
+    try {
+      const y = new Date(Date.parse(today()) - 86400000).toISOString().slice(0, 10);
+      const key = 'puzzle_winner_' + y;
+      if (await q.one(db.settings, { key })) return;
+      const res = await awardDayWinner(y);
+      await q.insert(db.settings, { key, value: res || 'none', at: nowISO() });
+    } catch (e) { console.error('puzzle winner:', e.message); }
+  }, 20 * 60 * 1000);
 
   // ── Dnešná hádanka + môj stav ──
   app.get('/api/puzzle/today', auth, async (req, res) => {
@@ -140,6 +178,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
         my_points: mine ? mine.points : 0,
         month_points: earned, monthly_cap: c.monthly_cap,
         points: c.points, fast_bonus: c.fast_bonus, fast_seconds: c.fast_seconds,
+        day_win_bonus: c.day_win_bonus, my_day_win: mine ? !!mine.day_win : false,
         solvers_today: solvers,
       });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -190,7 +229,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       const d = today();
       const rows = (await q.find(db.puzzle_solves, { date: d }))
         .sort((a, b) => (a.seconds || 0) - (b.seconds || 0)).slice(0, 10)
-        .map((r, i) => ({ pos: i + 1, name: r.user_name || 'Tanečníčka', seconds: r.seconds, me: r.user_id === req.session.uid }));
+        .map((r, i) => ({ pos: i + 1, name: r.user_name || 'Tanečníčka', seconds: r.seconds, me: r.user_id === req.session.uid, win: !!r.day_win }));
       res.json({ ok: true, date: d, rows });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -214,12 +253,21 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
   app.put('/api/admin/puzzle', adminAuth, async (req, res) => {
     try {
       const cur = await cfg();
+      // Pozor: +undefined je NaN a ?? ho NEzachytí — čiastočná zmena by ostatné
+      // hodnoty prepísala na null. Preto kontrolujeme Number.isFinite.
+      const num = (v, fallback, lo, hi) => {
+        if (v === undefined || v === null || v === '') return fallback;
+        const n = Number(v);
+        return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : fallback;
+      };
       const next = {
         enabled: req.body.enabled !== undefined ? !!req.body.enabled : cur.enabled,
-        points: Math.max(0, Math.min(10, +req.body.points ?? cur.points)),
-        fast_bonus: Math.max(0, Math.min(10, +req.body.fast_bonus ?? cur.fast_bonus)),
-        fast_seconds: Math.max(10, Math.min(600, +req.body.fast_seconds ?? cur.fast_seconds)),
-        monthly_cap: Math.max(0, Math.min(200, +req.body.monthly_cap ?? cur.monthly_cap)),
+        points: num(req.body.points, cur.points, 0, 10),
+        fast_bonus: num(req.body.fast_bonus, cur.fast_bonus, 0, 10),
+        fast_seconds: num(req.body.fast_seconds, cur.fast_seconds, 10, 600),
+        monthly_cap: num(req.body.monthly_cap, cur.monthly_cap, 0, 200),
+        day_win_bonus: num(req.body.day_win_bonus, cur.day_win_bonus, 0, 20),
+        day_win_min_players: num(req.body.day_win_min_players, cur.day_win_min_players, 1, 50),
       };
       const row = await q.one(db.settings, { key: 'puzzle_config' });
       if (row) await q.update(db.settings, { key: 'puzzle_config' }, { $set: { value: next, at: nowISO() } });
@@ -241,5 +289,5 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     return map;
   }
 
-  return { puzzleFor, validate, puzzlePointsMap, cfg, SIZE };
+  return { puzzleFor, validate, puzzlePointsMap, cfg, awardDayWinner, SIZE };
 };

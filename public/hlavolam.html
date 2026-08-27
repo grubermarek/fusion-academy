@@ -105,7 +105,7 @@ function render(){
     </div>
     <div class="board-wrap"><canvas id="board"></canvas></div>
     <div class="hint">Ťahaj prstom od <b>1</b> a spájaj čísla v poradí tak, aby si prešla <b>všetky políčka</b>.
-      Ťahom späť sa cesta vracia.</div>
+      Ťahom späť sa cesta vracia.<br><b style="color:var(--gold)">🏆 Najrýchlejší čas dňa berie +${P.day_win_bonus} bodov</b> — vyhodnocuje sa po polnoci.</div>
     <div class="actions">
       <button class="btn-ghost" onclick="resetPath()">Vymazať</button>
       <button class="btn-main" id="sendBtn" onclick="submit()">Odovzdať riešenie</button>
@@ -213,7 +213,8 @@ async function submit(){
   const m=$('msg'); m.className='msg ok';
   m.innerHTML = d.already ? d.message
     : `🎉 Vyriešené za <b>${fmtSec(d.seconds)}</b>! Získala si <b>${d.points} ${d.points===1?'bod':'body'}</b>${d.fast?' (vrátane bonusu za rýchlosť)':''}.`
-      + (d.capped?'<br><span style="opacity:.8">Mesačný strop bodov z hlavolamu je vyčerpaný — hrať môžeš ďalej pre radosť. 💛</span>':'');
+      + (d.capped?'<br><span style="opacity:.8">Mesačný strop bodov z hlavolamu je vyčerpaný — hrať môžeš ďalej pre radosť. 💛</span>':'')
+    + (P.day_win_bonus?'<br>🏆 Ak bude tvoj čas dnes najrýchlejší, ráno ti pribudne ďalších '+P.day_win_bonus+' bodov.':'');
   solvedToday=true;
   const st=await api('/api/puzzle/today').catch(()=>null); if(st&&st.ok) P=st;
   loadLb();
@@ -223,7 +224,7 @@ async function loadLb(){
   const d=await api('/api/puzzle/leaderboard').catch(()=>null);
   const el=$('lb'); if(!el||!d||!d.ok||!d.rows.length){ if(el) el.innerHTML=''; return; }
   el.innerHTML='<h3>Dnes najrýchlejšie</h3>'+d.rows.map(r=>
-    `<div class="row ${r.me?'me':''}"><div class="pos">${r.pos}.</div><div class="nm">${r.name}</div><div class="t">${fmtSec(r.seconds)}</div></div>`).join('');
+    `<div class="row ${r.me?'me':''}"><div class="pos">${r.win?'🏆':r.pos+'.'}</div><div class="nm">${r.name}</div><div class="t">${fmtSec(r.seconds)}</div></div>`).join('');
 }
 
 init();

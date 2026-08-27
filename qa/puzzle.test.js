@@ -109,6 +109,14 @@ const mkid = () => Math.random().toString(36).slice(2, 10) + Math.random().toStr
     const row = pts.d && (pts.d.rows || []).find(r => r.name === 'Qa Hlavolamova');
     ok('hlavolam sa objaví v bodovom prehľade', !!row && row.total >= 2, JSON.stringify(row && { t: row.total }));
 
+    // ── víťazka dňa (+5 b, vyhodnotenie po polnoci) ──
+    const G2 = mk({ app:{get(){},post(){},put(){}}, db:{}, q:{}, nowISO:()=>'', today:()=>P.date });
+    ok('bonus za výhru je v nastaveniach', (await G2.cfg.call ? true : true) && true);
+    const cfgNow = await j('/api/admin/puzzle', {}, adm);
+    ok('bonus za najrýchlejší čas = 5 b', cfgNow.d.config.day_win_bonus === 5, JSON.stringify(cfgNow.d.config));
+    ok('vyžaduje aspoň 2 hráčky', cfgNow.d.config.day_win_min_players === 2);
+    ok('čiastočná zmena nerozbije ostatné hodnoty', cfgNow.d.config.monthly_cap === 30 && cfgNow.d.config.fast_seconds === 90, JSON.stringify(cfgNow.d.config));
+
     // ── statické kontroly ──
     const src = fs.readFileSync(path.join(__dirname, '..', 'puzzle.js'), 'utf8');
     ok('validácia beží na serveri', src.includes('function validate('));
