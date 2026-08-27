@@ -23,6 +23,7 @@ async function j(url, opts = {}, jar) {
   let d = null; try { d = await r.json(); } catch (e) {}
   return { status: r.status, d };
 }
+const ok_silent = c => { if (!c) { failed++; console.log("  ❌ neplatná hádanka pri hromadnom teste"); } };
 const mkid = () => Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
 
 (async () => {
@@ -126,6 +127,19 @@ const mkid = () => Math.random().toString(36).slice(2, 10) + Math.random().toStr
     ok('vyžaduje aspoň 2 hráčky', cfgNow.d.config.day_win_min_players === 2);
     ok('čiastočná zmena nerozbije ostatné hodnoty', cfgNow.d.config.monthly_cap === 30 && cfgNow.d.config.fast_seconds === 90, JSON.stringify(cfgNow.d.config));
 
+    // ── nová hádanka každý deň, rýchle generovanie ──
+    const t0 = Date.now();
+    const podpisy = new Set();
+    for (let i = 0; i < 60; i++) {
+      const den = new Date(Date.parse(P.date) + i * 864e5).toISOString().slice(0, 10);
+      const pz = G.puzzleFor(den);
+      ok_silent(pz && !G.validate(pz, pz._path));
+      podpisy.add(pz.dots.map(x => x.cell).join(","));
+    }
+    const ms = Date.now() - t0;
+    ok("60 dní = 60 rôznych hádaniek", podpisy.size === 60, String(podpisy.size));
+    ok("generovanie je rýchle (neblokuje server)", ms < 3000, ms + " ms na 60 dní");
+    ok("po polnoci server odmietne starú hádanku", (await j("/api/puzzle/solve", { method: "POST", body: { cells: real._path, seconds: 5, date: "2020-01-01" } }, jar)).d.new_day === true);
     // ── statické kontroly ──
     const src = fs.readFileSync(path.join(__dirname, '..', 'puzzle.js'), 'utf8');
     ok('validácia beží na serveri', src.includes('function validate('));

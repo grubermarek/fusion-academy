@@ -37,26 +37,38 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     return out;
   };
 
-  // Hamiltonovská cesta cez celú mriežku — náhodné DFS s návratom.
-  // Warnsdorff (najmenej voľných susedov najskôr) drží hľadanie rýchle.
+  // Hamiltonovská cesta cez celú mriežku.
+  // Náhodné DFS s návratom vie pri nešťastnom seede bežať minúty a zablokovať
+  // server, preto ideme konštrukciou: hadovitá cesta + "backbite" premiešanie.
+  // Každý krok je O(1) a cesta zostáva vždy platná — generovanie trvá milisekundy.
   function hamiltonPath(rnd) {
-    const start = Math.floor(rnd() * CELLS);
-    const seen = new Array(CELLS).fill(false);
     const path = [];
-    let steps = 0;
-    const free = i => neighbours(i).filter(n => !seen[n]).length;
-    function walk(cur) {
-      if (++steps > 400000) return false;             // poistka proti zaseknutiu
-      seen[cur] = true; path.push(cur);
-      if (path.length === CELLS) return true;
-      const next = neighbours(cur).filter(n => !seen[n])
-        .map(n => ({ n, deg: free(n), r: rnd() }))
-        .sort((a, b) => a.deg - b.deg || a.r - b.r);
-      for (const { n } of next) if (walk(n)) return true;
-      seen[cur] = false; path.pop();
-      return false;
+    for (let r = 0; r < SIZE; r++) {                 // hadovitá cesta (vždy existuje)
+      for (let k = 0; k < SIZE; k++) {
+        const c = r % 2 === 0 ? k : SIZE - 1 - k;
+        path.push(idx(r, c));
+      }
     }
-    return walk(start) ? path : null;
+    const posOf = new Array(CELLS);
+    path.forEach((cellIdx, i) => { posOf[cellIdx] = i; });
+    const steps = 3000;
+    for (let s = 0; s < steps; s++) {
+      const fromStart = rnd() < 0.5;                 // striedavo prehýbame oba konce
+      const endCell = fromStart ? path[0] : path[CELLS - 1];
+      const nb = neighbours(endCell);
+      const pick = nb[Math.floor(rnd() * nb.length)];
+      const p = posOf[pick];
+      if (fromStart) {
+        if (p <= 1) continue;                        // sused je hneď vedľa konca → nič nezmení
+        const seg = path.slice(0, p).reverse();      // otoč začiatok po suseda
+        for (let i = 0; i < seg.length; i++) { path[i] = seg[i]; posOf[seg[i]] = i; }
+      } else {
+        if (p >= CELLS - 2) continue;
+        const seg = path.slice(p + 1).reverse();     // otoč koniec za suseda
+        for (let i = 0; i < seg.length; i++) { const at = p + 1 + i; path[at] = seg[i]; posOf[seg[i]] = at; }
+      }
+    }
+    return path;
   }
 
   // Z hotovej cesty spravíme hádanku: rozsekáme ju na úseky a konce označíme číslami.
@@ -82,7 +94,11 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
 
   const cache = {};
   function puzzleFor(dateStr) {
-    if (!cache[dateStr]) cache[dateStr] = buildPuzzle(dateStr);
+    if (!cache[dateStr]) {
+      cache[dateStr] = buildPuzzle(dateStr);
+      const keys = Object.keys(cache).sort();
+      while (keys.length > 5) delete cache[keys.shift()];   // nech pamäť nerastie
+    }
     return cache[dateStr];
   }
 
@@ -205,6 +221,9 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       const p = puzzleFor(d);
       if (!p) return res.status(500).json({ error: 'Hádanku sa nepodarilo pripraviť.' });
 
+      // Ak medzitým nastala polnoc, klient rieši včerajšiu hádanku — povedz mu to zrozumiteľne.
+      if (req.body.date && req.body.date !== d)
+        return res.status(409).json({ error: 'Práve sa zmenil deň — načítaj novú hádanku.', new_day: true });
       const err = validate(p, req.body.cells);
       if (err) return res.status(400).json({ error: err });
 
