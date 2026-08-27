@@ -421,7 +421,7 @@
   <a id="puzzleCard" href="/hlavolam" style="display:none;text-decoration:none;margin-bottom:16px;background:var(--card,#161616);border:1px solid var(--gold-border,#332a18);border-radius:16px;padding:16px 18px;align-items:center;gap:14px">
     <div style="font-size:2rem;line-height:1;flex:none">🧩</div>
     <div style="flex:1;min-width:0">
-      <div style="font-weight:800;color:var(--cream,#EAE3D5);font-size:.98rem">Denný hlavolam</div>
+      <div id="puzzleTitle" style="font-weight:800;color:var(--cream,#EAE3D5);font-size:.98rem">Denný hlavolam</div>
       <div id="puzzleSub" style="font-size:.8rem;color:var(--muted,#999);margin-top:2px">Spoj čísla a vyplň mriežku — za body do súťaže.</div>
     </div>
     <div id="puzzleBadge" style="flex:none;font-size:.72rem;font-weight:800;padding:5px 11px;border-radius:99px;background:rgba(201,168,76,.16);color:var(--gold,#C9A84C);border:1px solid var(--gold-border,#332a18)">HRAŤ</div>
@@ -1958,6 +1958,9 @@ async function loadPuzzleCard(me){
   const d=await api('/api/puzzle/today').catch(()=>null);
   if(!d||!d.ok||!d.enabled){ el.style.display='none'; return; }
   const sub=document.getElementById('puzzleSub'), bdg=document.getElementById('puzzleBadge');
+  const ttl=document.getElementById('puzzleTitle');
+  const jeOsem = d.type==='words';
+  if(ttl) ttl.textContent = jeOsem ? 'Denná osemsmerovka' : 'Denný hlavolam';
   if(d.solved){
     const s=d.my_seconds||0;
     sub.textContent='Dnes vyriešené za '+Math.floor(s/60)+':'+String(s%60).padStart(2,'0')+' · +'+d.my_points+(d.my_points===1?' bod':' body')+'. Nová hádanka zajtra.';
@@ -1965,7 +1968,9 @@ async function loadPuzzleCard(me){
     bdg.style.background='rgba(76,175,80,.14)'; bdg.style.color='#81c784'; bdg.style.borderColor='rgba(76,175,80,.4)';
   } else {
     const max=d.points+d.fast_bonus;
-    sub.textContent='Spoj čísla a vyplň mriežku — až '+max+' body do súťaže. Trvá to minútu.';
+    sub.textContent = jeOsem
+      ? 'Nájdi ' + (d.words ? d.words.length : 10) + ' tanečných slov v mriežke — až ' + max + ' body do súťaže.'
+      : 'Spoj čísla a vyplň mriežku — až ' + max + ' body do súťaže. Trvá to minútu.';
     bdg.textContent='HRAŤ';
   }
   el.style.display='flex';

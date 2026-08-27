@@ -1,13 +1,19 @@
 /**
- * Denný hlavolam „Cesta" (Zip) — spoj čísla v poradí a vyplň celú mriežku.
+ * Denný hlavolam — dva typy, ktoré sa striedajú po dňoch:
+ *  · „Cesta" (zip): spoj čísla v poradí a vyplň celú mriežku (tu v súbore),
+ *  · „Osemsmerovka" (words): nájdi tanečné slová v mriežke (./puzzle-words.js).
+ * Poradie určuje settings.puzzle_config.schedule, konkrétny deň sa dá prebiť
+ * cez overrides — admin tak vie na akciu nasadiť typ, ktorý chce.
  *
  * Kľúčové rozhodnutia:
  *  · Hádanka je pre všetkých rovnaká a odvodená z DÁTUMU (seedovaný generátor),
  *    takže sa dá porovnávať čas a nedá sa „preklikať" na ľahšiu.
- *  · Riešenie overuje VÝHRADNE server — klient posiela len cestu buniek.
+ *  · Riešenie overuje VÝHRADNE server — klient posiela len svoje ťahy.
  *  · Body sú zámerne nízke a mesačne stropované, aby hlavolam nenarušil
  *    súťaž Klientka mesiaca (hodina = 5 b).
  */
+const WORDS = require('./puzzle-words');
+
 module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
 
   const SIZE = 6;                 // mriežka 6×6
@@ -92,14 +98,35 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     return { date: dateStr, size: SIZE, dots, _path: path };
   }
 
+  // Aký typ pripadá na daný deň. Striedame, aby to neomrzelo; admin vie poradie
+  // zmeniť (schedule) alebo typ na konkrétny deň natvrdo určiť (overrides).
+  const TYPES = ['zip', 'words'];
+  function typeForSync(dateStr, conf) {
+    const ov = conf && conf.overrides && conf.overrides[dateStr];
+    if (ov && TYPES.includes(ov)) return ov;
+    const list = (conf && Array.isArray(conf.schedule) && conf.schedule.length) ? conf.schedule : TYPES;
+    const days = Math.floor(Date.parse(dateStr + 'T00:00:00Z') / 86400000);
+    return list[((days % list.length) + list.length) % list.length];
+  }
+
+  // Cache zahadzujeme v poradí, v akom pribúdala — nie podľa abecedy.
+  // (Abecedné triedenie vedelo vyhodiť práve vygenerovanú hádanku a vrátiť undefined.)
   const cache = {};
-  function puzzleFor(dateStr) {
-    if (!cache[dateStr]) {
-      cache[dateStr] = buildPuzzle(dateStr);
-      const keys = Object.keys(cache).sort();
-      while (keys.length > 5) delete cache[keys.shift()];   // nech pamäť nerastie
+  const cacheOrder = [];
+  function puzzleFor(dateStr, type) {
+    const t = type || 'zip';
+    const key = dateStr + '|' + t;
+    if (!cache[key]) {
+      if (t === 'words') {
+        const rnd = mulberry32(seedFromString('fusion-words-' + dateStr));
+        cache[key] = { ...WORDS.build(rnd), type: 'words', date: dateStr };
+      } else {
+        cache[key] = { ...buildPuzzle(dateStr), type: 'zip' };
+      }
+      cacheOrder.push(key);
+      while (cacheOrder.length > 8) delete cache[cacheOrder.shift()];   // nech pamäť nerastie
     }
-    return cache[dateStr];
+    return cache[key];
   }
 
   // ── Overenie riešenia (beží len na serveri) ──
@@ -124,9 +151,15 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     return null;
   }
 
+  // riešenie overuje ten modul, ktorému hádanka patrí
+  function validateAny(p, body) {
+    return p.type === 'words' ? WORDS.validate(p, body.found) : validate(p, body.cells);
+  }
+
   // ── Nastavenia (admin ich vie zmeniť bez zásahu do kódu) ──
   const DEFAULTS = { points: 1, fast_bonus: 1, fast_seconds: 90, monthly_cap: 40, enabled: true,
-                     day_win_bonus: 5, day_win_min_players: 2 };
+                     day_win_bonus: 5, day_win_min_players: 2,
+                     schedule: ['zip', 'words'], overrides: {} };
   async function cfg() {
     const row = await q.one(db.settings, { key: 'puzzle_config' });
     return { ...DEFAULTS, ...(row && row.value || {}) };
@@ -182,15 +215,22 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       const c = await cfg();
       if (!c.enabled) return res.json({ ok: true, enabled: false });
       const d = today();
-      const p = puzzleFor(d);
+      const type = typeForSync(d, c);
+      const p = puzzleFor(d, type);
       if (!p) return res.status(500).json({ error: 'Hádanku sa nepodarilo pripraviť.' });
       const mine = await q.one(db.puzzle_solves, { user_id: req.session.uid, date: d });
       const earned = await monthPoints(req.session.uid, d.slice(0, 7));
       const solvers = await q.count(db.puzzle_solves, { date: d });
       res.json({
-        ok: true, enabled: true, date: d, size: p.size,
-        dots: p.dots.map(x => ({ n: x.n, cell: x.cell })),   // cesta sa NIKDY neposiela
+        ok: true, enabled: true, date: d, size: p.size, type,
+        ...(type === 'words'
+          ? { grid: p.grid, words: p.words }                  // umiestnenie slov sa neposiela
+          : { dots: p.dots.map(x => ({ n: x.n, cell: x.cell })) }),   // cesta sa NIKDY neposiela
         solved: !!mine,
+        // Kto už má dnešok vyriešený, nech vidí aj riešenie — inak sa vráti na prázdnu mriežku.
+        ...(mine ? (type === 'words'
+          ? { solution: p._placed.map(x => ({ word: x.word, cells: x.cells })) }
+          : { solution_path: p._path }) : {}),
         my_seconds: mine ? mine.seconds : null,
         my_points: mine ? mine.points : 0,
         month_points: earned, monthly_cap: c.monthly_cap,
@@ -218,13 +258,13 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       const c = await cfg();
       if (!c.enabled) return res.status(400).json({ error: 'Hlavolam je momentálne vypnutý.' });
       const d = today();
-      const p = puzzleFor(d);
+      const p = puzzleFor(d, typeForSync(d, c));
       if (!p) return res.status(500).json({ error: 'Hádanku sa nepodarilo pripraviť.' });
 
       // Ak medzitým nastala polnoc, klient rieši včerajšiu hádanku — povedz mu to zrozumiteľne.
       if (req.body.date && req.body.date !== d)
         return res.status(409).json({ error: 'Práve sa zmenil deň — načítaj novú hádanku.', new_day: true });
-      const err = validate(p, req.body.cells);
+      const err = validateAny(p, req.body);
       if (err) return res.status(400).json({ error: err });
 
       const already = await q.one(db.puzzle_solves, { user_id: req.session.uid, date: d });
@@ -246,7 +286,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       const u = await q.one(db.users, { _id: req.session.uid });
       await q.insert(db.puzzle_solves, {
         user_id: req.session.uid, user_name: u ? u.name : '', date: d, month: d.slice(0, 7),
-        seconds, points, fast: seconds <= c.fast_seconds, verified, created_at: nowISO(),
+        seconds, points, fast: seconds <= c.fast_seconds, verified, type: p.type, created_at: nowISO(),
       });
 
       delete req.session.puzzle;
@@ -283,6 +323,10 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
         players_month: new Set(thisMonth.map(r => r.user_id)).size,
         points_month: thisMonth.reduce((s, r) => s + (+r.points || 0), 0),
         avg_seconds: thisMonth.length ? Math.round(thisMonth.reduce((s, r) => s + (+r.seconds || 0), 0) / thisMonth.length) : null,
+        upcoming: Array.from({ length: 7 }, (_, i) => {
+          const d = new Date(Date.parse(today() + 'T00:00:00Z') + i * 86400000).toISOString().slice(0, 10);
+          return { date: d, type: typeForSync(d, c) };
+        }),
       });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -304,6 +348,12 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
         monthly_cap: num(req.body.monthly_cap, cur.monthly_cap, 0, 200),
         day_win_bonus: num(req.body.day_win_bonus, cur.day_win_bonus, 0, 20),
         day_win_min_players: num(req.body.day_win_min_players, cur.day_win_min_players, 1, 50),
+        schedule: Array.isArray(req.body.schedule) && req.body.schedule.every(t => TYPES.includes(t)) && req.body.schedule.length
+          ? req.body.schedule : cur.schedule,
+        overrides: (req.body.overrides && typeof req.body.overrides === 'object')
+          ? Object.fromEntries(Object.entries(req.body.overrides)
+              .filter(([k, v]) => /^\d{4}-\d{2}-\d{2}$/.test(k) && TYPES.includes(v)))
+          : cur.overrides,
       };
       const row = await q.one(db.settings, { key: 'puzzle_config' });
       if (row) await q.update(db.settings, { key: 'puzzle_config' }, { $set: { value: next, at: nowISO() } });
@@ -325,5 +375,5 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     return map;
   }
 
-  return { puzzleFor, validate, puzzlePointsMap, cfg, awardDayWinner, SIZE };
+  return { puzzleFor, validate, validateAny, typeForSync, puzzlePointsMap, cfg, awardDayWinner, SIZE };
 };

@@ -58,6 +58,12 @@ html[data-theme="aurora"] .btn-main{background:linear-gradient(90deg,#A855F7,#EC
 .lb .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lb .t{font-variant-numeric:tabular-nums;color:var(--muted)}
 .loading{text-align:center;padding:40px;color:var(--muted)}
+/* osemsmerovka */
+.wordlist{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.wchip{font-size:.76rem;font-weight:700;padding:5px 11px;border-radius:99px;border:1px solid var(--line);
+  color:var(--muted);background:var(--card);transition:.2s}
+.wchip.done{color:#9fd894;border-color:rgba(76,175,80,.45);background:rgba(76,175,80,.12);
+  text-decoration:line-through;text-decoration-thickness:2px}
 </style>
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#C9A84C">
@@ -106,12 +112,15 @@ function render(){
       Nová hádanka je zajtra ráno.</p></div>`:''}
     <div class="bar">
       <div class="pill"><b id="clock">0:00</b><span>čas</span></div>
-      <div class="pill"><b id="filled">0/${P.size*P.size}</b><span>políčok</span></div>
+      <div class="pill"><b id="filled">${P.type==='words'?'0/'+P.words.length:'0/'+(P.size*P.size)}</b><span>${P.type==='words'?'slov':'políčok'}</span></div>
       <div class="pill"><b>${P.month_points}/${P.monthly_cap}</b><span>bodov v mesiaci</span></div>
     </div>
     <div class="board-wrap"><canvas id="board"></canvas></div>
-    <div class="hint">Ťahaj prstom od <b>1</b> a spájaj čísla v poradí tak, aby si prešla <b>všetky políčka</b>.
-      Ťahom späť sa cesta vracia.<br><b style="color:var(--gold)">🏆 Najrýchlejší čas dňa berie +${P.day_win_bonus} bodov</b> — čas ti beží od otvorenia, vyhodnocuje sa po polnoci.</div>
+    ${P.type==='words' ? '<div class="wordlist" id="wordList"></div>' : ''}
+    <div class="hint">${P.type==='words'
+      ? 'Ťahaj prstom po písmenách a označ <b>všetkých '+P.words.length+' slov</b>. Slová sú vodorovne, zvisle aj šikmo — aj odzadu.'
+      : 'Ťahaj prstom od <b>1</b> a spájaj čísla v poradí tak, aby si prešla <b>všetky políčka</b>.'}
+<br><b style="color:var(--gold)">🏆 Najrýchlejší čas dňa berie +${P.day_win_bonus} bodov</b> — čas ti beží od otvorenia, vyhodnocuje sa po polnoci.</div>
     <div class="actions">
       <button class="btn-ghost" onclick="resetPath()">Vymazať</button>
       <button class="btn-main" id="sendBtn" onclick="submit()">Odovzdať riešenie</button>
@@ -119,7 +128,8 @@ function render(){
     <div class="msg" id="msg"></div>
     <div class="lb" id="lb"></div>`;
   setupCanvas();
-  resetPath();
+  if(P.type==='words'){ found=(solvedToday&&P.solution)||[]; renderWordList(); draw(); }
+  else { path=(solvedToday&&P.solution_path)||[]; draw(); }
   loadLb();
 }
 
@@ -132,10 +142,16 @@ function setupCanvas(){
   cv.style.width=size+'px'; cv.style.height=size+'px';
   cv.width=size*dpr; cv.height=size*dpr; ctx.scale(dpr,dpr);
   cell=size/P.size;
-  cv.addEventListener('pointerdown',onDown);
-  cv.addEventListener('pointermove',onMove);
-  window.addEventListener('pointerup',onUp);
+  if(!cv.dataset.bound){
+    cv.dataset.bound='1';
+    cv.addEventListener('pointerdown',onDown);
+    cv.addEventListener('pointermove',onMove);
+    window.addEventListener('pointerup',onUp);
+  }
 }
+// otočenie telefónu / zmena okna — mriežku prepočítaj, inak by ťah mieril vedľa
+let rzT=null;
+window.addEventListener('resize',()=>{ if(!P) return; clearTimeout(rzT); rzT=setTimeout(()=>{ setupCanvas(); draw(); },150); });
 const cellOf=(x,y)=>{ const c=Math.floor(x/cell), r=Math.floor(y/cell);
   if(r<0||c<0||r>=P.size||c>=P.size) return -1; return r*P.size+c; };
 const centre=i=>({x:(i%P.size)*cell+cell/2, y:Math.floor(i/P.size)*cell+cell/2});
@@ -143,7 +159,55 @@ const adjacent=(a,b)=>{ const ra=Math.floor(a/P.size),ca=a%P.size,rb=Math.floor(
   return Math.abs(ra-rb)+Math.abs(ca-cb)===1; };
 const dotAt=i=>P.dots.find(d=>d.cell===i);
 
+let found=[], dragFrom=null, dragTo=null;
+function renderWordList(){
+  const el=$('wordList'); if(!el) return;
+  const done=new Set(found.map(f=>f.word));
+  el.innerHTML=P.words.map(w=>'<span class="wchip'+(done.has(w)?' done':'')+'">'+w+'</span>').join('');
+  const f=$('filled'); if(f) f.textContent=done.size+'/'+P.words.length;
+}
+// bunky medzi dvoma bodmi, ak ležia na priamke v niektorom z 8 smerov
+function lineCells(a,b){
+  const r1=Math.floor(a/P.size), c1=a%P.size, r2=Math.floor(b/P.size), c2=b%P.size;
+  const dr=Math.sign(r2-r1), dc=Math.sign(c2-c1);
+  const len=Math.max(Math.abs(r2-r1), Math.abs(c2-c1));
+  if(Math.abs(r2-r1)!==Math.abs(c2-c1) && r1!==r2 && c1!==c2) return null;   // nie je priamka
+  const out=[];
+  for(let i=0;i<=len;i++) out.push((r1+dr*i)*P.size+(c1+dc*i));
+  return out;
+}
+function drawWords(){
+  const S=P.size*cell;
+  ctx.clearRect(0,0,S,S);
+  const css=getComputedStyle(document.documentElement);
+  const line=css.getPropertyValue('--pz-line').trim()||'#C9A24C';
+  const cellBg=css.getPropertyValue('--pz-cell').trim()||'#1a1714';
+  const cream=css.getPropertyValue('--cream').trim()||'#EAE3D5';
+  // podklad
+  for(let i=0;i<P.size*P.size;i++){
+    const r=Math.floor(i/P.size), c=i%P.size;
+    ctx.fillStyle=cellBg;
+    ctx.beginPath(); ctx.roundRect(c*cell+1.5, r*cell+1.5, cell-3, cell-3, 6); ctx.fill();
+  }
+  // už nájdené slová – zelený pruh
+  const stroke=(cells,color,alpha)=>{
+    if(!cells||!cells.length) return;
+    const a=centre(cells[0]), b=centre(cells[cells.length-1]);
+    ctx.strokeStyle=color; ctx.globalAlpha=alpha; ctx.lineWidth=cell*0.72; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); ctx.globalAlpha=1;
+  };
+  found.forEach(f=>stroke(f.cells,'#4caf50',.30));
+  if(dragFrom!=null && dragTo!=null) stroke(lineCells(dragFrom,dragTo), line, .35);
+  // písmená
+  ctx.font='700 '+Math.round(cell*0.46)+'px Manrope, sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(let r=0;r<P.size;r++) for(let c=0;c<P.size;c++){
+    ctx.fillStyle=cream;
+    ctx.fillText(P.grid[r][c], c*cell+cell/2, r*cell+cell/2+1);
+  }
+}
 function draw(){
+  if(P.type==='words') return drawWords();
   const S=P.size*cell;
   ctx.clearRect(0,0,S,S);
   const css=getComputedStyle(document.documentElement);
@@ -181,6 +245,11 @@ function draw(){
 function pos(e){ const r=cv.getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; }
 function onDown(e){
   if(solvedToday) return;
+  if(P.type==='words'){
+    const i=cellOf(pos(e).x,pos(e).y); if(i<0) return;
+    cv.setPointerCapture(e.pointerId);
+    dragFrom=i; dragTo=i; drawing=true; draw(); return;
+  }
   const {x,y}=pos(e), i=cellOf(x,y); if(i<0) return;
   cv.setPointerCapture(e.pointerId);
   // začať sa dá len na jednotke, alebo pokračovať z konca cesty
@@ -191,13 +260,30 @@ function onDown(e){
 }
 function onMove(e){
   if(!drawing||solvedToday) return;
+  if(P.type==='words'){
+    const i=cellOf(pos(e).x,pos(e).y); if(i<0||i===dragTo) return;
+    dragTo=i; draw(); return;
+  }
   const {x,y}=pos(e), i=cellOf(x,y); if(i<0) return;
   const last=path[path.length-1];
   if(i===last) return;
   if(path.length>1 && i===path[path.length-2]){ path.pop(); draw(); return; }  // krok späť
   if(!path.includes(i) && adjacent(last,i)){ path.push(i); draw(); }
 }
-function onUp(){ drawing=false; }
+function onUp(){
+  if(P.type==='words' && drawing && dragFrom!=null && dragTo!=null){
+    const cells=lineCells(dragFrom,dragTo);
+    if(cells && cells.length>1){
+      const txt=cells.map(i=>P.grid[Math.floor(i/P.size)][i%P.size]).join('');
+      const rev=txt.split('').reverse().join('');
+      const hit=P.words.find(w=>(w===txt||w===rev) && !found.some(f=>f.word===w));
+      if(hit){ found.push({word:hit, cells}); renderWordList(); }
+    }
+    dragFrom=dragTo=null; draw();
+    if(found.length===P.words.length) submit();     // všetky nájdené → odovzdaj
+  }
+  drawing=false;
+}
 
 const skToday=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Bratislava'}).format(new Date());
 function tick(){
@@ -206,14 +292,18 @@ function tick(){
   if(P && skToday()!==P.date){ if(timer) clearInterval(timer); location.reload(); }
 }
 function startClock(){ if(!timer&&startedAt) timer=setInterval(tick,1000); }
-function resetPath(){ path=[]; draw(); const m=$('msg'); if(m){m.className='msg';m.textContent='';} }
+function resetPath(){
+  if(P && P.type==='words'){ found=[]; dragFrom=dragTo=null; renderWordList(); }
+  path=[]; draw(); const m=$('msg'); if(m){m.className='msg';m.textContent='';}
+}
 function flash(t){ const m=$('msg'); if(!m) return; m.className='msg err'; m.textContent=t; }
 
 async function submit(){
   if(solvedToday) return;
   const btn=$('sendBtn'); btn.disabled=true; btn.textContent='Kontrolujem…';
   const seconds=startedAt?Math.round((Date.now()-startedAt)/1000):0;
-  const d=await api('/api/puzzle/solve',{method:'POST',body:JSON.stringify({cells:path, seconds, date:P.date})}).catch(()=>null);
+  const payload=P.type==='words' ? {found, seconds, date:P.date} : {cells:path, seconds, date:P.date};
+  const d=await api('/api/puzzle/solve',{method:'POST',body:JSON.stringify(payload)}).catch(()=>null);
   btn.disabled=false; btn.textContent='Odovzdať riešenie';
   if(!d){ flash('Nepodarilo sa odoslať. Skús znova.'); return; }
   if(d.new_day){ flash('Práve nastala polnoc — načítavam novú hádanku…'); setTimeout(()=>location.reload(),1500); return; }
