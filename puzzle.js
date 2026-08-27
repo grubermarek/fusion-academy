@@ -188,11 +188,12 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
   // ── Štart merania času (beží na serveri, klientovi sa neverí) ──
   app.post('/api/puzzle/start', auth, async (req, res) => {
     const d = today();
-    // nový štart len ak ešte nemá rozbehnutý dnešok (opakovaný klik čas nenuluje)
+    // Čas beží od OTVORENIA hádanky. Opakované otvorenie ani obnovenie stránky
+    // ho nenuluje — inak by stačilo hádanku naštudovať a potom "zabehnúť".
     if (!req.session.puzzle || req.session.puzzle.date !== d) {
       req.session.puzzle = { date: d, at: Date.now() };
     }
-    res.json({ ok: true });
+    res.json({ ok: true, elapsed: Math.round((Date.now() - req.session.puzzle.at) / 1000) });
   });
 
   // ── Odoslanie riešenia ──

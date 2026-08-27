@@ -90,6 +90,12 @@ async function init(){
   const dd=new Date(d.date+'T12:00:00');
   $('dateLbl').textContent=dd.toLocaleDateString('sk-SK',{weekday:'long',day:'numeric',month:'long'});
   render();
+  // Čas beží od otvorenia hádanky — server povie, koľko už uplynulo
+  if(!solvedToday){
+    const st=await api('/api/puzzle/start',{method:'POST'}).catch(()=>null);
+    startedAt=Date.now()-((st&&st.elapsed||0)*1000);
+    tick(); timer=setInterval(tick,1000);
+  }
 }
 
 function render(){
@@ -105,7 +111,7 @@ function render(){
     </div>
     <div class="board-wrap"><canvas id="board"></canvas></div>
     <div class="hint">Ťahaj prstom od <b>1</b> a spájaj čísla v poradí tak, aby si prešla <b>všetky políčka</b>.
-      Ťahom späť sa cesta vracia.<br><b style="color:var(--gold)">🏆 Najrýchlejší čas dňa berie +${P.day_win_bonus} bodov</b> — vyhodnocuje sa po polnoci.</div>
+      Ťahom späť sa cesta vracia.<br><b style="color:var(--gold)">🏆 Najrýchlejší čas dňa berie +${P.day_win_bonus} bodov</b> — čas ti beží od otvorenia, vyhodnocuje sa po polnoci.</div>
     <div class="actions">
       <button class="btn-ghost" onclick="resetPath()">Vymazať</button>
       <button class="btn-main" id="sendBtn" onclick="submit()">Odovzdať riešenie</button>
@@ -193,12 +199,8 @@ function onMove(e){
 }
 function onUp(){ drawing=false; }
 
-function startClock(){
-  if(timer) return;
-  api('/api/puzzle/start',{method:'POST'}).catch(()=>{});   // čas beží na serveri
-  startedAt=Date.now();
-  timer=setInterval(()=>{ const c=$('clock'); if(c) c.textContent=fmtSec((Date.now()-startedAt)/1000); },1000);
-}
+function tick(){ const c=$('clock'); if(c&&startedAt) c.textContent=fmtSec((Date.now()-startedAt)/1000); }
+function startClock(){ if(!timer&&startedAt) timer=setInterval(tick,1000); }
 function resetPath(){ path=[]; draw(); const m=$('msg'); if(m){m.className='msg';m.textContent='';} }
 function flash(t){ const m=$('msg'); if(!m) return; m.className='msg err'; m.textContent=t; }
 

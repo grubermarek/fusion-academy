@@ -77,9 +77,14 @@ const mkid = () => Math.random().toString(36).slice(2, 10) + Math.random().toStr
     const dup = real._path.slice(); dup[35] = dup[33];
     await bad(dup, 'zdvojené políčko odmietnuté', 'raz');
 
+    // ── čas beží od OTVORENIA a opakované otvorenie ho nenuluje ──
+    const s1 = await j('/api/puzzle/start', { method: 'POST' }, jar);
+    ok('prvé otvorenie začína na nule', s1.d.elapsed === 0, String(s1.d.elapsed));
+    await new Promise(r => setTimeout(r, 2100));
+    const s2 = await j('/api/puzzle/start', { method: 'POST' }, jar);
+    ok('opakované otvorenie čas NEnuluje', s2.d.elapsed >= 2, 'elapsed=' + s2.d.elapsed);
+
     // ── čas meria SERVER: klientský údaj sa ignoruje ──
-    await j('/api/puzzle/start', { method: 'POST' }, jar);
-    await new Promise(r => setTimeout(r, 2100));                    // reálne 2 s riešenia
     const solve = await j('/api/puzzle/solve', { method: 'POST', body: { cells: real._path, seconds: 45 } }, jar);
     ok('čas je zo servera, nie z prehliadača', solve.d.seconds >= 2 && solve.d.seconds <= 6, 'poslal 45, server zmeral ' + solve.d.seconds);
     ok('správne riešenie prijaté', solve.d && solve.d.ok && !solve.d.error, JSON.stringify(solve.d));
