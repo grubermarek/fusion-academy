@@ -186,6 +186,7 @@ const db = {
   business_snapshots: new Datastore({ filename: path.join(DATA_DIR, 'business_snapshots.db'), autoload: true }),
   mail_log:     new Datastore({ filename: path.join(DATA_DIR, 'mail_log.db'), autoload: true }),
   feedback:     new Datastore({ filename: path.join(DATA_DIR, 'feedback.db'), autoload: true }),
+  puzzle_solves:new Datastore({ filename: path.join(DATA_DIR, 'puzzle_solves.db'), autoload: true }),
   venceky_schools:  new Datastore({ filename: path.join(DATA_DIR, 'venceky_schools.db'),  autoload: true }),
   venceky_classes:  new Datastore({ filename: path.join(DATA_DIR, 'venceky_classes.db'),  autoload: true }),
   venceky_payments: new Datastore({ filename: path.join(DATA_DIR, 'venceky_payments.db'), autoload: true }),
@@ -10290,6 +10291,7 @@ async function pointsSummaryData(from, to){
     // Absolvované súkromné hodiny v období (rátajú sa do súťaže rovnako ako skupinové)
     const privBy={}; (await q.find(db.private_bookings,{status:'completed'})).forEach(b=>{ if(b.client_id && inRange(b.date)) privBy[b.client_id]=(privBy[b.client_id]||0)+1; });
     const spinBy={}; (await q.find(db.spins,{})).forEach(s=>{ if(inRange(s.date)){ const b=spinBy[s.user_id]=spinBy[s.user_id]||{p:0,c:0}; b.p+=(+s.points||0); if(!s.milestone) b.c++; } });
+    const puzzleBy={}; (await q.find(db.puzzle_solves,{})).forEach(p=>{ if(inRange(p.date)){ const b=puzzleBy[p.user_id]=puzzleBy[p.user_id]||{p:0,c:0}; b.p+=(+p.points||0); b.c++; } });
     const reviewBy={}; (await q.find(db.review_claims,{status:'approved'})).forEach(c=>{ if(inRange(c.decided_at||c.created_at)) reviewBy[c.user_id]=(reviewBy[c.user_id]||0)+1; });
     const paidTiers=await paidMembershipTierMap();
     for(const u of users){
@@ -10304,7 +10306,7 @@ async function pointsSummaryData(from, to){
       const merchCount=merchMap[u._id]||0;
       const effTier=hasMem?effectiveMemTier(paidTiers[u._id]||null, m.plan_id, !!m.gift):null;
       const privCount=privBy[u._id]||0;
-      const pi=buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, memTier:effTier, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, privCount, spinPoints:(spinBy[u._id]||{}).p||0, spinCount:(spinBy[u._id]||{}).c||0, reviewCount:reviewBy[u._id]||0});
+      const pi=buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, memTier:effTier, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, privCount, spinPoints:(spinBy[u._id]||{}).p||0, spinCount:(spinBy[u._id]||{}).c||0, reviewCount:reviewBy[u._id]||0, puzzlePoints:(puzzleBy[u._id]||{}).p||0, puzzleCount:(puzzleBy[u._id]||{}).c||0});
       if(pi.total<=0) continue;
       catTotals.hours+=hours*MP_WEIGHTS.hour; catTotals.online+=online*MP_WEIGHTS.hour;
       catTotals.refs+=refs*MP_WEIGHTS.referral; catTotals.membership+=hasMem?membershipPointsFor(effTier):0;
@@ -14882,11 +14884,13 @@ async function monthlyPointsFor(userId, month){
   const merchCount = merchMap[userId]||0;
   const md = merchDownlinePointsFor(userId, adjacency, merchMap);
   const privCount = (await privCountMapInPeriod(month))[userId]||0;
+  const puz=(await q.find(db.puzzle_solves,{user_id:userId, month}));
+  const puzzlePoints=puz.reduce((s,x)=>s+(+x.points||0),0), puzzleCount=puz.length;
   const spins=(await q.find(db.spins,{user_id:userId, month}));
   const spinPoints=spins.reduce((s,x)=>s+(+x.points||0),0), spinCount=spins.filter(x=>!x.milestone).length;
   const reviewCount=(await q.find(db.review_claims,{user_id:userId, month, status:'approved'})).length;
   const paidTier=(await paidMembershipTierMap())[userId]||null;
-  return buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, memTier:hasMem?effectiveMemTier(paidTier, m.plan_id, !!m.gift):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, privCount, spinPoints, spinCount, reviewCount}, month);
+  return buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, memTier:hasMem?effectiveMemTier(paidTier, m.plan_id, !!m.gift):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, privCount, spinPoints, spinCount, reviewCount, puzzlePoints, puzzleCount}, month);
 }
 function buildPointItems({hours, online, refs, hasMem, memName, memTier, newMemberCount, newMemberPoints, merchCount, merchLineCount, merchLinePoints, privCount}, month){
   privCount=privCount||0;
@@ -14904,6 +14908,7 @@ function buildPointItems({hours, online, refs, hasMem, memName, memTier, newMemb
     { icon:'💛', label: hasMem?('Aktívne členstvo'+(memName?' ('+memName+')':'')):'Aktívne členstvo', count: hasMem?1:0, per:membershipPointsFor(memTier), points: hasMem?membershipPointsFor(memTier):0, sub: hasMem?'aktívne':'—' },
     { icon:'🎡', label:'Denné odmeny (koleso + séria)', count: arguments[0].spinCount||0, points: arguments[0].spinPoints||0, sub: (arguments[0].spinCount||0)+'× denná odmena' },
     { icon:'⭐', label:'Google recenzia', count: arguments[0].reviewCount||0, per:10, points:(arguments[0].reviewCount||0)*10, sub: (arguments[0].reviewCount||0)?'schválená recenzia':'—' },
+    { icon:'🧩', label:'Denný hlavolam', count: arguments[0].puzzleCount||0, points: arguments[0].puzzlePoints||0, sub: (arguments[0].puzzleCount||0)+'× vyriešený' },
   ];
   const total = items.reduce((s,i)=>s+i.points,0);
   return { month, total, items };
@@ -16438,6 +16443,7 @@ app.get('/support',    (req,res)=>res.sendFile(path.join(__dirname,'public','sup
 app.get('/cennik',     (req,res)=>res.redirect(302,'/obchod'));
 
 app.get('/obchod',     (req,res)=>res.sendFile(path.join(__dirname,'public','obchod.html')));
+app.get('/hlavolam',   (req,res)=>res.sendFile(path.join(__dirname,'public','hlavolam.html')));
 // Jeden obchod: cenník žije v /obchod (staré linky v mailoch/na webe presmerujeme)
 app.get('/pricing',    (req,res)=>res.redirect(302,'/obchod'+(req.originalUrl.includes('?')?'?'+req.originalUrl.split('?')[1]:'')));
 app.get('/u/:id',      (req,res)=>res.sendFile(path.join(__dirname,'public','profile.html')));
@@ -16764,6 +16770,7 @@ if(/^https?:\/\/(www\.)?fusionacademy\.sk/i.test(APP_URL)) APP_URL = 'https://ap
 
 // ── EVENT VSTUPENKY ──────────────────────────────────────────────────────────
 const isMemberActive = u => !!(u && u.membership_plan && u.membership_expires && new Date(u.membership_expires) > new Date());
+const PUZZLE = require('./puzzle')({ app, db, q, auth, adminAuth, nowISO, today });
 const EVENTS = require('./event-tickets')({
   app, db, q, auth, adminAuth, rlPublic, nowISO, today, APP_URL,
   sendMail, createInvoice, stripeApi, STRIPE_SECRET, isMemberActive, metaCapi

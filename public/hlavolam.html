@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<link rel="icon" type="image/png" href="/logo-mark.png">
+<title>Denný hlavolam – Fusion Academy</title>
+<script>try{if(localStorage.getItem('fa_theme')==='aurora')document.documentElement.dataset.theme='aurora'}catch(e){}</script>
+<link rel="stylesheet" href="/fa-theme.css">
+<link rel="stylesheet" href="/aurora.css">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<style>
+:root{
+  --gold:#C9A24C;--gold2:#E7C878;--cream:#EAE3D5;--muted:rgba(234,227,213,.55);
+  --bg:#0A0908;--card:#141210;--line:rgba(201,162,76,.22);
+  --pz-line:#C9A24C;--pz-cell:#1a1714;--pz-fill:rgba(201,162,76,.16);
+}
+html[data-theme="aurora"]{
+  --bg:#0B0714;--card:rgba(255,255,255,.07);--line:rgba(255,255,255,.14);
+  --cream:#F1EDF7;--muted:#B4ACC6;--gold:#E9B8FF;--gold2:#F3D27E;
+  --pz-line:#EC4899;--pz-cell:rgba(255,255,255,.05);--pz-fill:rgba(168,85,247,.22);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--cream);font-family:'Manrope',system-ui,sans-serif;
+  min-height:100dvh;padding-bottom:110px}
+.wrap{max-width:520px;margin:0 auto;padding:16px 16px 0}
+.top{display:flex;align-items:center;gap:10px;padding:6px 0 14px}
+.top a{color:var(--muted);text-decoration:none;font-size:1.3rem;display:flex}
+.top h1{font-size:1.15rem;font-weight:800;flex:1}
+.top .date{font-size:.72rem;color:var(--muted)}
+.bar{display:flex;gap:8px;margin-bottom:14px}
+.pill{flex:1;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:9px 12px;text-align:center}
+.pill b{display:block;font-size:1.15rem;font-weight:800;font-variant-numeric:tabular-nums}
+.pill span{font-size:.66rem;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+.board-wrap{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:14px;
+  touch-action:none;user-select:none}
+#board{display:block;width:100%;height:auto;border-radius:12px}
+.hint{font-size:.84rem;color:var(--muted);text-align:center;margin:12px 0 0;line-height:1.5}
+.actions{display:flex;gap:8px;margin-top:14px}
+button{font-family:inherit;cursor:pointer;border:none;border-radius:12px;font-weight:800;font-size:.88rem;padding:12px}
+.btn-main{flex:1;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08}
+html[data-theme="aurora"] .btn-main{background:linear-gradient(90deg,#A855F7,#EC4899);color:#fff}
+.btn-ghost{background:transparent;border:1px solid var(--line);color:var(--muted);padding:12px 18px}
+.msg{margin-top:12px;padding:12px 14px;border-radius:12px;font-size:.88rem;display:none;line-height:1.5}
+.msg.err{display:block;background:rgba(229,115,115,.12);border:1px solid rgba(229,115,115,.4);color:#f0a9a9}
+.msg.ok{display:block;background:rgba(76,175,80,.12);border:1px solid rgba(76,175,80,.4);color:#9fd894}
+.done{text-align:center;padding:22px 16px;background:var(--card);border:1px solid var(--line);
+  border-radius:20px;margin-bottom:14px}
+.done .e{font-size:2.6rem}
+.done h2{font-size:1.2rem;margin:6px 0 4px;font-weight:800}
+.done p{font-size:.88rem;color:var(--muted)}
+.lb{margin-top:18px;background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.lb h3{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+  padding:12px 16px 8px;font-weight:700}
+.lb .row{display:flex;align-items:center;gap:10px;padding:9px 16px;border-top:1px solid var(--line);font-size:.86rem}
+.lb .row.me{background:var(--pz-fill)}
+.lb .pos{width:22px;font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums}
+.lb .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lb .t{font-variant-numeric:tabular-nums;color:var(--muted)}
+.loading{text-align:center;padding:40px;color:var(--muted)}
+</style>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#C9A84C">
+<script>if("serviceWorker" in navigator)navigator.serviceWorker.register("/sw.js");</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <a href="/client-dashboard" aria-label="Späť"><i class="bi bi-chevron-left"></i></a>
+    <div style="flex:1">
+      <h1>🧩 Denný hlavolam</h1>
+      <div class="date" id="dateLbl">—</div>
+    </div>
+  </div>
+
+  <div id="app"><div class="loading">Načítavam hádanku…</div></div>
+</div>
+<script src="/dock.js"></script>
+<script>
+let P=null, path=[], drawing=false, startedAt=null, timer=null, solvedToday=false;
+const $=id=>document.getElementById(id);
+const api=async(url,opts)=>{ const r=await fetch(url,{credentials:'include',headers:{'Content-Type':'application/json'},...opts}); return r.json(); };
+const fmtSec=s=>{ s=Math.max(0,Math.round(s)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); };
+
+async function init(){
+  const d=await api('/api/puzzle/today').catch(()=>null);
+  if(!d||!d.ok){ $('app').innerHTML='<div class="loading">Hlavolam sa nepodarilo načítať.</div>'; return; }
+  if(!d.enabled){ $('app').innerHTML='<div class="loading">Hlavolam je momentálne vypnutý.</div>'; return; }
+  P=d; solvedToday=d.solved;
+  const dd=new Date(d.date+'T12:00:00');
+  $('dateLbl').textContent=dd.toLocaleDateString('sk-SK',{weekday:'long',day:'numeric',month:'long'});
+  render();
+}
+
+function render(){
+  const maxBody=P.points+P.fast_bonus;
+  $('app').innerHTML=`
+    ${solvedToday?`<div class="done"><div class="e">🎉</div><h2>Dnešnú hádanku máš vyriešenú!</h2>
+      <p>Zvládla si ju za <b>${fmtSec(P.my_seconds||0)}</b> a získala <b>${P.my_points} ${P.my_points===1?'bod':'body'}</b>.
+      Nová hádanka je zajtra ráno.</p></div>`:''}
+    <div class="bar">
+      <div class="pill"><b id="clock">0:00</b><span>čas</span></div>
+      <div class="pill"><b id="filled">0/${P.size*P.size}</b><span>políčok</span></div>
+      <div class="pill"><b>${P.month_points}/${P.monthly_cap}</b><span>bodov v mesiaci</span></div>
+    </div>
+    <div class="board-wrap"><canvas id="board"></canvas></div>
+    <div class="hint">Ťahaj prstom od <b>1</b> a spájaj čísla v poradí tak, aby si prešla <b>všetky políčka</b>.
+      Ťahom späť sa cesta vracia.</div>
+    <div class="actions">
+      <button class="btn-ghost" onclick="resetPath()">Vymazať</button>
+      <button class="btn-main" id="sendBtn" onclick="submit()">Odovzdať riešenie</button>
+    </div>
+    <div class="msg" id="msg"></div>
+    <div class="lb" id="lb"></div>`;
+  setupCanvas();
+  resetPath();
+  loadLb();
+}
+
+/* ── Kreslenie ── */
+let cv, ctx, cell, dpr;
+function setupCanvas(){
+  cv=$('board'); ctx=cv.getContext('2d');
+  const size=Math.min(cv.parentElement.clientWidth, 460);
+  dpr=window.devicePixelRatio||1;
+  cv.style.width=size+'px'; cv.style.height=size+'px';
+  cv.width=size*dpr; cv.height=size*dpr; ctx.scale(dpr,dpr);
+  cell=size/P.size;
+  cv.addEventListener('pointerdown',onDown);
+  cv.addEventListener('pointermove',onMove);
+  window.addEventListener('pointerup',onUp);
+}
+const cellOf=(x,y)=>{ const c=Math.floor(x/cell), r=Math.floor(y/cell);
+  if(r<0||c<0||r>=P.size||c>=P.size) return -1; return r*P.size+c; };
+const centre=i=>({x:(i%P.size)*cell+cell/2, y:Math.floor(i/P.size)*cell+cell/2});
+const adjacent=(a,b)=>{ const ra=Math.floor(a/P.size),ca=a%P.size,rb=Math.floor(b/P.size),cb=b%P.size;
+  return Math.abs(ra-rb)+Math.abs(ca-cb)===1; };
+const dotAt=i=>P.dots.find(d=>d.cell===i);
+
+function draw(){
+  const S=P.size*cell;
+  ctx.clearRect(0,0,S,S);
+  const css=getComputedStyle(document.documentElement);
+  const line=css.getPropertyValue('--pz-line').trim()||'#C9A24C';
+  const cellBg=css.getPropertyValue('--pz-cell').trim()||'#1a1714';
+  const fill=css.getPropertyValue('--pz-fill').trim()||'rgba(201,162,76,.16)';
+  const cream=css.getPropertyValue('--cream').trim()||'#EAE3D5';
+  // políčka
+  for(let i=0;i<P.size*P.size;i++){
+    const r=Math.floor(i/P.size), c=i%P.size;
+    ctx.fillStyle=path.includes(i)?fill:cellBg;
+    ctx.beginPath(); ctx.roundRect(c*cell+2, r*cell+2, cell-4, cell-4, 8); ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,.06)'; ctx.lineWidth=1; ctx.stroke();
+  }
+  // cesta
+  if(path.length>1){
+    ctx.strokeStyle=line; ctx.lineWidth=Math.max(8,cell*0.34);
+    ctx.lineCap='round'; ctx.lineJoin='round'; ctx.globalAlpha=.85;
+    ctx.beginPath();
+    path.forEach((i,k)=>{ const p=centre(i); k?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y); });
+    ctx.stroke(); ctx.globalAlpha=1;
+  }
+  // čísla
+  P.dots.forEach(d=>{
+    const p=centre(d.cell), rad=cell*0.30;
+    ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(p.x,p.y,rad,0,7); ctx.fill();
+    ctx.strokeStyle=line; ctx.lineWidth=2.5; ctx.stroke();
+    ctx.fillStyle='#fff'; ctx.font='800 '+Math.round(cell*0.33)+'px Manrope, sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(String(d.n), p.x, p.y+1);
+  });
+  const f=$('filled'); if(f) f.textContent=path.length+'/'+(P.size*P.size);
+}
+
+function pos(e){ const r=cv.getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; }
+function onDown(e){
+  if(solvedToday) return;
+  const {x,y}=pos(e), i=cellOf(x,y); if(i<0) return;
+  cv.setPointerCapture(e.pointerId);
+  // začať sa dá len na jednotke, alebo pokračovať z konca cesty
+  if(!path.length){ const d=dotAt(i); if(!d||d.n!==1) { flash('Začni na čísle 1.'); return; } path=[i]; startClock(); }
+  else if(path[path.length-1]!==i && !adjacent(path[path.length-1],i)) return;
+  else if(!path.includes(i)) path.push(i);
+  drawing=true; draw();
+}
+function onMove(e){
+  if(!drawing||solvedToday) return;
+  const {x,y}=pos(e), i=cellOf(x,y); if(i<0) return;
+  const last=path[path.length-1];
+  if(i===last) return;
+  if(path.length>1 && i===path[path.length-2]){ path.pop(); draw(); return; }  // krok späť
+  if(!path.includes(i) && adjacent(last,i)){ path.push(i); draw(); }
+}
+function onUp(){ drawing=false; }
+
+function startClock(){
+  if(timer) return;
+  startedAt=Date.now();
+  timer=setInterval(()=>{ const c=$('clock'); if(c) c.textContent=fmtSec((Date.now()-startedAt)/1000); },1000);
+}
+function resetPath(){ path=[]; draw(); const m=$('msg'); if(m){m.className='msg';m.textContent='';} }
+function flash(t){ const m=$('msg'); if(!m) return; m.className='msg err'; m.textContent=t; }
+
+async function submit(){
+  if(solvedToday) return;
+  const btn=$('sendBtn'); btn.disabled=true; btn.textContent='Kontrolujem…';
+  const seconds=startedAt?Math.round((Date.now()-startedAt)/1000):0;
+  const d=await api('/api/puzzle/solve',{method:'POST',body:JSON.stringify({cells:path, seconds})}).catch(()=>null);
+  btn.disabled=false; btn.textContent='Odovzdať riešenie';
+  if(!d){ flash('Nepodarilo sa odoslať. Skús znova.'); return; }
+  if(d.error){ flash(d.error); return; }
+  if(timer){ clearInterval(timer); timer=null; }
+  const m=$('msg'); m.className='msg ok';
+  m.innerHTML = d.already ? d.message
+    : `🎉 Vyriešené za <b>${fmtSec(d.seconds)}</b>! Získala si <b>${d.points} ${d.points===1?'bod':'body'}</b>${d.fast?' (vrátane bonusu za rýchlosť)':''}.`
+      + (d.capped?'<br><span style="opacity:.8">Mesačný strop bodov z hlavolamu je vyčerpaný — hrať môžeš ďalej pre radosť. 💛</span>':'');
+  solvedToday=true;
+  const st=await api('/api/puzzle/today').catch(()=>null); if(st&&st.ok) P=st;
+  loadLb();
+}
+
+async function loadLb(){
+  const d=await api('/api/puzzle/leaderboard').catch(()=>null);
+  const el=$('lb'); if(!el||!d||!d.ok||!d.rows.length){ if(el) el.innerHTML=''; return; }
+  el.innerHTML='<h3>Dnes najrýchlejšie</h3>'+d.rows.map(r=>
+    `<div class="row ${r.me?'me':''}"><div class="pos">${r.pos}.</div><div class="nm">${r.name}</div><div class="t">${fmtSec(r.seconds)}</div></div>`).join('');
+}
+
+init();
+</script>
+</body>
+</html>
