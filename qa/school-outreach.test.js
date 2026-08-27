@@ -123,6 +123,38 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('tretia dávka už nemá koho osloviť',
       (await j('/api/admin/schools/send', { method: 'POST', body: { limit: 50 } }, adm)).d.poslane === 0);
 
+    // ── osobný odkaz: sid v maile → prefill na landingu ──
+    const ctaLog = logy.find(l => l.to === kuk.email) || logy[0];
+    const ctaUrl = (ctaLog.links || []).find(u => /posledny-tanec/.test(u)) || '';
+    const sidSkoly = (ctaUrl.match(/[?&]sid=([A-Za-z0-9]+)/) || [])[1];
+    ok('CTA v maile nesie osobné sid školy', !!sidSkoly, ctaUrl);
+    const pf = await j('/api/public/school-prefill/' + sidSkoly);
+    const pfSkola = (await j('/api/admin/schools', {}, adm)).d.schools.find(x => x._id === sidSkoly);
+    ok('prefill vráti údaje presne tej školy', pf.d && pf.d.ok && pf.d.email === pfSkola.email
+      && pf.d.school === pfSkola.name && pf.d.name === pfSkola.director, JSON.stringify(pf.d));
+    ok('prefill je verejný (bez prihlásenia)', pf.status === 200);
+    ok('prefill s vymysleným sid mlčí', (await j('/api/public/school-prefill/neexistujuceSid1')).status === 404);
+
+    // ── dopyt z landingu: stačí škola + JEDEN kontakt; so sid sa spáruje so školou ──
+    ok('dopyt bez kontaktu odmietnutý',
+      (await j('/api/public/school-lead', { method: 'POST', body: { school: 'ZŠ X' } })).status === 400);
+    ok('dopyt bez školy odmietnutý',
+      (await j('/api/public/school-lead', { method: 'POST', body: { phone: '0900 111 222' } })).status === 400);
+    const lead1 = await j('/api/public/school-lead', { method: 'POST',
+      body: { school: 'ZŠ len s mailom', email: 'kontakt@zs-lenmail-qa.local' } });
+    ok('stačí e-mail bez telefónu a mena', lead1.d && lead1.d.ok, JSON.stringify(lead1.d));
+    const lead2 = await j('/api/public/school-lead', { method: 'POST',
+      body: { school: pfSkola.name, phone: '0905 999 888', sid: sidSkoly, note: 'mame zaujem o oktober' } });
+    ok('dopyt so sid prejde', lead2.d && lead2.d.ok, JSON.stringify(lead2.d));
+    const poLead = (await j('/api/admin/schools', {}, adm)).d.schools.find(x => x._id === sidSkoly);
+    ok('škola sa po dopyte posunie na „odpovedali"', poLead.status === 'replied', poLead.status);
+    ok('kontakt z dopytu je v poznámke školy', /DOPYT Z WEBU/.test(poLead.note) && poLead.note.includes('0905 999 888')
+      && poLead.note.includes('mame zaujem o oktober'), poLead.note);
+    ok('škola s dopytom sa ráta medzi odpovede', (await j('/api/admin/schools', {}, adm)).d.totals.odpovedali >= 1);
+
+    // drip guard: odpovedanú školu ďalšia dávka nesmie osloviť znova — sent_at už má,
+    // preto ju filter v sendBatch preskočí (overené vyššie „nikomu sa neposlalo dvakrát")
+
     // ── odhlásenie ──
     const odh = await fetch(BASE + '/skoly/odhlasit/' + sla._id);
     const odhTxt = await odh.text();
@@ -153,6 +185,10 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('v QA neodišiel ani jeden skutočný mail', true);   // MAIL_CAPTURE=1 zaručuje sendMail return pred odoslaním
     const src = fs.readFileSync(path.join(__dirname, '..', 'school-outreach.js'), 'utf8');
     ok('modul nikde nemá natvrdo zadanú adresu školy', !/@(zs|skola)[a-z0-9.-]*\.sk/i.test(src));
+    ok('denná automatika beží len na produkcii', /naProdukcii/.test(src) && /RAILWAY_ENVIRONMENT/.test(src));
+    ok('automatika sa dá vypnúť cez settings', src.includes('school_outreach_autodrip'));
+    ok('automatika má denný guard (reštart nepošle druhýkrát)', src.includes("'school_drip_' + dnesSK()"));
+    ok('env import má guard per obsah zoznamu', src.includes('SCHOOLS_IMPORT_B64') && src.includes("'schools_import_' + hash"));
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.message + '\n' + e.stack);
   } finally {

@@ -12641,17 +12641,31 @@ app.post('/api/public/school-lead', rlPublic, async(req,res)=>{
     const esc=s=>String(s||'').slice(0,500).replace(/[<>]/g,'');
     const school=esc(req.body.school), name=esc(req.body.name), phone=esc(req.body.phone);
     const email=esc(req.body.email), role=esc(req.body.role), note=esc(req.body.note);
-    if(!school||!name||!phone) return res.status(400).json({error:'Škola, meno a telefón sú povinné.'});
+    // Stačí škola + JEDEN kontakt (e-mail alebo telefón) — menej polí, viac dopytov.
+    if(!school) return res.status(400).json({error:'Napíšte názov školy.'});
+    if(!phone && !email) return res.status(400).json({error:'Nechajte na seba telefón alebo e-mail — inak sa vám nevieme ozvať.'});
+    // sid = osobný odkaz z nášho mailu → dopyt rovno spárujeme so školou v zozname
+    const sid=String(req.body.sid||'').slice(0,40);
+    const zoznamSkola = sid && db.schools ? await q.one(db.schools,{_id:sid}) : null;
     const lead=await q.insert(db.rentals,{_type:'school_lead',program:'posledny_tanec',
-      school,name,role,phone,email,note,status:'new',
+      school,name,role,phone,email,note,status:'new', school_id:zoznamSkola?zoznamSkola._id:null,
       utm:esc(req.body.utm), created_at:nowISO()});
+    if(zoznamSkola && db.schools){
+      // škola odpovedala → v mini-CRM ju posuň, nech ju drip už neoslovuje a Marek vie volať
+      const kontakt=['📞 '+(phone||'—'),'✉️ '+(email||'—'),name?('👤 '+name+(role?' ('+role+')':'')):'',note?('„'+note.slice(0,140)+'"'):'']
+        .filter(Boolean).join(' · ');
+      await q.update(db.schools,{_id:zoznamSkola._id},{$set:{
+        status: zoznamSkola.status==='meeting'||zoznamSkola.status==='won'?zoznamSkola.status:'replied',
+        note:('DOPYT Z WEBU '+today()+': '+kontakt+(zoznamSkola.note?' | '+zoznamSkola.note:'')).slice(0,600),
+        updated_at:nowISO()}});
+    }
     const html=`<!doctype html><html><body style="font-family:Arial,sans-serif">
       <h2 style="color:#c9a227">Nový dopyt školy – Posledný tanec</h2>
       <p><b>Škola:</b> ${school}<br><b>Kontakt:</b> ${name}${role?' ('+role+')':''}<br>
       <b>Telefón:</b> <a href="tel:${phone}">${phone}</a><br>
       <b>E-mail:</b> ${email||'—'}<br>
       <b>Poznámka:</b> ${note||'—'}</p>
-      <p style="color:#888;font-size:12px">Prišlo z fusionacademy.sk/programy/posledny-tanec.html${req.body.utm?' · '+esc(req.body.utm):''}</p>
+      <p style="color:#888;font-size:12px">Prišlo z fusionacademy.sk/programy/posledny-tanec.html${req.body.utm?' · '+esc(req.body.utm):''}${zoznamSkola?' · škola z oslovenia (/admin/skoly)':''}</p>
       </body></html>`;
     for(const to of SCHOOL_LEAD_MAILS){ try{ await sendMail(to,`🎓 Posledný tanec – dopyt: ${school}`,html); }catch(e){} }
     for(const a of await q.find(db.users,{is_admin:true})){
