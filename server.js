@@ -1799,6 +1799,42 @@ async function seedData() {
     await q.insert(db.settings,{key:'book_simonka_2026_08_10_v2', value:true, at:nowISO()});
   }
 
+  // Ivana Jasenská nemá permanentku — každý tréning si platí 10 € v hotovosti (Marek, 27. 8.).
+  // Rezervácie sa jej ale viazali na „single_entry", takže tréner v zápise videl
+  // „🎫 Permanentka (−1 vstup)" namiesto „💵 Platí na mieste". Prepíname na platbu na mieste
+  // a nulujeme zostatok vstupov, nech to tak ostane aj do budúcna.
+  // Peniaze táto migrácia ZÁMERNE nedopĺňa — len vypíše, ktoré absolvované hodiny nemajú
+  // v ten deň platbu, aby sa doplnilo presne to, čo naozaj chýba.
+  if(!(await q.one(db.settings,{key:'fix_ivana_pay_on_site_v1'}))){
+    try{
+      const iv=(await q.find(db.users,{})).find(x=>!x.is_child && /jasensk/i.test(x.name||'') && /ivan/i.test(x.name||''));
+      if(iv){
+        const pred=iv.single_entries||0;
+        if(pred>0) await q.update(db.users,{_id:iv._id},{$set:{single_entries:0}});
+        const vsetky=await q.find(db.bookings,{user_id:iv._id});
+        const naPrepis=vsetky.filter(b=>b.access_method==='single_entry' && b.status!=='cancelled');
+        // pay_on_site = „ešte treba vybrať"; kde už peniaze zapísané sú (entry_collected),
+        // príznak nedvíhame, nech sa v kalendári neobjaví ako nezaplatená
+        for(const b of naPrepis) await q.update(db.bookings,{_id:b._id},{$set:{access_method:'pay_on_site', pay_on_site:!b.entry_collected}});
+        const txs=await q.find(db.transactions,{user_id:iv._id});
+        const absolvovane=vsetky.filter(b=>b.attendance_status==='attended').map(b=>b.booking_date).sort();
+        const bezPlatby=absolvovane.filter(d=>!txs.some(t=>t.date===d && +t.amount>0));
+        console.log('💵 Ivana Jasenská: single_entries '+pred+'→0, prepísaných rezervácií na „platí na mieste": '+naPrepis.length);
+        console.log('💵 Ivana platby: '+(txs.map(t=>t.date+' '+t.type+' '+t.amount+'€ '+(t.payment_method||'?')).join(' | ')||'žiadne'));
+        console.log('💵 Ivana absolvované ('+absolvovane.length+'): '+(absolvovane.join(', ')||'—'));
+        console.log('💵 Ivana absolvované BEZ platby v ten deň ('+bezPlatby.length+'): '+(bezPlatby.join(', ')||'—'));
+      } else console.log('💵 Ivana Jasenská: NENÁJDENÁ v db.users');
+    }catch(e){ console.error('fix_ivana:', e.message); }
+    await q.insert(db.settings,{key:'fix_ivana_pay_on_site_v1', value:true, at:nowISO()});
+  }
+
+  // Anna Debnárová 23. 7. — Marek 27. 8. potvrdil, že taká platba nikdy nebola,
+  // takže v účtovníctve nič nechýba. Zatvárame otázku, nech prestane chodiť pripomienka.
+  if(!(await q.one(db.settings,{key:'openq_done_anna_debnarova_23_07'}))){
+    await q.insert(db.settings,{key:'openq_done_anna_debnarova_23_07', value:true, at:nowISO()});
+    console.log('❓ Účtovná otázka anna_debnarova_23_07 uzavretá (platba neexistovala — Marek 27. 8.)');
+  }
+
   // CRM audit 8/2026: sekvencie post_first_class a reengagement sa NIKDY nezaraďovali
   // (mŕtvy kód) a ich úlohu plnia trial_followup + churn/winback bloky denného jobu.
   // Deaktivuj ich, nech admin UI neklame, že bežia — kroky ostávajú, dajú sa zapnúť ručne.
