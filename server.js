@@ -1913,6 +1913,39 @@ async function seedData() {
     }catch(e){ console.error('fix_ivana_ucto:', e.message); }
   }
 
+  // Posledná chýbajúca platba Ivany: 20. 7. Marek 27. 8. potvrdil, že aj tú hodinu
+  // platila 10 € v hotovosti (starý záznam bez access_method, preto sa v v1 nedopisovala).
+  if(!(await q.one(db.settings,{key:'fix_ivana_ucto_v2'}))){
+    await q.insert(db.settings,{key:'fix_ivana_ucto_v2', value:true, at:nowISO()});
+    try{
+      const iv=(await q.find(db.users,{})).find(x=>!x.is_child && /jasensk/i.test(x.name||'') && /ivan/i.test(x.name||''));
+      const D='2026-07-20';
+      if(iv){
+        const txs=await q.find(db.transactions,{user_id:iv._id});
+        if(!txs.some(t=>t.date===D && +t.amount>0)){
+          await q.insert(db.transactions,{type:'single_entry', user_id:iv._id, user_name:iv.name, amount:10,
+            date:D, payment_method:'cash', method:'cash',
+            note:'Jednorazový vstup — Zumba '+D+' (hotovosť, dodatočný zápis)',
+            created_at:nowISO(), month:D.slice(0,7)});
+          await trackPurchase(iv._id,10);
+          createInvoice({user_id:iv._id, client_name:iv.name, client_email:iv.email,
+            items:[{desc:'Jednorazový vstup (20.7.2026)', qty:1, total:10}], total:10,
+            method:'hotovosť', issued_at:D}).catch(()=>{});
+          const b=(await q.find(db.bookings,{user_id:iv._id})).find(x=>x.booking_date===D && x.status!=='cancelled');
+          if(b) await q.update(db.bookings,{_id:b._id},{$set:{access_method:'pay_on_site',
+            entry_collected:{amount:10,method:'cash',at:nowISO(),by:'migration'}, pay_on_site:false}});
+          console.log('🧾 IVANA: dopísaná platba 10 € v hotovosti za '+D);
+        } else console.log('🧾 IVANA: platba za '+D+' už existuje — preskakujem');
+        const txs2=await q.find(db.transactions,{user_id:iv._id});
+        const bez=(await q.find(db.bookings,{user_id:iv._id})).filter(x=>x.attendance_status==='attended')
+          .map(x=>x.booking_date).filter(d=>!txs2.some(t=>t.date===d && +t.amount>0)).sort();
+        console.log('🧾 IVANA: hodiny bez platby po v2 ('+bez.length+'): '+(bez.join(', ')||'žiadne'));
+        console.log('🧾 IVANA: spolu zaplatila '+txs2.filter(t=>+t.amount>0).reduce((s2,t)=>s2+(+t.amount||0),0)+' € za '
+          +(await q.find(db.bookings,{user_id:iv._id})).filter(x=>x.attendance_status==='attended').length+' hodín');
+      }
+    }catch(e){ console.error('fix_ivana_ucto_v2:', e.message); }
+  }
+
   // Anna Debnárová 23. 7. — Marek 27. 8. potvrdil, že taká platba nikdy nebola,
   // takže v účtovníctve nič nechýba. Zatvárame otázku, nech prestane chodiť pripomienka.
   if(!(await q.one(db.settings,{key:'openq_done_anna_debnarova_23_07'}))){
