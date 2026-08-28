@@ -341,6 +341,20 @@ module.exports = function initSchoolOutreach(ctx) {
     } catch (e) { console.error('school sample:', e.message); }
   }, 40 * 1000);
 
+  // Mimoriadna dávka na Marekov pokyn (28.8.: „pošli ďalšie maily") — env
+  // SCHOOL_SEND_NOW s guardom per hodnota; pošle čakajúce hneď, mimo denného okna.
+  setTimeout(async () => {
+    try {
+      const v = process.env.SCHOOL_SEND_NOW;
+      if (!v) return;
+      const guard = 'school_send_now_' + String(v).replace(/[^a-z0-9_-]/gi, '').slice(0, 40);
+      if (await q.one(db.settings, { key: guard })) return;
+      await q.insert(db.settings, { key: guard, value: true, at: nowISO() });
+      const r = await sendBatch(25, null);
+      console.log('🎓 Školy — MIMORIADNA dávka (' + v + '): odoslané ' + r.poslane + ', zlyhalo ' + r.zlyhali + ', čaká ešte ' + r.zostava);
+    } catch (e) { console.error('school send now:', e.message); }
+  }, 50 * 1000);
+
   // stavový log pri každom štarte — nech vidno počty aj bez admin prístupu
   setTimeout(async () => {
     try {
