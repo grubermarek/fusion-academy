@@ -14690,9 +14690,10 @@ async function sendMail(to, subject, html, opts){
   // @import.local = syntetické adresy klientov zo starého zoznamu (majú len telefón,
   // kontaktujú sa SMSkou) — nikdy na ne nič neposielaj.
   if(/@import\.local$/i.test(String(to||''))) return false;
-  // QA: MAIL_CAPTURE=1 → mail sa zaloguje a linky sa prepíšu, ale NIKDY sa neodošle
-  // (lokálne testovanie click-trackingu bez siete; rovnaký princíp ako CAPI_DEBUG_FILE).
-  const capture = !MAIL_ENABLED && process.env.MAIL_CAPTURE==='1';
+  // QA: MAIL_CAPTURE=1 → mail sa zaloguje a linky sa prepíšu, ale NIKDY sa neodošle.
+  // Capture má prednosť VŽDY — aj pred MAIL_ON (28.8.: test s MAIL_ON+MAIL_CAPTURE
+  // reálne odoslal 9 QA mailov, prišli bounce — už sa to stať nemôže).
+  const capture = process.env.MAIL_CAPTURE==='1';
   if(!MAIL_ENABLED && !capture){ console.log(`✉️  [mail vypnutý] ${to} · ${subject}`); return false; }
   const priority=(opts&&+opts.priority)||4;
   if(!capture && !(await mailBudgetOk(priority))){

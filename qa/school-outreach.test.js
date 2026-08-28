@@ -33,7 +33,7 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
   const srv = spawn(process.execPath, ['server.js'], {
     cwd: path.join(__dirname, '..'),
     env: { ...process.env, PORT: String(PORT), DATA_DIR: DATA, APP_URL: BASE,
-           RATE_LIMIT_OFF: '1', MAIL_ON: '1', MAIL_CAPTURE: '1' },
+           RATE_LIMIT_OFF: '1', MAIL_OFF: '1', MAIL_CAPTURE: '1' },
     stdio: 'ignore',
   });
   const t0 = Date.now();
