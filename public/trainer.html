@@ -1708,7 +1708,27 @@ async function coachLoad(){
     </div>
     ${d.day_complete?`<div style="margin-top:10px;font-weight:800;color:#7bd88f">✅ DNEŠOK HOTOVÝ — všetky povinné aktivity splnené!</div>`:''}
     <div style="margin-top:10px;font-size:.85rem;color:var(--muted);font-style:italic">${esc(d.motivation)}</div>
+  </div>
+  <div style="background:${d.timer&&d.timer.running?'#101810':'#151515'};border:1px solid ${d.timer&&d.timer.running?'#2f4a35':'#2a2a2a'};border-radius:14px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <div style="flex:1;min-width:180px">
+      <div style="font-weight:800">⏱ Časovač práce
+        <span id="coachTimerClock" style="color:${d.timer&&d.timer.running?'#7bd88f':'var(--muted)'};font-variant-numeric:tabular-nums;margin-left:6px">${d.timer&&d.timer.running?'beží…':''}</span></div>
+      <div style="font-size:.76rem;color:var(--muted)">Zapni, keď pracuješ s ľuďmi — čas sa zapíše do úloh a máš zaň body
+        (${d.timer?d.timer.points_per_30min:1} b. / 30 min${d.timer&&d.timer.today_min?` · dnes už ${Math.floor(d.timer.today_min/60)} h ${d.timer.today_min%60} min +${d.timer.today_points} b.`:''}).</div>
+    </div>
+    ${d.timer&&d.timer.running
+      ?`<button onclick="coachTimerStop()" style="background:#2a1616;border:1px solid #7a2f2f;color:#ff9f9f;border-radius:10px;padding:10px 18px;font-weight:800;cursor:pointer">⏹ Zastaviť a zapísať</button>`
+      :`<button onclick="coachTimerStart()" style="background:#1d2b1f;border:1px solid #2f4a35;color:#7bd88f;border-radius:10px;padding:10px 18px;font-weight:800;cursor:pointer">▶ Spustiť</button>`}
   </div>`;
+  if(d.timer&&d.timer.running){
+    if(window._coachTimerTick) clearInterval(window._coachTimerTick);
+    const start=new Date(d.timer.started_at).getTime();
+    window._coachTimerTick=setInterval(()=>{
+      const el=document.getElementById('coachTimerClock'); if(!el){ clearInterval(window._coachTimerTick); return; }
+      const s2=Math.floor((Date.now()-start)/1000);
+      el.textContent=Math.floor(s2/3600)+':'+String(Math.floor(s2/60)%60).padStart(2,'0')+':'+String(s2%60).padStart(2,'0');
+    },1000);
+  } else if(window._coachTimerTick){ clearInterval(window._coachTimerTick); }
   // úlohy
   h+=`<div style="display:grid;gap:8px;margin-bottom:16px">`;
   for(const t of d.tasks){
@@ -1910,6 +1930,20 @@ async function collectEntry(bookingId, name, expected){
   else toast(r?.error||'Chyba',true);
 }
 // klik na Zavolať/SMS/WhatsApp = reálny kontakt → zapíš automaticky (1×/deň/lead)
+async function coachTimerStart(){
+  const r=await api('/api/coach/timer/start',{method:'POST',body:{}});
+  if(r?.ok){ toast(r.already?'Časovač už beží ⏱':'Časovač beží ⏱ — makaj, počítame ti to'); coachLoad(); }
+  else toast(r?.error||'Chyba',true);
+}
+async function coachTimerStop(){
+  const r=await api('/api/coach/timer/stop',{method:'POST',body:{}});
+  if(r?.ok){
+    const h=Math.floor((r.minutes||0)/60), m=(r.minutes||0)%60;
+    toast(r.minutes?('⏱ Zapísané: '+(h?h+' h ':'')+m+' min'+(r.points?(' · +'+r.points+' b. 🎉'):'')
+      +(r.capped?' (denný bodový strop naplnený)':'')):'Menej než minúta — nič sa nezapísalo');
+    coachLoad();
+  } else toast(r?.error||'Chyba',true);
+}
 async function coachAutoContact(id){
   const r=await api('/api/coach/contact',{method:'POST',body:{lead_id:id, outcome:'contacted', auto:true}}).catch(()=>null);
   if(r?.ok && !r.duplicate){ toast('Kontakt zapísaný ✅ (výsledok môžeš upresniť cez Zapísať)'); setTimeout(coachLoad, 1200); }

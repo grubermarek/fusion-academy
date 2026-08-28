@@ -55,6 +55,9 @@ module.exports = function initCoach(ctx){
     },
     weekly: { contacts: 21, content: 3, community: 3, referral_shares: 1, cases: 10 },
     own_auto_points: 5,          // vlastné aktivity do tejto hodnoty sa schvaľujú automaticky
+    timer_points_per_30min: 1,   // ⏱ bonus za odmeranú prácu: 1 bod / 30 min
+    timer_daily_cap_min: 240,    // bodujú sa max 4 h denne (čas sa zapíše celý)
+    timer_session_cap_min: 480,  // jedna zabudnutá session sa zastropuje na 8 h
     rank_weights: { consistency: 40, activity: 30, results: 20, learning: 10 },
     rank_target_points: 400,     // 30-dňový bodový cieľ pre plné aktivity skóre
     alert_overdue_followups: 5,  // admin alert od tohto počtu zameškaných follow-upov
@@ -368,6 +371,7 @@ module.exports = function initCoach(ctx){
         points_today: pts, day_complete: allMand,
         progress: tasks.length ? Math.round(doneCount/tasks.length*100) : 0,
         streak, leads, my_leads, batch, ambassador: isAmbassador(me), outcomes: OUTCOMES,
+        timer: await timerStav(me, cfg),
         templates: Object.fromEntries(Object.entries(cfg.templates).map(([k,v])=>[k, String(v).replace(/{trener}/g, fn)])),
         referral: { code, link, message, custom_text: custom },
         motivation: smartMotivation(cfg, {streak, remaining: tasks.length-doneCount, doneCount}) });
@@ -725,6 +729,62 @@ module.exports = function initCoach(ctx){
   }
 
   // vlastná iniciatíva (+ PRIDAŤ VLASTNÚ AKTIVITU)
+  // ── ⏱ Časovač práce (Marek 28.8.): tréner zapne, keď pracuje s ľuďmi;
+  // po vypnutí sa ČAS MERANÝ SERVEROM zapíše medzi úlohy + bonusové body.
+  // Anti-cheat: štart je v DB (prežije refresh aj iné zariadenie), session má
+  // strop 8 h (zabudnutý časovač), bodujú sa max 4 h denne.
+  async function timerStav(me, cfg){
+    const dnesove = (await q.find(db.coach_tasks,{trainer_id:me._id, date:todayStr()}))
+      .filter(t=>t.source==='timer');
+    const todayMin = dnesove.reduce((s2,t)=>s2+(+t.minutes||0),0);
+    const todayPts = dnesove.reduce((s2,t)=>s2+(+t.points||0),0);
+    return { running: !!me.coach_timer_start, started_at: me.coach_timer_start||null,
+      elapsed_min: me.coach_timer_start ? timerElapsedMin(me.coach_timer_start) : 0,
+      today_min: todayMin, today_points: todayPts,
+      points_per_30min: cfg.timer_points_per_30min, daily_cap_min: cfg.timer_daily_cap_min };
+  }
+  // QA_TIMER_FAST=1: sekundy sa rátajú ako 15 minút — testy nemusia čakať pol hodiny
+  function timerElapsedMin(startISO){
+    const ms = Date.now() - new Date(startISO).getTime();
+    if(process.env.QA_TIMER_FAST==='1') return Math.floor(ms/1000)*15;
+    return Math.floor(ms/60000);
+  }
+  app.post('/api/coach/timer/start', trainerAuth, async (req,res)=>{
+    try{
+      const me = coachUser(req);
+      const cfg = await getConfig();
+      if(me.coach_timer_start) return res.json({ ok:true, already:true, ...(await timerStav(me,cfg)) });
+      await q.update(db.users,{_id:me._id},{$set:{coach_timer_start:nowISO()}});
+      const me2 = await q.one(db.users,{_id:me._id});
+      res.json({ ok:true, ...(await timerStav(me2,cfg)) });
+    }catch(e){ res.status(500).json({error:e.message}); }
+  });
+  app.post('/api/coach/timer/stop', trainerAuth, async (req,res)=>{
+    try{
+      const me = coachUser(req);
+      const cfg = await getConfig();
+      if(!me.coach_timer_start) return res.status(400).json({error:'Časovač nebeží.'});
+      let minutes = Math.min(cfg.timer_session_cap_min, timerElapsedMin(me.coach_timer_start));
+      await q.update(db.users,{_id:me._id},{$set:{coach_timer_start:null}});
+      if(minutes < 1) return res.json({ ok:true, minutes:0, points:0,
+        message:'Menej než minúta — nič sa nezapisuje.' });
+      // body: 1×/30 min, len do denného stropu (čas sa eviduje celý)
+      const uzDnes = (await q.find(db.coach_tasks,{trainer_id:me._id, date:todayStr()}))
+        .filter(t=>t.source==='timer').reduce((s2,t)=>s2+(+t.minutes||0),0);
+      const bodovatelne = Math.max(0, Math.min(minutes, cfg.timer_daily_cap_min - uzDnes));
+      const points = Math.floor(bodovatelne/30) * cfg.timer_points_per_30min;
+      const h = Math.floor(minutes/60), m = minutes%60;
+      const label = '⏱ Odpracovaný čas: '+(h?h+' h ':'')+m+' min';
+      await q.insert(db.coach_tasks,{trainer_id:me._id, trainer_name:me.name, date:todayStr(),
+        key:'timer_'+Date.now(), label, icon:'⏱', cat:'own', points,
+        mandatory:false, auto:null, done:true, done_at:nowISO(),
+        proof:null, minutes, approved:true, source:'timer', created_at:nowISO()});
+      const me2 = await q.one(db.users,{_id:me._id});
+      res.json({ ok:true, minutes, points, capped: bodovatelne<minutes,
+        ...(await timerStav(me2,cfg)) });
+    }catch(e){ res.status(500).json({error:e.message}); }
+  });
+
   app.post('/api/coach/activity', trainerAuth, async (req,res)=>{
     try{
       const me = coachUser(req);
