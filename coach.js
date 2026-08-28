@@ -85,7 +85,9 @@ module.exports = function initCoach(ctx){
 
   // Coach koná vždy sám za seba (asistentský redirect len pre čistých asistentov)
   const coachUser = req => req.trainerUser; // coach je vždy osobný — aj asistent (ambasádor) koná sám za seba
-  const isAmbassador = u => u.is_assistant && !u.is_admin && u.user_type!=='trainer' && u.user_type!=='manager';
+  // zjednotené (28.8.): ambasádorka = user_type 'ambassador' ALEBO asistentka —
+  // predtým dva rôzne pojmy (batchy šli len asistentkám, /ambasador len user_type)
+  const isAmbassador = u => (u.is_assistant || u.user_type==='ambassador') && !u.is_admin && u.user_type!=='trainer' && u.user_type!=='manager';
 
   const OUTCOMES = ['contacted','replied','interested','not_interested','will_come','later','no_reply'];
   const OUTCOME_TO_LEAD_STATUS = { interested:'interested', not_interested:'not_interested', will_come:'interested' };
@@ -212,8 +214,13 @@ module.exports = function initCoach(ctx){
       // No-show sedí v attendance_status, nie v status — predošlý pokus dať ho do
       // `status` skryl prihlásené klientky trénerovi a musel sa vracať migráciou.
       const recentNoShow = bks.find(b=>b.attendance_status==='no_show' && (now-new Date(b.booking_date+'T12:00:00').getTime())<7*86400000);
+      // odklad práve skončil (do 7 dní dozadu) → treba sa ozvať, aj s dôvodom odkladu
+      const snoozeSkoncil = u.coach_snooze_until && u.coach_snooze_until <= date
+        && (now - new Date(u.coach_snooze_until+'T00:00:00').getTime()) < 7*86400000;
       let score=0, reason='', action='', tpl='';
       if(followupToday.has(u._id)){ score=100; reason='Naplánovaný follow-up'; action='Ozvi sa dnes — máš to v pláne.'; tpl='followup'; }
+      else if(snoozeSkoncil){ score=85; reason='⏰ Odklad skončil '+u.coach_snooze_until+(u.coach_snooze_reason?' (dôvod: '+u.coach_snooze_reason+')':'');
+        action='Sľúbený návrat — ozvi sa jej teraz.'; tpl='followup'; }
       else if(attended.length && daysSinceVisit<=2 && !activeMem.has(u._id) && !(u.single_entries>0)){ score=90; reason='Bola na hodine pred '+daysSinceVisit+' d, nič nekúpila'; action='Napíš jej dnes — spýtaj sa, ako sa jej páčilo a pošli termíny.'; tpl='after_first'; }
       else if(recentNoShow){ score=80; reason='No-show '+recentNoShow.booking_date; action='Ponúkni jej nový termín.'; tpl='no_show'; }
       else if(u.user_type==='lead' && !bks.length){ const age=Math.floor((now-new Date(u.created_at).getTime())/86400000); if(age>180) { score=20; reason='Starý lead ('+age+' d)'; action='Win-back kontakt.'; tpl='winback'; } else { score=70; reason='Nový lead bez rezervácie'; action='Pozvi ju na prvú hodinu zadarmo.'; tpl='new_lead'; } }
@@ -557,7 +564,8 @@ module.exports = function initCoach(ctx){
     const days = Math.max(1, Math.min(90, +(req.body||{}).days || 7));
     const until = new Date(Date.now()+days*86400000).toISOString().slice(0,10);
     const reason = String((req.body||{}).reason||'').slice(0,120);
-    await q.update(db.users,{_id:lead._id},{$set:{coach_claimed_by:null, coach_claimed_at:null, coach_snooze_until:until}});
+    await q.update(db.users,{_id:lead._id},{$set:{coach_claimed_by:null, coach_claimed_at:null,
+      coach_snooze_until:until, coach_snooze_reason:reason, coach_snooze_by:me.name}});
     await q.insert(db.lead_notes,{client_id:lead._id, client_name:lead.name, author_id:me._id, author_name:me.name,
       text:`Odložená do ${until}${reason?' — '+reason:''}`, source:'coach_snooze', created_at:nowISO()});
     res.json({ok:true, until});

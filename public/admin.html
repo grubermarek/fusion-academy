@@ -150,6 +150,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div class="grp2-h" onclick="toggleGrp(this)">Správa <span class="rail-dot" id="railDotManage"></span><i class="bi bi-chevron-down ms-auto"></i></div>
     <div class="group-links active" data-group="manage">
       <a class="nav-link" href="#" onclick="show('urgent')"><i class="bi bi-fire me-2"></i><span style="color:#ff6b6b;font-weight:800">Neodkladné</span> <span id="urgentBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
+      <a class="nav-link" href="#" onclick="show('ambasadori')"><i class="bi bi-people-fill me-2"></i><span style="color:#e0a656;font-weight:700">Ambasádori</span></a>
       <a class="nav-link active" href="#" onclick="show('attendance')"><i class="bi bi-calendar-heart me-2"></i><span style="color:#4ade80;font-weight:700">Kalendár rezervácií</span></a>
       <div class="nav-group-label">Klienti</div>
       <a class="nav-link" href="#" onclick="show('leads')"><i class="bi bi-person-plus me-2"></i>Leady <span id="leadsNavBadge" class="badge ms-1" style="background:#C9A84C;color:#111;display:none"></span></a>
@@ -231,6 +232,30 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 <div class="main p-4">
 
   <!-- URGENT TASKS -->
+  <div id="s-ambasadori" class="section" style="max-width:1150px">
+    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+      <div><h4 class="fw-bold mb-0">🔥 Ambasádori</h4>
+        <p class="text-muted small mb-0">Jedno miesto: kto má ambasádorský prístup, ich výkony, prihlášky na školenie a udeľovanie prístupu.</p></div>
+      <button class="btn btn-sm btn-outline-light" onclick="loadAmbasadori()"><i class="bi bi-arrow-clockwise me-1"></i>Obnoviť</button>
+    </div>
+    <div class="card border-0 rounded-3 p-3 mb-3">
+      <div class="fw-bold small mb-2">➕ Udeliť ambasádorský prístup</div>
+      <div class="d-flex gap-2 flex-wrap">
+        <input id="ambGrantQ" class="form-control form-control-sm" style="max-width:320px;background:#111;color:#eee;border-color:#333" placeholder="meno alebo e-mail…">
+        <button class="btn btn-sm btn-warning" onclick="ambGrant()">🔥 Udeliť</button>
+        <span class="text-muted small align-self-center">Trénerky a admin majú prístup automaticky.</span>
+      </div>
+      <div id="ambGrantMsg" class="small mt-2"></div>
+    </div>
+    <div class="card border-0 rounded-3 p-3 mb-3">
+      <div class="fw-bold small mb-2">👥 Tím a výkony (30 dní)</div>
+      <div class="table-responsive"><table class="table table-dark table-sm align-middle mb-0" style="font-size:.8rem" id="ambMembersTbl"></table></div>
+    </div>
+    <div class="card border-0 rounded-3 p-3 mb-3">
+      <div class="fw-bold small mb-2">🎓 Prihlášky na školenie</div>
+      <div class="table-responsive"><table class="table table-dark table-sm align-middle mb-0" style="font-size:.8rem" id="ambSignupsTbl"></table></div>
+    </div>
+  </div>
   <div id="s-urgent" class="section">
     <div class="d-flex align-items-center justify-content-between mb-3">
       <h4 class="fw-bold mb-0">🔥 Neodkladné úlohy</h4>
@@ -2638,6 +2663,7 @@ function show(sec){
   if(sec==='bizrank')loadBizRank();
   if(sec==='sutaze')loadRefGoalReport();
   if(sec==='venceky')loadVenceky();
+  if(sec==='ambasadori')loadAmbasadori();
   if(sec==='eventy')loadEventy();
   if(sec==='orders')loadOrders();
   if(sec==='partners')loadPartners();
@@ -5197,8 +5223,13 @@ async function loadCdTimeline(id){
   const d=await api('/api/admin/crm/client/'+id+'/timeline');
   if(!d?.ok){ box.innerHTML='<span class="text-danger">História sa nenačítala.</span>'; return; }
   const cas=iso=>{ const t=new Date(iso); return isNaN(t)?'':t.toLocaleDateString('sk-SK',{day:'numeric',month:'numeric',year:'numeric'})+' '+t.toLocaleTimeString('sk-SK',{hour:'2-digit',minute:'2-digit'}); };
-  const farba={kontakt:'#7bd88f',poznamka:'#e8c97a',mail:'#8ab8ff',hodina:'#d8b4fe',platba:'#C9A84C',clenstvo:'#C9A84C',followup:'#fd7e14',case:'#c4a8ff',registracia:'#8a8a8a',dnc:'#ff6b6b'};
-  box.innerHTML=(d.next_mail?`<div style="font-size:.76rem;color:#8ab8ff;background:#12203a;border:1px solid #24406a;border-radius:8px;padding:6px 10px;margin-bottom:8px">🤖 Najbližší automatický mail: <b>${escHtml(d.next_mail.sequence)}</b> ${d.next_mail.scheduled_for}${d.next_mail.subject?' — „'+escHtml(d.next_mail.subject)+'"':''}</div>`:'')
+  const farba={kontakt:'#7bd88f',poznamka:'#e8c97a',mail:'#8ab8ff',hodina:'#d8b4fe',platba:'#C9A84C',clenstvo:'#C9A84C',followup:'#fd7e14',case:'#c4a8ff',registracia:'#8a8a8a',dnc:'#ff6b6b',odklad:'#e8c97a'};
+  const snoozeBar = d.snooze
+    ? (d.snooze.stav==='bezi'
+      ? `<div style="font-size:.78rem;color:#e8c97a;background:#2a2416;border:1px solid #6a5a2a;border-radius:8px;padding:6px 10px;margin-bottom:8px">⏸ <b>NA ODKLADE do ${d.snooze.do}</b>${d.snooze.dovod?' — dôvod: '+escHtml(d.snooze.dovod):''}${d.snooze.kto?' <span class="text-muted">('+escHtml(d.snooze.kto)+')</span>':''}</div>`
+      : `<div style="font-size:.78rem;color:#ff9f9f;background:#2a1616;border:1px solid #7a2f2f;border-radius:8px;padding:6px 10px;margin-bottom:8px">🔔 <b>ODKLAD SKONČIL ${d.snooze.do} — treba kontaktovať!</b>${d.snooze.dovod?' Dôvod odkladu bol: '+escHtml(d.snooze.dovod):''}</div>`)
+    : '';
+  box.innerHTML=snoozeBar+(d.next_mail?`<div style="font-size:.76rem;color:#8ab8ff;background:#12203a;border:1px solid #24406a;border-radius:8px;padding:6px 10px;margin-bottom:8px">🤖 Najbližší automatický mail: <b>${escHtml(d.next_mail.sequence)}</b> ${d.next_mail.scheduled_for}${d.next_mail.subject?' — „'+escHtml(d.next_mail.subject)+'"':''}</div>`:'')
     +((d.timeline||[]).length?d.timeline.map(e=>`<div style="display:flex;gap:8px;font-size:.78rem;border-bottom:1px solid #232323;padding:5px 0">
       <span style="flex:none;color:#777;font-variant-numeric:tabular-nums;min-width:118px">${cas(e.at)}</span>
       <span style="flex:none">${e.ikona}</span>
@@ -7037,6 +7068,49 @@ async function doGiveFree(){
 
 // ── Neodkladné úlohy ──
 const URGENT_ICON={lead:'🆕',guest:'💃',expiring:'⏳',lapsed:'🔁',noshow:'🙈'};
+async function loadAmbasadori(){
+  const d=await api('/api/admin/ambassadors');
+  const mt=document.getElementById('ambMembersTbl'), st=document.getElementById('ambSignupsTbl');
+  if(!d?.ok){ mt.innerHTML='<tr><td class="text-danger p-2">Chyba: '+escHtml(d?.error||'?')+'</td></tr>'; return; }
+  mt.innerHTML='<thead><tr><th>Meno</th><th>Rola</th><th class="text-center">Kontakty</th><th class="text-center">Záujem</th><th class="text-center">Konverzie</th><th class="text-center">Línia</th><th class="text-center">Objem línie</th><th class="text-center">Body</th></tr></thead><tbody>'
+    +d.members.map(m=>`<tr>
+      <td><b>${escHtml(m.name||'—')}</b><div class="text-muted" style="font-size:.7rem">${escHtml(m.email||'')}</div></td>
+      <td><span class="badge" style="background:${m.rola==='admin'?'#6a2a2a':m.rola==='trénerka'?'#2a4a6a':'#6a5a2a'}">${m.rola}</span>${m.since?`<div class="text-muted" style="font-size:.68rem">od ${m.since}</div>`:''}</td>
+      <td class="text-center fw-bold">${m.kontakty_30d}</td>
+      <td class="text-center" style="color:#4ade80">${m.zaujem_30d}</td>
+      <td class="text-center" style="color:#C9A84C">${m.konverzie}</td>
+      <td class="text-center">${m.linia}</td>
+      <td class="text-center fw-bold">${m.objem_30d.toFixed(2)} €</td>
+      <td class="text-center">${m.body_30d}</td>
+    </tr>`).join('')+'</tbody>';
+  st.innerHTML='<thead><tr><th>Meno</th><th>Kontakt</th><th>Mesto</th><th>Prihlásená</th><th>Školenie</th><th>Účet v appke</th><th></th></tr></thead><tbody>'
+    +((d.signups||[]).length?d.signups.map(s2=>`<tr>
+      <td><b>${escHtml(s2.name)}</b></td>
+      <td class="small">${s2.phone?`<a href="tel:${escHtml(s2.phone)}" class="text-decoration-none">${escHtml(s2.phone)}</a>`:''}${s2.email?`<div class="text-muted">${escHtml(s2.email)}</div>`:''}</td>
+      <td class="small">${escHtml(s2.city||'—')}</td>
+      <td class="small">${s2.prihlasena}${s2.training_date?`<div class="text-muted" style="font-size:.68rem">termín ${s2.training_date}</div>`:''}</td>
+      <td>${s2.status==='completed'?`<span class="badge bg-success">✅ absolvovala${s2.completed_at?' '+s2.completed_at:''}</span>`:`<button class="btn btn-sm btn-outline-success py-0" onclick="ambComplete('${s2.id}')">✅ Absolvovala</button>`}</td>
+      <td class="small">${s2.user_name?escHtml(s2.user_name)+(s2.uz_ambasadorka?' <span class="badge bg-warning text-dark">🔥 má prístup</span>':''):'<span class="text-muted">bez účtu</span>'}</td>
+      <td>${s2.user_id&&!s2.uz_ambasadorka?`<button class="btn btn-sm btn-warning py-0" onclick="ambGrantId('${escHtml(s2.email||s2.user_id)}')">🔥 Ambasádorka</button>`:''}</td>
+    </tr>`).join(''):'<tr><td colspan="7" class="text-muted small p-2">Žiadne prihlášky.</td></tr>')+'</tbody>';
+}
+async function ambGrant(){
+  const qv=document.getElementById('ambGrantQ').value.trim(); if(!qv) return;
+  const r=await api('/api/admin/ambassadors/grant',{method:'POST',body:JSON.stringify({query:qv})});
+  document.getElementById('ambGrantMsg').innerHTML=r?.ok
+    ?('<span class="text-success">'+escHtml(r.granted?('🔥 '+r.granted+' má ambasádorský prístup!'):(r.note||'OK'))+'</span>')
+    :('<span class="text-danger">'+escHtml(r?.error||'Chyba')+'</span>');
+  if(r?.ok){ document.getElementById('ambGrantQ').value=''; loadAmbasadori(); }
+}
+async function ambGrantId(query){
+  const r=await api('/api/admin/ambassadors/grant',{method:'POST',body:JSON.stringify({query})});
+  if(r?.ok) showToast(r.granted?('🔥 '+r.granted+' má prístup'):(r.note||'OK'),'success'); else showToast(r?.error||'Chyba','error');
+  loadAmbasadori();
+}
+async function ambComplete(id){
+  const r=await api('/api/admin/amb-training/'+id+'/complete',{method:'POST',body:JSON.stringify({})});
+  if(r?.ok) loadAmbasadori(); else showToast(r?.error||'Chyba','error');
+}
 async function loadUrgent(){
   const box=document.getElementById('urgentList');
   const d=await api('/api/admin/urgent-tasks');

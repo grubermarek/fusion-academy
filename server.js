@@ -194,6 +194,7 @@ const db = {
   venceky_attendance:new Datastore({ filename: path.join(DATA_DIR, 'venceky_attendance.db'), autoload: true }),
   venceky_slots:    new Datastore({ filename: path.join(DATA_DIR, 'venceky_slots.db'),    autoload: true }),
   referral_events:  new Datastore({ filename: path.join(DATA_DIR, 'referral_events.db'),  autoload: true }),
+  deal_links:       new Datastore({ filename: path.join(DATA_DIR, 'deal_links.db'),       autoload: true }),
   credit_ledger:    new Datastore({ filename: path.join(DATA_DIR, 'credit_ledger.db'),    autoload: true }),
   shop_events:      new Datastore({ filename: path.join(DATA_DIR, 'shop_events.db'),      autoload: true }),
   ev_events:         new Datastore({ filename: path.join(DATA_DIR, 'ev_events.db'), autoload: true }),
@@ -549,7 +550,7 @@ const ambassadorAuth = async(req,res,next)=>{
   const u = await q.one(db.users,{_id:req.session.uid});
   // Tréner je automaticky ambasádor — reprezentuje firmu a privádza ľudí,
   // takže sekciu má sprístupnenú bez prepínania.
-  if(!u || !(u.is_admin || u.user_type==='ambassador' || u.user_type==='trainer'))
+  if(!u || !(u.is_admin || u.user_type==='ambassador' || u.user_type==='trainer' || u.is_assistant))
     return res.status(403).json({error:'Táto časť je len pre ambasádorky Fusion Academy'});
   req.ambUser = u;
   next();
@@ -1988,6 +1989,24 @@ async function seedData() {
         + ' | leadov stále bez kontaktu: ' + bezKontaktu.length + ' ' + JSON.stringify(podlaZdroja));
     } catch (e) { console.error('oldlist phones:', e.message); }
   }, 45 * 1000);
+
+  // Iveta Berecová (Marekova dlhoročná asistentka) → ambasádorský prístup (28.8.).
+  if(!(await q.one(db.settings,{key:'grant_iveta_ambassador_v1'}))){
+    await q.insert(db.settings,{key:'grant_iveta_ambassador_v1', value:true, at:nowISO()});
+    try{
+      const kand=(await q.find(db.users,{})).filter(u=>!u.is_child && !u.is_admin
+        && u.user_type!=='trainer' && /iveta/i.test(u.name||'') && /berec/i.test(u.name||''));
+      if(kand.length===1){
+        const u=kand[0];
+        await q.update(db.users,{_id:u._id},{$set:{user_type:'ambassador', ambassador_since:u.ambassador_since||nowISO()}});
+        await q.insert(db.notifications,{user_id:u._id,type:'ambassador',
+          title:'🔥 Si ambasádorka Fusion Academy!',
+          body:'Odomkli sme ti ambasádorskú sekciu — vlastný odkaz, klientky, provízie aj rebríček.',
+          read:false, created_at:nowISO()}).catch(()=>{});
+        console.log('🔥 AMBASÁDOR: '+u.name+' ('+u.email+') → prístup udelený');
+      } else console.log('🔥 AMBASÁDOR Iveta: kandidátov '+kand.length+' ('+kand.map(x=>x.name+' <'+x.email+'>').join(', ')+') — nejednoznačné, udeľ ručne v admin sekcii Ambasádori');
+    }catch(e){ console.error('grant iveta:', e.message); }
+  }
 
   // Anna Debnárová 23. 7. — Marek 27. 8. potvrdil, že taká platba nikdy nebola,
   // takže v účtovníctve nič nechýba. Zatvárame otázku, nech prestane chodiť pripomienka.
@@ -6277,6 +6296,84 @@ app.post('/api/admin/users/:id/entries', adminAuth, async(req,res)=>{
 });
 
 // Admin: zapnúť/vypnúť ambasádorku. Rola odomyká celú ambasádorskú sekciu.
+// ═══ Admin sekcia AMBASÁDORI — jedno miesto (Marek 28.8.) ═══
+app.get('/api/admin/ambassadors', adminAuth, async(req,res)=>{
+  try{
+    const users=await q.find(db.users,{});
+    const od30=Date.now()-30*86400000;
+    const ts=x=>new Date(x||0).getTime();
+    const clenovia=users.filter(u=>!u.is_child && (u.is_admin||['trainer','manager','ambassador'].includes(u.user_type||'')||u.is_assistant));
+    const kontakty=db.coach_contacts?await q.find(db.coach_contacts,{}):[];
+    const casy=db.coach_cases?await q.find(db.coach_cases,{}):[];
+    const ulohy=db.coach_tasks?await q.find(db.coach_tasks,{}):[];
+    const txs=await q.find(db.transactions,{});
+    const podlaSponzora={};
+    for(const u of users){ if(u.sponsor_id&&!u.is_admin&&!u.is_child) (podlaSponzora[u.sponsor_id]=podlaSponzora[u.sponsor_id]||[]).push(u); }
+    const rola=u=>u.is_admin?'admin':u.user_type==='trainer'?'trénerka':u.user_type==='manager'?'manažérka':u.user_type==='ambassador'?'ambasádorka':'asistentka';
+    const members=clenovia.map(u=>{
+      const moje=kontakty.filter(c=>c.trainer_id===u._id);
+      const linia=podlaSponzora[u._id]||[];
+      const liniaIds=new Set(linia.map(x=>x._id));
+      const objem30=txs.filter(t=>liniaIds.has(t.user_id)&&(+t.amount||0)>0&&!t.commission_only&&ts(t.created_at||t.date)>=od30)
+        .reduce((s2,t)=>s2+(+t.amount||0),0);
+      return { id:u._id, name:u.name, email:u.email, rola:rola(u),
+        since:(u.ambassador_since||'').slice(0,10)||null,
+        kontakty_30d:moje.filter(c=>ts(c.created_at)>=od30).length,
+        zaujem_30d:moje.filter(c=>ts(c.created_at)>=od30&&['interested','will_come','booked','replied'].includes(c.outcome)).length,
+        konverzie:casy.filter(c=>c.trainer_id===u._id&&c.converted&&!c.conversion_revoked_at).length,
+        linia:linia.length, objem_30d:+objem30.toFixed(2),
+        body_30d:ulohy.filter(t=>t.trainer_id===u._id&&t.done&&ts(t.done_at||t.created_at)>=od30)
+          .reduce((s2,t)=>s2+(+t.points||0),0) };
+    }).sort((a,b)=>b.objem_30d-a.objem_30d||b.kontakty_30d-a.kontakty_30d);
+    // prihlášky na školenie + spárovanie s účtom podľa mailu/telefónu
+    const p9=v=>{let x=String(v||'').replace(/[^\d]/g,'');if(x.startsWith('421'))x=x.slice(3);if(x.startsWith('0'))x=x.slice(1);return x.length===9?x:null;};
+    const podlaMailu={}, podlaTel={};
+    for(const u of users){ if(u.email)podlaMailu[u.email.toLowerCase()]=u; const t=p9(u.phone); if(t&&!podlaTel[t])podlaTel[t]=u; }
+    const signups=(await q.find(db.rentals,{_type:'amb_training'}))
+      .sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)))
+      .map(r2=>{ const u=(r2.email&&podlaMailu[r2.email.toLowerCase()])||podlaTel[p9(r2.phone)]||null;
+        return { id:r2._id, name:r2.name, phone:r2.phone||'', email:r2.email||'', city:r2.city||'',
+          training_date:r2.training_date||'', prihlasena:(r2.created_at||'').slice(0,10),
+          status:r2.status||'new', completed_at:(r2.completed_at||'').slice(0,10)||null,
+          user_id:u?u._id:null, user_name:u?u.name:null,
+          uz_ambasadorka:!!(u&&(u.is_admin||u.is_assistant||['trainer','manager','ambassador'].includes(u.user_type||''))) };});
+    res.json({ok:true, members, signups});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// školenie: označiť absolvované (+ voliteľne rovno udeliť ambasádora)
+app.post('/api/admin/amb-training/:id/complete', adminAuth, async(req,res)=>{
+  try{
+    const r2=await q.one(db.rentals,{_id:req.params.id, _type:'amb_training'});
+    if(!r2) return res.status(404).json({error:'Prihláška sa nenašla'});
+    await q.update(db.rentals,{_id:r2._id},{$set:{status:'completed', completed_at:nowISO()}});
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// udelenie podľa mena/mailu — jedno pole, žiadne hľadanie ID po admine
+app.post('/api/admin/ambassadors/grant', adminAuth, async(req,res)=>{
+  try{
+    const qy=String(req.body.query||'').trim().toLowerCase();
+    if(qy.length<3) return res.status(400).json({error:'Zadaj meno alebo e-mail (aspoň 3 znaky).'});
+    const users=(await q.find(db.users,{})).filter(u=>!u.is_child);
+    let kand=users.filter(u=>(u.email||'').toLowerCase()===qy);
+    if(!kand.length) kand=users.filter(u=>(u.name||'').toLowerCase().includes(qy)||(u.email||'').toLowerCase().includes(qy));
+    if(!kand.length) return res.status(404).json({error:'Nikto sa nenašiel. Skús presný e-mail.'});
+    if(kand.length>1) return res.status(400).json({error:'Nejednoznačné — našlo sa '+kand.length+': '
+      +kand.slice(0,5).map(u=>u.name+' <'+u.email+'>').join(', ')+(kand.length>5?'…':'')+'. Zadaj presný e-mail.'});
+    const u=kand[0];
+    if(u.is_admin||['trainer','manager'].includes(u.user_type||''))
+      return res.json({ok:true, note:u.name+' má ambasádorskú sekciu automaticky ('+(u.is_admin?'admin':'trénerka')+').'});
+    if(u.user_type==='ambassador') return res.json({ok:true, note:u.name+' už ambasádorkou je.'});
+    await q.update(db.users,{_id:u._id},{$set:{user_type:'ambassador', ambassador_since:u.ambassador_since||nowISO()}});
+    await q.insert(db.notifications,{user_id:u._id,type:'ambassador',
+      title:'🔥 Si ambasádorka Fusion Academy!',
+      body:'Odomkli sme ti ambasádorskú sekciu — vlastný odkaz, klientky, provízie aj rebríček.',
+      read:false, created_at:nowISO()}).catch(()=>{});
+    await auditLog(req,'ambassador_grant',u._id,{},{name:u.name},'');
+    res.json({ok:true, granted:u.name});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.post('/api/admin/users/:id/ambassador', adminAuth, async(req,res)=>{
   try{
     const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
@@ -10055,13 +10152,17 @@ app.get('/api/admin/crm/client/:id/timeline', adminAuth, async(req,res)=>{
     push(u.registration_at||u.created_at,'registracia','👋','', 'Registrácia',
       (u.lead_source?('zdroj: '+u.lead_source):'')+(u.utm_campaign?(' · kampaň: '+u.utm_campaign):''));
     if(u.do_not_contact) push(u.dnc_at,'dnc','🚫',u.dnc_by_name||'','NEKONTAKTOVAŤ','trvalé vyradenie z kontaktovania');
+    // odklady: každý zapísaný odklad je udalosť (lead_notes source coach_snooze
+    // nesie text „Odložená do X — dôvod"); aktuálny stav ide navrch ako banner
 
     // ľudské kontakty (tréneri + admin — jedna vrstva)
     if(db.coach_contacts) for(const c of await q.find(db.coach_contacts,{lead_id:u._id}))
       push(c.created_at,'kontakt','📞',c.trainer_name,'Kontakt — '+(c.outcome||''),(c.auto?'(klik na Zavolať/SMS) ':'')+(c.note||''));
     // poznámky
-    if(db.lead_notes) for(const n of await q.find(db.lead_notes,{client_id:u._id}))
-      push(n.created_at,'poznamka','📝',n.author_name,'Poznámka',n.text);
+    if(db.lead_notes) for(const n of await q.find(db.lead_notes,{client_id:u._id})){
+      if(n.source==='coach_snooze') push(n.created_at,'odklad','⏸',n.author_name,'Odklad',n.text);
+      else push(n.created_at,'poznamka','📝',n.author_name,'Poznámka',n.text);
+    }
     // maily (reálne odoslané, s otvorením/klikom)
     if(u.email) for(const m of (await q.find(db.mail_log,{to:u.email})).slice(-60))
       push(m.created_at,'mail','✉️','automatika','E-mail: '+(m.subject||''),
@@ -10098,7 +10199,14 @@ app.get('/api/admin/crm/client/:id/timeline', adminAuth, async(req,res)=>{
     let next=null;
     if(cakajuce[0]){ const st=await q.one(db.email_steps,{_id:cakajuce[0].step_id});
       next={sequence:cakajuce[0].sequence, scheduled_for:cakajuce[0].scheduled_for, subject:st?st.subject:''}; }
-    res.json({ok:true, name:u.name, timeline:ev.slice(0,250), next_mail:next});
+    // stavový banner odkladu: beží / práve skončil (7 dní po konci)
+    let snooze=null;
+    if(u.coach_snooze_until){
+      const koniec=new Date(u.coach_snooze_until+'T00:00:00').getTime();
+      if(u.coach_snooze_until>today()) snooze={stav:'bezi', do:u.coach_snooze_until, dovod:u.coach_snooze_reason||'', kto:u.coach_snooze_by||''};
+      else if(Date.now()-koniec<7*86400000) snooze={stav:'skoncil', do:u.coach_snooze_until, dovod:u.coach_snooze_reason||'', kto:u.coach_snooze_by||''};
+    }
+    res.json({ok:true, name:u.name, timeline:ev.slice(0,250), next_mail:next, snooze});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -11473,6 +11581,54 @@ async function fulfillStripeCheckout(s){
     {stripe_session_id:s.id, status:{$ne:'completed'}},
     {$set:{status:'completed', captured_at:nowISO(), stripe_payment_intent:s.payment_intent||'', stripe_subscription_id:s.subscription||null}});
   if(!claimed) return {ok:true, already:true, plan_name:plan.name}; // someone already fulfilled it
+  // ── LEAD OS: platba cez trénerov PLATOBNÝ LINK (deal) ──
+  // Beží PRED províziou: ak klient nemá reálneho sponzora, tréner sa ním stáva
+  // teraz — awardPurchaseCommission nižšie potom odmení práve jeho (ambasádorská
+  // sekcia, body aj objem sa premietnu automaticky cez existujúci mechanizmus).
+  if(meta.deal_token && db.deal_links){
+    try{
+      const deal=await q.one(db.deal_links,{_id:String(meta.deal_token)});
+      if(deal && !deal.used_at){
+        await q.update(db.deal_links,{_id:deal._id},{$set:{used_at:nowISO(), status:'paid', stripe_session_id:s.id}});
+        const klient=await q.one(db.users,{_id:deal.user_id});
+        const trener=await q.one(db.users,{_id:deal.trainer_id});
+        if(klient && trener){
+          // zdieľaná história: kontakt s výsledkom „rezervovala/kúpila" + poznámka
+          if(db.coach_contacts) await q.insert(db.coach_contacts,{trainer_id:trener._id, trainer_name:trener.name,
+            lead_id:klient._id, lead_name:klient.name, outcome:'booked',
+            note:'💳 Zaplatila cez platobný link — '+plan.name, auto:true, date:today(), created_at:nowISO()}).catch(()=>{});
+          await q.update(db.users,{_id:klient._id},{$set:{last_contacted_at:nowISO()}}).catch(()=>{});
+          if(db.lead_notes) await q.insert(db.lead_notes,{client_id:klient._id, client_name:klient.name,
+            author_id:trener._id, author_name:trener.name,
+            text:'💳 Zaplatený platobný link: '+plan.name+'.', source:'deal_link', created_at:nowISO()}).catch(()=>{});
+          // konverzia pod trénera — len ak klient nemá reálneho (ne-admin) cudzieho sponzora
+          const spon=klient.sponsor_id?await q.one(db.users,{_id:klient.sponsor_id}):null;
+          if(klient.sponsor_id!==trener._id && (!spon || spon.is_admin)){
+            await q.update(db.users,{_id:klient._id},{$set:{sponsor_id:trener._id}});
+            if(db.coach_cases) await q.insert(db.coach_cases,{trainer_id:trener._id, trainer_name:trener.name,
+              lead_id:klient._id, lead_name:klient.name, resolution:'trial', converted:true,
+              prev_sponsor:klient.sponsor_id||null,
+              conversion_note:'💳 Dohodol/dohodla nákup a poslal/a platobný link — klientka kúpila '+plan.name+' (automatická konverzia).',
+              claimed_at:deal.created_at, duration_h:null, contacts_count:1, notes_count:1,
+              date:today(), created_at:nowISO()}).catch(()=>{});
+            if(db.lead_notes) await q.insert(db.lead_notes,{client_id:klient._id, client_name:klient.name,
+              author_id:trener._id, author_name:trener.name,
+              text:'🤝 KONVERZIA — ako sa pričinil/a: dohodnutý nákup cez platobný link ('+plan.name+').',
+              source:'coach_release', created_at:nowISO()}).catch(()=>{});
+          }
+          await q.insert(db.notifications,{user_id:trener._id, type:'deal_paid',
+            title:'💳 '+klient.name+' zaplatila cez tvoj link! 🎉',
+            body:plan.name+' — nákup sa ti počíta do tvojej línie. Skvelá práca!',
+            read:false, created_at:nowISO()}).catch(()=>{});
+          for(const a of await q.find(db.users,{is_admin:true}))
+            await q.insert(db.notifications,{user_id:a._id, type:'deal_paid',
+              title:'💳 Platobný link: '+klient.name+' → '+plan.name,
+              body:'Link vytvoril(a) '+trener.name+'.', read:false, created_at:nowISO()}).catch(()=>{});
+          console.log('💳 DEAL LINK zaplatený: '+klient.name+' → '+plan.name+' (tréner '+trener.name+')');
+        }
+      }
+    }catch(e){ console.error('deal fulfill:', e.message); }
+  }
   const memberId = meta.member_id || meta.user_id;
   await activateMembership(memberId, meta.plan_id, plan.duration_days||30);
   if(meta.type==='subscription' && s.subscription){
@@ -11676,6 +11832,90 @@ app.get('/api/admin/churn-reasons', adminAuth, async(req,res)=>{
 });
 
 // Stripe webhook — subscription renewals + cancellations (raw body for signature verify)
+// ═══ LEAD OS: PLATOBNÝ LINK OD TRÉNERA — verejná časť ═══
+// Tréner sa s klientkou dohodne telefonicky, vytvorí link na KONKRÉTNY produkt
+// pre KONKRÉTNU osobu a pošle ho. Klik → prehľadná stránka → Zaplatiť → Stripe.
+// Token je nehádateľný a jednorazový; nákup padne na jej profil bez prihlásenia.
+async function dealInfo(token){
+  const deal=await q.one(db.deal_links,{_id:String(token||'').slice(0,64)});
+  if(!deal) return null;
+  const plan=MEMBERSHIP_PLANS[deal.plan_id];
+  const klient=await q.one(db.users,{_id:deal.user_id});
+  return deal && plan && klient ? {deal, plan, klient} : null;
+}
+app.get('/kupa/:token', async(req,res)=>{
+  try{
+    const info=await dealInfo(req.params.token);
+    const esc=v=>String(v==null?'':v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    res.set('Content-Type','text/html; charset=utf-8');
+    const shell=(vnutro)=>`<!doctype html><html lang="sk"><head><meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1"><title>Fusion Academy — nákup</title>
+      <link rel="icon" type="image/png" href="/logo-mark.png"></head>
+      <body style="margin:0;font-family:system-ui,Arial,sans-serif;background:#0f0d0a;color:#EAE3D5;
+        min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px">
+      <div style="max-width:430px;width:100%;background:#17140f;border:1px solid rgba(201,168,76,.4);
+        border-radius:18px;padding:26px;text-align:center">${vnutro}</div></body></html>`;
+    if(!info) return res.status(404).send(shell('<div style="font-size:2rem">🤔</div><h1 style="font-size:1.1rem">Tento odkaz neplatí</h1><p style="color:#b9b3a6;font-size:.9rem">Popros trénera o nový platobný odkaz, alebo zavolaj na 0904 31 51 51.</p>'));
+    const {deal, plan, klient}=info;
+    const meno=esc((klient.name||'').split(' ')[0]);
+    if(deal.used_at || req.query.stav==='ok')
+      return res.send(shell('<div style="font-size:2.4rem">🎉</div><h1 style="font-size:1.15rem">Zaplatené — ďakujeme'+(meno?(', '+meno):'')+'!</h1><p style="color:#b9b3a6;font-size:.9rem;line-height:1.6"><b style="color:#E7C878">'+esc(plan.name)+'</b> ti je aktivované na profile. Vidíme sa na parkete! 💛</p><a href="/client-dashboard" style="display:inline-block;margin-top:10px;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;font-weight:800;padding:12px 22px;border-radius:10px;text-decoration:none">Otvoriť appku</a>'));
+    if(deal.expires_at && deal.expires_at<nowISO())
+      return res.send(shell('<div style="font-size:2rem">⌛</div><h1 style="font-size:1.1rem">Odkaz vypršal</h1><p style="color:#b9b3a6;font-size:.9rem">Popros trénera o nový — alebo zavolaj 0904 31 51 51.</p>'));
+    const popis=plan.type==='bundle'?(plan.entries+(plan.entries===1?' vstup':' vstupov')+' na hodiny, platnosť '+(plan.duration_days||90)+' dní'):('členstvo na '+(plan.duration_days||30)+' dní'+(plan.online?' · vrátane online hodín':''));
+    res.send(shell(`
+      <img src="/logo-mark.png" alt="Fusion Academy" style="width:52px;height:52px;object-fit:contain">
+      <h1 style="font-size:1.2rem;margin:12px 0 4px">Ahoj${meno?(' '+meno):''}! 👋</h1>
+      <p style="color:#b9b3a6;font-size:.92rem;margin:0 0 16px">Tvoj tréner ${esc((deal.trainer_name||'').split(' ')[0])} ti pripravil dohodnutý nákup:</p>
+      <div style="background:#1f1a12;border:1px solid rgba(201,168,76,.45);border-radius:14px;padding:16px;margin-bottom:16px">
+        <div style="font-size:1.25rem;font-weight:800;color:#E7C878">${esc(plan.name)}</div>
+        <div style="color:#b9b3a6;font-size:.85rem;margin:4px 0 8px">${esc(popis)}</div>
+        <div style="font-size:1.7rem;font-weight:800">${(+deal.price).toFixed(2).replace('.',',')} €</div>
+      </div>
+      <form method="POST" action="/api/kupa/${esc(deal._id)}/checkout">
+        <button type="submit" style="width:100%;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;
+          font-weight:800;font-size:1rem;padding:14px;border:0;border-radius:12px;cursor:pointer">💳 Zaplatiť kartou</button>
+      </form>
+      <p style="color:#8d867a;font-size:.72rem;margin-top:12px;line-height:1.5">Bezpečná platba cez Stripe (karta, Apple Pay, Google Pay).
+      Nákup sa aktivuje na tvojom profile — netreba sa prihlasovať.</p>`));
+  }catch(e){ res.status(500).send('Chyba'); }
+});
+app.post('/api/kupa/:token/checkout', rlPublic, async(req,res)=>{
+  try{
+    const info=await dealInfo(req.params.token);
+    if(!info) return res.status(404).send('Odkaz neplatí');
+    const {deal, plan, klient}=info;
+    if(deal.used_at) return res.redirect('/kupa/'+deal._id);
+    if(deal.expires_at && deal.expires_at<nowISO()) return res.redirect('/kupa/'+deal._id);
+    // QA hook (konvencia STRIPE_FAKE): pending payment vznikne, session je falošná,
+    // webhook test potom prežene fulfillment — E2E bez siete.
+    if(process.env.STRIPE_FAKE==='1'){
+      await q.insert(db.payments,{user_id:klient._id, member_id:klient._id, amount:+deal.price,
+        ref_id:deal.plan_id, ref_type:'membership', provider:'stripe', status:'pending',
+        stripe_session_id:'fake_deal_'+deal._id, deal_token:deal._id, created_at:nowISO()});
+      return res.redirect('/kupa/'+deal._id+'?stav=test');
+    }
+    const params={ mode:'payment',
+      'line_items[0][price_data][currency]':'eur',
+      'line_items[0][price_data][unit_amount]':String(Math.round(+deal.price*100)),
+      'line_items[0][price_data][product_data][name]':plan.name+' — Fusion Academy',
+      'line_items[0][quantity]':'1',
+      success_url:APP_URL+'/kupa/'+deal._id+'?stav=ok',
+      cancel_url:APP_URL+'/kupa/'+deal._id,
+      customer_email:(klient.email&&!/@import\.local$|@guest\./i.test(klient.email))?klient.email:undefined,
+      'metadata[user_id]':klient._id, 'metadata[member_id]':klient._id,
+      'metadata[plan_id]':deal.plan_id, 'metadata[type]':'membership',
+      'metadata[deal_token]':deal._id };
+    Object.keys(params).forEach(k=>params[k]===undefined&&delete params[k]);
+    const r=await stripeApi('checkout/sessions', params, 'POST');
+    if(!r.body?.url) return res.status(500).send('Platbu sa nepodarilo pripraviť — skús znova alebo zavolaj 0904 31 51 51.');
+    await q.insert(db.payments,{user_id:klient._id, member_id:klient._id, amount:+deal.price,
+      ref_id:deal.plan_id, ref_type:'membership', provider:'stripe', status:'pending',
+      stripe_session_id:r.body.id, deal_token:deal._id, created_at:nowISO()});
+    res.redirect(303, r.body.url);
+  }catch(e){ res.status(500).send('Chyba: '+e.message); }
+});
+
 app.post('/api/stripe/webhook', async(req,res)=>{
   try {
     const secret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -13856,6 +14096,49 @@ app.delete('/api/trainer/cash/:id', trainerAuth, async(req,res)=>{
 // ── PREDAJ TRÉNEROM (členstvá / permanentky / merch) ─────────────────────────
 // Tréner predá klientovi na mieste bez admina. Cash → automaticky sa zapíše do
 // hotovostnej evidencie trénera (zrážka z výplaty, kým ju neodovzdá).
+// ═══ LEAD OS: PLATOBNÝ LINK OD TRÉNERA — trénerská časť ═══
+// „Dohodli sme sa telefonicky, že si kúpi Silver" → tréner vyberie produkt,
+// appka vytvorí unikátny link, tréner ho pošle SMS/WhatsAppom.
+const DEAL_PLAN_IDS=['vstup1','permanentka10','bronze','silver','gold','kids','online_basic','online_premium'];
+app.get('/api/trainer/deal-plans', trainerAuth, async(req,res)=>{
+  res.json({ok:true, plans:DEAL_PLAN_IDS.map(id=>({id, name:MEMBERSHIP_PLANS[id].name,
+    price:MEMBERSHIP_PLANS[id].price, bundle:MEMBERSHIP_PLANS[id].type==='bundle',
+    entries:MEMBERSHIP_PLANS[id].entries||null}))});
+});
+app.post('/api/trainer/deal-link', trainerAuth, async(req,res)=>{
+  try{
+    const me=await q.one(db.users,{_id:req.session.uid});
+    const klient=await q.one(db.users,{_id:String(req.body.user_id||'')});
+    if(!klient) return res.status(404).json({error:'Klientka sa nenašla'});
+    if(klient.do_not_contact) return res.status(400).json({error:'Táto osoba je označená Nekontaktovať.'});
+    const planId=String(req.body.plan_id||'');
+    if(!DEAL_PLAN_IDS.includes(planId)) return res.status(400).json({error:'Neznámy produkt'});
+    const plan=MEMBERSHIP_PLANS[planId];
+    // rovnaké cenové pravidlá ako v appke: individuálna cena / Gold zľava na permanentku
+    let price=plan.price;
+    if(klient.custom_prices && klient.custom_prices[planId]>0) price=+klient.custom_prices[planId];
+    else if(planId==='permanentka10'){
+      const m=(await q.find(db.memberships,{user_id:klient._id, status:'active'}))
+        .find(x=>/gold/i.test(String(x.plan_id||'')+String(x.plan_name||'')) && (!x.expires_at||x.expires_at>nowISO()));
+      if(m) price=70;
+    }
+    const token=require('crypto').randomBytes(12).toString('hex');
+    const expires=new Date(Date.now()+7*86400000).toISOString();
+    await q.insert(db.deal_links,{_id:token, user_id:klient._id, user_name:klient.name,
+      plan_id:planId, price, trainer_id:me._id, trainer_name:me.name,
+      status:'active', used_at:null, expires_at:expires, created_at:nowISO()});
+    const url=APP_URL.replace(/\/$/,'')+'/kupa/'+token;
+    if(db.lead_notes) await q.insert(db.lead_notes,{client_id:klient._id, client_name:klient.name,
+      author_id:me._id, author_name:me.name,
+      text:'💳 Vytvorený platobný link: '+plan.name+' ('+price.toFixed(2)+' €), platí 7 dní.',
+      source:'deal_link', created_at:nowISO()}).catch(()=>{});
+    const meno=(klient.name||'').split(' ')[0];
+    res.json({ok:true, url, price, plan_name:plan.name,
+      message:'Ahoj '+meno+'! 💛 Ako sme sa dohodli — tu je odkaz na '+plan.name
+        +' ('+price.toFixed(2).replace('.',',')+' €). Stačí klik a platba kartou, všetko sa ti aktivuje samo: '+url});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.post('/api/trainer/sell', trainerAuth, async(req,res)=>{
   try{
     const t=req.trainerUser;
