@@ -1832,7 +1832,7 @@ function coachLeadCard(L, d, mine){
           <span style="color:var(--muted);font-size:.75rem"> · ${esc(L.city||'')} ${L.visits?` · ${L.visits} návštev`:''}</span></span></div>
         <div style="font-size:.75rem;color:var(--muted)">${L.last_contact_days!=null?`kontakt pred ${L.last_contact_days} d`:'nikdy nekontaktovaná'}</div></div>
       <div style="font-size:.76rem;color:var(--muted);margin:3px 0">
-        ${L.phone?`📞 ${esc(L.phone)} · `:''}${L.email?`✉️ ${esc(L.email)}`:''}<br>
+        ${L.phone?`📞 <a href="tel:${esc(L.phone)}" style="color:var(--gold);text-decoration:none;font-weight:700">${esc(L.phone)}</a> · `:''}${L.email?`✉️ <a href="mailto:${esc(L.email)}" style="color:var(--gold);text-decoration:none">${esc(L.email)}</a>`:''}${!L.phone&&!L.email?'<span style="color:#ff9f9f">⚠️ bez kontaktu</span>':''}<br>
         Zdroj: ${esc(L.lead_source||'—')} · Status: ${esc(L.lead_status||'—')} · Návštevy: <b>${L.visits}</b>${L.no_shows?` · No-show: ${L.no_shows}`:''}
         · ${L.has_membership?'Členstvo ✅':L.entries_left?`Vstupy: ${L.entries_left}`:'Bez členstva'}
         ${L.last_email?`<br>Posledný automat. e-mail: ${L.last_email.date} (${esc(L.last_email.seq||'')})`:''}

@@ -23,6 +23,11 @@ module.exports = function initCoach(ctx){
   const nowISO = () => new Date().toISOString();
   const dayOfWeek = ds => new Date(ds+'T12:00:00').getDay(); // 0=Ne
   const isTest = u => isTestContact(u && u.email);
+  // reálne použiteľný kontakt: telefón, alebo e-mail, na ktorý sa dá naozaj napísať
+  // (syntetické @import.local a QA adresy sa nerátajú — Beátka 28.8.: karty bez
+  // kontaktu v dennom zozname boli presne tieto)
+  const realEmail = u => u && u.email && !/@import\.local$|@test-fa-qa\.local$|@qa-biz\.local$/i.test(u.email);
+  const hasContact = u => !!(u && (u.phone || realEmail(u)));
 
   // ── konfigurácia (admin editovateľná, settings key coach_config) ────────────
   const DEFAULT_CONFIG = {
@@ -195,7 +200,7 @@ module.exports = function initCoach(ctx){
       const claimedMine = u.coach_claimed_by === trainer._id;
       if(u.coach_claimed_by && !claimedMine) continue; // prevzatý iným trénerom
       if(u.hidden_lead || (isTest(u) && !isTest(trainer)) || u.lead_status==='do_not_contact' || u.do_not_contact) continue;
-      if(!u.phone && !u.email) continue;
+      if(!hasContact(u)) continue;
       const lc = lastContact[u._id] || (u.last_contacted_at ? new Date(u.last_contacted_at).getTime() : 0);
       if(!claimedMine && lc && (now-lc) < 3*86400000 && !followupToday.has(u._id)) continue; // kontaktovaný za posledné 3 dni
       if(!claimedMine && caseCooldown.has(u._id) && !followupToday.has(u._id)) continue; // case nedávno uzavretý → do histórie, nie späť do zoznamu
@@ -256,7 +261,7 @@ module.exports = function initCoach(ctx){
       return !lc || (now-lc) > 3*86400000; };
     const recentCaseIds = new Set((await q.find(db.coach_cases,{})).filter(c=>(now-new Date(c.created_at).getTime()) < 14*86400000).map(c=>c.lead_id));
     const base = u => !u.coach_claimed_by && !recentCaseIds.has(u._id) && !(u.coach_snooze_until && u.coach_snooze_until > todayStr()) && !u.hidden_lead && !u.guest && (!isTest(u) || isTest(user))
-      && u.lead_status!=='do_not_contact' && u.lead_status!=='not_interested' && !u.do_not_contact && (u.phone || u.email) && needsContact(u);
+      && u.lead_status!=='do_not_contact' && u.lead_status!=='not_interested' && !u.do_not_contact && hasContact(u) && needsContact(u);
     const freshLeads = users.filter(u=>u.user_type==='lead' && base(u))
       .sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
     // klientky, čo neboli 30+ dní — poznajú hodiny, iný (winback) tón komunikácie

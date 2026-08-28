@@ -1946,6 +1946,49 @@ async function seedData() {
     }catch(e){ console.error('fix_ivana_ucto_v2:', e.message); }
   }
 
+  // Doplnenie telefónov zo starého zoznamu (Beátka 28.8.: leady v trénerskom
+  // zozname nemali kontakt). Pôvodný import čítal Excel čísla vo vedeckom zápise
+  // (9.028261E8) a telefóny zahodil. Mapa meno;telefón sa nasadzuje cez Railway
+  // env OLDLIST_PHONES_B64 — len jednoznačné mená, len tam, kde telefón chýba.
+  setTimeout(async () => {
+    try {
+      const b64 = process.env.OLDLIST_PHONES_B64;
+      if (!b64) return;
+      const text = Buffer.from(b64, 'base64').toString('utf8');
+      let hash = 0; for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+      const guard = 'oldlist_phones_' + hash.toString(16);
+      if (await q.one(db.settings, { key: guard })) return;
+      await q.insert(db.settings, { key: guard, value: true, at: nowISO() });
+      const norm = v => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const mapa = {};
+      for (const line of text.split('\n')) {
+        const [meno, tel] = line.split(';');
+        if (meno && tel) mapa[meno.trim()] = tel.trim();
+      }
+      const vsetci = await q.find(db.users, {});
+      // meno → users (kvôli jednoznačnosti: rovnaké meno u 2 ľudí = nedopĺňať)
+      const podlaMena = {};
+      for (const u of vsetci) { const k = norm(u.name); (podlaMena[k] = podlaMena[k] || []).push(u); }
+      let doplnene = 0, nejednoznacne = 0;
+      for (const [meno, tel] of Object.entries(mapa)) {
+        const kandidati = (podlaMena[meno] || []).filter(u => !u.phone && !u.is_admin && !u.is_child);
+        if (!kandidati.length) continue;
+        if (kandidati.length > 1) { nejednoznacne++; continue; }
+        await q.update(db.users, { _id: kandidati[0]._id }, { $set: { phone: tel } });
+        doplnene++;
+      }
+      // koľko leadov ostáva bez použiteľného kontaktu (telefón alebo reálny mail)
+      const po = await q.find(db.users, {});
+      const bezKontaktu = po.filter(u => (u.user_type === 'lead' || u.hidden_lead) && !u.is_admin
+        && !u.phone && (!u.email || /@import\.local$/i.test(u.email)));
+      const podlaZdroja = {};
+      for (const u of bezKontaktu) podlaZdroja[u.lead_source || '—'] = (podlaZdroja[u.lead_source || '—'] || 0) + 1;
+      console.log('📞 OLDLIST TELEFÓNY: doplnených ' + doplnene + ', nejednoznačných mien ' + nejednoznacne
+        + ' | leadov stále bez kontaktu: ' + bezKontaktu.length + ' ' + JSON.stringify(podlaZdroja));
+    } catch (e) { console.error('oldlist phones:', e.message); }
+  }, 45 * 1000);
+
   // Anna Debnárová 23. 7. — Marek 27. 8. potvrdil, že taká platba nikdy nebola,
   // takže v účtovníctve nič nechýba. Zatvárame otázku, nech prestane chodiť pripomienka.
   if(!(await q.one(db.settings,{key:'openq_done_anna_debnarova_23_07'}))){
