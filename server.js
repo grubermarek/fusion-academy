@@ -3655,8 +3655,18 @@ async function computeUrgentTasks(){
   const memByUser={}; for(const m of activeMems){ if(!memByUser[m.user_id]||(m.expires_at||'')>(memByUser[m.user_id].expires_at||'')) memByUser[m.user_id]=m; }
   const allBookings=await q.find(db.bookings,{});
   const bookedUsers=new Set(allBookings.filter(b=>b.status!=='cancelled').map(b=>b.user_id));
+  // LEAD OS: posledný ĽUDSKÝ kontakt (tréner AJ admin píšu do coach_contacts) —
+  // semafor, aby dvaja ľudia nevolali tej istej osobe v ten istý týždeň.
+  const lastHuman={};
+  for(const c of await q.find(db.coach_contacts,{})){
+    const dt=(c.date||(c.created_at||'').slice(0,10)); if(!dt||!c.lead_id) continue;
+    const p=lastHuman[c.lead_id];
+    if(!p||dt>p.date) lastHuman[c.lead_id]={date:dt, by:c.trainer_name||'', outcome:c.outcome||''};
+  }
+  const freshContact=(uid,days)=>{ const p=lastHuman[uid]; return !!(p&&p.date>d(-days)); };
   const tasks=[];
-  const contact=u=>({name:u.name||'—', phone:u.phone||'', email:u.email||''});
+  const contact=u=>({name:u.name||'—', phone:u.phone||'', email:u.email||'', user_id:u._id,
+    last_contact:lastHuman[u._id]||null});
   // 1) Nová registrácia bez rezervácie (posledných 14 dní)
   const isTest=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'')||u.lead_source==='test'||u.is_test;
   for(const u of users){
@@ -3664,6 +3674,7 @@ async function computeUrgentTasks(){
     const created=(u.created_at||'').slice(0,10);
     if(!created || created<d(-14) || created>todayS) continue;
     if(bookedUsers.has(u._id) || memByUser[u._id]) continue;
+    if(freshContact(u._id,3)) continue;   // už jej niekto volal — nenaháňať druhýkrát
     tasks.push({key:'lead:'+u._id, type:'lead', prio:1, title:'Nová registrácia bez rezervácie',
       why:`${u.name} sa zaregistrovala ${created}${u.lead_source?' (zdroj: '+u.lead_source+')':''}, ale ešte si nerezervovala hodinu — zavolaj/napíš a pomôž jej vybrať termín.`, ...contact(u)});
   }
@@ -3686,10 +3697,7 @@ async function computeUrgentTasks(){
   }
   // koho už niekto z tímu kontaktoval za posledný mesiac, znova nenaháňame
   const recentContact={};
-  for(const c of await q.find(db.coach_contacts,{})){
-    const dt=(c.date||(c.created_at||'').slice(0,10)); if(!dt||!c.lead_id) continue;
-    if(!recentContact[c.lead_id]||dt>recentContact[c.lead_id]) recentContact[c.lead_id]=dt;
-  }
+  for(const [uid,p] of Object.entries(lastHuman)) recentContact[uid]=p.date;
   const expired=await q.find(db.memberships,{status:'expired'});
   const seen=new Set();
   for(const m of expired){
@@ -3710,6 +3718,7 @@ async function computeUrgentTasks(){
   for(const b of allBookings){
     if(b.status!=='no_show'||b.booking_date!==yest) continue;
     const u=byId[b.user_id]; if(!u) continue;
+    if(freshContact(u._id,3)) continue;   // po no-show jej už niekto písal
     tasks.push({key:'noshow:'+b._id, type:'noshow', prio:3, title:'Včera neprišla na hodinu',
       why:`${u.name} mala včera rezervovanú hodinu a neprišla. Krátke „chýbala si nám" drží vzťah.`, ...contact(u)});
   }
@@ -3725,9 +3734,121 @@ app.get('/api/admin/urgent-tasks', adminAuth, async(req,res)=>{
 app.post('/api/admin/urgent-tasks/dismiss', adminAuth, async(req,res)=>{
   try{ const key=String(req.body.key||'').slice(0,200); if(!key) return res.status(400).json({error:'key?'});
     await q.insert(db.settings,{key:'utask_done_'+key, value:true, by:req.session.uid, at:nowISO()});
+    // „Vybavené + kontaktovaná": jedným klikom sa vybaví úloha AJ zapíše kontakt
+    // do zdieľanej vrstvy — tréneri hneď vidia, že admin už volal (LEAD OS).
+    if(req.body.contacted && req.body.user_id){
+      const u=await q.one(db.users,{_id:String(req.body.user_id).slice(0,40)});
+      if(u) await zapisAdminKontakt(req, u, String(req.body.outcome||'contacted'),
+        String(req.body.note||'').slice(0,500) || null);
+    }
     res.json({ok:true}); }
   catch(e){ res.status(500).json({error:e.message}); }
 });
+
+// ═══ LEAD OS — jednotná zdieľaná vrstva starostlivosti (docs/LEAD_OS_SPEC.md) ═══
+// Admin píše kontakty do TEJ ISTEJ kolekcie ako tréneri (coach_contacts):
+// coach 3-dňový filter, neodkladné úlohy aj karta leada ich vidia automaticky.
+const ADMIN_OUTCOMES=['contacted','replied','interested','not_interested','will_come','later','no_reply'];
+async function zapisAdminKontakt(req, u, outcome, note, followupDate){
+  const me=await q.one(db.users,{_id:req.session.uid});
+  const kto=((me&&me.name)||'Admin').split(' ')[0]+' (admin)';
+  if(!ADMIN_OUTCOMES.includes(outcome)) outcome='contacted';
+  await q.insert(db.coach_contacts,{trainer_id:req.session.uid, trainer_name:kto, by_role:'admin',
+    lead_id:u._id, lead_name:u.name, outcome, note:note||'', date:today(), created_at:nowISO()});
+  const set={last_contacted_at:nowISO()};
+  // rovnaké premietnutie výsledku do lead_status ako u trénerov
+  if(u.user_type==='lead'){
+    const mapa={interested:'interested', will_come:'interested', not_interested:'not_interested'};
+    if(mapa[outcome]) set.lead_status=mapa[outcome];
+  }
+  await q.update(db.users,{_id:u._id},{$set:set});
+  if(note) await q.insert(db.lead_notes,{client_id:u._id, client_name:u.name,
+    author_id:req.session.uid, author_name:kto, text:note, source:'admin_contact', created_at:nowISO()}).catch(()=>{});
+  if(followupDate && /^\d{4}-\d{2}-\d{2}$/.test(followupDate))
+    await q.insert(db.crm_tasks,{title:'Ozvať sa: '+(u.name||''), note:note||'', client_id:u._id,
+      client_name:u.name, assigned_to:req.session.uid, due_date:followupDate, status:'open',
+      created_by:req.session.uid, created_at:nowISO()}).catch(()=>{});
+}
+// Zapísať kontakt (funguje pre leady AJ klientky)
+app.post('/api/admin/leads/:id/contact', adminAuth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.params.id});
+    if(!u) return res.status(404).json({error:'Nenájdená'});
+    await zapisAdminKontakt(req, u, String(req.body.outcome||'contacted'),
+      String(req.body.note||'').slice(0,1000)||null, String(req.body.followup_date||''));
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Poznámka do zdieľanej vrstvy (lead_notes); users.notes sa zrkadlí kvôli
+// starému stĺpcu v tabuľke — zdrojom pravdy je odteraz lead_notes.
+app.post('/api/admin/leads/:id/note', adminAuth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.params.id});
+    if(!u) return res.status(404).json({error:'Nenájdená'});
+    const text=String(req.body.text||'').trim().slice(0,1000);
+    if(!text) return res.status(400).json({error:'Prázdna poznámka'});
+    const me=await q.one(db.users,{_id:req.session.uid});
+    await q.insert(db.lead_notes,{client_id:u._id, client_name:u.name, author_id:req.session.uid,
+      author_name:((me&&me.name)||'Admin').split(' ')[0]+' (admin)', text, source:'manual', created_at:nowISO()});
+    await q.update(db.users,{_id:u._id},{$set:{notes:text}});
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// LEAD OS: horúce leady — raz denne notifikácia trénerom aj adminom, nech
+// najdôležitejšie čísla dňa nikomu nezapadnú (in-app zvonček + badge).
+setInterval(async()=>{ try{
+  const h=+new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Bratislava',hour:'2-digit',hour12:false}).format(new Date());
+  if(h<8||h>=20) return;
+  const guard='hot_leads_'+today();
+  if(await q.one(db.settings,{key:guard})) return;
+  const vsetky=await computeUrgentTasks();
+  const hot=vsetky.filter(t=>t.prio===1);
+  await q.insert(db.settings,{key:guard, value:hot.length, at:nowISO()});
+  if(!hot.length) return;
+  const prijemcovia=(await q.find(db.users,{})).filter(x=>x.is_admin||['trainer','manager'].includes(x.user_type));
+  for(const p of prijemcovia) await q.insert(db.notifications,{user_id:p._id, type:'hot_lead',
+    title:'🔥 '+hot.length+(hot.length===1?' horúci lead čaká':' horúce leady čakajú')+' na kontakt',
+    body:hot.slice(0,3).map(t=>t.name+' — '+t.title).join(' · ')+(hot.length>3?' · …':'')+' → Neodkladné úlohy / Môj deň',
+    read:false, created_at:nowISO()}).catch(()=>{});
+  console.log('🔥 HOT leady: '+hot.length+' → notifikácie '+prijemcovia.length+' ľuďom');
+}catch(e){ console.error('hot leads:',e.message); } }, 15*60*1000);
+
+// LEAD OS watchdog: každý pondelok spočíta „zabudnuté" leady (použiteľný kontakt,
+// >21 dní bez ľudského dotyku, bez follow-upu/snooze/DNC) a pripomenie ich adminom.
+setInterval(async()=>{ try{
+  const den=new Date().getDay(); if(den!==1) return;
+  const guard='lead_watchdog_'+today();
+  if(await q.one(db.settings,{key:guard})) return;
+  await q.insert(db.settings,{key:guard, value:true, at:nowISO()});
+  const zoznam=await zabudnuteLeady();
+  if(!zoznam.length) return;
+  for(const a of (await q.find(db.users,{is_admin:true})))
+    await q.insert(db.notifications,{user_id:a._id, type:'lead_watchdog',
+      title:'🕸 '+zoznam.length+' leadov čaká na kontakt vyše 21 dní',
+      body:'Napr.: '+zoznam.slice(0,5).map(u=>u.name).join(', ')+(zoznam.length>5?'…':'')+' — pozri sekciu Leady.',
+      read:false, created_at:nowISO()}).catch(()=>{});
+  console.log('🕸 Watchdog: '+zoznam.length+' zabudnutých leadov → admin notifikácia');
+}catch(e){ console.error('lead watchdog:',e.message); } }, 30*60*1000);
+
+async function zabudnuteLeady(){
+  const hranica=Date.now()-21*86400000;
+  const openFu=new Set((await q.find(db.crm_tasks,{status:'open'})).map(t=>t.client_id));
+  const lastHuman={};
+  for(const c of await q.find(db.coach_contacts,{})){
+    const t=new Date(c.created_at||0).getTime();
+    if(!lastHuman[c.lead_id]||t>lastHuman[c.lead_id]) lastHuman[c.lead_id]=t;
+  }
+  return (await q.find(db.users,{user_type:'lead', is_admin:{$ne:true}})).filter(u=>{
+    if(u.do_not_contact||['not_interested','do_not_contact'].includes(u.lead_status||'')) return false;
+    if(u.coach_claimed_by||(u.coach_snooze_until&&u.coach_snooze_until>today())) return false;
+    if(!(u.phone||(u.email&&!/@import\.local$|@test-fa-qa\.local$|@qa-biz\.local$/i.test(u.email)))) return false;
+    if(openFu.has(u._id)) return false;
+    const posledny=Math.max(lastHuman[u._id]||0, new Date(u.last_contacted_at||0).getTime(),
+      new Date(u.created_at||0).getTime());
+    return posledny<hranica;
+  });
+}
 // ── Pripomienka trénerovi ~30 min pred hodinou: koho vybrať na mieste ────────
 setInterval(async()=>{
   try{
@@ -6899,7 +7020,9 @@ app.get('/api/admin/leads', adminAuth, async(req,res)=>{
     const byStatus = {};
     for(const l of result){ byStatus[l.lead_status] = (byStatus[l.lead_status]||0)+1; }
     const denom = clientsCount + leadsCount;
+    const zabudnute=await zabudnuteLeady().catch(()=>[]);
     const stats = {
+      forgotten: zabudnute.length,
       leads: leadsCount, clients: clientsCount,
       conversion: denom>0 ? +(clientsCount/denom*100).toFixed(1) : 0,
       interested: (byStatus.interested||0),
@@ -9857,6 +9980,18 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
     };
     const activeMemb = membs.find(m=>(m.expires_at||'')> new Date().toISOString());
 
+    // LEAD OS: zdieľaná starostlivosť — čo pri klientke doteraz úplne chýbalo
+    const kontakty=db.coach_contacts?(await q.find(db.coach_contacts,{lead_id:u._id}))
+      .sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))).slice(0,30):[];
+    const poznamky=db.lead_notes?(await q.find(db.lead_notes,{client_id:u._id}))
+      .sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))).slice(0,30):[];
+    const mailQ=await q.find(db.email_queue,{user_id:u._id});
+    const cakajuce=mailQ.filter(m=>m.status==='pending')
+      .sort((a,b)=>String(a.scheduled_for).localeCompare(String(b.scheduled_for)));
+    let nextMail=null;
+    if(cakajuce[0]){ const st=await q.one(db.email_steps,{_id:cakajuce[0].step_id});
+      nextMail={sequence:cakajuce[0].sequence, scheduled_for:cakajuce[0].scheduled_for, subject:st?st.subject:''}; }
+
     // Refundácie k platbám tohto klienta (na zobrazenie stavu + zákaz dvojitého refundu)
     const refundsForUser = await q.find(db.refunds,{user_id:u._id});
     const refundByPay = {};
@@ -9868,6 +10003,12 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
         user_type:u.user_type||'client', active:u.active!==false,
         acq:{ utm_source:u.utm_source||'', utm_campaign:u.utm_campaign||'', lead_source:u.lead_source||'', is_meta:isMetaUser(u) },
         referral_credit:+u.referral_credit||0, notes:u.notes||'' },
+      care:{ last_contact:kontakty[0]?{at:kontakty[0].created_at, by:kontakty[0].trainer_name,
+          outcome:kontakty[0].outcome, note:kontakty[0].note||''}:null,
+        next_mail:nextMail, active_sequences:[...new Set(cakajuce.map(m=>m.sequence))],
+        claimed_by:u.coach_claimed_by||null, do_not_contact:!!u.do_not_contact },
+      contacts:kontakty.map(c=>({at:c.created_at, date:c.date, by:c.trainer_name, outcome:c.outcome, note:c.note||''})),
+      notes_list:poznamky.map(n=>({at:n.created_at, by:n.author_name, text:n.text})),
       kpis:{ totalPaid, ltv:totalPaid, visits:attended.length, avgPerMonth,
         firstVisit, lastVisit, topStudio:topBy('class_location'), topInstructor:topBy('instructor'),
         activeMembership: activeMemb? {plan_name:activeMemb.plan_name, expires_at:activeMemb.expires_at} : null },

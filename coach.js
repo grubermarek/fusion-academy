@@ -595,7 +595,11 @@ module.exports = function initCoach(ctx){
       const notes = (await q.find(db.lead_notes,{client_id:u._id})).sort((a,b)=>a.created_at<b.created_at?1:-1);
       const contacts = (await q.find(db.coach_contacts,{lead_id:u._id})).sort((a,b)=>a.created_at<b.created_at?1:-1).slice(0,20);
       const attended = bks.filter(b=>b.status==='attended');
-      const mailQ = (await q.find(db.email_queue,{user_id:u._id})).filter(m=>m.status==='sent').sort((a,b)=>a.sent_at<b.sent_at?1:-1).slice(0,15);
+      const mailAll = await q.find(db.email_queue,{user_id:u._id});
+      const mailQ = mailAll.filter(m=>m.status==='sent').sort((a,b)=>a.sent_at<b.sent_at?1:-1).slice(0,15);
+      // LEAD OS: tréner má vidieť aj ČO PRÍDE — nech nevolá deň po automatickom maile naslepo
+      const cakajuce = mailAll.filter(m=>m.status==='pending')
+        .sort((a,b)=>String(a.scheduled_for).localeCompare(String(b.scheduled_for)));
       res.json({ ok:true, lead:{ id:u._id, name:u.name, phone:u.phone||'', email:u.email||'', city:u.city||'',
         lead_source:u.lead_source||'', lead_status:u.lead_status||'', created_at:u.created_at,
         sponsor_id:u.sponsor_id||null, free_class_used:!!u.free_class_used, visits:attended.length+(u.glofox_attendances||0),
@@ -604,7 +608,9 @@ module.exports = function initCoach(ctx){
         had_membership: mems.length>0, last_contacted_at:u.last_contacted_at||null },
         bookings: bks.map(b=>({date:b.booking_date, name:b.class_name, loc:b.class_location, status:b.status, access:b.access_method||(b.free_class?'free_class':null), attended_by:b.attended_by||null})),
         notes, contacts: contacts.map(c=>({date:c.date, trainer:c.trainer_name, outcome:c.outcome, note:c.note})),
-        emails: mailQ.map(m=>({sent_at:m.sent_at, sequence:m.sequence})) });
+        emails: mailQ.map(m=>({sent_at:m.sent_at, sequence:m.sequence})),
+        next_mail: cakajuce[0]?{sequence:cakajuce[0].sequence, scheduled_for:cakajuce[0].scheduled_for}:null,
+        active_sequences: [...new Set(cakajuce.map(m=>m.sequence))] });
     }catch(e){ console.error('coach/lead',e); res.status(500).json({error:'Chyba'}); }
   });
 

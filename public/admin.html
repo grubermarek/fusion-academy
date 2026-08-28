@@ -4812,6 +4812,7 @@ function renderLeadStats(s){
     ${card('Aktívne leady', s.leads, '#C9A84C', 'ešte nezaplatili')}
     ${card('Majú záujem', s.interested, '#fd7e14', 'označené „Má záujem"')}
     ${card('Boli na hodine', s.trial, '#20c997', 'prišli na hodinu zdarma')}
+    ${card('🕸 Zabudnuté', s.forgotten??0, s.forgotten?'#ff6b6b':'#4ade80', 'bez kontaktu > 21 dní a bez plánu')}
   </div>`;
 }
 const LEAD_STATUS={
@@ -4866,7 +4867,7 @@ function renderLeads(){
     <td class="text-center">${l.attendances}</td>
     <td class="text-nowrap">
       <button class="btn btn-sm btn-outline-info" title="Mailová sekvencia" onclick="showLeadEmails('${l.id}','${escHtml((l.name||'').replace(/'/g,''))}')"><i class="bi bi-envelope-paper"></i></button>
-      <button class="btn btn-sm btn-outline-warning" title="Označiť ako kontaktovaný (teraz)" onclick="markContacted('${l.id}')"><i class="bi bi-telephone-check"></i></button>
+      <button class="btn btn-sm btn-outline-warning" title="Zapísať kontakt (zdieľané s trénermi)" onclick="openAdminContact('${l.id}','${escHtml((l.name||'').replace(/'/g,''))}')"><i class="bi bi-telephone-check"></i></button>
       <button class="btn btn-sm btn-outline-secondary" title="Zobraziť profil" onclick="window.open('/u/${l.id}','_blank')"><i class="bi bi-box-arrow-up-right"></i></button>
     </td>
   </tr>`).join('');
@@ -4898,9 +4899,32 @@ function openLeadNote(id){
 async function saveLeadNote(){
   const id=document.getElementById('leadNoteId').value;
   const notes=document.getElementById('leadNoteText').value;
-  const r=await api('/api/admin/users/'+id,{method:'PUT',body:JSON.stringify({notes})});
+  // LEAD OS: poznámka ide do zdieľanej vrstvy (lead_notes) — vidia ju aj tréneri;
+  // users.notes zrkadlí server kvôli tomuto stĺpcu
+  const r=await api('/api/admin/leads/'+id+'/note',{method:'POST',body:JSON.stringify({text:notes})});
   if(r&&r.ok){ const l=_leadsData.find(x=>x.id===id); if(l) l.notes=notes; showToast('Poznámka uložená ✓','success'); bootstrap.Modal.getInstance(document.getElementById('leadNoteModal')).hide(); renderLeads(); }
   else showToast('Chyba: '+(r?.error||'?'),'error');
+}
+let _acAfter=null;
+function openAdminContact(id,name,afterFn){
+  _acAfter=afterFn||null;
+  document.getElementById('acId').value=id;
+  document.getElementById('acName').textContent=name||'';
+  document.getElementById('acNote').value=''; document.getElementById('acFu').value='';
+  document.getElementById('acOutcome').value='contacted';
+  new bootstrap.Modal(document.getElementById('adminContactModal')).show();
+}
+async function saveAdminContact(){
+  const id=document.getElementById('acId').value;
+  const r=await api('/api/admin/leads/'+id+'/contact',{method:'POST',body:JSON.stringify({
+    outcome:document.getElementById('acOutcome').value,
+    note:document.getElementById('acNote').value.trim(),
+    followup_date:document.getElementById('acFu').value||''})});
+  if(r?.ok){ showToast('Kontakt zapísaný ✓ (vidia ho aj tréneri)','success');
+    bootstrap.Modal.getInstance(document.getElementById('adminContactModal')).hide();
+    if(typeof _acAfter==='function'){ _acAfter(); _acAfter=null; }
+    if(typeof loadLeads==='function' && document.getElementById('s-leads')?.classList.contains('active')) loadLeads();
+  } else showToast('Chyba: '+(r?.error||'?'),'error');
 }
 async function setLeadStatus(id,status){
   const r=await api('/api/admin/leads/'+id+'/status',{method:'PUT',body:JSON.stringify({status})});
@@ -5035,7 +5059,8 @@ function renderClients(){
     const av=c.avatar?`<img src="${c.avatar}" style="width:32px;height:32px;border-radius:50%;object-fit:cover">`:`<span style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#C9A84C,#a07830);color:#111;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.72rem">${escHtml(ini(c.name))}</span>`;
     const mem=c.membership?`<span class="badge" style="background:rgba(201,168,76,.15);color:#C9A84C;border:1px solid rgba(201,168,76,.3)">${escHtml(c.membership)}</span>`:'<span class="text-muted">–</span>';
     return `<tr style="cursor:pointer" onclick="window.open('/u/${c.id}','_blank')" title="Otvoriť profil klienta">
-      <td class="ps-3"><div class="d-flex align-items-center gap-2">${av}<b>${escHtml(c.name||'–')}</b>${c.active===false?'<span class="badge bg-danger ms-1">Blok</span>':''}</div></td>
+      <td class="ps-3"><div class="d-flex align-items-center gap-2">${av}<b>${escHtml(c.name||'–')}</b>${c.active===false?'<span class="badge bg-danger ms-1">Blok</span>':''}
+        <button class="btn btn-sm btn-outline-secondary py-0 px-1" style="font-size:.68rem" title="CRM detail (platby, starostlivosť, história)" onclick="event.stopPropagation();openClientDetail('${c.id}')"><i class="bi bi-folder2-open"></i></button></div></td>
       <td class="small text-muted">${escHtml(c.email||'–')}</td>
       <td class="text-nowrap" onclick="event.stopPropagation()">${c.phone?`<a href="tel:${escHtml(c.phone)}" class="text-decoration-none">${escHtml(c.phone)}</a>`:'–'}</td>
       <td>${mem}</td>
@@ -5088,7 +5113,12 @@ async function openClientDetail(id){
       · členom od <b style="color:#C9A84C">${fmtDate(p.member_since||p.created_at)}</b>
       <button class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1" style="font-size:.65rem" title="Upraviť dátum, odkedy je členom tanečnej školy (napr. z Glofoxu)" onclick="cdEditMemberSince('${p.id}','${p.member_since||''}')"><i class="bi bi-pencil"></i></button>
       ${p.member_since?'':`<span class="text-muted" style="font-size:.65rem">(= registrácia v appke)</span>`}</div>
-    <div class="text-muted" style="font-size:.72rem">Akvizícia: ${p.acq.is_meta?'<span class="badge" style="background:#1877F2;font-size:.6rem">📘 Meta Ads</span> ':''}${escHtml(acq)}</div>`;
+    <div class="text-muted" style="font-size:.72rem">Akvizícia: ${p.acq.is_meta?'<span class="badge" style="background:#1877F2;font-size:.6rem">📘 Meta Ads</span> ':''}${escHtml(acq)}</div>
+    ${d.care?`<div style="font-size:.75rem;margin-top:4px">
+      ${d.care.do_not_contact?'<span class="badge bg-danger">🚫 NEKONTAKTOVAŤ</span> ':''}
+      ${d.care.last_contact?`☎️ <b>${fmtDate(d.care.last_contact.at)}</b> ${escHtml((d.care.last_contact.by||'').split(' (')[0])} — ${escHtml(d.care.last_contact.outcome||'')}`:'☎️ <span style="color:#e8c97a">zatiaľ bez ľudského kontaktu</span>'}
+      ${d.care.next_mail?` · 🤖 ďalší automat. mail: <b>${escHtml(d.care.next_mail.sequence)}</b> ${d.care.next_mail.scheduled_for}`:''}
+    </div>`:''}`;
   const kpi=(l,v)=>`<div class="col-6 col-md-3"><div style="background:#1e1e1e;border:1px solid #2a2a2a;border-radius:9px;padding:11px 13px">
     <div class="text-muted" style="font-size:.62rem;text-transform:uppercase;letter-spacing:.04em">${l}</div>
     <div class="fw-bold" style="font-size:1.05rem">${v}</div></div></div>`;
@@ -5108,18 +5138,35 @@ async function openClientDetail(id){
     </div>
     <div id="cdEventSale" class="mb-3 pb-3" style="border-bottom:1px solid #2a2a2a"></div>
     <ul class="nav nav-tabs mb-2" style="border-color:#333">
-      ${['Platby','Členstvá','Návštevy','Faktúry','✉️ E-maily'].map((t,i)=>`<li class="nav-item"><a class="nav-link${i===0?' active':''}" style="cursor:pointer;color:#ccc" onclick="cdTab(${i},this)">${t}</a></li>`).join('')}
+      ${['Platby','Členstvá','Návštevy','Faktúry','✉️ E-maily','❤️ Starostlivosť'].map((t,i)=>`<li class="nav-item"><a class="nav-link${i===0?' active':''}" style="cursor:pointer;color:#ccc" onclick="cdTab(${i},this)">${t}</a></li>`).join('')}
     </ul>
     <div class="cd-tab" data-i="0">${cdPaymentsHtml(d.payments)}</div>
     <div class="cd-tab" data-i="1" style="display:none">${list(d.memberships,['Členstvo','Cena','Stav','Od','Do'],r=>`<tr><td>${escHtml(r.plan_name||'')}</td><td>${r.price.toFixed(2)} €</td><td>${escHtml(r.status||'')}</td><td>${fmtDate(r.started_at)}</td><td>${fmtDate(r.expires_at)}</td></tr>`)}</div>
     <div class="cd-tab" data-i="2" style="display:none">${list(d.bookings,['Dátum','Hodina','Miesto','Stav'],r=>`<tr><td>${fmtDate(r.date)}</td><td>${escHtml(r.class_name||'')}</td><td>${escHtml(r.location||'')}</td><td>${escHtml(r.status||'')}</td></tr>`)}</div>
     <div class="cd-tab" data-i="3" style="display:none">${list(d.invoices,['Číslo','Suma','Stav','Vystavená'],r=>`<tr><td><a href="/invoice/${r.number}" target="_blank" style="color:#C9A84C">${r.number}</a></td><td>${r.total.toFixed(2)} €</td><td>${escHtml(r.status||'')}</td><td>${fmtDate(r.issued_at)}</td></tr>`)}</div>
     <div class="cd-tab" data-i="4" style="display:none" id="cdEmailsTab"><div class="text-muted small py-2">Klikni na záložku pre načítanie…</div></div>
+    <div class="cd-tab" data-i="5" style="display:none">
+      <div class="d-flex gap-2 mb-2">
+        <button class="btn btn-sm btn-warning" onclick="openAdminContact('${p.id}','${escHtml((p.name||'').replace(/'/g,''))}',()=>openClientDetail('${p.id}'))">📞 Zapísať kontakt</button>
+        <input id="cdNoteText" class="form-control form-control-sm" style="background:#111;color:#eee;border-color:#333" placeholder="rýchla poznámka…">
+        <button class="btn btn-sm btn-outline-warning" onclick="cdAddNote('${p.id}')">📝</button>
+      </div>
+      <div class="fw-bold small mb-1">Kontakty (tréneri + admin)</div>
+      ${(d.contacts||[]).length?d.contacts.map(c=>`<div style="font-size:.78rem;border-bottom:1px solid #262626;padding:4px 0">${fmtDate(c.at)} · <b>${escHtml(c.by||'')}</b> — ${escHtml(c.outcome||'')}${c.note?' · '+escHtml(c.note):''}</div>`).join(''):'<div class="text-muted small py-2">Zatiaľ žiadny ľudský kontakt.</div>'}
+      <div class="fw-bold small mb-1 mt-3">Poznámky</div>
+      ${(d.notes_list||[]).length?d.notes_list.map(n=>`<div style="font-size:.78rem;border-bottom:1px solid #262626;padding:4px 0">${fmtDate(n.at)} · <b>${escHtml(n.by||'')}</b>: ${escHtml(n.text||'')}</div>`).join(''):'<div class="text-muted small py-2">Žiadne poznámky.</div>'}
+    </div>
     <div id="cdAwards" class="mt-3 pt-3" style="border-top:1px solid #2a2a2a"><div class="text-muted small">Načítavam odznaky…</div></div>`;
   loadAwards(id);
   loadCdEventSale(p, !!k.activeMembership);
 }
 
+async function cdAddNote(id){
+  const t=document.getElementById('cdNoteText').value.trim(); if(!t) return;
+  const r=await api('/api/admin/leads/'+id+'/note',{method:'POST',body:JSON.stringify({text:t})});
+  if(r?.ok){ showToast('Poznámka uložená ✓','success'); openClientDetail(id); }
+  else showToast('Chyba: '+(r?.error||'?'),'error');
+}
 // ── Predaj vstupenky priamo z profilu klientky (hotovosť/prevod) ─────────────
 // Vstupenku aj QR dostane e-mailom a padne jej rovno do appky. Ceny sa rátajú
 // rovnako ako v e-shope: členská / predpredaj / na mieste.
@@ -6958,10 +7005,12 @@ async function loadUrgent(){
         <div style="min-width:240px;flex:1">
           <div class="fw-bold">${URGENT_ICON[t.type]||'🔥'} ${t.title} — ${t.name}</div>
           <div class="text-muted" style="font-size:.88rem">${t.why}</div>
+          ${t.last_contact?`<div style="font-size:.78rem;color:#e8c97a">☎️ Naposledy: ${t.last_contact.date} · ${escHtml(t.last_contact.by||'')}`+(t.last_contact.outcome?` — ${escHtml(t.last_contact.outcome)}`:'')+`</div>`:''}
         </div>
         <div class="d-flex gap-2 align-items-center flex-wrap">
           ${t.phone?`<a class="btn btn-sm btn-success" href="tel:${t.phone}"><i class="bi bi-telephone me-1"></i>${t.phone}</a>`:''}
           ${t.email?`<a class="btn btn-sm btn-outline-light" href="mailto:${t.email}"><i class="bi bi-envelope me-1"></i>Mail</a>`:''}
+          ${t.user_id?`<button class="btn btn-sm btn-warning" title="Vybaví úlohu a zapíše kontakt do zdieľanej histórie" onclick="doneUrgentContact('${t.key.replace(/'/g,'')}','${t.user_id}','${escHtml((t.name||'').replace(/'/g,''))}')">✓ + 📞 kontaktovaná</button>`:''}
           <button class="btn btn-sm btn-outline-secondary" onclick="dismissUrgent('${t.key.replace(/'/g,'')}')">✓ Vybavené</button>
         </div>
       </div>
@@ -6971,6 +7020,11 @@ function updateUrgentBadge(n){ const b=document.getElementById('urgentBadge'); i
 async function dismissUrgent(key){
   const d=await api('/api/admin/urgent-tasks/dismiss',{method:'POST',body:{key}});
   if(d?.ok) loadUrgent(); else showToast('Chyba: '+(d?.error||'?'),'error');
+}
+// „Vybavené + kontaktovaná": otvorí kontaktný modal a po zapísaní úlohu vybaví
+function doneUrgentContact(key,userId,name){
+  openAdminContact(userId,name,async()=>{ await api('/api/admin/urgent-tasks/dismiss',{method:'POST',body:{key}}); loadUrgent(); });
+  // zapíše kontakt cez zdieľaný modal — dismiss beží až po uložení (afterFn)
 }
 // badge pri štarte + ak je v URL #urgent, otvor rovno sekciu
 (async()=>{ try{ const d=await api('/api/admin/urgent-tasks'); if(d?.ok) updateUrgentBadge(d.tasks.length); if(location.hash==='#urgent') show('urgent'); }catch(e){} })();
@@ -7059,6 +7113,30 @@ document.addEventListener('click', e => {
 </div>
 
 <!-- Poznámka k leadovi / klientovi -->
+<div class="modal fade" id="adminContactModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content" style="background:#191919;border:1px solid #333">
+    <div class="modal-header border-0"><h5 class="modal-title">📞 Zapísať kontakt — <span id="acName"></span></h5>
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body pt-0">
+      <div class="text-muted small mb-2">Zapíše sa do zdieľanej histórie — tréneri uvidia, že si volal, a 3 dni jej nebudú volať znova.</div>
+      <input type="hidden" id="acId">
+      <label class="form-label small">Výsledok</label>
+      <select id="acOutcome" class="form-select form-select-sm mb-2" style="background:#111;color:#eee;border-color:#333">
+        <option value="contacted">📞 Kontaktovaná</option><option value="replied">💬 Odpísala</option>
+        <option value="interested">🙂 Má záujem</option><option value="will_come">📅 Príde</option>
+        <option value="later">⏰ Ozvať sa neskôr</option><option value="no_reply">📵 Nedvíha</option>
+        <option value="not_interested">🙅 Nemá záujem</option>
+      </select>
+      <label class="form-label small">Poznámka</label>
+      <textarea id="acNote" rows="2" class="form-control form-control-sm mb-2" style="background:#111;color:#eee;border-color:#333" placeholder="čo povedala…"></textarea>
+      <label class="form-label small">Pripomenúť sa (nepovinné)</label>
+      <input type="date" id="acFu" class="form-control form-control-sm" style="background:#111;color:#eee;border-color:#333">
+    </div>
+    <div class="modal-footer border-0">
+      <button type="button" class="btn btn-warning" onclick="saveAdminContact()"><i class="bi bi-check-lg me-1"></i>Zapísať</button>
+    </div>
+  </div></div>
+</div>
 <div class="modal fade" id="leadNoteModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
