@@ -198,7 +198,11 @@ const put = (jar, p, b) => call(jar, 'PUT', p, b);
   ok('case má metriky (kontakty, trvanie)', hist.rows[0] && 'contacts_count' in hist.rows[0] && 'duration_h' in hist.rows[0], hist.rows[0]);
   // pokus o podvodnú konverziu: claim → okamžitý release s convert
   await post('T', '/api/coach/lead/' + meL.id + '/claim', {});
-  const fraud = await post('T', '/api/coach/lead/' + meL.id + '/release', { lead_status: 'trial', convert: true });
+  // brána 1: konverzia bez zdôvodnenia sa vôbec nespustí (case ostáva otvorený)
+  const bezNote = await post('T', '/api/coach/lead/' + meL.id + '/release', { lead_status: 'trial', convert: true });
+  ok('konverzia bez zdôvodnenia = 400 need_note', bezNote.status === 400 && bezNote.data && bezNote.data.need_note === true, bezNote.data);
+  // brána 2: so zdôvodnením prejde, ale okamžitú konverziu zastaví antifraud (krátky case)
+  const fraud = await post('T', '/api/coach/lead/' + meL.id + '/release', { lead_status: 'trial', convert: true, note: 'Volala som jej trikrat, dohodli sme termin a prisla na moju hodinu.' });
   ok('okamžitá konverzia neuznaná (antifraud)', fraud.data && fraud.data.ok && fraud.data.converted === false && !!fraud.data.convert_error, fraud.data);
   const acases = (await g('admin', '/api/admin/coach/cases')).data;
   ok('admin vidí všetky case-y s metrikami', acases && acases.ok && acases.rows.length >= 2 && 'suspicious' in acases.rows[0], acases && acases.rows.length);

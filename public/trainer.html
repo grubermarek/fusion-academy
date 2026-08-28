@@ -1945,7 +1945,6 @@ async function coachRelease(id){
   const opt=prompt('Uzavrieť case ako:\n1 = Prišla na hodinu 🎉\n2 = Má záujem (odovzdávam)\n3 = Nemá záujem\n4 = Len uvoľniť bez zmeny statusu\n5 = Konvertovaná 🤝 — stať sa jej sponzorom (affiliate odmeny; uzná sa len ak po tvojom prevzatí reálne prišla na hodinu alebo zaplatila)','1');
   if(opt===null) return;
   const map={'1':'trial','2':'interested','3':'not_interested','5':'trial'};
-  const note=prompt('Krátke zhrnutie case-u (voliteľné, uloží sa ako poznámka)')||'';
   let convert=(opt==='5');
   if(convert){
     const L=(_coach.my_leads||[]).find(x=>x.id===id)||_coach.leads.find(x=>x.id===id);
@@ -1953,6 +1952,14 @@ async function coachRelease(id){
       if(!confirm('⚠️ POZOR: '+(L.name||'tento lead')+' už má sponzora — '+L.sponsor_name+'.\nKonverziou by si mu prebral/a klienta, server ju NEUZNÁ.\n\nUzavrieť case ako „prišla na hodinu" (bez konverzie)?')) return;
       convert=false;
     }
+  }
+  // Konverzia = sponzorstvo → POVINNÉ zdôvodnenie, ako si sa o ňu pričinil/a
+  let note;
+  if(convert){
+    note=(prompt('🤝 KONVERZIA — napíš, ako si sa o ňu pričinil/a (POVINNÉ):\nnapr. „3× som jej volala, dohodli sme termín, prišla na moju hodinu a kúpila si Bronze."')||'').trim();
+    if(note.length<20){ toast('Konverzia potrebuje poznámku, ako si sa pričinil/a (aspoň pár slov). Case ostáva otvorený — skús znova.', true); return; }
+  } else {
+    note=prompt('Krátke zhrnutie case-u (voliteľné, uloží sa ako poznámka)')||'';
   }
   const r=await api('/api/coach/lead/'+id+'/release',{method:'POST',body:{lead_status:map[opt]||null, note, convert}});
   if(r?.ok){

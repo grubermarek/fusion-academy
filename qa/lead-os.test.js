@@ -182,6 +182,33 @@ async function j(url, opts = {}, jar) {
     const cr2 = (await j('/api/admin/care-report?days=7', {}, adm)).d;
     ok('duplicitný kontakt (2 rôzni ľudia < 3 dni) sa zachytí', cr2.duplicitne === 1, String(cr2.duplicitne));
 
+    // ── 12b. Konverzia leadu len s povinným zdôvodnením ──
+    // tréner si prevezme Zoru a zapíše kontakt (nutná podmienka konverzie)
+    await j('/api/coach/lead/leadZabudnuty001/claim', { method: 'POST', body: {} }, trn);
+    // pokus o konverziu BEZ poznámky → 400 a case OSTÁVA otvorený
+    const k1 = await j('/api/coach/lead/leadZabudnuty001/release', { method: 'POST',
+      body: { lead_status: 'trial', convert: true, note: '' } }, trn);
+    ok('konverzia bez poznámky sa odmietne', k1.status === 400 && k1.d && k1.d.need_note === true, JSON.stringify(k1.d));
+    ok('chybová hláška vysvetľuje, čo treba', /pričinil/.test((k1.d && k1.d.error) || ''));
+    const zoraPo = rd('users.db').find(u => u._id === 'leadZabudnuty001');
+    ok('case po odmietnutí OSTÁVA prevzatý (lead sa nestratí)', zoraPo.coach_claimed_by === 'trenerkaLeadOs01', JSON.stringify(zoraPo.coach_claimed_by));
+    // default sponzor (zakladateľ-admin) sa priraďuje pri štarte — podstatné je,
+    // že sa sponzorom NEstal tréner (konverzia neprebehla)
+    ok('trénerka sa sponzorom nestala', zoraPo.sponsor_id !== 'trenerkaLeadOs01', JSON.stringify(zoraPo.sponsor_id));
+    // krátka poznámka (menej ako 20 znakov) tiež neprejde
+    const k2 = await j('/api/coach/lead/leadZabudnuty001/release', { method: 'POST',
+      body: { lead_status: 'trial', convert: true, note: 'volala som' } }, trn);
+    ok('príliš krátke zdôvodnenie neprejde', k2.status === 400 && k2.d.need_note === true, JSON.stringify(k2.d));
+    // s poriadnou poznámkou request PREJDE (konverzia sa ešte neuzná — case < 1 h,
+    // ale to je až ďalšia podmienka; podstatné je, že brána poznámky pustila ďalej)
+    const k3 = await j('/api/coach/lead/leadZabudnuty001/release', { method: 'POST',
+      body: { lead_status: 'trial', convert: true, note: 'Trikrát som jej volala, dohodli sme termín a prišla na moju hodinu v utorok.' } }, trn);
+    ok('so zdôvodnením request prejde', k3.status === 200 && k3.d && k3.d.ok, JSON.stringify(k3.d));
+    ok('konverziu zastavila až ďalšia reálna podmienka (krátky case), nie poznámka',
+      k3.d.converted === false && /krátko|reálne/.test(k3.d.convert_error || ''), JSON.stringify(k3.d.convert_error));
+    ok('zdôvodnenie sa uložilo do poznámok', rd('lead_notes.db')
+      .some(n => n.client_id === 'leadZabudnuty001' && /Trikrát som jej volala/.test(n.text)));
+
     // ── 12. Statika: joby a spec existujú ──
     const src = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
     ok('hot-lead notifikačný job existuje (guard na deň)', src.includes("'hot_leads_'+today()") && src.includes("type:'hot_lead'"));

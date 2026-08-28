@@ -468,6 +468,14 @@ module.exports = function initCoach(ctx){
     const st = (req.body||{}).lead_status;
     const wantConvert = (req.body||{}).convert === true;
 
+    // Konverzia = sponzorstvo + affiliate odmeny → POVINNÉ zdôvodnenie, ako sa
+    // tréner o ňu pričinil (Marek 28.8.). Odmietame PRED akoukoľvek zmenou —
+    // case ostáva otvorený a lead prevzatý, stačí doplniť poznámku a skúsiť znova.
+    const convNote = String((req.body||{}).note||'').trim();
+    if(wantConvert && convNote.length < 20)
+      return res.status(400).json({ need_note:true,
+        error:'Pri konverzii napíš, ako si sa o ňu pričinil/a — čo si s ňou riešil/a a čím si ju priviedol/a (aspoň pár slov). Bez toho sa konverzia nedá uznať. Case ostáva otvorený.' });
+
     // konverzia na svojho klienta (sponzorstvo + affiliate) — len pri reálnom výsledku
     let converted = false, prevSponsor = lead.sponsor_id || null, convertError = null;
     if(wantConvert){
@@ -492,6 +500,7 @@ module.exports = function initCoach(ctx){
     await q.update(db.users,{_id:lead._id},{$set:set});
     await q.insert(db.coach_cases,{trainer_id:me._id, trainer_name:me.name, lead_id:lead._id, lead_name:lead.name,
       resolution: st||'released', converted, prev_sponsor: converted?prevSponsor:undefined,
+      conversion_note: converted ? convNote.slice(0,500) : undefined,
       claimed_at: claimedAt, duration_h: durationH, contacts_count: myContacts.length, notes_count: myNotes.length,
       date: todayStr(), created_at: nowISO()});
     // uzavretie case-u je práca s leadom → počíta sa ako dnešný kontakt (max 1/lead/deň)
@@ -505,11 +514,12 @@ module.exports = function initCoach(ctx){
     }
     const note = (req.body||{}).note;
     if(note) await q.insert(db.lead_notes,{client_id:lead._id, client_name:lead.name, author_id:me._id,
-      author_name:me.name, text:'Case uzavretý: '+String(note).slice(0,300), source:'coach_release', created_at:nowISO()});
+      author_name:me.name, text:(converted?'🤝 KONVERZIA — ako sa pričinil/a: ':'Case uzavretý: ')+String(note).slice(0,500),
+      source:'coach_release', created_at:nowISO()});
     if(converted){
       const admins = (await q.find(db.users,{is_admin:true})).filter(a=>!isTest(a));
       for(const a of admins) await q.insert(db.notifications,{user_id:a._id, type:'coach_convert',
-        title:'Konverzia leadu 🤝', body:`${me.name} konvertoval(a) ${lead.name} a stal(a) sa sponzorom (case ${durationH} h, ${myContacts.length} kontaktov). Skontroluj v admin → Úlohy trénerov.`,
+        title:'Konverzia leadu 🤝', body:`${me.name} konvertoval(a) ${lead.name} a stal(a) sa sponzorom (case ${durationH} h, ${myContacts.length} kontaktov). Zdôvodnenie: „${convNote.slice(0,200)}". Skontroluj v admin → Úlohy trénerov.`,
         read:false, created_at:nowISO()}).catch(()=>{});
     }
     res.json({ok:true, converted, convert_error: convertError});
