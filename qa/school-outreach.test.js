@@ -80,7 +80,7 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     const H = prev.txt;
     ok('náhľad mailu sa vygeneruje', prev.status === 200 && H.length > 800);
     for (const [co, txt] of [['13 lekcií', '13 lekcií (10 + 3 bonusové zadarmo)'], ['cena 49,90 €', '49,90 €'],
-      ['3 € škole', '3 € z každého zaplateného kurzu'], ['25 = 75 €', '75 €'], ['50 = 150 €', '150 €'],
+      ['3 € škole', '3 € za každého prihláseného žiaka'], ['25 = 75 €', '75 €'], ['50 = 150 €', '150 €'],
       ['telefón', '0904 31 51 51'], ['referencia Podbrezová', 'Podbrezovej'],
       ['žiadna hotovosť cez učiteľa', 'neprejde ani euro v hotovosti'],
       ['IČO', '56167563'], ['oslovenie riaditeľky', 'pani riaditeľka'], ['mesto v predmete', 'Detva']])
