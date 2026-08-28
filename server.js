@@ -10043,6 +10043,65 @@ app.get('/api/admin/analytics/retention', adminAuth, async(req,res)=>{
 });
 
 // ─── PHASE F: CRM detail klienta (360° pohľad) ──────────────────────────────────
+// LEAD OS: jedna chronologická história klientky — kedy, kým, aká akcia, poznámka
+// (Marek 28.8.: „nech má každá klientka svoju kartu a tam históriu akcií").
+app.get('/api/admin/crm/client/:id/timeline', adminAuth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.params.id});
+    if(!u) return res.status(404).json({error:'Nenájdená'});
+    const ev=[];
+    const push=(at,typ,ikona,kto,titul,detail)=>{ if(at) ev.push({at,typ,ikona,kto:kto||'',titul,detail:detail||''}); };
+
+    push(u.registration_at||u.created_at,'registracia','👋','', 'Registrácia',
+      (u.lead_source?('zdroj: '+u.lead_source):'')+(u.utm_campaign?(' · kampaň: '+u.utm_campaign):''));
+    if(u.do_not_contact) push(u.dnc_at,'dnc','🚫',u.dnc_by_name||'','NEKONTAKTOVAŤ','trvalé vyradenie z kontaktovania');
+
+    // ľudské kontakty (tréneri + admin — jedna vrstva)
+    if(db.coach_contacts) for(const c of await q.find(db.coach_contacts,{lead_id:u._id}))
+      push(c.created_at,'kontakt','📞',c.trainer_name,'Kontakt — '+(c.outcome||''),(c.auto?'(klik na Zavolať/SMS) ':'')+(c.note||''));
+    // poznámky
+    if(db.lead_notes) for(const n of await q.find(db.lead_notes,{client_id:u._id}))
+      push(n.created_at,'poznamka','📝',n.author_name,'Poznámka',n.text);
+    // maily (reálne odoslané, s otvorením/klikom)
+    if(u.email) for(const m of (await q.find(db.mail_log,{to:u.email})).slice(-60))
+      push(m.created_at,'mail','✉️','automatika','E-mail: '+(m.subject||''),
+        (m.template?('šablóna '+m.template+' · '):'')+(m.clicked_at?'klikla ✅':m.opened_at?'otvorila 👀':'neotvorená'));
+    // rezervácie / účasti / no-show
+    for(const b of await q.find(db.bookings,{user_id:u._id})){
+      const st=b.attendance_status==='no_show'?'❌ no-show':b.status==='cancelled'?'zrušená':b.attendance_status==='attended'||b.status==='attended'?'✅ prišla':'rezervovaná';
+      push((b.booking_date?b.booking_date+'T12:00:00.000Z':b.created_at),'hodina','📅','', 'Hodina: '+(b.class_name||'')+' ('+st+')',(b.class_location||'')+(b.access_method?(' · '+b.access_method):''));
+    }
+    // platby + tržbové transakcie
+    for(const p of (await q.find(db.payments,{user_id:u._id})).filter(p=>['completed','active'].includes(p.status)))
+      push(p.captured_at||p.activated_at||p.created_at,'platba','💶','', 'Platba '+(+p.amount||0).toFixed(2)+' €',(p.plan_name||p.note||'')+(p.provider?(' · '+p.provider):''));
+    for(const t of (await q.find(db.transactions,{user_id:u._id})).filter(t=>(+t.amount||0)>0&&['single_entry','membership','event_ticket','private_lesson','subscription','subscription_renewal'].includes(t.type)))
+      push(t.created_at||t.date,'platba','💶','', (t.type==='event_ticket'?'Vstupenka':'Nákup')+' '+(+t.amount).toFixed(2)+' €',(t.note||t.type)+(t.payment_method?(' · '+t.payment_method):''));
+    // členstvá
+    for(const m of (await q.find(db.memberships,{user_id:u._id})).filter(m=>!m._type))
+      push(m.started_at||m.created_at,'clenstvo','💎','', 'Členstvo: '+(m.plan_name||m.plan_id||''),(m.price?((+m.price).toFixed(2)+' € · '):'')+(m.expires_at?('do '+String(m.expires_at).slice(0,10)):''));
+    // follow-upy
+    if(db.crm_tasks) for(const t of await q.find(db.crm_tasks,{client_id:u._id})){
+      push(t.created_at,'followup','⏰','', 'Follow-up naplánovaný'+(t.due_date?(' na '+t.due_date):''),t.note||t.title||'');
+      if(t.status==='done') push(t.done_at,'followup','✅','', 'Follow-up splnený',t.title||'');
+    }
+    // case-y (prevzatie → uzavretie, konverzia so zdôvodnením)
+    if(db.coach_cases) for(const c of await q.find(db.coach_cases,{lead_id:u._id})){
+      if(c.claimed_at) push(c.claimed_at,'case','🤝',c.trainer_name,'Lead prevzatý','');
+      push(c.created_at,'case',c.converted?'🏆':'📁',c.trainer_name,
+        c.converted?'KONVERZIA — stal(a) sa sponzorom':'Case uzavretý: '+(c.resolution||''),
+        (c.conversion_note||'')+(c.duration_h!=null?(' · case '+c.duration_h+' h'):'')+' · '+(c.contacts_count||0)+' kontaktov');
+    }
+    ev.sort((a,b)=>String(b.at).localeCompare(String(a.at)));
+    // najbližší naplánovaný automatický mail — budúcnosť, ukazuje sa nad históriou
+    const cakajuce=(await q.find(db.email_queue,{user_id:u._id})).filter(m=>m.status==='pending')
+      .sort((a,b)=>String(a.scheduled_for).localeCompare(String(b.scheduled_for)));
+    let next=null;
+    if(cakajuce[0]){ const st=await q.one(db.email_steps,{_id:cakajuce[0].step_id});
+      next={sequence:cakajuce[0].sequence, scheduled_for:cakajuce[0].scheduled_for, subject:st?st.subject:''}; }
+    res.json({ok:true, name:u.name, timeline:ev.slice(0,250), next_mail:next});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
   try {
     const u=await q.one(db.users,{_id:req.params.id});

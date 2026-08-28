@@ -204,10 +204,38 @@ async function j(url, opts = {}, jar) {
     const k3 = await j('/api/coach/lead/leadZabudnuty001/release', { method: 'POST',
       body: { lead_status: 'trial', convert: true, note: 'Trikrát som jej volala, dohodli sme termín a prišla na moju hodinu v utorok.' } }, trn);
     ok('so zdôvodnením request prejde', k3.status === 200 && k3.d && k3.d.ok, JSON.stringify(k3.d));
-    ok('konverziu zastavila až ďalšia reálna podmienka (krátky case), nie poznámka',
-      k3.d.converted === false && /krátko|reálne/.test(k3.d.convert_error || ''), JSON.stringify(k3.d.convert_error));
+    ok('konverziu zastavila až reálna podmienka (bez návštevy/platby), nie poznámka',
+      k3.d.converted === false && /reálne/.test(k3.d.convert_error || ''), JSON.stringify(k3.d.convert_error));
     ok('zdôvodnenie sa uložilo do poznámok', rd('lead_notes.db')
       .some(n => n.client_id === 'leadZabudnuty001' && /Trikrát som jej volala/.test(n.text)));
+
+    // ── 12c. Timeline: jedna chronologická história klientky ──
+    // Klara má: registráciu, admin kontakt (winback telefonát), pending mail;
+    // pridáme jej booking, aby v histórii bola aj hodina
+    fs.appendFileSync(path.join(DATA, 'bookings.db'), JSON.stringify({ _id: 'bkTl1',
+      user_id: 'klientkaCare0001', class_name: 'Zumba', class_location: 'Detva',
+      booking_date: '2026-08-20', status: 'attended', attendance_status: 'attended',
+      created_at: pred(8) }) + '\n');
+    const tl = (await j('/api/admin/crm/client/klientkaCare0001/timeline', {}, adm)).d;
+    ok('timeline sa načíta', tl && tl.ok && Array.isArray(tl.timeline), JSON.stringify(tl).slice(0, 100));
+    const typy = tl.timeline.map(e => e.typ);
+    ok('obsahuje registráciu', typy.includes('registracia'));
+    ok('obsahuje ľudský kontakt s menom a poznámkou', tl.timeline.some(e => e.typ === 'kontakt'
+      && /\(admin\)/.test(e.kto) && /winback telefonát/.test(e.detail)), JSON.stringify(tl.timeline.filter(e => e.typ === 'kontakt')));
+    ok('obsahuje poznámku', typy.includes('poznamka'));
+    ok('každá udalosť má čas, typ aj titul', tl.timeline.every(e => e.at && e.typ && e.titul));
+    ok('zoradená od najnovšej', tl.timeline.every((e, i) => i === 0 || String(tl.timeline[i - 1].at) >= String(e.at)));
+    ok('ukazuje najbližší automatický mail', tl.next_mail && tl.next_mail.sequence === 'winback');
+    ok('timeline len pre admina', (await j('/api/admin/crm/client/klientkaCare0001/timeline', {}, trn)).status === 403);
+
+    // ── 12d. Žiadna minimálna dĺžka case-u (Marek 28.8.) ──
+    // Dôkaz je už v 12b: case starý PÁR SEKÚND prešiel so zdôvodnením až na
+    // podmienku reálnej návštevy/platby — pred zmenou by ho zastavilo
+    // „Case bol otvorený príliš krátko". Statika: hláška z kódu zmizla.
+    const coachSrc = fs.readFileSync(path.join(__dirname, '..', 'coach.js'), 'utf8');
+    ok('podmienka „príliš krátko" je z kódu preč', !coachSrc.includes('príliš krátko'));
+    ok('reálne podmienky (kontakt + návšteva/platba) ostali', coachSrc.includes('Bez jediného zapísaného kontaktu')
+      && coachSrc.includes('reálne príde na hodinu alebo zaplatí'));
 
     // ── 12. Statika: joby a spec existujú ──
     const src = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');

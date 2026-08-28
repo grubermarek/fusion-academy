@@ -484,8 +484,10 @@ module.exports = function initCoach(ctx){
       const attendedAfter = bks.some(b=>b.status==='attended' && claimedTs && new Date(b.booking_date+'T23:59:00').getTime()>=claimedTs);
       const pays = await q.find(db.payments,{user_id:lead._id});
       const paidAfter = pays.some(p=>claimedTs && new Date(p.created_at||0).getTime()>=claimedTs && p.status!=='pending_manual');
+      // Žiadna minimálna dĺžka case-u (Marek 28.8.): ak zavolá a človek si hneď
+      // niečo kúpi, konverzia je reálna aj za 5 minút — rozhoduje zapísaný
+      // kontakt + reálny nákup/návšteva po prevzatí, nie stopky.
       if(!myContacts.length) convertError = 'Bez jediného zapísaného kontaktu sa konverzia nedá uznať.';
-      else if(!claimedTs || durationH < 1) convertError = 'Case bol otvorený príliš krátko — konverzia sa neuznáva.';
       else if(!attendedAfter && !paidAfter) convertError = 'Konverzia sa uzná, až keď človek reálne príde na hodinu alebo zaplatí (po prevzatí case-u).';
       else {
         // sponzora nesmieš nikomu ukradnúť — len ak ho nemá, alebo je to admin/default

@@ -5183,16 +5183,28 @@ async function openClientDetail(id){
         <input id="cdNoteText" class="form-control form-control-sm" style="background:#111;color:#eee;border-color:#333" placeholder="rýchla poznámka…">
         <button class="btn btn-sm btn-outline-warning" onclick="cdAddNote('${p.id}')">📝</button>
       </div>
-      <div class="fw-bold small mb-1">Kontakty (tréneri + admin)</div>
-      ${(d.contacts||[]).length?d.contacts.map(c=>`<div style="font-size:.78rem;border-bottom:1px solid #262626;padding:4px 0">${fmtDate(c.at)} · <b>${escHtml(c.by||'')}</b> — ${escHtml(c.outcome||'')}${c.note?' · '+escHtml(c.note):''}</div>`).join(''):'<div class="text-muted small py-2">Zatiaľ žiadny ľudský kontakt.</div>'}
-      <div class="fw-bold small mb-1 mt-3">Poznámky</div>
-      ${(d.notes_list||[]).length?d.notes_list.map(n=>`<div style="font-size:.78rem;border-bottom:1px solid #262626;padding:4px 0">${fmtDate(n.at)} · <b>${escHtml(n.by||'')}</b>: ${escHtml(n.text||'')}</div>`).join(''):'<div class="text-muted small py-2">Žiadne poznámky.</div>'}
+      <div class="fw-bold small mb-1">🕒 Celá história — kedy · kto · akcia · poznámka</div>
+      <div id="cdTimeline" class="text-muted small py-2">Načítavam históriu…</div>
     </div>
     <div id="cdAwards" class="mt-3 pt-3" style="border-top:1px solid #2a2a2a"><div class="text-muted small">Načítavam odznaky…</div></div>`;
   loadAwards(id);
   loadCdEventSale(p, !!k.activeMembership);
+  loadCdTimeline(id);
 }
 
+async function loadCdTimeline(id){
+  const box=document.getElementById('cdTimeline'); if(!box) return;
+  const d=await api('/api/admin/crm/client/'+id+'/timeline');
+  if(!d?.ok){ box.innerHTML='<span class="text-danger">História sa nenačítala.</span>'; return; }
+  const cas=iso=>{ const t=new Date(iso); return isNaN(t)?'':t.toLocaleDateString('sk-SK',{day:'numeric',month:'numeric',year:'numeric'})+' '+t.toLocaleTimeString('sk-SK',{hour:'2-digit',minute:'2-digit'}); };
+  const farba={kontakt:'#7bd88f',poznamka:'#e8c97a',mail:'#8ab8ff',hodina:'#d8b4fe',platba:'#C9A84C',clenstvo:'#C9A84C',followup:'#fd7e14',case:'#c4a8ff',registracia:'#8a8a8a',dnc:'#ff6b6b'};
+  box.innerHTML=(d.next_mail?`<div style="font-size:.76rem;color:#8ab8ff;background:#12203a;border:1px solid #24406a;border-radius:8px;padding:6px 10px;margin-bottom:8px">🤖 Najbližší automatický mail: <b>${escHtml(d.next_mail.sequence)}</b> ${d.next_mail.scheduled_for}${d.next_mail.subject?' — „'+escHtml(d.next_mail.subject)+'"':''}</div>`:'')
+    +((d.timeline||[]).length?d.timeline.map(e=>`<div style="display:flex;gap:8px;font-size:.78rem;border-bottom:1px solid #232323;padding:5px 0">
+      <span style="flex:none;color:#777;font-variant-numeric:tabular-nums;min-width:118px">${cas(e.at)}</span>
+      <span style="flex:none">${e.ikona}</span>
+      <span style="min-width:0"><b style="color:${farba[e.typ]||'#ccc'}">${escHtml(e.titul)}</b>${e.kto?` <span class="text-muted">· ${escHtml(e.kto)}</span>`:''}${e.detail?`<br><span class="text-muted">${escHtml(e.detail)}</span>`:''}</span>
+    </div>`).join(''):'<div class="text-muted small py-2">Zatiaľ žiadna história.</div>');
+}
 async function cdAddNote(id){
   const t=document.getElementById('cdNoteText').value.trim(); if(!t) return;
   const r=await api('/api/admin/leads/'+id+'/note',{method:'POST',body:JSON.stringify({text:t})});

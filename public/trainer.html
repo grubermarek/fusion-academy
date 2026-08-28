@@ -1832,7 +1832,7 @@ function coachLeadCard(L, d, mine){
           <span><span onclick="window.open('/u/${L.id}','_blank')" title="Otvoriť profil" style="font-weight:800;cursor:pointer">${pr} ${esc(L.name)}</span>
           ${L.is_client?`<span style="background:#3a2a14;border:1px solid #8a6a2a;color:#e8c97a;border-radius:7px;padding:1px 7px;font-size:.68rem;font-weight:800;margin-left:4px">🔁 KLIENTKA — pozná hodiny, winback tón</span>`:''}
           <span style="color:var(--muted);font-size:.75rem"> · ${esc(L.city||'')} ${L.visits?` · ${L.visits} návštev`:''}</span></span></div>
-        <div style="font-size:.75rem;color:var(--muted)">${L.last_contact_days!=null?`kontakt pred ${L.last_contact_days} d`:'nikdy nekontaktovaná'}</div></div>
+        <div style="font-size:.75rem;color:${L.last_contact_days===0?'#7bd88f':'var(--muted)'};font-weight:${L.last_contact_days===0?'800':'400'}">${L.last_contact_days===0?'✅ dnes kontaktovaná':L.last_contact_days!=null?`kontakt pred ${L.last_contact_days} d`:'nikdy nekontaktovaná'}</div></div>
       <div style="font-size:.76rem;color:var(--muted);margin:3px 0">
         ${L.phone?`📞 <a href="tel:${esc(L.phone)}" style="color:var(--gold);text-decoration:none;font-weight:700">${esc(L.phone)}</a> · `:''}${L.email?`✉️ <a href="mailto:${esc(L.email)}" style="color:var(--gold);text-decoration:none">${esc(L.email)}</a>`:''}${!L.phone&&!L.email?'<span style="color:#ff9f9f">⚠️ bez kontaktu</span>':''}<br>
         Zdroj: ${esc(L.lead_source||'—')} · Status: ${esc(L.lead_status||'—')} · Návštevy: <b>${L.visits}</b>${L.no_shows?` · No-show: ${L.no_shows}`:''}
@@ -1851,9 +1851,10 @@ function coachLeadCard(L, d, mine){
         ${L.tpl?`<button onclick="coachCopyTpl('${L.id}','${L.tpl}')" style="background:#2a2140;border:1px solid #4a3a70;border-radius:9px;color:#c4a8ff;padding:5px 10px;font-size:.78rem;cursor:pointer">✉️ Šablóna</button>`:''}
         <button onclick="coachLeadDetail('${L.id}')" style="background:transparent;border:1px solid #2a2a2a;border-radius:9px;color:var(--muted);padding:5px 10px;font-size:.78rem;cursor:pointer">🗂 Detail</button>
       </div>
+      <div style="font-size:.72rem;color:var(--muted);margin-bottom:4px">📞 Zapíš výsledok dnešného kontaktu${mine?' — case tým NEuzatváraš, lead ostáva tvoj':''}:</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
         <select id="out-${L.id}" style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:9px;color:var(--cream);padding:5px 8px;font-size:.78rem">
-          <option value="">Výsledok…</option>${d.outcomes.map(o=>`<option value="${o}">${OUT_LBL[o]||o}</option>`).join('')}</select>
+          <option value="">Výsledok kontaktu…</option>${d.outcomes.map(o=>`<option value="${o}">${OUT_LBL[o]||o}</option>`).join('')}</select>
         <input id="note-${L.id}" placeholder="Poznámka (voliteľná)" style="flex:1;min-width:120px;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:9px;color:var(--cream);padding:5px 8px;font-size:.78rem">
         <input id="fu-${L.id}" type="date" title="Ozvať sa znovu" style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:9px;color:var(--muted);padding:4px 6px;font-size:.75rem">
         <button onclick="coachContact('${L.id}')" style="background:var(--gold);color:#111;border:0;border-radius:9px;padding:6px 12px;font-weight:800;font-size:.78rem;cursor:pointer">Zapísať</button>
@@ -2021,7 +2022,12 @@ async function coachContact(id){
   if(!outcome){ toast('Vyber výsledok kontaktu',true); return; }
   const r=await api('/api/coach/contact',{method:'POST',body:{lead_id:id, outcome,
     note:document.getElementById('note-'+id).value, followup_date:document.getElementById('fu-'+id).value||null}});
-  if(r?.ok){ toast(r.duplicate?'Výsledok upravený (dnes už zapísaná)':'Kontakt zapísaný ✅'); coachLoad(); }
+  if(r?.ok){
+    const mojLead=(_coach&&_coach.my_leads||[]).some(x=>x.id===id);
+    toast(r.duplicate?'Výsledok upravený (dnes už zapísaná)':
+      'Kontakt zapísaný ✅'+(mojLead?' — case ostáva otvorený, lead je stále tvoj':''));
+    coachLoad();
+  }
   else toast(r?.error||'Chyba',true);
 }
 async function coachCopyInvite(){
