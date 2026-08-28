@@ -767,6 +767,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </div>
     <p class="text-muted small mb-3">Registrovaní, ktorí ešte nezaplatili. V stĺpci <b>Stav</b> meníš fázu starostlivosti (volané/zdvihol, SMS, e-mail, má/nemá záujem…) — riadok sa podľa toho <b>zafarbí</b>. Keď príde na hodinu zdarma, automaticky sa označí <b>💃 Bola na hodine</b>; po prvej platbe prejde medzi <b>Klientov</b>. <i class="bi bi-envelope-paper"></i> ukáže mailovú sekvenciu, poznámku vidíš priamo v tabuľke. Importované staré leady (🗂️) vidíte len vy.</p>
     <div id="leadsStats"></div>
+    <div id="careReport" class="mb-3"></div>
     <div class="card border-0 rounded-3">
       <div class="table-responsive">
         <table class="table table-hover align-middle mb-0" style="font-size:.85rem">
@@ -4798,8 +4799,39 @@ async function loadLeads(){
   const nav=document.getElementById('leadsNavBadge'); if(d.total>0){ nav.textContent=d.total; nav.style.display='inline'; } else nav.style.display='none';
   _leadsData=d.leads||[];
   renderLeadStats(d.stats);
+  loadCareReport();
   if(!_leadsData.length){ body.innerHTML='<tr><td colspan="12" class="text-center py-4 text-muted">Žiadne leady 🎉</td></tr>'; return; }
   renderLeads();
+}
+async function loadCareReport(){
+  const box=document.getElementById('careReport'); if(!box) return;
+  const r=await api('/api/admin/care-report?days=7'); if(!r?.ok){ box.innerHTML=''; return; }
+  const trend=r.kontakty.predtym?Math.round((r.kontakty.spolu-r.kontakty.predtym)/r.kontakty.predtym*100):null;
+  const sip=v=>v===null?'':` <span style="color:${v>=0?'#4ade80':'#ff6b6b'};font-size:.7rem">${v>=0?'▲':'▼'} ${Math.abs(v)} %</span>`;
+  const hist=(r.zabudnute.historia||[]);
+  const histTxt=hist.length>1?hist.map(h=>h.count).join(' → '):'—';
+  const m=(l,v,sub)=>`<div style="flex:1;min-width:120px;background:#131313;border:1px solid #262626;border-radius:9px;padding:8px 12px">
+    <div class="text-muted" style="font-size:.6rem;text-transform:uppercase;letter-spacing:.03em">${l}</div>
+    <div class="fw-bold" style="font-size:1.05rem">${v}</div>${sub?`<div class="text-muted" style="font-size:.68rem">${sub}</div>`:''}</div>`;
+  box.innerHTML=`<details style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:10px 14px">
+    <summary style="cursor:pointer;font-weight:700;font-size:.88rem">📊 Starostlivosť za 7 dní — ${r.kontakty.spolu} kontaktov${sip(trend)}
+      <span class="text-muted" style="font-weight:400;font-size:.75rem">· každý pondelok príde zhrnutie aj notifikáciou</span></summary>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+      ${m('Kontakty',r.kontakty.spolu+(r.kontakty.predtym?' <small class="text-muted">/ min. '+r.kontakty.predtym+'</small>':''),'z toho so záujmom: '+r.kontakty.zaujem)}
+      ${m('🔥 Hot pokrytie',r.hot.registracie?(r.hot.kontakt_do_3d+'/'+r.hot.registracie):'—','nové registrácie kontaktované do 3 dní · s rezerváciou: '+r.hot.s_rezervaciou)}
+      ${m('Follow-upy',r.followupy.splnene+' ✓ / '+r.followupy.vytvorene+' nových',r.followupy.po_termine?('⚠️ '+r.followupy.po_termine+' po termíne'):'nič po termíne')}
+      ${m('Duplicitné kontakty',r.duplicitne,r.duplicitne?'dvaja ľudia < 3 dni — pozri históriu':'nikto nevolá dvakrát 👍')}
+      ${m('🕸 Zabudnuté',r.zabudnute.teraz,'pondelky: '+histTxt)}
+      ${m('Konverzie',r.konverzie,'uzavreté case-y → klientka')}
+    </div>
+    ${r.per_clen.length?`<div class="table-responsive mt-2"><table class="table table-dark table-sm mb-0" style="font-size:.78rem">
+      <thead><tr><th>Člen tímu</th><th class="text-center">Kontakty</th><th class="text-center">Záujem</th><th class="text-center">Nezáujem</th><th class="text-center">Follow-up ✓</th><th class="text-center">Konverzie</th></tr></thead>
+      <tbody>${r.per_clen.map(x=>`<tr><td>${escHtml(x.meno)} <span class="text-muted" style="font-size:.68rem">${x.rola}</span></td>
+        <td class="text-center fw-bold">${x.kontakty}</td><td class="text-center" style="color:#4ade80">${x.zaujem}</td>
+        <td class="text-center" style="color:#ff8f8f">${x.nezaujem}</td><td class="text-center">${x.followupy_splnene}</td>
+        <td class="text-center" style="color:#C9A84C">${x.konverzie}</td></tr>`).join('')}</tbody></table></div>`
+      :'<div class="text-muted small mt-2">Za posledných 7 dní zatiaľ žiadne kontakty.</div>'}
+  </details>`;
 }
 function renderLeadStats(s){
   const box=document.getElementById('leadsStats'); if(!box) return;

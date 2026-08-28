@@ -160,10 +160,33 @@ async function j(url, opts = {}, jar) {
       return posledny && posledny.outcome === 'contacted';
     })()));
 
+    // ── 12. Starostlivosť v číslach (týždenný report) ──
+    // stav v tomto teste: 4 admin kontakty (Nina interested, Klara contacted,
+    // Zora contacted [fallback z 'hocico'], Dana no_reply z dismissu) + follow-upy
+    const cr = (await j('/api/admin/care-report?days=7', {}, adm)).d;
+    ok('report sa načíta', cr && cr.ok, JSON.stringify(cr).slice(0, 120));
+    ok('ráta kontakty za 7 dní', cr.kontakty.spolu === 4, JSON.stringify(cr.kontakty));
+    ok('ráta záujem (interested)', cr.kontakty.zaujem === 1, String(cr.kontakty.zaujem));
+    const admRiadok = (cr.per_clen || []).find(x => /\(admin\)/.test(x.meno));
+    ok('rozpad per člen tímu vrátane admina', admRiadok && admRiadok.kontakty === 4 && admRiadok.rola === 'admin', JSON.stringify(cr.per_clen));
+    ok('duplicitné kontakty = 0 (nikto nevolal 2×)', cr.duplicitne === 0, String(cr.duplicitne));
+    ok('hot pokrytie: registrácie v okne sa rátajú', cr.hot.registracie >= 2, JSON.stringify(cr.hot));
+    ok('hot pokrytie: kontakt do 3 dní sa ráta', cr.hot.kontakt_do_3d >= 2, JSON.stringify(cr.hot));
+    ok('follow-upy: vytvorený sa ráta', cr.followupy.vytvorene === 1, JSON.stringify(cr.followupy));
+    // Zora dostala v kroku 11 admin kontakt → už NIE je zabudnutá (kontakt < 21 dní)
+    ok('zabudnuté kleslo na 0 po kontakte so Zorou', cr.zabudnute.teraz === 0, JSON.stringify(cr.zabudnute));
+    ok('report len pre admina', (await j('/api/admin/care-report', {}, trn)).status === 403);
+
+    // duplicitný kontakt od DRUHÉHO človeka do 3 dní sa zaráta
+    await j('/api/coach/contact', { method: 'POST', body: { lead_id: 'leadZabudnuty001', outcome: 'contacted', note: 'skusam znova' } }, trn);
+    const cr2 = (await j('/api/admin/care-report?days=7', {}, adm)).d;
+    ok('duplicitný kontakt (2 rôzni ľudia < 3 dni) sa zachytí', cr2.duplicitne === 1, String(cr2.duplicitne));
+
     // ── 12. Statika: joby a spec existujú ──
     const src = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
     ok('hot-lead notifikačný job existuje (guard na deň)', src.includes("'hot_leads_'+today()") && src.includes("type:'hot_lead'"));
     ok('watchdog job existuje (pondelok, guard)', src.includes("'lead_watchdog_'+today()") && src.includes('zabudnuteLeady'));
+    ok('pondelková notifikácia reportu existuje', src.includes("type:'care_report'") && src.includes('care_forgotten_hist'));
     ok('spec dokument existuje', fs.existsSync(path.join(__dirname, '..', 'docs', 'LEAD_OS_SPEC.md')));
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.message + '\n' + e.stack);

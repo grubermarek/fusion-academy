@@ -3822,6 +3822,26 @@ setInterval(async()=>{ try{
   if(await q.one(db.settings,{key:guard})) return;
   await q.insert(db.settings,{key:guard, value:true, at:nowISO()});
   const zoznam=await zabudnuteLeady();
+  // história pre trend v reporte (držíme 12 pondelkov)
+  try{
+    const row=await q.one(db.settings,{key:'care_forgotten_hist'});
+    const hist=((row&&row.value)||[]).slice(-11).concat([{date:today(), count:zoznam.length}]);
+    if(row) await q.update(db.settings,{_id:row._id},{$set:{value:hist, at:nowISO()}});
+    else await q.insert(db.settings,{key:'care_forgotten_hist', value:hist, at:nowISO()});
+  }catch(e){}
+  // „Starostlivosť v číslach" — pondelkové zhrnutie adminom
+  try{
+    const r=await careReport(7);
+    const trend=r.kontakty.predtym?Math.round((r.kontakty.spolu-r.kontakty.predtym)/r.kontakty.predtym*100):null;
+    for(const a of (await q.find(db.users,{is_admin:true})))
+      await q.insert(db.notifications,{user_id:a._id, type:'care_report',
+        title:'📊 Starostlivosť za týždeň: '+r.kontakty.spolu+' kontaktov'+(trend===null?'':' ('+(trend>=0?'+':'')+trend+' %)'),
+        body:'Záujem: '+r.kontakty.zaujem+' · hot pokrytie do 3 dní: '+r.hot.kontakt_do_3d+'/'+r.hot.registracie
+          +' · follow-upy: '+r.followupy.splnene+' splnených'+(r.followupy.po_termine?(', '+r.followupy.po_termine+' po termíne'):'')
+          +' · duplicitné: '+r.duplicitne+' · zabudnuté: '+r.zabudnute.teraz+'. Detail: sekcia Leady.',
+        read:false, created_at:nowISO()}).catch(()=>{});
+    console.log('📊 Care report poslaný adminom ('+r.kontakty.spolu+' kontaktov/7 d)');
+  }catch(e){ console.error('care report notify:',e.message); }
   if(!zoznam.length) return;
   for(const a of (await q.find(db.users,{is_admin:true})))
     await q.insert(db.notifications,{user_id:a._id, type:'lead_watchdog',
@@ -3830,6 +3850,84 @@ setInterval(async()=>{ try{
       read:false, created_at:nowISO()}).catch(()=>{});
   console.log('🕸 Watchdog: '+zoznam.length+' zabudnutých leadov → admin notifikácia');
 }catch(e){ console.error('lead watchdog:',e.message); } }, 30*60*1000);
+
+// LEAD OS: „Starostlivosť v číslach" — týždenný obraz, či sa leady naozaj ťažia.
+// Vracia posledných `days` dní + rovnako dlhé predchádzajúce okno na trend.
+async function careReport(days){
+  days=Math.min(60,Math.max(1,+days||7));
+  const now=Date.now(), od=now-days*86400000, predtym=od-days*86400000;
+  const ts=x=>new Date(x||0).getTime();
+  const vsetciU=await q.find(db.users,{});
+  const byId=Object.fromEntries(vsetciU.map(u=>[u._id,u]));
+  const jeTest=u=>!u||/@test-fa-qa\.local$|@qa-biz\.local$/i.test(u.email||'')||/test/i.test(u.name||'');
+
+  const kontaktyAll=(await q.find(db.coach_contacts,{})).filter(c=>!jeTest(byId[c.lead_id]));
+  const kontakty=kontaktyAll.filter(c=>ts(c.created_at)>=od);
+  const kontaktyPred=kontaktyAll.filter(c=>{const t=ts(c.created_at);return t>=predtym&&t<od;});
+
+  // rozpad podľa člena tímu (tréner aj admin — jedna vrstva)
+  const perClen={};
+  for(const c of kontakty){
+    const k=c.trainer_name||'—';
+    const r=perClen[k]=perClen[k]||{kontakty:0,zaujem:0,nezaujem:0,followupy_splnene:0,konverzie:0,rola:c.by_role==='admin'?'admin':'tréner'};
+    r.kontakty++;
+    if(['interested','will_come','booked','replied'].includes(c.outcome)) r.zaujem++;
+    if(c.outcome==='not_interested') r.nezaujem++;
+    if(c.followup_hit) r.followupy_splnene++;
+  }
+  const casy=(await q.find(db.coach_cases,{})).filter(x=>ts(x.created_at)>=od&&!jeTest(byId[x.lead_id]));
+  for(const x of casy){ if(x.converted&&!x.conversion_revoked_at){ const k=x.trainer_name||'—';
+    (perClen[k]=perClen[k]||{kontakty:0,zaujem:0,nezaujem:0,followupy_splnene:0,konverzie:0,rola:'tréner'}).konverzie++; } }
+
+  // duplicitné kontakty: dvaja RÔZNI ľudia tomu istému človeku do 3 dní — má byť ~0
+  let duplicitne=0; const podlaLeada={};
+  for(const c of kontaktyAll){ (podlaLeada[c.lead_id]=podlaLeada[c.lead_id]||[]).push(c); }
+  for(const list of Object.values(podlaLeada)){
+    list.sort((a,b)=>ts(a.created_at)-ts(b.created_at));
+    for(let i=1;i<list.length;i++){
+      const a=list[i-1], b=list[i];
+      if(ts(b.created_at)<od) continue;                       // rátame len tento týždeň
+      if(a.trainer_id!==b.trainer_id && ts(b.created_at)-ts(a.created_at)<3*86400000 && !b.auto && !a.auto) duplicitne++;
+    }
+  }
+
+  // HOT pokrytie: registrácie v okne → % kontaktovaných do 3 dní → % s rezerváciou
+  const regy=vsetciU.filter(u=>!u.is_admin&&!u.hidden_lead&&!u.is_child&&!jeTest(u)
+    &&!['trainer','manager','admin'].includes(u.user_type||'')&&!(u.imported&&!u.claimed)
+    &&ts(u.created_at)>=od);
+  const bookAll=await q.find(db.bookings,{});
+  const maBooking=new Set(bookAll.filter(b=>b.status!=='cancelled').map(b=>b.user_id));
+  let hotKontakt=0, hotBooking=0;
+  for(const u of regy){
+    const prvy=(podlaLeada[u._id]||[]).map(c=>ts(c.created_at)).filter(t=>t>=ts(u.created_at)).sort()[0];
+    if(prvy&&prvy-ts(u.created_at)<3*86400000) hotKontakt++;
+    if(maBooking.has(u._id)) hotBooking++;
+  }
+
+  // follow-upy
+  const fuAll=await q.find(db.crm_tasks,{});
+  const fu={ vytvorene:fuAll.filter(t=>ts(t.created_at)>=od).length,
+    splnene:fuAll.filter(t=>t.status==='done'&&ts(t.done_at)>=od).length,
+    po_termine:fuAll.filter(t=>t.status==='open'&&t.due_date&&t.due_date<today()).length };
+
+  // zabudnuté: aktuálny stav + história snapshotov (plní ju pondelkový job)
+  const zabudnute=(await zabudnuteLeady()).length;
+  const hist=((await q.one(db.settings,{key:'care_forgotten_hist'}))||{}).value||[];
+
+  return { days,
+    kontakty:{ spolu:kontakty.length, predtym:kontaktyPred.length,
+      zaujem:kontakty.filter(c=>['interested','will_come','booked','replied'].includes(c.outcome)).length },
+    per_clen:Object.entries(perClen).map(([meno,r])=>({meno,...r})).sort((a,b)=>b.kontakty-a.kontakty),
+    duplicitne,
+    hot:{ registracie:regy.length, kontakt_do_3d:hotKontakt, s_rezervaciou:hotBooking },
+    followupy:fu,
+    zabudnute:{ teraz:zabudnute, historia:hist.slice(-8) },
+    konverzie:casy.filter(x=>x.converted&&!x.conversion_revoked_at).length };
+}
+app.get('/api/admin/care-report', adminAuth, async(req,res)=>{
+  try{ res.json({ok:true, ...(await careReport(req.query.days))}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
 
 async function zabudnuteLeady(){
   const hranica=Date.now()-21*86400000;
