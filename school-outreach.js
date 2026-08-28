@@ -110,6 +110,73 @@ module.exports = function initSchoolOutreach(ctx) {
 </table></td></tr></table></body></html>`;
   }
 
+  // ── Follow-up (2. dotyk po ~5 dňoch): kratší mail pre školy, ktoré neklikli ──
+  function followupSubject(s) {
+    return 'Ešte k venčeku' + (s.city ? ' — ' + s.city : '') + ': stačí jedno kliknutie';
+  }
+  function followupHtml(s) {
+    const oslovenie = s.director ? 'Dobrý deň, ' + esc(s.director) + ',' : 'Dobrý deň,';
+    const odhlasit = APP_URL + '/skoly/odhlasit/' + s._id;
+    const cta = lpUrl(s);
+    return `<!DOCTYPE html><html lang="sk"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f2f1ee">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f1ee">
+<tr><td align="center" style="padding:26px 14px">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0"
+  style="max-width:600px;background:#ffffff;border-radius:10px;border:1px solid #e3e0d9">
+<tr><td style="padding:28px 34px 6px;font-family:Georgia,'Times New Roman',serif;font-size:16px;line-height:1.65;color:#222">
+  <p style="margin:0 0 14px">${oslovenie}</p>
+  <p style="margin:0 0 14px">pred pár dňami som vám písal ohľadom venčeka pre deviatakov
+  (program <b>Posledný tanec</b>). Viem, že začiatok školského roka je nápor — preto len krátko:</p>
+  <p style="margin:0 0 14px">škola pri tom <b>nerieši žiadnu organizáciu</b>, rodičia platia
+  v aplikácii a <b>3 € za každého prihláseného žiaka idú škole</b>. Počet škôl v sezóne je
+  obmedzený a termíny sa priebežne obsadzujú.</p>
+  <div style="text-align:center;margin:20px 0 22px">
+    <a href="${cta}" style="display:inline-block;background:#C9A84C;color:#1b1405;
+      padding:13px 28px;border-radius:8px;text-decoration:none;font-weight:700;
+      font-family:Arial,sans-serif;font-size:15px">Pozrieť ponuku pre školy</a>
+  </div>
+  <p style="margin:0 0 18px">Na stránke je krátky formulár — s vašimi údajmi už predvyplnený,
+  stačí jedno kliknutie. Alebo mi zavolajte na <b>${TEL}</b>, poviem vám voľné termíny.</p>
+  <p style="margin:0 0 4px">Pekný deň,</p>
+  <p style="margin:0 0 24px;line-height:1.5"><b>Marek Gruber</b><br>
+    <span style="font-size:14px;color:#555">Fusion Academy · ${TEL} · fusionacademy.sk</span></p>
+</td></tr>
+<tr><td style="padding:12px 34px 20px;border-top:1px solid #eeece7;
+    font-family:Arial,sans-serif;font-size:11px;line-height:1.6;color:#8d8a83;text-align:center">
+  Ak si neželáte ďalšie správy, <a href="${odhlasit}" style="color:#8d8a83">odhláste sa jedným klikom</a>.<br>
+  Fusion Academy · IČO 56167563 · fusionacademy.sk
+</td></tr>
+</table></td></tr></table></body></html>`;
+  }
+
+  // follow-up dávka: školy oslovené pred >=5 dňami, bez kliku, bez odpovede,
+  // bez odhlásenia a bez už poslaného follow-upu
+  async function sendFollowupBatch(limit) {
+    const vsetky = await q.find(db.schools, {});
+    const ids = vsetky.map(s => s.mail_log_id).filter(Boolean);
+    const logy = {};
+    if (ids.length) for (const l of await q.find(db.mail_log, { _id: { $in: ids } })) logy[l._id] = l;
+    const hranica = Date.now() - 5 * 86400000;
+    const kandidatky = vsetky.filter(s => s.sent_at && !s.followup_sent_at && !s.unsubscribed
+      && !['replied', 'meeting', 'won', 'lost'].includes(s.status)
+      && new Date(s.sent_at).getTime() < hranica
+      && !(logy[s.mail_log_id] && logy[s.mail_log_id].clicked_at))
+      .slice(0, limit);
+    const capture = process.env.MAIL_CAPTURE === '1';
+    let poslane = 0;
+    for (const s of kandidatky) {
+      const ok = await sendMail(s.email, followupSubject(s), followupHtml(s),
+        { priority: 8, template: 'skoly_posledny_tanec_fu' }) || capture;
+      if (!ok) continue;
+      await q.update(db.schools, { _id: s._id }, { $set: { followup_sent_at: nowISO(), updated_at: nowISO() } });
+      poslane++;
+      await new Promise(r => setTimeout(r, 350));
+    }
+    return poslane;
+  }
+
   // ── Import zoznamu škôl ─────────────────────────────────────────────────────
   // Marek nalepí zoznam z tabuľky; oddeľovač môže byť bodkočiarka, tabulátor alebo
   // čiarka. E-mail spoznáme podľa zavináča, telefón podľa tvaru, zvyšok podľa poradia.
@@ -240,16 +307,50 @@ module.exports = function initSchoolOutreach(ctx) {
       if (!maZoznam) return;                                  // nie je komu — guard nezapisuj
       await q.insert(db.settings, { key: guard, value: true, at: nowISO() });
       const r = await sendBatch(25, null);
-      console.log('🎓 Školy — denná dávka: odoslané ' + r.poslane + ', zlyhalo ' + r.zlyhali + ', čaká ešte ' + r.zostava);
+      const fu = await sendFollowupBatch(25);
+      console.log('🎓 Školy — denná dávka: odoslané ' + r.poslane + ', follow-upov ' + fu + ', zlyhalo ' + r.zlyhali + ', čaká ešte ' + r.zostava);
       for (const a of await q.find(db.users, { is_admin: true }))
         await q.insert(db.notifications, { user_id: a._id, type: 'school_outreach',
           title: '🎓 Oslovenie škôl — denná dávka',
-          body: 'Odoslané ' + r.poslane + ' škôl' + (r.zostava ? ', čaká ešte ' + r.zostava : ' — zoznam je dokončený') + '. Prehľad: /admin/skoly',
+          body: 'Odoslané ' + r.poslane + ' škôl' + (fu ? ' + ' + fu + ' follow-upov' : '') + (r.zostava ? ', čaká ešte ' + r.zostava : ' — zoznam je dokončený') + '. Prehľad: /admin/skoly',
           read: false, created_at: nowISO() }).catch(() => {});
     } catch (e) { console.error('school drip:', e.message); }
   }
   setInterval(schoolDrip, 20 * 60 * 1000);
   setTimeout(schoolDrip, 90 * 1000);   // krátko po štarte, nech deploy počas okna nečaká 20 min
+
+  // ── Ukážka mailu na vlastné adresy: env SCHOOL_SAMPLE_TO="mail1,mail2" ──────
+  setTimeout(async () => {
+    try {
+      const to = process.env.SCHOOL_SAMPLE_TO;
+      if (!to) return;
+      let hash = 0; for (let i = 0; i < to.length; i++) hash = (hash * 31 + to.charCodeAt(i)) >>> 0;
+      const guard = 'school_sample_' + hash.toString(16);
+      if (await q.one(db.settings, { key: guard })) return;
+      await q.insert(db.settings, { key: guard, value: to, at: nowISO() });
+      const vzor = { _id: 'ukazka', name: 'Základná škola — UKÁŽKA', city: 'Detva', director: 'pani riaditeľka' };
+      const html = '<div style="background:#fff3cd;border:1px solid #ffc107;padding:10px 16px;'
+        + 'font-family:Arial,sans-serif;font-size:13px;color:#664d03;text-align:center">'
+        + '⚠️ UKÁŽKA — presne takýto mail dostávajú riaditelia škôl (s ich menom a školou)</div>'
+        + htmlFor(vzor);
+      for (const adresa of to.split(',').map(x => x.trim()).filter(x => /@/.test(x))) {
+        const ok = await sendMail(adresa, '[UKÁŽKA] ' + subjectFor(vzor), html, { priority: 3, template: 'skoly_sample' });
+        console.log('🎓 Ukážka školského mailu → ' + adresa + ': ' + (ok ? 'odoslané' : 'NEODOSLANÉ'));
+        await new Promise(r => setTimeout(r, 400));
+      }
+    } catch (e) { console.error('school sample:', e.message); }
+  }, 40 * 1000);
+
+  // stavový log pri každom štarte — nech vidno počty aj bez admin prístupu
+  setTimeout(async () => {
+    try {
+      const vs = await q.find(db.schools, {});
+      console.log('🎓 Školy stav: spolu ' + vs.length + ' | odoslané ' + vs.filter(x => x.sent_at).length
+        + ' | follow-up ' + vs.filter(x => x.followup_sent_at).length
+        + ' | čakajú ' + vs.filter(x => !x.sent_at && !x.unsubscribed).length
+        + ' | odhlásené ' + vs.filter(x => x.unsubscribed).length);
+    } catch (e) {}
+  }, 35 * 1000);
 
   // ── Jednorazový import zoznamu z env premennej (Railway) ────────────────────
   // Prod DB nie je prístupná zvonku a admin heslo nepoznáme — zoznam škôl sa

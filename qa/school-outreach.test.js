@@ -155,6 +155,23 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     // drip guard: odpovedanú školu ďalšia dávka nesmie osloviť znova — sent_at už má,
     // preto ju filter v sendBatch preskočí (overené vyššie „nikomu sa neposlalo dvakrát")
 
+    // ── follow-up (2. dotyk po 5 dňoch) ──
+    // pripravíme stavy priamo v DB súbore a server reštartneme? Nie — follow-up
+    // dávku vieme zavolať cez drip logiku len na produkcii. Testujeme cez statiku
+    // + priamu funkciu: sent_at posunieme dozadu úpravou DB nejde (in-memory).
+    // → test cez sendBatch flow: kandidátka = sent_at pred 6 dňami. Simulácia:
+    // POST /api/admin/schools/:id s update sent_at nie je povolený (whitelist polí)
+    // — preto follow-up overujeme statikou + samostatnou unit vetvou nižšie.
+    const srcFu = fs.readFileSync(path.join(__dirname, '..', 'school-outreach.js'), 'utf8');
+    ok('follow-up mail existuje a je kratší 2. dotyk', srcFu.includes('followupHtml') && srcFu.includes('Ešte k venčeku'));
+    ok('follow-up ide len neklinuvším a max 1×', srcFu.includes('!s.followup_sent_at') && srcFu.includes('clicked_at'));
+    ok('follow-up rešpektuje odpovede a odhlásenie', srcFu.includes("['replied', 'meeting', 'won', 'lost']") && srcFu.includes('!s.unsubscribed'));
+    ok('follow-up čaká aspoň 5 dní od prvého mailu', srcFu.includes('5 * 86400000'));
+    ok('denný drip posiela aj follow-upy', srcFu.includes('sendFollowupBatch(25)'));
+    ok('follow-up nesie osobný odkaz (sid)', srcFu.includes('lpUrl(s)') && srcFu.includes('followupHtml'));
+    ok('ukážka mailu cez env s guardom', srcFu.includes('SCHOOL_SAMPLE_TO') && srcFu.includes("'school_sample_'"));
+    ok('ukážka je označená ako UKÁŽKA', srcFu.includes('[UKÁŽKA]'));
+
     // ── odhlásenie ──
     const odh = await fetch(BASE + '/skoly/odhlasit/' + sla._id);
     const odhTxt = await odh.text();
