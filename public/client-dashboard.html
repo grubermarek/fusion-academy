@@ -2372,7 +2372,7 @@ async function loadEventBanner(){
     const save=(full&&full.member_price!=null)?(full.door-full.member_price):null;
     const kick = allSold ? 'VYPREDANÉ'
       : (d.is_member && save ? 'MÁŠ ČLENSKÚ CENU — UŠETRÍŠ '+save+' €'
-                             : (save ? 'ČLENI FUSION ACADEMY UŠETRIA '+save+' €' : 'PREDPREDAJ BEŽÍ'));
+                             : (save ? 'ČLENKY FUSION ACADEMY UŠETRIA '+save+' €' : 'PREDPREDAJ BEŽÍ'));
     const left = full && full.left!=null && full.left>0 && full.left<=10
       ? '<span class="save">🔥 Posledných '+full.left+' miest na masterclass</span>' : '';
     const priceBlock = (!allSold && full) ? (
