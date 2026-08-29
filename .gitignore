@@ -5,3 +5,7 @@ data/*.db
 .DS_Store
 *.log
 npm-debug.log*
+
+# interne podklady — repo je verejne, tieto dokumenty do neho nepatria
+docs/FUSION_CUSTOMER_JOURNEY_MASTER.md
+docs/LEAD_OS_SPEC.md
