@@ -15522,11 +15522,17 @@ async function sendMail(to, subject, html, opts){
   if(brevoApiKey){
     try {
       const fromAddr = process.env.SMTP_FROM || process.env.SMTP_USER || 'gruber.marek@gmail.com';
+      // Od 29. 8. 2026 je fusionacademy.sk v Brevo autentifikovaná, takže sa dá
+      // posielať zo značkovej adresy. Na doméne ale zatiaľ nie je schránka —
+      // bez Reply-To by odpovede klientok padali do prázdna. MAIL_REPLY_TO teda
+      // smeruje odpovede tam, kde ich niekto naozaj číta.
+      const replyAddr = process.env.MAIL_REPLY_TO || '';
       const r = await fetch('https://api.brevo.com/v3/smtp/email', {
         method:'POST',
         headers:{'api-key':brevoApiKey,'Content-Type':'application/json'},
         body: JSON.stringify({
           sender:{ name:'Fusion Academy', email:fromAddr },
+          ...(replyAddr ? { replyTo:{ name:'Fusion Academy', email:replyAddr } } : {}),
           to:[{ email:to }],
           subject, htmlContent:html
         })
