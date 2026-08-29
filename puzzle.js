@@ -157,7 +157,8 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
   }
 
   // ── Nastavenia (admin ich vie zmeniť bez zásahu do kódu) ──
-  const DEFAULTS = { points: 1, fast_bonus: 1, fast_seconds: 90, monthly_cap: 40, enabled: true,
+  const DEFAULTS = { points: 2, fast_bonus: 0, fast_seconds: 90, monthly_cap: 40, enabled: true,
+                     podium_bonus: [5, 3, 1],       // 1. / 2. / 3. najrýchlejší čas dňa
                      day_win_bonus: 5, day_win_min_players: 2,
                      schedule: ['zip', 'words'], overrides: {} };
   async function cfg() {
@@ -174,29 +175,41 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
 
   // ── Víťazka dňa: najrýchlejší čas dostane bonus. Vyhodnocuje sa až PO polnoci,
   // aby sa poradie počas dňa nemenilo a nikto nemal bonus "dočasne". ──
+  // Bonus za pódium: prvé tri najrýchlejšie časy dňa dostanú +5 / +3 / +1.
+  // Vyhodnocuje sa až PO polnoci, keď je deň uzavretý a poradie definitívne.
   async function awardDayWinner(dateStr) {
     const c = await cfg();
-    if (!c.enabled || !c.day_win_bonus) return null;
+    const podium = Array.isArray(c.podium_bonus) && c.podium_bonus.length
+      ? c.podium_bonus : [c.day_win_bonus || 5];
+    if (!c.enabled || !podium.some(x => +x > 0)) return null;
     const all = await q.find(db.puzzle_solves, { date: dateStr });
     if (all.some(r => r.day_win)) return null;                 // už vyhodnotené
     const rows = all.filter(r => r.verified !== false);        // len serverom meraný čas
     if (rows.length < c.day_win_min_players) return null;      // sama proti sebe nesúťaží
     rows.sort((a, b) => (a.seconds || 0) - (b.seconds || 0)
       || String(a.created_at || '').localeCompare(String(b.created_at || '')));
-    const w = rows[0];
-    const month = dateStr.slice(0, 7);
-    const capLeft = Math.max(0, c.monthly_cap - await monthPoints(w.user_id, month));
-    const bonus = Math.min(c.day_win_bonus, capLeft);
-    await q.update(db.puzzle_solves, { _id: w._id },
-      { $set: { day_win: true, day_win_bonus: bonus, points: (+w.points || 0) + bonus } });
-    await q.insert(db.notifications, {
-      user_id: w.user_id, type: 'puzzle_win', title: '🏆 Vyhrala si denný hlavolam!',
-      body: 'Včerajšiu hádanku si zvládla najrýchlejšie zo všetkých (' + w.seconds + ' s)'
-        + (bonus ? ' — pripísali sme ti +' + bonus + ' bodov.' : '. Mesačný strop bodov máš už vyčerpaný.'),
-      read: false, created_at: nowISO(),
-    }).catch(() => {});
-    console.log('🏆 Hlavolam ' + dateStr + ': vyhrala ' + (w.user_name || w.user_id) + ' (' + w.seconds + ' s, +' + bonus + ' b)');
-    return { user_id: w.user_id, name: w.user_name, seconds: w.seconds, bonus };
+    const MEDAILA = ['🥇', '🥈', '🥉'];
+    const NAZOV = ['1. miesto', '2. miesto', '3. miesto'];
+    const vysledok = [];
+    for (let i = 0; i < Math.min(podium.length, rows.length); i++) {
+      const r = rows[i], odmena = +podium[i] || 0;
+      if (odmena <= 0) continue;
+      const capLeft = Math.max(0, c.monthly_cap - await monthPoints(r.user_id, dateStr.slice(0, 7)));
+      const bonus = Math.min(odmena, capLeft);
+      await q.update(db.puzzle_solves, { _id: r._id },
+        { $set: { day_win: i === 0, podium: i + 1, day_win_bonus: bonus, points: (+r.points || 0) + bonus } });
+      await q.insert(db.notifications, {
+        user_id: r.user_id, type: 'puzzle_win',
+        title: MEDAILA[i] + ' ' + NAZOV[i] + ' v dennom hlavolame!',
+        body: 'Včerajšiu hádanku si zvládla za ' + r.seconds + ' s — ' + NAZOV[i].toLowerCase() + ' zo všetkých'
+          + (bonus ? ' a +' + bonus + ' bonusových bodov.' : '. Mesačný strop bodov máš už vyčerpaný.'),
+        read: false, created_at: nowISO(),
+      }).catch(() => {});
+      vysledok.push({ miesto: i + 1, user_id: r.user_id, name: r.user_name, seconds: r.seconds, bonus });
+    }
+    if (vysledok.length) console.log('🏆 Hlavolam ' + dateStr + ' pódium: '
+      + vysledok.map(v => v.miesto + '. ' + (v.name || v.user_id) + ' (' + v.seconds + ' s, +' + v.bonus + ' b)').join(' · '));
+    return vysledok.length ? vysledok : null;
   }
   // beží každých 20 minút; guard v settings zabezpečí jedno vyhodnotenie na deň
   setInterval(async () => {
@@ -235,7 +248,8 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
         my_points: mine ? mine.points : 0,
         month_points: earned, monthly_cap: c.monthly_cap,
         points: c.points, fast_bonus: c.fast_bonus, fast_seconds: c.fast_seconds,
-        day_win_bonus: c.day_win_bonus, my_day_win: mine ? !!mine.day_win : false,
+        day_win_bonus: c.day_win_bonus, podium_bonus: c.podium_bonus || [5, 3, 1],
+        my_day_win: mine ? !!mine.day_win : false,
         solvers_today: solvers,
       });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -304,8 +318,9 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     try {
       const d = today();
       const rows = (await q.find(db.puzzle_solves, { date: d })).filter(r => r.verified !== false)
-        .sort((a, b) => (a.seconds || 0) - (b.seconds || 0)).slice(0, 10)
-        .map((r, i) => ({ pos: i + 1, name: r.user_name || 'Tanečníčka', seconds: r.seconds, me: r.user_id === req.session.uid, win: !!r.day_win }));
+        .sort((a, b) => (a.seconds || 0) - (b.seconds || 0))
+        .map((r, i) => ({ pos: i + 1, name: r.user_name || 'Tanečníčka', seconds: r.seconds,
+          me: r.user_id === req.session.uid, win: !!r.day_win, podium: r.podium || null }));
       res.json({ ok: true, date: d, rows });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -347,6 +362,9 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
         fast_seconds: num(req.body.fast_seconds, cur.fast_seconds, 10, 600),
         monthly_cap: num(req.body.monthly_cap, cur.monthly_cap, 0, 200),
         day_win_bonus: num(req.body.day_win_bonus, cur.day_win_bonus, 0, 20),
+        podium_bonus: Array.isArray(req.body.podium_bonus) && req.body.podium_bonus.length <= 3
+          && req.body.podium_bonus.every(x => Number.isFinite(+x) && +x >= 0 && +x <= 20)
+          ? req.body.podium_bonus.map(Number) : cur.podium_bonus,
         day_win_min_players: num(req.body.day_win_min_players, cur.day_win_min_players, 1, 50),
         schedule: Array.isArray(req.body.schedule) && req.body.schedule.every(t => TYPES.includes(t)) && req.body.schedule.length
           ? req.body.schedule : cur.schedule,

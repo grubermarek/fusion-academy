@@ -120,7 +120,7 @@ function render(){
     <div class="hint">${P.type==='words'
       ? 'Ťahaj prstom po písmenách a označ <b>všetkých '+P.words.length+' slov</b>. Slová sú vodorovne, zvisle aj šikmo — aj odzadu.'
       : 'Ťahaj prstom od <b>1</b> a spájaj čísla v poradí tak, aby si prešla <b>všetky políčka</b>.'}
-<br><b style="color:var(--gold)">🏆 Najrýchlejší čas dňa berie +${P.day_win_bonus} bodov</b> — čas ti beží od otvorenia, vyhodnocuje sa po polnoci.</div>
+<br><b style="color:var(--gold)">Za vyriešenie ${P.points} ${P.points===1?'bod':P.points<5?'body':'bodov'}</b> · najrýchlejšie časy dňa navyše 🥇 +${(P.podium_bonus||[5,3,1])[0]} · 🥈 +${(P.podium_bonus||[5,3,1])[1]} · 🥉 +${(P.podium_bonus||[5,3,1])[2]} — čas beží od otvorenia, poradie sa uzatvára o polnoci.</div>
     <div class="actions">
       <button class="btn-ghost" onclick="resetPath()">Vymazať</button>
       <button class="btn-main" id="sendBtn" onclick="submit()">Odovzdať riešenie</button>
@@ -311,9 +311,9 @@ async function submit(){
   if(timer){ clearInterval(timer); timer=null; }
   const m=$('msg'); m.className='msg ok';
   m.innerHTML = d.already ? d.message
-    : `🎉 Vyriešené za <b>${fmtSec(d.seconds)}</b>! Získala si <b>${d.points} ${d.points===1?'bod':'body'}</b>${d.fast?' (vrátane bonusu za rýchlosť)':''}.`
+    : `🎉 Vyriešené za <b>${fmtSec(d.seconds)}</b>! Získala si <b>${d.points} ${d.points===1?'bod':d.points<5?'body':'bodov'}</b>.`
       + (d.capped?'<br><span style="opacity:.8">Mesačný strop bodov z hlavolamu je vyčerpaný — hrať môžeš ďalej pre radosť. 💛</span>':'')
-    + (P.day_win_bonus?'<br>🏆 Ak bude tvoj čas dnes najrýchlejší, ráno ti pribudne ďalších '+P.day_win_bonus+' bodov.':'');
+    + '<br>🥇 Ak sa udržíš v prvej trojke, ráno ti pribudne bonus (+'+((P.podium_bonus||[5,3,1]).join(' / +'))+').';
   solvedToday=true;
   const st=await api('/api/puzzle/today').catch(()=>null); if(st&&st.ok) P=st;
   loadLb();
@@ -322,8 +322,12 @@ async function submit(){
 async function loadLb(){
   const d=await api('/api/puzzle/leaderboard').catch(()=>null);
   const el=$('lb'); if(!el||!d||!d.ok||!d.rows.length){ if(el) el.innerHTML=''; return; }
-  el.innerHTML='<h3>Dnes najrýchlejšie</h3>'+d.rows.map(r=>
-    `<div class="row ${r.me?'me':''}"><div class="pos">${r.win?'🏆':r.pos+'.'}</div><div class="nm">${r.name}</div><div class="t">${fmtSec(r.seconds)}</div></div>`).join('');
+  const MED={1:'🥇',2:'🥈',3:'🥉'};
+  const BON=(P&&P.podium_bonus)||[5,3,1];
+  el.innerHTML='<h3>Dnes najrýchlejšie · '+d.rows.length+(d.rows.length===1?' hráčka':d.rows.length<5?' hráčky':' hráčok')+'</h3>'
+    +d.rows.map(r=>
+    `<div class="row ${r.me?'me':''}"><div class="pos">${MED[r.pos]||r.pos+'.'}</div><div class="nm">${r.name}</div><div class="t">${fmtSec(r.seconds)}${r.pos<=3?` <span style="color:var(--gold);font-weight:800">+${BON[r.pos-1]}</span>`:''}</div></div>`).join('')
+    +'<div style="font-size:.72rem;color:var(--muted);padding:8px 16px 12px;border-top:1px solid var(--line);line-height:1.5">Poradie sa uzatvára o polnoci — bonus 🥇 +'+BON[0]+' · 🥈 +'+BON[1]+' · 🥉 +'+BON[2]+' bod pripíšeme ráno.</div>';
 }
 
 init();

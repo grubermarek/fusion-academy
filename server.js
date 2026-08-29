@@ -2149,6 +2149,32 @@ async function seedData() {
     }catch(e){ console.error('merge_hankova:', e.message); }
   }
 
+  // Prečo rozpis bodov ukazuje „Denný hlavolam 0×", hoci hráčka je v rebríčku?
+  // (Marek 29. 8.) Diagnostika: čo naozaj sedí v puzzle_solves a či mesiac sedí.
+  if(!(await q.one(db.settings,{key:'diag_puzzle_body_v1'}))){
+    await q.insert(db.settings,{key:'diag_puzzle_body_v1', value:true, at:nowISO()});
+    try{
+      const mesiac=today().slice(0,7);
+      const vsetky=await q.find(db.puzzle_solves,{});
+      console.log('🧩 SOLVES spolu: '+vsetky.length+' | tento mesiac ('+mesiac+'): '
+        +vsetky.filter(x=>x.month===mesiac).length+' | bez pola month: '+vsetky.filter(x=>!x.month).length);
+      const podlaMesiaca={};
+      for(const x of vsetky) podlaMesiaca[x.month||'(chýba)']=(podlaMesiaca[x.month||'(chýba)']||0)+1;
+      console.log('🧩 podľa mesiaca: '+JSON.stringify(podlaMesiaca));
+      for(const x of vsetky.slice(-8))
+        console.log('🧩 SOLVE '+(x.user_name||x.user_id)+' | date='+x.date+' month='+(x.month||'CHÝBA')
+          +' | body='+(x.points!=null?x.points:'CHÝBA')+' | s='+x.seconds+' | typ='+(x.type||'?')
+          +' | verified='+x.verified+' | podium='+(x.podium||'—'));
+      // konkrétne Monika zo screenshotu
+      const mon=(await q.find(db.users,{})).find(u=>/melichov/i.test(u.name||''));
+      if(mon){
+        const jej=vsetky.filter(x=>x.user_id===mon._id);
+        console.log('🧩 MONIKA id='+mon._id+' | solves='+jej.length
+          +' | '+jej.map(x=>x.date+'/'+(x.month||'CHÝBA')+'/'+x.points+'b').join(', '));
+      } else console.log('🧩 MONIKA sa nenašla podľa mena');
+    }catch(e){ console.error('diag_puzzle:', e.message); }
+  }
+
   // Anna Debnárová 23. 7. — Marek 27. 8. potvrdil, že taká platba nikdy nebola,
   // takže v účtovníctve nič nechýba. Zatvárame otázku, nech prestane chodiť pripomienka.
   if(!(await q.one(db.settings,{key:'openq_done_anna_debnarova_23_07'}))){
