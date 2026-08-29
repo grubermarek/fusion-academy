@@ -2008,6 +2008,38 @@ async function seedData() {
     }catch(e){ console.error('grant iveta:', e.message); }
   }
 
+  // Ailina Hanková — dva účty (Marek 29. 8.): zlúčiť duplicitný hankova@logro.sk
+  // do hlavného ailin.hankova@gmail.com, Bronze platbu refundovať, Silver ostáva.
+  // NAJPRV len DIAGNOSTIKA — bez presného obrazu sa peniaze ani účty nehýbu.
+  if(!(await q.one(db.settings,{key:'diag_hankova_v1'}))){
+    await q.insert(db.settings,{key:'diag_hankova_v1', value:true, at:nowISO()});
+    try{
+      const ucty=(await q.find(db.users,{})).filter(u=>/hankov/i.test(u.name||'')||/hankova/i.test(u.email||''));
+      for(const u of ucty){
+        console.log('👤 HANKOVA UCET '+u._id+' | '+u.name+' | '+u.email+' | tel='+(u.phone||'—')
+          +' | typ='+(u.user_type||'')+' | vstupy='+(u.single_entries||0)+' | kredit='+(u.referral_credit||0)
+          +' | navstevy='+(u.visit_count||0)+' | avatar='+(u.avatar?'ANO':'nie')
+          +' | sponsor='+(u.sponsor_id||'—')+' | stripe_sub='+(u.stripe_subscription_id||'—')
+          +' | vytvoreny='+(u.created_at||'').slice(0,10));
+        for(const m of (await q.find(db.memberships,{user_id:u._id})).filter(x=>!x._type))
+          console.log('   💎 CLENSTVO '+m._id+' | '+(m.plan_name||m.plan_id)+' | '+m.status+' | cena='+(m.price||0)
+            +' | od='+(m.started_at||'').slice(0,10)+' | do='+(m.expires_at||'').slice(0,10)+' | sposob='+(m.payment_method||'—'));
+        for(const p of await q.find(db.payments,{user_id:u._id}))
+          console.log('   💳 PLATBA '+p._id+' | '+(+p.amount||0)+'€ | '+p.status+' | '+(p.provider||p.method||'—')
+            +' | plan='+(p.ref_id||'—')+' | '+(p.created_at||'').slice(0,10)
+            +' | stripe_pi='+(p.stripe_payment_intent||'—')+' | sub='+(p.stripe_subscription_id||'—'));
+        for(const t of await q.find(db.transactions,{user_id:u._id}))
+          console.log('   🧾 TX '+t._id+' | '+(+t.amount||0)+'€ | '+t.type+' | '+(t.payment_method||'—')+' | '+(t.date||(t.created_at||'').slice(0,10))+' | '+(t.note||''));
+        const bk=await q.find(db.bookings,{user_id:u._id});
+        console.log('   📅 REZERVACII: '+bk.length+' | poslednych 5: '+bk.slice(-5).map(b=>b.booking_date+'/'+(b.attendance_status||b.status)).join(', '));
+        console.log('   🧾 FAKTUR: '+(await q.find(db.invoices,{user_id:u._id})).length
+          +' | REFUNDOV: '+(await q.find(db.refunds,{user_id:u._id})).length
+          +' | NOTIF: '+(await q.count(db.notifications,{user_id:u._id})));
+      }
+      console.log('👤 HANKOVA: uctov spolu '+ucty.length);
+    }catch(e){ console.error('diag_hankova:', e.message); }
+  }
+
   // Anna Debnárová 23. 7. — Marek 27. 8. potvrdil, že taká platba nikdy nebola,
   // takže v účtovníctve nič nechýba. Zatvárame otázku, nech prestane chodiť pripomienka.
   if(!(await q.one(db.settings,{key:'openq_done_anna_debnarova_23_07'}))){
