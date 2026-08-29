@@ -3176,9 +3176,19 @@ app.post('/api/admin/qa/run-event-mail/:wave', adminAuth, async(req,res)=>{
 // QA: matica mail budžetu pri simulovanom počte odoslaných (bez reálneho posielania)
 app.get('/api/admin/qa/mail-budget', adminAuth, async(req,res)=>{
   try{
-    const sent=+(req.query.sent||0); const outM={};
-    for(const p of [1,2,3,4,5,6,8,10]) outM['p'+p]=await mailBudgetOk(p, sent);
-    res.json({ok:true, sent, allowed:outM});
+    // bez ?sent= ukáž skutočný stav (vrátane mesačného stropu); s ?sent= simuluj deň
+    const simuluj=req.query.sent!==undefined, sent=+(req.query.sent||0); const outM={};
+    for(const p of [1,2,3,4,5,6,8,10])
+      outM['p'+p]= simuluj ? await mailBudgetOk(p, sent) : await mailBudgetOk(p);
+    const den=today(), mes=den.slice(0,7);
+    let zaDen=0, zaMesiac=0;
+    for(const m of await q.find(db.mail_log,{})){
+      const d=m.created_at||''; if(!d.startsWith(mes)) continue;
+      zaMesiac++; if(d.startsWith(den)) zaDen++;
+    }
+    res.json({ok:true, sent, allowed:outM,
+      skutocne:{ den:zaDen, mesiac:zaMesiac, mesacna_kvota:MAIL_MONTHLY_QUOTA },
+      stropy:{ den:MAIL_TIER_CAPS, mesiac_podiel:MAIL_TIER_MONTHLY_SHARE } });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -15441,20 +15451,35 @@ const MAIL_ENABLED = process.env.MAIL_OFF==='1' ? false
   : (process.env.MAIL_ON==='1' || process.env.NODE_ENV==='production' || !!process.env.RAILWAY_ENVIRONMENT);
 if(!MAIL_ENABLED) console.log('✉️  Odosielanie mailov VYPNUTÉ (nie je produkcia) — MAIL_ON=1 ho zapne');
 
-// Stropy podľa priority: kým transakčné (1–2) môžu do 295/deň, marketing (10) len do 200.
-// Vyššie číslo = nižšia priorita = skorší stop. (FUNNEL-006, spec AJ.)
-const MAIL_TIER_CAPS={1:295,2:295,3:285,4:270,5:255,6:240,7:240,8:225,9:225,10:200};
-// Stropy chránia transakčné maily pred tým, aby ich marketing vytlačil z denného
-// limitu Breva (free plán = 300/deň). Keď treba dobehnúť veľkú kampaň a limit
-// ešte nie je vyčerpaný, dá sa strop pre marketing (p8–10) na jeden deň zdvihnúť
-// env premennou MAIL_CAP_MARKETING — vždy tak, aby ostala rezerva na transakčné.
-const MAIL_CAP_MARKETING = Math.min(290, Math.max(0, +process.env.MAIL_CAP_MARKETING || 0));
+// Od 29. 8. 2026 je Brevo na pláne Starter: 10 000 mailov za MESIAC a denný
+// strop 300 padol. Strážiť teda treba mesiac, nie deň — a to prísnejšie, lebo
+// keď sa mesačný balík minie 20. dňa, nepošleme ani potvrdenie rezervácie.
+// Preto dva stropy naraz:
+//   • mesačný — delí balík podľa priority, transakčné majú celý, marketing 75 %
+//   • denný  — už nie je limitom Breva, ostáva ako poistka proti runaway
+//     (chyba v cykle nesmie za noc minúť celý mesačný balík)
+// Vyššie číslo priority = nižšia dôležitosť = skorší stop. (FUNNEL-006, spec AJ.)
+const MAIL_MONTHLY_QUOTA = Math.max(0, +process.env.MAIL_MONTHLY_QUOTA || 10000);
+const MAIL_TIER_CAPS={1:1200,2:1200,3:1000,4:900,5:800,6:700,7:700,8:600,9:600,10:500};
+const MAIL_TIER_MONTHLY_SHARE={1:1,2:1,3:0.97,4:0.94,5:0.9,6:0.86,7:0.86,8:0.8,9:0.8,10:0.75};
+// Keď treba dobehnúť veľkú kampaň a mesačný balík to unesie, dá sa denný strop
+// pre marketing (p8–10) zdvihnúť env premennou MAIL_CAP_MARKETING. Mesačný strop
+// tým NEobchádza — ten platí vždy, inak by kampaň zjedla transakčné maily.
+const MAIL_CAP_MARKETING = Math.max(0, +process.env.MAIL_CAP_MARKETING || 0);
 async function mailBudgetOk(priority, sentOverride){
   const p=Math.min(10,Math.max(1,Math.round(+priority||4)));
-  const cap=(MAIL_CAP_MARKETING && p>=8) ? MAIL_CAP_MARKETING : MAIL_TIER_CAPS[p];
-  const sent = sentOverride!==undefined ? +sentOverride
-    : (await q.find(db.mail_log,{})).filter(m=>(m.created_at||'').startsWith(today())).length;
-  return sent < cap;
+  const denCap=(MAIL_CAP_MARKETING && p>=8) ? MAIL_CAP_MARKETING : MAIL_TIER_CAPS[p];
+  if(sentOverride!==undefined) return +sentOverride < denCap;
+  const den=today(), mes=den.slice(0,7);
+  let zaDen=0, zaMesiac=0;
+  for(const m of await q.find(db.mail_log,{})){
+    const d=m.created_at||'';
+    if(!d.startsWith(mes)) continue;
+    zaMesiac++;
+    if(d.startsWith(den)) zaDen++;
+  }
+  const mesCap=Math.round(MAIL_MONTHLY_QUOTA * MAIL_TIER_MONTHLY_SHARE[p]);
+  return zaDen < denCap && zaMesiac < mesCap;
 }
 async function sendMail(to, subject, html, opts){
   // @import.local = syntetické adresy klientov zo starého zoznamu (majú len telefón,

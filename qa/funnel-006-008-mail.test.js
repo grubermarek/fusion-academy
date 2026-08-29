@@ -57,13 +57,16 @@ const iso = h => new Date(Date.now() - h * 3600e3).toISOString();
 
     // ── FUNNEL-006: matica budžetu ──
     const at = async n => (await j('/api/admin/qa/mail-budget?sent=' + n, {}, adm)).d.allowed;
-    const b0 = await at(0), b205 = await at(205), b230 = await at(230), b260 = await at(260), b290 = await at(290), b296 = await at(296);
+    // Hranice platia pre Brevo Starter (od 29. 8. 2026): denný strop 300 padol,
+    // denné caps sú už len poistka proti runaway — 500 marketing … 1200 transakčné.
+    // Mesačný strop (10 000) sa testuje zvlášť v qa/mail-budget.test.js.
+    const b0 = await at(0), b520 = await at(520), b620 = await at(620), b820 = await at(820), b1020 = await at(1020), b1210 = await at(1210);
     ok('pri 0 odoslaných ide všetko', Object.values(b0).every(v => v === true));
-    ok('pri 205: marketing (p10) STOP, ostatné idú', b205.p10 === false && b205.p8 === true && b205.p1 === true);
-    ok('pri 230: nurture (p8) STOP, konverzné (p5) idú', b230.p8 === false && b230.p5 === true);
-    ok('pri 260: konverzné (p5) STOP, remindery (p3) idú', b260.p5 === false && b260.p3 === true);
-    ok('pri 290: remindery STOP, transakčné (p1–2) idú', b290.p3 === false && b290.p2 === true);
-    ok('pri 296: stop aj transakčné (tvrdý strop)', b296.p1 === false && b296.p2 === false);
+    ok('pri 520: marketing (p10) STOP, ostatné idú', b520.p10 === false && b520.p8 === true && b520.p1 === true);
+    ok('pri 620: nurture (p8) STOP, konverzné (p5) idú', b620.p8 === false && b620.p5 === true);
+    ok('pri 820: konverzné (p5) STOP, remindery (p3) idú', b820.p5 === false && b820.p3 === true);
+    ok('pri 1020: remindery STOP, transakčné (p1–2) idú', b1020.p3 === false && b1020.p2 === true);
+    ok('pri 1210: stop aj transakčné (poistka proti runaway)', b1210.p1 === false && b1210.p2 === false);
 
     // ── FUNNEL-008: abandoned checkout ──
     const a1 = await j('/api/admin/qa/run-abandoned-checkout', { method: 'POST' }, adm);
