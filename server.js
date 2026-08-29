@@ -2067,6 +2067,88 @@ async function seedData() {
     }catch(e){ console.error('diag_hankova2:', e.message); }
   }
 
+  // ── Ailina Hanková: zlúčenie dvoch účtov + refund Bronze (Marek, 29. 8.) ──
+  // Ostáva ailin.hankova@gmail.com (fotka, Silver, aktívny Stripe odber).
+  // Duplicitný hankova@logro.sk sa deaktivuje, jeho história prejde na hlavný účet,
+  // mail sa zachová ako druhá adresa. Bronze (zaplatený PREVODOM 40 €, promo ZL20QMII)
+  // sa refunduje — peniaze posiela Marek prevodom, appka vystaví dobropis a doklad.
+  // Účtovné doklady (faktúry, transakcie) ZOSTÁVAJÚ na pôvodnom účte — audit trail.
+  if(!(await q.one(db.settings,{key:'merge_hankova_v1'}))){
+    await q.insert(db.settings,{key:'merge_hankova_v1', value:true, at:nowISO()});
+    try{
+      const hlavny = await q.one(db.users,{email:'ailin.hankova@gmail.com'});
+      const dupl   = await q.one(db.users,{email:'hankova@logro.sk'});
+      if(!hlavny || !dupl){ console.log('👤 HANKOVÁ: účty sa nenašli (hlavný='+!!hlavny+', duplicitný='+!!dupl+') — preskakujem'); }
+      else {
+        // 1) REFUND Bronze — platba 40 € prevodom (dBFrINAB0DrgWpLn)
+        const pay = (await q.find(db.payments,{user_id:dupl._id}))
+          .find(p=>p.status==='completed' && p.ref_id==='bronze' && (+p.amount||0)>0);
+        if(pay && !(await q.find(db.refunds,{user_id:dupl._id})).length){
+          const amt = +pay.amount || 0;
+          let creditNote = null;
+          const inv = (await q.find(db.invoices,{user_id:dupl._id}))
+            .filter(i=>i.type!=='credit_note' && i.status==='paid' && Math.abs((+i.total||0)-amt)<0.01)
+            .sort((a,b)=>String(b.issued_at).localeCompare(String(a.issued_at)))[0];
+          if(inv){
+            const cn = await createInvoice({user_id:dupl._id, client_name:inv.client_name, client_email:inv.client_email,
+              items:[{desc:'Refundácia k faktúre '+inv.number+' — duplicitné členstvo (zlúčenie účtov)', qty:1, total:-amt}],
+              total:-amt, method:inv.payment_method||'prevod', type:'credit_note', related_invoice:inv.number});
+            if(cn){ creditNote=cn.number; await q.update(db.invoices,{_id:inv._id},{$set:{status:'credited', credit_note:cn.number}}); }
+          }
+          await q.insert(db.refunds,{ payment_id:pay._id, user_id:dupl._id, client_name:dupl.name,
+            type:'transfer', amount:amt, reason:'duplicate',
+            note:'Duplicitný účet — klientka mala Bronze aj Silver naraz. Vraciame Bronze prevodom, Silver jej zostáva na hlavnom účte.',
+            gateway:'manual', gateway_ref:null, credit_note:creditNote,
+            created_by:null, created_at:nowISO(), month:today().slice(0,7)});
+          await q.update(db.payments,{_id:pay._id},{$set:{status:'refunded', refunded_at:nowISO()}});
+          console.log('👤 HANKOVÁ: refundovaných '+amt.toFixed(2)+' € (prevod)'+(creditNote?(', dobropis '+creditNote):', bez dobropisu'));
+          // klientke ide oznam na hlavný mail (ten jej zostáva)
+          await q.insert(db.notifications,{user_id:hlavny._id, type:'refund',
+            title:'Refundácia '+amt.toFixed(2)+' €',
+            body:'Vrátime ti '+amt.toFixed(2)+' € za duplicitné Bronze členstvo — peniaze pošleme prevodom. Silver ti zostáva. 💛',
+            read:false, created_at:nowISO()}).catch(()=>{});
+        } else console.log('👤 HANKOVÁ: Bronze platba na refund sa nenašla alebo už refundovaná');
+
+        // 2) Bronze členstvo ukončiť (Silver na hlavnom účte pokračuje)
+        for(const m of (await q.find(db.memberships,{user_id:dupl._id})).filter(x=>!x._type && x.status==='active'))
+          await q.update(db.memberships,{_id:m._id},{$set:{status:'cancelled', expires_at:nowISO(),
+            cancel_reason:'Duplicitný účet — zlúčené, členstvo refundované'}});
+
+        // 3) História klientky patrí človeku → rezervácie na hlavný účet
+        const bks = await q.find(db.bookings,{user_id:dupl._id});
+        for(const b of bks) await q.update(db.bookings,{_id:b._id},{$set:{user_id:hlavny._id,
+          user_name:hlavny.name, user_email:hlavny.email, merged_from:dupl._id}});
+        const pridajNavstevy = +dupl.visit_count || 0;
+
+        // 4) Hlavný účet: druhá adresa (Marek chcel mail zachovať) + návštevy + poznámka
+        await q.update(db.users,{_id:hlavny._id},{$set:{
+          alt_emails: [...new Set([...(hlavny.alt_emails||[]), dupl.email])],
+          visit_count: (+hlavny.visit_count||0) + pridajNavstevy,
+          merged_accounts: [...new Set([...(hlavny.merged_accounts||[]), dupl._id])] }});
+
+        // 5) Duplicitný účet vyradiť (NEmaže sa — účtovné doklady musia ostať dohľadateľné)
+        await q.update(db.users,{_id:dupl._id},{$set:{ active:false, merged_into:hlavny._id,
+          merged_at:nowISO(), name:(dupl.name||'')+' (zlúčený účet)',
+          user_type:'client', coach_claimed_by:null, do_not_contact:true,
+          offers_optout:true, sms_opt_out:true }});
+        await q.remove(db.email_queue,{user_id:dupl._id, status:'pending'},{multi:true}).catch(()=>{});
+        for(const p of (await q.find(db.payments,{user_id:dupl._id})).filter(p=>p.status==='pending'))
+          await q.update(db.payments,{_id:p._id},{$set:{status:'cancelled', note:'Zrušené pri zlúčení účtov'}});
+
+        // 6) Stopa v zdieľanej histórii (LEAD OS timeline hlavného účtu)
+        if(db.lead_notes) await q.insert(db.lead_notes,{client_id:hlavny._id, client_name:hlavny.name,
+          author_id:null, author_name:'Systém',
+          text:'🔗 Zlúčené s duplicitným účtom '+dupl.email+' (vytvorený 21. 7.). Prenesené '+bks.length
+            +' rezervácií a '+pridajNavstevy+' návštev. Bronze členstvo refundované prevodom, Silver pokračuje. '
+            +'Účtovné doklady zostávajú na pôvodnom účte.',
+          source:'merge', created_at:nowISO()}).catch(()=>{});
+
+        console.log('👤 HANKOVÁ: zlúčené — '+dupl.email+' → '+hlavny.email
+          +' | rezervácií '+bks.length+' | +'+pridajNavstevy+' návštev | Bronze ukončený, Silver aktívny');
+      }
+    }catch(e){ console.error('merge_hankova:', e.message); }
+  }
+
   // Anna Debnárová 23. 7. — Marek 27. 8. potvrdil, že taká platba nikdy nebola,
   // takže v účtovníctve nič nechýba. Zatvárame otázku, nech prestane chodiť pripomienka.
   if(!(await q.one(db.settings,{key:'openq_done_anna_debnarova_23_07'}))){
