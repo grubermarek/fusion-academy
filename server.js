@@ -15444,9 +15444,14 @@ if(!MAIL_ENABLED) console.log('✉️  Odosielanie mailov VYPNUTÉ (nie je produ
 // Stropy podľa priority: kým transakčné (1–2) môžu do 295/deň, marketing (10) len do 200.
 // Vyššie číslo = nižšia priorita = skorší stop. (FUNNEL-006, spec AJ.)
 const MAIL_TIER_CAPS={1:295,2:295,3:285,4:270,5:255,6:240,7:240,8:225,9:225,10:200};
+// Stropy chránia transakčné maily pred tým, aby ich marketing vytlačil z denného
+// limitu Breva (free plán = 300/deň). Keď treba dobehnúť veľkú kampaň a limit
+// ešte nie je vyčerpaný, dá sa strop pre marketing (p8–10) na jeden deň zdvihnúť
+// env premennou MAIL_CAP_MARKETING — vždy tak, aby ostala rezerva na transakčné.
+const MAIL_CAP_MARKETING = Math.min(290, Math.max(0, +process.env.MAIL_CAP_MARKETING || 0));
 async function mailBudgetOk(priority, sentOverride){
   const p=Math.min(10,Math.max(1,Math.round(+priority||4)));
-  const cap=MAIL_TIER_CAPS[p];
+  const cap=(MAIL_CAP_MARKETING && p>=8) ? MAIL_CAP_MARKETING : MAIL_TIER_CAPS[p];
   const sent = sentOverride!==undefined ? +sentOverride
     : (await q.find(db.mail_log,{})).filter(m=>(m.created_at||'').startsWith(today())).length;
   return sent < cap;
