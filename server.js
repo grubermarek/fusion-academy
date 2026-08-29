@@ -2175,6 +2175,26 @@ async function seedData() {
     }catch(e){ console.error('diag_puzzle:', e.message); }
   }
 
+  // v1 potvrdila, že dáta sedia (Monika má 2 vyriešenia s bodmi) — takže chyba je
+  // v čítaní. v2 zavolá presne tú funkciu, ktorá plní rozpis na profile.
+  if(!(await q.one(db.settings,{key:'diag_puzzle_body_v2'}))){
+    await q.insert(db.settings,{key:'diag_puzzle_body_v2', value:true, at:nowISO()});
+    try{
+      const mon=(await q.find(db.users,{})).find(u=>/melichov/i.test(u.name||''));
+      if(mon){
+        const mesiac=today().slice(0,7);
+        const priamo=await q.find(db.puzzle_solves,{user_id:mon._id, month:mesiac});
+        const bezMesiaca=await q.find(db.puzzle_solves,{user_id:mon._id});
+        console.log('🧩v2 priamy dotaz {user_id,month:"'+mesiac+'"} → '+priamo.length+' záznamov');
+        console.log('🧩v2 dotaz len {user_id} → '+bezMesiaca.length+' | mesiace: '
+          +JSON.stringify(bezMesiaca.map(x=>({m:x.month, typ:typeof x.month, d:x.date, b:x.points}))));
+        const mp=await monthlyPointsFor(mon._id);
+        const pol=(mp.items||[]).find(i=>/hlavolam/i.test(i.label||''));
+        console.log('🧩v2 monthlyPointsFor → month='+mp.month+' | hlavolam: '+JSON.stringify(pol)+' | spolu='+mp.total);
+      }
+    }catch(e){ console.error('diag_puzzle2:', e.message, e.stack); }
+  }
+
   // Anna Debnárová 23. 7. — Marek 27. 8. potvrdil, že taká platba nikdy nebola,
   // takže v účtovníctve nič nechýba. Zatvárame otázku, nech prestane chodiť pripomienka.
   if(!(await q.one(db.settings,{key:'openq_done_anna_debnarova_23_07'}))){
