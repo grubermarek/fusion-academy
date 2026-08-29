@@ -2040,6 +2040,33 @@ async function seedData() {
     }catch(e){ console.error('diag_hankova:', e.message); }
   }
 
+  // Hanková — presný výpis (v1 sa riadky v logu miešali; pri peniazoch sa nehádá).
+  // Každý riadok nesie skratku účtu: GMAIL = ailin.hankova@gmail.com (ostáva),
+  // LOGRO = hankova@logro.sk (duplicitný).
+  if(!(await q.one(db.settings,{key:'diag_hankova_v2'}))){
+    await q.insert(db.settings,{key:'diag_hankova_v2', value:true, at:nowISO()});
+    try{
+      const ucty=(await q.find(db.users,{})).filter(u=>/hankov/i.test(u.name||'')||/hankova/i.test(u.email||''));
+      for(const u of ucty){
+        const tag=/gmail/i.test(u.email||'')?'GMAIL':/logro/i.test(u.email||'')?'LOGRO':u._id;
+        const p=x=>console.log('🅷['+tag+'] '+x);
+        p('UCET id='+u._id+' mail='+u.email+' avatar='+(u.avatar?'ANO':'nie')+' stripe_sub='+(u.stripe_subscription_id||'—')
+          +' sub_plan='+(u.stripe_sub_plan||'—')+' navstevy='+(u.visit_count||0)+' vytvoreny='+(u.created_at||'').slice(0,10));
+        for(const m of (await q.find(db.memberships,{user_id:u._id})).filter(x=>!x._type))
+          p('CLENSTVO '+m._id+' '+(m.plan_name||m.plan_id)+' '+m.status+' cena='+(m.price||0)+' do='+(m.expires_at||'').slice(0,10));
+        for(const x of await q.find(db.payments,{user_id:u._id}))
+          p('PLATBA '+x._id+' '+(+x.amount||0)+'€ '+x.status+' '+(x.provider||x.method||'manual')+' plan='+(x.ref_id||'—')
+            +' '+(x.created_at||'').slice(0,10)+' sub='+(x.stripe_subscription_id||'—')+' sess='+(x.stripe_session_id||'—'));
+        for(const x of await q.find(db.transactions,{user_id:u._id}))
+          p('TX '+x._id+' '+(+x.amount||0)+'€ '+x.type+' '+(x.payment_method||'—')+' '+(x.date||(x.created_at||'').slice(0,10))+' | '+(x.note||''));
+        for(const x of await q.find(db.invoices,{user_id:u._id}))
+          p('FAKTURA '+x.number+' '+(+x.total||0)+'€ '+(x.status||'')+' '+(x.issued_at||'').slice(0,10));
+        const bk=(await q.find(db.bookings,{user_id:u._id})).sort((a,b)=>String(a.booking_date).localeCompare(String(b.booking_date)));
+        p('REZERVACIE ('+bk.length+'): '+bk.map(b=>b.booking_date+'/'+(b.attendance_status||b.status)).join(', '));
+      }
+    }catch(e){ console.error('diag_hankova2:', e.message); }
+  }
+
   // Anna Debnárová 23. 7. — Marek 27. 8. potvrdil, že taká platba nikdy nebola,
   // takže v účtovníctve nič nechýba. Zatvárame otázku, nech prestane chodiť pripomienka.
   if(!(await q.one(db.settings,{key:'openq_done_anna_debnarova_23_07'}))){
