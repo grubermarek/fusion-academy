@@ -2149,52 +2149,6 @@ async function seedData() {
     }catch(e){ console.error('merge_hankova:', e.message); }
   }
 
-  // Prečo rozpis bodov ukazuje „Denný hlavolam 0×", hoci hráčka je v rebríčku?
-  // (Marek 29. 8.) Diagnostika: čo naozaj sedí v puzzle_solves a či mesiac sedí.
-  if(!(await q.one(db.settings,{key:'diag_puzzle_body_v1'}))){
-    await q.insert(db.settings,{key:'diag_puzzle_body_v1', value:true, at:nowISO()});
-    try{
-      const mesiac=today().slice(0,7);
-      const vsetky=await q.find(db.puzzle_solves,{});
-      console.log('🧩 SOLVES spolu: '+vsetky.length+' | tento mesiac ('+mesiac+'): '
-        +vsetky.filter(x=>x.month===mesiac).length+' | bez pola month: '+vsetky.filter(x=>!x.month).length);
-      const podlaMesiaca={};
-      for(const x of vsetky) podlaMesiaca[x.month||'(chýba)']=(podlaMesiaca[x.month||'(chýba)']||0)+1;
-      console.log('🧩 podľa mesiaca: '+JSON.stringify(podlaMesiaca));
-      for(const x of vsetky.slice(-8))
-        console.log('🧩 SOLVE '+(x.user_name||x.user_id)+' | date='+x.date+' month='+(x.month||'CHÝBA')
-          +' | body='+(x.points!=null?x.points:'CHÝBA')+' | s='+x.seconds+' | typ='+(x.type||'?')
-          +' | verified='+x.verified+' | podium='+(x.podium||'—'));
-      // konkrétne Monika zo screenshotu
-      const mon=(await q.find(db.users,{})).find(u=>/melichov/i.test(u.name||''));
-      if(mon){
-        const jej=vsetky.filter(x=>x.user_id===mon._id);
-        console.log('🧩 MONIKA id='+mon._id+' | solves='+jej.length
-          +' | '+jej.map(x=>x.date+'/'+(x.month||'CHÝBA')+'/'+x.points+'b').join(', '));
-      } else console.log('🧩 MONIKA sa nenašla podľa mena');
-    }catch(e){ console.error('diag_puzzle:', e.message); }
-  }
-
-  // v1 potvrdila, že dáta sedia (Monika má 2 vyriešenia s bodmi) — takže chyba je
-  // v čítaní. v2 zavolá presne tú funkciu, ktorá plní rozpis na profile.
-  if(!(await q.one(db.settings,{key:'diag_puzzle_body_v2'}))){
-    await q.insert(db.settings,{key:'diag_puzzle_body_v2', value:true, at:nowISO()});
-    try{
-      const mon=(await q.find(db.users,{})).find(u=>/melichov/i.test(u.name||''));
-      if(mon){
-        const mesiac=today().slice(0,7);
-        const priamo=await q.find(db.puzzle_solves,{user_id:mon._id, month:mesiac});
-        const bezMesiaca=await q.find(db.puzzle_solves,{user_id:mon._id});
-        console.log('🧩v2 priamy dotaz {user_id,month:"'+mesiac+'"} → '+priamo.length+' záznamov');
-        console.log('🧩v2 dotaz len {user_id} → '+bezMesiaca.length+' | mesiace: '
-          +JSON.stringify(bezMesiaca.map(x=>({m:x.month, typ:typeof x.month, d:x.date, b:x.points}))));
-        const mp=await monthlyPointsFor(mon._id);
-        const pol=(mp.items||[]).find(i=>/hlavolam/i.test(i.label||''));
-        console.log('🧩v2 monthlyPointsFor → month='+mp.month+' | hlavolam: '+JSON.stringify(pol)+' | spolu='+mp.total);
-      }
-    }catch(e){ console.error('diag_puzzle2:', e.message, e.stack); }
-  }
-
   // Anna Debnárová 23. 7. — Marek 27. 8. potvrdil, že taká platba nikdy nebola,
   // takže v účtovníctve nič nechýba. Zatvárame otázku, nech prestane chodiť pripomienka.
   if(!(await q.one(db.settings,{key:'openq_done_anna_debnarova_23_07'}))){
@@ -15877,10 +15831,12 @@ async function monthlyPointsFor(userId, month){
   const paidTier=(await paidMembershipTierMap())[userId]||null;
   return buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, memTier:hasMem?effectiveMemTier(paidTier, m.plan_id, !!m.gift):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, privCount, spinPoints, spinCount, reviewCount, puzzlePoints, puzzleCount}, month);
 }
-function buildPointItems({hours, online, refs, hasMem, memName, memTier, newMemberCount, newMemberPoints, merchCount, merchLineCount, merchLinePoints, privCount}, month){
+function buildPointItems({hours, online, refs, hasMem, memName, memTier, newMemberCount, newMemberPoints, merchCount, merchLineCount, merchLinePoints, privCount, spinCount, spinPoints, reviewCount, puzzleCount, puzzlePoints}, month){
   privCount=privCount||0;
   online = online||0; newMemberCount=newMemberCount||0; newMemberPoints=newMemberPoints||0; merchCount=merchCount||0;
   merchLineCount=merchLineCount||0; merchLinePoints=merchLinePoints||0;
+  spinCount=spinCount||0; spinPoints=spinPoints||0; reviewCount=reviewCount||0;
+  puzzleCount=puzzleCount||0; puzzlePoints=puzzlePoints||0;
   const plur=(n,a,b,c)=> n===1?a : (n>=2&&n<=4?b:c);
   const items = [
     { icon:'🔥', label:'Odchodené hodiny',        count:hours,  per:MP_WEIGHTS.hour,     points:hours*MP_WEIGHTS.hour,     sub:`${hours} ${plur(hours,'hodina','hodiny','hodín')}` },
@@ -15891,9 +15847,9 @@ function buildPointItems({hours, online, refs, hasMem, memName, memTier, newMemb
     { icon:'🛍️', label:'Zakúpený merch',          count:merchCount, per:MP_WEIGHTS.merch, points:merchCount*MP_WEIGHTS.merch, sub:`${merchCount} ${plur(merchCount,'kus','kusy','kusov')}` },
     { icon:'🛒', label:'Merch v mojom tíme (aj v hĺbke)', count:merchLineCount, points:merchLinePoints, sub:`${merchLineCount} ${plur(merchLineCount,'kus','kusy','kusov')}` },
     { icon:'💛', label: hasMem?('Aktívne členstvo'+(memName?' ('+memName+')':'')):'Aktívne členstvo', count: hasMem?1:0, per:membershipPointsFor(memTier), points: hasMem?membershipPointsFor(memTier):0, sub: hasMem?'aktívne':'—' },
-    { icon:'🎡', label:'Denné odmeny (koleso + séria)', count: arguments[0].spinCount||0, points: arguments[0].spinPoints||0, sub: (arguments[0].spinCount||0)+'× denná odmena' },
-    { icon:'⭐', label:'Google recenzia', count: arguments[0].reviewCount||0, per:10, points:(arguments[0].reviewCount||0)*10, sub: (arguments[0].reviewCount||0)?'schválená recenzia':'—' },
-    { icon:'🧩', label:'Denný hlavolam', count: arguments[0].puzzleCount||0, points: arguments[0].puzzlePoints||0, sub: (arguments[0].puzzleCount||0)+'× vyriešený' },
+    { icon:'🎡', label:'Denné odmeny (koleso + séria)', count:spinCount, points:spinPoints, sub: spinCount+'× denná odmena' },
+    { icon:'⭐', label:'Google recenzia', count:reviewCount, per:10, points:reviewCount*10, sub: reviewCount?'schválená recenzia':'—' },
+    { icon:'🧩', label:'Denný hlavolam', count:puzzleCount, points:puzzlePoints, sub: puzzleCount+'× vyriešený' },
   ];
   const total = items.reduce((s,i)=>s+i.points,0);
   return { month, total, items };
@@ -16109,11 +16065,14 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
       const spinBy={}; (await q.find(db.spins,{})).forEach(s=>{ if((s.date||'').startsWith(prefix)){ const b=spinBy[s.user_id]=spinBy[s.user_id]||{p:0,c:0}; b.p+=(+s.points||0); if(!s.milestone) b.c++; } });
       // ⭐ schválené Google recenzie (+10 b) — musia sedieť s admin sumárom bodov
       const reviewBySpot={}; (await q.find(db.review_claims,{status:'approved'})).forEach(c=>{ if(String(c.decided_at||c.created_at||'').startsWith(prefix)) reviewBySpot[c.user_id]=(reviewBySpot[c.user_id]||0)+1; });
+      // 🧩 denný hlavolam — bez neho rebríček nesedel s rozpisom „Tvoje body"
+      const puzzleBySpot={}; (await q.find(db.puzzle_solves,{})).forEach(p=>{ if(String(p.date||'').startsWith(prefix)){ const b=puzzleBySpot[p.user_id]=puzzleBySpot[p.user_id]||{p:0,c:0}; b.p+=(+p.points||0); b.c++; } });
       const ranked=[];
       for(const u of users){
         const nm=newMemberPointsFor(u._id, adjacency, buyerSet);
         const md=merchDownlinePointsFor(u._id, adjacency, merchMap);
-        const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null, memTier:memTier[u._id]||null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount:merchMap[u._id]||0, merchLineCount:md.count, merchLinePoints:md.points, privCount:privMap[u._id]||0, spinPoints:(spinBy[u._id]||{}).p||0, spinCount:(spinBy[u._id]||{}).c||0, reviewCount:reviewBySpot[u._id]||0 }, prefix);
+        const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, hasMem:!!memActive[u._id], memName:memName[u._id]||null, memTier:memTier[u._id]||null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount:merchMap[u._id]||0, merchLineCount:md.count, merchLinePoints:md.points, privCount:privMap[u._id]||0, spinPoints:(spinBy[u._id]||{}).p||0, spinCount:(spinBy[u._id]||{}).c||0, reviewCount:reviewBySpot[u._id]||0,
+          puzzlePoints:(puzzleBySpot[u._id]||{}).p||0, puzzleCount:(puzzleBySpot[u._id]||{}).c||0 }, prefix);
         if(bd.total>0) ranked.push({ id:u._id, name:u.name, avatar:u.avatar||null, refs:refCount[u._id]||0, hours:attCount[u._id]||0, score:bd.total, points:bd.total, breakdown:bd.items, badge:getMemberBadge(u.created_at, u) });
       }
       ranked.sort((a,b)=>b.points-a.points);
