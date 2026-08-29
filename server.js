@@ -3169,7 +3169,8 @@ app.post('/api/admin/qa/run-abandoned-checkout', adminAuth, async(req,res)=>{
 // QA: event kampane (leady / urgencia) — bez čakania na 8-minútový tick
 app.post('/api/admin/qa/run-event-mail/:wave', adminAuth, async(req,res)=>{
   try{
-    const fn = req.params.wave==='urgency' ? eventUrgencyTick : eventLeadTick;
+    const fn = { urgency:eventUrgencyTick, lastday:eventLastDayTick,
+                 party:eventPartyPushTick, reminder:eventReminderTick }[req.params.wave] || eventLeadTick;
     res.json({ok:true, ...(await fn(true))});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -4153,7 +4154,7 @@ setInterval(async()=>{
     if(!process.env.BREVO_API_KEY) return;
     if(await q.one(db.settings,{key:'event_mail_lt2026_done'})) return;
     const hSK=+new Intl.DateTimeFormat('sk-SK',{hour:'numeric',hour12:false,timeZone:'Europe/Bratislava'}).format(new Date());
-    if(hSK<9||hSK>20) return;
+    if(hSK<9||hSK>20) return;                 // anonymný ticker, qaMode tu neexistuje
     if(!(await mailBudgetOk(10))) return;         // globálny denný budžet (p10 = marketing)
     let budget=60;                                // max 60 na tick
     const isTestU=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'')||u.lead_source==='test'||u.is_test;
@@ -4214,7 +4215,7 @@ async function eventLeadTick(qaMode){
     if(await q.one(db.settings,{key:'event_lead_lt2026_done'})) return;
     if(today() > '2026-09-05') return;            // po akcii už nikdy
     const hSK=+new Intl.DateTimeFormat('sk-SK',{hour:'numeric',hour12:false,timeZone:'Europe/Bratislava'}).format(new Date());
-    if(hSK<9||hSK>20) return;
+    if(!qaMode && (hSK<9||hSK>20)) return;   // QA smie bežať aj mimo denného okna
     if(!(await mailBudgetOk(10))) return;
     let budget=60;
     const isTestU=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'')||u.lead_source==='test'||u.is_test;
@@ -4268,7 +4269,7 @@ async function eventUrgencyTick(qaMode){
     if(!(qaMode && process.env.QA_EVENT_WINDOW==='1') && (t < '2026-08-29' || t > '2026-08-31')) return;   // presné okno urgencie
     if(await q.one(db.settings,{key:'event_urg_lt2026_done'})) return;
     const hSK=+new Intl.DateTimeFormat('sk-SK',{hour:'numeric',hour12:false,timeZone:'Europe/Bratislava'}).format(new Date());
-    if(hSK<9||hSK>20) return;
+    if(!qaMode && (hSK<9||hSK>20)) return;   // QA smie bežať aj mimo denného okna
     if(!(await mailBudgetOk(9))) return;
     let budget=60;
     const isTestU=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'')||u.lead_source==='test'||u.is_test;
@@ -4321,6 +4322,209 @@ async function eventUrgencyTick(qaMode){
   }catch(e){ console.error('event urgency mail:', e.message); return {error:e.message}; }
 }
 setInterval(eventUrgencyTick, 8*60*1000);
+
+// ── VLNA C: posledný deň predpredaja (31. 8.) ───────────────────────────────
+// Vlna B beží 29.–31. 8. a hovorí „posledné dni". 31. 8. je ale iná situácia —
+// o polnoci sa členská cena 45 € aj predpredaj 55 € menia na 65 € pre všetkých.
+// Ide LEN klientkam a ambasádorkám: pre leady sa 31. 8. nič nemení, párty za 5 €
+// majú v predpredaji až do 5. 9., takže by to bola falošná urgencia.
+const EV_LAST_SUBJ = '🔔 Dnes o polnoci sa cena mení — párty 5. 9.';
+async function eventLastDayTick(qaMode){
+  try{
+    if(!process.env.BREVO_API_KEY) return;
+    const t=today();
+    if(!(qaMode && process.env.QA_EVENT_WINDOW==='1') && t!=='2026-08-31') return;
+    if(await q.one(db.settings,{key:'event_lastday_lt2026_done'})) return;
+    const hSK=+new Intl.DateTimeFormat('sk-SK',{hour:'numeric',hour12:false,timeZone:'Europe/Bratislava'}).format(new Date());
+    if(!qaMode && (hSK<9||hSK>19)) return;   // QA smie bežať aj mimo denného okna
+    if(!(await mailBudgetOk(9))) return;
+    const budget=80;
+    const isTestU=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'')||u.lead_source==='test'||u.is_test;
+    const activeMem=new Set((await q.find(db.memberships,{status:'active'}))
+      .filter(m=>!m.expires_at||new Date(m.expires_at)>new Date()).map(m=>m.user_id));
+    const buyers=new Set((await q.find(db.ev_orders,{event_slug:'latin-tropical-2026', status:'paid'}))
+      .map(o=>String(o.buyer_email||'').toLowerCase()));
+    const already=new Set((await q.find(db.mail_log,{subject:EV_LAST_SUBJ})).map(m=>String(m.to).toLowerCase()));
+    // Anti-spam: kto dostal ktorýkoľvek event mail DNES, dnes už ďalší nedostane.
+    const dnesOslovene=new Set((await q.find(db.mail_log,{}))
+      .filter(m=>String(m.created_at||'').startsWith(t) && /event_campaign/.test(m.template||''))
+      .map(m=>String(m.to).toLowerCase()));
+    const users=(await q.find(db.users,{}))
+      .filter(u=>['client','ambassador'].includes(u.user_type) && !u.is_admin && !u.is_child && u.active!==false
+        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u)
+        && u.email && /@/.test(u.email) && !/@import\.local$|@guest\./i.test(u.email)
+        && !already.has(String(u.email).toLowerCase())
+        && !buyers.has(String(u.email).toLowerCase())
+        && !dnesOslovene.has(String(u.email).toLowerCase()))
+      .sort((a,b)=>(activeMem.has(b._id)?1:0)-(activeMem.has(a._id)?1:0));
+    if(!users.length){
+      await q.insert(db.settings,{key:'event_lastday_lt2026_done', value:true, at:nowISO()});
+      console.log('📧 EVENT LAST DAY LT2026: hotovo');
+      return {selected:[], sent:0, remaining:0};
+    }
+    const soldFull=(await q.find(db.ev_orders,{event_slug:'latin-tropical-2026', status:'paid'}))
+      .flatMap(o=>o.items||[]).filter(i=>/full/i.test(i.type||i.type_name||'')).reduce((s2,i)=>s2+(+i.qty||1),0);
+    const volne=Math.max(0, 30-soldFull);
+    let n=0;
+    for(const u of users){
+      if(n>=budget) break;
+      if(!(await mailBudgetOk(9))) break;
+      const first=String(u.name||'').split(' ')[0]||'tanečníčka';
+      const member=activeMem.has(u._id);
+      const cena=member
+        ? '<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">⭐ Tvoja členská cena <b style="color:#C9A84C">45 €</b> platí <b>len dnes do polnoci</b>. Od zajtra je Full Experience za 65 € — aj pre členky.</p>'
+        : '<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">🎟️ Predpredaj <b style="color:#C9A84C">55 €</b> platí <b>len dnes do polnoci</b>. Od zajtra 65 €.</p>';
+      const miesta = volne>0
+        ? '<p>💃 Na masterclass s <b>Marekom Gruberom a Ivanom Ligártom</b> ostáva <b>'+volne+'</b> z 30 miest.</p>'
+        : '<p>💃 Masterclass je vypredaná — ostáva už len vstup na párty.</p>';
+      const ok=await sendMail(u.email, EV_LAST_SUBJ,
+        emailTemplate('Ahoj '+first+'! 🔔',
+        '<p>Dnes je posledný deň, keď sa dá kúpiť vstupenka za nižšiu cenu. O polnoci sa predpredaj zatvára.</p>'
+        +cena+miesta
+        +'<p>🍹 Ak masterclass nechceš, samotná párty od 21:00 stojí <b>5 €</b> (na mieste 10 €) a čas na ňu máš do piatku.</p>'
+        +'<p>🪑 Rezervácia stola: <b>0904 31 51 51</b> — Beáta Gruber Buňová</p>'
+        +'<p>📍 Fusion Club Detva, Záhradná 7 · piatok 5. 9.</p>'
+        +'<p>Tím Fusion Academy</p>',
+        '🎟️ Kúpiť za dnešnú cenu', APP_URL+'/event/latin-tropical-2026?utm_source=email&utm_medium=email&utm_campaign=fa-masterclass-lastday'),
+        {priority:9, template:'event_campaign_lastday'}).catch(()=>false);
+      if(ok) n++;
+      await new Promise(r=>setTimeout(r,400));
+    }
+    if(n) console.log('📧 EVENT LAST DAY LT2026: odoslaných '+n+' (zostáva '+(users.length-n)+')');
+    return {selected:users.slice(0,budget).map(u=>u.email), sent:n, remaining:users.length, volne};
+  }catch(e){ console.error('event lastday mail:', e.message); return {error:e.message}; }
+}
+setInterval(eventLastDayTick, 8*60*1000);
+
+// ── VLNA D: párty za 5 € pre tých, čo mail otvorili, ale nekúpili ────────────
+// Po 31. 8. už masterclass nemá cenovú výhodu, ale párty za 5 € v predpredaji
+// beží až do piatku. Cielime na ľudí, ktorí niektorý event mail OTVORILI —
+// záujem prejavili, len neklikli. Kto nič neotvoril, ďalší mail nedostane.
+const EV_PARTY_SUBJ = '🍹 V piatok tancujeme — vstup 5 € do dňa akcie';
+async function eventPartyPushTick(qaMode){
+  try{
+    if(!process.env.BREVO_API_KEY) return;
+    const t=today();
+    if(!(qaMode && process.env.QA_EVENT_WINDOW==='1') && (t < '2026-09-02' || t > '2026-09-04')) return;
+    if(await q.one(db.settings,{key:'event_partypush_lt2026_done'})) return;
+    const hSK=+new Intl.DateTimeFormat('sk-SK',{hour:'numeric',hour12:false,timeZone:'Europe/Bratislava'}).format(new Date());
+    if(!qaMode && (hSK<10||hSK>19)) return;  // QA smie bežať aj mimo denného okna
+    if(!(await mailBudgetOk(10))) return;
+    const budget=70;
+    const isTestU=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'')||u.lead_source==='test'||u.is_test;
+    const buyers=new Set((await q.find(db.ev_orders,{event_slug:'latin-tropical-2026', status:'paid'}))
+      .map(o=>String(o.buyer_email||'').toLowerCase()));
+    const already=new Set((await q.find(db.mail_log,{subject:EV_PARTY_SUBJ})).map(m=>String(m.to).toLowerCase()));
+    // kto niektorý event mail otvoril — záujem je preukázaný, nie odhadnutý
+    const otvorili=new Set((await q.find(db.mail_log,{}))
+      .filter(m=>/event_campaign/.test(m.template||'') && m.opened_at)
+      .map(m=>String(m.to).toLowerCase()));
+    const dnesOslovene=new Set((await q.find(db.mail_log,{}))
+      .filter(m=>String(m.created_at||'').startsWith(t) && /event_campaign/.test(m.template||''))
+      .map(m=>String(m.to).toLowerCase()));
+    const users=(await q.find(db.users,{}))
+      .filter(u=>!u.is_admin && !u.is_child && u.active!==false
+        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u)
+        && u.email && /@/.test(u.email) && !/@import\.local$|@guest\./i.test(u.email)
+        && otvorili.has(String(u.email).toLowerCase())
+        && !already.has(String(u.email).toLowerCase())
+        && !buyers.has(String(u.email).toLowerCase())
+        && !dnesOslovene.has(String(u.email).toLowerCase()));
+    if(!users.length){
+      await q.insert(db.settings,{key:'event_partypush_lt2026_done', value:true, at:nowISO()});
+      console.log('📧 EVENT PARTY PUSH LT2026: hotovo');
+      return {selected:[], sent:0, remaining:0};
+    }
+    let n=0;
+    for(const u of users){
+      if(n>=budget) break;
+      if(!(await mailBudgetOk(10))) break;
+      const first=String(u.name||'').split(' ')[0]||'tanečníčka';
+      const ok=await sendMail(u.email, EV_PARTY_SUBJ,
+        emailTemplate('Ahoj '+first+'! 🍹',
+        '<p>Vidím, že ti naša pozvánka neušla — tak už len krátko a prakticky.</p>'
+        +'<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">🌴 <b style="color:#C9A84C">Latin Tropical Party</b> · piatok <b>5. septembra</b>, od 21:00<br>Vstup <b>5 €</b> v predpredaji, na mieste 10 €. Welcome drink je v cene.</p>'
+        +'<p>Nemusíš vedieť tancovať ani prísť v páre — príď sa pozrieť, aká je atmosféra. Slávime prvý rok tanečnej školy v Detve.</p>'
+        +'<p>🪑 Chceš stôl pre partiu? Zavolaj Beátke: <b>0904 31 51 51</b></p>'
+        +'<p>📍 Fusion Club Detva, Záhradná 7</p>'
+        +'<p>Tím Fusion Academy</p>',
+        '🎟️ Vstupenka za 5 €', APP_URL+'/event/latin-tropical-2026?utm_source=email&utm_medium=email&utm_campaign=fa-party-push'),
+        {priority:10, template:'event_campaign_party'}).catch(()=>false);
+      if(ok) n++;
+      await new Promise(r=>setTimeout(r,400));
+    }
+    if(n) console.log('📧 EVENT PARTY PUSH LT2026: odoslaných '+n+' (zostáva '+(users.length-n)+')');
+    return {selected:users.slice(0,budget).map(u=>u.email), sent:n, remaining:users.length};
+  }catch(e){ console.error('event party push mail:', e.message); return {error:e.message}; }
+}
+setInterval(eventPartyPushTick, 10*60*1000);
+
+// ── PRIPOMIENKA DEŇ PRED (4. 9.) pre tých, čo vstupenku UŽ MAJÚ ─────────────
+// Toto nie je kampaň, ale servis: kto zaplatil, musí vedieť kedy a kam prísť.
+// Preto priorita 3 (nie marketingová) — nesmie ju vytlačiť žiadna kampaň.
+// Ide aj na e-maily držiteľov vstupeniek, nielen na kupujúceho.
+const EV_REMIND_SUBJ = '🌴 Zajtra sa vidíme — Latin Tropical Party';
+async function eventReminderTick(qaMode){
+  try{
+    if(!process.env.BREVO_API_KEY) return;
+    const t=today();
+    if(!(qaMode && process.env.QA_EVENT_WINDOW==='1') && t!=='2026-09-04') return;
+    if(await q.one(db.settings,{key:'event_remind_lt2026_done'})) return;
+    const hSK=+new Intl.DateTimeFormat('sk-SK',{hour:'numeric',hour12:false,timeZone:'Europe/Bratislava'}).format(new Date());
+    if(!qaMode && (hSK<9||hSK>20)) return;   // QA smie bežať aj mimo denného okna
+    const orders=(await q.find(db.ev_orders,{event_slug:'latin-tropical-2026', status:'paid'}));
+    const already=new Set((await q.find(db.mail_log,{subject:EV_REMIND_SUBJ})).map(m=>String(m.to).toLowerCase()));
+    // adresa → má full vstupenku? (kto má full, príde o 18:15; kto len párty, o 21:00)
+    const prijemcovia=new Map();
+    for(const o of orders){
+      const maFull=(o.items||[]).some(i=>/full/i.test(i.type||i.type_name||''));
+      const pridaj=(mail,meno)=>{
+        const e=String(mail||'').toLowerCase();
+        if(!e || !/@/.test(e) || /@import\.local$|@guest\./i.test(e)) return;
+        const p=prijemcovia.get(e)||{email:String(mail), name:meno||'', full:false};
+        p.full = p.full || maFull;
+        if(!p.name && meno) p.name=meno;
+        prijemcovia.set(e,p);
+      };
+      pridaj(o.buyer_email, o.buyer_name);
+      for(const it of (o.items||[])) for(const h of (it.holders||[])) pridaj(h.email, h.name);
+    }
+    const zoznam=[...prijemcovia.values()].filter(p=>!already.has(p.email.toLowerCase()));
+    if(!zoznam.length){
+      await q.insert(db.settings,{key:'event_remind_lt2026_done', value:true, at:nowISO()});
+      console.log('📧 EVENT REMINDER LT2026: hotovo');
+      return {selected:[], sent:0, remaining:0};
+    }
+    let n=0;
+    for(const p of zoznam){
+      if(!(await mailBudgetOk(3))) break;
+      const first=String(p.name||'').split(' ')[0]||'tanečníčka';
+      const kedy = p.full
+        ? '<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">'
+          +'⏰ <b style="color:#C9A84C">Príď o 18:15</b> — masterclass začína načas.<br>'
+          +'18:15 Marek Gruber · 19:15 Ivan Ligárt · 20:15 Zumba + CIRCL Mobility · 21:00 párty pre verejnosť</p>'
+          +'<p>V cene máš jedlo aj welcome drink — o občerstvenie sa nestaraj.</p>'
+        : '<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">'
+          +'⏰ <b style="color:#C9A84C">Párty sa otvára o 21:00</b> · welcome drink máš v cene vstupenky.</p>';
+      const ok=await sendMail(p.email, EV_REMIND_SUBJ,
+        emailTemplate('Ahoj '+first+'! 🌴',
+        '<p>Zajtra je ten deň — <b>piatok 5. septembra</b> slávime prvý rok tanečnej školy.</p>'
+        +kedy
+        +'<p>📍 <b>Fusion Club Detva</b>, Záhradná 7, Detva</p>'
+        +'<p>👟 Vezmi si obuv, v ktorej sa ti dobre tancuje — parket býva rušný.</p>'
+        +'<p>Vstupenku nemusíš tlačiť, stačí sa ohlásiť menom pri vstupe.</p>'
+        +'<p>Ak sa niečo zmenilo a nedorazíš, daj vedieť na <b>0904 31 51 51</b>.</p>'
+        +'<p>Tešíme sa!<br>Tím Fusion Academy</p>',
+        '📋 Program a detaily', APP_URL+'/event/latin-tropical-2026?utm_source=email&utm_medium=email&utm_campaign=fa-reminder'),
+        {priority:3, template:'event_reminder'}).catch(()=>false);
+      if(ok) n++;
+      await new Promise(r=>setTimeout(r,300));
+    }
+    if(n) console.log('📧 EVENT REMINDER LT2026: odoslaných '+n+' z '+zoznam.length);
+    return {selected:zoznam.map(p=>p.email), sent:n, remaining:zoznam.length};
+  }catch(e){ console.error('event reminder mail:', e.message); return {error:e.message}; }
+}
+setInterval(eventReminderTick, 10*60*1000);
 
 // Denná notifikácia adminom o 8:00 (guard raz/deň)
 setInterval(async()=>{
