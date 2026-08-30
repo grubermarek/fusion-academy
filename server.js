@@ -2149,48 +2149,32 @@ async function seedData() {
     }catch(e){ console.error('merge_hankova:', e.message); }
   }
 
-  // Ailina Hanková (Marek 30. 8.): refund 40 € za duplicitný Bronze je v systéme
-  // zapísaný ako vrátený PREVODOM, ale Marek jej namiesto toho nabil kredit.
-  // Než to zosúladíme, chceme vidieť skutočný stav — koľko kreditu má, aké má
-  // refundy a či niekde nesedia sumy. Číta len, nič nemení.
-  if(!(await q.one(db.settings,{key:'diag_ailin_kredit_v1'}))){
-    await q.insert(db.settings,{key:'diag_ailin_kredit_v1', value:true, at:nowISO()});
+  // Ailina Hanková — druhé čítanie (Marek 30. 8.): kredit sa drží v poli
+  // referral_credit a ledger má pole delta, nie amount. Prvá diagnostika čítala
+  // zlé polia, takže nič neukázala. Číta len.
+  if(!(await q.one(db.settings,{key:'diag_ailin_kredit_v2'}))){
+    await q.insert(db.settings,{key:'diag_ailin_kredit_v2', value:true, at:nowISO()});
     try{
       const A=await q.one(db.users,{email:'ailin.hankova@gmail.com'});
       const D=await q.one(db.users,{email:'hankova@logro.sk'});
-      if(!A){ console.log('🅰 Ailina sa nenašla'); }
+      if(!A){ console.log('🅱 Ailina sa nenašla'); }
       else {
-        console.log('🅰 HLAVNÝ ÚČET '+A.name+' ['+A._id+'] '+A.email
-          +' | kredit='+(+A.credit_balance||0)+' € | vstupy='+(A.single_entries||0)
-          +' | free_credits='+(A.free_credits||0)+' | návštev='+(A.visit_count||0));
-        if(D) console.log('🅰 DUPLICITNÝ ['+D._id+'] '+D.email+' | aktívny='+(D.active!==false)
-          +' | kredit='+(+D.credit_balance||0)+' €');
+        console.log('🅱 KREDIT hlavný účet: '+(+A.referral_credit||0)+' € | vstupy='+(A.single_entries||0)
+          +' | free_credits='+(A.free_credits||0));
+        if(D) console.log('🅱 KREDIT duplicitný: '+(+D.referral_credit||0)+' €');
         for(const id of [A._id, D&&D._id].filter(Boolean)){
-          for(const r of (await q.find(db.refunds,{user_id:id})))
-            console.log('🅰 REFUND '+String(r.created_at||'').slice(0,10)+' '+(r.amount||'?')+' € | typ='+(r.type||'?')
-              +' | dôvod='+(r.reason||'')+' | dobropis='+(r.credit_note||'—'));
-          for(const p of (await q.find(db.payments,{user_id:id})))
-            console.log('🅰 PLATBA '+String(p.created_at||p.date||'').slice(0,10)+' '+(p.amount||'?')+' € | '
-              +(p.status||'?')+' | '+(p.ref_id||p.type||''));
+          const led=(await q.find(db.credit_ledger,{user_id:id}))
+            .sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
+          console.log('🅱 pohybov na '+id+': '+led.length);
+          for(const l of led)
+            console.log('🅱   '+String(l.created_at||'').slice(0,16)+'  '+((+l.delta>0?'+':'')+(+l.delta||0))+' €  → zostatok '+(l.balance!=null?l.balance:'?')+'  | '+(l.reason||''));
         }
-        // kreditný ledger — tam je vidieť, čo a kedy sa nabíjalo
-        const led=(await q.find(db.credit_ledger,{user_id:A._id}))
-          .sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
-        console.log('🅰 kreditných pohybov: '+led.length);
-        for(const l of led)
-          console.log('🅰 KREDIT '+String(l.created_at||'').slice(0,16)+' '+(l.amount>0?'+':'')+(l.amount||0)+' € | '
-            +(l.type||l.reason||'')+' | '+(l.note||l.description||''));
-        if(D){
-          const ledD=await q.find(db.credit_ledger,{user_id:D._id});
-          if(ledD.length) console.log('🅰 pozor: kreditné pohyby aj na duplicitnom účte: '+ledD.length);
-        }
-        // transakcie tento mesiac, nech vidno dopad na účtovníctvo
-        for(const t of (await q.find(db.transactions,{})))
-          if(t.user_id===A._id || (D && t.user_id===D._id))
-            console.log('🅰 TX '+String(t.date||t.created_at||'').slice(0,10)+' '+(t.amount||'?')+' € | '
-              +(t.type||'')+' | '+(t.note||''));
+        // aj celý objekt refundu, nech vidno všetky polia
+        for(const r of (await q.find(db.refunds,{})))
+          if(r.user_id===A._id || (D && r.user_id===D._id))
+            console.log('🅱 REFUND OBJEKT: '+JSON.stringify({d:String(r.created_at||'').slice(0,10), amount:r.amount, type:r.type, reason:r.reason, cn:r.credit_note}));
       }
-    }catch(e){ console.error('diag_ailin:', e.message, e.stack); }
+    }catch(e){ console.error('diag_ailin2:', e.message); }
   }
 
   // Olinka Kováčiková (Marek 30. 8.): chýbal jej jeden vstup z desaťvstupovej
