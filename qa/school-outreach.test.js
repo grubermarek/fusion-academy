@@ -167,7 +167,11 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('follow-up ide len neklinuvším a max 1×', srcFu.includes('!s.followup_sent_at') && srcFu.includes('clicked_at'));
     ok('follow-up rešpektuje odpovede a odhlásenie', srcFu.includes("['replied', 'meeting', 'won', 'lost']") && srcFu.includes('!s.unsubscribed'));
     ok('follow-up čaká aspoň 5 dní od prvého mailu', srcFu.includes('5 * 86400000'));
-    ok('denný drip posiela aj follow-upy', srcFu.includes('sendFollowupBatch(25)'));
+    ok('denný drip posiela aj follow-upy', srcFu.includes('sendFollowupBatch(davka)'));
+    ok('follow-upy dobehnú aj po dokončení zoznamu', srcFu.includes('maNove && !maFollowup'));
+    ok('denný strop sa dá meniť bez deployu', srcFu.includes("key: 'school_drip_size'"));
+    ok('guard drží počet, nie len príznak (dávka sa dá dobehnúť)', srcFu.includes('const zostavaDnes = dennyStrop - uzDnes'));
+    ok('starý boolean guard sa neprečíta ako 1', srcFu.includes('zaznam.value === true ? 25'));
     ok('follow-up nesie osobný odkaz (sid)', srcFu.includes('lpUrl(s)') && srcFu.includes('followupHtml'));
     ok('ukážka mailu cez env s guardom', srcFu.includes('SCHOOL_SAMPLE_TO') && srcFu.includes("'school_sample_'"));
     ok('ukážka je označená ako UKÁŽKA', srcFu.includes('[UKÁŽKA]'));

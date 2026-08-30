@@ -286,11 +286,21 @@ module.exports = function initSchoolOutreach(ctx) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // ── Denná automatika: 25 škôl/deň v pracovnom čase ──────────────────────────
-  // Marek chce rozposielať automaticky. Dávkujeme po 25, aby studený outreach
+  // ── Denná automatika: rozposielanie škôl v pracovnom čase ───────────────────
+  // Marek chce rozposielať automaticky. Studený outreach sa dávkuje, aby
   // nezhoršil reputáciu odosielateľa a nezožral Brevo budžet transakčným mailom.
-  // Beží len na produkcii (lokál/QA maily aj tak neposiela) a len raz denne —
-  // guard settings kľúčom, takže reštart servera nič nepošle druhýkrát.
+  // Beží len na produkcii (lokál/QA maily aj tak neposiela).
+  //
+  // Denný strop sa dá meniť BEZ DEPLOYU cez settings 'school_drip_size'
+  // (30. 8. 2026 zdvihnutý z 25 na 50 — doména je odvtedy v Brevo podpísaná
+  // cez DKIM a mesačný limit stúpol na 10 000). Zvyšovať postupne: nová
+  // odosielacia identita nesmie zo dňa na deň vystreliť na stovky mailov.
+  //
+  // Guard drží POČET odoslaného dnes, nie len „dnes bežalo". Vďaka tomu sa
+  // denná dávka rozloží do viacerých behov počas dňa (menej nárazovo) a keď
+  // sa strop zdvihne, zvyšok dobehne ešte v ten istý deň.
+  const DRIP_DEFAULT = 50;        // škôl/deň, kým to settings neprepíše
+  const DRIP_NA_BEH = 25;         // max na jeden beh, nech to nejde naraz
   const dnesSK = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Bratislava' }).format(new Date());
   const hodinaSK = () => +new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Bratislava', hour: '2-digit', hour12: false }).format(new Date());
   const naProdukcii = !!process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production';
@@ -301,19 +311,39 @@ module.exports = function initSchoolOutreach(ctx) {
       if (conf && conf.value === false) return;               // dá sa vypnúť bez deployu
       const h = hodinaSK();
       if (h < 9 || h >= 17) return;                           // len v pracovnom čase
+      const cfg = await q.one(db.settings, { key: 'school_drip_size' });
+      const dennyStrop = Math.min(200, Math.max(1, +(cfg && cfg.value) || DRIP_DEFAULT));
       const guard = 'school_drip_' + dnesSK();
-      if (await q.one(db.settings, { key: guard })) return;   // dnes už išlo
-      const maZoznam = (await q.find(db.schools, {})).some(s => !s.sent_at && !s.unsubscribed);
-      if (!maZoznam) return;                                  // nie je komu — guard nezapisuj
-      await q.insert(db.settings, { key: guard, value: true, at: nowISO() });
-      const r = await sendBatch(25, null);
-      const fu = await sendFollowupBatch(25);
-      console.log('🎓 Školy — denná dávka: odoslané ' + r.poslane + ', follow-upov ' + fu + ', zlyhalo ' + r.zlyhali + ', čaká ešte ' + r.zostava);
-      for (const a of await q.find(db.users, { is_admin: true }))
-        await q.insert(db.notifications, { user_id: a._id, type: 'school_outreach',
-          title: '🎓 Oslovenie škôl — denná dávka',
-          body: 'Odoslané ' + r.poslane + ' škôl' + (fu ? ' + ' + fu + ' follow-upov' : '') + (r.zostava ? ', čaká ešte ' + r.zostava : ' — zoznam je dokončený') + '. Prehľad: /admin/skoly',
-          read: false, created_at: nowISO() }).catch(() => {});
+      const zaznam = await q.one(db.settings, { key: guard });
+      // Starý guard bol boolean true (= dnes bežala jedna dávka po 25). Bez tohto
+      // prepočtu by sa `+true` prečítalo ako 1 a v deň nasadenia by odišlo o dávku viac.
+      const uzDnes = !zaznam ? 0 : (zaznam.value === true ? 25 : (+zaznam.value || 0));
+      const zostavaDnes = dennyStrop - uzDnes;
+      if (zostavaDnes <= 0) return;                           // dnešný strop vyčerpaný
+      const skoly = await q.find(db.schools, {});
+      const maNove = skoly.some(s2 => !s2.sent_at && !s2.unsubscribed);
+      // Aj keď už nie je koho osloviť prvýkrát, follow-upy musia dobehnúť —
+      // pôvodná podmienka ich po dokončení zoznamu ticho zastavila.
+      const maFollowup = skoly.some(s2 => s2.sent_at && !s2.followup_sent_at && !s2.unsubscribed
+        && !['replied', 'meeting', 'won', 'lost'].includes(s2.status));
+      if (!maNove && !maFollowup) return;                     // nie je komu — guard nezapisuj
+      const davka = Math.min(DRIP_NA_BEH, zostavaDnes);
+      const r = await sendBatch(davka, null);
+      const fu = await sendFollowupBatch(davka);
+      const spoluDnes = uzDnes + (r.poslane || 0) + (fu || 0);
+      if (zaznam) await q.update(db.settings, { key: guard }, { $set: { value: spoluDnes, at: nowISO() } });
+      else await q.insert(db.settings, { key: guard, value: spoluDnes, at: nowISO() });
+      console.log('🎓 Školy — dávka: odoslané ' + r.poslane + ', follow-upov ' + fu
+        + ', zlyhalo ' + r.zlyhali + ' | dnes spolu ' + spoluDnes + '/' + dennyStrop + ', čaká ešte ' + r.zostava);
+      // Notifikácia až keď je denný strop vyčerpaný alebo zoznam dokončený —
+      // inak by pri behu každých 20 minút chodila adminom celý deň.
+      const hotovoNaDnes = spoluDnes >= dennyStrop || (!r.zostava && !fu);
+      if (hotovoNaDnes && (r.poslane || fu))
+        for (const a of await q.find(db.users, { is_admin: true }))
+          await q.insert(db.notifications, { user_id: a._id, type: 'school_outreach',
+            title: '🎓 Oslovenie škôl — denná dávka',
+            body: 'Dnes odoslaných ' + spoluDnes + ' mailov školám' + (r.zostava ? ', čaká ešte ' + r.zostava : ' — zoznam je dokončený') + '. Prehľad: /admin/skoly',
+            read: false, created_at: nowISO() }).catch(() => {});
     } catch (e) { console.error('school drip:', e.message); }
   }
   setInterval(schoolDrip, 20 * 60 * 1000);
