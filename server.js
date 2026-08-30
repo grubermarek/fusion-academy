@@ -13483,6 +13483,184 @@ app.post('/api/kiosk/checkin', async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// KIOSK: prihlásenie na dnešné tréningy (Marek 30. 8. 2026)
+// ═══════════════════════════════════════════════════════════════════════════════
+// Doterajší check-in zapisoval ÚČASŤ na hodine, ktorá práve beží. Tu ide o iné:
+// klientka naskenuje QR a zaškrtne si, na ktoré z dnešných hodín chce ísť —
+// aj na viac naraz, aj na tie neskôr počas dňa.
+//
+// Rozdelenie podľa času: čo už beží (alebo začína do 15 minút) sa zapíše rovno
+// ako účasť, budúce hodiny ako bežná rezervácia. Klientka teda nemusí prísť ku
+// kiosku druhýkrát.
+//
+// Čo kiosk zámerne NEponúka:
+//   · Technika — má vlastný cenník (7–10 € podľa členstva), doplatok sa rieši
+//     s trénerom, nie zaškrtnutím na dotykovej obrazovke,
+//   · Súkromné hodiny — dohadujú sa individuálne,
+//   · Online hodiny — kiosk stojí v sále, online sa rezervuje z domu.
+const KIOSK_MIMO = c => /súkromn/i.test(c.name || '') || /súkromn/i.test(c.category || '')
+  || c.category === 'Technika' || c.category === 'Online';
+
+// Koľko vstupov klientke ostáva a čím zaplatí ďalšiu hodinu.
+async function kioskKrytie(u) {
+  const mem = await checkMembership(u._id);
+  const onlineOnly = mem && /online/.test(String((mem.plan_id || '') + ' ' + (mem.plan_name || '')).toLowerCase());
+  const clenstvo = !!(mem && mem.status === 'active' && !onlineOnly
+    && (!mem.expires_at || mem.expires_at >= today()));
+  return {
+    clenstvo, onlineOnly: !!onlineOnly,
+    prva_zdarma: !u.free_class_used,
+    kredity: +u.free_credits || 0,
+    vstupy: +u.single_entries || 0,
+    plan: mem ? (MEMBERSHIP_PLANS[mem.plan_id]?.name || mem.plan_name || 'Členstvo') : null,
+  };
+}
+
+// Dnešné hodiny v štúdiu + čo z nich klientka už má. Vracia sa po skene QR.
+app.post('/api/kiosk/day-classes', async (req, res) => {
+  try {
+    const a = await kioskAuth(req, res); if (!a) return;
+    const qr = String(req.body.qr_data || '');
+    const userId = qr.startsWith('FA:') ? qr.slice(3) : qr;
+    const u = await q.one(db.users, { _id: userId });
+    if (!u) return res.status(404).json({ error: 'Neplatný QR kód — skús to znova alebo sa ozvi trénerovi.' });
+
+    const todayS = today(), dow = new Date().getDay();
+    const nowMin = (d => d.getHours() * 60 + d.getMinutes())(new Date());
+    const toMin = t => { const [h, m] = String(t || '0:0').split(':').map(Number); return h * 60 + m; };
+    const mesto = a.city.toLowerCase().split(' ')[0];
+
+    const vsetky = (await q.find(db.classes, { active: true, day_of_week: dow }))
+      .filter(c => (c.location || '').toLowerCase().includes(mesto))
+      .filter(c => classRunsOn(c, todayS))
+      .filter(c => !KIOSK_MIMO(c))
+      .sort((x, y) => (x.time_start || '').localeCompare(y.time_start || ''));
+
+    const moje = await q.find(db.bookings, { user_id: u._id, booking_date: todayS, status: { $ne: 'cancelled' } });
+    const obsadenost = {};
+    for (const b of await q.find(db.bookings, { booking_date: todayS, status: { $ne: 'cancelled' } }))
+      obsadenost[b.class_id] = (obsadenost[b.class_id] || 0) + 1;
+
+    const konietOf = c => { const e = toMin(c.time_end), st = toMin(c.time_start); return e > st ? e : st + 60; };
+    const hodiny = vsetky.map(c => {
+      const mojaBk = moje.find(b => b.class_id === c._id);
+      const kap = +c.capacity || 30;
+      const obs = obsadenost[c._id] || 0;
+      const prebehla = nowMin >= konietOf(c) + 15;
+      return {
+        id: c._id, name: c.name, emoji: c.emoji || '💃', time_start: c.time_start, time_end: c.time_end || '',
+        instructor: c.instructor || '', volnych: Math.max(0, kap - obs),
+        // „teraz" = beží alebo začína do 15 min → zapíše sa rovno ako účasť
+        teraz: nowMin >= toMin(c.time_start) - 15 && nowMin < konietOf(c) + 15,
+        prebehla,
+        moja: mojaBk ? (mojaBk.status === 'attended' ? 'attended' : 'booked') : null,
+      };
+    }).filter(c => !c.prebehla || c.moja);           // dávno skončené a nenavštívené netreba
+
+    res.json({ ok: true, first: (u.name || '').split(' ')[0], name: u.name,
+      classes: hodiny, krytie: await kioskKrytie(u) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Prihlásenie na zaškrtnuté hodiny. Vstup sa strháva za KAŽDÚ hodinu zvlášť —
+// preto sa najprv overí, či na všetky vybrané vôbec má, a až potom sa zapisuje.
+// Inak by sa mohlo stať, že prvé dve prejdú a tretia spadne s prázdnym kontom.
+app.post('/api/kiosk/signup', async (req, res) => {
+  try {
+    const a = await kioskAuth(req, res); if (!a) return;
+    const qr = String(req.body.qr_data || '');
+    const userId = qr.startsWith('FA:') ? qr.slice(3) : qr;
+    let u = await q.one(db.users, { _id: userId });
+    if (!u) return res.status(404).json({ error: 'Neplatný QR kód — skús to znova alebo sa ozvi trénerovi.' });
+
+    const ids = (Array.isArray(req.body.class_ids) ? req.body.class_ids : []).map(String).slice(0, 10);
+    if (!ids.length) return res.status(400).json({ error: 'Nevybrala si žiadnu hodinu.' });
+
+    const todayS = today(), dow = new Date().getDay();
+    const nowMin = (d => d.getHours() * 60 + d.getMinutes())(new Date());
+    const toMin = t => { const [h, m] = String(t || '0:0').split(':').map(Number); return h * 60 + m; };
+    const mesto = a.city.toLowerCase().split(' ')[0];
+    const konietOf = c => { const e = toMin(c.time_end), st = toMin(c.time_start); return e > st ? e : st + 60; };
+
+    const hodiny = [];
+    for (const id of ids) {
+      const c = await q.one(db.classes, { _id: id });
+      if (!c || !c.active || c.day_of_week !== dow || !classRunsOn(c, todayS)
+        || !(c.location || '').toLowerCase().includes(mesto) || KIOSK_MIMO(c))
+        return res.status(400).json({ error: 'Jedna z hodín sa už nedá vybrať — načítaj zoznam znova.' });
+      hodiny.push(c);
+    }
+
+    const moje = await q.find(db.bookings, { user_id: u._id, booking_date: todayS, status: { $ne: 'cancelled' } });
+    const nove = hodiny.filter(c => !moje.some(b => b.class_id === c._id));
+    const uzMala = hodiny.length - nove.length;
+
+    // kapacita
+    for (const c of nove) {
+      const obs = (await q.find(db.bookings, { class_id: c._id, booking_date: todayS, status: { $ne: 'cancelled' } })).length;
+      if (obs >= (+c.capacity || 30))
+        return res.status(409).json({ error: '„' + c.name + ' ' + c.time_start + '" je už plná. Vyber inú alebo sa ozvi trénerovi.' });
+    }
+
+    // Krytie dopredu na VŠETKY nové hodiny — členstvo kryje všetko, inak sa
+    // spotrebúva v poradí: prvá zdarma → kredit → jednorazový vstup.
+    const kr = await kioskKrytie(u);
+    let plan = [];
+    if (!kr.clenstvo) {
+      let zdarma = kr.prva_zdarma ? 1 : 0, kred = kr.kredity, vst = kr.vstupy;
+      for (const c of nove) {
+        if (zdarma) { zdarma = 0; plan.push('free_class'); }
+        else if (kred > 0) { kred--; plan.push('free_credit'); }
+        else if (vst > 0) { vst--; plan.push('single_entry'); }
+        else return res.status(402).json({
+          error: (kr.onlineOnly ? 'Máš len ONLINE členstvo — živú hodinu nekryje. ' : 'Nemáš dosť vstupov na všetky vybrané hodiny — ')
+            + 'vyber menej hodín alebo sa ozvi trénerovi. 💛',
+          name: u.name, potrebne: nove.length, mas: (kr.prva_zdarma ? 1 : 0) + kr.kredity + kr.vstupy,
+        });
+      }
+    }
+
+    // zápis
+    const zapisane = [];
+    for (let i = 0; i < nove.length; i++) {
+      const c = nove[i];
+      const teraz = nowMin >= toMin(c.time_start) - 15 && nowMin < konietOf(c) + 15;
+      const sposob = kr.clenstvo ? 'membership' : plan[i];
+      if (!kr.clenstvo) {
+        const cerstvy = await q.one(db.users, { _id: u._id });
+        const upd = sposob === 'free_class' ? { free_class_used: true }
+          : sposob === 'free_credit' ? { free_credits: Math.max(0, (+cerstvy.free_credits || 0) - 1) }
+          : { single_entries: Math.max(0, (+cerstvy.single_entries || 0) - 1) };
+        await q.update(db.users, { _id: u._id }, { $set: upd });
+      }
+      await q.insert(db.bookings, {
+        class_id: c._id, class_name: c.name, class_emoji: c.emoji || '💃',
+        class_location: c.location, class_time_start: c.time_start, day_of_week: c.day_of_week, day_name: DAYS_SK[c.day_of_week],
+        user_id: u._id, user_name: u.name, user_email: u.email, user_phone: u.phone || '',
+        booking_date: todayS, free_class: sposob === 'free_class', access_method: sposob,
+        ...(teraz
+          ? { status: 'attended', attended_at: nowISO(), attended_by: 'kiosk_' + a.slug,
+              attendance_status: 'attended', attendance_source: 'qr' }
+          : { status: 'confirmed', attendance_status: 'pending' }),
+        notes: 'kiosk – prihlásenie', created_at: nowISO(),
+      });
+      if (teraz) await creditAttendance(u);
+      zapisane.push({ name: c.name, emoji: c.emoji || '💃', time_start: c.time_start, teraz });
+    }
+
+    u = await q.one(db.users, { _id: u._id });
+    const streak = await visitStreakWeeks(u._id);
+    const birthdayToday = (u.birthday || '').slice(5) === todayS.slice(5);
+    console.log('🎫 Kiosk ' + a.slug + ': ' + (u.name || u._id) + ' → ' + zapisane.length + ' hodín ('
+      + zapisane.map(z => z.name + ' ' + z.time_start + (z.teraz ? ' ✓' : '')).join(', ') + ')');
+    res.json({ ok: true, zapisane, uz_mala: uzMala,
+      user: { id: u._id, name: u.name, first: (u.name || '').split(' ')[0], av: !!u.avatar,
+        visit_count: u.visit_count || 0, points_gain: 5, streak_weeks: streak, birthday: birthdayToday },
+      krytie: await kioskKrytie(u) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Admin: čítanie/úprava nastavení kiosku
 app.get('/api/admin/kiosk', adminAuth, async(req,res)=>{
   const cfg=await kioskConfig();
