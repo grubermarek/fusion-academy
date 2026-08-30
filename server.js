@@ -2149,51 +2149,55 @@ async function seedData() {
     }catch(e){ console.error('merge_hankova:', e.message); }
   }
 
-  // Lenka Kováčiková (Marek 30. 8.): tvrdí, že jej má vychádzať ešte jeden vstup
-  // z desaťvstupovej permanentky. Najprv chceme vidieť, čo si kúpila a čo z toho
-  // reálne odišlo — až potom sa dá povedať, či ide o chybu alebo o jej omyl.
-  // Číta len, nič nemení.
-  if(!(await q.one(db.settings,{key:'diag_lenka_vstupy_v1'}))){
-    await q.insert(db.settings,{key:'diag_lenka_vstupy_v1', value:true, at:nowISO()});
+  // Olinka Kováčiková (Marek 30. 8.): tvrdí, že jej má vychádzať ešte jeden vstup
+  // z desaťvstupovej permanentky. Podozrenie: 21. 8. jej kiosk omylom zapísal
+  // techniku a fix mal vstup vrátiť — ale preskakoval, ak rezervácia medzitým
+  // nebola v stave 'attended'. Číta len, nič nemení.
+  if(!(await q.one(db.settings,{key:'diag_olinka_vstupy_v1'}))){
+    await q.insert(db.settings,{key:'diag_olinka_vstupy_v1', value:true, at:nowISO()});
     try{
-      const kand=(await q.find(db.users,{})).filter(u=>/kov[áa][čc][íi]kov/i.test(u.name||'')||/lenka/i.test(u.name||''));
-      console.log('🅻 kandidátky: '+kand.map(u=>u.name+' ['+u._id+']').join(' | '));
-      const L=kand.find(u=>/lenka/i.test(u.name||'') && /kov[áa][čc][íi]kov/i.test(u.name||'')) || kand[0];
-      if(!L){ console.log('🅻 nenašla sa'); }
+      const ID='2PGtFwcJiRDdRsVz';
+      const L=await q.one(db.users,{_id:ID});
+      if(!L){ console.log('🅾 Olinka sa nenašla'); }
       else {
-        console.log('🅻 ÚČET '+L.name+' ['+L._id+'] '+(L.email||'bez mailu')
+        console.log('🅾 ÚČET '+L.name+' ['+L._id+'] '+(L.email||'bez mailu')
           +' | vstupy='+(L.single_entries||0)+' kredity='+(L.free_credits||0)
-          +' | prvá zdarma použitá='+!!L.free_class_used+' | návštev='+(L.visit_count||0)
-          +' | vytvorený '+(L.created_at||'?'));
-        const mem=(await q.find(db.memberships,{user_id:L._id}));
-        console.log('🅻 členstvá: '+(mem.length?mem.map(m=>m.plan_id+'/'+m.status+' '+(m.started_at||'')+'→'+(m.expires_at||'')).join(' | '):'žiadne'));
-        // nákupy: objednávky aj platby
+          +' | prvá zdarma použitá='+!!L.free_class_used+' | návštev='+(L.visit_count||0));
+        const mem=(await q.find(db.memberships,{user_id:ID}));
+        console.log('🅾 členstvá: '+(mem.length?mem.map(m=>m.plan_id+'/'+m.status+' '+(m.started_at||'')+'→'+(m.expires_at||'')).join(' | '):'žiadne'));
         for(const o of (await q.find(db.orders,{}))){
-          const jej=(o.user_id===L._id)||(String(o.email||'').toLowerCase()===String(L.email||'').toLowerCase());
-          if(!jej) continue;
-          console.log('🅻 OBJ '+(o.created_at||'').slice(0,10)+' '+o.status+' '+(o.total||'?')+'€ | '
+          if(o.user_id!==ID && String(o.email||'').toLowerCase()!==String(L.email||'').toLowerCase()) continue;
+          console.log('🅾 OBJ '+(o.created_at||'').slice(0,10)+' '+o.status+' '+(o.total||'?')+'€ | '
             +(o.items||[]).map(i=>(i.product_name||i.name||'?')+'×'+(i.qty||1)).join(', '));
         }
         for(const p of (await q.find(db.payments,{}))){
-          if(p.user_id!==L._id && String(p.email||'').toLowerCase()!==String(L.email||'').toLowerCase()) continue;
-          console.log('🅻 PLATBA '+(p.created_at||p.date||'').slice(0,10)+' '+(p.amount||'?')+'€ | '
+          if(p.user_id!==ID && String(p.email||'').toLowerCase()!==String(L.email||'').toLowerCase()) continue;
+          console.log('🅾 PLATBA '+String(p.created_at||p.date||'').slice(0,10)+' '+(p.amount||'?')+'€ | '
             +(p.type||'?')+' | '+(p.note||p.description||p.plan_id||''));
         }
-        // všetky jej rezervácie, nech vidno, čo sa čím platilo
-        const bks=(await q.find(db.bookings,{user_id:L._id}))
+        for(const t of (await q.find(db.transactions,{}))){
+          if(t.user_id!==ID) continue;
+          console.log('🅾 TX '+String(t.date||t.created_at||'').slice(0,10)+' '+(t.amount||'?')+'€ | '+(t.type||'')+' | '+(t.note||t.description||''));
+        }
+        const bks=(await q.find(db.bookings,{user_id:ID}))
           .sort((a,b)=>String(a.booking_date||'').localeCompare(String(b.booking_date||'')));
-        console.log('🅻 rezervácií spolu: '+bks.length);
-        const podlaSposobu={};
+        console.log('🅾 rezervácií spolu: '+bks.length);
+        const podla={};
         for(const b of bks){
           const sp=b.access_method||(b.free_class?'free_class':'(neuvedené)');
-          podlaSposobu[sp]=(podlaSposobu[sp]||0)+1;
-          console.log('🅻 BK '+(b.booking_date||'?')+' '+String(b.class_name||'').padEnd(18).slice(0,18)
-            +' '+String(b.status||'').padEnd(10)+' platené='+sp
-            +' | '+(b.notes||'')+(b.cancel_reason?' | zrušené: '+b.cancel_reason:''));
+          podla[sp+'/'+(b.status||'?')]=(podla[sp+'/'+(b.status||'?')]||0)+1;
+          console.log('🅾 BK '+(b.booking_date||'?')+' '+String(b.class_name||'').padEnd(20).slice(0,20)
+            +' '+String(b.status||'').padEnd(10)+' platené='+String(sp).padEnd(14)
+            +' id='+b._id+(b.cancel_reason?' | zrušené: '+b.cancel_reason:'')+(b.notes?' | '+b.notes:''));
         }
-        console.log('🅻 podľa spôsobu platby: '+JSON.stringify(podlaSposobu));
+        console.log('🅾 súhrn: '+JSON.stringify(podla));
+        // presne tá rezervácia z kioskového fixu 21. 8.
+        const sporna=await q.one(db.bookings,{_id:'ydHMd77vnQZWKDcp'});
+        console.log('🅾 kioskový zápis 21.8. [ydHMd77vnQZWKDcp]: '
+          +(sporna?('user='+sporna.user_id+' status='+sporna.status+' dôvod='+(sporna.cancel_reason||'—')):'NEEXISTUJE'));
+        console.log('🅾 fix z 21.8. bežal: '+!!(await q.one(db.settings,{key:'fix_kiosk_technika_20260821'})));
       }
-    }catch(e){ console.error('diag_lenka:', e.message, e.stack); }
+    }catch(e){ console.error('diag_olinka:', e.message, e.stack); }
   }
 
   // Anna Debnárová 23. 7. — Marek 27. 8. potvrdil, že taká platba nikdy nebola,
