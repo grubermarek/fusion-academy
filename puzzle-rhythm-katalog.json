@@ -1,0 +1,90 @@
+[
+ {
+  "id": "r01",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r01.mp3",
+  "nazov": "Old School Salsa 04",
+  "autor": "vjgalaxy",
+  "odkaz": "https://pixabay.com/music/salsa-old-school-salsa-04-499573/"
+ },
+ {
+  "id": "r02",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r02.mp3",
+  "nazov": "Salsa Estilo New York 03",
+  "autor": "vjgalaxy",
+  "odkaz": "https://pixabay.com/music/latin-salsa-estilo-new-york-03-522534/"
+ },
+ {
+  "id": "r03",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r03.mp3",
+  "nazov": "Latin Salsa Caliente",
+  "autor": "alex-morgan",
+  "odkaz": "https://pixabay.com/music/urban-latin-latin-salsa-caliente-537472/"
+ },
+ {
+  "id": "r04",
+  "tanec": "bachata",
+  "subor": "/audio/rytmus/r04.mp3",
+  "nazov": "Beat De Bachata (Le Llaman La Viuda)",
+  "autor": "flakitogilbeatz",
+  "odkaz": "https://pixabay.com/music/folk-beat-de-bachata-le-llaman-la-viuda-391281/"
+ },
+ {
+  "id": "r05",
+  "tanec": "bachata",
+  "subor": "/audio/rytmus/r05.mp3",
+  "nazov": "Amores De Loco (Bachata)",
+  "autor": "flakitogilbeatz",
+  "odkaz": "https://pixabay.com/music/urban-latin-amores-de-loco-bachata-318699/"
+ },
+ {
+  "id": "r06",
+  "tanec": "bachata",
+  "subor": "/audio/rytmus/r06.mp3",
+  "nazov": "Bachata Street",
+  "autor": "MiguelBono",
+  "odkaz": "https://pixabay.com/music/acoustic-group-bachata-street-381811/"
+ },
+ {
+  "id": "r07",
+  "tanec": "merengue",
+  "subor": "/audio/rytmus/r07.mp3",
+  "nazov": "Merengue",
+  "autor": "Playlistsons",
+  "odkaz": "https://pixabay.com/music/folk-merengue-350311/"
+ },
+ {
+  "id": "r08",
+  "tanec": "merengue",
+  "subor": "/audio/rytmus/r08.mp3",
+  "nazov": "Poder de Coco",
+  "autor": "Eliza_music",
+  "odkaz": "https://pixabay.com/music/latin-poder-de-coco-463187/"
+ },
+ {
+  "id": "r09",
+  "tanec": "chacha",
+  "subor": "/audio/rytmus/r09.mp3",
+  "nazov": "Simple Cha Cha Cha",
+  "autor": "Retrofan",
+  "odkaz": "https://pixabay.com/music/cha-cha-latin-simple-cha-cha-cha-291958/"
+ },
+ {
+  "id": "r10",
+  "tanec": "chacha",
+  "subor": "/audio/rytmus/r10.mp3",
+  "nazov": "Comedy Cha Cha (Make the Drive)",
+  "autor": "AlexGrohl",
+  "odkaz": "https://pixabay.com/music/cha-cha-latin-comedy-cha-cha-make-the-drive-174277/"
+ },
+ {
+  "id": "r11",
+  "tanec": "chacha",
+  "subor": "/audio/rytmus/r11.mp3",
+  "nazov": "Moonlight Mambo",
+  "autor": "Forgotten-Hero-Records",
+  "odkaz": "https://pixabay.com/music/cha-cha-latin-moonlight-mambo-365881/"
+ }
+]

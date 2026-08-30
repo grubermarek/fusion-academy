@@ -57,6 +57,27 @@ html[data-theme="aurora"] .btn-main{background:linear-gradient(90deg,#A855F7,#EC
 .lb .pos{width:22px;font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums}
 .lb .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lb .t{font-variant-numeric:tabular-nums;color:var(--muted)}
+.rr{display:flex;flex-direction:column;gap:10px;margin:4px 0 2px}
+.rk{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.rk.hotovo{border-color:rgba(201,168,76,.45)}
+.rk .hl{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.rk .cislo{width:24px;height:24px;border-radius:50%;background:var(--pz-fill);color:var(--gold);
+  font-size:.74rem;font-weight:800;display:grid;place-items:center;flex:none}
+.rk .play{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--pz-fill);
+  border:1px solid var(--line);border-radius:10px;color:var(--cream,#EAE3D5);font:inherit;font-size:.82rem;
+  padding:9px 12px;cursor:pointer}
+.rk .play:hover{border-color:var(--gold)}
+.rk .play.hraje{border-color:var(--gold);color:var(--gold)}
+.rk .opts{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.rk .opts button{background:none;border:1px solid var(--line);border-radius:10px;color:var(--cream,#EAE3D5);
+  font:inherit;font-size:.8rem;padding:9px 6px;cursor:pointer}
+.rk .opts button:hover{border-color:var(--gold)}
+.rk .opts button.vyb{background:var(--pz-fill);border-color:var(--gold);color:var(--gold);font-weight:700}
+.rvys{margin-top:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.rvys .r{display:flex;gap:10px;padding:9px 14px;border-top:1px solid var(--line);font-size:.82rem;align-items:baseline}
+.rvys .r:first-child{border-top:0}
+.rvys .n{color:var(--gold);font-weight:700;min-width:104px}
+.rvys .tp{color:var(--muted);font-size:.76rem}
 .hist{margin-top:14px;background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
 .hist>button{width:100%;background:none;border:0;color:var(--cream,#EAE3D5);font:inherit;font-size:.82rem;
   padding:13px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer}
@@ -136,13 +157,15 @@ function render(){
       Nová hádanka je zajtra ráno.</p></div>`:''}
     <div class="bar">
       <div class="pill"><b id="clock">0:00</b><span>čas</span></div>
-      <div class="pill"><b id="filled">${P.type==='words'?'0/'+P.words.length:'0/'+(P.size*P.size)}</b><span>${P.type==='words'?'slov':'políčok'}</span></div>
+      <div class="pill"><b id="filled">${P.type==='words'?'0/'+P.words.length:P.type==='rhythm'?'0/'+P.rounds.length:'0/'+(P.size*P.size)}</b><span>${P.type==='words'?'slov':P.type==='rhythm'?'rytmov':'políčok'}</span></div>
       <div class="pill"><b>${P.month_points}/${P.monthly_cap}</b><span>bodov v mesiaci</span></div>
     </div>
-    <div class="board-wrap"><canvas id="board"></canvas></div>
+    ${P.type==='rhythm' ? '<div class="rr" id="rr"></div>' : '<div class="board-wrap"><canvas id="board"></canvas></div>'}
     ${P.type==='words' ? '<div class="wordlist" id="wordList"></div>' : ''}
     <div class="hint">${P.type==='words'
       ? 'Ťahaj prstom po písmenách a označ <b>všetkých '+P.words.length+' slov</b>. Slová sú vodorovne, zvisle aj šikmo — aj odzadu.'
+      : P.type==='rhythm'
+      ? 'Vypočuj si ukážku a hádaj, <b>na ktorý tanec</b> je. Pustiť si ju môžeš koľkokrát chceš — čas ale beží.'
       : 'Ťahaj prstom od <b>1</b> a spájaj čísla v poradí tak, aby si prešla <b>všetky políčka</b>.'}
 <br><b style="color:var(--gold)">Za vyriešenie ${P.points} ${P.points===1?'bod':P.points<5?'body':'bodov'}</b> · najrýchlejšie časy dňa navyše 🥇 +${(P.podium_bonus||[5,3,1])[0]} · 🥈 +${(P.podium_bonus||[5,3,1])[1]} · 🥉 +${(P.podium_bonus||[5,3,1])[2]} — čas beží od otvorenia, poradie sa uzatvára o polnoci.</div>
     <div class="actions">
@@ -152,9 +175,12 @@ function render(){
     <div class="msg" id="msg"></div>
     <div class="lb" id="lb"></div>
     <div class="hist" id="hist"></div>`;
-  setupCanvas();
-  if(P.type==='words'){ found=(solvedToday&&P.solution)||[]; renderWordList(); draw(); }
-  else { path=(solvedToday&&P.solution_path)||[]; draw(); }
+  if(P.type==='rhythm'){ renderRytmus(); }
+  else {
+    setupCanvas();
+    if(P.type==='words'){ found=(solvedToday&&P.solution)||[]; renderWordList(); draw(); }
+    else { path=(solvedToday&&P.solution_path)||[]; draw(); }
+  }
   loadLb();
 }
 
@@ -176,7 +202,8 @@ function setupCanvas(){
 }
 // otočenie telefónu / zmena okna — mriežku prepočítaj, inak by ťah mieril vedľa
 let rzT=null;
-window.addEventListener('resize',()=>{ if(!P) return; clearTimeout(rzT); rzT=setTimeout(()=>{ setupCanvas(); draw(); },150); });
+// Rytmus nemá mriežku ani canvas — prepočítavať netreba a setupCanvas by spadol.
+window.addEventListener('resize',()=>{ if(!P||P.type==='rhythm') return; clearTimeout(rzT); rzT=setTimeout(()=>{ setupCanvas(); draw(); },150); });
 const cellOf=(x,y)=>{ const c=Math.floor(x/cell), r=Math.floor(y/cell);
   if(r<0||c<0||r>=P.size||c>=P.size) return -1; return r*P.size+c; };
 const centre=i=>({x:(i%P.size)*cell+cell/2, y:Math.floor(i/P.size)*cell+cell/2});
@@ -318,6 +345,11 @@ function tick(){
 }
 function startClock(){ if(!timer&&startedAt) timer=setInterval(tick,1000); }
 function resetPath(){
+  if(P && P.type==='rhythm'){
+    prehravace.forEach(a=>{ if(a){ a.pause(); a.currentTime=0; } });
+    prehravace=[]; hraIndex=null;
+    renderRytmus(); const f=$('filled'); if(f) f.textContent='0/'+P.rounds.length; return;
+  }
   if(P && P.type==='words'){ found=[]; dragFrom=dragTo=null; renderWordList(); }
   path=[]; draw(); const m=$('msg'); if(m){m.className='msg';m.textContent='';}
 }
@@ -327,7 +359,9 @@ async function submit(){
   if(solvedToday) return;
   const btn=$('sendBtn'); btn.disabled=true; btn.textContent='Kontrolujem…';
   const seconds=startedAt?Math.round((Date.now()-startedAt)/1000):0;
-  const payload=P.type==='words' ? {found, seconds, date:P.date} : {cells:path, seconds, date:P.date};
+  const payload=P.type==='words' ? {found, seconds, date:P.date}
+    : P.type==='rhythm' ? {answers:odpovede, seconds, date:P.date}
+    : {cells:path, seconds, date:P.date};
   const d=await api('/api/puzzle/solve',{method:'POST',body:JSON.stringify(payload)}).catch(()=>null);
   btn.disabled=false; btn.textContent='Odovzdať riešenie';
   if(!d){ flash('Nepodarilo sa odoslať. Skús znova.'); return; }
@@ -341,6 +375,7 @@ async function submit(){
     + '<br>🥇 Ak sa udržíš v prvej trojke, ráno ti pribudne bonus (+'+((P.podium_bonus||[5,3,1]).join(' / +'))+').';
   solvedToday=true;
   const st=await api('/api/puzzle/today').catch(()=>null); if(st&&st.ok) P=st;
+  if(P.type==='rhythm') ukazRiesenie();
   loadLb();
 }
 
@@ -354,6 +389,78 @@ async function loadLb(){
     +d.rows.map(r=>
     `<div class="row ${r.me?'me':''}"><div class="pos">${MED[r.pos]||r.pos+'.'}</div><div class="nm">${r.name}</div><div class="t">${fmtSec(r.seconds)}${r.pos<=3?` <span style="color:var(--gold);font-weight:800">+${BON[r.pos-1]}</span>`:''}</div></div>`).join('')
     +'<div style="font-size:.72rem;color:var(--muted);padding:8px 16px 12px;border-top:1px solid var(--line);line-height:1.5">Poradie sa uzatvára o polnoci — bonus 🥇 +'+BON[0]+' · 🥈 +'+BON[1]+' · 🥉 +'+BON[2]+' bod pripíšeme ráno.</div>';
+}
+
+// ── Poznáš rytmus? ──────────────────────────────────────────────────────────
+// Zvuk skladáme priamo v prehliadači cez Web Audio — žiadna nahrávka, teda ani
+// žiadne autorské práva. Úder je krátky tón s rýchlym dobehom, akcent má vyššiu
+// frekvenciu aj hlasitosť, aby bolo počuť „pop" v bachate a chassé v cha-che.
+let odpovede=[], prehravace=[], hraIndex=null;
+
+// Skladby sú minútové ukážky, preto ich netreba načítať dopredu — 11 súborov po
+// 700 kB by pri otvorení stránky zbytočne zaťažilo dáta. Načítajú sa na klik.
+function prehravac(i){
+  if(prehravace[i]) return prehravace[i];
+  const r=P.rounds&&P.rounds[i]; if(!r) return null;
+  const a=new Audio(r.src);
+  a.preload='none';
+  a.addEventListener('ended',()=>oznacHranie(i,false));
+  a.addEventListener('error',()=>{
+    const b=$('play'+i); if(b) b.textContent='⚠️ Ukážku sa nepodarilo načítať';
+  });
+  prehravace[i]=a;
+  return a;
+}
+function oznacHranie(i,hra){
+  const b=$('play'+i); if(!b) return;
+  b.classList.toggle('hraje',hra);
+  b.textContent = hra ? '⏸ Zastaviť' : '▶ Pustiť ukážku';
+}
+function prehrajRytmus(i){
+  const a=prehravac(i); if(!a) return;
+  // Hrá vždy len jedna ukážka — dve naraz by sa nedali rozoznať.
+  if(hraIndex!=null && hraIndex!==i){
+    const p=prehravace[hraIndex];
+    if(p){ p.pause(); p.currentTime=0; }
+    oznacHranie(hraIndex,false);
+  }
+  if(!a.paused){ a.pause(); a.currentTime=0; oznacHranie(i,false); hraIndex=null; return; }
+  hraIndex=i;
+  oznacHranie(i,true);
+  a.play().catch(()=>{
+    oznacHranie(i,false); hraIndex=null;
+    const b=$('play'+i); if(b) b.textContent='🔇 Prehliadač zvuk zablokoval — ťukni ešte raz';
+  });
+}
+function vyberTanec(i,key){
+  if(solvedToday) return;
+  odpovede[i]=key;
+  const k=$('rk'+i); if(k){
+    k.classList.add('hotovo');
+    k.querySelectorAll('.opts button').forEach(b=>b.classList.toggle('vyb', b.dataset.k===key));
+  }
+  const f=$('filled'); if(f) f.textContent=odpovede.filter(Boolean).length+'/'+P.rounds.length;
+}
+function renderRytmus(){
+  const el=$('rr'); if(!el||!P.rounds) return;
+  odpovede=new Array(P.rounds.length).fill(null);
+  el.innerHTML=P.rounds.map((r,i)=>
+    '<div class="rk" id="rk'+i+'">'
+    +'<div class="hl"><div class="cislo">'+(i+1)+'</div>'
+      +'<button type="button" class="play" id="play'+i+'" onclick="prehrajRytmus('+i+')">▶ Pustiť ukážku</button></div>'
+    +'<div class="opts">'+P.options.map(o=>
+        '<button type="button" data-k="'+o.key+'" onclick="vyberTanec('+i+',\''+o.key+'\')">'+o.name+'</button>').join('')
+    +'</div></div>').join('');
+  if(solvedToday && P.reveal) ukazRiesenie();
+}
+function ukazRiesenie(){
+  const el=$('rr'); if(!el||!P.reveal) return;
+  if(document.querySelector('.rvys')) return;   // už je vypísané, nevkladaj druhýkrát
+  el.insertAdjacentHTML('afterend',
+    '<div class="rvys">'+P.reveal.map((x,i)=>
+      '<div class="r"><div class="n">'+(i+1)+'. '+x.name+'</div><div class="tp">'+x.tip
+      +(x.skladba?'<br><span style="opacity:.7">'+x.skladba+(x.autor?' · '+x.autor:'')+'</span>':'')+'</div></div>').join('')
+    +'</div>');
 }
 
 // ── História víťazov ────────────────────────────────────────────────────────

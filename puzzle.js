@@ -1,7 +1,8 @@
 /**
- * Denný hlavolam — dva typy, ktoré sa striedajú po dňoch:
+ * Denný hlavolam — tri typy, ktoré sa striedajú po dňoch:
  *  · „Cesta" (zip): spoj čísla v poradí a vyplň celú mriežku (tu v súbore),
- *  · „Osemsmerovka" (words): nájdi tanečné slová v mriežke (./puzzle-words.js).
+ *  · „Osemsmerovka" (words): nájdi tanečné slová v mriežke (./puzzle-words.js),
+ *  · „Poznáš rytmus?" (rhythm): uhádni tanec podľa rytmu (./puzzle-rhythm.js).
  * Poradie určuje settings.puzzle_config.schedule, konkrétny deň sa dá prebiť
  * cez overrides — admin tak vie na akciu nasadiť typ, ktorý chce.
  *
@@ -13,6 +14,7 @@
  *    súťaž Klientka mesiaca (hodina = 5 b).
  */
 const WORDS = require('./puzzle-words');
+const RYTMUS = require('./puzzle-rhythm');
 
 module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
 
@@ -100,7 +102,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
 
   // Aký typ pripadá na daný deň. Striedame, aby to neomrzelo; admin vie poradie
   // zmeniť (schedule) alebo typ na konkrétny deň natvrdo určiť (overrides).
-  const TYPES = ['zip', 'words'];
+  const TYPES = ['zip', 'words', 'rhythm'];
   function typeForSync(dateStr, conf) {
     const ov = conf && conf.overrides && conf.overrides[dateStr];
     if (ov && TYPES.includes(ov)) return ov;
@@ -120,6 +122,9 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       if (t === 'words') {
         const rnd = mulberry32(seedFromString('fusion-words-' + dateStr));
         cache[key] = { ...WORDS.build(rnd), type: 'words', date: dateStr };
+      } else if (t === 'rhythm') {
+        const rnd = mulberry32(seedFromString('fusion-rhythm-' + dateStr));
+        cache[key] = { ...RYTMUS.build(rnd), type: 'rhythm', date: dateStr };
       } else {
         cache[key] = { ...buildPuzzle(dateStr), type: 'zip' };
       }
@@ -153,14 +158,16 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
 
   // riešenie overuje ten modul, ktorému hádanka patrí
   function validateAny(p, body) {
-    return p.type === 'words' ? WORDS.validate(p, body.found) : validate(p, body.cells);
+    if (p.type === 'words') return WORDS.validate(p, body.found);
+    if (p.type === 'rhythm') return RYTMUS.validate(p, body.answers);
+    return validate(p, body.cells);
   }
 
   // ── Nastavenia (admin ich vie zmeniť bez zásahu do kódu) ──
   const DEFAULTS = { points: 2, fast_bonus: 0, fast_seconds: 90, monthly_cap: 40, enabled: true,
                      podium_bonus: [5, 3, 1],       // 1. / 2. / 3. najrýchlejší čas dňa
                      day_win_bonus: 5, day_win_min_players: 2,
-                     schedule: ['zip', 'words'], overrides: {} };
+                     schedule: ['zip', 'words', 'rhythm'], overrides: {} };
   async function cfg() {
     const row = await q.one(db.settings, { key: 'puzzle_config' });
     return { ...DEFAULTS, ...(row && row.value || {}) };
@@ -238,11 +245,15 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
         ok: true, enabled: true, date: d, size: p.size, type,
         ...(type === 'words'
           ? { grid: p.grid, words: p.words }                  // umiestnenie slov sa neposiela
+          : type === 'rhythm'
+          ? { rounds: p.rounds, options: p.options }          // správne odpovede sa NIKDY neposielajú
           : { dots: p.dots.map(x => ({ n: x.n, cell: x.cell })) }),   // cesta sa NIKDY neposiela
         solved: !!mine,
         // Kto už má dnešok vyriešený, nech vidí aj riešenie — inak sa vráti na prázdnu mriežku.
         ...(mine ? (type === 'words'
           ? { solution: p._placed.map(x => ({ word: x.word, cells: x.cells })) }
+          : type === 'rhythm'
+          ? { reveal: RYTMUS.reveal(p) }                      // po vyriešení nech sa niečo naučí
           : { solution_path: p._path }) : {}),
         my_seconds: mine ? mine.seconds : null,
         my_points: mine ? mine.points : 0,
