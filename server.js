@@ -2149,55 +2149,30 @@ async function seedData() {
     }catch(e){ console.error('merge_hankova:', e.message); }
   }
 
-  // Olinka Kováčiková (Marek 30. 8.): tvrdí, že jej má vychádzať ešte jeden vstup
-  // z desaťvstupovej permanentky. Podozrenie: 21. 8. jej kiosk omylom zapísal
-  // techniku a fix mal vstup vrátiť — ale preskakoval, ak rezervácia medzitým
-  // nebola v stave 'attended'. Číta len, nič nemení.
-  if(!(await q.one(db.settings,{key:'diag_olinka_vstupy_v1'}))){
-    await q.insert(db.settings,{key:'diag_olinka_vstupy_v1', value:true, at:nowISO()});
+  // Olinka Kováčiková (Marek 30. 8.): chýbal jej jeden vstup z desaťvstupovej
+  // permanentky (80 €, kúpená 17. 7.). Diagnostika ukázala prečo — kiosk ju
+  // 14. 8. zapísal aj na Technický tréning 18:00, hoci chodila na Zumbu 19:00.
+  // Rovnaká chyba nastala 16. 8. aj 21. 8., tie sa opravili (fix_kiosk_technika_
+  // 20260821), ale 14. 8. prešiel bez povšimnutia a vstup zostal strhnutý.
+  // Vraciame jeden vstup. Rezerváciu na techniku zatiaľ NErušíme — to je zásah
+  // do jej histórie návštev a Marek k nemu ešte nedal pokyn.
+  if(!(await q.one(db.settings,{key:'fix_olinka_vstup_20260830'}))){
     try{
       const ID='2PGtFwcJiRDdRsVz';
-      const L=await q.one(db.users,{_id:ID});
-      if(!L){ console.log('🅾 Olinka sa nenašla'); }
+      const u=await q.one(db.users,{_id:ID});
+      if(!u){ console.log('⚠️ Olinka sa nenašla — oprava preskočená'); }
       else {
-        console.log('🅾 ÚČET '+L.name+' ['+L._id+'] '+(L.email||'bez mailu')
-          +' | vstupy='+(L.single_entries||0)+' kredity='+(L.free_credits||0)
-          +' | prvá zdarma použitá='+!!L.free_class_used+' | návštev='+(L.visit_count||0));
-        const mem=(await q.find(db.memberships,{user_id:ID}));
-        console.log('🅾 členstvá: '+(mem.length?mem.map(m=>m.plan_id+'/'+m.status+' '+(m.started_at||'')+'→'+(m.expires_at||'')).join(' | '):'žiadne'));
-        for(const o of (await q.find(db.orders,{}))){
-          if(o.user_id!==ID && String(o.email||'').toLowerCase()!==String(L.email||'').toLowerCase()) continue;
-          console.log('🅾 OBJ '+(o.created_at||'').slice(0,10)+' '+o.status+' '+(o.total||'?')+'€ | '
-            +(o.items||[]).map(i=>(i.product_name||i.name||'?')+'×'+(i.qty||1)).join(', '));
-        }
-        for(const p of (await q.find(db.payments,{}))){
-          if(p.user_id!==ID && String(p.email||'').toLowerCase()!==String(L.email||'').toLowerCase()) continue;
-          console.log('🅾 PLATBA '+String(p.created_at||p.date||'').slice(0,10)+' '+(p.amount||'?')+'€ | '
-            +(p.type||'?')+' | '+(p.note||p.description||p.plan_id||''));
-        }
-        for(const t of (await q.find(db.transactions,{}))){
-          if(t.user_id!==ID) continue;
-          console.log('🅾 TX '+String(t.date||t.created_at||'').slice(0,10)+' '+(t.amount||'?')+'€ | '+(t.type||'')+' | '+(t.note||t.description||''));
-        }
-        const bks=(await q.find(db.bookings,{user_id:ID}))
-          .sort((a,b)=>String(a.booking_date||'').localeCompare(String(b.booking_date||'')));
-        console.log('🅾 rezervácií spolu: '+bks.length);
-        const podla={};
-        for(const b of bks){
-          const sp=b.access_method||(b.free_class?'free_class':'(neuvedené)');
-          podla[sp+'/'+(b.status||'?')]=(podla[sp+'/'+(b.status||'?')]||0)+1;
-          console.log('🅾 BK '+(b.booking_date||'?')+' '+String(b.class_name||'').padEnd(20).slice(0,20)
-            +' '+String(b.status||'').padEnd(10)+' platené='+String(sp).padEnd(14)
-            +' id='+b._id+(b.cancel_reason?' | zrušené: '+b.cancel_reason:'')+(b.notes?' | '+b.notes:''));
-        }
-        console.log('🅾 súhrn: '+JSON.stringify(podla));
-        // presne tá rezervácia z kioskového fixu 21. 8.
-        const sporna=await q.one(db.bookings,{_id:'ydHMd77vnQZWKDcp'});
-        console.log('🅾 kioskový zápis 21.8. [ydHMd77vnQZWKDcp]: '
-          +(sporna?('user='+sporna.user_id+' status='+sporna.status+' dôvod='+(sporna.cancel_reason||'—')):'NEEXISTUJE'));
-        console.log('🅾 fix z 21.8. bežal: '+!!(await q.one(db.settings,{key:'fix_kiosk_technika_20260821'})));
+        const pred=+u.single_entries||0;
+        await q.update(db.users,{_id:ID},{$set:{single_entries:pred+1}});
+        await q.insert(db.notifications,{ user_id:ID, type:'credit',
+          title:'🎁 Vrátili sme ti jeden vstup',
+          body:'Kiosk ťa 14. 8. omylom zapísal aj na technický tréning, hoci si bola na Zumbe — '
+            +'vstup ti preto vraciame späť na konto. Prepáč a ďakujeme, že si to povedala. 💛',
+          read:false, created_at:nowISO() }).catch(()=>{});
+        console.log('🎁 Olinka Kováčiková: vstupy '+pred+' → '+(pred+1)+' (oprava kioskového zápisu 14. 8.)');
       }
-    }catch(e){ console.error('diag_olinka:', e.message, e.stack); }
+      await q.insert(db.settings,{key:'fix_olinka_vstup_20260830', value:true, at:nowISO()});
+    }catch(e){ console.error('fix olinka:', e.message); }
   }
 
   // Anna Debnárová 23. 7. — Marek 27. 8. potvrdil, že taká platba nikdy nebola,
