@@ -325,6 +325,41 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── História: kto sa v ktorý deň zapojil, s časmi a bodmi ──
+  // Marek 30. 8.: rebríček ukazoval len dnešok, takže sa nedalo pozrieť dozadu.
+  // Vraciame dni zostupne aj s celým poradím — kto to v UI nerozklikne, uvidí
+  // len súhrn, takže dlhá história nikoho nezahltí.
+  app.get('/api/puzzle/history', auth, async (req, res) => {
+    try {
+      const dni = Math.min(90, Math.max(1, parseInt(req.query.days, 10) || 30));
+      const dnes = today();
+      const podlaDna = {};
+      for (const r of await q.find(db.puzzle_solves, {})) {
+        const d = String(r.date || '').slice(0, 10);
+        if (!d || d > dnes) continue;                       // dnešok áno, budúcnosť nie
+        (podlaDna[d] = podlaDna[d] || []).push(r);
+      }
+      const zoznam = Object.keys(podlaDna).sort().reverse().slice(0, dni).map(d => {
+        const vsetky = podlaDna[d];
+        const rows = vsetky.filter(r => r.verified !== false)
+          .sort((a, b) => (a.seconds || 0) - (b.seconds || 0)
+            || String(a.created_at || '').localeCompare(String(b.created_at || '')))
+          .map((r, i) => ({
+            pos: i + 1, name: r.user_name || 'Tanečníčka', seconds: r.seconds,
+            points: +r.points || 0, bonus: +r.day_win_bonus || 0,
+            podium: r.podium || null, me: r.user_id === req.session.uid,
+          }));
+        return {
+          date: d, type: (vsetky.find(r => r.type) || {}).type || null,
+          players: rows.length, points: rows.reduce((s2, r) => s2 + r.points, 0),
+          winner: rows[0] ? { name: rows[0].name, seconds: rows[0].seconds } : null,
+          rows,
+        };
+      });
+      res.json({ ok: true, days: zoznam, total_days: Object.keys(podlaDna).length });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── Admin: nastavenia + prehľad ──
   app.get('/api/admin/puzzle', adminAuth, async (req, res) => {
     try {

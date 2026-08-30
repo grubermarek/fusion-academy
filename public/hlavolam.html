@@ -57,6 +57,30 @@ html[data-theme="aurora"] .btn-main{background:linear-gradient(90deg,#A855F7,#EC
 .lb .pos{width:22px;font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums}
 .lb .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lb .t{font-variant-numeric:tabular-nums;color:var(--muted)}
+.hist{margin-top:14px;background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.hist>button{width:100%;background:none;border:0;color:var(--cream,#EAE3D5);font:inherit;font-size:.82rem;
+  padding:13px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer}
+.hist>button:hover{background:var(--pz-fill)}
+.hist .chev{color:var(--muted);transition:transform .18s}
+.hist.open .chev{transform:rotate(180deg)}
+.hist .body{display:none;border-top:1px solid var(--line)}
+.hist.open .body{display:block}
+.hday{border-top:1px solid var(--line)}
+.hday:first-child{border-top:0}
+.hday>button{width:100%;background:none;border:0;color:inherit;font:inherit;text-align:left;
+  padding:11px 16px;display:flex;align-items:center;gap:10px;cursor:pointer}
+.hday>button:hover{background:var(--pz-fill)}
+.hday .dt{font-size:.8rem;min-width:104px;color:var(--cream,#EAE3D5)}
+.hday .wn{flex:1;font-size:.8rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hday .cnt{font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.hday .det{display:none;padding:2px 0 10px}
+.hday.open .det{display:block}
+.hday .det .row{display:flex;align-items:center;gap:10px;padding:6px 16px;font-size:.82rem}
+.hday .det .row.me{background:var(--pz-fill)}
+.hday .det .pos{width:26px;font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums}
+.hday .det .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hday .det .t{font-variant-numeric:tabular-nums;color:var(--muted)}
+.hday .det .b{font-variant-numeric:tabular-nums;color:var(--gold);font-weight:700;min-width:34px;text-align:right}
 .loading{text-align:center;padding:40px;color:var(--muted)}
 /* osemsmerovka */
 .wordlist{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
@@ -126,7 +150,8 @@ function render(){
       <button class="btn-main" id="sendBtn" onclick="submit()">Odovzdať riešenie</button>
     </div>
     <div class="msg" id="msg"></div>
-    <div class="lb" id="lb"></div>`;
+    <div class="lb" id="lb"></div>
+    <div class="hist" id="hist"></div>`;
   setupCanvas();
   if(P.type==='words'){ found=(solvedToday&&P.solution)||[]; renderWordList(); draw(); }
   else { path=(solvedToday&&P.solution_path)||[]; draw(); }
@@ -321,6 +346,7 @@ async function submit(){
 
 async function loadLb(){
   const d=await api('/api/puzzle/leaderboard').catch(()=>null);
+  vykresliHistoriu();
   const el=$('lb'); if(!el||!d||!d.ok||!d.rows.length){ if(el) el.innerHTML=''; return; }
   const MED={1:'🥇',2:'🥈',3:'🥉'};
   const BON=(P&&P.podium_bonus)||[5,3,1];
@@ -328,6 +354,69 @@ async function loadLb(){
     +d.rows.map(r=>
     `<div class="row ${r.me?'me':''}"><div class="pos">${MED[r.pos]||r.pos+'.'}</div><div class="nm">${r.name}</div><div class="t">${fmtSec(r.seconds)}${r.pos<=3?` <span style="color:var(--gold);font-weight:800">+${BON[r.pos-1]}</span>`:''}</div></div>`).join('')
     +'<div style="font-size:.72rem;color:var(--muted);padding:8px 16px 12px;border-top:1px solid var(--line);line-height:1.5">Poradie sa uzatvára o polnoci — bonus 🥇 +'+BON[0]+' · 🥈 +'+BON[1]+' · 🥉 +'+BON[2]+' bod pripíšeme ráno.</div>';
+}
+
+// ── História víťazov ────────────────────────────────────────────────────────
+// Načítava sa až po kliknutí, nie pri otvorení stránky — hráčku zaujíma dnešok,
+// história je doplnok a nemá jej spomaľovať prvé zobrazenie.
+let HIST=null, histNacitava=false;
+const MEDAILA={1:'🥇',2:'🥈',3:'🥉'};
+const TYP={zip:'🧩 Spoj čísla', words:'🔤 Osemsmerovka'};
+const SK_MES=['januára','februára','marca','apríla','mája','júna','júla','augusta','septembra','októbra','novembra','decembra'];
+const SK_DEN=['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
+
+function datumSK(iso){
+  const [r,m,d]=String(iso).split('-').map(Number);
+  const dt=new Date(Date.UTC(r,m-1,d));
+  return SK_DEN[dt.getUTCDay()]+' '+d+'. '+SK_MES[m-1];
+}
+function hracky(n){ return n===1?'hráčka':(n>=2&&n<=4?'hráčky':'hráčok'); }
+
+function vykresliHistoriu(){
+  const el=$('hist'); if(!el) return;
+  if(!el.dataset.init){
+    el.dataset.init='1';
+    el.innerHTML='<button type="button" onclick="prepniHistoriu()">'
+      +'<span>📜 História — kto vyhral v predošlé dni</span><span class="chev">▾</span></button>'
+      +'<div class="body" id="histBody"></div>';
+  }
+}
+
+async function prepniHistoriu(){
+  const el=$('hist'); if(!el) return;
+  const otvorene=el.classList.toggle('open');
+  if(!otvorene || HIST || histNacitava) return;
+  histNacitava=true;
+  const b=$('histBody'); if(b) b.innerHTML='<div style="padding:14px 16px;color:var(--muted);font-size:.82rem">Načítavam…</div>';
+  const d=await api('/api/puzzle/history?days=30').catch(()=>null);
+  histNacitava=false;
+  if(!d||!d.ok){ if(b) b.innerHTML='<div style="padding:14px 16px;color:var(--muted);font-size:.82rem">Históriu sa nepodarilo načítať.</div>'; return; }
+  HIST=d.days||[];
+  if(!b) return;
+  if(!HIST.length){ b.innerHTML='<div style="padding:14px 16px;color:var(--muted);font-size:.82rem">Zatiaľ tu nič nie je — prvé kolo sa práve píše. 💛</div>'; return; }
+  b.innerHTML=HIST.map((den,i)=>{
+    const v=den.winner;
+    return '<div class="hday" id="hd'+i+'">'
+      +'<button type="button" onclick="prepniDen('+i+')">'
+        +'<span class="dt">'+datumSK(den.date)+'</span>'
+        +'<span class="wn">'+(v?MEDAILA[1]+' '+v.name+' · '+fmtSec(v.seconds):'nikto nevyriešil')+'</span>'
+        +'<span class="cnt">'+den.players+'</span>'
+      +'</button>'
+      +'<div class="det">'
+        +'<div style="padding:2px 16px 8px;font-size:.72rem;color:var(--muted)">'
+          +(TYP[den.type]||'hádanka')+' · '+den.players+' '+hracky(den.players)+' · spolu '+den.points+' b</div>'
+        +den.rows.map(r=>
+          '<div class="row '+(r.me?'me':'')+'">'
+          +'<div class="pos">'+(MEDAILA[r.pos]||r.pos+'.')+'</div>'
+          +'<div class="nm">'+r.name+'</div>'
+          +'<div class="t">'+fmtSec(r.seconds)+'</div>'
+          +'<div class="b">'+r.points+' b</div></div>').join('')
+      +'</div></div>';
+  }).join('');
+}
+
+function prepniDen(i){
+  const el=$('hd'+i); if(el) el.classList.toggle('open');
 }
 
 init();
