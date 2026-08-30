@@ -346,27 +346,6 @@ module.exports = function initSchoolOutreach(ctx) {
             read: false, created_at: nowISO() }).catch(() => {});
     } catch (e) { console.error('school drip:', e.message); }
   }
-  // Marek 30. 8.: koľko škôl máme v BB kraji a kde ešte chýbajú obce.
-  // Číta len — nič neposiela, nič nemení. Guard, nech to nespamuje log.
-  setTimeout(async () => {
-    try {
-      if (await q.one(db.settings, { key: 'diag_skoly_mesta_v1' })) return;
-      await q.insert(db.settings, { key: 'diag_skoly_mesta_v1', value: true, at: nowISO() });
-      const skoly = await q.find(db.schools, {});
-      const podlaMesta = {};
-      for (const s2 of skoly) {
-        const m = (s2.city || '(bez mesta)').trim();
-        const b = podlaMesta[m] = podlaMesta[m] || { spolu: 0, poslane: 0, ceka: 0 };
-        b.spolu++;
-        if (s2.sent_at) b.poslane++; else if (!s2.unsubscribed) b.ceka++;
-      }
-      const zoradene = Object.entries(podlaMesta).sort((a, b) => b[1].spolu - a[1].spolu);
-      console.log('🎓D Škôl spolu: ' + skoly.length + ' | miest: ' + zoradene.length);
-      for (const [m, b] of zoradene)
-        console.log('🎓D ' + b.spolu + 'x ' + m + '  (odoslané ' + b.poslane + ', čaká ' + b.ceka + ')');
-    } catch (e) { console.error('diag skoly:', e.message); }
-  }, 40 * 1000);
-
   setInterval(schoolDrip, 20 * 60 * 1000);
   setTimeout(schoolDrip, 90 * 1000);   // krátko po štarte, nech deploy počas okna nečaká 20 min
 
