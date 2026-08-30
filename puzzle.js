@@ -167,7 +167,10 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
   const DEFAULTS = { points: 2, fast_bonus: 0, fast_seconds: 90, monthly_cap: 40, enabled: true,
                      podium_bonus: [5, 3, 1],       // 1. / 2. / 3. najrýchlejší čas dňa
                      day_win_bonus: 5, day_win_min_players: 2,
-                     schedule: ['zip', 'words', 'rhythm'], overrides: {} };
+                     schedule: ['zip', 'words', 'rhythm'], overrides: {},
+                     // Rytmus sa boduje inak (Marek 30. 8.): jeden pokus, bod za každú
+                     // správnu odpoveď a +5 pre najrýchlejšiu, ktorá má všetkých päť.
+                     rhythm_per_answer: 1, rhythm_perfect_bonus: 5 };
   async function cfg() {
     const row = await q.one(db.settings, { key: 'puzzle_config' });
     return { ...DEFAULTS, ...(row && row.value || {}) };
@@ -191,10 +194,33 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     if (!c.enabled || !podium.some(x => +x > 0)) return null;
     const all = await q.find(db.puzzle_solves, { date: dateStr });
     if (all.some(r => r.day_win)) return null;                 // už vyhodnotené
-    const rows = all.filter(r => r.verified !== false);        // len serverom meraný čas
+    let rows = all.filter(r => r.verified !== false);          // len serverom meraný čas
     if (rows.length < c.day_win_min_players) return null;      // sama proti sebe nesúťaží
     rows.sort((a, b) => (a.seconds || 0) - (b.seconds || 0)
       || String(a.created_at || '').localeCompare(String(b.created_at || '')));
+
+    // Deň rytmu má vlastné pravidlo (Marek 30. 8.): body si každá odniesla už pri
+    // odovzdaní (bod za správnu ukážku) a bonus +5 patrí JEDNEJ — najrýchlejšej
+    // z tých, čo mali všetkých päť. Kto sa pomýlil, bonus nedostane ani keby bol
+    // najrýchlejší; inak by sa oplatilo klikať naslepo.
+    if (all.some(r => r.type === 'rhythm')) {
+      const bezchybne = rows.filter(r => r.perfect);
+      if (!bezchybne.length) { console.log('🎵 Rytmus ' + dateStr + ': nikto nemal všetkých päť — bonus nikomu'); return null; }
+      const v = bezchybne[0];
+      const capLeft = Math.max(0, c.monthly_cap - await monthPoints(v.user_id, dateStr.slice(0, 7)));
+      const bonus = Math.min(+c.rhythm_perfect_bonus || 0, capLeft);
+      await q.update(db.puzzle_solves, { _id: v._id },
+        { $set: { day_win: true, podium: 1, day_win_bonus: bonus, points: (+v.points || 0) + bonus } });
+      await q.insert(db.notifications, {
+        user_id: v.user_id, type: 'puzzle_win', title: '🥇 Najrýchlejšia s plným počtom!',
+        body: 'Včerajšie rytmy si mala všetky správne a odovzdala najrýchlejšie (' + v.seconds + ' s)'
+          + (bonus ? ' — pripísali sme ti +' + bonus + ' bonusových bodov.' : '. Mesačný strop bodov máš už vyčerpaný.'),
+        read: false, created_at: nowISO(),
+      }).catch(() => {});
+      console.log('🎵 Rytmus ' + dateStr + ': bonus +' + bonus + ' pre ' + (v.user_name || v.user_id)
+        + ' (' + v.seconds + ' s, ' + bezchybne.length + ' bezchybných z ' + rows.length + ')');
+      return [{ miesto: 1, user_id: v.user_id, name: v.user_name, seconds: v.seconds, bonus }];
+    }
     const MEDAILA = ['🥇', '🥈', '🥉'];
     const NAZOV = ['1. miesto', '2. miesto', '3. miesto'];
     const vysledok = [];
@@ -229,6 +255,17 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     } catch (e) { console.error('puzzle winner:', e.message); }
   }, 20 * 60 * 1000);
 
+  // QA: vyhodnotenie pódia/bonusu sa inak čaká 20 minút a až po polnoci —
+  // takto sa dá logika otestovať hneď. Guard sa pri ručnom behu obchádza.
+  app.post('/api/admin/qa/puzzle-award/:date', adminAuth, async (req, res) => {
+    try {
+      const d = String(req.params.date || '').slice(0, 10);
+      if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(d)) return res.status(400).json({ error: 'Neplatný dátum.' });
+      const vysledok = await awardDayWinner(d);
+      res.json({ ok: true, date: d, vysledok: vysledok || null });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── Dnešná hádanka + môj stav ──
   app.get('/api/puzzle/today', auth, async (req, res) => {
     try {
@@ -253,13 +290,17 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
         ...(mine ? (type === 'words'
           ? { solution: p._placed.map(x => ({ word: x.word, cells: x.cells })) }
           : type === 'rhythm'
-          ? { reveal: RYTMUS.reveal(p) }                      // po vyriešení nech sa niečo naučí
+          ? { reveal: RYTMUS.reveal(p, mine && mine.answers), // po odovzdaní nech sa niečo naučí
+              my_correct: mine ? (mine.correct != null ? mine.correct : null) : null,
+              my_total: mine ? (mine.total || RYTMUS.KOL) : null,
+              my_perfect: mine ? !!mine.perfect : false }
           : { solution_path: p._path }) : {}),
         my_seconds: mine ? mine.seconds : null,
         my_points: mine ? mine.points : 0,
         month_points: earned, monthly_cap: c.monthly_cap,
         points: c.points, fast_bonus: c.fast_bonus, fast_seconds: c.fast_seconds,
         day_win_bonus: c.day_win_bonus, podium_bonus: c.podium_bonus || [5, 3, 1],
+        rhythm_per_answer: +c.rhythm_per_answer || 1, rhythm_perfect_bonus: +c.rhythm_perfect_bonus || 0,
         my_day_win: mine ? !!mine.day_win : false,
         solvers_today: solvers,
       });
@@ -293,7 +334,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       if (err) return res.status(400).json({ error: err });
 
       const already = await q.one(db.puzzle_solves, { user_id: req.session.uid, date: d });
-      if (already) return res.json({ ok: true, already: true, points: 0, message: 'Dnešnú hádanku už máš vyriešenú. 🎉' });
+      if (already) return res.json({ ok: true, already: true, points: 0, message: 'Dnešnú hádanku už máš odovzdanú. 🎉' });
 
       // Čas meriame zo SERVEROVÉHO štartu. Bez neho (reštart, iné zariadenie)
       // riešenie uznáme, ale nemôže vyhrať deň — inak by stačilo poslať "1 s".
@@ -304,7 +345,13 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
         : Math.max(1, Math.min(3600, Math.round(+req.body.seconds || 0)));
 
       const capLeft = Math.max(0, c.monthly_cap - await monthPoints(req.session.uid, d.slice(0, 7)));
-      let points = c.points + (seconds <= c.fast_seconds ? c.fast_bonus : 0);
+      // Rytmus má vlastné bodovanie: hráčka odovzdáva RAZ a dostane bod za každú
+      // trafenú ukážku. Bonus +5 za bezchybné riešenie sa nedáva hneď — až po
+      // polnoci ho dostane tá najrýchlejšia z bezchybných (awardDayWinner).
+      const vysledok = p.type === 'rhythm' ? RYTMUS.score(p, req.body.answers) : null;
+      let points = vysledok
+        ? vysledok.spravne * (+c.rhythm_per_answer || 1)
+        : c.points + (seconds <= c.fast_seconds ? c.fast_bonus : 0);
       const capped = points > capLeft;
       points = Math.min(points, capLeft);
 
@@ -312,12 +359,17 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       await q.insert(db.puzzle_solves, {
         user_id: req.session.uid, user_name: u ? u.name : '', date: d, month: d.slice(0, 7),
         seconds, points, fast: seconds <= c.fast_seconds, verified, type: p.type, created_at: nowISO(),
+        ...(vysledok ? { correct: vysledok.spravne, total: vysledok.celkom, perfect: vysledok.perfect,
+                         answers: req.body.answers } : {}),
       });
 
       delete req.session.puzzle;
       const rank = await q.count(db.puzzle_solves, { date: d });
       res.json({
         ok: true, points, seconds, rank,
+        ...(vysledok ? { correct: vysledok.spravne, total: vysledok.celkom, perfect: vysledok.perfect,
+                         reveal: RYTMUS.reveal(p, req.body.answers),
+                         perfect_bonus: +c.rhythm_perfect_bonus || 0 } : {}),
         fast: seconds <= c.fast_seconds,
         capped, month_points: await monthPoints(req.session.uid, d.slice(0, 7)), monthly_cap: c.monthly_cap,
       });

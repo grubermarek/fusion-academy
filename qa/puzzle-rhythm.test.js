@@ -96,11 +96,24 @@ const seedFromString = str => { let h = 2166136261; for (let i = 0; i < str.leng
     ok('cez 300 dní sa nikdy neopakuje tá istá skladba', opakovana === 0, String(opakovana));
 
     // ── validácia ──
+    // Od 30. 8.: jeden pokus, bod za každú správnu. Zlý tip preto NIE je chyba —
+    // odpoveď sa prijme a oboduje sa čiastočne.
     ok('správne riešenie prejde', R.validate(p, p._answers) === null);
-    ok('jedna zlá odpoveď neprejde', typeof R.validate(p, p._answers.map((a, i) => i ? a : (a === 'salsa' ? 'bachata' : 'salsa'))) === 'string');
+    ok('zlý tip sa PRIJME (jeden pokus, čiastkové body)',
+      R.validate(p, p._answers.map((a, i) => i ? a : (a === 'salsa' ? 'bachata' : 'salsa'))) === null);
     ok('málo odpovedí neprejde', typeof R.validate(p, ['salsa']) === 'string');
     ok('vymyslený tanec neprejde', R.validate(p, p._answers.map(() => 'polka')) === 'Neplatná odpoveď.');
     ok('nie-pole neprejde', typeof R.validate(p, 'salsa') === 'string');
+
+    // vyhodnotenie po jednotlivých ukážkach
+    const sPlny = R.score(p, p._answers);
+    ok('plný počet = 5/5 a perfect', sPlny.spravne === 5 && sPlny.perfect === true, JSON.stringify(sPlny));
+    const dveZle = p._answers.map((a, i) => i < 3 ? a : (a === 'salsa' ? 'bachata' : 'salsa'));
+    const sCast = R.score(p, dveZle);
+    ok('dve zlé = 3/5 a nie perfect', sCast.spravne === 3 && sCast.perfect === false, JSON.stringify(sCast));
+    ok('score vráti aj to, ktoré sedeli', Array.isArray(sCast.trafene) && sCast.trafene.length === 5);
+    ok('reveal ukáže vlastný tip pri chybe',
+      R.reveal(p, dveZle).some(x => x.trafene === false && x.moj_tip), JSON.stringify(R.reveal(p, dveZle)[4]));
 
     // ── cez API ──
     const adm = {};
@@ -129,24 +142,34 @@ const seedFromString = str => { let h = 2166136261; for (let i = 0; i < str.leng
       zvuk.status + ' ' + zvuk.headers.get('content-type'));
 
     await j('/api/puzzle/start', { method: 'POST' }, jar);
-    const zle = await j('/api/puzzle/solve', { method: 'POST', body: { answers: ['polka', 'polka', 'polka', 'polka', 'polka'], date: DNES } }, jar);
-    ok('vymyslená odpoveď je odmietnutá', zle.status >= 400, JSON.stringify(zle.d));
-    ok('po zlom tipe je hádanka stále neriešená', (await j('/api/puzzle/today', {}, jar)).d.solved === false);
+    ok('klient pozná sadzby rytmu', T.rhythm_per_answer === 1 && T.rhythm_perfect_bonus === 5,
+      JSON.stringify({ a: T.rhythm_per_answer, b: T.rhythm_perfect_bonus }));
+    const nezmysel = await j('/api/puzzle/solve', { method: 'POST', body: { answers: ['polka', 'polka', 'polka', 'polka', 'polka'], date: DNES } }, jar);
+    ok('vymyslený tanec je odmietnutý', nezmysel.status >= 400, JSON.stringify(nezmysel.d));
+    ok('po odmietnutí je hádanka stále neodovzdaná', (await j('/api/puzzle/today', {}, jar)).d.solved === false);
 
+    // hráčka s TROMI správnymi: odpoveď sa prijme, dostane 3 body, bonus nie
     const spravne = R.build(mul(seedFromString('fusion-rhythm-' + DNES)))._answers;
-    const dobre = await j('/api/puzzle/solve', { method: 'POST', body: { answers: spravne, date: DNES } }, jar);
-    ok('správne riešenie prejde cez API', dobre.status === 200 && dobre.d && dobre.d.ok, JSON.stringify(dobre.d));
-    ok('pripísali sa body', dobre.d && dobre.d.points > 0, String(dobre.d && dobre.d.points));
-    ok('čas meral server', dobre.d && typeof dobre.d.seconds === 'number' && dobre.d.seconds >= 0, String(dobre.d && dobre.d.seconds));
+    const trojka = spravne.map((a, i) => i < 3 ? a : (a === 'salsa' ? 'bachata' : 'salsa'));
+    const cast = await j('/api/puzzle/solve', { method: 'POST', body: { answers: trojka, date: DNES } }, jar);
+    ok('čiastočné riešenie sa PRIJME (jeden pokus)', cast.status === 200 && cast.d && cast.d.ok, JSON.stringify(cast.d));
+    ok('dostala bod za každú správnu (3)', cast.d.points === 3, String(cast.d.points));
+    ok('server vráti, koľko trafila', cast.d.correct === 3 && cast.d.total === 5, JSON.stringify({ c: cast.d.correct, t: cast.d.total }));
+    ok('nie je označená ako bezchybná', cast.d.perfect === false, String(cast.d.perfect));
+    ok('riešenie sa ukáže hneď (druhý pokus aj tak nemá)', Array.isArray(cast.d.reveal) && cast.d.reveal.length === 5);
+    ok('reveal ukáže, čo tipla zle', cast.d.reveal.some(x => x.trafene === false && x.moj_tip), JSON.stringify(cast.d.reveal[4]));
 
     const po = await j('/api/puzzle/today', {}, jar);
-    ok('po vyriešení je označená ako vyriešená', po.d.solved === true);
-    ok('až teraz sa ukáže, čo bolo čo', Array.isArray(po.d.reveal) && po.d.reveal.length === 5);
+    ok('deň je označený ako odovzdaný', po.d.solved === true);
+    ok('pamätá si, koľko trafila', po.d.my_correct === 3 && po.d.my_total === 5, JSON.stringify({ c: po.d.my_correct, t: po.d.my_total }));
     ok('reveal má názov tanca, tip aj skladbu s autorom',
       po.d.reveal.every(x => x.name && x.tip && x.skladba && x.autor), JSON.stringify(po.d.reveal && po.d.reveal[0]));
 
-    const znova = await j('/api/puzzle/solve', { method: 'POST', body: { answers: spravne, date: DNES } }, jar);
-    ok('druhé odovzdanie v ten istý deň neprejde', znova.status >= 400 || (znova.d && znova.d.already), JSON.stringify(znova.d));
+    ok('DRUHÝ POKUS NEEXISTUJE — opravená odpoveď sa už neprijme',
+      await (async () => { const z = await j('/api/puzzle/solve', { method: 'POST', body: { answers: spravne, date: DNES } }, jar);
+        return z.status >= 400 || (z.d && z.d.already); })(), 'druhé odovzdanie prešlo!');
+    ok('body sa druhým odovzdaním nezmenili',
+      (await j('/api/puzzle/today', {}, jar)).d.my_correct === 3);
 
     // ── stránka ──
     const html = fs.readFileSync(path.join(KOREN, 'public', 'hlavolam.html'), 'utf8');
@@ -154,6 +177,10 @@ const seedFromString = str => { let h = 2166136261; for (let i = 0; i < str.leng
     ok('prehráva súbor, nie syntetický tón', html.includes('new Audio(r.src)') && !html.includes('createOscillator'));
     ok('naraz hrá len jedna ukážka', html.includes('hraIndex'));
     ok('ukážky sa načítavajú až na klik', html.includes("preload='none'"));
+    ok('pred odovzdaním sa pýta na potvrdenie', html.includes('Máš len jeden pokus'));
+    ok('bez vyplnenia všetkých ukážok sa odovzdať nedá', html.includes('Ešte ti chýba '));
+    ok('po odovzdaní sa voľby zamknú', html.includes('zamkniRytmus') && html.includes('b.disabled=true'));
+    ok('hráčka vidí, ktorá odpoveď bola správna', html.includes('spravne') && html.includes('zlyTip'));
 
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.message);

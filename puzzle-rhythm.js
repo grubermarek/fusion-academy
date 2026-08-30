@@ -70,8 +70,9 @@ function build(rnd) {
 }
 
 /**
- * Overenie beží výhradne na serveri — klient posiela len svoje tipy.
- * Vracia null pri správnom riešení, inak text chyby (rovnako ako ostatné typy).
+ * Kontrola FORMÁTU (beží na serveri). Na rozdiel od ostatných dvoch hier tu
+ * zlý tip nie je chyba — odpoveď sa prijme a obodujú sa správne kusy.
+ * Marek 30. 8.: „jedna možnosť odovzdať, bod za každú správnu".
  */
 function validate(puzzle, answers) {
   if (!Array.isArray(answers)) return 'Chýbajú odpovede.';
@@ -79,18 +80,27 @@ function validate(puzzle, answers) {
   if (answers.length !== spravne.length) return 'Odpovedz na všetkých ' + spravne.length + ' ukážok.';
   const platne = new Set(TANCE.map(t => t.key));
   for (const a of answers) if (!platne.has(a)) return 'Neplatná odpoveď.';
-  const zle = answers.reduce((n, a, i) => n + (a === spravne[i] ? 0 : 1), 0);
-  if (zle) return zle === 1 ? 'Jednu ukážku máš zle — vypočuj si ju ešte raz.'
-                            : zle + (zle < 5 ? ' ukážky' : ' ukážok') + ' máš zle — pusti si ich ešte raz.';
   return null;
 }
 
+/** Koľko z piatich sedelo. Vyhodnotenie patrí na server, klient dostane len počet. */
+function score(puzzle, answers) {
+  const spravne = puzzle._answers || [];
+  const trafene = spravne.map((k, i) => (answers || [])[i] === k);
+  const pocet = trafene.filter(Boolean).length;
+  return { spravne: pocet, celkom: spravne.length, perfect: pocet === spravne.length, trafene };
+}
+
 /** Po vyriešení ukážeme, čo bolo čo, aj s autorom — nech sa hráčka niečo naučí. */
-function reveal(puzzle) {
+function reveal(puzzle, answers) {
+  const moje = Array.isArray(answers) ? answers : null;
   return (puzzle._answers || []).map((k, i) => {
     const t = TANCE.find(x => x.key === k) || {};
     const s = KATALOG.find(x => x.id === (puzzle._ids || [])[i]) || {};
-    return { key: k, name: t.name || k, tip: t.tip || '', skladba: s.nazov || '', autor: s.autor || '' };
+    const tip = moje ? moje[i] : null;
+    const tipT = tip ? (TANCE.find(x => x.key === tip) || {}) : null;
+    return { key: k, name: t.name || k, tip: t.tip || '', skladba: s.nazov || '', autor: s.autor || '',
+      ...(moje ? { trafene: tip === k, moj_tip: tipT ? tipT.name : null } : {}) };
   });
 }
 
@@ -99,4 +109,4 @@ function kredity() {
   return KATALOG.map(s => ({ nazov: s.nazov, autor: s.autor, odkaz: s.odkaz }));
 }
 
-module.exports = { build, validate, reveal, kredity, TANCE, KOL, KATALOG };
+module.exports = { build, validate, score, reveal, kredity, TANCE, KOL, KATALOG };

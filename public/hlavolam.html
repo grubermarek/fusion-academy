@@ -73,6 +73,11 @@ html[data-theme="aurora"] .btn-main{background:linear-gradient(90deg,#A855F7,#EC
   font:inherit;font-size:.8rem;padding:9px 6px;cursor:pointer}
 .rk .opts button:hover{border-color:var(--gold)}
 .rk .opts button.vyb{background:var(--pz-fill);border-color:var(--gold);color:var(--gold);font-weight:700}
+.rk.zamknute .opts button{cursor:default;opacity:.75}
+.rk.zamknute .opts button.spravne{border-color:#5fa86b;color:#8fd39a;font-weight:700;opacity:1}
+.rk.zamknute .opts button.vyb.zlyTip{border-color:#a85f5f;color:#e08a8a}
+.rk.dobre{border-color:rgba(95,168,107,.5)}
+.rk.zle{border-color:rgba(168,95,95,.4)}
 .rvys{margin-top:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
 .rvys .r{display:flex;gap:10px;padding:9px 14px;border-top:1px solid var(--line);font-size:.82rem;align-items:baseline}
 .rvys .r:first-child{border-top:0}
@@ -165,12 +170,13 @@ function render(){
     <div class="hint">${P.type==='words'
       ? 'Ťahaj prstom po písmenách a označ <b>všetkých '+P.words.length+' slov</b>. Slová sú vodorovne, zvisle aj šikmo — aj odzadu.'
       : P.type==='rhythm'
-      ? 'Vypočuj si ukážku a hádaj, <b>na ktorý tanec</b> je. Pustiť si ju môžeš koľkokrát chceš — čas ale beží.'
+      ? 'Vypočuj si ukážku a hádaj, <b>na ktorý tanec</b> je. Pustiť si ju môžeš koľkokrát chceš — čas ale beží.<br>'
+        +'<b style="color:var(--gold)">Máš jeden pokus</b> · bod za každú správnu ukážku · 🥇 +'+(P.rhythm_perfect_bonus||5)+' pre najrýchlejšiu s plným počtom'
       : 'Ťahaj prstom od <b>1</b> a spájaj čísla v poradí tak, aby si prešla <b>všetky políčka</b>.'}
 <br><b style="color:var(--gold)">Za vyriešenie ${P.points} ${P.points===1?'bod':P.points<5?'body':'bodov'}</b> · najrýchlejšie časy dňa navyše 🥇 +${(P.podium_bonus||[5,3,1])[0]} · 🥈 +${(P.podium_bonus||[5,3,1])[1]} · 🥉 +${(P.podium_bonus||[5,3,1])[2]} — čas beží od otvorenia, poradie sa uzatvára o polnoci.</div>
     <div class="actions">
       <button class="btn-ghost" onclick="resetPath()">Vymazať</button>
-      <button class="btn-main" id="sendBtn" onclick="submit()">Odovzdať riešenie</button>
+      <button class="btn-main" id="sendBtn" onclick="submit()">${P.type==='rhythm'?'Odovzdať odpovede':'Odovzdať riešenie'}</button>
     </div>
     <div class="msg" id="msg"></div>
     <div class="lb" id="lb"></div>
@@ -357,6 +363,17 @@ function flash(t){ const m=$('msg'); if(!m) return; m.className='msg err'; m.tex
 
 async function submit(){
   if(solvedToday) return;
+  // Rytmus má JEDEN pokus (Marek 30. 8.), preto sa pýtame. Pri ostatných hrách
+  // sa zlé riešenie dá opraviť, tu je odovzdanie definitívne.
+  if(P.type==='rhythm'){
+    const chyba=odpovede.filter(Boolean).length;
+    if(chyba<P.rounds.length){
+      const ost=P.rounds.length-chyba;
+      flash(ost===1 ? 'Ešte ti chýba jedna ukážka.' : 'Ešte ti '+(ost<5?'chýbajú ':'chýba ')+ost+' '+(ost<5?'ukážky':'ukážok')+' z '+P.rounds.length+'.');
+      return;
+    }
+    if(!confirm('Odovzdať odpovede?\n\nMáš len jeden pokus — po odovzdaní sa už nedá nič zmeniť.\nZa každú správnu ukážku dostaneš bod.')) return;
+  }
   const btn=$('sendBtn'); btn.disabled=true; btn.textContent='Kontrolujem…';
   const seconds=startedAt?Math.round((Date.now()-startedAt)/1000):0;
   const payload=P.type==='words' ? {found, seconds, date:P.date}
@@ -369,10 +386,24 @@ async function submit(){
   if(d.error){ flash(d.error); return; }
   if(timer){ clearInterval(timer); timer=null; }
   const m=$('msg'); m.className='msg ok';
-  m.innerHTML = d.already ? d.message
-    : `🎉 Vyriešené za <b>${fmtSec(d.seconds)}</b>! Získala si <b>${d.points} ${d.points===1?'bod':d.points<5?'body':'bodov'}</b>.`
+  const bod=n=>n===1?'bod':(n>=2&&n<=4?'body':'bodov');
+  if(d.already){ m.innerHTML=d.message; }
+  else if(P.type==='rhythm'){
+    // Pri rytme nehodnotíme „vyriešené/nevyriešené", ale koľko z piatich sedelo.
+    const vsetko=d.correct===d.total;
+    m.className='msg '+(vsetko?'ok':'');
+    m.innerHTML=(vsetko?'🎉 ':'')+'Trafila si <b>'+d.correct+' z '+d.total+'</b> za <b>'+fmtSec(d.seconds)+'</b>'
+      +' — <b>'+d.points+' '+bod(d.points)+'</b>.'
       + (d.capped?'<br><span style="opacity:.8">Mesačný strop bodov z hlavolamu je vyčerpaný — hrať môžeš ďalej pre radosť. 💛</span>':'')
-    + '<br>🥇 Ak sa udržíš v prvej trojke, ráno ti pribudne bonus (+'+((P.podium_bonus||[5,3,1]).join(' / +'))+').';
+      + (vsetko && d.perfect_bonus
+          ? '<br>🥇 Ak budeš dnes najrýchlejšia zo všetkých, čo mali plný počet, ráno ti pribudne +'+d.perfect_bonus+' bodov.'
+          : (!vsetko ? '<br><span style="opacity:.8">Bonus +'+(d.perfect_bonus||5)+' patrí najrýchlejšej, ktorá trafí všetkých päť. Nabudúce! 💛</span>' : ''));
+  }
+  else {
+    m.innerHTML = `🎉 Vyriešené za <b>${fmtSec(d.seconds)}</b>! Získala si <b>${d.points} ${bod(d.points)}</b>.`
+      + (d.capped?'<br><span style="opacity:.8">Mesačný strop bodov z hlavolamu je vyčerpaný — hrať môžeš ďalej pre radosť. 💛</span>':'')
+      + '<br>🥇 Ak sa udržíš v prvej trojke, ráno ti pribudne bonus (+'+((P.podium_bonus||[5,3,1]).join(' / +'))+').';
+  }
   solvedToday=true;
   const st=await api('/api/puzzle/today').catch(()=>null); if(st&&st.ok) P=st;
   if(P.type==='rhythm') ukazRiesenie();
@@ -451,14 +482,29 @@ function renderRytmus(){
     +'<div class="opts">'+P.options.map(o=>
         '<button type="button" data-k="'+o.key+'" onclick="vyberTanec('+i+',\''+o.key+'\')">'+o.name+'</button>').join('')
     +'</div></div>').join('');
-  if(solvedToday && P.reveal) ukazRiesenie();
+  if(solvedToday && P.reveal){ ukazRiesenie(); const f=$('filled'); if(f && P.my_correct!=null) f.textContent=P.my_correct+'/'+(P.my_total||P.rounds.length); }
+}
+function zamkniRytmus(){
+  const el=$('rr'); if(!el||!P.reveal) return;
+  P.reveal.forEach((x,i)=>{
+    const k=$('rk'+i); if(!k) return;
+    k.classList.add('zamknute');
+    if(x.trafene!=null) k.classList.add(x.trafene?'dobre':'zle');
+    k.querySelectorAll('.opts button').forEach(b=>{
+      b.disabled=true;
+      b.classList.toggle('spravne', b.dataset.k===x.key);
+      b.classList.toggle('zlyTip', x.trafene===false && b.classList.contains('vyb'));
+    });
+  });
 }
 function ukazRiesenie(){
   const el=$('rr'); if(!el||!P.reveal) return;
+  zamkniRytmus();
   if(document.querySelector('.rvys')) return;   // už je vypísané, nevkladaj druhýkrát
   el.insertAdjacentHTML('afterend',
     '<div class="rvys">'+P.reveal.map((x,i)=>
-      '<div class="r"><div class="n">'+(i+1)+'. '+x.name+'</div><div class="tp">'+x.tip
+      '<div class="r"><div class="n">'+(x.trafene===false?'❌':x.trafene?'✅':'')+' '+(i+1)+'. '+x.name+'</div><div class="tp">'+x.tip
+      +(x.trafene===false&&x.moj_tip?'<br><span style="color:#e08a8a">tvoj tip: '+x.moj_tip+'</span>':'')
       +(x.skladba?'<br><span style="opacity:.7">'+x.skladba+(x.autor?' · '+x.autor:'')+'</span>':'')+'</div></div>').join('')
     +'</div>');
 }
