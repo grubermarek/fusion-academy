@@ -66,6 +66,14 @@ async function j(url, opts = {}, jar) {
     description: '', price: 10, color: '#C9A84C', active: true,
   }) + '\n');
 
+  // Zumba do porovnania — členstvo ju kryť MUSÍ aj po oprave techniky
+  fs.appendFileSync(path.join(DATA, 'classes.db'), JSON.stringify({
+    _id: 'qaTcZumba0000001', name: 'Zumba', emoji: '🎵', category: 'Zumba',
+    instructor: 'Beata Trenerka', location: 'Detva', address: 'Záhradná 7, Detva', day_of_week: DOW,
+    time_start: '19:00', time_end: '20:00', capacity: 30, level: 'Všetky úrovne',
+    description: '', price: 10, color: '#C9A84C', active: true,
+  }) + String.fromCharCode(10));
+
   console.log('TECHNIKA + HOTOVOSŤ QA — štart servera…');
   const srv = spawn(process.execPath, ['server.js'], {
     cwd: path.join(__dirname, '..'),
@@ -140,6 +148,40 @@ async function j(url, opts = {}, jar) {
     const cash2 = await j('/api/trainer/cash', {}, trener);
     ok('karta sa do hotovosti NEpočíta', (cash2.d.rows || []).length === 1 && cash2.d.pending === 10,
       JSON.stringify({ r: (cash2.d.rows || []).length, p: cash2.d.pending }));
+
+    // ── Marek 30. 8.: admin panel zapísal Moniku na techniku ako „kryté členstvom
+    // bronze", hoci technika sa členstvom nekryje a mal pýtať hotovosť. ──
+    const admin = await prihlas('qa.tc.admin@qa-biz.local');
+    const cezClenstvo = await j('/api/attendance/manual-booking', { method: 'POST',
+      body: { user_id: 'qaTcGold0000001', class_id: 'qaTcTech00000001', booking_date: DNES, method: 'membership' } }, admin);
+    ok('technika sa NEDÁ zapísať ako krytá členstvom', cezClenstvo.status === 400
+      && cezClenstvo.d.error === 'technika_nie_je_v_clenstve', JSON.stringify(cezClenstvo.d).slice(0, 120));
+    ok('a rovno povie, koľko vybrať (Gold 7 €)', cezClenstvo.d.tech_price === 7, String(cezClenstvo.d.tech_price));
+    const zoznamPo = (await j('/api/attendance/class/qaTcTech00000001', {}, trener)).d || [];
+    ok('taká rezervácia sa vôbec nevytvorí',
+      !(Array.isArray(zoznamPo) ? zoznamPo : []).some(x => /Gita/.test(x.name || '')),
+      JSON.stringify((Array.isArray(zoznamPo) ? zoznamPo : []).map(x => x.name)));
+
+    // zápis cez „platí na mieste" prejde a nesie sumu
+    const cezCash = await j('/api/attendance/manual-booking', { method: 'POST',
+      body: { user_id: 'qaTcGold0000001', class_id: 'qaTcTech00000001', booking_date: DNES,
+              method: 'pay_on_site', pay_amount: 7 } }, admin);
+    ok('zápis „platí na mieste" prejde', cezCash.status === 200 && cezCash.d.ok, JSON.stringify(cezCash.d).slice(0, 100));
+    const zoznamGita = (await j('/api/attendance/class/qaTcTech00000001', {}, trener)).d || [];
+    const rGita = (Array.isArray(zoznamGita) ? zoznamGita : []).find(x => /Gita/.test(x.name || '')) || {};
+    ok('tréner pri nej vidí sumu na výber (7 €)', rGita.pay_on_site === true && rGita.pay_amount === 7,
+      JSON.stringify({ p: rGita.pay_on_site, a: rGita.pay_amount }));
+
+    // Zumba členstvom krytá ostáva — oprava sa nesmie preliať na bežné hodiny
+    const zumba = await j('/api/attendance/manual-booking', { method: 'POST',
+      body: { user_id: 'qaTcSilver00001', class_id: 'qaTcZumba0000001', booking_date: DNES, method: 'membership' } }, admin);
+    ok('Zumba sa členstvom kryť MÔŽE (oprava sa netýka bežných hodín)',
+      zumba.status === 200 && zumba.d.ok, JSON.stringify(zumba.d).slice(0, 100));
+
+    // stránka admina
+    const adminHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'admin.html'), 'utf8');
+    ok('admin panel pozná cenník techniky', adminHtml.includes('function techCena'));
+    ok('a pri technike ponúka výber hotovosti', adminHtml.includes('adminShowTechnika') && adminHtml.includes('adminBookTechCash'));
 
     // ── storno preklepu ──
     const storno = await j('/api/admin/bookings/' + rJana.booking_id + '/collect', { method: 'DELETE' }, trener);

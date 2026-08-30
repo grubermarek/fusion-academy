@@ -2175,6 +2175,38 @@ async function seedData() {
     }catch(e){ console.error('fix olinka:', e.message); }
   }
 
+  // Olinka Kováčiková — dokončenie (Marek 30. 8.): okrem vráteného vstupu ešte
+  // zrušiť samotný kioskový zápis na techniku 14. 8. (nebola tam, takže ho nemá
+  // mať ani v histórii) a pridať jeden vstup navyše ako ospravedlnenie.
+  // Po tejto oprave má mať 2 vstupy: 1 vrátený + 1 za nepríjemnosť.
+  if(!(await q.one(db.settings,{key:'fix_olinka_technika_20260830'}))){
+    try{
+      const ID='2PGtFwcJiRDdRsVz', BK='JnI1p4fIMGsHZAil';
+      const u=await q.one(db.users,{_id:ID});
+      const b=await q.one(db.bookings,{_id:BK});
+      if(!u){ console.log('⚠️ Olinka sa nenašla'); }
+      else {
+        if(b && b.status!=='cancelled'){
+          await q.update(db.bookings,{_id:BK},{$set:{status:'cancelled',
+            cancel_reason:'kiosk zapísal omylom — prišla na Zumbu', cancelled_at:nowISO(),
+            attendance_status:'unknown'}});
+          await q.update(db.users,{_id:ID},{$set:{visit_count:Math.max(0,(u.visit_count||0)-1)}});
+          console.log('↩️ Olinka: technika 14. 8. zrušená, návštevy '+(u.visit_count||0)+' → '+Math.max(0,(u.visit_count||0)-1));
+        } else console.log('ℹ️ Olinka: technika 14. 8. už bola zrušená');
+        const cerstvy=await q.one(db.users,{_id:ID});
+        const pred=+cerstvy.single_entries||0;
+        await q.update(db.users,{_id:ID},{$set:{single_entries:pred+1}});
+        await q.insert(db.notifications,{ user_id:ID, type:'credit',
+          title:'🎁 Ešte jeden vstup navyše — prepáč!',
+          body:'Zápis na technický tréning zo 14. 8. sme ti zrušili (nebola si tam) a k vrátenému vstupu '
+            +'pridávame ešte jeden navyše ako ospravedlnenie za tú komplikáciu. Ďakujeme za trpezlivosť. 💛',
+          read:false, created_at:nowISO() }).catch(()=>{});
+        console.log('🎁 Olinka: vstupy '+pred+' → '+(pred+1)+' (jeden navyše ako ospravedlnenie)');
+      }
+      await q.insert(db.settings,{key:'fix_olinka_technika_20260830', value:true, at:nowISO()});
+    }catch(e){ console.error('fix olinka 2:', e.message); }
+  }
+
   // Anna Debnárová 23. 7. — Marek 27. 8. potvrdil, že taká platba nikdy nebola,
   // takže v účtovníctve nič nechýba. Zatvárame otázku, nech prestane chodiť pripomienka.
   if(!(await q.one(db.settings,{key:'openq_done_anna_debnarova_23_07'}))){
@@ -15371,7 +15403,22 @@ app.post('/api/attendance/manual-booking', trainerAuth, async(req,res)=>{
     } else if(method==='free'){
       if((u.free_credits||0) > 0){ upd.free_credits = (u.free_credits||0) - 1; methodNote='🎁 Hodina zadarmo (kredit)'; }
       else { if(!u.free_class_used) upd.free_class_used = true; methodNote = u.free_class_used ? '🎁 Hodina zadarmo (tréner)' : '🎁 Prvá hodina zdarma'; }
+    } else if(method==='pay_on_site'){
+      methodNote = '💵 Platí na mieste';
     } else { // membership
+      // Technický tréning členstvo NEKRYJE (vlastný cenník 7–10 € podľa členstva).
+      // Marek 30. 8.: admin panel zapísal Moniku ako „kryté členstvom bronze", hoci
+      // mal pýtať hotovosť. Radšej odmietneme, než aby sa ticho zapísala hodina,
+      // za ktorú nikto nezaplatil. Klientovi sa neverí — musí to stáť na serveri.
+      if(cls.category==='Technika'){
+        const m0=await checkMembership(u._id);
+        const aktivne=m0 && m0.status==='active' && (!m0.expires_at || m0.expires_at>=today());
+        const plan0=String(((m0&&m0.plan_id)||'')+' '+((m0&&m0.plan_name)||'')).toLowerCase();
+        const cena=aktivne&&/gold/.test(plan0)?7:(aktivne&&/silver/.test(plan0)?8:(aktivne&&/bronze/.test(plan0)?9:10));
+        return res.status(400).json({ error:'technika_nie_je_v_clenstve', tech_price:cena,
+          message:'Technický tréning členstvo nekryje — stojí '+cena+' €'
+            +(aktivne?' (cena podľa členstva)':'')+'. Zapíš ju ako „platí na mieste" alebo použi vstup.' });
+      }
       methodNote = '🏅 Členstvo';
     }
     upd.visit_count = (u.visit_count||0) + 1;
@@ -15388,6 +15435,7 @@ app.post('/api/attendance/manual-booking', trainerAuth, async(req,res)=>{
       day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
       user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||'',
       booking_date:bdate, status:'attended', attended_at:nowISO(), attended_by:req.trainerUser._id, access_method:method,
+      ...(method==='pay_on_site' ? { pay_on_site:true, pay_amount:+req.body.pay_amount||10 } : {}),
       free_class: method==='free', // zdarma — nepočíta sa do €/klient bonusu trénera
       notes: note || methodNote,
       manual: true, manual_by: req.trainerUser._id, created_at:nowISO()
