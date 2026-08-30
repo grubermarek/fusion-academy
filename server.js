@@ -2149,32 +2149,42 @@ async function seedData() {
     }catch(e){ console.error('merge_hankova:', e.message); }
   }
 
-  // Ailina Hanková — druhé čítanie (Marek 30. 8.): kredit sa drží v poli
-  // referral_credit a ledger má pole delta, nie amount. Prvá diagnostika čítala
-  // zlé polia, takže nič neukázala. Číta len.
-  if(!(await q.one(db.settings,{key:'diag_ailin_kredit_v2'}))){
-    await q.insert(db.settings,{key:'diag_ailin_kredit_v2', value:true, at:nowISO()});
+  // Ailina Hanková (Marek 30. 8.): refund 40 € za duplicitný Bronze bol zapísaný
+  // ako vrátený PREVODOM, ale Marek jej namiesto peňazí nabil kredit v appke.
+  // Doklad tak tvrdil niečo iné, než sa naozaj stalo. Appka pritom typ
+  // „kredit do appky" (app_credit) pozná — pri ňom by kredit pripísala sama
+  // aj so záznamom v histórii.
+  //
+  // Opravujeme len ZÁPIS, nie sumu: kredit 43 € jej na účte ostáva. Doplníme
+  // k nemu chýbajúcu históriu, aby bolo dohľadateľné, odkiaľ prišiel —
+  // 40 € refund + 3 € navyše ako kompenzácia za duplicitné účty.
+  if(!(await q.one(db.settings,{key:'fix_ailin_refund_typ_20260830'}))){
     try{
       const A=await q.one(db.users,{email:'ailin.hankova@gmail.com'});
-      const D=await q.one(db.users,{email:'hankova@logro.sk'});
-      if(!A){ console.log('🅱 Ailina sa nenašla'); }
+      if(!A){ console.log('⚠️ Ailina sa nenašla — preskakujem'); }
       else {
-        console.log('🅱 KREDIT hlavný účet: '+(+A.referral_credit||0)+' € | vstupy='+(A.single_entries||0)
-          +' | free_credits='+(A.free_credits||0));
-        if(D) console.log('🅱 KREDIT duplicitný: '+(+D.referral_credit||0)+' €');
-        for(const id of [A._id, D&&D._id].filter(Boolean)){
-          const led=(await q.find(db.credit_ledger,{user_id:id}))
-            .sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
-          console.log('🅱 pohybov na '+id+': '+led.length);
-          for(const l of led)
-            console.log('🅱   '+String(l.created_at||'').slice(0,16)+'  '+((+l.delta>0?'+':'')+(+l.delta||0))+' €  → zostatok '+(l.balance!=null?l.balance:'?')+'  | '+(l.reason||''));
-        }
-        // aj celý objekt refundu, nech vidno všetky polia
-        for(const r of (await q.find(db.refunds,{})))
-          if(r.user_id===A._id || (D && r.user_id===D._id))
-            console.log('🅱 REFUND OBJEKT: '+JSON.stringify({d:String(r.created_at||'').slice(0,10), amount:r.amount, type:r.type, reason:r.reason, cn:r.credit_note}));
+        const ref=(await q.find(db.refunds,{})).find(r=>r.reason==='duplicate' && +r.amount===40);
+        if(ref && ref.type==='transfer'){
+          await q.update(db.refunds,{_id:ref._id},{$set:{ type:'app_credit',
+            note:(ref.note||'')+' · Vrátené kreditom do aplikácie, nie prevodom (Marek 30. 8.).' }});
+          console.log('🅰 Ailina: refund prepísaný z „prevod" na „kredit do appky"');
+        } else console.log('ℹ️ Ailina: refund už je opravený alebo sa nenašiel');
+
+        // história kreditu bola prázdna — klientka ani účtovníctvo nevideli, odkiaľ 43 € je
+        const led=await q.find(db.credit_ledger,{user_id:A._id});
+        if(!led.length){
+          const zostatok=+A.referral_credit||0;
+          await q.insert(db.credit_ledger,{user_id:A._id, delta:40, balance:40,
+            reason:'Refundácia duplicitného členstva Bronze (dobropis '+((ref&&ref.credit_note)||'—')+')',
+            created_at:nowISO()});
+          if(zostatok>40) await q.insert(db.credit_ledger,{user_id:A._id, delta:+(zostatok-40).toFixed(2), balance:zostatok,
+            reason:'Kompenzácia za komplikácie s duplicitnými účtami', created_at:nowISO()});
+          console.log('🅰 Ailina: doplnená história kreditu (40 € refund'
+            +(zostatok>40?(' + '+(zostatok-40).toFixed(2)+' € kompenzácia'):'')+' = '+zostatok+' €)');
+        } else console.log('ℹ️ Ailina: história kreditu už existuje ('+led.length+' pohybov)');
       }
-    }catch(e){ console.error('diag_ailin2:', e.message); }
+      await q.insert(db.settings,{key:'fix_ailin_refund_typ_20260830', value:true, at:nowISO()});
+    }catch(e){ console.error('fix ailin:', e.message); }
   }
 
   // Olinka Kováčiková (Marek 30. 8.): chýbal jej jeden vstup z desaťvstupovej
