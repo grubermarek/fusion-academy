@@ -7024,11 +7024,9 @@ async function adminBookMethod(method, date, note, label){
 // Technika: cena podľa členstva (Gold 7 / Silver 8 / Bronze 9 / bez členstva 10).
 // Členstvo ju nekryje, takže sa vždy pýtame, ako sa platí.
 function techCena(st){
-  const m=String((st&&st.membership)||'').toLowerCase();
-  if(/gold/.test(m)) return 7;
-  if(/silver/.test(m)) return 8;
-  if(/bronze/.test(m)) return 9;
-  return 10;
+  // Cenu ráta server a posiela ju v client-status.tech_price — tu ju už
+  // nepočítame, aby sa cenník nemohol rozísť (Marek 30. 8.).
+  return +((st && st.tech_price)) || 10;
 }
 function adminShowTechnika(st, date, note){
   const box=document.getElementById('mbCoverage'); if(!box) return;

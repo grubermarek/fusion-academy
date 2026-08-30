@@ -852,6 +852,7 @@ let _allClasses = [];
 let _allStudents = [];
 let _baStudents = [];
 let _currentClassId = null;
+let _currentClassCategory = null;   // technika sa boduje inak než Zumba
 let _attendees = [];
 
 // ── CLOCK ────────────────────────────────────────────────────────────────────
@@ -1045,6 +1046,7 @@ async function openAttendance(classId){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
 
   const cls = _allClasses.find(c=>c._id===classId)||{};
+  _currentClassCategory = cls.category || null;
   const pct = cls.capacity ? Math.round(cls.confirmed/cls.capacity*100) : 0;
 
   document.getElementById('attHeader').innerHTML = `
@@ -1270,6 +1272,12 @@ async function quickAddUser(userId, userName){
   document.getElementById('addUserSearch').value='';
   const st = await api('/api/attendance/client-status?user_id='+encodeURIComponent(userId));
   if(!st || st.error){ toast(st?.error||'Chyba', true); return; }
+  // Technický tréning členstvo NEKRYJE — má vlastný cenník (server ho posiela
+  // v tech_price). Bez tohto by sa zapísal ako krytý a nikto by nezaplatil.
+  if(_currentClassCategory === 'Technika'){
+    if((st.single_entries||0) > 0){ await bookCovered(userId,'single_entry', `použitý vstup (zostáva ${(st.single_entries-1)})`); return; }
+    showTechnikaDialog(st); return;
+  }
   if(st.membership){ await bookCovered(userId,'membership', `kryté členstvom (${st.membership})`); return; }
   if((st.single_entries||0) > 0){ await bookCovered(userId,'single_entry', `použitý vstup (zostáva ${(st.single_entries-1)})`); return; }
   showCoverageDialog(st);
@@ -1281,6 +1289,33 @@ async function bookCovered(userId, method, label, classId){
   if(r?.ok){ toast(`✅ Zapísaný — ${label}`); if(cid===_currentClassId){ await loadAttendees(_currentClassId); } await loadSchedule(); }
   else toast(r?.error||'Chyba', true);
   return r;
+}
+// Technika: cena chodí zo servera (tech_price), aby sa cenník nemohol rozísť.
+function showTechnikaDialog(st){
+  const box=document.getElementById('addUserResults'); if(!box) return;
+  const cena=+st.tech_price||10;
+  box.style.display='block';
+  box.innerHTML='<div style="padding:14px">'
+    +'<div style="font-weight:800;color:var(--cream);margin-bottom:2px">'+esc(st.name)+'</div>'
+    +'<div style="font-size:.82rem;color:#e0a34c;margin-bottom:12px">🩰 Technický tréning — členstvo ho nekryje. Platí <b>'+cena+' €</b>'
+      +(st.membership?' (zľava podľa členstva '+esc(st.membership)+')':'')+'</div>'
+    +'<div style="display:flex;flex-direction:column;gap:8px">'
+    +'<button class="btn-block" style="background:rgba(224,86,86,.18);border:1px solid rgba(224,86,86,.5);color:#ff8a8a" onclick="bookTechCash(\''+st.id+'\','+cena+')">💵 Vyberiem '+cena+' € na mieste — zapísať</button>'
+    +'<button class="btn-block" onclick="sellEntryAndBook(\''+st.id+'\',1,'+cena+')">🎟️ Predať vstup za '+cena+' € + zapísať</button>'
+    +'<button class="btn-block" onclick="bookCovered(\''+st.id+'\',\'free\',\'zadarmo 🎁\')">🎁 Darovať zadarmo</button>'
+    +'</div></div>';
+}
+async function bookTechCash(userId, cena){
+  const box=document.getElementById('addUserResults'); if(box) box.style.display='none';
+  const r = await api('/api/attendance/manual-booking',{method:'POST',body:{
+    user_id:userId, class_id:_currentClassId, method:'pay_on_site', pay_amount:cena }});
+  if(r?.ok){ toast('✅ Zapísaná — vyber '+cena+' € na mieste'); await loadAttendees(_currentClassId); await loadSchedule(); }
+  else toast(r?.error||'Chyba', true);
+}
+async function sellEntryAndBook(userId, entries, amount){
+  const r = await api('/api/attendance/single-entry',{method:'POST',body:{user_id:userId, entries, amount, payment_method:'cash'}});
+  if(!r?.ok){ toast(r?.error||'Chyba', true); return; }
+  await bookCovered(userId,'single_entry', 'predaný vstup za '+amount+' €');
 }
 // Dialóg keď klient nemá žiadne krytie
 function showCoverageDialog(st){

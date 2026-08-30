@@ -15411,13 +15411,10 @@ app.post('/api/attendance/manual-booking', trainerAuth, async(req,res)=>{
       // mal pýtať hotovosť. Radšej odmietneme, než aby sa ticho zapísala hodina,
       // za ktorú nikto nezaplatil. Klientovi sa neverí — musí to stáť na serveri.
       if(cls.category==='Technika'){
-        const m0=await checkMembership(u._id);
-        const aktivne=m0 && m0.status==='active' && (!m0.expires_at || m0.expires_at>=today());
-        const plan0=String(((m0&&m0.plan_id)||'')+' '+((m0&&m0.plan_name)||'')).toLowerCase();
-        const cena=aktivne&&/gold/.test(plan0)?7:(aktivne&&/silver/.test(plan0)?8:(aktivne&&/bronze/.test(plan0)?9:10));
+        const cena=await technikaCena(u._id);
         return res.status(400).json({ error:'technika_nie_je_v_clenstve', tech_price:cena,
           message:'Technický tréning členstvo nekryje — stojí '+cena+' €'
-            +(aktivne?' (cena podľa členstva)':'')+'. Zapíš ju ako „platí na mieste" alebo použi vstup.' });
+            +(cena<10?' (cena podľa členstva)':'')+'. Zapíš ju ako „platí na mieste" alebo použi vstup.' });
       }
       methodNote = '🏅 Členstvo';
     }
@@ -15496,7 +15493,10 @@ app.get('/api/attendance/client-status', trainerAuth, async(req,res)=>{
       single_entries: u.single_entries||0, free_credits: u.free_credits||0, free_class_used: !!u.free_class_used,
       membership: isSub ? (m.plan_name||MEMBERSHIP_PLANS[m.plan_id]?.name||'Členstvo') : null,
       plan_id: active ? m.plan_id : null,
-      expires_at: active ? (m.expires_at||null) : null });
+      expires_at: active ? (m.expires_at||null) : null,
+      // Cenu techniky ráta server — UI ju len zobrazí, aby sa cenník nemohol
+      // rozísť medzi trénerským a admin panelom (Marek 30. 8.).
+      tech_price: await technikaCena(u._id) });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 // Record single-entry / permanentka sale for a user (entries = počet vstupov)
@@ -15635,6 +15635,26 @@ app.delete('/api/attendance/booking/:id', trainerAuth, async(req,res)=>{
 // Pripíše ABSOLVOVANÚ hodinu klientovi: +1 návšteva, míľnik/odznaky, uvítací e-mail po 1. hodine.
 // Volá sa až keď tréner POTVRDÍ účasť (QR alebo „potvrdiť hodinu"). Vstupy sa NEdedukujú
 // (tie sa strhli už pri rezervácii). Vráti nový počet návštev.
+// ── Cena technického tréningu ────────────────────────────────────────────────
+// Členstvo techniku NEKRYJE, dáva na ňu len zľavu. Marek 30. 8.: pôvodné
+// Bronze 9 € bolo drahšie ako vstup z permanentky (80 €/10 = 8 €), čo nedávalo
+// zmysel — každá úroveň členstva musí byť výhodnejšia než kúpa nastojato.
+//   bez členstva 10 · Bronze 8 · Silver 7 · Gold 6
+const TECHNIKA_CENNIK = { gold: 6, silver: 7, bronze: 8, ziadne: 10 };
+function technikaCenaZPlanu(plan, aktivne){
+  const p = String(plan || '').toLowerCase();
+  if(!aktivne) return TECHNIKA_CENNIK.ziadne;
+  if(/gold/.test(p)) return TECHNIKA_CENNIK.gold;
+  if(/silver/.test(p)) return TECHNIKA_CENNIK.silver;
+  if(/bronze/.test(p)) return TECHNIKA_CENNIK.bronze;
+  return TECHNIKA_CENNIK.ziadne;
+}
+async function technikaCena(userId){
+  const m = await checkMembership(userId);
+  const aktivne = !!(m && m.status==='active' && (!m.expires_at || m.expires_at>=today()));
+  return technikaCenaZPlanu(((m&&m.plan_id)||'')+' '+((m&&m.plan_name)||''), aktivne);
+}
+
 async function creditAttendance(u){
   if(!u) return 0;
   const newCount=(u.visit_count||0)+1;
@@ -16116,7 +16136,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
         else if((u.single_entries||0)>0){ deductPlan={uid:u._id, field:'single_entries', value:u.single_entries-1}; accessMethod='single_entry'; }
         else {
           // Cenník podľa členstva: Gold 7 / Silver 8 / Bronze 9 / bez členstva 10 (Gold už NIE JE zdarma)
-          techPrice=active&&/gold/.test(plan)?7:(active&&/silver/.test(plan)?8:(active&&/bronze/.test(plan)?9:10));
+          techPrice=technikaCenaZPlanu(plan, active);
           if(req.body.pay_on_site){ payOnSite=true; accessMethod='pay_on_site'; }
           else return res.status(402).json({ error:'membership_required', can_pay_on_site:true, tech_price:techPrice,
             message:`Technický tréning: ${techPrice} € jednorazovo${techPrice<10?' (zľava podľa členstva)':''}. Platí aj permanentka — vstup si kúpiš kartou v Obchode, alebo zaplatíš na mieste.` });

@@ -5,7 +5,11 @@
  *
  * Suma aj klik fungovali už predtým. Chýbalo ale to hlavné: vybraté peniaze
  * sa nikde neevidovali, takže tréner nevedel, koľko hotovosti má u seba a má
- * odovzdať. Test to stráži spolu s cenníkom podľa členstva (7/8/9/10 €).
+ * odovzdať. Test to stráži spolu s cenníkom podľa členstva.
+ *
+ * Cenník (Marek 30. 8., po oprave): bez členstva 10 · Bronze 8 · Silver 7 · Gold 6.
+ * Pôvodné Bronze 9 € bolo drahšie než vstup z permanentky (80 €/10 = 8 €) —
+ * každá úroveň členstva musí byť výhodnejšia než kúpa nastojato.
  *
  * Spustenie:  node qa/technika-cash.test.js
  */
@@ -98,8 +102,10 @@ async function j(url, opts = {}, jar) {
     ok('bez členstva sa technika neprihlási hneď', bezClen.status === 402 && bezClen.d.error === 'membership_required', JSON.stringify(bezClen.d).slice(0, 90));
     ok('ponúkne platbu na mieste', bezClen.d.can_pay_on_site === true);
     ok('bez členstva stojí 10 €', bezClen.d.tech_price === 10, String(bezClen.d.tech_price));
-    ok('Silver má 8 €', (await skus(sona)).d.tech_price === 8);
-    ok('Gold má 7 €', (await skus(gita)).d.tech_price === 7);
+    ok('Silver má 7 €', (await skus(sona)).d.tech_price === 7, String((await skus(sona)).d.tech_price));
+    ok('Gold má 6 €', (await skus(gita)).d.tech_price === 6, String((await skus(gita)).d.tech_price));
+    ok('žiadna úroveň nie je drahšia než vstup z permanentky (8 €)',
+      (await skus(sona)).d.tech_price <= 8 && (await skus(gita)).d.tech_price <= 8);
 
     // ── rezervácia s platbou na mieste ──
     const rez = await j('/api/bookings', { method: 'POST', body: { class_id: 'qaTcTech00000001', booking_date: DNES, pay_on_site: true } }, jana);
@@ -115,7 +121,7 @@ async function j(url, opts = {}, jar) {
     const rSona = riadky.find(x => /Sona/.test(x.name || '')) || {};
     ok('pri Jane je „platí na mieste"', rJana.pay_on_site === true, JSON.stringify(rJana.pay_on_site));
     ok('a suma 10 €', rJana.pay_amount === 10, String(rJana.pay_amount));
-    ok('pri Soni suma 8 € (zľava podľa členstva)', rSona.pay_amount === 8, String(rSona.pay_amount));
+    ok('pri Soni suma 7 € (zľava podľa členstva)', rSona.pay_amount === 7, String(rSona.pay_amount));
     ok('zatiaľ nič nevybrané', !rJana.entry_collected && !rSona.entry_collected);
     ok('tréner má na klik id rezervácie', !!rJana.booking_id, JSON.stringify(rJana.booking_id));
 
@@ -156,7 +162,7 @@ async function j(url, opts = {}, jar) {
       body: { user_id: 'qaTcGold0000001', class_id: 'qaTcTech00000001', booking_date: DNES, method: 'membership' } }, admin);
     ok('technika sa NEDÁ zapísať ako krytá členstvom', cezClenstvo.status === 400
       && cezClenstvo.d.error === 'technika_nie_je_v_clenstve', JSON.stringify(cezClenstvo.d).slice(0, 120));
-    ok('a rovno povie, koľko vybrať (Gold 7 €)', cezClenstvo.d.tech_price === 7, String(cezClenstvo.d.tech_price));
+    ok('a rovno povie, koľko vybrať (Gold 6 €)', cezClenstvo.d.tech_price === 6, String(cezClenstvo.d.tech_price));
     const zoznamPo = (await j('/api/attendance/class/qaTcTech00000001', {}, trener)).d || [];
     ok('taká rezervácia sa vôbec nevytvorí',
       !(Array.isArray(zoznamPo) ? zoznamPo : []).some(x => /Gita/.test(x.name || '')),
@@ -165,11 +171,11 @@ async function j(url, opts = {}, jar) {
     // zápis cez „platí na mieste" prejde a nesie sumu
     const cezCash = await j('/api/attendance/manual-booking', { method: 'POST',
       body: { user_id: 'qaTcGold0000001', class_id: 'qaTcTech00000001', booking_date: DNES,
-              method: 'pay_on_site', pay_amount: 7 } }, admin);
+              method: 'pay_on_site', pay_amount: 6 } }, admin);
     ok('zápis „platí na mieste" prejde', cezCash.status === 200 && cezCash.d.ok, JSON.stringify(cezCash.d).slice(0, 100));
     const zoznamGita = (await j('/api/attendance/class/qaTcTech00000001', {}, trener)).d || [];
     const rGita = (Array.isArray(zoznamGita) ? zoznamGita : []).find(x => /Gita/.test(x.name || '')) || {};
-    ok('tréner pri nej vidí sumu na výber (7 €)', rGita.pay_on_site === true && rGita.pay_amount === 7,
+    ok('tréner pri nej vidí sumu na výber (6 €)', rGita.pay_on_site === true && rGita.pay_amount === 6,
       JSON.stringify({ p: rGita.pay_on_site, a: rGita.pay_amount }));
 
     // Zumba členstvom krytá ostáva — oprava sa nesmie preliať na bežné hodiny
@@ -180,7 +186,13 @@ async function j(url, opts = {}, jar) {
 
     // stránka admina
     const adminHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'admin.html'), 'utf8');
-    ok('admin panel pozná cenník techniky', adminHtml.includes('function techCena'));
+    ok('admin panel berie cenu zo servera, neráta ju sám',
+      adminHtml.includes('st.tech_price') && !adminHtml.includes("if(/bronze/.test(m)) return 9"));
+    const trenerHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'trainer.html'), 'utf8');
+    ok('trénerský panel pozná techniku', trenerHtml.includes("_currentClassCategory === 'Technika'"));
+    ok('a ponúka výber hotovosti so správnou cenou',
+      trenerHtml.includes('showTechnikaDialog') && trenerHtml.includes('bookTechCash'));
+    ok('trénerský panel tiež berie cenu zo servera', trenerHtml.includes('st.tech_price'));
     ok('a pri technike ponúka výber hotovosti', adminHtml.includes('adminShowTechnika') && adminHtml.includes('adminBookTechCash'));
 
     // ── storno preklepu ──
