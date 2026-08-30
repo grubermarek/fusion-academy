@@ -12519,7 +12519,7 @@ app.post('/api/admin/bookings/:id/collect', (req,res,next)=>trainerAuth(req,res,
     const buyer=await q.one(db.users,{_id:b.user_id});
     await q.insert(db.transactions,{type:'single_entry', user_id:b.user_id, user_name:b.user_name,
       amount, payment_method:method, note:`Jednorazový vstup — ${b.class_name} ${b.booking_date} (${methodTxt})`,
-      created_at:nowISO(), month:today().slice(0,7)});
+      booking_id:b._id, created_at:nowISO(), month:today().slice(0,7)});
     trackPurchase(b.user_id, amount);
     createInvoice({user_id:b.user_id, client_name:b.user_name, client_email:buyer?.email,
       items:[{desc:`Jednorazový vstup — ${b.class_name} (${b.booking_date})`, qty:1, total:amount}],
@@ -12528,6 +12528,26 @@ app.post('/api/admin/bookings/:id/collect', (req,res,next)=>trainerAuth(req,res,
       title:'🧾 Potvrdenie o platbe — vstup',
       body:`Prijali sme ${amount.toFixed(2)} € (${methodTxt}) za vstup na ${b.class_name} ${b.booking_date}. Ďakujeme!`,
       read:false, created_at:nowISO()}).catch(()=>{});
+    // Hotovosť ostáva fyzicky u toho, kto ju vybral, kým ju neodovzdá — musí sa
+    // preto zapísať do jeho evidencie, rovnako ako pri predaji členstva či
+    // súkromnej hodine. (Marek 30. 8.: suma aj klik fungovali, ale vybraté
+    // peniaze sa nikde neevidovali a tréner nevedel, koľko má u seba.)
+    if(method==='cash' && amount>0){
+      const vyberca=await q.one(db.users,{_id:req.session.uid});
+      await q.insert(db.payouts,{_type:'cash_collected', trainer_id:req.session.uid,
+        trainer_name:(vyberca&&vyberca.name)||'—', amount,
+        note:'Vstup — '+b.user_name+' · '+b.class_name+' '+b.booking_date,
+        booking_id:b._id, month:today().slice(0,7), date:today(), status:'held', created_at:nowISO()}).catch(()=>{});
+      // Adminovi to hlásime len ak vyberal niekto iný — inak by si Marek posielal
+      // notifikácie sám sebe pri každom vstupnom.
+      for(const a of await q.find(db.users,{is_admin:true})){
+        if(a._id===req.session.uid) continue;
+        await q.insert(db.notifications,{user_id:a._id, type:'cash_collected',
+          title:'💵 '+((vyberca&&vyberca.name)||'Tréner')+': vstup '+amount.toFixed(2)+' €',
+          body:b.user_name+' · '+b.class_name+' '+b.booking_date+' — hotovosť u trénera.',
+          read:false, created_at:nowISO()}).catch(()=>{});
+      }
+    }
     res.json({ok:true});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -14642,6 +14662,23 @@ app.get('/api/trainer/cash', trainerAuth, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 // Tréner môže zmazať len VLASTNÝ, ešte nezúčtovaný záznam z dnešného dňa (preklep)
+// Storno vybratého vstupného (preklep v sume alebo spôsobe). Vráti rezerváciu
+// do stavu „platí na mieste" a zmaže transakciu aj záznam v hotovosti.
+// Len dnešný výber — staršie už môžu byť zúčtované.
+app.delete('/api/admin/bookings/:id/collect', (req,res,next)=>trainerAuth(req,res,next), async(req,res)=>{
+  try{
+    const b=await q.one(db.bookings,{_id:req.params.id});
+    if(!b || !b.entry_collected) return res.status(404).json({error:'Pri tejto rezervácii nie je čo stornovať'});
+    const ec=b.entry_collected;
+    if(String(ec.at||'').slice(0,10)!==today()) return res.status(400).json({error:'Stornovať sa dá len dnešný výber'});
+    await q.update(db.bookings,{_id:b._id},{$set:{entry_collected:null, pay_on_site:true}});
+    await q.remove(db.transactions,{type:'single_entry', booking_id:b._id},{multi:true}).catch(()=>{});
+    if(ec.method==='cash') await q.remove(db.payouts,{_type:'cash_collected', booking_id:b._id, status:'held'},{multi:true}).catch(()=>{});
+    await auditLog(req,'entry_collect_undo',(b.user_name||'')+' — '+(b.class_name||'')+' '+(b.booking_date||'')+' ('+ec.amount+' €)',ec,null,'');
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.delete('/api/trainer/cash/:id', trainerAuth, async(req,res)=>{
   try{
     const r=await q.one(db.payouts,{_id:req.params.id, _type:'cash_collected'});
