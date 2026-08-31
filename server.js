@@ -4544,8 +4544,6 @@ async function eventLastCallTick(qaMode){
     // Od 12:00 sedí „posledných 12 hodín", po 21:00 už mail nikto nestihne využiť.
     if(!qaMode && (hSK<12||hSK>21)) return;
     if(!(await mailBudgetOk(9))) return;
-    const otvorili=await brevoOtvoriliDnes(qaMode);
-    if(!otvorili){ console.log('📧 EVENT LAST CALL: zoznam otvorení sa nepodarilo získať — radšej neposielam'); return {error:'brevo_opens'}; }
     const budget=80;
     const isTestU=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'')||u.lead_source==='test'||u.is_test;
     const activeMem=new Set((await q.find(db.memberships,{status:'active'}))
@@ -4554,15 +4552,20 @@ async function eventLastCallTick(qaMode){
       .map(o=>String(o.buyer_email||'').toLowerCase()));
     const log=await q.find(db.mail_log,{});
     // komu ranná vlna dnes reálne odišla
-    const ranny=new Set(log.filter(m=>String(m.created_at||'').startsWith(t)
-      && /event_campaign_lastday/.test(m.template||'')).map(m=>String(m.to).toLowerCase()));
+    const ranne=log.filter(m=>String(m.created_at||'').startsWith(t)
+      && /event_campaign_lastday/.test(m.template||''));
+    const ranny=new Set(ranne.map(m=>String(m.to).toLowerCase()));
+    // Otvorenia si pýtame z Brevo podľa predmetu rannej vlny — kto dnes otvoril
+    // len potvrdenie rezervácie, o túto ponuku ešte neprišiel.
+    const otvorili=await brevoOtvoriliDnes(qaMode, new Set(ranne.map(m=>String(m.subject||'')).filter(Boolean)));
+    if(!otvorili){ console.log('📧 EVENT LAST CALL: zoznam otvorení sa nepodarilo získať — radšej neposielam'); return {error:'brevo_opens'}; }
     // a komu sme dobeh už poslali, nech ho nikto nedostane dvakrát
     const uz=new Set(log.filter(m=>/event_campaign_lastcall/.test(m.template||''))
       .map(m=>String(m.to).toLowerCase()));
     const users=(await q.find(db.users,{}))
       .filter(u=>['client','ambassador'].includes(u.user_type) && !u.is_admin && !u.is_child && u.active!==false
         && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u)
-        && u.email && /@/.test(u.email) && !/@import.local$|@guest./i.test(u.email))
+        && u.email && /@/.test(u.email) && !/@import\.local$|@guest\./i.test(u.email))
       .filter(u=>{ const e=String(u.email).toLowerCase();
         return ranny.has(e) && !otvorili.has(e) && !uz.has(e) && !buyers.has(e); })
       .sort((a,b)=>(activeMem.has(b._id)?1:0)-(activeMem.has(a._id)?1:0));
@@ -4594,7 +4597,7 @@ setInterval(eventLastCallTick, 8*60*1000);
 // Kto dnes mail otvoril — pýtame sa priamo Brevo, appka si otvorenia nevedie.
 // Keď sa zoznam nepodarí získať, vraciame null a volajúci radšej nepošle nič,
 // než by písal aj tým, ktorí už mail čítali.
-async function brevoOtvoriliDnes(qaMode){
+async function brevoOtvoriliDnes(qaMode, predmety){
   if(qaMode && process.env.QA_OPENED!==undefined)
     return new Set(String(process.env.QA_OPENED).split(',').map(s=>s.trim().toLowerCase()).filter(Boolean));
   try{
@@ -4603,7 +4606,9 @@ async function brevoOtvoriliDnes(qaMode){
     if(!r.ok){ console.error('brevo otvorenia: HTTP '+r.status); return null; }
     const j=await r.json();
     if(!j||!Array.isArray(j.events)) return null;
-    return new Set(j.events.map(e=>String(e.email||'').toLowerCase()).filter(Boolean));
+    return new Set(j.events
+      .filter(e=>!predmety||!predmety.size||predmety.has(String(e.subject||'')))
+      .map(e=>String(e.email||'').toLowerCase()).filter(Boolean));
   }catch(e){ console.error('brevo otvorenia:', e.message); return null; }
 }
 

@@ -36,8 +36,9 @@ async function j(base, url, opts = {}, jar) {
 // Text mailu overujeme na origináli: funkciu vytiahneme priamo zo server.js,
 // nech test nikdy nekontroluje kópiu, ktorá sa medzitým rozišla so skutočnosťou.
 function vytiahni(nazov) {
-  const i = SRC.indexOf('function ' + nazov + '(');
+  let i = SRC.indexOf('function ' + nazov + '(');
   if (i < 0) throw new Error(nazov + ' sa nenašla');
+  if (SRC.slice(i - 6, i) === 'async ') i -= 6;   // inak by sme z async funkcie spravili obyčajnú
   let h = 0, vRet = null;
   for (let k = i; k < SRC.length; k++) {
     const ch = SRC[k], pred = SRC[k - 1];
@@ -137,7 +138,28 @@ async function spusti(port, DATA, extraEnv) {
   ok('utm kampaň sa dá odlíšiť od rannej', f.clen.includes('fa-masterclass-lastcall'));
   ok('telefón na rezerváciu stola sedí', f.clen.includes('0904 31 51 51'));
 
-  // ── 2. cieľovka: posielame len tomu, kto ranný neotvoril ──
+  // ── 2. zoznam otvorení z Brevo (s podvrhnutým fetchom) ──
+  console.log('\nZoznam otvorení z Brevo:');
+  const helper = (odpoved) => new Function('fetch', 'process',
+    vytiahni('brevoOtvoriliDnes') + '\nreturn brevoOtvoriliDnes;')(
+    async () => odpoved, { env: { BREVO_API_KEY: 'x' } });
+
+  const bo = helper({ ok: true, json: async () => ({ events: [
+    { email: 'Anna@x.sk', subject: 'Ranny mail' },
+    { email: 'bela@x.sk', subject: 'Rezervácia potvrdená – Zumba' },
+    { email: 'cila@x.sk', subject: 'Ranny mail' },
+  ] }) });
+  const len = await bo(false, new Set(['Ranny mail']));
+  ok('kto otvoril ranný mail, je v zozname', len.has('anna@x.sk') && len.has('cila@x.sk'), [...len].join(','));
+  ok('kto otvoril iný mail, sa nepočíta', !len.has('bela@x.sk'), [...len].join(','));
+  ok('adresy sa porovnávajú bez ohľadu na veľkosť písmen', len.has('anna@x.sk'), [...len].join(','));
+  ok('bez zoznamu predmetov sa berú všetky otvorenia', (await bo(false, new Set())).size === 3);
+  ok('pri chybe Brevo sa vráti null, nie prázdny zoznam',
+    (await helper({ ok: false, status: 401 })(false, new Set())) === null);
+  ok('pri nečakanej odpovedi tiež null',
+    (await helper({ ok: true, json: async () => ({}) })(false, new Set())) === null);
+
+  // ── 3. cieľovka: posielame len tomu, kto ranný neotvoril ──
   console.log('\nKomu vlna píše:');
   const DATA = pripravData();
   const { srv, base } = await spusti(BASE_PORT, DATA, {
@@ -167,7 +189,7 @@ async function spusti(port, DATA, extraEnv) {
     const c2 = await j(base, '/api/admin/qa/run-event-mail/lastcall', { method: 'POST' }, adm);
     ok('druhý beh už nikoho neosloví', (c2.d && c2.d.selected || []).length === 0, JSON.stringify(c2.d && c2.d.selected));
 
-    // ── 3. poistka: bez zoznamu otvorení sa neposiela nič ──
+    // ── 4. poistka: bez zoznamu otvorení sa neposiela nič ──
     console.log('\nPoistka, keď Brevo mlčí:');
     const DATA2 = pripravData();
     const s2 = await spusti(BASE_PORT + 1, DATA2, {});   // bez QA_OPENED → ide sa na Brevo, kľúč je falošný
