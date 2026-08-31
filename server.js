@@ -2210,6 +2210,48 @@ async function seedData() {
     }catch(e){ console.error('anagram debut:', e.message); }
   }
 
+  // Dve veci naraz (Marek 1. 9.): prečo Marekovi hodnosť stále ukazuje
+  // „ZAČÍNAŠ", a čo si Miška ako klientka mesiaca kúpila z merchu — má na to
+  // mať 20 % zľavu, ktorú jej nikto neodrátal. Číta len, nič nemení.
+  if(!(await q.one(db.settings,{key:'diag_hodnost_merch_v1'}))) setTimeout(async()=>{
+    await q.insert(db.settings,{key:'diag_hodnost_merch_v1', value:true, at:nowISO()});
+    try{
+      // ── 1. hodnosť ──
+      for(const u of (await q.find(db.users,{}))){
+        if(!(u.is_admin || u.user_type==='ambassador' || u.user_type==='trainer')) continue;
+        const bezici = await ambVolume(u._id);
+        const podla = await ambVolumeByMonth(u._id);
+        const uzavierky = await q.find(db.amb_volume_months,{user_id:u._id});
+        const best = await ambBestVolume(u._id, bezici.total);
+        if(!best && !Object.keys(podla).length) continue;   // koho sa to netýka
+        console.log('🏅 '+u.name+': bežiaci '+bezici.total
+          +' | maximum '+best+' → '+(ambRank(best).name||'ZAČÍNAŠ')
+          +' | uzávierok '+uzavierky.length
+          +' | po mesiacoch: '+(Object.keys(podla).sort().map(m=>m+'='+podla[m]).join(', ')||'—'));
+      }
+      // ── 2. Miškin merch ──
+      const w=(await q.find(db.monthly_winners,{})).filter(x=>x.type!=='year')
+        .sort((a,b)=>String(a.month).localeCompare(String(b.month)));
+      console.log('🛍️ víťazky: '+(w.map(x=>x.month+'='+(x.user_name||x.user_id)).join(', ')||'—'));
+      for(const win of w){
+        const u=await q.one(db.users,{_id:win.user_id}); if(!u) continue;
+        // odmena platí v mesiaci PO výhre
+        const d0=new Date(+String(win.month).slice(0,4), +String(win.month).slice(5,7), 1);
+        const platiV=d0.getFullYear()+'-'+String(d0.getMonth()+1).padStart(2,'0');
+        const obj=(await q.find(db.orders,{})).filter(o=>o.status==='paid'
+          && String(o.client_email||'').toLowerCase()===String(u.email||'').toLowerCase()
+          && String(o.paid_at||o.created_at||'').slice(0,7)===platiV);
+        if(!obj.length){ console.log('🛍️ '+u.name+' (víťazka '+win.month+', zľava v '+platiV+'): žiadne objednávky'); continue; }
+        for(const o of obj){
+          const polozky=(o.items||[]).map(it=>(it.name||it.item||'?')+' ×'+(+it.qty||1)+' à '+(+it.price||0)+' €').join(' | ');
+          console.log('🛍️ '+u.name+' obj. '+(o.order_number||o._id)+' z '+String(o.paid_at||o.created_at).slice(0,10)
+            +' | spolu '+(+o.total||0)+' € | zľava v doklade: '+(o.discount||o.discount_amount||0)
+            +' | '+polozky);
+        }
+      }
+    }catch(e){ console.error('diag2:', e.message); }
+  }, 8000);
+
   // Ailina Hanková (Marek 30. 8.): refund 40 € za duplicitný Bronze bol zapísaný
   // ako vrátený PREVODOM, ale Marek jej namiesto peňazí nabil kredit v appke.
   // Doklad tak tvrdil niečo iné, než sa naozaj stalo. Appka pritom typ
@@ -6132,10 +6174,31 @@ function ambLadder(count){
 // by spadli na dno a človek by každý mesiac začínal odznova (Marek 1. 9.).
 // Provízie sa naďalej počítajú z bežiaceho mesiaca — hodnosť je uznanie,
 // nie nárok. Rovnako to má väčšina MLM firiem: titul ostáva, paid-as kolíše.
+// Objem po mesiacoch jedným prechodom transakcií. Volať ambVolume() zvlášť pre
+// každý mesiac by znamenalo prečítať celú tabuľku dvanásťkrát.
+async function ambVolumeByMonth(uid){
+  const ids = new Set([uid, ...(await getAllDescendants(uid))]);
+  const out = {};
+  for(const t of await q.find(db.transactions,{})){
+    if(!t.user_id || !ids.has(t.user_id)) continue;
+    const m = t.month || String(t.date||t.created_at||'').slice(0,7);
+    if(!/^[0-9]{4}-[0-9]{2}$/.test(m)) continue;
+    const amt = +t.amount || 0; if(amt <= 0) continue;
+    const f = OB_FACTORS[t.type]; if(f === undefined) continue;
+    const ob = Math.round(amt * f); if(!ob) continue;
+    out[m] = (out[m] || 0) + ob;
+  }
+  return out;
+}
 async function ambBestVolume(uid, bezici){
   let best = Math.max(0, +bezici || 0);
+  // uzavreté mesiace, ak už uzávierka bežala
   for(const r of await q.find(db.amb_volume_months,{user_id:uid}))
     best = Math.max(best, +r.group_ob || 0);
+  // a rovno aj z transakcií — uzávierka beží až 1.–3. dňa, takže prvého ráno
+  // ešte nemusí byť hotová a hodnosť by do tej chvíle vyzerala ako nula
+  const podlaMesiacov = await ambVolumeByMonth(uid);
+  for(const m of Object.keys(podlaMesiacov)) best = Math.max(best, podlaMesiacov[m]);
   return best;
 }
 
