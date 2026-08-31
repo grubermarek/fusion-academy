@@ -6127,6 +6127,18 @@ function ambLadder(count){
 }
 
 // Vráti hodnosť, počet hviezd a koľko ľudí chýba do ďalšieho stupňa.
+// Najvyšší mesačný objem, aký kedy dosiahla — z neho ide ZOBRAZENÁ hodnosť.
+// Prvého v mesiaci je objem bežiaceho mesiaca nula, takže hodnosť aj progres
+// by spadli na dno a človek by každý mesiac začínal odznova (Marek 1. 9.).
+// Provízie sa naďalej počítajú z bežiaceho mesiaca — hodnosť je uznanie,
+// nie nárok. Rovnako to má väčšina MLM firiem: titul ostáva, paid-as kolíše.
+async function ambBestVolume(uid, bezici){
+  let best = Math.max(0, +bezici || 0);
+  for(const r of await q.find(db.amb_volume_months,{user_id:uid}))
+    best = Math.max(best, +r.group_ob || 0);
+  return best;
+}
+
 function ambRank(count){
   const n = Math.max(0, +count||0);
   if(n < AMB_RANKS[0].stars[0]){
@@ -7060,15 +7072,20 @@ app.get('/api/ambassador/me', ambassadorAuth, async(req,res)=>{
     const prevMonth = (()=>{ const d=new Date(todayS+'T12:00:00'); d.setMonth(d.getMonth()-1);
       return d.toISOString().slice(0,7); })();
     const volPrev = await ambVolume(u._id, prevMonth);
-    const R = ambRank(vol.total);
+    // Hodnosť zo životného maxima, aktuálny mesiac zvlášť — z neho ide provízia.
+    const bestOb = await ambBestVolume(u._id, vol.total);
+    const R = ambRank(bestOb);
+    const Rmesiac = ambRank(vol.total);
     res.json({ ok:true,
       name:u.name, since:(u.ambassador_since||'').slice(0,10),
       referral_code:u.referral_code,
       link: APP_URL.replace(/\/$/,'')+'/invite/'+u.referral_code,
       rank: R,
+      rank_month: Rmesiac,        // hodnosť za bežiaci mesiac (z nej je provízia)
+      best_ob: bestOb,            // životné maximum objemu
       ladder: ambLadder(vol.total).map(r=>({...r, rate: ambRate(r.rank)})),
       volume: vol, volume_prev: {month:volPrev.month, total:volPrev.total},
-      rate: ambRate(R.rank||1),
+      rate: ambRate(Rmesiac.rank||1),
       contest: await (async()=>{
         const c=AMB_CONTEST;
         if(today()>c.to) return null;
@@ -7117,7 +7134,7 @@ app.get('/api/ambassador/me', ambassadorAuth, async(req,res)=>{
         .reduce((s,c)=>s+(c.amount||0),0)).toFixed(2),
       line_rates: LINE_RATES,
       team_from: AMB_TEAM_FROM,
-      team_bonus: ambTeamBonus(R.rank||1),
+      team_bonus: ambTeamBonus(Rmesiac.rank||1),
       ob_rules: Object.entries(OB_LABELS)
         .filter(([k])=>OB_FACTORS[k]!=null)
         .map(([k,label])=>({key:k, label, factor:OB_FACTORS[k]}))

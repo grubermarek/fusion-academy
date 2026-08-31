@@ -29,6 +29,10 @@ a{color:var(--gold)}
 .bar{height:12px;background:#1a1a1a;border-radius:8px;overflow:hidden;border:1px solid #2a2a2a;margin:14px 0 8px}
 .bar i{display:block;height:100%;background:linear-gradient(90deg,#C9A84C,#F7E7B8)}
 .togo{color:#E7C878;font-weight:800;font-size:.95rem}
+.mesiac{margin-top:12px;padding-top:11px;border-top:1px solid #241f16;display:flex;
+  align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;font-size:.82rem;color:#9b9282}
+.mesiac b{color:#E7C878}
+.mesiac .sep{width:1px;height:12px;background:#2e2820}
 
 /* čísla */
 .nums{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center}
@@ -135,6 +139,7 @@ async function load(){
 
 function render(){
   const d=D, R=d.rank||{rank:0,stars:0}, V=d.volume||{total:0,own:0,team:0,breakdown:[]};
+  const RM=d.rank_month||{rank:0,name:null};   // hodnosť za bežiaci mesiac
   const stars = R.top ? '<div class="hint" style="margin-top:6px">Najvyššia hodnosť</div>'
     : '<div class="stars"><span class="on">'+'★'.repeat(R.stars||0)+'</span>'
       +'<span class="off">'+'★'.repeat(Math.max(0,5-(R.stars||0)))+'</span></div>';
@@ -146,11 +151,18 @@ function render(){
                  +' onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
                  +'<div class="fallback">🔥</div>'
                : '<div class="fallback" style="display:flex">🕯️</div>')
-     + '<div class="name">'+esc(R.name || 'ZAČÍNAŠ')+'</div>' + stars
+     + '<div class="name">'+esc(R.name || 'ZAČÍNAŠ')+'</div>'
+     + (R.rank ? '<div class="hint" style="margin-top:2px;font-size:.72rem;letter-spacing:.06em">TVOJA DOSIAHNUTÁ HODNOSŤ</div>' : '')
+     + stars
      + (R.next ? '<div class="bar"><i style="width:'+(R.progress||0)+'%"></i></div>'
                  +'<div class="togo">Ešte '+ob(R.next.missing)+' '+bodov(R.next.missing)+' '
                  +(R.next.rank===R.rank ? ('do ★ '+R.next.star+'. hviezdy') : ('do hodnosti '+esc(R.next.name)))
                  +'</div>' : '')
+     // Hodnosť hore je najvyššia dosiahnutá a už neklesá; tu ukazujeme, ako na
+     // tom je bežiaci mesiac, lebo z neho ide provízia (Marek 1. 9.).
+     + '<div class="mesiac">Tento mesiac <b>'+ob(V.total)+'</b> '+bodov(V.total)
+       + (RM.name ? '<span class="sep"></span>hodnosť <b>'+esc(RM.name)+'</b>' : '')
+       + '<span class="sep"></span>provízia <b>'+Math.round((d.rate||0)*100)+' %</b></div>'
      + '</div>';
 
   // ── súťaž o Rím ─────────────────────────────────────────────────────────
