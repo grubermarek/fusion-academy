@@ -2370,7 +2370,11 @@ async function loadEventBanner(){
     const full=d.types.find(t=>t.key==='full');
     const allSold=d.types.every(t=>t.sold_out);
     const save=(full&&full.member_price!=null)?(full.door-full.member_price):null;
+    // Po skončení predpredaja klientke neoznamujeme, že prišla neskoro —
+    // žiadna úspora, žiadny odpočet, žiadna prečiarknutá cena (Marek 1. 9.).
+    const zvyhodnenieBezi = !!(full && full.presale_until && new Date(full.presale_until).getTime() > Date.now());
     const kick = allSold ? 'VYPREDANÉ'
+      : !zvyhodnenieBezi ? 'VSTUPENKY V PREDAJI'
       : (d.is_member && save ? 'MÁŠ ČLENSKÚ CENU — UŠETRÍŠ '+save+' €'
                              : (save ? 'ČLENKY FUSION ACADEMY UŠETRIA '+save+' €' : 'PREDPREDAJ BEŽÍ'));
     const left = full && full.left!=null && full.left>0 && full.left<=10
@@ -2378,8 +2382,8 @@ async function loadEventBanner(){
     const priceBlock = (!allSold && full) ? (
         '<div class="ev-price">'
       +   '<b>'+String(full.price).replace('.',',')+' €</b>'
-      +   '<span class="now">TERAZ</span>'
-      +   '<span class="then">od 1. septembra <s>'+String(full.door).replace('.',',')+' €</s></span>'
+      +   (zvyhodnenieBezi ? '<span class="now">TERAZ</span>'
+      +     '<span class="then">po predpredaji <s>'+String(full.door).replace('.',',')+' €</s></span>' : '')
       + '</div>'
       + '<div style="color:#e2d3a6;font-size:.78rem">Full Experience — obe masterclass, Zumba, CIRCL, jedlo aj párty</div>'
       ) : '';
@@ -2388,12 +2392,12 @@ async function loadEventBanner(){
       + '<h3>'+d.event.name+'</h3>'
       + '<div class="when">'+d.event.date_label+' · '+d.event.venue+(d.event.subtitle?' · '+d.event.subtitle:'')+'</div>'
       + priceBlock
-      + (allSold?'':'<div class="ev-cdlab">DO ZDRAŽENIA ZOSTÁVA</div><div class="ev-cd" id="evCd"></div>')
+      + ((allSold||!zvyhodnenieBezi)?'':'<div class="ev-cdlab">DO ZDRAŽENIA ZOSTÁVA</div><div class="ev-cd" id="evCd"></div>')
       + left
       + (allSold?'':'<span class="ev-btn">Kúpiť vstupenky →</span>')
       + '</a>';
     host.style.display='block';
-    if(!allSold && full && full.presale_until) evCountdown(new Date(full.presale_until).getTime());
+    if(!allSold && zvyhodnenieBezi) evCountdown(new Date(full.presale_until).getTime());
   }catch(e){}
 }
 
@@ -2402,7 +2406,7 @@ function evCountdown(end){
   const p=n=>String(n).padStart(2,'0');
   (function tick(){
     let d=Math.floor((end-Date.now())/1000);
-    if(d<=0){ box.innerHTML='<div style="min-width:auto"><b style="font-size:.8rem">Zvýhodnená cena skončila — platí plná suma</b></div>'; return; }
+    if(d<=0){ const w=document.querySelector('.ev-cdlab'); if(w) w.remove(); box.remove(); return; }
     const dd=Math.floor(d/86400); d-=dd*86400;
     const hh=Math.floor(d/3600);  d-=hh*3600;
     const mm=Math.floor(d/60);    const ss=d-mm*60;
