@@ -19985,9 +19985,13 @@ async function runDailyJobs(){
   }catch(e){ console.error('class_today notif:', e.message); }
 
   // ── Klientka mesiaca: korunovanie a odovzdanie cien (1. deň v mesiaci) ──
-  if(new Date().getDate()===1){ try{ await crownMonthlyWinner(); }catch(e){ console.error('crown winner daily:', e.message); } }
+  // Deň berieme v SLOVENSKOM čase — server beží v UTC, takže o polnoci u nás je
+  // tam ešte predošlý deň a korunovanie by sa spustilo až o druhej v noci.
+  const skDnes=today();
+  const jePrvy = skDnes.slice(8,10)==='01';
+  if(jePrvy){ try{ await crownMonthlyWinner(); }catch(e){ console.error('crown winner daily:', e.message); } }
   // ── Klientka roka: vyhlásenie 1. januára za predošlý rok ──
-  if(new Date().getDate()===1 && new Date().getMonth()===0){ try{ await crownYearlyWinner(); }catch(e){ console.error('crown year daily:', e.message); } }
+  if(jePrvy && skDnes.slice(5,7)==='01'){ try{ await crownYearlyWinner(); }catch(e){ console.error('crown year daily:', e.message); } }
 
   // ── Meta Ads: denná synchronizácia štatistík kampaní ──
   try{ await syncMetaCampaignStats(true); }catch(e){ console.error('meta sync daily:', e.message); }

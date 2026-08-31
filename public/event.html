@@ -170,6 +170,15 @@ function leftLine(t){
 
 function render(){
   const e = EV.event;
+  // Kým predpredaj beží, má zmysel hovoriť o úspore a o čase, ktorý ostáva.
+  // Keď skončí, cena je proste taká, aká je — návštevníkovi neoznamujeme, že
+  // prišiel neskoro, ani mu neukazujeme prečiarknutú „lacnejšiu" sumu
+  // (Marek 1. 9.).
+  const zvyhodnenieBezi = (()=>{
+    const t = EV.types.find(x=>x.key==='full') || EV.types[0] || {};
+    const do_ = t.presale_until ? new Date(t.presale_until).getTime() : 0;
+    return !!do_ && do_ > Date.now();
+  })();
   const memberSaving = (()=>{ const f=EV.types.find(x=>x.key==='full');
     return f && f.member_price!=null ? (f.door - f.member_price) : null; })();
 
@@ -180,28 +189,34 @@ function render(){
   h += '<p class="meta">📅 '+esc(e.date_label)+'<br>📍 '+esc(e.venue)+', '+esc(e.address)+'</p>';
 
   const fullT = EV.types.find(x=>x.key==='full');
-  const jump = fullT ? ('<div class="pricejump">Full Experience teraz <b>'+String(fullT.price).replace('.',',')
-      +' €</b> · od 1. septembra <s>'+String(fullT.door).replace('.',',')+' €</s></div>') : '';
-  const cdBox = jump + '<div class="cdbox" id="cdwrap"><div class="cdlab">DO ZDRAŽENIA ZOSTÁVA</div>'
-              + '<div class="cdown" id="cdown"></div></div>';
+  const jump = (zvyhodnenieBezi && fullT) ? ('<div class="pricejump">Full Experience teraz <b>'+String(fullT.price).replace('.',',')
+      +' €</b> · po predpredaji <s>'+String(fullT.door).replace('.',',')+' €</s></div>') : '';
+  const cdBox = zvyhodnenieBezi
+    ? jump + '<div class="cdbox" id="cdwrap"><div class="cdlab">DO ZDRAŽENIA ZOSTÁVA</div>'
+            + '<div class="cdown" id="cdown"></div></div>'
+    : '';
   // Cez partnerský odkaz má človek členskú cenu, hoci členom nie je.
   const affDeal = EV.affiliate && EV.types.some(x=>x.tier==='aff');
-  if(memberSaving && EV.member_price)
-    h += '<div class="glow">MÁŠ ČLENSKÚ CENU — UŠETRÍŠ '+memberSaving+' €'
-       + '<small>Členstvo overené · platí len do 31. augusta</small>'
-       + cdBox + '</div>';
-  else if(affDeal)
-    h += '<div class="glow">ZĽAVA PRE KLIENTKY '+esc(EV.affiliate.name.toUpperCase())+' — UŠETRÍŠ '+memberSaving+' €'
-       + '<small>Rovnaká cena ako majú členky Fusion Academy · platí len do 31. augusta</small>'
-       + cdBox + '</div>';
-  else if(memberSaving && !EV.is_member)
-    h += '<div class="glow">ČLENKY FUSION ACADEMY UŠETRIA '+memberSaving+' €'
-       + '<small>Špeciálna cena pre členky len do 31. augusta — prihlás sa v aplikácii</small>'
-       + cdBox + '</div>';
-  if(EV.is_member)
-    h += '<div class="glow">MÁŠ ČLENSKÚ CENU — UŠETRÍŠ '+memberSaving+' €'
-       + '<small>Platí do 31. augusta · VIP stoly pre členov máme zabezpečené</small>'
-       + cdBox + '</div>';
+  // Celý blok o úspore má zmysel len počas predpredaja. Termín nepíšeme dátumom —
+  // ten sa mení s každou akciou a po skončení by tvrdil nezmysel.
+  if(zvyhodnenieBezi){
+    if(memberSaving && EV.member_price)
+      h += '<div class="glow">MÁŠ ČLENSKÚ CENU — UŠETRÍŠ '+memberSaving+' €'
+         + '<small>Členstvo overené · platí počas predpredaja</small>'
+         + cdBox + '</div>';
+    else if(affDeal)
+      h += '<div class="glow">ZĽAVA PRE KLIENTKY '+esc(EV.affiliate.name.toUpperCase())+' — UŠETRÍŠ '+memberSaving+' €'
+         + '<small>Rovnaká cena ako majú členky Fusion Academy · platí počas predpredaja</small>'
+         + cdBox + '</div>';
+    else if(memberSaving && !EV.is_member)
+      h += '<div class="glow">ČLENKY FUSION ACADEMY UŠETRIA '+memberSaving+' €'
+         + '<small>Špeciálna cena pre členky počas predpredaja — prihlás sa v aplikácii</small>'
+         + cdBox + '</div>';
+    if(EV.is_member)
+      h += '<div class="glow">MÁŠ ČLENSKÚ CENU — UŠETRÍŠ '+memberSaving+' €'
+         + '<small>Platí počas predpredaja · VIP stoly pre členov máme zabezpečené</small>'
+         + cdBox + '</div>';
+  }
 
   EV.types.forEach(t=>{
     h += '<div class="card hl" id="c-'+t.key+'">';
@@ -322,7 +337,7 @@ function startCountdown(){
     let d=Math.floor((end-Date.now())/1000);
     if(d<=0){
       const w=document.getElementById('cdwrap');
-      if(w) w.innerHTML='<div class="cdlab" style="margin:0">ZVÝHODNENÁ CENA SKONČILA — PLATÍ PLNÁ SUMA</div>';
+      if(w) w.remove();   // bez oznamov, že je neskoro — cena je proste taká, aká je
       return;
     }
     const dd=Math.floor(d/86400); d-=dd*86400;
