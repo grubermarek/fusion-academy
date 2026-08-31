@@ -4424,7 +4424,7 @@ setInterval(eventUrgencyTick, 8*60*1000);
 // o polnoci sa členská cena 45 € aj predpredaj 55 € menia na 65 € pre všetkých.
 // Ide LEN klientkam a ambasádorkám: pre leady sa 31. 8. nič nemení, párty za 5 €
 // majú v predpredaji až do 5. 9., takže by to bola falošná urgencia.
-const EV_LAST_SUBJ = '🔔 Dnes o polnoci sa cena mení — párty 5. 9.';
+const EV_LAST_SUBJ = '⏳ Posledných 12 hodín za nižšiu cenu — masterclass 5. 9.';
 async function eventLastDayTick(qaMode){
   try{
     if(!process.env.BREVO_API_KEY) return;
@@ -4432,7 +4432,9 @@ async function eventLastDayTick(qaMode){
     if(!(qaMode && process.env.QA_EVENT_WINDOW==='1') && t!=='2026-08-31') return;
     if(await q.one(db.settings,{key:'event_lastday_lt2026_done'})) return;
     const hSK=+new Intl.DateTimeFormat('sk-SK',{hour:'numeric',hour12:false,timeZone:'Europe/Bratislava'}).format(new Date());
-    if(!qaMode && (hSK<9||hSK>19)) return;   // QA smie bežať aj mimo denného okna
+    // Štart o 12:00 zámerne: do konca predpredaja (polnoc) tak ostáva presne
+    // 12 hodín a text mailu nie je nadsadený (Marek 30. 8.).
+    if(!qaMode && (hSK<12||hSK>19)) return;
     if(!(await mailBudgetOk(9))) return;
     const budget=80;
     const isTestU=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'')||u.lead_source==='test'||u.is_test;
@@ -4468,20 +4470,45 @@ async function eventLastDayTick(qaMode){
       const first=String(u.name||'').split(' ')[0]||'tanečníčka';
       const member=activeMem.has(u._id);
       const cena=member
-        ? '<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">⭐ Tvoja členská cena <b style="color:#C9A84C">45 €</b> platí <b>len dnes do polnoci</b>. Od zajtra je Full Experience za 65 € — aj pre členky.</p>'
-        : '<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">🎟️ Predpredaj <b style="color:#C9A84C">55 €</b> platí <b>len dnes do polnoci</b>. Od zajtra 65 €.</p>';
+        ? '<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:14px 18px;font-size:1.02rem">'
+          +'⭐ Tvoja členská cena <b style="color:#C9A84C">45 €</b> platí <b>do dnešnej polnoci</b>. '
+          +'Od zajtra je Full Experience za <b>65 €</b> — aj pre členky. Ušetríš <b>20 €</b>.</p>'
+        : '<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:14px 18px;font-size:1.02rem">'
+          +'🎟️ Predpredaj <b style="color:#C9A84C">55 €</b> platí <b>do dnešnej polnoci</b>. '
+          +'Od zajtra <b>65 €</b>. Ušetríš <b>10 €</b>.</p>';
       const miesta = volne>0
-        ? '<p>💃 Na masterclass s <b>Marekom Gruberom a Ivanom Ligártom</b> ostáva <b>'+volne+'</b> z 30 miest.</p>'
-        : '<p>💃 Masterclass je vypredaná — ostáva už len vstup na párty.</p>';
+        ? '<p>💃 V sále je <b>30 miest</b> a voľných ostáva už len <b>'+volne+'</b>. Po naplnení sa dokúpiť nedá.</p>'
+        : '<p>💃 Masterclass je vypredaná — ostáva už len vstup na párty od 21:00.</p>';
       const ok=await sendMail(u.email, EV_LAST_SUBJ,
-        emailTemplate('Ahoj '+first+'! 🔔',
-        '<p>Dnes je posledný deň, keď sa dá kúpiť vstupenka za nižšiu cenu. O polnoci sa predpredaj zatvára.</p>'
-        +cena+miesta
-        +'<p>🍹 Ak masterclass nechceš, samotná párty od 21:00 stojí <b>5 €</b> (na mieste 10 €) a čas na ňu máš do piatku.</p>'
-        +'<p>🪑 Rezervácia stola: <b>0904 31 51 51</b> — Beáta Gruber Buňová</p>'
+        emailTemplate('Ahoj '+first+'! ⏳',
+        '<p><b>Ostáva posledných 12 hodín</b>, kým sa predpredaj o polnoci zatvorí.</p>'
+        // Plagát hneď pod úvod — vizuálne pripomenie, o akú akciu ide. Ceny na
+        // ňom sú za PÁRTY (5/10 €), preto ho dávame nad cenový blok masterclass,
+        // ktorý hneď vysvetlí, že Full Experience je iná vstupenka.
+        +'<a href="'+APP_URL+'/event/latin-tropical-2026?utm_source=email&utm_medium=email&utm_campaign=fa-masterclass-12h" style="display:block;margin:0 0 20px">'
+          +'<img src="'+APP_URL+'/img/events/latin-tropical.jpg" alt="Latino Tropical Party 5. septembra, Fusion Club Detva" width="536" style="width:100%;max-width:536px;height:auto;display:block;border-radius:12px;border:0">'
+        +'</a>'
+        +cena
+        +'<p style="font-size:1.02rem"><b style="color:#C9A84C">Masterclass s Marekom Gruberom a Ivanom Ligártom</b> — '
+          +'dvaja lektori, dva odlišné štýly a <b>nové choreografie</b>, ktoré sme inde neučili. '
+          +'Toto sa neopakuje — kto tam bude, bude o tom hovoriť ešte dlho.</p>'
+        +miesta
+        +'<div style="background:rgba(201,168,76,.10);border-left:3px solid #C9A84C;border-radius:8px;padding:14px 18px;margin:18px 0">'
+          +'<div style="font-weight:800;color:#C9A84C;margin-bottom:8px">Čo ťa čaká</div>'
+          +'<div style="line-height:1.9">'
+            +'18:15 &nbsp;Masterclass — Marek Gruber<br>'
+            +'19:15 &nbsp;Masterclass — Ivan Ligárt<br>'
+            +'20:15 &nbsp;Zumba + CIRCL Mobility<br>'
+            +'21:00 &nbsp;Latin Tropical Party'
+          +'</div></div>'
+        +'<p>🍹 V cene máš <b>jedlo aj welcome drink</b> — a bar ide celý večer.</p>'
+        +'<p>🎉 Slávime <b>prvý rok</b> tanečnej školy. Také niečo si druhýkrát nedáme.</p>'
+        +'<p>🍸 Nechceš masterclass, len tancovať? Vstup na párty od 21:00 stojí <b>5 €</b> (na mieste 10 €) '
+          +'a čas na ňu máš do piatku.</p>'
+        +'<p>🪑 Rezervácia stola pre partiu: <b>0904 31 51 51</b> — Beáta Gruber Buňová</p>'
         +'<p>📍 Fusion Club Detva, Záhradná 7 · piatok 5. 9.</p>'
-        +'<p>Tím Fusion Academy</p>',
-        '🎟️ Kúpiť za dnešnú cenu', APP_URL+'/event/latin-tropical-2026?utm_source=email&utm_medium=email&utm_campaign=fa-masterclass-lastday'),
+        +'<p>Vidíme sa na parkete!<br>Tím Fusion Academy</p>',
+        '🎟️ Beriem to za dnešnú cenu', APP_URL+'/event/latin-tropical-2026?utm_source=email&utm_medium=email&utm_campaign=fa-masterclass-12h'),
         {priority:9, template:'event_campaign_lastday'}).catch(()=>false);
       if(ok) n++;
       await new Promise(r=>setTimeout(r,400));

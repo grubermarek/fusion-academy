@@ -103,6 +103,19 @@ const U = (id, meno, mail, extra = {}) => JSON.stringify({
     const lg = await j('/api/login', { method: 'POST', body: { email: 'qa.ev.admin@qa-biz.local', password: 'Heslo123!' } }, adm);
     ok('admin prihlásený', lg.status === 200, JSON.stringify(lg.d));
 
+    // Poradie zámerne D → C: vlna C oslovuje aj klientky, ktoré predtým mail
+    // otvorili, a anti-spam poistka („kto dnes dostal eventový mail, druhý
+    // nedostane") by ich z D potom správne vylúčila. Testujeme teda D skôr.
+
+    // ── VLNA D: párty pre otvárateľov ──
+    const d = await j('/api/admin/qa/run-event-mail/party', { method: 'POST' }, adm);
+    const ds = (d.d && d.d.selected || []).map(e => String(e).toLowerCase());
+    ok('vlna D beží', d.status === 200 && Array.isArray(d.d && d.d.selected), JSON.stringify(d.d));
+    ok('D: kto mail otvoril, dostane ponuku', ds.includes('qa.ev.otvorila@qa-biz.local'), ds.join(','));
+    ok('D: kto neotvoril, NEdostane nič', !ds.includes('qa.ev.neotvorila@qa-biz.local'), ds.join(','));
+    ok('D: kto nikdy nedostal kampaň, NEdostane nič', !ds.includes('qa.ev.clenka@qa-biz.local'), ds.join(','));
+    ok('D: kupujúci NEdostane ponuku', !ds.includes('qa.ev.kupila@qa-biz.local'), ds.join(','));
+
     // ── VLNA C: posledný deň predpredaja ──
     const c = await j('/api/admin/qa/run-event-mail/lastday', { method: 'POST' }, adm);
     const cs = (c.d && c.d.selected || []).map(e => String(e).toLowerCase());
@@ -115,15 +128,6 @@ const U = (id, meno, mail, extra = {}) => JSON.stringify({
     ok('C: členka je v poradí pred nečlenkou',
       cs.indexOf('qa.ev.clenka@qa-biz.local') < cs.indexOf('qa.ev.neclenka@qa-biz.local'), cs.join(','));
     ok('C: ráta voľné miesta z objednávok (30 − 2 = 28)', c.d && c.d.volne === 28, String(c.d && c.d.volne));
-
-    // ── VLNA D: párty pre otvárateľov ──
-    const d = await j('/api/admin/qa/run-event-mail/party', { method: 'POST' }, adm);
-    const ds = (d.d && d.d.selected || []).map(e => String(e).toLowerCase());
-    ok('vlna D beží', d.status === 200 && Array.isArray(d.d && d.d.selected), JSON.stringify(d.d));
-    ok('D: kto mail otvoril, dostane ponuku', ds.includes('qa.ev.otvorila@qa-biz.local'), ds.join(','));
-    ok('D: kto neotvoril, NEdostane nič', !ds.includes('qa.ev.neotvorila@qa-biz.local'), ds.join(','));
-    ok('D: kto nikdy nedostal kampaň, NEdostane nič', !ds.includes('qa.ev.clenka@qa-biz.local'), ds.join(','));
-    ok('D: kupujúci NEdostane ponuku', !ds.includes('qa.ev.kupila@qa-biz.local'), ds.join(','));
 
     // ── PRIPOMIENKA: len pre tých, čo majú vstupenku ──
     const r = await j('/api/admin/qa/run-event-mail/reminder', { method: 'POST' }, adm);
