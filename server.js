@@ -2149,6 +2149,52 @@ async function seedData() {
     }catch(e){ console.error('merge_hankova:', e.message); }
   }
 
+  // Ako dopadla augustová referral výzva (Marek 31. 8.): pýta sa, akú súťaž
+  // dať v septembri. Než niečo navrhneme, chceme vidieť, kde sa reťaz trhala —
+  // koľko žien vôbec niekoho pozvalo, koľko pozvaných zaplatilo a na ktorom
+  // stupni odmien to skončilo. Číta len, nič nemení.
+  if(!(await q.one(db.settings,{key:'diag_referral_august_v1'}))){
+    await q.insert(db.settings,{key:'diag_referral_august_v1', value:true, at:nowISO()});
+    try{
+      // Okno kampane píšeme naplno: REFERRAL_GOAL_FROM/TO sú const až na r. 16834,
+      // pri boote by spadli na TDZ.
+      const OD='2026-08-05', DO='2026-08-31';
+      const vsetci=await q.find(db.users,{});
+      const test=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'')||u.is_test
+        ||/@test-fa-qa\.local$|@qa-biz\.local$/i.test(String(u.email||''));
+      const pozvani=vsetci.filter(u=>u.sponsor_id && !u.is_child && !u.anonymous && !test(u)
+        && (u.created_at||'')>=OD && (u.created_at||'').slice(0,10)<=DO);
+      const podla={};
+      let platiacich=0;
+      for(const p of pozvani){
+        const zaplatil=await referralGoalHasPaid(p._id);
+        if(zaplatil) platiacich++;
+        const s=(podla[p.sponsor_id]=podla[p.sponsor_id]||{reg:0, pay:0});
+        s.reg++; if(zaplatil) s.pay++;
+      }
+      const sponzori=Object.entries(podla).filter(([sid])=>{
+        const s=vsetci.find(u=>u._id===sid); return s && !s.is_admin && !test(s); });
+      const stupne={t1:0, t2:0, t3:0};
+      for(const [,v] of sponzori){ if(v.pay>=1) stupne.t1++; if(v.pay>=2) stupne.t2++; if(v.pay>=3) stupne.t3++; }
+      const aktivnych=vsetci.filter(u=>['client','ambassador'].includes(u.user_type) && u.active!==false
+        && !u.is_admin && !u.hidden_lead && !test(u)).length;
+      console.log('🎁 VÝZVA 8/2026 ('+OD+' – '+DO+')');
+      console.log('🎁 klientok v databáze: '+aktivnych+' | z nich niekoho pozvalo: '+sponzori.length
+        +' ('+Math.round(sponzori.length/Math.max(1,aktivnych)*100)+' %)');
+      console.log('🎁 pozvaných sa zaregistrovalo: '+pozvani.length+' | z toho zaplatilo: '+platiacich
+        +' ('+Math.round(platiacich/Math.max(1,pozvani.length)*100)+' %)');
+      console.log('🎁 odmeny: taška (1 platiaca) '+stupne.t1+'× | 50 % na event (2) '+stupne.t2
+        +'× | masterclass (3) '+stupne.t3+'×');
+      const rozlozenie={};
+      for(const [,v] of sponzori) rozlozenie[v.pay]=(rozlozenie[v.pay]||0)+1;
+      console.log('🎁 rozloženie (koľko žien priviedlo koľko platiacich): '
+        +Object.keys(rozlozenie).sort().map(k=>k+'× → '+rozlozenie[k]+' žien').join(' | '));
+      // koľko pozvaných uviazlo na registrácii bez nákupu — tam sa dá získať najviac
+      const iba=pozvani.length-platiacich;
+      console.log('🎁 zaregistrovaní, ale nezaplatili: '+iba+' — tu je najväčšia rezerva');
+    }catch(e){ console.error('diag_referral:', e.message); }
+  }
+
   // Ailina Hanková (Marek 30. 8.): refund 40 € za duplicitný Bronze bol zapísaný
   // ako vrátený PREVODOM, ale Marek jej namiesto peňazí nabil kredit v appke.
   // Doklad tak tvrdil niečo iné, než sa naozaj stalo. Appka pritom typ
