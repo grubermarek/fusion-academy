@@ -3109,22 +3109,29 @@ function renderSpotBoard(){
     <button onclick="event.stopPropagation();setSpotPeriod('month')" style="border:0;cursor:pointer;border-radius:16px;padding:4px 14px;font-size:.78rem;font-weight:700;background:${isM?'var(--gold)':'transparent'};color:${isM?'#1a1206':'var(--muted)'}">Mesiac</button>
     <button onclick="event.stopPropagation();setSpotPeriod('year')" style="border:0;cursor:pointer;border-radius:16px;padding:4px 14px;font-size:.78rem;font-weight:700;background:${!isM?'var(--gold)':'transparent'};color:${!isM?'#1a1206':'var(--muted)'}">Rok</button>
   </div>`;
+  const SKMON=['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
   // Odpočet do konca súťaže — tlačí na zbieranie bodov, kým je ešte čas
   const nowD=new Date();
   const endD=isM ? new Date(nowD.getFullYear(), nowD.getMonth()+1, 0) : new Date(nowD.getFullYear(), 11, 31);
   const daysLeft=Math.max(0, Math.ceil((endD - nowD)/86400000));
   const dayWord=n=> n===1?'deň':(n>=2&&n<=4?'dni':'dní');
   const urgent=daysLeft<=7;
-  const countdown=`<div style="display:flex;align-items:center;gap:7px;background:${urgent?'rgba(224,86,86,.14)':'rgba(201,168,76,.1)'};border:1px solid ${urgent?'rgba(224,86,86,.45)':'rgba(201,168,76,.3)'};border-radius:20px;padding:5px 13px;font-size:.78rem;font-weight:800;color:${urgent?'#ff9f9f':'var(--gold)'};margin-bottom:10px">
-    ${urgent?'🔥':'⏳'} ${daysLeft===0?'Dnes je posledný deň súťaže!':`Zostávaj${daysLeft===1?'ú':'ú'} <span style="font-size:.95rem">${daysLeft}</span> ${dayWord(daysLeft)} do konca ${isM?'mesačnej':'ročnej'} súťaže!`}
-    <span style="font-weight:600;color:var(--muted,#999)">${daysLeft>0?'Ešte to stihneš 💪':''}</span>
+  // Rebríček je za bežiace obdobie, nie za uzavreté — bez názvu mesiaca sa to
+  // dalo pomýliť s výsledkami minulého (Marek 1. 9.).
+  const obdobieNazov = isM
+    ? SKMON[nowD.getMonth()].toUpperCase()+' '+nowD.getFullYear()
+    : 'ROK '+nowD.getFullYear();
+  const countdown=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:${urgent?'rgba(224,86,86,.14)':'rgba(201,168,76,.08)'};border:1px solid ${urgent?'rgba(224,86,86,.45)':'rgba(201,168,76,.28)'};border-radius:12px;padding:7px 13px;font-size:.78rem;font-weight:800;color:${urgent?'#ff9f9f':'var(--gold)'};margin:0 0 10px">
+    <span style="letter-spacing:1.2px">🗓️ ${obdobieNazov}</span>
+    <span style="width:1px;height:13px;background:${urgent?'rgba(224,86,86,.4)':'rgba(201,168,76,.3)'}"></span>
+    <span style="font-weight:700">${daysLeft===0?(urgent?'🔥 posledný deň!':'posledný deň'):`${urgent?'🔥 ':''}ostáva ${daysLeft} ${dayWord(daysLeft)}`}</span>
+    <span style="font-weight:600;color:var(--muted,#999)">${daysLeft>0?'priebežné poradie':''}</span>
   </div>`;
   // „Tvoje body" — vlastné body a miesto v rebríčku, kompaktne vedľa „Ceny & súťaž"
   const my=(isM?d.myMonth:d.myYear)||{};
   const myChip=`<button onclick="event.stopPropagation();mySpotBreakdown()" title="${my.rank?`${my.rank}. miesto z ${my.total}`:'Zbieraj body a dostaň sa do rebríčka!'}" style="background:linear-gradient(102deg,rgba(126,200,227,.16),rgba(126,200,227,.06));border:1px solid rgba(126,200,227,.4);color:#7ec8e3;border-radius:10px;padding:7px 13px;font-size:.82rem;font-weight:700;cursor:pointer;white-space:nowrap">⭐ Tvoje body: ${my.points||0}${my.rank?` · ${my.rank}. miesto`:''}</button>`;
   // 👑 Glow-up karta poslednej korunovanej Klientky mesiaca + jej ceny
   const lw=d.lastWinner;
-  const SKMON=['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
   const winnerCard=(isM&&lw)?`<style>
     @keyframes cwPulse{0%,100%{box-shadow:0 0 16px rgba(231,200,120,.3)}50%{box-shadow:0 0 34px rgba(231,200,120,.7)}}
     @keyframes cwShine{0%{background-position:-200% 0}100%{background-position:200% 0}}
@@ -3150,9 +3157,9 @@ function renderSpotBoard(){
     <button onclick="event.stopPropagation();inviteFriend()" style="margin-left:auto;background:rgba(139,195,74,.15);border:1px solid #8bc34a;color:#8bc34a;border-radius:9px;padding:5px 11px;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap">❤️ Pozvať kamošku</button>
   </div><div id="refGoalWrap"></div>`;
   const header=`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-    <div class="sl-label" style="margin:0">${title}</div>${toggle}</div>${winnerCard}${countdown}${refRow}`;
+    <div class="sl-label" style="margin:0">${title}</div>${toggle}</div>${winnerCard}${refRow}`;
   if(!list.length){
-    return `<div class="sl-card sl-hero">${header}
+    return `<div class="sl-card sl-hero">${header}${countdown}
       <div class="sl-why">Zatiaľ žiadne body za toto obdobie — buď prvá! 💫</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         <button onclick="openRewardsInfo()" style="background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.35);color:var(--gold);border-radius:10px;padding:7px 13px;font-size:.82rem;font-weight:600;cursor:pointer">🎁 Ceny &amp; súťaž</button>
@@ -3186,7 +3193,7 @@ function renderSpotBoard(){
     <button onclick="openRewardsInfo()" style="background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.35);color:var(--gold);border-radius:10px;padding:7px 13px;font-size:.82rem;font-weight:600;cursor:pointer">${isM?'🎁 Ceny &amp; súťaž':'🏆 Ceny, uzávierka &amp; história'}</button>
     ${myChip}
   </div>`;
-  return `<div class="sl-card sl-hero" style="border-color:rgba(201,168,76,.5)">${header}${hero}${restBlock}${cta}</div>`;
+  return `<div class="sl-card sl-hero" style="border-color:rgba(201,168,76,.5)">${header}${countdown}${hero}${restBlock}${cta}</div>`;
 }
 
 /* ─── Profile photo ─── */
