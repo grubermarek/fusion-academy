@@ -15952,6 +15952,24 @@ app.post('/api/attendance/manual-booking', trainerAuth, async(req,res)=>{
           message:'Technický tréning členstvo nekryje — stojí '+cena+' €'
             +(cena<10?' (cena podľa členstva)':'')+'. Zapíš ju ako „platí na mieste" alebo použi vstup.' });
       }
+      // A rovnako sa musí overiť, či klientka vôbec MÁ členstvo, ktoré tú hodinu
+      // kryje. Doteraz stačilo, že tréner klikol „kryté členstvom" — tak prešli
+      // fyzické hodiny aj ženám s Online Basic, ktorý živé hodiny nekryje
+      // (Soňa a Radka, Marek 1. 9.). Samoobslužná rezervácia to už roky
+      // kontroluje, trénerský zápis nie.
+      const mCl = await checkMembership(u._id);
+      const aktivneCl = !!(mCl && mCl.status==='active' && (!mCl.expires_at || mCl.expires_at >= today()));
+      const lenOnline = !!(mCl && /online/.test(String((mCl.plan_id||'')+' '+(mCl.plan_name||'')).toLowerCase()));
+      const jeOnlineHodina = cls.category==='Online' || /online/i.test(String(cls.location||'')+' '+String(cls.name||''));
+      if(!aktivneCl){
+        return res.status(400).json({ error:'bez_clenstva',
+          message: u.name+' nemá aktívne členstvo. Zapíš ju ako „platí na mieste", použi jej vstup alebo jej hodinu daruj.' });
+      }
+      if(lenOnline && !jeOnlineHodina){
+        return res.status(400).json({ error:'online_nekryje_zivu_hodinu',
+          message: u.name+' má '+(mCl.plan_name||mCl.plan_id||'online členstvo')+', ktoré živé hodiny nekryje — kryje len online. '
+            +'Zapíš ju ako „platí na mieste" (10 €) alebo použi jej vstup.' });
+      }
       methodNote = '🏅 Členstvo';
     }
     upd.visit_count = (u.visit_count||0) + 1;
