@@ -2252,6 +2252,45 @@ async function seedData() {
     }catch(e){ console.error('diag2:', e.message); }
   }, 8000);
 
+  // Za čo tie fyzické hodiny reálne prešli (Marek 1. 9.): kryté členstvom,
+  // z permanentky, hodina zdarma alebo platba na mieste? Bez toho sa nedá
+  // povedať, či nám niečo uniká, alebo je to len zle pomenovaný odznak.
+  if(!(await q.one(db.settings,{key:'diag_platby_online_v1'}))) setTimeout(async()=>{
+    try{
+      await q.insert(db.settings,{key:'diag_platby_online_v1', value:true, at:nowISO()});
+      const t=today();
+      const cls=Object.fromEntries((await q.find(db.classes,{})).map(c=>[c._id,c]));
+      const jeOnline=b=>{ const c=cls[b.class_id]||{};
+        return c.category==='Online' || /online/i.test(c.location||b.class_location||b.class_name||'') || b.online===true; };
+      for(const meno of ['Moskálová', 'Vrbovská']){
+        const u=(await q.find(db.users,{})).find(x=>new RegExp(meno,'i').test(String(x.name||'')));
+        if(!u){ console.log('💶 '+meno+': nenájdená'); continue; }
+        console.log('💶 ── '+u.name+' ──');
+        console.log('💶 vstupy: '+(u.single_entries||0)+' | kredit: '+(+u.referral_credit||0)
+          +' € | prvá zdarma použitá: '+(u.free_class_used?'áno':'nie')+' | návštev: '+(u.visit_count||0));
+        const kryt={};
+        for(const b of (await q.find(db.bookings,{user_id:u._id}))){
+          if(b.status==='cancelled') continue;
+          if(String(b.booking_date||'')>t) continue;
+          const k=(jeOnline(b)?'ONLINE':'fyzická')+' / '
+            +(b.access_method||b.method||'—')+(b.pay_on_site?' (platba na mieste '+(b.pay_amount||0)+' €'+(b.entry_collected?', vybrané':', NEVYBRANÉ')+')':'');
+          kryt[k]=(kryt[k]||0)+1;
+        }
+        for(const k of Object.keys(kryt).sort()) console.log('💶   '+kryt[k]+'× '+k);
+        const tx=(await q.find(db.transactions,{user_id:u._id}))
+          .sort((a,b)=>String(a.date||a.created_at).localeCompare(String(b.date||b.created_at)));
+        if(!tx.length) console.log('💶   žiadne transakcie');
+        for(const x of tx) console.log('💶   TX '+String(x.date||x.created_at||'').slice(0,10)
+          +' | '+(x.type||'?')+' | '+(+x.amount||0)+' € | '+(x.payment_method||'—'));
+        for(const m of (await q.find(db.memberships,{user_id:u._id})))
+          console.log('💶   ČLENSTVO '+(m.plan_id||'?')+' | '+(m.status||'?')
+            +' | '+String(m.started_at||'').slice(0,10)+'–'+String(m.expires_at||'').slice(0,10)
+            +' | '+(+m.price||0)+' € | '+(m.payment_method||'—')+(m.gift?' | DAROVANÉ':''));
+      }
+      console.log('💶 — hotovo —');
+    }catch(e){ console.error('diag_platby:', e.message); }
+  }, 14000);
+
   // Soňa Moskálová má na profile odznak Online, ale chodí na fyzické hodiny
   // (Marek 1. 9.). Pozrieme sa, či nemá zle nastavené členstvo — a rovno aj
   // to, či to isté nemá niekto ďalší. Číta len, nič nemení.
