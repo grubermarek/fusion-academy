@@ -13734,7 +13734,7 @@ app.get('/api/kiosk/content', async(req,res)=>{
     const allB=await q.find(db.bookings,{});
     const todayAtt=allB.filter(b=>b.booking_date===todayS && b.status==='attended').length;
     const mon=new Date(); mon.setDate(mon.getDate()-((mon.getDay()+6)%7)); const monS=mon.toISOString().slice(0,10);
-    const weekAtt=allB.filter(b=>(b.booking_date||'')>=monS && ['attended','confirmed'].includes(b.status)).length;
+    const weekAtt=allB.filter(b=>(b.booking_date||'')>=monS && hodinaSaRata(b)).length;
     const totalAtt=allB.filter(b=>b.status==='attended').length;
     // Klient mesiaca + narodeniny (mená sú verejné v komunite; kiosk je v štúdiu)
     let spotlight=null, bdays=[];
@@ -13743,7 +13743,7 @@ app.get('/api/kiosk/content', async(req,res)=>{
       const users=(await q.find(db.users,{is_admin:{$ne:true}})).filter(u=>u.user_type!=='trainer'&&!u.is_child&&!u.anonymous&&!(u.imported&&!u.claimed));
       const mmdd=todayS.slice(5);
       bdays=users.filter(u=>(u.birthday||'').slice(5)===mmdd).map(u=>({name:u.name, av:!!u.avatar, id:u._id}));
-      const att={}; allB.forEach(b=>{ if((b.booking_date||'').startsWith(monthStr)&&['attended','confirmed'].includes(b.status)&&b.user_id) att[b.user_id]=(att[b.user_id]||0)+1; });
+      const att={}; allB.forEach(b=>{ if((b.booking_date||'').startsWith(monthStr)&&hodinaSaRata(b)&&b.user_id) att[b.user_id]=(att[b.user_id]||0)+1; });
       const top=Object.entries(att).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([id,n])=>{ const u=users.find(x=>x._id===id); return u?{name:u.name, visits:n, av:!!u.avatar, id}:null; }).filter(Boolean);
       spotlight=top;
     }catch(e){}
@@ -16909,7 +16909,7 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
       const refCount={}; allUsers.forEach(u=>{ if((u.created_at||'').startsWith(prefix) && u.sponsor_id) refCount[u.sponsor_id]=(refCount[u.sponsor_id]||0)+1; });
       const attCount={}, onlineCount={};
       bookings.forEach(b=>{ const d=b.booking_date||(b.created_at||'').slice(0,10);
-        if((d||'').startsWith(prefix) && ['attended','confirmed'].includes(b.status) && b.user_id){
+        if((d||'').startsWith(prefix) && hodinaSaRata(b) && b.user_id){
           const on=/online/i.test(b.class_name||'')||/online/i.test(b.class_location||'')||b.online===true;
           if(on) onlineCount[b.user_id]=(onlineCount[b.user_id]||0)+1; else attCount[b.user_id]=(attCount[b.user_id]||0)+1;
         } });
