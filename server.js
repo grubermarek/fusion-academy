@@ -2149,6 +2149,41 @@ async function seedData() {
     }catch(e){ console.error('merge_hankova:', e.message); }
   }
 
+  // Vlna „posledných 12 hodín" (Marek 31. 8.): ráno stihla odísť ešte stará
+  // verzia textu, kým sme novú dopisovali. Než sa rozhodne, čo ďalej, chceme
+  // vidieť tvrdé čísla — či sa vlna uzavrela a koho by nový text ešte zastihol.
+  // Číta len, nič nemení a nič neposiela.
+  if(!(await q.one(db.settings,{key:'diag_vlna_12h_v1'}))){
+    await q.insert(db.settings,{key:'diag_vlna_12h_v1', value:true, at:nowISO()});
+    try{
+      const t=today();
+      const done=await q.one(db.settings,{key:'event_lastday_lt2026_done'});
+      console.log('📮 VLNA uzavretá: '+(done?('ÁNO — '+(done.at||'')):'NIE, ešte môže bežať'));
+      const log=await q.find(db.mail_log,{});
+      const dnes=log.filter(m=>String(m.created_at||'').startsWith(t) && /event_campaign/.test(m.template||''));
+      const podla={};
+      for(const m of dnes) podla[String(m.subject||'?')]=(podla[String(m.subject||'?')]||0)+1;
+      for(const k of Object.keys(podla)) console.log('📮 dnes odišlo '+podla[k]+'× — '+k);
+      // presne ten istý filter ako vo vlne, len bez posielania
+      const isTestU=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'')||u.lead_source==='test'||u.is_test;
+      const buyers=new Set((await q.find(db.ev_orders,{event_slug:'latin-tropical-2026', status:'paid'}))
+        .map(o=>String(o.buyer_email||'').toLowerCase()));
+      const already=new Set(log.filter(m=>/event_campaign_lastday/.test(m.template||'')).map(m=>String(m.to).toLowerCase()));
+      const dnesOslovene=new Set(dnes.map(m=>String(m.to).toLowerCase()));
+      const vsetci=(await q.find(db.users,{}))
+        .filter(u=>['client','ambassador'].includes(u.user_type) && !u.is_admin && !u.is_child && u.active!==false
+          && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u)
+          && u.email && /@/.test(u.email) && !/@import.local$|@guest./i.test(u.email));
+      const volni=vsetci.filter(u=>!already.has(String(u.email).toLowerCase())
+        && !buyers.has(String(u.email).toLowerCase())
+        && !dnesOslovene.has(String(u.email).toLowerCase()));
+      console.log('📮 oslovitelných spolu: '+vsetci.length
+        +' | dnes už oslovených: '+dnesOslovene.size
+        +' | kupujúcich (preskakujeme): '+buyers.size
+        +' | NOVÝ text by o 12:00 zastihol: '+volni.length);
+    }catch(e){ console.error('diag_vlna:', e.message); }
+  }
+
   // Ailina Hanková (Marek 30. 8.): refund 40 € za duplicitný Bronze bol zapísaný
   // ako vrátený PREVODOM, ale Marek jej namiesto peňazí nabil kredit v appke.
   // Doklad tak tvrdil niečo iné, než sa naozaj stalo. Appka pritom typ
