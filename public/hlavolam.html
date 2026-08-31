@@ -58,6 +58,23 @@ html[data-theme="aurora"] .btn-main{background:linear-gradient(90deg,#A855F7,#EC
 .lb .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lb .t{font-variant-numeric:tabular-nums;color:var(--muted)}
 .rr{display:flex;flex-direction:column;gap:10px;margin:4px 0 2px}
+.ag{display:flex;flex-direction:column;gap:12px;margin:4px 0 2px}
+.ag-row{background:#15140f;border:1px solid rgba(201,168,76,.22);border-radius:12px;padding:12px 14px}
+.ag-row.ok{border-color:rgba(139,195,74,.55);background:rgba(139,195,74,.07)}
+.ag-head{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.ag-n{flex:none;width:22px;height:22px;border-radius:50%;background:rgba(201,168,76,.16);color:var(--gold);
+  display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:900}
+.ag-tiles{display:flex;flex-wrap:wrap;gap:5px}
+.ag-t{min-width:29px;height:34px;padding:0 6px;border-radius:8px;background:rgba(201,168,76,.13);
+  border:1px solid rgba(201,168,76,.3);color:#efe7d4;font-weight:900;font-size:1.02rem;
+  display:flex;align-items:center;justify-content:center;letter-spacing:.5px}
+.ag-row.ok .ag-t{background:rgba(139,195,74,.16);border-color:rgba(139,195,74,.4)}
+.ag-in{width:100%;margin-top:9px;background:#0f0e0b;border:1px solid rgba(201,168,76,.3);border-radius:9px;
+  color:#efe7d4;font-size:1rem;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;padding:10px 12px;
+  font-family:inherit;outline:none}
+.ag-in:focus{border-color:var(--gold)}
+.ag-row.ok .ag-in{border-color:rgba(139,195,74,.5);color:#b9dd9a}
+.ag-tick{margin-left:auto;color:#8bc34a;font-weight:900;font-size:.85rem}
 .rk{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
 .rk.hotovo{border-color:rgba(201,168,76,.45)}
 .rk .hl{display:flex;align-items:center;gap:10px;margin-bottom:10px}
@@ -162,13 +179,16 @@ function render(){
       Nová hádanka je zajtra ráno.</p></div>`:''}
     <div class="bar">
       <div class="pill"><b id="clock">0:00</b><span>čas</span></div>
-      <div class="pill"><b id="filled">${P.type==='words'?'0/'+P.words.length:P.type==='rhythm'?'0/'+P.rounds.length:'0/'+(P.size*P.size)}</b><span>${P.type==='words'?'slov':P.type==='rhythm'?'rytmov':'políčok'}</span></div>
+      <div class="pill"><b id="filled">${P.type==='words'?'0/'+P.words.length:P.type==='rhythm'?'0/'+P.rounds.length:P.type==='anagram'?'0/'+P.pocet:'0/'+(P.size*P.size)}</b><span>${P.type==='words'?'slov':P.type==='rhythm'?'rytmov':P.type==='anagram'?'slov':'políčok'}</span></div>
       <div class="pill"><b>${P.month_points}/${P.monthly_cap}</b><span>bodov v mesiaci</span></div>
     </div>
-    ${P.type==='rhythm' ? '<div class="rr" id="rr"></div>' : '<div class="board-wrap"><canvas id="board"></canvas></div>'}
+    ${P.type==='rhythm' ? '<div class="rr" id="rr"></div>' : P.type==='anagram' ? '<div class="ag" id="ag"></div>' : '<div class="board-wrap"><canvas id="board"></canvas></div>'}
     ${P.type==='words' ? '<div class="wordlist" id="wordList"></div>' : ''}
     <div class="hint">${P.type==='words'
       ? 'Ťahaj prstom po písmenách a označ <b>všetkých '+P.words.length+' slov</b>. Slová sú vodorovne, zvisle aj šikmo — aj odzadu.'
+      : P.type==='anagram'
+      ? 'Písmená sú rozhádzané — poskladaj z nich <b>správne slovo</b>. Všetko sú výrazy z tanca, fitnessu alebo Fusion Academy.<br>'
+        +'Slová sú <b>bez diakritiky</b> a idú od najkratšieho po najdlhšie. Opravovať môžeš, koľkokrát chceš — čas ale beží.'
       : P.type==='rhythm'
       ? 'Vypočuj si ukážku a hádaj, <b>na ktorý tanec</b> je. Pustiť si ju môžeš koľkokrát chceš — čas ale beží.<br>'
         +'<b style="color:var(--gold)">Máš jeden pokus</b> · bod za každú správnu ukážku · 🥇 +'+(P.rhythm_perfect_bonus||5)+' pre najrýchlejšiu s plným počtom'
@@ -176,12 +196,13 @@ function render(){
 <br><b style="color:var(--gold)">Za vyriešenie ${P.points} ${P.points===1?'bod':P.points<5?'body':'bodov'}</b> · najrýchlejšie časy dňa navyše 🥇 +${(P.podium_bonus||[5,3,1])[0]} · 🥈 +${(P.podium_bonus||[5,3,1])[1]} · 🥉 +${(P.podium_bonus||[5,3,1])[2]} — čas beží od otvorenia, poradie sa uzatvára o polnoci.</div>
     <div class="actions">
       <button class="btn-ghost" onclick="resetPath()">Vymazať</button>
-      <button class="btn-main" id="sendBtn" onclick="submit()">${P.type==='rhythm'?'Odovzdať odpovede':'Odovzdať riešenie'}</button>
+      <button class="btn-main" id="sendBtn" onclick="submit()">${P.type==='rhythm'?'Odovzdať odpovede':P.type==='anagram'?'Odovzdať slová':'Odovzdať riešenie'}</button>
     </div>
     <div class="msg" id="msg"></div>
     <div class="lb" id="lb"></div>
     <div class="hist" id="hist"></div>`;
   if(P.type==='rhythm'){ renderRytmus(); }
+  else if(P.type==='anagram'){ renderAnagram(); }
   else {
     setupCanvas();
     if(P.type==='words'){ found=(solvedToday&&P.solution)||[]; renderWordList(); draw(); }
@@ -356,6 +377,10 @@ function resetPath(){
     prehravace=[]; hraIndex=null;
     renderRytmus(); const f=$('filled'); if(f) f.textContent='0/'+P.rounds.length; return;
   }
+  if(P && P.type==='anagram'){
+    odpovedeAg=P.slova.map(()=> '');
+    renderAnagram(); const m=$('msg'); if(m){m.className='msg';m.textContent='';} return;
+  }
   if(P && P.type==='words'){ found=[]; dragFrom=dragTo=null; renderWordList(); }
   path=[]; draw(); const m=$('msg'); if(m){m.className='msg';m.textContent='';}
 }
@@ -377,6 +402,7 @@ async function submit(){
   const btn=$('sendBtn'); btn.disabled=true; btn.textContent='Kontrolujem…';
   const seconds=startedAt?Math.round((Date.now()-startedAt)/1000):0;
   const payload=P.type==='words' ? {found, seconds, date:P.date}
+    : P.type==='anagram' ? {answers:odpovedeAg.map(x=>normAg(x)), seconds, date:P.date}
     : P.type==='rhythm' ? {answers:odpovede, seconds, date:P.date}
     : {cells:path, seconds, date:P.date};
   const d=await api('/api/puzzle/solve',{method:'POST',body:JSON.stringify(payload)}).catch(()=>null);
@@ -472,6 +498,57 @@ function vyberTanec(i,key){
   }
   const f=$('filled'); if(f) f.textContent=odpovede.filter(Boolean).length+'/'+P.rounds.length;
 }
+
+/* ── Poskladaj slovo (Marek 31. 8.) ─────────────────────────────────────────
+   Päť rozhádzaných výrazov, ku každému políčko na odpoveď. Zelenie sa hneď,
+   ako slovo sedí — hráčka tak vie, na čom ešte pracovať, a nemusí strieľať
+   naslepo pri odovzdaní. Správnosť sa overuje aj na serveri. */
+let odpovedeAg = [];
+function normAg(s){
+  return String(s||'').trim().toUpperCase()
+    .normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]','g'),'')
+    .replace(/\s+/g,'');
+}
+function renderAnagram(){
+  const host=$('ag'); if(!host||!P.slova) return;
+  if(odpovedeAg.length!==P.slova.length) odpovedeAg=P.slova.map(()=> '');
+  // Kto už odovzdal, vidí hotové slová a políčka sú zamknuté.
+  if(solvedToday && Array.isArray(P.reveal)) odpovedeAg=P.reveal.map(r=>r.slovo);
+  host.innerHTML=P.slova.map((s,i)=>{
+    const hotovo = solvedToday || dlzkaSedi(i);
+    return '<div class="ag-row'+(hotovo?' ok':'')+'" id="agr'+i+'">'
+      +'<div class="ag-head"><span class="ag-n">'+(i+1)+'</span>'
+        +'<span style="font-size:.78rem;color:#a49b88">'+s.dlzka+' písmen</span>'
+        +'<span class="ag-tick" id="agt'+i+'">'+(hotovo?'✓':'')+'</span></div>'
+      +'<div class="ag-tiles">'+s.pismena.map(p=>'<span class="ag-t">'+p+'</span>').join('')+'</div>'
+      +'<input class="ag-in" id="agi'+i+'" maxlength="'+(s.dlzka+4)+'" autocomplete="off" '
+        +'autocapitalize="characters" spellcheck="false" '
+        +'value="'+String(odpovedeAg[i]||'').replace(/"/g,'&quot;')+'" '
+        +(solvedToday?'disabled ':'')+'placeholder="napíš slovo" '
+        +'oninput="zmenAg('+i+',this.value)">'
+      +'</div>';
+  }).join('');
+  spocitajAg();
+}
+/* Zelený rámik dávame, len keď písmená naozaj sedia — nie podľa dĺžky, aby sa
+   nedalo uhádnuť riešenie skúšaním hocijakého slova správnej dĺžky. */
+function dlzkaSedi(i){
+  const s=P.slova[i], moje=normAg(odpovedeAg[i]);
+  if(moje.length!==s.dlzka) return false;
+  return moje.split('').sort().join('') === s.pismena.join('').toUpperCase().split('').sort().join('');
+}
+function zmenAg(i, val){
+  odpovedeAg[i]=val;
+  const row=$('agr'+i), tick=$('agt'+i), ok=dlzkaSedi(i);
+  if(row) row.classList.toggle('ok', ok);
+  if(tick) tick.textContent = ok ? '✓' : '';
+  spocitajAg();
+}
+function spocitajAg(){
+  const n=P.slova.reduce((s,_,i)=>s+(dlzkaSedi(i)?1:0),0);
+  const f=$('filled'); if(f) f.textContent=n+'/'+P.slova.length;
+}
+
 function renderRytmus(){
   const el=$('rr'); if(!el||!P.rounds) return;
   odpovede=new Array(P.rounds.length).fill(null);
@@ -514,7 +591,7 @@ function ukazRiesenie(){
 // história je doplnok a nemá jej spomaľovať prvé zobrazenie.
 let HIST=null, histNacitava=false;
 const MEDAILA={1:'🥇',2:'🥈',3:'🥉'};
-const TYP={zip:'🧩 Spoj čísla', words:'🔤 Osemsmerovka'};
+const TYP={zip:'🧩 Spoj čísla', words:'🔤 Osemsmerovka', rhythm:'🎵 Poznáš rytmus?', anagram:'🔡 Poskladaj slovo'};
 const SK_MES=['januára','februára','marca','apríla','mája','júna','júla','augusta','septembra','októbra','novembra','decembra'];
 const SK_DEN=['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
 

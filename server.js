@@ -2195,6 +2195,21 @@ async function seedData() {
     }catch(e){ console.error('diag_referral:', e.message); }
   }
 
+  // Nová hra „Poskladaj slovo" debutuje 1. 9. (Marek 31. 8.). V pravidelnom
+  // striedaní by na ten deň pripadla osemsmerovka a nová hra by sa ukázala až
+  // 3. 9. — na jeden deň ju teda nastavíme napevno, potom ide bežná rotácia.
+  if(!(await q.one(db.settings,{key:'puzzle_anagram_debut_v1'}))){
+    try{
+      const row=await q.one(db.settings,{key:'puzzle_config'});
+      const val={...((row&&row.value)||{})};
+      val.overrides={...(val.overrides||{}), '2026-09-01':'anagram'};
+      if(row) await q.update(db.settings,{key:'puzzle_config'},{$set:{value:val}});
+      else await q.insert(db.settings,{key:'puzzle_config', value:val});
+      await q.insert(db.settings,{key:'puzzle_anagram_debut_v1', value:true, at:nowISO()});
+      console.log('🧩 Poskladaj slovo: debut nastavený na 1. 9.');
+    }catch(e){ console.error('anagram debut:', e.message); }
+  }
+
   // Ailina Hanková (Marek 30. 8.): refund 40 € za duplicitný Bronze bol zapísaný
   // ako vrátený PREVODOM, ale Marek jej namiesto peňazí nabil kredit v appke.
   // Doklad tak tvrdil niečo iné, než sa naozaj stalo. Appka pritom typ

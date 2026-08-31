@@ -1,8 +1,9 @@
 /**
- * Denný hlavolam — tri typy, ktoré sa striedajú po dňoch:
+ * Denný hlavolam — štyri typy, ktoré sa striedajú po dňoch:
  *  · „Cesta" (zip): spoj čísla v poradí a vyplň celú mriežku (tu v súbore),
  *  · „Osemsmerovka" (words): nájdi tanečné slová v mriežke (./puzzle-words.js),
- *  · „Poznáš rytmus?" (rhythm): uhádni tanec podľa rytmu (./puzzle-rhythm.js).
+ *  · „Poznáš rytmus?" (rhythm): uhádni tanec podľa rytmu (./puzzle-rhythm.js),
+ *  · „Poskladaj slovo" (anagram): poskladaj výraz z rozhádzaných písmen (./puzzle-anagram.js).
  * Poradie určuje settings.puzzle_config.schedule, konkrétny deň sa dá prebiť
  * cez overrides — admin tak vie na akciu nasadiť typ, ktorý chce.
  *
@@ -15,6 +16,7 @@
  */
 const WORDS = require('./puzzle-words');
 const RYTMUS = require('./puzzle-rhythm');
+const ANAGRAM = require('./puzzle-anagram');
 
 module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
 
@@ -102,7 +104,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
 
   // Aký typ pripadá na daný deň. Striedame, aby to neomrzelo; admin vie poradie
   // zmeniť (schedule) alebo typ na konkrétny deň natvrdo určiť (overrides).
-  const TYPES = ['zip', 'words', 'rhythm'];
+  const TYPES = ['zip', 'words', 'rhythm', 'anagram'];
   function typeForSync(dateStr, conf) {
     const ov = conf && conf.overrides && conf.overrides[dateStr];
     if (ov && TYPES.includes(ov)) return ov;
@@ -125,6 +127,9 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       } else if (t === 'rhythm') {
         const rnd = mulberry32(seedFromString('fusion-rhythm-' + dateStr));
         cache[key] = { ...RYTMUS.build(rnd), type: 'rhythm', date: dateStr };
+      } else if (t === 'anagram') {
+        const rnd = mulberry32(seedFromString('fusion-anagram-' + dateStr));
+        cache[key] = { ...ANAGRAM.build(rnd), type: 'anagram', date: dateStr };
       } else {
         cache[key] = { ...buildPuzzle(dateStr), type: 'zip' };
       }
@@ -160,6 +165,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
   function validateAny(p, body) {
     if (p.type === 'words') return WORDS.validate(p, body.found);
     if (p.type === 'rhythm') return RYTMUS.validate(p, body.answers);
+    if (p.type === 'anagram') return ANAGRAM.validate(p, body.answers);
     return validate(p, body.cells);
   }
 
@@ -167,7 +173,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
   const DEFAULTS = { points: 2, fast_bonus: 0, fast_seconds: 90, monthly_cap: 40, enabled: true,
                      podium_bonus: [5, 3, 1],       // 1. / 2. / 3. najrýchlejší čas dňa
                      day_win_bonus: 5, day_win_min_players: 2,
-                     schedule: ['zip', 'words', 'rhythm'], overrides: {},
+                     schedule: ['zip', 'words', 'rhythm', 'anagram'], overrides: {},
                      // Rytmus sa boduje inak (Marek 30. 8.): jeden pokus, bod za každú
                      // správnu odpoveď a +5 pre najrýchlejšiu, ktorá má všetkých päť.
                      rhythm_per_answer: 1, rhythm_perfect_bonus: 5 };
@@ -284,6 +290,8 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
           ? { grid: p.grid, words: p.words }                  // umiestnenie slov sa neposiela
           : type === 'rhythm'
           ? { rounds: p.rounds, options: p.options }          // správne odpovede sa NIKDY neposielajú
+          : type === 'anagram'
+          ? { slova: p.slova, pocet: p.pocet }             // len rozhádzané písmená, riešenie nikdy
           : { dots: p.dots.map(x => ({ n: x.n, cell: x.cell })) }),   // cesta sa NIKDY neposiela
         solved: !!mine,
         // Kto už má dnešok vyriešený, nech vidí aj riešenie — inak sa vráti na prázdnu mriežku.
@@ -294,6 +302,8 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
               my_correct: mine ? (mine.correct != null ? mine.correct : null) : null,
               my_total: mine ? (mine.total || RYTMUS.KOL) : null,
               my_perfect: mine ? !!mine.perfect : false }
+          : type === 'anagram'
+          ? { reveal: ANAGRAM.reveal(p, mine && mine.answers) }
           : { solution_path: p._path }) : {}),
         my_seconds: mine ? mine.seconds : null,
         my_points: mine ? mine.points : 0,
