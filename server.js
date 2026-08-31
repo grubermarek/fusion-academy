@@ -2252,6 +2252,36 @@ async function seedData() {
     }catch(e){ console.error('diag2:', e.message); }
   }, 8000);
 
+  // Soňa Moskálová má na profile odznak Online, ale chodí na fyzické hodiny
+  // (Marek 1. 9.). Pozrieme sa, či nemá zle nastavené členstvo — a rovno aj
+  // to, či to isté nemá niekto ďalší. Číta len, nič nemení.
+  if(!(await q.one(db.settings,{key:'diag_online_clenstva_v1'}))) setTimeout(async()=>{
+    try{
+      await q.insert(db.settings,{key:'diag_online_clenstva_v1', value:true, at:nowISO()});
+      const t=today();
+      const bks=await q.find(db.bookings,{});
+      const cls=Object.fromEntries((await q.find(db.classes,{})).map(c=>[c._id,c]));
+      const jeOnline=b=>{ const c=cls[b.class_id]||{};
+        return c.category==='Online' || /online/i.test(c.location||b.class_location||b.class_name||'') || b.online===true; };
+      for(const m of await q.find(db.memberships,{})){
+        if(!/online/i.test(String(m.plan_id||''))) continue;
+        const aktivne = m.status==='active' && (!m.expires_at || String(m.expires_at)>=t);
+        const u=await q.one(db.users,{_id:m.user_id}); if(!u) continue;
+        const moje=bks.filter(b=>b.user_id===u._id && b.status!=='cancelled'
+          && String(b.booking_date||'')<=t);
+        const fyz=moje.filter(b=>!jeOnline(b));
+        const onl=moje.filter(b=>jeOnline(b));
+        const poslednePar=fyz.map(b=>b.booking_date).sort().slice(-4).join(', ');
+        console.log('💻 '+u.name+' | plán '+m.plan_id+' ('+(aktivne?'aktívne':'neaktívne')
+          +', do '+String(m.expires_at||'—').slice(0,10)+') | cena '+(+m.price||0)
+          +' € | FYZICKÝCH hodín: '+fyz.length+', online: '+onl.length
+          +(fyz.length?(' | posledné fyzické: '+poslednePar):''));
+      }
+      // a naopak: kto chodí fyzicky a členstvo nemá vôbec
+      console.log('💻 — kontrola hotová —');
+    }catch(e){ console.error('diag_online:', e.message); }
+  }, 12000);
+
   // Oprava toho, čo som spravil o pár minút skôr (Marek 1. 9.): zľavu som
   // dorovnal kreditom, lebo som predpokladal, že klientka zaplatila plnú sumu.
   // V skutočnosti jednu objednávku zaplatila už zľavnenú (24 €) a druhú platí

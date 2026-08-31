@@ -441,7 +441,7 @@ function render(){
       ${P.is_self?'<input type="file" id="avatarInput" accept="image/*" style="display:none" onchange="uploadAvatar(this)">':''}
       ${P.is_founder?'<div class="founder-crown">👑 Zakladateľ Fusion Academy</div>':''}
       ${P.membership_tier?`<div class="mem-badge mem-${esc(P.membership_tier)}">${P.membership_tier==='gold'?'👑':P.membership_tier==='silver'?'⭐':'🥉'} ${esc(P.membership_name||P.membership_tier)} ${memberWord}</div>`:''}
-      ${P.name_badge?`<div class="name-badge">${P.name_badge.emoji} ${esc(P.name_badge.title)}</div>`:''}
+      ${(P.name_badge && !/^Ambasádor/i.test(P.name_badge.title||''))?`<div class="name-badge">${P.name_badge.emoji} ${esc(P.name_badge.title)}</div>`:''}
       ${P.winner_titles?.year_wins?`<div class="win-badge win-year">👑 Klientka roka${P.winner_titles.year_wins>1?` <span class="win-count">×${P.winner_titles.year_wins}</span>`:''}</div>`:''}
       ${P.winner_titles?.month_wins?`<div class="win-badge win-month">🏆 Klientka mesiaca${P.winner_titles.month_wins>1?` <span class="win-count">×${P.winner_titles.month_wins}</span>`:''}</div>`:''}
       ${P.vencek_alumni?`<div class="win-badge" style="background:linear-gradient(102deg,#7a5f1e,#C9A84C,#e8d18a);color:#231A08;border:none">🏅 FUSION VENČEKY ${esc(P.vencek_alumni)} · ABSOLVENT</div>`:''}
