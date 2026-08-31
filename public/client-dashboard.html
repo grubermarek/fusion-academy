@@ -3162,7 +3162,7 @@ function renderSpotBoard(){
   }
   const c=list[0];
   const hero=`<div class="sl-row" style="cursor:pointer" onclick="location.href='/u/${c.id}'" title="Zobraziť profil">${slAvatar(c.avatar,c.name)}
-    <div style="flex:1;min-width:0"><div class="sl-name">${escHtml(c.name)} ${c.badge?.emoji||''} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></div>
+    <div style="flex:1;min-width:0"><div class="sl-name">${escHtml(c.name)} ${faOdznak(c.badge)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></div>
       <div class="sl-why">${why}</div>
       <div class="sl-stats">
         <span onclick="event.stopPropagation();spotBreakdown('${_spotPeriod}',0)"
@@ -3178,7 +3178,7 @@ function renderSpotBoard(){
   const rest=list.slice(1,5).map((r,i)=>`
     <div style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-top:1px solid rgba(255,255,255,.06)">
       <span style="width:22px;text-align:center;font-weight:700;color:var(--muted);font-size:.9rem">${medal[i+1]}</span>
-      <a href="/u/${r.id}" style="text-decoration:none;color:inherit;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:.9rem">${escHtml(r.name)} ${r.badge?.emoji||''}</a>
+      <a href="/u/${r.id}" style="text-decoration:none;color:inherit;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:.9rem">${escHtml(r.name)} ${faOdznak(r.badge)}</a>
       <span onclick="spotBreakdown('${_spotPeriod}',${i+1})" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.28);border-radius:10px;padding:3px 10px;font-size:.8rem;font-weight:700;color:var(--gold);white-space:nowrap">⭐ ${r.points||0}</span>
     </div>`).join('');
   const restBlock=rest?`<div style="margin-top:10px">${rest}</div>`:'';
@@ -3430,5 +3430,6 @@ init();
 <script src="/nav-bar.js"></script>
 <script src="/booking-success.js"></script>
 <script src="/dock.js"></script>
+<script src="/odznaky.js"></script>
 </body>
 </html>

@@ -310,9 +310,9 @@ const CHANNELS    = [
 // Odznaky = ROLA alebo AKTÍVNE ČLENSTVO (Marek 25.8.: vekové odznaky boli nezrozumiteľné).
 // u.member_tier udržiava refreshMemberTier() pri každej zmene členstva + denný job.
 const TIER_BADGES = {
-  bronze:         { emoji:'🥉', label:'Bronze', color:'#cd7f32' },
-  silver:         { emoji:'🥈', label:'Silver', color:'#a8a9ad' },
-  gold:           { emoji:'🥇', label:'Gold',   color:'#C9A84C' },
+  bronze:         { emoji:'', icon:'/img/odznaky/bronze.png', label:'Bronze', color:'#cd7f32' },
+  silver:         { emoji:'', icon:'/img/odznaky/silver.png', label:'Silver', color:'#a8a9ad' },
+  gold:           { emoji:'', icon:'/img/odznaky/gold.png',   label:'Gold',   color:'#C9A84C' },
   kids:           { emoji:'🧒', label:'Kids',   color:'#FF6B9D' },
   online_basic:   { emoji:'💻', label:'Online', color:'#4CAF50' },
   online_premium: { emoji:'💻', label:'Online', color:'#9C27B0' },
@@ -2208,6 +2208,43 @@ async function seedData() {
       await q.insert(db.settings,{key:'puzzle_anagram_debut_v1', value:true, at:nowISO()});
       console.log('🧩 Poskladaj slovo: debut nastavený na 1. 9.');
     }catch(e){ console.error('anagram debut:', e.message); }
+  }
+
+  // Marek 1. 9.: appka písala klientkam „odchodené dve hodiny", hoci v septembri
+  // sa ešte žiadna hodina nekonala. Chceme vidieť, čo tie rezervácie naozaj sú —
+  // na aký deň, aký majú stav a či ich nová logika už neráta. Číta len.
+  if(!(await q.one(db.settings,{key:'diag_hodiny_0901_v1'}))){
+    await q.insert(db.settings,{key:'diag_hodiny_0901_v1', value:true, at:nowISO()});
+    try{
+      const t=today(), mes=t.slice(0,7);
+      const bks=(await q.find(db.bookings,{})).filter(b=>{
+        const d=String(b.booking_date||b.created_at||'').slice(0,10);
+        return d.startsWith(mes);
+      });
+      console.log('📅 REZERVÁCIE V '+mes+': '+bks.length);
+      const podlaDna={};
+      for(const b of bks){
+        const d=String(b.booking_date||b.created_at||'').slice(0,10);
+        const k=d+' | '+(b.status||'?')+' / '+(b.attendance_status||'—');
+        podlaDna[k]=(podlaDna[k]||0)+1;
+      }
+      for(const k of Object.keys(podlaDna).sort()) console.log('📅   '+podlaDna[k]+'× '+k);
+      // a ako to vidí súťaž po oprave
+      const rata=bks.filter(b=>hodinaSaRata(b,t)).length;
+      console.log('📅 do súťaže sa z nich ráta: '+rata+' (pred opravou by '
+        +bks.filter(b=>['attended','confirmed'].includes(b.status)).length+')');
+      // menovite tie dve, ktoré Marek videl
+      for(const meno of ['Ail','Štulajter','Stulajter']){
+        for(const u of (await q.find(db.users,{}))){
+          if(!String(u.name||'').match(new RegExp(meno,'i'))) continue;
+          const moje=bks.filter(b=>b.user_id===u._id);
+          if(!moje.length) continue;
+          console.log('📅 '+u.name+': '+moje.length+' rezervácií, do súťaže '
+            +moje.filter(b=>hodinaSaRata(b,t)).length+' | '
+            +moje.map(b=>String(b.booking_date||'').slice(5)+'('+(b.status||'')+')').join(', '));
+        }
+      }
+    }catch(e){ console.error('diag_hodiny:', e.message); }
   }
 
   // Ailina Hanková (Marek 30. 8.): refund 40 € za duplicitný Bronze bol zapísaný

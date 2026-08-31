@@ -462,7 +462,7 @@ function render(){
         ${P.is_trainer?(( (P.taught_group_hours||0)<100 )
           ? '<span class="tag" style="background:linear-gradient(102deg,#5a7a3a,#8bc34a);color:#0d1a05;border:none;font-weight:800">🎓 Tréner v zácviku</span>'
           : '<span class="tag" style="background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;border:none;font-weight:800">🎓 Tréner</span>'):''}
-        <span class="tag">${P.member_badge?.emoji||'🌱'} ${esc(P.member_badge?.label||'Nováčik')}</span>
+        <span class="tag">${faOdznak(P.member_badge)||'🌱'} ${esc(P.member_badge?.label||'Nováčik')}</span>
         <span class="tag">🏅 ${esc(P.loyalty_label)}</span>
         <span class="tag">🏆 ${T('profile.badges_of',{n:P.earned_count,m:P.total_count})}</span>
       </div>
@@ -1492,5 +1492,6 @@ async function evSell(){
 }
 </script>
 <script src="/dock.js"></script>
+<script src="/odznaky.js"></script>
 </body>
 </html>

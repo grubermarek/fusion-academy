@@ -560,7 +560,7 @@ function appendMessage(msg, animate) {
       <div class="article-title">${escHtml(titleLine)}</div>
       <div class="article-meta">
         <span class="msg-name">${escHtml(msg.user_name||'Fusion Academy')}</span>
-        ${badge.emoji?`<span class="member-badge" style="${badgeStyle}" title="${badge.label||''}">${badge.emoji}</span>`:''}
+        ${(badge.icon||badge.emoji)?`<span class="member-badge" style="${badgeStyle}" title="${badge.label||''}">${faOdznak(badge,15)}</span>`:''}
         <span class="msg-time">${msg.article_date?fmtDate(msg.article_date):timeStr}</span>
       </div>
       <div class="article-body">${formattedBody}</div>`;
@@ -574,7 +574,7 @@ function appendMessage(msg, animate) {
     const whoRow = isOwn ? '' : `
         <div class="who" ${clickAttr}>${escHtml(msg.nickname||msg.user_name||'?')}
           ${msg.nickname?`<span style="font-weight:500;color:var(--text-muted)">${escHtml(msg.user_name||'')}</span>`:''}
-          ${badge.emoji?`<span class="member-badge" style="${badgeStyle}" title="${badge.label||''}">${badge.emoji} ${badge.label||''}</span>`:''}
+          ${(badge.icon||badge.emoji)?`<span class="member-badge" style="${badgeStyle}" title="${badge.label||''}">${faOdznak(badge,15)} ${badge.label||''}</span>`:''}
           <span class="rank-badge">${msg.rankBadge||''}</span>
         </div>`;
     div.innerHTML = `
@@ -658,7 +658,7 @@ function convRow(c){
         <img src="/api/avatar/${c.other_id}" onerror="this.remove()" alt="">${(c.other_name||'?').charAt(0).toUpperCase()}
       </div>
       <div class="dm-meta">
-        <div class="dm-nm">${c.other_badge?.emoji||''} ${escHtml(c.other_name)}</div>
+        <div class="dm-nm">${faOdznak(c.other_badge)} ${escHtml(c.other_name)}</div>
         <div class="dm-last">${c.last_from===me.id?'Ty: ':''}${escHtml(c.last_text||'')}</div>
       </div>
       <div class="dm-right">
@@ -766,7 +766,7 @@ function renderMemberPicker() {
   document.getElementById('mpList').innerHTML = list.map(m => `
     <div class="mp-item" onclick="openDM('${m.id}','${escHtml(m.name).replace(/'/g,'')}')">
       <div class="dm-av" style="width:30px;height:30px;font-size:.72rem;background:${stringToColor(m.id)}"><img src="/api/avatar/${m.id}" onerror="this.remove()" alt="" loading="lazy">${m.name.charAt(0).toUpperCase()}</div>
-      <div><div style="font-weight:600">${m.memberBadge?.emoji||''} ${escHtml(m.name)}</div></div>
+      <div><div style="font-weight:600">${faOdznak(m.memberBadge)} ${escHtml(m.name)}</div></div>
     </div>`).join('') || '<div style="padding:12px;color:#888;font-size:.85rem">Nikto sa nenašiel.</div>';
 }
 
@@ -816,7 +816,7 @@ function renderPost(p) {
   return `<div class="post human" data-id="${p.id}">
     <div class="post-head">
       <div class="post-av" style="background:${av}"><img src="/api/avatar/${p.author_id}" onerror="this.remove()" alt="">${(p.author_name||'?').charAt(0).toUpperCase()}</div>
-      <div style="flex:1;min-width:0"><div class="post-name">${escHtml(p.author_name)} ${p.author_badge?.emoji?`<span class="member-badge" style="background:${p.author_badge.color||'#8bc34a'}" title="${p.author_badge.label||''}">${p.author_badge.emoji} ${p.author_badge.label||''}</span>`:''}</div><div class="post-time">${time}</div></div>
+      <div style="flex:1;min-width:0"><div class="post-name">${escHtml(p.author_name)} ${(p.author_badge?.icon||p.author_badge?.emoji)?`<span class="member-badge" style="background:${p.author_badge.color||'#8bc34a'}" title="${p.author_badge.label||''}">${faOdznak(p.author_badge,15)} ${p.author_badge.label||''}</span>`:''}</div><div class="post-time">${time}</div></div>
       ${p.can_delete?`<button class="post-del" onclick="deletePost('${p.id}')"><i class="bi bi-trash"></i></button>`:''}
     </div>
     ${p.text?`<div class="post-text">${escHtml(p.text)}</div>`:''}
@@ -1104,5 +1104,6 @@ document.addEventListener('keydown', e => { if(e.key==='Escape') hideLoginForm()
 init();
 </script>
 <script src="/dock.js"></script>
+<script src="/odznaky.js"></script>
 </body>
 </html>
