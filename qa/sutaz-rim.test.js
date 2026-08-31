@@ -49,8 +49,8 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     TX('qaRimTx00000001', 'qaRimVitazka001', 600, '2026-08-25'),
     TX('qaRimTx00000002', 'qaRimVitazka001', 450, '2026-08-28'),
     TX('qaRimTx00000003', 'qaRimTesna00001', 945, '2026-08-25'),
-    // pred štartom súťaže (20. 8.) — do méty sa rátať nesmie
-    TX('qaRimTx00000004', 'qaRimTesna00001', 800, '2026-08-10'),
+    // pred štartom súťaže (1. 8.) — do méty sa rátať nesmie
+    TX('qaRimTx00000004', 'qaRimTesna00001', 800, '2026-07-10'),
   ].join('\n') + '\n');
 
   console.log('SÚŤAŽ O RÍM QA — štart servera…');
@@ -71,7 +71,7 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     await j('/api/login', { method: 'POST', body: { email: 'qarimtesna00001@qa-biz.local', password: 'Heslo123!' } }, t);
     const mt = (await j('/api/ambassador/me', {}, t)).d;
     ok('panel odpovedá', mt && mt.ok, JSON.stringify(mt && mt.error));
-    ok('body pred štartom súťaže sa nerátajú', mt.contest && mt.contest.done === 945, 'done=' + (mt.contest && mt.contest.done));
+    ok('body pred štartom súťaže (1. 8.) sa nerátajú', mt.contest && mt.contest.done === 945, 'done=' + (mt.contest && mt.contest.done));
     ok('méta nie je splnená', mt.contest && mt.contest.won === false, JSON.stringify(mt.contest && mt.contest.won));
     ok('a vie, koľko chýba', mt.contest && mt.contest.missing === 55, 'missing=' + (mt.contest && mt.contest.missing));
 

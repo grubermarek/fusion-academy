@@ -2252,6 +2252,26 @@ async function seedData() {
     }catch(e){ console.error('diag2:', e.message); }
   }, 8000);
 
+  // Merch zo starých objednávok je dávno odovzdaný, len to nikto nezaklikol
+  // (Marek 1. 9.). Označíme ich ako vybavené BEZ oznámení — po týždňoch by
+  // sa ženy zľakli, čo že to majú vyzdvihnúť. Poslednú objednávku Marek
+  // odovzdá osobne, tá musí ostať otvorená.
+  if(!(await q.one(db.settings,{key:'merch_stare_odovzdane_v1'}))){
+    try{
+      const NECHAJ_OTVORENE=['FA-2026-T94KK44'];
+      let n=0;
+      for(const o of await q.find(db.orders,{})){
+        if(o.status!=='paid' || o.dispatched) continue;
+        if(NECHAJ_OTVORENE.includes(o.order_number)) continue;
+        await q.update(db.orders,{_id:o._id},{$set:{dispatched:true, dispatched_at:nowISO(),
+          dispatched_by_name:'spätné doplnenie'}});
+        n++;
+      }
+      await q.insert(db.settings,{key:'merch_stare_odovzdane_v1', value:true, at:nowISO()});
+      console.log('📦 Staré objednávky označené ako odovzdané: '+n+' (otvorené ostávajú: '+NECHAJ_OTVORENE.join(', ')+')');
+    }catch(e){ console.error('merch stare:', e.message); }
+  }
+
   // Ailina Hanková (Marek 30. 8.): refund 40 € za duplicitný Bronze bol zapísaný
   // ako vrátený PREVODOM, ale Marek jej namiesto peňazí nabil kredit v appke.
   // Doklad tak tvrdil niečo iné, než sa naozaj stalo. Appka pritom typ
@@ -6148,11 +6168,11 @@ async function ambVolumeRange(uid, fromDate, toDate){
   return total;
 }
 
-// SÚŤAŽ O RÍM: kto od 20. 8. do 31. 12. 2026 vyrobí 1 000 OB (≈ 1 000 € obratu
+// SÚŤAŽ O RÍM: kto od 1. 8. do 31. 12. 2026 vyrobí 1 000 OB (≈ 1 000 € obratu
 // z členstiev), získa 2 letenky do Ríma + vstup do Kolosea pre 2 osoby.
 // Splniť ju môže každá — nie je to rebríček, ale méta.
 const AMB_CONTEST = { id:'rim2026', name:'Rím pre dve osoby',
-  target:1000, from:'2026-08-20', to:'2026-12-31',
+  target:1000, from:'2026-08-01', to:'2026-12-31',
   prize:'2 letenky do Ríma + vstup do Kolosea pre 2 osoby' };
 
 // Raz splnená méta ostáva splnená. Bez zápisu by stačilo jedno storno alebo
@@ -9217,6 +9237,28 @@ app.put('/api/admin/orders/:id', adminAuth, async(req,res)=>{
       const me=await q.one(db.users,{_id:req.session.uid});
       await q.update(db.orders,{_id:req.params.id},{$set:{dispatched:!!dispatch, dispatched_at:dispatch?nowISO():null, dispatched_by_name:dispatch?(me?.name||''):''}});
       await auditLog(req,'order_dispatch',order.order_number,{},{dispatched:!!dispatch},'');
+      // Klientka nech vie, že si merch môže vyzdvihnúť / že ho má, a my nech
+      // vidíme, kto ho odovzdal — v admin menu si to preberáme ručne (Marek 1. 9.).
+      if(dispatch){
+        try{
+          const kusy=(order.items||[]).reduce((s,i)=>s+(+i.qty||1),0);
+          const zoznam=(order.items||[]).map(i=>(i.product_name||'položka')+(+i.qty>1?' ×'+i.qty:'')).join(', ');
+          const kto=me?.name||'admin';
+          const klient=order.client_email
+            ? await q.one(db.users,{email:new RegExp('^'+String(order.client_email).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$','i')})
+            : null;
+          if(klient) await q.insert(db.notifications,{user_id:klient._id, type:'order',
+            title:'🛍️ Ďakujeme za nákup!',
+            body:'Tvoj merch ('+zoznam+') je odovzdaný. Nos ho s láskou a ukáž sa nám v ňom! 💛',
+            read:false, created_at:nowISO()});
+          for(const a of await q.find(db.users,{is_admin:true}))
+            await q.insert(db.notifications,{user_id:a._id, type:'order',
+              title:'📦 Merch odovzdaný — '+(order.client_name||'klientka')+'',
+              body:kto+' odovzdal(a) objednávku '+(order.order_number||'')+' ('+kusy+' ks: '+zoznam+') dňa '
+                +new Date().toLocaleString('sk-SK',{timeZone:'Europe/Bratislava',day:'numeric',month:'numeric',hour:'2-digit',minute:'2-digit'})+'.',
+              read:false, created_at:nowISO()});
+        }catch(e){ console.error('merch oznamenia:', e.message); }
+      }
       return res.json({ok:true, dispatched:!!dispatch});
     }
     // „Prevziať" — priradí objednávku aktuálnemu adminovi (kto to vybavuje)
