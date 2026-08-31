@@ -11506,7 +11506,7 @@ async function pointsSummaryData(from, to){
     const bookings=await q.find(db.bookings,{});
     const isOnline=b=>/online/i.test(b.class_name||'')||/online/i.test(b.class_location||'')||b.online===true;
     const byUser={};
-    for(const b of bookings){ if(b.user_id && ['attended','confirmed'].includes(b.status) && inRange(b.booking_date||b.created_at)) (byUser[b.user_id]=byUser[b.user_id]||[]).push(b); }
+    for(const b of bookings){ if(b.user_id && hodinaSaRata(b) && inRange(b.booking_date||b.created_at)) (byUser[b.user_id]=byUser[b.user_id]||[]).push(b); }
     const allU=await q.find(db.users,{});
     const refByUser={};
     for(const u of users){ if(u.sponsor_id && inRange(u.created_at)) refByUser[u.sponsor_id]=(refByUser[u.sponsor_id]||0)+1; }
@@ -16566,10 +16566,24 @@ async function privCountMapInPeriod(prefix){
   return map;
 }
 // Rozpis bodov jedného používateľa za daný mesiac (YYYY-MM)
+// Do súťaže sa ráta len hodina, ktorá sa naozaj KONALA. Rezervácia na budúcu
+// hodinu má rovnaký status 'confirmed' ako odchodená, takže sám status
+// nestačí — 1. 9. o polnoci appka písala klientkam „odchodené dve hodiny" za
+// hodiny, na ktoré sa len prihlásili (Marek 1. 9.).
+//
+// Potvrdená dochádzka platí hneď; obyčajná rezervácia až keď deň hodiny prejde,
+// nech sa dnešná večerná hodina neráta doobeda.
+function hodinaSaRata(b, dnes){
+  if(!b || !['attended','confirmed'].includes(b.status)) return false;
+  if(b.attendance_status==='attended' || b.status==='attended') return true;
+  const d=String(b.booking_date||b.created_at||'').slice(0,10);
+  return !!d && d < (dnes||today());
+}
+
 async function monthlyPointsFor(userId, month){
   month = month || today().slice(0,7);
   const bks = await q.find(db.bookings,{user_id:userId});
-  const inMonth = b => { const d=b.booking_date||(b.created_at||'').slice(0,10); return (d||'').startsWith(month) && ['attended','confirmed'].includes(b.status); };
+  const inMonth = b => { const d=b.booking_date||(b.created_at||'').slice(0,10); return (d||'').startsWith(month) && hodinaSaRata(b); };
   const attended = bks.filter(inMonth);
   const isOnline = b => /online/i.test(b.class_name||'') || /online/i.test(b.class_location||'') || b.online===true;
   const online = attended.filter(isOnline).length;
