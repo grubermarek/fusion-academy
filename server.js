@@ -2252,6 +2252,42 @@ async function seedData() {
     }catch(e){ console.error('diag2:', e.message); }
   }, 8000);
 
+  // Oprava toho, čo som spravil o pár minút skôr (Marek 1. 9.): zľavu som
+  // dorovnal kreditom, lebo som predpokladal, že klientka zaplatila plnú sumu.
+  // V skutočnosti jednu objednávku zaplatila už zľavnenú (24 €) a druhú platí
+  // až pri odovzdaní (44 €) — nič nepreplatila, takže kredit jej nepatrí.
+  // Doklady ostávajú opravené, sťahuje sa len ten kredit.
+  if(!(await q.one(db.settings,{key:'vitazka_kredit_storno_v1'}))) setTimeout(async()=>{
+    try{
+      await q.insert(db.settings,{key:'vitazka_kredit_storno_v1', value:true, at:nowISO()});
+      const ZNAK=/Zľava 20 % na merch pre klientku mesiaca/;
+      const podlaOsoby={};
+      for(const l of await q.find(db.credit_ledger,{}))
+        if(ZNAK.test(String(l.reason||'')) && (+l.delta||0)>0)
+          (podlaOsoby[l.user_id]=podlaOsoby[l.user_id]||[]).push(l);
+      for(const uid of Object.keys(podlaOsoby)){
+        const u=await q.one(db.users,{_id:uid}); if(!u) continue;
+        const suma=+podlaOsoby[uid].reduce((s,l)=>s+(+l.delta||0),0).toFixed(2);
+        const bolo=+u.referral_credit||0;
+        const zostatok=+Math.max(0, bolo-suma).toFixed(2);
+        await q.update(db.users,{_id:uid},{$set:{referral_credit:zostatok}});
+        await q.insert(db.credit_ledger,{user_id:uid, delta:-suma, balance:zostatok,
+          reason:'Oprava: zľava na merch bola už zohľadnená v cene, kredit sa nepripisuje',
+          created_at:nowISO()});
+        // neprečítané oznámenie o kredite zmažeme, aby klientku nemýlilo
+        let zmazane=0;
+        for(const n of await q.find(db.notifications,{user_id:uid})){
+          if(n.read) continue;
+          if(!/Zľava pre klientku mesiaca/.test(String(n.title||''))) continue;
+          await q.remove(db.notifications,{_id:n._id},{}); zmazane++;
+        }
+        console.log('🛍️ KREDIT STORNO: '+u.name+' | '+bolo+' € → '+zostatok
+          +' € (stiahnuté '+suma+' €, zmazaných oznámení: '+zmazane+')');
+      }
+      if(!Object.keys(podlaOsoby).length) console.log('🛍️ KREDIT STORNO: nič na opravu');
+    }catch(e){ console.error('kredit storno:', e.message); }
+  }, 11000);
+
   // Klientka mesiaca má na merch 20 % zľavu, ale nikto jej ju neodrátal —
   // odteraz to appka robí sama pri objednávke, spätne to treba dorovnať
   // (Marek 1. 9.). Doklad sa opraví a rozdiel, ktorý už zaplatila, jej ide
@@ -2276,16 +2312,13 @@ async function seedData() {
           await q.update(db.orders,{_id:o._id},{$set:{ total:novy,
             original_total:(+o.total||0), winner_discount:zlava, winner_discount_pct:Math.round(VITAZKA_MERCH_ZLAVA*100),
             winner_discount_note:'Klientka mesiaca '+w.month+' — 20 % na merch, doplnené spätne' }});
-          // rozdiel jej ide do kreditu, keďže plnú sumu už zaplatila
-          const kredit=+((+u.referral_credit||0)+zlava).toFixed(2);
-          await q.update(db.users,{_id:u._id},{$set:{referral_credit:kredit}});
-          await q.insert(db.credit_ledger,{user_id:u._id, delta:zlava, balance:kredit,
-            reason:'Zľava 20 % na merch pre klientku mesiaca (objednávka '+(o.order_number||'')+')',
-            created_at:nowISO()});
-          await q.insert(db.notifications,{user_id:u._id, type:'credit',
+          // Kredit sa nedopláca: klientka platí až pri prevzatí, takže nová cena
+          // v doklade jej stačí. Keby niekedy zaplatila plnú sumu vopred, rieši
+          // sa to ručne — automat by inak rozdával kredit aj tam, kde netreba.
+          await q.insert(db.notifications,{user_id:u._id, type:'order',
             title:'🛍️ Zľava pre klientku mesiaca',
-            body:'Ako klientka mesiaca máš na merch 20 % zľavu. Z objednávky '+(o.order_number||'')
-              +' ti vraciame '+zlava.toFixed(2)+' € do kreditu v appke. 💛',
+            body:'Ako klientka mesiaca máš na merch 20 % zľavu — objednávka '+(o.order_number||'')
+              +' ťa stojí '+novy.toFixed(2)+' € namiesto '+(+o.total||0).toFixed(2)+' €. 💛',
             read:false, created_at:nowISO()});
           console.log('🛍️ ZĽAVA SPÄTNE: '+u.name+' | '+(o.order_number||o._id)
             +' | '+(+o.total||0)+' € → '+novy+' € (zľava '+zlava+' € do kreditu)');
