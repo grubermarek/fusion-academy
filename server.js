@@ -2252,6 +2252,48 @@ async function seedData() {
     }catch(e){ console.error('diag2:', e.message); }
   }, 8000);
 
+  // Klientka mesiaca má na merch 20 % zľavu, ale nikto jej ju neodrátal —
+  // odteraz to appka robí sama pri objednávke, spätne to treba dorovnať
+  // (Marek 1. 9.). Doklad sa opraví a rozdiel, ktorý už zaplatila, jej ide
+  // do kreditu — peniaze v hotovosti späť neposielame.
+  if(!(await q.one(db.settings,{key:'vitazka_merch_zlava_spatne_v1'}))) setTimeout(async()=>{
+    try{
+      await q.insert(db.settings,{key:'vitazka_merch_zlava_spatne_v1', value:true, at:nowISO()});
+      const vitazky=(await q.find(db.monthly_winners,{})).filter(w=>w.type!=='year');
+      for(const w of vitazky){
+        const u=await q.one(db.users,{_id:w.user_id}); if(!u||!u.email) continue;
+        // odmena platí v mesiaci PO výhre
+        const d0=new Date(+String(w.month).slice(0,4), +String(w.month).slice(5,7), 1);
+        const platiV=d0.getFullYear()+'-'+String(d0.getMonth()+1).padStart(2,'0');
+        for(const o of await q.find(db.orders,{})){
+          if(o.status!=='paid') continue;
+          if(String(o.client_email||'').toLowerCase()!==String(u.email).toLowerCase()) continue;
+          if(String(o.paid_at||o.created_at||'').slice(0,7)!==platiV) continue;
+          if(o.winner_discount) continue;                 // už dorovnané
+          const zlava=zlavaZMerchu(o.items, VITAZKA_MERCH_ZLAVA);
+          if(zlava<=0) continue;                          // v objednávke nebol merch
+          const novy=+(Math.max(0,(+o.total||0)-zlava)).toFixed(2);
+          await q.update(db.orders,{_id:o._id},{$set:{ total:novy,
+            original_total:(+o.total||0), winner_discount:zlava, winner_discount_pct:Math.round(VITAZKA_MERCH_ZLAVA*100),
+            winner_discount_note:'Klientka mesiaca '+w.month+' — 20 % na merch, doplnené spätne' }});
+          // rozdiel jej ide do kreditu, keďže plnú sumu už zaplatila
+          const kredit=+((+u.referral_credit||0)+zlava).toFixed(2);
+          await q.update(db.users,{_id:u._id},{$set:{referral_credit:kredit}});
+          await q.insert(db.credit_ledger,{user_id:u._id, delta:zlava, balance:kredit,
+            reason:'Zľava 20 % na merch pre klientku mesiaca (objednávka '+(o.order_number||'')+')',
+            created_at:nowISO()});
+          await q.insert(db.notifications,{user_id:u._id, type:'credit',
+            title:'🛍️ Zľava pre klientku mesiaca',
+            body:'Ako klientka mesiaca máš na merch 20 % zľavu. Z objednávky '+(o.order_number||'')
+              +' ti vraciame '+zlava.toFixed(2)+' € do kreditu v appke. 💛',
+            read:false, created_at:nowISO()});
+          console.log('🛍️ ZĽAVA SPÄTNE: '+u.name+' | '+(o.order_number||o._id)
+            +' | '+(+o.total||0)+' € → '+novy+' € (zľava '+zlava+' € do kreditu)');
+        }
+      }
+    }catch(e){ console.error('vitazka zlava spatne:', e.message); }
+  }, 9000);
+
   // Merch zo starých objednávok je dávno odovzdaný, len to nikto nezaklikol
   // (Marek 1. 9.). Označíme ich ako vybavené BEZ oznámení — po týždňoch by
   // sa ženy zľakli, čo že to majú vyzdvihnúť. Poslednú objednávku Marek
@@ -5020,6 +5062,10 @@ app.post('/api/shop/order', rlPublic, async(req,res)=>{
       enriched.push({product_id:prod._id,product_name:prod.name,price:prod.price,qty:item.qty,subtotal,commission_rate:prod.commission_rate, size, color});
     }
     total=+total.toFixed(2);
+    // Odmena klientky mesiaca sa odráta sama, ešte pred zľavovým kódom.
+    const vitazkaPodiel = await zlavaKlientkyMesiaca(req.session?.uid);
+    const vitazkaZlava = zlavaZMerchu(enriched, vitazkaPodiel);
+    if(vitazkaZlava > 0) total = +(total - vitazkaZlava).toFixed(2);
     // ── Zľavový kód (napr. osobná odmena za klientku mesiaca) ──────────────────
     let promoDiscount=0, appliedPromo=null;
     if(req.body.promo_code){
@@ -5039,9 +5085,9 @@ app.post('/api/shop/order', rlPublic, async(req,res)=>{
       }
     }
     const order_number='FA-'+new Date().getFullYear()+'-'+oid();
-    const order=await q.insert(db.orders,{order_number,client_name,client_email:client_email.toLowerCase().trim(),client_phone:client_phone||'',referral_code:referral_code?.trim()||'',partner_id,partner_name,city:city||'',items:enriched,total:finalTotal,original_total:total,credit_used:creditUsed,promo_code:appliedPromo?appliedPromo.code:null,promo_discount:promoDiscount,notes:notes||'',payment_method:payment_method||'cash',delivery,shipping,status:'pending',created_at:nowISO(),paid_at:null});
+    const order=await q.insert(db.orders,{order_number,client_name,client_email:client_email.toLowerCase().trim(),client_phone:client_phone||'',referral_code:referral_code?.trim()||'',partner_id,partner_name,city:city||'',items:enriched,total:finalTotal,original_total:total,credit_used:creditUsed,promo_code:appliedPromo?appliedPromo.code:null,promo_discount:promoDiscount,winner_discount:vitazkaZlava,winner_discount_pct:vitazkaPodiel?Math.round(vitazkaPodiel*100):0,notes:notes||'',payment_method:payment_method||'cash',delivery,shipping,status:'pending',created_at:nowISO(),paid_at:null});
     if(appliedPromo) await recordPromoRedemption(appliedPromo, req.session?.uid, promoDiscount);
-    res.json({ok:true,order_number,id:order._id,total:finalTotal,original_total:+(total+promoDiscount).toFixed(2),credit_used:creditUsed,promo_discount:promoDiscount});
+    res.json({ok:true,order_number,id:order._id,total:finalTotal,original_total:+(total+promoDiscount).toFixed(2),credit_used:creditUsed,promo_discount:promoDiscount,winner_discount:vitazkaZlava});
   } catch(e){res.status(500).json({error:e.message});}
 });
 
@@ -16719,6 +16765,26 @@ async function membershipBuyersInPeriod(prefix){
 // Merch = oblečenie/doplnky (podľa názvu produktu, kategórie sa líšia)
 const MERCH_RE = /trič|tielk|mikin|legg|taš|fľaš|flaš|merch|oblečen|obleč|doplnk|čiapk|šatk|ponožk|termosk|nákrčn/i;
 const isMerchItem = it => MERCH_RE.test(it.product_name||'') || /obleč|merch/i.test(it.cat||'');
+// Klientka mesiaca má NASLEDUJÚCI mesiac 20 % na merch (Marek 1. 9.). Nemusí
+// zadávať kód — appka to odráta sama, inak by odmena závisela od toho, či si
+// na ňu niekto spomenie. Vracia podiel (0.20), nie sumu.
+const VITAZKA_MERCH_ZLAVA = 0.20;
+async function zlavaKlientkyMesiaca(userId, kedy){
+  if(!userId) return 0;
+  const m = String(kedy || today()).slice(0,7);
+  const d = new Date(+m.slice(0,4), +m.slice(5,7)-2, 1);   // predošlý mesiac
+  const predosly = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  const w = await q.one(db.monthly_winners,{month:predosly, user_id:userId});
+  return (w && w.type!=='year') ? VITAZKA_MERCH_ZLAVA : 0;
+}
+// Koľko z objednávky pripadá na merch a aká je z toho zľava víťazky.
+function zlavaZMerchu(polozky, podiel){
+  if(!podiel) return 0;
+  let z = 0;
+  for(const it of (polozky||[])) if(isMerchItem(it)) z += (+it.subtotal || 0) * podiel;
+  return +z.toFixed(2);
+}
+
 // Mapa user_id → počet kusov zakúpeného merchu v období
 async function merchCountMapInPeriod(prefix){
   const emailToId={}; (await q.find(db.users,{})).forEach(u=>{ if(u.email) emailToId[u.email.toLowerCase()]=u._id; });
