@@ -6155,6 +6155,52 @@ const AMB_CONTEST = { id:'rim2026', name:'Rím pre dve osoby',
   target:1000, from:'2026-08-20', to:'2026-12-31',
   prize:'2 letenky do Ríma + vstup do Kolosea pre 2 osoby' };
 
+// Raz splnená méta ostáva splnená. Bez zápisu by stačilo jedno storno alebo
+// zmena obdobia a víťazka by cenu „stratila" — a novým mesiacom by jej appka
+// znova písala, koľko jej chýba (Marek 1. 9.).
+async function ambContestCheck(u, done){
+  const c = AMB_CONTEST;
+  const key = 'contest_'+c.id+'_'+u._id;
+  const uz = await q.one(db.settings,{key});
+  if(uz) return uz;                                   // už má splnené
+  if((+done||0) < c.target) return null;
+  const zapis = await q.insert(db.settings,{key, value:true, user_id:u._id,
+    user_name:u.name, done:+done, target:c.target, at:nowISO()});
+  try{
+    await q.insert(db.notifications,{user_id:u._id, type:'contest',
+      title:'🏛️ Vyhrala si Rím!',
+      body:'Splnila si métu '+c.target+' bodov — '+c.prize+' je tvoj. Ozveme sa ti s podrobnosťami. 💛',
+      read:false, created_at:nowISO()});
+    if(u.email && /@/.test(u.email))
+      await sendMail(u.email, '🏛️ Vyhrala si Rím pre dve osoby!',
+        emailTemplate('Gratulujeme, '+String(u.name||'').split(' ')[0]+'! 🏛️',
+        '<p>Dokázala si to — splnila si métu <b>'+c.target+' bodov</b> a vyhrávaš:</p>'
+        +'<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:14px 18px;font-size:1.05rem;font-weight:700;color:#C9A84C">'
+          +c.prize+'</p>'
+        +'<p>Ozveme sa ti s podrobnosťami — termín si vyberieš sama.</p>'
+        +'<p>Ďakujeme za všetko, čo pre Fusion Academy robíš.<br>Tím Fusion Academy</p>',
+        '🏛️ Otvoriť appku', APP_URL+'/ambasador'),
+        {priority:2, template:'contest_win'}).catch(()=>false);
+    // a nech o tom vieme aj my — cena sa odovzdáva ručne
+    for(const a of await q.find(db.users,{is_admin:true})){
+      await q.insert(db.notifications,{user_id:a._id, type:'contest',
+        title:'🏛️ '+u.name+' splnila métu súťaže!',
+        body:'Má '+done+' z '+c.target+' bodov. Cena: '+c.prize+'. Treba ju odovzdať.',
+        read:false, created_at:nowISO()});
+      if(a.email && /@/.test(a.email))
+        await sendMail(a.email, '🏛️ '+u.name+' vyhrala súťaž o Rím',
+          emailTemplate('Máme víťazku 🏛️',
+          '<p><b>'+u.name+'</b> splnila métu súťaže <b>'+c.name+'</b>.</p>'
+          +'<p>Body: <b>'+done+'</b> z '+c.target+'<br>Cena: <b>'+c.prize+'</b></p>'
+          +'<p>Klientke sme dali vedieť do appky aj mailom. Cenu treba odovzdať ručne.</p>',
+          '👤 Otvoriť admin', APP_URL+'/admin'),
+          {priority:2, template:'contest_win_admin'}).catch(()=>false);
+    }
+  }catch(e){ console.error('contest oznamenia:', e.message); }
+  console.log('🏛️ SÚŤAŽ '+c.id+': '+u.name+' splnila métu ('+done+'/'+c.target+')');
+  return zapis;
+}
+
 function ambLadder(count){
   const n = Math.max(0, +count||0);
   const cur = ambRank(n);
@@ -7153,8 +7199,11 @@ app.get('/api/ambassador/me', ambassadorAuth, async(req,res)=>{
         const c=AMB_CONTEST;
         if(today()>c.to) return null;
         const done=await ambVolumeRange(u._id, c.from, c.to);
-        return { ...c, done, missing:Math.max(0,c.target-done),
-          progress:Math.min(100,Math.round(done/c.target*100)), won:done>=c.target };
+        const vyhra=await ambContestCheck(u, done);      // zapíše a oznámi pri prvom splnení
+        const won=!!vyhra;
+        return { ...c, done, missing: won?0:Math.max(0,c.target-done),
+          progress: won?100:Math.min(100,Math.round(done/c.target*100)), won,
+          won_at: vyhra?vyhra.at:null };
       })(),
       // Tréner má provízie z línie zarátané v TRÉNERSKEJ výplate
       // (/api/trainer/earnings riadok „Affiliate provízie") — ambasádorská
