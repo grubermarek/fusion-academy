@@ -4081,7 +4081,7 @@ async function loadRefGoalReport(){
     const r=await fetch('/api/admin/referral-goal-report'); const d=await r.json();
     if(!d.ok){ el.textContent='Nepodarilo sa načítať.'; return; }
     document.getElementById('refGoalRepTotals').innerHTML=
-      `🛍️ tašky na nákup: <b style="color:#C9A84C">${d.totals.taska}</b> · 🎟️ zľavy na event: <b style="color:#C9A84C">${d.totals.event50}</b> · ⭐ masterclass zdarma: <b style="color:#C9A84C">${d.totals.masterclass}</b> · platiacich kamošiek spolu: <b>${d.totals.payingTotal}</b>${d.ended?' · <span class="text-warning">súťaž skončila</span>':''}`;
+      `💃 súkromné hodiny na odovzdanie: <b style="color:#C9A84C">${d.totals.hodina}</b> · platiacich kamošiek spolu: <b>${d.totals.payingTotal}</b>${d.ended?" · <span class=\"text-warning\">súťaž skončila</span>":""}`;
     if(!d.rows.length){ el.innerHTML='Zatiaľ nikto nepriviedol novú registráciu v rámci výzvy (od 5. 8.). Po prvej registrácii cez referral odkaz sa tu objaví.'; return; }
     el.innerHTML=`<table class="table table-dark table-sm small mb-0"><thead><tr>
       <th>Klientka</th><th class="text-center">💰 Platiace</th><th class="text-center">📝 Len registrované</th><th>Odmeny</th><th>Koho priviedla</th><th>Kontakt</th></tr></thead><tbody>
@@ -4089,7 +4089,7 @@ async function loadRefGoalReport(){
         <td><b>${x.sponsor}</b></td>
         <td class="text-center" style="color:#C9A84C;font-weight:800">${x.paying}</td>
         <td class="text-center text-muted">${x.registeredOnly}</td>
-        <td>${x.rewards.taska?'<span class="badge" style="background:#C9A84C;color:#111">🛍️ taška</span> ':''}${x.rewards.event50?'<span class="badge bg-secondary">🎟️ −50 % event</span> ':''}${x.rewards.masterclass?'<span class="badge bg-success">⭐ masterclass</span>':''}${!x.rewards.taska?'<span class="text-muted">— (kamoška ešte nezaplatila)</span>':''}</td>
+        <td>${x.rewards.hodina?"<span class=\"badge\" style=\"background:#C9A84C;color:#111\">💃 súkromná hodina</span>":"<span class=\"text-muted\">— (kamoška ešte nezaplatila)</span>"}</td>
         <td class="text-muted">${x.paidNames.map(n=>'💰 '+n).concat(x.registeredNames.map(n=>'📝 '+n)).join(', ')||'—'}</td>
         <td class="text-muted">${x.phone||x.email||''}</td></tr>`).join('')}
     </tbody></table>

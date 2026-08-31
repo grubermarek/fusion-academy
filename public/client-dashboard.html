@@ -1816,7 +1816,7 @@ async function confirmBooking(){
   btn.disabled=false;
   closeBookModal();
   if(d?.ok||d?.booking_id||d?.id){
-    // Úspech: pop-up „vezmi kamošku" (taška zdarma do konca mesiaca); FitDay má vlastný toast
+    // Úspech: pop-up „vezmi kamošku" (súkromná hodina s Marekom); FitDay má vlastný toast
     if(_bookIsFitDay) showToast('🎉 Prihlásený/á na FitDay!','success');
     else if(window.showBookingSuccess) showBookingSuccess({className:className0||''});
     else showToast('✅ Rezervácia potvrdená!','success');
@@ -3034,9 +3034,7 @@ async function loadRefGoal(){
     document.head.appendChild(st);
   }
   const rewardRows=[
-    {n:'1 kamoška', txt:'športová taška Fusion (limitovaná edícia) zadarmo'},
-    {n:'2 kamošky', txt:'50 % zľava na event'},
-    {n:'3 kamošky', txt:'masterclass úplne zadarmo'},
+    {n:'1 kamoška', txt:'súkromná hodina s Marekom zadarmo (hodnota 100 €)'},
   ].map((r,i)=>{const done=d.count>=i+1;
     return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.07)">
       <span style="flex:none;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:900;${done?'background:var(--gold);color:#161310':'background:rgba(201,168,76,.15);border:1px solid rgba(201,168,76,.45);color:var(--gold)'}">✓</span>
@@ -3047,22 +3045,28 @@ async function loadRefGoal(){
     <div style="display:grid;grid-template-columns:1fr;gap:14px" class="rg-promo-grid">
       <style>@media(min-width:700px){.rg-promo-grid{grid-template-columns:1.2fr 1fr !important;align-items:center}}</style>
       <div>
-        <div style="font-size:.72rem;letter-spacing:2px;text-transform:uppercase;color:var(--gold);font-weight:800;margin-bottom:6px">Augustová výzva · len do 31. 8.</div>
-        <div style="font-size:1.25rem;font-weight:900;color:#fff;line-height:1.25;margin-bottom:8px">Priveď kamošku, <span style="color:var(--gold)">taška je tvoja</span>.</div>
-        <div style="font-size:.82rem;color:#b9b3a6;margin-bottom:6px">Pozvi kamošku cez svoj odkaz. Keď sa zaregistruje a kúpi si členstvo alebo permanentku, získavaš odmenu:</div>
+        <div style="font-size:.72rem;letter-spacing:2px;text-transform:uppercase;color:var(--gold);font-weight:800;margin-bottom:6px">Septembrová výzva · celý september</div>
+        <div style="font-size:1.25rem;font-weight:900;color:#fff;line-height:1.25;margin-bottom:8px">Priveď kamošku a <span style="color:var(--gold)">hodinu tancuješ so mnou</span>.</div>
+        <div style="font-size:.82rem;color:#b9b3a6;margin-bottom:6px">Pozvi kamošku cez svoj odkaz. Keď sa zaregistruje a kúpi si členstvo alebo permanentku, máš súkromnú hodinu s Marekom — len ty a on, na to, čo chceš zlepšiť:</div>
         ${rewardRows}
         <button onclick="window.inviteFriend()" style="margin-top:14px;background:linear-gradient(135deg,#C9A84C,#a5842f);color:#161310;border:none;border-radius:999px;padding:12px 24px;font-weight:800;font-size:.95rem;cursor:pointer">❤️ POZVAŤ KAMOŠKU ZDARMA</button>
       </div>
-      <img src="/promo-taska-fusion.jpg" alt="Športová taška Fusion — limitovaná edícia" loading="lazy"
-        style="width:100%;border-radius:12px;border:1px solid rgba(201,168,76,.3);cursor:pointer" onclick="window.copyMyRefLink()">
+      <div onclick="window.copyMyRefLink()" style="cursor:pointer;border:1px solid rgba(201,168,76,.3);border-radius:12px;
+        background:linear-gradient(135deg,rgba(201,168,76,.16),rgba(201,168,76,.04));padding:26px 20px;text-align:center">
+        <div style="font-size:2.6rem;line-height:1;margin-bottom:10px">💃</div>
+        <div style="font-size:1.05rem;font-weight:900;color:#fff;margin-bottom:4px">Súkromná hodina s Marekom</div>
+        <div style="font-size:.8rem;color:#b9b3a6;margin-bottom:10px">Len ty a on. Choreo, technika, štýl — čo si vyberieš.</div>
+        <div style="display:inline-block;font-size:.78rem;font-weight:800;color:var(--gold);
+          border:1px solid rgba(201,168,76,.45);border-radius:999px;padding:5px 14px">hodnota 100 €</div>
+      </div>
     </div>
     <div style="border-top:1px solid rgba(255,255,255,.08);margin:14px 0 12px"></div>`:''}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <b style="font-size:.9rem">🎯 Tvoj progres vo výzve</b>
       <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         ${d.ended
-          ? '<span style="font-size:.72rem;background:#3a3427;color:var(--muted);border-radius:8px;padding:3px 9px;font-weight:700">Súťaž skončila 31.8.</span>'
-          : `<span style="font-size:.72rem;background:${(d.days_left<=7)?'rgba(224,86,86,.18)':'rgba(201,168,76,.15)'};color:${(d.days_left<=7)?'#ff8a8a':'var(--gold)'};border:1px solid ${(d.days_left<=7)?'rgba(224,86,86,.5)':'rgba(201,168,76,.4)'};border-radius:8px;padding:3px 9px;font-weight:800">⏳ do 31. augusta${d.days_left<=10?` · ostáva ${d.days_left} ${d.days_left===1?'deň':(d.days_left<=4?'dni':'dní')}`:''}</span>`}
+          ? '<span style="font-size:.72rem;background:#3a3427;color:var(--muted);border-radius:8px;padding:3px 9px;font-weight:700">Súťaž skončila 30. 9.</span>'
+          : `<span style="font-size:.72rem;background:${(d.days_left<=7)?'rgba(224,86,86,.18)':'rgba(201,168,76,.15)'};color:${(d.days_left<=7)?'#ff8a8a':'var(--gold)'};border:1px solid ${(d.days_left<=7)?'rgba(224,86,86,.5)':'rgba(201,168,76,.4)'};border-radius:8px;padding:3px 9px;font-weight:800">⏳ do 30. septembra${d.days_left<=10?` · ostáva ${d.days_left} ${d.days_left===1?'deň':(d.days_left<=4?'dni':'dní')}`:''}</span>`}
         <span style="font-size:.8rem;color:var(--gold);font-weight:800">${d.count} / ${max} platiacich kamošiek</span>
       </span>
     </div>
@@ -3076,8 +3080,8 @@ async function loadRefGoal(){
     <div style="font-size:.78rem;color:#a5d6a7;margin-top:8px">${d.ended
       ? (d.count>0 ? `Súťaž skončila — získané odmeny ti odovzdáme v štúdiu. Ďakujeme! 💛` : `Súťaž skončila. Sleduj dashboard — čoskoro ďalšia výzva! ✨`)
       : next
-      ? `Ráta sa kamoška, ktorá si kúpi členstvo alebo permanentku. Ešte <b>${next.need-d.count}</b> do 31. augusta a získaš: <b style="color:var(--gold)">${next.emoji} ${escHtml(next.label)}</b> — pošli kamoške svoj odkaz! 👆`
-      : `👑 Máš všetky odmeny — ozveme sa ti s odovzdaním. Každá ďalšia kamoška = ďalšie body do súťaže!`}</div>
+      ? `Ráta sa kamoška, ktorá si kúpi členstvo alebo permanentku — stačí <b>jedna</b> a hodina je tvoja. Máš čas do 30. septembra, tak jej pošli svoj odkaz! 👆`
+      : `💃 Hodinu máš! Ozveme sa ti s termínom. A každá ďalšia platiaca kamoška = ďalšia súkromná hodina.`}</div>
   </div>`;
 }
 // Jednotná pozvánka (celá appka používa ten istý /invite link + text)

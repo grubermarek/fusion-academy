@@ -57,9 +57,10 @@
   #err{position:fixed;bottom:1vmin;left:1vmin;font-size:1.6vmin;color:#553}
   /* Druhé tlačidlo: prihlásenie na dnešné hodiny. Zámerne tichšie než check-in —
      ten je častejší a musí ostať tým, čo padne do oka ako prvé. */
-  #cta2{position:fixed;left:50%;bottom:1.2vmin;transform:translateX(-50%);z-index:6;
-    background:rgba(20,16,8,.72);border:1px solid rgba(201,168,76,.45);color:var(--gold2);
-    border-radius:999px;padding:1.4vmin 4.5vmin;font-size:2.1vmin;font-weight:700;letter-spacing:.06em;cursor:pointer}
+  /* Prihlásenie na ďalšie hodiny má vlastné tlačidlo až na uvítacej obrazovke —
+     dve výzvy na skenovanie vedľa seba mýlili (Marek 31. 8.). */
+  #wMore{margin-top:2.4vmin;background:rgba(201,168,76,.14);border:1px solid rgba(201,168,76,.5);
+    color:var(--gold);border-radius:999px;padding:1.6vmin 5vmin;font-size:2.2vmin;font-weight:800;cursor:pointer}
   /* výber hodín */
   #pick{background:rgba(6,5,3,.97);flex-direction:column;align-items:center;justify-content:center;gap:2vmin;z-index:22;padding:4vmin}
   #pickHead{font-size:3.2vmin;font-weight:800;color:var(--cream)}
@@ -90,7 +91,6 @@
 
 <div class="layer on" id="stage"></div>
 <button id="cta" onclick="openScan()">✋ ŤUKNI A CHECKNI SA</button>
-<button id="cta2" onclick="openScan('signup')">📋 PRIHLÁSIŤ SA NA TRÉNINGY</button>
 
 <div class="layer" id="scan">
   <div class="kicker">QR Check-in</div>
@@ -128,7 +128,7 @@ const SLUG = location.pathname.split('/').filter(Boolean)[1] || '';
 const KEY  = new URLSearchParams(location.search).get('k') || '';
 let CFG=null, DATA=null, slides=[], slideIdx=0, slideTimer=null, idleTimer=null, paused=false, qrReader=null, scanBusy=false;
 // 'checkin' = doterajší zápis účasti, 'signup' = výber dnešných hodín cez checkboxy
-let skenRezim='checkin', vyberQr='', vyberHodiny=[], vyberVybrane=new Set();
+let skenRezim='checkin', poslednyQr='', welcomeTimer=null, vyberQr='', vyberHodiny=[], vyberVybrane=new Set();
 
 const $=id=>document.getElementById(id);
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -258,7 +258,7 @@ function poke(){
   idleTimer=setTimeout(()=>{ paused=false; startShow(); }, (CFG?CFG.idle_s:15)*1000);
 }
 ['pointerdown','touchstart'].forEach(ev=>document.addEventListener(ev, e=>{
-  if(e.target.closest('#cta')||e.target.closest('#cta2')||e.target.closest('#scan')
+  if(e.target.closest('#cta')||e.target.closest('#wMore')||e.target.closest('#scan')
     ||e.target.closest('#scanClose')||e.target.closest('#pick')) return;
   poke();
   if(document.fullscreenElement==null && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
@@ -304,6 +304,7 @@ async function onScan(txt){
   }
 
   if(scanBusy) return; scanBusy=true;
+  poslednyQr=txt;                       // uvítacia obrazovka ho ponúkne znova použiť
   if(skenRezim==='signup'){ await nacitajHodiny(txt); return; }
   $('scanMsg').textContent='⏳ Overujem…';
   try{
@@ -436,10 +437,18 @@ function showWelcome(d){
   rows.push('👣 Celkovo '+u.visit_count+' hodín · '+esc(d.class_name));
   rows.push('❤️ Ďakujeme, že si prišla.');
   w.innerHTML=av+'<div id="wName">'+(u.birthday?'🎉':'👋')+' Vitaj, <span style="color:var(--gold2)">'+esc(u.first)+'</span>!</div>'+
-    '<div id="wRows">'+rows.map((r,i)=>'<div class="r" style="animation-delay:'+(0.3+i*0.35)+'s">'+r+'</div>').join('')+'</div>';
+    '<div id="wRows">'+rows.map((r,i)=>'<div class="r" style="animation-delay:'+(0.3+i*0.35)+'s">'+r+'</div>').join('')+'</div>'+'<button id="wMore" onclick="prihlasNaDalsie()">📋 Prihlásiť sa aj na ďalšie hodiny</button>';
   w.classList.add('on');
   burstFx(u.birthday?'birthday':(u.streak_weeks>3?'fire':'confetti'));
-  setTimeout(()=>{ w.classList.remove('on'); paused=false; startShow(); }, 6500);
+  welcomeTimer=setTimeout(()=>{ w.classList.remove('on'); paused=false; startShow(); }, 9000);
+}
+// Z uvítacej obrazovky sa dá pokračovať na prihlásenie na ďalšie dnešné hodiny —
+// QR už máme z check-inu, takže sa neskenuje druhýkrát.
+function prihlasNaDalsie(){
+  clearTimeout(welcomeTimer);
+  $('welcome').classList.remove('on');
+  scanBusy=true;
+  nacitajHodiny(poslednyQr);
 }
 
 /* ── Efekty (konfety/oheň/srdcia) ── */

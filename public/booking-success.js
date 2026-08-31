@@ -1,10 +1,10 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   BOOKING SUCCESS POP-UP — „Si prihlásená! Vezmi aj kamošku 🎁"
+   BOOKING SUCCESS POP-UP — „Si prihlásená! Vezmi aj kamošku 💃"
    Zdieľaný medzi client-dashboard.html a schedule.html.
    Použitie: showBookingSuccess({className, dateStr})
    - konfety (vypnuté pri prefers-reduced-motion)
    - jednotný pozývací text z /api/invite-message + tlačidlo Skopírovať/Zdieľať
-   - promo: nová kamoška získava športovú tašku ZDARMA — do konca mesiaca
+   - promo: za kamošku, ktorá si zaplatí, je súkromná hodina s Marekom (september 2026)
    - živý odpočet dní/hodín/minút do konca mesiaca
    ═══════════════════════════════════════════════════════════════════════════ */
 (function(){
@@ -133,8 +133,8 @@ window.showBookingSuccess=async function(opts){
       <p class="bs-sub">${opts.className?`<b style="color:#ddd">${String(opts.className).replace(/</g,'&lt;')}</b>${opts.dateStr?' · '+String(opts.dateStr).replace(/</g,'&lt;'):''}<br>`:''}Vidíme sa na hodine — a vieš čo je ešte lepšie? Tancovať s kamoškou! 💃💃</p>
       <div class="bs-promo">
         <span class="bs-gift" aria-hidden="true">🎁</span>
-        <div class="bs-promo-t">Vezmi kamošku — a športová taška je TVOJA!</div>
-        <p class="bs-promo-s">Keď sa <b>nová kamoška</b> pridá k nám cez tvoj odkaz, <b style="color:#e8cf8a">ty získavaš športovú tašku ZDARMA</b> — a ona má <b>prvú hodinu zadarmo</b>. Akcia platí už len do <b>${lastDay}. ${monthGen}</b>!</p>
+        <div class="bs-promo-t">Vezmi kamošku — a tancuješ hodinu s Marekom!</div>
+        <p class="bs-promo-s">Keď sa <b>nová kamoška</b> pridá cez tvoj odkaz a kúpi si členstvo alebo permanentku, <b style="color:#e8cf8a">máš súkromnú hodinu s Marekom zadarmo</b> (hodnota 100 €) — a ona má <b>prvú hodinu zadarmo</b>. Akcia platí už len do <b>${lastDay}. ${monthGen}</b>!</p>
         <div class="bs-count-label">🔥 Do konca akcie zostáva</div>
         <div class="bs-count" id="bsCount" aria-live="off"></div>
       </div>

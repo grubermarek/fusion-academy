@@ -179,7 +179,12 @@ async function j(url, opts = {}, jar) {
 
     // ── stránka kiosku ──
     const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'kiosk.html'), 'utf8');
-    ok('kiosk má tlačidlo na prihlásenie', html.includes("openScan('signup')"));
+    // Dve výzvy na skenovanie vedľa seba mýlili (Marek 31. 8.) — na ploche ostalo
+    // jedno tlačidlo a prihlásenie sa ponúka až po check-ine, s už načítaným QR.
+    ok('plocha má jedinú výzvu na skenovanie',
+      (html.match(/onclick="openScan\(/g) || []).length === 1, html.match(/onclick="openScan\([^)]*\)/g));
+    ok('prihlásenie sa ponúkne po check-ine', html.includes('prihlasNaDalsie()') && html.includes('id="wMore"'));
+    ok('a QR sa druhýkrát neskenuje', html.includes('poslednyQr=txt') && html.includes('nacitajHodiny(poslednyQr)'));
     ok('výber je cez zaškrtávacie políčka', html.includes('prepniHodinu') && html.includes('class="box"'));
     ok('bežiaca hodina je predznačená', html.includes('c.teraz && !c.moja'));
     ok('pýta sa až po skene QR', html.includes('nacitajHodiny'));

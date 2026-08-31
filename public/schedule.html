@@ -558,7 +558,7 @@ async function confirmBooking() {
 }
 
 function showSuccess(className, dateStr) {
-  // Nový pop-up „vezmi kamošku" (taška zdarma); stará karta zostáva ako fallback
+  // Nový pop-up „vezmi kamošku" (súkromná hodina s Marekom); stará karta zostáva ako fallback
   if(window.showBookingSuccess){ showBookingSuccess({className, dateStr}); return; }
   const grid = document.getElementById('classesGrid');
   const card = document.createElement('div');

@@ -2521,82 +2521,9 @@ async function seedData() {
     await q.insert(db.settings,{key:'meta_ab_test_campaign_v1', value:true, at:nowISO()});
   }
 
-  // Augustová referral výzva — jednorazová kampaň (8/2026): email s fotkou tašky
-  // + in-app notifikácia všetkým aktívnym klientkam (nie leady/deti/staff/test).
-  if(!(await q.one(db.settings,{key:'referral_taska_campaign_v1'}))){
-    await q.insert(db.settings,{key:'referral_taska_campaign_v1', value:true, at:nowISO()});
-    (async()=>{
-      const users=(await q.find(db.users,{}))
-        .filter(u=>!u.is_admin && u.user_type!=='trainer' && u.user_type!=='manager' && !u.is_child
-          && u.user_type!=='lead' && !u.hidden_lead
-          && !/@test-fa-qa\.local$|@import\.local$|@qa-biz\.local$/i.test(String(u.email||'')));
-      let mails=0, notifs=0;
-      for(const u of users){
-        const firstName=String(u.name||'').split(' ')[0]||'tanečníčka';
-        try{
-          await q.insert(db.notifications,{user_id:u._id,type:'campaign',
-            title:'🎁 Augustová výzva: taška Fusion zadarmo',
-            body:`Priveď kamošku do 31. 8. a športová taška Fusion (limitovaná edícia) je tvoja! 2 kamošky = 50 % na event, 3 = masterclass zadarmo. Svoj odkaz a progres nájdeš na nástenke.`,
-            read:false, created_at:nowISO()});
-          notifs++;
-        }catch(e){}
-        if(u.email && /@/.test(u.email)){
-          const okMail=await sendMail(u.email,'🎁 Priveď kamošku a športová taška Fusion je tvoja (len do 31. 8.)',
-            emailTemplate(`Ahoj ${firstName}! 💛`,
-            `<div style="text-align:center;margin:6px 0 16px"><img src="${APP_URL}/promo-taska-fusion.jpg" alt="Športová taška Fusion — limitovaná edícia" style="width:100%;max-width:520px;border-radius:14px"></div>
-             <p>Máme pre teba <b>augustovú výzvu</b> — a odmeny, ktoré stoja za to:</p>
-             <p style="line-height:2">✅ <b style="color:#C9A84C">1 kamoška</b> → športová taška Fusion (limitovaná edícia) <b>zadarmo</b><br>
-             ✅ <b style="color:#C9A84C">2 kamošky</b> → <b>50 % zľava</b> na event<br>
-             ✅ <b style="color:#C9A84C">3 kamošky</b> → masterclass <b>úplne zadarmo</b></p>
-             <p><b>Ako na to?</b><br>1. Otvor appku a na nástenke klikni na <b>„Skopírovať môj odkaz"</b><br>
-             2. Pošli ho kamoške, ktorá ešte u nás netancuje<br>
-             3. Keď sa zaregistruje a kúpi si členstvo alebo permanentku — odmena je tvoja 💛</p>
-             <p>Svoj progres vidíš naživo priamo na nástenke v appke.</p>
-             <p>⏳ <b>Výzva platí len do 31. augusta</b> — čím skôr pošleš odkaz, tým viac času má kamoška prísť na prvú hodinu (má ju zadarmo!).</p>
-             <p>Vidíme sa na parkete!<br>Tím Fusion Academy</p>`,
-            '🔗 Otvoriť appku a zapojiť sa', `${APP_URL}/client-dashboard`)).catch(()=>false);
-          if(okMail) mails++;
-          await new Promise(r=>setTimeout(r,300)); // šetrný rozstup pre mail API
-        }
-      }
-      console.log(`🎁 TAŠKA KAMPAŇ: ${users.length} príjemkýň → ${notifs} notifikácií, ${mails} emailov. Mená: ${users.map(u=>u.name).join(', ')}`);
-    })().catch(e=>console.error('Taska kampaň error:', e.message));
-  }
-
-  // v2: EMAILOVÁ dorozielka kampane — prvý beh mal rozbitý mailer (chýbal Brevo
-  // kľúč, SMTP na Railway blokované), takže emaily nedošli. Notifikácie už išli
-  // vo v1 a NEposielajú sa znova. Beží až keď je BREVO_API_KEY nastavený.
-  if(process.env.BREVO_API_KEY && !(await q.one(db.settings,{key:'referral_taska_campaign_mail_v2'}))){
-    await q.insert(db.settings,{key:'referral_taska_campaign_mail_v2', value:true, at:nowISO()});
-    (async()=>{
-      const users=(await q.find(db.users,{}))
-        .filter(u=>!u.is_admin && u.user_type!=='trainer' && u.user_type!=='manager' && !u.is_child
-          && u.user_type!=='lead' && !u.hidden_lead
-          && !/@test-fa-qa\.local$|@import\.local$|@qa-biz\.local$/i.test(String(u.email||''))
-          && u.email && /@/.test(u.email));
-      let mails=0;
-      for(const u of users){
-        const firstName=String(u.name||'').split(' ')[0]||'tanečníčka';
-        const okMail=await sendMail(u.email,'🎁 Priveď kamošku a športová taška Fusion je tvoja (len do 31. 8.)',
-          emailTemplate(`Ahoj ${firstName}! 💛`,
-          `<div style="text-align:center;margin:6px 0 16px"><img src="${APP_URL}/promo-taska-fusion.jpg" alt="Športová taška Fusion — limitovaná edícia" style="width:100%;max-width:520px;border-radius:14px"></div>
-           <p>Máme pre teba <b>augustovú výzvu</b> — a odmeny, ktoré stoja za to:</p>
-           <p style="line-height:2">✅ <b style="color:#C9A84C">1 kamoška</b> → športová taška Fusion (limitovaná edícia) <b>zadarmo</b><br>
-           ✅ <b style="color:#C9A84C">2 kamošky</b> → <b>50 % zľava</b> na event<br>
-           ✅ <b style="color:#C9A84C">3 kamošky</b> → masterclass <b>úplne zadarmo</b></p>
-           <p><b>Ako na to?</b><br>1. Otvor appku a na nástenke klikni na <b>„Skopírovať môj odkaz"</b><br>
-           2. Pošli ho kamoške, ktorá ešte u nás netancuje<br>
-           3. Keď sa zaregistruje a kúpi si členstvo alebo permanentku — odmena je tvoja 💛</p>
-           <p>Svoj progres vidíš naživo priamo na nástenke v appke.</p>
-           <p>⏳ <b>Výzva platí len do 31. augusta</b> — čím skôr pošleš odkaz, tým viac času má kamoška prísť na prvú hodinu (má ju zadarmo!).</p>
-           <p>Vidíme sa na parkete!<br>Tím Fusion Academy</p>`,
-          '🔗 Otvoriť appku a zapojiť sa', `${APP_URL}/client-dashboard`)).catch(()=>false);
-        if(okMail) mails++;
-        await new Promise(r=>setTimeout(r,300));
-      }
-      console.log(`🎁 TAŠKA KAMPAŇ MAIL v2: ${mails}/${users.length} emailov doručených do Brevo. Príjemkyne: ${users.map(u=>u.name).join(', ')}`);
-    })().catch(e=>console.error('Taska kampaň mail v2 error:', e.message));
-  }
+  // Augustová kampaň o tašku tu bola ako dva jednorazové boot bloky. Septembrová
+  // výzva ide vlnou (referralChallengeTick nižšie), aby rešpektovala mailový
+  // budžet a dávkovala sa — pri 799 adresátkach naraz časť mailov budžet zjedol.
 
   // Úprata: zmazanie prod test účtu „QA Online Test" aj so všetkými stopami
   // ── Oprava 10.8.: Monike U. zobrala rezervácia online hodiny vstup z permanentky
@@ -3313,7 +3240,7 @@ app.post('/api/admin/qa/run-event-mail/:wave', adminAuth, async(req,res)=>{
   try{
     const fn = { urgency:eventUrgencyTick, lastday:eventLastDayTick,
                  party:eventPartyPushTick, reminder:eventReminderTick,
-                 lastcall:eventLastCallTick }[req.params.wave] || eventLeadTick;
+                 lastcall:eventLastCallTick, challenge:referralChallengeTick }[req.params.wave] || eventLeadTick;
     res.json({ok:true, ...(await fn(true))});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -4639,6 +4566,76 @@ async function eventLastCallTick(qaMode){
   }catch(e){ console.error('event lastcall mail:', e.message); return {error:e.message}; }
 }
 setInterval(eventLastCallTick, 8*60*1000);
+
+// ── Septembrová referral výzva: súkromná hodina s Marekom ───────────────────
+// Augustová verzia (taška / 50 % event / masterclass) oslovila 6 žien z 799 a
+// druhý ani tretí stupeň nedosiahol nikto. Odmena teraz nie je vecná, ale
+// zážitok, ktorý si za peniaze nekúpiš — a stupeň je jediný, nech je jasné,
+// čo treba spraviť: priviesť jednu kamošku, ktorá si zaplatí.
+// Ide vlnou, nie naraz: 799 adresátok naraz by narazilo na denný budžet.
+const REF_CHALLENGE_SUBJ = '💃 Priveď kamošku a hodinu tancuješ so mnou — súkromne (september)';
+async function referralChallengeTick(qaMode){
+  try{
+    if(!process.env.BREVO_API_KEY) return;
+    const t=today();
+    if(!(qaMode && process.env.QA_EVENT_WINDOW==='1') && (t<'2026-09-01' || t>'2026-09-07')) return;
+    if(await q.one(db.settings,{key:'ref_challenge_0926_done'})) return;
+    const hSK=+new Intl.DateTimeFormat('sk-SK',{hour:'numeric',hour12:false,timeZone:'Europe/Bratislava'}).format(new Date());
+    if(!qaMode && (hSK<9||hSK>19)) return;
+    if(!(await mailBudgetOk(9))) return;
+    const budget=80;
+    const isTestU=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'')||u.lead_source==='test'||u.is_test;
+    const already=new Set((await q.find(db.mail_log,{subject:REF_CHALLENGE_SUBJ})).map(m=>String(m.to).toLowerCase()));
+    const users=(await q.find(db.users,{}))
+      .filter(u=>['client','ambassador'].includes(u.user_type) && !u.is_admin && !u.is_child && u.active!==false
+        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u)
+        && u.email && /@/.test(u.email) && !/@import\.local$|@guest\./i.test(u.email)
+        && !already.has(String(u.email).toLowerCase()));
+    if(!users.length){
+      await q.insert(db.settings,{key:'ref_challenge_0926_done', value:true, at:nowISO()});
+      console.log('💃 VÝZVA 9/2026: hotovo');
+      return {selected:[], sent:0, remaining:0};
+    }
+    let n=0;
+    for(const u of users){
+      if(n>=budget) break;
+      if(!(await mailBudgetOk(9))) break;
+      const first=String(u.name||'').split(' ')[0]||'tanečníčka';
+      const ok=await sendMail(u.email, REF_CHALLENGE_SUBJ,
+        emailTemplate('Ahoj '+first+'! 💃',
+        '<p>V septembri máme <b>jedinú výzvu</b> — a odmenu, akú sme ešte nedávali.</p>'
+        +'<div style="background:rgba(201,168,76,.12);border-radius:12px;padding:18px;text-align:center;margin:18px 0">'
+          +'<div style="font-size:2rem;line-height:1;margin-bottom:8px">💃</div>'
+          +'<div style="font-size:1.1rem;font-weight:800;color:#C9A84C;margin-bottom:6px">Súkromná hodina s Marekom Gruberom</div>'
+          +'<div style="font-size:.9rem">Len ty a on. Choreo, technika, štýl — čo si vyberieš.</div>'
+          +'<div style="font-size:.85rem;color:#9b9282;margin-top:8px">bežne 100 €</div>'
+        +'</div>'
+        +'<p><b>Čo pre to treba spraviť?</b> Priviesť <b>jednu</b> kamošku, ktorá u nás ešte netancuje. '
+          +'Keď sa cez tvoj odkaz zaregistruje a kúpi si členstvo alebo permanentku, hodina je tvoja.</p>'
+        +'<p style="line-height:2">1. Otvor appku a na nástenke klikni na <b>„Skopírovať môj odkaz"</b><br>'
+          +'2. Pošli ho kamoške — <b>prvú hodinu má zadarmo</b>, nič neriskuje<br>'
+          +'3. Keď si kúpi členstvo alebo permanentku, ozveme sa ti s termínom 💛</p>'
+        +'<p>Privedieš viac kamošiek? Každá ďalšia, ktorá si zaplatí, je <b>ďalšia súkromná hodina</b>.</p>'
+        +'<p>Svoj progres vidíš naživo na nástenke v appke.</p>'
+        +'<p>⏳ Výzva platí <b>celý september, do 30. 9.</b></p>'
+        +'<p>Vidíme sa na parkete!<br>Tím Fusion Academy</p>',
+        '🔗 Skopírovať môj odkaz', APP_URL+'/client-dashboard?utm_source=email&utm_medium=email&utm_campaign=fa-vyzva-0926'),
+        {priority:9, template:'referral_challenge_0926'}).catch(()=>false);
+      if(ok){
+        n++;
+        await q.insert(db.notifications,{user_id:u._id, type:'referral_goal',
+          title:'💃 Septembrová výzva: súkromná hodina s Marekom',
+          body:'Priveď jednu kamošku, ktorá si kúpi členstvo alebo permanentku, a hodina je tvoja. Odkaz aj progres máš na nástenke.',
+          read:false, created_at:nowISO()});
+      }
+      await new Promise(r=>setTimeout(r,400));
+    }
+    if(n) console.log('💃 VÝZVA 9/2026: odoslaných '+n+' (zostáva '+(users.length-n)+')');
+    return {selected:users.slice(0,budget).map(u=>u.email), sent:n, remaining:users.length};
+  }catch(e){ console.error('referral challenge:', e.message); return {error:e.message}; }
+}
+setInterval(referralChallengeTick, 8*60*1000);
+
 
 // Kto dnes mail otvoril — pýtame sa priamo Brevo, appka si otvorenia nevedie.
 // Keď sa zoznam nepodarí získať, vraciame null a volajúci radšej nepošle nič,
@@ -16876,13 +16873,14 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
 });
 
 // ── Referral cieľ: motivačný progress k odmenám za nové registrácie ──────────
-// 1 nová = 🎒 športová taška · 2 nové = 🎟️ 50 % zľava na event · 3 nové = ⭐ masterclass zdarma
-const REFERRAL_GOAL_FROM = '2026-08-05'; // štart kampane
-const REFERRAL_GOAL_TO   = '2026-08-31'; // deadline — do konca augusta, nech je to poriadna súťaž
+// September 2026: jediná odmena, zato taká, ktorú si za peniaze nekúpiš —
+// súkromná hodina s Marekom (bežne 100 €). Augustová verzia mala tri stupne
+// (taška / 50 % na event / masterclass) a druhý ani tretí nedosiahol NIKTO,
+// prvý dve ženy. Stupne navyše len riedili pozornosť, tak ostáva jeden.
+const REFERRAL_GOAL_FROM = '2026-09-01'; // štart septembrovej výzvy
+const REFERRAL_GOAL_TO   = '2026-09-30'; // deadline — celý september
 const REFERRAL_GOAL_TIERS = [
-  { need:1, emoji:'🎒', label:'Športová taška Fusion' },
-  { need:2, emoji:'🎟️', label:'50 % zľava na event' },
-  { need:3, emoji:'⭐', label:'Masterclass event ZDARMA' },
+  { need:1, emoji:'💃', label:'Súkromná hodina s Marekom' },
 ];
 // Ráta sa až PLATIACA kamoška: registrácia v okne súťaže + reálne zaplatené
 // členstvo alebo permanentka/vstupy (darčeky a 0 € sa nerátajú).
@@ -16922,12 +16920,10 @@ app.get('/api/admin/referral-goal-report', adminAuth, async(req,res)=>{
       rows.push({ sponsor:s.name, email:s.email, phone:s.phone||'', paying:n,
         registeredOnly:v.registered.length,
         paidNames:v.paid.map(x=>x.name), registeredNames:v.registered.map(x=>x.name),
-        rewards:{ taska:n>=1, event50:n>=2, masterclass:n>=3 } });
+        rewards:{ hodina:n>=1 } });
     }
     rows.sort((a,b)=>b.paying-a.paying || b.registeredOnly-a.registeredOnly);
-    const totals={ taska:rows.filter(r=>r.rewards.taska).length,
-      event50:rows.filter(r=>r.rewards.event50).length,
-      masterclass:rows.filter(r=>r.rewards.masterclass).length,
+    const totals={ hodina:rows.filter(r=>r.rewards.hodina).length,
       payingTotal:rows.reduce((s,r)=>s+r.paying,0),
       registeredTotal:rows.reduce((s,r)=>s+r.registeredOnly+r.paying,0) };
     res.json({ok:true, from:REFERRAL_GOAL_FROM, to:REFERRAL_GOAL_TO, ended:today()>REFERRAL_GOAL_TO, rows, totals});
