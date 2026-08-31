@@ -370,6 +370,11 @@ function dashUrlFor(u) {
 // Dátum podľa SLOVENSKÉHO času — server beží v UTC a medzi 22:00–00:00 SK by inak
 // „dnes" bol včerajšok (rozbíjalo to reset mesačnej súťaže, rezervácie po 22:00 atď.)
 function today()        { return new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Bratislava'}).format(new Date()); }
+// Ktorý SLOVENSKÝ deň pripadá na daný ISO čas. Časy ukladáme v UTC, takže
+// medzi 22:00 a polnocou u nás má UTC ešte predošlý dátum — porovnávať
+// surový prefix s today() tam prestane fungovať (Marek 1. 9.: tréner nevedel
+// stornovať vlastný preklep vo výbere hotovosti, lebo appka ho mala za včerajší).
+function denSK(iso){ try{ return new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Bratislava'}).format(new Date(iso)); }catch(e){ return String(iso||'').slice(0,10); } }
 function nowISO()       { return new Date().toISOString(); }
 function currentMonth() { return new Date().toISOString().slice(0,7); }
 function dateAgo30()    { const d=new Date(); d.setDate(d.getDate()-30); return d.toISOString().slice(0,10); }
@@ -15238,7 +15243,7 @@ app.delete('/api/admin/bookings/:id/collect', (req,res,next)=>trainerAuth(req,re
     const b=await q.one(db.bookings,{_id:req.params.id});
     if(!b || !b.entry_collected) return res.status(404).json({error:'Pri tejto rezervácii nie je čo stornovať'});
     const ec=b.entry_collected;
-    if(String(ec.at||'').slice(0,10)!==today()) return res.status(400).json({error:'Stornovať sa dá len dnešný výber'});
+    if(denSK(ec.at)!==today()) return res.status(400).json({error:'Stornovať sa dá len dnešný výber'});
     await q.update(db.bookings,{_id:b._id},{$set:{entry_collected:null, pay_on_site:true}});
     await q.remove(db.transactions,{type:'single_entry', booking_id:b._id},{multi:true}).catch(()=>{});
     if(ec.method==='cash') await q.remove(db.payouts,{_type:'cash_collected', booking_id:b._id, status:'held'},{multi:true}).catch(()=>{});
@@ -20494,7 +20499,7 @@ async function runDailyJobs(){
     const sent = p.reminders_sent||0;
     if(sent >= DUNNING_DAYS.length) continue; // vyčerpané upomienky
     // ďalšiu upomienku pošli, keď uplynul jej deň a dnes sme ešte neposielali
-    if(daysSince >= DUNNING_DAYS[sent] && (p.last_reminder_at||'').slice(0,10) !== todayStr){
+    if(daysSince >= DUNNING_DAYS[sent] && denSK(p.last_reminder_at) !== todayStr){
       try { await sendDunning(p, sent); } catch(e){ console.error('Dunning error:', e.message); }
     }
   }
