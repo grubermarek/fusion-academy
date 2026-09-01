@@ -9997,6 +9997,17 @@ const MEMBERSHIP_PLANS = {
   'permanentka10':  { name:'10-vstupová permanentka', price:80, duration_days:90, online:false, color:'#FF9800', type:'bundle', entries:10 },
 };
 
+// Čo si klientka môže kúpiť na mieste, keď nemá členstvo (Marek 1. 9.).
+// Zámerne užší zoznam než MEMBERSHIP_PLANS — Kids ani online plány nemá
+// zmysel ponúkať pri rezervácii živej hodiny.
+const NA_MIESTE_PLANY = ['vstup1','permanentka10','bronze','silver','gold'];
+// Cena, ktorú tréner reálne vyberie. Technika má vlastný cenník podľa členstva,
+// preto sa jej sem nesiaha — o tú sa stará technikaCena().
+function cenaNaMieste(planId){
+  const p = NA_MIESTE_PLANY.includes(planId) ? MEMBERSHIP_PLANS[planId] : null;
+  return p ? +p.price : null;
+}
+
 async function logCredit(userId, delta, reason){
   try{ const u=await q.one(db.users,{_id:userId});
     await q.insert(db.credit_ledger,{user_id:userId, delta:+(+delta).toFixed(2), reason:String(reason).slice(0,160),
@@ -15941,6 +15952,10 @@ app.get('/api/attendance/class/:classId', trainerAuth, async(req,res)=>{
         av: !!(u && u.avatar),
         pay_on_site: !!b.pay_on_site,
         pay_amount: b.pay_amount||null,
+        // Čo si klientka pri rezervácii zvolila, že si na mieste kúpi — tréner
+        // tak vie, čo má predať, nielen koľko vybrať (Marek 1. 9.).
+        pay_plan: b.pay_plan||null,
+        pay_plan_name: b.pay_plan_name||null,
         entry_collected: b.entry_collected||null,
         name: b.user_name||u?.name||'—',
         email: b.user_email||u?.email||'—',
@@ -16710,6 +16725,10 @@ app.post('/api/bookings', auth, async(req,res)=>{
     const isTechClass = cls.category==='Technika';
     const visitCount = u.visit_count || 0;
     let payOnSite = false; // rezervácia bez členstva/kreditu so sľubom platby na mieste
+    // Klientka si pri rezervácii vyberie, čo na mieste kúpi — vstup, permanentku
+    // alebo mesačné členstvo. Trénerovi sa tak v zozname ukáže presná suma
+    // a čo má predať, nie len „vyber 10 €" (Marek 1. 9.).
+    const zvolenyPlan = NA_MIESTE_PLANY.includes(req.body.pay_plan) ? req.body.pay_plan : null;
     let deductPlan = null; // odpočet vstupu/kreditu sa vykoná až po úspešnej validácii
     // Čím klientka za hodinu „zaplatila" — bez tohto sa jej pri zrušení nedal vrátiť vstup
     let accessMethod = u.free_class_used ? 'membership' : 'free_class';
@@ -16812,7 +16831,11 @@ app.post('/api/bookings', auth, async(req,res)=>{
       user_id:u._id, user_name:u.name, user_email:isChild?parent.email:u.email, user_phone:u.phone||parent.phone||'',
       booked_by:parent._id, booked_by_name:parent.name, is_child_booking:isChild, child_name:isChild?u.name:null,
       booking_date:bdate, status:'confirmed', pay_on_site:payOnSite, notes:notes||'',
-      pay_amount: payOnSite ? (techPrice||10) : null, // koľko vybrať na mieste (technika má cenník podľa členstva)
+      // Suma na výber: technika má vlastný cenník, inak platí to, čo si klientka
+      // zvolila; keď nezvolila nič, ostáva jednorazový vstup.
+      pay_amount: payOnSite ? (techPrice || cenaNaMieste(zvolenyPlan) || 10) : null,
+      pay_plan: payOnSite ? (zvolenyPlan || null) : null,
+      pay_plan_name: payOnSite && zvolenyPlan ? (MEMBERSHIP_PLANS[zvolenyPlan]?.name || zvolenyPlan) : null,
       free_class: !u.free_class_used, // 1. hodina zdarma (aj technika) — nepočíta sa do €/klient bonusu trénera
       access_method: accessMethod,    // pre korektné vrátenie vstupu pri zrušení
       created_at:nowISO()

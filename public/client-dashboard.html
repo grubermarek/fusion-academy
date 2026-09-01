@@ -1767,28 +1767,110 @@ let _bookIsFitDay=false;
 
 let className0='';
 // Ponuka pre klientku bez členstva: rezervovať teraz, zaplatiť na mieste
-function showPayOnSiteChoice(classId, name, price){
-  price=+price||10;
-  let m=document.getElementById('posModal');
-  if(!m){ m=document.createElement('div'); m.id='posModal';
-    m.style.cssText='display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center;padding:16px';
-    m.onclick=e=>{ if(e.target===m) m.style.display='none'; };
-    document.body.appendChild(m); }
-  m.innerHTML=`<div style="background:#181818;border:1px solid var(--gold-border,#332a18);border-radius:16px;max-width:400px;width:100%;padding:22px">
-    <div style="font-weight:800;color:var(--gold,#C9A84C);font-size:1.05rem;margin-bottom:6px">Nemáš aktívne členstvo</div>
-    <div style="font-size:.88rem;color:var(--muted,#999);line-height:1.6;margin-bottom:16px">
-      Miesto na hodinu <b style="color:#ddd">${escHtml(name)}</b> ti vieme podržať aj tak — vstup jednoducho zaplatíš v hotovosti priamo v štúdiu.
-    </div>
-    <button onclick="doPayOnSite('${classId}')" style="width:100%;background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);color:#111;font-weight:800;border:none;border-radius:12px;padding:13px;font-size:.95rem;cursor:pointer;margin-bottom:8px">💵 Rezervovať a zaplatiť na mieste (${price} €)</button>
-    <a href="/pricing" style="display:block;text-align:center;background:rgba(201,168,76,.1);border:1px solid var(--gold-border,#332a18);color:var(--gold,#C9A84C);border-radius:12px;padding:12px;font-size:.9rem;font-weight:700;text-decoration:none;margin-bottom:8px">✨ Pozrieť členstvá a permanentky</a>
-    <button onclick="document.getElementById('posModal').style.display='none'" style="width:100%;background:none;border:1px solid #333;color:var(--muted,#888);border-radius:10px;padding:9px;font-size:.82rem;cursor:pointer">Zrušiť</button>
-  </div>`;
-  m.style.display='flex';
+// Keď klientka nemá členstvo, ponúkneme jej presne to, čo si môže kúpiť — aj
+// s cenami — a nechá si vybrať, či zaplatí na mieste alebo hneď online.
+// Predtým tu bolo jediné tlačidlo „zaplatiť na mieste (10 €)" a odkaz na cenník,
+// takže si musela vyberať inde a tréner nevedel, čo jej má predať (Marek 1. 9.).
+let _posPlany = null;
+async function posNacitajPlany(){
+  if(_posPlany) return _posPlany;
+  try{ _posPlany = await api('/api/membership/plans'); }catch(e){ _posPlany = {}; }
+  return _posPlany;
 }
-async function doPayOnSite(classId){
-  document.getElementById('posModal').style.display='none';
-  const d=await api('/api/bookings',{method:'POST',body:{class_id:classId, pay_on_site:true}});
-  if(d?.ok){ showToast('✅ Rezervované — vstup zaplatíš na mieste 💵','success'); loadMyBookings(); loadClasses(); }
+const POS_EUR = n => (Math.round(n*100)/100).toString().replace('.',',') + ' €';
+
+async function showPayOnSiteChoice(classId, name, price){
+  const P = await posNacitajPlany();
+  const c = k => (P && P[k] && +P[k].price) || null;
+  const CENY = {
+    vstup1: c('vstup1') || 10,
+    permanentka10: c('permanentka10') || 80,
+    bronze: c('bronze') || 50,
+    silver: c('silver') || 75,
+    gold: c('gold') || 125,
+  };
+  const goldCena = P && P.permanentka10 && P.permanentka10.gold_price;
+
+  let m = document.getElementById('posModal');
+  if(!m){ m = document.createElement('div'); m.id='posModal';
+    m.style.cssText='display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;overscroll-behavior:contain';
+    m.onclick = e => { if(e.target===m) m.style.display='none'; };
+    document.body.appendChild(m); }
+
+  const polozka = (id, nadpis, popis, cena, znacka) => `
+    <button onclick="posVyber('${classId}','${id}')" class="pos-item">
+      <span class="pos-l"><b>${nadpis}</b><small>${popis}</small></span>
+      <span class="pos-c">${POS_EUR(cena)}${znacka?`<em>${znacka}</em>`:''}</span>
+    </button>`;
+
+  m.innerHTML = `<style>
+    .pos-card{background:#181818;border:1px solid var(--gold-border,#332a18);border-radius:16px;max-width:430px;width:100%;padding:20px;margin:auto}
+    .pos-item{width:100%;display:flex;align-items:center;gap:12px;justify-content:space-between;text-align:left;
+      background:rgba(201,168,76,.07);border:1px solid rgba(201,168,76,.28);border-radius:12px;
+      padding:12px 14px;margin-bottom:8px;cursor:pointer;color:inherit;font:inherit}
+    .pos-item:hover{background:rgba(201,168,76,.14);border-color:rgba(201,168,76,.5)}
+    .pos-l{display:flex;flex-direction:column;gap:2px;min-width:0}
+    .pos-l b{font-size:.95rem;color:#efe7d4;font-weight:800}
+    .pos-l small{font-size:.76rem;color:var(--muted,#999);line-height:1.35}
+    .pos-c{flex:none;font-weight:900;color:var(--gold,#C9A84C);font-size:1rem;display:flex;flex-direction:column;align-items:flex-end}
+    .pos-c em{font-style:normal;font-size:.66rem;color:#8bc34a;font-weight:700}
+    .pos-h{font-weight:800;color:var(--gold,#C9A84C);font-size:1.05rem;margin-bottom:4px}
+    .pos-s{font-size:.86rem;color:var(--muted,#999);line-height:1.55;margin-bottom:14px}
+    .pos-sec{font-size:.72rem;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted,#888);font-weight:800;margin:14px 0 7px}
+    .pos-back{background:none;border:1px solid #333;color:var(--muted,#888);border-radius:10px;padding:9px;width:100%;font-size:.82rem;cursor:pointer;margin-top:4px}
+    .pos-online{display:block;text-align:center;background:rgba(139,195,74,.12);border:1px solid rgba(139,195,74,.45);
+      color:#a5d6a7;border-radius:12px;padding:12px;font-size:.88rem;font-weight:700;text-decoration:none;margin-top:12px}
+  </style>
+  <div class="pos-card" id="posCard">
+    <div class="pos-h">Nemáš aktívne členstvo</div>
+    <div class="pos-s">Miesto na <b style="color:#ddd">${escHtml(name)}</b> ti podržíme.
+      Vyber si, čo si kúpiš — zaplatíš v hotovosti priamo v štúdiu a tréner ti to zapíše.</div>
+
+    <div class="pos-sec">Jednorazovo</div>
+    ${polozka('vstup1','Jednorazový vstup','Na túto jednu hodinu', CENY.vstup1)}
+    ${polozka('permanentka10','10-vstupová permanentka','Platnosť 90 dní · vychádza '+POS_EUR(CENY.permanentka10/10)+' za hodinu', CENY.permanentka10, goldCena?'cena pre Gold':'')}
+
+    <div class="pos-sec">Mesačné členstvo</div>
+    <button onclick="posClenstva('${classId}','${String(name).replace(/'/g,"\\'")}')" class="pos-item">
+      <span class="pos-l"><b>💎 Mesačné členstvo</b><small>Neobmedzene hodín · od ${POS_EUR(CENY.bronze)}</small></span>
+      <span class="pos-c">›</span>
+    </button>
+
+    <a href="/pricing?src=booking" class="pos-online">🛒 Alebo si to kúp hneď online a rezervuj sa</a>
+    <button onclick="document.getElementById('posModal').style.display='none'" class="pos-back">Zrušiť</button>
+  </div>`;
+  m.style.display = 'flex';
+  m._ceny = CENY; m._nazov = name;
+}
+
+// Druhá úroveň — konkrétny plán členstva. Ceny sú tie isté, ktoré posiela server.
+function posClenstva(classId, name){
+  const m = document.getElementById('posModal'); if(!m) return;
+  const C = m._ceny || {bronze:50, silver:75, gold:125};
+  const polozka = (id, nadpis, popis, cena) => `
+    <button onclick="posVyber('${classId}','${id}')" class="pos-item">
+      <span class="pos-l"><b>${nadpis}</b><small>${popis}</small></span>
+      <span class="pos-c">${POS_EUR(cena)}<em>/ mesiac</em></span>
+    </button>`;
+  m.querySelector('#posCard').innerHTML = `
+    <div class="pos-h">Mesačné členstvo</div>
+    <div class="pos-s">Neobmedzene hodín vo všetkých mestách. Zaplatíš v štúdiu, tréner ti ho aktivuje.</div>
+    ${polozka('bronze','🥉 Bronze','Neobmedzene živých hodín', C.bronze)}
+    ${polozka('silver','🥈 Silver','Bronze + online hodiny + metabolická analýza', C.silver)}
+    ${polozka('gold','🥇 Gold','Silver + jedálniček na mieru a individuálny plán', C.gold)}
+    <a href="/pricing?src=booking" class="pos-online">🛒 Alebo si ho kúp hneď online a rezervuj sa</a>
+    <button onclick="showPayOnSiteChoice('${classId}','${String(name).replace(/'/g,"\\'")}')" class="pos-back">← Späť</button>`;
+}
+
+// Rezervácia so zvolenou položkou. Server si cenu doráta sám — klientovi sa neverí.
+async function posVyber(classId, plan){
+  const m = document.getElementById('posModal'); if(m) m.style.display='none';
+  const d = await api('/api/bookings',{method:'POST',body:{class_id:classId, pay_on_site:true, pay_plan:plan}});
+  if(d?.ok){
+    const nazvy = {vstup1:'jednorazový vstup', permanentka10:'permanentku', bronze:'Bronze', silver:'Silver', gold:'Gold'};
+    showToast('✅ Rezervované — v štúdiu zaplatíš '+(nazvy[plan]||'vstup')+' 💵','success');
+    loadMyBookings(); loadClasses();
+  }
   else if(d?.stale){ showToast('Rozvrh sa medzičasom zmenil — obnovili sme zoznam, skús to znova 🙏','error'); loadClasses(); }
   else showToast('Chyba: '+(d?.error||'?'),'error');
 }
