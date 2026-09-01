@@ -2421,6 +2421,32 @@ async function seedData() {
     }catch(e){ console.error('merch stare:', e.message); }
   }
 
+  // Traja ľudia majú na účte kredit, ku ktorému chýba záznam v histórii —
+  // pripísal sa v čase, keď sa ledger ešte nepísal (audit E1, Marek 1. 9.).
+  // Sumu NEMENÍME, len dopĺňame chýbajúci riadok, aby sa dalo dohľadať,
+  // odkiaľ peniaze prišli. Bez toho nesedí účet s výpisom.
+  if(!(await q.one(db.settings,{key:'kredit_historia_doplnena_v1'}))) setTimeout(async()=>{
+    try{
+      await q.insert(db.settings,{key:'kredit_historia_doplnena_v1', value:true, at:nowISO()});
+      let n=0;
+      for(const u of await q.find(db.users,{})){
+        const naUcte=+(u.referral_credit||0);
+        if(!(naUcte>0)) continue;
+        const zaznamy=await q.find(db.credit_ledger,{user_id:u._id});
+        const vHistorii=+zaznamy.reduce((s,l)=>s+(+l.delta||0),0).toFixed(2);
+        const rozdiel=+(naUcte-vHistorii).toFixed(2);
+        if(Math.abs(rozdiel)<0.02) continue;
+        await q.insert(db.credit_ledger,{user_id:u._id, delta:rozdiel, balance:naUcte,
+          reason:'Doplnenie histórie — kredit pripísaný pred zavedením výpisu',
+          created_at:nowISO(), doplnene_spatne:true});
+        n++;
+        console.log('💳 KREDIT: '+u.name+' · na účte '+naUcte.toFixed(2)
+          +' € · v histórii bolo '+vHistorii.toFixed(2)+' € · doplnené '+rozdiel.toFixed(2)+' €');
+      }
+      console.log('💳 KREDIT: doplnených záznamov: '+n);
+    }catch(e){ console.error('kredit historia:', e.message); }
+  }, 7000);
+
   // Brezno: od 23. 7. do 27. 8. vypadlo osem hodín (pôrodnica, nízka účasť).
   // Klientky za ten čas platili členstvo, ktoré nemali ako využiť, tak im ho
   // predlžujeme o zodpovedajúci čas (Marek 1. 9.). Dve hodiny týždenne × osem
@@ -9355,7 +9381,19 @@ app.post('/api/admin/transactions', adminAuth, async(req,res)=>{
     const prod=product_id?await q.one(db.products,{_id:product_id}):null;
     const product_name=prod?prod.name:(req.body.product_name||'Iný predaj');
     const finalAmt=+parseFloat(amount).toFixed(2);
-    const tx=await q.insert(db.transactions,{partner_id:partner_id||null,client_id:client_id||null,client_name,product_id:product_id||null,product_name,amount:finalAmt,date:date||today(),notes:notes||''});
+    // Bez typu transakcia nevstúpi do tržieb — /api/admin/finance/stats berie
+    // z transactions len konkrétne typy. Sedem merch predajov za 175 € tak
+    // v prehľade chýbalo (audit E2, Marek 1. 9.). Typ odvodíme z názvu produktu.
+    const typPredaja = (()=>{
+      const n = String(product_name||'').toLowerCase();
+      if(/permanentk|vstupov/.test(n)) return 'single_entry';
+      if(/vstup/.test(n)) return 'single_entry';
+      if(/členstv|clenstv|bronze|silver|gold/.test(n)) return 'membership';
+      if(/súkrom|sukrom|private/.test(n)) return 'private_lesson';
+      if(/vstupenk|event|masterclass/.test(n)) return 'event_ticket';
+      return isMerchItem({product_name}) ? 'product' : 'product';
+    })();
+    const tx=await q.insert(db.transactions,{partner_id:partner_id||null,client_id:client_id||null,client_name,product_id:product_id||null,product_name,amount:finalAmt,type:typPredaja,user_id:client_id||null,date:date||today(),created_at:nowISO(),notes:notes||''});
     // Commission only when we have a recipient (sponsor or explicit partner)
     if(partner_id){ await saveCommissions(tx._id,partner_id,finalAmt); await calcRank(partner_id); }
     res.json({ok:true,id:tx._id,commission:!!partner_id,partner_id:partner_id||null});
@@ -10976,13 +11014,20 @@ app.get('/api/admin/finance/stats', adminAuth, async(req,res)=>{
     // Vstupenky na eventy (Stripe aj hotovosť/prevod na mieste) — event modul ich
     // zapisuje ako transactions.event_ticket; do payments nejdú, preto sem.
     const eventTickets = (await q.find(db.transactions,{type:'event_ticket'})).filter(t=>+t.amount>0);
+    // Ručne zapísaný predaj (merch, členstvo v hotovosti) — do augusta 2026 sa
+    // ukladal bez typu a v tržbách chýbal. Berieme ho podľa typu aj podľa toho,
+    // že ho nemá vôbec, nech sedia aj staré záznamy.
+    const rucnePredaje = (await q.find(db.transactions,{})).filter(t=>
+      !t.commission_only && +t.amount>0
+      && (t.type==='product' || (!t.type && (t.product_name||t.payment_method))));
     const allEvents = [
       ...payments.map(p=>({d:payDate(p), a:+p.amount||0})),
       ...cashMembs.map(m=>({d:m.created_at||'', a:+m.price||0})),
       ...orders.map(o=>({d:o.paid_at||o.created_at||'', a:+o.total||0})),
       ...singleEntries.map(t=>({d:t.created_at||'', a:+t.amount||0})),
       ...privateLessons.map(t=>({d:t.created_at||'', a:+t.amount||0})),
-      ...eventTickets.map(t=>({d:t.created_at||'', a:+t.amount||0}))
+      ...eventTickets.map(t=>({d:t.created_at||'', a:+t.amount||0})),
+      ...rucnePredaje.map(t=>({d:t.created_at||t.date||'', a:+t.amount||0}))
     ];
     const period = allEvents.filter(e=>inRange(e.d));
     const revenuePeriod = +period.reduce((s,e)=>s+e.a,0).toFixed(2);
@@ -16999,6 +17044,10 @@ async function privCountMapInPeriod(prefix){
 // Potvrdená dochádzka platí hneď; obyčajná rezervácia až keď deň hodiny prejde,
 // nech sa dnešná večerná hodina neráta doobeda.
 function hodinaSaRata(b, dnes){
+  // Kto sa prihlásil a neprišiel, nemá dostať body za odchodenú hodinu
+  // (Marek 1. 9.). Neúčasť sa zapisuje do attendance_status, status ostáva
+  // confirmed — bez tejto kontroly by sa rátala ako odchodená.
+  if(b && b.attendance_status==='no_show') return false;
   if(!b || !['attended','confirmed'].includes(b.status)) return false;
   if(b.attendance_status==='attended' || b.status==='attended') return true;
   const d=String(b.booking_date||b.created_at||'').slice(0,10);

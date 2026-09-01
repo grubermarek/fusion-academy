@@ -125,6 +125,27 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
   </div>
 </section>
 
+<!-- SEPTEMBROVÁ AKCIA — plagát vedie na výzvu v appke. Do 30. 9., potom sa
+     blok schová sám, nech tu po termíne nevisí neplatná ponuka. -->
+<section id='promoSeptember' style='display:none;padding:26px 0;background:#0d0c09'>
+  <div class='container' style='max-width:620px'>
+    <a href='/client-dashboard#vyzva' style='display:block;text-decoration:none'>
+      <img src='/img/promo/sutaz-september-post.png' loading='lazy'
+        alt='Septembrová akcia: priveď novú členku a získaš súkromnú hodinu s Marekom v hodnote 100 €'
+        style='width:100%;height:auto;border-radius:16px;border:1px solid rgba(201,168,76,.35);display:block'>
+    </a>
+  </div>
+</section>
+<script>
+  // Akcia platí len september — po termíne nech tu nevisí neplatná ponuka.
+  (function(){
+    var dnes=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Bratislava'}).format(new Date());
+    if(dnes>='2026-09-01' && dnes<='2026-09-30'){
+      var el=document.getElementById('promoSeptember'); if(el) el.style.display='block';
+    }
+  })();
+</script>
+
 <!-- REFERRAL CREDIT BANNER (shown when logged in with credit) -->
 <div id="creditBanner" style="display:none;background:linear-gradient(135deg,rgba(201,168,76,.15),rgba(201,168,76,.05));border-bottom:1px solid rgba(201,168,76,.25);padding:12px 0">
   <div class="container d-flex align-items-center justify-content-between flex-wrap gap-2">
