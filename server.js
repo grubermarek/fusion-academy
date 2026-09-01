@@ -19941,6 +19941,79 @@ app.post('/api/admin/venceky/payment', adminAuth, async(req,res)=>{
     res.json({ok:true});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
+// ── Žiak si venčekový kurz zaplatí kartou ───────────────────────────────────
+// Doteraz sa dal uhradiť len v hotovosti na hodine alebo prevodom, čo znamená
+// behanie za peniazmi po telocvični. Marek 2. 9.: „daj im tú možnosť platby
+// Stripom, čiže kartou."
+app.post('/api/vencek/checkout', auth, async(req,res)=>{
+  try{
+    if(!STRIPE_SECRET) return res.status(400).json({error:'Platba kartou zatiaľ nie je dostupná — zaplať prosím u lektora.'});
+    const u=await q.one(db.users,{_id:req.session.uid});
+    if(!u || !u.venceky_class_id) return res.status(400).json({error:'Nie si v žiadnej venčekovej skupine'});
+    const c=await q.one(db.venceky_classes,{_id:u.venceky_class_id});
+    if(!c) return res.status(404).json({error:'Skupina nenájdená'});
+    // Rodič platí cez účet žiaka — inak by sedeli dve platby na jeden kurz.
+    if(u.venceky_role==='parent')
+      return res.status(400).json({error:'Kurz sa uhrádza cez účet žiaka — prihláste sa prosím jeho kontom.'});
+    if(await q.one(db.venceky_payments,{class_id:c._id, user_id:u._id}))
+      return res.status(400).json({error:'Kurz už máš uhradený'});
+    const suma=+c.price||49.90;
+    if(!(suma>0)) return res.status(400).json({error:'Neplatná cena kurzu'});
+    const s=await q.one(db.venceky_schools,{_id:c.school_id});
+    const r=await stripeApi('checkout/sessions', {
+      'mode':'payment',
+      'line_items[0][quantity]':1,
+      'line_items[0][price_data][currency]':'eur',
+      'line_items[0][price_data][unit_amount]':Math.round(suma*100),
+      'line_items[0][price_data][product_data][name]':`Venčekový kurz ${c.year} · ${(s&&s.name)||''} ${c.name}`.trim(),
+      'success_url':`${APP_URL}/vencek?stripe=ok&session_id={CHECKOUT_SESSION_ID}`,
+      'cancel_url':`${APP_URL}/vencek?stripe=cancel`,
+      'customer_email':u.email||'',
+      'metadata[type]':'vencek',
+      'metadata[class_id]':String(c._id),
+      'metadata[user_id]':String(u._id)
+    }, 'POST');
+    if(r.status>=400 || !r.body?.url) return res.status(400).json({error:r.body?.error?.message||'Stripe chyba'});
+    res.json({ok:true, url:r.body.url});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Overenie po návrate zo Stripe — stav sa ťahá od Stripe, nedá sa podvrhnúť.
+app.post('/api/vencek/verify', auth, async(req,res)=>{
+  try{
+    if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
+    const {session_id}=req.body;
+    if(!session_id) return res.status(400).json({error:'Chýba session_id'});
+    const r=await stripeApi('checkout/sessions/'+encodeURIComponent(session_id), null, 'GET');
+    const s=r.body;
+    if(s?.payment_status!=='paid' || s?.metadata?.type!=='vencek')
+      return res.status(400).json({error:'Platba nebola dokončená'});
+    const c=await q.one(db.venceky_classes,{_id:String(s.metadata.class_id||'')});
+    const u=await q.one(db.users,{_id:String(s.metadata.user_id||'')});
+    if(!c||!u) return res.status(404).json({error:'Skupina alebo žiak nenájdený'});
+    // Návrat na stránku sa dá zopakovať (refresh, druhý tab) — druhá platba nesmie vzniknúť.
+    if(await q.one(db.venceky_payments,{class_id:c._id, user_id:u._id}))
+      return res.json({ok:true, already:true});
+    const amt=+(s.amount_total||0)/100 || +c.price || 49.90;
+    await q.insert(db.venceky_payments,{class_id:c._id, school_id:c.school_id, user_id:u._id,
+      user_name:u.name, amount:amt, method:'stripe', paid_at:nowISO(),
+      stripe_session_id:String(session_id), created_at:nowISO()});
+    await q.insert(db.notifications,{user_id:u._id, type:'venceky',
+      title:'🧾 Potvrdenie o platbe — Fusion Venčeky',
+      body:`Prijali sme platbu ${amt.toFixed(2)} € za venčekový kurz (${c.name}). Ďakujeme!`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+    if(u.email && /@/.test(u.email)) sendMail(u.email,'🧾 Potvrdenie o platbe — Fusion Venčeky',
+      emailTemplate('Potvrdenie o platbe',
+      `<p>Potvrdzujeme prijatie platby <b>${amt.toFixed(2)} €</b> za venčekový kurz <b>Fusion Venčeky ${c.year}</b>, skupina <b>${c.name}</b>.</p>
+       <p>Spôsob platby: kartou · Dátum: ${today()}</p>
+       <p>Toto potvrdenie si uschovajte. Ďakujeme! 💛</p>`,
+      '📱 Otvoriť appku', `${APP_URL}/vencek`), {priority:2}).catch(()=>{});
+    createInvoice({ user_id:u._id, client_name:u.name, client_email:u.email,
+      items:[{desc:`Venčekový kurz ${c.year} · ${c.name}`, qty:1, total:amt}], total:amt,
+      method:'Stripe (karta / Apple Pay / Google Pay)' })
+      .catch(e=>console.error('faktúra k venčeku:', e.message));
+    res.json({ok:true, amount:amt});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 app.post('/api/admin/venceky/payment-delete', adminAuth, async(req,res)=>{
   try{ await q.remove(db.venceky_payments,{class_id:String(req.body.class_id||''),user_id:String(req.body.user_id||'')},{multi:true});
     res.json({ok:true}); }catch(e){ res.status(500).json({error:e.message}); }

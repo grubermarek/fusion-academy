@@ -182,6 +182,28 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('takže riaditeľom sa nestal', pu && pu.venceky_role === 'student' && !pu.vencek_pending_role,
       pu ? (pu.venceky_role + ' / pending=' + pu.vencek_pending_role) : '—');
 
+    console.log('\n7c) Platba kartou (Stripe nie je v QA nakonfigurovaný — stráži sa, koho vôbec pustí):');
+    const ziak = {};
+    await j('/api/login', { method: 'POST', body: { email: 'qa.ven.ziak@qa-biz.local', password: 'Heslo123!' } }, ziak);
+    const platba = await j('/api/vencek/checkout', { method: 'POST', body: {} }, ziak);
+    ok('žiak platbu vyvolá (bez kľúča skončí zrozumiteľne)', platba.status === 400 && /Stripe|kartou/i.test(String(platba.d && platba.d.error)),
+      'HTTP ' + platba.status + ' ' + JSON.stringify(platba.d));
+    const rodic = {};
+    await j('/api/login', { method: 'POST', body: { email: 'qa.ven.rodic@qa-biz.local', password: 'Heslo123!' } }, rodic);
+    const platbaR = await j('/api/vencek/checkout', { method: 'POST', body: {} }, rodic);
+    ok('rodič sa odmietne (kurz sa platí cez účet žiaka)', platbaR.status === 400,
+      'HTTP ' + platbaR.status + ' ' + JSON.stringify(platbaR.d).slice(0, 90));
+    const nikto = {};
+    await j('/api/login', { method: 'POST', body: { email: 'qa.ven.admin@qa-biz.local', password: 'Heslo123!' } }, nikto);
+    const platbaA = await j('/api/vencek/checkout', { method: 'POST', body: {} }, nikto);
+    ok('kto nie je v skupine, platbu nevyvolá', platbaA.status === 400,
+      'HTTP ' + platbaA.status + ' ' + JSON.stringify(platbaA.d).slice(0, 90));
+    const podvrh = await j('/api/vencek/verify', { method: 'POST', body: { session_id: 'cs_vymyslene_123' } }, ziak);
+    ok('podvrhnuté session_id platbu nezaloží', podvrh.status >= 400,
+      'HTTP ' + podvrh.status + ' ' + JSON.stringify(podvrh.d).slice(0, 90));
+    ok('a v databáze po ňom nič nie je', rd('venceky_payments.db').filter(p => p.method === 'stripe').length === 0,
+      JSON.stringify(rd('venceky_payments.db').map(p => p.method)));
+
     console.log('\n7b) Admin si pozrie skupinu očami žiaka:');
     const mojPrehlad = (await j('/api/vencek/mine', {}, adm)).d;
     ok('admin vidí prehľad škôl', mojPrehlad && mojPrehlad.role === 'admin' && Array.isArray(mojPrehlad.schools),

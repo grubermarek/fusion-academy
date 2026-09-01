@@ -78,8 +78,39 @@ function attCard(d){
     <div class="muted">Priemerná účasť <b style="color:var(--gold)">${d.class.attendance.avg_pct} %</b> · zapísaných ${d.class.attendance.lessons_recorded} lekcií</div></div>`;
   return '';
 }
+async function platitKartou(btn){
+  const pov=btn.textContent;
+  btn.disabled=true; btn.textContent='Otváram platbu…';
+  try{
+    const r=await (await fetch('/api/vencek/checkout',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:'{}'})).json();
+    if(r&&r.url){ location.href=r.url; return; }
+    alert(r&&r.error ? r.error : 'Platbu sa nepodarilo otvoriť. Skús to znova alebo zaplať u lektora.');
+  }catch(e){ alert('Platbu sa nepodarilo otvoriť. Skús to znova alebo zaplať u lektora.'); }
+  btn.disabled=false; btn.textContent=pov;
+}
+// Návrat zo Stripe — platbu potvrdí až server dotazom na Stripe, nie táto adresa.
+// Musí dobehnúť PRED načítaním prehľadu, inak by stránka ešte ukázala „neuhradené".
+async function overPlatbu(){
+  const p=new URLSearchParams(location.search);
+  if(p.get('stripe')!=='ok' || !p.get('session_id')) return null;
+  let hotovo=false;
+  try{
+    const r=await (await fetch('/api/vencek/verify',{method:'POST',headers:{'Content-Type':'application/json'},
+      credentials:'include',body:JSON.stringify({session_id:p.get('session_id')})})).json();
+    hotovo = !!(r && r.ok);
+  }catch(e){}
+  history.replaceState({},'', '/vencek');
+  return hotovo;
+}
 (async()=>{
   const host=document.getElementById('host');
+  const zaplatene=await overPlatbu();
+  if(zaplatene){
+    const b=document.createElement('div');
+    b.style.cssText='background:rgba(124,179,66,.16);border:1px solid rgba(124,179,66,.5);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:.9rem';
+    b.innerHTML='✅ <b>Ďakujeme, kurz je uhradený.</b> Potvrdenie ti prišlo na email aj do notifikácií.';
+    host.parentNode.insertBefore(b, host);
+  }
   // ?ako=student&class_id=… — admin si pozrie skupinu očami žiaka, aby vedel
   // na nábore ukázať, čo deti v appke uvidia.
   const qp=new URLSearchParams(location.search);
@@ -123,7 +154,15 @@ function attCard(d){
     ? `<div class="pay-ok" style="background:rgba(201,168,76,.1);border-color:rgba(201,168,76,.4);color:var(--cream)">👨‍👩‍👧 Sledujete triedu${d.child_name?` — dieťa <b>${esc(d.child_name)}</b>`:''}. Kurz (${(+d.price).toFixed(2)} €) sa uhrádza cez účet žiaka — po platbe príde potvrdenie na email.</div>`
     : d.my_payment
     ? `<div class="pay-ok">🧾 <b>Zaplatené</b> — ${(+d.my_payment.amount).toFixed(2)} € (${d.my_payment.method==='transfer'?'prevodom':'v hotovosti'}, ${new Date(d.my_payment.paid_at).toLocaleDateString('sk')}). Potvrdenie máš v notifikáciách a na emaili.</div>`
-    : `<div class="pay-no">💳 Kurz ešte nie je uhradený (${(+d.price).toFixed(2)} €). Platba v hotovosti na hodine alebo prevodom — info u lektora.</div>`;
+    : `<div class="pay-no">💳 Kurz ešte nie je uhradený — <b>${(+d.price).toFixed(2)} €</b>.
+        <div style="margin-top:10px">
+          <button onclick="platitKartou(this)"${d.preview?' disabled title="V náhľade sa platiť nedá"':''}
+            style="background:linear-gradient(135deg,#C9A84C,#a5842f);color:#161310;border:none;border-radius:10px;padding:11px 20px;font-weight:800;font-size:.92rem;cursor:pointer;width:100%;max-width:280px">
+            💳 Zaplatiť kartou
+          </button>
+        </div>
+        <div class="muted" style="margin-top:8px">Karta, Apple Pay aj Google Pay. Alebo v hotovosti na hodine či prevodom — info u lektora.</div>
+      </div>`;
   host.innerHTML=done+`<div class="muted" style="margin-bottom:8px">🏫 ${esc(d.school)}</div>`+classCard(d.class, `<div class="card">${pay}</div>`+attCard(d));
 })();
 </script>
