@@ -19291,6 +19291,10 @@ app.get('/api/qr.png', async(req,res)=>{
 // Venčeková registrácia má vlastnú stránku — hlavná predáva Zumbu dospelým
 // ženám („Nájdi svoj rytmus"), čo ôsmakovi po naskenovaní QR nič nehovorí.
 app.get('/v/:code',            (req,res)=>res.sendFile(path.join(__dirname,'public','vencek-registracia.html')));
+// Kiosk na nábor: celá obrazovka s QR, ktorý vedie na registráciu tej skupiny.
+app.get('/vk/:code',           (req,res)=>res.sendFile(path.join(__dirname,'public','vencek-kiosk.html')));
+// Kiosk pre nábor: celá obrazovka s QR, ktorý vedie na registráciu skupiny.
+app.get('/vk/:code',           (req,res)=>res.sendFile(path.join(__dirname,'public','vencek-kiosk.html')));
 app.get('/event/:slug',        (req,res)=>res.sendFile(path.join(__dirname,'public','event.html')));
 app.get('/event/:slug/hotovo', (req,res)=>res.sendFile(path.join(__dirname,'public','event-hotovo.html')));
 app.get('/t/:code',            (req,res)=>res.sendFile(path.join(__dirname,'public','ticket.html')));
@@ -20367,6 +20371,7 @@ app.get('/api/vencek/info', rlPublic, async(req,res)=>{
       roles:(Array.isArray(c.roles)&&c.roles.length)?c.roles:VENCEK_ROLES,
       price:+c.price||49.90, lessons_total:c.lessons_total||13, lessons_before:c.lessons_before||10,
       lecturer:c.lecturer||'', event_date:c.event_date||'', schedule:c.schedule||'',
+      registered:(await q.find(db.users,{venceky_class_id:c._id})).length,
       dances:(c.dances||[]).map(d=>d.name)});
   }catch(e){ res.status(500).json({error:e.message}); }
 });

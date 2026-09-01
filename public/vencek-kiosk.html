@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Venček — kiosk</title>
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/png" href="/logo-mark.png">
+<style>
+  :root{--bg:#0B0A07;--gold:#C9A84C;--gold-svetla:#EBD79A;--cream:#F2ECDC;--muted:#8E856F}
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden}
+  body{
+    background:var(--bg);color:var(--cream);
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    display:flex;align-items:center;justify-content:center;
+    height:100dvh;
+  }
+  .stred{position:relative;text-align:center;padding:3vmin;max-width:min(96vw,1100px)}
+  .stred::before{
+    content:'';position:absolute;inset:-14vmin -10vmin;
+    background:radial-gradient(52% 52% at 50% 45%, rgba(201,168,76,.18), transparent 70%);
+    pointer-events:none;
+  }
+  .znak{position:relative;font-size:clamp(.7rem,1.5vmin,1rem);letter-spacing:.3em;
+    text-transform:uppercase;color:var(--gold);font-weight:700}
+  h1{position:relative;margin:1.4vmin 0 .4vmin;font-size:clamp(2rem,7vmin,4.6rem);font-weight:800;
+    line-height:1;letter-spacing:-.02em;
+    background:linear-gradient(135deg,#F8E9BC,var(--gold) 55%,#9A7A2C);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .skola{position:relative;font-size:clamp(1rem,2.6vmin,1.8rem);font-weight:700}
+  .vyzva{position:relative;color:var(--muted);font-size:clamp(.85rem,2vmin,1.25rem);margin-top:.6vmin}
+
+  .qrbox{position:relative;background:#fff;border-radius:2.2vmin;padding:2.4vmin;
+    margin:3vmin auto 2vmin;width:fit-content;box-shadow:0 0 0 1px rgba(201,168,76,.35), 0 3vmin 8vmin rgba(0,0,0,.6)}
+  .qrbox img{display:block;width:min(46vmin,420px);height:min(46vmin,420px)}
+
+  .kod{position:relative;font-family:'Courier New',monospace;font-size:clamp(1.1rem,3.4vmin,2.2rem);
+    font-weight:700;letter-spacing:.1em;color:var(--gold-svetla)}
+  .adresa{position:relative;color:var(--muted);font-size:clamp(.75rem,1.7vmin,1.05rem);margin-top:.5vmin;word-break:break-all}
+  .pocet{position:relative;margin-top:2.2vmin;font-size:clamp(.85rem,2vmin,1.2rem);color:var(--cream)}
+  .pocet b{color:var(--gold);font-size:1.25em}
+
+  .stav{color:var(--muted);font-size:1.1rem;text-align:center;padding:6vmin}
+  /* Hore vpravo, aby neprekrývalo počet registrovaných pod QR. */
+  .fs{position:fixed;right:2vmin;top:2vmin;background:rgba(255,255,255,.06);border:1px solid rgba(201,168,76,.3);
+    color:var(--muted);border-radius:10px;padding:8px 14px;font-size:.8rem;cursor:pointer;font-family:inherit;z-index:5}
+  .fs:hover{color:var(--gold);border-color:var(--gold)}
+  /* V celoobrazovkovom režime už netreba — nech na plátne nesvieti. */
+  :fullscreen .fs{opacity:.25}
+  :fullscreen .fs:hover{opacity:1}
+  @media (prefers-reduced-motion:no-preference){
+    .qrbox{animation:dych 5s ease-in-out infinite}
+    @keyframes dych{0%,100%{transform:scale(1)}50%{transform:scale(1.015)}}
+  }
+</style>
+</head>
+<body>
+<div class="stred" id="host"><div class="stav">Načítavam…</div></div>
+<button class="fs" onclick="celaObrazovka()">⛶ Celá obrazovka</button>
+<script>
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const KOD=(new URLSearchParams(location.search).get('kod')
+  || location.pathname.split('/').filter(Boolean).pop() || '').toUpperCase();
+function celaObrazovka(){
+  try{ document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); }catch(e){}
+}
+(async()=>{
+  const host=document.getElementById('host');
+  if(!/^VEN-[A-Z0-9]{3,}$/.test(KOD)){
+    host.innerHTML='<div class="stav">Chýba kód skupiny.</div>'; return;
+  }
+  async function vykresli(){
+    let d; try{ d=await (await fetch('/api/vencek/info?code='+encodeURIComponent(KOD))).json(); }catch(e){}
+    if(!d || !d.ok){ host.innerHTML='<div class="stav">Kód '+esc(KOD)+' nepoznáme.</div>'; return; }
+    const adresa=location.origin.replace(/^https?:\/\//,'')+'/v/'+KOD;
+    host.innerHTML=`
+      <div class="znak">Fusion Academy</div>
+      <h1>Venček</h1>
+      <div class="skola">${esc(d.school||'')}</div>
+      <div class="vyzva">Naskenuj telefónom a zaregistruj sa</div>
+      <div class="qrbox"><img src="/api/qr.png?size=1000&path=${encodeURIComponent('/v/'+KOD)}" alt="QR kód na registráciu"></div>
+      <div class="kod">${esc(KOD)}</div>
+      <div class="adresa">${esc(adresa)}</div>
+      ${d.registered>0?`<div class="pocet">Už zaregistrovaných: <b>${d.registered}</b></div>`:''}`;
+  }
+  await vykresli();
+  // Počet registrovaných rastie počas náboru — obnovuje sa sám, nech to na
+  // premietanom kiosku nikto nemusí refreshovať.
+  setInterval(vykresli, 20000);
+})();
+</script>
+</body>
+</html>

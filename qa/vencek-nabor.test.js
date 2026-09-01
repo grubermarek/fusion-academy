@@ -95,6 +95,19 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('cena aj počet hodín sedia', tr.d.class.price === 49.9 && tr.d.class.lessons_total === 13,
       tr.d.class.price + ' € · ' + tr.d.class.lessons_total + ' hodín');
 
+    console.log('\n1c) Kiosk na nábor:');
+    const kioskR = await fetch(BASE + '/vk/VEN-DETVA');
+    ok('kiosk sa otvorí', kioskR.status === 200, 'HTTP ' + kioskR.status);
+    const kioskTelo = await kioskR.text();
+    ok('a ťahá QR z nášho endpointu, nie z cudzej služby',
+      /\/api\/qr\.png/.test(kioskTelo) && !/qrserver\.com/.test(kioskTelo));
+    ok('QR vedie na registráciu tej skupiny',
+      /path=\$\{encodeURIComponent\('\/v\/'\+KOD\)\}/.test(kioskTelo));
+    const infoK = (await j('/api/vencek/info?code=VEN-DETVA', {}, {})).d;
+    ok('kiosk vie, koľko ich je zaregistrovaných', infoK && typeof infoK.registered === 'number',
+      JSON.stringify(infoK && infoK.registered));
+    ok('a nedostane pritom mená', !/qa\.ven\./.test(JSON.stringify(infoK)));
+
     console.log('\n1b) Tance, ktoré sa učia:');
     const TANCE = ['Waltz','Cha-cha','Tango','Jive','Valčík','Polka','Samba',
       'Salsa','Bachata','Quickstep','Slowfox','Čardáš','Merengue','Zumba'];

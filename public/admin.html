@@ -3840,7 +3840,8 @@ async function loadVenceky(){
           <td class="text-center">${c.paid}/${c.members}${c.unpaid?` <span class="text-warning">(${c.unpaid} chýba)</span>`:' ✅'}</td>
           <td class="text-end">${vEur(c.income)}</td>
           <td class="text-end" style="color:${c.profit>=0?'#8bc34a':'#f87171'}">${vEur(c.profit)}</td>
-          <td><button class="btn btn-sm btn-outline-secondary" onclick="vShowQR('${c.code}','${c.name}')">QR / odkaz</button></td>
+          <td><button class="btn btn-sm btn-outline-secondary" onclick="vShowQR('${c.code}','${c.name}')">QR / odkaz</button>
+            <button class="btn btn-sm btn-outline-warning mt-1" onclick="vKiosk('${c.code}')" title="Celá obrazovka s veľkým QR — na nábor v telocvični">🖥️ Kiosk</button></td>
           <td><button class="btn btn-sm btn-brand" onclick="vClassDetail('${c.id}')">Detail</button></td>
         </tr>`).join('')}
       </tbody></table>`:'<div class="text-warning small">⚠️ Škola nemá skupinu, takže sa do nej zatiaľ nedá registrovať. Doplní sa sama do minúty po nasadení — alebo klikni „+ Ďalšia skupina".</div>'}
@@ -3960,6 +3961,13 @@ async function vSetRole(uid, cid, role, el){
   const r=await vApi('member-role',{user_id:uid, class_id:cid, role});
   if(r?.ok){ showToast(`✅ ${r.name}: ${role==='none'?'odobratý(á) z venčekov':V_ROLE_LBL[role].replace(/^\S+\s/,'')}`,'success'); vClassDetail(cid); loadVenceky(); }
   else showToast('Chyba: '+(r?.error||'?'),'error');
+}
+// Kiosk na nábor — otvorí sa v novom okne, aby si ho premietol alebo postavil
+// na stôl. Sám sa obnovuje, takže počet registrovaných rastie pred očami.
+function vKiosk(code){
+  const url=(window.FA_APP_URL||location.origin)+'/vk/'+code;
+  const w=window.open(url,'_blank','noopener');
+  if(!w) showToast('Prehliadač zablokoval nové okno — otvor ' + url,'error');
 }
 function vShowQR(code,name){
   // Odkaz musí niesť KANONICKÚ doménu zo servera, nie tú, na ktorej je práve
