@@ -3906,11 +3906,18 @@ async function vAddSchool(){
   await vApi('schools',{name,city,year}); loadVenceky();
 }
 async function vAddClass(sid){
-  const name=prompt('Názov triedy (napr. 9.A):'); if(!name) return;
+  const name=prompt('Názov skupiny (napr. 9.A, alebo „Venčeková skupina" keď je jedna spoločná):'); if(!name) return;
   const price=prompt('Cena za žiaka (€):','49.90')||'49.90';
   const lecturer=prompt('Lektor:','Marek Gruber')||'';
-  const d=await vApi('classes',{school_id:sid,name,price:+price,lecturer});
-  alert('Trieda vytvorená.\n\nRegistračný odkaz pre žiakov:\n'+d.join_link+'\n\n(QR nájdeš pri triede.)');
+  // Kto sa smie zaregistrovať. Pri jednej spoločnej skupine dáva zmysel len
+  // žiak a učiteľ — rodič a riaditeľ by tam boli len na omyl.
+  const kto=prompt('Kto sa môže registrovať?\n\n1 = žiak + učiteľ (odporúčané pri jednej skupine)\n2 = všetci (žiak, rodič, učiteľ, riaditeľ)','1')||'1';
+  const roles = kto.trim()==='2' ? null : ['student','teacher'];
+  // Vlastný kód je v odkaze aj na papieri — VEN-HALIC sa prepisuje lepšie než VEN-A6WRS.
+  const kod=prompt('Vlastný kód skupiny (nepovinné — nechaj prázdne pre náhodný):\n\nStačí napísať napr. HALIC, doplní sa na VEN-HALIC','');
+  const d=await vApi('classes',{school_id:sid,name,price:+price,lecturer,...(roles?{roles}:{}),...(kod&&kod.trim()?{code:kod.trim()}:{})});
+  if(!d||!d.ok) return showToast('Chyba: '+((d&&d.error)||'?'),'error');
+  alert('Skupina vytvorená.\n\nRegistračný odkaz pre žiakov:\n'+d.join_link+'\n\nQR na vytlačenie nájdeš pri skupine — tlačidlo „QR / odkaz".');
   loadVenceky();
 }
 // Rolu si pri registrácii vyberajú sami, takže preklik treba vedieť opraviť

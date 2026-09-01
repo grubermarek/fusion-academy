@@ -176,6 +176,18 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('takže riaditeľom sa nestal', pu && pu.venceky_role === 'student' && !pu.vencek_pending_role,
       pu ? (pu.venceky_role + ' / pending=' + pu.vencek_pending_role) : '—');
 
+    console.log('\n8b) Vlastný kód skupiny (nech sa dá prepísať z papiera):');
+    const vlastny = await j('/api/admin/venceky/classes', { method: 'POST',
+      body: { school_id: sid, name: 'Skupina s kódom', price: 49.90, code: 'halic' } }, adm);
+    ok('kód sa dá zadať a normalizuje sa', vlastny.status === 200 && vlastny.d.class && vlastny.d.class.code === 'VEN-HALIC',
+      vlastny.d && vlastny.d.class ? vlastny.d.class.code : JSON.stringify(vlastny.d));
+    const duplik = await j('/api/admin/venceky/classes', { method: 'POST',
+      body: { school_id: sid, name: 'Druhá s tým istým', price: 49.90, code: 'VEN-HALIC' } }, adm);
+    ok('ten istý kód druhýkrát neprejde', duplik.status === 400, 'HTTP ' + duplik.status + ' ' + JSON.stringify(duplik.d).slice(0, 80));
+    const kratky = await j('/api/admin/venceky/classes', { method: 'POST',
+      body: { school_id: sid, name: 'Prikrátky', price: 49.90, code: 'AB' } }, adm);
+    ok('prikrátky kód sa odmietne', kratky.status === 400, 'HTTP ' + kratky.status);
+
     console.log('\n9) Preklik v role — prepnutie v admine:');
     const zmena = await j('/api/admin/venceky/member-role', { method: 'POST',
       body: { user_id: (pu || {})._id, class_id: hal.d.class._id, role: 'teacher' } }, adm);

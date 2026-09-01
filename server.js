@@ -19772,8 +19772,19 @@ app.post('/api/admin/venceky/classes', adminAuth, async(req,res)=>{
     const school=await q.one(db.venceky_schools,{_id:String(school_id||'')});
     if(!school) return res.status(404).json({error:'Škola nenájdená'});
     if(!String(name||'').trim()) return res.status(400).json({error:'Zadaj názov triedy (napr. 9.A)'});
-    let code; do{ code='VEN-'+Math.random().toString(36).slice(2,7).toUpperCase(); }
-    while(await q.one(db.venceky_classes,{code}));
+    // Vlastný kód sa dá zadať, nech je odkaz zapamätateľný (VEN-HALIC namiesto
+    // náhodného VEN-A6WRS) — pri nábore ho deti prepisujú z papiera, keď im
+    // nejde skener. Bez zadania ostáva náhodný ako doteraz.
+    let code;
+    const ziadany=String(req.body.code||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+    if(ziadany){
+      code = 'VEN-' + ziadany.replace(/^VEN/,'').slice(0,12);
+      if(code.length < 7) return res.status(400).json({error:'Kód je prikrátky — za VEN- daj aspoň 3 znaky'});
+      if(await q.one(db.venceky_classes,{code})) return res.status(400).json({error:'Kód '+code+' už používa iná skupina'});
+    } else {
+      do{ code='VEN-'+Math.random().toString(36).slice(2,7).toUpperCase(); }
+      while(await q.one(db.venceky_classes,{code}));
+    }
     const c=await q.insert(db.venceky_classes,{school_id:school._id, name:String(name).trim(),
       year:school.year, code, price:+price||49.90, lessons_total:+lessons_total||13, lessons_done:0,
       lecturer:String(lecturer||'').trim(), event_date:String(event_date||''), note:'',
