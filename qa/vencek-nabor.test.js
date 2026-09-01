@@ -305,6 +305,68 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('účet v appke mu ostane, len bez skupiny', pu3 && !pu3.venceky_role && !pu3.venceky_class_id,
       pu3 ? (pu3.venceky_role + ' / ' + pu3.venceky_class_id) : 'účet zmizol');
 
+    console.log('\n9b) Chat skupiny:');
+    const ziakC = {};
+    await j('/api/login', { method: 'POST', body: { email: 'qa.ven.ziak@qa-biz.local', password: 'Heslo123!' } }, ziakC);
+    const posli = await j('/api/vencek/chat', { method: 'POST', body: { text: 'Ahojte, kedy máme ďalšiu hodinu?' } }, ziakC);
+    ok('žiak napíše do chatu', posli.status === 200 && posli.d && posli.d.ok, JSON.stringify(posli.d).slice(0, 90));
+    const citaj = (await j('/api/vencek/chat', {}, ziakC)).d;
+    ok('a správu vidí', citaj && citaj.messages && citaj.messages.length === 1
+      && /kedy máme/.test(citaj.messages[0].text), JSON.stringify(citaj && citaj.messages).slice(0, 110));
+    ok('so správnou rolou pri mene', citaj && citaj.messages[0].role === 'student',
+      citaj && citaj.messages[0].role);
+    // Rodič je v tej istej skupine, takže má správu vidieť — je to spoločný chat.
+    const rodicC = {};
+    await j('/api/login', { method: 'POST', body: { email: 'qa.ven.rodic@qa-biz.local', password: 'Heslo123!' } }, rodicC);
+    const citajR = (await j('/api/vencek/chat', {}, rodicC)).d;
+    ok('vidí ju aj ďalší člen skupiny', citajR && citajR.messages && citajR.messages.length === 1);
+    // Kto v skupine nie je, nesmie ani čítať, ani písať.
+    const cudziC = {};
+    await j('/api/login', { method: 'POST', body: { email: 'qa.ven.bezkodu@qa-biz.local', password: 'Heslo123!' } }, cudziC);
+    await j('/api/admin/venceky/member-role', { method: 'POST',
+      body: { user_id: (usr('qa.ven.bezkodu@qa-biz.local') || {})._id, role: 'none' } }, adm);
+    await new Promise(r => setTimeout(r, 400));
+    const cudziCita = await j('/api/vencek/chat', {}, cudziC);
+    ok('kto v skupine nie je, chat nevidí', cudziCita.status === 403, 'HTTP ' + cudziCita.status);
+    const cudziPise = await j('/api/vencek/chat', { method: 'POST', body: { text: 'nazdar' } }, cudziC);
+    ok('ani doň nenapíše', cudziPise.status === 403, 'HTTP ' + cudziPise.status);
+    const prazdna = await j('/api/vencek/chat', { method: 'POST', body: { text: '   ' } }, ziakC);
+    ok('prázdna správa sa odmietne', prazdna.status === 400, 'HTTP ' + prazdna.status);
+    const cudziaSprava = await j('/api/vencek/chat/' + citaj.messages[0].id, { method: 'DELETE' }, rodicC);
+    ok('cudziu správu nikto nezmaže', cudziaSprava.status === 403, 'HTTP ' + cudziaSprava.status);
+    const vlastna = await j('/api/vencek/chat/' + citaj.messages[0].id, { method: 'DELETE' }, ziakC);
+    ok('vlastnú áno', vlastna.status === 200, 'HTTP ' + vlastna.status);
+
+    console.log('\n10) Čo žiak NESMIE vidieť:');
+    const z = {};
+    await j('/api/login', { method: 'POST', body: { email: 'qa.ven.ziak@qa-biz.local', password: 'Heslo123!' } }, z);
+    const mojePohlad = (await j('/api/vencek/mine', {}, z)).d;
+    ok('žiak vidí len svoju skupinu, nie zoznam škôl',
+      mojePohlad && mojePohlad.role === 'student' && !mojePohlad.schools,
+      JSON.stringify(mojePohlad && Object.keys(mojePohlad)));
+    // Počet zaplatených je neškodný agregát, ale mená spolužiakov ani ich platby
+    // v žiackom pohľade nesmú byť — „kto zaplatil a kto nie" vidí len Marek.
+    const surovo = JSON.stringify(mojePohlad);
+    ok('v jeho pohľade nie sú mená ani platby spolužiakov',
+      !/Rena Rucna|Nina Neprisla|Renata Rodicova/.test(surovo) && !/"payments"|"members":\s*\[/.test(surovo),
+      surovo.slice(0, 140));
+    ok('nedostane sa do cudzej skupiny cez podstrčené class_id',
+      (await j('/api/vencek/mine?ako=student&class_id=' + hal.d.class._id, {}, z)).d.class.name !== 'Venčeková skupina'
+        || (await j('/api/vencek/mine?ako=student&class_id=' + hal.d.class._id, {}, z)).d.preview !== true,
+      'preview je len pre adminov');
+    const fin = await j('/api/admin/venceky/overview', {}, z);
+    ok('financie a prehľad škôl sú preňho zakázané', fin.status === 401 || fin.status === 403,
+      'HTTP ' + fin.status);
+    const detailZ = await j('/api/admin/venceky/class/' + tr.d.class._id, {}, z);
+    ok('menný zoznam platieb tiež', detailZ.status === 401 || detailZ.status === 403, 'HTTP ' + detailZ.status);
+    const zapisZ = await j('/api/admin/venceky/progress', { method: 'POST',
+      body: { class_id: tr.d.class._id, lessons_done: 99 } }, z);
+    ok('a nemôže si sám označiť tance ani lekcie', zapisZ.status === 401 || zapisZ.status === 403,
+      'HTTP ' + zapisZ.status);
+    const platbaZ = await j('/api/admin/venceky/payment', { method: 'POST',
+      body: { class_id: tr.d.class._id, user_id: (zu || {})._id, amount: 49.9, method: 'cash' } }, z);
+    ok('ani si zapísať, že zaplatil', platbaZ.status === 401 || platbaZ.status === 403, 'HTTP ' + platbaZ.status);
+
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.message);
   } finally {

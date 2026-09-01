@@ -196,6 +196,7 @@ const db = {
   venceky_costs:    new Datastore({ filename: path.join(DATA_DIR, 'venceky_costs.db'),    autoload: true }),
   venceky_attendance:new Datastore({ filename: path.join(DATA_DIR, 'venceky_attendance.db'), autoload: true }),
   venceky_slots:    new Datastore({ filename: path.join(DATA_DIR, 'venceky_slots.db'),    autoload: true }),
+  venceky_chat:     new Datastore({ filename: path.join(DATA_DIR, 'venceky_chat.db'),     autoload: true }),
   referral_events:  new Datastore({ filename: path.join(DATA_DIR, 'referral_events.db'),  autoload: true }),
   deal_links:       new Datastore({ filename: path.join(DATA_DIR, 'deal_links.db'),       autoload: true }),
   credit_ledger:    new Datastore({ filename: path.join(DATA_DIR, 'credit_ledger.db'),    autoload: true }),
@@ -4097,17 +4098,20 @@ app.post('/api/register', rlSignup, async(req,res)=>{
       // rodičov. Jednorazový vstup sa 2. 9. zrušil — vedľa celého mesiaca zadarmo
       // nič nepridával a v ponuke len mätie (prvú hodinu má aj tak každý nový zdarma).
       if(['student','parent'].includes(vencekRole)) try{
+        // plan_ids zužuje kupón na Silver. Bez toho by 100 % na „membership"
+        // dalo zadarmo aj Gold za 125 €, hoci sa sľubuje Silver za 75 €.
+        const VRP={ type:'percent', value:100, applies_to:'membership', plan_ids:['silver'],
+          note:'Venčeky — mesiac Silver zadarmo (75 €) pre žiakov, rodičov aj zamestnancov školy' };
         const vrp=await q.one(db.promo_codes,{code:'VENCEKRODIC'});
         if(!vrp)
-          await q.insert(db.promo_codes,{ code:'VENCEKRODIC', type:'percent', value:100, applies_to:'membership',
+          await q.insert(db.promo_codes,{ code:'VENCEKRODIC', ...VRP,
             max_uses:0, once_per_user:true, min_amount:0, expires_at:null, active:true, used_count:0,
-            note:'Venčeky — mesiac Zumby zadarmo pre rodičov a zamestnancov školy', created_at:nowISO() });
-        else if(vrp.value!==100)
-          await q.update(db.promo_codes,{_id:vrp._id},{$set:{value:100,
-            note:'Venčeky — mesiac Zumby zadarmo pre rodičov a zamestnancov školy'}});
+            created_at:nowISO() });
+        else if(vrp.value!==100 || !Array.isArray(vrp.plan_ids) || !vrp.plan_ids.includes('silver'))
+          await q.update(db.promo_codes,{_id:vrp._id},{$set:VRP});
         await q.insert(db.notifications,{user_id:u._id,type:'venceky',
           title:'🎁 Vitaj vo Fusion Venčekoch!',
-          body:'Máš u nás kupón VENCEKRODIC = celý 1. MESIAC Zumby zadarmo — platí pre teba aj pre rodičov. 💛',
+          body:'Máš u nás kupón VENCEKRODIC = celý 1. mesiac členstva Silver (75 €) ZADARMO — neobmedzene hodín v štúdiu, online hodiny aj meranie tela na Tanite. Platí pre teba aj pre rodičov. 💛',
           read:false, created_at:nowISO()});
       }catch(e){}
     }
@@ -10558,7 +10562,7 @@ app.post('/api/paypal/webhook', express.raw({type:'application/json'}), async(re
 });
 
 // ── Promo / zľavové kódy ──────────────────────────────────────────────────────
-async function validatePromo(code, price, userId, context){
+async function validatePromo(code, price, userId, context, opts){
   code=(code||'').toUpperCase().trim();
   if(!code) return {ok:false, reason:'Zadaj kód'};
   const p=await q.one(db.promo_codes,{code});
@@ -10569,6 +10573,15 @@ async function validatePromo(code, price, userId, context){
   if(p.max_uses && (p.used_count||0) >= p.max_uses) return {ok:false, reason:'Kód už bol vyčerpaný'};
   if(p.once_per_user && userId){ const used=await q.one(db.promo_redemptions,{code, user_id:userId}); if(used) return {ok:false, reason:'Kód si už použil/a'}; }
   if(p.target_user_id && p.target_user_id!==userId) return {ok:false, reason:'Tento kód je viazaný na iný účet'};
+  // Kód sa dá zúžiť na konkrétne plány. Bez toho by VENCEKRODIC (100 % na
+  // členstvo) dal zadarmo aj Gold za 125 €, hoci sa sľubuje Silver za 75 €.
+  if(Array.isArray(p.plan_ids) && p.plan_ids.length){
+    const plan=(context==='membership') ? String((opts||{}).plan_id||'') : '';
+    if(plan && !p.plan_ids.includes(plan)){
+      const mena=p.plan_ids.map(id=>(MEMBERSHIP_PLANS[id]||{}).name||id).join(' alebo ');
+      return {ok:false, reason:'Tento kód platí len na členstvo '+mena};
+    }
+  }
   let discount = p.type==='percent' ? +(price * (+p.value)/100).toFixed(2) : Math.min(+p.value, price);
   discount = Math.max(0, Math.min(discount, price));
   return {ok:true, discount, final:+(price-discount).toFixed(2), promo:p,
@@ -10593,7 +10606,7 @@ app.post('/api/promo/validate', auth, async(req,res)=>{
     const plan = MEMBERSHIP_PLANS[req.body.plan_id];
     const price = plan ? plan.price : (+req.body.amount||0);
     if(price<=0) return res.json({ok:false, reason:'Neplatná suma'});
-    const v = await validatePromo(req.body.code, price, req.session.uid, req.body.context||'membership');
+    const v = await validatePromo(req.body.code, price, req.session.uid, req.body.context||'membership', {plan_id:req.body.plan_id});
     res.json(v.ok ? {ok:true, discount:v.discount, final:v.final, label:v.label, code:v.promo.code} : {ok:false, reason:v.reason});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -10737,7 +10750,7 @@ app.post('/api/membership/buy', auth, async(req,res)=>{
     let promoDiscount = 0, promoCode = null, promoObj = null;
     let basePrice = plan.price;
     if(promo_code){
-      const v = await validatePromo(promo_code, plan.price, req.session.uid, 'membership');
+      const v = await validatePromo(promo_code, plan.price, req.session.uid, 'membership', {plan_id});
       if(!v.ok) return res.status(400).json({error:'Promo kód: '+v.reason});
       promoDiscount = v.discount; basePrice = v.final; promoCode = v.promo.code; promoObj = v.promo;
     }
@@ -12802,7 +12815,7 @@ app.post('/api/stripe/checkout', auth, async(req,res)=>{
       if(gm && gm.status==='active' && /gold/.test(String((gm.plan_id||'')+' '+(gm.plan_name||'')).toLowerCase())) price=70;
     }
     if(promo_code){
-      const v = await validatePromo(promo_code, plan.price, req.session.uid, 'membership');
+      const v = await validatePromo(promo_code, plan.price, req.session.uid, 'membership', {plan_id});
       if(!v.ok) return res.status(400).json({error:'Promo kód: '+v.reason});
       price = v.final; promoCode = v.promo.code; promoDiscount = v.discount;
     }
@@ -20348,6 +20361,53 @@ app.get('/api/vencek/info', rlPublic, async(req,res)=>{
       price:+c.price||49.90, lessons_total:c.lessons_total||13, lessons_before:c.lessons_before||10,
       lecturer:c.lecturer||'', event_date:c.event_date||'', schedule:c.schedule||'',
       dances:(c.dances||[]).map(d=>d.name)});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Chat skupiny: žiaci, učitelia aj lektor na jednom mieste ────────────────
+// Marek 2. 9.: „v tom venčekovom okne si môžu úplne dole písať v chate žiaci
+// aj učitelia, je tam taký spoločný chat." Prístup má len ten, kto do skupiny
+// naozaj patrí — class_id sa berie z účtu, nie z requestu.
+async function vencekMojaSkupina(uid, classIdAkAdmin){
+  const u=await q.one(db.users,{_id:uid});
+  if(!u) return null;
+  if(u.is_admin && classIdAkAdmin) return await q.one(db.venceky_classes,{_id:String(classIdAkAdmin)});
+  if(!u.venceky_class_id) return null;
+  return await q.one(db.venceky_classes,{_id:u.venceky_class_id});
+}
+app.get('/api/vencek/chat', auth, async(req,res)=>{
+  try{
+    const c=await vencekMojaSkupina(req.session.uid, req.query.class_id);
+    if(!c) return res.status(403).json({error:'Nie si vo venčekovej skupine'});
+    const spravy=(await q.find(db.venceky_chat,{class_id:c._id}))
+      .sort((a,b)=>String(a.created_at||'').localeCompare(String(b.created_at||'')))
+      .slice(-120);
+    res.json({ok:true, me:req.session.uid, messages:spravy.map(m=>({
+      id:m._id, user_id:m.user_id, name:m.user_name, role:m.role, text:m.text, at:m.created_at })) });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/vencek/chat', auth, async(req,res)=>{
+  try{
+    const c=await vencekMojaSkupina(req.session.uid, req.body.class_id);
+    if(!c) return res.status(403).json({error:'Nie si vo venčekovej skupine'});
+    const text=String(req.body.text||'').trim().slice(0,600);
+    if(!text) return res.status(400).json({error:'Prázdna správa'});
+    const u=await q.one(db.users,{_id:req.session.uid});
+    const m=await q.insert(db.venceky_chat,{ class_id:c._id, school_id:c.school_id,
+      user_id:u._id, user_name:u.name, role:(u.is_admin?'lektor':(u.venceky_role||'student')),
+      text, created_at:nowISO() });
+    res.json({ok:true, id:m._id});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.delete('/api/vencek/chat/:id', auth, async(req,res)=>{
+  try{
+    const m=await q.one(db.venceky_chat,{_id:req.params.id});
+    if(!m) return res.status(404).json({error:'Správa nenájdená'});
+    const u=await q.one(db.users,{_id:req.session.uid});
+    // Zmazať smie autor alebo admin — deti si medzi sebou správy mazať nebudú.
+    if(!u || (m.user_id!==u._id && !u.is_admin)) return res.status(403).json({error:'Túto správu zmazať nemôžeš'});
+    await q.remove(db.venceky_chat,{_id:m._id},{});
+    res.json({ok:true});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 

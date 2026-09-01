@@ -36,6 +36,25 @@ body{background:#12100a;color:var(--cream);font-family:'Inter',system-ui,sans-se
 .cls .head{display:flex;justify-content:space-between;align-items:center;font-weight:800}
 .muted{color:var(--muted);font-size:.82rem}
 .empty{text-align:center;padding:60px 20px;color:var(--muted)}
+/* chat skupiny — žiaci, učitelia aj lektor na jednom mieste */
+.chat-zoznam{display:flex;flex-direction:column;gap:9px;max-height:340px;overflow-y:auto;padding-right:4px;margin-bottom:10px}
+.sprava{background:#1d1a15;border:1px solid #2e2a20;border-radius:12px;padding:9px 12px}
+.sprava.ja{background:rgba(201,168,76,.12);border-color:rgba(201,168,76,.35)}
+.sprava .hlava{display:flex;align-items:center;gap:7px;font-size:.76rem;margin-bottom:3px;flex-wrap:wrap}
+.sprava .kto{font-weight:800;color:var(--cream)}
+.sprava .rola{font-size:.65rem;padding:1px 7px;border-radius:999px;background:rgba(201,168,76,.16);color:var(--gold);font-weight:700}
+.sprava .rola.uc{background:rgba(126,200,227,.16);color:#7ec8e3}
+.sprava .kedy{color:#6d6656;margin-left:auto;font-size:.7rem}
+.sprava .telo{font-size:.9rem;white-space:pre-wrap;word-break:break-word}
+.sprava .zmaz{background:none;border:none;color:#6d6656;cursor:pointer;font-size:.72rem;padding:0}
+.sprava .zmaz:hover{color:#f87171}
+.chat-pisanie{display:flex;gap:8px;align-items:flex-end}
+.chat-pisanie textarea{flex:1;background:#12100a;border:1px solid #2e2a20;color:var(--cream);border-radius:11px;
+  padding:10px 12px;font-size:.92rem;font-family:inherit;resize:none;outline:none;min-height:44px;max-height:120px}
+.chat-pisanie textarea:focus{border-color:var(--gold)}
+.chat-pisanie button{background:linear-gradient(135deg,var(--gold),#a5842f);color:#161310;border:none;
+  border-radius:11px;padding:11px 16px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap}
+.chat-pisanie button:disabled{opacity:.5;cursor:default}
 .tance-cakaju{display:flex;flex-wrap:wrap;gap:7px}
 .tance-cakaju .caka{background:#1d1a15;border:1px solid #2e2a20;border-radius:999px;
   padding:5px 12px;font-size:.83rem;color:var(--muted)}
@@ -109,6 +128,66 @@ function attCard(d){
     <div class="muted">Priemerná účasť <b style="color:var(--gold)">${d.class.attendance.avg_pct} %</b> · zapísaných ${d.class.attendance.lessons_recorded} lekcií</div></div>`;
   return '';
 }
+// ── Chat skupiny ───────────────────────────────────────────────────────────
+// Spoločný pre žiakov, učiteľov aj lektora. Skupina sa berie z účtu na serveri,
+// tu sa posiela class_id len pri admin náhľade.
+let _chatId=null, _chatJa=null;
+const ROLA_LBL={student:'žiak', parent:'rodič', teacher:'učiteľ', director:'riaditeľ', lektor:'lektor'};
+function chatCas(iso){
+  try{
+    const d=new Date(iso), dnes=new Date();
+    const cas=d.toLocaleTimeString('sk',{hour:'2-digit',minute:'2-digit'});
+    return d.toDateString()===dnes.toDateString() ? cas : d.toLocaleDateString('sk',{day:'numeric',month:'numeric'})+' '+cas;
+  }catch(e){ return ''; }
+}
+function chatKarta(){
+  return `<div class="card" id="chatKarta">
+    <h3>💬 Chat skupiny <small style="color:var(--muted);font-weight:400">· píšu sem žiaci aj učitelia</small></h3>
+    <div class="chat-zoznam" id="chatZoznam"><div class="muted">Načítavam…</div></div>
+    <div class="chat-pisanie">
+      <textarea id="chatText" rows="1" maxlength="600" placeholder="Napíš správu skupine…"
+        oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();chatPosli();}"></textarea>
+      <button id="chatBtn" onclick="chatPosli()">Poslať</button>
+    </div>
+  </div>`;
+}
+async function chatNacitaj(){
+  const el=document.getElementById('chatZoznam'); if(!el) return;
+  try{
+    const d=await (await fetch('/api/vencek/chat'+(_chatId?('?class_id='+encodeURIComponent(_chatId)):''),{credentials:'include'})).json();
+    if(!d.ok){ el.innerHTML='<div class="muted">Chat sa nepodarilo načítať.</div>'; return; }
+    _chatJa=d.me;
+    el.innerHTML = d.messages.length ? d.messages.map(m=>{
+      const ja=m.user_id===d.me, uc=['teacher','director','lektor'].includes(m.role);
+      return `<div class="sprava${ja?' ja':''}">
+        <div class="hlava"><span class="kto">${esc(m.name||'—')}</span>
+          <span class="rola${uc?' uc':''}">${esc(ROLA_LBL[m.role]||m.role||'')}</span>
+          <span class="kedy">${chatCas(m.at)}</span></div>
+        <div class="telo">${esc(m.text)}</div>
+        ${ja?`<button class="zmaz" onclick="chatZmaz('${m.id}')">zmazať</button>`:''}
+      </div>`;
+    }).join('') : '<div class="muted">Zatiaľ nikto nepísal. Buď prvý/prvá 💬</div>';
+    el.scrollTop=el.scrollHeight;
+  }catch(e){ el.innerHTML='<div class="muted">Chat sa nepodarilo načítať.</div>'; }
+}
+async function chatPosli(){
+  const t=document.getElementById('chatText'), b=document.getElementById('chatBtn');
+  const text=(t.value||'').trim(); if(!text) return;
+  b.disabled=true;
+  try{
+    const r=await (await fetch('/api/vencek/chat',{method:'POST',headers:{'Content-Type':'application/json'},
+      credentials:'include',body:JSON.stringify({text, class_id:_chatId||undefined})})).json();
+    if(r&&r.ok){ t.value=''; t.style.height='auto'; await chatNacitaj(); }
+    else alert((r&&r.error)||'Správu sa nepodarilo odoslať.');
+  }catch(e){ alert('Správu sa nepodarilo odoslať.'); }
+  b.disabled=false;
+}
+async function chatZmaz(id){
+  if(!confirm('Zmazať túto správu?')) return;
+  try{ await fetch('/api/vencek/chat/'+encodeURIComponent(id),{method:'DELETE',credentials:'include'}); }catch(e){}
+  chatNacitaj();
+}
 async function platitKartou(btn){
   const pov=btn.textContent;
   btn.disabled=true; btn.textContent='Otváram platbu…';
@@ -150,6 +229,8 @@ async function overPlatbu(){
   let d; try{ d=await (await fetch(nahladUrl,{credentials:'include'})).json(); }
   catch(e){ host.innerHTML='<div class="empty">Nepodarilo sa načítať. Skús to znova.</div>'; return; }
   if(d.preview){
+    // V admin náhľade chat nepozná skupinu z účtu — musí ju dostať z adresy.
+    _chatId=qp.get('class_id');
     const p=document.createElement('div');
     p.style.cssText='background:rgba(201,168,76,.14);border:1px solid rgba(201,168,76,.45);border-radius:12px;padding:11px 14px;margin-bottom:14px;font-size:.88rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap';
     // Odkaz musí niesť ?prehlad=1, inak by presmerovanie pri jedinej skupine
@@ -185,6 +266,8 @@ async function overPlatbu(){
   if(d.role==='teacher'){
     host.innerHTML=`<div class="card"><h3>👩‍🏫 Vaša skupina — ${esc(d.class.name)} · ${esc(d.school)}</h3></div>`
       +classCard(d.class, `<div class="card"><div class="muted">Uhradené: <b style="color:#aed581">${d.class.paid_count}/${d.class.members}</b> žiakov (menný zoznam spravuje Fusion Academy — nemusíte vyberať nič).</div></div>`+attCard(d));
+    // Chat je úplne dole — spoločný pre celú skupinu.
+    host.insertAdjacentHTML('beforeend', chatKarta()); chatNacitaj();
     return;
   }
   // žiak / rodič
@@ -204,6 +287,9 @@ async function overPlatbu(){
         <div class="muted" style="margin-top:8px">Karta, Apple Pay aj Google Pay. Alebo v hotovosti na hodine či prevodom — info u lektora.</div>
       </div>`;
   host.innerHTML=done+`<div class="muted" style="margin-bottom:8px">🏫 ${esc(d.school)}</div>`+classCard(d.class, `<div class="card">${pay}</div>`+attCard(d));
+  // Chat je úplne dole — spoločný pre celú skupinu.
+  host.insertAdjacentHTML('beforeend', chatKarta());
+  chatNacitaj();
 })();
 </script>
 </body>
