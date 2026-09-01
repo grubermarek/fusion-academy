@@ -3587,7 +3587,7 @@ app.post('/api/admin/qa/run-event-mail/:wave', adminAuth, async(req,res)=>{
   try{
     const fn = { urgency:eventUrgencyTick, lastday:eventLastDayTick,
                  party:eventPartyPushTick, reminder:eventReminderTick,
-                 lastcall:eventLastCallTick, challenge:referralChallengeTick }[req.params.wave] || eventLeadTick;
+                 lastcall:eventLastCallTick, challenge:referralChallengeTick, september:septemberGreetingTick }[req.params.wave] || eventLeadTick;
     res.json({ok:true, ...(await fn(true))});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -4924,6 +4924,11 @@ const REF_CHALLENGE_SUBJ = '💃 Priveď kamošku a hodinu tancuješ so mnou —
 async function referralChallengeTick(qaMode){
   try{
     if(!process.env.BREVO_API_KEY) return;
+    // Vizuálna verzia tej istej výzvy (septemberGreetingTick) hovorí to isté,
+    // len s plagátom. Keď beží, textová vlna sa zastaví — inak by tí, čo ju ešte
+    // nedostali, dostali dva takmer rovnaké maily v jeden deň. 320 klientok
+    // text 1. 9. dostalo, zvyšok dostane rovno peknejšiu verziu.
+    if(!qaMode && process.env.SEPT_WAVE_ON==='1') return;
     const t=today();
     if(!(qaMode && process.env.QA_EVENT_WINDOW==='1') && (t<'2026-09-01' || t>'2026-09-07')) return;
     if(await q.one(db.settings,{key:'ref_challenge_0926_done'})) return;
@@ -4982,6 +4987,64 @@ async function referralChallengeTick(qaMode){
   }catch(e){ console.error('referral challenge:', e.message); return {error:e.message}; }
 }
 setInterval(referralChallengeTick, 8*60*1000);
+
+// ── Septembrové prianie + akcia na obrázku (Marek 1. 9.) ──────────────────
+// Výzva „priveď kamošku" ide textovým mailom vyššie. Toto je jej vizuálna
+// pripomienka pre všetky klientky: prianie do nového mesiaca a plagát akcie
+// na jednom mieste. Kto dostal aj textovú výzvu, nedostane to isté dvakrát —
+// mail hovorí inú vec a odkazuje na obrázok, nie na zoznam krokov.
+const SEPT_SUBJ = '🍂 Krásny september! A akcia, ktorá platí celý mesiac';
+async function septemberGreetingTick(qaMode){
+  try{
+    if(!process.env.BREVO_API_KEY) return;
+    // Hromadný mail neodchádza sám od seba — Marek ho najprv vidí a schváli.
+    // Spúšťa sa až prepnutím SEPT_WAVE_ON=1 na Railway (QA beh cez qaMode ho obchádza).
+    if(!qaMode && process.env.SEPT_WAVE_ON!=='1') return;
+    const t=today();
+    if(!(qaMode && process.env.QA_EVENT_WINDOW==='1') && (t<'2026-09-01' || t>'2026-09-30')) return;
+    if(await q.one(db.settings,{key:'sept_greeting_2026_done'})) return;
+    const hSK=+new Intl.DateTimeFormat('sk-SK',{hour:'numeric',hour12:false,timeZone:'Europe/Bratislava'}).format(new Date());
+    if(!qaMode && (hSK<9||hSK>19)) return;
+    if(!(await mailBudgetOk(9))) return;
+    const budget=120;
+    const isTestU=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'')||u.lead_source==='test'||u.is_test;
+    const already=new Set((await q.find(db.mail_log,{subject:SEPT_SUBJ})).map(m=>String(m.to).toLowerCase()));
+    const users=(await q.find(db.users,{}))
+      .filter(u=>['client','ambassador'].includes(u.user_type) && !u.is_admin && !u.is_child && u.active!==false
+        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u)
+        && u.email && /@/.test(u.email) && !/@import.local$|@guest./i.test(u.email)
+        && !already.has(String(u.email).toLowerCase()));
+    if(!users.length){
+      await q.insert(db.settings,{key:'sept_greeting_2026_done', value:true, at:nowISO()});
+      console.log('🍂 SEPTEMBER: hotovo');
+      return {selected:[], sent:0, remaining:0};
+    }
+    let n=0;
+    for(const u of users){
+      if(n>=budget) break;
+      if(!(await mailBudgetOk(9))) break;
+      const first=String(u.name||'').split(' ')[0]||'tanečníčka';
+      const ok=await sendMail(u.email, SEPT_SUBJ,
+        emailTemplate('Krásny a úspešný september, '+first+'! 🍂',
+        '<p>Leto máme za sebou a sezóna sa naplno rozbieha. Prajeme ti mesiac, v ktorom ti veci vyjdú — na parkete aj mimo neho. 💛</p>'
+        +'<p>A aby si na to nebola sama: <b>počas celého septembra</b> u nás platí jedna akcia.</p>'
+        +'<div style="text-align:center;margin:22px 0">'
+          +'<img src="'+APP_URL+'/img/vyzva-september-2026.jpg" alt="Počas celého septembra: priveď novú členku a získaš súkromnú hodinu v hodnote 100 €" width="536" style="width:100%;max-width:536px;height:auto;display:block;margin:0 auto;border-radius:12px;border:0">'
+        +'</div>'
+        +'<p><b>Priveď novú členku</b>, ktorá si u nás kúpi akékoľvek členstvo alebo permanentku — a máš <b>súkromnú hodinu s Marekom</b> v hodnote 100 €. Koľko členiek privedieš, toľko súkromných hodín budeš mať.</p>'
+        +'<p>Stačí poslať kamoške svoj odkaz z nástenky. <b>Prvú hodinu má u nás zadarmo</b>, takže nič neriskuje.</p>'
+        +'<p>Svoj progres vidíš naživo v appke.</p>'
+        +'<p>Nech je ten september tvoj. Vidíme sa na parkete!<br>Tím Fusion Academy</p>',
+        '🔗 Skopírovať môj odkaz', APP_URL+'/client-dashboard?utm_source=email&utm_medium=email&utm_campaign=fa-september-2026'),
+        {priority:9, template:'september_greeting_2026'}).catch(()=>false);
+      if(ok) n++;
+      await new Promise(r=>setTimeout(r,400));
+    }
+    if(n) console.log('🍂 SEPTEMBER: odoslaných '+n+' (zostáva '+(users.length-n)+')');
+    return {selected:users.slice(0,budget).map(u=>u.email), sent:n, remaining:users.length};
+  }catch(e){ console.error('september greeting:', e.message); return {error:e.message}; }
+}
+setInterval(septemberGreetingTick, 9*60*1000);
 
 
 // Kto dnes mail otvoril — pýtame sa priamo Brevo, appka si otvorenia nevedie.
@@ -16751,7 +16814,10 @@ if(!MAIL_ENABLED) console.log('✉️  Odosielanie mailov VYPNUTÉ (nie je produ
 //     (chyba v cykle nesmie za noc minúť celý mesačný balík)
 // Vyššie číslo priority = nižšia dôležitosť = skorší stop. (FUNNEL-006, spec AJ.)
 const MAIL_MONTHLY_QUOTA = Math.max(0, +process.env.MAIL_MONTHLY_QUOTA || 10000);
-const MAIL_TIER_CAPS={1:1200,2:1200,3:1000,4:900,5:800,6:700,7:700,8:600,9:600,10:500};
+// Denné stropy sú od 1. 9. len poistka proti runaway, nie limit Breva —
+// to má 10 000/mesiac a denný strop 300 zrušilo. Kampaň pre ~800 klientok
+// tak prejde za jeden deň namiesto troch; mesačný podiel ju aj tak ustráži.
+const MAIL_TIER_CAPS={1:2000,2:2000,3:1800,4:1600,5:1500,6:1400,7:1400,8:1300,9:1300,10:1200};
 const MAIL_TIER_MONTHLY_SHARE={1:1,2:1,3:0.97,4:0.94,5:0.9,6:0.86,7:0.86,8:0.8,9:0.8,10:0.75};
 // Keď treba dobehnúť veľkú kampaň a mesačný balík to unesie, dá sa denný strop
 // pre marketing (p8–10) zdvihnúť env premennou MAIL_CAP_MARKETING. Mesačný strop
@@ -16791,6 +16857,9 @@ async function sendMail(to, subject, html, opts){
   try{
     const log=await q.insert(db.mail_log,{to:String(to), subject:String(subject||''),
       template:(opts&&opts.template)||null, created_at:nowISO(), opened_at:null, clicked_at:null, click_count:0});
+    // V QA capture režime si necháme aj telo mailu — inak sa nedá ukázať náhľad
+    // toho, čo by reálne odišlo. Na produkcii sa HTML neukladá (zbytočne veľké).
+    if(capture && typeof html==='string') await q.update(db.mail_log,{_id:log._id},{$set:{html}});
     if(typeof html==='string'){
       // FUNNEL-012 click-tracking: každý odkaz ide cez /api/mail/click/<log>/<idx>.
       // Ciele sa ukladajú do mail_logu a redirect ide podľa indexu — žiadny open-redirect

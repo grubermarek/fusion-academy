@@ -70,7 +70,11 @@ async function j(url, opts = {}, jar) {
     ok('diagnostika budžetu odpovedá', b.status === 200 && b.d && b.d.ok, JSON.stringify(b.d));
     const sk = b.d && b.d.skutocne;
     ok('mesačná spotreba sa ráta (' + MINUTE + ')', sk && sk.mesiac === MINUTE, JSON.stringify(sk));
-    ok('dnešná spotreba je 0', sk && sk.den === 0, JSON.stringify(sk));
+    // Seed sedí na prvom dni mesiaca. Keď test beží práve prvého, sú to maily
+    // z dneška — inak z minulosti. Prvého septembra to spadlo, lebo test čakal 0.
+    const dnesJePrveho = new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Bratislava'}).format(new Date()).endsWith('-01');
+    ok('dnešná spotreba sedí so seedom', sk && sk.den === (dnesJePrveho ? MINUTE : 0),
+      JSON.stringify(sk) + (dnesJePrveho ? ' (dnes je prvého — seed je z dneška)' : ''));
     ok('kvóta sa berie z env', sk && sk.mesacna_kvota === KVOTA, JSON.stringify(sk));
 
     // pri 82 % minutého mesiaca: marketing (p10 = 75 % kvóty = 750) už NESMIE,
@@ -83,12 +87,13 @@ async function j(url, opts = {}, jar) {
     ok('p3 (pripomienky) prejdú — 97 % kvóty', a && a.p3 === true, JSON.stringify(a));
 
     // denný strop ako poistka: simulovaný počet nad denný cap zastaví aj transakčné
-    const den = await j('/api/admin/qa/mail-budget?sent=1500', {}, adm);
+    const den = await j('/api/admin/qa/mail-budget?sent=2500', {}, adm);
     const ad = den.d && den.d.allowed;
-    ok('denná poistka zastaví aj p1 pri 1500 za deň', ad && ad.p1 === false, JSON.stringify(ad));
-    const den2 = await j('/api/admin/qa/mail-budget?sent=550', {}, adm);
+    // Stropy sú od 1. 9. vyššie (p1 = 2000), tak sa poistka skúša vyššie číslom.
+    ok('denná poistka zastaví aj p1 pri 2500 za deň', ad && ad.p1 === false, JSON.stringify(ad));
+    const den2 = await j('/api/admin/qa/mail-budget?sent=1250', {}, adm);
     const ad2 = den2.d && den2.d.allowed;
-    ok('pri 550 za deň marketing p10 stopne, transakčné p1 nie',
+    ok('pri 1250 za deň marketing p10 stopne, transakčné p1 nie',
       ad2 && ad2.p10 === false && ad2.p1 === true, JSON.stringify(ad2));
 
     ok('denné stropy sú vyššie než starých 295 (limit 300/deň padol)',
