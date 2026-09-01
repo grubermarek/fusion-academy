@@ -63,11 +63,13 @@ for (const [k, v] of Object.entries(podlaTypu).sort((a, b) => b[1].s - a[1].s))
 const notAdmin = x => !adminIds.has(x.user_id);
 const A_payments = T('payments').filter(p => ['completed', 'active'].includes(p.status) && !p.accounting_skip && notAdmin(p));
 const A_orders = T('orders').filter(o => o.status === 'paid');
+const A_cashMembs = T('memberships').filter(m => !m._type && notAdmin(m) && m.payment_method);
 const A_single = T('transactions').filter(t => t.type === 'single_entry');
 const A_priv = T('transactions').filter(t => t.type === 'private_lesson');
 const A_event = T('transactions').filter(t => t.type === 'event_ticket' && +t.amount > 0);
 const A_udalosti = [
   ...A_payments.map(p => ({ d: payDate(p), a: +p.amount || 0, z: 'payment' })),
+  ...A_cashMembs.map(m => ({ d: m.created_at || '', a: +m.price || 0, z: 'členstvo v hotovosti' })),
   ...A_orders.map(o => ({ d: o.paid_at || o.created_at || '', a: +o.total || 0, z: 'order' })),
   ...A_single.map(t => ({ d: t.created_at || '', a: +t.amount || 0, z: 'single_entry' })),
   ...A_priv.map(t => ({ d: t.created_at || '', a: +t.amount || 0, z: 'private_lesson' })),
@@ -111,8 +113,8 @@ for (const [k, v] of Object.entries(A_podla).sort((a, b) => b[1].s - a[1].s))
 console.log('  B obsahuje len transactions — teda NEOBSAHUJE payments ani orders:');
 console.log('    payments mimo B         ' + eur(sucet(A_payments.filter(p => vObdobi(payDate(p))), 'amount')));
 console.log('    orders mimo B           ' + eur(sucet(A_orders.filter(o => vObdobi(o.paid_at || o.created_at)), 'total')));
-console.log('  C navyše oproti A:');
-console.log('    členstvá v hotovosti    ' + eur(sucet(C_cash.filter(m => vObdobi(m.created_at)), 'price')));
+console.log('  C navyše oproti A (C nefiltruje adminov):');
+console.log('    admin platby, ktoré A vylučuje  ' + eur(C - A));
 
 // ── dvojité započítanie ────────────────────────────────────────────────────
 console.log('\n══ RIZIKO DVOJITÉHO ZAPOČÍTANIA ' + '═'.repeat(39));

@@ -2428,6 +2428,54 @@ async function seedData() {
     }catch(e){ console.error('merch stare:', e.message); }
   }
 
+  // Merch predaný cez admin do 1. 9. sa zapisoval bez faktúry, takže v zozname
+  // „Predaje & faktúry" chýbal. Dvom predajom doklad chýba úplne — doplníme ho
+  // spätne, ticho (klientke po týždňoch nemá zmysel posielať „ďakujeme za platbu").
+  if(!(await q.one(db.settings,{key:'merch_faktury_doplnene_v1'}))) setTimeout(async()=>{
+    try{
+      await q.insert(db.settings,{key:'merch_faktury_doplnene_v1', value:true, at:nowISO()});
+      const fa=await q.find(db.invoices,{});
+      let n=0;
+      for(const t of await q.find(db.transactions,{})){
+        if(t.commission_only || !(+t.amount>0)) continue;
+        if(t.type && t.type!=='product') continue;      // členstvá a vstupy majú doklad inde
+        if(!t.product_name) continue;
+        const klient = t.client_id ? await q.one(db.users,{_id:t.client_id}) : null;
+        if(!klient) continue;
+        const uz = fa.some(i=>i.user_id===klient._id && Math.abs((+i.total||0)-(+t.amount||0))<0.01
+          && String(i.issued_at||i.created_at||'').slice(0,10)===String(t.date||'').slice(0,10));
+        if(uz) continue;
+        const cn = await createInvoice({ user_id:klient._id, client_name:klient.name, client_email:klient.email,
+          items:[{desc:t.product_name, qty:1, total:+t.amount}], total:+t.amount,
+          method:(t.payment_method==='card'?'Karta':'Hotovosť'),
+          issued_at:t.date, silent:true });
+        if(cn){ n++; console.log('🧾 FAKTÚRA doplnená: '+cn.number+' · '+klient.name+' · '+t.amount+' € · '+t.product_name); }
+      }
+      console.log('🧾 Doplnených faktúr k ručnému predaju: '+n);
+    }catch(e){ console.error('merch faktury:', e.message); }
+  }, 10000);
+
+  // Staré transakcie bez typu — bez neho nevstúpia do tržieb ani sa nedajú
+  // filtrovať v zozname predajov. Typ odvodíme z názvu produktu.
+  if(!(await q.one(db.settings,{key:'tx_typy_doplnene_v1'}))) setTimeout(async()=>{
+    try{
+      await q.insert(db.settings,{key:'tx_typy_doplnene_v1', value:true, at:nowISO()});
+      let n=0;
+      for(const t of await q.find(db.transactions,{})){
+        if(t.type || t.commission_only || !t.product_name) continue;
+        const nm=String(t.product_name).toLowerCase();
+        const typ = /permanentk|vstupov|vstup/.test(nm) ? 'single_entry'
+          : /členstv|clenstv|bronze|silver|gold/.test(nm) ? 'membership'
+          : /súkrom|sukrom|private/.test(nm) ? 'private_lesson'
+          : /vstupenk|event|masterclass/.test(nm) ? 'event_ticket'
+          : 'product';
+        await q.update(db.transactions,{_id:t._id},{$set:{type:typ, typ_doplneny:true}});
+        n++;
+      }
+      console.log('🏷️ Doplnených typov transakcií: '+n);
+    }catch(e){ console.error('tx typy:', e.message); }
+  }, 11000);
+
   // Traja ľudia majú na účte kredit, ku ktorému chýba záznam v histórii —
   // pripísal sa v čase, keď sa ledger ešte nepísal (audit E1, Marek 1. 9.).
   // Sumu NEMENÍME, len dopĺňame chýbajúci riadok, aby sa dalo dohľadať,
@@ -9401,6 +9449,16 @@ app.post('/api/admin/transactions', adminAuth, async(req,res)=>{
       return isMerchItem({product_name}) ? 'product' : 'product';
     })();
     const tx=await q.insert(db.transactions,{partner_id:partner_id||null,client_id:client_id||null,client_name,product_id:product_id||null,product_name,amount:finalAmt,type:typPredaja,user_id:client_id||null,date:date||today(),created_at:nowISO(),notes:notes||''});
+    // Bez faktúry predaj nevidno v „Predaje & faktúry" — Marek predal merch cez
+    // admin a v zozname nebol (1. 9.). Doklad vystavíme rovnako ako pri každom
+    // inom predaji; keď klient nie je náš účet, faktúra sa nevystaví (nemáme komu).
+    if(client_id){
+      const klient = await q.one(db.users,{_id:client_id});
+      if(klient) createInvoice({ user_id:klient._id, client_name:klient.name, client_email:klient.email,
+        items:[{desc:product_name, qty:1, total:finalAmt}], total:finalAmt,
+        method:(req.body.payment_method==='card'?'Karta':'Hotovosť'),
+        issued_at:(date||today()), silent:true }).catch(e=>console.error('faktúra k ručnému predaju:', e.message));
+    }
     // Commission only when we have a recipient (sponsor or explicit partner)
     if(partner_id){ await saveCommissions(tx._id,partner_id,finalAmt); await calcRank(partner_id); }
     res.json({ok:true,id:tx._id,commission:!!partner_id,partner_id:partner_id||null});
