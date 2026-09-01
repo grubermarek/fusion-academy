@@ -59,6 +59,21 @@ a.kto:hover{color:var(--gold);text-decoration:underline}
 .chat-pisanie button{background:linear-gradient(135deg,var(--gold),#a5842f);color:#161310;border:none;
   border-radius:11px;padding:11px 16px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap}
 .chat-pisanie button:disabled{opacity:.5;cursor:default}
+/* rozvrh lekcií */
+.rozvrh{display:flex;flex-direction:column;gap:5px;max-height:320px;overflow-y:auto;padding-right:4px}
+.rterm{display:flex;align-items:center;gap:10px;padding:7px 10px;background:#1d1a15;border:1px solid #2e2a20;border-radius:10px;font-size:.87rem}
+.rterm .rc{width:22px;height:22px;border-radius:7px;display:flex;align-items:center;justify-content:center;
+  background:rgba(201,168,76,.16);color:var(--gold);font-weight:800;font-size:.72rem;flex:none}
+.rterm .rd{flex:1}
+.rterm .rp{font-size:.68rem;padding:2px 8px;border-radius:999px;background:rgba(201,168,76,.14);color:var(--gold)}
+.rterm .rp.bon{background:rgba(124,179,66,.16);color:#aed581}
+.rterm .rp.zmena{background:rgba(255,152,0,.16);color:#ffcc80}
+.rterm.bolo{opacity:.5}
+.rterm.bolo .rc{background:rgba(124,179,66,.16);color:#aed581}
+.rterm.zrus{opacity:.45}
+.rterm.zrus .rd{text-decoration:line-through}
+.rterm.zrus .rc{background:rgba(224,86,86,.16);color:#ff8a8a}
+.rterm.zrus .rp{background:rgba(224,86,86,.16);color:#ff8a8a}
 .tance-cakaju{display:flex;flex-wrap:wrap;gap:7px}
 .tance-cakaju .caka{background:#1d1a15;border:1px solid #2e2a20;border-radius:999px;
   padding:5px 12px;font-size:.83rem;color:var(--muted)}
@@ -75,6 +90,29 @@ a.kto:hover{color:var(--gold);text-decoration:underline}
 <script>
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmtD=d=>d?d.split('-').reverse().join('.'):null;
+const DNI=['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
+function termin(iso){
+  try{
+    const d=new Date(iso);
+    return DNI[d.getDay()]+' '+d.getDate()+'. '+(d.getMonth()+1)+'. · '
+      +String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  }catch(e){ return String(iso||''); }
+}
+// Celý rozvrh — čo už bolo, je stlmené, zrušené prečiarknuté.
+function rozvrhKarta(c){
+  const t=(c.terminy||[]).filter(x=>x.at);
+  if(!t.length) return '';
+  const teraz=new Date();
+  return `<div class="card"><h3>🗓️ Rozvrh lekcií</h3>
+    <div class="rozvrh">${t.map(x=>{
+      const bolo=new Date(x.at)<teraz;
+      return `<div class="rterm${x.cancelled?' zrus':(bolo?' bolo':'')}">
+        <span class="rc">${x.cancelled?'✕':(bolo?'✓':(x.lesson||''))}</span>
+        <span class="rd">${esc(termin(x.at))}</span>
+        ${x.cancelled?'<span class="rp">zrušená</span>':(x.moved?'<span class="rp zmena">presunutá</span>':(x.bonus?'<span class="rp bon">bonus</span>':''))}
+      </div>`;
+    }).join('')}</div></div>`;
+}
 function danceHtml(d){
   return `<div class="dance ${d.level>=4?'done':''}">
     <div class="row"><span>${d.level>=4?'✅':'💃'} <b>${esc(d.name)}</b></span><span class="lvl">${d.level>=4?'ZVLÁDNUTÉ':esc(d.level_label)} · ${d.pct} %</span></div>
@@ -97,7 +135,12 @@ function classCard(c, extra=''){
       : `Lekcia ${c.lessons_done} z ${doVencka}`}${c.event_date?` · ✨ Venčekový večer: <b style="color:var(--gold)">${esc(fmtD(c.event_date))}</b>`:''}</div>
     <div class="bigbar"><i style="width:${c.progress}%"></i></div>
     <div style="font-weight:900;color:var(--gold)">${c.progress} %</div>
-    ${c.schedule?`<div class="sub" style="margin-top:8px">🕐 ${esc(c.schedule)}</div>`:''}
+    ${(() => {
+      // Najbližšia lekcia patrí navrch — je to prvá vec, na ktorú sa pozrú.
+      const b=(c.terminy||[]).filter(t=>!t.cancelled && t.at && new Date(t.at)>=new Date())[0];
+      if(!b) return c.schedule?`<div class="sub" style="margin-top:8px">📍 ${esc(c.schedule)}</div>`:'';
+      return `<div class="sub" style="margin-top:10px">⏭️ Najbližšia lekcia: <b style="color:var(--gold)">${esc(termin(b.at))}</b>${c.schedule?`<br>📍 ${esc(c.schedule)}`:''}</div>`;
+    })()}
   </div>
   ${extra}
   ${(() => {
@@ -110,6 +153,7 @@ function classCard(c, extra=''){
       ${ucime.length?`<div class="card"><h3>💃 Práve sa učíme</h3>${ucime.map(danceHtml).join('')}</div>`:''}
       ${cakaju.length?`<div class="card"><h3>⏳ Ešte nás čaká <span style="color:var(--muted);font-weight:400">· ${cakaju.length}</span></h3>
         <div class="tance-cakaju">${cakaju.map(x=>`<span class="caka">${esc(x.name)}</span>`).join('')}</div></div>`:''}
+      ${rozvrhKarta(c)}
       ${c.note?`<div class="card"><div class="muted">📝 ${esc(c.note)}</div></div>`:''}`;
   })()}
   <div class="grid">

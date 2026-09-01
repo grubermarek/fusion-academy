@@ -19816,8 +19816,32 @@ async function runFriendEventsDaily(){
 // ═══════════════════════════════════════════════════════════════════════════════
 // Zoznam, ktorý Marek reálne učí (2. 9.) — v tomto poradí ho vidia aj žiaci.
 const VENCEK_DEFAULT_DANCES=['Waltz','Cha-cha','Tango','Jive','Valčík','Polka','Samba',
-  'Salsa','Bachata','Quickstep','Slowfox','Čardáš','Merengue','Zumba'];
+  'Salsa','Bachata','Quickstep','Slowfox','Čardáš','Merengue','Blues','Zumba'];
 const VENCEK_LEVELS=['nezačaté','základy','poznáme kroky','vieme zatancovať','zvládnuté']; // 0–4
+// Rozvrh venčeka: zadá sa prvá lekcia a ďalšie idú po týždni (Marek 2. 9.).
+// Jednu lekciu sa dá presunúť na iný čas alebo zrušiť — zrušený týždeň sa
+// preskočí a celý kurz sa tým posunie o týždeň dozadu, presne ako v realite.
+// lesson_changes: [{week:2, cancelled:true} | {week:4, at:'2026-10-14T16:00'}]
+function vencekTerminy(c){
+  const out=[];
+  if(!c || !c.start_at) return out;
+  const zaciatok=new Date(c.start_at);
+  if(isNaN(zaciatok)) return out;
+  const zmeny={};
+  (Array.isArray(c.lesson_changes)?c.lesson_changes:[]).forEach(z=>{ if(z && z.week!=null) zmeny[+z.week]=z; });
+  const spolu=+c.lessons_total||13, doVencka=+c.lessons_before||10;
+  let tyzden=0, lekcia=1;
+  // Strop 200 týždňov, nech sa z toho nikdy nestane nekonečná slučka.
+  while(lekcia<=spolu && tyzden<200){
+    const z=zmeny[tyzden]||{};
+    if(z.cancelled){ out.push({week:tyzden, cancelled:true, at:new Date(zaciatok.getTime()+tyzden*604800000).toISOString(), reason:z.reason||''}); tyzden++; continue; }
+    const kedy=z.at ? new Date(z.at) : new Date(zaciatok.getTime()+tyzden*604800000);
+    out.push({ week:tyzden, lesson:lekcia, at:isNaN(kedy)?null:kedy.toISOString(),
+      moved:!!z.at, bonus:lekcia>doVencka });
+    lekcia++; tyzden++;
+  }
+  return out;
+}
 const vencekPct=ds=>ds&&ds.length? Math.round(ds.reduce((s,d)=>s+(d.level||0),0)/(ds.length*4)*100):0;
 
 // ── Admin: školy ──
@@ -19954,7 +19978,7 @@ app.get('/api/admin/venceky/class/:id', adminAuth, async(req,res)=>{
     // pri registrácii vybral zle, nebolo ho kde nájsť a prepnúť.
     const staff=allInClass.filter(u=>['teacher','director'].includes(u.venceky_role))
       .map(t=>({id:t._id, name:t.name, email:t.email, role:t.venceky_role}));
-    res.json({ok:true, school:school?.name||'', class:{...c, progress:vencekPct(c.dances)},
+    res.json({ok:true, school:school?.name||'', class:{...c, progress:vencekPct(c.dances), terminy:vencekTerminy(c)},
       members:members.map(m=>({id:m._id,name:m.name,email:m.email,phone:m.phone||'',
         paid:!!payBy[m._id], amount:payBy[m._id]?.amount||null, paid_at:payBy[m._id]?.paid_at||null, method:payBy[m._id]?.method||null})),
       parents, staff, costs, levels:VENCEK_LEVELS});
@@ -20130,6 +20154,11 @@ app.post('/api/admin/venceky/progress', trainerAuth, async(req,res)=>{
     // Kedy sa hodiny konajú. Termíny sa dohadujú so školou osobne (Marek 2. 9.),
     // takže je to voľný text — nie výber zo slotov, ktoré nikto nepoužíva.
     if(req.body.schedule!=null) set.schedule=String(req.body.schedule).slice(0,120);
+    // Dátum a čas PRVEJ lekcie; ďalšie sa dopočítajú po týždni.
+    if(req.body.start_at!=null){
+      const d=new Date(req.body.start_at);
+      set.start_at = (String(req.body.start_at).trim() && !isNaN(d)) ? d.toISOString() : null;
+    }
     await q.update(db.venceky_classes,{_id:c._id},{$set:set});
     // Notifikácia triede pri novom zvládnutom tanci
     if(set.dances){
@@ -20376,6 +20405,40 @@ app.get('/api/vencek/info', rlPublic, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ── Admin: presunúť alebo zrušiť jednu lekciu ───────────────────────────────
+// Zrušený týždeň sa preskočí a kurz sa posunie o týždeň — nič sa nestráca.
+app.post('/api/admin/venceky/lesson-change', trainerAuth, async(req,res)=>{
+  try{
+    const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});
+    if(!c) return res.status(404).json({error:'Skupina nenájdená'});
+    if(!c.start_at) return res.status(400).json({error:'Najprv nastav dátum a čas prvej lekcie'});
+    const week=Math.max(0, Math.min(199, +req.body.week));
+    if(!Number.isFinite(week)) return res.status(400).json({error:'Chýba týždeň'});
+    const zmeny=(Array.isArray(c.lesson_changes)?c.lesson_changes:[]).filter(z=>+z.week!==week);
+    let popis='';
+    if(req.body.reset){
+      popis='vrátená do pôvodného termínu';
+    } else if(req.body.cancelled){
+      zmeny.push({week, cancelled:true, reason:String(req.body.reason||'').slice(0,120)});
+      popis='zrušená — všetko ďalšie sa posúva o týždeň';
+    } else if(req.body.at){
+      const d=new Date(req.body.at);
+      if(isNaN(d)) return res.status(400).json({error:'Neplatný dátum'});
+      zmeny.push({week, at:d.toISOString()});
+      popis='presunutá na '+d.toISOString().slice(0,16).replace('T',' ');
+    } else return res.status(400).json({error:'Neviem, čo s tou lekciou spraviť'});
+    zmeny.sort((a,b)=>a.week-b.week);
+    await q.update(db.venceky_classes,{_id:c._id},{$set:{lesson_changes:zmeny}});
+    // Zmena termínu je pre deti podstatná informácia — nech sa ju dozvedia.
+    const clenovia=await q.find(db.users,{venceky_class_id:c._id});
+    for(const m of clenovia) await q.insert(db.notifications,{user_id:m._id, type:'venceky',
+      title:'🗓️ Zmena v rozvrhu venčeka',
+      body:`Lekcia bola ${popis}. Aktuálny rozvrh nájdeš v appke v sekcii Venčeky.`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+    res.json({ok:true, terminy:vencekTerminy({...c, lesson_changes:zmeny})});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ── Chat skupiny: žiaci, učitelia aj lektor na jednom mieste ────────────────
 // Marek 2. 9.: „v tom venčekovom okne si môžu úplne dole písať v chate žiaci
 // aj učitelia, je tam taký spoločný chat." Prístup má len ten, kto do skupiny
@@ -20478,7 +20541,8 @@ app.get('/api/vencek/mine', auth, async(req,res)=>{
       return { id:c._id, name:c.name, year:c.year, progress:vencekPct(c.dances),
         dances:(c.dances||[]).map(d=>({name:d.name, level:d.level, level_label:VENCEK_LEVELS[d.level||0], pct:Math.round((d.level||0)/4*100)})),
         lessons_done:c.lessons_done||0, lessons_total:c.lessons_total||13, lessons_before:c.lessons_before||10,
-        event_date:c.event_date||null, schedule:c.schedule||'', note:c.note||'', members:members.length,
+        event_date:c.event_date||null, schedule:c.schedule||'', note:c.note||'',
+        start_at:c.start_at||null, terminy:vencekTerminy(c), members:members.length,
         completed:!!c.completed,
         paid_count:new Set(pays.map(p=>p.user_id)).size,
         attendance:await (async()=>{ const recs=await q.find(db.venceky_attendance,{class_id:c._id});

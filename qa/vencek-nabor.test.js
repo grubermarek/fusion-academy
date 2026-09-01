@@ -95,6 +95,52 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('cena aj počet hodín sedia', tr.d.class.price === 49.9 && tr.d.class.lessons_total === 13,
       tr.d.class.price + ' € · ' + tr.d.class.lessons_total + ' hodín');
 
+    console.log('\n1d) Rozvrh — prvá lekcia a týždenné opakovanie:');
+    const START = '2026-09-09T14:00:00.000Z';
+    await j('/api/admin/venceky/progress', { method: 'POST',
+      body: { class_id: sk.d.class._id, start_at: START } }, adm);
+    await new Promise(r => setTimeout(r, 400));
+    const detR = (await j('/api/admin/venceky/class/' + sk.d.class._id, {}, adm)).d;
+    const T = (detR && detR.class && detR.class.terminy) || [];
+    ok('vygeneruje sa 13 termínov', T.length === 13, 'termínov: ' + T.length);
+    ok('prvý sedí s tým, čo si zadal', T[0] && T[0].at === START, T[0] && T[0].at);
+    ok('druhý je presne o týždeň neskôr',
+      T[1] && (new Date(T[1].at) - new Date(T[0].at)) === 7 * 86400000,
+      T[1] && T[1].at);
+    ok('posledné tri sú označené ako bonus',
+      T.slice(-3).every(x => x.bonus) && !T[9].bonus,
+      JSON.stringify(T.map(x => x.bonus ? 'B' : '.').join('')));
+
+    console.log('\n1e) Presun a zrušenie jednej lekcie:');
+    const presun = await j('/api/admin/venceky/lesson-change', { method: 'POST',
+      body: { class_id: sk.d.class._id, week: 1, at: '2026-09-18T16:30:00.000Z' } }, adm);
+    ok('lekcia sa presunie', presun.status === 200 && presun.d && presun.d.ok, JSON.stringify(presun.d).slice(0, 80));
+    const T2 = (presun.d && presun.d.terminy) || [];
+    ok('má nový čas a je označená ako presunutá',
+      T2[1] && T2[1].at === '2026-09-18T16:30:00.000Z' && T2[1].moved === true,
+      JSON.stringify(T2[1]));
+    ok('ostatné termíny sa nepohli', T2[2] && T2[2].at === T[2].at, T2[2] && T2[2].at);
+
+    const zrus = await j('/api/admin/venceky/lesson-change', { method: 'POST',
+      body: { class_id: sk.d.class._id, week: 3, cancelled: true, reason: 'prázdniny' } }, adm);
+    ok('lekcia sa dá zrušiť', zrus.status === 200, JSON.stringify(zrus.d).slice(0, 70));
+    const T3 = (zrus.d && zrus.d.terminy) || [];
+    ok('zrušený týždeň je označený a nemá číslo lekcie',
+      T3[3] && T3[3].cancelled === true && !T3[3].lesson, JSON.stringify(T3[3]));
+    ok('a kurz sa predĺžil o týždeň — stále je 13 lekcií',
+      T3.filter(x => !x.cancelled).length === 13, 'lekcií: ' + T3.filter(x => !x.cancelled).length);
+    ok('posledná lekcia je teda o týždeň neskôr než predtým',
+      new Date(T3[T3.length - 1].at) - new Date(T[T.length - 1].at) === 7 * 86400000,
+      T3[T3.length - 1].at + ' vs ' + T[T.length - 1].at);
+    // Notifikáciu o zmene rozvrhu skúšame až v sekcii 9d — tu v skupine
+    // ešte nikto nie je, takže by nemala komu prísť.
+
+    const vratit = await j('/api/admin/venceky/lesson-change', { method: 'POST',
+      body: { class_id: sk.d.class._id, week: 3, reset: true } }, adm);
+    const T4 = (vratit.d && vratit.d.terminy) || [];
+    ok('zrušenie sa dá vrátiť späť', !T4.some(x => x.cancelled) && T4.length === 13,
+      'termínov: ' + T4.length);
+
     console.log('\n1c) Kiosk na nábor:');
     const kioskR = await fetch(BASE + '/vk/VEN-DETVA');
     ok('kiosk sa otvorí', kioskR.status === 200, 'HTTP ' + kioskR.status);
@@ -110,9 +156,9 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
 
     console.log('\n1b) Tance, ktoré sa učia:');
     const TANCE = ['Waltz','Cha-cha','Tango','Jive','Valčík','Polka','Samba',
-      'Salsa','Bachata','Quickstep','Slowfox','Čardáš','Merengue','Zumba'];
+      'Salsa','Bachata','Quickstep','Slowfox','Čardáš','Merengue','Blues','Zumba'];
     const infoT = (await j('/api/vencek/info?code=VEN-DETVA', {}, {})).d;
-    ok('skupina dostane všetkých 14 tancov v poradí',
+    ok('skupina dostane všetkých 15 tancov v poradí',
       infoT && JSON.stringify(infoT.dances) === JSON.stringify(TANCE),
       JSON.stringify(infoT && infoT.dances));
     ok('a všetky začínajú ako nezačaté',
@@ -383,6 +429,16 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('absolventský kupón platí len na Silver, nie na Gold',
       absKup && Array.isArray(absKup.plan_ids) && absKup.plan_ids.join() === 'silver',
       JSON.stringify(absKup && absKup.plan_ids));
+
+    console.log('\n9d) Zmena rozvrhu dorazí žiakom:');
+    await j('/api/admin/venceky/progress', { method: 'POST',
+      body: { class_id: tr.d.class._id, start_at: START } }, adm);
+    await j('/api/admin/venceky/lesson-change', { method: 'POST',
+      body: { class_id: tr.d.class._id, week: 2, cancelled: true } }, adm);
+    await new Promise(r => setTimeout(r, 800));
+    const notifR = rd('notifications.db').filter(n => /rozvrhu/i.test(n.title || ''));
+    ok('žiaci o zmene rozvrhu dostali notifikáciu', notifR.length >= 1,
+      JSON.stringify(notifR.map(n => n.title)).slice(0, 90));
 
     console.log('\n10) Čo žiak NESMIE vidieť:');
     const z = {};

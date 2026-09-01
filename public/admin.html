@@ -3962,6 +3962,39 @@ async function vSetRole(uid, cid, role, el){
   if(r?.ok){ showToast(`✅ ${r.name}: ${role==='none'?'odobratý(á) z venčekov':V_ROLE_LBL[role].replace(/^\S+\s/,'')}`,'success'); vClassDetail(cid); loadVenceky(); }
   else showToast('Chyba: '+(r?.error||'?'),'error');
 }
+// ── Rozvrh venčeka ─────────────────────────────────────────────────────────
+const V_DNI=['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
+function vTermin(iso){
+  try{
+    const d=new Date(iso);
+    return V_DNI[d.getDay()]+' '+d.getDate()+'. '+(d.getMonth()+1)+'. '+d.getFullYear()
+      +' · '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  }catch(e){ return String(iso||'—'); }
+}
+async function vSaveStart(cid){
+  const v=document.getElementById('vStartAt').value;
+  const r=await vApi('progress',{class_id:cid, start_at:v||''});
+  if(r&&r.ok!==false){ showToast(v?'Rozvrh uložený — ďalšie lekcie idú po týždni ✅':'Rozvrh zrušený','success'); vClassDetail(cid); }
+  else showToast('Chyba: '+((r&&r.error)||'?'),'error');
+}
+// Presun a zrušenie jednej lekcie. Zrušená sa preskočí a kurz sa posunie
+// o týždeň — presne ako keď hodina v škole vypadne.
+async function vLekcia(cid, week, akcia, teraz){
+  let body={class_id:cid, week};
+  if(akcia==='cancel'){
+    const d=prompt('Zrušiť túto lekciu?\n\nVšetky ďalšie sa posunú o týždeň.\n\nDôvod (nepovinné, žiaci ho neuvidia):','');
+    if(d===null) return;
+    body.cancelled=true; body.reason=d;
+  } else if(akcia==='move'){
+    const pred=String(teraz||'').slice(0,16);
+    const n=prompt('Nový dátum a čas tejto lekcie (formát 2026-10-14T16:00):', pred);
+    if(!n) return;
+    body.at=n.trim();
+  } else body.reset=true;
+  const r=await vApi('lesson-change', body);
+  if(r&&r.ok){ showToast('Rozvrh upravený — žiakom prišla notifikácia ✅','success'); vClassDetail(cid); }
+  else showToast('Chyba: '+((r&&r.error)||'?'),'error');
+}
 // Kiosk na nábor — otvorí sa v novom okne, aby si ho premietol alebo postavil
 // na stôl. Sám sa obnovuje, takže počet registrovaných rastie pred očami.
 function vKiosk(code){
@@ -4070,10 +4103,33 @@ async function vClassDetail(cid){
       <div class="d-flex gap-2 mt-2 flex-wrap">
         <input id="vLessons" type="number" min="0" max="${c.lessons_total}" value="${c.lessons_done}" class="form-control form-control-sm bg-dark text-light" style="max-width:90px" title="odučené lekcie">
         <input id="vEvent" type="date" value="${c.event_date||''}" class="form-control form-control-sm bg-dark text-light" style="max-width:170px" title="dátum venčekového večera">
-        <input id="vSchedule" value="${(c.schedule||'').replace(/"/g,'&quot;')}" placeholder="kedy hodiny (napr. Utorok 14:00 · telocvičňa)" class="form-control form-control-sm bg-dark text-light" style="max-width:280px" title="Kedy sa skupina učí — uvidia to žiaci aj na registračnej stránke">
+        <input id="vSchedule" value="${(c.schedule||'').replace(/"/g,'&quot;')}" placeholder="miesto (napr. telocvičňa školy)" class="form-control form-control-sm bg-dark text-light" style="max-width:220px" title="Kde sa skupina učí — uvidia to žiaci aj na registračnej stránke">
         <input id="vNote" value="${(c.note||'').replace(/"/g,'&quot;')}" placeholder="poznámka (napr. dokončíme tango)" class="form-control form-control-sm bg-dark text-light" style="flex:1;min-width:180px">
         <button class="btn btn-sm btn-brand" onclick="vSaveProgress('${c._id}',${(c.dances||[]).length})">💾 Uložiť hodinu</button>
       </div></div>
+
+    <h6 class="fw-bold mt-3">🗓️ Rozvrh <small class="text-muted fw-normal">— zadaj prvú lekciu, ďalšie idú po týždni</small></h6>
+    <div class="d-flex gap-2 mb-2 flex-wrap align-items-center">
+      <input id="vStartAt" type="datetime-local" value="${(c.start_at||'').slice(0,16)}"
+        class="form-control form-control-sm bg-dark text-light" style="max-width:220px" title="Dátum a čas prvej lekcie">
+      <button class="btn btn-sm btn-brand" onclick="vSaveStart('${c._id}')">💾 Uložiť rozvrh</button>
+      ${c.start_at?`<span class="text-muted small">Zrušená lekcia posunie celý kurz o týždeň.</span>`:''}
+    </div>
+    ${(d.class.terminy||[]).length?`<div class="mb-3" style="max-height:260px;overflow:auto">
+      <table class="table table-dark table-sm small mb-0"><tbody>
+      ${d.class.terminy.map(t=>`<tr${t.cancelled?' style="opacity:.55"':''}>
+        <td style="width:80px">${t.cancelled?'<span class="text-danger">zrušená</span>':`<b>${t.lesson}.</b>${t.bonus?' <span class="badge bg-secondary" style="font-size:.6rem">bonus</span>':''}`}</td>
+        <td>${t.at?vTermin(t.at):'—'}${t.moved?' <span class="text-warning small">(presunutá)</span>':''}</td>
+        <td class="text-end" style="white-space:nowrap">
+          ${t.cancelled
+            ? `<button class="btn btn-sm btn-outline-secondary" style="font-size:.7rem;padding:1px 7px" onclick="vLekcia('${c._id}',${t.week},'reset')">vrátiť</button>`
+            : `<button class="btn btn-sm btn-outline-warning" style="font-size:.7rem;padding:1px 7px" onclick="vLekcia('${c._id}',${t.week},'move','${t.at||''}')">presunúť</button>
+               <button class="btn btn-sm btn-outline-danger" style="font-size:.7rem;padding:1px 7px" onclick="vLekcia('${c._id}',${t.week},'cancel')">zrušiť</button>
+               ${t.moved?`<button class="btn btn-sm btn-outline-secondary" style="font-size:.7rem;padding:1px 7px" onclick="vLekcia('${c._id}',${t.week},'reset')">späť</button>`:''}`}
+        </td>
+      </tr>`).join('')}
+      </tbody></table></div>`
+      : '<div class="text-muted small mb-3">Zatiaľ bez rozvrhu — nastav dátum a čas prvej lekcie.</div>'}
 
     <h6 class="fw-bold mt-3">🧾 Žiaci a platby (${d.members.filter(x=>x.paid).length}/${d.members.length} zaplatené)
       <button class="btn btn-sm btn-outline-warning ms-2" onclick="vAssignStudent('${c._id}')">+ Priradiť existujúci účet</button></h6>
