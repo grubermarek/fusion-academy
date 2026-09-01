@@ -3790,6 +3790,12 @@ async function vApi(path, body){
 async function loadVenceky(){
   const list=document.getElementById('vencekyList');
   try{ VEN=await vApi('overview'); }catch(e){ list.innerHTML='<div class="text-danger py-3">Nepodarilo sa načítať.</div>'; return; }
+  // Kanonická doména sa berie z odkazu, ktorý postavil server — admin môže byť
+  // otvorený na starej app.latindancefusion.art a odkaz na papieri má viesť na novú.
+  try{
+    const vzor=(VEN.schools||[]).flatMap(s=>s.classes||[]).map(c=>c.join_link).find(Boolean);
+    if(vzor) window.FA_APP_URL=new URL(vzor).origin;
+  }catch(e){}
   document.getElementById('vencekyTotals').innerHTML=`<div class="d-flex gap-2 flex-wrap">
     <span class="badge bg-secondary p-2">👥 žiakov: <b>${VEN.totals.students}</b></span>
     <span class="badge bg-secondary p-2">🧾 zaplatilo: <b>${VEN.totals.paid}/${VEN.totals.students}</b></span>
@@ -3955,7 +3961,10 @@ async function vSetRole(uid, cid, role, el){
   else showToast('Chyba: '+(r?.error||'?'),'error');
 }
 function vShowQR(code,name){
-  const link=location.origin+'/v/'+code;
+  // Odkaz musí niesť KANONICKÚ doménu zo servera, nie tú, na ktorej je práve
+  // otvorený admin. Marek mal 2. 9. admin na starej app.latindancefusion.art
+  // a odkaz pod QR viedol tam, kým samotný QR (generovaný serverom) na novú.
+  const link=(window.FA_APP_URL||location.origin)+'/v/'+code;
   const m=document.createElement('div');
   m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   m.onclick=e=>{if(e.target===m)m.remove();};
@@ -3977,7 +3986,10 @@ function vShowQR(code,name){
 // z displeja sa nemusí načítať. Kód je pod ním aj textom, nech si ho vie
 // prepísať ten, komu skener nefunguje.
 function vPrintQR(code,name){
-  const link=location.origin+'/v/'+code;
+  // Odkaz musí niesť KANONICKÚ doménu zo servera, nie tú, na ktorej je práve
+  // otvorený admin. Marek mal 2. 9. admin na starej app.latindancefusion.art
+  // a odkaz pod QR viedol tam, kým samotný QR (generovaný serverom) na novú.
+  const link=(window.FA_APP_URL||location.origin)+'/v/'+code;
   const w=window.open('','_blank','width=760,height=900');
   if(!w) return showToast('Prehliadač zablokoval okno na tlač','error');
   w.document.write(`<!DOCTYPE html><html lang="sk"><head><meta charset="utf-8"><title>QR ${name}</title>
