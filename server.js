@@ -2431,6 +2431,30 @@ async function seedData() {
   // Merch predaný cez admin do 1. 9. sa zapisoval bez faktúry, takže v zozname
   // „Predaje & faktúry" chýbal. Dvom predajom doklad chýba úplne — doplníme ho
   // spätne, ticho (klientke po týždňoch nemá zmysel posielať „ďakujeme za platbu").
+  // Škola bez skupiny je slepá ulička — nemá kód, takže sa do nej nedá
+  // zaregistrovať. Marek 2. 9. založil Halíč a skupinu už riešiť nechcel,
+  // tak ju doplníme sami. Guard je na settings, ale beží aj opakovane pre
+  // novo pridané školy — vytvorí len to, čo naozaj chýba.
+  setTimeout(async()=>{
+    try{
+      const skoly=await q.find(db.venceky_schools,{});
+      if(!skoly.length) return;
+      const triedy=await q.find(db.venceky_classes,{});
+      let n=0;
+      for(const s of skoly){
+        if(triedy.some(c=>c.school_id===s._id)) continue;
+        const kod=await vencekVolnyKod(vencekKodZoNazvu(s.city) || vencekKodZoNazvu(s.name));
+        const c=await q.insert(db.venceky_classes,{school_id:s._id, name:'Venčeková skupina',
+          year:s.year, code:kod, price:49.90, lessons_total:13, lessons_done:0,
+          lecturer:'Marek Gruber', event_date:'', note:'', roles:['student','teacher'],
+          dances:VENCEK_DEFAULT_DANCES.map(x=>({name:x, level:0})), created_at:nowISO()});
+        n++;
+        console.log('🎓 Škole '+s.name+' doplnená skupina · kód '+c.code+' · '+APP_URL+'/?vencek='+c.code);
+      }
+      if(n) console.log('🎓 Doplnených venčekových skupín: '+n);
+    }catch(e){ console.error('vencek skupiny:', e.message); }
+  }, 12000);
+
   if(!(await q.one(db.settings,{key:'merch_faktury_doplnene_v1'}))) setTimeout(async()=>{
     try{
       await q.insert(db.settings,{key:'merch_faktury_doplnene_v1', value:true, at:nowISO()});
@@ -19750,13 +19774,43 @@ const VENCEK_LEVELS=['nezačaté','základy','poznáme kroky','vieme zatancovať
 const vencekPct=ds=>ds&&ds.length? Math.round(ds.reduce((s,d)=>s+(d.level||0),0)/(ds.length*4)*100):0;
 
 // ── Admin: školy ──
+// Kód a odkaz na registráciu visia na skupine, nie na škole — samotná škola
+// je len obal. Marek (2. 9.): „+ trieda tam nemusí byť, už toto samotné je
+// skupina pre Halíč." Skupina teda vzniká rovno pri založení školy a delenie
+// na viac skupín ostáva ako možnosť pre školy, kde ho naozaj treba.
+function vencekKodZoNazvu(text){
+  const zaklad=String(text||'').toUpperCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g,'')     // Halíč → HALIC
+    .replace(/[^A-Z0-9]/g,'').slice(0,12);
+  return zaklad.length>=3 ? 'VEN-'+zaklad : null;
+}
+async function vencekVolnyKod(navrh){
+  if(navrh && !(await q.one(db.venceky_classes,{code:navrh}))) return navrh;
+  if(navrh) for(let i=2;i<=9;i++){
+    const k=navrh+i;
+    if(!(await q.one(db.venceky_classes,{code:k}))) return k;
+  }
+  let k; do{ k='VEN-'+Math.random().toString(36).slice(2,7).toUpperCase(); }
+  while(await q.one(db.venceky_classes,{code:k}));
+  return k;
+}
 app.post('/api/admin/venceky/schools', adminAuth, async(req,res)=>{
   try{
     const {name, city, year}=req.body;
     if(!String(name||'').trim()) return res.status(400).json({error:'Zadaj názov školy'});
     const s=await q.insert(db.venceky_schools,{name:String(name).trim(), city:String(city||'').trim(),
       year:String(year||'2026/27'), created_at:nowISO()});
-    res.json({ok:true, school:s});
+    // Prvá skupina rovno k nej, nech je škola hneď použiteľná — kód sa odvodí
+    // z mesta (Halíč → VEN-HALIC), a keď je obsadený, pripojí sa číslo.
+    const kod=await vencekVolnyKod(
+      String(req.body.code||'').trim() ? vencekKodZoNazvu(req.body.code) : (vencekKodZoNazvu(city) || vencekKodZoNazvu(name)));
+    const c=await q.insert(db.venceky_classes,{school_id:s._id,
+      name:String(req.body.group_name||'Venčeková skupina').trim(), year:s.year, code:kod,
+      price:+req.body.price||49.90, lessons_total:+req.body.lessons_total||13, lessons_done:0,
+      lecturer:String(req.body.lecturer||'').trim(), event_date:'', note:'',
+      roles:Array.isArray(req.body.roles)?req.body.roles.filter(r=>VENCEK_ROLES.includes(r)):['student','teacher'],
+      dances:VENCEK_DEFAULT_DANCES.map(n=>({name:n, level:0})), created_at:nowISO()});
+    res.json({ok:true, school:s, class:c, join_link:`${APP_URL}/?vencek=${c.code}`});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 const VENCEK_ROLES=['student','parent','teacher','director'];

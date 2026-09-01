@@ -3815,7 +3815,7 @@ async function loadVenceky(){
         <h6 class="fw-bold mb-0">🏫 ${s.name} <span class="text-muted small">· ${s.city||''} · ${s.year}</span></h6>
         <div class="d-flex gap-2 align-items-center">
           <span class="small">💶 ${vEur(s.income)} · 📉 ${vEur(s.costs)} · <b style="color:${s.profit>=0?'#8bc34a':'#f87171'}">📈 ${vEur(s.profit)}</b></span>
-          <button class="btn btn-sm btn-outline-light" onclick="vAddClass('${s.id}')">+ Trieda</button>
+          <button class="btn btn-sm btn-outline-light" onclick="vAddClass('${s.id}')" title="Väčšina škôl vystačí s jednou skupinou — pridaj len ak naozaj delíš na 9.A a 9.B">+ Ďalšia skupina</button>
           <button class="btn btn-sm btn-outline-secondary" onclick="vAssignRole('${s.id}')">👩‍🏫 Rola</button>
           <button class="btn btn-sm btn-outline-secondary" onclick="vAddCost('${s.id}','')">+ Náklad školy</button>
         </div>
@@ -3823,7 +3823,7 @@ async function loadVenceky(){
       ${s.staff?.length?`<div class="small text-muted mb-2">Personál: ${s.staff.map(t=>`${t.role==='director'?'🏫':'👩‍🏫'} ${t.name}`).join(' · ')}</div>`:''}
       <div class="small mb-2"><button class="btn btn-sm btn-outline-warning" onclick="vBookingLink('${s.id}')">📅 Booking link pre školu</button></div>
       ${s.classes.length?`<table class="table table-dark table-sm small mb-0"><thead><tr>
-        <th>Trieda</th><th>Progress</th><th>Lekcie</th><th class="text-center">Žiaci</th><th class="text-center">🧾 Zaplatené</th><th class="text-end">Príjem</th><th class="text-end">Zisk</th><th>Registrácia</th><th></th></tr></thead><tbody>
+        <th>Skupina</th><th>Progress</th><th>Lekcie</th><th class="text-center">Žiaci</th><th class="text-center">🧾 Zaplatené</th><th class="text-end">Príjem</th><th class="text-end">Zisk</th><th>Registrácia</th><th></th></tr></thead><tbody>
         ${s.classes.map(c=>`<tr>
           <td><b>${c.name}</b>${c.event_date?`<br><small class="text-muted">✨ ${c.event_date}</small>`:''}</td>
           <td style="min-width:110px"><div style="height:8px;background:#26221a;border-radius:5px;overflow:hidden"><div style="height:100%;width:${c.progress}%;background:#C9A84C"></div></div><small class="text-muted">${c.progress} %</small></td>
@@ -3835,11 +3835,11 @@ async function loadVenceky(){
           <td><button class="btn btn-sm btn-outline-secondary" onclick="vShowQR('${c.code}','${c.name}')">QR / odkaz</button></td>
           <td><button class="btn btn-sm btn-brand" onclick="vClassDetail('${c.id}')">Detail</button></td>
         </tr>`).join('')}
-      </tbody></table>`:'<div class="text-muted small">Žiadne triedy — pridaj prvú.</div>'}
+      </tbody></table>`:'<div class="text-warning small">⚠️ Škola nemá skupinu, takže sa do nej zatiaľ nedá registrovať. Doplní sa sama do minúty po nasadení — alebo klikni „+ Ďalšia skupina".</div>'}
     </div></div>`).join('');
 }
 async function vAssignStudent(cid){
-  const query=prompt('Email alebo meno existujúceho účtu (lead/klient), ktorý chceš priradiť do triedy:'); if(!query) return;
+  const query=prompt('Email alebo meno existujúceho účtu (lead/klient), ktorý chceš priradiť do skupiny:'); if(!query) return;
   const role=prompt('Rola: 1 = žiak, 2 = rodič','1')==='2'?'parent':'student';
   let r=await vApi('assign-student',{class_id:cid, query, role});
   if(r?.pick){

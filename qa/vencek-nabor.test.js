@@ -67,6 +67,12 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
       body: { name: 'ZŠ Kukučínova Detva', city: 'Detva', year: '2026/27' } }, adm);
     ok('škola sa založí', sk.status === 200 && sk.d && sk.d.school && sk.d.school._id, JSON.stringify(sk.d).slice(0, 110));
     const sid = sk.d.school._id;
+    // Kód visí na skupine — škola bez nej je slepá ulička, tak vzniká rovno so školou.
+    ok('a rovno s ňou aj skupina', !!(sk.d.class && sk.d.class._id), JSON.stringify(sk.d.class || null).slice(0, 90));
+    ok('kód sa odvodí z mesta', sk.d.class && sk.d.class.code === 'VEN-DETVA', sk.d.class && sk.d.class.code);
+    ok('a registrovať sa smie žiak a učiteľ', sk.d.class && JSON.stringify(sk.d.class.roles) === JSON.stringify(['student', 'teacher']),
+      JSON.stringify(sk.d.class && sk.d.class.roles));
+    ok('odkaz je hneď použiteľný', sk.d.join_link === BASE + '/?vencek=VEN-DETVA', String(sk.d.join_link));
 
     const tr = await j('/api/admin/venceky/classes', { method: 'POST',
       body: { school_id: sid, name: '9.A', price: 49.90, lessons_total: 13, lecturer: 'Marek Gruber' } }, adm);
@@ -140,8 +146,8 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     console.log('\n7) Prehľad a peniaze:');
     const ov = (await j('/api/admin/venceky/overview', {}, adm)).d;
     const skola = ov && Array.isArray(ov.schools) ? ov.schools.find(s => s.id === sid) : null;
-    const trieda = skola && Array.isArray(skola.classes) ? skola.classes[0] : null;
-    ok('prehľad ukáže školu aj triedu', !!trieda, JSON.stringify(ov && Object.keys(ov)).slice(0, 110));
+    // Škola má aj skupinu, ktorá vznikla s ňou — vyberáme tú našu podľa id.
+    const trieda = skola && Array.isArray(skola.classes) ? skola.classes.find(x => x.id === tr.d.class._id) : null;
     ok('a počíta žiakov (2: cez kód + ručne)', trieda && trieda.members === 2,
       trieda ? 'members=' + trieda.members : '—');
 
@@ -150,7 +156,7 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('platba za žiaka sa zapíše', pay.status === 200 && pay.d && pay.d.ok !== false, JSON.stringify(pay.d).slice(0, 110));
     await new Promise(r => setTimeout(r, 600));
     const ov2 = (await j('/api/admin/venceky/overview', {}, adm)).d;
-    const t2 = ov2 && ov2.schools && ov2.schools[0] && ov2.schools[0].classes && ov2.schools[0].classes[0];
+    const t2 = ov2 && Array.isArray(ov2.schools) ? (ov2.schools.find(x => x.id === sid) || {classes:[]}).classes.find(x => x.id === tr.d.class._id) : null;
     ok('a je vidieť v tržbe triedy', t2 && +t2.income >= 49.9, t2 ? 'income=' + t2.income + ' € · zaplatilo ' + t2.paid + ' z ' + t2.members : '—');
 
     console.log('\n8) Skupina s obmedzenými rolami (Halíč: len žiak a učiteľ):');
