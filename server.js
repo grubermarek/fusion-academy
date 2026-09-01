@@ -4107,7 +4107,7 @@ app.post('/api/register', rlSignup, async(req,res)=>{
             note:'Venčeky — mesiac Zumby zadarmo pre rodičov a zamestnancov školy'}});
         await q.insert(db.notifications,{user_id:u._id,type:'venceky',
           title:'🎁 Vitaj vo Fusion Venčekoch!',
-          body:'Máš u nás kupón VENCEKRODIC = celý 1. MESIAC Zumby zadarmo — platí pre teba aj pre rodičov. A prvú hodinu má u nás každý zdarma, tak pokojne priveď aj ich. 💛',
+          body:'Máš u nás kupón VENCEKRODIC = celý 1. MESIAC Zumby zadarmo — platí pre teba aj pre rodičov. 💛',
           read:false, created_at:nowISO()});
       }catch(e){}
     }
