@@ -41,7 +41,11 @@ body{background:#12100a;color:var(--cream);font-family:'Inter',system-ui,sans-se
 .sprava{background:#1d1a15;border:1px solid #2e2a20;border-radius:12px;padding:9px 12px}
 .sprava.ja{background:rgba(201,168,76,.12);border-color:rgba(201,168,76,.35)}
 .sprava .hlava{display:flex;align-items:center;gap:7px;font-size:.76rem;margin-bottom:3px;flex-wrap:wrap}
-.sprava .kto{font-weight:800;color:var(--cream)}
+.sprava .kto{font-weight:800;color:var(--cream);text-decoration:none}
+a.kto:hover{color:var(--gold);text-decoration:underline}
+.ch-av{width:24px;height:24px;border-radius:50%;object-fit:cover;flex:none;display:inline-flex;
+  align-items:center;justify-content:center;border:1px solid #3a3428;background:#26221a}
+.ch-ini{font-size:.66rem;font-weight:800;color:var(--gold)}
 .sprava .rola{font-size:.65rem;padding:1px 7px;border-radius:999px;background:rgba(201,168,76,.16);color:var(--gold);font-weight:700}
 .sprava .rola.uc{background:rgba(126,200,227,.16);color:#7ec8e3}
 .sprava .kedy{color:#6d6656;margin-left:auto;font-size:.7rem}
@@ -160,8 +164,16 @@ async function chatNacitaj(){
     _chatJa=d.me;
     el.innerHTML = d.messages.length ? d.messages.map(m=>{
       const ja=m.user_id===d.me, uc=['teacher','director','lektor'].includes(m.role);
+      const ini=(m.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+      // Meno aj fotka vedú na profil — tam sa dá komentovať a lajkovať.
+      const av=m.avatar
+        ? `<img class="ch-av" src="${esc(m.avatar)}" alt="">`
+        : `<span class="ch-av ch-ini">${esc(ini)}</span>`;
+      const kto=m.user_id
+        ? `<a class="kto" href="/u/${esc(m.user_id)}">${esc(m.name||'—')}</a>`
+        : `<span class="kto">${esc(m.name||'—')}</span>`;
       return `<div class="sprava${ja?' ja':''}">
-        <div class="hlava"><span class="kto">${esc(m.name||'—')}</span>
+        <div class="hlava">${m.user_id?`<a href="/u/${esc(m.user_id)}">${av}</a>`:av}${kto}
           <span class="rola${uc?' uc':''}">${esc(ROLA_LBL[m.role]||m.role||'')}</span>
           <span class="kedy">${chatCas(m.at)}</span></div>
         <div class="telo">${esc(m.text)}</div>

@@ -337,6 +337,40 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     const vlastna = await j('/api/vencek/chat/' + citaj.messages[0].id, { method: 'DELETE' }, ziakC);
     ok('vlastnú áno', vlastna.status === 200, 'HTTP ' + vlastna.status);
 
+    console.log('\n9c) Profil v chate a ukončenie venčeka:');
+    await j('/api/vencek/chat', { method: 'POST', body: { text: 'test profilu' } }, ziakC);
+    // Profil si mení klientka sama — admin endpoint tieto polia zámerne neprijíma.
+    // Fotka ide vlastným endpointom a musí byť data URI (1×1 priehľadný PNG).
+    const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+    await j('/api/profile', { method: 'PUT', body: { nickname: 'Zuzi' } }, ziakC);
+    await j('/api/client/avatar', { method: 'POST', body: { avatar: PNG } }, ziakC);
+    await new Promise(r => setTimeout(r, 500));
+    const chatP = (await j('/api/vencek/chat', {}, ziakC)).d;
+    const moja = (chatP.messages || []).slice(-1)[0];
+    ok('chat ukazuje prezývku z profilu, nie meno pri registrácii',
+      moja && moja.name === 'Zuzi', moja && moja.name);
+    ok('a fotku z profilu', !!(moja && moja.avatar && moja.avatar.startsWith('data:image/png')), String(moja && moja.avatar).slice(0, 40));
+    ok('so správnym user_id, aby sa dalo prejsť na profil',
+      moja && moja.user_id === (zu || {})._id, moja && moja.user_id);
+
+    const ukonci = await j('/api/admin/venceky/complete', { method: 'POST',
+      body: { class_id: tr.d.class._id } }, adm);
+    ok('venček sa dá ukončiť', ukonci.status === 200 && ukonci.d && ukonci.d.ok, JSON.stringify(ukonci.d).slice(0, 80));
+    await new Promise(r => setTimeout(r, 700));
+    const poUkonceni = (await j('/api/vencek/mine', {}, ziakC)).d;
+    ok('skupina je označená ako ukončená (karta na nástenke zmizne)',
+      poUkonceni && poUkonceni.class && poUkonceni.class.completed === true,
+      JSON.stringify(poUkonceni && poUkonceni.class && poUkonceni.class.completed));
+    const zuPo = usr('qa.ven.ziak@qa-biz.local');
+    ok('žiak má odznak absolventa', !!(zuPo && zuPo.vencek_alumni), zuPo && zuPo.vencek_alumni);
+    ok('a účet mu ostáva bežný — nič sa mu neodobralo',
+      zuPo && zuPo.active !== false && !!zuPo.email && zuPo.nickname === 'Zuzi',
+      JSON.stringify({ active: zuPo && zuPo.active, nick: zuPo && zuPo.nickname }));
+    const absKup = rd('promo_codes.db').find(p => p.code === 'VENCEKABS');
+    ok('absolventský kupón platí len na Silver, nie na Gold',
+      absKup && Array.isArray(absKup.plan_ids) && absKup.plan_ids.join() === 'silver',
+      JSON.stringify(absKup && absKup.plan_ids));
+
     console.log('\n10) Čo žiak NESMIE vidieť:');
     const z = {};
     await j('/api/login', { method: 'POST', body: { email: 'qa.ven.ziak@qa-biz.local', password: 'Heslo123!' } }, z);

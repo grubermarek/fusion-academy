@@ -3503,6 +3503,9 @@ init();
     // Admin kartu dovtedy nevidel vôbec — Marek si ju pýtal, aby vedel deťom
     // na nábore ukázať, kam majú klikať a čo tam uvidia.
     if(!d.ok || !d.role) return;
+    // Po ukončení venčeka karta zmizne a ostane bežná appka (Marek 2. 9.).
+    // Účet ostáva nedotknutý — odznak absolventa aj história mu zostávajú.
+    if(d.class && d.class.completed && d.role!=='admin') return;
     const main=document.getElementById('dashMain'); if(!main) return;
 
     // Venček je pre týchto ľudí hlavný dôvod, prečo appku otvorili — karta preto

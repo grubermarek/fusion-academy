@@ -20169,10 +20169,17 @@ app.post('/api/admin/venceky/complete', adminAuth, async(req,res)=>{
     if(!c) return res.status(404).json({error:'Trieda nenájdená'});
     if(c.completed) return res.status(400).json({error:'Venček je už ukončený'});
     await q.update(db.venceky_classes,{_id:c._id},{$set:{completed:true, completed_at:nowISO()}});
-    if(!await q.one(db.promo_codes,{code:'VENCEKABS'}))
-      await q.insert(db.promo_codes,{ code:'VENCEKABS', type:'percent', value:100, applies_to:'membership',
+    // plan_ids ako pri VENCEKRODIC — 100 % na „membership" by inak dalo zadarmo
+    // aj Gold za 125 €, hoci sa sľubuje Silver.
+    const ABS={ type:'percent', value:100, applies_to:'membership', plan_ids:['silver'],
+      note:'Venčeky — absolventský mesiac Silver zdarma (75 €)' };
+    const abs=await q.one(db.promo_codes,{code:'VENCEKABS'});
+    if(!abs)
+      await q.insert(db.promo_codes,{ code:'VENCEKABS', ...ABS,
         max_uses:0, once_per_user:true, min_amount:0, expires_at:null, active:true, used_count:0,
-        note:'Venčeky — absolventský mesiac členstva zdarma', created_at:nowISO() });
+        created_at:nowISO() });
+    else if(!Array.isArray(abs.plan_ids) || !abs.plan_ids.includes('silver'))
+      await q.update(db.promo_codes,{_id:abs._id},{$set:ABS});
     const students=(await q.find(db.users,{venceky_class_id:c._id})).filter(x=>x.venceky_role==='student');
     for(const m of students){
       await q.update(db.users,{_id:m._id},{$set:{vencek_alumni:c.year||'2026/27'}});
@@ -20382,8 +20389,17 @@ app.get('/api/vencek/chat', auth, async(req,res)=>{
     const spravy=(await q.find(db.venceky_chat,{class_id:c._id}))
       .sort((a,b)=>String(a.created_at||'').localeCompare(String(b.created_at||'')))
       .slice(-120);
+    // Meno, prezývka a fotka sa ťahajú z účtu, nie z uloženej správy — keď si
+    // niekto zmení profil, chat sa má prepísať tiež (Marek 2. 9.).
+    const ids=[...new Set(spravy.map(m=>m.user_id).filter(Boolean))];
+    const ludia={};
+    if(ids.length) (await q.find(db.users,{_id:{$in:ids}})).forEach(u=>{
+      ludia[u._id]={ name:u.nickname||u.name, avatar:u.avatar||null }; });
     res.json({ok:true, me:req.session.uid, messages:spravy.map(m=>({
-      id:m._id, user_id:m.user_id, name:m.user_name, role:m.role, text:m.text, at:m.created_at })) });
+      id:m._id, user_id:m.user_id,
+      name:(ludia[m.user_id]||{}).name || m.user_name,
+      avatar:(ludia[m.user_id]||{}).avatar || null,
+      role:m.role, text:m.text, at:m.created_at })) });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 app.post('/api/vencek/chat', auth, async(req,res)=>{
