@@ -4020,7 +4020,10 @@ app.post('/api/register', rlSignup, async(req,res)=>{
     if(req.body.vencek_code){
       vencekClass=await q.one(db.venceky_classes,{code:String(req.body.vencek_code).toUpperCase().trim()});
       if(!vencekClass) return res.status(400).json({error:'Venčekový kód triedy neexistuje. Skontroluj QR/kód od školy.'});
-      vencekRole=['student','parent','teacher','director'].includes(req.body.vencek_role)?req.body.vencek_role:'student';
+      // Skupina si môže obmedziť, aké role sa dajú vybrať (Halíč: len žiak a učiteľ).
+      // Kontroluje sa aj tu, nielen vo formulári — inak by stačilo poslať iné pole.
+      const povolene=(Array.isArray(vencekClass.roles)&&vencekClass.roles.length)?vencekClass.roles:['student','parent','teacher','director'];
+      vencekRole=povolene.includes(req.body.vencek_role)?req.body.vencek_role:povolene[0];
     }
     const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',city:String(req.body.city||'').trim().slice(0,60),referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,referral_credit:0,lead_source,utm_source,utm_medium,utm_campaign,fbclid,gclid,landing_page:clean(attr.landing),referrer:clean(attr.referrer),consent_at: req.body.consent ? nowISO() : null,created_at:today(),account_creation_type:'self_registration',registration_at:nowISO(),registration_at_source:'actual',
       ...(vencekClass? (['student','parent'].includes(vencekRole)
@@ -19756,9 +19759,16 @@ app.post('/api/admin/venceky/schools', adminAuth, async(req,res)=>{
     res.json({ok:true, school:s});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
+const VENCEK_ROLES=['student','parent','teacher','director'];
 app.post('/api/admin/venceky/classes', adminAuth, async(req,res)=>{
   try{
     const {school_id, name, price, lessons_total, lecturer, event_date}=req.body;
+    // Ktoré role si smú pri registrácii vybrať. V Halíči (2. 9.) je to jedna
+    // spoločná skupina ôsmakov a deviatakov a Marek tam chce len žiaka a učiteľa,
+    // nech sa nikto nezaraďuje ako rodič či riaditeľ omylom. Prázdne = všetky štyri.
+    const roles=Array.isArray(req.body.roles)
+      ? req.body.roles.filter(r=>VENCEK_ROLES.includes(r))
+      : null;
     const school=await q.one(db.venceky_schools,{_id:String(school_id||'')});
     if(!school) return res.status(404).json({error:'Škola nenájdená'});
     if(!String(name||'').trim()) return res.status(400).json({error:'Zadaj názov triedy (napr. 9.A)'});
@@ -19767,6 +19777,7 @@ app.post('/api/admin/venceky/classes', adminAuth, async(req,res)=>{
     const c=await q.insert(db.venceky_classes,{school_id:school._id, name:String(name).trim(),
       year:school.year, code, price:+price||49.90, lessons_total:+lessons_total||13, lessons_done:0,
       lecturer:String(lecturer||'').trim(), event_date:String(event_date||''), note:'',
+      ...(roles && roles.length ? {roles} : {}),
       dances:VENCEK_DEFAULT_DANCES.map(n=>({name:n, level:0})), created_at:nowISO()});
     res.json({ok:true, class:c, join_link:`${APP_URL}/?vencek=${code}`});
   }catch(e){ res.status(500).json({error:e.message}); }
@@ -19827,10 +19838,14 @@ app.get('/api/admin/venceky/class/:id', adminAuth, async(req,res)=>{
     const pays=await q.find(db.venceky_payments,{class_id:c._id});
     const payBy=Object.fromEntries(pays.map(p=>[p.user_id,p]));
     const costs=await q.find(db.venceky_costs,{class_id:c._id});
+    // Učitelia v skupine sa doteraz v detaile nezobrazovali vôbec — keď si niekto
+    // pri registrácii vybral zle, nebolo ho kde nájsť a prepnúť.
+    const staff=allInClass.filter(u=>['teacher','director'].includes(u.venceky_role))
+      .map(t=>({id:t._id, name:t.name, email:t.email, role:t.venceky_role}));
     res.json({ok:true, school:school?.name||'', class:{...c, progress:vencekPct(c.dances)},
       members:members.map(m=>({id:m._id,name:m.name,email:m.email,phone:m.phone||'',
         paid:!!payBy[m._id], amount:payBy[m._id]?.amount||null, paid_at:payBy[m._id]?.paid_at||null, method:payBy[m._id]?.method||null})),
-      parents, costs, levels:VENCEK_LEVELS});
+      parents, staff, costs, levels:VENCEK_LEVELS});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -20145,6 +20160,53 @@ app.post('/api/admin/venceky/assign-role', adminAuth, async(req,res)=>{
       body:`Máte prístup k venčekovému prehľadu ${role==='director'?'školy':'triedy'} ${school.name}. Nájdete ho v appke v sekcii Venčeky. Darček od nás: kupón VENCEKRODIC = 1. mesiac Zumby ZADARMO — poďakovanie, že ste si vybrali práve nás. 💛`,
       read:false, created_at:nowISO()}).catch(()=>{});
     res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Verejné: čo je za venčekovým kódom (pre registračnú stránku) ────────────
+// Registrácia tak vie ukázať názov skupiny a ponúknuť len tie role, ktoré sú
+// pre ňu povolené. Vracia zámerne len to, čo je aj tak na plagáte s QR.
+app.get('/api/vencek/info', rlPublic, async(req,res)=>{
+  try{
+    const code=String(req.query.code||'').toUpperCase().trim();
+    const c=await q.one(db.venceky_classes,{code});
+    if(!c) return res.status(404).json({error:'Kód skupiny neexistuje'});
+    const s=await q.one(db.venceky_schools,{_id:c.school_id});
+    res.json({ok:true, name:c.name, school:(s&&s.name)||'',
+      roles:(Array.isArray(c.roles)&&c.roles.length)?c.roles:VENCEK_ROLES});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Admin: prepnúť rolu človeka, ktorý už v skupine je ──────────────────────
+// assign-role vedel len učiteľa/riaditeľa a assign-student len žiaka/rodiča,
+// takže preklik pri registrácii sa nedal opraviť na jednom mieste. Pri nábore
+// v Halíči (2. 9.) si rolu vyberajú sami — omyl treba vedieť prepnúť hneď.
+app.post('/api/admin/venceky/member-role', adminAuth, async(req,res)=>{
+  try{
+    const role=String(req.body.role||'');
+    if(!['student','parent','teacher','director','none'].includes(role))
+      return res.status(400).json({error:'Neznáma rola'});
+    const u=await q.one(db.users,{_id:String(req.body.user_id||'')});
+    if(!u) return res.status(404).json({error:'Účet nenájdený'});
+    // Čakajúca žiadosť po ručnom prepnutí už nemá zmysel — rozhodol si za ňu.
+    const unset={vencek_pending_role:true, vencek_pending_class_id:true, vencek_pending_school_id:true};
+    if(role==='none'){
+      await q.update(db.users,{_id:u._id},{$unset:{...unset, venceky_role:true, venceky_school_id:true, venceky_class_id:true, vencek_child_name:true}});
+      return res.json({ok:true, name:u.name, role:'none'});
+    }
+    const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||u.venceky_class_id||'')});
+    if(!c) return res.status(400).json({error:'Vyber skupinu, do ktorej ho zaradiť'});
+    const set={venceky_role:role, venceky_school_id:c.school_id,
+      venceky_class_id: role==='director' ? null : c._id};
+    // Meno dieťaťa dáva zmysel len pri rodičovi.
+    if(role!=='parent') unset.vencek_child_name=true;
+    await q.update(db.users,{_id:u._id},{$set:set, $unset:unset});
+    const lbl={student:'žiak/žiačka', parent:'rodič', teacher:'učiteľ/učiteľka', director:'riaditeľ/riaditeľka'}[role];
+    await q.insert(db.notifications,{user_id:u._id, type:'venceky',
+      title:'🎓 Fusion Venčeky — upravili sme ti typ konta',
+      body:`V skupine ${c.name} si teraz vedený/á ako ${lbl}. Ak to nesedí, ozvi sa nám.`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+    res.json({ok:true, name:u.name, role});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 

@@ -548,18 +548,31 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
 /* Venčekový registračný kód z QR (?vencek=VEN-XXXXX) — uloží sa a použije pri registrácii */
 (function(){
   var p=new URLSearchParams(location.search), vc=p.get('vencek');
-  if(vc){ localStorage.setItem('fa_vencek_code', vc.toUpperCase());
-    document.addEventListener('DOMContentLoaded', function(){
-      var b=document.createElement('div');
-      b.style.cssText='position:sticky;top:0;z-index:1000;background:linear-gradient(90deg,#C9A84C,#a5842f);color:#161310;font-weight:800;text-align:center;padding:10px 14px;font-size:.92rem';
-      b.textContent='🎓 Registruješ sa do FUSION VENČEKOV — po registrácii ťa automaticky priradíme k tvojej triede ('+vc.toUpperCase()+').';
-      document.body.prepend(b);
-    });
-  }
+  if(vc) localStorage.setItem('fa_vencek_code', vc.toUpperCase());
+  var kod=localStorage.getItem('fa_vencek_code');
   document.addEventListener('DOMContentLoaded', function(){
-    if(localStorage.getItem('fa_vencek_code')){
-      var g=document.getElementById('venRoleGroup'); if(g) g.style.display='block';
-    }
+    if(!kod) return;
+    var g=document.getElementById('venRoleGroup'); if(g) g.style.display='block';
+    var b=document.createElement('div');
+    b.style.cssText='position:sticky;top:0;z-index:1000;background:linear-gradient(90deg,#C9A84C,#a5842f);color:#161310;font-weight:800;text-align:center;padding:10px 14px;font-size:.92rem';
+    b.textContent='🎓 Registruješ sa do FUSION VENČEKOV — po registrácii ťa priradíme automaticky ('+kod+').';
+    document.body.prepend(b);
+    /* Skupina si môže obmedziť, kto sa smie registrovať (napr. len žiak a učiteľ).
+       Nepovolené voľby zo zoznamu vypadnú, nech si nikto nevyberie zlú rolu. */
+    fetch('/api/vencek/info?code='+encodeURIComponent(kod)).then(function(r){return r.json();}).then(function(d){
+      if(!d||!d.ok) return;
+      if(d.school||d.name)
+        b.textContent='🎓 Registrácia do venčekov — '+[d.school,d.name].filter(Boolean).join(' · ');
+      var sel=document.getElementById('rVenRole');
+      if(sel && Array.isArray(d.roles) && d.roles.length){
+        Array.prototype.slice.call(sel.options).forEach(function(o){
+          if(d.roles.indexOf(o.value)<0) o.remove();
+        });
+        if(sel.options.length) sel.value=sel.options[0].value;
+        var ch=document.getElementById('venChildGroup');
+        if(ch) ch.style.display = sel.value==='parent' ? 'block' : 'none';
+      }
+    }).catch(function(){});
   });
 })();
 </script>

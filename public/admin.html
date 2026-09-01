@@ -3913,20 +3913,73 @@ async function vAddClass(sid){
   alert('Trieda vytvorená.\n\nRegistračný odkaz pre žiakov:\n'+d.join_link+'\n\n(QR nájdeš pri triede.)');
   loadVenceky();
 }
+// Rolu si pri registrácii vyberajú sami, takže preklik treba vedieť opraviť
+// priamo v zozname — nie cez tri rôzne dialógy ako doteraz.
+const V_ROLE_LBL={student:'🧑‍🎓 žiak/žiačka', parent:'👨‍👩‍👧 rodič', teacher:'👩‍🏫 učiteľ/ka', director:'🏫 riaditeľ/ka', none:'➖ odobrať z venčekov'};
+function vRolePicker(uid, cid, akt){
+  return `<select class="form-select form-select-sm bg-dark text-light border-secondary d-inline-block mt-1"
+    style="width:auto;font-size:.72rem;padding:.1rem 1.6rem .1rem .4rem" data-prev="${akt}"
+    title="Zmeniť typ konta" onchange="vSetRole('${uid}','${cid}',this.value,this)">
+    ${Object.entries(V_ROLE_LBL).map(([k,l])=>`<option value="${k}"${k===akt?' selected':''}>${l}</option>`).join('')}
+  </select>`;
+}
+async function vSetRole(uid, cid, role, el){
+  const akt=el?.dataset.prev;
+  if(role==='none' && !confirm('Naozaj odobrať z venčekovej skupiny?\n\nÚčet v appke mu ostane, len prestane patriť do skupiny.')){
+    if(akt) el.value=akt; return;
+  }
+  const r=await vApi('member-role',{user_id:uid, class_id:cid, role});
+  if(r?.ok){ showToast(`✅ ${r.name}: ${role==='none'?'odobratý(á) z venčekov':V_ROLE_LBL[role].replace(/^\S+\s/,'')}`,'success'); vClassDetail(cid); loadVenceky(); }
+  else showToast('Chyba: '+(r?.error||'?'),'error');
+}
 function vShowQR(code,name){
   const link=location.origin+'/?vencek='+code;
   const m=document.createElement('div');
   m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   m.onclick=e=>{if(e.target===m)m.remove();};
-  m.innerHTML=`<div style="background:#fff;border-radius:16px;padding:26px;text-align:center;max-width:340px">
+  const qrSrc='/api/qr.png?size=900&path='+encodeURIComponent('/?vencek='+code);
+  m.innerHTML=`<div style="background:#fff;border-radius:16px;padding:24px;text-align:center;max-width:360px;max-height:92vh;overflow:auto">
     <div style="font-weight:900;color:#161310;font-size:1.1rem;margin-bottom:4px">FUSION VENČEKY — ${name}</div>
-    <div style="color:#666;font-size:.8rem;margin-bottom:12px">Naskenuj a zaregistruj sa — trieda sa priradí automaticky</div>
-    <img src="/api/qr.png?size=480&path=${encodeURIComponent('/?vencek='+code)}" width="240" height="240" alt="QR kód triedy ${name}">
-    <div style="font-family:monospace;font-weight:800;margin-top:10px;color:#161310">${code}</div>
+    <div style="color:#666;font-size:.8rem;margin-bottom:12px">Naskenuj a zaregistruj sa — do skupiny ťa priradíme automaticky</div>
+    <img src="${qrSrc}" width="260" height="260" alt="QR kód skupiny ${name}">
+    <div style="font-family:monospace;font-weight:800;margin-top:10px;color:#161310;font-size:1.05rem">${code}</div>
     <input value="${link}" readonly onclick="this.select()" style="width:100%;margin-top:8px;padding:6px;font-size:.75rem;border:1px solid #ccc;border-radius:8px">
-    <button onclick="navigator.clipboard.writeText('${link}');this.textContent='✅ Skopírované'" style="margin-top:10px;background:#C9A84C;border:none;border-radius:10px;padding:9px 18px;font-weight:800;cursor:pointer">Kopírovať odkaz</button>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button onclick="navigator.clipboard.writeText('${link}');this.textContent='✅ Skopírované'" style="flex:1;background:#C9A84C;border:none;border-radius:10px;padding:9px 12px;font-weight:800;cursor:pointer">Kopírovať odkaz</button>
+      <button onclick="vPrintQR('${code}','${String(name).replace(/'/g,'')}')" style="flex:1;background:#161310;color:#fff;border:none;border-radius:10px;padding:9px 12px;font-weight:800;cursor:pointer">🖨️ Tlačiť</button>
+    </div>
   </div>`;
   document.body.appendChild(m);
+}
+// Papierový QR je pri nábore poistka — v telocvični býva slabý signál a QR
+// z displeja sa nemusí načítať. Kód je pod ním aj textom, nech si ho vie
+// prepísať ten, komu skener nefunguje.
+function vPrintQR(code,name){
+  const link=location.origin+'/?vencek='+code;
+  const w=window.open('','_blank','width=760,height=900');
+  if(!w) return showToast('Prehliadač zablokoval okno na tlač','error');
+  w.document.write(`<!DOCTYPE html><html lang="sk"><head><meta charset="utf-8"><title>QR ${name}</title>
+  <style>
+    @page{margin:14mm}
+    body{font-family:'Segoe UI',Arial,sans-serif;text-align:center;color:#161310;margin:0;padding:18px}
+    .znak{font-size:.8rem;letter-spacing:.22em;text-transform:uppercase;color:#8F6E1E;font-weight:700}
+    h1{font-size:2rem;margin:6px 0 2px}
+    .skupina{font-size:1.15rem;color:#444;margin-bottom:16px}
+    img{width:15cm;height:15cm;max-width:92%;height:auto;aspect-ratio:1}
+    .kod{font-family:'Courier New',monospace;font-size:1.7rem;font-weight:700;margin-top:10px;letter-spacing:.06em}
+    .link{font-size:.95rem;color:#444;margin-top:4px;word-break:break-all}
+    .navod{margin-top:14px;font-size:1rem;color:#333;line-height:1.6}
+  </style></head><body>
+    <div class="znak">Fusion Academy</div>
+    <h1>Venčeky</h1>
+    <div class="skupina">${name}</div>
+    <img src="/api/qr.png?size=1200&path=${encodeURIComponent('/?vencek='+code)}" alt="QR kód">
+    <div class="kod">${code}</div>
+    <div class="link">${link}</div>
+    <div class="navod">Naskenuj QR kód telefónom a zaregistruj sa.<br>Pri registrácii si vyber, či si <b>žiak</b> alebo <b>učiteľ</b>.</div>
+  </body></html>`);
+  w.document.close();
+  w.onload=()=>{ try{ w.focus(); w.print(); }catch(e){} };
 }
 async function vAssignRole(sid){
   const email=prompt('Email učiteľa/riaditeľa (musí už mať účet v appke):'); if(!email) return;
@@ -3977,7 +4030,8 @@ async function vClassDetail(cid){
       <button class="btn btn-sm btn-outline-warning ms-2" onclick="vAssignStudent('${c._id}')">+ Priradiť existujúci účet</button></h6>
     <table class="table table-dark table-sm small"><tbody>
       ${d.members.map(mm=>`<tr>
-        <td>${mm.paid?'✅':'⏳'} <b>${mm.name}</b><br><small class="text-muted">${mm.email||''} ${mm.phone||''}</small></td>
+        <td>${mm.paid?'✅':'⏳'} <b>${mm.name}</b><br><small class="text-muted">${mm.email||''} ${mm.phone||''}</small>
+          ${vRolePicker(mm.id,c._id,'student')}</td>
         <td class="text-end">${mm.paid
           ? `${vEur(mm.amount)} <small class="text-muted">(${mm.method==='transfer'?'prevod':'hotovosť'})</small><br><button class="btn btn-sm btn-outline-danger mt-1" onclick="vApi('payment-delete',{class_id:'${c._id}',user_id:'${mm.id}'}).then(()=>vClassDetail('${c._id}'))">zrušiť</button>`
           : `<button class="btn btn-sm btn-brand" onclick="vMarkPaid('${c._id}','${mm.id}','cash')">💶 hotovosť</button>
@@ -3985,8 +4039,11 @@ async function vClassDetail(cid){
       </tr>`).join('')||'<tr><td class="text-muted">Zatiaľ žiadni žiaci — pošli triede QR/odkaz na registráciu.</td></tr>'}
     </tbody></table>
 
-    ${(d.parents||[]).length?`<h6 class="fw-bold mt-2">👨‍👩‍👧 Rodičia v triede (${d.parents.length})</h6>
-    <div class="small mb-2">${d.parents.map(p=>`<div class="border-bottom border-secondary py-1"><b>${p.name}</b> <span class="text-muted">${p.email||''}</span>${p.child?` · dieťa: <b>${p.child}</b>`:''}</div>`).join('')}</div>`:''}
+    ${(d.parents||[]).length?`<h6 class="fw-bold mt-2">👨‍👩‍👧 Rodičia v skupine (${d.parents.length})</h6>
+    <div class="small mb-2">${d.parents.map(p=>`<div class="border-bottom border-secondary py-1"><b>${p.name}</b> <span class="text-muted">${p.email||''}</span>${p.child?` · dieťa: <b>${p.child}</b>`:''}${vRolePicker(p.id,c._id,'parent')}</div>`).join('')}</div>`:''}
+
+    ${(d.staff||[]).length?`<h6 class="fw-bold mt-2">👩‍🏫 Učitelia a vedenie v skupine (${d.staff.length})</h6>
+    <div class="small mb-2">${d.staff.map(t=>`<div class="border-bottom border-secondary py-1"><b>${t.name}</b> <span class="text-muted">${t.email||''}</span>${vRolePicker(t.id,c._id,t.role)}</div>`).join('')}</div>`:''}
 
     <h6 class="fw-bold mt-3">🙋 Dochádzka <small class="text-muted fw-normal">(vidia ju rodičia aj riaditeľ)</small></h6>
     <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">

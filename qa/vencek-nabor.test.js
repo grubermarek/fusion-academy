@@ -153,6 +153,49 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     const t2 = ov2 && ov2.schools && ov2.schools[0] && ov2.schools[0].classes && ov2.schools[0].classes[0];
     ok('a je vidieť v tržbe triedy', t2 && +t2.income >= 49.9, t2 ? 'income=' + t2.income + ' € · zaplatilo ' + t2.paid + ' z ' + t2.members : '—');
 
+    console.log('\n8) Skupina s obmedzenými rolami (Halíč: len žiak a učiteľ):');
+    const hal = await j('/api/admin/venceky/classes', { method: 'POST',
+      body: { school_id: sid, name: 'Venčeková skupina', price: 49.90, lecturer: 'Marek Gruber',
+        roles: ['student', 'teacher'] } }, adm);
+    ok('skupina sa založí s obmedzením', hal.status === 200 && hal.d && hal.d.class, JSON.stringify(hal.d).slice(0, 100));
+    const hkod = hal.d.class && hal.d.class.code;
+
+    const info = await j('/api/vencek/info?code=' + hkod, {}, {});
+    ok('registračná stránka zistí, čo je za kódom', info.status === 200 && info.d && info.d.ok, JSON.stringify(info.d).slice(0, 110));
+    ok('a dostane len povolené role', info.d && JSON.stringify(info.d.roles) === JSON.stringify(['student', 'teacher']),
+      JSON.stringify(info.d && info.d.roles));
+    ok('aj názov školy a skupiny', info.d && /Kuku/.test(info.d.school || '') && info.d.name === 'Venčeková skupina',
+      JSON.stringify([info.d && info.d.school, info.d && info.d.name]));
+
+    const podvod = await j('/api/register', { method: 'POST', body: { name: 'Podvod Podvodnik',
+      email: 'qa.ven.podvod@qa-biz.local', password: 'Heslo123!', city: 'Detva', consent: true,
+      vencek_code: hkod, vencek_role: 'director' } }, {});
+    ok('kto pošle nepovolenú rolu, dostane prvú povolenú', podvod.status === 200 || podvod.status === 201, JSON.stringify(podvod.d).slice(0, 90));
+    await new Promise(r => setTimeout(r, 600));
+    const pu = usr('qa.ven.podvod@qa-biz.local');
+    ok('takže riaditeľom sa nestal', pu && pu.venceky_role === 'student' && !pu.vencek_pending_role,
+      pu ? (pu.venceky_role + ' / pending=' + pu.vencek_pending_role) : '—');
+
+    console.log('\n9) Preklik v role — prepnutie v admine:');
+    const zmena = await j('/api/admin/venceky/member-role', { method: 'POST',
+      body: { user_id: (pu || {})._id, class_id: hal.d.class._id, role: 'teacher' } }, adm);
+    ok('prepnutie prejde', zmena.status === 200 && zmena.d && zmena.d.ok, JSON.stringify(zmena.d).slice(0, 100));
+    await new Promise(r => setTimeout(r, 600));
+    const pu2 = usr('qa.ven.podvod@qa-biz.local');
+    ok('a človek je teraz učiteľ', pu2 && pu2.venceky_role === 'teacher', pu2 ? String(pu2.venceky_role) : '—');
+    ok('ostáva v tej istej skupine', pu2 && pu2.venceky_class_id === hal.d.class._id);
+    const det = (await j('/api/admin/venceky/class/' + hal.d.class._id, {}, adm)).d;
+    ok('a je vidieť v detaile skupiny medzi učiteľmi', det && Array.isArray(det.staff) && det.staff.some(t => t.id === pu2._id),
+      JSON.stringify(det && det.staff));
+
+    const dolu = await j('/api/admin/venceky/member-role', { method: 'POST',
+      body: { user_id: (pu || {})._id, class_id: hal.d.class._id, role: 'none' } }, adm);
+    ok('dá sa aj úplne odobrať z venčekov', dolu.status === 200, JSON.stringify(dolu.d).slice(0, 90));
+    await new Promise(r => setTimeout(r, 600));
+    const pu3 = usr('qa.ven.podvod@qa-biz.local');
+    ok('účet v appke mu ostane, len bez skupiny', pu3 && !pu3.venceky_role && !pu3.venceky_class_id,
+      pu3 ? (pu3.venceky_role + ' / ' + pu3.venceky_class_id) : 'účet zmizol');
+
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.message);
   } finally {
