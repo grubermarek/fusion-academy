@@ -183,6 +183,9 @@ const db = {
   private_slots:    new Datastore({ filename: path.join(DATA_DIR, 'private_slots.db'),    autoload: true }),
   private_bookings: new Datastore({ filename: path.join(DATA_DIR, 'private_bookings.db'), autoload: true }),
   private_recurring: new Datastore({ filename: path.join(DATA_DIR, 'private_recurring.db'), autoload: true }),
+  // Ktoré webhooky sme už spracovali — Stripe pri nepotvrdení doručuje ten istý
+  // event znova a bez tohto by sa členstvo predĺžilo viackrát za jednu platbu.
+  webhook_events:    new Datastore({ filename: path.join(DATA_DIR, 'webhook_events.db'),    autoload: true }),
   business_snapshots: new Datastore({ filename: path.join(DATA_DIR, 'business_snapshots.db'), autoload: true }),
   mail_log:     new Datastore({ filename: path.join(DATA_DIR, 'mail_log.db'), autoload: true }),
   feedback:     new Datastore({ filename: path.join(DATA_DIR, 'feedback.db'), autoload: true }),
@@ -210,6 +213,10 @@ db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true })
 db.bookings.ensureIndex({ fieldName: 'created_at' });
 db.messages.ensureIndex({ fieldName: 'created_at' });
 db.invoices.ensureIndex({ fieldName: 'number', unique: true });
+// Unikátny index je tu tým zámkom, ktorý NeDB inak nemá: druhý zápis toho istého
+// eventu zlyhá, a to atomicky — kontrola „najprv pozri, potom zapíš" by pri
+// súbežnom doručení neochránila nič.
+db.webhook_events.ensureIndex({ fieldName: 'event_id', unique: true });
 
 // ─── DB helpers ───────────────────────────────────────────────────────────────
 const q = {
@@ -9992,6 +9999,15 @@ app.delete('/api/admin/tips/:id', adminAuth, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// PayPal nepoužívame (Marek 1. 9.) — v dátach nie je ani jedna PayPal platba
+// a kľúče nie sú nastavené. Handler nižšie pritom NEOVERUJE podpis a vie
+// označiť platbu ako zaplatenú, takže ho radšej zatvárame. Kód ostáva, aby sa
+// dal zapnúť späť premennou PAYPAL_ENABLED=1, keby sa PayPal niekedy vrátil.
+const PAYPAL_ENABLED = process.env.PAYPAL_ENABLED==='1';
+app.use(['/api/paypal/webhook','/api/paypal/create-order','/api/paypal/capture-order'], (req,res,next)=>{
+  if(PAYPAL_ENABLED) return next();
+  return res.status(404).json({error:'not_found'});
+});
 app.post('/api/paypal/webhook', express.json({type:'*/*'}), async(req,res)=>{
   // Basic webhook handler – extend with signature verification for production
   const event = req.body;
@@ -12969,6 +12985,12 @@ app.post('/api/kupa/:token/checkout', rlPublic, async(req,res)=>{
 app.post('/api/stripe/webhook', async(req,res)=>{
   try {
     const secret = process.env.STRIPE_WEBHOOK_SECRET;
+    // Bez tajomstva sa podpis overiť nedá — na produkcii preto webhook radšej
+    // odmietneme, než by sme prijali čokoľvek, čo príde.
+    if(!secret && process.env.NODE_ENV==='production'){
+      console.error('Stripe webhook: chýba STRIPE_WEBHOOK_SECRET — odmietam');
+      return res.status(503).send('webhook secret missing');
+    }
     if(secret){
       const crypto = require('crypto');
       const sig = req.headers['stripe-signature']||'';
@@ -12978,6 +13000,18 @@ app.post('/api/stripe/webhook', async(req,res)=>{
       if(!parts.v1 || expected !== parts.v1){ console.error('Stripe webhook: bad signature'); return res.status(400).send('bad signature'); }
     }
     const event = req.body;
+    // Ten istý event spracujeme raz. Zápis ide PRED spracovaním a spolieha sa
+    // na unikátny index — keď dorazí druhýkrát (aj súbežne), insert zlyhá
+    // a my sa vrátime bez toho, aby sme čokoľvek predĺžili (audit E3, 1. 9.).
+    if(event && event.id){
+      try{
+        await q.insert(db.webhook_events,{ event_id:String(event.id), provider:'stripe',
+          type:String(event.type||''), at:nowISO() });
+      }catch(e){
+        console.log('↩️  Stripe webhook '+event.id+' už bol spracovaný — preskakujem');
+        return res.json({ok:true, duplicate:true});
+      }
+    }
     if(event.type==='invoice.paid'){
       const inv = event.data.object;
       // Only extend on real renewals; first payment is handled by /verify
