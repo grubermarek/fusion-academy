@@ -5038,6 +5038,15 @@ async function septemberGreetingTick(qaMode){
         '🔗 Skopírovať môj odkaz', APP_URL+'/client-dashboard?utm_source=email&utm_medium=email&utm_campaign=fa-september-2026'),
         {priority:9, template:'september_greeting_2026'}).catch(()=>false);
       if(ok) n++;
+      // Notifikáciu posielala textová vlna. Tá je teraz zastavená, takže bez
+      // tohto by tie, čo ju nestihli dostať, o akcii v appke vôbec nevedeli.
+      // Ide zámerne aj vtedy, keď mail neprešiel (bounce, plný budžet) — vtedy
+      // je notifikácia jediné miesto, kde sa klientka o akcii dozvie.
+      if(!(await q.one(db.notifications,{user_id:u._id, type:'referral_goal'})))
+        await q.insert(db.notifications,{user_id:u._id, type:'referral_goal',
+          title:'💃 Septembrová akcia: súkromná hodina s Marekom',
+          body:'Priveď novú členku, ktorá si kúpi členstvo alebo permanentku, a máš súkromnú hodinu. Koľko privedieš, toľko hodín. Odkaz aj progres máš na nástenke.',
+          read:false, created_at:nowISO()});
       await new Promise(r=>setTimeout(r,400));
     }
     if(n) console.log('🍂 SEPTEMBER: odoslaných '+n+' (zostáva '+(users.length-n)+')');

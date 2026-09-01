@@ -97,6 +97,10 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('má CTA na odkaz', /Skop.{1,3}rova/.test(html));
     ok('je oslovená menom', html.includes('Beata') || html.includes('Dana'));
 
+    const notif = rd('notifications.db').filter(x => x.type === 'referral_goal');
+    ok('klientka dostane aj notifikáciu v appke', notif.length === 2,
+      notif.length + ': ' + JSON.stringify(notif.map(x => x.title)));
+
     const obr = path.join(__dirname, '..', 'public', 'img', 'vyzva-september-2026.jpg');
     ok('plagát v projekte naozaj existuje', fs.existsSync(obr), obr);
     if (fs.existsSync(obr)) {
