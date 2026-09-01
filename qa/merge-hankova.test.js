@@ -78,7 +78,8 @@ const LO = 'jqIlQnhbzVy8LiCt';   // hankova@logro.sk — duplicitný
     const ref = rd('refunds.db');
     ok('refund je zapísaný', ref.length === 1, JSON.stringify(ref.map(r => ({ a: r.amount, t: r.type }))));
     ok('refunduje sa 40 € (skutočne zaplatené, nie cenníkových 50)', ref[0] && ref[0].amount === 40, JSON.stringify(ref[0] && ref[0].amount));
-    ok('typ refundu = prevod (platila prevodom)', ref[0] && ref[0].type === 'transfer' && ref[0].gateway === 'manual');
+    ok('typ refundu = kredit do appky (dostala kredit, nie prevod)', ref[0] && ref[0].type === 'app_credit' && ref[0].gateway === 'manual',
+      JSON.stringify(ref[0] && {t:ref[0].type, g:ref[0].gateway}));
     ok('dôvod je duplicita', ref[0] && ref[0].reason === 'duplicate');
     ok('pôvodná platba je označená ako refundovaná', (rd('payments.db').find(p => p._id === 'pBronze40') || {}).status === 'refunded');
     const cn = rd('invoices.db').find(i => i.type === 'credit_note');

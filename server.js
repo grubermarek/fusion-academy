@@ -12466,9 +12466,26 @@ app.post('/api/admin/refunds', adminAuth, async(req,res)=>{
     if(!REFUND_TYPES.includes(type)) return res.status(400).json({error:'Neplatný typ refundu'});
     const pay = payment_id ? await q.one(db.payments,{_id:payment_id}) : null;
     const user = pay?.user_id ? await q.one(db.users,{_id:pay.user_id}) : null;
-    const amt = +amount || (pay? +pay.amount : 0);
+    // Nula (alebo prázdne pole) doteraz znamenala „vráť celú platbu" — stačilo,
+    // aby admin nechal sumu nevyplnenú, a odišlo všetko. Prázdne pole ostáva
+    // skratkou pre celú sumu, ale výslovná nula je chyba (audit E6, 1. 9.).
+    const zadanaSuma = amount !== undefined && amount !== null && String(amount).trim() !== '';
+    if(zadanaSuma && !(+amount > 0)) return res.status(400).json({error:'Neplatná suma'});
+    const amt = zadanaSuma ? +amount : (pay ? +pay.amount : 0);
     if(!(amt>0)) return res.status(400).json({error:'Neplatná suma'});
     if(pay && amt> (+pay.amount||0)+0.001) return res.status(400).json({error:'Suma prevyšuje platbu'});
+    // A hlavne: kontroluje sa SÚČET už vrátených súm, nie len jeden refund.
+    // Bez toho sa dala tá istá platba vrátiť koľkokrát sa dalo — v teste
+    // 3× 50 € z jednej päťdesiatky.
+    if(pay){
+      const uzVratene = (await q.find(db.refunds,{payment_id:pay._id}))
+        .reduce((s,r)=>s+(+r.amount||0),0);
+      const zostava = +((+pay.amount||0) - uzVratene).toFixed(2);
+      if(amt > zostava + 0.001) return res.status(400).json({
+        error: uzVratene>0
+          ? 'Z tejto platby už bolo vrátené '+uzVratene.toFixed(2)+' € — vrátiť sa dá najviac '+zostava.toFixed(2)+' €.'
+          : 'Suma prevyšuje platbu' });
+    }
 
     let gateway={method:'manual', ref:null, ok:true};
     // Actual gateway refund (skip for app_credit / manual transfer)
@@ -12486,17 +12503,27 @@ app.post('/api/admin/refunds', adminAuth, async(req,res)=>{
     // App credit → bump referral_credit
     if(type==='app_credit' && user){
       await q.update(db.users,{_id:user._id},{$set:{referral_credit:+((+user.referral_credit||0)+amt).toFixed(2)}});
+      // Bez záznamu v histórii nesedí zostatok s výpisom a nedá sa dohľadať,
+      // odkiaľ kredit prišiel — presne to sme 1. 9. dopĺňali trom ľuďom spätne.
+      await logCredit(user._id, amt, 'Refundácia'+(reason?(' — '+(REFUND_REASONS[reason]||reason)):''));
     }
     // Credit note for the original invoice, if we can find it
     let creditNote=null;
     if(pay && user){
-      const inv=(await q.find(db.invoices,{user_id:user._id})).filter(i=>i.type!=='credit_note' && i.status==='paid')
+      // Doteraz sa hľadala len faktúra so status:'paid'. Faktúry, ktoré ten stav
+      // nemajú vyplnený, tak ostali bez dobropisu — a nikto sa to nedozvedel,
+      // lebo sa to nikde nehlásilo. Berieme každú faktúru okrem už dobropisovaných.
+      const inv=(await q.find(db.invoices,{user_id:user._id}))
+        .filter(i=>i.type!=='credit_note' && i.status!=='credited' && +i.total>0)
         .sort((a,b)=>(b.issued_at||'').localeCompare(a.issued_at||''))[0];
       if(inv){
         const cn=await createInvoice({user_id:user._id, client_name:inv.client_name, client_email:inv.client_email,
           items:[{desc:`Refundácia k faktúre ${inv.number}${reason?` — ${REFUND_REASONS[reason]||reason}`:''}`, qty:1, total:-amt}],
           total:-amt, method:inv.payment_method, type:'credit_note', related_invoice:inv.number});
         if(cn){ creditNote=cn.number; await q.update(db.invoices,{_id:inv._id},{$set:{status:'credited',credit_note:cn.number}}); }
+        else console.error('Refund: dobropis k faktúre '+inv.number+' sa nevytvoril');
+      } else {
+        console.error('Refund '+amt+' € pre '+user.name+': k platbe sa nenašla faktúra — dobropis nevznikol');
       }
     }
     const refund=await q.insert(db.refunds,{
