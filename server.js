@@ -2445,13 +2445,22 @@ async function seedData() {
         if(triedy.some(c=>c.school_id===s._id)) continue;
         const kod=await vencekVolnyKod(vencekKodZoNazvu(s.city) || vencekKodZoNazvu(s.name));
         const c=await q.insert(db.venceky_classes,{school_id:s._id, name:'Venčeková skupina',
-          year:s.year, code:kod, price:49.90, lessons_total:13, lessons_done:0,
+          year:s.year, code:kod, price:49.90, lessons_total:13, lessons_before:10, lessons_done:0,
           lecturer:'Marek Gruber', event_date:'', note:'', roles:['student','teacher'],
           dances:VENCEK_DEFAULT_DANCES.map(x=>({name:x, level:0})), created_at:nowISO()});
         n++;
         console.log('🎓 Škole '+s.name+' doplnená skupina · kód '+c.code+' · '+APP_URL+'/?vencek='+c.code);
       }
       if(n) console.log('🎓 Doplnených venčekových skupín: '+n);
+      // Venčekový večer je po 10. lekcii, zvyšné 3 sú bonus po ňom (Marek 2. 9.).
+      // Staršie skupiny to pole nemajú a odpočet by rátal do 13.
+      let m=0;
+      for(const c of await q.find(db.venceky_classes,{})){
+        if(c.lessons_before) continue;
+        await q.update(db.venceky_classes,{_id:c._id},{$set:{lessons_before:Math.min(10, c.lessons_total||13)}});
+        m++;
+      }
+      if(m) console.log('🎓 Skupín s doplneným počtom lekcií do venčeka: '+m);
     }catch(e){ console.error('vencek skupiny:', e.message); }
   }, 12000);
 
@@ -19806,7 +19815,7 @@ app.post('/api/admin/venceky/schools', adminAuth, async(req,res)=>{
       String(req.body.code||'').trim() ? vencekKodZoNazvu(req.body.code) : (vencekKodZoNazvu(city) || vencekKodZoNazvu(name)));
     const c=await q.insert(db.venceky_classes,{school_id:s._id,
       name:String(req.body.group_name||'Venčeková skupina').trim(), year:s.year, code:kod,
-      price:+req.body.price||49.90, lessons_total:+req.body.lessons_total||13, lessons_done:0,
+      price:+req.body.price||49.90, lessons_total:+req.body.lessons_total||13, lessons_before:+req.body.lessons_before||10, lessons_done:0,
       lecturer:String(req.body.lecturer||'').trim(), event_date:'', note:'',
       roles:Array.isArray(req.body.roles)?req.body.roles.filter(r=>VENCEK_ROLES.includes(r)):['student','teacher'],
       dances:VENCEK_DEFAULT_DANCES.map(n=>({name:n, level:0})), created_at:nowISO()});
@@ -19840,7 +19849,7 @@ app.post('/api/admin/venceky/classes', adminAuth, async(req,res)=>{
       while(await q.one(db.venceky_classes,{code}));
     }
     const c=await q.insert(db.venceky_classes,{school_id:school._id, name:String(name).trim(),
-      year:school.year, code, price:+price||49.90, lessons_total:+lessons_total||13, lessons_done:0,
+      year:school.year, code, price:+price||49.90, lessons_total:+lessons_total||13, lessons_before:+req.body.lessons_before||10, lessons_done:0,
       lecturer:String(lecturer||'').trim(), event_date:String(event_date||''), note:'',
       ...(roles && roles.length ? {roles} : {}),
       dances:VENCEK_DEFAULT_DANCES.map(n=>({name:n, level:0})), created_at:nowISO()});
@@ -19866,7 +19875,7 @@ app.get('/api/admin/venceky/overview', adminAuth, async(req,res)=>{
         const ccosts=costs.filter(k=>k.class_id===c._id).reduce((x,k)=>x+(+k.amount||0),0);
         return { id:c._id, name:c.name, code:c.code, join_link:`${APP_URL}/?vencek=${c.code}`,
           lecturer:c.lecturer, event_date:c.event_date, price:c.price,
-          lessons_done:c.lessons_done||0, lessons_total:c.lessons_total||13,
+          lessons_done:c.lessons_done||0, lessons_total:c.lessons_total||13, lessons_before:c.lessons_before||10,
           progress:vencekPct(c.dances), members:members.length, parents:parents.length,
           paid:members.filter(m=>paidIds.has(m._id)).length,
           unpaid:members.filter(m=>!paidIds.has(m._id)).length,
@@ -20360,7 +20369,7 @@ app.get('/api/vencek/mine', auth, async(req,res)=>{
       const pays=await q.find(db.venceky_payments,{class_id:c._id});
       return { id:c._id, name:c.name, year:c.year, progress:vencekPct(c.dances),
         dances:(c.dances||[]).map(d=>({name:d.name, level:d.level, level_label:VENCEK_LEVELS[d.level||0], pct:Math.round((d.level||0)/4*100)})),
-        lessons_done:c.lessons_done||0, lessons_total:c.lessons_total||13,
+        lessons_done:c.lessons_done||0, lessons_total:c.lessons_total||13, lessons_before:c.lessons_before||10,
         event_date:c.event_date||null, note:c.note||'', members:members.length,
         completed:!!c.completed,
         paid_count:new Set(pays.map(p=>p.user_id)).size,

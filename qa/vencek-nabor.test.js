@@ -73,6 +73,10 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('a registrovať sa smie žiak a učiteľ', sk.d.class && JSON.stringify(sk.d.class.roles) === JSON.stringify(['student', 'teacher']),
       JSON.stringify(sk.d.class && sk.d.class.roles));
     ok('odkaz je hneď použiteľný', sk.d.join_link === BASE + '/?vencek=VEN-DETVA', String(sk.d.join_link));
+    // Venčekový večer je po 10. lekcii, zvyšné 3 sú bonus po ňom.
+    ok('kurz má 13 lekcií, ale do venčeka ich je 10',
+      sk.d.class && sk.d.class.lessons_total === 13 && sk.d.class.lessons_before === 10,
+      sk.d.class ? sk.d.class.lessons_before + '/' + sk.d.class.lessons_total : '—');
 
     const tr = await j('/api/admin/venceky/classes', { method: 'POST',
       body: { school_id: sid, name: '9.A', price: 49.90, lessons_total: 13, lecturer: 'Marek Gruber' } }, adm);

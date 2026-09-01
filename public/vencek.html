@@ -56,10 +56,19 @@ function danceHtml(d){
   </div>`;
 }
 function classCard(c, extra=''){
+  // Venčekový večer je po 10. lekcii, zvyšné 3 sú bonus po ňom — tie sa nepočítajú
+  // do odpočtu, inak by to vyzeralo, že venček je ďalej, než naozaj je.
+  const doVencka=+c.lessons_before||10;
+  const zostava=Math.max(0, doVencka-(c.lessons_done||0));
+  const poVencku=Math.max(0, (c.lessons_done||0)-doVencka);
+  const bonusSpolu=Math.max(0, (c.lessons_total||13)-doVencka);
+  const vBonuse=zostava===0 && bonusSpolu>0;
   return `<div class="hero">
     <span class="badge">${esc(c.year)} · ${esc(c.name).toUpperCase()}</span>
     <h1>Naša cesta k venčeku</h1>
-    <div class="sub">Lekcia ${c.lessons_done} z ${c.lessons_total}${c.event_date?` · ✨ Venčekový večer: <b style="color:var(--gold)">${esc(fmtD(c.event_date))}</b>`:''}</div>
+    <div class="sub">${vBonuse
+      ? `Venček máte za sebou · bonusová lekcia ${Math.min(poVencku||1,bonusSpolu)} z ${bonusSpolu}`
+      : `Lekcia ${c.lessons_done} z ${doVencka}`}${c.event_date?` · ✨ Venčekový večer: <b style="color:var(--gold)">${esc(fmtD(c.event_date))}</b>`:''}</div>
     <div class="bigbar"><i style="width:${c.progress}%"></i></div>
     <div style="font-weight:900;color:var(--gold)">${c.progress} %</div>
   </div>
@@ -68,8 +77,16 @@ function classCard(c, extra=''){
     ${c.note?`<div class="muted" style="margin-top:8px">📝 ${esc(c.note)}</div>`:''}</div>
   <div class="grid">
     <div class="stat"><b>${c.members}</b><span>žiakov v skupine</span></div>
-    <div class="stat"><b>${c.lessons_total-c.lessons_done}</b><span>lekcií do venčeka</span></div>
-  </div>`;
+    ${vBonuse
+      ? `<div class="stat"><b>${Math.max(0,bonusSpolu-poVencku)}</b><span>bonusových lekcií ešte máte</span></div>`
+      : `<div class="stat"><b>${zostava}</b><span>${zostava===1?'lekcia':(zostava>=2&&zostava<=4?'lekcie':'lekcií')} do venčeka</span></div>`}
+  </div>
+  ${bonusSpolu>0?`<div class="card" style="border-color:rgba(201,168,76,.4)">
+    <h3>🎁 ${vBonuse?'Bonusové lekcie bežia':`Po venčeku máte ${bonusSpolu} bonusové lekcie`}</h3>
+    <div class="muted">${vBonuse
+      ? 'Venček skončil, ale tancovať nemusíte prestať — tieto lekcie sú navyše a zadarmo. Ak vás to chytilo, ozvite sa nám a ukážeme vám, kam sa dá ísť ďalej. 💛'
+      : 'Kurz má ' + (c.lessons_total||13) + ' lekcií: ' + doVencka + ' do venčekového večera a ' + bonusSpolu + ' navyše po ňom. Tie posledné sú náš darček — aby ste v tanci mohli pokračovať. 💛'}</div>
+  </div>`:''}`;
 }
 function attCard(d){
   if(d.my_attendance) return `<div class="card"><h3>🙋 Moja dochádzka</h3>

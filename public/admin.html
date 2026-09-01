@@ -3827,7 +3827,7 @@ async function loadVenceky(){
         ${s.classes.map(c=>`<tr>
           <td><b>${c.name}</b>${c.event_date?`<br><small class="text-muted">✨ ${c.event_date}</small>`:''}</td>
           <td style="min-width:110px"><div style="height:8px;background:#26221a;border-radius:5px;overflow:hidden"><div style="height:100%;width:${c.progress}%;background:#C9A84C"></div></div><small class="text-muted">${c.progress} %</small></td>
-          <td>${c.lessons_done}/${c.lessons_total}</td>
+          <td>${c.lessons_done}/${c.lessons_before||10}${(c.lessons_total||13)>(c.lessons_before||10)?`<br><small class="text-muted">+${(c.lessons_total||13)-(c.lessons_before||10)} bonus</small>`:""}</td>
           <td class="text-center">${c.members}</td>
           <td class="text-center">${c.paid}/${c.members}${c.unpaid?` <span class="text-warning">(${c.unpaid} chýba)</span>`:' ✅'}</td>
           <td class="text-end">${vEur(c.income)}</td>
@@ -4017,7 +4017,7 @@ async function vClassDetail(cid){
       <h5 class="fw-bold mb-0" style="color:#C9A24C">🎓 ${c.name} — ${d.school}</h5>
       <button onclick="document.getElementById('vClassModal').remove()" style="background:none;border:none;color:#888;font-size:1.3rem;cursor:pointer">✕</button>
     </div>
-    <div class="small text-muted mb-3">Progress ${c.progress} % · lekcia ${c.lessons_done}/${c.lessons_total} · cena ${vEur(c.price)}${c.event_date?` · ✨ večer ${c.event_date}`:''}</div>
+    <div class="small text-muted mb-3">Progress ${c.progress} % · lekcia ${c.lessons_done}/${c.lessons_before||10} do venčeka (+${(c.lessons_total||13)-(c.lessons_before||10)} bonus po ňom) · cena ${vEur(c.price)}${c.event_date?` · ✨ večer ${c.event_date}`:''}</div>
 
     <h6 class="fw-bold">💃 Zápis hodiny (tance + lekcia)</h6>
     <div class="mb-2">${(c.dances||[]).map((dn,i)=>`
