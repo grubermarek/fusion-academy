@@ -2421,6 +2421,46 @@ async function seedData() {
     }catch(e){ console.error('merch stare:', e.message); }
   }
 
+  // Brezno: od 23. 7. do 27. 8. vypadlo osem hodín (pôrodnica, nízka účasť).
+  // Klientky za ten čas platili členstvo, ktoré nemali ako využiť, tak im ho
+  // predlžujeme o zodpovedajúci čas (Marek 1. 9.). Dve hodiny týždenne × osem
+  // zrušení = 28 dní. Online členstvo sa nepredlžuje — živé hodiny nekrylo,
+  // takže mu zrušenie v Brezne nič nevzalo.
+  if(!(await q.one(db.settings,{key:'brezno_predlzenie_0926'}))) setTimeout(async()=>{
+    try{
+      await q.insert(db.settings,{key:'brezno_predlzenie_0926', value:true, at:nowISO()});
+      const DNI=28;
+      const hodiny=(await q.find(db.classes,{})).filter(c=>/brezno/i.test(String(c.location||'')));
+      const ids=new Set(hodiny.map(c=>c._id));
+      const chodili=new Set((await q.find(db.bookings,{}))
+        .filter(b=>ids.has(b.class_id) && b.status!=='cancelled').map(b=>b.user_id));
+      const t=today();
+      let n=0;
+      for(const uid of chodili){
+        const u=await q.one(db.users,{_id:uid}); if(!u) continue;
+        for(const m of await q.find(db.memberships,{user_id:uid})){
+          if(m._type || m.status!=='active') continue;
+          if(!m.expires_at || String(m.expires_at).slice(0,10) < t) continue;
+          // online plán živé hodiny nekryje → nemá čo doháňať
+          if(/online/i.test(String(m.plan_id||'')+' '+String(m.plan_name||''))) continue;
+          if(m.brezno_predlzene) continue;
+          const stare=String(m.expires_at).slice(0,10);
+          const nove=new Date(Date.parse(stare+'T12:00:00Z')+DNI*86400000).toISOString().slice(0,10);
+          await q.update(db.memberships,{_id:m._id},{$set:{ expires_at:nove, brezno_predlzene:true,
+            brezno_predlzene_o:DNI, brezno_predlzene_z:stare, brezno_predlzene_at:nowISO() }});
+          await q.insert(db.notifications,{user_id:uid, type:'membership',
+            title:'💛 Predĺžili sme ti členstvo',
+            body:'V Brezne nám vypadlo osem hodín, tak ti členstvo predlžujeme o '+DNI
+              +' dní — platí do '+nove.split('-').reverse().join('. ')+'. Nech ti nič neujde. 💛',
+            read:false, created_at:nowISO()});
+          n++;
+          console.log('🗓️ BREZNO: '+u.name+' · '+m.plan_id+' · '+stare+' → '+nove);
+        }
+      }
+      console.log('🗓️ BREZNO: predĺžených členstiev: '+n+' (o '+DNI+' dní)');
+    }catch(e){ console.error('brezno predlzenie:', e.message); }
+  }, 6000);
+
   // Ailina Hanková (Marek 30. 8.): refund 40 € za duplicitný Bronze bol zapísaný
   // ako vrátený PREVODOM, ale Marek jej namiesto peňazí nabil kredit v appke.
   // Doklad tak tvrdil niečo iné, než sa naozaj stalo. Appka pritom typ
