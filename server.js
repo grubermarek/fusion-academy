@@ -19203,6 +19203,26 @@ app.get('/api/qr/invite.png', async(req,res)=>{
     res.end(png);
   }catch(e){ res.status(500).end(); }
 });
+// Univerzálny QR na našu vlastnú stránku. Doteraz si QR ťahal admin panel aj
+// kiosk z api.qrserver.com — v telocvični bez signálu alebo pri výpadku tej
+// služby by sa QR pre venčekovú triedu nezobrazil vôbec (Marek ide 2. 9. na
+// prvý nábor). Berie sa len cesta, nie celé URL, takže QR nikdy nevedie inam
+// než na appku a endpoint sa nedá zneužiť na generovanie cudzích kódov.
+app.get('/api/qr.png', async(req,res)=>{
+  try{
+    let p = String(req.query.path||'/').slice(0,200);
+    if(!p.startsWith('/')) p = '/'+p;
+    if(p.startsWith('//')) p = '/';                 // ochrana proti //evil.example
+    const px = Math.min(1200, Math.max(120, +req.query.size||600));
+    const dark = /^[0-9A-Fa-f]{6}$/.test(String(req.query.dark||'')) ? '#'+req.query.dark : '#000000';
+    const light = /^[0-9A-Fa-f]{6}$/.test(String(req.query.light||'')) ? '#'+req.query.light : '#FFFFFF';
+    const png = await require('qrcode').toBuffer(APP_URL.replace(/\/$/,'')+p,
+      {width:px, margin:1, color:{dark, light}, errorCorrectionLevel:'M'});
+    res.setHeader('Content-Type','image/png');
+    res.setHeader('Cache-Control','public, max-age=86400');
+    res.end(png);
+  }catch(e){ res.status(500).end(); }
+});
 app.get('/event/:slug',        (req,res)=>res.sendFile(path.join(__dirname,'public','event.html')));
 app.get('/event/:slug/hotovo', (req,res)=>res.sendFile(path.join(__dirname,'public','event-hotovo.html')));
 app.get('/t/:code',            (req,res)=>res.sendFile(path.join(__dirname,'public','ticket.html')));

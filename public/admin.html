@@ -3921,7 +3921,7 @@ function vShowQR(code,name){
   m.innerHTML=`<div style="background:#fff;border-radius:16px;padding:26px;text-align:center;max-width:340px">
     <div style="font-weight:900;color:#161310;font-size:1.1rem;margin-bottom:4px">FUSION VENČEKY — ${name}</div>
     <div style="color:#666;font-size:.8rem;margin-bottom:12px">Naskenuj a zaregistruj sa — trieda sa priradí automaticky</div>
-    <img src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(link)}" width="240" height="240" alt="QR">
+    <img src="/api/qr.png?size=480&path=${encodeURIComponent('/?vencek='+code)}" width="240" height="240" alt="QR kód triedy ${name}">
     <div style="font-family:monospace;font-weight:800;margin-top:10px;color:#161310">${code}</div>
     <input value="${link}" readonly onclick="this.select()" style="width:100%;margin-top:8px;padding:6px;font-size:.75rem;border:1px solid #ccc;border-radius:8px">
     <button onclick="navigator.clipboard.writeText('${link}');this.textContent='✅ Skopírované'" style="margin-top:10px;background:#C9A84C;border:none;border-radius:10px;padding:9px 18px;font-weight:800;cursor:pointer">Kopírovať odkaz</button>

@@ -234,9 +234,9 @@ function priceLine(t){
   if(t.member!=null) p.push('členky '+t.member+' €');
   return p.join(' · ');
 }
-function qrUrl(u){ return '<img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&bgcolor=0B0A07&color=C9A84C&data='+encodeURIComponent(u)+'" style="margin-top:3vmin;border-radius:1.6vmin;border:1px solid rgba(201,168,76,.4);width:18vmin;height:18vmin" alt="QR">'; }
+function qrUrl(u){ var p=String(u||'/').replace(/^https?:\/\/[^/]+/,'')||'/'; return '<img src="/api/qr.png?size=440&dark=C9A84C&light=0B0A07&path='+encodeURIComponent(p)+'" style="margin-top:3vmin;border-radius:1.6vmin;border:1px solid rgba(201,168,76,.4);width:18vmin;height:18vmin" alt="QR">'; }
 function fmtDate(d){ try{ return new Date(d+'T00:00:00').toLocaleDateString('sk-SK',{day:'numeric',month:'long',year:'numeric'}); }catch(e){ return d||''; } }
-function qrApp(){ return '<img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&bgcolor=0B0A07&color=C9A84C&data='+encodeURIComponent(DATA.app_url)+'" style="margin-top:3vmin;border-radius:1.6vmin;border:1px solid rgba(201,168,76,.4);width:18vmin;height:18vmin" alt="QR">'; }
+function qrApp(){ return '<img src="/api/qr.png?size=440&dark=C9A84C&light=0B0A07&path=%2F" style="margin-top:3vmin;border-radius:1.6vmin;border:1px solid rgba(201,168,76,.4);width:18vmin;height:18vmin" alt="QR">'; }
 
 /* ── Slideshow engine ── */
 function showSlide(i){
