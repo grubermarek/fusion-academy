@@ -151,8 +151,10 @@ async function overPlatbu(){
   if(d.preview){
     const p=document.createElement('div');
     p.style.cssText='background:rgba(201,168,76,.14);border:1px solid rgba(201,168,76,.45);border-radius:12px;padding:11px 14px;margin-bottom:14px;font-size:.88rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap';
+    // Odkaz musí niesť ?prehlad=1, inak by presmerovanie pri jedinej skupine
+    // hodilo naspäť sem a vzniklo by koleso.
     p.innerHTML='<span>👁️</span><span style="flex:1">Toto vidí <b>žiak</b> tejto skupiny. Platba ani dochádzka tu nie sú tvoje.</span>'
-      +'<a href="/vencek" style="color:var(--gold);text-decoration:none;font-weight:700;white-space:nowrap">← späť na prehľad</a>';
+      +'<a href="/vencek?prehlad=1" style="color:var(--gold);text-decoration:none;font-weight:700;white-space:nowrap">📊 čísla skupiny</a>';
     host.parentNode.insertBefore(p, host);
   }
   if(!d.ok || !d.role){
@@ -161,12 +163,19 @@ async function overPlatbu(){
       <a class="switch" href="/client-dashboard">Prejsť do appky</a></div>`; return;
   }
   if(d.role==='director' || d.role==='admin'){
+    // Pri jedinej skupine je zoznam zbytočný medzikrok — otvor ju rovno tak,
+    // ako ju vidia žiaci. Zoznam sa oplatí až keď je z čoho vyberať.
+    const vsetky=(d.schools||[]).flatMap(s=>(s.classes||[]).map(c=>({id:c.id||c._id})));
+    if(vsetky.length===1 && !qp.get('prehlad')){
+      location.replace('/vencek?ako=student&class_id='+encodeURIComponent(vsetky[0].id));
+      return;
+    }
     host.innerHTML=(d.schools||[]).map(s=>`
       <div class="card"><h3>🏫 ${esc(s.school)} · ${esc(s.year)}</h3>
       ${s.classes.map(c=>`<div class="cls">
         <div class="head"><span>${esc(c.name)}</span><span style="color:var(--gold)">${c.progress} %</span></div>
         <div class="bigbar" style="margin:8px 0 4px"><i style="width:${c.progress}%"></i></div>
-        <div class="muted">Lekcia ${c.lessons_done}/${c.lessons_total} · ${c.members} žiakov · uhradené ${c.paid_count}/${c.members}${c.event_date?` · večer ${esc(fmtD(c.event_date))}`:''}</div>
+        <div class="muted">Lekcia ${c.lessons_done}/${c.lessons_before||10} do venčeka${(c.lessons_total||13)>(c.lessons_before||10)?` (+${(c.lessons_total||13)-(c.lessons_before||10)} bonus)`:''} · ${c.members} žiakov · uhradené ${c.paid_count}/${c.members}${c.event_date?` · večer ${esc(fmtD(c.event_date))}`:''}</div>
         <a href="/vencek?ako=student&class_id=${c.id||c._id}" style="display:inline-block;margin-top:8px;background:rgba(201,168,76,.16);border:1px solid rgba(201,168,76,.45);color:var(--gold);border-radius:9px;padding:5px 11px;font-size:.78rem;font-weight:700;text-decoration:none">👁️ Pozrieť ako žiak</a>
       </div>`).join('')||'<div class="muted">Zatiaľ žiadne skupiny.</div>'}</div>`).join('')
       ||'<div class="empty">Žiadne školy.</div>';
