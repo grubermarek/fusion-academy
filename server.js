@@ -4093,8 +4093,9 @@ app.post('/api/register', rlSignup, async(req,res)=>{
           body:'Ďakujeme! Prístup učiteľa/riaditeľa k venčekovému prehľadu vám odomkneme po overení — zvyčajne do pár hodín. Zvyšok appky môžete používať hneď.',
           read:false, created_at:nowISO()}).catch(()=>{});
       }
-      // Uvítacie benefity: 1× Zumba zdarma hneď + kupón VENCEKRODIC = 1. mesiac Zumby ZADARMO
-      // (poďakovanie rodičom aj zamestnancom školy, že si vybrali práve nás)
+      // Uvítací benefit: kupón VENCEKRODIC = 1. mesiac Zumby ZADARMO, pre žiaka aj
+      // rodičov. Jednorazový vstup sa 2. 9. zrušil — vedľa celého mesiaca zadarmo
+      // nič nepridával a v ponuke len mätie (prvú hodinu má aj tak každý nový zdarma).
       if(['student','parent'].includes(vencekRole)) try{
         const vrp=await q.one(db.promo_codes,{code:'VENCEKRODIC'});
         if(!vrp)
@@ -4104,10 +4105,9 @@ app.post('/api/register', rlSignup, async(req,res)=>{
         else if(vrp.value!==100)
           await q.update(db.promo_codes,{_id:vrp._id},{$set:{value:100,
             note:'Venčeky — mesiac Zumby zadarmo pre rodičov a zamestnancov školy'}});
-        await q.update(db.users,{_id:u._id},{$set:{free_credits:1}});
         await q.insert(db.notifications,{user_id:u._id,type:'venceky',
           title:'🎁 Vitaj vo Fusion Venčekoch!',
-          body:'Máš u nás 1× vstup na Zumbu ZDARMA a kupón VENCEKRODIC = celý 1. MESIAC Zumby zadarmo (platí aj pre rodičov) — poďakovanie, že ste si vybrali práve nás. 💛',
+          body:'Máš u nás kupón VENCEKRODIC = celý 1. MESIAC Zumby zadarmo — platí pre teba aj pre rodičov. A prvú hodinu má u nás každý zdarma, tak pokojne priveď aj ich. 💛',
           read:false, created_at:nowISO()});
       }catch(e){}
     }

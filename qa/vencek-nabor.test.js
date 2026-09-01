@@ -131,7 +131,8 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('žiak je priradený k triede', zu && zu.venceky_class_id === tr.d.class._id, zu ? String(zu.venceky_class_id) : 'účet nenájdený');
     ok('aj ku škole', zu && zu.venceky_school_id === sid);
     ok('s rolou žiak', zu && zu.venceky_role === 'student', zu ? String(zu.venceky_role) : '—');
-    ok('dostal 1× Zumbu zdarma', zu && zu.free_credits === 1, zu ? String(zu.free_credits) : '—');
+    // Jednorazový vstup sa 2. 9. zrušil — vedľa celého mesiaca zadarmo nič nepridával.
+    ok('jednorazový vstup sa už nerozdáva', zu && !zu.free_credits, zu ? String(zu.free_credits) : '—');
     const promo = rd('promo_codes.db').find(p => p.code === 'VENCEKRODIC');
     ok('kupón VENCEKRODIC vznikol (mesiac Zumby zadarmo)', !!promo && promo.value === 100,
       promo ? promo.value + '% na ' + promo.applies_to : 'kupón nevznikol');
