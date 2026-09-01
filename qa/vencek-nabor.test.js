@@ -72,7 +72,15 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('kód sa odvodí z mesta', sk.d.class && sk.d.class.code === 'VEN-DETVA', sk.d.class && sk.d.class.code);
     ok('a registrovať sa smie žiak a učiteľ', sk.d.class && JSON.stringify(sk.d.class.roles) === JSON.stringify(['student', 'teacher']),
       JSON.stringify(sk.d.class && sk.d.class.roles));
-    ok('odkaz je hneď použiteľný', sk.d.join_link === BASE + '/?vencek=VEN-DETVA', String(sk.d.join_link));
+    // Odkaz vedie na vlastnú venčekovú stránku, nie na hlavnú — tá predáva
+    // Zumbu dospelým a ôsmakovi po naskenovaní QR nehovorí nič.
+    ok('odkaz vedie na venčekovú registráciu', sk.d.join_link === BASE + '/v/VEN-DETVA', String(sk.d.join_link));
+    const strankaR = await fetch(BASE + '/v/VEN-DETVA');
+    ok('a tá stránka existuje', strankaR.status === 200, 'HTTP ' + strankaR.status);
+    const telo = await strankaR.text();
+    ok('nie je to hlavná stránka („Nájdi svoj rytmus")', !/Nájdi svoj/i.test(telo) && /Venček/i.test(telo));
+    const hlavna = await (await fetch(BASE + '/?vencek=VEN-DETVA')).text();
+    ok('staré vytlačené QR (?vencek=) sa presmerujú', /location\.replace\('\/v\/'/.test(hlavna));
     // Venčekový večer je po 10. lekcii, zvyšné 3 sú bonus po ňom.
     ok('kurz má 13 lekcií, ale do venčeka ich je 10',
       sk.d.class && sk.d.class.lessons_total === 13 && sk.d.class.lessons_before === 10,
@@ -83,7 +91,7 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('trieda sa založí', tr.status === 200 && tr.d && tr.d.class, JSON.stringify(tr.d).slice(0, 110));
     const kod = tr.d.class && tr.d.class.code;
     ok('trieda dostane kód VEN-XXXXX', /^VEN-[A-Z0-9]{5}$/.test(String(kod)), String(kod));
-    ok('a registračný odkaz pre žiakov', tr.d.join_link === BASE + '/?vencek=' + kod, String(tr.d.join_link));
+    ok('a registračný odkaz pre žiakov', tr.d.join_link === BASE + '/v/' + kod, String(tr.d.join_link));
     ok('cena aj počet hodín sedia', tr.d.class.price === 49.9 && tr.d.class.lessons_total === 13,
       tr.d.class.price + ' € · ' + tr.d.class.lessons_total + ' hodín');
 

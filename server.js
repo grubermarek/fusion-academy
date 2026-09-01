@@ -2449,7 +2449,7 @@ async function seedData() {
           lecturer:'Marek Gruber', event_date:'', note:'', roles:['student','teacher'],
           dances:VENCEK_DEFAULT_DANCES.map(x=>({name:x, level:0})), created_at:nowISO()});
         n++;
-        console.log('🎓 Škole '+s.name+' doplnená skupina · kód '+c.code+' · '+APP_URL+'/?vencek='+c.code);
+        console.log('🎓 Škole '+s.name+' doplnená skupina · kód '+c.code+' · '+APP_URL+'/v/'+c.code);
       }
       if(n) console.log('🎓 Doplnených venčekových skupín: '+n);
       // Venčekový večer je po 10. lekcii, zvyšné 3 sú bonus po ňom (Marek 2. 9.).
@@ -19259,6 +19259,9 @@ app.get('/api/qr.png', async(req,res)=>{
     res.end(png);
   }catch(e){ res.status(500).end(); }
 });
+// Venčeková registrácia má vlastnú stránku — hlavná predáva Zumbu dospelým
+// ženám („Nájdi svoj rytmus"), čo ôsmakovi po naskenovaní QR nič nehovorí.
+app.get('/v/:code',            (req,res)=>res.sendFile(path.join(__dirname,'public','vencek-registracia.html')));
 app.get('/event/:slug',        (req,res)=>res.sendFile(path.join(__dirname,'public','event.html')));
 app.get('/event/:slug/hotovo', (req,res)=>res.sendFile(path.join(__dirname,'public','event-hotovo.html')));
 app.get('/t/:code',            (req,res)=>res.sendFile(path.join(__dirname,'public','ticket.html')));
@@ -19819,7 +19822,7 @@ app.post('/api/admin/venceky/schools', adminAuth, async(req,res)=>{
       lecturer:String(req.body.lecturer||'').trim(), event_date:'', note:'',
       roles:Array.isArray(req.body.roles)?req.body.roles.filter(r=>VENCEK_ROLES.includes(r)):['student','teacher'],
       dances:VENCEK_DEFAULT_DANCES.map(n=>({name:n, level:0})), created_at:nowISO()});
-    res.json({ok:true, school:s, class:c, join_link:`${APP_URL}/?vencek=${c.code}`});
+    res.json({ok:true, school:s, class:c, join_link:`${APP_URL}/v/${c.code}`});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 const VENCEK_ROLES=['student','parent','teacher','director'];
@@ -19853,7 +19856,7 @@ app.post('/api/admin/venceky/classes', adminAuth, async(req,res)=>{
       lecturer:String(lecturer||'').trim(), event_date:String(event_date||''), note:'',
       ...(roles && roles.length ? {roles} : {}),
       dances:VENCEK_DEFAULT_DANCES.map(n=>({name:n, level:0})), created_at:nowISO()});
-    res.json({ok:true, class:c, join_link:`${APP_URL}/?vencek=${code}`});
+    res.json({ok:true, class:c, join_link:`${APP_URL}/v/${code}`});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -19873,7 +19876,7 @@ app.get('/api/admin/venceky/overview', adminAuth, async(req,res)=>{
         const paidIds=new Set(cp.map(p=>p.user_id));
         const income=cp.reduce((x,p)=>x+(+p.amount||0),0);
         const ccosts=costs.filter(k=>k.class_id===c._id).reduce((x,k)=>x+(+k.amount||0),0);
-        return { id:c._id, name:c.name, code:c.code, join_link:`${APP_URL}/?vencek=${c.code}`,
+        return { id:c._id, name:c.name, code:c.code, join_link:`${APP_URL}/v/${c.code}`,
           lecturer:c.lecturer, event_date:c.event_date, price:c.price,
           lessons_done:c.lessons_done||0, lessons_total:c.lessons_total||13, lessons_before:c.lessons_before||10,
           progress:vencekPct(c.dances), members:members.length, parents:parents.length,
@@ -20319,8 +20322,11 @@ app.get('/api/vencek/info', rlPublic, async(req,res)=>{
     const c=await q.one(db.venceky_classes,{code});
     if(!c) return res.status(404).json({error:'Kód skupiny neexistuje'});
     const s=await q.one(db.venceky_schools,{_id:c.school_id});
-    res.json({ok:true, name:c.name, school:(s&&s.name)||'',
-      roles:(Array.isArray(c.roles)&&c.roles.length)?c.roles:VENCEK_ROLES});
+    res.json({ok:true, name:c.name, school:(s&&s.name)||'', city:(s&&s.city)||'', year:c.year||'',
+      roles:(Array.isArray(c.roles)&&c.roles.length)?c.roles:VENCEK_ROLES,
+      price:+c.price||49.90, lessons_total:c.lessons_total||13, lessons_before:c.lessons_before||10,
+      lecturer:c.lecturer||'', event_date:c.event_date||'',
+      dances:(c.dances||[]).map(d=>d.name)});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 

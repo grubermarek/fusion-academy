@@ -548,7 +548,10 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
 /* Venčekový registračný kód z QR (?vencek=VEN-XXXXX) — uloží sa a použije pri registrácii */
 (function(){
   var p=new URLSearchParams(location.search), vc=p.get('vencek');
-  if(vc) localStorage.setItem('fa_vencek_code', vc.toUpperCase());
+  // Venčeky majú vlastnú registračnú stránku — hlavná predáva Zumbu dospelým
+  // a ôsmakovi po naskenovaní QR nehovorí nič. Staré vytlačené QR s ?vencek=
+  // tu preto len presmerujeme, nech ostanú platné.
+  if(vc && /^VEN-[A-Z0-9]{3,}$/i.test(vc)){ location.replace('/v/'+vc.toUpperCase()); return; }
   var kod=localStorage.getItem('fa_vencek_code');
   document.addEventListener('DOMContentLoaded', function(){
     if(!kod) return;
@@ -1070,23 +1073,10 @@ if(_preview){
       // (?home=1 umožní pozrieť si verejnú domovskú stránku aj po prihlásení.)
       const dashUrl=me.is_admin?'/admin':me.user_type==='trainer'?'/trainer':'/client-dashboard';
       const qs=new URLSearchParams(location.search);
-      // Venčekový odkaz otvorený prihláseným: nepresmerovať, ale ukázať stránku
-      // tak, ako ju uvidia žiaci. Marek 2. 9. klikol na odkaz skupiny a appka
-      // ho hodila do administrácie — nedalo sa overiť, čo z toho deti uvidia.
-      if(qs.get('vencek')){
-        const l=document.createElement('div');
-        l.style.cssText='position:sticky;top:0;z-index:1100;background:#161310;color:#e8e2d4;border-bottom:1px solid rgba(201,168,76,.5);padding:9px 14px;font-size:.85rem;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap';
-        l.innerHTML='<span>👁️ Si prihlásený/á ako <b>'+(me.name||'').split(' ')[0]+'</b> — takto stránku uvidia <b>žiaci</b>.</span>'
-          +'<a href="'+dashUrl+'" style="color:#C9A84C;font-weight:700;text-decoration:none;white-space:nowrap">← späť do appky</a>';
-        document.addEventListener('DOMContentLoaded',()=>document.body.prepend(l));
-        if(document.readyState!=='loading') document.body.prepend(l);
-      } else if(!qs.has('home')){
+      if(!qs.has('home')){
         location.replace(dashUrl);
         return;
       }
-      // Pri venčekovom náhľade nechaj stránku presne takú, akú uvidí žiak —
-      // uvítacia obrazovka „Ahoj, Marek" by ukázala niečo iné než jemu.
-      if(qs.get('vencek')) return;
       document.getElementById('s0').style.display='none';
       document.getElementById('navLoginBtn').style.display='none';
       document.getElementById('navDashBtn').style.display='flex';

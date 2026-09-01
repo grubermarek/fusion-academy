@@ -3940,11 +3940,11 @@ async function vSetRole(uid, cid, role, el){
   else showToast('Chyba: '+(r?.error||'?'),'error');
 }
 function vShowQR(code,name){
-  const link=location.origin+'/?vencek='+code;
+  const link=location.origin+'/v/'+code;
   const m=document.createElement('div');
   m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   m.onclick=e=>{if(e.target===m)m.remove();};
-  const qrSrc='/api/qr.png?size=900&path='+encodeURIComponent('/?vencek='+code);
+  const qrSrc='/api/qr.png?size=900&path='+encodeURIComponent('/v/'+code);
   m.innerHTML=`<div style="background:#fff;border-radius:16px;padding:24px;text-align:center;max-width:360px;max-height:92vh;overflow:auto">
     <div style="font-weight:900;color:#161310;font-size:1.1rem;margin-bottom:4px">FUSION VENČEKY — ${name}</div>
     <div style="color:#666;font-size:.8rem;margin-bottom:12px">Naskenuj a zaregistruj sa — do skupiny ťa priradíme automaticky</div>
@@ -3962,7 +3962,7 @@ function vShowQR(code,name){
 // z displeja sa nemusí načítať. Kód je pod ním aj textom, nech si ho vie
 // prepísať ten, komu skener nefunguje.
 function vPrintQR(code,name){
-  const link=location.origin+'/?vencek='+code;
+  const link=location.origin+'/v/'+code;
   const w=window.open('','_blank','width=760,height=900');
   if(!w) return showToast('Prehliadač zablokoval okno na tlač','error');
   w.document.write(`<!DOCTYPE html><html lang="sk"><head><meta charset="utf-8"><title>QR ${name}</title>
@@ -3980,7 +3980,7 @@ function vPrintQR(code,name){
     <div class="znak">Fusion Academy</div>
     <h1>Venčeky</h1>
     <div class="skupina">${name}</div>
-    <img src="/api/qr.png?size=1200&path=${encodeURIComponent('/?vencek='+code)}" alt="QR kód">
+    <img src="/api/qr.png?size=1200&path=${encodeURIComponent('/v/'+code)}" alt="QR kód">
     <div class="kod">${code}</div>
     <div class="link">${link}</div>
     <div class="navod">Naskenuj QR kód telefónom a zaregistruj sa.<br>Pri registrácii si vyber, či si <b>žiak</b> alebo <b>učiteľ</b>.</div>
