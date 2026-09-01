@@ -148,6 +148,8 @@ const ROLE_LBL={student:'🧑‍🎓 Som žiak / žiačka', parent:'👨‍👩�
       <div class="kroky">
         <div class="krok"><div class="n">${doVencka}</div><div class="t"><b>lekcií do venčeka</b>
           <span>Naučíme ťa tancovať od nuly. Netreba partnera ani skúsenosti.</span></div></div>
+        ${d.schedule?`<div class="krok"><div class="n">🕐</div><div class="t"><b>Kedy sa učíme</b>
+          <span>${esc(d.schedule)}</span></div></div>`:''}
         <div class="krok"><div class="n">✨</div><div class="t"><b>Venčekový večer</b>
           <span>${d.event_date ? esc(d.event_date.split('-').reverse().join('. ')) : 'Termín upresníme'} — deň, keď to celé ukážete rodičom.</span></div></div>
         ${bonus?`<div class="krok"><div class="n">+${bonus}</div><div class="t"><b>bonusové lekcie po venčeku</b>

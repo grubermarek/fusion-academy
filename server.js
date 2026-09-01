@@ -20110,6 +20110,9 @@ app.post('/api/admin/venceky/progress', trainerAuth, async(req,res)=>{
     if(req.body.lessons_done!=null) set.lessons_done=Math.max(0,Math.min(+c.lessons_total||13,+req.body.lessons_done||0));
     if(req.body.note!=null) set.note=String(req.body.note).slice(0,300);
     if(req.body.event_date!=null) set.event_date=String(req.body.event_date).slice(0,20);
+    // Kedy sa hodiny konajú. Termíny sa dohadujú so školou osobne (Marek 2. 9.),
+    // takže je to voľný text — nie výber zo slotov, ktoré nikto nepoužíva.
+    if(req.body.schedule!=null) set.schedule=String(req.body.schedule).slice(0,120);
     await q.update(db.venceky_classes,{_id:c._id},{$set:set});
     // Notifikácia triede pri novom zvládnutom tanci
     if(set.dances){
@@ -20343,7 +20346,7 @@ app.get('/api/vencek/info', rlPublic, async(req,res)=>{
     res.json({ok:true, name:c.name, school:(s&&s.name)||'', city:(s&&s.city)||'', year:c.year||'',
       roles:(Array.isArray(c.roles)&&c.roles.length)?c.roles:VENCEK_ROLES,
       price:+c.price||49.90, lessons_total:c.lessons_total||13, lessons_before:c.lessons_before||10,
-      lecturer:c.lecturer||'', event_date:c.event_date||'',
+      lecturer:c.lecturer||'', event_date:c.event_date||'', schedule:c.schedule||'',
       dances:(c.dances||[]).map(d=>d.name)});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -20394,7 +20397,7 @@ app.get('/api/vencek/mine', auth, async(req,res)=>{
       return { id:c._id, name:c.name, year:c.year, progress:vencekPct(c.dances),
         dances:(c.dances||[]).map(d=>({name:d.name, level:d.level, level_label:VENCEK_LEVELS[d.level||0], pct:Math.round((d.level||0)/4*100)})),
         lessons_done:c.lessons_done||0, lessons_total:c.lessons_total||13, lessons_before:c.lessons_before||10,
-        event_date:c.event_date||null, note:c.note||'', members:members.length,
+        event_date:c.event_date||null, schedule:c.schedule||'', note:c.note||'', members:members.length,
         completed:!!c.completed,
         paid_count:new Set(pays.map(p=>p.user_id)).size,
         attendance:await (async()=>{ const recs=await q.find(db.venceky_attendance,{class_id:c._id});

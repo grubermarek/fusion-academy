@@ -3827,8 +3827,9 @@ async function loadVenceky(){
         </div>
       </div>
       ${s.staff?.length?`<div class="small text-muted mb-2">Personál: ${s.staff.map(t=>`${t.role==='director'?'🏫':'👩‍🏫'} ${t.name}`).join(' · ')}</div>`:''}
-      <div class="small mb-2"><button class="btn btn-sm btn-outline-warning" onclick="vBookingLink('${s.id}')">📅 Odkaz pre RIADITEĽA — výber termínov</button>
-        <span class="text-muted" style="font-size:.75rem;margin-left:6px">Odkaz pre žiakov na registráciu je nižšie pri skupine, pod „QR / odkaz“.</span></div>
+      <div class="small mb-2 text-muted" style="font-size:.75rem">
+        📅 Termíny hodín a venčekového večera zadávaš v detaile skupiny — dohodneš sa so školou osobne.
+        · Odkaz pre žiakov na registráciu nájdeš pri skupine pod „QR / odkaz“.</div>
       ${s.classes.length?`<table class="table table-dark table-sm small mb-0"><thead><tr>
         <th>Skupina</th><th>Progress</th><th>Lekcie</th><th class="text-center">Žiaci</th><th class="text-center">🧾 Zaplatené</th><th class="text-end">Príjem</th><th class="text-end">Zisk</th><th>Registrácia</th><th></th></tr></thead><tbody>
         ${s.classes.map(c=>`<tr>
@@ -4061,6 +4062,7 @@ async function vClassDetail(cid){
       <div class="d-flex gap-2 mt-2 flex-wrap">
         <input id="vLessons" type="number" min="0" max="${c.lessons_total}" value="${c.lessons_done}" class="form-control form-control-sm bg-dark text-light" style="max-width:90px" title="odučené lekcie">
         <input id="vEvent" type="date" value="${c.event_date||''}" class="form-control form-control-sm bg-dark text-light" style="max-width:170px" title="dátum venčekového večera">
+        <input id="vSchedule" value="${(c.schedule||'').replace(/"/g,'&quot;')}" placeholder="kedy hodiny (napr. Utorok 14:00 · telocvičňa)" class="form-control form-control-sm bg-dark text-light" style="max-width:280px" title="Kedy sa skupina učí — uvidia to žiaci aj na registračnej stránke">
         <input id="vNote" value="${(c.note||'').replace(/"/g,'&quot;')}" placeholder="poznámka (napr. dokončíme tango)" class="form-control form-control-sm bg-dark text-light" style="flex:1;min-width:180px">
         <button class="btn btn-sm btn-brand" onclick="vSaveProgress('${c._id}',${(c.dances||[]).length})">💾 Uložiť hodinu</button>
       </div></div>
@@ -4140,6 +4142,7 @@ async function vSaveProgress(cid,n){
   await vApi('progress',{class_id:cid, dances,
     lessons_done:+document.getElementById('vLessons').value,
     event_date:document.getElementById('vEvent').value,
+    schedule:document.getElementById('vSchedule').value,
     note:document.getElementById('vNote').value});
   alert('Hodina uložená ✅ — žiakom sa aktualizoval progress.');
   vClassDetail(cid); loadVenceky();

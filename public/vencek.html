@@ -74,6 +74,7 @@ function classCard(c, extra=''){
       : `Lekcia ${c.lessons_done} z ${doVencka}`}${c.event_date?` · ✨ Venčekový večer: <b style="color:var(--gold)">${esc(fmtD(c.event_date))}</b>`:''}</div>
     <div class="bigbar"><i style="width:${c.progress}%"></i></div>
     <div style="font-weight:900;color:var(--gold)">${c.progress} %</div>
+    ${c.schedule?`<div class="sub" style="margin-top:8px">🕐 ${esc(c.schedule)}</div>`:''}
   </div>
   ${extra}
   ${(() => {

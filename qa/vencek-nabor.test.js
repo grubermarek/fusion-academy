@@ -111,6 +111,19 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
       class_id: sk.d.class._id, lessons_done: 2,
       dances: TANCE.map((n, i) => ({ name: n, level: i === 0 ? 4 : (i === 1 ? 2 : 0) })) } }, adm);
     ok('zápis hodiny prejde', zapis.status === 200, JSON.stringify(zapis.d).slice(0, 90));
+
+    // Termíny sa dohadujú so školou osobne a zadáva ich Marek — musia sa
+    // dostať až k žiakom, inak nevedia, kedy prísť.
+    const term = await j('/api/admin/venceky/progress', { method: 'POST', body: {
+      class_id: sk.d.class._id, schedule: 'Utorok 14:00 · telocvičňa školy', event_date: '2026-11-28' } }, adm);
+    ok('termín hodín sa dá zapísať', term.status === 200, JSON.stringify(term.d).slice(0, 80));
+    await new Promise(r => setTimeout(r, 500));
+    const infoS = (await j('/api/vencek/info?code=VEN-DETVA', {}, {})).d;
+    ok('a vidí ho aj ten, kto sa ešte len registruje',
+      infoS && infoS.schedule === 'Utorok 14:00 · telocvičňa školy', JSON.stringify(infoS && infoS.schedule));
+    const detailS = (await j('/api/admin/venceky/class/' + sk.d.class._id, {}, adm)).d;
+    ok('aj žiak v appke', detailS && detailS.class && detailS.class.schedule === 'Utorok 14:00 · telocvičňa školy',
+      JSON.stringify(detailS && detailS.class && detailS.class.schedule));
     await new Promise(r => setTimeout(r, 600));
     const poZapise = rd('venceky_classes.db').find(x => x._id === sk.d.class._id);
     ok('Waltz je označený ako zvládnutý', poZapise && poZapise.dances[0].level === 4,
