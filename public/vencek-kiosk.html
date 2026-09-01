@@ -35,20 +35,18 @@
     margin:3vmin auto 2vmin;width:fit-content;box-shadow:0 0 0 1px rgba(201,168,76,.35), 0 3vmin 8vmin rgba(0,0,0,.6)}
   .qrbox img{display:block;width:min(46vmin,420px);height:min(46vmin,420px)}
 
-  .kod{position:relative;font-family:'Courier New',monospace;font-size:clamp(1.1rem,3.4vmin,2.2rem);
-    font-weight:700;letter-spacing:.1em;color:var(--gold-svetla)}
-  .adresa{position:relative;color:var(--muted);font-size:clamp(.75rem,1.7vmin,1.05rem);margin-top:.5vmin;word-break:break-all}
   .pocet{position:relative;margin-top:2.2vmin;font-size:clamp(.85rem,2vmin,1.2rem);color:var(--cream)}
   .pocet b{color:var(--gold);font-size:1.25em}
 
   .stav{color:var(--muted);font-size:1.1rem;text-align:center;padding:6vmin}
   /* Hore vpravo, aby neprekrývalo počet registrovaných pod QR. */
-  .fs{position:fixed;right:2vmin;top:2vmin;background:rgba(255,255,255,.06);border:1px solid rgba(201,168,76,.3);
-    color:var(--muted);border-radius:10px;padding:8px 14px;font-size:.8rem;cursor:pointer;font-family:inherit;z-index:5}
+  .ovladanie{position:fixed;right:2vmin;top:2vmin;display:flex;gap:8px;z-index:5}
+  .fs{background:rgba(255,255,255,.06);border:1px solid rgba(201,168,76,.3);
+    color:var(--muted);border-radius:10px;padding:8px 14px;font-size:.8rem;cursor:pointer;font-family:inherit}
   .fs:hover{color:var(--gold);border-color:var(--gold)}
-  /* V celoobrazovkovom režime už netreba — nech na plátne nesvieti. */
-  :fullscreen .fs{opacity:.25}
-  :fullscreen .fs:hover{opacity:1}
+  /* Na premietanom plátne nech ovládanie nesvieti, kým naň nejdeš myšou. */
+  :fullscreen .ovladanie{opacity:.2}
+  :fullscreen .ovladanie:hover{opacity:1}
   @media (prefers-reduced-motion:no-preference){
     .qrbox{animation:dych 5s ease-in-out infinite}
     @keyframes dych{0%,100%{transform:scale(1)}50%{transform:scale(1.015)}}
@@ -57,13 +55,24 @@
 </head>
 <body>
 <div class="stred" id="host"><div class="stav">Načítavam…</div></div>
-<button class="fs" onclick="celaObrazovka()">⛶ Celá obrazovka</button>
+<div class="ovladanie">
+  <button class="fs" onclick="spat()">← Späť</button>
+  <button class="fs" onclick="celaObrazovka()">⛶ Celá obrazovka</button>
+</div>
 <script>
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const KOD=(new URLSearchParams(location.search).get('kod')
   || location.pathname.split('/').filter(Boolean).pop() || '').toUpperCase();
 function celaObrazovka(){
   try{ document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); }catch(e){}
+}
+// Kiosk sa z admina otvára v novom okne, kde história býva prázdna — vtedy
+// zavri okno, inak sa vráť tam, odkiaľ prišiel.
+function spat(){
+  try{ if(document.fullscreenElement) document.exitFullscreen(); }catch(e){}
+  if(history.length>1){ history.back(); return; }
+  window.close();
+  setTimeout(()=>{ if(!window.closed) location.href='/admin'; }, 250);
 }
 (async()=>{
   const host=document.getElementById('host');
@@ -73,15 +82,12 @@ function celaObrazovka(){
   async function vykresli(){
     let d; try{ d=await (await fetch('/api/vencek/info?code='+encodeURIComponent(KOD))).json(); }catch(e){}
     if(!d || !d.ok){ host.innerHTML='<div class="stav">Kód '+esc(KOD)+' nepoznáme.</div>'; return; }
-    const adresa=location.origin.replace(/^https?:\/\//,'')+'/v/'+KOD;
     host.innerHTML=`
       <div class="znak">Fusion Academy</div>
       <h1>Venček</h1>
       <div class="skola">${esc(d.school||'')}</div>
       <div class="vyzva">Naskenuj telefónom a zaregistruj sa</div>
       <div class="qrbox"><img src="/api/qr.png?size=1000&path=${encodeURIComponent('/v/'+KOD)}" alt="QR kód na registráciu"></div>
-      <div class="kod">${esc(KOD)}</div>
-      <div class="adresa">${esc(adresa)}</div>
       ${d.registered>0?`<div class="pocet">Už zaregistrovaných: <b>${d.registered}</b></div>`:''}`;
   }
   await vykresli();
