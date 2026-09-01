@@ -57,7 +57,7 @@ function danceHtml(d){
 }
 function classCard(c, extra=''){
   return `<div class="hero">
-    <span class="badge">${esc(c.year)} · TRIEDA ${esc(c.name)}</span>
+    <span class="badge">${esc(c.year)} · ${esc(c.name).toUpperCase()}</span>
     <h1>Naša cesta k venčeku</h1>
     <div class="sub">Lekcia ${c.lessons_done} z ${c.lessons_total}${c.event_date?` · ✨ Venčekový večer: <b style="color:var(--gold)">${esc(fmtD(c.event_date))}</b>`:''}</div>
     <div class="bigbar"><i style="width:${c.progress}%"></i></div>
@@ -67,7 +67,7 @@ function classCard(c, extra=''){
   <div class="card"><h3>💃 Naše tance</h3>${c.dances.map(danceHtml).join('')}
     ${c.note?`<div class="muted" style="margin-top:8px">📝 ${esc(c.note)}</div>`:''}</div>
   <div class="grid">
-    <div class="stat"><b>${c.members}</b><span>žiakov v triede</span></div>
+    <div class="stat"><b>${c.members}</b><span>žiakov v skupine</span></div>
     <div class="stat"><b>${c.lessons_total-c.lessons_done}</b><span>lekcií do venčeka</span></div>
   </div>`;
 }
@@ -80,10 +80,22 @@ function attCard(d){
 }
 (async()=>{
   const host=document.getElementById('host');
-  let d; try{ d=await (await fetch('/api/vencek/mine',{credentials:'include'})).json(); }
+  // ?ako=student&class_id=… — admin si pozrie skupinu očami žiaka, aby vedel
+  // na nábore ukázať, čo deti v appke uvidia.
+  const qp=new URLSearchParams(location.search);
+  const nahladUrl = (qp.get('ako')==='student' && qp.get('class_id'))
+    ? '/api/vencek/mine?ako=student&class_id='+encodeURIComponent(qp.get('class_id')) : '/api/vencek/mine';
+  let d; try{ d=await (await fetch(nahladUrl,{credentials:'include'})).json(); }
   catch(e){ host.innerHTML='<div class="empty">Nepodarilo sa načítať. Skús to znova.</div>'; return; }
+  if(d.preview){
+    const p=document.createElement('div');
+    p.style.cssText='background:rgba(201,168,76,.14);border:1px solid rgba(201,168,76,.45);border-radius:12px;padding:11px 14px;margin-bottom:14px;font-size:.88rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap';
+    p.innerHTML='<span>👁️</span><span style="flex:1">Toto vidí <b>žiak</b> tejto skupiny. Platba ani dochádzka tu nie sú tvoje.</span>'
+      +'<a href="/vencek" style="color:var(--gold);text-decoration:none;font-weight:700;white-space:nowrap">← späť na prehľad</a>';
+    host.parentNode.insertBefore(p, host);
+  }
   if(!d.ok || !d.role){
-    host.innerHTML=`<div class="empty">🎓 Tvoj účet zatiaľ nie je priradený k venčekovej triede.<br><br>
+    host.innerHTML=`<div class="empty">🎓 Tvoj účet zatiaľ nie je priradený k venčekovej skupine.<br><br>
       Ak máš QR kód od školy, naskenuj ho znova — alebo napíš svojmu lektorovi.<br><br>
       <a class="switch" href="/client-dashboard">Prejsť do appky</a></div>`; return;
   }
@@ -94,12 +106,13 @@ function attCard(d){
         <div class="head"><span>${esc(c.name)}</span><span style="color:var(--gold)">${c.progress} %</span></div>
         <div class="bigbar" style="margin:8px 0 4px"><i style="width:${c.progress}%"></i></div>
         <div class="muted">Lekcia ${c.lessons_done}/${c.lessons_total} · ${c.members} žiakov · uhradené ${c.paid_count}/${c.members}${c.event_date?` · večer ${esc(fmtD(c.event_date))}`:''}</div>
-      </div>`).join('')||'<div class="muted">Zatiaľ žiadne triedy.</div>'}</div>`).join('')
+        <a href="/vencek?ako=student&class_id=${c.id||c._id}" style="display:inline-block;margin-top:8px;background:rgba(201,168,76,.16);border:1px solid rgba(201,168,76,.45);color:var(--gold);border-radius:9px;padding:5px 11px;font-size:.78rem;font-weight:700;text-decoration:none">👁️ Pozrieť ako žiak</a>
+      </div>`).join('')||'<div class="muted">Zatiaľ žiadne skupiny.</div>'}</div>`).join('')
       ||'<div class="empty">Žiadne školy.</div>';
     return;
   }
   if(d.role==='teacher'){
-    host.innerHTML=`<div class="card"><h3>👩‍🏫 Vaša trieda — ${esc(d.class.name)} · ${esc(d.school)}</h3></div>`
+    host.innerHTML=`<div class="card"><h3>👩‍🏫 Vaša skupina — ${esc(d.class.name)} · ${esc(d.school)}</h3></div>`
       +classCard(d.class, `<div class="card"><div class="muted">Uhradené: <b style="color:#aed581">${d.class.paid_count}/${d.class.members}</b> žiakov (menný zoznam spravuje Fusion Academy — nemusíte vyberať nič).</div></div>`+attCard(d));
     return;
   }

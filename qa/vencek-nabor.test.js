@@ -176,6 +176,24 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('takže riaditeľom sa nestal', pu && pu.venceky_role === 'student' && !pu.vencek_pending_role,
       pu ? (pu.venceky_role + ' / pending=' + pu.vencek_pending_role) : '—');
 
+    console.log('\n7b) Admin si pozrie skupinu očami žiaka:');
+    const mojPrehlad = (await j('/api/vencek/mine', {}, adm)).d;
+    ok('admin vidí prehľad škôl', mojPrehlad && mojPrehlad.role === 'admin' && Array.isArray(mojPrehlad.schools),
+      JSON.stringify(mojPrehlad && Object.keys(mojPrehlad)));
+    const nahlad = (await j('/api/vencek/mine?ako=student&class_id=' + tr.d.class._id, {}, adm)).d;
+    ok('a vie sa prepnúť do žiackeho pohľadu', nahlad && nahlad.role === 'student' && nahlad.preview === true,
+      JSON.stringify(nahlad && { role: nahlad.role, preview: nahlad.preview }));
+    ok('náhľad nesie tance aj s popisom úrovne', nahlad && nahlad.class && Array.isArray(nahlad.class.dances)
+      && nahlad.class.dances.every(x => 'level_label' in x),
+      JSON.stringify(nahlad && nahlad.class && (nahlad.class.dances || []).slice(0, 1)));
+    ok('a nevydáva cudziu platbu za jeho', nahlad && nahlad.my_payment === null && nahlad.my_attendance === null,
+      JSON.stringify(nahlad && [nahlad.my_payment, nahlad.my_attendance]));
+    const cudzi = {};
+    await j('/api/login', { method: 'POST', body: { email: 'qa.ven.ziak@qa-biz.local', password: 'Heslo123!' } }, cudzi);
+    const pokus = (await j('/api/vencek/mine?ako=student&class_id=' + tr.d.class._id, {}, cudzi)).d;
+    ok('kto nie je admin, náhľad nedostane', pokus && pokus.preview !== true,
+      JSON.stringify(pokus && { role: pokus.role, preview: pokus.preview }));
+
     console.log('\n8b) Vlastný kód skupiny (nech sa dá prepísať z papiera):');
     const vlastny = await j('/api/admin/venceky/classes', { method: 'POST',
       body: { school_id: sid, name: 'Skupina s kódom', price: 49.90, code: 'halic' } }, adm);

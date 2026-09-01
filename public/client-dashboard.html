@@ -3500,7 +3500,9 @@ init();
 (async function(){
   try{
     const d=await (await fetch('/api/vencek/mine',{credentials:'include'})).json();
-    if(!d.ok || !d.role || d.role==='admin') return;
+    // Admin kartu dovtedy nevidel vôbec — Marek si ju pýtal, aby vedel deťom
+    // na nábore ukázať, kam majú klikať a čo tam uvidia.
+    if(!d.ok || !d.role) return;
     const main=document.getElementById('dashMain'); if(!main) return;
 
     // Venček je pre týchto ľudí hlavný dôvod, prečo appku otvorili — karta preto
@@ -3533,10 +3535,15 @@ init();
     const card=document.createElement('a');
     card.href='/vencek';
     card.className='ven-card';
-    // Riaditeľka dostáva zoznam škôl, ostatní jednu — názov beriem z toho, čo prišlo.
-    const skola = d.school || (Array.isArray(d.schools) && d.schools.length===1 ? d.schools[0].school : '');
+    // Riaditeľka aj admin dostávajú zoznam škôl, ostatní jednu.
+    const skoly = Array.isArray(d.schools) ? d.schools : [];
+    const skola = d.school || (skoly.length===1 ? skoly[0].school : '');
     const titulok = skola ? ('VENČEK ' + String(skola).toUpperCase()) : 'FUSION VENČEKY';
-    const sub = d.role==='director' ? 'Prehľad všetkých skupín vašej školy'
+    const pocetSkupin = skoly.reduce((s,x)=>s+((x.classes||[]).length),0);
+    const sub = d.role==='admin'
+        ? (pocetSkupin ? `${skoly.length} ${skoly.length===1?'škola':(skoly.length<5?'školy':'škôl')} · ${pocetSkupin} ${pocetSkupin===1?'skupina':(pocetSkupin<5?'skupiny':'skupín')} — aj náhľad očami žiaka`
+                       : 'Zatiaľ žiadna skupina — založ ju v admine')
+      : d.role==='director' ? 'Prehľad všetkých skupín vašej školy'
       : d.role==='teacher' ? `Vaša skupina ${d.class?.name||''} — progress a dochádzka`
       : `${d.class?.name||''} · ${d.class?.progress??0} % · lekcia ${d.class?.lessons_done??0}/${d.class?.lessons_total??13}`;
     card.innerHTML=`<span class="ven-ikona">🎓</span>

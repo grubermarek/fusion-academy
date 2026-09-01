@@ -20242,6 +20242,17 @@ app.get('/api/vencek/mine', auth, async(req,res)=>{
           const tot=recs.reduce((s,r)=>s+(r.present||[]).length,0);
           return { lessons_recorded:recs.length, avg_pct:Math.round(tot/(recs.length*members.length)*100) }; })() };
     };
+    // Admin si môže pozrieť skupinu očami žiaka — aby vedel deťom na nábore
+    // ukázať, čo v appke uvidia. Je to náhľad: platba ani dochádzka nie sú jeho,
+    // preto sú prázdne. Tvar je rovnaký ako pre žiaka, nech stránka nepozná rozdiel.
+    if(u.is_admin && req.query.ako==='student' && req.query.class_id){
+      const c=await q.one(db.venceky_classes,{_id:String(req.query.class_id)});
+      if(!c) return res.status(404).json({error:'Skupina nenájdená'});
+      const s=await q.one(db.venceky_schools,{_id:c.school_id});
+      return res.json({ok:true, role:'student', preview:true,
+        school:(s&&s.name)||'', class:await classView(c), price:c.price||49.90,
+        my_payment:null, my_attendance:null});
+    }
     if(role==='director' || role==='admin'){
       const sid=u.venceky_school_id;
       const schools=role==='admin'? await q.find(db.venceky_schools,{}) : [await q.one(db.venceky_schools,{_id:sid})].filter(Boolean);
