@@ -3920,6 +3920,19 @@ async function vAddClass(sid){
   alert('Skupina vytvorená.\n\nRegistračný odkaz pre žiakov:\n'+d.join_link+'\n\nQR na vytlačenie nájdeš pri skupine — tlačidlo „QR / odkaz".');
   loadVenceky();
 }
+// Úroveň tanca sa klikne, nie vyberá z rozbaľovačky — pri 14 tancoch by to bolo
+// 14 dropdownov po hodine. Uloží sa až tlačidlom „Uložiť hodinu".
+function vSetLevel(i, li){
+  const h=document.getElementById('vd_'+i); if(!h) return;
+  h.value=li;
+  document.querySelectorAll('.vdBtn_'+i).forEach(b=>{
+    const je=+b.dataset.l===li;
+    b.style.borderColor = je?'#C9A84C':'#3a3428';
+    b.style.background  = je?'rgba(201,168,76,.22)':'transparent';
+    b.style.color       = je?'#C9A84C':'#9a9a9a';
+    b.style.fontWeight  = je?'800':'400';
+  });
+}
 // Rolu si pri registrácii vyberajú sami, takže preklik treba vedieť opraviť
 // priamo v zozname — nie cez tri rôzne dialógy ako doteraz.
 const V_ROLE_LBL={student:'🧑‍🎓 žiak/žiačka', parent:'👨‍👩‍👧 rodič', teacher:'👩‍🏫 učiteľ/ka', director:'🏫 riaditeľ/ka', none:'➖ odobrať z venčekov'};
@@ -4020,12 +4033,17 @@ async function vClassDetail(cid){
     <div class="small text-muted mb-3">Progress ${c.progress} % · lekcia ${c.lessons_done}/${c.lessons_before||10} do venčeka (+${(c.lessons_total||13)-(c.lessons_before||10)} bonus po ňom) · cena ${vEur(c.price)}${c.event_date?` · ✨ večer ${c.event_date}`:''}</div>
 
     <h6 class="fw-bold">💃 Zápis hodiny (tance + lekcia)</h6>
+    <div class="small text-muted mb-2">Klikni na úroveň — žiaci ju uvidia hneď po uložení. „Vieme" im pošle aj notifikáciu.</div>
     <div class="mb-2">${(c.dances||[]).map((dn,i)=>`
-      <div class="d-flex align-items-center gap-2 mb-1">
-        <span style="width:180px" class="small">${dn.name}</span>
-        <select id="vd_${i}" class="form-select form-select-sm bg-dark text-light" style="max-width:220px">
-          ${d.levels.map((l,li)=>`<option value="${li}" ${li===dn.level?'selected':''}>${'●'.repeat(li)}${'○'.repeat(4-li)} ${l}</option>`).join('')}
-        </select></div>`).join('')}
+      <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+        <span style="width:120px" class="small">${dn.name}</span>
+        <input type="hidden" id="vd_${i}" value="${dn.level||0}">
+        <div class="btn-group btn-group-sm" role="group" aria-label="Úroveň tanca ${dn.name}">
+          ${d.levels.map((l,li)=>`<button type="button" class="btn btn-sm vdBtn vdBtn_${i}"
+            data-i="${i}" data-l="${li}" title="${l}"
+            style="font-size:.7rem;padding:2px 8px;border:1px solid ${li===dn.level?'#C9A84C':'#3a3428'};background:${li===dn.level?'rgba(201,168,76,.22)':'transparent'};color:${li===dn.level?'#C9A84C':'#9a9a9a'};font-weight:${li===dn.level?'800':'400'}"
+            onclick="vSetLevel(${i},${li})">${li===0?'—':li>=4?'✓ vieme':'●'.repeat(li)}</button>`).join('')}
+        </div></div>`).join('')}
       <div class="d-flex gap-2 mt-2 flex-wrap">
         <input id="vLessons" type="number" min="0" max="${c.lessons_total}" value="${c.lessons_done}" class="form-control form-control-sm bg-dark text-light" style="max-width:90px" title="odučené lekcie">
         <input id="vEvent" type="date" value="${c.event_date||''}" class="form-control form-control-sm bg-dark text-light" style="max-width:170px" title="dátum venčekového večera">

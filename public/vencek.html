@@ -36,6 +36,9 @@ body{background:#12100a;color:var(--cream);font-family:'Inter',system-ui,sans-se
 .cls .head{display:flex;justify-content:space-between;align-items:center;font-weight:800}
 .muted{color:var(--muted);font-size:.82rem}
 .empty{text-align:center;padding:60px 20px;color:var(--muted)}
+.tance-cakaju{display:flex;flex-wrap:wrap;gap:7px}
+.tance-cakaju .caka{background:#1d1a15;border:1px solid #2e2a20;border-radius:999px;
+  padding:5px 12px;font-size:.83rem;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -73,8 +76,18 @@ function classCard(c, extra=''){
     <div style="font-weight:900;color:var(--gold)">${c.progress} %</div>
   </div>
   ${extra}
-  <div class="card"><h3>💃 Naše tance</h3>${c.dances.map(danceHtml).join('')}
-    ${c.note?`<div class="muted" style="margin-top:8px">📝 ${esc(c.note)}</div>`:''}</div>
+  ${(() => {
+    // Marek označuje po hodine, čo už vieme — nech to žiaci vidia oddelene od
+    // toho, čo ich ešte čaká. Jeden dlhý zoznam 14 tancov by to zahmlil.
+    const vieme=c.dances.filter(x=>x.level>=4), ucime=c.dances.filter(x=>x.level>0&&x.level<4), cakaju=c.dances.filter(x=>!x.level);
+    return `${vieme.length?`<div class="card" style="border-color:rgba(124,179,66,.4)">
+        <h3>✅ Toto už vieme <span style="color:var(--muted);font-weight:400">· ${vieme.length} z ${c.dances.length}</span></h3>
+        ${vieme.map(danceHtml).join('')}</div>`:''}
+      ${ucime.length?`<div class="card"><h3>💃 Práve sa učíme</h3>${ucime.map(danceHtml).join('')}</div>`:''}
+      ${cakaju.length?`<div class="card"><h3>⏳ Ešte nás čaká <span style="color:var(--muted);font-weight:400">· ${cakaju.length}</span></h3>
+        <div class="tance-cakaju">${cakaju.map(x=>`<span class="caka">${esc(x.name)}</span>`).join('')}</div></div>`:''}
+      ${c.note?`<div class="card"><div class="muted">📝 ${esc(c.note)}</div></div>`:''}`;
+  })()}
   <div class="grid">
     <div class="stat"><b>${c.members}</b><span>žiakov v skupine</span></div>
     ${vBonuse

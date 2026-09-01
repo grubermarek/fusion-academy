@@ -95,6 +95,31 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('cena aj počet hodín sedia', tr.d.class.price === 49.9 && tr.d.class.lessons_total === 13,
       tr.d.class.price + ' € · ' + tr.d.class.lessons_total + ' hodín');
 
+    console.log('\n1b) Tance, ktoré sa učia:');
+    const TANCE = ['Waltz','Cha-cha','Tango','Jive','Valčík','Polka','Samba',
+      'Salsa','Bachata','Quickstep','Slowfox','Čardáš','Merengue','Zumba'];
+    const infoT = (await j('/api/vencek/info?code=VEN-DETVA', {}, {})).d;
+    ok('skupina dostane všetkých 14 tancov v poradí',
+      infoT && JSON.stringify(infoT.dances) === JSON.stringify(TANCE),
+      JSON.stringify(infoT && infoT.dances));
+    ok('a všetky začínajú ako nezačaté',
+      (sk.d.class.dances || []).every(x => (x.level || 0) === 0),
+      JSON.stringify((sk.d.class.dances || []).map(x => x.level)));
+
+    // Marek po hodine označí, čo už vedia — žiakom to má pribudnúť medzi zvládnuté.
+    const zapis = await j('/api/admin/venceky/progress', { method: 'POST', body: {
+      class_id: sk.d.class._id, lessons_done: 2,
+      dances: TANCE.map((n, i) => ({ name: n, level: i === 0 ? 4 : (i === 1 ? 2 : 0) })) } }, adm);
+    ok('zápis hodiny prejde', zapis.status === 200, JSON.stringify(zapis.d).slice(0, 90));
+    await new Promise(r => setTimeout(r, 600));
+    const poZapise = rd('venceky_classes.db').find(x => x._id === sk.d.class._id);
+    ok('Waltz je označený ako zvládnutý', poZapise && poZapise.dances[0].level === 4,
+      poZapise ? String(poZapise.dances[0].level) : '—');
+    ok('Cha-cha je rozrobená, zvyšok nezačatý',
+      poZapise && poZapise.dances[1].level === 2 && poZapise.dances[2].level === 0);
+    ok('a percento pokroku sa prepočítalo',
+      (await j('/api/admin/venceky/class/' + sk.d.class._id, {}, adm)).d.class.progress > 0);
+
     console.log('\n2) Žiak sa registruje cez kód z QR:');
     const z1 = {};
     const rz = await j('/api/register', { method: 'POST', body: { name: 'Zuzka Ziacka',

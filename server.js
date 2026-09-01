@@ -2461,6 +2461,22 @@ async function seedData() {
         m++;
       }
       if(m) console.log('🎓 Skupín s doplneným počtom lekcií do venčeka: '+m);
+      // Zoznam tancov sa 2. 9. rozšíril zo 7 na 14. Doplníme chýbajúce a vyhodíme
+      // len tie, ktoré v novom zozname nie sú A nikto sa ich ešte neučil — kto má
+      // za tancom odrobený progres, o neho neprde.
+      let t=0;
+      for(const c of await q.find(db.venceky_classes,{})){
+        const teraz=Array.isArray(c.dances)?c.dances:[];
+        const podlaMena=Object.fromEntries(teraz.map(d=>[d.name, d]));
+        const novy=VENCEK_DEFAULT_DANCES.map(n=>podlaMena[n] || {name:n, level:0});
+        // čo v novom zozname nie je, ale má nakročené, si necháme na konci
+        const navyse=teraz.filter(d=>!VENCEK_DEFAULT_DANCES.includes(d.name) && (d.level||0)>0);
+        const vysledok=[...novy, ...navyse];
+        if(JSON.stringify(vysledok)===JSON.stringify(teraz)) continue;
+        await q.update(db.venceky_classes,{_id:c._id},{$set:{dances:vysledok}});
+        t++;
+      }
+      if(t) console.log('🎓 Skupín s aktualizovaným zoznamom tancov: '+t+' (teraz '+VENCEK_DEFAULT_DANCES.length+' tancov)');
     }catch(e){ console.error('vencek skupiny:', e.message); }
   }, 12000);
 
@@ -19781,7 +19797,9 @@ async function runFriendEventsDaily(){
 // 🎓 VENČEKY — školy, triedy, žiaci, platby, náklady, progress tancov
 // Venčekár/učiteľ/riaditeľ = bežný účet appky s rolou navyše (venceky_role).
 // ═══════════════════════════════════════════════════════════════════════════════
-const VENCEK_DEFAULT_DANCES=['Waltz','Polka','Čardáš','Cha-cha','Salsa','Tango','Moderný spoločný tanec'];
+// Zoznam, ktorý Marek reálne učí (2. 9.) — v tomto poradí ho vidia aj žiaci.
+const VENCEK_DEFAULT_DANCES=['Waltz','Cha-cha','Tango','Jive','Valčík','Polka','Samba',
+  'Salsa','Bachata','Quickstep','Slowfox','Čardáš','Merengue','Zumba'];
 const VENCEK_LEVELS=['nezačaté','základy','poznáme kroky','vieme zatancovať','zvládnuté']; // 0–4
 const vencekPct=ds=>ds&&ds.length? Math.round(ds.reduce((s,d)=>s+(d.level||0),0)/(ds.length*4)*100):0;
 
