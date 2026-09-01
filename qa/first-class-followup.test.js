@@ -37,7 +37,11 @@ const post = (jar, p, b) => call(jar, 'POST', p, b);
   const today = new Date().toISOString().slice(0, 10);
   const bk = await post('C1', '/api/bookings', { class_id: cid, booking_date: today });
   ok('booking OK', bk.status === 200, bk);
-  const att = await post('admin', '/api/attendance/confirm-session', { class_id: cid, date: today });
+  // Účasť sa dokazuje: bez zoznamu prítomných by klientka dostala „neprišla"
+  // a follow-up po prvej hodine by sa nemal komu poslať.
+  const zoznam = (await g('admin', `/api/attendance/class/${cid}?date=${today}`)).data || [];
+  const att = await post('admin', '/api/attendance/confirm-session',
+    { class_id: cid, date: today, present_ids: zoznam.map(a => a.booking_id) });
   ok('účasť zapísaná', att.status === 200 || att.status === 201, att);
 
   // spusti follow-up

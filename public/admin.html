@@ -6837,6 +6837,14 @@ async function openAttClass(classId){
               ? `<span class="badge" style="background:rgba(96,165,250,.15);color:#60a5fa;font-size:.7rem">🎟 x${a.single_entries}</span>`
               : `<span class="badge" style="background:rgba(244,67,54,.15);color:#f87171;font-size:.7rem">⚠ Bez členstva</span>`));
     const statusCell = accTag + mTag;
+    // Účasť sa dokazuje, nepredpokladá: kto sa nezapísal QR kódom a koho tu
+    // neoznačíš, dostane pri potvrdení hodiny „neprišla". Doteraz tu checkbox
+    // vôbec nebol a potvrdenie zapísalo návštevu všetkým prihláseným.
+    const dochadzka = a.status==='attended'
+      ? `<span class="badge" style="background:rgba(76,175,80,.18);color:#4ade80;font-size:.68rem" title="Už má zapísanú návštevu">✓ bola tu${a.attendance_source==='qr'?' · QR':''}</span>`
+      : `<label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:.72rem;color:${a.attendance_status==='no_show'?'#f87171':'var(--muted,#9a9a9a)'}" title="Zaškrtni, ak tu bola. Kto ostane nezaškrtnutý, dostane pri potvrdení hodiny „neprišla".">
+           <input type="checkbox" class="att-present" value="${a.booking_id}" style="accent-color:#4ade80">${a.attendance_status==='no_show'?'🚫 neprišla':'bola tu'}
+         </label>`;
     const nameCell = a.user_id
       ? `<a href="/u/${a.user_id}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none"><strong>${escHtml(a.name)}</strong> <i class="bi bi-box-arrow-up-right" style="font-size:.6rem;opacity:.55"></i></a>`
       : `<strong>${escHtml(a.name)}</strong>`;
@@ -6844,7 +6852,7 @@ async function openAttClass(classId){
     const telDigits = (a.phone||'').replace(/[^\d+]/g,'');
     const phoneLink = a.phone && a.phone!=='—' ? `<a href="tel:${escHtml(telDigits)}" class="text-decoration-none" style="color:#60a5fa"><i class="bi bi-telephone-fill me-1"></i>${escHtml(a.phone)}</a>` : '';
     return `<tr>
-      <td class="ps-2">${nameCell}</td>
+      <td class="ps-2">${nameCell}<div style="margin-top:3px">${dochadzka}</div></td>
       <td onclick="event.stopPropagation()"><small class="text-muted">${emailLink}${emailLink&&phoneLink?'<br>':''}${phoneLink}</small></td>
       <td>${statusCell}</td>
       <td><span style="color:var(--gold);font-weight:700">${a.visit_count}</span></td>
@@ -6870,9 +6878,17 @@ function closeAttDetail(){
 }
 async function doConfirmSession(){
   if(!_attSelectedClass) return;
-  if(!confirm('Potvrdiť túto hodinu ako ABSOLVOVANÚ?\n\nVšetkým prihláseným sa pripíše návšteva + body a hodina sa započíta do výplaty trénera.')) return;
-  const r=await api('/api/attendance/confirm-session',{method:'POST',body:JSON.stringify({class_id:_attSelectedClass._id, date:_attDateStr()})});
-  if(r&&r.ok){ showToast(r.already?('Hodina už bola potvrdená ('+r.attended+' účastníkov)'):('Hodina potvrdená · '+r.credited+' nových ✓'),'success'); openAttClass(_attSelectedClass._id); }
+  // Zaškrtnuté = bola tu. Nezaškrtnutí dostanú „neprišla".
+  const present=[...document.querySelectorAll('#attAttendeesTable .att-present:checked')].map(c=>c.value);
+  const nezaskrtnutych=document.querySelectorAll('#attAttendeesTable .att-present').length - present.length;
+  const msg = present.length
+    ? `Potvrdiť hodinu?\n\n✅ ${present.length}× označená ako BOLA TU — pripíše sa návšteva + body.${nezaskrtnutych?`\n🚫 ${nezaskrtnutych}× dostane NEPRIŠLA.`:''}`
+    : (nezaskrtnutych
+      ? `Neoznačil/a si nikoho ako prítomného.\n\n🚫 Všetkých ${nezaskrtnutych} prihlásených dostane NEPRIŠLA — nepripíše sa im návšteva ani body.\n\nKto sa zapísal QR kódom, návštevu už má.\n\nPotvrdiť takto?`
+      : 'Potvrdiť túto hodinu ako odučenú?\n\nVšetci, čo tu boli, sa už zapísali QR kódom — nikomu ďalšiemu sa nič nepripíše.');
+  if(!confirm(msg)) return;
+  const r=await api('/api/attendance/confirm-session',{method:'POST',body:JSON.stringify({class_id:_attSelectedClass._id, date:_attDateStr(), present_ids:present})});
+  if(r&&r.ok){ showToast(r.already?('Hodina už bola potvrdená ('+r.attended+' účastníkov)'):('Hodina potvrdená · '+r.credited+'× bola tu'+(r.no_shows?' · '+r.no_shows+'× neprišla':'')),'success'); openAttClass(_attSelectedClass._id); }
   else showToast('Chyba: '+(r?.error||'?'),'error');
 }
 

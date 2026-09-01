@@ -117,7 +117,9 @@ const del = (jar, p) => call(jar, 'DELETE', p);
   r = await post('C', '/api/bookings', { class_id: cls._id, booking_date: nextDate });
   ok('po zvýšení kapacity C rezervuje', r.status === 200);
   // 2d. Potvrdenie účasti (check-in) → návšteva + body
-  r = await post('admin', '/api/attendance/confirm-session', { class_id: cls._id, date: nextDate });
+  // Účasť sa dokazuje — bez zoznamu prítomných by B dostala „neprišla".
+  const _zozn = (await g('admin', `/api/attendance/class/${cls._id}?date=${nextDate}`)).data || [];
+  r = await post('admin', '/api/attendance/confirm-session', { class_id: cls._id, date: nextDate, present_ids: _zozn.map(a => a.booking_id) });
   ok('check-in: potvrdenie hodiny trénerom', r.status === 200);
   meB = (await g('B', '/api/me')).data;
   ok('B: visit_count=1 po check-ine', meB.visit_count === 1, `visits=${meB.visit_count}`);

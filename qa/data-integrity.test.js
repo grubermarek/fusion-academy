@@ -84,7 +84,7 @@ async function reg(name, email) {
   // ── T6: online hodina nesmie tvoriť výplatu ani odučenú hodinu ──
   const online = (Array.isArray(classes) ? classes : []).find(c => c.category === 'Online');
   if (online) {
-    const conf = await req('/api/attendance/confirm-session', { method: 'POST', cookie: A, body: { class_id: online._id } });
+    const conf = await req('/api/attendance/confirm-session', { method: 'POST', cookie: A, body: { class_id: online._id, present_ids: [] } });
     if (conf.status === 200) find('T6', 'P1', 'výplaty', 'Online hodinu možno potvrdiť ako odučenú (ide do výplaty)', `→ 200`);
     else pass('T6: online hodina sa nedá potvrdiť do výplaty');
   }

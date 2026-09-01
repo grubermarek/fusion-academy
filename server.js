@@ -14017,7 +14017,10 @@ setInterval(async()=>{
       try{
         const bks=await q.find(db.bookings,{class_id:cls._id, booking_date:today(), status:'confirmed'});
         for(const b of bks){
-          await q.update(db.bookings,{_id:b._id},{$set:{status:'attended', attended_at:nowISO(), attended_by:'online_auto'}});
+          // Online hodina sa QR kódom checknúť nedá, preto účasť ostáva automatická.
+          // Stav dochádzky sa dopĺňa, nech zoznam ukáže, čím sa účasť dokázala.
+          await q.update(db.bookings,{_id:b._id},{$set:{status:'attended', attended_at:nowISO(), attended_by:'online_auto',
+            attendance_status:'attended', attendance_source:'online_auto'}});
           if(!b.is_child_booking && b.user_id){
             const bu=await q.one(db.users,{_id:b.user_id});
             if(bu){
@@ -16180,6 +16183,8 @@ app.get('/api/attendance/class/:classId', trainerAuth, async(req,res)=>{
         booking_date: b.booking_date,
         status: b.status,
         attendance_status: b.attendance_status||'pending',
+        // Čím sa účasť dokázala — zoznam odlíši QR zápis od ručného označenia.
+        attendance_source: b.attendance_source||null,
         is_child_booking: !!b.is_child_booking,
         child_name: b.child_name||null,
         booked_by_name: b.booked_by_name||null,
@@ -16550,13 +16555,27 @@ app.post('/api/attendance/confirm-session', trainerAuth, async(req,res)=>{
     if(cls.category==='Online') return res.status(400).json({error:'Online hodiny sa potvrdzujú automaticky pri štarte vysielania — účasť aj body dostanú klientky samé, tréner za ne výplatu nemá.'});
     const date=/^\d{4}-\d{2}-\d{2}$/.test(req.body.date||'') ? req.body.date : sessionDateFor(cls);
     const rows=await q.find(db.bookings,{class_id:cls._id, booking_date:date, status:'confirmed'});
-    // Tréner najprv odškrtne, kto NEPRIŠIEL — bez toho by sa každý prihlásený
-    // zapísal ako prítomný a no-show dáta by neexistovali (a body by dostal aj ten,
-    // kto tam nebol). absent_ids = _id rezervácií.
-    const absent=new Set((Array.isArray(req.body.absent_ids)?req.body.absent_ids:[]).map(String));
+    // Účasť sa dokazuje, nepredpokladá (Marek 1. 9.): kto sa nezapísal QR kódom
+    // a koho tréner ručne neoznačí, má NEPRIŠLA. Doteraz to bolo naopak —
+    // posielal sa zoznam neprítomných a všetci ostatní dostali návštevu aj body,
+    // takže potvrdenie hodiny bez označenia znamenalo „prišli všetci".
+    // present_ids = _id rezervácií, ktoré tréner ručne označil ako prítomné.
+    // Kto sa zapísal cez QR, tu už nie je — má status 'attended', takže do rows
+    // nespadne a návšteva sa mu nepripíše druhýkrát.
+    if(!Array.isArray(req.body.present_ids) && !Array.isArray(req.body.absent_ids))
+      return res.status(400).json({error:'Táto verzia stránky ešte posiela dochádzku po starom. Obnov stránku (Ctrl+F5) a potvrď hodinu znova.'});
+    // absent_ids drží pri živote staršie otvorené karty: prítomní = všetci okrem nich.
+    const present = Array.isArray(req.body.present_ids)
+      ? new Set(req.body.present_ids.map(String))
+      : new Set(rows.map(b=>String(b._id)).filter(id=>!req.body.absent_ids.map(String).includes(id)));
     let credited=0, noShows=0;
     for(const b of rows){
-      if(absent.has(String(b._id))){
+      if(!present.has(String(b._id))){
+        // No-show nechá status:'confirmed', takže tá istá rezervácia sa načíta
+        // aj pri ďalšom potvrdení hodiny. Bez tejto poistky by druhé kliknutie
+        // zvýšilo no_show_count znova a poslalo druhú notifikáciu — a odkedy sa
+        // účasť dokazuje, je opakované potvrdenie oveľa bežnejšie než predtým.
+        if(b.attendance_status==='no_show') continue;
         await q.update(db.bookings,{_id:b._id},{$set:{attendance_status:'no_show', attendance_source:'trainer',
           no_show_at:nowISO(), no_show_by:req.trainerUser._id}});
         noShows++;
@@ -16599,7 +16618,10 @@ app.post('/api/attendance/confirm-session', trainerAuth, async(req,res)=>{
         read:false, created_at:nowISO() }).catch(()=>{});
     }
     if(credited>0) await auditLog(req,'confirm_session',cls._id,{date},{credited, earn:sessionEarn},'');
-    res.json({ ok:true, credited, no_shows:noShows, already:credited===0, date, class_name:cls.name, instructor:si.instructor, attended:totalAttended, session_earn:sessionEarn });
+    // „already" znamená, že sa nič nezmenilo — nie že nikto neprišiel. Odkedy sa
+    // účasť dokazuje, je credited===0 bežný a správny výsledok (hodinu potvrdil
+    // tréner, ktorý nikoho neoznačil), a hlásiť ho ako „už potvrdené" by klamalo.
+    res.json({ ok:true, credited, no_shows:noShows, already:credited===0 && noShows===0, date, class_name:cls.name, instructor:si.instructor, attended:totalAttended, session_earn:sessionEarn });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 

@@ -1098,15 +1098,20 @@ async function loadTrainerInstructor(classId){
 }
 async function confirmTrainerSession(){
   if(!_currentClassId) return;
-  const absent=[...document.querySelectorAll('.att-absent:checked')].map(c=>c.value);
-  const msg = absent.length
-    ? `Potvrdiť hodinu?\n\n${absent.length}× označená ako NEPRIŠLA — tým sa nepripíše návšteva ani body.\nOstatným prihláseným sa pripíše návšteva + body a hodina sa započíta do tvojej výplaty.`
-    : 'Potvrdiť túto hodinu ako ABSOLVOVANÚ?\n\nVšetkým prihláseným sa pripíše návšteva + body a hodina sa započíta do tvojej výplaty.\n\nAk niekto neprišiel, najprv ho zaškrtni ako „neprišla".';
+  // Zaškrtnuté = bola tu. Nezaškrtnutí dostanú „neprišla" — vrátane tých,
+  // ktorých checkbox tréner vôbec nevidel (QR-checknutí ho nemajú, tí sú už attended).
+  const present=[...document.querySelectorAll('.att-present:checked')].map(c=>c.value);
+  const nezaskrtnutych=document.querySelectorAll('.att-present').length - present.length;
+  const msg = present.length
+    ? `Potvrdiť hodinu?\n\n✅ ${present.length}× označená ako BOLA TU — pripíše sa návšteva + body.${nezaskrtnutych?`\n🚫 ${nezaskrtnutych}× dostane NEPRIŠLA (nezaškrtnutá a nezapísala sa QR kódom).`:''}`
+    : (nezaskrtnutych
+      ? `Neoznačil/a si nikoho ako prítomného.\n\n🚫 Všetkých ${nezaskrtnutych} prihlásených dostane NEPRIŠLA — nepripíše sa im návšteva ani body.\n\nKto sa zapísal QR kódom, návštevu už má.\n\nPotvrdiť takto?`
+      : 'Potvrdiť túto hodinu ako odučenú?\n\nVšetci, čo tu boli, sa už zapísali QR kódom — nikomu ďalšiemu sa nič nepripíše.');
   if(!confirm(msg)) return;
-  const r=await api('/api/attendance/confirm-session',{method:'POST',body:{class_id:_currentClassId, absent_ids:absent}});
+  const r=await api('/api/attendance/confirm-session',{method:'POST',body:{class_id:_currentClassId, present_ids:present}});
   if(r&&r.ok){
-    if(r.already && !r.no_shows) toast(`ℹ️ Hodina už bola potvrdená (${r.attended} účastníkov) — nič sa nepripísalo znova.`);
-    else toast(`✅ Hodina potvrdená · ${r.credited} nových${r.no_shows?` · ${r.no_shows}× neprišla`:''} · zarobil/a si ${(r.session_earn||0).toFixed(2)} € 💰`);
+    if(r.already) toast(`ℹ️ Hodina už bola potvrdená (${r.attended} účastníkov) — nič sa nepripísalo znova.`);
+    else toast(`✅ Hodina potvrdená · ${r.credited}× bola tu${r.no_shows?` · ${r.no_shows}× neprišla`:''} · zarobil/a si ${(r.session_earn||0).toFixed(2)} € 💰`);
     loadAttendees(_currentClassId); loadSchedule&&loadSchedule();
     if(typeof loadTrainerEarnings==='function') loadTrainerEarnings();
   } else toast(r?.error||'Chyba', true);
@@ -1191,15 +1196,14 @@ function renderAttendees(list){
     // FUNNEL-009: prvýčka — tréner ju má privítať, previesť hodinou a po hodine osloviť
     if((b.visit_count||0)===0 && !b.is_child_booking) extraHtml += `<span class="att-badge" style="background:rgba(255,111,165,.18);color:#ff9ec6;border:1px solid rgba(255,111,165,.5);font-weight:800">🌟 PRVÁ HODINA — privítaj ju</span>`;
     if(b.is_child_booking) extraHtml += `<span class="att-badge" style="background:rgba(126,200,227,.15);color:#7ec8e3;border:1px solid rgba(126,200,227,.4)">👧 Dieťa${b.booked_by_name?' — booknuté z rodičovského účtu ('+esc(b.booked_by_name)+')':''}${String(b.access_method||'').startsWith('parent_')?' · kryté členstvom/vstupom rodiča':''}</span>`;
-    // Neprítomné treba odškrtnúť PRED potvrdením hodiny — inak by dostali návštevu
-    // aj body ľudia, ktorí neprišli, a no-show by sa nikdy nedal zmerať.
+    // Účasť sa dokazuje, nepredpokladá: kto sa nezapísal QR kódom a koho tu
+    // neoznačíš, dostane pri potvrdení hodiny NEPRIŠLA. Aj tá, ktorá už neprišla
+    // má checkbox — aby sa dala oprava spraviť rovno tu.
     statusHtml = b.status==='attended'
-      ? `<span class="att-badge" style="background:rgba(74,222,128,.18);color:#4ade80;border:1px solid rgba(74,222,128,.35)"><i class="bi bi-check-circle-fill"></i>Absolvoval</span>`
-      : (b.attendance_status==='no_show'
-        ? `<span class="att-badge" style="background:rgba(224,86,86,.15);color:#ff8a8a;border:1px solid rgba(224,86,86,.4)">🚫 Neprišla</span>`
-        : `<label class="att-badge" style="background:rgba(255,255,255,.05);color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;gap:6px" title="Zaškrtni, ak dnes neprišla — pri potvrdení hodiny sa jej nepripíše návšteva">
-             <input type="checkbox" class="att-absent" value="${b.booking_id}" style="accent-color:#e57373"> neprišla
-           </label>`);
+      ? `<span class="att-badge" style="background:rgba(74,222,128,.18);color:#4ade80;border:1px solid rgba(74,222,128,.35)"><i class="bi bi-check-circle-fill"></i>Bola tu${b.attendance_source==='qr'?' · QR':''}</span>`
+      : `<label class="att-badge" style="background:${b.attendance_status==='no_show'?'rgba(224,86,86,.15)':'rgba(255,255,255,.05)'};color:${b.attendance_status==='no_show'?'#ff8a8a':'var(--muted)'};border:1px solid ${b.attendance_status==='no_show'?'rgba(224,86,86,.4)':'transparent'};cursor:pointer;display:inline-flex;align-items:center;gap:6px" title="Zaškrtni, ak tu dnes bola. Kto ostane nezaškrtnutý, dostane pri potvrdení hodiny „neprišla".">
+             <input type="checkbox" class="att-present" value="${b.booking_id}" style="accent-color:#4ade80"> ${b.attendance_status==='no_show'?'🚫 neprišla — opraviť na „bola tu"':'bola tu'}
+           </label>`;
     // Čím je hodina uhradená (zo samotnej rezervácie).
     accHtml = acc
       ? `<span class="att-badge" style="background:${acc[1]}22;color:${acc[1]};border:1px solid ${acc[1]}66;font-weight:700">${acc[0]}</span>`

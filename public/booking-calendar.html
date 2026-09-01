@@ -241,9 +241,19 @@ async function cancelDay(classId, dateStr, name){
   else toast((r&&r.error)||'Chyba', true);
 }
 async function confirmSession(classId, dateStr){
-  if(!confirm('Potvrdiť túto hodinu ako ABSOLVOVANÚ?\n\nVšetkým prihláseným sa pripíše návšteva + body a hodina sa započíta do tvojej výplaty.')) return;
-  const r=await api('/api/attendance/confirm-session',{method:'POST',body:{class_id:classId, date:dateStr}});
-  if(r&&r.ok){ toast(r.already?('ℹ️ Hodina už bola potvrdená ('+r.attended+' účastníkov)'):('✅ Hodina potvrdená · '+r.credited+' nových návštev')); renderDay(); } else toast(r?.error||'Chyba', true);
+  // Účasť sa dokazuje, nepredpokladá: kto sa nezapísal QR kódom, dostane
+  // „neprišla". Tu sa nedá zaškrtávať, tak aspoň ukážeme mená — nech tréner
+  // vie, koho tým označí, a mohol to opraviť v trénerskom paneli.
+  const list=await api(`/api/attendance/class/${classId}?date=${dateStr}`)||[];
+  const boli=list.filter(a=>a.status==='attended');
+  const nebudu=list.filter(a=>a.status!=='attended');
+  const mena=nebudu.slice(0,8).map(a=>'• '+a.name).join('\n')+(nebudu.length>8?`\n• …a ďalších ${nebudu.length-8}`:'');
+  const msg = nebudu.length
+    ? `Potvrdiť hodinu ako odučenú?\n\n✅ ${boli.length}× zapísaná (QR kód alebo ručne)\n🚫 ${nebudu.length}× dostane NEPRIŠLA:\n${mena}\n\nAk tu niekto z nich bol, označ ho najprv v trénerskom paneli.\n\nPotvrdiť takto?`
+    : `Potvrdiť hodinu ako odučenú?\n\n✅ Všetkých ${boli.length} zapísaných má návštevu — nikomu ďalšiemu sa nič nepripíše.`;
+  if(!confirm(msg)) return;
+  const r=await api('/api/attendance/confirm-session',{method:'POST',body:{class_id:classId, date:dateStr, present_ids:[]}});
+  if(r&&r.ok){ toast(r.already?('ℹ️ Hodina už bola potvrdená ('+r.attended+' účastníkov)'):('✅ Hodina potvrdená · '+r.credited+'× bola tu'+(r.no_shows?' · '+r.no_shows+'× neprišla':''))); renderDay(); } else toast(r?.error||'Chyba', true);
 }
 async function claimSession(classId, dateStr){
   const r=await api('/api/attendance/session-instructor',{method:'POST',body:{class_id:classId, date:dateStr}});
