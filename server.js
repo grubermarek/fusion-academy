@@ -1102,7 +1102,7 @@ async function seedData() {
   if(!(await q.one(db.settings,{key:'party_invite_msgs_v1'}))){
     const marek=await q.one(db.users,{is_admin:true, name:/marek/i}) || await q.one(db.users,{is_admin:true});
     if(marek){
-      const txt='🌴 LATIN TROPICAL PARTY & MASTERCLASS — piatok 5. 9., Detva! Oslavujeme 1. výročie tanečnej školy 🎉\n\n'
+      const txt='🌴 LATIN TROPICAL PARTY & MASTERCLASS — sobota 5. 9., Detva! Oslavujeme 1. výročie tanečnej školy 🎉\n\n'
         +'💃 FULL EXPERIENCE od 18:15: masterclass Marek Gruber & Ivan Ligárt, Zumba + CIRCL Mobility, jedlo a welcome drink — a potom celá Latin Tropical Party.\n'
         +'🍹 Vstup len na latino párty od 21:00.\n\n'
         +'🎟️ Vstupenky: https://app.fusionacademy.sk/event/latin-tropical-2026?utm_source=komunita&utm_medium=chat&utm_campaign=fa-masterclass-01\n'
@@ -3637,7 +3637,7 @@ app.post('/api/admin/qa/run-event-mail/:wave', adminAuth, async(req,res)=>{
   try{
     const fn = { urgency:eventUrgencyTick, lastday:eventLastDayTick,
                  party:eventPartyPushTick, reminder:eventReminderTick,
-                 lastcall:eventLastCallTick, challenge:referralChallengeTick, september:septemberGreetingTick }[req.params.wave] || eventLeadTick;
+                 lastcall:eventLastCallTick, challenge:referralChallengeTick, september:septemberGreetingTick, oprava:eventOpravaTick }[req.params.wave] || eventLeadTick;
     res.json({ok:true, ...(await fn(true))});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -4719,7 +4719,7 @@ async function eventLeadTick(qaMode){
         +'<p>Raz si sa u nás zaujímala o tanec — a <b>5. septembra</b> máme najlepší dôvod, aby si nás spoznala naživo. Oslavujeme <b>1. výročie</b> tanečnej školy v Detve. 🌴</p>'
         +'<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">🍹 <b style="color:#C9A84C">Vstup na párty: 5 €</b> v predpredaji (na mieste 10 €), welcome drink v cene. Nemusíš vedieť tancovať ani nikoho poznať — príď sa pozrieť, aká je u nás atmosféra.</p>'
         +'<p>Ak si chceš aj zatancovať: pred párty od <b>18:15</b> je masterclass s <b>Marekom Gruberom a Ivanom Ligártom</b>, Zumba + CIRCL Mobility, jedlo a welcome drink — Full Experience <b>55 €</b> (kapacita 30 miest).</p>'
-        +'<p>📍 Fusion Club Detva, Záhradná 7 · piatok 5. 9. 2026 od 21:00</p>'
+        +'<p>📍 Fusion Club Detva, Záhradná 7 · sobota 5. 9. 2026 od 21:00</p>'
         +'<p>Budeme sa tešiť!<br>Tím Fusion Academy</p>',
         '🎟️ Chcem vstupenku', APP_URL+'/event/latin-tropical-2026?utm_source=email&utm_medium=email&utm_campaign=fa-masterclass-01'),
         {priority:10, template:'event_campaign_leads'}).catch(()=>false);
@@ -4778,7 +4778,7 @@ async function eventUrgencyTick(qaMode){
         : '<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">🎟️ <b style="color:#C9A84C">Predpredaj 55 €</b> končí v nedeľu <b>31. 8.</b> — potom platí 65 €.</p>';
       const ok=await sendMail(u.email, EV_URG_SUBJ,
         emailTemplate('Ahoj '+first+'! ⏳',
-        '<p>V piatok <b>5. septembra</b> oslavujeme rok tanečnej školy — a predpredaj sa nám chýli ku koncu.</p>'
+        '<p>V sobotu <b>5. septembra</b> oslavujeme rok tanečnej školy — a predpredaj sa nám chýli ku koncu.</p>'
         +cena
         +'<p>💃 Masterclass s <b>Marekom Gruberom a Ivanom Ligártom</b> má <b>30 miest</b>, voľných je ešte <b>'+volne+'</b>. Po naplnení sa dokúpiť nedá.</p>'
         +'<p>🍹 Nechceš masterclass, len tancovať? Vstup na párty od 21:00 za <b>5 €</b> (na mieste 10 €).</p>'
@@ -4843,7 +4843,7 @@ function evLastCallHtml(first, member, volne, utm){
     +'<p>🍸 Nechceš masterclass, len tancovať? Vstup na párty od 21:00 stojí <b>5 €</b> (na mieste 10 €) '
       +'a čas na ňu máš do piatku.</p>'
     +'<p>🪑 Rezervácia stola pre partiu: <b>0904 31 51 51</b> — Beáta Gruber Buňová</p>'
-    +'<p>📍 Fusion Club Detva, Záhradná 7 · piatok 5. 9.</p>'
+    +'<p>📍 Fusion Club Detva, Záhradná 7 · sobota 5. 9.</p>'
     +'<p>Vidíme sa na parkete!<br>Tím Fusion Academy</p>',
     '🎟️ Beriem to za dnešnú cenu', odkaz);
 }
@@ -5135,7 +5135,57 @@ async function brevoOtvoriliDnes(qaMode, predmety){
 // Po 31. 8. už masterclass nemá cenovú výhodu, ale párty za 5 € v predpredaji
 // beží až do piatku. Cielime na ľudí, ktorí niektorý event mail OTVORILI —
 // záujem prejavili, len neklikli. Kto nič neotvoril, ďalší mail nedostane.
-const EV_PARTY_SUBJ = '🍹 V piatok tancujeme — vstup 5 € do dňa akcie';
+const EV_PARTY_SUBJ = '🍹 V sobotu tancujeme — vstup 5 € do dňa akcie';
+// Pôvodné znenie, ktoré 2. 9. odišlo 280 ľuďom s nesprávnym dňom. Drží sa tu,
+// aby sa im tá istá pozvánka neposlala znova a aby vedeli, komu ide oprava.
+const EV_PARTY_SUBJ_STARY = '🍹 V piatok tancujeme — vstup 5 € do dňa akcie';
+const EV_OPRAVA_SUBJ = 'Oprava: Latin Tropical Party je v SOBOTU 5. 9., nie v piatok 🙏';
+// Chybu sme spravili my, tak ju sami aj opravíme — každému, komu zlý mail odišiel.
+async function eventOpravaTick(qaMode){
+  try{
+    if(!process.env.BREVO_API_KEY) return;
+    const t=today();
+    if(!(qaMode && process.env.QA_EVENT_WINDOW==='1') && (t<'2026-09-02' || t>'2026-09-05')) return;
+    if(await q.one(db.settings,{key:'event_oprava_den_done'})) return;
+    if(!(await mailBudgetOk(2))) return;      // oprava má prednosť pred marketingom
+    const zle=[...new Set((await q.find(db.mail_log,{subject:EV_PARTY_SUBJ_STARY}))
+      .map(m=>String(m.to).toLowerCase()))];
+    const uz=new Set((await q.find(db.mail_log,{subject:EV_OPRAVA_SUBJ})).map(m=>String(m.to).toLowerCase()));
+    const komu=zle.filter(e=>!uz.has(e));
+    if(!komu.length){
+      await q.insert(db.settings,{key:'event_oprava_den_done', value:true, at:nowISO()});
+      console.log('🙏 OPRAVA DŇA: hotovo');
+      return {selected:[], sent:0, remaining:0};
+    }
+    let n=0;
+    for(const email of komu){
+      if(n>=120) break;
+      if(!(await mailBudgetOk(2))) break;
+      const u=await q.one(db.users,{email});
+      const meno=u ? (String(u.name||'').split(' ')[0]||'') : '';
+      const ok=await sendMail(email, EV_OPRAVA_SUBJ,
+        emailTemplate((meno?'Ahoj '+meno+', ':'')+'pomýlili sme sa v dni 🙏',
+        '<p>V dnešnom maili sme napísali, že Latin Tropical Party je <b>v piatok</b>. Nie je — a je to naša chyba, prepáč.</p>'
+        +'<div style="background:rgba(201,168,76,.12);border-radius:12px;padding:18px;text-align:center;margin:18px 0">'
+          +'<div style="font-size:.75rem;letter-spacing:.14em;text-transform:uppercase;color:#9b9282;margin-bottom:6px">Správny termín</div>'
+          +'<div style="font-size:1.35rem;font-weight:800;color:#C9A84C">SOBOTA 5. septembra 2026</div>'
+          +'<div style="font-size:.95rem;margin-top:6px">od 21:00 · Fusion Club Detva, Záhradná 7</div>'
+        +'</div>'
+        +'<p>Všetko ostatné platí, ako sme písali: <b>Latin Tropical Party</b> k prvému výročiu tanečnej školy, '
+        +'vstup <b>5 €</b> v predpredaji (na mieste 10 €) a welcome drink je v cene.</p>'
+        +'<p>Ak si si kvôli nám prepísal/a piatok do kalendára, ospravedlňujeme sa za zmätok. '
+        +'Sobota je na tancovanie aj tak lepšia. 💛</p>'
+        +'<p>Tím Fusion Academy</p>',
+        '🎟️ Kúpiť lístky', APP_URL+'/event/latin-tropical-2026?utm_source=email&utm_medium=email&utm_campaign=fa-oprava-dna'),
+        {priority:2, template:'event_oprava_dna'}).catch(()=>false);
+      if(ok) n++;
+      await new Promise(r=>setTimeout(r,350));
+    }
+    if(n) console.log('🙏 OPRAVA DŇA: odoslaných '+n+' (zostáva '+(komu.length-n)+')');
+    return {selected:komu.slice(0,120), sent:n, remaining:komu.length};
+  }catch(e){ console.error('oprava dna:', e.message); return {error:e.message}; }
+}
+setInterval(eventOpravaTick, 6*60*1000);
 async function eventPartyPushTick(qaMode){
   try{
     if(!process.env.BREVO_API_KEY) return;
@@ -5149,7 +5199,11 @@ async function eventPartyPushTick(qaMode){
     const isTestU=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'')||u.lead_source==='test'||u.is_test;
     const buyers=new Set((await q.find(db.ev_orders,{event_slug:'latin-tropical-2026', status:'paid'}))
       .map(o=>String(o.buyer_email||'').toLowerCase()));
-    const already=new Set((await q.find(db.mail_log,{subject:EV_PARTY_SUBJ})).map(m=>String(m.to).toLowerCase()));
+    // Predmet sa 2. 9. opravil („piatok" → „sobota"), takže sa musí počítať aj
+    // ten pôvodný — inak by 280 ľudí dostalo tú istú pozvánku druhýkrát.
+    const already=new Set((await q.find(db.mail_log,{}))
+      .filter(m=>m.subject===EV_PARTY_SUBJ || m.subject===EV_PARTY_SUBJ_STARY)
+      .map(m=>String(m.to).toLowerCase()));
     // kto niektorý event mail otvoril — záujem je preukázaný, nie odhadnutý
     const otvorili=new Set((await q.find(db.mail_log,{}))
       .filter(m=>/event_campaign/.test(m.template||'') && m.opened_at)
@@ -5178,7 +5232,7 @@ async function eventPartyPushTick(qaMode){
       const ok=await sendMail(u.email, EV_PARTY_SUBJ,
         emailTemplate('Ahoj '+first+'! 🍹',
         '<p>Vidím, že ti naša pozvánka neušla — tak už len krátko a prakticky.</p>'
-        +'<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">🌴 <b style="color:#C9A84C">Latin Tropical Party</b> · piatok <b>5. septembra</b>, od 21:00<br>Vstup <b>5 €</b> v predpredaji, na mieste 10 €. Welcome drink je v cene.</p>'
+        +'<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">🌴 <b style="color:#C9A84C">Latin Tropical Party</b> · sobota <b>5. septembra</b>, od 21:00<br>Vstup <b>5 €</b> v predpredaji, na mieste 10 €. Welcome drink je v cene.</p>'
         +'<p>Nemusíš vedieť tancovať ani prísť v páre — príď sa pozrieť, aká je atmosféra. Slávime prvý rok tanečnej školy v Detve.</p>'
         +'<p>🪑 Chceš stôl pre partiu? Zavolaj Beátke: <b>0904 31 51 51</b></p>'
         +'<p>📍 Fusion Club Detva, Záhradná 7</p>'
@@ -5243,7 +5297,7 @@ async function eventReminderTick(qaMode){
           +'⏰ <b style="color:#C9A84C">Párty sa otvára o 21:00</b> · welcome drink máš v cene vstupenky.</p>';
       const ok=await sendMail(p.email, EV_REMIND_SUBJ,
         emailTemplate('Ahoj '+first+'! 🌴',
-        '<p>Zajtra je ten deň — <b>piatok 5. septembra</b> slávime prvý rok tanečnej školy.</p>'
+        '<p>Zajtra je ten deň — <b>sobota 5. septembra</b> slávime prvý rok tanečnej školy.</p>'
         +kedy
         +'<p>📍 <b>Fusion Club Detva</b>, Záhradná 7, Detva</p>'
         +'<p>👟 Vezmi si obuv, v ktorej sa ti dobre tancuje — parket býva rušný.</p>'
