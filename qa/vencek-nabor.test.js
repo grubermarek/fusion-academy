@@ -487,6 +487,46 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('žiaci o zmene rozvrhu dostali notifikáciu', notifR.length >= 1,
       JSON.stringify(notifR.map(n => n.title)).slice(0, 90));
 
+    console.log('\n9f) Detail lekcie, učiteľský zoznam a miesto venčeka:');
+    // Marek 2. 9.: „ku každej lekcii im aj mne daj možnosť rozkliknúť detail —
+    // kto chýbal a čo sa učilo." Zapísali sme lekciu 1 (Waltz + Zuzka chýbala).
+    await j('/api/admin/venceky/lesson-log', { method: 'POST',
+      body: { class_id: tr.d.class._id, lesson: 1, dances: ['Waltz'], note: 'základné kroky' } }, adm);
+    await new Promise(r => setTimeout(r, 500));
+    const ziakD = (await j('/api/vencek/mine', {}, ziakC)).d;
+    const l1 = ziakD && Array.isArray(ziakD.lessons) ? ziakD.lessons.find(l => l.lesson === 1) : null;
+    ok('žiak dostane detail lekcie', !!l1, JSON.stringify(ziakD && Object.keys(ziakD)));
+    ok('vidí, čo sa učilo', l1 && l1.dances.includes('Waltz') && l1.note === 'základné kroky', JSON.stringify(l1));
+    ok('a kto chýbal — menom', l1 && l1.recorded && Array.isArray(l1.absent) && l1.absent.length === 1,
+      JSON.stringify(l1 && l1.absent));
+    ok('a že chýbal práve on', l1 && l1.me_absent === true, String(l1 && l1.me_absent));
+    ok('ale mená spolužiakov s platbami nie', !ziakD.students, JSON.stringify(ziakD.students || null));
+
+    // Učiteľ vidí menný zoznam aj s tým, kto zaplatil (Marek 2. 9.).
+    await j('/api/admin/venceky/member-role', { method: 'POST',
+      body: { user_id: (uu || {})._id, class_id: tr.d.class._id, role: 'teacher' } }, adm);
+    const ucitelC = {};
+    await j('/api/login', { method: 'POST', body: { email: 'qa.ven.ucitel@qa-biz.local', password: 'Heslo123!' } }, ucitelC);
+    const ucD = (await j('/api/vencek/mine', {}, ucitelC)).d;
+    ok('učiteľ dostane zoznam žiakov', ucD && ucD.role === 'teacher' && Array.isArray(ucD.students) && ucD.students.length >= 1,
+      JSON.stringify(ucD && { role: ucD.role, n: (ucD.students || []).length }));
+    const zuz = ucD && (ucD.students || []).find(s => /Zuz/.test(s.name));
+    ok('pri každom vidí, či zaplatil', zuz && zuz.paid === true, JSON.stringify(zuz));
+    ok('aj koľkokrát chýbal', zuz && zuz.absences === 1, String(zuz && zuz.absences));
+    ok('a detail lekcií má tiež', Array.isArray(ucD.lessons) && ucD.lessons.some(l => l.recorded));
+
+    // Miesto venčeka — dátum sa dal zadať, miesto nie (Marek: „Dom kultúry v Halíči").
+    await j('/api/admin/venceky/progress', { method: 'POST',
+      body: { class_id: tr.d.class._id, event_date: '2026-12-12', event_venue: 'Dom kultúry Halíč' } }, adm);
+    await new Promise(r => setTimeout(r, 400));
+    const infoV = (await j('/api/vencek/info?code=' + kod, {}, {})).d;
+    ok('miesto venčeka sa uloží a vidí ho aj ten, kto sa len registruje',
+      infoV && infoV.event_venue === 'Dom kultúry Halíč' && infoV.event_date === '2026-12-12',
+      JSON.stringify(infoV && [infoV.event_date, infoV.event_venue]));
+    const ziakV = (await j('/api/vencek/mine', {}, ziakC)).d;
+    ok('aj žiak v appke', ziakV && ziakV.class && ziakV.class.event_venue === 'Dom kultúry Halíč',
+      JSON.stringify(ziakV && ziakV.class && ziakV.class.event_venue));
+
     console.log('\n10) Čo žiak NESMIE vidieť:');
     const z = {};
     await j('/api/login', { method: 'POST', body: { email: 'qa.ven.ziak@qa-biz.local', password: 'Heslo123!' } }, z);

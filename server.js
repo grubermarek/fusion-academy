@@ -19921,6 +19921,22 @@ const VENCEK_LEVELS=['nezačaté','základy','poznáme kroky','vieme zatancovať
 // Jednu lekciu sa dá presunúť na iný čas alebo zrušiť — zrušený týždeň sa
 // preskočí a celý kurz sa tým posunie o týždeň dozadu, presne ako v realite.
 // lesson_changes: [{week:2, cancelled:true} | {week:4, at:'2026-10-14T16:00'}]
+// Detail každej lekcie — kto chýbal a čo sa učilo (Marek 2. 9.: „im aj mne").
+// Venček je školská trieda, dochádzku spolužiakov v nej každý vidí aj tak.
+// uid je null pri admin náhľade — vtedy sa „ja som chýbal" nevyhodnocuje.
+function vencekLekcie(c, clenovia, recs, uid){
+  const menoPodla=Object.fromEntries(clenovia.map(m=>[m._id, m.nickname||m.name]));
+  const logPodla=Object.fromEntries((c.lesson_log||[]).map(z=>[+z.lesson, z]));
+  const attPodla=Object.fromEntries(recs.map(r=>[+r.lesson_no, r]));
+  return Array.from({length:c.lessons_total||13},(_,i)=>i+1).map(n=>{
+    const z=logPodla[n], a=attPodla[n];
+    const chybali=a ? (Array.isArray(a.absent) ? a.absent
+      : clenovia.filter(m=>m.venceky_role==='student' && !(a.present||[]).includes(m._id)).map(m=>m._id)) : null;
+    return { lesson:n, dances:(z&&z.dances)||[], note:(z&&z.note)||'',
+      recorded: !!a, absent: chybali ? chybali.map(id=>menoPodla[id]||'—') : null,
+      me_absent: (chybali && uid) ? chybali.includes(uid) : null };
+  });
+}
 function vencekTerminy(c){
   const out=[];
   if(!c || !c.start_at) return out;
@@ -20255,6 +20271,9 @@ app.post('/api/admin/venceky/progress', trainerAuth, async(req,res)=>{
     if(req.body.lessons_done!=null) set.lessons_done=Math.max(0,Math.min(+c.lessons_total||13,+req.body.lessons_done||0));
     if(req.body.note!=null) set.note=String(req.body.note).slice(0,300);
     if(req.body.event_date!=null) set.event_date=String(req.body.event_date).slice(0,20);
+    // Kde sa venček koná. Dátum sa dal zadať, miesto nie — a to je prvé, na čo
+    // sa rodičia spýtajú.
+    if(req.body.event_venue!=null) set.event_venue=String(req.body.event_venue).slice(0,120);
     // Kedy sa hodiny konajú. Termíny sa dohadujú so školou osobne (Marek 2. 9.),
     // takže je to voľný text — nie výber zo slotov, ktoré nikto nepoužíva.
     if(req.body.schedule!=null) set.schedule=String(req.body.schedule).slice(0,120);
@@ -20557,7 +20576,7 @@ app.get('/api/vencek/info', rlPublic, async(req,res)=>{
     res.json({ok:true, name:c.name, school:(s&&s.name)||'', city:(s&&s.city)||'', year:c.year||'',
       roles:(Array.isArray(c.roles)&&c.roles.length)?c.roles:VENCEK_ROLES,
       price:+c.price||49.90, lessons_total:c.lessons_total||13, lessons_before:c.lessons_before||10,
-      lecturer:c.lecturer||'', event_date:c.event_date||'', schedule:c.schedule||'',
+      lecturer:c.lecturer||'', event_date:c.event_date||'', event_venue:c.event_venue||'', schedule:c.schedule||'',
       registered:(await q.find(db.users,{venceky_class_id:c._id})).length,
       dances:(c.dances||[]).map(d=>d.name)});
   }catch(e){ res.status(500).json({error:e.message}); }
@@ -20735,7 +20754,7 @@ app.get('/api/vencek/mine', auth, async(req,res)=>{
       return { id:c._id, name:c.name, year:c.year, progress:vencekPct(c.dances),
         dances:(c.dances||[]).map(d=>({name:d.name, level:d.level, level_label:VENCEK_LEVELS[d.level||0], pct:Math.round((d.level||0)/4*100)})),
         lessons_done:c.lessons_done||0, lessons_total:c.lessons_total||13, lessons_before:c.lessons_before||10,
-        event_date:c.event_date||null, schedule:c.schedule||'', note:c.note||'',
+        event_date:c.event_date||null, event_venue:c.event_venue||'', schedule:c.schedule||'', note:c.note||'',
         start_at:c.start_at||null, terminy:vencekTerminy(c), members:members.length,
         completed:!!c.completed,
         paid_count:new Set(pays.map(p=>p.user_id)).size,
@@ -20751,8 +20770,11 @@ app.get('/api/vencek/mine', auth, async(req,res)=>{
       const c=await q.one(db.venceky_classes,{_id:String(req.query.class_id)});
       if(!c) return res.status(404).json({error:'Skupina nenájdená'});
       const s=await q.one(db.venceky_schools,{_id:c.school_id});
+      const clen=await q.find(db.users,{venceky_class_id:c._id});
+      const recs=await q.find(db.venceky_attendance,{class_id:c._id});
       return res.json({ok:true, role:'student', preview:true,
         school:(s&&s.name)||'', class:await classView(c), price:c.price||49.90,
+        lessons:vencekLekcie(c, clen, recs, null),
         my_payment:null, my_attendance:null});
     }
     if(role==='director' || role==='admin'){
@@ -20771,7 +20793,20 @@ app.get('/api/vencek/mine', auth, async(req,res)=>{
     const view=await classView(c);
     const myPay=await q.one(db.venceky_payments,{class_id:c._id, user_id:u._id});
     const myRecs=await q.find(db.venceky_attendance,{class_id:c._id});
-    res.json({ok:true, role, school:school?.name||'', class:view,
+    const clenovia=await q.find(db.users,{venceky_class_id:c._id});
+    const lekcie=vencekLekcie(c, clenovia, myRecs, u._id);
+    // Učiteľ vidí, kto zaplatil a kto nie (Marek 2. 9.) — žiak nie.
+    let ziaci;
+    if(role==='teacher'){
+      const pays=await q.find(db.venceky_payments,{class_id:c._id});
+      const zaplatil=new Set(pays.map(p=>p.user_id));
+      ziaci=clenovia.filter(m=>m.venceky_role==='student').map(m=>({
+        id:m._id, name:m.name, paid:zaplatil.has(m._id),
+        absences: myRecs.filter(r=>Array.isArray(r.absent) ? r.absent.includes(m._id) : (r.present&&!r.present.includes(m._id))).length }))
+        .sort((a,b)=>a.name.localeCompare(b.name,'sk'));
+    }
+    res.json({ok:true, role, school:school?.name||'', class:view, lessons:lekcie,
+      ...(ziaci?{students:ziaci}:{}),
       is_parent: role==='parent'||undefined, child_name: role==='parent'?(u.vencek_child_name||''):undefined,
       my_payment: myPay?{amount:myPay.amount, paid_at:myPay.paid_at, method:myPay.method}:null,
       my_attendance: (role!=='parent'&&myRecs.length)?{attended:myRecs.filter(r=>(r.present||[]).includes(u._id)).length, recorded:myRecs.length}:null,

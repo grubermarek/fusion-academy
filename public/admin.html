@@ -166,6 +166,11 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 .vdet-clovek input{width:17px;height:17px;accent-color:#e57373;margin:0}
 .vdet-clovek:has(input:checked){background:rgba(224,86,86,.14);border-color:rgba(224,86,86,.5)}
 .vdet-clovek:has(input:checked) span{color:#ff9b9b;text-decoration:line-through}
+/* riadok dochádzky: meno + stav platby + hotovosť na jednom mieste */
+.vdet-riadok{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.vdet-zapl{font-size:.7rem;padding:3px 9px;border-radius:999px;font-weight:700}
+.vdet-zapl.ok{background:rgba(139,195,74,.16);color:#aed581}
+.vdet-zapl.ne{background:rgba(255,152,0,.16);color:#ffcc80}
 
 /* denník lekcií — jeden riadok na lekciu */
 .vl-riadok{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;
@@ -4175,7 +4180,15 @@ async function vClassDetail(cid, tab){
        +'<span id="vAttInfo" class="small text-muted"></span>'
      +'</div>'
      +'<div id="vAttList" class="vdet-mena">'
-       +(d.members.map(mm=>'<label class="vdet-clovek"><input type="checkbox" class="vAttCb" value="'+mm.id+'"><span>'+escHtml(mm.name)+'</span></label>').join('')
+       // Pri mene svieti, či zaplatil — a kto nie, má rovno tlačidlo na hotovosť.
+       // Peniaze sa vyberajú na hodine, tak nech sa zapíšu tam, kde sa píše dochádzka.
+       +(d.members.map(mm=>'<div class="vdet-riadok">'
+           +'<label class="vdet-clovek"><input type="checkbox" class="vAttCb" value="'+mm.id+'"><span>'+escHtml(mm.name)+'</span></label>'
+           +(mm.paid
+             ? '<span class="vdet-zapl ok" title="'+vEur(mm.amount)+' · '+(mm.method==='transfer'?'prevod':'hotovosť')+'">✓ zaplatené</span>'
+             : '<span class="vdet-zapl ne">nezaplatené</span>'
+               +'<button class="btn btn-sm btn-brand" style="font-size:.72rem;padding:2px 9px" onclick="event.stopPropagation();vMarkPaid(\''+c._id+'\',\''+mm.id+'\',\'cash\')" title="Zapísať, že si od nej/neho vzal hotovosť">💶 vzal som hotovosť</button>')
+         +'</div>').join('')
          ||'<span class="text-muted small">Zatiaľ žiadni žiaci — pošli im QR na registráciu.</span>')
      +'</div>'
    +'</div>'
@@ -4234,6 +4247,7 @@ async function vClassDetail(cid, tab){
      +'<h6 class="fw-bold">📍 Miesto, večer a odkaz skupine</h6>'
      +'<div class="d-flex gap-2 mb-3 flex-wrap">'
        +'<input id="vEvent" type="date" value="'+(c.event_date||'')+'" class="form-control form-control-sm bg-dark text-light" style="max-width:170px" title="dátum venčekového večera">'
+       +'<input id="vEventVenue" value="'+(c.event_venue||'').replace(/"/g,'&quot;')+'" placeholder="miesto venčeka (napr. Dom kultúry Halíč)" class="form-control form-control-sm bg-dark text-light" style="max-width:260px" title="Kde bude venčekový večer — uvidia to žiaci aj rodičia">'
        +'<input id="vSchedule" value="'+(c.schedule||'').replace(/"/g,'&quot;')+'" placeholder="miesto (napr. telocvičňa školy)" class="form-control form-control-sm bg-dark text-light" style="max-width:240px">'
        +'<input id="vNote" value="'+(c.note||'').replace(/"/g,'&quot;')+'" placeholder="odkaz pre skupinu (napr. dokončíme tango)" class="form-control form-control-sm bg-dark text-light" style="flex:1;min-width:200px">'
        +'<button class="btn btn-sm btn-brand" onclick="vSaveProgress(\''+c._id+'\')">💾 Uložiť</button>'
@@ -4302,6 +4316,7 @@ async function vMarkPaid(cid,uid,method){
 async function vSaveProgress(cid){
   await vApi('progress',{class_id:cid,
     event_date:document.getElementById('vEvent').value,
+    event_venue:(document.getElementById('vEventVenue')||{}).value||'',
     schedule:document.getElementById('vSchedule').value,
     note:document.getElementById('vNote').value});
   showToast('Uložené ✅','success');
