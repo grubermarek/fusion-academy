@@ -19929,12 +19929,17 @@ function vencekTerminy(c){
   const zmeny={};
   (Array.isArray(c.lesson_changes)?c.lesson_changes:[]).forEach(z=>{ if(z && z.week!=null) zmeny[+z.week]=z; });
   const spolu=+c.lessons_total||13, doVencka=+c.lessons_before||10;
+  // Týždne sa pripočítavajú cez setDate, nie cez milisekundy. Pri prechode na
+  // zimný čas (25. 10.) má týždeň 169 hodín, nie 168 — cez ms by sa lekcie od
+  // konca októbra posunuli o hodinu skôr a nikto by si toho nevšimol, kým by
+  // deti neprišli o hodinu neskôr.
+  const poTyzdnoch=(n)=>{ const d=new Date(zaciatok); d.setDate(d.getDate()+7*n); return d; };
   let tyzden=0, lekcia=1;
   // Strop 200 týždňov, nech sa z toho nikdy nestane nekonečná slučka.
   while(lekcia<=spolu && tyzden<200){
     const z=zmeny[tyzden]||{};
-    if(z.cancelled){ out.push({week:tyzden, cancelled:true, at:new Date(zaciatok.getTime()+tyzden*604800000).toISOString(), reason:z.reason||''}); tyzden++; continue; }
-    const kedy=z.at ? new Date(z.at) : new Date(zaciatok.getTime()+tyzden*604800000);
+    if(z.cancelled){ out.push({week:tyzden, cancelled:true, at:poTyzdnoch(tyzden).toISOString(), reason:z.reason||''}); tyzden++; continue; }
+    const kedy=z.at ? new Date(z.at) : poTyzdnoch(tyzden);
     out.push({ week:tyzden, lesson:lekcia, at:isNaN(kedy)?null:kedy.toISOString(),
       moved:!!z.at, bonus:lekcia>doVencka });
     lekcia++; tyzden++;

@@ -111,6 +111,20 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
       T.slice(-3).every(x => x.bonus) && !T[9].bonus,
       JSON.stringify(T.map(x => x.bonus ? 'B' : '.').join('')));
 
+    // Pri prechode na zimný čas má týždeň 169 hodín. Keby sa termíny počítali
+    // cez milisekundy, lekcie od konca októbra by vyšli o hodinu skôr.
+    const cezZimnyCas = await j('/api/admin/venceky/progress', { method: 'POST',
+      body: { class_id: sk.d.class._id, start_at: '2026-09-10T13:00:00' } }, adm);
+    ok('rozvrh cez zmenu času sa uloží', cezZimnyCas.status === 200);
+    await new Promise(r => setTimeout(r, 400));
+    const TZ = ((await j('/api/admin/venceky/class/' + sk.d.class._id, {}, adm)).d.class.terminy) || [];
+    const hodiny = TZ.filter(x => x.at).map(x => new Date(x.at).getHours());
+    ok('všetky lekcie držia rovnaký čas aj po zmene na zimný čas',
+      new Set(hodiny).size === 1, 'hodiny: ' + [...new Set(hodiny)].join(', '));
+    // vráť pôvodný začiatok, nech ďalšie kontroly sedia
+    await j('/api/admin/venceky/progress', { method: 'POST', body: { class_id: sk.d.class._id, start_at: START } }, adm);
+    await new Promise(r => setTimeout(r, 300));
+
     console.log('\n1e) Presun a zrušenie jednej lekcie:');
     const presun = await j('/api/admin/venceky/lesson-change', { method: 'POST',
       body: { class_id: sk.d.class._id, week: 1, at: '2026-09-18T16:30:00.000Z' } }, adm);
