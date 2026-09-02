@@ -165,11 +165,26 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
       (sk.d.class.dances || []).every(x => (x.level || 0) === 0),
       JSON.stringify((sk.d.class.dances || []).map(x => x.level)));
 
-    // Marek po hodine označí, čo už vedia — žiakom to má pribudnúť medzi zvládnuté.
-    const zapis = await j('/api/admin/venceky/progress', { method: 'POST', body: {
-      class_id: sk.d.class._id, lessons_done: 2,
-      dances: TANCE.map((n, i) => ({ name: n, level: i === 0 ? 4 : (i === 1 ? 2 : 0) })) } }, adm);
-    ok('zápis hodiny prejde', zapis.status === 200, JSON.stringify(zapis.d).slice(0, 90));
+    // Marek zapíše po lekciách, čo sa učilo — tanec sa tým žiakom označí ako
+    // zvládnutý, úrovne 0–4 klikať netreba.
+    const zapis = await j('/api/admin/venceky/lesson-log', { method: 'POST', body: {
+      class_id: sk.d.class._id, lesson: 1, dances: ['Waltz'], note: 'základné kroky' } }, adm);
+    ok('zápis lekcie prejde', zapis.status === 200 && zapis.d && zapis.d.ok, JSON.stringify(zapis.d).slice(0, 90));
+    await j('/api/admin/venceky/lesson-log', { method: 'POST', body: {
+      class_id: sk.d.class._id, lesson: 2, dances: ['Cha-cha', 'Tango'], note: '' } }, adm);
+    await new Promise(r => setTimeout(r, 500));
+    const poLog = (await j('/api/admin/venceky/class/' + sk.d.class._id, {}, adm)).d;
+    ok('zapísané tance sú označené ako zvládnuté',
+      (poLog.class.dances || []).filter(x => x.level >= 4).map(x => x.name).sort().join() === 'Cha-cha,Tango,Waltz',
+      JSON.stringify((poLog.class.dances || []).filter(x => x.level >= 4).map(x => x.name)));
+    ok('a zvyšok zoznamu ostal nezačatý',
+      (poLog.class.dances || []).filter(x => !x.level).length === 12,
+      String((poLog.class.dances || []).filter(x => !x.level).length));
+    ok('odučené lekcie sa dopočítali z denníka', poLog.class.lessons_done === 2,
+      String(poLog.class.lessons_done));
+    ok('poznámka k lekcii sa uložila',
+      (poLog.class.lesson_log || []).find(z => z.lesson === 1)?.note === 'základné kroky',
+      JSON.stringify(poLog.class.lesson_log));
 
     // Termíny sa dohadujú so školou osobne a zadáva ich Marek — musia sa
     // dostať až k žiakom, inak nevedia, kedy prísť.
@@ -187,8 +202,10 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     const poZapise = rd('venceky_classes.db').find(x => x._id === sk.d.class._id);
     ok('Waltz je označený ako zvládnutý', poZapise && poZapise.dances[0].level === 4,
       poZapise ? String(poZapise.dances[0].level) : '—');
-    ok('Cha-cha je rozrobená, zvyšok nezačatý',
-      poZapise && poZapise.dances[1].level === 2 && poZapise.dances[2].level === 0);
+    // Medzistupne zmizli — tanec sa buď učil (a je zvládnutý), alebo ešte nie.
+    ok('nič nezostalo v polovičnej úrovni',
+      poZapise && (poZapise.dances || []).every(x => x.level === 0 || x.level === 4),
+      JSON.stringify((poZapise.dances || []).map(x => x.level)));
     ok('a percento pokroku sa prepočítalo',
       (await j('/api/admin/venceky/class/' + sk.d.class._id, {}, adm)).d.class.progress > 0);
 
@@ -429,6 +446,22 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('absolventský kupón platí len na Silver, nie na Gold',
       absKup && Array.isArray(absKup.plan_ids) && absKup.plan_ids.join() === 'silver',
       JSON.stringify(absKup && absKup.plan_ids));
+
+    console.log('\n9e) Dochádzka — zapisuje sa, kto chýba:');
+    const chybajuci = await j('/api/admin/venceky/attendance', { method: 'POST',
+      body: { class_id: tr.d.class._id, lesson_no: 1, absent: [(zu || {})._id] } }, adm);
+    ok('zápis prejde', chybajuci.status === 200 && chybajuci.d && chybajuci.d.ok, JSON.stringify(chybajuci.d).slice(0, 80));
+    // V tejto skupine je jediný žiak — keď zaškrtnem jeho, prítomných je nula.
+    ok('kto je zaškrtnutý, ten chýba — zvyšok je prítomný automaticky',
+      chybajuci.d && chybajuci.d.absent === 1 && chybajuci.d.present === 0,
+      'prítomní ' + (chybajuci.d && chybajuci.d.present) + ' · chýbali ' + (chybajuci.d && chybajuci.d.absent));
+    const zapisA = rd('venceky_attendance.db').find(x => x.lesson_no === 1 && x.class_id === tr.d.class._id);
+    ok('do záznamu sa uložili obe strany', zapisA && Array.isArray(zapisA.absent) && Array.isArray(zapisA.present),
+      JSON.stringify(zapisA && { p: (zapisA.present || []).length, a: (zapisA.absent || []).length }));
+    const vsetciTam = await j('/api/admin/venceky/attendance', { method: 'POST',
+      body: { class_id: tr.d.class._id, lesson_no: 2, absent: [] } }, adm);
+    ok('keď nikto nechýba, prítomní sú všetci', vsetciTam.d && vsetciTam.d.absent === 0 && vsetciTam.d.present >= 1,
+      'prítomní ' + (vsetciTam.d && vsetciTam.d.present));
 
     console.log('\n9d) Zmena rozvrhu dorazí žiakom:');
     await j('/api/admin/venceky/progress', { method: 'POST',

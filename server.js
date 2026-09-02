@@ -20182,12 +20182,24 @@ app.post('/api/admin/venceky/attendance', trainerAuth, async(req,res)=>{
     const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});
     if(!c) return res.status(404).json({error:'Trieda nenájdená'});
     const lesson=Math.max(1,Math.min(+c.lessons_total||13,+req.body.lesson_no||1));
-    const present=Array.isArray(req.body.present)?req.body.present.map(String):[];
+    // Venček je školská trieda — prídu všetci a zapisuje sa len to, kto chýbal
+    // (Marek 2. 9.). Prítomní sa dopočítajú, nech staré záznamy aj štatistika
+    // ďalej fungujú s tým istým poľom.
+    const vsetci=(await q.find(db.users,{venceky_class_id:c._id}))
+      .filter(u=>u.venceky_role==='student').map(u=>String(u._id));
+    let present, absent;
+    if(Array.isArray(req.body.absent)){
+      absent=req.body.absent.map(String).filter(id=>vsetci.includes(id));
+      present=vsetci.filter(id=>!absent.includes(id));
+    } else {                               // staršia otvorená karta posiela prítomných
+      present=Array.isArray(req.body.present)?req.body.present.map(String):vsetci;
+      absent=vsetci.filter(id=>!present.includes(id));
+    }
     const existing=await q.one(db.venceky_attendance,{class_id:c._id, lesson_no:lesson});
-    if(existing) await q.update(db.venceky_attendance,{_id:existing._id},{$set:{present, updated_at:nowISO()}});
+    if(existing) await q.update(db.venceky_attendance,{_id:existing._id},{$set:{present, absent, updated_at:nowISO()}});
     else await q.insert(db.venceky_attendance,{class_id:c._id, school_id:c.school_id, lesson_no:lesson,
-      present, date:today(), recorded_by:req.session.uid, created_at:nowISO()});
-    res.json({ok:true, lesson_no:lesson, present:present.length});
+      present, absent, date:today(), recorded_by:req.session.uid, created_at:nowISO()});
+    res.json({ok:true, lesson_no:lesson, present:present.length, absent:absent.length});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 app.get('/api/admin/venceky/attendance/:class_id', trainerAuth, async(req,res)=>{
@@ -20407,6 +20419,42 @@ app.get('/api/vencek/info', rlPublic, async(req,res)=>{
 
 // ── Admin: presunúť alebo zrušiť jednu lekciu ───────────────────────────────
 // Zrušený týždeň sa preskočí a kurz sa posunie o týždeň — nič sa nestráca.
+// ── Admin: zápis lekcie — čo sa učilo a poznámka ────────────────────────────
+// Marek 2. 9.: „chcem mať 10 okien pod sebou, do ktorých vyberiem zo zoznamu
+// len tanec, ktorý sa učil, a možnosť napísať poznámku." Úrovne 0–4 pri 15
+// tancoch boli neprehľadné, takže sa dopĺňajú samy: čo bolo zapísané aspoň
+// v jednej lekcii, platí za naučené — zvyšok zoznamu ešte len čaká.
+app.post('/api/admin/venceky/lesson-log', trainerAuth, async(req,res)=>{
+  try{
+    const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});
+    if(!c) return res.status(404).json({error:'Skupina nenájdená'});
+    const lekcia=Math.max(1, Math.min(+c.lessons_total||13, +req.body.lesson||1));
+    const tance=(Array.isArray(req.body.dances)?req.body.dances:[])
+      .map(x=>String(x).slice(0,60)).filter(x=>x);
+    const log=(Array.isArray(c.lesson_log)?c.lesson_log:[]).filter(z=>+z.lesson!==lekcia);
+    const zapis={ lesson:lekcia, dances:tance, note:String(req.body.note||'').slice(0,300), at:nowISO() };
+    if(tance.length || zapis.note) log.push(zapis);
+    log.sort((a,b)=>a.lesson-b.lesson);
+    // Tanec, ktorý sa už na nejakej lekcii učil, je pre žiakov „naučený".
+    const naucene=new Set(log.flatMap(z=>z.dances||[]));
+    const dances=(c.dances||[]).map(d=>({...d, level: naucene.has(d.name) ? 4 : 0}));
+    // Odučené lekcie = najvyššie zapísané číslo, nech to nie je druhé počítadlo.
+    const hotovo=log.reduce((m,z)=>Math.max(m,+z.lesson||0),0);
+    await q.update(db.venceky_classes,{_id:c._id},{$set:{lesson_log:log, dances, lessons_done:hotovo}});
+    // Nový tanec je pre skupinu udalosť — nech o ňom vedia.
+    const predtym=new Set((c.dances||[]).filter(d=>d.level>=4).map(d=>d.name));
+    const pribudlo=[...naucene].filter(n=>!predtym.has(n));
+    if(pribudlo.length){
+      for(const m of await q.find(db.users,{venceky_class_id:c._id}))
+        await q.insert(db.notifications,{user_id:m._id, type:'venceky',
+          title:`🔥 ${pribudlo.join(' + ')} — máte to za sebou!`,
+          body:`Vaša skupina už zvláda ${naucene.size} z ${(c.dances||[]).length} tancov. Len tak ďalej! 💃`,
+          read:false, created_at:nowISO()}).catch(()=>{});
+    }
+    res.json({ok:true, log, naucenych:naucene.size, lessons_done:hotovo});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.post('/api/admin/venceky/lesson-change', trainerAuth, async(req,res)=>{
   try{
     const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});
