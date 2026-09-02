@@ -131,6 +131,58 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 .card{box-shadow:var(--adm-shadow);border-radius:var(--adm-radius)!important;}
 .btn-outline-secondary{border-color:var(--gold-border)!important;color:var(--text-muted)!important;}
 .btn-outline-secondary:hover{background:var(--adm-hover)!important;color:var(--cream)!important;}
+/* ── Detail venčekovej skupiny ─────────────────────────────────────────────
+   Bol to úzky modal, kde bolo všetko pod sebou a dochádzku nebolo vidieť.
+   Teraz je to široká plocha so záložkami; dochádzka je prvá, lebo sa robí
+   po každej hodine. */
+.vdet{background:#181818;border:1px solid #333;border-radius:16px;
+  width:min(1180px,97vw);max-height:96vh;display:flex;flex-direction:column;overflow:hidden}
+.vdet-hlava{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
+  padding:18px 22px 14px;border-bottom:1px solid #2a2a2a}
+.vdet-nazov{font-size:1.25rem;font-weight:800;color:#C9A24C}
+.vdet-skola{color:#9a9a9a;font-size:.88rem;margin-top:2px}
+.vdet-x{background:none;border:none;color:#888;font-size:1.4rem;cursor:pointer;line-height:1;padding:0 4px}
+.vdet-x:hover{color:#fff}
+.vdet-staty{display:flex;gap:10px;flex-wrap:wrap;padding:14px 22px;border-bottom:1px solid #2a2a2a}
+.vdet-stat{background:#202020;border:1px solid #2f2f2f;border-radius:11px;padding:9px 14px;min-width:104px}
+.vdet-stat b{display:block;font-size:1.15rem;color:#fff;line-height:1.1}
+.vdet-stat span{font-size:.72rem;color:#8f8f8f}
+.vdet-taby{display:flex;gap:6px;padding:12px 22px 0;flex-wrap:wrap;border-bottom:1px solid #2a2a2a}
+.vdet-tab{background:none;border:1px solid transparent;border-bottom:none;color:#9a9a9a;
+  border-radius:10px 10px 0 0;padding:9px 16px;font-size:.88rem;font-weight:600;cursor:pointer;font-family:inherit}
+.vdet-tab:hover{color:#e8e8e8;background:#202020}
+.vdet-tab.on{background:#202020;border-color:#3a3428;color:#C9A24C;font-weight:800;margin-bottom:-1px}
+.vdet-telo{padding:18px 22px 22px;overflow-y:auto;flex:1}
+.vdet-panel{display:none}
+.vdet-navod{color:#9a9a9a;font-size:.86rem;margin-bottom:14px;line-height:1.5}
+.vdet-navod b{color:#d8d8d8}
+.vdet-osoba{border-bottom:1px solid #2a2a2a;padding:7px 0}
+
+/* dochádzka — mená ako klikacie štítky, zaškrtnutý = chýbal */
+.vdet-mena{display:flex;flex-wrap:wrap;gap:8px}
+.vdet-clovek{display:inline-flex;align-items:center;gap:8px;background:#202020;border:1px solid #2f2f2f;
+  border-radius:10px;padding:9px 14px;cursor:pointer;font-size:.9rem;user-select:none;transition:.14s}
+.vdet-clovek:hover{border-color:#4a4a4a}
+.vdet-clovek input{width:17px;height:17px;accent-color:#e57373;margin:0}
+.vdet-clovek:has(input:checked){background:rgba(224,86,86,.14);border-color:rgba(224,86,86,.5)}
+.vdet-clovek:has(input:checked) span{color:#ff9b9b;text-decoration:line-through}
+
+/* denník lekcií — jeden riadok na lekciu */
+.vl-riadok{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;
+  background:#1d1d1d;border:1px solid #2a2a2a;margin-bottom:6px;flex-wrap:wrap}
+.vl-riadok.vl-hotova{border-color:rgba(139,195,74,.35);background:rgba(139,195,74,.06)}
+.vl-cislo{width:118px;flex:none;font-size:.86rem;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.vl-bonus{font-size:.6rem;background:#3a3a3a;color:#bbb;border-radius:5px;padding:1px 6px}
+.vl-datum{font-size:.68rem;color:#8f8f8f;width:100%}
+.vl-tance{max-width:230px;height:74px;font-size:.84rem}
+.vl-riadok input{flex:1;min-width:160px}
+@media (max-width:720px){
+  .vdet-telo{padding:14px}
+  .vdet-staty{padding:12px 14px}
+  .vdet-taby{padding:10px 14px 0}
+  .vl-cislo{width:100%}
+  .vl-tance{max-width:none;width:100%}
+}
 </style>
 </head>
 <body>
@@ -4061,113 +4113,146 @@ async function vAddCost(sid,cid){
   await vApi('cost',{school_id:sid,class_id:cid,label,amount:+amount});
   if(document.getElementById('vClassModal')) vClassDetail(cid); else loadVenceky();
 }
-async function vClassDetail(cid){
+async function vClassDetail(cid, tab){
   const d=await vApi('class/'+cid);
   document.getElementById('vClassModal')?.remove();
   const c=d.class;
+  const doV=+c.lessons_before||10, spolu=+c.lessons_total||13, bonus=Math.max(0,spolu-doV);
+  const zaplatilo=d.members.filter(x=>x.paid).length;
+  V_TAB = tab || V_TAB || 'dochadzka';
+
+  // Denník lekcií — jedno okno na lekciu, s dátumom z rozvrhu.
+  const log=Object.fromEntries((c.lesson_log||[]).map(z=>[z.lesson,z]));
+  const term=Object.fromEntries((c.terminy||[]).filter(t=>t.lesson).map(t=>[t.lesson,t.at]));
+  const lekcieHtml=Array.from({length:spolu},(_,i)=>i+1).map(n=>{
+    const z=log[n]||{}, vyb=z.dances||[];
+    return '<div class="vl-riadok'+(vyb.length?' vl-hotova':'')+'">'
+      +'<div class="vl-cislo"><b>'+n+'.</b>'+(n>doV?'<span class="vl-bonus">bonus</span>':'')
+        +(term[n]?'<span class="vl-datum">'+vTerminKratky(term[n])+'</span>':'')+'</div>'
+      +'<select id="vlog_d_'+n+'" multiple class="form-select form-select-sm bg-dark text-light vl-tance">'
+        +(c.dances||[]).map(dn=>'<option value="'+escHtml(dn.name)+'"'+(vyb.includes(dn.name)?' selected':'')+'>'+escHtml(dn.name)+'</option>').join('')
+      +'</select>'
+      +'<input id="vlog_n_'+n+'" value="'+(z.note||'').replace(/"/g,'&quot;')+'" placeholder="poznámka k lekcii" class="form-control form-control-sm bg-dark text-light">'
+      +'<button class="btn btn-sm btn-brand" onclick="vLogSave(\''+c._id+'\','+n+')">Uložiť</button>'
+      +'</div>';
+  }).join('');
+
   const m=document.createElement('div'); m.id='vClassModal';
-  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9998;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow:auto';
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9998;display:flex;align-items:center;justify-content:center;padding:2vh 2vw';
   m.onclick=e=>{if(e.target===m)m.remove();};
-  m.innerHTML=`<div style="background:#1e1e1e;border:1px solid #333;border-radius:14px;padding:22px;width:min(760px,96vw)">
-    <div class="d-flex justify-content-between align-items-center mb-2">
-      <h5 class="fw-bold mb-0" style="color:#C9A24C">🎓 ${c.name} — ${d.school}</h5>
-      <button onclick="document.getElementById('vClassModal').remove()" style="background:none;border:none;color:#888;font-size:1.3rem;cursor:pointer">✕</button>
-    </div>
-    <div class="small text-muted mb-3">Progress ${c.progress} % · lekcia ${c.lessons_done}/${c.lessons_before||10} do venčeka (+${(c.lessons_total||13)-(c.lessons_before||10)} bonus po ňom) · cena ${vEur(c.price)}${c.event_date?` · ✨ večer ${c.event_date}`:''}</div>
+  m.innerHTML='<div class="vdet">'
+   +'<div class="vdet-hlava">'
+     +'<div><div class="vdet-nazov">🎓 '+escHtml(c.name)+'</div>'
+       +'<div class="vdet-skola">'+escHtml(d.school||'')+' · '+escHtml(c.year||'')+'</div></div>'
+     +'<button class="vdet-x" onclick="document.getElementById(\'vClassModal\').remove()">✕</button>'
+   +'</div>'
+   +'<div class="vdet-staty">'
+     +'<div class="vdet-stat"><b>'+c.progress+' %</b><span>zvládnuté tance</span></div>'
+     +'<div class="vdet-stat"><b>'+c.lessons_done+'/'+doV+'</b><span>lekcií'+(bonus?' (+'+bonus+' bonus)':'')+'</span></div>'
+     +'<div class="vdet-stat"><b>'+d.members.length+'</b><span>žiakov</span></div>'
+     +'<div class="vdet-stat"><b>'+zaplatilo+'/'+d.members.length+'</b><span>zaplatilo</span></div>'
+     +'<div class="vdet-stat"><b>'+vEur(c.price)+'</b><span>cena kurzu</span></div>'
+   +'</div>'
+   +'<div class="vdet-taby">'
+     +[['dochadzka','🙋 Dochádzka'],['lekcie','💃 Čo sa učilo'],['rozvrh','🗓️ Rozvrh'],
+       ['ziaci','🧾 Žiaci a platby'],['ostatne','⚙️ Ostatné']]
+       .map(([k,l])=>'<button class="vdet-tab'+(V_TAB===k?' on':'')+'" onclick="vTab(\''+k+'\')">'+l+'</button>').join('')
+   +'</div>'
+   +'<div class="vdet-telo">'
 
-    <h6 class="fw-bold">💃 Čo sa učilo na ktorej lekcii</h6>
-    <div class="small text-muted mb-2">Ku každej lekcii vyber tanec (aj viac) a napíš poznámku. Čo tu zapíšeš, žiaci hneď uvidia — a tanec im pribudne medzi zvládnuté.</div>
-    <div class="mb-2" style="max-height:320px;overflow:auto">${(() => {
-      const log = Object.fromEntries((d.class.lesson_log||[]).map(z=>[z.lesson, z]));
-      const doV = +c.lessons_before||10, spolu = +c.lessons_total||13;
-      const term = Object.fromEntries((d.class.terminy||[]).filter(t=>t.lesson).map(t=>[t.lesson, t.at]));
-      return Array.from({length:spolu}, (_,i)=>i+1).map(n=>{
-        const z = log[n]||{}, vybrane = z.dances||[];
-        return `<div class="d-flex align-items-start gap-2 mb-1 flex-wrap p-1" style="border-bottom:1px solid #2a2a2a">
-          <span style="width:96px;flex:none" class="small">
-            <b>${n}.</b>${n>doV?' <span class="badge bg-secondary" style="font-size:.55rem">bonus</span>':''}
-            ${term[n]?`<br><span class="text-muted" style="font-size:.66rem">${vTerminKratky(term[n])}</span>`:''}
-          </span>
-          <select id="vlog_d_${n}" multiple size="1" class="form-select form-select-sm bg-dark text-light"
-            style="max-width:200px;height:32px" title="Podržaním Ctrl vyberieš viac tancov">
-            ${(c.dances||[]).map(dn=>`<option value="${escHtml(dn.name)}"${vybrane.includes(dn.name)?' selected':''}>${escHtml(dn.name)}</option>`).join('')}
-          </select>
-          <input id="vlog_n_${n}" value="${(z.note||'').replace(/"/g,'&quot;')}" placeholder="poznámka k lekcii"
-            class="form-control form-control-sm bg-dark text-light" style="flex:1;min-width:150px">
-          <button class="btn btn-sm btn-outline-warning" style="font-size:.72rem" onclick="vLogSave('${c._id}',${n})">💾</button>
-        </div>`;
-      }).join('');
-    })()}</div>
-      <div class="d-flex gap-2 mt-2 flex-wrap">
-        <input id="vEvent" type="date" value="${c.event_date||''}" class="form-control form-control-sm bg-dark text-light" style="max-width:170px" title="dátum venčekového večera">
-        <input id="vSchedule" value="${(c.schedule||'').replace(/"/g,'&quot;')}" placeholder="miesto (napr. telocvičňa školy)" class="form-control form-control-sm bg-dark text-light" style="max-width:220px" title="Kde sa skupina učí — uvidia to žiaci aj na registračnej stránke">
-        <input id="vNote" value="${(c.note||'').replace(/"/g,'&quot;')}" placeholder="odkaz pre skupinu (napr. dokončíme tango)" class="form-control form-control-sm bg-dark text-light" style="flex:1;min-width:180px">
-        <button class="btn btn-sm btn-brand" onclick="vSaveProgress('${c._id}')">💾 Uložiť</button>
-      </div></div>
+   // ── DOCHÁDZKA ──
+   +'<div class="vdet-panel" data-tab="dochadzka">'
+     +'<div class="vdet-navod">Venček je školská trieda — <b>prídu všetci</b>. Zaškrtni len toho, <b>kto chýbal</b>, a ulož.</div>'
+     +'<div class="d-flex align-items-center gap-2 mb-3 flex-wrap">'
+       +'<span class="small">Lekcia č.</span>'
+       +'<input id="vAttLesson" type="number" min="1" max="'+spolu+'" value="'+Math.max(1,c.lessons_done||1)+'" class="form-control form-control-sm bg-dark text-light" style="max-width:80px" onchange="vAttLoad(\''+c._id+'\')">'
+       +'<button class="btn btn-brand" onclick="vAttSave(\''+c._id+'\')">💾 Uložiť dochádzku</button>'
+       +'<span id="vAttInfo" class="small text-muted"></span>'
+     +'</div>'
+     +'<div id="vAttList" class="vdet-mena">'
+       +(d.members.map(mm=>'<label class="vdet-clovek"><input type="checkbox" class="vAttCb" value="'+mm.id+'"><span>'+escHtml(mm.name)+'</span></label>').join('')
+         ||'<span class="text-muted small">Zatiaľ žiadni žiaci — pošli im QR na registráciu.</span>')
+     +'</div>'
+   +'</div>'
 
-    <h6 class="fw-bold mt-3">🗓️ Rozvrh <small class="text-muted fw-normal">— zadaj prvú lekciu, ďalšie idú po týždni</small></h6>
-    <div class="d-flex gap-2 mb-2 flex-wrap align-items-center">
-      <input id="vStartAt" type="datetime-local" value="${(c.start_at||'').slice(0,16)}"
-        class="form-control form-control-sm bg-dark text-light" style="max-width:220px" title="Dátum a čas prvej lekcie">
-      <button class="btn btn-sm btn-brand" onclick="vSaveStart('${c._id}')">💾 Uložiť rozvrh</button>
-      ${c.start_at?`<span class="text-muted small">Zrušená lekcia posunie celý kurz o týždeň.</span>`:''}
-    </div>
-    ${(d.class.terminy||[]).length?`<div class="mb-3" style="max-height:260px;overflow:auto">
-      <table class="table table-dark table-sm small mb-0"><tbody>
-      ${d.class.terminy.map(t=>`<tr${t.cancelled?' style="opacity:.55"':''}>
-        <td style="width:80px">${t.cancelled?'<span class="text-danger">zrušená</span>':`<b>${t.lesson}.</b>${t.bonus?' <span class="badge bg-secondary" style="font-size:.6rem">bonus</span>':''}`}</td>
-        <td>${t.at?vTermin(t.at):'—'}${t.moved?' <span class="text-warning small">(presunutá)</span>':''}</td>
-        <td class="text-end" style="white-space:nowrap">
-          ${t.cancelled
-            ? `<button class="btn btn-sm btn-outline-secondary" style="font-size:.7rem;padding:1px 7px" onclick="vLekcia('${c._id}',${t.week},'reset')">vrátiť</button>`
-            : `<button class="btn btn-sm btn-outline-warning" style="font-size:.7rem;padding:1px 7px" onclick="vLekcia('${c._id}',${t.week},'move','${t.at||''}')">presunúť</button>
-               <button class="btn btn-sm btn-outline-danger" style="font-size:.7rem;padding:1px 7px" onclick="vLekcia('${c._id}',${t.week},'cancel')">zrušiť</button>
-               ${t.moved?`<button class="btn btn-sm btn-outline-secondary" style="font-size:.7rem;padding:1px 7px" onclick="vLekcia('${c._id}',${t.week},'reset')">späť</button>`:''}`}
-        </td>
-      </tr>`).join('')}
-      </tbody></table></div>`
-      : '<div class="text-muted small mb-3">Zatiaľ bez rozvrhu — nastav dátum a čas prvej lekcie.</div>'}
+   // ── LEKCIE ──
+   +'<div class="vdet-panel" data-tab="lekcie">'
+     +'<div class="vdet-navod">Ku každej lekcii vyber tanec (Ctrl = viac naraz) a napíš poznámku. Čo tu zapíšeš, žiaci hneď uvidia — a tanec im pribudne medzi zvládnuté.</div>'
+     +lekcieHtml
+   +'</div>'
 
-    <h6 class="fw-bold mt-3">🧾 Žiaci a platby (${d.members.filter(x=>x.paid).length}/${d.members.length} zaplatené)
-      <button class="btn btn-sm btn-outline-warning ms-2" onclick="vAssignStudent('${c._id}')">+ Priradiť existujúci účet</button></h6>
-    <table class="table table-dark table-sm small"><tbody>
-      ${d.members.map(mm=>`<tr>
-        <td>${mm.paid?'✅':'⏳'} <b>${mm.name}</b><br><small class="text-muted">${mm.email||''} ${mm.phone||''}</small>
-          ${vRolePicker(mm.id,c._id,'student')}</td>
-        <td class="text-end">${mm.paid
-          ? `${vEur(mm.amount)} <small class="text-muted">(${mm.method==='transfer'?'prevod':'hotovosť'})</small><br><button class="btn btn-sm btn-outline-danger mt-1" onclick="vApi('payment-delete',{class_id:'${c._id}',user_id:'${mm.id}'}).then(()=>vClassDetail('${c._id}'))">zrušiť</button>`
-          : `<button class="btn btn-sm btn-brand" onclick="vMarkPaid('${c._id}','${mm.id}','cash')">💶 hotovosť</button>
-             <button class="btn btn-sm btn-outline-light" onclick="vMarkPaid('${c._id}','${mm.id}','transfer')">🏦 prevod</button>`}</td>
-      </tr>`).join('')||'<tr><td class="text-muted">Zatiaľ žiadni žiaci — pošli triede QR/odkaz na registráciu.</td></tr>'}
-    </tbody></table>
+   // ── ROZVRH ──
+   +'<div class="vdet-panel" data-tab="rozvrh">'
+     +'<div class="vdet-navod">Zadaj dátum a čas <b>prvej</b> lekcie — ďalšie idú po týždni. Zrušená lekcia posunie celý kurz o týždeň.</div>'
+     +'<div class="d-flex gap-2 mb-3 flex-wrap align-items-center">'
+       +'<input id="vStartAt" type="datetime-local" value="'+(c.start_at||'').slice(0,16)+'" class="form-control form-control-sm bg-dark text-light" style="max-width:220px">'
+       +'<button class="btn btn-brand btn-sm" onclick="vSaveStart(\''+c._id+'\')">💾 Uložiť rozvrh</button>'
+     +'</div>'
+     +((c.terminy||[]).length
+       ? '<table class="table table-dark table-sm"><tbody>'+c.terminy.map(t=>'<tr'+(t.cancelled?' style="opacity:.5"':'')+'>'
+           +'<td style="width:90px">'+(t.cancelled?'<span class="text-danger">zrušená</span>':'<b>'+t.lesson+'.</b>'+(t.bonus?' <span class="badge bg-secondary" style="font-size:.6rem">bonus</span>':''))+'</td>'
+           +'<td>'+(t.at?vTermin(t.at):'—')+(t.moved?' <span class="text-warning small">(presunutá)</span>':'')+'</td>'
+           +'<td class="text-end" style="white-space:nowrap">'
+             +(t.cancelled
+               ? '<button class="btn btn-sm btn-outline-secondary" onclick="vLekcia(\''+c._id+'\','+t.week+',\'reset\')">vrátiť</button>'
+               : '<button class="btn btn-sm btn-outline-warning" onclick="vLekcia(\''+c._id+'\','+t.week+',\'move\',\''+(t.at||'')+'\')">presunúť</button> '
+                 +'<button class="btn btn-sm btn-outline-danger" onclick="vLekcia(\''+c._id+'\','+t.week+',\'cancel\')">zrušiť</button>'
+                 +(t.moved?' <button class="btn btn-sm btn-outline-secondary" onclick="vLekcia(\''+c._id+'\','+t.week+',\'reset\')">späť</button>':''))
+           +'</td></tr>').join('')+'</tbody></table>'
+       : '<div class="text-muted">Zatiaľ bez rozvrhu — nastav dátum a čas prvej lekcie.</div>')
+   +'</div>'
 
-    ${(d.parents||[]).length?`<h6 class="fw-bold mt-2">👨‍👩‍👧 Rodičia v skupine (${d.parents.length})</h6>
-    <div class="small mb-2">${d.parents.map(p=>`<div class="border-bottom border-secondary py-1"><b>${p.name}</b> <span class="text-muted">${p.email||''}</span>${p.child?` · dieťa: <b>${p.child}</b>`:''}${vRolePicker(p.id,c._id,'parent')}</div>`).join('')}</div>`:''}
+   // ── ŽIACI A PLATBY ──
+   +'<div class="vdet-panel" data-tab="ziaci">'
+     +'<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">'
+       +'<div class="vdet-navod mb-0">Zaplatené vidíš len ty. Typ konta sa dá prepnúť, keď sa niekto pri registrácii pomýlil.</div>'
+       +'<button class="btn btn-sm btn-outline-warning" onclick="vAssignStudent(\''+c._id+'\')">+ Priradiť existujúci účet</button>'
+     +'</div>'
+     +'<table class="table table-dark table-sm"><tbody>'
+       +(d.members.map(mm=>'<tr>'
+         +'<td>'+(mm.paid?'✅':'⏳')+' <b>'+escHtml(mm.name)+'</b><br><small class="text-muted">'+escHtml(mm.email||'')+' '+escHtml(mm.phone||'')+'</small>'+vRolePicker(mm.id,c._id,'student')+'</td>'
+         +'<td class="text-end">'+(mm.paid
+           ? vEur(mm.amount)+' <small class="text-muted">('+(mm.method==='transfer'?'prevod':'hotovosť')+')</small><br><button class="btn btn-sm btn-outline-danger mt-1" onclick="vApi(\'payment-delete\',{class_id:\''+c._id+'\',user_id:\''+mm.id+'\'}).then(()=>vClassDetail(\''+c._id+'\'))">zrušiť platbu</button>'
+           : '<button class="btn btn-sm btn-brand" onclick="vMarkPaid(\''+c._id+'\',\''+mm.id+'\',\'cash\')">💶 hotovosť</button> '
+             +'<button class="btn btn-sm btn-outline-light" onclick="vMarkPaid(\''+c._id+'\',\''+mm.id+'\',\'transfer\')">🏦 prevod</button>')
+         +'</td></tr>').join('')
+         ||'<tr><td class="text-muted">Zatiaľ žiadni žiaci — pošli im QR na registráciu.</td></tr>')
+     +'</tbody></table>'
+     +((d.parents||[]).length?'<h6 class="fw-bold mt-3">👨‍👩‍👧 Rodičia ('+d.parents.length+')</h6>'
+       +'<div class="small">'+d.parents.map(p=>'<div class="vdet-osoba"><b>'+escHtml(p.name)+'</b> <span class="text-muted">'+escHtml(p.email||'')+'</span>'+(p.child?' · dieťa: <b>'+escHtml(p.child)+'</b>':'')+vRolePicker(p.id,c._id,'parent')+'</div>').join('')+'</div>':'')
+     +((d.staff||[]).length?'<h6 class="fw-bold mt-3">👩‍🏫 Učitelia a vedenie ('+d.staff.length+')</h6>'
+       +'<div class="small">'+d.staff.map(t=>'<div class="vdet-osoba"><b>'+escHtml(t.name)+'</b> <span class="text-muted">'+escHtml(t.email||'')+'</span>'+vRolePicker(t.id,c._id,t.role)+'</div>').join('')+'</div>':'')
+   +'</div>'
 
-    ${(d.staff||[]).length?`<h6 class="fw-bold mt-2">👩‍🏫 Učitelia a vedenie v skupine (${d.staff.length})</h6>
-    <div class="small mb-2">${d.staff.map(t=>`<div class="border-bottom border-secondary py-1"><b>${t.name}</b> <span class="text-muted">${t.email||''}</span>${vRolePicker(t.id,c._id,t.role)}</div>`).join('')}</div>`:''}
+   // ── OSTATNÉ ──
+   +'<div class="vdet-panel" data-tab="ostatne">'
+     +'<h6 class="fw-bold">📍 Miesto, večer a odkaz skupine</h6>'
+     +'<div class="d-flex gap-2 mb-3 flex-wrap">'
+       +'<input id="vEvent" type="date" value="'+(c.event_date||'')+'" class="form-control form-control-sm bg-dark text-light" style="max-width:170px" title="dátum venčekového večera">'
+       +'<input id="vSchedule" value="'+(c.schedule||'').replace(/"/g,'&quot;')+'" placeholder="miesto (napr. telocvičňa školy)" class="form-control form-control-sm bg-dark text-light" style="max-width:240px">'
+       +'<input id="vNote" value="'+(c.note||'').replace(/"/g,'&quot;')+'" placeholder="odkaz pre skupinu (napr. dokončíme tango)" class="form-control form-control-sm bg-dark text-light" style="flex:1;min-width:200px">'
+       +'<button class="btn btn-sm btn-brand" onclick="vSaveProgress(\''+c._id+'\')">💾 Uložiť</button>'
+     +'</div>'
+     +'<h6 class="fw-bold mt-3">📉 Náklady skupiny <button class="btn btn-sm btn-outline-secondary ms-2" onclick="vAddCost(\'\',\''+c._id+'\')">+ pridať</button></h6>'
+     +'<div class="small mb-3">'+((d.costs||[]).map(k=>'<div class="d-flex justify-content-between vdet-osoba"><span>'+escHtml(k.label)+' <span class="text-muted">'+escHtml(k.date||'')+'</span></span><b>'+vEur(k.amount)+'</b></div>').join('')||'<span class="text-muted">Žiadne náklady.</span>')+'</div>'
+     +'<div class="mt-4 pt-3 border-top border-secondary">'
+       +(c.completed
+         ? '<span class="badge bg-success">🏅 Venček ukončený — žiaci majú odznak absolventa</span>'
+         : '<button class="btn btn-outline-warning" onclick="vComplete(\''+c._id+'\')">🏅 Ukončiť venček (odznaky + kupóny absolventom)</button>'
+           +'<div class="text-muted small mt-2">Po ukončení im z nástenky zmizne venčekové okno a ostane bežná appka.</div>')
+     +'</div>'
+   +'</div>'
 
-    <h6 class="fw-bold mt-3">🙋 Dochádzka <small class="text-muted fw-normal">(vidia ju rodičia aj riaditeľ)</small></h6>
-    <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
-      <span class="small">Lekcia č.</span>
-      <input id="vAttLesson" type="number" min="1" max="${c.lessons_total}" value="${Math.max(1,c.lessons_done||1)}" class="form-control form-control-sm bg-dark text-light" style="max-width:80px" onchange="vAttLoad('${c._id}')">
-      <button class="btn btn-sm btn-brand" onclick="vAttSave('${c._id}')">💾 Uložiť dochádzku</button>
-      <span id="vAttInfo" class="small text-muted"></span>
-    </div>
-    <div class="small text-muted mb-2">Prídu všetci — zaškrtni len toho, <b>kto chýba</b>.</div>
-    <div id="vAttList" class="mb-2">${d.members.map(mm=>`<label class="d-inline-flex align-items-center gap-1 me-3 small" style="cursor:pointer"><input type="checkbox" class="vAttCb" value="${mm.id}" style="accent-color:#e57373"> ${mm.name}</label>`).join('')||'<span class="small text-muted">Žiadni žiaci.</span>'}</div>
-
-    <h6 class="fw-bold mt-2">📉 Náklady triedy <button class="btn btn-sm btn-outline-secondary ms-2" onclick="vAddCost('','${c._id}')">+ pridať</button></h6>
-    <div class="small">${(d.costs||[]).map(k=>`<div class="d-flex justify-content-between border-bottom border-secondary py-1"><span>${k.label} <span class="text-muted">${k.date}</span></span><b>${vEur(k.amount)}</b></div>`).join('')||'<span class="text-muted">Žiadne náklady.</span>'}</div>
-
-    <div class="mt-3 pt-2 border-top border-secondary text-end">
-      ${c.completed
-        ? `<span class="badge bg-success">🏅 Venček ukončený — žiaci majú odznak absolventa</span>`
-        : `<button class="btn btn-sm btn-outline-warning" onclick="vComplete('${c._id}')">🏅 Ukončiť venček (odznaky + kupóny absolventom)</button>`}
-    </div>
-  </div>`;
+   +'</div></div>';
   document.body.appendChild(m);
+  vTab(V_TAB);
   vAttLoad(cid);
+}
+let V_TAB='dochadzka';
+function vTab(k){
+  V_TAB=k;
+  document.querySelectorAll('#vClassModal .vdet-panel').forEach(p=>p.style.display = p.dataset.tab===k ? 'block' : 'none');
+  document.querySelectorAll('#vClassModal .vdet-tab').forEach(b=>b.classList.toggle('on', b.textContent.includes({dochadzka:'Dochádzka',lekcie:'učilo',rozvrh:'Rozvrh',ziaci:'Žiaci',ostatne:'Ostatné'}[k])));
 }
 let VATT={};
 // Venček je školská trieda — prídu všetci, zaškrtávajú sa len chýbajúci.
