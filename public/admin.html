@@ -3954,8 +3954,13 @@ async function vAddSlot(kind){
     const city=prompt('Mesto:','Zvolen')||'';
     await vApi('slot',{kind,label,city});
   }else{
-    const date=prompt('Dátum večera (RRRR-MM-DD, sobota):'); if(!date) return;
-    const label=prompt('Popis (napr. Sobota 13.6.2027, 17:00):', 'Sobota '+date.split('-').reverse().join('.'))||date;
+    const date=prompt('Dátum večera (RRRR-MM-DD):'); if(!date) return;
+    // Deň sa dopočíta z dátumu — natvrdo napísaná „Sobota" bola presne ten typ
+    // údaja, ktorý sa 2. 9. rozišiel s realitou a odišiel 350 ľuďom.
+    const _dni=['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
+    let _den=''; try{ const _d=new Date(date+'T12:00:00'); if(!isNaN(_d)) _den=_dni[_d.getDay()]; }catch(e){}
+    const _navrh=(_den?_den.charAt(0).toUpperCase()+_den.slice(1)+' ':'')+date.split('-').reverse().join('.');
+    const label=prompt('Popis večera:', _navrh)||date;
     const venue=prompt('Miesto (napr. sála školy / KD Zvolen):')||'';
     await vApi('slot',{kind,label,date,venue});
   }

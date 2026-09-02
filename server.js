@@ -383,6 +383,25 @@ function today()        { return new Intl.DateTimeFormat('sv-SE',{timeZone:'Euro
 // surový prefix s today() tam prestane fungovať (Marek 1. 9.: tréner nevedel
 // stornovať vlastný preklep vo výbere hotovosti, lebo appka ho mala za včerajší).
 function denSK(iso){ try{ return new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Bratislava'}).format(new Date(iso)); }catch(e){ return String(iso||'').slice(0,10); } }
+// Deň v týždni sa NIKDY nepíše ručne vedľa dátumu. 2. 9. 2026 odišla pozvánka
+// 350 ľuďom s „piatok 5. 9.", hoci to bola sobota — a v tom istom súbore bolo
+// aj „nedeľa 31. 8.", pričom to bol pondelok. Dátum je jediný zdroj pravdy.
+const DNI_SK = ['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
+const DNI_SK_V = ['nedeľu','pondelok','utorok','stredu','štvrtok','piatok','sobotu']; // „v …"
+function denVTyzdni(iso){ try{
+  const d = new Date(String(iso).length<=10 ? iso+'T12:00:00' : iso);
+  return isNaN(d) ? '' : DNI_SK[d.getDay()];
+}catch(e){ return ''; } }
+function vDen(iso){ try{
+  const d = new Date(String(iso).length<=10 ? iso+'T12:00:00' : iso);
+  return isNaN(d) ? '' : DNI_SK_V[d.getDay()];
+}catch(e){ return ''; } }
+// „sobota 5. 9. 2026" — deň sa dopočíta, nedá sa rozísť s dátumom.
+function denADatum(iso, srok){ try{
+  const d = new Date(String(iso).length<=10 ? iso+'T12:00:00' : iso);
+  if(isNaN(d)) return String(iso||'');
+  return DNI_SK[d.getDay()]+' '+d.getDate()+'. '+(d.getMonth()+1)+'.'+(srok===false?'':' '+d.getFullYear());
+}catch(e){ return String(iso||''); } }
 function nowISO()       { return new Date().toISOString(); }
 function currentMonth() { return new Date().toISOString().slice(0,7); }
 function dateAgo30()    { const d=new Date(); d.setDate(d.getDate()-30); return d.toISOString().slice(0,10); }
@@ -1102,7 +1121,7 @@ async function seedData() {
   if(!(await q.one(db.settings,{key:'party_invite_msgs_v1'}))){
     const marek=await q.one(db.users,{is_admin:true, name:/marek/i}) || await q.one(db.users,{is_admin:true});
     if(marek){
-      const txt='🌴 LATIN TROPICAL PARTY & MASTERCLASS — sobota 5. 9., Detva! Oslavujeme 1. výročie tanečnej školy 🎉\n\n'
+      const txt='🌴 LATIN TROPICAL PARTY & MASTERCLASS — '+denADatum('2026-09-05',false)+', Detva! Oslavujeme 1. výročie tanečnej školy 🎉\n\n'
         +'💃 FULL EXPERIENCE od 18:15: masterclass Marek Gruber & Ivan Ligárt, Zumba + CIRCL Mobility, jedlo a welcome drink — a potom celá Latin Tropical Party.\n'
         +'🍹 Vstup len na latino párty od 21:00.\n\n'
         +'🎟️ Vstupenky: https://app.fusionacademy.sk/event/latin-tropical-2026?utm_source=komunita&utm_medium=chat&utm_campaign=fa-masterclass-01\n'
@@ -1269,7 +1288,7 @@ async function seedData() {
           +'<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">🎟️ <b style="color:#C9A84C">Predpredaj: 55 €</b> (členky Fusion Academy <b>45 €</b>) — len do 31. augusta, potom 65 €. Kapacita len <b>30 miest</b>!</p>'
           +'<p>🍹 <b>Len párty od 21:00?</b> Vstupenka s welcome drinkom za <b>5 €</b> v predpredaji (na mieste 10 €).</p>'
           +'<p>🪑 Rezervácia stola: <b>0904 31 51 51</b> — Beáta Gruber Buňová</p>'
-          +'<p>📍 Fusion Club Detva, Záhradná 7 · sobota 5. 9. 2026</p>'
+          +'<p>📍 Fusion Club Detva, Záhradná 7 · '+denADatum('2026-09-05')+'</p>'
           +'<p>Vidíme sa na parkete!<br>Tím Fusion Academy</p>',
           '🎟️ Kúpiť vstupenku', APP_URL+'/event/latin-tropical-2026?utm_source=email&utm_medium=email&utm_campaign=fa-masterclass-01')).catch(()=>{});
         await new Promise(r=>setTimeout(r,400));
@@ -4668,7 +4687,7 @@ setInterval(async()=>{
         +cena
         +'<p>🍹 <b>Len párty od 21:00?</b> Vstupenka s welcome drinkom za <b>5 €</b> v predpredaji (na mieste 10 €).</p>'
         +'<p>🪑 Rezervácia stola: <b>0904 31 51 51</b> — Beáta Gruber Buňová</p>'
-        +'<p>📍 Fusion Club Detva, Záhradná 7 · sobota 5. 9. 2026</p>'
+        +'<p>📍 Fusion Club Detva, Záhradná 7 · '+denADatum('2026-09-05')+'</p>'
         +'<p>Vidíme sa na parkete!<br>Tím Fusion Academy</p>',
         '🎟️ Kúpiť vstupenku', APP_URL+'/event/latin-tropical-2026?utm_source=email&utm_medium=email&utm_campaign=fa-masterclass-01'), {priority:10, template:'event_campaign'}).catch(()=>false);
       if(ok) n++;
@@ -4719,7 +4738,7 @@ async function eventLeadTick(qaMode){
         +'<p>Raz si sa u nás zaujímala o tanec — a <b>5. septembra</b> máme najlepší dôvod, aby si nás spoznala naživo. Oslavujeme <b>1. výročie</b> tanečnej školy v Detve. 🌴</p>'
         +'<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">🍹 <b style="color:#C9A84C">Vstup na párty: 5 €</b> v predpredaji (na mieste 10 €), welcome drink v cene. Nemusíš vedieť tancovať ani nikoho poznať — príď sa pozrieť, aká je u nás atmosféra.</p>'
         +'<p>Ak si chceš aj zatancovať: pred párty od <b>18:15</b> je masterclass s <b>Marekom Gruberom a Ivanom Ligártom</b>, Zumba + CIRCL Mobility, jedlo a welcome drink — Full Experience <b>55 €</b> (kapacita 30 miest).</p>'
-        +'<p>📍 Fusion Club Detva, Záhradná 7 · sobota 5. 9. 2026 od 21:00</p>'
+        +'<p>📍 Fusion Club Detva, Záhradná 7 · '+denADatum('2026-09-05')+' od 21:00</p>'
         +'<p>Budeme sa tešiť!<br>Tím Fusion Academy</p>',
         '🎟️ Chcem vstupenku', APP_URL+'/event/latin-tropical-2026?utm_source=email&utm_medium=email&utm_campaign=fa-masterclass-01'),
         {priority:10, template:'event_campaign_leads'}).catch(()=>false);
@@ -4774,8 +4793,8 @@ async function eventUrgencyTick(qaMode){
       const first=String(u.name||'').split(' ')[0]||'tanečníčka';
       const member=activeMem.has(u._id);
       const cena=member
-        ? '<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">⭐ <b style="color:#C9A84C">Tvoja členská cena 45 €</b> platí len do nedele <b>31. 8.</b> — od pondelka je Full Experience za 65 € pre všetkých.</p>'
-        : '<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">🎟️ <b style="color:#C9A84C">Predpredaj 55 €</b> končí v nedeľu <b>31. 8.</b> — potom platí 65 €.</p>';
+        ? '<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">⭐ <b style="color:#C9A84C">Tvoja členská cena 45 €</b> platí len do <b>31. 8.</b> (pondelok) — od pondelka je Full Experience za 65 € pre všetkých.</p>'
+        : '<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:12px 16px">🎟️ <b style="color:#C9A84C">Predpredaj 55 €</b> končí <b>31. 8.</b> (pondelok) — potom platí 65 €.</p>';
       const ok=await sendMail(u.email, EV_URG_SUBJ,
         emailTemplate('Ahoj '+first+'! ⏳',
         '<p>V sobotu <b>5. septembra</b> oslavujeme rok tanečnej školy — a predpredaj sa nám chýli ku koncu.</p>'
@@ -4843,7 +4862,7 @@ function evLastCallHtml(first, member, volne, utm){
     +'<p>🍸 Nechceš masterclass, len tancovať? Vstup na párty od 21:00 stojí <b>5 €</b> (na mieste 10 €) '
       +'a čas na ňu máš do piatku.</p>'
     +'<p>🪑 Rezervácia stola pre partiu: <b>0904 31 51 51</b> — Beáta Gruber Buňová</p>'
-    +'<p>📍 Fusion Club Detva, Záhradná 7 · sobota 5. 9.</p>'
+    +'<p>📍 Fusion Club Detva, Záhradná 7 · '+denADatum('2026-09-05',false)+'</p>'
     +'<p>Vidíme sa na parkete!<br>Tím Fusion Academy</p>',
     '🎟️ Beriem to za dnešnú cenu', odkaz);
 }
