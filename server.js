@@ -17021,6 +17021,10 @@ async function sendMail(to, subject, html, opts){
     console.log(`✉️  [mail budžet] preskočené p${priority} · ${to} · ${subject}`);
     return false;
   }
+  // Odkaz na odhlásenie dostane podpis príjemcu — v šablóne je bez neho, lebo
+  // šablóna nevie, komu mail ide. Bez podpisu by sa dal odhlásiť ktokoľvek.
+  if(typeof html==='string' && html.includes('/unsubscribe'))
+    html = html.split(APP_URL.replace(/\/$/,'')+'/unsubscribe').join(unsubUrl(to));
   // Mail log + tracking pixel (CRM P3): každý odoslaný mail sa zaloguje a otvorenie
   // sa zaznamená cez 1×1 pixel — open rate vidno v /api/admin/mail-log/stats.
   try{
@@ -17063,6 +17067,12 @@ async function sendMail(to, subject, html, opts){
           sender:{ name:'Fusion Academy', email:fromAddr },
           ...(replyAddr ? { replyTo:{ name:'Fusion Academy', email:replyAddr } } : {}),
           to:[{ email:to }],
+          // Odhlásenie priamo v poštovom klientovi (Gmail ho zobrazí pri odosielateľovi).
+          // Kto sa vie odhlásiť jedným klikom, nedá namiesto toho „spam".
+          headers:{
+            'List-Unsubscribe':'<'+unsubUrl(to)+'>',
+            'List-Unsubscribe-Post':'List-Unsubscribe=One-Click'
+          },
           subject, htmlContent:html
         })
       });
@@ -19363,6 +19373,8 @@ app.get('/api/qr.png', async(req,res)=>{
 });
 // Venčeková registrácia má vlastnú stránku — hlavná predáva Zumbu dospelým
 // ženám („Nájdi svoj rytmus"), čo ôsmakovi po naskenovaní QR nič nehovorí.
+// Odhlásenie z ponúk — odkaz je v pätičke každého mailu.
+app.get('/unsubscribe',        (req,res)=>res.sendFile(path.join(__dirname,'public','unsubscribe.html')));
 app.get('/v/:code',            (req,res)=>res.sendFile(path.join(__dirname,'public','vencek-registracia.html')));
 // Kiosk na nábor: celá obrazovka s QR, ktorý vedie na registráciu tej skupiny.
 app.get('/vk/:code',           (req,res)=>res.sendFile(path.join(__dirname,'public','vencek-kiosk.html')));
@@ -19647,6 +19659,20 @@ async function sendFirstBookingWelcome(u, cls, bdate, bookingId){
   }catch(e){ console.error('sendFirstBookingWelcome:', e.message); }
 }
 
+// ── Odhlásenie z ponúk ──────────────────────────────────────────────────────
+// Odkaz „Odhlásiť" je v pätičke každého mailu, ale stránka /unsubscribe
+// neexistovala — vracala 404 (klientka to nahlásila 2. 9.). Nikto sa teda
+// odhlásiť nemohol, čo je aj zákonná povinnosť, aj dôvod, prečo ľudia namiesto
+// odhlásenia dajú „spam" a pokazia doručiteľnosť celej domény.
+// Token je podpis e-mailu, aby sa nedal odhlásiť niekto cudzí.
+function unsubToken(email){
+  return require('crypto').createHmac('sha256', process.env.SESSION_SECRET || 'fusion-dev-secret-change-in-production-2026')
+    .update('unsub:'+String(email||'').toLowerCase().trim()).digest('hex').slice(0,32);
+}
+function unsubUrl(email){
+  return APP_URL.replace(/\/$/,'')+'/unsubscribe?e='+encodeURIComponent(String(email||'').toLowerCase().trim())
+    +'&t='+unsubToken(email);
+}
 function emailTemplate(title, body, ctaText, ctaUrl){
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#1a1a1a;font-family:'Segoe UI',Arial,sans-serif">
 <table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:30px 16px">
@@ -20470,6 +20496,48 @@ app.post('/api/admin/venceky/assign-role', adminAuth, async(req,res)=>{
       read:false, created_at:nowISO()}).catch(()=>{});
     res.json({ok:true});
   }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Odhlásenie z ponúk: stav a vykonanie ────────────────────────────────────
+app.get('/api/unsubscribe/stav', rlPublic, async(req,res)=>{
+  try{
+    const email=String(req.query.e||'').toLowerCase().trim();
+    const t=String(req.query.t||'');
+    if(!email || t!==unsubToken(email)) return res.status(400).json({error:'Neplatný odkaz'});
+    const u=await q.one(db.users,{email});
+    res.json({ok:true, email, meno:(u&&String(u.name||'').split(' ')[0])||'',
+      odhlaseny: !!(u && (u.offers_optout || u.do_not_contact)) });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/unsubscribe', rlPublic, async(req,res)=>{
+  try{
+    const email=String(req.body.e||'').toLowerCase().trim();
+    if(!email || String(req.body.t||'')!==unsubToken(email)) return res.status(400).json({error:'Neplatný odkaz'});
+    const u=await q.one(db.users,{email});
+    // Kto v systéme nie je, nech dostane rovnakú odpoveď — inak by sa dalo
+    // odkazom zisťovať, či daná adresa u nás účet má.
+    const vsetko = req.body.rozsah==='vsetko';
+    if(u){
+      const set = vsetko ? {offers_optout:true, do_not_contact:true, sms_opt_out:true}
+                         : {offers_optout:true};
+      await q.update(db.users,{_id:u._id},{$set:{...set, unsubscribed_at:nowISO()}});
+      await auditLog(req,'unsubscribe',u._id,{email},{rozsah:vsetko?'všetko':'ponuky'},'').catch(()=>{});
+      console.log('🚫 Odhlásenie z '+(vsetko?'VŠETKÝCH mailov':'ponúk')+': '+email);
+    }
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// One-click odhlásenie z poštového klienta (RFC 8058) — Gmail posiela POST sem.
+app.post('/unsubscribe', express.urlencoded({extended:false}), async(req,res)=>{
+  try{
+    const email=String(req.query.e||'').toLowerCase().trim();
+    if(email && String(req.query.t||'')===unsubToken(email)){
+      const u=await q.one(db.users,{email});
+      if(u){ await q.update(db.users,{_id:u._id},{$set:{offers_optout:true, unsubscribed_at:nowISO()}});
+        console.log('🚫 Odhlásenie z ponúk (one-click): '+email); }
+    }
+    res.status(200).end();
+  }catch(e){ res.status(200).end(); }
 });
 
 // ── Verejné: čo je za venčekovým kódom (pre registračnú stránku) ────────────

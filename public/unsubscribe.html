@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odhlásenie – Fusion Academy</title>
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/png" href="/logo-mark.png">
+<style>
+  :root{--bg:#0F0D09;--card:#1A160E;--line:#2E2718;--gold:#C9A84C;--cream:#F2ECDC;--muted:#948B77;--ok:#8BC34A}
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;min-height:100%}
+  body{background:var(--bg);color:var(--cream);font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    line-height:1.6;display:flex;align-items:center;justify-content:center;padding:24px 16px;min-height:100dvh}
+  .karta{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:30px 26px;max-width:480px;width:100%}
+  .znak{font-size:.7rem;letter-spacing:.26em;text-transform:uppercase;color:var(--gold);font-weight:700;text-align:center}
+  h1{font-size:1.45rem;margin:12px 0 6px;text-align:center;font-weight:800}
+  .mail{text-align:center;color:var(--muted);font-size:.9rem;word-break:break-all;margin-bottom:22px}
+  .volba{display:block;background:#12100A;border:1px solid var(--line);border-radius:12px;padding:14px 16px;
+    margin-bottom:10px;cursor:pointer;transition:.15s}
+  .volba:hover{border-color:rgba(201,168,76,.5)}
+  .volba input{margin-right:9px;accent-color:var(--gold)}
+  .volba b{font-size:.96rem}
+  .volba span{display:block;color:var(--muted);font-size:.83rem;margin-top:3px;margin-left:24px}
+  button{width:100%;background:linear-gradient(135deg,var(--gold),#A5842F);color:#14110A;border:none;
+    border-radius:12px;padding:15px;font-size:1rem;font-weight:800;cursor:pointer;font-family:inherit;margin-top:8px}
+  button:disabled{opacity:.55;cursor:default}
+  .spat{display:block;text-align:center;color:var(--muted);font-size:.85rem;margin-top:16px;text-decoration:none}
+  .spat:hover{color:var(--gold)}
+  .stav{text-align:center;padding:16px 0}
+  .stav .ikona{font-size:3rem;line-height:1}
+  .stav h2{font-size:1.25rem;margin:12px 0 8px}
+  .stav p{color:var(--muted);margin:0 0 18px}
+  .chyba{background:rgba(224,86,86,.14);border:1px solid rgba(224,86,86,.45);color:#FF9B9B;
+    border-radius:11px;padding:12px 14px;font-size:.9rem;text-align:center}
+</style>
+</head>
+<body>
+<div class="karta" id="host"><div class="stav">Načítavam…</div></div>
+<script>
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const p=new URLSearchParams(location.search);
+const E=p.get('e')||'', T=p.get('t')||'';
+const host=document.getElementById('host');
+
+function chyba(text){
+  host.innerHTML='<div class="znak">Fusion Academy</div><h1>Odhlásenie</h1>'
+    +'<div class="chyba">'+esc(text)+'</div>'
+    +'<a class="spat" href="/">Prejsť na stránku Fusion Academy →</a>';
+}
+
+(async()=>{
+  if(!E || !T) return chyba('Odkaz na odhlásenie je neúplný. Otvor ho prosím priamo z e-mailu, ktorý ti prišiel.');
+  let d;
+  try{ d=await (await fetch('/api/unsubscribe/stav?e='+encodeURIComponent(E)+'&t='+encodeURIComponent(T))).json(); }catch(e){}
+  if(!d || !d.ok) return chyba('Odkaz na odhlásenie je neplatný alebo už vypršal. Napíš nám na info@fusionacademy.sk a odhlásime ťa ručne.');
+
+  if(d.odhlaseny) return hotovo(true);
+
+  host.innerHTML='<div class="znak">Fusion Academy</div>'
+    +'<h1>'+(d.meno?esc(d.meno)+', mrzí nás to':'Odhlásenie z e-mailov')+'</h1>'
+    +'<div class="mail">'+esc(d.email)+'</div>'
+    +'<label class="volba"><input type="radio" name="r" value="ponuky" checked><b>Nechcem ponuky a novinky</b>'
+      +'<span>Prestaneme ti posielať akcie, výzvy a pozvánky. Potvrdenia rezervácií a platieb ti chodiť budú.</span></label>'
+    +'<label class="volba"><input type="radio" name="r" value="vsetko"><b>Nechcem už žiadne e-maily</b>'
+      +'<span>Neposielame ti nič okrem toho, čo si sám vyžiadaš v appke.</span></label>'
+    +'<button id="btn">Odhlásiť ma</button>'
+    +'<a class="spat" href="/">Radšej to nechám tak</a>';
+
+  document.getElementById('btn').onclick=async function(){
+    this.disabled=true; this.textContent='Odhlasujem…';
+    const rozsah=(document.querySelector('input[name=r]:checked')||{}).value||'ponuky';
+    try{
+      const r=await (await fetch('/api/unsubscribe',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({e:E,t:T,rozsah})})).json();
+      if(r&&r.ok) return hotovo(false, rozsah);
+    }catch(e){}
+    this.disabled=false; this.textContent='Odhlásiť ma';
+    alert('Nepodarilo sa odhlásiť. Skús to prosím znova alebo nám napíš na info@fusionacademy.sk.');
+  };
+})();
+
+function hotovo(uzPredtym, rozsah){
+  host.innerHTML='<div class="stav">'
+    +'<div class="ikona">💛</div>'
+    +'<h2>'+(uzPredtym?'Už si odhlásený/á':'Hotovo, odhlásili sme ťa')+'</h2>'
+    +'<p>'+(rozsah==='vsetko'
+        ? 'Neposielame ti už žiadne e-maily.'
+        : 'Ponuky a novinky ti už chodiť nebudú. Potvrdenia rezervácií a platieb áno — tie sa týkajú toho, čo si u nás objednáš.')
+      +'</p>'
+    +'<p style="font-size:.86rem">Ak si to rozmyslíš, stačí nám napísať na <b>info@fusionacademy.sk</b>.</p>'
+    +'<a class="spat" href="/">Prejsť na stránku Fusion Academy →</a>'
+    +'</div>';
+}
+</script>
+</body>
+</html>
