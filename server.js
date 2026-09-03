@@ -10566,11 +10566,10 @@ app.post('/api/membership/subscribe', auth, async(req,res)=>{
     const {plan_id} = req.body;
     const plan = MEMBERSHIP_PLANS[plan_id];
     if(!plan || plan.type==='bundle') return res.status(400).json({error:'Neplatný plán pre subscription'});
-    if(!PAYPAL_CLIENT_ID) {
-      // Demo mode – activate immediately
-      await activateMembership(req.session.uid, plan_id);
-      return res.json({ok:true, demo:true, message:'Demo: subscription aktivovaná'});
-    }
+    // Audit 3. 9. 2026: bez PAYPAL_CLIENT_ID tu bol „demo režim", ktorý členstvo
+    // aktivoval bez platby — a na prode PayPal nastavený nie je, takže by si ho
+    // ktokoľvek prihlásený vedel zapnúť zadarmo. Platí sa kartou (Stripe).
+    if(!PAYPAL_CLIENT_ID) return res.status(400).json({error:'PayPal platba nie je dostupná — zaplať kartou.'});
     const u = await q.one(db.users,{_id:req.session.uid});
     const paypalPlanId = await ppEnsureSubscriptionPlan(plan_id);
     const subRes = await ppApi('POST','/v1/billing/subscriptions',{
@@ -10934,11 +10933,9 @@ app.post('/api/membership/buy', auth, async(req,res)=>{
     }
 
     if(payment_method==='paypal'){
-      if(!PAYPAL_CLIENT_ID) {
-        // Demo mode – activate immediately
-        await activateMembership(memberId, plan_id, plan.duration_days||30);
-        return res.json({ok:true, demo:true, credit_used:creditUsed, final_price:finalPrice, message:'Demo: členstvo aktivované bez PayPal'});
-      }
+      // Audit 3. 9. 2026: rovnaká diera ako pri subscribe — bez PAYPAL_CLIENT_ID
+      // sa členstvo aktivovalo „demo" zadarmo. Frontend PayPal neposiela, API áno.
+      if(!PAYPAL_CLIENT_ID) return res.status(400).json({error:'PayPal platba nie je dostupná — zaplať kartou.'});
       const result = await ppCreateOrder(finalPrice,'EUR',`Fusion Academy – ${plan.name}${forWhom}`);
       if(result.status!==201) return res.status(400).json({error:'PayPal chyba'});
       const payment = await q.insert(db.payments,{paypal_order_id:result.body.id,user_id:req.session.uid,member_id:memberId,amount:finalPrice,currency:'EUR',description:`Členstvo ${plan.name}${forWhom}${promoNote}`,ref_id:plan_id,ref_type:'membership',status:'pending',created_at:nowISO(),credit_used:creditUsed,promo_code:promoCode});
