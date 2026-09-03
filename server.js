@@ -16426,7 +16426,8 @@ async function kompenzujZrusenie({class_id, date, days, scope, by}){
       const doKedy=nove.slice(0,10).split('-').reverse().join('. ');
       await q.insert(db.notifications,{user_id:uid, type:'membership',
         title:'💛 Predĺžili sme ti členstvo',
-        body:'Hodina '+cls.name+' '+denADatum(den)+' v '+cls.location+' odpadla, tak ti členstvo '+(m.plan_name||m.plan_id)
+        // mesto v zátvorke — „v Brezno" sa nedá skloňovať bez slovníka
+        body:'Hodina '+cls.name+' ('+cls.location+') '+denADatum(den)+' odpadla, tak ti členstvo '+(m.plan_name||m.plan_id)
           +' predlžujeme o '+dni+' '+sklon(dni)+' — platí do '+doKedy+'. Nech ti nič neujde. 💛',
         read:false, created_at:nowISO()}).catch(()=>{});
       extended.push({user_id:uid, name:u.name, plan:m.plan_id, from:stare.slice(0,10), to:nove.slice(0,10), membership_id:m._id});
