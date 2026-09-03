@@ -47,7 +47,8 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
   console.log('VENČEKOVÝ NÁBOR QA — štart servera…');
   const srv = spawn(process.execPath, ['server.js'], {
     cwd: path.join(__dirname, '..'),
-    env: { ...process.env, PORT: String(PORT), DATA_DIR: DATA, APP_URL: BASE, RATE_LIMIT_OFF: '1', MAIL_CAPTURE: '1' },
+    env: { ...process.env, PORT: String(PORT), DATA_DIR: DATA, APP_URL: BASE, RATE_LIMIT_OFF: '1', MAIL_CAPTURE: '1',
+      IMPORT_TOKEN: 'qa-servis-token' },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   let chyba = ''; srv.stderr.on('data', d => { chyba += d; });
@@ -526,6 +527,28 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     const ziakV = (await j('/api/vencek/mine', {}, ziakC)).d;
     ok('aj žiak v appke', ziakV && ziakV.class && ziakV.class.event_venue === 'Dom kultúry Halíč',
       JSON.stringify(ziakV && ziakV.class && ziakV.class.event_venue));
+
+    console.log('\n9g) Servisné nastavenie rozvrhu cez token (bez admin session):');
+    const bezTok = await fetch(BASE + '/api/vencek/service/set', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: 'VEN-DETVA', event_venue: 'x' }) });
+    ok('bez tokenu endpoint „neexistuje"', bezTok.status === 404, 'HTTP ' + bezTok.status);
+    const sTok = async (body) => { const r = await fetch(BASE + '/api/vencek/service/set', { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-import-token': 'qa-servis-token' }, body: JSON.stringify(body) });
+      let d = null; try { d = await r.json(); } catch (e) {} return { status: r.status, d }; };
+    const nast = await sTok({ code: 'VEN-DETVA', start_at: '2026-09-10T13:00:00', event_date: '2026-12-12', event_venue: 'Dom kultúry Halíč' });
+    ok('s tokenom uloží rozvrh, večer aj miesto', nast.status === 200 && nast.d && nast.d.ok, JSON.stringify(nast.d).slice(0, 120));
+    ok('a vráti prvé termíny na kontrolu', nast.d && Array.isArray(nast.d.terminy) && nast.d.terminy.length === 3
+      && nast.d.terminy[0].startsWith('2026-09-10'), JSON.stringify(nast.d && nast.d.terminy));
+    await new Promise(r => setTimeout(r, 400));
+    const infoN = (await j('/api/vencek/info?code=VEN-DETVA', {}, {})).d;
+    ok('registračná stránka to hneď vidí', infoN && infoN.event_date === '2026-12-12' && infoN.event_venue === 'Dom kultúry Halíč',
+      JSON.stringify(infoN && [infoN.event_date, infoN.event_venue]));
+    ok('neplatný dátum sa odmietne', (await sTok({ code: 'VEN-DETVA', start_at: 'nezmysel' })).status === 400);
+    ok('neznámy kód vráti 404', (await sTok({ code: 'VEN-NIEJE', event_venue: 'x' })).status === 404);
+    ok('prázdne telo sa odmietne', (await sTok({ code: 'VEN-DETVA' })).status === 400);
+    // vráť pôvodný začiatok, nech ďalšie kontroly rozvrhu sedia
+    await sTok({ code: 'VEN-DETVA', start_at: START });
+    await new Promise(r => setTimeout(r, 300));
 
     console.log('\n10) Čo žiak NESMIE vidieť:');
     const z = {};

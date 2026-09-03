@@ -20261,6 +20261,34 @@ app.post('/api/admin/venceky/cost', adminAuth, async(req,res)=>{
 });
 
 // ── Lektor/Admin: zápis hodiny (30-sekundový formulár → progress) ──
+// Servisné nastavenie skupiny cez IMPORT_TOKEN — rovnaký vzor ako import
+// a opätovné odoslanie školám. Marek 3. 9.: „tak to tam zadaj" (rozvrh,
+// venčekový večer, miesto) — do admina sa z terminálu nedostanem, token áno.
+// Prijíma len polia rozvrhu a miesta, nie tance ani dochádzku.
+app.post('/api/vencek/service/set', async(req,res)=>{
+  const tok=process.env.IMPORT_TOKEN;
+  if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
+  try{
+    const kod=String(req.body.code||'').toUpperCase().trim();
+    const c=kod ? await q.one(db.venceky_classes,{code:kod}) : null;
+    if(!c) return res.status(404).json({error:'Skupina nenájdená'});
+    const set={};
+    if(req.body.event_date!=null) set.event_date=String(req.body.event_date).slice(0,20);
+    if(req.body.event_venue!=null) set.event_venue=String(req.body.event_venue).slice(0,120);
+    if(req.body.schedule!=null) set.schedule=String(req.body.schedule).slice(0,120);
+    if(req.body.start_at!=null){
+      const d=new Date(req.body.start_at);
+      if(!(String(req.body.start_at).trim() && !isNaN(d))) return res.status(400).json({error:'Neplatný dátum prvej lekcie'});
+      set.start_at=d.toISOString();
+    }
+    if(!Object.keys(set).length) return res.status(400).json({error:'Nič na uloženie'});
+    await q.update(db.venceky_classes,{_id:c._id},{$set:{...set, updated_at:nowISO()}});
+    const po=await q.one(db.venceky_classes,{_id:c._id});
+    console.log('🎓 SERVIS skupina '+c.code+': '+JSON.stringify(set));
+    res.json({ok:true, code:c.code, set, terminy:vencekTerminy(po).slice(0,3).map(t=>t.at)});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.post('/api/admin/venceky/progress', trainerAuth, async(req,res)=>{
   try{
     const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});
