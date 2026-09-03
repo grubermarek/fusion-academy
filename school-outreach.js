@@ -304,9 +304,13 @@ module.exports = function initSchoolOutreach(ctx) {
       let odislo = false;
       if (vlastny) {
         const meno = String(req.body.subject).slice(0, 200);
-        odislo = await sendMail(s.email, meno, ctx.emailTemplate
-            ? ctx.emailTemplate(String(req.body.title || meno), String(req.body.html), req.body.cta || null, req.body.cta_url || null)
-            : String(req.body.html),
+        // raw:true = html je už hotový dokument (napr. svetlá formálna verzia
+        // v štýle prvého mailu školám) — nebalí sa do tmavej klientskej šablóny.
+        // Pätičku s odhlásením si musí niesť sám; podpis príjemcu doplní sendMail.
+        const telo = (req.body.raw === true || !ctx.emailTemplate)
+          ? String(req.body.html)
+          : ctx.emailTemplate(String(req.body.title || meno), String(req.body.html), req.body.cta || null, req.body.cta_url || null);
+        odislo = await sendMail(s.email, meno, telo,
           { priority: 3, template: 'skoly_rucna_ponuka' }) || process.env.MAIL_CAPTURE === '1';
         if (odislo) await q.update(db.schools, { _id: s._id }, { $set: { resend_of: predtym, resend_at: nowISO(),
           rucna_ponuka_at: nowISO(), updated_at: nowISO() } });
