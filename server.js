@@ -5281,6 +5281,9 @@ const EV_DOPREDAJ_ROZSAH = process.env.EV_DOPREDAJ_ROZSAH === 'otvorili' ? 'otvo
 async function eventDopredajTick(qaMode, opts){
   try{
     if(!process.env.BREVO_API_KEY) return;
+    // Poistka: vlna čaká na Marekovo slovo. Bez EV_DOPREDAJ_GO=1 na Railway
+    // sa nespustí, aj keď je kód nasadený — deploy tak nie je schválenie.
+    if(!qaMode && process.env.EV_DOPREDAJ_GO!=='1') return;
     const t=today();
     if(!(qaMode && process.env.QA_EVENT_WINDOW==='1') && t!=='2026-09-04') return;
     if(await q.one(db.settings,{key:'event_dopredaj_lt2026_done'})) return;
@@ -16376,6 +16379,78 @@ app.post('/api/attendance/cancel-session', trainerAuth, async(req,res)=>{
     await auditLog(req,'class_cancel',class_id,{},{date, reason, notified:bookings.length, refunded, online:!!onlineCancelled},reason||'');
     res.json({ ok:true, notified:bookings.length, refunded, date, next:nextInfo, online_cancelled:onlineCancelled });
   } catch(e){ res.status(500).json({error:e.message}); }
+});
+// ── Kompenzácia za zrušenú hodinu: predĺženie mesačných členstiev ───────────
+// Marek pri rušení hodiny kompenzuje členky v meste predĺžením členstva
+// (20. 8. a 1. 9. Brezno šli ako jednorazové migrácie; 3. 9. „opäť" → nástroj).
+// Kľúč: dve hodiny týždenne = 3,5 dňa na jednu zrušenú hodinu, zaokrúhlené
+// v prospech klientky na 4. Online členstvo živé hodiny nekryje, nepredlžuje sa.
+// Okruh 'city' = všetky, čo do mesta chodia (ako 1. 9.); 'booked' = len
+// booknuté na tú hodinu. Každé zrušenie (hodina + dátum) predĺži členstvo
+// najviac raz — zoznam kompenzácií ostáva na členstve.
+async function kompenzujZrusenie({class_id, date, days, scope, by}){
+  const cls=await q.one(db.classes,{_id:String(class_id||'')});
+  if(!cls) throw new Error('Hodina nenájdená');
+  const dni=Math.round(+days||0);
+  if(!(dni>0 && dni<=60)) throw new Error('Počet dní musí byť 1–60');
+  const den=String(date||'').slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(den) || isNaN(Date.parse(den))) throw new Error('Neplatný dátum');
+  const rozsah=scope==='booked'?'booked':'city';
+  const t=today();
+  let okruh;
+  if(rozsah==='booked'){
+    okruh=new Set((await q.find(db.bookings,{class_id:cls._id, booking_date:den}))
+      .filter(b=>b.status!=='cancelled').map(b=>b.user_id));
+  } else {
+    const mesto=String(cls.location||'').trim().toLowerCase();
+    const ids=new Set((await q.find(db.classes,{}))
+      .filter(c=>String(c.location||'').trim().toLowerCase()===mesto && c.category!=='Online').map(c=>c._id));
+    okruh=new Set((await q.find(db.bookings,{})).filter(b=>ids.has(b.class_id) && b.status!=='cancelled').map(b=>b.user_id));
+  }
+  const kluc=cls._id+'@'+den;
+  const sklon=n=>n===1?'deň':n<5?'dni':'dní';
+  const extended=[];
+  for(const uid of okruh){
+    const u=await q.one(db.users,{_id:uid}); if(!u || u.is_admin) continue;
+    for(const m of await q.find(db.memberships,{user_id:uid})){
+      if(m._type || m.status!=='active') continue;
+      if(!m.expires_at || String(m.expires_at).slice(0,10) < t) continue;
+      if(/online/i.test(String(m.plan_id||'')+' '+String(m.plan_name||''))) continue;
+      if((m.kompenzacie||[]).some(k=>k.key===kluc)) continue;
+      const stare=String(m.expires_at);
+      let nove;
+      if(/T/.test(stare)){ const d0=new Date(stare); d0.setDate(d0.getDate()+dni); nove=d0.toISOString(); }
+      else { const d0=new Date(stare.slice(0,10)+'T12:00:00Z'); d0.setUTCDate(d0.getUTCDate()+dni); nove=d0.toISOString().slice(0,10); }
+      const zaznam={key:kluc, class_name:cls.name, location:cls.location, date:den, days:dni, from:stare, to:nove, at:nowISO(), by:by||null};
+      await q.update(db.memberships,{_id:m._id},{$set:{expires_at:nove, kompenzacie:[...(m.kompenzacie||[]), zaznam]}});
+      const doKedy=nove.slice(0,10).split('-').reverse().join('. ');
+      await q.insert(db.notifications,{user_id:uid, type:'membership',
+        title:'💛 Predĺžili sme ti členstvo',
+        body:'Hodina '+cls.name+' '+denADatum(den)+' v '+cls.location+' odpadla, tak ti členstvo '+(m.plan_name||m.plan_id)
+          +' predlžujeme o '+dni+' '+sklon(dni)+' — platí do '+doKedy+'. Nech ti nič neujde. 💛',
+        read:false, created_at:nowISO()}).catch(()=>{});
+      extended.push({user_id:uid, name:u.name, plan:m.plan_id, from:stare.slice(0,10), to:nove.slice(0,10), membership_id:m._id});
+    }
+  }
+  return {class:cls.name, location:cls.location, date:den, days:dni, scope:rozsah, considered:okruh.size, extended};
+}
+app.post('/api/attendance/cancel-compensate', trainerAuth, async(req,res)=>{
+  try{
+    const r=await kompenzujZrusenie({...req.body, by:req.trainerUser?._id||null});
+    await auditLog(req,'class_compensate',String(req.body.class_id||''),{},{date:r.date, days:r.days, scope:r.scope, extended:r.extended.length},'');
+    res.json({ok:true, ...r});
+  }catch(e){ res.status(400).json({error:e.message}); }
+});
+// Servisná cesta cez IMPORT_TOKEN — rovnaký vzor ako import a venček.
+app.post('/api/service/cancel-compensate', async(req,res)=>{
+  const tok=process.env.IMPORT_TOKEN;
+  if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
+  try{
+    const r=await kompenzujZrusenie({...req.body, by:'service'});
+    console.log('💛 KOMPENZÁCIA '+r.class+' '+r.date+' '+r.location+' +'+r.days+' d ('+r.scope+'): '
+      +(r.extended.map(x=>x.name+' '+x.from+'→'+x.to).join(', ')||'nikto'));
+    res.json({ok:true, ...r});
+  }catch(e){ res.status(400).json({error:e.message}); }
 });
 app.get('/api/attendance/cancellations', trainerAuth, async(req,res)=>{
   const list = await q.find(db.class_cancellations,{ date:{$gte:today()} });
