@@ -21867,7 +21867,7 @@ seedData().then(backfillDefaultSponsor).then(reconcileGlofoxVisits).then(fixClas
 
 // ── Coach Growth System (Úlohy pre trénerov) ────────────────────────────────
 require('./coach')({ app, db, q, Datastore, DATA_DIR, trainerAuth, adminAuth, APP_URL, isTestContact });
-require('./school-outreach')({ app, db, q, Datastore, DATA_DIR, adminAuth, nowISO, APP_URL, sendMail });
+require('./school-outreach')({ app, db, q, Datastore, DATA_DIR, adminAuth, nowISO, APP_URL, sendMail, emailTemplate });
 require('./fusion-ai')({ app, db, q, adminAuth, isTestContact }); // po coach — používa db.coach_contacts
 
 // ── 404 page ──────────────────────────────────────────────────────────────────

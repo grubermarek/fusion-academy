@@ -278,6 +278,51 @@ module.exports = function initSchoolOutreach(ctx) {
     return { poslane, zlyhali: zlyhali.length, adresy_zlyhani: zlyhali.slice(0, 10), zostava };
   }
 
+  // Opätovné odoslanie jednej škole. sendBatch zámerne preskakuje všetko, čo už
+  // má sent_at (inak by drip posielal dookola), takže „pošli ešte raz" cez
+  // admin nešlo. Marek 2. 9.: ZŠ Sekier tvrdí, že mail nedostala — Brevo síce
+  // hlási doručené aj otvorené, ale keď škola prosí, pošleme znova.
+  // Chránené IMPORT_TOKEN ako ostatné servisné volania, nech sa to dá spustiť
+  // aj bez admin session (napr. z terminálu), a zapisuje sa, že šlo o resend.
+  app.post('/api/schools/resend', async (req, res) => {
+    const tok = process.env.IMPORT_TOKEN;
+    if (!tok || req.headers['x-import-token'] !== tok) return res.status(404).end();
+    try {
+      // _id rozlišuje veľkosť písmen, e-mail nie — preto sa porovnávajú zvlášť.
+      const hladajId = String((req.body && req.body.id) || '').trim();
+      const hladajMail = String((req.body && req.body.email) || '').toLowerCase().trim();
+      if (!hladajId && !hladajMail) return res.status(400).json({ error: 'Zadaj email alebo id školy' });
+      const s = (await q.find(db.schools, {})).find(x => (hladajId && x._id === hladajId)
+        || (hladajMail && String(x.email || '').toLowerCase() === hladajMail));
+      if (!s) return res.status(404).json({ error: 'Škola nenájdená' });
+      if (s.unsubscribed) return res.status(400).json({ error: 'Škola sa odhlásila — neposielame' });
+      const predtym = s.sent_at || null;
+      // Vlastný predmet a text — keď riaditeľke ide konkrétna ponuka (zľava,
+      // samostatný venček), nie štandardná šablóna. Ide cez tú istú šablónu
+      // vzhľadu a s pätičkou na odhlásenie ako všetko ostatné.
+      const vlastny = req.body && req.body.subject && req.body.html;
+      let odislo = false;
+      if (vlastny) {
+        const meno = String(req.body.subject).slice(0, 200);
+        odislo = await sendMail(s.email, meno, ctx.emailTemplate
+            ? ctx.emailTemplate(String(req.body.title || meno), String(req.body.html), req.body.cta || null, req.body.cta_url || null)
+            : String(req.body.html),
+          { priority: 3, template: 'skoly_rucna_ponuka' }) || process.env.MAIL_CAPTURE === '1';
+        if (odislo) await q.update(db.schools, { _id: s._id }, { $set: { resend_of: predtym, resend_at: nowISO(),
+          rucna_ponuka_at: nowISO(), updated_at: nowISO() } });
+      } else {
+        await q.update(db.schools, { _id: s._id }, { $set: { sent_at: null, resend_of: predtym, resend_at: nowISO(), updated_at: nowISO() } });
+        const r = await sendBatch(1, [s._id]);
+        odislo = !!r.poslane;
+        // Neodišlo — vráť pôvodný stav, nech drip nezačne školu považovať za novú.
+        if (!odislo) await q.update(db.schools, { _id: s._id }, { $set: { sent_at: predtym, updated_at: nowISO() } });
+      }
+      if (!odislo) return res.status(500).json({ error: 'Mail sa nepodarilo odoslať' });
+      console.log('📨 ' + (vlastny ? 'RUČNÁ PONUKA' : 'RESEND') + ' škole ' + s.email + ' (pôvodne ' + String(predtym || '').slice(0, 10) + ')');
+      res.json({ ok: true, email: s.email, name: s.name, resend_of: predtym, vlastny: !!vlastny });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   app.post('/api/admin/schools/send', adminAuth, async (req, res) => {
     try {
       const limit = Math.min(120, Math.max(1, +((req.body && req.body.limit) || 25)));
