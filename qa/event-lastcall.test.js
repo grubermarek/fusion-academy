@@ -120,7 +120,10 @@ async function spusti(port, DATA, extraEnv) {
   // ── 1. text mailu (bez servera, priamo z origináli v server.js) ──
   console.log('Text mailu:');
   const APP = 'https://app.fusionacademy.sk';
-  const f = new Function('APP_URL', vytiahni('emailTemplate') + '\n' + vytiahni('evLastCallHtml')
+  // evLastCallHtml odvtedy počíta deň v týždni cez denADatum (aby sa „piatok 5. 9."
+  // nedal napísať rukou), takže sa musí vytiahnuť aj tá funkcia s jej tabuľkou dní.
+  const f = new Function('APP_URL', 'const DNI_SK=' + JSON.stringify(['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota']) + ';\n'
+    + vytiahni('denADatum') + '\n' + vytiahni('emailTemplate') + '\n' + vytiahni('evLastCallHtml')
     + '\nreturn {clen: evLastCallHtml("Katka", true, 24, "fa-masterclass-lastcall"),'
     + ' neclen: evLastCallHtml("Lucia", false, 24, "fa-masterclass-lastcall"),'
     + ' plno: evLastCallHtml("Nina", false, 0, "fa-masterclass-lastcall")};')(APP);

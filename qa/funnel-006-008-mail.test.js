@@ -58,15 +58,16 @@ const iso = h => new Date(Date.now() - h * 3600e3).toISOString();
     // ── FUNNEL-006: matica budžetu ──
     const at = async n => (await j('/api/admin/qa/mail-budget?sent=' + n, {}, adm)).d.allowed;
     // Hranice platia pre Brevo Starter (od 29. 8. 2026): denný strop 300 padol,
-    // denné caps sú už len poistka proti runaway — 500 marketing … 1200 transakčné.
+    // denné caps sú už len poistka proti runaway. Od 1. 9. (10 000/mesiac) sú
+    // MAIL_TIER_CAPS 1200 marketing … 2000 transakčné — čísla nižšie ich kopírujú.
     // Mesačný strop (10 000) sa testuje zvlášť v qa/mail-budget.test.js.
-    const b0 = await at(0), b520 = await at(520), b620 = await at(620), b820 = await at(820), b1020 = await at(1020), b1210 = await at(1210);
+    const b0 = await at(0), b1220 = await at(1220), b1320 = await at(1320), b1520 = await at(1520), b1820 = await at(1820), b2010 = await at(2010);
     ok('pri 0 odoslaných ide všetko', Object.values(b0).every(v => v === true));
-    ok('pri 520: marketing (p10) STOP, ostatné idú', b520.p10 === false && b520.p8 === true && b520.p1 === true);
-    ok('pri 620: nurture (p8) STOP, konverzné (p5) idú', b620.p8 === false && b620.p5 === true);
-    ok('pri 820: konverzné (p5) STOP, remindery (p3) idú', b820.p5 === false && b820.p3 === true);
-    ok('pri 1020: remindery STOP, transakčné (p1–2) idú', b1020.p3 === false && b1020.p2 === true);
-    ok('pri 1210: stop aj transakčné (poistka proti runaway)', b1210.p1 === false && b1210.p2 === false);
+    ok('pri 1220: marketing (p10) STOP, ostatné idú', b1220.p10 === false && b1220.p8 === true && b1220.p1 === true);
+    ok('pri 1320: nurture (p8) STOP, konverzné (p5) idú', b1320.p8 === false && b1320.p5 === true);
+    ok('pri 1520: konverzné (p5) STOP, remindery (p3) idú', b1520.p5 === false && b1520.p3 === true);
+    ok('pri 1820: remindery STOP, transakčné (p1–2) idú', b1820.p3 === false && b1820.p2 === true);
+    ok('pri 2010: stop aj transakčné (poistka proti runaway)', b2010.p1 === false && b2010.p2 === false);
 
     // ── FUNNEL-008: abandoned checkout ──
     const a1 = await j('/api/admin/qa/run-abandoned-checkout', { method: 'POST' }, adm);

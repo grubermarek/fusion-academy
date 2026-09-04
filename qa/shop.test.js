@@ -87,9 +87,16 @@ const put = (jar, p, b) => call(jar, 'PUT', p, b);
   // ── E: pay_on_site rezervácia → admin vyberie 10 € na mieste ──
   await post('E', '/api/register', { name: 'SHOP Ivka', email: 'shop-e-' + uniq + '@test-fa-qa.local', password: 'AuditPass123!', consent: true });
   await post('E', '/api/bookings', { class_id: normalCls._id }); // 1. zdarma
-  const gate = await post('E', '/api/bookings', { class_id: normalCls._id, booking_date: '2030-01-07' });
+  // Termín sa už nesmie vymyslieť: od auditu 3. 9. musí booking_date sedieť s dňom
+  // hodiny (pevné 2030-01-07 bol pondelok, hodina nedeľná). Berieme druhý výskyt
+  // toho dňa, nech nekoliduje s rezerváciou zdarma o riadok vyššie.
+  const druhyTermin = (() => { const d = new Date(); d.setHours(12, 0, 0, 0);
+    do { d.setDate(d.getDate() + 1); } while (d.getDay() !== normalCls.day_of_week);
+    d.setDate(d.getDate() + 7);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); })();
+  const gate = await post('E', '/api/bookings', { class_id: normalCls._id, booking_date: druhyTermin });
   ok('bez členstva pýta platbu (402 + can_pay_on_site)', gate.status === 402 && gate.data.can_pay_on_site, gate);
-  const bPos = await post('E', '/api/bookings', { class_id: normalCls._id, booking_date: '2030-01-07', pay_on_site: true });
+  const bPos = await post('E', '/api/bookings', { class_id: normalCls._id, booking_date: druhyTermin, pay_on_site: true });
   ok('rezervácia s platbou na mieste prešla', bPos.status === 200, bPos);
   const col = await post('admin', '/api/admin/bookings/' + bPos.data.id + '/collect', { method: 'cash', amount: 10 });
   ok('vstupné vybrané a zapísané', col.status === 200, col);

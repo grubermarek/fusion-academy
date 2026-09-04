@@ -348,8 +348,13 @@ function renderEventy(){
     +`<div id="cartbar-e">${cartBar()}</div>`;
 }
 let ORDER_PROMO=null;
+// Jedno ID na jeden otvorený košík / produkt: server podľa neho spozná dvojklik
+// a vráti tú istú objednávku namiesto druhej (audit E11/4)
+let ORDER_CID=null;
+const newOrderCid=()=>(window.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,12));
 function openCart(){
   if(!cartCount()) return;
+  ORDER_CID=newOrderCid();
   api('/api/shop/event',{method:'POST',body:JSON.stringify({type:'checkout_open',item:'cart'})});
   const creditApply=Math.min(OV.credit, cartTotal());
   document.getElementById('mTitle').textContent=FA_T('shop.cart_h');
@@ -399,7 +404,7 @@ async function submitOrder(){
     items:CART.map(i=>({product_id:i.product_id, qty:i.qty, size:i.size||undefined, color:i.color||undefined})),
     payment_method:'cash', delivery, notes:'Objednané cez Obchod v appke',
     use_referral_credit:!!document.getElementById('oCredit')?.checked,
-    promo_code:ORDER_PROMO?.code };
+    promo_code:ORDER_PROMO?.code, client_order_id:ORDER_CID||(ORDER_CID=newOrderCid()) };
   if(delivery==='post'){ body.shipping={ name:document.getElementById('shName').value, street:document.getElementById('shStreet').value,
     zip:document.getElementById('shZip').value, city:document.getElementById('shCity').value };
     if(!body.shipping.street||!body.shipping.zip||!body.shipping.city){ err.textContent=FA_T('shop.sh_need'); return; } }
@@ -491,6 +496,7 @@ function openProduct(id){
   const p=PRODUCTS.find(x=>x._id===id); if(!p) return;
   const size=document.getElementById('sz-'+id)?.value, color=document.getElementById('cl-'+id)?.value;
   CUR={kind:'product', id, p, size, color};
+  ORDER_CID=newOrderCid();
   document.getElementById('mTitle').textContent=(p.emoji||'🛍️')+' '+p.name;
   document.getElementById('mBody').innerHTML=`
     <div class="mrow"><span class="mut">Cena</span><span>${eur(p.price)}</span></div>
@@ -507,7 +513,8 @@ async function orderProduct(){
   const r=await api('/api/shop/order',{method:'POST', body:JSON.stringify({
     client_name:ME.name, client_email:ME.email, client_phone:ME.phone||'',
     items:[{product_id:CUR.id, qty:1, size:CUR.size, color:CUR.color}],
-    payment_method:'cash', delivery:'pickup', notes:'Objednané cez Obchod v appke'})});
+    payment_method:'cash', delivery:'pickup', notes:'Objednané cez Obchod v appke',
+    client_order_id:ORDER_CID||(ORDER_CID=newOrderCid())})});
   if(!r.ok&&!r.order_number){ err.textContent=r.error||FA_T('shop.try_again'); return; }
   closeM(); toast(FA_T('shop.order_ok_pickup',{n:CUR.p.name+' '}));
 }

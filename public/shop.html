@@ -472,8 +472,13 @@ async function applyPromoCode() {
   }
 }
 
+// Jedno ID na jeden otvorený košík: server podľa neho spozná dvojklik / dva taby
+// a vráti tú istú objednávku namiesto druhej (audit E11/4)
+let clientOrderId = null;
+const newClientOrderId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12));
 function openCart() {
   if (!cartOffcanvas) cartOffcanvas = new bootstrap.Offcanvas(document.getElementById('cartPanel'));
+  clientOrderId = newClientOrderId();
   cartOffcanvas.show();
 }
 
@@ -548,7 +553,7 @@ async function submitOrder() {
     const r = await fetch('/api/shop/order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ client_name:name, client_email:email, client_phone:phone, referral_code:ref, city, items, notes:fullNotes, payment_method:payMethod, use_referral_credit:useCredit, delivery, shipping, promo_code:promoCode })
+      body: JSON.stringify({ client_name:name, client_email:email, client_phone:phone, referral_code:ref, city, items, notes:fullNotes, payment_method:payMethod, use_referral_credit:useCredit, delivery, shipping, promo_code:promoCode, client_order_id: clientOrderId || (clientOrderId = newClientOrderId()) })
     });
     const d = await r.json();
     if (!r.ok) { errEl.textContent = d.error || 'Chyba'; errEl.classList.remove('d-none'); return; }

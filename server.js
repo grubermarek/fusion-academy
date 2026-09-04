@@ -218,6 +218,10 @@ db.invoices.ensureIndex({ fieldName: 'number', unique: true });
 // eventu zlyhá, a to atomicky — kontrola „najprv pozri, potom zapíš" by pri
 // súbežnom doručení neochránila nič.
 db.webhook_events.ensureIndex({ fieldName: 'event_id', unique: true });
+// Kupóny once_per_user rovnako: syntetický kľúč code:user_id (hosť v e-shope code:email)
+// je unikátny, takže dve súbežné požiadavky tej istej klientky nemôžu prejsť obe.
+// sparse — riadky bez kľúča (kódy bez once_per_user, staré záznamy) index nerieši.
+db.promo_redemptions.ensureIndex({ fieldName: 'user_code_key', unique: true, sparse: true });
 
 // ─── DB helpers ───────────────────────────────────────────────────────────────
 const q = {
@@ -737,9 +741,9 @@ async function seedData() {
     if(renamed) console.log(`✅  Premenovaných ${renamed} hodín „Zumba Fitness" → „Zumba"`); }
   // Migration: Silver membership product price 65 → 75 (idempotent)
   await q.update(db.products,{name:'Členstvo SILVER',price:65},{$set:{price:75}},{multi:true});
-  // Migration: jednotná kapacita 30 pre všetky hodiny v mestách (online necháme na 100)
-  { const capUp = await q.update(db.classes,{category:{$ne:'Online'},capacity:{$ne:30}},{$set:{capacity:30}},{multi:true});
-    if(capUp) console.log(`✅  Kapacita nastavená na 30 pre ${capUp} hodín`); }
+  // Kapacita hodín sa pri štarte už NEprepisuje na 30 (audit 3. 9., E11-A): migrácia
+  // bežala bez flagu pri každom deploji, takže kapacita nastavená v admine neprežila
+  // reštart. Na prode majú všetky živé hodiny 30 — zrušenie nič nemení.
   // Migration: úplné odstránenie Herbalife + F1 z ponuky (deaktivácia produktov + zmazanie blogov)
   { const herbOff = await q.update(db.products,{cat:'Herbalife',active:true},{$set:{active:false}},{multi:true});
     if(herbOff) console.log(`✅  Deaktivovaných ${herbOff} Herbalife produktov`);
@@ -3295,11 +3299,21 @@ async function seedData() {
   }
 
   // Idempotentne: promo kód „prvý mesiac Silver za cenu Bronzu" (25 € zľava, 1×/klient)
+  // Audit 3. 9. 2026 (E11/3): bez plan_ids dal pevných 25 € aj Online Basic (12,90 €) zadarmo → len Silver.
   if(!(await q.one(db.promo_codes,{code:'PRVYMESIAC'}))){
-    await q.insert(db.promo_codes,{ code:'PRVYMESIAC', type:'fixed', value:25, applies_to:'membership',
+    await q.insert(db.promo_codes,{ code:'PRVYMESIAC', type:'fixed', value:25, applies_to:'membership', plan_ids:['silver'],
       max_uses:0, once_per_user:true, min_amount:0, expires_at:null, active:true, used_count:0,
       note:'Prvý mesiac Silver za cenu Bronzu', created_at:nowISO() });
     console.log('✅  promo PRVYMESIAC pridané');
+  }
+  // Migrácia (raz): PRVYMESIAC na prode vznikol bez plan_ids — doplň Silver existujúcemu záznamu.
+  if(!(await q.one(db.settings,{key:'promo_prvymesiac_silver_20260904'}))){
+    const pm=await q.one(db.promo_codes,{code:'PRVYMESIAC'});
+    if(pm && !(Array.isArray(pm.plan_ids) && pm.plan_ids.length)){
+      await q.update(db.promo_codes,{_id:pm._id},{$set:{plan_ids:['silver']}});
+      console.log('✅  promo PRVYMESIAC obmedzené na Silver');
+    }
+    await q.insert(db.settings,{key:'promo_prvymesiac_silver_20260904', value:true, at:nowISO()});
   }
 
   // ── Zosúladenie obsahu upsell sekvencií s blogom (reálne čísla, citáty, odkazy) ──
@@ -3573,14 +3587,23 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
     }
     if(!u.manage_token){ u.manage_token='MG'+Math.random().toString(36).slice(2,12).toUpperCase();
       await q.update(db.users,{_id:u._id},{$set:{manage_token:u.manage_token}}); }
-    const booking=await q.insert(db.bookings,{
-      class_id:cls._id, class_name:cls.name, class_emoji:cls.emoji||'💃',
-      class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
-      day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
-      user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||phone||'',
-      booked_by:u._id, booked_by_name:u.name, is_child_booking:false, child_name:null,
-      booking_date:bdate, status:'confirmed', notes:'', free_class:!u.free_class_used,
-      access_method:'free_class', source:'prva-hodina', created_at:nowISO() });
+    // Pod zámkom hodina@termín znova over obsadenosť a duplicitu — medzi kontrolou
+    // vyššie a zápisom mohla vojsť iná požiadavka (tá istá diera ako E11-B v /api/bookings).
+    const booking=await withBookingLock(cls._id+'@'+bdate, async()=>{
+      const obs=await q.count(db.bookings,{class_id:cls._id, booking_date:bdate, status:{$ne:'cancelled'}});
+      if(cls.capacity && obs>=cls.capacity) return {plna:true};
+      if(await q.one(db.bookings,{user_id:u._id, class_id:cls._id, booking_date:bdate, status:{$ne:'cancelled'}})) return {dup:true};
+      return q.insert(db.bookings,{
+        class_id:cls._id, class_name:cls.name, class_emoji:cls.emoji||'💃',
+        class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
+        day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
+        user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||phone||'',
+        booked_by:u._id, booked_by_name:u.name, is_child_booking:false, child_name:null,
+        booking_date:bdate, status:'confirmed', notes:'', free_class:!u.free_class_used,
+        access_method:'free_class', source:'prva-hodina', created_at:nowISO() });
+    });
+    if(booking.plna) return res.status(400).json({error:'Hodina je už plná — vyber si prosím inú.'});
+    if(booking.dup) return res.status(409).json({error:'Na tento termín už máš rezerváciu. 💛'});
     await q.update(db.users,{_id:u._id},{$set:{free_class_used:true, winback_sent:false, ...(phone&&!u.phone?{phone}:{})}});
     try{
       const admins=await q.find(db.users,{is_admin:true});
@@ -3659,6 +3682,18 @@ app.post('/api/admin/qa/run-event-mail/:wave', adminAuth, async(req,res)=>{
                  lastcall:eventLastCallTick, challenge:referralChallengeTick, september:septemberGreetingTick, oprava:eventOpravaTick,
                  dopredaj:eventDopredajTick }[req.params.wave] || eventLeadTick;
     res.json({ok:true, ...(await fn(true, req.query))});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// QA: denný tick (no-show + denné joby po 8:00 + večerný follow-up po 20:00) s podstrčenou
+// SK hodinou ?hour=NN — bez čakania na 10-minútový interval; bez hour = skutočná hodina
+app.post('/api/admin/qa/run-daily-tick', adminAuth, async(req,res)=>{
+  try{
+    let h;
+    if(req.query.hour!==undefined){
+      h = +req.query.hour;
+      if(!Number.isInteger(h) || h<0 || h>23) return res.status(400).json({error:'hour musí byť 0–23'});
+    }
+    res.json({ok:true, ...(await runDailyTick(h))});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 // QA: matica mail budžetu pri simulovanom počte odoslaných (bez reálneho posielania)
@@ -5544,34 +5579,75 @@ app.get('/api/shop/products', async(req,res)=>{
   res.json(prods.map(p=>({...p, variants:variantsFor(p.name)})));
 });
 
+// ── Objednávka z e-shopu (audit E11/2+3+4+7) ──────────────────────────────────
+// Nič z tela požiadavky nejde do NeDB dotazu priamo: každý reťazec prejde
+// String() + orezaním na povolené znaky (inak {$ne:null} objedná náhodný
+// produkt a referral '.*' priradí cudziu províziu). Ceny sa rátajú len z DB.
+const ORDER_ID_RX = /[^a-zA-Z0-9_-]/g;
+const ORDER_EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ORDER_MAX_ITEMS = 30, ORDER_MAX_QTY = 50;
+// Dvojklik / dva taby pošlú ten istý košík naraz a NeDB nemá transakcie —
+// „nájdi duplicitu → vlož" preto beží po jednom cez tento sériový zámok.
+let shopOrderChain = Promise.resolve();
+function shopOrderSerial(fn){ const run = shopOrderChain.then(fn, fn); shopOrderChain = run.then(()=>{}, ()=>{}); return run; }
+function orderFingerprint(email, items, total, delivery){
+  return [String(email||'').toLowerCase(), delivery||'pickup', (+total||0).toFixed(2),
+    (items||[]).map(i=>[i.product_id, i.qty, i.size||'', i.color||''].join(':')).join(',')].join('|');
+}
+const orderReply = (o, extra) => ({ ok:true, order_number:o.order_number, id:o._id, total:o.total,
+  original_total:+((+o.original_total||+o.total||0)+(+o.promo_discount||0)).toFixed(2),
+  credit_used:o.credit_used||0, promo_discount:o.promo_discount||0, winner_discount:o.winner_discount||0, ...(extra||{}) });
+
 app.post('/api/shop/order', rlPublic, async(req,res)=>{
   try {
-    const {client_name,client_email,client_phone,referral_code,city,items,notes,payment_method,use_referral_credit}=req.body;
-    // Doručenie: 'pickup' (na hodine) | 'post' (poštou + adresa)
-    const delivery = req.body.delivery==='post' ? 'post' : 'pickup';
+    const b = (req.body && typeof req.body==='object' && !Array.isArray(req.body)) ? req.body : {};
+    const str = (v, n) => String(v==null ? '' : v).trim().slice(0, n);
+    const client_name = str(b.client_name, 120);
+    const client_email = str(b.client_email, 254).toLowerCase();
+    const client_phone = str(b.client_phone, 40);
+    const city = str(b.city, 60);
+    const notes = str(b.notes, 1000);
+    const payment_method = str(b.payment_method, 30).replace(/[^a-z_]/gi,'') || 'cash';
+    const referral_code = String(b.referral_code==null ? '' : b.referral_code).replace(/[^a-zA-Z0-9-]/g,'').slice(0,40);
+    const client_order_id = String(b.client_order_id==null ? '' : b.client_order_id).replace(ORDER_ID_RX,'').slice(0,64);
+    const promo_code = str(b.promo_code, 40);
+    const items = b.items;
+    if(!client_name) return res.status(400).json({error:'Meno je povinné'});
+    if(!client_email || !ORDER_EMAIL_RX.test(client_email)) return res.status(400).json({error:'Zadaj platný e-mail'});
+    if(!Array.isArray(items) || !items.length) return res.status(400).json({error:'Košík je prázdny'});
+    if(items.length > ORDER_MAX_ITEMS) return res.status(400).json({error:`Priveľa položiek v košíku (max ${ORDER_MAX_ITEMS})`});
+    // Doručenie: 'pickup' (na hodine) | 'post' (poštou) — adresa je pri pošte povinná vždy, nie len keď ju klient pošle
+    const delivery = b.delivery==='post' ? 'post' : 'pickup';
     let shipping = null;
-    if(delivery==='post' && req.body.shipping){
-      const s=req.body.shipping, clean=v=>String(v||'').slice(0,120);
-      shipping={ name:clean(s.name), street:clean(s.street), zip:clean(s.zip), city:clean(s.city) };
+    if(delivery==='post'){
+      const s = (b.shipping && typeof b.shipping==='object') ? b.shipping : {};
+      shipping = { name:str(s.name,120), street:str(s.street,120), zip:str(s.zip,20), city:str(s.city,120) };
       if(!shipping.name||!shipping.street||!shipping.zip||!shipping.city) return res.status(400).json({error:'Pri zásielke poštou treba celú adresu.'});
     }
-    if(!client_name||!client_email||!items?.length) return res.status(400).json({error:'Meno, email a košík sú povinné'});
     let partner_id=null, partner_name=null;
-    if(referral_code?.trim()){
-      const sp=await q.one(db.users,{referral_code:new RegExp('^'+referral_code.trim()+'$','i')});
+    if(referral_code){
+      const sp=await q.one(db.users,{referral_code:new RegExp('^'+referral_code+'$','i')});
       if(sp){partner_id=sp._id;partner_name=sp.name;}
     }
     const enriched=[]; let total=0;
     for(const item of items){
-      const prod=await q.one(db.products,{_id:item.product_id});
-      if(!prod) continue;
-      const subtotal=+(prod.price*item.qty).toFixed(2);
+      if(!item || typeof item!=='object' || Array.isArray(item) || typeof item.product_id!=='string') return res.status(400).json({error:'Neplatná položka v košíku'});
+      const pid = item.product_id.replace(ORDER_ID_RX,'').slice(0,64);
+      const qty = (typeof item.qty==='string' && /^\d{1,3}$/.test(item.qty)) ? +item.qty : item.qty;
+      if(!Number.isInteger(qty) || qty<1 || qty>ORDER_MAX_QTY) return res.status(400).json({error:`Neplatné množstvo (1–${ORDER_MAX_QTY} ks)`});
+      // Neexistujúci alebo vypnutý produkt sa neprekočí potichu — objednávka za 0 € by bola nezmysel
+      const prod = pid ? await q.one(db.products,{_id:pid, active:true}) : null;
+      if(!prod) return res.status(400).json({error:'Produkt už nie je v ponuke'});
+      const price = +prod.price;
+      if(!Number.isFinite(price) || price<0) return res.status(400).json({error:'Produkt nemá platnú cenu'});
+      const subtotal=+(price*qty).toFixed(2);
       total+=subtotal;
       const vr=variantsFor(prod.name);
-      const size = (vr&&vr.sizes&&item.size&&vr.sizes.includes(item.size)) ? item.size : null;
-      const color = (vr&&vr.colors&&item.color&&vr.colors.includes(item.color)) ? item.color : null;
-      enriched.push({product_id:prod._id,product_name:prod.name,price:prod.price,qty:item.qty,subtotal,commission_rate:prod.commission_rate, size, color});
+      const size = (vr&&vr.sizes&&typeof item.size==='string'&&vr.sizes.includes(item.size)) ? item.size : null;
+      const color = (vr&&vr.colors&&typeof item.color==='string'&&vr.colors.includes(item.color)) ? item.color : null;
+      enriched.push({product_id:prod._id,product_name:prod.name,price,qty,subtotal,commission_rate:prod.commission_rate, size, color});
     }
+    if(!enriched.length) return res.status(400).json({error:'Košík je prázdny'});
     total=+total.toFixed(2);
     // Odmena klientky mesiaca sa odráta sama, ešte pred zľavovým kódom.
     const vitazkaPodiel = await zlavaKlientkyMesiaca(req.session?.uid);
@@ -5579,26 +5655,44 @@ app.post('/api/shop/order', rlPublic, async(req,res)=>{
     if(vitazkaZlava > 0) total = +(total - vitazkaZlava).toFixed(2);
     // ── Zľavový kód (napr. osobná odmena za klientku mesiaca) ──────────────────
     let promoDiscount=0, appliedPromo=null;
-    if(req.body.promo_code){
-      const v=await validatePromo(req.body.promo_code, total, req.session?.uid, 'merch');
+    if(promo_code){
+      const v=await validatePromo(promo_code, total, req.session?.uid, 'merch', {email:client_email, reserve:true});
       if(v.ok){ promoDiscount=v.discount; total=v.final; appliedPromo=v.promo; }
     }
-    // ── Apply referral credit ─────────────────────────────────────────────────
-    let creditUsed = 0;
-    let finalTotal = total;
-    if(use_referral_credit && req.session?.uid){
-      const buyer = await q.one(db.users,{_id:req.session.uid});
+    // ── Referral kredit — tu sa len spočíta, odpočet ide až so zápisom objednávky ──
+    let creditUsed = 0, finalTotal = total, buyer = null;
+    if(b.use_referral_credit && req.session?.uid){
+      buyer = await q.one(db.users,{_id:req.session.uid});
       if(buyer && (buyer.referral_credit||0) > 0){
         creditUsed = Math.min(buyer.referral_credit, total);
         finalTotal = Math.max(0, +(total - creditUsed).toFixed(2));
+      } else buyer = null;
+    }
+    if(!Number.isFinite(finalTotal) || finalTotal < 0) return res.status(400).json({error:'Neplatná suma objednávky'});
+    const fp = orderFingerprint(client_email, enriched, finalTotal, delivery);
+    const result = await shopOrderSerial(async()=>{
+      // 1) to isté client_order_id (uuid z košíka) s tým istým košíkom → tá istá objednávka
+      if(client_order_id){
+        const same=(await q.find(db.orders,{client_order_id})).find(o=>orderFingerprint(o.client_email,o.items,o.total,o.delivery)===fp);
+        if(same) return {existing:same};
+      }
+      // 2) rovnaký e-mail + položky + suma medzi čakajúcimi za posledných 60 s (dvojklik bez uuid)
+      const since=new Date(Date.now()-60000).toISOString();
+      const dup=(await q.find(db.orders,{client_email, status:'pending'}))
+        .filter(o=>String(o.created_at||'')>=since)
+        .find(o=>orderFingerprint(o.client_email,o.items,o.total,o.delivery)===fp);
+      if(dup) return {existing:dup};
+      if(creditUsed > 0 && buyer){
         await q.update(db.users,{_id:buyer._id},{$set:{referral_credit:+((buyer.referral_credit)-creditUsed).toFixed(2)}});
         await q.insert(db.notifications,{user_id:buyer._id,type:'credit',title:`Referral kredit použitý v e-shope 🛍`,body:`Zľava ${creditUsed.toFixed(2)} € na objednávku. Nový zostatok: ${((buyer.referral_credit)-creditUsed).toFixed(2)} €`,read:false,created_at:nowISO()});
       }
-    }
-    const order_number='FA-'+new Date().getFullYear()+'-'+oid();
-    const order=await q.insert(db.orders,{order_number,client_name,client_email:client_email.toLowerCase().trim(),client_phone:client_phone||'',referral_code:referral_code?.trim()||'',partner_id,partner_name,city:city||'',items:enriched,total:finalTotal,original_total:total,credit_used:creditUsed,promo_code:appliedPromo?appliedPromo.code:null,promo_discount:promoDiscount,winner_discount:vitazkaZlava,winner_discount_pct:vitazkaPodiel?Math.round(vitazkaPodiel*100):0,notes:notes||'',payment_method:payment_method||'cash',delivery,shipping,status:'pending',created_at:nowISO(),paid_at:null});
-    if(appliedPromo) await recordPromoRedemption(appliedPromo, req.session?.uid, promoDiscount);
-    res.json({ok:true,order_number,id:order._id,total:finalTotal,original_total:+(total+promoDiscount).toFixed(2),credit_used:creditUsed,promo_discount:promoDiscount,winner_discount:vitazkaZlava});
+      const order_number='FA-'+new Date().getFullYear()+'-'+oid();
+      const order=await q.insert(db.orders,{order_number,client_order_id:client_order_id||null,client_name,client_email,client_phone,referral_code,partner_id,partner_name,city,items:enriched,total:finalTotal,original_total:total,credit_used:creditUsed,promo_code:appliedPromo?appliedPromo.code:null,promo_discount:promoDiscount,winner_discount:vitazkaZlava,winner_discount_pct:vitazkaPodiel?Math.round(vitazkaPodiel*100):0,notes,payment_method,delivery,shipping,status:'pending',created_at:nowISO(),paid_at:null});
+      return {order};
+    });
+    if(result.existing) return res.json(orderReply(result.existing,{duplicate:true}));
+    if(appliedPromo) await recordPromoRedemption(appliedPromo, req.session?.uid, promoDiscount, {email:client_email});
+    res.json(orderReply(result.order));
   } catch(e){res.status(500).json({error:e.message});}
 });
 
@@ -5618,6 +5712,97 @@ app.get('/api/shop/order/:num', async(req,res)=>{
 });
 
 app.get('/api/shop/locations', (req,res)=>res.json(LOCATIONS));
+
+// ── Jedna cesta „objednávka zaplatená" (audit E11/1+5+6) ─────────────────────
+// Admin potvrdenie, Stripe webhook aj verify-order končia tu. NeDB nemá
+// transakcie, ale jeden update je atomický — filtrovaný update {status≠paid}
+// je preto zámok: pri súbehu (5 klikov naraz, webhook + návrat z platby) vyhrá
+// presne jedna cesta a len tá vystaví faktúru, pripíše províziu, odznak,
+// notifikácie a maily. paid_at sa zapíše raz (jediný zápis do objednávky).
+const ORDER_PAY_LABEL = { stripe:'Stripe (karta / Apple Pay / Google Pay)', online:'Stripe (karta / Apple Pay / Google Pay)',
+  card:'Karta', cash:'Hotovosť', onsite:'Hotovosť (na hodine)', transfer:'Prevod', referral_credit:'Fusion kredit' };
+async function userByEmailCI(email){
+  const em=String(email||'').trim();
+  if(!em) return null;
+  return q.one(db.users,{email:new RegExp('^'+em.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$','i')});
+}
+// Faktúra k objednávke — idempotentná podľa order_id/order_number, aby ju žiadna
+// cesta (ani dofakturovanie) nevystavila dvakrát. Nikdy nehádže.
+async function createOrderInvoice(order, {silent, buyer}={}){
+  try{
+    const existing = await q.one(db.invoices,{$or:[{order_id:order._id},{order_number:order.order_number}]});
+    if(existing) return existing;
+    const items=(order.items||[]).map(it=>{ const qty=+it.qty||1, price=+it.price||0;
+      return { desc:`${it.product_name||it.name||'Položka'}${variantLabel(it)} ×${qty}`, qty, unit_price:+price.toFixed(2), total:+(price*qty).toFixed(2) }; });
+    const sum=+items.reduce((s,i)=>s+i.total,0).toFixed(2);
+    const total=+(+order.total||0).toFixed(2);
+    // Kredit / promo kód / odmena klientky mesiaca — ako zľavový riadok, aby súčet sedel so zaplatenou sumou
+    if(sum-total>0.009) items.push({ desc:'Zľava (kredit / promo kód)', qty:1, unit_price:-+(sum-total).toFixed(2), total:-+(sum-total).toFixed(2) });
+    const u = buyer!==undefined ? buyer : await userByEmailCI(order.client_email);
+    const dt = String(order.paid_at||'').slice(0,10) || today();
+    return await createInvoice({ user_id:u?u._id:null, client_name:order.client_name, client_email:order.client_email, items, total,
+      method: ORDER_PAY_LABEL[order.payment_method] || order.payment_method || '—',
+      issued_at:dt, paid_at:dt, silent:!!silent, order_id:order._id, order_number:order.order_number });
+  }catch(e){ console.error('createOrderInvoice:', e.message); return null; }
+}
+async function orderPaid(order, {source, paid_via, stripe_session_id}={}){
+  if(!order||!order._id) return {changed:false};
+  const firstTime = !order.paid_at;
+  const set = { status:'paid', paid_at: order.paid_at||nowISO(), paid_source: source||'admin', updated_at: nowISO() };
+  if(paid_via) set.payment_method = paid_via;
+  if(stripe_session_id) set.stripe_session_id = String(stripe_session_id);
+  const n = await q.update(db.orders,{_id:order._id, status:{$ne:'paid'}},{$set:set});
+  if(n!==1) return {changed:false};                    // už zaplatená, alebo ju práve zaplatila druhá cesta
+  if(!firstTime) return {changed:true, repeated:true}; // paid→pending→paid: provízia aj faktúra už raz boli
+  const paid = {...order, ...set};
+  const buyer = await userByEmailCI(paid.client_email).catch(()=>null);
+  // 1) provízia — rovnaké pravidlá, aké malo doteraz len admin potvrdenie
+  try{
+    if(buyer && buyer.sponsor_id){
+      // Člen: provízia hore po jeho sponzorskej línii (ako pri členstve); admin „Predaj" posiela awardPurchaseCommission
+      for(const item of (paid.items||[])) await awardPurchaseCommission({ buyer_id:buyer._id, amount:item.subtotal, product_name:item.product_name });
+    } else {
+      if(paid.partner_id){
+        // Hosť s referral kódom — provízia referrerovi (transakcia nesie order_id kvôli dohľadateľnosti)
+        for(const item of (paid.items||[])){
+          const tx=await q.insert(db.transactions,{partner_id:paid.partner_id,client_name:paid.client_name,product_id:item.product_id||null,product_name:item.product_name,amount:item.subtotal,date:today(),notes:'E-shop objednávka '+paid.order_number,order_id:paid._id,payment_method:paid.payment_method||null,created_at:nowISO()});
+          await saveCommissions(tx._id,paid.partner_id,item.subtotal);
+        }
+        await calcRank(paid.partner_id);
+      }
+      // Admin sa o zaplatenom predaji dozvie aj bez sponzorskej línie (kartové objednávky hostí boli doteraz tiché)
+      if(!/@test-fa-qa\.local$/i.test(String(paid.client_email||''))){
+        const zoznam=(paid.items||[]).map(i=>(i.product_name||'položka')+(+i.qty>1?' ×'+i.qty:'')).join(', ');
+        for(const a of await q.find(db.users,{is_admin:true}))
+          await q.insert(db.notifications,{user_id:a._id,type:'sale',title:`💶 Predaj: ${(+paid.total||0).toFixed(2)} €`,
+            body:`${paid.client_name||paid.client_email} — E-shop ${paid.order_number} (${zoznam})`,read:false,created_at:nowISO()}).catch(()=>{});
+      }
+    }
+  }catch(e){ console.error('orderPaid provízia:', e.message); }
+  // 2) faktúra (klientke odíde „ďakujeme za platbu")
+  const invoice = await createOrderInvoice(paid,{buyer});
+  // 3) odznak za merch + oznámenie priateľom
+  await grantMerchFromOrder(paid);
+  return {changed:true, invoice};
+}
+// Dofakturovanie (audit E11, 4. 9. 2026): dve kartové objednávky z 28. a 31. 8.
+// prešli cez Stripe webhook, ktorý vtedy faktúru nevystavoval. Presne tieto dve
+// dostanú faktúru cez createOrderInvoice (bez mailu, dátum = deň platby). Nič iné.
+async function shopInvoiceBackfill20260904(){
+  const KEY='shop_invoice_backfill_20260904';
+  try{
+    if(await q.one(db.settings,{key:KEY})) return;
+    let n=0, fail=false;
+    for(const num of ['FA-2026-YMJJNKU','FA-2026-T94KK44']){
+      const o=await q.one(db.orders,{order_number:num});
+      if(!o || o.status!=='paid') continue;
+      if(await q.one(db.invoices,{$or:[{order_id:o._id},{order_number:o.order_number}]})) continue;
+      const inv=await createOrderInvoice(o,{silent:true});
+      if(inv){ n++; console.log(`🧾 Dofakturované ${num} → faktúra ${inv.number}`); } else fail=true;
+    }
+    if(!fail) await q.insert(db.settings,{key:KEY, value:true, at:nowISO(), invoiced:n});
+  }catch(e){ console.error('shopInvoiceBackfill20260904:', e.message); }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SCHEDULE – PUBLIC
@@ -5729,13 +5914,21 @@ app.post('/api/invite/:code/book', rlPublic, async(req,res)=>{
       return res.status(400).json({error:'Na túto hodinu už máš rezerváciu 🙂'});
     if(!u.manage_token){ u.manage_token='MG'+Math.random().toString(36).slice(2,12).toUpperCase();
       await q.update(db.users,{_id:u._id},{$set:{manage_token:u.manage_token}}); }
-    const booking=await q.insert(db.bookings,{
-      class_id:cls._id, class_name:cls.name, class_emoji:cls.emoji||'💃',
-      class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
-      day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
-      user_id:u._id, user_name:u.name, user_email:/@guest\./.test(u.email)?'':u.email, user_phone:u.phone||'',
-      booking_date:bdate, status:'confirmed', notes:'', free_class:!u.free_class_used,
-      access_method:'free_class', source:'invite', invited_by:sp._id, created_at:nowISO() });
+    // Pod zámkom hodina@termín znova over obsadenosť a duplicitu (tá istá diera ako E11-B).
+    const booking=await withBookingLock(cls._id+'@'+bdate, async()=>{
+      const obs=await q.count(db.bookings,{class_id:cls._id, booking_date:bdate, status:{$ne:'cancelled'}});
+      if(cls.capacity && obs>=cls.capacity) return {plna:true};
+      if(await q.one(db.bookings,{class_id:cls._id, user_id:u._id, booking_date:bdate, status:{$ne:'cancelled'}})) return {dup:true};
+      return q.insert(db.bookings,{
+        class_id:cls._id, class_name:cls.name, class_emoji:cls.emoji||'💃',
+        class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
+        day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
+        user_id:u._id, user_name:u.name, user_email:/@guest\./.test(u.email)?'':u.email, user_phone:u.phone||'',
+        booking_date:bdate, status:'confirmed', notes:'', free_class:!u.free_class_used,
+        access_method:'free_class', source:'invite', invited_by:sp._id, created_at:nowISO() });
+    });
+    if(booking.plna) return res.status(400).json({error:'Hodina je už plná — vyber si prosím inú.'});
+    if(booking.dup) return res.status(400).json({error:'Na túto hodinu už máš rezerváciu 🙂'});
     await q.update(db.users,{_id:u._id},{$set:{free_class_used:true, winback_sent:false}});
     refEvent(sp,'booked',{guest_id:u._id, class_id:cls._id, booking_id:booking._id, city:cls.location, test});
     if(!test){
@@ -8017,30 +8210,29 @@ app.post('/api/admin/users/:id/grant-membership', adminAuth, async(req,res)=>{
     const plan_id=req.body.plan_id; const plan=MEMBERSHIP_PLANS[plan_id];
     const gift = req.body.gift!==false; // default darček (bez platby) — migrácia
     const entries = Math.max(0, parseInt(req.body.entries)||0);
-    let expiresISO=null;
-    if(req.body.expires_at && /^\d{4}-\d{2}-\d{2}/.test(req.body.expires_at)){
-      expiresISO = new Date(req.body.expires_at+'T23:59:59').toISOString();
-    } else if(plan){
-      // Obnova NADVÄZUJE na koniec bežiaceho členstva — kto si zaplatí ďalší mesiac
-      // skôr, nesmie oň prísť (predtým sa počítalo od dnešného dňa a obdobie sa skrátilo).
-      const existingForExp = plan.type!=='bundle' ? await q.one(db.memberships,{user_id:u._id,status:'active'}) : null;
-      const base = (existingForExp && existingForExp.expires_at && new Date(existingForExp.expires_at)>new Date())
-        ? new Date(existingForExp.expires_at) : new Date();
-      expiresISO = new Date(base.getTime()+(plan.duration_days||30)*86400000).toISOString();
-    }
+    // Platnosť zadaná adminom (migrácia z Glofoxu, oprava) má prednosť pred výpočtom.
+    const adminExpiresISO = (req.body.expires_at && /^\d{4}-\d{2}-\d{2}/.test(req.body.expires_at))
+      ? new Date(req.body.expires_at+'T23:59:59').toISOString() : null;
+    let expiresISO = adminExpiresISO;
+    if(!expiresISO && plan && plan.type==='bundle') expiresISO = new Date(Date.now()+(plan.duration_days||30)*86400000).toISOString();
     const payMethod = gift ? null : (req.body.payment_method||'cash');
     const paidAmount = +(req.body.amount||plan?.price||0);
-    let bundleEntries = 0;
+    let bundleEntries = 0, credited = 0;
     // Členstvo (ak vybraný plán a nie je to len permanentka)
     if(plan && plan.type!=='bundle'){
-      const existing=await q.one(db.memberships,{user_id:u._id,status:'active'});
+      // Rovnaká logika ako platba kartou (audit E7): rovnaký plán nadväzuje na expiráciu,
+      // iný plán vráti zvyšok starého do kreditu (aj pri darčeku — klientka o zaplatený
+      // zvyšok nesmie prísť) a nový začína dnes. Predtým sa tu nadväzovalo bez ohľadu na plán.
+      const sw = await settleMembershipChange(u._id, plan_id, plan.duration_days||30, {expiresAt: adminExpiresISO});
+      expiresISO = sw.expiresAt.toISOString(); credited = sw.refundVal;
+      const existing = sw.existing;
       // POZOR: payment_method na zázname členstva je to, podľa čoho ho vidí ÚČTOVNÍCTVO
       // (accountingData berie membs.filter(m=>m.payment_method)) — bez neho je predaj neviditeľný.
       const rec={user_id:u._id,user_name:u.name,plan_id,plan_name:plan.name,price:gift?0:paidAmount,
         status:'active',started_at:nowISO(),expires_at:expiresISO,
         payment_method: payMethod,
         gift:!!gift,migrated:!!gift,granted_by:req.session.uid,updated_at:nowISO()};
-      if(existing){ await q.update(db.memberships,{_id:existing._id},{$set:{plan_id,plan_name:plan.name,expires_at:expiresISO,price:gift?0:paidAmount,payment_method:payMethod,gift:!!gift,migrated:!!gift}}); }
+      if(existing){ await q.update(db.memberships,{_id:existing._id},{$set:{plan_id,plan_name:plan.name,expires_at:expiresISO,price:gift?0:paidAmount,payment_method:payMethod,gift:!!gift,migrated:!!gift,updated_at:nowISO()}}); }
       else { await q.insert(db.memberships,{...rec,created_at:nowISO()}); }
       await q.update(db.users,{_id:u._id},{$set:{membership_plan:plan_id,membership_expires:expiresISO}});
       refreshMemberTier(u._id).catch(()=>{});
@@ -8088,8 +8280,9 @@ app.post('/api/admin/users/:id/grant-membership', adminAuth, async(req,res)=>{
     if(totalEntries>0){ await q.update(db.users,{_id:u._id},{$set:{single_entries:(u.single_entries||0)+totalEntries}}); }
     await q.insert(db.notifications,{user_id:u._id,type:'membership',title: gift?'🎁 Členstvo pridelené':'✅ Členstvo aktivované',
       body:`${plan?plan.name:''}${expiresISO?` platné do ${expiresISO.slice(0,10)}`:''}${entries?` · +${entries} vstupov`:''}`,read:false,created_at:nowISO()}).catch(()=>{});
-    await auditLog(req, gift?'membership_gift':'membership_sell', u._id, {}, {plan_id,expires_at:expiresISO,entries,gift,amount:gift?0:(req.body.amount||plan?.price)}, gift?'Migrácia/darček':'Platba na mieste');
-    res.json({ ok:true, plan_name:plan?.name||'—', expires_at:expiresISO?expiresISO.slice(0,10):null, entries: totalEntries });
+    await auditLog(req, gift?'membership_gift':'membership_sell', u._id, {}, {plan_id,expires_at:expiresISO,entries,gift,amount:gift?0:(req.body.amount||plan?.price),credited}, gift?'Migrácia/darček':'Platba na mieste');
+    // credited = kredit za zvyšok starého plánu pri zmene (0 pri predĺžení) — admin nech to vidí
+    res.json({ ok:true, plan_name:plan?.name||'—', expires_at:expiresISO?expiresISO.slice(0,10):null, entries: totalEntries, credited });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -9848,29 +10041,16 @@ app.put('/api/admin/orders/:id', adminAuth, async(req,res)=>{
       if(!status) return res.json({ok:true, handled_by_name:me?.name||''});
     }
     if(!status) return res.json({ok:true});
-    await q.update(db.orders,{_id:req.params.id},{$set:{status,updated_at:nowISO(),...(status==='paid'?{paid_at:nowISO()}:{})}});
-    if(status==='paid' && order.status!=='paid'){
-      // Kto objednávku kúpil (ak je to náš člen) — pre províziu po jeho sponzorskej línii
-      const esc=s=>String(s||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-      const buyer = order.client_email
-        ? await q.one(db.users,{email:new RegExp('^'+esc(order.client_email.trim())+'$','i')})
-        : null;
-      if(buyer && buyer.sponsor_id){
-        // Provízia hore po genealógii kupujúceho (rovnako ako pri členstve).
-        // Sponzor tak dostane affiliate kredit aj za merch kúpený niekým v jeho línii.
-        for(const item of order.items){
-          await awardPurchaseCommission({ buyer_id: buyer._id, amount:item.subtotal, product_name: item.product_name });
-        }
-      } else if(order.partner_id){
-        // Predaj cez referral kód (kupujúci nie je náš člen) — provízia referrerovi.
-        for(const item of order.items){
-          const tx=await q.insert(db.transactions,{partner_id:order.partner_id,client_name:order.client_name,product_id:item.product_id||null,product_name:item.product_name,amount:item.subtotal,date:today(),notes:'E-shop objednávka '+order.order_number,order_id:order._id});
-          await saveCommissions(tx._id,order.partner_id,item.subtotal);
-        }
-        await calcRank(order.partner_id);
-      }
-      grantMerchFromOrder(order);
+    // Whitelist stavov — čokoľvek iné („hocico") sa nesmie uložiť (audit E11/5)
+    if(!['pending','paid','cancelled'].includes(status)) return res.status(400).json({error:'Neznámy stav objednávky'});
+    if(status==='paid'){
+      // Jedna spoločná cesta so zámkom: provízia, faktúra, odznak, notifikácie a maily
+      // presne raz — aj keď admin klikne „Zaplatené" päťkrát naraz alebo opakovane.
+      const r=await orderPaid(order,{source:'admin'});
+      if(r.changed) await auditLog(req,'order_paid',order.order_number,{status:order.status},{status:'paid'},'');
+      return res.json({ok:true, already_paid:!r.changed});
     }
+    await q.update(db.orders,{_id:order._id},{$set:{status,updated_at:nowISO()}});
     res.json({ok:true});
   } catch(e){res.status(500).json({error:e.message});}
 });
@@ -10014,6 +10194,7 @@ app.get('/api/admin/bookings', adminAuth, async(req,res)=>{
 
 app.put('/api/admin/bookings/:id', adminAuth, async(req,res)=>{
   const {status} = req.body;
+  if(!status || typeof status!=='string') return res.status(400).json({error:'Chýba stav rezervácie'});
   const b = await q.one(db.bookings,{_id:req.params.id});
   if(!b) return res.status(404).json({error:'Rezervácia nenájdená'});
   // Pri storne sa vstup vracia LEN na výslovnú žiadosť (refund:true). Pri no-show
@@ -10021,8 +10202,10 @@ app.put('/api/admin/bookings/:id', adminAuth, async(req,res)=>{
   let refunded='';
   const chceVratit = req.body.refund===true || req.body.refund==='1';
   if(status==='cancelled' && b.status==='confirmed'){
+    // Najprv podmienený update ako zámok (E11-F): druhý klik s refund:true predtým vrátil vstup dvakrát.
+    const zmenene = await q.update(db.bookings,{_id:b._id, status:'confirmed'},{$set:{status,cancelled_at:nowISO(),cancelled_by:'admin'}});
+    if(!zmenene) return res.json({ok:true, already:true, refunded:false, refund_note:null});
     if(chceVratit) refunded = await refundBookingAccess(b);
-    await q.update(db.bookings,{_id:req.params.id},{$set:{status,cancelled_at:nowISO(),cancelled_by:'admin'}});
     await promoteWaitlist(b.class_id, b.booking_date);
   } else {
     await q.update(db.bookings,{_id:req.params.id},{$set:{status}});
@@ -10198,6 +10381,12 @@ app.post('/api/paypal/capture-order', async(req,res)=>{
       // If it's a membership payment, activate membership (member_id = child if family purchase)
       if(payment.ref_type==='membership' && payment.user_id){
         await activateMembership(payment.member_id || payment.user_id, payment.ref_id, 30);
+        // kupón rezervovaný pri žiadosti sa započíta až teraz, keď peniaze prišli (E11/2)
+        if(payment.promo_code && payment.promo_redemption_id){
+          const pr=await q.one(db.promo_codes,{code:payment.promo_code});
+          if(pr){ const r=await commitPromoUse(pr, payment.promo_redemption_id, {discount:payment.promo_discount}).catch(()=>({ok:false, reason:'chyba zápisu'}));
+            if(!r.ok) await promoAdminWarn(await q.one(db.users,{_id:payment.user_id}), payment.promo_code, r.reason, payment.promo_discount, payment.description||'členstvo'); }
+        }
       }
       // If it's a booking payment, confirm booking
       if(payment.ref_type==='booking' && payment.ref_id){
@@ -10408,6 +10597,40 @@ async function logCredit(userId, delta, reason){
     await q.insert(db.credit_ledger,{user_id:userId, delta:+(+delta).toFixed(2), reason:String(reason).slice(0,160),
       balance:+(u?.referral_credit||0), created_at:nowISO()}); }catch(e){}
 }
+// Spoločná logika „existujúce členstvo → nové" pre platbu kartou (activateMembership)
+// aj ručný predaj / darček (grant-membership). Predtým mal ručný predaj vlastný výpočet
+// a pri zmene plánu nadväzoval od starej expirácie: Bronze so zvyškom 15 dní + Gold dalo
+// 45 dní Gold za cenu 30 a kredit 0; pri downgrade klientka o zvyšok drahšieho plánu prišla
+// (audit E7). Pravidlo: rovnaký plán = predĺženie od aktuálnej expirácie; iný plán =
+// zvyšok starého plánu sa prepočíta na Fusion kredit (aj pri darčeku) a nový začína dnes.
+// opts.expiresAt = platnosť zadaná adminom (migrácia/oprava), má prednosť pred výpočtom.
+async function settleMembershipChange(userId, planId, durationDays, opts={}){
+  const plan = MEMBERSHIP_PLANS[planId];
+  const now = new Date();
+  const existing = await q.one(db.memberships,{user_id:userId,status:'active'});
+  const stillValid = !!(existing && existing.expires_at && new Date(existing.expires_at)>now);
+  let refundVal=0, remDays=0;
+  if(existing && stillValid && existing.plan_id!==planId){
+    const oldPlan=MEMBERSHIP_PLANS[existing.plan_id];
+    remDays=Math.max(0,Math.min(30,(new Date(existing.expires_at)-now)/86400000));
+    refundVal=oldPlan?+((oldPlan.price||existing.price||0)*remDays/30).toFixed(2):0;
+    if(refundVal>=0.5){
+      const uu=await q.one(db.users,{_id:userId});
+      const nb=+((uu?.referral_credit||0)+refundVal).toFixed(2);
+      await q.update(db.users,{_id:userId},{$set:{referral_credit:nb}});
+      await logCredit(userId, refundVal, 'Prerátanie zvyšku členstva '+(oldPlan?.name||existing.plan_name)+' ('+Math.round(remDays)+' dní) pri zmene plánu');
+      await q.insert(db.notifications,{user_id:userId,type:'credit',
+        title:'💛 +'+refundVal.toFixed(2)+' € Fusion kredit',
+        body:'Zvyšných '+Math.round(remDays)+' dní členstva '+(oldPlan?.name||existing.plan_name)+' sme ti prerátali na kredit. Nové členstvo platí od dnes.',
+        read:false, created_at:nowISO()}).catch(()=>{});
+    } else refundVal=0;
+  }
+  const samePlanExtend = !!(existing && stillValid && existing.plan_id===planId);
+  const startDate = samePlanExtend ? new Date(existing.expires_at) : now;
+  const expiresAt = opts.expiresAt ? new Date(opts.expiresAt)
+    : new Date(startDate.getTime() + (durationDays||plan?.duration_days||30)*86400000);
+  return { existing, samePlanExtend, startDate, expiresAt, refundVal, remDays };
+}
 async function activateMembership(userId, planId, durationDays){
   const plan = MEMBERSHIP_PLANS[planId];
   if(!plan) return;
@@ -10441,28 +10664,9 @@ async function activateMembership(userId, planId, durationDays){
     return;
   }
 
-  // Check existing active membership
-  const existing = await q.one(db.memberships,{user_id:userId,status:'active'});
-  // Upgrade/zmena plánu: zvyšné dni starého plánu vrátime ako Fusion kredit a nový
-  // plán začína hneď. Rovnaký plán = predĺženie od aktuálnej expirácie (pôvodné správanie).
-  if(existing && existing.plan_id!==planId && new Date(existing.expires_at)>now){
-    const oldPlan=MEMBERSHIP_PLANS[existing.plan_id];
-    const remDays=Math.max(0,Math.min(30,(new Date(existing.expires_at)-now)/86400000));
-    const refundVal=oldPlan?+((oldPlan.price||existing.price||0)*remDays/30).toFixed(2):0;
-    if(refundVal>=0.5){
-      const uu=await q.one(db.users,{_id:userId});
-      const nb=+((uu?.referral_credit||0)+refundVal).toFixed(2);
-      await q.update(db.users,{_id:userId},{$set:{referral_credit:nb}});
-      logCredit(userId, refundVal, 'Prerátanie zvyšku členstva '+(oldPlan?.name||existing.plan_name)+' ('+Math.round(remDays)+' dní) pri zmene plánu');
-      await q.insert(db.notifications,{user_id:userId,type:'credit',
-        title:'💛 +'+refundVal.toFixed(2)+' € Fusion kredit',
-        body:'Zvyšných '+Math.round(remDays)+' dní členstva '+(oldPlan?.name||existing.plan_name)+' sme ti prerátali na kredit. Nové členstvo platí od dnes.',
-        read:false, created_at:nowISO()}).catch(()=>{});
-    }
-  }
-  const samePlanExtend = existing && existing.plan_id===planId && new Date(existing.expires_at)>now;
-  const startDate = samePlanExtend ? new Date(existing.expires_at) : now;
-  const expiresAt = new Date(startDate.getTime() + (durationDays||plan.duration_days)*24*60*60*1000);
+  // Zmena/predĺženie ide cez tú istú logiku ako ručný predaj (settleMembershipChange):
+  // iný plán → zvyšok do kreditu a štart dnes, rovnaký plán → nadviazanie na expiráciu.
+  const { existing, expiresAt } = await settleMembershipChange(userId, planId, durationDays||plan.duration_days);
   if(existing){
     await q.update(db.memberships,{_id:existing._id},{$set:{plan_id:planId,plan_name:plan.name,expires_at:expiresAt.toISOString(),updated_at:nowISO()}});
   } else {
@@ -10716,34 +10920,137 @@ app.post('/api/paypal/webhook', express.raw({type:'application/json'}), async(re
 });
 
 // ── Promo / zľavové kódy ──────────────────────────────────────────────────────
+// Kanonický tvar kódu — rovnaký ako pri tvorbe v admine (bez akýchkoľvek medzier,
+// veľké písmená), inak „LETO 10" neprejde, hoci admin uložil LETO10. String() preto,
+// že kód poslaný ako číslo zhadzoval endpoint na 500.
+function normPromoCode(code){ return String(code==null?'':code).toUpperCase().replace(/\s+/g,''); }
+const normPromoEmail = e => String(e||'').trim().toLowerCase() || null;
+// Cena plánu pre konkrétnu klientku: individuálna cena z profilu (custom_prices) má
+// prednosť, Gold má 10-vstupovú permanentku za 70 €. Jedno miesto pre náhľad kódu,
+// nákup prevodom aj Stripe — kód počítal zľavu z cenníka a vracal vyššiu cenu, než
+// klientka platí bez neho (audit E11/6).
+async function buyerPlanPrice(memberId, plan_id){
+  const plan=MEMBERSHIP_PLANS[plan_id]; if(!plan) return 0;
+  let price=+plan.price;
+  const buyer=memberId ? await q.one(db.users,{_id:memberId}) : null;
+  if(buyer?.custom_prices && buyer.custom_prices[plan_id]!=null && +buyer.custom_prices[plan_id]>0) price=+buyer.custom_prices[plan_id];
+  if(plan_id==='permanentka10'){
+    const gm=await checkMembership(memberId);
+    if(gm && gm.status==='active' && /gold/.test(String((gm.plan_id||'')+' '+(gm.plan_name||'')).toLowerCase())) price=Math.min(price,70);
+  }
+  return +price.toFixed(2);
+}
+// Čistá kontrola bez zápisu (náhľad aj nákup). price = suma, ktorú klientka naozaj
+// platí. opts: {plan_id, email (hosť v e-shope), reserve (rezervuj hneď — e-shop)}
 async function validatePromo(code, price, userId, context, opts){
-  code=(code||'').toUpperCase().trim();
+  const o=opts||{};
+  code=normPromoCode(code);
   if(!code) return {ok:false, reason:'Zadaj kód'};
+  // amount:'1e999' dával Infinity → ok:true s NaN cenou; záporná suma → záporná zľava
+  price=Number(price);
+  if(!Number.isFinite(price) || price<=0) return {ok:false, reason:'Neplatná suma'};
   const p=await q.one(db.promo_codes,{code});
   if(!p || p.active===false) return {ok:false, reason:'Kód neexistuje alebo je neaktívny'};
   if(p.applies_to && context && p.applies_to!==context) return {ok:false, reason:'Tento kód platí len na '+(p.applies_to==='merch'?'e-shop':'členstvá')};
   if(p.expires_at && new Date(p.expires_at) < new Date()) return {ok:false, reason:'Platnosť kódu vypršala'};
   if(p.min_amount && price < p.min_amount) return {ok:false, reason:`Kód platí od ${p.min_amount} €`};
   if(p.max_uses && (p.used_count||0) >= p.max_uses) return {ok:false, reason:'Kód už bol vyčerpaný'};
-  if(p.once_per_user && userId){ const used=await q.one(db.promo_redemptions,{code, user_id:userId}); if(used) return {ok:false, reason:'Kód si už použil/a'}; }
+  const email=normPromoEmail(o.email);
+  if(p.once_per_user){
+    // Hosť v e-shope nemá uid — bez kľúčovania na e-mail by kód použil donekonečna.
+    const used = userId ? await q.one(db.promo_redemptions,{code, user_id:userId})
+               : email  ? await q.one(db.promo_redemptions,{code, email}) : null;
+    if(used) return {ok:false, reason: used.status==='pending' ? 'Kód si už použil/a — žiadosť čaká na potvrdenie platby' : 'Kód si už použil/a'};
+  }
   if(p.target_user_id && p.target_user_id!==userId) return {ok:false, reason:'Tento kód je viazaný na iný účet'};
   // Kód sa dá zúžiť na konkrétne plány. Bez toho by VENCEKRODIC (100 % na
   // členstvo) dal zadarmo aj Gold za 125 €, hoci sa sľubuje Silver za 75 €.
   if(Array.isArray(p.plan_ids) && p.plan_ids.length){
-    const plan=(context==='membership') ? String((opts||{}).plan_id||'') : '';
+    const plan=(context==='membership') ? String(o.plan_id||'') : '';
     if(plan && !p.plan_ids.includes(plan)){
       const mena=p.plan_ids.map(id=>(MEMBERSHIP_PLANS[id]||{}).name||id).join(' alebo ');
       return {ok:false, reason:'Tento kód platí len na členstvo '+mena};
     }
   }
-  let discount = p.type==='percent' ? +(price * (+p.value)/100).toFixed(2) : Math.min(+p.value, price);
+  let discount = p.type==='percent' ? +(price * (+p.value)/100).toFixed(2) : +(+p.value).toFixed(2);
+  // Pevná zľava nesmie dať produkt zadarmo — PRVYMESIAC (25 €) by inak dal Online Basic (12,90 €) za 0 €.
+  if(p.type!=='percent' && price <= discount) return {ok:false, reason:`Kód platí len na produkty drahšie než ${discount.toFixed(2)} €`};
   discount = Math.max(0, Math.min(discount, price));
-  return {ok:true, discount, final:+(price-discount).toFixed(2), promo:p,
+  const out={ok:true, discount, final:+(price-discount).toFixed(2), promo:p,
     label: p.type==='percent' ? `${p.value}%` : `${(+p.value).toFixed(2)} €` };
+  if(o.reserve){
+    // E-shop: rezervuj už pri validácii — medzi kontrolou a zápisom objednávky inak
+    // prešlo 6 súbežných objednávok s max_uses:1. reservation_id nesie promo ďalej.
+    const r=await reservePromoUse(p,{user_id:userId||null, email},{discount});
+    if(!r.ok) return {ok:false, reason:r.reason};
+    out.promo={...p, reservation_id:r.redemption_id}; out.reservation_id=r.redemption_id;
+  }
+  return out;
 }
-async function recordPromoRedemption(promo, userId, discount){
-  await q.update(db.promo_codes,{_id:promo._id},{$inc:{used_count:1}});
-  await q.insert(db.promo_redemptions,{code:promo.code, user_id:userId||null, discount:+discount||0, at:nowISO()});
+// ── Rezervácia použitia kódu (audit E11/1) ─────────────────────────────────────
+// NeDB nemá transakcie ani porovnanie dvoch polí v dotaze, preto:
+//  1) riadok v promo_redemptions — pri once_per_user s unikátnym kľúčom code:identita
+//     (druhý súbežný insert padne na indexe → odmietnuť),
+//  2) max_uses: podmienený $inc (used_count < max_uses) zmení 0 alebo 1 záznam —
+//     pokračuje sa len pri 1, inak sa riadok z 1) zruší.
+// pending:true (platba prevodom/PayPal): len riadok ako zámok, počet použití sa
+// odpočíta až po prijatí peňazí (commitPromoUse); zrušená žiadosť ho uvoľní
+// (releasePromoUse) — nezaplatená žiadosť tak kód nespáli (E11/2).
+async function promoCountUse(promo){
+  const max=+promo.max_uses||0;
+  const cond = max>0 ? {_id:promo._id, $or:[{used_count:{$lt:max}},{used_count:{$exists:false}}]} : {_id:promo._id};
+  return (await q.update(db.promo_codes,cond,{$inc:{used_count:1}}))===1;
+}
+async function reservePromoUse(promo, ident, o){
+  o=o||{}; ident=ident||{};
+  const email=normPromoEmail(ident.email);
+  const who = ident.user_id || email || null;
+  const row={ code:promo.code, user_id:ident.user_id||null, email, discount:+(+o.discount||0).toFixed(2),
+    status:o.pending?'pending':'used', payment_id:o.payment_id||null, at:nowISO() };
+  if(promo.once_per_user && who) row.user_code_key=promo.code+':'+who;
+  let r;
+  try{ r=await q.insert(db.promo_redemptions,row); }
+  catch(e){ if(e && e.errorType==='uniqueViolated') return {ok:false, reason:'Kód si už použil/a'}; throw e; }
+  if(o.pending) return {ok:true, redemption_id:r._id};
+  if(!(await promoCountUse(promo))){ await q.remove(db.promo_redemptions,{_id:r._id}); return {ok:false, reason:'Kód už bol vyčerpaný'}; }
+  return {ok:true, redemption_id:r._id};
+}
+// Po prijatí platby: odpočítaj použitie. Ak kód medzitým vyčerpal niekto iný, riadok
+// zruš a vráť dôvod — volajúci platbu nechá (klientka zaplatila) a upozorní admina.
+async function commitPromoUse(promo, redemption_id, o){
+  const row=await q.one(db.promo_redemptions,{_id:redemption_id});
+  if(!row) return {ok:false, reason:'rezervácia kódu už neexistuje'};
+  if(row.status==='used') return {ok:true, already:true};
+  if(!(await promoCountUse(promo))){ await q.remove(db.promo_redemptions,{_id:redemption_id}); return {ok:false, reason:'Kód už bol vyčerpaný'}; }
+  const set={status:'used', paid_at:nowISO()};
+  if(o && o.discount!=null) set.discount=+(+o.discount||0).toFixed(2);
+  await q.update(db.promo_redemptions,{_id:redemption_id},{$set:set});
+  return {ok:true};
+}
+// Uvoľnenie: zrušená žiadosť alebo neúspešná aktivácia. counted=true, ak už bol
+// used_count odpočítaný (okamžitá aktivácia) — vráť ho, nie však pod nulu.
+async function releasePromoUse(promo, redemption_id, counted){
+  if(redemption_id) await q.remove(db.promo_redemptions,{_id:redemption_id});
+  if(counted && promo) await q.update(db.promo_codes,{_id:promo._id, used_count:{$gt:0}},{$inc:{used_count:-1}});
+}
+// Admin sa musí dozvedieť, že zľava z kódu sa pri platbe neuplatnila — klientka
+// zaplatila zľavnenú sumu, rozdiel treba doriešiť ručne.
+async function promoAdminWarn(buyer, code, reason, discount, productName){
+  for(const a of await q.find(db.users,{is_admin:true}))
+    await q.insert(db.notifications,{user_id:a._id, type:'promo_warn', title:`🎟️ Kód ${code} sa neuplatnil — ${buyer?.name||'klientka'}`,
+      body:`${buyer?.name||'Klientka'} zaplatila ${productName} so zľavou ${(+discount||0).toFixed(2)} € (kód ${code}), ale pri potvrdení platby: ${reason}. Zľava nie je evidovaná — skontroluj a prípadne dorieš rozdiel.`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+}
+// Spätne kompatibilný zápis použitia. Ak už bolo rezervované pri validácii
+// (e-shop → promo.reservation_id), len doplní zľavu; inak rezervuje teraz a vráti
+// výsledok — volajúci rozhodne, čo s neúspechom.
+async function recordPromoRedemption(promo, userId, discount, opts){
+  const o=opts||{};
+  if(promo && promo.reservation_id){
+    await q.update(db.promo_redemptions,{_id:promo.reservation_id},{$set:{discount:+(+discount||0).toFixed(2), status:'used'}});
+    return {ok:true, redemption_id:promo.reservation_id};
+  }
+  return reservePromoUse(promo,{user_id:userId||null, email:o.email},{discount, payment_id:o.payment_id});
 }
 // Vytvor osobný časovo-limitovaný ponukový kód (napr. 20 % na 24 h) pre konkrétneho leada
 async function createOfferCode(userId, percent, hours){
@@ -10754,14 +11061,26 @@ async function createOfferCode(userId, percent, hours){
     active:true, used_count:0, note:`Ponuka ${percent}% (${hours} h) pre leada`, created_at:nowISO() });
   return { code, expires_at };
 }
-// Klient overí promo kód pred platbou (náhľad zľavy)
+// Klient overí promo kód pred platbou (náhľad zľavy). Náhľad počíta to isté, čo
+// nákup: pri členstve je plan_id povinný (amount:125 bez plánu obchádzal plan_ids)
+// a vychádza z individuálnej ceny klientky, nie z cenníka (audit E11/6, E11/7).
 app.post('/api/promo/validate', auth, async(req,res)=>{
   try {
-    const plan = MEMBERSHIP_PLANS[req.body.plan_id];
-    const price = plan ? plan.price : (+req.body.amount||0);
-    if(price<=0) return res.json({ok:false, reason:'Neplatná suma'});
-    const v = await validatePromo(req.body.code, price, req.session.uid, req.body.context||'membership', {plan_id:req.body.plan_id});
-    res.json(v.ok ? {ok:true, discount:v.discount, final:v.final, label:v.label, code:v.promo.code} : {ok:false, reason:v.reason});
+    const b=req.body||{};
+    // obchod.html posiela applies_to namiesto context — ber oboje
+    const context = String(b.context||b.applies_to||'membership');
+    let price;
+    if(context==='membership'){
+      if(!MEMBERSHIP_PLANS[b.plan_id]) return res.json({ok:false, reason:'Vyber najprv členstvo'});
+      let memberId=req.session.uid;
+      if(b.for_child_id){ const child=await q.one(db.users,{_id:String(b.for_child_id)}); if(child && child.parent_id===req.session.uid) memberId=child._id; }
+      price = await buyerPlanPrice(memberId, b.plan_id);
+    } else {
+      price = Number(b.amount);
+    }
+    if(!Number.isFinite(price) || price<=0) return res.json({ok:false, reason:'Neplatná suma'});
+    const v = await validatePromo(b.code, price, req.session.uid, context, {plan_id:b.plan_id});
+    res.json(v.ok ? {ok:true, discount:v.discount, final:v.final, label:v.label, code:v.promo.code, price} : {ok:false, reason:v.reason});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 // Admin: správa promo kódov
@@ -10901,13 +11220,20 @@ app.post('/api/membership/buy', auth, async(req,res)=>{
     const forWhom = childName ? ` (${childName})` : '';
 
     // ── Promo / zľavový kód (aplikuje sa na cenu plánu, pred kreditom) ─────────
+    // Zľava sa počíta z ceny, ktorú klientka naozaj platí (individuálna cena z
+    // profilu), nie z cenníka — kód nesmie vrátiť vyššiu cenu než bez kódu (audit E11/6).
     let promoDiscount = 0, promoCode = null, promoObj = null;
-    let basePrice = plan.price;
+    const listPrice = await buyerPlanPrice(memberId, plan_id);
+    let basePrice = listPrice;
     if(promo_code){
-      const v = await validatePromo(promo_code, plan.price, req.session.uid, 'membership', {plan_id});
+      const v = await validatePromo(promo_code, listPrice, req.session.uid, 'membership', {plan_id});
       if(!v.ok) return res.status(400).json({error:'Promo kód: '+v.reason});
       promoDiscount = v.discount; basePrice = v.final; promoCode = v.promo.code; promoObj = v.promo;
     }
+    // Audit 3. 9. 2026: rovnaká diera ako pri subscribe — bez PAYPAL_CLIENT_ID
+    // sa členstvo aktivovalo „demo" zadarmo. Frontend PayPal neposiela, API áno.
+    // Kontrola je PRED rezerváciou kódu a odpísaním kreditu, nech niet čo vracať.
+    if(payment_method==='paypal' && !PAYPAL_CLIENT_ID) return res.status(400).json({error:'PayPal platba nie je dostupná — zaplať kartou.'});
 
     // ── Referral credit discount (always from parent's balance) ────────────────
     let creditUsed = 0;
@@ -10915,34 +11241,47 @@ app.post('/api/membership/buy', auth, async(req,res)=>{
     if(use_referral_credit && (u.referral_credit||0) > 0){
       creditUsed = Math.min(u.referral_credit, basePrice);
       finalPrice = Math.max(0, +(basePrice - creditUsed).toFixed(2));
-      await q.update(db.users,{_id:u._id},{$set:{referral_credit: +(u.referral_credit - creditUsed).toFixed(2)}});
-      logCredit(u._id, -creditUsed, 'Použitý pri nákupe '+plan.name);
-      await q.insert(db.notifications,{user_id:u._id,type:'credit',title:`Referral kredit použitý 💳`,body:`${creditUsed.toFixed(2)} € zľava na ${plan.name}${forWhom}. Nový zostatok: ${(u.referral_credit-creditUsed).toFixed(2)} €`,read:false,created_at:nowISO()});
     }
-
-    // Zaznamenaj použitie promo kódu (raz na nákup)
-    if(promoObj){ await recordPromoRedemption(promoObj, req.session.uid, promoDiscount);
-      await q.insert(db.notifications,{user_id:u._id,type:'credit',title:`Promo kód ${promoCode} 🎟️`,body:`Zľava ${promoDiscount.toFixed(2)} € na ${plan.name}${forWhom}.`,read:false,created_at:nowISO()}).catch(()=>{}); }
     const promoNote = promoCode ? ` [promo ${promoCode} -${promoDiscount.toFixed(2)}€]` : '';
 
-    if(finalPrice === 0){
-      // Fully covered by credit/promo – activate immediately
-      await activateMembership(memberId, plan_id, plan.duration_days||30);
-      await q.insert(db.transactions,{type:'membership',user_id:memberId,user_name:childName||u.name,amount:0,payment_method:'referral_credit',note:`${plan.name}${forWhom} – 100% hradené kreditom${promoNote}`,plan_id,promo_code:promoCode,created_at:nowISO(),month:today().slice(0,7)});
-      return res.json({ok:true, credit_used:creditUsed, promo_discount:promoDiscount, final_price:0, message:`Členstvo ${plan.name}${forWhom} aktivované${promoCode?' (promo '+promoCode+')':' pomocou referral kreditu'}!`});
+    // ── Rezervácia kódu — atomicky, PRED odpísaním kreditu a aktiváciou (E11/1) ──
+    // 0 € (kód/kredit pokryje všetko): použitie sa započíta hneď, aktivácia je okamžitá.
+    // Prevod/PayPal: len zámok (once_per_user); počet sa odpočíta, až keď peniaze
+    // prídu — nezaplatená či zrušená žiadosť kód nespáli (E11/2).
+    let promoRes = null;
+    if(promoObj){
+      promoRes = await reservePromoUse(promoObj, {user_id:req.session.uid}, {discount:promoDiscount, pending: finalPrice > 0});
+      if(!promoRes.ok) return res.status(400).json({error:'Promo kód: '+promoRes.reason});
     }
+    // Nič sa nepredalo → rezerváciu vráť, inak by kód ostal spálený bez nákupu.
+    const promoRollback = async()=>{ if(promoRes && promoRes.ok) await releasePromoUse(promoObj, promoRes.redemption_id, finalPrice===0).catch(()=>{}); };
+    let manualPay = null;
+    try {
+      if(creditUsed > 0){
+        await q.update(db.users,{_id:u._id},{$set:{referral_credit: +(u.referral_credit - creditUsed).toFixed(2)}});
+        logCredit(u._id, -creditUsed, 'Použitý pri nákupe '+plan.name);
+        await q.insert(db.notifications,{user_id:u._id,type:'credit',title:`Referral kredit použitý 💳`,body:`${creditUsed.toFixed(2)} € zľava na ${plan.name}${forWhom}. Nový zostatok: ${(u.referral_credit-creditUsed).toFixed(2)} €`,read:false,created_at:nowISO()});
+      }
+      if(promoObj) await q.insert(db.notifications,{user_id:u._id,type:'credit',title:`Promo kód ${promoCode} 🎟️`,body:`Zľava ${promoDiscount.toFixed(2)} € na ${plan.name}${forWhom}.`,read:false,created_at:nowISO()}).catch(()=>{});
 
-    if(payment_method==='paypal'){
-      // Audit 3. 9. 2026: rovnaká diera ako pri subscribe — bez PAYPAL_CLIENT_ID
-      // sa členstvo aktivovalo „demo" zadarmo. Frontend PayPal neposiela, API áno.
-      if(!PAYPAL_CLIENT_ID) return res.status(400).json({error:'PayPal platba nie je dostupná — zaplať kartou.'});
-      const result = await ppCreateOrder(finalPrice,'EUR',`Fusion Academy – ${plan.name}${forWhom}`);
-      if(result.status!==201) return res.status(400).json({error:'PayPal chyba'});
-      const payment = await q.insert(db.payments,{paypal_order_id:result.body.id,user_id:req.session.uid,member_id:memberId,amount:finalPrice,currency:'EUR',description:`Členstvo ${plan.name}${forWhom}${promoNote}`,ref_id:plan_id,ref_type:'membership',status:'pending',created_at:nowISO(),credit_used:creditUsed,promo_code:promoCode});
-      return res.json({ok:true, paypalOrderId:result.body.id, paymentId:payment._id, credit_used:creditUsed, promo_discount:promoDiscount, final_price:finalPrice});
-    }
-    // Bank transfer / cash – admin will confirm
-    const manualPay=await q.insert(db.payments,{user_id:req.session.uid,member_id:memberId,amount:finalPrice,currency:'EUR',description:`Členstvo ${plan.name}${forWhom}${creditUsed?` (kredit: -${creditUsed}€)`:''}${promoNote}`,ref_id:plan_id,ref_type:'membership',status:'pending_manual',payment_method:'manual',created_at:nowISO(),credit_used:creditUsed,promo_code:promoCode});
+      if(finalPrice === 0){
+        // Fully covered by credit/promo – activate immediately
+        await activateMembership(memberId, plan_id, plan.duration_days||30);
+        // Označ podľa toho, čím sa naozaj hradilo — 0 € čisto z kódu nie je „hradené kreditom" (E11/7).
+        const paidBy = creditUsed>0 && promoDiscount>0 ? 'kreditom + promo kódom' : creditUsed>0 ? 'kreditom' : 'promo kódom';
+        await q.insert(db.transactions,{type:'membership',user_id:memberId,user_name:childName||u.name,amount:0,payment_method: creditUsed>0 ? 'referral_credit' : 'promo',note:`${plan.name}${forWhom} – 100% hradené ${paidBy}${promoNote}`,plan_id,promo_code:promoCode,promo_discount:promoDiscount,credit_used:creditUsed,created_at:nowISO(),month:today().slice(0,7)});
+        return res.json({ok:true, credit_used:creditUsed, promo_discount:promoDiscount, final_price:0, message:`Členstvo ${plan.name}${forWhom} aktivované${promoCode?' (promo '+promoCode+')':' pomocou referral kreditu'}!`});
+      }
+
+      if(payment_method==='paypal'){
+        const result = await ppCreateOrder(finalPrice,'EUR',`Fusion Academy – ${plan.name}${forWhom}`);
+        if(result.status!==201){ await promoRollback(); return res.status(400).json({error:'PayPal chyba'}); }
+        const payment = await q.insert(db.payments,{paypal_order_id:result.body.id,user_id:req.session.uid,member_id:memberId,amount:finalPrice,currency:'EUR',description:`Členstvo ${plan.name}${forWhom}${promoNote}`,ref_id:plan_id,ref_type:'membership',status:'pending',created_at:nowISO(),credit_used:creditUsed,promo_code:promoCode,promo_discount:promoDiscount,promo_redemption_id:promoRes?promoRes.redemption_id:null});
+        return res.json({ok:true, paypalOrderId:result.body.id, paymentId:payment._id, credit_used:creditUsed, promo_discount:promoDiscount, final_price:finalPrice});
+      }
+      // Bank transfer / cash – admin will confirm; kód sa započíta až pri potvrdení platby
+      manualPay=await q.insert(db.payments,{user_id:req.session.uid,member_id:memberId,amount:finalPrice,currency:'EUR',description:`Členstvo ${plan.name}${forWhom}${creditUsed?` (kredit: -${creditUsed}€)`:''}${promoNote}`,ref_id:plan_id,ref_type:'membership',status:'pending_manual',payment_method:'manual',created_at:nowISO(),credit_used:creditUsed,promo_code:promoCode,promo_discount:promoDiscount,promo_redemption_id:promoRes?promoRes.redemption_id:null});
+    } catch(e){ await promoRollback(); throw e; }
     // Admin MUSÍ o žiadosti vedieť — predtým padala do čiernej diery a členstvo sa nikdy neaktivovalo.
     // Zlúčené s prípadnou „Rezervácia s platbou na mieste" tej istej klientky (jedna karta, nie dve).
     try{ await adminPayNotify(u, 'manual_payment', '💰 Čaká platba: '+plan.name,
@@ -11004,7 +11343,7 @@ async function nextInvoiceNumber(){
 // Create + archive an invoice, then email the payment confirmation. Never throws.
 // silent:true = faktúra sa vytvorí, ale klientke NEODÍDE e-mail (spätné doplnenie
 // starých predajov — nemá zmysel po dňoch posielať „ďakujeme za platbu").
-async function createInvoice({user_id, client_name, client_email, items, total, method, type, related_invoice, paid_at, silent, issued_at, repaired_audit}){
+async function createInvoice({user_id, client_name, client_email, items, total, method, type, related_invoice, paid_at, silent, issued_at, repaired_audit, order_id, order_number}){
   try {
     const number = await nextInvoiceNumber();
     const inv = await q.insert(db.invoices, {
@@ -11017,6 +11356,8 @@ async function createInvoice({user_id, client_name, client_email, items, total, 
       payment_method: method||'—',
       issued_at: issued_at||today(), paid_at: paid_at||today(),
       ...(repaired_audit ? {repaired_audit} : {}),
+      // Väzba na e-shop objednávku — faktúra je dohľadateľná a nevystaví sa dvakrát (audit E11)
+      ...(order_id ? {order_id, order_number:order_number||null} : {}),
       status: type==='credit_note' ? 'credited' : 'paid',
       supplier: invoiceSupplier(),
       created_at: nowISO()
@@ -13076,13 +13417,25 @@ async function fulfillStripeCheckout(s){
   }
   const buyer = await q.one(db.users,{_id:meta.user_id});
   const via = meta.type==='subscription' ? 'Stripe mesačný odber' : 'Stripe · karta/Apple/Google Pay';
-  await q.insert(db.transactions,{type:meta.type==='subscription'?'subscription':'membership',user_id:memberId,user_name:buyer?.name||'—',amount:plan.price,payment_method:'stripe',note:`${plan.name} (${via})`,plan_id:meta.plan_id,created_at:nowISO(),month:today().slice(0,7)});
+  // Audit E11/8: kupón sa započíta až po zaplatení, ale znovu cez atomickú rezerváciu —
+  // dve klientky s max_uses:1 mohli obe zaplatiť. Ak už kód nie je voľný, platbu nechaj
+  // (klientka zaplatila), zľavu neeviduj, poznač to do transakcie a upozorni admina.
+  let promoNote='';
+  if(meta.promo_code){
+    const pr=await q.one(db.promo_codes,{code:normPromoCode(meta.promo_code)});
+    const disc=+meta.promo_discount||0;
+    if(pr){
+      const r=await reservePromoUse(pr,{user_id:meta.user_id},{discount:disc, payment_id:s.id});
+      if(r.ok) promoNote=` [promo ${pr.code} -${disc.toFixed(2)}€]`;
+      else { promoNote=` [promo ${pr.code}: ${r.reason} — zľava ${disc.toFixed(2)} € neevidovaná]`; await promoAdminWarn(buyer, pr.code, r.reason, disc, plan.name); }
+    }
+  }
+  await q.insert(db.transactions,{type:meta.type==='subscription'?'subscription':'membership',user_id:memberId,user_name:buyer?.name||'—',amount:plan.price,payment_method:'stripe',note:`${plan.name} (${via})${promoNote}`,promo_code:meta.promo_code?normPromoCode(meta.promo_code):null,plan_id:meta.plan_id,created_at:nowISO(),month:today().slice(0,7)});
   trackPurchase(meta.user_id, plan.price, 'pur_'+s.id);
   createInvoice({user_id:meta.user_id, client_name:buyer?.name, client_email:buyer?.email,
     items:[{desc:`Členstvo ${plan.name}${meta.type==='subscription'?' (mesačný odber)':''}`, qty:1, total:plan.price}],
     total:plan.price, method:'Stripe (karta / Apple Pay / Google Pay)'});
   awardPurchaseCommission({buyer_id:meta.user_id, amount:plan.price, product_name:`Členstvo ${plan.name}`});
-  if(meta.promo_code){ const pr=await q.one(db.promo_codes,{code:(meta.promo_code||'').toUpperCase()}); if(pr) await recordPromoRedemption(pr, meta.user_id, +meta.promo_discount||0); }
   return {ok:true, plan_name:plan.name, subscription:meta.type==='subscription'};
 }
 
@@ -13425,8 +13778,10 @@ app.post('/api/stripe/webhook', async(req,res)=>{
       if(s.metadata?.type==='event_order' && s.metadata.order_number && s.payment_status==='paid'){
         await EVENTS.fulfillEventOrder(s.metadata.order_number).catch(e=>console.error('Event fulfil:',e.message));
       } else if(s.metadata?.type==='order' && s.metadata.order_number && s.payment_status==='paid'){
-        await q.update(db.orders,{order_number:s.metadata.order_number,status:{$ne:'paid'}},{$set:{status:'paid',paid_at:nowISO(),payment_method:'stripe'}});
-        const ord=await q.one(db.orders,{order_number:s.metadata.order_number}); if(ord) grantMerchFromOrder(ord);
+        // Tá istá cesta ako admin potvrdenie a verify-order: faktúra + provízia + odznak,
+        // zámok v orderPaid zaručí, že sa to pri súbehu s návratom z platby stane raz.
+        const ord=await q.one(db.orders,{order_number:String(s.metadata.order_number)});
+        if(ord) await orderPaid(ord,{source:'stripe_webhook', paid_via:'stripe', stripe_session_id:s.id});
       } else {
         // Membership / subscription first payment — reliable fulfilment via webhook
         // (idempotent with the browser /verify path)
@@ -13441,8 +13796,9 @@ app.post('/api/stripe/webhook', async(req,res)=>{
 app.post('/api/stripe/checkout-order', async(req,res)=>{
   try {
     if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
-    const { order_number } = req.body;
-    const order = await q.one(db.orders,{order_number});
+    // Číslo objednávky z tela nikdy nejde do dotazu ako objekt ({$ne:null} by vybral cudziu objednávku)
+    const order_number = String(req.body?.order_number||'').replace(/[^a-zA-Z0-9-]/g,'').slice(0,40);
+    const order = order_number ? await q.one(db.orders,{order_number}) : null;
     if(!order) return res.status(404).json({error:'Objednávka nenájdená'});
     if(order.status==='paid') return res.json({ok:true, already:true});
     if(!(order.total>0)) return res.status(400).json({error:'Nulová suma'});
@@ -13470,19 +13826,15 @@ app.post('/api/stripe/checkout-order', async(req,res)=>{
 app.post('/api/stripe/verify-order', async(req,res)=>{
   try {
     if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
-    const { session_id } = req.body;
+    const session_id = String(req.body?.session_id||'').trim().slice(0,200);
     if(!session_id) return res.status(400).json({error:'Chýba session_id'});
     const r = await stripeApi('checkout/sessions/'+encodeURIComponent(session_id), null, 'GET');
     const s = r.body;
     if(s?.payment_status !== 'paid' || s?.metadata?.type!=='order') return res.status(400).json({error:'Platba nebola dokončená'});
-    const order = await q.one(db.orders,{order_number:s.metadata.order_number});
-    if(order && order.status!=='paid'){
-      await q.update(db.orders,{_id:order._id},{$set:{status:'paid',paid_at:nowISO(),payment_method:'stripe'}});
-      grantMerchFromOrder(order);
-      createInvoice({user_id:null, client_name:order.client_name, client_email:order.client_email,
-        items:(order.items||[]).map(it=>({desc:`${it.name||it.product_name||'Položka'} ×${it.qty||1}`, qty:it.qty||1, total:+((it.price||0)*(it.qty||1)).toFixed(2)})),
-        total:order.total, method:'Stripe (karta / Apple Pay / Google Pay)'});
-    }
+    const order = await q.one(db.orders,{order_number:String(s.metadata.order_number||'')});
+    // Tá istá cesta ako webhook — zámok v orderPaid zaručí, že dvojitý refresh success
+    // stránky ani súbeh s webhookom nevystaví druhú faktúru/odznak (audit E11/6)
+    if(order) await orderPaid(order,{source:'stripe_verify', paid_via:'stripe', stripe_session_id:s.id});
     res.json({ok:true, order_number:s.metadata.order_number});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -13528,12 +13880,24 @@ app.post('/api/admin/manual-payments/:id/confirm', adminAuth, async(req,res)=>{
     const plan=MEMBERSHIP_PLANS[p.ref_id];
     if(!plan) return res.status(400).json({error:'Neznámy plán '+p.ref_id});
     const memberId=p.member_id||p.user_id;
-    await activateMembership(memberId, p.ref_id, plan.duration_days||30);
     const buyer=await q.one(db.users,{_id:p.user_id});
+    // Kupón sa započíta až teraz — peniaze prišli (audit E11/2). Ak ho medzitým vyčerpal
+    // niekto iný, členstvo aj tak aktivuj (klientka zaplatila), len to poznač a upozorni
+    // admina. Staré žiadosti bez promo_redemption_id sa započítali už pri žiadosti.
+    let promoNote = p.promo_code ? ' [promo '+p.promo_code+(p.promo_discount?' -'+(+p.promo_discount).toFixed(2)+'€':'')+']' : '';
+    if(p.promo_code && p.promo_redemption_id){
+      const pr=await q.one(db.promo_codes,{code:p.promo_code});
+      const r = pr ? await commitPromoUse(pr, p.promo_redemption_id, {discount:p.promo_discount}) : {ok:false, reason:'kód už neexistuje'};
+      if(!r.ok){
+        promoNote=` [promo ${p.promo_code}: ${r.reason} — zľava ${(+p.promo_discount||0).toFixed(2)} € neevidovaná]`;
+        await promoAdminWarn(buyer, p.promo_code, r.reason, p.promo_discount, plan.name);
+      }
+    }
+    await activateMembership(memberId, p.ref_id, plan.duration_days||30);
     const methodTxt=method==='cash'?'hotovosť':'prevod na účet';
     await q.insert(db.transactions,{type:plan.type==='bundle'?'single_entry':'membership', user_id:memberId,
       user_name:buyer?.name||'—', amount:p.amount, payment_method:method,
-      note:`${plan.name} (${methodTxt})${p.promo_code?' [promo '+p.promo_code+']':''}`,
+      note:`${plan.name} (${methodTxt})${promoNote}`, promo_code:p.promo_code||null,
       plan_id:p.ref_id, created_at:nowISO(), month:today().slice(0,7)});
     trackPurchase(p.user_id, p.amount);
     createInvoice({user_id:p.user_id, client_name:buyer?.name, client_email:buyer?.email,
@@ -13551,6 +13915,8 @@ app.post('/api/admin/manual-payments/:id/cancel', adminAuth, async(req,res)=>{
     if(p.credit_used>0){ const u=await q.one(db.users,{_id:p.user_id});
       if(u){ await q.update(db.users,{_id:u._id},{$set:{referral_credit:+((u.referral_credit||0)+p.credit_used).toFixed(2)}});
         logCredit(u._id, p.credit_used, 'Vrátený kredit — zrušená žiadosť '+p.description); } }
+    // zamietnutá platba kód nespáli — uvoľni zámok once_per_user (počet sa ešte neodpočítal)
+    if(p.promo_redemption_id) await releasePromoUse(null, p.promo_redemption_id, false).catch(()=>{});
     await q.update(db.payments,{_id:p._id},{$set:{status:'cancelled', cancelled_at:nowISO(), cancelled_by:req.session.uid}});
     await q.insert(db.notifications,{user_id:p.user_id,type:'membership',
       title:'Žiadosť o členstvo zrušená', body:'Tvoja žiadosť o '+p.description+' bola zrušená. Ak ide o omyl, ozvi sa nám.',
@@ -13824,16 +14190,22 @@ const CANCEL_DEADLINE_HOURS = +process.env.CANCEL_DEADLINE_HOURS || 3;
 // Vráti to, čím klientka za hodinu zaplatila (permanentka / hodina zdarma /
 // prvá hodina zadarmo / vstup rodiča). Volá sa z klientskeho aj admin storna,
 // aby vstup pri zrušení neprepadol. Vracia text do notifikácie, '' keď nebolo čo vrátiť.
+// Vrátenie cez $inc (atomické): $set z prečítanej hodnoty stratil vstup, keď sa
+// storno stretlo s inou rezerváciou/stornom tej istej klientky. Text (import) → číslo.
+async function vratVstup(u, field){
+  if(typeof u[field]==='number') return q.update(db.users,{_id:u._id},{$inc:{[field]:1}});
+  return q.update(db.users,{_id:u._id},{$set:{[field]:(+u[field]||0)+1}});
+}
 async function refundBookingAccess(b){
   if(!b || b.status!=='confirmed') return '';
   const cu = await q.one(db.users,{_id:b.user_id});
   if(!cu) return '';
   if(b.access_method==='single_entry'){
-    await q.update(db.users,{_id:cu._id},{$set:{single_entries:(cu.single_entries||0)+1}});
+    await vratVstup(cu,'single_entries');
     return ' Vstup z permanentky sme ti vrátili.';
   }
   if(b.access_method==='free_credit'){
-    await q.update(db.users,{_id:cu._id},{$set:{free_credits:(cu.free_credits||0)+1}});
+    await vratVstup(cu,'free_credits');
     return ' Hodinu zdarma sme ti vrátili.';
   }
   if(b.access_method==='free_class' || b.free_class){
@@ -13842,11 +14214,11 @@ async function refundBookingAccess(b){
   }
   if(b.access_method==='parent_single_entry' && b.booked_by){
     const pu=await q.one(db.users,{_id:b.booked_by});
-    if(pu){ await q.update(db.users,{_id:pu._id},{$set:{single_entries:(pu.single_entries||0)+1}}); return ' Vstup z tvojej permanentky sme ti vrátili.'; }
+    if(pu){ await vratVstup(pu,'single_entries'); return ' Vstup z tvojej permanentky sme ti vrátili.'; }
   }
   if(b.access_method==='parent_free_credit' && b.booked_by){
     const pu=await q.one(db.users,{_id:b.booked_by});
-    if(pu){ await q.update(db.users,{_id:pu._id},{$set:{free_credits:(pu.free_credits||0)+1}}); return ' Hodinu zdarma sme ti vrátili.'; }
+    if(pu){ await vratVstup(pu,'free_credits'); return ' Hodinu zdarma sme ti vrátili.'; }
   }
   return '';
 }
@@ -13862,6 +14234,9 @@ app.delete('/api/bookings/:id', auth, async(req,res)=>{
     }
   }
   if(!b) return res.status(404).json({error:'Rezervácia nenájdená'});
+  // Už zrušená (druhý klik, druhý tab, opakovaný DELETE) → nič nerob a nič neposielaj.
+  // Predtým odišiel mail „Rezervácia zrušená" pri každom kliku (audit 3. 9., E11-F).
+  if(b.status==='cancelled') return res.json({ok:true, already:true, refunded:false});
   if(b.status==='confirmed' && b.booking_date){
     const cls = await q.one(db.classes,{_id:b.class_id});
     const start = new Date(`${b.booking_date}T${cls?.time_start||'00:00'}:00`);
@@ -13870,7 +14245,11 @@ app.delete('/api/bookings/:id', auth, async(req,res)=>{
       return res.status(400).json({error:`Storno je možné najneskôr ${CANCEL_DEADLINE_HOURS} hod. pred začiatkom hodiny. Ak nemôžeš prísť, kontaktuj nás.`});
     }
   }
-  await q.update(db.bookings,{_id:req.params.id},{$set:{status:'cancelled',cancelled_at:nowISO()}});
+  // Podmienený update je zámok: stav prepne len to z dvoch súbežných stôrn, ktoré
+  // stihlo prvé; druhé dostane already:true bez vrátenia vstupu, notifikácie a mailu.
+  // (status:b.status, nie 'confirmed' — zrušiť sa dá aj miesto na čakacom zozname.)
+  const zmenene = await q.update(db.bookings,{_id:b._id, user_id:b.user_id, status:(b.status ? b.status : {$exists:false})},{$set:{status:'cancelled',cancelled_at:nowISO()}});
+  if(!zmenene) return res.json({ok:true, already:true, refunded:false});
   // Vrátenie toho, čím klientka za hodinu zaplatila (len ak ju ešte neabsolvovala) —
   // bez tohto jej vstup z permanentky pri zrušení prepadol.
   let refundNote='';
@@ -14221,8 +14600,12 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
 // Ticker: keď online hodina začne, pošli notifikáciu všetkým s online prístupom (raz/deň/hodinu)
 setInterval(async()=>{
   try{
-    const dow=new Date().getDay(); const nowHM=new Date().toTimeString().slice(0,5);
-    const classes=(await q.find(db.classes,{category:'Online', active:true, day_of_week:dow, time_start:nowHM}))
+    // Okno 2 minúty (aktuálna + predchádzajúca): tick beží každých 60 s a pri
+    // oneskorení/preskočení (GC, reštart) by sa hodina s presne zhodnou minútou
+    // nespustila (audit E10). Guard online_live_<id>_<deň> nižšie ostáva → nebeží 2×.
+    const now=new Date(); const dow=now.getDay();
+    const nowHM=now.toTimeString().slice(0,5), prevHM=new Date(now.getTime()-60000).toTimeString().slice(0,5);
+    const classes=(await q.find(db.classes,{category:'Online', active:true, day_of_week:dow, time_start:{$in:[nowHM,prevHM]}}))
       .filter(c=>classRunsOn(c, today()));
     for(const cls of classes){
       const guardKey='online_live_'+cls._id+'_'+today();
@@ -16512,6 +16895,10 @@ app.post('/api/attendance/manual-booking', trainerAuth, async(req,res)=>{
     let method = req.body.method;
     if(!method) method = is_free ? 'free' : 'membership';
     if(!user_id||!class_id) return res.status(400).json({error:'Chýba user_id alebo class_id'});
+    // Typová kontrola ako v /api/bookings (E11-E): objekt namiesto id by prešiel do NeDB dotazu.
+    // Dátum len tvarom — tréner smie dopísať aj minulú hodinu (oprava dochádzky).
+    if(typeof user_id!=='string' || typeof class_id!=='string') return res.status(400).json({error:'Neplatné user_id alebo class_id'});
+    if(booking_date!=null && booking_date!=='' && !jePlatnyDatum(booking_date)) return res.status(400).json({error:'Neplatný dátum hodiny — očakáva sa tvar RRRR-MM-DD.'});
     const cls = await q.one(db.classes,{_id:class_id});
     if(!cls) return res.status(404).json({error:'Hodina nenájdená'});
     const u = await q.one(db.users,{_id:user_id});
@@ -16571,18 +16958,25 @@ app.post('/api/attendance/manual-booking', trainerAuth, async(req,res)=>{
     if(u.winback_sent) upd.winback_sent = false;
     applyLeadTrial(upd, u); // lead → automaticky „Bola na hodine"
 
-    await q.insert(db.bookings,{
-      class_id, class_name:cls.name, class_emoji:cls.emoji||'💃',
-      class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
-      day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
-      user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||'',
-      booking_date:bdate, status:'attended', attended_at:nowISO(), attended_by:req.trainerUser._id, access_method:method,
-      ...(method==='pay_on_site' ? { pay_on_site:true, pay_amount:+req.body.pay_amount||10 } : {}),
-      free_class: method==='free', // zdarma — nepočíta sa do €/klient bonusu trénera
-      notes: note || methodNote,
-      manual: true, manual_by: req.trainerUser._id, created_at:nowISO()
+    // Pod zámkom hodina@termín (E11-B): dvojklik trénera medzi kontrolou duplicity
+    // vyššie a zápisom by tú istú klientku zapísal dvakrát.
+    const duplicita = await withBookingLock(class_id+'@'+bdate, async()=>{
+      if(await q.one(db.bookings,{class_id,user_id,booking_date:bdate,status:{$ne:'cancelled'}})) return true;
+      await q.insert(db.bookings,{
+        class_id, class_name:cls.name, class_emoji:cls.emoji||'💃',
+        class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
+        day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
+        user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||'',
+        booking_date:bdate, status:'attended', attended_at:nowISO(), attended_by:req.trainerUser._id, access_method:method,
+        ...(method==='pay_on_site' ? { pay_on_site:true, pay_amount:+req.body.pay_amount||10 } : {}),
+        free_class: method==='free', // zdarma — nepočíta sa do €/klient bonusu trénera
+        notes: note || methodNote,
+        manual: true, manual_by: req.trainerUser._id, created_at:nowISO()
+      });
+      await q.update(db.users,{_id:u._id},{$set:upd});
+      return false;
     });
-    await q.update(db.users,{_id:u._id},{$set:upd});
+    if(duplicita) return res.status(400).json({error:'Tento klient je už prihlásený na túto hodinu'});
     await q.insert(db.notifications,{user_id:u._id,type:'booking',title:'Rezervácia potvrdená ✅',body:`${cls.name} – ${bdate} o ${cls.time_start} · ${methodNote}`,read:false,created_at:nowISO()});
     res.json({ok:true, booking_date:bdate, visit_count:upd.visit_count, method, method_note:methodNote, single_entries:upd.single_entries!==undefined?upd.single_entries:(u.single_entries||0)});
   } catch(e){ res.status(500).json({error:e.message}); }
@@ -16765,7 +17159,11 @@ app.delete('/api/attendance/booking/:id', trainerAuth, async(req,res)=>{
   try {
     const b = await q.one(db.bookings,{_id:req.params.id});
     if(!b) return res.status(404).json({error:'Rezervácia nenájdená'});
-    await q.update(db.bookings,{_id:req.params.id},{$set:{status:'cancelled',cancelled_at:nowISO(),cancelled_by:req.trainerUser._id}});
+    // Rovnaký zámok ako pri klientskom storne (E11-F): už zrušenú nechaj tak a druhý
+    // klik trénera nesmie vrátiť vstup ani poslať mail „Rezervácia zrušená" druhýkrát.
+    if(b.status==='cancelled') return res.json({ok:true, already:true, refunded:false, refund_note:null});
+    const zmenene = await q.update(db.bookings,{_id:b._id, status:(b.status ? b.status : {$exists:false})},{$set:{status:'cancelled',cancelled_at:nowISO(),cancelled_by:req.trainerUser._id}});
+    if(!zmenene) return res.json({ok:true, already:true, refunded:false, refund_note:null});
     if(b.status==='confirmed') await promoteWaitlist(b.class_id, b.booking_date);
     // Vstup vraciame len keď o to admin/tréner výslovne požiada — pri no-show
     // (klientka sa prihlásila a neprišla) musí vstup prepadnúť.
@@ -17257,19 +17655,64 @@ async function sendMail(to, subject, html, opts){
   } catch(e){ console.error('Mail error:', e.message); return false; }
 }
 
+// ── Zámok rezervácií ──────────────────────────────────────────────────────────
+// NeDB nemá transakcie: „spočítaj obsadenosť → over → zapíš" sa dá prerušiť
+// paralelnou požiadavkou (dva taby, 6 klientok naraz na posledné 2 miesta — audit
+// 3. 9., E11-B). Preto pre každú hodinu@termín beží ten blok sériovo cez reťaz promisov.
+const bookingLocks = new Map();
+function withBookingLock(key, fn){
+  const prev = bookingLocks.get(key) || Promise.resolve();
+  const run = prev.then(() => fn());
+  const tail = run.then(() => {}, () => {}); // chyba jedného čakateľa nesmie zablokovať ďalších
+  bookingLocks.set(key, tail);
+  tail.then(() => { if(bookingLocks.get(key) === tail) bookingLocks.delete(key); });
+  return run;
+}
+// Odpočet vstupu/kreditu s podmienkou „ešte ho má": update s query je v NeDB
+// atomický, takže 5 rezervácií naraz s 1 vstupom vezme permanentku len raz a nikdy
+// do mínusu (E11-C/E). Vracia true, keď sa naozaj odpočítalo.
+async function odpocitajVstup(uid, field){
+  let n = await q.update(db.users,{_id:uid, [field]:{$gte:1}},{$inc:{[field]:-1}});
+  if(!n){
+    // Staršie účty (import) môžu mať počet uložený ako text — $gte naň nesedí; znormalizuj a skús raz znova.
+    const f = await q.one(db.users,{_id:uid});
+    if(f && typeof f[field]!=='number' && (+f[field]||0)>=1)
+      n = await q.update(db.users,{_id:uid, [field]:f[field]},{$set:{[field]:(+f[field])-1}});
+  }
+  return n===1;
+}
+// Platný kalendárny dátum RRRR-MM-DD (odmietne aj 2026-02-30) a jeho deň v týždni
+// nezávislý od časovej zóny servera.
+const jePlatnyDatum = s => typeof s==='string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && new Date(s+'T00:00:00Z').toISOString().slice(0,10)===s;
+const dowZDatumu = s => new Date(s+'T00:00:00Z').getUTCDay(); // 0 = nedeľa … 6 = sobota (ako day_of_week)
+
 // Send booking confirmation email
 app.post('/api/bookings', auth, async(req,res)=>{
   try {
-    const {class_id, booking_date, notes, override_free, for_child_id}=req.body;
+    const {class_id, booking_date, for_child_id}=req.body;
+    const notes = typeof req.body.notes==='string' ? req.body.notes.slice(0,500) : '';
+    // Typová kontrola vstupu: objekt namiesto reťazca ({$in:[…]}) padal v NeDB na 500
+    // a permanentkárka prišla o vstup (E11-E); zámerne je to pokus o NoSQL injekciu.
     if(!class_id || class_id==='null' || class_id==='undefined') return res.status(400).json({error:'Chýba trieda'});
+    if(typeof class_id!=='string') return res.status(400).json({error:'Neplatná hodina.'});
+    if(booking_date!=null && booking_date!=='' && typeof booking_date!=='string') return res.status(400).json({error:'Neplatný dátum hodiny.'});
+    if(for_child_id!=null && for_child_id!=='' && typeof for_child_id!=='string') return res.status(400).json({error:'Neplatný detský profil'});
     const cls=await q.one(db.classes,{_id:class_id});
     if(!cls||!cls.active){
       const who=await q.one(db.users,{_id:req.session.uid});
       console.warn('⚠️ booking 404: class_id='+class_id+' user='+(who&&who.email)+' exists='+!!cls+(cls?' active='+cls.active:''));
       return res.status(404).json({error:'Hodina nenájdená', stale:true});
     }
+    // Termín: len RRRR-MM-DD, nie v minulosti a musí sedieť s dňom hodiny (alebo s
+    // jednorazovým only_date). Frontend posiela správne, ale API bolo otvorené — prešla
+    // minulosť, iný deň v týždni aj „včera" (E11-D). Bez dátumu = najbližší termín.
+    const bdate = booking_date || cls.only_date || displayNextDateForDay(cls.day_of_week);
+    if(!jePlatnyDatum(bdate)) return res.status(400).json({error:'Neplatný dátum hodiny — očakáva sa tvar RRRR-MM-DD.'});
+    if(bdate < today()) return res.status(400).json({error:'Tento termín je už v minulosti — vyber si najbližšiu hodinu.'});
     // Jednorazový termín sa dá rezervovať len na svoj dátum
-    if(!classRunsOn(cls, booking_date||today())) return res.status(404).json({error:'Hodina nenájdená', stale:true});
+    if(!classRunsOn(cls, bdate)) return res.status(404).json({error:'Hodina nenájdená', stale:true});
+    if(!cls.only_date && dowZDatumu(bdate)!==+cls.day_of_week)
+      return res.status(400).json({error:`Dátum ${bdate} nesedí s dňom hodiny (${DAYS_SK[cls.day_of_week]||'?'}).`});
     const parent=await q.one(db.users,{_id:req.session.uid});
     // ── Booking for a child profile? ────────────────────────────────────────────
     let target = parent;
@@ -17307,18 +17750,18 @@ app.post('/api/bookings', auth, async(req,res)=>{
     let techPrice=null;
     if(isTechClass && !u.is_admin && u.user_type!=='trainer'){
       const freeDates=(await q.one(db.settings,{key:'tech_free_dates'}))?.value||[];
-      const bdatePre=booking_date||displayNextDateForDay(cls.day_of_week);
-      if(freeDates.includes(bdatePre)){ accessMethod='promo_free'; }
+      if(freeDates.includes(bdate)){ accessMethod='promo_free'; }
       else if(!u.free_class_used){ accessMethod='free_class'; }
       else {
         const m=await checkMembership(u._id);
         const active=m && m.status==='active' && (!m.expires_at || m.expires_at>=today());
         const plan=String((m?.plan_id||'')+' '+(m?.plan_name||'')).toLowerCase();
-        if((u.free_credits||0)>0){ deductPlan={uid:u._id, field:'free_credits', value:u.free_credits-1}; accessMethod='free_credit'; }
-        else if((u.single_entries||0)>0){ deductPlan={uid:u._id, field:'single_entries', value:u.single_entries-1}; accessMethod='single_entry'; }
+        // Cenník podľa členstva: Gold 7 / Silver 8 / Bronze 9 / bez členstva 10 (Gold už NIE JE zdarma).
+        // Počíta sa vopred, aby cenu dostala aj klientka, ktorej sa vstup minul v súbehu.
+        techPrice=technikaCenaZPlanu(plan, active);
+        if((u.free_credits||0)>0){ deductPlan={uid:u._id, field:'free_credits'}; accessMethod='free_credit'; }
+        else if((u.single_entries||0)>0){ deductPlan={uid:u._id, field:'single_entries'}; accessMethod='single_entry'; }
         else {
-          // Cenník podľa členstva: Gold 7 / Silver 8 / Bronze 9 / bez členstva 10 (Gold už NIE JE zdarma)
-          techPrice=technikaCenaZPlanu(plan, active);
           if(req.body.pay_on_site){ payOnSite=true; accessMethod='pay_on_site'; }
           else return res.status(402).json({ error:'membership_required', can_pay_on_site:true, tech_price:techPrice,
             message:`Technický tréning: ${techPrice} € jednorazovo${techPrice<10?' (zľava podľa členstva)':''}. Platí aj permanentka — vstup si kúpiš kartou v Obchode, alebo zaplatíš na mieste.` });
@@ -17342,8 +17785,8 @@ app.post('/api/bookings', auth, async(req,res)=>{
           const pm = await checkMembership(parent._id);
           const pHasMem = pm && (pm.status==='active') && (!pm.expires_at || pm.expires_at >= today());
           if(pHasMem) parentCover = {method:'parent_membership'};
-          else if((parent.free_credits||0) > 0) parentCover = {method:'parent_free_credit', deduct:{uid:parent._id, field:'free_credits', value:(parent.free_credits||0)-1}};
-          else if((parent.single_entries||0) > 0) parentCover = {method:'parent_single_entry', deduct:{uid:parent._id, field:'single_entries', value:(parent.single_entries||0)-1}};
+          else if((parent.free_credits||0) > 0) parentCover = {method:'parent_free_credit', deduct:{uid:parent._id, field:'free_credits'}};
+          else if((parent.single_entries||0) > 0) parentCover = {method:'parent_single_entry', deduct:{uid:parent._id, field:'single_entries'}};
         }
         if(!hasMembership && singleEntries <= 0 && freeCredits <= 0 && !parentCover){
           if(req.body.pay_on_site){
@@ -17363,12 +17806,13 @@ app.post('/api/bookings', auth, async(req,res)=>{
         // Use free credit first, then single entry, then membership.
         // POZOR: odpočet sa vykoná až PO kontrole kapacity/duplicity/zrušenia —
         // inak zamietnutá rezervácia zožrala klientke vstup (reálne sa stávalo).
+        // Samotný odpočet je podmienený (odpocitajVstup), nie $set z prečítanej hodnoty.
         if(!hasMembership){
           if(freeCredits > 0){
-            deductPlan={uid:u._id, field:'free_credits', value:freeCredits-1};
+            deductPlan={uid:u._id, field:'free_credits'};
             accessMethod='free_credit';
           } else if(singleEntries > 0){
-            deductPlan={uid:u._id, field:'single_entries', value:singleEntries-1};
+            deductPlan={uid:u._id, field:'single_entries'};
             accessMethod='single_entry';
           } else if(parentCover){
             accessMethod=parentCover.method;
@@ -17378,32 +17822,63 @@ app.post('/api/bookings', auth, async(req,res)=>{
       }
     }
 
-    const bdate=booking_date||displayNextDateForDay(cls.day_of_week);
-    if(await q.one(db.class_cancellations,{class_id, date:bdate})) return res.status(400).json({error:'Táto hodina je zrušená a nedá sa rezervovať.'});
-    // Kapacita sa počíta pre KONKRÉTNY termín — predtým sa sčítavali rezervácie zo
-    // všetkých týždňov dokopy, takže po pár týždňoch hlásila obľúbená hodina „plná" navždy.
-    const booked=await q.count(db.bookings,{class_id, booking_date:bdate, status:{$ne:'cancelled'}});
-    if(booked>=cls.capacity) return res.status(400).json({error:'Hodina je plne obsadená – skúste čakací zoznam'});
-    const exists=await q.one(db.bookings,{class_id,user_id:u._id,booking_date:bdate,status:{$ne:'cancelled'}});
-    if(exists) return res.status(400).json({error:isChild?`${u.name} je už na túto hodinu prihlásené`:'Na túto hodinu ste sa už prihlásili'});
-    // Validácia prešla — až teraz odpočítaj vstup/kredit
-    if(deductPlan) await q.update(db.users,{_id:deductPlan.uid||u._id},{$set:{[deductPlan.field]: deductPlan.value}});
-    const booking=await q.insert(db.bookings,{
-      class_id, class_name:cls.name, class_emoji:cls.emoji||'💃',
-      class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
-      day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
-      user_id:u._id, user_name:u.name, user_email:isChild?parent.email:u.email, user_phone:u.phone||parent.phone||'',
-      booked_by:parent._id, booked_by_name:parent.name, is_child_booking:isChild, child_name:isChild?u.name:null,
-      booking_date:bdate, status:'confirmed', pay_on_site:payOnSite, notes:notes||'',
-      // Suma na výber: technika má vlastný cenník, inak platí to, čo si klientka
-      // zvolila; keď nezvolila nič, ostáva jednorazový vstup.
-      pay_amount: payOnSite ? (techPrice || cenaNaMieste(zvolenyPlan) || 10) : null,
-      pay_plan: payOnSite ? (zvolenyPlan || null) : null,
-      pay_plan_name: payOnSite && zvolenyPlan ? (MEMBERSHIP_PLANS[zvolenyPlan]?.name || zvolenyPlan) : null,
-      free_class: !u.free_class_used, // 1. hodina zdarma (aj technika) — nepočíta sa do €/klient bonusu trénera
-      access_method: accessMethod,    // pre korektné vrátenie vstupu pri zrušení
-      created_at:nowISO()
+    // ── Kritická sekcia pod zámkom hodina@termín: zrušenie → obsadenosť → duplicita →
+    // spotreba vstupu / prvej hodiny zdarma → zápis. Vstup sa berie podmieneným updatom
+    // PRED zápisom (nie $set z prečítanej hodnoty) a keď zápis padne, vráti sa.
+    const membershipRequired = msg => ({ code:402, body:{ error:'membership_required', can_pay_on_site:true,
+      ...(techPrice ? {tech_price:techPrice} : {}), message:msg, visit_count:visitCount, free_class_used:true } });
+    let jePrvaZdarma = !u.free_class_used; // 1. hodina zdarma (aj technika) — nepočíta sa do €/klient bonusu trénera
+    const vysl = await withBookingLock(class_id+'@'+bdate, async () => {
+      if(await q.one(db.class_cancellations,{class_id, date:bdate})) return {code:400, body:{error:'Táto hodina je zrušená a nedá sa rezervovať.'}};
+      // Kapacita sa počíta pre KONKRÉTNY termín — predtým sa sčítavali rezervácie zo
+      // všetkých týždňov dokopy, takže po pár týždňoch hlásila obľúbená hodina „plná" navždy.
+      const booked=await q.count(db.bookings,{class_id, booking_date:bdate, status:{$ne:'cancelled'}});
+      if(booked>=cls.capacity) return {code:400, body:{error:'Hodina je plne obsadená – skúste čakací zoznam'}};
+      const exists=await q.one(db.bookings,{class_id,user_id:u._id,booking_date:bdate,status:{$ne:'cancelled'}});
+      if(exists) return {code:400, body:{error:isChild?`${u.name} je už na túto hodinu prihlásené`:'Na túto hodinu ste sa už prihlásili'}};
+      let vratit=null; // čo sme klientke vzali — ak zápis padne, vrátime to
+      try{
+        if(jePrvaZdarma && !isOnlineClass){ // online hodina prvú zdarma nespotrebuje (ako doteraz)
+          // Spotrebuj ju len raz: 5 hodín v 5 taboch naraz dostalo prvú zdarma 5× (E11-C).
+          if(await q.update(db.users,{_id:u._id, free_class_used:{$ne:true}},{$set:{free_class_used:true}})) vratit={uid:u._id, field:'free_class_used'};
+          else {
+            jePrvaZdarma=false;
+            if(accessMethod==='free_class'){
+              if(!u.is_admin && u.user_type!=='trainer') return membershipRequired(isChild
+                ? `Prvá hodina zadarmo pre ${u.name} bola využitá. Na ďalšiu potrebuje členstvo alebo jednorazový vstup (10 €).`
+                : 'Prvá hodina zadarmo bola využitá. Na ďalšiu hodinu potrebuješ členstvo alebo jednorazový vstup (10 €).');
+              accessMethod='membership';
+            }
+          }
+        } else if(deductPlan){
+          if(!(await odpocitajVstup(deductPlan.uid, deductPlan.field)))
+            return membershipRequired('Vstup sa práve minul — použila ho iná tvoja rezervácia. Na túto hodinu potrebuješ ďalší vstup alebo členstvo.');
+          vratit=deductPlan;
+        }
+        const booking=await q.insert(db.bookings,{
+          class_id, class_name:cls.name, class_emoji:cls.emoji||'💃',
+          class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
+          day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
+          user_id:u._id, user_name:u.name, user_email:isChild?parent.email:u.email, user_phone:u.phone||parent.phone||'',
+          booked_by:parent._id, booked_by_name:parent.name, is_child_booking:isChild, child_name:isChild?u.name:null,
+          booking_date:bdate, status:'confirmed', pay_on_site:payOnSite, notes:notes||'',
+          // Suma na výber: technika má vlastný cenník, inak platí to, čo si klientka
+          // zvolila; keď nezvolila nič, ostáva jednorazový vstup.
+          pay_amount: payOnSite ? (techPrice || cenaNaMieste(zvolenyPlan) || 10) : null,
+          pay_plan: payOnSite ? (zvolenyPlan || null) : null,
+          pay_plan_name: payOnSite && zvolenyPlan ? (MEMBERSHIP_PLANS[zvolenyPlan]?.name || zvolenyPlan) : null,
+          free_class: jePrvaZdarma,
+          access_method: accessMethod,    // pre korektné vrátenie vstupu pri zrušení
+          created_at:nowISO()
+        });
+        return {booking};
+      }catch(e){
+        if(vratit) await q.update(db.users,{_id:vratit.uid}, vratit.field==='free_class_used' ? {$set:{free_class_used:false}} : {$inc:{[vratit.field]:1}}).catch(()=>{});
+        throw e;
+      }
     });
+    if(vysl.code) return res.status(vysl.code).json(vysl.body);
+    const booking=vysl.booking;
     if(payOnSite){
       // Daj vedieť adminom, že príde klient bez členstva — vybrať platbu na mieste.
       // Zlúčené s prípadnou „Čaká platba" žiadosťou tej istej klientky z obchodu (jedna karta).
@@ -17411,12 +17886,9 @@ app.post('/api/bookings', auth, async(req,res)=>{
         `${u.name} — ${cls.name} ${bdate}${techPrice?` (${techPrice} € podľa členstva)`:''}. Nemá členstvo ani vstupy, vybrať platbu na mieste.`).catch(()=>{});
     }
     // POZOR: rezervácia sama NEpripočíta návštevu ani body — pripíšu sa až keď tréner
-    // POTVRDÍ absolvovanie hodiny (QR alebo „potvrdiť hodinu"). Tu len spotrebuj 1. hodinu zdarma
-    // (rezervácia miesta) a resetni winback príznak.
-    const userUpd = {};
-    if(!u.free_class_used && !isOnlineClass) userUpd.free_class_used = true; // platí aj pre techniku
-    if(u.winback_sent) userUpd.winback_sent = false;
-    if(Object.keys(userUpd).length) await q.update(db.users,{_id:u._id},{$set: userUpd});
+    // POTVRDÍ absolvovanie hodiny (QR alebo „potvrdiť hodinu"). Prvá hodina zdarma sa
+    // spotrebovala už v zámku pred zápisom; tu len resetni winback príznak.
+    if(u.winback_sent) await q.update(db.users,{_id:u._id},{$set:{winback_sent:false}});
     const notifUid = parent._id;
     const who = isChild ? `${u.name}: ` : '';
     await q.insert(db.notifications,{user_id:notifUid,type:'booking',title:`Rezervácia potvrdená ✅`,body:`${who}${cls.name} – ${bdate} o ${cls.time_start}`,read:false,created_at:nowISO()});
@@ -17472,7 +17944,8 @@ const membershipPointsFor = planId => MEMBERSHIP_TIER_POINTS[planId] ?? MP_WEIGH
 async function paidMembershipTierMap(){
   const map={};
   (await q.find(db.transactions,{type:'membership'}))
-    .filter(t=>t.plan_id && MEMBERSHIP_TIER_POINTS[t.plan_id]!==undefined && t.payment_method!=='free' && ((+t.amount||0)>0 || t.payment_method==='referral_credit'))
+    // 0 € cez kredit alebo 100 % kupón (payment_method 'promo') sa ráta rovnako ako doteraz
+    .filter(t=>t.plan_id && MEMBERSHIP_TIER_POINTS[t.plan_id]!==undefined && t.payment_method!=='free' && ((+t.amount||0)>0 || ['referral_credit','promo'].includes(t.payment_method)))
     .sort((a,b)=>String(a.date||a.created_at||'').localeCompare(String(b.date||b.created_at||'')))
     .forEach(t=>{ map[t.user_id]=t.plan_id; });
   return map;
@@ -17908,7 +18381,7 @@ const REFERRAL_GOAL_TIERS = [
 // členstvo alebo permanentka/vstupy (darčeky a 0 € sa nerátajú).
 async function referralGoalHasPaid(uid){
   const tx=(await q.find(db.transactions,{user_id:uid}))
-    .find(t=>['membership','single_entry'].includes(t.type) && t.payment_method!=='free' && ((+t.amount||0)>0 || t.payment_method==='referral_credit'));
+    .find(t=>['membership','single_entry'].includes(t.type) && t.payment_method!=='free' && ((+t.amount||0)>0 || ['referral_credit','promo'].includes(t.payment_method)));
   if(tx) return true;
   const mem=(await q.find(db.memberships,{user_id:uid})).find(m=>(+m.price||0)>0 && m.payment_method);
   if(mem) return true;
@@ -21932,21 +22405,46 @@ app.post('/api/admin/run-first-class-followup', adminAuth, async(req,res)=>{
   catch(e){ res.status(500).json({error:e.message}); }
 });
 
-// Run daily at ~08:00 server time (check every hour)
-setInterval(async()=>{
-  const h = new Date().getHours();
-  // Dochádzka sa vyhodnocuje každú hodinu — no-show musí zbehnúť krátko po hodine,
+// ── Denný tick (každých 10 min) so samoliečbou ──────────────────────────────
+// Predtým hodinový tick viazaný na getHours()===8 / ===20 bez guardu: deploy medzi
+// 20:00 a časom ticku znamenal, že kupón po prvej hodine sa v ten deň neposlal a už
+// nedobehol (audit E10). Teraz: denné joby bežia hocikedy po 8:00 SK a večerný
+// follow-up hocikedy po 20:00 SK, ak dnes ešte nebežali (guard v settings per deň,
+// rovnaký vzor ako utask_notify). Guard sa zapisuje PRED behom — pri páde uprostred
+// sa v ten deň netočí dokola, dobehne sa ručne (/api/admin/run-first-class-followup).
+// markNoShows je idempotentný, beží každý tick. hourOverride = len QA endpoint.
+function hodinaSK(){
+  // Server na Railway beží v UTC; hourCycle h23, nech polnoc je 0 a nie 24 (inak by
+  // sa o 00:xx spustil večerný follow-up pre nový deň a o 20:00 by ho guard zablokoval).
+  return +new Intl.DateTimeFormat('sk-SK',{hour:'numeric',hourCycle:'h23',timeZone:'Europe/Bratislava'}).format(new Date()) % 24;
+}
+async function runDailyTick(hourOverride){
+  const hSK = Number.isFinite(hourOverride) ? hourOverride : hodinaSK();
+  const out = { hour:hSK, date:today(), no_shows:0, daily:false, followup:false, followup_sent:0 };
+  // Dochádzka sa vyhodnocuje každý tick — no-show musí zbehnúť krátko po hodine,
   // nie až ráno, inak je recovery notifikácia zbytočne stará.
-  try{ await markNoShows(); }catch(e){ console.error('No-show job error:',e.message); }
-  if(h === 8){
-    try{ await runDailyJobs(); }catch(e){ console.error('Cron error:',e); }
-    try{ await processEmailQueue(); }catch(e){ console.error('Email queue error:',e); }
-    try{ await rebuildFunnelStamps(); }catch(e){ console.error('Funnel stamps error:',e.message); }
+  try{ out.no_shows = (await markNoShows())||0; }catch(e){ console.error('No-show job error:',e.message); }
+  if(hSK>=8){
+    const guard='daily_jobs_'+today();
+    if(!(await q.one(db.settings,{key:guard}))){
+      await q.insert(db.settings,{key:guard, value:true, at:nowISO()});
+      out.daily=true;
+      try{ await runDailyJobs(); }catch(e){ console.error('Cron error:',e); }
+      try{ await processEmailQueue(); }catch(e){ console.error('Email queue error:',e); }
+      try{ await rebuildFunnelStamps(); }catch(e){ console.error('Funnel stamps error:',e.message); }
+    }
   }
-  if(h === 20){
-    try{ await runFirstClassFollowup(); }catch(e){ console.error('First class followup error:',e); }
+  if(hSK>=20){
+    const guard='first_class_followup_'+today();
+    if(!(await q.one(db.settings,{key:guard}))){
+      await q.insert(db.settings,{key:guard, value:true, at:nowISO()});
+      out.followup=true;
+      try{ out.followup_sent = (await runFirstClassFollowup())||0; }catch(e){ console.error('First class followup error:',e); }
+    }
   }
-}, 3600000);
+  return out;
+}
+setInterval(()=>{ runDailyTick().catch(e=>console.error('daily tick:', e.message)); }, 10*60*1000);
 // Po štarte raz dobehni dochádzku aj funnel timestampy (obe sú idempotentné).
 setTimeout(async()=>{
   try{ await markNoShows(); }catch(e){ console.error('no-show at boot:', e.message); }
@@ -22031,7 +22529,7 @@ async function fixClassesInstructors(){
   } catch(e){ console.error('fixClassesInstructors error:', e.message); }
 }
 
-seedData().then(backfillDefaultSponsor).then(reconcileGlofoxVisits).then(fixClassesInstructors).then(ensureGenrePoll).then(ensureTopStars).then(()=>{
+seedData().then(backfillDefaultSponsor).then(shopInvoiceBackfill20260904).then(reconcileGlofoxVisits).then(fixClassesInstructors).then(ensureGenrePoll).then(ensureTopStars).then(()=>{
   server.listen(PORT, ()=>{
     console.log('\n╔══════════════════════════════════════════════════════╗');
     console.log('║  🎵  Fusion Academy – Systém v2.0 spustený             ║');
