@@ -1,7 +1,12 @@
 /**
  * E2E: Technický tréning Detva (kategória Technika) — vlastný cenník:
- * 10 € jednorazovo / Bronze 9 / Silver 8 / Gold zdarma; platí permanentka (vstup);
- * prvá hodina zadarmo sa naň nevzťahuje; dnešný termín (tech_free_dates) zadarmo.
+ * 10 € jednorazovo / Bronze 8 / Silver 7 / Gold 6 €; platí permanentka (vstup);
+ * dnešný termín zo zoznamu tech_free_dates je zadarmo.
+ *
+ * Prvá hodina zadarmo sa NA techniku vzťahuje (commit b507849, „Prvá hodina zdarma
+ * aj na techniku") — test to pôvodne popieral, lebo vznikol 14. 8. pred tou zmenou
+ * a už sa neaktualizoval. Preto si každá persóna prvú hodinu zadarmo najprv minie
+ * na Zumbe a až potom sa overuje cenník techniky.
  */
 const BASE = 'http://localhost:' + (process.env.QA_PORT || 3999);
 let PASS = 0, FAIL = 0;
@@ -38,26 +43,43 @@ const nextDow = dow => { const n = new Date(); const diff = ((dow - n.getDay() +
   ok('fyzická hodina Ne 18:00 Detva', !!techNe);
   ok('online prenos Pi 18:00 (stream Detva)', !!onlPi && onlPi.stream_city === 'Detva', onlPi && { s: onlPi.stream_city });
   ok('online prenos Ne 18:00 (stream Detva)', !!onlNe);
-  ok('popis obsahuje cenník aj permanentku', /Bronze 9/.test(techPi?.description || '') && /permanentka/i.test(techPi?.description || ''), techPi?.description);
+  ok('popis obsahuje cenník aj permanentku', /Bronze 8/.test(techPi?.description || '') && /permanentka/i.test(techPi?.description || ''), techPi?.description);
   if (!techPi || !techNe) { console.log('FATAL: hodiny chýbajú'); process.exit(1); }
   const NE = nextDow(0); // budúca nedeľa — nie je vo free dates
 
-  // ── A: čerstvá klientka (prvá hodina NEzadarmo na technike) ──────────────
+  // Bežná (nie Technika, nie Online) hodina, na ktorej sa minie prvá hodina zadarmo,
+  // aby sa dal overiť samotný cenník techniky.
+  const bezna = classes.find(c => c.active !== false && c.category !== 'Technika' && c.category !== 'Online' && c.day_of_week != null);
+  ok('existuje bežná hodina na minutie prvej zadarmo', !!bezna, bezna && bezna.name);
+  const minPrvuZadarmo = async (jar) => {
+    if (!bezna) return;
+    await post(jar, '/api/bookings', { class_id: bezna._id, booking_date: nextDow(bezna.day_of_week) });
+  };
+
+  // ── A: klientka, ktorá už prvú hodinu zadarmo minula → technika za 10 € ──
   await post('A', '/api/register', { name: 'Tech Klientka', email: 'tech-a-' + uniq + '@example.com', password: 'AuditPass123!', consent: true });
   const meA = (await g('A', '/api/me')).data;
   let r = await post('A', '/api/bookings', { class_id: techNe._id, booking_date: NE });
-  ok('bez členstva → 402 membership_required (žiadna prvá zadarmo)', r.status === 402 && r.data?.error === 'membership_required', r);
+  ok('prvá hodina zadarmo platí aj na techniku', r.status === 200, r);
+  const meA0 = (await g('A', '/api/me')).data;
+  ok('a naozaj sa ňou minula', meA0.free_class_used === true, meA0.free_class_used);
+  // Zrušenie by hodinu zadarmo vrátilo (a správne), preto sa na cenník pýtame
+  // iným termínom tej istej hodiny — o týždeň neskôr.
+  const NE2 = (() => { const d = new Date(NE + 'T12:00:00'); d.setDate(d.getDate() + 7); return dstr(d); })();
+  r = await post('A', '/api/bookings', { class_id: techNe._id, booking_date: NE2 });
+  ok('druhá technika bez členstva → 402 membership_required', r.status === 402 && r.data?.error === 'membership_required', r);
   ok('402 nesie tech_price 10 a spomína permanentku', r.data?.tech_price === 10 && /permanentk/i.test(r.data?.message || ''), r.data);
-  r = await post('A', '/api/bookings', { class_id: techNe._id, booking_date: NE, pay_on_site: true });
+  r = await post('A', '/api/bookings', { class_id: techNe._id, booking_date: NE2, pay_on_site: true });
   ok('pay_on_site rezervácia prešla', r.status === 200 && (r.data?.ok || r.data?.id || r.data?.booking_id), r);
-  const attNe = (await g('admin', '/api/admin/attendance?class_id=' + techNe._id + '&date=' + NE)).data;
+  const attNe = (await g('admin', '/api/admin/attendance?class_id=' + techNe._id + '&date=' + NE2)).data;
   const rowA = (attNe?.bookings || attNe || []).find?.(b => b.user_id === meA.id) || (attNe?.attendees || []).find?.(b => b.user_id === meA.id);
   ok('rezervácia má pay_amount 10 (na mieste)', !rowA || rowA.pay_amount === 10 || rowA.pay_on_site === true, rowA);
   const meA2 = (await g('A', '/api/me')).data;
-  ok('prvá hodina zadarmo sa NEspotrebovala', meA2.free_class_used !== true, meA2.free_class_used);
+  ok('platba na mieste už žiadnu hodinu zadarmo neminie', meA2.free_class_used === true, meA2.free_class_used);
 
   // ── B: permanentka (vstupy) kryje tréning ────────────────────────────────
   await post('B', '/api/register', { name: 'Tech Permanentkárka', email: 'tech-b-' + uniq + '@example.com', password: 'AuditPass123!', consent: true });
+  await minPrvuZadarmo('B');
   const meB = (await g('B', '/api/me')).data;
   await post('admin', '/api/admin/users/' + meB.id + '/entries', { op: 'set', amount: 2 });
   r = await post('B', '/api/bookings', { class_id: techNe._id, booking_date: NE });
@@ -67,26 +89,29 @@ const nextDow = dow => { const n = new Date(); const diff = ((dow - n.getDay() +
 
   // ── C: Gold členka zadarmo ───────────────────────────────────────────────
   await post('C', '/api/register', { name: 'Tech Goldka', email: 'tech-c-' + uniq + '@example.com', password: 'AuditPass123!', consent: true });
+  await minPrvuZadarmo('C');
   const meC = (await g('C', '/api/me')).data;
   await post('admin', '/api/admin/users/' + meC.id + '/grant-membership', { plan_id: 'gold', gift: true });
   r = await post('C', '/api/bookings', { class_id: techNe._id, booking_date: NE });
-  ok('Gold rezervácia zadarmo prešla', r.status === 200, r);
+  ok('Gold → 402 s tech_price 6 (Gold už nie je zadarmo)', r.status === 402 && r.data?.tech_price === 6, r.data);
 
-  // ── D: Bronze členka → 402 s cenou 9 € ───────────────────────────────────
+  // ── D: Bronze členka → 402 s cenou 8 € ───────────────────────────────────
   await post('D', '/api/register', { name: 'Tech Bronzka', email: 'tech-d-' + uniq + '@example.com', password: 'AuditPass123!', consent: true });
+  await minPrvuZadarmo('D');
   const meD = (await g('D', '/api/me')).data;
   await post('admin', '/api/admin/users/' + meD.id + '/grant-membership', { plan_id: 'bronze', gift: true });
   r = await post('D', '/api/bookings', { class_id: techNe._id, booking_date: NE });
-  ok('Bronze → 402 s tech_price 9', r.status === 402 && r.data?.tech_price === 9, r.data);
+  ok('Bronze → 402 s tech_price 8', r.status === 402 && r.data?.tech_price === 8, r.data);
   r = await post('D', '/api/bookings', { class_id: techNe._id, booking_date: NE, pay_on_site: true });
   ok('Bronze pay_on_site prešlo', r.status === 200, r);
 
-  // ── E: Silver → 8 € ──────────────────────────────────────────────────────
+  // ── E: Silver → 7 € ──────────────────────────────────────────────────────
   await post('E', '/api/register', { name: 'Tech Silverka', email: 'tech-e-' + uniq + '@example.com', password: 'AuditPass123!', consent: true });
+  await minPrvuZadarmo('E');
   const meE = (await g('E', '/api/me')).data;
   await post('admin', '/api/admin/users/' + meE.id + '/grant-membership', { plan_id: 'silver', gift: true });
   r = await post('E', '/api/bookings', { class_id: techNe._id, booking_date: NE });
-  ok('Silver → 402 s tech_price 8', r.status === 402 && r.data?.tech_price === 8, r.data);
+  ok('Silver → 402 s tech_price 7', r.status === 402 && r.data?.tech_price === 7, r.data);
 
   // ── F: dnešný termín zadarmo (tech_free_dates obsahuje dnešok pri nasadení) ──
   const TODAY = dstr(new Date());

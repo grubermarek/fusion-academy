@@ -1583,6 +1583,19 @@ async function seedData() {
     for(const c of await q.find(db.classes,{category:'Technika'})) await q.update(db.classes,{_id:c._id},{$set:{description:NEWDESC2}});
     await q.insert(db.settings,{key:'tech_freeclass_20260816', value:true, at:nowISO()});
   }
+  // 4.9. (audit): popis sľuboval Bronze 9 / Silver 8 / Gold 7, ale od 30.8. sa reálne
+  // účtuje 8 / 7 / 6 (TECHNIKA_CENNIK). Rozvrh musí hovoriť to, čo appka naozaj zoberie.
+  // Musí bežať AŽ ZA migráciami vyššie, inak by mu prepísali popis späť na staré ceny.
+  if(!(await q.one(db.settings,{key:'tech_popis_cennik_20260904'}))){
+    const POPIS='Technika, izolácie a štýl — nadstavba k Zumbe. 🎁 Prvá hodina zadarmo! Inak 💳 '
+      +TECHNIKA_CENNIK.ziadne+' € jednorazový vstup · Bronze '+TECHNIKA_CENNIK.bronze+' € · Silver '
+      +TECHNIKA_CENNIK.silver+' € · Gold '+TECHNIKA_CENNIK.gold+' €. Platí aj permanentka (1 vstup) — '
+      +'kúpiš kartou v Obchode, alebo zaplatíš na mieste. Pokračujeme Zumbou o 19:00. Beží aj online prenos!';
+    for(const c of await q.find(db.classes,{category:'Technika'}))
+      await q.update(db.classes,{_id:c._id},{$set:{description:POPIS}});
+    await q.insert(db.settings,{key:'tech_popis_cennik_20260904', value:true, at:nowISO()});
+    console.log('🎯 Popis techniky zosúladený s cenníkom '+JSON.stringify(TECHNIKA_CENNIK));
+  }
 
   // 14.8.: STRIKTNÁ ATRIBÚCIA KAMPANÍ — žiadne domyslené tržby.
   // Júlová migrácia (meta_campaign_sync_v1) otagovala utm_campaign='FA — Zumba
