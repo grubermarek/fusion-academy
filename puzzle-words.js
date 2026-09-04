@@ -18,9 +18,11 @@ const SIZE = 11;
 const WORD_COUNT = 10;
 const DIRS = [[0, 1], [1, 0], [1, 1], [-1, 1], [0, -1], [-1, 0], [-1, -1], [1, -1]];
 
-function build(rnd) {
+// `slova` (voliteľné) — tematická sada na konkrétny deň, napr. v deň párty.
+// Vtedy sú v mriežke len slová z akcie, takže samotný zoznam nesie odkaz.
+function build(rnd, slova) {
   // výber slov na daný deň — kratšie sa umiestňujú ľahšie, tak ich mixujeme
-  const pool = WORDS.slice();
+  const pool = (Array.isArray(slova) && slova.length ? slova : WORDS).slice();
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(rnd() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -40,8 +42,11 @@ function build(rnd) {
     return cells;
   };
 
+  // Pri tematickej sade chceme do mriežky dostať všetky slová, nie len prvých 10 —
+  // zoznam je vtedy odkaz sám o sebe a chýbajúce slovo by ho zmrzačilo.
+  const limit = (Array.isArray(slova) && slova.length) ? pool.length : WORD_COUNT;
   for (const w of pool) {
-    if (placed.length >= WORD_COUNT) break;
+    if (placed.length >= limit) break;
     if (w.length > SIZE) continue;
     const tries = [];
     for (let t = 0; t < 220; t++) {

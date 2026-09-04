@@ -102,10 +102,37 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     return { date: dateStr, size: SIZE, dots, _path: path };
   }
 
+  // ── Tematické dni ────────────────────────────────────────────────────────────
+  // V deň akcie nemá hlavolam len zabaviť, ale aj pripomenúť, že sa večer niekam ide.
+  // Mriežka vtedy obsahuje len slová z akcie a nad hádankou je pruh s termínom,
+  // miestom a odkazom na vstupenku. Fakty sú prevzaté z ev_events (nič vymyslené).
+  const THEMES = {
+    '2026-09-05': {
+      type: 'words',
+      slova: ['LATINO', 'TROPICAL', 'PARTY', 'SOBOTA', 'VECER', 'DETVA',
+              'KOKTAIL', 'TANEC', 'SALSA', 'BACHATA', 'PARKET', 'VYROCIE'],
+      banner: {
+        emoji: '🌴',
+        title: 'Dnes večer tancujeme v Detve!',
+        text: 'Latin Tropical Party — <b>dnes o 21:00</b>, Fusion Club Detva, Záhradná 7. '
+            + 'Slávime <b>prvý rok</b> tanečnej školy. Vstupenka online <b>5 €</b> (do 20:59), '
+            + 'na mieste 10 € — welcome drink je v cene.',
+        // Bez počtu slov — koľko sa ich do mriežky zmestí, závisí od generátora,
+        // a číslo v texte by pri inom seede klamalo.
+        note: 'Všetky slová v mriežke sú z dnešného večera. 💃',
+        cta: '🎟️ Vstupenka za 5 €',
+        url: '/event/latin-tropical-2026?utm_source=appka&utm_medium=hlavolam&utm_campaign=fa-party-den-d',
+      },
+    },
+  };
+  function themeFor(dateStr) { return THEMES[dateStr] || null; }
+
   // Aký typ pripadá na daný deň. Striedame, aby to neomrzelo; admin vie poradie
   // zmeniť (schedule) alebo typ na konkrétny deň natvrdo určiť (overrides).
   const TYPES = ['zip', 'words', 'rhythm', 'anagram'];
   function typeForSync(dateStr, conf) {
+    const th = themeFor(dateStr);
+    if (th && TYPES.includes(th.type)) return th.type;   // tematický deň má prednosť
     const ov = conf && conf.overrides && conf.overrides[dateStr];
     if (ov && TYPES.includes(ov)) return ov;
     const list = (conf && Array.isArray(conf.schedule) && conf.schedule.length) ? conf.schedule : TYPES;
@@ -123,7 +150,8 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     if (!cache[key]) {
       if (t === 'words') {
         const rnd = mulberry32(seedFromString('fusion-words-' + dateStr));
-        cache[key] = { ...WORDS.build(rnd), type: 'words', date: dateStr };
+        const th = themeFor(dateStr);
+        cache[key] = { ...WORDS.build(rnd, th && th.slova), type: 'words', date: dateStr };
       } else if (t === 'rhythm') {
         const rnd = mulberry32(seedFromString('fusion-rhythm-' + dateStr));
         cache[key] = { ...RYTMUS.build(rnd), type: 'rhythm', date: dateStr };
@@ -313,6 +341,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
         rhythm_per_answer: +c.rhythm_per_answer || 1, rhythm_perfect_bonus: +c.rhythm_perfect_bonus || 0,
         my_day_win: mine ? !!mine.day_win : false,
         solvers_today: solvers,
+        banner: (themeFor(d) || {}).banner || null,   // pruh s akciou v tematický deň
       });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
