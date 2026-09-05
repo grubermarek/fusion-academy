@@ -70,7 +70,8 @@ module.exports = function mountEventTickets(ctx){
         capacity: 30 },
       { key:'party', name:'LATIN TROPICAL PARTY',
         includes:['Vstup od 21:00','Welcome drink'],
-        member: null, presale: 5, door: 10,
+        // Členka platí 5 € aj pri dverách po 21:00 (Marek 5. 9.) — cudzí 10 €.
+        member: 5, member_after_presale: true, presale: 5, door: 10,
         presale_until: '2026-09-05T20:59:59+02:00',
         capacity: null,
         tables: true }
@@ -111,7 +112,25 @@ module.exports = function mountEventTickets(ctx){
 
   async function ensureEvent(){
     for(const EV of ALL_EVENTS) await ensureOne(EV);
+    await patchPartyMemberPrice();
+    // Odznak dostanú aj tie, čo si masterclass kúpili predtým, než odznak existoval.
+    try{ await grantMasterclassBadge(await q.find(db.ev_tickets,{type:'full'})); }
+    catch(e){ console.error('masterclass backfill:', e.message); }
     return await q.one(db.ev_events,{slug:LATIN.slug});
+  }
+
+  // 5. 9.: ceny typov sa zo seedu zámerne neprepisujú (kapacity si admin mení sám),
+  // preto členskú cenu párty doplníme cielene. Členka 5 € aj pri dverách, cudzí 10 €.
+  async function patchPartyMemberPrice(){
+    try{
+      const ev = await q.one(db.ev_events,{slug:'latin-tropical-2026'});
+      if(!ev || !Array.isArray(ev.types)) return;
+      const t = ev.types.find(x=>x.key==='party');
+      if(!t || (t.member===5 && t.member_after_presale===true)) return;
+      const types = ev.types.map(x=>x.key==='party' ? {...x, member:5, member_after_presale:true} : x);
+      await q.update(db.ev_events,{_id:ev._id},{$set:{types}});
+      console.log('🎟️  Párty: členská cena 5 € platí aj pri dverách');
+    }catch(e){ console.error('patchPartyMemberPrice:', e.message); }
   }
 
   async function ensureOne(LATIN){
@@ -128,12 +147,43 @@ module.exports = function mountEventTickets(ctx){
     }
   }
 
+  // ── Odznak Masterclass #1 ──────────────────────────────────────────────────
+  // Kto si KÚPI vstupenku na masterclass, dostane odznak do profilu a 50 bodov
+  // do mesačného rebríčka (Marek 5. 9.). Darovaná vstupenka odznak nedáva —
+  // odmena je za to, že si to zaplatila. Body sa počítajú z lístkov
+  // (masterclassMapInPeriod v server.js), tu sa nastavuje len odznak.
+  async function grantMasterclassBadge(tickets){
+    try{
+      const komu = new Map();
+      for(const t of (tickets||[])){
+        if(!t || t.type!=='full' || t.status==='void') continue;
+        if(t.tier==='gift' || !(+t.price>0)) continue;
+        const u = t.user_id ? await q.one(db.users,{_id:t.user_id})
+                : (t.holder_email ? await q.one(db.users,{email:String(t.holder_email).toLowerCase()}) : null);
+        if(u && !u.masterclass_1) komu.set(u._id, u);
+      }
+      for(const u of komu.values()){
+        await q.update(db.users,{_id:u._id},{$set:{masterclass_1:true, masterclass_1_at:nowISO()}});
+        await q.insert(db.notifications,{ user_id:u._id, type:'achievement',
+          title:'🏆 Odznak Masterclass #1',
+          body:'Máš vstupenku na prvý masterclass Fusion Academy — odznak je v tvojom profile a v rebríčku ti pribudlo 50 bodov. 💛',
+          read:false, created_at:nowISO() }).catch(()=>{});
+        console.log('🏆 Masterclass #1 → '+(u.name||u.email));
+      }
+      return komu.size;
+    }catch(e){ console.error('grantMasterclassBadge:', e.message); return 0; }
+  }
+
   // ── Ceny a dostupnosť ──────────────────────────────────────────────────────
   // isMember: členská cena je len pre prihlásených členov s aktívnym členstvom.
+  // member_after_presale: členská cena platí aj po konci predpredaja. Pri párty to
+  // Marek chce (členka 5 €, cudzí 10 €, aj o polnoci pri dverách), pri masterclasse
+  // nie — tam sa 45 € viazalo na predpredaj a v mailoch sme napísali, že skončil.
   function priceFor(type, isMember){
     const now = skNow();
     const presaleOpen = now <= new Date(type.presale_until).toISOString();
-    if(isMember && type.member != null && presaleOpen) return { price:type.member, tier:'member' };
+    if(isMember && type.member != null && (presaleOpen || type.member_after_presale))
+      return { price:type.member, tier:'member' };
     if(presaleOpen) return { price:type.presale, tier:'presale' };
     return { price:type.door, tier:'door' };
   }
@@ -207,6 +257,7 @@ module.exports = function mountEventTickets(ctx){
           const a = avail[t.key];
           return { key:t.key, name:t.name, includes:t.includes, tables:!!t.tables,
                    price:p.price, tier:p.tier, member_price:t.member, presale:t.presale, door:t.door,
+                   member_after_presale: !!t.member_after_presale,
                    presale_until:t.presale_until,
                    sold:a.sold, left:a.left, sold_out: a.left!=null && a.left<=0 };
         }),
@@ -365,6 +416,7 @@ module.exports = function mountEventTickets(ctx){
         tickets: tickets.length, source:order.source, status:'active', created_at:nowISO()
       });
     }
+    await grantMasterclassBadge(tickets);
 
     // Meta CAPI Purchase — event_id = order_number, takže opakovaný fulfil (webhook +
     // return page) Meta zdeduplikuje a konverzia sa nezaráta dvakrát.
@@ -598,13 +650,20 @@ module.exports = function mountEventTickets(ctx){
       const ev = await q.one(db.ev_events,{slug:req.params.slug});
       if(!ev) return res.status(404).json({error:'Event nenájdený'});
       const tickets = (await q.find(db.ev_tickets,{event_slug:ev.slug})).filter(t=>t.status!=='void');
+      // Rozdaný lístok nie je predaj — Marek chce vidieť oddelene, koľko sa predalo
+      // a koľko rozdalo (5. 9.). Darček spoznáme podľa tier 'gift' alebo nulovej ceny.
+      const jeDar = x => x.tier==='gift' || !(+x.price>0);
       const perType = {};
       for(const t of ev.types){
         const mine = tickets.filter(x=>x.type===t.key);
-        perType[t.key] = { name:t.name, sold:mine.length, revenue:+mine.reduce((s,x)=>s+(+x.price||0),0).toFixed(2),
+        const dary = mine.filter(jeDar), predane = mine.filter(x=>!jeDar(x));
+        perType[t.key] = { name:t.name, sold:mine.length,
+          paid: predane.length, gifts: dary.length,
+          revenue:+predane.reduce((s,x)=>s+(+x.price||0),0).toFixed(2),
           checked_in: mine.filter(x=>x.status==='used').length,
           capacity: t.capacity, left: t.capacity==null?null:Math.max(0,t.capacity-mine.length) };
       }
+      const daryAll = tickets.filter(jeDar), predaneAll = tickets.filter(x=>!jeDar(x));
       const bySource = {};
       for(const t of tickets) bySource[t.source||'web'] = (bySource[t.source||'web']||0)+1;
       const affiliates = (ev.affiliates||[]).map(a=>{
@@ -623,7 +682,12 @@ module.exports = function mountEventTickets(ctx){
       res.json({ ok:true, event:{name:ev.name, date_label:ev.date_label, venue:ev.venue},
         per_type: perType,
         total_sold: tickets.length,
-        total_revenue: +tickets.reduce((s,x)=>s+(+x.price||0),0).toFixed(2),
+        total_paid: predaneAll.length,
+        total_gifts: daryAll.length,
+        total_revenue: +predaneAll.reduce((s,x)=>s+(+x.price||0),0).toFixed(2),
+        // Koľko ľudí naozaj prišlo — jeden človek môže mať aj dva typy vstupeniek
+        people: new Set(tickets.filter(t=>t.status==='used')
+          .map(t=>String(t.holder_email||'').toLowerCase() || t.code)).size,
         checked_in: tickets.filter(t=>t.status==='used').length,
         by_source: bySource,
         affiliates,
@@ -699,11 +763,12 @@ module.exports = function mountEventTickets(ctx){
         if(!qty) continue;
         const left = avail[t.key].left;
         if(left!=null && qty>left) return res.status(400).json({error:`Pri „${t.name}" ostáva len ${left} miest.`});
-        // Cena: ak ju nezadá, vypočíta sa sama — člen/nečlen a podľa toho,
-        // či ešte beží predpredaj.
+        // Cena pri dverách: predpredaj je výhoda za nákup online, nie za to, že
+        // človek príde na miesto. Preto tu platí jednoduché pravidlo (Marek 5. 9.):
+        // členka členskú cenu, cudzí cenu na mieste. Ručne zadaná cena má prednosť.
         const price = isGift ? 0 : ((w.price!=null && w.price!=='')
           ? Math.max(0,+w.price)
-          : priceFor(t, isMemberSale).price);
+          : ((isMemberSale && t.member!=null) ? t.member : (t.door!=null ? t.door : priceFor(t, isMemberSale).price)));
         // Mená ďalších osôb — vstupenka môže znieť na kamarátku, nielen na kupujúcu.
         const holders=(Array.isArray(w.holders)?w.holders:[]).slice(0,qty).map(h=>({
           name:esc(h&&h.name,120), email:esc(h&&h.email,120).toLowerCase(), phone:esc(h&&h.phone,40) }));
@@ -739,6 +804,7 @@ module.exports = function mountEventTickets(ctx){
           aff_paid_out:false, aff_paid_at:null,
           checked_in_at:null, checked_in_by:null, checkin_place:null, created_at:nowISO()})); }
       }
+      await grantMasterclassBadge(made);
       const summary = lines.map(l=>l.qty+'× '+l.t.name).join(', ');
       await q.insert(db.transactions,{type:'event_ticket', user_id:acct?._id||null, user_name:name, channel:'onsite',
         amount:total, payment_method:method,

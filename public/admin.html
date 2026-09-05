@@ -2011,12 +2011,17 @@ async function loadEventy(){
     let html='';
     types.forEach(function(k){
       const x=st.per_type[k];
-      html += box(x.name, (x.sold||0)+' ks',
-        (x.revenue||0).toFixed(2)+' € · prišlo '+(x.checked_in||0)
+      html += box(x.name, (x.paid!=null?x.paid:x.sold)+' predaných',
+        (x.revenue||0).toFixed(2)+' €'
+        + (x.gifts ? ' · '+x.gifts+' zadarmo' : '')
+        + ' · prišlo '+(x.checked_in||0)
         + (x.capacity!=null ? (' · zostáva '+x.left) : ''), '#C9A84C');
     });
-    html += box('Celková tržba', (st.total_revenue||0).toFixed(2)+' €',
-      st.total_sold+' vstupeniek · '+st.checked_in+' prišlo', '#8bc34a');
+    html += box('Tržba za vstupenky', (st.total_revenue||0).toFixed(2)+' €',
+      (st.total_paid!=null?st.total_paid:st.total_sold)+' predaných'
+      + (st.total_gifts ? ' · '+st.total_gifts+' rozdaných' : ''), '#8bc34a');
+    html += box('Prišlo ľudí', (st.people!=null?st.people:st.checked_in),
+      st.checked_in+' načítaných vstupeniek z '+st.total_sold, '#4fc3f7');
     document.getElementById('evStats').innerHTML = html;
     const affBox=document.getElementById('evAff');
     affBox.innerHTML = (st.affiliates||[]).map(function(a){
@@ -2104,79 +2109,109 @@ async function evOnsiteOpen(){
   }
   const TYPES = EV_PRICES.length ? EV_PRICES : [{key:'full',name:'VSTUPENKA'}];
   const t=k=>EV_PRICES.find(x=>x.key===k)||{};
-  // Cena podľa typu, členstva a toho, či ešte beží predpredaj.
-  const priceOf=(key,member)=>{
+  // Cena podľa typu a členstva. Členská cena platí aj po konci predpredaja, ak to
+  // typ dovoľuje (párty: členka 5 €, cudzí 10 € aj pri dverách) — musí to sedieť
+  // s priceFor na serveri, inak by sa ukázalo iné číslo, než sa naozaj zapíše.
+  const priceOf=(key,member,gift)=>{
+    if(gift) return 0;
     const x=t(key); if(!x.key) return 0;
-    if(member && x.member_price!=null && x.tier!=='door') return x.member_price;
-    return x.price;
+    if(member && x.member_price!=null) return x.member_price;
+    return x.door!=null ? x.door : x.price;
   };
 
-  evModal('Ručný predaj vstupenky',
-    '<label class="small text-muted">Koľko vstupeniek</label>'
+  evModal('Predaj na mieste',
+    '<div class="d-flex gap-2 mb-2" id="evmKto">'
+   +'<button type="button" class="btn btn-outline-warning flex-fill py-2" data-m="0"><b>Cudzí</b><br><small class="evm-hint" data-t="cudzi"></small></button>'
+   +'<button type="button" class="btn btn-outline-warning flex-fill py-2" data-m="1"><b>Členka</b><br><small class="evm-hint" data-t="clen"></small></button>'
+   +'<button type="button" class="btn btn-outline-secondary flex-fill py-2" data-m="g"><b>Zadarmo</b><br><small>rozdaný lístok</small></button>'
+   +'</div>'
    + TYPES.map(function(t,i){
        return '<div class="d-flex align-items-center gap-2 mb-2 p-2 rounded" style="background:rgba(255,255,255,.04)">'
         +'<div class="flex-fill"><b>'+t.name+'</b><br><small class="text-muted evm-p" data-t="'+t.key+'"></small></div>'
-        +'<input id="evmQty_'+t.key+'" type="number" min="0" max="20" value="'+(TYPES.length===1||i===TYPES.length-1?1:0)+'" '
-        +'style="width:74px" class="form-control form-control-sm bg-dark text-light border-secondary">'
+        +'<button type="button" class="btn btn-outline-secondary btn-sm evm-mi" data-t="'+t.key+'" style="width:38px">−</button>'
+        +'<input id="evmQty_'+t.key+'" type="number" min="0" max="20" value="'+(t.key==='party'?1:0)+'" '
+        +'style="width:64px;text-align:center" class="form-control form-control-sm bg-dark text-light border-secondary">'
+        +'<button type="button" class="btn btn-outline-warning btn-sm evm-pl" data-t="'+t.key+'" style="width:38px">+</button>'
         +'</div>'; }).join('')
-   +'<div class="form-check form-check-inline mb-2"><input class="form-check-input" type="checkbox" id="evmMember">'
-   +'<label class="form-check-label small" for="evmMember">Je členka Fusion Academy (členská cena)</label></div>'
-   +'<label class="small text-muted">Spôsob platby</label>'
    +'<div class="d-flex gap-2 mb-3" id="evmPay">'
    +'<button type="button" class="btn btn-warning flex-fill" data-p="cash">💶 Hotovosť</button>'
    +'<button type="button" class="btn btn-outline-warning flex-fill" data-p="transfer">🏦 Prevodom</button>'
    +'</div>'
-   +'<label class="small text-muted">Meno kupujúcej *</label>'
-   +'<input id="evmName" class="form-control form-control-sm bg-dark text-light border-secondary mb-2" placeholder="Meno a priezvisko">'
-   +'<label class="small text-muted">E-mail — pošleme naň vstupenku s QR</label>'
-   +'<input id="evmMail" type="email" class="form-control form-control-sm bg-dark text-light border-secondary mb-2" placeholder="meno@email.sk">'
-   +'<div class="small text-muted mb-2">Ak je pod týmto e-mailom registrovaná, vstupenka sa jej ukáže aj v aplikácii.</div>'
-   +'<label class="small text-muted">Cena za kus v € (prázdne = automaticky, platí pre oba typy)</label>'
-   +'<input id="evmPrice" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="automaticky">'
-   +'<div class="mt-2 p-2 rounded" style="background:rgba(201,168,76,.12)"><b id="evmTotal" style="color:#C9A84C"></b></div>',
+   +'<div class="mb-2 p-2 rounded" style="background:rgba(201,168,76,.12)"><b id="evmTotal" style="color:#C9A84C"></b></div>'
+   +'<a class="small text-muted" style="cursor:pointer" onclick="var d=document.getElementById(\'evmDet\');d.hidden=!d.hidden">'
+   +'▾ Meno, e-mail, vlastná cena (nepovinné)</a>'
+   +'<div id="evmDet" hidden class="mt-2">'
+   +'<input id="evmName" class="form-control form-control-sm bg-dark text-light border-secondary mb-2" placeholder="Meno (nepovinné)">'
+   +'<input id="evmMail" type="email" class="form-control form-control-sm bg-dark text-light border-secondary mb-1" placeholder="E-mail — pošleme naň vstupenku s QR (nepovinné)">'
+   +'<div class="small text-muted mb-2">Bez e-mailu sa lístok len zaráta do prehľadu — nikomu nič neodíde.</div>'
+   +'<input id="evmPrice" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="Vlastná cena za kus v € (prázdne = automaticky)">'
+   +'</div>',
     async (wrap, close)=>{
       const pay=wrap.querySelector('#evmPay .btn-warning')?.dataset.p||'cash';
-      const name=wrap.querySelector('#evmName').value.trim();
-      if(!name) throw new Error('Zadaj meno kupujúcej.');
-      const p=wrap.querySelector('#evmPrice').value.trim();
+      const kto=wrap.querySelector('#evmKto .btn-warning')?.dataset.m;
+      if(kto==null) throw new Error('Vyber, či je to členka, cudzí, alebo lístok zadarmo.');
+      const p=(wrap.querySelector('#evmPrice')||{}).value?.trim()||'';
       const items=[];
       TYPES.forEach(function(t){
         const n=+((wrap.querySelector('#evmQty_'+t.key)||{}).value)||0;
         if(n) items.push({type:t.key, qty:n, price: p? +p.replace(',','.') : undefined});
       });
       if(!items.length) throw new Error('Zadaj aspoň jednu vstupenku.');
-      const body={ items:items, name:name,
-        email:wrap.querySelector('#evmMail').value.trim(),
-        member:wrap.querySelector('#evmMember').checked, method:pay };
+      const body={ items:items,
+        name:(wrap.querySelector('#evmName')||{}).value?.trim()||'',
+        email:(wrap.querySelector('#evmMail')||{}).value?.trim()||'',
+        member: kto==='1', gift: kto==='g', method:pay };
       const r=await fetch('/api/admin/events/'+EV_SLUG+'/onsite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       const j=await r.json(); if(!j.ok) throw new Error(j.error||'Nepodarilo sa uložiť');
       close();
-      alert('Predané: '+j.summary+' za '+j.total.toFixed(2)+' €.'
+      alert((j.gift?'Rozdané: ':'Predané: ')+j.summary+(j.gift?' zadarmo.':' za '+j.total.toFixed(2)+' €.')
         + (j.emailed?'\nVstupenka s QR odoslaná e-mailom.':'\nBez e-mailu — kód: '+j.tickets.join(', '))
         + (j.linked?'\nSpárované s jej účtom — vidí to v aplikácii.':''));
       loadEventy();
     });
 
   const eu=n=>n.toFixed(2).replace('.',',')+' €';
+  const ktoNow=()=> (document.querySelector('#evmKto .btn-warning')||{}).dataset?.m;
   const refresh=()=>{
-    const member=document.getElementById('evmMember').checked;
-    const manual=document.getElementById('evmPrice').value.trim();
-    const unitOf=k=> manual? +manual.replace(',','.') : priceOf(k,member);
-    document.querySelectorAll('.evm-p').forEach(el=>{ el.textContent=eu(unitOf(el.dataset.t))+' / ks'; });
-    const parts=[]; let sum=0;
+    const kto=ktoNow();
+    const manual=(document.getElementById('evmPrice')||{}).value?.trim()||'';
+    const unitOf=k=> kto==='g' ? 0 : (manual? +manual.replace(',','.') : priceOf(k, kto==='1'));
+    document.querySelectorAll('.evm-p').forEach(el=>{
+      el.textContent = kto==null ? 'vyber cudzí / členka / zadarmo' : eu(unitOf(el.dataset.t))+' / ks'; });
+    // nápoveda priamo na tlačidlách, nech Marek vidí ceny bez klikania
+    const par=TYPES.find(x=>x.key==='party')||TYPES[0]||{};
+    const hc=document.querySelector('.evm-hint[data-t="cudzi"]'), hm=document.querySelector('.evm-hint[data-t="clen"]');
+    if(hc) hc.textContent=eu(priceOf(par.key,false));
+    if(hm) hm.textContent=eu(priceOf(par.key,true));
+    const parts=[]; let sum=0, ks=0;
     TYPES.forEach(function(t){
       const el=document.getElementById('evmQty_'+t.key); const n=el?(+el.value||0):0;
-      if(n){ sum+=n*unitOf(t.key); parts.push(n+'× '+t.name.split(' ')[0]+' '+eu(n*unitOf(t.key))); }
+      if(n){ ks+=n; sum+=n*unitOf(t.key); parts.push(n+'× '+t.name.split(' ')[0]+' '+eu(n*unitOf(t.key))); }
     });
     document.getElementById('evmTotal').textContent =
-      parts.length ? (parts.join('  ·  ')+'   =   '+eu(sum)) : 'Zadaj počet vstupeniek';
+      !parts.length ? 'Zadaj počet vstupeniek'
+      : kto==='g' ? (ks+'× zadarmo — rozdané, do tržby sa neráta')
+      : (parts.join('  ·  ')+'   =   '+eu(sum));
   };
   document.querySelectorAll('#evmPay .btn').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('#evmPay .btn').forEach(x=>x.className='btn btn-outline-warning flex-fill');
-    b.className='btn btn-warning flex-fill';
+    b.className='btn btn-warning flex-fill'; refresh();
   });
-  ['evmMember','evmPrice'].concat(TYPES.map(t=>'evmQty_'+t.key)).forEach(id=>{
-    const el=document.getElementById(id);
+  document.querySelectorAll('#evmKto .btn').forEach(b=>b.onclick=()=>{
+    document.querySelectorAll('#evmKto .btn').forEach(x=>{
+      x.className=(x.dataset.m==='g'?'btn btn-outline-secondary':'btn btn-outline-warning')+' flex-fill py-2'; });
+    b.className='btn btn-warning flex-fill py-2';
+    // Darček sa neplatí — spôsob platby netreba riešiť
+    document.getElementById('evmPay').style.display = b.dataset.m==='g' ? 'none' : '';
+    refresh();
+  });
+  document.querySelectorAll('.evm-pl,.evm-mi').forEach(b=>b.onclick=()=>{
+    const el=document.getElementById('evmQty_'+b.dataset.t);
+    el.value=Math.max(0, Math.min(20, (+el.value||0) + (b.classList.contains('evm-pl')?1:-1)));
+    refresh();
+  });
+  ['evmPrice'].concat(TYPES.map(t=>'evmQty_'+t.key)).forEach(id=>{
+    const el=document.getElementById(id); if(!el) return;
     el.addEventListener('change',refresh); el.addEventListener('input',refresh);
   });
   refresh();

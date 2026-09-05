@@ -6677,6 +6677,10 @@ const ACHIEVEMENTS = [
   {id:'merch_tricko', cat:'merch', item:'tricko', icon:'👕', name:'Tričko FA', desc:'Kúpené tričko Fusion Academy'},
   {id:'merch_taska',  cat:'merch', item:'taska',  icon:'👜', name:'Taška FA',  desc:'Kúpená taška Fusion Academy'},
   {id:'merch_mikina', cat:'merch', item:'mikina', icon:'🧥', name:'Mikina FA', desc:'Kúpená mikina Fusion Academy'},
+  // Masterclass — odomkne sa tomu, kto si KÚPIL vstupenku na masterclass (nie darovanú).
+  // Prvý ročník: Latin Tropical 5. 9. 2026, Marek Gruber & Ivan Ligárt.
+  {id:'masterclass1', cat:'special', flag:'masterclass_1', icon:'🏆', name:'Masterclass #1',
+   desc:'Bola na prvom masterclasse Fusion Academy (5. 9. 2026)'},
 ];
 const MERCH_KEYWORDS={tielko:/tielk/i, tricko:/tri[čc]k/i, taska:/ta[šs]k/i, mikina:/mikin/i};
 // Varianty merchu (veľkosti / farby) — podľa názvu produktu.
@@ -17947,7 +17951,7 @@ const stripDia = s => (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCas
 // členstvo. Za príspevky/správy v komunite ZÁMERNE žiadne body (dá sa zneužiť).
 // 5 b hodina, 20 b súkromná hodina, 5 b privedený člen (registrácia), 10 b aktívne
 // členstvo, 30/15/10/5/5 b za nového PLATIACEHO člena v 1.–5. línii, 15 b za kus merchu.
-const MP_WEIGHTS = { hour:5, referral:5, membership:10, newMemberLine:[30,15,10,5,5], merch:15, merchLine:[10,5,3,2,1], private:20 };
+const MP_WEIGHTS = { hour:5, referral:5, membership:10, newMemberLine:[30,15,10,5,5], merch:15, merchLine:[10,5,3,2,1], private:20, masterclass:50 };
 // Body za aktívne členstvo podľa úrovne (iné plány, napr. Online, majú default MP_WEIGHTS.membership)
 const MEMBERSHIP_TIER_POINTS = { bronze:10, silver:20, gold:40 };
 const membershipPointsFor = planId => MEMBERSHIP_TIER_POINTS[planId] ?? MP_WEIGHTS.membership;
@@ -18034,6 +18038,20 @@ async function merchCountMapInPeriod(prefix){
   });
   return map;
 }
+// Kúpené vstupenky na masterclass v období → user_id → počet (Marek 5. 9.: 50 bodov).
+// Darované (tier 'gift' / 0 €) sa nerátajú — bod je za to, že si to kúpila.
+async function masterclassMapInPeriod(prefix){
+  const emailToId={}; (await q.find(db.users,{})).forEach(u=>{ if(u.email) emailToId[u.email.toLowerCase()]=u._id; });
+  const map={};
+  (await q.find(db.ev_tickets,{type:'full'})).forEach(t=>{
+    if(t.status==='void') return;
+    if(t.tier==='gift' || !(+t.price>0)) return;
+    const d=String(t.created_at||'').slice(0,10); if(!d.startsWith(prefix)) return;
+    const uid=t.user_id || emailToId[String(t.holder_email||'').toLowerCase()];
+    if(uid) map[uid]=(map[uid]||0)+1;
+  });
+  return map;
+}
 // Absolvované súkromné hodiny v období (prefix YYYY-MM alebo YYYY) → client_id → počet
 async function privCountMapInPeriod(prefix){
   const map={};
@@ -18077,16 +18095,17 @@ async function monthlyPointsFor(userId, month){
   const merchCount = merchMap[userId]||0;
   const md = merchDownlinePointsFor(userId, adjacency, merchMap);
   const privCount = (await privCountMapInPeriod(month))[userId]||0;
+  const mcCount = (await masterclassMapInPeriod(month))[userId]||0;
   const puz=(await q.find(db.puzzle_solves,{user_id:userId, month}));
   const puzzlePoints=puz.reduce((s,x)=>s+(+x.points||0),0), puzzleCount=puz.length;
   const spins=(await q.find(db.spins,{user_id:userId, month}));
   const spinPoints=spins.reduce((s,x)=>s+(+x.points||0),0), spinCount=spins.filter(x=>!x.milestone).length;
   const reviewCount=(await q.find(db.review_claims,{user_id:userId, month, status:'approved'})).length;
   const paidTier=(await paidMembershipTierMap())[userId]||null;
-  return buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, memTier:hasMem?effectiveMemTier(paidTier, m.plan_id, !!m.gift):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, privCount, spinPoints, spinCount, reviewCount, puzzlePoints, puzzleCount}, month);
+  return buildPointItems({hours, online, refs, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, memTier:hasMem?effectiveMemTier(paidTier, m.plan_id, !!m.gift):null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, privCount, mcCount, spinPoints, spinCount, reviewCount, puzzlePoints, puzzleCount}, month);
 }
-function buildPointItems({hours, online, refs, hasMem, memName, memTier, newMemberCount, newMemberPoints, merchCount, merchLineCount, merchLinePoints, privCount, spinCount, spinPoints, reviewCount, puzzleCount, puzzlePoints}, month){
-  privCount=privCount||0;
+function buildPointItems({hours, online, refs, hasMem, memName, memTier, newMemberCount, newMemberPoints, merchCount, merchLineCount, merchLinePoints, privCount, mcCount, spinCount, spinPoints, reviewCount, puzzleCount, puzzlePoints}, month){
+  privCount=privCount||0; mcCount=mcCount||0;
   online = online||0; newMemberCount=newMemberCount||0; newMemberPoints=newMemberPoints||0; merchCount=merchCount||0;
   merchLineCount=merchLineCount||0; merchLinePoints=merchLinePoints||0;
   spinCount=spinCount||0; spinPoints=spinPoints||0; reviewCount=reviewCount||0;
@@ -18104,6 +18123,8 @@ function buildPointItems({hours, online, refs, hasMem, memName, memTier, newMemb
     { icon:'🎡', label:'Denné odmeny (koleso + séria)', count:spinCount, points:spinPoints, sub: spinCount+'× denná odmena' },
     { icon:'⭐', label:'Google recenzia', count:reviewCount, per:10, points:reviewCount*10, sub: reviewCount?'schválená recenzia':'—' },
     { icon:'🧩', label:'Denný hlavolam', count:puzzleCount, points:puzzlePoints, sub: puzzleCount+'× vyriešený' },
+    { icon:'🏆', label:'Masterclass', count:mcCount, per:MP_WEIGHTS.masterclass, points:mcCount*MP_WEIGHTS.masterclass,
+      sub: mcCount ? (mcCount+'× '+plur(mcCount,'vstupenka','vstupenky','vstupeniek')) : '—' },
   ];
   const total = items.reduce((s,i)=>s+i.points,0);
   return { month, total, items };
