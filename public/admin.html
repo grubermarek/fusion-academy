@@ -206,6 +206,8 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div class="grp2" data-grp="manage">
     <div class="grp2-h" onclick="toggleGrp(this)">Správa <span class="rail-dot" id="railDotManage"></span><i class="bi bi-chevron-down ms-auto"></i></div>
     <div class="group-links active" data-group="manage">
+      <a class="nav-link" href="#" onclick="show('dnes')"><i class="bi bi-sunrise me-2"></i><span style="color:#C9A84C;font-weight:800">Dnes</span></a>
+      <a class="nav-link" href="#" onclick="show('predaje')"><i class="bi bi-cash-stack me-2"></i><span style="color:#8bc34a;font-weight:700">Predaje</span></a>
       <a class="nav-link" href="#" onclick="show('urgent')"><i class="bi bi-fire me-2"></i><span style="color:#ff6b6b;font-weight:800">Neodkladné</span> <span id="urgentBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('ambasadori')"><i class="bi bi-people-fill me-2"></i><span style="color:#e0a656;font-weight:700">Ambasádori</span></a>
       <a class="nav-link active" href="#" onclick="show('attendance')"><i class="bi bi-calendar-heart me-2"></i><span style="color:#4ade80;font-weight:700">Kalendár rezervácií</span></a>
@@ -313,6 +315,43 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <div class="table-responsive"><table class="table table-dark table-sm align-middle mb-0" style="font-size:.8rem" id="ambSignupsTbl"></table></div>
     </div>
   </div>
+  <!-- DNES — ranná obrazovka: peniaze, končiace členstvá, kto bol, čo treba -->
+  <div id="s-dnes" class="section" style="max-width:1150px">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+      <div><h4 class="fw-bold mb-0">☀️ Dnes</h4>
+        <p class="text-muted small mb-0" id="dnesDatum">Všetko podstatné na jednej obrazovke.</p></div>
+      <button class="btn btn-sm btn-outline-light" onclick="loadDnes()"><i class="bi bi-arrow-clockwise me-1"></i>Obnoviť</button>
+    </div>
+    <div id="dnesBody"><div class="text-muted py-4 text-center">Načítavam…</div></div>
+  </div>
+
+  <!-- PREDAJE — jeden zoznam všetkých peňazí -->
+  <div id="s-predaje" class="section" style="max-width:1250px">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+      <div><h4 class="fw-bold mb-0">💰 Predaje</h4>
+        <p class="text-muted small mb-0">Všetky peniaze na jednom mieste — členstvá, vstupy, súkromné hodiny, vstupenky aj e-shop. Rovnaké číslo ako v Prehľade a vo Financiách.</p></div>
+      <div class="d-flex gap-2">
+        <a class="btn btn-sm btn-outline-warning" id="predajeCsv" href="#" target="_blank"><i class="bi bi-download me-1"></i>Stiahnuť pre účtovníčku</a>
+        <button class="btn btn-sm btn-outline-light" onclick="loadPredaje()"><i class="bi bi-arrow-clockwise me-1"></i>Obnoviť</button>
+      </div>
+    </div>
+    <div class="d-flex gap-2 flex-wrap mb-3 align-items-end">
+      <div><label class="small text-muted d-block">Od</label>
+        <input type="date" id="predajeOd" class="form-control form-control-sm bg-dark text-light border-secondary" onchange="loadPredaje()"></div>
+      <div><label class="small text-muted d-block">Do</label>
+        <input type="date" id="predajeDo" class="form-control form-control-sm bg-dark text-light border-secondary" onchange="loadPredaje()"></div>
+      <div><label class="small text-muted d-block">Za čo</label>
+        <select id="predajeKat" class="form-select form-select-sm bg-dark text-light border-secondary" onchange="loadPredaje()">
+          <option value="">všetko</option></select></div>
+      <div class="flex-fill" style="min-width:180px"><label class="small text-muted d-block">Hľadať klientku alebo produkt</label>
+        <input type="text" id="predajeQ" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="meno, e-mail, produkt…"></div>
+      <div class="form-check"><input class="form-check-input" type="checkbox" id="predajeHist" onchange="loadPredaje()">
+        <label class="form-check-label small text-muted" for="predajeHist">aj história z Glofoxu</label></div>
+    </div>
+    <div id="predajeSuhrn" class="row g-2 mb-3"></div>
+    <div id="predajeBody"><div class="text-muted py-4 text-center">Načítavam…</div></div>
+  </div>
+
   <div id="s-urgent" class="section">
     <div class="d-flex align-items-center justify-content-between mb-3">
       <h4 class="fw-bold mb-0">🔥 Neodkladné úlohy</h4>
@@ -2360,7 +2399,7 @@ function accessLabel(m){ return ACCESS_LABELS[m] || null; }
 const SECTION_GROUP={attendance:'manage',sale:'reports',
   leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',staff:'manage',classes:'manage',privatehours:'manage',kiosk:'manage',bookings:'manage',orders:'manage',products:'manage',rentals:'manage',articles:'manage',
   marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
-  sutaze:'marketing',venceky:'manage',eventy:'manage',fusionai:'reports',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',funnel:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
+  dnes:'manage',predaje:'reports',  sutaze:'marketing',venceky:'manage',eventy:'manage',fusionai:'reports',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',payments:'reports',funnel:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
   partners:'partners',addpartner:'partners',commissions:'partners'};
 function selectGroup(g){
   // Nový sidebar: skupina aktívnej sekcie sa otvorí (zbalené ostatné nechávame tak)
@@ -2765,6 +2804,8 @@ function show(sec){
   if(sec==='urgent')loadUrgent();
   if(sec==='fusionai')loadFusionAI();
   if(sec==='bizrank')loadBizRank();
+  if(sec==='dnes')loadDnes();
+  if(sec==='predaje')loadPredaje();
   if(sec==='sutaze')loadRefGoalReport();
   if(sec==='venceky')loadVenceky();
   if(sec==='ambasadori')loadAmbasadori();
@@ -4412,6 +4453,148 @@ async function loadRefFunnel(){
 function refFunnelTest(){
   prompt('Testovací funnel (nešpiní štatistiky ani neposiela maily):\n\n1. Otvor tento link s ?test=1\n2. Ako kontakt zadaj čokoľvek@test-fa-qa.local\n3. Testovacie dáta zmaže bežná QA čistiaca migrácia\n\nLink:', location.origin+'/invite/MAREK21?test=1');
 }
+/* ═══ DNES — ranná obrazovka ═══════════════════════════════════════════════
+   Marek 7. 9.: „jedna stránka so štyrmi vecami — koľko prišlo peňazí, komu
+   končí členstvo, kto bol na hodine a čo treba dnes urobiť." Nič sa tu
+   nepočíta nanovo, len sa to poskladá z rovnakých zdrojov ako ostatné sekcie. */
+const eurF = n => (Math.round((+n||0)*100)/100).toFixed(2).replace('.',',')+' €';
+async function loadDnes(){
+  const host=document.getElementById('dnesBody'); if(!host) return;
+  const d=new Date();
+  const dni=['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
+  const dt=document.getElementById('dnesDatum');
+  if(dt) dt.textContent=dni[d.getDay()]+' '+d.getDate()+'. '+(d.getMonth()+1)+'. '+d.getFullYear();
+  host.innerHTML='<div class="text-muted py-4 text-center">Načítavam…</div>';
+  try{
+    const [fin, konc, doch, ulohy] = await Promise.all([
+      api('/api/admin/finance/stats').catch(()=>null),
+      api('/api/admin/memberships/expiring?days=14').catch(()=>null),
+      api('/api/admin/dnes/dochadzka').catch(()=>null),
+      api('/api/admin/urgent-tasks').catch(()=>null),
+    ]);
+    const karta=(nadpis,telo,akcia)=>'<div class="col-12 col-xl-6"><div class="card bg-dark border-secondary h-100">'
+      +'<div class="card-body"><div class="d-flex justify-content-between align-items-center mb-2">'
+      +'<h6 class="fw-bold mb-0">'+nadpis+'</h6>'+(akcia||'')+'</div>'+telo+'</div></div></div>';
+
+    // 1) Peniaze
+    const r=(fin&&fin.revenue)||{};
+    const peniaze='<div class="d-flex gap-3 flex-wrap">'
+      +'<div><div class="text-muted small">Dnes</div><div class="fw-bold" style="font-size:1.5rem;color:#8bc34a">'+eurF(r.today)+'</div></div>'
+      +'<div><div class="text-muted small">Tento mesiac</div><div class="fw-bold" style="font-size:1.5rem;color:#C9A84C">'+eurF(r.month)+'</div></div>'
+      +'<div><div class="text-muted small">Tento rok</div><div class="fw-bold" style="font-size:1.5rem">'+eurF(r.year)+'</div></div>'
+      +'</div>'
+      +(fin&&fin.imported&&fin.imported.total
+        ? '<div class="small text-muted mt-2">Okrem toho '+eurF(fin.imported.total)+' histórie zo starého systému — do tržby sa neráta.</div>' : '');
+
+    // 2) Končiace členstvá
+    const kz=(konc&&(konc.rows||konc.list||konc.members))||[];
+    const konciace = !kz.length
+      ? '<div class="text-muted small">Do 14 dní nikomu členstvo nekončí. 👌</div>'
+      : '<div class="table-responsive"><table class="table table-dark table-sm small mb-0"><tbody>'
+        +kz.slice(0,10).map(function(m){
+          const dnu = m.days_left!=null ? m.days_left : m.dni;
+          const naliehave = (+dnu)<=3;
+          return '<tr><td><b>'+(m.name||m.user_name||'—')+'</b><div class="text-muted" style="font-size:.75rem">'+(m.plan_name||m.plan_id||'')+'</div></td>'
+            +'<td class="text-end" style="white-space:nowrap"><span class="badge '+(naliehave?'bg-danger':'bg-secondary')+'">'
+            +(dnu==null?'':(dnu===0?'dnes':(dnu===1?'zajtra':'o '+dnu+' dní')))+'</span></td>'
+            +'<td class="text-end text-muted" style="white-space:nowrap;font-size:.78rem">'+(m.phone||m.email||'')+'</td></tr>'; }).join('')
+        +'</tbody></table></div>'
+        +(kz.length>10?'<div class="text-muted small mt-1">…a ďalších '+(kz.length-10)+'</div>':'');
+
+    // 3) Kto bol na hodine
+    const dd=doch||{};
+    const dochadzka = (dd.hodiny&&dd.hodiny.length)
+      ? '<div class="table-responsive"><table class="table table-dark table-sm small mb-0"><tbody>'
+        +dd.hodiny.map(function(h){
+          return '<tr><td><b>'+h.nazov+'</b><div class="text-muted" style="font-size:.75rem">'+h.mesto+' · '+h.cas+'</div></td>'
+            +'<td class="text-end"><span class="fw-bold" style="color:#4ade80;font-size:1.1rem">'+h.prisli+'</span>'
+            +'<span class="text-muted">/'+h.prihlaseni+'</span>'
+            +(h.nedosli?'<div class="text-muted" style="font-size:.72rem">'+h.nedosli+' neprišlo</div>':'')+'</td></tr>'; }).join('')
+        +'</tbody></table></div>'
+        +'<div class="text-muted small mt-1">Spolu '+(dd.spolu_prislo||0)+' ľudí za včera a dnes.</div>'
+      : '<div class="text-muted small">Za včera a dnes zatiaľ žiadna odchodená hodina.</div>';
+
+    // 4) Čo treba dnes
+    const ul=(ulohy&&(ulohy.tasks||ulohy.rows||ulohy))||[];
+    const zoznam=Array.isArray(ul)?ul:[];
+    const uloha = !zoznam.length
+      ? '<div class="text-muted small">Nič neodkladné. 👌</div>'
+      : '<div class="d-flex flex-column gap-2">'
+        +zoznam.slice(0,8).map(function(t){
+          return '<div class="d-flex justify-content-between align-items-start gap-2">'
+            +'<div><b>'+(t.name||t.title||'—')+'</b>'
+            +'<div class="text-muted" style="font-size:.78rem">'+(t.why||t.title||'')+'</div></div>'
+            +'<span class="text-muted" style="white-space:nowrap;font-size:.75rem">'+(t.phone||'')+'</span></div>'; }).join('')
+        +'</div>'
+        +(zoznam.length>8?'<div class="text-muted small mt-2">…a ďalších '+(zoznam.length-8)+'</div>':'');
+
+    host.innerHTML='<div class="row g-3">'
+      +karta('💶 Peniaze', peniaze, '<button class="btn btn-sm btn-outline-warning" onclick="show(\'predaje\')">Všetky predaje</button>')
+      +karta('⏳ Končiace členstvá <span class="text-muted" style="font-size:.8rem">(14 dní)</span>', konciace, '<button class="btn btn-sm btn-outline-warning" onclick="show(\'memberships\')">Členstvá</button>')
+      +karta('👟 Kto bol na hodine <span class="text-muted" style="font-size:.8rem">(včera a dnes)</span>', dochadzka, '<button class="btn btn-sm btn-outline-warning" onclick="show(\'attendance\')">Kalendár</button>')
+      +karta('🔥 Čo treba dnes', uloha, '<button class="btn btn-sm btn-outline-warning" onclick="show(\'urgent\')">Všetky úlohy</button>')
+      +'</div>';
+  }catch(e){ host.innerHTML='<div class="text-danger">Chyba: '+e.message+'</div>'; }
+}
+
+/* ═══ PREDAJE — jeden zoznam pre účtovníčku ═══════════════════════════════ */
+let predajeTimer=null;
+async function loadPredaje(){
+  const host=document.getElementById('predajeBody'); if(!host) return;
+  const p=new URLSearchParams();
+  const od=(document.getElementById('predajeOd')||{}).value;
+  const doo=(document.getElementById('predajeDo')||{}).value;
+  const kat=(document.getElementById('predajeKat')||{}).value;
+  const q=(document.getElementById('predajeQ')||{}).value;
+  const hist=(document.getElementById('predajeHist')||{}).checked;
+  if(od) p.set('from',od); if(doo) p.set('to',doo);
+  if(kat) p.set('cat',kat); if(q) p.set('q',q); if(hist) p.set('history','1');
+  const csv=document.getElementById('predajeCsv');
+  if(csv) csv.href='/api/admin/predaje/export.csv?'+p.toString();
+  host.innerHTML='<div class="text-muted py-4 text-center">Načítavam…</div>';
+  try{
+    const d=await api('/api/admin/predaje?'+p.toString());
+    if(!d||!d.ok){ host.innerHTML='<div class="text-danger">Nepodarilo sa načítať.</div>'; return; }
+    const sel=document.getElementById('predajeKat');
+    if(sel && sel.options.length<=1){
+      Object.entries(d.kategorie||{}).forEach(function(x){
+        const o=document.createElement('option'); o.value=x[0]; o.textContent=x[1]; sel.appendChild(o); });
+    }
+    const box=(l,v,sub,c)=>'<div class="col-6 col-md-3"><div class="card bg-dark border-secondary h-100"><div class="card-body py-2 px-3">'
+      +'<div class="small text-muted">'+l+'</div><div class="fw-bold" style="font-size:1.25rem;color:'+(c||'#fff')+'">'+v+'</div>'
+      +(sub?'<div class="small text-muted">'+sub+'</div>':'')+'</div></div></div>';
+    const kat2=Object.entries(d.podla_kategorie||{}).sort((a,b)=>b[1]-a[1])
+      .map(x=>((d.kategorie||{})[x[0]]||x[0])+' '+eurF(x[1])).join(' · ');
+    document.getElementById('predajeSuhrn').innerHTML=
+      box('Spolu', eurF(d.suma), d.pocet+' predajov', '#8bc34a')
+      +box('Bez faktúry', d.bez_faktury, d.bez_faktury?'treba doriešiť':'všetko zdokladované', d.bez_faktury?'#e57373':'#8bc34a')
+      +box('Podľa čoho', Object.keys(d.podla_kategorie||{}).length+' kategórií', kat2.slice(0,70), '#C9A84C')
+      +box('Spôsob platby', Object.entries(d.podla_sposobu||{}).sort((a,b)=>b[1]-a[1]).slice(0,1).map(x=>x[0]).join('')||'—',
+           Object.entries(d.podla_sposobu||{}).sort((a,b)=>b[1]-a[1]).map(x=>x[0]+' '+eurF(x[1])).join(' · ').slice(0,70));
+    if(!d.rows.length){ host.innerHTML='<div class="text-muted py-4 text-center">Za toto obdobie nič.</div>'; return; }
+    host.innerHTML='<div class="table-responsive"><table class="table table-dark table-sm align-middle small">'
+      +'<thead><tr><th>Dátum</th><th>Klientka</th><th>Za čo</th><th class="text-end">Suma</th>'
+      +'<th>Platba</th><th>Odkiaľ</th><th>Faktúra</th></tr></thead><tbody>'
+      +d.rows.map(function(r){
+        return '<tr'+(r.src==='glofox'?' style="opacity:.55"':'')+'>'
+          +'<td style="white-space:nowrap">'+String(r.d).slice(0,10)+'</td>'
+          +'<td><b>'+r.who.name+'</b>'+(r.who.email?'<div class="text-muted" style="font-size:.72rem">'+r.who.email+'</div>':'')+'</td>'
+          +'<td>'+r.what+'<div class="text-muted" style="font-size:.72rem">'+((d.kategorie||{})[r.cat]||r.cat)+'</div></td>'
+          +'<td class="text-end fw-bold" style="white-space:nowrap;font-variant-numeric:tabular-nums">'+eurF(r.a)+'</td>'
+          +'<td class="text-muted">'+(r.method||'—')+'</td>'
+          +'<td class="text-muted" style="font-size:.78rem">'+(r.kanal||'—')+'</td>'
+          +'<td>'+(r.invoice
+              ? '<a href="/invoice/'+r.invoice.number+'" target="_blank" style="color:#C9A84C">'+r.invoice.number+'</a>'
+              : (r.src==='glofox' ? '<span class="text-muted">—</span>' : '<span class="badge bg-secondary">chýba</span>'))+'</td></tr>'; }).join('')
+      +'</tbody></table></div>'
+      +(d.zobrazenych<d.pocet?'<div class="text-muted small">Zobrazených '+d.zobrazenych+' z '+d.pocet+' — zúž obdobie alebo použi hľadanie.</div>':'');
+  }catch(e){ host.innerHTML='<div class="text-danger">Chyba: '+e.message+'</div>'; }
+}
+document.addEventListener('DOMContentLoaded',function(){
+  const q=document.getElementById('predajeQ');
+  if(q) q.addEventListener('input',function(){ clearTimeout(predajeTimer); predajeTimer=setTimeout(loadPredaje,350); });
+});
+
 async function loadRefGoalReport(){
   loadRefFunnel();
   const el=document.getElementById('refGoalReport'); if(!el) return;

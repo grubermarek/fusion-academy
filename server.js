@@ -4627,6 +4627,58 @@ async function computeUrgentTasks(){
   const doneKeys=new Set(done.map(s=>s.key.slice('utask_done_'.length)));
   return tasks.filter(t=>!doneKeys.has(t.key)).sort((a,b)=>a.prio-b.prio);
 }
+// ── Podklady pre rannú obrazovku „Dnes" ──────────────────────────────────────
+// Komu končí členstvo (predvolene do 14 dní) — zoradené od najbližšieho.
+app.get('/api/admin/memberships/expiring', adminAuth, async(req,res)=>{
+  try{
+    const dni = Math.min(90, Math.max(1, +req.query.days || 14));
+    const dnes = today();
+    const hranica = new Date(Date.now() + dni*86400000).toISOString().slice(0,10);
+    const rows = [];
+    for(const m of await q.find(db.memberships,{status:'active'})){
+      if(m._type) continue;
+      const exp = String(m.expires_at||'').slice(0,10);
+      if(!exp || exp < dnes || exp > hranica) continue;
+      const u = await q.one(db.users,{_id:m.user_id});
+      if(!u || u.is_admin) continue;
+      rows.push({ user_id:u._id, name:u.name, email:u.email||'', phone:u.phone||'',
+        plan_id:m.plan_id, plan_name:m.plan_name||m.plan_id, expires_at:exp,
+        days_left: Math.round((Date.parse(exp+'T12:00:00Z') - Date.parse(dnes+'T12:00:00Z'))/86400000) });
+    }
+    rows.sort((a,b)=>a.days_left-b.days_left || String(a.name).localeCompare(String(b.name)));
+    res.json({ok:true, days:dni, count:rows.length, rows});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Kto bol na hodine za včera a dnes — po hodinách, s počtom prihlásených a neprítomných.
+app.get('/api/admin/dnes/dochadzka', adminAuth, async(req,res)=>{
+  try{
+    const dnes = today();
+    const vcera = new Date(Date.parse(dnes+'T12:00:00Z') - 86400000).toISOString().slice(0,10);
+    const dni = [vcera, dnes];
+    const bks = (await q.find(db.bookings,{})).filter(b=>dni.includes(String(b.booking_date||'')));
+    const podla = {};
+    for(const b of bks){
+      const k = b.class_id+'|'+b.booking_date;
+      const p = podla[k] = podla[k] || { class_id:b.class_id, datum:b.booking_date, prihlaseni:0, prisli:0, nedosli:0 };
+      if(String(b.status||'').startsWith('cancelled')) continue;
+      p.prihlaseni++;
+      // Výslovné no_show má prednosť — dochádzka sa dokazuje, nepredpokladá.
+      if(b.attendance_status==='no_show') p.nedosli++;
+      else if(b.status==='attended' || b.attendance_status==='attended') p.prisli++;
+    }
+    const hodiny = [];
+    for(const p of Object.values(podla)){
+      if(!p.prihlaseni) continue;
+      const c = await q.one(db.classes,{_id:p.class_id});
+      hodiny.push({ ...p, nazov:(c&&c.name)||'Hodina', mesto:(c&&c.location)||'—',
+        cas:((c&&c.time_start)||'')+' · '+(p.datum===dnes?'dnes':'včera') });
+    }
+    hodiny.sort((a,b)=>String(b.datum+a.cas).localeCompare(String(a.datum+b.cas)));
+    res.json({ok:true, dni, hodiny, spolu_prislo:hodiny.reduce((s2,h)=>s2+h.prisli,0) });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/admin/urgent-tasks', adminAuth, async(req,res)=>{
   try{ res.json({ok:true, tasks:await computeUrgentTasks()}); }
   catch(e){ res.status(500).json({error:e.message}); }
@@ -12015,13 +12067,19 @@ app.post('/api/admin/cash-upsell-blast', adminAuth, async(req,res)=>{
 async function revenueEvents(opts){
   const o = opts||{};
   const vylucit = new Set();                      // koho do tržby nerátame
+  const uMap = {};
   for(const u of await q.find(db.users,{})){
+    uMap[u._id] = u;
     if(u.is_admin) vylucit.add(u._id);
-    // testovací účet: len výslovné príznaky. Zámerne NEfiltrujeme podľa mena —
-    // klientka menom Testovická by inak prišla o svoje platby v tržbe.
-    if(brIsTest(u) || u.is_test || u.test_account || u.lead_source==='test') vylucit.add(u._id);
+    // Testovací účet spoznáme podľa výslovného príznaku, nie podľa mena ani domény
+    // e-mailu: klientka menom Testovická by inak prišla o svoje platby v tržbe.
+    // Produkčný test účet má lead_source 'test' (Marek), preto stačia tieto tri.
+    if(u.is_test || u.test_account || u.lead_source==='test') vylucit.add(u._id);
   }
   const ok = id => !id || !vylucit.has(id);
+  const kto = id => { const u=uMap[id]; return { id:id||null, name:(u&&(u.name||u.email))||'—', email:(u&&u.email)||'' }; };
+  const podlaMailu = {};
+  Object.values(uMap).forEach(u=>{ if(u.email) podlaMailu[String(u.email).toLowerCase()] = u; });
   const payDate = p => p.captured_at||p.activated_at||p.created_at||'';
   const catPlatby = p => { const t=String(p.description||p.plan_name||'').toLowerCase();
     if(/permanentk|vstupov/.test(t)) return 'passes';
@@ -12031,34 +12089,157 @@ async function revenueEvents(opts){
     if(/členstv|clenstv|member|bronze|silver|gold|online|lite|premium/.test(t)) return 'memberships';
     return 'other'; };
 
+  // Faktúry sa hľadajú podľa väzby na objednávku, inak podľa (človek, suma, deň).
+  const faktury = await q.find(db.invoices,{});
+  const fPodlaOrder = {};
+  const fPodlaKluca = {};
+  for(const i of faktury){
+    if(i.status==='void' || i.type==='credit_note') continue;
+    if(i.order_number) fPodlaOrder[i.order_number] = i;
+    if(i.order_id) fPodlaOrder[i.order_id] = i;
+    const k = String(i.user_id||i.client_email||'').toLowerCase()+'|'+(+i.total||0).toFixed(2)
+      +'|'+String(i.issued_at||i.paid_at||i.created_at||'').slice(0,10);
+    fPodlaKluca[k] = i;
+  }
+  const najdiFakturu = (uid, email, suma, datum, orderKey) => {
+    if(orderKey && fPodlaOrder[orderKey]) return fPodlaOrder[orderKey];
+    const d10 = String(datum||'').slice(0,10);
+    return fPodlaKluca[String(uid||'').toLowerCase()+'|'+(+suma||0).toFixed(2)+'|'+d10]
+        || fPodlaKluca[String(email||'').toLowerCase()+'|'+(+suma||0).toFixed(2)+'|'+d10]
+        || null;
+  };
+  const fak = i => i ? { number:i.number, id:i._id } : null;
+
   const platby=(await q.find(db.payments,{}))
     .filter(p=>['completed','active'].includes(p.status) && !p.accounting_skip && ok(p.user_id));
   const clenstvaMimoBranu=(await q.find(db.memberships,{}))
     .filter(m=>!m._type && m.payment_method && ok(m.user_id));
   const objednavky=(await q.find(db.orders,{})).filter(o2=>o2.status==='paid');
   const tr=await q.find(db.transactions,{});
-  const trans = (typ,cat) => tr.filter(t=>t.type===typ && +t.amount>0 && ok(t.user_id||t.buyer_id||t.client_id))
-    .map(t=>({d:t.created_at||t.date||'', a:+t.amount||0, cat, src:'app'}));
+
+  // Členstvo predané v hotovosti je zapísané aj ako členstvo, aj ako transakcia.
+  // Bez tohto kľúča by sa tá istá tržba započítala dvakrát.
+  const memTx = tr.filter(t=>t.type==='membership' && +t.amount>0 && !t.commission_only && ok(t.user_id)
+    && !/stripe|paypal|free|referral_credit|demo/i.test(String(t.payment_method||t.method||'')));
+  const memTxKeys = new Set(memTx.map(t=>t.user_id+'|'+(+t.amount).toFixed(2)));
+
+  const trans = (typ,cat,popis) => tr.filter(t=>t.type===typ && +t.amount>0 && !t.commission_only && ok(t.user_id||t.buyer_id||t.client_id))
+    .map(t=>{ const uid=t.user_id||t.buyer_id||t.client_id; const d=t.created_at||t.date||'';
+      const u=kto(uid);
+      return { id:t._id, d, a:+t.amount||0, cat, src:'app', who:u,
+        what: popis(t), method: t.payment_method||t.method||'hotovosť',
+        kanal: t.channel||'appka', invoice: fak(najdiFakturu(uid,u.email,t.amount,d)) }; });
 
   const udalosti=[
-    ...platby.map(p=>({d:payDate(p), a:+p.amount||0, cat:catPlatby(p), src:p.glofox_import?'glofox':'app'})),
-    ...clenstvaMimoBranu.map(m=>({d:m.created_at||'', a:+m.price||0,
-      cat:(MEMBERSHIP_PLANS[m.plan_id]?.type==='bundle'||m.status==='bundle')?'passes':'memberships', src:'app'})),
-    ...objednavky.map(o2=>({d:o2.paid_at||o2.created_at||'', a:+o2.total||0, cat:'merch', src:'app'})),
-    ...trans('single_entry','entries'),
-    ...trans('private_lesson','private'),
-    ...trans('event_ticket','events'),
+    ...platby.map(p=>{ const u=kto(p.user_id); const d=payDate(p);
+      return { id:p._id, d, a:+p.amount||0, cat:catPlatby(p), src:p.glofox_import?'glofox':'app', who:u,
+        what: p.description||p.plan_name||'Platba', method: p.provider||p.method||'karta',
+        kanal: p.glofox_import?'Glofox (história)':'platobná brána',
+        invoice: p.glofox_import?null:fak(najdiFakturu(p.user_id,u.email,p.amount,d)) }; }),
+    ...clenstvaMimoBranu
+      .filter(m=>!memTxKeys.has(m.user_id+'|'+(+m.price||0).toFixed(2)))
+      .map(m=>{ const u=kto(m.user_id); const d=m.created_at||'';
+        return { id:m._id, d, a:+m.price||0,
+          cat:(MEMBERSHIP_PLANS[m.plan_id]?.type==='bundle'||m.status==='bundle')?'passes':'memberships',
+          src:'app', who:u, what:(m.plan_name||'Členstvo'), method:m.payment_method||'hotovosť',
+          kanal:'ručný zápis', invoice: fak(najdiFakturu(m.user_id,u.email,m.price,d)) }; }),
+    ...memTx.map(t=>{ const u=kto(t.user_id); const d=t.created_at||t.date||'';
+      return { id:t._id, d, a:+t.amount||0, cat:'memberships', src:'app', who:u,
+        what:(MEMBERSHIP_PLANS[t.plan_id]?.name)||t.note||'Členstvo',
+        method:t.payment_method||t.method||'hotovosť', kanal:'ručný zápis',
+        invoice: fak(najdiFakturu(t.user_id,u.email,t.amount,d)) }; }),
+    ...objednavky.map(o2=>{ const u=podlaMailu[String(o2.client_email||'').toLowerCase()];
+      const d=o2.paid_at||o2.created_at||'';
+      return { id:o2._id, d, a:+o2.total||0, cat:'merch', src:'app',
+        who:{ id:u?u._id:null, name:o2.client_name||o2.client_email||'—', email:o2.client_email||'' },
+        what:(o2.items||[]).map(i=>i.product_name||'položka').join(', ')||'E-shop',
+        method:o2.payment_method||'hotovosť', kanal:'e-shop',
+        invoice: fak(najdiFakturu(u&&u._id, o2.client_email, o2.total, d, o2.order_number)) }; }),
+    ...trans('single_entry','entries', t=>t.note||'Jednorazový vstup'),
+    ...trans('private_lesson','private', t=>t.note||'Súkromná hodina'),
+    ...trans('event_ticket','events', t=>t.note||'Vstupenky'),
     // ručný predaj: staré záznamy nemajú typ, poznáme ich podľa názvu produktu
     ...tr.filter(t=>!t.commission_only && +t.amount>0
         && (t.type==='product' || (!t.type && (t.product_name||t.payment_method))) && ok(t.user_id||t.client_id))
-      .map(t=>({d:t.created_at||t.date||'', a:+t.amount||0, cat:'merch', src:'app'})),
+      .map(t=>{ const uid=t.user_id||t.client_id; const u=kto(uid); const d=t.created_at||t.date||'';
+        return { id:t._id, d, a:+t.amount||0, cat:'merch', src:'app', who:u,
+          what:t.product_name||t.note||'Predaj', method:t.payment_method||t.method||'hotovosť',
+          kanal:'ručný zápis', invoice: fak(najdiFakturu(uid,u.email,t.amount,d)) }; }),
   ].filter(e=>e.d);
 
   return o.includeImported ? udalosti : udalosti.filter(e=>e.src==='app');
 }
-// Súčet za obdobie (prefix 'YYYY' alebo 'YYYY-MM' alebo celý dátum)
+
 const revSum = (ev, prefix) => +ev.filter(e=>!prefix || String(e.d).startsWith(prefix))
   .reduce((s,e)=>s+e.a,0).toFixed(2);
+
+// ═══ JEDEN ZOZNAM PREDAJOV ═══════════════════════════════════════════════════
+// Marek 7. 9.: „peniaze tečú piatimi cestami, chcem jeden zoznam".
+// Každý riadok: kedy, kto, za čo, koľko, ako zaplatil, akou cestou prišiel
+// a odkaz na faktúru. Zdroj je revenueEvents — to isté číslo ako v prehľadoch.
+const PREDAJ_KATEGORIE = {
+  "memberships": "Členstvo",
+  "passes": "Permanentka",
+  "entries": "Vstup",
+  "private": "Súkromná hodina",
+  "events": "Vstupenky",
+  "merch": "Merch",
+  "other": "Ostatné"
+};
+async function predajeZoznam(qs){
+  const q2 = qs||{};
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(q2.from||'') ? q2.from : null;
+  const to   = /^\d{4}-\d{2}-\d{2}$/.test(q2.to||'')   ? q2.to   : null;
+  const vsetko = String(q2.history||'')==='1';        // aj história z Glofoxu
+  let rows = await revenueEvents({includeImported:vsetko});
+  if(from) rows = rows.filter(r=>String(r.d).slice(0,10) >= from);
+  if(to)   rows = rows.filter(r=>String(r.d).slice(0,10) <= to);
+  if(q2.cat)    rows = rows.filter(r=>r.cat===q2.cat);
+  if(q2.method) rows = rows.filter(r=>String(r.method||'').toLowerCase().includes(String(q2.method).toLowerCase()));
+  if(q2.q){ const h=String(q2.q).toLowerCase();
+    rows = rows.filter(r=>String(r.who.name).toLowerCase().includes(h)
+      || String(r.who.email).toLowerCase().includes(h) || String(r.what).toLowerCase().includes(h)); }
+  rows.sort((a,b)=>String(b.d).localeCompare(String(a.d)));
+  const suma = +rows.reduce((x,r)=>x+r.a,0).toFixed(2);
+  const podlaKat={}, podlaSposobu={}, podlaMesiaca={};
+  for(const r of rows){
+    podlaKat[r.cat]=(podlaKat[r.cat]||0)+r.a;
+    podlaSposobu[r.method||'—']=(podlaSposobu[r.method||'—']||0)+r.a;
+    const m=String(r.d).slice(0,7); if(m) podlaMesiaca[m]=(podlaMesiaca[m]||0)+r.a;
+  }
+  const zaokruhli=o=>Object.fromEntries(Object.entries(o).map(([k,v])=>[k,+v.toFixed(2)]));
+  return { rows, suma, pocet:rows.length,
+    bez_faktury: rows.filter(r=>!r.invoice && r.src==='app').length,
+    kategorie: PREDAJ_KATEGORIE,
+    podla_kategorie: zaokruhli(podlaKat), podla_sposobu: zaokruhli(podlaSposobu),
+    podla_mesiaca: Object.fromEntries(Object.entries(zaokruhli(podlaMesiaca)).sort()) };
+}
+app.get('/api/admin/predaje', adminAuth, async(req,res)=>{
+  try{
+    const d = await predajeZoznam(req.query);
+    const limit = Math.min(2000, Math.max(1, +req.query.limit || 300));
+    res.json({ ok:true, ...d, rows:d.rows.slice(0, limit), zobrazenych:Math.min(limit, d.rows.length) });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// CSV pre účtovníčku — jeden súbor, ktorý netreba vysvetľovať
+app.get('/api/admin/predaje/export.csv', adminAuth, async(req,res)=>{
+  try{
+    const d = await predajeZoznam(req.query);
+    const esc = v => '"' + String(v==null?'':v).replace(/"/g,'""') + '"';
+    const hlavicka = ['Dátum','Klient','E-mail','Za čo','Kategória','Suma (EUR)','Spôsob platby','Kanál','Faktúra'];
+    const riadky = d.rows.map(r=>[
+      String(r.d).slice(0,10), r.who.name, r.who.email, r.what,
+      PREDAJ_KATEGORIE[r.cat]||r.cat, (+r.a).toFixed(2).replace('.',','),
+      r.method, r.kanal, r.invoice?r.invoice.number:''
+    ].map(esc).join(';'));
+    const spolu = ['','','','','SPOLU', (+d.suma).toFixed(2).replace('.',','),'','',''].map(esc).join(';');
+    const csv = '\uFEFF' + [hlavicka.map(esc).join(';'), ...riadky, spolu].join('\r\n');
+    const nazov = 'predaje-' + (req.query.from||'od-zaciatku') + '-' + (req.query.to||'do-dnes') + '.csv';
+    res.setHeader('Content-Type','text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition','attachment; filename="'+nazov+'"');
+    res.send(csv);
+  }catch(e){ res.status(500).send('Chyba: '+e.message); }
+});
 
 app.get('/api/admin/finance/stats', adminAuth, async(req,res)=>{
   try {
@@ -12418,43 +12599,21 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
 
 // ─── PHASE G: Účtovníctvo — uzávierky, príjmy podľa rozmerov, exporty ───────────
 async function accountingData(from, to){
+  // Audit 7. 9.: účtovníctvo si tržbu počítalo po svojom (štvrtý spôsob v appke).
+  // Teraz ide z rovnakého zdroja ako Financie aj Prehľad — jedno číslo všade.
   const fromISO=from?from+'T00:00:00':'0000';
   const toISO=to?to+'T23:59:59':'9999';
   const inRange=d=>d>=fromISO && d<=toISO;
-  // Admini (Marek, Beatka…) neplatia za vlastné členstvá — do tržieb nepatria.
-  const adminIds=new Set((await q.find(db.users,{is_admin:true})).map(u=>u._id));
-  const notAdmin=x=>!adminIds.has(x.user_id);
-  const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status) && !p.accounting_skip && notAdmin(p));
-  const membs=(await q.find(db.memberships,{})).filter(m=>!m._type && notAdmin(m));
-  const orders=(await q.find(db.orders,{})).filter(o=>o.status==='paid');
-  const singleEntries=(await q.find(db.transactions,{type:'single_entry'})).filter(notAdmin);
-  const eventTxs=(await q.find(db.transactions,{type:'event_ticket'})).filter(t=>+t.amount>0 && notAdmin(t));
-  // Hotovostné/kartové predaje členstiev z transakcií — záznam členstva sa pri
-  // upgrade PREPÍŠE (Bronze→Silver), takže bez transakcií by stará tržba zmizla.
-  // Stripe/PayPal/free/kredit sa vynechajú (tie už sedia v payments / nie sú tržba).
-  const memTxs=(await q.find(db.transactions,{type:'membership'}))
-    .filter(t=>+t.amount>0 && notAdmin(t) && !/stripe|paypal|free|referral_credit|demo/i.test(String(t.payment_method||t.method||'')));
-  const memTxKeys=new Set(memTxs.map(t=>`${t.user_id}|${(+t.amount).toFixed(2)}`));
-  const bookings=await q.find(db.bookings,{});
   const invoices=(await q.find(db.invoices,{}));
-
-  // per-user primary studio/instructor from bookings
+  const bookings=await q.find(db.bookings,{});
   const uBook={};
   for(const b of bookings){ if(b.user_id) (uBook[b.user_id]=uBook[b.user_id]||[]).push(b); }
   const topOf=(uid,field)=>{ const bs=uBook[uid]||[]; if(!bs.length) return '—'; const c={}; bs.forEach(b=>{const k=b[field]||'—';c[k]=(c[k]||0)+1;}); return Object.entries(c).sort((a,b)=>b[1]-a[1])[0][0]; };
 
-  const events=[
-    ...payments.map(p=>({date:(p.captured_at||p.activated_at||p.created_at||''),amount:+p.amount||0,plan:p.plan_name||MEMBERSHIP_PLANS[p.stripe_sub_plan]?.name||MEMBERSHIP_PLANS[p.subscription_plan]?.name||'Platba',user_id:p.user_id,method:p.provider||p.method||'card'})),
-    ...membs.filter(m=>m.payment_method && !memTxKeys.has(`${m.user_id}|${(+m.price||0).toFixed(2)}`)).map(m=>({date:m.created_at||'',amount:+m.price||0,plan:m.plan_name||'Členstvo',user_id:m.user_id,method:m.payment_method})),
-    ...memTxs.map(t=>({date:t.created_at||t.date||'',amount:+t.amount||0,plan:(MEMBERSHIP_PLANS[t.plan_id]?.name)||'Členstvo',user_id:t.user_id,method:t.payment_method||t.method||'cash'})),
-    ...orders.map(o=>({date:o.paid_at||o.created_at||'',amount:+o.total||0,plan:'E-shop',user_id:o.partner_id,method:o.payment_method||'cash'})),
-    ...singleEntries.map(t=>({date:t.created_at||'',amount:+t.amount||0,plan:'Jednorazový vstup',user_id:t.user_id,method:t.method||'cash'})),
-    // Vstupenky na eventy (faktúra sa vystavuje automaticky, ale nie je „manual" —
-    // preto sa tržba berie z transakcie, nie z faktúry, aby sa nepočítala dvakrát)
-    ...eventTxs.map(t=>({date:t.created_at||'',amount:+t.amount||0,plan:'Vstupenky — '+String(t.note||'event').split(' — ')[0].slice(0,40),user_id:t.user_id,method:t.payment_method||'stripe'})),
-    // Manuálne faktúry (eventy, prenájmy…) — do tržieb až keď sú UHRADENÉ
-    ...invoices.filter(i=>i.manual && i.status==='paid').map(i=>({date:i.paid_at||i.issued_at||'',amount:+i.total||0,plan:'Faktúra (event/manuál)',user_id:i.user_id,method:i.payment_method||'prevod'}))
-  ].filter(e=>inRange(e.date));
+  const events=(await revenueEvents())
+    .filter(e=>inRange(e.d))
+    .map(e=>({ date:e.d, amount:e.a, plan:e.what, user_id:e.who.id, method:e.method,
+               cat:e.cat, invoice:e.invoice?e.invoice.number:null }));
 
   const bucket=(keyFn)=>{ const m={}; for(const e of events){ const k=keyFn(e)||'—'; m[k]=(m[k]||0)+e.amount; } return Object.entries(m).map(([key,v])=>({key,revenue:+v.toFixed(2)})).sort((a,b)=>b.revenue-a.revenue); };
 
