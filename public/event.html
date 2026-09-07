@@ -170,6 +170,20 @@ function leftLine(t){
 
 function render(){
   const e = EV.event;
+  // Akcia už prebehla — namiesto predaja poďakovanie a odkaz na rozvrh.
+  // Stránku nerušíme, chodia na ňu staré odkazy z mailov a zo sociálnych sietí.
+  if(EV.ended){
+    document.getElementById('app').innerHTML =
+      '<div class="card" style="text-align:center;padding:28px 20px">'
+      + (e.poster?'<img src="'+esc(e.poster)+'" alt="" style="width:100%;max-width:420px;border-radius:14px;margin-bottom:16px">':'')
+      + '<h1 style="font-size:1.3rem;margin:0 0 6px">'+esc(e.name)+'</h1>'
+      + '<div style="opacity:.75;margin-bottom:14px">'+esc(e.date_label||'')+' · '+esc(e.venue||'')+'</div>'
+      + '<p style="margin:0 0 18px">Táto akcia už prebehla. Ďakujeme všetkým, ktorí prišli. 💛</p>'
+      + '<a class="btn" href="/schedule" style="display:inline-block;text-decoration:none">Pozrieť rozvrh hodín</a>'
+      + '</div>';
+    const b=document.getElementById('buyBtn'); if(b) b.style.display='none';
+    return;
+  }
   // Kým predpredaj beží, má zmysel hovoriť o úspore a o čase, ktorý ostáva.
   // Keď skončí, cena je proste taká, aká je — návštevníkovi neoznamujeme, že
   // prišiel neskoro, ani mu neukazujeme prečiarknutú „lacnejšiu" sumu

@@ -2449,6 +2449,8 @@ async function loadEventBanner(){
     const r=await fetch('/api/events/latin-tropical-2026',{credentials:'include'});
     const d=await r.json(); if(!d.ok) return;
     const host=document.getElementById('eventBanner'); if(!host) return;
+    // Akcia je za nami — ponuku neukazujeme (7. 9., po Latin Tropical)
+    if(d.ended){ host.style.display='none'; host.innerHTML=''; return; }
     const full=d.types.find(t=>t.key==='full');
     const allSold=d.types.every(t=>t.sold_out);
     const save=(full&&full.member_price!=null)?(full.door-full.member_price):null;

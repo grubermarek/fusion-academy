@@ -147,6 +147,13 @@ module.exports = function mountEventTickets(ctx){
     }
   }
 
+  // Akcia je za nami, ak jej dátum už prešiel (v SK čase). Podľa toho sa
+  // zastaví predaj a z appky aj webu zmizne ponuka.
+  function evSkoncil(ev){
+    const d = String((ev && ev.date) || '').slice(0,10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d < today() : false;
+  }
+
   // ── Odznak Masterclass #1 ──────────────────────────────────────────────────
   // Kto si KÚPI vstupenku na masterclass, dostane odznak do profilu a 50 bodov
   // do mesačného rebríčka (Marek 5. 9.). Darovaná vstupenka odznak nedáva —
@@ -250,6 +257,7 @@ module.exports = function mountEventTickets(ctx){
                 venue:ev.venue, address:ev.address, poster:ev.poster, program:ev.program,
                 tables_public_max:ev.tables_public_max, tables_persons_max:ev.tables_persons_max },
         is_member: isMember,
+        ended: evSkoncil(ev),          // appka aj web podľa toho skryjú ponuku
         member_price: memberPrice,
         affiliate: affLink ? {code:affLink.code, name:affLink.name} : null,
         types: ev.types.map(t=>{
@@ -285,6 +293,9 @@ module.exports = function mountEventTickets(ctx){
     try{
       const ev = await q.one(db.ev_events,{slug:req.params.slug});
       if(!ev || ev.active===false) return res.status(404).json({error:'Event nie je dostupný'});
+      // Po akcii sa vstupenky už nepredávajú. Bez tejto poistky sa dal lístok
+      // kúpiť aj týždeň po párty (starý odkaz z mailu, záložka v prehliadači).
+      if(evSkoncil(ev)) return res.status(400).json({error:'Táto akcia už prebehla — vstupenky sa nepredávajú.'});
 
       const buyer_name  = esc(req.body.buyer_name,120);
       const buyer_email = esc(req.body.buyer_email,120).toLowerCase().trim();
