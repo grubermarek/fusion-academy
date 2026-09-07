@@ -110,6 +110,19 @@ const tickets = () => rd('ev_tickets.db').filter(t => t.event_slug === SLUG);
       JSON.stringify(s.per_type.party));
     ok('prehľad hovorí aj o počte ľudí', typeof s.people === 'number', 'people=' + s.people);
 
+    console.log('\n4b) Hromadné označenie prítomnosti (keď sa nestíhalo skenovať):');
+    const ca1 = await j('/api/admin/events/' + SLUG + '/checkin-all', { method: 'POST', body: {} }, adm);
+    ok('označí všetky nepoužité vstupenky naraz', ca1.status === 200 && ca1.d && ca1.d.marked === 5, JSON.stringify(ca1.d));
+    await new Promise(r => setTimeout(r, 400));
+    ok('lístky sú zapísané ako použité a s poznámkou, že to bolo dodatočne',
+      tickets().every(t => t.status === 'used' && t.checkin_manual === true), JSON.stringify(tickets().map(t => t.status)));
+    const ca2 = await j('/api/admin/events/' + SLUG + '/checkin-all', { method: 'POST', body: {} }, adm);
+    ok('druhé kliknutie už nič neoznačí (nezdvojí sa)', ca2.d && ca2.d.marked === 0, JSON.stringify(ca2.d));
+    const sPo = await stat();
+    ok('prehľad teraz ukáže, koľko ľudí prišlo', sPo.checked_in === 5 && sPo.people >= 1,
+      'lístkov=' + sPo.checked_in + ' ľudí=' + sPo.people);
+    ok('bez oprávnenia to nejde', [401, 403].includes((await j('/api/admin/events/' + SLUG + '/checkin-all', { method: 'POST', body: {} })).status));
+
     console.log('\n5) Masterclass — odznak a body:');
     const m1 = await predaj({ items: [{ type: 'full', qty: 1 }], email: 'qa.ev.master@qa-biz.local', member: false, method: 'cash' });
     ok('predaj masterclassu prejde za 65 €', m1.status === 200 && m1.d && m1.d.total === 65, 'total=' + (m1.d && m1.d.total));

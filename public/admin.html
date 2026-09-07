@@ -1133,6 +1133,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <div class="d-flex gap-2">
         <a class="btn btn-sm btn-outline-warning" id="evCsv" href="#" target="_blank">⬇ Export CSV</a>
         <button class="btn btn-sm btn-success" onclick="evScanOpen()">📷 Skenovať QR</button>
+        <button class="btn btn-sm btn-outline-success" onclick="evCheckinAll()">✅ Prišli všetci</button>
         <button class="btn btn-sm btn-warning" onclick="evOnsiteOpen()">+ Predaj na mieste</button>
       </div>
     </div>
@@ -2215,6 +2216,17 @@ async function evOnsiteOpen(){
     el.addEventListener('change',refresh); el.addEventListener('input',refresh);
   });
   refresh();
+}
+
+// Keď sa pri dverách nestíhalo skenovať, prítomnosť sa doplní dodatočne jedným klikom.
+async function evCheckinAll(){
+  if(!confirm('Označiť všetky nepoužité vstupenky ako „prišla"?\n\nZapíše sa to ako dodatočné potvrdenie, nie ako sken pri dverách.\nUž načítané vstupenky ostanú, ako sú.')) return;
+  const r=await fetch('/api/admin/events/'+EV_SLUG+'/checkin-all',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+  const j=await r.json();
+  alert(j.ok ? ('Označených: '+j.marked+'\nPrišlo spolu '+j.checked_in+' z '+j.total+' vstupeniek.')
+             : ('Chyba: '+(j.error||'')));
+  loadEventy();
 }
 
 function evAffCopy(link){

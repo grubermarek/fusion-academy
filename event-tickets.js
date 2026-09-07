@@ -595,6 +595,31 @@ module.exports = function mountEventTickets(ctx){
     }catch(e){ res.status(500).json({error:e.message}); }
   });
 
+  // Hromadné označenie prítomnosti — keď sa QR pri dverách nestíha skenovať
+  // (5. 9.: prišli všetci, nikto nič nenačítal). Zapíše sa rovnako ako sken,
+  // len s poznámkou, že to bolo dodatočne a kým. Už použité lístky nechá tak.
+  app.post('/api/admin/events/:slug/checkin-all', adminAuth, async(req,res)=>{
+    try{
+      const ev = await q.one(db.ev_events,{slug:req.params.slug});
+      if(!ev) return res.status(404).json({error:'Event nenájdený'});
+      const kody = Array.isArray(req.body.codes) ? req.body.codes.map(c=>String(c).toUpperCase()) : null;
+      const at = nowISO(), by = req.session?.uid || null;
+      const lístky = (await q.find(db.ev_tickets,{event_slug:ev.slug, status:'valid'}))
+        .filter(t => !kody || kody.includes(String(t.code).toUpperCase()));
+      let n = 0;
+      for(const t of lístky){
+        const claimed = await q.update(db.ev_tickets,{_id:t._id, status:'valid'},
+          {$set:{status:'used', checked_in_at:at, checked_in_by:by,
+                 checkin_place: ev.venue||'', checkin_manual:true}});
+        if(claimed) n++;
+      }
+      const vsetky = (await q.find(db.ev_tickets,{event_slug:ev.slug})).filter(t=>t.status!=='void');
+      console.log('✅ '+ev.name+': dodatočne označených prítomných '+n);
+      res.json({ok:true, marked:n, total:vsetky.length,
+        checked_in: vsetky.filter(t=>t.status==='used').length});
+    }catch(e){ res.status(500).json({error:e.message}); }
+  });
+
   app.post('/api/tickets/:code/checkin', async(req,res)=>{
     try{
       if(!(await staffOk(req))) return res.status(403).json({error:'Bez oprávnenia'});
