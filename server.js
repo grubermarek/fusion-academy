@@ -3426,6 +3426,150 @@ async function seedData() {
   // Taška v shope patrí pod „Oblečenie" (kat. „Doplnky" nemá vlastné tlačidlo)
   { const moved = await q.update(db.products,{name:new RegExp('ta[šs]k','i'), cat:'Doplnky'},{$set:{cat:'Oblečenie'}},{multi:true});
     if(moved) console.log(`✅  ${moved} tašiek presunutých do kat. Oblečenie`); }
+
+  // ═══ RUČNÉ OPRAVY 7. 9. 2026 (Marek) ═══════════════════════════════════════
+  // Meno bez diakritiky a veľkých písmen — v DB sú mená písané rôzne.
+  const bezDiakritiky = s => String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+
+  // ── 1) Miška Ďuricová: dnešný hlavolam sa jej nedal dokončiť ───────────────
+  // Zmažeme jej dnešný záznam o riešení, takže hru dostane odznova. Príčinu
+  // (zelená fajka sľubovala správne slovo, hoci overovala len písmená) rieši
+  // oprava v puzzle.js + hlavolam.html.
+  if(!(await q.one(db.settings,{key:'hlavolam_reset_miska_20260907'}))){
+    try{
+      const D=today();
+      const u=(await q.find(db.users,{})).find(x=>{
+        const n=bezDiakritiky(x.name);
+        return /duricov/.test(n) && /(michael|miska)/.test(n);
+      });
+      if(!u) console.log('⚠️ Hlavolam reset: Miška Ďuricová sa nenašla');
+      else {
+        const mine=await q.find(db.puzzle_solves,{user_id:u._id, date:D});
+        for(const r of mine) await q.remove(db.puzzle_solves,{_id:r._id});
+        await q.insert(db.notifications,{user_id:u._id, type:'puzzle',
+          title:'🧩 Hlavolam ti je odomknutý',
+          body:'Dnešný hlavolam sa ti nedal dokončiť — chyba bola na našej strane. Vrátili sme ti ho na začiatok, môžeš si ho zahrať znova. Prepáč! 💛',
+          read:false, created_at:nowISO()}).catch(()=>{});
+        console.log('🧩 Hlavolam reset: '+u.name+' '+D+' — zmazané záznamy: '+mine.length);
+      }
+      await q.insert(db.settings,{key:'hlavolam_reset_miska_20260907', value:true, at:nowISO()});
+    }catch(e){ console.error('hlavolam reset:', e.message); }
+  }
+
+  // ── 2) Nedeľný technický tréning 6. 9. sa NEKONAL ─────────────────────────
+  // Marek ho neorganizoval a zabudol ho zrušiť v appke: hodina sa „rozbehla"
+  // sama (LIVE notifikácie + automatická dochádzka) a klientke zobrala výhernú
+  // online hodinu za prenos, ktorý nikdy nebežal. Zrušíme termín spätne a
+  // vrátime všetko, čo za neho appka strhla. Body a návštevu nikomu neberieme.
+  if(!(await q.one(db.settings,{key:'zrusena_technika_20260906'}))){
+    try{
+      const D='2026-09-06';
+      const hodiny=(await q.find(db.classes,{})).filter(c=>
+        +c.day_of_week===0 && (c.category==='Technika'
+          || (c.category==='Online' && /technick/i.test(String(c.name||'')))));
+      let zrusene=0, vratene=0;
+      for(const c of hodiny){
+        if(!(await q.one(db.class_cancellations,{class_id:c._id, date:D})))
+          await q.insert(db.class_cancellations,{class_id:c._id, class_name:c.name, date:D,
+            reason:'Tréning sa nekonal — nebol organizovaný štúdiom (spätné zrušenie 7. 9.)',
+            cancelled_at:nowISO(), cancelled_by:'system'});
+        for(const b of await q.find(db.bookings,{class_id:c._id, booking_date:D})){
+          if(b.status==='cancelled') continue;
+          await q.update(db.bookings,{_id:b._id},{$set:{status:'cancelled', cancelled_at:nowISO(),
+            cancel_reason:'Hodina sa nekonala — zrušené spätne (body ti ostávajú)'}});
+          zrusene++;
+          const cu=b.user_id ? await q.one(db.users,{_id:b.user_id}) : null;
+          if(!cu) continue;
+          if(b.access_method==='single_entry'){ await vratVstup(cu,'single_entries'); vratene++; }
+          else if(b.access_method==='free_credit'){ await vratVstup(cu,'free_credits'); vratene++; }
+          // Prvá hodina zdarma sa na ONLINE hodine nespotrebúva — vraciame ju len
+          // pri fyzickej technike, inak by klientka dostala hodinu zdarma navyše.
+          else if(c.category!=='Online' && (b.access_method==='free_class' || b.free_class) && cu.free_class_used){
+            await q.update(db.users,{_id:cu._id},{$set:{free_class_used:false}}); vratene++;
+          }
+        }
+      }
+      // Čo strhol vstup do prenosu (výherná online hodina / vstup z permanentky)
+      const nazvyTechniky=/technick/i;
+      const passy=(await q.find(db.audit,{action:'online_pass_use'}))
+        .filter(a=>String(a.created_at||'').slice(0,10)===D && nazvyTechniky.test(String(a.after?.class||'')));
+      for(const a of passy){
+        const cu=await q.one(db.users,{_id:a.target}); if(!cu) continue;
+        await q.update(db.users,{_id:cu._id},{$inc:{online_passes:1}});
+        if(cu.online_pass_used_date===D) await q.update(db.users,{_id:cu._id},{$set:{online_pass_used_date:null}});
+        await q.insert(db.notifications,{user_id:cu._id, type:'online_pass',
+          title:'🎡 Vrátili sme ti výhernú online hodinu',
+          body:'Nedeľný technický tréning sa nekonal, prenos nebežal — hodinu z kolesa ti vraciame späť. Prepáč za zmätok! 💛',
+          read:false, created_at:nowISO()}).catch(()=>{});
+        console.log('🎡 Vrátená výherná online hodina: '+cu.name);
+        vratene++;
+      }
+      const vstupy=(await q.find(db.audit,{action:'online_entry_charge'}))
+        .filter(a=>String(a.created_at||'').slice(0,10)===D && nazvyTechniky.test(String(a.after?.class||'')));
+      for(const a of vstupy){
+        const cu=await q.one(db.users,{_id:a.target}); if(!cu) continue;
+        await q.update(db.users,{_id:cu._id},{$inc:{single_entries:1}});
+        await q.remove(db.settings,{key:'online_entry_'+cu._id+'_'+D});
+        await q.insert(db.notifications,{user_id:cu._id, type:'online_entry',
+          title:'🎟️ Vrátili sme ti vstup',
+          body:'Nedeľný technický tréning sa nekonal — vstup, ktorý sa ti zaň odčítal, máš späť na permanentke. Prepáč! 💛',
+          read:false, created_at:nowISO()}).catch(()=>{});
+        console.log('🎟️ Vrátený vstup za nekonanú techniku: '+cu.name);
+        vratene++;
+      }
+      await q.insert(db.settings,{key:'zrusena_technika_20260906', value:true, at:nowISO()});
+      console.log('🎯 Technika '+D+' zrušená spätne — hodín: '+hodiny.length+', zrušených rezervácií: '+zrusene+', vrátených vstupov/hodín: '+vratene);
+    }catch(e){ console.error('zrusena technika 6.9.:', e.message); }
+  }
+
+  // ── 3) Alena Notová: Bronze zaplatený druhýkrát ───────────────────────────
+  // Kúpila si Bronze, hoci sa jej členstvo obnovovalo automaticky. Peniaze
+  // nevracia (sama povedala, že jej stačí mesiac navyše), tak jej členstvo
+  // predlžujeme o jedno celé obdobie. Do logu vypíšeme aj jej platby, nech je
+  // v účtovníctve vidieť, z čoho predĺženie vzniklo.
+  if(!(await q.one(db.settings,{key:'alena_notova_predlzenie_20260907'}))){
+    try{
+      const u=(await q.find(db.users,{})).find(x=>{
+        const n=bezDiakritiky(x.name);
+        return /\bnotov/.test(n) && /\balena\b/.test(n);
+      });
+      if(!u) console.log('⚠️ Alena Notová sa nenašla — predĺženie neprebehlo');
+      else {
+        const m=await q.one(db.memberships,{user_id:u._id, status:'active'});
+        const platby=(await q.find(db.payments,{member_id:u._id})).concat(await q.find(db.payments,{user_id:u._id}))
+          .filter(p=>p.status==='completed' && p.ref_type!=='order')
+          .map(p=>String(p.created_at||'').slice(0,10)+' '+p.ref_id+' '+p.amount+' € ('+p.ref_type+')');
+        console.log('💳 Alena — platby: '+(platby.join(' | ')||'žiadne'));
+        if(!m) console.log('⚠️ Alena Notová nemá aktívne členstvo — predĺženie neprebehlo');
+        else {
+          const plan=MEMBERSHIP_PLANS[m.plan_id];
+          const dni=plan?.duration_days||30;
+          const stare=m.expires_at;
+          const zostava=Math.round((new Date(stare)-Date.now())/86400000);
+          // Rovnaký plán kúpený druhýkrát appka NADVÄZUJE na expiráciu (settleMembershipChange),
+          // takže druhé obdobie už môže byť pripísané. Vtedy sa nepredlžuje znova — inak by
+          // Alena dostala tri mesiace za dve platby. Rozhoduje zostatok: viac ako jedno celé
+          // obdobie = druhá platba je vnútri, menej = chýba a dopĺňame ju.
+          if(zostava > dni+1){
+            console.log('💛 Alena Notová: '+(m.plan_name||m.plan_id)+' platí do '+String(stare).slice(0,10)
+              +' (zostáva '+zostava+' dní) — druhá platba je už zarátaná, nepredlžujem');
+          } else {
+            const nove=new Date(new Date(stare).getTime()+dni*86400000).toISOString();
+            await q.update(db.memberships,{_id:m._id},{$set:{expires_at:nove,
+              predlzene_kompenzacia:{dni, dovod:'dvojitá platba '+(m.plan_name||m.plan_id)+' — namiesto refundu mesiac navyše', z:stare, at:nowISO()}}});
+            await q.update(db.users,{_id:u._id},{$set:{membership_expires:nove}});
+            await q.insert(db.notifications,{user_id:u._id, type:'membership',
+              title:'💛 Členstvo máme predĺžené',
+              body:'Členstvo '+(m.plan_name||'')+' sa ti omylom zaplatilo dvakrát. Namiesto vrátenia peňazí ti ho predlžujeme o '+dni+' dní — platí do '+nove.slice(0,10)+'. Ďakujeme za pochopenie!',
+              read:false, created_at:nowISO()}).catch(()=>{});
+            console.log('💛 Alena Notová: '+(m.plan_name||m.plan_id)+' predĺžené o '+dni+' dní — '
+              +String(stare).slice(0,10)+' → '+nove.slice(0,10)+' (pred opravou zostávalo '+zostava+' dní)');
+          }
+        }
+      }
+      await q.insert(db.settings,{key:'alena_notova_predlzenie_20260907', value:true, at:nowISO()});
+    }catch(e){ console.error('alena predlzenie:', e.message); }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -7580,6 +7724,9 @@ app.put('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
   if(req.body.referral_credit!==undefined) set.referral_credit=Math.max(0,+parseFloat(req.body.referral_credit).toFixed(2)||0);
   if(req.body.single_entries!==undefined) set.single_entries=Math.max(0,parseInt(req.body.single_entries)||0);
   if(req.body.free_credits!==undefined) set.free_credits=Math.max(0,parseInt(req.body.free_credits)||0);
+  // Výherné online hodiny z kolesa — aby sa dali ručne vrátiť, keď ich appka
+  // strhla za hodinu, ktorá sa nekonala (7. 9.).
+  if(req.body.online_passes!==undefined) set.online_passes=Math.max(0,parseInt(req.body.online_passes)||0);
   if(Array.isArray(req.body.merch_owned)) set.merch_owned=req.body.merch_owned.filter(x=>MERCH_KEYWORDS[x]);
   if(Array.isArray(req.body.manual_achievements)) set.manual_achievements=req.body.manual_achievements.filter(id=>ACHIEVEMENTS.some(a=>a.id===id));
   if(Object.keys(set).length) await q.update(db.users,{_id:u._id},{$set:set});
@@ -10648,6 +10795,34 @@ async function settleMembershipChange(userId, planId, durationDays, opts={}){
     : new Date(startDate.getTime() + (durationDays||plan?.duration_days||30)*86400000);
   return { existing, samePlanExtend, startDate, expiresAt, refundVal, remDays };
 }
+// ── Dvojitá aktivácia členstva ────────────────────────────────────────────────
+// Alena N. (7. 9. 2026) si kúpila Bronze, hoci sa jej členstvo obnovovalo
+// automaticky — appka jej to bez slova zobrala druhýkrát. Nákup, ktorý by
+// znamenal druhé bežiace členstvo (rovnaký plán) alebo druhý mesačný odber,
+// zastavíme ešte pred Stripom a povieme, čo má klientka spraviť.
+// Permanentky a jednorazové vstupy sa stackujú zámerne — tých sa to netýka.
+async function duplicitneClenstvo(memberId, planId, payer, {odber=false}={}){
+  const plan = MEMBERSHIP_PLANS[planId];
+  if(!plan || plan.type==='bundle') return null;
+  // Odber beží na platiteľovi; keď platí za dieťa, viaže sa na konkrétneho člena.
+  const subId = payer && (payer.stripe_subscription_id || payer.paypal_subscription_id);
+  const autoRenew = !!subId && (!payer.stripe_sub_member || payer.stripe_sub_member===memberId);
+  const podpora = ' Ak chceš niečo zmeniť, napíš nám na 0904 31 51 51 — spravíme to za teba. 💛';
+  if(odber && autoRenew) return { code:'subscription_exists', auto_renew:true,
+    error:'Mesačný odber ti už beží a obnovuje sa automaticky — druhý by ti z karty strhával dve členstvá naraz.'+podpora };
+  const m = await checkMembership(memberId);
+  const bezi = !!(m && m.status==='active' && (!m.expires_at || String(m.expires_at)>=today())
+                  && MEMBERSHIP_PLANS[m.plan_id]?.type!=='bundle');
+  if(!bezi) return null;
+  const doKedy = String(m.expires_at||'').slice(0,10);
+  if(m.plan_id===planId) return { code:'membership_active', plan_name:m.plan_name, expires_at:doKedy, auto_renew:autoRenew,
+    error:`Členstvo ${m.plan_name} ti beží do ${doKedy}${autoRenew?' a obnovuje sa automaticky':''} — kupovať ho druhýkrát nemusíš.`+podpora };
+  if(autoRenew) return { code:'membership_active', plan_name:m.plan_name, expires_at:doKedy, auto_renew:true,
+    error:`Máš bežiaci odber ${m.plan_name} do ${doKedy}, ktorý sa obnovuje automaticky. Aby si neplatila dve členstvá naraz, najprv zruš obnovenie v profile.`+podpora };
+  if(odber) return { code:'membership_active', plan_name:m.plan_name, expires_at:doKedy, auto_renew:false,
+    error:`Členstvo ${m.plan_name} ti beží do ${doKedy}. Mesačný odber si nastav až keď dobehne, inak zaplatíš dvakrát.`+podpora };
+  return null;   // zmena plánu bez odberu je v poriadku — zvyšok prerátame na kredit
+}
 async function activateMembership(userId, planId, durationDays){
   const plan = MEMBERSHIP_PLANS[planId];
   if(!plan) return;
@@ -11235,6 +11410,9 @@ app.post('/api/membership/buy', auth, async(req,res)=>{
       memberId = child._id; childName = child.name;
     }
     const forWhom = childName ? ` (${childName})` : '';
+    // Rovnaké členstvo druhýkrát — zastav to skôr, než sa minie kredit či promo kód.
+    { const dup = await duplicitneClenstvo(memberId, plan_id, memberId===req.session.uid ? u : null);
+      if(dup) return res.status(409).json(dup); }
 
     // ── Promo / zľavový kód (aplikuje sa na cenu plánu, pred kreditom) ─────────
     // Zľava sa počíta z ceny, ktorú klientka naozaj platí (individuálna cena z
@@ -13324,6 +13502,9 @@ app.post('/api/stripe/checkout', auth, async(req,res)=>{
       const gm=await checkMembership(memberId);
       if(gm && gm.status==='active' && /gold/.test(String((gm.plan_id||'')+' '+(gm.plan_name||'')).toLowerCase())) price=70;
     }
+    // Rovnaké členstvo druhýkrát (alebo popri bežiacom odbere) — nepustíme do platby.
+    { const dup = await duplicitneClenstvo(memberId, plan_id, memberId===req.session.uid ? u : null);
+      if(dup) return res.status(409).json(dup); }
     if(promo_code){
       const v = await validatePromo(promo_code, plan.price, req.session.uid, 'membership', {plan_id});
       if(!v.ok) return res.status(400).json({error:'Promo kód: '+v.reason});
@@ -13565,6 +13746,9 @@ app.post('/api/stripe/subscribe', auth, async(req,res)=>{
       if(!child || child.parent_id !== req.session.uid || child.active===false) return res.status(403).json({error:'Neplatný detský profil'});
       memberId = child._id; childName = child.name;
     }
+    // Druhý mesačný odber = dvojitá platba každý mesiac. Zastav to hneď.
+    { const dup = await duplicitneClenstvo(memberId, plan_id, u, {odber:true});
+      if(dup) return res.status(409).json(dup); }
     const base = APP_URL;
     const params = {
       'mode':'subscription',
@@ -14299,6 +14483,20 @@ function hasOnlineAccess(m, u){
   if(plan && plan.online) return true;
   return /silver|gold|online/i.test(String(m.plan_id||'')+' '+String(m.plan_name||''));
 }
+// Technický tréning — fyzická hodina AJ jej online prenos. Má vlastný cenník a
+// členstvo ho nekryje, preto naň nesmie padnúť výherná online hodina z kolesa:
+// tú klientka vyhrala na Online Zumbu (Marek 7. 9. — „technika nesmie zobrať
+// online hodinu"). Permanentka na techniku platí ďalej, tá je v cenníku.
+function jeTechnika(cls){
+  return !!cls && (cls.category==='Technika'
+    || (cls.category==='Online' && /technick/i.test(String(cls.name||''))));
+}
+// Zrušený termín sa nesmie tváriť ako živý — ani v zozname, ani pri vstupe do
+// prenosu. Bez tejto kontroly zobrala nedeľná technika 6. 9. (Marek ju zabudol
+// zrušiť) klientke online hodinu za prenos, ktorý sa nikdy nespustil.
+async function terminZruseny(classId, date){
+  return !!(await q.one(db.class_cancellations,{class_id:classId, date:date||today()}));
+}
 // Klientske JS chyby → do server logov (diagnostika bielej obrazovky na zariadeniach,
 // ku ktorým nemám prístup). Bez dát navyše, len chybová hláška + stránka + prehliadač.
 app.post('/api/client-error', rlPublic, async(req,res)=>{
@@ -14343,12 +14541,20 @@ app.get('/api/online/classes', auth, async(req,res)=>{
   const freeDay = await onlineFreeToday();
   const hasFull = freeDay || hasOnlineAccess(m, mu);
   // Výherný pass z kolesa: spotrebuje sa klikom „pripojiť sa" — má prednosť pred vstupmi
-  const passMode = !hasFull && (mu?.online_passes||0)>0;
+  const maPass = !hasFull && (mu?.online_passes||0)>0;
   // Permanentkárka: prístup má, ale sledovanie ju stojí 1 vstup (odčíta /api/online/enter)
-  const entryMode = !hasFull && !passMode && (mu?.single_entries||0)>0;
-  const hasAccess = hasFull || passMode || entryMode;
-  const classes = (await q.find(db.classes,{category:'Online',active:true}))
+  const maVstup = !hasFull && (mu?.single_entries||0)>0;
+  const vsetky = (await q.find(db.classes,{category:'Online',active:true}))
     .filter(c=>classRunsOn(c, nextOccurrence(c.day_of_week)));
+  // Zrušený termín do zoznamu nepatrí — inak sa klientka prihlási na prenos,
+  // ktorý sa nespustí, a ešte ju to stojí vstup.
+  const classes=[];
+  for(const c of vsetky) if(!(await terminZruseny(c._id, nextOccurrence(c.day_of_week)))) classes.push(c);
+  // Režim sa počíta pre KAŽDÚ hodinu zvlášť: výherná online hodina na techniku neplatí.
+  const rezim = c => hasFull ? 'full'
+    : (maPass && !jeTechnika(c)) ? 'pass'
+    : maVstup ? 'entry' : null;
+  const hasAccess = hasFull || maPass || maVstup;
   const result = await Promise.all(classes.map(async c=>({
     ...c,
     instructor: await onlineInstructorFor(c, nextOccurrence(c.day_of_week)),
@@ -14356,9 +14562,11 @@ app.get('/api/online/classes', auth, async(req,res)=>{
     stream_url: hasFull ? (c.stream_url||null) : null,
     stream_key: hasFull ? (c.stream_key||null) : null,
     has_stream: !!(c.stream_url||c.stream_key),
-    has_access: hasAccess,
-    locked: !hasAccess,
+    has_access: !!rezim(c),
+    access_mode: rezim(c),
+    locked: !rezim(c),
   })));
+  const passMode=maPass, entryMode=!hasFull && !maPass && maVstup;
   res.json({classes:result, has_access:hasAccess, online_free_today:freeDay, access_mode: hasFull?'full':(passMode?'pass':(entryMode?'entry':null)),
     entries: mu?.single_entries||0, online_passes: mu?.online_passes||0,
     media_base:(process.env.MEDIA_BASE||'').replace(/\/$/,''), membership:m?{plan_id:m.plan_id,plan_name:m.plan_name,expires_at:m.expires_at}:null});
@@ -14373,11 +14581,20 @@ app.post('/api/online/enter', auth, async(req,res)=>{
     const m=await checkMembership(u._id);
     const cls=await q.one(db.classes,{_id:String(req.body.class_id||'')});
     if(!cls || cls.category!=='Online' || !classRunsOn(cls, today())) return res.status(404).json({error:'Online hodina nenájdená'});
+    // Zrušený termín — nikto sa naň nepripája a hlavne sa zaň nič nestrháva.
+    if(await terminZruseny(cls._id, today()))
+      return res.status(410).json({error:'Táto hodina je dnes zrušená — vysielanie nebude. Nič sme ti nestrhli. 💛', cancelled:true});
     const stream={stream_url:cls.stream_url||null, stream_key:cls.stream_key||null};
     if(await onlineFreeToday()) return res.json({ok:true, charged:false, mode:'full', free_day:true, stream});
     if(hasOnlineAccess(m,u)) return res.json({ok:true, charged:false, mode:'full', stream});
-    // 1) Výherný pass z kolesa — spotrebuje sa práve teraz, prístup platí do konca dňa
-    if((u.online_passes||0)>0){
+    // Odtiaľto sa už PLATÍ. Keď ešte nie je čo pozerať (tréner nezadal odkaz na
+    // vysielanie), nesmie sa strhnúť nič — presne toto 6. 9. zobralo klientke
+    // výhernú online hodinu za nedeľnú techniku, ktorá sa vôbec nekonala.
+    if(!cls.stream_url && !cls.stream_key)
+      return res.status(409).json({error:'Vysielanie ešte nie je spustené — skús to o pár minút. Nič sme ti nestrhli. 💛', waiting:true});
+    // 1) Výherný pass z kolesa — spotrebuje sa práve teraz, prístup platí do konca dňa.
+    //    Na technický tréning neplatí: vyhráva sa na Online Zumbu a technika má vlastný cenník.
+    if((u.online_passes||0)>0 && !jeTechnika(cls)){
       await q.update(db.users,{_id:u._id},{$set:{online_passes:(u.online_passes||0)-1, online_pass_used_date:today()}});
       await q.insert(db.notifications,{user_id:u._id, type:'online_pass',
         title:'🎡 Použila si výhernú online hodinu', body:'Príjemné cvičenie! Prístup k dnešnému prenosu ti platí do konca dňa.',
@@ -14389,7 +14606,9 @@ app.post('/api/online/enter', auth, async(req,res)=>{
     const entries=u.single_entries||0;
     const guardKey='online_entry_'+u._id+'_'+today();
     if(await q.one(db.settings,{key:guardKey})) return res.json({ok:true, charged:false, mode:'entry', remaining:entries, stream});
-    if(entries<=0) return res.status(402).json({error:'Nemáš žiadne vstupy na permanentke.'});
+    if(entries<=0) return res.status(402).json({error: jeTechnika(cls)
+      ? 'Na technický tréning výherná online hodina neplatí — tú máš na Online Zumbu. Technika ide z permanentky alebo za cenu podľa členstva.'
+      : 'Nemáš žiadne vstupy na permanentke.'});
     await q.update(db.users,{_id:u._id},{$set:{single_entries:entries-1}});
     await q.insert(db.settings,{key:guardKey, value:true, at:nowISO()});
     await q.insert(db.notifications,{user_id:u._id, type:'online_entry',
@@ -14573,9 +14792,11 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
     const dow=new Date().getDay();
     const toMin=t=>{ const [h,m]=String(t||'0:0').split(':').map(Number); return h*60+m; };
     const nowMin=(d=>d.getHours()*60+d.getMinutes())(new Date());
-    const classes=(await q.find(db.classes,{category:'Online', active:true, day_of_week:dow}))
+    const vsetky=(await q.find(db.classes,{category:'Online', active:true, day_of_week:dow}))
       .filter(c=>classRunsOn(c, today()))
       .sort((a,b)=>(a.time_start||'').localeCompare(b.time_start||''));
+    const classes=[];   // zrušený termín sa v „práve beží" banneri neponúka
+    for(const c of vsetky) if(!(await terminZruseny(c._id, today()))) classes.push(c);
     // koniec hodiny: ak time_end chýba, počítaj 60 minút (nie 0 — banner mizol 5 min po štarte)
     const endMin=c=>{ const e=toMin(c.time_end); const s=toMin(c.time_start); return e>s?e:s+60; };
     const inWin=c=> nowMin>=toMin(c.time_start)-90 && nowMin<endMin(c)+5;
@@ -14590,7 +14811,7 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
     const upcU=await q.one(db.users,{_id:req.session.uid});
     const freeDay=await onlineFreeToday();
     const hasFull=freeDay || hasOnlineAccess(m, upcU);
-    const passMode=!hasFull && (upcU?.online_passes||0)>0;   // výherná online hodina z kolesa
+    const passMode=!hasFull && (upcU?.online_passes||0)>0 && !jeTechnika(cls);   // výherná online hodina z kolesa (na techniku neplatí)
     const entryMode=!hasFull && !passMode && (upcU?.single_entries||0)>0; // permanentka: za 1 vstup
     const hasAccess=hasFull||passMode||entryMode;
     const liveKeys=await liveStreamKeys();
@@ -14625,6 +14846,9 @@ setInterval(async()=>{
     const classes=(await q.find(db.classes,{category:'Online', active:true, day_of_week:dow, time_start:{$in:[nowHM,prevHM]}}))
       .filter(c=>classRunsOn(c, today()));
     for(const cls of classes){
+      // Zrušený termín sa nesmie „rozbehnúť" sám: žiadne LIVE notifikácie a hlavne
+      // žiadna automatická dochádzka za hodinu, ktorá sa nekoná.
+      if(await terminZruseny(cls._id, today())) continue;
       const guardKey='online_live_'+cls._id+'_'+today();
       if(await q.one(db.settings,{key:guardKey})) continue;
       await q.insert(db.settings,{key:guardKey, value:true, at:nowISO()});

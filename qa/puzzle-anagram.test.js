@@ -134,6 +134,17 @@ const DNES = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Bratislava' })
     await j('/api/puzzle/start', { method: 'POST' }, jar1);
     const zle = await j('/api/puzzle/solve', { method: 'POST', body: { answers: h._answers.map((s, i) => i ? s : 'ZLE'), date: DNES } }, jar1);
     ok('nesprávne slovo server odmietne', zle.status === 400, JSON.stringify(zle.d));
+    // Bez tohto hráčka videla len „jedno slovo nesedí" a nevedela ktoré — 7. 9.
+    // sa tak Miške Ď. točil čas bez šance hru dokončiť.
+    ok('a povie, ktoré slovo nesedí', Array.isArray(zle.d && zle.d.trafene)
+      && zle.d.trafene.length === 5 && zle.d.trafene[0] === false && zle.d.trafene.slice(1).every(Boolean),
+      JSON.stringify(zle.d && zle.d.trafene));
+    // Prehádzané písmená správneho slova sú stále nesprávna odpoveď — server ju
+    // musí odmietnuť, inak by „zelená fajka za písmená" znamenala hotovú hru.
+    const premiesane = h._answers.map((s, i) => i ? s : s.split('').reverse().join(''));
+    const zle2 = await j('/api/puzzle/solve', { method: 'POST', body: { answers: premiesane, date: DNES } }, jar1);
+    ok('prehádzané písmená neprejdú ako riešenie', zle2.status === 400 || premiesane[0] === h._answers[0],
+      JSON.stringify(zle2.d));
     const dobre = await j('/api/puzzle/solve', { method: 'POST', body: { answers: h._answers, date: DNES } }, jar1);
     ok('správne riešenie prejde', dobre.status === 200 && dobre.d.ok, JSON.stringify(dobre.d));
     ok('a dá body', dobre.d.points > 0, 'points=' + dobre.d.points);
@@ -162,6 +173,22 @@ const DNES = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Bratislava' })
     if (Array.isArray(poradie) && poradie.length === 3)
       ok('a to 5 / 3 / 1', poradie.map(x => x.bonus).join(',') === '5,3,1', poradie.map(x => x.bonus).join(','));
     else ok('a to 5 / 3 / 1', false, 'pódium sa nevrátilo');
+
+    // ── Admin vie zaseknutú hru vrátiť na začiatok ──────────────────────────
+    const kto = (await j('/api/admin/users?limit=500', {}, adm)).d || {};
+    const hracka = (kto.users || []).find(u => u.email === 'qaagprva000001@qa-biz.local');
+    ok('admin nájde hráčku', !!hracka, kto.total);
+    if (hracka) {
+      const res = await j('/api/admin/puzzle/reset', { method: 'POST', body: { user_id: hracka.id, date: DNES } }, adm);
+      ok('reset dnešnej hry prejde', res.status === 200 && res.d.ok === true, JSON.stringify(res.d));
+      ok('a zmaže presne jeden záznam', res.d.removed === 1, JSON.stringify(res.d));
+      const znovu = (await j('/api/puzzle/today', {}, jar1)).d;
+      ok('hráčka má hru opäť nevyriešenú', znovu.solved === false, JSON.stringify({ solved: znovu.solved }));
+      const opat = await j('/api/puzzle/solve', { method: 'POST', body: { answers: h._answers, date: DNES } }, jar1);
+      ok('a dá sa odovzdať znova', opat.status === 200 && opat.d.ok === true, JSON.stringify(opat.d));
+    }
+    const cudzi = await j('/api/admin/puzzle/reset', { method: 'POST', body: { user_id: 'xxx' } }, jar1);
+    ok('klientka si reset spustiť nemôže', cudzi.status === 403 || cudzi.status === 401, cudzi.status);
 
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.message);

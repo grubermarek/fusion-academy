@@ -370,7 +370,15 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       if (req.body.date && req.body.date !== d)
         return res.status(409).json({ error: 'Práve sa zmenil deň — načítaj novú hádanku.', new_day: true });
       const err = validateAny(p, req.body);
-      if (err) return res.status(400).json({ error: err });
+      if (err) {
+        // Pri „Poskladaj slovo" povedz, KTORÉ riadky nesedia. Bez toho hráčka
+        // videla len „3 slová ešte nesedia", skúšala dokola a hodinu sa jej
+        // točil čas bez šance dokončiť (Miška Ď., 7. 9.). Riešenie sa neprezradí —
+        // posielame iba áno/nie pre už napísané slová.
+        if (p.type === 'anagram')
+          return res.status(400).json({ error: err, trafene: ANAGRAM.score(p, req.body.answers).trafene });
+        return res.status(400).json({ error: err });
+      }
 
       const already = await q.one(db.puzzle_solves, { user_id: req.session.uid, date: d });
       if (already) return res.json({ ok: true, already: true, points: 0, message: 'Dnešnú hádanku už máš odovzdanú. 🎉' });
@@ -412,6 +420,27 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
         fast: seconds <= c.fast_seconds,
         capped, month_points: await monthPoints(req.session.uid, d.slice(0, 7)), monthly_cap: c.monthly_cap,
       });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Admin: reset dnešnej hry pre jednu klientku ──
+  // Keď sa niekomu hra zasekne (zle uznané riešenie, spadnutá odpoveď), admin ju
+  // vie vrátiť do stavu „ešte nehrala" bez zásahu do databázy cez konzolu.
+  app.post('/api/admin/puzzle/reset', adminAuth, async (req, res) => {
+    try {
+      const uid = String(req.body.user_id || '');
+      const d = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(String(req.body.date || '')) ? req.body.date : today();
+      if (!uid) return res.status(400).json({ error: 'Chýba klientka.' });
+      const u = await q.one(db.users, { _id: uid });
+      if (!u) return res.status(404).json({ error: 'Klientka nenájdená.' });
+      const mine = await q.find(db.puzzle_solves, { user_id: uid, date: d });
+      for (const r of mine) await q.remove(db.puzzle_solves, { _id: r._id });
+      if (mine.length) await q.insert(db.notifications, { user_id: uid, type: 'puzzle',
+        title: '🧩 Hlavolam ti je odomknutý',
+        body: 'Dnešný hlavolam sme ti vrátili na začiatok — môžeš si ho zahrať znova. Prepáč za komplikácie! 💛',
+        read: false, created_at: nowISO() }).catch(() => {});
+      console.log('🧩 Hlavolam reset: ' + u.name + ' ' + d + ' (zmazané: ' + mine.length + ')');
+      res.json({ ok: true, date: d, removed: mine.length, points_back: mine.reduce((s, r) => s + (+r.points || 0), 0) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

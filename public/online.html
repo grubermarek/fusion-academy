@@ -316,18 +316,21 @@ async function loadOnlineClasses(){
     try{ const s=await fetch(mediaBase+'/api/streams').then(r=>r.json()); (s.live||[]).forEach(k=>liveSet.add(k)); }catch(e){}
   }
   container.innerHTML = data.classes.map(c=>{
-    const locked = !data.has_access;
+    // Prístup rieši server pre každú hodinu zvlášť — výherná online hodina z kolesa
+    // napr. neplatí na technický tréning, ten ide z permanentky.
+    const mode = c.access_mode!==undefined ? c.access_mode : (data.has_access ? data.access_mode : null);
+    const locked = !mode;
     const nm = (c.name||'').replace(/'/g,'');
     const key = c.stream_key;
     const isLive = key && liveSet.has(key);
     let action;
     if(locked){
       action = `<span style="font-size:.8rem;color:var(--text-muted)">${FA_T('onl.needs_mem')}</span>`;
-    } else if(data.access_mode==='entry' || data.access_mode==='pass'){
+    } else if(mode==='entry' || mode==='pass'){
       // Permanentka (1 vstup) alebo výherná online hodina z kolesa — stream vydá server po odpočte
-      const lbl = data.access_mode==='pass' ? '▶️ Pripojiť sa · 🎡 výherná hodina' : '▶️ Sledovať · 🎟️ 1 vstup';
+      const lbl = mode==='pass' ? '▶️ Pripojiť sa · 🎡 výherná hodina' : '▶️ Sledovať · 🎟️ 1 vstup';
       action = c.has_stream
-        ? `<button class="btn-stream" onclick="entryWatch('${c._id}','${nm}')">${lbl}</button>`
+        ? `<button class="btn-stream" onclick="entryWatch('${c._id}','${nm}','${mode}')">${lbl}</button>`
         : `<span style="font-size:.8rem;color:var(--text-muted)">${FA_T('onl.soon')}</span>`;
     } else {
       const parts=[];
@@ -469,8 +472,8 @@ function watchStream(encUrl, name){
   }
 }
 // Permanentkárka: sledovanie za 1 vstup — prvýkrát s upozornením, potom odpočet a prehratie
-async function entryWatch(classId, name){
-  const mode = window._onlineAccessMode||'entry';
+async function entryWatch(classId, name, modeArg){
+  const mode = modeArg || window._onlineAccessMode || 'entry';
   if(mode==='pass'){
     if(!confirm('Pripojíš sa cez svoju 🎡 VÝHERNÚ online hodinu z kolesa šťastia — spotrebuje sa práve teraz a prístup ti platí do konca dňa. Pokračovať?')) return;
   } else if(!localStorage.getItem('fa_online_entry_ok')){
