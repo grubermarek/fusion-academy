@@ -12248,7 +12248,18 @@ async function predajeZoznam(qs){
     const m=String(r.d).slice(0,7); if(m) podlaMesiaca[m]=(podlaMesiaca[m]||0)+r.a;
   }
   const zaokruhli=o=>Object.fromEntries(Object.entries(o).map(([k,v])=>[k,+v.toFixed(2)]));
-  return { rows, suma, pocet:rows.length,
+  // Porovnanie s rovnako dlhým predošlým obdobím — nech je vidieť trend
+  let predch=null;
+  if(from && to){
+    const dl = Math.max(1, Math.round((Date.parse(to+'T12:00:00Z')-Date.parse(from+'T12:00:00Z'))/86400000)+1);
+    const pTo = new Date(Date.parse(from+'T12:00:00Z')-86400000).toISOString().slice(0,10);
+    const pFrom = new Date(Date.parse(pTo+'T12:00:00Z')-(dl-1)*86400000).toISOString().slice(0,10);
+    const vsetkyP = await revenueEvents({includeImported:vsetko});
+    predch = { from:pFrom, to:pTo, suma:+vsetkyP.filter(r=>{const d2=String(r.d).slice(0,10);return d2>=pFrom&&d2<=pTo;})
+      .reduce((x,r)=>x+r.a,0).toFixed(2) };
+  }
+  return { rows, suma, pocet:rows.length, predchadzajuce:predch,
+    priemer: rows.length ? +(suma/rows.length).toFixed(2) : 0,
     bez_faktury: rows.filter(r=>!r.invoice && r.src==='app').length,
     kategorie: PREDAJ_KATEGORIE,
     podla_kategorie: zaokruhli(podlaKat), podla_sposobu: zaokruhli(podlaSposobu),
