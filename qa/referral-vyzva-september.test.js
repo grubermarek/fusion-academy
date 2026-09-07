@@ -134,9 +134,12 @@ const U = (id, meno, extra = {}) => JSON.stringify({
 
     console.log('\nTexty v appke:');
     const dash = fs.readFileSync(path.join(__dirname, '..', 'public', 'client-dashboard.html'), 'utf8');
-    ok('nástenka ponúka súkromnú hodinu', /súkromná hodina s Marekom zadarmo \(hodnota 100 €\)/.test(dash));
+    // karta sa 1. 9. zjednodušila: jeden stupeň, odmena a počítadlo (bez progressbaru)
+    ok('nástenka ponúka súkromnú hodinu s Marekom', /Súkromná hodina<br>s Marekom/.test(dash) && /hodnota 100 €/.test(dash));
     ok('nástenka už nespomína tašku ako odmenu', !/taška je tvoja/.test(dash) && !/športová taška Fusion \(limitovaná/.test(dash));
-    ok('termín je september', /do 30\. septembra/.test(dash) && !/⏳ do 31\. augusta/.test(dash));
+    // termín sa už nepíše do HTML natvrdo — chodí zo servera (REFERRAL_GOAL_TO),
+    // aby sa pri ďalšej výzve nemusel prepisovať kód
+    ok('termín sa neduplikuje v HTML, berie sa zo servera', dash.indexOf('do 31. augusta')<0 && dash.indexOf('/api/client/referral-goal')>=0);
     const pop = fs.readFileSync(path.join(__dirname, '..', 'public', 'booking-success.js'), 'utf8');
     ok('pop-up po rezervácii tiež', /tancuješ hodinu s Marekom/.test(pop) && !/športová taška je TVOJA/.test(pop));
 

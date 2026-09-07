@@ -1180,7 +1180,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <!-- Augustová referral výzva — kto priviedol koľko platiacich + odmeny -->
     <div class="card bg-dark border-secondary mb-3"><div class="card-body">
       <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-        <h6 class="fw-bold mb-0">🎁 Priveď kamošku — taška Fusion (5. 8. – 31. 8.)</h6>
+        <h6 class="fw-bold mb-0" id="refGoalTitle">🎁 Priveď kamošku</h6>
         <span id="refGoalRepTotals" class="small text-muted"></span>
       </div>
       <div id="refGoalReport" class="small text-muted">Načítavam…</div>
@@ -4418,20 +4418,45 @@ async function loadRefGoalReport(){
   try{
     const r=await fetch('/api/admin/referral-goal-report'); const d=await r.json();
     if(!d.ok){ el.textContent='Nepodarilo sa načítať.'; return; }
+    // Nadpis aj obdobie sa berú zo servera — pri ďalšej výzve netreba nič prepisovať
+    const den=x=>{const p=String(x||'').split('-');return p.length===3?(+p[2])+'. '+(+p[1])+'.':x};
+    const t=document.getElementById('refGoalTitle');
+    if(t) t.textContent=(d.reward_emoji||'🎁')+' Priveď kamošku — '+(d.reward||'odmena')
+      +' ('+den(d.from)+' – '+den(d.to)+')';
+    const stav = d.ended ? '<span class="text-warning">súťaž skončila</span>'
+      : '<span class="text-muted">zostáva '+d.days_left+' '+(d.days_left===1?'deň':d.days_left<5?'dni':'dní')+'</span>';
     document.getElementById('refGoalRepTotals').innerHTML=
-      `💃 súkromné hodiny na odovzdanie: <b style="color:#C9A84C">${d.totals.hodina}</b> · platiacich kamošiek spolu: <b>${d.totals.payingTotal}</b>${d.ended?" · <span class=\"text-warning\">súťaž skončila</span>":""}`;
-    if(!d.rows.length){ el.innerHTML='Zatiaľ nikto nepriviedol novú registráciu v rámci výzvy (od 5. 8.). Po prvej registrácii cez referral odkaz sa tu objaví.'; return; }
-    el.innerHTML=`<table class="table table-dark table-sm small mb-0"><thead><tr>
-      <th>Klientka</th><th class="text-center">💰 Platiace</th><th class="text-center">📝 Len registrované</th><th>Odmeny</th><th>Koho priviedla</th><th>Kontakt</th></tr></thead><tbody>
-      ${d.rows.map(x=>`<tr>
-        <td><b>${x.sponsor}</b></td>
-        <td class="text-center" style="color:#C9A84C;font-weight:800">${x.paying}</td>
-        <td class="text-center text-muted">${x.registeredOnly}</td>
-        <td>${x.rewards.hodina?"<span class=\"badge\" style=\"background:#C9A84C;color:#111\">💃 súkromná hodina</span>":"<span class=\"text-muted\">— (kamoška ešte nezaplatila)</span>"}</td>
-        <td class="text-muted">${x.paidNames.map(n=>'💰 '+n).concat(x.registeredNames.map(n=>'📝 '+n)).join(', ')||'—'}</td>
-        <td class="text-muted">${x.phone||x.email||''}</td></tr>`).join('')}
-    </tbody></table>
-    <div class="text-muted mt-1">💰 = kamoška si už kúpila členstvo/permanentku (ráta sa do odmien) · 📝 = zatiaľ len registrácia. Súčty hore = koľko tašiek objednať a komu dať zľavy.</div>`;
+      '💃 zaslúžených hodín: <b style="color:#C9A84C">'+d.totals.hodina+'</b>'
+      +' · čaká na rezerváciu: <b>'+(d.totals.caka||0)+'</b>'
+      +' · už vyčerpaných: <b>'+(d.totals.vycerpane||0)+'</b>'
+      +((d.totals.nepripisane||0)?' · <b class="text-danger">nepripísaných: '+d.totals.nepripisane+'</b>':'')
+      +' · platiacich kamošiek: <b>'+d.totals.payingTotal+'</b> · '+stav;
+    if(!d.rows.length){
+      el.innerHTML='Zatiaľ nikto nepriviedol novú registráciu v tejto výzve (od '+den(d.from)+'). '
+        +'Po prvej registrácii cez referral odkaz sa tu objaví.';
+      return;
+    }
+    const odmena=p=>{
+      if(!p) return '<span class="text-muted">—</span>';
+      if(p.stav==='vyčerpaná') return '<span class="badge bg-secondary">✅ vyčerpaná'+(p.used_at?' · '+den(p.used_at):'')+'</span>';
+      if(p.stav==='pripísaná, čaká na rezerváciu') return '<span class="badge" style="background:#C9A84C;color:#111">💃 pripísaná — čaká na rezerváciu</span>';
+      if(p.stav==='zaslúžená, ale nepripísaná') return '<span class="badge bg-danger">⚠ zaslúžená, nepripísaná</span>';
+      return '<span class="text-muted">— (kamoška ešte nezaplatila)</span>';
+    };
+    el.innerHTML='<div class="table-responsive"><table class="table table-dark table-sm small mb-0"><thead><tr>'
+      +'<th>Klientka</th><th class="text-center">💰 Platiace</th><th class="text-center">📝 Len registrované</th>'
+      +'<th>Súkromná hodina</th><th>Koho priviedla</th><th>Kontakt</th></tr></thead><tbody>'
+      +d.rows.map(function(x){ return '<tr>'
+        +'<td><b>'+x.sponsor+'</b></td>'
+        +'<td class="text-center" style="color:#C9A84C;font-weight:800">'+x.paying+'</td>'
+        +'<td class="text-center text-muted">'+x.registeredOnly+'</td>'
+        +'<td>'+odmena(x.prize)+'</td>'
+        +'<td class="text-muted">'+(x.paidNames.map(n=>'💰 '+n).concat(x.registeredNames.map(n=>'📝 '+n)).join(', ')||'—')+'</td>'
+        +'<td class="text-muted">'+(x.phone||x.email||'')+'</td></tr>'; }).join('')
+      +'</tbody></table></div>'
+      +'<div class="text-muted mt-1">💰 = kamoška si už kúpila členstvo alebo permanentku (ráta sa do odmeny) · '
+      +'📝 = zatiaľ len registrácia.<br>Súkromná hodina sa pripíše sama, keď kamoška zaplatí. '
+      +'Klientka si ju potom rezervuje v appke voľbou „Zadarmo — výhra súťaže", a tu sa prepne na „vyčerpaná".</div>';
   }catch(e){ el.textContent='Chyba: '+e.message; }
 }
 

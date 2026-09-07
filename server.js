@@ -5992,6 +5992,31 @@ async function orderPaid(order, {source, paid_via, stripe_session_id}={}){
 // Audit 7. 9.: doúčtovanie a upratanie dokladov.
 //  · FAMT39E2QA (24 €, 21. 8.) je zaplatená objednávka bez faktúry — jediná taká
 //  · faktúra 20260070 znie na 0 € za dve DAROVANÉ vstupenky — doklad tam nepatrí
+// 7. 9.: 510 importovaných klientok nemá vlastný referral kód, takže sa nevedia
+// zapojiť do výzvy "Priveď kamošku" — nemajú čo poslať. Doplníme im ho.
+// Kód sa odvodzuje z krstného mena rovnako ako pri registrácii, kolízie riešime číslom.
+async function doplnReferralKody20260907(){
+  const KEY='referral_kody_backfill_20260907';
+  try{
+    if(await q.one(db.settings,{key:KEY})) return;
+    const vsetci=await q.find(db.users,{});
+    const obsadene=new Set(vsetci.map(u=>u.referral_code).filter(Boolean));
+    let n=0;
+    for(const u of vsetci){
+      if(u.referral_code || u.is_child) continue;
+      if(!['client','lead','ambassador'].includes(u.user_type)) continue;
+      const base=String(u.name||'').split(' ')[0].toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8) || 'FUSION';
+      let kod, pokus=0;
+      do{ kod=base+Math.floor(10+Math.random()*(pokus++<20?90:9990)); }while(obsadene.has(kod) && pokus<60);
+      if(obsadene.has(kod)) continue;
+      obsadene.add(kod);
+      await q.update(db.users,{_id:u._id},{$set:{referral_code:kod}});
+      n++;
+    }
+    await q.insert(db.settings,{key:KEY, value:true, at:nowISO(), doplnene:n});
+    console.log('🔗 Referral kódy doplnené: '+n+' klientkam');
+  }catch(e){ console.error('doplnReferralKody20260907:', e.message); }
+}
 async function uctovnictvoOprava20260907(){
   const KEY='uctovnictvo_oprava_20260907';
   try{
@@ -18833,16 +18858,38 @@ app.get('/api/admin/referral-goal-report', adminAuth, async(req,res)=>{
     for(const [sid, v] of Object.entries(bySponsor)){
       const s=await q.one(db.users,{_id:sid}); if(!s || s.is_admin) continue;
       const n=v.paid.length;
+      // Stav odmeny end-to-end: zaslúžená → pripísaná → vyčerpaná.
+      // Bez toho Marek nevie, komu ešte súkromnú hodinu naozaj odovzdať.
+      const priz = await q.find(db.private_bookings,{client_id:sid});
+      const vycerpana = priz.filter(b=>b.pay_method==='prize' && b.status!=='cancelled');
       rows.push({ sponsor:s.name, email:s.email, phone:s.phone||'', paying:n,
         registeredOnly:v.registered.length,
         paidNames:v.paid.map(x=>x.name), registeredNames:v.registered.map(x=>x.name),
-        rewards:{ hodina:n>=1 } });
+        rewards:{ hodina:n>=1 },
+        prize:{
+          earned: n>=1,
+          credited: !!s.referral_goal_prize_at,
+          credits_left: +s.free_private_lesson_credits||0,
+          used: vycerpana.length,
+          used_at: vycerpana.map(b=>String(b.date||b.created_at||'').slice(0,10)).sort().slice(-1)[0]||null,
+          stav: n<1 ? 'nezaslúžená'
+              : vycerpana.length ? 'vyčerpaná'
+              : (+s.free_private_lesson_credits||0)>0 ? 'pripísaná, čaká na rezerváciu'
+              : 'zaslúžená, ale nepripísaná'
+        } });
     }
     rows.sort((a,b)=>b.paying-a.paying || b.registeredOnly-a.registeredOnly);
     const totals={ hodina:rows.filter(r=>r.rewards.hodina).length,
+      pripisane:rows.filter(r=>r.prize.credited).length,
+      caka:rows.filter(r=>r.prize.earned && !r.prize.used && r.prize.credits_left>0).length,
+      vycerpane:rows.filter(r=>r.prize.used>0).length,
+      nepripisane:rows.filter(r=>r.prize.earned && !r.prize.credited).length,
       payingTotal:rows.reduce((s,r)=>s+r.paying,0),
       registeredTotal:rows.reduce((s,r)=>s+r.registeredOnly+r.paying,0) };
-    res.json({ok:true, from:REFERRAL_GOAL_FROM, to:REFERRAL_GOAL_TO, ended:today()>REFERRAL_GOAL_TO, rows, totals});
+    const daysLeft=Math.max(0, Math.ceil((new Date(REFERRAL_GOAL_TO+'T23:59:59')-Date.now())/86400000));
+    res.json({ok:true, from:REFERRAL_GOAL_FROM, to:REFERRAL_GOAL_TO, days_left:daysLeft,
+      reward:(REFERRAL_GOAL_TIERS[0]||{}).label||'', reward_emoji:(REFERRAL_GOAL_TIERS[0]||{}).emoji||'🎁',
+      ended:today()>REFERRAL_GOAL_TO, rows, totals});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -18863,7 +18910,15 @@ async function referralGoalCheck(sponsorId){
     const count=await referralGoalCount(sponsorId);
     const tier=REFERRAL_GOAL_TIERS.filter(t=>count>=t.need).length;
     if(tier<=(sp.referral_goal_notified||0)) return;
-    await q.update(db.users,{_id:sp._id},{$set:{referral_goal_notified:tier}});
+    // Odmena sa nielen oznámi, ale aj pripíše — inak by ju Marek musel odovzdávať
+    // ručne a nikde by nebolo vidieť, či sa tak stalo (7. 9.). Kredit sa spotrebuje
+    // pri rezervácii súkromnej hodiny voľbou „Zadarmo — výhra súťaže".
+    const setOdmena={referral_goal_notified:tier};
+    if(!sp.referral_goal_prize_at){
+      setOdmena.free_private_lesson_credits=(sp.free_private_lesson_credits||0)+1;
+      setOdmena.referral_goal_prize_at=nowISO();
+    }
+    await q.update(db.users,{_id:sp._id},{$set:setOdmena});
     const t=REFERRAL_GOAL_TIERS[tier-1];
     await q.insert(db.notifications,{user_id:sp._id,type:'referral_goal',
       title:`${t.emoji} Odmena odomknutá: ${t.label}!`,
@@ -22931,7 +22986,7 @@ async function fixClassesInstructors(){
   } catch(e){ console.error('fixClassesInstructors error:', e.message); }
 }
 
-seedData().then(backfillDefaultSponsor).then(shopInvoiceBackfill20260904).then(uctovnictvoOprava20260907).then(reconcileGlofoxVisits).then(fixClassesInstructors).then(ensureGenrePoll).then(ensureTopStars).then(()=>{
+seedData().then(backfillDefaultSponsor).then(shopInvoiceBackfill20260904).then(uctovnictvoOprava20260907).then(doplnReferralKody20260907).then(reconcileGlofoxVisits).then(fixClassesInstructors).then(ensureGenrePoll).then(ensureTopStars).then(()=>{
   server.listen(PORT, ()=>{
     console.log('\n╔══════════════════════════════════════════════════════╗');
     console.log('║  🎵  Fusion Academy – Systém v2.0 spustený             ║');
