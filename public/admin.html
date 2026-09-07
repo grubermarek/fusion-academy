@@ -4468,7 +4468,7 @@ async function loadDnes(){
   try{
     const [fin, konc, doch, ulohy] = await Promise.all([
       api('/api/admin/finance/stats').catch(()=>null),
-      api('/api/admin/memberships/expiring?days=14').catch(()=>null),
+      api('/api/admin/dnes/nechodia?days=30').catch(()=>null),
       api('/api/admin/dnes/dochadzka').catch(()=>null),
       api('/api/admin/urgent-tasks').catch(()=>null),
     ]);
@@ -4486,20 +4486,21 @@ async function loadDnes(){
       +(fin&&fin.imported&&fin.imported.total
         ? '<div class="small text-muted mt-2">Okrem toho '+eurF(fin.imported.total)+' histórie zo starého systému — do tržby sa neráta.</div>' : '');
 
-    // 2) Končiace členstvá
-    const kz=(konc&&(konc.rows||konc.list||konc.members))||[];
-    const konciace = !kz.length
-      ? '<div class="text-muted small">Do 14 dní nikomu členstvo nekončí. 👌</div>'
+    // 2) Ženy, ktoré prestali chodiť — tie treba osloviť (Marek 7. 9.)
+    const nz=(konc&&konc.rows)||[];
+    const konciace = !nz.length
+      ? '<div class="text-muted small">Všetky, čo chodili, boli za posledný mesiac na hodine. 👌</div>'
       : '<div class="table-responsive"><table class="table table-dark table-sm small mb-0"><tbody>'
-        +kz.slice(0,10).map(function(m){
-          const dnu = m.days_left!=null ? m.days_left : m.dni;
-          const naliehave = (+dnu)<=3;
-          return '<tr><td><b>'+(m.name||m.user_name||'—')+'</b><div class="text-muted" style="font-size:.75rem">'+(m.plan_name||m.plan_id||'')+'</div></td>'
-            +'<td class="text-end" style="white-space:nowrap"><span class="badge '+(naliehave?'bg-danger':'bg-secondary')+'">'
-            +(dnu==null?'':(dnu===0?'dnes':(dnu===1?'zajtra':'o '+dnu+' dní')))+'</span></td>'
-            +'<td class="text-end text-muted" style="white-space:nowrap;font-size:.78rem">'+(m.phone||m.email||'')+'</td></tr>'; }).join('')
+        +nz.slice(0,10).map(function(z){
+          return '<tr><td><b>'+(z.name||'—')+'</b>'
+            +(z.paying?' <span class="badge bg-danger" style="font-size:.6rem">PLATÍ A NECHODÍ</span>':'')
+            +'<div class="text-muted" style="font-size:.75rem">'+z.visits+' odchodených hodín</div></td>'
+            +'<td class="text-end" style="white-space:nowrap"><span class="badge '+(z.days_since>=60?'bg-danger':'bg-secondary')+'">'
+            +z.days_since+' dní</span></td>'
+            +'<td class="text-end text-muted" style="white-space:nowrap;font-size:.78rem">'+(z.phone||z.email||'')+'</td></tr>'; }).join('')
         +'</tbody></table></div>'
-        +(kz.length>10?'<div class="text-muted small mt-1">…a ďalších '+(kz.length-10)+'</div>':'');
+        +(nz.length>10?'<div class="text-muted small mt-1">…a ďalších '+(nz.length-10)+'</div>':'')
+        +((konc&&konc.paying)?'<div class="small mt-2" style="color:#e57373">'+konc.paying+' z nich platí členstvo a nechodí — tie zavolaj prvé.</div>':'');
 
     // 3) Kto bol na hodine
     const dd=doch||{};
@@ -4530,7 +4531,7 @@ async function loadDnes(){
 
     host.innerHTML='<div class="row g-3">'
       +karta('💶 Peniaze', peniaze, '<button class="btn btn-sm btn-outline-warning" onclick="show(\'predaje\')">Všetky predaje</button>')
-      +karta('⏳ Končiace členstvá <span class="text-muted" style="font-size:.8rem">(14 dní)</span>', konciace, '<button class="btn btn-sm btn-outline-warning" onclick="show(\'memberships\')">Členstvá</button>')
+      +karta('📵 Prestali chodiť <span class="text-muted" style="font-size:.8rem">(mesiac a viac)</span>', konciace, '<button class="btn btn-sm btn-outline-warning" onclick="show(\'winback\')">Odídení klienti</button>')
       +karta('👟 Kto bol na hodine <span class="text-muted" style="font-size:.8rem">(včera a dnes)</span>', dochadzka, '<button class="btn btn-sm btn-outline-warning" onclick="show(\'attendance\')">Kalendár</button>')
       +karta('🔥 Čo treba dnes', uloha, '<button class="btn btn-sm btn-outline-warning" onclick="show(\'urgent\')">Všetky úlohy</button>')
       +'</div>';

@@ -4650,6 +4650,46 @@ app.get('/api/admin/memberships/expiring', adminAuth, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Ženy, ktoré CHODILI a už mesiac a viac neprišli — tie treba osloviť.
+// Marek 7. 9.: končiace členstvá netreba, tie si ženy obnovujú samy.
+// Berieme len skutočnú odchodenú hodinu, nie odhad z importu — inak by tu
+// bolo 500 ľudí z Glofoxu, ktorí v appke nikdy neboli.
+app.get('/api/admin/dnes/nechodia', adminAuth, async(req,res)=>{
+  try{
+    const dni = Math.min(365, Math.max(7, +req.query.days || 30));
+    const dnes = today();
+    const teraz = Date.parse(dnes+'T12:00:00Z');
+    const posledna = {};
+    for(const b of await q.find(db.bookings,{})){
+      if(!b.user_id) continue;
+      const bol = b.status==='attended' || b.attendance_status==='attended';
+      if(!bol || b.attendance_status==='no_show') continue;
+      const d = String(b.booking_date||'').slice(0,10);
+      if(!d) continue;
+      if(!posledna[b.user_id] || d > posledna[b.user_id]) posledna[b.user_id] = d;
+    }
+    const aktivne = new Set((await q.find(db.memberships,{status:'active'}))
+      .filter(m=>!m._type && (!m.expires_at || String(m.expires_at).slice(0,10) >= dnes))
+      .map(m=>m.user_id));
+    const rows = [];
+    for(const [uid, d] of Object.entries(posledna)){
+      const odvtedy = Math.floor((teraz - Date.parse(d+'T12:00:00Z'))/86400000);
+      if(odvtedy < dni) continue;
+      const u = await q.one(db.users,{_id:uid});
+      if(!u || u.is_admin || u.is_child || u.do_not_contact) continue;
+      if(['trainer','manager'].includes(u.user_type)) continue;
+      if(u.is_test || u.test_account || u.lead_source==='test') continue;
+      rows.push({ user_id:uid, name:u.name, email:u.email||'', phone:u.phone||'',
+        last_visit:d, days_since:odvtedy, visits:u.visit_count||0,
+        // Platí a nechodí = najhoršia kombinácia, tá ide navrch.
+        paying: aktivne.has(uid) });
+    }
+    rows.sort((a,b)=>(b.paying-a.paying) || (b.visits-a.visits) || (b.days_since-a.days_since));
+    res.json({ ok:true, days:dni, count:rows.length,
+      paying:rows.filter(r=>r.paying).length, rows });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Kto bol na hodine za včera a dnes — po hodinách, s počtom prihlásených a neprítomných.
 app.get('/api/admin/dnes/dochadzka', adminAuth, async(req,res)=>{
   try{

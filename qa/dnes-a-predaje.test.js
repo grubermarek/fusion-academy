@@ -1,8 +1,8 @@
 /**
  * Ranná obrazovka „Dnes" + jeden zoznam „Predaje" (7. 9. 2026).
  *
- * Marek: „chcem jednu stránku so štyrmi vecami — koľko prišlo peňazí, komu končí
- * členstvo, kto bol na hodine a čo treba dnes" a „jeden zoznam predajov, kde má
+ * Marek: „chcem jednu stránku so štyrmi vecami — koľko prišlo peňazí, kto prestal
+ * chodiť, kto bol na hodine a čo treba dnes" a „jeden zoznam predajov, kde má
  * každý riadok sumu, dátum, kto, za čo a odkaz na faktúru, aby som to vedel dať
  * účtovníčke bez vysvetľovania."
  *
@@ -12,7 +12,8 @@
  *   · faktúra sa k predaju naozaj spáruje; čo doklad nemá, je označené
  *   · filtre (obdobie, kategória, hľadanie) aj CSV export fungujú
  *   · história z Glofoxu je mimo, kým sa výslovne nezapne
- *   · končiace členstvá a dochádzka za včera/dnes chodia s tým, čo je v DB
+ *   · kto chodil a prestal (končiace členstvá netreba, tie sa obnovujú samy)
+ *   · dochádzka za včera a dnes sedí s tým, čo je v DB
  *
  * Spustenie:  node qa/dnes-a-predaje.test.js
  */
@@ -47,14 +48,16 @@ async function text(url, jar) {
   const vcera = new Date(Date.parse(dnes + 'T12:00:00Z') - 86400000).toISOString().slice(0, 10);
   const o5 = new Date(Date.parse(dnes + 'T12:00:00Z') + 5 * 86400000).toISOString().slice(0, 10);
   const o40 = new Date(Date.parse(dnes + 'T12:00:00Z') + 40 * 86400000).toISOString().slice(0, 10);
+  const pred45 = new Date(Date.parse(dnes + 'T12:00:00Z') - 45 * 86400000).toISOString().slice(0, 10);
   const hash = bcrypt.hashSync('Heslo123!', 10);
   const U = (id, name, email, extra) => JSON.stringify({ _id: id, name, email, password: hash, user_type: 'client', active: true, created_at: '2026-01-01', ...(extra || {}) });
 
   fs.writeFileSync(path.join(DATA, 'users.db'), [
     U('qaDnAdmin000001', 'Adam Admin', 'qa.dn.admin@qa-biz.local', { is_admin: true, user_type: 'admin' }),
     U('qaDnKlara000001', 'Klára Kupujúca', 'qa.dn.klara@qa-biz.local'),
-    U('qaDnEva00000001', 'Eva Končiaca', 'qa.dn.eva@qa-biz.local', { phone: '0900111222' }),
+    U('qaDnEva00000001', 'Eva Končiaca', 'qa.dn.eva@qa-biz.local'),
     U('qaDnZita00000001', 'Zita Dlhá', 'qa.dn.zita@qa-biz.local'),
+    U('qaDnDana00000001', 'Dana Odišla', 'qa.dn.dana@qa-biz.local', { phone: '0900111222', visit_count: 12 }),
   ].join('\n') + '\n');
 
   // 100 € kartou (má faktúru) + 500 € história z Glofoxu + 25 € vstup bez faktúry
@@ -81,6 +84,8 @@ async function text(url, jar) {
       status: 'active', price: 50, expires_at: o5, created_at: '2026-08-01' }),
     JSON.stringify({ _id: 'qaDnMem00000002', user_id: 'qaDnZita00000001', plan_id: 'silver', plan_name: 'Silver',
       status: 'active', price: 75, expires_at: o40, created_at: '2026-08-01' }),
+    JSON.stringify({ _id: 'qaDnMem00000003', user_id: 'qaDnDana00000001', plan_id: 'bronze', plan_name: 'Bronze',
+      status: 'active', price: 50, expires_at: o40, created_at: '2026-06-01' }),
   ].join('\n') + '\n');
 
   // dochádzka: včerajšia hodina — 2 prišli, 1 neprišla
@@ -91,6 +96,8 @@ async function text(url, jar) {
     JSON.stringify({ _id: 'qaDnBk00000001', user_id: 'qaDnKlara000001', class_id: 'qaDnCls00000001', booking_date: vcera, status: 'attended', attendance_status: 'attended', created_at: vcera }),
     JSON.stringify({ _id: 'qaDnBk00000002', user_id: 'qaDnEva00000001', class_id: 'qaDnCls00000001', booking_date: vcera, status: 'attended', attendance_status: 'attended', created_at: vcera }),
     JSON.stringify({ _id: 'qaDnBk00000003', user_id: 'qaDnZita00000001', class_id: 'qaDnCls00000001', booking_date: vcera, status: 'confirmed', attendance_status: 'no_show', created_at: vcera }),
+    // Dana chodila, naposledy pred 45 dňami — a členstvo jej beží ďalej
+    JSON.stringify({ _id: 'qaDnBk00000004', user_id: 'qaDnDana00000001', class_id: 'qaDnCls00000001', booking_date: pred45, status: 'attended', attendance_status: 'attended', created_at: pred45 }),
   ].join('\n') + '\n');
 
   console.log('DNES A PREDAJE QA — štart servera…');
@@ -148,11 +155,15 @@ async function text(url, jar) {
     ok('a riadok SPOLU so sumou', /SPOLU/.test(csv.body) && /125,00/.test(csv.body), csv.body.split('\r\n').slice(-1)[0]);
 
     console.log('\n4) Ranná obrazovka — podklady:');
-    const konc = (await j('/api/admin/memberships/expiring?days=14', {}, adm)).d;
-    ok('končiace členstvá vráti len tie do 14 dní', konc.ok && konc.count === 1 && konc.rows[0].name === 'Eva Končiaca',
-      JSON.stringify((konc.rows || []).map(r => r.name)));
-    ok('a povie, o koľko dní', konc.rows[0].days_left === 5, 'days_left=' + konc.rows[0].days_left);
-    ok('nesie aj telefón, nech sa dá hneď volať', konc.rows[0].phone === '0900111222', konc.rows[0].phone);
+    // Marek 7. 9.: končiace členstvá netreba — ženy si ich obnovujú samy.
+    // Podstatné je, kto chodil a prestal.
+    const nech = (await j('/api/admin/dnes/nechodia?days=30', {}, adm)).d;
+    ok('kto chodil a mesiac neprišiel', nech.ok && nech.count === 1 && nech.rows[0].name === 'Dana Odišla',
+      JSON.stringify((nech.rows || []).map(r => r.name + ':' + r.days_since)));
+    ok('a povie, koľko dní už nebola', nech.rows[0].days_since >= 40, 'days_since=' + nech.rows[0].days_since);
+    ok('nesie telefón, nech sa dá hneď volať', nech.rows[0].phone === '0900111222', nech.rows[0].phone);
+    ok('kto bol na hodine včera, v zozname NIE JE', !(nech.rows || []).some(r => r.name === 'Klára Kupujúca'));
+    ok('a zvlášť hlási, koľko z nich platí a nechodí', nech.paying === 1, 'paying=' + nech.paying);
     const doch = (await j('/api/admin/dnes/dochadzka', {}, adm)).d;
     ok('dochádzka za včera a dnes', doch.ok && doch.hodiny.length === 1, JSON.stringify(doch.hodiny).slice(0, 120));
     ok('2 prišli, 1 neprišla z 3 prihlásených',
