@@ -6260,7 +6260,10 @@ app.get('/api/classes', async(req,res)=>{
     const viewer = loggedIn ? await q.one(db.users,{_id:req.session.uid}).catch(()=>null) : null;
     // Jednorazové termíny po svojom dni miznú klientkam aj trénerom; admin ich vidí
     // ďalej, aby ich vedel dočistiť.
-    const allCls = await q.find(db.classes,{active:true});
+    // Admin s ?all=1 vidí aj vypnuté hodiny — sekcia Hodiny/Stream inak nemá kam
+    // vložiť link k hodine, ktorá je dočasne vypnutá (7. 9.: online BB pondelok).
+    const vsetky = viewer?.is_admin && String(req.query.all||'')==='1';
+    const allCls = await q.find(db.classes, vsetky ? {} : {active:true});
     const classes = viewer?.is_admin ? allCls
       : allCls.filter(c=>classRunsOn(c, displayNextDateForDay(c.day_of_week)));
     const result=[];
@@ -17113,6 +17116,21 @@ app.post('/api/attendance/cancel-compensate', trainerAuth, async(req,res)=>{
     await auditLog(req,'class_compensate',String(req.body.class_id||''),{},{date:r.date, days:r.days, scope:r.scope, extended:r.extended.length},'');
     res.json({ok:true, ...r});
   }catch(e){ res.status(400).json({error:e.message}); }
+});
+// Servisné zapnutie/vypnutie hodiny (IMPORT_TOKEN) — keď treba hodinu sprístupniť
+// hneď a nie je po ruke admin prihlásenie.
+app.post('/api/service/class-active', async(req,res)=>{
+  const tok=process.env.IMPORT_TOKEN;
+  if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
+  try{
+    const c=await q.one(db.classes,{_id:String(req.body.class_id||'')});
+    if(!c) return res.status(404).json({error:'Hodina nenájdená'});
+    const active=!!req.body.active;
+    await q.update(db.classes,{_id:c._id},{$set:{active}});
+    console.log('🗓️ SERVIS hodina '+c.name+' '+(c.stream_city||c.location)+' → active='+active);
+    res.json({ok:true, name:c.name, location:c.location, stream_city:c.stream_city||null,
+      day_of_week:c.day_of_week, time_start:c.time_start, active});
+  }catch(e){ res.status(500).json({error:e.message}); }
 });
 // Servisná cesta cez IMPORT_TOKEN — rovnaký vzor ako import a venček.
 app.post('/api/service/cancel-compensate', async(req,res)=>{

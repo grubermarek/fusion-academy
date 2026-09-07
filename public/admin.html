@@ -6889,7 +6889,9 @@ let adminClassesWholeWeek=false;
 function toggleAdminClassesWeek(){ adminClassesWholeWeek=!adminClassesWholeWeek; loadAdminClasses(); }
 async function loadAdminClasses(){
   refreshFreeOnlineBtn();
-  let rows=await api('/api/classes');if(!Array.isArray(rows))return;
+  // ?all=1 → aj vypnuté hodiny. Bez toho sa k vypnutej online hodine nedal
+  // vložiť link (7. 9.: online z Banskej Bystrice v pondelok bola vypnutá).
+  let rows=await api('/api/classes?all=1');if(!Array.isArray(rows))return;
   const tb=document.getElementById('adminClassesTable');if(!tb)return;
   // Sekcia je len pre ONLINE hodiny; predvolene sa zobrazia iba dnešné
   rows=rows.filter(c=>c.category==='Online');
@@ -6904,7 +6906,10 @@ async function loadAdminClasses(){
   </td></tr>`;
   if(!shown.length){tb.innerHTML=toggle;return;}
   tb.innerHTML=shown.map(c=>`<tr>
-    <td class="ps-3 fw-semibold">${c.emoji||''} ${c.name}<div class="small text-muted">${c.stream_city||''}</div></td>
+    <td class="ps-3 fw-semibold">${c.emoji||''} ${c.name}
+      ${c.active===false?'<span class="badge bg-secondary ms-1">vypnutá</span>':''}
+      <div class="small text-muted">${c.stream_city||''}</div>
+      ${c.active===false?`<button class="btn btn-sm btn-outline-success mt-1 py-0" onclick="toggleClassActive('${c._id}',true)">Zapnúť hodinu</button>`:''}</td>
     <td class="small text-muted">${c.dayName||c.day||''} ${c.time_start||''}</td>
     <td class="small">${c.city||'—'}</td>
     <td class="small">${c.capacity||20}</td>
@@ -6956,6 +6961,14 @@ async function toggleFreeOnline(){
   const r=await api('/api/admin/online-free-day',{method:'POST',body:{on:!on}});
   if(r&&r.ok) refreshFreeOnlineBtn();
 }
+// Zapnutie/vypnutie hodiny priamo zo sekcie Hodiny/Stream
+async function toggleClassActive(classId, active){
+  if(!confirm(active?'Zapnúť túto hodinu? Zobrazí sa klientkam v rozvrhu.':'Vypnúť hodinu?')) return;
+  const r=await api('/api/admin/classes/'+classId,{method:'PUT',body:JSON.stringify({active:!!active})});
+  if(r && r.error) return alert('Chyba: '+r.error);
+  loadAdminClasses();
+}
+
 function genStreamKey(classId,name){
   const inp=document.getElementById('streamkey_'+classId);
   if(inp) inp.value = (slugify(name)||'hodina') + '-' + Math.random().toString(36).slice(2,6);
