@@ -3522,6 +3522,44 @@ async function seedData() {
     }catch(e){ console.error('zrusena technika 6.9.:', e.message); }
   }
 
+  // ── 2b) Nedeľný večer 6. 9.: vrátiť VŠETKO, čo si zaň appka vzala ─────────
+  // Prvá verzia opravy hľadala v audite hodinu s „technik" v názve, lenže Soňa
+  // sa o 18:19 pripojila cez kartu „Zumba ONLINE – LIVE" (jeden večer = jeden
+  // prenos, karty zdieľajú odkaz). Nič nebežalo, tak sa vracia každý odpočet
+  // z toho večera bez ohľadu na to, na ktorej karte skončil.
+  if(!(await q.one(db.settings,{key:'vratenie_nedela_20260906'}))){
+    try{
+      const D='2026-09-06';
+      let vratene=0;
+      for(const a of (await q.find(db.audit,{action:'online_pass_use'}))
+            .filter(x=>String(x.created_at||'').slice(0,10)===D)){
+        const cu=await q.one(db.users,{_id:a.target}); if(!cu) continue;
+        await q.update(db.users,{_id:cu._id},{$inc:{online_passes:1}});
+        if(cu.online_pass_used_date===D) await q.update(db.users,{_id:cu._id},{$set:{online_pass_used_date:null}});
+        await q.insert(db.notifications,{user_id:cu._id, type:'online_pass',
+          title:'🎡 Vrátili sme ti výhernú online hodinu',
+          body:'V nedeľu večer prenos nebežal — výhernú hodinu z kolesa ti vraciame späť. Použiješ ju, kedy budeš chcieť. Prepáč za zmätok! 💛',
+          read:false, created_at:nowISO()}).catch(()=>{});
+        console.log('🎡 Vrátená výherná online hodina ('+D+'): '+cu.name+' — '+(a.after&&a.after.class||'?'));
+        vratene++;
+      }
+      for(const a of (await q.find(db.audit,{action:'online_entry_charge'}))
+            .filter(x=>String(x.created_at||'').slice(0,10)===D)){
+        const cu=await q.one(db.users,{_id:a.target}); if(!cu) continue;
+        await q.update(db.users,{_id:cu._id},{$inc:{single_entries:1}});
+        await q.remove(db.settings,{key:'online_entry_'+cu._id+'_'+D});
+        await q.insert(db.notifications,{user_id:cu._id, type:'online_entry',
+          title:'🎟️ Vrátili sme ti vstup',
+          body:'V nedeľu večer prenos nebežal — vstup, ktorý sa ti zaň odčítal, máš späť na permanentke. Prepáč! 💛',
+          read:false, created_at:nowISO()}).catch(()=>{});
+        console.log('🎟️ Vrátený vstup ('+D+'): '+cu.name+' — '+(a.after&&a.after.class||'?'));
+        vratene++;
+      }
+      await q.insert(db.settings,{key:'vratenie_nedela_20260906', value:true, at:nowISO()});
+      console.log('↩️ Nedeľa '+D+': vrátených hodín/vstupov spolu '+vratene);
+    }catch(e){ console.error('vratenie nedela 6.9.:', e.message); }
+  }
+
   // ── 3) Alena Notová: Bronze zaplatený druhýkrát ───────────────────────────
   // Kúpila si Bronze, hoci sa jej členstvo obnovovalo automaticky. Peniaze
   // nevracia (sama povedala, že jej stačí mesiac navyše), tak jej členstvo
