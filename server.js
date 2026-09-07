@@ -5989,6 +5989,35 @@ async function orderPaid(order, {source, paid_via, stripe_session_id}={}){
 // Dofakturovanie (audit E11, 4. 9. 2026): dve kartové objednávky z 28. a 31. 8.
 // prešli cez Stripe webhook, ktorý vtedy faktúru nevystavoval. Presne tieto dve
 // dostanú faktúru cez createOrderInvoice (bez mailu, dátum = deň platby). Nič iné.
+// Audit 7. 9.: doúčtovanie a upratanie dokladov.
+//  · FAMT39E2QA (24 €, 21. 8.) je zaplatená objednávka bez faktúry — jediná taká
+//  · faktúra 20260070 znie na 0 € za dve DAROVANÉ vstupenky — doklad tam nepatrí
+async function uctovnictvoOprava20260907(){
+  const KEY='uctovnictvo_oprava_20260907';
+  try{
+    if(await q.one(db.settings,{key:KEY})) return;
+    let dofakturovane=0, zrusene=0;
+    const o=await q.one(db.orders,{order_number:'FAMT39E2QA'});
+    if(o && o.status==='paid' && +o.total>0
+       && !(await q.one(db.invoices,{$or:[{order_id:o._id},{order_number:o.order_number}]}))){
+      const kupujuci=await userByEmailCI(o.client_email).catch(()=>null);
+      const inv=await createInvoice({ user_id:kupujuci?._id||null, client_name:o.client_name||o.client_email,
+        client_email:o.client_email,
+        items:(o.items||[]).map(i=>({desc:i.product_name||'Položka', qty:+i.qty||1, total:+i.subtotal||+o.total})),
+        total:+o.total, method:o.payment_method||'Hotovosť', issued_at:String(o.paid_at||o.created_at).slice(0,10),
+        silent:true, order_id:o._id, order_number:o.order_number });
+      if(inv){ dofakturovane++; console.log('🧾 Dofakturované '+o.order_number+' → '+inv.number); }
+    }
+    // nulový doklad za darček — označíme ako stornovaný, číslo v rade ostáva
+    const nula=await q.one(db.invoices,{number:'20260070'});
+    if(nula && !(+nula.total>0) && nula.status!=='void'){
+      await q.update(db.invoices,{_id:nula._id},{$set:{status:'void',
+        void_reason:'Darované vstupenky — 0 €, doklad nemal vzniknúť (audit 7. 9.)', void_at:nowISO()}});
+      zrusene++; console.log('🧾 Faktúra 20260070 označená ako neplatná (0 € za darček)');
+    }
+    await q.insert(db.settings,{key:KEY, value:true, at:nowISO(), dofakturovane, zrusene});
+  }catch(e){ console.error('uctovnictvoOprava20260907:', e.message); }
+}
 async function shopInvoiceBackfill20260904(){
   const KEY='shop_invoice_backfill_20260904';
   try{
@@ -8715,6 +8744,7 @@ app.get('/api/admin/stats', adminAuth, async(req,res)=>{
   const month=currentMonth();
   const allU=await q.find(db.users,{is_admin:{$ne:true}});
   const allTx=(await q.find(db.transactions,{})).filter(t=>!t.commission_only); // exclude commission-anchor rows from revenue
+  const revEv=await revenueEvents();   // spoločný výpočet tržby
   const allC=await q.find(db.commissions,{});
   const allO=await q.find(db.orders,{});
   const allB=await q.find(db.bookings,{});
@@ -8722,15 +8752,18 @@ app.get('/api/admin/stats', adminAuth, async(req,res)=>{
   // Transactions may carry `date` (legacy MLM sales) or only `created_at` (attendance/membership)
   const txDate = t => t.date || (t.created_at||'').slice(0,10) || (t.month? t.month+'-01' : '');
   const monthMap={};
-  for(const t of allTx){const m=txDate(t).slice(0,7);if(m && m>=sixAgo.toISOString().slice(0,7)){if(!monthMap[m])monthMap[m]={total:0,cnt:0};monthMap[m].total+=(+t.amount||0);monthMap[m].cnt++;}}
+  // graf tržieb rovnako zo spoločného výpočtu, nie len z transakcií (audit 7. 9.)
+  for(const e of revEv){const m=String(e.d).slice(0,7);if(m && m>=sixAgo.toISOString().slice(0,7)){if(!monthMap[m])monthMap[m]={total:0,cnt:0};monthMap[m].total+=e.a;monthMap[m].cnt++;}}
   const prodMap={};
   for(const t of allTx){const key=t.product_name||t.note||t.type||'—';if(!prodMap[key])prodMap[key]={cnt:0,total:0};prodMap[key].cnt++;prodMap[key].total+=(+t.amount||0);}
   const rankMap={};
   for(const u of allU){const r=u.rank||1;rankMap[r]=(rankMap[r]||0)+1;}
   res.json({
     totalPartners:allU.length, activePartners:allU.filter(u=>u.active).length,
-    monthRevenue:+allTx.filter(t=>txDate(t).startsWith(month)).reduce((s,t)=>s+(+t.amount||0),0).toFixed(2),
-    totalRevenue:+allTx.reduce((s,t)=>s+(+t.amount||0),0).toFixed(2),
+    // Rovnaký výpočet ako v sekcii Financie (audit 7. 9.) — predtým sa tu rátali
+    // len transakcie, takže hlavný prehľad ukazoval desatinu skutočnej tržby.
+    monthRevenue:revSum(revEv, month),
+    totalRevenue:revSum(revEv),
     pendingComm:+allC.filter(c=>c.status==='pending'&&c.month===month).reduce((s,c)=>s+c.amount,0).toFixed(2),
     pendingOrders:allO.filter(o=>o.status==='pending').length,
     paidOrders:allO.filter(o=>o.status==='paid').length,
@@ -11588,6 +11621,10 @@ async function nextInvoiceNumber(){
 // starých predajov — nemá zmysel po dňoch posielať „ďakujeme za platbu").
 async function createInvoice({user_id, client_name, client_email, items, total, method, type, related_invoice, paid_at, silent, issued_at, repaired_audit, order_id, order_number}){
   try {
+    // Za nulu sa doklad nevystavuje — darovaná vstupenka ani zľava na 100 % nie je
+    // predaj (audit 7. 9.: faktúra 20260070 na 0 € za dve darované vstupenky).
+    // Dobropis je výnimka, ten smie byť nulový aj záporný.
+    if(type!=='credit_note' && !(+total > 0)) return null;
     const number = await nextInvoiceNumber();
     const inv = await q.insert(db.invoices, {
       number, vs: number,
@@ -11940,6 +11977,64 @@ app.post('/api/admin/cash-upsell-blast', adminAuth, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ═══ JEDEN VÝPOČET TRŽBY PRE CELÚ APPKU ═══════════════════════════════════════
+// Audit 7. 9.: tržba sa počítala na troch miestach troma spôsobmi a vychádzali
+// tri rôzne čísla (Financie 40 115 €, Prehľad 3 674 €, Fusion AI 40 100 €).
+// Hlavná príčina: 1031 platieb je HISTÓRIA IMPORTOVANÁ Z GLOFOXU (36 489 €) —
+// peniaze, ktoré appka nikdy nezinkasovala. Financie ich rátali do tržby,
+// Prehľad nie. Preto je história oddelená a do tržby nevstupuje.
+//
+// Vracia rovnaké „udalosti" pre všetky prehľady: {d: dátum, a: suma, cat, src}.
+//   src 'app'    — appka to naozaj zinkasovala
+//   src 'glofox' — historický záznam zo starého systému (do tržby sa neráta)
+async function revenueEvents(opts){
+  const o = opts||{};
+  const vylucit = new Set();                      // koho do tržby nerátame
+  for(const u of await q.find(db.users,{})){
+    if(u.is_admin) vylucit.add(u._id);
+    // testovací účet: len výslovné príznaky. Zámerne NEfiltrujeme podľa mena —
+    // klientka menom Testovická by inak prišla o svoje platby v tržbe.
+    if(brIsTest(u) || u.is_test || u.test_account || u.lead_source==='test') vylucit.add(u._id);
+  }
+  const ok = id => !id || !vylucit.has(id);
+  const payDate = p => p.captured_at||p.activated_at||p.created_at||'';
+  const catPlatby = p => { const t=String(p.description||p.plan_name||'').toLowerCase();
+    if(/permanentk|vstupov/.test(t)) return 'passes';
+    if(/vstup/.test(t)) return 'entries';
+    if(/súkrom|sukrom|private|svadob/.test(t)) return 'private';
+    if(/event|masterclass|workshop|kurz|course/.test(t)) return 'events';
+    if(/členstv|clenstv|member|bronze|silver|gold|online|lite|premium/.test(t)) return 'memberships';
+    return 'other'; };
+
+  const platby=(await q.find(db.payments,{}))
+    .filter(p=>['completed','active'].includes(p.status) && !p.accounting_skip && ok(p.user_id));
+  const clenstvaMimoBranu=(await q.find(db.memberships,{}))
+    .filter(m=>!m._type && m.payment_method && ok(m.user_id));
+  const objednavky=(await q.find(db.orders,{})).filter(o2=>o2.status==='paid');
+  const tr=await q.find(db.transactions,{});
+  const trans = (typ,cat) => tr.filter(t=>t.type===typ && +t.amount>0 && ok(t.user_id||t.buyer_id||t.client_id))
+    .map(t=>({d:t.created_at||t.date||'', a:+t.amount||0, cat, src:'app'}));
+
+  const udalosti=[
+    ...platby.map(p=>({d:payDate(p), a:+p.amount||0, cat:catPlatby(p), src:p.glofox_import?'glofox':'app'})),
+    ...clenstvaMimoBranu.map(m=>({d:m.created_at||'', a:+m.price||0,
+      cat:(MEMBERSHIP_PLANS[m.plan_id]?.type==='bundle'||m.status==='bundle')?'passes':'memberships', src:'app'})),
+    ...objednavky.map(o2=>({d:o2.paid_at||o2.created_at||'', a:+o2.total||0, cat:'merch', src:'app'})),
+    ...trans('single_entry','entries'),
+    ...trans('private_lesson','private'),
+    ...trans('event_ticket','events'),
+    // ručný predaj: staré záznamy nemajú typ, poznáme ich podľa názvu produktu
+    ...tr.filter(t=>!t.commission_only && +t.amount>0
+        && (t.type==='product' || (!t.type && (t.product_name||t.payment_method))) && ok(t.user_id||t.client_id))
+      .map(t=>({d:t.created_at||t.date||'', a:+t.amount||0, cat:'merch', src:'app'})),
+  ].filter(e=>e.d);
+
+  return o.includeImported ? udalosti : udalosti.filter(e=>e.src==='app');
+}
+// Súčet za obdobie (prefix 'YYYY' alebo 'YYYY-MM' alebo celý dátum)
+const revSum = (ev, prefix) => +ev.filter(e=>!prefix || String(e.d).startsWith(prefix))
+  .reduce((s,e)=>s+e.a,0).toFixed(2);
+
 app.get('/api/admin/finance/stats', adminAuth, async(req,res)=>{
   try {
     const {from, to} = req.query; // YYYY-MM-DD inclusive
@@ -11967,15 +12062,9 @@ app.get('/api/admin/finance/stats', adminAuth, async(req,res)=>{
     const rucnePredaje = (await q.find(db.transactions,{})).filter(t=>
       !t.commission_only && +t.amount>0
       && (t.type==='product' || (!t.type && (t.product_name||t.payment_method))));
-    const allEvents = [
-      ...payments.map(p=>({d:payDate(p), a:+p.amount||0})),
-      ...cashMembs.map(m=>({d:m.created_at||'', a:+m.price||0})),
-      ...orders.map(o=>({d:o.paid_at||o.created_at||'', a:+o.total||0})),
-      ...singleEntries.map(t=>({d:t.created_at||'', a:+t.amount||0})),
-      ...privateLessons.map(t=>({d:t.created_at||'', a:+t.amount||0})),
-      ...eventTickets.map(t=>({d:t.created_at||'', a:+t.amount||0})),
-      ...rucnePredaje.map(t=>({d:t.created_at||t.date||'', a:+t.amount||0}))
-    ];
+    // Jeden spoločný výpočet tržby (audit 7. 9.) — história z Glofoxu sa neráta.
+    const allEvents = await revenueEvents();
+    const importovane = (await revenueEvents({includeImported:true})).filter(e=>e.src==='glofox');
     const period = allEvents.filter(e=>inRange(e.d));
     const revenuePeriod = +period.reduce((s,e)=>s+e.a,0).toFixed(2);
 
@@ -12019,6 +12108,11 @@ app.get('/api/admin/finance/stats', adminAuth, async(req,res)=>{
 
     res.json({
       revenue:{ today:revToday, month:revMonth, year:revYear, total:revTotal, period:revenuePeriod },
+      // História zo starého systému (Glofox) — nie je to tržba appky, ale majiteľ
+      // potrebuje vidieť, že tie peniaze existovali, inak to vyzerá ako prepad.
+      imported:{ total:+importovane.reduce((s2,e)=>s2+e.a,0).toFixed(2), count:importovane.length,
+                 from:importovane.map(e=>String(e.d).slice(0,10)).sort()[0]||null,
+                 to:importovane.map(e=>String(e.d).slice(0,10)).sort().slice(-1)[0]||null },
       mrr, arr:+(mrr*12).toFixed(2),
       avgMonthly:+(revYear/Math.max(1,now.getMonth()+1)).toFixed(2),
       aov, avgClientValue,
@@ -21874,31 +21968,12 @@ const brXpFn = (v, cfg) => cfg.fn==='sqrt' ? cfg.w*Math.sqrt(Math.max(0,v))
 // (payments completed/active + hotovostné členstvá + zaplatené objednávky +
 // jednorazové vstupy + súkromné hodiny), navyše s kategóriou a bez test účtov.
 async function brRevenueEvents(){
+  // Audit 7. 9.: rovnaké čísla ako Financie aj hlavný prehľad. História z Glofoxu
+  // sa do tržby neráta — inak Fusion AI hlásil 40 100 € namiesto 3 627 €.
+  const events=await revenueEvents();
   const testIds=new Set((await q.find(db.users,{})).filter(brIsTest).map(u=>u._id));
-  const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status) && !testIds.has(p.user_id));
   const membs=(await q.find(db.memberships,{})).filter(m=>!m._type && !testIds.has(m.user_id));
-  const cashMembs=membs.filter(m=>m.payment_method);
-  const orders=(await q.find(db.orders,{})).filter(o=>o.status==='paid' && !testIds.has(o.user_id));
-  const singleEntries=(await q.find(db.transactions,{type:'single_entry'})).filter(t=>!testIds.has(t.buyer_id||t.user_id));
-  const privateLessons=(await q.find(db.transactions,{type:'private_lesson'})).filter(t=>!testIds.has(t.buyer_id||t.user_id));
-  const eventTickets=(await q.find(db.transactions,{type:'event_ticket'})).filter(t=>+t.amount>0 && !testIds.has(t.user_id));
-  const payDate=p=>p.captured_at||p.activated_at||p.created_at||'';
-  const catOfPayment=p=>{ const d=String(p.description||'').toLowerCase();
-    if(/permanentk|vstupov/.test(d)) return 'passes';
-    if(/vstup/.test(d)) return 'entries';
-    if(/súkrom|sukrom|private|svadob/.test(d)) return 'private';
-    if(/event|masterclass|workshop|kurz|course/.test(d)) return 'events';
-    if(/členstv|clenstv|member|bronze|silver|gold|online/.test(d)) return 'memberships';
-    return 'other'; };
-  const events=[
-    ...payments.map(p=>({d:payDate(p), a:+p.amount||0, cat:catOfPayment(p)})),
-    ...cashMembs.map(m=>({d:m.created_at||'', a:+m.price||0, cat:(MEMBERSHIP_PLANS[m.plan_id]?.type==='bundle'||m.status==='bundle')?'passes':'memberships'})),
-    ...orders.map(o=>({d:o.paid_at||o.created_at||'', a:+o.total||0, cat:'merch'})),
-    ...singleEntries.map(t=>({d:t.created_at||'', a:+t.amount||0,
-      cat:((MEMBERSHIP_PLANS[t.plan_id]?.entries||1)>1 || (+t.entries||1)>1 || /permanentk/i.test(String(t.note||''))) ? 'passes':'entries'})),
-    ...privateLessons.map(t=>({d:t.created_at||'', a:+t.amount||0, cat:'private'})),
-    ...eventTickets.map(t=>({d:t.created_at||'', a:+t.amount||0, cat:'events'})),
-  ];
+  const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status) && !p.glofox_import && !testIds.has(p.user_id));
   return { events, testIds, membs, payments };
 }
 
@@ -22856,7 +22931,7 @@ async function fixClassesInstructors(){
   } catch(e){ console.error('fixClassesInstructors error:', e.message); }
 }
 
-seedData().then(backfillDefaultSponsor).then(shopInvoiceBackfill20260904).then(reconcileGlofoxVisits).then(fixClassesInstructors).then(ensureGenrePoll).then(ensureTopStars).then(()=>{
+seedData().then(backfillDefaultSponsor).then(shopInvoiceBackfill20260904).then(uctovnictvoOprava20260907).then(reconcileGlofoxVisits).then(fixClassesInstructors).then(ensureGenrePoll).then(ensureTopStars).then(()=>{
   server.listen(PORT, ()=>{
     console.log('\n╔══════════════════════════════════════════════════════╗');
     console.log('║  🎵  Fusion Academy – Systém v2.0 spustený             ║');

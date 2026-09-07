@@ -443,7 +443,8 @@ module.exports = function mountEventTickets(ctx){
     try{
       await createInvoice({ user_id:acct?._id||null, client_name:order.buyer_name, client_email:order.buyer_email,
         items: order.items.map(i=>({desc:`${ev?.name||''} — ${i.type_name}`, qty:i.qty, total:i.subtotal})),
-        total: order.total, method:'Stripe (karta)' });
+        total: order.total, method:'Stripe (karta)',
+        order_id:order._id, order_number:order.order_number });
     }catch(e){ console.error('event invoice:', e.message); }
 
     if(acct){
@@ -848,7 +849,7 @@ module.exports = function mountEventTickets(ctx){
       try{
         if(!isGift) await createInvoice({ user_id:acct?._id||null, client_name:name, client_email:email,
           items: lines.map(l=>({desc:`${ev.name} — ${l.t.name}`, qty:l.qty, total:+(l.price*l.qty).toFixed(2)})),
-          total, method });
+          total, method, order_id:order._id, order_number:order.order_number });
       }catch(e){ console.error('onsite invoice:', e.message); }
       if(acct){
         await q.insert(db.notifications,{ user_id:acct._id, type:'ticket',
