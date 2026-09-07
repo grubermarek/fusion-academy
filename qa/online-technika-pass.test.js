@@ -92,6 +92,13 @@ const DOW = new Date().getDay();
   stav = (await g('K', '/api/online/classes')).data || {};
   ok('výherná hodina stále nespotrebovaná', stav.online_passes === 1, { passes: stav.online_passes });
 
+  // Odkaz na vysielanie si pamätá deň zadania — podľa toho sa pozná, či je
+  // dnešný, alebo tam visí z minulého týždňa (vtedy sa zaň nesmie platiť).
+  const zoznamHodin = (await g('admin', '/api/classes')).data || [];
+  const techCls = zoznamHodin.find(c => c._id === tech.id);
+  ok('odkaz na vysielanie nesie dátum zadania', techCls && techCls.stream_url_at === TODAY,
+    techCls && { at: techCls.stream_url_at, dnes: TODAY });
+
   // ── 4) Na bežnej online Zumbe pass funguje ────────────────────────────────
   const r4 = await post('K', '/api/online/enter', { class_id: zumba.id });
   ok('Zumba online + výherná hodina → pustí', r4.status === 200 && r4.data?.mode === 'pass', r4);

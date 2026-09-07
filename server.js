@@ -3527,12 +3527,18 @@ async function seedData() {
   // nevracia (sama povedala, že jej stačí mesiac navyše), tak jej členstvo
   // predlžujeme o jedno celé obdobie. Do logu vypíšeme aj jej platby, nech je
   // v účtovníctve vidieť, z čoho predĺženie vzniklo.
-  if(!(await q.one(db.settings,{key:'alena_notova_predlzenie_20260907'}))){
+  if(!(await q.one(db.settings,{key:'alena_notova_predlzenie_20260907_v2'}))){
     try{
-      const u=(await q.find(db.users,{})).find(x=>{
+      // Alena má v systéme dva účty (klientka + starý lead). Rozhoduje ten
+      // s bežiacim členstvom — inak by sa oprava pozerala na prázdny účet.
+      const kandidati=(await q.find(db.users,{})).filter(x=>{
         const n=bezDiakritiky(x.name);
         return /\bnotov/.test(n) && /\balena\b/.test(n);
       });
+      let u=null;
+      for(const k of kandidati) if(await q.one(db.memberships,{user_id:k._id, status:'active'})){ u=k; break; }
+      u = u || kandidati[0];
+      if(kandidati.length>1) console.log('ℹ️ Alena Notová má '+kandidati.length+' účty — beriem '+(u&&u.email));
       if(!u) console.log('⚠️ Alena Notová sa nenašla — predĺženie neprebehlo');
       else {
         const m=await q.one(db.memberships,{user_id:u._id, status:'active'});
@@ -3567,7 +3573,7 @@ async function seedData() {
           }
         }
       }
-      await q.insert(db.settings,{key:'alena_notova_predlzenie_20260907', value:true, at:nowISO()});
+      await q.insert(db.settings,{key:'alena_notova_predlzenie_20260907_v2', value:true, at:nowISO()});
     }catch(e){ console.error('alena predlzenie:', e.message); }
   }
 }
@@ -7612,6 +7618,7 @@ app.get('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
   res.json({ membership, name:u.name, email:u.email||"", phone:u.phone||"", visit_count:u.visit_count||0, private_hours:u.private_hours||0,
     referral_credit:+(u.referral_credit||0), referral_credit_pending:+(u.referral_credit_pending||0),
     single_entries:+(u.single_entries||0), free_credits:+(u.free_credits||0),
+    online_passes:+(u.online_passes||0),
     is_trainer:(u.user_type==='trainer')||!!u.is_admin, taught_group_hours:u.taught_group_hours||0, taught_private_hours:u.taught_private_hours||0,
     referrals:refCount, joined:(u.created_at||'').slice(0,10), birthday:u.birthday||'',
     achievements: computeAchievements(u, refCount, memberMonths),
@@ -14590,7 +14597,10 @@ app.post('/api/online/enter', auth, async(req,res)=>{
     // Odtiaľto sa už PLATÍ. Keď ešte nie je čo pozerať (tréner nezadal odkaz na
     // vysielanie), nesmie sa strhnúť nič — presne toto 6. 9. zobralo klientke
     // výhernú online hodinu za nedeľnú techniku, ktorá sa vôbec nekonala.
-    if(!cls.stream_url && !cls.stream_key)
+    // Odkaz z minulého týždňa je pre dnešok mŕtvy — platiť sa zaň nesmie.
+    // (Nedeľná technika 6. 9. mala odkaz z predošlého vysielania, tak sa tvárila živá.)
+    const staryOdkaz = !!cls.stream_url && !!cls.stream_url_at && cls.stream_url_at!==today();
+    if((!cls.stream_url && !cls.stream_key) || staryOdkaz)
       return res.status(409).json({error:'Vysielanie ešte nie je spustené — skús to o pár minút. Nič sme ti nestrhli. 💛', waiting:true});
     // 1) Výherný pass z kolesa — spotrebuje sa práve teraz, prístup platí do konca dňa.
     //    Na technický tréning neplatí: vyhráva sa na Online Zumbu a technika má vlastný cenník.
@@ -16793,7 +16803,10 @@ app.get('/api/trainer/students', trainerAuth, async(req,res)=>{
 // Update class stream URL (trainer/admin)
 app.put('/api/admin/classes/:id/stream', adminAuth, async(req,res)=>{
   const {stream_url,stream_platform,stream_notes,stream_key} = req.body;
-  const $set = {stream_url:stream_url||'',stream_platform:stream_platform||'',stream_notes:stream_notes||''};
+  // Deň zadania odkazu: odkaz ostáva na hodine aj po jej skončení, takže o týždeň
+  // vyzerá ako živý. Bez tejto stopy sa nedá odlíšiť dnešný prenos od minulého.
+  const $set = {stream_url:stream_url||'',stream_platform:stream_platform||'',stream_notes:stream_notes||'',
+    stream_url_at: stream_url ? today() : null};
   if(stream_key!==undefined) $set.stream_key = String(stream_key||'').replace(/[^a-zA-Z0-9_-]/g,'');
   await q.update(db.classes,{_id:req.params.id},{$set});
   // Jeden večer = jeden prenos: ďalšie aktívne online hodiny z toho istého mesta
@@ -16805,7 +16818,7 @@ app.put('/api/admin/classes/:id/stream', adminAuth, async(req,res)=>{
         day_of_week:cls.day_of_week}))
         .filter(c=>c._id!==cls._id && (c.stream_city||'')===(cls.stream_city||''));
       for(const sib of siblings)
-        await q.update(db.classes,{_id:sib._id},{$set:{stream_url:stream_url||'', stream_platform:stream_platform||''}});
+        await q.update(db.classes,{_id:sib._id},{$set:{stream_url:stream_url||'', stream_platform:stream_platform||'', stream_url_at:today()}});
       if(siblings.length) console.log('🌐 Stream link zdieľaný s '+siblings.length+' online hodinou/ami v ten deň');
     }
   }catch(e){}
