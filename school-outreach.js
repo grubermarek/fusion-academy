@@ -196,6 +196,26 @@ module.exports = function initSchoolOutreach(ctx) {
     return out;
   }
 
+  // Servisný import cez IMPORT_TOKEN — rovnaký vzor ako ostatné importy.
+  // Školy sa pridajú ako 'new', mail im NEODÍDE, kým sa drip nespustí ručne.
+  app.post('/api/schools/import-service', async (req, res) => {
+    const tok = process.env.IMPORT_TOKEN;
+    if (!tok || req.headers['x-import-token'] !== tok) return res.status(404).end();
+    try {
+      const rows = parseRows(req.body && req.body.text);
+      if (!rows.length) return res.status(400).json({ error: 'Žiadny použiteľný riadok.' });
+      let pridane = 0; const duplicity = [];
+      for (const r of rows) {
+        if (await q.one(db.schools, { email: r.email })) { duplicity.push(r.email); continue; }
+        await q.insert(db.schools, { ...r, status: 'new', unsubscribed: false, mail_log_id: null,
+          sent_at: null, note: '', created_at: nowISO(), updated_at: nowISO() });
+        pridane++;
+      }
+      console.log('🏫 SERVIS import škôl: pridaných ' + pridane + ', preskočených ' + duplicity.length);
+      res.json({ ok: true, pridane, preskocene: duplicity.length });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   app.post('/api/admin/schools/import', adminAuth, async (req, res) => {
     try {
       const rows = parseRows(req.body && req.body.text);
