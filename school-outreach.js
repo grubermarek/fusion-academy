@@ -283,10 +283,25 @@ module.exports = function initSchoolOutreach(ctx) {
   // ── Rozposlanie po dávkach ──────────────────────────────────────────────────
   // Denný strop Breva si stráži sendMail sám; my len neposielame viac, než koľko
   // si Marek vyžiada, a nikdy dvakrát tej istej škole.
+  // Pásma podľa dojazdu z Detvy — Marek tam musí chodiť každý týždeň.
+  const PASMA = [
+    { id:1, nazov:'do 25 min', obce:['Detva','Hriňová','Očová','Zvolenská Slatina','Kriváň','Vígľaš','Detvianska Huta','Slatinské Lazy','Zvolen','Sliač','Budča'] },
+    { id:2, nazov:'25–45 min', obce:['Krupina','Bzovík','Sebechleby','Hontianske Nemce','Hontianske Moravce','Cerovo','Senohrad','Dobrá Niva','Pliešovce','Dudince','Banská Bystrica','Badín','Selce','Slovenská Ľupča','Poniky','Hrochoť','Ľubietová','Brusno','Banská Štiavnica','Svätý Anton','Štiavnické Bane','Banská Belá','Vyhne','Žiar nad Hronom','Hliník nad Hronom','Trnavá Hora','Jastrabá','Janova Lehota','Horná Ždaňa','Kremnica','Lučenec','Halič','Poltár','Lovinobaňa','Veľké Dravce','Divín','Cinobaňa','Kalinovo','Málinec','Utekáč'] },
+    { id:3, nazov:'45–70 min', obce:['Brezno','Predajná','Nemecká','Valaská','Čierny Balog','Beňuš','Heľpa','Pohronská Polhora','Fiľakovo','Radzovce','Husiná','Veľký Krtíš','Nová Baňa','Brehy','Žarnovica','Župkov','Hodruša-Hámre','Hronský Beňadik','Tekovská Breznica','Malá Lehota','Veľká Lehota','Rimavská Sobota','Hnúšťa','Klenovec','Hrachovo','Rimavská Baňa','Kokava nad Rimavicou','Tisovec','Ožďany','Jesenské'] },
+  ];
+  const pasmoPre = obec => (PASMA.find(p => p.obce.includes(String(obec||'').trim())) || {id:4, nazov:'nad 70 min'});
+
   async function sendBatch(limit, iba) {
     const cakaju = (await q.find(db.schools, {}))
       .filter(s => !s.sent_at && !s.unsubscribed && /@/.test(s.email || ''))
+      // Škola s neovereným kontaktom počká, kým sa adresa potvrdí telefonicky —
+      // odraz od neexistujúcej adresy zhoršuje reputáciu odosielateľa.
+      .filter(s => !s.kontakt_neovereny)
       .filter(s => !iba || iba.includes(s._id))
+      // Najprv najbližšie školy: Marek tam musí chodiť každý týždeň, takže
+      // odpoveď z Detvy má väčšiu cenu než odpoveď spoza dvoch hodín cesty.
+      .sort((x, y) => (pasmoPre(x.city).id - pasmoPre(y.city).id)
+        || String(x.city || '').localeCompare(String(y.city || ''), 'sk'))
       .slice(0, limit);
     // QA hook (rovnaká konvencia ako STRIPE_FAKE / CAPI_DEBUG_FILE): v capture režime
     // sa mail zaloguje, ale NIKDY neodošle — evidenciu si aj tak chceme overiť.
@@ -514,13 +529,6 @@ module.exports = function initSchoolOutreach(ctx) {
     nezaujem:  'Nemá záujem',
     ziskane:   'Získaná škola',
   };
-  // Pásma podľa dojazdu z Detvy — Marek tam musí chodiť každý týždeň.
-  const PASMA = [
-    { id:1, nazov:'do 25 min', obce:['Detva','Hriňová','Očová','Zvolenská Slatina','Kriváň','Vígľaš','Detvianska Huta','Slatinské Lazy','Zvolen','Sliač','Budča'] },
-    { id:2, nazov:'25–45 min', obce:['Krupina','Bzovík','Sebechleby','Hontianske Nemce','Hontianske Moravce','Cerovo','Senohrad','Dobrá Niva','Pliešovce','Dudince','Banská Bystrica','Badín','Selce','Slovenská Ľupča','Poniky','Hrochoť','Ľubietová','Brusno','Banská Štiavnica','Svätý Anton','Štiavnické Bane','Banská Belá','Vyhne','Žiar nad Hronom','Hliník nad Hronom','Trnavá Hora','Jastrabá','Janova Lehota','Horná Ždaňa','Kremnica','Lučenec','Halič','Poltár','Lovinobaňa','Veľké Dravce','Divín','Cinobaňa','Kalinovo','Málinec','Utekáč'] },
-    { id:3, nazov:'45–70 min', obce:['Brezno','Predajná','Nemecká','Valaská','Čierny Balog','Beňuš','Heľpa','Pohronská Polhora','Fiľakovo','Radzovce','Husiná','Veľký Krtíš','Nová Baňa','Brehy','Žarnovica','Župkov','Hodruša-Hámre','Hronský Beňadik','Tekovská Breznica','Malá Lehota','Veľká Lehota','Rimavská Sobota','Hnúšťa','Klenovec','Hrachovo','Rimavská Baňa','Kokava nad Rimavicou','Tisovec','Ožďany','Jesenské'] },
-  ];
-  const pasmoPre = obec => (PASMA.find(p => p.obce.includes(String(obec||'').trim())) || {id:4, nazov:'nad 70 min'});
 
   // Zoznam pre CRM — s tým, či mail otvorili, kliknuli, kedy sa im volalo a kedy sa ozvať.
   app.get('/api/admin/schools/crm', adminAuth, async (req, res) => {
