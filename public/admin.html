@@ -1226,6 +1226,40 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
         <a class="btn btn-sm btn-outline-info ms-1" href="/admin/skoly">✉️ Oslovenie škôl</a>
       </div>
     </div>
+    <!-- CRM na navolávanie škôl -->
+    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+        <h6 class="fw-bold mb-0">📞 Navolávanie škôl</h6>
+        <div class="d-flex gap-2 align-items-center">
+          <span id="skolyCrmSuc" class="small text-muted"></span>
+          <button class="btn btn-sm btn-outline-light py-0" onclick="loadSkolyCrm()"><i class="bi bi-arrow-clockwise"></i></button>
+          <button class="btn btn-sm btn-outline-secondary py-0" onclick="const b=document.getElementById('skolyCrmBody');b.hidden=!b.hidden" id="skolyCrmToggle">Zbaliť</button>
+        </div>
+      </div>
+      <div id="skolyCrmBody">
+        <div id="skolyCrmDnes" class="mb-2"></div>
+        <div class="d-flex gap-2 flex-wrap mb-2 align-items-end">
+          <div><label class="small text-muted d-block">Stav</label>
+            <select id="skFStav" class="form-select form-select-sm bg-dark text-light border-secondary" onchange="renderSkolyCrm()">
+              <option value="">všetky</option></select></div>
+          <div><label class="small text-muted d-block">Dojazd z Detvy</label>
+            <select id="skFPasmo" class="form-select form-select-sm bg-dark text-light border-secondary" onchange="renderSkolyCrm()">
+              <option value="">všetky</option><option value="1">do 25 min</option><option value="2">25–45 min</option>
+              <option value="3">45–70 min</option><option value="4">nad 70 min</option></select></div>
+          <div><label class="small text-muted d-block">Zaujímavosť</label>
+            <select id="skFZaujem" class="form-select form-select-sm bg-dark text-light border-secondary" onchange="renderSkolyCrm()">
+              <option value="">všetky</option><option value="klik">klikli na ponuku</option>
+              <option value="otv">otvorili mail</option><option value="nic">neotvorili</option></select></div>
+          <div class="flex-fill" style="min-width:160px"><label class="small text-muted d-block">Hľadať</label>
+            <input id="skFQ" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="škola, obec…" oninput="renderSkolyCrm()"></div>
+          <div><label class="small text-muted d-block">Zoradiť</label>
+            <select id="skFSort" class="form-select form-select-sm bg-dark text-light border-secondary" onchange="renderSkolyCrm()">
+              <option value="prio">najprv najlepšie</option><option value="pasmo">podľa vzdialenosti</option>
+              <option value="obec">podľa obce</option><option value="volane">naposledy volané</option></select></div>
+        </div>
+        <div id="skolyCrmList" class="text-muted small">Načítavam…</div>
+      </div>
+    </div></div>
     <div id="vencekyTotals" class="mb-3"></div>
     <div id="vencekyList"><div class="text-muted py-4 text-center">Načítavam…</div></div>
   </div>
@@ -2833,6 +2867,7 @@ function show(sec){
   if(sec==='urgent')loadUrgent();
   if(sec==='fusionai')loadFusionAI();
   if(sec==='bizrank')loadBizRank();
+  if(sec==='venceky')loadSkolyCrm();
   if(sec==='dnes')loadDnes();
   if(sec==='predaje')loadPredaje();
   if(sec==='sutaze')loadRefGoalReport();
@@ -4565,6 +4600,125 @@ async function loadDnes(){
       +karta('🔥 Čo treba dnes', uloha, '<button class="btn btn-sm btn-outline-warning" onclick="show(\'urgent\')">Všetky úlohy</button>')
       +'</div>';
   }catch(e){ host.innerHTML='<div class="text-danger">Chyba: '+e.message+'</div>'; }
+}
+
+/* ═══ NAVOLÁVANIE ŠKÔL ══════════════════════════════════════════════════════
+   Marek 8. 9.: „prepracuj ten zoznam ako CRM — navolávať, písať poznámky,
+   triediť." Beátka volá; keď sa dohodnú na neskoršom telefonáte, odloží školu
+   na dátum a v ten deň sa jej sama vráti hore medzi „na dnes". */
+let SK_CRM = null;
+async function loadSkolyCrm(){
+  const host=document.getElementById('skolyCrmList'); if(!host) return;
+  host.innerHTML='Načítavam…';
+  try{
+    SK_CRM=await api('/api/admin/schools/crm');
+    if(!SK_CRM||!SK_CRM.ok){ host.innerHTML='<span class="text-danger">Nepodarilo sa načítať.</span>'; return; }
+    const sel=document.getElementById('skFStav');
+    if(sel && sel.options.length<=1)
+      Object.entries(SK_CRM.stavy||{}).forEach(function(x){
+        const o=document.createElement('option'); o.value=x[0]; o.textContent=x[1]; sel.appendChild(o); });
+    const t=SK_CRM.totals||{};
+    document.getElementById('skolyCrmSuc').innerHTML=
+      (t.na_dnes?'<b style="color:#e57373">'+t.na_dnes+' na dnes</b> · ':'')
+      +t.nevolane+' nevolaných · '+t.odlozene+' odložených · '
+      +'<b style="color:#8bc34a">'+t.stretnutia+'</b> stretnutí · '+t.ziskane+' získaných';
+    renderSkolyCrm();
+  }catch(e){ host.innerHTML='<span class="text-danger">Chyba: '+e.message+'</span>'; }
+}
+function skStavBadge(r){
+  const farby={nove:'secondary',dovolane:'info',odlozene:'warning',stretnutie:'success',nezaujem:'dark',ziskane:'success'};
+  return '<span class="badge bg-'+(farby[r.stav]||'secondary')+'">'+r.stav_nazov+'</span>';
+}
+function renderSkolyCrm(){
+  const host=document.getElementById('skolyCrmList'); if(!host||!SK_CRM) return;
+  const fSt=(document.getElementById('skFStav')||{}).value||'';
+  const fPa=(document.getElementById('skFPasmo')||{}).value||'';
+  const fZa=(document.getElementById('skFZaujem')||{}).value||'';
+  const fQ=((document.getElementById('skFQ')||{}).value||'').toLowerCase().trim();
+  const fSo=(document.getElementById('skFSort')||{}).value||'prio';
+  let r=(SK_CRM.rows||[]).slice();
+  if(fSt) r=r.filter(x=>x.stav===fSt);
+  if(fPa) r=r.filter(x=>String(x.pasmo)===fPa);
+  if(fZa==='klik') r=r.filter(x=>x.klikol);
+  if(fZa==='otv') r=r.filter(x=>x.otvoril);
+  if(fZa==='nic') r=r.filter(x=>!x.otvoril);
+  if(fQ) r=r.filter(x=>(x.name+' '+x.city+' '+(x.posledna_poznamka||'')).toLowerCase().includes(fQ));
+  const poradie={odlozene:0,nove:1,dovolane:2,stretnutie:3,ziskane:4,nezaujem:5};
+  if(fSo==='prio') r.sort((x,y)=>(y.na_dnes-x.na_dnes)||(y.klikol-x.klikol)||(y.otvoril-x.otvoril)
+    ||(x.pasmo-y.pasmo)||((poradie[x.stav]||9)-(poradie[y.stav]||9)));
+  else if(fSo==='pasmo') r.sort((x,y)=>(x.pasmo-y.pasmo)||String(x.city).localeCompare(String(y.city),'sk'));
+  else if(fSo==='obec') r.sort((x,y)=>String(x.city).localeCompare(String(y.city),'sk'));
+  else r.sort((x,y)=>String(y.volane_at||'').localeCompare(String(x.volane_at||'')));
+
+  // pás „na dnes" — odložené školy, ktorých termín nastal
+  const dnesR=(SK_CRM.rows||[]).filter(x=>x.na_dnes);
+  document.getElementById('skolyCrmDnes').innerHTML = !dnesR.length ? '' :
+    '<div class="p-2 rounded mb-2" style="background:rgba(229,115,115,.12);border:1px solid rgba(229,115,115,.4)">'
+    +'<b style="color:#e57373">Dnes sa ozvať ('+dnesR.length+'):</b> '
+    +dnesR.map(x=>'<a href="#" onclick="skOpen(&quot;'+x.id+'&quot;);return false" style="color:#e57373">'
+      +x.name.split(' – ')[0]+'</a>'+(x.po_termine?' <span class="text-muted">('+x.ozvat_sa+')</span>':'')).join(' · ')
+    +'</div>';
+
+  if(!r.length){ host.innerHTML='<div class="text-muted py-3">Nič nesedí s filtrom.</div>'; return; }
+  host.innerHTML='<div class="table-responsive"><table class="table table-dark table-sm align-middle small mb-0">'
+    +'<thead><tr><th>Škola</th><th>Obec</th><th>Telefón</th><th>Stav</th><th>Posledná poznámka</th><th></th></tr></thead><tbody>'
+    +r.map(function(x){
+      return '<tr'+(x.na_dnes?' style="background:rgba(229,115,115,.10)"':'')+'>'
+        +'<td><b>'+x.name.split(' – ')[0]+'</b>'
+          +(x.klikol?' <span class="badge bg-success" style="font-size:.6rem">KLIKLA</span>':
+            x.otvoril?' <span class="badge bg-secondary" style="font-size:.6rem">otvorila</span>':'')
+          +'<div class="text-muted" style="font-size:.7rem">'+x.pasmo_nazov+' z Detvy</div></td>'
+        +'<td class="text-muted">'+x.city+'</td>'
+        +'<td>'+(x.phone?'<a href="tel:'+x.phone.replace(/\s+/g,'')+'" style="color:#C9A84C;white-space:nowrap">'+x.phone+'</a>':'<span class="text-muted">—</span>')+'</td>'
+        +'<td>'+skStavBadge(x)+(x.ozvat_sa?'<div class="text-muted" style="font-size:.7rem">'+(x.po_termine?'⚠ ':'')+'ozvať sa '+x.ozvat_sa+'</div>':'')+'</td>'
+        +'<td class="text-muted" style="max-width:230px;font-size:.78rem">'+(x.posledna_poznamka||'—')+'</td>'
+        +'<td class="text-end"><button class="btn btn-sm btn-outline-warning py-0" onclick="skOpen(&quot;'+x.id+'&quot;)">Zápis</button></td></tr>'; }).join('')
+    +'</tbody></table></div>'
+    +'<div class="text-muted mt-1" style="font-size:.78rem">Zobrazených '+r.length+' z '+(SK_CRM.rows||[]).length+' škôl.</div>';
+}
+// Okno zápisu z hovoru
+function skOpen(id){
+  const x=(SK_CRM&&SK_CRM.rows||[]).find(s=>s.id===id); if(!x) return;
+  const hist=(x.poznamky||[]).slice().reverse().map(function(p){
+    return '<div class="border-bottom border-secondary py-1"><div>'+p.text+'</div>'
+      +'<div class="text-muted" style="font-size:.7rem">'+String(p.at).slice(0,16).replace('T',' ')+(p.kto?' · '+p.kto:'')+'</div></div>'; }).join('')
+    || '<div class="text-muted">Zatiaľ žiadna poznámka.</div>';
+  evModal('📞 '+x.name.split(' – ')[0],
+    '<div class="mb-2 text-muted small">'+x.city+' · '+x.pasmo_nazov+' z Detvy'
+      +(x.phone?' · <a href="tel:'+x.phone.replace(/\s+/g,'')+'" style="color:#C9A84C">'+x.phone+'</a>':'')
+      +(x.sent_at?' · mail poslaný '+x.sent_at:'')
+      +(x.klikol?' · <b style="color:#8bc34a">klikla na ponuku</b>':x.otvoril?' · otvorila mail':' · mail neotvorila')+'</div>'
+    +'<label class="small text-muted">Ako to dopadlo</label>'
+    +'<select id="skStav" class="form-select form-select-sm bg-dark text-light border-secondary mb-2">'
+      +Object.entries((SK_CRM.stavy||{})).map(function(s2){
+        return '<option value="'+s2[0]+'"'+(s2[0]===x.stav?' selected':'')+'>'+s2[1]+'</option>'; }).join('')
+    +'</select>'
+    +'<label class="small text-muted">Poznámka z hovoru</label>'
+    +'<textarea id="skPozn" rows="3" class="form-control form-control-sm bg-dark text-light border-secondary mb-1" placeholder="S kým si hovoril, čo povedali, na čom ste sa dohodli…"></textarea>'
+    +'<div class="small text-muted mb-2">Poznámky sa pridávajú, staré ostávajú.</div>'
+    +'<label class="small text-muted">Ozvať sa znova (nechaj prázdne, ak netreba)</label>'
+    +'<div class="d-flex gap-1 mb-1">'
+      +'<input type="date" id="skOzvat" class="form-control form-control-sm bg-dark text-light border-secondary" value="'+(x.ozvat_sa||'')+'" style="color-scheme:dark">'
+      +'<button type="button" class="btn btn-sm btn-outline-secondary" onclick="skOzvatZa(7)">+7 dní</button>'
+      +'<button type="button" class="btn btn-sm btn-outline-secondary" onclick="skOzvatZa(30)">+mesiac</button>'
+      +'<button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById(&quot;skOzvat&quot;).value=&quot;&quot;">zrušiť</button>'
+    +'</div>'
+    +'<div class="small text-muted mb-3">V ten deň sa škola sama objaví hore medzi „Dnes sa ozvať".</div>'
+    +'<div class="fw-semibold small mb-1">História</div>'
+    +'<div style="max-height:170px;overflow:auto;font-size:.82rem">'+hist+'</div>',
+    async function(wrap, close){
+      const body={ stav:wrap.querySelector('#skStav').value,
+        poznamka:wrap.querySelector('#skPozn').value.trim(),
+        ozvat_sa:wrap.querySelector('#skOzvat').value||'',
+        volane:true };
+      const r=await api('/api/admin/schools/'+id+'/crm',{method:'POST',body:JSON.stringify(body)});
+      if(r && r.error) throw new Error(r.error);
+      close(); loadSkolyCrm();
+    });
+}
+function skOzvatZa(dni){
+  const d=new Date(); d.setDate(d.getDate()+dni);
+  document.getElementById('skOzvat').value=_fmtD(d);
 }
 
 /* ═══ FINANCIE & ÚČTOVNÍCTVO — jedna obrazovka ═══════════════════════════

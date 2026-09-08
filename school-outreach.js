@@ -213,13 +213,24 @@ module.exports = function initSchoolOutreach(ctx) {
   });
 
   // ── Prehľad + štatistika ────────────────────────────────────────────────────
+  // Škola dostala viac mailov (prvý + follow-up), preto sa otvorenie a klik
+  // hľadá naprieč VŠETKÝMI jej mailmi, nie len tým z mail_log_id — predtým sa
+  // otvorenie follow-upu nikde neprejavilo.
   async function withMail(list) {
-    const ids = list.map(s => s.mail_log_id).filter(Boolean);
-    const byId = {};
-    if (ids.length) for (const l of await q.find(db.mail_log, { _id: { $in: ids } })) byId[l._id] = l;
-    return list.map(s => ({ ...s,
-      opened_at: (byId[s.mail_log_id] || {}).opened_at || null,
-      clicked_at: (byId[s.mail_log_id] || {}).clicked_at || null }));
+    const maily = await q.find(db.mail_log, {});
+    const podlaAdresy = {};
+    for (const l of maily) {
+      const e = String(l.to || '').toLowerCase();
+      if (!e) continue;
+      const p = podlaAdresy[e] = podlaAdresy[e] || { opened_at: null, clicked_at: null, count: 0 };
+      p.count++;
+      if (l.opened_at && (!p.opened_at || l.opened_at < p.opened_at)) p.opened_at = l.opened_at;
+      if (l.clicked_at && (!p.clicked_at || l.clicked_at < p.clicked_at)) p.clicked_at = l.clicked_at;
+    }
+    return list.map(s => {
+      const p = podlaAdresy[String(s.email || '').toLowerCase()] || {};
+      return { ...s, opened_at: p.opened_at || null, clicked_at: p.clicked_at || null, mail_count: p.count || 0 };
+    });
   }
 
   app.get('/api/admin/schools', adminAuth, async (req, res) => {
@@ -471,6 +482,107 @@ module.exports = function initSchoolOutreach(ctx) {
 
   // ── Ručná úprava (stav po telefonáte, poznámka, oprava adresy) ──────────────
   const STAVY = ['new', 'sent', 'replied', 'meeting', 'won', 'lost'];
+  // ── ŠKOLY AKO CRM ──────────────────────────────────────────────────────────
+  // Marek 8. 9.: „aby sa s tým dalo pracovať — navolávať, písať poznámky, triediť."
+  // Beátka volá a keď sa dohodnú na neskoršom telefonáte, odloží školu na dátum
+  // a v ten deň sa jej sama vráti medzi „na dnes".
+  const CRM_STAVY = {
+    nove:      'Nevolané',
+    dovolane:  'Dovolané',
+    odlozene:  'Odložené — ozvať sa',
+    stretnutie:'Dohodnuté stretnutie',
+    nezaujem:  'Nemá záujem',
+    ziskane:   'Získaná škola',
+  };
+  // Pásma podľa dojazdu z Detvy — Marek tam musí chodiť každý týždeň.
+  const PASMA = [
+    { id:1, nazov:'do 25 min', obce:['Detva','Hriňová','Očová','Zvolenská Slatina','Kriváň','Vígľaš','Detvianska Huta','Slatinské Lazy','Zvolen','Sliač','Budča'] },
+    { id:2, nazov:'25–45 min', obce:['Krupina','Bzovík','Sebechleby','Hontianske Nemce','Hontianske Moravce','Cerovo','Senohrad','Dobrá Niva','Pliešovce','Dudince','Banská Bystrica','Badín','Selce','Slovenská Ľupča','Poniky','Hrochoť','Ľubietová','Brusno','Banská Štiavnica','Svätý Anton','Štiavnické Bane','Banská Belá','Vyhne','Žiar nad Hronom','Hliník nad Hronom','Trnavá Hora','Jastrabá','Janova Lehota','Horná Ždaňa','Kremnica','Lučenec','Halič','Poltár','Lovinobaňa','Veľké Dravce','Divín','Cinobaňa','Kalinovo','Málinec','Utekáč'] },
+    { id:3, nazov:'45–70 min', obce:['Brezno','Predajná','Nemecká','Valaská','Čierny Balog','Beňuš','Heľpa','Pohronská Polhora','Fiľakovo','Radzovce','Husiná','Veľký Krtíš','Nová Baňa','Brehy','Žarnovica','Župkov','Hodruša-Hámre','Hronský Beňadik','Tekovská Breznica','Malá Lehota','Veľká Lehota','Rimavská Sobota','Hnúšťa','Klenovec','Hrachovo','Rimavská Baňa','Kokava nad Rimavicou','Tisovec','Ožďany','Jesenské'] },
+  ];
+  const pasmoPre = obec => (PASMA.find(p => p.obce.includes(String(obec||'').trim())) || {id:4, nazov:'nad 70 min'});
+
+  // Zoznam pre CRM — s tým, či mail otvorili, kliknuli, kedy sa im volalo a kedy sa ozvať.
+  app.get('/api/admin/schools/crm', adminAuth, async (req, res) => {
+    try {
+      const dnes = dnesSK();
+      const skoly = await withMail(await q.find(db.schools, {}));
+      const rows = skoly.filter(x => !x.unsubscribed).map(x => {
+        const p = pasmoPre(x.city);
+        const stav = x.crm_stav || (x.status === 'won' ? 'ziskane' : x.status === 'lost' ? 'nezaujem' : 'nove');
+        return {
+          id: x._id, name: x.name || '—', city: x.city || '', director: x.director || '',
+          phone: x.phone || '', email: x.email || '',
+          pasmo: p.id, pasmo_nazov: p.nazov,
+          otvoril: !!x.opened_at, klikol: !!x.clicked_at,
+          sent_at: x.sent_at ? String(x.sent_at).slice(0,10) : null,
+          stav, stav_nazov: CRM_STAVY[stav] || stav,
+          volane_at: x.crm_volane_at || null,
+          volal: x.crm_volal || '',
+          ozvat_sa: x.crm_ozvat_sa || null,
+          // „na dnes" = odložená škola, ktorej termín už nastal
+          // vyriešená škola (získaná/bez záujmu) sa už medzi 'na dnes' nevracia
+          na_dnes: !!(x.crm_ozvat_sa && String(x.crm_ozvat_sa).slice(0,10) <= dnes
+            && !['ziskane','nezaujem'].includes(stav)),
+          po_termine: !!(x.crm_ozvat_sa && String(x.crm_ozvat_sa).slice(0,10) < dnes
+            && !['ziskane','nezaujem'].includes(stav)),
+          poznamky: Array.isArray(x.crm_poznamky) ? x.crm_poznamky.slice(-20) : [],
+          posledna_poznamka: (Array.isArray(x.crm_poznamky) && x.crm_poznamky.length)
+            ? x.crm_poznamky[x.crm_poznamky.length-1].text : '',
+        };
+      });
+      const suc = {
+        spolu: rows.length,
+        na_dnes: rows.filter(r => r.na_dnes).length,
+        nevolane: rows.filter(r => r.stav === 'nove').length,
+        odlozene: rows.filter(r => r.stav === 'odlozene').length,
+        stretnutia: rows.filter(r => r.stav === 'stretnutie').length,
+        ziskane: rows.filter(r => r.stav === 'ziskane').length,
+        nezaujem: rows.filter(r => r.stav === 'nezaujem').length,
+        otvorili: rows.filter(r => r.otvoril).length,
+        klikli: rows.filter(r => r.klikol).length,
+      };
+      res.json({ ok: true, rows, totals: suc, stavy: CRM_STAVY });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Zápis z hovoru — stav, poznámka, termín ozvania sa. Poznámky sa pridávajú,
+  // neprepisujú: pri ďalšom hovore treba vidieť, čo padlo minule.
+  app.post('/api/admin/schools/:id/crm', adminAuth, async (req, res) => {
+    try {
+      const s2 = await q.one(db.schools, { _id: req.params.id });
+      if (!s2) return res.status(404).json({ error: 'Škola nenájdená' });
+      const kto = await q.one(db.users, { _id: req.session.uid });
+      const set = { updated_at: nowISO() };
+
+      if (req.body.stav) {
+        if (!CRM_STAVY[req.body.stav]) return res.status(400).json({ error: 'Neznámy stav' });
+        set.crm_stav = req.body.stav;
+        // stav v pôvodnom poli držíme zosúladený, nech drip aj štatistiky sedia
+        if (req.body.stav === 'ziskane') set.status = 'won';
+        else if (req.body.stav === 'nezaujem') set.status = 'lost';
+        else if (req.body.stav === 'stretnutie') set.status = 'meeting';
+      }
+      if (req.body.volane) { set.crm_volane_at = nowISO(); set.crm_volal = (kto && kto.name) || ''; }
+
+      if (req.body.ozvat_sa !== undefined) {
+        const d = String(req.body.ozvat_sa || '').slice(0, 10);
+        if (!d) set.crm_ozvat_sa = null;
+        else if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || isNaN(Date.parse(d)))
+          return res.status(400).json({ error: 'Neplatný dátum' });
+        else set.crm_ozvat_sa = d;
+      }
+
+      const text = String(req.body.poznamka || '').trim().slice(0, 1000);
+      if (text) {
+        const doteraz = Array.isArray(s2.crm_poznamky) ? s2.crm_poznamky : [];
+        set.crm_poznamky = [...doteraz, { text, at: nowISO(), kto: (kto && kto.name) || '' }].slice(-50);
+      }
+      await q.update(db.schools, { _id: s2._id }, { $set: set });
+      res.json({ ok: true, school: await q.one(db.schools, { _id: s2._id }) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   app.post('/api/admin/schools/:id', adminAuth, async (req, res) => {
     try {
       const s = await q.one(db.schools, { _id: req.params.id });
