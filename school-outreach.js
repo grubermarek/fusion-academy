@@ -592,6 +592,9 @@ module.exports = function initSchoolOutreach(ctx) {
         else if (req.body.stav === 'stretnutie') set.status = 'meeting';
       }
       if (req.body.volane) { set.crm_volane_at = nowISO(); set.crm_volal = (kto && kto.name) || ''; }
+      // Neoverený kontakt (adresa z katalógu, škola nemá web) — drip ho preskočí,
+      // kým sa mail nepotvrdí telefonicky. Odraz zhoršuje reputáciu odosielateľa.
+      if (req.body.kontakt_neovereny !== undefined) set.kontakt_neovereny = !!req.body.kontakt_neovereny;
 
       if (req.body.ozvat_sa !== undefined) {
         const d = String(req.body.ozvat_sa || '').slice(0, 10);

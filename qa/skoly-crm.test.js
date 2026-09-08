@@ -149,6 +149,14 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     await new Promise(r => setTimeout(r, 300));
     ok('získaná škola → won', rd('schools.db').find(x => x._id === 'qaSk00000000003').status === 'won');
 
+    console.log('\n5b) Neoverený kontakt sa nerozposiela:');
+    await j('/api/admin/schools/qaSk00000000004/crm', { method: 'POST', body: { kontakt_neovereny: true, poznamka: 'Adresa len z katalógu.' } }, adm);
+    await new Promise(r => setTimeout(r, 300));
+    ok('príznak sa uloží', rd('schools.db').find(x => x._id === 'qaSk00000000004').kontakt_neovereny === true);
+    await j('/api/admin/schools/qaSk00000000004/crm', { method: 'POST', body: { kontakt_neovereny: false } }, adm);
+    await new Promise(r => setTimeout(r, 300));
+    ok('a dá sa zrušiť', rd('schools.db').find(x => x._id === 'qaSk00000000004').kontakt_neovereny === false);
+
     console.log('\n6) Čo nesmie prejsť:');
     ok('neznámy stav', (await j('/api/admin/schools/qaSk00000000001/crm', { method: 'POST', body: { stav: 'hocico' } }, adm)).status === 400);
     ok('nezmyselný dátum', (await j('/api/admin/schools/qaSk00000000001/crm', { method: 'POST', body: { ozvat_sa: 'zajtra' } }, adm)).status === 400);

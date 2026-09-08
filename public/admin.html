@@ -4704,12 +4704,15 @@ function skOpen(id){
       +'<button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById(&quot;skOzvat&quot;).value=&quot;&quot;">zrušiť</button>'
     +'</div>'
     +'<div class="small text-muted mb-3">V ten deň sa škola sama objaví hore medzi „Dnes sa ozvať".</div>'
+    +'<div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="skNeover"'+(x.kontakt_neovereny?' checked':'')+'>'
+      +'<label class="form-check-label small text-muted" for="skNeover">Mail je neoverený — nerozposielať, kým ho nepotvrdím telefonicky</label></div>'
     +'<div class="fw-semibold small mb-1">História</div>'
     +'<div style="max-height:170px;overflow:auto;font-size:.82rem">'+hist+'</div>',
     async function(wrap, close){
       const body={ stav:wrap.querySelector('#skStav').value,
         poznamka:wrap.querySelector('#skPozn').value.trim(),
         ozvat_sa:wrap.querySelector('#skOzvat').value||'',
+        kontakt_neovereny:wrap.querySelector('#skNeover').checked,
         volane:true };
       const r=await api('/api/admin/schools/'+id+'/crm',{method:'POST',body:JSON.stringify(body)});
       if(r && r.error) throw new Error(r.error);
