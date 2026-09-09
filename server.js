@@ -208,6 +208,10 @@ const db = {
   amb_volume_months: new Datastore({ filename: path.join(DATA_DIR, 'amb_volume_months.db'), autoload: true }),
   amb_rank_history:  new Datastore({ filename: path.join(DATA_DIR, 'amb_rank_history.db'),  autoload: true }),
   commission_adjustments: new Datastore({ filename: path.join(DATA_DIR, 'commission_adjustments.db'), autoload: true }),
+  // Reklama: register všetkých kampaní z reklamného účtu + ich mesačné čísla.
+  // Karty v „Kampane" pokrývajú len tie, ktoré si Marek založil ručne — tu je celý účet.
+  ad_campaigns:      new Datastore({ filename: path.join(DATA_DIR, 'ad_campaigns.db'), autoload: true }),
+  ad_stats:          new Datastore({ filename: path.join(DATA_DIR, 'ad_stats.db'), autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -20381,6 +20385,179 @@ app.put('/api/admin/campaigns/:id', adminAuth, async(req,res)=>{
     res.json({ok:true});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
+
+// ── REKLAMA: celý reklamný účet, nie len založené karty ──────────────────────
+// Karty v „Kampane" pokrývali 7 kampaní zo 130 v Meta účte, takže väčšina
+// minutých peňazí nebola v appke nikde vidieť. Toto stiahne celý účet po
+// mesiacoch, uloží ho a z toho sa ráta prehľad aj CAC podľa zdroja (adspend).
+const AD_SYNC_KEY='ad_stats_sync_at';
+
+async function metaGraph(tok, url){
+  const u = url.startsWith('http')
+    ? url + '&access_token=' + encodeURIComponent(tok)
+    : 'https://graph.facebook.com/v21.0/' + url + (url.includes('?')?'&':'?') + 'access_token=' + encodeURIComponent(tok);
+  return (await fetch(u)).json();
+}
+// Graph vracia dáta po stránkach — bez dotiahnutia zvyšku by chýbali staršie mesiace.
+async function metaAll(tok, url, maxPages){
+  const out=[]; let d=await metaGraph(tok,url), p=0;
+  while(true){
+    if(d && d.error) throw new Error(d.error.message);
+    out.push(...((d&&d.data)||[])); p++;
+    if(d && d.paging && d.paging.next && p<(maxPages||40)) d=await (await fetch(d.paging.next)).json();
+    else break;
+  }
+  return out;
+}
+
+async function syncAdStats(force){
+  const tok=(await getMetaAdsToken()) || (await getMetaCapiToken());
+  if(!tok) return {ok:false, error:'no_token'};
+  const last=await q.one(db.settings,{key:AD_SYNC_KEY});
+  if(!force && last && (Date.now()-new Date(last.at||0).getTime()) < 6*3600*1000) return {ok:true, cached:true};
+  try{
+    // 1) register kampaní vrátane vypnutých — inak z histórie zmizne, čo sa už minulo
+    const camps=await metaAll(tok, META_ACT+'/campaigns?fields=id,name,effective_status,objective,created_time&limit=200');
+    // 2) mesačné čísla za celú históriu účtu (date_preset=maximum drží 36 mesiacov)
+    const ins=await metaAll(tok, META_ACT+'/insights?level=campaign&fields=campaign_id,campaign_name,spend,impressions,clicks,reach,actions&date_preset=maximum&time_increment=monthly&limit=500');
+    // 3) Nesie reklama utm_campaign? Bez neho sa registrácia ku kampani priradiť nedá
+    //    — to je jediný dôvod, prečo časť kampaní ukazuje tržbu 0 €.
+    let ads=[]; try{ ads=await metaAll(tok, META_ACT+'/ads?fields=id,campaign_id,effective_status,creative{url_tags,object_story_spec{link_data{link}}}&limit=300', 12); }catch(e){}
+    const utm={};
+    for(const a of ads){
+      const cr=a.creative||{};
+      const t=String(cr.url_tags||'')+' '+String((((cr.object_story_spec||{}).link_data)||{}).link||'');
+      if(/utm_campaign=/i.test(t)) utm[a.campaign_id]=true;
+      else if(utm[a.campaign_id]===undefined) utm[a.campaign_id]=false;
+    }
+    const teraz=nowISO();
+    const suma={};
+    for(const r of ins){
+      const cid=String(r.campaign_id||''); if(!cid) continue;
+      const month=String(r.date_start||'').slice(0,7); if(!/^\d{4}-\d{2}$/.test(month)) continue;
+      const leads=(r.actions||[]).find(a=>a.action_type==='lead');
+      const row={ platform:'meta', campaign_id:cid, campaign_name:r.campaign_name||'', month,
+        spend:+r.spend||0, impressions:+r.impressions||0, clicks:+r.clicks||0,
+        reach:+r.reach||0, leads:leads?(+leads.value||0):0, synced_at:teraz };
+      await q.update(db.ad_stats,{platform:'meta', campaign_id:cid, month},{$set:row},{upsert:true});
+      const x=suma[cid]=suma[cid]||{spend:0,impressions:0,clicks:0,leads:0,reach:0,months:[]};
+      x.spend+=row.spend; x.impressions+=row.impressions; x.clicks+=row.clicks;
+      x.leads+=row.leads; x.reach=Math.max(x.reach,row.reach); x.months.push(month);
+    }
+    for(const c of camps){
+      const x=suma[c.id]||{spend:0,impressions:0,clicks:0,leads:0,reach:0,months:[]};
+      const ms=x.months.slice().sort();
+      await q.update(db.ad_campaigns,{platform:'meta', campaign_id:c.id},{$set:{
+        platform:'meta', campaign_id:c.id, name:c.name||'', status:c.effective_status||'',
+        objective:c.objective||'', created:(c.created_time||'').slice(0,10),
+        spend:+x.spend.toFixed(2), impressions:x.impressions, clicks:x.clicks,
+        leads:x.leads, reach:x.reach,
+        first_month:ms[0]||null, last_month:ms[ms.length-1]||null,
+        ma_utm: utm[c.id]===undefined ? null : !!utm[c.id],
+        synced_at:teraz }},{upsert:true});
+    }
+    // Mesačný súčet do adspend — odtiaľ si berie CAC podľa zdroja v Marketingu.
+    // Meta API je pre zdroj „meta" pravda, preto sa ručný riadok prepíše.
+    const poMes={};
+    for(const r of ins){ const m=String(r.date_start||'').slice(0,7);
+      if(/^\d{4}-\d{2}$/.test(m)) poMes[m]=(poMes[m]||0)+(+r.spend||0); }
+    for(const m of Object.keys(poMes)){
+      await q.update(db.adspend,{month:m, source:'meta'},{$set:{month:m, source:'meta',
+        amount:+poMes[m].toFixed(2), auto:true, note:'Automaticky z Meta Ads API',
+        updated_at:teraz}},{upsert:true});
+    }
+    if(last) await q.update(db.settings,{_id:last._id},{$set:{at:teraz}});
+    else await q.insert(db.settings,{key:AD_SYNC_KEY, at:teraz});
+    console.log('📊 Reklama: '+camps.length+' kampaní, '+ins.length+' mesačných riadkov, '+Object.keys(poMes).length+' mesiacov');
+    return {ok:true, campaigns:camps.length, rows:ins.length, months:Object.keys(poMes).length};
+  }catch(e){ console.error('syncAdStats:', e.message); return {ok:false, error:e.message}; }
+}
+
+// Prehľad reklamy. mesiac = 'RRRR-MM' alebo 'all' (celá história).
+async function adOverview(mesiac){
+  const camps=await q.find(db.ad_campaigns,{});
+  const stats=await q.find(db.ad_stats,{});
+  const karty=await q.find(db.campaigns,{});
+  const kartaPre={};
+  karty.forEach(k=>{ if(k.meta_campaign_id && !kartaPre[k.meta_campaign_id]) kartaPre[k.meta_campaign_id]=k.name; });
+  const vsetko = !mesiac || mesiac==='all';
+  const vyber = vsetko ? stats : stats.filter(x=>x.month===mesiac);
+  const podla={};
+  for(const x of vyber){
+    const c=podla[x.campaign_id]=podla[x.campaign_id]||{spend:0,impressions:0,clicks:0,leads:0,reach:0};
+    c.spend+=+x.spend||0; c.impressions+=+x.impressions||0; c.clicks+=+x.clicks||0;
+    c.leads+=+x.leads||0; c.reach=Math.max(c.reach,+x.reach||0);
+  }
+  const rows=camps.map(c=>{
+    const a=podla[c.campaign_id]||{spend:0,impressions:0,clicks:0,leads:0,reach:0};
+    return { campaign_id:c.campaign_id, name:c.name, status:c.status, objective:c.objective||'',
+      created:c.created||'', first_month:c.first_month||null, last_month:c.last_month||null,
+      spend:+a.spend.toFixed(2), impressions:a.impressions, clicks:a.clicks, leads:a.leads, reach:a.reach,
+      cpc: a.clicks ? +(a.spend/a.clicks).toFixed(2) : null,
+      ctr: a.impressions ? +((a.clicks/a.impressions)*100).toFixed(2) : null,
+      cpm: a.impressions ? +((a.spend/a.impressions)*1000).toFixed(2) : null,
+      cpl: a.leads ? +(a.spend/a.leads).toFixed(2) : null,
+      ma_utm: c.ma_utm===undefined?null:c.ma_utm,
+      karta: kartaPre[c.campaign_id]||null };
+  }).filter(r=>r.spend>0).sort((a,b)=>b.spend-a.spend);
+
+  // Mesačný rad: minuté vs. zarobené. Bez tržby vedľa spendu je spend len číslo.
+  const mesiace={};
+  for(const x of stats){ const m=x.month; if(!/^\d{4}-\d{2}$/.test(m||'')) continue;
+    const y=mesiace[m]=mesiace[m]||{month:m, spend:0, clicks:0, impressions:0, leads:0};
+    y.spend+=+x.spend||0; y.clicks+=+x.clicks||0; y.impressions+=+x.impressions||0; y.leads+=+x.leads||0; }
+  const ev=await revenueEvents({includeImported:true});
+  const rad=Object.keys(mesiace).sort().map(m=>{
+    const y=mesiace[m]; const trzba=revSum(ev, m);
+    return { month:m, spend:+y.spend.toFixed(2), clicks:y.clicks, impressions:y.impressions,
+      leads:y.leads, revenue:trzba,
+      roas: y.spend ? +(trzba/y.spend).toFixed(2) : null };
+  });
+
+  const sc=(k)=>rows.reduce((s,r)=>s+(+r[k]||0),0);
+  const spend=+sc('spend').toFixed(2), clicks=sc('clicks'), impressions=sc('impressions'), leads=sc('leads');
+  const trzbaObd = vsetko ? revSum(ev) : revSum(ev, mesiac);
+  // Naviazané = kampaň má kartu v „Kampane". Bez utm sa jej registrácie nedajú priradiť.
+  const bezUtm=rows.filter(r=>r.ma_utm===false);
+  const bezKarty=rows.filter(r=>!r.karta);
+  const sync=await q.one(db.settings,{key:AD_SYNC_KEY});
+  return { ok:true, mesiac: vsetko?'all':mesiac,
+    mesiace_k_dispozicii: Object.keys(mesiace).sort().reverse(),
+    totals:{ spend, clicks, impressions, leads, kampani:rows.length,
+      cpc: clicks?+(spend/clicks).toFixed(2):null,
+      ctr: impressions?+((clicks/impressions)*100).toFixed(2):null,
+      cpm: impressions?+((spend/impressions)*1000).toFixed(2):null,
+      cpl: leads?+(spend/leads).toFixed(2):null,
+      revenue: trzbaObd, roas: spend?+(trzbaObd/spend).toFixed(2):null },
+    diery:{ bez_utm:bezUtm.length, bez_utm_spend:+bezUtm.reduce((s,r)=>s+r.spend,0).toFixed(2),
+      bez_karty:bezKarty.length, bez_karty_spend:+bezKarty.reduce((s,r)=>s+r.spend,0).toFixed(2) },
+    rows, rad, synced_at: sync ? sync.at : null };
+}
+
+app.get('/api/admin/ads/overview', adminAuth, async(req,res)=>{
+  try{ res.json(await adOverview(String(req.query.month||'all'))); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/ads/sync', adminAuth, async(req,res)=>{
+  try{ res.json(await syncAdStats(true)); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+// Servisná cesta cez IMPORT_TOKEN — rovnaký vzor ako import a venček.
+app.post('/api/service/ads-sync', async(req,res)=>{
+  const tok=process.env.IMPORT_TOKEN;
+  if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
+  try{ res.json(await syncAdStats(true)); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+app.get('/api/service/ads-overview', async(req,res)=>{
+  const tok=process.env.IMPORT_TOKEN;
+  if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
+  try{ res.json(await adOverview(String(req.query.month||'all'))); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+// Sťahuje sa na pozadí: po štarte a potom každých 6 h (vnútorná cache stráži počet volaní).
+setTimeout(()=>syncAdStats(false).catch(()=>{}), 150*1000);
+setInterval(()=>syncAdStats(false).catch(()=>{}), 6*3600*1000);
 
 app.delete('/api/admin/campaigns/:id', adminAuth, async(req,res)=>{
   const c=await q.one(db.campaigns,{_id:req.params.id});
