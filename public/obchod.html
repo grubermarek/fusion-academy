@@ -142,10 +142,13 @@ async function boot(){
   ME=me; OV=ov; PLANS=plans; STRIPE=!!cfg.stripe_enabled; PRODUCTS=Array.isArray(prods)?prods:[];
   renderMyf(); renderRecs(); renderTabs();
   api('/api/shop/event',{method:'POST',body:JSON.stringify({type:'shop_open'})});
-  const want=new URLSearchParams(location.search).get('tab')||location.hash.replace('#','');
-  showTab(['clenstva','vstupy','sukromne','merch','eventy','nakupy'].includes(want)?want:'clenstva');
-  // Priamy odkaz z reklamy otvorí rovno nákup vybraného plánu.
-  const buy=new URLSearchParams(location.search).get('buy');
+  const qsB=new URLSearchParams(location.search);
+  // Priamy odkaz z reklamy: /obchod?buy=<plán>. Musí sa prečítať PRED showTab —
+  // ten prepíše adresu na ?tab=… a parameter by sa stratil.
+  const buy=qsB.get('buy');
+  const want=qsB.get('tab')||location.hash.replace('#','');
+  const jeVstup=buy&&PLANS[buy]&&(PLANS[buy].type==='bundle'||buy==='vstup1');
+  showTab(jeVstup?'vstupy':(['clenstva','vstupy','sukromne','merch','eventy','nakupy'].includes(want)?want:'clenstva'));
   if(buy && PLANS[buy]) setTimeout(()=>openPlan(buy), 350);
 }
 function renderMyf(){
@@ -461,7 +464,8 @@ function openPlan(id){
     <div class="promo-row"><input id="mPromo" placeholder="${FA_T('shop.promo_ph')}"><button onclick="applyPromo()">${FA_T('shop.apply')}</button></div>
     <div id="mPromoMsg" class="err" style="min-height:0"></div>
     <div class="total"><span>${FA_T('shop.total')}</span><span class="gold" id="mTotal">${eur(p.price)}</span></div>
-    ${STRIPE?`<button class="paybtn" id="mStripe" onclick="payStripe()">${FA_T('shop.pay_card')}</button>`:''}
+    ${STRIPE?`<button class="paybtn" id="mStripe" onclick="payStripe()">${FA_T('shop.pay_card')}</button>
+    <p class="note" id="mStripeNote" style="display:none;color:var(--gold)"></p>`:''}
     <button class="paybtn sec" id="mManual" onclick="payManual()">${FA_T('shop.pay_cash')}</button>
     <p class="note" id="mManualNote">${FA_T('shop.cash_note',{what:p.type==='bundle'?FA_T('shop.what_entries'):FA_T('shop.what_mem')})}</p>
     <div class="err" id="mErr"></div>`;
@@ -482,6 +486,11 @@ function recalc(){
   if(man) man.style.display=renew?'none':'block';
   if(note) note.style.display=renew?'none':'block';
   if(man) man.textContent=total===0?FA_T('shop.pay_credit_only'):FA_T('shop.pay_cash');
+  // Kartou sa kredit minúť nedá — Stripe pýta plnú cenu. Nech to klientka vidí
+  // na tlačidle, nie až na výpise z účtu.
+  const st=document.getElementById('mStripe'), stN=document.getElementById('mStripeNote');
+  if(st) st.textContent=FA_T('shop.pay_card')+(cr>0?' · '+eur(base):'');
+  if(stN){ stN.textContent=cr>0?FA_T('shop.card_no_credit',{p:eur(base)}):''; stN.style.display=cr>0?'block':'none'; }
   return {renew,total,useCr};
 }
 async function applyPromo(){

@@ -665,6 +665,12 @@ function updateBuyTotal(){
   else pr.style.display='none';
   document.getElementById('buyFinalPrice').textContent = final.toFixed(2)+' €';
   document.getElementById('buyBtnLabel').textContent = final === 0 ? 'Aktivovať zľavou/kreditom' : ((_stripeEnabled ? 'Prevod / hotovosť' : 'Pokračovať k platbe') + ` (${final.toFixed(2)} €)`);
+  // Kartou sa kredit minúť nedá — Stripe pýta plnú cenu.
+  const stripeNote = document.getElementById('buyStripeNote');
+  if(stripeNote){
+    stripeNote.textContent = creditApply > 0 ? `💳 Kartou zaplatíš plnú cenu ${base.toFixed(2)} € — kredit sa uplatní pri voľbe „Prevod / hotovosť".` : '';
+    stripeNote.style.display = creditApply > 0 ? 'block' : 'none';
+  }
 }
 async function applyPromo(){
   const code=(document.getElementById('buyPromoInput').value||'').trim();
@@ -799,6 +805,7 @@ async function confirmBuy(){
     <button id="buyStripeBtn" onclick="payWithStripe()" style="display:none;width:100%;padding:.85rem;background:var(--foil,linear-gradient(102deg,#B98F3E,#F7E7B8 36%,#E7C878 58%,#B98F3E));background-size:180% auto;border:none;border-radius:.75rem;font-weight:800;color:#231A08;cursor:pointer;font-size:.95rem;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:8px">
        Zaplatiť kartou &nbsp;·&nbsp; Apple Pay &nbsp;·&nbsp; Google Pay
     </button>
+    <p id="buyStripeNote" style="display:none;font-size:.78rem;color:#E0B65A;margin:-4px 0 10px"></p>
     <div id="buyStripeDivider" style="display:none;text-align:center;font-size:.72rem;color:rgba(234,227,213,.4);margin-bottom:10px;letter-spacing:.1em;text-transform:uppercase">alebo</div>
     <p id="buyManualHint" style="font-size:.78rem;color:rgba(234,227,213,.45);margin-bottom:14px">💵 Zaplatíš v hotovosti na hodine alebo prevodom — aktivujeme hneď po prijatí platby a príde ti potvrdenie.</p>
     <button id="buyConfirmBtn" onclick="confirmBuy()" style="width:100%;padding:.8rem;background:var(--dark-4,#221E19);border:1px solid var(--gold-border,rgba(201,162,76,.28));border-radius:.75rem;font-weight:700;color:var(--cream,#EAE3D5);cursor:pointer;font-size:.95rem">
