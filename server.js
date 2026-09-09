@@ -19966,23 +19966,36 @@ async function syncMetaCampaignStats(force){
 }
 
 // Revenue attributed to a campaign = total spend of clients whose utm_campaign matches
+// Tržba priradená kampani. Zdroj je revenueEvents — to isté číslo ako vo
+// Financiách. Predtým sa tu rátali len platby cez bránu a hotovostné členstvá,
+// takže jednorazové vstupy, súkromné hodiny, merch ani vstupenky sa do žiadnej
+// kampane nikdy nezapočítali a kampaň vyzerala horšie, než v skutočnosti bola.
 async function campaignRevenueMap(){
   const users=await q.find(db.users,{is_admin:{$ne:true}});
-  const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status)&&p.user_id);
-  const membs=(await q.find(db.memberships,{})).filter(m=>!m._type && m.payment_method);
-  const rev={}; payments.forEach(p=>{ rev[p.user_id]=(rev[p.user_id]||0)+(+p.amount||0); });
-  membs.forEach(m=>{ rev[m.user_id]=(rev[m.user_id]||0)+(+m.price||0); });
+  const rev={};
+  for(const e of await revenueEvents()){ const id=e.who&&e.who.id; if(id) rev[id]=(rev[id]||0)+(+e.a||0); }
   const byCampaign={}; // campaignName(lower) -> {revenue, payers}
   const byLeadSource={}; // lead_source(lower) -> {revenue, payers} — pre form-lead kampane (import má presný zdroj)
+  const doKampane=(key,r)=>{ if(!key) return;
+    if(!byCampaign[key]) byCampaign[key]={revenue:0, payers:0};
+    byCampaign[key].revenue+=r; if(r>0) byCampaign[key].payers++; };
   users.forEach(u=>{
     const r=rev[u._id]||0;
-    const key=(u.utm_campaign||'').toLowerCase().trim();
-    if(key){ if(!byCampaign[key]) byCampaign[key]={revenue:0, payers:0};
-      byCampaign[key].revenue+=r; if(r>0) byCampaign[key].payers++; }
+    doKampane((u.utm_campaign||'').toLowerCase().trim(), r);
     const ls=(u.lead_source||'').toLowerCase().trim();
     if(ls){ if(!byLeadSource[ls]) byLeadSource[ls]={revenue:0, payers:0};
       byLeadSource[ls].revenue+=r; if(r>0) byLeadSource[ls].payers++; }
   });
+  // Vstupenka kúpená bez účtu nemá cez koho prejsť — kampaň si ju vezme z utm,
+  // ktoré nesie samotná objednávka. Ak kupujúca účet má, tržba už prišla vyššie
+  // cez ňu, tak sa sem neráta druhýkrát.
+  const maUcet=new Set(users.map(u=>String(u.email||'').toLowerCase()).filter(Boolean));
+  for(const o of await q.find(db.ev_orders,{status:'paid'})){
+    if(o.user_id || maUcet.has(String(o.buyer_email||'').toLowerCase())) continue;
+    const a=o.attr||{};
+    const key=String(a.utm_campaign || (a.first&&a.first.utm_campaign) || '').toLowerCase().trim();
+    doKampane(key, +o.total||0);
+  }
   byCampaign.__byLeadSource=byLeadSource;
   byCampaign.__rev=rev; // uid -> celkové tržby (pre gclid/inú per-user atribúciu)
   return byCampaign;
