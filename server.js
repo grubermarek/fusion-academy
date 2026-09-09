@@ -2970,6 +2970,15 @@ async function seedData() {
     await q.insert(db.settings,{key:'campaign_nazov_oprava_20260909', value:true, at:nowISO()});
   }
 
+  // Reklama „Video HEJ BABY" posiela utm_campaign=fa-video-hej-baby, karta čakala
+  // presnú zhodu s „fa-video-hej" — registrácia sa preto nezapočítala nikam.
+  // Hviezdička = prefixová zhoda (rovnako ako fa-test-*).
+  if(!(await q.one(db.settings,{key:'utm_key_video_hej_20260909'}))){
+    const n=await q.update(db.campaigns,{utm_key:'fa-video-hej'},{$set:{utm_key:'fa-video-hej*'}},{multi:true});
+    if(n) console.log('🎯 utm_key kampane Video HEJ BABY zmenený na prefix fa-video-hej*');
+    await q.insert(db.settings,{key:'utm_key_video_hej_20260909', value:true, at:nowISO()});
+  }
+
   // Augustová kampaň o tašku tu bola ako dva jednorazové boot bloky. Septembrová
   // výzva ide vlnou (referralChallengeTick nižšie), aby rešpektovala mailový
   // budžet a dávkovala sa — pri 799 adresátkach naraz časť mailov budžet zjedol.
