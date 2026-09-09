@@ -9159,10 +9159,18 @@ function phoneCore(v){
   if(d.startsWith('0')) d=d.slice(1);
   return d;
 }
+// Hľadanie ignoruje diakritiku. Na telefóne nikto nepíše „Kopuncová" s dĺžňom
+// a predtým sa taká klientka jednoducho nenašla — týkalo sa to 386 z 810 mien
+// (Marek 9. 9.: „nejde otvoriť profil niektorých klientok").
+const bezDiakritiky = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
 function userMatchesSearch(u, term){
-  const s=String(term||'').toLowerCase().trim(); if(!s) return true;
-  if(u.name?.toLowerCase().includes(s) || u.email?.toLowerCase().includes(s) || (u.phone||'').includes(s)) return true;
-  const pd=phoneCore(s);
+  const raw=String(term||'').toLowerCase().trim(); if(!raw) return true;
+  const s=bezDiakritiky(raw);
+  if(bezDiakritiky(u.name).includes(s) || bezDiakritiky(u.email).includes(s) || (u.phone||'').includes(raw)) return true;
+  // Telefón porovnávaj len vtedy, keď hľadaný výraz naozaj vyzerá ako číslo —
+  // inak „abc123" vytiahne cudziu klientku, ktorej v čísle náhodou sedia tri cifry.
+  if(/[a-z]/i.test(raw)) return false;
+  const pd=phoneCore(raw);
   return pd.length>=3 && phoneCore(u.phone).includes(pd);
 }
 app.get('/api/admin/leads', adminAuth, async(req,res)=>{
