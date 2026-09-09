@@ -1652,6 +1652,22 @@ async function seedData() {
     await q.insert(db.settings,{key:'google_campaign_20260814', value:true, at:nowISO()});
   }
 
+  // 9. 9.: Zumba Kids Detva — kartu zakladáme EŠTE PRED spustením reklamy, aby
+  // prvá registrácia mala kam spadnúť. Prefix fa-kids-detva* pokryje aj varianty
+  // kreatív (fa-kids-detva-01, -02…), nech sa dajú porovnávať v jednej kampani.
+  if(!(await q.one(db.settings,{key:'kids_campaign_20260909'}))){
+    if(!(await q.one(db.campaigns,{name:'FA — Zumba Kids Detva'}))){
+      await q.insert(db.campaigns,{ name:'FA — Zumba Kids Detva', platform:'facebook',
+        utm_key:'fa-kids-detva*', date_from:today(), date_to:'', budget:0,
+        goal:'Prihlášky detí na Zumba Kids v Detve — prvá hodina zadarmo',
+        note:'Odkaz v reklame MUSÍ niesť ?utm_source=fb&utm_medium=paid&utm_campaign=fa-kids-detva-01 (číslo podľa kreatívy). Spend a stav sa ťahajú z Meta Ads API po doplnení meta_campaign_id.',
+        spend:0, impressions:0, clicks:0, registrations:0, first_visits:0, memberships:0,
+        created_at:nowISO() });
+      console.log('🧒 Kampaň FA — Zumba Kids Detva pripravená (utm fa-kids-detva*)');
+    }
+    await q.insert(db.settings,{key:'kids_campaign_20260909', value:true, at:nowISO()});
+  }
+
   // 24.8.: kampane bez utm_key sa nedali merať — platili sme za kliky, ktoré nemali
   // kam zapadnúť (Video HEJ BABY 141 klikov, Kreatívny test 423 klikov, obe 0 registrácií
   // na karte, hoci vo funneli boli registrácie s utm_campaign fa-test-*).
