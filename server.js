@@ -1724,6 +1724,20 @@ async function seedData() {
     console.log('🧒 Zumba Kids: časy posunuté na 14:00/15:00 ('+zmenene+' hodín)');
   }
 
+  // Marek 9. 9. večer: prehodiť skupiny — mladšie deti idú neskôr.
+  // Zumba Kids 1 (4–6) o 15:00, Zumba Kids 2 (7–14) o 14:00.
+  if(!(await q.one(db.settings,{key:'zumba_kids_prehodenie_20260909c'}))){
+    const prehod=[
+      { nazov:'Zumba Kids 1 (4–6)',  od:'15:00', do:'16:00' },
+      { nazov:'Zumba Kids 2 (7–14)', od:'14:00', do:'15:00' },
+    ];
+    let n=0;
+    for(const x of prehod) n += await q.update(db.classes,{name:x.nazov},
+      {$set:{time_start:x.od, time_end:x.do}},{multi:true});
+    await q.insert(db.settings,{key:'zumba_kids_prehodenie_20260909c', value:true, at:nowISO()});
+    console.log('🧒 Zumba Kids: skupiny prehodené — 4–6 o 15:00, 7–14 o 14:00 ('+n+' hodín)');
+  }
+
   // 24.8.: kampane bez utm_key sa nedali merať — platili sme za kliky, ktoré nemali
   // kam zapadnúť (Video HEJ BABY 141 klikov, Kreatívny test 423 klikov, obe 0 registrácií
   // na karte, hoci vo funneli boli registrácie s utm_campaign fa-test-*).
@@ -10428,6 +10442,70 @@ app.post('/api/admin/users/:id/merge-into', adminAuth, async(req,res)=>{
   }catch(e){ res.status(e.code||500).json({error:e.message}); }
 });
 
+// ── Servisné prevádzkové opravy (IMPORT_TOKEN) ───────────────────────────────
+// Na doúčtovanie toho, čo sa na hodine stalo, ale v appke sa nezapísalo.
+const servisToken = req => { const t=process.env.IMPORT_TOKEN; return t && req.headers['x-import-token']===t; };
+
+// Vyber platbu k existujúcej rezervácii (rovnaká cesta ako tlačidlo trénera).
+app.post('/api/service/collect', async(req,res)=>{
+  if(!servisToken(req)) return res.status(404).end();
+  try{
+    const b=await q.one(db.bookings,{_id:String(req.body.booking_id||'')});
+    if(!b) return res.status(404).json({error:'Rezervácia nenájdená'});
+    if(b.entry_collected) return res.status(400).json({error:'Už vybrané'});
+    const amount=+req.body.amount||10;
+    const method=['cash','card','transfer'].includes(req.body.method)?req.body.method:'cash';
+    const kto=await q.one(db.users,{email:'gruber.marek@gmail.com'});
+    const v=await vyberVstupne(b,{amount, method, by:(kto&&kto._id)||'service', byName:(kto&&kto.name)||'Marek Gruber'});
+    const u=await q.one(db.users,{_id:b.user_id});
+    res.json({ok:true, klientka:b.user_name, suma:amount, ...v, vstupy_po:(u&&u.single_entries)||0});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Doplň rezerváciu na hodinu a rovno ju označ ako odchodenú (klientka na hodine bola).
+app.post('/api/service/book-attend', async(req,res)=>{
+  if(!servisToken(req)) return res.status(404).end();
+  try{
+    const u=await q.one(db.users,{_id:String(req.body.user_id||'')});
+    const cls=await q.one(db.classes,{_id:String(req.body.class_id||'')});
+    if(!u||!cls) return res.status(404).json({error:'Klientka alebo hodina nenájdená'});
+    const bdate=String(req.body.date||today()).slice(0,10);
+    let b=await q.one(db.bookings,{class_id:cls._id, user_id:u._id, booking_date:bdate, status:{$ne:'cancelled'}});
+    if(!b){
+      b=await q.insert(db.bookings,{ class_id:cls._id, class_name:cls.name, class_emoji:cls.emoji||'💃',
+        class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
+        day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
+        user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||'',
+        booking_date:bdate, status:'confirmed', free_class:false,
+        access_method: req.body.pay_plan ? 'pay_on_site' : (req.body.access_method||'pay_on_site'),
+        pay_on_site: !!req.body.pay_plan || !!req.body.pay_on_site,
+        pay_amount: req.body.pay_amount!=null ? +req.body.pay_amount : null,
+        pay_plan: req.body.pay_plan||null,
+        pay_plan_name: req.body.pay_plan && MEMBERSHIP_PLANS[req.body.pay_plan] ? MEMBERSHIP_PLANS[req.body.pay_plan].name : null,
+        notes:'Doplnené štúdiom', created_at:nowISO() });
+    }
+    if(req.body.attended!==false && b.status!=='attended'){
+      await q.update(db.bookings,{_id:b._id},{$set:{status:'attended', attendance_status:'attended',
+        attended_at:nowISO(), attended_by:'service', attendance_source:'trainer'}});
+      await creditAttendance(u).catch(()=>{});
+    }
+    res.json({ok:true, booking_id:b._id, klientka:u.name, hodina:cls.name+' '+cls.location+' '+bdate});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Zruš nezaplatenú žiadosť o platbu (aby sa neúčtovala druhýkrát).
+app.post('/api/service/payment-cancel', async(req,res)=>{
+  if(!servisToken(req)) return res.status(404).end();
+  try{
+    const p=await q.one(db.payments,{_id:String(req.body.payment_id||'')});
+    if(!p) return res.status(404).json({error:'Platba nenájdená'});
+    if(p.status!=='pending_manual'&&p.status!=='pending') return res.status(400).json({error:'Nie je čakajúca (stav: '+p.status+')'});
+    await q.update(db.payments,{_id:p._id},{$set:{status:'cancelled', cancelled_at:nowISO(),
+      note:String(req.body.reason||'Zrušené — zaplatené inou cestou')}});
+    res.json({ok:true, suma:p.amount, popis:p.description});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Servisná cesta cez IMPORT_TOKEN — rovnaký vzor ako import a venček.
 app.post('/api/service/merge-users', async(req,res)=>{
   const tok=process.env.IMPORT_TOKEN;
@@ -14713,20 +14791,41 @@ async function adminPayNotify(user, kind, title, body){
 // Vybrať vstupné na mieste k rezervácii (pay_on_site / bez členstva) — zapíše predaj,
 // vystaví doklad a označí rezerváciu ako zaplatenú. Rieši prípad „už je booknutá,
 // nedá sa jej predať vstup".
-app.post('/api/admin/bookings/:id/collect', (req,res,next)=>trainerAuth(req,res,next), async(req,res)=>{
-  try{
-    const b=await q.one(db.bookings,{_id:req.params.id});
-    if(!b) return res.status(404).json({error:'Rezervácia nenájdená'});
-    if(b.entry_collected) return res.status(400).json({error:'Vstup k tejto rezervácii je už vybraný'});
-    const amount=+req.body.amount||10;
-    const method=req.body.method==='card'?'card':(req.body.method==='transfer'?'transfer':'cash');
-    const methodTxt=method==='cash'?'hotovosť':(method==='card'?'karta':'prevod');
-    await q.update(db.bookings,{_id:b._id},{$set:{entry_collected:{amount, method, at:nowISO(), by:req.session.uid}, pay_on_site:false}});
-    const buyer=await q.one(db.users,{_id:b.user_id});
+// Výber platby na mieste. Keď si klientka pri rezervácii vybrala konkrétny plán
+// (permanentka, členstvo), MUSÍ sa aktivovať — inak zaplatí 80 € a nedostane nič.
+// Predtým sa všetko zapisovalo ako „jednorazový vstup" a plán sa ignoroval.
+async function vyberVstupne(b, { amount, method, by, byName }) {
+  const methodTxt = method==='cash' ? 'hotovosť' : (method==='card' ? 'karta' : 'prevod');
+  const plan = b.pay_plan && MEMBERSHIP_PLANS[b.pay_plan] ? MEMBERSHIP_PLANS[b.pay_plan] : null;
+  const jeBalik = plan && plan.type==='bundle';
+  const buyer = await q.one(db.users,{_id:b.user_id});
+
+  await q.update(db.bookings,{_id:b._id},{$set:{
+    entry_collected:{amount, method, at:nowISO(), by}, pay_on_site:false,
+    ...(plan ? {access_method: jeBalik ? 'single_entry' : 'membership'} : {}) }});
+
+  if(plan){
+    // Plán sa aktivuje rovnakou cestou ako pri platbe kartou.
+    await activateMembership(b.user_id, b.pay_plan, plan.duration_days||30);
+    // Permanentka kúpená na hodine kryje aj TÚTO hodinu — inak by klientke
+    // ostalo 10 vstupov a hodina, na ktorej stojí, by nebola zaplatená.
+    if(jeBalik) await odpocitajVstup(b.user_id, 'single_entries').catch(()=>{});
+    await q.insert(db.transactions,{type:'membership', user_id:b.user_id, user_name:b.user_name,
+      amount, payment_method:method, plan_id:b.pay_plan,
+      note:`${plan.name} — predané na hodine ${b.class_name} ${b.booking_date} (${methodTxt})`,
+      booking_id:b._id, created_at:nowISO(), month:today().slice(0,7)});
+    createInvoice({user_id:b.user_id, client_name:b.user_name, client_email:buyer?.email,
+      items:[{desc:`${plan.name} — predané na hodine (${b.booking_date})`, qty:1, total:amount}],
+      total:amount, method:methodTxt});
+    await q.insert(db.notifications,{user_id:b.user_id,type:'payment',
+      title:'🧾 Potvrdenie o platbe — '+plan.name,
+      body:`Prijali sme ${amount.toFixed(2)} € (${methodTxt}) za ${plan.name}.`+
+        (jeBalik ? ' Vstupy máš pripísané v aplikácii.' : ' Členstvo je aktívne.'),
+      read:false, created_at:nowISO()}).catch(()=>{});
+  } else {
     await q.insert(db.transactions,{type:'single_entry', user_id:b.user_id, user_name:b.user_name,
       amount, payment_method:method, note:`Jednorazový vstup — ${b.class_name} ${b.booking_date} (${methodTxt})`,
       booking_id:b._id, created_at:nowISO(), month:today().slice(0,7)});
-    trackPurchase(b.user_id, amount);
     createInvoice({user_id:b.user_id, client_name:b.user_name, client_email:buyer?.email,
       items:[{desc:`Jednorazový vstup — ${b.class_name} (${b.booking_date})`, qty:1, total:amount}],
       total:amount, method:methodTxt});
@@ -14734,27 +14833,39 @@ app.post('/api/admin/bookings/:id/collect', (req,res,next)=>trainerAuth(req,res,
       title:'🧾 Potvrdenie o platbe — vstup',
       body:`Prijali sme ${amount.toFixed(2)} € (${methodTxt}) za vstup na ${b.class_name} ${b.booking_date}. Ďakujeme!`,
       read:false, created_at:nowISO()}).catch(()=>{});
-    // Hotovosť ostáva fyzicky u toho, kto ju vybral, kým ju neodovzdá — musí sa
-    // preto zapísať do jeho evidencie, rovnako ako pri predaji členstva či
-    // súkromnej hodine. (Marek 30. 8.: suma aj klik fungovali, ale vybraté
-    // peniaze sa nikde neevidovali a tréner nevedel, koľko má u seba.)
+  }
+  trackPurchase(b.user_id, amount);
+
+  // Hotovosť ostáva u toho, kto ju vybral, kým ju neodovzdá.
+  if(method==='cash' && amount>0){
+    await q.insert(db.payouts,{_type:'cash_collected', trainer_id:by, trainer_name:byName||'—', amount,
+      note:(plan?plan.name:'Vstup')+' — '+b.user_name+' · '+b.class_name+' '+b.booking_date,
+      booking_id:b._id, month:today().slice(0,7), date:today(), status:'held', created_at:nowISO()}).catch(()=>{});
+  }
+  return { plan: plan? plan.name : null, bundle: !!jeBalik };
+}
+
+app.post('/api/admin/bookings/:id/collect', (req,res,next)=>trainerAuth(req,res,next), async(req,res)=>{
+  try{
+    const b=await q.one(db.bookings,{_id:req.params.id});
+    if(!b) return res.status(404).json({error:'Rezervácia nenájdená'});
+    if(b.entry_collected) return res.status(400).json({error:'Vstup k tejto rezervácii je už vybraný'});
+    const amount=+req.body.amount||10;
+    const method=req.body.method==='card'?'card':(req.body.method==='transfer'?'transfer':'cash');
+    const vyberca=await q.one(db.users,{_id:req.session.uid});
+    const vysl=await vyberVstupne(b,{amount, method, by:req.session.uid, byName:(vyberca&&vyberca.name)||'—'});
+    // Adminovi to hlásime len ak vyberal niekto iný — inak by si Marek posielal
+    // notifikácie sám sebe pri každom vstupnom.
     if(method==='cash' && amount>0){
-      const vyberca=await q.one(db.users,{_id:req.session.uid});
-      await q.insert(db.payouts,{_type:'cash_collected', trainer_id:req.session.uid,
-        trainer_name:(vyberca&&vyberca.name)||'—', amount,
-        note:'Vstup — '+b.user_name+' · '+b.class_name+' '+b.booking_date,
-        booking_id:b._id, month:today().slice(0,7), date:today(), status:'held', created_at:nowISO()}).catch(()=>{});
-      // Adminovi to hlásime len ak vyberal niekto iný — inak by si Marek posielal
-      // notifikácie sám sebe pri každom vstupnom.
       for(const a of await q.find(db.users,{is_admin:true})){
         if(a._id===req.session.uid) continue;
         await q.insert(db.notifications,{user_id:a._id, type:'cash_collected',
-          title:'💵 '+((vyberca&&vyberca.name)||'Tréner')+': vstup '+amount.toFixed(2)+' €',
+          title:'💵 '+((vyberca&&vyberca.name)||'Tréner')+': '+(vysl.plan||'vstup')+' '+amount.toFixed(2)+' €',
           body:b.user_name+' · '+b.class_name+' '+b.booking_date+' — hotovosť u trénera.',
           read:false, created_at:nowISO()}).catch(()=>{});
       }
     }
-    res.json({ok:true});
+    res.json({ok:true, ...vysl});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -15781,8 +15892,12 @@ app.post('/api/kiosk/checkin', async(req,res)=>{
       const upd={};
       if(!hasMem){ if(hasFree) upd.free_class_used=true; else if(hasCredit) upd.free_credits=(u.free_credits||0)-1; else if(hasSingle) upd.single_entries=(u.single_entries||0)-1; }
       if(Object.keys(upd).length) await q.update(db.users,{_id:u._id},{$set:upd});
+      // Bez access_method nebolo z rezervácie vidieť, čím bola hodina krytá —
+      // v zozname trénera svietilo prázdno a spotrebovaný vstup nezanechal stopu.
+      const kiosKrytie = hasMem ? 'membership' : hasFree ? 'free_class'
+        : hasCredit ? 'free_credit' : hasSingle ? 'single_entry' : 'membership';
       await q.insert(db.bookings,{ class_id:cls._id, class_name:cls.name, class_emoji:cls.emoji||'💃',
-        free_class: !hasMem&&hasFree,
+        free_class: !hasMem&&hasFree, access_method: kiosKrytie,
         class_location:cls.location, class_time_start:cls.time_start, day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
         user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||'',
         booking_date:todayS, status:'attended', attended_at:nowISO(), attended_by:'kiosk_'+a.slug,
