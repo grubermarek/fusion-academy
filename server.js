@@ -1684,10 +1684,10 @@ async function seedData() {
       address:'Fusion Academy, Záhradná 7, Detva', capacity:30,
       price:9, color:'#F0C060', active:true };
     const skupiny=[
-      { nazov:'Zumba Kids 1 (4–6)', level:'Deti 4–6 rokov', od:'15:00', do:'16:00',
-        popis:'Zumba pre najmenších. Krátke choreografie, veľa hry, pohyb cez rozprávku a rytmus. Prvá hodina ZADARMO!' },
-      { nazov:'Zumba Kids 2 (7–14)', level:'Deti 7–14 rokov', od:'16:00', do:'17:00',
-        popis:'Zumba pre školákov. Skutočné choreografie, latino rytmy a vystúpenia pred publikom. Prvá hodina ZADARMO!' },
+      { nazov:'Zumba Kids 1 (4–6)', level:'Deti 4–6 rokov', od:'14:00', do:'15:00',
+        popis:'Zumba pre najmenších. Krátke choreografie, veľa hry, pohyb cez rozprávku a rytmus.' },
+      { nazov:'Zumba Kids 2 (7–14)', level:'Deti 7–14 rokov', od:'15:00', do:'16:00',
+        popis:'Zumba pre školákov. Skutočné choreografie, latino rytmy a vystúpenia pred publikom.' },
     ];
     let pridane=0;
     for(const den of [5,0]){          // piatok, nedeľa
@@ -1700,6 +1700,28 @@ async function seedData() {
     }
     await q.insert(db.settings,{key:'zumba_kids_hodiny_20260909', value:true, at:nowISO()});
     console.log('🧒 Zumba Kids: otvorených '+pridane+' hodín, staré detské tance zrušené');
+  }
+
+  // Marek posunul časy: 4–6 o 14:00, 7–14 o 15:00 (pôvodne 15:00 a 16:00).
+  if(!(await q.one(db.settings,{key:'zumba_kids_casy_20260909b'}))){
+    const posun=[
+      { nazov:'Zumba Kids 1 (4–6)',  od:'14:00', do:'15:00' },
+      { nazov:'Zumba Kids 2 (7–14)', od:'15:00', do:'16:00' },
+    ];
+    let zmenene=0;
+    for(const x of posun){
+      zmenene += await q.update(db.classes,{name:x.nazov},
+        {$set:{time_start:x.od, time_end:x.do}},{multi:true});
+    }
+    // Prvá hodina sa už nedáva zadarmo — popis to nesmie sľubovať.
+    await q.update(db.classes,{name:{$in:posun.map(x=>x.nazov)}},
+      {$unset:{}},{multi:true}).catch(()=>{});
+    for(const c of await q.find(db.classes,{name:{$in:posun.map(x=>x.nazov)}})){
+      const bez=String(c.description||'').replace(/s*Prvá hodina ZADARMO!s*/,'').trim();
+      if(bez!==c.description) await q.update(db.classes,{_id:c._id},{$set:{description:bez}});
+    }
+    await q.insert(db.settings,{key:'zumba_kids_casy_20260909b', value:true, at:nowISO()});
+    console.log('🧒 Zumba Kids: časy posunuté na 14:00/15:00 ('+zmenene+' hodín)');
   }
 
   // 24.8.: kampane bez utm_key sa nedali merať — platili sme za kliky, ktoré nemali

@@ -1052,6 +1052,29 @@ function fmtDMY(d){
 
 // ── PREVIEW REŽIM (admin): /?preview=1 — prejdi si celý onboarding bez zápisu dát.
 // Registrácia aj rezervácia sa len simulujú; guide na dashboarde sa spustí cez ?welcome=1.
+// ── Zámer nákupu z reklamy ──────────────────────────────────────────────────
+// Reklama vedie na /?buy=kids. Kým si rodič vytvorí účet, parameter by sa
+// stratil, tak si ho odložíme na 24 h a po prihlásení ho použijeme ako cieľ.
+(function(){
+  try{
+    const b=new URLSearchParams(location.search).get('buy');
+    if(b) localStorage.setItem('fa_buy_intent', JSON.stringify({v:b, at:Date.now()}));
+  }catch(e){}
+})();
+function faPoPrihlaseni(def){
+  try{
+    const raw=localStorage.getItem('fa_buy_intent');
+    if(raw){
+      const o=JSON.parse(raw);
+      if(o && o.v && o.at && Date.now()-o.at < 24*3600*1000){
+        localStorage.removeItem('fa_buy_intent');
+        return '/obchod?buy='+encodeURIComponent(o.v);
+      }
+      localStorage.removeItem('fa_buy_intent');
+    }
+  }catch(e){}
+  return def || '/client-dashboard';
+}
 const _preview = new URLSearchParams(location.search).get('preview')==='1';
 if(_preview){
   document.addEventListener('DOMContentLoaded',()=>{
@@ -1074,7 +1097,7 @@ if(_preview){
       const dashUrl=me.is_admin?'/admin':me.user_type==='trainer'?'/trainer':'/client-dashboard';
       const qs=new URLSearchParams(location.search);
       if(!qs.has('home')){
-        location.replace(dashUrl);
+        location.replace(faPoPrihlaseni(dashUrl));
         return;
       }
       document.getElementById('s0').style.display='none';
@@ -1632,7 +1655,7 @@ function scrollToTop(){
             attribution: window.faGetAttribution ? window.faGetAttribution() : {} };
           const r=await fetch('/api/auth/google',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)});
           const d=await r.json();
-          if(r.ok && d.ok){ if(window.faTrack&&d.new_account) window.faTrack('CompleteRegistration'); window.location.href=d.redirect_to||'/client-dashboard'; }
+          if(r.ok && d.ok){ if(window.faTrack&&d.new_account) window.faTrack('CompleteRegistration'); window.location.href=faPoPrihlaseni(d.redirect_to); }
           else { showErr && showErr('regErr', d.error||'Google prihlásenie zlyhalo'); }
         }catch(e){ showErr && showErr('regErr','Google prihlásenie zlyhalo — skús email a heslo.'); }
       }});
@@ -1676,7 +1699,7 @@ async function doLogin(){
     }
     // Refresh _me so booking modal shows correct state
     _me = await fetch('/api/me',{credentials:'include'}).then(r=>r.json()).catch(()=>null);
-    window.location.href=d.redirect_to||'/client-dashboard';
+    window.location.href=faPoPrihlaseni(d.redirect_to);
   }catch{showErr('loginErr','Chyba pripojenia');}
 }
 function showResetBox(){
@@ -1695,7 +1718,7 @@ async function doSetNewPassword(){
       body:JSON.stringify({email,password:np}),credentials:'include'});
     const d=await r.json();
     if(!r.ok){showErr('loginErr',d.error||'Nepodarilo sa vytvoriť heslo');return;}
-    window.location.href=d.redirect_to||'/client-dashboard';
+    window.location.href=faPoPrihlaseni(d.redirect_to);
   }catch{showErr('loginErr','Chyba pripojenia');}
 }
 
