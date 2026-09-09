@@ -20571,7 +20571,9 @@ async function adOverview(mesiac){
       cpc: clicks?+(spend/clicks).toFixed(2):null,
       ctr: impressions?+((clicks/impressions)*100).toFixed(2):null,
       cpm: impressions?+((spend/impressions)*1000).toFixed(2):null,
-      cpl: leads?+(spend/leads).toFixed(2):null,
+      // Cenu za lead delíme len výdajom kampaní, ktoré leady naozaj priniesli —
+      // inak by ju nafúkli peniaze minuté na kampane s úplne iným cieľom.
+      cpl: leads?+(rows.filter(r=>r.leads>0).reduce((s,r)=>s+r.spend,0)/leads).toFixed(2):null,
       revenue: trzbaObd, roas: spend?+(trzbaObd/spend).toFixed(2):null,
       zive:zive.length },
     diery:{ bez_utm:bezUtm.length, bez_utm_spend:+bezUtm.reduce((s,r)=>s+r.spend,0).toFixed(2),

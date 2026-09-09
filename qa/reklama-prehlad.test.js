@@ -120,7 +120,7 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     ok('CPC sedí (400/2750)', all.totals.cpc === 0.15, String(all.totals.cpc));
     ok('CTR sedí (2750/145000)', all.totals.ctr === 1.9, String(all.totals.ctr));
     ok('CPM sedí', all.totals.cpm === 2.76, String(all.totals.cpm));
-    ok('cena za lead sedí (400/30)', all.totals.cpl === 13.33, String(all.totals.cpl));
+    ok('cena za lead sa ráta len z leadovej kampane (150/30)', all.totals.cpl === 5, String(all.totals.cpl));
     ok('zoradené od najdrahšej', all.rows[0].spend >= all.rows[1].spend && all.rows[1].spend >= all.rows[2].spend,
       all.rows.map(r=>r.spend).join(' > '));
 
