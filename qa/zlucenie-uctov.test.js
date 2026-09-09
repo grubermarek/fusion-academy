@@ -230,6 +230,20 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     ok('stará adresa je dohľadateľná', (ciel.merged_emails || []).includes('qa.daniela.dupl@qa-biz.local'),
       JSON.stringify(ciel.merged_emails));
     ok('zlúčený účet je zaznamenaný', (ciel.merged_accounts || []).includes(DUPL));
+    // 10. 9. sme naraz zlúčili 41 účtov. Ženy si pamätajú tú adresu, ktorou sa
+    // registrovali — nesmie ich to vyhodiť z appky ani stratiť adminovi.
+    const lgStara = await j('/api/login', { method: 'POST',
+      body: { email: 'qa.daniela.dupl@qa-biz.local', password: 'Heslo123!' } }, {});
+    ok('prihlási sa aj pod starou adresou', lgStara.status === 200, JSON.stringify(lgStara.d));
+    const adm = {};
+    const lgAdm = await fetch(BASE + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'qa.zluc.admin@qa-biz.local', password: 'Heslo123!' }) });
+    adm.cookie = (lgAdm.headers.get('set-cookie') || '').split(';')[0];
+    const najdi = await fetch(BASE + '/api/admin/clients?search=' + encodeURIComponent('qa.daniela.dupl'),
+      { headers: { Cookie: adm.cookie } }).then(r => r.json()).catch(() => null);
+    ok('admin ju nájde aj podľa starej adresy',
+      ((najdi && najdi.clients) || []).some(c => c.id === CIEL || c._id === CIEL),
+      JSON.stringify(((najdi && najdi.clients) || []).map(c => c.email)));
 
     console.log('\n10) Sieť odporúčaní:');
     ok('kamarátka má za sponzora cieľ', (users.find(u => u._id === DIETA) || {}).sponsor_id === CIEL);

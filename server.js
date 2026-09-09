@@ -3789,7 +3789,12 @@ app.post('/api/auth/google', rlLogin, async(req,res)=>{
 app.post('/api/login', rlLogin, async(req,res)=>{
   try {
     const {email,password}=req.body;
-    const u=await q.one(db.users,{email:(email||'').toLowerCase().trim()});
+    const zadany=(email||'').toLowerCase().trim();
+    let u=await q.one(db.users,{email:zadany});
+    // Po zlúčení dvoch účtov ostane žene v hlave tá stará adresa. Bez tohto by
+    // sa 10. 9. nevedelo prihlásiť 41 žien, ktorým sme účty zlúčili — heslo
+    // majú správne, len píšu e-mail, ktorý už neexistuje.
+    if(!u && zadany) u=await q.one(db.users,{merged_emails:zadany});
     if(u && !u.password && u.pw_reset) return res.status(401).json({error:'Vaše heslo bolo resetované správcom. Vytvorte si nové heslo nižšie.', pw_reset:true});
     if(!u||!u.password||!(await bcrypt.compare(password,u.password))) return res.status(401).json({error:'Nesprávny email alebo heslo'});
     if(u.active===false) return res.status(403).json({error:'Váš účet je zablokovaný. Kontaktujte správcu.'});
@@ -9167,6 +9172,8 @@ function userMatchesSearch(u, term){
   const raw=String(term||'').toLowerCase().trim(); if(!raw) return true;
   const s=bezDiakritiky(raw);
   if(bezDiakritiky(u.name).includes(s) || bezDiakritiky(u.email).includes(s) || (u.phone||'').includes(raw)) return true;
+  // Po zlúčení účtov si tréner pamätá starú adresu — nech ju nájde aj tak.
+  if((u.merged_emails||[]).some(e=>bezDiakritiky(e).includes(s))) return true;
   // Telefón porovnávaj len vtedy, keď hľadaný výraz naozaj vyzerá ako číslo —
   // inak „abc123" vytiahne cudziu klientku, ktorej v čísle náhodou sedia tri cifry.
   if(/[a-z]/i.test(raw)) return false;
