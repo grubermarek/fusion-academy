@@ -145,8 +145,7 @@ async function boot(){
   showTab(['clenstva','vstupy','sukromne','merch','eventy','nakupy'].includes(want)?want:'clenstva');
   // Priamy odkaz z reklamy: /obchod?buy=kids otvorí rovno nákup Zumba Kids.
   const buy=new URLSearchParams(location.search).get('buy');
-  if(buy==='kids') setTimeout(openKids, 350);
-  else if(buy && PLANS[buy]) setTimeout(()=>openPlan(buy), 350);
+  if(buy && PLANS[buy]) setTimeout(()=>openPlan(buy), 350);
 }
 function renderMyf(){
   const m=OV.membership, e=OV.entries;
@@ -233,290 +232,25 @@ function renderPlans(){
            <button class="howto" onclick="openPlan('${id}')">${FA_T('shop.manage')}</button>`
         : `<button class="buy" onclick="openPlan('${id}')">${FA_T('shop.buy',{name:esc(p.name)})}</button>`}
     </div>`;
-  }).join('')+kidsCard()+`<button class="howto" onclick="howTo('membership')">${FA_T('shop.howto_mem')}</button>`;
+  }).join('')+`<button class="howto" onclick="howTo('membership')">${FA_T('shop.howto_mem')}</button>`;
 }
-// Zumba Kids je samostatný produkt pre dieťa, nie stupienok v rebríčku členstiev,
-// preto stojí pod nimi a kupuje sa na detský profil (for_child_id).
-function kidsCard(){
-  const p=PLANS.kids; if(!p) return '';
-  const maju = CHILDREN.filter(c=>c.membership && c.membership.plan_name===p.name);
-  return `<div class="pcard" style="border-color:#FF6B9D;background:linear-gradient(160deg,#2a1620,#1a1216)">
-    <div class="top"><h3>🧒 ${esc(p.name)}</h3><span class="price">${eur(p.price)}<small> ${FA_T('shop.per_month')}</small></span></div>
-    <ul>
-      <li>Pre deti 4–14 rokov · Detva, Záhradná 7</li>
-      <li>Piatok aj nedeľa — dieťa môže chodiť na obe hodiny</li>
-      <li>Rezervácia hodiny v aplikácii</li>
-      <li>Bez viazanosti, zrušíš kedykoľvek</li>
-    </ul>
-    ${maju.length?`<div class="note" style="color:#FF9DC0;margin:0 0 8px">Aktívne pre: ${maju.map(c=>esc(c.name)).join(', ')}</div>`:''}
-    <button class="buy" style="background:linear-gradient(102deg,#FF6B9D,#FF9DC0);color:#2a0e19" onclick="openKids()">Kúpiť pre dieťa</button>
-  </div>`;
+// Členstvo si rodič kupuje aj pre dieťa — bez tejto voľby by sadlo na neho
+// a dieťa by nemalo v appke ani rezervácie, ani dochádzku.
+function preKohoBlok(){
+  if(!CHILDREN.length) return '';
+  return `<label class="renew" style="align-items:flex-start"><span style="width:100%">Pre koho je členstvo?<br>
+    <select id="mFor" onchange="nastavPreKoho(this.value)" style="width:100%;margin-top:6px;padding:9px;border-radius:10px;background:#171410;color:#fff;border:1px solid #3a3020">
+      <option value="">Pre mňa</option>
+      ${CHILDREN.map(c=>`<option value="${c.id}"${KIDS_CHILD===c.id?' selected':''}>${esc(c.name)}${c.birth_year?' ('+c.birth_year+')':''}</option>`).join('')}
+    </select></span></label>`;
 }
-/* ── VSTUPY ── */
-function renderVstupy(){
-  const e=OV.entries;
-  document.getElementById('p-vstupy').innerHTML=`
-    ${e.left>0?`<div class="pcard hl"><div class="top"><h3>${FA_T('shop.your_pass')}</h3><span class="price">${e.left} <small>${FA_T('shop.entryN')}</small></span></div>
-      <div class="dots" style="margin:8px 0">${Array.from({length:Math.min(Math.max(e.total,e.left),12)},(_,i)=>`<span class="dot ${i<e.left?'full':'used'}"></span>`).join('')}</div>
-      ${e.expires_at?`<p>${FA_T('shop.valid_until')} ${dstr(e.expires_at)}</p>`:''}
-      ${e.left<=2?`<button class="buy" onclick="openPlan('permanentka10')">${FA_T('shop.pass_low')}</button>`:''}</div>`:''}
-    <div class="pcard"><div class="top"><h3>${FA_T('shop.single_h')}</h3><span class="price">${eur(PLANS.vstup1.price)}</span></div>
-      <p>${FA_T('shop.single_d')}</p>
-      <button class="buy" onclick="openPlan('vstup1')">${FA_T('shop.single_buy')}</button></div>
-    <div class="pcard hl"><div class="top"><h3>${FA_T('shop.pass10_h')}</h3><span class="price">${eur(PLANS.permanentka10.price)}</span></div>
-      <p>${FA_T('shop.pass10_d')}</p>
-      <button class="buy" onclick="openPlan('permanentka10')">${FA_T('shop.pass10_buy')}</button></div>
-    <button class="howto" onclick="howTo('entries')">${FA_T('shop.howto_entries')}</button>`;
-}
-/* ── SÚKROMNÉ HODINY — existujúci booking systém (/api/private/*) ── */
-let PV={trainers:null, sel:null, slots:[], disc:0, plan:null};
-async function renderSukromne(){
-  const el=document.getElementById('p-sukromne');
-  if(!PV.trainers){
-    el.innerHTML='<p style="color:var(--muted)">'+FA_T('shop.pv_loading')+'</p>';
-    const t=await api('/api/private/trainers'); PV.trainers=(t&&t.trainers)||[];
-  }
-  if(!PV.trainers.length){ el.innerHTML='<p style="color:var(--muted)">'+FA_T('shop.pv_none')+'</p>'; return; }
-  el.innerHTML=`
-    <div class="pcard hl"><h3>${FA_T('shop.pv_h')}</h3>
-      <p>${FA_T('shop.pv_d')}</p></div>
-    <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px">${FA_T('shop.pv_pick')}</div>
-    ${PV.trainers.map(tr=>`<button class="pcard" style="width:100%;text-align:left;cursor:pointer;display:flex;align-items:center;gap:12px;border-color:${PV.sel===tr.id?'var(--gold)':'var(--line)'}" onclick="pvSelect('${tr.id}')">
-      ${tr.av?`<img src="/api/avatar/${tr.id}" style="width:46px;height:46px;border-radius:50%;object-fit:cover;border:2px solid rgba(201,168,76,.5);flex-shrink:0">`:`<span style="width:46px;height:46px;border-radius:50%;background:#2a2410;display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0">🎓</span>`}
-      <span><b style="color:var(--cream);font-size:1rem">${esc(tr.name)}</b><br>${tr.specialty?`<span style="color:var(--gold);font-size:.78rem">${esc(tr.specialty)}</span><br>`:''}<span style="color:var(--muted);font-size:.8rem">${FA_T('shop.pv_from',{r:(+tr.rate).toFixed(0)})} · ${esc((tr.cities||[]).join(', '))}</span></span></button>`).join('')}
-    <div id="pvSlotsBox"></div>`;
-  if(PV.sel) pvRenderSlots();
-}
-async function pvSelect(tid){
-  PV.sel=tid;
-  const box=()=>document.getElementById('pvSlotsBox');
-  renderSukromne(); box().innerHTML='<p style="color:var(--muted)">'+FA_T('shop.pv_slots_loading')+'</p>';
-  const d=await api('/api/private/slots?trainer_id='+tid);
-  PV.slots=(d&&d.slots)||[]; PV.disc=(d&&d.discount_pct)||0; PV.plan=(d&&d.discount_plan)||null;
-  pvRenderSlots();
-}
-function pvRenderSlots(){
-  const box=document.getElementById('pvSlotsBox'); if(!box) return;
-  if(!PV.slots.length){ box.innerHTML='<p style="color:var(--muted)">'+FA_T('shop.pv_no_slots')+'</p>'; return; }
-  const byDay={}; PV.slots.forEach(s=>{(byDay[s.date]=byDay[s.date]||[]).push(s);});
-  box.innerHTML=(PV.disc?`<div class="rec"><b>${FA_T('shop.pv_disc',{plan:esc(PV.plan||''),p:PV.disc})}</b></div>`:'')
-    +Object.entries(byDay).slice(0,10).map(([d,ss])=>`<div style="margin:10px 0 4px;font-size:.85rem;color:var(--gold);font-weight:800">📅 ${d.split('-').reverse().join('.')}</div>
-      ${ss.map(s=>{const my=s.my_price!=null?s.my_price:s.price;
-        return `<button class="tab" style="margin:0 6px 6px 0" onclick='pvOpenBook(${JSON.stringify(s).replace(/'/g,"&#39;")})'>${s.time_start} · ${s.duration_min} min · ${esc(s.city)} · <b style="color:var(--gold)">${eur(my)}</b></button>`;}).join('')}`).join('');
-}
-function pvOpenBook(s){
-  const my=s.my_price!=null?s.my_price:s.price;
-  api('/api/shop/event',{method:'POST',body:JSON.stringify({type:'checkout_open',item:'private'})});
-  document.getElementById('mTitle').textContent=FA_T('shop.pv_h');
-  document.getElementById('mBody').innerHTML=`
-    <div class="mrow"><span class="mut">${FA_T('shop.pv_when')}</span><span><b>${s.date.split('-').reverse().join('.')} · ${s.time_start}</b></span></div>
-    <div class="mrow"><span class="mut">${FA_T('shop.pv_len')}</span><span>${s.duration_min} min · ${esc(s.city)}</span></div>
-    ${PV.disc?`<div class="mrow"><span class="mut">${FA_T('shop.pv_price_disc',{p:PV.disc})}</span><span><s style="color:var(--muted)">${eur(s.price)}</s> <b class="gold">${eur(my)}</b></span></div>`
-      :`<div class="mrow"><span class="mut">${FA_T('shop.price')}</span><span class="gold"><b>${eur(my)}</b></span></div>`}
-    ${(ME.free_private_lesson_credits||0)>0?`<button class="paybtn" onclick="pvBook('${s.id}','prize')">${FA_T('shop.pv_prize')}</button>`:''}
-    ${STRIPE?`<button class="paybtn" onclick="pvBook('${s.id}','card')">${FA_T('shop.pv_card')}</button>`:''}
-    ${OV.credit>=my?`<button class="paybtn sec" onclick="pvBook('${s.id}','credit')">${FA_T('shop.pv_credit',{c:eur(OV.credit)})}</button>`:''}
-    <button class="paybtn sec" onclick="pvBook('${s.id}','onsite')">${FA_T('shop.pv_onsite')}</button>
-    <p class="note">${FA_T('shop.pv_note')}</p>
-    <div class="err" id="mErr"></div>`;
-  document.getElementById('buyM').classList.add('open');
-}
-async function pvBook(slotId, pay){
-  const err=document.getElementById('mErr'); err.textContent='';
-  const r=await api('/api/private/book',{method:'POST',body:JSON.stringify({slot_id:slotId, pay})});
-  if(!r.ok){ err.textContent=r.error||'Skús to znova.'; return; }
-  if(pay==='card'){
-    const c=await api('/api/private/card-checkout',{method:'POST',body:JSON.stringify({booking_id:r.id})});
-    if(c.ok&&c.url){ location.href=c.url; return; }
-  }
-  closeM(); PV.sel=null; PV.trainers=null;
-  toast(FA_T('shop.pv_ok')+(pay==='credit'?FA_T('shop.pv_ok_credit'):pay==='prize'?FA_T('shop.pv_ok_prize'):FA_T('shop.pv_ok_onsite')));
-  OV=await api('/api/shop/overview'); renderMyf(); renderSukromne();
-}
-
-/* ── MERCH & EVENTY + KOŠÍK (existujúci objednávkový systém /api/shop/order) ── */
-let CART=[]; // {product_id,name,emoji,price,qty,size,color}
-function cartCount(){ return CART.reduce((a,i)=>a+i.qty,0); }
-function cartTotal(){ return +CART.reduce((a,i)=>a+i.price*i.qty,0).toFixed(2); }
-function prodCard(p){
-  const v=p.variants||null;
-  return `<div class="pcard"><div class="top"><h3>${p.emoji||'🛍️'} ${esc(p.name)}</h3><span class="price">${eur(p.price)}</span></div>
-    <p>${esc(p.desc||'')}</p>
-    ${v?`<div style="margin-bottom:6px">
-      ${v.sizes?`<select id="sz-${p._id}">${v.sizes.map(s=>`<option>${s}</option>`).join('')}</select>`:''}
-      ${v.colors?`<select id="cl-${p._id}">${v.colors.map(c=>`<option>${c}</option>`).join('')}</select>`:''}</div>`:''}
-    <button class="buy" onclick="addToCart('${p._id}')">${FA_T('shop.add_cart')}</button></div>`;
-}
-function cartBar(){
-  return cartCount()?`<div class="pcard hl" style="position:sticky;bottom:96px;z-index:50;display:flex;justify-content:space-between;align-items:center;gap:10px">
-    <span>🛒 <b>${cartCount()}</b> ${FA_T('shop.cart_pcs')} · <b class="gold">${eur(cartTotal())}</b></span>
-    <button class="buy" style="width:auto;margin:0;padding:10px 20px" onclick="openCart()">${FA_T('shop.cart_checkout')}</button></div>`:'';
-}
-function addToCart(id){
-  const p=PRODUCTS.find(x=>x._id===id); if(!p) return;
-  const size=document.getElementById('sz-'+id)?.value||null, color=document.getElementById('cl-'+id)?.value||null;
-  const ex=CART.find(i=>i.product_id===id&&i.size===size&&i.color===color);
-  if(ex) ex.qty++; else CART.push({product_id:id,name:p.name,emoji:p.emoji||'🛍️',price:p.price,qty:1,size,color});
-  toast(FA_T('shop.cart_added',{name:p.name+(size?' ('+size+(color?', '+color:'')+')':'')}));
-  refreshCartBars();
-}
-function refreshCartBars(){ ['cartbar-m','cartbar-e'].forEach(x=>{ const el=document.getElementById(x); if(el) el.innerHTML=cartBar(); }); }
-function cartQty(idx,d){ CART[idx].qty+=d; if(CART[idx].qty<=0) CART.splice(idx,1); if(cartCount()) openCart(); else { closeM(); refreshCartBars(); } }
-function renderMerch(){
-  const items=PRODUCTS.filter(p=>p.active!==false && p.type!=='event' && !/členstvo|vstup|permanent/i.test(p.name));
-  document.getElementById('p-merch').innerHTML=(items.length?items.map(prodCard).join(''):'<p style="color:var(--muted)">'+FA_T('shop.merch_soon')+'</p>')
-    +`<div id="cartbar-m">${cartBar()}</div>`
-    +`<button class="howto" onclick="howTo('merch')">${FA_T('shop.howto_merch')}</button>`;
-}
-function renderEventy(){
-  const items=PRODUCTS.filter(p=>p.active!==false && p.type==='event');
-  document.getElementById('p-eventy').innerHTML=(items.length?items.map(prodCard).join(''):'<p style="color:var(--muted)">'+FA_T('shop.events_none')+'</p>')
-    +`<div id="cartbar-e">${cartBar()}</div>`;
-}
-let ORDER_PROMO=null;
-// Jedno ID na jeden otvorený košík / produkt: server podľa neho spozná dvojklik
-// a vráti tú istú objednávku namiesto druhej (audit E11/4)
-let ORDER_CID=null;
-const newOrderCid=()=>(window.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,12));
-function openCart(){
-  if(!cartCount()) return;
-  ORDER_CID=newOrderCid();
-  api('/api/shop/event',{method:'POST',body:JSON.stringify({type:'checkout_open',item:'cart'})});
-  const creditApply=Math.min(OV.credit, cartTotal());
-  document.getElementById('mTitle').textContent=FA_T('shop.cart_h');
-  document.getElementById('mBody').innerHTML=`
-    ${CART.map((i,x)=>`<div class="mrow" style="align-items:center"><span>${i.emoji} ${esc(i.name)}${i.size?' · '+esc(i.size):''}${i.color?' · '+esc(i.color):''}</span>
-      <span style="white-space:nowrap"><button onclick="cartQty(${x},-1)" style="background:#221e16;border:1px solid var(--line);color:var(--cream);border-radius:8px;width:26px;height:26px;cursor:pointer">−</button>
-      <b style="margin:0 6px">${i.qty}</b>
-      <button onclick="cartQty(${x},1)" style="background:#221e16;border:1px solid var(--line);color:var(--cream);border-radius:8px;width:26px;height:26px;cursor:pointer">+</button>
-      <span class="gold" style="margin-left:8px">${eur(i.price*i.qty)}</span></span></div>`).join('')}
-    <div style="margin:12px 0 4px;font-size:.85rem;color:var(--muted)">${FA_T('shop.delivery')}</div>
-    <label style="display:block;font-size:.88rem;margin-bottom:6px;cursor:pointer"><input type="radio" name="odel" value="pickup" checked onchange="document.getElementById('shipFields').style.display='none'" style="accent-color:#C9A84C"> ${FA_T('shop.del_pickup')}</label>
-    <label style="display:block;font-size:.88rem;cursor:pointer"><input type="radio" name="odel" value="post" onchange="document.getElementById('shipFields').style.display='block'" style="accent-color:#C9A84C"> ${FA_T('shop.del_post')}</label>
-    <div id="shipFields" style="display:none;margin-top:8px">
-      <input id="shName" placeholder="${FA_T('shop.sh_name')}" value="${esc(ME.name||'')}" style="width:100%;background:#0f0d09;border:1px solid var(--line);color:var(--cream);border-radius:10px;padding:9px;margin-bottom:6px">
-      <input id="shStreet" placeholder="${FA_T('shop.sh_street')}" style="width:100%;background:#0f0d09;border:1px solid var(--line);color:var(--cream);border-radius:10px;padding:9px;margin-bottom:6px">
-      <div style="display:flex;gap:6px"><input id="shZip" placeholder="${FA_T('shop.sh_zip')}" style="flex:1;background:#0f0d09;border:1px solid var(--line);color:var(--cream);border-radius:10px;padding:9px">
-      <input id="shCity" placeholder="${FA_T('shop.sh_city')}" style="flex:2;background:#0f0d09;border:1px solid var(--line);color:var(--cream);border-radius:10px;padding:9px"></div>
-    </div>
-    ${OV.credit>0?`<label class="credit-row"><input type="checkbox" id="oCredit" checked onchange="cartRecalc()" style="accent-color:#C9A84C">💛 Použiť Fusion kredit (${eur(OV.credit)})</label>`:''}
-    <div class="promo-row"><input id="oPromo" placeholder="Promo kód"><button onclick="applyOrderPromo()">Použiť</button></div>
-    <div id="oPromoMsg" class="err" style="min-height:0"></div>
-    <div class="total"><span>${FA_T('shop.total_sum')}</span><span class="gold" id="oTotal">${eur(Math.max(0,cartTotal()-creditApply))}</span></div>
-    <button class="paybtn" id="oSubmit" onclick="submitOrder()">${FA_T('shop.order')}</button>
-    <p class="note">${FA_T('shop.order_note')}</p>
-    <div class="err" id="oErr"></div>`;
-  ORDER_PROMO=null;
-  document.getElementById('buyM').classList.add('open');
-}
-function cartRecalc(){
-  const promoD=ORDER_PROMO?Math.min(ORDER_PROMO.discount,cartTotal()):0;
-  const base=Math.max(0,cartTotal()-promoD);
-  const cr=document.getElementById('oCredit')?.checked?Math.min(OV.credit,base):0;
-  document.getElementById('oTotal').textContent=eur(Math.max(0,+(base-cr).toFixed(2)));
-}
-async function applyOrderPromo(){
-  const code=document.getElementById('oPromo').value.trim(); if(!code) return;
-  const r=await api('/api/promo/validate',{method:'POST',body:JSON.stringify({code, amount:cartTotal(), applies_to:'merch'})});
-  const msg=document.getElementById('oPromoMsg');
-  if(r.ok){ ORDER_PROMO={code:r.code,discount:r.discount}; msg.style.color='#8bc34a'; msg.textContent='🎟️ '+r.code+' −'+eur(r.discount); }
-  else { ORDER_PROMO=null; msg.style.color='#ff8a80'; msg.textContent=r.reason||'Neplatný kód'; }
-  cartRecalc();
-}
-async function submitOrder(){
-  const err=document.getElementById('oErr'); err.textContent='';
-  const delivery=document.querySelector('input[name=odel]:checked').value;
-  const body={ client_name:ME.name, client_email:ME.email, client_phone:ME.phone||'',
-    items:CART.map(i=>({product_id:i.product_id, qty:i.qty, size:i.size||undefined, color:i.color||undefined})),
-    payment_method:'cash', delivery, notes:'Objednané cez Obchod v appke',
-    use_referral_credit:!!document.getElementById('oCredit')?.checked,
-    promo_code:ORDER_PROMO?.code, client_order_id:ORDER_CID||(ORDER_CID=newOrderCid()) };
-  if(delivery==='post'){ body.shipping={ name:document.getElementById('shName').value, street:document.getElementById('shStreet').value,
-    zip:document.getElementById('shZip').value, city:document.getElementById('shCity').value };
-    if(!body.shipping.street||!body.shipping.zip||!body.shipping.city){ err.textContent=FA_T('shop.sh_need'); return; } }
-  const b=document.getElementById('oSubmit'); b.disabled=true; b.textContent=FA_T('shop.sending');
-  const r=await api('/api/shop/order',{method:'POST', body:JSON.stringify(body)});
-  b.disabled=false; b.textContent=FA_T('shop.order');
-  if(!r.ok&&!r.order_number){ err.textContent=r.error||FA_T('shop.try_again'); return; }
-  CART=[]; refreshCartBars(); closeM();
-  toast(FA_T(delivery==='post'?'shop.order_ok_post':'shop.order_ok_pickup',{n:(r.order_number?('#'+r.order_number+' '):'')}));
-  OV=await api('/api/shop/overview'); renderMyf();
-}
-/* ── NÁKUPY ── */
-function renderNakupy(){
-  const rows=(OV.purchases||[]).map(t=>`<div class="txrow"><span>${esc(t.note)}<small>${dstr(t.date)} · ${t.method==='cash'?FA_T('shop.pu_cash'):t.method==='stripe'?FA_T('shop.pu_card'):esc(t.method||'')}</small></span><span class="amt">${eur(t.amount)}</span></div>`).join('');
-  const pend=(OV.pending||[]).map(p=>`<div class="txrow"><span>⏳ ${esc(p.description)}<small>${FA_T('shop.pu_pending_note')}</small></span><span class="amt">${eur(p.amount)}</span></div>`).join('');
-  document.getElementById('p-nakupy').innerHTML=(pend?`<h3 style="font-size:.9rem;color:#ffb74d">${FA_T('shop.pu_pending')}</h3>${pend}`:'')
-    +(rows?`<h3 style="font-size:.9rem;margin-top:14px">${FA_T('shop.pu_history')}</h3>${rows}`:'<p style="color:var(--muted)">'+FA_T('shop.pu_none')+'</p>')
-    +((OV.invoices||[]).length?`<p class="note">${FA_T('shop.pu_inv',{n:OV.invoices.length})}</p>`:'');
-}
-
-/* ── NÁKUPNÝ MODÁL (plány) — rovnaké API ako cenník: Stripe / odber / hotovosť / kredit / promo ── */
-let CUR=null, PROMO=null;
-// Bez detského profilu sa členstvo nemá na koho naviazať — preto sa dá založiť
-// priamo tu, aby rodič neodchádzal z nákupu inam.
-function openKids(){
-  const p=PLANS.kids; if(!p) return;
-  showTab('clenstva');
-  if(!CHILDREN.length){ openKidsNewChild(); return; }
-  KIDS_CHILD = KIDS_CHILD || CHILDREN[0].id;
-  CUR={kind:'plan', id:'kids', price:p.price, name:p.name, child_id:KIDS_CHILD}; PROMO=null;
-  document.getElementById('mTitle').textContent='🧒 '+p.name;
-  document.getElementById('mBody').innerHTML=`
-    <label class="renew" style="align-items:flex-start">
-      <span style="width:100%">Pre ktoré dieťa?<br>
-        <select id="mChild" onchange="kidsPickChild(this.value)" style="width:100%;margin-top:6px;padding:9px;border-radius:10px;background:#171410;color:#fff;border:1px solid #3a3020">
-          ${CHILDREN.map(c=>`<option value="${c.id}">${esc(c.name)}${c.birth_year?' ('+c.birth_year+')':''}</option>`).join('')}
-        </select>
-        <button class="howto" style="margin-top:8px" onclick="openKidsNewChild()">+ Pridať ďalšie dieťa</button>
-      </span>
-    </label>
-    ${STRIPE?`<label class="renew"><input type="checkbox" id="mRenew" checked onchange="recalc()" style="accent-color:#C9A84C;width:17px;height:17px">
-      <span>${FA_T('shop.renew_toggle')}<br><small style="color:var(--muted)">${FA_T('shop.renew_hint')}</small></span></label>`:''}
-    <div class="mrow"><span class="mut">${FA_T('shop.price')}</span><span>${eur(p.price)}</span></div>
-    ${OV.credit>0?`<label class="credit-row"><input type="checkbox" id="mCredit" checked onchange="recalc()" style="accent-color:#C9A84C">${FA_T('shop.use_credit',{c:eur(OV.credit)})}</label>`:''}
-    <div class="promo-row"><input id="mPromo" placeholder="${FA_T('shop.promo_ph')}"><button onclick="applyPromo()">${FA_T('shop.apply')}</button></div>
-    <div id="mPromoMsg" class="err" style="min-height:0"></div>
-    <div class="total"><span>${FA_T('shop.total')}</span><span class="gold" id="mTotal">${eur(p.price)}</span></div>
-    ${STRIPE?`<button class="paybtn" id="mStripe" onclick="payStripe()">${FA_T('shop.pay_card')}</button>`:''}
-    <button class="paybtn sec" id="mManual" onclick="payManual()">${FA_T('shop.pay_cash')}</button>
-    <p class="note" id="mManualNote">${FA_T('shop.cash_note',{what:FA_T('shop.what_mem')})}</p>
-    <div class="err" id="mErr"></div>`;
-  api('/api/shop/event',{method:'POST',body:JSON.stringify({type:'checkout_open', item:'kids'})});
-  document.getElementById('buyM').classList.add('open');
-  recalc();
-}
-function kidsPickChild(id){ KIDS_CHILD=id; if(CUR) CUR.child_id=id; }
-function openKidsNewChild(){
-  document.getElementById('mTitle').textContent='Pridať dieťa';
-  document.getElementById('mBody').innerHTML=`
-    <p class="note" style="margin:0 0 10px">Členstvo Zumba Kids sa viaže na profil dieťaťa — vďaka nemu vidíš jeho dochádzku aj rezervácie.</p>
-    <div class="promo-row"><input id="kidName" placeholder="Meno dieťaťa"></div>
-    <div class="promo-row" style="margin-top:8px"><input id="kidYear" placeholder="Rok narodenia (napr. 2018)" inputmode="numeric"></div>
-    <button class="paybtn" onclick="saveKidAndBuy()">Pokračovať v nákupe</button>
-    <div class="err" id="mErr"></div>`;
-  document.getElementById('buyM').classList.add('open');
-}
-async function saveKidAndBuy(){
-  const err=document.getElementById('mErr'); err.textContent='';
-  const name=(document.getElementById('kidName').value||'').trim();
-  const year=(document.getElementById('kidYear').value||'').trim();
-  if(!name){ err.textContent='Zadaj meno dieťaťa'; return; }
-  const r=await api('/api/family/children',{method:'POST',
-    body:JSON.stringify({name, birth_year: year||undefined})});
-  if(!r || r.error){ err.textContent=(r&&r.error)||'Nepodarilo sa uložiť'; return; }
-  try{ CHILDREN = await fetch('/api/family/children',{credentials:'include'}).then(x=>x.json()); }catch(e){}
-  if(!Array.isArray(CHILDREN)) CHILDREN=[];
-  KIDS_CHILD = (CHILDREN[CHILDREN.length-1]||{}).id || null;
-  renderPlans();
-  openKids();
-}
+function nastavPreKoho(v){ KIDS_CHILD=v||null; if(CUR) CUR.child_id=v||null; }
 function openPlan(id){
   const p=PLANS[id]; if(!p) return;
-  CUR={kind:'plan', id, price:p.price, name:p.name}; PROMO=null;
+  CUR={kind:'plan', id, price:p.price, name:p.name, child_id:KIDS_CHILD||null}; PROMO=null;
   const monthly=p.type!=='bundle';
   document.getElementById('mTitle').textContent=p.name;
-  document.getElementById('mBody').innerHTML=`
+  document.getElementById('mBody').innerHTML=preKohoBlok()+`
     ${monthly&&STRIPE?`<label class="renew"><input type="checkbox" id="mRenew" checked onchange="recalc()" style="accent-color:#C9A84C;width:17px;height:17px">
       <span>${FA_T('shop.renew_toggle')}<br><small style="color:var(--muted)">${FA_T('shop.renew_hint')}</small></span></label>`:''}
     ${(OV.membership && OV.membership.plan_id!==id && monthly)?`<p class="note" style="margin:0 0 10px;color:var(--gold)">${FA_T('shop.upgrade_note',{old:esc(OV.membership.plan_name), d:dstr(OV.membership.expires_at), val:Math.max(0,Math.round((OV.membership.price||0)*Math.max(0,OV.membership.days_left)/30*100)/100).toFixed(2)+' €'})}</p>`:''}
