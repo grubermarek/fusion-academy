@@ -1668,6 +1668,40 @@ async function seedData() {
     await q.insert(db.settings,{key:'kids_campaign_20260909', value:true, at:nowISO()});
   }
 
+  // 9. 9. (Marek): „spoločenské tance pre deti zruš na webe aj v appke, bude len
+  // Zumba Kids." Jeden detský program s dvoma vekovými skupinami — vek je priamo
+  // v názve hodiny, aby rodič v rozvrhu videl, kam patrí jeho dieťa.
+  if(!(await q.one(db.settings,{key:'zumba_kids_hodiny_20260909'}))){
+    for(const c of await q.find(db.classes,{name:'Detské spoločenské tance'})){
+      const rez=await q.count(db.bookings,{class_id:c._id});
+      // História sa nemaže: keby na hodine niekto bol, ostane len vypnutá.
+      if(rez){ await q.update(db.classes,{_id:c._id},{$set:{active:false}});
+        console.log('🧒 Staré detské tance majú '+rez+' rezervácií — iba vypnuté'); }
+      else await q.remove(db.classes,{_id:c._id});
+    }
+    const zaklad={ emoji:'🧒', category:'Deti', instructor:'Marek Gruber',
+      instructor_id:'y72YL9QS4LVl8f9c', location:'Detva',
+      address:'Fusion Academy, Záhradná 7, Detva', capacity:30,
+      price:9, color:'#F0C060', active:true };
+    const skupiny=[
+      { nazov:'Zumba Kids 1 (4–6)', level:'Deti 4–6 rokov', od:'15:00', do:'16:00',
+        popis:'Zumba pre najmenších. Krátke choreografie, veľa hry, pohyb cez rozprávku a rytmus. Prvá hodina ZADARMO!' },
+      { nazov:'Zumba Kids 2 (7–14)', level:'Deti 7–14 rokov', od:'16:00', do:'17:00',
+        popis:'Zumba pre školákov. Skutočné choreografie, latino rytmy a vystúpenia pred publikom. Prvá hodina ZADARMO!' },
+    ];
+    let pridane=0;
+    for(const den of [5,0]){          // piatok, nedeľa
+      for(const s of skupiny){
+        if(await q.one(db.classes,{name:s.nazov, location:'Detva', day_of_week:den})) continue;
+        await q.insert(db.classes,{ ...zaklad, name:s.nazov, level:s.level,
+          day_of_week:den, time_start:s.od, time_end:s.do, description:s.popis });
+        pridane++;
+      }
+    }
+    await q.insert(db.settings,{key:'zumba_kids_hodiny_20260909', value:true, at:nowISO()});
+    console.log('🧒 Zumba Kids: otvorených '+pridane+' hodín, staré detské tance zrušené');
+  }
+
   // 24.8.: kampane bez utm_key sa nedali merať — platili sme za kliky, ktoré nemali
   // kam zapadnúť (Video HEJ BABY 141 klikov, Kreatívny test 423 klikov, obe 0 registrácií
   // na karte, hoci vo funneli boli registrácie s utm_campaign fa-test-*).
