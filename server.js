@@ -20444,7 +20444,14 @@ async function syncAdStats(force){
       x.spend+=row.spend; x.impressions+=row.impressions; x.clicks+=row.clicks;
       x.leads+=row.leads; x.reach=Math.max(x.reach,row.reach); x.months.push(month);
     }
-    for(const c of camps){
+    // Kampaň, ktorá už bola zmazaná, sa v zozname kampaní nevráti — v štatistikách
+    // ale ostáva a jej peniaze sú reálne minuté. Bez tohto by prehľad ukazoval
+    // menej, než účet naozaj minul.
+    const znameId=new Set(camps.map(c=>c.id));
+    const menoZo={}; for(const r of ins){ if(r.campaign_id && r.campaign_name) menoZo[r.campaign_id]=r.campaign_name; }
+    const doplnene=Object.keys(suma).filter(id=>!znameId.has(id)).map(id=>({
+      id, name:menoZo[id]||('Kampaň '+id), effective_status:'DELETED', objective:'', created_time:'' }));
+    for(const c of camps.concat(doplnene)){
       const x=suma[c.id]||{spend:0,impressions:0,clicks:0,leads:0,reach:0,months:[]};
       const ms=x.months.slice().sort();
       await q.update(db.ad_campaigns,{platform:'meta', campaign_id:c.id},{$set:{
@@ -20468,8 +20475,8 @@ async function syncAdStats(force){
     }
     if(last) await q.update(db.settings,{_id:last._id},{$set:{at:teraz}});
     else await q.insert(db.settings,{key:AD_SYNC_KEY, at:teraz});
-    console.log('📊 Reklama: '+camps.length+' kampaní, '+ins.length+' mesačných riadkov, '+Object.keys(poMes).length+' mesiacov');
-    return {ok:true, campaigns:camps.length, rows:ins.length, months:Object.keys(poMes).length};
+    console.log('📊 Reklama: '+(camps.length+doplnene.length)+' kampaní (z toho '+doplnene.length+' zmazaných), '+ins.length+' mesačných riadkov, '+Object.keys(poMes).length+' mesiacov');
+    return {ok:true, campaigns:camps.length+doplnene.length, deleted:doplnene.length, rows:ins.length, months:Object.keys(poMes).length};
   }catch(e){ console.error('syncAdStats:', e.message); return {ok:false, error:e.message}; }
 }
 
@@ -20488,7 +20495,13 @@ async function adOverview(mesiac){
     c.spend+=+x.spend||0; c.impressions+=+x.impressions||0; c.clicks+=+x.clicks||0;
     c.leads+=+x.leads||0; c.reach=Math.max(c.reach,+x.reach||0);
   }
-  const rows=camps.map(c=>{
+  // Register + čokoľvek, čo je v štatistikách navyše (kampaň zmazaná v Mete).
+  // Peniaze sa nesmú stratiť len preto, že kampaň už v účte nie je vidieť.
+  const reg={}; camps.forEach(c=>{ reg[c.campaign_id]=c; });
+  for(const x of stats) if(!reg[x.campaign_id]) reg[x.campaign_id]={ campaign_id:x.campaign_id,
+    name:x.campaign_name||('Kampaň '+x.campaign_id), status:'DELETED', objective:'', created:'',
+    first_month:null, last_month:null, ma_utm:null };
+  const rows=Object.values(reg).map(c=>{
     const a=podla[c.campaign_id]||{spend:0,impressions:0,clicks:0,leads:0,reach:0};
     return { campaign_id:c.campaign_id, name:c.name, status:c.status, objective:c.objective||'',
       created:c.created||'', first_month:c.first_month||null, last_month:c.last_month||null,

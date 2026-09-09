@@ -78,6 +78,9 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
       month: '2026-08', spend: 150, impressions: 30000, clicks: 750, reach: 12000, leads: 30 },
     { _id: 'qaAdsS4', platform: 'meta', campaign_id: '333', campaign_name: 'Príspevok: „Tancuj s nami"',
       month: '2026-07', spend: 80, impressions: 40000, clicks: 400, reach: 15000, leads: 0 },
+    // kampaň, ktorá už bola v Mete zmazaná — v registri nie je, peniaze minula
+    { _id: 'qaAdsS5', platform: 'meta', campaign_id: '444', campaign_name: 'Zmazaná kampaň',
+      month: '2026-07', spend: 20, impressions: 5000, clicks: 100, reach: 3000, leads: 0 },
   ]);
   // karty existujú len pre prvé dve kampane
   w('campaigns.db', [
@@ -111,20 +114,22 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     console.log('\n2) Celá história:');
     const all = (await j('/api/service/ads-overview?month=all', { headers: T })).d;
     ok('prehľad prišiel', all && all.ok, JSON.stringify(all).slice(0, 200));
-    ok('sčítalo všetky tri kampane, aj tú bez karty', all.rows.length === 3, 'rows=' + all.rows.length);
-    ok('minuté = 380 €', all.totals.spend === 380, String(all.totals.spend));
-    ok('kliky = 2 650', all.totals.clicks === 2650, String(all.totals.clicks));
-    ok('CPC sedí (380/2650)', all.totals.cpc === 0.14, String(all.totals.cpc));
-    ok('CTR sedí (2650/140000)', all.totals.ctr === 1.89, String(all.totals.ctr));
-    ok('CPM sedí', all.totals.cpm === 2.71, String(all.totals.cpm));
-    ok('cena za lead sedí (380/30)', all.totals.cpl === 12.67, String(all.totals.cpl));
+    ok('sčítalo všetky štyri kampane, aj tú bez karty a zmazanú', all.rows.length === 4, 'rows=' + all.rows.length);
+    ok('minuté = 400 € (vrátane zmazanej kampane)', all.totals.spend === 400, String(all.totals.spend));
+    ok('kliky = 2 750', all.totals.clicks === 2750, String(all.totals.clicks));
+    ok('CPC sedí (400/2750)', all.totals.cpc === 0.15, String(all.totals.cpc));
+    ok('CTR sedí (2750/145000)', all.totals.ctr === 1.9, String(all.totals.ctr));
+    ok('CPM sedí', all.totals.cpm === 2.76, String(all.totals.cpm));
+    ok('cena za lead sedí (400/30)', all.totals.cpl === 13.33, String(all.totals.cpl));
     ok('zoradené od najdrahšej', all.rows[0].spend >= all.rows[1].spend && all.rows[1].spend >= all.rows[2].spend,
       all.rows.map(r=>r.spend).join(' > '));
 
     console.log('\n3) Diery, ktoré treba dolepiť:');
     ok('kampaň bez utm je pomenovaná', all.diery.bez_utm === 1, String(all.diery.bez_utm));
     ok('a s ňou aj suma, ktorú prehltla', all.diery.bez_utm_spend === 80, String(all.diery.bez_utm_spend));
-    ok('kampaň bez karty je pomenovaná', all.diery.bez_karty === 1, String(all.diery.bez_karty));
+    ok('kampane bez karty sú pomenované', all.diery.bez_karty === 2, String(all.diery.bez_karty));
+    ok('zmazaná kampaň sa v prehľade nestratila',
+      (all.rows.find(r => r.campaign_id === '444') || {}).status === 'DELETED');
     ok('karta sa priradila správne',
       (all.rows.find(r => r.campaign_id === '111') || {}).karta === 'QA — karta Web');
     ok('doboostovaný príspevok kartu nemá', (all.rows.find(r => r.campaign_id === '333') || {}).karta === null);
@@ -132,7 +137,7 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     console.log('\n4) Mesačný rad:');
     const jul = all.rad.find(r => r.month === '2026-07');
     const aug = all.rad.find(r => r.month === '2026-08');
-    ok('júl: 180 € reklamy', jul && jul.spend === 180, jul && String(jul.spend));
+    ok('júl: 200 € reklamy', jul && jul.spend === 200, jul && String(jul.spend));
     ok('august: 200 € reklamy', aug && aug.spend === 200, aug && String(aug.spend));
     ok('august pozná tržbu appky 100 €', aug && aug.revenue === 100, aug && String(aug.revenue));
     ok('a ROAS 0,5× (prerobené)', aug && aug.roas === 0.5, aug && String(aug.roas));
