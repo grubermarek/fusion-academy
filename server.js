@@ -14200,6 +14200,20 @@ async function fulfillStripeCheckout(s){
     {stripe_session_id:s.id, status:{$ne:'completed'}},
     {$set:{status:'completed', captured_at:nowISO(), stripe_payment_intent:s.payment_intent||'', stripe_subscription_id:s.subscription||null}});
   if(!claimed) return {ok:true, already:true, plan_name:plan.name}; // someone already fulfilled it
+  // Klientka najprv klikne „zaplatím v hotovosti", potom si to rozmyslí a zaplatí
+  // kartou — a nezaplatená žiadosť ostane visieť naveky. Admin ju o týždeň
+  // potvrdí a klientka má zrazu dva plány a dve faktúry. (Viera Tallová, Daria
+  // Abra — 28. a 29. 8. 2026.) Kartová platba tú žiadosť ruší.
+  try{
+    const platca = meta.user_id || null;
+    if(platca){
+      const zrusene = await q.update(db.payments,
+        { user_id:platca, ref_id:meta.plan_id, status:'pending_manual' },
+        { $set:{ status:'cancelled', cancelled_at:nowISO(),
+          note:'Zrušené automaticky — ten istý plán zaplatený kartou' } }, {multi:true});
+      if(zrusene) console.log('🧹 Zrušených '+zrusene+' čakajúcich hotovostných žiadostí (zaplatené kartou)');
+    }
+  }catch(e){ console.error('cleanup pending_manual:', e.message); }
   // ── LEAD OS: platba cez trénerov PLATOBNÝ LINK (deal) ──
   // Beží PRED províziou: ak klient nemá reálneho sponzora, tréner sa ním stáva
   // teraz — awardPurchaseCommission nižšie potom odmení práve jeho (ambasádorská
