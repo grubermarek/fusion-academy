@@ -2958,6 +2958,18 @@ async function seedData() {
     await q.insert(db.settings,{key:'meta_ab_test_campaign_v1', value:true, at:nowISO()});
   }
 
+  // Názov kampane sa pri jednom zápise poškodil (pomlčka → �) a takto ho vidno
+  // v Kampaniach aj v prehľade reklamy. Nahraď náhradný znak pomlčkou.
+  if(!(await q.one(db.settings,{key:'campaign_nazov_oprava_20260909'}))){
+    const zle=(await q.find(db.campaigns,{})).filter(c=>String(c.name||'').includes('�'));
+    for(const c of zle){
+      const opr=String(c.name).replace(/�/g,'—');
+      await q.update(db.campaigns,{_id:c._id},{$set:{name:opr}});
+      console.log('🔤 Názov kampane opravený: '+opr);
+    }
+    await q.insert(db.settings,{key:'campaign_nazov_oprava_20260909', value:true, at:nowISO()});
+  }
+
   // Augustová kampaň o tašku tu bola ako dva jednorazové boot bloky. Septembrová
   // výzva ide vlnou (referralChallengeTick nižšie), aby rešpektovala mailový
   // budžet a dávkovala sa — pri 799 adresátkach naraz časť mailov budžet zjedol.
@@ -20530,9 +20542,19 @@ async function adOverview(mesiac){
   const sc=(k)=>rows.reduce((s,r)=>s+(+r[k]||0),0);
   const spend=+sc('spend').toFixed(2), clicks=sc('clicks'), impressions=sc('impressions'), leads=sc('leads');
   const trzbaObd = vsetko ? revSum(ev) : revSum(ev, mesiac);
-  // Naviazané = kampaň má kartu v „Kampane". Bez utm sa jej registrácie nedajú priradiť.
-  const bezUtm=rows.filter(r=>r.ma_utm===false);
+  // Leadové kampane majú atribúciu cez formulár (lead_source), utm pri nich netreba
+  // — inak by hlásenie o dierach kričalo na kampaň, ktorá je v poriadku.
+  const naUtm=r=>r.objective!=='OUTCOME_LEADS';
+  const bezUtm=rows.filter(r=>r.ma_utm===false && naUtm(r));
   const bezKarty=rows.filter(r=>!r.karta);
+  // Najhorší prípad: karta na kampaň existuje a čaká tržby cez utm, ale reklama
+  // ho neposiela — čísla potom vyzerajú ako neúspech, hoci sa len nemerajú.
+  const kartaBezUtm=rows.filter(r=>r.karta && r.ma_utm===false && naUtm(r));
+  // „ACTIVE" pri doboostovanom príspevku ostáva navždy — reálne beží len to,
+  // čo minulo peniaze tento alebo minulý mesiac.
+  const dnes10=today();
+  const minuly=(()=>{ const d2=new Date(dnes10+'T12:00:00Z'); d2.setUTCMonth(d2.getUTCMonth()-1); return d2.toISOString().slice(0,7); })();
+  const zive=rows.filter(r=>r.last_month && r.last_month>=minuly);
   const sync=await q.one(db.settings,{key:AD_SYNC_KEY});
   return { ok:true, mesiac: vsetko?'all':mesiac,
     mesiace_k_dispozicii: Object.keys(mesiace).sort().reverse(),
@@ -20541,9 +20563,11 @@ async function adOverview(mesiac){
       ctr: impressions?+((clicks/impressions)*100).toFixed(2):null,
       cpm: impressions?+((spend/impressions)*1000).toFixed(2):null,
       cpl: leads?+(spend/leads).toFixed(2):null,
-      revenue: trzbaObd, roas: spend?+(trzbaObd/spend).toFixed(2):null },
+      revenue: trzbaObd, roas: spend?+(trzbaObd/spend).toFixed(2):null,
+      zive:zive.length },
     diery:{ bez_utm:bezUtm.length, bez_utm_spend:+bezUtm.reduce((s,r)=>s+r.spend,0).toFixed(2),
-      bez_karty:bezKarty.length, bez_karty_spend:+bezKarty.reduce((s,r)=>s+r.spend,0).toFixed(2) },
+      bez_karty:bezKarty.length, bez_karty_spend:+bezKarty.reduce((s,r)=>s+r.spend,0).toFixed(2),
+      karta_bez_utm:kartaBezUtm.length, karta_bez_utm_mena:kartaBezUtm.map(r=>r.karta) },
     rows, rad, synced_at: sync ? sync.at : null };
 }
 

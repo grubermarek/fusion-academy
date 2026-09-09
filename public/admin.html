@@ -5012,7 +5012,7 @@ async function loadAds(){
     (pod?'<div class="text-muted" style="font-size:.68rem">'+pod+'</div>':'')+'</div></div>';
 
   let h='<div class="row g-2 mb-3">'
-    + kachlicka('Minuté', adEur(t.spend), t.kampani+' kampaní')
+    + kachlicka('Minuté', adEur(t.spend), t.kampani+' kampaní'+(t.zive!=null?' · '+t.zive+' živých':''))
     + kachlicka('Tržba za obdobie', adEur(t.revenue), 'celá appka, nie len z reklamy')
     + kachlicka('ROAS', t.roas!=null? t.roas+'×' : '—', 'tržba / reklama')
     + kachlicka('Kliky', adNum(t.clicks), 'CPC '+(t.cpc!=null?adEur(t.cpc):'—'))
@@ -5024,9 +5024,10 @@ async function loadAds(){
   h+='<div class="text-muted mb-3" style="font-size:.72rem">ROAS tu porovnáva <b>celú</b> tržbu appky s reklamou — nie je to tržba priradená kampaniam. Priradené tržby sú na kartách kampaní nižšie.</div>';
 
   const di=d.diery||{};
-  if(di.bez_utm || di.bez_karty){
+  if(di.bez_utm || di.bez_karty || di.karta_bez_utm){
     h+='<div class="alert alert-warning py-2 px-3 small mb-3">';
-    if(di.bez_utm) h+='<div>⚠️ <b>'+di.bez_utm+'</b> kampaní za <b>'+adEur(di.bez_utm_spend)+'</b> nemá v odkaze <code>utm_campaign</code> — ich registrácie sa nedajú priradiť, tržba pri nich vždy vyjde 0 €.</div>';
+    if(di.karta_bez_utm) h+='<div>🚨 <b>'+di.karta_bez_utm+'</b> kampaní má v appke kartu, ktorá čaká tržby cez <code>utm_campaign</code>, ale reklama ho neposiela — čísla vyzerajú ako neúspech, hoci sa len nemerajú'+((di.karta_bez_utm_mena||[]).length?': <b>'+di.karta_bez_utm_mena.map(esc).join(', ')+'</b>':'')+'.</div>';
+    if(di.bez_utm) h+='<div>⚠️ <b>'+di.bez_utm+'</b> kampaní za <b>'+adEur(di.bez_utm_spend)+'</b> nemá v odkaze <code>utm_campaign</code> — ich registrácie sa nedajú priradiť, tržba pri nich vždy vyjde 0 €. (Leadové kampane sem nerátame, tie merajú cez formulár.)</div>';
     if(di.bez_karty) h+='<div>📄 <b>'+di.bez_karty+'</b> kampaní za <b>'+adEur(di.bez_karty_spend)+'</b> nemá kartu v Kampaniach — čísla sa nesledujú.</div>';
     h+='</div>';
   }
