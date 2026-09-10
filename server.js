@@ -15343,6 +15343,37 @@ app.get('/api/online/classes', auth, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Kto sa na online hodinu naozaj pripojí, musí ju mať aj zapísanú. Body aj
+// návštevy sa rátajú výhradne z rezervácií, takže hodina, na ktorú sa klientka
+// pripojila bez toho, aby si ju vopred rezervovala, bola úplne neviditeľná —
+// prístup dostala, výherný pass sa jej minul a nezarátalo sa nič.
+// (Soňa Moskálová 10. 9.: „ani za online hodinu, čo som si vytočila".)
+async function zapisOnlineUcast(u, cls, krytie){
+  try{
+    if(!u || !cls) return;
+    const d=today();
+    const uz=(await q.find(db.bookings,{user_id:u._id, class_id:cls._id, booking_date:d}))
+      .find(b=>b.status!=='cancelled');
+    if(uz){
+      // Rezervovanú hodinu označí za odchodenú aj automat pri štarte vysielania —
+      // druhýkrát sa preto nesmie pripísať nič.
+      if(uz.status!=='attended' && uz.attendance_status!=='attended'){
+        await q.update(db.bookings,{_id:uz._id},{$set:{status:'attended', attendance_status:'attended',
+          attended_at:nowISO(), attended_by:'online_enter', attendance_source:'online_auto'}});
+        await creditAttendance(u);
+      }
+      return;
+    }
+    await q.insert(db.bookings,{ class_id:cls._id, class_name:cls.name,
+      class_location:cls.location||'Online', class_time:cls.time_start||'',
+      user_id:u._id, user_name:u.name, user_email:u.email||'',
+      booking_date:d, status:'attended', attendance_status:'attended',
+      attended_at:nowISO(), attended_by:'online_enter', attendance_source:'online_auto',
+      online:true, access_method:krytie, created_at:nowISO() });
+    await creditAttendance(u);
+  }catch(e){ console.error('zápis online účasti:', e.message); }
+}
+
 // Vstup do online prenosu pre permanentkárku: odčíta 1 vstup (raz za deň) a vydá stream.
 // Plný online prístup (Silver/Gold/Online) prechádza bez odpočtu.
 app.post('/api/online/enter', auth, async(req,res)=>{
@@ -15355,8 +15386,10 @@ app.post('/api/online/enter', auth, async(req,res)=>{
     if(await terminZruseny(cls._id, today()))
       return res.status(410).json({error:'Táto hodina je dnes zrušená — vysielanie nebude. Nič sme ti nestrhli. 💛', cancelled:true});
     const stream={stream_url:cls.stream_url||null, stream_key:cls.stream_key||null};
-    if(await onlineFreeToday()) return res.json({ok:true, charged:false, mode:'full', free_day:true, stream});
-    if(hasOnlineAccess(m,u)) return res.json({ok:true, charged:false, mode:'full', stream});
+    if(await onlineFreeToday()){ await zapisOnlineUcast(u, cls, 'free_class');
+      return res.json({ok:true, charged:false, mode:'full', free_day:true, stream}); }
+    if(hasOnlineAccess(m,u)){ await zapisOnlineUcast(u, cls, 'membership');
+      return res.json({ok:true, charged:false, mode:'full', stream}); }
     // Odtiaľto sa už PLATÍ. Keď ešte nie je čo pozerať (tréner nezadal odkaz na
     // vysielanie), nesmie sa strhnúť nič — presne toto 6. 9. zobralo klientke
     // výhernú online hodinu za nedeľnú techniku, ktorá sa vôbec nekonala.
@@ -15373,12 +15406,14 @@ app.post('/api/online/enter', auth, async(req,res)=>{
         title:'🎡 Použila si výhernú online hodinu', body:'Príjemné cvičenie! Prístup k dnešnému prenosu ti platí do konca dňa.',
         read:false, created_at:nowISO()}).catch(()=>{});
       await auditLog(req,'online_pass_use',u._id,{passes:u.online_passes},{remaining:(u.online_passes||0)-1, class:cls.name},'');
+      await zapisOnlineUcast(u, cls, 'online_pass');
       return res.json({ok:true, charged:true, mode:'pass', remaining:(u.online_passes||0)-1, stream});
     }
     // 2) Permanentka — 1 vstup, raz za deň
     const entries=u.single_entries||0;
     const guardKey='online_entry_'+u._id+'_'+today();
-    if(await q.one(db.settings,{key:guardKey})) return res.json({ok:true, charged:false, mode:'entry', remaining:entries, stream});
+    if(await q.one(db.settings,{key:guardKey})){ await zapisOnlineUcast(u, cls, 'single_entry');
+      return res.json({ok:true, charged:false, mode:'entry', remaining:entries, stream}); }
     if(entries<=0) return res.status(402).json({error: jeTechnika(cls)
       ? 'Na technický tréning výherná online hodina neplatí — tú máš na Online Zumbu. Technika ide z permanentky alebo za cenu podľa členstva.'
       : 'Nemáš žiadne vstupy na permanentke.'});
@@ -15389,6 +15424,7 @@ app.post('/api/online/enter', auth, async(req,res)=>{
       body:`Za dnešnú online hodinu sa ti odčítal 1 vstup z permanentky. Zostáva ti ${entries-1} ${entries-1===1?'vstup':entries-1>=2&&entries-1<=4?'vstupy':'vstupov'}.`,
       read:false, created_at:nowISO()}).catch(()=>{});
     await auditLog(req,'online_entry_charge',u._id,{entries},{remaining:entries-1, class:cls.name},'');
+    await zapisOnlineUcast(u, cls, 'single_entry');
     res.json({ok:true, charged:true, mode:'entry', remaining:entries-1, stream});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
