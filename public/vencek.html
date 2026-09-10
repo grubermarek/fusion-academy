@@ -107,6 +107,8 @@ a.kto:hover{color:var(--gold);text-decoration:underline}
 <script>
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmtD=d=>d?d.split('-').reverse().join('.'):null;
+// Kto zaplatil kartou, mal doteraz napísané „v hotovosti" — poznali sme len prevod.
+const SPOSOB=m=>({stripe:'kartou',card:'kartou',transfer:'prevodom',cash:'v hotovosti'})[m]||'v hotovosti';
 const DNI=['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
 function termin(iso){
   try{
@@ -155,10 +157,12 @@ function danceHtml(d){
 function classCard(c, extra=''){
   // Venčekový večer je po 10. lekcii, zvyšné 3 sú bonus po ňom — tie sa nepočítajú
   // do odpočtu, inak by to vyzeralo, že venček je ďalej, než naozaj je.
-  const doVencka=+c.lessons_before||10;
+  // Počty berieme zo skutočných termínov (server ich ráta podľa dátumu venčeka),
+  // nie z nastavenia — inak by sme deťom tvrdili, že venček už bol, hoci nebol.
+  const doVencka = c.pred_veckom!=null ? +c.pred_veckom : (+c.lessons_before||10);
   const zostava=Math.max(0, doVencka-(c.lessons_done||0));
   const poVencku=Math.max(0, (c.lessons_done||0)-doVencka);
-  const bonusSpolu=Math.max(0, (c.lessons_total||13)-doVencka);
+  const bonusSpolu = c.bonusov!=null ? +c.bonusov : Math.max(0, (c.lessons_total||13)-doVencka);
   const vBonuse=zostava===0 && bonusSpolu>0;
   return `<div class="hero">
     <span class="badge">${esc(c.year)} · ${esc(c.name).toUpperCase()}</span>
@@ -349,7 +353,7 @@ async function overPlatbu(){
       ${s.classes.map(c=>`<div class="cls">
         <div class="head"><span>${esc(c.name)}</span><span style="color:var(--gold)">${c.progress} %</span></div>
         <div class="bigbar" style="margin:8px 0 4px"><i style="width:${c.progress}%"></i></div>
-        <div class="muted">Lekcia ${c.lessons_done}/${c.lessons_before||10} do venčeka${(c.lessons_total||13)>(c.lessons_before||10)?` (+${(c.lessons_total||13)-(c.lessons_before||10)} bonus)`:''} · ${c.members} žiakov · uhradené ${c.paid_count}/${c.members}${c.event_date?` · večer ${esc(fmtD(c.event_date))}`:''}</div>
+        <div class="muted">Lekcia ${c.lessons_done}/${c.pred_veckom!=null?c.pred_veckom:(c.lessons_before||10)} do venčeka${(c.bonusov||0)>0?` (+${c.bonusov} bonus)`:''} · ${c.members} žiakov · uhradené ${c.paid_count}/${c.members}${c.event_date?` · večer ${esc(fmtD(c.event_date))}`:''}</div>
         <a href="/vencek?ako=student&class_id=${c.id||c._id}" style="display:inline-block;margin-top:8px;background:rgba(201,168,76,.16);border:1px solid rgba(201,168,76,.45);color:var(--gold);border-radius:9px;padding:5px 11px;font-size:.78rem;font-weight:700;text-decoration:none">👁️ Pozrieť ako žiak</a>
       </div>`).join('')||'<div class="muted">Zatiaľ žiadne skupiny.</div>'}</div>`).join('')
       ||'<div class="empty">Žiadne školy.</div>';
@@ -376,9 +380,21 @@ async function overPlatbu(){
   const done = d.class.completed
     ? `<div class="hero" style="border-color:rgba(124,179,66,.6)"><span class="badge" style="color:#aed581;border-color:rgba(124,179,66,.5);background:rgba(124,179,66,.12)">🏅 ABSOLVENT</span><h1>Venček máte za sebou!</h1><div class="sub">Odznak absolventa svieti na tvojom profile. Kupón <b style="color:var(--gold)">VENCEKABS</b> = 1. mesiac členstva zdarma. 💛</div></div>` : '';
   const pay = d.is_parent
-    ? `<div class="pay-ok" style="background:rgba(201,168,76,.1);border-color:rgba(201,168,76,.4);color:var(--cream)">👨‍👩‍👧 Sledujete triedu${d.child_name?` — dieťa <b>${esc(d.child_name)}</b>`:''}. Kurz (${(+d.price).toFixed(2)} €) sa uhrádza cez účet žiaka — po platbe príde potvrdenie na email.</div>`
+    ? (d.child_paid
+      ? `<div class="pay-ok">🧾 <b>Kurz je uhradený</b>${d.child_name?` — ${esc(d.child_name)}`:''}. Potvrdenie máte na emaili.</div>`
+      : d.child_matched
+      ? `<div class="pay-no">💳 Kurz ${d.child_name?`pre <b>${esc(d.child_name)}</b> `:''}ešte nie je uhradený — <b>${(+d.price).toFixed(2)} €</b>.
+          <div style="margin-top:10px">
+            <button onclick="platitKartou(this)"${d.preview?' disabled':''}
+              style="background:linear-gradient(135deg,#C9A84C,#a5842f);color:#161310;border:none;border-radius:10px;padding:11px 20px;font-weight:800;font-size:.92rem;cursor:pointer;width:100%;max-width:280px">
+              💳 Zaplatiť za dieťa
+            </button>
+          </div>
+          <div class="muted" style="margin-top:8px">Karta, Apple Pay aj Google Pay. Platba sa pripíše ${esc(d.child_name||'dieťaťu')} — potvrdenie príde vám aj jemu.</div>
+        </div>`
+      : `<div class="pay-ok" style="background:rgba(201,168,76,.1);border-color:rgba(201,168,76,.4);color:var(--cream)">👨‍👩‍👧 Sledujete triedu${d.child_name?` — dieťa <b>${esc(d.child_name)}</b>`:''}. Kurz (${(+d.price).toFixed(2)} €) zatiaľ vieme prijať len cez účet žiaka — napíšte nám a spárujeme vás s dieťaťom.</div>`)
     : d.my_payment
-    ? `<div class="pay-ok">🧾 <b>Zaplatené</b> — ${(+d.my_payment.amount).toFixed(2)} € (${d.my_payment.method==='transfer'?'prevodom':'v hotovosti'}, ${new Date(d.my_payment.paid_at).toLocaleDateString('sk')}). Potvrdenie máš v notifikáciách a na emaili.</div>`
+    ? `<div class="pay-ok">🧾 <b>Zaplatené</b> — ${(+d.my_payment.amount).toFixed(2)} € (${SPOSOB(d.my_payment.method)}, ${new Date(d.my_payment.paid_at).toLocaleDateString('sk')}). Potvrdenie máš v notifikáciách a na emaili.</div>`
     : `<div class="pay-no">💳 Kurz ešte nie je uhradený — <b>${(+d.price).toFixed(2)} €</b>.
         <div style="margin-top:10px">
           <button onclick="platitKartou(this)"${d.preview?' disabled title="V náhľade sa platiť nedá"':''}

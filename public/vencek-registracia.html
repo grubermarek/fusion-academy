@@ -131,7 +131,10 @@ const ROLE_LBL={student:'🧑‍🎓 Som žiak / žiačka', parent:'👨‍👩�
     host.innerHTML='<div class="stav">🎓 Kód <b>'+esc(KOD)+'</b> nepoznáme.<br><br>Skontroluj ho prosím na papieri od školy — alebo naskenuj QR znova.</div>'; return;
   }
 
-  const doVencka=d.lessons_before||10, bonus=Math.max(0,(d.lessons_total||13)-doVencka);
+  // Počty zo skutočných termínov — sľubovať „3 bonusové lekcie po venčeku",
+  // keď posledná lekcia je pred ním, je klamstvo hneď na registračnej stránke.
+  const doVencka = d.pred_veckom!=null ? +d.pred_veckom : (d.lessons_before||10);
+  const bonus = d.bonusov!=null ? +d.bonusov : Math.max(0,(d.lessons_total||13)-doVencka);
   const tance=(d.dances||[]).filter(Boolean);
   const role=(d.roles||['student']).filter(r=>ROLE_LBL[r]);
 

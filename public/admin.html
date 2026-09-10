@@ -4058,7 +4058,7 @@ async function loadVenceky(){
         ${s.classes.map(c=>`<tr>
           <td><b>${c.name}</b>${c.event_date?`<br><small class="text-muted">✨ ${c.event_date}</small>`:''}</td>
           <td style="min-width:110px"><div style="height:8px;background:#26221a;border-radius:5px;overflow:hidden"><div style="height:100%;width:${c.progress}%;background:#C9A84C"></div></div><small class="text-muted">${c.progress} %</small></td>
-          <td>${c.lessons_done}/${c.lessons_before||10}${(c.lessons_total||13)>(c.lessons_before||10)?`<br><small class="text-muted">+${(c.lessons_total||13)-(c.lessons_before||10)} bonus</small>`:""}</td>
+          <td>${c.lessons_done}/${c.pred_veckom!=null?c.pred_veckom:(c.lessons_before||10)}${(c.bonusov||0)>0?`<br><small class="text-muted">+${c.bonusov} bonus</small>`:""}</td>
           <td class="text-center">${c.members}</td>
           <td class="text-center">${c.paid}/${c.members}${c.unpaid?` <span class="text-warning">(${c.unpaid} chýba)</span>`:' ✅'}</td>
           <td class="text-end">${vEur(c.income)}</td>
@@ -4178,6 +4178,8 @@ async function vSetRole(uid, cid, role, el){
   else showToast('Chyba: '+(r?.error||'?'),'error');
 }
 // ── Rozvrh venčeka ─────────────────────────────────────────────────────────
+// Kartová platba sa v admine vypisovala ako hotovosť — poznali sme len prevod.
+const V_SPOSOB=m=>({stripe:'karta',card:'karta',transfer:'prevod',cash:'hotovosť'})[m]||'hotovosť';
 const V_DNI=['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
 function vTermin(iso){
   try{
@@ -4293,7 +4295,11 @@ async function vClassDetail(cid, tab){
   const d=await vApi('class/'+cid);
   document.getElementById('vClassModal')?.remove();
   const c=d.class;
-  const doV=+c.lessons_before||10, spolu=+c.lessons_total||13, bonus=Math.max(0,spolu-doV);
+  const spolu=+c.lessons_total||13;
+  // Pred venčekom / po ňom sa ráta z reálnych termínov, nie z nastavených počtov.
+  const _t=(c.terminy||[]).filter(t=>!t.cancelled&&t.at);
+  const doV=_t.length?_t.filter(t=>!t.bonus).length:(+c.lessons_before||10);
+  const bonus=_t.length?_t.filter(t=>t.bonus).length:Math.max(0,spolu-(+c.lessons_before||10));
   const zaplatilo=d.members.filter(x=>x.paid).length;
   V_TAB = tab || V_TAB || 'dochadzka';
 
@@ -4351,7 +4357,7 @@ async function vClassDetail(cid, tab){
        +(d.members.map(mm=>'<div class="vdet-riadok">'
            +'<label class="vdet-clovek"><input type="checkbox" class="vAttCb" value="'+mm.id+'"><span>'+escHtml(mm.name)+'</span></label>'
            +(mm.paid
-             ? '<span class="vdet-zapl ok" title="'+vEur(mm.amount)+' · '+(mm.method==='transfer'?'prevod':'hotovosť')+'">✓ zaplatené</span>'
+             ? '<span class="vdet-zapl ok" title="'+vEur(mm.amount)+' · '+V_SPOSOB(mm.method)+'">✓ zaplatené</span>'
              : '<span class="vdet-zapl ne">nezaplatené</span>'
                +'<button class="btn btn-sm btn-brand" style="font-size:.72rem;padding:2px 9px" onclick="event.stopPropagation();vMarkPaid(\''+c._id+'\',\''+mm.id+'\',\'cash\')" title="Zapísať, že si od nej/neho vzal hotovosť">💶 vzal som hotovosť</button>')
          +'</div>').join('')
@@ -4396,7 +4402,7 @@ async function vClassDetail(cid, tab){
        +(d.members.map(mm=>'<tr>'
          +'<td>'+(mm.paid?'✅':'⏳')+' <b>'+escHtml(mm.name)+'</b><br><small class="text-muted">'+escHtml(mm.email||'')+' '+escHtml(mm.phone||'')+'</small>'+vRolePicker(mm.id,c._id,'student')+'</td>'
          +'<td class="text-end">'+(mm.paid
-           ? vEur(mm.amount)+' <small class="text-muted">('+(mm.method==='transfer'?'prevod':'hotovosť')+')</small><br><button class="btn btn-sm btn-outline-danger mt-1" onclick="vApi(\'payment-delete\',{class_id:\''+c._id+'\',user_id:\''+mm.id+'\'}).then(()=>vClassDetail(\''+c._id+'\'))">zrušiť platbu</button>'
+           ? vEur(mm.amount)+' <small class="text-muted">('+V_SPOSOB(mm.method)+')</small><br><button class="btn btn-sm btn-outline-danger mt-1" onclick="vApi(\'payment-delete\',{class_id:\''+c._id+'\',user_id:\''+mm.id+'\'}).then(()=>vClassDetail(\''+c._id+'\'))">zrušiť platbu</button>'
            : '<button class="btn btn-sm btn-brand" onclick="vMarkPaid(\''+c._id+'\',\''+mm.id+'\',\'cash\')">💶 hotovosť</button> '
              +'<button class="btn btn-sm btn-outline-light" onclick="vMarkPaid(\''+c._id+'\',\''+mm.id+'\',\'transfer\')">🏦 prevod</button>')
          +'</td></tr>').join('')

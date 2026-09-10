@@ -391,6 +391,29 @@ function today()        { return new Intl.DateTimeFormat('sv-SE',{timeZone:'Euro
 // surový prefix s today() tam prestane fungovať (Marek 1. 9.: tréner nevedel
 // stornovať vlastný preklep vo výbere hotovosti, lebo appka ho mala za včerajší).
 function denSK(iso){ try{ return new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Bratislava'}).format(new Date(iso)); }catch(e){ return String(iso||'').slice(0,10); } }
+// O koľko minút je slovenský čas pred UTC v danom okamihu (120 v lete, 60 v zime).
+function posunSK(ms){
+  const f=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Bratislava',hour12:false,
+    year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+  const p={}; for(const x of f.formatToParts(new Date(ms))) if(x.type!=='literal') p[x.type]=+x.value;
+  const lokal=Date.UTC(p.year,p.month-1,p.day,p.hour===24?0:p.hour,p.minute);
+  return Math.round((lokal-ms)/60000);
+}
+// Formulár posiela „2026-09-10T13:00" bez zóny. new Date() to na serveri (UTC)
+// prečíta ako 13:00 UTC, čiže 15:00 u nás — a deťom by sa rozvrh venčeka
+// posunul o dve hodiny. Bez zóny to teda znamená slovenský čas.
+function casSKnaISO(vstup){
+  const s=String(vstup||'').trim();
+  if(!s) return null;
+  if(/(Z|[+-]\d{2}:?\d{2})$/.test(s)){ const d=new Date(s); return isNaN(d)?null:d.toISOString(); }
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+  if(!m){ const d=new Date(s); return isNaN(d)?null:d.toISOString(); }
+  const zaklad=Date.UTC(+m[1],+m[2]-1,+m[3],+m[4],+m[5]);
+  let ms=zaklad;
+  // Dva prechody kvôli hodine, keď sa mení letný čas — druhý už sedí vždy.
+  for(let i=0;i<2;i++) ms=zaklad-posunSK(ms)*60000;
+  return new Date(ms).toISOString();
+}
 // Deň v týždni sa NIKDY nepíše ručne vedľa dátumu. 2. 9. 2026 odišla pozvánka
 // 350 ľuďom s „piatok 5. 9.", hoci to bola sobota — a v tom istom súbore bolo
 // aj „nedeľa 31. 8.", pričom to bol pondelok. Dátum je jediný zdroj pravdy.
@@ -10401,6 +10424,11 @@ async function zlucUcty(srcId, tgtId){
     prenesene['venčeky']=(prenesene['venčeky']||0)+1;
   }
   await pren(db.venceky_attendance,'recorded_by','venčeky');
+  // Bez týchto dvoch by zlúčenie duplicity venčekára osirelo jeho zaplatený kurz
+  // (v skupine by vyšiel ako neplatič) a jeho správy v chate by viedli na zmazaný
+  // účet.
+  await pren(db.venceky_payments,'user_id','venčeky');
+  await pren(db.venceky_chat,'user_id','venčeky');
   // Maily: odoslané ostávajú ako história, čakajúce zruš — inak by klientke po
   // zlúčení odišla ešte raz sekvencia, ktorú cieľový účet už dostal.
   const zruseneMaily=await q.update(db.email_queue,{user_id:src._id, status:'pending'},
@@ -10436,7 +10464,18 @@ async function zlucUcty(srcId, tgtId){
       .filter(e=>e && e!==tgt.email))),
     merged_accounts: Array.from(new Set([...(tgt.merged_accounts||[]), src._id])),
     merged_at: nowISO(),
+    // Venčeková príslušnosť sa neprenášala vôbec — zlúčenie žiaka, ktorý si
+    // založil druhý účet, by ho vyhodilo zo skupiny.
+    venceky_class_id: tgt.venceky_class_id||src.venceky_class_id||null,
+    venceky_school_id: tgt.venceky_school_id||src.venceky_school_id||null,
+    venceky_role: tgt.venceky_role||src.venceky_role||null,
+    vencek_child_name: tgt.vencek_child_name||src.vencek_child_name||'',
+    vencek_alumni: tgt.vencek_alumni||src.vencek_alumni||null,
   };
+  // Prázdne hodnoty nezapisuj — inak by účet mimo venčekov dostal samé nully.
+  for(const k of ['venceky_class_id','venceky_school_id','venceky_role','vencek_alumni'])
+    if(set[k]==null) delete set[k];
+  if(!set.vencek_child_name) delete set.vencek_child_name;
   // Ak si heslo nastavila na duplicitnom účte, bez tohto by sa po zlúčení
   // neprihlásila vôbec.
   if(!tgt.password && src.password) set.password=src.password;
@@ -12440,6 +12479,11 @@ async function revenueEvents(opts){
     .filter(m=>!m._type && m.payment_method && ok(m.user_id));
   const objednavky=(await q.find(db.orders,{})).filter(o2=>o2.status==='paid');
   const tr=await q.find(db.transactions,{});
+  // Venčekové kurzy si peniaze evidovali vo vlastnej kolekcii, ktorú tržba
+  // nečítala — 199,60 € vybratých v Halíči nevidela ani sekcia Financie, ani
+  // účtovníctvo, hoci faktúry na ne existovali (10. 9.).
+  const vencekPlatby=(await q.find(db.venceky_payments,{})).filter(p=>+p.amount>0 && ok(p.user_id));
+  const vencekNazov=Object.fromEntries((await q.find(db.venceky_classes,{})).map(c=>[c._id,c.name]));
 
   // Členstvo predané v hotovosti je zapísané aj ako členstvo, aj ako transakcia.
   // Bez tohto kľúča by sa tá istá tržba započítala dvakrát.
@@ -12483,6 +12527,12 @@ async function revenueEvents(opts){
         what:(o2.items||[]).map(i=>i.product_name||'položka').join(', ')||'E-shop',
         method:o2.payment_method||'hotovosť', kanal:'e-shop',
         invoice: fak(najdiFakturu(u&&u._id, o2.client_email, o2.total, d, o2.order_number)) }; }),
+    ...vencekPlatby.map(p=>{ const u=kto(p.user_id); const d=p.paid_at||p.created_at||'';
+      if(!u.name || u.name==='—') u.name=p.user_name||'—';
+      return { id:p._id, d, a:+p.amount||0, cat:'venceky', src:'app', who:u,
+        what:'Venčekový kurz'+(vencekNazov[p.class_id]?' · '+vencekNazov[p.class_id]:''),
+        method: p.method==='stripe' ? 'karta' : (p.method==='transfer' ? 'prevod' : 'hotovosť'),
+        kanal:'venčeky', invoice: fak(najdiFakturu(p.user_id,u.email,p.amount,d)) }; }),
     ...trans('single_entry','entries', t=>t.note||'Jednorazový vstup'),
     ...trans('private_lesson','private', t=>t.note||'Súkromná hodina'),
     ...trans('event_ticket','events', t=>t.note||'Vstupenky'),
@@ -12510,6 +12560,7 @@ const PREDAJ_KATEGORIE = {
   "passes": "Permanentka",
   "entries": "Vstup",
   "private": "Súkromná hodina",
+  "venceky": "Venčeky",
   "events": "Vstupenky",
   "merch": "Merch",
   "other": "Ostatné"
@@ -21808,6 +21859,8 @@ function vencekTerminy(c){
   const zmeny={};
   (Array.isArray(c.lesson_changes)?c.lesson_changes:[]).forEach(z=>{ if(z && z.week!=null) zmeny[+z.week]=z; });
   const spolu=+c.lessons_total||13, doVencka=+c.lessons_before||10;
+  const vecerMs=/^\d{4}-\d{2}-\d{2}$/.test(String(c.event_date||''))
+    ? Date.parse(c.event_date+'T23:59:59Z') : null;
   // Týždne sa pripočítavajú cez setDate, nie cez milisekundy. Pri prechode na
   // zimný čas (25. 10.) má týždeň 169 hodín, nie 168 — cez ms by sa lekcie od
   // konca októbra posunuli o hodinu skôr a nikto by si toho nevšimol, kým by
@@ -21819,11 +21872,34 @@ function vencekTerminy(c){
     const z=zmeny[tyzden]||{};
     if(z.cancelled){ out.push({week:tyzden, cancelled:true, at:poTyzdnoch(tyzden).toISOString(), reason:z.reason||''}); tyzden++; continue; }
     const kedy=z.at ? new Date(z.at) : poTyzdnoch(tyzden);
+    // „Bonusová" je lekcia, ktorá je AŽ PO venčekovom večere. Doteraz sa to
+    // rátalo len z poradia, takže v Halíči (venček 12. 12., posledná lekcia
+    // 3. 12.) by appka od 12. 11. deťom písala „venček máte za sebou" — mesiac
+    // predtým, než bol.
     out.push({ week:tyzden, lesson:lekcia, at:isNaN(kedy)?null:kedy.toISOString(),
-      moved:!!z.at, bonus:lekcia>doVencka });
+      moved:!!z.at, bonus: vecerMs ? (!isNaN(kedy) && kedy.getTime()>vecerMs) : lekcia>doVencka });
     lekcia++; tyzden++;
   }
   return out;
+}
+// Rodič zadáva meno dieťaťa voľným textom, väzba na jeho účet neexistuje.
+// Spárujeme ho so žiakom v skupine — jednoznačne, alebo vôbec.
+async function vencekDieta(rodic, classId){
+  if(!rodic || rodic.venceky_role!=='parent' || !classId) return null;
+  const meno=bezDiakritiky(rodic.vencek_child_name||'').trim();
+  if(meno.length<3) return null;
+  const ziaci=(await q.find(db.users,{venceky_class_id:classId})).filter(x=>x.venceky_role==='student');
+  const presne=ziaci.filter(x=>bezDiakritiky(x.name).trim()===meno);
+  const kandidati=presne.length ? presne : ziaci.filter(x=>bezDiakritiky(x.name).includes(meno));
+  return kandidati.length===1 ? kandidati[0] : null;
+}
+// Koľko lekcií je pred venčekom a koľko po ňom — podľa skutočných termínov,
+// keď ich poznáme, inak podľa nastavených počtov.
+function vencekPocty(c){
+  const t=vencekTerminy(c).filter(x=>!x.cancelled && x.at);
+  const doV=+c.lessons_before||10;
+  if(!t.length) return { pred:doV, bonus:Math.max(0,(+c.lessons_total||13)-doV) };
+  return { pred:t.filter(x=>!x.bonus).length, bonus:t.filter(x=>x.bonus).length };
 }
 const vencekPct=ds=>ds&&ds.length? Math.round(ds.reduce((s,d)=>s+(d.level||0),0)/(ds.length*4)*100):0;
 
@@ -21921,6 +21997,7 @@ app.get('/api/admin/venceky/overview', adminAuth, async(req,res)=>{
         return { id:c._id, name:c.name, code:c.code, join_link:`${APP_URL}/v/${c.code}`,
           lecturer:c.lecturer, event_date:c.event_date, price:c.price,
           lessons_done:c.lessons_done||0, lessons_total:c.lessons_total||13, lessons_before:c.lessons_before||10,
+          ...(()=>{ const p=vencekPocty(c); return {pred_veckom:p.pred, bonusov:p.bonus}; })(),
           progress:vencekPct(c.dances), members:members.length, parents:parents.length,
           paid:members.filter(m=>paidIds.has(m._id)).length,
           unpaid:members.filter(m=>!paidIds.has(m._id)).length,
@@ -21992,6 +22069,13 @@ app.post('/api/admin/venceky/payment', adminAuth, async(req,res)=>{
        <p>Spôsob platby: ${method==='transfer'?'prevod na účet':'hotovosť'} · Dátum: ${today()}</p>
        <p>Toto potvrdenie si uschovajte. Ďakujeme! 💛</p>`,
       '📱 Otvoriť appku', `${APP_URL}/vencek`)).catch(()=>{});
+    // Doklad sa doteraz vystavoval len pri platbe kartou. Hotovosť vybratá na
+    // hodine tak v „Predaje & faktúry" nemala nič — a účtovníčka to nemala z čoho
+    // zaúčtovať (10. 9.).
+    createInvoice({ user_id:u._id, client_name:u.name, client_email:u.email,
+      items:[{desc:`Venčekový kurz ${c.year||''} · ${c.name}`.trim(), qty:1, total:amt}], total:amt,
+      method:(method==='transfer'?'Prevod na účet':'Hotovosť'), silent:true })
+      .catch(e=>console.error('faktúra k venčeku (hotovosť):', e.message));
     res.json({ok:true});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -22006,11 +22090,18 @@ app.post('/api/vencek/checkout', auth, async(req,res)=>{
     if(!u || !u.venceky_class_id) return res.status(400).json({error:'Nie si v žiadnej venčekovej skupine'});
     const c=await q.one(db.venceky_classes,{_id:u.venceky_class_id});
     if(!c) return res.status(404).json({error:'Skupina nenájdená'});
-    // Rodič platí cez účet žiaka — inak by sedeli dve platby na jeden kurz.
-    if(u.venceky_role==='parent')
-      return res.status(400).json({error:'Kurz sa uhrádza cez účet žiaka — prihláste sa prosím jeho kontom.'});
-    if(await q.one(db.venceky_payments,{class_id:c._id, user_id:u._id}))
-      return res.status(400).json({error:'Kurz už máš uhradený'});
+    // Kartu má rodič, nie trinásťročný — nech môže zaplatiť za svoje dieťa.
+    // Platba sa aj tak zapíše žiakovi, inak by v skupine vyšiel ako neplatič.
+    // Dieťa hľadáme podľa mena, ktoré rodič zadal pri registrácii; keď sa
+    // jednoznačne nespáruje, ostáva pôvodná odpoveď.
+    let ziak=u;
+    if(u.venceky_role==='parent'){
+      ziak=await vencekDieta(u, c._id);
+      if(!ziak)
+        return res.status(400).json({error:'Kurz sa uhrádza na účet žiaka. Prihláste sa jeho kontom — alebo nám napíšte a spárujeme vás s dieťaťom.'});
+    }
+    if(await q.one(db.venceky_payments,{class_id:c._id, user_id:ziak._id}))
+      return res.status(400).json({error: ziak._id===u._id ? 'Kurz už máš uhradený' : 'Kurz už je za '+ziak.name+' uhradený'});
     const suma=+c.price||49.90;
     if(!(suma>0)) return res.status(400).json({error:'Neplatná cena kurzu'});
     const s=await q.one(db.venceky_schools,{_id:c.school_id});
@@ -22025,7 +22116,8 @@ app.post('/api/vencek/checkout', auth, async(req,res)=>{
       'customer_email':u.email||'',
       'metadata[type]':'vencek',
       'metadata[class_id]':String(c._id),
-      'metadata[user_id]':String(u._id)
+      'metadata[user_id]':String(ziak._id),
+      'metadata[payer_id]':String(u._id)
     }, 'POST');
     if(r.status>=400 || !r.body?.url) return res.status(400).json({error:r.body?.error?.message||'Stripe chyba'});
     res.json({ok:true, url:r.body.url});
@@ -22065,6 +22157,22 @@ app.post('/api/vencek/verify', auth, async(req,res)=>{
       items:[{desc:`Venčekový kurz ${c.year} · ${c.name}`, qty:1, total:amt}], total:amt,
       method:'Stripe (karta / Apple Pay / Google Pay)' })
       .catch(e=>console.error('faktúra k venčeku:', e.message));
+    // Keď platil rodič, potvrdenie musí prísť aj jemu — z jeho účtu odišli peniaze.
+    const platcaId=String(s.metadata.payer_id||'');
+    if(platcaId && platcaId!==u._id){
+      const rodic=await q.one(db.users,{_id:platcaId});
+      if(rodic){
+        await q.insert(db.notifications,{user_id:rodic._id, type:'venceky',
+          title:'🧾 Potvrdenie o platbe — Fusion Venčeky',
+          body:`Zaplatili ste ${amt.toFixed(2)} € za venčekový kurz pre ${u.name}. Ďakujeme!`,
+          read:false, created_at:nowISO()}).catch(()=>{});
+        if(rodic.email && /@/.test(rodic.email)) sendMail(rodic.email,'🧾 Potvrdenie o platbe — Fusion Venčeky',
+          emailTemplate('Potvrdenie o platbe',
+          `<p>Potvrdzujeme prijatie platby <b>${amt.toFixed(2)} €</b> za venčekový kurz <b>${c.name}</b> pre <b>${u.name}</b>.</p>
+           <p>Spôsob platby: kartou · Dátum: ${today()}</p><p>Ďakujeme! 💛</p>`,
+          '📱 Otvoriť appku', `${APP_URL}/vencek`), {priority:2}).catch(()=>{});
+      }
+    }
     res.json({ok:true, amount:amt});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -22083,6 +22191,7 @@ app.post('/api/admin/venceky/class-delete', adminAuth, async(req,res)=>{
     await q.remove(db.venceky_payments,{class_id:c._id},{multi:true});
     await q.remove(db.venceky_attendance,{class_id:c._id},{multi:true});
     await q.remove(db.venceky_costs,{class_id:c._id},{multi:true});
+    await q.remove(db.venceky_chat,{class_id:c._id},{multi:true});
     await q.remove(db.venceky_classes,{_id:c._id},{});
     await auditLog(req,'vencek_class_delete',c._id,{name:c.name},{members:members.length},'');
     res.json({ok:true, unassigned:members.length});
@@ -22101,6 +22210,7 @@ app.post('/api/admin/venceky/school-delete', adminAuth, async(req,res)=>{
       await q.remove(db.venceky_payments,{class_id:c._id},{multi:true});
       await q.remove(db.venceky_attendance,{class_id:c._id},{multi:true});
       await q.remove(db.venceky_costs,{class_id:c._id},{multi:true});
+    await q.remove(db.venceky_chat,{class_id:c._id},{multi:true});
       await q.remove(db.venceky_classes,{_id:c._id},{});
     }
     for(const u of await q.find(db.users,{venceky_school_id:s._id}))
@@ -22140,9 +22250,9 @@ app.post('/api/vencek/service/set', async(req,res)=>{
     if(req.body.event_venue!=null) set.event_venue=String(req.body.event_venue).slice(0,120);
     if(req.body.schedule!=null) set.schedule=String(req.body.schedule).slice(0,120);
     if(req.body.start_at!=null){
-      const d=new Date(req.body.start_at);
-      if(!(String(req.body.start_at).trim() && !isNaN(d))) return res.status(400).json({error:'Neplatný dátum prvej lekcie'});
-      set.start_at=d.toISOString();
+      const iso=casSKnaISO(req.body.start_at);
+      if(!iso) return res.status(400).json({error:'Neplatný dátum prvej lekcie'});
+      set.start_at=iso;
     }
     if(!Object.keys(set).length) return res.status(400).json({error:'Nič na uloženie'});
     await q.update(db.venceky_classes,{_id:c._id},{$set:{...set, updated_at:nowISO()}});
@@ -22169,10 +22279,7 @@ app.post('/api/admin/venceky/progress', trainerAuth, async(req,res)=>{
     // takže je to voľný text — nie výber zo slotov, ktoré nikto nepoužíva.
     if(req.body.schedule!=null) set.schedule=String(req.body.schedule).slice(0,120);
     // Dátum a čas PRVEJ lekcie; ďalšie sa dopočítajú po týždni.
-    if(req.body.start_at!=null){
-      const d=new Date(req.body.start_at);
-      set.start_at = (String(req.body.start_at).trim() && !isNaN(d)) ? d.toISOString() : null;
-    }
+    if(req.body.start_at!=null) set.start_at = casSKnaISO(req.body.start_at);
     await q.update(db.venceky_classes,{_id:c._id},{$set:set});
     // Notifikácia triede pri novom zvládnutom tanci
     if(set.dances){
@@ -22213,6 +22320,10 @@ app.post('/api/admin/venceky/attendance', trainerAuth, async(req,res)=>{
     if(existing) await q.update(db.venceky_attendance,{_id:existing._id},{$set:{present, absent, updated_at:nowISO()}});
     else await q.insert(db.venceky_attendance,{class_id:c._id, school_id:c.school_id, lesson_no:lesson,
       present, absent, date:today(), recorded_by:req.session.uid, created_at:nowISO()});
+    // Počítadlo odučených lekcií sa dvíhalo výhradne zo zápisu tancov. Kto si
+    // píše len dochádzku, mal v appke „Lekcia 0 z 10" celý kurz.
+    if((+c.lessons_done||0) < lesson)
+      await q.update(db.venceky_classes,{_id:c._id},{$set:{lessons_done:lesson}});
     res.json({ok:true, lesson_no:lesson, present:present.length, absent:absent.length});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -22373,7 +22484,11 @@ app.post('/api/admin/venceky/assign-student', adminAuth, async(req,res)=>{
     const needle=String(req.body.query||'').toLowerCase().trim();
     if(needle.length<3) return res.status(400).json({error:'Zadaj email alebo meno (min. 3 znaky)'});
     const all=await q.find(db.users,{});
-    const matches=all.filter(u=>!u.is_admin && (String(u.email||'').toLowerCase().includes(needle) || String(u.name||'').toLowerCase().includes(needle)));
+    // Bez tohto „kakova" nenašlo Kákovú — tá istá chyba, akú sme opravili
+    // v zozname klientov.
+    const ihla=bezDiakritiky(needle);
+    const matches=all.filter(u=>!u.is_admin
+      && (bezDiakritiky(u.email).includes(ihla) || bezDiakritiky(u.name).includes(ihla)));
     if(!matches.length) return res.status(404).json({error:'Nenašiel sa žiadny účet pre „'+needle+'"'});
     if(matches.length>1 && !req.body.user_id)
       return res.json({ok:true, pick:matches.slice(0,8).map(u=>({id:u._id,name:u.name,email:u.email}))});
@@ -22467,6 +22582,7 @@ app.get('/api/vencek/info', rlPublic, async(req,res)=>{
     res.json({ok:true, name:c.name, school:(s&&s.name)||'', city:(s&&s.city)||'', year:c.year||'',
       roles:(Array.isArray(c.roles)&&c.roles.length)?c.roles:VENCEK_ROLES,
       price:+c.price||49.90, lessons_total:c.lessons_total||13, lessons_before:c.lessons_before||10,
+      ...(()=>{ const p=vencekPocty(c); return {pred_veckom:p.pred, bonusov:p.bonus}; })(),
       lecturer:c.lecturer||'', event_date:c.event_date||'', event_venue:c.event_venue||'', schedule:c.schedule||'',
       registered:(await q.find(db.users,{venceky_class_id:c._id})).length,
       dances:(c.dances||[]).map(d=>d.name)});
@@ -22526,10 +22642,11 @@ app.post('/api/admin/venceky/lesson-change', trainerAuth, async(req,res)=>{
       zmeny.push({week, cancelled:true, reason:String(req.body.reason||'').slice(0,120)});
       popis='zrušená — všetko ďalšie sa posúva o týždeň';
     } else if(req.body.at){
-      const d=new Date(req.body.at);
-      if(isNaN(d)) return res.status(400).json({error:'Neplatný dátum'});
-      zmeny.push({week, at:d.toISOString()});
-      popis='presunutá na '+d.toISOString().slice(0,16).replace('T',' ');
+      const iso=casSKnaISO(req.body.at);
+      if(!iso) return res.status(400).json({error:'Neplatný dátum'});
+      zmeny.push({week, at:iso});
+      popis='presunutá na '+new Intl.DateTimeFormat('sk-SK',{timeZone:'Europe/Bratislava',
+        day:'numeric',month:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(iso));
     } else return res.status(400).json({error:'Neviem, čo s tou lekciou spraviť'});
     zmeny.sort((a,b)=>a.week-b.week);
     await q.update(db.venceky_classes,{_id:c._id},{$set:{lesson_changes:zmeny}});
@@ -22584,6 +22701,18 @@ app.post('/api/vencek/chat', auth, async(req,res)=>{
     const m=await q.insert(db.venceky_chat,{ class_id:c._id, school_id:c.school_id,
       user_id:u._id, user_name:u.name, role:(u.is_admin?'lektor':(u.venceky_role||'student')),
       text, created_at:nowISO() });
+    // Do chatu sa dalo písať, ale nikto sa to nedozvedel — správa tam ležala,
+    // kým stránku niekto sám neotvoril.
+    (async()=>{
+      const kto=u.nickname||String(u.name||'').split(' ')[0]||'Niekto';
+      const ukazka=text.length>90 ? text.slice(0,90)+'…' : text;
+      for(const clen of await q.find(db.users,{venceky_class_id:c._id})){
+        if(clen._id===u._id) continue;
+        await q.insert(db.notifications,{user_id:clen._id, type:'venceky',
+          title:'💬 '+kto+' píše v chate skupiny', body:ukazka,
+          read:false, created_at:nowISO()}).catch(()=>{});
+      }
+    })().catch(e=>console.error('vencek chat notify:', e.message));
     res.json({ok:true, id:m._id});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -22645,6 +22774,7 @@ app.get('/api/vencek/mine', auth, async(req,res)=>{
       return { id:c._id, name:c.name, year:c.year, progress:vencekPct(c.dances),
         dances:(c.dances||[]).map(d=>({name:d.name, level:d.level, level_label:VENCEK_LEVELS[d.level||0], pct:Math.round((d.level||0)/4*100)})),
         lessons_done:c.lessons_done||0, lessons_total:c.lessons_total||13, lessons_before:c.lessons_before||10,
+        ...(()=>{ const p=vencekPocty(c); return {pred_veckom:p.pred, bonusov:p.bonus}; })(),
         event_date:c.event_date||null, event_venue:c.event_venue||'', schedule:c.schedule||'', note:c.note||'',
         start_at:c.start_at||null, terminy:vencekTerminy(c), members:members.length,
         completed:!!c.completed,
@@ -22699,6 +22829,13 @@ app.get('/api/vencek/mine', auth, async(req,res)=>{
     res.json({ok:true, role, school:school?.name||'', class:view, lessons:lekcie,
       ...(ziaci?{students:ziaci}:{}),
       is_parent: role==='parent'||undefined, child_name: role==='parent'?(u.vencek_child_name||''):undefined,
+      // Rodič potrebuje vedieť, či je dieťa spárované a či má zaplatené —
+      // inak by na neho tlačidlo platby buď chýbalo, alebo ho poslalo do chyby.
+      ...(role==='parent' ? await (async()=>{
+        const dieta=await vencekDieta(u, c._id);
+        if(!dieta) return { child_matched:false, child_paid:null };
+        return { child_matched:true, child_paid: !!(await q.one(db.venceky_payments,{class_id:c._id, user_id:dieta._id})) };
+      })() : {}),
       my_payment: myPay?{amount:myPay.amount, paid_at:myPay.paid_at, method:myPay.method}:null,
       my_attendance: (role!=='parent'&&myRecs.length)?{attended:myRecs.filter(r=>(r.present||[]).includes(u._id)).length, recorded:myRecs.length}:null,
       alumni: u.vencek_alumni||null,
