@@ -413,7 +413,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
         <div id="saleSponsorInfo" class="mb-3 small" style="display:none"></div>
         <div class="mb-3" id="salePartnerWrap" style="display:none">
           <label class="form-label fw-semibold small">Partner, ktorý dostane províziu (ručne)</label>
-          <select class="form-select" id="salePartner"><option value="">— bez provízie —</option></select>
+          <select class="form-select" id="salePartner"><option value="">— sponzor klienta (automaticky) —</option><option value="none">✖ bez provízie</option></select>
         </div>
         <div class="mb-3"><label class="form-label fw-semibold small">Produkt</label>
           <select class="form-select" id="saleProd" onchange="fillPrice()"><option value="">— Iný predaj —</option></select></div>
@@ -6891,7 +6891,7 @@ async function loadSaleForm(){
   // client picker options (all non-admin users)
   document.getElementById('saleClientList').innerHTML=(users||[]).map(u=>`<option value="${escHtml(u.name)} · ${escHtml(u.email)}" data-id="${u.id}"></option>`).join('');
   // fallback manual partner select
-  document.getElementById('salePartner').innerHTML='<option value="">— bez provízie —</option>'+(partners||[]).filter(p=>p.active).map(p=>`<option value="${p.id}">${p.name} [${p.referral_code}]</option>`).join('');
+  document.getElementById('salePartner').innerHTML='<option value="">— sponzor klienta (automaticky) —</option><option value="none">✖ bez provízie</option>'+(partners||[]).filter(p=>p.active).map(p=>`<option value="${p.id}">${p.name} [${p.referral_code}]</option>`).join('');
   document.getElementById('saleProd').innerHTML='<option value="">— Iný predaj —</option>'+prods.map(p=>`<option value="${p._id}" data-price="${p.price}">${p.cat}: ${p.name} (${eur(p.price)})</option>`).join('');
   document.getElementById('saleDate').value=new Date().toISOString().slice(0,10);
   document.getElementById('saleClientId').value='';document.getElementById('saleClientPick').value='';
@@ -6921,7 +6921,9 @@ function onSaleClientPick(){
   if(u && u.sponsor_id){
     info.style.display='block'; info.className='mb-3 small';
     info.innerHTML=`✅ Províziu dostane sponzor: <b style="color:var(--gold,#C9A24C)">${escHtml(u.sponsor_name||'—')}</b> <span class="text-muted">(automaticky)</span>`;
-    partnerWrap.style.display='none';
+    // Voľba musí byť dostupná aj keď sponzor existuje — pri spätnom dopísaní
+    // starého predaja provízia zmysel nedáva a doteraz sa nedala vypnúť.
+    partnerWrap.style.display='block';
     document.getElementById('salePartner').value='';
   } else {
     info.style.display='block'; info.className='mb-2 small';

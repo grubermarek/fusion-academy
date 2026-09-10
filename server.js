@@ -10540,12 +10540,18 @@ app.post('/api/admin/transactions', adminAuth, async(req,res)=>{
     // If a real client account is chosen, use its name and auto-derive the sponsor
     // (the person who registered them) as the commission recipient — unless an
     // explicit partner_id override was provided.
+    // „bez provízie" musí naozaj znamenať bez provízie. Prázdny výber = doplň
+    // sponzora klienta (tak to bolo doteraz), 'none' = nikomu nič. Bez tohto
+    // dostal Marek províziu sám sebe za starú súkromnú hodinu, ktorú spätne
+    // dopisoval do príjmov (10. 9.).
+    const bezProvizie = String(partner_id||'')==='none';
+    if(bezProvizie) partner_id = null;
     let client=null;
     if(client_id){
       client=await q.one(db.users,{_id:client_id});
       if(client){
         client_name = client_name || client.name;
-        if(!partner_id) partner_id = client.sponsor_id || null;
+        if(!partner_id && !bezProvizie) partner_id = client.sponsor_id || null;
       }
     }
     if(!client_name||!amount) return res.status(400).json({error:'Klient a suma sú povinné'});

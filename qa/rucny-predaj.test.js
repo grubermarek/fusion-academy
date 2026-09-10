@@ -38,6 +38,11 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     JSON.stringify({ _id: 'qaRpKlientka001', name: 'Klara Merchova', email: 'qa.rp.klientka@qa-biz.local',
       password: hash, user_type: 'client', active: true, referral_code: 'QARP01',
       visit_count: 3, created_at: '2026-06-01', city: 'Detva' }),
+    // klientka, ktorej sponzorom je admin — spätný zápis jej starej hodiny
+    // nesmie adminovi vygenerovať províziu sám sebe
+    JSON.stringify({ _id: 'qaRpSponz00001', name: 'Sponzorovaná Klientka', email: 'qa.rp.sponz@qa-biz.local',
+      password: hash, user_type: 'client', active: true, referral_code: 'QARP02',
+      sponsor_id: 'qaRpAdmin000001', visit_count: 5, created_at: '2026-02-01', city: 'Detva' }),
   ].join('\n') + '\n');
 
   // starý merch predaj bez typu a bez faktúry — migrácia ho má dorovnať
@@ -120,6 +125,28 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
       riadok ? JSON.stringify(riadok.who) : 'riadok sa nenašiel');
     ok('a započíta sa ako súkromná hodina', riadok && riadok.cat === 'private' && Math.abs(riadok.a - 210) < 0.01,
       riadok ? riadok.cat + '/' + riadok.a : '—');
+
+    // „— bez provízie —" v admine bolo doteraz len nálepka: server aj tak
+    // dohľadal sponzora klientky. Pri spätnom zápise starého predaja tak
+    // vznikla provízia za hodinu, ktorá bola dávno zaplatená.
+    console.log('\nSpätný zápis bez provízie:');
+    const bezProv = await j('/api/admin/transactions', { method: 'POST', body: {
+      client_id: 'qaRpSponz00001', partner_id: 'none',
+      product_name: '10× súkromná hodina', amount: 700,
+      date: '2026-03-15', payment_method: 'cash' } }, adm);
+    ok('predaj prejde', bezProv.status === 200 && bezProv.d && bezProv.d.ok);
+    ok('a provízia nevznikla', bezProv.d && bezProv.d.commission === false, JSON.stringify(bezProv.d));
+    await new Promise(r => setTimeout(r, 900));
+    const txSukr = rd('transactions.db').find(t => t.product_name === '10× súkromná hodina');
+    ok('ani v databáze', txSukr && !rd('commissions.db').some(c => c.transaction_id === txSukr._id),
+      JSON.stringify(rd('commissions.db').map(c => c.transaction_id + ':' + c.amount)));
+
+    console.log('\nBez voľby ostáva sponzor automaticky:');
+    const sponz = await j('/api/admin/transactions', { method: 'POST', body: {
+      client_id: 'qaRpSponz00001', product_name: 'Členstvo Bronze', amount: 50,
+      date: '2026-09-02', payment_method: 'cash' } }, adm);
+    ok('provízia sa priradí sponzorovi', sponz.d && sponz.d.commission === true
+      && sponz.d.partner_id === 'qaRpAdmin000001', JSON.stringify(sponz.d));
 
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.message);
