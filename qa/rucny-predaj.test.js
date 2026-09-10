@@ -141,6 +141,15 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('ani v databáze', txSukr && !rd('commissions.db').some(c => c.transaction_id === txSukr._id),
       JSON.stringify(rd('commissions.db').map(c => c.transaction_id + ':' + c.amount)));
 
+    // Marek dopisoval marcové hodiny v septembri — tržba musí sadnúť do marca,
+    // nie do mesiaca, v ktorom sa to klikalo.
+    console.log('\nSpätný zápis sadne do správneho mesiaca:');
+    const marec = (await j('/api/admin/predaje?from=2026-03-01&to=2026-03-31', {}, adm)).d;
+    ok('700 € je v marci', Math.abs((marec && marec.suma) - 700) < 0.01, 'suma=' + (marec && marec.suma));
+    const zari = (await j('/api/admin/predaje?from=2026-09-01&to=2026-09-30', {}, adm)).d;
+    ok('a v septembri už nie', !((zari && zari.rows) || []).some(r => Math.abs(r.a - 700) < 0.01),
+      JSON.stringify(((zari && zari.rows) || []).map(r => r.a)));
+
     console.log('\nBez voľby ostáva sponzor automaticky:');
     const sponz = await j('/api/admin/transactions', { method: 'POST', body: {
       client_id: 'qaRpSponz00001', product_name: 'Členstvo Bronze', amount: 50,

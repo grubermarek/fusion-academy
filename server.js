@@ -12472,6 +12472,13 @@ async function revenueEvents(opts){
         || null;
   };
   const fak = i => i ? { number:i.number, id:i._id } : null;
+  // Dátum predaja: keď je zapísaný spätne (marcová súkromná hodina dopísaná
+  // v septembri), platí zadaný dátum, nie okamih zápisu. Inak by tržba sadla
+  // do nesprávneho mesiaca.
+  const denTx = t => { const cre=String(t.created_at||""); const den=String(t.date||"").slice(0,10);
+    // Vraciame plný čas, nie holý dátum — porovnania rozsahov inde v appke
+    // pracujú s „RRRR-MM-DDTHH:MM:SS" a holý dátum by pri dolnej hranici vypadol.
+    return (den && den!==cre.slice(0,10)) ? den+"T12:00:00.000Z" : (cre||(den?den+"T12:00:00.000Z":"")); };
 
   const platby=(await q.find(db.payments,{}))
     .filter(p=>['completed','active'].includes(p.status) && !p.accounting_skip && ok(p.user_id));
@@ -12492,7 +12499,7 @@ async function revenueEvents(opts){
   const memTxKeys = new Set(memTx.map(t=>t.user_id+'|'+(+t.amount).toFixed(2)));
 
   const trans = (typ,cat,popis) => tr.filter(t=>t.type===typ && +t.amount>0 && !t.commission_only && ok(t.user_id||t.buyer_id||t.client_id))
-    .map(t=>{ const uid=t.user_id||t.buyer_id||t.client_id; const d=t.created_at||t.date||'';
+    .map(t=>{ const uid=t.user_id||t.buyer_id||t.client_id; const d=denTx(t);
       const u=kto(uid);
       // Kto u nás účet nemá (svadobný pár na súkromných hodinách), sa v zozname
       // predajov ukazoval ako „—". Meno z ručného zápisu je jediné, čo o ňom
@@ -12515,7 +12522,7 @@ async function revenueEvents(opts){
           cat:(MEMBERSHIP_PLANS[m.plan_id]?.type==='bundle'||m.status==='bundle')?'passes':'memberships',
           src:'app', who:u, what:(m.plan_name||'Členstvo'), method:m.payment_method||'hotovosť',
           kanal:'ručný zápis', invoice: fak(najdiFakturu(m.user_id,u.email,m.price,d)) }; }),
-    ...memTx.map(t=>{ const u=kto(t.user_id); const d=t.created_at||t.date||'';
+    ...memTx.map(t=>{ const u=kto(t.user_id); const d=denTx(t);
       return { id:t._id, d, a:+t.amount||0, cat:'memberships', src:'app', who:u,
         what:(MEMBERSHIP_PLANS[t.plan_id]?.name)||t.note||'Členstvo',
         method:t.payment_method||t.method||'hotovosť', kanal:'ručný zápis',
@@ -12539,7 +12546,7 @@ async function revenueEvents(opts){
     // ručný predaj: staré záznamy nemajú typ, poznáme ich podľa názvu produktu
     ...tr.filter(t=>!t.commission_only && +t.amount>0
         && (t.type==='product' || (!t.type && (t.product_name||t.payment_method))) && ok(t.user_id||t.client_id))
-      .map(t=>{ const uid=t.user_id||t.client_id; const u=kto(uid); const d=t.created_at||t.date||'';
+      .map(t=>{ const uid=t.user_id||t.client_id; const u=kto(uid); const d=denTx(t);
         return { id:t._id, d, a:+t.amount||0, cat:'merch', src:'app', who:u,
           what:t.product_name||t.note||'Predaj', method:t.payment_method||t.method||'hotovosť',
           kanal:'ručný zápis', invoice: fak(najdiFakturu(uid,u.email,t.amount,d)) }; }),
