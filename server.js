@@ -20970,6 +20970,32 @@ app.post('/api/service/ads-sync', async(req,res)=>{
   try{ res.json(await syncAdStats(true)); }
   catch(e){ res.status(500).json({error:e.message}); }
 });
+// Vypnutie alebo zapnutie kampane bez otvárania Ads Managera. Marek 10. 9.:
+// tri kampane na event, ktorý sa už konal, ostali zapnuté — po zaplatení
+// nedoplatku by sa rozbehli znova a míňali na akciu, ktorá bola. Klikať sa
+// dá len vtedy, keď je okno prehliadača vpredu, čo z terminálu nezariadim.
+// Vyžaduje token s ads_management; s ads_read to Meta odmietne a povie to sem.
+app.post('/api/service/ads-status', async(req,res)=>{
+  const tok=process.env.IMPORT_TOKEN;
+  if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
+  try{
+    const meta=(await getMetaAdsToken()) || (await getMetaCapiToken());
+    if(!meta) return res.status(400).json({error:'Chýba Meta Ads token'});
+    const id=String(req.body.campaign_id||'').trim();
+    const stav=String(req.body.status||'PAUSED').toUpperCase();
+    if(!/^\d+$/.test(id)) return res.status(400).json({error:'Zadaj campaign_id'});
+    if(!['PAUSED','ACTIVE'].includes(stav)) return res.status(400).json({error:'status musí byť PAUSED alebo ACTIVE'});
+    const g=async(u,init)=>await (await fetch('https://graph.facebook.com/v21.0/'+u, init)).json();
+    const pred=await g(`${id}?fields=name,status&access_token=${encodeURIComponent(meta)}`);
+    if(pred.error) return res.status(400).json({error:pred.error.message});
+    const upd=await g(id, {method:'POST', body:new URLSearchParams({status:stav, access_token:meta})});
+    if(upd.error) return res.status(400).json({error:upd.error.message, name:pred.name,
+      hint:'Token zrejme nemá ads_management — kampaň treba vypnúť klikom v Ads Manageri.'});
+    const po=await g(`${id}?fields=name,status&access_token=${encodeURIComponent(meta)}`);
+    console.log('📴 Meta kampaň „'+pred.name+'": '+pred.status+' → '+po.status);
+    res.json({ok:true, name:pred.name, pred:pred.status, po:po.status});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 app.get('/api/service/ads-overview', async(req,res)=>{
   const tok=process.env.IMPORT_TOKEN;
   if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
