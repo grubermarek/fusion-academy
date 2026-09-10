@@ -3042,6 +3042,41 @@ async function seedData() {
     await q.insert(db.settings,{key:'sona_online_pass_fix_v1', value:true, at:nowISO()});
   }
 
+  // Mesačný strop hlavolamu (40 bodov) Marek 10. 9. zrušil. Soňa Moskálová ho
+  // vyčerpala už 7. 9. a zvyšok mesiaca hrala za nulu — presne opačná motivácia,
+  // než akú od denného hlavolamu chceme. Strop 0 odteraz znamená „bez stropu".
+  // Zároveň vraciame body, ktoré strop v tomto mesiaci zobral: dopočítame podľa
+  // pravidiel, koľko mala hra dať, a rozdiel dorovnáme.
+  if(!(await q.one(db.settings,{key:'puzzle_cap_off_v1'}))){
+    const row=await q.one(db.settings,{key:'puzzle_config'});
+    const pc={ points:2, fast_bonus:0, podium_bonus:[5,3,1], rhythm_per_answer:1,
+      rhythm_perfect_bonus:5, ...((row&&row.value)||{}) };
+    const mesiac=today().slice(0,7);
+    let vratene=0; const dotknute=new Set();
+    for(const r of await q.find(db.puzzle_solves,{month:mesiac})){
+      const zaklad = r.type==='rhythm'
+        ? (+r.correct||0)*(+pc.rhythm_per_answer||1)
+        : (+pc.points||0)+(r.fast?(+pc.fast_bonus||0):0);
+      const bonus = !r.podium ? 0
+        : (r.type==='rhythm' ? (r.perfect ? (+pc.rhythm_perfect_bonus||0) : 0)
+                             : (+((pc.podium_bonus||[])[r.podium-1])||0));
+      const malaBy = zaklad + bonus;
+      if(malaBy > (+r.points||0)){
+        vratene += malaBy-(+r.points||0); dotknute.add(r.user_id);
+        await q.update(db.puzzle_solves,{_id:r._id},
+          {$set:{points:malaBy, day_win_bonus:bonus, cap_restored:true}});
+      }
+    }
+    await q.update(db.settings,{key:'puzzle_config'},
+      {$set:{key:'puzzle_config', value:{...((row&&row.value)||{}), monthly_cap:0}}},{upsert:true});
+    for(const uid of dotknute) await q.insert(db.notifications,{user_id:uid, type:'puzzle',
+      title:'🧩 Mesačný strop bodov sme zrušili',
+      body:'Hlavolam už strop nemá — body sa ti rátajú každý deň. A tie, ktoré ti strop tento mesiac zobral, sme ti dopísali. Ďakujeme, že hráš! 💛',
+      read:false, created_at:nowISO()}).catch(()=>{});
+    await q.insert(db.settings,{key:'puzzle_cap_off_v1', value:true, at:nowISO()});
+    console.log(`🧩 Strop hlavolamu zrušený · vrátených ${vratene} bodov ${dotknute.size} hráčkam`);
+  }
+
   // Po výmene kreatívy (priamy vstup do appky) čítame štatistiky len z novej reklamy,
   // nie z celej kampane — inak by sa miešali so staršou (pozastavenou) reklamou.
   if(!(await q.one(db.settings,{key:'meta_ad_id_v1'}))){

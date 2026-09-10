@@ -210,6 +210,15 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     return { ...DEFAULTS, ...(row && row.value || {}) };
   }
 
+
+  // Strop 0 (alebo záporný) znamená BEZ stropu. Marek ho 10. 9. zrušil — najaktívnejšia
+  // hráčka ho vyčerpala za týždeň a zvyšok mesiaca hrala za nulu, čo je presne opačná
+  // motivácia, než akú od hlavolamu chceme.
+  async function zostatokDoStropu(c, userId, month) {
+    if (!(+c.monthly_cap > 0)) return Infinity;
+    return Math.max(0, c.monthly_cap - await monthPoints(userId, month));
+  }
+
   async function monthPoints(userId, month) {
     const rows = await q.find(db.puzzle_solves, { user_id: userId });
     return rows.filter(r => String(r.date || '').startsWith(month))
@@ -241,7 +250,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       const bezchybne = rows.filter(r => r.perfect);
       if (!bezchybne.length) { console.log('🎵 Rytmus ' + dateStr + ': nikto nemal všetkých päť — bonus nikomu'); return null; }
       const v = bezchybne[0];
-      const capLeft = Math.max(0, c.monthly_cap - await monthPoints(v.user_id, dateStr.slice(0, 7)));
+      const capLeft = await zostatokDoStropu(c, v.user_id, dateStr.slice(0, 7));
       const bonus = Math.min(+c.rhythm_perfect_bonus || 0, capLeft);
       await q.update(db.puzzle_solves, { _id: v._id },
         { $set: { day_win: true, podium: 1, day_win_bonus: bonus, points: (+v.points || 0) + bonus } });
@@ -261,7 +270,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     for (let i = 0; i < Math.min(podium.length, rows.length); i++) {
       const r = rows[i], odmena = +podium[i] || 0;
       if (odmena <= 0) continue;
-      const capLeft = Math.max(0, c.monthly_cap - await monthPoints(r.user_id, dateStr.slice(0, 7)));
+      const capLeft = await zostatokDoStropu(c, r.user_id, dateStr.slice(0, 7));
       const bonus = Math.min(odmena, capLeft);
       await q.update(db.puzzle_solves, { _id: r._id },
         { $set: { day_win: i === 0, podium: i + 1, day_win_bonus: bonus, points: (+r.points || 0) + bonus } });
@@ -391,7 +400,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
         ? Math.max(1, Math.min(3600, Math.round((Date.now() - st.at) / 1000)))
         : Math.max(1, Math.min(3600, Math.round(+req.body.seconds || 0)));
 
-      const capLeft = Math.max(0, c.monthly_cap - await monthPoints(req.session.uid, d.slice(0, 7)));
+      const capLeft = await zostatokDoStropu(c, req.session.uid, d.slice(0, 7));
       // Rytmus má vlastné bodovanie: hráčka odovzdáva RAZ a dostane bod za každú
       // trafenú ukážku. Bonus +5 za bezchybné riešenie sa nedáva hneď — až po
       // polnoci ho dostane tá najrýchlejšia z bezchybných (awardDayWinner).

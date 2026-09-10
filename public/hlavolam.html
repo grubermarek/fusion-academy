@@ -203,9 +203,9 @@ function render(){
     <div class="bar">
       <div class="pill"><b id="clock">0:00</b><span>čas</span></div>
       <div class="pill"><b id="filled">${P.type==='words'?'0/'+P.words.length:P.type==='rhythm'?'0/'+P.rounds.length:P.type==='anagram'?'0/'+P.pocet:'0/'+(P.size*P.size)}</b><span>${P.type==='words'?'slov':P.type==='rhythm'?'rytmov':P.type==='anagram'?'slov':'políčok'}</span></div>
-      <div class="pill"><b>${P.month_points}/${P.monthly_cap}</b><span>bodov v mesiaci</span></div>
+      <div class="pill"><b>${P.month_points}${P.monthly_cap>0?'/'+P.monthly_cap:''}</b><span>bodov v mesiaci</span></div>
     </div>
-    ${P.month_points>=P.monthly_cap ? `<div style="background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.4);
+    ${(P.monthly_cap>0 && P.month_points>=P.monthly_cap) ? `<div style="background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.4);
       border-radius:12px;padding:11px 14px;margin:10px 0;font-size:.88rem;line-height:1.45">
       🏆 <b>Mesačný strop ${P.monthly_cap} bodov máš vyčerpaný</b> — si najaktívnejšia hráčka mesiaca.
       Ďalšie hlavolamy sa už do bodov nerátajú, séria aj rebríček ti bežia ďalej.
