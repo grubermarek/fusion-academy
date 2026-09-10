@@ -12444,6 +12444,10 @@ async function revenueEvents(opts){
   const trans = (typ,cat,popis) => tr.filter(t=>t.type===typ && +t.amount>0 && !t.commission_only && ok(t.user_id||t.buyer_id||t.client_id))
     .map(t=>{ const uid=t.user_id||t.buyer_id||t.client_id; const d=t.created_at||t.date||'';
       const u=kto(uid);
+      // Kto u nás účet nemá (svadobný pár na súkromných hodinách), sa v zozname
+      // predajov ukazoval ako „—". Meno z ručného zápisu je jediné, čo o ňom
+      // vieme — tak nech je aspoň vidieť, komu tie peniaze patrili.
+      if(!uid && (t.client_name||t.user_name)) u.name = t.client_name||t.user_name;
       return { id:t._id, d, a:+t.amount||0, cat, src:'app', who:u,
         what: popis(t), method: t.payment_method||t.method||'hotovosť',
         kanal: t.channel||'appka', invoice: fak(najdiFakturu(uid,u.email,t.amount,d)) }; });

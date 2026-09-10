@@ -104,6 +104,23 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('a je započítaný v tržbách', fin && fin.revenue && +fin.revenue.period >= 20,
       'revenue.period=' + (fin && fin.revenue ? fin.revenue.period : '—'));
 
+    // Marek 10. 9.: súkromné hodiny svadobnému páru, ktorý u nás účet nemá.
+    // V zozname predajov sa taký zápis ukazoval ako „—" a nedalo sa zistiť,
+    // komu tie peniaze patrili.
+    console.log('\nPredaj klientovi bez účtu:');
+    const bezUctu = await j('/api/admin/transactions', { method: 'POST', body: {
+      client_name: 'Svadobný pár Novákovci', product_name: '3× súkromná hodina',
+      amount: 210, date: '2026-09-10', payment_method: 'cash' } }, adm);
+    ok('zapíše sa aj bez účtu klienta', bezUctu.status === 200 && bezUctu.d && bezUctu.d.ok,
+      JSON.stringify(bezUctu.d).slice(0, 140));
+    await new Promise(r => setTimeout(r, 700));
+    const pr = (await j('/api/admin/predaje?from=2026-09-01&to=2026-09-30', {}, adm)).d;
+    const riadok = ((pr && pr.rows) || []).find(r => /súkromná/i.test(String(r.what || '')));
+    ok('v zozname predajov je meno, nie „—"', riadok && riadok.who && riadok.who.name === 'Svadobný pár Novákovci',
+      riadok ? JSON.stringify(riadok.who) : 'riadok sa nenašiel');
+    ok('a započíta sa ako súkromná hodina', riadok && riadok.cat === 'private' && Math.abs(riadok.a - 210) < 0.01,
+      riadok ? riadok.cat + '/' + riadok.a : '—');
+
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.message);
   } finally {
