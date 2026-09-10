@@ -52,6 +52,11 @@ app.use((req,res,next)=>{
 // Capture raw body so webhook signatures (Stripe) can be verified against exact bytes
 app.use(express.json({ limit:'10mb', verify:(req,res,buf)=>{ req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: true, limit:'10mb' }));
+// Reklamné kreatívy sú verejné obrázky určené na to, aby si ich stiahol
+// Meta Ads Manager. Bez tejto hlavičky ich prehliadač z cudzej domény
+// neprečíta a kreatívu treba nahrávať ručne klikaním.
+app.use('/kreativy', express.static(path.join(__dirname, 'public', 'kreativy'),
+  { setHeaders: res => res.setHeader('Access-Control-Allow-Origin', '*') }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Rate limiting (in-memory; appka beží ako jedna inštancia) ────────────────
