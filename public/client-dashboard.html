@@ -363,6 +363,36 @@
   <!-- EVENT — predaj vstupeniek (najvyššia priorita) -->
   <div id="eventBanner" style="display:none;margin-bottom:16px"></div>
   <div id="myTickets" style="display:none;margin-bottom:16px"></div>
+  <!-- 💃 Nové odmeny za kamošky (Marek 11. 9.) — zreteľne hore na dashboarde -->
+  <style>
+    @keyframes kmSweep{to{background-position:-200% center}}
+    @keyframes kmGlow{0%,100%{box-shadow:0 0 18px -6px rgba(255,92,150,.55)}50%{box-shadow:0 0 40px 0 rgba(255,92,150,.9)}}
+    .km-banner{position:relative;border-radius:18px;overflow:hidden;padding:16px 18px 15px;color:#fff;
+      border:1.5px solid #ff6fa3;background:linear-gradient(115deg,#2c0a1d,#5e1538 45%,#3a0d26 70%,#2c0a1d);
+      background-size:200% auto;animation:kmSweep 6s linear infinite,kmGlow 2.6s ease-in-out infinite}
+    .km-kick{font-size:.68rem;font-weight:900;letter-spacing:.16em;color:#ffc2d9}
+    .km-banner h3{margin:6px 36px 12px 0;font-size:1.12rem;line-height:1.25;color:#fff;text-wrap:balance}
+    .km-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .km-stat{display:flex;flex-direction:column;gap:4px;background:rgba(0,0,0,.28);
+      border:1px solid rgba(255,194,217,.28);border-radius:14px;padding:10px 12px}
+    .km-stat b{font-size:1.9rem;line-height:1;color:#ffe9a8;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+    .km-stat b small{font-size:.8rem;font-weight:800;color:#ffd98a;margin-left:3px}
+    .km-stat span{font-size:.78rem;line-height:1.3;color:#f5d3e0}
+    .km-stat.km-top{border-color:#ffe9a8;background:rgba(255,233,168,.1)}
+    .km-note{margin-top:10px;font-size:.78rem;line-height:1.4;color:#f0c9d8}
+    .km-cta{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+    .km-go,.km-how{font-family:inherit}
+    .km-go{border:0;cursor:pointer;background:#ff4f8b;color:#fff;font-weight:900;letter-spacing:.04em;
+      border-radius:999px;padding:10px 18px;font-size:.88rem;box-shadow:0 6px 18px -6px rgba(255,79,139,.8)}
+    .km-how{cursor:pointer;background:transparent;border:1px solid rgba(255,194,217,.45);color:#ffc2d9;
+      border-radius:999px;padding:9px 14px;font-size:.8rem;font-weight:700}
+    .km-x{position:absolute;top:10px;right:10px;width:30px;height:30px;border-radius:50%;border:0;cursor:pointer;
+      background:rgba(0,0,0,.3);color:#ffc2d9;font-size:.9rem;line-height:1}
+    .km-go:focus-visible,.km-how:focus-visible,.km-x:focus-visible{outline:2px solid #ffe9a8;outline-offset:2px}
+    @media (prefers-reduced-motion:reduce){.km-banner{animation:none}}
+    @media (max-width:340px){.km-stats{grid-template-columns:1fr}}
+  </style>
+  <div id="kamoskaBanner" style="display:none;margin-bottom:16px"></div>
   <div id="ambEntry" style="display:none;margin-bottom:16px"></div>
 
 
@@ -2298,6 +2328,7 @@ async function init(){
   loadPrivate();
   loadEventBanner();
   loadMyTickets();
+  loadKamoskaBanner(me);
   loadAmbEntry();
   loadOnlineBanner();
   loadDmBadge();
@@ -2978,7 +3009,7 @@ async function openRewardsInfo(){
   const prizeList=arr=>(arr&&arr.length)?`<ul style="margin:6px 0 0;padding-left:18px">${arr.map(p=>`<li style="margin:4px 0">${escHtml(p)}</li>`).join('')}</ul>`:'<div class="sl-why">Ceny čoskoro oznámime.</div>';
   host.innerHTML=`<div style="background:#161616;border:1px solid rgba(201,168,76,.4);border-radius:16px;max-width:460px;width:100%;max-height:88vh;overflow-y:auto;padding:20px;color:var(--cream)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="font-size:1.1rem;color:var(--gold)">🏆 Klientka mesiaca & roka</b><button onclick="document.getElementById('rewInfoModal').remove()" style="background:none;border:none;color:#999;font-size:1.3rem;cursor:pointer">✕</button></div>
-    <p class="sl-why" style="margin-bottom:14px">Každý mesiac aj celý rok zbieraš body za aktivitu: 🔥 hodiny (5 b), 💻 online (5 b), 🤝 privedený člen (5 b), 🏅 nový platiaci člen (30 b — aj v 2.–5. línii), 🛍️ zakúpený merch (15 b/kus), 💛 aktívne členstvo (Bronze 10 b · Silver 20 b · Gold 40 b).</p>
+    <p class="sl-why" style="margin-bottom:14px">Každý mesiac aj celý rok zbieraš body za aktivitu: 🔥 hodiny (5 b), 💻 online (5 b), 💃 kamoška na prvej hodine (20 b), 🤝 kamoška, ktorá sa zaregistruje (100 b), 🏅 nový platiaci člen (30 b — aj v 2.–5. línii), 🛍️ zakúpený merch (15 b/kus), 💛 aktívne členstvo (Bronze 10 b · Silver 20 b · Gold 40 b).</p>
     <div style="background:#1e1e1e;border:1px solid #2a2a2a;border-radius:12px;padding:12px 14px;margin-bottom:10px">
       <b style="color:var(--gold)">🏆 Klientka mesiaca získava</b>${prizeList(r.month_prizes)}</div>
     <div style="background:linear-gradient(160deg,#231d0e,#171717);border:1px solid rgba(201,168,76,.4);border-radius:12px;padding:12px 14px;margin-bottom:10px">
@@ -3218,6 +3249,34 @@ async function loadRefGoal(){
     </div>
   </div>`;
 }
+// 💃 Nové odmeny za kamošky (Marek 11. 9.: „daj oznam na hlavný dashboard nejak
+// zreteľne"). Body v súťaži zbierajú len klientky — adminom, trénerom a anonymným
+// profilom (tie v rebríčku nie sú) ho neukazujeme. Krížik ho skryje na 3 dni.
+function loadKamoskaBanner(me){
+  const host=document.getElementById('kamoskaBanner'); if(!host) return;
+  if(!me || me.is_admin || ['trainer','manager'].includes(me.user_type) || me.anonymous){ host.style.display='none'; return; }
+  let skryte=0; try{ skryte=+localStorage.getItem('fa_kamoska_skryte')||0; }catch(e){}
+  if(skryte>Date.now()){ host.style.display='none'; return; }
+  host.innerHTML=`<div class="km-banner" role="region" aria-label="Nové odmeny za kamošky">
+    <button class="km-x" onclick="skryKamoskaBanner()" aria-label="Skryť na 3 dni" title="Skryť na 3 dni">✕</button>
+    <div class="km-kick">🔥 NOVÉ ODMENY ZA KAMOŠKY</div>
+    <h3>Priveď kamošku — body letia do súťaže! 💃</h3>
+    <div class="km-stats">
+      <div class="km-stat"><b>+20<small>b</small></b><span>keď kamoška príde na hodinu</span></div>
+      <div class="km-stat km-top"><b>+100<small>b</small></b><span>keď sa zaregistruje v appke</span></div>
+    </div>
+    <div class="km-note">Body idú rovno do súťaže Klientka mesiaca 🏆 A keď si kamoška kúpi členstvo, pribudne ďalších +30 b.</div>
+    <div class="km-cta">
+      <button class="km-go" onclick="inviteFriend()">❤️ POZVAŤ KAMOŠKU</button>
+      <button class="km-how" onclick="openRewardsInfo()">Ako sa zbierajú body</button>
+    </div>
+  </div>`;
+  host.style.display='block';
+}
+window.skryKamoskaBanner=()=>{
+  try{ localStorage.setItem('fa_kamoska_skryte', String(Date.now()+3*86400000)); }catch(e){}
+  const h=document.getElementById('kamoskaBanner'); if(h) h.style.display='none';
+};
 // Jednotná pozvánka (celá appka používa ten istý /invite link + text)
 async function getInviteMsg(){
   try{ const d=await api('/api/invite-message'); if(d?.ok) return d; }catch(e){}
@@ -3299,7 +3358,7 @@ function renderSpotBoard(){
     </div>`:'';
   // 🤝 Motivácia: pozvi kamošku = body do súťaže (nový mesiac začína od nuly)
   const refRow=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:rgba(139,195,74,.08);border:1px solid rgba(139,195,74,.35);border-radius:12px;padding:8px 13px;margin-bottom:10px">
-    <span style="font-size:.82rem;color:#a5d6a7">🤝 <b>Pozvi kamošku</b> — +5 b. za privedenie a +30 b., keď sa stane členkou!</span>
+    <span style="font-size:.82rem;color:#a5d6a7">🤝 <b>Pozvi kamošku</b> — +20 b., keď príde na hodinu, a +100 b., keď sa zaregistruje!</span>
     <button onclick="event.stopPropagation();inviteFriend()" style="margin-left:auto;background:rgba(139,195,74,.15);border:1px solid #8bc34a;color:#8bc34a;border-radius:9px;padding:5px 11px;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap">❤️ Pozvať kamošku</button>
   </div><div id="refGoalWrap"></div>`;
   const header=`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
