@@ -331,12 +331,18 @@ function addBodyPadding(){
 }
 
 /* ─── Wire up events ───────────────────────────────────────── */
+// Pri data-fa-nav="overlay-only" lišta (a jej #fa-nb-menu-btn) neexistuje — chýbajúci prvok preskočiť, nie spadnúť
+function on(id, type, fn){
+  const el = document.getElementById(id);
+  if(el) el.addEventListener(type, fn);
+}
+
 function wireEvents(){
-  document.getElementById('fa-nb-menu-btn').addEventListener('click', e => { e.stopPropagation(); toggleMenu(); });
-  document.getElementById('fa-mo-close-btn').addEventListener('click', closeMenu);
+  on('fa-nb-menu-btn', 'click', e => { e.stopPropagation(); toggleMenu(); });
+  on('fa-mo-close-btn', 'click', closeMenu);
 
   // Clicking outside tile area in overlay closes it
-  document.getElementById('fa-menu-overlay').addEventListener('click', e => {
+  on('fa-menu-overlay', 'click', e => {
     if(e.target.id === 'fa-menu-overlay') closeMenu();
   });
 
