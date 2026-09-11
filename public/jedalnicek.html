@@ -60,7 +60,7 @@
 <script>
 const BLOG='https://latindancefusion.art/blog';
 let ME_PROFILE=null, ME_PLAN=null, IS_GOLD=false, IS_STAFF=false;
-const state={ gender:'zena', goal:'chudnutie', activity:'stredna', meals_per_day:4, diet:'bezna', allergens:[], include_f1:true };
+const state={ gender:'zena', goal:'chudnutie', activity:'stredna', meals_per_day:4, diet:'bezna', allergens:[] };
 const ALLERGENS=[['lepok','Lepok'],['laktoza','Laktóza'],['orechy','Orechy'],['vajcia','Vajcia'],['soja','Sója'],['ryby','Ryby / morské plody']];
 
 async function api(url,opts){ try{ const r=await fetch(url,Object.assign({credentials:'include',headers:{'Content-Type':'application/json'}},opts)); return await r.json(); }catch(e){ return null; } }
@@ -130,7 +130,6 @@ function renderForm(keepValues){
 
 function syncInputs(){
   ['age','height_cm','weight_kg','likes','dislikes'].forEach(id=>{ const el=document.getElementById(id); if(el) state[id]= (id==='likes'||id==='dislikes')? el.value : (+el.value||el.value); });
-  const f1=document.getElementById('include_f1'); if(f1) state.include_f1=f1.checked;
 }
 
 async function generate(){

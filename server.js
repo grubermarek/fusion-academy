@@ -695,38 +695,6 @@ async function seedData() {
       {cat:'Kurzy',     name:'Kurz pre dospelých (12 týž)',  emoji:'💃', desc:'Latino, Hip-Hop, Choreo. Začiatočníci vítaní!',                            price:150,   commission_rate:0.12, type:'course',       active:true},
       {cat:'Kurzy',     name:'Maturantský ples – Last Dance', emoji:'🎓', desc:'Špeciálny program pre maturantov.',                                        price:120,   commission_rate:0.12, type:'course',       active:true},
       {cat:'Analýzy',   name:'Metabolická analýza (InBody)', emoji:'📊', desc:'Profesionálna analýza telesnej kompozície.',                               price:35,    commission_rate:0.15, type:'service',      active:true},
-      // Herbalife — náhrada jedla
-      {cat:'Herbalife', name:'Formula 1 – Vanilka-smotana (500g)',   emoji:'🥤', desc:'Náhrada jedla. 220 kcal, 18g bielkovín, 25 vitamínov a minerálov. Príchuť vanilka-smotana.',                    price:38.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Formula 1 – Jemná čokoláda (500g)',    emoji:'🍫', desc:'Náhrada jedla. 220 kcal, 18g bielkovín, 25 vitamínov a minerálov. Príchuť čokoláda.',                           price:38.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Formula 1 – Jahoda & Malina (500g)',   emoji:'🍓', desc:'Náhrada jedla. 220 kcal, 18g bielkovín. Osviežujúca letná príchuť.',                                            price:38.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Formula 1 – Café Latte (500g)',        emoji:'☕', desc:'Náhrada jedla s príchuťou kávy. Ideálne pre ranný štart dňa.',                                                   price:38.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Formula 1 – Vanilka-smotana XXL (780g)',emoji:'🥤',desc:'Veľké balenie Formula 1 vanilka. Šetrnejšia možnosť na mesiac. Úspora cca 18 %.',                               price:55.50, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Formula 1 – balíček 3 príchute',       emoji:'🎁', desc:'Tri kusy Formula 1 podľa vlastného výberu príchutí. Ideálny štartovací set.',                                   price:114.70,commission_rate:0.25, type:'product', active:true},
-      // Herbalife — nápoje
-      {cat:'Herbalife', name:'Instantný bylinný čaj – Broskyňa (50g)',emoji:'🍑',desc:'Bylinný čaj s prírodnou príchuťou. Podporuje metabolizmus. 50 dávok.',                                          price:26.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Instantný bylinný čaj – XXL (100g)',   emoji:'🍵', desc:'Dvojbalenie obľúbeného bylinného čaju. Výhodná cena na deň.',                                                    price:45.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Bylinný nápoj z Aloe Vera – Originál', emoji:'🌿', desc:'Nápoj z aloe vera pre správne trávenie a hydratáciu. Originálna príchuť. 473 ml.',                              price:34.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Bylinný nápoj z Aloe Vera – Mango XXL',emoji:'🥭', desc:'Veľké balenie aloe vera mangová príchuť. Pre každodennú hydratáciu.',                                           price:119.90,commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Multivlákninový nápoj (Fiber)',        emoji:'🌾', desc:'Vláknina pre zdravé trávenie. Prirodzene sladká príchuť. Jednoduché miešanie.',                                  price:29.90, commission_rate:0.25, type:'product', active:true},
-      // Herbalife — šport H24
-      {cat:'Herbalife', name:'H24 Rebuild Strength – proteín (1 kg)',emoji:'💪', desc:'Proteínový prášok po tréningu. 24g bielkovín na dávku. Podpora budovania svalov.',                              price:63.40, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'H24 Hydrate – elektrolyty (20 sáčkov)',emoji:'⚡', desc:'Rýchla hydratácia počas tréningu. Elektrolyty a B-vitamíny. 20 dávok.',                                         price:35.50, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'H24 CR7 Drive Acai – energetický nápoj',emoji:'⚽',desc:'Šport. nápoj Cristiana Ronalda. Acai + elektrolyty + sacharidy. 10 sáčkov.',                                   price:17.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Creatine+ Herbalife24',                emoji:'🏋️', desc:'Kreatín monohydrát pre silu a výkon. Bez zbytočných prísad.',                                                    price:29.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'H24 Proteínové tyčinky – Brusnica (6ks)',emoji:'🍫',desc:'Proteínové tyčinky s príchuťou brusnice a bielej čokolády. 12g bielkovín na kus.',                             price:20.50, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Proteínové chipsy – Kyslá smotana (6ks)',emoji:'🥔',desc:'Chrumkavý proteínový snack s nízkym obsahom tuku. 15g bielkovín.',                                             price:24.90, commission_rate:0.25, type:'product', active:true},
-      // Herbalife — cielená výživa
-      {cat:'Herbalife', name:'Phyto Complete – 60 kapsúl',           emoji:'🌱', desc:'Rastlinný komplex antioxidantov. Podpora bunkovej ochrany a energie.',                                           price:57.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Night Mode – spánok & regenerácia',    emoji:'🌙', desc:'Harmanček a broskyňa. Prirodzená podpora spánku a nočnej regenerácie.',                                         price:45.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Immune Booster – imunita',             emoji:'🛡️', desc:'Vitamín C, D, zinok a echinacea. Komplexná podpora imunitného systému.',                                        price:44.00, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Active Mind Complex – 60 kapsúl',      emoji:'🧠', desc:'Koncentrácia a pamäť. Ginko, ginseng, vitamíny B. Pre aktívnych ľudí.',                                         price:46.50, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Collagen Skin Booster – 171g',         emoji:'✨', desc:'Hydrolyzovaný morský kolagén + vitamín C + biotin. Krásna pokožka zvnútra.',                                     price:65.00, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Protein Bake Mix – pečenie',           emoji:'🧁', desc:'Proteínový základ pre muffiny, palacinky, tyčinky. 14g bielkovín na dávku.',                                    price:45.90, commission_rate:0.25, type:'product', active:true},
-      // Herbalife — sety & programy
-      {cat:'Herbalife', name:'Štartovací set: F1 + Čaj',             emoji:'🎯', desc:'Formula 1 (500g) + Bylinný čaj (50g). Ideálny štart pre Fit Premena program.',                                  price:64.80, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Štartovací set: F1 + Aloe',            emoji:'🌿', desc:'Formula 1 (500g) + Aloe vera nápoj. Výživa + hydratácia + trávenie.',                                           price:72.30, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Program chudnutia – Štandard',         emoji:'📦', desc:'F1 shake + Čaj + Aloe + Vláknina. Komplexný program na 1 mesiac.',                                              price:162.00,commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Program chudnutia – Štandard Plus',    emoji:'🏆', desc:'Rozšírený program + proteínové tyčinky + vitamínový komplex. Pre lepšie výsledky.',                             price:250.00,commission_rate:0.25, type:'product', active:true},
       {cat:'Oblečenie', name:'Fusion tričko (dámske)',       emoji:'👕', desc:'Priedušné športové tričko. Veľkosti XS–XL.',                               price:25,    commission_rate:0.08, type:'product',      active:true},
       {cat:'Oblečenie', name:'Fusion leggings',              emoji:'🩱', desc:'Vysokopasové leggings so vzorom. XS–XL.',                                  price:45,    commission_rate:0.08, type:'product',      active:true},
       {cat:'Oblečenie', name:'Fusion mikina (unisex)',       emoji:'🧥', desc:'Pohodlná mikina s kapucňou. S–XXL.',                                       price:55,    commission_rate:0.08, type:'product',      active:true},
@@ -776,11 +744,25 @@ async function seedData() {
   // Kapacita hodín sa pri štarte už NEprepisuje na 30 (audit 3. 9., E11-A): migrácia
   // bežala bez flagu pri každom deploji, takže kapacita nastavená v admine neprežila
   // reštart. Na prode majú všetky živé hodiny 30 — zrušenie nič nemení.
-  // Migration: úplné odstránenie Herbalife + F1 z ponuky (deaktivácia produktov + zmazanie blogov)
-  { const herbOff = await q.update(db.products,{cat:'Herbalife',active:true},{$set:{active:false}},{multi:true});
-    if(herbOff) console.log(`✅  Deaktivovaných ${herbOff} Herbalife produktov`);
-    const arts = await q.find(db.messages,{channel:'blog'});
-    for(const a of arts){ if(/herbalife|formula 1|f1 kokte/i.test((a.title||''))) await q.remove(db.messages,{_id:a._id},{}); } }
+  // Herbalife skončil (Marek 11. 9. 2026: „všetok herbalife preč"). Z obchodu zmiznú
+  // produkty úplne (žiadna objednávka ich nemala), z komunity články o Herbalife a F1
+  // a z príbehov klientok riadky, ktoré ho spomínali. Predchádzajúca migrácia hľadala
+  // názov článku v poli title, ktoré príspevky nemajú — preto nikdy nič nezmazala.
+  if(!(await q.one(db.settings,{key:'herbalife_prec_v1'}))){
+    const produkty = await q.remove(db.products,{cat:'Herbalife'},{multi:true});
+    let clanky=0, pribehy=0;
+    for(const m of await q.find(db.messages,{channel:'blog'})){
+      const text=String(m.text||'');
+      const nazov=(text.match(/^📰 \*(.+?)\*/)||[])[1]||'';
+      if(/herbalife|formula ?1\b|f1 kokte/i.test(nazov)){ await q.remove(db.messages,{_id:m._id},{}); clanky++; continue; }
+      if(/herbalife/i.test(text)){
+        await q.update(db.messages,{_id:m._id},{$set:{text:text.split('\n').filter(r=>!/herbalife/i.test(r)).join('\n')}});
+        pribehy++;
+      }
+    }
+    await q.insert(db.settings,{key:'herbalife_prec_v1', value:true, at:nowISO()});
+    console.log(`🧹 Herbalife preč: produktov ${produkty}, článkov ${clanky}, upravených príbehov ${pribehy}`);
+  }
   // Migration: odstránenie služieb Fit Premena (základný/premium) + Nutričné poradenstvo (InBody analýzu ponechaj)
   { const anOff = await q.update(db.products,{active:true,$or:[
         {name:new RegExp('fit\\s*premena','i')},
@@ -788,40 +770,6 @@ async function seedData() {
       ]},{$set:{active:false}},{multi:true});
     if(anOff) console.log(`✅  Deaktivovaných ${anOff} služieb (Fit Premena / Nutričné poradenstvo)`); }
 
-  // Herbalife products (add even if other products already exist)
-  if(await q.count(db.products,{cat:'Herbalife'})===0){
-    const herba=[
-      {cat:'Herbalife', name:'Formula 1 – Vanilka-smotana (500g)',    emoji:'🥤', desc:'Náhrada jedla. 220 kcal, 18g bielkovín, 25 vitamínov. Príchuť vanilka-smotana.',              price:38.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Formula 1 – Jemná čokoláda (500g)',     emoji:'🍫', desc:'Náhrada jedla. 220 kcal, 18g bielkovín. Príchuť čokoláda.',                                    price:38.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Formula 1 – Jahoda & Malina (500g)',    emoji:'🍓', desc:'Náhrada jedla. 220 kcal, 18g bielkovín. Osviežujúca letná príchuť.',                            price:38.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Formula 1 – Café Latte (500g)',         emoji:'☕', desc:'Náhrada jedla s príchuťou kávy. Ideálne pre ranný štart dňa.',                                  price:38.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Formula 1 – Vanilka XXL (780g)',        emoji:'🥤', desc:'Veľké balenie Formula 1 vanilka. Úspora cca 18 %. Cca 26 dávok.',                              price:55.50, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Formula 1 – balíček 3 príchute',        emoji:'🎁', desc:'3× Formula 1 podľa vlastného výberu. Ideálny štartovací set.',                                 price:114.70,commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Bylinný čaj – Broskyňa (50g)',          emoji:'🍑', desc:'Bylinný čaj, podporuje metabolizmus. 50 dávok.',                                               price:26.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Bylinný čaj – XXL (100g)',              emoji:'🍵', desc:'Dvojbalenie bylinného čaju. Výhodná cena na deň.',                                             price:45.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Aloe Vera nápoj – Originál',            emoji:'🌿', desc:'Nápoj z aloe vera pre trávenie a hydratáciu. Originálna príchuť. 473 ml.',                    price:34.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Aloe Vera nápoj – Mango XXL',           emoji:'🥭', desc:'Veľké balenie aloe vera, mangová príchuť.',                                                    price:119.90,commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Multivlákninový nápoj (Fiber)',         emoji:'🌾', desc:'Vláknina pre zdravé trávenie. Prirodzene sladká príchuť.',                                     price:29.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'H24 Rebuild Strength proteín (1 kg)',   emoji:'💪', desc:'Proteínový prášok po tréningu. 24g bielkovín na dávku.',                                       price:63.40, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'H24 Hydrate – elektrolyty (20 sáčkov)', emoji:'⚡', desc:'Rýchla hydratácia počas tréningu. Elektrolyty a B-vitamíny.',                                 price:35.50, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'H24 CR7 Drive Acai (10 sáčkov)',        emoji:'⚽', desc:'Šport. nápoj Cristiana Ronalda. Acai + elektrolyty + sacharidy.',                             price:17.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Creatine+ Herbalife24',                 emoji:'🏋️', desc:'Kreatín monohydrát pre silu a výkon.',                                                         price:29.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'H24 Proteínové tyčinky Brusnica (6ks)', emoji:'🍫', desc:'Proteínové tyčinky, brusnica & biela čokoláda. 12g bielkovín/kus.',                           price:20.50, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Proteínové chipsy Kyslá smotana (6ks)', emoji:'🥔', desc:'Chrumkavý proteínový snack. 15g bielkovín.',                                                   price:24.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Phyto Complete – 60 kapsúl',            emoji:'🌱', desc:'Rastlinný komplex antioxidantov. Podpora bunkovej ochrany.',                                   price:57.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Night Mode – spánok & regenerácia',     emoji:'🌙', desc:'Harmanček a broskyňa. Prirodzená podpora spánku.',                                            price:45.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Immune Booster – imunita',              emoji:'🛡️', desc:'Vitamín C, D, zinok, echinacea. Komplexná podpora imunity.',                                  price:44.00, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Active Mind Complex – 60 kapsúl',       emoji:'🧠', desc:'Koncentrácia a pamäť. Ginko, ginseng, vitamíny B.',                                           price:46.50, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Collagen Skin Booster – 171g',          emoji:'✨', desc:'Morský kolagén + vitamín C + biotin. Krásna pokožka zvnútra.',                                 price:65.00, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Protein Bake Mix',                      emoji:'🧁', desc:'Proteínový základ pre muffiny, palacinky, tyčinky. 14g bielkovín/dávku.',                    price:45.90, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Štartovací set: F1 + Čaj',              emoji:'🎯', desc:'Formula 1 (500g) + Bylinný čaj (50g). Ideálny štart pre Fit Premena program.',               price:64.80, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Štartovací set: F1 + Aloe',             emoji:'🌿', desc:'Formula 1 (500g) + Aloe vera nápoj. Výživa + hydratácia + trávenie.',                        price:72.30, commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Program chudnutia – Štandard',          emoji:'📦', desc:'F1 shake + Čaj + Aloe + Vláknina. Komplexný 1-mesačný program chudnutia.',                   price:162.00,commission_rate:0.25, type:'product', active:true},
-      {cat:'Herbalife', name:'Program chudnutia – Štandard Plus',     emoji:'🏆', desc:'Rozšírený program + proteínové tyčinky + vitamíny. Pre lepšie výsledky.',                    price:250.00,commission_rate:0.25, type:'product', active:true},
-    ];
-    for(const p of herba) await q.insert(db.products,p);
-    console.log('✅  Herbalife produkty naplnené');
-  }
 
   // Blog articles as community posts (seed once)
   if(await q.count(db.messages,{channel:'blog'})===0){
@@ -3494,7 +3442,7 @@ async function seedData() {
   if(!(await q.one(db.email_steps,{sequence:'bronze_upsell',day:15}))) await q.insert(db.email_steps, buOnline(15,'Konzistencia','Tajomstvo tých, čo to nevzdajú? Nevynechávajú.',
     `<p>{meno}, najväčší zabijak výsledkov nie je zlý tréning. Je to <b>vynechaný tréning.</b></p><p>So <b>Silver</b> máš online hodiny stále po ruke — aj na dovolenke, aj keď je vonku −10 °C a nechce sa ti nikam.</p><p>Štúdio, keď môžeš prísť. Online, keď nie. Výsledok? <b>Konzistencia</b> — presne tá, čo robí skutočné premeny.</p><p>Plus tá metabolická analýza tela, o ktorej sme písali. Silver = vidíš pokrok <i>a</i> nikdy nevypadneš z rytmu.</p>`));
 
-  // Idempotentne: upsell sekvencia Silver → Gold (Herbalife F1 raňajková zložka)
+  // Idempotentne: upsell sekvencia Silver → Gold
   // gold_upsell — bez Herbalife: jedálničky, Tanita meranie, zľavy na súkromné hodiny a eventy
   const GOLD_BLOG='https://latindancefusion.art/blog';
   const GOLD_UPSELL_STEPS=[
@@ -3548,7 +3496,7 @@ async function seedData() {
     body:`<p>Ahoj <b>{meno}</b>,</p><p>prvá hodina je vždy o zoznámení. <b>Tá druhá je tá, po ktorej to väčšinou klapne</b> — už vieš, kde si vyzuješ topánky, poznáš tvár trénerky a telo si pamätá kroky.</p><p>Baby, ktoré prídu druhýkrát do dvoch týždňov, zostávajú s nami najčastejšie. Tak si vyber termín, ktorý ti sadne — a uvidíme sa na parkete. 💛</p>`,
     cta:'🗓️ Vybrať si druhú hodinu', cta_url:`${APP_URL}/schedule` });
 
-  // bronze day3 — bez konfliktu s reálnou Miškou (tá je F1 príbeh), + odkaz na článok
+  // bronze day3 — bez konfliktu s reálnou Miškou (jej príbeh je o Fit Premene), + odkaz na článok
   await up('bronze_upsell',3,{ body:`<p>{meno}, sľúbili sme príbeh — tu je.</p><p>Jedna z našich báb chodila 8 týždňov na Zumbu. Postavila sa na váhu: <b>rovnaké číslo ako na začiatku.</b> Sklamanie, však?</p><p>Lenže <b>analýza zloženia tela</b> ukázala pravdu: <b>tuku ubudlo, svalu pribudlo.</b> Rovnaká váha — úplne iné telo. Pevnejšie, silnejšie, s rýchlejším metabolizmom, čo páli kalórie aj na gauči.</p><p>Keby verila len váhe, možno to vzdá. <b>Namiesto toho videla pravdu — a pokračovala.</b></p><p><a href="${BLOG}/metabolicka-analyza-fit-premena">📖 Čo všetko ti analýza prezradí →</a></p>` });
   await up('bronze_upsell',7,{ body:`<p>{meno}, zrkadlo ti ukáže <i>ako vyzeráš</i>. Analýza tela ti ukáže <b>prečo</b> — a čo s tým.</p><p>Za pár sekúnd zistíš:</p><ul><li>📉 <b>% telesného tuku</b> a <b>bazálny metabolizmus</b> — koľko kalórií reálne potrebuješ</li><li>💪 <b>svalovú hmotu</b> — či cvičíš správne</li><li>💧 <b>hydratáciu</b> a <b>viscerálny tuk</b> (ten najnebezpečnejší, okolo orgánov)</li></ul><p>A najlepšie? <b>Máš to celé v mobile</b>, týždeň po týždni. Žiadne hádanie „funguje to alebo nie".</p><p><a href="${BLOG}/metabolicka-analyza-fit-premena">📖 Metabolická analýza — čo o tebe prezradí →</a></p>` });
   // gold_upsell — prepíš aj existujúce DB na verziu bez Herbalife (labely + subject + body + cta)
