@@ -703,6 +703,18 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       </table></div>
     </div></div>
   </div>
+  <!-- Potvrdenie súkromnej hodiny: hotovosť trénerovi (odráta sa z výplaty) alebo na účet -->
+  <div class="modal fade" id="phDoneModal" tabindex="-1" aria-labelledby="phDoneTitle">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content bg-dark text-light border-secondary">
+      <div class="modal-header border-secondary"><h6 class="modal-title fw-bold" id="phDoneTitle">✅ Súkromná hodina je hotová</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Zavrieť"></button></div>
+      <div class="modal-body" id="phDoneBody"></div>
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Späť</button>
+        <button type="button" class="btn btn-sm btn-warning fw-bold" id="phDoneOk" onclick="phDoneSubmit()">Potvrdiť</button>
+      </div>
+    </div></div>
+  </div>
 
   <div id="s-classes" class="section">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -6767,16 +6779,70 @@ async function loadAdminPrivate(){
     <td>${t.month_count}× · <b style="color:#C9A84C">${t.month_earn.toFixed(2)} €</b></td>
     <td><button class="btn btn-sm btn-warning py-0 px-2" onclick="savePrivTrainer('${t.id}')">Uložiť</button></td>
   </tr>`).join('')||'<tr><td colspan="7" class="text-muted py-2">Žiadni tréneri.</td></tr>';
+  _phBk=Object.fromEntries((d.bookings||[]).map(b=>[b.id,b]));
   document.getElementById('phBookings').innerHTML=(d.bookings||[]).map(b=>`<tr>
     <td>${fmtDate(b.date)} ${b.time_start}</td>
     <td>${escHtml(b.trainer_name)}</td>
     <td>${b.manual?`${escHtml(b.client_name)} <span class="badge bg-secondary" style="font-size:.62rem">hosť</span>`:`<a href="#" onclick="openClientDetail('${b.client_id}');return false" style="color:#C9A84C">${escHtml(b.client_name)}</a>`}</td>
     <td>${escHtml(b.city||'')}</td>
-    <td>${(+b.price).toFixed(2)} € <span class="text-muted" style="font-size:.68rem">(tréner ${b.split||70}%)</span></td>
-    <td>${b.manual?`<span class="badge bg-secondary">${b.pay_method==='cash'?'hotovosť':b.pay_method==='transfer'?'prevod':'zdarma'}</span>`:(b.paid?'<span class="badge bg-success">kredit ✓</span>':'<span class="badge bg-warning text-dark">na mieste</span>')}</td>
+    <td>${(+b.price).toFixed(2)} € <span class="text-muted" style="font-size:.68rem">(tréner ${b.status==='completed'&&b.trainer_cut?(+b.trainer_cut).toFixed(2)+' €':(b.split||70)+'%'})</span></td>
+    <td>${phPlatba(b)}</td>
     <td>${PH_STATUS[b.status]||escHtml(b.status)}</td>
-    <td>${b.status==='booked'?`<button class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:.7rem" onclick="adminCancelPriv('${b.id}')">✕ Zrušiť</button>`:''}</td>
+    <td class="text-nowrap">${b.status==='booked'?`<button class="btn btn-sm btn-outline-success py-0 px-2 me-1" style="font-size:.7rem" onclick="phDone('${b.id}')">✅ Hotovo</button><button class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:.7rem" onclick="adminCancelPriv('${b.id}')">✕ Zrušiť</button>`:''}</td>
   </tr>`).join('')||'<tr><td colspan="8" class="text-muted py-2">Zatiaľ žiadne rezervácie.</td></tr>';
+}
+// Ako bola hodina zaplatená: hotovosť u trénera sa mu odráta z výplaty, prevod čaká na potvrdenie
+function phPlatba(b){
+  const eur=n=>(+n).toFixed(2)+' €';
+  if(b.status==='completed' && b.cash_amount>0) return `<span class="badge bg-warning text-dark">💵 hotovosť u trénera ${eur(b.cash_amount)}</span>`;
+  if(b.transfer_pending && !b.paid) return `<span class="badge bg-info text-dark">🏦 čaká na prevod</span> <button class="btn btn-sm btn-outline-info py-0 px-1 ms-1" style="font-size:.66rem" onclick="phTransferPaid('${b.id}')">Prevod prijatý</button>`;
+  if(b.manual) return `<span class="badge bg-secondary">${b.pay_method==='cash'?'hotovosť':b.pay_method==='transfer'?'prevod':'zdarma'}</span>`;
+  if(b.paid) return `<span class="badge bg-success">${({card:'karta',credit:'kredit',prize:'výhra 🎁',transfer:'prevod',cash:'hotovosť'})[b.pay_method]||'zaplatené'} ✓</span>`;
+  return '<span class="badge bg-warning text-dark">na mieste</span>';
+}
+// Admin potvrdí hodinu za trénera — rovnaká voľba ako v trénerskom paneli
+let _phBk={}, _phId=null, _phModal=null;
+function phDone(id){
+  const b=_phBk[id]; if(!b) return; _phId=id;
+  document.getElementById('phDoneBody').innerHTML=`<div class="small text-muted mb-3">${escHtml(b.client_name)} · ${fmtDate(b.date)} ${b.time_start} · tréner <b class="text-light">${escHtml(b.trainer_name)}</b></div>`+
+    (b.paid
+      ? `<div class="alert alert-success py-2 small mb-0">✓ Klientka zaplatila v appke — trénerovi sa vyplatí jeho podiel.</div>`
+      : `<div class="small fw-bold mb-2">Ako klientka zaplatila?</div>
+         <div class="form-check"><input class="form-check-input" type="radio" name="phPay" id="phPayCash" value="cash" checked onchange="phDoneUpdate()"><label class="form-check-label small" for="phPayCash">💵 Hotovosť trénerovi — odráta sa mu z výplaty</label></div>
+         <div class="form-check mb-2"><input class="form-check-input" type="radio" name="phPay" id="phPayTr" value="transfer" onchange="phDoneUpdate()"><label class="form-check-label small" for="phPayTr">🏦 Na účet štúdia — trénerovi vyplatíme podiel</label></div>
+         <label class="d-flex align-items-center gap-2 small" for="phAmount">Zaplatila <input type="number" id="phAmount" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:100px" min="0.5" max="1000" step="0.5" value="${(+b.price).toFixed(2)}" oninput="phDoneUpdate()"> €</label>`)+
+    `<div id="phDonePreview" class="small mt-3"></div>`;
+  document.getElementById('phDoneOk').disabled=false;
+  phDoneUpdate();
+  if(!_phModal) _phModal=new bootstrap.Modal(document.getElementById('phDoneModal'));
+  _phModal.show();
+}
+function phDoneUpdate(){
+  const b=_phBk[_phId], box=document.getElementById('phDonePreview'); if(!b||!box) return;
+  const r=document.querySelector('input[name="phPay"]:checked'), a=document.getElementById('phAmount');
+  const pay=b.paid?null:(r?r.value:'cash'), cena=pay?+a.value:+b.price, split=+b.split||70;
+  if(pay && !(cena>0)){ box.innerHTML='<span class="text-danger">Zadaj sumu, ktorú klientka zaplatila.</span>'; return; }
+  const podiel=+(cena*split/100).toFixed(2);
+  box.innerHTML = pay==='cash'
+    ? `Tréner má u seba <b class="text-warning">${cena.toFixed(2)} €</b> — odráta sa mu z výplaty. Jeho podiel ${podiel.toFixed(2)} € (${split} %) mu pribudne, spolu vo výplate <b>${(podiel-cena).toFixed(2)} €</b>.`
+    : `Trénerovi pribudne do výplaty podiel <b class="text-success">${podiel.toFixed(2)} €</b> (${split} % z ${cena.toFixed(2)} €).`;
+}
+async function phDoneSubmit(){
+  const b=_phBk[_phId]; if(!b) return;
+  const body={booking_id:_phId};
+  if(!b.paid){ const r=document.querySelector('input[name="phPay"]:checked'); body.pay=r?r.value:'cash'; body.amount=+document.getElementById('phAmount').value;
+    if(!(body.amount>0)){ showToast('Zadaj sumu, ktorú klientka zaplatila','error'); return; } }
+  const btn=document.getElementById('phDoneOk'); btn.disabled=true;
+  const r=await api('/api/private/complete',{method:'POST',body:JSON.stringify(body)});
+  btn.disabled=false;
+  if(r&&r.ok){ _phModal.hide(); showToast(r.cash_recorded?`Hotovo ✓ · hotovosť ${(+r.cash_amount).toFixed(2)} € sa trénerovi odráta z výplaty`:`Hotovo ✓ · tréner +${(+r.trainer_cut).toFixed(2)} €`,'success'); loadAdminPrivate(); }
+  else showToast('Chyba: '+((r&&r.error)||'?'),'error');
+}
+async function phTransferPaid(id){
+  const b=_phBk[id]; if(!b) return;
+  if(!confirm(`Prišiel na účet prevod ${(+b.price).toFixed(2)} € od ${b.client_name}?`)) return;
+  const r=await api('/api/admin/private/'+id+'/paid',{method:'POST'});
+  if(r&&r.ok){ showToast('Prevod označený ako prijatý ✓','success'); loadAdminPrivate(); } else showToast('Chyba: '+((r&&r.error)||'?'),'error');
 }
 async function savePrivTrainer(id){
   const body={ enabled:document.getElementById('ph_en_'+id).checked,

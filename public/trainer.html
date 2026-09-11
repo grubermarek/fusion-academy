@@ -2537,11 +2537,12 @@ async function loadTrainerPrivate(){
     <span style="background:rgba(201,168,76,.1);border:1px solid var(--gold-border);border-radius:10px;padding:8px 14px;font-size:.85rem">💶 Sadzba: <b style="color:var(--gold)">${s.rate.toFixed(2)} €/h</b></span>
     <span style="background:rgba(201,168,76,.1);border:1px solid var(--gold-border);border-radius:10px;padding:8px 14px;font-size:.85rem">🤝 Tvoj podiel: <b style="color:var(--gold)">${s.split} %</b></span>
     <span style="background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.3);border-radius:10px;padding:8px 14px;font-size:.85rem">📅 Tento mesiac: <b style="color:#4ade80">${(d.month_earn||0).toFixed(2)} €</b> (${d.month_count||0} hodín)</span>
+    ${d.month_cash>0?`<span style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.35);border-radius:10px;padding:8px 14px;font-size:.85rem">💵 Hotovosť u teba: <b style="color:#fbbf24">${d.month_cash.toFixed(2)} €</b> — odráta sa z výplaty</span>`:''}
   </div>`;
   document.getElementById('privCreate').style.display='block';
   // ✍️ Ručný zápis (neregistrovaní) — predvyplň dnešok a cenu podľa sadzby
   document.getElementById('privManual').style.display='block';
-  _privRate=s.rate;
+  _privRate=s.rate; _privSplit=s.split; _privBk={};
   if(!document.getElementById('pmDate').value) document.getElementById('pmDate').value=new Date().toISOString().slice(0,10);
   if(!document.getElementById('pmPrice').value) pmSuggestPrice();
   renderPrivGuests(d.guests||[]);
@@ -2558,22 +2559,7 @@ async function loadTrainerPrivate(){
   }
   const rows=(d.slots||[]).map(sl=>{
     const when=`<b>${sl.date.split('-').reverse().join('.')}</b> ${sl.time_start} · ${sl.duration_min} min · 📍 ${esc(sl.city)}${sl.location?' ('+esc(sl.location)+')':''}`;
-    if(sl.booking && sl.booking.status==='booked'){
-      const b=sl.booking;
-      return `<div style="background:var(--card);border:1px solid rgba(201,168,76,.4);border-radius:12px;padding:12px;margin-bottom:8px">
-        <div style="font-size:.88rem">${when} · <b style="color:var(--gold)">${sl.price.toFixed(2)} €</b> ${b.paid?'<span style="color:#4ade80;font-size:.72rem">✓ zaplatené vopred</span>':'<span style="color:#fbbf24;font-size:.72rem">💵 platí v hotovosti na mieste</span>'}</div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px">
-          <a href="/u/${b.client_id}" target="_blank" style="color:var(--cream);font-weight:700;text-decoration:none">👤 ${esc(b.client_name)}</a>
-          ${b.client_phone?`<a href="tel:${esc(b.client_phone.replace(/\s+/g,''))}" style="color:#4ade80;text-decoration:none;font-size:.82rem">📞 Zavolať</a>`:''}
-          <a href="/community?dm=${b.client_id}" target="_blank" style="color:var(--gold);text-decoration:none;font-size:.82rem">✉️ Napísať</a>
-          <span style="flex:1"></span>
-          ${b.paid
-            ? `<button onclick="completePriv('${b.id}',0,false)" style="background:rgba(74,222,128,.15);border:1px solid #4ade80;color:#4ade80;border-radius:8px;padding:5px 12px;font-size:.78rem;font-weight:700;cursor:pointer">✅ Absolvovaná</button>`
-            : `<button onclick="completePriv('${b.id}',${sl.price},true)" style="background:rgba(74,222,128,.15);border:1px solid #4ade80;color:#4ade80;border-radius:8px;padding:5px 12px;font-size:.78rem;font-weight:700;cursor:pointer">✅ Absolvovaná · prevzala som ${sl.price.toFixed(2)} €</button>
-               <button onclick="completePriv('${b.id}',${sl.price},false)" title="Hodina prebehla, ale klientka ešte nezaplatila" style="background:none;border:1px solid #555;color:#999;border-radius:8px;padding:5px 10px;font-size:.75rem;cursor:pointer">✅ bez platby</button>`}
-          <button onclick="cancelPriv('${b.id}')" style="background:none;border:1px solid rgba(229,115,115,.5);color:#e57373;border-radius:8px;padding:5px 12px;font-size:.78rem;cursor:pointer">✕ Zrušiť</button>
-        </div></div>`;
-    }
+    if(sl.booking && sl.booking.status==='booked') return privBkCard(sl.booking, when);
     const done=sl.booking&&sl.booking.status==='completed';
     const late=sl.booking&&sl.booking.status==='cancelled_late';
     return `<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
@@ -2583,9 +2569,87 @@ async function loadTrainerPrivate(){
       ${(!sl.booking)?`<button onclick="delPrivSlot('${sl.id}')" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:5px 10px;font-size:.75rem;cursor:pointer">🗑 Odstrániť</button>`:''}
     </div>`;
   }).join('');
-  host.innerHTML=rows||'<div class="empty">🗓️ Zatiaľ žiadne termíny — pridaj prvý hore.</div>';
+  // ⏳ Hodiny, ktoré už prebehli a ešte nie sú potvrdené (zabudnuté) — hore, nech na ne tréner nezabudne
+  const pend=(d.pending||[]).map(p=>privBkCard(p, `<b>${p.date.split('-').reverse().join('.')}</b> ${p.time_start} · ${p.duration_min} min · 📍 ${esc(p.city)}${p.location?' ('+esc(p.location)+')':''}`)).join('');
+  host.innerHTML=(pend?`<div style="margin-bottom:16px"><div style="font-weight:700;font-size:.9rem;color:#fbbf24;margin-bottom:8px">⏳ Čakajú na potvrdenie (${d.pending.length})</div>${pend}</div>`:'')
+    +(rows||'<div class="empty">🗓️ Zatiaľ žiadne termíny — pridaj prvý hore.</div>');
 }
-let _privRate=0;
+let _privRate=0, _privSplit=70, _privBk={}, _pdId=null;
+// Karta rezervovanej hodiny (dnešnej aj zabudnutej) s tlačidlom „Hodina je hotová"
+function privBkCard(b, when){
+  _privBk[b.id]={...b, when};
+  const cena=+b.price||0;
+  const platba=b.paid
+    ? (b.pay_method==='prize'?'<span style="color:#4ade80;font-size:.72rem">🎁 výherná hodina — platí štúdio</span>':'<span style="color:#4ade80;font-size:.72rem">✓ zaplatené v appke</span>')
+    : '<span style="color:#fbbf24;font-size:.72rem">💵 platí na mieste</span>';
+  return `<div style="background:var(--card);border:1px solid rgba(201,168,76,.4);border-radius:12px;padding:12px;margin-bottom:8px">
+    <div style="font-size:.88rem">${when} · <b style="color:var(--gold)">${cena.toFixed(2)} €</b> ${platba}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px">
+      <a href="/u/${b.client_id}" target="_blank" style="color:var(--cream);font-weight:700;text-decoration:none">👤 ${esc(b.client_name)}</a>
+      ${b.client_phone?`<a href="tel:${esc(String(b.client_phone).replace(/\s+/g,''))}" style="color:#4ade80;text-decoration:none;font-size:.82rem">📞 Zavolať</a>`:''}
+      <a href="/community?dm=${b.client_id}" target="_blank" style="color:var(--gold);text-decoration:none;font-size:.82rem">✉️ Napísať</a>
+      <span style="flex:1"></span>
+      <button onclick="privDone('${b.id}')" style="background:rgba(74,222,128,.15);border:1px solid #4ade80;color:#4ade80;border-radius:8px;padding:6px 12px;font-size:.8rem;font-weight:700;cursor:pointer">✅ Hodina je hotová</button>
+      <button onclick="cancelPriv('${b.id}')" style="background:none;border:1px solid rgba(229,115,115,.5);color:#e57373;border-radius:8px;padding:5px 12px;font-size:.78rem;cursor:pointer">✕ Zrušiť</button>
+    </div></div>`;
+}
+// Po hodine: ako klientka zaplatila. Hotovosť, ktorú má tréner u seba, sa mu odráta
+// z výplaty; platbu v appke alebo na účet štúdia mu vyplatíme vo výplate.
+function privDone(id){
+  const b=_privBk[id]; if(!b) return;
+  privDoneClose(); _pdId=id;
+  const m=document.createElement('div'); m.id='privDoneModal';
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px';
+  m.addEventListener('click',e=>{ if(e.target===m) privDoneClose(); });
+  m.addEventListener('keydown',e=>{ if(e.key==='Escape') privDoneClose(); });
+  const lbl='display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:6px;cursor:pointer;font-size:.88rem;color:var(--cream)';
+  m.innerHTML=`<div role="dialog" aria-modal="true" aria-labelledby="pdTitle" style="background:var(--card);border:1px solid var(--gold-border);border-radius:16px;padding:18px;max-width:430px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.6)">
+    <div id="pdTitle" style="font-weight:800;font-size:1.02rem;color:var(--cream)">✅ Hodina je hotová</div>
+    <div style="font-size:.82rem;color:var(--muted);margin:4px 0 14px">👤 ${esc(b.client_name)} · ${b.when}</div>
+    ${b.paid
+      ? `<div style="background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.3);border-radius:10px;padding:10px 12px;font-size:.85rem;color:var(--cream)">✓ ${b.pay_method==='prize'?'Výherná hodina — platí ju štúdio.':'Klientka zaplatila v appke.'} Nič od nej nevyberáš.</div>`
+      : `<div style="font-size:.8rem;font-weight:700;margin-bottom:8px;color:var(--cream)">Ako klientka zaplatila?</div>
+         <label style="${lbl}"><input type="radio" name="pdPay" value="cash" checked onchange="privDoneUpdate()"> 💵 V hotovosti — peniaze mám u seba</label>
+         <label style="${lbl}"><input type="radio" name="pdPay" value="transfer" onchange="privDoneUpdate()"> 🏦 Na účet štúdia (prevodom)</label>
+         <label for="pdAmount" style="display:flex;align-items:center;gap:8px;margin:10px 0 2px;font-size:.86rem;color:var(--cream)">Zaplatila
+           <input type="number" id="pdAmount" value="${(+b.price||0).toFixed(2)}" min="0.5" max="1000" step="0.5" inputmode="decimal" oninput="privDoneUpdate()" style="width:110px;background:#161310;border:1px solid var(--border);color:var(--cream);border-radius:8px;padding:8px;font-size:1rem"> €</label>`}
+    <div id="pdPreview" style="font-size:.83rem;line-height:1.6;margin-top:12px;color:var(--cream)"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button onclick="privDoneClose()" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:10px;padding:10px 14px;cursor:pointer">Späť</button>
+      <button id="pdOk" onclick="privDoneSubmit()" style="background:linear-gradient(135deg,var(--gold),#a07830);border:none;color:#111;font-weight:800;border-radius:10px;padding:10px 18px;cursor:pointer">Potvrdiť</button>
+    </div></div>`;
+  document.body.appendChild(m);
+  privDoneUpdate();
+  (m.querySelector('#pdAmount')||m.querySelector('#pdOk')).focus();
+}
+function privDoneClose(){ const m=document.getElementById('privDoneModal'); if(m) m.remove(); }
+function privDoneUdaje(){
+  const r=document.querySelector('input[name="pdPay"]:checked'), a=document.getElementById('pdAmount');
+  return { pay:r?r.value:null, amount:a?+a.value:null };
+}
+function privDoneUpdate(){
+  const box=document.getElementById('pdPreview'), b=_privBk[_pdId]; if(!box||!b) return;
+  const {pay,amount}=privDoneUdaje();
+  const cena=pay?amount:(+b.price||0), split=+b.split||_privSplit;
+  const eur=n=>(+n).toFixed(2).replace('.',',')+' €';
+  if(pay && !(cena>0)){ box.innerHTML='<span style="color:#e57373">Zadaj sumu, ktorú klientka zaplatila.</span>'; return; }
+  const podiel=+(cena*split/100).toFixed(2), spolu=+(podiel-cena).toFixed(2);
+  if(pay==='cash') box.innerHTML=`Hotovosť <b style="color:#fbbf24">${eur(cena)}</b> máš u seba — <b>odráta sa ti z výplaty</b>.<br>Tvoj podiel <b style="color:#4ade80">${eur(podiel)}</b> (${split} %) ti pribudne.<br><span style="color:var(--muted)">Vo výplate to spolu spraví <b style="color:var(--cream)">${spolu<0?'−':'+'}${eur(Math.abs(spolu))}</b>${spolu<0?' — podiel štúdia ostal u teba v hotovosti':''}.</span>`;
+  else box.innerHTML=`${pay==='transfer'?'Peniaze príjme štúdio na účet. ':''}Tvoj podiel <b style="color:#4ade80">${eur(podiel)}</b> (${split} % z ${eur(cena)}) ti <b>vyplatíme vo výplate</b>.`;
+}
+async function privDoneSubmit(){
+  const id=_pdId, b=_privBk[id]; if(!b) return;
+  const body={booking_id:id};
+  if(!b.paid){ const {pay,amount}=privDoneUdaje(); if(!(amount>0)){ toast('Zadaj sumu, ktorú klientka zaplatila', true); return; } body.pay=pay; body.amount=amount; }
+  const btn=document.getElementById('pdOk'); btn.disabled=true; btn.textContent='Ukladám…';
+  const r=await api('/api/private/complete',{method:'POST',body});
+  if(r&&r.ok){ privDoneClose();
+    toast(r.cash_recorded
+      ? `✅ Hotovo · podiel +${(+r.trainer_cut).toFixed(2)} €, hotovosť ${(+r.cash_amount).toFixed(2)} € sa odráta z výplaty`
+      : `✅ Hotovo · +${(+r.trainer_cut).toFixed(2)} € do výplaty`);
+    loadTrainerPrivate(); }
+  else { btn.disabled=false; btn.textContent='Potvrdiť'; toast((r&&r.error)||'Chyba', true); }
+}
 function pmSuggestPrice(){
   const dur=+document.getElementById('pmDur').value||60;
   document.getElementById('pmPrice').value=(_privRate*(dur/60)).toFixed(2);
@@ -2637,16 +2701,6 @@ async function delPrivSlot(id){
   if(!confirm('Odstrániť tento voľný termín?')) return;
   const r=await api('/api/trainer/private-slots/'+id,{method:'DELETE'});
   if(r&&r.ok){ toast('Termín odstránený'); loadTrainerPrivate(); } else toast((r&&r.error)||'Chyba', true);
-}
-async function completePriv(id, price, cash){
-  const msg = cash
-    ? `Potvrdiť hodinu ako ABSOLVOVANÚ a prevzatie ${(+price).toFixed(2)} € v hotovosti?\n\nKlientke sa pripíše návšteva + odznaky, tebe podiel do výplaty.\nHotovosť ti pribudne do evidencie — odovzdáš ju, alebo sa zúčtuje s výplatou.`
-    : (price ? 'Potvrdiť hodinu ako ABSOLVOVANÚ BEZ platby?\n\nKlientka za ňu ešte nezaplatila — tržba sa zapíše, ale hotovosť ti do evidencie nepribudne.'
-             : 'Potvrdiť hodinu ako ABSOLVOVANÚ?\n\nKlientke sa pripíše návšteva + odznaky, tebe podiel do výplaty a tržba do účtovníctva.');
-  if(!confirm(msg)) return;
-  const r=await api('/api/private/complete',{method:'POST',body:{booking_id:id, cash_received:!!cash}});
-  if(r&&r.ok){ toast(`✅ Absolvovaná · +${(r.trainer_cut||0).toFixed(2)} € do výplaty${r.cash_recorded?` · hotovosť ${(+price).toFixed(2)} € v evidencii`:''}`); loadTrainerPrivate(); }
-  else toast((r&&r.error)||'Chyba', true);
 }
 async function cancelPriv(id){
   const reason=prompt('Zrušiť súkromnú hodinu?\n\nKlientovi pošleme ospravedlnenie a vrátime platbu (ak platil kreditom).\n\nDôvod (nepovinné):','');

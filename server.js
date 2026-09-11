@@ -13256,6 +13256,20 @@ async function trainerMonthStats(month){
   return Object.values(stats).map(s=>({instructor:s.instructor, sessions:s.sessions.size, attendances:s.attendances, revenue:+s.revenue.toFixed(2), newClients:s.newClients.size, fullClasses:s.fullClasses, session_atts:s.session_atts}));
 }
 
+// Výplaty rátajú trénerov zo skupinových hodín. Tréner, ktorý mal v mesiaci len súkromné
+// hodiny alebo vybral hotovosť, by vo výplatách chýbal — a s ním jeho podiel aj zrážka.
+async function payrollStats(month){
+  const stats=await trainerMonthStats(month);
+  const mam=new Set(stats.map(s=>s.instructor));
+  const mena=Object.fromEntries((await q.find(db.users,{})).map(u=>[u._id,u.name]));
+  const navyse=new Set();
+  for(const b of await q.find(db.private_bookings,{}))
+    if(String(b.date||'').startsWith(month) && ['completed','cancelled_late'].includes(b.status)) navyse.add(mena[b.trainer_id]||b.trainer_name);
+  for(const r of await q.find(db.payouts,{_type:'cash_collected', month})) navyse.add(r.trainer_name);
+  for(const n of navyse) if(n && !mam.has(n)) stats.push({instructor:n, sessions:0, attendances:0, revenue:0, newClients:0, fullClasses:0, session_atts:[]});
+  return stats;
+}
+
 // Nový štandardný model: 10 € základ za hodinu + 1 € za každého klienta NAD 10 na hodine.
 const DEFAULT_PAYOUT_RULE={fixed_per_class:10, pct_of_revenue:0, per_client:1, per_client_threshold:10, bonus_full_class:0, bonus_new_member:0};
 // Počet "platených" účastníkov = súčet klientov nad prah na každej hodine
@@ -13763,7 +13777,7 @@ app.get('/api/admin/points-summary.csv', adminAuth, async(req,res)=>{
 app.get('/api/admin/payouts', adminAuth, async(req,res)=>{
   try {
     const month=req.query.month||today().slice(0,7);
-    const stats=await trainerMonthStats(month);
+    const stats=await payrollStats(month);
     const rules=Object.fromEntries((await q.find(db.payout_rules,{})).map(r=>[r.trainer,r]));
     const saved=Object.fromEntries((await q.find(db.payouts,{month, _type:{$exists:false}})).map(p=>[p.trainer,p]));
     const nameToId=Object.fromEntries((await q.find(db.users,{})).map(u=>[u.name,u._id]));
@@ -16636,10 +16650,22 @@ app.get('/api/trainer/private', trainerAuth, async(req,res)=>{
     const bkBySlot=Object.fromEntries(bookings.map(b=>[b.slot_id,b]));
     const out=slots.map(s=>{ const b=bkBySlot[s._id];
       return { id:s._id, date:s.date, time_start:s.time_start, duration_min:s.duration_min||60, city:s.city, location:s.location||'', price:s.price, status:s.status,
-        booking: (b&&['booked','completed','cancelled_late'].includes(b.status)) ? { id:b._id, client_id:b.client_id, client_name:b.client_name, client_phone:b.client_phone||'', pay_method:b.pay_method, paid:!!b.paid, status:b.status } : null };
+        booking: (b&&['booked','completed','cancelled_late'].includes(b.status)) ? { id:b._id, client_id:b.client_id, client_name:b.client_name, client_phone:b.client_phone||'', pay_method:b.pay_method, paid:!!b.paid, status:b.status, price:+b.price||0, split:+b.split||PRIVATE_DEFAULT_SPLIT } : null };
     });
     const m=today().slice(0,7);
     const earn=await privateEarningsFor(t._id, m);
+    // Hodiny, ktoré už prebehli a tréner ich nepotvrdil (zabudol) — posledných 30 dní.
+    // Dnešné sú v termínoch vyššie; staršie by zo zoznamu úplne zmizli a nedali by sa potvrdiť.
+    const od30=new Date(Date.now()-30*864e5).toISOString().slice(0,10);
+    const pending=bookings.filter(b=>b.status==='booked' && b.date<today() && b.date>=od30)
+      .sort((a,b)=>(a.date+(a.time_start||'')).localeCompare(b.date+(b.time_start||'')))
+      .map(b=>({ id:b._id, date:b.date, time_start:b.time_start||'', duration_min:b.duration_min||60, city:b.city||'', location:b.location||'',
+        price:+b.price||0, split:+b.split||PRIVATE_DEFAULT_SPLIT, client_id:b.client_id, client_name:b.client_name, client_phone:b.client_phone||'',
+        pay_method:b.pay_method, paid:!!b.paid }));
+    // Hotovosť zo súkromných hodín, ktorú má tréner tento mesiac u seba (odráta sa z výplaty)
+    const month_cash=+(await q.find(db.payouts,{_type:'cash_collected', trainer_id:t._id, month:m}))
+      .filter(r=>r.status!=='settled_handed' && (r.private_booking_id || /^Súkromná hodina/.test(r.note||'')))
+      .reduce((s,r)=>s+(+r.amount||0),0).toFixed(2);
     const DAYS_W=['Nedeľa','Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota'];
     const recurring=(await q.find(db.private_recurring,{trainer_id:t._id, active:{$ne:false}}))
       .map(r=>({id:r._id, weekday:r.weekday, weekday_name:DAYS_W[r.weekday], time_start:r.time_start, duration_min:r.duration_min||60, city:r.city, location:r.location||''}));
@@ -16649,7 +16675,7 @@ app.get('/api/trainer/private', trainerAuth, async(req,res)=>{
       .map(b=>({ id:b._id, date:b.date, time_start:b.time_start||'', duration_min:b.duration_min||60, city:b.city||'',
         name:b.client_name, phone:b.client_phone||'', price:+b.price||0, pay_method:b.pay_method,
         cut:+b.trainer_cut||0, can_delete: b.date===today() }));
-    res.json({ ok:true, settings:privateSettings(t), slots:out, recurring, guests, month_earn:earn.amount, month_count:earn.count });
+    res.json({ ok:true, settings:privateSettings(t), slots:out, recurring, guests, pending, month_cash, month_earn:earn.amount, month_count:earn.count });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -16955,39 +16981,54 @@ app.post('/api/private/cancel', auth, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
-// Tréner potvrdí absolvovanie → účtovníctvo, návšteva, odznaky, notifikácie
+// Tréner (alebo admin) po hodine potvrdí, že prebehla, a zadá, ako klientka zaplatila
+// (Marek 11. 9.): hotovosť, ktorú si tréner nechal, sa mu odráta z výplaty; pri platbe
+// v appke alebo na účet štúdia mu podiel vyplatíme my. Suma sa dá zmeniť — klientka
+// mohla zaplatiť inak, než bola cena v rezervácii. Starší klient posiela len cash_received.
 app.post('/api/private/complete', trainerAuth, async(req,res)=>{
   try{
     const b=await q.one(db.private_bookings,{_id:String(req.body.booking_id||'')});
-    if(!b||b.status!=='booked') return res.status(400).json({error:'Rezervácia sa nedá potvrdiť'});
+    if(!b||b.status!=='booked') return res.status(400).json({error:'Hodina už je potvrdená alebo zrušená'});
     if(b.trainer_id!==req.trainerUser._id && !req.trainerUser.is_admin) return res.status(403).json({error:'Nie je tvoja hodina'});
-    const cut=+((+b.price||0)*((+b.split||PRIVATE_DEFAULT_SPLIT)/100)).toFixed(2);
-    // Hotovosť na mieste: trénerka pri potvrdení označí, že peniaze reálne prevzala.
-    // Bez toho by držala celú sumu v ruke a vo výplate by dostala ešte svoj podiel —
-    // preto ide hotovosť do jej evidencie a zúčtuje sa (rovnako ako pri predaji).
-    const cashReceived = req.body.cash_received===true && !b.paid && b.pay_method!=='prize' && +b.price>0;
-    await q.update(db.private_bookings,{_id:b._id},{$set:{status:'completed', completed_at:nowISO(), trainer_cut:cut,
-      ...(cashReceived ? {paid:true, paid_at:nowISO(), pay_method:'cash'} : {})}});
+    const vopred = !!b.paid || b.pay_method==='prize';   // zaplatené v appke (kredit/karta) alebo výherná hodina
+    let pay = ['cash','transfer'].includes(req.body.pay) ? req.body.pay : (req.body.cash_received===true ? 'cash' : null);
+    if(vopred || (!req.body.pay && !(+b.price>0))) pay=null;
+    let price=+b.price||0;
+    if(pay){
+      const suma = (req.body.amount===undefined||req.body.amount===null||req.body.amount==='') ? price : +req.body.amount;
+      if(!Number.isFinite(suma) || suma<=0 || suma>1000) return res.status(400).json({error:'Zadaj sumu, ktorú klientka zaplatila (0–1000 €).'});
+      price=+suma.toFixed(2);
+    }
+    const split=+b.split||PRIVATE_DEFAULT_SPLIT;
+    const cut=+(price*(split/100)).toFixed(2);
+    const cashReceived = pay==='cash';
+    const set={status:'completed', completed_at:nowISO(), completed_by:req.trainerUser._id, trainer_cut:cut};
+    if(pay && price!==(+b.price||0)){ set.price=price; set.price_booked=+b.price||0; }
+    if(cashReceived) Object.assign(set,{paid:true, paid_at:nowISO(), pay_method:'cash', cash_amount:price});
+    if(pay==='transfer') Object.assign(set,{pay_method:'transfer', transfer_pending:true});
+    await q.update(db.private_bookings,{_id:b._id},{$set:set});
     // Účtovníctvo: tržba za súkromnú hodinu — výherná hodina (pay_method 'prize')
     // sa NEPOČÍTA do tržieb, klientka za ňu neplatila (cenu preplatilo štúdio, tréner
     // dostáva svoj podiel normálne z trainer_cut vyššie).
-    if(b.pay_method!=='prize') await q.insert(db.transactions,{type:'private_lesson', amount:+b.price, user_id:b.client_id, user_name:b.client_name, date:today(), method:cashReceived?'cash':b.pay_method, ...(cashReceived?{payment_method:'cash'}:{}), note:`Súkromná hodina ${b.trainer_name} ${b.date} ${b.time_start}${cashReceived?' (hotovosť)':''}`, created_at:nowISO()}).catch(()=>{});
+    const metoda = cashReceived ? 'cash' : (pay==='transfer' ? 'transfer' : b.pay_method);
+    if(b.pay_method!=='prize') await q.insert(db.transactions,{type:'private_lesson', amount:price, user_id:b.client_id, user_name:b.client_name, date:today(), method:metoda, ...(cashReceived?{payment_method:'cash'}:{}), private_booking_id:b._id, note:`Súkromná hodina ${b.trainer_name} ${b.date} ${b.time_start}${cashReceived?' (hotovosť u trénera)':pay==='transfer'?' (na účet)':''}`, created_at:nowISO()}).catch(()=>{});
     if(cashReceived){
+      // Mesiac hodiny — do rovnakého mesiaca ide aj podiel trénera (privateEarningsFor ráta podľa dátumu hodiny)
       await q.insert(db.payouts,{_type:'cash_collected', trainer_id:b.trainer_id, trainer_name:b.trainer_name,
-        amount:+(+b.price).toFixed(2), note:`Súkromná hodina — ${b.client_name}`, month:today().slice(0,7),
-        date:today(), status:'held', created_at:nowISO()});
+        amount:price, note:`Súkromná hodina — ${b.client_name}`, private_booking_id:b._id,
+        month:String(b.date||today()).slice(0,7), date:today(), status:'held', created_at:nowISO()});
       for(const a of await q.find(db.users,{is_admin:true}))
         await q.insert(db.notifications,{user_id:a._id, type:'cash_collected',
-          title:`💵 ${b.trainer_name}: súkromná hodina ${(+b.price).toFixed(2)} €`,
-          body:`${b.client_name} zaplatila v hotovosti — peniaze má trénerka, zúčtujú sa s výplatou.`,
+          title:`💵 ${b.trainer_name}: súkromná hodina ${price.toFixed(2)} €`,
+          body:`${b.client_name} zaplatila v hotovosti — peniaze má tréner, odrátajú sa mu z výplaty.`,
           read:false, created_at:nowISO()}).catch(()=>{});
     }
     // Klient: návšteva + súkromné odznaky
     const c=await q.one(db.users,{_id:b.client_id});
     // Faktúra za súkromnú hodinu (pri platbe kartou vopred ju už vystavil Stripe; výherná hodina fakturu nemá)
-    if(+b.price>0 && b.pay_method!=='card' && b.pay_method!=='prize') createInvoice({user_id:b.client_id, client_name:b.client_name, client_email:c?.email,
-      items:[{desc:`Súkromná hodina — ${b.trainer_name} (${b.date} ${b.time_start})`, qty:1, total:+b.price}],
-      total:+b.price, method: b.pay_method==='credit' ? 'Kredit' : 'Hotovosť'}).catch(()=>{});
+    if(price>0 && b.pay_method!=='card' && b.pay_method!=='prize') createInvoice({user_id:b.client_id, client_name:b.client_name, client_email:c?.email,
+      items:[{desc:`Súkromná hodina — ${b.trainer_name} (${b.date} ${b.time_start})`, qty:1, total:price}],
+      total:price, method: cashReceived ? 'Hotovosť' : pay==='transfer' ? 'Prevodom' : b.pay_method==='credit' ? 'Kredit' : 'Hotovosť'}).catch(()=>{});
     if(c){ await creditAttendance(c);
       await q.update(db.users,{_id:c._id},{$set:{private_hours:(c.private_hours||0)+1}});
       checkNewAchievements(c._id).catch(()=>{});
@@ -16997,9 +17038,9 @@ app.post('/api/private/complete', trainerAuth, async(req,res)=>{
     const t=await q.one(db.users,{_id:b.trainer_id});
     if(t){ await q.update(db.users,{_id:t._id},{$set:{taught_private_hours:(t.taught_private_hours||0)+1}});
       checkNewAchievements(t._id).catch(()=>{});
-      await q.insert(db.notifications,{user_id:t._id,type:'private_done',title:`💰 Súkromná hodina: +${cut.toFixed(2)} €`,body:`${b.client_name} · ${b.date.split('-').reverse().join('.')} ${b.time_start}. Tvoj podiel ${b.split||PRIVATE_DEFAULT_SPLIT} % z ${(+b.price).toFixed(2)} € — uvidíš ho vo výplate.`,read:false,created_at:nowISO()}).catch(()=>{});
+      await q.insert(db.notifications,{user_id:t._id,type:'private_done',title:`💰 Súkromná hodina: +${cut.toFixed(2)} €`,body:`${b.client_name} · ${b.date.split('-').reverse().join('.')} ${b.time_start}. Tvoj podiel ${split} % z ${price.toFixed(2)} €${cashReceived?` — hotovosť ${price.toFixed(2)} € máš u seba, odráta sa ti z výplaty.`:' — uvidíš ho vo výplate.'}`,read:false,created_at:nowISO()}).catch(()=>{});
     }
-    res.json({ok:true, trainer_cut:cut, cash_recorded:cashReceived});
+    res.json({ok:true, trainer_cut:cut, price, pay: vopred ? 'app' : (pay||'onsite'), cash_recorded:cashReceived, cash_amount:cashReceived?price:0});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -17028,7 +17069,19 @@ app.get('/api/admin/private', adminAuth, async(req,res)=>{
       trainers.push({ id:t._id, name:t.name, enabled:st.enabled, rate:st.rate, split:st.split, open_slots:openCnt, month_earn:earn.amount, month_count:earn.count });
     }
     const all=(await q.find(db.private_bookings,{})).sort((a,b)=>(b.date+b.time_start).localeCompare(a.date+a.time_start)).slice(0,60);
-    res.json({ok:true, trainers, bookings:all.map(b=>({id:b._id, date:b.date, time_start:b.time_start, city:b.city, trainer_name:b.trainer_name, client_id:b.client_id, client_name:b.client_name, price:b.price, split:b.split, pay_method:b.pay_method, paid:!!b.paid, status:b.status, manual:!!b.manual}))});
+    res.json({ok:true, trainers, bookings:all.map(b=>({id:b._id, date:b.date, time_start:b.time_start, city:b.city, trainer_name:b.trainer_name, client_id:b.client_id, client_name:b.client_name, price:b.price, split:b.split, pay_method:b.pay_method, paid:!!b.paid, status:b.status, manual:!!b.manual, cash_amount:+b.cash_amount||0, trainer_cut:+b.trainer_cut||0, transfer_pending:!!b.transfer_pending}))});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Klientka zaplatila súkromnú hodinu prevodom na účet štúdia — admin potvrdí, že prišiel
+app.post('/api/admin/private/:id/paid', adminAuth, async(req,res)=>{
+  try{
+    const b=await q.one(db.private_bookings,{_id:req.params.id});
+    if(!b) return res.status(404).json({error:'Rezervácia nenájdená'});
+    if(b.paid) return res.json({ok:true, already:true});
+    await q.update(db.private_bookings,{_id:b._id},{$set:{paid:true, paid_at:nowISO(), transfer_pending:false}});
+    await auditLog(req,'private_paid',b.trainer_name+': '+b.client_name+' '+b.date+' '+(+b.price||0).toFixed(2)+' € (prevod)',null,{paid:true},'');
+    res.json({ok:true});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
