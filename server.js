@@ -10400,6 +10400,12 @@ async function zlucUcty(srcId, tgtId){
   if(!src||!tgt) throw chyba('Účet nenájdený',404);
   if(src._id===tgt._id) throw chyba('Nemôžeš zlúčiť účet sám so sebou',400);
   if(src.is_admin) throw chyba('Admin účet nemožno zlúčiť/zmazať',400);
+  // Dva rôzne mesačné odbery by po zlúčení nemali kam patriť — jeden by ďalej
+  // strhával peniaze bez účtu. Najprv treba jeden zrušiť.
+  if(src.stripe_subscription_id && tgt.stripe_subscription_id && src.stripe_subscription_id!==tgt.stripe_subscription_id)
+    throw chyba('Oba účty majú aktívny mesačný odber cez Stripe — najprv jeden zruš, potom zlúč.',409);
+  if(src.paypal_subscription_id && tgt.paypal_subscription_id && src.paypal_subscription_id!==tgt.paypal_subscription_id)
+    throw chyba('Oba účty majú aktívny mesačný odber cez PayPal — najprv jeden zruš, potom zlúč.',409);
 
   const prenesene={};
   const pren=async(coll,field,nazov)=>{
@@ -10476,6 +10482,9 @@ async function zlucUcty(srcId, tgtId){
   await pren(db.email_queue,'user_id','maily');
   // downline: kto mal za sponzora zdroj, dostane cieľ
   const downline=await q.update(db.users,{sponsor_id:src._id},{$set:{sponsor_id:tgt._id}},{multi:true});
+  // Rodič, ktorého odber aktivuje členstvo zdrojovému účtu (dieťaťu), musí po zlúčení
+  // aktivovať cieľový — inak by obnova predĺžila členstvo zmazanému účtu.
+  await q.update(db.users,{stripe_sub_member:src._id, _id:{$ne:src._id}},{$set:{stripe_sub_member:tgt._id}},{multi:true});
   // priateľstvá zdroja radšej odstráň (páry sú kľúčované, aby nevznikli duplicity)
   await q.remove(db.friends,{users:src._id},{multi:true});
   // meal plan: ak cieľ nemá, prenes zdrojový
@@ -10511,7 +10520,23 @@ async function zlucUcty(srcId, tgtId){
     venceky_role: tgt.venceky_role||src.venceky_role||null,
     vencek_child_name: tgt.vencek_child_name||src.vencek_child_name||'',
     vencek_alumni: tgt.vencek_alumni||src.vencek_alumni||null,
+    // Mesačný odber: Stripe/PayPal páruje obnovu podľa id odberu na účte. Bez prenosu
+    // by obnova po zlúčení nikoho nenašla — Stripe by strhol peniaze a členstvo by sa
+    // nepredĺžilo (Michaela N., 11. 9.). Odber patrí účtu, ktorý ho má.
+    ...(()=>{
+      const odber = (tgt.stripe_subscription_id||tgt.paypal_subscription_id) ? tgt
+        : ((src.stripe_subscription_id||src.paypal_subscription_id) ? src : null);
+      if(!odber) return {};
+      return { stripe_subscription_id: odber.stripe_subscription_id||null, paypal_subscription_id: odber.paypal_subscription_id||null,
+        stripe_sub_plan: odber.stripe_sub_plan||null,
+        stripe_sub_member: (odber.stripe_sub_member && odber.stripe_sub_member!==src._id) ? odber.stripe_sub_member : tgt._id };
+    })(),
+    membership_plan: tgt.membership_plan||src.membership_plan||null,
+    membership_expires: [tgt.membership_expires,src.membership_expires].filter(Boolean).sort().pop()||null,
+    first_membership_at: [tgt.first_membership_at,src.first_membership_at].filter(Boolean).sort()[0]||null,
   };
+  for(const k of ['stripe_subscription_id','paypal_subscription_id','stripe_sub_plan','membership_plan','membership_expires','first_membership_at'])
+    if(set[k]==null) delete set[k];
   // Prázdne hodnoty nezapisuj — inak by účet mimo venčekov dostal samé nully.
   for(const k of ['venceky_class_id','venceky_school_id','venceky_role','vencek_alumni'])
     if(set[k]==null) delete set[k];
