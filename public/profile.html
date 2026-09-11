@@ -550,13 +550,16 @@ function render(){
   `;
   loadComments();
   if(P.can_receive_tips) loadTips();
+  // Marek 11. 9.: pozvánka (text + kód) sa má hneď skopírovať a appka povie
+  // „kód skopírovaný". Text sa načíta vopred — iPhone po čakaní kopírovať nedovolí.
+  const invP=P.is_self ? fetch('/api/invite-message',{credentials:'include'}).then(r=>r.json()).catch(()=>null) : Promise.resolve(null);
+  let invD=null; invP.then(d=>{ invD=d; });
   window.ambCopyLink=async(btn)=>{
-    try{
-      const r=await fetch('/api/invite-message',{credentials:'include'}); const d=await r.json();
-      if(navigator.share){ try{ await navigator.share({text:d.message}); return; }catch(e){ if(e.name==='AbortError') return; } }
-      await navigator.clipboard.writeText(d.message);
-      btn.textContent='✅ Pozvánka skopírovaná — pošli ju kamoške!';
-    }catch(e){ btn.textContent='Odkaz nájdeš na nástenke v appke'; }
+    const d=invD||await invP;
+    if(!d||!d.message){ btn.textContent='Odkaz nájdeš na nástenke v appke'; return; }
+    try{ await navigator.clipboard.writeText(d.message); btn.textContent='✅ Kód skopírovaný — pošli ho kamoške!'; }
+    catch(e){ btn.textContent='Odkaz nájdeš na nástenke v appke'; return; }
+    if(navigator.share){ try{ await navigator.share({text:d.message}); }catch(e){} }
   };
   // Medaila hodnosti: obrázok /img/ranks/rank-N.png, kým nie je nahraný,
   // ukážeme jednoduchý zlatý štít s číslom — nič sa nerozbije.

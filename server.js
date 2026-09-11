@@ -6342,11 +6342,14 @@ let pubSchedCache=null;
 // nechá meno + kontakt a má rezervovanú prvú hodinu zdarma. Guest účet (lead)
 // sa neskôr claimne registráciou/Googlom — žiadny paralelný systém, žiadne duplicity.
 // ═══════════════════════════════════════════════════════════════════════════════
+// Kód aj samostatne (Marek 11. 9.) — keď sa kamoška zaregistruje priamo v appke,
+// zadá ho do poľa „kód" a sponzorka ostane správna aj bez kliknutia na odkaz.
 const INVITE_MSG = code =>
   'Poď so mnou na Zumbu! 💃❤️\n' +
   'Prvú hodinu máš úplne ZADARMO.\n' +
   'Vyber si, kde a kedy chceš prísť 👇\n' +
-  APP_URL + '/invite/' + code;
+  APP_URL + '/invite/' + code + '\n' +
+  'Môj pozývací kód: ' + code;
 const isTestContact = c => /@test-fa-qa\.local$/i.test(String(c||''));
 // Venčekári — žiaci, rodičia aj učitelia zo školských skupín — nie sú leady na
 // konverziu. Marek 11. 9.: „leady z venčeka nemusia ísť trénerom do leadforiem

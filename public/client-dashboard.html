@@ -393,7 +393,6 @@
     .km-stat b small{font-size:.8rem;font-weight:800;color:#ffd98a;margin-left:3px}
     .km-stat span{font-size:.78rem;line-height:1.3;color:#f5d3e0}
     .km-stat.km-top{border-color:#ffe9a8;background:rgba(255,233,168,.1)}
-    .km-note{margin-top:10px;font-size:.78rem;line-height:1.4;color:#f0c9d8}
     .km-admin{display:inline-block;margin-top:6px;font-size:.7rem;font-weight:800;color:#2a1f06;background:#ffe9a8;border-radius:999px;padding:3px 10px}
     .km-cta{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
     .km-go,.km-how{font-family:inherit}
@@ -2344,6 +2343,7 @@ async function init(){
   loadEventBanner();
   loadMyTickets();
   loadKamoskaBanner(me);
+  getInviteMsg().catch(()=>{}); // pozvánka vopred — pri kliknutí sa musí kopírovať hneď
   loadAmbEntry();
   loadOnlineBanner();
   loadDmBadge();
@@ -3283,7 +3283,6 @@ function loadKamoskaBanner(me){
       <div class="km-stat"><b>+20<small>b</small></b><span>keď kamoška príde na hodinu</span></div>
       <div class="km-stat km-top"><b>+100<small>b</small></b><span>keď si kúpi členstvo</span></div>
     </div>
-    <div class="km-note">Body idú rovno do súťaže Klientka mesiaca 🏆 A za každú kamošku, ktorá sa zaregistruje, máš +5 b.</div>
     <div class="km-cta">
       <button class="km-go" onclick="inviteFriend()">❤️ POZVAŤ KAMOŠKU</button>
       <button class="km-how" onclick="openRewardsInfo()">Ako sa zbierajú body</button>
@@ -3296,21 +3295,64 @@ window.skryKamoskaBanner=()=>{
   const h=document.getElementById('kamoskaBanner'); if(h) h.style.display='none';
 };
 // Jednotná pozvánka (celá appka používa ten istý /invite link + text)
-async function getInviteMsg(){
-  try{ const d=await api('/api/invite-message'); if(d?.ok) return d; }catch(e){}
-  const code=_me?.referral_code||'';
-  return {message:'Poď so mnou na Zumbu! 💃❤️\nPrvú hodinu máš úplne ZADARMO.\nVyber si, kde a kedy chceš prísť 👇\n'+location.origin+'/invite/'+code, link:location.origin+'/invite/'+code};
+let _invCache=null;
+function pozvankaLokalne(){
+  const code=_me?.referral_code||'', link=location.origin+'/invite/'+code;
+  return {code, link, message:'Poď so mnou na Zumbu! 💃❤️\nPrvú hodinu máš úplne ZADARMO.\nVyber si, kde a kedy chceš prísť 👇\n'+link+'\nMôj pozývací kód: '+code};
 }
-window.inviteFriend=async()=>{
-  const inv=await getInviteMsg();
-  if(navigator.share){ try{ await navigator.share({text:inv.message}); return; }catch(e){ if(e.name==='AbortError') return; } }
-  copyMyRefLink();
+async function getInviteMsg(){
+  if(_invCache) return _invCache;
+  try{ const d=await api('/api/invite-message'); if(d?.ok){ _invCache=d; return d; } }catch(e){}
+  return pozvankaLokalne();
+}
+// Kopíruje hneď v rámci kliknutia — iPhone po čakaní na server kopírovanie zablokuje,
+// preto sa text pozvánky načíta vopred (getInviteMsg pri štarte dashboardu).
+function kopirujText(t){
+  try{ if(navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(t).then(()=>true, ()=>kopirujOznacenim(t)); }catch(e){}
+  return Promise.resolve(kopirujOznacenim(t));
+}
+function kopirujOznacenim(t){
+  const i=document.createElement('textarea'); i.value=t; i.setAttribute('readonly','');
+  i.style.cssText='position:fixed;top:0;left:0;opacity:0;font-size:16px';
+  document.body.appendChild(i); i.select(); try{ i.setSelectionRange(0,t.length); }catch(e){}
+  let ok=false; try{ ok=document.execCommand('copy'); }catch(e){}
+  i.remove(); return ok;
+}
+// Marek 11. 9.: po kliknutí má pozvánku aj s kódom hneď skopírovanú a appka jej
+// povie „kód skopírovaný, pošli ho kamoške". Zdieľanie až tlačidlom v okne.
+window.inviteFriend=()=>{
+  const inv=_invCache||pozvankaLokalne();
+  kopirujText(inv.message).then(ok=>ukazPozvanku(inv, ok));
 };
-window.copyMyRefLink=async()=>{
-  const inv=await getInviteMsg();
-  try{ await navigator.clipboard.writeText(inv.message); showToast('💌 Pozvánka skopírovaná — pošli ju kamoške!','success'); }
-  catch(e){ const i=document.createElement('textarea'); i.value=inv.message; document.body.appendChild(i); i.select(); document.execCommand('copy'); i.remove(); showToast('💌 Pozvánka skopírovaná!','success'); }
-};
+window.copyMyRefLink=()=>window.inviteFriend();
+function ukazPozvanku(inv, ok){
+  document.getElementById('invModal')?.remove();
+  const m=document.createElement('div'); m.id='invModal';
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  const esc=e=>{ if(e.key==='Escape') zavri(); };
+  const zavri=()=>{ m.remove(); document.removeEventListener('keydown',esc); };
+  m.onclick=e=>{ if(e.target===m) zavri(); };
+  const zdielat=!!navigator.share;
+  m.innerHTML=`<div role="dialog" aria-modal="true" aria-labelledby="invTitle" style="background:#161512;border:1px solid rgba(201,168,76,.4);border-radius:18px;max-width:400px;width:100%;padding:20px;color:#f1ede4">
+    <div id="invTitle" style="font-weight:900;font-size:1.12rem;line-height:1.3;color:${ok?'#8bd06a':'var(--gold)'}">${ok?'✅ Kód skopírovaný — pošli ho kamoške! 💌':'📋 Pozvánka pre kamošku'}</div>
+    <p style="margin:6px 0 12px;font-size:.84rem;color:#b9b2a5;line-height:1.4">${ok?'Otvor Messenger, WhatsApp alebo SMS, podrž prst v správe a daj <b>Vložiť</b>.':'Kopírovanie sa nepodarilo — označ text nižšie a skopíruj si ho.'}</p>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(201,168,76,.1);border:1px dashed rgba(201,168,76,.55);border-radius:12px;padding:10px 14px;margin-bottom:10px">
+      <span style="font-size:.78rem;color:#c9b98c">Tvoj pozývací kód</span>
+      <b id="invCode" style="font-size:1.25rem;letter-spacing:.08em;color:#ffe9a8">${escHtml(inv.code||'')}</b>
+    </div>
+    <textarea readonly rows="5" aria-label="Text pozvánky" style="width:100%;box-sizing:border-box;background:#0f0e0c;border:1px solid #2a2620;border-radius:10px;color:#ddd;font-size:.84rem;padding:10px;resize:none;font-family:inherit">${escHtml(inv.message)}</textarea>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      ${zdielat?'<button id="invShare" style="flex:1;border:0;cursor:pointer;background:#ff4f8b;color:#fff;font-weight:900;border-radius:999px;padding:11px 16px;font-size:.9rem;font-family:inherit">📲 Poslať kamoške</button>'
+        :`<a href="https://wa.me/?text=${encodeURIComponent(inv.message)}" target="_blank" rel="noopener" style="flex:1;text-align:center;text-decoration:none;background:#25d366;color:#07210f;font-weight:900;border-radius:999px;padding:11px 16px;font-size:.9rem">💬 Poslať cez WhatsApp</a>`}
+      <button id="invDone" style="border:1px solid #3a352c;background:transparent;color:#ccc;border-radius:999px;padding:10px 16px;font-size:.86rem;font-weight:700;cursor:pointer;font-family:inherit">Hotovo</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+  document.addEventListener('keydown',esc);
+  m.querySelector('#invDone').onclick=zavri;
+  const sh=m.querySelector('#invShare'); if(sh) sh.onclick=async()=>{ try{ await navigator.share({text:inv.message}); zavri(); }catch(e){} };
+  if(!ok){ const ta=m.querySelector('textarea'); ta.focus(); ta.select(); }
+}
 // Rozpis vlastných bodov („Tvoje body" v súťažnom okne)
 window.mySpotBreakdown=()=>{
   const my=(_spotPeriod==='month'?_spotData?.myMonth:_spotData?.myYear)||{};

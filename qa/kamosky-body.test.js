@@ -201,6 +201,8 @@ const riadky = arr => arr.map(o => JSON.stringify(o)).join('\n') + '\n';
     ok('dashboard: pravidlá súťaže majú nové body', /kamoška na prvej hodine \(20 b\)/.test(html) && /kamoška, ktorá si kúpi členstvo \(100 b\)/.test(html) && /zaregistrovaná kamoška \(5 b\)/.test(html));
     ok('dashboard: riadok v rebríčku má nové body', /\+20 b\., keď príde na hodinu, a \+100 b\., keď si kúpi členstvo!/.test(html));
     ok('dashboard: nikde „100 b za registráciu"', !/zaregistruje v appke/.test(html) && !/zaregistruje \(100 b\)/.test(html) && !/\+5 b\. za privedenie/.test(html));
+    // Marek 11. 9.: riadok o 5 b za registráciu v ozname preč — kamoška sa registruje vždy, aj keď príde zadarmo
+    ok('dashboard: oznam už nemá riadok o 5 b za registráciu', !/class="km-note"/.test(html) && !/ktorá sa zaregistruje, máš \+5 b/.test(html));
     const swDisk = fs.readFileSync(path.join(__dirname, '..', 'public', 'sw.js'), 'utf8').match(/fa-v\d+/)[0];
     const swWeb = ((await (await fetch(BASE + '/sw.js')).text()).match(/fa-v\d+/) || [])[0];
     ok('service worker má aktuálnu verziu (' + swDisk + ')', swWeb === swDisk, swWeb);

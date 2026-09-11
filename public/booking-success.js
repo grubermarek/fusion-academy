@@ -150,12 +150,13 @@ window.showBookingSuccess=async function(opts){
 
   const btn=document.getElementById('bsCopyBtn');
   btn.onclick=async()=>{
-    // Mobil: natívne zdieľanie (WhatsApp/Messenger); inak clipboard
-    if(navigator.share){ try{ await navigator.share({text:fullMsg}); return; }catch(e){ if(e.name==='AbortError') return; } }
+    // Marek 11. 9.: pozvánka aj s kódom sa skopíruje vždy (aj na mobile) a appka povie
+    // „kód skopírovaný"; natívne zdieľanie (WhatsApp/Messenger) sa ponúkne až potom.
     try{ await navigator.clipboard.writeText(fullMsg); }
     catch(e){ const t=document.createElement('textarea'); t.value=fullMsg; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); }
-    btn.classList.add('copied'); btn.textContent='✓ Skopírované — pošli ju kamoške!';
-    setTimeout(()=>{ btn.classList.remove('copied'); btn.textContent='💌 Skopírovať pozvánku s mojím linkom'; },2600);
+    btn.classList.add('copied'); btn.textContent='✓ Kód skopírovaný — pošli ho kamoške!';
+    setTimeout(()=>{ btn.classList.remove('copied'); btn.textContent='💌 Skopírovať pozvánku s mojím linkom'; },3500);
+    if(navigator.share){ try{ await navigator.share({text:fullMsg}); }catch(e){} }
   };
 };
 })();
