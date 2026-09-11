@@ -3066,6 +3066,17 @@ async function seedData() {
     await q.insert(db.settings,{key:'vencek_mimo_konverzie_v1', value:true, at:nowISO()});
     console.log(`🎓 Venčekári mimo konverzie: ${ven.length} · uvoľnených ${uvolnene} · zavretých úloh ${ulohy} · follow-upov ${followupy}`);
   }
+  // …a predajné maily im tiež nechodia (Marek 11. 9.). Kód ich pri odoslaní
+  // preskočí; toto zruší tie, čo už čakajú, nech ich admin nevidí ako naplánované.
+  if(!(await q.one(db.settings,{key:'vencek_bez_predajnych_mailov_v1'}))){
+    const ven=new Set((await q.find(db.users,{})).filter(vencekMimoKonverzie).map(u=>u._id));
+    let zrusene=0;
+    for(const m of await q.find(db.email_queue,{status:'pending'}))
+      if(ven.has(m.user_id) && predajnaSekvencia(m.sequence)){
+        await q.update(db.email_queue,{_id:m._id},{$set:{status:'skipped',reason:'vencek'}}); zrusene++; }
+    await q.insert(db.settings,{key:'vencek_bez_predajnych_mailov_v1', value:true, at:nowISO()});
+    console.log(`🎓 Venčekári bez predajných mailov: zrušených ${zrusene} čakajúcich`);
+  }
 
   // Mesačný strop hlavolamu (40 bodov) Marek 10. 9. zrušil. Soňa Moskálová ho
   // vyčerpala už 7. 9. a zvyšok mesiaca hrala za nulu — presne opačná motivácia,
@@ -4314,7 +4325,7 @@ async function firstBookingNudgeTick(){
   const users=(await q.find(db.users,{account_creation_type:'self_registration'}))
     .filter(u=>u.registration_at && u.email && /@/.test(u.email)
       && !/@import\.local$|@guest\./i.test(u.email)
-      && !u.do_not_contact && !u.offers_optout && !isTestU(u) && u.active!==false);
+      && !u.do_not_contact && !u.offers_optout && !isTestU(u) && u.active!==false && !vencekMimoKonverzie(u));
   for(const u of users){
     if(budget<=0) break;
     const ageMin=(now-Date.parse(u.registration_at))/60000;
@@ -4618,8 +4629,11 @@ app.post('/api/register', rlSignup, async(req,res)=>{
       }
     }
     // Email automation: enqueue welcome + lead_nurture sequences
-    enqueueSequence(u._id, 'welcome').then(()=>processEmailQueue()).catch(()=>{});
-    enqueueSequence(u._id, 'lead_nurture').catch(()=>{});
+    // (venčekár nie — predajné maily mu nechodia, Marek 11. 9.)
+    if(!vencekClass && !jeVencekar(u)){
+      enqueueSequence(u._id, 'welcome').then(()=>processEmailQueue()).catch(()=>{});
+      enqueueSequence(u._id, 'lead_nurture').catch(()=>{});
+    }
     // Server-side conversion tracking
     metaCapi('CompleteRegistration',{email:u.email, fbclid, fbp:clean(attr.fbp),
       event_id:clean(attr.event_id)||undefined, source_url:clean(attr.landing)||undefined}).catch(()=>{});
@@ -5187,7 +5201,7 @@ setInterval(async()=>{
     const already=new Set((await q.find(db.mail_log,{subject:EV_MAIL_SUBJ})).map(m=>String(m.to).toLowerCase()));
     const users=(await q.find(db.users,{}))
       .filter(u=>['client','ambassador'].includes(u.user_type) && !u.is_admin && !u.is_child
-        && u.active!==false && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u)
+        && u.active!==false && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u) && !vencekMimoKonverzie(u)
         && u.email && /@/.test(u.email) && !/@import\.local$|@guest\./i.test(u.email)
         && !already.has(String(u.email).toLowerCase()))
       .sort((a,b)=>(activeMem.has(b._id)?1:0)-(activeMem.has(a._id)?1:0)); // členky prvé
@@ -5246,7 +5260,7 @@ async function eventLeadTick(qaMode){
     const already=new Set((await q.find(db.mail_log,{subject:EV_LEAD_SUBJ})).map(m=>String(m.to).toLowerCase()));
     const users=(await q.find(db.users,{}))
       .filter(u=>u.user_type==='lead' && !u.is_admin && !u.is_child && u.active!==false
-        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u)
+        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u) && !vencekMimoKonverzie(u)
         && u.email && /@/.test(u.email) && !/@import\.local$|@guest\./i.test(u.email)
         && !already.has(String(u.email).toLowerCase()));
     if(!users.length){
@@ -5305,7 +5319,7 @@ async function eventUrgencyTick(qaMode){
     const already=new Set((await q.find(db.mail_log,{subject:EV_URG_SUBJ})).map(m=>String(m.to).toLowerCase()));
     const users=(await q.find(db.users,{}))
       .filter(u=>['client','ambassador'].includes(u.user_type) && !u.is_admin && !u.is_child && u.active!==false
-        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u)
+        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u) && !vencekMimoKonverzie(u)
         && u.email && /@/.test(u.email) && !/@import\.local$|@guest\./i.test(u.email)
         && !already.has(String(u.email).toLowerCase()) && !buyers.has(String(u.email).toLowerCase()))
       .sort((a,b)=>(activeMem.has(b._id)?1:0)-(activeMem.has(a._id)?1:0)); // členky prvé
@@ -5423,7 +5437,7 @@ async function eventLastDayTick(qaMode){
       .map(m=>String(m.to).toLowerCase()));
     const users=(await q.find(db.users,{}))
       .filter(u=>['client','ambassador'].includes(u.user_type) && !u.is_admin && !u.is_child && u.active!==false
-        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u)
+        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u) && !vencekMimoKonverzie(u)
         && u.email && /@/.test(u.email) && !/@import\.local$|@guest\./i.test(u.email)
         && !already.has(String(u.email).toLowerCase())
         && !buyers.has(String(u.email).toLowerCase())
@@ -5491,7 +5505,7 @@ async function eventLastCallTick(qaMode){
       .map(m=>String(m.to).toLowerCase()));
     const users=(await q.find(db.users,{}))
       .filter(u=>['client','ambassador'].includes(u.user_type) && !u.is_admin && !u.is_child && u.active!==false
-        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u)
+        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u) && !vencekMimoKonverzie(u)
         && u.email && /@/.test(u.email) && !/@import\.local$|@guest\./i.test(u.email))
       .filter(u=>{ const e=String(u.email).toLowerCase();
         return ranny.has(e) && !otvorili.has(e) && !uz.has(e) && !buyers.has(e); })
@@ -5547,7 +5561,7 @@ async function referralChallengeTick(qaMode){
     const already=new Set((await q.find(db.mail_log,{subject:REF_CHALLENGE_SUBJ})).map(m=>String(m.to).toLowerCase()));
     const users=(await q.find(db.users,{}))
       .filter(u=>['client','ambassador'].includes(u.user_type) && !u.is_admin && !u.is_child && u.active!==false
-        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u)
+        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u) && !vencekMimoKonverzie(u)
         && u.email && /@/.test(u.email) && !/@import\.local$|@guest\./i.test(u.email)
         && !already.has(String(u.email).toLowerCase()));
     if(!users.length){
@@ -5618,7 +5632,7 @@ async function septemberGreetingTick(qaMode){
     const already=new Set((await q.find(db.mail_log,{subject:SEPT_SUBJ})).map(m=>String(m.to).toLowerCase()));
     const users=(await q.find(db.users,{}))
       .filter(u=>['client','ambassador'].includes(u.user_type) && !u.is_admin && !u.is_child && u.active!==false
-        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u)
+        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u) && !vencekMimoKonverzie(u)
         && u.email && /@/.test(u.email) && !/@import.local$|@guest./i.test(u.email)
         && !already.has(String(u.email).toLowerCase()));
     if(!users.length){
@@ -5764,7 +5778,7 @@ async function eventPartyPushTick(qaMode){
       .map(m=>String(m.to).toLowerCase()));
     const users=(await q.find(db.users,{}))
       .filter(u=>!u.is_admin && !u.is_child && u.active!==false
-        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u)
+        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u) && !vencekMimoKonverzie(u)
         && u.email && /@/.test(u.email) && !/@import\.local$|@guest\./i.test(u.email)
         && otvorili.has(String(u.email).toLowerCase())
         && !already.has(String(u.email).toLowerCase())
@@ -5837,7 +5851,7 @@ async function eventDopredajTick(qaMode, opts){
       .map(m=>String(m.to).toLowerCase()));
     const users=(await q.find(db.users,{}))
       .filter(u=>!u.is_admin && !u.is_child && u.active!==false
-        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u)
+        && !u.hidden_lead && !u.do_not_contact && !u.offers_optout && !isTestU(u) && !vencekMimoKonverzie(u)
         && u.email && /@/.test(u.email) && !/@import\.local$|@guest\./i.test(u.email)
         && zaujem.has(String(u.email).toLowerCase())
         && !already.has(String(u.email).toLowerCase())
@@ -6382,6 +6396,11 @@ const isTestContact = c => /@test-fa-qa\.local$/i.test(String(c||''));
 function jeVencekar(u){ return !!(u && (u.venceky_class_id || u.venceky_school_id || u.venceky_role
   || u.vencek_pending_role || u.lead_source==='vencek')); }
 function vencekMimoKonverzie(u){ return jeVencekar(u) && u.user_type!=='client'; }
+// …a nedostávajú ani predajné maily (Marek 11. 9.: „nemusia dostávať ani predajné
+// maily"). Predajné = uvítacia séria s „prvá hodina ZADARMO", starostlivosť o leada,
+// zľavy, upsell, winback. Servisné (platba, faktúra, heslo, venček) chodia ďalej.
+function predajnaSekvencia(s){ return ['welcome','lead_nurture','winback','trial_followup','bronze_upsell',
+  'gold_upsell','meta_lead_zumba','app_launch','reengagement','post_first_class'].includes(s); }
 async function refEvent(sponsor, type, extra={}){
   try{ await q.insert(db.referral_events,{ code:sponsor.referral_code, sponsor_id:sponsor._id,
     type, ...extra, test:!!extra.test, created_at:nowISO(), day:today() }); }catch(e){}
@@ -21487,6 +21506,10 @@ async function processEmailQueue(){
       if(u.offers_optout && MARKETING_SEQS.includes(step.sequence)){
         await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'offers_optout'}}); continue;
       }
+      // Venčekár (kým nie je klientom) predajné maily nedostáva — ani uvítaciu sériu
+      if(vencekMimoKonverzie(u) && predajnaSekvencia(step.sequence)){
+        await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'vencek'}}); continue;
+      }
 
       // Conditional checks per sequence
       if(step.sequence === 'lead_nurture'){
@@ -21896,6 +21919,7 @@ async function runLeadOffers(){
   const leads = await q.find(db.users,{user_type:'lead', is_admin:{$ne:true}, active:{$ne:false}});
   for(const u of leads){
     if(!u.email || u.offers_optout) continue;
+    if(vencekMimoKonverzie(u)) continue; // venčekár — výzvy ani zľavy nie
     if(await q.one(db.memberships,{user_id:u._id, status:'active'})) continue; // už kúpil členstvo
 
     // ── FÁZA A: ešte nebola na hodine zdarma → motivuj ju prísť ──────────────
@@ -23587,7 +23611,7 @@ async function runDailyJobs(){
     const laterBk = await q.find(db.bookings,{user_id:bk.user_id,created_at:{$gte:cutoff30+'T00:00:00'}});
     if(laterBk.length>0) continue; // came back
     const u = await q.one(db.users,{_id:bk.user_id});
-    if(!u || u.is_admin || u.user_type==='trainer' || u.is_child || u.winback_sent) continue;
+    if(!u || u.is_admin || u.user_type==='trainer' || u.is_child || u.winback_sent || vencekMimoKonverzie(u)) continue;
     const m = await checkMembership(u._id);
     if(m && m.status==='active') continue; // still has access
     await q.update(db.users,{_id:u._id},{$set:{winback_sent:true, free_credits:Math.max(u.free_credits||0, 1)}}); // top-up na 1, nestackuje
