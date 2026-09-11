@@ -1779,36 +1779,14 @@ async function posNacitajPlany(){
 }
 const POS_EUR = n => (Math.round(n*100)/100).toString().replace('.',',') + ' €';
 
-async function showPayOnSiteChoice(classId, name, price){
-  const P = await posNacitajPlany();
-  const c = k => (P && P[k] && +P[k].price) || null;
-  const CENY = {
-    vstup1: c('vstup1') || 10,
-    permanentka10: c('permanentka10') || 80,
-    bronze: c('bronze') || 50,
-    silver: c('silver') || 75,
-    gold: c('gold') || 125,
-  };
-  const goldCena = P && P.permanentka10 && P.permanentka10.gold_price;
-
-  let m = document.getElementById('posModal');
-  if(!m){ m = document.createElement('div'); m.id='posModal';
-    m.style.cssText='display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;overscroll-behavior:contain';
-    m.onclick = e => { if(e.target===m) m.style.display='none'; };
-    document.body.appendChild(m); }
-
-  const polozka = (id, nadpis, popis, cena, znacka) => `
-    <button onclick="posVyber('${classId}','${id}')" class="pos-item">
-      <span class="pos-l"><b>${nadpis}</b><small>${popis}</small></span>
-      <span class="pos-c">${POS_EUR(cena)}${znacka?`<em>${znacka}</em>`:''}</span>
-    </button>`;
-
-  m.innerHTML = `<style>
+const POS_CSS = `<style>
     .pos-card{background:#181818;border:1px solid var(--gold-border,#332a18);border-radius:16px;max-width:430px;width:100%;padding:20px;margin:auto}
     .pos-item{width:100%;display:flex;align-items:center;gap:12px;justify-content:space-between;text-align:left;
       background:rgba(201,168,76,.07);border:1px solid rgba(201,168,76,.28);border-radius:12px;
       padding:12px 14px;margin-bottom:8px;cursor:pointer;color:inherit;font:inherit}
     .pos-item:hover{background:rgba(201,168,76,.14);border-color:rgba(201,168,76,.5)}
+    .pos-item.pos-kredit{background:rgba(139,195,74,.1);border-color:rgba(139,195,74,.5)}
+    .pos-item.pos-off{opacity:.55;cursor:default}
     .pos-l{display:flex;flex-direction:column;gap:2px;min-width:0}
     .pos-l b{font-size:.95rem;color:#efe7d4;font-weight:800}
     .pos-l small{font-size:.76rem;color:var(--muted,#999);line-height:1.35}
@@ -1820,7 +1798,79 @@ async function showPayOnSiteChoice(classId, name, price){
     .pos-back{background:none;border:1px solid #333;color:var(--muted,#888);border-radius:10px;padding:9px;width:100%;font-size:.82rem;cursor:pointer;margin-top:4px}
     .pos-online{display:block;text-align:center;background:rgba(139,195,74,.12);border:1px solid rgba(139,195,74,.45);
       color:#a5d6a7;border-radius:12px;padding:12px;font-size:.88rem;font-weight:700;text-decoration:none;margin-top:12px}
-  </style>
+  </style>`;
+function posModalEl(){
+  let m = document.getElementById('posModal');
+  if(!m){ m = document.createElement('div'); m.id='posModal';
+    m.style.cssText='display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;overscroll-behavior:contain';
+    m.onclick = e => { if(e.target===m) m.style.display='none'; };
+    document.body.appendChild(m); }
+  return m;
+}
+
+// Technický tréning má vlastný cenník podľa členstva a členstvo ho nekryje.
+// Zaplatiť sa dá kreditom z appky (Marek 11. 9.), na mieste, alebo permanentkou.
+function showTechPay(classId, name, price, credit){
+  const kredit = credit!=null ? +credit : +(_me&&_me.referral_credit||0);
+  const m = posModalEl();
+  m.innerHTML = POS_CSS + `
+  <div class="pos-card" id="posCard" role="dialog" aria-modal="true" aria-labelledby="posTechTitle">
+    <div class="pos-h" id="posTechTitle">🎯 Technický tréning · ${POS_EUR(price)}</div>
+    <div class="pos-s">${escHtml(name||'Technický tréning')} — cena podľa tvojho členstva. Vyber, ako zaplatíš.</div>
+    ${kredit>=price
+      ? `<button onclick="posTechKredit('${classId}',${price})" class="pos-item pos-kredit">
+          <span class="pos-l"><b>💳 Zaplatiť kreditom z appky</b><small>Na účte máš ${POS_EUR(kredit)} · ostane ti ${POS_EUR(kredit-price)}</small></span>
+          <span class="pos-c">${POS_EUR(price)}</span></button>`
+      : (kredit>0 ? `<div class="pos-item pos-off"><span class="pos-l"><b>💳 Kredit z appky</b><small>Máš ${POS_EUR(kredit)} — na techniku treba ${POS_EUR(price)}</small></span></div>` : '')}
+    <button onclick="posTechNaMieste('${classId}',${price})" class="pos-item">
+      <span class="pos-l"><b>💵 Zaplatím na mieste</b><small>V hotovosti priamo v štúdiu</small></span>
+      <span class="pos-c">${POS_EUR(price)}</span></button>
+    <a href="/pricing?src=booking" class="pos-online">🎫 Alebo si kúp permanentku — platí aj na techniku</a>
+    <button onclick="document.getElementById('posModal').style.display='none'" class="pos-back">Zrušiť</button>
+  </div>`;
+  m.style.display = 'flex';
+}
+async function posTechKredit(classId, price){
+  const m = document.getElementById('posModal'); if(m) m.style.display='none';
+  const d = await api('/api/bookings',{method:'POST',body:{class_id:classId, pay_credit:true}});
+  if(d?.ok||d?.booking_id||d?.id){
+    if(_me) _me.referral_credit = +((+_me.referral_credit||0)-price).toFixed(2);
+    showToast('✅ Rezervované · zaplatené kreditom '+POS_EUR(price),'success');
+    loadMyBookings(); loadClasses();
+  }
+  else if(d?.stale){ showToast('Rozvrh sa medzičasom zmenil — obnovili sme zoznam, skús to znova 🙏','error'); loadClasses(); }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
+}
+async function posTechNaMieste(classId, price){
+  const m = document.getElementById('posModal'); if(m) m.style.display='none';
+  const d = await api('/api/bookings',{method:'POST',body:{class_id:classId, pay_on_site:true}});
+  if(d?.ok||d?.booking_id||d?.id){ showToast('✅ Rezervované — v štúdiu zaplatíš '+POS_EUR(price)+' 💵','success'); loadMyBookings(); loadClasses(); }
+  else if(d?.stale){ showToast('Rozvrh sa medzičasom zmenil — obnovili sme zoznam, skús to znova 🙏','error'); loadClasses(); }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
+}
+
+async function showPayOnSiteChoice(classId, name, price, credit){
+  if(price) return showTechPay(classId, name, +price, credit);   // technika má vlastné okno
+  const P = await posNacitajPlany();
+  const c = k => (P && P[k] && +P[k].price) || null;
+  const CENY = {
+    vstup1: c('vstup1') || 10,
+    permanentka10: c('permanentka10') || 80,
+    bronze: c('bronze') || 50,
+    silver: c('silver') || 75,
+    gold: c('gold') || 125,
+  };
+  const goldCena = P && P.permanentka10 && P.permanentka10.gold_price;
+
+  const m = posModalEl();
+
+  const polozka = (id, nadpis, popis, cena, znacka) => `
+    <button onclick="posVyber('${classId}','${id}')" class="pos-item">
+      <span class="pos-l"><b>${nadpis}</b><small>${popis}</small></span>
+      <span class="pos-c">${POS_EUR(cena)}${znacka?`<em>${znacka}</em>`:''}</span>
+    </button>`;
+
+  m.innerHTML = POS_CSS + `
   <div class="pos-card" id="posCard">
     <div class="pos-h">Nemáš aktívne členstvo</div>
     <div class="pos-s">Miesto na <b style="color:#ddd">${escHtml(name)}</b> ti podržíme.
@@ -1907,7 +1957,7 @@ async function confirmBooking(){
   } else if(d?.error==='membership_required'){
     // Klientka bez členstva sa MÔŽE rezervovať dopredu a zaplatiť na mieste —
     // rezervácia sa všade viditeľne označí, aby tréner vedel vybrať vstupné.
-    if(d.can_pay_on_site) showPayOnSiteChoice(cid, className0||'', d.tech_price);
+    if(d.can_pay_on_site) showPayOnSiteChoice(cid, className0||'', d.tech_price, d.credit_balance);
     else { showToast('Najskôr si kúp členstvo alebo jednorazový vstup.','error');
       setTimeout(()=>{window.location.href='/pricing';},1500); }
   } else if(d?.error==='already_booked'){

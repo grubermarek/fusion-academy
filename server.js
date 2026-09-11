@@ -15245,6 +15245,17 @@ async function refundBookingAccess(b){
     const pu=await q.one(db.users,{_id:b.booked_by});
     if(pu){ await vratVstup(pu,'free_credits'); return ' Hodinu zdarma sme ti vrátili.'; }
   }
+  // Technika zaplatená kreditom z appky → kredit späť tomu, kto platil (raz)
+  if(b.access_method==='credit' && +b.credit_paid>0){
+    if(!(await q.update(db.bookings,{_id:b._id, credit_refunded:{$ne:true}},{$set:{credit_refunded:true, credit_refunded_at:nowISO()}}))) return '';
+    const pu=await q.one(db.users,{_id:b.credit_payer_id||b.booked_by||b.user_id});
+    if(pu){
+      await q.update(db.users,{_id:pu._id},{$set:{referral_credit:+((+pu.referral_credit||0)+(+b.credit_paid)).toFixed(2)}});
+      await logCredit(pu._id, +b.credit_paid, 'Vrátený kredit — zrušený technický tréning '+(b.booking_date||''));
+      await q.remove(db.transactions,{booking_id:b._id, payment_method:'referral_credit'},{multi:true}).catch(()=>{});
+      return ' Kredit '+(+b.credit_paid).toFixed(2)+' € sme ti vrátili.';
+    }
+  }
   return '';
 }
 
@@ -19003,7 +19014,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
     // Členstvo hodinu NEkryje. Platí bežná permanentka/vstup, alebo platba na mieste
     // podľa členstva: 10 € / Bronze 9 € / Silver 8 € / Gold 7 €.
     // „Prvá hodina zadarmo" platí aj na techniku (spotrebuje sa rovnako ako pri Zumbe).
-    let techPrice=null;
+    let techPrice=null, creditPay=null;
     if(isTechClass && !u.is_admin && u.user_type!=='trainer'){
       const freeDates=(await q.one(db.settings,{key:'tech_free_dates'}))?.value||[];
       if(freeDates.includes(bdate)){ accessMethod='promo_free'; }
@@ -19018,8 +19029,15 @@ app.post('/api/bookings', auth, async(req,res)=>{
         if((u.free_credits||0)>0){ deductPlan={uid:u._id, field:'free_credits'}; accessMethod='free_credit'; }
         else if((u.single_entries||0)>0){ deductPlan={uid:u._id, field:'single_entries'}; accessMethod='single_entry'; }
         else {
-          if(req.body.pay_on_site){ payOnSite=true; accessMethod='pay_on_site'; }
-          else return res.status(402).json({ error:'membership_required', can_pay_on_site:true, tech_price:techPrice,
+          // Kredit z appky (Marek 11. 9.) — platí ten, kto rezerváciu robí (mama za dieťa).
+          // Odpíše sa až pod zámkom, podmieneným updatom, aby ho súbeh nemohol minúť dvakrát.
+          const mamKredit=+(+parent.referral_credit||0).toFixed(2);
+          if(req.body.pay_credit){
+            if(mamKredit < techPrice) return res.status(400).json({ error:'Na účte máš '+mamKredit.toFixed(2)+' € kreditu — na technický tréning treba '+techPrice+' €.', credit_balance:mamKredit });
+            creditPay={uid:parent._id, amount:techPrice}; accessMethod='credit';
+          }
+          else if(req.body.pay_on_site){ payOnSite=true; accessMethod='pay_on_site'; }
+          else return res.status(402).json({ error:'membership_required', can_pay_on_site:true, tech_price:techPrice, credit_balance:mamKredit,
             message:`Technický tréning: ${techPrice} € jednorazovo${techPrice<10?' (zľava podľa členstva)':''}. Platí aj permanentka — vstup si kúpiš kartou v Obchode, alebo zaplatíš na mieste.` });
         }
       }
@@ -19110,6 +19128,11 @@ app.post('/api/bookings', auth, async(req,res)=>{
           if(!(await odpocitajVstup(deductPlan.uid, deductPlan.field)))
             return membershipRequired('Vstup sa práve minul — použila ho iná tvoja rezervácia. Na túto hodinu potrebuješ ďalší vstup alebo členstvo.');
           vratit=deductPlan;
+        } else if(creditPay){
+          // Podmienený odpis — dve rezervácie naraz nesmú minúť ten istý kredit dvakrát
+          if(!(await q.update(db.users,{_id:creditPay.uid, referral_credit:{$gte:creditPay.amount}},{$inc:{referral_credit:-creditPay.amount}})))
+            return {code:400, body:{error:'Kredit sa práve minul — na technický tréning treba '+creditPay.amount+' €.'}};
+          vratit={uid:creditPay.uid, credit:creditPay.amount};
         }
         const booking=await q.insert(db.bookings,{
           class_id, class_name:cls.name, class_emoji:cls.emoji||'💃',
@@ -19125,16 +19148,27 @@ app.post('/api/bookings', auth, async(req,res)=>{
           pay_plan_name: payOnSite && zvolenyPlan ? (MEMBERSHIP_PLANS[zvolenyPlan]?.name || zvolenyPlan) : null,
           free_class: jePrvaZdarma,
           access_method: accessMethod,    // pre korektné vrátenie vstupu pri zrušení
+          ...(creditPay ? { credit_paid:creditPay.amount, credit_payer_id:creditPay.uid } : {}),
           created_at:nowISO()
         });
         return {booking};
       }catch(e){
-        if(vratit) await q.update(db.users,{_id:vratit.uid}, vratit.field==='free_class_used' ? {$set:{free_class_used:false}} : {$inc:{[vratit.field]:1}}).catch(()=>{});
+        if(vratit) await q.update(db.users,{_id:vratit.uid}, vratit.credit ? {$inc:{referral_credit:vratit.credit}} : vratit.field==='free_class_used' ? {$set:{free_class_used:false}} : {$inc:{[vratit.field]:1}}).catch(()=>{});
         throw e;
       }
     });
     if(vysl.code) return res.status(vysl.code).json(vysl.body);
     const booking=vysl.booking;
+    if(creditPay){
+      // $inc nechá v zostatku desatinný šum (13.300000001) — zaokrúhli a zapíš do ledgera.
+      // Transakcia má 0 € ako pri členstve hradenom kreditom: kredit nie je hotovostná tržba.
+      const pu=await q.one(db.users,{_id:creditPay.uid});
+      await q.update(db.users,{_id:creditPay.uid},{$set:{referral_credit:+(+(pu&&pu.referral_credit)||0).toFixed(2)}});
+      await logCredit(creditPay.uid, -creditPay.amount, 'Technický tréning '+bdate+' ('+cls.name+')');
+      await q.insert(db.transactions,{type:'single_entry', user_id:u._id, user_name:u.name, amount:0, payment_method:'referral_credit',
+        credit_used:creditPay.amount, booking_id:booking._id, date:today(), month:today().slice(0,7),
+        note:'Technický tréning '+bdate+' — zaplatené kreditom ('+creditPay.amount+' €)', created_at:nowISO()}).catch(()=>{});
+    }
     if(payOnSite){
       // Daj vedieť adminom, že príde klient bez členstva — vybrať platbu na mieste.
       // Zlúčené s prípadnou „Čaká platba" žiadosťou tej istej klientky z obchodu (jedna karta).
