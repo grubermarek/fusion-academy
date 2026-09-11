@@ -4437,8 +4437,8 @@ app.post('/api/register', rlSignup, async(req,res)=>{
           city: String(req.body.city||existing.city||'').trim().slice(0,60),
           consent_at: req.body.consent ? nowISO() : existing.consent_at,
           free_credits: existing.guest ? (existing.free_credits||0) : Math.max(existing.free_credits||0, 1) }; // guest už má prvú hodinu cez booking — nestackovať
-        // claimed_at = deň, keď hosť z pozvánky naozaj založil účet — od neho sa
-        // sponzorke ráta 100 b za registráciu kamošky (created_at je deň pozvánky)
+        // claimed_at = deň, keď hosť z pozvánky naozaj založil účet (created_at je deň
+        // pozvánky) — sponzorke vtedy dáme vedieť, čo ju čaká za kamoškine členstvo
         if(existing.guest){ set.guest=false; if(!existing.claimed_at) set.claimed_at=nowISO(); }
         await q.update(db.users,{_id:existing._id},{$set:set});
         if(existing.guest && existing.sponsor_id && kamoskaPlatna({...existing, ...set}))
@@ -4545,10 +4545,10 @@ app.post('/api/register', rlSignup, async(req,res)=>{
     if(sponsor_id){
       const sp = await q.one(db.users,{_id:sponsor_id});
       if(sp){
-        // Nové odmeny za kamošky (11. 9.): hneď povedz, koľko bodov registrácia priniesla
+        // Kamošky (11. 9.): hneď povedz, za čo prídu body — prvá hodina 20 b, členstvo 100 b
         if(sutaziOKamosky(sp)) await q.insert(db.notifications,{user_id:sponsor_id,type:'referral_credit',
-          title:`🎉 +${KAMOSKA_BODY.registracia} bodov! ${name} sa registroval/a cez tvoj link`,
-          body:`Body máš v súťaži Klientka mesiaca. 🏆 Keď kamoška príde na prvú hodinu, pribudne ďalších +${KAMOSKA_BODY.hodina} b. A keď si kúpi členstvo alebo vstupy, dostaneš aj 10 % z nákupu ako kredit. 💛`,
+          title:`🎉 ${name} sa registroval/a cez tvoj link!`,
+          body:`Keď príde na prvú hodinu, máš +${KAMOSKA_BODY.hodina} bodov do súťaže Klientka mesiaca, a keď si kúpi členstvo, +${KAMOSKA_BODY.clenstvo} bodov. 🏆 K tomu ti príde 10 % z jej nákupu ako kredit. 💛`,
           read:false,created_at:nowISO()});
         else await q.insert(db.notifications,{user_id:sponsor_id,type:'referral_credit',title:`🎉 ${name} sa registroval/a cez tvoj link!`,body:`Odmena ti príde, keď si kúpi členstvo alebo vstupy (10 % z nákupu).`,read:false,created_at:nowISO()});
       }
@@ -6474,7 +6474,7 @@ app.post('/api/invite/:code/book', rlPublic, async(req,res)=>{
       await q.insert(db.notifications,{user_id:sp._id, type:'referral',
         title:'🎉 Tvoja kamoška sa prihlásila!',
         body:name+' si cez tvoju pozvánku rezervovala prvú hodinu ('+cls.name+', '+bdate+').'
-          +((isNew && sutaziOKamosky(sp)) ? ' Keď príde, máš +'+KAMOSKA_BODY.hodina+' bodov do súťaže — a keď si potom vytvorí účet v appke, ďalších +'+KAMOSKA_BODY.registracia+'. 🔥' : '')
+          +((isNew && sutaziOKamosky(sp)) ? ' Keď príde, máš +'+KAMOSKA_BODY.hodina+' bodov do súťaže — a keď si kúpi členstvo, ďalších +'+KAMOSKA_BODY.clenstvo+'. 🔥' : '')
           +' Držíme palce, nech jej to chytí srdce! 💛',
         read:false, created_at:nowISO()}).catch(()=>{});
       try{ const admins=await q.find(db.users,{is_admin:true});
@@ -13645,9 +13645,9 @@ async function pointsSummaryData(from, to){
     for(const b of bookings){ if(b.user_id && hodinaSaRata(b) && inRange(b.booking_date||b.created_at)) (byUser[b.user_id]=byUser[b.user_id]||[]).push(b); }
     const allU=await q.find(db.users,{});
     const refByUser={};
-    // 5 b za registráciu len do KAMOSKA_OD — potom platia body za kamošky (kamMap)
-    for(const u of users){ if(u.sponsor_id && inRange(u.created_at) && String(u.created_at||'').slice(0,10)<KAMOSKA_OD) refByUser[u.sponsor_id]=(refByUser[u.sponsor_id]||0)+1; }
-    const kamMap=kamoskyBody(allU, bookingsPodlaKlientky(bookings), inRange);
+    for(const u of users){ if(u.sponsor_id && inRange(u.created_at)) refByUser[u.sponsor_id]=(refByUser[u.sponsor_id]||0)+1; }
+    // body za kamošky (od 11. 9.): prvá hodina 20 b, prvé zaplatené členstvo 100 b
+    const kamVysl=kamoskyBody(allU, bookingsPodlaKlientky(bookings), await prveZaplateneClenstva(), inRange), kamMap=kamVysl.po;
     // noví platiaci členovia (po líniách) + merch v rozsahu
     const adjacency={}; allU.forEach(u=>{ if(u.sponsor_id) (adjacency[u.sponsor_id]=adjacency[u.sponsor_id]||[]).push(u._id); });
     const buyerSet=new Set();
@@ -13673,7 +13673,7 @@ async function pointsSummaryData(from, to){
       const kam=kamMap[u._id]||null;
       const m=await checkMembership(u._id);
       const hasMem=!!m;
-      const nm=newMemberPointsFor(u._id, adjacency, buyerSet);
+      const nm=newMemberPointsFor(u._id, adjacency, buyerSet, kamVysl.clenIds);
       const md=merchDownlinePointsFor(u._id, adjacency, merchMap);
       const merchCount=merchMap[u._id]||0;
       const effTier=hasMem?effectiveMemTier(paidTiers[u._id]||null, m.plan_id, !!m.gift):null;
@@ -13681,10 +13681,10 @@ async function pointsSummaryData(from, to){
       const pi=buildPointItems({hours, online, refs, kamosky:kam, hasMem, memName:hasMem?(MEMBERSHIP_PLANS[m.plan_id]?.name||m.plan_name||'Členstvo'):null, memTier:effTier, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount, merchLineCount:md.count, merchLinePoints:md.points, privCount, spinPoints:(spinBy[u._id]||{}).p||0, spinCount:(spinBy[u._id]||{}).c||0, reviewCount:reviewBy[u._id]||0, puzzlePoints:(puzzleBy[u._id]||{}).p||0, puzzleCount:(puzzleBy[u._id]||{}).c||0});
       if(pi.total<=0) continue;
       catTotals.hours+=hours*MP_WEIGHTS.hour; catTotals.online+=online*MP_WEIGHTS.hour;
-      catTotals.refs+=refs*MP_WEIGHTS.referral+(kam?kam.regPoints+kam.hodinaPoints:0); catTotals.membership+=hasMem?membershipPointsFor(effTier):0;
+      catTotals.refs+=refs*MP_WEIGHTS.referral+(kam?kam.clenPoints+kam.hodinaPoints:0); catTotals.membership+=hasMem?membershipPointsFor(effTier):0;
       catTotals.newmem+=nm.points; catTotals.merch+=merchCount*MP_WEIGHTS.merch; catTotals.merchline+=md.points;
       catTotals.review+=(reviewBy[u._id]||0)*10; catTotals.private+=privCount*MP_WEIGHTS.private;
-      rows.push({ id:u._id, name:u.name, total:pi.total, hours, online, refs:refs+(kam?kam.regCount:0), kamosky_hodina:kam?kam.hodinaCount:0, hasMem, private_hours:privCount,
+      rows.push({ id:u._id, name:u.name, total:pi.total, hours, online, refs, kamosky_clenstvo:kam?kam.clenCount:0, kamosky_hodina:kam?kam.hodinaCount:0, hasMem, private_hours:privCount,
         items:pi.items.filter(i=>i.points>0).map(i=>({label:i.label, count:i.count, points:i.points})) });
     }
     rows.sort((a,b)=>b.total-a.total);
@@ -19263,46 +19263,59 @@ const firstName = full => (full||'').trim().split(/\s+/)[0];
 const stripDia = s => (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
 
 // ── Bodový systém „Klient mesiaca" ────────────────────────────────────────────
-// 5 b za odchodenú hodinu (aj online), 10 b za aktívne členstvo. Za príspevky/správy
-// v komunite ZÁMERNE žiadne body (dá sa zneužiť).
-// 5 b hodina, 20 b súkromná hodina, 10 b aktívne členstvo, 30/15/10/5/5 b za nového
-// PLATIACEHO člena v 1.–5. línii, 15 b za kus merchu. Kamošky: viď KAMOSKA_BODY nižšie —
-// MP_WEIGHTS.referral (5 b za registráciu) platí už len pre dni pred KAMOSKA_OD.
+// 5 b za odchodenú hodinu (aj online), 5 b za privedeného člena, 10 b za aktívne
+// členstvo. Za príspevky/správy v komunite ZÁMERNE žiadne body (dá sa zneužiť).
+// 5 b hodina, 20 b súkromná hodina, 5 b privedený člen (registrácia), 10 b aktívne
+// členstvo, 30/15/10/5/5 b za nového PLATIACEHO člena v 1.–5. línii, 15 b za kus merchu.
+// Od 11. 9. navyše body za kamošky — viď KAMOSKA_BODY nižšie.
 const MP_WEIGHTS = { hour:5, referral:5, membership:10, newMemberLine:[30,15,10,5,5], merch:15, merchLine:[10,5,3,2,1], private:20, masterclass:50 };
 // ── Kamošky: body za privedenie (Marek 11. 9.) ────────────────────────────────
-// „Za novú kamošku na hodine 20 bodov, keď sa zaregistruje, tak 100 bodov" — cieľ
-// je naozaj posilniť nové registrácie cez odporúčanie. Platí od 11. 9. 2026; skôr
-// bola registrácia za 5 b a tie dni (aj ročný rebríček) sa spätne neprepočítavajú.
+// „Za novú kamošku na hodine 20 bodov" a hneď oprava: „nie keď sa zaregistruje
+// 100 b, ale keď si kúpi členstvo". Registrácia ostáva po 5 b (MP_WEIGHTS.referral).
+// Cieľ: naozaj posilniť nové registrácie cez odporúčanie. Platí od 11. 9. 2026 —
+// skoršie obdobia sa spätne neprepočítavajú.
 const KAMOSKA_OD = '2026-09-11';
-const KAMOSKA_BODY = { registracia:100, hodina:20 };
+const KAMOSKA_BODY = { clenstvo:100, hodina:20 };
 // Kamoška je nová klientka. Importované z Glofoxu a staré klientky u nás boli už
 // predtým, detský profil zakladá rodič, test sa neráta. Deaktivovaný účet body
-// nedáva — admin tak jedným krokom zruší body za falošnú registráciu (body sa
-// rátajú vždy nanovo z dát, nikde sa neukladajú).
+// nedáva — admin tak jedným krokom zruší body za podvod (body sa rátajú vždy
+// nanovo z dát, nikde sa neukladajú).
 function kamoskaPlatna(f){
   return !!f && !f.is_admin && !f.is_child && !f.anonymous && f.active!==false
     && !f.imported && !(f.glofox_attendances>0) && !['trainer','manager'].includes(f.user_type)
     && !isTestContact(f.email);
 }
-// Deň, keď si kamoška vytvorila účet (heslo alebo Google). Hosť z pozvánky ho
-// nemá, kým registráciu nedokončí — vtedy dostane claimed_at.
-function kamoskaRegistraciaDna(f){
-  if(!(f.password || f.google_id)) return null;
-  return String(f.claimed_at || f.created_at || '').slice(0,10) || null;
+// Deň PRVÉHO naozaj zaplateného členstva každej klientky (user_id → YYYY-MM-DD).
+// Nie darček, nie 100 % kupón (napr. venčekový), nie permanentka ani vstup;
+// kredit z appky je platba. Klientka s vrátenými peniazmi (refund) sa neráta.
+async function prveZaplateneClenstva(){
+  const vratene=new Set((await q.find(db.refunds,{})).map(r=>r.user_id).filter(Boolean));
+  const prve={};
+  for(const t of await q.find(db.transactions,{type:{$in:['membership','subscription']}})){
+    if(!t.user_id || vratene.has(t.user_id)) continue;
+    if(MEMBERSHIP_PLANS[t.plan_id]?.type==='bundle') continue;
+    if(['free','promo'].includes(t.payment_method)) continue;
+    if(!((+t.amount||0)>0 || (+t.credit_used||0)>0)) continue;
+    const d=String(t.date||t.created_at||'').slice(0,10); if(!d) continue;
+    if(!prve[t.user_id] || d<prve[t.user_id]) prve[t.user_id]=d;
+  }
+  return prve;
 }
-// Body za kamošky v období: sponzorka → {regCount, regPoints, hodinaCount, hodinaPoints}.
-// users = kandidátky, bookingsBy = ich rezervácie podľa user_id, inRange(d) = patrí
-// deň do obdobia. Registrácia patrí sponzorke (sponsor_id), prvá hodina tomu, kto
-// kamošku na ňu pozval (invited_by), inak sponzorke. Za hodinu len raz — za úplne
-// prvú odchodenú, nech sa za staré klientky body nevyrábajú.
-function kamoskyBody(users, bookingsBy, inRange){
-  const out={};
-  const pre=id=>(out[id]=out[id]||{regCount:0, regPoints:0, hodinaCount:0, hodinaPoints:0});
+// Body za kamošky v období. users = kandidátky, bookingsBy = ich rezervácie podľa
+// user_id, prveClen = prveZaplateneClenstva(), inRange(d) = patrí deň do obdobia.
+// Vracia { po: sponzorka → {clenCount, clenPoints, hodinaCount, hodinaPoints},
+//          clenIds: kamošky, za ktorých členstvo sa v období dalo 100 b }.
+// Členstvo patrí sponzorke (sponsor_id) a len to PRVÉ zaplatené — predĺženia nie.
+// Prvá hodina patrí tomu, kto kamošku na ňu pozval (invited_by), inak sponzorke;
+// len za úplne prvú odchodenú, nech sa za staré klientky body nevyrábajú.
+function kamoskyBody(users, bookingsBy, prveClen, inRange){
+  const po={}, clenIds=new Set();
+  const pre=id=>(po[id]=po[id]||{clenCount:0, clenPoints:0, hodinaCount:0, hodinaPoints:0});
   for(const f of users){
     if(!kamoskaPlatna(f)) continue;
-    const reg=kamoskaRegistraciaDna(f);
-    if(f.sponsor_id && f.sponsor_id!==f._id && reg && reg>=KAMOSKA_OD && inRange(reg)){
-      const x=pre(f.sponsor_id); x.regCount++; x.regPoints+=KAMOSKA_BODY.registracia;
+    const kupila=prveClen[f._id];
+    if(f.sponsor_id && f.sponsor_id!==f._id && kupila && kupila>=KAMOSKA_OD && inRange(kupila)){
+      const x=pre(f.sponsor_id); x.clenCount++; x.clenPoints+=KAMOSKA_BODY.clenstvo; clenIds.add(f._id);
     }
     let prva=null, prvaD='';
     for(const b of (bookingsBy[f._id]||[])){
@@ -19315,18 +19328,18 @@ function kamoskyBody(users, bookingsBy, inRange){
       if(kto && kto!==f._id){ const x=pre(kto); x.hodinaCount++; x.hodinaPoints+=KAMOSKA_BODY.hodina; }
     }
   }
-  return out;
+  return { po, clenIds };
 }
 const bookingsPodlaKlientky = bks => { const m={}; for(const b of bks) if(b.user_id) (m[b.user_id]=m[b.user_id]||[]).push(b); return m; };
-// Sponzorke povedz hneď, koľko bodov jej kamoška priniesla. Admin, tréneri
-// a anonymné profily v súťaži nie sú — tým body nesľubujeme.
+// Sponzorke povedz hneď, za čo prídu body. Admin, tréneri a anonymné profily
+// v súťaži nie sú — tým body nesľubujeme.
 const sutaziOKamosky = sp => !!sp && !sp.is_admin && !['trainer','manager'].includes(sp.user_type) && !sp.anonymous;
 async function oznamKamoskaRegistracia(sponsorId, meno){
   const sp=await q.one(db.users,{_id:sponsorId});
   if(!sutaziOKamosky(sp)) return;
   await q.insert(db.notifications,{user_id:sp._id, type:'referral',
-    title:`🎉 +${KAMOSKA_BODY.registracia} bodov! ${meno} si vytvoril/a účet v appke`,
-    body:`Tvoja kamoška dokončila registráciu — body máš v súťaži Klientka mesiaca. 🏆 Pošli pozvánku ďalšej! 💛`,
+    title:`🎉 ${meno} si vytvoril/a účet v appke`,
+    body:`Tvoja kamoška dokončila registráciu. Keď si kúpi členstvo, máš +${KAMOSKA_BODY.clenstvo} bodov do súťaže Klientka mesiaca 🏆 — a za jej prvú hodinu +${KAMOSKA_BODY.hodina} b. 💛`,
     read:false, created_at:nowISO()});
 }
 // Body za aktívne členstvo podľa úrovne (iné plány, napr. Online, majú default MP_WEIGHTS.membership)
@@ -19360,13 +19373,15 @@ function merchDownlinePointsFor(userId, adjacency, merchMap){
   return { count, points };
 }
 // Členovia v štruktúre, ktorí si kúpili členstvo v danom období — body po líniách
-function newMemberPointsFor(userId, adjacency, buyerSet){
+// kamoskyClen = kamošky, za ktorých prvé členstvo už priamej sponzorke idú body za
+// kamošku (100 b) — v 1. línii sa za ne 30 b nedáva druhýkrát. Hlbšie línie áno.
+function newMemberPointsFor(userId, adjacency, buyerSet, kamoskyClen){
   let points=0, count=0;
   let frontier=[userId]; const seen=new Set([userId]);
   for(let line=0; line<MP_WEIGHTS.newMemberLine.length; line++){
     const next=[];
     for(const pid of frontier){ for(const cid of (adjacency[pid]||[])){ if(seen.has(cid)) continue; seen.add(cid); next.push(cid);
-      if(buyerSet.has(cid)){ count++; points+=MP_WEIGHTS.newMemberLine[line]; } } }
+      if(buyerSet.has(cid) && !(line===0 && kamoskyClen && kamoskyClen.has(cid))){ count++; points+=MP_WEIGHTS.newMemberLine[line]; } } }
     frontier=next;
   }
   return { count, points };
@@ -19463,17 +19478,18 @@ async function monthlyPointsFor(userId, month){
   const online = attended.filter(isOnline).length;
   const hours = attended.length - online;
   const sponzorovane = await q.find(db.users,{sponsor_id:userId});
-  const refs = sponzorovane.filter(u=>(u.created_at||'').startsWith(month) && String(u.created_at||'').slice(0,10)<KAMOSKA_OD).length;
+  const refs = sponzorovane.filter(u=>(u.created_at||'').startsWith(month)).length;
   // Kamošky: sponzorované + tie, ktoré pozvala na hodinu cez /invite (môžu mať iného sponzora)
   const pozvaneIds=[...new Set((await q.find(db.bookings,{invited_by:userId})).map(b=>b.user_id).filter(Boolean))];
   const kandidatky=[...sponzorovane, ...(await q.find(db.users,{_id:{$in:pozvaneIds.filter(id=>!sponzorovane.some(u=>u._id===id))}}))];
   const kamBks=kandidatky.length ? await q.find(db.bookings,{user_id:{$in:kandidatky.map(u=>u._id)}}) : [];
-  const kamosky=kamoskyBody(kandidatky, bookingsPodlaKlientky(kamBks), d=>String(d||'').startsWith(month))[userId]||null;
+  const kamVysl=kamoskyBody(kandidatky, bookingsPodlaKlientky(kamBks), await prveZaplateneClenstva(), d=>String(d||'').startsWith(month));
+  const kamosky=kamVysl.po[userId]||null;
   const m = await checkMembership(userId);
   const hasMem = !!(m && (m.status==='active') && (!m.expires_at || m.expires_at>=today()));
   // noví platiaci členovia (po líniách) + merch
   const adjacency={}; (await q.find(db.users,{})).forEach(u=>{ if(u.sponsor_id) (adjacency[u.sponsor_id]=adjacency[u.sponsor_id]||[]).push(u._id); });
-  const nm = newMemberPointsFor(userId, adjacency, await membershipBuyersInPeriod(month));
+  const nm = newMemberPointsFor(userId, adjacency, await membershipBuyersInPeriod(month), kamVysl.clenIds);
   const merchMap = await merchCountMapInPeriod(month);
   const merchCount = merchMap[userId]||0;
   const md = merchDownlinePointsFor(userId, adjacency, merchMap);
@@ -19493,17 +19509,18 @@ function buildPointItems({hours, online, refs, kamosky, hasMem, memName, memTier
   merchLineCount=merchLineCount||0; merchLinePoints=merchLinePoints||0;
   spinCount=spinCount||0; spinPoints=spinPoints||0; reviewCount=reviewCount||0;
   puzzleCount=puzzleCount||0; puzzlePoints=puzzlePoints||0;
-  // refs = registrácie pred KAMOSKA_OD (po 5 b), kamosky = body podľa nových pravidiel
+  // refs = registrácie (po 5 b), kamosky = body za kamošky od KAMOSKA_OD
   refs=refs||0; const kam=kamosky||{};
-  const regN=refs+(kam.regCount||0), regPts=refs*MP_WEIGHTS.referral+(kam.regPoints||0);
+  const clenN=kam.clenCount||0, clenPts=kam.clenPoints||0;
   const hodN=kam.hodinaCount||0, hodPts=kam.hodinaPoints||0;
   const plur=(n,a,b,c)=> n===1?a : (n>=2&&n<=4?b:c);
   const items = [
     { icon:'🔥', label:'Odchodené hodiny',        count:hours,  per:MP_WEIGHTS.hour,     points:hours*MP_WEIGHTS.hour,     sub:`${hours} ${plur(hours,'hodina','hodiny','hodín')}` },
     { icon:'💻', label:'Online hodiny',            count:online, per:MP_WEIGHTS.hour,     points:online*MP_WEIGHTS.hour,    sub:`${online} ${plur(online,'hodina','hodiny','hodín')}` },
     { icon:'🎭', label:'Súkromné hodiny',          count:privCount, per:MP_WEIGHTS.private, points:privCount*MP_WEIGHTS.private, sub:`${privCount} ${plur(privCount,'hodina','hodiny','hodín')}` },
-    { icon:'🤝', label:'Kamošky, ktoré sa zaregistrovali', count:regN, ...(refs?{}:{per:KAMOSKA_BODY.registracia}), points:regPts, sub:`${regN} ${plur(regN,'kamoška','kamošky','kamošiek')}` },
+    { icon:'🤝', label:'Kamošky, ktoré sa zaregistrovali', count:refs, per:MP_WEIGHTS.referral, points:refs*MP_WEIGHTS.referral, sub:`${refs} ${plur(refs,'kamoška','kamošky','kamošiek')}` },
     { icon:'💃', label:'Kamošky na prvej hodine', count:hodN, per:KAMOSKA_BODY.hodina, points:hodPts, sub:`${hodN} ${plur(hodN,'kamoška','kamošky','kamošiek')}` },
+    { icon:'💳', label:'Kamošky, ktoré si kúpili členstvo', count:clenN, per:KAMOSKA_BODY.clenstvo, points:clenPts, sub:`${clenN} ${plur(clenN,'kamoška','kamošky','kamošiek')}` },
     { icon:'🏅', label:'Noví platiaci členovia (aj v hĺbke)', count:newMemberCount, points:newMemberPoints, sub:`${newMemberCount} ${plur(newMemberCount,'člen','členovia','členov')}` },
     { icon:'🛍️', label:'Zakúpený merch',          count:merchCount, per:MP_WEIGHTS.merch, points:merchCount*MP_WEIGHTS.merch, sub:`${merchCount} ${plur(merchCount,'kus','kusy','kusov')}` },
     { icon:'🛒', label:'Merch v mojom tíme (aj v hĺbke)', count:merchLineCount, points:merchLinePoints, sub:`${merchLineCount} ${plur(merchLineCount,'kus','kusy','kusov')}` },
@@ -19713,10 +19730,11 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
 
     const adjacency={}; allUsers.forEach(u=>{ if(u.sponsor_id) (adjacency[u.sponsor_id]=adjacency[u.sponsor_id]||[]).push(u._id); });
     const bookingsBySpot = bookingsPodlaKlientky(bookings);
+    const prveClenSpot = await prveZaplateneClenstva();
     // Víťaz za dané obdobie (prefix YYYY-MM alebo YYYY)
     const winnerFor = async (prefix)=>{
-      const refCount={}; allUsers.forEach(u=>{ if((u.created_at||'').startsWith(prefix) && String(u.created_at||'').slice(0,10)<KAMOSKA_OD && u.sponsor_id) refCount[u.sponsor_id]=(refCount[u.sponsor_id]||0)+1; });
-      const kamMap=kamoskyBody(allUsers, bookingsBySpot, d=>String(d||'').startsWith(prefix));
+      const refCount={}; allUsers.forEach(u=>{ if((u.created_at||'').startsWith(prefix) && u.sponsor_id) refCount[u.sponsor_id]=(refCount[u.sponsor_id]||0)+1; });
+      const kamVysl=kamoskyBody(allUsers, bookingsBySpot, prveClenSpot, d=>String(d||'').startsWith(prefix)), kamMap=kamVysl.po;
       const attCount={}, onlineCount={};
       bookings.forEach(b=>{ const d=b.booking_date||(b.created_at||'').slice(0,10);
         if((d||'').startsWith(prefix) && hodinaSaRata(b) && b.user_id){
@@ -19734,11 +19752,11 @@ app.get('/api/client/spotlight', auth, async(req,res)=>{
       const puzzleBySpot={}; (await q.find(db.puzzle_solves,{})).forEach(p=>{ if(String(p.date||'').startsWith(prefix)){ const b=puzzleBySpot[p.user_id]=puzzleBySpot[p.user_id]||{p:0,c:0}; b.p+=(+p.points||0); b.c++; } });
       const ranked=[];
       for(const u of users){
-        const nm=newMemberPointsFor(u._id, adjacency, buyerSet);
+        const nm=newMemberPointsFor(u._id, adjacency, buyerSet, kamVysl.clenIds);
         const md=merchDownlinePointsFor(u._id, adjacency, merchMap);
         const bd=buildPointItems({ hours:attCount[u._id]||0, online:onlineCount[u._id]||0, refs:refCount[u._id]||0, kamosky:kamMap[u._id]||null, hasMem:!!memActive[u._id], memName:memName[u._id]||null, memTier:memTier[u._id]||null, newMemberCount:nm.count, newMemberPoints:nm.points, merchCount:merchMap[u._id]||0, merchLineCount:md.count, merchLinePoints:md.points, privCount:privMap[u._id]||0, spinPoints:(spinBy[u._id]||{}).p||0, spinCount:(spinBy[u._id]||{}).c||0, reviewCount:reviewBySpot[u._id]||0,
           puzzlePoints:(puzzleBySpot[u._id]||{}).p||0, puzzleCount:(puzzleBySpot[u._id]||{}).c||0 }, prefix);
-        if(bd.total>0) ranked.push({ id:u._id, name:u.name, avatar:u.avatar||null, refs:(refCount[u._id]||0)+((kamMap[u._id]||{}).regCount||0), hours:attCount[u._id]||0, score:bd.total, points:bd.total, breakdown:bd.items, badge:getMemberBadge(u.created_at, u) });
+        if(bd.total>0) ranked.push({ id:u._id, name:u.name, avatar:u.avatar||null, refs:refCount[u._id]||0, hours:attCount[u._id]||0, score:bd.total, points:bd.total, breakdown:bd.items, badge:getMemberBadge(u.created_at, u) });
       }
       ranked.sort((a,b)=>b.points-a.points);
       return ranked;
