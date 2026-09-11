@@ -3047,6 +3047,26 @@ async function seedData() {
     await q.insert(db.settings,{key:'sona_online_pass_fix_v1', value:true, at:nowISO()});
   }
 
+  // Venčekári vypadnú z trénerských zoznamov (Marek 11. 9.) — kód ich tam už
+  // nepustí, toto uprace, čo tam zostalo: prevzatých uvoľní a otvorené úlohy
+  // „kontaktuj X" pre nich zavrie. História kontaktov ostáva, len sa nepokračuje.
+  if(!(await q.one(db.settings,{key:'vencek_mimo_konverzie_v1'}))){
+    const ven=(await q.find(db.users,{})).filter(vencekMimoKonverzie);
+    const ids=new Set(ven.map(u=>u._id));
+    let uvolnene=0, ulohy=0, followupy=0;
+    for(const u of ven) if(u.coach_claimed_by){
+      await q.update(db.users,{_id:u._id},{$unset:{coach_claimed_by:true, coach_claimed_at:true}}); uvolnene++; }
+    for(const t of await q.find(db.coach_tasks,{done:false})){
+      const m=String(t.key||'').match(/^urgent_lead_(.+)$/);
+      if(m && ids.has(m[1])){ await q.remove(db.coach_tasks,{_id:t._id},{}); ulohy++; }
+    }
+    for(const t of await q.find(db.crm_tasks,{status:'open'}))
+      if(ids.has(t.client_id)){ await q.update(db.crm_tasks,{_id:t._id},{$set:{status:'cancelled',
+        cancel_reason:'venčekár — nie je na konverziu', cancelled_at:nowISO()}}); followupy++; }
+    await q.insert(db.settings,{key:'vencek_mimo_konverzie_v1', value:true, at:nowISO()});
+    console.log(`🎓 Venčekári mimo konverzie: ${ven.length} · uvoľnených ${uvolnene} · zavretých úloh ${ulohy} · follow-upov ${followupy}`);
+  }
+
   // Mesačný strop hlavolamu (40 bodov) Marek 10. 9. zrušil. Soňa Moskálová ho
   // vyčerpala už 7. 9. a zvyšok mesiaca hrala za nulu — presne opačná motivácia,
   // než akú od denného hlavolamu chceme. Strop 0 odteraz znamená „bez stropu".
@@ -4571,8 +4591,9 @@ app.post('/api/register', rlSignup, async(req,res)=>{
           read:false, created_at:nowISO()}).catch(()=>{});
       }
     }
-    // Notify all admins about the new lead (in-app + email) so they can call/nurture
-    if(utype==='lead'){
+    // Notify all admins about the new lead (in-app + email) so they can call/nurture.
+    // Venčekár nie — o ňom príde „🎓 Nový venčekár" vyššie a volať mu netreba.
+    if(utype==='lead' && !vencekClass){
       const sponsorName = sponsor_id ? (await q.one(db.users,{_id:sponsor_id}))?.name : null;
       const src = lead_source ? ` · zdroj: ${lead_source}` : '';
       const admins = await q.find(db.users,{is_admin:true});
@@ -4749,7 +4770,9 @@ async function computeUrgentTasks(){
   // 1) Nová registrácia bez rezervácie (posledných 14 dní)
   const isTest=u=>/test/i.test(u.name||'')||/test/i.test(u.email||'')||u.lead_source==='test'||u.is_test;
   for(const u of users){
-    if(u.is_admin||u.hidden_lead||isTest(u)) continue;
+    // Venčekár nechodí na bežné hodiny, takže bol VŽDY „registrácia bez rezervácie"
+    // a celá trieda sa sypala trénerom ako horúce leady.
+    if(u.is_admin||u.hidden_lead||isTest(u)||vencekMimoKonverzie(u)) continue;
     const created=(u.created_at||'').slice(0,10);
     if(!created || created<d(-14) || created>todayS) continue;
     if(bookedUsers.has(u._id) || memByUser[u._id]) continue;
@@ -5111,6 +5134,7 @@ async function zabudnuteLeady(){
   return (await q.find(db.users,{user_type:'lead', is_admin:{$ne:true}})).filter(u=>{
     if(u.do_not_contact||['not_interested','do_not_contact'].includes(u.lead_status||'')) return false;
     if(u.coach_claimed_by||(u.coach_snooze_until&&u.coach_snooze_until>today())) return false;
+    if(vencekMimoKonverzie(u)) return false;   // venčekár nie je zabudnutý lead
     if(!(u.phone||(u.email&&!/@import\.local$|@test-fa-qa\.local$|@qa-biz\.local$/i.test(u.email)))) return false;
     if(openFu.has(u._id)) return false;
     const posledny=Math.max(lastHuman[u._id]||0, new Date(u.last_contacted_at||0).getTime(),
@@ -6349,6 +6373,15 @@ const INVITE_MSG = code =>
   'Vyber si, kde a kedy chceš prísť 👇\n' +
   APP_URL + '/invite/' + code;
 const isTestContact = c => /@test-fa-qa\.local$/i.test(String(c||''));
+// Venčekári — žiaci, rodičia aj učitelia zo školských skupín — nie sú leady na
+// konverziu. Marek 11. 9.: „leady z venčeka nemusia ísť trénerom do leadforiem
+// na konverziu." Trinásťročného deviataka ani jeho triednu nemá tréner volať
+// s ponukou Zumby. Kým sa sami nestanú platiacimi klientmi, trénerské zoznamy,
+// horúce leady ani watchdog ich nevidia. (Deklarácie funkcií kvôli hoistingu —
+// volá sa to aj z kódu, ktorý je v súbore vyššie.)
+function jeVencekar(u){ return !!(u && (u.venceky_class_id || u.venceky_school_id || u.venceky_role
+  || u.vencek_pending_role || u.lead_source==='vencek')); }
+function vencekMimoKonverzie(u){ return jeVencekar(u) && u.user_type!=='client'; }
 async function refEvent(sponsor, type, extra={}){
   try{ await q.insert(db.referral_events,{ code:sponsor.referral_code, sponsor_id:sponsor._id,
     type, ...extra, test:!!extra.test, created_at:nowISO(), day:today() }); }catch(e){}
@@ -24009,7 +24042,7 @@ seedData().then(backfillDefaultSponsor).then(shopInvoiceBackfill20260904).then(u
 }).catch(e=>{console.error('Chyba pri spustení:', e); process.exit(1);});
 
 // ── Coach Growth System (Úlohy pre trénerov) ────────────────────────────────
-require('./coach')({ app, db, q, Datastore, DATA_DIR, trainerAuth, adminAuth, APP_URL, isTestContact });
+require('./coach')({ app, db, q, Datastore, DATA_DIR, trainerAuth, adminAuth, APP_URL, isTestContact, vencekMimoKonverzie });
 require('./school-outreach')({ app, db, q, Datastore, DATA_DIR, adminAuth, nowISO, APP_URL, sendMail, emailTemplate });
 require('./fusion-ai')({ app, db, q, adminAuth, isTestContact }); // po coach — používa db.coach_contacts
 
