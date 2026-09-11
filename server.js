@@ -16369,6 +16369,97 @@ function schoolLeadCors(req,res){
   res.setHeader('Access-Control-Allow-Methods','POST,OPTIONS');
 }
 app.options('/api/public/school-lead',(req,res)=>{ schoolLeadCors(req,res); res.sendStatus(204); });
+// Nábor trénerov (11. 9. 2026) — prihláška z fusionacademy.sk/programy/spolupracuj.html.
+// Ukladá sa medzi dopyty (db.rentals), v admine ju vidno v „Dopyty o prenájom"
+// s typom „🎤 Nábor trénera". Video (nepovinné) ide druhým requestom, aby sa
+// prihláška nestratila, keď sa veľké video z mobilu nenahrá.
+const NABOR_MAILS=['gruber.marek@gmail.com'];
+const NABOR_VIDEO_DIR=path.join(DATA_DIR,'uploads','nabor');
+const NABOR_VIDEO_TYPY={'video/mp4':'mp4','video/quicktime':'mov','video/webm':'webm','video/3gpp':'3gp','video/x-matroska':'mkv','video/x-msvideo':'avi'};
+function naborCors(req,res){
+  res.setHeader('Access-Control-Allow-Origin','*');
+  res.setHeader('Access-Control-Allow-Headers','Content-Type,X-Upload-Token');
+  res.setHeader('Access-Control-Allow-Methods','POST,OPTIONS');
+}
+app.options('/api/public/trainer-application',(req,res)=>{ naborCors(req,res); res.sendStatus(204); });
+app.options('/api/public/trainer-application/:id/video',(req,res)=>{ naborCors(req,res); res.sendStatus(204); });
+app.post('/api/public/trainer-application', rlPublic, async(req,res)=>{
+  naborCors(req,res);
+  try{
+    const b=req.body||{};
+    const t=(v,n)=>String(v==null?'':v).slice(0,n||300).replace(/[<>]/g,'').trim();
+    const zoznam=(v,n)=>(Array.isArray(v)?v:(v?[v]:[])).map(x=>t(x,60)).filter(Boolean).slice(0,n);
+    const name=t(b.name,120), phone=t(b.phone,40), email=t(b.email,160).toLowerCase(), city=t(b.city,80);
+    if(!name) return res.status(400).json({error:'Napíš svoje meno.'});
+    if(!phone) return res.status(400).json({error:'Nechaj nám telefón — ozveme sa ti telefonicky.'});
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({error:'Skontroluj e-mail.'});
+    if(!city) return res.status(400).json({error:'Napíš mesto.'});
+    if(b.consent!==true) return res.status(400).json({error:'Bez súhlasu so spracovaním údajov prihlášku neprijmeme.'});
+    const vek=parseInt(b.age,10);
+    const d={ age:(vek>=10&&vek<=99)?vek:null, class_types:zoznam(b.class_types,8), class_other:t(b.class_other,200),
+      experience:t(b.experience,80), qualification:t(b.qualification,80), experience_note:t(b.experience_note,600),
+      hours_week:t(b.hours_week,40), availability:zoznam(b.availability,6), income:t(b.income,40),
+      motivation:t(b.motivation,1500), social:t(b.social,300) };
+    const token=require('crypto').randomBytes(16).toString('hex');
+    const zhrnutie=[d.class_types.join(', '), d.income?'príjem: '+d.income.toLowerCase():'', d.motivation].filter(Boolean).join(' · ');
+    const z=await q.insert(db.rentals,{ _type:'trainer_application', event_type:'🎤 Nábor trénera',
+      name, phone, email, city, ...d, message:zhrnutie.slice(0,400), status:'new', upload_token:token,
+      video_expected:!!b.has_video, utm:t(b.utm,300), page:t(b.page,200), created_at:nowISO() });
+    const riadok=(k,v)=>v?`<tr><td style="color:#999;padding:4px 12px 4px 0;vertical-align:top">${k}</td><td style="padding:4px 0">${v}</td></tr>`:'';
+    const html=`<!doctype html><html><body style="font-family:Arial,sans-serif;background:#0a0a0a;color:#eee;padding:20px">
+      <h2 style="color:#C9A84C;margin:0 0 12px">🎤 Prihláška do náboru trénerov</h2>
+      <table style="font-size:14px;border-collapse:collapse">
+        ${riadok('Meno',`<b>${name}</b>`)}${riadok('Telefón',`<a href="tel:${phone}" style="color:#C9A84C">${phone}</a>`)}
+        ${riadok('E-mail',email)}${riadok('Mesto',city)}${riadok('Vek',d.age)}
+        ${riadok('Hodiny',[d.class_types.join(', '),d.class_other].filter(Boolean).join(' · '))}
+        ${riadok('Skúsenosti',[d.experience,d.experience_note].filter(Boolean).join(' · '))}
+        ${riadok('Kvalifikácia',d.qualification)}${riadok('Hodín týždenne',d.hours_week)}
+        ${riadok('Čas',d.availability.join(', '))}${riadok('Príjem',d.income)}
+        ${riadok('Prečo',d.motivation.replace(/\n/g,'<br>'))}${riadok('Instagram/TikTok',d.social)}
+        ${riadok('Video',b.has_video?'nahráva sa — príde ďalší mail s odkazom':'')}
+      </table>
+      <p style="color:#888;font-size:12px;margin-top:16px">V admine: Prenájmy → Dopyty (typ „Nábor trénera")${b.utm?' · '+t(b.utm,300):''}</p></body></html>`;
+    for(const to of NABOR_MAILS){ try{ await sendMail(to,'🎤 Nový tréner sa hlási: '+name+(city?' ('+city+')':''), html); }catch(e){} }
+    for(const a of await q.find(db.users,{is_admin:true})){
+      await q.insert(db.notifications,{user_id:a._id, type:'trainer_application',
+        title:'🎤 Prihláška do náboru trénerov',
+        body:name+' · '+phone+' · '+city+(d.class_types.length?' · '+d.class_types.join(', '):''),
+        read:false, created_at:nowISO()}).catch(()=>{});
+    }
+    res.json({ok:true, id:z._id, upload_token:token});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/public/trainer-application/:id/video', rlPublic,
+  express.raw({type:()=>true, limit:'100mb'}), async(req,res)=>{
+  naborCors(req,res);
+  try{
+    const z=await q.one(db.rentals,{_id:String(req.params.id), _type:'trainer_application'});
+    if(!z || !z.upload_token || req.get('X-Upload-Token')!==z.upload_token)
+      return res.status(403).json({error:'Odkaz na nahratie videa neplatí.'});
+    const typ=String(req.get('Content-Type')||'').split(';')[0].trim().toLowerCase();
+    if(!/^video\//.test(typ)) return res.status(400).json({error:'Nahraj video súbor.'});
+    if(!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({error:'Video je prázdne.'});
+    fs.mkdirSync(NABOR_VIDEO_DIR,{recursive:true});
+    const subor=z._id+'.'+(NABOR_VIDEO_TYPY[typ]||'mp4');
+    fs.writeFileSync(path.join(NABOR_VIDEO_DIR,subor), req.body);
+    await q.update(db.rentals,{_id:z._id},{$set:{video_file:subor, video_type:typ, video_size:req.body.length, video_at:nowISO()},
+      $unset:{upload_token:true}});
+    const odkaz=APP_URL+'/api/admin/trainer-applications/'+z._id+'/video';
+    const mb=(req.body.length/1048576).toFixed(1);
+    for(const to of NABOR_MAILS){ try{ await sendMail(to,'📹 Video k prihláške: '+z.name,
+      `<!doctype html><html><body style="font-family:Arial,sans-serif;background:#0a0a0a;color:#eee;padding:20px">
+       <h2 style="color:#C9A84C;margin:0 0 10px">📹 ${z.name} poslal(a) video</h2>
+       <p><a href="${odkaz}" style="color:#C9A84C">Pozrieť video (${mb} MB)</a> — otvorí sa po prihlásení do adminu.</p></body></html>`); }catch(e){} }
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.get('/api/admin/trainer-applications/:id/video', adminAuth, async(req,res)=>{
+  const z=await q.one(db.rentals,{_id:String(req.params.id), _type:'trainer_application'});
+  if(!z || !z.video_file) return res.status(404).json({error:'Video nie je.'});
+  res.type(z.video_type||'video/mp4');
+  res.sendFile(path.join(NABOR_VIDEO_DIR, path.basename(z.video_file)));
+});
+
 // Prihláška na vstupné ambasádorské školenie (29. 8. 2026).
 app.options('/api/public/ambassador-training',(req,res)=>{
   res.setHeader('Access-Control-Allow-Origin','*');

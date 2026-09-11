@@ -7460,7 +7460,7 @@ async function loadRentals(){
         <option value="rejected" ${r.status==='rejected'?'selected':''}>Zamietnutý</option>
       </select>
     </td>
-    <td class="text-muted small">${r.message?.slice(0,60)||'—'}</td>
+    <td class="text-muted small">${r.message?.slice(0,60)||'—'}${r.video_file?` · <a href="/api/admin/trainer-applications/${r._id}/video" target="_blank">📹 video</a>`:''}</td>
   </tr>`).join('');
 }
 async function updateRental(id,status){
