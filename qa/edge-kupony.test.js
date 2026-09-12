@@ -172,7 +172,10 @@ async function login(email) { const jar = {}; const r = await j('/api/login', { 
     ok('záznam 0 € je označený ako promo, nie „referral_credit / hradené kreditom" (kredit sa nepoužil)', tx5.length === 1 && tx5[0].payment_method !== 'referral_credit' && !/hradené kreditom/.test(tx5[0].note || ''), tx5[0] && (tx5[0].payment_method + ' | ' + tx5[0].note));
     ok('redemption STOPERCENT zapísaná s discount 75', redemptions('STOPERCENT').length === 1 && redemptions('STOPERCENT')[0].discount === 75, JSON.stringify(redemptions('STOPERCENT')));
     const b5b = await buy(dana, { plan_id: 'silver', promo_code: 'STOPERCENT' });
-    ok('tá istá klientka druhýkrát (sekvenčne, once_per_user): odmietnuté', b5b.status === 400 && /použil/.test((b5b.d || {}).error || ''), 'HTTP ' + b5b.status + ' ' + JSON.stringify(b5b.d));
+    // Od 7. 9. (koniec dvojitých členstiev) zastaví rovnaký plán už kontrola „členstvo ti beží" — ešte pred kupónom.
+    ok('tá istá klientka druhýkrát ten istý plán: 409 membership_active (dvojité členstvo)', b5b.status === 409 && (b5b.d || {}).code === 'membership_active', 'HTTP ' + b5b.status + ' ' + JSON.stringify(b5b.d));
+    const b5c = await buy(dana, { plan_id: 'gold', promo_code: 'STOPERCENT' });
+    ok('ten istý kód na iný plán (once_per_user): odmietnuté', b5c.status === 400 && /použil/.test((b5c.d || {}).error || ''), 'HTTP ' + b5c.status + ' ' + JSON.stringify(b5c.d));
     const gita = await login('qa.kup.gita@qa-biz.local');
     const c5 = await checkout(gita, { plan_id: 'silver', promo_code: 'STOPERCENT' });
     ok('Stripe checkout so 100 % kupónom: 400 „cena po zľave je 0 €", session nevzniká', c5.status === 400 && /0 €/.test((c5.d || {}).error || ''), 'HTTP ' + c5.status + ' ' + JSON.stringify(c5.d));
