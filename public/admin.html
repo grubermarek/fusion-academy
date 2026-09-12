@@ -1364,7 +1364,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   <!-- FINANCE -->
   <div class="section" id="s-finance">
     <h4 class="fw-bold mb-1">💶 Financie</h4>
-    <p class="text-muted small mb-3">Obraty, MRR/ARR a vývoj príjmov. Vyber časový horizont a prepínaj šípkami.</p>
+    <p class="text-muted small mb-3">Tržby, náklady a výsledok, MRR/ARR a čo zo Stripe prišlo na účet. Vyber časový horizont a prepínaj šípkami.</p>
     <div class="card bg-dark border-secondary mb-3"><div class="card-body py-3">
       <!-- 1) granularita: v akom horizonte sa pozerám -->
       <div class="d-flex justify-content-center mb-3">
@@ -1400,6 +1400,8 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <h6 class="fw-bold mb-3"><i class="bi bi-graph-up me-2 text-warning"></i>Príjmy za obdobie</h6>
       <canvas id="finChart" height="90"></canvas>
     </div></div>
+    <!-- Náklady a výsledok + Banka (Stripe) -->
+    <div class="row g-3 mb-3" id="finVysledok"></div>
 
     <!-- Aktívne členstvá & permanentky -->
     <div class="card bg-dark border-secondary mb-3"><div class="card-body">
@@ -3264,7 +3266,11 @@ async function loadPayouts(){
     <td class="${r.affiliate>0?'text-info':'text-muted'}">${(r.affiliate||0).toFixed(2)} €</td>
     <td class="${(r.tips||0)>0?'':'text-muted'}" style="${(r.tips||0)>0?'color:#e7c878':''}">${(r.tips||0).toFixed(2)} €</td>
     <td class="${(r.private||0)>0?'':'text-muted'}">${(r.private||0).toFixed(2)} €</td>
-    <td>${(r.cash_deduct||0)>0?`<span class="badge bg-danger" title="Vybraná hotovosť u trénera — zníži výplatu (klik na trénera pre detail)">−${r.cash_deduct.toFixed(2)} €</span>`:'<span class="text-muted">—</span>'}</td>
+    <td>${r.majitel && (r.cash_firma||0)>0
+      ? `<span class="badge bg-secondary" title="Hotovosť, ktorú vybral majiteľ — je to pokladňa firmy, z výplaty sa nezráža">💼 pokladňa ${r.cash_firma.toFixed(2)} €</span>`
+      : (r.cash_deduct||0)>0
+        ? `<span class="badge bg-danger" title="Vybraná hotovosť u trénera — zníži výplatu (klik na trénera pre detail)">−${r.cash_deduct.toFixed(2)} €</span>${(r.cash_odovzdat||0)>0?`<div style="font-size:.66rem;color:#ffb74d">odovzdať ${r.cash_odovzdat.toFixed(2)} €</div>`:''}`
+        : '<span class="text-muted">—</span>'}</td>
     <td><input type="number" step="0.01" value="${r.deductions||0}" id="ded_${r.id||''}" data-trainer='${escHtml(r.trainer)}' style="width:78px" class="form-control form-control-sm bg-dark text-light border-secondary" ${r.saved?'':'disabled title="Najprv vygeneruj"'}></td>
     <td class="fw-bold" style="color:#C9A24C">${r.total.toFixed(2)} €${(r.paid_total||0)>0?`<div class="text-success" style="font-size:.66rem;font-weight:600">vyplatené ${r.paid_total.toFixed(2)} €</div>`:''}</td>
     <td class="fw-bold ${r.outstanding>0?'':'text-muted'}" style="${r.outstanding>0?'color:#81c784':''}">${(r.outstanding??r.total).toFixed(2)} €</td>
@@ -5282,7 +5288,8 @@ function finCustom(){
 }
 const _finKpiCard=(l,v,s,c)=>`<div class="col-6 col-md-3"><div class="card bg-dark border-secondary"><div class="card-body py-2 px-3">
     <div class="small text-muted">${l}</div><div class="fs-5 fw-bold" style="color:${c||'#EAE3D5'}">${v}</div><div class="small text-muted">${s||''}</div></div></div></div>`;
-function _renderFinKpis(d, periodLabel, periodVal, deltaHtml){
+function _renderFinKpis(d, periodLabel, periodVal, deltaHtml, f){
+  f=f||d; // f = dáta za zvolené obdobie (refundy, náklady, výsledok, banka)
   document.getElementById('finKpis').innerHTML =
     _finKpiCard(periodLabel, periodVal.toFixed(2)+' €', deltaHtml||'', '#C9A24C')
     + _finKpiCard('Dnes', d.revenue.today.toFixed(2)+' €','', '#4ade80')
@@ -5291,7 +5298,58 @@ function _renderFinKpis(d, periodLabel, periodVal, deltaHtml){
     + _finKpiCard('MRR', d.mrr.toFixed(2)+' €', 'ARR '+d.arr.toFixed(2)+' €', '#C9A24C')
     + _finKpiCard('Priem. objednávka', d.aov.toFixed(2)+' €', 'v období')
     + _finKpiCard('Priem. hodnota klienta', d.avgClientValue.toFixed(2)+' €', 'all-time')
-    + _finKpiCard('Členstvá', d.activeMembers+' aktívnych', `+${d.newMemberships} nových · ${d.expiredNotRenewed} neobnov.`, '#4ade80');
+    + _finKpiCard('Členstvá', d.activeMembers+' aktívnych', `+${d.newMemberships} nových · ${d.expiredNotRenewed} neobnov.`, '#4ade80')
+    + (f.refunds && f.refunds.period>0 ? _finKpiCard('Refundy', '−'+f.refunds.period.toFixed(2)+' €', 'čistá tržba '+f.net.period.toFixed(2)+' €', '#e57373') : '')
+    + (f.vysledok ? _finKpiCard('Výsledok obdobia', f.vysledok.cisty.toFixed(2)+' €', 'po refundoch, poplatkoch, výplatách a reklame', f.vysledok.cisty>=0?'#4ade80':'#e57373') : '')
+    + (f.banka ? _finKpiCard('Zo Stripe na účet', f.banka.ciste.toFixed(2)+' €', 'poplatky '+f.banka.poplatky.toFixed(2)+' € · čaká '+(f.banka.caka??0).toFixed(2)+' €', '#7ec8e3') : '');
+  _renderFinVysledok(f);
+}
+const _mesSlovo=n=>n===1?'mesiac':(n>=2&&n<=4?'mesiace':'mesiacov');
+// Náklady a výsledok + Banka (Stripe) — Marek 12. 9.: „prejdi financie, navrhni zjednodušenie".
+// Jeden pohľad: čo sme utŕžili, čo to stálo, čo ostalo — a či to zo Stripe naozaj prišlo na účet.
+function _renderFinVysledok(d){
+  const host=document.getElementById('finVysledok'); if(!host) return;
+  const n=d.naklady, v=d.vysledok, b=d.banka;
+  if(!n||!v){ host.innerHTML=''; return; }
+  const eur=x=>(+x||0).toFixed(2)+' €';
+  const riadok=(l,val,c,sub)=>`<tr><td class="text-muted">${l}${sub?`<div style="font-size:.68rem;opacity:.7">${sub}</div>`:''}</td><td class="text-end fw-semibold" style="color:${c||'#EAE3D5'};white-space:nowrap">${val}</td></tr>`;
+  const mes=(n.mesiace||[]).length;
+  const tren=(n.vyplaty_treneri||[]).map(t=>`${escHtml(t.trainer)} ${eur(t.total)}`).join(' · ');
+  const naklady=`<div class="col-12 col-lg-6"><div class="card bg-dark border-secondary h-100"><div class="card-body">
+    <h6 class="fw-bold mb-2"><i class="bi bi-cash-stack me-2 text-warning"></i>Náklady a výsledok obdobia</h6>
+    <table class="table table-dark table-sm mb-2" style="font-size:.84rem"><tbody>
+      ${riadok('Tržba (hrubá)', eur(v.trzba), '#C9A24C')}
+      ${riadok('− Refundy', '−'+eur(n.refundy), n.refundy>0?'#e57373':'#777')}
+      ${riadok('− Poplatky Stripe', '−'+eur(n.stripe_poplatky), n.stripe_poplatky>0?'#e57373':'#777', n.stripe_dostupne?'':'Stripe teraz nedostupný — poplatky sa nerátajú')}
+      ${riadok('− Výplaty trénerov', '−'+eur(n.vyplaty), n.vyplaty>0?'#e57373':'#777', tren||(mes>1?'za '+mes+' '+_mesSlovo(mes):''))}
+      ${riadok('− Reklama (Meta)', '−'+eur(n.reklama), n.reklama>0?'#e57373':'#777')}
+      <tr style="border-top:2px solid #C9A24C"><td class="fw-bold">= Výsledok</td><td class="text-end fw-bold fs-5" style="color:${v.cisty>=0?'#4ade80':'#e57373'};white-space:nowrap">${eur(v.cisty)}</td></tr>
+    </tbody></table>
+    <div class="text-muted" style="font-size:.7rem">Výplaty a reklama sa vedú po mesiacoch — rátajú sa za ${mes===1?'tento mesiac':mes+' '+_mesSlovo(mes)+', do ktorých obdobie zasahuje'}. Nájom a iné náklady appka nevedie.</div>
+  </div></div></div>`;
+  let bankaHtml;
+  if(b){
+    const ok=Math.abs(b.rozdiel)<1;
+    const vypl=(b.vyplaty||[]).slice(0,8).map(p=>`<tr><td>${fmtDate(p.d)}</td><td class="text-end">${eur(p.a)}</td><td class="text-end"><span class="badge ${p.stav==='paid'?'bg-success':(p.chyba?'bg-danger':'bg-secondary')}" style="font-size:.62rem">${p.stav==='paid'?'na účte':(p.stav==='in_transit'||p.stav==='pending'?'na ceste':p.stav)}</span></td></tr>`).join('');
+    bankaHtml=`<div class="col-12 col-lg-6"><div class="card bg-dark border-secondary h-100"><div class="card-body">
+      <h6 class="fw-bold mb-2"><i class="bi bi-bank me-2 text-info"></i>Banka (Stripe)</h6>
+      <table class="table table-dark table-sm mb-2" style="font-size:.84rem"><tbody>
+        ${riadok('Zaplatené kartou (hrubo)', eur(b.hrubo), '#EAE3D5', b.platieb+' platieb')}
+        ${riadok('− Poplatky Stripe', '−'+eur(b.poplatky), '#e57373')}
+        ${b.vratene>0?riadok('− Vrátené klientkam', '−'+eur(b.vratene), '#e57373'):''}
+        ${riadok('= Čisté', eur(b.ciste), '#7ec8e3')}
+        ${riadok('Už na bankovom účte', eur(b.vyplatene), '#4ade80', 'výplaty zo Stripe v období')}
+        ${riadok('Čaká vo Stripe', eur(b.caka), '#e0a656', 'príde do 3 dní')}
+      </tbody></table>
+      <div class="mb-2" style="font-size:.8rem;color:${ok?'#4ade80':'#ffb74d'}">${ok?'✓ Karta v appke sedí so Stripe':'⚠ Karta v appke '+eur(b.karta_v_appke)+' vs Stripe '+eur(b.hrubo)+' — rozdiel '+eur(b.rozdiel)}</div>
+      ${vypl?`<div class="text-muted mb-1" style="font-size:.7rem">Posledné výplaty na účet</div><table class="table table-dark table-sm mb-0" style="font-size:.78rem"><tbody>${vypl}</tbody></table>`:''}
+    </div></div></div>`;
+  } else {
+    bankaHtml=`<div class="col-12 col-lg-6"><div class="card bg-dark border-secondary h-100"><div class="card-body">
+      <h6 class="fw-bold mb-2"><i class="bi bi-bank me-2 text-info"></i>Banka (Stripe)</h6>
+      <div class="text-muted small">Stripe nie je pripojený alebo teraz neodpovedá. Tržba vyššie je hrubá.</div></div></div></div>`;
+  }
+  host.innerHTML=naklady+bankaHtml;
 }
 function _renderFinChart(labels, values, focusIdx){
   const ctx=document.getElementById('finChart');
@@ -5328,7 +5386,10 @@ async function loadFinance(){
     deltaHtml=`<span style="color:${up?'#4ade80':'#e57373'};font-weight:700">${up?'▲':'▼'} ${Math.abs(ch).toFixed(0)} %</span> <span class="text-muted">vs ${prev.v.toFixed(0)} €</span>`;
   } else if(focused.v>0){ deltaHtml='<span style="color:#4ade80;font-weight:700">▲ nové</span>'; }
   const GRAN_LABEL={day:'Tržby (deň)',week:'Tržby (týždeň)',month:'Tržby (mesiac)',year:'Tržby (rok)'};
-  _renderFinKpis(d, GRAN_LABEL[g], focused.v, deltaHtml);
+  // d je celé okno grafu (napr. 12 mesiacov) — refundy, náklady, výsledok a banka
+  // musia byť za ZVOLENÉ obdobie, inak by „september" ukazoval náklady za rok.
+  const dF=await api(`/api/admin/finance/stats?from=${_fmtD(focused.start)}&to=${_fmtD(focused.end)}`).catch(()=>null);
+  _renderFinKpis(d, GRAN_LABEL[g], focused.v, deltaHtml, (dF&&!dF.error)?dF:d);
   _renderFinChart(buckets.map(b=>b.label), buckets.map(b=>b.v), focusIdx);
   loadMembOverview();
 }

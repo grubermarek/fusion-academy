@@ -12127,14 +12127,21 @@ async function auditLog(req, action, target, before, after, reason){
 }
 
 // Sequential yearly numbering: 2026 0001 … (number doubles as variabilný symbol)
+// NeDB nemá transakcie: dve platby v tej istej sekunde si prečítali rovnaký počet
+// faktúr a dostali by rovnaké číslo. Vydané číslo sa preto na chvíľu rezervuje v
+// pamäti — kontrola aj rezervácia bežia bez await, takže ich nič nepreruší.
+const rezervovaneCislaFaktur=new Set();
 async function nextInvoiceNumber(){
   const year = String(new Date().getFullYear());
   const existing = await q.find(db.invoices, {});
   const inYear = existing.filter(i=>String(i.number).startsWith(year));
   let seq = inYear.length + 1;
-  for(let attempt=0; attempt<20; attempt++, seq++){
+  for(let attempt=0; attempt<200; attempt++, seq++){
     const num = year + String(seq).padStart(4,'0');
-    if(!inYear.some(i=>String(i.number)===num)) return num;
+    if(inYear.some(i=>String(i.number)===num) || rezervovaneCislaFaktur.has(num)) continue;
+    rezervovaneCislaFaktur.add(num);
+    setTimeout(()=>rezervovaneCislaFaktur.delete(num), 15000);
+    return num;
   }
   return year + String(Date.now()).slice(-4);
 }
@@ -12510,6 +12517,19 @@ app.post('/api/admin/cash-upsell-blast', adminAuth, async(req,res)=>{
 // Vracia rovnaké „udalosti" pre všetky prehľady: {d: dátum, a: suma, cat, src}.
 //   src 'app'    — appka to naozaj zinkasovala
 //   src 'glofox' — historický záznam zo starého systému (do tržby sa neráta)
+// Spôsob platby má v dátach desať podôb (card/stripe/karta, cash/hotovosť, bank/transfer…)
+// a účtovníctvo ich ukazovalo ako rôzne kôpky — „stripe 575 €" aj „karta 399 €" (Marek
+// 12. 9.). Do prehľadov ide vždy jedna z piatich; pôvodná hodnota ostáva v method_raw.
+function normMetoda(m){
+  const s=String(m||'').toLowerCase().trim();
+  if(!s) return 'hotovosť';
+  if(/stripe|card|karta|apple|google|paypal|brána|brana|gateway/.test(s)) return 'karta';
+  if(/cash|hotov|onsite|na mieste/.test(s)) return 'hotovosť';
+  if(/transfer|bank|prevod|iban|účet|ucet/.test(s)) return 'prevod';
+  if(/credit|kredit/.test(s)) return 'kredit';
+  if(/free|promo|gift|dar|zadarmo/.test(s)) return 'zadarmo';
+  return s;
+}
 async function revenueEvents(opts){
   const o = opts||{};
   const vylucit = new Set();                      // koho do tržby nerátame
@@ -12634,6 +12654,7 @@ async function revenueEvents(opts){
           what:t.product_name||t.note||'Predaj', method:t.payment_method||t.method||'hotovosť',
           kanal:'ručný zápis', invoice: fak(najdiFakturu(uid,u.email,t.amount,d)) }; }),
   ].filter(e=>e.d);
+  for(const e of udalosti){ e.method_raw=e.method; e.method=normMetoda(e.method); }
 
   return o.includeImported ? udalosti : udalosti.filter(e=>e.src==='app');
 }
@@ -12721,6 +12742,78 @@ app.get('/api/admin/predaje/export.csv', adminAuth, async(req,res)=>{
   }catch(e){ res.status(500).send('Chyba: '+e.message); }
 });
 
+// ── Banka: čo zo Stripe naozaj prišlo na účet ───────────────────────────────
+// Appka vie hrubé sumy; Stripe si berie poplatok a vypláca s odstupom. Toto je
+// pohľad z druhej strany (Marek 12. 9.: „či to máme pekne na účte, či nám to chodí"):
+// hrubo, poplatky, vrátené, čisté, čo už odišlo na účet a čo ešte čaká.
+const stripeBankaCache=new Map();
+async function stripeApiGet(path){
+  const r=await fetch('https://api.stripe.com/v1/'+path,{headers:{Authorization:'Bearer '+STRIPE_SECRET}});
+  const body=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error((body.error&&body.error.message)||('Stripe '+r.status));
+  return body;
+}
+async function stripeBanka(from, to){
+  if(!STRIPE_SECRET || process.env.STRIPE_FAKE==='1' || process.env.STRIPE_BANKA_OFF==='1') return null;
+  const key=from+'|'+to; const c=stripeBankaCache.get(key);
+  if(c && Date.now()-c.at<10*60*1000) return c.data;
+  const gte=Math.max(0, Math.floor(Date.parse(from+'T00:00:00Z')/1000)), lte=Math.floor(Date.parse(to+'T23:59:59Z')/1000);
+  const tx=[]; let after=null;
+  for(let i=0;i<20;i++){
+    const page=await stripeApiGet('balance_transactions?limit=100&created[gte]='+gte+'&created[lte]='+lte+(after?'&starting_after='+after:''));
+    tx.push(...(page.data||[])); if(!page.has_more || !(page.data||[]).length) break; after=page.data[page.data.length-1].id;
+  }
+  const eur=c=>+((c||0)/100).toFixed(2);
+  const jePredaj=t=>['charge','payment'].includes(t.type), jeVratka=t=>/refund/.test(t.type), jeVyplata=t=>t.type==='payout';
+  const predaje=tx.filter(jePredaj), vratky=tx.filter(jeVratka), vyplatyTx=tx.filter(jeVyplata);
+  const ostatne=tx.filter(t=>!jePredaj(t)&&!jeVratka(t)&&!jeVyplata(t));
+  const sum=(a,f)=>a.reduce((s,t)=>s+(t[f]||0),0);
+  const bal=await stripeApiGet('balance').catch(()=>null);
+  const payouts=await stripeApiGet('payouts?limit=50&arrival_date[gte]='+gte).catch(()=>({data:[]}));
+  const vyplaty=(payouts.data||[]).filter(p=>p.arrival_date<=lte+86400)
+    .map(p=>({d:new Date(p.arrival_date*1000).toISOString().slice(0,10), a:eur(p.amount), stav:p.status, chyba:p.failure_message||null}));
+  const eurBal=list=>eur((list||[]).filter(b=>b.currency==='eur').reduce((s,b)=>s+b.amount,0));
+  const data={ hrubo:eur(sum(predaje,'amount')), platieb:predaje.length,
+    poplatky:eur(sum(predaje,'fee')+sum(vratky,'fee')+sum(ostatne,'fee')),
+    vratene:eur(-sum(vratky,'amount')),
+    ciste:eur(sum(predaje,'net')+sum(vratky,'net')+sum(ostatne,'net')),
+    vyplatene:eur(-sum(vyplatyTx,'amount')), vyplaty,
+    caka: bal ? eurBal(bal.pending) : null, dostupne: bal ? eurBal(bal.available) : null,
+    nacitane_o: nowISO() };
+  stripeBankaCache.set(key,{at:Date.now(), data});
+  return data;
+}
+app.get('/api/admin/finance/banka', adminAuth, async(req,res)=>{
+  try{
+    const from=/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from||''))?req.query.from:today().slice(0,7)+'-01';
+    const to=/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.to||''))?req.query.to:today();
+    res.json({ok:true, from, to, banka:await stripeBanka(from,to)});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// ── Náklady a výsledok obdobia ──────────────────────────────────────────────
+// Tržba sama nehovorí, či sa oplatilo. Od hrubej tržby odrátame refundy, poplatky
+// Stripe, výplaty trénerov a reklamu — ostane výsledok. Výplaty a reklama sa vedú
+// po mesiacoch, preto sa berú za mesiace, do ktorých obdobie zasahuje.
+async function nakladyObdobia(from, to, udalostiObdobia, refundyObdobia){
+  const prvy=udalostiObdobia.map(e=>String(e.d).slice(0,10)).sort()[0]||today();
+  const zac=String(from||'').slice(0,10)>'2000' ? String(from).slice(0,10) : prvy;
+  const kon=(String(to||'') && String(to).slice(0,10)<'2999') ? String(to).slice(0,10) : today();
+  const mesiace=[]; { let m=zac.slice(0,7); const last=kon.slice(0,7);
+    while(m<=last && mesiace.length<36){ mesiace.push(m); const d=new Date(+m.slice(0,4), +m.slice(5,7), 1); m=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); } }
+  let vyplaty=0; const vyplatyTreneri=[];
+  for(const m of mesiace){ for(const r of await vyplatyPrehlad(m,{cache:true})){ vyplaty+=r.total; if(r.total>0) vyplatyTreneri.push({trainer:r.trainer, month:m, total:r.total}); } }
+  vyplaty=+vyplaty.toFixed(2);
+  const reklama=+(await q.find(db.adspend,{})).filter(a=>mesiace.includes(String(a.month||''))).reduce((s,a)=>s+(+a.amount||0),0).toFixed(2);
+  const banka=await stripeBanka(zac, kon).catch(()=>null);
+  const poplatky=banka?banka.poplatky:0;
+  const trzba=+udalostiObdobia.reduce((s,e)=>s+e.a,0).toFixed(2);
+  const kartaVAppke=+udalostiObdobia.filter(e=>e.method==='karta').reduce((s,e)=>s+e.a,0).toFixed(2);
+  const spolu=+(refundyObdobia+poplatky+vyplaty+reklama).toFixed(2);
+  return { naklady:{ refundy:+refundyObdobia.toFixed(2), stripe_poplatky:poplatky, stripe_dostupne:!!banka, vyplaty, vyplaty_treneri:vyplatyTreneri, reklama, mesiace, spolu },
+    vysledok:{ trzba, cisty:+(trzba-spolu).toFixed(2) },
+    banka: banka ? {...banka, karta_v_appke:kartaVAppke, rozdiel:+(kartaVAppke-banka.hrubo).toFixed(2)} : null };
+}
+
 app.get('/api/admin/finance/stats', adminAuth, async(req,res)=>{
   try {
     const {from, to} = req.query; // YYYY-MM-DD inclusive
@@ -12762,6 +12855,15 @@ app.get('/api/admin/finance/stats', adminAuth, async(req,res)=>{
     const revMonth = +allEvents.filter(e=>e.d.startsWith(monthStr)).reduce((s,e)=>s+e.a,0).toFixed(2);
     const revYear  = +allEvents.filter(e=>e.d.startsWith(yearStr)).reduce((s,e)=>s+e.a,0).toFixed(2);
     const revTotal = +allEvents.reduce((s,e)=>s+e.a,0).toFixed(2);
+    // Refundy — tržba vyššie je hrubá, čistá = hrubá − vrátené peniaze (doteraz sa
+    // refund odpočítaval len vo Fusion AI, Financie ho nevideli).
+    const refundy=(await q.find(db.refunds,{})).map(r=>({d:String(r.created_at||''), a:+r.amount||0}));
+    const refSum=f=>+refundy.filter(f).reduce((s,r)=>s+r.a,0).toFixed(2);
+    const refunds={ period:refSum(r=>inRange(r.d)), today:refSum(r=>r.d.startsWith(dayStr)), month:refSum(r=>r.d.startsWith(monthStr)),
+      year:refSum(r=>r.d.startsWith(yearStr)), total:refSum(()=>true), count:refundy.filter(r=>inRange(r.d)).length };
+    const net={ period:+(revenuePeriod-refunds.period).toFixed(2), today:+(revToday-refunds.today).toFixed(2), month:+(revMonth-refunds.month).toFixed(2),
+      year:+(revYear-refunds.year).toFixed(2), total:+(revTotal-refunds.total).toFixed(2) };
+    const nk=await nakladyObdobia(from, to, period, refunds.period);
 
     // MRR = recurring subscriptions only (Stripe + PayPal)
     let mrr = 0;
@@ -12803,6 +12905,7 @@ app.get('/api/admin/finance/stats', adminAuth, async(req,res)=>{
       avgMonthly:+(revYear/Math.max(1,now.getMonth()+1)).toFixed(2),
       aov, avgClientValue,
       activeMembers:activeMemberIds.size, newMembers, newMemberships, expiredNotRenewed,
+      refunds, net, naklady:nk.naklady, vysledok:nk.vysledok, banka:nk.banka,
       txCount:period.length,
       series:Object.entries(series).sort((a,b)=>a[0].localeCompare(b[0])).map(([d,v])=>({d,v}))
     });
@@ -13098,6 +13201,7 @@ async function accountingData(from, to){
   const bucket=(keyFn)=>{ const m={}; for(const e of events){ const k=keyFn(e)||'—'; m[k]=(m[k]||0)+e.amount; } return Object.entries(m).map(([key,v])=>({key,revenue:+v.toFixed(2)})).sort((a,b)=>b.revenue-a.revenue); };
 
   const total=+events.reduce((s,e)=>s+e.amount,0).toFixed(2);
+  const refundyObd=+(await q.find(db.refunds,{})).filter(r=>inRange(String(r.created_at||''))).reduce((s,r)=>s+(+r.amount||0),0).toFixed(2);
   const invPeriod=invoices.filter(i=>inRange(i.issued_at||'') && i.type!=='credit_note' && i.status!=='cancelled');
   const supplier=invoiceSupplier();
   const vatPayer=!!supplier.icdph;
@@ -13109,7 +13213,7 @@ async function accountingData(from, to){
     byInstructor: bucket(e=>topOf(e.user_id,'instructor')),
     byMethod: bucket(e=>e.method),
     byMonth: bucket(e=>(e.date||'').slice(0,7)).sort((a,b)=>a.key.localeCompare(b.key)),
-    totals:{ revenue:total, txCount:events.length, invoiceCount:invPeriod.length,
+    totals:{ revenue:total, refunds:refundyObd, net:+(total-refundyObd).toFixed(2), txCount:events.length, invoiceCount:invPeriod.length,
       vatPayer, vatBase: vatPayer?+(total/1.2).toFixed(2):total, vat: vatPayer?+(total-total/1.2).toFixed(2):0 },
     supplier
   };
@@ -13129,6 +13233,7 @@ app.get('/api/admin/accounting/export.csv', adminAuth, async(req,res)=>{
     .forEach(e=>rows.push([(e.date||'').slice(0,10),e.plan,e.method,num(e.amount)].map(esc).join(';')));
   rows.push('');
   rows.push([esc('SPOLU'),'','',esc(num(d.totals.revenue))].join(';'));
+  if(d.totals.refunds>0){ rows.push([esc('REFUNDY'),'','',esc('-'+num(d.totals.refunds))].join(';')); rows.push([esc('ČISTÉ'),'','',esc(num(d.totals.net))].join(';')); }
   res.setHeader('Content-Type','text/csv; charset=utf-8');
   res.setHeader('Content-Disposition',`attachment; filename=uctovnictvo_${req.query.from||'vse'}_${req.query.to||''}.csv`);
   res.send('﻿'+rows.join('\r\n'));
@@ -13450,7 +13555,7 @@ async function trainerMonthPayslip(trainerUser, month){
   const cash=await cashCollectedFor(tName, month).catch(()=>({deduct:0}));
   const rec=await q.one(db.payouts,{trainer:tName,month});
   const ded=rec?.deductions||0;
-  const total=+(base+bonuses+affiliate+tips+priv.amount-ded-cash.deduct).toFixed(2);
+  const total=+Math.max(0, base+bonuses+affiliate+tips+priv.amount-ded-cash.deduct).toFixed(2); // pod nulu nejde — zvyšok hotovosti tréner odovzdá
   const lines=[
     ['Základ za hodinu', `${st.sessions}× ${rule.fixed_per_class||0} €`, +((rule.fixed_per_class||0)*st.sessions).toFixed(2)],
     [thr>0?`Klienti nad ${thr} na hodine`:'Odmena za účastníka', `${billable}× ${rule.per_client||0} €`, +((rule.per_client||0)*billable).toFixed(2)],
@@ -13820,35 +13925,47 @@ app.get('/api/admin/points-summary.csv', adminAuth, async(req,res)=>{
 });
 
 // Draft payouts for a month = computed stats × rules, merged with any saved payout records
+// Výplaty trénerov za mesiac — jeden výpočet pre sekciu Výplaty aj pre Financie
+// (náklady). Výplata nejde pod nulu: čo je hotovosti nad zárobok, tréner odovzdá
+// (cash_odovzdat). Majiteľova hotovosť je pokladňa (cash_firma), nie zrážka.
+const vyplatyCache=new Map();
+async function vyplatyPrehlad(month, o){
+  if(o && o.cache){ const c=vyplatyCache.get(month); if(c && Date.now()-c.at<2*60*1000) return c.rows; }
+  const stats=await payrollStats(month);
+  const rules=Object.fromEntries((await q.find(db.payout_rules,{})).map(r=>[r.trainer,r]));
+  const saved=Object.fromEntries((await q.find(db.payouts,{month, _type:{$exists:false}})).map(p=>[p.trainer,p]));
+  const nameToId=Object.fromEntries((await q.find(db.users,{})).map(u=>[u.name,u._id]));
+  const rows=await Promise.all(stats.map(async st=>{
+    const {base,bonuses}=computePayout(rules[st.instructor],st);
+    const sv=saved[st.instructor];
+    const deductions=sv?.deductions||0;
+    const affiliate = nameToId[st.instructor] ? await affiliateCommissionFor(nameToId[st.instructor], month) : 0;
+    const b=sv?sv.base:base, bo=sv?sv.bonuses:bonuses;
+    const cash=await cashCollectedFor(st.instructor, month); // hotovosť u trénera = zrážka
+    const priv = nameToId[st.instructor] ? await privateEarningsFor(nameToId[st.instructor], month) : {amount:0,count:0};
+    const tips = nameToId[st.instructor] ? await trainerTipsForMonth(nameToId[st.instructor], month) : 0;
+    const zarobok=+(b+bo+affiliate+tips+priv.amount-deductions).toFixed(2);
+    const total=+Math.max(0, zarobok-cash.deduct).toFixed(2);
+    const cash_odovzdat=+Math.max(0, cash.deduct-zarobok).toFixed(2);
+    // Koľko už bolo reálne vyplatené (čiastočné platby) a koľko zostáva
+    const paid_total=+((sv?.payments||[]).reduce((s,p)=>s+(+p.amount||0),0) || (sv?.status==='paid'&&!(sv?.payments||[]).length ? total : 0)).toFixed(2);
+    return { trainer:st.instructor, trainer_id:nameToId[st.instructor]||null, month, ...st, affiliate, tips,
+      base:b, bonuses:bo, deductions, private:priv.amount, zarobok,
+      cash_deduct:cash.deduct, cash_pending:cash.pending, cash_firma:cash.firma||0, cash_odovzdat, majitel:!!cash.majitel,
+      total, paid_total, outstanding:+Math.max(0,total-paid_total).toFixed(2),
+      premium_total:+(sv?.premium_total||0),
+      payments:sv?.payments||[],
+      status:sv?.status||'draft', saved:!!sv, id:sv?._id||null, note:sv?.note||'',
+      payment_method:sv?.payment_method||null, paid_at:sv?.paid_at||null, history:sv?.history||[] };
+  }));
+  vyplatyCache.set(month,{at:Date.now(), rows});
+  return rows;
+}
 app.get('/api/admin/payouts', adminAuth, async(req,res)=>{
   try {
     const month=req.query.month||today().slice(0,7);
-    const stats=await payrollStats(month);
     const rules=Object.fromEntries((await q.find(db.payout_rules,{})).map(r=>[r.trainer,r]));
-    const saved=Object.fromEntries((await q.find(db.payouts,{month, _type:{$exists:false}})).map(p=>[p.trainer,p]));
-    const nameToId=Object.fromEntries((await q.find(db.users,{})).map(u=>[u.name,u._id]));
-    const rows=await Promise.all(stats.map(async st=>{
-      const {base,bonuses}=computePayout(rules[st.instructor],st);
-      const sv=saved[st.instructor];
-      const deductions=sv?.deductions||0;
-      const affiliate = nameToId[st.instructor] ? await affiliateCommissionFor(nameToId[st.instructor], month) : 0;
-      const b=sv?sv.base:base, bo=sv?sv.bonuses:bonuses;
-      const cash=await cashCollectedFor(st.instructor, month); // hotovosť u trénera = zrážka
-      const priv = nameToId[st.instructor] ? await privateEarningsFor(nameToId[st.instructor], month) : {amount:0,count:0};
-      const tips = nameToId[st.instructor] ? await trainerTipsForMonth(nameToId[st.instructor], month) : 0;
-      const total=+((b+bo+affiliate+tips+priv.amount-deductions-cash.deduct)).toFixed(2);
-      // Koľko už bolo reálne vyplatené (čiastočné platby) a koľko zostáva
-      const paid_total=+((sv?.payments||[]).reduce((s,p)=>s+(+p.amount||0),0) || (sv?.status==='paid'&&!(sv?.payments||[]).length ? total : 0)).toFixed(2);
-      return { trainer:st.instructor, trainer_id:nameToId[st.instructor]||null, month, ...st, affiliate, tips,
-        base:b, bonuses:bo, deductions, private:priv.amount,
-        cash_deduct:cash.deduct, cash_pending:cash.pending,
-        total, paid_total, outstanding:+Math.max(0,total-paid_total).toFixed(2),
-        premium_total:+(sv?.premium_total||0),
-        payments:sv?.payments||[],
-        status:sv?.status||'draft', saved:!!sv, id:sv?._id||null, note:sv?.note||'',
-        payment_method:sv?.payment_method||null, paid_at:sv?.paid_at||null, history:sv?.history||[] };
-    }));
-    res.json({month, rows, rules});
+    res.json({month, rows:await vyplatyPrehlad(month), rules});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -13913,7 +14030,7 @@ app.post('/api/admin/payouts/pay', adminAuth, async(req,res)=>{
     // Hotovosť, ktorú tréner vybral a neodovzdal → zníži výplatu a zúčtuje sa
     const cash=await cashCollectedFor(trainer, month);
     const priv = tUser ? await privateEarningsFor(tUser._id, month) : {amount:0,count:0};
-    const total=+(base+bonuses+affiliate+tips+priv.amount-deductions-cash.deduct).toFixed(2);
+    const total=+Math.max(0, base+bonuses+affiliate+tips+priv.amount-deductions-cash.deduct).toFixed(2); // rovnako ako v prehľade výplat — nikdy záporná
     // Čiastočné vyplatenie: admin môže zadať konkrétnu sumu (amount) — zvyšok
     // ostáva „na vyplatenie". Bez sumy sa vyplatí celý zostatok naraz.
     const prevPayments=rec?.payments||[];
@@ -17390,7 +17507,12 @@ async function trainerTipsForMonth(userId, month){
 async function cashCollectedFor(trainerName, month){
   const rows=await q.find(db.payouts,{_type:'cash_collected', trainer_name:trainerName, month});
   const active=rows.filter(r=>r.status!=='settled_handed'); // odovzdané sa už nezráža
-  return { deduct:+active.reduce((s,r)=>s+(+r.amount||0),0).toFixed(2),
+  const suma=+active.reduce((s,r)=>s+(+r.amount||0),0).toFixed(2);
+  // Hotovosť u MAJITEĽA nie je zrážka z výplaty — je to pokladňa firmy. Marekovi
+  // vychádzala výplata −171,80 €, lebo vybral viac hotovosti, než „zarobil" (12. 9.).
+  const u=await q.one(db.users,{name:trainerName});
+  const majitel=!!(u && u.is_admin);
+  return { deduct: majitel?0:suma, firma: majitel?suma:0, majitel,
            pending:+rows.filter(r=>r.status==='held').reduce((s,r)=>s+(+r.amount||0),0).toFixed(2),
            rows };
 }
@@ -17609,7 +17731,7 @@ app.get('/api/trainer/earnings', trainerAuth, async(req,res)=>{
       const ded=rec?.deductions||0;
       const cash=await cashCollectedFor(tName, m); // vybraná hotovosť = zrážka, kým sa neodovzdá
       const priv=await privateEarningsFor(t._id, m);
-      const total=+(base+bonuses+affiliate+tips+priv.amount-ded-cash.deduct).toFixed(2);
+      const total=+Math.max(0, base+bonuses+affiliate+tips+priv.amount-ded-cash.deduct).toFixed(2); // pod nulu nejde — zvyšok hotovosti tréner odovzdá
       const items=[
         {label:'Základ za hodinu', count:st.sessions, per:rule.fixed_per_class||0, amount:+((rule.fixed_per_class||0)*st.sessions).toFixed(2)},
         {label:'🎭 Súkromné hodiny (môj podiel)', count:priv.count, per:'', amount:priv.amount},
