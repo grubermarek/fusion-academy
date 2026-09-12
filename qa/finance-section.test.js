@@ -55,11 +55,10 @@ const req = async (p, o = {}) => { const r = await fetch(B + p, { method: o.meth
   await check('6. Zaznamenať predaj — partneri', '/api/admin/partners');
   await check('6. Zaznamenať predaj — produkty', '/api/products', d => Array.isArray(d) ? null : 'nevrátil zoznam produktov');
   const tx = await check('7. Všetky predaje (transactions)', '/api/transactions', d => Array.isArray(d) ? null : 'nevrátil zoznam');
-  const pay = await check('8. Platby PayPal (payments)', '/api/payments', d => Array.isArray(d) ? null : 'nevrátil zoznam');
-  if (pay) {
-    const pp = pay.filter(p => (p.provider || '').toLowerCase().includes('paypal') || p.paypal_order_id);
-    if (!pp.length) warn('8. Platby PayPal', 'PayPal je vypnutý (platby idú cez Stripe) — sekcia je trvalo prázdna');
-  }
+  // 8. PayPal je z appky preč (12. 9.) — sekcia „Platby kartou" aj /api/payments už neexistujú
+  { const r = await req('/api/payments', { cookie: A });
+    if (r.status === 404) ok('8. Platby (PayPal) — sekcia aj endpoint sú preč (404)');
+    else bad('8. Platby (PayPal)', '/api/payments mal byť preč, HTTP ' + r.status); }
 
   console.log('\n═══ VÝKON & RETENCIA ═══');
   await check('9. Retencia & LTV', '/api/admin/analytics/retention', d => (d.ltv !== undefined || d.cohorts || d.retention) ? null : 'chýbajú metriky');

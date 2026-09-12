@@ -541,38 +541,6 @@ async function payWithStripeSub(){
   btn.disabled = false; btn.textContent = 'Odoberať kartou · Apple Pay · Google Pay';
 }
 
-async function confirmSubscribe(){
-  if(!_subPlanId) return;
-  const btn = document.getElementById('subConfirmBtn');
-  btn.disabled=true; btn.textContent='Presmerovávam na platbu…';
-  try {
-    const r = await fetch('/api/membership/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan_id:_subPlanId}),credentials:'include'});
-    const d = await r.json();
-    if(!r.ok) throw new Error(d.error||'Chyba');
-    if(d.demo){ location.href='/client-dashboard?sub=success'; return; }
-    if(d.approve_url){ window.location.href = d.approve_url; return; }
-    throw new Error('Nepodarilo sa spustiť platbu');
-  } catch(e){
-    btn.disabled=false; btn.textContent='Potvrdiť';
-    alert('Chyba: '+e.message);
-  }
-}
-
-// ── Návrat z platobnej brány ──────────────────────────────────────────────────
-(async()=>{
-  const params = new URLSearchParams(location.search);
-  const subStatus = params.get('sub');
-  const subId = params.get('subscription_id');
-  const planId = params.get('plan');
-  if(subStatus==='success' && subId && planId){
-    const r = await fetch('/api/membership/subscribe/activate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscription_id:subId,plan_id:planId}),credentials:'include'});
-    const d = await r.json();
-    if(d.ok) { alert('✅ Subscription aktivovaná! Členstvo '+d.plan_name+' je aktívne.'); location.href='/client-dashboard'; }
-    else alert('Chyba aktivácie: '+(d.error||'?'));
-  }
-  if(subStatus==='cancel') alert('Subscription bola zrušená. Môžeš skúsiť znova.');
-})();
-
 // ── Zumba Kids ────────────────────────────────────────────────────────────────
 function renderKidsChildSelect(){
   const wrap = document.getElementById('kidsChildSelectWrap');

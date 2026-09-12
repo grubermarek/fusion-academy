@@ -19,14 +19,6 @@ const path      = require('path');
 const fs        = require('fs');
 const { generatePlan: generateMealPlan } = require('./mealplan');
 
-// ─── PayPal Config ────────────────────────────────────────────────────────────
-const PAYPAL_CLIENT_ID     = process.env.PAYPAL_CLIENT_ID     || '';
-const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || '';
-const PAYPAL_ENV           = process.env.PAYPAL_ENV           || 'sandbox';
-const PAYPAL_BASE          = PAYPAL_ENV === 'live'
-  ? 'https://api-m.paypal.com'
-  : 'https://api-m.sandbox.paypal.com';
-
 const app    = express();
 const server = http.createServer(app);
 const io     = new Server(server, { cors: { origin: '*' } });
@@ -88,13 +80,6 @@ const rlSignup = rateLimit({max:30, windowMs:60*60*1000, message:'Priveľa regis
 const rlLookup = rateLimit({max:60, windowMs:60*60*1000, message:'Priveľa požiadaviek. Skús to neskôr.'});
 const rlPublic = rateLimit({max:20, windowMs:60*60*1000, message:'Priveľa odoslaní. Skús to neskôr.'});
 
-// PayPal sa v produkcii nepoužíva (platby idú cez Stripe). Kým nie je nastavený
-// PAYPAL_CLIENT_ID, celá vetva vrátane webhooku je mŕtva — inak by sa dal
-// nepodpísaný webhook zneužiť na „zaplatenie" objednávky bez platby.
-app.use('/api/paypal', (req,res,next)=>{
-  if(!process.env.PAYPAL_CLIENT_ID) return res.status(404).json({error:'PayPal nie je aktívny'});
-  next();
-});
 // Trust Railway / reverse-proxy HTTPS headers
 if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
 
@@ -554,7 +539,7 @@ async function notifyCommissionRecipients(txId, awarded){
   }
 }
 
-// Auto-award MLM commission for an automatic purchase (Stripe/PayPal/cash membership).
+// Auto-award MLM commission for an automatic purchase (Stripe/cash membership).
 // Recipient = the buyer's sponsor (who referred them). No-op if the buyer has no sponsor.
 async function awardPurchaseCommission({buyer_id, amount, product_name}){
   try {
@@ -762,6 +747,12 @@ async function seedData() {
     }
     await q.insert(db.settings,{key:'herbalife_prec_v1', value:true, at:nowISO()});
     console.log(`🧹 Herbalife preč: produktov ${produkty}, článkov ${clanky}, upravených príbehov ${pribehy}`);
+  }
+  // 12. 9.: platba Aleny N. z 5. 9. (spustená v Stripe Dashboarde) bola dopísaná ručným
+  // predajom skôr, než endpoint ukladal spôsob platby — zapísala sa ako hotovosť.
+  if(!(await q.one(db.settings,{key:'alena_tx_karta_v1'}))){
+    await q.update(db.transactions,{_id:'7le2np8zDIN8PyXI'},{$set:{payment_method:'card', method:'card'}});
+    await q.insert(db.settings,{key:'alena_tx_karta_v1', value:true, at:nowISO()});
   }
   // Migration: odstránenie služieb Fit Premena (základný/premium) + Nutričné poradenstvo (InBody analýzu ponechaj)
   { const anOff = await q.update(db.products,{active:true,$or:[
@@ -4610,7 +4601,6 @@ app.post('/api/register', rlSignup, async(req,res)=>{
 app.get('/api/config', async(req,res)=>{
   const founder = await q.one(db.users,{email:'gruber.marek@gmail.com'});
   res.json({
-    paypal_client_id: PAYPAL_CLIENT_ID||'sb', paypal_env: PAYPAL_ENV,
     stripe_enabled: !!process.env.STRIPE_SECRET_KEY,
     meta_pixel_id: process.env.META_PIXEL_ID||'',
     google_ads_id: process.env.GOOGLE_ADS_ID||'',
@@ -10422,8 +10412,6 @@ async function zlucUcty(srcId, tgtId){
   // strhával peniaze bez účtu. Najprv treba jeden zrušiť.
   if(src.stripe_subscription_id && tgt.stripe_subscription_id && src.stripe_subscription_id!==tgt.stripe_subscription_id)
     throw chyba('Oba účty majú aktívny mesačný odber cez Stripe — najprv jeden zruš, potom zlúč.',409);
-  if(src.paypal_subscription_id && tgt.paypal_subscription_id && src.paypal_subscription_id!==tgt.paypal_subscription_id)
-    throw chyba('Oba účty majú aktívny mesačný odber cez PayPal — najprv jeden zruš, potom zlúč.',409);
 
   const prenesene={};
   const pren=async(coll,field,nazov)=>{
@@ -10538,14 +10526,14 @@ async function zlucUcty(srcId, tgtId){
     venceky_role: tgt.venceky_role||src.venceky_role||null,
     vencek_child_name: tgt.vencek_child_name||src.vencek_child_name||'',
     vencek_alumni: tgt.vencek_alumni||src.vencek_alumni||null,
-    // Mesačný odber: Stripe/PayPal páruje obnovu podľa id odberu na účte. Bez prenosu
+    // Mesačný odber: Stripe páruje obnovu podľa id odberu na účte. Bez prenosu
     // by obnova po zlúčení nikoho nenašla — Stripe by strhol peniaze a členstvo by sa
     // nepredĺžilo (Michaela N., 11. 9.). Odber patrí účtu, ktorý ho má.
     ...(()=>{
-      const odber = (tgt.stripe_subscription_id||tgt.paypal_subscription_id) ? tgt
-        : ((src.stripe_subscription_id||src.paypal_subscription_id) ? src : null);
+      const odber = tgt.stripe_subscription_id ? tgt
+        : (src.stripe_subscription_id ? src : null);
       if(!odber) return {};
-      return { stripe_subscription_id: odber.stripe_subscription_id||null, paypal_subscription_id: odber.paypal_subscription_id||null,
+      return { stripe_subscription_id: odber.stripe_subscription_id||null,
         stripe_sub_plan: odber.stripe_sub_plan||null,
         stripe_sub_member: (odber.stripe_sub_member && odber.stripe_sub_member!==src._id) ? odber.stripe_sub_member : tgt._id };
     })(),
@@ -10553,7 +10541,7 @@ async function zlucUcty(srcId, tgtId){
     membership_expires: [tgt.membership_expires,src.membership_expires].filter(Boolean).sort().pop()||null,
     first_membership_at: [tgt.first_membership_at,src.first_membership_at].filter(Boolean).sort()[0]||null,
   };
-  for(const k of ['stripe_subscription_id','paypal_subscription_id','stripe_sub_plan','membership_plan','membership_expires','first_membership_at'])
+  for(const k of ['stripe_subscription_id','stripe_sub_plan','membership_plan','membership_expires','first_membership_at'])
     if(set[k]==null) delete set[k];
   // Prázdne hodnoty nezapisuj — inak by účet mimo venčekov dostal samé nully.
   for(const k of ['venceky_class_id','venceky_school_id','venceky_role','vencek_alumni'])
@@ -10692,7 +10680,9 @@ app.post('/api/admin/transactions', adminAuth, async(req,res)=>{
       if(/vstupenk|event|masterclass/.test(n)) return 'event_ticket';
       return isMerchItem({product_name}) ? 'product' : 'product';
     })();
-    const tx=await q.insert(db.transactions,{partner_id:partner_id||null,client_id:client_id||null,client_name,product_id:product_id||null,product_name,amount:finalAmt,type:typPredaja,user_id:client_id||null,date:date||today(),created_at:nowISO(),notes:notes||''});
+    const tx=await q.insert(db.transactions,{partner_id:partner_id||null,client_id:client_id||null,client_name,product_id:product_id||null,product_name,amount:finalAmt,type:typPredaja,user_id:client_id||null,date:date||today(),
+      // Spôsob platby sa neukladal — predaj kartou sa v účtovníctve ukazoval ako hotovosť (12. 9.).
+      payment_method:String(req.body.payment_method||'cash').slice(0,20),created_at:nowISO(),notes:notes||''});
     // Bez faktúry predaj nevidno v „Predaje & faktúry" — Marek predal merch cez
     // admin a v zozname nebol (1. 9.). Doklad vystavíme rovnako ako pri každom
     // inom predaji; keď klient nie je náš účet, faktúra sa nevystaví (nemáme komu).
@@ -10981,199 +10971,11 @@ app.put('/api/admin/bookings/:id', adminAuth, async(req,res)=>{
   res.json({ok:true, refunded:!!refunded, refund_note:refunded||null});
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PAYPAL HELPERS
-// ═══════════════════════════════════════════════════════════════════════════════
-function ppRequest(method, endpoint, body){
-  return new Promise((resolve, reject)=>{
-    const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`).toString('base64');
-    const url  = new URL(PAYPAL_BASE + endpoint);
-    const postData = body ? JSON.stringify(body) : '';
-    const options = {
-      hostname: url.hostname, path: url.pathname + url.search,
-      method, headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(postData),
-      }
-    };
-    const req = https.request(options, res=>{
-      let data='';
-      res.on('data', d=>data+=d);
-      res.on('end', ()=>{ try{ resolve({status:res.statusCode, body: data?JSON.parse(data):{}}); }catch(e){ resolve({status:res.statusCode, body:data}); }});
-    });
-    req.on('error', reject);
-    if(postData) req.write(postData);
-    req.end();
-  });
-}
-// ── PayPal helper: generic API call ───────────────────────────────────────────
-async function ppApi(method, path, body){
-  const token = await ppGetToken();
-  const url = new URL(PAYPAL_BASE + path);
-  const postData = body ? JSON.stringify(body) : null;
-  return new Promise((resolve,reject)=>{
-    const headers = {'Authorization':`Bearer ${token}`,'Content-Type':'application/json','Accept':'application/json'};
-    if(postData) headers['Content-Length'] = Buffer.byteLength(postData);
-    const req = https.request({hostname:url.hostname,path:url.pathname+url.search,method,headers},res=>{
-      let d=''; res.on('data',c=>d+=c); res.on('end',()=>{ try{ resolve({status:res.statusCode,body:d?JSON.parse(d):null}); }catch(e){ resolve({status:res.statusCode,body:d}); }});
-    });
-    req.on('error',reject);
-    if(postData) req.write(postData);
-    req.end();
-  });
-}
-
-// ── PayPal Subscriptions: create or fetch product & plan IDs ─────────────────
-async function ppEnsureSubscriptionPlan(planKey){
-  const plan = MEMBERSHIP_PLANS[planKey];
-  if(!plan || plan.type==='bundle') return null;
-  if(!PAYPAL_CLIENT_ID) return null;
-
-  // Check if we already have a stored plan_id
-  const stored = await q.one(db.email_steps, {_type:'paypal_plan', plan_key:planKey}).catch(()=>null);
-  if(stored?.paypal_plan_id) return stored.paypal_plan_id;
-
-  // 1. Create product
-  const prodRes = await ppApi('POST','/v1/catalogs/products',{
-    name:`Fusion Academy – ${plan.name}`,
-    description:`Mesačné tančné členstvo ${plan.name}`,
-    type:'SERVICE', category:'EDUCATIONAL_AND_TEXTBOOKS'
-  });
-  if(prodRes.status!==201) throw new Error('PayPal product error: '+JSON.stringify(prodRes.body));
-  const productId = prodRes.body.id;
-
-  // 2. Create billing plan
-  const planRes = await ppApi('POST','/v1/billing/plans',{
-    product_id: productId,
-    name: `Fusion Academy ${plan.name} – mesačné`,
-    description: `Neobmedzené hodiny ${plan.name}`,
-    status:'ACTIVE',
-    billing_cycles:[{
-      frequency:{ interval_unit:'MONTH', interval_count:1 },
-      tenure_type:'REGULAR', sequence:1,
-      total_cycles:0, // 0 = infinite
-      pricing_scheme:{ fixed_price:{ value: plan.price.toFixed(2), currency_code:'EUR' } }
-    }],
-    payment_preferences:{
-      auto_bill_outstanding:true,
-      setup_fee:{ value:'0', currency_code:'EUR' },
-      setup_fee_failure_action:'CONTINUE',
-      payment_failure_threshold:3
-    }
-  });
-  if(planRes.status!==201) throw new Error('PayPal plan error: '+JSON.stringify(planRes.body));
-  const paypalPlanId = planRes.body.id;
-
-  // Store for reuse (using email_steps table as a kv store hack)
-  await q.insert(db.email_steps,{_type:'paypal_plan', plan_key:planKey, paypal_plan_id:paypalPlanId, created_at:nowISO()});
-  return paypalPlanId;
-}
-
-async function ppGetToken(){
-  const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`).toString('base64');
-  const postData = 'grant_type=client_credentials';
-  return new Promise((resolve, reject)=>{
-    const url = new URL(PAYPAL_BASE + '/v1/oauth2/token');
-    const req = https.request({ hostname:url.hostname, path:url.pathname, method:'POST', headers:{'Authorization':`Basic ${auth}`,'Content-Type':'application/x-www-form-urlencoded','Content-Length':Buffer.byteLength(postData)} }, res=>{
-      let d=''; res.on('data',c=>d+=c); res.on('end',()=>{ try{ resolve(JSON.parse(d).access_token); }catch(e){ reject(e); }});
-    });
-    req.on('error', reject); req.write(postData); req.end();
-  });
-}
-async function ppCreateOrder(amount, currency='EUR', description='Fusion Academy'){
-  if(!PAYPAL_CLIENT_ID) throw new Error('PayPal nie je nakonfigurovaný');
-  const token = await ppGetToken();
-  const url = new URL(PAYPAL_BASE+'/v2/checkout/orders');
-  const body = JSON.stringify({ intent:'CAPTURE', purchase_units:[{ amount:{ currency_code:currency, value:parseFloat(amount).toFixed(2) }, description }] });
-  return new Promise((resolve,reject)=>{
-    const req = https.request({ hostname:url.hostname, path:url.pathname, method:'POST', headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json','Content-Length':Buffer.byteLength(body)} }, res=>{
-      let d=''; res.on('data',c=>d+=c); res.on('end',()=>{ try{ resolve({status:res.statusCode,body:JSON.parse(d)}); }catch(e){ resolve({status:res.statusCode,body:d}); }});
-    });
-    req.on('error',reject); req.write(body); req.end();
-  });
-}
-async function ppCaptureOrder(orderId){
-  if(!PAYPAL_CLIENT_ID) throw new Error('PayPal nie je nakonfigurovaný');
-  const token = await ppGetToken();
-  const url = new URL(`${PAYPAL_BASE}/v2/checkout/orders/${orderId}/capture`);
-  const body = '{}';
-  return new Promise((resolve,reject)=>{
-    const req = https.request({ hostname:url.hostname, path:url.pathname, method:'POST', headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json','Content-Length':2} }, res=>{
-      let d=''; res.on('data',c=>d+=c); res.on('end',()=>{ try{ resolve({status:res.statusCode,body:JSON.parse(d)}); }catch(e){ resolve({status:res.statusCode,body:d}); }});
-    });
-    req.on('error',reject); req.write(body); req.end();
-  });
-}
-
-// ─── PayPal Routes ────────────────────────────────────────────────────────────
-app.post('/api/paypal/create-order', async(req,res)=>{
-  try {
-    const { amount, description, ref_id, ref_type } = req.body;
-    if(!amount) return res.status(400).json({error:'Chýba suma'});
-    if(!PAYPAL_CLIENT_ID) return res.json({ ok:false, demo:true, message:'PayPal sandbox nie je nakonfigurovaný – objednávka je evidovaná bez platby' });
-    const result = await ppCreateOrder(amount, 'EUR', description||'Fusion Academy');
-    if(result.status!==201) return res.status(400).json({error:'PayPal chyba', detail: result.body});
-    // Save pending payment record
-    const payment = await q.insert(db.payments,{
-      paypal_order_id: result.body.id,
-      user_id: req.session?.uid||null,
-      amount:+parseFloat(amount).toFixed(2),
-      currency:'EUR', description:description||'Fusion Academy',
-      ref_id:ref_id||null, ref_type:ref_type||null,
-      status:'pending', created_at:nowISO()
-    });
-    res.json({ ok:true, paypalOrderId: result.body.id, paymentId: payment._id });
-  } catch(e){ res.status(500).json({error:e.message}); }
-});
-
-app.post('/api/paypal/capture-order', async(req,res)=>{
-  try {
-    const { paypalOrderId, paymentId } = req.body;
-    if(!paypalOrderId) return res.status(400).json({error:'Chýba paypalOrderId'});
-    const result = await ppCaptureOrder(paypalOrderId);
-    const captured = result.status===201 || result.status===200;
-    const payment = paymentId ? await q.one(db.payments,{_id:paymentId}) : null;
-    if(captured && payment){
-      await q.update(db.payments,{_id:paymentId},{$set:{status:'completed',captured_at:nowISO(),paypal_capture_id:result.body?.purchase_units?.[0]?.payments?.captures?.[0]?.id||''}});
-      const isTip = payment.ref_type==='tip';
-      if(isTip){ await recordTip(payment); }
-      else {
-        trackPurchase(payment.user_id, payment.amount);
-        { const pu = payment.user_id ? await q.one(db.users,{_id:payment.user_id}) : null;
-          createInvoice({user_id:payment.user_id, client_name:pu?.name, client_email:pu?.email,
-            items:[{desc:payment.description||'Platba Fusion Academy', qty:1, total:payment.amount}],
-            total:payment.amount, method:'PayPal'}); }
-        if(payment.status!=='completed') awardPurchaseCommission({buyer_id:payment.user_id, amount:payment.amount, product_name:payment.description||'Členstvo'});
-      }
-      // If it's a membership payment, activate membership (member_id = child if family purchase)
-      if(payment.ref_type==='membership' && payment.user_id){
-        await activateMembership(payment.member_id || payment.user_id, payment.ref_id, 30);
-        // kupón rezervovaný pri žiadosti sa započíta až teraz, keď peniaze prišli (E11/2)
-        if(payment.promo_code && payment.promo_redemption_id){
-          const pr=await q.one(db.promo_codes,{code:payment.promo_code});
-          if(pr){ const r=await commitPromoUse(pr, payment.promo_redemption_id, {discount:payment.promo_discount}).catch(()=>({ok:false, reason:'chyba zápisu'}));
-            if(!r.ok) await promoAdminWarn(await q.one(db.users,{_id:payment.user_id}), payment.promo_code, r.reason, payment.promo_discount, payment.description||'členstvo'); }
-        }
-      }
-      // If it's a booking payment, confirm booking
-      if(payment.ref_type==='booking' && payment.ref_id){
-        await q.update(db.bookings,{_id:payment.ref_id},{$set:{status:'confirmed',paid:true,paid_at:nowISO()}});
-      }
-      // Notify user
-      if(payment.user_id){
-        await q.insert(db.notifications,{user_id:payment.user_id,type:'payment',title:'Platba prijatá ✅',body:`Platba ${payment.amount}€ bola úspešne spracovaná.`,read:false,created_at:nowISO()});
-      }
-    }
-    res.json({ ok:captured, status: result.body?.status||'UNKNOWN', detail: captured?undefined:result.body });
-  } catch(e){ res.status(500).json({error:e.message}); }
-});
-
 // ─── TIPY (dank) pre trénerov/adminov — 80 % tréner / 20 % my ──────────────────
 const TIP_TRAINER_SHARE = 0.8;
 async function recordTip(payment){
   try{
-    if(payment.paypal_order_id && await q.one(db.tips,{paypal_order_id:payment.paypal_order_id})) return; // idempotencia
+    if(payment.order_ref && await q.one(db.tips,{order_ref:payment.order_ref})) return; // idempotencia
     const trainer = await q.one(db.users,{_id:payment.ref_id});
     if(!trainer) return;
     const from = payment.user_id ? await q.one(db.users,{_id:payment.user_id}) : null;
@@ -11187,7 +10989,7 @@ async function recordTip(payment){
       from_user_id: from?._id||null, from_name: from?.name||'Anonym', anonymous: anon,
       to_user_id: trainer._id, to_name: trainer.name,
       amount, trainer_cut:trainerCut, our_cut:ourCut, message,
-      month: currentMonth(), paypal_order_id: payment.paypal_order_id||null,
+      month: currentMonth(), order_ref: payment.order_ref||null,
       status:'paid', created_at: nowISO()
     });
     await q.insert(db.notifications,{user_id:trainer._id, type:'tip',
@@ -11207,7 +11009,7 @@ async function recordTip(payment){
     return tip;
   }catch(e){ console.error('recordTip:',e.message); }
 }
-// Vytvorí tip (PayPal/karta). Recipient musí byť tréner/admin.
+// Vytvorí tip (karta cez Stripe). Recipient musí byť tréner/admin.
 app.post('/api/tips/create', auth, async(req,res)=>{
   try{
     const { to_user_id, amount, message } = req.body;
@@ -11241,7 +11043,7 @@ app.post('/api/tips/create', auth, async(req,res)=>{
       return res.json({ ok:true, url:r.body.url });
     }
     // 2) Demo (Stripe nenakonfigurovaný) — zapíš rovno pre test
-    await recordTip({ user_id:req.session.uid, ref_id:to_user_id, ref_type:'tip', amount:amt, tip_message:msg, tip_anonymous:anon, paypal_order_id:'demo-'+Date.now() });
+    await recordTip({ user_id:req.session.uid, ref_id:to_user_id, ref_type:'tip', amount:amt, tip_message:msg, tip_anonymous:anon, order_ref:'demo-'+Date.now() });
     res.json({ ok:true, demo:true });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -11295,44 +11097,6 @@ app.delete('/api/admin/tips/:id', adminAuth, async(req,res)=>{
     await auditLog(req,'tip_delete',req.params.id,{},{amount:t.amount,to:t.to_name,from:t.from_name},'');
     res.json({ ok:true });
   }catch(e){ res.status(500).json({error:e.message}); }
-});
-
-// PayPal nepoužívame (Marek 1. 9.) — v dátach nie je ani jedna PayPal platba
-// a kľúče nie sú nastavené. Handler nižšie pritom NEOVERUJE podpis a vie
-// označiť platbu ako zaplatenú, takže ho radšej zatvárame. Kód ostáva, aby sa
-// dal zapnúť späť premennou PAYPAL_ENABLED=1, keby sa PayPal niekedy vrátil.
-const PAYPAL_ENABLED = process.env.PAYPAL_ENABLED==='1';
-app.use(['/api/paypal/webhook','/api/paypal/create-order','/api/paypal/capture-order'], (req,res,next)=>{
-  if(PAYPAL_ENABLED) return next();
-  return res.status(404).json({error:'not_found'});
-});
-app.post('/api/paypal/webhook', express.json({type:'*/*'}), async(req,res)=>{
-  // Basic webhook handler – extend with signature verification for production
-  const event = req.body;
-  if(event?.event_type==='PAYMENT.CAPTURE.COMPLETED'){
-    const orderId = event?.resource?.supplementary_data?.related_ids?.order_id;
-    if(orderId){
-      const payment = await q.one(db.payments,{paypal_order_id:orderId});
-      if(payment && payment.status!=='completed'){
-        await q.update(db.payments,{_id:payment._id},{$set:{status:'completed',captured_at:nowISO()}});
-      }
-    }
-  }
-  res.status(200).json({ok:true});
-});
-
-app.get('/api/payments', adminAuth, async(req,res)=>{
-  const payments = await q.find(db.payments,{});
-  payments.sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
-  res.json(payments.slice(0,200));
-});
-
-app.get('/api/payments/:id', auth, async(req,res)=>{
-  const p = await q.one(db.payments,{_id:req.params.id});
-  if(!p) return res.status(404).json({error:'Nenájdená'});
-  if(p.user_id!==req.session.uid && !(await q.one(db.users,{_id:req.session.uid,is_admin:true})))
-    return res.status(403).json({error:'Prístup zamietnutý'});
-  res.json(p);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -11409,7 +11173,7 @@ async function duplicitneClenstvo(memberId, planId, payer, {odber=false}={}){
   const plan = MEMBERSHIP_PLANS[planId];
   if(!plan || plan.type==='bundle') return null;
   // Odber beží na platiteľovi; keď platí za dieťa, viaže sa na konkrétneho člena.
-  const subId = payer && (payer.stripe_subscription_id || payer.paypal_subscription_id);
+  const subId = payer && payer.stripe_subscription_id;
   const autoRenew = !!subId && (!payer.stripe_sub_member || payer.stripe_sub_member===memberId);
   const podpora = ' Ak chceš niečo zmeniť, napíš nám na 0904 31 51 51 — spravíme to za teba. 💛';
   if(odber && autoRenew) return { code:'subscription_exists', auto_renew:true,
@@ -11560,161 +11324,6 @@ app.get('/api/membership/plans', async(req,res)=>{
   res.json(MEMBERSHIP_PLANS);
 });
 
-// ── Create PayPal Subscription ─────────────────────────────────────────────────
-app.post('/api/membership/subscribe', auth, async(req,res)=>{
-  try {
-    const {plan_id} = req.body;
-    const plan = MEMBERSHIP_PLANS[plan_id];
-    if(!plan || plan.type==='bundle') return res.status(400).json({error:'Neplatný plán pre subscription'});
-    // Audit 3. 9. 2026: bez PAYPAL_CLIENT_ID tu bol „demo režim", ktorý členstvo
-    // aktivoval bez platby — a na prode PayPal nastavený nie je, takže by si ho
-    // ktokoľvek prihlásený vedel zapnúť zadarmo. Platí sa kartou (Stripe).
-    if(!PAYPAL_CLIENT_ID) return res.status(400).json({error:'PayPal platba nie je dostupná — zaplať kartou.'});
-    const u = await q.one(db.users,{_id:req.session.uid});
-    const paypalPlanId = await ppEnsureSubscriptionPlan(plan_id);
-    const subRes = await ppApi('POST','/v1/billing/subscriptions',{
-      plan_id: paypalPlanId,
-      subscriber: { name:{ given_name: u.name.split(' ')[0], surname: u.name.split(' ').slice(1).join(' ')||'-' }, email_address: u.email },
-      application_context: {
-        brand_name:'Fusion Academy',
-        locale:'sk-SK',
-        shipping_preference:'NO_SHIPPING',
-        user_action:'SUBSCRIBE_NOW',
-        return_url:`${APP_URL}/client-dashboard?sub=success&plan=${plan_id}`,
-        cancel_url:`${APP_URL}/pricing?sub=cancel`
-      }
-    });
-    if(subRes.status!==201) return res.status(400).json({error:'PayPal subscription chyba', detail: subRes.body});
-    const approveLink = subRes.body.links?.find(l=>l.rel==='approve')?.href;
-    // Store pending subscription
-    await q.insert(db.payments,{
-      paypal_subscription_id: subRes.body.id, user_id:u._id, amount:plan.price,
-      currency:'EUR', description:`Subscription ${plan.name}`, ref_id:plan_id,
-      ref_type:'subscription', status:'pending', created_at:nowISO()
-    });
-    res.json({ok:true, subscription_id: subRes.body.id, approve_url: approveLink});
-  } catch(e){ res.status(500).json({error:e.message}); }
-});
-
-// ── Activate subscription after PayPal approval ────────────────────────────────
-app.post('/api/membership/subscribe/activate', auth, async(req,res)=>{
-  try {
-    const {subscription_id, plan_id} = req.body;
-    if(!subscription_id || !plan_id) return res.status(400).json({error:'Chýba subscription_id alebo plan_id'});
-    // Verify with PayPal
-    const subRes = await ppApi('GET',`/v1/billing/subscriptions/${subscription_id}`);
-    if(subRes.status!==200) return res.status(400).json({error:'Subscription nenájdená'});
-    const sub = subRes.body;
-    if(!['ACTIVE','APPROVED'].includes(sub.status)) return res.status(400).json({error:'Subscription nie je aktívna: '+sub.status});
-    // Activate membership
-    await activateMembership(req.session.uid, plan_id);
-    // Save subscription_id on user
-    await q.update(db.users,{_id:req.session.uid},{$set:{paypal_subscription_id: subscription_id, subscription_plan: plan_id}});
-    await q.update(db.payments,{paypal_subscription_id:subscription_id},{$set:{status:'active', activated_at:nowISO()}});
-    trackPurchase(req.session.uid, MEMBERSHIP_PLANS[plan_id]?.price);
-    { const pu = await q.one(db.users,{_id:req.session.uid});
-      createInvoice({user_id:req.session.uid, client_name:pu?.name, client_email:pu?.email,
-        items:[{desc:`Členstvo ${MEMBERSHIP_PLANS[plan_id]?.name} (mesačný odber)`, qty:1, total:MEMBERSHIP_PLANS[plan_id]?.price||0}],
-        total:MEMBERSHIP_PLANS[plan_id]?.price||0, method:'PayPal (automatický odber)'}); }
-    awardPurchaseCommission({buyer_id:req.session.uid, amount:MEMBERSHIP_PLANS[plan_id]?.price, product_name:`Členstvo ${MEMBERSHIP_PLANS[plan_id]?.name}`});
-    res.json({ok:true, plan_name: MEMBERSHIP_PLANS[plan_id]?.name});
-  } catch(e){ res.status(500).json({error:e.message}); }
-});
-
-// ── Cancel subscription ────────────────────────────────────────────────────────
-app.post('/api/membership/subscribe/cancel', auth, async(req,res)=>{
-  try {
-    const u = await q.one(db.users,{_id:req.session.uid});
-    if(!u.paypal_subscription_id) return res.status(400).json({error:'Nemáš aktívnu subscription'});
-    const cancelRes = await ppApi('POST',`/v1/billing/subscriptions/${u.paypal_subscription_id}/cancel`,{reason:'Zrušenie na žiadosť klienta'});
-    if(cancelRes.status!==204) return res.status(400).json({error:'Chyba zrušenia PayPal'});
-    await q.update(db.users,{_id:u._id},{$set:{paypal_subscription_id:null, subscription_plan:null}});
-    await recordMembershipCancel(u, req.body.reason, req.body.note, 'paypal_self');
-    await q.insert(db.notifications,{user_id:u._id,type:'membership',title:'Subscription zrušená',body:'Automatické obnovenie bolo zrušené. Členstvo zostáva aktívne do konca obdobia.',read:false,created_at:nowISO()});
-    res.json({ok:true});
-  } catch(e){ res.status(500).json({error:e.message}); }
-});
-
-// ── Admin: cancel subscription for user ───────────────────────────────────────
-app.post('/api/admin/membership/cancel-subscription', adminAuth, async(req,res)=>{
-  try {
-    const u = await q.one(db.users,{_id:req.body.user_id});
-    if(!u?.paypal_subscription_id) return res.status(400).json({error:'Užívateľ nemá subscription'});
-    await ppApi('POST',`/v1/billing/subscriptions/${u.paypal_subscription_id}/cancel`,{reason:'Admin zrušenie'});
-    await q.update(db.users,{_id:u._id},{$set:{paypal_subscription_id:null,subscription_plan:null}});
-    res.json({ok:true});
-  } catch(e){ res.status(500).json({error:e.message}); }
-});
-
-// ── PayPal Webhook: subscription events ───────────────────────────────────────
-// Raw body needed for webhook signature verification
-app.post('/api/paypal/webhook', express.raw({type:'application/json'}), async(req,res)=>{
-  try {
-    const event = JSON.parse(req.body.toString());
-    const {event_type, resource} = event;
-    console.log('📦 PayPal webhook:', event_type);
-
-    if(event_type === 'BILLING.SUBSCRIPTION.RENEWED' || event_type === 'PAYMENT.SALE.COMPLETED'){
-      // Find user by subscription_id
-      const subId = resource.billing_agreement_id || resource.id;
-      if(!subId) return res.sendStatus(200);
-      const u = await q.one(db.users,{paypal_subscription_id:subId});
-      if(!u) return res.sendStatus(200);
-      const planId = u.subscription_plan;
-      const plan = MEMBERSHIP_PLANS[planId];
-      if(!plan) return res.sendStatus(200);
-
-      // Extend membership by 30 days from current expiry
-      const existing = await q.one(db.memberships,{user_id:u._id,status:'active'});
-      const now = new Date();
-      const base = existing && new Date(existing.expires_at) > now ? new Date(existing.expires_at) : now;
-      const newExpiry = new Date(base.getTime() + 30*86400000);
-      if(existing){
-        await q.update(db.memberships,{_id:existing._id},{$set:{expires_at:newExpiry.toISOString(),updated_at:nowISO()}});
-      } else {
-        await q.insert(db.memberships,{user_id:u._id,plan_id:planId,plan_name:plan.name,price:plan.price,status:'active',started_at:now.toISOString(),expires_at:newExpiry.toISOString(),created_at:nowISO()});
-      }
-      await q.update(db.users,{_id:u._id},{$set:{membership_plan:planId,membership_expires:newExpiry.toISOString()}});
-      const amount = resource.amount?.total || plan.price;
-      await q.insert(db.transactions,{type:'subscription_renewal',user_id:u._id,user_name:u.name,amount:parseFloat(amount),payment_method:'paypal_subscription',note:`Auto-renewal ${plan.name}`,plan_id:planId,created_at:nowISO(),month:today().slice(0,7)});
-      createInvoice({user_id:u._id, client_name:u.name, client_email:u.email,
-        items:[{desc:`Členstvo ${plan.name} — mesačná obnova`, qty:1, total:parseFloat(amount)}],
-        total:parseFloat(amount), method:'PayPal (automatický odber)'});
-      awardPurchaseCommission({buyer_id:u._id, amount:parseFloat(amount), product_name:`Členstvo ${plan.name} (obnova)`});
-      await q.insert(db.notifications,{user_id:u._id,type:'membership',title:'Členstvo obnovené 🔄',body:`${plan.name} automaticky obnovené do ${newExpiry.toLocaleDateString('sk-SK')}.`,read:false,created_at:nowISO()});
-      if(u.email) sendMail(u.email,`🔄 Členstvo obnovené – ${plan.name}`,
-        emailTemplate('Členstvo automaticky obnovené 🔄',
-          `<p>Ahoj <b>${u.name}</b>,</p><p>Tvoje členstvo <b>${plan.name}</b> bolo automaticky obnovené a platí do <b>${newExpiry.toLocaleDateString('sk-SK')}</b>.</p><p>Ďakujeme, že si s nami! 💃</p>`,
-          '📱 Môj profil',`${APP_URL}/client-dashboard`)).catch(()=>{});
-    }
-
-    if(event_type === 'BILLING.SUBSCRIPTION.PAYMENT.FAILED'){
-      const subId = resource.id;
-      const u = await q.one(db.users,{paypal_subscription_id:subId});
-      if(!u?.email) return res.sendStatus(200);
-      await q.insert(db.notifications,{user_id:u._id,type:'payment',title:'⚠️ Platba zlyhala',body:'Automatické obnovenie členstva sa nepodarilo. Skontroluj platobnú metódu.',read:false,created_at:nowISO()});
-      sendMail(u.email,'⚠️ Platba za členstvo zlyhala',
-        emailTemplate('Platba zlyhala ⚠️',
-          `<p>Ahoj <b>${u.name}</b>,</p><p>Automatická platba za tvoje členstvo <b>zlyhala</b>.</p><p>PayPal sa pokúsi o platbu znova. Ak problém pretrváva, skontroluj svoju platobnú metódu v PayPal účte.</p>`,
-          '💳 Spravovať platbu',`https://www.paypal.com/myaccount/autopay/`)).catch(()=>{});
-    }
-
-    if(event_type === 'BILLING.SUBSCRIPTION.CANCELLED'){
-      const subId = resource.id;
-      const u = await q.one(db.users,{paypal_subscription_id:subId});
-      if(u){
-        await q.update(db.users,{_id:u._id},{$set:{paypal_subscription_id:null,subscription_plan:null}});
-        await q.insert(db.notifications,{user_id:u._id,type:'membership',title:'Subscription zrušená',body:'Automatické obnovenie členstva bolo zrušené.',read:false,created_at:nowISO()});
-      }
-    }
-
-    res.sendStatus(200);
-  } catch(e){
-    console.error('Webhook error:', e.message);
-    res.sendStatus(200); // always 200 to prevent PayPal retries
-  }
-});
-
 // ── Promo / zľavové kódy ──────────────────────────────────────────────────────
 // Kanonický tvar kódu — rovnaký ako pri tvorbe v admine (bez akýchkoľvek medzier,
 // veľké písmená), inak „LETO 10" neprejde, hoci admin uložil LETO10. String() preto,
@@ -11789,7 +11398,7 @@ async function validatePromo(code, price, userId, context, opts){
 //     (druhý súbežný insert padne na indexe → odmietnuť),
 //  2) max_uses: podmienený $inc (used_count < max_uses) zmení 0 alebo 1 záznam —
 //     pokračuje sa len pri 1, inak sa riadok z 1) zruší.
-// pending:true (platba prevodom/PayPal): len riadok ako zámok, počet použití sa
+// pending:true (platba prevodom): len riadok ako zámok, počet použití sa
 // odpočíta až po prijatí peňazí (commitPromoUse); zrušená žiadosť ho uvoľní
 // (releasePromoUse) — nezaplatená žiadosť tak kód nespáli (E11/2).
 async function promoCountUse(promo){
@@ -12029,10 +11638,9 @@ app.post('/api/membership/buy', auth, async(req,res)=>{
       if(!v.ok) return res.status(400).json({error:'Promo kód: '+v.reason});
       promoDiscount = v.discount; basePrice = v.final; promoCode = v.promo.code; promoObj = v.promo;
     }
-    // Audit 3. 9. 2026: rovnaká diera ako pri subscribe — bez PAYPAL_CLIENT_ID
-    // sa členstvo aktivovalo „demo" zadarmo. Frontend PayPal neposiela, API áno.
-    // Kontrola je PRED rezerváciou kódu a odpísaním kreditu, nech niet čo vracať.
-    if(payment_method==='paypal' && !PAYPAL_CLIENT_ID) return res.status(400).json({error:'PayPal platba nie je dostupná — zaplať kartou.'});
+    // PayPal už v appke nie je (12. 9.). Kartou sa platí cez Stripe checkout; sem chodí
+    // prevod/hotovosť. Odmietnuť PRED rezerváciou kódu a odpísaním kreditu, nech niet čo vracať.
+    if(payment_method==='paypal') return res.status(400).json({error:'PayPal už nepoužívame — zaplať kartou.'});
 
     // ── Referral credit discount (always from parent's balance) ────────────────
     let creditUsed = 0;
@@ -12045,7 +11653,7 @@ app.post('/api/membership/buy', auth, async(req,res)=>{
 
     // ── Rezervácia kódu — atomicky, PRED odpísaním kreditu a aktiváciou (E11/1) ──
     // 0 € (kód/kredit pokryje všetko): použitie sa započíta hneď, aktivácia je okamžitá.
-    // Prevod/PayPal: len zámok (once_per_user); počet sa odpočíta, až keď peniaze
+    // Prevod: len zámok (once_per_user); počet sa odpočíta, až keď peniaze
     // prídu — nezaplatená či zrušená žiadosť kód nespáli (E11/2).
     let promoRes = null;
     if(promoObj){
@@ -12072,12 +11680,6 @@ app.post('/api/membership/buy', auth, async(req,res)=>{
         return res.json({ok:true, credit_used:creditUsed, promo_discount:promoDiscount, final_price:0, message:`Členstvo ${plan.name}${forWhom} aktivované${promoCode?' (promo '+promoCode+')':' pomocou referral kreditu'}!`});
       }
 
-      if(payment_method==='paypal'){
-        const result = await ppCreateOrder(finalPrice,'EUR',`Fusion Academy – ${plan.name}${forWhom}`);
-        if(result.status!==201){ await promoRollback(); return res.status(400).json({error:'PayPal chyba'}); }
-        const payment = await q.insert(db.payments,{paypal_order_id:result.body.id,user_id:req.session.uid,member_id:memberId,amount:finalPrice,currency:'EUR',description:`Členstvo ${plan.name}${forWhom}${promoNote}`,ref_id:plan_id,ref_type:'membership',status:'pending',created_at:nowISO(),credit_used:creditUsed,promo_code:promoCode,promo_discount:promoDiscount,promo_redemption_id:promoRes?promoRes.redemption_id:null});
-        return res.json({ok:true, paypalOrderId:result.body.id, paymentId:payment._id, credit_used:creditUsed, promo_discount:promoDiscount, final_price:finalPrice});
-      }
       // Bank transfer / cash – admin will confirm; kód sa započíta až pri potvrdení platby
       manualPay=await q.insert(db.payments,{user_id:req.session.uid,member_id:memberId,amount:finalPrice,currency:'EUR',description:`Členstvo ${plan.name}${forWhom}${creditUsed?` (kredit: -${creditUsed}€)`:''}${promoNote}`,ref_id:plan_id,ref_type:'membership',status:'pending_manual',payment_method:'manual',created_at:nowISO(),credit_used:creditUsed,promo_code:promoCode,promo_discount:promoDiscount,promo_redemption_id:promoRes?promoRes.redemption_id:null});
     } catch(e){ await promoRollback(); throw e; }
@@ -12434,7 +12036,7 @@ app.get('/api/admin/memberships-detailed', adminAuth, async(req,res)=>{
       const m=monthlyByUser[uid], u=uMap[uid]; if(!u||u.is_admin) continue;
       const plan=MEMBERSHIP_PLANS[m.plan_id]||{};
       const method=(m.payment_method||m.method||'').toLowerCase();
-      const isAuto=!!(u.stripe_subscription_id||u.paypal_subscription_id);
+      const isAuto=!!u.stripe_subscription_id;
       const base={ ...contact(u), plan_id:m.plan_id, plan_name:plan.name||m.plan_name||m.plan_id,
         method, is_cash:method==='cash', is_auto:isAuto, expires_at:(m.expires_at||'').slice(0,10) };
       const isActive=(m.status==='active')&&((m.expires_at||'')>nowISOv);
@@ -12498,7 +12100,7 @@ app.post('/api/admin/cash-upsell-blast', adminAuth, async(req,res)=>{
       if(seen.has(m.user_id)) continue; seen.add(m.user_id);
       const u=await q.one(db.users,{_id:m.user_id});
       if(!u||u.is_admin){ continue; }
-      if(u.stripe_subscription_id||u.paypal_subscription_id){ continue; } // už platí kartou
+      if(u.stripe_subscription_id){ continue; } // už platí kartou
       const done=await sendCashUpsellTo(u, MEMBERSHIP_PLANS[m.plan_id]);
       if(done) sent++; else skipped++;
     }
@@ -12865,11 +12467,10 @@ app.get('/api/admin/finance/stats', adminAuth, async(req,res)=>{
       year:+(revYear-refunds.year).toFixed(2), total:+(revTotal-refunds.total).toFixed(2) };
     const nk=await nakladyObdobia(from, to, period, refunds.period);
 
-    // MRR = recurring subscriptions only (Stripe + PayPal)
+    // MRR = recurring subscriptions only (Stripe)
     let mrr = 0;
     for(const u of users){
       if(u.stripe_subscription_id){ mrr += MEMBERSHIP_PLANS[u.stripe_sub_plan]?.price||0; }
-      if(u.paypal_subscription_id){ mrr += MEMBERSHIP_PLANS[u.subscription_plan]?.price||0; }
     }
     mrr = +mrr.toFixed(2);
 
@@ -13161,7 +12762,7 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
         const r = refundByPay[p._id];
         return {id:p._id, date:p.captured_at||p.activated_at||p.created_at, amount:+p.amount||0,
           method:p.provider||p.method||'—', note:p.note||p.plan_name||'', status:p.status,
-          gateway: p.stripe_payment_intent ? 'stripe' : (p.paypal_capture_id ? 'paypal' : 'manual'),
+          gateway: p.stripe_payment_intent ? 'stripe' : 'manual',
           refundable: !r && (+p.amount||0)>0,
           refunded: r ? {amount:+r.amount||0, type:r.type, date:(r.created_at||'').slice(0,10), credit_note:r.credit_note||null} : null };
       }).concat(extraTx.map(t=>({
@@ -14127,15 +13728,6 @@ app.get('/api/admin/payouts/export.csv', adminAuth, async(req,res)=>{
 const REFUND_REASONS={ requested:'Na žiadosť klienta', duplicate:'Duplicitná platba', service_issue:'Problém so službou', cancelled_class:'Zrušená hodina', goodwill:'Ústretovosť', error:'Chyba účtovania', other:'Iné' };
 const REFUND_TYPES=['full','partial','storno','credit_note','app_credit','transfer'];
 
-async function ppRefundCapture(captureId, amount){
-  const token=await ppGetToken();
-  const r=await fetch(`${PAYPAL_BASE}/v2/payments/captures/${captureId}/refund`,{
-    method:'POST', headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'},
-    body: JSON.stringify(amount?{amount:{value:(+amount).toFixed(2),currency_code:'EUR'}}:{})
-  });
-  return { status:r.status, body: await r.json().catch(()=>({})) };
-}
-
 app.get('/api/admin/refund-reasons', adminAuth, (req,res)=>res.json({reasons:REFUND_REASONS,types:REFUND_TYPES}));
 
 // ─── PHASE M: Exporty jedným klikom ─────────────────────────────────────────────
@@ -14267,7 +13859,7 @@ app.post('/api/admin/reset-data', adminAuth, async(req,res)=>{
     // Reset per-user counters on the kept staff accounts (fresh test stats)
     await q.update(db.users,{},{$set:{visit_count:0, no_show_count:0, referral_credit:0,
       first_class_email_sent:false, winback_sent:false, review_asked:false, free_credits:0,
-      single_entries:0, stripe_subscription_id:null, paypal_subscription_id:null,
+      single_entries:0, stripe_subscription_id:null,
       membership_plan:null, membership_expires:null}},{multi:true});
 
     // Fresh audit entry documenting the reset (audit was just wiped)
@@ -14317,10 +13909,6 @@ app.post('/api/admin/refunds', adminAuth, async(req,res)=>{
         const r=await stripeApi('refunds',{payment_intent:pay.stripe_payment_intent, amount:Math.round(amt*100)});
         gateway={method:'stripe', ref:r.body?.id||null, ok:r.status<300};
         if(!gateway.ok) return res.status(400).json({error:'Stripe refund zlyhal: '+(r.body?.error?.message||r.status)});
-      } else if(pay.paypal_capture_id && PAYPAL_CLIENT_ID){
-        const r=await ppRefundCapture(pay.paypal_capture_id, type==='partial'?amt:null);
-        gateway={method:'paypal', ref:r.body?.id||null, ok:r.status<300};
-        if(!gateway.ok) return res.status(400).json({error:'PayPal refund zlyhal: '+(r.body?.message||r.status)});
       }
     }
     // App credit → bump referral_credit
@@ -14375,7 +13963,7 @@ app.get('/api/admin/refundable-payments', adminAuth, async(req,res)=>{
   list=list.map(p=>({ id:p._id, amount:+p.amount||0, description:p.description||p.ref_type||'Platba',
     client:users[p.user_id]?.name||'—', email:users[p.user_id]?.email||'',
     date:(p.captured_at||p.activated_at||p.created_at||'').slice(0,10),
-    gateway: p.stripe_payment_intent?'stripe': p.paypal_capture_id?'paypal':(p.provider||p.payment_method||'manual') }));
+    gateway: p.stripe_payment_intent?'stripe':(p.provider||p.payment_method||'manual') }));
   if(term) list=list.filter(p=>p.client.toLowerCase().includes(term)||p.email.toLowerCase().includes(term)||p.description.toLowerCase().includes(term));
   res.json(list.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,100));
 });
@@ -14490,7 +14078,7 @@ async function fulfillStripeCheckout(s){
     const claimedTip = await q.update(db.payments,{stripe_session_id:s.id, status:{$ne:'completed'}},{$set:{status:'completed', captured_at:nowISO(), stripe_payment_intent:s.payment_intent||''}});
     if(!claimedTip) return {ok:true, already:true};
     await recordTip({ user_id:meta.gifter_id, ref_id:meta.to_user_id, ref_type:'tip',
-      amount:+meta.amount, tip_message:meta.message||'', tip_anonymous:meta.anon==='1', paypal_order_id:'stripe-'+s.id });
+      amount:+meta.amount, tip_message:meta.message||'', tip_anonymous:meta.anon==='1', order_ref:'stripe-'+s.id });
     return {ok:true, tip:true};
   }
   const plan = MEMBERSHIP_PLANS[meta.plan_id];
@@ -20151,7 +19739,7 @@ app.get('/api/me', async(req,res)=>{
     role_label: role.label, role_icon: role.icon, dash_url: role.dashUrl,
     created_at: u.created_at, avatar: u.avatar||null,
     birthday: u.birthday||'', anonymous: !!u.anonymous,
-    stripe_subscription: !!u.stripe_subscription_id, paypal_subscription: !!u.paypal_subscription_id,
+    stripe_subscription: !!u.stripe_subscription_id,
   });
 });
 
@@ -21980,7 +21568,7 @@ app.post('/api/email-queue/run', async(req,res)=>{
 // ── Email automation API ──────────────────────────────────────────────────────
 // GET all sequences with their steps
 app.get('/api/admin/email-sequences', adminAuth, async(req,res)=>{
-  // email_steps kolekcia obsahuje aj PayPal plány (_type:'paypal_plan') — do zoznamu
+  // email_steps kolekcia obsahuje aj staré technické záznamy s _type — do zoznamu
   // sekvencií nepatria (zobrazovali sa ako neznáma sivá sekvencia).
   const steps = (await q.find(db.email_steps, {})).filter(s=>s.sequence && !s._type);
   steps.sort((a,b)=>a.sequence.localeCompare(b.sequence)||(a.day-b.day));
@@ -23512,10 +23100,9 @@ async function businessRankData(fresh){
   const passesSoldMonth=(membs.filter(m=>(m.status==='bundle'||MEMBERSHIP_PLANS[m.plan_id]?.type==='bundle') && (m.created_at||'').startsWith(monthStr) && +m.price>0)).length;
   const passesSoldTotal=(membs.filter(m=>(m.status==='bundle'||MEMBERSHIP_PLANS[m.plan_id]?.type==='bundle') && +m.price>0)).length;
 
-  // MRR — rovnaká logika ako Financie (aktívne Stripe/PayPal subscriptions)
+  // MRR — rovnaká logika ako Financie (aktívne Stripe subscriptions)
   let mrr=0; for(const u of clients){
-    if(u.stripe_subscription_id) mrr+=MEMBERSHIP_PLANS[u.stripe_sub_plan]?.price||0;
-    if(u.paypal_subscription_id) mrr+=MEMBERSHIP_PLANS[u.subscription_plan]?.price||0; }
+    if(u.stripe_subscription_id) mrr+=MEMBERSHIP_PLANS[u.stripe_sub_plan]?.price||0; }
   mrr=+mrr.toFixed(2);
 
   // Tréneri: aktívni + vyťažení (učili za 30 dní podľa session_instructors/task logu/taught hodín)
@@ -23805,7 +23392,7 @@ async function runDailyJobs(){
     if(cashSeen.has(m.user_id)) continue; cashSeen.add(m.user_id);
     const u=await q.one(db.users,{_id:m.user_id});
     if(!u||u.is_admin||u.cash_upsell_sent) continue;
-    if(u.stripe_subscription_id||u.paypal_subscription_id) continue; // už platí kartou
+    if(u.stripe_subscription_id) continue; // už platí kartou
     if((u.visit_count||0) < 3) continue; // len pravidelní (aspoň 3 návštevy)
     await sendCashUpsellTo(u, MEMBERSHIP_PLANS[m.plan_id]);
   }

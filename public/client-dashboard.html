@@ -1071,8 +1071,6 @@ function renderMembership(me){
     const ar=document.getElementById('mcAutoRenew');
     if(me.stripe_subscription){
       ar.innerHTML='<a onclick="mcToggleRenew()" style="color:#81c784;font-weight:700;cursor:pointer;text-decoration:underline dotted">🔄 Aktívne — vypnúť?</a>';
-    } else if(me.paypal_subscription){
-      ar.innerHTML='<span style="color:#81c784;font-weight:700">🔄 Aktívne (PayPal)</span>';
     } else {
       ar.innerHTML='<span style="color:#9e9e9e">Vypnuté</span> <a href="/pricing" style="color:var(--gold);font-size:.78rem">zapnúť →</a>';
     }
@@ -3557,19 +3555,10 @@ async function loadQR(){
   } catch(e){ console.error('QR error:', e); }
 }
 
-/* ─── PayPal Subscription return handler ─── */
+/* ─── Návrat z platobnej brány (Stripe) ─── */
 (async()=>{
   const p=new URLSearchParams(window.location.search);
-  if(p.get('sub')==='success' && p.get('subscription_id')){
-    try{
-      const r=await api('/api/membership/subscribe/activate',{method:'POST',body:{subscription_id:p.get('subscription_id'),plan_id:p.get('plan')}});
-      if(r.ok){ showToast('🎉 Subscription aktivovaná! Členstvo je aktívne.','success'); if(window.faTrack) window.faTrack('Purchase',{value:+(p.get('value')||0)}); }
-      else showToast('Chyba pri aktivácii: '+(r.error||'skúste znova'),'error');
-    }catch(e){ showToast('Chyba pri aktivácii subscription','error'); }
-    window.history.replaceState({},'','/client-dashboard');
-  } else if(p.get('sub')==='cancel'){
-    showToast('Platba bola zrušená.','error');
-    window.history.replaceState({},'','/client-dashboard');
+  if(p.get('stripe')==='success' && p.get('session_id')){
   } else if(p.get('stripe')==='success' && p.get('session_id')){
     try{
       const r=await api('/api/stripe/verify',{method:'POST',body:{session_id:p.get('session_id')}});

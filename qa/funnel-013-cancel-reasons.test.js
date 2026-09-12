@@ -95,7 +95,6 @@ const mkid = () => Math.random().toString(36).slice(2, 10) + Math.random().toStr
     // ── 6) statické kontroly ──
     const src = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
     const cd = fs.readFileSync(path.join(__dirname, '..', 'public', 'client-dashboard.html'), 'utf8');
-    ok('PayPal self-cancel tiež ukladá dôvod', /paypal_subscription_id:null, subscription_plan:null\}\}\);\s*\n\s*await recordMembershipCancel/.test(src));
     ok('UI: modal s dôvodmi + OSTÁVAM tlačidlo', cd.includes('CANCEL_REASONS_UI') && cd.includes('cnSubmit') && cd.includes('OSTÁVAM'));
     ok('UI: dôvod povinný (tlačidlo disabled do výberu)', cd.includes("onclick=\"cnSubmit()\" disabled"));
   } catch (e) {

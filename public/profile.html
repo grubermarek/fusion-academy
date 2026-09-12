@@ -747,31 +747,9 @@ async function submitTip(){
   if(!r||r.error){ box.innerHTML='<span style="color:#e0577b">'+((r&&r.error)||'Chyba')+'</span>'; return; }
   if(r.url){ box.innerHTML='<span style="color:var(--muted)">Presmerúvam na platbu…</span>'; location.href=r.url; return; } // Stripe checkout
   if(r.demo){ box.innerHTML='<span style="color:#8bc34a">✓ Tip zaznamenaný (demo režim). Ďakujeme!</span>'; setTimeout(()=>{document.getElementById('tipModal')?.remove(); loadTips();},1200); return; }
-  // PayPal platba
-  box.innerHTML='<span style="color:var(--muted)">Načítavam PayPal…</span>';
-  document.getElementById('tipPayArea').innerHTML='<div id="tipPaypal"></div>';
-  await loadPayPalSdk();
-  if(!window.paypal){ box.innerHTML='<span style="color:#e0577b">PayPal sa nepodarilo načítať.</span>'; return; }
-  box.innerHTML='';
-  paypal.Buttons({
-    createOrder:()=>r.paypalOrderId,
-    onApprove: async()=>{
-      box.innerHTML='<span style="color:var(--gold)">⏳ Spracúvam…</span>';
-      const c=await fetch('/api/paypal/capture-order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({paypalOrderId:r.paypalOrderId,paymentId:r.paymentId})}).then(x=>x.json());
-      if(c&&c.ok){ box.innerHTML='<span style="color:#8bc34a">✓ Ďakujeme za tip! 💛</span>'; setTimeout(()=>{document.getElementById('tipModal')?.remove(); loadTips();},1400); }
-      else box.innerHTML='<span style="color:#e0577b">Platba nebola dokončená.</span>';
-    },
-    onError:()=>{ box.innerHTML='<span style="color:#e0577b">Chyba PayPal.</span>'; }
-  }).render('#tipPaypal');
+  box.innerHTML='<span style="color:#e0577b">Platba kartou momentálne nie je dostupná — skús to prosím o chvíľu.</span>';
 }
-function loadPayPalSdk(){
-  return new Promise(res=>{
-    if(window.paypal) return res();
-    const cid=window.__PAYPAL_CLIENT_ID__||'sb';
-    const s=document.createElement('script'); s.src=`https://www.paypal.com/sdk/js?client-id=${cid}&currency=EUR`;
-    s.onload=()=>res(); s.onerror=()=>res(); document.head.appendChild(s);
-  });
-}
+
 async function loadComments(){
   const box=document.getElementById('cmtList'); if(!box) return;
   try{

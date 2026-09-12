@@ -315,13 +315,13 @@ async function login(email) { const jar = {}; const r = await j('/api/login', { 
     const bF2 = await buy(frida, { plan_id: 'silver', promo_code: 'MANUALKOD' });
     ok('ale vyčerpaný kód (max_uses:1 už použitý) ďalšia žiadosť nedostane',
       bF2.status === 400 && /vyčerpan/i.test((bF2.d || {}).error || ''), 'HTTP ' + bF2.status + ' ' + JSON.stringify(bF2.d));
-    // c) payment_method:"paypal" bez PAYPAL_CLIENT_ID → „demo" aktivácia
+    // c) payment_method:"paypal" — PayPal už v appke nie je (12. 9.): žiadosť sa odmietne, nič sa neaktivuje
     const ida = await login('qa.kup.ida@qa-biz.local');
     const bP = await buy(ida, { plan_id: 'gold', payment_method: 'paypal', promo_code: 'LETO10' });
     await sleep(300);
     const memP = aktivne(IDA, 'gold').length;
     const zaznamyP = rd('transactions.db').filter(t => t.user_id === IDA).length + rd('payments.db').filter(p => p.user_id === IDA).length;
-    ok('payment_method:"paypal" bez PAYPAL_CLIENT_ID: členstvo sa NEaktivuje bez platby a bez záznamu', !(bP.status === 200 && bP.d && bP.d.demo && memP > 0 && zaznamyP === 0), 'HTTP ' + bP.status + ' demo=' + (bP.d && bP.d.demo) + ' aktívne Gold=' + memP + ' záznamov(platby+transakcie)=' + zaznamyP + ' redemption LETO10 pre Idu=' + redemptions('LETO10').filter(r => r.user_id === IDA).length);
+    ok('payment_method:"paypal": odmietnuté (400), členstvo sa neaktivuje a nič sa nezapíše', bP.status === 400 && memP === 0 && zaznamyP === 0, 'HTTP ' + bP.status + ' ' + JSON.stringify(bP.d));
     // d) individuálna cena (custom_prices) vs. kód — zľava sa počíta z cenníkovej ceny
     const hana = await login('qa.kup.hana@qa-biz.local');
     const vH = await validate(hana, { code: 'LETO10', plan_id: 'silver' });
