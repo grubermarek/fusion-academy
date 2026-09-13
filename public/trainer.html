@@ -845,6 +845,8 @@ select.form-control option{background:var(--dark3)}
 <div class="toast" id="toast"></div>
 
 <script>
+// Otvorenie profilu: keď prehliadač nové okno nedovolí (PWA, blokovanie okien), otvorí sa v tejto karte.
+function otvorProfil(id){ const url='/u/'+id; let w=null; try{ w=window.open(url,'_blank'); }catch(e){} if(!w) location.href=url; }
 function fmtDate(d){
   if(d===null||d===undefined||d==='') return '';
   const s=String(d);
@@ -1896,11 +1898,11 @@ function coachLeadCard(L, d, mine){
     ${hot?'<div style="font-size:.68rem;font-weight:800;letter-spacing:.08em;color:#ff8f8f;margin-bottom:4px">🔥 DÔLEŽITÉ DNES</div>':''}
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
         <div style="display:flex;align-items:center;gap:8px">
-          <span onclick="window.open('/u/${L.id}','_blank')" title="Otvoriť profil" style="position:relative;width:34px;height:34px;flex:none;cursor:pointer">
+          <span onclick="otvorProfil('${L.id}')" title="Otvoriť profil" style="position:relative;width:34px;height:34px;flex:none;cursor:pointer">
             <span style="position:absolute;inset:0;border-radius:50%;background:#2a2417;color:var(--gold);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.8rem;border:1px solid #3a3220">${esc((L.name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2))}</span>
             <img src="/api/avatar/${L.id}" alt="" onerror="this.remove()" style="position:absolute;inset:0;width:34px;height:34px;border-radius:50%;object-fit:cover;border:1px solid #3a3220">
           </span>
-          <span><span onclick="window.open('/u/${L.id}','_blank')" title="Otvoriť profil" style="font-weight:800;cursor:pointer">${pr} ${esc(L.name)}</span>
+          <span><span onclick="otvorProfil('${L.id}')" title="Otvoriť profil" style="font-weight:800;cursor:pointer">${pr} ${esc(L.name)}</span>
           ${L.is_client?`<span style="background:#3a2a14;border:1px solid #8a6a2a;color:#e8c97a;border-radius:7px;padding:1px 7px;font-size:.68rem;font-weight:800;margin-left:4px">🔁 KLIENTKA — pozná hodiny, winback tón</span>`:''}
           <span style="color:var(--muted);font-size:.75rem"> · ${esc(L.city||'')} ${L.visits?` · ${L.visits} návštev`:''}</span></span></div>
         <div style="font-size:.75rem;color:${L.last_contact_days===0?'#7bd88f':'var(--muted)'};font-weight:${L.last_contact_days===0?'800':'400'}">${L.last_contact_days===0?'✅ dnes kontaktovaná':L.last_contact_days!=null?`kontakt pred ${L.last_contact_days} d`:'nikdy nekontaktovaná'}</div></div>

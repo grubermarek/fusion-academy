@@ -3926,7 +3926,7 @@ async function loadPointsSummary(){
   const rows=d.rows.map((r,i)=>{
     const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1)+'.';
     const detail=r.items.map(it=>`${it.label} ${it.count>0?'('+it.count+')':''} ${it.points}b`).join(' · ');
-    return `<tr onclick="window.open('/u/${r.id}','_blank')" style="cursor:pointer">
+    return `<tr onclick="otvorProfil('${r.id}')" style="cursor:pointer">
       <td class="text-center" style="width:36px">${medal}</td>
       <td class="fw-semibold">${escHtml(r.name)}</td>
       <td class="small text-muted">${escHtml(detail)}</td>
@@ -5945,7 +5945,7 @@ function renderLeads(){
     <td class="text-nowrap">
       <button class="btn btn-sm btn-outline-info" title="Mailová sekvencia" onclick="showLeadEmails('${l.id}','${escHtml((l.name||'').replace(/'/g,''))}')"><i class="bi bi-envelope-paper"></i></button>
       <button class="btn btn-sm btn-outline-warning" title="Zapísať kontakt (zdieľané s trénermi)" onclick="openAdminContact('${l.id}','${escHtml((l.name||'').replace(/'/g,''))}')"><i class="bi bi-telephone-check"></i></button>
-      <button class="btn btn-sm btn-outline-secondary" title="Zobraziť profil" onclick="window.open('/u/${l.id}','_blank')"><i class="bi bi-box-arrow-up-right"></i></button>
+      <button class="btn btn-sm btn-outline-secondary" title="Zobraziť profil" onclick="otvorProfil('${l.id}')"><i class="bi bi-box-arrow-up-right"></i></button>
     </td>
   </tr>`).join('');
 }
@@ -6135,8 +6135,8 @@ function renderClients(){
   tbody.innerHTML=rows.map(c=>{
     const av=c.avatar?`<img src="${c.avatar}" style="width:32px;height:32px;border-radius:50%;object-fit:cover">`:`<span style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#C9A84C,#a07830);color:#111;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.72rem">${escHtml(ini(c.name))}</span>`;
     const mem=c.membership?`<span class="badge" style="background:rgba(201,168,76,.15);color:#C9A84C;border:1px solid rgba(201,168,76,.3)">${escHtml(c.membership)}</span>`:'<span class="text-muted">–</span>';
-    return `<tr style="cursor:pointer" onclick="window.open('/u/${c.id}','_blank')" title="Otvoriť profil klienta">
-      <td class="ps-3"><div class="d-flex align-items-center gap-2">${av}<b>${escHtml(c.name||'–')}</b>${c.active===false?'<span class="badge bg-danger ms-1">Blok</span>':''}
+    return `<tr style="cursor:pointer" onclick="otvorProfil('${c.id}')" title="Otvoriť profil klienta">
+      <td class="ps-3"><div class="d-flex align-items-center gap-2">${av}<a href="/u/${c.id}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none"><b>${escHtml(c.name||'–')}</b></a>${c.active===false?'<span class="badge bg-danger ms-1">Blok</span>':''}
         <button class="btn btn-sm btn-outline-secondary py-0 px-1" style="font-size:.68rem" title="CRM detail (platby, starostlivosť, história)" onclick="event.stopPropagation();openClientDetail('${c.id}')"><i class="bi bi-folder2-open"></i></button></div></td>
       <td class="small text-muted">${escHtml(c.email||'–')}</td>
       <td class="text-nowrap" onclick="event.stopPropagation()">${c.phone?`<a href="tel:${escHtml(c.phone)}" class="text-decoration-none">${escHtml(c.phone)}</a>`:'–'}</td>
@@ -7279,7 +7279,10 @@ async function enterTestAccount(){
   const r=await fetch('/api/admin/test-account',{method:'POST'}).then(r=>r.json());
   if(r.ok) window.location.href=r.redirect_to; else alert(r.error||'Chyba');
 }
-async function goMyProfile(){ try{ const me=await api('/api/me'); if(me&&me.id) window.open('/u/'+me.id,'_blank'); }catch(e){} }
+async function goMyProfile(){ try{ const me=await api('/api/me'); if(me&&me.id) otvorProfil(me.id); }catch(e){} }
+// Marek 13. 9.: „nejde mi otvoriť profil klienta" — v nainštalovanej appke (PWA) a pri blokovaní
+// vyskakovacích okien window.open ticho zlyhá. Keď nové okno nevznikne, otvoríme profil v tejto karte.
+function otvorProfil(id){ const url='/u/'+id; let w=null; try{ w=window.open(url,'_blank'); }catch(e){} if(!w) location.href=url; }
 (async()=>{ try{ const me=await api('/api/me'); const el=document.getElementById('admUserName');
   if(me&&me.name&&el){ el.textContent=me.name; const av=document.querySelector('.sb2-av'); if(av) av.textContent=me.name.charAt(0).toUpperCase(); } }catch(e){} })();
 
