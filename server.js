@@ -187,6 +187,7 @@ const db = {
   venceky_attendance:new Datastore({ filename: path.join(DATA_DIR, 'venceky_attendance.db'), autoload: true }),
   venceky_slots:    new Datastore({ filename: path.join(DATA_DIR, 'venceky_slots.db'),    autoload: true }),
   venceky_chat:     new Datastore({ filename: path.join(DATA_DIR, 'venceky_chat.db'),     autoload: true }),
+  kids_roster:      new Datastore({ filename: path.join(DATA_DIR, 'kids_roster.db'),      autoload: true }),
   referral_events:  new Datastore({ filename: path.join(DATA_DIR, 'referral_events.db'),  autoload: true }),
   deal_links:       new Datastore({ filename: path.join(DATA_DIR, 'deal_links.db'),       autoload: true }),
   credit_ledger:    new Datastore({ filename: path.join(DATA_DIR, 'credit_ledger.db'),    autoload: true }),
@@ -12265,6 +12266,7 @@ async function revenueEvents(opts){
           src:'app', who:u, what:(m.plan_name||'Členstvo'), method:m.payment_method||'hotovosť',
           kanal:'ručný zápis', invoice: fak(najdiFakturu(m.user_id,u.email,m.price,d)) }; }),
     ...memTx.map(t=>{ const u=kto(t.user_id); const d=denTx(t);
+      if(!t.user_id && (t.client_name||t.user_name)) u.name = t.client_name||t.user_name; // dieťa zo zoznamu Zumba Kids bez účtu
       return { id:t._id, d, a:+t.amount||0, cat:'memberships', src:'app', who:u,
         what:(MEMBERSHIP_PLANS[t.plan_id]?.name)||t.note||'Členstvo',
         method:t.payment_method||t.method||'hotovosť', kanal:'ručný zápis',
@@ -18480,6 +18482,154 @@ app.get('/api/me/qr', auth, async(req,res)=>{
 // FAMILY ACCOUNTS – parent manages child profiles (no own login)
 // ═══════════════════════════════════════════════════════════════════════════════
 const MAX_CHILDREN = 6;
+
+// ── Predbežný zoznam Zumba Kids (Marek 13. 9.) ────────────────────────────────
+// Deti chodia na hodiny skôr, než im rodičia založia účet. Zoznam drží meno, skupinu,
+// kto zaplatil (hneď v tržbách ako ručný predaj bez účtu) a dochádzku podľa dátumov.
+// Po založení účtu sa položka prepojí s detským profilom: členstvo od dátumu platby,
+// dochádzka ako odchodené hodiny skupiny, faktúra rodičovi, automatické hodiny.
+const KIDS_SKUPINY = ['Kids 1','Kids 2'];
+async function kidsHodinaPre(skupina, datum){
+  const dow = dowZDatumu(datum);
+  return (await q.find(db.classes,{active:true, category:'Deti', day_of_week:dow})).find(c=>String(c.name||'').includes(skupina)) || null;
+}
+// Odchodená (alebo vymeškaná) hodina skupiny v daný deň pre prepojené dieťa.
+async function kidsZapisDochadzku(childId, skupina, datum, pritomne){
+  const cls = await kidsHodinaPre(skupina, datum); if(!cls) return 0;
+  const dieta = await q.one(db.users,{_id:childId}); if(!dieta) return 0;
+  const ex = await q.one(db.bookings,{class_id:cls._id, user_id:childId, booking_date:datum, status:{$ne:'cancelled'}});
+  if(!pritomne){
+    if(ex && ex.status!=='attended') await q.update(db.bookings,{_id:ex._id},{$set:{attendance_status:'no_show', attendance_source:'roster'}});
+    return 0;
+  }
+  if(ex){
+    if(ex.status==='attended') return 0;
+    await q.update(db.bookings,{_id:ex._id},{$set:{status:'attended', attendance_status:'attended', attendance_source:'roster', attended_at:nowISO()}});
+    await creditAttendance(dieta); return 1;
+  }
+  const rodic = dieta.parent_id ? await q.one(db.users,{_id:dieta.parent_id}) : null;
+  await q.insert(db.bookings,{ class_id:cls._id, class_name:cls.name, class_emoji:cls.emoji||'🧒', class_location:cls.location,
+    class_time_start:cls.time_start, class_time_end:cls.time_end, day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
+    user_id:childId, user_name:dieta.name, user_email:'', user_phone:rodic?.phone||'', booking_date:datum,
+    status:'attended', attendance_status:'attended', attendance_source:'roster', attended_at:nowISO(), access_method:'membership',
+    is_child_booking:true, child_name:dieta.name, booked_by:rodic?._id||null, booked_by_name:rodic?.name||null,
+    notes:'🧒 predbežný zoznam Zumba Kids', created_at:nowISO() });
+  await creditAttendance(dieta); return 1;
+}
+app.get('/api/kids/roster', trainerAuth, async(req,res)=>{
+  try{
+    const rows = (await q.find(db.kids_roster,{})).sort((a,b)=>String(a.name).localeCompare(String(b.name),'sk'));
+    const deti = await q.find(db.users,{is_child:true, active:{$ne:false}});
+    const rodicia = Object.fromEntries((await q.find(db.users,{_id:{$in:[...new Set(deti.map(u=>u.parent_id).filter(Boolean))]}})).map(p=>[p._id,p]));
+    const prepojene = new Set(rows.map(r=>r.linked_user_id).filter(Boolean));
+    const datumy = [...new Set(rows.flatMap(r=>Object.keys(r.attendance||{})))].sort();
+    res.json({ ok:true, datumy, skupiny:KIDS_SKUPINY,
+      rows: rows.map(r=>{ const u = r.linked_user_id ? deti.find(x=>x._id===r.linked_user_id) : null;
+        return {...r, linked_name:u?u.name:null, parent_name:(u&&rodicia[u.parent_id])?rodicia[u.parent_id].name:null}; }),
+      deti: deti.filter(u=>!prepojene.has(u._id)).map(u=>({id:u._id, name:u.name, birth_year:u.birth_year||null, parent:rodicia[u.parent_id]?.name||'—'})) });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/kids/roster', adminAuth, async(req,res)=>{
+  try{
+    const name = String(req.body.name||'').trim().slice(0,80); if(name.length<2) return res.status(400).json({error:'Zadaj meno dieťaťa'});
+    const group = KIDS_SKUPINY.includes(req.body.group) ? req.body.group : null;
+    const r = await q.insert(db.kids_roster,{name, group, note:String(req.body.note||'').slice(0,300), attendance:{}, paid:null, linked_user_id:null, created_by:req.session.uid, created_at:nowISO()});
+    res.json({ok:true, id:r._id});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.put('/api/admin/kids/roster/:id', adminAuth, async(req,res)=>{
+  try{
+    const upd = {};
+    if(req.body.name!==undefined){ const n=String(req.body.name||'').trim().slice(0,80); if(n.length<2) return res.status(400).json({error:'Zadaj meno'}); upd.name=n; }
+    if(req.body.group!==undefined) upd.group = KIDS_SKUPINY.includes(req.body.group) ? req.body.group : null;
+    if(req.body.note!==undefined) upd.note = String(req.body.note||'').slice(0,300);
+    const n = await q.update(db.kids_roster,{_id:req.params.id},{$set:upd});
+    if(!n) return res.status(404).json({error:'Nenájdené'});
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.delete('/api/admin/kids/roster/:id', adminAuth, async(req,res)=>{
+  try{ const r=await q.one(db.kids_roster,{_id:req.params.id}); if(!r) return res.status(404).json({error:'Nenájdené'});
+    if(r.paid?.tx_id) return res.status(400).json({error:'Najprv zruš zapísanú platbu'});
+    await q.remove(db.kids_roster,{_id:r._id},{}); res.json({ok:true}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+// dochádzka podľa dátumu: present true = bola, false = chýbala, null = záznam dňa zmazať
+app.post('/api/kids/roster/:id/attend', trainerAuth, async(req,res)=>{
+  try{
+    const r = await q.one(db.kids_roster,{_id:req.params.id}); if(!r) return res.status(404).json({error:'Nenájdené'});
+    const d = String(req.body.date||today()).slice(0,10); if(!jePlatnyDatum(d)) return res.status(400).json({error:'Neplatný dátum'});
+    const att = {...(r.attendance||{})};
+    if(req.body.present===null || req.body.present===undefined) delete att[d]; else att[d] = !!req.body.present;
+    await q.update(db.kids_roster,{_id:r._id},{$set:{attendance:att}});
+    if(r.linked_user_id && r.group && att[d]!==undefined) await kidsZapisDochadzku(r.linked_user_id, r.group, d, att[d]).catch(()=>{});
+    res.json({ok:true, attendance:att});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// zaplatené: hneď do tržieb ako ručný predaj bez účtu; hotovosť do pokladne toho, kto ju vybral
+app.post('/api/admin/kids/roster/:id/paid', adminAuth, async(req,res)=>{
+  try{
+    const r = await q.one(db.kids_roster,{_id:req.params.id}); if(!r) return res.status(404).json({error:'Nenájdené'});
+    if(req.body.clear){
+      if(r.paid?.tx_id){ await q.remove(db.transactions,{_id:r.paid.tx_id},{}); await q.remove(db.payouts,{kids_roster_id:r._id},{multi:true}); }
+      await q.update(db.kids_roster,{_id:r._id},{$set:{paid:null}}); return res.json({ok:true, paid:null});
+    }
+    if(r.paid) return res.status(400).json({error:'Platba je už zapísaná — najprv ju zruš'});
+    const plan_id = String(req.body.plan_id||'bronze'); const plan = planNaPredaj(plan_id);
+    if(!plan || plan.type==='bundle') return res.status(400).json({error:'Neplatný plán'});
+    const amount = +(+req.body.amount>0 ? +req.body.amount : plan.price).toFixed(2);
+    const method = ['cash','card','transfer'].includes(req.body.method) ? req.body.method : 'cash';
+    const d = String(req.body.date||today()).slice(0,10); if(!jePlatnyDatum(d)) return res.status(400).json({error:'Neplatný dátum'});
+    const tx = await q.insert(db.transactions,{ type:'membership', client_name:r.name+' (Zumba Kids)', user_id:null, client_id:null,
+      product_name:`Členstvo ${plan.name}`, plan_id, amount, payment_method:method, method, date:d, month:d.slice(0,7),
+      notes:'Predbežný zoznam Zumba Kids — účet ešte nemá', kids_roster_id:r._id, recorded_by:req.session.uid, created_at:nowISO() });
+    if(method==='cash'){ const ja = await q.one(db.users,{_id:req.session.uid});
+      await q.insert(db.payouts,{_type:'cash_collected', trainer_id:req.session.uid, trainer_name:ja?.name||'—', amount,
+        note:`Zumba Kids ${plan.name} — ${r.name}`, kids_roster_id:r._id, month:d.slice(0,7), date:d, status:'held', created_at:nowISO()}).catch(()=>{}); }
+    const paid = {amount, method, date:d, plan_id, tx_id:tx._id};
+    await q.update(db.kids_roster,{_id:r._id},{$set:{paid}});
+    res.json({ok:true, paid});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// prepojenie s detským profilom: členstvo od dátumu platby, dochádzka, faktúra rodičovi, automatické hodiny skupiny
+app.post('/api/admin/kids/roster/:id/link', adminAuth, async(req,res)=>{
+  try{
+    const r = await q.one(db.kids_roster,{_id:req.params.id}); if(!r) return res.status(404).json({error:'Nenájdené'});
+    if(r.linked_user_id) return res.status(400).json({error:'Už je prepojené'});
+    const dieta = await q.one(db.users,{_id:String(req.body.user_id||'')});
+    if(!dieta || !dieta.is_child || dieta.active===false) return res.status(400).json({error:'Vyber detský profil'});
+    if(await q.one(db.kids_roster,{linked_user_id:dieta._id})) return res.status(400).json({error:'Tento profil je už prepojený s inou položkou'});
+    const rodic = dieta.parent_id ? await q.one(db.users,{_id:dieta.parent_id}) : null;
+    const vysl = { membership:null, bookings:0, invoice:null };
+    if(r.paid && r.paid.amount>0){
+      const plan_id = r.paid.plan_id||'bronze', plan = MEMBERSHIP_PLANS[plan_id]||MEMBERSHIP_PLANS.bronze;
+      const exp = new Date(r.paid.date+'T23:59:59Z'); exp.setUTCDate(exp.getUTCDate()+(plan.duration_days||30));
+      const sw = await settleMembershipChange(dieta._id, plan_id, plan.duration_days||30, {expiresAt: exp.toISOString()});
+      const rec = { user_id:dieta._id, user_name:dieta.name, plan_id, plan_name:plan.name, price:r.paid.amount, status:'active',
+        started_at:r.paid.date+'T12:00:00.000Z', expires_at:sw.expiresAt.toISOString(), payment_method:r.paid.method, granted_by:req.session.uid, updated_at:nowISO() };
+      if(sw.existing) await q.update(db.memberships,{_id:sw.existing._id},{$set:rec}); else await q.insert(db.memberships,{...rec, created_at:nowISO()});
+      await q.update(db.users,{_id:dieta._id},{$set:{membership_plan:plan_id, membership_expires:sw.expiresAt.toISOString(), user_type:'client'}});
+      // tržba už bola zapísaná v mesiaci platby — len prejde na dieťa (memTxKeys ju s členstvom neráta dvakrát)
+      if(r.paid.tx_id) await q.update(db.transactions,{_id:r.paid.tx_id},{$set:{user_id:dieta._id, client_id:dieta._id, user_name:dieta.name, client_name:dieta.name, notes:'Predbežný zoznam Zumba Kids — prepojené s účtom'}});
+      if(rodic){ const inv = await createInvoice({ user_id:dieta._id, client_name:`${rodic.name} (za ${dieta.name})`, client_email:rodic.email,
+        items:[{desc:`Členstvo ${plan.name} — Zumba Kids`, qty:1, total:r.paid.amount}], total:r.paid.amount,
+        method: r.paid.method==='card'?'Karta':r.paid.method==='transfer'?'Prevod':'Hotovosť', issued_at:r.paid.date, paid_at:r.paid.date, silent:true }).catch(()=>null);
+        vysl.invoice = inv ? inv.number : null; }
+      refreshMemberTier(dieta._id).catch(()=>{});
+      vysl.membership = { plan:plan.name, expires_at:sw.expiresAt.toISOString().slice(0,10) };
+    }
+    if(r.group) for(const [d,pritomne] of Object.entries(r.attendance||{})) if(pritomne) vysl.bookings += await kidsZapisDochadzku(dieta._id, r.group, d, true);
+    if(r.group && !(Array.isArray(dieta.auto_classes) && dieta.auto_classes.length)){
+      const hodiny = (await q.find(db.classes,{active:true, category:'Deti'})).filter(c=>String(c.name||'').includes(r.group));
+      if(hodiny.length){ await q.update(db.users,{_id:dieta._id},{$set:{auto_classes:hodiny.map(c=>c._id)}}); await autoKidsBookingsFor({...dieta, auto_classes:hodiny.map(c=>c._id)}).catch(()=>{}); }
+    }
+    await q.update(db.kids_roster,{_id:r._id},{$set:{linked_user_id:dieta._id, linked_at:nowISO()}});
+    if(rodic) await q.insert(db.notifications,{user_id:rodic._id, type:'membership', title:`🧒 ${dieta.name} je v zozname Zumba Kids`,
+      body:(vysl.membership?`Členstvo ${vysl.membership.plan} platí do ${vysl.membership.expires_at}. `:'')+`Zapísali sme ${vysl.bookings} odchodených hodín. Dieťa je prihlasované automaticky — upraviť to vieš v karte dieťaťa.`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+    res.json({ok:true, ...vysl});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 
 // Veková skupina podľa dátumu narodenia: 4–6 = Zumba Kids 1, 7–14 = Zumba Kids 2.
 function vekDietata(d){

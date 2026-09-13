@@ -222,6 +222,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('privatehours')"><i class="bi bi-person-heart me-2"></i>Súkromné hodiny 🎭</a>
       <a class="nav-link" href="#" onclick="show('kiosk')"><i class="bi bi-display me-2"></i>Kiosk / Recepcia</a>
       <a class="nav-link" href="#" onclick="show('venceky')"><i class="bi bi-mortarboard me-2"></i><span style="color:#C9A84C;font-weight:700">Venčeky</span></a>
+      <a class="nav-link" href="#" onclick="show('kids')"><i class="bi bi-emoji-smile me-2"></i><span style="color:#FF6B9D;font-weight:700">Zumba Kids</span></a>
       <a class="nav-link" href="#" onclick="show('eventy')"><i class="bi bi-ticket-perforated me-2"></i><span style="color:#C9A84C;font-weight:700">Eventy &amp; vstupenky</span></a>
       <a class="nav-link" href="/jedalnicek" target="_blank"><i class="bi bi-egg-fried me-2"></i>Generátor jedálničkov <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></a>
       <a class="nav-link" href="#" onclick="show('products')"><i class="bi bi-box-seam me-2"></i>Produkty & objednávky <span id="pendingBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
@@ -1240,6 +1241,28 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   </div>
 
   <!-- SÚŤAŽE -->
+  <!-- ZUMBA KIDS — predbežný zoznam (Marek 13. 9.) -->
+  <div class="section" id="s-kids" style="max-width:1150px">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
+      <h4 class="fw-bold mb-0">🧒 Zumba Kids — predbežný zoznam</h4>
+      <div class="d-flex gap-2 align-items-center flex-wrap">
+        <label class="small text-muted mb-0">Deň</label>
+        <input type="date" id="kidsDen" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:150px;color-scheme:dark" onchange="loadKids()">
+        <button class="btn btn-sm btn-outline-light" onclick="loadKids()"><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
+    </div>
+    <p class="text-muted small mb-3">Deti, ktoré chodia skôr, než majú rodičia účet v appke. Klik v dátume: ✅ bola → ❌ chýbala → · zmazať. Platba sa hneď zapíše do Predajov. Keď rodič založí profil dieťaťa, klikni <b>Prepojiť</b> — prenesie sa členstvo od dátumu platby, dochádzka na hodiny skupiny aj faktúra rodičovi.</p>
+    <div class="d-flex gap-2 flex-wrap mb-3">
+      <input id="kidsNewName" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:220px" placeholder="Meno dieťaťa" onkeydown="if(event.key==='Enter')kidsAdd()">
+      <select id="kidsNewGroup" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:240px"><option value="Kids 2">Zumba Kids 2 (7–14) · 15:00</option><option value="Kids 1">Zumba Kids 1 (4–6) · 16:00</option><option value="">skupina neznáma</option></select>
+      <button class="btn btn-sm btn-warning" onclick="kidsAdd()"><i class="bi bi-plus-lg"></i> Pridať dieťa</button>
+    </div>
+    <div id="kidsStats" class="small text-muted mb-2"></div>
+    <div class="table-responsive"><table class="table table-dark table-hover align-middle" style="font-size:.85rem">
+      <thead id="kidsHead"></thead><tbody id="kidsBody"><tr><td class="text-muted text-center py-4">Načítavam…</td></tr></tbody>
+    </table></div>
+  </div>
+
   <div class="section" id="s-sutaze" style="max-width:1100px">
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <div><h4 class="fw-bold mb-0">🏆 Súťaže</h4>
@@ -2426,7 +2449,7 @@ function accessLabel(m){ return ACCESS_LABELS[m] || null; }
 const SECTION_GROUP={attendance:'manage',sale:'reports',
   leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',staff:'manage',classes:'manage',privatehours:'manage',kiosk:'manage',products:'manage',rentals:'manage',articles:'manage',
   marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
-  dnes:'manage',predaje:'reports',  sutaze:'marketing',venceky:'manage',eventy:'manage',fusionai:'reports',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',funnel:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
+  dnes:'manage',predaje:'reports',  sutaze:'marketing',venceky:'manage',kids:'manage',eventy:'manage',fusionai:'reports',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',funnel:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
   partners:'partners',addpartner:'partners',commissions:'partners'};
 function selectGroup(g){
   // Nový sidebar: skupina aktívnej sekcie sa otvorí (zbalené ostatné nechávame tak)
@@ -2836,6 +2859,7 @@ function show(sec){
   if(sec==='predaje')loadPredaje();
   if(sec==='sutaze')loadRefGoalReport();
   if(sec==='venceky')loadVenceky();
+  if(sec==='kids')loadKids();
   if(sec==='ambasadori')loadAmbasadori();
   if(sec==='eventy')loadEventy();
   if(sec==='partners')loadPartners();
@@ -2878,6 +2902,51 @@ function show(sec){
   if(sec==='alerts')loadAlerts();
   if(sec==='exports')loadExports();
 }
+
+/* ─── ZUMBA KIDS — predbežný zoznam ─── */
+let _kids=null;
+const kidsFd=x=>x.slice(8,10).replace(/^0/,'')+'. '+x.slice(5,7).replace(/^0/,'')+'.';
+async function loadKids(){
+  const d=await api('/api/kids/roster'); if(!d||!d.ok){ document.getElementById('kidsBody').innerHTML='<tr><td class="text-danger">Nepodarilo sa načítať</td></tr>'; return; }
+  _kids=d;
+  const denEl=document.getElementById('kidsDen'); if(denEl && !denEl.value) denEl.value=new Date().toISOString().slice(0,10);
+  const dnes=denEl.value;
+  const datumy=[...new Set([...d.datumy, dnes])].sort().slice(-8);
+  document.getElementById('kidsHead').innerHTML=`<tr><th>Dieťa</th><th>Skupina</th><th>Zaplatené</th>${datumy.map(x=>`<th class="text-center${x===dnes?' text-warning':''}">${kidsFd(x)}</th>`).join('')}<th>Účet</th><th></th></tr>`;
+  const zapl=d.rows.filter(r=>r.paid).length;
+  document.getElementById('kidsStats').textContent=`${d.rows.length} detí · zaplatené ${zapl} · bez platby ${d.rows.length-zapl} · prepojené s účtom ${d.rows.filter(r=>r.linked_user_id).length}`;
+  const esc1=s=>escHtml(s).replace(/'/g,'&#39;');
+  document.getElementById('kidsBody').innerHTML=d.rows.map(r=>{
+    const att=r.attendance||{};
+    const cells=datumy.map(x=>{ const v=att[x]; const lbl=v===true?'✅':v===false?'❌':'·'; const col=v===true?'#4ade80':v===false?'#e05656':'#666';
+      return `<td class="text-center"><button class="btn btn-sm kids-att" style="border:1px solid #333;color:${col};min-width:36px" title="klik: bola → chýbala → zmazať" onclick="kidsAttend('${r._id}','${x}')">${lbl}</button></td>`; }).join('');
+    const paid=r.paid?`<span style="color:#4ade80">✅ ${(+r.paid.amount).toFixed(2)} €</span> <small class="text-muted">${r.paid.method==='cash'?'hotovosť':r.paid.method==='card'?'karta':'prevod'} · ${kidsFd(r.paid.date)}</small> <a onclick="kidsClearPaid('${r._id}')" style="cursor:pointer;color:#888;font-size:.75rem" title="Zrušiť platbu">✕</a>`
+      :`<span style="color:#e05656">✗ nezaplatené</span> <button class="btn btn-sm btn-outline-warning py-0" onclick="kidsPaid('${r._id}','${esc1(r.name)}')">Zaplatené…</button>`;
+    const ucet=r.linked_user_id?`<span style="color:#4ade80">🔗 ${escHtml(r.linked_name||'')}</span><br><small class="text-muted">rodič ${escHtml(r.parent_name||'—')}</small>`
+      :`<button class="btn btn-sm btn-outline-light py-0" onclick="kidsLink('${r._id}','${esc1(r.name)}')">Prepojiť</button>`;
+    return `<tr><td class="fw-semibold">${escHtml(r.name)}${r.note?`<br><small class="text-muted">${escHtml(r.note)}</small>`:''}</td>
+      <td><select class="form-select form-select-sm bg-dark text-light border-secondary" style="width:150px" onchange="kidsGroup('${r._id}',this.value)"><option value="Kids 2"${r.group==='Kids 2'?' selected':''}>Kids 2 (7–14)</option><option value="Kids 1"${r.group==='Kids 1'?' selected':''}>Kids 1 (4–6)</option><option value=""${!r.group?' selected':''}>?</option></select></td>
+      <td>${paid}</td>${cells}<td>${ucet}</td>
+      <td><button class="btn btn-sm btn-outline-danger py-0" onclick="kidsDel('${r._id}','${esc1(r.name)}')"><i class="bi bi-trash"></i></button></td></tr>`;
+  }).join('')||'<tr><td colspan="12" class="text-muted text-center py-4">Zoznam je prázdny — pridaj deti hore.</td></tr>';
+}
+async function kidsAdd(){ const name=document.getElementById('kidsNewName').value.trim(); const group=document.getElementById('kidsNewGroup').value; if(name.length<2){ showToast('Zadaj meno','error'); return; }
+  const r=await api('/api/admin/kids/roster',{method:'POST',body:JSON.stringify({name,group})}); if(r?.ok){ document.getElementById('kidsNewName').value=''; loadKids(); } else showToast(r?.error||'Chyba','error'); }
+async function kidsGroup(id,group){ const r=await api('/api/admin/kids/roster/'+id,{method:'PUT',body:JSON.stringify({group})}); if(!r?.ok) showToast(r?.error||'Chyba','error'); else loadKids(); }
+async function kidsAttend(id,date){ const row=_kids.rows.find(r=>r._id===id); const cur=(row.attendance||{})[date]; const next=cur===undefined?true:cur===true?false:null;
+  const r=await api('/api/kids/roster/'+id+'/attend',{method:'POST',body:JSON.stringify({date,present:next})}); if(r?.ok) loadKids(); else showToast(r?.error||'Chyba','error'); }
+async function kidsPaid(id,name){ const s=prompt(`Platba za ${name}\nSuma v € (Bronze = 50):`,'50'); if(s===null) return; const amount=parseFloat(String(s).replace(',','.')); if(!(amount>0)){ showToast('Neplatná suma','error'); return; }
+  const m=prompt('Spôsob: hotovost / karta / prevod','hotovost'); if(m===null) return; const method=/kart/i.test(m)?'card':/prev/i.test(m)?'transfer':'cash';
+  const d=prompt('Dátum platby (RRRR-MM-DD):', new Date().toISOString().slice(0,10)); if(d===null) return;
+  const r=await api('/api/admin/kids/roster/'+id+'/paid',{method:'POST',body:JSON.stringify({amount,method,date:d.trim(),plan_id:'bronze'})}); if(r?.ok){ showToast('Platba zapísaná — je v Predajoch','success'); loadKids(); } else showToast(r?.error||'Chyba','error'); }
+async function kidsClearPaid(id){ if(!confirm('Zrušiť zapísanú platbu (aj z tržieb)?')) return; const r=await api('/api/admin/kids/roster/'+id+'/paid',{method:'POST',body:JSON.stringify({clear:true})}); if(r?.ok) loadKids(); else showToast(r?.error||'Chyba','error'); }
+async function kidsLink(id,name){ const deti=_kids.deti||[]; if(!deti.length){ showToast('Zatiaľ nie je žiadny voľný detský profil — rodič si ho musí založiť v appke','error'); return; }
+  const pick=prompt(`Prepojiť ${name} s detským profilom — napíš číslo:\n`+deti.map((d,i)=>`${i+1}. ${d.name}${d.birth_year?' ('+d.birth_year+')':''} — rodič ${d.parent}`).join('\n')); if(pick===null) return;
+  const d=deti[parseInt(pick,10)-1]; if(!d){ showToast('Neplatná voľba','error'); return; }
+  if(!confirm(`Prepojiť ${name} → ${d.name} (rodič ${d.parent})? Prenesie sa členstvo od dátumu platby, dochádzka a faktúra rodičovi.`)) return;
+  const r=await api('/api/admin/kids/roster/'+id+'/link',{method:'POST',body:JSON.stringify({user_id:d.id})});
+  if(r?.ok){ showToast(`Prepojené ✓${r.membership?' · členstvo do '+r.membership.expires_at:''} · ${r.bookings} hodín${r.invoice?' · faktúra '+r.invoice:''}`,'success'); loadKids(); } else showToast(r?.error||'Chyba','error'); }
+async function kidsDel(id,name){ if(!confirm(`Zmazať ${name} zo zoznamu?`)) return; const r=await api('/api/admin/kids/roster/'+id,{method:'DELETE'}); if(r?.ok) loadKids(); else showToast(r?.error||'Chyba','error'); }
 
 /* ─── EXPORTY JEDNÝM KLIKOM ──────────────────────────────── */
 // Pre účtovníčku štyri súbory s jasnými názvami (Marek 12. 9.), ostatné exporty pod nimi.
