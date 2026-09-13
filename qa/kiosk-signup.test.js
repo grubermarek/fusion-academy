@@ -48,9 +48,10 @@ async function j(url, opts = {}, jar) {
     U('qaKsDvaVstupy01', 'Dana Dvojvstup', 'QAKS02', { single_entries: 2 }),
     U('qaKsBezNicoho01', 'Bara Prazdna', 'QAKS03'),                       // nič nemá
     U('qaKsPrvaZdarma1', 'Petra Prva', 'QAKS04', { free_class_used: false }),
+    U('qaKsRezervov001', 'Rada Rezervovana', 'QAKS05', { visit_count: 4 }),      // rezervovala z appky (členka)
   ].join('\n') + '\n');
 
-  fs.writeFileSync(path.join(DATA, 'memberships.db'), JSON.stringify({
+  fs.writeFileSync(path.join(DATA, 'memberships.db'), JSON.stringify({ _id: 'qaKsMem00000002', user_id: 'qaKsRezervov001', plan_id: 'bronze', status: 'active', started_at: '2026-08-01', expires_at: '2026-12-31', price: 50 }) + '\n' + JSON.stringify({
     _id: 'qaKsMem00000001', user_id: 'qaKsClenka00001', plan_id: 'silver', status: 'active',
     started_at: '2026-08-01', expires_at: '2026-12-31', price: 69,
   }) + '\n');
@@ -76,6 +77,12 @@ async function j(url, opts = {}, jar) {
     C('qaKsClsTech0001', 'Technický tréning', hhmm(t2), hhmm(t2 + 55), { category: 'Technika' }),
     C('qaKsClsOnline01', 'Zumba ONLINE', hhmm(t2), hhmm(t2 + 55), { category: 'Online', location: 'Online' }),
     C('qaKsClsZvolen01', 'Zumba Zvolen', hhmm(t2), hhmm(t2 + 55), { location: 'Zvolen' }),
+  ].join('\n') + '\n');
+
+  // Rada má z appky rezervovanú bežiacu hodinu aj neskoršiu (Marek 13. 9.: „Zumba bola vysedená")
+  fs.writeFileSync(path.join(DATA, 'bookings.db'), [
+    JSON.stringify({ _id: 'qaKsBkRada0001', class_id: 'qaKsCls00000001', class_name: 'Zumba prvá', user_id: 'qaKsRezervov001', user_name: 'Rada Rezervovana', booking_date: DNES, status: 'confirmed', attendance_status: 'pending', access_method: 'membership', created_at: DNES + 'T06:00:00.000Z' }),
+    JSON.stringify({ _id: 'qaKsBkRada0002', class_id: 'qaKsCls00000002', class_name: 'Zumba druhá', user_id: 'qaKsRezervov001', user_name: 'Rada Rezervovana', booking_date: DNES, status: 'confirmed', attendance_status: 'pending', access_method: 'membership', created_at: DNES + 'T06:00:00.000Z' }),
   ].join('\n') + '\n');
 
   console.log('KIOSK PRIHLÁSENIE QA — štart servera…');
@@ -169,6 +176,18 @@ async function j(url, opts = {}, jar) {
     ok('bez vstupov to neprejde', pB.status === 402, JSON.stringify(pB.d).slice(0, 110));
     ok('a hláška posiela za trénerom', /trénerovi/i.test(pB.d.error || ''), pB.d.error);
 
+    // ── rezervovaná z appky: bežiaca hodina sa dá zaškrtnúť a zapíše účasť, neskoršia ostáva „už si prihlásená" ──
+    const zR = await zoznam('FA:qaKsRezervov001');
+    const r1 = (zR.d.classes || []).find(c => c.id === 'qaKsCls00000001'), r2 = (zR.d.classes || []).find(c => c.id === 'qaKsCls00000002');
+    ok('rezervované hodiny sú označené moja=booked, bežiaca aj teraz', r1 && r1.moja === 'booked' && r1.teraz === true && r2 && r2.moja === 'booked' && !r2.teraz, JSON.stringify([r1, r2].map(c => c && c.moja + '/' + c.teraz)));
+    const pR = await prihlas('FA:qaKsRezervov001', ['qaKsCls00000001', 'qaKsCls00000002']);
+    ok('bežiaca rezervovaná hodina sa zapíše ako účasť, neskoršia sa nezdvojí', pR.status === 200 && (pR.d.zapisane || []).length === 1 && pR.d.zapisane[0].teraz === true && pR.d.uz_mala === 1, JSON.stringify(pR.d).slice(0, 160));
+    ok('návšteva pribudla (4 → 5)', pR.d.user && pR.d.user.visit_count === 5, JSON.stringify(pR.d.user && pR.d.user.visit_count));
+    const zR2 = await zoznam('FA:qaKsRezervov001');
+    ok('bežiaca je teraz „attended", neskoršia stále „booked"', (zR2.d.classes || []).find(c => c.id === 'qaKsCls00000001').moja === 'attended' && (zR2.d.classes || []).find(c => c.id === 'qaKsCls00000002').moja === 'booked');
+    const pR2 = await prihlas('FA:qaKsRezervov001', ['qaKsCls00000001']);
+    ok('opakovanie nič nezdvojí ani nepripíše', (pR2.d.zapisane || []).length === 0 && pR2.d.uz_mala === 1 && pR2.d.user.visit_count === 5, JSON.stringify({ z: (pR2.d.zapisane || []).length, u: pR2.d.uz_mala, v: pR2.d.user.visit_count }));
+
     // ── ochrany ──
     const pPrazdne = await prihlas('FA:qaKsClenka00001', []);
     ok('prázdny výber je odmietnutý', pPrazdne.status === 400, JSON.stringify(pPrazdne.d));
@@ -186,7 +205,8 @@ async function j(url, opts = {}, jar) {
     ok('prihlásenie sa ponúkne po check-ine', html.includes('prihlasNaDalsie()') && html.includes('id="wMore"'));
     ok('a QR sa druhýkrát neskenuje', html.includes('poslednyQr=txt') && html.includes('nacitajHodiny(poslednyQr)'));
     ok('výber je cez zaškrtávacie políčka', html.includes('prepniHodinu') && html.includes('class="box"'));
-    ok('bežiaca hodina je predznačená', html.includes('c.teraz && !c.moja'));
+    ok('bežiaca hodina je predznačená (aj rezervovaná z appky)', html.includes("c.teraz && (c.moja==='booked' || (!c.moja && c.volnych>0))"));
+    ok('rezervovaná neskoršia hodina je zelená „už si prihlásená", nie vysedená', html.includes('.pk.ok{') && html.includes('účasť ti zapíšeme pred hodinou') && html.includes('máš rezervované — zapíšeme ti účasť'));
     ok('pýta sa až po skene QR', html.includes('nacitajHodiny'));
     ok('ukazuje, koľko vstupov zostáva', html.includes('Zostáva ti '));
 

@@ -512,8 +512,9 @@ function bookClass(classId) {
   document.body.style.overflow = 'hidden';
 }
 
-async function confirmBooking() {
+async function confirmBooking(platba) {
   if (!selectedClass) return;
+  platba = platba || {};
   const btn = document.querySelector('.btn-confirm');
   btn.disabled = true; btn.textContent = FA_T('sched.booking');
   const nextDate = getNextDate(selectedClass.day_of_week);
@@ -522,7 +523,8 @@ async function confirmBooking() {
     const r = await fetch('/api/bookings', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ class_id: selectedClass._id, booking_date: nextDate, for_child_id: forChild || undefined })
+      body: JSON.stringify({ class_id: selectedClass._id, booking_date: nextDate, for_child_id: forChild || undefined,
+        pay_on_site: platba.pay_on_site || undefined, pay_credit: platba.pay_credit || undefined })
     });
     const d = await r.json();
     if (!r.ok) {
@@ -536,15 +538,21 @@ async function confirmBooking() {
         btn.disabled = false; btn.innerHTML = '<i class="bi bi-check2-circle me-2"></i>'+FA_T('sched.confirm');
         return;
       }
-      document.getElementById('bookError').textContent = d.error || d.message;
+      if (d && d.can_pay_on_site) { // hodina nie je krytá → otázka: zaplatíš na mieste? (Marek 13. 9.)
+        ponukniPlatbuNaMieste(d, btn);
+        return;
+      }
+      document.getElementById('bookError').textContent = d.message || d.error;
       document.getElementById('bookError').classList.remove('d-none');
       btn.disabled = false; btn.innerHTML = '<i class="bi bi-check2-circle me-2"></i>'+FA_T('sched.confirm');
       return;
     }
-    // Success
+    // Success — closeBookModal() nuluje selectedClass, preto si hodinu odložíme (inak TypeError → „Chyba pripojenia")
+    const hodina = selectedClass;
     closeBookModal();
-    showToast(FA_T('sched.ok') + (d.for_child?FA_T('sched.for')+d.for_child:'') + ' – ' + selectedClass.name, 'success');
-    showSuccess(selectedClass.name, fmtDate(nextDate));
+    showToast(FA_T('sched.ok') + (d.for_child?FA_T('sched.for')+d.for_child:'') + ' – ' + hodina.name
+      + (platba.pay_on_site ? ' · v štúdiu zaplatíš ' + (d.pay_amount || platbaSuma) + ' € 💵' : platba.pay_credit ? ' · zaplatené kreditom' : ''), 'success');
+    showSuccess(hodina.name, fmtDate(nextDate));
     // Refresh class list
     await loadMyBookedMap();
     const resp = await fetch('/api/classes');
@@ -557,6 +565,28 @@ async function confirmBooking() {
   }
 }
 
+// Hodina bez členstva/vstupu: namiesto chyby otázka, či klientka zaplatí v hotovosti na mieste.
+// Sumu ráta server (technika podľa členstva: 10 / Bronze 8 / Silver 7 / Gold 6, inak vstup 10 €).
+let platbaSuma = 10;
+function ponukniPlatbuNaMieste(d, btn) {
+  const technika = !!(selectedClass && selectedClass.category === 'Technika');
+  const suma = +(d.tech_price || 10); platbaSuma = suma;
+  const kredit = +(d.credit_balance || 0);
+  const box = document.getElementById('bookError');
+  box.className = 'py-2 small mb-3';
+  box.style.cssText = 'background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.45);border-radius:12px;padding:12px 14px';
+  box.innerHTML = '<div style="font-weight:800;color:var(--gold,#C9A84C);font-size:.95rem">💵 ' + (technika ? 'Technický tréning · ' + suma + ' €' : 'Vstup na hodinu · ' + suma + ' €') + '</div>'
+    + '<div class="text-muted" style="margin:4px 0 10px">' + (technika
+        ? 'Technický tréning členstvo nekryje — cena je podľa členstva' + (suma < 10 ? ' (tvoja zľava je už započítaná)' : '') + '. '
+        : 'Túto hodinu ti nekryje členstvo ani vstup. ')
+      + 'Chceš zaplatiť <b>v hotovosti na mieste</b>?</div>'
+    + (technika && kredit >= suma
+        ? '<button type="button" class="btn-confirm" style="margin-bottom:8px;background:linear-gradient(135deg,#4ade80,#16a34a)" onclick="confirmBooking({pay_credit:true})">💳 Zaplatiť kreditom z appky (' + kredit.toFixed(2) + ' €)</button>' : '')
+    + '<button type="button" class="btn-confirm" onclick="confirmBooking({pay_on_site:true})">💵 Áno, zaplatím na mieste ' + suma + ' €</button>'
+    + '<a href="/obchod?src=booking" class="d-block text-center mt-2" style="color:var(--gold,#C9A84C)">🎫 Radšej si kúpim členstvo alebo permanentku</a>';
+  box.classList.remove('d-none');
+  btn.style.display = 'none';
+}
 function showSuccess(className, dateStr) {
   // Nový pop-up „vezmi kamošku" (súkromná hodina s Marekom); stará karta zostáva ako fallback
   if(window.showBookingSuccess){ showBookingSuccess({className, dateStr}); return; }
@@ -575,6 +605,8 @@ function showSuccess(className, dateStr) {
 }
 
 function closeBookModal() {
+  const be = document.getElementById('bookError'); be.className = 'alert alert-danger d-none py-2 small mb-3'; be.style.cssText = ''; be.innerHTML = '';
+  const cb = document.querySelector('#bookModal .btn-confirm'); if (cb) { cb.style.display = ''; cb.disabled = false; }
   document.getElementById('bookModal').classList.remove('show');
   document.body.style.overflow = '';
   selectedClass = null;

@@ -70,6 +70,8 @@
     border-radius:2vmin;padding:2vmin 2.4vmin;cursor:pointer;text-align:left}
   .pk.sel{border-color:var(--gold);background:linear-gradient(135deg,rgba(201,168,76,.22),rgba(201,168,76,.06))}
   .pk.off{opacity:.45;cursor:default}
+  .pk.ok{cursor:default;border-color:rgba(74,222,128,.55);background:rgba(74,222,128,.07)}
+  .pk.ok .box{border-color:rgba(74,222,128,.7);color:#4ade80}
   .pk .box{width:4.2vmin;height:4.2vmin;border-radius:1vmin;border:2px solid rgba(201,168,76,.5);flex:none;
     display:grid;place-items:center;font-size:2.6vmin;color:var(--gold2)}
   .pk.sel .box{background:var(--gold);border-color:var(--gold);color:#141008}
@@ -312,6 +314,7 @@ async function onScan(txt){
       body:JSON.stringify({studio:SLUG, k:KEY, qr_data:txt})});
     const d=await r.json();
     if(r.ok && d.ok && d.choose){ showClassChoice(d, txt); return; }
+    if(r.status===402 && d.ask_cash){ showCashQuestion(d, txt); return; }
     if(r.ok && d.ok){ await closeScan(); showWelcome(d); }
     else { $('scanMsg').textContent='⚠️ '+(d.error||'Skús to znova'); setTimeout(()=>{scanBusy=false; $('scanMsg').textContent='Ukáž kamere svoj QR kód z appky 📱';}, 3500); }
   }catch(e){ $('scanMsg').textContent='⚠️ Chyba spojenia — skús znova.'; scanBusy=false; }
@@ -337,7 +340,7 @@ async function nacitajHodiny(qrTxt){
       return;
     }
     vyberQr=qrTxt; vyberHodiny=d.classes; vyberVybrane=new Set();
-    vyberHodiny.forEach(c=>{ if(c.teraz && !c.moja && c.volnych>0) vyberVybrane.add(c.id); });
+    vyberHodiny.forEach(c=>{ if(c.teraz && (c.moja==='booked' || (!c.moja && c.volnych>0))) vyberVybrane.add(c.id); });
     await closeScan(); stopShow();
     $('pick').classList.add('on');
     $('pickHead').textContent='Ahoj '+(d.first||'')+', na čo sa prihlasuješ?';
@@ -353,15 +356,19 @@ function hodiny(n){ return n+' '+(n===1?'hodinu':(n>=2&&n<=4?'hodiny':'hodín'))
 
 function vykresliVyber(){
   $('pickList').innerHTML=vyberHodiny.map(c=>{
-    const mam=!!c.moja, plna=c.volnych<=0 && !mam, vyp=mam||plna;
+    // rezervovaná z appky a práve začína → dá sa zaškrtnúť (zapíše sa účasť);
+    // rezervovaná na neskôr → zelená „už si prihlásená", nie vysedená bez vysvetlenia (Marek 13. 9.)
+    const bola=c.moja==='attended', rezerv=c.moja==='booked', rezervTeraz=rezerv && c.teraz;
+    const plna=c.volnych<=0 && !c.moja, vyp=bola||plna, hotovo=rezerv && !c.teraz;
     const sel=vyberVybrane.has(c.id);
-    const stav = c.moja==='attended' ? '✅ dnes si tu už bola'
-      : c.moja==='booked' ? '✅ už si prihlásená'
+    const stav = bola ? '✅ dnes si tu už bola'
+      : rezervTeraz ? '✓ máš rezervované — zapíšeme ti účasť'
+      : rezerv ? '✅ už si prihlásená · účasť ti zapíšeme pred hodinou (naskenuj QR znova)'
       : plna ? 'obsadené'
       : c.teraz ? 'práve začína — zapíšeme ti účasť'
       : 'voľných miest: '+c.volnych;
-    return '<div class="pk'+(sel?' sel':'')+(vyp?' off':'')+'"'+(vyp?'':' onclick="prepniHodinu(\''+c.id+'\')"')+'>'
-      +'<div class="box">'+(sel?'✓':(mam?'✓':''))+'</div>'
+    return '<div class="pk'+(sel?' sel':'')+(vyp?' off':'')+(hotovo?' ok':'')+'"'+((vyp||hotovo)?'':' onclick="prepniHodinu(\''+c.id+'\')"')+'>'
+      +'<div class="box">'+(sel?'✓':(c.moja?'✓':''))+'</div>'
       +'<div class="txt"><div class="nm">'+esc(c.emoji)+' '+esc(c.name)+'</div>'
       +'<div class="mt">'+esc(stav)+(c.instructor?' · '+esc(c.instructor):'')+'</div></div>'
       +'<div class="tm">'+esc(c.time_start)+'</div></div>';
@@ -412,9 +419,36 @@ function showClassChoice(d, qrTxt){
         body:JSON.stringify({studio:SLUG, k:KEY, qr_data:qrTxt, class_id:b.dataset.cid})});
       const d2=await r.json();
       if(r.ok && d2.ok && !d2.choose){ await closeScan(); showWelcome(d2); }
+      else if(r.status===402 && d2.ask_cash){ showCashQuestion(d2, qrTxt); }
       else { m.textContent='⚠️ '+(d2.error||'Skús znova'); setTimeout(()=>{scanBusy=false; m.textContent='Ukáž kamere svoj QR kód z appky 📱';}, 3500); }
     }catch(e){ m.textContent='⚠️ Chyba spojenia — skús znova.'; scanBusy=false; }
   });
+}
+
+/* ── Bez krytia: zaplatíš v hotovosti? (Marek 13. 9.) ────────────────────────
+   Suma chodí zo servera podľa členstva (technika 10 / Bronze 8 / Silver 7 / Gold 6, inak vstup 10 €).
+   Po potvrdení sa zapíše účasť ako „platí na mieste" a tréner dostane oznam, že má vybrať hotovosť. */
+function showCashQuestion(d, qrTxt){
+  const m=$('scanMsg');
+  const btn='display:block;width:100%;margin:8px 0;padding:16px;font-size:1.15rem;font-weight:800;border-radius:14px;cursor:pointer;';
+  m.innerHTML='<div style="font-size:1.05rem;margin-bottom:4px">👋 Ahoj <b style="color:var(--gold2)">'+esc(d.first||'')+'</b></div>'
+    +'<div style="font-size:.95rem;margin-bottom:10px">'+(d.tech
+        ? '🩰 <b>'+esc(d.class_name||'Technický tréning')+'</b> členstvo nekryje — cena '+(d.has_membership?'podľa tvojho členstva':'bez členstva')+' je <b style="color:var(--gold2)">'+d.price+' €</b>.'
+        : '<b>'+esc(d.class_name||'Hodina')+'</b> — nemáš aktívne členstvo ani vstup. Jednorazový vstup je <b style="color:var(--gold2)">'+d.price+' €</b>.')
+      +'<br>Zaplatíš v hotovosti trénerovi na hodine?</div>'
+    +'<button id="cashYes" style="'+btn+'border:1px solid rgba(201,168,76,.6);background:linear-gradient(135deg,rgba(201,168,76,.28),rgba(201,168,76,.08));color:var(--cream)">💵 Áno, zaplatím '+d.price+' € — zapíš ma</button>'
+    +'<button id="cashNo" style="'+btn+'border:1px solid rgba(255,255,255,.18);background:none;color:var(--muted)">Nie, radšej sa ozvem trénerovi</button>';
+  $('cashNo').onclick=()=>{ scanBusy=false; m.textContent='Ukáž kamere svoj QR kód z appky 📱'; };
+  $('cashYes').onclick=async()=>{
+    m.textContent='⏳ Zapisujem…';
+    try{
+      const r=await fetch('/api/kiosk/checkin',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({studio:SLUG, k:KEY, qr_data:qrTxt, class_id:d.class_id, pay_on_site:true})});
+      const d2=await r.json();
+      if(r.ok && d2.ok){ await closeScan(); showWelcome(d2); }
+      else { m.textContent='⚠️ '+(d2.error||'Skús znova'); setTimeout(()=>{scanBusy=false; m.textContent='Ukáž kamere svoj QR kód z appky 📱';}, 3500); }
+    }catch(e){ m.textContent='⚠️ Chyba spojenia — skús znova.'; scanBusy=false; }
+  };
 }
 
 /* ── Welcome ── */

@@ -15916,17 +15916,39 @@ app.post('/api/kiosk/checkin', async(req,res)=>{
       const mem=await checkMembership(u._id);
       // Online-only plán nekryje živú hodinu — kiosk musí upozorniť, že treba vybrať vstupné
       const onlineOnly=mem&&/online/.test(String((mem.plan_id||'')+' '+(mem.plan_name||'')).toLowerCase());
-      const hasMem=mem&&mem.status==='active'&&!onlineOnly, hasFree=!u.free_class_used, hasSingle=(u.single_entries||0)>0, hasCredit=(u.free_credits||0)>0;
-      if(!hasMem&&!hasFree&&!hasSingle&&!hasCredit) return res.status(402).json({error:(onlineOnly?'Máš len ONLINE členstvo — živú hodinu nekryje. ':'Nemáš aktívne členstvo ani vstup — ')+'ozvi sa prosím trénerovi na hodine. 💛', name:u.name});
+      const hasMem=!!(mem&&mem.status==='active'&&!onlineOnly&&(!mem.expires_at||mem.expires_at>=todayS)), hasFree=!u.free_class_used, hasSingle=(u.single_entries||0)>0, hasCredit=(u.free_credits||0)>0;
+      // Technický tréning členstvo NEKRYJE (vlastný cenník podľa členstva) — doteraz ho kiosk
+      // zapísal ako krytý a nikto nezaplatil. Bez krytia sa kiosk PÝTA na hotovosť (Marek 13. 9.).
+      const jeTech = cls.category==='Technika';
+      let kiosKrytie = null, cena = null;
+      if(jeTech){
+        if(hasFree) kiosKrytie='free_class'; else if(hasCredit) kiosKrytie='free_credit'; else if(hasSingle) kiosKrytie='single_entry';
+        else cena = technikaCenaZPlanu(String((mem?.plan_id||'')+' '+(mem?.plan_name||'')), hasMem);
+      } else {
+        if(hasMem) kiosKrytie='membership'; else if(hasFree) kiosKrytie='free_class'; else if(hasCredit) kiosKrytie='free_credit'; else if(hasSingle) kiosKrytie='single_entry';
+        else cena = 10;
+      }
+      if(!kiosKrytie){
+        if(!req.body.pay_on_site) return res.status(402).json({
+          error:(onlineOnly?'Máš len ONLINE členstvo — živú hodinu nekryje. ':jeTech?'Technický tréning členstvo nekryje. ':'Nemáš aktívne členstvo ani vstup. ')+'Zaplatíš '+cena+' € v hotovosti trénerovi?',
+          ask_cash:true, price:cena, class_id:cls._id, class_name:cls.name, tech:jeTech, has_membership:hasMem,
+          name:u.name, first:(u.name||'').split(' ')[0] });
+        kiosKrytie='pay_on_site';
+      }
       const upd={};
-      if(!hasMem){ if(hasFree) upd.free_class_used=true; else if(hasCredit) upd.free_credits=(u.free_credits||0)-1; else if(hasSingle) upd.single_entries=(u.single_entries||0)-1; }
+      if(kiosKrytie==='free_class') upd.free_class_used=true; else if(kiosKrytie==='free_credit') upd.free_credits=(u.free_credits||0)-1; else if(kiosKrytie==='single_entry') upd.single_entries=(u.single_entries||0)-1;
       if(Object.keys(upd).length) await q.update(db.users,{_id:u._id},{$set:upd});
-      // Bez access_method nebolo z rezervácie vidieť, čím bola hodina krytá —
-      // v zozname trénera svietilo prázdno a spotrebovaný vstup nezanechal stopu.
-      const kiosKrytie = hasMem ? 'membership' : hasFree ? 'free_class'
-        : hasCredit ? 'free_credit' : hasSingle ? 'single_entry' : 'membership';
+      if(kiosKrytie==='pay_on_site'){
+        // tréner musí vedieť, že má vybrať hotovosť — rovnaká stopa ako pri rezervácii „platí na mieste"
+        const komu = cls.instructor_id ? [await q.one(db.users,{_id:cls.instructor_id})].filter(Boolean) : [];
+        if(!komu.length) komu.push(...await q.find(db.users,{is_admin:true}));
+        for(const t of komu) await q.insert(db.notifications,{user_id:t._id, type:'pay_on_site',
+          title:'💵 Kiosk: vybrať '+cena+' € — '+u.name, body:cls.name+' '+cls.time_start+' · zaplatí v hotovosti na hodine (potvrdila na kiosku)',
+          read:false, created_at:nowISO()}).catch(()=>{});
+      }
       await q.insert(db.bookings,{ class_id:cls._id, class_name:cls.name, class_emoji:cls.emoji||'💃',
-        free_class: !hasMem&&hasFree, access_method: kiosKrytie,
+        free_class: kiosKrytie==='free_class', access_method: kiosKrytie,
+        ...(kiosKrytie==='pay_on_site' ? { pay_on_site:true, pay_amount:cena } : {}),
         class_location:cls.location, class_time_start:cls.time_start, day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
         user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||'',
         booking_date:todayS, status:'attended', attended_at:nowISO(), attended_by:'kiosk_'+a.slug,
@@ -16053,7 +16075,11 @@ app.post('/api/kiosk/signup', async (req, res) => {
 
     const moje = await q.find(db.bookings, { user_id: u._id, booking_date: todayS, status: { $ne: 'cancelled' } });
     const nove = hodiny.filter(c => !moje.some(b => b.class_id === c._id));
-    const uzMala = hodiny.length - nove.length;
+    // Už rezervovaná hodina, ktorá práve beží → zapíše sa účasť (predtým sa ticho preskočila
+    // a klientka rezervovaná z appky sa cez tento zoznam nevedela zapísať — Marek 13. 9.).
+    const bezneRezervovane = hodiny.filter(c => moje.some(b => b.class_id === c._id && b.status !== 'attended')
+      && nowMin >= toMin(c.time_start) - 15 && nowMin < konietOf(c) + 15);
+    const uzMala = hodiny.length - nove.length - bezneRezervovane.length;
 
     // kapacita
     for (const c of nove) {
@@ -16108,6 +16134,16 @@ app.post('/api/kiosk/signup', async (req, res) => {
       zapisane.push({ name: c.name, emoji: c.emoji || '💃', time_start: c.time_start, teraz });
     }
 
+    for (const c of bezneRezervovane) {
+      const b = moje.find(x => x.class_id === c._id);
+      const fix = b.attendance_status === 'no_show' ? { no_show_corrected_at: nowISO(), no_show_corrected_by: 'kiosk_' + a.slug } : {};
+      if (b.attendance_status === 'no_show') { const cu = await q.one(db.users, { _id: u._id });
+        if (cu && (cu.no_show_count || 0) > 0) await q.update(db.users, { _id: u._id }, { $set: { no_show_count: cu.no_show_count - 1 } }); }
+      await q.update(db.bookings, { _id: b._id }, { $set: { status: 'attended', attended_at: nowISO(), attended_by: 'kiosk_' + a.slug,
+        attendance_status: 'attended', attendance_source: 'qr', ...fix } });
+      await creditAttendance(await q.one(db.users, { _id: u._id }));
+      zapisane.push({ name: c.name, emoji: c.emoji || '💃', time_start: c.time_start, teraz: true });
+    }
     u = await q.one(db.users, { _id: u._id });
     const streak = await visitStreakWeeks(u._id);
     const birthdayToday = (u.birthday || '').slice(5) === todayS.slice(5);
