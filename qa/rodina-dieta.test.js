@@ -46,10 +46,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const obchod = fs.readFileSync(path.join(ROOT, 'public', 'obchod.html'), 'utf8');
   const dash = fs.readFileSync(path.join(ROOT, 'public', 'client-dashboard.html'), 'utf8');
   console.log('STATICKÉ');
-  ok('cenník: karta Zumba Kids preč', !/plan-name">Zumba Kids/.test(pricing) && !/buyKids\(/.test(pricing) && !/kidsChildSelect/.test(pricing));
-  ok('cenník: ?buy=kids ide do Obchodu', /get\('buy'\)==='kids'/.test(pricing) && /\/obchod\?buy=bronze&pre=dieta/.test(pricing));
-  ok('obchod: buy=kids = Bronze pre dieťa', /buyRaw==='kids'\?'bronze'/.test(obchod) && /PRE_KOHO=CHILDREN\[0\]\.id/.test(obchod));
-  ok('dashboard: rodičovská karta má automatické hodiny a vypnutie odberu dieťaťa', /toggleAutoClass\(/.test(dash) && /cancelChildRenew\(/.test(dash) && /Chodí automaticky na/.test(dash));
+  const shop = fs.readFileSync(path.join(ROOT, 'public', 'shop.html'), 'utf8');
+  ok('cenník je len presmerovanie do Obchodu (jeden obchod)', /location\.replace\('\/obchod'/.test(pricing) && !/Zumba Kids/.test(pricing) && pricing.length < 400);
+  ok('starý e-shop je len presmerovanie do Obchodu (merch)', /location\.replace\('\/obchod\?tab=merch'/.test(shop) && shop.length < 400);
+  ok('obchod: buy=kids = Bronze pre dieťa, bez detí založí profil', /buyRaw==='kids'\?'bronze'/.test(obchod) && /PRE_KOHO=CHILDREN\.length\?CHILDREN\[0\]\.id:'new'/.test(obchod) && /ulozNoveDieta/.test(obchod) && /Pridať dieťa \(Zumba Kids\)/.test(obchod));
+  const nav = fs.readFileSync(path.join(ROOT, 'public', 'nav-bar.js'), 'utf8');
+  ok('menu: jedna položka Obchod (/obchod), žiadne Členstvo (/pricing)', !/href:'\/pricing'/.test(nav) && !/href:'\/shop'/.test(nav) && /label:'Obchod', href:'\/obchod'/.test(nav));
+  ok('appka neodkazuje na /pricing ani /shop', ['client-dashboard.html','schedule.html','index.html','unlock.html','jedalnicek.html','404.html','admin.html'].every(f => { const t = fs.readFileSync(path.join(ROOT, 'public', f), 'utf8'); return !/\/pricing/.test(t) && !/href="\/shop"/.test(t); }));
+  ok('dashboard: rodičovská karta má automatické hodiny a vypnutie odberu dieťaťa', /toggleAutoClass\(/.test(dash) && /cancelChildRenew\(/.test(dash) && /Chodí automaticky na/.test(dash) && /zapniOdporucane\(/.test(dash) && /doplnDatum\(/.test(dash));
 
   // ── fixtúry ──
   const DNES = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Bratislava' }).format(new Date());
@@ -194,8 +198,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok('admin: Bronze pre mamu (hotovosť)', grM.status === 200 && grM.d && grM.d.ok, JSON.stringify(grM.d));
     const bMama = await j('/api/bookings', { method: 'POST', body: { class_id: 'qaZumbaD', booking_date: ZAJTRA } }, mj);
     ok('mama si rezervuje Zumbu pre seba (vlastné členstvo)', bMama.status === 200 && bMama.d && bMama.d.ok, 'HTTP ' + bMama.status + ' ' + JSON.stringify(bMama.d));
+    // dieťa (8 r.) bolo po obnove členstva zaradené podľa veku do Kids 2 a na zajtra už automaticky prihlásené
     const bKid = await j('/api/bookings', { method: 'POST', body: { class_id: 'qaKids2Pi', booking_date: ZAJTRA, for_child_id: DIETA } }, mj);
-    ok('mama rezervuje Zumba Kids pre dieťa (členstvo dieťaťa)', bKid.status === 200 && bKid.d && bKid.d.ok, 'HTTP ' + bKid.status + ' ' + JSON.stringify(bKid.d));
+    ok('dieťa je na Zumba Kids 2 prihlásené automaticky (mamin zápis: už prihlásené)', bKid.status === 400 && /už na túto hodinu/.test((bKid.d || {}).error || '') && rd('bookings.db').some(b => b.user_id === DIETA && b.class_id === 'qaKids2Pi' && b.booking_date === ZAJTRA && b.auto_kids), 'HTTP ' + bKid.status + ' ' + JSON.stringify(bKid.d));
     const bk = rd('bookings.db').find(b => b.user_id === DIETA && b.class_id === 'qaKids2Pi' && b.booking_date === ZAJTRA);
     const cs = await j('/api/attendance/confirm-session', { method: 'POST', body: { class_id: 'qaKids2Pi', date: ZAJTRA, present_ids: [bk && bk._id] } }, aj);
     await sleep(400);
@@ -206,7 +211,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const putA = await j('/api/family/children/' + DIETA, { method: 'PUT', body: { auto_classes: ['qaKids2Pi', 'qaKids1Pi', 'qaZumbaD'] } }, mj);
     ok('rodič zapne automatické hodiny (len detské sa uložia)', putA.status === 200 && putA.d && JSON.stringify(putA.d.auto_classes) === JSON.stringify(['qaKids2Pi', 'qaKids1Pi']), JSON.stringify(putA.d));
     const autoBk = rd('bookings.db').filter(b => b.auto_kids && b.user_id === DIETA && b.booking_date >= DNES);
-    ok('appka dieťa prihlásila na najbližší termín Kids 1 (Kids 2 na zajtra už mala od mamy)', putA.d && putA.d.auto_bookings === 1 && autoBk.length === 1 && autoBk[0].class_id === 'qaKids1Pi' && autoBk[0].booking_date === ZAJTRA && autoBk[0].is_child_booking && autoBk[0].class_time_start === '16:00', JSON.stringify(autoBk.map(b => b.class_id + ' ' + b.booking_date + ' ' + b.class_time_start)));
+    ok('appka dieťa prihlásila aj na Kids 1 (Kids 2 už mala z automatiky)', putA.d && putA.d.auto_bookings === 1 && autoBk.length === 2 && autoBk.some(b => b.class_id === 'qaKids1Pi' && b.booking_date === ZAJTRA && b.class_time_start === '16:00') && autoBk.every(b => b.is_child_booking), JSON.stringify(autoBk.map(b => b.class_id + ' ' + b.booking_date + ' ' + b.class_time_start)));
     const fam2 = await j('/api/family/children', {}, mj);
     ok('rodina: auto_classes v zozname', fam2.d && fam2.d[0] && fam2.d[0].auto_classes.length === 2);
     const ns = await j('/api/admin/attendance/run-noshow', { method: 'POST' }, aj);
@@ -217,6 +222,21 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok('bežná rezervácia dospelej bez potvrdenia ostáva no-show', teta0.attendance_status === 'no_show', JSON.stringify(teta0 && teta0.attendance_status));
     const idem = await j('/api/family/children/' + DIETA, { method: 'PUT', body: { auto_classes: ['qaKids2Pi', 'qaKids1Pi'] } }, mj);
     ok('opakované uloženie nevytvorí duplicitné rezervácie', idem.d && idem.d.auto_bookings === 0 && rd('bookings.db').filter(b => b.user_id === DIETA && b.booking_date === ZAJTRA && b.status !== 'cancelled').length === 2);
+
+    // ── 7) jeden obchod, dátum narodenia, zaradenie podľa veku ──
+    const rp = await fetch(BASE + '/pricing?buy=bronze', { redirect: 'manual' }), rs = await fetch(BASE + '/shop', { redirect: 'manual' });
+    ok('/pricing a /shop presmerujú do /obchod', rp.status === 302 && /\/obchod\?buy=bronze/.test(rp.headers.get('location') || '') && rs.status === 302 && /\/obchod\?tab=merch/.test(rs.headers.get('location') || ''), rp.status + ' ' + rp.headers.get('location') + ' | ' + rs.status + ' ' + rs.headers.get('location'));
+    const bezD = await j('/api/family/children', { method: 'POST', body: { name: 'Bez Datumu' } }, mj);
+    ok('dieťa bez dátumu narodenia → 400', bezD.status === 400 && /narodenia/.test((bezD.d || {}).error || ''), 'HTTP ' + bezD.status + ' ' + JSON.stringify(bezD.d));
+    const nove = await j('/api/family/children', { method: 'POST', body: { name: 'Samko Mamov', birth_date: '2018-05-05' } }, mj);
+    ok('nové dieťa (8 r.) založené', nove.status === 200 && nove.d && nove.d.id, JSON.stringify(nove.d));
+    const grS = await j('/api/admin/users/' + nove.d.id + '/grant-membership', { method: 'POST', body: { plan_id: 'bronze', gift: false, payment_method: 'cash', amount: 50 } }, aj);
+    await sleep(800);
+    const fam3 = await j('/api/family/children', {}, mj);
+    const samko = (fam3.d || []).find(c => c.id === nove.d.id);
+    ok('po kúpe členstva je 8-ročné dieťa zaradené do Zumba Kids 2 (podľa veku)', grS.status === 200 && samko && samko.age === 8 && samko.age_group === 'Kids 2' && JSON.stringify(samko.auto_classes) === JSON.stringify(['qaKids2Pi']), JSON.stringify(samko && { age: samko.age, g: samko.age_group, a: samko.auto_classes }));
+    ok('… a má automatickú rezerváciu na najbližší termín', rd('bookings.db').some(b => b.user_id === nove.d.id && b.auto_kids && b.class_id === 'qaKids2Pi'));
+    ok('rodič dostal upozornenie o zaradení', (await j('/api/client/notifications', {}, mj)).d.some(n => /Samko.*zaradené do Zumba Kids 2/.test(n.title || '')));
   } catch (e) { failed++; console.log('  ❌ výnimka: ' + e.stack); }
   finally {
     proc.kill();

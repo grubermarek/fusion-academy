@@ -148,7 +148,7 @@ async function boot(){
   // Zrušený detský balík: /?buy=kids (reklama) = Bronze pre dieťa, „Pre koho" predvyplnené prvým dieťaťom
   const buyRaw=qsB.get('buy');
   const buy=buyRaw==='kids'?'bronze':buyRaw;
-  if((buyRaw==='kids'||qsB.get('pre')==='dieta') && CHILDREN.length) PRE_KOHO=CHILDREN[0].id;
+  if(buyRaw==='kids'||qsB.get('pre')==='dieta') PRE_KOHO=CHILDREN.length?CHILDREN[0].id:'new';
   const want=qsB.get('tab')||location.hash.replace('#','');
   const jeVstup=buy&&PLANS[buy]&&(PLANS[buy].type==='bundle'||buy==='vstup1');
   showTab(jeVstup?'vstupy':(['clenstva','vstupy','sukromne','merch','eventy','nakupy'].includes(want)?want:'clenstva'));
@@ -445,17 +445,46 @@ let CUR=null, PROMO=null;
 // Členstvo si rodič kupuje aj pre dieťa — bez tejto voľby by sadlo na neho
 // a dieťa by nemalo v appke ani rezervácie, ani dochádzku.
 function preKohoBlok(){
-  if(!CHILDREN.length) return '';
+  // Rodič má svoj účet, dieťa svoj profil (Marek 13. 9.) — členstvo pre dieťa sa kupuje
+  // na dieťa. Bez detí ponúkneme založenie profilu rovno tu (reklama /?buy=kids).
+  const bezDeti=!CHILDREN.length;
   return `<label class="renew" style="align-items:flex-start"><span style="width:100%">Pre koho je členstvo?<br>
     <select id="mFor" onchange="nastavPreKoho(this.value)" style="width:100%;margin-top:6px;padding:9px;border-radius:10px;background:#171410;color:#fff;border:1px solid #3a3020">
       <option value="">Pre mňa</option>
       ${CHILDREN.map(c=>`<option value="${c.id}"${PRE_KOHO===c.id?' selected':''}>${esc(c.name)}${c.birth_year?' ('+c.birth_year+')':''}</option>`).join('')}
-    </select></span></label>`;
+      <option value="new"${PRE_KOHO==='new'?' selected':''}>➕ Pridať dieťa (Zumba Kids)</option>
+    </select></span></label>
+    <div id="mNoveDieta" style="display:${PRE_KOHO==='new'?'block':'none'};margin:-4px 0 12px;padding:10px 12px;border:1px dashed rgba(201,168,76,.5);border-radius:10px">
+      <div style="font-size:.8rem;color:var(--muted);margin-bottom:6px">${bezDeti?'Zumba Kids je pre dieťa — najprv mu založ profil (má vlastný QR kód aj dochádzku).':'Nový detský profil'}</div>
+      <input id="mDietaMeno" placeholder="Meno a priezvisko dieťaťa" style="width:100%;padding:9px;border-radius:10px;background:#171410;color:#fff;border:1px solid #3a3020;margin-bottom:6px">
+      <input id="mDietaNar" type="date" max="${new Date().toISOString().slice(0,10)}" style="width:100%;padding:9px;border-radius:10px;background:#171410;color:#fff;border:1px solid #3a3020;color-scheme:dark;margin-bottom:8px">
+      <button type="button" class="paybtn sec" style="margin:0" onclick="ulozNoveDieta()">Uložiť dieťa</button>
+      <div class="err" id="mDietaErr"></div>
+    </div>`;
 }
-function nastavPreKoho(v){ PRE_KOHO=v||null; if(CUR) CUR.child_id=v||null; }
+function nastavPreKoho(v){
+  PRE_KOHO=v||null; if(CUR) CUR.child_id=(v&&v!=='new')?v:null;
+  const f=document.getElementById('mNoveDieta'); if(f) f.style.display=v==='new'?'block':'none';
+  // kým nie je dieťa uložené, nákup „pre nové dieťa" sa nedá odoslať (sadol by na rodiča)
+  const st=document.getElementById('mStripe'), man=document.getElementById('mManual');
+  if(st) st.disabled=v==='new'; if(man) man.disabled=v==='new';
+}
+async function ulozNoveDieta(){
+  const meno=(document.getElementById('mDietaMeno')?.value||'').trim(), nar=document.getElementById('mDietaNar')?.value||'';
+  const err=document.getElementById('mDietaErr'); err.textContent='';
+  if(meno.length<2){ err.textContent='Zadaj meno dieťaťa'; return; }
+  if(!nar){ err.textContent='Zadaj dátum narodenia — podľa veku dieťa zaradíme do skupiny'; return; }
+  const r=await api('/api/family/children',{method:'POST',body:JSON.stringify({name:meno, birth_date:nar})});
+  if(!r||!r.ok){ err.textContent=(r&&r.error)||'Nepodarilo sa uložiť'; return; }
+  try{ CHILDREN=await fetch('/api/family/children',{credentials:'include'}).then(x=>x.json()); }catch(e){}
+  if(!Array.isArray(CHILDREN)) CHILDREN=[];
+  PRE_KOHO=r.id; toast('🧒 '+meno+' má profil — členstvo kupuješ pre '+meno.split(' ')[0]);
+  if(CUR&&CUR.kind==='plan') openPlan(CUR.id);
+}
+
 function openPlan(id){
   const p=PLANS[id]; if(!p) return;
-  CUR={kind:'plan', id, price:p.price, name:p.name, child_id:PRE_KOHO||null}; PROMO=null;
+  CUR={kind:'plan', id, price:p.price, name:p.name, child_id:(PRE_KOHO&&PRE_KOHO!=='new')?PRE_KOHO:null}; PROMO=null;
   const monthly=p.type!=='bundle';
   document.getElementById('mTitle').textContent=p.name;
   document.getElementById('mBody').innerHTML=preKohoBlok()+`
@@ -475,6 +504,7 @@ function openPlan(id){
   api('/api/shop/event',{method:'POST',body:JSON.stringify({type:'checkout_open', item:id})});
   document.getElementById('buyM').classList.add('open');
   recalc();
+  nastavPreKoho(PRE_KOHO||'');
 }
 function recalc(){
   if(!CUR||CUR.kind!=='plan') return;

@@ -524,11 +524,11 @@
     </div>
     <div id="mcNoMembershipBlock" class="mc-no-membership" style="display:none">
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:6px">
-        <a href="/pricing" style="text-decoration:none;background:rgba(201,168,76,.1);border:1px solid var(--gold,#C9A84C);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
+        <a href="/obchod" style="text-decoration:none;background:rgba(201,168,76,.1);border:1px solid var(--gold,#C9A84C);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
           <div style="font-size:1.5rem">💛</div><div style="font-weight:800;margin:4px 0 2px">Mesačné členstvo</div>
           <div style="font-size:.74rem;color:var(--muted,#999)">neobmedzené hodiny · od 50 €/mes.</div>
         </a>
-        <a href="/pricing" style="text-decoration:none;background:#161616;border:1px solid var(--gold-border,#332a18);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
+        <a href="/obchod" style="text-decoration:none;background:#161616;border:1px solid var(--gold-border,#332a18);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
           <div style="font-size:1.5rem">🎟️</div><div style="font-weight:800;margin:4px 0 2px">Permanentka</div>
           <div style="font-size:.74rem;color:var(--muted,#999)">10 vstupov · 80 € · bez záväzku</div>
         </a>
@@ -554,7 +554,7 @@
     </div>
     <!-- Permanentkové vstupy + darované hodiny — viditeľné VŽDY keď nejaké sú (aj popri členstve) -->
     <div id="mcEntriesRow" style="display:none;margin-top:10px;background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.3);border-radius:12px;padding:10px 14px;font-size:.88rem"></div>
-    <button class="mc-buy-btn" id="mcBuyBtn" onclick="window.location.href='/pricing'">
+    <button class="mc-buy-btn" id="mcBuyBtn" onclick="window.location.href='/obchod'">
       <i class="bi bi-cart-plus"></i> <span data-i18n="dash.mc_buy">Kúpiť / obnoviť členstvo</span>
     </button>
     <a id="mcCancelSub" onclick="cancelStripeSub()" style="display:none;margin-top:10px;font-size:.78rem;color:var(--muted);text-decoration:underline;cursor:pointer;text-align:center"><span data-i18n="dash.mc_cancel_sub">Zrušiť automatický mesačný odber</span></a>
@@ -698,7 +698,7 @@
       <div style="font-size:.85rem;font-weight:700;color:var(--gold);margin-bottom:4px">💳 Dostupný kredit – čo s ním?</div>
       <div style="font-size:.75rem;color:var(--muted);margin-bottom:10px">Tvoje provízie zo štruktúry + referral kredit v jednom. Použi ho na nákupy v appke, alebo si ho nad 100 € nechaj vyplatiť na účet.</div>
       <div style="display:grid;gap:8px">
-        <a href="/pricing" style="display:flex;align-items:center;gap:10px;background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:11px 14px;text-decoration:none;color:var(--text);transition:border-color .2s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='#333'">
+        <a href="/obchod" style="display:flex;align-items:center;gap:10px;background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:11px 14px;text-decoration:none;color:var(--text);transition:border-color .2s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='#333'">
           <span style="font-size:1.4rem">🏷️</span>
           <div>
             <div style="font-size:.85rem;font-weight:600">Členstvá, vstupenky, súkromné hodiny</div>
@@ -706,7 +706,7 @@
      Ak si ho chceš dať vyplatiť na účet, príď na <a href="/skolenie" style="color:var(--gold)">ambasádorské školenie</a>.</div>
           </div>
         </a>
-        <a href="/shop" style="display:flex;align-items:center;gap:10px;background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:11px 14px;text-decoration:none;color:var(--text);transition:border-color .2s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='#333'">
+        <a href="/obchod?tab=merch" style="display:flex;align-items:center;gap:10px;background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:11px 14px;text-decoration:none;color:var(--text);transition:border-color .2s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='#333'">
           <span style="font-size:1.4rem">🛍️</span>
           <div>
             <div style="font-size:.85rem;font-weight:600">Merch v e-shope</div>
@@ -814,11 +814,11 @@
       <i class="bi bi-calendar-week"></i>
       <span data-i18n="dash.qa_sched">Rozvrh hodín</span>
     </a>
-    <a class="qa-btn" href="/pricing">
+    <a class="qa-btn" href="/obchod">
       <i class="bi bi-credit-card"></i>
       <span data-i18n="dash.qa_buy">Kúpiť členstvo</span>
     </a>
-    <a class="qa-btn" href="/shop">
+    <a class="qa-btn" href="/obchod?tab=merch">
       <i class="bi bi-bag"></i>
       <span data-i18n="dash.qa_shop">E-shop</span>
     </a>
@@ -1000,7 +1000,7 @@ function renderUnlockCards(me){
   const feats=[
     {f:'silver',ic:'🥈',title:'Silver výhody',sub:'Metabolická analýza tela (Tanita) + Online hodiny LIVE',open:['silver','gold'].includes(plan),tier:'Silver',href:'/support',cta:'✓ Aktívne'},
     {f:'gold',ic:'🥇',title:'Gold výhody',sub:'Metabolická analýza + jedálniček na mieru + 20 % na súkromné hodiny',open:plan==='gold',tier:'Gold',href:'/support',cta:'✓ Aktívne'},
-    {f:'meal',ic:'🍽️',title:'Jedálniček na mieru',sub:'Osobný jedálniček na celý týždeň (Gold aj Online Premium)',open:['gold','online_premium'].includes(plan),tier:'Gold / Online Premium',href:'/jedalnicek',cta:'✓ Otvoriť jedálniček',lockHref:'/pricing'},
+    {f:'meal',ic:'🍽️',title:'Jedálniček na mieru',sub:'Osobný jedálniček na celý týždeň (Gold aj Online Premium)',open:['gold','online_premium'].includes(plan),tier:'Gold / Online Premium',href:'/jedalnicek',cta:'✓ Otvoriť jedálniček',lockHref:'/obchod'},
   ];
   box.innerHTML=feats.map(x=>x.open
     ? `<a class="unlock-card open" href="${x.href}"><div class="uc-ic">${x.ic}</div><div class="uc-txt"><b>${x.title}</b><span>${x.sub}</span></div><div class="uc-badge open">${x.cta}</div></a>`
@@ -1072,7 +1072,7 @@ function renderMembership(me){
     if(me.stripe_subscription){
       ar.innerHTML='<a onclick="mcToggleRenew()" style="color:#81c784;font-weight:700;cursor:pointer;text-decoration:underline dotted">🔄 Aktívne — vypnúť?</a>';
     } else {
-      ar.innerHTML='<span style="color:#9e9e9e">Vypnuté</span> <a href="/pricing" style="color:var(--gold);font-size:.78rem">zapnúť →</a>';
+      ar.innerHTML='<span style="color:#9e9e9e">Vypnuté</span> <a href="/obchod" style="color:var(--gold);font-size:.78rem">zapnúť →</a>';
     }
     const TIER_COLORS={bronze:'#cd7f32',silver:'#c0c6d0',gold:'#C9A84C',kids:'#FF6B9D',online_basic:'#4CAF50',online_premium:'#9C27B0'};
     const card=document.getElementById('membershipCard');
@@ -1091,7 +1091,7 @@ function renderMembership(me){
         🎟️ Zostáva ti <b style="color:#60a5fa">${entries}</b> vstup${entries===1?'':entries<5?'y':'ov'} z permanentky.${freeCr>0?` 🎁 + ${freeCr} darovan${freeCr===1?'á hodina':'é hodiny'}.`:''}
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
-        <a href="/pricing" style="text-decoration:none;background:rgba(201,168,76,.1);border:1px solid var(--gold,#C9A84C);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
+        <a href="/obchod" style="text-decoration:none;background:rgba(201,168,76,.1);border:1px solid var(--gold,#C9A84C);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
           <div style="font-size:1.4rem">💛</div><div style="font-weight:800;margin:4px 0 2px">Prejdi na mesačné členstvo</div>
           <div style="font-size:.72rem;color:var(--muted,#999)">neobmedzené hodiny + zľavy na súkromky — pri 2+ hodinách týždenne výhodnejšie</div>
         </a>
@@ -1109,11 +1109,11 @@ function renderMembership(me){
   statusEl.className='mc-status none'; statusEl.textContent='Neaktívne';
   noBlock.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:6px">
-      <a href="/pricing" style="text-decoration:none;background:rgba(201,168,76,.1);border:1px solid var(--gold,#C9A84C);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
+      <a href="/obchod" style="text-decoration:none;background:rgba(201,168,76,.1);border:1px solid var(--gold,#C9A84C);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
         <div style="font-size:1.5rem">💛</div><div style="font-weight:800;margin:4px 0 2px">Mesačné členstvo</div>
         <div style="font-size:.74rem;color:var(--muted,#999)">neobmedzené hodiny · od 50 €/mes.</div>
       </a>
-      <a href="/pricing" style="text-decoration:none;background:#161616;border:1px solid var(--gold-border,#332a18);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
+      <a href="/obchod" style="text-decoration:none;background:#161616;border:1px solid var(--gold-border,#332a18);border-radius:14px;padding:14px;text-align:center;color:var(--cream,#eee)">
         <div style="font-size:1.5rem">🎟️</div><div style="font-weight:800;margin:4px 0 2px">Permanentka</div>
         <div style="font-size:.74rem;color:var(--muted,#999)">10 vstupov · 80 € · bez záväzku</div>
       </a>
@@ -1148,11 +1148,11 @@ function renderAccessBar(me){
     if(se>0) parts.push(`<strong>${se} ${se===1?'vstup':(se<5?'vstupy':'vstupov')}</strong>`);
     if(fc>0) parts.push(`<strong>${fc} ${fc===1?'hodina':(fc<5?'hodiny':'hodín')} zadarmo</strong>`);
     bar.className='access-bar ok anim anim-d2';icon.className='bi bi-ticket-perforated-fill';
-    text.innerHTML=`Máš ${parts.join(' + ')} k dispozícii. <a href="/pricing" style="color:var(--gold)">Kúpiť členstvo →</a>`;
+    text.innerHTML=`Máš ${parts.join(' + ')} k dispozícii. <a href="/obchod" style="color:var(--gold)">Kúpiť členstvo →</a>`;
     bar.style.display='flex';
   } else {
     bar.className='access-bar warn anim anim-d2';icon.className='bi bi-exclamation-triangle-fill';
-    text.innerHTML='Prvá hodina zadarmo bola využitá. <a href="/pricing" style="color:var(--gold);font-weight:700">Kúp členstvo</a> alebo <strong>jednorazový vstup (10 €)</strong>.';
+    text.innerHTML='Prvá hodina zadarmo bola využitá. <a href="/obchod" style="color:var(--gold);font-weight:700">Kúp členstvo</a> alebo <strong>jednorazový vstup (10 €)</strong>.';
     bar.style.display='flex';
   }
 }
@@ -1258,12 +1258,15 @@ async function loadFamily(){
     const mem=c.membership?`<span style="color:#4caf50">🏅 ${escHtml(c.membership.plan_name)}${c.auto_renew?' · 🔄 odber':''}</span>${c.auto_renew?` <a onclick="cancelChildRenew('${c.id}','${escHtml(c.name).replace(/'/g,"&#39;")}')" style="font-size:.72rem;color:var(--muted);cursor:pointer;text-decoration:underline dotted">vypnúť</a>`:''}`:(c.free_class_used?'<span style="opacity:.6">bez členstva</span>':'<span style="color:var(--gold)">🎁 1. hodina zdarma</span>');
     const auto=c.auto_classes||[];
     // Automatická dochádzka (13. 9.): dieťa sa nemusí rezervovať — rodič vyberie hodiny, appka ho prihlási sama
-    const autoRows = kids.length ? `<div style="margin-top:8px;font-size:.78rem;color:var(--muted);line-height:1.5">🧒 Chodí automaticky na:${c.membership?'':' <span style="color:#ffb74d">(najprv členstvo pre dieťa v Obchode)</span>'}<br>
+    const bezDatumu=!c.birth_date && !c.birth_year;
+    const odporuc = bezDatumu ? ` <a onclick="doplnDatum('${c.id}')" style="color:var(--gold);cursor:pointer;text-decoration:underline dotted">doplň dátum narodenia — zaradíme podľa veku</a>`
+      : (c.age_group && !auto.length && c.membership ? ` <a onclick="zapniOdporucane('${c.id}','${c.age_group}')" style="color:var(--gold);cursor:pointer;text-decoration:underline dotted">zapnúť odporúčané: Zumba ${c.age_group}</a>` : (c.age_group && !auto.length ? ` <span style="opacity:.7">(${c.age} r. → Zumba ${c.age_group})</span>` : ''));
+    const autoRows = kids.length ? `<div style="margin-top:8px;font-size:.78rem;color:var(--muted);line-height:1.5">🧒 Chodí automaticky na:${c.membership?'':' <span style="color:#ffb74d">(najprv členstvo pre dieťa v Obchode)</span>'}${odporuc}<br>
       ${kids.map(k=>`<label style="display:inline-flex;align-items:center;gap:5px;margin:4px 12px 0 0;cursor:pointer;color:${auto.includes(k._id)?'var(--text)':'var(--muted)'}"><input type="checkbox" ${auto.includes(k._id)?'checked':''} ${c.membership?'':'disabled'} onchange="toggleAutoClass('${c.id}','${k._id}',this.checked)" style="accent-color:var(--gold)">${escHtml(k.name)} · ${DNI[k.day_of_week]} ${k.time_start}</label>`).join('')}</div>` : '';
     return `<div class="booking-item" style="flex-wrap:wrap">
       <div class="booking-emoji">🧒</div>
       <div class="booking-info" style="min-width:0;flex:1">
-        <strong>${escHtml(c.name)}${c.birth_year?` <span style="opacity:.5;font-weight:400">• ${c.birth_year}</span>`:''}</strong>
+        <strong>${escHtml(c.name)}${c.birth_year?` <span style="opacity:.5;font-weight:400">• ${c.birth_year}${c.age!=null?' · '+c.age+' r.':''}</span>`:''}</strong>
         <span>${c.visit_count} návštev • ${mem}${c.upcoming?.length?` • najbližšie ${fmtDMY(c.upcoming[0].booking_date)}`:''}</span>
         ${autoRows}
       </div>
@@ -1281,6 +1284,19 @@ async function kidsClasses(){
   try{ const all=await api('/api/classes'); _kidsClasses=(Array.isArray(all)?all:[]).filter(c=>c.category==='Deti' && c.active!==false).sort((a,b)=>(a.day_of_week-b.day_of_week)||String(a.time_start).localeCompare(String(b.time_start))); }
   catch(e){ _kidsClasses=[]; }
   return _kidsClasses;
+}
+async function zapniOdporucane(childId, skupina){
+  const kids=await kidsClasses(); const ids=kids.filter(k=>String(k.name).includes(skupina)).map(k=>k._id);
+  if(!ids.length){ showToast('Detské hodiny sa nenašli','error'); return; }
+  const d=await api('/api/family/children/'+childId,{method:'PUT',body:{auto_classes:ids}});
+  if(d?.ok){ showToast('✅ Zaradené do Zumba '+skupina+(d.auto_bookings?' · '+d.auto_bookings+'× najbližšie termíny':''),'success'); loadFamily(); loadMyBookings(); }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
+}
+async function doplnDatum(childId){
+  const v=prompt('Dátum narodenia dieťaťa (RRRR-MM-DD):'); if(!v) return;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(v.trim())){ showToast('Zadaj dátum v tvare RRRR-MM-DD','error'); return; }
+  const d=await api('/api/family/children/'+childId,{method:'PUT',body:{birth_date:v.trim()}});
+  if(d?.ok){ showToast('Dátum uložený','success'); loadFamily(); } else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 async function toggleAutoClass(childId, classId, on){
   const c=_children.find(x=>x.id===childId); if(!c) return;
@@ -1301,6 +1317,7 @@ async function saveChild(){
   const name=document.getElementById('childName').value.trim();
   const birth_date=document.getElementById('childBirthDate').value;
   if(!name){ showToast('Zadaj meno dieťaťa','error'); return; }
+  if(!birth_date){ showToast('Zadaj dátum narodenia — podľa veku dieťa zaradíme do skupiny Zumba Kids','error'); return; }
   const d=await api('/api/family/children',{method:'POST',body:{name,birth_date}});
   if(d?.ok){ showToast('Dieťa pridané ✓','success'); closeChildModal(); loadFamily(); }
   else showToast('Chyba: '+(d?.error||'?'),'error');
@@ -1371,8 +1388,8 @@ function notifDest(n){
     case 'review_claim': return '/admin#points';       // schválenie Google recenzie
     case 'pay_on_site': return '/admin#bookings';
     case 'manual_payment': return '/admin#invoices';   // potvrdenie platby → Všetky predaje
-    case 'expiry_warning': case 'credit': case 'role_change': return '/pricing';
-    case 'friend_purchase': case 'purchase': return '/shop';
+    case 'expiry_warning': case 'credit': case 'role_change': return '/obchod';
+    case 'friend_purchase': case 'purchase': return '/obchod?tab=merch';
     default: return null;
   }
 }
@@ -1421,7 +1438,7 @@ function openPayoutModal(){
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:1.1rem;color:var(--gold)">💸 Vyplatiť kredit na účet</b><button onclick="closeCreditModal()" style="background:none;border:none;color:#999;font-size:1.3rem;cursor:pointer">✕</button></div>
     <div style="font-size:.82rem;color:var(--muted);margin-bottom:12px">Dostupný kredit: <b style="color:var(--gold)">${avail.toFixed(2)} €</b> · minimum na výplatu <b>100 €</b>. Zvyšok ostáva ako kredit (môžeš ho použiť na členstvá, permanentky, merch, súkromné hodiny alebo darovať).</div>
     ${avail<100?`<div style="background:rgba(255,152,0,.1);border:1px solid rgba(255,152,0,.3);color:#ffb74d;border-radius:10px;padding:10px;font-size:.82rem;margin-bottom:12px">Zatiaľ nemáš 100 € na výplatu. Kredit môžeš hneď použiť v appke ↓</div>
-      <div style="display:flex;flex-direction:column;gap:8px"><a href="/pricing" class="btn-primary" style="text-decoration:none;text-align:center">🏷️ Členstvá / permanentky / vstupenky / súkromné hodiny</a><a href="/shop" class="btn-primary" style="text-decoration:none;text-align:center;background:#2a2a2a;color:var(--text)">🛍️ Merch v e-shope</a></div>`
+      <div style="display:flex;flex-direction:column;gap:8px"><a href="/obchod" class="btn-primary" style="text-decoration:none;text-align:center">🏷️ Členstvá / permanentky / vstupenky / súkromné hodiny</a><a href="/obchod?tab=merch" class="btn-primary" style="text-decoration:none;text-align:center;background:#2a2a2a;color:var(--text)">🛍️ Merch v e-shope</a></div>`
     :`
     <label style="font-size:.8rem;color:var(--muted)">Suma na výplatu (€)</label>
     <input id="poAmount" type="number" min="100" max="${avail.toFixed(2)}" step="1" value="${Math.floor(avail)}" style="width:100%;background:#111;border:1px solid #333;color:var(--text);border-radius:10px;padding:10px 12px;margin:4px 0 10px">
@@ -1894,7 +1911,7 @@ function showTechPay(classId, name, price, credit){
     <button onclick="posTechNaMieste('${classId}',${price})" class="pos-item">
       <span class="pos-l"><b>💵 Zaplatím na mieste</b><small>V hotovosti priamo v štúdiu</small></span>
       <span class="pos-c">${POS_EUR(price)}</span></button>
-    <a href="/pricing?src=booking" class="pos-online">🎫 Alebo si kúp permanentku — platí aj na techniku</a>
+    <a href="/obchod?src=booking" class="pos-online">🎫 Alebo si kúp permanentku — platí aj na techniku</a>
     <button onclick="document.getElementById('posModal').style.display='none'" class="pos-back">Zrušiť</button>
   </div>`;
   m.style.display = 'flex';
@@ -1955,7 +1972,7 @@ async function showPayOnSiteChoice(classId, name, price, credit){
       <span class="pos-c">›</span>
     </button>
 
-    <a href="/pricing?src=booking" class="pos-online">🛒 Alebo si to kúp hneď online a rezervuj sa</a>
+    <a href="/obchod?src=booking" class="pos-online">🛒 Alebo si to kúp hneď online a rezervuj sa</a>
     <button onclick="document.getElementById('posModal').style.display='none'" class="pos-back">Zrušiť</button>
   </div>`;
   m.style.display = 'flex';
@@ -1977,7 +1994,7 @@ function posClenstva(classId, name){
     ${polozka('bronze','🥉 Bronze','Neobmedzene živých hodín', C.bronze)}
     ${polozka('silver','🥈 Silver','Bronze + online hodiny + metabolická analýza', C.silver)}
     ${polozka('gold','🥇 Gold','Silver + jedálniček na mieru a individuálny plán', C.gold)}
-    <a href="/pricing?src=booking" class="pos-online">🛒 Alebo si ho kúp hneď online a rezervuj sa</a>
+    <a href="/obchod?src=booking" class="pos-online">🛒 Alebo si ho kúp hneď online a rezervuj sa</a>
     <button onclick="showPayOnSiteChoice('${classId}','${String(name).replace(/'/g,"\\'")}')" class="pos-back">← Späť</button>`;
 }
 
@@ -2028,7 +2045,7 @@ async function confirmBooking(){
     // rezervácia sa všade viditeľne označí, aby tréner vedel vybrať vstupné.
     if(d.can_pay_on_site) showPayOnSiteChoice(cid, className0||'', d.tech_price, d.credit_balance);
     else { showToast('Najskôr si kúp členstvo alebo jednorazový vstup.','error');
-      setTimeout(()=>{window.location.href='/pricing';},1500); }
+      setTimeout(()=>{window.location.href='/obchod';},1500); }
   } else if(d?.error==='already_booked'){
     showToast('Na túto hodinu si už prihlásený/á.','error');
   } else if(d?.stale){
@@ -2257,7 +2274,7 @@ async function loadStateStrip(me){
     html=box('<div style="font-weight:900;color:#fff;font-size:1rem">Páčila sa ti prvá hodina? 💛</div>'
       +'<div style="font-size:.82rem;color:var(--muted,#999);margin:4px 0">Pokračuj s nami pravidelne — vyber si členstvo alebo permanentku.</div>'
       +cup
-      +'<a href="/pricing" style="display:block;text-align:center;background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);color:#161310;font-weight:900;padding:12px;border-radius:12px;text-decoration:none;margin-top:6px">VYBRAŤ ČLENSTVO →</a>');
+      +'<a href="/obchod" style="display:block;text-align:center;background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);color:#161310;font-weight:900;padding:12px;border-radius:12px;text-decoration:none;margin-top:6px">VYBRAŤ ČLENSTVO →</a>');
   }
   else if(d.state==='AT_RISK'){
     html=box('<div style="font-weight:900;color:#fff;font-size:1rem">Už je to '+(d.days_since||'pár')+' dní od tvojej poslednej hodiny 💃</div>'
@@ -2687,7 +2704,7 @@ async function loadOnlineBanner(){
         <b>${liveNow?obName(u.name).toUpperCase()+' — PRÁVE PREBIEHA NAŽIVO ONLINE!':'🌐 Online: '+obName(u.name)+' o '+u.time_start} ${u.src?'· vysielame z mesta '+escHtml(u.src):''}</b>
         <div style="font-size:.8rem;color:${liveNow?'#f3d9d9':'var(--muted,#999)'}">${liveNow?'Práve teraz tancujú ostatné z obývačky — pridaj sa k nim!':'Tancuj z obývačky!'} Online prístup je súčasťou <b style="color:#c0c6d0">Silver</b> a <b style="color:var(--gold)">Gold</b> členstva.</div>
       </div>
-      <a href="/pricing" style="background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);color:#111;font-weight:800;padding:10px 18px;border-radius:11px;text-decoration:none;white-space:nowrap">🔓 Odomknúť so Silver →</a>
+      <a href="/obchod" style="background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);color:#111;font-weight:800;padding:10px 18px;border-radius:11px;text-decoration:none;white-space:nowrap">🔓 Odomknúť so Silver →</a>
     </div>`;
     return;
   }

@@ -146,22 +146,16 @@ const NAV_ITEMS = [
     paths:['/schedule','/online']
   },
   {
-    id:'pricing', label:'Členstvo', href:'/pricing',
-    icon:'🏅', desc:'Bronze, Silver, Gold plány',
-    color:'#C9A24C', rgb:'201,162,76',
-    paths:['/pricing']
-  },
-  {
     id:'profile', label:'Profil', href:'/client-dashboard',
     icon:'👤', desc:'Rezervácie, vernosť, odmeny',
     color:'#9c27b0', rgb:'156,39,176',
     paths:['/client-dashboard','/dashboard']
   },
   {
-    id:'shop', label:'Obchod', href:'/shop',
-    icon:'🛍️', desc:'Oblečenie, členstvá, doplnky',
-    color:'#4caf50', rgb:'76,175,80',
-    paths:['/shop']
+    id:'shop', label:'Obchod', href:'/obchod',
+    icon:'🛍️', desc:'Členstvá, permanentky, oblečenie',
+    color:'#C9A24C', rgb:'201,162,76',
+    paths:['/obchod','/shop','/pricing']
   },
   {
     id:'community', label:'Komunita', href:'/community',

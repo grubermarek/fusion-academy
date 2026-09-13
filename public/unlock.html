@@ -64,7 +64,7 @@ const isSilver = d.tier==='Silver';
 const offerHtml = isSilver ? `<div class="offer"><div class="big">🎁 Vyskúšaj Silver mesiac zadarmo!</div><p style="margin:8px 0 0;font-size:.9rem;color:var(--cream)">Aktivujeme ti Silver <b>hneď a bez platby</b> — máš ho do konca aktuálneho obdobia za cenu Bronzu. <b>Silver sa začne účtovať až od ďalšieho obnovenia</b> členstva. Nič teraz nedoplácaš.</p></div>` : '';
 const ctaHtml = isSilver
   ? `<button class="cta" id="tryBtn" onclick="tryS()">✨ Aktivovať Silver na skúšku (zdarma)</button>`
-  : `<a class="cta" href="/pricing">Prejsť na Gold 🏆</a>`;
+  : `<a class="cta" href="/obchod">Prejsť na Gold 🏆</a>`;
 document.getElementById('content').innerHTML = `
   <div class="hero"><div class="ic">${d.ic}</div></div>
   <div style="text-align:center"><span class="lockpill"><i class="bi bi-lock-fill"></i> Odomkne sa v členstve ${d.tier}</span></div>
@@ -85,7 +85,7 @@ async function tryS(){
     const r=await fetch('/api/membership/try-silver',{method:'POST',credentials:'include'});
     const j=await r.json();
     if(j.ok){ btn.style.display='none'; msg.style.color='#8bd06a'; msg.innerHTML='✅ <b>Silver aktivovaný!</b> Máš ho zadarmo do '+(j.until||'konca obdobia')+'. Presmerovávam…'; setTimeout(()=>location.href='/client-dashboard',1800); return; }
-    if(j.error==='no_membership'||j.error==='not_bronze'){ msg.style.color='#e0c070'; msg.innerHTML='Skúšku vieme aktivovať len Bronze členom. <a href="/pricing" style="color:var(--gold)">Pozri členstvá →</a>'; btn.style.display='none'; return; }
+    if(j.error==='no_membership'||j.error==='not_bronze'){ msg.style.color='#e0c070'; msg.innerHTML='Skúšku vieme aktivovať len Bronze členom. <a href="/obchod" style="color:var(--gold)">Pozri členstvá →</a>'; btn.style.display='none'; return; }
     msg.style.color='#e57373'; msg.textContent=j.error||'Nepodarilo sa'; btn.disabled=false; btn.textContent='✨ Aktivovať Silver na skúšku (zdarma)';
   }catch{ msg.style.color='#e57373'; msg.textContent='Chyba pripojenia'; btn.disabled=false; btn.textContent='✨ Aktivovať Silver na skúšku (zdarma)'; }
 }

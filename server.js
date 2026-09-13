@@ -842,7 +842,7 @@ async function seedData() {
       { sequence:'lead_nurture', day:14, label:'Lead – 14 dní bez nákupu', active:true,
         subject:'Posledná šanca: 10% zľava na prvé členstvo 🎟️',
         body:`<p>Ako špeciálne poďakovanie za registráciu, ponúkame ti <b>10% zľavu na Bronze členstvo</b> (neobmedzene hodín).</p><p>Platí do konca týždňa. Stačí sa prihlásiť a vybrať plán.</p>`,
-        cta:'💳 Aktivovať zľavu', cta_url:`${APP}/pricing` },
+        cta:'💳 Aktivovať zľavu', cta_url:`${APP}/obchod` },
       { sequence:'lead_nurture', day:30, label:'Lead – 30 dní bez nákupu', active:true,
         subject:'Zdravíme sa! Stále tu sme 💛',
         body:`<p>Uplynul mesiac od registrácie. Ak sa okolnosti zmenili a chceš začať tancovať – sme stále tu.</p><p>Kedykoľvek prídeš, prvá hodina je zadarmo.</p>`,
@@ -866,15 +866,15 @@ async function seedData() {
       { sequence:'expiry_warning', day:-7, label:'Upozornenie 7 dní', active:true,
         subject:'⚠️ Tvoje členstvo vyprší o 7 dní',
         body:`<p>Tvoje členstvo vyprší o <b>7 dní</b>.</p><p>Obnov si ho teraz a neprerušuj svoju tanečnú cestu. Ak obnovíš pred expiráciou, členstvo sa predĺži – nestratíš ani deň.</p>`,
-        cta:'🔄 Obnoviť členstvo', cta_url:`${APP}/pricing` },
+        cta:'🔄 Obnoviť členstvo', cta_url:`${APP}/obchod` },
       { sequence:'expiry_warning', day:-3, label:'Upozornenie 3 dni', active:true,
         subject:'⚠️ Tvoje členstvo vyprší o 3 dni – konaj teraz',
         body:`<p>Zostávajú <b>3 dni</b> platnosti tvojho členstva.</p><p>Po expirácii stratíš prístup na hodiny. Obnov si ho jedným kliknutím.</p>`,
-        cta:'⚡ Obnoviť teraz', cta_url:`${APP}/pricing` },
+        cta:'⚡ Obnoviť teraz', cta_url:`${APP}/obchod` },
       { sequence:'expiry_warning', day:-1, label:'Upozornenie posledný deň', active:true,
         subject:'🚨 Tvoje členstvo vyprší ZAJTRA',
         body:`<p>Toto je posledné upozornenie – tvoje členstvo vyprší <b>zajtra</b>.</p><p>Ak nechceš prísť o prístup na hodiny, obnov si ho ešte dnes.</p>`,
-        cta:'🔐 Obnoviť ihneď', cta_url:`${APP}/pricing` },
+        cta:'🔐 Obnoviť ihneď', cta_url:`${APP}/obchod` },
 
       // ── POST FIRST CLASS ─────────────────────────────────────────────────────
       { sequence:'post_first_class', day:0, label:'Follow-up po prvej hodine', active:true,
@@ -884,7 +884,7 @@ async function seedData() {
       { sequence:'post_first_class', day:3, label:'Ponuka po prvej hodine', active:true,
         subject:'Špeciálna ponuka len pre teba 🎁',
         body:`<p>Videli sme ťa na hodine – a vieme, že to mal byť len začiatok!</p><p>Pre nových klientov ponúkame Bronze členstvo (neobmedzene hodín) za <b>50 €/mesiac</b>.</p><p>To vychádza na <b>menej ako 2 € za hodinu</b> – pri 3 hodinách týždenne.</p>`,
-        cta:'💳 Aktivovať členstvo', cta_url:`${APP}/pricing` },
+        cta:'💳 Aktivovať členstvo', cta_url:`${APP}/obchod` },
 
       // ── RE-ENGAGEMENT (neaktívni 14+ dní) ───────────────────────────────────
       { sequence:'reengagement', day:0, label:'Chýbaš nám – 14 dní', active:true,
@@ -928,7 +928,7 @@ async function seedData() {
       { sequence:'winback', day:11, label:'Zľava 30% na návrat', active:true,
         subject:'{meno}, vitaj späť — 30% zľava na prvý mesiac 💛',
         body:`<p>Ahoj <b>{meno}</b>,</p><p>ak sa chceš vrátiť naplno, máme pre teba darček: <b>30% zľavu na prvý mesiac členstva</b> pri návrate.</p><div style="text-align:center;margin:14px 0"><div style="display:inline-block;font-family:monospace;font-weight:800;letter-spacing:1px;background:#0d0d0d;border:1px dashed #C9A84C;color:#E7C878;border-radius:10px;padding:12px 22px;font-size:1.2rem">VITAJSPAT</div></div><p>Zadáš ho pri kúpe členstva. Beátka sa tiež raz vrátila — a dnes je o 17 kg ľahšia. Všetko sa začína jedným krokom späť.</p><p><a href="${BLOGW}/metabolicka-analyza-fit-premena">📖 Ako vyzerá skutočná premena →</a></p>`,
-        cta:'💳 Vrátiť sa so zľavou', cta_url:`${APP2}/pricing`, created_at:nowISO() },
+        cta:'💳 Vrátiť sa so zľavou', cta_url:`${APP2}/obchod`, created_at:nowISO() },
       { sequence:'winback', day:25, label:'Posledná pripomienka', active:true,
         subject:'Posledná pripomienka: tvoje miesto na parkete stále čaká 💃',
         body:`<p>Ahoj <b>{meno}</b>,</p><p>nechceme byť dotieraví — len ti chceme povedať, že <b>dvere sú stále otvorené</b> a tvoja komunita ťa privíta s otvorenou náručou.</p><p>Zľava <b>VITAJSPAT (30%)</b> na prvý mesiac stále platí. Keď budeš pripravená, sme tu. 💛</p>`,
@@ -958,7 +958,7 @@ async function seedData() {
       { sequence:'winback', day:150, label:'Sezónny reštart + permanentka', active:true,
         subject:'{meno}, nový začiatok sa nikdy nezačína „v pondelok" 🌱',
         body:`<p>Ahoj <b>{meno}</b>,</p><p>vieš, kedy je najlepší čas začať odznova? Nie v pondelok, nie od prvého. <b>Vtedy, keď sa rozhodneš.</b></p><p>A aby to bolo jednoduchšie: <b>10-vstupová permanentka</b> — žiadny mesačný záväzok, chodíš, kedy chceš, platí 3 mesiace. Ušetríš 20 % oproti jednorazovým vstupom.</p><p>Jedna karta, desať tancov, nula výhovoriek. 💪</p>`,
-        cta:'🎟️ Pozrieť permanentku', cta_url:`${APP2}/pricing`, created_at:nowISO() },
+        cta:'🎟️ Pozrieť permanentku', cta_url:`${APP2}/obchod`, created_at:nowISO() },
       { sequence:'winback', day:210, label:'Zdravie a pohyb (jemné)', active:true,
         subject:'60 minút, ktoré ti telo vráti desaťnásobne 🫀',
         body:`<p>Ahoj <b>{meno}</b>,</p><p>žiadny predaj, len fakt: pravidelný tanec preukázateľne zlepšuje náladu, spánok, pamäť aj kondíciu — a je to jediný „tréning", pri ktorom sa ľudia usmievajú. 😄</p><p>Tvoje telo si pamätá, aké to bolo. A my tiež.</p><p>Keby si chcela začať potichu, bez veľkých slov — príď na jednu hodinu. Nikomu nič nemusíš vysvetľovať.</p>`,
@@ -1009,11 +1009,11 @@ async function seedData() {
       { sequence:'trial_followup', day:2, label:'Ako bolo na hodine?', active:true,
         subject:'{meno}, aká bola tvoja prvá hodina? 💃',
         body:`<p>Ahoj <b>{meno}</b>,</p><p>videli sme ťa na hodine — a dúfame, že ti to dalo rovnakú energiu ako nám! 🔥</p><p>Vieš, čo hovoria baby najčastejšie po prvej hodine? <i>„Neviem prečo som tak dlho váhala."</i></p><p>Ak chceš pokračovať, máš na výber:</p><ul style="color:#ccc"><li>🥉 <b>Mesačné členstvo</b> — neobmedzené hodiny, od 50 €/mes.</li><li>🎟️ <b>Permanentka 10 vstupov</b> — 80 €, bez záväzku, platí 3 mesiace</li><li>🎫 <b>Jednorazový vstup</b> — 10 €, zaplatíš aj na mieste</li></ul>`,
-        cta:'💳 Pozrieť možnosti', cta_url:`${APP2}/pricing`, created_at:nowISO() },
+        cta:'💳 Pozrieť možnosti', cta_url:`${APP2}/obchod`, created_at:nowISO() },
       { sequence:'trial_followup', day:5, label:'Prečo sa oplatí pokračovať', active:true,
         subject:'Prvá hodina je za tebou. Vieš, čo príde po tretej? ✨',
         body:`<p>Ahoj <b>{meno}</b>,</p><p>prvá hodina je zoznámenie. <b>Po tretej</b> sa telo rozpamätá, kroky sadnú a začne tá najlepšia časť — keď tanec prestane byť cvičenie a začne byť radosť.</p><p>Beátka k nám tiež prišla „len vyskúšať". Dnes je o <b>17 kg ľahšia</b> a nevynechá ani týždeň. 💛</p><p>Tvoje miesto na parkete čaká — stačí si vybrať, ako chceš chodiť.</p>`,
-        cta:'🗓️ Chcem pokračovať', cta_url:`${APP2}/pricing`, created_at:nowISO() },
+        cta:'🗓️ Chcem pokračovať', cta_url:`${APP2}/obchod`, created_at:nowISO() },
       // ŽIADNA zľava — 20 % kupón po prvej hodine stačí. Ďalšia zľava o pár dní by
       // klientky naučila nekupovať a čakať na lacnejšiu ponuku.
       { sequence:'trial_followup', day:9, label:'Druhá hodina — návyk', active:true,
@@ -1023,7 +1023,7 @@ async function seedData() {
       { sequence:'trial_followup', day:16, label:'Permanentka bez záväzku', active:true,
         subject:'Nechceš záväzok? Rozumieme. Preto máme permanentku 🎟️',
         body:`<p>Ahoj <b>{meno}</b>,</p><p>nie každému vyhovuje mesačné členstvo — a to je úplne v poriadku.</p><p><b>10-vstupová permanentka za 80 €:</b></p><ul style="color:#ccc"><li>✅ žiadny mesačný záväzok</li><li>✅ chodíš, kedy chceš (platí 3 mesiace)</li><li>✅ ušetríš 20 % oproti jednorazovým vstupom</li></ul><p>Alebo príď len tak — vstup 10 € zaplatíš aj v hotovosti na mieste.</p>`,
-        cta:'🎟️ Pozrieť permanentku', cta_url:`${APP2}/pricing`, created_at:nowISO() },
+        cta:'🎟️ Pozrieť permanentku', cta_url:`${APP2}/obchod`, created_at:nowISO() },
       { sequence:'trial_followup', day:25, label:'Miesto ťa čaká', active:true,
         subject:'{meno}, tvoje miesto na parkete stále čaká 💛',
         body:`<p>Ahoj <b>{meno}</b>,</p><p>od tvojej hodiny ubehol už nejaký čas. Nebudeme ťa naháňať — len ti chceme povedať, že <b>dvere sú otvorené</b> a baby sa na teba pamätajú.</p><p>Keď budeš pripravená, vyber si hodinu a príď. Vstup vyriešiš členstvom, permanentkou, alebo desiatkou na mieste. Jednoduchšie to už nevieme spraviť. 😄</p>`,
@@ -3424,7 +3424,7 @@ async function seedData() {
 
   // Idempotentne: upsell sekvencia Bronze → Silver (metabolická analýza tela)
   if(await q.count(db.email_steps,{sequence:'bronze_upsell'})===0){
-    const bu = (day,label,subject,body,cta)=>({sequence:'bronze_upsell',day,label,active:true,subject,body,cta:cta||null,cta_url:`${APP_URL}/pricing`,created_at:nowISO()});
+    const bu = (day,label,subject,body,cta)=>({sequence:'bronze_upsell',day,label,active:true,subject,body,cta:cta||null,cta_url:`${APP_URL}/obchod`,created_at:nowISO()});
     const steps = [
       bu(0,'Váha klame','Tvoja váha ti klame (a je to dokázateľné)',
         `<p>Ahoj {meno},</p><p>povieme ti tajomstvo, ktoré ti žiadna váha v kúpeľni nepovie:</p><p><b>Číslo na váhe je jedno z najhorších meradiel toho, ako ti to ide.</b></p><p>Môžeš schudnúť 3 kilá a vyzerať <i>horšie</i> — stačí stratiť sval a vodu. A môžeš mať rovnakú váhu tri mesiace a pritom sa úplne zmeniť.</p><p>Váha nevie rozlíšiť tuk od svalu. Ty áno. A <b>my ti to vieme ukázať čierne na bielom.</b></p><p>Zajtra ti napíšeme príbeh baby, ktorá „neschudla ani deko" — a aj tak vyhrala. 💃</p>`),
@@ -3445,7 +3445,7 @@ async function seedData() {
   // Migrácia bronze_upsell: meno „Miška zo Zvolena" v príbehu + emaily o online hodinách
   await q.update(db.email_steps,{sequence:'bronze_upsell',day:3},{$set:{body:
     `<p>{meno}, sľúbili sme príbeh — tu je.</p><p><b>Miška zo Zvolena</b> chodila 8 týždňov na Zumbu. Postavila sa na váhu: <b>rovnaké číslo ako na začiatku.</b> Sklamanie, však?</p><p>Lenže <b>analýza zloženia tela</b> ukázala toto:</p><ul><li>🔥 <b>−4 kg tuku</b></li><li>💪 <b>+4 kg svalu</b></li></ul><p>Rovnaká váha. Úplne iné telo — pevnejšie, silnejšie, s rýchlejším metabolizmom, čo páli kalórie aj na gauči.</p><p>Keby Miška verila len váhe, možno to vzdá. <b>Namiesto toho videla pravdu — a pokračovala.</b></p>`}},{multi:true});
-  const buOnline=(day,label,subject,body,cta)=>({sequence:'bronze_upsell',day,label,active:true,subject,body,cta:cta||null,cta_url:`${APP_URL}/pricing`,created_at:nowISO()});
+  const buOnline=(day,label,subject,body,cta)=>({sequence:'bronze_upsell',day,label,active:true,subject,body,cta:cta||null,cta_url:`${APP_URL}/obchod`,created_at:nowISO()});
   if(!(await q.one(db.email_steps,{sequence:'bronze_upsell',day:9}))) await q.insert(db.email_steps, buOnline(9,'Online hodiny','Aj v pyžame. Aj o 22:00. Zumba, keď sa ti hodí. 🛋️',
     `<p>{meno}, ešte jedna vec, ktorú Bronze nemá a Silver áno:</p><p><b>Online hodiny.</b> 💻</p><p>Dážď? Choré dieťa? Dlho v práci? Namiesto vynechanej hodiny <b>zapneš appku a tancuješ z obývačky</b> — kedy sa ti hodí, aj o desiatej večer v pyžame.</p><p>Žiadna vynechaná hodina = žiadny výpadok v progrese. Cvičíš vtedy, keď <i>ty</i> môžeš, nie keď „to vyšlo".</p>`));
   if(!(await q.one(db.email_steps,{sequence:'bronze_upsell',day:15}))) await q.insert(db.email_steps, buOnline(15,'Konzistencia','Tajomstvo tých, čo to nevzdajú? Nevynechávajú.',
@@ -3469,7 +3469,7 @@ async function seedData() {
   if(await q.count(db.email_steps,{sequence:'gold_upsell'})===0){
     for(const s of GOLD_UPSELL_STEPS)
       await q.insert(db.email_steps,{ sequence:'gold_upsell', day:s.day, label:s.label, active:true,
-        subject:s.subject, body:s.body, cta:s.cta, cta_url:`${APP_URL}/pricing`, created_at:nowISO() });
+        subject:s.subject, body:s.body, cta:s.cta, cta_url:`${APP_URL}/obchod`, created_at:nowISO() });
     console.log('✅  gold_upsell sekvencia pridaná');
   }
 
@@ -4036,7 +4036,7 @@ async function abandonedCheckoutTick(){
       emailTemplate('Ahoj '+first+'!',
       '<p>Vyzerá to, že si začala objednávku <b>'+String(p.description||'členstva')+'</b>, ale platba nebola dokončená.</p>'
       +'<p>Ak chceš pokračovať, objednávku dokončíš jedným klikom — a ak si to rozmyslela, tento mail pokojne ignoruj. 💛</p>',
-      '💳 DOKONČIŤ OBJEDNÁVKU', APP_URL+'/pricing?utm_source=email&utm_medium=activation&utm_campaign=abandoned-checkout'),{priority:6, template:'abandoned_checkout'}).catch(()=>false);
+      '💳 DOKONČIŤ OBJEDNÁVKU', APP_URL+'/obchod?utm_source=email&utm_medium=activation&utm_campaign=abandoned-checkout'),{priority:6, template:'abandoned_checkout'}).catch(()=>false);
     if(ok){ out.sent++; await q.update(db.payments,{_id:p._id},{$set:{abandoned_mail_at:nowISO()}}); }
   }
   return out;
@@ -8799,6 +8799,8 @@ app.post('/api/admin/users/:id/grant-membership', adminAuth, async(req,res)=>{
       else { await q.insert(db.memberships,{...rec,created_at:nowISO()}); }
       await q.update(db.users,{_id:u._id},{$set:{membership_plan:plan_id,membership_expires:expiresISO}});
       refreshMemberTier(u._id).catch(()=>{});
+      // Predaj dieťaťu na mieste obchádza activateMembership — zaradenie podľa veku aj tu (13. 9.)
+      if(u.is_child) autoZapisDietata(u).catch(e=>console.error('auto kids:', e.message));
       if(!gift){ // reálna platba na mieste → tržba + faktúra + provízia
         await q.insert(db.transactions,{type:'membership',user_id:u._id,user_name:u.name,amount:paidAmount,date:today(),
           payment_method:payMethod, method:payMethod, note:`Členstvo ${plan.name} (admin)`,plan_id,recorded_by:req.session.uid,created_at:nowISO(),month:today().slice(0,7)});
@@ -10071,7 +10073,7 @@ function dunningEmail(u, payment, stage){
   ];
   const titles = ['Platba sa nepodarila', 'Pripomienka platby', 'Posledná pripomienka platby'];
   return { subject: `⚠️ ${titles[stage]||titles[0]} (${amt} €)`,
-    html: emailTemplate(titles[stage]||titles[0], bodies[stage]||bodies[0], '💳 Aktualizovať platbu', `${APP_URL}/pricing`) };
+    html: emailTemplate(titles[stage]||titles[0], bodies[stage]||bodies[0], '💳 Aktualizovať platbu', `${APP_URL}/obchod`) };
 }
 async function sendDunning(payment, stage){
   const u = await q.one(db.users,{_id:payment.user_id});
@@ -10369,7 +10371,7 @@ app.post('/api/admin/crm/send-expiry-warnings', adminAuth, async(req,res)=>{
     for(const m of expiring){
       const u = await q.one(db.users,{_id:m.user_id});
       if(u?.email){
-        await sendMail(u.email,'⚠️ Tvoje členstvo čoskoro vyprší',`<h2>Ahoj ${u.name}!</h2><p>Tvoje členstvo <b>${m.plan_name}</b> vyprší <b>${m.expires_at}</b>.</p><p>👉 <a href="${APP_URL}/pricing">Obnov si členstvo</a> a neprerušuj svoju cestu!</p><p><i>Fusion Academy tím 💃</i></p>`,{priority:4, template:'membership_expiry'}).catch(()=>{});
+        await sendMail(u.email,'⚠️ Tvoje členstvo čoskoro vyprší',`<h2>Ahoj ${u.name}!</h2><p>Tvoje členstvo <b>${m.plan_name}</b> vyprší <b>${m.expires_at}</b>.</p><p>👉 <a href="${APP_URL}/obchod">Obnov si členstvo</a> a neprerušuj svoju cestu!</p><p><i>Fusion Academy tím 💃</i></p>`,{priority:4, template:'membership_expiry'}).catch(()=>{});
         await q.insert(db.notifications,{user_id:u._id,type:'expiry_warning',title:'⚠️ Členstvo čoskoro vyprší',body:`${m.plan_name} vyprší ${m.expires_at}`,read:false,created_at:nowISO()});
         sent++;
       }
@@ -11266,7 +11268,7 @@ async function activateMembership(userId, planId, durationDays){
   await q.update(db.users,{_id:userId},{$set:memberSet});
   // Notification
   await q.insert(db.notifications,{user_id:userId,type:'membership',title:'Členstvo aktivované 🎉',body:`Váš plán ${plan.name} je aktívny do ${expiresAt.toLocaleDateString('sk-SK')}.`,read:false,created_at:nowISO()});
-  if(promoU && promoU.is_child) autoKidsBookingsFor(promoU).catch(e=>console.error('auto kids:', e.message));
+  if(promoU && promoU.is_child) autoZapisDietata(promoU).catch(e=>console.error('auto kids:', e.message));
   // ── Email automation: cancel lead_nurture, enqueue membership_welcome ────────
   cancelSequence(userId,'lead_nurture').catch(()=>{});
   enqueueSequence(userId,'membership_welcome').catch(()=>{});
@@ -12120,7 +12122,7 @@ async function sendCashUpsellTo(u, plan){
          <li>✅ Bez papierovačiek — faktúra ti príde automaticky na e-mail</li>
        </ul>
        <p>Prejsť na kartu zaberie minútu priamo v aplikácii:</p>`,
-      '💳 Nastaviť automatickú platbu', `${APP_URL}/pricing`)).catch(()=>false);
+      '💳 Nastaviť automatickú platbu', `${APP_URL}/obchod`)).catch(()=>false);
   if(ok!==false){ await q.update(db.users,{_id:u._id},{$set:{cash_upsell_sent:true, cash_upsell_sent_at:nowISO()}}); return true; }
   return false;
 }
@@ -14082,7 +14084,7 @@ app.post('/api/stripe/checkout', auth, async(req,res)=>{
       'line_items[0][price_data][unit_amount]':Math.round(price*100),
       'line_items[0][price_data][product_data][name]':`Členstvo ${plan.name}${childName?' – '+childName:''}${promoCode?` (promo ${promoCode})`:''}`,
       'success_url':`${base}/client-dashboard?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
-      'cancel_url':`${base}/pricing?stripe=cancel`,
+      'cancel_url':`${base}/obchod?stripe=cancel`,
       'customer_email':u.email,
       'metadata[user_id]':req.session.uid,
       'metadata[member_id]':memberId,
@@ -14232,7 +14234,7 @@ async function creditRecipient(recipientId, amount, gifterName){
   if(rcpt.email) sendMail(rcpt.email, `🎁 Dostal/a si darček – ${amt} € kredit`,
     emailTemplate('Máš darček! 🎁',
       `<p>Ahoj <b>${rcpt.name}</b>,</p><p><b>${gifterName||'Niekto'}</b> ti kúpil/a <b>${amt} € kredit</b> do Fusion Academy! 💛</p><p>Tvoj nový zostatok je <b>${newBal.toFixed(2)} €</b>. Použi ho na hodiny alebo členstvo — stačí pri kúpe zaškrtnúť „Referral kredit".</p>`,
-      '📱 Použiť kredit', `${APP_URL}/pricing`)).catch(()=>{});
+      '📱 Použiť kredit', `${APP_URL}/obchod`)).catch(()=>{});
   return true;
 }
 // Notifikácia + e-mail darcovi (že darček prebehol)
@@ -14339,7 +14341,7 @@ app.post('/api/stripe/subscribe', auth, async(req,res)=>{
       'line_items[0][price_data][recurring][interval]':'month',
       'line_items[0][price_data][product_data][name]':`Členstvo ${plan.name}${childName?' – '+childName:''} (mesačne)`,
       'success_url':`${base}/client-dashboard?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
-      'cancel_url':`${base}/pricing?stripe=cancel`,
+      'cancel_url':`${base}/obchod?stripe=cancel`,
       'customer_email':u.email,
       'metadata[user_id]':req.session.uid,
       'metadata[member_id]':memberId,
@@ -18479,6 +18481,39 @@ app.get('/api/me/qr', auth, async(req,res)=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 const MAX_CHILDREN = 6;
 
+// Veková skupina podľa dátumu narodenia: 4–6 = Zumba Kids 1, 7–14 = Zumba Kids 2.
+function vekDietata(d){
+  const b = d.birth_date || (d.birth_year ? d.birth_year+'-07-01' : null); if(!b) return null;
+  const t = new Date(today()+'T00:00:00Z'), n = new Date(String(b).slice(0,10)+'T00:00:00Z'); if(isNaN(n)) return null;
+  let v = t.getUTCFullYear()-n.getUTCFullYear();
+  if(t.getUTCMonth()<n.getUTCMonth() || (t.getUTCMonth()===n.getUTCMonth() && t.getUTCDate()<n.getUTCDate())) v--;
+  return v;
+}
+function skupinaKids(d){ const v = vekDietata(d); if(v==null) return null; if(v>=4 && v<=6) return 'Kids 1'; if(v>=7 && v<=14) return 'Kids 2'; return null; }
+// Po kúpe členstva dieťaťu: ak rodič ešte nevybral hodiny, zaradíme dieťa podľa veku
+// (Marek 13. 9.: „dieťa sa nemusí bookovať, berie sa automaticky, že chodí") a dáme mu
+// rezervácie. Rodič to vie kedykoľvek zmeniť v karte dieťaťa.
+async function autoZapisDietata(dieta){
+  if(!dieta || !dieta.is_child) return 0;
+  let d = dieta;
+  if(!(Array.isArray(d.auto_classes) && d.auto_classes.length)){
+    const sk = skupinaKids(d);
+    if(sk){
+      const hodiny = (await q.find(db.classes,{active:true, category:'Deti'})).filter(c=>String(c.name||'').includes(sk));
+      if(hodiny.length){
+        await q.update(db.users,{_id:d._id},{$set:{auto_classes:hodiny.map(c=>c._id)}});
+        d = {...d, auto_classes:hodiny.map(c=>c._id)};
+        const DNI=['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
+        await q.insert(db.notifications,{user_id:d._id, type:'membership',
+          title:`🧒 ${d.name}: zaradené do Zumba ${sk}`,
+          body:`Podľa veku (${vekDietata(d)} r.) chodí automaticky na ${hodiny.map(c=>c.name+' — '+DNI[c.day_of_week]+' '+c.time_start).join(', ')}. Netreba rezervovať; upraviť to vieš v karte dieťaťa.`,
+          read:false, created_at:nowISO()}).catch(()=>{});
+      }
+    }
+  }
+  return autoKidsBookingsFor(d);
+}
+
 // ── Automatická dochádzka detí (Marek 13. 9.: „dieťa sa nemusí bookovať, berie sa
 // automaticky, že chodí") ─────────────────────────────────────────────────────
 // Dieťa s aktívnym členstvom a vybranými detskými hodinami (auto_classes) dostane
@@ -18539,6 +18574,7 @@ app.get('/api/family/children', auth, async(req,res)=>{
         free_class_used:c.free_class_used||false,
         membership: m ? {plan_id:m.plan_id, plan_name:m.plan_name, expires_at:m.expires_at, status:m.status||'active'} : null,
         auto_renew: !!c.stripe_subscription_id, auto_classes: Array.isArray(c.auto_classes)?c.auto_classes:[],
+        age: vekDietata(c), age_group: skupinaKids(c),
         upcoming: upcoming.slice(0,3),
       });
     }
@@ -18550,6 +18586,8 @@ app.post('/api/family/children', auth, async(req,res)=>{
   try {
     const name = (req.body.name||'').trim();
     if(!name) return res.status(400).json({error:'Chýba meno dieťaťa'});
+    // Podľa veku dieťa zaradíme do skupiny Zumba Kids (13. 9.) — bez dátumu to nejde.
+    if(!req.body.birth_date && !req.body.birth_year) return res.status(400).json({error:'Zadaj dátum narodenia dieťaťa — podľa veku ho zaradíme do správnej skupiny Zumba Kids.'});
     // Full date of birth (YYYY-MM-DD); birth_year derived for display
     let birth_date = null, birth_year = null;
     if(req.body.birth_date){
@@ -21175,7 +21213,8 @@ app.delete('/api/admin/campaigns/:id', adminAuth, async(req,res)=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 app.get('/',           (req,res)=>res.sendFile(path.join(__dirname,'public','index.html')));
 app.get('/kiosk/:studio', (req,res)=>res.sendFile(path.join(__dirname,'public','kiosk.html')));
-app.get('/shop',       (req,res)=>res.sendFile(path.join(__dirname,'public','shop.html')));
+// Jeden obchod (Marek 13. 9.): starý e-shop aj cenník vedú do /obchod
+app.get('/shop',       (req,res)=>res.redirect(302,'/obchod?tab=merch'));
 app.get('/schedule',   (req,res)=>res.sendFile(path.join(__dirname,'public','schedule.html')));
 app.get('/community',  (req,res)=>res.sendFile(path.join(__dirname,'public','community.html')));
 app.get('/support',    (req,res)=>res.sendFile(path.join(__dirname,'public','support.html')));
@@ -21940,17 +21979,17 @@ async function sendFirstClassEmail(userId){
          <div style="font-size:20px;font-weight:800;color:#C9A84C;margin-bottom:4px">Mesačné členstvo</div>
          <div style="color:#ccc;font-size:14px;margin-bottom:14px">Choď na <b style="color:#fff">neobmedzený počet hodín</b> každý mesiac, vo všetkých mestách. Najlepšia hodnota pre pravidelný tanec.</div>
          <div style="font-size:26px;font-weight:900;color:#fff;margin-bottom:2px">už od 50 € / mesiac</div>
-         <a href="${APP_URL}/pricing" style="display:inline-block;margin-top:14px;background:#C9A84C;color:#111;font-weight:800;text-decoration:none;padding:13px 30px;border-radius:10px;font-size:15px">Chcem členstvo 💃</a>
+         <a href="${APP_URL}/obchod" style="display:inline-block;margin-top:14px;background:#C9A84C;color:#111;font-weight:800;text-decoration:none;padding:13px 30px;border-radius:10px;font-size:15px">Chcem členstvo 💃</a>
        </div>
      </div>
      <div style="border:1px solid #333;border-radius:12px;padding:16px 18px;margin:10px 0;text-align:center">
        <div style="color:#aaa;font-size:13px;margin-bottom:6px">Nechceš záväzok každý mesiac?</div>
        <div style="font-size:15px;font-weight:700;color:#ddd">🎟️ Permanentka na 10 vstupov – <b>80 €</b></div>
-       <div style="color:#888;font-size:12px;margin-top:4px">Platná 90 dní · vhodná, ak chodíš občas · <a href="${APP_URL}/pricing" style="color:#C9A84C;text-decoration:none">viac info</a></div>
+       <div style="color:#888;font-size:12px;margin-top:4px">Platná 90 dní · vhodná, ak chodíš občas · <a href="${APP_URL}/obchod" style="color:#C9A84C;text-decoration:none">viac info</a></div>
      </div>
      <p style="color:#999;font-size:13px;margin-top:16px">Ak máš akékoľvek otázky, stačí odpovedať na tento email. Tešíme sa na teba na ďalšej hodine! 🌟</p>`;
   await sendMail(u.email,'Ďakujeme za tvoju prvú hodinu! 🥰 A čo ďalej?',
-    emailTemplate('Ďakujeme, že si prišiel/prišla! 💛', body, '💃 Vybrať si členstvo', `${APP_URL}/pricing`)).catch(()=>{});
+    emailTemplate('Ďakujeme, že si prišiel/prišla! 💛', body, '💃 Vybrať si členstvo', `${APP_URL}/obchod`)).catch(()=>{});
   await q.insert(db.notifications,{user_id:u._id,type:'first_class_followup',title:'Ďakujeme za prvú hodinu! 🥰',body:'Pozri si možnosti členstva a permanentky.',read:false,created_at:nowISO()});
   processEmailQueue().catch(()=>{});
 }
@@ -21987,7 +22026,7 @@ async function sendLeadOffer(u, percent, stage){
     <p>Zadaj ho pri kúpe členstva a ušetríš na prvom mesiaci. Tvoja premena môže začať dnes. 💃</p>
     <p style="font-size:.78rem;color:#888;margin-top:18px">Nechceš dostávať ponuky? Vypni si ich vo svojom profile v aplikácii.</p>`;
   const subj = stage===1 ? `Beátka schudla 17 kg 💪 Tvoja zľava ${percent}% platí len 24 h ⏳` : `Posledná šanca: ${percent}% na prvý mesiac (len 24 h) 🔥`;
-  if(u.email) await sendMail(u.email, subj, emailTemplate(subj.replace(/^[^\w]*/,''), body, 'Uplatniť zľavu', `${APP_URL}/pricing`)).catch(()=>{});
+  if(u.email) await sendMail(u.email, subj, emailTemplate(subj.replace(/^[^\w]*/,''), body, 'Uplatniť zľavu', `${APP_URL}/obchod`)).catch(()=>{});
   await q.insert(db.notifications,{user_id:u._id,type:'offer',title:`🎁 ${percent}% zľava — len 24 h!`,body:`Kód ${code} na prvý mesiac členstva. Platí len do zajtra!`,read:false,created_at:nowISO()}).catch(()=>{});
 }
 // Motivačná sekvencia PRED absolvovaním hodiny zdarma — pozýva leada prísť
@@ -23490,7 +23529,7 @@ async function runDailyJobs(){
     await sendMail(u.email,`⚠️ Členstvo vyprší o ${daysLeft} ${daysLeft===1?'deň':'dní'}`,
       emailTemplate(`Členstvo vyprší o ${daysLeft} ${daysLeft===1?'deň':'dní'}`,
         `<p>Ahoj <b>${u.name}</b>,</p><p>Tvoje členstvo <b>${m.plan_name}</b> vyprší <b>${m.expires_at.slice(0,10)}</b>.</p><p>Obnov si ho teraz a neprerušuj svoju tanečnú cestu! 💃</p>`,
-        '🔄 Obnoviť členstvo',`${APP_URL}/pricing`)).catch(()=>{});
+        '🔄 Obnoviť členstvo',`${APP_URL}/obchod`)).catch(()=>{});
     await q.insert(db.notifications,{user_id:u._id,type:'expiry_warning',title:`⚠️ Členstvo vyprší o ${daysLeft} dní`,body:`${m.plan_name} – expirácia ${m.expires_at.slice(0,10)}`,read:false,created_at:nowISO()});
   }
 
@@ -23510,7 +23549,7 @@ async function runDailyJobs(){
     await sendMail(u.email,'Tvoje členstvo skončilo – vráť sa na parket 💃',
       emailTemplate('Členstvo skončilo',
         `<p>Ahoj <b>${u.name}</b>,</p><p>Tvoje členstvo <b>${m.plan_name}</b> práve skončilo. Dúfame, že si si tanec užil/a naplno! 🌟</p><p>Obnov si ho jedným klikom a pokračuj tam, kde si prestal/a – tvoje miesto na parkete čaká.</p>`,
-        '🔄 Obnoviť členstvo',`${APP_URL}/pricing`)).catch(()=>{});
+        '🔄 Obnoviť členstvo',`${APP_URL}/obchod`)).catch(()=>{});
     await q.insert(db.notifications,{user_id:u._id,type:'membership_ended',title:'Členstvo skončilo',body:`${m.plan_name} vypršalo ${m.expires_at.slice(0,10)}`,read:false,created_at:nowISO()});
   }
 
@@ -24013,7 +24052,7 @@ async function runFirstClassFollowup(){
          <p>Aby si nemusela dlho rozmýšľať, máme pre teba darček: <b>20 % zľavu na prvý mesiac členstva</b>.</p>
          <div style="text-align:center;margin:16px 0"><div style="display:inline-block;font-family:monospace;font-weight:800;letter-spacing:1px;background:#0d0d0d;border:1px dashed #C9A84C;color:#E7C878;border-radius:10px;padding:12px 22px;font-size:1.2rem">${code}</div></div>
          <p style="color:#b9b3a6">⏳ Kód platí len <b>48 hodín</b> a je len tvoj. Zadáš ho pri kúpe členstva v appke.</p>`,
-        '💛 Vybrať členstvo so zľavou', `${APP_URL}/pricing`), {priority:5, template:'first_class_followup'}).catch(()=>{});
+        '💛 Vybrať členstvo so zľavou', `${APP_URL}/obchod`), {priority:5, template:'first_class_followup'}).catch(()=>{});
       await q.insert(db.notifications,{user_id:u._id, type:'promo',
         title:'🎁 Darček po prvej hodine', body:`20 % zľava na prvý mesiac členstva — kód ${code}, platí 48 hodín. Nájdeš ho aj v maile.`,
         read:false, created_at:nowISO()}).catch(()=>{});

@@ -44,13 +44,11 @@ const STRANKY = [
   ['/schedule',         'klient'],
   ['/community',        'klient'],
   ['/obchod',           'klient'],
-  ['/pricing',          'klient'],
-  ['/shop',             'klient'],
   ['/trainer',          'trener'],
   ['/admin',            'admin' ],
 ];
 // stránky, ktoré nav-bar.js načítať musia — aby test nezačal potichu nič netestovať
-const MUSIA_MAT_MENU = ['/client-dashboard', '/schedule', '/obchod', '/pricing', '/shop'];
+const MUSIA_MAT_MENU = ['/client-dashboard', '/schedule', '/obchod'];
 
 (async () => {
   const hash = bcrypt.hashSync('Heslo123!', 10);
