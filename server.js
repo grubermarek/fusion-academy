@@ -755,6 +755,16 @@ async function seedData() {
     await q.update(db.transactions,{_id:'7le2np8zDIN8PyXI'},{$set:{payment_method:'card', method:'card'}});
     await q.insert(db.settings,{key:'alena_tx_karta_v1', value:true, at:nowISO()});
   }
+  // 13. 9.: dve mamy sa omylom zapísali na detskú hodinu namiesto dieťaťa/seba; rezervácie
+  // sú stornované, ale jednej ostalo automatické „neprišla" (a bod v no_show_count).
+  if(!(await q.one(db.settings,{key:'deti_storno_noshow_20260913'}))){
+    const detske = new Set((await q.find(db.classes,{category:'Deti'})).map(c=>c._id));
+    const zle = (await q.find(db.bookings,{status:'cancelled', attendance_status:'no_show', booking_date:{$gte:'2026-09-09'}}))
+      .filter(b=>detske.has(b.class_id) && !b.is_child_booking);
+    for(const b of zle) await zrusNoShow(b, 'migracia_20260913');
+    if(zle.length) console.log('🧒 storno detských hodín bez no-show: '+zle.length);
+    await q.insert(db.settings,{key:'deti_storno_noshow_20260913', value:true, at:nowISO()});
+  }
   // Migration: odstránenie služieb Fit Premena (základný/premium) + Nutričné poradenstvo (InBody analýzu ponechaj)
   { const anOff = await q.update(db.products,{active:true,$or:[
         {name:new RegExp('fit\\s*premena','i')},
@@ -10985,6 +10995,10 @@ app.put('/api/admin/bookings/:id', adminAuth, async(req,res)=>{
     const zmenene = await q.update(db.bookings,{_id:b._id, status:'confirmed'},{$set:{status,cancelled_at:nowISO(),cancelled_by:'admin'}});
     if(!zmenene) return res.json({ok:true, already:true, refunded:false, refund_note:null});
     if(chceVratit) refunded = await refundBookingAccess(b);
+    // Omylom vytvorená rezervácia (Alena N. 11. 9.: detská hodina namiesto Zumby) medzitým
+    // dostala automatické „neprišla". Storno ten záznam ruší — inak by jej v skóre ostal
+    // no-show za hodinu, na ktorú nikdy nechcela ísť.
+    if(b.attendance_status==='no_show') await zrusNoShow(b, 'admin_cancel');
     await promoteWaitlist(b.class_id, b.booking_date);
   } else {
     await q.update(db.bookings,{_id:req.params.id},{$set:{status}});
@@ -15023,6 +15037,12 @@ const CANCEL_DEADLINE_HOURS = +process.env.CANCEL_DEADLINE_HOURS || 3;
 async function vratVstup(u, field){
   if(typeof u[field]==='number') return q.update(db.users,{_id:u._id},{$inc:{[field]:1}});
   return q.update(db.users,{_id:u._id},{$set:{[field]:(+u[field]||0)+1}});
+}
+// Automatické „neprišla" pri rezervácii, ktorá sa ruší: značka preč, počítadlo o jeden dole.
+async function zrusNoShow(b, kto){
+  await q.update(db.bookings,{_id:b._id},{$set:{no_show_corrected_at:nowISO(), no_show_corrected_by:kto||'admin'}, $unset:{attendance_status:true, no_show_at:true}});
+  if(b.user_id && !b.is_child_booking){ const u=await q.one(db.users,{_id:b.user_id});
+    if(u && (u.no_show_count||0)>0) await q.update(db.users,{_id:u._id},{$set:{no_show_count:Math.max(0,(u.no_show_count||0)-1)}}); }
 }
 async function refundBookingAccess(b){
   if(!b || b.status!=='confirmed') return '';
