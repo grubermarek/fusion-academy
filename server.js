@@ -10983,9 +10983,17 @@ app.get('/api/admin/bookings', adminAuth, async(req,res)=>{
 
 app.put('/api/admin/bookings/:id', adminAuth, async(req,res)=>{
   const {status} = req.body;
-  if(!status || typeof status!=='string') return res.status(400).json({error:'Chýba stav rezervácie'});
   const b = await q.one(db.bookings,{_id:req.params.id});
   if(!b) return res.status(404).json({error:'Rezervácia nenájdená'});
+  // Oprava sumy „platí na mieste" bez zmeny stavu (Marek 13. 9.: technika 10 → 8 € s členstvom)
+  if(req.body.pay_amount!=null && !status){
+    const suma=+req.body.pay_amount;
+    if(!(suma>=0 && suma<=500)) return res.status(400).json({error:'Neplatná suma'});
+    if(!b.pay_on_site && !b.entry_collected) return res.status(400).json({error:'Rezervácia nie je „platí na mieste"'});
+    await q.update(db.bookings,{_id:b._id},{$set:{pay_amount:suma, pay_amount_edited_by:req.session.uid, pay_amount_edited_at:nowISO()}});
+    return res.json({ok:true, pay_amount:suma});
+  }
+  if(!status || typeof status!=='string') return res.status(400).json({error:'Chýba stav rezervácie'});
   // Pri storne sa vstup vracia LEN na výslovnú žiadosť (refund:true). Pri no-show
   // musí vstup prepadnúť, pri omylom vytvorenej rezervácii sa vráti.
   let refunded='';

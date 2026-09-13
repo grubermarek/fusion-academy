@@ -45,6 +45,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     { _id: 'qaStBkZumba', class_id: 'qaStZumba', class_name: 'Zumba', user_id: 'qaStAlena00001', user_name: 'Alena Testová', booking_date: '2026-09-11', status: 'attended', attendance_status: 'attended', access_method: 'membership', created_at: '2026-09-11T12:01:00.000Z' },
     // Bea: dospelá na detskej hodine, už stornovaná, no_show ostalo → rieši migrácia
     { _id: 'qaStBkBea', class_id: 'qaStKids2', class_name: 'Zumba Kids 2 (7–14)', user_id: 'qaStBea000001', user_name: 'Bea Testová', booking_date: '2026-09-11', status: 'cancelled', cancelled_at: '2026-09-13T10:00:00.000Z', attendance_status: 'no_show', attendance_source: 'auto', no_show_at: '2026-09-11T14:30:00.000Z', access_method: 'membership', created_at: '2026-09-11T12:00:00.000Z' },
+    // „platí na mieste" 10 € — admin opraví sumu na 8 € (technika s členstvom), bez zmeny stavu
+    { _id: 'qaStBkTech', class_id: 'qaStZumba', class_name: 'Technický tréning', user_id: 'qaStAlena00001', user_name: 'Alena Testová', booking_date: '2026-09-13', status: 'attended', attendance_status: 'attended', access_method: 'pay_on_site', pay_on_site: true, pay_amount: 10, created_at: '2026-09-13T16:00:00.000Z' },
     // skutočný no-show na dospelej hodine — migrácia sa ho nesmie dotknúť
     { _id: 'qaStBkBea2', class_id: 'qaStZumba', class_name: 'Zumba', user_id: 'qaStBea000001', user_name: 'Bea Testová', booking_date: '2026-09-10', status: 'cancelled', attendance_status: 'no_show', attendance_source: 'auto', no_show_at: '2026-09-10T20:30:00.000Z', access_method: 'membership', created_at: '2026-09-10T12:00:00.000Z' },
   ]));
@@ -74,6 +76,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok('rezervácia je stornovaná bez no_show značky', bk.status === 'cancelled' && !bk.attendance_status && !bk.no_show_at && bk.no_show_corrected_by === 'admin_cancel', JSON.stringify(bk));
     ok('Alena no_show_count 2 → 1', alena.no_show_count === 1, JSON.stringify(alena.no_show_count));
     ok('skutočná Zumba ostala odchodená, návštevy nezmenené', rd('bookings.db').find(b => b._id === 'qaStBkZumba').status === 'attended' && alena.visit_count === 5);
+    // oprava sumy „platí na mieste" (Marek 13. 9.: Stanka technika 10 → 8 € s členstvom)
+    const pa = await j('/api/admin/bookings/qaStBkTech', { method: 'PUT', body: { pay_amount: 8 } }, aj);
+    await sleep(300);
+    const bkT = rd('bookings.db').find(b => b._id === 'qaStBkTech');
+    ok('admin opraví sumu platby na mieste 10 → 8 € bez zmeny stavu', pa.status === 200 && pa.d.pay_amount === 8 && bkT.pay_amount === 8 && bkT.status === 'attended' && bkT.pay_amount_edited_by === 'qaStAdmin00001', JSON.stringify({ r: pa.d, pa: bkT.pay_amount, s: bkT.status }));
+    ok('neplatná suma → 400', (await j('/api/admin/bookings/qaStBkTech', { method: 'PUT', body: { pay_amount: -1 } }, aj)).status === 400);
+    ok('suma sa nedá nastaviť rezervácii, ktorá nie je „platí na mieste"', (await j('/api/admin/bookings/qaStBkZumba', { method: 'PUT', body: { pay_amount: 8 } }, aj)).status === 400);
+    ok('PUT bez stavu aj bez sumy → 400', (await j('/api/admin/bookings/qaStBkTech', { method: 'PUT', body: {} }, aj)).status === 400);
     // druhé storno tej istej rezervácie nič neodpočíta
     const c2 = await j('/api/admin/bookings/qaStBkKids', { method: 'PUT', body: { status: 'cancelled' } }, aj);
     await sleep(300);
