@@ -233,27 +233,6 @@ body{background:var(--dark-1);color:var(--cream);font-family:var(--sans,'Manrope
         </div>
       </div>
 
-      <!-- ZUMBA KIDS -->
-      <div class="plan-card" style="border-color:rgba(255,107,157,.4)">
-        <div class="plan-emoji">🧒</div>
-        <div class="plan-name">Zumba Kids</div>
-        <div class="plan-price">49,90<span style="font-size:1.2rem">€</span></div>
-        <div class="plan-period">/ mesiac · pre deti</div>
-        <ul class="plan-features">
-          <li><i class="fas fa-check check"></i>Neobmedzené detské hodiny</li>
-          <li><i class="fas fa-check check"></i>Platné vo všetkých mestách, kde je Zumba Kids</li>
-          <li><i class="fas fa-check check"></i>Rodič spravuje a rezervuje v appke</li>
-          <li><i class="fas fa-check check"></i>Vlastný QR kód dieťaťa na check-in</li>
-          <li><i class="fas fa-times cross"></i>Online hodiny</li>
-        </ul>
-        <div id="kidsChildSelectWrap" style="display:none;margin-bottom:8px">
-          <select id="kidsChildSelect" style="width:100%;padding:9px 12px;background:#141414;border:1px solid rgba(255,107,157,.4);border-radius:.6rem;color:#f5edd6;font-size:.9rem"></select>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <button class="btn-plan btn-plan-outline" style="border-color:#FF6B9D;color:#FF6B9D" onclick="buyKids()">🧒 Prihlásiť dieťa</button>
-        </div>
-      </div>
-
     </div>
 
     <!-- Jednorazové vstupy -->
@@ -478,12 +457,12 @@ let _stripeEnabled = false;
   try { _stripeEnabled = !!(await fetch('/api/config').then(r=>r.json())).stripe_enabled; } catch(e){}
   // Stripe cancel return
   if(new URLSearchParams(location.search).get('stripe')==='cancel'){ history.replaceState({},'','/pricing'); }
+  // Detský balík je zrušený (9. 9.) — reklama /?buy=kids vedie do Obchodu, kde si rodič vyberie „Pre koho: dieťa"
+  if(new URLSearchParams(location.search).get('buy')==='kids'){ location.replace('/obchod?buy=bronze&pre=dieta'); return; }
   try {
     const me = await fetch('/api/me',{credentials:'include'}).then(r=>r.json());
     _pricingMe = me?.id ? me : null;
     if(me?.id){
-      try { _pricingChildren = await fetch('/api/family/children',{credentials:'include'}).then(r=>r.json()); if(!Array.isArray(_pricingChildren)) _pricingChildren=[]; } catch(e){ _pricingChildren=[]; }
-      renderKidsChildSelect();
       document.getElementById('navLoginBtn').style.display='none';
       document.getElementById('navDashBtn').style.display='inline-block';
       const dashUrl = me.is_admin?'/admin':me.user_type==='trainer'?'/trainer':'/client-dashboard';
@@ -539,29 +518,6 @@ async function payWithStripeSub(){
     alert('Chyba: '+(r.error||'nepodarilo sa spustiť odber'));
   } catch(e){ alert('Chyba pripojenia'); }
   btn.disabled = false; btn.textContent = 'Odoberať kartou · Apple Pay · Google Pay';
-}
-
-// ── Zumba Kids ────────────────────────────────────────────────────────────────
-function renderKidsChildSelect(){
-  const wrap = document.getElementById('kidsChildSelectWrap');
-  const sel = document.getElementById('kidsChildSelect');
-  if(!wrap||!sel) return;
-  if(_pricingChildren.length){
-    wrap.style.display='block';
-    sel.innerHTML = _pricingChildren.map(c=>`<option value="${c.id}">${c.name}${c.birth_year?' ('+c.birth_year+')':''}</option>`).join('');
-  } else {
-    wrap.style.display='none';
-  }
-}
-function buyKids(){
-  if(!_pricingMe){ window.location.href='/?buy=kids'; return; }
-  if(!_pricingChildren.length){
-    if(confirm('Najprv pridaj profil dieťaťa vo svojom účte. Prejsť tam teraz?')) window.location.href='/client-dashboard';
-    return;
-  }
-  const childId = document.getElementById('kidsChildSelect').value;
-  const child = _pricingChildren.find(c=>c.id===childId);
-  openBuyModal('kids','🧒 Zumba Kids – '+(child?child.name:'dieťa'),'49.90', childId);
 }
 
 // ── Buy modal ─────────────────────────────────────────────────────────────────

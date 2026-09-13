@@ -145,7 +145,10 @@ async function boot(){
   const qsB=new URLSearchParams(location.search);
   // Priamy odkaz z reklamy: /obchod?buy=<plán>. Musí sa prečítať PRED showTab —
   // ten prepíše adresu na ?tab=… a parameter by sa stratil.
-  const buy=qsB.get('buy');
+  // Zrušený detský balík: /?buy=kids (reklama) = Bronze pre dieťa, „Pre koho" predvyplnené prvým dieťaťom
+  const buyRaw=qsB.get('buy');
+  const buy=buyRaw==='kids'?'bronze':buyRaw;
+  if((buyRaw==='kids'||qsB.get('pre')==='dieta') && CHILDREN.length) PRE_KOHO=CHILDREN[0].id;
   const want=qsB.get('tab')||location.hash.replace('#','');
   const jeVstup=buy&&PLANS[buy]&&(PLANS[buy].type==='bundle'||buy==='vstup1');
   showTab(jeVstup?'vstupy':(['clenstva','vstupy','sukromne','merch','eventy','nakupy'].includes(want)?want:'clenstva'));

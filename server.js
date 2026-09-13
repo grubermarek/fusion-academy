@@ -1705,6 +1705,24 @@ async function seedData() {
     console.log('🧒 Zumba Kids: skupiny prehodené — 4–6 o 15:00, 7–14 o 14:00 ('+n+' hodín)');
   }
 
+  // Marek 13. 9.: „prerob rozvrh — 15:00 budú väčšie deti, 16:00 tie menšie."
+  if(!(await q.one(db.settings,{key:'zumba_kids_casy_20260913'}))){
+    const casy=[
+      { nazov:'Zumba Kids 2 (7–14)', od:'15:00', do:'16:00' },
+      { nazov:'Zumba Kids 1 (4–6)',  od:'16:00', do:'17:00' },
+    ];
+    let n=0;
+    for(const x of casy){
+      n += await q.update(db.classes,{name:x.nazov},{$set:{time_start:x.od, time_end:x.do}},{multi:true});
+      // Budúce rezervácie nesú čas hodiny v sebe — inak by rodičom svietil starý čas.
+      for(const c of await q.find(db.classes,{name:x.nazov}))
+        await q.update(db.bookings,{class_id:c._id, booking_date:{$gte:today()}, status:{$ne:'cancelled'}},
+          {$set:{class_time_start:x.od, class_time_end:x.do}},{multi:true});
+    }
+    await q.insert(db.settings,{key:'zumba_kids_casy_20260913', value:true, at:nowISO()});
+    console.log('🧒 Zumba Kids: 7–14 o 15:00, 4–6 o 16:00 ('+n+' hodín)');
+  }
+
   // 24.8.: kampane bez utm_key sa nedali merať — platili sme za kliky, ktoré nemali
   // kam zapadnúť (Video HEJ BABY 141 klikov, Kreatívny test 423 klikov, obe 0 registrácií
   // na karte, hoci vo funneli boli registrácie s utm_campaign fa-test-*).
@@ -11106,7 +11124,8 @@ const MEMBERSHIP_PLANS = {
   'bronze':         { name:'Bronze',         price:50,   duration_days:30,  online:false, color:'#cd7f32' },
   'silver':         { name:'Silver',         price:75,   duration_days:30,  online:true,  color:'#a8a9ad' },
   'gold':           { name:'Gold',           price:125,  duration_days:30,  online:true,  color:'#C9A84C', meal:true },
-  'kids':           { name:'Zumba Kids',     price:49.9, duration_days:30,  online:false, color:'#FF6B9D', kids:true },
+  // Zrušený 9. 9. (deti majú bežné Bronze/Silver/Gold) — ostáva len pre staré záznamy.
+  'kids':           { name:'Zumba Kids',     price:49.9, duration_days:30,  online:false, color:'#FF6B9D', kids:true, retired:true },
   'online_basic':   { name:'Online Basic',   price:12.9, duration_days:30,  online:true,  color:'#4CAF50' },
   'online_premium': { name:'Online Premium', price:67.9, duration_days:30,  online:true,  color:'#9C27B0', meal:true },
   'vstup1':         { name:'Jednorazový vstup', price:10, duration_days:30, online:false, color:'#4CAF50', type:'bundle', entries:1 },
@@ -11117,6 +11136,10 @@ const MEMBERSHIP_PLANS = {
 // Zámerne užší zoznam než MEMBERSHIP_PLANS — Kids ani online plány nemá
 // zmysel ponúkať pri rezervácii živej hodiny.
 const NA_MIESTE_PLANY = ['vstup1','permanentka10','bronze','silver','gold'];
+// Zrušené plány sa nedajú kúpiť ani cez API — v cenníku ostala karta Zumba Kids a plán
+// 'kids' bez obmedzení púšťal za 49,90 € aj na dospelé hodiny (13. 9.).
+const planNaPredaj = id => { const p = MEMBERSHIP_PLANS[id]; return p && !p.retired ? p : null; };
+const PLANY_NA_PREDAJ = () => Object.fromEntries(Object.entries(MEMBERSHIP_PLANS).filter(([,p])=>!p.retired));
 // Cena, ktorú tréner reálne vyberie. Technika má vlastný cenník podľa členstva,
 // preto sa jej sem nesiaha — o tú sa stará technikaCena().
 function cenaNaMieste(planId){
@@ -11173,8 +11196,12 @@ async function duplicitneClenstvo(memberId, planId, payer, {odber=false}={}){
   const plan = MEMBERSHIP_PLANS[planId];
   if(!plan || plan.type==='bundle') return null;
   // Odber beží na platiteľovi; keď platí za dieťa, viaže sa na konkrétneho člena.
-  const subId = payer && payer.stripe_subscription_id;
-  const autoRenew = !!subId && (!payer.stripe_sub_member || payer.stripe_sub_member===memberId);
+  // Odber je na zázname ČLENA (dieťa má vlastný, platí ho rodič). Staršie dáta: odber
+  // rodiča so stripe_sub_member = dieťa. Predtým jeden slot na rodičovi blokoval odber
+  // pre dieťa, keď mal rodič vlastný (13. 9.).
+  const clen = payer && payer._id===memberId ? payer : await q.one(db.users,{_id:memberId});
+  const autoRenew = !!(clen && clen.stripe_subscription_id)
+    || !!(payer && payer.stripe_subscription_id && payer.stripe_sub_member && payer.stripe_sub_member===memberId);
   const podpora = ' Ak chceš niečo zmeniť, napíš nám na 0904 31 51 51 — spravíme to za teba. 💛';
   if(odber && autoRenew) return { code:'subscription_exists', auto_renew:true,
     error:'Mesačný odber ti už beží a obnovuje sa automaticky — druhý by ti z karty strhával dve členstvá naraz.'+podpora };
@@ -11239,6 +11266,7 @@ async function activateMembership(userId, planId, durationDays){
   await q.update(db.users,{_id:userId},{$set:memberSet});
   // Notification
   await q.insert(db.notifications,{user_id:userId,type:'membership',title:'Členstvo aktivované 🎉',body:`Váš plán ${plan.name} je aktívny do ${expiresAt.toLocaleDateString('sk-SK')}.`,read:false,created_at:nowISO()});
+  if(promoU && promoU.is_child) autoKidsBookingsFor(promoU).catch(e=>console.error('auto kids:', e.message));
   // ── Email automation: cancel lead_nurture, enqueue membership_welcome ────────
   cancelSequence(userId,'lead_nurture').catch(()=>{});
   enqueueSequence(userId,'membership_welcome').catch(()=>{});
@@ -11317,11 +11345,11 @@ app.get('/api/membership/plans', async(req,res)=>{
     if(req.session?.uid){
       const gm=await checkMembership(req.session.uid);
       if(gm && gm.status==='active' && /gold/.test(String((gm.plan_id||'')+' '+(gm.plan_name||'')).toLowerCase())){
-        return res.json({...MEMBERSHIP_PLANS, permanentka10:{...MEMBERSHIP_PLANS.permanentka10, price:70, gold_price:true}});
+        return res.json({...PLANY_NA_PREDAJ(), permanentka10:{...MEMBERSHIP_PLANS.permanentka10, price:70, gold_price:true}});
       }
     }
   }catch(e){}
-  res.json(MEMBERSHIP_PLANS);
+  res.json(PLANY_NA_PREDAJ());
 });
 
 // ── Promo / zľavové kódy ──────────────────────────────────────────────────────
@@ -11610,7 +11638,7 @@ app.post('/api/meal-plan/generate', auth, async(req,res)=>{
 app.post('/api/membership/buy', auth, async(req,res)=>{
   try {
     const {plan_id, payment_method, use_referral_credit, for_child_id, promo_code} = req.body;
-    const plan = MEMBERSHIP_PLANS[plan_id];
+    const plan = planNaPredaj(plan_id);
     if(!plan) return res.status(400).json({error:'Neplatný plán'});
     const u = await q.one(db.users,{_id:req.session.uid}); // parent = payer
     // ── Membership for a child? ────────────────────────────────────────────────
@@ -11757,6 +11785,13 @@ async function createInvoice({user_id, client_name, client_email, items, total, 
     // predaj (audit 7. 9.: faktúra 20260070 na 0 € za dve darované vstupenky).
     // Dobropis je výnimka, ten smie byť nulový aj záporný.
     if(type!=='credit_note' && !(+total > 0)) return null;
+    // Faktúra za dieťa ide rodičovi — detský profil má len interný e-mail (13. 9.)
+    if(/@internal\.local$/i.test(String(client_email||''))){
+      const dieta = user_id ? await q.one(db.users,{_id:user_id}).catch(()=>null) : null;
+      const rodic = dieta && dieta.parent_id ? await q.one(db.users,{_id:dieta.parent_id}).catch(()=>null) : null;
+      if(rodic){ client_email = rodic.email; client_name = `${rodic.name} (za ${dieta.name})`; }
+      else client_email = '';
+    }
     const number = await nextInvoiceNumber();
     const inv = await q.insert(db.invoices, {
       number, vs: number,
@@ -14010,7 +14045,7 @@ app.post('/api/stripe/checkout', auth, async(req,res)=>{
   try {
     if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
     const { plan_id, for_child_id, promo_code } = req.body;
-    const plan = MEMBERSHIP_PLANS[plan_id];
+    const plan = planNaPredaj(plan_id);
     if(!plan) return res.status(400).json({error:'Neplatný plán'});
     const u = await q.one(db.users,{_id:req.session.uid});
     let memberId = req.session.uid, childName = null;
@@ -14153,7 +14188,11 @@ async function fulfillStripeCheckout(s){
   const memberId = meta.member_id || meta.user_id;
   await activateMembership(memberId, meta.plan_id, plan.duration_days||30);
   if(meta.type==='subscription' && s.subscription){
-    await q.update(db.users,{_id:meta.user_id},{$set:{stripe_subscription_id:s.subscription, stripe_sub_plan:meta.plan_id, stripe_sub_member:memberId}});
+    // Odber patrí ČLENOVI: rodičov vlastný ostáva na ňom, odber pre dieťa sa zapíše na
+    // detský profil so stripe_sub_payer_id = rodič. Jeden slot na rodičovi sa prepisoval
+    // a obnovy dieťaťa sa strácali (13. 9.).
+    if(memberId===meta.user_id) await q.update(db.users,{_id:meta.user_id},{$set:{stripe_subscription_id:s.subscription, stripe_sub_plan:meta.plan_id, stripe_sub_member:memberId}});
+    else await q.update(db.users,{_id:memberId},{$set:{stripe_subscription_id:s.subscription, stripe_sub_plan:meta.plan_id, stripe_sub_member:memberId, stripe_sub_payer_id:meta.user_id}});
   }
   const buyer = await q.one(db.users,{_id:meta.user_id});
   const via = meta.type==='subscription' ? 'Stripe mesačný odber' : 'Stripe · karta/Apple/Google Pay';
@@ -14278,7 +14317,7 @@ app.post('/api/stripe/subscribe', auth, async(req,res)=>{
   try {
     if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
     const { plan_id, for_child_id } = req.body;
-    const plan = MEMBERSHIP_PLANS[plan_id];
+    const plan = planNaPredaj(plan_id);
     if(!plan) return res.status(400).json({error:'Neplatný plán'});
     if(plan.type==='bundle') return res.status(400).json({error:'Permanentku nemožno kúpiť ako odber'});
     const u = await q.one(db.users,{_id:req.session.uid});
@@ -14342,12 +14381,19 @@ async function recordMembershipCancel(u, reason, note, source){
 app.post('/api/stripe/subscribe/cancel', auth, async(req,res)=>{
   try {
     if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
-    const u = await q.one(db.users,{_id:req.session.uid});
-    if(!u.stripe_subscription_id) return res.status(400).json({error:'Nemáš aktívny mesačný odber'});
+    const ja = await q.one(db.users,{_id:req.session.uid});
+    // Rodič vypína aj odber dieťaťa (member_id) — ten je na zázname dieťaťa (13. 9.)
+    let u = ja;
+    if(req.body.member_id && String(req.body.member_id)!==ja._id){
+      const dieta = await q.one(db.users,{_id:String(req.body.member_id)});
+      if(!dieta || dieta.parent_id!==ja._id) return res.status(403).json({error:'Neplatný detský profil'});
+      u = dieta;
+    }
+    if(!u.stripe_subscription_id) return res.status(400).json({error: u===ja ? 'Nemáš aktívny mesačný odber' : `${u.name} nemá aktívny mesačný odber`});
     await stripeApi('subscriptions/'+encodeURIComponent(u.stripe_subscription_id), null, 'DELETE');
     await q.update(db.users,{_id:u._id},{$set:{stripe_subscription_id:null}});
-    await recordMembershipCancel(u, req.body.reason, req.body.note, 'stripe_self');
-    await q.insert(db.notifications,{user_id:u._id,type:'membership',title:'Odber zrušený',body:'Automatické obnovenie bolo zrušené. Členstvo platí do konca obdobia.',read:false,created_at:nowISO()});
+    await recordMembershipCancel(u, req.body.reason, req.body.note, u===ja ? 'stripe_self' : 'stripe_parent');
+    await q.insert(db.notifications,{user_id:ja._id,type:'membership',title:'Odber zrušený',body:(u===ja?'Automatické obnovenie bolo zrušené.':'Automatické obnovenie pre '+u.name+' bolo zrušené.')+' Členstvo platí do konca obdobia.',read:false,created_at:nowISO()});
     res.json({ok:true});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -14492,10 +14538,12 @@ app.post('/api/stripe/webhook', async(req,res)=>{
           if(plan){
             await activateMembership(u.stripe_sub_member||u._id, planId, plan.duration_days||30);
             await q.insert(db.transactions,{type:'subscription_renewal',user_id:u.stripe_sub_member||u._id,user_name:u.name,amount:plan.price,date:today(),payment_method:'stripe',note:`Auto-obnova ${plan.name} (Stripe)`,plan_id:planId,created_at:nowISO(),month:today().slice(0,7)});
-            createInvoice({user_id:u._id, client_name:u.name, client_email:u.email,
-              items:[{desc:`Členstvo ${plan.name} — mesačná obnova`, qty:1, total:plan.price}],
+            // Odber dieťaťa: faktúra a provízia idú platiteľovi (rodičovi), nie detskému profilu (13. 9.)
+            const platca = u.stripe_sub_payer_id ? (await q.one(db.users,{_id:u.stripe_sub_payer_id}))||u : u;
+            createInvoice({user_id:platca._id, client_name:platca.name, client_email:platca.email,
+              items:[{desc:`Členstvo ${plan.name}${platca._id!==u._id?' ('+u.name+')':''} — mesačná obnova`, qty:1, total:plan.price}],
               total:plan.price, method:'Stripe (automatický odber)'});
-            awardPurchaseCommission({buyer_id:u._id, amount:plan.price, product_name:`Členstvo ${plan.name} (obnova)`});
+            awardPurchaseCommission({buyer_id:platca._id, amount:plan.price, product_name:`Členstvo ${plan.name} (obnova)`});
           }
         }
       }
@@ -14505,13 +14553,13 @@ app.post('/api/stripe/webhook', async(req,res)=>{
         const u = await q.one(db.users,{stripe_subscription_id:inv.subscription});
         if(u){
           const amt = (inv.amount_due||inv.total||0)/100;
-          await recordFailedPayment({ user_id:u._id, amount:amt, description:'Členstvo (automatická obnova)',
+          await recordFailedPayment({ user_id:u.stripe_sub_payer_id||u._id, amount:amt, description:'Členstvo (automatická obnova)'+(u.stripe_sub_payer_id?' — '+u.name:''),
             plan_name:'Členstvo', provider:'stripe', invoice_id:inv.id });
         }
       }
     } else if(event.type==='invoice.payment_succeeded'){
       const inv = event.data.object;
-      if(inv.subscription){ const u = await q.one(db.users,{stripe_subscription_id:inv.subscription}); if(u) await resolveFailedPayments(u._id); }
+      if(inv.subscription){ const u = await q.one(db.users,{stripe_subscription_id:inv.subscription}); if(u) await resolveFailedPayments(u.stripe_sub_payer_id||u._id); }
     } else if(event.type==='customer.subscription.deleted'){
       const sub = event.data.object;
       const u = await q.one(db.users,{stripe_subscription_id:sub.id});
@@ -15641,6 +15689,14 @@ async function markNoShows(){
     if(!(b.class_id in clsCache)) clsCache[b.class_id] = await q.one(db.classes,{_id:b.class_id});
     const endMs = classEndMs(b, clsCache[b.class_id]);
     if(!Number.isFinite(endMs) || now < endMs + 60*60000) continue;
+    // Automatická detská rezervácia: dieťa sa berie, že chodí (Marek 13. 9.) — bez
+    // výslovného „neprišlo" od trénera sa po hodine započíta ako odchodená.
+    if(b.auto_kids){
+      await q.update(db.bookings,{_id:b._id},{$set:{status:'attended', attendance_status:'attended', attendance_source:'auto_kids', attended_at:nowISO()}});
+      const dieta=b.user_id ? await q.one(db.users,{_id:b.user_id}) : null;
+      if(dieta) await creditAttendance(dieta);
+      continue;
+    }
     await q.update(db.bookings,{_id:b._id},{$set:{attendance_status:'no_show', attendance_source:'auto', no_show_at:nowISO()}});
     // počítadlo pre skórovanie leadov v trénerskom paneli
     if(b.user_id && !b.is_child_booking){ const u=await q.one(db.users,{_id:b.user_id});
@@ -15831,7 +15887,7 @@ app.post('/api/kiosk/checkin', async(req,res)=>{
         await q.update(db.users,{_id:u._id},{$set:{no_show_count:Math.max(0,(u.no_show_count||0)-1)}});
       await q.update(db.bookings,{_id:exists._id},{$set:{status:'attended', attended_at:nowISO(), attended_by:'kiosk_'+a.slug,
         attendance_status:'attended', attendance_source:'qr', ...fix}});
-      if(!already && !exists.is_child_booking) vc=await creditAttendance(u);
+      if(!already) vc=await creditAttendance(u); // aj detský profil (13. 9.)
     } else {
       const mem=await checkMembership(u._id);
       // Online-only plán nekryje živú hodinu — kiosk musí upozorniť, že treba vybrať vstupné
@@ -17211,7 +17267,7 @@ app.post('/api/trainer/sell', trainerAuth, async(req,res)=>{
     if(!u) return res.status(404).json({error:'Klient nenájdený'});
     let amount=0, what='';
     if(kind==='plan'){
-      const plan=MEMBERSHIP_PLANS[req.body.plan_id];
+      const plan=planNaPredaj(req.body.plan_id);
       if(!plan) return res.status(400).json({error:'Neplatný plán'});
       amount=+(+req.body.amount>0?+req.body.amount:plan.price).toFixed(2);
       what=plan.type==='bundle'?`Permanentka ${plan.name}`:`Členstvo ${plan.name}`;
@@ -17258,7 +17314,7 @@ app.post('/api/trainer/sell', trainerAuth, async(req,res)=>{
 });
 // Plány pre trénerský predaj (id, názov, cena)
 app.get('/api/trainer/sell-options', trainerAuth, async(req,res)=>{
-  const plans=Object.entries(MEMBERSHIP_PLANS).map(([id,p])=>({id, name:p.name, price:p.price, bundle:p.type==='bundle'}));
+  const plans=Object.entries(PLANY_NA_PREDAJ()).map(([id,p])=>({id, name:p.name, price:p.price, bundle:p.type==='bundle'}));
   const products=(await q.find(db.products,{active:true})).map(p=>({id:p._id, name:p.name, price:p.price, cat:p.cat||''}));
   res.json({ok:true, plans, products});
 });
@@ -18302,7 +18358,7 @@ app.post('/api/attendance/confirm-session', trainerAuth, async(req,res)=>{
       await q.update(db.bookings,{_id:b._id},{$set:{status:'attended', attended_at:nowISO(), attended_by:req.trainerUser._id,
         attendance_status:'attended', attendance_source:'trainer',
         ...(wasNoShow?{no_show_corrected_at:nowISO(), no_show_corrected_by:req.trainerUser._id}:{})}});
-      if(!b.is_child_booking && b.user_id){
+      if(b.user_id){ // aj detský profil dostane návštevu — predtým sa dieťaťu nikdy nepripísala (13. 9.)
         const u=await q.one(db.users,{_id:b.user_id});
         if(u){ await creditAttendance(u); credited++;
           if(wasNoShow && (u.no_show_count||0)>0) await q.update(db.users,{_id:u._id},{$set:{no_show_count:Math.max(0,(u.no_show_count||0)-1)}});
@@ -18365,7 +18421,7 @@ app.post('/api/attendance/qr-checkin', trainerAuth, async(req,res)=>{
         const already = exists.status==='attended';
         await q.update(db.bookings,{_id:exists._id},{$set:{status:'attended',attended_at:nowISO(),attended_by:req.trainerUser._id}});
         let vc = u.visit_count||0;
-        if(!already && !exists.is_child_booking){ vc = await creditAttendance(u); }
+        if(!already){ vc = await creditAttendance(u); } // aj detský profil (13. 9.)
         else if(!u.is_child) sendFirstClassEmail(u._id).catch(()=>{});
         return res.json({ok:true, user:{...userData, visit_count:vc}, booking:{existing:true, attended:true, booking_date:bdate, class_name:cls.name}});
       }
@@ -18423,6 +18479,53 @@ app.get('/api/me/qr', auth, async(req,res)=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 const MAX_CHILDREN = 6;
 
+// ── Automatická dochádzka detí (Marek 13. 9.: „dieťa sa nemusí bookovať, berie sa
+// automaticky, že chodí") ─────────────────────────────────────────────────────
+// Dieťa s aktívnym členstvom a vybranými detskými hodinami (auto_classes) dostane
+// rezerváciu na najbližšie termíny samo; keď ju tréner výslovne neoznačí ako
+// „neprišlo", po hodine sa počíta ako odchodená (markNoShows). Vstupy a permanentky
+// sa neautomatizujú — každá rezervácia by odpisovala vstup.
+async function autoKidsBookingsFor(dieta){
+  if(!dieta || !dieta.is_child || dieta.active===false) return 0;
+  const ids=Array.isArray(dieta.auto_classes)?dieta.auto_classes:[];
+  if(!ids.length) return 0;
+  const m=await checkMembership(dieta._id);
+  const aktivne=!!(m && m.status==='active' && (!m.expires_at || String(m.expires_at)>=today()) && MEMBERSHIP_PLANS[m.plan_id]?.type!=='bundle');
+  if(!aktivne) return 0;
+  const rodic=dieta.parent_id ? await q.one(db.users,{_id:dieta.parent_id}) : null;
+  const zaklad=new Date(today()+'T12:00:00Z');
+  let n=0;
+  for(const cid of ids){
+    const cls=await q.one(db.classes,{_id:cid});
+    if(!cls || !cls.active || cls.category!=='Deti') continue;
+    for(let k=0;k<7;k++){
+      const d=new Date(zaklad.getTime()+k*86400000).toISOString().slice(0,10);
+      if(dowZDatumu(d)!==+cls.day_of_week || !classRunsOn(cls,d)) continue;
+      if(await q.one(db.class_cancellations,{class_id:cls._id, date:d})) continue;
+      if(await q.one(db.bookings,{class_id:cls._id, user_id:dieta._id, booking_date:d, status:{$ne:'cancelled'}})) continue;
+      const obs=await q.count(db.bookings,{class_id:cls._id, booking_date:d, status:{$ne:'cancelled'}});
+      if(cls.capacity && obs>=cls.capacity) continue;
+      await q.insert(db.bookings,{ class_id:cls._id, class_name:cls.name, class_emoji:cls.emoji||'🧒',
+        class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
+        day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
+        user_id:dieta._id, user_name:dieta.name, user_email:'', user_phone:rodic?.phone||'',
+        booking_date:d, status:'confirmed', attendance_status:'pending', access_method:'membership',
+        is_child_booking:true, child_name:dieta.name, booked_by:rodic?._id||null, booked_by_name:rodic?.name||null,
+        auto_kids:true, notes:'🧒 automaticky — detské členstvo', created_at:nowISO() });
+      n++;
+    }
+  }
+  return n;
+}
+async function autoKidsBookings(){
+  let n=0;
+  for(const d of await q.find(db.users,{is_child:true, active:{$ne:false}})){
+    if(Array.isArray(d.auto_classes) && d.auto_classes.length) n+=await autoKidsBookingsFor(d).catch(()=>0);
+  }
+  if(n) console.log('🧒 Automatické detské rezervácie: '+n);
+  return n;
+}
+
 app.get('/api/family/children', auth, async(req,res)=>{
   try {
     const children = await q.find(db.users,{parent_id:req.session.uid, active:{$ne:false}},{created_at:1});
@@ -18434,7 +18537,8 @@ app.get('/api/family/children', auth, async(req,res)=>{
         id:c._id, name:c.name, birth_date:c.birth_date||null, birth_year:c.birth_year||null,
         visit_count:c.visit_count||0, single_entries:c.single_entries||0, free_credits:c.free_credits||0,
         free_class_used:c.free_class_used||false,
-        membership: m ? {plan_name:m.plan_name, expires_at:m.expires_at, status:m.status||'active'} : null,
+        membership: m ? {plan_id:m.plan_id, plan_name:m.plan_name, expires_at:m.expires_at, status:m.status||'active'} : null,
+        auto_renew: !!c.stripe_subscription_id, auto_classes: Array.isArray(c.auto_classes)?c.auto_classes:[],
         upcoming: upcoming.slice(0,3),
       });
     }
@@ -18487,8 +18591,16 @@ app.put('/api/family/children/:id', auth, async(req,res)=>{
       upd.birth_date = req.body.birth_date || null;
       upd.birth_year = req.body.birth_date ? new Date(req.body.birth_date).getFullYear() : null;
     } else if(req.body.birth_year!==undefined) upd.birth_year = +req.body.birth_year || null;
+    // Automatické prihlasovanie na detské hodiny (13. 9.): rodič vyberie, kam dieťa chodí
+    if(req.body.auto_classes!==undefined){
+      const ids=[...new Set((Array.isArray(req.body.auto_classes)?req.body.auto_classes:[]).map(String))].slice(0,6);
+      const ok=[]; for(const id of ids){ const c=await q.one(db.classes,{_id:id}); if(c && c.active && c.category==='Deti') ok.push(id); }
+      upd.auto_classes=ok;
+    }
     await q.update(db.users,{_id:child._id},{$set:upd});
-    res.json({ok:true});
+    let auto_bookings=0;
+    if(upd.auto_classes) auto_bookings=await autoKidsBookingsFor({...child, ...upd}).catch(()=>0);
+    res.json({ok:true, auto_classes:upd.auto_classes, auto_bookings});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -18584,6 +18696,14 @@ async function sendMail(to, subject, html, opts){
   // @import.local = syntetické adresy klientov zo starého zoznamu (majú len telefón,
   // kontaktujú sa SMSkou) — nikdy na ne nič neposielaj.
   if(/@import\.local$/i.test(String(to||''))) return false;
+  // Detský profil má interný e-mail (child-…@internal.local) a nemá vlastný login —
+  // pošta o jeho členstve ide rodičovi (13. 9.).
+  if(/@internal\.local$/i.test(String(to||''))){
+    const dieta = await q.one(db.users,{email:String(to).toLowerCase()}).catch(()=>null);
+    const rodic = dieta && dieta.parent_id ? await q.one(db.users,{_id:dieta.parent_id}).catch(()=>null) : null;
+    if(!rodic || !rodic.email) return false;
+    to = rodic.email; subject = '👧 '+(dieta.name||'dieťa')+': '+String(subject||'');
+  }
   // QA: MAIL_CAPTURE=1 → mail sa zaloguje a linky sa prepíšu, ale NIKDY sa neodošle.
   // Capture má prednosť VŽDY — aj pred MAIL_ON (28.8.: test s MAIL_ON+MAIL_CAPTURE
   // reálne odoslal 9 QA mailov, prišli bounce — už sa to stať nemôže).
@@ -18746,6 +18866,9 @@ app.post('/api/bookings', auth, async(req,res)=>{
       target = child;
     }
     const isChild = target !== parent;
+    // Zumba Kids je pre deti — dospelí sa tam zapisovali sami namiesto dieťaťa (13. 9.: 2 rezervácie).
+    if(cls.category==='Deti' && !isChild && !parent.is_admin && parent.user_type!=='trainer')
+      return res.status(400).json({ error:'Zumba Kids je detská hodina — rezervuj ju pre svoje dieťa: v rozvrhu vyber dieťa (profil dieťaťa si pridáš v appke v časti Rodina).', kids_class:true });
     const u = target; // gate + visit-count apply to the target (self or child)
 
     // ── Free-class / membership gate ───────────────────────────────────────────
@@ -19719,7 +19842,7 @@ app.get('/api/me', async(req,res)=>{
   const u = await q.one(db.users,{_id:req.session.uid});
   if(!u) return res.json({});
   const m = await checkMembership(req.session.uid);
-  const notifCount = await q.count(db.notifications,{user_id:req.session.uid,read:false});
+  const notifCount = await q.count(db.notifications,{user_id:{$in:(await idsSDetmi(req.session.uid)).ids},read:false});
   const loyalty = getLoyaltyStatus(u.visit_count || 0);
   const role = USER_ROLES[u.user_type] || USER_ROLES.client;
   res.json({
@@ -20117,12 +20240,20 @@ app.get('/api/admin/support/tickets', auth, async(req,res)=>{
 });
 
 // ─── Client notifications ─────────────────────────────────────────────────────
+// Rodič vidí aj upozornenia detských profilov — tie nemajú vlastný login (13. 9.).
+async function idsSDetmi(uid){
+  const deti = await q.find(db.users,{parent_id:uid, active:{$ne:false}});
+  return { ids:[uid, ...deti.map(d=>d._id)], mena:Object.fromEntries(deti.map(d=>[d._id, d.name])) };
+}
 app.get('/api/client/notifications', auth, async(req,res)=>{
-  const notifs = await q.find(db.notifications,{user_id:req.session.uid},{created_at:-1});
+  const { ids, mena } = await idsSDetmi(req.session.uid);
+  const notifs = (await q.find(db.notifications,{user_id:{$in:ids}},{created_at:-1}))
+    .map(n => n.user_id===req.session.uid ? n : {...n, title:'👧 '+(mena[n.user_id]||'dieťa')+': '+(n.title||''), child_id:n.user_id});
   res.json(notifs.slice(0,30));
 });
 app.post('/api/client/notifications/read-all', auth, async(req,res)=>{
-  await q.update(db.notifications,{user_id:req.session.uid,read:false},{$set:{read:true}},{multi:true});
+  const { ids } = await idsSDetmi(req.session.uid);
+  await q.update(db.notifications,{user_id:{$in:ids},read:false},{$set:{read:true}},{multi:true});
   res.json({ok:true});
 });
 
@@ -23927,6 +24058,7 @@ async function runDailyTick(hourOverride){
       try{ await runDailyJobs(); }catch(e){ console.error('Cron error:',e); }
       try{ await processEmailQueue(); }catch(e){ console.error('Email queue error:',e); }
       try{ await rebuildFunnelStamps(); }catch(e){ console.error('Funnel stamps error:',e.message); }
+      try{ await autoKidsBookings(); }catch(e){ console.error('Auto kids error:',e.message); }
     }
   }
   if(hSK>=20){

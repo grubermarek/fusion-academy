@@ -1252,13 +1252,20 @@ async function loadFamily(){
   if(!Array.isArray(_children)) _children=[];
   const el=document.getElementById('familyList');
   if(!_children.length){ el.innerHTML=`<div class="empty-state" style="padding:12px"><i class="bi bi-people"></i>Zatiaľ žiadne detské profily. Pridaj dieťa a rezervuj zaň hodiny.</div>`; return; }
+  const kids=await kidsClasses();
+  const DNI=['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
   el.innerHTML=_children.map(c=>{
-    const mem=c.membership?`<span style="color:#4caf50">🏅 ${escHtml(c.membership.plan_name)}</span>`:(c.free_class_used?'<span style="opacity:.6">bez členstva</span>':'<span style="color:var(--gold)">🎁 1. hodina zdarma</span>');
-    return `<div class="booking-item">
+    const mem=c.membership?`<span style="color:#4caf50">🏅 ${escHtml(c.membership.plan_name)}${c.auto_renew?' · 🔄 odber':''}</span>${c.auto_renew?` <a onclick="cancelChildRenew('${c.id}','${escHtml(c.name).replace(/'/g,"&#39;")}')" style="font-size:.72rem;color:var(--muted);cursor:pointer;text-decoration:underline dotted">vypnúť</a>`:''}`:(c.free_class_used?'<span style="opacity:.6">bez členstva</span>':'<span style="color:var(--gold)">🎁 1. hodina zdarma</span>');
+    const auto=c.auto_classes||[];
+    // Automatická dochádzka (13. 9.): dieťa sa nemusí rezervovať — rodič vyberie hodiny, appka ho prihlási sama
+    const autoRows = kids.length ? `<div style="margin-top:8px;font-size:.78rem;color:var(--muted);line-height:1.5">🧒 Chodí automaticky na:${c.membership?'':' <span style="color:#ffb74d">(najprv členstvo pre dieťa v Obchode)</span>'}<br>
+      ${kids.map(k=>`<label style="display:inline-flex;align-items:center;gap:5px;margin:4px 12px 0 0;cursor:pointer;color:${auto.includes(k._id)?'var(--text)':'var(--muted)'}"><input type="checkbox" ${auto.includes(k._id)?'checked':''} ${c.membership?'':'disabled'} onchange="toggleAutoClass('${c.id}','${k._id}',this.checked)" style="accent-color:var(--gold)">${escHtml(k.name)} · ${DNI[k.day_of_week]} ${k.time_start}</label>`).join('')}</div>` : '';
+    return `<div class="booking-item" style="flex-wrap:wrap">
       <div class="booking-emoji">🧒</div>
-      <div class="booking-info">
+      <div class="booking-info" style="min-width:0;flex:1">
         <strong>${escHtml(c.name)}${c.birth_year?` <span style="opacity:.5;font-weight:400">• ${c.birth_year}</span>`:''}</strong>
         <span>${c.visit_count} návštev • ${mem}${c.upcoming?.length?` • najbližšie ${fmtDMY(c.upcoming[0].booking_date)}`:''}</span>
+        ${autoRows}
       </div>
       <div style="display:flex;gap:6px">
         <button class="qa-btn" style="padding:7px 10px" title="QR kód" onclick="showChildQR('${c.id}','${escHtml(c.name).replace(/'/g,"&#39;")}')"><i class="bi bi-qr-code" style="margin:0"></i></button>
@@ -1268,6 +1275,26 @@ async function loadFamily(){
     </div>`;
   }).join('');
 }
+let _kidsClasses=null;
+async function kidsClasses(){
+  if(_kidsClasses) return _kidsClasses;
+  try{ const all=await api('/api/classes'); _kidsClasses=(Array.isArray(all)?all:[]).filter(c=>c.category==='Deti' && c.active!==false).sort((a,b)=>(a.day_of_week-b.day_of_week)||String(a.time_start).localeCompare(String(b.time_start))); }
+  catch(e){ _kidsClasses=[]; }
+  return _kidsClasses;
+}
+async function toggleAutoClass(childId, classId, on){
+  const c=_children.find(x=>x.id===childId); if(!c) return;
+  const list=new Set(c.auto_classes||[]); if(on) list.add(classId); else list.delete(classId);
+  const d=await api('/api/family/children/'+childId,{method:'PUT',body:{auto_classes:[...list]}});
+  if(d?.ok){ showToast(on?('✅ Prihlásené automaticky'+(d.auto_bookings?' · '+d.auto_bookings+'× najbližšie termíny':'')):'Automatické prihlasovanie vypnuté','success'); loadFamily(); loadMyBookings(); }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
+}
+async function cancelChildRenew(childId, name){
+  if(!confirm(`Vypnúť automatické obnovenie členstva pre ${name}? Členstvo platí do konca obdobia.`)) return;
+  const d=await api('/api/stripe/subscribe/cancel',{method:'POST',body:{member_id:childId, reason:'other', note:'rodič vypol odber dieťaťa'}});
+  if(d?.ok){ showToast('Odber vypnutý','success'); loadFamily(); } else showToast('Chyba: '+(d?.error||'?'),'error');
+}
+
 function openChildModal(){ document.getElementById('childName').value=''; document.getElementById('childBirthDate').value=''; document.getElementById('childBirthDate').max=new Date().toISOString().slice(0,10); document.getElementById('childModal').style.display='flex'; }
 function closeChildModal(){ document.getElementById('childModal').style.display='none'; }
 async function saveChild(){
