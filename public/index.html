@@ -627,12 +627,12 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
         <span class="line1" data-i18n="auth.hero_l1">Nájdi svoj</span>
         <span class="foil" data-i18n="auth.hero_foil">rytmus.</span>
       </h1>
-      <p class="hero-sub" id="heroSub" data-i18n="auth.hero_sub">Latinskoamerické tance a Zumba v prémiovom štúdiu — pod vedením majstrov s 18-ročnou praxou. Tvoja prvá hodina je na nás.</p>
+      <p class="hero-sub" id="heroSub" data-i18n="auth.hero_sub">Latinskoamerické tance a Zumba v prémiovom štúdiu — pod vedením majstrov s 18-ročnou praxou. Tvoj prvý týždeň je na nás.</p>
       <div class="hero-cta">
         <button class="btn-hero" onclick="startOnboarding()">
-          <span data-i18n="auth.hero_cta">Rezervovať prvú hodinu</span> <i class="bi bi-arrow-right"></i>
+          <span data-i18n="auth.hero_cta">Začať prvý týždeň zadarmo</span> <i class="bi bi-arrow-right"></i>
         </button>
-        <span class="hero-note" data-i18n="auth.hero_note">Zadarmo · bez záväzkov</span>
+        <span class="hero-note" data-i18n="auth.hero_note">7 dní zadarmo · zruš kedykoľvek</span>
         <button onclick="openLogin()" style="display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(201,162,76,.10);border:1.5px solid rgba(201,162,76,.55);color:#E7C878;font-weight:700;font-size:.95rem;padding:12px 26px;border-radius:14px;cursor:pointer">
           🔑 <span data-i18n="auth.have_acct_big">Už máš u nás účet? Prihlás sa tu</span>
         </button>
@@ -1081,6 +1081,7 @@ function faPoPrihlaseni(def){
   return def || '/client-dashboard';
 }
 const _preview = new URLSearchParams(location.search).get('preview')==='1';
+let _previewSkuska = false; // náhľad už ukázal ponuku prvého týždňa
 if(_preview){
   document.addEventListener('DOMContentLoaded',()=>{
     const b=document.createElement('div');
@@ -1492,8 +1493,12 @@ async function doConfirmBook(){
   btn.innerHTML='<i class="bi bi-arrow-repeat spin"></i>&nbsp; Rezervujem...';
   closeBookConfirm();
   if(el){ el.classList.add('booking'); const cta=el.querySelector('.cc-cta'); if(cta) cta.innerHTML='<i class="bi bi-arrow-repeat spin"></i>'; }
-  if(_preview){ // náhľad: rezervácia sa nevytvára, len ukáž potvrdenie s animáciou
+  if(_preview){ // náhľad: rezervácia sa nevytvára; v režime prvého týždňa najprv ponuka skúšky ako u reálnej novej klientky
     btn.disabled=false; btn.innerHTML='<i class="bi bi-check2-circle"></i> Áno, rezervovať!';
+    if(!_previewSkuska){ let cfg={}; try{ cfg=await fetch('/api/config').then(r=>r.json()); }catch(e){}
+      if(cfg.prvy_tyzden){ _previewSkuska=true;
+        if(el){ el.classList.remove('booking'); const cta=el.querySelector('.cc-cta'); if(cta) cta.innerHTML='<i class="bi bi-check2-circle"></i> Rezervovať'; }
+        showMembershipWall(true); _pending=null; return; } }
     await showConfirmation({class_name:className, booking_date:date||''});
     goTo(3);
     setTimeout(()=>{ document.querySelectorAll('.tip-item').forEach((t,i)=>{ setTimeout(()=>{t.style.opacity='1';t.style.animation='fadeUp .4s ease both';},i*130); }); },500);
@@ -1760,6 +1765,11 @@ function showMembershipWall(trial){
   document.getElementById('membershipWallModal').style.display='flex';
 }
 async function startTrialFromLanding(){
+  if(_preview){ // náhľad: Stripe sa neotvára, pokračuj ako po zapnutí skúšky (hodina sa rezervuje)
+    closeMembershipWall(); showToast('🧪 Náhľad: tu si klientka uloží kartu v Stripe a skúška sa zapne.');
+    if(_lastAttempt){ _pending={..._lastAttempt}; doConfirmBook(); }
+    return;
+  }
   const btn=document.getElementById('mwTrialBtn'); if(btn){ btn.disabled=true; btn.textContent='⏳ Otváram Stripe…'; }
   try{ if(_lastAttempt) localStorage.setItem('fa_pending_booking', JSON.stringify({class_id:_lastAttempt.classId, class_name:_lastAttempt.className, date:_lastAttempt.date||null})); }catch(e){}
   try{

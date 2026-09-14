@@ -192,6 +192,24 @@ async function start(PORT, DATA, env) {
     await sleep(300);
     ok('po zrušení príde oznam „nič sa nestrhne"', rd('notifications.db').some(n => n.user_id === zojaId && /Skúšobný týždeň zrušený/.test(n.title)));
     ok('bez skúšky ide stále kúpiť vstup/členstvo (Sára: 402 s can_pay_on_site)', bkS.d.can_pay_on_site === true);
+    // 🕵️ testovací účet adminov: reset vynuluje skúšku, skúška sa zapne bez Stripe (Marek 14. 9.)
+    const adm2 = {};
+    await j('/api/login', { method: 'POST', body: { email: 'qa.pt.admin@qa-biz.local', password: 'Heslo123!' } }, adm2);
+    const ta = await j('/api/admin/test-account', { method: 'POST' }, adm2);
+    const meT = await j('/api/me', {}, adm2);
+    ok('testovací účet: nárok na skúšku', ta.status === 200 && meT.d.test_account === true && meT.d.trial && meT.d.trial.eligible === true, JSON.stringify({ ta: ta.d, tr: meT.d.trial }));
+    const tt = await j('/api/stripe/trial', { method: 'POST' }, adm2);
+    const meT2 = await j('/api/me', {}, adm2);
+    ok('testovací účet: skúška sa zapne naoko bez Stripe', tt.status === 200 && tt.d.test === true && /stripe=trial_test/.test(tt.d.url || '') && meT2.d.trial.active === true && meT2.d.membership && meT2.d.membership.plan_id === 'bronze' && !rd('payments.db').some(p => p.user_id === meT.d.id), JSON.stringify({ tt: tt.d, tr: meT2.d.trial }));
+    ok('testovací účet: bez mailu na testovaciu doménu', !rd('mail_log.db').some(m => /test-fa-qa\.local/.test(m.to || '')));
+    const cT = await j('/api/stripe/subscribe/cancel', { method: 'POST', body: { reason: 'ine' } }, adm2);
+    ok('testovací účet: zrušenie skúšky prejde', cT.status === 200 && cT.d.ok, JSON.stringify(cT.d));
+    await j('/api/test-account/back', { method: 'POST' }, adm2);
+    const ta2 = await j('/api/admin/test-account', { method: 'POST' }, adm2);
+    const meT3 = await j('/api/me', {}, adm2);
+    ok('testovací účet: opätovný vstup vynuluje skúšku (znova nárok)', ta2.status === 200 && meT3.d.trial.eligible === true && meT3.d.trial.used === false && meT3.d.trial.active === false && !meT3.d.membership && meT3.d.stripe_subscription === false, JSON.stringify(meT3.d.trial));
+    await j('/api/test-account/back', { method: 'POST' }, adm2);
+
     // statika
     const dash = fs.readFileSync(path.join(ROOT, 'public', 'client-dashboard.html'), 'utf8');
     ok('nástenka má celú obrazovku skúšky a otvára ju pri vstupe', /id="skuskaWall"/.test(dash) && /skuskaUkaz\(me\)/.test(dash) && /Vyskúšať za 0,00 €/.test(dash) && /Nie, ďakujem/.test(dash) && /stripe'\)==='trial'/.test(dash));

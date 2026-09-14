@@ -938,6 +938,7 @@
     <div style="margin-top:auto">
       <div style="text-align:center;color:#c9c2b2;font-size:.92rem;margin-bottom:12px"><b style="color:#fff"><span id="skuskaCena">49,90</span> € / mesiac</b> po <span id="skuskaDni">7</span>-dňovej skúške zadarmo.<br>Zrušiť môžeš kedykoľvek.</div>
       <button id="skuskaBtn" onclick="skuskaStart()" style="width:100%;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;border:none;border-radius:16px;padding:16px;font-size:1.25rem;font-weight:900;cursor:pointer;box-shadow:0 10px 30px rgba(201,168,76,.25)">Vyskúšať za 0,00 €</button>
+      <div id="skuskaTestNote" style="display:none;text-align:center;margin-top:10px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.4);color:#9fe0b4;border-radius:10px;padding:8px;font-size:.78rem">🧪 Testovací účet — Stripe sa neotvorí, skúška sa zapne naoko.</div>
       <div style="text-align:center;margin-top:14px"><a href="#" onclick="skuskaZavri();return false" style="color:#bbb;font-weight:700;text-decoration:none">Nie, ďakujem</a></div>
       <div style="text-align:center;color:#8a8478;font-size:.72rem;margin-top:14px;line-height:1.5">Kartu si uložíš bezpečne cez Stripe. Prvých 7 dní sa nič nestrhne. Potom členstvo Bronze mesačne, kým odber nezrušíš v appke. Bez skúšky si hodiny kúpiš v Obchode — vstup alebo členstvo.</div>
     </div>
@@ -1175,6 +1176,7 @@ function skuskaUkaz(me){
   const w=document.getElementById('skuskaWall'); if(!w||!me||!me.trial||!me.trial.eligible) return false;
   const c=document.getElementById('skuskaCena'); if(c) c.textContent=(+me.trial.price||49.9).toFixed(2).replace('.',',');
   const d=document.getElementById('skuskaDni'); if(d) d.textContent=me.trial.days||7;
+  { const tn=document.getElementById('skuskaTestNote'); if(tn) tn.style.display=me.test_account?'block':'none'; }
   w.style.display='block'; document.body.style.overflow='hidden'; w.scrollTop=0;
   return true;
 }
@@ -3680,7 +3682,11 @@ async function loadQR(){
 /* ─── Návrat z platobnej brány (Stripe) ─── */
 (async()=>{
   const p=new URLSearchParams(window.location.search);
-  if(p.get('stripe')==='trial' && p.get('session_id')){
+  if(p.get('stripe')==='trial_test'){
+    showToast('🧪 Testovací účet: prvý týždeň zapnutý naoko — bez Stripe a bez karty.','success');
+    window.history.replaceState({},'','/client-dashboard');
+    setTimeout(()=>location.reload(), 1600);
+  } else if(p.get('stripe')==='trial' && p.get('session_id')){
     try{
       const r=await api('/api/stripe/verify',{method:'POST',body:{session_id:p.get('session_id')}});
       if(r.ok){ showToast('🎉 Prvý týždeň zadarmo beží! Vyber si hodinu.','success'); if(window.faTrack) window.faTrack('StartTrial',{eventID:'trial_'+p.get('session_id')}); try{ localStorage.removeItem('fa_skuska_odmietnuta'); }catch(e){} }

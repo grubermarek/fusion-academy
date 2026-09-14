@@ -968,7 +968,8 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <p class="text-muted small mb-2">Sekvencie sa spúšťajú automaticky pri registrácii, kúpe členstva a prvej hodine. Každý deň o 8:00 sa odošlú naplánované emaily.</p>
     <div class="card bg-dark border-secondary mb-3"><div class="card-body py-2 d-flex flex-wrap gap-2 align-items-center">
       <span class="small fw-semibold" style="color:#C9A84C">🧪 Náhľad klientskeho onboardingu:</span>
-      <a class="btn btn-sm btn-outline-warning" href="/?preview=1" target="_blank" title="Celý flow nového klienta: registrácia → výber mesta a termínu → potvrdenie s animáciou → guide na dashboarde. Nič sa reálne neuloží."><i class="bi bi-play-circle"></i> Prejsť si registráciu ako klient</a>
+      <a class="btn btn-sm btn-outline-warning" href="/?preview=1" target="_blank" title="Web appky ako nový návštevník: registrácia → výber mesta a termínu → ponuka prvého týždňa zadarmo → potvrdenie. Nič sa reálne neuloží."><i class="bi bi-play-circle"></i> Prejsť si registráciu ako klient</a>
+      <button class="btn btn-sm btn-outline-success" onclick="enterTestAccount()" title="Prázdny testovací účet: celá obrazovka „Tvoj prvý týždeň zadarmo" pri vstupe, lišta, zapnutie skúšky naoko (bez Stripe). Späť plávajúcim tlačidlom."><i class="bi bi-incognito"></i> Nový človek v appke (testovací účet)</button>
       <a class="btn btn-sm btn-outline-info" href="/client-dashboard?welcome=1" target="_blank" title="Len uvítací guide na dashboarde (fotka, narodeniny, odznaky, priatelia)"><i class="bi bi-stars"></i> Len welcome guide</a>
     </div></div>
 
@@ -7277,7 +7278,7 @@ async function logout(){await fetch('/api/logout',{method:'POST'});window.locati
 async function enterTestAccount(){
   if(!confirm('Prepnúť sa do TESTOVACIEHO ÚČTU?\n\nÚčet sa vždy vyresetuje na prázdno (žiadne členstvo, rezervácie ani história) a je mimo všetkých štatistík. Späť sa vrátiš plávajúcim tlačidlom v appke.')) return;
   const r=await fetch('/api/admin/test-account',{method:'POST'}).then(r=>r.json());
-  if(r.ok) window.location.href=r.redirect_to; else alert(r.error||'Chyba');
+  if(r.ok){ try{ localStorage.removeItem('fa_skuska_odmietnuta'); }catch(e){} window.location.href=r.redirect_to; } else alert(r.error||'Chyba');
 }
 async function goMyProfile(){ try{ const me=await api('/api/me'); if(me&&me.id) otvorProfil(me.id); }catch(e){} }
 // Marek 13. 9.: „nejde mi otvoriť profil klienta" — v nainštalovanej appke (PWA) a pri blokovaní

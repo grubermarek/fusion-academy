@@ -11240,7 +11240,7 @@ async function aktivujSkusku(userId, subId, s){
     title:'🎉 Prvý týždeň zadarmo beží — do '+fmtDenSk(konci),
     body:'Choď na ktorúkoľvek hodinu vo svojom meste. Potom pokračuje Bronze za '+plan.price.toFixed(2).replace('.',',')+' € mesačne automaticky. Zrušiť môžeš kedykoľvek: Nástenka → Členstvo → Automatický odber.',
     read:false, created_at:nowISO()}).catch(()=>{});
-  if(u.email) sendMail(u.email, '🎉 Tvoj prvý týždeň zadarmo beží — do '+fmtDenSk(konci),
+  if(u.email && !/@test-fa-qa\.local$/i.test(u.email)) sendMail(u.email, '🎉 Tvoj prvý týždeň zadarmo beží — do '+fmtDenSk(konci),
     emailTemplate('Vitaj, tancujeme! 💃',
       `<p>Ahoj <b>${u.name}</b>,</p><p>tvoj <b>skúšobný týždeň</b> je zapnutý. Do <b>${fmtDenSk(konci)}</b> môžeš prísť na ktorúkoľvek hodinu vo svojom meste — stačí si ju rezervovať v appke.</p>
        <p>Potom pokračuje členstvo <b>Bronze za ${plan.price.toFixed(2).replace('.',',')} € mesačne</b>, ktoré sa obnovuje automaticky. Dva dni pred prvou platbou ti pošleme pripomienku.</p>
@@ -11248,7 +11248,7 @@ async function aktivujSkusku(userId, subId, s){
       '🗓️ Vybrať si hodinu', APP_URL+'/schedule'), {priority:2, template:'trial_start'}).catch(()=>{});
   // Rovnaká karta na dvoch účtoch = dvakrát zadarmo. Neblokujeme (mama a dcéra môžu mať
   // jednu kartu), len upozorníme admina.
-  if(subId && process.env.STRIPE_FAKE!=='1'){
+  if(subId && !String(subId).startsWith('test_') && process.env.STRIPE_FAKE!=='1'){
     try{
       const sub = await stripeApi('subscriptions/'+encodeURIComponent(subId), null, 'GET');
       const pmId = sub.body?.default_payment_method || sub.body?.default_source;
@@ -14263,6 +14263,11 @@ app.post('/api/stripe/trial', auth, async(req,res)=>{
     const u = await q.one(db.users,{_id:req.session.uid});
     const n = await skuskaNarok(u);
     if(!n.ok) return res.status(400).json({error:SKUSKA_DOVODY[n.reason]||'Skúšobný týždeň nie je k dispozícii', reason:n.reason});
+    // 🕵️ Testovací účet adminov: celý priebeh bez Stripe a bez karty — skúška sa zapne naoko
+    if(u.email===TEST_ACC_EMAIL){
+      await aktivujSkusku(u._id, 'test_trial_'+Date.now(), null);
+      return res.json({ok:true, test:true, url:'/client-dashboard?stripe=trial_test'});
+    }
     const plan = MEMBERSHIP_PLANS[SKUSKA.plan];
     const base = APP_URL;
     const params = {
@@ -14599,7 +14604,7 @@ app.post('/api/stripe/subscribe/cancel', auth, async(req,res)=>{
       u = dieta;
     }
     if(!u.stripe_subscription_id) return res.status(400).json({error: u===ja ? 'Nemáš aktívny mesačný odber' : `${u.name} nemá aktívny mesačný odber`});
-    await stripeApi('subscriptions/'+encodeURIComponent(u.stripe_subscription_id), null, 'DELETE');
+    if(!String(u.stripe_subscription_id).startsWith('test_')) await stripeApi('subscriptions/'+encodeURIComponent(u.stripe_subscription_id), null, 'DELETE');
     await q.update(db.users,{_id:u._id},{$set:{stripe_subscription_id:null}});
     // Zrušenie počas skúšobného týždňa: nič sa nestrhne, do konca skúšky sa dá chodiť (webhook
     // „deleted" už používateľa podľa odberu nenájde, preto oznam ide odtiaľto)
@@ -15154,6 +15159,9 @@ app.post('/api/admin/test-account', adminAuth, async(req,res)=>{
         user_type:'client', visit_count:0, referral_credit:0, lead_source:'test',
         consent_at:nowISO(), created_at:today()});
     }
+    // skutočný Stripe odber testovacieho účtu (niekto ho zapol reálnou kartou) pred resetom zruš
+    if(t.stripe_subscription_id && !String(t.stripe_subscription_id).startsWith('test_'))
+      await stripeApi('subscriptions/'+encodeURIComponent(t.stripe_subscription_id), null, 'DELETE').catch(()=>{});
     // reset na prázdny účet
     for(const col of ['bookings','notifications','memberships','transactions','payments','invoices','promo_redemptions','spins','mail_log']){
       try{ await q.remove(db[col],{user_id:t._id},{multi:true}); }catch(e){}
@@ -15161,7 +15169,9 @@ app.post('/api/admin/test-account', adminAuth, async(req,res)=>{
     await q.update(db.users,{_id:t._id},{$set:{visit_count:0, free_class_used:false, free_credits:0,
       single_entries:0, referral_credit:0, membership_plan:null, membership_expires:null, avatar:null,
       gender:null, nickname:'', status:''},
-      $unset:{venceky_class_id:true, venceky_role:true, venceky_school_id:true, vencek_alumni:true}});
+      $unset:{venceky_class_id:true, venceky_role:true, venceky_school_id:true, vencek_alumni:true,
+        trial_used:true, trial_started_at:true, trial_ends_at:true, trial_reminder_sent:true, trial_converted_at:true, trial_card_fp:true,
+        stripe_subscription_id:true, stripe_sub_plan:true, stripe_sub_member:true, stripe_sub_payer_id:true}});
     req.session.admin_uid=req.session.uid;   // cesta späť
     req.session.uid=t._id; req.session.sv=t.sess_ver||0;
     res.json({ok:true, redirect_to:'/client-dashboard'});
