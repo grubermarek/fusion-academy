@@ -1199,7 +1199,7 @@ function renderAccessBar(me){
   const fmtSk=s=>{ const x=new Date(s); return x.getDate()+'. '+(x.getMonth()+1)+'.'; };
   if(me.trial&&me.trial.active){
     bar.className='access-bar ok anim anim-d2';icon.className='bi bi-gift-fill';
-    text.innerHTML='<strong>🎁 Prvý týždeň zadarmo beží</strong> do '+fmtSk(me.trial.ends_at)+'. Potom Bronze '+(+me.trial.price).toFixed(2).replace('.',',')+' €/mes. — zrušiť môžeš v karte členstva.';
+    text.innerHTML='<strong>🎁 Prvý týždeň zadarmo beží</strong> do '+fmtSk(me.trial.ends_at)+' Potom Bronze '+(+me.trial.price).toFixed(2).replace('.',',')+' €/mes. — zrušiť môžeš v karte členstva.';
     bar.style.display='flex';
   } else if(hasMembership){
     // Card below already shows the full membership detail — avoid duplicating it here
