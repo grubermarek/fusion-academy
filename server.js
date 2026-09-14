@@ -771,6 +771,38 @@ async function seedData() {
   // Detvankám (Michaela Ďuricová, Monika Melichová), ktoré do BB chodia len výnimočne. Marek: „tým sa
   // nemá predĺžiť". Vrátime pôvodnú expiráciu, záznam o kompenzácii a neprečítané oznámenie o predĺžení.
   // Ak sa expirácia medzitým zmenila (nákup, obnova), nesiahame na ňu.
+  // Hotovosť vybratá na hodinách, ktorú nikto neodklikol v appke (Marek 14. 9.: „áno, je to vybraté").
+  // Zapisuje sa dodatočne, ale ku dňu hodiny: tržba do správneho mesiaca, faktúra s dátumom hodiny
+  // a bez mailu, žiadne potvrdenie klientke po týždňoch. Hotovosť drží Marek (tie hodiny učil).
+  // Preskočí sa rezervácia, ktorá je už vybratá, nie je „platí na mieste" alebo na hodine nebola.
+  if(!(await q.one(db.settings,{key:'hotovost_dodatocne_20260914'}))){
+    const vysledok=[];
+    try{
+      const marek=await q.one(db.users,{_id:'y72YL9QS4LVl8f9c'});
+      for(const id of ['IW2gEbwfC4nNZcTM','bgS8YsqDQdQVNmmz','Z1WJp7Rk44nTJbXO','HMu4R6BlgiC2wI6U','BU0gzgnB0NW0kPms','V22m44ZnbFBcSIBR','ZyJfss0hlJBvfO28']){
+        const b=await q.one(db.bookings,{_id:id});
+        if(!b){ vysledok.push(id+': rezervácia nenájdená'); continue; }
+        if(b.entry_collected || !b.pay_on_site || b.status!=='attended'){ vysledok.push((b.user_name||id)+': preskočené (už vybraté alebo nebola na hodine)'); continue; }
+        const amount=+b.pay_amount>0 ? +b.pay_amount : 10;
+        const den=String(b.booking_date).slice(0,10);
+        const kedy=den+'T18:00:00.000Z';
+        await q.update(db.bookings,{_id:b._id},{$set:{entry_collected:{amount, method:'cash', at:kedy, by:marek?marek._id:null, dodatocne:nowISO()}, pay_on_site:false}});
+        const buyer=await q.one(db.users,{_id:b.user_id});
+        await q.insert(db.transactions,{type:'single_entry', user_id:b.user_id, user_name:b.user_name, amount, payment_method:'cash',
+          note:'Jednorazový vstup — '+b.class_name+' '+den+' (hotovosť, zapísané dodatočne 14. 9.)', booking_id:b._id,
+          date:den, created_at:kedy, month:den.slice(0,7)});
+        await createInvoice({user_id:b.user_id, client_name:b.user_name, client_email:buyer?.email,
+          items:[{desc:'Jednorazový vstup — '+b.class_name+' ('+den+')', qty:1, total:amount}], total:amount, method:'hotovosť',
+          silent:true, issued_at:den, paid_at:den});
+        await q.insert(db.payouts,{_type:'cash_collected', trainer_id:marek?marek._id:null, trainer_name:marek?marek.name:'Marek Gruber', amount,
+          note:'Vstup — '+b.user_name+' · '+b.class_name+' '+den+' (zapísané dodatočne)', booking_id:b._id,
+          month:den.slice(0,7), date:den, status:'held', created_at:kedy});
+        vysledok.push(b.user_name+' '+den+' '+b.class_name+' '+amount+' €');
+      }
+      console.log('💵 Hotovosť dodatočne: '+vysledok.join(' | '));
+    }catch(e){ console.error('hotovost_dodatocne:', e.message); vysledok.push('chyba: '+e.message); }
+    await q.insert(db.settings,{key:'hotovost_dodatocne_20260914', value:vysledok, at:nowISO()});
+  }
   if(!(await q.one(db.settings,{key:'bb_kompenzacia_detvanky_20260914'}))){
     const vysledok=[];
     try{
