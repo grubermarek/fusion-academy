@@ -775,6 +775,41 @@ async function seedData() {
   // Zapisuje sa dodatočne, ale ku dňu hodiny: tržba do správneho mesiaca, faktúra s dátumom hodiny
   // a bez mailu, žiadne potvrdenie klientke po týždňoch. Hotovosť drží Marek (tie hodiny učil).
   // Preskočí sa rezervácia, ktorá je už vybratá, nie je „platí na mieste" alebo na hodine nebola.
+  // Druhá dávka (Marek 14. 9.: „všetko vybraté"). Ak klientka má v deň hodiny už zapísaný predaj vstupu
+  // (tréner ho predal cez panel), tržba existuje — rezervácia sa len označí ako vybratá, bez novej
+  // transakcie, faktúry a hotovosti. Inak rovnaký zápis ako prvá dávka.
+  if(!(await q.one(db.settings,{key:'hotovost_dodatocne2_20260914'}))){
+    const vysledok=[];
+    try{
+      const marek=await q.one(db.users,{_id:'y72YL9QS4LVl8f9c'});
+      for(const id of ['yBjhaM8trsSW87HC','8gLyM2Y5I7vAvkLc','PNUQ6W1GGyIbkzvu','A52fRqrUmaqmCVjE','ChvGnR5LKr3UGSWr','UF5o7cLiO6ujoBPW','5ma7HcPZY8E7TGk8']){
+        const b=await q.one(db.bookings,{_id:id});
+        if(!b){ vysledok.push(id+': rezervácia nenájdená'); continue; }
+        if(b.entry_collected || !b.pay_on_site || b.status!=='attended'){ vysledok.push((b.user_name||id)+': preskočené (už vybraté alebo nebola na hodine)'); continue; }
+        const amount=+b.pay_amount>0 ? +b.pay_amount : 10;
+        const den=String(b.booking_date).slice(0,10);
+        const kedy=den+'T18:00:00.000Z';
+        const uzTrzba=(await q.find(db.transactions,{user_id:b.user_id, type:'single_entry'}))
+          .find(t=>(!t.booking_id || t.booking_id===b._id) && (String(t.date||'').slice(0,10)===den || denSK(t.created_at)===den));
+        await q.update(db.bookings,{_id:b._id},{$set:{entry_collected:{amount:uzTrzba?(+uzTrzba.amount||amount):amount, method:'cash', at:kedy, by:marek?marek._id:null,
+          dodatocne:nowISO(), ...(uzTrzba?{transakcia_id:uzTrzba._id}:{})}, pay_on_site:false}});
+        if(uzTrzba){ vysledok.push(b.user_name+' '+den+' '+b.class_name+': len označené, tržba už bola ('+uzTrzba.amount+' €)'); continue; }
+        const buyer=await q.one(db.users,{_id:b.user_id});
+        await q.insert(db.transactions,{type:'single_entry', user_id:b.user_id, user_name:b.user_name, amount, payment_method:'cash',
+          note:'Jednorazový vstup — '+b.class_name+' '+den+' (hotovosť, zapísané dodatočne 14. 9.)', booking_id:b._id,
+          date:den, created_at:kedy, month:den.slice(0,7)});
+        await createInvoice({user_id:b.user_id, client_name:b.user_name, client_email:buyer?.email,
+          items:[{desc:'Jednorazový vstup — '+b.class_name+' ('+den+')', qty:1, total:amount}], total:amount, method:'hotovosť',
+          silent:true, issued_at:den, paid_at:den});
+        await q.insert(db.payouts,{_type:'cash_collected', trainer_id:marek?marek._id:null, trainer_name:marek?marek.name:'Marek Gruber', amount,
+          note:'Vstup — '+b.user_name+' · '+b.class_name+' '+den+' (zapísané dodatočne)', booking_id:b._id,
+          month:den.slice(0,7), date:den, status:'held', created_at:kedy});
+        vysledok.push(b.user_name+' '+den+' '+b.class_name+' '+amount+' €');
+      }
+      console.log('💵 Hotovosť dodatočne 2: '+vysledok.join(' | '));
+    }catch(e){ console.error('hotovost_dodatocne2:', e.message); vysledok.push('chyba: '+e.message); }
+    await q.insert(db.settings,{key:'hotovost_dodatocne2_20260914', value:vysledok, at:nowISO()});
+  }
   if(!(await q.one(db.settings,{key:'hotovost_dodatocne_20260914'}))){
     const vysledok=[];
     try{
