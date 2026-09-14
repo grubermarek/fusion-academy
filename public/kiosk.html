@@ -86,19 +86,33 @@
   #pickOk:disabled{opacity:.4;cursor:default}
   #pickCancel{background:none;border:1px solid rgba(201,168,76,.4);color:var(--gold);border-radius:999px;
     padding:1.9vmin 4vmin;font-size:2.4vmin;cursor:pointer}
+  /* Nový človek bez účtu → QR na registráciu (Marek 14. 9.) */
+  #scanBtns{display:flex;gap:2vmin;flex-wrap:wrap;justify-content:center}
+  #noAcc{background:rgba(201,168,76,.14);border:1px solid rgba(201,168,76,.55);color:var(--gold2);border-radius:999px;padding:1.8vmin 5vmin;font-size:2.6vmin;font-weight:800;cursor:pointer}
+  #reg{background:rgba(6,5,3,.98);flex-direction:column;align-items:center;justify-content:center;gap:2.2vmin;z-index:24;text-align:center;padding:4vmin}
+  #regTitle{font-family:Georgia,serif;font-size:6vmin;line-height:1.1;color:var(--cream);text-wrap:balance;max-width:84vw}
+  #regQr{width:min(46vmin,420px);height:min(46vmin,420px);border-radius:2vmin;border:2px solid rgba(201,168,76,.5);background:var(--ground)}
+  #regSub{font-size:2.6vmin;color:var(--muted);line-height:1.5;max-width:74vmin;text-wrap:balance}
+  #regUrl{font-size:2.2vmin;color:var(--gold);letter-spacing:.02em}
+  #regClose{background:none;border:1px solid rgba(201,168,76,.4);color:var(--gold);border-radius:999px;padding:1.8vmin 5vmin;font-size:2.6vmin;cursor:pointer}
+  .pk .cena{color:var(--gold2);font-weight:800;white-space:nowrap}
+  #pickInfo b{color:var(--gold2)}
 </style>
 </head>
 <body>
 <div id="topbar"><span class="brand">Fusion Academy · <span id="cityName"></span></span><span id="clock">--:--</span></div>
 
 <div class="layer on" id="stage"></div>
-<button id="cta" onclick="openScan()">✋ ŤUKNI A CHECKNI SA</button>
+<button id="cta" onclick="openScan('signup')">✋ ŤUKNI A CHECKNI SA</button>
 
 <div class="layer" id="scan">
   <div class="kicker">QR Check-in</div>
   <div id="qrbox"></div>
   <div id="scanMsg">Ukáž kamere svoj QR kód z appky 📱</div>
-  <button id="scanClose" onclick="closeScan()">Zavrieť</button>
+  <div id="scanBtns">
+    <button id="noAcc" onclick="ukazRegistraciu()">🙋 Ešte nemám účet</button>
+    <button id="scanClose" onclick="closeScan()">Zavrieť</button>
+  </div>
 </div>
 
 <div class="layer" id="pick">
@@ -110,6 +124,16 @@
     <button id="pickCancel" onclick="zavriVyber()">Späť</button>
     <button id="pickOk" onclick="odosliVyber()">Prihlásiť sa</button>
   </div>
+</div>
+
+<!-- Nový človek bez účtu: QR na registráciu v appke (Marek 14. 9.) -->
+<div class="layer" id="reg">
+  <div class="kicker">Si tu prvýkrát?</div>
+  <div id="regTitle">Naskenuj kód mobilom a zaregistruj sa</div>
+  <img id="regQr" alt="QR kód na registráciu">
+  <div id="regSub">Registrácia trvá 30 sekúnd a prvý týždeň máš zadarmo 🎁<br>Potom sa sem vráť a ukáž kamere svoj QR kód z appky.</div>
+  <div id="regUrl"></div>
+  <button id="regClose" onclick="zavriRegistraciu()">Zavrieť</button>
 </div>
 
 <div class="layer" id="welcome"></div>
@@ -130,7 +154,7 @@ const SLUG = location.pathname.split('/').filter(Boolean)[1] || '';
 const KEY  = new URLSearchParams(location.search).get('k') || '';
 let CFG=null, DATA=null, slides=[], slideIdx=0, slideTimer=null, idleTimer=null, paused=false, qrReader=null, scanBusy=false;
 // 'checkin' = doterajší zápis účasti, 'signup' = výber dnešných hodín cez checkboxy
-let skenRezim='checkin', poslednyQr='', welcomeTimer=null, vyberQr='', vyberHodiny=[], vyberVybrane=new Set();
+let skenRezim='checkin', poslednyQr='', welcomeTimer=null, vyberQr='', vyberHodiny=[], vyberVybrane=new Set(), vyberKrytie=null, vyberHotovost=null;
 
 const $=id=>document.getElementById(id);
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -260,8 +284,9 @@ function poke(){
   idleTimer=setTimeout(()=>{ paused=false; startShow(); }, (CFG?CFG.idle_s:15)*1000);
 }
 ['pointerdown','touchstart'].forEach(ev=>document.addEventListener(ev, e=>{
-  if(e.target.closest('#cta')||e.target.closest('#wMore')||e.target.closest('#scan')
-    ||e.target.closest('#scanClose')||e.target.closest('#pick')) return;
+  // na obrazovkách skenu, výberu a registrácie sa dotykom len posúva automatické zatvorenie
+  if(e.target.closest('#scan')||e.target.closest('#pick')||e.target.closest('#reg')){ vyberAktivita(); return; }
+  if(e.target.closest('#cta')) return;
   poke();
   if(document.fullscreenElement==null && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
 },{passive:true}));
@@ -270,7 +295,7 @@ function poke(){
 async function openScan(rezim){
   skenRezim = rezim === 'signup' ? 'signup' : 'checkin';
   stopShow(); clearTimeout(idleTimer);
-  $('scan').classList.add('on');
+  $('scan').classList.add('on'); vyberAktivita();
   $('scan').querySelector('.kicker').textContent = skenRezim==='signup' ? 'Prihlásenie na tréningy' : 'QR Check-in';
   $('scanMsg').textContent='Ukáž kamere svoj QR kód z appky 📱';
   try{
@@ -283,7 +308,7 @@ async function openScan(rezim){
 }
 async function closeScan(){
   if(qrReader){ try{ await qrReader.stop(); qrReader.clear(); }catch(e){} qrReader=null; }
-  $('scan').classList.remove('on'); scanBusy=false;
+  $('scan').classList.remove('on'); scanBusy=false; clearTimeout(vyberIdle);
   paused=false; startShow();
 }
 async function onScan(txt){
@@ -306,25 +331,17 @@ async function onScan(txt){
   }
 
   if(scanBusy) return; scanBusy=true;
-  poslednyQr=txt;                       // uvítacia obrazovka ho ponúkne znova použiť
-  if(skenRezim==='signup'){ await nacitajHodiny(txt); return; }
-  $('scanMsg').textContent='⏳ Overujem…';
-  try{
-    const r=await fetch('/api/kiosk/checkin',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({studio:SLUG, k:KEY, qr_data:txt})});
-    const d=await r.json();
-    if(r.ok && d.ok && d.choose){ showClassChoice(d, txt); return; }
-    if(r.status===402 && d.ask_cash){ showCashQuestion(d, txt); return; }
-    if(r.ok && d.ok){ await closeScan(); showWelcome(d); }
-    else { $('scanMsg').textContent='⚠️ '+(d.error||'Skús to znova'); setTimeout(()=>{scanBusy=false; $('scanMsg').textContent='Ukáž kamere svoj QR kód z appky 📱';}, 3500); }
-  }catch(e){ $('scanMsg').textContent='⚠️ Chyba spojenia — skús znova.'; scanBusy=false; }
+  poslednyQr=txt;
+  // Po skene vždy jeden výber hodín dňa (14. 9.): bežiaca hodina je predznačená, ďalšie aj
+  // skončené si doklikne. Samostatná otázka „na ktorú hodinu si prišla" je preč.
+  await nacitajHodiny(txt);
 }
 
-/* ── Prihlásenie na dnešné tréningy: sken QR → checkboxy ─────────────────────
-   Hodiny, ktoré práve bežia, zaškrtneme vopred — kto prišiel na hodinu, má tak
-   len jeden ťuk. Ostatné si doklikne sama. */
+/* ── Výber dnešných hodín: sken QR → checkboxy ───────────────────────────────
+   Bežiacu hodinu zaškrtneme vopred — kto prišiel na hodinu, má jedno ťuknutie.
+   Skončené hodiny sa ponúkajú tiež (Marek 14. 9.: zapisujú sa aj po tréningu). */
 async function nacitajHodiny(qrTxt){
-  $('scanMsg').textContent='⏳ Načítavam dnešný rozvrh…';
+  $('scanMsg').textContent='⏳ Načítavam dnešné hodiny…';
   try{
     const r=await fetch('/api/kiosk/day-classes',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({studio:SLUG, k:KEY, qr_data:qrTxt})});
@@ -335,121 +352,126 @@ async function nacitajHodiny(qrTxt){
       return;
     }
     if(!d.classes.length){
-      $('scanMsg').textContent='Dnes tu už nie je na čo sa prihlásiť. 💛';
+      $('scanMsg').textContent='Dnes tu nie je žiadna hodina. 💛';
       setTimeout(()=>{ closeScan(); }, 3000);
       return;
     }
-    vyberQr=qrTxt; vyberHodiny=d.classes; vyberVybrane=new Set();
-    vyberHodiny.forEach(c=>{ if(c.teraz && (c.moja==='booked' || (!c.moja && c.volnych>0))) vyberVybrane.add(c.id); });
+    vyberQr=qrTxt; vyberHodiny=d.classes; vyberKrytie=d.krytie; vyberVybrane=new Set(); vyberHotovost=null;
+    vyberHodiny.forEach(c=>{ if(c.predznacit) vyberVybrane.add(c.id); });   // server vyberie jednu hodinu, na ktorú práve prišla
     await closeScan(); stopShow();
-    $('pick').classList.add('on');
-    $('pickHead').textContent='Ahoj '+(d.first||'')+', na čo sa prihlasuješ?';
+    $('pick').classList.add('on'); vyberAktivita();
+    $('pickHead').textContent='Ahoj '+(d.first||'')+', na ktoré hodiny si prišla?';
+    const zost=(d.krytie.prva_zdarma?1:0)+d.krytie.kredity+d.krytie.vstupy;
+    const tech=vyberHodiny.some(c=>c.tech)?' Technický tréning členstvo nekryje.':'';
     $('pickSub').innerHTML = d.krytie.clenstvo
-      ? 'Máš aktívne členstvo — hodiny ťa nič nestoja. 💛'
-      : 'K dispozícii máš '+kusy((d.krytie.prva_zdarma?1:0)+d.krytie.kredity+d.krytie.vstupy)
-        +'. Za každú hodinu sa odpočíta jeden.';
+      ? 'Máš aktívne členstvo — hodiny ťa nič nestoja.'+tech+' 💛'
+      : zost ? 'K dispozícii máš '+kusy(zost)+'. Za každú hodinu sa odpočíta jeden.'
+      : 'Nemáš členstvo ani vstup — hodinu zaplatíš trénerovi v hotovosti.';
     vykresliVyber();
   }catch(e){ $('scanMsg').textContent='⚠️ Chyba spojenia — skús znova.'; scanBusy=false; }
 }
 function kusy(n){ return n+' '+(n===1?'vstup':(n>=2&&n<=4?'vstupy':'vstupov')); }
 function hodiny(n){ return n+' '+(n===1?'hodinu':(n>=2&&n<=4?'hodiny':'hodín')); }
+const eur=n=>n+'&nbsp;€';
 
 function vykresliVyber(){
+  const kr=vyberKrytie||{}; const zost=(kr.prva_zdarma?1:0)+(kr.kredity||0)+(kr.vstupy||0);
   $('pickList').innerHTML=vyberHodiny.map(c=>{
-    // rezervovaná z appky a práve začína → dá sa zaškrtnúť (zapíše sa účasť);
-    // rezervovaná na neskôr → zelená „už si prihlásená", nie vysedená bez vysvetlenia (Marek 13. 9.)
-    const bola=c.moja==='attended', rezerv=c.moja==='booked', rezervTeraz=rezerv && c.teraz;
-    const plna=c.volnych<=0 && !c.moja, vyp=bola||plna, hotovo=rezerv && !c.teraz;
+    const bola=c.moja==='attended', rezerv=c.moja==='booked';
+    const plna=c.volnych<=0 && !c.moja && !c.ucast, vyp=bola||plna, hotovo=rezerv && !c.ucast;
     const sel=vyberVybrane.has(c.id);
     const stav = bola ? '✅ dnes si tu už bola'
-      : rezervTeraz ? '✓ máš rezervované — zapíšeme ti účasť'
-      : rezerv ? '✅ už si prihlásená · účasť ti zapíšeme pred hodinou (naskenuj QR znova)'
+      : rezerv && c.ucast ? '✓ máš rezervované — zapíšeme ti účasť'
+      : rezerv ? '✅ už si prihlásená — keď prídeš, naskenuj QR a zapíšeme ti účasť'
       : plna ? 'obsadené'
-      : c.teraz ? 'práve začína — zapíšeme ti účasť'
+      : c.prebehla ? 'hodina už skončila — zapíšeme ti účasť'
+      : c.teraz ? (c.za_min>0 ? 'začína o '+c.za_min+' min — zapíšeme ti účasť' : 'práve prebieha — zapíšeme ti účasť')
       : 'voľných miest: '+c.volnych;
+    // suma v hotovosti pri hodine, ktorú žene nič nekryje (technika aj pri členstve)
+    const platiHotovost = !c.moja && !zost && (c.tech || !kr.clenstvo);
+    const cena = platiHotovost ? ' · <span class="cena">'+eur(c.cena_hotovost)+' v hotovosti</span>' : '';
     return '<div class="pk'+(sel?' sel':'')+(vyp?' off':'')+(hotovo?' ok':'')+'"'+((vyp||hotovo)?'':' onclick="prepniHodinu(\''+c.id+'\')"')+'>'
       +'<div class="box">'+(sel?'✓':(c.moja?'✓':''))+'</div>'
       +'<div class="txt"><div class="nm">'+esc(c.emoji)+' '+esc(c.name)+'</div>'
-      +'<div class="mt">'+esc(stav)+(c.instructor?' · '+esc(c.instructor):'')+'</div></div>'
+      +'<div class="mt">'+esc(stav)+cena+(c.instructor?' · '+esc(c.instructor):'')+'</div></div>'
       +'<div class="tm">'+esc(c.time_start)+'</div></div>';
   }).join('');
   const n=vyberVybrane.size;
+  if(vyberHotovost){
+    // server sa pýta na hotovosť — zoznam hodín so sumou a potvrdenie jedným ťuknutím
+    const h=vyberHotovost;
+    $('pickInfo').innerHTML='💵 '+esc(h.error||'').replace(/ €/g,'&nbsp;€')+'<br>'
+      +h.hotovost.map(x=>esc(x.name)+' '+esc(x.time_start)+' · <b>'+eur(x.cena)+'</b>').join(' &nbsp;|&nbsp; ');
+    $('pickOk').disabled=false;
+    $('pickOk').innerHTML='💵 Áno, zaplatím '+eur(h.spolu)+' — zapíš ma';
+    return;
+  }
   // 'Vybrané: …' je nominatív, tlačidlo 'Prihlásiť sa na …' akuzatív — preto dva tvary
   $('pickInfo').textContent = n ? 'Vybrané: '+n+' '+(n===1?'hodina':(n<5?'hodiny':'hodín')) : 'Zaškrtni aspoň jednu hodinu.';
   $('pickOk').disabled = !n;
   $('pickOk').textContent = n>1 ? 'Prihlásiť sa na '+hodiny(n) : 'Prihlásiť sa';
 }
 function prepniHodinu(id){
+  vyberHotovost=null;                    // zmena výberu ruší otázku na hotovosť
   if(vyberVybrane.has(id)) vyberVybrane.delete(id); else vyberVybrane.add(id);
-  vykresliVyber();
+  vyberAktivita(); vykresliVyber();
 }
 function zavriVyber(){
+  clearTimeout(vyberIdle);
   $('pick').classList.remove('on');
-  vyberQr=''; vyberHodiny=[]; vyberVybrane=new Set();
+  vyberQr=''; vyberHodiny=[]; vyberVybrane=new Set(); vyberKrytie=null; vyberHotovost=null;
   scanBusy=false; paused=false; startShow();
 }
 async function odosliVyber(){
   if(!vyberVybrane.size) return;
-  const btn=$('pickOk'); btn.disabled=true; btn.textContent='Prihlasujem…';
+  vyberAktivita();
+  const hotovostOk=!!vyberHotovost;
+  const btn=$('pickOk'); btn.disabled=true; btn.textContent='Zapisujem…';
   try{
     const r=await fetch('/api/kiosk/signup',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({studio:SLUG, k:KEY, qr_data:vyberQr, class_ids:[...vyberVybrane]})});
+      body:JSON.stringify({studio:SLUG, k:KEY, qr_data:vyberQr, class_ids:[...vyberVybrane], ...(hotovostOk?{pay_on_site:true}:{})})});
     const d=await r.json();
+    if(r.status===402 && d.ask_cash && !hotovostOk){ vyberHotovost=d; vykresliVyber(); return; }
     if(!r.ok || !d.ok){
-      $('pickInfo').textContent='⚠️ '+(d.error||'Skús to znova');
-      btn.disabled=false; vykresliVyber();
+      vyberHotovost=null; vykresliVyber();
+      $('pickInfo').textContent='⚠️ '+(d.error||'Skús to znova');   // až po vykreslení, inak by hlášku prepísal
       return;
     }
+    clearTimeout(vyberIdle);
     $('pick').classList.remove('on');
     const zoz=(d.zapisane||[]).map(z=>z.emoji+' '+z.name+' '+z.time_start).join(' · ');
     showWelcome({ ok:true, user:d.user, class_name:zoz,
-      already:false, prihlasenie:{ pocet:(d.zapisane||[]).length, uz_mala:d.uz_mala||0, krytie:d.krytie } });
-  }catch(e){ $('pickInfo').textContent='⚠️ Chyba spojenia — skús znova.'; btn.disabled=false; vykresliVyber(); }
+      already:false, prihlasenie:{ pocet:(d.zapisane||[]).length, uz_mala:d.uz_mala||0, krytie:d.krytie, hotovost:d.hotovost_spolu||0 } });
+  }catch(e){ vyberHotovost=null; vykresliVyber(); $('pickInfo').textContent='⚠️ Chyba spojenia — skús znova.'; }
 }
 
-/* ── Výber hodiny, keď v okne bežia/nasledujú dve (technika + Zumba) ── */
-function showClassChoice(d, qrTxt){
-  const m=$('scanMsg');
-  m.innerHTML='<div style="font-size:1.05rem;margin-bottom:10px">👋 Ahoj <b style="color:var(--gold2)">'+esc(d.first||'')+'</b> — na ktorú hodinu si prišla?</div>'+
-    d.options.map(o=>'<button class="chooseBtn" data-cid="'+o.id+'" style="display:block;width:100%;margin:8px 0;padding:16px;font-size:1.15rem;font-weight:800;border-radius:14px;border:1px solid rgba(201,168,76,.5);background:linear-gradient(135deg,rgba(201,168,76,.2),rgba(201,168,76,.06));color:var(--cream)">'+esc(o.emoji)+' '+esc(o.name)+' <span style="color:var(--gold2)">'+esc(o.time_start)+'</span></button>').join('');
-  m.querySelectorAll('.chooseBtn').forEach(b=>b.onclick=async()=>{
-    m.textContent='⏳ Zapisujem...';
-    try{
-      const r=await fetch('/api/kiosk/checkin',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({studio:SLUG, k:KEY, qr_data:qrTxt, class_id:b.dataset.cid})});
-      const d2=await r.json();
-      if(r.ok && d2.ok && !d2.choose){ await closeScan(); showWelcome(d2); }
-      else if(r.status===402 && d2.ask_cash){ showCashQuestion(d2, qrTxt); }
-      else { m.textContent='⚠️ '+(d2.error||'Skús znova'); setTimeout(()=>{scanBusy=false; m.textContent='Ukáž kamere svoj QR kód z appky 📱';}, 3500); }
-    }catch(e){ m.textContent='⚠️ Chyba spojenia — skús znova.'; scanBusy=false; }
-  });
+/* ── Nový človek bez účtu: QR na registráciu (Marek 14. 9.) ──────────────────
+   utm_source=kiosk otvorí na webe appky rovno registráciu a zapíše zdroj. */
+async function ukazRegistraciu(){
+  await closeScan(); stopShow();
+  const cesta='/?utm_source=kiosk&utm_medium=qr&utm_campaign='+encodeURIComponent(SLUG||'studio');
+  $('regQr').src='/api/qr.png?size=520&dark=141008&light=EFE6D0&path='+encodeURIComponent(cesta);
+  $('regUrl').textContent=location.host||'app.fusionacademy.sk';
+  $('reg').classList.add('on'); vyberAktivita();
+}
+function zavriRegistraciu(){
+  clearTimeout(vyberIdle);
+  $('reg').classList.remove('on');
+  paused=false; startShow();
 }
 
-/* ── Bez krytia: zaplatíš v hotovosti? (Marek 13. 9.) ────────────────────────
-   Suma chodí zo servera podľa členstva (technika 10 / Bronze 8 / Silver 7 / Gold 6, inak vstup 10 €).
-   Po potvrdení sa zapíše účasť ako „platí na mieste" a tréner dostane oznam, že má vybrať hotovosť. */
-function showCashQuestion(d, qrTxt){
-  const m=$('scanMsg');
-  const btn='display:block;width:100%;margin:8px 0;padding:16px;font-size:1.15rem;font-weight:800;border-radius:14px;cursor:pointer;';
-  m.innerHTML='<div style="font-size:1.05rem;margin-bottom:4px">👋 Ahoj <b style="color:var(--gold2)">'+esc(d.first||'')+'</b></div>'
-    +'<div style="font-size:.95rem;margin-bottom:10px">'+(d.tech
-        ? '🩰 <b>'+esc(d.class_name||'Technický tréning')+'</b> členstvo nekryje — cena '+(d.has_membership?'podľa tvojho členstva':'bez členstva')+' je <b style="color:var(--gold2)">'+d.price+' €</b>.'
-        : '<b>'+esc(d.class_name||'Hodina')+'</b> — nemáš aktívne členstvo ani vstup. Jednorazový vstup je <b style="color:var(--gold2)">'+d.price+' €</b>.')
-      +'<br>Zaplatíš v hotovosti trénerovi na hodine?</div>'
-    +'<button id="cashYes" style="'+btn+'border:1px solid rgba(201,168,76,.6);background:linear-gradient(135deg,rgba(201,168,76,.28),rgba(201,168,76,.08));color:var(--cream)">💵 Áno, zaplatím '+d.price+' € — zapíš ma</button>'
-    +'<button id="cashNo" style="'+btn+'border:1px solid rgba(255,255,255,.18);background:none;color:var(--muted)">Nie, radšej sa ozvem trénerovi</button>';
-  $('cashNo').onclick=()=>{ scanBusy=false; m.textContent='Ukáž kamere svoj QR kód z appky 📱'; };
-  $('cashYes').onclick=async()=>{
-    m.textContent='⏳ Zapisujem…';
-    try{
-      const r=await fetch('/api/kiosk/checkin',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({studio:SLUG, k:KEY, qr_data:qrTxt, class_id:d.class_id, pay_on_site:true})});
-      const d2=await r.json();
-      if(r.ok && d2.ok){ await closeScan(); showWelcome(d2); }
-      else { m.textContent='⚠️ '+(d2.error||'Skús znova'); setTimeout(()=>{scanBusy=false; m.textContent='Ukáž kamere svoj QR kód z appky 📱';}, 3500); }
-    }catch(e){ m.textContent='⚠️ Chyba spojenia — skús znova.'; scanBusy=false; }
-  };
+/* ── Automatické zatvorenie (audit 14. 9.): výber hodín, sken ani registrácia nesmú ostať
+   otvorené — ďalšia žena by inak ťukla „Prihlásiť sa" za tú predchádzajúcu. ── */
+let vyberIdle=null, VYBER_IDLE_MS=45000;
+function vyberAktivita(){
+  clearTimeout(vyberIdle);
+  vyberIdle=setTimeout(()=>{
+    if($('pick').classList.contains('on')) zavriVyber();
+    else if($('reg').classList.contains('on')) zavriRegistraciu();
+    else if($('scan').classList.contains('on')) closeScan();
+  }, VYBER_IDLE_MS);
 }
+
 
 /* ── Welcome ── */
 function showWelcome(d){
@@ -459,8 +481,10 @@ function showWelcome(d){
   if(u.birthday) rows.push('🎂 Všetko najlepšie k narodeninám!');
   if(d.prihlasenie){
     const p=d.prihlasenie;
-    rows.push('✅ Prihlásená na '+(p.pocet===1?'1 hodinu':(p.pocet<5?p.pocet+' hodiny':p.pocet+' hodín'))
-      + (p.uz_mala?' (+'+p.uz_mala+' už si mala)':''));
+    rows.push(p.pocet
+      ? '✅ Zapísaná na '+(p.pocet===1?'1 hodinu':(p.pocet<5?p.pocet+' hodiny':p.pocet+' hodín'))+(p.uz_mala?' (+'+p.uz_mala+' už si mala)':'')
+      : '✅ Všetko už máš zapísané — vidíme sa na parkete!');
+    if(p.hotovost) rows.push('💵 Trénerovi zaplatíš '+p.hotovost+'&nbsp;€ v hotovosti');
     if(p.krytie && !p.krytie.clenstvo){
       const zost=(p.krytie.prva_zdarma?1:0)+p.krytie.kredity+p.krytie.vstupy;
       rows.push('🎟️ Zostáva ti '+zost+' '+(zost===1?'vstup':(zost>=2&&zost<=4?'vstupy':'vstupov')));
@@ -468,22 +492,15 @@ function showWelcome(d){
   }
   else rows.push(d.already ? '✅ Dnes si už checknutá — vidíme sa na parkete!' : '⭐ +'+u.points_gain+' bodov do mesačnej súťaže');
   if(u.streak_weeks>1) rows.push('🔥 Séria '+u.streak_weeks+' týždňov po sebe!');
-  rows.push('👣 Celkovo '+u.visit_count+' hodín · '+esc(d.class_name));
+  rows.push('👣 Celkovo '+u.visit_count+' hodín'+(d.class_name?' · '+esc(d.class_name):''));
   rows.push('❤️ Ďakujeme, že si prišla.');
   w.innerHTML=av+'<div id="wName">'+(u.birthday?'🎉':'👋')+' Vitaj, <span style="color:var(--gold2)">'+esc(u.first)+'</span>!</div>'+
-    '<div id="wRows">'+rows.map((r,i)=>'<div class="r" style="animation-delay:'+(0.3+i*0.35)+'s">'+r+'</div>').join('')+'</div>'+'<button id="wMore" onclick="prihlasNaDalsie()">📋 Prihlásiť sa aj na ďalšie hodiny</button>';
+    '<div id="wRows">'+rows.map((r,i)=>'<div class="r" style="animation-delay:'+(0.3+i*0.35)+'s">'+r+'</div>').join('')+'</div>';
   w.classList.add('on');
   burstFx(u.birthday?'birthday':(u.streak_weeks>3?'fire':'confetti'));
-  welcomeTimer=setTimeout(()=>{ w.classList.remove('on'); paused=false; startShow(); }, 9000);
+  welcomeTimer=setTimeout(()=>{ w.classList.remove('on'); scanBusy=false; paused=false; startShow(); }, 9000);
 }
-// Z uvítacej obrazovky sa dá pokračovať na prihlásenie na ďalšie dnešné hodiny —
-// QR už máme z check-inu, takže sa neskenuje druhýkrát.
-function prihlasNaDalsie(){
-  clearTimeout(welcomeTimer);
-  $('welcome').classList.remove('on');
-  scanBusy=true;
-  nacitajHodiny(poslednyQr);
-}
+
 
 /* ── Efekty (konfety/oheň/srdcia) ── */
 const fx=$('fx'), ctx=fx.getContext('2d'); let parts=[];
@@ -524,7 +541,7 @@ function tickNight(){
   $('cta').style.display = n?'none':'block';
   const c2=$('cta2'); if(c2) c2.style.display = n?'none':'block';
   if(n){ stopShow(); $('nightClock').textContent=new Date().toTimeString().slice(0,5); }
-  else if(!slideTimer && !paused && !$('scan').classList.contains('on') && !$('welcome').classList.contains('on')) startShow();
+  else if(!slideTimer && !paused && !$('scan').classList.contains('on') && !$('welcome').classList.contains('on') && !$('pick').classList.contains('on') && !$('reg').classList.contains('on')) startShow();
 }
 
 /* ── Hodiny + refresh ── */

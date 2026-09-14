@@ -50,7 +50,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   fs.writeFileSync(path.join(DATA, 'classes.db'), [
     C('qaKcTech00000001', 'Technický tréning', { category: 'Technika' }),
     C('qaKcZumba0000001', 'Zumba'),
+    C('qaKcZrusena00001', 'Zumba zrušená'),
+    C('qaKcKids00000001', 'Zumba Kids', { category: 'Deti', price: 9 }),
   ].join('\n') + '\n');
+  fs.writeFileSync(path.join(DATA, 'class_cancellations.db'), JSON.stringify({ _id: 'qaKcZrus01', class_id: 'qaKcZrusena00001', class_name: 'Zumba zrušená', date: DNES, location: 'Detva', created_at: DNES + 'T06:00:00.000Z' }) + '\n');
+  fs.appendFileSync(path.join(DATA, 'users.db'), U('qaKcNova0000001', 'Nina Nova', 'QAKC03') + '\n');
   const pm = new Date(+DNES.slice(0, 4), +DNES.slice(5, 7) - 2, 1);
   fs.writeFileSync(path.join(DATA, 'monthly_winners.db'), JSON.stringify({ _id: 'qaKcMW01', month: pm.getFullYear() + '-' + String(pm.getMonth() + 1).padStart(2, '0'), user_id: 'x', created_at: '2026-01-01' }) + '\n');
   fs.writeFileSync(path.join(DATA, 'settings.db'), JSON.stringify({ _id: 'qaKcSet1', key: 'retro_confirm_v1', value: true, at: '2026-01-01T00:00:00.000Z' }) + '\n');
@@ -99,7 +103,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok('Bronze na Zumbe: rovno zapísaná, krytá členstvom', b3.status === 200 && b3.d.ok && bkZ && bkZ.access_method === 'membership' && !bkZ.pay_on_site, JSON.stringify(bkZ && { am: bkZ.access_method, pos: bkZ.pay_on_site }));
     // stránka kiosku
     const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'kiosk.html'), 'utf8');
-    ok('kiosk má otázku na hotovosť (obe cesty: sken aj výber hodiny)', (html.match(/showCashQuestion\(/g) || []).length >= 3 && html.includes('pay_on_site:true') && html.includes('Áno, zaplatím'));
+    ok('kiosk má otázku na hotovosť vo výbere hodín', html.includes('pay_on_site:true') && html.includes('Áno, zaplatím') && html.includes('d.ask_cash'));
+    // check-in (API) neponúka zrušenú hodinu ani detskú hodinu dospelej (audit 14. 9.)
+    const nova = await checkin('FA:qaKcNova0000001');
+    const volby = (nova.d && nova.d.options || []).map(o => o.name).sort();
+    ok('check-in: bez zrušenej a detskej hodiny', nova.status === 200 && nova.d.choose === true && JSON.stringify(volby) === JSON.stringify(['Technický tréning', 'Zumba']), JSON.stringify(nova.d).slice(0, 200));
   } catch (e) { failed++; console.log('  ❌ výnimka: ' + e.stack); }
   finally { srv.kill(); console.log('\nKIOSK HOTOVOSŤ: ' + passed + ' OK / ' + failed + ' chýb'); setTimeout(() => { try { fs.rmSync(DATA, { recursive: true, force: true }); } catch (e) {} process.exit(failed ? 1 : 0); }, 500); }
 })();
