@@ -120,7 +120,7 @@ html[data-theme="aurora"] .pcard .price, html[data-theme="aurora"] .gold{color:#
 <script src="/i18n-pages.js"></script>
 <script>
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const eur=n=>(+n).toFixed(2).replace('.',',')+' €';
+const eur=n=>(+n).toFixed(2).replace('.',',')+'\u00a0€'; // € nikdy samo na novom riadku
 const dstr=d=>d?new Date(d).toLocaleDateString('sk'):'';
 let ME=null, OV=null, PLANS=null, PRODUCTS=null, STRIPE=false;
 const api=(p,o)=>fetch(p,{credentials:'include',...(o||{}),headers:{'Content-Type':'application/json',...(o&&o.headers||{})}}).then(r=>r.json().then(d=>({status:r.status,...d}))).catch(()=>({}));

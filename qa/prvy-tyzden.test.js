@@ -104,6 +104,18 @@ async function start(PORT, DATA, env) {
     ok('kto nárok nemá (členstvo už mala): 402 bez trial_available', bkS.status === 402 && bkS.d.trial_available === false && !/prvý týždeň/.test(bkS.d.message || ''), JSON.stringify(bkS.d));
     const bkSa = await j('/api/bookings', { method: 'POST', body: { class_id: 'qaPtZumbaBud' } }, sara);
     ok('kto mal len prvú hodinu zadarmo, skúšku ešte dostane (402 + trial_available)', bkSa.status === 402 && bkSa.d.trial_available === true, JSON.stringify(bkSa.d));
+    // odmietnutie ponuky je natrvalo — ponuka je len raz (Marek 14. 9.)
+    const odS = await j('/api/skuska/odmietnut', { method: 'POST' }, sara);
+    const meSa = await j('/api/me', {}, sara);
+    ok('odmietnutie skúšky sa uloží natrvalo (declined, bez nároku)', odS.status === 200 && odS.d.ok && meSa.d.trial.declined === true && meSa.d.trial.eligible === false && meSa.d.trial.reason === 'odmietnuta', JSON.stringify({ o: odS.d, t: meSa.d.trial }));
+    const bkSa2 = await j('/api/bookings', { method: 'POST', body: { class_id: 'qaPtZumbaBud' } }, sara);
+    ok('po odmietnutí rezervácia bez ponuky skúšky, platba na mieste ide', bkSa2.status === 402 && bkSa2.d.trial_available === false && bkSa2.d.can_pay_on_site === true, JSON.stringify(bkSa2.d));
+    const tSa = await j('/api/stripe/trial', { method: 'POST' }, sara);
+    ok('po odmietnutí skúšku zapnúť nejde (400, odmietnuta)', tSa.status === 400 && tSa.d.reason === 'odmietnuta', JSON.stringify(tSa.d));
+    const odB = await j('/api/skuska/odmietnut', { method: 'POST' }, bea);
+    const meB = await j('/api/me', {}, bea);
+    ok('odmietnutie bez nároku nič nezapíše (dôvod ostáva)', odB.status === 200 && meB.d.trial.reason === 'mala_clenstvo' && !meB.d.trial.declined, JSON.stringify({ o: odB.d, t: meB.d.trial }));
+    ok('odmietnutie bez prihlásenia neprejde', [401, 403].includes((await j('/api/skuska/odmietnut', { method: 'POST' })).status));
     ok('hero „vyber si prvú hodinu" sa nezobrazí', (await j('/api/first-class/suggestions', {}, nora)).d.eligible === false);
     // pozvánka + landing bez účtu
     const inv = await j('/api/invite/QAPTSP/book', { method: 'POST', body: { name: 'Hana Hosť', contact: 'hana.host@qa-biz.local', class_id: 'qaPtZumbaBud' } });
@@ -208,15 +220,23 @@ async function start(PORT, DATA, env) {
     const ta2 = await j('/api/admin/test-account', { method: 'POST' }, adm2);
     const meT3 = await j('/api/me', {}, adm2);
     ok('testovací účet: opätovný vstup vynuluje skúšku (znova nárok)', ta2.status === 200 && meT3.d.trial.eligible === true && meT3.d.trial.used === false && meT3.d.trial.active === false && !meT3.d.membership && meT3.d.stripe_subscription === false, JSON.stringify(meT3.d.trial));
+    await j('/api/skuska/odmietnut', { method: 'POST' }, adm2);
+    const declT = (await j('/api/me', {}, adm2)).d.trial.declined === true;
+    await j('/api/test-account/back', { method: 'POST' }, adm2);
+    await j('/api/admin/test-account', { method: 'POST' }, adm2);
+    const meT4 = await j('/api/me', {}, adm2);
+    ok('testovací účet: aj odmietnutie sa pri opätovnom vstupe vynuluje', declT && meT4.d.trial.eligible === true && !meT4.d.trial.declined, JSON.stringify({ declT, t: meT4.d.trial }));
     await j('/api/test-account/back', { method: 'POST' }, adm2);
 
     // statika
     const dash = fs.readFileSync(path.join(ROOT, 'public', 'client-dashboard.html'), 'utf8');
-    ok('nástenka má celú obrazovku skúšky a otvára ju pri vstupe', /id="skuskaWall"/.test(dash) && /skuskaUkaz\(me\)/.test(dash) && /Vyskúšať za 0,00 €/.test(dash) && /Nie, ďakujem/.test(dash) && /stripe'\)==='trial'/.test(dash));
+    ok('nástenka má celú obrazovku skúšky a otvára ju pri vstupe', /id="skuskaWall"/.test(dash) && /skuskaUkaz\(me\)/.test(dash) && /Vyskúšať za 0,00(&nbsp;| )€/.test(dash) && /Nie, ďakujem/.test(dash) && /stripe'\)==='trial'/.test(dash));
     const idx = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
     ok('landing appky: prvý týždeň zadarmo, stena so skúškou', /Prvý týždeň zadarmo/.test(idx) && /startTrialFromLanding/.test(idx) && !/<title>Fusion Academy – Prvá hodina zadarmo/.test(idx));
+    ok('nástenka: „Nie, ďakujem" najprv upozornenie „len raz", odmietnutie na server (nie localStorage)', /id="skuskaOdm"/.test(dash) && /Túto ponuku dostaneš len raz/.test(dash) && /\/api\/skuska\/odmietnut/.test(dash) && !/setItem\('fa_skuska_odmietnuta'/.test(dash));
+    ok('landing: ponuka po registrácii + stena v dvoch krokoch + upozornenie „len raz"', /id="sVyber"/.test(idx) && /id="odmModal"/.test(idx) && /id="mwKupa"/.test(idx) && /Túto ponuku dostaneš len raz/.test(idx) && /\/api\/skuska\/odmietnut/.test(idx));
     const sch = fs.readFileSync(path.join(ROOT, 'public', 'schedule.html'), 'utf8');
-    ok('rozvrh: skúška ako prvá voľba pri hodine bez krytia', /skuskaZRozvrhu/.test(sch) && /trial_available/.test(sch));
+    ok('rozvrh: skúška ako prvá voľba pri hodine bez krytia, odmietnutie s upozornením', /skuskaZRozvrhu/.test(sch) && /trial_available/.test(sch) && /skuskaNieRozvrh/.test(sch) && /\/api\/skuska\/odmietnut/.test(sch) && /len raz/.test(sch));
   } catch (e) { failed++; console.log('  ❌ výnimka: ' + e.stack); }
   finally { proc.kill(); await sleep(500); try { fs.rmSync(DATA, { recursive: true, force: true }); } catch (e) {} }
 

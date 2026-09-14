@@ -11201,7 +11201,7 @@ const MEMBERSHIP_PLANS = {
 // pozvánka, landing) nedáva — tréner ju môže darovať ručne ďalej.
 const SKUSKA = { dni:7, plan:'bronze' };
 const SKUSKA_DOVODY = { rola:'Skúšobný týždeň je pre klientky.', vypnute:'Skúšobný týždeň momentálne nie je k dispozícii.',
-  uz_mala:'Skúšobný týždeň si už využila.', odber:'Už máš bežiaci mesačný odber.', clenstvo:'Už máš aktívne členstvo.',
+  uz_mala:'Skúšobný týždeň si už využila.', odmietnuta:'Ponuku prvého týždňa zadarmo si už odmietla — dostáva sa len raz.', odber:'Už máš bežiaci mesačný odber.', clenstvo:'Už máš aktívne členstvo.',
   mala_clenstvo:'Skúšobný týždeň je pre nové klientky — členstvo si u nás už mala.' };
 async function skuskaZapnuta(){
   const s = await q.one(db.settings,{key:'prvy_tyzden'});
@@ -11212,6 +11212,7 @@ async function skuskaNarok(u){
   if(!u || u.is_admin || u.is_child || ['trainer','manager','admin'].includes(u.user_type)) return {ok:false, reason:'rola'};
   if(!(await skuskaZapnuta())) return {ok:false, reason:'vypnute'};
   if(u.trial_used) return {ok:false, reason:'uz_mala'};
+  if(u.trial_declined_at) return {ok:false, reason:'odmietnuta'}; // ponuka je len raz (Marek 14. 9.)
   if(u.stripe_subscription_id) return {ok:false, reason:'odber'};
   const m = await checkMembership(u._id);
   if(m && m.status==='active' && (!m.expires_at || m.expires_at>=today())) return {ok:false, reason:'clenstvo'};
@@ -11222,7 +11223,7 @@ async function skuskaInfo(u){
   const on = await skuskaZapnuta();
   const n = on ? await skuskaNarok(u) : {ok:false, reason:'vypnute'};
   const active = !!(u && u.trial_ends_at && !u.trial_converted_at && u.trial_ends_at >= nowISO() && u.stripe_subscription_id);
-  return { on, eligible:n.ok, reason:n.ok?null:n.reason, active, ends_at:u?.trial_ends_at||null, used:!!u?.trial_used,
+  return { on, eligible:n.ok, reason:n.ok?null:n.reason, active, ends_at:u?.trial_ends_at||null, used:!!u?.trial_used, declined:!!u?.trial_declined_at,
     days:SKUSKA.dni, plan:SKUSKA.plan, price:MEMBERSHIP_PLANS[SKUSKA.plan].price };
 }
 function fmtDenSk(iso){ const d=new Date(iso); return d.getUTCDate()+'. '+(d.getUTCMonth()+1)+'.'; }
@@ -14256,6 +14257,20 @@ app.post('/api/stripe/checkout', auth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Odmietnutie prvého týždňa zadarmo (Marek 14. 9.): ponuka je len raz — kto ju po upozornení odmietne,
+// už ju nedostane a na hodiny si kupuje jednorazový vstup, permanentku alebo členstvo.
+app.post('/api/skuska/odmietnut', auth, async(req,res)=>{
+  try{
+    const u = await q.one(db.users,{_id:req.session.uid});
+    if(!u) return res.status(401).json({error:'Nie ste prihlásený'});
+    if(u.trial_declined_at) return res.json({ok:true, already:true});
+    const n = await skuskaNarok(u);
+    if(!n.ok) return res.json({ok:true, eligible:false, reason:n.reason});
+    await q.update(db.users,{_id:u._id},{$set:{trial_declined_at:nowISO()}});
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Prvý týždeň zadarmo: Stripe odber Bronze so 7-dňovou skúškou, karta sa uloží hneď.
 app.post('/api/stripe/trial', auth, async(req,res)=>{
   try{
@@ -14270,6 +14285,8 @@ app.post('/api/stripe/trial', auth, async(req,res)=>{
     }
     const plan = MEMBERSHIP_PLANS[SKUSKA.plan];
     const base = APP_URL;
+    // z registrácie (landing) sa po skúške vracia rovno na výber prvej hodiny, z appky na nástenku
+    const navrat = req.body && req.body.navrat==='onboarding' ? '/' : '/client-dashboard';
     const params = {
       'mode':'subscription',
       'line_items[0][quantity]':1,
@@ -14279,8 +14296,8 @@ app.post('/api/stripe/trial', auth, async(req,res)=>{
       'line_items[0][price_data][product_data][name]':`Členstvo ${plan.name} (mesačne) — prvých ${SKUSKA.dni} dní zadarmo`,
       'subscription_data[trial_period_days]':SKUSKA.dni,
       'payment_method_collection':'always',
-      'success_url':`${base}/client-dashboard?stripe=trial&session_id={CHECKOUT_SESSION_ID}`,
-      'cancel_url':`${base}/client-dashboard?stripe=trial_cancel`,
+      'success_url':`${base}${navrat}?stripe=trial&session_id={CHECKOUT_SESSION_ID}`,
+      'cancel_url':`${base}${navrat}?stripe=trial_cancel`,
       'customer_email':u.email,
       'metadata[user_id]':req.session.uid,
       'metadata[member_id]':req.session.uid,
@@ -14294,7 +14311,7 @@ app.post('/api/stripe/trial', auth, async(req,res)=>{
     };
     // QA hook (konvencia STRIPE_FAKE): session je falošná, webhook test potom preženie aktiváciu bez siete
     const r = process.env.STRIPE_FAKE==='1'
-      ? { status:200, body:{ id:'fake_trial_'+req.session.uid, url:base+'/client-dashboard?stripe=trial&session_id=fake_trial_'+req.session.uid } }
+      ? { status:200, body:{ id:'fake_trial_'+req.session.uid, url:base+navrat+'?stripe=trial&session_id=fake_trial_'+req.session.uid } }
       : await stripeApi('checkout/sessions', params, 'POST');
     if(r.status>=400 || !r.body?.url) return res.status(400).json({error:r.body?.error?.message||'Stripe chyba pri vytváraní skúšky'});
     await q.insert(db.payments,{stripe_session_id:r.body.id, user_id:req.session.uid, member_id:req.session.uid, amount:0, currency:'EUR',
@@ -15170,7 +15187,7 @@ app.post('/api/admin/test-account', adminAuth, async(req,res)=>{
       single_entries:0, referral_credit:0, membership_plan:null, membership_expires:null, avatar:null,
       gender:null, nickname:'', status:''},
       $unset:{venceky_class_id:true, venceky_role:true, venceky_school_id:true, vencek_alumni:true,
-        trial_used:true, trial_started_at:true, trial_ends_at:true, trial_reminder_sent:true, trial_converted_at:true, trial_card_fp:true,
+        trial_used:true, trial_declined_at:true, trial_started_at:true, trial_ends_at:true, trial_reminder_sent:true, trial_converted_at:true, trial_card_fp:true,
         stripe_subscription_id:true, stripe_sub_plan:true, stripe_sub_member:true, stripe_sub_payer_id:true}});
     req.session.admin_uid=req.session.uid;   // cesta späť
     req.session.uid=t._id; req.session.sv=t.sess_ver||0;

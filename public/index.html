@@ -172,7 +172,7 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
 .step-content.wide{max-width:780px}
 .step-icon{font-size:2.4rem;margin-bottom:12px;animation:popIn .5s .1s ease both;opacity:0}
 .step-icon.show{opacity:1}
-.step-title{font-family:var(--serif);font-size:2.6rem;font-weight:500;margin-bottom:8px;letter-spacing:-.01em;line-height:1.05}
+.step-title{font-family:var(--serif);font-size:clamp(2rem,9vw,2.6rem);text-wrap:balance;font-weight:500;margin-bottom:8px;letter-spacing:-.01em;line-height:1.05}
 .step-sub{color:var(--muted);font-size:.95rem;margin-bottom:24px;line-height:1.6}
 .step-sub .gold{color:var(--gold)}
 
@@ -304,6 +304,8 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
 @keyframes wiggle{0%,100%{transform:rotate(0)}25%{transform:rotate(-10deg)}75%{transform:rotate(10deg)}}
 .free-banner .fb-text{font-size:.92rem;line-height:1.4}
 .free-banner .fb-text b{color:#81c784}
+/* Voľba po registrácii: prvý týždeň zadarmo alebo bez skúšky (14. 9.) */
+.skuska-stav{background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.35);color:#bfe8c9;border-radius:12px;padding:10px 14px;font-size:.88rem;line-height:1.45;margin:0 0 14px;text-wrap:pretty}
 
 /* calendar */
 .cal-wrap{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:18px 16px}
@@ -439,6 +441,28 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
 .final-cta-box h2{font-size:1.8rem;font-weight:900;margin-bottom:12px}
 .final-cta-box p{color:var(--muted);margin-bottom:28px}
 
+/* ── Prvý týždeň zadarmo: jedna ponuka na prvý pohľad (Marek 14. 9.) ── */
+.ponuka{text-align:center;max-width:420px;margin:0 auto}
+.ponuka-lead{color:var(--text);font-size:1.08rem;font-weight:600;line-height:1.45;margin:0 0 22px;text-wrap:balance}
+.ponuka-btn{display:block;width:100%;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;border:none;border-radius:16px;padding:16px;font:inherit;font-size:1.2rem;line-height:1.3;font-weight:900;cursor:pointer;box-shadow:0 10px 30px rgba(201,168,76,.25);text-wrap:balance}
+.ponuka-btn:disabled{opacity:.7;cursor:wait}
+.ponuka-cena{color:var(--muted);font-size:.85rem;line-height:1.5;margin:10px 0 0;text-wrap:balance}
+.ponuka-nie{display:block;margin:16px auto 0;background:none;border:none;color:var(--muted);font:inherit;font-size:.95rem;font-weight:700;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:8px 14px}
+.ponuka-btn:focus-visible,.ponuka-nie:focus-visible,.odm-card button:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+.bez-zlomu{white-space:nowrap}
+.odm-bg{position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:18px}
+.odm-bg[hidden]{display:none}
+.odm-card{background:var(--dark3);border:1px solid var(--gold-border);border-radius:20px;max-width:400px;width:100%;padding:24px 20px 18px;text-align:center}
+.odm-card .odm-ic{font-size:2.2rem;line-height:1;margin-bottom:10px}
+.odm-card h3{font-size:1.3rem;font-weight:800;line-height:1.25;margin:0 0 8px;text-wrap:balance}
+.odm-card p{color:var(--muted);font-size:.92rem;line-height:1.5;margin:0 0 18px;text-wrap:balance}
+.odm-card .odm-sec{display:block;width:100%;background:none;border:none;color:var(--muted);font:inherit;font-weight:700;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:12px 8px 4px}
+.mw-cennik{border:1px solid var(--border);border-radius:12px;margin:6px 0 16px;text-align:left}
+.mw-cennik div{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 14px;font-size:.92rem}
+.mw-cennik div+div{border-top:1px solid var(--border)}
+.mw-cennik b{white-space:nowrap;color:var(--gold)}
+.mw-online{display:block;text-align:center;margin-top:12px;color:var(--gold);font-weight:700;text-decoration:underline;text-underline-offset:3px}
+
 /* ── MODALS ── */
 .modal-bg{
   position:fixed;inset:0;z-index:500;
@@ -552,31 +576,9 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
   // a ôsmakovi po naskenovaní QR nehovorí nič. Staré vytlačené QR s ?vencek=
   // tu preto len presmerujeme, nech ostanú platné.
   if(vc && /^VEN-[A-Z0-9]{3,}$/i.test(vc)){ location.replace('/v/'+vc.toUpperCase()); return; }
-  var kod=localStorage.getItem('fa_vencek_code');
-  document.addEventListener('DOMContentLoaded', function(){
-    if(!kod) return;
-    var g=document.getElementById('venRoleGroup'); if(g) g.style.display='block';
-    var b=document.createElement('div');
-    b.style.cssText='position:sticky;top:0;z-index:1000;background:linear-gradient(90deg,#C9A84C,#a5842f);color:#161310;font-weight:800;text-align:center;padding:10px 14px;font-size:.92rem';
-    b.textContent='🎓 Registruješ sa do FUSION VENČEKOV — po registrácii ťa priradíme automaticky ('+kod+').';
-    document.body.prepend(b);
-    /* Skupina si môže obmedziť, kto sa smie registrovať (napr. len žiak a učiteľ).
-       Nepovolené voľby zo zoznamu vypadnú, nech si nikto nevyberie zlú rolu. */
-    fetch('/api/vencek/info?code='+encodeURIComponent(kod)).then(function(r){return r.json();}).then(function(d){
-      if(!d||!d.ok) return;
-      if(d.school||d.name)
-        b.textContent='🎓 Registrácia do venčekov — '+[d.school,d.name].filter(Boolean).join(' · ');
-      var sel=document.getElementById('rVenRole');
-      if(sel && Array.isArray(d.roles) && d.roles.length){
-        Array.prototype.slice.call(sel.options).forEach(function(o){
-          if(d.roles.indexOf(o.value)<0) o.remove();
-        });
-        if(sel.options.length) sel.value=sel.options[0].value;
-        var ch=document.getElementById('venChildGroup');
-        if(ch) ch.style.display = sel.value==='parent' ? 'block' : 'none';
-      }
-    }).catch(function(){});
-  });
+  // Bežná registrácia s venčekmi nič nerobí — tie majú vlastný odkaz /v/KÓD (Marek 14. 9.).
+  // Kód uložený staršou verziou by inak ukazoval venčekové pole a potichu priradil človeka do skupiny.
+  try{ localStorage.removeItem('fa_vencek_code'); }catch(e){}
 })();
 </script>
 </head>
@@ -686,21 +688,6 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
           <label><span data-i18n="auth.sponsor">Kód sponzora</span> <span class="optional" data-i18n="auth.sponsor_opt">(ak ťa niekto pozval)</span></label>
           <input type="text" id="rCode" placeholder="napr. MAREK21" data-i18n-ph="auth.sponsor_ph" style="text-transform:uppercase">
         </div>
-        <div id="venRoleGroup" style="display:none">
-          <div class="form-group">
-            <label style="color:#C9A24C" data-i18n="auth.ven_q">🎓 Venčeky — kto sa registruje?</label>
-            <select id="rVenRole" style="width:100%;padding:12px;border-radius:10px;background:#1d1a15;border:1px solid #3a3428;color:#e8e2d4" onchange="document.getElementById('venChildGroup').style.display=this.value==='parent'?'block':'none'">
-              <option value="student" data-i18n="auth.ven_student">🧑‍🎓 Žiak / žiačka</option>
-              <option value="parent" data-i18n="auth.ven_parent">👨‍👩‍👧 Rodič žiaka</option>
-              <option value="teacher" data-i18n="auth.ven_teacher">👩‍🏫 Triedny učiteľ / učiteľka</option>
-              <option value="director" data-i18n="auth.ven_director">🏫 Riaditeľ / riaditeľka školy</option>
-            </select>
-          </div>
-          <div class="form-group" id="venChildGroup" style="display:none">
-            <label><span data-i18n="auth.ven_child">Meno vášho dieťaťa</span> <span class="optional" data-i18n="auth.ven_child_opt">(aby sme vás spárovali s triedou)</span></label>
-            <input type="text" id="rVenChild" placeholder="napr. Ema Nováková" data-i18n-ph="auth.ven_child_ph">
-          </div>
-        </div>
         <div class="form-group">
           <label><span data-i18n="auth.lead_q">Kde si sa o nás dozvedela?</span> <span class="optional" data-i18n="auth.optional2">(voliteľné)</span></label>
           <select id="rLeadSource" style="width:100%;padding:.7rem .9rem;background:#1e1e1e;border:1px solid rgba(201,168,76,.3);border-radius:.6rem;color:#e8e8e8;font-size:.9rem">
@@ -730,11 +717,24 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
   </div>
 
   <!-- ── SCREEN 2: PICK A CLASS (step-by-step wizard) ── -->
+  <!-- ── PONUKA hneď po registrácii: najprv len prvý týždeň zadarmo, bežná ponuka až po odmietnutí (Marek 14. 9.) ── -->
+  <div class="screen" id="sVyber">
+    <div class="step-content ponuka">
+      <div class="step-icon">🎁</div>
+      <h2 class="step-title">Prvý týždeň zadarmo</h2>
+      <p class="ponuka-lead">7&nbsp;dní chodíš na všetky hodiny zadarmo.</p>
+      <button type="button" class="ponuka-btn" id="vyberSkuskaBtn" onclick="vyberSkusku()"><span id="vyberSkuskaCta">Vyskúšať zadarmo</span></button>
+      <p class="ponuka-cena">Potom <span class="bez-zlomu"><span id="vyberCena">49,90</span>&nbsp;€/mes.</span> z karty. Zrušíš kedykoľvek pred platbou.</p>
+      <button type="button" class="ponuka-nie" id="vyberBezBtn" onclick="vyberBezSkusky()">Nie, ďakujem</button>
+    </div>
+  </div>
+
   <div class="screen" id="s2">
     <div class="step-content wide">
 
       <!-- crumbs (filled by JS) -->
       <div class="wiz-crumbs" id="wizCrumbs"></div>
+      <div class="skuska-stav" id="skuskaStav" hidden></div>
 
       <!-- SUB-STEP A: choose the dance/program -->
       <div class="wiz-panel active" id="wizType">
@@ -959,49 +959,40 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
   </div>
 </div>
 
+<!-- ── UPOZORNENIE pred odmietnutím týždňa zadarmo: ponuka je len raz (Marek 14. 9.) ── -->
+<div class="odm-bg" id="odmModal" hidden onclick="if(event.target===this)zavriOdmietnutie()">
+  <div class="odm-card" role="dialog" aria-modal="true" aria-labelledby="odmTitle">
+    <div class="odm-ic">⚠️</div>
+    <h3 id="odmTitle">Túto ponuku dostaneš len raz</h3>
+    <p>Keď ju odmietneš, na hodiny si zaplatíš vstup, permanentku alebo členstvo.</p>
+    <button type="button" class="ponuka-btn" id="odmSpat" onclick="odmChcem()">🎁 Chcem týždeň zadarmo</button>
+    <button type="button" class="odm-sec" id="odmPotvrd" onclick="potvrdOdmietnutie()">Nie, pokračovať bez neho</button>
+  </div>
+</div>
+
 <!-- ── MEMBERSHIP WALL MODAL ── -->
 <div class="modal-bg" id="membershipWallModal" onclick="if(event.target===this)closeMembershipWall()" style="display:none">
   <div class="modal-card" style="text-align:center;max-width:420px">
     <button class="modal-close" onclick="closeMembershipWall()"><i class="bi bi-x-lg"></i></button>
-    <div style="font-size:3rem;margin-bottom:12px">🏷️</div>
-    <h3 class="modal-title" id="mwTitle" style="margin-bottom:8px">Na túto hodinu potrebuješ vstup alebo členstvo</h3>
-    <p class="modal-sub" id="mwSub" style="margin-bottom:20px">Vyber si jedno z členských plánov alebo jednorazový vstup.</p>
-    <div id="mwTrial" style="display:none;margin-bottom:16px">
-      <button onclick="startTrialFromLanding()" id="mwTrialBtn" style="width:100%;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;border:none;border-radius:14px;padding:15px;font-size:1.1rem;font-weight:900;cursor:pointer">🎁 Vyskúšať prvý týždeň za 0,00 €</button>
-      <div style="color:var(--muted);font-size:.78rem;margin-top:8px;line-height:1.5">Uložíš kartu, 7 dní tancuješ zadarmo, potom Bronze 49,90 €/mes. Zrušiť môžeš kedykoľvek. Túto hodinu ti po zapnutí rezervujeme automaticky.</div>
-      <div style="color:var(--muted);font-size:.78rem;margin:12px 0 0">— alebo bez skúšky —</div>
+    <div id="mwIkona" style="font-size:2.6rem;margin-bottom:10px">🏷️</div>
+    <h3 class="modal-title" id="mwTitle" style="margin-bottom:8px;text-wrap:balance">Ako zaplatíš túto hodinu?</h3>
+    <!-- krok 1: len ponuka týždňa zadarmo -->
+    <div id="mwTrial" style="display:none">
+      <p class="modal-sub" style="margin-bottom:18px;text-wrap:balance">7&nbsp;dní chodíš na všetky hodiny zadarmo. Túto hodinu ti po zapnutí rezervujeme.</p>
+      <button type="button" class="ponuka-btn" id="mwTrialBtn" onclick="startTrialFromLanding()">Vyskúšať zadarmo</button>
+      <p class="ponuka-cena">Potom <span class="bez-zlomu">49,90&nbsp;€/mes.</span> z karty. Zrušíš kedykoľvek pred platbou.</p>
+      <button type="button" class="ponuka-nie" id="mwNie" onclick="mwOdmietni()">Nie, ďakujem</button>
     </div>
-    <div style="display:grid;gap:10px;margin-bottom:20px">
-      <div style="background:rgba(201,168,76,.15);border:2px solid var(--gold-border);border-radius:12px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;position:relative">
-        <div style="position:absolute;top:-1px;right:12px;background:var(--gold);color:#111;font-size:.65rem;font-weight:800;padding:2px 10px;border-radius:0 0 8px 8px;text-transform:uppercase;letter-spacing:.05em">Najvýhodnejšie</div>
-        <div style="text-align:left">
-          <div style="font-weight:700;color:var(--gold)">🥉 Mesačné členstvo</div>
-          <div style="font-size:.78rem;color:var(--muted)">Neobmedzené hodiny · celý mesiac</div>
-        </div>
-        <div style="font-size:1.3rem;font-weight:800;color:var(--gold);white-space:nowrap">od 49,90 €</div>
+    <!-- krok 2 (alebo bez nároku na skúšku): bežná ponuka -->
+    <div id="mwKupa">
+      <div class="mw-cennik">
+        <div><span>🎫 Jednorazový vstup</span><b>10&nbsp;€</b></div>
+        <div><span>🎟️ Permanentka 10 vstupov</span><b>80&nbsp;€</b></div>
+        <div><span>🥉 Mesačné členstvo</span><b>od 49,90&nbsp;€</b></div>
       </div>
-      <div style="background:rgba(100,100,100,.1);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center">
-        <div style="text-align:left">
-          <div style="font-weight:700;color:var(--text)">🎟️ Permanentka 10 vstupov</div>
-          <div style="font-size:.78rem;color:var(--muted)">Platná 90 dní · bez mesačného záväzku</div>
-        </div>
-        <div style="font-size:1.3rem;font-weight:800;color:var(--text);white-space:nowrap">80 €</div>
-      </div>
-      <div style="background:rgba(100,100,100,.1);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center">
-        <div style="text-align:left">
-          <div style="font-weight:700;color:var(--text)">🎫 Jednorazový vstup</div>
-          <div style="font-size:.78rem;color:var(--muted)">Jedna hodina, bez záväzkov</div>
-        </div>
-        <div style="font-size:1.3rem;font-weight:800;color:var(--text);white-space:nowrap">10 €</div>
-      </div>
+      <button type="button" class="ponuka-btn" style="font-size:1.05rem" onclick="bookPayOnSite()">💵 Rezervovať a zaplatiť na mieste</button>
+      <a href="/obchod" class="mw-online">Kúpiť online v obchode</a>
     </div>
-    <a href="/obchod" class="bc-btn-confirm" style="display:block;text-align:center;text-decoration:none;background:linear-gradient(135deg,var(--gold),#a07830);color:#111">
-      <i class="bi bi-credit-card"></i> Pozrieť všetky plány
-    </a>
-    <button class="bc-btn-confirm" style="margin-top:8px;width:100%;background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.4);color:#4ade80" onclick="bookPayOnSite()">
-      💵 Rezervovať a zaplatiť na mieste (10 €)
-    </button>
-    <button class="bc-btn-cancel" style="margin-top:8px;width:100%" onclick="closeMembershipWall()">Zatvoriť</button>
   </div>
 </div>
 
@@ -1081,7 +1072,86 @@ function faPoPrihlaseni(def){
   return def || '/client-dashboard';
 }
 const _preview = new URLSearchParams(location.search).get('preview')==='1';
-let _previewSkuska = false; // náhľad už ukázal ponuku prvého týždňa
+let _previewSkuska = false; // náhľad „bez skúšky" už ukázal ponuku kúpy
+
+// ── Prvý týždeň zadarmo: voľba HNEĎ po registrácii, ešte pred výberom hodiny (Marek 14. 9.) ──
+let _bezSkusky = false, _skuskaZvolena = false;
+async function nacitajKonfig(){ try{ return await fetch('/api/config').then(r=>r.json()); }catch(e){ return {}; } }
+async function poRegistracii(){
+  const cfg = await nacitajKonfig();
+  if(!cfg.prvy_tyzden){ goTo(2); return; }
+  if(!_preview){
+    let me={}; try{ me=await fetch('/api/me',{credentials:'include'}).then(r=>r.json()); }catch(e){}
+    if(!(me.trial && me.trial.eligible)){ goTo(2); return; }
+  }
+  await ukazVyber(cfg);
+}
+async function ukazVyber(cfg){
+  cfg = cfg || await nacitajKonfig();
+  const c=document.getElementById('vyberCena'); if(c && cfg.trial_price) c.textContent=(+cfg.trial_price).toFixed(2).replace('.',',');
+  const btn=document.getElementById('vyberSkuskaBtn'); if(btn) btn.disabled=false;
+  const cta=document.getElementById('vyberSkuskaCta'); if(cta) cta.textContent='Vyskúšať zadarmo';
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('sVyber').classList.add('active');
+  _step='vyber'; updateStepBar(2); window.scrollTo({top:0,behavior:'smooth'});
+}
+function ukazStav(html){
+  const s=document.getElementById('skuskaStav'); if(s){ s.innerHTML=html; s.hidden=false; }
+  document.querySelectorAll('.free-banner').forEach(b=>{ b.style.display='none'; });
+}
+async function vyberSkusku(){
+  _bezSkusky=false; _skuskaZvolena=true;
+  if(_preview){
+    showToast('🧪 Náhľad: tu si klientka uloží kartu v Stripe a skúška sa zapne.');
+    goTo(2); ukazStav('🎁 <b>Prvý týždeň zadarmo beží</b> — vyber si svoju prvú hodinu.'); return;
+  }
+  const btn=document.getElementById('vyberSkuskaBtn'), cta=document.getElementById('vyberSkuskaCta');
+  if(btn) btn.disabled=true; if(cta) cta.textContent='⏳ Otváram Stripe…';
+  try{
+    const r=await fetch('/api/stripe/trial',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({navrat:'onboarding'})});
+    const d=await r.json();
+    if(d && d.url){ location.href=d.url; return; }
+    showToast((d&&d.error)||'Skúšku sa nepodarilo spustiť');
+  }catch(e){ showToast('Chyba pripojenia'); }
+  if(btn) btn.disabled=false; if(cta) cta.textContent='Vyskúšať zadarmo';
+}
+// „Nie, ďakujem" → najprv upozornenie, že ponuka je len raz; odmietnutie sa uloží až po potvrdení (Marek 14. 9.)
+let _odmZdroj = 'vyber'; // 'vyber' = ponuka po registrácii, 'stena' = stena pri hodine
+function otvorOdmietnutie(zdroj){
+  _odmZdroj=zdroj; const m=document.getElementById('odmModal'); if(!m) return;
+  m.hidden=false; const b=document.getElementById('odmSpat'); if(b) b.focus();
+}
+function zavriOdmietnutie(){ const m=document.getElementById('odmModal'); if(m) m.hidden=true; }
+function vyberBezSkusky(){ otvorOdmietnutie('vyber'); }
+function mwOdmietni(){ otvorOdmietnutie('stena'); }
+function odmChcem(){ zavriOdmietnutie(); if(_odmZdroj==='stena') startTrialFromLanding(); else vyberSkusku(); }
+async function potvrdOdmietnutie(){
+  const btn=document.getElementById('odmPotvrd'); if(btn) btn.disabled=true;
+  if(!_preview){ try{ await fetch('/api/skuska/odmietnut',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include'}); }catch(e){} }
+  if(btn) btn.disabled=false; zavriOdmietnutie();
+  _bezSkusky=true; _skuskaZvolena=false;
+  ukazStav('🎟️ <b>Bez skúšky</b> — hodinu zaplatíš na mieste alebo online.');
+  if(_odmZdroj==='stena') showMembershipWall(false); else goTo(2);
+}
+// Návrat zo Stripe do registrácie: po skúške rovno výber prvej hodiny, po zrušení znova voľba
+async function navratZoSkusky(qs){
+  const st=qs.get('stripe'); if(st!=='trial' && st!=='trial_cancel') return false;
+  history.replaceState({},'','/');
+  await loadClasses();
+  if(st==='trial' && qs.get('session_id')){
+    let aktivna=false;
+    try{ const v=await fetch('/api/stripe/verify',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({session_id:qs.get('session_id')})}).then(r=>r.json()); aktivna=!!(v&&v.ok); }catch(e){}
+    if(!aktivna){ try{ const m2=await fetch('/api/me',{credentials:'include'}).then(r=>r.json()); aktivna=!!(m2.trial&&m2.trial.active); }catch(e){} }
+    if(aktivna){
+      _skuskaZvolena=true; _bezSkusky=false; goTo(2);
+      ukazStav('🎁 <b>Prvý týždeň zadarmo beží</b> — vyber si svoju prvú hodinu.');
+      if(window.faTrack) window.faTrack('StartTrial',{eventID:'trial_'+qs.get('session_id')});
+      return true;
+    }
+    showToast('Skúšku sa nepodarilo overiť — skús to znova alebo pokračuj bez nej.');
+  } else showToast('Skúšku si nezapla — vyber si, ako chceš začať.');
+  await ukazVyber(); return true;
+}
 if(_preview){
   document.addEventListener('DOMContentLoaded',()=>{
     const b=document.createElement('div');
@@ -1102,6 +1172,7 @@ if(_preview){
       // (?home=1 umožní pozrieť si verejnú domovskú stránku aj po prihlásení.)
       const dashUrl=me.is_admin?'/admin':me.user_type==='trainer'?'/trainer':'/client-dashboard';
       const qs=new URLSearchParams(location.search);
+      if(await navratZoSkusky(qs)) return;
       if(!qs.has('home')){
         location.replace(faPoPrihlaseni(dashUrl));
         return;
@@ -1222,14 +1293,14 @@ async function doRegister(){
   if(!document.getElementById('rConsent').checked){showErr('regErr',FA_T('auth.err_consent'));return;}
   btn.disabled=true;btn.innerHTML='<i class="bi bi-arrow-repeat spin"></i>&nbsp; '+FA_T('auth.registering');
   if(_preview){ // náhľad: účet sa nevytvára, len pokračuj vo flow
-    await loadClasses(); goTo(2);
+    await loadClasses(); await poRegistracii();
     btn.disabled=false;btn.innerHTML='Pokračovať &nbsp;<i class="bi bi-arrow-right"></i>';
     return;
   }
   try{
     const lead_source=document.getElementById('rLeadSource')?.value||'';
     const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name,email,password:pass,phone,sponsorCode:code,user_type:'client',lead_source,consent:true,vencek_code:localStorage.getItem('fa_vencek_code')||undefined,vencek_role:document.getElementById('rVenRole')?.value||undefined,vencek_child_name:document.getElementById('rVenChild')?.value.trim()||undefined,attribution:window.faGetAttribution?window.faGetAttribution():{}}),credentials:'include'});
+      body:JSON.stringify({name,email,password:pass,phone,sponsorCode:code,user_type:'client',lead_source,consent:true,attribution:window.faGetAttribution?window.faGetAttribution():{}}),credentials:'include'});
     const d=await r.json();
     if(!r.ok){
       showErr('regErr',d.error||FA_T('auth.err_reg'));
@@ -1237,9 +1308,9 @@ async function doRegister(){
       return;
     }
     if(window.faTrack) window.faTrack('CompleteRegistration');
-    // Load classes then go to step 2
+    // Najprv voľba (prvý týždeň zadarmo / bez skúšky), až potom výber hodiny
     await loadClasses();
-    goTo(2);
+    await poRegistracii();
     btn.disabled=false;btn.innerHTML='Pokračovať &nbsp;<i class="bi bi-arrow-right"></i>';
   }catch(e){
     showErr('regErr','Chyba pripojenia. Skúste znova.');
@@ -1495,10 +1566,9 @@ async function doConfirmBook(){
   if(el){ el.classList.add('booking'); const cta=el.querySelector('.cc-cta'); if(cta) cta.innerHTML='<i class="bi bi-arrow-repeat spin"></i>'; }
   if(_preview){ // náhľad: rezervácia sa nevytvára; v režime prvého týždňa najprv ponuka skúšky ako u reálnej novej klientky
     btn.disabled=false; btn.innerHTML='<i class="bi bi-check2-circle"></i> Áno, rezervovať!';
-    if(!_previewSkuska){ let cfg={}; try{ cfg=await fetch('/api/config').then(r=>r.json()); }catch(e){}
-      if(cfg.prvy_tyzden){ _previewSkuska=true;
+    if(_bezSkusky && !_previewSkuska){ _previewSkuska=true; // náhľad „bez skúšky": ako reálne — najprv kúpa
         if(el){ el.classList.remove('booking'); const cta=el.querySelector('.cc-cta'); if(cta) cta.innerHTML='<i class="bi bi-check2-circle"></i> Rezervovať'; }
-        showMembershipWall(true); _pending=null; return; } }
+        showMembershipWall(false); _pending=null; return; }
     await showConfirmation({class_name:className, booking_date:date||''});
     goTo(3);
     setTimeout(()=>{ document.querySelectorAll('.tip-item').forEach((t,i)=>{ setTimeout(()=>{t.style.opacity='1';t.style.animation='fadeUp .4s ease both';},i*130); }); },500);
@@ -1522,7 +1592,7 @@ async function doConfirmBook(){
         showToast('Prihlás sa prosím — rezerváciu potom dokončíme automaticky.');
         openLogin && openLogin();
       } else if(d.error==='membership_required'){
-        showMembershipWall(!!d.trial_available);
+        showMembershipWall(!!d.trial_available && !_bezSkusky);
       } else if(/už (ste sa |si )?prihlás/i.test(d.error||'')){
         // Rezervácia už existuje (dvojité ťuknutie / opakovaný pokus) — pre klientku
         // je to úspech, pokračuj na potvrdenie namiesto slepej uličky.
@@ -1758,10 +1828,12 @@ function showErr(id,msg){const e=document.getElementById(id);if(!e)return;e.text
 function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function escJs(s){return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200);}
+// Stena pri hodine: s nárokom najprv LEN ponuka týždňa zadarmo; bežná ponuka až po odmietnutí (Marek 14. 9.)
 function showMembershipWall(trial){
   const t=document.getElementById('mwTrial'); if(t) t.style.display=trial?'block':'none';
-  const h=document.getElementById('mwTitle'); if(h) h.textContent=trial?'Tvoj prvý týždeň zadarmo':'Na túto hodinu potrebuješ vstup alebo členstvo';
-  const s=document.getElementById('mwSub'); if(s) s.textContent=trial?'Namiesto jednej hodiny máš celý týždeň zadarmo. Ak nechceš, kúp si vstup alebo členstvo.':'Vyber si jedno z členských plánov alebo jednorazový vstup.';
+  const k=document.getElementById('mwKupa'); if(k) k.style.display=trial?'none':'block';
+  const i=document.getElementById('mwIkona'); if(i) i.textContent=trial?'🎁':'🏷️';
+  const h=document.getElementById('mwTitle'); if(h) h.textContent=trial?'Tvoj prvý týždeň zadarmo':'Ako zaplatíš túto hodinu?';
   document.getElementById('membershipWallModal').style.display='flex';
 }
 async function startTrialFromLanding(){
@@ -1778,7 +1850,7 @@ async function startTrialFromLanding(){
     if(d&&d.url){ location.href=d.url; return; }
     showToast(d.error||'Skúšku sa nepodarilo spustiť');
   }catch(e){ showToast('Chyba pripojenia'); }
-  if(btn){ btn.disabled=false; btn.textContent='🎁 Vyskúšať prvý týždeň za 0,00 €'; }
+  if(btn){ btn.disabled=false; btn.textContent='Vyskúšať zadarmo'; }
 }
 function closeMembershipWall(){document.getElementById('membershipWallModal').style.display='none';}
 

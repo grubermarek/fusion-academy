@@ -578,22 +578,49 @@ async function skuskaZRozvrhu() {
     showToast(d.error || 'Skúšku sa nepodarilo spustiť', 'error');
   } catch (e) { showToast(FA_T('sched.err_conn'), 'error'); }
 }
+// Prvý týždeň zadarmo v rozvrhu (Marek 14. 9.): najprv LEN ponuka, „Nie, ďakujem" → upozornenie „len raz" → bežná ponuka
+let skuskaOdmietnuta = false, _skuskaD = null, _skuskaBtn = null;
+const SKUSKA_BOX_CSS = 'background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.45);border-radius:12px;padding:14px;text-align:center';
+const SKUSKA_NIE_CSS = 'display:block;margin:10px auto 0;background:none;border:none;color:inherit;opacity:.75;font-weight:700;text-decoration:underline;text-underline-offset:3px;padding:6px 10px;cursor:pointer';
+function ponukniSkusku(d, btn) {
+  _skuskaD = d; _skuskaBtn = btn;
+  const box = document.getElementById('bookError');
+  box.className = 'py-2 small mb-3'; box.style.cssText = SKUSKA_BOX_CSS;
+  box.innerHTML = '<div style="font-weight:800;color:var(--gold,#C9A84C);font-size:1.05rem">🎁 Prvý týždeň zadarmo</div>'
+    + '<div style="margin:4px 0 12px">7&nbsp;dní chodíš na všetky hodiny zadarmo. Potom <span style="white-space:nowrap">49,90&nbsp;€/mes.</span> z karty, zrušíš kedykoľvek pred platbou.</div>'
+    + '<button type="button" class="btn-confirm" onclick="skuskaZRozvrhu()">Vyskúšať zadarmo</button>'
+    + '<button type="button" style="' + SKUSKA_NIE_CSS + '" onclick="skuskaNieRozvrh()">Nie, ďakujem</button>';
+  box.classList.remove('d-none');
+  btn.style.display = 'none';
+}
+function skuskaNieRozvrh() {
+  const box = document.getElementById('bookError');
+  box.innerHTML = '<div style="font-weight:800;color:var(--gold,#C9A84C);font-size:1.05rem">⚠️ Túto ponuku dostaneš len raz</div>'
+    + '<div style="margin:4px 0 12px">Keď ju odmietneš, na hodiny si zaplatíš vstup, permanentku alebo členstvo.</div>'
+    + '<button type="button" class="btn-confirm" onclick="skuskaZRozvrhu()">🎁 Chcem týždeň zadarmo</button>'
+    + '<button type="button" style="' + SKUSKA_NIE_CSS + '" onclick="skuskaOdmietniRozvrh()">Nie, pokračovať bez neho</button>';
+}
+async function skuskaOdmietniRozvrh() {
+  try { await fetch('/api/skuska/odmietnut', { method: 'POST', headers: { 'Content-Type': 'application/json' } }); } catch (e) {}
+  skuskaOdmietnuta = true;
+  ponukniPlatbuNaMieste(Object.assign({}, _skuskaD, { trial_available: false }), _skuskaBtn);
+}
 function ponukniPlatbuNaMieste(d, btn) {
+  if (d.trial_available && !skuskaOdmietnuta) { ponukniSkusku(d, btn); return; }
   const technika = !!(selectedClass && selectedClass.category === 'Technika');
   const suma = +(d.tech_price || 10); platbaSuma = suma;
   const kredit = +(d.credit_balance || 0);
   const box = document.getElementById('bookError');
   box.className = 'py-2 small mb-3';
   box.style.cssText = 'background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.45);border-radius:12px;padding:12px 14px';
-  box.innerHTML = '<div style="font-weight:800;color:var(--gold,#C9A84C);font-size:.95rem">💵 ' + (technika ? 'Technický tréning · ' + suma + ' €' : 'Vstup na hodinu · ' + suma + ' €') + '</div>'
+  box.innerHTML = '<div style="font-weight:800;color:var(--gold,#C9A84C);font-size:.95rem">💵 ' + (technika ? 'Technický tréning · ' + suma + '&nbsp;€' : 'Vstup na hodinu · ' + suma + '&nbsp;€') + '</div>'
     + '<div class="text-muted" style="margin:4px 0 10px">' + (technika
         ? 'Technický tréning členstvo nekryje — cena je podľa členstva' + (suma < 10 ? ' (tvoja zľava je už započítaná)' : '') + '. '
         : 'Túto hodinu ti nekryje členstvo ani vstup. ')
       + 'Chceš zaplatiť <b>v hotovosti na mieste</b>?</div>'
     + (technika && kredit >= suma
         ? '<button type="button" class="btn-confirm" style="margin-bottom:8px;background:linear-gradient(135deg,#4ade80,#16a34a)" onclick="confirmBooking({pay_credit:true})">💳 Zaplatiť kreditom z appky (' + kredit.toFixed(2) + ' €)</button>' : '')
-    + (d.trial_available ? '<button type="button" class="btn-confirm" style="margin-bottom:8px" onclick="skuskaZRozvrhu()">🎁 Prvý týždeň zadarmo — potom 49,90 €/mes., zruš kedykoľvek</button>' : '')
-    + '<button type="button" class="btn-confirm" onclick="confirmBooking({pay_on_site:true})">💵 Áno, zaplatím na mieste ' + suma + ' €</button>'
+    + '<button type="button" class="btn-confirm" onclick="confirmBooking({pay_on_site:true})">💵 Áno, zaplatím na mieste ' + suma + '&nbsp;€</button>'
     + '<a href="/obchod?src=booking" class="d-block text-center mt-2" style="color:var(--gold,#C9A84C)">🎫 Radšej si kúpim členstvo alebo permanentku</a>';
   box.classList.remove('d-none');
   btn.style.display = 'none';
