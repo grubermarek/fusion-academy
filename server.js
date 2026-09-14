@@ -18026,6 +18026,11 @@ app.post('/api/attendance/session-instructor', trainerAuth, async(req,res)=>{
 
 // Zruš konkrétnu hodinu (dátum) — upozorni booknutých, vráť kredit z permanentky,
 // daj oznam na nástenku, znemožni booknutie, pozvi na najbližšiu hodinu v tom meste.
+// Automatické predĺženie členstiev pri zrušení hodiny (Marek 14. 9.: „pri každom zrušení").
+// Kompenzuje sa len hodina, ktorú mesačné členstvo kryje — nie technika, online ani súkromná.
+const KOMPENZACIA_DNI = 4;
+const kompenzovatelna = c => !!c && !['Online','Technika','Súkromné'].includes(c.category);
+const fmtDenMes = s => { const [y,m,d] = String(s).slice(0,10).split('-'); return (+d)+'. '+(+m)+'. '+y; };
 app.post('/api/attendance/cancel-session', trainerAuth, async(req,res)=>{
   try {
     const { class_id } = req.body;
@@ -18054,6 +18059,16 @@ app.post('/api/attendance/cancel-session', trainerAuth, async(req,res)=>{
     // Zruš rezervácie + vráť permanentkový vstup + notifikuj
     const bookings = await q.find(db.bookings,{class_id, booking_date:date, status:{$nin:['cancelled','cancelled_studio']}});
     let refunded=0;
+    // Predĺženie beží pred oznámeniami: prihlásená členka ho má priamo v oznámení a v maile
+    // o zrušení, ostatné členky z mesta dostanú samostatné oznámenie.
+    let komp=null; const kompPre={};
+    if(kompenzovatelna(cls) && !req.body.skip_compensation){
+      try{
+        komp=await kompenzujZrusenie({class_id, date, days:KOMPENZACIA_DNI, scope:'city', by:req.trainerUser?._id||'auto',
+          tichoPre:new Set(bookings.map(b=>b.user_id))});
+        for(const x of komp.extended) if(!kompPre[x.user_id]) kompPre[x.user_id]=x;
+      }catch(e){ console.error('auto kompenzácia:', e.message); }
+    }
     for(const b of bookings){
       // Vráť všetko, čím klientka zaplatila — nielen permanentkový vstup
       let backTxt='';
@@ -18077,7 +18092,8 @@ app.post('/api/attendance/cancel-session', trainerAuth, async(req,res)=>{
         }
       }
       await q.update(db.bookings,{_id:b._id},{$set:{status:'cancelled_studio', cancelled_reason:reason||'Zrušené štúdiom', cancelled_at:nowISO()}});
-      const refundNote = backTxt;
+      const ext = kompPre[b.user_id];
+      const refundNote = backTxt + (ext ? ` Členstvo ${ext.plan_name} ti za zrušenú hodinu predlžujeme o ${KOMPENZACIA_DNI} dni — platí do ${fmtDenMes(ext.to)}.` : '');
       await q.insert(db.notifications,{user_id:b.user_id, type:'class_cancelled',
         title:`❌ Hodina zrušená: ${cls.name}`,
         body:`${cls.name} dňa ${date}${cls.time_start?' o '+cls.time_start:''} v ${cls.location} sa NEKONÁ${reason?' ('+reason+')':''}.${refundNote}${inviteTxt}`,
@@ -18085,7 +18101,7 @@ app.post('/api/attendance/cancel-session', trainerAuth, async(req,res)=>{
       const u = await q.one(db.users,{_id:b.user_id});
       if(u?.email) sendMail(u.email, `Hodina zrušená: ${cls.name} (${date})`,
         emailTemplate('Hodina sa nekoná 😔',
-          `<p>Ahoj <b>${u.name}</b>,</p><p>Mrzí nás to — hodina <b>${cls.name}</b> dňa <b>${date}</b>${cls.time_start?' o '+cls.time_start:''} v <b>${cls.location}</b> sa <b>nekoná</b>${reason?` (${reason})`:''}.</p>${b.access_method==='single_entry'?'<p>Tvoj vstup z permanentky sme ti <b>vrátili</b> späť.</p>':''}${nextInfo?`<p>Pozývame ťa na najbližšiu hodinu v ${cls.location}: <b>${nextInfo.name}</b> ${nextInfo.date} o ${nextInfo.time}. 💃</p>`:''}`,
+          `<p>Ahoj <b>${u.name}</b>,</p><p>Mrzí nás to — hodina <b>${cls.name}</b> dňa <b>${date}</b>${cls.time_start?' o '+cls.time_start:''} v <b>${cls.location}</b> sa <b>nekoná</b>${reason?` (${reason})`:''}.</p>${b.access_method==='single_entry'?'<p>Tvoj vstup z permanentky sme ti <b>vrátili</b> späť.</p>':''}${ext?`<p>Členstvo <b>${ext.plan_name}</b> ti za zrušenú hodinu <b>predlžujeme o ${KOMPENZACIA_DNI} dni</b> — platí do <b>${fmtDenMes(ext.to)}</b>. 💛</p>`:''}${nextInfo?`<p>Pozývame ťa na najbližšiu hodinu v ${cls.location}: <b>${nextInfo.name}</b> ${nextInfo.date} o ${nextInfo.time}. 💃</p>`:''}`,
           '🗓️ Pozrieť rozvrh', `${APP_URL}/schedule`)).catch(()=>{});
     }
 
@@ -18116,8 +18132,10 @@ app.post('/api/attendance/cancel-session', trainerAuth, async(req,res)=>{
       }
     }
 
-    await auditLog(req,'class_cancel',class_id,{},{date, reason, notified:bookings.length, refunded, online:!!onlineCancelled},reason||'');
-    res.json({ ok:true, notified:bookings.length, refunded, date, next:nextInfo, online_cancelled:onlineCancelled });
+    await auditLog(req,'class_cancel',class_id,{},{date, reason, notified:bookings.length, refunded, online:!!onlineCancelled, compensated:komp?komp.extended.length:0},reason||'');
+    if(komp) await auditLog(req,'class_compensate',class_id,{},{date, days:komp.days, scope:komp.scope, extended:komp.extended.length, auto:true},'');
+    res.json({ ok:true, notified:bookings.length, refunded, date, next:nextInfo, online_cancelled:onlineCancelled,
+      compensation: komp ? {days:komp.days, extended:komp.extended.length, names:komp.extended.map(x=>x.name)} : null });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 // ── Kompenzácia za zrušenú hodinu: predĺženie mesačných členstiev ───────────
@@ -18128,7 +18146,7 @@ app.post('/api/attendance/cancel-session', trainerAuth, async(req,res)=>{
 // Okruh 'city' = všetky, čo do mesta chodia (ako 1. 9.); 'booked' = len
 // booknuté na tú hodinu. Každé zrušenie (hodina + dátum) predĺži členstvo
 // najviac raz — zoznam kompenzácií ostáva na členstve.
-async function kompenzujZrusenie({class_id, date, days, scope, by}){
+async function kompenzujZrusenie({class_id, date, days, scope, by, tichoPre}){
   const cls=await q.one(db.classes,{_id:String(class_id||'')});
   if(!cls) throw new Error('Hodina nenájdená');
   const dni=Math.round(+days||0);
@@ -18143,8 +18161,10 @@ async function kompenzujZrusenie({class_id, date, days, scope, by}){
       .filter(b=>b.status!=='cancelled').map(b=>b.user_id));
   } else {
     const mesto=String(cls.location||'').trim().toLowerCase();
+    // detská hodina kompenzuje len deti z detských hodín, dospelá len dospelých (deti majú vlastné členstvá)
+    const detska=cls.category==='Deti';
     const ids=new Set((await q.find(db.classes,{}))
-      .filter(c=>String(c.location||'').trim().toLowerCase()===mesto && c.category!=='Online').map(c=>c._id));
+      .filter(c=>String(c.location||'').trim().toLowerCase()===mesto && c.category!=='Online' && (c.category==='Deti')===detska).map(c=>c._id));
     okruh=new Set((await q.find(db.bookings,{})).filter(b=>ids.has(b.class_id) && b.status!=='cancelled').map(b=>b.user_id));
   }
   const kluc=cls._id+'@'+den;
@@ -18164,13 +18184,13 @@ async function kompenzujZrusenie({class_id, date, days, scope, by}){
       const zaznam={key:kluc, class_name:cls.name, location:cls.location, date:den, days:dni, from:stare, to:nove, at:nowISO(), by:by||null};
       await q.update(db.memberships,{_id:m._id},{$set:{expires_at:nove, kompenzacie:[...(m.kompenzacie||[]), zaznam]}});
       const doKedy=nove.slice(0,10).split('-').reverse().join('. ');
-      await q.insert(db.notifications,{user_id:uid, type:'membership',
+      if(!(tichoPre && tichoPre.has(uid))) await q.insert(db.notifications,{user_id:uid, type:'membership',
         title:'💛 Predĺžili sme ti členstvo',
         // mesto v zátvorke — „v Brezno" sa nedá skloňovať bez slovníka
         body:'Hodina '+cls.name+' ('+cls.location+') '+denADatum(den)+' odpadla, tak ti členstvo '+(m.plan_name||m.plan_id)
           +' predlžujeme o '+dni+' '+sklon(dni)+' — platí do '+doKedy+'. Nech ti nič neujde. 💛',
         read:false, created_at:nowISO()}).catch(()=>{});
-      extended.push({user_id:uid, name:u.name, plan:m.plan_id, from:stare.slice(0,10), to:nove.slice(0,10), membership_id:m._id});
+      extended.push({user_id:uid, name:u.name, plan:m.plan_id, plan_name:m.plan_name||m.plan_id, from:stare.slice(0,10), to:nove.slice(0,10), membership_id:m._id});
     }
   }
   return {class:cls.name, location:cls.location, date:den, days:dni, scope:rozsah, considered:okruh.size, extended};

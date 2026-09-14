@@ -7809,11 +7809,11 @@ async function loadAttendance(){
   closeAttDetail();
 }
 async function cancelSession(classId, dateStr, name){
-  const reason = prompt(`Zrušiť hodinu „${name}" dňa ${dateStr}?\n\nVšetkým booknutým pošleme oznámenie, vrátime kredit z permanentky, dáme oznam na nástenku a pozveme ich na najbližšiu hodinu v tom meste.\n\nDôvod (nepovinné):`, '');
+  const reason = prompt(`Zrušiť hodinu „${name}" dňa ${dateStr}?\n\nVšetkým booknutým pošleme oznámenie, vrátime kredit z permanentky, dáme oznam na nástenku a pozveme ich na najbližšiu hodinu v tom meste. Ženám s mesačným členstvom v meste automaticky predĺžime členstvo o 4 dni (pri technike nie).\n\nDôvod (nepovinné):`, '');
   if(reason===null) return; // zrušené
   const d=await api('/api/attendance/cancel-session',{method:'POST',body:JSON.stringify({class_id:classId,date:dateStr,reason})});
   if(d&&d.ok){
-    showToast(`Hodina zrušená ✓ Upozornených ${d.notified||0}${d.refunded?', vrátených vstupov '+d.refunded:''}`,'success');
+    showToast(`Hodina zrušená ✓ Upozornených ${d.notified||0}${d.refunded?', vrátených vstupov '+d.refunded:''}${d.compensation&&d.compensation.extended?', predĺžené členstvá '+d.compensation.extended+' (+'+d.compensation.days+' dni)':''}`,'success');
     loadAttendance();
   } else showToast('Chyba: '+(d?.error||'?'),'error');
 }

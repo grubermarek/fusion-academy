@@ -909,12 +909,13 @@ async function api(url, opts={}){
 // ── TAB SWITCHING – defined later with QR support ────────────────────────────
 
 async function trCancelSession(classId, name){
-  const reason = prompt(`Zrušiť najbližšiu hodinu „${name}"?\n\nVšetkým prihláseným pošleme oznámenie, vrátime kredit z permanentky, dáme oznam na nástenku a pozveme ich na ďalšiu hodinu v tom meste.\n\nDôvod (nepovinné):`, '');
+  const reason = prompt(`Zrušiť najbližšiu hodinu „${name}"?\n\nVšetkým prihláseným pošleme oznámenie, vrátime kredit z permanentky, dáme oznam na nástenku a pozveme ich na ďalšiu hodinu v tom meste. Ženám s mesačným členstvom v meste automaticky predĺžime členstvo o 4 dni (pri technike nie).\n\nDôvod (nepovinné):`, '');
   if(reason===null) return;
   const d=await api('/api/attendance/cancel-session',{method:'POST',body:{class_id:classId,reason}});
   if(d&&d.ok){
     const onl = d.online_cancelled ? `\n\n🌐 Automaticky zrušené aj online vysielanie o ${d.online_cancelled.time} (upozornených ${d.online_cancelled.notified}).` : '';
-    alert(`Hodina zrušená ✓ Upozornených ${d.notified||0}${d.refunded?', vrátených vstupov '+d.refunded:''}. Termín: ${fmtDate(d.date)}${onl}`);
+    const kmp = d.compensation && d.compensation.extended ? `\n\n💛 Predĺžené členstvá: ${d.compensation.extended} (+${d.compensation.days} dni) — ${d.compensation.names.join(', ')}.` : '';
+    alert(`Hodina zrušená ✓ Upozornených ${d.notified||0}${d.refunded?', vrátených vstupov '+d.refunded:''}. Termín: ${fmtDate(d.date)}${onl}${kmp}`);
     loadSchedule();
   }
   else alert('Chyba: '+(d?.error||'?'));
