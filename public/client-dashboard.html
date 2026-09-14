@@ -921,6 +921,28 @@
 </div>
 
 <!-- ── WELCOME GUIDE: prvé kroky po registrácii/rezervácii ── -->
+<!-- Prvý týždeň zadarmo — celá obrazovka pri vstupe do appky (Marek 14. 9.) -->
+<div id="skuskaWall" style="display:none;position:fixed;inset:0;z-index:2500;background:#141210;color:#f5f0e6;overflow-y:auto">
+  <div style="max-width:520px;margin:0 auto;padding:16px 22px 36px;min-height:100%;display:flex;flex-direction:column;box-sizing:border-box">
+    <button onclick="skuskaZavri()" aria-label="Zavrieť" style="align-self:flex-start;background:none;border:none;color:#bbb;font-size:1.7rem;padding:2px 6px;cursor:pointer;line-height:1">←</button>
+    <h1 style="font-family:'Cormorant Garamond',serif;font-size:2.3rem;text-align:center;margin:6px 0 16px;line-height:1.1">Tvoj prvý týždeň <span style="color:#E7C878">zadarmo</span></h1>
+    <ul style="list-style:none;padding:0;margin:0 auto 14px;display:grid;gap:9px;font-size:1.02rem;font-weight:700;width:fit-content">
+      <li><span style="color:#4ade80">✔</span> Neobmedzené hodiny 7 dní</li>
+      <li><span style="color:#4ade80">✔</span> Zumba vo všetkých 4 mestách</li>
+      <li><span style="color:#4ade80">✔</span> Rezervácie v appke, bez čakania</li>
+      <li><span style="color:#4ade80">✔</span> Komunita a súťaž o ceny</li>
+      <li><span style="color:#4ade80">✔</span> Zruš kedykoľvek, aj hneď</li>
+    </ul>
+    <div style="text-align:center;font-size:4.2rem;line-height:1;margin:10px 0 6px;filter:drop-shadow(0 8px 24px rgba(231,200,120,.25))">💃</div>
+    <div style="text-align:center;color:#c9c2b2;font-size:.9rem;margin-bottom:12px">Ostatní si kupujú vstup 10 € alebo členstvo. Ty môžeš celý týždeň skúšať zadarmo.</div>
+    <div style="margin-top:auto">
+      <div style="text-align:center;color:#c9c2b2;font-size:.92rem;margin-bottom:12px"><b style="color:#fff"><span id="skuskaCena">50,00</span> € / mesiac</b> po <span id="skuskaDni">7</span>-dňovej skúške zadarmo.<br>Zrušiť môžeš kedykoľvek.</div>
+      <button id="skuskaBtn" onclick="skuskaStart()" style="width:100%;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;border:none;border-radius:16px;padding:16px;font-size:1.25rem;font-weight:900;cursor:pointer;box-shadow:0 10px 30px rgba(201,168,76,.25)">Vyskúšať za 0,00 €</button>
+      <div style="text-align:center;margin-top:14px"><a href="#" onclick="skuskaZavri();return false" style="color:#bbb;font-weight:700;text-decoration:none">Nie, ďakujem</a></div>
+      <div style="text-align:center;color:#8a8478;font-size:.72rem;margin-top:14px;line-height:1.5">Kartu si uložíš bezpečne cez Stripe. Prvých 7 dní sa nič nestrhne. Potom členstvo Bronze mesačne, kým odber nezrušíš v appke. Bez skúšky si hodiny kúpiš v Obchode — vstup alebo členstvo.</div>
+    </div>
+  </div>
+</div>
 <div id="welcomeGuide" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:2000;align-items:center;justify-content:center;padding:16px;overflow-y:auto">
   <div style="background:var(--card,#1a1a1a);border:1px solid var(--gold,#C9A84C);border-radius:18px;max-width:440px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.6);animation:fadeUp .4s ease">
     <div style="text-align:center;margin-bottom:14px">
@@ -949,7 +971,7 @@
     </div>
     <div class="wg-step" style="display:flex;gap:10px;align-items:center;background:#161616;border:1px solid #2a2a2a;border-radius:12px;padding:10px 12px;margin-bottom:14px">
       <div style="font-size:1.3rem">👯‍♀️</div>
-      <div style="flex:1;font-size:.85rem"><b>Pridaj si kamarátky</b><div style="color:#999;font-size:.75rem">Uvidíte sa v komunite a môžeš pozvať kamarátku — prvú hodinu má zadarmo.</div></div>
+      <div style="flex:1;font-size:.85rem"><b>Pridaj si kamarátky</b><div style="color:#999;font-size:.75rem">Uvidíte sa v komunite a môžeš pozvať kamarátku — prvý týždeň má zadarmo.</div></div>
       <button onclick="wgGoFriends()" style="background:none;border:1px solid var(--gold,#C9A84C);color:var(--gold,#C9A84C);font-weight:700;padding:6px 12px;border-radius:8px;cursor:pointer;font-size:.78rem">Pozrieť</button>
     </div>
     <button onclick="wgClose()" style="width:100%;background:linear-gradient(135deg,var(--gold,#C9A84C),#a07830);border:none;color:#111;font-weight:800;padding:12px;border-radius:12px;cursor:pointer;font-size:.95rem">Poďme tancovať! 💃</button>
@@ -1147,15 +1169,44 @@ function mcToggleRenew(){
 }
 
 /* ─── Access bar ─── */
+/* ── Prvý týždeň zadarmo (Marek 14. 9.): ponuka hneď pri vstupe, namiesto prvej hodiny zadarmo ── */
+const skuskaDnes=()=>new Date().toISOString().slice(0,10);
+function skuskaUkaz(me){
+  const w=document.getElementById('skuskaWall'); if(!w||!me||!me.trial||!me.trial.eligible) return false;
+  const c=document.getElementById('skuskaCena'); if(c) c.textContent=(+me.trial.price||49.9).toFixed(2).replace('.',',');
+  const d=document.getElementById('skuskaDni'); if(d) d.textContent=me.trial.days||7;
+  w.style.display='block'; document.body.style.overflow='hidden'; w.scrollTop=0;
+  return true;
+}
+function skuskaZavri(){
+  const w=document.getElementById('skuskaWall'); if(w) w.style.display='none'; document.body.style.overflow='';
+  try{ localStorage.setItem('fa_skuska_odmietnuta', skuskaDnes()); }catch(e){}
+}
+async function skuskaStart(){
+  const btn=document.getElementById('skuskaBtn'); if(btn){ btn.disabled=true; btn.textContent='⏳ Otváram Stripe…'; }
+  const d=await api('/api/stripe/trial',{method:'POST'}).catch(()=>null);
+  if(d&&d.url){ location.href=d.url; return; }
+  showToast(d?.error||'Skúšku sa nepodarilo spustiť, skús znova.','error');
+  if(btn){ btn.disabled=false; btn.textContent='Vyskúšať za 0,00 €'; }
+}
 function renderAccessBar(me){
   const bar=document.getElementById('accessBar');
   const icon=document.getElementById('accessBarIcon');
   const text=document.getElementById('accessBarText');
   const hasMembership=me.membership&&me.membership.status==='active';
-  if(hasMembership){
+  const fmtSk=s=>{ const x=new Date(s); return x.getDate()+'. '+(x.getMonth()+1)+'.'; };
+  if(me.trial&&me.trial.active){
+    bar.className='access-bar ok anim anim-d2';icon.className='bi bi-gift-fill';
+    text.innerHTML='<strong>🎁 Prvý týždeň zadarmo beží</strong> do '+fmtSk(me.trial.ends_at)+'. Potom Bronze '+(+me.trial.price).toFixed(2).replace('.',',')+' €/mes. — zrušiť môžeš v karte členstva.';
+    bar.style.display='flex';
+  } else if(hasMembership){
     // Card below already shows the full membership detail — avoid duplicating it here
     bar.style.display='none';
-  } else if(!me.free_class_used){
+  } else if(me.trial&&me.trial.eligible){
+    bar.className='access-bar free anim anim-d2';icon.className='bi bi-gift-fill';
+    text.innerHTML='<strong>🎁 Prvý týždeň ZADARMO!</strong> 7 dní neobmedzene, zruš kedykoľvek. <a href="#" onclick="skuskaUkaz(_me);return false" style="color:var(--gold);font-weight:700">Zapnúť skúšku →</a>';
+    bar.style.display='flex';
+  } else if(!me.free_class_used && !(me.trial&&me.trial.on)){
     bar.className='access-bar free anim anim-d2';icon.className='bi bi-gift-fill';
     text.innerHTML='<strong>🎁 Prvá hodina ZADARMO!</strong> Zarezervuj si svoju prvú hodinu bezplatne.';
     bar.style.display='flex';
@@ -1169,7 +1220,7 @@ function renderAccessBar(me){
     bar.style.display='flex';
   } else {
     bar.className='access-bar warn anim anim-d2';icon.className='bi bi-exclamation-triangle-fill';
-    text.innerHTML='Prvá hodina zadarmo bola využitá. <a href="/obchod" style="color:var(--gold);font-weight:700">Kúp členstvo</a> alebo <strong>jednorazový vstup (10 €)</strong>.';
+    text.innerHTML=(me.trial&&me.trial.on ? 'Na hodiny potrebuješ ' : 'Prvá hodina zadarmo bola využitá. ')+'<a href="/obchod" style="color:var(--gold);font-weight:700">'+(me.trial&&me.trial.on?'členstvo':'Kúp členstvo')+'</a> alebo <strong>jednorazový vstup (10 €)</strong>.';
     bar.style.display='flex';
   }
 }
@@ -1913,13 +1964,14 @@ function posModalEl(){
 
 // Technický tréning má vlastný cenník podľa členstva a členstvo ho nekryje.
 // Zaplatiť sa dá kreditom z appky (Marek 11. 9.), na mieste, alebo permanentkou.
-function showTechPay(classId, name, price, credit){
+function showTechPay(classId, name, price, credit, trial){
   const kredit = credit!=null ? +credit : +(_me&&_me.referral_credit||0);
   const m = posModalEl();
   m.innerHTML = POS_CSS + `
   <div class="pos-card" id="posCard" role="dialog" aria-modal="true" aria-labelledby="posTechTitle">
     <div class="pos-h" id="posTechTitle">🎯 Technický tréning · ${POS_EUR(price)}</div>
     <div class="pos-s">${escHtml(name||'Technický tréning')} — cena podľa tvojho členstva. Vyber, ako zaplatíš.</div>
+    ${POS_SKUSKA(trial)}
     ${kredit>=price
       ? `<button onclick="posTechKredit('${classId}',${price})" class="pos-item pos-kredit">
           <span class="pos-l"><b>💳 Zaplatiť kreditom z appky</b><small>Na účte máš ${POS_EUR(kredit)} · ostane ti ${POS_EUR(kredit-price)}</small></span>
@@ -1952,8 +2004,11 @@ async function posTechNaMieste(classId, price){
   else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 
-async function showPayOnSiteChoice(classId, name, price, credit){
-  if(price) return showTechPay(classId, name, +price, credit);   // technika má vlastné okno
+const POS_SKUSKA = trial => trial ? `<button onclick="skuskaStart()" class="pos-item" style="border-color:#E7C878;background:rgba(201,168,76,.14)">
+      <span class="pos-l"><b>🎁 Prvý týždeň zadarmo</b><small>Uložíš kartu, 7 dní tancuješ zadarmo, potom Bronze mesačne. Zruš kedykoľvek.</small></span>
+      <span class="pos-c">0 €</span></button>` : '';
+async function showPayOnSiteChoice(classId, name, price, credit, trial){
+  if(price) return showTechPay(classId, name, +price, credit, trial);   // technika má vlastné okno
   const P = await posNacitajPlany();
   const c = k => (P && P[k] && +P[k].price) || null;
   const CENY = {
@@ -1979,6 +2034,7 @@ async function showPayOnSiteChoice(classId, name, price, credit){
     <div class="pos-s">Miesto na <b style="color:#ddd">${escHtml(name)}</b> ti podržíme.
       Vyber si, čo si kúpiš — zaplatíš v hotovosti priamo v štúdiu a tréner ti to zapíše.</div>
 
+    ${POS_SKUSKA(trial)}
     <div class="pos-sec">Jednorazovo</div>
     ${polozka('vstup1','Jednorazový vstup','Na túto jednu hodinu', CENY.vstup1)}
     ${polozka('permanentka10','10-vstupová permanentka','Platnosť 90 dní · vychádza '+POS_EUR(CENY.permanentka10/10)+' za hodinu', CENY.permanentka10, goldCena?'cena pre Gold':'')}
@@ -2060,7 +2116,7 @@ async function confirmBooking(){
   } else if(d?.error==='membership_required'){
     // Klientka bez členstva sa MÔŽE rezervovať dopredu a zaplatiť na mieste —
     // rezervácia sa všade viditeľne označí, aby tréner vedel vybrať vstupné.
-    if(d.can_pay_on_site) showPayOnSiteChoice(cid, className0||'', d.tech_price, d.credit_balance);
+    if(d.can_pay_on_site) showPayOnSiteChoice(cid, className0||'', d.tech_price, d.credit_balance, d.trial_available);
     else { showToast('Najskôr si kúp členstvo alebo jednorazový vstup.','error');
       setTimeout(()=>{window.location.href='/obchod';},1500); }
   } else if(d?.error==='already_booked'){
@@ -2395,6 +2451,11 @@ async function init(){
   loadSpotlight();
   loadSupportContacts();
   _me=me;
+  // Prvý týždeň zadarmo: hneď pri vstupe, kým človek nemá skúšku ani nákup („Nie, ďakujem" = dnes už nie)
+  try{
+    const qs=new URLSearchParams(location.search);
+    if(!qs.get('stripe') && me.trial && me.trial.eligible && (qs.get('skuska')==='1' || localStorage.getItem('fa_skuska_odmietnuta')!==skuskaDnes())) skuskaUkaz(me);
+  }catch(e){}
   // Friends & public profile
   document.getElementById('myProfileLink').href='/u/'+me.id;
   loadFriends();
@@ -3295,7 +3356,7 @@ async function loadRefGoal(){
         : 'Výzva skončila. Čoskoro vyhlásime ďalšiu ✨')
     : ziskane>0
     ? '<b>Hodinu máš!</b> Ozveme sa ti s termínom. Každá ďalšia kamoška = ďalšia hodina.'
-    : 'Zatiaľ žiadna kamoška. Pošli jej svoj odkaz — prvú hodinu má u nás zadarmo.';
+    : 'Zatiaľ žiadna kamoška. Pošli jej svoj odkaz — prvý týždeň má u nás zadarmo.';
   const promo = d.ended ? '' : `<div class="rg-grid">
       <div>
         <div class="rg-eyebrow">Septembrová výzva${dni<=10?' · ostáva '+dni+' '+(dni===1?'deň':(dni<=4?'dni':'dní')):''}</div>
@@ -3357,7 +3418,7 @@ window.skryKamoskaBanner=()=>{
 let _invCache=null;
 function pozvankaLokalne(){
   const code=_me?.referral_code||'', link=location.origin+'/invite/'+code;
-  return {code, link, message:'Poď so mnou na Zumbu! 💃❤️\nPrvú hodinu máš úplne ZADARMO.\nVyber si, kde a kedy chceš prísť 👇\n'+link+'\nMôj pozývací kód: '+code};
+  return {code, link, message:'Poď so mnou na Zumbu! 💃❤️\nPrvý týždeň máš úplne ZADARMO.\nZaregistruj sa a vyber si, kde a kedy chceš prísť 👇\n'+link+'\nMôj pozývací kód: '+code};
 }
 async function getInviteMsg(){
   if(_invCache) return _invCache;
@@ -3619,7 +3680,17 @@ async function loadQR(){
 /* ─── Návrat z platobnej brány (Stripe) ─── */
 (async()=>{
   const p=new URLSearchParams(window.location.search);
-  if(p.get('stripe')==='success' && p.get('session_id')){
+  if(p.get('stripe')==='trial' && p.get('session_id')){
+    try{
+      const r=await api('/api/stripe/verify',{method:'POST',body:{session_id:p.get('session_id')}});
+      if(r.ok){ showToast('🎉 Prvý týždeň zadarmo beží! Vyber si hodinu.','success'); if(window.faTrack) window.faTrack('StartTrial',{eventID:'trial_'+p.get('session_id')}); try{ localStorage.removeItem('fa_skuska_odmietnuta'); }catch(e){} }
+      else showToast('Skúšku sa nepodarilo overiť: '+(r.error||'kontaktuj nás'),'error');
+    }catch(e){ showToast('Chyba pri overovaní skúšky','error'); }
+    window.history.replaceState({},'','/client-dashboard');
+    setTimeout(()=>location.reload(), 1600);
+  } else if(p.get('stripe')==='trial_cancel'){
+    showToast('Skúšku si nezapla — nájdeš ju kedykoľvek hore na nástenke.','error');
+    window.history.replaceState({},'','/client-dashboard');
   } else if(p.get('stripe')==='success' && p.get('session_id')){
     try{
       const r=await api('/api/stripe/verify',{method:'POST',body:{session_id:p.get('session_id')}});

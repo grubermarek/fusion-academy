@@ -230,7 +230,7 @@ module.exports = function initCoach(ctx){
         action='Sľúbený návrat — ozvi sa jej teraz.'; tpl='followup'; }
       else if(attended.length && daysSinceVisit<=2 && !activeMem.has(u._id) && !(u.single_entries>0)){ score=90; reason='Bola na hodine pred '+daysSinceVisit+' d, nič nekúpila'; action='Napíš jej dnes — spýtaj sa, ako sa jej páčilo a pošli termíny.'; tpl='after_first'; }
       else if(recentNoShow){ score=80; reason='No-show '+recentNoShow.booking_date; action='Ponúkni jej nový termín.'; tpl='no_show'; }
-      else if(u.user_type==='lead' && !bks.length){ const age=Math.floor((now-new Date(u.created_at).getTime())/86400000); if(age>180) { score=20; reason='Starý lead ('+age+' d)'; action='Win-back kontakt.'; tpl='winback'; } else { score=70; reason='Nový lead bez rezervácie'; action='Pozvi ju na prvú hodinu zadarmo.'; tpl='new_lead'; } }
+      else if(u.user_type==='lead' && !bks.length){ const age=Math.floor((now-new Date(u.created_at).getTime())/86400000); if(age>180) { score=20; reason='Starý lead ('+age+' d)'; action='Win-back kontakt.'; tpl='winback'; } else { score=70; reason='Nový lead bez rezervácie'; action='Pozvi ju na prvý týždeň zadarmo.'; tpl='new_lead'; } }
       else if(expiredMem[u._id] && !activeMem.has(u._id) && (now-expiredMem[u._id])<60*86400000){ score=60; reason='Členstvo expirovalo'; action='Spýtaj sa, či chce pokračovať — ponúkni obnovenie.'; tpl='expired'; }
       else if(attended.length && daysSinceVisit>=21 && daysSinceVisit<=120 && !activeMem.has(u._id)){ score=50; reason='Nebola '+daysSinceVisit+' dní'; action='Win-back kontakt.'; tpl='winback'; }
       else if(claimedMine){ score=40;
@@ -364,7 +364,7 @@ module.exports = function initCoach(ctx){
       const code = me.referral_code||'';
       const link = APP_URL + '/invite/' + code;
       const fn = (me.name||'').split(' ')[0];
-      const custom = me.coach_invite_text || `Ahojky ❤️ ak máš chuť skúsiť Zumbu, prvá hodina je úplne zdarma. Keby si mala akékoľvek otázky, kľudne mi napíš, veľmi rada ti pomôžem 😊 - ${fn} :) Termín si vieš vybrať tu:`;
+      const custom = me.coach_invite_text || `Ahojky ❤️ ak máš chuť skúsiť Zumbu, prvý týždeň je úplne zdarma. Keby si mala akékoľvek otázky, kľudne mi napíš, veľmi rada ti pomôžem 😊 - ${fn} :) Termín si vieš vybrať tu:`;
       // link vždy pripájame server-side — attribution sa nedá omylom zmazať
       const message = custom.replace(/https?:\/\/\S+/g,'').trim() + ' ' + link;
       res.json({ ok:true, date, tasks:tasks.sort((a,b)=>(b.mandatory?1:0)-(a.mandatory?1:0)),

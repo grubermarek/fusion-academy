@@ -831,7 +831,7 @@ async function seedData() {
       { sequence:'welcome', day:0, label:'Uvítací email', active:true,
         subject:'Vitaj vo Fusion Academy! 🎉',
         body:`<p>Sme nadšení, že si tu!</p><p>Vo Fusion Academy ťa čaká:</p><ul><li>💃 Zumba, spoločenské tance, súkromné hodiny</li><li>📍 4 mestá: Detva, Zvolen, Banská Bystrica, Brezno</li><li>👥 Komunita stoviek spokojných klientok</li></ul><p>Ako začať? <b>Prvá hodina je ZADARMO</b> — bez záväzku, bez platby.</p><p>👉 <b><a href="${APP}/schedule" style="color:#C9A84C">Rezervuj si prvú hodinu hneď tu →</a></b> — vyber mesto aj termín a je to. 💃</p><p style="margin-top:12px">Máš otázku? Rady ti pomôžeme — <a href="mailto:fusionacademysk@gmail.com" style="color:#C9A84C">napíš nám</a> alebo zavolaj na <a href="tel:+421904315151" style="color:#C9A84C">+421 904 315 151</a>. 💛</p>`,
-        cta:'🗓️ Rezervovať prvú hodinu zadarmo', cta_url:`${APP}/schedule` },
+        cta:'🎁 Zapnúť prvý týždeň zadarmo', cta_url:`${APP}/schedule` },
       { sequence:'welcome', day:3, label:'Tip po 3 dňoch', active:true,
         subject:'Tip pre teba: ako vybrať správnu hodinu 💃',
         body:`<p>Nevieš, čia hodina je pre teba? Poradíme!</p><ul><li><b>Zumba</b> – chudnutie, energia, zábava. Ideálne pre začiatočníkov.</li><li><b>Spoločenské tance</b> – elegancia, plesová príprava, páry aj jednotlivci.</li><li><b>Súkromná hodina</b> – individuálny tréning jeden na jedného, tempo aj zameranie podľa teba.</li></ul><p>Zapíš sa na tú, čo ťa zaujíma – <b>prvá je zadarmo</b>.</p>`,
@@ -844,7 +844,7 @@ async function seedData() {
       // ── LEAD NURTURE (registrovaný, bez členstva) ────────────────────────────
       { sequence:'lead_nurture', day:3, label:'Lead – 3 dni bez nákupu', active:true,
         subject:'Ešte si neprišla? Tvoja hodina ťa čaká 🎯',
-        body:`<p>Zaregistrovala si sa, ale zatiaľ sme ťa nevideli.</p><p>Vieme, že prvý krok je najtažší. Preto je prvá hodina <b>ZADARMO</b> – bez rizika, bez záväzku.</p><p>Jednoducho príď, vyskúšaj a uvidíš sama.</p>`,
+        body:`<p>Zaregistrovala si sa, ale zatiaľ sme ťa nevideli.</p><p>Vieme, že prvý krok je najtažší. Preto je prvý týždeň <b>ZADARMO</b> – bez rizika, bez záväzku.</p><p>Jednoducho príď, vyskúšaj a uvidíš sama.</p>`,
         cta:'🎁 Rezervovať zadarmo', cta_url:`${APP}/schedule` },
       { sequence:'lead_nurture', day:7, label:'Lead – 7 dní bez nákupu', active:true,
         subject:'Čo hovorí naša komunita? 👥',
@@ -856,7 +856,7 @@ async function seedData() {
         cta:'💳 Aktivovať zľavu', cta_url:`${APP}/obchod` },
       { sequence:'lead_nurture', day:30, label:'Lead – 30 dní bez nákupu', active:true,
         subject:'Zdravíme sa! Stále tu sme 💛',
-        body:`<p>Uplynul mesiac od registrácie. Ak sa okolnosti zmenili a chceš začať tancovať – sme stále tu.</p><p>Kedykoľvek prídeš, prvá hodina je zadarmo.</p>`,
+        body:`<p>Uplynul mesiac od registrácie. Ak sa okolnosti zmenili a chceš začať tancovať – sme stále tu.</p><p>Kedykoľvek prídeš, prvý týždeň je zadarmo.</p>`,
         cta:'🗓️ Pozrieť rozvrh', cta_url:`${APP}/schedule` },
 
       // ── MEMBERSHIP WELCOME (po kúpe členstva) ────────────────────────────────
@@ -975,8 +975,8 @@ async function seedData() {
         body:`<p>Ahoj <b>{meno}</b>,</p><p>žiadny predaj, len fakt: pravidelný tanec preukázateľne zlepšuje náladu, spánok, pamäť aj kondíciu — a je to jediný „tréning", pri ktorom sa ľudia usmievajú. 😄</p><p>Tvoje telo si pamätá, aké to bolo. A my tiež.</p><p>Keby si chcela začať potichu, bez veľkých slov — príď na jednu hodinu. Nikomu nič nemusíš vysvetľovať.</p>`,
         cta:'🗓️ Rozvrh hodín', cta_url:`${APP2}/schedule`, created_at:nowISO() },
       { sequence:'winback', day:300, label:'Priveď kamarátku — obe zadarmo', active:true,
-        subject:'{meno}, vezmi kamarátku — prvá hodina zadarmo pre obe 👯‍♀️',
-        body:`<p>Ahoj <b>{meno}</b>,</p><p>vieme, že vrátiť sa samej je ťažšie. Tak to sprav inak: <b>vezmi kamarátku a prvú hodinu máte obe zadarmo.</b></p><p>Spolu je to vždy jednoduchšie — aj smiech je dvojnásobný. A keď sa vám bude chcieť pokračovať, appka vám dá odznak „Priviedla kamarátku". 😉</p>`,
+        subject:'{meno}, vezmi kamarátku — prvý týždeň zadarmo pre obe 👯‍♀️',
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>vieme, že vrátiť sa samej je ťažšie. Tak to sprav inak: <b>vezmi kamarátku a prvý týždeň máte obe zadarmo.</b></p><p>Spolu je to vždy jednoduchšie — aj smiech je dvojnásobný. A keď sa vám bude chcieť pokračovať, appka vám dá odznak „Priviedla kamarátku". 😉</p>`,
         cta:'👯‍♀️ Prísť vo dvojici', cta_url:`${APP2}/schedule`, created_at:nowISO() },
       { sequence:'winback', day:420, label:'Rok — nová kapitola', active:true,
         subject:'Už je to rok… a presne preto ti píšem 💛',
@@ -2945,7 +2945,7 @@ async function seedData() {
           subject:'💃 {meno}, tvoja hodina Zumby ZADARMO v meste {mesto} ťa čaká!',
           body:`<p>Ahoj {meno},</p>
             <p>nedávno si na Facebooku/Instagrame vyplnila formulár, že ťa zaujíma <b>Zumba v meste {mesto}</b> — sme <b>Fusion Academy</b>, tanečná škola, ktorá tieto hodiny vedie (18 rokov praxe, 2000+ tanečníčok, 5,0★ na Google). 💛</p>
-            <p>Tvoja <b>prvá hodina je úplne ZADARMO</b> 🎁 — bez platby a bez záväzkov. Stačí si v našej appke vybrať termín, zaberie to 30 sekúnd.</p>
+            <p>Tvoj <b>prvý týždeň je úplne ZADARMO</b> 🎁 — zapneš si ho v appke jedným klikom, zruš kedykoľvek. Zaberie to 30 sekúnd.</p>
             <p>Vidíme sa na parkete! 💃<br><i>Marek & Beáta, Fusion Academy</i></p>`,
           cta:'💃 Rezervovať hodinu ZADARMO', cta_url:CTA_URL, created_at:nowISO() },
         { sequence:'meta_lead_zumba', day:3, label:'Zumba lead – pripomienka', active:true,
@@ -2958,13 +2958,13 @@ async function seedData() {
           subject:'Čo ťa čaká na prvej hodine Zumby? (spoiler: žiadny stres)',
           body:`<p>Ahoj {meno},</p>
             <p>vieme, že prvý krok je najťažší, tak prezradíme, ako to u nás vyzerá: prídeš, trénerka ťa privíta, postavíš sa kamkoľvek do sály — a o 3 minúty sa hýbeš, aj keby si „nevedela tancovať". Spáliš 400–600 kcal a odídeš s úsmevom. 😄</p>
-            <p>Prines si len tenisky, vodu a dobrú náladu. Tvoja prvá hodina v meste {mesto} je stále <b>zadarmo</b>.</p>`,
+            <p>Prines si len tenisky, vodu a dobrú náladu. Tvoj prvý týždeň v meste {mesto} je stále <b>zadarmo</b>.</p>`,
           cta:'💃 Idem to skúsiť', cta_url:CTA_URL, created_at:nowISO() },
         { sequence:'meta_lead_zumba', day:14, label:'Zumba lead – posledná výzva', active:true,
           subject:'🎁 {meno}, posledná pripomienka — hodina zdarma stále platí',
           body:`<p>Ahoj {meno},</p>
             <p>toto je naša posledná pripomienka — tvoja <b>hodina Zumby zadarmo</b> v meste {mesto} stále platí. 🙂</p>
-            <p>Tip: vezmi kamošku — <b>aj ona dostane prvú hodinu zadarmo</b> a vo dvojici je to hneď väčšia zábava. 👯‍♀️</p>
+            <p>Tip: vezmi kamošku — <b>aj ona dostane prvý týždeň zadarmo</b> a vo dvojici je to hneď väčšia zábava. 👯‍♀️</p>
             <p>Keby čokoľvek, stačí odpísať na tento mail. Tešíme sa na teba!<br><i>Marek & Beáta, Fusion Academy</i></p>`,
           cta:'💃 Rezervovať poslednú voľnú hodinu', cta_url:CTA_URL, created_at:nowISO() },
       ]);
@@ -3506,7 +3506,7 @@ async function seedData() {
   const BLOG='https://latindancefusion.art/blog';
   const up=(seq,day,fields)=>q.update(db.email_steps,{sequence:seq,day},{$set:fields},{multi:true});
   // welcome — už nemáme „Fit Premena" (nahradené súkromnou hodinou), BB → Banská Bystrica
-  await up('welcome',0,{ cta:'🗓️ Rezervovať prvú hodinu zadarmo', cta_url:`${APP_URL}/schedule`, body:`<p>Sme nadšení, že si tu!</p><p>Vo Fusion Academy ťa čaká:</p><ul><li>💃 Zumba, spoločenské tance, súkromné hodiny</li><li>📍 4 mestá: Detva, Zvolen, Banská Bystrica, Brezno</li><li>👥 Komunita stoviek spokojných klientok</li></ul><p>Ako začať? <b>Prvá hodina je ZADARMO</b> — bez záväzku, bez platby.</p><p>👉 <b><a href="${APP_URL}/schedule" style="color:#C9A84C">Rezervuj si prvú hodinu hneď tu →</a></b> — vyber mesto aj termín a je to. 💃</p><p style="margin-top:12px">Máš otázku? Rady ti pomôžeme — <a href="mailto:fusionacademysk@gmail.com" style="color:#C9A84C">napíš nám</a> alebo zavolaj na <a href="tel:+421904315151" style="color:#C9A84C">+421 904 315 151</a>. 💛</p>` });
+  await up('welcome',0,{ cta:'🎁 Zapnúť prvý týždeň zadarmo', cta_url:`${APP_URL}/schedule`, body:`<p>Sme nadšení, že si tu!</p><p>Vo Fusion Academy ťa čaká:</p><ul><li>💃 Zumba, spoločenské tance, súkromné hodiny</li><li>📍 4 mestá: Detva, Zvolen, Banská Bystrica, Brezno</li><li>👥 Komunita stoviek spokojných klientok</li></ul><p>Ako začať? <b>Prvá hodina je ZADARMO</b> — bez záväzku, bez platby.</p><p>👉 <b><a href="${APP_URL}/schedule" style="color:#C9A84C">Rezervuj si prvú hodinu hneď tu →</a></b> — vyber mesto aj termín a je to. 💃</p><p style="margin-top:12px">Máš otázku? Rady ti pomôžeme — <a href="mailto:fusionacademysk@gmail.com" style="color:#C9A84C">napíš nám</a> alebo zavolaj na <a href="tel:+421904315151" style="color:#C9A84C">+421 904 315 151</a>. 💛</p>` });
   await up('welcome',3,{ body:`<p>Nevieš, čia hodina je pre teba? Poradíme!</p><ul><li><b>Zumba</b> – chudnutie, energia, zábava. Ideálne pre začiatočníkov.</li><li><b>Spoločenské tance</b> – elegancia, plesová príprava, páry aj jednotlivci.</li><li><b>Súkromná hodina</b> – individuálny tréning jeden na jedného, tempo aj zameranie podľa teba.</li></ul><p>Zapíš sa na tú, čo ťa zaujíma – <b>prvá je zadarmo</b>.</p>` });
   // trial_followup deň 9 — PREČ so zľavou. Po 20 % kupóne z prvej hodiny nasledovala
   // o pár dní ďalšia (10 %), čo klientky učí nekupovať a čakať na lacnejšiu ponuku.
@@ -3902,6 +3902,7 @@ async function firstBookingEligible(u){
   if(bks.some(b=>b.status!=='cancelled')) return false;
   const mem=await q.one(db.memberships,{user_id:u._id, status:'active'});
   if(mem) return false;
+  if(await skuskaZapnuta()) return false; // prvá hodina zadarmo sa nedáva — najprv skúška alebo nákup
   return true;
 }
 // FUNNEL-002: verejný rozvrh pre acquisition landing — najbližšie prezenčné
@@ -3933,6 +3934,8 @@ app.get('/api/first-class/schedule', rlPublic, async(req,res)=>{
 // Zrkadlí guest-invite flow: dedupe podľa kontaktu, kapacita, potvrdenie mailom.
 app.post('/api/first-class/book', rlPublic, async(req,res)=>{
   try{
+    if(await skuskaZapnuta()) return res.status(410).json({ error:'Prvá hodina zadarmo skončila — teraz dostaneš celý prvý týždeň zadarmo. Zaregistruj sa v appke a zapni si skúšku. 💛',
+      trial:true, register_url:APP_URL+'/' });
     const name=String(req.body.name||'').trim().slice(0,80);
     const email=String(req.body.email||'').trim().toLowerCase().slice(0,120);
     const phone=String(req.body.phone||'').trim().slice(0,30);
@@ -4080,6 +4083,19 @@ app.post('/api/admin/qa/run-daily-tick', adminAuth, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 // QA: matica mail budžetu pri simulovanom počte odoslaných (bez reálneho posielania)
+// QA hook (len v testoch so STRIPE_FAKE/QA_HOOKS): nastav polia používateľa — NeDB drží dáta v pamäti,
+// takže test nemôže len dopísať riadok do súboru (napr. posunúť koniec skúšky).
+app.post('/api/admin/qa/set-user', adminAuth, async(req,res)=>{
+  if(process.env.STRIPE_FAKE!=='1' && process.env.QA_HOOKS!=='1') return res.status(404).json({error:'Not found'});
+  const id=String(req.body.user_id||''); const set=req.body.set||{};
+  if(!id || typeof set!=='object') return res.status(400).json({error:'user_id + set'});
+  const n=await q.update(db.users,{_id:id},{$set:set});
+  res.json({ok:true, updated:n});
+});
+app.post('/api/admin/qa/run-trial-reminders', adminAuth, async(req,res)=>{
+  if(process.env.STRIPE_FAKE!=='1' && process.env.QA_HOOKS!=='1') return res.status(404).json({error:'Not found'});
+  try{ res.json({ok:true, sent:await pripomienkySkusky()}); }catch(e){ res.status(500).json({error:e.message}); }
+});
 app.get('/api/admin/qa/mail-budget', adminAuth, async(req,res)=>{
   try{
     // bez ?sent= ukáž skutočný stav (vrátane mesačného stropu); s ?sent= simuluj deň
@@ -4315,7 +4331,7 @@ async function firstBookingNudgeTick(){
     const subj = which===1 ? 'Ešte ti chýba jeden krok 💃' : 'Stále chceš skúsiť Zumbu? 💃';
     const body = which===1
       ? '<p>registráciu už máš hotovú — teraz si už len vyber hodinu, na ktorú chceš prísť. <b>Prvá návšteva je zadarmo.</b></p><p>Najbližšie termíny:</p><ul style="line-height:1.9">'+list+'</ul><p>Rezervácia zaberie pár sekúnd a nič ťa nestojí.</p>'
-      : '<p>tvoja <b>prvá hodina zadarmo</b> stále čaká. Nemusíš vedieť tancovať — stačí prísť, trénerka ťa prevedie hodinou.</p><p>Najbližšie termíny:</p><ul style="line-height:1.9">'+list+'</ul>';
+      : '<p>tvoj <b>prvý týždeň zadarmo</b> stále čaká. Nemusíš vedieť tancovať — stačí prísť, trénerka ťa prevedie hodinou.</p><p>Najbližšie termíny:</p><ul style="line-height:1.9">'+list+'</ul>';
     const ok=await sendMail(u.email, subj, emailTemplate('Ahoj '+first+'! 💛', body, '🗓️ Vybrať si hodinu', cta), {priority:5, template:'first_booking_nudge'}).catch(()=>false);
     if(ok){ out.sent++; budget--; await q.update(db.users,{_id:u._id},{$set:{['booking_nudge'+which+'_at']:nowISO()}}); }
   }
@@ -4634,7 +4650,8 @@ app.get('/api/config', async(req,res)=>{
     meta_pixel_id: process.env.META_PIXEL_ID||'',
     google_ads_id: process.env.GOOGLE_ADS_ID||'',
     google_client_id: GOOGLE_CLIENT_ID,
-    default_sponsor_code: founder?.referral_code || ''
+    default_sponsor_code: founder?.referral_code || '',
+    prvy_tyzden: await skuskaZapnuta(), trial_days: SKUSKA.dni, trial_price: MEMBERSHIP_PLANS[SKUSKA.plan].price
   });
 });
 
@@ -5566,7 +5583,7 @@ async function referralChallengeTick(qaMode){
         +'<p><b>Čo pre to treba spraviť?</b> Priviesť <b>jednu</b> kamošku, ktorá u nás ešte netancuje. '
           +'Keď sa cez tvoj odkaz zaregistruje a kúpi si členstvo alebo permanentku, hodina je tvoja.</p>'
         +'<p style="line-height:2">1. Otvor appku a na nástenke klikni na <b>„Skopírovať môj odkaz"</b><br>'
-          +'2. Pošli ho kamoške — <b>prvú hodinu má zadarmo</b>, nič neriskuje<br>'
+          +'2. Pošli ho kamoške — <b>prvý týždeň má zadarmo</b>, nič neriskuje<br>'
           +'3. Keď si kúpi členstvo alebo permanentku, ozveme sa ti s termínom 💛</p>'
         +'<p>Privedieš viac kamošiek? Každá ďalšia, ktorá si zaplatí, je <b>ďalšia súkromná hodina</b>.</p>'
         +'<p>Svoj progres vidíš naživo na nástenke v appke.</p>'
@@ -5633,7 +5650,7 @@ async function septemberGreetingTick(qaMode){
           +'<img src="'+APP_URL+'/img/vyzva-september-2026.jpg" alt="Počas celého septembra: priveď novú členku a získaš súkromnú hodinu v hodnote 100 €" width="536" style="width:100%;max-width:536px;height:auto;display:block;margin:0 auto;border-radius:12px;border:0">'
         +'</div>'
         +'<p><b>Priveď novú členku</b>, ktorá si u nás kúpi akékoľvek členstvo alebo permanentku — a máš <b>súkromnú hodinu s Marekom</b> v hodnote 100 €. Koľko členiek privedieš, toľko súkromných hodín budeš mať.</p>'
-        +'<p>Stačí poslať kamoške svoj odkaz z nástenky. <b>Prvú hodinu má u nás zadarmo</b>, takže nič neriskuje.</p>'
+        +'<p>Stačí poslať kamoške svoj odkaz z nástenky. <b>Prvý týždeň má u nás zadarmo</b>, takže nič neriskuje.</p>'
         +'<p>Svoj progres vidíš naživo v appke.</p>'
         +'<p>Nech je ten september tvoj. Vidíme sa na parkete!<br>Tím Fusion Academy</p>',
         '🔗 Skopírovať môj odkaz', APP_URL+'/client-dashboard?utm_source=email&utm_medium=email&utm_campaign=fa-september-2026'),
@@ -6365,7 +6382,7 @@ let pubSchedCache=null;
 // zadá ho do poľa „kód" a sponzorka ostane správna aj bez kliknutia na odkaz.
 const INVITE_MSG = code =>
   'Poď so mnou na Zumbu! 💃❤️\n' +
-  'Prvú hodinu máš úplne ZADARMO.\n' +
+  'Prvý týždeň máš úplne ZADARMO.\n' +
   'Vyber si, kde a kedy chceš prísť 👇\n' +
   APP_URL + '/invite/' + code + '\n' +
   'Môj pozývací kód: ' + code;
@@ -6439,6 +6456,8 @@ app.post('/api/invite/:code/book', rlPublic, async(req,res)=>{
   try{
     const sp=await inviterByCode(req.params.code);
     if(!sp) return res.status(404).json({error:'Pozvánka nie je platná'});
+    if(await skuskaZapnuta()) return res.status(410).json({ error:'Prvá hodina zadarmo skončila — teraz dostaneš celý prvý týždeň zadarmo. Zaregistruj sa v appke s kódom '+sp.referral_code+' a zapni si skúšku. 💛',
+      trial:true, register_url:APP_URL+'/?ref='+encodeURIComponent(sp.referral_code) });
     const name=String(req.body.name||'').trim().slice(0,80);
     const contact=String(req.body.contact||'').trim().slice(0,120);
     if(name.length<2) return res.status(400).json({error:'Napíš nám svoje meno 🙂'});
@@ -8694,12 +8713,12 @@ app.get('/api/ambassador/materials', ambassadorAuth, async(req,res)=>{
     const u=req.ambUser;
     const link=APP_URL.replace(/\/$/,'')+'/invite/'+u.referral_code;
     res.json({ok:true, materials:[
-      { id:'story-prva', name:'Story — prvá hodina zadarmo', kind:'text',
-        text:'Poď si so mnou zatancovať 💃 Prvá hodina je úplne zadarmo — Zumba vo Zvolene, Detve, B. Bystrici aj Brezne. Registrácia za 30 sekúnd: '+link },
+      { id:'story-prva', name:'Story — prvý týždeň zadarmo', kind:'text',
+        text:'Poď si so mnou zatancovať 💃 Prvý týždeň je úplne zadarmo — Zumba vo Zvolene, Detve, B. Bystrici aj Brezne. Registrácia za 30 sekúnd: '+link },
       { id:'sprava-kamoske', name:'Správa kamoške', kind:'text',
-        text:'Ahoj! Chodím na Zumbu do Fusion Academy a je to najlepšia časť môjho týždňa 🧡 Prvú hodinu máš zadarmo — poď to skúsiť so mnou: '+link },
+        text:'Ahoj! Chodím na Zumbu do Fusion Academy a je to najlepšia časť môjho týždňa 🧡 Prvý týždeň máš zadarmo — poď to skúsiť so mnou: '+link },
       { id:'post-fb', name:'Príspevok na Facebook', kind:'text',
-        text:'Hľadala som pohyb, pri ktorom nebudem pozerať na hodinky — a našla som Zumbu vo Fusion Academy. Super hudba, žiadny tlak, skvelá partia žien. Prvá hodina je zadarmo, tak ak rozmýšľaš, toto je znamenie 😄 '+link },
+        text:'Hľadala som pohyb, pri ktorom nebudem pozerať na hodinky — a našla som Zumbu vo Fusion Academy. Super hudba, žiadny tlak, skvelá partia žien. Prvý týždeň je zadarmo, tak ak rozmýšľaš, toto je znamenie 😄 '+link },
       { id:'event-latin', name:'Latin Tropical Party — pozvánka', kind:'text',
         text:'5. septembra bude v Detve LATIN TROPICAL PARTY 🌴 Masterclass s Marekom Gruberom a Ivanom Ligártom, potom párty s welcome drinkom. Lístky: '+APP_URL.replace(/\/$/,'')+'/event/latin-tropical-2026' },
       { id:'plagat-event', name:'Plagát Latin Tropical (na stiahnutie)', kind:'image',
@@ -8716,7 +8735,7 @@ const AMB_COURSES = [
   { id:'zaklad-1', tier:'basic', name:'Ako funguje ambasádorský program',
     body:'Tvoja odmena vzniká z objemových bodov — 1 bod za každé euro, ktoré tvoja skupina zaplatí (členstvá, vstupy, permanentky; eventy a venčeky polovicu, merch tretinu). Percento máš podľa hodnosti: Starter 10 %, President 20 %. Hodnosť sa počíta každý mesiac nanovo z bodov celej tvojej skupiny do piatej úrovne. Provízia čaká 14 dní (ochrana pred vrátením platby) a potom sa pripíše do kreditu.' },
   { id:'zaklad-2', tier:'basic', name:'Ako pozvať prvú ženu',
-    body:'Nepresviedčaj — pozvi. Najlepšie funguje úprimná veta: „Chodím na Zumbu, je to super, poď raz so mnou — prvú hodinu máš zadarmo." Pošli svoj odkaz zo sekcie Môj odkaz, alebo jej ukáž QR kód priamo z mobilu. Keď sa registruje cez tvoj odkaz, je navždy tvoja klientka.' },
+    body:'Nepresviedčaj — pozvi. Najlepšie funguje úprimná veta: „Chodím na Zumbu, je to super, poď raz so mnou — prvý týždeň máš zadarmo." Pošli svoj odkaz zo sekcie Môj odkaz, alebo jej ukáž QR kód priamo z mobilu. Keď sa registruje cez tvoj odkaz, je navždy tvoja klientka.' },
   { id:'zaklad-3', tier:'basic', name:'Ako komunikovať bez spamovania',
     body:'Pravidlo: hovor o svojom zážitku, nie o "príležitosti". Zdieľaj storky z hodín, ako sa cítiš, čo ti to dalo. Nikdy neposielaj ten istý text desiatim ženám naraz — každej píš osobne a len raz. Ak neodpovie, nechaj to tak; vráti sa, keď bude pripravená.' },
   { id:'zaklad-4', tier:'basic', name:'Udržanie je viac než nábor',
@@ -11156,6 +11175,101 @@ const MEMBERSHIP_PLANS = {
   'vstup1':         { name:'Jednorazový vstup', price:10, duration_days:30, online:false, color:'#4CAF50', type:'bundle', entries:1 },
   'permanentka10':  { name:'10-vstupová permanentka', price:80, duration_days:90, online:false, color:'#FF9800', type:'bundle', entries:10 },
 };
+
+// ── PRVÝ TÝŽDEŇ ZADARMO (Marek 14. 9. 2026) ──────────────────────────────────
+// Namiesto „prvá hodina zadarmo" dostane nový človek hneď pri vstupe do appky ponuku:
+// 7 dní Bronze zadarmo s uloženou kartou, potom 49,90 €/mes. automaticky, zrušiť
+// kedykoľvek. Kto nechce, kúpi si jednorazový vstup alebo členstvo sám. Kým je
+// režim zapnutý, prvá hodina zadarmo sa v samoobslužných cestách (appka, kiosk,
+// pozvánka, landing) nedáva — tréner ju môže darovať ručne ďalej.
+const SKUSKA = { dni:7, plan:'bronze' };
+const SKUSKA_DOVODY = { rola:'Skúšobný týždeň je pre klientky.', vypnute:'Skúšobný týždeň momentálne nie je k dispozícii.',
+  uz_mala:'Skúšobný týždeň si už využila.', odber:'Už máš bežiaci mesačný odber.', clenstvo:'Už máš aktívne členstvo.',
+  mala_clenstvo:'Skúšobný týždeň je pre nové klientky — členstvo si u nás už mala.' };
+async function skuskaZapnuta(){
+  const s = await q.one(db.settings,{key:'prvy_tyzden'});
+  if(s && typeof s.value==='boolean') return s.value;
+  return process.env.PRVY_TYZDEN==='1' || !!process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV==='production';
+}
+async function skuskaNarok(u){
+  if(!u || u.is_admin || u.is_child || ['trainer','manager','admin'].includes(u.user_type)) return {ok:false, reason:'rola'};
+  if(!(await skuskaZapnuta())) return {ok:false, reason:'vypnute'};
+  if(u.trial_used) return {ok:false, reason:'uz_mala'};
+  if(u.stripe_subscription_id) return {ok:false, reason:'odber'};
+  const m = await checkMembership(u._id);
+  if(m && m.status==='active' && (!m.expires_at || m.expires_at>=today())) return {ok:false, reason:'clenstvo'};
+  if(await q.one(db.memberships,{user_id:u._id, plan_id:{$in:['bronze','silver','gold']}})) return {ok:false, reason:'mala_clenstvo'};
+  return {ok:true};
+}
+async function skuskaInfo(u){
+  const on = await skuskaZapnuta();
+  const n = on ? await skuskaNarok(u) : {ok:false, reason:'vypnute'};
+  const active = !!(u && u.trial_ends_at && !u.trial_converted_at && u.trial_ends_at >= nowISO() && u.stripe_subscription_id);
+  return { on, eligible:n.ok, reason:n.ok?null:n.reason, active, ends_at:u?.trial_ends_at||null, used:!!u?.trial_used,
+    days:SKUSKA.dni, plan:SKUSKA.plan, price:MEMBERSHIP_PLANS[SKUSKA.plan].price };
+}
+function fmtDenSk(iso){ const d=new Date(iso); return d.getUTCDate()+'. '+(d.getUTCMonth()+1)+'.'; }
+// Po úspešnom Checkoute so skúškou: členstvo Bronze na 7 dní, odber na zázname, oznam + mail.
+async function aktivujSkusku(userId, subId, s){
+  const u = await q.one(db.users,{_id:userId}); if(!u) return {ok:false, error:'Používateľ nenájdený'};
+  const plan = MEMBERSHIP_PLANS[SKUSKA.plan];
+  await activateMembership(userId, SKUSKA.plan, SKUSKA.dni);
+  const mem = await q.one(db.memberships,{user_id:userId, status:'active'});
+  const konci = mem ? mem.expires_at : new Date(Date.now()+SKUSKA.dni*864e5).toISOString();
+  if(mem) await q.update(db.memberships,{_id:mem._id},{$set:{trial:true, trial_ends_at:konci, price:0}});
+  await q.update(db.users,{_id:userId},{$set:{ trial_used:true, trial_started_at:nowISO(), trial_ends_at:konci, free_class_used:true,
+    stripe_subscription_id:subId||null, stripe_sub_plan:SKUSKA.plan, stripe_sub_member:userId }});
+  await q.insert(db.notifications,{user_id:userId, type:'trial',
+    title:'🎉 Prvý týždeň zadarmo beží — do '+fmtDenSk(konci),
+    body:'Choď na ktorúkoľvek hodinu vo svojom meste. Potom pokračuje Bronze za '+plan.price.toFixed(2).replace('.',',')+' € mesačne automaticky. Zrušiť môžeš kedykoľvek: Nástenka → Členstvo → Automatický odber.',
+    read:false, created_at:nowISO()}).catch(()=>{});
+  if(u.email) sendMail(u.email, '🎉 Tvoj prvý týždeň zadarmo beží — do '+fmtDenSk(konci),
+    emailTemplate('Vitaj, tancujeme! 💃',
+      `<p>Ahoj <b>${u.name}</b>,</p><p>tvoj <b>skúšobný týždeň</b> je zapnutý. Do <b>${fmtDenSk(konci)}</b> môžeš prísť na ktorúkoľvek hodinu vo svojom meste — stačí si ju rezervovať v appke.</p>
+       <p>Potom pokračuje členstvo <b>Bronze za ${plan.price.toFixed(2).replace('.',',')} € mesačne</b>, ktoré sa obnovuje automaticky. Dva dni pred prvou platbou ti pošleme pripomienku.</p>
+       <p>Ak by ti to nesadlo, odber zrušíš kedykoľvek v appke: <b>Nástenka → Členstvo → Automatický odber → Zrušiť</b>. Do konca skúšky môžeš chodiť ďalej a nič sa nestrhne.</p>`,
+      '🗓️ Vybrať si hodinu', APP_URL+'/schedule'), {priority:2, template:'trial_start'}).catch(()=>{});
+  // Rovnaká karta na dvoch účtoch = dvakrát zadarmo. Neblokujeme (mama a dcéra môžu mať
+  // jednu kartu), len upozorníme admina.
+  if(subId && process.env.STRIPE_FAKE!=='1'){
+    try{
+      const sub = await stripeApi('subscriptions/'+encodeURIComponent(subId), null, 'GET');
+      const pmId = sub.body?.default_payment_method || sub.body?.default_source;
+      if(pmId){ const pm = await stripeApi('payment_methods/'+encodeURIComponent(pmId), null, 'GET');
+        const fp = pm.body?.card?.fingerprint;
+        if(fp){ await q.update(db.users,{_id:userId},{$set:{trial_card_fp:fp}});
+          const ina = (await q.find(db.users,{trial_card_fp:fp})).filter(x=>x._id!==userId);
+          if(ina.length) for(const a of await q.find(db.users,{is_admin:true})) await q.insert(db.notifications,{user_id:a._id, type:'trial_dup',
+            title:'⚠️ Skúšobný týždeň na tej istej karte — '+u.name, body:'Rovnakú kartu použil(a) už: '+ina.map(x=>x.name).join(', ')+'. Skontroluj, či nejde o druhý účet.',
+            read:false, created_at:nowISO()}).catch(()=>{}); } }
+    }catch(e){ console.error('trial fingerprint:', e.message); }
+  }
+  console.log('🎁 Skúšobný týždeň: '+u.name+' do '+konci.slice(0,10));
+  return {ok:true, trial:true, plan_name:plan.name, ends_at:konci};
+}
+// Dva dni pred koncom skúšky: pripomienka, že sa strhne prvá platba (denný tick + Stripe event).
+async function pripomenSkusku(u){
+  if(!u || !u.trial_ends_at || u.trial_reminder_sent || u.trial_converted_at || !u.stripe_subscription_id) return false;
+  const plan = MEMBERSHIP_PLANS[u.stripe_sub_plan||SKUSKA.plan] || MEMBERSHIP_PLANS[SKUSKA.plan];
+  await q.update(db.users,{_id:u._id},{$set:{trial_reminder_sent:nowISO()}});
+  await q.insert(db.notifications,{user_id:u._id, type:'trial_end',
+    title:'⏰ Skúšobný týždeň končí '+fmtDenSk(u.trial_ends_at),
+    body:'Potom sa strhne '+plan.price.toFixed(2).replace('.',',')+' € za '+plan.name+'. Ak chceš pokračovať, nemusíš nič robiť. Ak nie, zruš odber: Nástenka → Členstvo → Automatický odber.',
+    read:false, created_at:nowISO()}).catch(()=>{});
+  if(u.email) await sendMail(u.email, '⏰ Tvoj skúšobný týždeň končí '+fmtDenSk(u.trial_ends_at),
+    emailTemplate('Ako ti to sadlo? 💛',
+      `<p>Ahoj <b>${u.name}</b>,</p><p>tvoj prvý týždeň zadarmo končí <b>${fmtDenSk(u.trial_ends_at)}</b>. Potom pokračuje členstvo <b>${plan.name} za ${plan.price.toFixed(2).replace('.',',')} € mesačne</b> a prvá platba sa strhne z uloženej karty.</p>
+       <p>Ak chceš tancovať ďalej, nemusíš robiť nič. Ak nie, odber zrušíš v appke: <b>Nástenka → Členstvo → Automatický odber → Zrušiť</b>. Do konca skúšky môžeš chodiť ďalej.</p>`,
+      '⚙️ Otvoriť členstvo', APP_URL+'/client-dashboard'), {priority:2, template:'trial_end'}).catch(()=>{});
+  return true;
+}
+async function pripomienkySkusky(){
+  const hranica = new Date(Date.now()+3*864e5).toISOString();
+  const kandidatky = (await q.find(db.users,{trial_ends_at:{$lte:hranica}})).filter(u=>u.trial_ends_at>=nowISO() && !u.trial_reminder_sent && !u.trial_converted_at && u.stripe_subscription_id);
+  let n=0; for(const u of kandidatky){ if(await pripomenSkusku(u)) n++; }
+  if(n) console.log('⏰ Pripomienky konca skúšky: '+n);
+  return n;
+}
 
 // Čo si klientka môže kúpiť na mieste, keď nemá členstvo (Marek 1. 9.).
 // Zámerne užší zoznam než MEMBERSHIP_PLANS — Kids ani online plány nemá
@@ -14125,13 +14239,59 @@ app.post('/api/stripe/checkout', auth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Prvý týždeň zadarmo: Stripe odber Bronze so 7-dňovou skúškou, karta sa uloží hneď.
+app.post('/api/stripe/trial', auth, async(req,res)=>{
+  try{
+    if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
+    const u = await q.one(db.users,{_id:req.session.uid});
+    const n = await skuskaNarok(u);
+    if(!n.ok) return res.status(400).json({error:SKUSKA_DOVODY[n.reason]||'Skúšobný týždeň nie je k dispozícii', reason:n.reason});
+    const plan = MEMBERSHIP_PLANS[SKUSKA.plan];
+    const base = APP_URL;
+    const params = {
+      'mode':'subscription',
+      'line_items[0][quantity]':1,
+      'line_items[0][price_data][currency]':'eur',
+      'line_items[0][price_data][unit_amount]':Math.round(plan.price*100),
+      'line_items[0][price_data][recurring][interval]':'month',
+      'line_items[0][price_data][product_data][name]':`Členstvo ${plan.name} (mesačne) — prvých ${SKUSKA.dni} dní zadarmo`,
+      'subscription_data[trial_period_days]':SKUSKA.dni,
+      'payment_method_collection':'always',
+      'success_url':`${base}/client-dashboard?stripe=trial&session_id={CHECKOUT_SESSION_ID}`,
+      'cancel_url':`${base}/client-dashboard?stripe=trial_cancel`,
+      'customer_email':u.email,
+      'metadata[user_id]':req.session.uid,
+      'metadata[member_id]':req.session.uid,
+      'metadata[plan_id]':SKUSKA.plan,
+      'metadata[type]':'subscription',
+      'metadata[trial]':'1',
+      'subscription_data[metadata][user_id]':req.session.uid,
+      'subscription_data[metadata][member_id]':req.session.uid,
+      'subscription_data[metadata][plan_id]':SKUSKA.plan,
+      'subscription_data[metadata][trial]':'1'
+    };
+    // QA hook (konvencia STRIPE_FAKE): session je falošná, webhook test potom preženie aktiváciu bez siete
+    const r = process.env.STRIPE_FAKE==='1'
+      ? { status:200, body:{ id:'fake_trial_'+req.session.uid, url:base+'/client-dashboard?stripe=trial&session_id=fake_trial_'+req.session.uid } }
+      : await stripeApi('checkout/sessions', params, 'POST');
+    if(r.status>=400 || !r.body?.url) return res.status(400).json({error:r.body?.error?.message||'Stripe chyba pri vytváraní skúšky'});
+    await q.insert(db.payments,{stripe_session_id:r.body.id, user_id:req.session.uid, member_id:req.session.uid, amount:0, currency:'EUR',
+      description:`Skúšobný týždeň ${plan.name} (${SKUSKA.dni} dní zadarmo, potom ${plan.price} €/mes.)`, ref_id:SKUSKA.plan, ref_type:'trial',
+      status:'pending', trial:true, accounting_skip:true, created_at:nowISO()});
+    metaCapi('StartTrial',{email:u.email, fbclid:u.fbclid, event_id:'trial_'+r.body.id}).catch(()=>{});
+    res.json({ok:true, url:r.body.url});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Verify a returned Checkout Session and activate membership (idempotent)
 // Fulfill a paid Stripe Checkout session (membership/subscription): activate membership,
 // link subscription, invoice, commission. Idempotent + atomic via the payment record lock,
 // so it's safe to call from BOTH /verify (browser redirect) and the webhook (reliable).
 async function fulfillStripeCheckout(s){
-  if(!s || s.payment_status!=='paid') return {ok:false, error:'Platba nebola dokončená'};
-  const meta = s.metadata || {};
+  const meta = (s && s.metadata) || {};
+  // Skúšobný týždeň: Checkout so skúškou nič nestrháva (no_payment_required), ale je hotový.
+  const jeSkuska = !!s && meta.trial==='1' && ['no_payment_required','paid'].includes(s.payment_status) && s.status!=='expired';
+  if(!s || (s.payment_status!=='paid' && !jeSkuska)) return {ok:false, error:'Platba nebola dokončená'};
   if(meta.type==='order') return {ok:false, skip:true}; // e-shop handled separately
   if(meta.type==='gift_credit') return await fulfillGiftCredit(s);
   if(meta.type==='tip'){
@@ -14144,6 +14304,12 @@ async function fulfillStripeCheckout(s){
   }
   const plan = MEMBERSHIP_PLANS[meta.plan_id];
   if(!plan) return {ok:false, error:'Neznámy plán'};
+  if(jeSkuska){
+    const claimedT = await q.update(db.payments,{stripe_session_id:s.id, status:{$ne:'completed'}},
+      {$set:{status:'completed', captured_at:nowISO(), stripe_subscription_id:s.subscription||null, accounting_skip:true}});
+    if(!claimedT) return {ok:true, already:true, trial:true, plan_name:plan.name};
+    return await aktivujSkusku(meta.user_id, s.subscription, s);
+  }
   // Atomic claim: only the first caller flips pending→completed and proceeds
   const claimed = await q.update(db.payments,
     {stripe_session_id:s.id, status:{$ne:'completed'}},
@@ -14418,6 +14584,11 @@ app.post('/api/stripe/subscribe/cancel', auth, async(req,res)=>{
     if(!u.stripe_subscription_id) return res.status(400).json({error: u===ja ? 'Nemáš aktívny mesačný odber' : `${u.name} nemá aktívny mesačný odber`});
     await stripeApi('subscriptions/'+encodeURIComponent(u.stripe_subscription_id), null, 'DELETE');
     await q.update(db.users,{_id:u._id},{$set:{stripe_subscription_id:null}});
+    // Zrušenie počas skúšobného týždňa: nič sa nestrhne, do konca skúšky sa dá chodiť (webhook
+    // „deleted" už používateľa podľa odberu nenájde, preto oznam ide odtiaľto)
+    if(u.trial_ends_at && !u.trial_converted_at && u.trial_ends_at>=nowISO()) await q.insert(db.notifications,{user_id:u._id, type:'trial_cancel',
+      title:'Skúšobný týždeň zrušený', body:'Nič sa ti nestrhne. Do '+fmtDenSk(u.trial_ends_at)+' môžeš chodiť ďalej — a keď budeš chcieť pokračovať, členstvo alebo vstup si kúpiš v Obchode.',
+      read:false, created_at:nowISO()}).catch(()=>{});
     await recordMembershipCancel(u, req.body.reason, req.body.note, u===ja ? 'stripe_self' : 'stripe_parent');
     await q.insert(db.notifications,{user_id:ja._id,type:'membership',title:'Odber zrušený',body:(u===ja?'Automatické obnovenie bolo zrušené.':'Automatické obnovenie pre '+u.name+' bolo zrušené.')+' Členstvo platí do konca obdobia.',read:false,created_at:nowISO()});
     res.json({ok:true});
@@ -14563,6 +14734,11 @@ app.post('/api/stripe/webhook', async(req,res)=>{
           const planId = u.stripe_sub_plan; const plan = MEMBERSHIP_PLANS[planId];
           if(plan){
             await activateMembership(u.stripe_sub_member||u._id, planId, plan.duration_days||30);
+            if(u.trial_ends_at && !u.trial_converted_at){ // prvá platba po skúšobnom týždni
+              await q.update(db.users,{_id:u._id},{$set:{trial_converted_at:nowISO()}});
+              await q.update(db.memberships,{user_id:u.stripe_sub_member||u._id, status:'active'},{$set:{trial:false, price:plan.price}});
+              console.log('💳 Skúška → platené členstvo: '+u.name);
+            }
             await q.insert(db.transactions,{type:'subscription_renewal',user_id:u.stripe_sub_member||u._id,user_name:u.name,amount:plan.price,date:today(),payment_method:'stripe',note:`Auto-obnova ${plan.name} (Stripe)`,plan_id:planId,created_at:nowISO(),month:today().slice(0,7)});
             // Odber dieťaťa: faktúra a provízia idú platiteľovi (rodičovi), nie detskému profilu (13. 9.)
             const platca = u.stripe_sub_payer_id ? (await q.one(db.users,{_id:u.stripe_sub_payer_id}))||u : u;
@@ -14586,10 +14762,17 @@ app.post('/api/stripe/webhook', async(req,res)=>{
     } else if(event.type==='invoice.payment_succeeded'){
       const inv = event.data.object;
       if(inv.subscription){ const u = await q.one(db.users,{stripe_subscription_id:inv.subscription}); if(u) await resolveFailedPayments(u.stripe_sub_payer_id||u._id); }
+    } else if(event.type==='customer.subscription.trial_will_end'){
+      const sub = event.data.object;
+      const u = await q.one(db.users,{stripe_subscription_id:sub.id});
+      if(u) await pripomenSkusku(u);
     } else if(event.type==='customer.subscription.deleted'){
       const sub = event.data.object;
       const u = await q.one(db.users,{stripe_subscription_id:sub.id});
       if(u) await q.update(db.users,{_id:u._id},{$set:{stripe_subscription_id:null}});
+      if(u && u.trial_ends_at && !u.trial_converted_at) await q.insert(db.notifications,{user_id:u._id, type:'trial_cancel',
+        title:'Skúšobný týždeň zrušený', body:'Nič sa ti nestrhne. Do '+fmtDenSk(u.trial_ends_at)+' môžeš chodiť ďalej — a keď budeš chcieť pokračovať, členstvo alebo vstup si kúpiš v Obchode.',
+        read:false, created_at:nowISO()}).catch(()=>{});
     } else if(event.type==='checkout.session.completed'){
       const s = event.data.object;
       if(s.metadata?.type==='event_order' && s.metadata.order_number && s.payment_status==='paid'){
@@ -15924,7 +16107,7 @@ app.post('/api/kiosk/checkin', async(req,res)=>{
       const mem=await checkMembership(u._id);
       // Online-only plán nekryje živú hodinu — kiosk musí upozorniť, že treba vybrať vstupné
       const onlineOnly=mem&&/online/.test(String((mem.plan_id||'')+' '+(mem.plan_name||'')).toLowerCase());
-      const hasMem=!!(mem&&mem.status==='active'&&!onlineOnly&&(!mem.expires_at||mem.expires_at>=todayS)), hasFree=!u.free_class_used, hasSingle=(u.single_entries||0)>0, hasCredit=(u.free_credits||0)>0;
+      const hasMem=!!(mem&&mem.status==='active'&&!onlineOnly&&(!mem.expires_at||mem.expires_at>=todayS)), hasFree=!u.free_class_used && !(await skuskaZapnuta()), hasSingle=(u.single_entries||0)>0, hasCredit=(u.free_credits||0)>0;
       // Technický tréning členstvo NEKRYJE (vlastný cenník podľa členstva) — doteraz ho kiosk
       // zapísal ako krytý a nikto nezaplatil. Bez krytia sa kiosk PÝTA na hotovosť (Marek 13. 9.).
       const jeTech = cls.category==='Technika';
@@ -15999,7 +16182,7 @@ async function kioskKrytie(u) {
     && (!mem.expires_at || mem.expires_at >= today()));
   return {
     clenstvo, onlineOnly: !!onlineOnly,
-    prva_zdarma: !u.free_class_used,
+    prva_zdarma: !u.free_class_used && !(await skuskaZapnuta()),
     kredity: +u.free_credits || 0,
     vstupy: +u.single_entries || 0,
     plan: mem ? (MEMBERSHIP_PLANS[mem.plan_id]?.name || mem.plan_name || 'Členstvo') : null,
@@ -19136,7 +19319,16 @@ app.post('/api/bookings', auth, async(req,res)=>{
     const zvolenyPlan = NA_MIESTE_PLANY.includes(req.body.pay_plan) ? req.body.pay_plan : null;
     let deductPlan = null; // odpočet vstupu/kreditu sa vykoná až po úspešnej validácii
     // Čím klientka za hodinu „zaplatila" — bez tohto sa jej pri zrušení nedal vrátiť vstup
-    let accessMethod = u.free_class_used ? 'membership' : 'free_class';
+    // Prvý týždeň zadarmo (14. 9.): kým je zapnutý, samoobslužná „prvá hodina zadarmo" neexistuje —
+    // nová klientka si zapne skúšku (karta, 7 dní) alebo si kúpi vstup/členstvo.
+    const skuska = await skuskaZapnuta();
+    const skuskaOk = skuska && (await skuskaNarok(u)).ok;
+    const prvaZdarmaDostupna = !u.free_class_used && !skuska;
+    const spravaBezKrytia = isChild
+      ? `${u.name} potrebuje členstvo alebo jednorazový vstup (10 €).`
+      : (skuska ? 'Na túto hodinu potrebuješ členstvo alebo jednorazový vstup (10 €)'+(skuskaOk?' — alebo si zapni prvý týždeň zadarmo.':'.')
+               : 'Prvá hodina zadarmo bola využitá. Na ďalšiu hodinu potrebuješ členstvo alebo jednorazový vstup (10 €).');
+    let accessMethod = prvaZdarmaDostupna ? 'free_class' : 'membership';
     // "First class free" is governed solely by free_class_used — the same flag the
     // client profile shows. Do NOT also gate on visit_count, or a client whose free
     // class is still available (flag false) but has visits from other paths gets
@@ -19149,7 +19341,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
     if(isTechClass && !u.is_admin && u.user_type!=='trainer'){
       const freeDates=(await q.one(db.settings,{key:'tech_free_dates'}))?.value||[];
       if(freeDates.includes(bdate)){ accessMethod='promo_free'; }
-      else if(!u.free_class_used){ accessMethod='free_class'; }
+      else if(prvaZdarmaDostupna){ accessMethod='free_class'; }
       else {
         const m=await checkMembership(u._id);
         const active=m && m.status==='active' && (!m.expires_at || m.expires_at>=today());
@@ -19168,13 +19360,13 @@ app.post('/api/bookings', auth, async(req,res)=>{
             creditPay={uid:parent._id, amount:techPrice}; accessMethod='credit';
           }
           else if(req.body.pay_on_site){ payOnSite=true; accessMethod='pay_on_site'; }
-          else return res.status(402).json({ error:'membership_required', can_pay_on_site:true, tech_price:techPrice, credit_balance:mamKredit,
+          else return res.status(402).json({ error:'membership_required', can_pay_on_site:true, trial_available:skuskaOk, tech_price:techPrice, credit_balance:mamKredit,
             message:`Technický tréning: ${techPrice} € jednorazovo${techPrice<10?' (zľava podľa členstva)':''}. Platí aj permanentka — vstup si kúpiš kartou v Obchode, alebo zaplatíš na mieste.` });
         }
       }
     }
     if(!u.is_admin && u.user_type !== 'trainer' && !isOnlineClass && !isTechClass){
-      if(u.free_class_used){
+      if(!prvaZdarmaDostupna){
         // Not first visit – need membership or single entry credit
         const m = await checkMembership(u._id);
         // Online-only plány (Online Basic/Premium) NEkryjú živé hodiny — inak by Online Basic
@@ -19200,10 +19392,8 @@ app.post('/api/bookings', auth, async(req,res)=>{
             payOnSite = true;
           } else return res.status(402).json({
             error:'membership_required',
-            can_pay_on_site: true,
-            message: isChild
-              ? `Prvá hodina zadarmo pre ${u.name} bola využitá. Na ďalšiu potrebuje členstvo alebo jednorazový vstup (10 €).`
-              : 'Prvá hodina zadarmo bola využitá. Na ďalšiu hodinu potrebuješ členstvo alebo jednorazový vstup (10 €).',
+            can_pay_on_site: true, trial_available: skuskaOk,
+            message: spravaBezKrytia,
             visit_count: visitCount,
             free_class_used: !!u.free_class_used
           });
@@ -19230,9 +19420,9 @@ app.post('/api/bookings', auth, async(req,res)=>{
     // ── Kritická sekcia pod zámkom hodina@termín: zrušenie → obsadenosť → duplicita →
     // spotreba vstupu / prvej hodiny zdarma → zápis. Vstup sa berie podmieneným updatom
     // PRED zápisom (nie $set z prečítanej hodnoty) a keď zápis padne, vráti sa.
-    const membershipRequired = msg => ({ code:402, body:{ error:'membership_required', can_pay_on_site:true,
+    const membershipRequired = msg => ({ code:402, body:{ error:'membership_required', can_pay_on_site:true, trial_available:skuskaOk,
       ...(techPrice ? {tech_price:techPrice} : {}), message:msg, visit_count:visitCount, free_class_used:true } });
-    let jePrvaZdarma = !u.free_class_used; // 1. hodina zdarma (aj technika) — nepočíta sa do €/klient bonusu trénera
+    let jePrvaZdarma = prvaZdarmaDostupna; // 1. hodina zdarma (aj technika) — nepočíta sa do €/klient bonusu trénera; v režime skúšky sa nedáva
     const vysl = await withBookingLock(class_id+'@'+bdate, async () => {
       if(await q.one(db.class_cancellations,{class_id, date:bdate})) return {code:400, body:{error:'Táto hodina je zrušená a nedá sa rezervovať.'}};
       // Kapacita sa počíta pre KONKRÉTNY termín — predtým sa sčítavali rezervácie zo
@@ -19249,9 +19439,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
           else {
             jePrvaZdarma=false;
             if(accessMethod==='free_class'){
-              if(!u.is_admin && u.user_type!=='trainer') return membershipRequired(isChild
-                ? `Prvá hodina zadarmo pre ${u.name} bola využitá. Na ďalšiu potrebuje členstvo alebo jednorazový vstup (10 €).`
-                : 'Prvá hodina zadarmo bola využitá. Na ďalšiu hodinu potrebuješ členstvo alebo jednorazový vstup (10 €).');
+              if(!u.is_admin && u.user_type!=='trainer') return membershipRequired(spravaBezKrytia);
               accessMethod='membership';
             }
           }
@@ -19379,7 +19567,7 @@ function kamoskaPlatna(f){
 async function prveZaplateneClenstva(){
   const vratene=new Set((await q.find(db.refunds,{})).map(r=>r.user_id).filter(Boolean));
   const prve={};
-  for(const t of await q.find(db.transactions,{type:{$in:['membership','subscription']}})){
+  for(const t of await q.find(db.transactions,{type:{$in:['membership','subscription','subscription_renewal']}})){
     if(!t.user_id || vratene.has(t.user_id)) continue;
     if(MEMBERSHIP_PLANS[t.plan_id]?.type==='bundle') continue;
     if(['free','promo'].includes(t.payment_method)) continue;
@@ -20106,6 +20294,7 @@ app.get('/api/me', async(req,res)=>{
     membership: m ? {plan_id:m.plan_id,plan_name:m.plan_name,expires_at:m.expires_at,status:m.status||'active'} : null,
     notif_count: notifCount, loyalty, visit_count: u.visit_count||0,
     free_class_used: u.free_class_used||false,
+    trial: await skuskaInfo(u),
     single_entries: u.single_entries||0,
     free_credits: u.free_credits||0,
     referral_credit: u.referral_credit||0,
@@ -21440,7 +21629,7 @@ app.get('/hlavolam',   (req,res)=>res.sendFile(path.join(__dirname,'public','hla
 app.get('/pricing',    (req,res)=>res.redirect(302,'/obchod'+(req.originalUrl.includes('?')?'?'+req.originalUrl.split('?')[1]:'')));
 app.get('/u/:id',      (req,res)=>res.sendFile(path.join(__dirname,'public','profile.html')));
 app.get('/reset-heslo', (req,res)=>res.sendFile(path.join(__dirname,'public','reset-heslo.html')));
-app.get('/prva-hodina', (req,res)=>res.sendFile(path.join(__dirname,'public','prva-hodina.html')));
+app.get('/prva-hodina', async(req,res)=>{ if(await skuskaZapnuta().catch(()=>false)) return res.redirect(302,'/?src=prva-hodina'); res.sendFile(path.join(__dirname,'public','prva-hodina.html')); });
 app.get('/vencek',     (req,res)=>res.sendFile(path.join(__dirname,'public','vencek.html')));
 app.get('/vencek-booking', (req,res)=>res.sendFile(path.join(__dirname,'public','vencek-booking.html')));
 app.get('/invite', (req,res)=>{ const qs=req.url.includes('?')?req.url.slice(req.url.indexOf('?')):''; res.redirect('/invite/FUSION'+qs); });
@@ -22083,7 +22272,7 @@ async function sendFirstBookingWelcome(u, cls, bdate, bookingId){
       <div style="background:linear-gradient(135deg,#C9A84C,#a07030);border-radius:16px;padding:2px;margin:18px 0">
         <div style="background:#1c1c1c;border-radius:14px;padding:18px 20px">
           <div style="color:#C9A84C;font-weight:800;font-size:15px;margin-bottom:8px">👯 Priveď kamošku — obe získate</div>
-          <p style="color:#ddd;font-size:14px;margin:0 0 8px">Zober so sebou kamošku! <b>Aj ona bude mať prvú hodinu zadarmo.</b> A keď príde s tebou, <b>ty získaš odmenu v podobe kreditu</b> — takže tvoja ďalšia hodina ťa bude stáť o to menej. 💛</p>
+          <p style="color:#ddd;font-size:14px;margin:0 0 8px">Zober so sebou kamošku! <b>Aj ona bude mať prvý týždeň zadarmo.</b> A keď príde s tebou, <b>ty získaš odmenu v podobe kreditu</b> — takže tvoja ďalšia hodina ťa bude stáť o to menej. 💛</p>
           ${referralCode?`<p style="color:#aaa;font-size:13px;margin:0">Nech sa zaregistruje cez tvoj link: <a href="${referralUrl}" style="color:#C9A84C">${referralUrl}</a><br>alebo zadá tvoj kód <b style="color:#fff">${referralCode}</b> pri registrácii.</p>`:''}
         </div>
       </div>
@@ -22145,7 +22334,7 @@ async function sendFirstClassDayReminder(bk){
     try{ const cls=await q.one(db.classes,{_id:bk.class_id}); if(cls){ addr=cls.address||''; inst=cls.instructor||''; } }catch(e){}
     const body=`
       <p>Ahoj <b>${first}</b>,</p>
-      <p><b>dnes je tvoj deň</b> — čaká ťa tvoja prvá hodina zadarmo! 🎉</p>
+      <p><b>dnes je tvoj deň</b> — čaká ťa tvoja prvá hodina! 🎉</p>
       <div style="border:1px solid #C9A84C55;border-radius:12px;padding:16px 18px;margin:14px 0">
         <div style="font-size:16px;font-weight:800;color:#C9A84C">${bk.class_emoji||'💃'} ${bk.class_name}</div>
         <div style="color:#ccc;margin-top:6px">🕐 Dnes o <b>${bk.class_time_start||''}</b>${bk.class_time_end?'–'+bk.class_time_end:''}<br>📍 <b>${bk.class_location||''}</b>${addr?' · '+addr:''}${inst?`<br>🎓 Trénerka: <b>${inst}</b>`:''}</div>
@@ -22163,7 +22352,7 @@ async function sendFirstClassDayReminder(bk){
       <p>Vieme, že prvý raz vie byť stresík — <b>nikto na teba nebude pozerať</b>, každá z nás raz stála na hodine prvýkrát. Trénerka ti so všetkým pomôže a tancuješ vlastným tempom. Stačí prísť o pár minút skôr a povedať, že si tu prvý raz. 💛</p>
       <div style="border:1px dashed #C9A84C88;border-radius:12px;padding:16px 18px;margin:16px 0">
         <div style="font-weight:800;color:#fff;margin-bottom:6px">👯‍♀️ Vo dvojici je to hneď väčšia zábava!</div>
-        <div style="color:#ccc;font-size:14px">Zober so sebou kamošku — jej prvá hodina je tiež <b>zadarmo</b>. A keď sa zaregistruje cez tvoj odkaz a neskôr si kúpi vstup či členstvo, <b>získaš kredit do aplikácie</b>, ktorý môžeš minúť na hodiny.</div>
+        <div style="color:#ccc;font-size:14px">Zober so sebou kamošku — jej prvý týždeň je tiež <b>zadarmo</b>. A keď sa zaregistruje cez tvoj odkaz a neskôr si kúpi vstup či členstvo, <b>získaš kredit do aplikácie</b>, ktorý môžeš minúť na hodiny.</div>
         <div style="margin-top:10px"><a href="${refLink}" style="color:#C9A84C;font-weight:700;word-break:break-all">${refLink}</a></div>
       </div>
       <p>Vidíme sa večer na parkete! 💃</p>`;
@@ -22185,7 +22374,7 @@ async function sendFirstClassEmail(userId){
   if(mem && mem.status==='active') return;
   const body =
     `<p>Ahoj <b>${u.name}</b>,</p>
-     <p>Máme z teba obrovskú radosť – zvládol/zvládla si <b>prvú hodinu zadarmo</b> a to je ten najťažší krok! 🎉 Dúfame, že si sa cítil/a skvele a odchádzal/a s úsmevom.</p>
+     <p>Máme z teba obrovskú radosť – zvládol/zvládla si <b>prvú hodinu</b> a to je ten najťažší krok! 🎉 Dúfame, že si sa cítil/a skvele a odchádzal/a s úsmevom.</p>
      <p>Ak chceš pokračovať a naplno si tanec užiť, tu je naša <b>najvýhodnejšia</b> možnosť:</p>
      <div style="background:linear-gradient(135deg,#C9A84C,#a07030);border-radius:16px;padding:2px;margin:18px 0">
        <div style="background:#1c1c1c;border-radius:14px;padding:20px 22px;text-align:center">
@@ -22249,9 +22438,9 @@ async function sendFreeClassNudge(u, stage){
   const bookedBefore = !!u.lead_fc_at;
   let subj, body;
   if(!bookedBefore){
-    subj = `${u.name}, tvoja prvá hodina je zadarmo 💃 Kedy prídeš?`;
+    subj = `${u.name}, tvoj prvý týždeň je zadarmo 💃 Kedy prídeš?`;
     body = `<p>Ahoj <b>${u.name}</b>,</p>
-      <p>tešíme sa, že si tu! Máš u nás <b>prvú hodinu úplne zadarmo</b> — bez záväzkov, len ty a hudba. 🎶</p>
+      <p>tešíme sa, že si tu! Máš u nás <b>prvý týždeň úplne zadarmo</b> — zruš kedykoľvek, len ty a hudba. 🎶</p>
       <p>Nemusíš nič vedieť dopredu, nemusíš mať „postavu na tanec". Príď v čomkoľvek pohodlnom a zvyšok necháme na parket. 💛</p>
       <p>Vyber si termín, ktorý ti sadne — a uvidíme sa!</p>`;
   } else if(stage<=2){
@@ -22268,7 +22457,7 @@ async function sendFreeClassNudge(u, stage){
   }
   body += `<p style="font-size:.78rem;color:#888;margin-top:18px">Nechceš dostávať tieto e-maily? Vypni si ich vo svojom profile v aplikácii.</p>`;
   if(u.email) await sendMail(u.email, subj, emailTemplate(subj.replace(/^[^\w]*/,''), body, '🗓️ Vybrať termín hodiny zdarma', `${APP_URL}/schedule`)).catch(()=>{});
-  await q.insert(db.notifications,{user_id:u._id,type:'freeclass_nudge',title:'💃 Tvoja hodina zdarma čaká',body:'Vyber si termín a príď — prvá hodina je na nás.',read:false,created_at:nowISO()}).catch(()=>{});
+  await q.insert(db.notifications,{user_id:u._id,type:'freeclass_nudge',title:'💃 Tvoj týždeň zadarmo čaká',body:'Zapni si skúšku, vyber si termín a príď — prvý týždeň je na nás.',read:false,created_at:nowISO()}).catch(()=>{});
 }
 
 async function runLeadOffers(){
@@ -24312,6 +24501,7 @@ async function runDailyTick(hourOverride){
       try{ await processEmailQueue(); }catch(e){ console.error('Email queue error:',e); }
       try{ await rebuildFunnelStamps(); }catch(e){ console.error('Funnel stamps error:',e.message); }
       try{ await autoKidsBookings(); }catch(e){ console.error('Auto kids error:',e.message); }
+      try{ await pripomienkySkusky(); }catch(e){ console.error('Trial reminder error:',e.message); }
     }
   }
   if(hSK>=20){

@@ -151,7 +151,7 @@ const APP_PROMO=[
  ['📱','Rezervuj si hodiny v appke','Dva kliky a máš miesto. Žiadne volanie, žiadne čakanie.'],
  ['⭐','Zbieraj body a odznaky','Každá hodina sa počíta — súťaž o Klientku mesiaca beží stále.'],
  ['👯','Komunita','Fotky, výzvy, ankety a kamarátky — všetko v appke.'],
- ['🤝','Priveď kamarátku','Ona má prvú hodinu zadarmo, ty odmenu z referral programu.'],
+ ['🤝','Priveď kamarátku','Ona má prvý týždeň zadarmo, ty odmenu z referral programu.'],
  ['✨','Súkromné hodiny','Tréner len pre teba — vyber si termín z kalendára v appke.'],
  ['🍽️','Jedálničky na mieru','Gold členky majú týždenné jedálničky na jeden klik.']];
 const UPSELL=[
@@ -168,7 +168,7 @@ const QUOTES=[
  'Energia, ktorú dnes dáš parketu,\nsa ti vráti dvojnásobne.'];
 const CHALLENGES=[
  '💪 Výzva týždňa: príď 3× tento týždeň!',
- '👯 Výzva: priveď kamarátku — má prvú hodinu zadarmo!',
+ '👯 Výzva: priveď kamarátku — má prvý týždeň zadarmo!',
  '📸 Výzva: zdieľaj fotku z hodiny do komunity!',
  '⭐ Výzva: nazbieraj tento mesiac 50 bodov!'];
 
@@ -221,7 +221,7 @@ function buildSlides(){
   if(W.upsell!==false) UPSELL.forEach(u=>add(sl('Pre teba','🛍️',card(u))));
   if(W.health!==false) HEALTH.forEach(h=>add(sl('Vedela si, že…','💡',card(h))));
   if(W.app_promo!==false) APP_PROMO.forEach(p=>add(sl('Fusion appka','📲',card(p)+qrApp())));
-  if(W.referral!==false) add(sl('Referral program','🤝','<div class="big">Priveď kamarátku —<br><span class="g">obe získate</span></div><div class="sub">Ona prvú hodinu zadarmo, ty odmenu do kreditu. Zdieľaj svoj link z appky!</div>'));
+  if(W.referral!==false) add(sl('Referral program','🤝','<div class="big">Priveď kamarátku —<br><span class="g">obe získate</span></div><div class="sub">Ona prvý týždeň zadarmo, ty odmenu do kreditu. Zdieľaj svoj link z appky!</div>'));
   if(W.challenge!==false) add(sl('Výzva','🎯','<div class="big">'+esc(CHALLENGES[new Date().getDate()%CHALLENGES.length])+'</div>'));
   QUOTES.forEach(qt=>add(sl('Fusion Academy','💛','<div class="big">'+esc(qt).replace(/\n/g,'<br>')+'</div>')));
   if(W.custom!==false) (CFG.custom_slides||[]).forEach(c=>add(sl('Oznam',''+(c.emoji||'✨'),'<div class="big">'+esc(c.title)+'</div>'+(c.text?'<div class="sub">'+esc(c.text)+'</div>':''))));

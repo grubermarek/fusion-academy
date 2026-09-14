@@ -568,6 +568,16 @@ async function confirmBooking(platba) {
 // Hodina bez členstva/vstupu: namiesto chyby otázka, či klientka zaplatí v hotovosti na mieste.
 // Sumu ráta server (technika podľa členstva: 10 / Bronze 8 / Silver 7 / Gold 6, inak vstup 10 €).
 let platbaSuma = 10;
+// Skúška z rozvrhu: hodinu si odložíme, po návrate zo Stripe ju nástenka dokončí (fa_pending_booking)
+async function skuskaZRozvrhu() {
+  try { if (selectedClass) localStorage.setItem('fa_pending_booking', JSON.stringify({ class_id: selectedClass._id, class_name: selectedClass.name, date: getNextDate(selectedClass.day_of_week) })); } catch (e) {}
+  try {
+    const r = await fetch('/api/stripe/trial', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    const d = await r.json();
+    if (d && d.url) { location.href = d.url; return; }
+    showToast(d.error || 'Skúšku sa nepodarilo spustiť', 'error');
+  } catch (e) { showToast(FA_T('sched.err_conn'), 'error'); }
+}
 function ponukniPlatbuNaMieste(d, btn) {
   const technika = !!(selectedClass && selectedClass.category === 'Technika');
   const suma = +(d.tech_price || 10); platbaSuma = suma;
@@ -582,6 +592,7 @@ function ponukniPlatbuNaMieste(d, btn) {
       + 'Chceš zaplatiť <b>v hotovosti na mieste</b>?</div>'
     + (technika && kredit >= suma
         ? '<button type="button" class="btn-confirm" style="margin-bottom:8px;background:linear-gradient(135deg,#4ade80,#16a34a)" onclick="confirmBooking({pay_credit:true})">💳 Zaplatiť kreditom z appky (' + kredit.toFixed(2) + ' €)</button>' : '')
+    + (d.trial_available ? '<button type="button" class="btn-confirm" style="margin-bottom:8px" onclick="skuskaZRozvrhu()">🎁 Prvý týždeň zadarmo — potom 50 €/mes., zruš kedykoľvek</button>' : '')
     + '<button type="button" class="btn-confirm" onclick="confirmBooking({pay_on_site:true})">💵 Áno, zaplatím na mieste ' + suma + ' €</button>'
     + '<a href="/obchod?src=booking" class="d-block text-center mt-2" style="color:var(--gold,#C9A84C)">🎫 Radšej si kúpim členstvo alebo permanentku</a>';
   box.classList.remove('d-none');

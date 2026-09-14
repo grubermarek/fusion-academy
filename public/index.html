@@ -4,11 +4,11 @@
 <meta charset="UTF-8">
 <link rel="icon" type="image/png" href="/logo-mark.png">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="Fusion Academy – Zumba štúdio. Prvá hodina zadarmo. Latinské rytmy, energia a komunita v 4 mestách na Slovensku — aj online.">
-<meta property="og:title" content="Fusion Academy – Zumba · Prvá hodina ZADARMO">
-<meta property="og:description" content="Prvá hodina Zumby zadarmo. 2000+ tanečníkov, ⭐5.0 na Google, Tanečná škola roka. Detva · Zvolen · Banská Bystrica · Brezno.">
+<meta name="description" content="Fusion Academy – Zumba štúdio. Prvý týždeň zadarmo. Latinské rytmy, energia a komunita v 4 mestách na Slovensku — aj online.">
+<meta property="og:title" content="Fusion Academy – Zumba · Prvý týždeň ZADARMO">
+<meta property="og:description" content="Prvý týždeň Zumby zadarmo. 2000+ tanečníkov, ⭐5.0 na Google, Tanečná škola roka. Detva · Zvolen · Banská Bystrica · Brezno.">
 <meta property="og:image" content="https://latindancefusion.art/og-image.svg">
-<title>Fusion Academy – Prvá hodina zadarmo</title>
+<title>Fusion Academy – Prvý týždeň zadarmo</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -651,7 +651,7 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
     <div class="step-content">
       <div class="step-icon">👋</div>
       <h2 class="step-title" id="s1Title" data-i18n="auth.reg_title">Vitaj v Fusion Academy!</h2>
-      <p class="step-sub" id="s1Sub" data-i18n-html="auth.reg_sub">Prvá hodina je <span class="gold">zadarmo</span>. Stačí sa zaregistrovať — trvá to 30 sekúnd.</p>
+      <p class="step-sub" id="s1Sub" data-i18n-html="auth.reg_sub">Prvý týždeň je <span class="gold">zadarmo</span>. Stačí sa zaregistrovať — trvá to 30 sekúnd.</p>
       <!-- Výrazné prihlásenie pre existujúce klientky — po odhlásení nevideli malý
            odkaz hore a vypisovali registráciu odznova -->
       <button onclick="openLogin()" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;max-width:420px;margin:0 auto 16px;background:rgba(201,162,76,.10);border:1.5px solid rgba(201,162,76,.55);color:#E7C878;font-weight:700;font-size:.95rem;padding:12px 18px;border-radius:14px;cursor:pointer">
@@ -810,7 +810,7 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
         <h3>👯‍♀️ Pozvi kamošku</h3>
         <div class="friend-bonus">
           <i class="bi bi-gift-fill"></i>
-          Tvoja kamarátka dostane prvú hodinu <strong>tiež zadarmo!</strong> Skopíruj si svoj odkaz a pošli jej ho.
+          Tvoja kamarátka dostane prvý týždeň <strong>tiež zadarmo!</strong> Skopíruj si svoj odkaz a pošli jej ho.
           <div id="friendRefBox"></div>
         </div>
       </div>
@@ -863,7 +863,7 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
       <div class="prog-card">
         <div class="prog-icon">🎵</div>
         <div class="prog-name">Zumba hodiny</div>
-        <div class="prog-desc">Latinská hudba, energia a dobrá nálada. Živé hodiny v <strong>Detve, Zvolene, Banskej Bystrici a Brezne</strong> — aj online. Prvá hodina zadarmo.</div>
+        <div class="prog-desc">Latinská hudba, energia a dobrá nálada. Živé hodiny v <strong>Detve, Zvolene, Banskej Bystrici a Brezne</strong> — aj online. Prvý týždeň zadarmo.</div>
       </div>
       <div class="prog-card">
         <div class="prog-icon">🔥</div>
@@ -915,7 +915,7 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
 
     <div class="final-cta-box" id="finalCta">
       <div style="font-size:2.5rem;margin-bottom:12px">💃</div>
-      <h2>Prvá hodina čaká na teba</h2>
+      <h2>Prvý týždeň zadarmo čaká na teba</h2>
       <p>Zaregistruj sa teraz – bezplatne, bez záväzkov.</p>
       <button class="btn-hero" onclick="scrollToTop()" style="margin:0 auto">
         Začni zadarmo &nbsp;<i class="bi bi-arrow-up-circle"></i>
@@ -964,8 +964,13 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
   <div class="modal-card" style="text-align:center;max-width:420px">
     <button class="modal-close" onclick="closeMembershipWall()"><i class="bi bi-x-lg"></i></button>
     <div style="font-size:3rem;margin-bottom:12px">🏷️</div>
-    <h3 class="modal-title" style="margin-bottom:8px">Prvá hodina využitá</h3>
-    <p class="modal-sub" style="margin-bottom:20px">Tvoja bezplatná hodina bola už použitá. Na ďalšie hodiny si vyber jedno z členských plánov alebo jednorazový vstup.</p>
+    <h3 class="modal-title" id="mwTitle" style="margin-bottom:8px">Na túto hodinu potrebuješ vstup alebo členstvo</h3>
+    <p class="modal-sub" id="mwSub" style="margin-bottom:20px">Vyber si jedno z členských plánov alebo jednorazový vstup.</p>
+    <div id="mwTrial" style="display:none;margin-bottom:16px">
+      <button onclick="startTrialFromLanding()" id="mwTrialBtn" style="width:100%;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;border:none;border-radius:14px;padding:15px;font-size:1.1rem;font-weight:900;cursor:pointer">🎁 Vyskúšať prvý týždeň za 0,00 €</button>
+      <div style="color:var(--muted);font-size:.78rem;margin-top:8px;line-height:1.5">Uložíš kartu, 7 dní tancuješ zadarmo, potom Bronze 50 €/mes. Zrušiť môžeš kedykoľvek. Túto hodinu ti po zapnutí rezervujeme automaticky.</div>
+      <div style="color:var(--muted);font-size:.78rem;margin:12px 0 0">— alebo bez skúšky —</div>
+    </div>
     <div style="display:grid;gap:10px;margin-bottom:20px">
       <div style="background:rgba(201,168,76,.15);border:2px solid var(--gold-border);border-radius:12px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;position:relative">
         <div style="position:absolute;top:-1px;right:12px;background:var(--gold);color:#111;font-size:.65rem;font-weight:800;padding:2px 10px;border-radius:0 0 8px 8px;text-transform:uppercase;letter-spacing:.05em">Najvýhodnejšie</div>
@@ -1123,7 +1128,7 @@ if(_preview){
   const fromAd = p.get('fbclid') || p.get('utm_source') || p.get('gclid');
   if(!fromAd) return;
   const t=document.getElementById('s1Title'), s=document.getElementById('s1Sub');
-  if(t) t.textContent='Tvoja prvá hodina je zadarmo 🎁';
+  if(t) t.textContent='Tvoj prvý týždeň je zadarmo 🎁';
   if(s) s.innerHTML='Vyplň pár údajov a rezervuj si termín — bez platby, bez záväzkov. Trvá to 30 sekúnd.';
   const src=(p.get('utm_source')||'').toLowerCase();
   const sel=document.getElementById('rLeadSource');
@@ -1329,7 +1334,7 @@ function renderCityStep(){
   if(backBtn) backBtn.style.display = singleType ? 'none' : '';
   const sub=document.getElementById('citySub');
   if(sub) sub.innerHTML = singleType
-    ? `Vyber si mesto, kde chceš prísť na <b class="gold">${escHtml(_wizType.emoji+' '+_wizType.name)}</b>. Prvá hodina je zadarmo.`
+    ? `Vyber si mesto, kde chceš prísť na <b class="gold">${escHtml(_wizType.emoji+' '+_wizType.name)}</b>. Prvý týždeň je zadarmo.`
     : 'Vyber si mesto, ktoré ti je najbližšie.';
   const grid=document.getElementById('cityGrid');
   const inType=_allClasses.filter(c=>(c.category||'Ostatné').trim()===_wizType.name);
@@ -1512,7 +1517,7 @@ async function doConfirmBook(){
         showToast('Prihlás sa prosím — rezerváciu potom dokončíme automaticky.');
         openLogin && openLogin();
       } else if(d.error==='membership_required'){
-        showMembershipWall();
+        showMembershipWall(!!d.trial_available);
       } else if(/už (ste sa |si )?prihlás/i.test(d.error||'')){
         // Rezervácia už existuje (dvojité ťuknutie / opakovaný pokus) — pre klientku
         // je to úspech, pokračuj na potvrdenie namiesto slepej uličky.
@@ -1748,7 +1753,23 @@ function showErr(id,msg){const e=document.getElementById(id);if(!e)return;e.text
 function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function escJs(s){return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200);}
-function showMembershipWall(){document.getElementById('membershipWallModal').style.display='flex';}
+function showMembershipWall(trial){
+  const t=document.getElementById('mwTrial'); if(t) t.style.display=trial?'block':'none';
+  const h=document.getElementById('mwTitle'); if(h) h.textContent=trial?'Tvoj prvý týždeň zadarmo':'Na túto hodinu potrebuješ vstup alebo členstvo';
+  const s=document.getElementById('mwSub'); if(s) s.textContent=trial?'Namiesto jednej hodiny máš celý týždeň zadarmo. Ak nechceš, kúp si vstup alebo členstvo.':'Vyber si jedno z členských plánov alebo jednorazový vstup.';
+  document.getElementById('membershipWallModal').style.display='flex';
+}
+async function startTrialFromLanding(){
+  const btn=document.getElementById('mwTrialBtn'); if(btn){ btn.disabled=true; btn.textContent='⏳ Otváram Stripe…'; }
+  try{ if(_lastAttempt) localStorage.setItem('fa_pending_booking', JSON.stringify({class_id:_lastAttempt.classId, class_name:_lastAttempt.className, date:_lastAttempt.date||null})); }catch(e){}
+  try{
+    const r=await fetch('/api/stripe/trial',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include'});
+    const d=await r.json();
+    if(d&&d.url){ location.href=d.url; return; }
+    showToast(d.error||'Skúšku sa nepodarilo spustiť');
+  }catch(e){ showToast('Chyba pripojenia'); }
+  if(btn){ btn.disabled=false; btn.textContent='🎁 Vyskúšať prvý týždeň za 0,00 €'; }
+}
 function closeMembershipWall(){document.getElementById('membershipWallModal').style.display='none';}
 
 // ── KEYBOARD SHORTCUTS ────────────────────────────────────────────────────────
