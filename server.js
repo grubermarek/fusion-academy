@@ -767,6 +767,30 @@ async function seedData() {
   }
   // 14. 9.: ceny 49,90 / 74,90 / 124,90 € — texty uložené v DB (mailové kroky, príspevky) a
   // nevybrané „zaplatím na mieste" so starou sumou plánu. História (platby, faktúry) sa nemení.
+  // Bystrica 14. 9.: ručná kompenzácia za zrušenú Zumbu šla ešte na celé mesto a predĺžila aj dvom
+  // Detvankám (Michaela Ďuricová, Monika Melichová), ktoré do BB chodia len výnimočne. Marek: „tým sa
+  // nemá predĺžiť". Vrátime pôvodnú expiráciu, záznam o kompenzácii a neprečítané oznámenie o predĺžení.
+  // Ak sa expirácia medzitým zmenila (nákup, obnova), nesiahame na ňu.
+  if(!(await q.one(db.settings,{key:'bb_kompenzacia_detvanky_20260914'}))){
+    const vysledok=[];
+    try{
+      const KLUC='OIy0ig5p14uhVmXV@2026-09-14';
+      for(const mid of ['8T3mV8C5pWSMtZ88','lVNMA8NTbtvncIhT']){
+        const m=await q.one(db.memberships,{_id:mid});
+        const k=m && (m.kompenzacie||[]).find(x=>x.key===KLUC);
+        if(!m || !k){ vysledok.push(mid+': bez záznamu o kompenzácii'); continue; }
+        if(String(m.expires_at)!==String(k.to)){ vysledok.push(mid+': expirácia sa medzitým zmenila ('+m.expires_at+'), nechávam'); continue; }
+        await q.update(db.memberships,{_id:mid},{$set:{expires_at:k.from, kompenzacie:(m.kompenzacie||[]).filter(x=>x.key!==KLUC)}});
+        const u=await q.one(db.users,{_id:m.user_id});
+        const oz=(await q.find(db.notifications,{user_id:m.user_id, title:'💛 Predĺžili sme ti členstvo'}))
+          .filter(n=>String(n.created_at||'').slice(0,10)==='2026-09-14' && /Banská Bystrica/.test(n.body||''));
+        for(const n of oz) await q.remove(db.notifications,{_id:n._id});
+        vysledok.push((u?u.name:m.user_id)+': '+String(k.to).slice(0,10)+' → '+String(k.from).slice(0,10)+', oznámení zmazaných '+oz.length);
+      }
+      console.log('↩️ BB kompenzácia Detvanky: '+vysledok.join(' | '));
+    }catch(e){ console.error('bb_kompenzacia_detvanky:', e.message); vysledok.push('chyba: '+e.message); }
+    await q.insert(db.settings,{key:'bb_kompenzacia_detvanky_20260914', value:vysledok, at:nowISO()});
+  }
   if(!(await q.one(db.settings,{key:'ceny_4990_20260914'}))){
     const NAHR=[['50 €/mesiac','49,90 €/mesiac'],['od 50 €/mes.','od 49,90 €/mes.'],['50 €/mes','49,90 €/mes'],['75 €/mes','74,90 €/mes'],['125 €/mes','124,90 €/mes'],
       ['Bronze členstvo (neobmedzene hodín) za <b>50 €','Bronze členstvo (neobmedzene hodín) za <b>49,90 €'],['už od 50 € / mesiac','už od 49,90 € / mesiac']];
