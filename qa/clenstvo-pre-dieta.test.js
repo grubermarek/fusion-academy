@@ -74,10 +74,10 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
   try {
     console.log('1) Cenník pre deti = bežné balíky:');
     const plans = (await j('/api/membership/plans')).d || {};
-    ok('Bronze 50 €', plans.bronze && plans.bronze.price === 50, plans.bronze && String(plans.bronze.price));
-    ok('Silver 75 € a je v ňom online', plans.silver && plans.silver.price === 75 && plans.silver.online === true,
+    ok('Bronze 49,90 €', plans.bronze && plans.bronze.price === 49.9, plans.bronze && String(plans.bronze.price));
+    ok('Silver 74,90 € a je v ňom online', plans.silver && plans.silver.price === 74.9 && plans.silver.online === true,
       JSON.stringify(plans.silver));
-    ok('Gold 125 € a je v ňom jedálniček', plans.gold && plans.gold.price === 125 && plans.gold.meal === true,
+    ok('Gold 124,90 € a je v ňom jedálniček', plans.gold && plans.gold.price === 124.9 && plans.gold.meal === true,
       JSON.stringify(plans.gold));
 
     console.log('\n2) Rodič a detský profil:');
@@ -94,7 +94,7 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     const kup = await j('/api/membership/buy', { method: 'POST', body: {
       plan_id: 'bronze', payment_method: 'manual', for_child_id: dieta } }, rodic);
     ok('nákup prešiel', kup.status === 200 && kup.d && kup.d.ok, JSON.stringify(kup.d).slice(0, 160));
-    ok('pýta si 50 €', kup.d && Math.abs(kup.d.final_price - 50) < 0.01, kup.d && String(kup.d.final_price));
+    ok('pýta si 49,90 €', kup.d && Math.abs(kup.d.final_price - 49.9) < 0.01, kup.d && String(kup.d.final_price));
 
     await new Promise(r => setTimeout(r, 700));
     const pl = rd('payments.db').find(x => x._id === (kup.d && kup.d.payment_id));
@@ -103,7 +103,7 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     ok('za plán bronze', pl && pl.ref_id === 'bronze', pl && pl.ref_id);
 
     console.log('\n4) Vyššie balíky pre dieťa tiež:');
-    for (const [plan, cena] of [['silver', 75], ['gold', 125]]) {
+    for (const [plan, cena] of [['silver', 74.9], ['gold', 124.9]]) {
       const r2 = await j('/api/membership/buy', { method: 'POST', body: {
         plan_id: plan, payment_method: 'manual', for_child_id: dieta } }, rodic);
       await new Promise(r => setTimeout(r, 400));

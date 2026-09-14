@@ -2935,7 +2935,7 @@ async function kidsAdd(){ const name=document.getElementById('kidsNewName').valu
 async function kidsGroup(id,group){ const r=await api('/api/admin/kids/roster/'+id,{method:'PUT',body:JSON.stringify({group})}); if(!r?.ok) showToast(r?.error||'Chyba','error'); else loadKids(); }
 async function kidsAttend(id,date){ const row=_kids.rows.find(r=>r._id===id); const cur=(row.attendance||{})[date]; const next=cur===undefined?true:cur===true?false:null;
   const r=await api('/api/kids/roster/'+id+'/attend',{method:'POST',body:JSON.stringify({date,present:next})}); if(r?.ok) loadKids(); else showToast(r?.error||'Chyba','error'); }
-async function kidsPaid(id,name){ const s=prompt(`Platba za ${name}\nSuma v € (Bronze = 50):`,'50'); if(s===null) return; const amount=parseFloat(String(s).replace(',','.')); if(!(amount>0)){ showToast('Neplatná suma','error'); return; }
+async function kidsPaid(id,name){ const s=prompt(`Platba za ${name}\nSuma v € (Bronze = 49,90):`,'49,90'); if(s===null) return; const amount=parseFloat(String(s).replace(',','.')); if(!(amount>0)){ showToast('Neplatná suma','error'); return; }
   const m=prompt('Spôsob: hotovost / karta / prevod','hotovost'); if(m===null) return; const method=/kart/i.test(m)?'card':/prev/i.test(m)?'transfer':'cash';
   const d=prompt('Dátum platby (RRRR-MM-DD):', new Date().toISOString().slice(0,10)); if(d===null) return;
   const r=await api('/api/admin/kids/roster/'+id+'/paid',{method:'POST',body:JSON.stringify({amount,method,date:d.trim(),plan_id:'bronze'})}); if(r?.ok){ showToast('Platba zapísaná — je v Predajoch','success'); loadKids(); } else showToast(r?.error||'Chyba','error'); }
@@ -5481,7 +5481,7 @@ function renderMembOverview(){
       </tr></thead><tbody>${rows.map(m=>`<tr style="cursor:pointer" onclick="openClientDetail('${m.id}')">
         <td class="fw-semibold" style="color:#C9A84C">${escHtml(m.name)}${m.trial?' <span class="badge bg-info text-dark" style="font-size:.6rem">skúška</span>':''}${m.active?'':' <span class="badge bg-secondary" style="font-size:.6rem">neaktívny</span>'}</td>
         <td><span class="badge" style="background:${MO_PLAN_COLOR[m.plan_id]||'#555'};color:#111">${escHtml(m.plan_name)}</span></td>
-        <td>${m.price.toFixed(0)} €</td>
+        <td>${m.price.toFixed(2).replace('.',',')} €</td>
         <td>${m.expires_at||'—'}</td>
         <td class="small text-muted" onclick="event.stopPropagation()">${m.email?`<a href="mailto:${escHtml(m.email)}" class="text-decoration-none text-muted">${escHtml(m.email)}</a>`:''}${m.phone?` · <a href="tel:${escHtml(m.phone)}" class="text-decoration-none text-muted">${escHtml(m.phone)}</a>`:''}</td>
       </tr>`).join('')}</tbody></table></div>`;
@@ -8103,9 +8103,9 @@ function adminCovMembership(){
   box.innerHTML=`<div style="background:rgba(224,163,76,.08);border:1px solid rgba(224,163,76,.3);border-radius:.6rem;padding:10px">
     <div class="small mb-2" style="color:#e0a34c;font-weight:700">💎 Vyber členstvo (aktivuje sa a klient sa zapíše):</div>
     <div class="d-flex flex-column gap-2">
-      <button class="btn btn-sm btn-outline-warning text-start" onclick="adminSellMemAndBook('bronze',50)">🥉 Bronze – 50 € / mes</button>
-      <button class="btn btn-sm btn-outline-warning text-start" onclick="adminSellMemAndBook('silver',75)">🥈 Silver – 75 € / mes</button>
-      <button class="btn btn-sm btn-outline-warning text-start" onclick="adminSellMemAndBook('gold',125)">🥇 Gold – 125 € / mes</button>
+      <button class="btn btn-sm btn-outline-warning text-start" onclick="adminSellMemAndBook('bronze',49.90)">🥉 Bronze – 49,90 € / mes</button>
+      <button class="btn btn-sm btn-outline-warning text-start" onclick="adminSellMemAndBook('silver',74.90)">🥈 Silver – 74,90 € / mes</button>
+      <button class="btn btn-sm btn-outline-warning text-start" onclick="adminSellMemAndBook('gold',124.90)">🥇 Gold – 124,90 € / mes</button>
       <button class="btn btn-sm btn-outline-secondary text-start" onclick="adminSellMemAndBook('online_basic',12.90)">🌐 Online Basic – 12,90 € / mes</button>
       <button class="btn btn-sm btn-link text-muted text-start p-0" onclick="doManualBooking()">← Späť</button>
     </div></div>`;

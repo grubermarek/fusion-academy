@@ -592,7 +592,7 @@ function ponukniPlatbuNaMieste(d, btn) {
       + 'Chceš zaplatiť <b>v hotovosti na mieste</b>?</div>'
     + (technika && kredit >= suma
         ? '<button type="button" class="btn-confirm" style="margin-bottom:8px;background:linear-gradient(135deg,#4ade80,#16a34a)" onclick="confirmBooking({pay_credit:true})">💳 Zaplatiť kreditom z appky (' + kredit.toFixed(2) + ' €)</button>' : '')
-    + (d.trial_available ? '<button type="button" class="btn-confirm" style="margin-bottom:8px" onclick="skuskaZRozvrhu()">🎁 Prvý týždeň zadarmo — potom 50 €/mes., zruš kedykoľvek</button>' : '')
+    + (d.trial_available ? '<button type="button" class="btn-confirm" style="margin-bottom:8px" onclick="skuskaZRozvrhu()">🎁 Prvý týždeň zadarmo — potom 49,90 €/mes., zruš kedykoľvek</button>' : '')
     + '<button type="button" class="btn-confirm" onclick="confirmBooking({pay_on_site:true})">💵 Áno, zaplatím na mieste ' + suma + ' €</button>'
     + '<a href="/obchod?src=booking" class="d-block text-center mt-2" style="color:var(--gold,#C9A84C)">🎫 Radšej si kúpim členstvo alebo permanentku</a>';
   box.classList.remove('d-none');

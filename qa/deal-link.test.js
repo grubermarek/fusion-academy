@@ -62,7 +62,7 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     // ── 1. Zoznam produktov pre trénera ──
     const pl = (await j('/api/trainer/deal-plans', {}, trn)).d;
     ok('produkty sa načítajú', pl && pl.ok && pl.plans.length === 8, JSON.stringify(pl && pl.plans && pl.plans.length));
-    ok('sú tam členstvá aj permanentky s cenami', pl.plans.some(p => p.id === 'silver' && p.price === 75)
+    ok('sú tam členstvá aj permanentky s cenami', pl.plans.some(p => p.id === 'silver' && p.price === 74.9)
       && pl.plans.some(p => p.id === 'permanentka10' && p.price === 80 && p.entries === 10), JSON.stringify(pl.plans));
 
     // ── 2. Vytvorenie linku ──
@@ -72,7 +72,7 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     const token = dl.url.split('/kupa/')[1];
     const zaznam = rd('deal_links.db').find(x => x._id === token);
     ok('záznam má klientku, produkt, cenu, trénera aj expiráciu', zaznam && zaznam.user_id === 'klientkaDeal0001'
-      && zaznam.plan_id === 'silver' && zaznam.price === 75 && zaznam.trainer_id === 'trenerkaDeal0001' && !!zaznam.expires_at, JSON.stringify(zaznam));
+      && zaznam.plan_id === 'silver' && zaznam.price === 74.9 && zaznam.trainer_id === 'trenerkaDeal0001' && !!zaznam.expires_at, JSON.stringify(zaznam));
     ok('vytvorenie linku je v poznámkach (timeline)', rd('lead_notes.db')
       .some(n => n.client_id === 'klientkaDeal0001' && /platobný link/i.test(n.text) && /Silver/.test(n.text)));
     ok('nezmyselný produkt sa odmietne', (await j('/api/trainer/deal-link', { method: 'POST', body: { user_id: 'klientkaDeal0001', plan_id: 'zlato' } }, trn)).status === 400);
@@ -80,7 +80,7 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
 
     // ── 3. Verejná stránka (bez prihlásenia) ──
     const pg = await j('/kupa/' + token);
-    ok('stránka sa otvorí bez prihlásenia', pg.status === 200 && /Ahoj Mia/.test(pg.txt) && /Silver/.test(pg.txt) && /75,00/.test(pg.txt), pg.status + '');
+    ok('stránka sa otvorí bez prihlásenia', pg.status === 200 && /Ahoj Mia/.test(pg.txt) && /Silver/.test(pg.txt) && /74,90/.test(pg.txt), pg.status + '');
     ok('neplatný token = slušná 404', (await j('/kupa/neexistujuci123')).status === 404);
 
     // ── 4. Checkout (STRIPE_FAKE) → pending platba ──
@@ -106,9 +106,9 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('kontakt „zaplatila cez link" v zdieľanej vrstve', rd('coach_contacts.db')
       .some(c => c.lead_id === 'klientkaDeal0001' && c.outcome === 'booked' && /platobný link/i.test(c.note || '')));
     ok('AMBASÁDOR: provízia trénerke z nákupu', rd('transactions.db')
-      .some(t => t.partner_id === 'trenerkaDeal0001' && t.commission_only && +t.amount === 75), '');
+      .some(t => t.partner_id === 'trenerkaDeal0001' && t.commission_only && +t.amount === 74.9), '');
     ok('nákup je v tržbách (membership transakcia)', rd('transactions.db')
-      .some(t => t.user_id === 'klientkaDeal0001' && t.type === 'membership' && +t.amount === 75));
+      .some(t => t.user_id === 'klientkaDeal0001' && t.type === 'membership' && +t.amount === 74.9));
     ok('trénerke prišla notifikácia 💳', rd('notifications.db')
       .some(n => n.user_id === 'trenerkaDeal0001' && n.type === 'deal_paid'));
     ok('link je jednorazový — označený ako zaplatený', (rd('deal_links.db').find(x => x._id === token) || {}).status === 'paid');
@@ -142,7 +142,7 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     const beataRow = amb.members.find(m => m.id === 'trenerkaDeal0001');
     ok('trénerka je v zozname ako trénerka', beataRow && beataRow.rola === 'trénerka');
     ok('VÝKONY: konverzia aj línia sa premietli', beataRow.konverzie === 1 && beataRow.linia === 1, JSON.stringify(beataRow));
-    ok('VÝKONY: objem línie ráta Miin nákup', beataRow.objem_30d === 75, JSON.stringify(beataRow.objem_30d));
+    ok('VÝKONY: objem línie ráta Miin nákup', Math.abs(beataRow.objem_30d - 74.9) < 0.01, JSON.stringify(beataRow.objem_30d));
     ok('ambasádorka Soňa je v zozname', amb.members.some(m => m.id === 'sponzorkaReal001' && m.rola === 'ambasádorka'));
     // grant podľa mena
     const gr = (await j('/api/admin/ambassadors/grant', { method: 'POST', body: { query: 'mia.qa@qa-real.sk' } }, adm)).d;

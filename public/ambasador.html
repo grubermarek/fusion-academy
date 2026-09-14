@@ -181,15 +181,15 @@ function render(){
         : '<div class="bar"><i style="width:'+CT.progress+'%"></i></div>'
           +'<div class="togo">'+ob(CT.done)+' / '+ob(CT.target)+' bodov · chýba '+ob(CT.missing)+'</div>'
           +(function(){
-            // Prepočet na ženy: Bronze 50 € × počet mesiacov, ktoré do konca roka
+            // Prepočet na ženy: Bronze 49,90 € × počet mesiacov, ktoré do konca roka
             // ešte zaplatia (september–december = 4; každý ďalší mesiac o 1 menej).
             var monthsLeft=Math.max(1, 12 - new Date().getMonth() - 1);
-            var women=Math.ceil(CT.missing/(50*monthsLeft));
+            var women=Math.ceil(CT.missing/(49.9*monthsLeft));
             return '<p class="hint" style="margin-top:8px">Stačí '
               +women+' '+(women===1?'žena':(women<=4?'ženy':'žien'))
-              +', ktoré budú platiť Bronze (50 €) do konca roka — '
-              +women+' × 50 € × '+monthsLeft+' '+(monthsLeft===1?'mesiac':'mesiace')+' = '
-              +ob(women*50*monthsLeft)+' bodov. S vyššími členstvami ich treba ešte menej.</p>';
+              +', ktoré budú platiť Bronze (49,90 €) do konca roka — '
+              +women+' × 49,90 € × '+monthsLeft+' '+(monthsLeft===1?'mesiac':'mesiace')+' = '
+              +ob(Math.round(women*49.9*monthsLeft))+' bodov. S vyššími členstvami ich treba ešte menej.</p>';
           })())
       + '</div>';
   }
@@ -261,7 +261,7 @@ function render(){
      +   '<b id="cOut">—</b><span id="cSub"></span>'
      + '</div>'
      + '<p class="hint" id="cNote" style="text-align:center"></p>'
-     + '<p class="hint">Počítame s priemerným členstvom 75 € mesačne. Skutočná suma závisí od toho, '
+     + '<p class="hint">Počítame s priemerným členstvom 74,90 € mesačne. Skutočná suma závisí od toho, '
      + 'čo tvoje klientky reálne platia, a je nižšia, ak má niekto v tvojom tíme vlastnú hodnosť.</p></div>';
 
   // ── koľko sa dá zarobiť na ktorej hodnosti ───────────────────────────────
@@ -597,7 +597,7 @@ function toggleRules(){
 // ── kalkulačka: hodnosť × počet klientok × priemerná platba ───────────────
 function calc(){
   const el=document.getElementById('cCount'); if(!el) return;
-  const AVG=75;                                        // priemerné členstvo
+  const AVG=74.9;                                        // priemerné členstvo
   const mine=+el.value||0;
   const team=+document.getElementById('cTeam').value||0;
   const groupVol=(mine+team)*AVG;
@@ -611,7 +611,7 @@ function calc(){
   const income=groupVol*rate;
   document.getElementById('cOut').textContent=eur(income)+' / mesiac';
   document.getElementById('cSub').textContent=(mine+team)+' '+zien(mine+team)
-    +' × 75 € = '+ob(groupVol)+' bodov · sadzba '+Math.round(rate*100)+' %';
+    +' × 74,90 € = '+ob(groupVol)+' bodov · sadzba '+Math.round(rate*100)+' %';
 
   // medaila k dosiahnutej hodnosti
   const medal=document.getElementById('cMedal');

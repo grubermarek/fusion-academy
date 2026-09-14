@@ -75,7 +75,7 @@ const U = (id, meno, hash, extra = {}) => JSON.stringify({ _id: id, name: meno, 
     ok('cenník je verejne dostupný', plany && plany.bronze, JSON.stringify(plany && Object.keys(plany)));
     ok('ceny sedia s cenníkom',
       +plany.vstup1.price === 10 && +plany.permanentka10.price === 80
-      && +plany.bronze.price === 50 && +plany.silver.price === 75 && +plany.gold.price === 125,
+      && +plany.bronze.price === 49.9 && +plany.silver.price === 74.9 && +plany.gold.price === 124.9,
       JSON.stringify({ v: plany.vstup1.price, p: plany.permanentka10.price, b: plany.bronze.price, s: plany.silver.price, g: plany.gold.price }));
 
     console.log('\nRezervácia so zvolenou položkou:');
@@ -91,7 +91,7 @@ const U = (id, meno, hash, extra = {}) => JSON.stringify({ _id: id, name: meno, 
       qaPosTretia0001: 'silver',
       qaPosStvrta0001: 'gold',
     };
-    const ocakavana = { permanentka10: 80, silver: 75, gold: 125 };
+    const ocakavana = { permanentka10: 80, silver: 74.9, gold: 124.9 };
     for (const [uid, plan] of Object.entries(ucty)) {
       const jar = {};
       await j('/api/login', { method: 'POST', body: { email: uid.toLowerCase() + '@qa-biz.local', password: 'Heslo123!' } }, jar);

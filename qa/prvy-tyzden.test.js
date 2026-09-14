@@ -85,7 +85,7 @@ async function start(PORT, DATA, env) {
   let j = mkJ(BASE), rd = mkRd(DATA);
   try {
     const cfg = await j('/api/config');
-    ok('config: prepínač zapnutý, 7 dní, 49,90 €', cfg.d.prvy_tyzden === true && cfg.d.trial_days === 7 && cfg.d.trial_price === 50, JSON.stringify({ p: cfg.d.prvy_tyzden, d: cfg.d.trial_days, c: cfg.d.trial_price }));
+    ok('config: prepínač zapnutý, 7 dní, 49,90 €', cfg.d.prvy_tyzden === true && cfg.d.trial_days === 7 && cfg.d.trial_price === 49.9, JSON.stringify({ p: cfg.d.prvy_tyzden, d: cfg.d.trial_days, c: cfg.d.trial_price }));
     const nora = {}, bea = {}, sara = {}, adm = {}, tren = {};
     await j('/api/login', { method: 'POST', body: { email: 'qa.pt.nora@qa-biz.local', password: 'Heslo123!' } }, nora);
     await j('/api/login', { method: 'POST', body: { email: 'qa.pt.bea@qa-biz.local', password: 'Heslo123!' } }, bea);

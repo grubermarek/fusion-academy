@@ -765,6 +765,23 @@ async function seedData() {
     if(zle.length) console.log('🧒 storno detských hodín bez no-show: '+zle.length);
     await q.insert(db.settings,{key:'deti_storno_noshow_20260913', value:true, at:nowISO()});
   }
+  // 14. 9.: ceny 49,90 / 74,90 / 124,90 € — texty uložené v DB (mailové kroky, príspevky) a
+  // nevybrané „zaplatím na mieste" so starou sumou plánu. História (platby, faktúry) sa nemení.
+  if(!(await q.one(db.settings,{key:'ceny_4990_20260914'}))){
+    const NAHR=[['50 €/mesiac','49,90 €/mesiac'],['od 50 €/mes.','od 49,90 €/mes.'],['50 €/mes','49,90 €/mes'],['75 €/mes','74,90 €/mes'],['125 €/mes','124,90 €/mes'],
+      ['Bronze členstvo (neobmedzene hodín) za <b>50 €','Bronze členstvo (neobmedzene hodín) za <b>49,90 €'],['už od 50 € / mesiac','už od 49,90 € / mesiac']];
+    const prepis=t=>{ let o=String(t); for(const [a,b] of NAHR) o=o.split(a).join(b); return o; };
+    let kroky=0; for(const st of await q.find(db.email_steps,{})){ const upd={};
+      for(const f of ['body','subject','cta']) if(st[f] && prepis(st[f])!==st[f]) upd[f]=prepis(st[f]);
+      if(Object.keys(upd).length){ await q.update(db.email_steps,{_id:st._id},{$set:upd}); kroky++; } }
+    let prispevky=0; if(db.feed) for(const p of await q.find(db.feed,{})){ if(p.text && prepis(p.text)!==p.text){ await q.update(db.feed,{_id:p._id},{$set:{text:prepis(p.text)}}); prispevky++; } }
+    const STARE={bronze:50, silver:75, gold:125};
+    let naMieste=0; for(const b of await q.find(db.bookings,{pay_on_site:true, status:{$ne:'cancelled'}})){
+      if(b.entry_collected || !STARE[b.pay_plan] || +b.pay_amount!==STARE[b.pay_plan]) continue;
+      await q.update(db.bookings,{_id:b._id},{$set:{pay_amount:MEMBERSHIP_PLANS[b.pay_plan].price}}); naMieste++; }
+    console.log('💶 Ceny 49,90/74,90/124,90: mailové kroky '+kroky+', príspevky '+prispevky+', platby na mieste '+naMieste);
+    await q.insert(db.settings,{key:'ceny_4990_20260914', value:{kroky, prispevky, naMieste}, at:nowISO()});
+  }
   // Migration: odstránenie služieb Fit Premena (základný/premium) + Nutričné poradenstvo (InBody analýzu ponechaj)
   { const anOff = await q.update(db.products,{active:true,$or:[
         {name:new RegExp('fit\\s*premena','i')},
@@ -791,7 +808,7 @@ async function seedData() {
       {title:'Metabolická analýza — čo o tebe prezradí', cat:'Zdravie', date:'16.4.2026',
        text:`📊 Metabolická analýza (InBody)\n\nVieš koľko svalov, tuku a vody má tvoje telo? Bez tejto informácie je akékoľvek chudnutie len hádanie.\n\nAká merania získaš:\n• Bazálny metabolizmus (koľko kcal spáliš v pokoji)\n• Rozloženie svalovej hmoty\n• % telesného tuku a viscerálneho tuku\n• Biologický vek\n• Odporúčanie makronutrientov na mieru\n\n💡 Príklad: 33-ročný muž, 83.4 kg, 22.9% tuk — analýza ukáže presne kde sú rezervy.\n\n💰 Cena: 35 € | ZADARMO v Silver a Gold členstve\n📍 Dostupné vo všetkých 4 mestách\n🎁 Prvá analýza na vyskúšanie ZDARMA`},
       {title:'Zumba v Detve, Zvolene, Banskej Bystrici a Brezne', cat:'Zumba', date:'16.4.2026',
-       text:`🗺️ Kompletný sprievodca Zumby vo Fusion Academy\n\nRozvrh hodín:\n📍 Detva (Záhradná 7): Piatok 19:00, Nedeľa 19:00\n📍 Zvolen (Fitko Gymkova): Pondelok 19:00, Streda 17:00\n📍 Banská Bystrica (R2N Biz centrum): Pondelok 17:00, Streda 19:00\n📍 Brezno (Fitko LÉGIA): Utorok 19:00, Štvrtok 19:00\n🌐 Online LIVE: Utorok 19:00 | 12.90 €/mes\n\n💰 Ceny:\n• Jednorazovo: 10 €\n• 10-vstupová permanentka: 80 €\n• Bronze členstvo: 50 €/mes (neobmedzene)\n\n🎁 Prvá hodina ZADARMO!\n\n"Nikto sa na teba nepozerá — každý rieši samého seba" 😊`},
+       text:`🗺️ Kompletný sprievodca Zumby vo Fusion Academy\n\nRozvrh hodín:\n📍 Detva (Záhradná 7): Piatok 19:00, Nedeľa 19:00\n📍 Zvolen (Fitko Gymkova): Pondelok 19:00, Streda 17:00\n📍 Banská Bystrica (R2N Biz centrum): Pondelok 17:00, Streda 19:00\n📍 Brezno (Fitko LÉGIA): Utorok 19:00, Štvrtok 19:00\n🌐 Online LIVE: Utorok 19:00 | 12.90 €/mes\n\n💰 Ceny:\n• Jednorazovo: 10 €\n• 10-vstupová permanentka: 80 €\n• Bronze členstvo: 49,90 €/mes (neobmedzene)\n\n🎁 Prvá hodina ZADARMO!\n\n"Nikto sa na teba nepozerá — každý rieši samého seba" 😊`},
       {title:'Spoločenské tance pre dospelých — začať môžeš aj bez partnera', cat:'Tanec', date:'16.4.2026',
        text:`👫 Spoločenské tance pre dospelých\n\nNemáš partnera? Nevadí! Na naše hodiny chodia aj jednotlivci.\n\nČo sa naučíš:\n🕺 Štandardné tance: valčík, tango, slowfox\n💃 Latinsko-americké: cha-cha, samba, rumba, jive\n\nPre koho:\n• Páry pripravujúce svadobný tanec\n• Rodičia chcú zatancovať na plese s deťmi\n• Každý, kto hľadá elegantný pohyb\n\n"80 % ľudí, čo prídu, tancuje zhrbených — to je prvá vec, ktorú opravíme"\n\n📍 Pravidelné skupiny: Detva\n📍 Súkromné hodiny: Zvolen, BB, Brezno\n💰 Od 45 €/hodina súkromne | Skupiny od 10 €/vstup\n🎁 Prvá hodina ZADARMO — volaj 0904 31 51 51`},
       {title:'Príbeh Beátky — −17 kg za rok vďaka Zumbe a výžive', cat:'Príbeh', date:'16.4.2026',
@@ -894,7 +911,7 @@ async function seedData() {
         cta:'🗓️ Rezervovať ďalšiu hodinu', cta_url:`${APP}/schedule` },
       { sequence:'post_first_class', day:3, label:'Ponuka po prvej hodine', active:true,
         subject:'Špeciálna ponuka len pre teba 🎁',
-        body:`<p>Videli sme ťa na hodine – a vieme, že to mal byť len začiatok!</p><p>Pre nových klientov ponúkame Bronze členstvo (neobmedzene hodín) za <b>50 €/mesiac</b>.</p><p>To vychádza na <b>menej ako 2 € za hodinu</b> – pri 3 hodinách týždenne.</p>`,
+        body:`<p>Videli sme ťa na hodine – a vieme, že to mal byť len začiatok!</p><p>Pre nových klientov ponúkame Bronze členstvo (neobmedzene hodín) za <b>49,90 €/mesiac</b>.</p><p>To vychádza na <b>menej ako 2 € za hodinu</b> – pri 3 hodinách týždenne.</p>`,
         cta:'💳 Aktivovať členstvo', cta_url:`${APP}/obchod` },
 
       // ── RE-ENGAGEMENT (neaktívni 14+ dní) ───────────────────────────────────
@@ -1019,7 +1036,7 @@ async function seedData() {
     await q.insert(db.email_steps,[
       { sequence:'trial_followup', day:2, label:'Ako bolo na hodine?', active:true,
         subject:'{meno}, aká bola tvoja prvá hodina? 💃',
-        body:`<p>Ahoj <b>{meno}</b>,</p><p>videli sme ťa na hodine — a dúfame, že ti to dalo rovnakú energiu ako nám! 🔥</p><p>Vieš, čo hovoria baby najčastejšie po prvej hodine? <i>„Neviem prečo som tak dlho váhala."</i></p><p>Ak chceš pokračovať, máš na výber:</p><ul style="color:#ccc"><li>🥉 <b>Mesačné členstvo</b> — neobmedzené hodiny, od 50 €/mes.</li><li>🎟️ <b>Permanentka 10 vstupov</b> — 80 €, bez záväzku, platí 3 mesiace</li><li>🎫 <b>Jednorazový vstup</b> — 10 €, zaplatíš aj na mieste</li></ul>`,
+        body:`<p>Ahoj <b>{meno}</b>,</p><p>videli sme ťa na hodine — a dúfame, že ti to dalo rovnakú energiu ako nám! 🔥</p><p>Vieš, čo hovoria baby najčastejšie po prvej hodine? <i>„Neviem prečo som tak dlho váhala."</i></p><p>Ak chceš pokračovať, máš na výber:</p><ul style="color:#ccc"><li>🥉 <b>Mesačné členstvo</b> — neobmedzené hodiny, od 49,90 €/mes.</li><li>🎟️ <b>Permanentka 10 vstupov</b> — 80 €, bez záväzku, platí 3 mesiace</li><li>🎫 <b>Jednorazový vstup</b> — 10 €, zaplatíš aj na mieste</li></ul>`,
         cta:'💳 Pozrieť možnosti', cta_url:`${APP2}/obchod`, created_at:nowISO() },
       { sequence:'trial_followup', day:5, label:'Prečo sa oplatí pokračovať', active:true,
         subject:'Prvá hodina je za tebou. Vieš, čo príde po tretej? ✨',
@@ -11165,9 +11182,9 @@ app.delete('/api/admin/tips/:id', adminAuth, async(req,res)=>{
 // MEMBERSHIP SYSTEM
 // ═══════════════════════════════════════════════════════════════════════════════
 const MEMBERSHIP_PLANS = {
-  'bronze':         { name:'Bronze',         price:50,   duration_days:30,  online:false, color:'#cd7f32' },
-  'silver':         { name:'Silver',         price:75,   duration_days:30,  online:true,  color:'#a8a9ad' },
-  'gold':           { name:'Gold',           price:125,  duration_days:30,  online:true,  color:'#C9A84C', meal:true },
+  'bronze':         { name:'Bronze',         price:49.9, duration_days:30,  online:false, color:'#cd7f32' },
+  'silver':         { name:'Silver',         price:74.9, duration_days:30,  online:true,  color:'#a8a9ad' },
+  'gold':           { name:'Gold',           price:124.9, duration_days:30,  online:true,  color:'#C9A84C', meal:true },
   // Zrušený 9. 9. (deti majú bežné Bronze/Silver/Gold) — ostáva len pre staré záznamy.
   'kids':           { name:'Zumba Kids',     price:49.9, duration_days:30,  online:false, color:'#FF6B9D', kids:true, retired:true },
   'online_basic':   { name:'Online Basic',   price:12.9, duration_days:30,  online:true,  color:'#4CAF50' },
@@ -14276,7 +14293,7 @@ app.post('/api/stripe/trial', auth, async(req,res)=>{
       : await stripeApi('checkout/sessions', params, 'POST');
     if(r.status>=400 || !r.body?.url) return res.status(400).json({error:r.body?.error?.message||'Stripe chyba pri vytváraní skúšky'});
     await q.insert(db.payments,{stripe_session_id:r.body.id, user_id:req.session.uid, member_id:req.session.uid, amount:0, currency:'EUR',
-      description:`Skúšobný týždeň ${plan.name} (${SKUSKA.dni} dní zadarmo, potom ${plan.price} €/mes.)`, ref_id:SKUSKA.plan, ref_type:'trial',
+      description:`Skúšobný týždeň ${plan.name} (${SKUSKA.dni} dní zadarmo, potom ${plan.price.toFixed(2).replace('.',',')} €/mes.)`, ref_id:SKUSKA.plan, ref_type:'trial',
       status:'pending', trial:true, accounting_skip:true, created_at:nowISO()});
     metaCapi('StartTrial',{email:u.email, fbclid:u.fbclid, event_id:'trial_'+r.body.id}).catch(()=>{});
     res.json({ok:true, url:r.body.url});
@@ -14734,18 +14751,19 @@ app.post('/api/stripe/webhook', async(req,res)=>{
           const planId = u.stripe_sub_plan; const plan = MEMBERSHIP_PLANS[planId];
           if(plan){
             await activateMembership(u.stripe_sub_member||u._id, planId, plan.duration_days||30);
+            const sumaObnovy = (+inv.amount_paid>0) ? +(inv.amount_paid/100).toFixed(2) : plan.price;
             if(u.trial_ends_at && !u.trial_converted_at){ // prvá platba po skúšobnom týždni
               await q.update(db.users,{_id:u._id},{$set:{trial_converted_at:nowISO()}});
-              await q.update(db.memberships,{user_id:u.stripe_sub_member||u._id, status:'active'},{$set:{trial:false, price:plan.price}});
+              await q.update(db.memberships,{user_id:u.stripe_sub_member||u._id, status:'active'},{$set:{trial:false, price:sumaObnovy}});
               console.log('💳 Skúška → platené členstvo: '+u.name);
             }
-            await q.insert(db.transactions,{type:'subscription_renewal',user_id:u.stripe_sub_member||u._id,user_name:u.name,amount:plan.price,date:today(),payment_method:'stripe',note:`Auto-obnova ${plan.name} (Stripe)`,plan_id:planId,created_at:nowISO(),month:today().slice(0,7)});
+            await q.insert(db.transactions,{type:'subscription_renewal',user_id:u.stripe_sub_member||u._id,user_name:u.name,amount:sumaObnovy,date:today(),payment_method:'stripe',note:`Auto-obnova ${plan.name} (Stripe)`,plan_id:planId,created_at:nowISO(),month:today().slice(0,7)});
             // Odber dieťaťa: faktúra a provízia idú platiteľovi (rodičovi), nie detskému profilu (13. 9.)
             const platca = u.stripe_sub_payer_id ? (await q.one(db.users,{_id:u.stripe_sub_payer_id}))||u : u;
             createInvoice({user_id:platca._id, client_name:platca.name, client_email:platca.email,
-              items:[{desc:`Členstvo ${plan.name}${platca._id!==u._id?' ('+u.name+')':''} — mesačná obnova`, qty:1, total:plan.price}],
-              total:plan.price, method:'Stripe (automatický odber)'});
-            awardPurchaseCommission({buyer_id:platca._id, amount:plan.price, product_name:`Členstvo ${plan.name} (obnova)`});
+              items:[{desc:`Členstvo ${plan.name}${platca._id!==u._id?' ('+u.name+')':''} — mesačná obnova`, qty:1, total:sumaObnovy}],
+              total:sumaObnovy, method:'Stripe (automatický odber)'});
+            awardPurchaseCommission({buyer_id:platca._id, amount:sumaObnovy, product_name:`Členstvo ${plan.name} (obnova)`});
           }
         }
       }
@@ -15109,9 +15127,9 @@ app.get('/api/shop/overview', auth, async(req,res)=>{
       rec.push({key:'entries_low', title:'Dochádza ti permanentka', text:'Zostáva ti '+entries+' '+(entries===1?'vstup':'vstupy')+'. Kúp si ďalšiu, nech nemusíš riešiť platby na hodine.', plan_id:'permanentka10'});
     if(!m && visits30>=5)
       rec.push({key:'membership_worth', title:'Pri tvojom tempe sa oplatí členstvo',
-        text:'Za posledný mesiac si bola na '+visits30+' hodinách — na vstupoch je to ~'+(visits30*10)+' €. Bronze členstvo stojí 50 €/mes.', plan_id:'bronze'});
+        text:'Za posledný mesiac si bola na '+visits30+' hodinách — na vstupoch je to ~'+(visits30*10)+' €. Bronze členstvo stojí 49,90 €/mes.', plan_id:'bronze'});
     if(!m && entries<=0 && visits30===0 && !pending.length)
-      rec.push({key:'start', title:'Začni členstvom alebo permanentkou', text:'Vyber si, čo ti sedí — mesačné členstvo Bronze za 50 € alebo 10 vstupov za 80 €.'});
+      rec.push({key:'start', title:'Začni členstvom alebo permanentkou', text:'Vyber si, čo ti sedí — mesačné členstvo Bronze za 49,90 € alebo 10 vstupov za 80 €.'});
     if((u.referral_credit||0)>=10)
       rec.push({key:'credit', title:'Máš '+(+u.referral_credit).toFixed(2)+' € Fusion kreditu 🎉', text:'Môžeš ho použiť ako zľavu pri nákupe členstva alebo permanentky.'});
     res.json({ok:true,
@@ -22381,7 +22399,7 @@ async function sendFirstClassEmail(userId){
          <div style="display:inline-block;background:#C9A84C;color:#111;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:4px 12px;border-radius:20px;margin-bottom:10px">⭐ Najvýhodnejšie</div>
          <div style="font-size:20px;font-weight:800;color:#C9A84C;margin-bottom:4px">Mesačné členstvo</div>
          <div style="color:#ccc;font-size:14px;margin-bottom:14px">Choď na <b style="color:#fff">neobmedzený počet hodín</b> každý mesiac, vo všetkých mestách. Najlepšia hodnota pre pravidelný tanec.</div>
-         <div style="font-size:26px;font-weight:900;color:#fff;margin-bottom:2px">už od 50 € / mesiac</div>
+         <div style="font-size:26px;font-weight:900;color:#fff;margin-bottom:2px">už od 49,90 € / mesiac</div>
          <a href="${APP_URL}/obchod" style="display:inline-block;margin-top:14px;background:#C9A84C;color:#111;font-weight:800;text-decoration:none;padding:13px 30px;border-radius:10px;font-size:15px">Chcem členstvo 💃</a>
        </div>
      </div>
