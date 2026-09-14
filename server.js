@@ -18026,7 +18026,8 @@ app.post('/api/attendance/session-instructor', trainerAuth, async(req,res)=>{
 
 // Zruš konkrétnu hodinu (dátum) — upozorni booknutých, vráť kredit z permanentky,
 // daj oznam na nástenku, znemožni booknutie, pozvi na najbližšiu hodinu v tom meste.
-// Automatické predĺženie členstiev pri zrušení hodiny (Marek 14. 9.: „pri každom zrušení").
+// Automatické predĺženie členstiev pri zrušení hodiny (Marek 14. 9.: „pri každom zrušení",
+// „predĺžiť členstvo len tej, čo bola prihlásená" → len prihláseným na zrušený termín).
 // Kompenzuje sa len hodina, ktorú mesačné členstvo kryje — nie technika, online ani súkromná.
 const KOMPENZACIA_DNI = 4;
 const kompenzovatelna = c => !!c && !['Online','Technika','Súkromné'].includes(c.category);
@@ -18059,12 +18060,12 @@ app.post('/api/attendance/cancel-session', trainerAuth, async(req,res)=>{
     // Zruš rezervácie + vráť permanentkový vstup + notifikuj
     const bookings = await q.find(db.bookings,{class_id, booking_date:date, status:{$nin:['cancelled','cancelled_studio']}});
     let refunded=0;
-    // Predĺženie beží pred oznámeniami: prihlásená členka ho má priamo v oznámení a v maile
-    // o zrušení, ostatné členky z mesta dostanú samostatné oznámenie.
+    // Predĺženie len prihláseným na zrušený termín. Beží pred oznámeniami, takže ho členka
+    // má priamo v oznámení a v maile o zrušení (žiadne samostatné oznámenie navyše).
     let komp=null; const kompPre={};
     if(kompenzovatelna(cls) && !req.body.skip_compensation){
       try{
-        komp=await kompenzujZrusenie({class_id, date, days:KOMPENZACIA_DNI, scope:'city', by:req.trainerUser?._id||'auto',
+        komp=await kompenzujZrusenie({class_id, date, days:KOMPENZACIA_DNI, scope:'booked', by:req.trainerUser?._id||'auto',
           tichoPre:new Set(bookings.map(b=>b.user_id))});
         for(const x of komp.extended) if(!kompPre[x.user_id]) kompPre[x.user_id]=x;
       }catch(e){ console.error('auto kompenzácia:', e.message); }

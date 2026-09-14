@@ -234,7 +234,7 @@ async function renderDay(){
 const _insBy={};
 // Zrušiť KONKRÉTNY termín hodiny (napr. štvrtok 23.7. Brezno) — oznámenia + vrátenie vstupov
 async function cancelDay(classId, dateStr, name){
-  const reason = prompt(`Zrušiť hodinu „${name}" dňa ${dateStr.split('-').reverse().join('.')}?\n\nVšetkým prihláseným pošleme oznámenie, vrátime vstupy z permanentky a pozveme ich na inú hodinu. Ženám s mesačným členstvom v meste automaticky predĺžime členstvo o 4 dni (pri technike nie). Rezervácie na tento termín sa zablokujú.\n\nDôvod (nepovinné):`, '');
+  const reason = prompt(`Zrušiť hodinu „${name}" dňa ${dateStr.split('-').reverse().join('.')}?\n\nVšetkým prihláseným pošleme oznámenie, vrátime vstupy z permanentky a pozveme ich na inú hodinu. Prihláseným s mesačným členstvom automaticky predĺžime členstvo o 4 dni (pri technike nie). Rezervácie na tento termín sa zablokujú.\n\nDôvod (nepovinné):`, '');
   if(reason===null) return;
   const r=await api('/api/attendance/cancel-session',{method:'POST',body:{class_id:classId, date:dateStr, reason}});
   if(r&&r.ok){ toast(r.already?'ℹ️ Tento termín už bol zrušený':`✅ Hodina zrušená · upozornených ${r.notified||0}${r.refunded?', vrátených vstupov '+r.refunded:''}${r.compensation&&r.compensation.extended?', predĺžené členstvá '+r.compensation.extended+' (+'+r.compensation.days+' dni)':''}`); renderDay(); }

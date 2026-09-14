@@ -909,7 +909,7 @@ async function api(url, opts={}){
 // ── TAB SWITCHING – defined later with QR support ────────────────────────────
 
 async function trCancelSession(classId, name){
-  const reason = prompt(`Zrušiť najbližšiu hodinu „${name}"?\n\nVšetkým prihláseným pošleme oznámenie, vrátime kredit z permanentky, dáme oznam na nástenku a pozveme ich na ďalšiu hodinu v tom meste. Ženám s mesačným členstvom v meste automaticky predĺžime členstvo o 4 dni (pri technike nie).\n\nDôvod (nepovinné):`, '');
+  const reason = prompt(`Zrušiť najbližšiu hodinu „${name}"?\n\nVšetkým prihláseným pošleme oznámenie, vrátime kredit z permanentky, dáme oznam na nástenku a pozveme ich na ďalšiu hodinu v tom meste. Prihláseným s mesačným členstvom automaticky predĺžime členstvo o 4 dni (pri technike nie).\n\nDôvod (nepovinné):`, '');
   if(reason===null) return;
   const d=await api('/api/attendance/cancel-session',{method:'POST',body:{class_id:classId,reason}});
   if(d&&d.ok){

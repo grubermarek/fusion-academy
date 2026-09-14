@@ -2,18 +2,19 @@
  * Kompenzácia za zrušenú hodinu — predĺženie mesačných členstiev.
  *
  * 3. 9. 2026: nástroj POST /api/attendance/cancel-compensate (tréner/admin)
- * a /api/service/cancel-compensate (IMPORT_TOKEN, z terminálu).
- * 14. 9. 2026 (Marek: „sprav to automaticky pri každom zrušení"): zrušenie hodiny
- * cez appku (cancel-session) predĺži členstvá samo — 1 hodina = 4 dni, okruh mesto.
+ * a /api/service/cancel-compensate (IMPORT_TOKEN, z terminálu), okruh 'city' alebo 'booked'.
+ * 14. 9. 2026 (Marek: „sprav to automaticky pri každom zrušení", „predĺžiť členstvo len tej,
+ * čo bola prihlásená"): zrušenie hodiny cez appku (cancel-session) samo predĺži členstvo
+ * prihláseným na zrušený termín — 1 hodina = 4 dni.
  *
  * Stráži, že:
- *   · zrušenie Zumby samo predĺži všetkým členkám, čo do mesta chodia (aj z techniky)
- *   · prihlásená členka má predĺženie priamo v oznámení a v maile o zrušení,
- *     ostatné dostanú samostatné oznámenie (nikto dve o tom istom)
+ *   · zrušenie Zumby samo predĺži len prihláseným členkám, nie ostatným z mesta
+ *   · prihlásená členka má predĺženie priamo v oznámení a v maile o zrušení (žiadne druhé)
  *   · online členstvo, expirované, lead, iné mesto a deti pri dospelej hodine: nič
  *   · zrušenie techniky, online hodiny ani s skip_compensation nepredlžuje
- *   · zrušenie detskej hodiny predĺži len deťom
+ *   · zrušenie detskej hodiny predĺži prihlásenému dieťaťu
  *   · opakované zrušenie ani ručný nástroj na to isté zrušenie nepredĺži druhýkrát
+ *   · ručný okruh „city" ďalej funguje (samostatné oznámenia s dňom v týždni)
  *   · Stripe obnova po predĺžení nadväzuje na predĺžený dátum (predĺženie sa nestratí)
  *   · bez tokenu servisná cesta „neexistuje", zlé vstupy vrátia 400
  *
@@ -97,8 +98,9 @@ const spi = ms => new Promise(r => setTimeout(r, ms));
     B('qaKompBk0000008', 'qaKompTech00001', 'qaKompClsBrTe01', '2026-09-03', { access_method: 'pay_on_site', pay_on_site: true }),
     B('qaKompBk0000009', 'qaKompStripe001', 'qaKompClsBrUt01', '2026-08-25'),
     B('qaKompBk0000010', 'qaKompDieta0001', 'qaKompClsBrDe01', '2026-09-08', { booked_by: 'qaKompRodic0001' }),
+    B('qaKompBk0000011', 'qaKompStripe001', 'qaKompClsBrUt01', '2026-09-15'),
+    B('qaKompBk0000012', 'qaKompTimea0001', 'qaKompClsBrSt01', '2026-09-03', { status: 'cancelled', cancelled_at: '2026-09-02T10:00:00.000Z' }),
   ].join('\n') + '\n');
-
   // staré jednorazové predĺženia pre Brezno (20. 8., 13. 8., 1. 9.) by pri štarte predĺžili testovacie členstvá
   fs.writeFileSync(path.join(DATA, 'settings.db'), ['brezno_extend_20260820', 'online_brezno_20260813', 'brezno_predlzenie_0926']
     .map((k, i) => JSON.stringify({ _id: 'qaKompSet' + i, key: k, value: true, at: '2026-09-01T00:00:00.000Z' })).join('\n') + '\n');
@@ -123,26 +125,23 @@ const spi = ms => new Promise(r => setTimeout(r, ms));
     const lg = await j('/api/login', { method: 'POST', body: { email: 'qa.komp.admin@qa-biz.local', password: 'Heslo123!' } }, adm);
     ok('admin prihlásený', lg.status === 200, 'HTTP ' + lg.status);
 
-    console.log('\n1) Zrušenie Zumby cez appku — predĺženie samo:');
+    console.log('\n1) Zrušenie Zumby cez appku — predĺženie len prihláseným:');
     const zr = await j('/api/attendance/cancel-session', { method: 'POST', body: { class_id: 'qaKompClsBrSt01', date: '2026-09-03', reason: 'nízka účasť' } }, adm);
     ok('hodina zrušená', zr.status === 200 && zr.d && zr.d.ok, JSON.stringify(zr.d).slice(0, 160));
     ok('appka sama vrátila hodinu zdarma leadke, upozornila 3', zr.d && zr.d.refunded === 1 && zr.d.notified === 3, JSON.stringify(zr.d).slice(0, 160));
-    const mena = ((zr.d && zr.d.compensation && zr.d.compensation.names) || []).slice().sort();
-    ok('predĺžené samo štyrom členkám z Brezna (aj z techniky a so Stripe odberom)', zr.d.compensation && zr.d.compensation.days === 4 && JSON.stringify(mena) === JSON.stringify(['Eva Booknutá', 'Soňa Stripe', 'Terézia Technika', 'Tímea Chodiaca']), JSON.stringify(zr.d.compensation));
+    ok('predĺžené samo len prihlásenej členke Eve', zr.d.compensation && zr.d.compensation.days === 4 && JSON.stringify(zr.d.compensation.names) === JSON.stringify(['Eva Booknutá']), JSON.stringify(zr.d.compensation));
     await spi(500);
     ok('Eva: +4 dni, formát dátumu bez času ostal', memb('qaKompMemEva001').expires_at === plusDni(EXP, 4), memb('qaKompMemEva001').expires_at);
-    ok('Tímea: +4 dni, formát s časom ostal', memb('qaKompMemTim001').expires_at === plusDni(EXP, 4) + 'T21:59:59.000Z', memb('qaKompMemTim001').expires_at);
     const eva = memb('qaKompMemEva001');
     ok('na členstve je jeden záznam o kompenzácii', Array.isArray(eva.kompenzacie) && eva.kompenzacie.length === 1 && eva.kompenzacie[0].key === KLUC && eva.kompenzacie[0].days === 4);
-    ok('online členstvo sa nepredĺžilo', memb('qaKompMemOnl001').expires_at === EXP);
+    ok('neprihlásené členky z mesta sa nepredĺžili (Tímea, Terézia, Soňa)', memb('qaKompMemTim001').expires_at === EXP + 'T21:59:59.000Z' && memb('qaKompMemTec001').expires_at === EXP && memb('qaKompMemStr001').expires_at === EXP);
+    ok('Tímea, ktorá sa z hodiny sama odhlásila, sa nepredĺžila', memb('qaKompMemTim001').expires_at === EXP + 'T21:59:59.000Z');
+    ok('prihlásené online členstvo sa nepredĺžilo', memb('qaKompMemOnl001').expires_at === EXP);
     ok('expirované členstvo sa nepredĺžilo', memb('qaKompMemExp001').expires_at === vcera.toISOString().slice(0, 10));
-    ok('členka zo Zvolena sa nepredĺžila', memb('qaKompMemZvo001').expires_at === EXP);
-    ok('dieťa z detskej hodiny sa pri dospelej hodine nepredĺžilo', memb('qaKompMemDie001').expires_at === EXP);
+    ok('členka zo Zvolena a dieťa sa nepredĺžili', memb('qaKompMemZvo001').expires_at === EXP && memb('qaKompMemDie001').expires_at === EXP);
     const oznEva = rd('notifications.db').filter(n => n.user_id === 'qaKompEva000001' && n.type === 'class_cancelled');
-    ok('prihlásená Eva má predĺženie priamo v oznámení o zrušení', oznEva.length === 1 && /predlžujeme o 4 dni — platí do/.test(oznEva[0].body), oznEva[0] && oznEva[0].body);
-    ok('Eva nedostala druhé samostatné oznámenie', !samostatne().some(n => n.user_id === 'qaKompEva000001'));
-    ok('neprihlásené členky dostali samostatné oznámenie (Tímea, Terézia, Soňa)', JSON.stringify(samostatne().map(n => n.user_id).sort()) === JSON.stringify(['qaKompStripe001', 'qaKompTech00001', 'qaKompTimea0001']), JSON.stringify(samostatne().map(n => n.user_id)));
-    ok('samostatné oznámenie má deň v týždni a „o 4 dni"', samostatne().every(n => /štvrtok 3\. 9\. 2026/.test(n.body) && /o 4 dni/.test(n.body)), samostatne()[0] && samostatne()[0].body);
+    ok('Eva má predĺženie priamo v oznámení o zrušení', oznEva.length === 1 && /predlžujeme o 4 dni — platí do/.test(oznEva[0].body), oznEva[0] && oznEva[0].body);
+    ok('nikto nedostal samostatné oznámenie navyše', samostatne().length === 0, 'n=' + samostatne().length);
     const oznOlga = rd('notifications.db').find(n => n.user_id === 'qaKompOnline001' && n.type === 'class_cancelled');
     ok('online členka má oznámenie o zrušení bez predĺženia', oznOlga && !/predlžujeme/.test(oznOlga.body));
     const mailEva = rd('mail_log.db').find(m => m.to === 'qa.komp.eva@qa-biz.local' && /^Hodina zrušená/.test(m.subject));
@@ -150,34 +149,33 @@ const spi = ms => new Promise(r => setTimeout(r, ms));
     ok('mail Eve o zrušení spomína predĺženie', mailEva && /predlžujeme o 4 dni/.test(mailEva.html || ''), mailEva && (mailEva.html || '').slice(0, 80));
     ok('mail leadke predĺženie nespomína', mailLenka && !/predlžujeme/.test(mailLenka.html || ''));
     const aud = rd('audit.db');
-    ok('audit: class_cancel s počtom predĺžených a class_compensate auto', aud.some(a => a.action === 'class_cancel' && a.after && a.after.compensated === 4) && aud.some(a => a.action === 'class_compensate' && a.after && a.after.auto === true));
+    ok('audit: class_cancel s počtom predĺžených a class_compensate auto booked', aud.some(a => a.action === 'class_cancel' && a.after && a.after.compensated === 1) && aud.some(a => a.action === 'class_compensate' && a.after && a.after.auto === true && a.after.scope === 'booked'));
 
     console.log('\n2) Opakovanie nič nezdvojí:');
     const zr2 = await j('/api/attendance/cancel-session', { method: 'POST', body: { class_id: 'qaKompClsBrSt01', date: '2026-09-03' } }, adm);
     ok('druhé zrušenie toho istého termínu → already', zr2.status === 200 && zr2.d.already === true);
-    const k1 = await j('/api/attendance/cancel-compensate', { method: 'POST', body: { class_id: 'qaKompClsBrSt01', date: '2026-09-03', days: 4, scope: 'city' } }, adm);
-    ok('ručný nástroj na to isté zrušenie už nikoho nepredĺži', k1.status === 200 && k1.d.extended.length === 0, JSON.stringify(k1.d).slice(0, 160));
+    const k1 = await j('/api/attendance/cancel-compensate', { method: 'POST', body: { class_id: 'qaKompClsBrSt01', date: '2026-09-03', days: 4, scope: 'booked' } }, adm);
+    ok('ručný nástroj „booked" na to isté zrušenie už nikoho nepredĺži', k1.status === 200 && k1.d.extended.length === 0, JSON.stringify(k1.d).slice(0, 160));
     await spi(300);
     ok('Eva má stále len +4 a jeden záznam', memb('qaKompMemEva001').expires_at === plusDni(EXP, 4) && memb('qaKompMemEva001').kompenzacie.length === 1);
-    ok('žiadne ďalšie samostatné oznámenia', samostatne().length === 3, 'n=' + samostatne().length);
 
     console.log('\n3) Čo sa nekompenzuje:');
     const te = await j('/api/attendance/cancel-session', { method: 'POST', body: { class_id: 'qaKompClsBrTe01', date: '2026-09-03' } }, adm);
-    ok('zrušenie techniky: bez predĺženia (členstvo techniku nekryje)', te.status === 200 && te.d.ok && te.d.compensation === null, JSON.stringify(te.d).slice(0, 160));
+    ok('zrušenie techniky: bez predĺženia ani prihlásenej členke', te.status === 200 && te.d.ok && te.d.compensation === null, JSON.stringify(te.d).slice(0, 160));
     const on = await j('/api/attendance/cancel-session', { method: 'POST', body: { class_id: 'qaKompClsOnl001', date: '2026-09-17' } }, adm);
     ok('zrušenie online hodiny: bez predĺženia', on.status === 200 && on.d.ok && on.d.compensation === null, JSON.stringify(on.d).slice(0, 160));
     const sk = await j('/api/attendance/cancel-session', { method: 'POST', body: { class_id: 'qaKompClsBrUt01', date: '2026-09-15', skip_compensation: true } }, adm);
     ok('skip_compensation: bez predĺženia', sk.status === 200 && sk.d.ok && sk.d.compensation === null, JSON.stringify(sk.d).slice(0, 160));
     await spi(300);
-    ok('Terézia a Tímea ostali na +4', memb('qaKompMemTec001').expires_at === plusDni(EXP, 4) && memb('qaKompMemTim001').expires_at === plusDni(EXP, 4) + 'T21:59:59.000Z');
+    ok('Terézia (technika) a Soňa (skip) bez zmeny', memb('qaKompMemTec001').expires_at === EXP && memb('qaKompMemStr001').expires_at === EXP);
 
     console.log('\n4) Detská hodina:');
     const de = await j('/api/attendance/cancel-session', { method: 'POST', body: { class_id: 'qaKompClsBrDe01', date: '2026-09-08' } }, adm);
-    ok('zrušenie detskej hodiny predĺži len dieťaťu', de.status === 200 && de.d.compensation && JSON.stringify(de.d.compensation.names) === JSON.stringify(['Danka Dieťa']), JSON.stringify(de.d.compensation));
+    ok('zrušenie detskej hodiny predĺži prihlásenému dieťaťu', de.status === 200 && de.d.compensation && JSON.stringify(de.d.compensation.names) === JSON.stringify(['Danka Dieťa']), JSON.stringify(de.d.compensation));
     await spi(300);
     ok('dieťa +4, dospelé bez zmeny', memb('qaKompMemDie001').expires_at === plusDni(EXP, 4) && memb('qaKompMemEva001').expires_at === plusDni(EXP, 4));
 
-    console.log('\n5) Ochrana a vstupy ručného nástroja:');
+    console.log('\n5) Ručný nástroj:');
     ok('bez prihlásenia trénerská cesta nejde', [401, 403].includes((await j('/api/attendance/cancel-compensate', { method: 'POST', body: { class_id: 'qaKompClsBrSt01', date: '2026-09-03', days: 4 } })).status));
     const svc = (body, tok) => j('/api/service/cancel-compensate', { method: 'POST', body, headers: tok ? { 'x-import-token': tok } : {} });
     ok('bez tokenu servisná cesta „neexistuje"', (await svc({ class_id: 'qaKompClsBrSt01', date: '2026-09-03', days: 4 })).status === 404);
@@ -186,6 +184,12 @@ const spi = ms => new Promise(r => setTimeout(r, ms));
     ok('99 dní sa odmietne', (await svc({ class_id: 'qaKompClsBrSt01', date: '2026-09-03', days: 99 }, TOKEN)).status === 400);
     ok('zlý dátum sa odmietne', (await svc({ class_id: 'qaKompClsBrSt01', date: 'včera', days: 4 }, TOKEN)).status === 400);
     ok('neznáma hodina sa odmietne', (await svc({ class_id: 'nieje', date: '2026-09-03', days: 4 }, TOKEN)).status === 400);
+    const kc = await svc({ class_id: 'qaKompClsBrSt01', date: '2026-09-03', days: 4, scope: 'city' }, TOKEN);
+    const menaC = ((kc.d && kc.d.extended) || []).map(x => x.name).sort();
+    ok('ručne okruh „city" na výnimku: ostatné dospelé členky z Brezna, Eva nie druhýkrát, dieťa nie', kc.status === 200 && JSON.stringify(menaC) === JSON.stringify(['Soňa Stripe', 'Terézia Technika', 'Tímea Chodiaca']), JSON.stringify(menaC));
+    await spi(400);
+    ok('Tímea +4, formát s časom ostal; Eva stále +4', memb('qaKompMemTim001').expires_at === plusDni(EXP, 4) + 'T21:59:59.000Z' && memb('qaKompMemEva001').expires_at === plusDni(EXP, 4));
+    ok('ručné „city" pošle samostatné oznámenia s dňom v týždni a „o 4 dni"', samostatne().length === 3 && samostatne().every(n => /štvrtok 3\. 9\. 2026/.test(n.body) && /o 4 dni/.test(n.body)), 'n=' + samostatne().length);
     const k3 = await svc({ class_id: 'qaKompClsBrSt01', date: '2026-09-10', days: 4, scope: 'booked' }, TOKEN);
     ok('ručne iný dátum, okruh „booked": len Eva (booknutá na 10. 9.)', k3.status === 200 && JSON.stringify(k3.d.extended.map(x => x.name)) === JSON.stringify(['Eva Booknutá']), JSON.stringify(k3.d && k3.d.extended));
     await spi(300);
