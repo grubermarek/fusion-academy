@@ -7348,7 +7348,23 @@ async function enterTestAccount(){
 async function goMyProfile(){ try{ const me=await api('/api/me'); if(me&&me.id) otvorProfil(me.id); }catch(e){} }
 // Marek 13. 9.: „nejde mi otvoriť profil klienta" — v nainštalovanej appke (PWA) a pri blokovaní
 // vyskakovacích okien window.open ticho zlyhá. Keď nové okno nevznikne, otvoríme profil v tejto karte.
-function otvorProfil(id){ const url='/u/'+id; let w=null; try{ w=window.open(url,'_blank'); }catch(e){} if(!w) location.href=url; }
+// Marek 15. 9. znova: „keď kliknem na meno, iba sa načítava" — meno v zozname bol obyčajný odkaz do novej karty,
+// ktorý opravu z 13. 9. obchádzal. V nainštalovanej appke (samostatné okno) sa profil otvorí v tejto karte.
+function otvorProfil(id){
+  const url='/u/'+id;
+  let appka=false; try{ appka=window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone===true; }catch(e){}
+  if(appka){ location.href=url; return; }
+  let w=null; try{ w=window.open(url,'_blank'); }catch(e){}
+  if(!w) location.href=url;
+}
+// Každý odkaz na profil v admine (zoznam klientov, leady, úlohy, tréneri, objednávky…) ide cez otvorProfil.
+// Zachytáva sa vopred (capture), lebo odkazy v riadkoch majú vlastné onclick so stopPropagation.
+document.addEventListener('click', e=>{
+  if(e.defaultPrevented || e.button!==0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+  const a=e.target && e.target.closest && e.target.closest('a[href^="/u/"]'); if(!a) return;
+  const id=(a.getAttribute('href').match(/^\/u\/([A-Za-z0-9_-]+)/)||[])[1]; if(!id) return;
+  e.preventDefault(); e.stopPropagation(); otvorProfil(id);
+}, true);
 (async()=>{ try{ const me=await api('/api/me'); const el=document.getElementById('admUserName');
   if(me&&me.name&&el){ el.textContent=me.name; const av=document.querySelector('.sb2-av'); if(av) av.textContent=me.name.charAt(0).toUpperCase(); } }catch(e){} })();
 

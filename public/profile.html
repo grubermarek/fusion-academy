@@ -395,7 +395,13 @@ async function load(){
   if(!r.ok){ let em=''; try{ em=(await r.json()).error||''; }catch(e){} document.getElementById('host').innerHTML='<div class="empty">'+T('profile.load_fail')+(em?('<br><small style="opacity:.6">'+esc(em)+'</small>'):'')+' <br><small style="opacity:.5">('+r.status+')</small></div>'; return; }
   P=await r.json();
   // Apply the logged-in viewer's saved language (server wins over localStorage)
-  if(P.viewer_lang && P.viewer_lang!==FA_I18N.lang){ localStorage.setItem('fa_lang',P.viewer_lang); location.reload(); return; }
+  // Jazyk z účtu: obnoviť najviac raz. Keď sa nedá uložiť (localStorage blokovaný), stránka by sa obnovovala
+  // dookola a profil by „len načítaval" (Marek 15. 9.) — vtedy ho radšej ukážeme v aktuálnom jazyku.
+  if(P.viewer_lang && P.viewer_lang!==FA_I18N.lang){
+    let uz=true;
+    try{ uz = sessionStorage.getItem('fa_lang_reload')===P.viewer_lang; sessionStorage.setItem('fa_lang_reload',P.viewer_lang); localStorage.setItem('fa_lang',P.viewer_lang); }catch(e){ uz=true; }
+    if(!uz){ location.reload(); return; }
+  }
   render();
   FA_I18N.mount('langMount'); // switcher lives inside the settings panel
   // Návrat z platby tipu
