@@ -778,6 +778,26 @@ async function seedData() {
   // Druhá dávka (Marek 14. 9.: „všetko vybraté"). Ak klientka má v deň hodiny už zapísaný predaj vstupu
   // (tréner ho predal cez panel), tržba existuje — rezervácia sa len označí ako vybratá, bez novej
   // transakcie, faktúry a hotovosti. Inak rovnaký zápis ako prvá dávka.
+  // Nový venček Klenovec (Marek 15. 9.): spojení ôsmaci a deviataci, kurz 65 €, prvý nácvik 5. 3. 2027
+  // o 14:30 v Kultúrnom dome Klenovec, venčekový večer 5. 6. 2027, učí Marek. 10 lekcií do venčeka.
+  // Odložené o pár sekúnd, nech sú načítané aj konštanty venčekov nižšie v súbore.
+  if(!(await q.one(db.settings,{key:'vencek_klenovec_20260915'}))) setTimeout(async()=>{
+    try{
+      if(await q.one(db.settings,{key:'vencek_klenovec_20260915'})) return;
+      let c=await q.one(db.venceky_classes,{code:'VEN-KLENOVEC'});
+      if(!c){
+        const s=await q.insert(db.venceky_schools,{name:'Klenovec', city:'Klenovec', year:'2026/27', created_at:nowISO()});
+        c=await q.insert(db.venceky_classes,{school_id:s._id, name:'8. a 9. ročník', year:'2026/27', code:'VEN-KLENOVEC',
+          price:65, lessons_total:10, lessons_before:10, lessons_done:0, lecturer:'Marek Gruber',
+          event_date:'2027-06-05', event_venue:'', note:'',
+          schedule:'Prvý nácvik: '+denVTyzdni('2027-03-05')+' 5. 3. 2027 o 14:30 · Kultúrny dom Klenovec',
+          start_at:casSKnaISO('2027-03-05T14:30'), roles:['student','teacher'],
+          dances:VENCEK_DEFAULT_DANCES.map(n=>({name:n, level:0})), created_at:nowISO()});
+      }
+      await q.insert(db.settings,{key:'vencek_klenovec_20260915', value:{class_id:c._id, code:c.code}, at:nowISO()});
+      console.log('🎓 Venček Klenovec: '+APP_URL+'/v/'+c.code);
+    }catch(e){ console.error('vencek_klenovec:', e.message); }
+  }, 5000);
   if(!(await q.one(db.settings,{key:'hotovost_dodatocne2_20260914'}))){
     const vysledok=[];
     try{
@@ -4667,7 +4687,7 @@ app.post('/api/register', rlSignup, async(req,res)=>{
         // plan_ids zužuje kupón na Silver. Bez toho by 100 % na „membership"
         // dalo zadarmo aj Gold za 125 €, hoci sa sľubuje Silver za 75 €.
         const VRP={ type:'percent', value:100, applies_to:'membership', plan_ids:['silver'],
-          note:'Venčeky — mesiac Silver zadarmo (75 €) pre žiakov, rodičov aj zamestnancov školy' };
+          note:'Venčeky — mesiac Silver zadarmo (74,90 €) pre žiakov, rodičov aj zamestnancov školy' };
         const vrp=await q.one(db.promo_codes,{code:'VENCEKRODIC'});
         if(!vrp)
           await q.insert(db.promo_codes,{ code:'VENCEKRODIC', ...VRP,
@@ -4677,7 +4697,7 @@ app.post('/api/register', rlSignup, async(req,res)=>{
           await q.update(db.promo_codes,{_id:vrp._id},{$set:VRP});
         await q.insert(db.notifications,{user_id:u._id,type:'venceky',
           title:'🎁 Vitaj vo Fusion Venčekoch!',
-          body:'Máš u nás kupón VENCEKRODIC = celý 1. mesiac členstva Silver (75 €) ZADARMO — neobmedzene hodín v štúdiu, online hodiny aj meranie tela na Tanite. Platí pre teba aj pre rodičov. 💛',
+          body:'Máš u nás kupón VENCEKRODIC = celý 1. mesiac členstva Silver (74,90 €) ZADARMO — neobmedzene hodín v štúdiu, online hodiny aj meranie tela na Tanite. Platí pre teba aj pre rodičov. 💛',
           read:false, created_at:nowISO()});
       }catch(e){}
     }
@@ -23259,7 +23279,7 @@ app.post('/api/admin/venceky/complete', adminAuth, async(req,res)=>{
     // plan_ids ako pri VENCEKRODIC — 100 % na „membership" by inak dalo zadarmo
     // aj Gold za 125 €, hoci sa sľubuje Silver.
     const ABS={ type:'percent', value:100, applies_to:'membership', plan_ids:['silver'],
-      note:'Venčeky — absolventský mesiac Silver zdarma (75 €)' };
+      note:'Venčeky — absolventský mesiac Silver zdarma (74,90 €)' };
     const abs=await q.one(db.promo_codes,{code:'VENCEKABS'});
     if(!abs)
       await q.insert(db.promo_codes,{ code:'VENCEKABS', ...ABS,
