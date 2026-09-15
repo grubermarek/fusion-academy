@@ -844,6 +844,28 @@ async function seedData() {
       console.log('📍 Brezno len za vstup 10 €: dobieha '+Object.keys(dobiehaju).length+' členstiev, hodín '+hodiny);
     }catch(e){ console.error('mesta_len_vstup_brezno:', e.message); }
   }, 12000);
+  // Nový venček Hnúšťa (Marek 15. 9.): spojení ôsmaci a deviataci, kurz 90 €, 10 lekcií do venčeka, nácviky
+  // v Kultúrnom dome Hnúšťa od piatku 5. 3. 2027 o 16:00 (Klenovec je v ten deň o 14:30), venčekový večer
+  // 4. 6. 2027 tiež v Kultúrnom dome Hnúšťa, učí Marek. Veľký piatok 26. 3. 2027 (týždeň 3) je sviatok
+  // a škola má prázdniny — lekcia sa ruší rovnako ako v Klenovci, kurz sa posunie o týždeň (posledná 14. 5.).
+  if(!(await q.one(db.settings,{key:'vencek_hnusta_20260915'}))) setTimeout(async()=>{
+    try{
+      if(await q.one(db.settings,{key:'vencek_hnusta_20260915'})) return;
+      let c=await q.one(db.venceky_classes,{code:'VEN-HNUSTA'});
+      if(!c){
+        const s=await q.insert(db.venceky_schools,{name:'Hnúšťa', city:'Hnúšťa', year:'2026/27', created_at:nowISO()});
+        c=await q.insert(db.venceky_classes,{school_id:s._id, name:'8. a 9. ročník', year:'2026/27', code:'VEN-HNUSTA',
+          price:90, lessons_total:10, lessons_before:10, lessons_done:0, lecturer:'Marek Gruber',
+          event_date:'2027-06-04', event_venue:'Kultúrny dom Hnúšťa', note:'',
+          schedule:'Prvý nácvik: '+denVTyzdni('2027-03-05')+' 5. 3. 2027 o 16:00 · Kultúrny dom Hnúšťa',
+          start_at:casSKnaISO('2027-03-05T16:00'), roles:['student','teacher'],
+          lesson_changes:[{week:3, cancelled:true, reason:'Veľký piatok — štátny sviatok'}],
+          dances:VENCEK_DEFAULT_DANCES.map(n=>({name:n, level:0})), created_at:nowISO()});
+      }
+      await q.insert(db.settings,{key:'vencek_hnusta_20260915', value:{class_id:c._id, code:c.code}, at:nowISO()});
+      console.log('🎓 Venček Hnúšťa: '+APP_URL+'/v/'+c.code);
+    }catch(e){ console.error('vencek_hnusta:', e.message); }
+  }, 6000);
   if(!(await q.one(db.settings,{key:'vencek_klenovec_velkypiatok_20260915'}))) setTimeout(async()=>{
     try{
       if(await q.one(db.settings,{key:'vencek_klenovec_velkypiatok_20260915'})) return;
