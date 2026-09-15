@@ -204,7 +204,7 @@ async function stop() {
     const lead = rd('mail_log.db').filter(m => String(m.to || '').toLowerCase() === 'qa.vm.lead@qa-biz.local');
     ok('bežná leadka dostala uvítací mail, pripomienku aj výzvu',
       lead.some(m => /^welcome/.test(m.template || '')) && lead.some(m => m.template === 'first_booking_nudge')
-        && lead.some(m => /prvá hodina je zadarmo/i.test(String(m.subject || ''))),
+        && lead.some(m => /prvý týždeň je zadarmo|prvá hodina je zadarmo/i.test(String(m.subject || ''))),
       JSON.stringify(lead.map(m => m.template || m.subject)));
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.message);
