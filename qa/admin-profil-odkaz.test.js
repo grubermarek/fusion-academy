@@ -101,6 +101,7 @@ const riadky = arr => arr.map(o => JSON.stringify(o)).join('\n') + '\n';
     const text = await p.evaluate(() => document.body.innerText);
     ok('profil sa zobrazí (meno klientky), nie len „načítavam"', /Klára Profilová/.test(text), text.slice(0, 200));
     ok('stránka sa neobnovuje dookola', nacitania <= 2, 'načítaní: ' + nacitania);
+    ok('dolné menu na profile má texty, nie kľúče (dock.home)', !/dock\.[a-z_]+/.test(text) && /Domov/.test(text) && /Profil/.test(text), (text.match(/dock\.[a-z_]+/g) || []).join(', '));
     await ctx.close();
 
     const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block', locale: 'sk-SK' });

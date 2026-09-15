@@ -38,7 +38,9 @@ function svg(name){
 }
 
 const DL={home:'Domov',book:'Rezervovať',shop:'Obchod',comm:'Komunita',prof:'Profil',help:'Podpora',role_client:'Osobný',role_admin:'Firemný',role_trainer:'Trénerský',role_assist:'Asistent'};
-const dt=k=>window.FA_T?window.FA_T('dock.'+k):DL[k]; // fallback SK, keď i18n nie je na stránke
+// Preklad z i18n, inak slovensky. Stránky bez /i18n-pages.js (profil, komunita, podpora…) majú FA_T,
+// ale nie kľúče dock.* — FA_T vtedy vráti samotný kľúč a v menu svietilo „dock.home" (Marek 15. 9.).
+const dt=k=>{ const s=window.FA_T?window.FA_T('dock.'+k):''; return (s && s!=='dock.'+k) ? s : DL[k]; };
 const items = [
   { key:'home',  label:dt('home'),      icon:'home',     href:'/client-dashboard', match:['/client-dashboard','/dashboard'] },
   { key:'book',  label:dt('book'), icon:'calendar', href:'/client-dashboard#bookSection', match:['#book'] },
