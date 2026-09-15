@@ -106,7 +106,9 @@ a.kto:hover{color:var(--gold);text-decoration:underline}
 </div>
 <script>
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const fmtD=d=>d?d.split('-').reverse().join('.'):null;
+// Dátum a suma po slovensky: „5. 6. 2027", „65,00 €" (predtým „05.06.2027" a „65.00 €")
+const fmtD=d=>{ if(!d) return null; const [y,m,dd]=String(d).slice(0,10).split('-'); return (+dd)+'. '+(+m)+'. '+y; };
+const eurSK=x=>(+x||0).toFixed(2).replace('.',',')+'&nbsp;€';
 // Kto zaplatil kartou, mal doteraz napísané „v hotovosti" — poznali sme len prevod.
 const SPOSOB=m=>({stripe:'kartou',card:'kartou',transfer:'prevodom',cash:'v hotovosti'})[m]||'v hotovosti';
 const DNI=['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
@@ -383,7 +385,7 @@ async function overPlatbu(){
     ? (d.child_paid
       ? `<div class="pay-ok">🧾 <b>Kurz je uhradený</b>${d.child_name?` — ${esc(d.child_name)}`:''}. Potvrdenie máte na emaili.</div>`
       : d.child_matched
-      ? `<div class="pay-no">💳 Kurz ${d.child_name?`pre <b>${esc(d.child_name)}</b> `:''}ešte nie je uhradený — <b>${(+d.price).toFixed(2)} €</b>.
+      ? `<div class="pay-no">💳 Kurz ${d.child_name?`pre <b>${esc(d.child_name)}</b> `:''}ešte nie je uhradený — <b>${eurSK(d.price)}</b>.
           <div style="margin-top:10px">
             <button onclick="platitKartou(this)"${d.preview?' disabled':''}
               style="background:linear-gradient(135deg,#C9A84C,#a5842f);color:#161310;border:none;border-radius:10px;padding:11px 20px;font-weight:800;font-size:.92rem;cursor:pointer;width:100%;max-width:280px">
@@ -392,10 +394,10 @@ async function overPlatbu(){
           </div>
           <div class="muted" style="margin-top:8px">Karta, Apple Pay aj Google Pay. Platba sa pripíše ${esc(d.child_name||'dieťaťu')} — potvrdenie príde vám aj jemu.</div>
         </div>`
-      : `<div class="pay-ok" style="background:rgba(201,168,76,.1);border-color:rgba(201,168,76,.4);color:var(--cream)">👨‍👩‍👧 Sledujete triedu${d.child_name?` — dieťa <b>${esc(d.child_name)}</b>`:''}. Kurz (${(+d.price).toFixed(2)} €) zatiaľ vieme prijať len cez účet žiaka — napíšte nám a spárujeme vás s dieťaťom.</div>`)
+      : `<div class="pay-ok" style="background:rgba(201,168,76,.1);border-color:rgba(201,168,76,.4);color:var(--cream)">👨‍👩‍👧 Sledujete triedu${d.child_name?` — dieťa <b>${esc(d.child_name)}</b>`:''}. Kurz (${eurSK(d.price)}) zatiaľ vieme prijať len cez účet žiaka — napíšte nám a spárujeme vás s dieťaťom.</div>`)
     : d.my_payment
-    ? `<div class="pay-ok">🧾 <b>Zaplatené</b> — ${(+d.my_payment.amount).toFixed(2)} € (${SPOSOB(d.my_payment.method)}, ${new Date(d.my_payment.paid_at).toLocaleDateString('sk')}). Potvrdenie máš v notifikáciách a na emaili.</div>`
-    : `<div class="pay-no">💳 Kurz ešte nie je uhradený — <b>${(+d.price).toFixed(2)} €</b>.
+    ? `<div class="pay-ok">🧾 <b>Zaplatené</b> — ${eurSK(d.my_payment.amount)} (${SPOSOB(d.my_payment.method)}, ${new Date(d.my_payment.paid_at).toLocaleDateString('sk')}). Potvrdenie máš v notifikáciách a na emaili.</div>`
+    : `<div class="pay-no">💳 Kurz ešte nie je uhradený — <b>${eurSK(d.price)}</b>.
         <div style="margin-top:10px">
           <button onclick="platitKartou(this)"${d.preview?' disabled title="V náhľade sa platiť nedá"':''}
             style="background:linear-gradient(135deg,#C9A84C,#a5842f);color:#161310;border:none;border-radius:10px;padding:11px 20px;font-weight:800;font-size:.92rem;cursor:pointer;width:100%;max-width:280px">

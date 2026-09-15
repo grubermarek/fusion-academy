@@ -116,6 +116,9 @@
 <div class="wrap" id="host"><div class="stav">Načítavam…</div></div>
 <script>
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// Deň v týždni sa počíta z dátumu, nikdy sa nepíše ručne („sobota 5. 6. 2027")
+const DNI=['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
+const fmtDatum=s=>{ const d=new Date(String(s).slice(0,10)+'T12:00:00'); return isNaN(d)?String(s):DNI[d.getDay()]+' '+d.getDate()+'. '+(d.getMonth()+1)+'. '+d.getFullYear(); };
 const KOD=(new URLSearchParams(location.search).get('kod')
   || location.pathname.split('/').filter(Boolean).pop() || '').toUpperCase();
 const ROLE_LBL={student:'🧑‍🎓 Som žiak / žiačka', parent:'👨‍👩‍👧 Som rodič', teacher:'👩‍🏫 Som učiteľ / učiteľka', director:'🏫 Som riaditeľ / riaditeľka'};
@@ -143,7 +146,7 @@ const ROLE_LBL={student:'🧑‍🎓 Som žiak / žiačka', parent:'👨‍👩�
       <div class="znak">Fusion Academy</div>
       <h1>Venček</h1>
       <div class="skola">${esc(d.school||'')}</div>
-      <div class="rok">${esc(d.year||'')}${d.city?' · '+esc(d.city):''}</div>
+      <div class="rok">${esc(d.year||'')}${d.name && d.name!=='Venčeková skupina' ? ' · '+esc(d.name) : ''}${d.city && String(d.city).trim().toLowerCase()!==String(d.school||'').trim().toLowerCase() ? ' · '+esc(d.city) : ''}</div>
     </div>
 
     <div class="karta">
@@ -154,7 +157,7 @@ const ROLE_LBL={student:'🧑‍🎓 Som žiak / žiačka', parent:'👨‍👩�
         ${d.schedule?`<div class="krok"><div class="n">🕐</div><div class="t"><b>Kedy sa učíme</b>
           <span>${esc(d.schedule)}</span></div></div>`:''}
         <div class="krok"><div class="n">✨</div><div class="t"><b>Venčekový večer</b>
-          <span>${d.event_date ? esc(d.event_date.split('-').reverse().join('. ')) : 'Termín upresníme'} — deň, keď to celé ukážete rodičom.</span></div></div>
+          <span>${d.event_date ? esc(fmtDatum(d.event_date)) : 'Termín upresníme'}${d.event_venue ? ' · 📍 '+esc(d.event_venue) : ''} — deň, keď to celé ukážete rodičom.</span></div></div>
         ${bonus?`<div class="krok"><div class="n">+${bonus}</div><div class="t"><b>bonusové lekcie po venčeku</b>
           <span>Náš darček, aby ste mohli pokračovať, keď vás to chytí.</span></div></div>`:''}
       </div>
@@ -236,6 +239,18 @@ const ROLE_LBL={student:'🧑‍🎓 Som žiak / žiačka', parent:'👨‍👩�
       const dd=await r.json().catch(()=>({}));
       if(r.ok && dd.ok){
         if(window.faTrack) try{ window.faTrack('CompleteRegistration'); }catch(e){}
+        // Učiteľ a riaditeľ sa do skupiny pridajú až po schválení adminom — nesmie čítať „si v skupine"
+        const cakaNaSchvalenie = !!(rola && ['teacher','director'].includes(rola.value));
+        if(cakaNaSchvalenie){
+          document.getElementById('host').innerHTML=`<div class="hotovo">
+          <div class="ikona">⏳</div>
+          <h2>Ďakujeme, účet je vytvorený</h2>
+          <p>Prístup ${rola.value==='director'?'riaditeľa':'učiteľa'} ku skupine <b style="color:var(--cream)">${esc(d.school||'')}</b> odomkneme po overení — zvyčajne do pár hodín. Dáme vám vedieť v appke.</p>
+          <button class="hlavne" style="max-width:280px;width:100%" onclick="location.href='/client-dashboard'">Otvoriť appku →</button>
+        </div>`;
+          window.scrollTo(0,0);
+          return;
+        }
         document.getElementById('host').innerHTML=`<div class="hotovo">
           <div class="ikona">🎉</div>
           <h2>Vitaj vo venčekoch!</h2>

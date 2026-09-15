@@ -781,6 +781,23 @@ async function seedData() {
   // Nový venček Klenovec (Marek 15. 9.): spojení ôsmaci a deviataci, kurz 65 €, prvý nácvik 5. 3. 2027
   // o 14:30 v Kultúrnom dome Klenovec, venčekový večer 5. 6. 2027, učí Marek. 10 lekcií do venčeka.
   // Odložené o pár sekúnd, nech sú načítané aj konštanty venčekov nižšie v súbore.
+  // Klenovec: 4. lekcia (týždeň 3 od 5. 3. 2027) padla na Veľký piatok 26. 3. 2027 — štátny sviatok,
+  // škola má veľkonočné prázdniny. Lekcia sa ruší, kurz sa posunie o týždeň (Marek 15. 9.).
+  if(!(await q.one(db.settings,{key:'vencek_klenovec_velkypiatok_20260915'}))) setTimeout(async()=>{
+    try{
+      if(await q.one(db.settings,{key:'vencek_klenovec_velkypiatok_20260915'})) return;
+      const c=await q.one(db.venceky_classes,{code:'VEN-KLENOVEC'});
+      if(!c || !c.start_at) return;                       // skupina ešte nevznikla — skúsi sa pri ďalšom štarte
+      const zmeny=Array.isArray(c.lesson_changes)?c.lesson_changes:[];
+      if(!zmeny.some(z=>+z.week===3)){
+        zmeny.push({week:3, cancelled:true, reason:'Veľký piatok — štátny sviatok'});
+        zmeny.sort((a,b)=>a.week-b.week);
+        await q.update(db.venceky_classes,{_id:c._id},{$set:{lesson_changes:zmeny, updated_at:nowISO()}});
+      }
+      await q.insert(db.settings,{key:'vencek_klenovec_velkypiatok_20260915', value:true, at:nowISO()});
+      console.log('🎓 Venček Klenovec: lekcia 26. 3. 2027 (Veľký piatok) zrušená');
+    }catch(e){ console.error('vencek_klenovec_velkypiatok:', e.message); }
+  }, 9000);
   if(!(await q.one(db.settings,{key:'vencek_klenovec_20260915'}))) setTimeout(async()=>{
     try{
       if(await q.one(db.settings,{key:'vencek_klenovec_20260915'})) return;
@@ -11313,7 +11330,8 @@ const MEMBERSHIP_PLANS = {
 const SKUSKA = { dni:7, plan:'bronze' };
 const SKUSKA_DOVODY = { rola:'Skúšobný týždeň je pre klientky.', vypnute:'Skúšobný týždeň momentálne nie je k dispozícii.',
   uz_mala:'Skúšobný týždeň si už využila.', odmietnuta:'Ponuku prvého týždňa zadarmo si už odmietla — dostáva sa len raz.', odber:'Už máš bežiaci mesačný odber.', clenstvo:'Už máš aktívne členstvo.',
-  mala_clenstvo:'Skúšobný týždeň je pre nové klientky — členstvo si u nás už mala.' };
+  mala_clenstvo:'Skúšobný týždeň je pre nové klientky — členstvo si u nás už mala.',
+  vencek:'Prvý týždeň zadarmo je pre bežné klientky — venčekári majú vlastný darček.' };
 async function skuskaZapnuta(){
   const s = await q.one(db.settings,{key:'prvy_tyzden'});
   if(s && typeof s.value==='boolean') return s.value;
@@ -11321,6 +11339,9 @@ async function skuskaZapnuta(){
 }
 async function skuskaNarok(u){
   if(!u || u.is_admin || u.is_child || ['trainer','manager','admin'].includes(u.user_type)) return {ok:false, reason:'rola'};
+  // Venčekári (žiaci, rodičia, učitelia) nie sú cieľ predaja (Marek 11. 9.) — ponuku skúšky nevidia,
+  // kým sa sami nestanú klientkami; majú vlastný darček VENCEKRODIC (Marek 15. 9.).
+  if(vencekMimoKonverzie(u)) return {ok:false, reason:'vencek'};
   if(!(await skuskaZapnuta())) return {ok:false, reason:'vypnute'};
   if(u.trial_used) return {ok:false, reason:'uz_mala'};
   if(u.trial_declined_at) return {ok:false, reason:'odmietnuta'}; // ponuka je len raz (Marek 14. 9.)
