@@ -12774,6 +12774,158 @@ async function nakladyObdobia(from, to, udalostiObdobia, refundyObdobia){
     banka: banka ? {...banka, karta_v_appke:kartaVAppke, rozdiel:+(kartaVAppke-banka.hrubo).toFixed(2)} : null };
 }
 
+// ═══ MESTÁ: náklady a zisk (Marek 15. 9.) ════════════════════════════════════
+// „Sprav mi pre každé mesto tabuľku, koľko ma ktoré mesto stojí a koľko mi zarába."
+// Náklady: cesta autom z Detvy (jedna za deň; BB a Zvolen v ten istý deň = okružne a km sa delia
+// podľa vzdialenosti) × spotreba LPG × cena, nájom za hodinu, tréner pri zástupe (pravidlo výplat).
+// Tržby: vstup a súkromná hodina mestu, kde hodina bola; členstvo a permanentka celé mestu, kde
+// klientka v tom mesiaci chodila najčastejšie (Marek 15. 9.). Merch, eventy a venčeky sú mimo miest.
+// Km z vzdialenost.sk (Detva–BB 39,8, –Zvolen 26,4, –Brezno 48,9, BB–Zvolen 21,1),
+// LPG 0,80 €/l (priemer SR v 36. týždni 2026), spotreba 13 l/100 km (Mustang 3.7). Všetko sa dá zmeniť v admine.
+const MESTA_NAKLADY_DEFAULT = { lpg_cena:0.80, spotreba_l_100km:13,
+  mesta:{ 'Detva':{km:0, najom_hod:0}, 'Banská Bystrica':{km:39.8, najom_hod:0}, 'Zvolen':{km:26.4, najom_hod:15}, 'Brezno':{km:48.9, najom_hod:20} },
+  medzi:{ 'Banská Bystrica|Zvolen':21.1 } };
+async function mestaNastavenie(){
+  const s = await q.one(db.settings,{key:'mesta_naklady'});
+  const v = (s && s.value) || {};
+  const mesta = {};
+  for(const m of LOCATIONS.filter(x=>x!=='Online')) mesta[m] = { ...(MESTA_NAKLADY_DEFAULT.mesta[m]||{km:0, najom_hod:0}), ...((v.mesta||{})[m]||{}) };
+  return { lpg_cena: +v.lpg_cena>0 ? +v.lpg_cena : MESTA_NAKLADY_DEFAULT.lpg_cena,
+    spotreba_l_100km: +v.spotreba_l_100km>0 ? +v.spotreba_l_100km : MESTA_NAKLADY_DEFAULT.spotreba_l_100km,
+    mesta, medzi:{ ...MESTA_NAKLADY_DEFAULT.medzi, ...(v.medzi||{}) } };
+}
+const mzBez = s => String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+function mzMesto(loc){
+  const s = String(loc||''); if(!s || s.includes('/')) return null;       // „Detva / Zvolen / BB / Brezno" = súkromné podľa dohody
+  const b = mzBez(s); if(/online/.test(b)) return null;
+  for(const m of LOCATIONS) if(m!=='Online' && b.includes(mzBez(m))) return m;
+  if(/\bbb\b|bystric/.test(b)) return 'Banská Bystrica';
+  return null;
+}
+async function mestaZisk(from, to){
+  const nast = await mestaNastavenie();
+  const dnes = today(), kon = to < dnes ? to : dnes;
+  const classes = await q.find(db.classes,{});
+  const cMap = Object.fromEntries(classes.map(c=>[c._id,c]));
+  const zrusene = new Set((await q.find(db.class_cancellations,{})).map(z=>z.class_id+'|'+String(z.date||'').slice(0,10)));
+  const bookings = await q.find(db.bookings,{});
+  const bMap = Object.fromEntries(bookings.map(b=>[b._id,b]));
+  const uMap = Object.fromEntries((await q.find(db.users,{})).map(u=>[u._id,u]));
+  const zastup = {}; for(const s of await q.find(db.session_instructors,{})) zastup[s.class_id+'|'+s.date] = s;
+  const pravidla = Object.fromEntries((await q.find(db.payout_rules,{})).map(r=>[r.trainer,r]));
+  const pritomni = {}, navstevy = {};
+  for(const b of bookings){
+    if(b.status!=='attended') continue;
+    const d = String(b.booking_date||'').slice(0,10), c = cMap[b.class_id];
+    pritomni[b.class_id+'|'+d] = (pritomni[b.class_id+'|'+d]||0)+1;
+    const m = mzMesto((c && c.location) || b.class_location); if(!m || !b.user_id) continue;
+    const k = b.user_id+'|'+d.slice(0,7); navstevy[k] = navstevy[k]||{}; navstevy[k][m] = (navstevy[k][m]||0)+1;
+  }
+  const R = {};
+  for(const m of Object.keys(nast.mesta)) R[m] = { mesto:m, konane:0, zrusene:0, hodin:0, dochadzka:0, zastupy:0,
+    trzby:{ clenstva:0, permanentky:0, vstupy:0, sukromne:0, spolu:0 }, naklady:{ km:0, cestovne:0, najom:0, treneri:0, spolu:0 } };
+  const minuty = x => { const [h,mi] = String(x||'0:00').split(':').map(Number); return (h||0)*60+(mi||0); };
+  const dniMesta = {};
+  for(let ts=Date.parse(from+'T12:00:00Z'); ts<=Date.parse(kon+'T12:00:00Z'); ts+=86400000){
+    const den = new Date(ts).toISOString().slice(0,10), dow = new Date(ts).getUTCDay();
+    for(const c of classes){
+      const m = mzMesto(c.location); if(!m || !R[m]) continue;
+      if(c.category==='Online' || /súkrom/i.test(String(c.category||'')+' '+String(c.name||''))) continue;
+      if(c.only_date ? c.only_date!==den : +c.day_of_week!==dow) continue;
+      if(String(c.created_at||'').slice(0,10) > den) continue;
+      const k = c._id+'|'+den, prisli = pritomni[k]||0;
+      if(zrusene.has(k)){ R[m].zrusene++; continue; }
+      if(c.active===false && !prisli) continue;                                  // hodina, ktorá už nebeží
+      const hod = Math.max(0.5, (minuty(c.time_end)-minuty(c.time_start))/60 || 1);
+      R[m].konane++; R[m].hodin += hod; R[m].dochadzka += prisli;
+      R[m].naklady.najom += hod*(+nast.mesta[m].najom_hod||0);
+      const z = zastup[k]; const ucitel = z ? uMap[z.instructor_id] : uMap[c.instructor_id];
+      if(ucitel && !ucitel.is_admin && ucitel.user_type==='trainer'){
+        const r = { ...DEFAULT_PAYOUT_RULE, ...(pravidla[ucitel.name]||{}) };
+        R[m].naklady.treneri += (+r.fixed_per_class||0) + (+r.per_client||0)*Math.max(0, prisli-(+r.per_client_threshold||0));
+        R[m].zastupy++;
+      }
+      if(+nast.mesta[m].km>0){ const dm = dniMesta[den] = dniMesta[den]||{}; dm[m] = Math.min(dm[m]==null?9999:dm[m], minuty(c.time_start)); }
+    }
+  }
+  for(const dm of Object.values(dniMesta)){
+    const poradie = Object.entries(dm).sort((a,b)=>a[1]-b[1]).map(x=>x[0]);
+    let km = +nast.mesta[poradie[0]].km + +nast.mesta[poradie[poradie.length-1]].km;
+    for(let i=1;i<poradie.length;i++){
+      const a = poradie[i-1], b = poradie[i];
+      const med = nast.medzi[a+'|'+b]!=null ? nast.medzi[a+'|'+b] : nast.medzi[b+'|'+a];
+      km += med!=null ? +med : (+nast.mesta[a].km + +nast.mesta[b].km);           // bez známej vzdialenosti cez Detvu
+    }
+    const vaha = poradie.reduce((s,m)=>s+2*nast.mesta[m].km,0) || 1;
+    for(const m of poradie){ const podiel = km*(2*nast.mesta[m].km)/vaha; R[m].naklady.km += podiel; R[m].naklady.cestovne += podiel*nast.spotreba_l_100km/100*nast.lpg_cena; }
+  }
+  const txMap = Object.fromEntries((await q.find(db.transactions,{})).map(x=>[x._id,x]));
+  const pbMap = Object.fromEntries((await q.find(db.private_bookings,{})).map(p=>[p._id,p]));
+  const najcastejsie = (uid, mes) => {
+    if(!uid) return null;
+    const [y,mo] = mes.split('-').map(Number);
+    for(let i=0;i<4;i++){                                                       // mesiac platby, inak až 3 mesiace dozadu
+      const n = navstevy[uid+'|'+new Date(Date.UTC(y, mo-1-i, 1)).toISOString().slice(0,7)];
+      if(n) return Object.entries(n).sort((a,b)=>b[1]-a[1])[0][0];
+    }
+    return uMap[uid] ? mzMesto(uMap[uid].city) : null;
+  };
+  const mimo = {}, nepriradenePolozky = []; let nepriradene = 0;
+  for(const e of await revenueEvents()){
+    const den = String(e.d).slice(0,10); if(den<from || den>to) continue;
+    const mes = den.slice(0,7), tx = txMap[e.id], uid = e.who && e.who.id;
+    let m = null, kat = null;
+    if(e.cat==='entries'){ kat = 'vstupy'; const b = tx && tx.booking_id && bMap[tx.booking_id]; const c = b && cMap[b.class_id];
+      m = (b && mzMesto((c && c.location) || b.class_location)) || najcastejsie(uid, mes); }
+    else if(e.cat==='private'){ kat = 'sukromne'; const pb = tx && pbMap[tx.private_booking_id]; m = (pb && mzMesto(pb.city)) || najcastejsie(uid, mes); }
+    else if(e.cat==='memberships' || e.cat==='passes'){ kat = e.cat==='passes' ? 'permanentky' : 'clenstva'; m = najcastejsie(uid, mes); }
+    else { mimo[e.cat] = +((mimo[e.cat]||0)+e.a).toFixed(2); continue; }
+    if(!m || !R[m]){ nepriradene += e.a; if(nepriradenePolozky.length<30) nepriradenePolozky.push({ d:den, kto:e.who && e.who.name, co:e.what, a:e.a }); continue; }
+    R[m].trzby[kat] += e.a; R[m].trzby.spolu += e.a;
+  }
+  const r2 = x => +(+x||0).toFixed(2);
+  const mesta = Object.values(R).map(x=>{
+    for(const k of Object.keys(x.trzby)) x.trzby[k] = r2(x.trzby[k]);
+    x.naklady = { km:+x.naklady.km.toFixed(1), cestovne:r2(x.naklady.cestovne), najom:r2(x.naklady.najom), treneri:r2(x.naklady.treneri) };
+    x.naklady.spolu = r2(x.naklady.cestovne + x.naklady.najom + x.naklady.treneri);
+    x.hodin = +x.hodin.toFixed(1);
+    x.zisk = r2(x.trzby.spolu - x.naklady.spolu);
+    x.priemer_ludi = x.konane ? +(x.dochadzka/x.konane).toFixed(1) : 0;
+    x.naklad_na_hodinu = x.konane ? r2(x.naklady.spolu/x.konane) : 0;
+    x.trzba_na_hodinu = x.konane ? r2(x.trzby.spolu/x.konane) : 0;
+    x.zisk_na_hodinu = x.konane ? r2(x.zisk/x.konane) : 0;
+    x.hranica_ludi = x.naklad_na_hodinu>0 ? Math.ceil(x.naklad_na_hodinu/10 - 1e-9) : 0;   // koľko platiacich po 10 € zaplatí jednu hodinu
+    return x;
+  }).filter(x=>x.konane || x.zrusene || x.trzby.spolu).sort((a,b)=>b.zisk-a.zisk);
+  const sum = f => r2(mesta.reduce((s,x)=>s+f(x),0));
+  return { from, to, mesta,
+    spolu:{ trzby:sum(x=>x.trzby.spolu), naklady:sum(x=>x.naklady.spolu), zisk:sum(x=>x.zisk), konane:mesta.reduce((s,x)=>s+x.konane,0) },
+    mimo_miest:mimo, nepriradene:r2(nepriradene), nepriradene_polozky:nepriradenePolozky, nastavenie:nast };
+}
+app.get('/api/admin/mesta-zisk', adminAuth, async(req,res)=>{
+  try{
+    const re = /^\d{4}-\d{2}-\d{2}$/;
+    const from = re.test(String(req.query.from||'')) ? req.query.from : today().slice(0,7)+'-01';
+    const to = re.test(String(req.query.to||'')) ? req.query.to : today();
+    if(to < from) return res.status(400).json({error:'Dátum „do" je pred „od".'});
+    if((Date.parse(to)-Date.parse(from))/86400000 > 800) return res.status(400).json({error:'Obdobie môže mať najviac 2 roky.'});
+    res.json({ ok:true, ...(await mestaZisk(from, to)) });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.put('/api/admin/mesta-naklady', adminAuth, async(req,res)=>{
+  try{
+    const b = req.body||{}, stare = await mestaNastavenie();
+    const cislo = (v, max) => { if(v==null || v==='') return null; const n = +String(v).replace(',','.'); return Number.isFinite(n) && n>=0 && n<=max ? +n.toFixed(3) : null; };
+    const nove = { lpg_cena: cislo(b.lpg_cena, 5) ?? stare.lpg_cena, spotreba_l_100km: cislo(b.spotreba_l_100km, 60) ?? stare.spotreba_l_100km, mesta:{}, medzi:{ ...stare.medzi } };
+    for(const m of Object.keys(stare.mesta)){ const x = (b.mesta||{})[m]||{}; nove.mesta[m] = { km: cislo(x.km, 500) ?? stare.mesta[m].km, najom_hod: cislo(x.najom_hod, 500) ?? stare.mesta[m].najom_hod }; }
+    for(const [k,v] of Object.entries(b.medzi||{})) if(/^[^|]{2,40}\|[^|]{2,40}$/.test(k) && cislo(v,500)!=null) nove.medzi[k] = cislo(v,500);
+    if(await q.one(db.settings,{key:'mesta_naklady'})) await q.update(db.settings,{key:'mesta_naklady'},{$set:{value:nove, at:nowISO()}});
+    else await q.insert(db.settings,{key:'mesta_naklady', value:nove, at:nowISO()});
+    try{ await auditLog(req,'mesta_naklady','Náklady miest',stare,nove,''); }catch(e){}
+    res.json({ ok:true, nastavenie: await mestaNastavenie() });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/admin/finance/stats', adminAuth, async(req,res)=>{
   try {
     const {from, to} = req.query; // YYYY-MM-DD inclusive

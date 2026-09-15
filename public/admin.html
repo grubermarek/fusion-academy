@@ -1376,6 +1376,8 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </div></div>
     <!-- Náklady a výsledok + Banka (Stripe) -->
     <div class="row g-3 mb-3" id="finVysledok"></div>
+    <!-- Mestá — náklady a zisk (Marek 15. 9.) -->
+    <div class="mb-3" id="finMesta"></div>
 
     <!-- Aktívne členstvá & permanentky -->
     <div class="card bg-dark border-secondary mb-3"><div class="card-body">
@@ -5318,6 +5320,67 @@ function _renderFinKpis(d, periodLabel, periodVal, deltaHtml, f){
     + (f.banka ? _finKpiCard('Zo Stripe na účet', f.banka.ciste.toFixed(2)+' €', 'poplatky '+f.banka.poplatky.toFixed(2)+' € · čaká '+(f.banka.caka??0).toFixed(2)+' €', '#7ec8e3') : '');
   _renderFinVysledok(f);
 }
+// ── Mestá — náklady a zisk (Marek 15. 9.: „koľko ma ktoré mesto stojí a koľko mi zarába") ──
+let _mzData=null;
+async function loadMestaZisk(from,to){
+  const host=document.getElementById('finMesta'); if(!host) return;
+  const d=await api('/api/admin/mesta-zisk?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to));
+  if(!d||!d.ok){ host.innerHTML='<div class="text-danger small">Mestá: '+escHtml((d&&d.error)||'chyba')+'</div>'; return; }
+  _mzData=d; renderMestaZisk();
+}
+function renderMestaZisk(){
+  const d=_mzData, host=document.getElementById('finMesta'); if(!d||!host) return;
+  const e=x=>(+x||0).toFixed(2).replace('.',',')+' €';
+  const c=x=>String(x).replace('.',',');
+  const farba=x=>x>0.004?'#4ade80':(x<-0.004?'#e57373':'#aaa');
+  const druhy=m=>[['členstvá',m.trzby.clenstva],['permanentky',m.trzby.permanentky],['vstupy',m.trzby.vstupy],['súkromné',m.trzby.sukromne]]
+    .filter(x=>x[1]>0).map(x=>x[0]+' '+e(x[1])).join(' · ');
+  const riadky=d.mesta.map(m=>'<tr>'
+    +'<td><div class="fw-semibold">'+escHtml(m.mesto)+'</div><div style="font-size:.66rem;opacity:.65">'+(druhy(m)||'bez tržieb')+'</div></td>'
+    +'<td class="text-end">'+m.konane+(m.zrusene?'<div style="font-size:.66rem;opacity:.65">+'+m.zrusene+' zrušené</div>':'')+'</td>'
+    +'<td class="text-end">'+c(m.priemer_ludi)+'</td>'
+    +'<td class="text-end" style="color:#C9A24C">'+e(m.trzby.spolu)+'</td>'
+    +'<td class="text-end">'+(m.naklady.cestovne?'−'+e(m.naklady.cestovne)+'<div style="font-size:.66rem;opacity:.65">'+c(m.naklady.km)+' km</div>':'—')+'</td>'
+    +'<td class="text-end">'+(m.naklady.najom?'−'+e(m.naklady.najom):'—')+'</td>'
+    +'<td class="text-end">'+(m.naklady.treneri?'−'+e(m.naklady.treneri)+'<div style="font-size:.66rem;opacity:.65">'+m.zastupy+'× zástup</div>':'—')+'</td>'
+    +'<td class="text-end fw-bold" style="color:'+farba(m.zisk)+'">'+e(m.zisk)+'</td>'
+    +'<td class="text-end" style="color:'+farba(m.zisk_na_hodinu)+'">'+(m.konane?e(m.zisk_na_hodinu):'—')+'</td>'
+    +'<td class="text-end">'+(m.hranica_ludi?m.hranica_ludi+' ľudí':'—')+'</td></tr>').join('');
+  const s=d.spolu;
+  const kat={venceky:'venčeky',events:'vstupenky',merch:'merch',other:'ostatné'};
+  const mimo=Object.entries(d.mimo_miest||{}).filter(x=>x[1]>0).map(x=>(kat[x[0]]||x[0])+' '+e(x[1])).join(' · ');
+  const n=d.nastavenie, mesta=Object.keys(n.mesta);
+  const inp=(id,val,w)=>'<input id="'+id+'" value="'+c(val)+'" inputmode="decimal" class="form-control form-control-sm bg-dark text-light border-secondary" style="max-width:'+(w||90)+'px">';
+  const nastavenie='<details class="mt-2"><summary style="cursor:pointer;color:#C9A24C;font-size:.8rem">⚙️ Náklady miest — km, nájom, LPG</summary>'
+    +'<div class="d-flex flex-wrap gap-3 mt-2 align-items-end" style="font-size:.78rem">'
+    +'<label>Cena LPG (€/l)<br>'+inp('mzLpg',n.lpg_cena)+'</label>'
+    +'<label>Spotreba (l/100 km)<br>'+inp('mzSpotreba',n.spotreba_l_100km)+'</label>'
+    +'<label>BB ↔ Zvolen (km)<br>'+inp('mzMedziBbZv',n.medzi['Banská Bystrica|Zvolen']??'')+'</label></div>'
+    +'<div class="table-responsive mt-2"><table class="table table-dark table-sm mb-2" style="font-size:.78rem;max-width:460px"><thead><tr><th>Mesto</th><th>km z Detvy (jedným smerom)</th><th>Nájom €/hod</th></tr></thead><tbody>'
+    +mesta.map((m,i)=>'<tr><td>'+escHtml(m)+'</td><td>'+inp('mzKm'+i,n.mesta[m].km)+'</td><td>'+inp('mzNajom'+i,n.mesta[m].najom_hod)+'</td></tr>').join('')
+    +'</tbody></table></div><button class="btn btn-sm btn-warning" onclick="ulozMestaNaklady()">Uložiť náklady</button></details>';
+  host.innerHTML='<div class="card bg-dark border-secondary"><div class="card-body">'
+    +'<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2"><h6 class="fw-bold mb-0"><i class="bi bi-geo-alt-fill me-2 text-warning"></i>Mestá — náklady a zisk</h6>'
+    +'<span class="text-muted" style="font-size:.74rem">'+fmtDate(d.from)+' – '+fmtDate(d.to)+'</span></div>'
+    +(d.mesta.length?'<div class="table-responsive"><table class="table table-dark table-sm mb-2" style="font-size:.82rem;min-width:760px"><thead><tr style="font-size:.7rem;color:#999">'
+      +'<th>Mesto</th><th class="text-end">Hodiny</th><th class="text-end">Ľudí Ø</th><th class="text-end">Tržby</th><th class="text-end">Cesta</th><th class="text-end">Nájom</th><th class="text-end">Tréneri</th><th class="text-end">Zisk</th><th class="text-end">Zisk / hodina</th><th class="text-end" title="Koľko platiacich po 10 € zaplatí náklady jednej hodiny">Hranica</th>'
+      +'</tr></thead><tbody>'+riadky+'</tbody><tfoot><tr style="border-top:2px solid #C9A24C"><td class="fw-bold">Spolu</td><td class="text-end">'+s.konane+'</td><td></td>'
+      +'<td class="text-end fw-bold" style="color:#C9A24C">'+e(s.trzby)+'</td><td colspan="3" class="text-end text-muted">−'+e(s.naklady)+'</td>'
+      +'<td class="text-end fw-bold" style="color:'+farba(s.zisk)+'">'+e(s.zisk)+'</td><td colspan="2"></td></tr></tfoot></table></div>'
+      :'<div class="text-muted small mb-2">V tomto období nebola žiadna hodina v meste.</div>')
+    +'<div class="text-muted" style="font-size:.7rem;line-height:1.5">Vstup a súkromná hodina patria mestu, kde hodina bola. Členstvo a permanentka celé mestu, kde klientka v tom mesiaci chodila najčastejšie. '
+      +'Cesta: jedna za deň z Detvy a späť; Bystrica a Zvolen v ten istý deň sa rátajú ako jedna okružná cesta. Tréneri: výplata pri zástupe (10 € + 1 € za klientku nad 10). '
+      +'Hranica = koľko platiacich po 10 € zaplatí náklady jednej hodiny.'
+      +(mimo?'<br>Mimo miest: '+mimo+'.':'')+(d.nepriradene>0?'<br><span style="color:#e0a656">Nepriradené k mestu: '+e(d.nepriradene)+'</span> (klientka v posledných 3 mesiacoch nebola na hodine a nemá mesto v profile).':'')+'</div>'
+    +nastavenie+'</div></div>';
+}
+async function ulozMestaNaklady(){
+  const d=_mzData; if(!d) return;
+  const v=id=>(document.getElementById(id)||{}).value;
+  const mesta={}; Object.keys(d.nastavenie.mesta).forEach((m,i)=>{ mesta[m]={km:v('mzKm'+i), najom_hod:v('mzNajom'+i)}; });
+  const r=await api('/api/admin/mesta-naklady',{method:'PUT', body:{ lpg_cena:v('mzLpg'), spotreba_l_100km:v('mzSpotreba'), medzi:{'Banská Bystrica|Zvolen':v('mzMedziBbZv')}, mesta }});
+  if(r&&r.ok){ showToast('Náklady miest uložené','success'); loadMestaZisk(d.from,d.to); } else showToast('Chyba: '+((r&&r.error)||'?'),'error');
+}
 const _mesSlovo=n=>n===1?'mesiac':(n>=2&&n<=4?'mesiace':'mesiacov');
 // Náklady a výsledok + Banka (Stripe) — Marek 12. 9.: „prejdi financie, navrhni zjednodušenie".
 // Jeden pohľad: čo sme utŕžili, čo to stálo, čo ostalo — a či to zo Stripe naozaj prišlo na účet.
@@ -5404,6 +5467,7 @@ async function loadFinance(){
   // musia byť za ZVOLENÉ obdobie, inak by „september" ukazoval náklady za rok.
   const dF=await api(`/api/admin/finance/stats?from=${_fmtD(focused.start)}&to=${_fmtD(focused.end)}`).catch(()=>null);
   _renderFinKpis(d, GRAN_LABEL[g], focused.v, deltaHtml, (dF&&!dF.error)?dF:d);
+  loadMestaZisk(_fmtD(focused.start), _fmtD(focused.end));
   _renderFinChart(buckets.map(b=>b.label), buckets.map(b=>b.v), focusIdx);
   loadMembOverview();
 }
@@ -5425,6 +5489,7 @@ async function loadFinanceCustom(){
   document.getElementById('finPeriodSub').textContent=`${fmtDate(_finRange.from)} – ${fmtDate(_finRange.to)}`;
   document.getElementById('finNextBtn').disabled=false;
   _renderFinKpis(d, 'Tržby (rozsah)', d.revenue.period, deltaHtml);
+  loadMestaZisk(_finRange.from, _finRange.to);
   _renderFinChart((d.series||[]).map(x=>fmtDate(x.d).slice(0,5)), (d.series||[]).map(x=>x.v), -1);
   loadMembOverview();
 }
