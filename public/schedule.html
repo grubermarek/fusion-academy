@@ -608,20 +608,24 @@ async function skuskaOdmietniRozvrh() {
 function ponukniPlatbuNaMieste(d, btn) {
   if (d.trial_available && !skuskaOdmietnuta) { ponukniSkusku(d, btn); return; }
   const technika = !!(selectedClass && selectedClass.category === 'Technika');
+  const lenVstup = !!d.len_vstup;   // Brezno: len jednorazový vstup, členstvo tu neplatí (15. 9.)
   const suma = +(d.tech_price || 10); platbaSuma = suma;
   const kredit = +(d.credit_balance || 0);
   const box = document.getElementById('bookError');
   box.className = 'py-2 small mb-3';
   box.style.cssText = 'background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.45);border-radius:12px;padding:12px 14px';
-  box.innerHTML = '<div style="font-weight:800;color:var(--gold,#C9A84C);font-size:.95rem">💵 ' + (technika ? 'Technický tréning · ' + suma + '&nbsp;€' : 'Vstup na hodinu · ' + suma + '&nbsp;€') + '</div>'
+  box.innerHTML = '<div style="font-weight:800;color:var(--gold,#C9A84C);font-size:.95rem">💵 ' + (technika ? 'Technický tréning · ' + suma + '&nbsp;€' : lenVstup ? 'Jednorazový vstup · ' + suma + '&nbsp;€' : 'Vstup na hodinu · ' + suma + '&nbsp;€') + '</div>'
     + '<div class="text-muted" style="margin:4px 0 10px">' + (technika
         ? 'Technický tréning členstvo nekryje — cena je podľa členstva' + (suma < 10 ? ' (tvoja zľava je už započítaná)' : '') + '. '
+        : lenVstup ? String(d.message || '').replace(/ Zaplatíš.*$/, '') + ' '
         : 'Túto hodinu ti nekryje členstvo ani vstup. ')
       + 'Chceš zaplatiť <b>v hotovosti na mieste</b>?</div>'
     + (technika && kredit >= suma
         ? '<button type="button" class="btn-confirm" style="margin-bottom:8px;background:linear-gradient(135deg,#4ade80,#16a34a)" onclick="confirmBooking({pay_credit:true})">💳 Zaplatiť kreditom z appky (' + kredit.toFixed(2) + ' €)</button>' : '')
     + '<button type="button" class="btn-confirm" onclick="confirmBooking({pay_on_site:true})">💵 Áno, zaplatím na mieste ' + suma + '&nbsp;€</button>'
-    + '<a href="/obchod?src=booking" class="d-block text-center mt-2" style="color:var(--gold,#C9A84C)">🎫 Radšej si kúpim členstvo alebo permanentku</a>';
+    + (lenVstup
+        ? '<a href="/obchod?buy=vstup1&src=booking" class="d-block text-center mt-2" style="color:var(--gold,#C9A84C)">🎟️ Radšej si kúpim vstup online</a>'
+        : '<a href="/obchod?src=booking" class="d-block text-center mt-2" style="color:var(--gold,#C9A84C)">🎫 Radšej si kúpim členstvo alebo permanentku</a>');
   box.classList.remove('d-none');
   btn.style.display = 'none';
 }

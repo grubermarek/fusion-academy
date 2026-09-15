@@ -45,6 +45,8 @@ async function j(url, opts = {}, jar) {
     kl('qaMzBea00000001', 'Beáta Breznianska'),
     kl('qaMzDana0000001', 'Dana Detvianska', { city: 'Detva' }),
     kl('qaMzKlient00001', 'Klára Klientka'),
+    kl('qaMzStary000001', 'Zuzana Zvolenská (zlúčený účet)'),
+    { ...kl('qaMzZuzkaNov001', 'Zuzana Nová'), referral_code: 'QAMZNOVA', merged_accounts: ['qaMzStary000001'] },
   ]));
   const cls = (id, loc, dow, od, doo, extra) => ({ _id: id, name: 'Zumba', category: 'Zumba', instructor: 'Adam Admin', instructor_id: 'qaMzAdmin000001', location: loc, day_of_week: dow, time_start: od, time_end: doo, capacity: 30, price: 10, active: true, created_at: '2026-01-01', ...(extra || {}) });
   fs.writeFileSync(path.join(DATA, 'classes.db'), riadky([
@@ -53,11 +55,12 @@ async function j(url, opts = {}, jar) {
     cls('qaMzClsBRut', 'Brezno', 2, '19:00', '20:00'),
     cls('qaMzClsBRst', 'Brezno', 4, '19:00', '20:00'),
     cls('qaMzClsDT', 'Detva', 5, '19:00', '20:00'),
+    cls('qaMzClsKids', 'Detva', 3, '15:00', '16:00', { category: 'Deti', name: 'Zumba Kids 2', active: true }),
     cls('qaMzClsOnl', 'Online', 3, '19:00', '20:00', { category: 'Online' }),
     cls('qaMzClsSuk', 'Detva / Zvolen / BB / Brezno', 6, '09:00', '18:00', { category: 'Súkromné', name: 'Súkromná lekcia – rezervácia' }),
   ]));
   const bk = (id, cid, den, uid) => ({ _id: id, class_id: cid, booking_date: den, user_id: uid, status: 'attended', attendance_status: 'attended', created_at: den + 'T10:00:00.000Z' });
-  const zv = Array.from({ length: 12 }, (_, i) => bk('qaMzBkZv' + i, 'qaMzClsZV', '2026-09-07', i === 0 ? 'qaMzZuzka000001' : 'qaMzAnon' + i));
+  const zv = Array.from({ length: 12 }, (_, i) => bk('qaMzBkZv' + i, 'qaMzClsZV', '2026-09-07', i === 0 ? 'qaMzZuzka000001' : i === 1 ? 'qaMzZuzkaNov001' : 'qaMzAnon' + i));
   fs.writeFileSync(path.join(DATA, 'bookings.db'), riadky([
     ...zv,
     bk('qaMzBkBB1', 'qaMzClsBB', '2026-09-07', 'qaMzAnonB1'), bk('qaMzBkBB2', 'qaMzClsBB', '2026-09-07', 'qaMzAnonB2'),
@@ -71,6 +74,8 @@ async function j(url, opts = {}, jar) {
     { _id: 'qaMzTxVstup', type: 'single_entry', amount: 10, user_id: 'qaMzBea00000001', date: '2026-09-08', payment_method: 'cash', booking_id: 'qaMzBkBR1', note: 'Jednorazový vstup', created_at: '2026-09-08T18:00:00.000Z' },
     { _id: 'qaMzTxClen', type: 'membership', amount: 49.9, user_id: 'qaMzZuzka000001', date: '2026-09-08', payment_method: 'cash', plan_id: 'bronze', created_at: '2026-09-08T18:00:00.000Z' },
     { _id: 'qaMzTxSuk', type: 'private_lesson', amount: 25, user_id: 'qaMzDana0000001', date: '2026-09-11', method: 'cash', private_booking_id: 'qaMzPb1', created_at: '2026-09-11T18:00:00.000Z' },
+    { _id: 'qaMzTxStary', type: 'membership', amount: 40, user_id: 'qaMzStary000001', date: '2026-09-09', payment_method: 'cash', plan_id: 'bronze', created_at: '2026-09-09T18:00:00.000Z' },
+    { _id: 'qaMzTxKids', type: 'membership', amount: 50, user_name: 'Timka (Zumba Kids)', date: '2026-09-10', payment_method: 'cash', plan_id: 'bronze', created_at: '2026-09-10T18:00:00.000Z' },
     { _id: 'qaMzTxMerch', type: 'product', amount: 30, user_id: 'qaMzDana0000001', date: '2026-09-11', payment_method: 'cash', product_name: 'Taška', created_at: '2026-09-11T18:00:00.000Z' },
   ]));
   const pm = new Date(2026, 7, 1);
@@ -116,7 +121,9 @@ async function j(url, opts = {}, jar) {
 
     console.log('\nTržby:');
     ok('vstup 10 € patrí Breznu (podľa rezervácie)', M.Brezno.trzby.vstupy === 10 && M.Brezno.trzby.spolu === 10, JSON.stringify(M.Brezno.trzby));
-    ok('členstvo 49,90 € patrí Zvolenu (tam chodí), hoci má v profile Detvu', M.Zvolen.trzby.clenstva === 49.9, JSON.stringify(M.Zvolen.trzby));
+    ok('členstvo 49,90 € patrí Zvolenu (tam chodí), aj 40 € zo zlúčeného účtu podľa nového účtu', M.Zvolen.trzby.clenstva === 89.9, JSON.stringify(M.Zvolen.trzby));
+    ok('Zumba Kids bez účtu (50 €) patrí mestu detských hodín', M.Detva.trzby.clenstva === 50, JSON.stringify(M.Detva.trzby));
+    ok('nič nepriradené', r.d.nepriradene === 0, JSON.stringify(r.d.nepriradene_polozky));
     ok('súkromná hodina 25 € patrí Detve', M.Detva.trzby.sukromne === 25, JSON.stringify(M.Detva.trzby));
     ok('merch je mimo miest', r.d.mimo_miest && r.d.mimo_miest.merch === 30, JSON.stringify(r.d.mimo_miest));
 

@@ -1289,8 +1289,13 @@ async function searchUsersForAdd(){
 // inak vyzvi (predať členstvo / permanentku / vstup / darovať zadarmo).
 async function quickAddUser(userId, userName){
   document.getElementById('addUserSearch').value='';
-  const st = await api('/api/attendance/client-status?user_id='+encodeURIComponent(userId));
+  const st = await api('/api/attendance/client-status?user_id='+encodeURIComponent(userId)+'&class_id='+encodeURIComponent(_currentClassId||''));
   if(!st || st.error){ toast(st?.error||'Chyba', true); return; }
+  // Brezno: len jednorazový vstup — členstvo hodinu nekryje (server to vie podľa hodiny, Marek 15. 9.)
+  if(st.len_vstup){
+    if((st.single_entries||0) > 0){ await bookCovered(userId,'single_entry', `použitý vstup (zostáva ${(st.single_entries-1)})`); return; }
+    showTechnikaDialog(st); return;
+  }
   // Technický tréning členstvo NEKRYJE — má vlastný cenník (server ho posiela
   // v tech_price). Bez tohto by sa zapísal ako krytý a nikto by nezaplatil.
   if(_currentClassCategory === 'Technika'){
@@ -1316,8 +1321,9 @@ function showTechnikaDialog(st){
   box.style.display='block';
   box.innerHTML='<div style="padding:14px">'
     +'<div style="font-weight:800;color:var(--cream);margin-bottom:2px">'+esc(st.name)+'</div>'
-    +'<div style="font-size:.82rem;color:#e0a34c;margin-bottom:12px">🩰 Technický tréning — členstvo ho nekryje. Platí <b>'+cena+' €</b>'
-      +(st.membership?' (zľava podľa členstva '+esc(st.membership)+')':'')+'</div>'
+    +'<div style="font-size:.82rem;color:#e0a34c;margin-bottom:12px">'+(st.len_vstup
+      ? '📍 '+esc(st.len_vstup_mesto||'')+' — teraz len jednorazový vstup, členstvo tu hodinu nekryje. Platí <b>'+cena+' €</b>'
+      : '🩰 Technický tréning — členstvo ho nekryje. Platí <b>'+cena+' €</b>'+(st.membership?' (zľava podľa členstva '+esc(st.membership)+')':''))+'</div>'
     +'<div style="display:flex;flex-direction:column;gap:8px">'
     +'<button class="btn-block" style="background:rgba(224,86,86,.18);border:1px solid rgba(224,86,86,.5);color:#ff8a8a" onclick="bookTechCash(\''+st.id+'\','+cena+')">💵 Vyberiem '+cena+' € na mieste — zapísať</button>'
     +'<button class="btn-block" onclick="sellEntryAndBook(\''+st.id+'\',1,'+cena+')">🎟️ Predať vstup za '+cena+' € + zapísať</button>'

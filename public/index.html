@@ -1592,7 +1592,7 @@ async function doConfirmBook(){
         showToast('Prihlás sa prosím — rezerváciu potom dokončíme automaticky.');
         openLogin && openLogin();
       } else if(d.error==='membership_required'){
-        showMembershipWall(!!d.trial_available && !_bezSkusky);
+        showMembershipWall(!!d.trial_available && !_bezSkusky, d);
       } else if(/už (ste sa |si )?prihlás/i.test(d.error||'')){
         // Rezervácia už existuje (dvojité ťuknutie / opakovaný pokus) — pre klientku
         // je to úspech, pokračuj na potvrdenie namiesto slepej uličky.
@@ -1829,11 +1829,15 @@ function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt
 function escJs(s){return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200);}
 // Stena pri hodine: s nárokom najprv LEN ponuka týždňa zadarmo; bežná ponuka až po odmietnutí (Marek 14. 9.)
-function showMembershipWall(trial){
+function showMembershipWall(trial, d){
   const t=document.getElementById('mwTrial'); if(t) t.style.display=trial?'block':'none';
   const k=document.getElementById('mwKupa'); if(k) k.style.display=trial?'none':'block';
   const i=document.getElementById('mwIkona'); if(i) i.textContent=trial?'🎁':'🏷️';
   const h=document.getElementById('mwTitle'); if(h) h.textContent=trial?'Tvoj prvý týždeň zadarmo':'Ako zaplatíš túto hodinu?';
+  // Brezno len za jednorazový vstup: nadpis podľa servera a v cenníku bez členstva (15. 9.)
+  const lv=!!(d&&d.len_vstup), riadky=document.querySelectorAll('#mwKupa .mw-cennik > div');
+  if(riadky[2]) riadky[2].style.display=lv?'none':'';
+  if(lv&&h) h.textContent=String(d.message||'').split(' — ')[0]||'Jednorazový vstup';
   document.getElementById('membershipWallModal').style.display='flex';
 }
 async function startTrialFromLanding(){

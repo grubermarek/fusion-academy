@@ -816,6 +816,34 @@ async function seedData() {
     await q.insert(db.settings,{key:'stripe_obnovy_doplnenie_20260915', value:vysledok, at:nowISO()});
     console.log('🔄 Doplnenie Stripe obnov: '+vysledok.join(' | '));
   }, 11000);
+  // Brezno len za jednorazový vstup 10 € (Marek 15. 9.). Kto má teraz zaplatené členstvo (aj z iného mesta),
+  // chodí na ňom do jeho konca; zoznam sa zapíše raz. Odložené, nech sú načítané plány a pomocníci nižšie.
+  if(!(await q.one(db.settings,{key:'mesta_len_vstup_brezno_20260915'}))) setTimeout(async()=>{
+    try{
+      if(await q.one(db.settings,{key:'mesta_len_vstup_brezno_20260915'})) return;
+      const teraz=nowISO(), dobiehaju={};
+      for(const m of await q.find(db.memberships,{status:'active'})){
+        if(!m.user_id || !m.expires_at || String(m.expires_at)<=teraz) continue;
+        if(MEMBERSHIP_PLANS[m.plan_id]?.type==='bundle') continue;
+        if(/online/.test(String((m.plan_id||'')+' '+(m.plan_name||'')).toLowerCase())) continue;   // online živú hodinu nekrylo ani doteraz
+        if(!dobiehaju[m.user_id] || String(m.expires_at)>dobiehaju[m.user_id]) dobiehaju[m.user_id]=String(m.expires_at);
+      }
+      const s=await q.one(db.settings,{key:'mesta_len_vstup'}); const v=(s&&s.value)||{};
+      v['Brezno']={ aktivne:true, cena:10, od:today(), dobiehaju };
+      if(s) await q.update(db.settings,{key:'mesta_len_vstup'},{$set:{value:v, at:nowISO()}});
+      else await q.insert(db.settings,{key:'mesta_len_vstup', value:v, at:nowISO()});
+      const POZN='📍 V Brezne teraz platí jednorazový vstup 10 € — zaplatíš na mieste alebo vstupom z appky.';
+      let hodiny=0;
+      for(const c of await q.find(db.classes,{})){
+        if(mzMesto(c.location)!=='Brezno' || c.category==='Online' || /súkrom/i.test(String(c.category||'')+' '+String(c.name||''))) continue;
+        const set={price:10};
+        if(!String(c.description||'').includes('jednorazový vstup 10 €')) set.description=(POZN+' '+String(c.description||'')).trim();
+        await q.update(db.classes,{_id:c._id},{$set:set}); hodiny++;
+      }
+      await q.insert(db.settings,{key:'mesta_len_vstup_brezno_20260915', value:{dobiehaju:Object.keys(dobiehaju).length, hodiny}, at:nowISO()});
+      console.log('📍 Brezno len za vstup 10 €: dobieha '+Object.keys(dobiehaju).length+' členstiev, hodín '+hodiny);
+    }catch(e){ console.error('mesta_len_vstup_brezno:', e.message); }
+  }, 12000);
   if(!(await q.one(db.settings,{key:'vencek_klenovec_velkypiatok_20260915'}))) setTimeout(async()=>{
     try{
       if(await q.one(db.settings,{key:'vencek_klenovec_velkypiatok_20260915'})) return;
@@ -12802,6 +12830,28 @@ function mzMesto(loc){
   if(/\bbb\b|bystric/.test(b)) return 'Banská Bystrica';
   return null;
 }
+// ═══ MESTO LEN ZA VSTUP ══════════════════════════════════════════════════════
+// Marek 15. 9.: „v Brezne budeme dočasne učiť len za 10 € na hodinu jednorazové vstupy, kým sa nám
+// nerozbehne návštevnosť". Členstvo tam hodinu nekryje. Ženy, ktorým 15. 9. bežalo zaplatené členstvo,
+// chodia na ňom do jeho konca („dobehne, potom 10 €") — zoznam zapísala migrácia raz, obnova ani nový
+// nákup ho nepredĺžia. Vstup z appky / permanentky a darovaná hodina platia normálne.
+// Nastavenie: settings mesta_len_vstup = { Brezno:{ aktivne, cena, od, dobiehaju:{ user_id: koniec členstva } } }.
+const V_MESTE = { 'Brezno':'V Brezne', 'Zvolen':'Vo Zvolene', 'Detva':'V Detve', 'Banská Bystrica':'V Banskej Bystrici' };
+const vMeste = m => V_MESTE[m] || ('V meste '+m);
+async function lenVstupPravidlo(cls){
+  if(!cls) return null;
+  const m = mzMesto(cls.location); if(!m) return null;
+  if(cls.category==='Online' || /súkrom/i.test(String(cls.category||'')+' '+String(cls.name||''))) return null;
+  const s = await q.one(db.settings,{key:'mesta_len_vstup'});
+  const p = s && s.value && s.value[m];
+  if(!p || p.aktivne===false) return null;
+  return { mesto:m, cena: +p.cena>0 ? +p.cena : 10, od:p.od||null, dobiehaju:p.dobiehaju||{} };
+}
+function clenstvoKryjeVMeste(pr, uid, den){
+  if(!pr) return true;
+  const d = pr.dobiehaju && pr.dobiehaju[uid];
+  return !!(d && String(den||today()).slice(0,10) <= String(d).slice(0,10));
+}
 async function mestaZisk(from, to){
   const nast = await mestaNastavenie();
   const dnes = today(), kon = to < dnes ? to : dnes;
@@ -12861,21 +12911,28 @@ async function mestaZisk(from, to){
   }
   const txMap = Object.fromEntries((await q.find(db.transactions,{})).map(x=>[x._id,x]));
   const pbMap = Object.fromEntries((await q.find(db.private_bookings,{})).map(p=>[p._id,p]));
-  const najcastejsie = (uid, mes) => {
+  // Zlúčený duplicitný účet (napr. Ailina H.) nemá vlastné návštevy — rozhodujú návštevy účtu, do ktorého sa zlúčil
+  const zlucenyDo = {}; for(const x of Object.values(uMap)) for(const idz of (x.merged_accounts||[])) zlucenyDo[idz] = x._id;
+  const najcastejsie = (uid, mes, hlbka=0) => {
     if(!uid) return null;
     const [y,mo] = mes.split('-').map(Number);
     for(let i=0;i<4;i++){                                                       // mesiac platby, inak až 3 mesiace dozadu
       const n = navstevy[uid+'|'+new Date(Date.UTC(y, mo-1-i, 1)).toISOString().slice(0,7)];
       if(n) return Object.entries(n).sort((a,b)=>b[1]-a[1])[0][0];
     }
+    if(zlucenyDo[uid] && zlucenyDo[uid]!==uid && hlbka<3) return najcastejsie(zlucenyDo[uid], mes, hlbka+1);
     return uMap[uid] ? mzMesto(uMap[uid].city) : null;
   };
+  // Zumba Kids zo zoznamu bez účtu (platí rodič v hotovosti) — mesto detských hodín
+  const detskeMesto = (classes.find(c=>c.category==='Deti' && c.active!==false && mzMesto(c.location))||{}).location;
   const mimo = {}, nepriradenePolozky = []; let nepriradene = 0;
   for(const e of await revenueEvents()){
     const den = String(e.d).slice(0,10); if(den<from || den>to) continue;
     const mes = den.slice(0,7), tx = txMap[e.id], uid = e.who && e.who.id;
     let m = null, kat = null;
-    if(e.cat==='entries'){ kat = 'vstupy'; const b = tx && tx.booking_id && bMap[tx.booking_id]; const c = b && cMap[b.class_id];
+    const kidsBezUctu = !uid && detskeMesto && /zumba kids/i.test(String((e.who && e.who.name)||'')+' '+String(e.what||''));
+    if(kidsBezUctu && ['entries','memberships','passes'].includes(e.cat)){ kat = e.cat==='entries' ? 'vstupy' : e.cat==='passes' ? 'permanentky' : 'clenstva'; m = mzMesto(detskeMesto); }
+    else if(e.cat==='entries'){ kat = 'vstupy'; const b = tx && tx.booking_id && bMap[tx.booking_id]; const c = b && cMap[b.class_id];
       m = (b && mzMesto((c && c.location) || b.class_location)) || najcastejsie(uid, mes); }
     else if(e.cat==='private'){ kat = 'sukromne'; const pb = tx && pbMap[tx.private_booking_id]; m = (pb && mzMesto(pb.city)) || najcastejsie(uid, mes); }
     else if(e.cat==='memberships' || e.cat==='passes'){ kat = e.cat==='passes' ? 'permanentky' : 'clenstva'; m = najcastejsie(uid, mes); }
@@ -16522,18 +16579,19 @@ app.post('/api/kiosk/checkin', async(req,res)=>{
       // Technický tréning členstvo NEKRYJE (vlastný cenník podľa členstva) — doteraz ho kiosk
       // zapísal ako krytý a nikto nezaplatil. Bez krytia sa kiosk PÝTA na hotovosť (Marek 13. 9.).
       const jeTech = cls.category==='Technika';
+      const lenV = await lenVstupPravidlo(cls);
       let kiosKrytie = null, cena = null;
       if(jeTech){
         if(hasFree) kiosKrytie='free_class'; else if(hasCredit) kiosKrytie='free_credit'; else if(hasSingle) kiosKrytie='single_entry';
         else cena = technikaCenaZPlanu(String((mem?.plan_id||'')+' '+(mem?.plan_name||'')), hasMem);
       } else {
-        if(hasMem) kiosKrytie='membership'; else if(hasFree) kiosKrytie='free_class'; else if(hasCredit) kiosKrytie='free_credit'; else if(hasSingle) kiosKrytie='single_entry';
-        else cena = +cls.price>0 ? +cls.price : 10;
+        if(hasMem && clenstvoKryjeVMeste(lenV, u._id, todayS)) kiosKrytie='membership'; else if(hasFree) kiosKrytie='free_class'; else if(hasCredit) kiosKrytie='free_credit'; else if(hasSingle) kiosKrytie='single_entry';
+        else cena = lenV ? lenV.cena : (+cls.price>0 ? +cls.price : 10);
       }
       if(!kiosKrytie){
         if(!req.body.pay_on_site) return res.status(402).json({
-          error:(onlineOnly?'Máš len ONLINE členstvo — živú hodinu nekryje. ':jeTech?'Technický tréning členstvo nekryje. ':'Nemáš aktívne členstvo ani vstup. ')+'Zaplatíš '+cena+' € v hotovosti trénerovi?',
-          ask_cash:true, price:cena, class_id:cls._id, class_name:cls.name, tech:jeTech, has_membership:hasMem,
+          error:(onlineOnly?'Máš len ONLINE členstvo — živú hodinu nekryje. ':jeTech?'Technický tréning členstvo nekryje. ':(lenV&&hasMem)?vMeste(lenV.mesto)+' je teraz len jednorazový vstup — členstvo tu neplatí. ':'Nemáš aktívne členstvo ani vstup. ')+'Zaplatíš '+cena+' € v hotovosti trénerovi?',
+          ask_cash:true, price:cena, class_id:cls._id, class_name:cls.name, tech:jeTech, len_vstup:!!lenV, has_membership:hasMem,
           name:u.name, first:(u.name||'').split(' ')[0] });
         kiosKrytie='pay_on_site';
       }
@@ -16646,6 +16704,8 @@ app.post('/api/kiosk/day-classes', async (req, res) => {
     // Ponúkajú sa VŠETKY dnešné hodiny, aj skončené — niekto sa zapisuje až po tréningu aj na
     // hodiny, ktoré absolvoval (Marek 14. 9.). Na hodinu, ktorá už začala alebo skončila, sa
     // zapíše účasť (ucast), na neskoršiu rezervácia.
+    const lenVMap = {};
+    for (const c of vsetky) lenVMap[c._id] = await lenVstupPravidlo(c);
     const hodiny = vsetky.map(c => {
       const mojaBk = moje.find(b => b.class_id === c._id);
       const kap = +c.capacity || 30;
@@ -16660,7 +16720,8 @@ app.post('/api/kiosk/day-classes', async (req, res) => {
         predznacit: predznac.has(c._id),
         za_min: toMin(c.time_start) - nowMin,
         tech: c.category === 'Technika',
-        cena_hotovost: kioskCena(c, kr),
+        len_vstup: !!(lenVMap[c._id] && !clenstvoKryjeVMeste(lenVMap[c._id], u._id, todayS)),
+        cena_hotovost: lenVMap[c._id] ? lenVMap[c._id].cena : kioskCena(c, kr),
         moja: mojaBk ? (mojaBk.status === 'attended' ? 'attended' : 'booked') : null,
       };
     });
@@ -16720,14 +16781,15 @@ app.post('/api/kiosk/signup', async (req, res) => {
     const plan = [], hotovost = [];
     for (const c of nove) {
       const tech = c.category === 'Technika';
-      if (!tech && kr.clenstvo) { plan.push({ sposob: 'membership' }); continue; }
+      const lenV = await lenVstupPravidlo(c);
+      if (!tech && kr.clenstvo && clenstvoKryjeVMeste(lenV, u._id, todayS)) { plan.push({ sposob: 'membership' }); continue; }
       if (zdarma) { zdarma = 0; plan.push({ sposob: 'free_class' }); }
       else if (kred > 0) { kred--; plan.push({ sposob: 'free_credit' }); }
       else if (vst > 0) { vst--; plan.push({ sposob: 'single_entry' }); }
       else {
-        const cena = kioskCena(c, kr);
+        const cena = lenV ? lenV.cena : kioskCena(c, kr);
         plan.push({ sposob: 'pay_on_site', cena });
-        hotovost.push({ id: c._id, name: c.name, time_start: c.time_start, cena, tech });
+        hotovost.push({ id: c._id, name: c.name, time_start: c.time_start, cena, tech, mesto: lenV ? lenV.mesto : null });
       }
     }
     const spolu = hotovost.reduce((s, h) => s + h.cena, 0);
@@ -16738,6 +16800,7 @@ app.post('/api/kiosk/signup', async (req, res) => {
         error: (kr.onlineOnly ? 'Máš len ONLINE členstvo — živú hodinu nekryje. ' : '')
           + (n === 1 ? 'Na hodinu „' + hotovost[0].name + '"' : 'Na ' + n + (n < 5 ? ' hodiny' : ' hodín')) + ' nemáš vstup'
           + (kr.clenstvo && hotovost.some(h => h.tech) ? ' (technický tréning členstvo nekryje)' : '')
+          + (kr.clenstvo && hotovost.some(h => h.mesto) ? ' (' + vMeste(hotovost.find(h => h.mesto).mesto).toLowerCase().replace(/^v/, 'v') + ' je teraz len jednorazový vstup, členstvo tu neplatí)' : '')
           + '. Zaplatíš ' + spolu + ' € v hotovosti trénerovi?',
         name: u.name, first: (u.name || '').split(' ')[0],
         potrebne: nove.length, mas: (kr.prva_zdarma ? 1 : 0) + kr.kredity + kr.vstupy,
@@ -18736,6 +18799,12 @@ app.post('/api/attendance/manual-booking', trainerAuth, async(req,res)=>{
           message:'Technický tréning členstvo nekryje — stojí '+cena+' €'
             +(cena<10?' (cena podľa členstva)':'')+'. Zapíš ju ako „platí na mieste" alebo použi vstup.' });
       }
+      // Brezno: len jednorazový vstup — členstvo hodinu nekryje, kým klientke nedobieha staré (Marek 15. 9.)
+      const lenVm = await lenVstupPravidlo(cls);
+      if(lenVm && !clenstvoKryjeVMeste(lenVm, u._id, bdate)){
+        return res.status(400).json({ code:'mesto_len_vstup', tech_price:lenVm.cena,
+          error: vMeste(lenVm.mesto)+' je teraz len jednorazový vstup '+lenVm.cena+' € — členstvo tu hodinu nekryje. Zapíš ju ako „platí na mieste" alebo použi jej vstup.' });
+      }
       // A rovnako sa musí overiť, či klientka vôbec MÁ členstvo, ktoré tú hodinu
       // kryje. Doteraz stačilo, že tréner klikol „kryté členstvom" — tak prešli
       // fyzické hodiny aj ženám s Online Basic, ktorý živé hodiny nekryje
@@ -18831,6 +18900,10 @@ app.get('/api/attendance/client-status', trainerAuth, async(req,res)=>{
     const u = await q.one(db.users,{_id:req.query.user_id});
     if(!u) return res.status(404).json({error:'Klient nenájdený'});
     const m = await checkMembership(u._id);
+    // Pri konkrétnej hodine (?class_id) povie, či ju členstvo kryje — Brezno je len za vstup (15. 9.)
+    const clsSt = req.query.class_id ? await q.one(db.classes,{_id:String(req.query.class_id)}) : null;
+    const lenVs0 = clsSt ? await lenVstupPravidlo(clsSt) : null;
+    const lenVs = (lenVs0 && !clenstvoKryjeVMeste(lenVs0, u._id, sessionDateFor(clsSt))) ? lenVs0 : null;
     const SUBS=['bronze','silver','gold','kids','online_basic','online_premium'];
     const active = !!(m && m.status==='active');
     const isSub = active && SUBS.includes(m.plan_id);
@@ -18841,7 +18914,8 @@ app.get('/api/attendance/client-status', trainerAuth, async(req,res)=>{
       expires_at: active ? (m.expires_at||null) : null,
       // Cenu techniky ráta server — UI ju len zobrazí, aby sa cenník nemohol
       // rozísť medzi trénerským a admin panelom (Marek 30. 8.).
-      tech_price: await technikaCena(u._id) });
+      tech_price: lenVs ? lenVs.cena : await technikaCena(u._id),
+      ...(lenVs ? { len_vstup:true, len_vstup_mesto:lenVs.mesto } : {}) });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 // Record single-entry / permanentka sale for a user (entries = počet vstupov)
@@ -19156,12 +19230,15 @@ app.post('/api/attendance/qr-checkin', trainerAuth, async(req,res)=>{
         return res.json({ok:true, user:{...userData, visit_count:vc}, booking:{existing:true, attended:true, booking_date:bdate, class_name:cls.name}});
       }
       // Determine access type (first free class governed by free_class_used only)
-      const hasMem = mem && mem.status === 'active';
+      const lenVq = await lenVstupPravidlo(cls);
+      const hasMem = !!(mem && mem.status === 'active' && (!mem.expires_at || mem.expires_at >= today())
+        && !/online/.test(String((mem.plan_id||'')+' '+(mem.plan_name||'')).toLowerCase()) && clenstvoKryjeVMeste(lenVq, u._id, bdate));
       const hasFree = !u.free_class_used;
       const hasSingle = (u.single_entries||0) > 0;
       const hasCredit = (u.free_credits||0) > 0;
       if(!hasMem && !hasFree && !hasSingle && !hasCredit){
-        return res.json({ok:false, user:userData, error:'membership_required', note:'Žiadne platné členstvo ani vstup'});
+        return res.json({ok:false, user:userData, error:'membership_required',
+          note: lenVq ? vMeste(lenVq.mesto)+' je teraz len jednorazový vstup '+lenVq.cena+' € — zapíš ju ako „platí na mieste".' : 'Žiadne platné členstvo ani vstup'});
       }
       await q.insert(db.bookings,{
         class_id, class_name:cls.name, class_emoji:cls.emoji||'💃',
@@ -19800,10 +19877,12 @@ app.post('/api/bookings', auth, async(req,res)=>{
     // Čím klientka za hodinu „zaplatila" — bez tohto sa jej pri zrušení nedal vrátiť vstup
     // Prvý týždeň zadarmo (14. 9.): kým je zapnutý, samoobslužná „prvá hodina zadarmo" neexistuje —
     // nová klientka si zapne skúšku (karta, 7 dní) alebo si kúpi vstup/členstvo.
+    const lenVstup = await lenVstupPravidlo(cls);          // Brezno: len jednorazový vstup (Marek 15. 9.)
     const skuska = await skuskaZapnuta();
-    const skuskaOk = skuska && (await skuskaNarok(u)).ok;
+    const skuskaOk = skuska && !lenVstup && (await skuskaNarok(u)).ok;   // skúška je členstvo — tu by hodinu nepokryla
     const prvaZdarmaDostupna = !u.free_class_used && !skuska;
-    const spravaBezKrytia = isChild
+    const spravaBezKrytia = lenVstup ? (vMeste(lenVstup.mesto)+' je teraz jednorazový vstup '+lenVstup.cena+' € na hodinu — členstvo tu dočasne neplatí. Zaplatíš na mieste alebo vstupom z appky.')
+      : isChild
       ? `${u.name} potrebuje členstvo alebo jednorazový vstup (10 €).`
       : (skuska ? 'Na túto hodinu potrebuješ členstvo alebo jednorazový vstup (10 €)'+(skuskaOk?' — alebo si zapni prvý týždeň zadarmo.':'.')
                : 'Prvá hodina zadarmo bola využitá. Na ďalšiu hodinu potrebuješ členstvo alebo jednorazový vstup (10 €).');
@@ -19851,7 +19930,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
         // Online-only plány (Online Basic/Premium) NEkryjú živé hodiny — inak by Online Basic
         // klientka prešla ako „membership" a nikto by od nej nevybral vstupné.
         const isOnlineOnlyPlan = m && /online/.test(String((m.plan_id||'')+' '+(m.plan_name||'')).toLowerCase());
-        const hasMembership = m && (m.status==='active') && (!m.expires_at || m.expires_at >= today()) && !isOnlineOnlyPlan;
+        const hasMembership = m && (m.status==='active') && (!m.expires_at || m.expires_at >= today()) && !isOnlineOnlyPlan && clenstvoKryjeVMeste(lenVstup, u._id, bdate);
         const singleEntries = u.single_entries || 0;
         const freeCredits = u.free_credits || 0;
         // ── Dieťa bez vlastného členstva/vstupov → skús ČLENSTVO/VSTUPY RODIČA ──
@@ -19859,7 +19938,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
         let parentCover = null;
         if(isChild && !hasMembership && singleEntries <= 0 && freeCredits <= 0){
           const pm = await checkMembership(parent._id);
-          const pHasMem = pm && (pm.status==='active') && (!pm.expires_at || pm.expires_at >= today());
+          const pHasMem = pm && (pm.status==='active') && (!pm.expires_at || pm.expires_at >= today()) && clenstvoKryjeVMeste(lenVstup, parent._id, bdate);
           if(pHasMem) parentCover = {method:'parent_membership'};
           else if((parent.free_credits||0) > 0) parentCover = {method:'parent_free_credit', deduct:{uid:parent._id, field:'free_credits'}};
           else if((parent.single_entries||0) > 0) parentCover = {method:'parent_single_entry', deduct:{uid:parent._id, field:'single_entries'}};
@@ -19872,6 +19951,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
           } else return res.status(402).json({
             error:'membership_required',
             can_pay_on_site: true, trial_available: skuskaOk,
+            ...(lenVstup ? { tech_price:lenVstup.cena, len_vstup:true, mesto:lenVstup.mesto } : {}),
             message: spravaBezKrytia,
             visit_count: visitCount,
             free_class_used: !!u.free_class_used
@@ -19900,7 +19980,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
     // spotreba vstupu / prvej hodiny zdarma → zápis. Vstup sa berie podmieneným updatom
     // PRED zápisom (nie $set z prečítanej hodnoty) a keď zápis padne, vráti sa.
     const membershipRequired = msg => ({ code:402, body:{ error:'membership_required', can_pay_on_site:true, trial_available:skuskaOk,
-      ...(techPrice ? {tech_price:techPrice} : {}), message:msg, visit_count:visitCount, free_class_used:true } });
+      ...(techPrice ? {tech_price:techPrice} : {}), ...(lenVstup ? {tech_price:lenVstup.cena, len_vstup:true, mesto:lenVstup.mesto} : {}), message:msg, visit_count:visitCount, free_class_used:true } });
     let jePrvaZdarma = prvaZdarmaDostupna; // 1. hodina zdarma (aj technika) — nepočíta sa do €/klient bonusu trénera; v režime skúšky sa nedáva
     const vysl = await withBookingLock(class_id+'@'+bdate, async () => {
       if(await q.one(db.class_cancellations,{class_id, date:bdate})) return {code:400, body:{error:'Táto hodina je zrušená a nedá sa rezervovať.'}};
@@ -19941,9 +20021,9 @@ app.post('/api/bookings', auth, async(req,res)=>{
           booking_date:bdate, status:'confirmed', pay_on_site:payOnSite, notes:notes||'',
           // Suma na výber: technika má vlastný cenník, inak platí to, čo si klientka
           // zvolila; keď nezvolila nič, ostáva jednorazový vstup.
-          pay_amount: payOnSite ? (techPrice || cenaNaMieste(zvolenyPlan) || 10) : null,
-          pay_plan: payOnSite ? (zvolenyPlan || null) : null,
-          pay_plan_name: payOnSite && zvolenyPlan ? (MEMBERSHIP_PLANS[zvolenyPlan]?.name || zvolenyPlan) : null,
+          pay_amount: payOnSite ? ((lenVstup && lenVstup.cena) || techPrice || cenaNaMieste(zvolenyPlan) || 10) : null,
+          pay_plan: payOnSite && !lenVstup ? (zvolenyPlan || null) : null,     // v meste len za vstup sa členstvo na mieste nepredáva
+          pay_plan_name: payOnSite && zvolenyPlan && !lenVstup ? (MEMBERSHIP_PLANS[zvolenyPlan]?.name || zvolenyPlan) : null,
           free_class: jePrvaZdarma,
           access_method: accessMethod,    // pre korektné vrátenie vstupu pri zrušení
           ...(creditPay ? { credit_paid:creditPay.amount, credit_payer_id:creditPay.uid } : {}),

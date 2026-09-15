@@ -2017,6 +2017,22 @@ function posModalEl(){
   return m;
 }
 
+// Mesto len za jednorazový vstup (Brezno, Marek 15. 9.): členstvo tam hodinu nekryje — vstup na mieste alebo z appky.
+function showLenVstupPay(classId, name, price, d){
+  const m = posModalEl();
+  const text = String((d && d.message) || 'V tomto meste je teraz jednorazový vstup na hodinu — členstvo tu dočasne neplatí.').replace(/ Zaplatíš.*$/, '');
+  m.innerHTML = POS_CSS + `
+  <div class="pos-card" id="posCard" role="dialog" aria-modal="true" aria-labelledby="posLvTitle">
+    <div class="pos-h" id="posLvTitle">📍 Jednorazový vstup · ${POS_EUR(price)}</div>
+    <div class="pos-s">${escHtml(name||'')} — ${escHtml(text)}</div>
+    <button onclick="posVyber('${classId}','vstup1')" class="pos-item" id="posLvNaMieste">
+      <span class="pos-l"><b>💵 Zaplatím na mieste</b><small>V hotovosti priamo na hodine</small></span>
+      <span class="pos-c">${POS_EUR(price)}</span></button>
+    <a href="/obchod?buy=vstup1&src=booking" class="pos-online">🎟️ Alebo si kúp vstup online</a>
+    <button onclick="document.getElementById('posModal').style.display='none'" class="pos-back">Zrušiť</button>
+  </div>`;
+  m.style.display = 'flex';
+}
 // Technický tréning má vlastný cenník podľa členstva a členstvo ho nekryje.
 // Zaplatiť sa dá kreditom z appky (Marek 11. 9.), na mieste, alebo permanentkou.
 function showTechPay(classId, name, price, credit, trial){
@@ -2062,7 +2078,8 @@ async function posTechNaMieste(classId, price){
 const POS_SKUSKA = trial => trial ? `<button onclick="skuskaStart()" class="pos-item" style="border-color:#E7C878;background:rgba(201,168,76,.14)">
       <span class="pos-l"><b>🎁 Prvý týždeň zadarmo</b><small>Uložíš kartu, 7&nbsp;dní tancuješ zadarmo, potom Bronze mesačne. Zruš kedykoľvek.</small></span>
       <span class="pos-c">0&nbsp;€</span></button>` : '';
-async function showPayOnSiteChoice(classId, name, price, credit, trial){
+async function showPayOnSiteChoice(classId, name, price, credit, trial, lenVstup){
+  if(lenVstup) return showLenVstupPay(classId, name, +price||10, lenVstup);   // Brezno: len vstup
   if(price) return showTechPay(classId, name, +price, credit, trial);   // technika má vlastné okno
   const P = await posNacitajPlany();
   const c = k => (P && P[k] && +P[k].price) || null;
@@ -2171,7 +2188,7 @@ async function confirmBooking(){
   } else if(d?.error==='membership_required'){
     // Klientka bez členstva sa MÔŽE rezervovať dopredu a zaplatiť na mieste —
     // rezervácia sa všade viditeľne označí, aby tréner vedel vybrať vstupné.
-    if(d.can_pay_on_site) showPayOnSiteChoice(cid, className0||'', d.tech_price, d.credit_balance, d.trial_available);
+    if(d.can_pay_on_site) showPayOnSiteChoice(cid, className0||'', d.tech_price, d.credit_balance, d.trial_available, d.len_vstup ? d : null);
     else { showToast('Najskôr si kúp členstvo alebo jednorazový vstup.','error');
       setTimeout(()=>{window.location.href='/obchod';},1500); }
   } else if(d?.error==='already_booked'){

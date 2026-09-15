@@ -363,8 +363,9 @@ async function nacitajHodiny(qrTxt){
     $('pickHead').textContent='Ahoj '+(d.first||'')+', na ktoré hodiny si prišla?';
     const zost=(d.krytie.prva_zdarma?1:0)+d.krytie.kredity+d.krytie.vstupy;
     const tech=vyberHodiny.some(c=>c.tech)?' Technický tréning členstvo nekryje.':'';
+    const lenv=vyberHodiny.some(c=>c.len_vstup)?' Tu je teraz len jednorazový vstup — členstvo hodinu nekryje.':'';
     $('pickSub').innerHTML = d.krytie.clenstvo
-      ? 'Máš aktívne členstvo — hodiny ťa nič nestoja.'+tech+' 💛'
+      ? 'Máš aktívne členstvo'+(lenv?'.':' — hodiny ťa nič nestoja.')+tech+lenv+' 💛'
       : zost ? 'K dispozícii máš '+kusy(zost)+'. Za každú hodinu sa odpočíta jeden.'
       : 'Nemáš členstvo ani vstup — hodinu zaplatíš trénerovi v hotovosti.';
     vykresliVyber();
@@ -388,7 +389,7 @@ function vykresliVyber(){
       : c.teraz ? (c.za_min>0 ? 'začína o '+c.za_min+' min — zapíšeme ti účasť' : 'práve prebieha — zapíšeme ti účasť')
       : 'voľných miest: '+c.volnych;
     // suma v hotovosti pri hodine, ktorú žene nič nekryje (technika aj pri členstve)
-    const platiHotovost = !c.moja && !zost && (c.tech || !kr.clenstvo);
+    const platiHotovost = !c.moja && !zost && (c.tech || c.len_vstup || !kr.clenstvo);
     const cena = platiHotovost ? ' · <span class="cena">'+eur(c.cena_hotovost)+' v hotovosti</span>' : '';
     return '<div class="pk'+(sel?' sel':'')+(vyp?' off':'')+(hotovo?' ok':'')+'"'+((vyp||hotovo)?'':' onclick="prepniHodinu(\''+c.id+'\')"')+'>'
       +'<div class="box">'+(sel?'✓':(c.moja?'✓':''))+'</div>'
