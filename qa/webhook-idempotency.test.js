@@ -46,10 +46,23 @@ function posli(telo, { podpis = true, t = Math.floor(Date.now() / 1000) } = {}) 
     JSON.stringify({ _id: 'qaWhKlientka001', name: 'Klara Predplatna', email: 'qa.wh@qa-biz.local',
       password: hash, user_type: 'client', active: true, referral_code: 'QAWH1', created_at: '2026-06-01',
       stripe_subscription_id: 'sub_qa_test_1', stripe_sub_plan: 'bronze' }),
+    JSON.stringify({ _id: 'qaWhNeskora0001', name: 'Nora Neskora', email: 'qa.wh2@qa-biz.local',
+      password: hash, user_type: 'client', active: true, referral_code: 'QAWH2', created_at: '2026-06-01',
+      stripe_subscription_id: 'sub_qa_neskoro', stripe_sub_plan: 'bronze' }),
+    JSON.stringify({ _id: 'qaWhDruha000001', name: 'Dvojita Odberatelka', email: 'qa.wh3@qa-biz.local',
+      password: hash, user_type: 'client', active: true, referral_code: 'QAWH3', created_at: '2026-06-01',
+      stripe_subscription_id: 'sub_qa_znamy', stripe_sub_plan: 'silver' }),
+    JSON.stringify({ _id: 'qaWhAdmin000001', name: 'Admin QA', email: 'qa.wh.admin@qa-biz.local',
+      password: hash, user_type: 'admin', is_admin: true, active: true, referral_code: 'QAWH9', created_at: '2026-06-01' }),
   ].join('\n') + '\n');
+  const VCERA = new Date(Date.now() - 86400000).toISOString();
   fs.writeFileSync(path.join(DATA, 'memberships.db'), [
     JSON.stringify({ _id: 'qaWhMem00000001', user_id: 'qaWhKlientka001', plan_id: 'bronze', plan_name: 'Bronze',
       status: 'active', started_at: '2026-08-01', expires_at: O_MESIAC, price: 50, payment_method: 'card' }),
+    JSON.stringify({ _id: 'qaWhMem00000002', user_id: 'qaWhNeskora0001', plan_id: 'bronze', plan_name: 'Bronze',
+      status: 'expired', started_at: '2026-08-01', expires_at: VCERA, price: 50 }),
+    JSON.stringify({ _id: 'qaWhMem00000003', user_id: 'qaWhDruha000001', plan_id: 'silver', plan_name: 'Silver',
+      status: 'active', started_at: '2026-08-01', expires_at: O_MESIAC, price: 74.9 }),
   ].join('\n') + '\n');
 
   console.log('WEBHOOK IDEMPOTENCIA QA — štart servera…');
@@ -113,6 +126,40 @@ function posli(telo, { podpis = true, t = Math.floor(Date.now() / 1000) } = {}) 
     await new Promise(r => setTimeout(r, 500));
     ok('nový event prejde', iny.status === 200 && !/duplicate/.test(iny.text), JSON.stringify(iny));
     ok('a predĺži členstvo znova', platnost() !== poBurste, poBurste + ' → ' + platnost());
+
+    // 15. 9. 2026: skutočné obnovy nechodili ako invoice.paid, ale ako invoice.payment_succeeded
+    // a bez invoice.subscription (Stripe API 2025-03-31) — appka ich celé mesiace ticho zahodila.
+    console.log('\nNová verzia Stripe API — obnova bez invoice.subscription:');
+    const koniecObdobia = Math.floor(Date.now() / 1000) + 30 * 86400;
+    const basil = (evId, typ, invId, sub, member) => ({ id: evId, type: typ, data: { object: { id: invId, billing_reason: 'subscription_cycle', amount_paid: 4990,
+      parent: { type: 'subscription_details', subscription_details: { subscription: sub, metadata: { member_id: member, plan_id: 'bronze' } } },
+      lines: { data: [{ amount: 4990, period: { start: koniecObdobia - 30 * 86400, end: koniecObdobia } }] } } } });
+    const predBasil = platnost();
+    const b1 = await posli(basil('evt_qa_basil_1', 'invoice.payment_succeeded', 'in_qa_basil_1', 'sub_qa_test_1', 'qaWhKlientka001'));
+    await new Promise(r => setTimeout(r, 700));
+    const poBasil = platnost();
+    ok('invoice.payment_succeeded s odberom v parent.subscription_details predĺži členstvo', b1.status === 200 && poBasil !== predBasil, predBasil + ' → ' + poBasil);
+    const trzby = () => rd('transactions.db').filter(t => t.type === 'subscription_renewal' && t.stripe_invoice_id === 'in_qa_basil_1' && t.amount === 49.9);
+    ok('a zapíše tržbu 49,90 €', trzby().length === 1, JSON.stringify(trzby()));
+    const b2 = await posli(basil('evt_qa_basil_1b', 'invoice.paid', 'in_qa_basil_1', 'sub_qa_test_1', 'qaWhKlientka001'));
+    await new Promise(r => setTimeout(r, 700));
+    ok('tá istá faktúra ešte raz ako invoice.paid už nepredĺži', b2.status === 200 && platnost() === poBasil, poBasil + ' → ' + platnost());
+    ok('a tržba ostane zapísaná len raz', trzby().length === 1, String(trzby().length));
+
+    const b3 = await posli(basil('evt_qa_basil_2', 'invoice.payment_succeeded', 'in_qa_basil_2', 'sub_qa_neskoro', 'qaWhNeskora0001'));
+    await new Promise(r => setTimeout(r, 700));
+    const nesk = rd('memberships.db').filter(m => m.user_id === 'qaWhNeskora0001').sort((a, b) => String(a.expires_at).localeCompare(String(b.expires_at))).pop();
+    ok('obnova, keď členstvo medzitým vypršalo: platí do konca zaplateného obdobia v Stripe',
+      b3.status === 200 && nesk && nesk.status === 'active' && Math.abs(Date.parse(nesk.expires_at) - koniecObdobia * 1000) < 120000,
+      JSON.stringify(nesk && { s: nesk.status, e: nesk.expires_at, stripe: new Date(koniecObdobia * 1000).toISOString() }));
+
+    const clenstvoDruhej = () => rd('memberships.db').filter(m => m.user_id === 'qaWhDruha000001').map(m => m.status + ' ' + m.expires_at).sort().join('|');
+    const predDruhy = clenstvoDruhej();
+    const b4 = await posli(basil('evt_qa_basil_3', 'invoice.payment_succeeded', 'in_qa_basil_3', 'sub_qa_druhy', 'qaWhDruha000001'));
+    await new Promise(r => setTimeout(r, 700));
+    ok('platba za druhý odber, ktorý appka nepozná, členstvo nezmení', b4.status === 200 && clenstvoDruhej() === predDruhy, predDruhy + ' → ' + clenstvoDruhej());
+    const upoz = rd('notifications.db').filter(n => n.user_id === 'qaWhAdmin000001' && n.type === 'stripe_odber_neznamy');
+    ok('adminovi príde upozornenie s menom klientky a sumou', upoz.length === 1 && /Dvojita Odberatelka/.test(upoz[0].title + upoz[0].body) && /49,90/.test(upoz[0].body), JSON.stringify(upoz));
 
     console.log('\nPayPal (nepoužívame):');
     for (const cesta of ['/api/paypal/webhook', '/api/paypal/create-order', '/api/paypal/capture-order']) {

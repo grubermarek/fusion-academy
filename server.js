@@ -783,6 +783,39 @@ async function seedData() {
   // Odložené o pár sekúnd, nech sú načítané aj konštanty venčekov nižšie v súbore.
   // Klenovec: 4. lekcia (týždeň 3 od 5. 3. 2027) padla na Veľký piatok 26. 3. 2027 — štátny sviatok,
   // škola má veľkonočné prázdniny. Lekcia sa ruší, kurz sa posunie o týždeň (Marek 15. 9.).
+  // Stripe obnovy sa do 15. 9. nezapisovali (webhook čakal invoice.paid a invoice.subscription). Marek 15. 9.
+  // súhlasil s doplnením: Monika Šuleková zaplatila 13. 9. obnovu Online Basic 12,90 € (Stripe faktúra
+  // in_1UF9MKD7ePYNrtvfGswQhFAo) a appka jej ukazovala vypršané členstvo → platí do konca obdobia 13. 10.
+  // Barbore K. (38 návštev) chodili maily „aká bola tvoja prvá hodina" — tie sa rušia. Jej obnova
+  // a dvojité odbery (Alena N., Ailina H., Monika K.) čakajú na Marekovo rozhodnutie.
+  if(!(await q.one(db.settings,{key:'stripe_obnovy_doplnenie_20260915'}))) setTimeout(async()=>{
+    const vysledok=[];
+    try{
+      if(await q.one(db.settings,{key:'stripe_obnovy_doplnenie_20260915'})) return;
+      const INV='in_1UF9MKD7ePYNrtvfGswQhFAo', UID='BQhZj2762GFLHy76';
+      const u=await q.one(db.users,{_id:UID});
+      let novy=false;
+      if(u){ try{ await q.insert(db.webhook_events,{event_id:'obnova:'+INV, provider:'stripe', type:'renewal', at:nowISO()}); novy=true; }catch(e){} }
+      if(u && novy && u.stripe_sub_plan==='online_basic'){
+        await activateMembership(UID,'online_basic',30,{expiresAt:'2026-10-13T09:06:00.000Z'});
+        await q.insert(db.transactions,{type:'subscription_renewal',user_id:UID,user_name:u.name,amount:12.9,date:'2026-09-13',payment_method:'stripe',
+          note:'Auto-obnova Online Basic (Stripe) — doplnené 15. 9.',plan_id:'online_basic',stripe_invoice_id:INV,created_at:nowISO(),month:'2026-09'});
+        await createInvoice({user_id:UID, client_name:u.name, client_email:u.email,
+          items:[{desc:'Členstvo Online Basic — mesačná obnova', qty:1, total:12.9}], total:12.9,
+          method:'Stripe (automatický odber)', issued_at:'2026-09-13', paid_at:'2026-09-13', silent:true});
+        awardPurchaseCommission({buyer_id:UID, amount:12.9, product_name:'Členstvo Online Basic (obnova)'});
+        vysledok.push(u.name+': Online Basic do 13. 10. 2026, tržba a faktúra 12,90 €');
+      } else vysledok.push('Šuleková preskočená ('+(!u?'nenájdená':!novy?'obnova už zapísaná':'plán '+u.stripe_sub_plan)+')');
+      const b=await q.one(db.users,{_id:'g3zkQ89A7TVnNG3x'});
+      if(b){
+        const n=await q.count(db.email_queue,{user_id:b._id, sequence:'trial_followup', status:'pending'});
+        await cancelSequence(b._id,'trial_followup');
+        vysledok.push(b.name+': zrušené maily po prvej hodine ('+n+')');
+      }
+    }catch(e){ vysledok.push('chyba: '+e.message); console.error('stripe_obnovy_doplnenie:', e.message); }
+    await q.insert(db.settings,{key:'stripe_obnovy_doplnenie_20260915', value:vysledok, at:nowISO()});
+    console.log('🔄 Doplnenie Stripe obnov: '+vysledok.join(' | '));
+  }, 11000);
   if(!(await q.one(db.settings,{key:'vencek_klenovec_velkypiatok_20260915'}))) setTimeout(async()=>{
     try{
       if(await q.one(db.settings,{key:'vencek_klenovec_velkypiatok_20260915'})) return;
@@ -11507,7 +11540,7 @@ async function duplicitneClenstvo(memberId, planId, payer, {odber=false}={}){
     error:`Členstvo ${m.plan_name} ti beží do ${doKedy}. Mesačný odber si nastav až keď dobehne, inak zaplatíš dvakrát.`+podpora };
   return null;   // zmena plánu bez odberu je v poriadku — zvyšok prerátame na kredit
 }
-async function activateMembership(userId, planId, durationDays){
+async function activateMembership(userId, planId, durationDays, opts={}){
   const plan = MEMBERSHIP_PLANS[planId];
   if(!plan) return;
   const now = new Date();
@@ -11542,7 +11575,7 @@ async function activateMembership(userId, planId, durationDays){
 
   // Zmena/predĺženie ide cez tú istú logiku ako ručný predaj (settleMembershipChange):
   // iný plán → zvyšok do kreditu a štart dnes, rovnaký plán → nadviazanie na expiráciu.
-  const { existing, expiresAt } = await settleMembershipChange(userId, planId, durationDays||plan.duration_days);
+  const { existing, expiresAt } = await settleMembershipChange(userId, planId, durationDays||plan.duration_days, opts);
   if(existing){
     await q.update(db.memberships,{_id:existing._id},{$set:{plan_id:planId,plan_name:plan.name,expires_at:expiresAt.toISOString(),updated_at:nowISO()}});
   } else {
@@ -14866,6 +14899,69 @@ app.post('/api/kupa/:token/checkout', rlPublic, async(req,res)=>{
   }catch(e){ res.status(500).send('Chyba: '+e.message); }
 });
 
+// ID odberu z faktúry: staré API ho má v invoice.subscription, API 2025-03-31 (basil) v parent.subscription_details
+function odberFaktury(inv){
+  if(!inv) return null;
+  const idz = s => !s ? null : (typeof s==='string' ? s : (s.id||null));
+  if(inv.subscription) return idz(inv.subscription);
+  const det = inv.parent && inv.parent.subscription_details;
+  if(det && det.subscription) return idz(det.subscription);
+  for(const l of (inv.lines && inv.lines.data) || []){
+    const s = l.subscription || (l.parent && l.parent.subscription_item_details && l.parent.subscription_item_details.subscription);
+    if(s) return idz(s);
+  }
+  return null;
+}
+// Mesačná obnova odberu zo Stripe → predĺženie členstva, tržba, faktúra, provízia (raz na faktúru)
+async function spracujObnovuStripe(inv, subId){
+  // Tú istú faktúru Stripe pošle ako invoice.paid aj invoice.payment_succeeded — predĺžiť sa smie len raz
+  if(inv.id){
+    try{ await q.insert(db.webhook_events,{ event_id:'obnova:'+inv.id, provider:'stripe', type:'renewal', at:nowISO() }); }
+    catch(e){ return; }
+  }
+  const suma = +((+inv.amount_paid||0)/100).toFixed(2);
+  const u = await q.one(db.users,{stripe_subscription_id:subId});
+  if(!u){
+    // Odber, ktorý appka nepozná — typicky druhý odber tej istej klientky (Ailina H., Monika K.).
+    // Naslepo nepredlžovať (iný plán by prerátal bežiace členstvo), ale hneď dať vedieť.
+    const det = (inv.parent && inv.parent.subscription_details) || {};
+    const kid = det.metadata && (det.metadata.member_id || det.metadata.user_id);
+    const kto = kid ? ((await q.one(db.users,{_id:String(kid)})) || (await q.one(db.users,{merged_accounts:String(kid)}))) : null;
+    const meno = kto ? kto.name : (inv.customer_email || inv.customer_name || 'neznáma klientka');
+    console.error('⚠️ Stripe obnova pre neznámy odber '+subId+' ('+meno+', '+suma+' €)');
+    for(const a of await q.find(db.users,{is_admin:true}))
+      await q.insert(db.notifications,{user_id:a._id, type:'stripe_odber_neznamy',
+        title:'⚠️ Platba za odber, ktorý appka nepozná — '+meno,
+        body:`Stripe strhol ${suma.toFixed(2).replace('.',',')} € za odber ${subId}, ktorý v appke nie je priradený. Pravdepodobne druhý odber tej istej klientky — skontroluj ho v Stripe, inak jej bude strhávať dvakrát.`,
+        read:false, created_at:nowISO()}).catch(()=>{});
+    return;
+  }
+  const planId = u.stripe_sub_plan; const plan = MEMBERSHIP_PLANS[planId];
+  if(!plan) return;
+  const clenId = u.stripe_sub_member||u._id;
+  // Kým členstvo beží, obnova nadväzuje na jeho koniec (aj s kompenzáciami za zrušené hodiny).
+  // Keď medzitým vypršalo (obnova spracovaná neskoro), platí do konca zaplateného obdobia v Stripe.
+  const koniec = ((inv.lines && inv.lines.data) || []).map(l=>l.period && +l.period.end).filter(Boolean).sort((a,b)=>b-a)[0];
+  const bezi = await q.one(db.memberships,{user_id:clenId, status:'active'});
+  const beziDoteraz = !!(bezi && bezi.expires_at && new Date(bezi.expires_at) > new Date());
+  const opts = (!beziDoteraz && koniec && koniec*1000 > Date.now()) ? { expiresAt:new Date(koniec*1000).toISOString() } : {};
+  await activateMembership(clenId, planId, plan.duration_days||30, opts);
+  const sumaObnovy = suma>0 ? suma : plan.price;
+  if(u.trial_ends_at && !u.trial_converted_at){ // prvá platba po skúšobnom týždni
+    await q.update(db.users,{_id:u._id},{$set:{trial_converted_at:nowISO()}});
+    await q.update(db.memberships,{user_id:clenId, status:'active'},{$set:{trial:false, price:sumaObnovy}});
+    console.log('💳 Skúška → platené členstvo: '+u.name);
+  }
+  await q.insert(db.transactions,{type:'subscription_renewal',user_id:clenId,user_name:u.name,amount:sumaObnovy,date:today(),payment_method:'stripe',note:`Auto-obnova ${plan.name} (Stripe)`,plan_id:planId,stripe_invoice_id:inv.id||null,created_at:nowISO(),month:today().slice(0,7)});
+  // Odber dieťaťa: faktúra a provízia idú platiteľovi (rodičovi), nie detskému profilu (13. 9.)
+  const platca = u.stripe_sub_payer_id ? (await q.one(db.users,{_id:u.stripe_sub_payer_id}))||u : u;
+  createInvoice({user_id:platca._id, client_name:platca.name, client_email:platca.email,
+    items:[{desc:`Členstvo ${plan.name}${platca._id!==u._id?' ('+u.name+')':''} — mesačná obnova`, qty:1, total:sumaObnovy}],
+    total:sumaObnovy, method:'Stripe (automatický odber)'});
+  awardPurchaseCommission({buyer_id:platca._id, amount:sumaObnovy, product_name:`Členstvo ${plan.name} (obnova)`});
+  console.log('🔄 Stripe obnova: '+u.name+' '+plan.name+' '+sumaObnovy+' €');
+}
+
 app.post('/api/stripe/webhook', async(req,res)=>{
   try {
     const secret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -14896,44 +14992,25 @@ app.post('/api/stripe/webhook', async(req,res)=>{
         return res.json({ok:true, duplicate:true});
       }
     }
-    if(event.type==='invoice.paid'){
+    if(event.type==='invoice.paid' || event.type==='invoice.payment_succeeded'){
       const inv = event.data.object;
-      // Only extend on real renewals; first payment is handled by /verify
-      if(inv.billing_reason==='subscription_cycle' && inv.subscription){
-        const u = await q.one(db.users,{stripe_subscription_id:inv.subscription});
-        if(u){
-          const planId = u.stripe_sub_plan; const plan = MEMBERSHIP_PLANS[planId];
-          if(plan){
-            await activateMembership(u.stripe_sub_member||u._id, planId, plan.duration_days||30);
-            const sumaObnovy = (+inv.amount_paid>0) ? +(inv.amount_paid/100).toFixed(2) : plan.price;
-            if(u.trial_ends_at && !u.trial_converted_at){ // prvá platba po skúšobnom týždni
-              await q.update(db.users,{_id:u._id},{$set:{trial_converted_at:nowISO()}});
-              await q.update(db.memberships,{user_id:u.stripe_sub_member||u._id, status:'active'},{$set:{trial:false, price:sumaObnovy}});
-              console.log('💳 Skúška → platené členstvo: '+u.name);
-            }
-            await q.insert(db.transactions,{type:'subscription_renewal',user_id:u.stripe_sub_member||u._id,user_name:u.name,amount:sumaObnovy,date:today(),payment_method:'stripe',note:`Auto-obnova ${plan.name} (Stripe)`,plan_id:planId,created_at:nowISO(),month:today().slice(0,7)});
-            // Odber dieťaťa: faktúra a provízia idú platiteľovi (rodičovi), nie detskému profilu (13. 9.)
-            const platca = u.stripe_sub_payer_id ? (await q.one(db.users,{_id:u.stripe_sub_payer_id}))||u : u;
-            createInvoice({user_id:platca._id, client_name:platca.name, client_email:platca.email,
-              items:[{desc:`Členstvo ${plan.name}${platca._id!==u._id?' ('+u.name+')':''} — mesačná obnova`, qty:1, total:sumaObnovy}],
-              total:sumaObnovy, method:'Stripe (automatický odber)'});
-            awardPurchaseCommission({buyer_id:platca._id, amount:sumaObnovy, product_name:`Členstvo ${plan.name} (obnova)`});
-          }
-        }
-      }
+      // Obnovy sa do 15. 9. 2026 nezapisovali vôbec: webhook v Stripe má zapnuté len
+      // invoice.payment_succeeded (nie invoice.paid) a API 2025-03-31 už nemá invoice.subscription.
+      // Barbora K. zaplatila 49,90 € a appka jej ukazovala vypršané členstvo. Prvú platbu rieši /verify.
+      const subId = odberFaktury(inv);
+      if(inv.billing_reason==='subscription_cycle' && subId) await spracujObnovuStripe(inv, subId);
+      if(event.type==='invoice.payment_succeeded' && subId){ const u = await q.one(db.users,{stripe_subscription_id:subId}); if(u) await resolveFailedPayments(u.stripe_sub_payer_id||u._id); }
     } else if(event.type==='invoice.payment_failed'){
       const inv = event.data.object;
-      if(inv.subscription){
-        const u = await q.one(db.users,{stripe_subscription_id:inv.subscription});
+      const subId = odberFaktury(inv);
+      if(subId){
+        const u = await q.one(db.users,{stripe_subscription_id:subId});
         if(u){
           const amt = (inv.amount_due||inv.total||0)/100;
           await recordFailedPayment({ user_id:u.stripe_sub_payer_id||u._id, amount:amt, description:'Členstvo (automatická obnova)'+(u.stripe_sub_payer_id?' — '+u.name:''),
             plan_name:'Členstvo', provider:'stripe', invoice_id:inv.id });
         }
       }
-    } else if(event.type==='invoice.payment_succeeded'){
-      const inv = event.data.object;
-      if(inv.subscription){ const u = await q.one(db.users,{stripe_subscription_id:inv.subscription}); if(u) await resolveFailedPayments(u.stripe_sub_payer_id||u._id); }
     } else if(event.type==='customer.subscription.trial_will_end'){
       const sub = event.data.object;
       const u = await q.one(db.users,{stripe_subscription_id:sub.id});
@@ -18797,6 +18874,9 @@ async function creditAttendance(u){
   (async()=>{
     try{
       if(u.is_child || u.is_admin || u.trial_followup_enrolled) return;
+      // Len naozaj nová klientka. Barbora K. (38 návštev) prišla na hodinu 3 hodiny po konci
+      // členstva (obnova sa nezapísala) a dostala „aká bola tvoja prvá hodina?" (15. 9.).
+      if(u.stripe_subscription_id || u.first_paid_at || u.first_membership_at) return;
       if((u.single_entries||0)>0) return;
       const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
       if(mem && (mem.expires_at||'')>new Date().toISOString()) return;
