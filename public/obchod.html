@@ -159,7 +159,7 @@ function renderMyf(){
   let rows='';
   if(m){
     rows+=`<div class="row"><span>${FA_T('shop.mem_active')}</span><span><b class="big gold">${esc(m.plan_name)}</b></span></div>
-    <div class="row"><span>${m.auto_renew?FA_T('shop.next_pay'):FA_T('shop.valid_until')}</span><span><b>${dstr(m.expires_at)}</b> ${m.days_left<=5?'<span class="badge warn">'+FA_T('shop.in_days',{n:m.days_left})+'</span>':''}</span></div>
+    <div class="row"><span>${m.auto_renew?FA_T('shop.next_pay'):FA_T('shop.valid_until')}</span><span><b>${dstr(m.auto_renew&&OV.odber&&OV.odber.dalsia_platba?OV.odber.dalsia_platba:m.expires_at)}</b> ${m.days_left<=5?'<span class="badge warn">'+FA_T('shop.in_days',{n:m.days_left})+'</span>':''}</span></div>
     <div class="row"><span>${FA_T('shop.autorenew')}</span><span class="badge ${m.auto_renew?'on':'off'}">${m.auto_renew?FA_T('shop.on'):FA_T('shop.off')}</span></div>`;
   } else rows+=`<div class="row"><span>${FA_T('shop.membership')}</span><span class="badge off">${FA_T('shop.mem_none')}</span></div>`;
   if(e.left>0 || e.expires_at){

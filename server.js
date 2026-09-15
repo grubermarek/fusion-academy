@@ -10578,7 +10578,7 @@ app.post('/api/admin/crm/send-expiry-warnings', adminAuth, async(req,res)=>{
     let sent = 0;
     for(const m of expiring){
       const u = await q.one(db.users,{_id:m.user_id});
-      if(u?.email){
+      if(u?.email && !u.stripe_subscription_id){
         await sendMail(u.email,'⚠️ Tvoje členstvo čoskoro vyprší',`<h2>Ahoj ${u.name}!</h2><p>Tvoje členstvo <b>${m.plan_name}</b> vyprší <b>${m.expires_at}</b>.</p><p>👉 <a href="${APP_URL}/obchod">Obnov si členstvo</a> a neprerušuj svoju cestu!</p><p><i>Fusion Academy tím 💃</i></p>`,{priority:4, template:'membership_expiry'}).catch(()=>{});
         await q.insert(db.notifications,{user_id:u._id,type:'expiry_warning',title:'⚠️ Členstvo čoskoro vyprší',body:`${m.plan_name} vyprší ${m.expires_at}`,read:false,created_at:nowISO()});
         sent++;
@@ -14920,6 +14920,7 @@ async function spracujObnovuStripe(inv, subId){
     catch(e){ return; }
   }
   const suma = +((+inv.amount_paid||0)/100).toFixed(2);
+  odberCache.delete(String(subId));
   const u = await q.one(db.users,{stripe_subscription_id:subId});
   if(!u){
     // Odber, ktorý appka nepozná — typicky druhý odber tej istej klientky (Ailina H., Monika K.).
@@ -15366,6 +15367,7 @@ app.get('/api/shop/overview', auth, async(req,res)=>{
     res.json({ok:true,
       membership: m?{plan_id:m.plan_id, plan_name:m.plan_name, expires_at:m.expires_at, days_left:daysLeft,
         price:plan?.price||m.price, auto_renew:!!u.stripe_subscription_id, status:m.status}:null,
+      odber: await odberInfo(u),
       entries:{left:entries, total:bundlePlan?.entries||((entries>0&&!bundlePlan)?entries:10), expires_at:lastBundle?.expires_at||null},
       free_credits:u.free_credits||0, credit:+(u.referral_credit||0),
       visits30, pending, purchases:tx, invoices, recommendations:rec.slice(0,3)});
@@ -19295,7 +19297,7 @@ app.get('/api/family/children', auth, async(req,res)=>{
         visit_count:c.visit_count||0, single_entries:c.single_entries||0, free_credits:c.free_credits||0,
         free_class_used:c.free_class_used||false,
         membership: m ? {plan_id:m.plan_id, plan_name:m.plan_name, expires_at:m.expires_at, status:m.status||'active'} : null,
-        auto_renew: !!c.stripe_subscription_id, auto_classes: Array.isArray(c.auto_classes)?c.auto_classes:[],
+        auto_renew: !!c.stripe_subscription_id, odber: c.stripe_subscription_id ? await odberInfo(c) : null, auto_classes: Array.isArray(c.auto_classes)?c.auto_classes:[],
         age: vekDietata(c), age_group: skupinaKids(c),
         upcoming: upcoming.slice(0,3),
       });
@@ -20602,6 +20604,38 @@ app.post('/api/me/fix-name', auth, async(req,res)=>{
   res.json({ok:true, name});
 });
 
+// Automatický odber pre profil: že beží, kedy a koľko sa strhne (Marek 15. 9.: „daj im výrazne na profil,
+// že majú automatické obnovy, možnosť vypnutia a kedy sa im obnoví" — klientky sa sťažovali na nečakané platby).
+// Dátum a suma zo Stripe (obdobie odberu nemusí sedieť s koncom členstva v appke), keď Stripe nie je, z appky.
+const odberCache = new Map();
+async function odberInfo(u){
+  if(!u || !u.stripe_subscription_id) return null;
+  const sid = String(u.stripe_subscription_id);
+  const plan = MEMBERSHIP_PLANS[u.stripe_sub_plan] || null;
+  const c = odberCache.get(sid);
+  if(c && Date.now()-c.at < 10*60*1000) return c.data;
+  let data = null;
+  if(STRIPE_SECRET && process.env.STRIPE_FAKE!=='1' && !sid.startsWith('test_')){
+    try{
+      const s = await stripeApiGet('subscriptions/'+encodeURIComponent(sid));
+      const it = s.items && s.items.data && s.items.data[0];
+      const koniec = (it && it.current_period_end) || s.current_period_end;
+      data = { zdroj:'stripe', stav:s.status, plan_name: plan ? plan.name : 'Členstvo',
+        suma: (it && it.price && it.price.unit_amount!=null) ? +(it.price.unit_amount/100).toFixed(2) : (plan ? plan.price : null),
+        dalsia_platba: koniec ? new Date(koniec*1000).toISOString() : null,
+        vypnuty: !!s.cancel_at_period_end || s.status==='canceled', skuska: s.status==='trialing' };
+    }catch(e){ data = null; }
+  }
+  if(!data){
+    const m = await checkMembership(u.stripe_sub_member||u._id);
+    data = { zdroj:'appka', stav:'active', plan_name: plan ? plan.name : 'Členstvo', suma: plan ? plan.price : null,
+      dalsia_platba: (m && m.expires_at) ? new Date(m.expires_at).toISOString() : null, vypnuty:false,
+      skuska: !!(u.trial_ends_at && !u.trial_converted_at && u.trial_ends_at>=nowISO()) };
+  }
+  odberCache.set(sid, {at:Date.now(), data});
+  return data;
+}
+
 app.get('/api/me', async(req,res)=>{
   if(!req.session?.uid) return res.json({});
   const u = await q.one(db.users,{_id:req.session.uid});
@@ -20629,6 +20663,7 @@ app.get('/api/me', async(req,res)=>{
     created_at: u.created_at, avatar: u.avatar||null,
     birthday: u.birthday||'', anonymous: !!u.anonymous,
     stripe_subscription: !!u.stripe_subscription_id,
+    odber: await odberInfo(u),
   });
 });
 
@@ -22403,6 +22438,8 @@ async function processEmailQueue(){
         if(recent.length){ await cancelSequence(u._id,'winback'); await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'returned_visit'}}); continue; }
       }
       if(step.sequence === 'expiry_warning'){
+        // S automatickým odberom členstvo nevyprší — „obnov si ho" by klientku len zmiatlo (15. 9.)
+        if(u.stripe_subscription_id){ await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'auto_renew'}}); continue; }
         const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
         if(!mem){ await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'no_membership'}}); continue; }
       }
@@ -24247,10 +24284,39 @@ async function runDailyJobs(){
   const todayStr = today();
 
   // ── 1. Expiry warnings ─────────────────────────────────────────────────────
+  // ── 0. Automatická obnova o ≤ 3 dni → raz upozorniť, kedy a koľko sa strhne ─────────
+  // Klientky s odberom dostávali „vyprší, obnov si ho" a platba ich potom prekvapila (Marek 15. 9.).
+  try{
+    for(const u of await q.find(db.users,{stripe_subscription_id:{$exists:true}})){
+      if(!u.stripe_subscription_id || u.active===false) continue;
+      if(u.trial_ends_at && !u.trial_converted_at) continue;          // skúška má vlastnú pripomienku
+      const o = await odberInfo(u);
+      if(!o || o.vypnuty || o.skuska || !o.dalsia_platba) continue;
+      const dni = (Date.parse(o.dalsia_platba)-Date.now())/86400000;
+      if(dni<0 || dni>3) continue;
+      const kluc = String(u.stripe_subscription_id)+':'+String(o.dalsia_platba).slice(0,10);
+      if(await q.one(db.notifications,{type:'renewal_notice', key:kluc})) continue;
+      const platca = u.stripe_sub_payer_id ? ((await q.one(db.users,{_id:u.stripe_sub_payer_id}))||u) : u;
+      const datum = fmtDenSk(o.dalsia_platba);
+      const suma = o.suma!=null ? o.suma.toFixed(2).replace('.',',')+' €' : 'mesačná platba';
+      const pre = platca._id!==u._id ? ' ('+u.name+')' : '';
+      await q.insert(db.notifications,{user_id:platca._id, type:'renewal_notice', key:kluc,
+        title:'🔄 '+datum+' sa automaticky obnoví členstvo'+pre,
+        body:o.plan_name+': z karty sa strhne '+suma+'. Nechceš pokračovať? Vypni automatickú obnovu v profile ešte pred týmto dňom.',
+        read:false, created_at:nowISO()}).catch(()=>{});
+      if(platca.email && !/@internal\.local$/i.test(platca.email))
+        await sendMail(platca.email, '🔄 '+datum+' sa automaticky obnoví tvoje členstvo'+pre,
+          emailTemplate('Automatická obnova členstva',
+            `<p>Ahoj <b>${platca.name}</b>,</p><p>členstvo <b>${o.plan_name}</b>${pre} sa <b>${datum}</b> automaticky obnoví a z tvojej karty sa strhne <b>${suma}</b>.</p><p>Ak chceš pokračovať, nemusíš robiť nič. Ak nie, vypni automatickú obnovu v profile ešte pred týmto dňom — členstvo ti ostane do konca zaplateného obdobia a nič sa už nestrhne.</p>`,
+            '⚙️ Otvoriť profil', APP_URL+'/client-dashboard'), {priority:2, template:'renewal_notice'}).catch(()=>{});
+    }
+  }catch(e){ console.error('renewal_notice:', e.message); }
+
   const expiring = await q.find(db.memberships,{status:'active',expires_at:{$lte:d7+'T23:59:59',$gte:todayStr+'T00:00:00'}});
   for(const m of expiring){
     const u = await q.one(db.users,{_id:m.user_id});
     if(!u?.email) continue;
+    if(u.stripe_subscription_id) continue;   // s odberom nič „nevyprší" — upozornenie na obnovu ide vyššie
     const alreadySent = await q.one(db.notifications,{user_id:u._id,type:'expiry_warning',created_at:{$gte:todayStr}});
     if(alreadySent) continue;
     const daysLeft = Math.ceil((new Date(m.expires_at)-Date.now())/86400000);

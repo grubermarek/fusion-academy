@@ -552,6 +552,8 @@
         <span id="mcAutoRenew">—</span>
       </div>
     </div>
+    <!-- Automatická obnova: či beží, kedy a koľko sa strhne, vypnutie (Marek 15. 9.) -->
+    <div id="mcOdber" style="display:none"></div>
     <!-- Permanentkové vstupy + darované hodiny — viditeľné VŽDY keď nejaké sú (aj popri členstve) -->
     <div id="mcEntriesRow" style="display:none;margin-top:10px;background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.3);border-radius:12px;padding:10px 14px;font-size:.88rem"></div>
     <button class="mc-buy-btn" id="mcBuyBtn" onclick="window.location.href='/obchod'">
@@ -1034,7 +1036,7 @@ function cancelStripeSub(){
     const go=document.getElementById('cnGo'); go.disabled=true; go.textContent='⏳';
     const d=await api('/api/stripe/subscribe/cancel',{method:'POST',body:{reason:sel,note:document.getElementById('cnNote').value.trim()}});
     document.getElementById('cancelModal').remove();
-    if(d?.ok){ showToast('Odber zrušený. Členstvo platí do konca obdobia.','success'); if(_me){ _me.stripe_subscription=false; renderMembership(_me); } }
+    if(d?.ok){ showToast('Odber zrušený. Členstvo platí do konca obdobia.','success'); if(_me){ _me.stripe_subscription=false; _me.odber=null; renderMembership(_me); } }
     else showToast('Chyba: '+(d?.error||'?'),'error');
   };
 }
@@ -1096,6 +1098,7 @@ function renderMembership(me){
     } else er.style.display='none';
   }
   const m=me.membership;
+  renderOdber(me);
   const planEl=document.getElementById('mcPlan');
   const statusEl=document.getElementById('mcStatus');
   const noBlock=document.getElementById('mcNoMembershipBlock');
@@ -1111,16 +1114,15 @@ function renderMembership(me){
     statusEl.className='mc-status active'; statusEl.textContent='✓ Aktívne';
     noBlock.style.display='none'; infoBlock.style.display='flex'; buyBtn.style.display='none';
     if(m.expires_at){
-      const d=new Date(m.expires_at);const days=Math.round((d-new Date())/86400000);
-      document.getElementById('mcExpiry').textContent=fmtDMY(m.expires_at)+(days>=0&&days<=7?` ⚠️ (${days} dní)`:'');
-      if(days>=0&&days<=7) document.getElementById('mcExpiry').style.color='#ffb74d';
+      const days=dniDo(m.expires_at);
+      // S automatickou obnovou členstvo nekončí — výstraha „⚠️ o 2 dni" by klientku len vyľakala (15. 9.)
+      const upoz=days>=0&&days<=7&&!(me.odber&&!me.odber.vypnuty);
+      document.getElementById('mcExpiry').textContent=datumSk(m.expires_at)+(upoz?' ⚠️ ('+dniText(days)+')':'');
+      document.getElementById('mcExpiry').style.color=upoz?'#ffb74d':'';
     } else {document.getElementById('mcExpiry').textContent='Neobmedzené';}
     const ar=document.getElementById('mcAutoRenew');
-    if(me.stripe_subscription){
-      ar.innerHTML='<a onclick="mcToggleRenew()" style="color:#81c784;font-weight:700;cursor:pointer;text-decoration:underline dotted">🔄 Aktívne — vypnúť?</a>';
-    } else {
-      ar.innerHTML='<span style="color:#9e9e9e">Vypnuté</span> <a href="/obchod" style="color:var(--gold);font-size:.78rem">zapnúť →</a>';
-    }
+    // Podrobnosti a vypnutie sú vo výraznom bloku pod kartou (renderOdber)
+    ar.innerHTML = me.stripe_subscription ? '<span style="color:#81c784;font-weight:700">🔄 Zapnutý</span>' : '<span style="color:#9e9e9e">Vypnutý</span>';
     const TIER_COLORS={bronze:'#cd7f32',silver:'#c0c6d0',gold:'#C9A84C',kids:'#FF6B9D',online_basic:'#4CAF50',online_premium:'#9C27B0'};
     const card=document.getElementById('membershipCard');
     card.style.setProperty('--tier', TIER_COLORS[planKey]||'#C9A84C');
@@ -1170,6 +1172,38 @@ function renderMembership(me){
       </a>
     </div>`;
   buyBtn.innerHTML = m ? '<i class="bi bi-cart-plus"></i> 🛒 Obnoviť členstvo →' : '<i class="bi bi-cart-plus"></i> 🛒 Kúpiť prvé členstvo →';
+  // Odber beží, len členstvo v appke medzitým vypršalo — neponúkať druhý nákup (dvakrát by zaplatila)
+  if(me.odber && !me.odber.vypnuty){ buyBtn.style.display='none'; noBlock.style.display='none';
+    planEl.textContent='🔄 '+(me.odber.plan_name||'Členstvo'); statusEl.className='mc-status active'; statusEl.textContent='Obnovuje sa'; }
+}
+// Automatická obnova výrazne v profile (Marek 15. 9.): že je zapnutá, kedy a koľko sa strhne a ako ju vypnúť.
+// Klientky sa sťažovali, že im platba odišla nečakane — musia to vidieť bez hľadania.
+const datumSk=d=>{ const x=new Date(d); return isNaN(x) ? '' : x.getDate()+'. '+(x.getMonth()+1)+'. '+x.getFullYear(); };
+// Kalendárne dni do dátumu — karta aj blok obnovy musia ukázať to isté číslo (predtým 2 vs 3)
+const dniDo=d=>{ const x=new Date(d), n=new Date(); return Math.round((new Date(x.getFullYear(),x.getMonth(),x.getDate())-new Date(n.getFullYear(),n.getMonth(),n.getDate()))/86400000); };
+const dniText=n=>n===0?'dnes':n===1?'zajtra':(n<5?n+' dni':n+' dní');
+function renderOdber(me){
+  const box=document.getElementById('mcOdber'); if(!box) return;
+  const o=me.odber, m=me.membership;
+  const eur=x=>(+x).toFixed(2).replace('.',',')+' €';
+  const aktivne=!!(m && m.status==='active' && (!m.expires_at||m.expires_at>=new Date().toISOString().slice(0,10)));
+  if(o && !o.vypnuty){
+    const dni=o.dalsia_platba?dniDo(o.dalsia_platba):null;
+    const blizko=dni!=null&&dni<=3;
+    const kedy=o.dalsia_platba?datumSk(o.dalsia_platba):'na konci obdobia';
+    const za=(dni!=null&&dni>=0&&dni<=7)?(dni<=1?' ('+dniText(dni)+')':' (o '+dniText(dni)+')'):'';
+    const suma=o.suma!=null?'<b>'+eur(o.suma)+'</b> ':'';
+    box.innerHTML='<div style="margin-top:12px;border:1.5px solid '+(blizko?'#ffb74d':'rgba(129,199,132,.6)')+';background:'+(blizko?'rgba(255,183,77,.1)':'rgba(129,199,132,.08)')+';border-radius:14px;padding:12px 14px">'
+      +'<div style="font-weight:800;font-size:.95rem;color:#fff">🔄 Automatická obnova je zapnutá</div>'
+      +'<div style="font-size:.88rem;margin-top:5px;color:var(--cream,#eee)">'+(o.skuska?'Po skúšobnom týždni sa prvá platba '+suma+'strhne':'Ďalšia platba '+suma+'sa strhne')+' z tvojej karty <b>'+kedy+'</b>'+za+'.</div>'
+      +'<div style="font-size:.76rem;color:var(--muted,#999);margin-top:4px">Nechceš pokračovať? Vypni obnovu ešte pred týmto dňom — členstvo ti ostane do konca zaplateného obdobia a nič sa už nestrhne.</div>'
+      +'<button type="button" id="mcOdberVypnut" onclick="cancelStripeSub()" style="margin-top:10px;background:none;border:1px solid rgba(255,255,255,.35);color:#fff;font-weight:700;padding:8px 14px;border-radius:10px;cursor:pointer;font-size:.84rem">Vypnúť automatickú obnovu</button>'
+      +'</div>';
+    box.style.display='block';
+  } else if(aktivne && m.expires_at){
+    box.innerHTML='<div style="margin-top:12px;border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:10px 14px;font-size:.84rem;color:var(--cream,#eee)">Automatická obnova je <b>vypnutá</b> — z karty sa ti nič nestrhne. Členstvo skončí <b>'+datumSk(m.expires_at)+'</b>; ak budeš chcieť pokračovať, predĺžiš si ho v <a href="/obchod" style="color:var(--gold,#C9A84C)">Obchode</a>.</div>';
+    box.style.display='block';
+  } else { box.innerHTML=''; box.style.display='none'; }
 }
 // Klik na „Automatické obnovenie" pri aktívnom Stripe odbere → ponúkni vypnutie
 function mcToggleRenew(){
@@ -1344,7 +1378,7 @@ async function loadFamily(){
   const kids=await kidsClasses();
   const DNI=['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
   el.innerHTML=_children.map(c=>{
-    const mem=c.membership?`<span style="color:#4caf50">🏅 ${escHtml(c.membership.plan_name)}${c.auto_renew?' · 🔄 odber':''}</span>${c.auto_renew?` <a onclick="cancelChildRenew('${c.id}','${escHtml(c.name).replace(/'/g,"&#39;")}')" style="font-size:.72rem;color:var(--muted);cursor:pointer;text-decoration:underline dotted">vypnúť</a>`:''}`:(c.free_class_used?'<span style="opacity:.6">bez členstva</span>':'<span style="color:var(--gold)">🎁 1. hodina zdarma</span>');
+    const mem=c.membership?`<span style="color:#4caf50">🏅 ${escHtml(c.membership.plan_name)}${c.auto_renew?' · 🔄 odber'+(c.odber&&c.odber.dalsia_platba?' (platba '+datumSk(c.odber.dalsia_platba)+(c.odber.suma!=null?' · '+(+c.odber.suma).toFixed(2).replace('.',',')+' €':'')+')':''):''}</span>${c.auto_renew?` <a onclick="cancelChildRenew('${c.id}','${escHtml(c.name).replace(/'/g,"&#39;")}')" style="font-size:.72rem;color:var(--muted);cursor:pointer;text-decoration:underline dotted">vypnúť</a>`:''}`:(c.free_class_used?'<span style="opacity:.6">bez členstva</span>':'<span style="color:var(--gold)">🎁 1. hodina zdarma</span>');
     const auto=c.auto_classes||[];
     // Automatická dochádzka (13. 9.): dieťa sa nemusí rezervovať — rodič vyberie hodiny, appka ho prihlási sama
     const bezDatumu=!c.birth_date && !c.birth_year;
