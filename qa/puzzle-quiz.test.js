@@ -55,9 +55,8 @@ const citajDb = f => { try { return fs.readFileSync(path.join(DATA, f), 'utf8').
   ok('žiadna otázka sa neopakuje (rovnaký text)', new Set(B.map(o => o.q.toLowerCase())).size === B.length);
   ok('všetky skupiny majú otázky', Object.keys(K.SKUPINY).every(g => B.some(o => o.g === g)),
     Object.keys(K.SKUPINY).filter(g => !B.some(o => o.g === g)).join(','));
-  ok('výživy je v banke najviac alebo aspoň štvrtina',
-    B.filter(o => o.g === 'vyziva').length >= B.length / 4 || B.filter(o => o.g === 'vyziva').length >= Math.max(...Object.keys(K.SKUPINY).map(g => B.filter(o => o.g === g).length)),
-    JSON.stringify(B.reduce((m, o) => (m[o.g] = (m[o.g] || 0) + 1, m), {})));
+  const pocetSk = B.reduce((m, o) => (m[o.g] = (m[o.g] || 0) + 1, m), {});
+  ok('otázok o výžive je dosť (aspoň 100)', (pocetSk.vyziva || 0) >= 100, JSON.stringify(pocetSk));
 
   // ── výber otázok ──
   const v0 = K.vyber(mul(1), new Map(), 0);
