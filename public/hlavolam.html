@@ -117,6 +117,33 @@ html[data-theme="aurora"] .btn-main{background:linear-gradient(90deg,#A855F7,#EC
 .rvys .r:first-child{border-top:0}
 .rvys .n{color:var(--gold);font-weight:700;min-width:104px}
 .rvys .tp{color:var(--muted);font-size:.76rem}
+/* denný kvíz */
+.kv{display:flex;flex-direction:column;gap:12px;margin:4px 0 2px}
+.kq{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 14px}
+.kq .kh{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.kq .cislo{width:24px;height:24px;border-radius:50%;background:var(--pz-fill);color:var(--gold);
+  font-size:.74rem;font-weight:800;display:grid;place-items:center;flex:none}
+.kq .kat{font-size:.66rem;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.kq .qt{font-size:.96rem;font-weight:700;line-height:1.42;margin-bottom:11px;color:var(--cream);text-wrap:pretty}
+.kq .ko{display:grid;grid-template-columns:1fr;gap:7px}
+.kq .ko button{display:flex;align-items:center;gap:10px;text-align:left;background:none;border:1px solid var(--line);
+  border-radius:10px;color:var(--cream);font:inherit;font-size:.87rem;font-weight:600;padding:10px 12px;line-height:1.35}
+.kq .ko button .pis{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
+  background:var(--pz-fill);color:var(--gold);font-size:.7rem;font-weight:800;text-transform:uppercase}
+.kq .ko button:hover{border-color:var(--gold)}
+.kq .ko button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.kq .ko button.vyb{background:var(--pz-fill);border-color:var(--gold);color:var(--gold)}
+.kq.hotovo{border-color:rgba(201,168,76,.45)}
+.kq.zamknute .ko button{cursor:default;opacity:.62}
+.kq.zamknute .ko button.spravne{border-color:#5fa86b;color:#8fd39a;opacity:1;background:rgba(95,168,107,.10)}
+.kq.zamknute .ko button.vyb.zlyTip{border-color:#a85f5f;color:#e08a8a;opacity:1;background:rgba(168,95,95,.10)}
+.kq.dobre{border-color:rgba(95,168,107,.5)}
+.kq.zle{border-color:rgba(168,95,95,.4)}
+.kq .vys{display:none;margin-top:10px;font-size:.82rem;line-height:1.5;color:var(--muted);
+  border-top:1px solid var(--line);padding-top:9px}
+.kq.zamknute .vys{display:block}
+.kq .vys b{color:var(--cream)}
+@media(min-width:480px){.kq .ko{grid-template-columns:1fr 1fr}}
 .hist{margin-top:14px;background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
 .hist>button{width:100%;background:none;border:0;color:var(--cream,#EAE3D5);font:inherit;font-size:.82rem;
   padding:13px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer}
@@ -171,6 +198,11 @@ let P=null, path=[], drawing=false, startedAt=null, timer=null, solvedToday=fals
 const $=id=>document.getElementById(id);
 const api=async(url,opts)=>{ const r=await fetch(url,{credentials:'include',headers:{'Content-Type':'application/json'},...opts}); return r.json(); };
 const fmtSec=s=>{ s=Math.max(0,Math.round(s)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); };
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const bodSlovo=n=>n===1?'bod':(n>=2&&n<=4?'body':'bodov');
+// Rytmus a kvíz: jeden pokus, bod za každú správnu, bonus len pre najrýchlejšiu bezchybnú.
+const jeBodovana=t=>t==='rhythm'||t==='quiz';
+const bonusBezchyby=()=>P.type==='quiz'?(P.quiz_perfect_bonus||5):(P.rhythm_perfect_bonus||5);
 
 async function init(){
   const d=await api('/api/puzzle/today').catch(()=>null);
@@ -192,7 +224,7 @@ function render(){
   const maxBody=P.points+P.fast_bonus;
   $('app').innerHTML=`
     ${solvedToday?`<div class="done"><div class="e">🎉</div><h2>Dnešnú hádanku máš vyriešenú!</h2>
-      <p>Zvládla si ju za <b>${fmtSec(P.my_seconds||0)}</b> a získala <b>${P.my_points} ${P.my_points===1?'bod':'body'}</b>.
+      <p>Zvládla si ju za <b>${fmtSec(P.my_seconds||0)}</b> a získala <b>${P.my_points} ${bodSlovo(P.my_points)}</b>.
       Nová hádanka je zajtra ráno.</p></div>`:''}
     ${P.banner ? `<div class="evb">
       <div class="evb-t">${P.banner.emoji||'🎉'} ${P.banner.title||''}</div>
@@ -202,7 +234,7 @@ function render(){
     </div>` : ''}
     <div class="bar">
       <div class="pill"><b id="clock">0:00</b><span>čas</span></div>
-      <div class="pill"><b id="filled">${P.type==='words'?'0/'+P.words.length:P.type==='rhythm'?'0/'+P.rounds.length:P.type==='anagram'?'0/'+P.pocet:'0/'+(P.size*P.size)}</b><span>${P.type==='words'?'slov':P.type==='rhythm'?'rytmov':P.type==='anagram'?'slov':'políčok'}</span></div>
+      <div class="pill"><b id="filled">${P.type==='words'?'0/'+P.words.length:P.type==='rhythm'?'0/'+P.rounds.length:(P.type==='anagram'||P.type==='quiz')?'0/'+P.pocet:'0/'+(P.size*P.size)}</b><span>${P.type==='words'?'slov':P.type==='rhythm'?'rytmov':P.type==='anagram'?'slov':P.type==='quiz'?'otázok':'políčok'}</span></div>
       <div class="pill"><b>${P.month_points}${P.monthly_cap>0?'/'+P.monthly_cap:''}</b><span>bodov v mesiaci</span></div>
     </div>
     ${(P.monthly_cap>0 && P.month_points>=P.monthly_cap) ? `<div style="background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.4);
@@ -211,7 +243,7 @@ function render(){
       Ďalšie hlavolamy sa už do bodov nerátajú, séria aj rebríček ti bežia ďalej.
       Od 1. ${new Date(new Date().getFullYear(), new Date().getMonth()+1, 1)
         .toLocaleDateString('sk-SK',{month:'long'})} sa počítadlo nuluje. 💛</div>` : ''}
-    ${P.type==='rhythm' ? '<div class="rr" id="rr"></div>' : P.type==='anagram' ? '<div class="ag" id="ag"></div>' : '<div class="board-wrap"><canvas id="board"></canvas></div>'}
+    ${P.type==='rhythm' ? '<div class="rr" id="rr"></div>' : P.type==='quiz' ? '<div class="kv" id="kv"></div>' : P.type==='anagram' ? '<div class="ag" id="ag"></div>' : '<div class="board-wrap"><canvas id="board"></canvas></div>'}
     ${P.type==='words' ? '<div class="wordlist" id="wordList"></div>' : ''}
     <div class="hint">${P.type==='words'
       ? 'Ťahaj prstom po písmenách a označ <b>všetkých '+P.words.length+' slov</b>. Slová sú vodorovne, zvisle aj šikmo — aj odzadu.'
@@ -221,17 +253,21 @@ function render(){
       + '<br><span style="opacity:.85">Bodka • znamená, že si použila správne písmená; či je to aj správne slovo, povie až odovzdanie — a keď niečo nesedí, ukážeme ti presne ktoré.</span>'
       : P.type==='rhythm'
       ? 'Vypočuj si ukážku a hádaj, <b>na ktorý tanec</b> je. Pustiť si ju môžeš koľkokrát chceš — čas ale beží.<br>'
-        +'<b style="color:var(--gold)">Máš jeden pokus</b> · bod za každú správnu ukážku · 🥇 +'+(P.rhythm_perfect_bonus||5)+' pre najrýchlejšiu s plným počtom'
+        +'<b style="color:var(--gold)">Máš jeden pokus</b> · bod za každú správnu ukážku · 🥇 +'+bonusBezchyby()+' pre najrýchlejšiu s plným počtom — poradie sa uzatvára o polnoci.'
+      : P.type==='quiz'
+      ? 'Päť otázok o <b>výžive, pohybe, tanci, svete</b> aj o nás. Pri každej vyber jednu odpoveď — po odovzdaní uvidíš správne odpovede aj s vysvetlením.<br>'
+        +'<b style="color:var(--gold)">Máš jeden pokus</b> · '+(P.quiz_per_answer||1)+' '+bodSlovo(P.quiz_per_answer||1)+' za každú správnu odpoveď · 🥇 +'+bonusBezchyby()+' pre najrýchlejšiu s plným počtom — čas beží od otvorenia, poradie sa uzatvára o polnoci.'
       : 'Ťahaj prstom od <b>1</b> a spájaj čísla v poradí tak, aby si prešla <b>všetky políčka</b>.'}
-<br><b style="color:var(--gold)">Za vyriešenie ${P.points} ${P.points===1?'bod':P.points<5?'body':'bodov'}</b> · najrýchlejšie časy dňa navyše 🥇 +${(P.podium_bonus||[5,3,1])[0]} · 🥈 +${(P.podium_bonus||[5,3,1])[1]} · 🥉 +${(P.podium_bonus||[5,3,1])[2]} — čas beží od otvorenia, poradie sa uzatvára o polnoci.</div>
+${jeBodovana(P.type) ? '' : `<br><b style="color:var(--gold)">Za vyriešenie ${P.points} ${bodSlovo(P.points)}</b> · najrýchlejšie časy dňa navyše 🥇 +${(P.podium_bonus||[5,3,1])[0]} · 🥈 +${(P.podium_bonus||[5,3,1])[1]} · 🥉 +${(P.podium_bonus||[5,3,1])[2]} — čas beží od otvorenia, poradie sa uzatvára o polnoci.`}</div>
     <div class="actions">
       <button class="btn-ghost" onclick="resetPath()">Vymazať</button>
-      <button class="btn-main" id="sendBtn" onclick="submit()">${P.type==='rhythm'?'Odovzdať odpovede':P.type==='anagram'?'Odovzdať slová':'Odovzdať riešenie'}</button>
+      <button class="btn-main" id="sendBtn" onclick="submit()">${jeBodovana(P.type)?'Odovzdať odpovede':P.type==='anagram'?'Odovzdať slová':'Odovzdať riešenie'}</button>
     </div>
     <div class="msg" id="msg"></div>
     <div class="lb" id="lb"></div>
     <div class="hist" id="hist"></div>`;
   if(P.type==='rhythm'){ renderRytmus(); }
+  else if(P.type==='quiz'){ renderKviz(); }
   else if(P.type==='anagram'){ renderAnagram(); }
   else {
     setupCanvas();
@@ -261,7 +297,7 @@ function setupCanvas(){
 let rzT=null;
 // Rytmus ani „Poskladaj slovo" nemajú mriežku — prepočítavať netreba a setupCanvas
 // by spadol na null canvase (na mobile to hodilo chybu pri každom otvorení klávesnice).
-window.addEventListener('resize',()=>{ if(!P||P.type==='rhythm'||P.type==='anagram') return; clearTimeout(rzT); rzT=setTimeout(()=>{ setupCanvas(); draw(); },150); });
+window.addEventListener('resize',()=>{ if(!P||P.type==='rhythm'||P.type==='anagram'||P.type==='quiz') return; clearTimeout(rzT); rzT=setTimeout(()=>{ setupCanvas(); draw(); },150); });
 const cellOf=(x,y)=>{ const c=Math.floor(x/cell), r=Math.floor(y/cell);
   if(r<0||c<0||r>=P.size||c>=P.size) return -1; return r*P.size+c; };
 const centre=i=>({x:(i%P.size)*cell+cell/2, y:Math.floor(i/P.size)*cell+cell/2});
@@ -408,6 +444,10 @@ function resetPath(){
     prehravace=[]; hraIndex=null;
     renderRytmus(); const f=$('filled'); if(f) f.textContent='0/'+P.rounds.length; return;
   }
+  if(P && P.type==='quiz'){
+    if(solvedToday) return;
+    odpovedeKv=[]; renderKviz(); const m=$('msg'); if(m){m.className='msg';m.textContent='';} return;
+  }
   if(P && P.type==='anagram'){
     odpovedeAg=P.slova.map(()=> ''); overeneAg=[];
     renderAnagram(); const m=$('msg'); if(m){m.className='msg';m.textContent='';} return;
@@ -430,11 +470,21 @@ async function submit(){
     }
     if(!confirm('Odovzdať odpovede?\n\nMáš len jeden pokus — po odovzdaní sa už nedá nič zmeniť.\nZa každú správnu ukážku dostaneš bod.')) return;
   }
+  if(P.type==='quiz'){
+    const hotove=odpovedeKv.filter(Boolean).length, ost=P.pocet-hotove;
+    if(ost>0){
+      flash(ost===1 ? 'Ešte ti chýba odpoveď na jednu otázku.' : 'Ešte ti chýbajú odpovede na '+ost+' otázky z '+P.pocet+'.');
+      const prva=odpovedeKv.findIndex((x,i)=>i<P.pocet&&!x); const k=$('kq'+(prva<0?0:prva)); if(k) k.scrollIntoView({behavior:'smooth',block:'center'});
+      return;
+    }
+    if(!confirm('Odovzdať odpovede?\n\nMáš len jeden pokus — po odovzdaní sa už nedá nič zmeniť.\nZa každú správnu odpoveď dostaneš bod.')) return;
+  }
   const btn=$('sendBtn'); btn.disabled=true; btn.textContent='Kontrolujem…';
   const seconds=startedAt?Math.round((Date.now()-startedAt)/1000):0;
   const payload=P.type==='words' ? {found, seconds, date:P.date}
     : P.type==='anagram' ? {answers:odpovedeAg.map(x=>normAg(x)), seconds, date:P.date}
     : P.type==='rhythm' ? {answers:odpovede, seconds, date:P.date}
+    : P.type==='quiz' ? {answers:odpovedeKv.slice(0,P.pocet), seconds, date:P.date}
     : {cells:path, seconds, date:P.date};
   const d=await api('/api/puzzle/solve',{method:'POST',body:JSON.stringify(payload)}).catch(()=>null);
   btn.disabled=false; btn.textContent='Odovzdať riešenie';
@@ -443,8 +493,18 @@ async function submit(){
   if(d.error){ flash(d.error); if(P.type==='anagram') ofarbiAg(d.trafene); return; }
   if(timer){ clearInterval(timer); timer=null; }
   const m=$('msg'); m.className='msg ok';
-  const bod=n=>n===1?'bod':(n>=2&&n<=4?'body':'bodov');
+  const bod=bodSlovo;
   if(d.already){ m.innerHTML=d.message; }
+  else if(P.type==='quiz'){
+    const vsetko=d.correct===d.total;
+    m.className='msg '+(vsetko?'ok':'');
+    m.innerHTML=(vsetko?'🎉 ':'')+'Správne si odpovedala na <b>'+d.correct+' z '+d.total+'</b> za <b>'+fmtSec(d.seconds)+'</b>'
+      +' — <b>'+d.points+' '+bod(d.points)+'</b>. Pod otázkami nájdeš vysvetlenia. 👇'
+      + (d.capped?'<br><span style="opacity:.8">Mesačný strop bodov z hlavolamu je vyčerpaný — hrať môžeš ďalej pre radosť. 💛</span>':'')
+      + (vsetko && d.perfect_bonus
+          ? '<br>🥇 Ak budeš dnes najrýchlejšia zo všetkých, čo mali plný počet, ráno ti pribudne +'+d.perfect_bonus+' bodov.'
+          : (!vsetko ? '<br><span style="opacity:.8">Bonus +'+(d.perfect_bonus||5)+' patrí najrýchlejšej, ktorá odpovie správne na všetkých päť. Nabudúce! 💛</span>' : ''));
+  }
   else if(P.type==='rhythm'){
     // Pri rytme nehodnotíme „vyriešené/nevyriešené", ale koľko z piatich sedelo.
     const vsetko=d.correct===d.total;
@@ -464,6 +524,7 @@ async function submit(){
   solvedToday=true;
   const st=await api('/api/puzzle/today').catch(()=>null); if(st&&st.ok) P=st;
   if(P.type==='rhythm') ukazRiesenie();
+  if(P.type==='quiz') zamkniKviz();
   loadLb();
 }
 
@@ -473,6 +534,15 @@ async function loadLb(){
   const el=$('lb'); if(!el||!d||!d.ok||!d.rows.length){ if(el) el.innerHTML=''; return; }
   const MED={1:'🥇',2:'🥈',3:'🥉'};
   const BON=(P&&P.podium_bonus)||[5,3,1];
+  if(d.scored){
+    // Rytmus a kvíz: poradie podľa počtu správnych, potom času; bonus len prvej bezchybnej.
+    const prvaBezchybna=d.rows.findIndex(r=>r.perfect);
+    el.innerHTML='<h3>Dnešné poradie · '+d.rows.length+' '+hracky(d.rows.length)+'</h3>'
+      +d.rows.map((r,i)=>
+      `<div class="row ${r.me?'me':''}"><div class="pos">${MED[r.pos]||r.pos+'.'}</div><div class="nm">${esc(r.name)}</div><div class="t">${r.correct}/${r.total} · ${fmtSec(r.seconds)}${i===prvaBezchybna?` <span style="color:var(--gold);font-weight:800">+${bonusBezchyby()}</span>`:''}</div></div>`).join('')
+      +'<div style="font-size:.72rem;color:var(--muted);padding:8px 16px 12px;border-top:1px solid var(--line);line-height:1.5">Rozhoduje počet správnych odpovedí, potom čas. Bonus 🥇 +'+bonusBezchyby()+' pripíšeme ráno najrýchlejšej s plným počtom.</div>';
+    return;
+  }
   el.innerHTML='<h3>Dnes najrýchlejšie · '+d.rows.length+(d.rows.length===1?' hráčka':d.rows.length<5?' hráčky':' hráčok')+'</h3>'
     +d.rows.map(r=>
     `<div class="row ${r.me?'me':''}"><div class="pos">${MED[r.pos]||r.pos+'.'}</div><div class="nm">${r.name}</div><div class="t">${fmtSec(r.seconds)}${r.pos<=3?` <span style="color:var(--gold);font-weight:800">+${BON[r.pos-1]}</span>`:''}</div></div>`).join('')
@@ -637,12 +707,62 @@ function ukazRiesenie(){
     +'</div>');
 }
 
+// ── Denný kvíz (Marek 16. 9.) ───────────────────────────────────────────────
+// Päť otázok naraz, pri každej jedna voľba. Správnu odpoveď prehliadač nepozná —
+// príde až s vyhodnotením zo servera, spolu s krátkym vysvetlením.
+let odpovedeKv=[];
+function renderKviz(){
+  const el=$('kv'); if(!el||!P.otazky) return;
+  if(odpovedeKv.length!==P.otazky.length) odpovedeKv=new Array(P.otazky.length).fill(null);
+  el.innerHTML=P.otazky.map((o,i)=>
+    '<div class="kq" id="kq'+i+'">'
+    +'<div class="kh"><div class="cislo">'+(i+1)+'</div><span class="kat">'+esc(o.kat)+'</span></div>'
+    +'<div class="qt">'+esc(o.q)+'</div>'
+    +'<div class="ko">'+o.moznosti.map(m=>
+        '<button type="button" data-k="'+m.k+'" onclick="vyberOdpoved('+i+',\''+m.k+'\')">'
+        +'<span class="pis">'+m.k+'</span><span>'+esc(m.t)+'</span></button>').join('')
+    +'</div><div class="vys" id="kvv'+i+'"></div></div>').join('');
+  if(solvedToday && P.reveal) zamkniKviz();
+  else spocitajKv();
+}
+function vyberOdpoved(i,k){
+  if(solvedToday) return;
+  odpovedeKv[i]=k;
+  const c=$('kq'+i); if(c){
+    c.classList.add('hotovo');
+    c.querySelectorAll('.ko button').forEach(b=>b.classList.toggle('vyb', b.dataset.k===k));
+  }
+  const m=$('msg'); if(m && m.classList.contains('err')){ m.className='msg'; m.textContent=''; }
+  spocitajKv();
+}
+function spocitajKv(){
+  const f=$('filled'); if(f) f.textContent=odpovedeKv.filter(Boolean).length+'/'+P.pocet;
+}
+function zamkniKviz(){
+  if(!P.reveal) return;
+  P.reveal.forEach((x,i)=>{
+    const c=$('kq'+i); if(!c) return;
+    c.classList.add('zamknute');
+    if(x.trafene!=null) c.classList.add(x.trafene?'dobre':'zle');
+    c.querySelectorAll('.ko button').forEach(b=>{
+      b.disabled=true;
+      if(x.moj) b.classList.toggle('vyb', b.dataset.k===x.moj);
+      b.classList.toggle('spravne', b.dataset.k===x.key);
+      b.classList.toggle('zlyTip', x.trafene===false && b.dataset.k===x.moj);
+    });
+    const v=$('kvv'+i);
+    if(v) v.innerHTML=(x.trafene===true?'✅ Správne! ':x.trafene===false?'❌ Správna odpoveď: <b>'+esc(x.spravna)+'</b><br>':'')
+      +(x.vysvetlenie?'💡 '+esc(x.vysvetlenie):'');
+  });
+  const f=$('filled'); if(f && P.my_correct!=null) f.textContent=P.my_correct+'/'+(P.my_total||P.pocet);
+}
+
 // ── História víťazov ────────────────────────────────────────────────────────
 // Načítava sa až po kliknutí, nie pri otvorení stránky — hráčku zaujíma dnešok,
 // história je doplnok a nemá jej spomaľovať prvé zobrazenie.
 let HIST=null, histNacitava=false;
 const MEDAILA={1:'🥇',2:'🥈',3:'🥉'};
-const TYP={zip:'🧩 Spoj čísla', words:'🔤 Osemsmerovka', rhythm:'🎵 Poznáš rytmus?', anagram:'🔡 Poskladaj slovo'};
+const TYP={zip:'🧩 Spoj čísla', words:'🔤 Osemsmerovka', rhythm:'🎵 Poznáš rytmus?', anagram:'🔡 Poskladaj slovo', quiz:'❓ Denný kvíz'};
 const SK_MES=['januára','februára','marca','apríla','mája','júna','júla','augusta','septembra','októbra','novembra','decembra'];
 const SK_DEN=['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
 
@@ -680,7 +800,7 @@ async function prepniHistoriu(){
     return '<div class="hday" id="hd'+i+'">'
       +'<button type="button" onclick="prepniDen('+i+')">'
         +'<span class="dt">'+datumSK(den.date)+'</span>'
-        +'<span class="wn">'+(v?MEDAILA[1]+' '+v.name+' · '+fmtSec(v.seconds):'nikto nevyriešil')+'</span>'
+        +'<span class="wn">'+(v?MEDAILA[1]+' '+esc(v.name)+' · '+fmtSec(v.seconds):(den.scored&&den.players?'nikto nemal všetko správne':'nikto nevyriešil'))+'</span>'
         +'<span class="cnt">'+den.players+'</span>'
       +'</button>'
       +'<div class="det">'
@@ -690,7 +810,7 @@ async function prepniHistoriu(){
           '<div class="row '+(r.me?'me':'')+'">'
           +'<div class="pos">'+(MEDAILA[r.pos]||r.pos+'.')+'</div>'
           +'<div class="nm">'+r.name+'</div>'
-          +'<div class="t">'+fmtSec(r.seconds)+'</div>'
+          +'<div class="t">'+(r.correct!=null?r.correct+'/'+r.total+' · ':'')+fmtSec(r.seconds)+'</div>'
           +'<div class="b">'+r.points+' b</div></div>').join('')
       +'</div></div>';
   }).join('');

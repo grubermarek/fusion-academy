@@ -3,7 +3,8 @@
  *  · „Cesta" (zip): spoj čísla v poradí a vyplň celú mriežku (tu v súbore),
  *  · „Osemsmerovka" (words): nájdi tanečné slová v mriežke (./puzzle-words.js),
  *  · „Poznáš rytmus?" (rhythm): uhádni tanec podľa rytmu (./puzzle-rhythm.js),
- *  · „Poskladaj slovo" (anagram): poskladaj výraz z rozhádzaných písmen (./puzzle-anagram.js).
+ *  · „Poskladaj slovo" (anagram): poskladaj výraz z rozhádzaných písmen (./puzzle-anagram.js),
+ *  · „Denný kvíz" (quiz): päť otázok o výžive, pohybe, tanci, svete a o nás (./puzzle-quiz.js).
  * Poradie určuje settings.puzzle_config.schedule, konkrétny deň sa dá prebiť
  * cez overrides — admin tak vie na akciu nasadiť typ, ktorý chce.
  *
@@ -17,6 +18,7 @@
 const WORDS = require('./puzzle-words');
 const RYTMUS = require('./puzzle-rhythm');
 const ANAGRAM = require('./puzzle-anagram');
+const KVIZ = require('./puzzle-quiz');
 
 module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
 
@@ -129,7 +131,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
 
   // Aký typ pripadá na daný deň. Striedame, aby to neomrzelo; admin vie poradie
   // zmeniť (schedule) alebo typ na konkrétny deň natvrdo určiť (overrides).
-  const TYPES = ['zip', 'words', 'rhythm', 'anagram'];
+  const TYPES = ['zip', 'words', 'rhythm', 'anagram', 'quiz'];
   function typeForSync(dateStr, conf) {
     const th = themeFor(dateStr);
     if (th && TYPES.includes(th.type)) return th.type;   // tematický deň má prednosť
@@ -137,18 +139,24 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     if (ov && TYPES.includes(ov)) return ov;
     const list = (conf && Array.isArray(conf.schedule) && conf.schedule.length) ? conf.schedule : TYPES;
     const days = Math.floor(Date.parse(dateStr + 'T00:00:00Z') / 86400000);
-    return list[((days % list.length) + list.length) % list.length];
+    const t = list[((days % list.length) + list.length) % list.length];
+    return t === 'quiz' && KVIZ.OTAZKY.length < KVIZ.KOL ? 'zip' : t;   // bez banky otázok kvíz nejde
   }
 
   // Cache zahadzujeme v poradí, v akom pribúdala — nie podľa abecedy.
   // (Abecedné triedenie vedelo vyhodiť práve vygenerovanú hádanku a vrátiť undefined.)
   const cache = {};
   const cacheOrder = [];
-  function puzzleFor(dateStr, type) {
+  function puzzleFor(dateStr, type, vyber) {
     const t = type || 'zip';
-    const key = dateStr + '|' + t;
+    const key = dateStr + '|' + t + '|' + (vyber && vyber.ids ? vyber.ids.join(',') : '');
     if (!cache[key]) {
-      if (t === 'words') {
+      if (t === 'quiz') {
+        const rnd = mulberry32(seedFromString('fusion-quiz-moznosti-' + dateStr));
+        cache[key] = { ...KVIZ.build(rnd, (vyber && vyber.ids) || []), type: 'quiz', date: dateStr };
+      } else if (t === 'rhythm' && vyber && vyber.ids) {
+        cache[key] = { ...RYTMUS.zIds(vyber.ids), type: 'rhythm', date: dateStr };
+      } else if (t === 'words') {
         const rnd = mulberry32(seedFromString('fusion-words-' + dateStr));
         const th = themeFor(dateStr);
         cache[key] = { ...WORDS.build(rnd, th && th.slova), type: 'words', date: dateStr };
@@ -166,6 +174,60 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     }
     return cache[key];
   }
+
+  // ── Uložený výber otázok a skladieb (Marek 16. 9.: „stále sa opakujú") ──
+  // Kvíz a rytmus si pri prvom otvorení dňa zapíšu, čo dostali, a ďalší deň
+  // berie z toho, čo ešte nebolo (alebo najdlhšie nebolo). Zápis v settings
+  // zaručí, že výber sa počas dňa nezmení ani po reštarte servera.
+  const vyberyHotove = {};
+  const vyberyBezia = {};                    // dve súčasné požiadavky nesmú vybrať dvakrát
+  const RYTMUS_BEZ_ZAPISU_DO = '2026-09-17'; // staršie rytmy sa dajú presne prepočítať zo seedu
+  async function historiaVyberov(type, pred) {
+    const pouzite = new Map();
+    const zapis = (ids, d) => { for (const id of ids || []) if ((pouzite.get(id) || '') < d) pouzite.set(id, d); };
+    const pref = 'puzzle_pick_' + type + '_';
+    const riadky = await q.find(db.settings, { key: { $regex: new RegExp('^' + pref) } });
+    let n = 0;
+    for (const r of riadky) {
+      const d = String(r.key).slice(pref.length);
+      if (!(d < pred)) continue;
+      n++; zapis(r.value && r.value.ids, d);
+    }
+    if (type === 'rhythm') {
+      const dni = new Set((await q.find(db.puzzle_solves, { type: 'rhythm' })).map(r => String(r.date || ''))
+        .filter(d => d && d < RYTMUS_BEZ_ZAPISU_DO && d < pred));
+      for (const d of dni) if (!riadky.some(r => r.key === pref + d))
+        zapis(RYTMUS.build(mulberry32(seedFromString('fusion-rhythm-' + d)))._ids, d);
+    }
+    return { pouzite, n };
+  }
+  function vyberDna(d, type) {
+    const key = 'puzzle_pick_' + type + '_' + d;
+    if (vyberyHotove[key]) return Promise.resolve(vyberyHotove[key]);
+    if (!vyberyBezia[key]) {
+      vyberyBezia[key] = (async () => {
+        const ulozeny = await q.one(db.settings, { key });
+        if (ulozeny && ulozeny.value && Array.isArray(ulozeny.value.ids)) return ulozeny.value;
+        const { pouzite, n } = await historiaVyberov(type, d);
+        const rnd = mulberry32(seedFromString('fusion-' + type + '-' + d));
+        const ids = type === 'quiz' ? KVIZ.vyber(rnd, pouzite, n) : RYTMUS.build(rnd, pouzite)._ids;
+        const value = { type, ids, poradie: n };
+        await q.insert(db.settings, { key, value, at: nowISO() });
+        return value;
+      })().then(v => { vyberyHotove[key] = v; delete vyberyBezia[key]; return v; },
+                e => { delete vyberyBezia[key]; throw e; });
+    }
+    return vyberyBezia[key];
+  }
+  // Hádanka dňa vrátane uloženého výberu — toto volajú endpointy.
+  async function hadanka(d, type) {
+    if (type === 'quiz' || type === 'rhythm') return puzzleFor(d, type, await vyberDna(d, type));
+    return puzzleFor(d, type);
+  }
+  // Hry s bodom za každú správnu odpoveď (jeden pokus, bonus pre bezchybnú).
+  const BODOVANE = { rhythm: RYTMUS, quiz: KVIZ };
+  const naOdpoved = (c, type) => type === 'quiz' ? (+c.quiz_per_answer || 1) : (+c.rhythm_per_answer || 1);
+  const bonusBezchybnej = (c, type) => type === 'quiz' ? (+c.quiz_perfect_bonus || 0) : (+c.rhythm_perfect_bonus || 0);
 
   // ── Overenie riešenia (beží len na serveri) ──
   function validate(puzzle, cells) {
@@ -194,6 +256,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     if (p.type === 'words') return WORDS.validate(p, body.found);
     if (p.type === 'rhythm') return RYTMUS.validate(p, body.answers);
     if (p.type === 'anagram') return ANAGRAM.validate(p, body.answers);
+    if (p.type === 'quiz') return KVIZ.validate(p, body.answers);
     return validate(p, body.cells);
   }
 
@@ -201,10 +264,15 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
   const DEFAULTS = { points: 2, fast_bonus: 0, fast_seconds: 90, monthly_cap: 40, enabled: true,
                      podium_bonus: [5, 3, 1],       // 1. / 2. / 3. najrýchlejší čas dňa
                      day_win_bonus: 5, day_win_min_players: 2,
-                     schedule: ['zip', 'words', 'rhythm', 'anagram'], overrides: {},
+                     // Kvíz pribudol 16. 9. Poradie je zvolené tak, aby sa doterajšie
+                     // striedanie nezlomilo: 16. 9. zostáva „Spoj čísla", 17. 9. je kvíz,
+                     // 18. 9. osemsmerovka, 19. 9. rytmus, 20. 9. „Poskladaj slovo".
+                     schedule: ['rhythm', 'anagram', 'zip', 'quiz', 'words'], overrides: {},
                      // Rytmus sa boduje inak (Marek 30. 8.): jeden pokus, bod za každú
                      // správnu odpoveď a +5 pre najrýchlejšiu, ktorá má všetkých päť.
-                     rhythm_per_answer: 1, rhythm_perfect_bonus: 5 };
+                     rhythm_per_answer: 1, rhythm_perfect_bonus: 5,
+                     // Kvíz rovnako (Marek 16. 9.): bod za správnu, +5 najrýchlejšej s 5/5.
+                     quiz_per_answer: 1, quiz_perfect_bonus: 5 };
   async function cfg() {
     const row = await q.one(db.settings, { key: 'puzzle_config' });
     return { ...DEFAULTS, ...(row && row.value || {}) };
@@ -246,21 +314,25 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     // odovzdaní (bod za správnu ukážku) a bonus +5 patrí JEDNEJ — najrýchlejšej
     // z tých, čo mali všetkých päť. Kto sa pomýlil, bonus nedostane ani keby bol
     // najrýchlejší; inak by sa oplatilo klikať naslepo.
-    if (all.some(r => r.type === 'rhythm')) {
+    // Denný kvíz (od 17. 9.) má to isté pravidlo.
+    const bodovany = all.find(r => BODOVANE[r.type]);
+    if (bodovany) {
+      const kviz = bodovany.type === 'quiz';
+      const nazov = kviz ? '❓ Kvíz ' : '🎵 Rytmus ';
       const bezchybne = rows.filter(r => r.perfect);
-      if (!bezchybne.length) { console.log('🎵 Rytmus ' + dateStr + ': nikto nemal všetkých päť — bonus nikomu'); return null; }
+      if (!bezchybne.length) { console.log(nazov + dateStr + ': nikto nemal všetkých päť — bonus nikomu'); return null; }
       const v = bezchybne[0];
       const capLeft = await zostatokDoStropu(c, v.user_id, dateStr.slice(0, 7));
-      const bonus = Math.min(+c.rhythm_perfect_bonus || 0, capLeft);
+      const bonus = Math.min(bonusBezchybnej(c, bodovany.type), capLeft);
       await q.update(db.puzzle_solves, { _id: v._id },
         { $set: { day_win: true, podium: 1, day_win_bonus: bonus, points: (+v.points || 0) + bonus } });
       await q.insert(db.notifications, {
         user_id: v.user_id, type: 'puzzle_win', title: '🥇 Najrýchlejšia s plným počtom!',
-        body: 'Včerajšie rytmy si mala všetky správne a odovzdala najrýchlejšie (' + v.seconds + ' s)'
+        body: 'Včerajšie ' + (kviz ? 'otázky v kvíze' : 'rytmy') + ' si mala všetky správne a odovzdala najrýchlejšie (' + v.seconds + ' s)'
           + (bonus ? ' — pripísali sme ti +' + bonus + ' bonusových bodov.' : '. Mesačný strop bodov máš už vyčerpaný.'),
         read: false, created_at: nowISO(),
       }).catch(() => {});
-      console.log('🎵 Rytmus ' + dateStr + ': bonus +' + bonus + ' pre ' + (v.user_name || v.user_id)
+      console.log(nazov + dateStr + ': bonus +' + bonus + ' pre ' + (v.user_name || v.user_id)
         + ' (' + v.seconds + ' s, ' + bezchybne.length + ' bezchybných z ' + rows.length + ')');
       return [{ miesto: 1, user_id: v.user_id, name: v.user_name, seconds: v.seconds, bonus }];
     }
@@ -316,9 +388,10 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       if (!c.enabled) return res.json({ ok: true, enabled: false });
       const d = today();
       const type = typeForSync(d, c);
-      const p = puzzleFor(d, type);
+      const p = await hadanka(d, type);
       if (!p) return res.status(500).json({ error: 'Hádanku sa nepodarilo pripraviť.' });
       const mine = await q.one(db.puzzle_solves, { user_id: req.session.uid, date: d });
+      const M = BODOVANE[type];
       const earned = await monthPoints(req.session.uid, d.slice(0, 7));
       const solvers = await q.count(db.puzzle_solves, { date: d });
       res.json({
@@ -329,15 +402,17 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
           ? { rounds: p.rounds, options: p.options }          // správne odpovede sa NIKDY neposielajú
           : type === 'anagram'
           ? { slova: p.slova, pocet: p.pocet }             // len rozhádzané písmená, riešenie nikdy
+          : type === 'quiz'
+          ? { otazky: p.otazky, pocet: p.pocet }           // otázky a zamiešané možnosti, správna nikdy
           : { dots: p.dots.map(x => ({ n: x.n, cell: x.cell })) }),   // cesta sa NIKDY neposiela
         solved: !!mine,
         // Kto už má dnešok vyriešený, nech vidí aj riešenie — inak sa vráti na prázdnu mriežku.
         ...(mine ? (type === 'words'
           ? { solution: p._placed.map(x => ({ word: x.word, cells: x.cells })) }
-          : type === 'rhythm'
-          ? { reveal: RYTMUS.reveal(p, mine && mine.answers), // po odovzdaní nech sa niečo naučí
+          : M
+          ? { reveal: M.reveal(p, mine && mine.answers), // po odovzdaní nech sa niečo naučí
               my_correct: mine ? (mine.correct != null ? mine.correct : null) : null,
-              my_total: mine ? (mine.total || RYTMUS.KOL) : null,
+              my_total: mine ? (mine.total || M.KOL) : null,
               my_perfect: mine ? !!mine.perfect : false }
           : type === 'anagram'
           ? { reveal: ANAGRAM.reveal(p, mine && mine.answers) }
@@ -348,6 +423,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
         points: c.points, fast_bonus: c.fast_bonus, fast_seconds: c.fast_seconds,
         day_win_bonus: c.day_win_bonus, podium_bonus: c.podium_bonus || [5, 3, 1],
         rhythm_per_answer: +c.rhythm_per_answer || 1, rhythm_perfect_bonus: +c.rhythm_perfect_bonus || 0,
+        quiz_per_answer: naOdpoved(c, 'quiz'), quiz_perfect_bonus: bonusBezchybnej(c, 'quiz'),
         my_day_win: mine ? !!mine.day_win : false,
         solvers_today: solvers,
         banner: (themeFor(d) || {}).banner || null,   // pruh s akciou v tematický deň
@@ -372,7 +448,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       const c = await cfg();
       if (!c.enabled) return res.status(400).json({ error: 'Hlavolam je momentálne vypnutý.' });
       const d = today();
-      const p = puzzleFor(d, typeForSync(d, c));
+      const p = await hadanka(d, typeForSync(d, c));
       if (!p) return res.status(500).json({ error: 'Hádanku sa nepodarilo pripraviť.' });
 
       // Ak medzitým nastala polnoc, klient rieši včerajšiu hádanku — povedz mu to zrozumiteľne.
@@ -404,9 +480,11 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       // Rytmus má vlastné bodovanie: hráčka odovzdáva RAZ a dostane bod za každú
       // trafenú ukážku. Bonus +5 za bezchybné riešenie sa nedáva hneď — až po
       // polnoci ho dostane tá najrýchlejšia z bezchybných (awardDayWinner).
-      const vysledok = p.type === 'rhythm' ? RYTMUS.score(p, req.body.answers) : null;
+      // Denný kvíz sa boduje rovnako.
+      const M = BODOVANE[p.type];
+      const vysledok = M ? M.score(p, req.body.answers) : null;
       let points = vysledok
-        ? vysledok.spravne * (+c.rhythm_per_answer || 1)
+        ? vysledok.spravne * naOdpoved(c, p.type)
         : c.points + (seconds <= c.fast_seconds ? c.fast_bonus : 0);
       const capped = points > capLeft;
       points = Math.min(points, capLeft);
@@ -424,8 +502,8 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       res.json({
         ok: true, points, seconds, rank,
         ...(vysledok ? { correct: vysledok.spravne, total: vysledok.celkom, perfect: vysledok.perfect,
-                         reveal: RYTMUS.reveal(p, req.body.answers),
-                         perfect_bonus: +c.rhythm_perfect_bonus || 0 } : {}),
+                         reveal: M.reveal(p, req.body.answers),
+                         perfect_bonus: bonusBezchybnej(c, p.type) } : {}),
         fast: seconds <= c.fast_seconds,
         capped, month_points: await monthPoints(req.session.uid, d.slice(0, 7)), monthly_cap: c.monthly_cap,
       });
@@ -453,15 +531,24 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // Pri rytme a kvíze rozhoduje najprv počet správnych, až potom čas — inak by
+  // na prvom mieste svietila tá, čo klikala naslepo, hoci bonus dostane iná.
+  const poradieRiesitelov = bodovany => (a, b) =>
+    (bodovany ? (+b.correct || 0) - (+a.correct || 0) : 0)
+    || (a.seconds || 0) - (b.seconds || 0)
+    || String(a.created_at || '').localeCompare(String(b.created_at || ''));
+
   // ── Dnešný rebríček (kto to dal najrýchlejšie) ──
   app.get('/api/puzzle/leaderboard', auth, async (req, res) => {
     try {
       const d = today();
-      const rows = (await q.find(db.puzzle_solves, { date: d })).filter(r => r.verified !== false)
-        .sort((a, b) => (a.seconds || 0) - (b.seconds || 0))
+      const vsetky = (await q.find(db.puzzle_solves, { date: d })).filter(r => r.verified !== false);
+      const bodovany = vsetky.some(r => BODOVANE[r.type]);
+      const rows = vsetky.sort(poradieRiesitelov(bodovany))
         .map((r, i) => ({ pos: i + 1, name: r.user_name || 'Tanečníčka', seconds: r.seconds,
-          me: r.user_id === req.session.uid, win: !!r.day_win, podium: r.podium || null }));
-      res.json({ ok: true, date: d, rows });
+          me: r.user_id === req.session.uid, win: !!r.day_win, podium: r.podium || null,
+          ...(bodovany ? { correct: +r.correct || 0, total: +r.total || 5, perfect: !!r.perfect } : {}) }));
+      res.json({ ok: true, date: d, rows, scored: bodovany });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
@@ -481,18 +568,22 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       }
       const zoznam = Object.keys(podlaDna).sort().reverse().slice(0, dni).map(d => {
         const vsetky = podlaDna[d];
+        const bodovany = vsetky.some(r => BODOVANE[r.type]);
         const rows = vsetky.filter(r => r.verified !== false)
-          .sort((a, b) => (a.seconds || 0) - (b.seconds || 0)
-            || String(a.created_at || '').localeCompare(String(b.created_at || '')))
+          .sort(poradieRiesitelov(bodovany))
           .map((r, i) => ({
             pos: i + 1, name: r.user_name || 'Tanečníčka', seconds: r.seconds,
             points: +r.points || 0, bonus: +r.day_win_bonus || 0,
             podium: r.podium || null, me: r.user_id === req.session.uid,
+            ...(bodovany ? { correct: +r.correct || 0, total: +r.total || 5, perfect: !!r.perfect } : {}),
           }));
+        // pri bodovanej hre je víťazka tá najrýchlejšia s plným počtom
+        const vitazka = rows[0] && (!bodovany || rows[0].perfect) ? rows[0] : null;
         return {
           date: d, type: (vsetky.find(r => r.type) || {}).type || null,
           players: rows.length, points: rows.reduce((s2, r) => s2 + r.points, 0),
-          winner: rows[0] ? { name: rows[0].name, seconds: rows[0].seconds } : null,
+          winner: vitazka ? { name: vitazka.name, seconds: vitazka.seconds } : null,
+          scored: bodovany,
           rows,
         };
       });
@@ -541,6 +632,10 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
           && req.body.podium_bonus.every(x => Number.isFinite(+x) && +x >= 0 && +x <= 20)
           ? req.body.podium_bonus.map(Number) : cur.podium_bonus,
         day_win_min_players: num(req.body.day_win_min_players, cur.day_win_min_players, 1, 50),
+        rhythm_per_answer: num(req.body.rhythm_per_answer, cur.rhythm_per_answer, 0, 10),
+        rhythm_perfect_bonus: num(req.body.rhythm_perfect_bonus, cur.rhythm_perfect_bonus, 0, 20),
+        quiz_per_answer: num(req.body.quiz_per_answer, cur.quiz_per_answer, 0, 10),
+        quiz_perfect_bonus: num(req.body.quiz_perfect_bonus, cur.quiz_perfect_bonus, 0, 20),
         schedule: Array.isArray(req.body.schedule) && req.body.schedule.every(t => TYPES.includes(t)) && req.body.schedule.length
           ? req.body.schedule : cur.schedule,
         overrides: (req.body.overrides && typeof req.body.overrides === 'object')
@@ -568,5 +663,5 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     return map;
   }
 
-  return { puzzleFor, validate, validateAny, typeForSync, puzzlePointsMap, cfg, awardDayWinner, SIZE };
+  return { puzzleFor, hadanka, vyberDna, validate, validateAny, typeForSync, puzzlePointsMap, cfg, awardDayWinner, SIZE };
 };

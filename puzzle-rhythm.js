@@ -35,7 +35,11 @@ for (const s of KATALOG) (podlaTanca[s.tanec] = podlaTanca[s.tanec] || []).push(
  * Zostaví dennú hádanku. `rnd` je seedovaný generátor, takže rovnaký deň dá
  * rovnakých päť ukážok na každom zariadení a časy sú porovnateľné.
  */
-function build(rnd) {
+function build(rnd, posledne) {
+  // posledne: Map id skladby → dátum, kedy naposledy zaznela (od 17. 9. 2026).
+  // Skladby sa opakovali, lebo každý deň sa ťahalo náhodne z celého katalógu.
+  // Teraz sa z každého tanca berú najprv tie, ktoré najdlhšie nehrali.
+  const kedy = id => (posledne && posledne.get(id)) || '';
   const dostupne = TANCE.filter(t => (podlaTanca[t.key] || []).length);
   const zamiesaj = pole => {                       // Fisher-Yates so seedovaným rnd
     const p = pole.slice();
@@ -56,7 +60,9 @@ function build(rnd) {
     // Tú istú nahrávku nedávame v jednom dni dvakrát — hráčka by ju spoznala
     // podľa melódie, nie podľa rytmu, a druhé kolo by bolo zadarmo.
     const volne = podlaTanca[t.key].filter(x => !pouziteSkladby.has(x.id));
-    const zoznam = volne.length ? volne : podlaTanca[t.key];
+    let zoznam = volne.length ? volne : podlaTanca[t.key];
+    const najstarsia = zoznam.reduce((m, x) => (m === null || kedy(x.id) < m ? kedy(x.id) : m), null);
+    zoznam = zoznam.filter(x => kedy(x.id) === najstarsia);   // bez histórie ostane celý zoznam
     const s = zoznam[Math.floor(rnd() * zoznam.length) % zoznam.length];
     pouziteSkladby.add(s.id);
     kola.push({ src: s.subor, _key: t.key, _id: s.id });
@@ -66,6 +72,18 @@ function build(rnd) {
     options: dostupne.map(t => ({ key: t.key, name: t.name })),
     _answers: kola.map(k => k._key),
     _ids: kola.map(k => k._id),
+  };
+}
+
+/** Hádanka z uloženého výberu (settings puzzle_pick_rhythm_<dátum>). */
+function zIds(ids) {
+  const kola = (ids || []).map(id => KATALOG.find(x => x.id === id)).filter(Boolean);
+  const dostupne = TANCE.filter(t => (podlaTanca[t.key] || []).length);
+  return {
+    rounds: kola.map(s => ({ src: s.subor })),
+    options: dostupne.map(t => ({ key: t.key, name: t.name })),
+    _answers: kola.map(s => s.tanec),
+    _ids: kola.map(s => s.id),
   };
 }
 
@@ -109,4 +127,4 @@ function kredity() {
   return KATALOG.map(s => ({ nazov: s.nazov, autor: s.autor, odkaz: s.odkaz }));
 }
 
-module.exports = { build, validate, score, reveal, kredity, TANCE, KOL, KATALOG };
+module.exports = { build, zIds, validate, score, reveal, kredity, TANCE, KOL, KATALOG };
