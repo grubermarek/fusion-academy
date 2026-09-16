@@ -49,6 +49,7 @@ html[data-theme="aurora"] .evb{background:linear-gradient(135deg,rgba(168,85,247
   font-size:.88rem;text-decoration:none}
 html[data-theme="aurora"] .evb a.evb-c{background:linear-gradient(90deg,#A855F7,#EC4899);color:#fff}
 .actions{display:flex;gap:8px;margin-top:14px}
+.actions[hidden]{display:none}
 button{font-family:inherit;cursor:pointer;border:none;border-radius:12px;font-weight:800;font-size:.88rem;padding:12px}
 .btn-main{flex:1;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08}
 html[data-theme="aurora"] .btn-main{background:linear-gradient(90deg,#A855F7,#EC4899);color:#fff}
@@ -235,7 +236,7 @@ function render(){
     <div class="bar">
       <div class="pill"><b id="clock">0:00</b><span>čas</span></div>
       <div class="pill"><b id="filled">${P.type==='words'?'0/'+P.words.length:P.type==='rhythm'?'0/'+P.rounds.length:(P.type==='anagram'||P.type==='quiz')?'0/'+P.pocet:'0/'+(P.size*P.size)}</b><span>${P.type==='words'?'slov':P.type==='rhythm'?'rytmov':P.type==='anagram'?'slov':P.type==='quiz'?'otázok':'políčok'}</span></div>
-      <div class="pill"><b>${P.month_points}${P.monthly_cap>0?'/'+P.monthly_cap:''}</b><span>bodov v mesiaci</span></div>
+      <div class="pill"><b id="mesBody">${P.month_points}${P.monthly_cap>0?'/'+P.monthly_cap:''}</b><span>bodov v mesiaci</span></div>
     </div>
     ${(P.monthly_cap>0 && P.month_points>=P.monthly_cap) ? `<div style="background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.4);
       border-radius:12px;padding:11px 14px;margin:10px 0;font-size:.88rem;line-height:1.45">
@@ -259,7 +260,7 @@ function render(){
         +'<b style="color:var(--gold)">Máš jeden pokus</b> · '+(P.quiz_per_answer||1)+' '+bodSlovo(P.quiz_per_answer||1)+' za každú správnu odpoveď · 🥇 +'+bonusBezchyby()+' pre najrýchlejšiu s plným počtom — čas beží od otvorenia, poradie sa uzatvára o polnoci.'
       : 'Ťahaj prstom od <b>1</b> a spájaj čísla v poradí tak, aby si prešla <b>všetky políčka</b>.'}
 ${jeBodovana(P.type) ? '' : `<br><b style="color:var(--gold)">Za vyriešenie ${P.points} ${bodSlovo(P.points)}</b> · najrýchlejšie časy dňa navyše 🥇 +${(P.podium_bonus||[5,3,1])[0]} · 🥈 +${(P.podium_bonus||[5,3,1])[1]} · 🥉 +${(P.podium_bonus||[5,3,1])[2]} — čas beží od otvorenia, poradie sa uzatvára o polnoci.`}</div>
-    <div class="actions">
+    <div class="actions"${solvedToday?' hidden':''}>
       <button class="btn-ghost" onclick="resetPath()">Vymazať</button>
       <button class="btn-main" id="sendBtn" onclick="submit()">${jeBodovana(P.type)?'Odovzdať odpovede':P.type==='anagram'?'Odovzdať slová':'Odovzdať riešenie'}</button>
     </div>
@@ -492,6 +493,9 @@ async function submit(){
   if(d.new_day){ flash('Práve nastala polnoc — načítavam novú hádanku…'); setTimeout(()=>location.reload(),1500); return; }
   if(d.error){ flash(d.error); if(P.type==='anagram') ofarbiAg(d.trafene); return; }
   if(timer){ clearInterval(timer); timer=null; }
+  // Hotovo — tlačidlá už nič nerobia, tak ich schováme; body v mesiaci hneď obnovíme.
+  const akcie=document.querySelector('.actions'); if(akcie) akcie.hidden=true;
+  const mb=$('mesBody'); if(mb && d.month_points!=null) mb.textContent=d.month_points+(d.monthly_cap>0?'/'+d.monthly_cap:'');
   const m=$('msg'); m.className='msg ok';
   const bod=bodSlovo;
   if(d.already){ m.innerHTML=d.message; }
