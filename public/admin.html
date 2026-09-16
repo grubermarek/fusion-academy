@@ -6287,6 +6287,10 @@ async function openClientDetail(id){
       <button class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1" style="font-size:.65rem" title="Upraviť dátum, odkedy je členom tanečnej školy (napr. z Glofoxu)" onclick="cdEditMemberSince('${p.id}','${p.member_since||''}')"><i class="bi bi-pencil"></i></button>
       ${p.member_since?'':`<span class="text-muted" style="font-size:.65rem">(= registrácia v appke)</span>`}</div>
     <div class="text-muted" style="font-size:.72rem">Akvizícia: ${p.acq.is_meta?'<span class="badge" style="background:#1877F2;font-size:.6rem">📘 Meta Ads</span> ':''}${escHtml(acq)}</div>
+    <div style="font-size:.72rem;margin-top:4px">${p.body_zakaz
+      ? `<span class="badge bg-danger">🚫 Bez bodov od ${fmtDate(p.body_zakaz_at)}${p.body_zakaz_dovod?' — '+escHtml(p.body_zakaz_dovod):''}</span>
+         <button class="btn btn-sm btn-outline-success py-0 px-2 ms-1" style="font-size:.66rem" onclick="cdBodyZakaz('${p.id}',false)">Povoliť body</button>`
+      : `<button class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:.66rem" title="Za podvádzanie: hrať a chodiť môže ďalej, ale body do súťaže nezíska a vypadne z rebríčka" onclick="cdBodyZakaz('${p.id}',true)">🚫 Zakázať body (podvádzanie)</button>`}</div>
     ${d.care?`<div style="font-size:.75rem;margin-top:4px">
       ${d.care.do_not_contact?'<span class="badge bg-danger">🚫 NEKONTAKTOVAŤ</span> ':''}
       ${d.care.last_contact?`☎️ <b>${fmtDate(d.care.last_contact.at)}</b> ${escHtml((d.care.last_contact.by||'').split(' (')[0])} — ${escHtml(d.care.last_contact.outcome||'')}`:'☎️ <span style="color:#e8c97a">zatiaľ bez ľudského kontaktu</span>'}
@@ -6476,6 +6480,19 @@ async function cdEditMemberSince(id, current){
   if(val && !/^\d{4}-\d{2}-\d{2}$/.test(val)){ showToast('Zadaj dátum vo formáte RRRR-MM-DD','error'); return; }
   const d=await api('/api/admin/users/'+id,{method:'PUT',body:JSON.stringify({member_since:val||null})});
   if(d?.ok){ showToast('Uložené ✓','success'); openClientDetail(id); }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
+}
+
+// Zákaz bodov za podvádzanie (Marek 16. 9.) — klientka dostane oznámenie v appke.
+async function cdBodyZakaz(id, zakaz){
+  let dovod='';
+  if(zakaz){
+    const v=prompt('Zakázať získavanie bodov za podvádzanie?\n\nKlientka môže ďalej hrať aj chodiť na hodiny, ale body do súťaže nezíska a vypadne z rebríčka. V appke dostane oznámenie.\n\nDôvod (vidíš ho len v admine):','');
+    if(v===null) return;
+    dovod=v.trim();
+  } else if(!confirm('Povoliť klientke znova získavať body?')) return;
+  const d=await api('/api/admin/users/'+id,{method:'PUT',body:JSON.stringify({body_zakaz:zakaz, body_zakaz_dovod:dovod})});
+  if(d?.ok){ showToast(zakaz?'Body zakázané 🚫':'Body povolené ✓','success'); openClientDetail(id); }
   else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 

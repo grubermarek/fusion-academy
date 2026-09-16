@@ -45,7 +45,7 @@ const citajDb = f => { try { return fs.readFileSync(path.join(DATA, f), 'utf8').
 
   // ── banka otázok ──
   const B = K.OTAZKY;
-  ok('banka má aspoň 25 otázok', B.length >= 25, String(B.length));
+  ok('banka má aspoň 1000 otázok', B.length >= 1000, String(B.length));
   ok('id otázok sú jedinečné', new Set(B.map(o => o.id)).size === B.length);
   ok('každá otázka má 4 rôzne neprázdne možnosti',
     B.every(o => Array.isArray(o.a) && o.a.length === 4 && new Set(o.a).size === 4 && o.a.every(x => String(x).trim())),
@@ -56,7 +56,7 @@ const citajDb = f => { try { return fs.readFileSync(path.join(DATA, f), 'utf8').
   ok('všetky skupiny majú otázky', Object.keys(K.SKUPINY).every(g => B.some(o => o.g === g)),
     Object.keys(K.SKUPINY).filter(g => !B.some(o => o.g === g)).join(','));
   const pocetSk = B.reduce((m, o) => (m[o.g] = (m[o.g] || 0) + 1, m), {});
-  ok('otázok o výžive je dosť (aspoň 100)', (pocetSk.vyziva || 0) >= 100, JSON.stringify(pocetSk));
+  ok('otázok o výžive je najviac z tém okrem sveta a aspoň 300', (pocetSk.vyziva || 0) >= 300 && ['pohyb', 'tanec', 'fusion'].every(g => (pocetSk.vyziva || 0) > (pocetSk[g] || 0)), JSON.stringify(pocetSk));
 
   // ── výber otázok ──
   const v0 = K.vyber(mul(1), new Map(), 0);
@@ -118,6 +118,8 @@ const citajDb = f => { try { return fs.readFileSync(path.join(DATA, f), 'utf8').
     U('qaKvHracka00002', 'Dana Kvizova', 'qa.kv2@qa-biz.local', 'QAKV02'),
     U('qaKvRychlaZle01', 'Nina Rychla', 'qa.kv3@qa-biz.local', 'QAKV03'),
     U('qaKvPomalaOk001', 'Ema Presna', 'qa.kv4@qa-biz.local', 'QAKV04'),
+    U('qaKvPodvod00001', 'Pia Podvodna', 'qa.kv5@qa-biz.local', 'QAKV05', { body_zakaz: true, body_zakaz_at: '2026-09-01T00:00:00.000Z' }),
+    U('qaKvZakaz000001', 'Zora Zakazana', 'qa.kv6@qa-biz.local', 'QAKV06'),
   ].join('\n') + '\n');
   // Predošlý kvíz (pred 5 dňami) už použil tieto otázky — dnes sa nesmú zopakovať.
   const minule = K.vyber(mul(seedFromString('minule')), new Map(), 0);
@@ -132,6 +134,7 @@ const citajDb = f => { try { return fs.readFileSync(path.join(DATA, f), 'utf8').
   fs.writeFileSync(path.join(DATA, 'puzzle_solves.db'), [
     S('qaKvS1', 'qaKvRychlaZle01', 'Nina Rychla', 30, 4),
     S('qaKvS2', 'qaKvPomalaOk001', 'Ema Presna', 45, 5),
+    S('qaKvS3', 'qaKvPodvod00001', 'Pia Podvodna', 20, 5),   // najrýchlejšia s 5/5, ale so zákazom bodov
   ].join('\n') + '\n');
 
   console.log('KVÍZ QA — štart servera…');
@@ -161,6 +164,7 @@ const citajDb = f => { try { return fs.readFileSync(path.join(DATA, f), 'utf8').
     const vys = (aw.d && aw.d.vysledok) || [];
     ok('včerajší kvíz: bonus dostala najrýchlejšia BEZCHYBNÁ (Ema)', vys.length === 1 && vys[0].user_id === 'qaKvPomalaOk001' && vys[0].bonus === 5, JSON.stringify(aw.d));
     ok('rýchlejšia s chybou bonus nedostala', !vys.some(v => v.user_id === 'qaKvRychlaZle01'));
+    ok('bezchybná so zákazom bodov bonus nedostala (a nikoho neodsunula)', !vys.some(v => v.user_id === 'qaKvPodvod00001'));
 
     const fix = await j('/api/admin/puzzle', { method: 'PUT', body: { overrides: { [DNES]: 'quiz' } } }, adm);
     ok('admin vie nasadiť kvíz na konkrétny deň', fix.d && fix.d.config.overrides[DNES] === 'quiz', JSON.stringify(fix.d && fix.d.config));
@@ -225,6 +229,30 @@ const citajDb = f => { try { return fs.readFileSync(path.join(DATA, f), 'utf8').
     ok('história: včerajšia víťazka je bezchybná Ema', hv && hv.type === 'quiz' && hv.winner && hv.winner.name === 'Ema Presna', JSON.stringify(hv));
     ok('história ukazuje počet správnych', hv && hv.rows.every(r => typeof r.correct === 'number'));
 
+    // ── zákaz bodov za podvádzanie (Marek 16. 9.) ──
+    const zak = await j('/api/admin/users/qaKvZakaz000001', { method: 'PUT', body: { body_zakaz: true, body_zakaz_dovod: 'test: dva účty' } }, adm);
+    ok('admin zakáže body', zak.status === 200 && zak.d.ok, JSON.stringify(zak.d));
+    const det = await j('/api/admin/crm/client/qaKvZakaz000001', {}, adm);
+    ok('detail klientky ukáže zákaz aj dôvod', det.d && det.d.profile.body_zakaz === true && det.d.profile.body_zakaz_dovod === 'test: dva účty', JSON.stringify(det.d && det.d.profile).slice(0, 200));
+    ok('klientka dostala oznámenie o zákaze', citajDb('notifications.db').some(n => n.user_id === 'qaKvZakaz000001' && n.type === 'body_zakaz' && /pozastavené/.test(n.title)));
+    const jz = {};
+    await j('/api/login', { method: 'POST', body: { email: 'qa.kv6@qa-biz.local', password: 'Heslo123!' } }, jz);
+    const tz = await j('/api/puzzle/today', {}, jz);
+    ok('hlavolam vie o zákaze', tz.d.body_zakaz === true);
+    await j('/api/puzzle/start', { method: 'POST' }, jz);
+    const rz = await j('/api/puzzle/solve', { method: 'POST', body: { answers: spravne, date: DNES } }, jz);
+    ok('so zákazom môže hrať, ale dostane 0 bodov', rz.status === 200 && rz.d.points === 0 && rz.d.correct === 5 && rz.d.body_zakaz === true, JSON.stringify(rz.d).slice(0, 200));
+    const ps = await j('/api/admin/points-summary?from=' + DNES.slice(0, 8) + '01&to=' + DNES.slice(0, 8) + '31', {}, adm);
+    ok('v rebríčku súťaže klientka so zákazom nie je', ps.d && Array.isArray(ps.d.rows) && !ps.d.rows.some(r => r.id === 'qaKvZakaz000001' || r.id === 'qaKvPodvod00001')
+      && ps.d.rows.some(r => r.id === 'qaKvHracka00002'), JSON.stringify((ps.d && ps.d.rows || []).map(r => r.id)));
+    const prof = await j('/api/profile/qaKvZakaz000001', {}, jz);
+    ok('vlastný profil: 0 bodov a príznak zákazu', prof.status === 200 && (prof.d.points && prof.d.points.total === 0 && prof.d.points.body_zakaz === true), JSON.stringify(prof.d && prof.d.points));
+    const cudzi = await j('/api/profile/qaKvZakaz000001', {}, jar);
+    ok('cudzí profil zákaz neprezradí', cudzi.status === 200 && !(cudzi.d.points && cudzi.d.points.body_zakaz), JSON.stringify(cudzi.d && cudzi.d.points));
+    const povol = await j('/api/admin/users/qaKvZakaz000001', { method: 'PUT', body: { body_zakaz: false } }, adm);
+    ok('admin body znova povolí', povol.d.ok && (await j('/api/puzzle/today', {}, jz)).d.body_zakaz === false);
+    ok('klientka dostala oznámenie, že body sa rátajú', citajDb('notifications.db').some(n => n.user_id === 'qaKvZakaz000001' && n.type === 'body_zakaz' && /opäť/.test(n.title)));
+
     // ── stránky ──
     const html = fs.readFileSync(path.join(KOREN, 'public', 'hlavolam.html'), 'utf8');
     ok('stránka vie vykresliť kvíz', html.includes("P.type==='quiz'") && html.includes('renderKviz') && html.includes('zamkniKviz'));
@@ -234,6 +262,10 @@ const citajDb = f => { try { return fs.readFileSync(path.join(DATA, f), 'utf8').
     ok('pri rytme a kvíze sa neukazuje pódium +5/+3/+1', html.includes("jeBodovana(P.type) ? ''"));
     const dash = fs.readFileSync(path.join(KOREN, 'public', 'client-dashboard.html'), 'utf8');
     ok('karta na nástenke pozná kvíz', dash.includes("quiz:'Denný kvíz'"));
+    ok('hlavolam upozorňuje, že za podvádzanie sa odoberú body', html.includes('Ak zistíme, že niekto podvádza, odoberieme mu možnosť získavať body.'));
+    ok('hlavolam ukáže oznam pri zákaze', html.includes('P.body_zakaz') && html.includes('Získavanie bodov máš pozastavené'));
+    const admHtml = fs.readFileSync(path.join(KOREN, 'public', 'admin.html'), 'utf8');
+    ok('admin má tlačidlo na zákaz bodov', admHtml.includes('cdBodyZakaz(') && admHtml.includes('Zakázať body'));
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.stack);
   } finally {

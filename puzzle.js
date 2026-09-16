@@ -305,7 +305,9 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     if (!c.enabled || !podium.some(x => +x > 0)) return null;
     const all = await q.find(db.puzzle_solves, { date: dateStr });
     if (all.some(r => r.day_win)) return null;                 // už vyhodnotené
-    let rows = all.filter(r => r.verified !== false);          // len serverom meraný čas
+    // kto má zákaz bodov (podvádzanie), bonus nedostane a nikoho neodsunie
+    const zakazane = new Set((await q.find(db.users, { body_zakaz: true })).map(u => u._id));
+    let rows = all.filter(r => r.verified !== false && !r.body_zakaz && !zakazane.has(r.user_id));   // len serverom meraný čas
     if (rows.length < c.day_win_min_players) return null;      // sama proti sebe nesúťaží
     rows.sort((a, b) => (a.seconds || 0) - (b.seconds || 0)
       || String(a.created_at || '').localeCompare(String(b.created_at || '')));
@@ -394,6 +396,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       const M = BODOVANE[type];
       const earned = await monthPoints(req.session.uid, d.slice(0, 7));
       const solvers = await q.count(db.puzzle_solves, { date: d });
+      const ja = await q.one(db.users, { _id: req.session.uid });
       res.json({
         ok: true, enabled: true, date: d, size: p.size, type,
         ...(type === 'words'
@@ -425,6 +428,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
         rhythm_per_answer: +c.rhythm_per_answer || 1, rhythm_perfect_bonus: +c.rhythm_perfect_bonus || 0,
         quiz_per_answer: naOdpoved(c, 'quiz'), quiz_perfect_bonus: bonusBezchybnej(c, 'quiz'),
         my_day_win: mine ? !!mine.day_win : false,
+        body_zakaz: !!(ja && ja.body_zakaz),
         solvers_today: solvers,
         banner: (themeFor(d) || {}).banner || null,   // pruh s akciou v tematický deň
       });
@@ -488,11 +492,14 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
         : c.points + (seconds <= c.fast_seconds ? c.fast_bonus : 0);
       const capped = points > capLeft;
       points = Math.min(points, capLeft);
-
+      // Kto podvádzal, hrať môže, ale body nedostane (Marek 16. 9.).
       const u = await q.one(db.users, { _id: req.session.uid });
+      const bezBodov = !!(u && u.body_zakaz);
+      if (bezBodov) points = 0;
       await q.insert(db.puzzle_solves, {
         user_id: req.session.uid, user_name: u ? u.name : '', date: d, month: d.slice(0, 7),
         seconds, points, fast: seconds <= c.fast_seconds, verified, type: p.type, created_at: nowISO(),
+        ...(bezBodov ? { body_zakaz: true } : {}),
         ...(vysledok ? { correct: vysledok.spravne, total: vysledok.celkom, perfect: vysledok.perfect,
                          answers: req.body.answers } : {}),
       });
@@ -504,7 +511,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
         ...(vysledok ? { correct: vysledok.spravne, total: vysledok.celkom, perfect: vysledok.perfect,
                          reveal: M.reveal(p, req.body.answers),
                          perfect_bonus: bonusBezchybnej(c, p.type) } : {}),
-        fast: seconds <= c.fast_seconds,
+        fast: seconds <= c.fast_seconds, body_zakaz: bezBodov,
         capped, month_points: await monthPoints(req.session.uid, d.slice(0, 7)), monthly_cap: c.monthly_cap,
       });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -531,6 +538,10 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // Kto má zákaz bodov (podvádzanie), v poradí hlavolamu nefiguruje.
+  const zakazaneIds = async () => new Set((await q.find(db.users, { body_zakaz: true })).map(u => u._id));
+  const vPoradi = zak => r => r.verified !== false && !r.body_zakaz && !zak.has(r.user_id);
+
   // Pri rytme a kvíze rozhoduje najprv počet správnych, až potom čas — inak by
   // na prvom mieste svietila tá, čo klikala naslepo, hoci bonus dostane iná.
   const poradieRiesitelov = bodovany => (a, b) =>
@@ -542,7 +553,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
   app.get('/api/puzzle/leaderboard', auth, async (req, res) => {
     try {
       const d = today();
-      const vsetky = (await q.find(db.puzzle_solves, { date: d })).filter(r => r.verified !== false);
+      const vsetky = (await q.find(db.puzzle_solves, { date: d })).filter(vPoradi(await zakazaneIds()));
       const bodovany = vsetky.some(r => BODOVANE[r.type]);
       const rows = vsetky.sort(poradieRiesitelov(bodovany))
         .map((r, i) => ({ pos: i + 1, name: r.user_name || 'Tanečníčka', seconds: r.seconds,
@@ -561,6 +572,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       const dni = Math.min(90, Math.max(1, parseInt(req.query.days, 10) || 30));
       const dnes = today();
       const podlaDna = {};
+      const zak = await zakazaneIds();
       for (const r of await q.find(db.puzzle_solves, {})) {
         const d = String(r.date || '').slice(0, 10);
         if (!d || d > dnes) continue;                       // dnešok áno, budúcnosť nie
@@ -569,7 +581,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       const zoznam = Object.keys(podlaDna).sort().reverse().slice(0, dni).map(d => {
         const vsetky = podlaDna[d];
         const bodovany = vsetky.some(r => BODOVANE[r.type]);
-        const rows = vsetky.filter(r => r.verified !== false)
+        const rows = vsetky.filter(vPoradi(zak))
           .sort(poradieRiesitelov(bodovany))
           .map((r, i) => ({
             pos: i + 1, name: r.user_name || 'Tanečníčka', seconds: r.seconds,

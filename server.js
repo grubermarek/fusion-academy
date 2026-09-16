@@ -8345,7 +8345,7 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
       status: u.anonymous&&!isSelf ? '' : (u.status||''),
       birthday: isSelf ? (u.birthday||'') : undefined,
       gender, viewer_lang: viewerLang, viewer_is_admin: viewerIsAdmin, viewer_logged_in: !!req.session?.uid,
-      points: monthPoints,
+      points: isSelf ? monthPoints : { ...monthPoints, body_zakaz: undefined },
       membership_tier: memTier, membership_name: memName,
       winner_titles: winnerTitles,
       likes: likeCount, liked_by_me: likedByMe,
@@ -10758,6 +10758,21 @@ app.put('/api/admin/users/:id', adminAuth, async(req,res)=>{
     if(bank_account !== undefined) upd.bank_account = bank_account;
     if(sponsor_id !== undefined) upd.sponsor_id = sponsor_id || null;
     if(visit_count !== undefined) upd.visit_count = Math.max(0,parseInt(visit_count)||0);
+    // Zákaz bodov (Marek 16. 9.): kto v súťaži podvádza, príde o možnosť získavať body.
+    // Hrať a chodiť na hodiny môže ďalej, len mu body nepribúdajú a vypadne z rebríčka.
+    if(req.body.body_zakaz !== undefined){
+      const zak = !!req.body.body_zakaz;
+      const pred = await q.one(db.users,{_id:req.params.id});
+      if(!pred) return res.status(404).json({error:'Klientka nenájdená'});
+      upd.body_zakaz = zak;
+      upd.body_zakaz_at = zak ? nowISO() : null;
+      upd.body_zakaz_dovod = zak ? String(req.body.body_zakaz_dovod||'').trim().slice(0,300) : null;
+      if(!!pred.body_zakaz !== zak) await q.insert(db.notifications,{user_id:req.params.id, type:'body_zakaz',
+        title: zak ? '⚠️ Získavanie bodov máš pozastavené' : '✅ Body sa ti opäť rátajú',
+        body: zak ? 'Pri tvojom účte sme zistili porušenie pravidiel súťaže, preto ti body do súťaže nepribúdajú. Ak ide o omyl, napíš nám.'
+                  : 'Získavanie bodov do súťaže ti opäť funguje. Ďakujeme za férovú hru! 💛',
+        read:false, created_at:nowISO()}).catch(()=>{});
+    }
     await q.update(db.users,{_id:req.params.id},{$set:upd});
     res.json({ok:true});
   } catch(e){res.status(500).json({error:e.message});}
@@ -13605,6 +13620,7 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
       profile:{ id:u._id, name:u.name, email:u.email, phone:u.phone||'', created_at:u.created_at,
         member_since:u.member_since||null,
         user_type:u.user_type||'client', active:u.active!==false,
+        body_zakaz:!!u.body_zakaz, body_zakaz_dovod:u.body_zakaz_dovod||'', body_zakaz_at:u.body_zakaz_at||null,
         acq:{ utm_source:u.utm_source||'', utm_campaign:u.utm_campaign||'', lead_source:u.lead_source||'', is_meta:isMetaUser(u) },
         referral_credit:+u.referral_credit||0, notes:u.notes||'' },
       care:{ last_contact:kontakty[0]?{at:kontakty[0].created_at, by:kontakty[0].trainer_name,
@@ -14205,7 +14221,8 @@ async function pointsSummaryData(from, to){
   {
     const fromD=(from||'0000').slice(0,10), toD=(to||'9999').slice(0,10);
     const inRange=d=>{ d=(d||'').slice(0,10); return d>=fromD && d<=toD; };
-    const users=(await q.find(db.users,{is_admin:{$ne:true}, is_child:{$ne:true}})).filter(u=>!(u.imported&&!u.claimed)&&!u.anonymous);
+    // body_zakaz: za podvádzanie vypadne zo súťaže (Marek 16. 9.)
+    const users=(await q.find(db.users,{is_admin:{$ne:true}, is_child:{$ne:true}})).filter(u=>!(u.imported&&!u.claimed)&&!u.anonymous&&!u.body_zakaz);
     const bookings=await q.find(db.bookings,{});
     const isOnline=b=>/online/i.test(b.class_name||'')||/online/i.test(b.class_location||'')||b.online===true;
     const byUser={};
@@ -20606,6 +20623,8 @@ function hodinaSaRata(b, dnes){
 
 async function monthlyPointsFor(userId, month){
   month = month || today().slice(0,7);
+  const zakazBodov = await q.one(db.users,{_id:userId});
+  if(zakazBodov && zakazBodov.body_zakaz) return { month, total:0, items:[], body_zakaz:true };
   const bks = await q.find(db.bookings,{user_id:userId});
   const inMonth = b => { const d=b.booking_date||(b.created_at||'').slice(0,10); return (d||'').startsWith(month) && hodinaSaRata(b); };
   const attended = bks.filter(inMonth);

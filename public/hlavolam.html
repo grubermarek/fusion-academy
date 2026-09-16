@@ -50,6 +50,10 @@ html[data-theme="aurora"] .evb{background:linear-gradient(135deg,rgba(168,85,247
 html[data-theme="aurora"] .evb a.evb-c{background:linear-gradient(90deg,#A855F7,#EC4899);color:#fff}
 .actions{display:flex;gap:8px;margin-top:14px}
 .actions[hidden]{display:none}
+.fair{margin-top:10px;font-size:.78rem;color:var(--muted);text-align:center;line-height:1.45}
+.fair b{color:var(--cream)}
+.zakaz{background:rgba(229,115,115,.12);border:1px solid rgba(229,115,115,.4);color:#f0a9a9;
+  border-radius:12px;padding:11px 14px;margin:0 0 12px;font-size:.86rem;line-height:1.45}
 button{font-family:inherit;cursor:pointer;border:none;border-radius:12px;font-weight:800;font-size:.88rem;padding:12px}
 .btn-main{flex:1;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08}
 html[data-theme="aurora"] .btn-main{background:linear-gradient(90deg,#A855F7,#EC4899);color:#fff}
@@ -227,6 +231,7 @@ function render(){
     ${solvedToday?`<div class="done"><div class="e">🎉</div><h2>Dnešnú hádanku máš vyriešenú!</h2>
       <p>Zvládla si ju za <b>${fmtSec(P.my_seconds||0)}</b> a získala <b>${P.my_points} ${bodSlovo(P.my_points)}</b>.
       Nová hádanka je zajtra ráno.</p></div>`:''}
+    ${P.body_zakaz ? `<div class="zakaz">⚠️ <b>Získavanie bodov máš pozastavené</b> pre porušenie pravidiel súťaže. Hrať môžeš ďalej, ale body sa ti nepripisujú.</div>` : ''}
     ${P.banner ? `<div class="evb">
       <div class="evb-t">${P.banner.emoji||'🎉'} ${P.banner.title||''}</div>
       <div class="evb-x">${P.banner.text||''}</div>
@@ -260,6 +265,7 @@ function render(){
         +'<b style="color:var(--gold)">Máš jeden pokus</b> · '+(P.quiz_per_answer||1)+' '+bodSlovo(P.quiz_per_answer||1)+' za každú správnu odpoveď · 🥇 +'+bonusBezchyby()+' pre najrýchlejšiu s plným počtom — čas beží od otvorenia, poradie sa uzatvára o polnoci.'
       : 'Ťahaj prstom od <b>1</b> a spájaj čísla v poradí tak, aby si prešla <b>všetky políčka</b>.'}
 ${jeBodovana(P.type) ? '' : `<br><b style="color:var(--gold)">Za vyriešenie ${P.points} ${bodSlovo(P.points)}</b> · najrýchlejšie časy dňa navyše 🥇 +${(P.podium_bonus||[5,3,1])[0]} · 🥈 +${(P.podium_bonus||[5,3,1])[1]} · 🥉 +${(P.podium_bonus||[5,3,1])[2]} — čas beží od otvorenia, poradie sa uzatvára o polnoci.`}</div>
+    <div class="fair">⚠️ <b>Hraj férovo.</b> Ak zistíme, že niekto podvádza, odoberieme mu možnosť získavať body.</div>
     <div class="actions"${solvedToday?' hidden':''}>
       <button class="btn-ghost" onclick="resetPath()">Vymazať</button>
       <button class="btn-main" id="sendBtn" onclick="submit()">${jeBodovana(P.type)?'Odovzdať odpovede':P.type==='anagram'?'Odovzdať slová':'Odovzdať riešenie'}</button>
@@ -525,6 +531,7 @@ async function submit(){
       + (d.capped?'<br><span style="opacity:.8">Mesačný strop bodov z hlavolamu je vyčerpaný — hrať môžeš ďalej pre radosť. 💛</span>':'')
       + '<br>🥇 Ak sa udržíš v prvej trojke, ráno ti pribudne bonus (+'+((P.podium_bonus||[5,3,1]).join(' / +'))+').';
   }
+  if(d.body_zakaz) m.innerHTML += '<br>⚠️ Získavanie bodov máš pozastavené, preto sa ti body nepripísali.';
   solvedToday=true;
   const st=await api('/api/puzzle/today').catch(()=>null); if(st&&st.ok) P=st;
   if(P.type==='rhythm') ukazRiesenie();
