@@ -66,7 +66,10 @@ const graf = http.createServer((req, res) => {
   if (p === 'act_51759494/insights' && u.searchParams.get('level') === 'ad') return J({ data: [
     { ad_id: '111', ad_name: 'HEJ reklama', campaign_id: '9001', campaign_name: 'FA — Video HEJ BABY', spend: '5.10' },
     { ad_id: '222', ad_name: 'Zlá reklama', campaign_id: '9002', campaign_name: 'Kampaň bez karty', spend: '3.00' },
-    { ad_id: '444', ad_name: 'Stará', campaign_id: '9004', campaign_name: 'Vypnutá', spend: '0' } ] });
+    { ad_id: '444', ad_name: 'Stará', campaign_id: '9004', campaign_name: 'Vypnutá', spend: '0' },
+    { ad_id: '555', ad_name: 'Nábor Kids', campaign_id: '9005', campaign_name: 'Kids nábor', spend: '5.37' } ] });
+  if (p === '555' && f.includes('tracking_specs')) return J({ id: '555', name: 'Nábor Kids', adset: { end_time: '2026-09-13T13:00:00-0700' }, campaign: { stop_time: '2026-09-13T13:00:00-0700' },
+    tracking_specs: [], creative: { object_story_spec: { link_data: { link: BASE + '/neexistuje-kids' } } } });
   if (p.startsWith('act_51759494/')) return J({ data: [] });
   if (p === '111' && f.includes('tracking_specs')) return J({ id: '111', name: 'HEJ reklama',
     tracking_specs: [{ 'action.type': ['offsite_conversion'], fb_pixel: ['PIX123'] }],
@@ -189,6 +192,7 @@ const graf = http.createServer((req, res) => {
     ok('nález: Meta odmieta udalosti', kody.includes('capi'));
     ok('nález: registrácia z reklamy bez kampane (Cecília)', (d1.meranie.nalezy || []).some(n => n.kod === 'nepriradene' && /Cecilia Neznama/.test(n.detail)));
     ok('reklama bez útraty sa nekontroluje', !volania.some(v => v.startsWith('/444')));
+    ok('skončená reklama bez poplachu, len poznámka', !text.includes('Kids nábor') && (d1.meranie.ok || []).some(x => /Kids nábor.*skončila 13\. 9\. 2026/.test(x)), JSON.stringify(d1.meranie.ok));
     await sleep(500);
     const notif = rd('notifications.db').filter(n => n.type === 'meranie');
     const mojich = notif.filter(n => n.user_id === 'qaMrAdmin000001');

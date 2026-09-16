@@ -22369,8 +22369,14 @@ async function strazcaMerania({upozornit=true}={}){
       for(const r of reklamy){
         const meno='„'+(r.campaign_name||r.campaign_id)+'"';
         let ad;
-        try{ ad=await metaGraph(tok, r.ad_id+'?fields=name,tracking_specs,creative{url_tags,link_url,object_story_spec{link_data{link},video_data{call_to_action}},asset_feed_spec{link_urls}}'); }catch(e){ continue; }
+        try{ ad=await metaGraph(tok, r.ad_id+'?fields=name,tracking_specs,adset{end_time},campaign{stop_time},creative{url_tags,link_url,object_story_spec{link_data{link},video_data{call_to_action}},asset_feed_spec{link_urls}}'); }catch(e){ continue; }
         if(!ad || ad.error) continue;
+        // Reklama s uplynutým koncom (napr. nábor Kids do 13. 9.) už nemíňa — nie je čo opravovať
+        const konce=[(ad.adset||{}).end_time, (ad.campaign||{}).stop_time].map(x=>x?Date.parse(x):NaN).filter(Number.isFinite);
+        if(konce.length && Math.min(...konce) < Date.now()){
+          ok.push(meno+': skončila '+new Date(Math.min(...konce)).toLocaleDateString('sk-SK'));
+          continue;
+        }
         const cr=ad.creative||{}, oss=cr.object_story_spec||{};
         const odkaz=(((oss.video_data||{}).call_to_action||{}).value||{}).link || (oss.link_data||{}).link || cr.link_url
           || ((((cr.asset_feed_spec||{}).link_urls)||[])[0]||{}).website_url || '';
