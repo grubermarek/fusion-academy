@@ -5062,7 +5062,7 @@ async function loadAds(){
     (pod?'<div class="text-muted" style="font-size:.68rem">'+pod+'</div>':'')+'</div></div>';
 
   let h='<div class="row g-2 mb-3">'
-    + kachlicka('Minuté', adEur(t.spend), t.kampani+' kampaní'+(t.zive!=null?' · '+t.zive+' živých':''))
+    + kachlicka('Minuté', adEur(t.spend), t.kampani+' kampaní v zozname'+(t.zive!=null?' · '+t.zive+' živých':'')+((t.nemerane&&t.nemerane.kampani)?' · z toho '+adEur(t.nemerane.spend)+' nemerané':''))
     + kachlicka('Tržba za obdobie', adEur(t.revenue), 'celá appka, nie len z reklamy')
     + kachlicka('ROAS', t.roas!=null? t.roas+'×' : '—', 'tržba / reklama')
     + kachlicka('Kliky', adNum(t.clicks), 'CPC '+(t.cpc!=null?adEur(t.cpc):'—'))
@@ -5072,6 +5072,7 @@ async function loadAds(){
 
   // ROAS je za celú tržbu appky — nech si to nikto nepomýli s tržbou z reklamy
   h+='<div class="text-muted mb-3" style="font-size:.72rem">ROAS tu porovnáva <b>celú</b> tržbu appky s reklamou — nie je to tržba priradená kampaniam. Priradené tržby sú na kartách kampaní nižšie.</div>';
+  if(t.nemerane && t.nemerane.kampani) h+='<div class="text-muted mb-3" style="font-size:.72rem">📦 <b>'+t.nemerane.kampani+'</b> starých kampaní bez merania (bez utm aj karty) za <b>'+adEur(t.nemerane.spend)+'</b> je skrytých zo zoznamu a z klikov, CPC a leadov. V „Minuté“, v mesiacoch aj v nákladoch ostávajú započítané.</div>';
 
   const di=d.diery||{};
   if(di.bez_utm || di.bez_karty || di.karta_bez_utm){
@@ -5089,7 +5090,7 @@ async function loadAds(){
       +'<thead><tr><th>Mesiac</th><th class="text-end">Reklama</th><th class="text-end">Tržba appky</th><th class="text-end">ROAS</th><th class="text-end">Kliky</th><th class="text-end">Leady</th></tr></thead><tbody>'
       + rad.map(r=>'<tr'+(r.month===adMesiac?' class="table-active"':'')+'>'
         +'<td><a href="#" onclick="adNaMesiac(&#39;'+r.month+'&#39;);return false" class="text-decoration-none">'+r.month+'</a></td>'
-        +'<td class="text-end">'+adEur(r.spend)+'</td>'
+        +'<td class="text-end">'+adEur(r.spend)+(r.nemerane?'<div class="text-muted" style="font-size:.66rem">z toho nemerané '+adEur(r.nemerane)+'</div>':'')+'</td>'
         +'<td class="text-end">'+adEur(r.revenue)+'</td>'
         +'<td class="text-end '+(r.roas!=null && r.roas<1?'text-danger':'')+'">'+(r.roas!=null?r.roas+'×':'—')+'</td>'
         +'<td class="text-end">'+adNum(r.clicks)+'</td>'

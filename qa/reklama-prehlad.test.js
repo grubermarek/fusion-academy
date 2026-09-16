@@ -41,6 +41,7 @@ async function j(url, opts) {
 }
 const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.stringify(r)).join('\n') + '\n');
 
+const TERAZ = new Date().toISOString().slice(0, 7);
 (async () => {
   const hash = bcrypt.hashSync('Heslo123!', 10);
 
@@ -67,6 +68,10 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     { _id: 'qaAdsC3', platform: 'meta', campaign_id: '333', name: 'Príspevok: „Tancuj s nami"',
       status: 'ACTIVE', objective: 'OUTCOME_ENGAGEMENT', created: '2026-07-01',
       first_month: '2026-07', last_month: '2026-07', ma_utm: false },
+    // beží teraz, bez utm aj bez karty — nesmie sa skryť, je to chyba na opravu
+    { _id: 'qaAdsC5', platform: 'meta', campaign_id: '555', name: 'Nová kampaň bez merania',
+      status: 'ACTIVE', objective: 'OUTCOME_TRAFFIC', created: TERAZ + '-01',
+      first_month: TERAZ, last_month: TERAZ, ma_utm: false },
   ]);
   // mesačné čísla
   w('ad_stats.db', [
@@ -81,6 +86,8 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     // kampaň, ktorá už bola v Mete zmazaná — v registri nie je, peniaze minula
     { _id: 'qaAdsS5', platform: 'meta', campaign_id: '444', campaign_name: 'Zmazaná kampaň',
       month: '2026-07', spend: 20, impressions: 5000, clicks: 100, reach: 3000, leads: 0 },
+    { _id: 'qaAdsS6', platform: 'meta', campaign_id: '555', campaign_name: 'Nová kampaň bez merania',
+      month: TERAZ, spend: 30, impressions: 10000, clicks: 300, reach: 4000, leads: 0 },
   ]);
   // karty existujú len pre prvé dve kampane
   w('campaigns.db', [
@@ -114,30 +121,30 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     console.log('\n2) Celá história:');
     const all = (await j('/api/service/ads-overview?month=all', { headers: T })).d;
     ok('prehľad prišiel', all && all.ok, JSON.stringify(all).slice(0, 200));
-    ok('sčítalo všetky štyri kampane, aj tú bez karty a zmazanú', all.rows.length === 4, 'rows=' + all.rows.length);
-    ok('minuté = 400 € (vrátane zmazanej kampane)', all.totals.spend === 400, String(all.totals.spend));
-    ok('kliky = 2 750', all.totals.clicks === 2750, String(all.totals.clicks));
-    ok('CPC sedí (400/2750)', all.totals.cpc === 0.15, String(all.totals.cpc));
-    ok('CTR sedí (2750/145000)', all.totals.ctr === 1.9, String(all.totals.ctr));
-    ok('CPM sedí', all.totals.cpm === 2.76, String(all.totals.cpm));
+    // Marek 16. 9.: staré kampane bez merania preč zo zoznamu a štatistík, útrata ostáva
+    ok('v zozname sú merané a bežiaca kampaň (3), staré nemerané nie', all.rows.length === 3 && !all.rows.some(r => ['333', '444'].includes(r.campaign_id)), all.rows.map(r => r.campaign_id).join(','));
+    ok('minuté = 430 € (vrátane skrytých a zmazanej)', all.totals.spend === 430, String(all.totals.spend));
+    ok('nemerané: 2 kampane za 100 €', all.totals.nemerane && all.totals.nemerane.kampani === 2 && all.totals.nemerane.spend === 100, JSON.stringify(all.totals.nemerane));
+    ok('útrata kampaní v zozname 330 €', all.totals.spend_zoznam === 330, String(all.totals.spend_zoznam));
+    ok('kliky len zo zoznamu = 2 550', all.totals.clicks === 2550, String(all.totals.clicks));
+    ok('CPC sedí (330/2550)', all.totals.cpc === 0.13, String(all.totals.cpc));
+    ok('CTR sedí (2550/110000)', all.totals.ctr === 2.32, String(all.totals.ctr));
+    ok('CPM sedí (330/110000)', all.totals.cpm === 3, String(all.totals.cpm));
     ok('cena za lead sa ráta len z leadovej kampane (150/30)', all.totals.cpl === 5, String(all.totals.cpl));
     ok('zoradené od najdrahšej', all.rows[0].spend >= all.rows[1].spend && all.rows[1].spend >= all.rows[2].spend,
       all.rows.map(r=>r.spend).join(' > '));
 
     console.log('\n3) Diery, ktoré treba dolepiť:');
-    ok('kampaň bez utm je pomenovaná', all.diery.bez_utm === 1, String(all.diery.bez_utm));
-    ok('a s ňou aj suma, ktorú prehltla', all.diery.bez_utm_spend === 80, String(all.diery.bez_utm_spend));
-    ok('kampane bez karty sú pomenované', all.diery.bez_karty === 2, String(all.diery.bez_karty));
-    ok('zmazaná kampaň sa v prehľade nestratila',
-      (all.rows.find(r => r.campaign_id === '444') || {}).status === 'DELETED');
+    ok('bežiaca kampaň bez utm ostáva viditeľná a hlásená', all.diery.bez_utm === 1 && all.diery.bez_utm_spend === 30, JSON.stringify(all.diery));
+    ok('bez karty je len bežiaca kampaň', all.diery.bez_karty === 1, String(all.diery.bez_karty));
     ok('karta sa priradila správne',
       (all.rows.find(r => r.campaign_id === '111') || {}).karta === 'QA — karta Web');
-    ok('doboostovaný príspevok kartu nemá', (all.rows.find(r => r.campaign_id === '333') || {}).karta === null);
 
     console.log('\n4) Mesačný rad:');
     const jul = all.rad.find(r => r.month === '2026-07');
     const aug = all.rad.find(r => r.month === '2026-08');
-    ok('júl: 200 € reklamy', jul && jul.spend === 200, jul && String(jul.spend));
+    ok('júl: 200 € reklamy (z toho 100 € nemerané)', jul && jul.spend === 200 && jul.nemerane === 100, jul && JSON.stringify(jul));
+    ok('júl: kliky len z meranej kampane (1 000)', jul && jul.clicks === 1000, jul && String(jul.clicks));
     ok('august: 200 € reklamy', aug && aug.spend === 200, aug && String(aug.spend));
     ok('august pozná tržbu appky 100 €', aug && aug.revenue === 100, aug && String(aug.revenue));
     ok('a ROAS 0,5× (prerobené)', aug && aug.roas === 0.5, aug && String(aug.roas));
@@ -148,6 +155,9 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     ok('august má len 2 kampane', m8.rows.length === 2, 'rows=' + m8.rows.length);
     ok('minuté v auguste = 200 €', m8.totals.spend === 200, String(m8.totals.spend));
     ok('doboostovaný príspevok z júla tam nie je', !m8.rows.some(r => r.campaign_id === '333'));
+    ok('v auguste nič nemerané', m8.totals.nemerane.kampani === 0 && m8.totals.spend_zoznam === 200, JSON.stringify(m8.totals));
+    const m7 = (await j('/api/service/ads-overview?month=2026-07', { headers: T })).d;
+    ok('júl: minuté 200 €, v zozname len Zumba Web', m7.totals.spend === 200 && m7.rows.length === 1 && m7.totals.nemerane.spend === 100, JSON.stringify({ s: m7.totals.spend, n: m7.rows.length, x: m7.totals.nemerane }));
     ok('v auguste už žiadna kampaň bez utm nebeží', m8.diery.bez_utm === 0, String(m8.diery.bez_utm));
     ok('tržba za august je 100 €', m8.totals.revenue === 100, String(m8.totals.revenue));
     ok('ROAS augusta 0,5×', m8.totals.roas === 0.5, String(m8.totals.roas));

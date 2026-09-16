@@ -22529,7 +22529,7 @@ async function adOverview(mesiac){
   for(const x of stats) if(!reg[x.campaign_id]) reg[x.campaign_id]={ campaign_id:x.campaign_id,
     name:x.campaign_name||('Kampaň '+x.campaign_id), status:'DELETED', objective:'', created:'',
     first_month:null, last_month:null, ma_utm:null };
-  const rows=Object.values(reg).map(c=>{
+  let rows=Object.values(reg).map(c=>{
     const a=podla[c.campaign_id]||{spend:0,impressions:0,clicks:0,leads:0,reach:0};
     return { campaign_id:c.campaign_id, name:c.name, status:c.status, objective:c.objective||'',
       created:c.created||'', first_month:c.first_month||null, last_month:c.last_month||null,
@@ -22542,21 +22542,38 @@ async function adOverview(mesiac){
       karta: kartaPre[c.campaign_id]||null };
   }).filter(r=>r.spend>0).sort((a,b)=>b.spend-a.spend);
 
+  // Marek 16. 9.: kampane, ktoré sa nedali merať (bez utm a bez karty), nepatria do zoznamu ani
+  // do štatistík výkonu — „len zachovaj, koľko sme minuli". Ich peniaze ostávajú v útrate,
+  // mesačnom rade aj v nákladoch. Kampaň bez merania, ktorá ešte beží, sa neskrýva (je to chyba na opravu).
+  const dnes10=today();
+  const minuly=(()=>{ const d2=new Date(dnes10+'T12:00:00Z'); d2.setUTCMonth(d2.getUTCMonth()-1); return d2.toISOString().slice(0,7); })();
+  const merana=r=>r.ma_utm===true || !!r.karta;
+  const ziva=r=>!!(r.last_month && r.last_month>=minuly);
+  const vsetkyRiadky=rows;
+  const skryte=vsetkyRiadky.filter(r=>!merana(r) && !ziva(r));
+  const skryteId=new Set(skryte.map(r=>r.campaign_id));
+  rows=vsetkyRiadky.filter(r=>!skryteId.has(r.campaign_id));
+
   // Mesačný rad: minuté vs. zarobené. Bez tržby vedľa spendu je spend len číslo.
   const mesiace={};
   for(const x of stats){ const m=x.month; if(!/^\d{4}-\d{2}$/.test(m||'')) continue;
-    const y=mesiace[m]=mesiace[m]||{month:m, spend:0, clicks:0, impressions:0, leads:0};
-    y.spend+=+x.spend||0; y.clicks+=+x.clicks||0; y.impressions+=+x.impressions||0; y.leads+=+x.leads||0; }
+    const y=mesiace[m]=mesiace[m]||{month:m, spend:0, nemerane:0, clicks:0, impressions:0, leads:0};
+    y.spend+=+x.spend||0;
+    if(skryteId.has(x.campaign_id)){ y.nemerane+=+x.spend||0; continue; }
+    y.clicks+=+x.clicks||0; y.impressions+=+x.impressions||0; y.leads+=+x.leads||0; }
   const ev=await revenueEvents({includeImported:true});
   const rad=Object.keys(mesiace).sort().map(m=>{
     const y=mesiace[m]; const trzba=revSum(ev, m);
-    return { month:m, spend:+y.spend.toFixed(2), clicks:y.clicks, impressions:y.impressions,
+    return { month:m, spend:+y.spend.toFixed(2), nemerane:+y.nemerane.toFixed(2), clicks:y.clicks, impressions:y.impressions,
       leads:y.leads, revenue:trzba,
       roas: y.spend ? +(trzba/y.spend).toFixed(2) : null };
   });
 
   const sc=(k)=>rows.reduce((s,r)=>s+(+r[k]||0),0);
-  const spend=+sc('spend').toFixed(2), clicks=sc('clicks'), impressions=sc('impressions'), leads=sc('leads');
+  // Minuté = všetko (aj nemerané); kliky, CPC, CTR, CPM, leady = len kampane v zozname
+  const spend=+vsetkyRiadky.reduce((s,r)=>s+r.spend,0).toFixed(2);
+  const spendZoznam=+sc('spend').toFixed(2), clicks=sc('clicks'), impressions=sc('impressions'), leads=sc('leads');
+  const nemerane={ kampani:skryte.length, spend:+skryte.reduce((s,r)=>s+r.spend,0).toFixed(2) };
   const trzbaObd = vsetko ? revSum(ev) : revSum(ev, mesiac);
   // Leadové kampane majú atribúciu cez formulár (lead_source), utm pri nich netreba
   // — inak by hlásenie o dierach kričalo na kampaň, ktorá je v poriadku.
@@ -22568,16 +22585,14 @@ async function adOverview(mesiac){
   const kartaBezUtm=rows.filter(r=>r.karta && r.ma_utm===false && naUtm(r));
   // „ACTIVE" pri doboostovanom príspevku ostáva navždy — reálne beží len to,
   // čo minulo peniaze tento alebo minulý mesiac.
-  const dnes10=today();
-  const minuly=(()=>{ const d2=new Date(dnes10+'T12:00:00Z'); d2.setUTCMonth(d2.getUTCMonth()-1); return d2.toISOString().slice(0,7); })();
-  const zive=rows.filter(r=>r.last_month && r.last_month>=minuly);
+  const zive=rows.filter(ziva);
   const sync=await q.one(db.settings,{key:AD_SYNC_KEY});
   return { ok:true, mesiac: vsetko?'all':mesiac,
     mesiace_k_dispozicii: Object.keys(mesiace).sort().reverse(),
-    totals:{ spend, clicks, impressions, leads, kampani:rows.length,
-      cpc: clicks?+(spend/clicks).toFixed(2):null,
+    totals:{ spend, spend_zoznam:spendZoznam, nemerane, clicks, impressions, leads, kampani:rows.length,
+      cpc: clicks?+(spendZoznam/clicks).toFixed(2):null,
       ctr: impressions?+((clicks/impressions)*100).toFixed(2):null,
-      cpm: impressions?+((spend/impressions)*1000).toFixed(2):null,
+      cpm: impressions?+((spendZoznam/impressions)*1000).toFixed(2):null,
       // Cenu za lead delíme len výdajom kampaní, ktoré leady naozaj priniesli —
       // inak by ju nafúkli peniaze minuté na kampane s úplne iným cieľom.
       cpl: leads?+(rows.filter(r=>r.leads>0).reduce((s,r)=>s+r.spend,0)/leads).toFixed(2):null,
