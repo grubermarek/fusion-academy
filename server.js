@@ -11106,13 +11106,18 @@ app.post('/api/service/book-attend', async(req,res)=>{
         class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
         day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
         user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||'',
-        booking_date:bdate, status:'confirmed', free_class:false,
+        booking_date:bdate, status:'confirmed', free_class: req.body.access_method==='free',
         access_method: req.body.pay_plan ? 'pay_on_site' : (req.body.access_method||'pay_on_site'),
         pay_on_site: !!req.body.pay_plan || !!req.body.pay_on_site,
         pay_amount: req.body.pay_amount!=null ? +req.body.pay_amount : null,
         pay_plan: req.body.pay_plan||null,
         pay_plan_name: req.body.pay_plan && MEMBERSHIP_PLANS[req.body.pay_plan] ? MEMBERSHIP_PLANS[req.body.pay_plan].name : null,
-        notes:'Doplnené štúdiom', created_at:nowISO() });
+        notes: String(req.body.notes||'Doplnené štúdiom').slice(0,200), created_at:nowISO() });
+      // Budúcu rezerváciu klientka uvidí aj v notifikáciách (ako pri zápise od trénera)
+      if(req.body.attended===false) await q.insert(db.notifications,{user_id:u._id, type:'booking',
+        title:'Rezervácia potvrdená ✅',
+        body:`${cls.name} ${cls.location} – ${DAYS_SK[cls.day_of_week].toLowerCase()} ${+bdate.slice(8,10)}. ${+bdate.slice(5,7)}. o ${cls.time_start}`+(req.body.access_method==='free'?' · 🎁 hodina zadarmo':''),
+        read:false, created_at:nowISO()}).catch(()=>{});
     }
     if(req.body.attended!==false && b.status!=='attended'){
       await q.update(db.bookings,{_id:b._id},{$set:{status:'attended', attendance_status:'attended',
@@ -11123,6 +11128,43 @@ app.post('/api/service/book-attend', async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Presun rezervácie na inú hodinu alebo deň (Marek 16. 9.: „Rigovú preložiť z nedele na piatok").
+// Spôsob vstupu ostáva (prvá hodina zadarmo, členstvo, platba na mieste); klientka dostane oznam.
+app.post('/api/service/booking-move', async(req,res)=>{
+  if(!servisToken(req)) return res.status(404).end();
+  try{
+    const b=await q.one(db.bookings,{_id:String(req.body.booking_id||'')});
+    if(!b || b.status==='cancelled') return res.status(404).json({error:'Rezervácia nenájdená'});
+    if(b.status==='attended' || b.attendance_status==='attended') return res.status(400).json({error:'Na hodine už bola — presúvať sa nedá'});
+    const cls=await q.one(db.classes,{_id:String(req.body.class_id||b.class_id)});
+    if(!cls || cls.active===false) return res.status(404).json({error:'Hodina nenájdená'});
+    const bdate=String(req.body.date||'').slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(bdate)) return res.status(400).json({error:'Zadaj dátum RRRR-MM-DD'});
+    if(bdate<today()) return res.status(400).json({error:'Dátum je v minulosti'});
+    const den=new Date(bdate+'T12:00:00Z').getUTCDay();
+    if(den!==cls.day_of_week) return res.status(400).json({error:cls.name+' '+cls.location+' je v deň '+DAYS_SK[cls.day_of_week]+', '+bdate+' je '+DAYS_SK[den]});
+    if(b.class_id===cls._id && b.booking_date===bdate) return res.status(400).json({error:'Rezervácia už je na tejto hodine'});
+    if(await q.one(db.class_cancellations,{class_id:cls._id, date:bdate})) return res.status(400).json({error:'Hodina je v ten deň zrušená'});
+    const vysl=await withBookingLock(cls._id+'@'+bdate, async()=>{
+      if(await q.one(db.bookings,{user_id:b.user_id, class_id:cls._id, booking_date:bdate, status:{$ne:'cancelled'}, _id:{$ne:b._id}})) return {dup:true};
+      const obs=await q.count(db.bookings,{class_id:cls._id, booking_date:bdate, status:{$ne:'cancelled'}});
+      if(cls.capacity && obs>=cls.capacity) return {plna:true};
+      await q.update(db.bookings,{_id:b._id},{$set:{class_id:cls._id, class_name:cls.name, class_emoji:cls.emoji||'💃',
+        class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
+        day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week], booking_date:bdate,
+        moved_from:{class_id:b.class_id, class_name:b.class_name, booking_date:b.booking_date, time_start:b.class_time_start, at:nowISO()}}});
+      return {ok:true};
+    });
+    if(vysl.dup) return res.status(409).json({error:'Na tú hodinu už rezerváciu má'});
+    if(vysl.plna) return res.status(400).json({error:'Hodina je plná'});
+    const kedy=d=>DAYS_SK[new Date(d+'T12:00:00Z').getUTCDay()].toLowerCase()+' '+(+d.slice(8,10))+'. '+(+d.slice(5,7))+'.';
+    if(req.body.oznamit!==false) await q.insert(db.notifications,{user_id:b.user_id, type:'booking',
+      title:'📅 Rezervácia presunutá',
+      body:`${cls.name} ${cls.location}: ${kedy(bdate)} o ${cls.time_start} (namiesto ${kedy(b.booking_date)} o ${b.class_time_start})`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+    res.json({ok:true, klientka:b.user_name, z:b.class_name+' '+b.booking_date+' '+b.class_time_start, na:cls.name+' '+cls.location+' '+bdate+' '+cls.time_start});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 // Zruš nezaplatenú žiadosť o platbu (aby sa neúčtovala druhýkrát).
 app.post('/api/service/payment-cancel', async(req,res)=>{
   if(!servisToken(req)) return res.status(404).end();
