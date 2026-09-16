@@ -94,6 +94,31 @@ a.kto:hover{color:var(--gold);text-decoration:underline}
 .tance-cakaju{display:flex;flex-wrap:wrap;gap:7px}
 .tance-cakaju .caka{background:#1d1a15;border:1px solid #2e2a20;border-radius:999px;
   padding:5px 12px;font-size:.83rem;color:var(--muted)}
+/* rodič ↔ dieťa */
+.btn-g{background:linear-gradient(135deg,#C9A84C,#a5842f);color:#161310;border:none;border-radius:10px;
+  padding:11px 20px;font-weight:800;font-size:.92rem;cursor:pointer;font-family:inherit}
+.btn-g:disabled{opacity:.55;cursor:default}
+.btn-o{background:transparent;color:var(--gold);border:1px solid rgba(201,168,76,.5);border-radius:10px;
+  padding:9px 14px;font-weight:700;font-size:.85rem;cursor:pointer;font-family:inherit}
+.btn-o:disabled{opacity:.55;cursor:default}
+.btn-g:focus-visible,.btn-o:focus-visible,.vstup:focus-visible,.deti a:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.kod{font-family:ui-monospace,Consolas,monospace;font-size:1.7rem;font-weight:900;letter-spacing:.22em;color:var(--gold);
+  background:#12100a;border:1px dashed rgba(201,168,76,.5);border-radius:12px;padding:10px 14px;text-align:center;margin:10px 0}
+.vstup{flex:1;min-width:0;background:#12100a;border:1px solid #3a3428;color:var(--cream);border-radius:10px;
+  padding:11px 12px;font-size:1.05rem;font-family:ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase}
+.riadok{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.deti{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.deti a{background:#1d1a15;border:1px solid #2e2a20;border-radius:999px;padding:7px 14px;font-size:.85rem;
+  color:var(--cream);text-decoration:none;font-weight:700}
+.deti a.on{background:rgba(201,168,76,.16);border-color:rgba(201,168,76,.55);color:var(--gold)}
+.oznam{border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:.9rem}
+.oznam.ok{background:rgba(124,179,66,.16);border:1px solid rgba(124,179,66,.5)}
+.oznam.chyba{background:rgba(224,86,86,.12);border:1px solid rgba(224,86,86,.45);color:#ffb4b4}
+.suhlas{border-color:rgba(126,200,227,.45)}
+.suhlas p{font-size:.85rem;color:var(--muted);margin:0 0 10px;line-height:1.5}
+.suhlas a{color:#7ec8e3}
+.uz .r .akcie{display:flex;gap:6px}
+.uz .r .akcie button{padding:5px 10px;font-size:.75rem}
 </style>
 </head>
 <body>
@@ -135,9 +160,14 @@ function rozvrhKarta(c, lessons){
       const detail=!maDetail ? '' : `<div class="rdet" hidden>
           ${(l.dances||[]).length?`<div class="rdet-r">💃 <b>Učilo sa:</b> ${l.dances.map(esc).join(', ')}</div>`:''}
           ${l.note?`<div class="rdet-r">📝 ${esc(l.note)}</div>`:''}
-          ${l.recorded ? (l.absent.length
+          ${!l.recorded ? '' : l.absent==null
+            // Rodič nevidí, kto zo spolužiakov chýbal — len svoje dieťa (16. 9.)
+            ? (l.dieta_chybalo
+              ? `<div class="rdet-r ja-chybal">🚫 ${esc(window._DIETA||'Dieťa')} na lekcii chýbal/a.</div>`
+              : `<div class="rdet-r">✅ ${esc(window._DIETA||'Dieťa')} bol/a na lekcii.</div>`)
+            : (l.absent.length
               ? `<div class="rdet-r">🚫 <b>Chýbali:</b> ${l.absent.map(esc).join(', ')}</div>`
-              : `<div class="rdet-r">✅ Prišli všetci</div>`) : ''}
+              : `<div class="rdet-r">✅ Prišli všetci</div>`)}
           ${l.me_absent===true?`<div class="rdet-r ja-chybal">Ty si chýbal/a — dobehni si to na ďalšej lekcii.</div>`:''}
         </div>`;
       return `<div class="rterm${x.cancelled?' zrus':(bolo?' bolo':'')}${maDetail?' klik':''}"${maDetail?' onclick="this.querySelector(\'.rdet\').hidden=!this.querySelector(\'.rdet\').hidden"':''}>
@@ -229,7 +259,7 @@ function chatCas(iso){
 }
 function chatKarta(){
   return `<div class="card" id="chatKarta">
-    <h3>💬 Chat skupiny <small style="color:var(--muted);font-weight:400">· píšu sem žiaci aj učitelia</small></h3>
+    <h3>💬 Chat skupiny <small style="color:var(--muted);font-weight:400">· žiaci, rodičia, učitelia aj lektor</small></h3>
     <div class="chat-zoznam" id="chatZoznam"><div class="muted">Načítavam…</div></div>
     <div class="chat-pisanie">
       <textarea id="chatText" rows="1" maxlength="600" placeholder="Napíš správu skupine…"
@@ -283,15 +313,174 @@ async function chatZmaz(id){
   try{ await fetch('/api/vencek/chat/'+encodeURIComponent(id),{method:'DELETE',credentials:'include'}); }catch(e){}
   chatNacitaj();
 }
-async function platitKartou(btn){
+const postJ=(url,telo)=>fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(telo||{})});
+async function platitKartou(btn, dietaId){
   const pov=btn.textContent;
   btn.disabled=true; btn.textContent='Otváram platbu…';
   try{
-    const r=await (await fetch('/api/vencek/checkout',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:'{}'})).json();
+    const r=await (await postJ('/api/vencek/checkout', dietaId?{dieta_id:dietaId}:{})).json();
     if(r&&r.url){ location.href=r.url; return; }
     alert(r&&r.error ? r.error : 'Platbu sa nepodarilo otvoriť. Skús to znova alebo zaplať u lektora.');
   }catch(e){ alert('Platbu sa nepodarilo otvoriť. Skús to znova alebo zaplať u lektora.'); }
   btn.disabled=false; btn.textContent=pov;
+}
+// ── Rodič ↔ dieťa (16. 9.) ─────────────────────────────────────────────────
+// Rodič sa k dieťaťu pripojí kódom z appky dieťaťa, alebo dieťa klikne na odkaz od rodiča.
+function oznam(html, ok){
+  const b=document.createElement('div');
+  b.className='oznam '+(ok?'ok':'chyba');
+  b.innerHTML=html;
+  const host=document.getElementById('host');
+  host.parentNode.insertBefore(b, host);
+}
+async function zdielat(text, url, btn){
+  try{
+    if(navigator.share){ await navigator.share({text, url}); return; }
+  }catch(e){ if(e && e.name==='AbortError') return; }
+  try{
+    await navigator.clipboard.writeText(text+' '+url);
+    if(btn){ const p=btn.textContent; btn.textContent='✅ Skopírované'; setTimeout(()=>btn.textContent=p, 2200); }
+  }catch(e){ prompt('Skopírujte si odkaz:', url); }
+}
+function pripojKartu(prve){
+  return `<div class="card">
+    <h3>${prve?'👨‍👩‍👧 Pripojte svoje dieťa':'➕ Pripojiť ďalšie dieťa'}</h3>
+    <div class="muted" style="margin-bottom:10px">Dieťa nájde 6-miestny kód vo svojej appke v sekcii <b>Venčeky → Rodičia</b>.</div>
+    <div class="riadok">
+      <input class="vstup" id="kodDietata" maxlength="8" autocomplete="off" autocapitalize="characters" placeholder="napr. K7M2QX" aria-label="Kód dieťaťa"
+        onkeydown="if(event.key==='Enter')pripojitKod(document.getElementById('kodBtn'))">
+      <button class="btn-g" id="kodBtn" onclick="pripojitKod(this)">Pripojiť</button>
+    </div>
+    <div class="muted" id="kodChyba" style="color:#ffb4b4;margin-top:8px" hidden></div>
+    ${window._POZVANKA?`<div class="muted" style="margin-top:14px">Alebo pošlite dieťaťu odkaz — keď sa cez neho zaregistruje alebo prihlási, pripojí sa k vám samo.</div>
+    <button class="btn-o" style="margin-top:8px" onclick="zdielat('Pripoj sa ku mne vo Fusion venčeku, nech vidím tvoj kurz:', window._POZVANKA, this)">📤 Poslať odkaz dieťaťu</button>`:''}
+  </div>`;
+}
+async function pripojitKod(btn){
+  const vstup=document.getElementById('kodDietata'), ch=document.getElementById('kodChyba');
+  const kod=(vstup.value||'').trim();
+  if(kod.length<6){ ch.hidden=false; ch.textContent='Kód má 6 znakov.'; vstup.focus(); return; }
+  btn.disabled=true; ch.hidden=true;
+  try{
+    const r=await postJ('/api/vencek/rodic/pripojit',{kod});
+    const j=await r.json().catch(()=>({}));
+    if(r.ok && j.ok){ location.href='/vencek?dieta='+encodeURIComponent(j.dieta.id); return; }
+    ch.hidden=false; ch.textContent=j.error||'Pripojenie sa nepodarilo.';
+  }catch(e){ ch.hidden=false; ch.textContent='Pripojenie sa nepodarilo. Skúste to znova.'; }
+  btn.disabled=false;
+}
+async function dajSuhlas(btn, dietaId){
+  btn.disabled=true;
+  try{
+    const j=await (await postJ('/api/vencek/rodic/suhlas',{dieta_id:dietaId})).json();
+    if(j && j.ok){ btn.closest('.card').innerHTML='<div class="muted">✅ Súhlas je zaznamenaný. Ďakujeme.</div>'; return; }
+    alert((j&&j.error)||'Súhlas sa nepodarilo uložiť.');
+  }catch(e){ alert('Súhlas sa nepodarilo uložiť.'); }
+  btn.disabled=false;
+}
+function rodiciaKarta(d){
+  if(!d.kod_rodica) return '';
+  const rodicia=d.rodicia||[];
+  return `<div class="card">
+    <h3>👨‍👩‍👧 Rodičia</h3>
+    ${rodicia.length
+      ? `<div class="muted" style="margin-bottom:8px">Pripojení: <b style="color:var(--cream)">${rodicia.map(r=>esc(r.name)).join(', ')}</b> — vidia tvoju dochádzku, progres a platbu kurzu.</div>`
+      : `<div class="muted" style="margin-bottom:8px">Pošli rodičovi odkaz — uvidí tvoju dochádzku a progres a kurz môže zaplatiť za teba. Spolužiakov neuvidí.</div>`}
+    <button class="btn-g" onclick="zdielat('Pripoj sa ku mne vo Fusion venčeku (kód ${esc(d.kod_rodica)}):', '${esc(d.odkaz_rodica)}', this)">📤 Poslať odkaz rodičovi</button>
+    <div class="muted" style="margin-top:12px">Ak už rodič appku má, stačí mu tento kód:</div>
+    <div class="kod">${esc(d.kod_rodica)}</div>
+  </div>`;
+}
+function rodicView(d, host){
+  const deti=d.deti||[];
+  window._POZVANKA=d.pozvanka_odkaz||'';
+  if(!d.dieta){
+    host.innerHTML=pripojKartu(true)
+      +(d.class?`<div class="muted" style="margin-bottom:8px">🏫 ${esc(d.school||'')}</div>`+classCard(d.class):'');
+    return;
+  }
+  const x=d.dieta, meno=String(x.name||'').split(' ')[0];
+  window._DIETA=meno;
+  const prepinac=deti.length>1 ? `<div class="deti">${deti.map(k=>
+    `<a href="/vencek?dieta=${encodeURIComponent(k.id)}" class="${k.id===x.id?'on':''}">${esc(String(k.name||'').split(' ')[0])}</a>`).join('')}</div>` : '';
+  const suhlas=x.suhlas ? '' : `<div class="card suhlas">
+    <h3>✍️ Súhlas rodiča</h3>
+    <p>Súhlasím, aby Fusion Academy spracúvala údaje môjho dieťaťa (<b style="color:var(--cream)">${esc(x.name)}</b>) — meno, e-mail, dochádzku, platbu a správy v chate skupiny — na organizáciu venčekového kurzu.
+      Súhlas môžem kedykoľvek odvolať na <a href="mailto:fusionacademysk@gmail.com">fusionacademysk@gmail.com</a>. <a href="/terms" target="_blank" rel="noopener">Podmienky a ochrana údajov</a></p>
+    <button class="btn-g" onclick="dajSuhlas(this,'${esc(x.id)}')">Súhlasím</button>
+  </div>`;
+  const p=x.payment;
+  const platba = p
+    ? `<div class="pay-ok">🧾 <b>Kurz je uhradený</b> — ${eurSK(p.amount)} (${SPOSOB(p.method)}, ${new Date(p.paid_at).toLocaleDateString('sk')})${p.payer_name?`, zaplatil/a ${esc(p.payer_name)}`:''}.</div>`
+    : `<div class="pay-no">💳 <b>${esc(meno)}</b> · kurz ešte nie je uhradený — <b>${eurSK(d.price)}</b>.
+        <div style="margin-top:10px"><button class="btn-g" style="width:100%;max-width:280px" onclick="platitKartou(this,'${esc(x.id)}')">💳 Zaplatiť kurz kartou</button></div>
+        <div class="muted" style="margin-top:8px">Karta, Apple Pay aj Google Pay. Doklad príde vám na e-mail. Dá sa zaplatiť aj v hotovosti u lektora.</div>
+      </div>`;
+  const a=x.attendance;
+  const dochadzka = a
+    ? `<div class="card"><h3>🙋 Dochádzka — ${esc(meno)}</h3>
+        <div style="display:flex;justify-content:space-between;font-size:.9rem"><span>Bol/a na <b>${a.attended}</b> z ${a.recorded} zapísaných lekcií</span><span style="color:var(--gold);font-weight:900">${Math.round(a.attended/a.recorded*100)} %</span></div>
+        ${a.missed.length?`<div class="muted" style="margin-top:6px;color:#ffcc80">Chýbal/a na lekcii č. ${a.missed.join(', ')} — čo sa učilo, nájdete v rozvrhu.</div>`:''}</div>`
+    : `<div class="card"><h3>🙋 Dochádzka — ${esc(meno)}</h3><div class="muted">Zatiaľ nie je zapísaná žiadna lekcia.</div></div>`;
+  const done = d.class.completed
+    ? `<div class="hero" style="border-color:rgba(124,179,66,.6)"><span class="badge" style="color:#aed581;border-color:rgba(124,179,66,.5);background:rgba(124,179,66,.12)">🏅 ABSOLVENT</span><h1>Venček je za nami!</h1></div>` : '';
+  host.innerHTML=prepinac
+    +`<div class="card"><h3 style="margin:0">👨‍👩‍👧 ${esc(x.name)}</h3><div class="muted" style="margin-top:4px">🏫 ${esc(d.school||'')} · ${esc(d.class.name)}</div></div>`
+    +done+suhlas
+    +classCard(d.class, `<div class="card">${platba}</div>`+dochadzka)
+    +`<details class="card"><summary style="cursor:pointer;font-weight:800">➕ Pripojiť ďalšie dieťa</summary><div style="margin-top:10px">${pripojKartu(false).replace(/^<div class="card">|<\/div>$/g,'')}</div></details>`;
+  _chatId=d.chat_class_id||null;
+  host.insertAdjacentHTML('beforeend', chatKarta());
+  chatNacitaj();
+}
+// Lektor (tréner, ktorý venček učí) zapisuje hotovosť a prevody priamo na hodine.
+function lektorView(d, host){
+  const sp=document.querySelector('.switch'); if(sp){ sp.href='/trainer'; sp.textContent='↔ Trénerský panel'; }
+  host.innerHTML=(d.classes||[]).map(c=>{
+    const zapl=c.students.filter(z=>z.paid).length;
+    return `<div class="card"><h3>🎓 ${esc(c.school)} · ${esc(c.name)} <small style="color:var(--muted);font-weight:400">· uhradené ${zapl}/${c.students.length}</small></h3>
+      <div class="uz">${c.students.map(z=>`<div class="r">
+        <span class="n">${esc(z.name)}</span>
+        ${z.paid
+          ? `<span class="p ok">${eurSK(z.amount)} ${SPOSOB(z.method)}</span>`
+          : `<span class="akcie"><button class="btn-o" data-meno="${esc(z.name)}" onclick="lektorPlatba(this,'${esc(c.id)}','${esc(z.id)}','cash',${+c.price||0})">💶 hotovosť</button>
+             <button class="btn-o" data-meno="${esc(z.name)}" onclick="lektorPlatba(this,'${esc(c.id)}','${esc(z.id)}','transfer',${+c.price||0})">🏦 prevod</button></span>`}
+      </div>`).join('')||'<div class="muted">Zatiaľ žiadni žiaci.</div>'}</div>
+      <div class="muted" style="margin-top:10px">Zapíš až keď peniaze naozaj máš. Žiak aj rodičia dostanú potvrdenie a Marek správu.</div></div>`;
+  }).join('') || '<div class="empty">Zatiaľ neučíš žiadnu skupinu.</div>';
+}
+async function lektorPlatba(btn, classId, userId, method, cena){
+  const meno=btn.dataset.meno||'';
+  const suma=(+cena||0).toFixed(2).replace('.',',')+' €';
+  if(!confirm((method==='cash'?'Zapísať hotovosť ':'Zapísať prevod ')+suma+' — '+meno+'?')) return;
+  btn.disabled=true;
+  try{
+    const j=await (await postJ('/api/vencek/lektor/platba',{class_id:classId, user_id:userId, method})).json();
+    if(j && j.ok){ location.reload(); return; }
+    alert((j&&j.error)||'Platbu sa nepodarilo zapísať.');
+  }catch(e){ alert('Platbu sa nepodarilo zapísať.'); }
+  btn.disabled=false;
+}
+// Odkaz od rodiča (?rodic=) alebo kód dieťaťa (?pripojit=) — pripojí sa hneď po otvorení.
+// Neprihláseného pošleme na prihlásenie a po ňom späť sem.
+async function pripojZOdkazu(qp){
+  const kod=qp.get('pripojit'), token=qp.get('rodic');
+  if(!kod && !token) return true;
+  let r;
+  try{ r=await postJ(kod?'/api/vencek/rodic/pripojit':'/api/vencek/dieta/pripojit', kod?{kod}:{token}); }
+  catch(e){ oznam('Pripojenie sa nepodarilo. Skúste odkaz otvoriť znova.', false); return true; }
+  if(r.status===401){
+    try{ localStorage.setItem('fa_po_prihlaseni', JSON.stringify({url:location.pathname+location.search, at:Date.now()})); }catch(e){}
+    location.href='/?login=1';
+    return false;
+  }
+  const j=await r.json().catch(()=>({}));
+  history.replaceState({},'', (kod && j.ok) ? '/vencek?dieta='+encodeURIComponent(j.dieta.id) : '/vencek');
+  if(j.ok) oznam(kod
+    ? '✅ <b>'+esc(j.dieta.name)+'</b> je pripojený/á k vášmu účtu.'
+    : '✅ Pripojené — <b>'+esc(j.rodic.name)+'</b> teraz vidí tvoj kurz a môže ho za teba zaplatiť.', true);
+  else oznam(esc(j.error||'Pripojenie sa nepodarilo.'), false);
+  return true;
 }
 // Návrat zo Stripe — platbu potvrdí až server dotazom na Stripe, nie táto adresa.
 // Musí dobehnúť PRED načítaním prehľadu, inak by stránka ešte ukázala „neuhradené".
@@ -318,9 +507,11 @@ async function overPlatbu(){
   }
   // ?ako=student&class_id=… — admin si pozrie skupinu očami žiaka, aby vedel
   // na nábore ukázať, čo deti v appke uvidia.
+  if(!(await pripojZOdkazu(new URLSearchParams(location.search)))) return;
   const qp=new URLSearchParams(location.search);
   const nahladUrl = (qp.get('ako')==='student' && qp.get('class_id'))
-    ? '/api/vencek/mine?ako=student&class_id='+encodeURIComponent(qp.get('class_id')) : '/api/vencek/mine';
+    ? '/api/vencek/mine?ako=student&class_id='+encodeURIComponent(qp.get('class_id'))
+    : '/api/vencek/mine'+(qp.get('dieta')?'?dieta='+encodeURIComponent(qp.get('dieta')):'');
   let d; try{ d=await (await fetch(nahladUrl,{credentials:'include'})).json(); }
   catch(e){ host.innerHTML='<div class="empty">Nepodarilo sa načítať. Skús to znova.</div>'; return; }
   // Detail lekcií (kto chýbal, čo sa učilo) číta rozvrh cez globál — classCard
@@ -361,6 +552,8 @@ async function overPlatbu(){
       ||'<div class="empty">Žiadne školy.</div>';
     return;
   }
+  if(d.role==='lektor'){ lektorView(d, host); return; }
+  if(d.role==='parent'){ rodicView(d, host); return; }
   if(d.role==='teacher'){
     // Učiteľ vidí menný zoznam žiakov aj s tým, kto zaplatil (Marek 2. 9.).
     const ziaci=(d.students||[]);
@@ -378,24 +571,10 @@ async function overPlatbu(){
     host.insertAdjacentHTML('beforeend', chatKarta()); chatNacitaj();
     return;
   }
-  // žiak / rodič
+  // žiak
   const done = d.class.completed
     ? `<div class="hero" style="border-color:rgba(124,179,66,.6)"><span class="badge" style="color:#aed581;border-color:rgba(124,179,66,.5);background:rgba(124,179,66,.12)">🏅 ABSOLVENT</span><h1>Venček máte za sebou!</h1><div class="sub">Odznak absolventa svieti na tvojom profile. Kupón <b style="color:var(--gold)">VENCEKABS</b> = 1. mesiac členstva zdarma. 💛</div></div>` : '';
-  const pay = d.is_parent
-    ? (d.child_paid
-      ? `<div class="pay-ok">🧾 <b>Kurz je uhradený</b>${d.child_name?` — ${esc(d.child_name)}`:''}. Potvrdenie máte na emaili.</div>`
-      : d.child_matched
-      ? `<div class="pay-no">💳 Kurz ${d.child_name?`pre <b>${esc(d.child_name)}</b> `:''}ešte nie je uhradený — <b>${eurSK(d.price)}</b>.
-          <div style="margin-top:10px">
-            <button onclick="platitKartou(this)"${d.preview?' disabled':''}
-              style="background:linear-gradient(135deg,#C9A84C,#a5842f);color:#161310;border:none;border-radius:10px;padding:11px 20px;font-weight:800;font-size:.92rem;cursor:pointer;width:100%;max-width:280px">
-              💳 Zaplatiť za dieťa
-            </button>
-          </div>
-          <div class="muted" style="margin-top:8px">Karta, Apple Pay aj Google Pay. Platba sa pripíše ${esc(d.child_name||'dieťaťu')} — potvrdenie príde vám aj jemu.</div>
-        </div>`
-      : `<div class="pay-ok" style="background:rgba(201,168,76,.1);border-color:rgba(201,168,76,.4);color:var(--cream)">👨‍👩‍👧 Sledujete triedu${d.child_name?` — dieťa <b>${esc(d.child_name)}</b>`:''}. Kurz (${eurSK(d.price)}) zatiaľ vieme prijať len cez účet žiaka — napíšte nám a spárujeme vás s dieťaťom.</div>`)
-    : d.my_payment
+  const pay = d.my_payment
     ? `<div class="pay-ok">🧾 <b>Zaplatené</b> — ${eurSK(d.my_payment.amount)} (${SPOSOB(d.my_payment.method)}, ${new Date(d.my_payment.paid_at).toLocaleDateString('sk')}). Potvrdenie máš v notifikáciách a na emaili.</div>`
     : `<div class="pay-no">💳 Kurz ešte nie je uhradený — <b>${eurSK(d.price)}</b>.
         <div style="margin-top:10px">
@@ -404,9 +583,9 @@ async function overPlatbu(){
             💳 Zaplatiť kartou
           </button>
         </div>
-        <div class="muted" style="margin-top:8px">Karta, Apple Pay aj Google Pay. Alebo v hotovosti na hodine či prevodom — info u lektora.</div>
+        <div class="muted" style="margin-top:8px">Karta, Apple Pay aj Google Pay. Alebo v hotovosti na hodine či prevodom — info u lektora.${d.kod_rodica?' Zaplatiť môže aj rodič — pošli mu odkaz nižšie.':''}</div>
       </div>`;
-  host.innerHTML=done+`<div class="muted" style="margin-bottom:8px">🏫 ${esc(d.school)}</div>`+classCard(d.class, `<div class="card">${pay}</div>`+attCard(d));
+  host.innerHTML=done+`<div class="muted" style="margin-bottom:8px">🏫 ${esc(d.school)}</div>`+classCard(d.class, `<div class="card">${pay}</div>`+attCard(d)+rodiciaKarta(d));
   // Chat je úplne dole — spoločný pre celú skupinu.
   host.insertAdjacentHTML('beforeend', chatKarta());
   chatNacitaj();

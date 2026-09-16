@@ -96,6 +96,10 @@
   .pod{text-align:center;font-size:.82rem;color:var(--muted);margin-top:2px}
   .pod a{color:var(--gold);text-decoration:none;font-weight:700}
 
+  .pozvanka{position:relative;background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.45);border-radius:14px;
+    padding:12px 14px;margin:0 0 14px;font-size:.9rem;text-align:center}
+  .info-rodic{background:rgba(126,200,227,.08);border:1px solid rgba(126,200,227,.35);border-radius:11px;
+    padding:10px 12px;font-size:.85rem;color:var(--cream)}
   .stav{text-align:center;padding:70px 20px;color:var(--muted)}
   .hotovo{text-align:center;padding:46px 16px}
   .hotovo .ikona{font-size:3.4rem;line-height:1}
@@ -122,6 +126,10 @@ const fmtDatum=s=>{ const d=new Date(String(s).slice(0,10)+'T12:00:00'); return 
 const KOD=(new URLSearchParams(location.search).get('kod')
   || location.pathname.split('/').filter(Boolean).pop() || '').toUpperCase();
 const ROLE_LBL={student:'🧑‍🎓 Som žiak / žiačka', parent:'👨‍👩‍👧 Som rodič', teacher:'👩‍🏫 Som učiteľ / učiteľka', director:'🏫 Som riaditeľ / riaditeľka'};
+// Odkaz od dieťaťa pre rodiča (?dieta=KÓD) alebo od rodiča pre dieťa (?rodic=TOKEN) — 16. 9.
+const QP=new URLSearchParams(location.search);
+const DIETA_KOD=(QP.get('dieta')||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,12);
+const RODIC_TOKEN=(QP.get('rodic')||'').replace(/[^A-Za-z0-9]/g,'').slice(0,20);
 
 (async()=>{
   const host=document.getElementById('host');
@@ -139,7 +147,13 @@ const ROLE_LBL={student:'🧑‍🎓 Som žiak / žiačka', parent:'👨‍👩�
   const doVencka = d.pred_veckom!=null ? +d.pred_veckom : (d.lessons_before||10);
   const bonus = d.bonusov!=null ? +d.bonusov : Math.max(0,(d.lessons_total||13)-doVencka);
   const tance=(d.dances||[]).filter(Boolean);
-  const role=(d.roles||['student']).filter(r=>ROLE_LBL[r]);
+  let role=(d.roles||['student']).filter(r=>ROLE_LBL[r]);
+  const pozvanyRodic=!!DIETA_KOD && role.includes('parent');
+  const pozvaneDieta=!!RODIC_TOKEN && role.includes('student');
+  if(pozvanyRodic) role=['parent'];
+  if(pozvaneDieta) role=['student'];
+  const prihlasenie = pozvanyRodic ? '/vencek?pripojit='+encodeURIComponent(DIETA_KOD)
+    : pozvaneDieta ? '/vencek?rodic='+encodeURIComponent(RODIC_TOKEN) : '/?login=1';
 
   host.innerHTML=`
     <div class="hero">
@@ -148,6 +162,8 @@ const ROLE_LBL={student:'🧑‍🎓 Som žiak / žiačka', parent:'👨‍👩�
       <div class="skola">${esc(d.school||'')}</div>
       <div class="rok">${esc(d.year||'')}${d.name && d.name!=='Venčeková skupina' ? ' · '+esc(d.name) : ''}${d.city && String(d.city).trim().toLowerCase()!==String(d.school||'').trim().toLowerCase() ? ' · '+esc(d.city) : ''}</div>
     </div>
+    ${pozvanyRodic?`<div class="pozvanka">👨‍👩‍👧 <b>Pozvánka od vášho dieťaťa.</b><br>Po registrácii uvidíte jeho dochádzku, progres v tancoch a platbu kurzu. <a href="${esc(prihlasenie)}" style="color:var(--gold);font-weight:700">Už máte účet? Prihláste sa</a></div>`:''}
+    ${pozvaneDieta?`<div class="pozvanka">👨‍👩‍👧 <b>Pozvánka od tvojho rodiča.</b><br>Po registrácii sa k nemu tvoj účet pripojí sám. <a href="${esc(prihlasenie)}" style="color:var(--gold);font-weight:700">Už máš účet? Prihlás sa</a></div>`:''}
 
     <div class="karta">
       <h2>💃 Čo ťa čaká</h2>
@@ -178,7 +194,7 @@ const ROLE_LBL={student:'🧑‍🎓 Som žiak / žiačka', parent:'👨‍👩�
       <h2>💳 Cena kurzu</h2>
       <div class="cena"><b>${(+d.price).toFixed(2).replace('.',',')} €</b><span>za prípravný kurz</span></div>
       <div style="text-align:center;color:var(--muted);font-size:.85rem;margin-top:6px">
-        Platí sa až potom — kartou priamo v appke, alebo v hotovosti u lektora.
+        Platí sa až potom — kartou v appke (môže aj rodič za dieťa), alebo v hotovosti u lektora.
         <br>Registrácia ťa teraz k ničomu nezaväzuje.
       </div>
     </div>
@@ -191,9 +207,10 @@ const ROLE_LBL={student:'🧑‍🎓 Som žiak / žiačka', parent:'👨‍👩�
           <label for="rola">Kto sa registruje?</label>
           <select id="rola">${role.map(r=>`<option value="${r}">${ROLE_LBL[r]}</option>`).join('')}</select>
         </div>`:`<input type="hidden" id="rola" value="${role[0]||'student'}">`}
-        <div id="dietaBox" style="display:none">
-          <label for="dieta">Meno vášho dieťaťa</label>
-          <input id="dieta" placeholder="napr. Ema Nováková" autocomplete="off">
+        <div id="dietaBox" class="info-rodic" style="display:${pozvanyRodic||role[0]==='parent'?'block':'none'}">
+          ${pozvanyRodic
+            ? '✅ Po registrácii sa váš účet pripojí k dieťaťu automaticky.'
+            : '👨‍👩‍👧 Po registrácii si dieťa pripojíte kódom z jeho appky (sekcia Venčeky → Rodičia). Najjednoduchšie je, keď vám dieťa pošle odkaz.'}
         </div>
         <div><label for="meno">Meno a priezvisko</label>
           <input id="meno" required placeholder="Ema Nováková" autocomplete="name"></div>
@@ -206,7 +223,7 @@ const ROLE_LBL={student:'🧑‍🎓 Som žiak / žiačka', parent:'👨‍👩�
         <label class="suhlas"><input type="checkbox" id="suhlas" required>
           <span>Súhlasím so spracovaním údajov pre potreby venčekového kurzu a účtu v appke.</span></label>
         <button class="hlavne" type="submit" id="odoslat">Vytvoriť účet a pridať sa 💃</button>
-        <div class="pod">Už máš účet? <a href="/?login=1">Prihlás sa</a></div>
+        <div class="pod">Už máš účet? <a href="${esc(prihlasenie)}">Prihlás sa</a></div>
       </form>
     </div>
 
@@ -233,12 +250,25 @@ const ROLE_LBL={student:'🧑‍🎓 Som žiak / žiačka', parent:'👨‍👩�
           lead_source:'vencek',
           vencek_code:KOD,
           vencek_role:rola?rola.value:'student',
-          vencek_child_name:(document.getElementById('dieta')||{}).value||undefined,
+          vencek_dieta_kod: (pozvanyRodic && rola && rola.value==='parent') ? DIETA_KOD : undefined,
+          vencek_rodic_token: (pozvaneDieta && rola && rola.value==='student') ? RODIC_TOKEN : undefined,
           attribution: window.faGetAttribution?window.faGetAttribution():{}
         })});
       const dd=await r.json().catch(()=>({}));
       if(r.ok && dd.ok){
-        if(window.faTrack) try{ window.faTrack('CompleteRegistration'); }catch(e){}
+        // Venčekári (deti a ich rodičia) sa do Meta reklamy neposielajú (16. 9.)
+        if(rola && rola.value==='parent'){
+          document.getElementById('host').innerHTML=`<div class="hotovo">
+          <div class="ikona">👨‍👩‍👧</div>
+          <h2>Účet rodiča je hotový</h2>
+          <p>${pozvanyRodic
+            ? 'V appke nájdete kurz vášho dieťaťa — dochádzku, progres v tancoch aj platbu.'
+            : 'V appke si teraz pripojíte dieťa kódom z jeho appky. Potom uvidíte jeho dochádzku, progres aj platbu kurzu.'}</p>
+          <button class="hlavne" style="max-width:280px;width:100%" onclick="location.href='/vencek'">Otvoriť venček →</button>
+        </div>`;
+          window.scrollTo(0,0);
+          return;
+        }
         // Učiteľ a riaditeľ sa do skupiny pridajú až po schválení adminom — nesmie čítať „si v skupine"
         const cakaNaSchvalenie = !!(rola && ['teacher','director'].includes(rola.value));
         if(cakaNaSchvalenie){

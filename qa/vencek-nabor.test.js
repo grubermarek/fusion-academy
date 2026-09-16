@@ -71,7 +71,8 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     // Kód visí na skupine — škola bez nej je slepá ulička, tak vzniká rovno so školou.
     ok('a rovno s ňou aj skupina', !!(sk.d.class && sk.d.class._id), JSON.stringify(sk.d.class || null).slice(0, 90));
     ok('kód sa odvodí z mesta', sk.d.class && sk.d.class.code === 'VEN-DETVA', sk.d.class && sk.d.class.code);
-    ok('a registrovať sa smie žiak a učiteľ', sk.d.class && JSON.stringify(sk.d.class.roles) === JSON.stringify(['student', 'teacher']),
+    // Od 16. 9. majú všetky venčeky aj rodičovské účty.
+    ok('a registrovať sa smie žiak, rodič a učiteľ', sk.d.class && JSON.stringify(sk.d.class.roles) === JSON.stringify(['student', 'parent', 'teacher']),
       JSON.stringify(sk.d.class && sk.d.class.roles));
     // Odkaz vedie na vlastnú venčekovú stránku, nie na hlavnú — tá predáva
     // Zumbu dospelým a ôsmakovi po naskenovaní QR nehovorí nič.
@@ -406,11 +407,15 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
       && /kedy máme/.test(citaj.messages[0].text), JSON.stringify(citaj && citaj.messages).slice(0, 110));
     ok('so správnou rolou pri mene', citaj && citaj.messages[0].role === 'student',
       citaj && citaj.messages[0].role);
-    // Rodič je v tej istej skupine, takže má správu vidieť — je to spoločný chat.
+    // Rodič vidí chat až keď má pripojené dieťa (16. 9.) — napísané meno nestačí.
     const rodicC = {};
     await j('/api/login', { method: 'POST', body: { email: 'qa.ven.rodic@qa-biz.local', password: 'Heslo123!' } }, rodicC);
+    ok('nepripojený rodič chat nevidí', (await j('/api/vencek/chat', {}, rodicC)).status === 403);
+    const kodZ = (await j('/api/vencek/rodic/kod', {}, ziakC)).d;
+    const prip = await j('/api/vencek/rodic/pripojit', { method: 'POST', body: { kod: kodZ && kodZ.kod } }, rodicC);
+    ok('rodič sa pripojí kódom dieťaťa', prip.status === 200, JSON.stringify(prip.d));
     const citajR = (await j('/api/vencek/chat', {}, rodicC)).d;
-    ok('vidí ju aj ďalší člen skupiny', citajR && citajR.messages && citajR.messages.length === 1);
+    ok('a potom správu vidí', citajR && citajR.messages && citajR.messages.length === 1);
     // Kto v skupine nie je, nesmie ani čítať, ani písať.
     const cudziC = {};
     await j('/api/login', { method: 'POST', body: { email: 'qa.ven.bezkodu@qa-biz.local', password: 'Heslo123!' } }, cudziC);
@@ -559,10 +564,12 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
       JSON.stringify(mojePohlad && Object.keys(mojePohlad)));
     // Počet zaplatených je neškodný agregát, ale mená spolužiakov ani ich platby
     // v žiackom pohľade nesmú byť — „kto zaplatil a kto nie" vidí len Marek.
-    const surovo = JSON.stringify(mojePohlad);
+    // Renata je od 16. 9. jeho pripojený rodič (sekcia 9b) — jej meno vidieť smie, iné nie.
+    const surovo = JSON.stringify({ ...mojePohlad, rodicia: undefined });
     ok('v jeho pohľade nie sú mená ani platby spolužiakov',
       !/Rena Rucna|Nina Neprisla|Renata Rodicova/.test(surovo) && !/"payments"|"members":\s*\[/.test(surovo),
       surovo.slice(0, 140));
+    ok('vlastného rodiča vidí', (mojePohlad.rodicia || []).map(r => r.name).join() === 'Renata Rodicova', JSON.stringify(mojePohlad.rodicia));
     ok('nedostane sa do cudzej skupiny cez podstrčené class_id',
       (await j('/api/vencek/mine?ako=student&class_id=' + hal.d.class._id, {}, z)).d.class.name !== 'Venčeková skupina'
         || (await j('/api/vencek/mine?ako=student&class_id=' + hal.d.class._id, {}, z)).d.preview !== true,

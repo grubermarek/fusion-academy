@@ -12,7 +12,7 @@
  *   · „bonusové lekcie po venčeku" sa rátajú podľa dátumu venčeka, nie z poradia
  *   · zlúčenie účtov vezme venčekovú skupinu, platbu aj chat so sebou
  *   · správa v chate dá o sebe vedieť ostatným
- *   · rodič sa spáruje s dieťaťom a môže zaň zaplatiť
+ *   · rodič vidí len dieťa, ktoré je k nemu naozaj pripojené (od 16. 9. väzbou, nie podľa mena)
  *   · priradenie existujúceho účtu nájde človeka aj bez diakritiky
  *
  * Spustenie:  node qa/vencek-opravy.test.js
@@ -50,7 +50,8 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
       password: hash, is_admin: true, user_type: 'admin', active: true, created_at: '2026-01-01' },
     { _id: 'qaVoZiak0000001', name: 'Adela Káková', email: 'qa.vo.adela@qa-biz.local',
       password: hash, user_type: 'client', active: true, created_at: '2026-09-01',
-      venceky_class_id: 'qaVoTrieda00001', venceky_school_id: 'qaVoSkola000001', venceky_role: 'student' },
+      venceky_class_id: 'qaVoTrieda00001', venceky_school_id: 'qaVoSkola000001', venceky_role: 'student',
+      vencek_rodicia: ['qaVoRodic000001'] },
     { _id: 'qaVoZiak0000002', name: 'Michal Lenč', email: 'qa.vo.michal@qa-biz.local',
       password: hash, user_type: 'client', active: true, created_at: '2026-09-01',
       venceky_class_id: 'qaVoTrieda00001', venceky_school_id: 'qaVoSkola000001', venceky_role: 'student' },
@@ -157,15 +158,18 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     ok('kategória má slovenský názov', pr.d && pr.d.kategorie && pr.d.kategorie.venceky === 'Venčeky',
       JSON.stringify(pr.d && pr.d.kategorie));
 
-    console.log('\n7) Rodič je spárovaný s dieťaťom:');
+    console.log('\n7) Rodič vidí len pripojené dieťa:');
     const mR = await j('/api/vencek/mine', {}, rodic);
-    ok('appka vie, ktoré dieťa je jeho', mR.d.child_matched === true, JSON.stringify({ m: mR.d.child_matched }));
-    ok('a že kurz je zaplatený', mR.d.child_paid === true, JSON.stringify({ p: mR.d.child_paid }));
+    ok('appka vie, ktoré dieťa je jeho', !!(mR.d.dieta && mR.d.dieta.id === 'qaVoZiak0000001'), JSON.stringify(mR.d.dieta || null).slice(0, 120));
+    ok('a že kurz je zaplatený', !!(mR.d.dieta && mR.d.dieta.payment && Math.abs(mR.d.dieta.payment.amount - 49.9) < 0.01),
+      JSON.stringify(mR.d.dieta && mR.d.dieta.payment));
     const mR2 = await j('/api/vencek/mine', {}, rodic2);
-    ok('rodič bez zhody nedostane falošnú istotu', mR2.d.child_matched === false, JSON.stringify({ m: mR2.d.child_matched }));
+    ok('rodič, ktorý meno dieťaťa len napísal, cudzie dieťa nedostane',
+      mR2.d.role === 'parent' && !mR2.d.dieta && (mR2.d.deti || []).length === 0,
+      JSON.stringify({ d: mR2.d.dieta, n: (mR2.d.deti || []).length }));
     const chk = await j('/api/vencek/checkout', { method: 'POST', body: {} }, rodic2);
     ok('a platbu mu appka zrozumiteľne odmietne',
-      chk.status === 400 && /spárujeme|účet žiaka/i.test(String(chk.d && chk.d.error)),
+      chk.status === 400 && /pripojte dieťa/i.test(String(chk.d && chk.d.error)),
       JSON.stringify(chk.d));
 
     console.log('\n8) Chat dá o sebe vedieť:');
@@ -173,8 +177,9 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     await j('/api/vencek/chat', { method: 'POST', body: { class_id: CID, text: 'Ahojte, zajtra si vezmite tenisky.' } }, adm);
     await new Promise(r => setTimeout(r, 900));
     const nove = rd('notifications.db').filter(n => /píše v chate/.test(String(n.title || '')));
-    ok('ostatní v skupine dostali notifikáciu', nove.length === 4, 'nových: ' + nove.length + ' (spolu ' + predT + '→' + rd('notifications.db').length + ')');
+    ok('ostatní v skupine dostali notifikáciu (dvaja žiaci + pripojená mama)', nove.length === 3, 'nových: ' + nove.length + ' (spolu ' + predT + '→' + rd('notifications.db').length + ')');
     ok('autorovi neprišla', !nove.some(n => n.user_id === 'qaVoAdmin000001'));
+    ok('nepripojenému rodičovi tiež nie', !nove.some(n => n.user_id === 'qaVoRodic000002'));
     ok('a nesie začiatok správy', nove[0] && /tenisky/.test(nove[0].body), nove[0] ? nove[0].body : '—');
 
     console.log('\n9) Priradenie účtu bez diakritiky:');

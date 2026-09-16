@@ -848,6 +848,19 @@ async function seedData() {
   // v Kultúrnom dome Hnúšťa od piatku 5. 3. 2027 o 16:00 (Klenovec je v ten deň o 14:30), venčekový večer
   // 4. 6. 2027 tiež v Kultúrnom dome Hnúšťa, učí Marek. Veľký piatok 26. 3. 2027 (týždeň 3) je sviatok
   // a škola má prázdniny — lekcia sa ruší rovnako ako v Klenovci, kurz sa posunie o týždeň (posledná 14. 5.).
+  // Rodičovské účty pre všetky venčeky (Marek 16. 9.): rola rodič musí byť v registrácii každej skupiny.
+  if(!(await q.one(db.settings,{key:'vencek_rodicia_roly_20260916'}))) setTimeout(async()=>{
+    try{
+      if(await q.one(db.settings,{key:'vencek_rodicia_roly_20260916'})) return;
+      let n=0;
+      for(const c of await q.find(db.venceky_classes,{})){
+        if(!Array.isArray(c.roles) || !c.roles.length || c.roles.includes('parent')) continue;
+        await q.update(db.venceky_classes,{_id:c._id},{$set:{roles:['student','parent',...c.roles.filter(r=>r!=='student')]}}); n++;
+      }
+      await q.insert(db.settings,{key:'vencek_rodicia_roly_20260916', value:{skupiny:n}, at:nowISO()});
+      console.log('👨‍👩‍👧 Venčeky: rola rodič doplnená do '+n+' skupín');
+    }catch(e){ console.error('vencek_rodicia_roly:', e.message); }
+  }, 10000);
   if(!(await q.one(db.settings,{key:'vencek_hnusta_20260915'}))) setTimeout(async()=>{
     try{
       if(await q.one(db.settings,{key:'vencek_hnusta_20260915'})) return;
@@ -858,7 +871,7 @@ async function seedData() {
           price:90, lessons_total:10, lessons_before:10, lessons_done:0, lecturer:'Marek Gruber',
           event_date:'2027-06-04', event_venue:'Kultúrny dom Hnúšťa', note:'',
           schedule:'Prvý nácvik: '+denVTyzdni('2027-03-05')+' 5. 3. 2027 o 16:00 · Kultúrny dom Hnúšťa',
-          start_at:casSKnaISO('2027-03-05T16:00'), roles:['student','teacher'],
+          start_at:casSKnaISO('2027-03-05T16:00'), roles:['student','parent','teacher'],
           lesson_changes:[{week:3, cancelled:true, reason:'Veľký piatok — štátny sviatok'}],
           dances:VENCEK_DEFAULT_DANCES.map(n=>({name:n, level:0})), created_at:nowISO()});
       }
@@ -891,7 +904,7 @@ async function seedData() {
           price:65, lessons_total:10, lessons_before:10, lessons_done:0, lecturer:'Marek Gruber',
           event_date:'2027-06-05', event_venue:'', note:'',
           schedule:'Prvý nácvik: '+denVTyzdni('2027-03-05')+' 5. 3. 2027 o 14:30 · Kultúrny dom Klenovec',
-          start_at:casSKnaISO('2027-03-05T14:30'), roles:['student','teacher'],
+          start_at:casSKnaISO('2027-03-05T14:30'), roles:['student','parent','teacher'],
           dances:VENCEK_DEFAULT_DANCES.map(n=>({name:n, level:0})), created_at:nowISO()});
       }
       await q.insert(db.settings,{key:'vencek_klenovec_20260915', value:{class_id:c._id, code:c.code}, at:nowISO()});
@@ -4801,6 +4814,17 @@ app.post('/api/register', rlSignup, async(req,res)=>{
           read:false, created_at:nowISO()});
       }catch(e){}
     }
+    // Rodič ↔ dieťa priamo z odkazu (16. 9.): rodič s kódom dieťaťa, dieťa s pozvánkou rodiča.
+    if(vencekClass) try{
+      if(vencekRole==='parent' && req.body.vencek_dieta_kod){
+        const z=await q.one(db.users,{vencek_kod_rodica:vencekCistyKod(req.body.vencek_dieta_kod)});
+        if(z) await vencekPrepoj(await q.one(db.users,{_id:u._id}), z);
+      }
+      if(vencekRole==='student' && req.body.vencek_rodic_token){
+        const r=await q.one(db.users,{vencek_pozvanka:String(req.body.vencek_rodic_token).replace(/[^A-Za-z0-9]/g,'').slice(0,20)});
+        if(r) await vencekPrepoj(r, await q.one(db.users,{_id:u._id}));
+      }
+    }catch(e){ console.error('vencek prepojenie pri registrácii:', e.message); }
     req.session.uid=u._id;
     req.session.sv=0;
     // ── Referral: za SAMOTNÚ registráciu už NIE JE odmena (zneužívalo by sa) ───
@@ -4860,7 +4884,8 @@ app.post('/api/register', rlSignup, async(req,res)=>{
       enqueueSequence(u._id, 'lead_nurture').catch(()=>{});
     }
     // Server-side conversion tracking
-    metaCapi('CompleteRegistration',{email:u.email, fbclid, fbp:clean(attr.fbp),
+    // Venčekári (deti 13–15 r. a ich rodičia) do Meta reklamy nejdú (Marek 16. 9.)
+    if(!vencekClass) metaCapi('CompleteRegistration',{email:u.email, fbclid, fbp:clean(attr.fbp),
       event_id:clean(attr.event_id)||undefined, source_url:clean(attr.landing)||undefined}).catch(()=>{});
     announceNewMember(u._id).catch(()=>{});
     res.json({ok:true, userType:utype, redirect_to: dashUrlFor(u)});
@@ -10759,6 +10784,13 @@ async function zlucUcty(srcId, tgtId){
   // účet.
   await pren(db.venceky_payments,'user_id','venčeky');
   await pren(db.venceky_chat,'user_id','venčeky');
+  // Rodič ↔ dieťa (16. 9.): kde bol zdroj zapísaný ako rodič, je teraz cieľ
+  for(const d of await q.find(db.users,{vencek_rodicia:src._id})){
+    const ids=Array.from(new Set(d.vencek_rodicia.map(x=>x===src._id?tgt._id:x))).filter(x=>x!==d._id);
+    await q.update(db.users,{_id:d._id},{$set:{vencek_rodicia:ids}});
+    prenesene['venčeky']=(prenesene['venčeky']||0)+1;
+  }
+  await pren(db.venceky_payments,'payer_id','venčeky');
   // Maily: odoslané ostávajú ako história, čakajúce zruš — inak by klientke po
   // zlúčení odišla ešte raz sekvencia, ktorú cieľový účet už dostal.
   const zruseneMaily=await q.update(db.email_queue,{user_id:src._id, status:'pending'},
@@ -10804,6 +10836,9 @@ async function zlucUcty(srcId, tgtId){
     venceky_role: tgt.venceky_role||src.venceky_role||null,
     vencek_child_name: tgt.vencek_child_name||src.vencek_child_name||'',
     vencek_alumni: tgt.vencek_alumni||src.vencek_alumni||null,
+    vencek_rodicia: Array.from(new Set([...(tgt.vencek_rodicia||[]), ...(src.vencek_rodicia||[])]))
+      .map(x=>x===src._id?tgt._id:x).filter(x=>x!==tgt._id),
+    vencek_suhlas_rodica: tgt.vencek_suhlas_rodica||src.vencek_suhlas_rodica||null,
     // Mesačný odber: Stripe páruje obnovu podľa id odberu na účte. Bez prenosu
     // by obnova po zlúčení nikoho nenašla — Stripe by strhol peniaze a členstvo by sa
     // nepredĺžilo (Michaela N., 11. 9.). Odber patrí účtu, ktorý ho má.
@@ -10825,6 +10860,8 @@ async function zlucUcty(srcId, tgtId){
   for(const k of ['venceky_class_id','venceky_school_id','venceky_role','vencek_alumni'])
     if(set[k]==null) delete set[k];
   if(!set.vencek_child_name) delete set.vencek_child_name;
+  if(!set.vencek_rodicia.length) delete set.vencek_rodicia;
+  if(!set.vencek_suhlas_rodica) delete set.vencek_suhlas_rodica;
   // Ak si heslo nastavila na duplicitnom účte, bez tohto by sa po zlúčení
   // neprihlásila vôbec.
   if(!tgt.password && src.password) set.password=src.password;
@@ -14728,6 +14765,15 @@ async function fulfillStripeCheckout(s){
   const jeSkuska = !!s && meta.trial==='1' && ['no_payment_required','paid'].includes(s.payment_status) && s.status!=='expired';
   if(!s || (s.payment_status!=='paid' && !jeSkuska)) return {ok:false, error:'Platba nebola dokončená'};
   if(meta.type==='order') return {ok:false, skip:true}; // e-shop handled separately
+  // Venček: doteraz sa platba zapísala len po návrate na /vencek — kto zavrel okno, ostal neplatič (16. 9.)
+  if(meta.type==='vencek'){
+    const c=await q.one(db.venceky_classes,{_id:String(meta.class_id||'')});
+    const ziak=await q.one(db.users,{_id:String(meta.user_id||'')});
+    if(!c || !ziak) return {ok:false, error:'Skupina alebo žiak nenájdený'};
+    const platca=meta.payer_id ? await q.one(db.users,{_id:String(meta.payer_id)}) : null;
+    const r=await vencekZapisPlatbu({c, ziak, amount:(+s.amount_total||0)/100, method:'stripe', platca, stripe_session_id:String(s.id||'')});
+    return {ok:true, ...r};
+  }
   if(meta.type==='gift_credit') return await fulfillGiftCredit(s);
   if(meta.type==='tip'){
     // idempotencia cez payment status
@@ -23211,16 +23257,126 @@ function vencekTerminy(c){
   }
   return out;
 }
-// Rodič zadáva meno dieťaťa voľným textom, väzba na jeho účet neexistuje.
-// Spárujeme ho so žiakom v skupine — jednoznačne, alebo vôbec.
-async function vencekDieta(rodic, classId){
-  if(!rodic || rodic.venceky_role!=='parent' || !classId) return null;
-  const meno=bezDiakritiky(rodic.vencek_child_name||'').trim();
-  if(meno.length<3) return null;
-  const ziaci=(await q.find(db.users,{venceky_class_id:classId})).filter(x=>x.venceky_role==='student');
-  const presne=ziaci.filter(x=>bezDiakritiky(x.name).trim()===meno);
-  const kandidati=presne.length ? presne : ziaci.filter(x=>bezDiakritiky(x.name).includes(meno));
-  return kandidati.length===1 ? kandidati[0] : null;
+// ═══ RODIČ ↔ DIEŤA vo venčeku (Marek 16. 9.) ═════════════════════════════════
+// „Spravme všetkým venčekom aj rodičovské účty — rodič bude môcť platiť za svoje dieťa a vidieť
+// jeho dochádzku aj ostatné info, len platby a dochádzku iných detí nemusí vedieť."
+// Väzba je na účte dieťaťa: vencek_rodicia [id rodičov]. Vzniká kódom z appky dieťaťa, ktorý rodič
+// zadá, alebo odkazom od rodiča, cez ktorý sa dieťa zaregistruje / prihlási. Hádanie dieťaťa podľa
+// napísaného mena sa zrušilo — dalo sa ním pozrieť a zaplatiť za ktoréhokoľvek spolužiaka.
+const VENCEK_MAX_RODICOV=3;
+const VENCEK_KOD_ZNAKY='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const vencekNahodny=n=>Array.from({length:n},()=>VENCEK_KOD_ZNAKY[require('crypto').randomInt(VENCEK_KOD_ZNAKY.length)]).join('');
+const vencekCistyKod=k=>String(k||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,12);
+async function vencekKodDietata(ziak){
+  if(ziak.vencek_kod_rodica) return ziak.vencek_kod_rodica;
+  let k; do{ k=vencekNahodny(6); } while(await q.one(db.users,{vencek_kod_rodica:k}));
+  await q.update(db.users,{_id:ziak._id},{$set:{vencek_kod_rodica:k}});
+  return k;
+}
+async function vencekPozvankaRodica(rodic){
+  if(rodic.vencek_pozvanka) return rodic.vencek_pozvanka;
+  let k; do{ k=vencekNahodny(10); } while(await q.one(db.users,{vencek_pozvanka:k}));
+  await q.update(db.users,{_id:rodic._id},{$set:{vencek_pozvanka:k}});
+  return k;
+}
+async function vencekDetiRodica(rodicId){
+  return (await q.find(db.users,{vencek_rodicia:rodicId}))
+    .filter(x=>x.active!==false && (x.venceky_role||'student')==='student' && x.venceky_class_id)
+    .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'sk'));
+}
+async function vencekRodicia(ziak){
+  const ids=Array.isArray(ziak && ziak.vencek_rodicia)?ziak.vencek_rodicia:[];
+  return ids.length ? (await q.find(db.users,{_id:{$in:ids}})).filter(x=>x.active!==false) : [];
+}
+async function vencekPrepoj(rodic, ziak){
+  if(!rodic || !ziak) return {error:'Účet nenájdený'};
+  if(rodic._id===ziak._id) return {error:'Kód patrí tvojmu vlastnému účtu — daj ho rodičovi.'};
+  if((ziak.venceky_role||'student')!=='student' || !ziak.venceky_class_id) return {error:'Tento kód nepatrí žiakovi venčeka.'};
+  if(['student','teacher','director'].includes(rodic.venceky_role))
+    return {error:'Tento účet je vo venčeku vedený ako '+({student:'žiak',teacher:'učiteľ',director:'riaditeľ'}[rodic.venceky_role])+'. Rodičovský účet si založte na inom e-maile.'};
+  const ids=Array.isArray(ziak.vencek_rodicia)?ziak.vencek_rodicia:[];
+  if(ids.includes(rodic._id)) return {ok:true, uz:true, dieta:ziak};
+  if(ids.length>=VENCEK_MAX_RODICOV) return {error:'Dieťa už má pripojených '+VENCEK_MAX_RODICOV+' rodičov. Ak je to omyl, ozvite sa nám.'};
+  await q.update(db.users,{_id:ziak._id},{$addToSet:{vencek_rodicia:rodic._id}});
+  const set={venceky_role:'parent'};
+  if(!rodic.venceky_class_id){ set.venceky_class_id=ziak.venceky_class_id; set.venceky_school_id=ziak.venceky_school_id; }
+  if(!rodic.lead_source) set.lead_source='vencek';
+  await q.update(db.users,{_id:rodic._id},{$set:set});
+  await q.insert(db.notifications,{user_id:ziak._id, type:'venceky',
+    title:'👨‍👩‍👧 '+rodic.name+' je pripojený/á ako tvoj rodič',
+    body:'Vo venčeku uvidí tvoju dochádzku, progres v tancoch aj platbu kurzu a môže ho za teba zaplatiť. Ak to nie je tvoj rodič, napíš lektorovi.',
+    read:false, created_at:nowISO()}).catch(()=>{});
+  await q.insert(db.notifications,{user_id:rodic._id, type:'venceky',
+    title:'✅ '+String(ziak.name||'').split(' ')[0]+' je pripojený/á k vášmu účtu',
+    body:'V sekcii Venčeky vidíte dochádzku, progres, platbu kurzu aj chat skupiny.',
+    read:false, created_at:nowISO()}).catch(()=>{});
+  return {ok:true, dieta:ziak};
+}
+// Kto dostáva oznamy skupiny: jej členovia (bez nepripojených rodičov) + rodičia pripojení k deťom v nej.
+async function vencekPrijemcovia(classId){
+  const clenovia=await q.find(db.users,{venceky_class_id:classId});
+  const prepojeni=new Set(clenovia.filter(u=>(u.venceky_role||'student')==='student')
+    .flatMap(z=>Array.isArray(z.vencek_rodicia)?z.vencek_rodicia:[]));
+  const mimo=[...prepojeni].filter(id=>!clenovia.some(x=>x._id===id));
+  const rodicia=mimo.length ? await q.find(db.users,{_id:{$in:mimo}}) : [];
+  return [...clenovia.filter(u=>u.venceky_role!=='parent' || prepojeni.has(u._id)), ...rodicia].filter(u=>u.active!==false);
+}
+// Lektor skupiny smie zapisovať dochádzku, lekcie, zmeny aj hotovosť — iný tréner nie (16. 9.).
+function jeLektorSkupiny(u, c){
+  if(!u || !c) return false;
+  if(u.is_admin) return true;
+  // Lektor je vždy tréner — klientka s rovnakým menom ako lektor skupinu neučí.
+  if(!(u.user_type==='trainer' || u.user_type==='manager' || u.is_assistant)) return false;
+  if(c.lecturer_id) return c.lecturer_id===u._id;
+  const n=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+  return !!c.lecturer && n(c.lecturer)===n(u.name);
+}
+// Zápis platby za venček — karta (Stripe), hotovosť alebo prevod (admin, lektor). Platí sa za žiaka;
+// keď platil rodič, doklad a potvrdenie idú jemu. Zámok: návrat zo Stripe a webhook naraz
+// nesmú zapísať dve platby.
+async function vencekZapisPlatbu({c, ziak, amount, method, platca, recorded_by, stripe_session_id}){
+  return await withBookingLock('vencek-platba:'+c._id+':'+ziak._id, async()=>{
+    if(await q.one(db.venceky_payments,{class_id:c._id, user_id:ziak._id})) return {already:true};
+    const amt=+amount>0 ? +(+amount).toFixed(2) : (+c.price||49.90);
+    const platiRodic=!!(platca && platca._id!==ziak._id);
+    await q.insert(db.venceky_payments,{class_id:c._id, school_id:c.school_id, user_id:ziak._id,
+      user_name:ziak.name, amount:amt, method, paid_at:nowISO(),
+      ...(platiRodic?{payer_id:platca._id, payer_name:platca.name}:{}),
+      ...(recorded_by?{recorded_by}:{}), ...(stripe_session_id?{stripe_session_id}:{}),
+      created_at:nowISO()});
+    const sposob=method==='stripe'?'kartou':(method==='transfer'?'prevodom na účet':'v hotovosti');
+    const eur=amt.toFixed(2).replace('.',',')+' €';
+    const mailOk=x=>x && x.email && /@/.test(x.email) && !/@internal\.local$/i.test(x.email);
+    await q.insert(db.notifications,{user_id:ziak._id, type:'venceky',
+      title:'🧾 Potvrdenie o platbe — Fusion Venčeky',
+      body:'Prijali sme platbu '+eur+' za venčekový kurz ('+c.name+')'+(platiRodic?' — zaplatil/a '+platca.name:'')+'. Ďakujeme!',
+      read:false, created_at:nowISO()}).catch(()=>{});
+    if(mailOk(ziak)) sendMail(ziak.email,'🧾 Potvrdenie o platbe — Fusion Venčeky',
+      emailTemplate('Potvrdenie o platbe',
+        '<p>Potvrdzujeme prijatie platby <b>'+eur+'</b> za venčekový kurz <b>Fusion Venčeky '+(c.year||'')+'</b>, skupina <b>'+c.name+'</b>.</p>'
+        +'<p>Spôsob platby: '+sposob+' · Dátum: '+today()+'</p><p>Toto potvrdenie si uschovajte. Ďakujeme! 💛</p>',
+        '📱 Otvoriť appku', APP_URL+'/vencek'), {priority:2}).catch(()=>{});
+    const rodicia=await vencekRodicia(ziak);
+    if(platiRodic && !rodicia.some(r=>r._id===platca._id)) rodicia.push(platca);
+    for(const r of rodicia){
+      await q.insert(db.notifications,{user_id:r._id, type:'venceky',
+        title:'🧾 '+String(ziak.name||'').split(' ')[0]+': venčekový kurz je uhradený',
+        body:eur+' za venčekový kurz ('+c.name+'), '+sposob+'.'+(platiRodic&&r._id===platca._id?' Doklad vám príde na e-mail.':''),
+        read:false, created_at:nowISO()}).catch(()=>{});
+      if(mailOk(r)) sendMail(r.email,'🧾 Potvrdenie o platbe — Fusion Venčeky',
+        emailTemplate('Potvrdenie o platbe',
+          '<p>Potvrdzujeme prijatie platby <b>'+eur+'</b> za venčekový kurz <b>'+c.name+'</b>. Kurz navštevuje: <b>'+ziak.name+'</b>.</p>'
+          +'<p>Spôsob platby: '+sposob+' · Dátum: '+today()+'</p><p>Ďakujeme! 💛</p>',
+          '📱 Otvoriť appku', APP_URL+'/vencek'), {priority:2}).catch(()=>{});
+    }
+    const naKoho=platiRodic?platca:ziak;
+    createInvoice({ user_id:naKoho._id, client_name: platiRodic ? platca.name+' (dieťa: '+ziak.name+')' : ziak.name, client_email:naKoho.email,
+      items:[{desc:('Venčekový kurz '+(c.year||'')+' · '+c.name+(platiRodic?' — '+ziak.name:'')).replace(/\s+/g,' ').trim(), qty:1, total:amt}], total:amt,
+      method: method==='stripe' ? 'Stripe (karta / Apple Pay / Google Pay)' : (method==='transfer' ? 'Prevod na účet' : 'Hotovosť'),
+      ...(method==='stripe' ? {} : {silent:true}) })
+      .catch(e=>console.error('faktúra k venčeku:', e.message));
+    return {ok:true, amount:amt};
+  });
 }
 // Koľko lekcií je pred venčekom a koľko po ňom — podľa skutočných termínov,
 // keď ich poznáme, inak podľa nastavených počtov.
@@ -23267,7 +23423,7 @@ app.post('/api/admin/venceky/schools', adminAuth, async(req,res)=>{
       name:String(req.body.group_name||'Venčeková skupina').trim(), year:s.year, code:kod,
       price:+req.body.price||49.90, lessons_total:+req.body.lessons_total||13, lessons_before:+req.body.lessons_before||10, lessons_done:0,
       lecturer:String(req.body.lecturer||'').trim(), event_date:'', note:'',
-      roles:Array.isArray(req.body.roles)?req.body.roles.filter(r=>VENCEK_ROLES.includes(r)):['student','teacher'],
+      roles:Array.isArray(req.body.roles)?req.body.roles.filter(r=>VENCEK_ROLES.includes(r)):['student','parent','teacher'],
       dances:VENCEK_DEFAULT_DANCES.map(n=>({name:n, level:0})), created_at:nowISO()});
     res.json({ok:true, school:s, class:c, join_link:`${APP_URL}/v/${c.code}`});
   }catch(e){ res.status(500).json({error:e.message}); }
@@ -23359,7 +23515,14 @@ app.get('/api/admin/venceky/class/:id', adminAuth, async(req,res)=>{
     const school=await q.one(db.venceky_schools,{_id:c.school_id});
     const allInClass=await q.find(db.users,{venceky_class_id:c._id});
     const members=allInClass.filter(u=>u.venceky_role==='student');
-    const parents=allInClass.filter(u=>u.venceky_role==='parent').map(p=>({id:p._id,name:p.name,email:p.email,child:p.vencek_child_name||''}));
+    // Rodičia = pripojení k deťom v skupine (16. 9.) + tí, čo sa registrovali ako rodič a dieťa ešte nepripojili
+    const rodicIds=[...new Set(members.flatMap(m=>Array.isArray(m.vencek_rodicia)?m.vencek_rodicia:[]))];
+    const rodiciaUcty=rodicIds.length ? await q.find(db.users,{_id:{$in:rodicIds}}) : [];
+    const menoRodica=Object.fromEntries(rodiciaUcty.map(r=>[r._id, r.name]));
+    const parents=[...rodiciaUcty, ...allInClass.filter(u=>u.venceky_role==='parent' && !rodicIds.includes(u._id))]
+      .map(p=>{ const deti=members.filter(m=>(m.vencek_rodicia||[]).includes(p._id)).map(m=>m.name);
+        return {id:p._id, name:p.name, email:p.email,
+          child: deti.length ? deti.join(', ') : 'dieťa zatiaľ nepripojené'+(p.vencek_child_name?' (uviedol/a: '+p.vencek_child_name+')':'')}; });
     const pays=await q.find(db.venceky_payments,{class_id:c._id});
     const payBy=Object.fromEntries(pays.map(p=>[p.user_id,p]));
     const costs=await q.find(db.venceky_costs,{class_id:c._id});
@@ -23369,7 +23532,9 @@ app.get('/api/admin/venceky/class/:id', adminAuth, async(req,res)=>{
       .map(t=>({id:t._id, name:t.name, email:t.email, role:t.venceky_role}));
     res.json({ok:true, school:school?.name||'', class:{...c, progress:vencekPct(c.dances), terminy:vencekTerminy(c)},
       members:members.map(m=>({id:m._id,name:m.name,email:m.email,phone:m.phone||'',
-        paid:!!payBy[m._id], amount:payBy[m._id]?.amount||null, paid_at:payBy[m._id]?.paid_at||null, method:payBy[m._id]?.method||null})),
+        paid:!!payBy[m._id], amount:payBy[m._id]?.amount||null, paid_at:payBy[m._id]?.paid_at||null, method:payBy[m._id]?.method||null,
+        payer:payBy[m._id]?.payer_name||null,
+        rodicia:(m.vencek_rodicia||[]).map(id=>menoRodica[id]).filter(Boolean)})),
       parents, staff, costs, levels:VENCEK_LEVELS});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -23383,28 +23548,9 @@ app.post('/api/admin/venceky/payment', adminAuth, async(req,res)=>{
     if(!c||!u) return res.status(404).json({error:'Trieda alebo žiak nenájdený'});
     if(await q.one(db.venceky_payments,{class_id:c._id,user_id:u._id}))
       return res.status(400).json({error:'Platba už je zaznamenaná'});
-    const amt=+amount||c.price||49.90;
-    await q.insert(db.venceky_payments,{class_id:c._id, school_id:c.school_id, user_id:u._id,
-      user_name:u.name, amount:amt, method:String(method||'cash'), paid_at:nowISO(),
-      recorded_by:req.session.uid, created_at:nowISO()});
-    // Potvrdenie o platbe — notifikácia + email (rodič/žiak)
-    await q.insert(db.notifications,{user_id:u._id,type:'venceky',
-      title:'🧾 Potvrdenie o platbe — Fusion Venčeky',
-      body:`Prijali sme platbu ${amt.toFixed(2)} € za venčekový kurz (${c.name}). Ďakujeme!`,
-      read:false, created_at:nowISO()}).catch(()=>{});
-    if(u.email && /@/.test(u.email)) sendMail(u.email,'🧾 Potvrdenie o platbe — Fusion Venčeky',
-      emailTemplate('Potvrdenie o platbe',
-      `<p>Potvrdzujeme prijatie platby <b>${amt.toFixed(2)} €</b> za venčekový kurz <b>Fusion Venčeky ${c.year}</b>, trieda <b>${c.name}</b>.</p>
-       <p>Spôsob platby: ${method==='transfer'?'prevod na účet':'hotovosť'} · Dátum: ${today()}</p>
-       <p>Toto potvrdenie si uschovajte. Ďakujeme! 💛</p>`,
-      '📱 Otvoriť appku', `${APP_URL}/vencek`)).catch(()=>{});
-    // Doklad sa doteraz vystavoval len pri platbe kartou. Hotovosť vybratá na
-    // hodine tak v „Predaje & faktúry" nemala nič — a účtovníčka to nemala z čoho
-    // zaúčtovať (10. 9.).
-    createInvoice({ user_id:u._id, client_name:u.name, client_email:u.email,
-      items:[{desc:`Venčekový kurz ${c.year||''} · ${c.name}`.trim(), qty:1, total:amt}], total:amt,
-      method:(method==='transfer'?'Prevod na účet':'Hotovosť'), silent:true })
-      .catch(e=>console.error('faktúra k venčeku (hotovosť):', e.message));
+    // Hotovosť/prevod — rovnaký zápis ako karta, potvrdenie ide aj pripojeným rodičom (16. 9.)
+    const r=await vencekZapisPlatbu({c, ziak:u, amount, method:(method==='transfer'?'transfer':'cash'), recorded_by:req.session.uid});
+    if(r.already) return res.status(400).json({error:'Platba už je zaznamenaná'});
     res.json({ok:true});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -23416,21 +23562,21 @@ app.post('/api/vencek/checkout', auth, async(req,res)=>{
   try{
     if(!STRIPE_SECRET) return res.status(400).json({error:'Platba kartou zatiaľ nie je dostupná — zaplať prosím u lektora.'});
     const u=await q.one(db.users,{_id:req.session.uid});
-    if(!u || !u.venceky_class_id) return res.status(400).json({error:'Nie si v žiadnej venčekovej skupine'});
-    const c=await q.one(db.venceky_classes,{_id:u.venceky_class_id});
-    if(!c) return res.status(404).json({error:'Skupina nenájdená'});
-    // Kartu má rodič, nie trinásťročný — nech môže zaplatiť za svoje dieťa.
-    // Platba sa aj tak zapíše žiakovi, inak by v skupine vyšiel ako neplatič.
-    // Dieťa hľadáme podľa mena, ktoré rodič zadal pri registrácii; keď sa
-    // jednoznačne nespáruje, ostáva pôvodná odpoveď.
+    if(!u) return res.status(401).json({error:'Nie ste prihlásený'});
+    // Kartu má rodič, nie trinásťročný — platí za svoje PRIPOJENÉ dieťa (16. 9.). Platba sa zapíše
+    // žiakovi (inak by v skupine vyšiel ako neplatič), doklad a potvrdenie idú rodičovi.
     let ziak=u;
     if(u.venceky_role==='parent'){
-      ziak=await vencekDieta(u, c._id);
-      if(!ziak)
-        return res.status(400).json({error:'Kurz sa uhrádza na účet žiaka. Prihláste sa jeho kontom — alebo nám napíšte a spárujeme vás s dieťaťom.'});
+      const deti=await vencekDetiRodica(u._id);
+      ziak=deti.find(x=>x._id===String(req.body.dieta_id||'')) || ((deti.length===1 && !req.body.dieta_id) ? deti[0] : null);
+      if(!ziak) return res.status(400).json({error: deti.length ? 'Vyberte, za ktoré dieťa platíte.' : 'Najprv si pripojte dieťa — kódom z jeho appky alebo odkazom pre dieťa.'});
     }
+    if(!ziak.venceky_class_id || (ziak.venceky_role && ziak.venceky_role!=='student'))
+      return res.status(400).json({error:'Nie si v žiadnej venčekovej skupine'});
+    const c=await q.one(db.venceky_classes,{_id:ziak.venceky_class_id});
+    if(!c) return res.status(404).json({error:'Skupina nenájdená'});
     if(await q.one(db.venceky_payments,{class_id:c._id, user_id:ziak._id}))
-      return res.status(400).json({error: ziak._id===u._id ? 'Kurz už máš uhradený' : 'Kurz už je za '+ziak.name+' uhradený'});
+      return res.status(400).json({error: ziak._id===u._id ? 'Kurz už máš uhradený' : 'Kurz už je uhradený ('+ziak.name+')'});
     const suma=+c.price||49.90;
     if(!(suma>0)) return res.status(400).json({error:'Neplatná cena kurzu'});
     const s=await q.one(db.venceky_schools,{_id:c.school_id});
@@ -23465,44 +23611,15 @@ app.post('/api/vencek/verify', auth, async(req,res)=>{
     const c=await q.one(db.venceky_classes,{_id:String(s.metadata.class_id||'')});
     const u=await q.one(db.users,{_id:String(s.metadata.user_id||'')});
     if(!c||!u) return res.status(404).json({error:'Skupina alebo žiak nenájdený'});
-    // Návrat na stránku sa dá zopakovať (refresh, druhý tab) — druhá platba nesmie vzniknúť.
-    if(await q.one(db.venceky_payments,{class_id:c._id, user_id:u._id}))
-      return res.json({ok:true, already:true});
-    const amt=+(s.amount_total||0)/100 || +c.price || 49.90;
-    await q.insert(db.venceky_payments,{class_id:c._id, school_id:c.school_id, user_id:u._id,
-      user_name:u.name, amount:amt, method:'stripe', paid_at:nowISO(),
-      stripe_session_id:String(session_id), created_at:nowISO()});
-    await q.insert(db.notifications,{user_id:u._id, type:'venceky',
-      title:'🧾 Potvrdenie o platbe — Fusion Venčeky',
-      body:`Prijali sme platbu ${amt.toFixed(2)} € za venčekový kurz (${c.name}). Ďakujeme!`,
-      read:false, created_at:nowISO()}).catch(()=>{});
-    if(u.email && /@/.test(u.email)) sendMail(u.email,'🧾 Potvrdenie o platbe — Fusion Venčeky',
-      emailTemplate('Potvrdenie o platbe',
-      `<p>Potvrdzujeme prijatie platby <b>${amt.toFixed(2)} €</b> za venčekový kurz <b>Fusion Venčeky ${c.year}</b>, skupina <b>${c.name}</b>.</p>
-       <p>Spôsob platby: kartou · Dátum: ${today()}</p>
-       <p>Toto potvrdenie si uschovajte. Ďakujeme! 💛</p>`,
-      '📱 Otvoriť appku', `${APP_URL}/vencek`), {priority:2}).catch(()=>{});
-    createInvoice({ user_id:u._id, client_name:u.name, client_email:u.email,
-      items:[{desc:`Venčekový kurz ${c.year} · ${c.name}`, qty:1, total:amt}], total:amt,
-      method:'Stripe (karta / Apple Pay / Google Pay)' })
-      .catch(e=>console.error('faktúra k venčeku:', e.message));
-    // Keď platil rodič, potvrdenie musí prísť aj jemu — z jeho účtu odišli peniaze.
-    const platcaId=String(s.metadata.payer_id||'');
-    if(platcaId && platcaId!==u._id){
-      const rodic=await q.one(db.users,{_id:platcaId});
-      if(rodic){
-        await q.insert(db.notifications,{user_id:rodic._id, type:'venceky',
-          title:'🧾 Potvrdenie o platbe — Fusion Venčeky',
-          body:`Zaplatili ste ${amt.toFixed(2)} € za venčekový kurz pre ${u.name}. Ďakujeme!`,
-          read:false, created_at:nowISO()}).catch(()=>{});
-        if(rodic.email && /@/.test(rodic.email)) sendMail(rodic.email,'🧾 Potvrdenie o platbe — Fusion Venčeky',
-          emailTemplate('Potvrdenie o platbe',
-          `<p>Potvrdzujeme prijatie platby <b>${amt.toFixed(2)} €</b> za venčekový kurz <b>${c.name}</b> pre <b>${u.name}</b>.</p>
-           <p>Spôsob platby: kartou · Dátum: ${today()}</p><p>Ďakujeme! 💛</p>`,
-          '📱 Otvoriť appku', `${APP_URL}/vencek`), {priority:2}).catch(()=>{});
-      }
-    }
-    res.json({ok:true, amount:amt});
+    // Potvrdiť smie ten, kto platil, žiak alebo admin (predtým ktokoľvek prihlásený so session_id).
+    const ja=await q.one(db.users,{_id:req.session.uid});
+    if(![String(s.metadata.payer_id||''), String(s.metadata.user_id||'')].includes(req.session.uid) && !(ja && ja.is_admin))
+      return res.status(403).json({error:'Túto platbu potvrdiť nemôžeš'});
+    // Refresh, druhý tab aj webhook naraz — zápis je raz (zámok vo vencekZapisPlatbu).
+    const platca=s.metadata.payer_id ? await q.one(db.users,{_id:String(s.metadata.payer_id)}) : null;
+    const zap=await vencekZapisPlatbu({c, ziak:u, amount:(+s.amount_total||0)/100, method:'stripe', platca, stripe_session_id:String(session_id)});
+    if(zap.already) return res.json({ok:true, already:true});
+    res.json({ok:true, amount:zap.amount});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 app.post('/api/admin/venceky/payment-delete', adminAuth, async(req,res)=>{
@@ -23595,6 +23712,7 @@ app.post('/api/admin/venceky/progress', trainerAuth, async(req,res)=>{
   try{
     const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});
     if(!c) return res.status(404).json({error:'Trieda nenájdená'});
+    if(!jeLektorSkupiny(req.trainerUser, c)) return res.status(403).json({error:'Túto skupinu neučíš'});
     const set={};
     if(Array.isArray(req.body.dances))
       set.dances=req.body.dances.map(d=>({name:String(d.name).slice(0,60), level:Math.max(0,Math.min(4,+d.level||0))}));
@@ -23615,7 +23733,7 @@ app.post('/api/admin/venceky/progress', trainerAuth, async(req,res)=>{
       const before=new Set((c.dances||[]).filter(d=>d.level>=4).map(d=>d.name));
       const newly=set.dances.filter(d=>d.level>=4 && !before.has(d.name));
       if(newly.length){
-        const members=(await q.find(db.users,{venceky_class_id:c._id}));
+        const members=await vencekPrijemcovia(c._id);
         for(const m of members) await q.insert(db.notifications,{user_id:m._id,type:'venceky',
           title:`🔥 ${newly.map(d=>d.name).join(' + ')} zvládnut${newly.length>1?'é':'ý'}!`,
           body:`Vaša trieda ${c.name} už vie ${set.dances.filter(d=>d.level>=4).length} z ${set.dances.length} tancov. Len tak ďalej! 💃`,
@@ -23631,6 +23749,7 @@ app.post('/api/admin/venceky/attendance', trainerAuth, async(req,res)=>{
   try{
     const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});
     if(!c) return res.status(404).json({error:'Trieda nenájdená'});
+    if(!jeLektorSkupiny(req.trainerUser, c)) return res.status(403).json({error:'Túto skupinu neučíš'});
     const lesson=Math.max(1,Math.min(+c.lessons_total||13,+req.body.lesson_no||1));
     // Venček je školská trieda — prídu všetci a zapisuje sa len to, kto chýbal
     // (Marek 2. 9.). Prítomní sa dopočítajú, nech staré záznamy aj štatistika
@@ -23653,11 +23772,39 @@ app.post('/api/admin/venceky/attendance', trainerAuth, async(req,res)=>{
     // píše len dochádzku, mal v appke „Lekcia 0 z 10" celý kurz.
     if((+c.lessons_done||0) < lesson)
       await q.update(db.venceky_classes,{_id:c._id},{$set:{lessons_done:lesson}});
+    // Rodičovi príde správa, keď dieťa chýbalo (Marek 16. 9.) — raz za lekciu na dieťa.
+    if(absent.length) (async()=>{
+      const term=vencekTerminy(c).find(t=>t.lesson===lesson);
+      const kedy=term && term.at ? new Intl.DateTimeFormat('sk-SK',{timeZone:'Europe/Bratislava',day:'numeric',month:'numeric'}).format(new Date(term.at)) : '';
+      for(const zid of absent){
+        const z=await q.one(db.users,{_id:zid}); if(!z) continue;
+        const meno=String(z.name||'').split(' ')[0];
+        for(const r of await vencekRodicia(z)){
+          const kluc='vencek_absent:'+c._id+':'+lesson+':'+zid;
+          if(await q.one(db.notifications,{user_id:r._id, key:kluc})) continue;
+          await q.insert(db.notifications,{user_id:r._id, type:'venceky', key:kluc,
+            title:'🚫 '+meno+' chýbal/a na nácviku venčeka',
+            body:'Lekcia '+lesson+(kedy?' ('+kedy+')':'')+', skupina '+c.name+'. Čo sa učilo, nájdete v appke v sekcii Venčeky.',
+            read:false, created_at:nowISO()}).catch(()=>{});
+          if(r.email && /@/.test(r.email) && !/@internal\.local$/i.test(r.email))
+            sendMail(r.email, '🚫 '+meno+' chýbal/a na nácviku venčeka',
+              emailTemplate('Chýbal/a na nácviku',
+                '<p>Dobrý deň,</p><p><b>'+z.name+'</b> chýbal/a na lekcii č. '+lesson+(kedy?' ('+kedy+')':'')+' venčekového kurzu, skupina '+c.name+'.</p>'
+                +'<p>Čo sa na lekcii učilo, nájdete v appke — nech to na ďalšej lekcii dobehne. 💛</p>',
+                '📱 Otvoriť venček', APP_URL+'/vencek'), {priority:3, template:'vencek_absent'}).catch(()=>{});
+        }
+      }
+    })().catch(e=>console.error('vencek absent notify:', e.message));
     res.json({ok:true, lesson_no:lesson, present:present.length, absent:absent.length});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 app.get('/api/admin/venceky/attendance/:class_id', trainerAuth, async(req,res)=>{
-  try{ res.json({ok:true, records:await q.find(db.venceky_attendance,{class_id:req.params.class_id},{lesson_no:1})}); }
+  try{
+    const c=await q.one(db.venceky_classes,{_id:String(req.params.class_id||'')});
+    if(!c) return res.status(404).json({error:'Trieda nenájdená'});
+    if(!jeLektorSkupiny(req.trainerUser, c)) return res.status(403).json({error:'Túto skupinu neučíš'});
+    res.json({ok:true, records:await q.find(db.venceky_attendance,{class_id:c._id},{lesson_no:1})});
+  }
   catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -23929,6 +24076,7 @@ app.post('/api/admin/venceky/lesson-log', trainerAuth, async(req,res)=>{
   try{
     const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});
     if(!c) return res.status(404).json({error:'Skupina nenájdená'});
+    if(!jeLektorSkupiny(req.trainerUser, c)) return res.status(403).json({error:'Túto skupinu neučíš'});
     const lekcia=Math.max(1, Math.min(+c.lessons_total||13, +req.body.lesson||1));
     const tance=(Array.isArray(req.body.dances)?req.body.dances:[])
       .map(x=>String(x).slice(0,60)).filter(x=>x);
@@ -23946,7 +24094,7 @@ app.post('/api/admin/venceky/lesson-log', trainerAuth, async(req,res)=>{
     const predtym=new Set((c.dances||[]).filter(d=>d.level>=4).map(d=>d.name));
     const pribudlo=[...naucene].filter(n=>!predtym.has(n));
     if(pribudlo.length){
-      for(const m of await q.find(db.users,{venceky_class_id:c._id}))
+      for(const m of await vencekPrijemcovia(c._id))
         await q.insert(db.notifications,{user_id:m._id, type:'venceky',
           title:`🔥 ${pribudlo.join(' + ')} — máte to za sebou!`,
           body:`Vaša skupina už zvláda ${naucene.size} z ${(c.dances||[]).length} tancov. Len tak ďalej! 💃`,
@@ -23960,6 +24108,7 @@ app.post('/api/admin/venceky/lesson-change', trainerAuth, async(req,res)=>{
   try{
     const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});
     if(!c) return res.status(404).json({error:'Skupina nenájdená'});
+    if(!jeLektorSkupiny(req.trainerUser, c)) return res.status(403).json({error:'Túto skupinu neučíš'});
     if(!c.start_at) return res.status(400).json({error:'Najprv nastav dátum a čas prvej lekcie'});
     const week=Math.max(0, Math.min(199, +req.body.week));
     if(!Number.isFinite(week)) return res.status(400).json({error:'Chýba týždeň'});
@@ -23980,7 +24129,7 @@ app.post('/api/admin/venceky/lesson-change', trainerAuth, async(req,res)=>{
     zmeny.sort((a,b)=>a.week-b.week);
     await q.update(db.venceky_classes,{_id:c._id},{$set:{lesson_changes:zmeny}});
     // Zmena termínu je pre deti podstatná informácia — nech sa ju dozvedia.
-    const clenovia=await q.find(db.users,{venceky_class_id:c._id});
+    const clenovia=await vencekPrijemcovia(c._id);
     for(const m of clenovia) await q.insert(db.notifications,{user_id:m._id, type:'venceky',
       title:'🗓️ Zmena v rozvrhu venčeka',
       body:`Lekcia bola ${popis}. Aktuálny rozvrh nájdeš v appke v sekcii Venčeky.`,
@@ -23993,10 +24142,17 @@ app.post('/api/admin/venceky/lesson-change', trainerAuth, async(req,res)=>{
 // Marek 2. 9.: „v tom venčekovom okne si môžu úplne dole písať v chate žiaci
 // aj učitelia, je tam taký spoločný chat." Prístup má len ten, kto do skupiny
 // naozaj patrí — class_id sa berie z účtu, nie z requestu.
-async function vencekMojaSkupina(uid, classIdAkAdmin){
+async function vencekMojaSkupina(uid, classIdParam){
   const u=await q.one(db.users,{_id:uid});
   if(!u) return null;
-  if(u.is_admin && classIdAkAdmin) return await q.one(db.venceky_classes,{_id:String(classIdAkAdmin)});
+  if(u.is_admin && classIdParam) return await q.one(db.venceky_classes,{_id:String(classIdParam)});
+  // Rodič vidí chat skupiny svojho dieťaťa (Marek 16. 9.) — len keď je dieťa naozaj pripojené.
+  if(u.venceky_role==='parent'){
+    const deti=await vencekDetiRodica(u._id);
+    const chce=String(classIdParam||'');
+    const d=(chce && deti.find(x=>x.venceky_class_id===chce)) || (chce ? null : deti[0]);
+    return d ? await q.one(db.venceky_classes,{_id:d.venceky_class_id}) : null;
+  }
   if(!u.venceky_class_id) return null;
   return await q.one(db.venceky_classes,{_id:u.venceky_class_id});
 }
@@ -24035,7 +24191,7 @@ app.post('/api/vencek/chat', auth, async(req,res)=>{
     (async()=>{
       const kto=u.nickname||String(u.name||'').split(' ')[0]||'Niekto';
       const ukazka=text.length>90 ? text.slice(0,90)+'…' : text;
-      for(const clen of await q.find(db.users,{venceky_class_id:c._id})){
+      for(const clen of await vencekPrijemcovia(c._id)){
         if(clen._id===u._id) continue;
         await q.insert(db.notifications,{user_id:clen._id, type:'venceky',
           title:'💬 '+kto+' píše v chate skupiny', body:ukazka,
@@ -24090,12 +24246,112 @@ app.post('/api/admin/venceky/member-role', adminAuth, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ── Rodič ↔ dieťa: kódy, pozvánky, súhlas; lektor zapisuje hotovosť (Marek 16. 9.) ──
+const vencekPokusy=new Map();   // rodič zadáva kód dieťaťa — skúšanie je obmedzené
+app.get('/api/vencek/rodic/kod', auth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.session.uid});
+    if(!u || (u.venceky_role||'')!=='student' || !u.venceky_class_id) return res.status(403).json({error:'Kód pre rodiča má len žiak venčeka'});
+    const c=await q.one(db.venceky_classes,{_id:u.venceky_class_id});
+    const kod=await vencekKodDietata(u);
+    res.json({ok:true, kod, odkaz:APP_URL+'/v/'+((c&&c.code)||'')+'?dieta='+kod, rodicia:(await vencekRodicia(u)).map(r=>({name:r.name}))});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/vencek/rodic/pripojit', auth, async(req,res)=>{
+  try{
+    const uid=req.session.uid, teraz=Date.now();
+    const p=vencekPokusy.get(uid);
+    if(p && teraz-p.od<3600000 && p.n>=8) return res.status(429).json({error:'Priveľa nesprávnych pokusov. Skúste to o hodinu alebo sa ozvite lektorovi.'});
+    const kod=vencekCistyKod(req.body.kod);
+    const ziak=kod.length>=6 ? await q.one(db.users,{vencek_kod_rodica:kod}) : null;
+    if(!ziak){
+      const z=(p && teraz-p.od<3600000) ? p : {od:teraz, n:0}; z.n++; vencekPokusy.set(uid, z);
+      return res.status(404).json({error:'Tento kód nepoznáme. Dieťa ho nájde vo svojej appke v sekcii Venčeky.'});
+    }
+    const r=await vencekPrepoj(await q.one(db.users,{_id:uid}), ziak);
+    if(r.error) return res.status(400).json({error:r.error});
+    res.json({ok:true, uz:!!r.uz, dieta:{id:ziak._id, name:ziak.name}});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.get('/api/vencek/rodic/pozvanka', auth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.session.uid});
+    if(!u || ['student','teacher','director'].includes(u.venceky_role)) return res.status(403).json({error:'Pozvánku pre dieťa má len rodič'});
+    const token=await vencekPozvankaRodica(u);
+    const c=u.venceky_class_id ? await q.one(db.venceky_classes,{_id:u.venceky_class_id}) : null;
+    res.json({ok:true, odkaz: c ? APP_URL+'/v/'+c.code+'?rodic='+token : APP_URL+'/vencek?rodic='+token, odkaz_ucet:APP_URL+'/vencek?rodic='+token});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/vencek/dieta/pripojit', auth, async(req,res)=>{
+  try{
+    const token=String(req.body.token||'').replace(/[^A-Za-z0-9]/g,'').slice(0,20);
+    const rodic=token.length>=10 ? await q.one(db.users,{vencek_pozvanka:token}) : null;
+    if(!rodic) return res.status(404).json({error:'Pozvánka neplatí. Popros rodiča o nový odkaz.'});
+    const r=await vencekPrepoj(rodic, await q.one(db.users,{_id:req.session.uid}));
+    if(r.error) return res.status(400).json({error:r.error});
+    res.json({ok:true, uz:!!r.uz, rodic:{name:rodic.name}});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/vencek/rodic/odpojit', auth, async(req,res)=>{
+  try{
+    const d=await q.one(db.users,{_id:String(req.body.dieta_id||'')});
+    if(!d || !(d.vencek_rodicia||[]).includes(req.session.uid)) return res.status(404).json({error:'Dieťa nie je pripojené'});
+    await q.update(db.users,{_id:d._id},{$pull:{vencek_rodicia:req.session.uid}});
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Súhlas rodiča so spracovaním údajov dieťaťa — deti vo venčeku majú 13–15 rokov (16. 9.)
+app.post('/api/vencek/rodic/suhlas', auth, async(req,res)=>{
+  try{
+    const d=await q.one(db.users,{_id:String(req.body.dieta_id||'')});
+    if(!d || !(d.vencek_rodicia||[]).includes(req.session.uid)) return res.status(404).json({error:'Dieťa nie je pripojené'});
+    const r=await q.one(db.users,{_id:req.session.uid});
+    await q.update(db.users,{_id:d._id},{$set:{vencek_suhlas_rodica:{at:nowISO(), rodic_id:r._id, rodic_meno:r.name}}});
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Lektor zapíše hotovosť alebo prevod priamo na hodine (Marek 16. 9.: „aj lektor môže")
+app.post('/api/vencek/lektor/platba', auth, async(req,res)=>{
+  try{
+    const ja=await q.one(db.users,{_id:req.session.uid});
+    const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});
+    if(!c) return res.status(404).json({error:'Skupina nenájdená'});
+    if(!jeLektorSkupiny(ja, c)) return res.status(403).json({error:'Platby zapisuje len lektor tejto skupiny'});
+    const ziak=await q.one(db.users,{_id:String(req.body.user_id||'')});
+    if(!ziak || ziak.venceky_class_id!==c._id || (ziak.venceky_role||'student')!=='student') return res.status(404).json({error:'Žiak v tejto skupine nie je'});
+    const method=req.body.method==='transfer'?'transfer':'cash';
+    const r=await vencekZapisPlatbu({c, ziak, amount:req.body.amount, method, recorded_by:ja._id});
+    if(r.already) return res.status(400).json({error:'Platba už je zaznamenaná'});
+    if(!ja.is_admin) for(const a of await q.find(db.users,{is_admin:true}))
+      await q.insert(db.notifications,{user_id:a._id, type:'venceky',
+        title:'💶 '+ja.name+': venček '+r.amount.toFixed(2).replace('.',',')+' € — '+ziak.name,
+        body:'Skupina '+c.name+' · '+(method==='transfer'?'prevod na účet':'hotovosť u lektora'),
+        read:false, created_at:nowISO()}).catch(()=>{});
+    res.json({ok:true, amount:r.amount});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ── Člen/učiteľ/riaditeľ: môj venčekový prehľad (rovnaké dáta, iný rozsah) ──
 app.get('/api/vencek/mine', auth, async(req,res)=>{
   try{
     const u=await q.one(db.users,{_id:req.session.uid});
-    if(!u || (!u.venceky_class_id && !u.venceky_school_id && !u.is_admin))
-      return res.json({ok:true, role:null});
+    if(!u) return res.json({ok:true, role:null});
+    // Tréner, ktorý venček učí (lektor), vidí svoje skupiny a zapisuje hotovosť (Marek 16. 9.)
+    if(!u.is_admin && !u.venceky_class_id && !u.venceky_school_id && u.venceky_role!=='parent'){
+      const moje=(await q.find(db.venceky_classes,{})).filter(c=>!c.completed && jeLektorSkupiny(u,c));
+      if(!moje.length) return res.json({ok:true, role:null});
+      const out=[];
+      for(const c of moje){
+        const s=await q.one(db.venceky_schools,{_id:c.school_id});
+        const ziaci=(await q.find(db.users,{venceky_class_id:c._id})).filter(x=>(x.venceky_role||'student')==='student');
+        const plat=Object.fromEntries((await q.find(db.venceky_payments,{class_id:c._id})).map(p=>[p.user_id,p]));
+        out.push({ id:c._id, name:c.name, school:(s&&s.name)||'', price:c.price||49.90,
+          students:ziaci.map(z=>({ id:z._id, name:z.name, paid:!!plat[z._id],
+            amount:plat[z._id]?plat[z._id].amount:null, method:plat[z._id]?plat[z._id].method:null }))
+            .sort((a,b)=>a.name.localeCompare(b.name,'sk')) });
+      }
+      return res.json({ok:true, role:'lektor', classes:out});
+    }
     const role=u.is_admin?'admin':(u.venceky_role||'student');
     const classView=async c=>{
       const members=(await q.find(db.users,{venceky_class_id:c._id})).filter(x=>x.venceky_role==='student');
@@ -24137,6 +24393,37 @@ app.get('/api/vencek/mine', auth, async(req,res)=>{
       }
       return res.json({ok:true, role, schools:out});
     }
+    if(role==='parent'){
+      const deti=await vencekDetiRodica(u._id);
+      const dieta=deti.find(x=>x._id===String(req.query.dieta||'')) || deti[0] || null;
+      const cid=dieta ? dieta.venceky_class_id : u.venceky_class_id;
+      const cr=cid ? await q.one(db.venceky_classes,{_id:cid}) : null;
+      const token=await vencekPozvankaRodica(u);
+      const zaklad={ ok:true, role:'parent', is_parent:true,
+        deti:deti.map(x=>({id:x._id, name:x.name})),
+        pozvanka_odkaz: cr ? APP_URL+'/v/'+cr.code+'?rodic='+token : APP_URL+'/vencek?rodic='+token,
+        pozvanka_ucet: APP_URL+'/vencek?rodic='+token };
+      if(!cr) return res.json({...zaklad, class:null});
+      const skola=await q.one(db.venceky_schools,{_id:cr.school_id});
+      const pohlad=await classView(cr);
+      pohlad.paid_count=null;                 // kto ďalší zaplatil, rodičovi netreba
+      pohlad.attendance=null;                 // ani priemer triedy — vidí dochádzku svojho dieťaťa
+      const zaznamy=await q.find(db.venceky_attendance,{class_id:cr._id});
+      const vTriede=await q.find(db.users,{venceky_class_id:cr._id});
+      // Mená chýbajúcich spolužiakov rodič nevidí — len či bolo na lekcii jeho dieťa.
+      const lekcieR=vencekLekcie(cr, vTriede, zaznamy, dieta?dieta._id:null)
+        .map(l=>({ lesson:l.lesson, dances:l.dances, note:l.note, recorded:!!dieta && l.recorded, absent:null,
+          dieta_chybalo:(dieta && l.recorded) ? !!l.me_absent : null }));
+      const zakl2={...zaklad, school:(skola&&skola.name)||'', class:pohlad, lessons:lekcieR, price:cr.price||49.90};
+      if(!dieta) return res.json(zakl2);
+      const platba=await q.one(db.venceky_payments,{class_id:cr._id, user_id:dieta._id});
+      const zapisane=lekcieR.filter(l=>l.recorded);
+      return res.json({...zakl2, chat_class_id:cr._id,
+        dieta:{ id:dieta._id, name:dieta.name, class_id:cr._id, suhlas:!!dieta.vencek_suhlas_rodica,
+          payment: platba ? {amount:platba.amount, paid_at:platba.paid_at, method:platba.method, payer_name:platba.payer_name||null} : null,
+          attendance: zapisane.length ? { recorded:zapisane.length, attended:zapisane.filter(l=>!l.dieta_chybalo).length,
+            missed:zapisane.filter(l=>l.dieta_chybalo).map(l=>l.lesson) } : null } });
+    }
     const c=await q.one(db.venceky_classes,{_id:u.venceky_class_id});
     if(!c) return res.json({ok:true, role:null});
     const school=await q.one(db.venceky_schools,{_id:c.school_id});
@@ -24157,13 +24444,11 @@ app.get('/api/vencek/mine', auth, async(req,res)=>{
     }
     res.json({ok:true, role, school:school?.name||'', class:view, lessons:lekcie,
       ...(ziaci?{students:ziaci}:{}),
-      is_parent: role==='parent'||undefined, child_name: role==='parent'?(u.vencek_child_name||''):undefined,
-      // Rodič potrebuje vedieť, či je dieťa spárované a či má zaplatené —
-      // inak by na neho tlačidlo platby buď chýbalo, alebo ho poslalo do chyby.
-      ...(role==='parent' ? await (async()=>{
-        const dieta=await vencekDieta(u, c._id);
-        if(!dieta) return { child_matched:false, child_paid:null };
-        return { child_matched:true, child_paid: !!(await q.one(db.venceky_payments,{class_id:c._id, user_id:dieta._id})) };
+      // Žiak dá kód rodičovi — rodič potom vidí jeho dochádzku, progres a môže zaplatiť (16. 9.)
+      ...(role==='student' ? await (async()=>{
+        const kod=await vencekKodDietata(u);
+        return { rodicia:(await vencekRodicia(u)).map(r=>({name:r.name})), kod_rodica:kod,
+          odkaz_rodica:APP_URL+'/v/'+c.code+'?dieta='+kod, suhlas_rodica:!!u.vencek_suhlas_rodica };
       })() : {}),
       my_payment: myPay?{amount:myPay.amount, paid_at:myPay.paid_at, method:myPay.method}:null,
       my_attendance: (role!=='parent'&&myRecs.length)?{attended:myRecs.filter(r=>(r.present||[]).includes(u._id)).length, recorded:myRecs.length}:null,
@@ -24565,6 +24850,27 @@ async function runDailyJobs(){
             '⚙️ Otvoriť profil', APP_URL+'/client-dashboard'), {priority:2, template:'renewal_notice'}).catch(()=>{});
     }
   }catch(e){ console.error('renewal_notice:', e.message); }
+
+  // ── Venček: nezaplatený kurz → raz za týždeň pripomienka žiakovi a jeho rodičom, len v appke (16. 9.) ──
+  try{
+    const tyzden=Math.floor(Date.now()/(7*864e5));
+    for(const c of await q.find(db.venceky_classes,{})){
+      if(c.completed || !((+c.lessons_done||0)>=1)) continue;
+      const zaplatili=new Set((await q.find(db.venceky_payments,{class_id:c._id})).map(p=>p.user_id));
+      const eur=(+c.price||49.9).toFixed(2).replace('.',',')+' €';
+      for(const z of (await q.find(db.users,{venceky_class_id:c._id})).filter(x=>(x.venceky_role||'student')==='student' && x.active!==false)){
+        if(zaplatili.has(z._id)) continue;
+        const kluc='vencek_platba:'+c._id+':'+z._id+':'+tyzden;
+        for(const r of [z, ...await vencekRodicia(z)]){
+          if(await q.one(db.notifications,{user_id:r._id, key:kluc})) continue;
+          await q.insert(db.notifications,{user_id:r._id, type:'venceky', key:kluc,
+            title: r._id===z._id ? '💳 Venčekový kurz ešte nie je uhradený' : '💳 '+String(z.name||'').split(' ')[0]+': venčekový kurz ešte nie je uhradený',
+            body:'Skupina '+c.name+' · '+eur+'. Zaplatiť sa dá kartou v appke (sekcia Venčeky) alebo v hotovosti u lektora.',
+            read:false, created_at:nowISO()}).catch(()=>{});
+        }
+      }
+    }
+  }catch(e){ console.error('vencek pripomienka platby:', e.message); }
 
   const expiring = await q.find(db.memberships,{status:'active',expires_at:{$lte:d7+'T23:59:59',$gte:todayStr+'T00:00:00'}});
   for(const m of expiring){

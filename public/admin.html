@@ -4436,9 +4436,9 @@ async function vClassDetail(cid, tab){
      +'</div>'
      +'<table class="table table-dark table-sm"><tbody>'
        +(d.members.map(mm=>'<tr>'
-         +'<td>'+(mm.paid?'✅':'⏳')+' <b>'+escHtml(mm.name)+'</b><br><small class="text-muted">'+escHtml(mm.email||'')+' '+escHtml(mm.phone||'')+'</small>'+vRolePicker(mm.id,c._id,'student')+'</td>'
+         +'<td>'+(mm.paid?'✅':'⏳')+' <b>'+escHtml(mm.name)+'</b><br><small class="text-muted">'+escHtml(mm.email||'')+' '+escHtml(mm.phone||'')+'</small>'+((mm.rodicia||[]).length?'<br><small>👨‍👩‍👧 '+escHtml(mm.rodicia.join(', '))+'</small>':'')+vRolePicker(mm.id,c._id,'student')+'</td>'
          +'<td class="text-end">'+(mm.paid
-           ? vEur(mm.amount)+' <small class="text-muted">('+V_SPOSOB(mm.method)+')</small><br><button class="btn btn-sm btn-outline-danger mt-1" onclick="vApi(\'payment-delete\',{class_id:\''+c._id+'\',user_id:\''+mm.id+'\'}).then(()=>vClassDetail(\''+c._id+'\'))">zrušiť platbu</button>'
+           ? vEur(mm.amount)+' <small class="text-muted">('+V_SPOSOB(mm.method)+(mm.payer?', platil/a '+escHtml(mm.payer):'')+')</small><br><button class="btn btn-sm btn-outline-danger mt-1" onclick="vApi(\'payment-delete\',{class_id:\''+c._id+'\',user_id:\''+mm.id+'\'}).then(()=>vClassDetail(\''+c._id+'\'))">zrušiť platbu</button>'
            : '<button class="btn btn-sm btn-brand" onclick="vMarkPaid(\''+c._id+'\',\''+mm.id+'\',\'cash\')">💶 hotovosť</button> '
              +'<button class="btn btn-sm btn-outline-light" onclick="vMarkPaid(\''+c._id+'\',\''+mm.id+'\',\'transfer\')">🏦 prevod</button>')
          +'</td></tr>').join('')

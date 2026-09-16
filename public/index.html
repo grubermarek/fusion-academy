@@ -1058,6 +1058,12 @@ function fmtDMY(d){
   }catch(e){}
 })();
 function faPoPrihlaseni(def){
+  // Venček: odkaz na pripojenie rodiča/dieťaťa otvorený bez prihlásenia — po prihlásení späť naň (16. 9.)
+  try{
+    const po=JSON.parse(localStorage.getItem('fa_po_prihlaseni')||'null');
+    localStorage.removeItem('fa_po_prihlaseni');
+    if(po && typeof po.url==='string' && /^\/vencek(\?|$)/.test(po.url) && Date.now()-(+po.at||0) < 3600*1000) return po.url;
+  }catch(e){}
   try{
     const raw=localStorage.getItem('fa_buy_intent');
     if(raw){

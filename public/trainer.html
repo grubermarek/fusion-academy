@@ -2901,6 +2901,23 @@ function showQrResult(r, classId){
   }
 }
 
+// Tréner, ktorý učí venček, má odtiaľto cestu k platbám žiakov (16. 9.)
+(async function(){
+  try{
+    const d=await (await fetch('/api/vencek/mine',{credentials:'include'})).json();
+    if(!d || d.role!=='lektor' || !(d.classes||[]).length) return;
+    const panel=document.getElementById('panel-coach'); if(!panel) return;
+    const a=document.createElement('a');
+    a.href='/vencek';
+    a.style.cssText='display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,rgba(201,168,76,.18),rgba(201,168,76,.05));border:1px solid rgba(201,168,76,.5);border-radius:14px;padding:12px 16px;margin-bottom:14px;text-decoration:none;color:inherit';
+    const nezapl=d.classes.reduce((s,c)=>s+c.students.filter(z=>!z.paid).length,0);
+    a.innerHTML='<span style="font-size:1.5rem">🎓</span><span style="flex:1;min-width:0"><b style="color:#F0DFA8">VENČEKY</b><br><small style="color:#b9b3a6">'
+      +d.classes.length+' '+(d.classes.length===1?'skupina':'skupiny')+' · nezaplatení: '+nezapl+' — zapíš hotovosť z hodiny</small></span>'
+      +'<span style="background:linear-gradient(135deg,#C9A84C,#a5842f);color:#161310;border-radius:999px;padding:7px 14px;font-weight:800;font-size:.8rem">Otvoriť ↗</span>';
+    panel.prepend(a);
+  }catch(e){}
+})();
+
 function renderScanLog(){
   const el = document.getElementById('qrScanLog');
   if(!_qrScanLog.length){ el.innerHTML='<div style="font-size:.82rem;color:var(--muted);text-align:center;padding:12px">Žiadne skeny v tejto relácii</div>'; return; }

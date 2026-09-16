@@ -3916,6 +3916,10 @@ init();
                        : 'Zatiaľ žiadna skupina — založ ju v admine')
       : d.role==='director' ? 'Prehľad všetkých skupín vašej školy'
       : d.role==='teacher' ? `Vaša skupina ${d.class?.name||''} — progress a dochádzka`
+      : d.role==='parent' ? (d.dieta
+          ? `${String(d.dieta.name||'').split(' ')[0].replace(/[<>&"]/g,'')} — dochádzka, progres a platba kurzu`
+          : 'Pripojte svoje dieťa kódom z jeho appky')
+      : d.role==='lektor' ? `${(d.classes||[]).length} ${(d.classes||[]).length===1?'skupina':'skupiny'} — platby žiakov`
       : `${d.class?.name||''} · ${d.class?.progress??0} % · lekcia ${d.class?.lessons_done??0}/${d.class?.lessons_total??13}`;
     card.innerHTML=`<span class="ven-ikona">🎓</span>
       <span style="flex:1;min-width:0"><b style="color:#F0DFA8">${titulok}</b><br><small style="color:#b9b3a6">${sub}</small></span>
