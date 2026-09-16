@@ -848,6 +848,57 @@ async function seedData() {
   // v Kultúrnom dome Hnúšťa od piatku 5. 3. 2027 o 16:00 (Klenovec je v ten deň o 14:30), venčekový večer
   // 4. 6. 2027 tiež v Kultúrnom dome Hnúšťa, učí Marek. Veľký piatok 26. 3. 2027 (týždeň 3) je sviatok
   // a škola má prázdniny — lekcia sa ruší rovnako ako v Klenovci, kurz sa posunie o týždeň (posledná 14. 5.).
+  // Oznam venčekárom o rodičovských účtoch (Marek 16. 9. schválil text) — správa v appke každému žiakovi
+  // a jedna správa lektora do chatu skupiny. Kto už zaplatil, nečíta vetu o platbe.
+  if(!(await q.one(db.settings,{key:'vencek_rodicia_oznam_20260916'}))) setTimeout(async()=>{
+    try{
+      if(await q.one(db.settings,{key:'vencek_rodicia_oznam_20260916'})) return;
+      const TEXT='👨‍👩‍👧 Novinka: pripoj rodičov. V sekcii Venčeky → Rodičia máš odkaz pre rodiča. Keď sa cez neho pripojí, uvidí tvoju dochádzku a progres a kurz môže zaplatiť kartou za teba.';
+      const ucitelia=await q.find(db.users,{$or:[{is_admin:true},{user_type:'trainer'},{user_type:'manager'}]});
+      const n=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
+      const vysl={};
+      for(const c of await q.find(db.venceky_classes,{})){
+        if(c.completed) continue;
+        const ziaci=(await q.find(db.users,{venceky_class_id:c._id})).filter(u=>(u.venceky_role||'student')==='student' && u.active!==false);
+        if(!ziaci.length) continue;
+        const zaplatili=new Set((await q.find(db.venceky_payments,{class_id:c._id})).map(p=>p.user_id));
+        for(const z of ziaci){
+          const kluc='vencek_rodicia_oznam:'+z._id;
+          if(await q.one(db.notifications,{user_id:z._id, key:kluc})) continue;
+          await q.insert(db.notifications,{user_id:z._id, type:'venceky', key:kluc,
+            title:'👨‍👩‍👧 Novinka: pripoj rodičov',
+            body: zaplatili.has(z._id)
+              ? 'V sekcii Venčeky → Rodičia máš odkaz pre rodiča. Keď sa cez neho pripojí, uvidí tvoju dochádzku a progres v tancoch.'
+              : 'V sekcii Venčeky → Rodičia máš odkaz pre rodiča. Keď sa cez neho pripojí, uvidí tvoju dochádzku a progres a kurz môže zaplatiť kartou za teba.',
+            read:false, created_at:nowISO()});
+        }
+        const autor=ucitelia.filter(a=>n(a.name)===n(c.lecturer)).sort((x,y)=>(y.is_admin?1:0)-(x.is_admin?1:0))[0] || ucitelia.find(a=>a.is_admin);
+        if(autor) await q.insert(db.venceky_chat,{ class_id:c._id, school_id:c.school_id,
+          user_id:autor._id, user_name:autor.name, role:'lektor', text:TEXT, created_at:nowISO() });
+        vysl[c.code]=ziaci.length;
+      }
+      await q.insert(db.settings,{key:'vencek_rodicia_oznam_20260916', value:vysl, at:nowISO()});
+      console.log('👨‍👩‍👧 Oznam o rodičovských účtoch: '+JSON.stringify(vysl));
+    }catch(e){ console.error('vencek_rodicia_oznam:', e.message); }
+  }, 13000);
+  // Maily „po prvej hodine" čakali aj stálym a už platiacim klientkam (Marek 16. 9.: zrušiť).
+  if(!(await q.one(db.settings,{key:'po_prvej_hodine_platiace_20260916'}))) setTimeout(async()=>{
+    try{
+      if(await q.one(db.settings,{key:'po_prvej_hodine_platiace_20260916'})) return;
+      const ids=[...new Set((await q.find(db.email_queue,{sequence:'trial_followup', status:'pending'})).map(e=>e.user_id))];
+      const zrusene=[];
+      for(const id of ids){
+        const u=await q.one(db.users,{_id:id});
+        const mem=u && await q.one(db.memberships,{user_id:u._id, status:'active'});
+        if(!u || !(mem || await poPrvejHodineNepatri(u))) continue;
+        const pocet=await q.count(db.email_queue,{user_id:u._id, sequence:'trial_followup', status:'pending'});
+        await cancelSequence(u._id,'trial_followup');
+        zrusene.push(u.name+' ('+pocet+')');
+      }
+      await q.insert(db.settings,{key:'po_prvej_hodine_platiace_20260916', value:{zrusene}, at:nowISO()});
+      console.log('✉️  Maily po prvej hodine zrušené: '+(zrusene.join(', ')||'nikomu'));
+    }catch(e){ console.error('po_prvej_hodine_platiace:', e.message); }
+  }, 14000);
   // Rodičovské účty pre všetky venčeky (Marek 16. 9.): rola rodič musí byť v registrácii každej skupiny.
   if(!(await q.one(db.settings,{key:'vencek_rodicia_roly_20260916'}))) setTimeout(async()=>{
     try{
@@ -22692,6 +22743,17 @@ async function enqueueSequence(userId, sequenceName, anchorDate){
 async function cancelSequence(userId, sequenceName){
   await q.remove(db.email_queue, {user_id: userId, sequence: sequenceName, status:'pending'}, {multi:true});
 }
+// Maily „po prvej hodine" sú pre novú ženu, ktorá sa ešte nerozhodla. Nepatria tej, čo má vstupy,
+// odber alebo si niekedy kúpila členstvo či permanentku, ani stálej klientke, ktorá platila viac ako
+// mesiac pred zaradením (Glofox import, návrat po prestávke). 16. 9.: čakali aj Janke R. (98 návštev).
+// Nová žena, ktorá zaplatila 10 € za vstup, ich dostáva ďalej.
+async function poPrvejHodineNepatri(u){
+  if(!u) return false;
+  if((u.single_entries||0)>0 || u.stripe_subscription_id) return true;
+  if((await q.find(db.memberships,{user_id:u._id})).some(m=>+m.price>0 && !m.gift && m.plan_id!=='vstup1')) return true;
+  const zaradena = u.trial_followup_at ? new Date(u.trial_followup_at) : new Date();
+  return !!(u.first_paid_at && zaradena - new Date(u.first_paid_at) > 30*864e5);
+}
 
 // Process queue: send all emails due today or earlier
 async function processEmailQueue(){
@@ -22728,7 +22790,7 @@ async function processEmailQueue(){
       // Po hodine zdarma: prestaň, len čo si kúpi členstvo alebo vstupy (konvertovala)
       if(step.sequence === 'trial_followup'){
         const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
-        if(mem || (u.single_entries||0)>0){ await cancelSequence(u._id,'trial_followup'); await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'converted'}}); continue; }
+        if(mem || await poPrvejHodineNepatri(u)){ await cancelSequence(u._id,'trial_followup'); await q.update(db.email_queue,{_id:item._id},{$set:{status:'skipped',reason:'converted'}}); continue; }
       }
       // Winback: prestaň, ak sa klient vrátil (nedávna účasť) alebo si kúpil členstvo
       if(step.sequence === 'winback'){

@@ -99,7 +99,7 @@ const MAMA = 'qaRdMama0000001';
   const t0 = Date.now(); let zije = false;
   while (Date.now() - t0 < 180000) { try { await fetch(BASE + '/'); zije = true; break; } catch (e) { await sleep(1000); } }
   if (!zije) { console.log('  ❌ server nenabehol'); console.log(chyba.slice(0, 1200)); process.exit(1); }
-  await sleep(12000); // migrácia rolí beží 10 s po štarte
+  await sleep(16000); // migrácie (roly 10 s, oznam 13 s, maily 14 s) bežia po štarte
 
   const jar = { adm: {}, iveta: {}, nelka: {}, ema: {}, tomas: {}, ucitel: {}, lea: {}, mama: {}, zved: {}, menovkyna: {} };
   const prihlas = (k, e) => j('/api/login', { method: 'POST', body: { email: e, password: 'Heslo123!' } }, jar[k]);
@@ -117,6 +117,13 @@ const MAMA = 'qaRdMama0000001';
     ok('žiak ostal prvý', skupiny.every(c => c.roles[0] === 'student'));
     const info = await j('/api/vencek/info?code=VEN-QARDA');
     ok('registračná stránka ponúka rodiča', (info.d.roles || []).includes('parent'), JSON.stringify(info.d.roles));
+    const oznam = rd('notifications.db').filter(n => /^vencek_rodicia_oznam:/.test(n.key || ''));
+    ok('oznam o rodičoch dostali traja žiaci', [EMA, TOMAS, LEA].every(id => oznam.some(n => n.user_id === id)) && oznam.length === 3, JSON.stringify(oznam.map(n => n.user_id)));
+    ok('učiteľka ani tréneri nie', !oznam.some(n => ['qaRdUcitel00001', 'qaRdIveta000001', 'qaRdAdmin000001'].includes(n.user_id)));
+    ok('nezaplatení čítajú aj vetu o platbe', oznam.every(n => /zaplatiť kartou/.test(n.body)));
+    const chatO = rd('venceky_chat.db');
+    ok('v chate skupín je správa od lektora', chatO.length === 2 && (user(chatO.find(m => m.class_id === A).user_id) || {}).is_admin && (user(chatO.find(m => m.class_id === A).user_id) || {}).name === 'Marek Gruber'
+      && chatO.find(m => m.class_id === B).user_id === 'qaRdIveta000001' && chatO.every(m => m.role === 'lektor' && /Novinka: pripoj rodičov/.test(m.text)), JSON.stringify(chatO.map(m => [m.class_id, m.user_id])));
 
     console.log('\n2) Žiak má kód a odkaz pre rodiča:');
     const kodE = await j('/api/vencek/rodic/kod', {}, jar.ema);
@@ -188,6 +195,8 @@ const MAMA = 'qaRdMama0000001';
     ok('mama napíše do chatu', chM.status === 200, JSON.stringify(chM.d));
     await sleep(700);
     const msg = rd('venceky_chat.db').find(m => m.user_id === MAMA);
+    const chM2 = await j('/api/vencek/chat', {}, jar.mama);
+    ok('mama vidí oznam lektora aj svoju správu', chM2.d.messages.length === 2 && chM2.d.messages[0].role === 'lektor', JSON.stringify(chM2.d.messages.map(m => m.role)));
     ok('správa je v skupine Emy s rolou rodič', msg && msg.class_id === A && msg.role === 'parent', JSON.stringify(msg));
     const nov = {};
     const reg = await j('/api/register', { method: 'POST', body: { name: 'Otec Nepripojený', email: 'qa.rd.otec@qa-biz.local', password: 'Heslo123!',
