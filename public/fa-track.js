@@ -19,7 +19,7 @@ function captureAttribution(){
       keys.forEach(k=>{ if(p.get(k)) attr[k]=p.get(k); });
       localStorage.setItem('fa_attr', JSON.stringify(attr));
     } else if(!stored.captured_at && document.referrer && !document.referrer.includes(location.hostname)){
-      localStorage.setItem('fa_attr', JSON.stringify({captured_at:new Date().toISOString(), landing:location.pathname, referrer:document.referrer}));
+      localStorage.setItem('fa_attr', JSON.stringify({captured_at:new Date().toISOString(), landing:location.pathname+location.search, referrer:document.referrer}));
     }
   } catch(e){}
 }

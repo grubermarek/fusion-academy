@@ -22127,11 +22127,15 @@ async function syncAdStats(force){
     const ins=await metaAll(tok, META_ACT+'/insights?level=campaign&fields=campaign_id,campaign_name,spend,impressions,clicks,reach,actions&date_preset=maximum&time_increment=monthly&limit=500');
     // 3) Nesie reklama utm_campaign? Bez neho sa registrácia ku kampani priradiť nedá
     //    — to je jediný dôvod, prečo časť kampaní ukazuje tržbu 0 €.
-    let ads=[]; try{ ads=await metaAll(tok, META_ACT+'/ads?fields=id,campaign_id,effective_status,creative{url_tags,object_story_spec{link_data{link}}}&limit=300', 12); }catch(e){}
+    // Videoreklama má odkaz v tlačidle (video_data.call_to_action), nie v link_data —
+    // HEJ BABY preto vyzerala „bez utm", hoci ho nesie (16. 9.).
+    let ads=[]; try{ ads=await metaAll(tok, META_ACT+'/ads?fields=id,campaign_id,effective_status,creative{url_tags,link_url,object_story_spec{link_data{link},video_data{call_to_action}}}&limit=300', 12); }catch(e){}
     const utm={};
     for(const a of ads){
       const cr=a.creative||{};
-      const t=String(cr.url_tags||'')+' '+String((((cr.object_story_spec||{}).link_data)||{}).link||'');
+      const oss=cr.object_story_spec||{};
+      const cta=(((oss.video_data||{}).call_to_action||{}).value||{}).link||'';
+      const t=[cr.url_tags, cr.link_url, (oss.link_data||{}).link, cta].map(x=>String(x||'')).join(' ');
       if(/utm_campaign=/i.test(t)) utm[a.campaign_id]=true;
       else if(utm[a.campaign_id]===undefined) utm[a.campaign_id]=false;
     }
@@ -22342,7 +22346,16 @@ app.get('/hlavolam',   (req,res)=>res.sendFile(path.join(__dirname,'public','hla
 app.get('/pricing',    (req,res)=>res.redirect(302,'/obchod'+(req.originalUrl.includes('?')?'?'+req.originalUrl.split('?')[1]:'')));
 app.get('/u/:id',      (req,res)=>res.sendFile(path.join(__dirname,'public','profile.html')));
 app.get('/reset-heslo', (req,res)=>res.sendFile(path.join(__dirname,'public','reset-heslo.html')));
-app.get('/prva-hodina', async(req,res)=>{ if(await skuskaZapnuta().catch(()=>false)) return res.redirect(302,'/?src=prva-hodina'); res.sendFile(path.join(__dirname,'public','prva-hodina.html')); });
+// Pri prvom týždni zadarmo vedie stará vstupná stránka na úvod appky. Parametre z reklamy
+// (utm_*, fbclid, city) musia ísť so sebou — do 16. 9. sa strácali a klik z kampane
+// HEJ BABY sa nedal priradiť ani appke, ani Mete.
+app.get('/prva-hodina', async(req,res)=>{
+  if(await skuskaZapnuta().catch(()=>false)){
+    const qs=req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')+1) : '';
+    return res.redirect(302,'/?src=prva-hodina'+(qs?'&'+qs:''));
+  }
+  res.sendFile(path.join(__dirname,'public','prva-hodina.html'));
+});
 app.get('/vencek',     (req,res)=>res.sendFile(path.join(__dirname,'public','vencek.html')));
 app.get('/vencek-booking', (req,res)=>res.sendFile(path.join(__dirname,'public','vencek-booking.html')));
 app.get('/invite', (req,res)=>{ const qs=req.url.includes('?')?req.url.slice(req.url.indexOf('?')):''; res.redirect('/invite/FUSION'+qs); });
