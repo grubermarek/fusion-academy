@@ -72,6 +72,13 @@ const TERAZ = new Date().toISOString().slice(0, 7);
     { _id: 'qaAdsC5', platform: 'meta', campaign_id: '555', name: 'Nová kampaň bez merania',
       status: 'ACTIVE', objective: 'OUTCOME_TRAFFIC', created: TERAZ + '-01',
       first_month: TERAZ, last_month: TERAZ, ma_utm: false },
+    // tento mesiac minuli, ale už nebežia (pozastavený príspevok, kampaň po konci) — skryť
+    { _id: 'qaAdsC6', platform: 'meta', campaign_id: '666', name: 'Príspevok: „DETVA, V SOBOTU"',
+      status: 'PAUSED', objective: 'OUTCOME_ENGAGEMENT', created: TERAZ + '-01',
+      first_month: TERAZ, last_month: TERAZ, ma_utm: null },
+    { _id: 'qaAdsC7', platform: 'meta', campaign_id: '777', name: 'Skončený nábor',
+      status: 'ACTIVE', objective: 'OUTCOME_TRAFFIC', created: TERAZ + '-01', stop: '2026-01-01T00:00:00+0100',
+      first_month: TERAZ, last_month: TERAZ, ma_utm: false },
   ]);
   // mesačné čísla
   w('ad_stats.db', [
@@ -88,6 +95,10 @@ const TERAZ = new Date().toISOString().slice(0, 7);
       month: '2026-07', spend: 20, impressions: 5000, clicks: 100, reach: 3000, leads: 0 },
     { _id: 'qaAdsS6', platform: 'meta', campaign_id: '555', campaign_name: 'Nová kampaň bez merania',
       month: TERAZ, spend: 30, impressions: 10000, clicks: 300, reach: 4000, leads: 0 },
+    { _id: 'qaAdsS7', platform: 'meta', campaign_id: '666', campaign_name: 'Príspevok: „DETVA, V SOBOTU"',
+      month: TERAZ, spend: 12, impressions: 3000, clicks: 50, reach: 2000, leads: 0 },
+    { _id: 'qaAdsS8', platform: 'meta', campaign_id: '777', campaign_name: 'Skončený nábor',
+      month: TERAZ, spend: 8, impressions: 2000, clicks: 40, reach: 1500, leads: 0 },
   ]);
   // karty existujú len pre prvé dve kampane
   w('campaigns.db', [
@@ -123,8 +134,9 @@ const TERAZ = new Date().toISOString().slice(0, 7);
     ok('prehľad prišiel', all && all.ok, JSON.stringify(all).slice(0, 200));
     // Marek 16. 9.: staré kampane bez merania preč zo zoznamu a štatistík, útrata ostáva
     ok('v zozname sú merané a bežiaca kampaň (3), staré nemerané nie', all.rows.length === 3 && !all.rows.some(r => ['333', '444'].includes(r.campaign_id)), all.rows.map(r => r.campaign_id).join(','));
-    ok('minuté = 430 € (vrátane skrytých a zmazanej)', all.totals.spend === 430, String(all.totals.spend));
-    ok('nemerané: 2 kampane za 100 €', all.totals.nemerane && all.totals.nemerane.kampani === 2 && all.totals.nemerane.spend === 100, JSON.stringify(all.totals.nemerane));
+    ok('minuté = 450 € (vrátane skrytých a zmazanej)', all.totals.spend === 450, String(all.totals.spend));
+    ok('nemerané: 4 kampane za 120 € (aj pozastavený príspevok a skončený nábor)', all.totals.nemerane && all.totals.nemerane.kampani === 4 && all.totals.nemerane.spend === 120, JSON.stringify(all.totals.nemerane));
+    ok('bežia len aktívne kampane bez uplynutého konca (leady + nová), nie pozastavený príspevok ani skončený nábor', all.totals.zive === 2 && !all.rows.some(r => ['666', '777'].includes(r.campaign_id)), String(all.totals.zive));
     ok('útrata kampaní v zozname 330 €', all.totals.spend_zoznam === 330, String(all.totals.spend_zoznam));
     ok('kliky len zo zoznamu = 2 550', all.totals.clicks === 2550, String(all.totals.clicks));
     ok('CPC sedí (330/2550)', all.totals.cpc === 0.13, String(all.totals.cpc));

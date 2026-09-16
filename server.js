@@ -22316,7 +22316,7 @@ async function syncAdStats(force){
   if(!force && last && (Date.now()-new Date(last.at||0).getTime()) < 6*3600*1000) return {ok:true, cached:true};
   try{
     // 1) register kampaní vrátane vypnutých — inak z histórie zmizne, čo sa už minulo
-    const camps=await metaAll(tok, META_ACT+'/campaigns?fields=id,name,effective_status,objective,created_time&limit=200');
+    const camps=await metaAll(tok, META_ACT+'/campaigns?fields=id,name,effective_status,objective,created_time,stop_time&limit=200');
     // 2) mesačné čísla za celú históriu účtu (date_preset=maximum drží 36 mesiacov)
     const ins=await metaAll(tok, META_ACT+'/insights?level=campaign&fields=campaign_id,campaign_name,spend,impressions,clicks,reach,actions&date_preset=maximum&time_increment=monthly&limit=500');
     // 3) Nesie reklama utm_campaign? Bez neho sa registrácia ku kampani priradiť nedá
@@ -22359,7 +22359,7 @@ async function syncAdStats(force){
       const ms=x.months.slice().sort();
       await q.update(db.ad_campaigns,{platform:'meta', campaign_id:c.id},{$set:{
         platform:'meta', campaign_id:c.id, name:c.name||'', status:c.effective_status||'',
-        objective:c.objective||'', created:(c.created_time||'').slice(0,10),
+        objective:c.objective||'', created:(c.created_time||'').slice(0,10), stop:c.stop_time||null,
         spend:+x.spend.toFixed(2), impressions:x.impressions, clicks:x.clicks,
         leads:x.leads, reach:x.reach,
         first_month:ms[0]||null, last_month:ms[ms.length-1]||null,
@@ -22531,7 +22531,7 @@ async function adOverview(mesiac){
     first_month:null, last_month:null, ma_utm:null };
   let rows=Object.values(reg).map(c=>{
     const a=podla[c.campaign_id]||{spend:0,impressions:0,clicks:0,leads:0,reach:0};
-    return { campaign_id:c.campaign_id, name:c.name, status:c.status, objective:c.objective||'',
+    return { campaign_id:c.campaign_id, name:c.name, status:c.status, stop:c.stop||null, objective:c.objective||'',
       created:c.created||'', first_month:c.first_month||null, last_month:c.last_month||null,
       spend:+a.spend.toFixed(2), impressions:a.impressions, clicks:a.clicks, leads:a.leads, reach:a.reach,
       cpc: a.clicks ? +(a.spend/a.clicks).toFixed(2) : null,
@@ -22548,7 +22548,9 @@ async function adOverview(mesiac){
   const dnes10=today();
   const minuly=(()=>{ const d2=new Date(dnes10+'T12:00:00Z'); d2.setUTCMonth(d2.getUTCMonth()-1); return d2.toISOString().slice(0,7); })();
   const merana=r=>r.ma_utm===true || !!r.karta;
-  const ziva=r=>!!(r.last_month && r.last_month>=minuly);
+  // Beží = aktívna v Mete, bez uplynutého konca a s útratou tento/minulý mesiac. Pozastavený príspevok
+  // „DETVA, V SOBOTU…" (skončil 6. 9.) sa predtým ukazoval ako bežiaci len pre septembrovú útratu.
+  const ziva=r=>!!(r.last_month && r.last_month>=minuly && r.status==='ACTIVE' && !(r.stop && Date.parse(r.stop)<Date.now()));
   const vsetkyRiadky=rows;
   const skryte=vsetkyRiadky.filter(r=>!merana(r) && !ziva(r));
   const skryteId=new Set(skryte.map(r=>r.campaign_id));
