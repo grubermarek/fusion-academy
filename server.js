@@ -41,6 +41,68 @@ app.use((req,res,next)=>{
 // cookies klientiek sú viazané na starú doménu; 301 ich odhlásil a rozbil ikonky.
 // Appka preto beží plnohodnotne na oboch doménach; nové odkazy idú cez APP_URL.
 
+// ── Zdroj návštevy zachytený na serveri (Marek 16. 9.: „raz a navždy správne") ──
+// Parametre z reklamy (utm_*, fbclid, gclid) sa uložia do cookie hneď pri prvom dotyku —
+// ešte pred presmerovaním a bez ohľadu na to, či prehliadač vo FB/IG pustí localStorage.
+// Registrácia si ich doplní, keď ich stránka neposlala (od 14. 9. sa tak strácali kliky z HEJ BABY).
+// Graph API — v testoch sa dá presmerovať na falošný server (na produkcii nenastavené)
+const META_GRAPH=(process.env.META_GRAPH_URL||'https://graph.facebook.com/v21.0/').replace(/\/?$/,'/');
+const ZDROJ_COOKIE='fa_zdroj';
+const ZDROJ_KLUCE=['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid'];
+function citajZdrojCookie(req){
+  try{
+    const m=String(req.headers.cookie||'').match(/(?:^|;\s*)fa_zdroj=([^;]+)/);
+    if(!m) return null;
+    const o=JSON.parse(Buffer.from(decodeURIComponent(m[1]),'base64url').toString('utf8'));
+    return (o && typeof o==='object') ? o : null;
+  }catch(e){ return null; }
+}
+app.use((req,res,next)=>{
+  if(req.method!=='GET' || req.path.startsWith('/api/')) return next();
+  const qs=req.query||{};
+  if(!ZDROJ_KLUCE.some(k=>typeof qs[k]==='string' && qs[k])) return next();
+  // Prvý dotyk ako vo fa-track: platený klik neprepíše skorší platený klik (90 dní)
+  const stary=citajZdrojCookie(req);
+  if(stary && (stary.fbclid || stary.gclid || stary.utm_campaign)) return next();
+  const z={ at:new Date().toISOString(), landing:String(req.originalUrl||'').slice(0,300),
+    referrer:String(req.headers.referer||'').slice(0,200) };
+  for(const k of ZDROJ_KLUCE) if(typeof qs[k]==='string' && qs[k]) z[k]=qs[k].slice(0,300);
+  res.cookie(ZDROJ_COOKIE, Buffer.from(JSON.stringify(z)).toString('base64url'),
+    { maxAge:90*864e5, httpOnly:true, sameSite:'lax', secure:process.env.NODE_ENV==='production', path:'/' });
+  next();
+});
+// Zdroj z registrácie (stránka) + zo servera. Keď stránka neposlala nič, platí cookie;
+// keď poslala tú istú kampaň, cookie doplní chýbajúci fbclid/gclid.
+function spojZdroj(req, attr){
+  const a={...((attr && typeof attr==='object') ? attr : {})};
+  const c=citajZdrojCookie(req);
+  if(!c) return a;
+  const stranka=ZDROJ_KLUCE.some(k=>a[k]);
+  if(!stranka){
+    for(const k of ZDROJ_KLUCE) if(c[k]) a[k]=c[k];
+    if(c.landing) a.landing=c.landing;
+    if(c.referrer && !a.referrer) a.referrer=c.referrer;
+  } else if(!a.utm_campaign || a.utm_campaign===c.utm_campaign){
+    for(const k of ZDROJ_KLUCE) if(!a[k] && c[k]) a[k]=c[k];
+  }
+  if(c.at && (a.fbclid===c.fbclid || a.gclid===c.gclid)) a.click_at=c.at;
+  return a;
+}
+// fbclid z platenej reklamy nesie 8-bajtové číslo reklamy (pole „adid"). Pre jednu reklamu
+// je stále rovnaké — podľa neho sa dá priradiť registrácia aj bez utm (organický klik ho nemá).
+function metaKlikZFbclid(fbclid){
+  const s=String(fbclid||'').split('_aem_')[0];
+  if(s.length<16) return null;
+  for(const off of [2,0,1,3]){
+    let b; try{ b=Buffer.from(s.slice(off).replace(/-/g,'+').replace(/_/g,'/'),'base64'); }catch(e){ continue; }
+    const i=b.indexOf('adid');
+    if(i<0 || b.length<i+12) continue;
+    const id=b.readBigUInt64BE(i+4);
+    if(id>10n**12n && id<10n**17n) return id.toString();
+  }
+  return null;
+}
+
 // Capture raw body so webhook signatures (Stripe) can be verified against exact bytes
 app.use(express.json({ limit:'10mb', verify:(req,res,buf)=>{ req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: true, limit:'10mb' }));
@@ -848,6 +910,23 @@ async function seedData() {
   // v Kultúrnom dome Hnúšťa od piatku 5. 3. 2027 o 16:00 (Klenovec je v ten deň o 14:30), venčekový večer
   // 4. 6. 2027 tiež v Kultúrnom dome Hnúšťa, učí Marek. Veľký piatok 26. 3. 2027 (týždeň 3) je sviatok
   // a škola má prázdniny — lekcia sa ruší rovnako ako v Klenovci, kurz sa posunie o týždeň (posledná 14. 5.).
+  // Číslo reklamy z uložených fbclid + odvodené kampane (16. 9.) — napr. klik z tej istej reklamy bez utm
+  if(!(await q.one(db.settings,{key:'meta_klik_20260916'}))) setTimeout(async()=>{
+    try{
+      if(await q.one(db.settings,{key:'meta_klik_20260916'})) return;
+      let n=0, odv=[];
+      for(const u of await q.find(db.users,{})){
+        const k=u.fbclid && metaKlikZFbclid(u.fbclid);
+        if(k && u.meta_klik!==k){ await q.update(db.users,{_id:u._id},{$set:{meta_klik:k}}); n++; }
+      }
+      for(const u of await q.find(db.users,{meta_klik:{$exists:true}})){
+        if(u.utm_campaign) continue;
+        const c=await odvodUtmZKliku(u); if(c) odv.push(u.name+' → '+c);
+      }
+      await q.insert(db.settings,{key:'meta_klik_20260916', value:{s_cislom_reklamy:n, odvodene:odv}, at:nowISO()});
+      console.log('🔎 fbclid → reklama: '+n+' účtov, odvodené '+odv.length);
+    }catch(e){ console.error('meta_klik:', e.message); }
+  }, 15000);
   // Oznam venčekárom o rodičovských účtoch (Marek 16. 9. schválil text) — správa v appke každému žiakovi
   // a jedna správa lektora do chatu skupiny. Kto už zaplatil, nečíta vetu o platbe.
   if(!(await q.one(db.settings,{key:'vencek_rodicia_oznam_20260916'}))) setTimeout(async()=>{
@@ -4126,7 +4205,7 @@ app.post('/api/auth/google', rlLogin, async(req,res)=>{
     const base=name.split(' ')[0].toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8)||'GOOGLE';
     let code=base+Math.floor(10+Math.random()*90);
     while(await q.one(db.users,{referral_code:code})) code=base+Math.floor(100+Math.random()*900);
-    const attr=req.body.attribution||{}; const clean=v=>String(v||'').slice(0,200);
+    const attr=spojZdroj(req, req.body.attribution); const clean=v=>String(v||'').slice(0,200);
     let lead_source='google_signin';
     if(clean(attr.fbclid)) lead_source='meta'; else if(clean(attr.utm_source)) lead_source=clean(attr.utm_source).toLowerCase();
     u=await q.insert(db.users,{name, email, password:null, google_id:info.sub, avatar:info.picture||null,
@@ -4137,6 +4216,11 @@ app.post('/api/auth/google', rlLogin, async(req,res)=>{
       consent_at:nowISO(), created_at:today(),
       account_creation_type:'self_registration', registration_at:nowISO(), registration_at_source:'actual'});
     req.session.uid=u._id; req.session.sv=0;
+    await doplnZdrojUctu(u, attr).catch(()=>{});
+    // Registrácia cez Google do 16. 9. Mete nechodila vôbec — len pixel v prehliadači.
+    metaCapi('CompleteRegistration',{email, fbclid:clean(attr.fbclid), fbp:clean(attr.fbp), click_at:attr.click_at,
+      external_id:u._id, ip:klientIp(req), ua:req.headers['user-agent'],
+      event_id:clean(attr.event_id)||undefined, source_url:clean(attr.landing)||undefined}).catch(()=>{});
     try{ const admins=await q.find(db.users,{is_admin:true});
       for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'new_lead',title:'🆕 Nová registrácia cez Google',body:`${name} · ${email}`,read:false,created_at:nowISO()}); }catch(e){}
     announceNewMember(u._id).catch(()=>{});
@@ -4242,7 +4326,7 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
     const booked=(await q.find(db.bookings,{class_id:cls._id, booking_date:bdate})).filter(b=>b.status!=='cancelled').length;
     if(cls.capacity && booked>=cls.capacity) return res.status(400).json({error:'Hodina je už plná — vyber si prosím inú.'});
 
-    const attr=req.body.attribution||{}; const clean=v=>String(v||'').slice(0,300);
+    const attr=spojZdroj(req, req.body.attribution); const clean=v=>String(v||'').slice(0,300);
     let u=await q.one(db.users,{email});
     const isNew=!u;
     if(u){
@@ -4262,6 +4346,7 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
         consent_at:nowISO(), created_at:today(),
         account_creation_type:'self_registration', registration_at:nowISO(), registration_at_source:'actual',
         manage_token:'MG'+Math.random().toString(36).slice(2,12).toUpperCase() });
+      await doplnZdrojUctu(u, attr).catch(()=>{});
       announceNewMember(u._id).catch(()=>{});
       enqueueSequence(u._id,'welcome').then(()=>processEmailQueue()).catch(()=>{});
     }
@@ -4291,9 +4376,10 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
         title:'🆕 Prvá hodina z landing page', body:`${name} · ${cls.name} ${cls.location} ${bdate} ${cls.time_start}`,
         read:false, created_at:nowISO()});
     }catch(e){}
-    metaCapi('Lead',{email, fbclid:clean(attr.fbclid), fbp:clean(attr.fbp),
+    metaCapi('Lead',{email, fbclid:clean(attr.fbclid), fbp:clean(attr.fbp), click_at:attr.click_at,
+      external_id:u._id, ip:klientIp(req), ua:req.headers['user-agent'],
       event_id:clean(attr.event_id_lead)||undefined, source_url:clean(attr.landing)||undefined}).catch(()=>{});
-    metaCapi('Schedule',{email, fbclid:clean(attr.fbclid),
+    metaCapi('Schedule',{email, fbclid:clean(attr.fbclid), external_id:u._id, ip:klientIp(req), ua:req.headers['user-agent'],
       event_id:clean(attr.event_id_schedule)||undefined, source_url:clean(attr.landing)||undefined}).catch(()=>{});
     sendMail(email, 'Tešíme sa na teba! 💃 Prvá hodina zdarma je rezervovaná',
       emailTemplate('Máš to! 🎉',
@@ -4806,7 +4892,7 @@ app.post('/api/register', rlSignup, async(req,res)=>{
     // roles (trainer/partner/manager/admin) passed via API are kept as given.
     const utype = (user_type && !['client','lead'].includes(user_type)) ? user_type : 'lead';
     // ── Marketing attribution (first-touch, captured client-side) ─────────────
-    const attr = req.body.attribution||{};
+    const attr = spojZdroj(req, req.body.attribution);
     const clean = v => String(v||'').slice(0,200);
     const utm_source=clean(attr.utm_source), utm_medium=clean(attr.utm_medium), utm_campaign=clean(attr.utm_campaign);
     const fbclid=clean(attr.fbclid), gclid=clean(attr.gclid);
@@ -4833,6 +4919,7 @@ app.post('/api/register', rlSignup, async(req,res)=>{
            ...(vencekRole==='parent'?{vencek_child_name:String(req.body.vencek_child_name||'').slice(0,80)}:{})}
         : {vencek_pending_role:vencekRole, vencek_pending_class_id:vencekClass._id, vencek_pending_school_id:vencekClass.school_id})
       :{})});
+    await doplnZdrojUctu(u, attr).catch(()=>{});
     if(vencekClass){
       const roleLbl={student:'žiak',parent:'rodič',teacher:'UČITEĽ — čaká na schválenie',director:'RIADITEĽ — čaká na schválenie'}[vencekRole];
       try{ const admins=await q.find(db.users,{is_admin:true});
@@ -4938,7 +5025,8 @@ app.post('/api/register', rlSignup, async(req,res)=>{
     }
     // Server-side conversion tracking
     // Venčekári (deti 13–15 r. a ich rodičia) do Meta reklamy nejdú (Marek 16. 9.)
-    if(!vencekClass) metaCapi('CompleteRegistration',{email:u.email, fbclid, fbp:clean(attr.fbp),
+    if(!vencekClass) metaCapi('CompleteRegistration',{email:u.email, fbclid, fbp:clean(attr.fbp), click_at:attr.click_at,
+      external_id:u._id, ip:klientIp(req), ua:req.headers['user-agent'],
       event_id:clean(attr.event_id)||undefined, source_url:clean(attr.landing)||undefined}).catch(()=>{});
     announceNewMember(u._id).catch(()=>{});
     res.json({ok:true, userType:utype, redirect_to: dashUrlFor(u)});
@@ -6345,14 +6433,34 @@ app.post('/api/admin/meta-fix-ids', adminAuth, async(req,res)=>{
 });
 // event_id: keď browser Pixel aj server pošlú ten istý event s rovnakým event_id,
 // Meta ich deduplikuje (spec N/BG). Klient generuje id a posiela ho v attribution.
-async function metaCapi(eventName, {email, value, currency='EUR', fbclid, fbp, event_id, source_url}={}){
+// IP klienta za proxy Railway (prvá adresa v x-forwarded-for)
+function klientIp(req){
+  const x=String((req && req.headers && req.headers['x-forwarded-for'])||'').split(',')[0].trim();
+  return x || (req && (req.ip || (req.socket && req.socket.remoteAddress))) || '';
+}
+// Či Meta udalosti naozaj prijíma — do 16. 9. to nebolo vidieť nikde (chyby len v stratových logoch).
+async function zapisCapiStav(udalost, ok, detail){
+  try{
+    const s=await q.one(db.settings,{key:'meta_capi_stav'});
+    const v=(s && s.value) || {udalosti:{}};
+    const u=v.udalosti[udalost] || {ok:0, chyby:0};
+    const teraz=nowISO();
+    if(ok){ u.ok++; u.posledna_ok=teraz; v.posledna_ok=teraz; }
+    else { u.chyby++; u.posledna_chyba=teraz; u.chyba=String(detail||'').slice(0,300); v.posledna_chyba=teraz; v.chyba=u.chyba; }
+    v.udalosti[udalost]=u;
+    if(s) await q.update(db.settings,{_id:s._id},{$set:{value:v}});
+    else await q.insert(db.settings,{key:'meta_capi_stav', value:v});
+  }catch(e){}
+}
+async function metaCapi(eventName, {email, value, currency='EUR', fbclid, fbp, event_id, source_url, external_id, ip, ua, click_at}={}){
   const payload={ event_name:eventName, event_time:Math.floor(Date.now()/1000),
     action_source:'website',
     ...(event_id?{event_id:String(event_id).slice(0,80)}:{}),
     ...(source_url?{event_source_url:String(source_url).slice(0,300)}:{}) };
   // QA: zapíš payload do súboru namiesto odoslania (bez tokenu, bez siete)
   if(process.env.CAPI_DEBUG_FILE){
-    try{ fs.appendFileSync(process.env.CAPI_DEBUG_FILE, JSON.stringify({...payload, email:!!email, value:+value||0})+'\n'); }catch(e){}
+    try{ fs.appendFileSync(process.env.CAPI_DEBUG_FILE, JSON.stringify({...payload, email:!!email, value:+value||0,
+      fbclid:!!fbclid, click_at:click_at||null, external_id:!!external_id, ip:!!ip, ua:!!ua})+'\n'); }catch(e){}
     return;
   }
   const pixel=process.env.META_PIXEL_ID, token=await getMetaCapiToken();
@@ -6362,8 +6470,13 @@ async function metaCapi(eventName, {email, value, currency='EUR', fbclid, fbp, e
     const h=s=>crypto.createHash('sha256').update(String(s).trim().toLowerCase()).digest('hex');
     const user_data={};
     if(email) user_data.em=[h(email)];
-    if(fbclid) user_data.fbc=`fb.1.${Date.now()}.${fbclid}`;
+    // fbc nesie čas kliku (nie čas odoslania) — Meta podľa neho páruje s reklamou
+    const klik=click_at ? Date.parse(click_at) : NaN;
+    if(fbclid) user_data.fbc=`fb.1.${Number.isFinite(klik)?klik:Date.now()}.${fbclid}`;
     if(fbp) user_data.fbp=fbp;
+    if(external_id) user_data.external_id=[h(external_id)];
+    if(ip) user_data.client_ip_address=String(ip).slice(0,64);
+    if(ua) user_data.client_user_agent=String(ua).slice(0,400);
     const r=await fetch(`https://graph.facebook.com/v21.0/${pixel}/events?access_token=${token}`,{
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({data:[{
@@ -6371,8 +6484,32 @@ async function metaCapi(eventName, {email, value, currency='EUR', fbclid, fbp, e
         ...(value?{custom_data:{value:+value, currency}}:{})
       }]})
     });
-    if(!r.ok) console.error('Meta CAPI error:', (await r.text()).slice(0,300));
-  } catch(e){ console.error('Meta CAPI error:', e.message); }
+    const txt=await r.text();
+    let prijate=0; try{ prijate=+(JSON.parse(txt).events_received||0); }catch(e){}
+    if(!r.ok || !prijate){ console.error('Meta CAPI error:', txt.slice(0,300)); zapisCapiStav(eventName, false, txt); }
+    else zapisCapiStav(eventName, true);
+  } catch(e){ console.error('Meta CAPI error:', e.message); zapisCapiStav(eventName, false, e.message); }
+}
+// Po registrácii: číslo reklamy z fbclid, obsah reklamy, čas kliku. Keď chýba utm_campaign,
+// odvodí sa z iných registrácií z tej istej reklamy (klik bez utm sa inak nepriradí nikomu).
+async function doplnZdrojUctu(u, attr){
+  if(!u || !u._id) return;
+  const a=attr||{};
+  const set={};
+  const klik=metaKlikZFbclid(a.fbclid || u.fbclid);
+  if(klik) set.meta_klik=klik;
+  if(a.utm_content && !u.utm_content) set.utm_content=String(a.utm_content).slice(0,200);
+  if(a.click_at) set.klik_at=String(a.click_at).slice(0,40);
+  if(Object.keys(set).length) await q.update(db.users,{_id:u._id},{$set:set});
+  if(klik && !(u.utm_campaign || a.utm_campaign)) await odvodUtmZKliku({...u, ...set});
+}
+async function odvodUtmZKliku(u){
+  if(!u || !u.meta_klik || u.utm_campaign) return null;
+  const vzor=(await q.find(db.users,{meta_klik:u.meta_klik})).find(x=>x._id!==u._id && x.utm_campaign && !x.utm_odvodene);
+  if(!vzor) return null;
+  await q.update(db.users,{_id:u._id},{$set:{utm_campaign:vzor.utm_campaign, utm_source:u.utm_source||vzor.utm_source||'fb',
+    utm_medium:u.utm_medium||vzor.utm_medium||'cpc', utm_odvodene:'fbclid', lead_source:(u.lead_source==='google_signin'||!u.lead_source)?'meta':u.lead_source}});
+  return vzor.utm_campaign;
 }
 async function trackPurchase(userId, amount, eventId){
   try {
@@ -21602,7 +21739,11 @@ async function syncMetaCampaignStats(force){
     if(!force && last && (Date.now()-new Date(last.at||0).getTime()) < 6*3600*1000) return {ok:true, cached:true};
     if(last) await q.update(db.settings,{_id:last._id},{$set:{at:nowISO()}});
     else await q.insert(db.settings,{key:'meta_sync_at', at:nowISO()});
-    const camps=(await q.find(db.campaigns,{})).filter(c=>c.meta_campaign_id);
+    // Karty s vlastnou reklamou (meta_ad_id) idú prvé — ich čísla sa potom odpočítajú z karty
+    // celej kampane. Do 16. 9. sa A/B reklama (117 €) rátala aj v karte Zumba Web.
+    const camps=(await q.find(db.campaigns,{})).filter(c=>c.meta_campaign_id)
+      .sort((a,b)=>(b.meta_ad_id?1:0)-(a.meta_ad_id?1:0));
+    const reklamyKariet={};   // meta_campaign_id → [{spend, impressions, clicks, spend_7d}]
     let updated=0;
     for(const c of camps){
       try{
@@ -21610,7 +21751,7 @@ async function syncMetaCampaignStats(force){
         // čítame štatistiky len z tejto konkrétnej reklamy — nie z celej kampane, aby sa
         // čísla nezmiešali s históriou staršej (pozastavenej) reklamy v tej istej kampani.
         const targetId=c.meta_ad_id||c.meta_campaign_id;
-        const url=`https://graph.facebook.com/v21.0/${targetId}/insights?fields=spend,impressions,clicks,reach,actions&date_preset=maximum&access_token=${encodeURIComponent(tok)}`;
+        const url=`${META_GRAPH}${targetId}/insights?fields=spend,impressions,clicks,reach,actions&date_preset=maximum&access_token=${encodeURIComponent(tok)}`;
         const d=await (await fetch(url)).json();
         if(d.error){ console.error('meta sync', c.name, d.error.message); continue; }
         const row=d.data&&d.data[0]; if(!row) continue;
@@ -21621,13 +21762,24 @@ async function syncMetaCampaignStats(force){
         // Beží kampaň ešte? Bez toho sa z karty nedá zistiť — čísla sú kumulatívne
         // od štartu, takže vypnutá kampaň vyzerá presne ako živá.
         try{
-          const st=await (await fetch(`https://graph.facebook.com/v21.0/${targetId}?fields=effective_status&access_token=${encodeURIComponent(tok)}`)).json();
+          const st=await (await fetch(`${META_GRAPH}${targetId}?fields=effective_status&access_token=${encodeURIComponent(tok)}`)).json();
           if(!st.error && st.effective_status) upd.meta_status=st.effective_status;
         }catch(e){}
         try{
-          const w=await (await fetch(`https://graph.facebook.com/v21.0/${targetId}/insights?fields=spend&date_preset=last_7d&access_token=${encodeURIComponent(tok)}`)).json();
+          const w=await (await fetch(`${META_GRAPH}${targetId}/insights?fields=spend&date_preset=last_7d&access_token=${encodeURIComponent(tok)}`)).json();
           upd.spend_7d = (!w.error && w.data && w.data[0]) ? +w.data[0].spend||0 : 0;
         }catch(e){}
+        if(c.meta_ad_id){
+          (reklamyKariet[c.meta_campaign_id]=reklamyKariet[c.meta_campaign_id]||[]).push(upd);
+        } else if(reklamyKariet[c.meta_campaign_id]){
+          const deti=reklamyKariet[c.meta_campaign_id];
+          const minus=k=>deti.reduce((s,x)=>s+(+x[k]||0),0);
+          upd.spend=+Math.max(0, upd.spend-minus('spend')).toFixed(2);
+          upd.impressions=Math.max(0, upd.impressions-minus('impressions'));
+          upd.clicks=Math.max(0, upd.clicks-minus('clicks'));
+          upd.spend_7d=+Math.max(0, (upd.spend_7d||0)-minus('spend_7d')).toFixed(2);
+          upd.bez_reklam_s_kartou=true;
+        }
         await q.update(db.campaigns,{_id:c._id},{$set:upd}); updated++;
       }catch(e){ console.error('meta sync', c.name, e.message); }
     }
@@ -22100,7 +22252,7 @@ const AD_SYNC_KEY='ad_stats_sync_at';
 async function metaGraph(tok, url){
   const u = url.startsWith('http')
     ? url + '&access_token=' + encodeURIComponent(tok)
-    : 'https://graph.facebook.com/v21.0/' + url + (url.includes('?')?'&':'?') + 'access_token=' + encodeURIComponent(tok);
+    : META_GRAPH + url + (url.includes('?')?'&':'?') + 'access_token=' + encodeURIComponent(tok);
   return (await fetch(u)).json();
 }
 // Graph vracia dáta po stránkach — bez dotiahnutia zvyšku by chýbali staršie mesiace.
@@ -22188,6 +22340,125 @@ async function syncAdStats(force){
     return {ok:true, campaigns:camps.length+doplnene.length, deleted:doplnene.length, rows:ins.length, months:Object.keys(poMes).length};
   }catch(e){ console.error('syncAdStats:', e.message); return {ok:false, error:e.message}; }
 }
+
+// ── Strážca merania reklám (Marek 16. 9.: „aby to už bolo raz a navždy dokonale správne") ──
+// Denne pre každú reklamu, ktorá za posledné 3 dni minula peniaze, overí celú cestu kliku:
+// odkaz nesie utm, adresa ho po presmerovaní nestratí, reklama posiela Mete udalosti webu,
+// kampaň má v appke kartu, návštevy sa menia na priradené registrácie, token neexpiruje
+// a Meta udalosti z appky prijíma. Nález ide adminom do notifikácií (ten istý najviac raz za 3 dni).
+async function strazcaMerania({upozornit=true}={}){
+  const nalezy=[], ok=[];
+  const pridaj=(kod, text, detail)=>nalezy.push({kod, text, detail:detail||''});
+  const tok=await getMetaAdsToken();
+  const pixel=String(process.env.META_PIXEL_ID||'');
+  if(!tok) pridaj('token','Chýba token na čítanie reklám — prehľad kampaní sa nesynchronizuje.');
+  const karty=await q.find(db.campaigns,{});
+  const vsetciUzivatelia=await q.find(db.users,{is_admin:{$ne:true}});
+  if(tok){
+    try{
+      const dbg=await metaGraph(tok,'debug_token?input_token='+encodeURIComponent(tok));
+      const exp=dbg && dbg.data && dbg.data.expires_at ? dbg.data.expires_at*1000 : 0;
+      if(dbg && dbg.data && dbg.data.is_valid===false) pridaj('token','Token na čítanie reklám už neplatí.');
+      else if(exp && exp-Date.now() < 14*864e5) pridaj('token','Token na čítanie reklám expiruje '+new Date(exp).toLocaleDateString('sk-SK')+' — treba ho obnoviť.');
+      else if(exp) ok.push('Token platí do '+new Date(exp).toLocaleDateString('sk-SK'));
+    }catch(e){}
+    try{
+      const beziace=await metaAll(tok, META_ACT+'/insights?level=ad&fields=ad_id,ad_name,campaign_id,campaign_name,spend&date_preset=last_3d&limit=200', 5);
+      const reklamy=beziace.filter(r=>+r.spend>0);
+      if(!reklamy.length) ok.push('Za posledné 3 dni nebežala žiadna platená reklama');
+      for(const r of reklamy){
+        const meno='„'+(r.campaign_name||r.campaign_id)+'"';
+        let ad;
+        try{ ad=await metaGraph(tok, r.ad_id+'?fields=name,tracking_specs,creative{url_tags,link_url,object_story_spec{link_data{link},video_data{call_to_action}},asset_feed_spec{link_urls}}'); }catch(e){ continue; }
+        if(!ad || ad.error) continue;
+        const cr=ad.creative||{}, oss=cr.object_story_spec||{};
+        const odkaz=(((oss.video_data||{}).call_to_action||{}).value||{}).link || (oss.link_data||{}).link || cr.link_url
+          || ((((cr.asset_feed_spec||{}).link_urls)||[])[0]||{}).website_url || '';
+        const tagy=String(cr.url_tags||'');
+        const utmZ=(odkaz.match(/[?&]utm_campaign=([^&#]+)/)||tagy.match(/(?:^|&)utm_campaign=([^&]+)/)||[])[1];
+        const utm=utmZ ? decodeURIComponent(utmZ).toLowerCase() : '';
+        const cesta=r.ad_name ? meno+' / '+r.ad_name : meno;
+        if(!odkaz) { pridaj('odkaz', cesta+': reklama nemá odkaz na web — nedá sa merať.'); continue; }
+        if(!utm) pridaj('utm', cesta+': odkaz nenesie utm_campaign — registrácie sa ku kampani nepriradia.', odkaz);
+        const sleduje=pixel && JSON.stringify(ad.tracking_specs||[]).includes(pixel);
+        if(!sleduje) pridaj('pixel', cesta+': reklama nemá zapnuté „Udalosti webu" (dataset '+pixel+') — Meta nevidí registrácie ani nákupy a nevie na ne optimalizovať.');
+        // Skutočný klik: sleduj presmerovania a over, že fbclid aj utm prežijú
+        try{
+          const test='fa_strazca_'+Date.now();
+          let url=odkaz+(tagy?(odkaz.includes('?')?'&':'?')+tagy:'');
+          url+=(url.includes('?')?'&':'?')+'fbclid='+test;
+          let stav=0;
+          for(let i=0;i<6;i++){
+            const resp=await fetch(url,{redirect:'manual', headers:{'user-agent':'FusionStrazcaMerania/1.0'}});
+            stav=resp.status;
+            if(stav>=300 && stav<400 && resp.headers.get('location')){ url=new URL(resp.headers.get('location'), url).toString(); continue; }
+            break;
+          }
+          if(stav!==200) pridaj('stranka', cesta+': odkaz z reklamy končí chybou HTTP '+stav+'.', url);
+          else if(!url.includes(test) || (utm && !url.toLowerCase().includes('utm_campaign='+encodeURIComponent(utm).toLowerCase()) && !url.toLowerCase().includes('utm_campaign='+utm)))
+            pridaj('presmerovanie', cesta+': po presmerovaní sa stratia parametre reklamy (fbclid/utm) — klik sa nepriradí.', url);
+        }catch(e){ pridaj('stranka', cesta+': odkaz z reklamy sa nedá otvoriť ('+e.message+').', odkaz); }
+        // Karta v appke
+        const karta=karty.find(k=>k.meta_campaign_id===r.campaign_id && (!k.meta_ad_id || k.meta_ad_id===r.ad_id))
+          || karty.find(k=>{ const uk=String(k.utm_key||'').toLowerCase(); return uk && utm && (uk.endsWith('*') ? utm.startsWith(uk.slice(0,-1)) : utm===uk); });
+        if(!karta) pridaj('karta', cesta+': kampaň nemá v appke kartu — návratnosť sa nepočíta.');
+        else if(utm && karta.utm_key){
+          const uk=String(karta.utm_key).toLowerCase();
+          if(!(uk.endsWith('*') ? utm.startsWith(uk.slice(0,-1)) : utm===uk))
+            pridaj('karta', cesta+': karta „'+karta.name+'" čaká utm „'+karta.utm_key+'", reklama posiela „'+utm+'".');
+        }
+        // Návštevy vs. priradené registrácie za 7 dní
+        if(utm){
+          try{
+            const ins=await metaGraph(tok, r.campaign_id+'/insights?fields=actions,spend&date_preset=last_7d');
+            const lpv=+((((ins.data||[])[0]||{}).actions||[]).find(x=>x.action_type==='landing_page_view')||{}).value||0;
+            const od=new Date(Date.now()-7*864e5).toISOString();
+            const reg=vsetciUzivatelia.filter(u=>String(u.utm_campaign||'').toLowerCase()===utm && String(u.registration_at||u.created_at||'')>=od).length;
+            if(lpv>=100 && reg===0) pridaj('konverzie', cesta+': za 7 dní '+lpv+' návštev stránky a 0 priradených registrácií — reklama privádza ľudí, ktorí sa neregistrujú, alebo meranie niekde tečie.');
+            else ok.push(cesta+': 7 dní — '+lpv+' návštev, '+reg+' registrácií');
+          }catch(e){}
+        }
+      }
+    }catch(e){ pridaj('api','Kontrola reklám zlyhala: '+e.message); }
+  }
+  // Prijíma Meta udalosti z appky?
+  const capi=((await q.one(db.settings,{key:'meta_capi_stav'}))||{}).value||null;
+  if(capi && capi.posledna_chyba && (!capi.posledna_ok || capi.posledna_chyba>capi.posledna_ok) && Date.now()-Date.parse(capi.posledna_chyba)<48*3600e3)
+    pridaj('capi','Meta odmieta udalosti z appky (posledná chyba '+new Date(capi.posledna_chyba).toLocaleString('sk-SK',{timeZone:'Europe/Bratislava'})+').', capi.chyba);
+  else if(capi && capi.posledna_ok) ok.push('Meta prijala udalosť z appky '+new Date(capi.posledna_ok).toLocaleString('sk-SK',{timeZone:'Europe/Bratislava'}));
+  // Registrácie z reklamy bez priradenej kampane (fbclid s číslom reklamy, bez utm)
+  const bezKampane=vsetciUzivatelia.filter(u=>u.meta_klik && !u.utm_campaign && String(u.registration_at||u.created_at||'')>=new Date(Date.now()-30*864e5).toISOString());
+  if(bezKampane.length) pridaj('nepriradene', bezKampane.length+' registrácií z platenej reklamy za 30 dní sa nepodarilo priradiť kampani (chýba utm aj vzor z rovnakej reklamy).', bezKampane.map(u=>u.name).join(', '));
+  const vysledok={at:nowISO(), nalezy, ok};
+  const s=await q.one(db.settings,{key:'meranie_stav'});
+  const upozornene=(s && s.value && s.value.upozornene) || {};
+  if(upozornit && nalezy.length){
+    const admini=await q.find(db.users,{is_admin:true});
+    for(const n of nalezy){
+      const kluc=n.kod+'_'+require('crypto').createHash('sha1').update(n.text).digest('hex').slice(0,16);   // NeDB nedovolí bodky v kľúčoch
+      if(upozornene[kluc] && Date.now()-Date.parse(upozornene[kluc]) < 3*864e5) continue;
+      upozornene[kluc]=nowISO();
+      for(const a of admini) await q.insert(db.notifications,{user_id:a._id, type:'meranie',
+        title:'🩺 Meranie reklám: '+({token:'token',utm:'chýba utm',pixel:'reklama nesleduje web',stranka:'odkaz nefunguje',presmerovanie:'strácajú sa parametre',karta:'karta kampane',konverzie:'návštevy bez registrácií',capi:'Meta odmieta udalosti',nepriradene:'nepriradené registrácie',odkaz:'reklama bez odkazu',api:'kontrola zlyhala'}[n.kod]||n.kod),
+        body:n.text, read:false, created_at:nowISO()}).catch(()=>{});
+    }
+  }
+  vysledok.upozornene=upozornene;
+  if(s) await q.update(db.settings,{_id:s._id},{$set:{value:vysledok}});
+  else await q.insert(db.settings,{key:'meranie_stav', value:vysledok});
+  return {nalezy, ok};
+}
+app.get('/api/admin/meranie', adminAuth, async(req,res)=>{
+  try{
+    const s=await q.one(db.settings,{key:'meranie_stav'});
+    const capi=((await q.one(db.settings,{key:'meta_capi_stav'}))||{}).value||null;
+    res.json({ok:true, stav:s?{at:s.value.at, nalezy:s.value.nalezy, ok:s.value.ok}:null, capi});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/meranie/skontroluj', adminAuth, async(req,res)=>{
+  try{ res.json({ok:true, ...(await strazcaMerania({upozornit:false}))}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
 
 // Prehľad reklamy. mesiac = 'RRRR-MM' alebo 'all' (celá história).
 async function adOverview(mesiac){
@@ -22282,7 +22553,12 @@ app.post('/api/admin/ads/sync', adminAuth, async(req,res)=>{
 app.post('/api/service/ads-sync', async(req,res)=>{
   const tok=process.env.IMPORT_TOKEN;
   if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
-  try{ res.json(await syncAdStats(true)); }
+  try{
+    const reklama=await syncAdStats(true);
+    const karty=await syncMetaCampaignStats(true);
+    const meranie=req.query.strazca==='0' ? null : await strazcaMerania({upozornit:req.query.upozornit!=='0'});
+    res.json({...reklama, karty, meranie});
+  }
   catch(e){ res.status(500).json({error:e.message}); }
 });
 // Vypnutie alebo zapnutie kampane bez otvárania Ads Managera. Marek 10. 9.:
@@ -24927,6 +25203,14 @@ async function runDailyJobs(){
             '⚙️ Otvoriť profil', APP_URL+'/client-dashboard'), {priority:2, template:'renewal_notice'}).catch(()=>{});
     }
   }catch(e){ console.error('renewal_notice:', e.message); }
+
+  // ── Meranie reklám: odvodené priradenia z fbclid + strážca (16. 9.) ──
+  try{
+    for(const u of await q.find(db.users,{meta_klik:{$exists:true}})) if(!u.utm_campaign) await odvodUtmZKliku(u);
+    await syncAdStats(false).catch(()=>{});
+    await syncMetaCampaignStats(false).catch(()=>{});
+    await strazcaMerania();
+  }catch(e){ console.error('strazca merania:', e.message); }
 
   // ── Venček: nezaplatený kurz → raz za týždeň pripomienka žiakovi a jeho rodičom, len v appke (16. 9.) ──
   try{

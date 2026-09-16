@@ -1147,6 +1147,14 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       </div>
       <div id="adOverview" class="small text-muted">Načítavam…</div>
     </div></div>
+    <!-- Strážca merania reklám (16. 9.) -->
+    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+        <h6 class="fw-bold mb-0">🩺 Meranie reklám</h6>
+        <button class="btn btn-sm btn-outline-warning" id="meranieBtn" onclick="skontrolujMeranie()">Skontrolovať teraz</button>
+      </div>
+      <div id="meraniePanel" class="small text-muted">Načítavam…</div>
+    </div></div>
     <!-- META ADS prehľad -->
     <div class="card bg-dark border-secondary mb-3"><div class="card-body">
       <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
@@ -5125,7 +5133,28 @@ async function adSync(){
   const s=document.getElementById('adMonth'); if(s) s.dataset.filled='';
   loadAds();
 }
+// Strážca merania: či sa kliky z reklám dajú priradiť a Meta prijíma udalosti (16. 9.)
+function vykresliMeranie(stav, capi){
+  const host=document.getElementById('meraniePanel'); if(!host) return;
+  if(!stav){ host.innerHTML='<span class="text-muted">Kontrola ešte neprebehla — klikni „Skontrolovať teraz".</span>'; return; }
+  const kedy=stav.at?new Date(stav.at).toLocaleString('sk-SK'):'';
+  const nal=(stav.nalezy||[]).map(n=>'<div class="mb-1" style="color:#ff9b9b">⚠️ '+esc(n.text)+(n.detail?'<br><small class="text-muted" style="word-break:break-all">'+esc(n.detail)+'</small>':'')+'</div>').join('');
+  const okr=(stav.ok||[]).map(x=>'<div class="mb-1" style="color:#aed581">✓ '+esc(x)+'</div>').join('');
+  const ud=capi&&capi.udalosti?Object.entries(capi.udalosti).map(([k,v])=>esc(k)+': '+(v.ok||0)+' prijatých'+(v.chyby?', <span style="color:#ff9b9b">'+v.chyby+' chýb</span>':'')).join(' · '):'';
+  host.innerHTML=(nal||'<div style="color:#aed581" class="mb-1">✅ Bez nálezov — kliky z reklám sa dajú priradiť.</div>')+okr
+    +(ud?'<div class="text-muted mt-2">Udalosti pre Metu zo servera: '+ud+'</div>':'')
+    +'<div class="text-muted mt-1">Posledná kontrola: '+esc(kedy)+' · denne automaticky, nález príde do notifikácií</div>';
+}
+async function loadMeranie(){
+  try{ const d=await api('/api/admin/meranie'); vykresliMeranie(d&&d.stav, d&&d.capi); }catch(e){}
+}
+async function skontrolujMeranie(){
+  const b=document.getElementById('meranieBtn'); if(b){ b.disabled=true; b.textContent='Kontrolujem…'; }
+  try{ await api('/api/admin/meranie/skontroluj',{method:'POST',body:{}}); await loadMeranie(); }catch(e){}
+  if(b){ b.disabled=false; b.textContent='Skontrolovať teraz'; }
+}
 async function loadCampaigns(){
+  loadMeranie();
   loadAds();
   loadMetaStats();
   loadLeadFunnel();
