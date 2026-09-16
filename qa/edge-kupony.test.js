@@ -113,6 +113,15 @@ async function login(email) { const jar = {}; const r = await j('/api/login', { 
   try {
     const anna = await login('qa.kup.anna@qa-biz.local');
     ok('klientka prihlásená', !!anna.cookie);
+    // Cena Silver z cenníka appky (/api/membership/plans ← MEMBERSHIP_PLANS), nie natvrdo —
+    // test predtým rátal so 75 € a po zmene cien 14. 9. 2026 (74,90 €) padal.
+    const plany = await j('/api/membership/plans');
+    const SILVER = Number(plany.d && plany.d.silver && plany.d.silver.price);
+    ok('cenník vráti cenu Silver', plany.status === 200 && Number.isFinite(SILVER) && SILVER > 0, 'HTTP ' + plany.status + ' ' + JSON.stringify(plany.d && plany.d.silver));
+    const centy = x => Math.round(x * 100) / 100;
+    const zlava = pct => centy(SILVER * pct / 100);
+    const poZlave = pct => centy(SILVER - zlava(pct));
+    const eur = x => x.toFixed(2).replace('.', ',') + ' €';
 
     console.log('\n1) Neplatný kód:');
     const v1 = await validate(anna, { code: 'NEEXISTUJE', plan_id: 'silver' });
@@ -137,15 +146,15 @@ async function login(email) { const jar = {}; const r = await j('/api/login', { 
     const b3 = await buy(anna, { plan_id: 'silver', promo_code: 'NEAKTIVNY' });
     ok('nákup: odmietnutý 400', b3.status === 400 && /neakt/i.test((b3.d || {}).error || ''), 'HTTP ' + b3.status + ' ' + JSON.stringify(b3.d));
 
-    console.log('\n4) Veľkosť písmen a medzery (uložené LETO10, 10 % na Silver 75 €):');
+    console.log('\n4) Veľkosť písmen a medzery (uložené LETO10, 10 % na Silver ' + eur(SILVER) + '):');
     const v4a = await validate(anna, { code: 'leto10', plan_id: 'silver' });
-    ok('validácia: „leto10" prejde ako LETO10, 75 → 67,50', v4a.d && v4a.d.ok === true && v4a.d.code === 'LETO10' && v4a.d.final === 67.5, JSON.stringify(v4a.d));
+    ok('validácia: „leto10" prejde ako LETO10, ' + eur(SILVER) + ' → ' + eur(poZlave(10)), v4a.d && v4a.d.ok === true && v4a.d.code === 'LETO10' && v4a.d.price === SILVER && v4a.d.discount === zlava(10) && v4a.d.final === poZlave(10), JSON.stringify(v4a.d));
     const v4b = await validate(anna, { code: '  LETO10  ', plan_id: 'silver' });
-    ok('validácia: „  LETO10  " prejde', v4b.d && v4b.d.ok === true && v4b.d.final === 67.5, JSON.stringify(v4b.d));
+    ok('validácia: „  LETO10  " prejde', v4b.d && v4b.d.ok === true && v4b.d.final === poZlave(10), JSON.stringify(v4b.d));
     const b4a = await buy(anna, { plan_id: 'silver', promo_code: 'leto10' });
-    ok('nákup: „leto10" prejde s tou istou zľavou (7,50 €)', b4a.status === 200 && b4a.d && b4a.d.ok && b4a.d.promo_discount === 7.5 && b4a.d.final_price === 67.5, 'HTTP ' + b4a.status + ' ' + JSON.stringify(b4a.d));
+    ok('nákup: „leto10" prejde s tou istou zľavou (' + eur(zlava(10)) + ')', b4a.status === 200 && b4a.d && b4a.d.ok && b4a.d.promo_discount === zlava(10) && b4a.d.final_price === poZlave(10), 'HTTP ' + b4a.status + ' ' + JSON.stringify(b4a.d));
     const b4b = await buy(anna, { plan_id: 'silver', promo_code: '  LETO10  ' });
-    ok('nákup: „  LETO10  " prejde', b4b.status === 200 && b4b.d && b4b.d.ok && b4b.d.final_price === 67.5, 'HTTP ' + b4b.status + ' ' + JSON.stringify(b4b.d));
+    ok('nákup: „  LETO10  " prejde', b4b.status === 200 && b4b.d && b4b.d.ok && b4b.d.final_price === poZlave(10), 'HTTP ' + b4b.status + ' ' + JSON.stringify(b4b.d));
     await sleep(300);
     const red4 = redemptions('LETO10');
     ok('obe použitia zapísané pod kanonickým kódom LETO10 (validácia = použitie)', red4.length === 2 && red4.every(r => r.user_id === ANNA), 'n=' + red4.length);
@@ -164,13 +173,13 @@ async function login(email) { const jar = {}; const r = await j('/api/login', { 
     console.log('\n5) 100 % kupón — cena po zľave 0 €:');
     const dana = await login('qa.kup.dana@qa-biz.local');
     const b5 = await buy(dana, { plan_id: 'silver', promo_code: 'STOPERCENT' });
-    ok('/api/membership/buy so 100 % kupónom: ok, final_price 0, zľava 75', b5.status === 200 && b5.d && b5.d.ok && b5.d.final_price === 0 && b5.d.promo_discount === 75, 'HTTP ' + b5.status + ' ' + JSON.stringify(b5.d));
+    ok('/api/membership/buy so 100 % kupónom: ok, final_price 0, zľava ' + eur(SILVER), b5.status === 200 && b5.d && b5.d.ok && b5.d.final_price === 0 && b5.d.promo_discount === SILVER, 'HTTP ' + b5.status + ' ' + JSON.stringify(b5.d));
     await sleep(300);
     ok('členstvo Silver aktivované', aktivne(DANA, 'silver').length === 1, 'aktívnych=' + aktivne(DANA, 'silver').length);
     const tx5 = rd('transactions.db').filter(t => t.user_id === DANA);
     ok('existuje transakčný záznam 0 € s promo kódom', tx5.length === 1 && tx5[0].amount === 0 && tx5[0].promo_code === 'STOPERCENT', JSON.stringify(tx5).slice(0, 200));
     ok('záznam 0 € je označený ako promo, nie „referral_credit / hradené kreditom" (kredit sa nepoužil)', tx5.length === 1 && tx5[0].payment_method !== 'referral_credit' && !/hradené kreditom/.test(tx5[0].note || ''), tx5[0] && (tx5[0].payment_method + ' | ' + tx5[0].note));
-    ok('redemption STOPERCENT zapísaná s discount 75', redemptions('STOPERCENT').length === 1 && redemptions('STOPERCENT')[0].discount === 75, JSON.stringify(redemptions('STOPERCENT')));
+    ok('redemption STOPERCENT zapísaná so zľavou celej ceny (' + eur(SILVER) + ')', redemptions('STOPERCENT').length === 1 && redemptions('STOPERCENT')[0].discount === SILVER, JSON.stringify(redemptions('STOPERCENT')));
     const b5b = await buy(dana, { plan_id: 'silver', promo_code: 'STOPERCENT' });
     // Od 7. 9. (koniec dvojitých členstiev) zastaví rovnaký plán už kontrola „členstvo ti beží" — ešte pred kupónom.
     ok('tá istá klientka druhýkrát ten istý plán: 409 membership_active (dvojité členstvo)', b5b.status === 409 && (b5b.d || {}).code === 'membership_active', 'HTTP ' + b5b.status + ' ' + JSON.stringify(b5b.d));
@@ -198,7 +207,7 @@ async function login(email) { const jar = {}; const r = await j('/api/login', { 
     const v6g = await validate(anna, { code: 'LENSILVER', plan_id: 'gold' });
     ok('validácia na Gold: odmietnutý s menom plánu', v6g.d && v6g.d.ok === false && /Silver/.test(v6g.d.reason || ''), JSON.stringify(v6g.d));
     const v6s = await validate(anna, { code: 'LENSILVER', plan_id: 'silver' });
-    ok('validácia na Silver: prejde, 75 → 60', v6s.d && v6s.d.ok === true && v6s.d.final === 60, JSON.stringify(v6s.d));
+    ok('validácia na Silver: prejde, ' + eur(SILVER) + ' → ' + eur(poZlave(20)), v6s.d && v6s.d.ok === true && v6s.d.final === poZlave(20), JSON.stringify(v6s.d));
     const b6g = await buy(anna, { plan_id: 'gold', promo_code: 'LENSILVER' });
     ok('nákup Gold s kódom pre Silver: 400', b6g.status === 400 && /Silver/.test((b6g.d || {}).error || ''), 'HTTP ' + b6g.status + ' ' + JSON.stringify(b6g.d));
     const c6g = await checkout(gita, { plan_id: 'gold', promo_code: 'LENSILVER' });
@@ -280,7 +289,7 @@ async function login(email) { const jar = {}; const r = await j('/api/login', { 
     // b) hotovosť/prevod: kód sa spotrebuje hneď pri žiadosti, nie až po prijatí platby
     const ema = await login('qa.kup.ema@qa-biz.local');
     const bE = await buy(ema, { plan_id: 'silver', promo_code: 'MANUALKOD' });
-    ok('žiadosť o platbu prevodom s kódom MANUALKOD (max_uses:1): prijatá, 60 €', bE.status === 200 && bE.d && bE.d.ok && bE.d.final_price === 60, 'HTTP ' + bE.status + ' ' + JSON.stringify(bE.d));
+    ok('žiadosť o platbu prevodom s kódom MANUALKOD (max_uses:1): prijatá, ' + eur(poZlave(20)), bE.status === 200 && bE.d && bE.d.ok && bE.d.final_price === poZlave(20), 'HTTP ' + bE.status + ' ' + JSON.stringify(bE.d));
     await sleep(300);
     const payE = rd('payments.db').find(p => p.user_id === EMA);
     ok('platba je len pending_manual, členstvo neaktívne', !!payE && payE.status === 'pending_manual' && aktivne(EMA).length === 0, JSON.stringify(payE || null).slice(0, 160));
@@ -295,7 +304,7 @@ async function login(email) { const jar = {}; const r = await j('/api/login', { 
     const frida = await login('qa.kup.frida@qa-biz.local');
     const bF = await buy(frida, { plan_id: 'silver', promo_code: 'MANUALKOD' });
     ok('kým Ema nezaplatila, kód (max_uses:1) môže použiť aj ďalšia klientka',
-      bF.status === 200 && bF.d && bF.d.ok && bF.d.final_price === 60, 'HTTP ' + bF.status + ' ' + JSON.stringify(bF.d));
+      bF.status === 200 && bF.d && bF.d.ok && bF.d.final_price === poZlave(20), 'HTTP ' + bF.status + ' ' + JSON.stringify(bF.d));
 
     // Potvrdenie a zamietnutie žiadosti adminom — tu sa použitie odpočíta, resp. uvoľní
     const adm = await login('qa.kup.admin@qa-biz.local');
