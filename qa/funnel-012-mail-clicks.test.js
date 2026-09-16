@@ -5,6 +5,11 @@
  * click_count, last-click atribúciu nákupu v /api/admin/mail-performance,
  * šablóny first_booking_welcome (s .ics linkom) aj booking_confirm.
  *
+ * 16. 9.: welcome mail vzniká pri prvej rezervácii; klientka bez členstva sa zapíše len
+ * cez prvú hodinu zadarmo, preto server beží s vypnutým prvým týždňom zadarmo (inak by
+ * samoobslužná prvá rezervácia skončila 402). Hodiny sa
+ * vyberajú podľa kategórie — slepé items[0] od 13. 9. trafilo Zumba Kids (kids_class 400).
+ *
  * Spustenie:  node qa/funnel-012-mail-clicks.test.js
  */
 const { spawn } = require('child_process');
@@ -42,7 +47,10 @@ function mailLogs() {
   console.log('FUNNEL-012 QA — štart servera…');
   const srv = spawn(process.execPath, ['server.js'], {
     cwd: path.join(__dirname, '..'),
-    env: { ...process.env, PORT: String(PORT), DATA_DIR: DATA, APP_URL: BASE, RATE_LIMIT_OFF: '1', MAIL_CAPTURE: '1' },
+    // Prvý týždeň zadarmo vypnutý (skuskaZapnuta berie aj RAILWAY_ENVIRONMENT / NODE_ENV=production),
+    // MAIL_OFF je poistka navyše — z testu nesmie odísť žiadny mail.
+    env: { ...process.env, PORT: String(PORT), DATA_DIR: DATA, APP_URL: BASE, RATE_LIMIT_OFF: '1', MAIL_CAPTURE: '1', MAIL_OFF: '1',
+      PRVY_TYZDEN: '', RAILWAY_ENVIRONMENT: '', NODE_ENV: 'test' },
     stdio: 'ignore',
   });
   const t0 = Date.now();
@@ -51,13 +59,21 @@ function mailLogs() {
   try {
     const adm = {};
     await j('/api/login', { method: 'POST', body: { email: 'admin@fusionacademy.sk', password: 'admin123' } }, adm);
+    ok('prvý týždeň zadarmo je v teste vypnutý', (await j('/api/config', {}, adm)).d?.prvy_tyzden === false);
+    const kat = {};
+    for (const c of (await j('/api/classes', {}, adm)).d || []) kat[c._id] = c.category;
 
     // ── 1) prvá rezervácia → first_booking_welcome s prepísanými linkami + .ics ──
     const jar = {};
     await j('/api/register', { method: 'POST', body: { name: 'Qa Klikova', email: 'qa.click@qa-biz.local', password: 'Heslo123!', consent: true, city: 'Detva' } }, jar);
     const sug = (await j('/api/first-class/suggestions', {}, jar)).d;
-    const bk = await j('/api/bookings', { method: 'POST', body: { class_id: sug.items[0].class_id } }, jar);
-    ok('prvá rezervácia ok', bk.d && (bk.d.ok || bk.d.id));
+    const items = (sug && sug.items) || [];
+    ok('návrhy pre dospelú bez Zumba Kids', items.length > 0 && !items.some(i => kat[i.class_id] === 'Deti'), JSON.stringify(items.map(i => [i.name, kat[i.class_id]])));
+    // Bežná dospelá Zumba — Technika má vlastný cenník, Brezno je len za vstup
+    const zumby = items.filter(i => kat[i.class_id] === 'Zumba' && i.city !== 'Brezno');
+    if (!zumby.length) throw new Error('v návrhoch chýba dospelá Zumba: ' + JSON.stringify(items));
+    const bk = await j('/api/bookings', { method: 'POST', body: { class_id: zumby[0].class_id, booking_date: zumby[0].date } }, jar);
+    ok('prvá rezervácia ok', bk.d && (bk.d.ok || bk.d.id), JSON.stringify(bk));
     await new Promise(r => setTimeout(r, 700));
     const log = mailLogs().find(l => l.template === 'first_booking_welcome' && l.to === 'qa.click@qa-biz.local');
     ok('welcome mail so šablónou first_booking_welcome', !!log, JSON.stringify(mailLogs().map(l => l.template)));
@@ -86,7 +102,10 @@ function mailLogs() {
     await j('/api/admin/users/' + uid + '/grant-membership', { method: 'POST', body: { plan_id: 'bronze', gift: false, payment_method: 'cash', amount: 50 } }, adm);
 
     // ── 4) druhá rezervácia (už s členstvom) → booking_confirm ──
-    const b2 = await j('/api/bookings', { method: 'POST', body: { class_id: (sug.items[1] || sug.items[0]).class_id } }, jar);
+    // Iná Zumba z návrhov, inak tá istá o týždeň neskôr (rovnaký termín by bol duplicita)
+    const druha = zumby[1] ? { class_id: zumby[1].class_id, booking_date: zumby[1].date }
+      : { class_id: zumby[0].class_id, booking_date: new Date(Date.parse(zumby[0].date + 'T12:00:00Z') + 7 * 86400000).toISOString().slice(0, 10) };
+    const b2 = await j('/api/bookings', { method: 'POST', body: druha }, jar);
     ok('druhá rezervácia ok', b2.d && (b2.d.ok || b2.d.id), JSON.stringify(b2.d));
     await new Promise(r => setTimeout(r, 700));
     ok('booking_confirm mail zalogovaný', mailLogs().some(l => l.template === 'booking_confirm' && l.to === 'qa.click@qa-biz.local'));

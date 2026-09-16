@@ -4168,9 +4168,11 @@ app.post('/api/logout',(req,res)=>{ req.session.destroy(); res.json({ok:true}); 
 // ── FUNNEL-001: najbližšie hodiny pre ženu bez prvej rezervácie ──────────────
 // Jedno miesto pravdy pre dashboard hero aj aktivačné maily. Vracia max `limit`
 // najbližších termínov prezenčných hodín, mesto klientky prvé (ak ho poznáme).
+// Bez Zumba Kids: návrhy sú pre samotnú klientku a dospelá sa na detskú hodinu
+// nezapíše (kids_class) — od 13. 9. boli Kids v Detve navrchu a „Rezervovať" padalo.
 async function firstClassSuggestions(u, limit=6){
   const classes=(await q.find(db.classes,{active:true}))
-    .filter(c=>c.category!=='Online' && !/rezervácia/i.test(String(c.name||'')));
+    .filter(c=>c.category!=='Online' && c.category!=='Deti' && !/rezervácia/i.test(String(c.name||'')));
   const items=[];
   for(const c of classes){
     const date=(typeof classNextDate==='function') ? classNextDate(c) : displayNextDateForDay(c.day_of_week);
