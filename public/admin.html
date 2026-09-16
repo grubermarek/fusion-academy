@@ -8176,7 +8176,7 @@ async function adminBookMethod(method, date, note, label){
   if(d?.ok){ showToast('Zapísaný ✓ — '+label,'success'); const uid=_mbUserId; clearMbUser(); document.getElementById('mbNote').value=''; document.getElementById('mbDate').value=''; document.getElementById('mbIsFree').checked=false; document.getElementById('mbCoverage').style.display='none'; openAttClass(_attSelectedClass._id); loadAttendance(); }
   else showToast('Chyba: '+(d?.error||'?'),'error');
 }
-// Technika: cena podľa členstva (Gold 7 / Silver 8 / Bronze 9 / bez členstva 10).
+// Technika: cena podľa členstva (TECHNIKA_CENNIK na serveri — Gold 6 / Silver 7 / Bronze 8 / bez členstva 10).
 // Členstvo ju nekryje, takže sa vždy pýtame, ako sa platí.
 function techCena(st){
   // Cenu ráta server a posiela ju v client-status.tech_price — tu ju už

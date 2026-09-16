@@ -72,7 +72,7 @@ const citajDb = f => { try { return fs.readFileSync(path.join(DATA, f), 'utf8').
   // simulácia dní: nič sa nezopakuje, kým je banka plná
   const pouzite = new Map();
   let opakovane = 0, dni = 0;
-  const kolkoBezOpakovania = Math.floor(B.length / 5) - 2;
+  const kolkoBezOpakovania = Math.floor(B.filter(o => K.pouzitelna(o)).length / 5) - 2;
   for (let n = 0; n < kolkoBezOpakovania; n++) {
     const d = posun('2027-01-01', n * 5);
     const ids = K.vyber(mul(seedFromString('x' + n)), pouzite, n);
@@ -252,6 +252,53 @@ const citajDb = f => { try { return fs.readFileSync(path.join(DATA, f), 'utf8').
     const povol = await j('/api/admin/users/qaKvZakaz000001', { method: 'PUT', body: { body_zakaz: false } }, adm);
     ok('admin body znova povolí', povol.d.ok && (await j('/api/puzzle/today', {}, jz)).d.body_zakaz === false);
     ok('klientka dostala oznámenie, že body sa rátajú', citajDb('notifications.db').some(n => n.user_id === 'qaKvZakaz000001' && n.type === 'body_zakaz' && /opäť/.test(n.title)));
+
+    // ── otázky o škole sa menia s appkou (Marek 17. 9.) ──
+    // Server beží bez PRVY_TYZDEN → skúšobný týždeň je vypnutý, takže otázky o ňom
+    // musia byť vyradené a admin musí dostať upozornenie. Ostatné musia sedieť.
+    const kt = await j('/api/admin/kviz/kontrola', { method: 'POST' }, adm);
+    const FAK = kt.d && kt.d.fakty || {};
+    ok('server dodá fakty z konštánt appky', FAK.hodina === 5 && FAK.kamoska_clenstvo === 100 && FAK.skuska_plan === 'Bronze'
+      && FAK.typy_pocet === 5 && FAK.rytmus_tance === 'Salsa, bachata, merengue a cha-cha-chá' && FAK.mesta_pocet === 4
+      && FAK.permanentka_uspora === 20 && FAK.jedalnicek_plany === 'Gold a Online Premium', JSON.stringify(FAK).slice(0, 300));
+    const nesediIds = (kt.d.nesedi || []).map(x => x.id).sort();
+    ok('pri vypnutom prvom týždni nesedia práve otázky o ňom', JSON.stringify(nesediIds) === JSON.stringify(['fa0003', 'fa0049', 'fa0050', 'fa0051', 'fa0052']),
+      JSON.stringify(kt.d.nesedi));
+    const upoz = citajDb('notifications.db').filter(n => n.user_id === 'qaKvAdmin0000001' && n.type === 'kviz_kontrola');
+    ok('admin dostal upozornenie na nesediace otázky (raz)', upoz.length === 1 && /5 otázky o škole nesedia/.test(upoz[0].title), JSON.stringify(upoz.map(n => n.title)));
+    await j('/api/admin/kviz/kontrola', { method: 'POST' }, adm);
+    ok('opakovaná kontrola upozornenie nezdvojí', citajDb('notifications.db').filter(n => n.type === 'kviz_kontrola' && n.user_id === 'qaKvAdmin0000001').length === 1);
+    const prehlad = await j('/api/admin/puzzle', {}, adm);
+    ok('admin prehľad hlavolamu ukáže nesediace otázky', (prehlad.d.kviz_nesedi || []).length === 5, JSON.stringify(prehlad.d.kviz_nesedi));
+    // v produkčnom režime (skúška zapnutá) musí sedieť všetko — kontroly čítajú skutočné súbory appky
+    const FPROD = { ...FAK, skuska_zapnuta: true };
+    const fusionZle = B.filter(o => o.g === 'fusion' && !o.vyradena).map(o => [o.id, K.preverOtazku(o, FPROD)]).filter(x => x[1].length);
+    ok('všetky otázky o škole sedia s kódom appky', fusionZle.length === 0, JSON.stringify(fusionZle));
+    ok('všetky otázky sa dajú vyplniť bez zvyškov šablóny', B.every(o => { const t = K.vyplnOtazku(o, FPROD); return t && !/[{}]/.test(t.q + t.v + t.a.join('')); }),
+      (B.find(o => { const t = K.vyplnOtazku(o, FPROD); return !t || /[{}]/.test(t.q + t.v + t.a.join('')); }) || {}).id);
+    // kontroly webu (iný projekt) — overíme, ak je web na tomto počítači
+    const WEB = path.join(KOREN, '..', '..', 'Web', 'fusion-academy');
+    if (fs.existsSync(WEB)) {
+      const webZle = [];
+      for (const o of B) for (const k of o.kontrola || []) if (k.web) {
+        let t = ''; try { t = fs.readFileSync(path.join(WEB, k.web), 'utf8'); } catch (e) {}
+        if (!t.includes(k.obsahuje)) webZle.push(o.id + ' ' + k.web);
+      }
+      ok('tvrdenia z webu fusionacademy.sk stále platia', webZle.length === 0, webZle.join(', '));
+    } else console.log('  ⚪ web nie je na tomto počítači — kontrola webu preskočená');
+    // zmena v appke sa prejaví v odpovediach
+    const fa02 = B.find(o => o.id === 'fa0002');
+    const zmena = K.vyplnOtazku(fa02, { ...FPROD, hodina: 20 });
+    ok('keď appka zmení body za hodinu, zmení sa aj odpoveď', zmena.a[0] === '20 bodov' && zmena.v.includes('20 bodov') && new Set(zmena.a).size === 4,
+      JSON.stringify(zmena));
+    const fa41 = K.vyplnOtazku(B.find(o => o.id === 'fa0041'), { ...FPROD, permanentka_dni: 120, permanentka_vstupy: 12 });
+    ok('permanentka: zmena dĺžky aj počtu vstupov sa prepíše', fa41.q.includes('12-vstupová') && fa41.a[0] === '120 dní', JSON.stringify(fa41));
+    ok('keď appka zmení fakt, na ktorom otázka stojí, otázka sa nevyberie',
+      !K.pouzitelna(B.find(o => o.id === 'fa0074'), { ...FPROD, mesta_pocet: 5 }) && K.pouzitelna(B.find(o => o.id === 'fa0074'), FPROD));
+    ok('vyradené otázky sa nevyberajú', B.filter(o => o.vyradena).every(o => !K.pouzitelna(o, FPROD)) && B.some(o => o.vyradena));
+    let vyradenaVybrana = false;
+    for (let n = 0; n < 60; n++) if (K.vyber(mul(500 + n), new Map(), n).some(id => (B.find(o => o.id === id) || {}).vyradena)) vyradenaVybrana = true;
+    ok('ani náhodný výber nevytiahne vyradenú otázku', !vyradenaVybrana);
 
     // ── stránky ──
     const html = fs.readFileSync(path.join(KOREN, 'public', 'hlavolam.html'), 'utf8');

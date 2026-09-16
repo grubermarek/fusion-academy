@@ -1949,6 +1949,8 @@ async function seedData() {
     await q.insert(db.settings,{key:'tech_popis_cennik_20260904', value:true, at:nowISO()});
     console.log('🎯 Popis techniky zosúladený s cenníkom '+JSON.stringify(TECHNIKA_CENNIK));
   }
+  // 17. 9.: popis sa odteraz skladá vždy nanovo (cenník + režim prvého týždňa), pozri popisTechniky.
+  await zosuladPopisTechniky().catch(e=>console.error('popis techniky:', e.message));
 
   // 14.8.: STRIKTNÁ ATRIBÚCIA KAMPANÍ — žiadne domyslené tržby.
   // Júlová migrácia (meta_campaign_sync_v1) otagovala utm_campaign='FA — Zumba
@@ -19381,6 +19383,29 @@ app.delete('/api/attendance/booking/:id', trainerAuth, async(req,res)=>{
 // zmysel — každá úroveň členstva musí byť výhodnejšia než kúpa nastojato.
 //   bez členstva 10 · Bronze 8 · Silver 7 · Gold 6
 const TECHNIKA_CENNIK = { gold: 6, silver: 7, bronze: 8, ziadne: 10 };
+// Popis technického tréningu v rozvrhu sa skladá z cenníka a z toho, či beží prvý týždeň
+// zadarmo (Marek 17. 9.: čo sa zmení v appke, musí sa zmeniť aj v textoch). Kým je
+// skúšobný týždeň zapnutý, prvá hodina zadarmo sa nedáva ani na techniku — popis ju
+// preto nesmie sľubovať. Prepisujeme len náš štandardný popis, vlastný text admina nie.
+function popisTechniky(skuska){
+  return 'Technika, izolácie a štýl — nadstavba k Zumbe. '
+    +(skuska ? '💳 ' : '🎁 Prvá hodina zadarmo! Inak 💳 ')
+    +TECHNIKA_CENNIK.ziadne+' € jednorazový vstup · Bronze '+TECHNIKA_CENNIK.bronze+' € · Silver '
+    +TECHNIKA_CENNIK.silver+' € · Gold '+TECHNIKA_CENNIK.gold+' €. Platí aj permanentka (1 vstup) — '
+    +'kúpiš kartou v Obchode, alebo zaplatíš na mieste. Pokračujeme Zumbou o 19:00. Beží aj online prenos!';
+}
+async function zosuladPopisTechniky(){
+  const popis=popisTechniky(await skuskaZapnuta());
+  let n=0;
+  for(const c of await q.find(db.classes,{category:'Technika'})){
+    if(c.description===popis || !String(c.description||'').startsWith('Technika, izolácie a štýl — nadstavba k Zumbe.')) continue;
+    await q.update(db.classes,{_id:c._id},{$set:{description:popis}}); n++;
+  }
+  if(n) console.log('🎯 Popis techniky aktualizovaný ('+n+'×)');
+  return n;
+}
+// režim prvého týždňa sa dá prepnúť v nastaveniach bez reštartu — skontroluj raz za hodinu
+setInterval(()=>{ zosuladPopisTechniky().catch(()=>{}); }, 60*60*1000);
 function technikaCenaZPlanu(plan, aktivne){
   const p = String(plan || '').toLowerCase();
   if(!aktivne) return TECHNIKA_CENNIK.ziadne;
@@ -23037,7 +23062,49 @@ if(/^https?:\/\/(www\.)?fusionacademy\.sk/i.test(APP_URL)) APP_URL = 'https://ap
 
 // ── EVENT VSTUPENKY ──────────────────────────────────────────────────────────
 const isMemberActive = u => !!(u && u.membership_plan && u.membership_expires && new Date(u.membership_expires) > new Date());
-const PUZZLE = require('./puzzle')({ app, db, q, auth, adminAuth, nowISO, today });
+// Fakty pre otázky Denného kvízu o Fusion Academy (Marek 17. 9.: „vždy keď sa niečo zmení
+// v appke, musí sa to zmeniť aj v odpovediach"). Hodnoty berieme z tých istých konštánt,
+// podľa ktorých appka reálne počíta — otázka tak nikdy nepovie niečo iné než appka.
+// Volá sa až pri hre (nie pri načítaní), preto smie siahať aj na konštanty definované nižšie.
+async function faktyKvizu(){
+  const P=MEMBERSHIP_PLANS;
+  const bsg=['bronze','silver','gold'].map(k=>P[k]).filter(Boolean);
+  const zoznam=a=>a.length<2?(a[0]||''):a.slice(0,-1).join(', ')+' a '+a[a.length-1];
+  const alebo=a=>a.length<2?(a[0]||''):a.slice(0,-1).join(', ')+' alebo '+a[a.length-1];
+  const jedal=Object.values(P).filter(p=>p.meal && !p.retired).map(p=>p.name);
+  const vstup=P.vstup1, perm=P.permanentka10;
+  const permVstup=(perm && perm.entries) ? perm.price/perm.entries : null;
+  const s7=SPIN_MILESTONES.find(m=>m.days===7), s180=SPIN_MILESTONES.find(m=>m.days===180);
+  const T=TECHNIKA_CENNIK, Z=PRIVATE_MEMBER_DISCOUNT, B=MEMBERSHIP_TIER_POINTS;
+  return {
+    hodina: MP_WEIGHTS.hour, sukromna: MP_WEIGHTS.private,
+    kamoska_clenstvo: KAMOSKA_BODY.clenstvo, kamoska_hodina: KAMOSKA_BODY.hodina,
+    bronze_body: B.bronze, silver_body: B.silver, gold_body: B.gold,
+    tier_body_rastie: B.bronze < B.silver && B.silver < B.gold,
+    recenzia: REVIEW_POINTS,
+    tip_podiel: Math.round(TIP_TRAINER_SHARE*100),
+    kredit_kamoska: Math.round(LINE_RATES[0]*100),
+    sukr_zlava_bronze: Z.bronze, sukr_zlava_rastie: Z.bronze < Z.silver && Z.silver < Z.gold,
+    kompenzacia: KOMPENZACIA_DNI,
+    vencek_rodicov: VENCEK_MAX_RODICOV,
+    vencek_od: VENCEK_LEVELS[0], vencek_do: VENCEK_LEVELS[VENCEK_LEVELS.length-1],
+    skuska_zapnuta: await skuskaZapnuta(), skuska_dni: SKUSKA.dni, skuska_plan: (P[SKUSKA.plan]||{}).name,
+    permanentka_dni: perm && perm.duration_days, permanentka_vstupy: perm && perm.entries,
+    permanentka_vstup: permVstup, vstup_cena: vstup && vstup.price,
+    permanentka_uspora: (vstup && permVstup) ? Math.round((1-permVstup/vstup.price)*100) : null,
+    seria7: s7 && s7.points, seria180_sukromna: !!(s180 && s180.private_lesson),
+    plany_bsg: zoznam(bsg.map(p=>p.name)),
+    online_bsg: zoznam(bsg.filter(p=>p.online).map(p=>p.name)),
+    online_bsg_alebo: alebo(bsg.filter(p=>p.online).map(p=>p.name)),
+    online_bronze: !!(P.bronze && P.bronze.online), online_silver: !!(P.silver && P.silver.online),
+    jedalnicek_bsgv: zoznam(['bronze','silver','gold','vstup1'].map(k=>P[k]).filter(p=>p && p.meal).map(p=>p.name)),
+    jedalnicek_plany: zoznam(jedal), jedalnicek_plany_alebo: alebo(jedal),
+    mesta_pocet: CITY_BADGES.length, mesta: CITY_BADGES.join(', '),
+    kids_clenstvo_zrusene: !!(P.kids && P.kids.retired),
+    technika_klesa: T.ziadne > T.bronze && T.bronze > T.silver && T.silver > T.gold,
+  };
+}
+const PUZZLE = require('./puzzle')({ app, db, q, auth, adminAuth, nowISO, today, fakty: faktyKvizu });
 const EVENTS = require('./event-tickets')({
   app, db, q, auth, adminAuth, rlPublic, nowISO, today, APP_URL,
   sendMail, createInvoice, stripeApi, STRIPE_SECRET, isMemberActive, metaCapi

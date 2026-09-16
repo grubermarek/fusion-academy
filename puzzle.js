@@ -20,7 +20,7 @@ const RYTMUS = require('./puzzle-rhythm');
 const ANAGRAM = require('./puzzle-anagram');
 const KVIZ = require('./puzzle-quiz');
 
-module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
+module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty }) => {
 
   const SIZE = 6;                 // mriežka 6×6
   const CELLS = SIZE * SIZE;
@@ -147,9 +147,9 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
   // (Abecedné triedenie vedelo vyhodiť práve vygenerovanú hádanku a vrátiť undefined.)
   const cache = {};
   const cacheOrder = [];
-  function puzzleFor(dateStr, type, vyber) {
+  function puzzleFor(dateStr, type, vyber, verzia) {
     const t = type || 'zip';
-    const key = dateStr + '|' + t + '|' + (vyber && vyber.ids ? vyber.ids.join(',') : '');
+    const key = dateStr + '|' + t + '|' + (vyber && vyber.ids ? vyber.ids.join(',') : '') + '|' + (verzia || '');
     if (!cache[key]) {
       if (t === 'quiz') {
         const rnd = mulberry32(seedFromString('fusion-quiz-moznosti-' + dateStr));
@@ -209,6 +209,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
         const ulozeny = await q.one(db.settings, { key });
         if (ulozeny && ulozeny.value && Array.isArray(ulozeny.value.ids)) return ulozeny.value;
         const { pouzite, n } = await historiaVyberov(type, d);
+        if (type === 'quiz') await obnovFaktyKvizu(await cfg());
         const rnd = mulberry32(seedFromString('fusion-' + type + '-' + d));
         const ids = type === 'quiz' ? KVIZ.vyber(rnd, pouzite, n) : RYTMUS.build(rnd, pouzite)._ids;
         const value = { type, ids, poradie: n };
@@ -221,9 +222,72 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
   }
   // Hádanka dňa vrátane uloženého výberu — toto volajú endpointy.
   async function hadanka(d, type) {
-    if (type === 'quiz' || type === 'rhythm') return puzzleFor(d, type, await vyberDna(d, type));
+    if (type === 'quiz') {
+      // otázky o nás berú čísla z aktuálneho stavu appky — pri zmene sa text prepočíta
+      const f = await obnovFaktyKvizu(await cfg());
+      return puzzleFor(d, type, await vyberDna(d, type), String(seedFromString(JSON.stringify(f))));
+    }
+    if (type === 'rhythm') return puzzleFor(d, type, await vyberDna(d, type));
     return puzzleFor(d, type);
   }
+
+  // ── Fakty pre otázky o Fusion Academy ──
+  // Časť dodá server (body, ceny, plány…), časť vie len hlavolam (typy hier, sadzby).
+  const NAZVY_HIER = { zip: 'Spoj čísla', words: 'Osemsmerovka', rhythm: 'Poznáš rytmus?', anagram: 'Poskladaj slovo', quiz: 'Denný kvíz' };
+  const zoznamSk = a => a.length < 2 ? (a[0] || '') : a.slice(0, -1).join(', ') + ' a ' + a[a.length - 1];
+  async function obnovFaktyKvizu(c) {
+    let zoServera = {};
+    try { zoServera = (typeof fakty === 'function' ? await fakty() : {}) || {}; }
+    catch (e) { console.error('fakty kvízu:', e.message); }
+    const rozvrh = Array.isArray(c.schedule) && c.schedule.length ? c.schedule : TYPES;
+    const hry = TYPES.filter(t => rozvrh.includes(t));
+    const f = {
+      ...zoServera,
+      typy_pocet: hry.length,
+      typy_zoznam: zoznamSk(hry.map(t => NAZVY_HIER[t])),
+      ma_zip: hry.includes('zip'), ma_words: hry.includes('words'),
+      ma_rytmus: hry.includes('rhythm'), ma_anagram: hry.includes('anagram'),
+      rytmus_tance: zoznamSk(RYTMUS.TANCE.map((t, i) => i ? t.name.toLowerCase() : t.name)),
+      kviz_body: naOdpoved(c, 'quiz'), kviz_bonus: bonusBezchybnej(c, 'quiz'),
+      podium_pocet: (Array.isArray(c.podium_bonus) ? c.podium_bonus : []).filter(x => +x > 0).length,
+    };
+    KVIZ.nastavFakty(f);
+    return f;
+  }
+
+  // Ktoré otázky nesedia s appkou — admin dostane upozornenie, otázka sa nevyberá.
+  // Dve kontroly naraz (štart servera + ručná) by poslali upozornenie dvakrát.
+  let kontrolaBezi = null;
+  function skontrolujOtazky() {
+    if (!kontrolaBezi) kontrolaBezi = kontrolaOtazok().finally(() => { kontrolaBezi = null; });
+    return kontrolaBezi;
+  }
+  async function kontrolaOtazok() {
+    const f = await obnovFaktyKvizu(await cfg());
+    const zle = KVIZ.OTAZKY.filter(o => !o.vyradena)
+      .map(o => ({ id: o.id, q: o.q, dovody: KVIZ.preverOtazku(o, f) }))
+      .filter(x => x.dovody.length);
+    const ulozene = await q.find(db.settings, { key: { $regex: /^kviz_nesedi_/ } });
+    const zleIds = new Set(zle.map(x => x.id));
+    for (const r of ulozene) if (!zleIds.has(String(r.key).slice(12))) await q.remove(db.settings, { _id: r._id });
+    const nove = zle.filter(x => !ulozene.some(r => r.key === 'kviz_nesedi_' + x.id));
+    for (const x of nove) await q.insert(db.settings, { key: 'kviz_nesedi_' + x.id, value: x.dovody, at: nowISO() });
+    if (nove.length) {
+      const text = nove.slice(0, 3).map(x => '„' + x.q + '“ — ' + x.dovody[0]).join(' · ')
+        + (nove.length > 3 ? ' · a ďalšie (' + (nove.length - 3) + ')' : '');
+      for (const a of await q.find(db.users, { is_admin: true })) await q.insert(db.notifications, {
+        user_id: a._id, type: 'kviz_kontrola',
+        title: '❓ Kvíz: ' + nove.length + (nove.length === 1 ? ' otázka o škole nesedí' : ' otázky o škole nesedia') + ' s appkou',
+        body: text + '. Kým ich neopravíme, do kvízu sa nedostanú.',
+        read: false, created_at: nowISO(),
+      }).catch(() => {});
+      console.log('❓ Kvíz: nesedí s appkou → ' + nove.map(x => x.id + ' (' + x.dovody.join('; ') + ')').join(' | '));
+    }
+    return zle;
+  }
+  // Konštanty servera sú dostupné až po načítaní celého server.js — preto s odstupom.
+  setTimeout(() => { skontrolujOtazky().catch(e => console.error('kontrola kvízu:', e.message)); }, 45 * 1000);
+  setInterval(() => { skontrolujOtazky().catch(() => {}); }, 6 * 60 * 60 * 1000);
   // Hry s bodom za každú správnu odpoveď (jeden pokus, bonus pre bezchybnú).
   const BODOVANE = { rhythm: RYTMUS, quiz: KVIZ };
   const naOdpoved = (c, type) => type === 'quiz' ? (+c.quiz_per_answer || 1) : (+c.rhythm_per_answer || 1);
@@ -380,6 +444,14 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(d)) return res.status(400).json({ error: 'Neplatný dátum.' });
       const vysledok = await awardDayWinner(d);
       res.json({ ok: true, date: d, vysledok: vysledok || null });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Admin/QA: kontrola otázok o škole hneď (inak beží 45 s po štarte a každých 6 h).
+  app.post('/api/admin/kviz/kontrola', adminAuth, async (req, res) => {
+    try {
+      const zle = await skontrolujOtazky();
+      res.json({ ok: true, nesedi: zle, fakty: await obnovFaktyKvizu(await cfg()) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
@@ -610,8 +682,10 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
       const all = await q.find(db.puzzle_solves, {});
       const m = today().slice(0, 7);
       const thisMonth = all.filter(r => String(r.date || '').startsWith(m));
+      const nesedi = (await q.find(db.settings, { key: { $regex: /^kviz_nesedi_/ } }))
+        .map(r => ({ id: String(r.key).slice(12), dovody: r.value }));
       res.json({
-        ok: true, config: c,
+        ok: true, config: c, kviz_nesedi: nesedi,
         solves_total: all.length, solves_month: thisMonth.length,
         players_month: new Set(thisMonth.map(r => r.user_id)).size,
         points_month: thisMonth.reduce((s, r) => s + (+r.points || 0), 0),
@@ -675,5 +749,6 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today }) => {
     return map;
   }
 
-  return { puzzleFor, hadanka, vyberDna, validate, validateAny, typeForSync, puzzlePointsMap, cfg, awardDayWinner, SIZE };
+  return { puzzleFor, hadanka, vyberDna, validate, validateAny, typeForSync, puzzlePointsMap, cfg, awardDayWinner,
+    skontrolujOtazky, obnovFaktyKvizu, SIZE };
 };
