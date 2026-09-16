@@ -61,6 +61,19 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
   padding:14px 24px;
   display:none;align-items:center;justify-content:center;gap:0;
 }
+/* Lišta krokov sedí pod hlavičkou — predtým boli obe na top:0 a na mobile/tablete sa
+   kroky prekrývali s logom a výberom jazyka (videl to každý klik z reklamy, 16. 9.) */
+.step-bar{top:var(--fa-nav-h,58px)}
+.fa-lang-select{background:#151515;color:var(--text);border:1px solid rgba(255,255,255,.15);border-radius:20px;padding:5px 8px;font-size:.78rem;font-family:inherit;cursor:pointer}
+.fa-lang-select:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+@media(max-width:640px){
+  .top-nav{padding:10px 14px}
+  .nav-brand{gap:8px;font-size:.72rem;letter-spacing:.16em}
+  .nav-right{gap:8px}
+  .nav-link{white-space:nowrap;padding:6px 12px}
+  #langSwNav{margin-right:0!important}
+  .step-bar{padding:8px 14px}
+}
 .sb-item{display:flex;align-items:center;gap:0}
 .sb-dot{
   width:32px;height:32px;border-radius:50%;border:2px solid var(--border);
@@ -568,6 +581,13 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
 <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag("js",new Date());gtag("config","AW-18386367227");</script>
 <script>
 document.addEventListener('DOMContentLoaded',function(){ if(window.FA_I18N){ FA_I18N.mount('langSwNav'); } });
+// Výška hlavičky pre lištu krokov (mení sa so šírkou, jazykom aj prihlásením)
+document.addEventListener('DOMContentLoaded',function(){
+  const nav=document.querySelector('.top-nav'); if(!nav) return;
+  const nastav=()=>document.documentElement.style.setProperty('--fa-nav-h', nav.offsetHeight+'px');
+  nastav(); addEventListener('resize', nastav);
+  if(window.ResizeObserver) new ResizeObserver(nastav).observe(nav);
+});
 document.addEventListener('fa-lang-changed',()=>location.reload());
 /* Venčekový registračný kód z QR (?vencek=VEN-XXXXX) — uloží sa a použije pri registrácii */
 (function(){
