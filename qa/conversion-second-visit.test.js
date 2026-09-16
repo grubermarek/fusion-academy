@@ -48,8 +48,10 @@ const today = () => new Date().toISOString().slice(0, 10);
   const c1 = await post('admin', '/api/admin/classes', { name: 'QA Konverzia A', emoji: '💃', day_of_week: now.getDay(), time_start: `${hh}:00`, time_end: `${hh}:50`, location: 'Brezno', capacity: 20, instructor: 'Trenerka Konverzna', active: true, category: 'Zumba' });
   const clsA = c1.data?.id || c1.data?._id;
 
-  // Ema príde dvakrát, Sara raz, Nina neprišla vôbec
-  const mk = async (tag, name) => { await post(tag, '/api/register', { name, email: `qa.${tag}${uniq}@test-fa-qa.local`, password: 'AuditPass123!', consent: true }); return (await g(tag, '/api/me')).data.id; };
+  // Ema príde dvakrát, Sara raz, Nina neprišla vôbec.
+  // Telefón je nutný: od 28. 8. (f88cc3f) coach vynecháva leady, ktoré majú len syntetický
+  // QA e-mail a žiadny telefón (hasContact). Číslo je zámerne neplatné — SMS brána ho odmietne.
+  const mk = async (tag, name) => { await post(tag, '/api/register', { name, email: `qa.${tag}${uniq}@test-fa-qa.local`, phone: '+421000000', password: 'AuditPass123!', consent: true }); return (await g(tag, '/api/me')).data.id; };
   const idE = await mk('E', 'Ema Vracia');
   const idS = await mk('S', 'Sara Raz');
   const idN = await mk('N', 'Nina Neprisla');

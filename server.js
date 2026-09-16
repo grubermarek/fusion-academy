@@ -19915,7 +19915,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
     // wrongly redirected to buy membership.
     // ── TECHNICKÝ TRÉNING (kategória Technika) — vlastný cenník ────────────────
     // Členstvo hodinu NEkryje. Platí bežná permanentka/vstup, alebo platba na mieste
-    // podľa členstva: 10 € / Bronze 9 € / Silver 8 € / Gold 7 €.
+    // podľa členstva: 10 € / Bronze 8 € / Silver 7 € / Gold 6 € (TECHNIKA_CENNIK).
     // „Prvá hodina zadarmo" platí aj na techniku (spotrebuje sa rovnako ako pri Zumbe).
     let techPrice=null, creditPay=null;
     if(isTechClass && !u.is_admin && u.user_type!=='trainer'){
@@ -19926,7 +19926,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
         const m=await checkMembership(u._id);
         const active=m && m.status==='active' && (!m.expires_at || m.expires_at>=today());
         const plan=String((m?.plan_id||'')+' '+(m?.plan_name||'')).toLowerCase();
-        // Cenník podľa členstva: Gold 7 / Silver 8 / Bronze 9 / bez členstva 10 (Gold už NIE JE zdarma).
+        // Cenník podľa členstva: Gold 6 / Silver 7 / Bronze 8 / bez členstva 10 (Gold už NIE JE zdarma).
         // Počíta sa vopred, aby cenu dostala aj klientka, ktorej sa vstup minul v súbehu.
         techPrice=technikaCenaZPlanu(plan, active);
         if((u.free_credits||0)>0){ deductPlan={uid:u._id, field:'free_credits'}; accessMethod='free_credit'; }
