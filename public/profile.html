@@ -410,6 +410,17 @@ async function load(){
   else if(tp==='cancel'){ history.replaceState({},'',location.pathname); }
   // Admin sa vráti do admin panelu, klient na svoj dashboard
   const bl=document.getElementById('backLink'); if(bl && P.viewer_is_admin && !P.is_self){ bl.href='/admin'; }
+  // Z trénerského panela (dochádzka), admina či venčeka späť tam, odkiaľ prišiel — v nainštalovanej
+  // appke sa profil otvára v tej istej karte a „na nástenku" by trénera vyhodilo z hodiny (16. 9.).
+  try{
+    const ref=document.referrer ? new URL(document.referrer) : null;
+    const odkial=ref && ref.origin===location.origin && (ref.pathname.match(/^\/(trainer|admin|vencek)\b/)||[])[1];
+    if(bl && odkial && !P.is_self){
+      bl.href='/'+odkial;
+      const s=bl.querySelector('span'); if(s){ s.removeAttribute('data-i18n'); s.textContent=({trainer:'Späť do trénerského panela',admin:'Späť do adminu',vencek:'Späť na venček'})[odkial]; }
+      bl.addEventListener('click', e=>{ if(history.length>1){ e.preventDefault(); history.back(); } });
+    }
+  }catch(e){}
 }
 function friendBtn(){
   if(P.friend_state==='self') return '';
