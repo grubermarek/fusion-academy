@@ -3994,6 +3994,27 @@ async function seedData() {
   { const moved = await q.update(db.products,{name:new RegExp('ta[šs]k','i'), cat:'Doplnky'},{$set:{cat:'Oblečenie'}},{multi:true});
     if(moved) console.log(`✅  ${moved} tašiek presunutých do kat. Oblečenie`); }
 
+  // ═══ 17. 9. 2026: po párty nemá v komunite visieť predaj lístkov ══════════
+  // Pozvánka z 25. 8. bola jedinou správou vo Všeobecných aj v Eventoch, stále
+  // vyzývala kúpiť lístok a mala zlý deň (piatok). Marek: nahradiť poďakovaním.
+  if(!(await q.one(db.settings,{key:'party_invite_dakujeme_20260917'}))){
+    try{
+      const stare=(await q.find(db.messages,{channel:{$in:['general','eventy']}}))
+        .filter(m=>/^🌴 LATIN TROPICAL PARTY & MASTERCLASS/.test(String(m.text||'')));
+      const autor=(stare[0] && await q.one(db.users,{_id:stare[0].user_id}))
+        || await q.one(db.users,{is_admin:true, name:/marek/i});
+      const kanaly=[...new Set(stare.map(m=>m.channel))];
+      for(const m of stare) await q.remove(db.messages,{_id:m._id});
+      if(autor) for(const ch of kanaly)
+        await q.insert(db.messages,{channel:ch, user_id:autor._id, user_name:autor.name,
+          text:'💛 Ďakujeme všetkým, ktorí prišli na Latin Tropical Party a oslávili s nami prvý rok tanečnej školy v Detve!',
+          memberBadge:getMemberBadge(autor.created_at, autor), created_at:nowISO()});
+      await q.insert(db.settings,{key:'party_invite_dakujeme_20260917', value:true, at:nowISO(),
+        povodny_text: stare[0] ? stare[0].text : null});
+      console.log('💛 Komunita: pozvánka na párty nahradená poďakovaním v kanáloch '+(kanaly.join(', ')||'—'));
+    }catch(e){ console.error('party dakujeme:', e.message); }
+  }
+
   // ═══ RUČNÉ OPRAVY 7. 9. 2026 (Marek) ═══════════════════════════════════════
   // Meno bez diakritiky a veľkých písmen — v DB sú mená písané rôzne.
   const bezDiakritiky = s => String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
@@ -9178,6 +9199,10 @@ app.get('/api/ambassador/materials', ambassadorAuth, async(req,res)=>{
   try{
     const u=req.ambUser;
     const link=APP_URL.replace(/\/$/,'')+'/invite/'+u.referral_code;
+    // Pozvánka na párty patrí do materiálov len kým akcia ešte len bude —
+    // po 5. 9. tu visela ďalej a ambasádorky mohli zdieľať predaj, ktorý skončil.
+    const party=db.ev_events ? await q.one(db.ev_events,{slug:'latin-tropical-2026'}) : null;
+    const partyBude=!!(party && party.active!==false && String(party.date||'').slice(0,10)>=today());
     res.json({ok:true, materials:[
       { id:'story-prva', name:'Story — prvý týždeň zadarmo', kind:'text',
         text:'Poď si so mnou zatancovať 💃 Prvý týždeň je úplne zadarmo — Zumba vo Zvolene, Detve, B. Bystrici aj Brezne. Registrácia za 30 sekúnd: '+link },
@@ -9185,10 +9210,12 @@ app.get('/api/ambassador/materials', ambassadorAuth, async(req,res)=>{
         text:'Ahoj! Chodím na Zumbu do Fusion Academy a je to najlepšia časť môjho týždňa 🧡 Prvý týždeň máš zadarmo — poď to skúsiť so mnou: '+link },
       { id:'post-fb', name:'Príspevok na Facebook', kind:'text',
         text:'Hľadala som pohyb, pri ktorom nebudem pozerať na hodinky — a našla som Zumbu vo Fusion Academy. Super hudba, žiadny tlak, skvelá partia žien. Prvý týždeň je zadarmo, tak ak rozmýšľaš, toto je znamenie 😄 '+link },
+      ...(partyBude ? [
       { id:'event-latin', name:'Latin Tropical Party — pozvánka', kind:'text',
         text:'5. septembra bude v Detve LATIN TROPICAL PARTY 🌴 Masterclass s Marekom Gruberom a Ivanom Ligártom, potom párty s welcome drinkom. Lístky: '+APP_URL.replace(/\/$/,'')+'/event/latin-tropical-2026' },
       { id:'plagat-event', name:'Plagát Latin Tropical (na stiahnutie)', kind:'image',
         url:'/img/events/latin-tropical.jpg' },
+      ] : []),
       { id:'qr', name:'Môj QR kód (na vytlačenie)', kind:'image',
         url:'/api/qr/invite.png?code='+encodeURIComponent(u.referral_code) }
     ]});
@@ -22831,6 +22858,39 @@ app.post('/api/service/ads-status', async(req,res)=>{
     const po=await g(`${id}?fields=name,status&access_token=${encodeURIComponent(meta)}`);
     console.log('📴 Meta kampaň „'+pred.name+'": '+pred.status+' → '+po.status);
     res.json({ok:true, name:pred.name, pred:pred.status, po:po.status});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Výsledky jednotlivých reklám v kampani (kreatívny test: ktorá z 28 kreatív
+// má najlepšie CTR). Marek 17. 9.: „Dotiahni CTR všetkých 28 kreatív a vyber
+// top 5" — z Mety čítame spend/zobrazenia/kliky per reklama, z appky k tomu
+// pridáme registrácie podľa utm_campaign (názov reklamy = utm_campaign).
+app.get('/api/service/ads-insights', async(req,res)=>{
+  const tok=process.env.IMPORT_TOKEN;
+  if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
+  try{
+    const meta=(await getMetaAdsToken()) || (await getMetaCapiToken());
+    if(!meta) return res.status(400).json({error:'Chýba Meta Ads token'});
+    const id=String(req.query.campaign_id||'').trim();
+    if(!/^d+$/.test(id)) return res.status(400).json({error:'Zadaj campaign_id'});
+    const preset=/^[a-z0-9_]+$/.test(String(req.query.preset||''))?String(req.query.preset):'maximum';
+    const url=`${META_GRAPH}${id}/insights?level=ad&fields=ad_id,ad_name,spend,impressions,reach,clicks,ctr,cpc,inline_link_clicks,inline_link_click_ctr,actions&date_preset=${preset}&limit=200&access_token=${encodeURIComponent(meta)}`;
+    const d=await (await fetch(url)).json();
+    if(d.error) return res.status(400).json({error:d.error.message});
+    const test=x=>/test/i.test(x.name||'')||/test/i.test(x.email||'')||x.lead_source==='test'||x.is_test;
+    const users=(await q.find(db.users,{is_admin:{$ne:true}})).filter(u=>!u.is_child && !test(u));
+    const memb=new Set((await q.find(db.memberships,{status:'active'})).filter(m=>!m._type).map(m=>m.user_id));
+    const rows=(d.data||[]).map(r=>{
+      const key=String(r.ad_name||'').toLowerCase().trim();
+      const mine=users.filter(u=>String(u.utm_campaign||'').toLowerCase().trim()===key);
+      const lp=(r.actions||[]).find(a=>a.action_type==='landing_page_view');
+      return { ad_id:r.ad_id, name:r.ad_name, spend:+r.spend||0, impressions:+r.impressions||0, reach:+r.reach||0,
+        clicks:+r.clicks||0, ctr:+(+r.ctr||0).toFixed(2), cpc:+(+r.cpc||0).toFixed(3),
+        link_clicks:+r.inline_link_clicks||0, link_ctr:+(+r.inline_link_click_ctr||0).toFixed(2),
+        landing_views:lp?+lp.value||0:0,
+        registrations:mine.length, first_visits:mine.filter(u=>(u.visit_count||0)>0).length,
+        memberships:mine.filter(u=>memb.has(u._id)).length };
+    }).sort((a,b)=>b.link_ctr-a.link_ctr || b.ctr-a.ctr);
+    res.json({ok:true, campaign_id:id, preset, count:rows.length, rows});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 app.get('/api/service/ads-overview', async(req,res)=>{
