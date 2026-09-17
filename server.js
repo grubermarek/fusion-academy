@@ -11504,14 +11504,24 @@ app.put('/api/admin/classes/:id', adminAuth, async(req,res)=>{
     const ins=await resolveInstructor(b.instructor_id,b.instructor);
     $set.instructor=ins.instructor; $set.instructor_id=ins.instructor_id;
   }
+  const pred = await q.one(db.classes,{_id:req.params.id});
+  if(!pred) return res.status(404).json({error:'Hodina nenájdená'});
   await q.update(db.classes,{_id:req.params.id},{$set});
-  res.json({ok:true});
+  // Zmena času / dňa / miesta / vypnutie → upozorni rezervované (oznamZmenuHodiny)
+  let zmena=null;
+  try{ zmena = await oznamZmenuHodiny(pred, await q.one(db.classes,{_id:req.params.id}), req); }
+  catch(e){ console.error('oznamZmenuHodiny:', e.message); }
+  res.json({ok:true, zmena});
 });
 
 
 app.delete('/api/admin/classes/:id', adminAuth, async(req,res)=>{
+  const pred = await q.one(db.classes,{_id:req.params.id});
   await q.update(db.classes,{_id:req.params.id},{$set:{active:false}});
-  res.json({ok:true});
+  let zmena=null;
+  try{ if(pred) zmena = await oznamZmenuHodiny(pred, {...pred, active:false}, req); }
+  catch(e){ console.error('oznamZmenuHodiny:', e.message); }
+  res.json({ok:true, zmena});
 });
 
 // Keep only Zumba / Zumba ONLINE classes — deactivates everything else. Audited & reversible.
@@ -18851,6 +18861,124 @@ app.post('/api/attendance/session-instructor', trainerAuth, async(req,res)=>{
 const KOMPENZACIA_DNI = 4;
 const kompenzovatelna = c => !!c && !['Online','Technika','Súkromné'].includes(c.category);
 const fmtDenMes = s => { const [y,m,d] = String(s).slice(0,10).split('-'); return (+d)+'. '+(+m)+'. '+y; };
+// Vráti klientke to, čím rezerváciu zaplatila (vstup z permanentky, hodina zdarma,
+// prvá hodina) — spoločné pre zrušenie termínu aj vyradenie hodiny z rozvrhu.
+async function vratKrytieRezervacie(b){
+  const u0 = await q.one(db.users,{_id:b.user_id});
+  if(!u0) return {refunded:0, backTxt:''};
+  if(b.access_method==='single_entry'){
+    await q.update(db.users,{_id:u0._id},{$set:{single_entries:(u0.single_entries||0)+1}});
+    return {refunded:1, backTxt:' Tvoj vstup z permanentky sme ti vrátili.'};
+  }
+  if(b.access_method==='free_credit'){
+    await q.update(db.users,{_id:u0._id},{$set:{free_credits:(u0.free_credits||0)+1}});
+    return {refunded:1, backTxt:' Hodinu zdarma sme ti vrátili.'};
+  }
+  if(b.access_method==='free_class' || b.free_class){
+    await q.update(db.users,{_id:u0._id},{$set:{free_class_used:false}});
+    return {refunded:1, backTxt:' Prvú hodinu zdarma máš stále k dispozícii.'};
+  }
+  if(b.access_method==='parent_single_entry' && b.booked_by){
+    const pu=await q.one(db.users,{_id:b.booked_by});
+    if(pu){ await q.update(db.users,{_id:pu._id},{$set:{single_entries:(pu.single_entries||0)+1}}); return {refunded:1, backTxt:' Vstup z rodičovskej permanentky sme vrátili.'}; }
+  }
+  if(b.access_method==='parent_free_credit' && b.booked_by){
+    const pu=await q.one(db.users,{_id:b.booked_by});
+    if(pu){ await q.update(db.users,{_id:pu._id},{$set:{free_credits:(pu.free_credits||0)+1}}); return {refunded:1, backTxt:' Hodinu zdarma sme vrátili rodičovi.'}; }
+  }
+  return {refunded:0, backTxt:''};
+}
+
+// ── Zmena hodiny → upozornenie rezervovaným (17. 9. 2026, plán 7.3) ────────────
+// Dovtedy úprava hodiny (PUT /api/admin/classes/:id, migrácie) len prepísala záznam
+// a klientka s rezerváciou prišla podľa starého času alebo na staré miesto.
+// Teraz zmena času, konca, dňa, jednorazového dátumu alebo miesta upozorní každú
+// budúcu rezerváciu (oznam v appke + mail), prepíše ju na nový termín a pridá
+// oznam na nástenku mesta; vypnutie hodiny budúce rezervácie zruší a vráti,
+// čím sa platilo (rovnako ako zrušenie termínu, bez predĺženia členstva).
+// Volaj po zápise: oznamZmenuHodiny(pred, po, req). Nič nerobí, keď sa nič z toho nezmenilo.
+const ZMENA_HODINY_POLIA = ['time_start','time_end','day_of_week','only_date','location'];
+function isoLokalne(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function terminHodinyTxt(c){
+  const den = c.only_date ? denADatum(c.only_date) : DNI_SK[c.day_of_week]||'';
+  return `${den} ${c.time_start||''}${c.time_end?'–'+c.time_end:''}, ${c.location||''}`;
+}
+async function oznamZmenuHodiny(pred, po, req){
+  const vysl = {zmeny:[], notified:0, moved:0, cancelled:0, refunded:0};
+  if(!pred || !po) return vysl;
+  const vypnuta = pred.active!==false && po.active===false;
+  const zmeny = ZMENA_HODINY_POLIA.filter(f => String(pred[f]??'') !== String(po[f]??''));
+  if(!vypnuta && !zmeny.length) return vysl;
+  vysl.zmeny = vypnuta ? ['active'] : zmeny;
+  const dnes = today();
+  const bookings = (await q.find(db.bookings,{class_id:po._id, status:{$nin:['cancelled','cancelled_studio']}}))
+    .filter(b => String(b.booking_date||'') >= dnes && b.attendance_status!=='attended' && b.status!=='attended');
+  const stary = terminHodinyTxt(pred), novy = terminHodinyTxt(po);
+
+  if(vypnuta){
+    for(const b of bookings){
+      const vratene = await vratKrytieRezervacie(b);
+      vysl.refunded += vratene.refunded;
+      await q.update(db.bookings,{_id:b._id},{$set:{status:'cancelled_studio', cancelled_reason:'Hodina vyradená z rozvrhu', cancelled_at:nowISO()}});
+      vysl.cancelled++;
+      const kedy = denADatum(b.booking_date);
+      await q.insert(db.notifications,{user_id:b.user_id, type:'class_cancelled',
+        title:`❌ Hodina zrušená: ${po.name}`,
+        body:`${po.name} (${stary}) už nie je v rozvrhu — tvoja rezervácia na ${kedy} sa ruší.${vratene.backTxt} Pozri rozvrh a vyber si inú hodinu.`,
+        read:false, created_at:nowISO()}).catch(()=>{});
+      const u = await q.one(db.users,{_id:b.user_id});
+      if(u?.email) sendMail(u.email, `Hodina zrušená: ${po.name} (${b.booking_date})`,
+        emailTemplate('Hodina už nie je v rozvrhu 😔',
+          `<p>Ahoj <b>${u.name}</b>,</p><p>Hodina <b>${po.name}</b> (${stary}) <b>už nie je v rozvrhu</b> — tvoja rezervácia na <b>${kedy}</b> sa ruší.${vratene.backTxt?`</p><p>${vratene.backTxt.trim()}`:''}</p><p>Pozri si rozvrh a vyber si inú hodinu. 💃</p>`,
+          '🗓️ Pozrieť rozvrh', `${APP_URL}/schedule`)).catch(()=>{});
+      vysl.notified++;
+    }
+    if(req) await auditLog(req,'class_deactivate',po._id,{},{cancelled:vysl.cancelled, refunded:vysl.refunded},'');
+    return vysl;
+  }
+
+  const menyDen = zmeny.includes('day_of_week') || zmeny.includes('only_date');
+  for(const b of bookings){
+    let novyDatum = b.booking_date;
+    if(menyDen){
+      if(po.only_date) novyDatum = po.only_date;
+      else {
+        const d = new Date(String(b.booking_date).slice(0,10)+'T12:00:00');
+        d.setDate(d.getDate() + ((po.day_of_week - d.getDay() + 7) % 7));
+        if(isoLokalne(d) < dnes) d.setDate(d.getDate()+7);
+        novyDatum = isoLokalne(d);
+      }
+    }
+    const presun = novyDatum !== b.booking_date;
+    const $set = { class_time_start:po.time_start, class_time_end:po.time_end, class_location:po.location,
+      day_of_week:po.day_of_week, day_name:DAYS_SK[po.day_of_week], zmena_hodiny_at:nowISO() };
+    if(presun){ $set.booking_date = novyDatum; $set.moved_from_date = b.booking_date; vysl.moved++; }
+    await q.update(db.bookings,{_id:b._id},{$set});
+    const kedy = `${denADatum(novyDatum)} o ${po.time_start||''}, ${po.location||''}`;
+    const rezTxt = presun
+      ? `Tvoja rezervácia z ${denADatum(b.booking_date)} je presunutá na ${kedy}.`
+      : `Tvoja rezervácia platí ďalej: ${kedy}.`;
+    await q.insert(db.notifications,{user_id:b.user_id, type:'class_changed', ref_id:b._id,
+      title:`🗓️ Zmena hodiny: ${po.name}`,
+      body:`${po.name} sa mení z „${stary}" na „${novy}". ${rezTxt} Ak ti nový termín nevyhovuje, rezerváciu zruš v appke.`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+    const u = await q.one(db.users,{_id:b.user_id});
+    if(u?.email) sendMail(u.email, `Zmena hodiny: ${po.name} (${novyDatum})`,
+      emailTemplate('Hodina sa mení 🗓️',
+        `<p>Ahoj <b>${u.name}</b>,</p><p>Hodina <b>${po.name}</b> sa mení:</p><p>doteraz: ${stary}<br>odteraz: <b>${novy}</b></p><p>${rezTxt}</p><p>Ak ti nový termín nevyhovuje, rezerváciu si zruš v appke. 💛</p>`,
+        '🗓️ Pozrieť rozvrh', `${APP_URL}/schedule`)).catch(()=>{});
+    vysl.notified++;
+  }
+  await q.insert(db.feed,{ author_id:'studio', author_name:'Fusion Academy', author_badge:{emoji:'📢',label:'Oznam'},
+    studio_announcement:true, city:po.location,
+    text:`📢 Zmena hodiny — ${po.location}\n\nHodina „${po.name}" sa mení.\nDoteraz: ${stary}\nOdteraz: ${novy}\n\nKto má rezerváciu, dostane správu. Tešíme sa na teba! 💃`,
+    image:null, reactions:{}, comments:[], created_at:nowISO() }).catch(()=>{});
+  if(req) await auditLog(req,'class_change',po._id,
+    Object.fromEntries(zmeny.map(f=>[f,pred[f]])), Object.fromEntries(zmeny.map(f=>[f,po[f]])),
+    `notified ${vysl.notified}, moved ${vysl.moved}`);
+  return vysl;
+}
+
 app.post('/api/attendance/cancel-session', trainerAuth, async(req,res)=>{
   try {
     const { class_id } = req.body;
@@ -18891,26 +19019,8 @@ app.post('/api/attendance/cancel-session', trainerAuth, async(req,res)=>{
     }
     for(const b of bookings){
       // Vráť všetko, čím klientka zaplatila — nielen permanentkový vstup
-      let backTxt='';
-      const u0 = await q.one(db.users,{_id:b.user_id});
-      if(u0){
-        if(b.access_method==='single_entry'){
-          await q.update(db.users,{_id:u0._id},{$set:{single_entries:(u0.single_entries||0)+1}}); refunded++;
-          backTxt=' Tvoj vstup z permanentky sme ti vrátili.';
-        } else if(b.access_method==='free_credit'){
-          await q.update(db.users,{_id:u0._id},{$set:{free_credits:(u0.free_credits||0)+1}}); refunded++;
-          backTxt=' Hodinu zdarma sme ti vrátili.';
-        } else if(b.access_method==='free_class' || b.free_class){
-          await q.update(db.users,{_id:u0._id},{$set:{free_class_used:false}}); refunded++;
-          backTxt=' Prvú hodinu zdarma máš stále k dispozícii.';
-        } else if(b.access_method==='parent_single_entry' && b.booked_by){
-          const pu=await q.one(db.users,{_id:b.booked_by});
-          if(pu){ await q.update(db.users,{_id:pu._id},{$set:{single_entries:(pu.single_entries||0)+1}}); refunded++; backTxt=' Vstup z rodičovskej permanentky sme vrátili.'; }
-        } else if(b.access_method==='parent_free_credit' && b.booked_by){
-          const pu=await q.one(db.users,{_id:b.booked_by});
-          if(pu){ await q.update(db.users,{_id:pu._id},{$set:{free_credits:(pu.free_credits||0)+1}}); refunded++; backTxt=' Hodinu zdarma sme vrátili rodičovi.'; }
-        }
-      }
+      const vratene = await vratKrytieRezervacie(b);
+      refunded += vratene.refunded; const backTxt = vratene.backTxt;
       await q.update(db.bookings,{_id:b._id},{$set:{status:'cancelled_studio', cancelled_reason:reason||'Zrušené štúdiom', cancelled_at:nowISO()}});
       const ext = kompPre[b.user_id];
       const refundNote = backTxt + (ext ? ` Členstvo ${ext.plan_name} ti za zrušenú hodinu predlžujeme o ${KOMPENZACIA_DNI} dni — platí do ${fmtDenMes(ext.to)}.` : '');

@@ -222,7 +222,10 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
   default true, vypínateľné v profile).
 - V schedule.html pri hodine: "💃 Ide 8 ľudí: Katka, Mirka, +6".
 
-### 7.3 Zmena/zrušenie hodiny → automatické upozornenie rezervovaným
+### 7.3 Zmena/zrušenie hodiny → automatické upozornenie rezervovaným ✅ HOTOVO (2026-09-17)
+> Zrušenie termínu: cancel-session (oznam, mail, vrátenie vstupu, +4 dni členstva prihláseným).
+> Zmena času/dňa/miesta/only_date a vypnutie hodiny: oznamZmenuHodiny v PUT/DELETE /api/admin/classes/:id
+> (oznam + mail rezervovaným, rezervácia prepísaná na nový termín, oznam na nástenke mesta; vypnutie = storno + vrátenie). Test qa/zmena-hodiny.test.js.
 - `PUT /api/admin/classes/:id`: ak sa zmení `time_start`, `location` alebo `active:false`,
   nájdi všetky budúce confirmed bookings tej hodiny a pošli email + notifikáciu
   ("Hodina X sa presúva / ruší"). Pri zrušení hodiny vráť klientom vstup
@@ -249,7 +252,7 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
 - `POST /api/vouchers/redeem` (auth): pripíše vstupy (`single_entries += value`)
   alebo kredit (`referral_credit += value`). Admin zoznam v sekcii Členstvá.
 
-### 7.7 Kiosk režim check-inu (tablet na recepcii)
+### 7.7 Kiosk režim check-inu (tablet na recepcii) ✅ HOTOVO (2026-09-14, public/kiosk.html, /api/kiosk/*)
 - Nová stránka `/kiosk` (trainerAuth cez PIN v URL alebo prihlásený tréner):
   celoobrazovkový QR skener (použi existujúcu logiku z trainer.html
   `/api/attendance/qr-checkin`) + veľké potvrdenie "✅ Vitaj, Katka!".
