@@ -32,7 +32,9 @@ const put = (jar, p, b) => call(jar, 'PUT', p, b);
 const del = (jar, p) => call(jar, 'DELETE', p);
 const dstr = d => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Bratislava' }).format(d);
 const TODAY = dstr(new Date());
-const DOW = new Date().getDay();
+// Deň v týždni z toho istého slovenského dátumu — nie z časovej zóny stroja,
+// na ktorom test beží (inak by sa po polnoci rozišiel s TODAY).
+const DOW = new Date(TODAY + 'T12:00:00Z').getUTCDay();
 
 (async () => {
   const uniq = Date.now().toString(36);

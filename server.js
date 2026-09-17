@@ -16162,8 +16162,14 @@ async function onlineInstructorFor(cls, date){
   }catch(e){ return cls.instructor||''; }
 }
 // Najbližší dátum (YYYY-MM-DD), kedy sa hodina koná (dnes, ak je dnes jej deň)
+// Najbližší termín (dnes alebo neskôr) pre deň v týždni — počítané zo SLOVENSKÉHO
+// dátumu. Predtým sa deň bral z miestneho času, ale dátum z UTC (toISOString),
+// takže medzi polnocou a 2:00 (v zime 1:00) dostala každá online hodina o deň
+// menej: dnešné jednorazové prenosy zo zoznamu zmizli a zrušenie termínu sa
+// hľadalo na zlý dátum (QA test online-technika-pass 17. 9. tesne po polnoci).
 function nextOccurrence(dow){
-  const d=new Date(); const diff=(dow-d.getDay()+7)%7;
+  const d=new Date(today()+'T12:00:00Z');
+  const diff=(dow-d.getUTCDay()+7)%7;
   return new Date(d.getTime()+diff*86400000).toISOString().slice(0,10);
 }
 

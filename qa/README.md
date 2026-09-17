@@ -45,3 +45,4 @@ Pozor: registrácia vyžaduje celé meno bez číslic, bodiek a podčiarkovníko
 | data T6 | online hodina nesmie ísť do výplaty trénera |
 | data T7 | dvojitá affiliate odmena trénerovi |
 | data T10 | duplicitná dochádzka pri dvojitom kiosk skene |
+| online-polnoc | online hodiny po polnoci s včerajším dátumom (zmiznutý prenos, zrušená hodina v ponuke) — hodiny servera posúva `qa/posun-casu.js` (`FAKE_NOW`) |
