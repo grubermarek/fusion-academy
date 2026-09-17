@@ -22871,7 +22871,7 @@ app.get('/api/service/ads-insights', async(req,res)=>{
     const meta=(await getMetaAdsToken()) || (await getMetaCapiToken());
     if(!meta) return res.status(400).json({error:'Chýba Meta Ads token'});
     const id=String(req.query.campaign_id||'').trim();
-    if(!/^d+$/.test(id)) return res.status(400).json({error:'Zadaj campaign_id'});
+    if(!/^\d+$/.test(id)) return res.status(400).json({error:'Zadaj campaign_id'});
     const preset=/^[a-z0-9_]+$/.test(String(req.query.preset||''))?String(req.query.preset):'maximum';
     const url=`${META_GRAPH}${id}/insights?level=ad&fields=ad_id,ad_name,spend,impressions,reach,clicks,ctr,cpc,inline_link_clicks,inline_link_click_ctr,actions&date_preset=${preset}&limit=200&access_token=${encodeURIComponent(meta)}`;
     const d=await (await fetch(url)).json();
@@ -22880,8 +22880,9 @@ app.get('/api/service/ads-insights', async(req,res)=>{
     const users=(await q.find(db.users,{is_admin:{$ne:true}})).filter(u=>!u.is_child && !test(u));
     const memb=new Set((await q.find(db.memberships,{status:'active'})).filter(m=>!m._type).map(m=>m.user_id));
     const rows=(d.data||[]).map(r=>{
-      const key=String(r.ad_name||'').toLowerCase().trim();
-      const mine=users.filter(u=>String(u.utm_campaign||'').toLowerCase().trim()===key);
+      // Názov reklamy býva „fa-test-12 60-minut-tyzdenne", utm_campaign len „fa-test-12"
+      const key=String(r.ad_name||'').toLowerCase().trim(), kratky=key.split(/\s+/)[0];
+      const mine=users.filter(u=>{ const uc=String(u.utm_campaign||'').toLowerCase().trim(); return uc===key||uc===kratky; });
       const lp=(r.actions||[]).find(a=>a.action_type==='landing_page_view');
       return { ad_id:r.ad_id, name:r.ad_name, spend:+r.spend||0, impressions:+r.impressions||0, reach:+r.reach||0,
         clicks:+r.clicks||0, ctr:+(+r.ctr||0).toFixed(2), cpc:+(+r.cpc||0).toFixed(3),
