@@ -1,6 +1,6 @@
 /**
  * Poskladaj slovo — štvrtý typ denného hlavolamu (Marek 31. 8.).
- * Päť rozhádzaných výrazov z tanca, fitnessu a Fusion Academy: A S L S A → SALSA.
+ * Päť rozhádzaných slov z tanca, pohybu, zdravia, jedla a zo Slovenska: M B Z U A → ZUMBA.
  *
  * Slová idú od najkratšieho po najdlhšie, nech sa hra rozbieha zľahka a končí
  * poriadnou výzvou. Rovnako ako v osemsmerovke sú zámerne BEZ diakritiky —

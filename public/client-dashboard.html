@@ -2337,7 +2337,7 @@ async function loadPuzzleCard(me){
     const max=d.points+d.fast_bonus;
     const bonus = d.type==='quiz' ? (d.quiz_perfect_bonus||5) : (d.rhythm_perfect_bonus||5);
     sub.textContent = jeOsem
-      ? 'Nájdi ' + (d.words ? d.words.length : 10) + ' tanečných slov v mriežke — až ' + max + ' ' + bodSlovo(max) + ' do súťaže.'
+      ? 'Nájdi ' + (d.words ? d.words.length : 10) + ' slov v mriežke — až ' + max + ' ' + bodSlovo(max) + ' do súťaže.'
       : d.type==='quiz'
       ? 'Päť otázok o výžive, pohybe, tanci a svete — bod za každú správnu a +' + bonus + ' pre najrýchlejšiu bez chyby.'
       : d.type==='rhythm'
