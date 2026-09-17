@@ -8869,7 +8869,8 @@ app.post('/api/admin/users/:id/credit', adminAuth, async(req,res)=>{
   try {
     const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
     const op=req.body.op; const val=+parseFloat(req.body.amount);
-    if(isNaN(val)) return res.status(400).json({error:'Neplatná suma'});
+    // isFinite, nie len isNaN: „Infinity" / „1e400" prešlo a kredit sa uložil ako null
+    if(!Number.isFinite(val)) return res.status(400).json({error:'Neplatná suma'});
     let cur=+(u.referral_credit||0);
     let nc = op==='set' ? val : op==='add' ? cur+val : op==='sub' ? cur-val : cur;
     nc=+Math.max(0,nc).toFixed(2);

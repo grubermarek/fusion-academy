@@ -41,8 +41,10 @@ Pozor: registrácia vyžaduje celé meno bez číslic, bodiek a podčiarkovníko
 | security: IDOR/escalation | prístup klienta k admin dátam a cudzím účtom |
 | security: brute force | hádanie hesla (rate limiting) |
 | security: validácie | neplatný e-mail, krátke heslo, prepísané polia |
-| data T2/T3 | nesprávny odpočet a **neVrátenie vstupu pri zrušení** |
+| data T1 | hodina bez krytia zadarmo (režim prvého týždňa ako na prode) |
+| data T2/T3 | nesprávny odpočet a **neVrátenie vstupu pri zrušení** (aj dvojité storno) |
 | data T6 | online hodina nesmie ísť do výplaty trénera |
-| data T7 | dvojitá affiliate odmena trénerovi |
-| data T10 | duplicitná dochádzka pri dvojitom kiosk skene |
+| data T7 | dvojitá affiliate odmena trénerovi (ceny z `/api/membership/plans`) |
+| data T9 | kredit poškodený nevalidnou sumou (`abc`, `Infinity`) alebo pod nulou |
+| data T10 | duplicitná dochádzka / odpočet vstupu pri dvojitom kiosk skene (`/api/kiosk/signup`) |
 | online-polnoc | online hodiny po polnoci s včerajším dátumom (zmiznutý prenos, zrušená hodina v ponuke) — hodiny servera posúva `qa/posun-casu.js` (`FAKE_NOW`) |

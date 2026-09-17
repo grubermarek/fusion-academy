@@ -1,11 +1,20 @@
 /**
- * Dátová integrita kľúčových obchodných tokov (T1–T10): prvá hodina zdarma,
+ * Dátová integrita kľúčových obchodných tokov (T1–T10): hodina bez krytia,
  * odpočet a vrátenie vstupu z permanentky, aktivácia a predaj členstva,
  * online hodina mimo výplaty, tréner-sponzor bez referral kreditu,
  * samoodporúčanie, nevalidné vstupy od admina, dvojitý kiosk sken.
  *
  * Samostatná inštancia: vlastný DATA_DIR, RATE_LIMIT_OFF=1, MAIL_CAPTURE=1 (nič
- * neodíde mailom), účty a hodiny zapísané priamo do .db súborov.
+ * neodíde mailom), účty a hodiny zapísané priamo do .db súborov. Port je pevný,
+ * nie QA_PORT — ten ukazuje na ručne spustený server s inou DB.
+ *
+ * Režim ako na produkcii (17. 9. 2026): „prvý týždeň zadarmo" je zapnutý
+ * v settings.db, takže samoobslužná prvá hodina zadarmo neexistuje a z permanentky
+ * sa platí hneď prvá rezervácia. Predtým režim závisel od env shellu (lokálne
+ * vypnutý) a T1/T2 overovali cestu, ktorá na prode nebeží. Starú prvú hodinu
+ * zadarmo pokrýva qa/prvy-tyzden.test.js (časť B). Ceny sa berú z
+ * /api/membership/plans — po zmene cenníka 14. 9. (Silver 74,90 €) T7 padal na
+ * natvrdo zapísaných 75 € / 7,50 €.
  *
  * Prečo prepis (11. 9. 2026): test sa pripájal na ručne spustený server na :3991
  * a účty registroval s menami „QA Free QAD_1789…". Od 12. 8. registrácia
@@ -60,14 +69,14 @@ const book = (cookie, class_id) => req('/api/bookings', { method: 'POST', cookie
     created_at: '2026-01-01', visit_count: 0, free_class_used: false, single_entries: 0, free_credits: 0, referral_credit: 0, sponsor_id: null, ...extra });
   w('users.db', [
     U('qaDiAdmin00001', 'QA Admin Integrita', { is_admin: true, user_type: 'admin' }),
-    U('qaDiFree000001', 'Klára Prvá'),                 // T1 — nová, prvá hodina zdarma
+    U('qaDiFree000001', 'Klára Prvá'),                 // T1 — nová, bez krytia
     U('qaDiPerm000001', 'Petra Permanentková'),        // T2/T3/T9 — permanentka
     U('qaDiClen000001', 'Mária Členka'),               // T4/T5 — členstvo Silver
     U('qaDiTrener0001', 'Tamara Trénerka'),            // T7 — rolu trénera dostane cez API
     U('qaDiRef0000001', 'Renáta Odporúčaná'),          // T7/T8 — privedie ju trénerka
     U('qaDiSponz00001', 'Soňa Sponzorka'),             // T7 kontrola — klientka ako sponzorka
     U('qaDiKamos00001', 'Olga Kamošová', { sponsor_id: 'qaDiSponz00001' }),
-    U('qaDiKiosk00001', 'Kamila Kiosková'),            // T10
+    U('qaDiKiosk00001', 'Kamila Kiosková', { single_entries: 2 }), // T10 — permanentka
   ]);
   // Minulý mesiac aj minulý rok sú už vyhlásené — inak by server pri štarte
   // korunoval niektorú z testovacích klientok a dal jej Gold (T4 by nesedel).
@@ -90,56 +99,78 @@ const book = (cookie, class_id) => req('/api/bookings', { method: 'POST', cookie
     Z('qaDiOnline0001', { name: 'Zumba ONLINE – LIVE', category: 'Online', location: 'Online', day_of_week: dow(2), capacity: 100 }),
     Z('qaDiKioskHod01', { day_of_week: teraz.getDay(), time_start: hhmm(m0), time_end: hhmm(Math.min(m0 + 60, 23 * 60 + 59)) }),
   ]);
+  // Prvý týždeň zadarmo zapnutý ako na produkcii — nastavenie má prednosť pred env
+  // (PRVY_TYZDEN, NODE_ENV), výsledok teda nezávisí od shellu, z ktorého test beží.
+  w('settings.db', [{ _id: 'qaDiSetSkuska1', key: 'prvy_tyzden', value: true, at: '2026-01-01T00:00:00.000Z' }]);
 
   console.log('=== DATA INTEGRITY ===\n');
+  // Ak na porte už niečo beží, test by sa pripojil tam a čítal by inú DB ako svoju.
+  const upratDb = () => { try { fs.rmSync(DATA, { recursive: true, force: true }); } catch (e) {} };
+  if (await fetch(B + '/').then(() => true, () => false)) { console.log(`❌ port ${PORT} je obsadený — zastav tamojší server`); upratDb(); process.exit(1); }
   const srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '..'), stdio: ['ignore', 'ignore', 'pipe'],
     env: { ...process.env, PORT: String(PORT), DATA_DIR: DATA, APP_URL: B, RATE_LIMIT_OFF: '1', MAIL_CAPTURE: '1' } });
   let chyba = ''; srv.stderr.on('data', d => { chyba += d; });
   const t0 = Date.now(); let zije = false;
-  while (Date.now() - t0 < 180000) { try { await fetch(B + '/'); zije = true; break; } catch (e) { await spi(1000); } }
-  if (!zije) { console.log('❌ server nenabehol'); console.log(chyba.slice(0, 1200)); srv.kill(); process.exit(1); }
+  while (Date.now() - t0 < 180000 && srv.exitCode === null) { try { await fetch(B + '/'); zije = true; break; } catch (e) { await spi(1000); } }
+  if (!zije) { console.log('❌ server nenabehol'); console.log(chyba.slice(0, 1200)); srv.kill(); upratDb(); process.exit(1); }
   await spi(15000); // migrácie a štartovacie joby
 
   try {
     const A = await login('qaDiAdmin00001');
     const c1 = 'qaDiZumba00001', c2 = 'qaDiZumba00002';
+    const cennik = (await req('/api/membership/plans')).body || {};
+    const silver = +cennik.silver?.price;
+    if (!(silver > 0)) throw new Error('cenník bez Silver: ' + JSON.stringify(cennik).slice(0, 150));
 
-    // ── T1: prvá hodina zdarma, druhá vyžaduje členstvo ──
+    // ── T1: nová klientka bez krytia — hodinu nedostane zadarmo a nič sa nespotrebuje ──
     const u1 = await login('qaDiFree000001');
     const b1 = await book(u1, c1);
-    if (b1.status !== 200) find('T1a', 'P1', 'rezervácie', 'Prvá hodina zdarma nefunguje', `→ ${b1.status} ${JSON.stringify(b1.body)}`);
-    else pass('T1: prvá hodina zdarma prešla');
-    const b2 = await book(u1, c2);
-    if (b2.status === 200) find('T1b', 'P1', 'monetizácia', 'Druhá hodina bez členstva prešla ZADARMO', '→ 200 (očakávané 402 membership_required)');
-    else if (b2.status === 402 && b2.body?.error === 'membership_required') pass('T1: druhá hodina správne vyžaduje členstvo');
-    else find('T1b', 'P2', 'rezervácie', 'Druhá hodina zablokovaná z nečakaného dôvodu', `→ ${b2.status} ${JSON.stringify(b2.body)}`);
+    await spi(200);
+    const k1 = user('qaDiFree000001');
+    const z1 = rd('bookings.db').filter(b => b.user_id === 'qaDiFree000001').length;
+    if (b1.status === 200) find('T1', 'P1', 'monetizácia', 'Hodina bez členstva prešla ZADARMO', `→ 200 ${JSON.stringify(b1.body)} (očakávané 402 membership_required)`);
+    else if (b1.status !== 402 || b1.body?.error !== 'membership_required' || b1.body?.trial_available !== true)
+      find('T1', 'P2', 'rezervácie', 'Hodina bez krytia zamietnutá z nečakaného dôvodu', `→ ${b1.status} ${JSON.stringify(b1.body)} (očakávané 402 + ponuka skúšky)`);
+    else if (z1 !== 0 || k1.free_class_used !== false || k1.single_entries !== 0)
+      find('T1', 'P1', 'rezervácie', 'Zamietnutá rezervácia aj tak niečo zapísala alebo spotrebovala', `záznamov ${z1}, free_class_used=${k1.free_class_used}, vstupy=${k1.single_entries}`);
+    else pass('T1: bez krytia 402 s ponukou skúšky, nič sa nezapísalo ani nespotrebovalo');
 
-    // ── T2: permanentka — presne 1 vstup za rezerváciu ──
+    // ── T2: permanentka — presne 1 vstup za KAŽDÚ rezerváciu, aj za prvú ──
     const u2 = await login('qaDiPerm000001');
     const add = await req('/api/admin/users/qaDiPerm000001/entries', { method: 'POST', cookie: A, body: { op: 'add', amount: 10 } });
-    const f2 = await book(u2, c1); // 1. = zdarma
     const before = (await me(u2)).single_entries;
-    const p2 = await book(u2, c2); // 2. = z permanentky
+    const p1 = await book(u2, c1);
+    const mid = (await me(u2)).single_entries;
+    const p2 = await book(u2, c2);
     const after = (await me(u2)).single_entries;
-    const used = before - after;
-    if (add.body?.single_entries !== 10 || f2.status !== 200 || p2.status !== 200 || before !== 10 || used !== 1)
-      find('T2', 'P0', 'kredity', 'Nesprávny odpočet vstupov z permanentky', `pridané ${add.status}/${add.body?.single_entries}, rezervácie ${f2.status}/${p2.status}, pred=${before} po=${after} odpočítané=${used} (očakávané 10→9)`);
-    else pass(`T2: permanentka odpočítala presne 1 vstup (${before}→${after})`);
+    await spi(200);
+    const zap2 = rd('bookings.db').filter(b => b.user_id === 'qaDiPerm000001' && b.status !== 'cancelled');
+    const k2 = user('qaDiPerm000001');
+    if (add.body?.single_entries !== 10 || before !== 10 || p1.status !== 200 || p2.status !== 200 || mid !== 9 || after !== 8)
+      find('T2', 'P0', 'kredity', 'Nesprávny odpočet vstupov z permanentky', `pridané ${add.status}/${add.body?.single_entries}, rezervácie ${p1.status}/${p2.status}, zostatok ${before}→${mid}→${after} (očakávané 10→9→8) ${JSON.stringify(p1.body).slice(0, 120)}`);
+    else if (k2.single_entries !== 8 || k2.free_class_used !== false || zap2.length !== 2 || !zap2.every(b => b.access_method === 'single_entry'))
+      find('T2', 'P1', 'kredity', 'Rezervácie z permanentky nie sú zapísané ako platené vstupom', `db vstupy=${k2.single_entries}, free_class_used=${k2.free_class_used}, rezervácie ${JSON.stringify(zap2.map(b => b.access_method))}`);
+    else pass(`T2: každá rezervácia odpočítala presne 1 vstup (${before}→${mid}→${after}), prvá zdarma sa nespotrebovala`);
 
-    // ── T3: zrušenie rezervácie — vráti sa vstup? ──
-    await spi(300);
-    const last = rd('bookings.db').find(b => b.user_id === 'qaDiPerm000001' && b.class_id === c2 && b.status !== 'cancelled');
+    // ── T3: zrušenie rezervácie vráti vstup práve raz ──
+    const last = zap2.find(b => b.class_id === c2);
     if (!last) find('T3', 'P1', 'kredity', 'Rezervácia z permanentky sa nezapísala', 'v bookings.db nie je');
     else {
       const d3 = await req('/api/bookings/' + last._id, { method: 'DELETE', cookie: u2 });
       const afterCancel = (await me(u2)).single_entries;
-      if (d3.status !== 200) find('T3', 'P1', 'rezervácie', 'Storno 3 dni vopred neprešlo', `→ ${d3.status} ${JSON.stringify(d3.body)}`);
-      else if (afterCancel !== before) find('T3', 'P1', 'kredity', 'Po zrušení rezervácie sa vstup NEVRÁTI', `zostatok ${after}→${afterCancel} (očakávané ${before})`);
-      else pass(`T3: zrušenie vrátilo vstup (${after}→${afterCancel})`);
+      const d3b = await req('/api/bookings/' + last._id, { method: 'DELETE', cookie: u2 }); // druhý klik / druhý tab
+      const afterTwice = (await me(u2)).single_entries;
+      await spi(200);
+      const stav3 = rd('bookings.db').find(b => b._id === last._id)?.status;
+      if (d3.status !== 200 || d3.body?.refunded !== true) find('T3', 'P1', 'rezervácie', 'Storno 3 dni vopred neprešlo alebo nehlási vrátenie', `→ ${d3.status} ${JSON.stringify(d3.body)}`);
+      else if (afterCancel !== after + 1 || stav3 !== 'cancelled') find('T3', 'P1', 'kredity', 'Po zrušení rezervácie sa vstup NEVRÁTI', `zostatok ${after}→${afterCancel} (očakávané ${after + 1}), stav ${stav3}`);
+      else if (d3b.body?.already !== true || afterTwice !== afterCancel) find('T3', 'P0', 'kredity', 'Opakované storno vrátilo vstup druhýkrát', `→ ${d3b.status} ${JSON.stringify(d3b.body)}, zostatok ${afterCancel}→${afterTwice}`);
+      else pass(`T3: zrušenie vrátilo vstup práve raz (${after}→${afterCancel}, 2. storno: already)`);
     }
 
     // ── T4: členstvo — aktivácia a dátum expirácie ──
     const u3 = await login('qaDiClen000001');
+    // 75 € zámerne nesedí s cenníkom (74,90) — T5 overí, že sa zapíše zadaná suma
     const g4 = await req('/api/admin/users/qaDiClen000001/grant-membership', { method: 'POST', cookie: A, body: { plan_id: 'silver', gift: false, amount: 75, payment_method: 'cash' } });
     const mem = (await me(u3)).membership;
     if (g4.status !== 200 || !mem || !mem.expires_at) find('T4a', 'P1', 'členstvá', 'Členstvo sa neaktivovalo', `→ ${g4.status} ${JSON.stringify(mem)}`);
@@ -172,7 +203,8 @@ const book = (cookie, class_id) => req('/api/bookings', { method: 'POST', cookie
 
     // ── T7: tréner ako sponzor nedostáva kredit (dvojitá affiliate) ──
     // Predaj na mieste (/api/trainer/sell) ide cez activateMembership, kde sa
-    // sponzorke pripisuje 10 % kredit. Kontrola: klientka-sponzorka ho dostať MÁ.
+    // sponzorke pripisuje 10 % z cenníkovej ceny. Kontrola: klientka-sponzorka ho dostať MÁ.
+    const kredit7 = +(silver * 0.10).toFixed(2);
     const role = await req('/api/admin/users/qaDiTrener0001/role', { method: 'PUT', cookie: A, body: { user_type: 'trainer' } });
     const sp = await req('/api/admin/users/qaDiRef0000001/sponsor', { method: 'PUT', cookie: A, body: { sponsor_id: 'qaDiTrener0001' } });
     const s7 = await req('/api/trainer/sell', { method: 'POST', cookie: A, body: { user_id: 'qaDiRef0000001', kind: 'plan', plan_id: 'silver' } });
@@ -181,11 +213,12 @@ const book = (cookie, class_id) => req('/api/bookings', { method: 'POST', cookie
     const tr = user('qaDiTrener0001'), sona = user('qaDiSponz00001');
     if (role.status !== 200 || sp.status !== 200 || s7.status !== 200 || s7k.status !== 200)
       find('T7', 'P1', 'financie', 'Príprava T7 zlyhala', `rola ${role.status}, sponzor ${sp.status}, predaj ${s7.status}/${s7k.status} ${JSON.stringify(s7.body)}`);
-    else if (sona.referral_credit !== 7.5) find('T7', 'P2', 'financie', 'Kontrola: klientka-sponzorka nedostala 10 % kredit', `kredit=${sona.referral_credit} (očakávané 7.5) — bez toho T7 nič neoverí`);
+    else if (s7.body?.amount !== silver) find('T7', 'P2', 'tržby', 'Predaj Silver na mieste nie je za cenníkovú cenu', `predané za ${s7.body?.amount} € (cenník ${silver} €)`);
+    else if (sona.referral_credit !== kredit7) find('T7', 'P2', 'financie', 'Kontrola: klientka-sponzorka nedostala 10 % kredit', `kredit=${sona.referral_credit} (očakávané ${kredit7}) — bez toho T7 nič neoverí`);
     else if ((tr.referral_credit || 0) > 0) find('T7', 'P1', 'financie', 'Tréner dostal referral kredit AJ do dashboardu (dvojitá affiliate)', `kredit=${tr.referral_credit}`);
-    else if (!rd('transactions.db').some(t => t.partner_id === 'qaDiTrener0001' && t.commission_only && t.amount === 75))
-      find('T7', 'P2', 'výplaty', 'Trénerovi sa nezapísala affiliate provízia', 'chýba transakcia commission_only 75 €');
-    else pass('T7: tréner nedostáva kredit (affiliate ide do výplaty), klientka-sponzorka 10 % áno');
+    else if (!rd('transactions.db').some(t => t.partner_id === 'qaDiTrener0001' && t.client_id === 'qaDiRef0000001' && t.commission_only && t.amount === silver))
+      find('T7', 'P2', 'výplaty', 'Trénerovi sa nezapísala affiliate provízia', `chýba transakcia commission_only ${silver} €`);
+    else pass(`T7: tréner nedostáva kredit (affiliate ${silver} € ide do výplaty), klientka-sponzorka ${kredit7} € áno`);
 
     // ── T8: samoodporúčanie ──
     const self = await req('/api/admin/users/qaDiRef0000001/sponsor', { method: 'PUT', cookie: A, body: { sponsor_id: 'qaDiRef0000001' } });
@@ -196,46 +229,69 @@ const book = (cookie, class_id) => req('/api/bookings', { method: 'POST', cookie
     else pass('T8: samoodporúčanie zamietnuté, sponzor ostal');
 
     // ── T9: nesprávne dátové typy / záporné hodnoty ──
-    const e0 = (await me(u2)).single_entries; // po T3 znova 10
+    const e0 = (await me(u2)).single_entries; // po T3: 9
     const neg = await req('/api/admin/users/qaDiPerm000001/entries', { method: 'POST', cookie: A, body: { op: 'add', amount: -5 } });
     await req('/api/admin/users/qaDiPerm000001/entries', { method: 'POST', cookie: A, body: { op: 'sub', amount: 999 } });
-    const bad = await req('/api/admin/users/qaDiPerm000001/credit', { method: 'POST', cookie: A, body: { amount: 'abc' } });
+    // Najprv platná úprava — inak by „kredit ostal 0" prešlo, aj keby endpoint nerobil nič.
+    const credit = body => req('/api/admin/users/qaDiPerm000001/credit', { method: 'POST', cookie: A, body });
+    const ok9 = await credit({ op: 'add', amount: 5 });
+    const bad = await credit({ op: 'add', amount: 'abc' });
+    const inf = await credit({ op: 'add', amount: 'Infinity' }); // aj „1e400" z číselného poľa
     const m9 = await me(u2);
     await spi(200);
     const k9 = user('qaDiPerm000001').referral_credit;
-    if (bad.status !== 400 || typeof m9.referral_credit !== 'number' || isNaN(m9.referral_credit) || k9 !== 0)
-      find('T9', 'P1', 'validácie', 'Kredit sa poškodil nevalidným vstupom', `→ ${bad.status}, /api/me=${JSON.stringify(m9.referral_credit)}, db=${JSON.stringify(k9)}`);
-    else pass('T9: nevalidná suma kreditu odmietnutá, kredit ostal platné číslo');
+    if (ok9.status !== 200 || ok9.body?.referral_credit !== 5) find('T9', 'P1', 'validácie', 'Platná úprava kreditu nezbehla — kontrola nevalidných vstupov nič neoverí', `→ ${ok9.status} ${JSON.stringify(ok9.body)}`);
+    else if (bad.status !== 400 || inf.status !== 400 || m9.referral_credit !== 5 || k9 !== 5)
+      find('T9', 'P1', 'validácie', 'Kredit sa poškodil nevalidným vstupom', `„abc" → ${bad.status}, „Infinity" → ${inf.status} ${JSON.stringify(inf.body)}, /api/me=${JSON.stringify(m9.referral_credit)}, db=${JSON.stringify(k9)} (očakávané 400/400, 5 €)`);
+    else {
+      const sub9 = await credit({ op: 'sub', amount: 999 });
+      await spi(200);
+      const k9b = user('qaDiPerm000001').referral_credit;
+      if (sub9.body?.referral_credit !== 0 || k9b !== 0) find('T9', 'P1', 'validácie', 'Kredit ide pod nulu', `5 − 999 → ${JSON.stringify(sub9.body)}, db=${k9b}`);
+      else pass('T9: nevalidná suma kreditu odmietnutá, kredit ostal 5 € a nejde pod nulu');
+    }
     if (neg.body?.single_entries !== Math.max(0, e0 - 5) || m9.single_entries !== 0)
       find('T9b', 'P1', 'validácie', 'Odobratie vstupov nesedí alebo ide pod nulu', `${e0} −5 → ${neg.body?.single_entries}, −999 → ${m9.single_entries}`);
     else pass(`T9: odobratie vstupov nejde pod nulu (${e0}→${neg.body.single_entries}→${m9.single_entries})`);
 
-    // ── T10: kiosk check-in — dvojitý sken nepridá 2× ──
+    // ── T10: kiosk — dvojitý sken nepridá návštevu ani neodpočíta vstup 2× ──
+    // Kiosk od 14. 9. volá /api/kiosk/day-classes (po skene) a /api/kiosk/signup
+    // (potvrdenie výberu). Starý /api/kiosk/checkin už nevolá, preto ide len ako
+    // tretí sken — ani ten nesmie nič pridať.
     await req('/api/admin/kiosk', { cookie: A }); // založí kiosk config
     const en = await req('/api/admin/kiosk/detva', { method: 'PUT', cookie: A, body: { enabled: true } });
     const tok = ((await req('/api/admin/kiosk', { cookie: A })).body?.studios || []).find(s => s.slug === 'detva')?.token;
-    // Štartovacie migrácie pridávajú do rozvrhu aj reálne hodiny — keď v Detve práve
-    // beží ďalšia, kiosk sa pýta, na ktorú ide (choose). Hodinu preto volíme rovno,
-    // tak ako to klientka spraví na obrazovke kiosku.
-    const scan = () => req('/api/kiosk/checkin', { method: 'POST', body: { qr_data: 'FA:qaDiKiosk00001', k: tok, studio: 'detva', class_id: 'qaDiKioskHod01' } });
-    const s1 = await scan(); await spi(300);
-    const v1 = user('qaDiKiosk00001').visit_count || 0;
-    const s2 = await scan(); await spi(300);
-    const v2 = user('qaDiKiosk00001').visit_count || 0;
-    const zapisy = rd('bookings.db').filter(b => b.user_id === 'qaDiKiosk00001' && b.class_id === 'qaDiKioskHod01' && b.status !== 'cancelled').length;
-    if (en.status !== 200 || !tok || s1.status !== 200 || !s1.body?.class_name)
-      find('T10', 'P1', 'dochádzka', 'Prvý kiosk sken nezapísal účasť', `kiosk ${en.status}, token ${!!tok}, sken → ${s1.status} ${JSON.stringify(s1.body)}`);
-    else if (v1 < 1) find('T10', 'P1', 'dochádzka', 'Kiosk sken nepripísal návštevu', `visit_count=${v1}`);
-    else if (v2 > v1 || zapisy !== 1) find('T10', 'P0', 'dochádzka', 'Dvojitý kiosk sken pripísal návštevu 2×', `${v1}→${v2}, záznamov ${zapisy}`);
-    else if (s2.body?.already !== true) find('T10', 'P2', 'dochádzka', 'Druhý sken nehlási, že už je zapísaná', `→ ${s2.status} ${JSON.stringify(s2.body)}`);
-    else pass(`T10: dvojitý sken nepridal duplicitnú návštevu (${v1}→${v2}, 2. sken: already)`);
+    const kiosk = (p, body) => req('/api/kiosk/' + p, { method: 'POST', body: { studio: 'detva', k: tok, qr_data: 'FA:qaDiKiosk00001', ...body } });
+    const stav10 = () => { const k = user('qaDiKiosk00001'); return { v: k.visit_count || 0, e: k.single_entries,
+      z: rd('bookings.db').filter(b => b.user_id === 'qaDiKiosk00001' && b.class_id === 'qaDiKioskHod01' && b.status !== 'cancelled') }; };
+    const dc = await kiosk('day-classes');
+    const hod = (dc.body?.classes || []).find(c => c.id === 'qaDiKioskHod01');
+    // Štartovacie migrácie pridávajú do rozvrhu aj reálne hodiny — klientka si na
+    // obrazovke odklikne tú svoju, preto ju posielame menovite.
+    const s1 = await kiosk('signup', { class_ids: ['qaDiKioskHod01'] }); await spi(300);
+    const t1 = stav10();
+    const s2 = await kiosk('signup', { class_ids: ['qaDiKioskHod01'] }); await spi(300);
+    const t2 = stav10();
+    const s3 = await kiosk('checkin', { class_id: 'qaDiKioskHod01' }); await spi(300);
+    const t3 = stav10();
+    if (en.status !== 200 || !tok || dc.status !== 200 || !hod?.ucast || dc.body?.krytie?.vstupy !== 2)
+      find('T10', 'P1', 'dochádzka', 'Kiosk po skene neponúkol bežiacu hodinu so vstupmi', `kiosk ${en.status}, token ${!!tok}, day-classes → ${dc.status} ${JSON.stringify(hod || dc.body).slice(0, 200)}, krytie ${JSON.stringify(dc.body?.krytie)}`);
+    else if (s1.status !== 200 || s1.body?.zapisane?.length !== 1 || s1.body.zapisane[0].teraz !== true)
+      find('T10', 'P1', 'dochádzka', 'Prvý kiosk sken nezapísal účasť', `→ ${s1.status} ${JSON.stringify(s1.body).slice(0, 200)}`);
+    else if (t1.v !== 1 || t1.e !== 1 || t1.z.length !== 1 || t1.z[0].status !== 'attended' || t1.z[0].access_method !== 'single_entry')
+      find('T10', 'P1', 'dochádzka', 'Kiosk sken nezapísal účasť zo vstupu', `návštevy ${t1.v}, vstupy 2→${t1.e}, záznamy ${JSON.stringify(t1.z.map(b => [b.status, b.access_method]))}`);
+    else if (t2.v !== t1.v || t2.e !== t1.e || t2.z.length !== 1 || t3.v !== t1.v || t3.e !== t1.e || t3.z.length !== 1)
+      find('T10', 'P0', 'dochádzka', 'Dvojitý kiosk sken pripísal návštevu alebo vstup 2×', `návštevy ${t1.v}→${t2.v}→${t3.v}, vstupy ${t1.e}→${t2.e}→${t3.e}, záznamov ${t1.z.length}→${t2.z.length}→${t3.z.length}`);
+    else if (s2.status !== 200 || s2.body?.zapisane?.length !== 0 || s2.body?.uz_mala !== 1 || s3.body?.already !== true)
+      find('T10', 'P2', 'dochádzka', 'Opakovaný sken nehlási, že už je zapísaná', `signup → ${s2.status} ${JSON.stringify(s2.body).slice(0, 150)}, checkin → ${s3.status} ${JSON.stringify(s3.body).slice(0, 150)}`);
+    else pass(`T10: dvojitý sken nepridal návštevu ani vstup (návštevy ${t1.v}→${t3.v}, vstupy 2→${t1.e}→${t3.e}, opakovanie: už_mala / already)`);
     await req('/api/admin/kiosk/detva', { method: 'PUT', cookie: A, body: { enabled: false } });
   } catch (e) {
     find('FATAL', 'P0', 'test', 'Výnimka v teste', e.message);
   } finally {
     srv.kill();
     setTimeout(() => {
-      try { fs.rmSync(DATA, { recursive: true, force: true }); } catch (e) {}
+      upratDb();
       console.log('\n=== VÝSLEDOK ===');
       console.log('PASS:', OK.length, '| NÁLEZY:', F.length);
       if (process.env.OUT) fs.writeFileSync(process.env.OUT, JSON.stringify({ findings: F, passed: OK.length }, null, 1));
