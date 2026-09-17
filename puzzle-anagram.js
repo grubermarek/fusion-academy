@@ -11,7 +11,10 @@
 
 // Výrazy sú roztriedené podľa dĺžky, nie podľa témy — dĺžka robí obťažnosť.
 // V jednej hre je z každej priehradky práve jeden, takže postup je vždy plynulý.
-const SLOVA = {
+// Od 17. 9. 2026 zásoba z puzzle-slova.json (desiatky slov na každú dĺžku), výber bez
+// opakovania robí `vyberSlova`. Pôvodný zoznam ostáva ako záloha.
+const ZASOBA = (() => { try { return require('./puzzle-slova.json').anagram || null; } catch (e) { return null; } })();
+const PODVODNE = {
   5: ['SALSA', 'ZUMBA', 'RUMBA', 'SAMBA', 'TANGO', 'TANEC', 'HUDBA', 'KROKY', 'POHYB', 'TEMPO', 'DETVA', 'VYDRZ'],
   6: ['CUMBIA', 'LATINO', 'RYTMUS', 'RADOST', 'FUSION', 'LEKCIA', 'OTOCKA', 'ZABAVA', 'ZVOLEN', 'PARKET', 'KOSTYM', 'BREZNO'],
   7: ['BACHATA', 'ENERGIA', 'PARTNER', 'TRENING', 'FITNESS', 'ZRKADLO', 'SKUPINA', 'POTLESK', 'KIZOMBA', 'KAMOSKA'],
@@ -19,6 +22,7 @@ const SLOVA = {
   9: ['ROZCVICKA', 'TANECNICA', 'PARTNERKA', 'KAMARATKA', 'PRIATELIA', 'HUDOBNICI'],
 };
 const DLZKY = [5, 6, 7, 8, 9];
+const SLOVA = ZASOBA && DLZKY.every(d => Array.isArray(ZASOBA[d]) && ZASOBA[d].length >= 10) ? ZASOBA : PODVODNE;
 const POCET = DLZKY.length;
 
 /** Fisher-Yates so seedovaným generátorom — rovnaký deň dá rovnakú hru. */
@@ -47,8 +51,8 @@ function rozhadz(slovo, rnd) {
   return p.join('');
 }
 
-function build(rnd) {
-  const vybrane = DLZKY.map(d => {
+function build(rnd, ulozene) {
+  const vybrane = Array.isArray(ulozene) && ulozene.length === DLZKY.length ? ulozene : DLZKY.map(d => {
     const zoznam = SLOVA[d];
     return zoznam[Math.floor(rnd() * zoznam.length)];
   });
@@ -57,6 +61,17 @@ function build(rnd) {
     slova: vybrane.map((s, i) => ({ i, dlzka: s.length, pismena: rozhadz(s, rnd).split('') })),
     _answers: vybrane,
   };
+}
+
+/** Na nový deň: z každej dĺžky slovo, ktoré ešte nebolo (alebo najdlhšie nebolo). */
+function vyberSlova(rnd, pouzite) {
+  const kedy = w => (pouzite && pouzite.get(w)) || '';
+  return DLZKY.map(d => {
+    const zoznam = SLOVA[d];
+    const najstarsi = zoznam.reduce((m, w) => (m === null || kedy(w) < m ? kedy(w) : m), null);
+    const pool = zoznam.filter(w => kedy(w) === najstarsi);
+    return pool[Math.floor(rnd() * pool.length) % pool.length];
+  });
 }
 
 /**
@@ -96,4 +111,4 @@ function reveal(puzzle, answers) {
   }));
 }
 
-module.exports = { build, validate, score, reveal, SLOVA, DLZKY, POCET, norm };
+module.exports = { build, validate, score, reveal, vyberSlova, SLOVA, DLZKY, POCET, norm };

@@ -156,7 +156,9 @@ const citajDb = f => { try { return fs.readFileSync(path.join(DATA, f), 'utf8').
     ok('17. 9. 2026 pripadá na kvíz a 16. 9. ostáva „Spoj čísla"',
       (() => { const G = require(path.join(KOREN, 'puzzle.js')); return true; })() &&
       cf.d.config.schedule[Math.floor(Date.parse('2026-09-17T00:00:00Z') / 86400000) % cf.d.config.schedule.length] === 'quiz' &&
-      cf.d.config.schedule[Math.floor(Date.parse('2026-09-16T00:00:00Z') / 86400000) % cf.d.config.schedule.length] === 'zip');
+      cf.d.config.schedule[Math.floor(Date.parse('2026-09-16T00:00:00Z') / 86400000) % cf.d.config.schedule.length] === 'zip' &&
+      cf.d.config.schedule[Math.floor(Date.parse('2026-09-18T00:00:00Z') / 86400000) % cf.d.config.schedule.length] === 'words' &&
+      cf.d.config.schedule[Math.floor(Date.parse('2026-09-19T00:00:00Z') / 86400000) % cf.d.config.schedule.length] === 'rhythm');
     ok('sadzby kvízu: 1 bod za odpoveď, bonus 5', cf.d.config.quiz_per_answer === 1 && cf.d.config.quiz_perfect_bonus === 5);
 
     // bonus za včerajšok
@@ -259,23 +261,22 @@ const citajDb = f => { try { return fs.readFileSync(path.join(DATA, f), 'utf8').
     const kt = await j('/api/admin/kviz/kontrola', { method: 'POST' }, adm);
     const FAK = kt.d && kt.d.fakty || {};
     ok('server dodá fakty z konštánt appky', FAK.hodina === 5 && FAK.kamoska_clenstvo === 100 && FAK.skuska_plan === 'Bronze'
-      && FAK.typy_pocet === 4 && FAK.ma_rytmus === false && FAK.rytmus_tance === 'Salsa, bachata, merengue a cha-cha-chá' && FAK.mesta_pocet === 4
+      && FAK.typy_pocet === 5 && FAK.ma_rytmus === true && FAK.rytmus_tance === 'Salsa, bachata, merengue a cha-cha-chá' && FAK.mesta_pocet === 4
       && FAK.permanentka_uspora === 20 && FAK.jedalnicek_plany === 'Gold a Online Premium', JSON.stringify(FAK).slice(0, 300));
     const nesediIds = (kt.d.nesedi || []).map(x => x.id).sort();
-    ok('nevyberajú sa otázky o prvom týždni (je vypnutý) a o rytme (nehrá sa)',
-      JSON.stringify(nesediIds) === JSON.stringify(['fa0003', 'fa0007', 'fa0008', 'fa0009', 'fa0049', 'fa0050', 'fa0051', 'fa0052']),
+    ok('nevyberajú sa otázky o prvom týždni (je vypnutý)',
+      JSON.stringify(nesediIds) === JSON.stringify(['fa0003', 'fa0049', 'fa0050', 'fa0051', 'fa0052']),
       JSON.stringify(kt.d.nesedi));
-    ok('otázky o rytme sú označené ako zámerne vypnuté', ['fa0007', 'fa0008', 'fa0009'].every(id =>
-      (kt.d.nesedi.find(x => x.id === id) || { dovody: [] }).dovody.every(d => d.startsWith(K.TICHO))));
+    ok('otázka o hre mimo striedania sa vyradí ticho', K.preverOtazku(B.find(o => o.id === 'fa0007'), { ...FAK, ma_rytmus: false }).every(d => d.startsWith(K.TICHO)));
     const fa06 = K.vyplnOtazku(B.find(o => o.id === 'fa0006'), FAK);
-    ok('otázka o počte hier sa prepísala na štyri (bez rytmu)', fa06.a[0] === 'Štyri' && !fa06.v.includes('rytmus'), JSON.stringify(fa06));
+    ok('otázka o počte hier sedí s rozvrhom (päť)', fa06.a[0] === 'Päť' && fa06.v.includes('Poznáš rytmus?'), JSON.stringify(fa06));
     const upoz = citajDb('notifications.db').filter(n => n.user_id === 'qaKvAdmin0000001' && n.type === 'kviz_kontrola');
     ok('admin dostal upozornenie na nesediace otázky (raz)', upoz.length === 1 && /5 otázky o škole nesedia/.test(upoz[0].title), JSON.stringify(upoz.map(n => n.title)));
     await j('/api/admin/kviz/kontrola', { method: 'POST' }, adm);
     ok('opakovaná kontrola upozornenie nezdvojí', citajDb('notifications.db').filter(n => n.type === 'kviz_kontrola' && n.user_id === 'qaKvAdmin0000001').length === 1);
     const prehlad = await j('/api/admin/puzzle', {}, adm);
-    ok('admin prehľad hlavolamu ukáže nevybrané otázky', (prehlad.d.kviz_nesedi || []).length === 8, JSON.stringify(prehlad.d.kviz_nesedi));
-    ok('rytmus nie je v striedaní hier (Marek 17. 9.)', !prehlad.d.config.schedule.includes('rhythm') && !prehlad.d.upcoming.some(u => u.type === 'rhythm'),
+    ok('admin prehľad hlavolamu ukáže nevybrané otázky', (prehlad.d.kviz_nesedi || []).length === 5, JSON.stringify(prehlad.d.kviz_nesedi));
+    ok('rytmus je v striedaní hier', prehlad.d.config.schedule.includes('rhythm'),
       JSON.stringify(prehlad.d.config.schedule));
     // v produkčnom režime (skúška zapnutá) musí sedieť všetko — kontroly čítajú skutočné súbory appky
     const FPROD = { ...FAK, skuska_zapnuta: true };

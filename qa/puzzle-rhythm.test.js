@@ -95,6 +95,30 @@ const seedFromString = str => { let h = 2166136261; for (let i = 0; i < str.leng
     ok('cez 300 dní vždy aspoň 4 rôzne tance', malotancov === 0, String(malotancov));
     ok('cez 300 dní sa nikdy neopakuje tá istá skladba', opakovana === 0, String(opakovana));
 
+    // ── nový výber (od 17. 9.): každá skladba raz za cyklus ──
+    ok('katalóg má aspoň 70 skladieb (Marek 17. 9.: 71 z Pixabay)', kat.length >= 70, String(kat.length));
+    ok('pôvodných 11 skladieb ostalo pre staré dni', R.POVODNE.size === 11 && [...R.POVODNE].every(id => kat.some(s => s.id === id)));
+    const pouz = new Map();
+    let opak = 0, dniSVelaTancami = 0, dniJedenTanec = 0, dni = 0;
+    const cyklus = Math.floor(kat.length / 5);
+    for (let d = 0; d < cyklus; d++) {
+      const den = new Date(Date.UTC(2026, 8, 19 + d * 5)).toISOString().slice(0, 10);
+      const ids = R.vyberNove(mul(seedFromString('fusion-rhythm-' + den)), pouz, d);
+      if (ids.length !== 5 || new Set(ids).size !== 5) { opak++; break; }
+      for (const id of ids) { if (pouz.has(id)) opak++; pouz.set(id, den); }
+      const tanceDna = new Set(ids.map(id => kat.find(s => s.id === id).tanec)).size;
+      if (tanceDna >= 3) dniSVelaTancami++;
+      if (tanceDna < 2) dniJedenTanec++;
+      dni++;
+    }
+    ok('počas ' + dni + ' kôl rytmu sa žiadna skladba nezopakovala', opak === 0, String(opak));
+    ok('každé kolo má aspoň 2 rôzne tance', dniJedenTanec === 0, String(dniJedenTanec));
+    ok('polovica kôl má aspoň 3 rôzne tance', dniSVelaTancami >= Math.floor(dni / 2), dniSVelaTancami + ' z ' + dni);
+    const nehrane = kat.filter(s => !pouz.has(s.id)).map(s => s.id);
+    const dalsi = R.vyberNove(mul(77), pouz, dni);
+    ok('v ďalšom kole idú najprv skladby, ktoré ešte nezazneli', dalsi.length === 5 && nehrane.slice(0, 5).every(id => dalsi.includes(id)),
+      JSON.stringify({ nehrane, dalsi }));
+
     // ── validácia ──
     // Od 30. 8.: jeden pokus, bod za každú správnu. Zlý tip preto NIE je chyba —
     // odpoveď sa prijme a oboduje sa čiastočne.
@@ -149,7 +173,12 @@ const seedFromString = str => { let h = 2166136261; for (let i = 0; i < str.leng
     ok('po odmietnutí je hádanka stále neodovzdaná', (await j('/api/puzzle/today', {}, jar)).d.solved === false);
 
     // hráčka s TROMI správnymi: odpoveď sa prijme, dostane 3 body, bonus nie
-    const spravne = R.build(mul(seedFromString('fusion-rhythm-' + DNES)))._answers;
+    // odpovede dňa: server si výber skladieb uložil do settings (puzzle_pick_rhythm_<dátum>)
+    const pickR = fs.readFileSync(path.join(DATA, 'settings.db'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l))
+      .filter(r => r.key === 'puzzle_pick_rhythm_' + DNES);
+    ok('výber skladieb dňa je uložený práve raz', pickR.length === 1, String(pickR.length));
+    const spravne = R.zIds(pickR[0].value.ids)._answers;
+    ok('dnešné ukážky sedia s uloženým výberom', JSON.stringify(R.zIds(pickR[0].value.ids).rounds) === JSON.stringify(T.rounds));
     const trojka = spravne.map((a, i) => i < 3 ? a : (a === 'salsa' ? 'bachata' : 'salsa'));
     const cast = await j('/api/puzzle/solve', { method: 'POST', body: { answers: trojka, date: DNES } }, jar);
     ok('čiastočné riešenie sa PRIJME (jeden pokus)', cast.status === 200 && cast.d && cast.d.ok, JSON.stringify(cast.d));

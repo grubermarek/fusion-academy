@@ -159,13 +159,17 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty }) => {
       } else if (t === 'words') {
         const rnd = mulberry32(seedFromString('fusion-words-' + dateStr));
         const th = themeFor(dateStr);
-        cache[key] = { ...WORDS.build(rnd, th && th.slova), type: 'words', date: dateStr };
+        cache[key] = th && th.slova
+          ? { ...WORDS.build(rnd, th.slova), type: 'words', date: dateStr }
+          : vyber && vyber.ids
+          ? { ...WORDS.build(rnd, vyber.ids, WORDS.WORD_COUNT), type: 'words', date: dateStr }
+          : { ...WORDS.build(rnd), type: 'words', date: dateStr };
       } else if (t === 'rhythm') {
         const rnd = mulberry32(seedFromString('fusion-rhythm-' + dateStr));
         cache[key] = { ...RYTMUS.build(rnd), type: 'rhythm', date: dateStr };
       } else if (t === 'anagram') {
         const rnd = mulberry32(seedFromString('fusion-anagram-' + dateStr));
-        cache[key] = { ...ANAGRAM.build(rnd), type: 'anagram', date: dateStr };
+        cache[key] = { ...ANAGRAM.build(rnd, vyber && vyber.ids), type: 'anagram', date: dateStr };
       } else {
         cache[key] = { ...buildPuzzle(dateStr), type: 'zip' };
       }
@@ -191,7 +195,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty }) => {
     for (const r of riadky) {
       const d = String(r.key).slice(pref.length);
       if (!(d < pred)) continue;
-      n++; zapis(r.value && r.value.ids, d);
+      n++; zapis(r.value && (r.value.pouzite || r.value.ids), d);
     }
     if (type === 'rhythm') {
       const dni = new Set((await q.find(db.puzzle_solves, { type: 'rhythm' })).map(r => String(r.date || ''))
@@ -211,7 +215,10 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty }) => {
         const { pouzite, n } = await historiaVyberov(type, d);
         if (type === 'quiz') await obnovFaktyKvizu(await cfg());
         const rnd = mulberry32(seedFromString('fusion-' + type + '-' + d));
-        const ids = type === 'quiz' ? KVIZ.vyber(rnd, pouzite, n) : RYTMUS.build(rnd, pouzite)._ids;
+        const ids = type === 'quiz' ? KVIZ.vyber(rnd, pouzite, n)
+          : type === 'words' ? WORDS.vyberSlova(rnd, pouzite)
+          : type === 'anagram' ? ANAGRAM.vyberSlova(rnd, pouzite)
+          : RYTMUS.vyberNove(rnd, pouzite, n);
         const value = { type, ids, poradie: n };
         await q.insert(db.settings, { key, value, at: nowISO() });
         return value;
@@ -227,7 +234,18 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty }) => {
       const f = await obnovFaktyKvizu(await cfg());
       return puzzleFor(d, type, await vyberDna(d, type), String(seedFromString(JSON.stringify(f))));
     }
-    if (type === 'rhythm') return puzzleFor(d, type, await vyberDna(d, type));
+    if (type === 'rhythm' || type === 'anagram') return puzzleFor(d, type, await vyberDna(d, type));
+    // Osemsmerovka (od 17. 9.): slová sa neopakujú. Tematický deň má vlastné slová.
+    if (type === 'words' && !(themeFor(d) && themeFor(d).slova)) {
+      const vyber = await vyberDna(d, type);
+      const p = puzzleFor(d, type, vyber);
+      // Do mriežky sa nezmestia všetci kandidáti — ako použité si zapíšeme len umiestnené slová.
+      if (!vyber.pouzite && p && Array.isArray(p.words)) {
+        vyber.pouzite = p.words.slice();
+        q.update(db.settings, { key: 'puzzle_pick_words_' + d }, { $set: { 'value.pouzite': vyber.pouzite } }).catch(() => {});
+      }
+      return p;
+    }
     return puzzleFor(d, type);
   }
 
@@ -330,13 +348,12 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty }) => {
   const DEFAULTS = { points: 2, fast_bonus: 0, fast_seconds: 90, monthly_cap: 40, enabled: true,
                      podium_bonus: [5, 3, 1],       // 1. / 2. / 3. najrýchlejší čas dňa
                      day_win_bonus: 5, day_win_min_players: 2,
-                     // Kvíz pribudol 16. 9. „Poznáš rytmus?" Marek 17. 9. vyradil: pod
-                     // podmienkou, že skladieb bude aspoň 100 („nech sa nám to neopakuje"),
-                     // no Pixabay má len 71 skutočných skladieb na tieto štyri tance
-                     // (merengue iba 2). Kód hry ostáva pre históriu, do striedania nejde.
-                     // Poradie drží dnešok (17. 9. kvíz); ďalej 18. 9. osemsmerovka,
-                     // 19. 9. „Poskladaj slovo", 20. 9. „Spoj čísla", 21. 9. kvíz.
-                     schedule: ['zip', 'quiz', 'words', 'anagram'], overrides: {},
+                     // Kvíz pribudol 16. 9. Rytmus Marek 17. 9. najprv vyradil (menej ako 100
+                     // skladieb), potom povolil pripraviť 71 skladieb z Pixabay → späť v hre;
+                     // s novým výberom sa skladba zopakuje až po ~15 kolách rytmu.
+                     // Poradie drží dni: 17. 9. kvíz, 18. 9. osemsmerovka, 19. 9. rytmus,
+                     // 20. 9. „Poskladaj slovo", 21. 9. „Spoj čísla", 22. 9. kvíz.
+                     schedule: ['rhythm', 'anagram', 'zip', 'quiz', 'words'], overrides: {},
                      // Rytmus sa boduje inak (Marek 30. 8.): jeden pokus, bod za každú
                      // správnu odpoveď a +5 pre najrýchlejšiu, ktorá má všetkých päť.
                      rhythm_per_answer: 1, rhythm_perfect_bonus: 5,

@@ -86,5 +86,501 @@
   "nazov": "Moonlight Mambo",
   "autor": "Forgotten-Hero-Records",
   "odkaz": "https://pixabay.com/music/cha-cha-latin-moonlight-mambo-365881/"
+ },
+ {
+  "id": "r12",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r12.mp3",
+  "nazov": "Salsa Serenade",
+  "autor": "Black-Knight98",
+  "odkaz": "https://pixabay.com/music/folk-salsa-serenade-309450/"
+ },
+ {
+  "id": "r13",
+  "tanec": "chacha",
+  "subor": "/audio/rytmus/r13.mp3",
+  "nazov": "ChaCha Music - Cha Cha Dream 2.0",
+  "autor": "Tech_Oasis",
+  "odkaz": "https://pixabay.com/music/upbeat-chacha-music-cha-cha-dream-20-219106/"
+ },
+ {
+  "id": "r14",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r14.mp3",
+  "nazov": "Latin Summer Salsa Tropical Groove Music",
+  "autor": "Tunetank",
+  "odkaz": "https://pixabay.com/music/island-latin-summer-salsa-tropical-groove-music-349751/"
+ },
+ {
+  "id": "r15",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r15.mp3",
+  "nazov": "Salsa for Two",
+  "autor": "TokyoRifft",
+  "odkaz": "https://pixabay.com/music/folk-salsa-for-two-295078/"
+ },
+ {
+  "id": "r16",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r16.mp3",
+  "nazov": "Latin Underscore - Uplifting Salsa Loop",
+  "autor": "Sonican",
+  "odkaz": "https://pixabay.com/music/latin-latin-underscore-uplifting-salsa-loop-601297/"
+ },
+ {
+  "id": "r17",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r17.mp3",
+  "nazov": "Salsa Cubana 01",
+  "autor": "vjgalaxy",
+  "odkaz": "https://pixabay.com/music/latin-salsa-cubana-01-522536/"
+ },
+ {
+  "id": "r18",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r18.mp3",
+  "nazov": "Salsa Music - Dancing in the Moonlight 6.0",
+  "autor": "Tech_Oasis",
+  "odkaz": "https://pixabay.com/music/bossa-nova-salsa-music-dancing-in-the-moonlight-60-218905/"
+ },
+ {
+  "id": "r19",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r19.mp3",
+  "nazov": "Salsa Music - Eternal Sunshine 2.0",
+  "autor": "Tech_Oasis",
+  "odkaz": "https://pixabay.com/music/bossa-nova-salsa-music-eternal-sunshine-20-218907/"
+ },
+ {
+  "id": "r20",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r20.mp3",
+  "nazov": "Salsa Latin Party Music",
+  "autor": "Tunetank",
+  "odkaz": "https://pixabay.com/music/comedy-salsa-latin-party-music-349496/"
+ },
+ {
+  "id": "r21",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r21.mp3",
+  "nazov": "Tropical Salsa Latin Pop Music",
+  "autor": "Tunetank",
+  "odkaz": "https://pixabay.com/music/pop-tropical-salsa-latin-pop-music-350014/"
+ },
+ {
+  "id": "r22",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r22.mp3",
+  "nazov": "Old School Salsa 02",
+  "autor": "vjgalaxy",
+  "odkaz": "https://pixabay.com/music/salsa-old-school-salsa-02-499571/"
+ },
+ {
+  "id": "r23",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r23.mp3",
+  "nazov": "Old School Salsa 03",
+  "autor": "vjgalaxy",
+  "odkaz": "https://pixabay.com/music/salsa-old-school-salsa-03-499570/"
+ },
+ {
+  "id": "r24",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r24.mp3",
+  "nazov": "Salsa Estilo New York 02",
+  "autor": "vjgalaxy",
+  "odkaz": "https://pixabay.com/music/latin-salsa-estilo-new-york-02-522541/"
+ },
+ {
+  "id": "r25",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r25.mp3",
+  "nazov": "Epic Cinematic Salsa",
+  "autor": "Luis_Humanoide",
+  "odkaz": "https://pixabay.com/music/samba-latin-epic-cinematic-salsa-270433/"
+ },
+ {
+  "id": "r26",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r26.mp3",
+  "nazov": "Salsa",
+  "autor": "Echobrainz",
+  "odkaz": "https://pixabay.com/music/salsa-salsa-584691/"
+ },
+ {
+  "id": "r27",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r27.mp3",
+  "nazov": "Salsa Music - Dancing Hearts 2.0",
+  "autor": "Tech_Oasis",
+  "odkaz": "https://pixabay.com/music/bossa-nova-salsa-music-dancing-hearts-20-218903/"
+ },
+ {
+  "id": "r28",
+  "tanec": "chacha",
+  "subor": "/audio/rytmus/r28.mp3",
+  "nazov": "ChaCha Music - Cha Cha Dream",
+  "autor": "Tech_Oasis",
+  "odkaz": "https://pixabay.com/music/cha-cha-latin-chacha-music-cha-cha-dream-219105/"
+ },
+ {
+  "id": "r29",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r29.mp3",
+  "nazov": "Short Salsa",
+  "autor": "Alban_Gogh",
+  "odkaz": "https://pixabay.com/music/folk-short-salsa-141682/"
+ },
+ {
+  "id": "r30",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r30.mp3",
+  "nazov": "Diego's Destiny (Salsa Cat) [Old Version]",
+  "autor": "AberrantRealities",
+  "odkaz": "https://pixabay.com/music/samba-latin-diegox27s-destiny-salsa-cat-old-version-208566/"
+ },
+ {
+  "id": "r31",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r31.mp3",
+  "nazov": "Salsa Groove",
+  "autor": "Sonican",
+  "odkaz": "https://pixabay.com/music/salsa-salsa-groove-598417/"
+ },
+ {
+  "id": "r32",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r32.mp3",
+  "nazov": "Salsa Groove - Loop",
+  "autor": "Sonican",
+  "odkaz": "https://pixabay.com/music/salsa-salsa-groove-loop-598958/"
+ },
+ {
+  "id": "r33",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r33.mp3",
+  "nazov": "Afro-Cuban Latin Salsa",
+  "autor": "MusicDiet",
+  "odkaz": "https://pixabay.com/music/latin-afro-cuban-latin-salsa-467057/"
+ },
+ {
+  "id": "r34",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r34.mp3",
+  "nazov": "Salsa Love Song",
+  "autor": "JuliusH",
+  "odkaz": "https://pixabay.com/music/samba-latin-salsa-love-song-285858/"
+ },
+ {
+  "id": "r35",
+  "tanec": "merengue",
+  "subor": "/audio/rytmus/r35.mp3",
+  "nazov": "Dark Merengue",
+  "autor": "alanajordan",
+  "odkaz": "https://pixabay.com/music/upbeat-dark-merengue-249441/"
+ },
+ {
+  "id": "r36",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r36.mp3",
+  "nazov": "Salsa Music - Dancing in the Moonlight 5.0",
+  "autor": "Tech_Oasis",
+  "odkaz": "https://pixabay.com/music/bossa-nova-salsa-music-dancing-in-the-moonlight-50-218904/"
+ },
+ {
+  "id": "r37",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r37.mp3",
+  "nazov": "Latin Pop Salsa Dance Party Groove Music",
+  "autor": "Tunetank",
+  "odkaz": "https://pixabay.com/music/island-latin-pop-salsa-dance-party-groove-music-349498/"
+ },
+ {
+  "id": "r38",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r38.mp3",
+  "nazov": "Uplifting Latin Underscore - Salsa Groove V2",
+  "autor": "Sonican",
+  "odkaz": "https://pixabay.com/music/latin-uplifting-latin-underscore-salsa-groove-v2-600795/"
+ },
+ {
+  "id": "r39",
+  "tanec": "chacha",
+  "subor": "/audio/rytmus/r39.mp3",
+  "nazov": "ChaCha Music - Midnight Dance 2.0",
+  "autor": "Tech_Oasis",
+  "odkaz": "https://pixabay.com/music/cha-cha-latin-chacha-music-midnight-dance-20-219103/"
+ },
+ {
+  "id": "r40",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r40.mp3",
+  "nazov": "Salsa Estilo New York 01",
+  "autor": "vjgalaxy",
+  "odkaz": "https://pixabay.com/music/latin-salsa-estilo-new-york-01-522539/"
+ },
+ {
+  "id": "r41",
+  "tanec": "bachata",
+  "subor": "/audio/rytmus/r41.mp3",
+  "nazov": "Cort_Bachata(1)_DM",
+  "autor": "DannyMurillo_Poduction",
+  "odkaz": "https://pixabay.com/music/electronic-cort-bachata1-dm-496765/"
+ },
+ {
+  "id": "r42",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r42.mp3",
+  "nazov": "Festive Party Salsa",
+  "autor": "Tunetank",
+  "odkaz": "https://pixabay.com/music/island-festive-party-salsa-349426/"
+ },
+ {
+  "id": "r43",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r43.mp3",
+  "nazov": "Salsa Caliente (Action Dancing Salsa)",
+  "autor": "Diamond_Tunes",
+  "odkaz": "https://pixabay.com/music/urban-latin-salsa-caliente-action-dancing-salsa-123388/"
+ },
+ {
+  "id": "r44",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r44.mp3",
+  "nazov": "Salsa De Corazon Boricua",
+  "autor": "trangiahung159",
+  "odkaz": "https://pixabay.com/music/samba-latin-salsa-de-corazon-boricua-299697/"
+ },
+ {
+  "id": "r45",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r45.mp3",
+  "nazov": "Salsa Music - Eternal Sunshine",
+  "autor": "Tech_Oasis",
+  "odkaz": "https://pixabay.com/music/bossa-nova-salsa-music-eternal-sunshine-218906/"
+ },
+ {
+  "id": "r46",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r46.mp3",
+  "nazov": "Candy Salsa",
+  "autor": "LuminousPresence",
+  "odkaz": "https://pixabay.com/music/upbeat-candy-salsa-198844/"
+ },
+ {
+  "id": "r47",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r47.mp3",
+  "nazov": "This Salsa Short",
+  "autor": "moodmode",
+  "odkaz": "https://pixabay.com/music/urban-latin-this-salsa-short-278076/"
+ },
+ {
+  "id": "r48",
+  "tanec": "bachata",
+  "subor": "/audio/rytmus/r48.mp3",
+  "nazov": "Cort_Bachata(2)_DM",
+  "autor": "DannyMurillo_Poduction",
+  "odkaz": "https://pixabay.com/music/electronic-cort-bachata2-dm-496764/"
+ },
+ {
+  "id": "r49",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r49.mp3",
+  "nazov": "Salsa Estilo New York 04",
+  "autor": "vjgalaxy",
+  "odkaz": "https://pixabay.com/music/latin-salsa-estilo-new-york-04-522529/"
+ },
+ {
+  "id": "r50",
+  "tanec": "bachata",
+  "subor": "/audio/rytmus/r50.mp3",
+  "nazov": "Cort_Bachata(4)_DM",
+  "autor": "DannyMurillo_Poduction",
+  "odkaz": "https://pixabay.com/music/electronic-cort-bachata4-dm-496763/"
+ },
+ {
+  "id": "r51",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r51.mp3",
+  "nazov": "This Salsa",
+  "autor": "moodmode",
+  "odkaz": "https://pixabay.com/music/urban-latin-this-salsa-278079/"
+ },
+ {
+  "id": "r52",
+  "tanec": "chacha",
+  "subor": "/audio/rytmus/r52.mp3",
+  "nazov": "ChaCha Music - Midnight Dance",
+  "autor": "Tech_Oasis",
+  "odkaz": "https://pixabay.com/music/cafe-chacha-music-midnight-dance-219102/"
+ },
+ {
+  "id": "r53",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r53.mp3",
+  "nazov": "Salsa Groove - Uplifting Loop",
+  "autor": "Sonican",
+  "odkaz": "https://pixabay.com/music/salsa-salsa-groove-uplifting-loop-599437/"
+ },
+ {
+  "id": "r54",
+  "tanec": "bachata",
+  "subor": "/audio/rytmus/r54.mp3",
+  "nazov": "Bachata",
+  "autor": "Elijah_K",
+  "odkaz": "https://pixabay.com/music/upbeat-bachata-286983/"
+ },
+ {
+  "id": "r55",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r55.mp3",
+  "nazov": "Percussion Fresh Cheerful Salsa Celebratory Party Music",
+  "autor": "REDproductions",
+  "odkaz": "https://pixabay.com/music/happy-childrens-tunes-percussion-fresh-cheerful-salsa-celebratory-party-music-183160/"
+ },
+ {
+  "id": "r56",
+  "tanec": "bachata",
+  "subor": "/audio/rytmus/r56.mp3",
+  "nazov": "Cort_Bachata(3)_DM",
+  "autor": "DannyMurillo_Poduction",
+  "odkaz": "https://pixabay.com/music/electronic-cort-bachata3-dm-496762/"
+ },
+ {
+  "id": "r57",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r57.mp3",
+  "nazov": "Old School Salsa 01",
+  "autor": "vjgalaxy",
+  "odkaz": "https://pixabay.com/music/urban-latin-old-school-salsa-01-499572/"
+ },
+ {
+  "id": "r58",
+  "tanec": "chacha",
+  "subor": "/audio/rytmus/r58.mp3",
+  "nazov": "Cinematic Cha-Cha Lounge 2",
+  "autor": "pietiX",
+  "odkaz": "https://pixabay.com/music/orchestral-cinematic-cha-cha-lounge-2-562105/"
+ },
+ {
+  "id": "r59",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r59.mp3",
+  "nazov": "Party Salsa Music",
+  "autor": "Tunetank",
+  "odkaz": "https://pixabay.com/music/upbeat-party-salsa-music-350025/"
+ },
+ {
+  "id": "r60",
+  "tanec": "bachata",
+  "subor": "/audio/rytmus/r60.mp3",
+  "nazov": "Beat De Bachata Por Tu Amor (Free)",
+  "autor": "flakitogilbeatz",
+  "odkaz": "https://pixabay.com/music/urban-latin-beat-de-bachata-por-tu-amor-free-420958/"
+ },
+ {
+  "id": "r61",
+  "tanec": "chacha",
+  "subor": "/audio/rytmus/r61.mp3",
+  "nazov": "Cinematic Cha-Cha Lounge 1",
+  "autor": "pietiX",
+  "odkaz": "https://pixabay.com/music/orchestral-cinematic-cha-cha-lounge-1-562104/"
+ },
+ {
+  "id": "r62",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r62.mp3",
+  "nazov": "Salsa Comercial 01",
+  "autor": "vjgalaxy",
+  "odkaz": "https://pixabay.com/music/latin-salsa-comercial-01-522538/"
+ },
+ {
+  "id": "r63",
+  "tanec": "bachata",
+  "subor": "/audio/rytmus/r63.mp3",
+  "nazov": "Cort_Bachata_DM",
+  "autor": "DannyMurillo_Poduction",
+  "odkaz": "https://pixabay.com/music/electronic-cort-bachata-dm-496760/"
+ },
+ {
+  "id": "r64",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r64.mp3",
+  "nazov": "Salsa song",
+  "autor": "Icsilviu",
+  "odkaz": "https://pixabay.com/music/reggae-salsa-song-335517/"
+ },
+ {
+  "id": "r65",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r65.mp3",
+  "nazov": "Some Salsa",
+  "autor": "DamHall",
+  "odkaz": "https://pixabay.com/music/funk-some-salsa-588131/"
+ },
+ {
+  "id": "r66",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r66.mp3",
+  "nazov": "Ritmo Sabroso (Latin Salsa)",
+  "autor": "CloudSystem",
+  "odkaz": "https://pixabay.com/music/urban-latin-ritmo-sabroso-latin-salsa-576245/"
+ },
+ {
+  "id": "r67",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r67.mp3",
+  "nazov": "This Salsa Medium",
+  "autor": "moodmode",
+  "odkaz": "https://pixabay.com/music/urban-latin-this-salsa-medium-278077/"
+ },
+ {
+  "id": "r68",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r68.mp3",
+  "nazov": "Smooth Salsa Latin Background",
+  "autor": "Tunetank",
+  "odkaz": "https://pixabay.com/music/island-smooth-salsa-latin-background-349499/"
+ },
+ {
+  "id": "r69",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r69.mp3",
+  "nazov": "Latin Salsa Music",
+  "autor": "Tunetank",
+  "odkaz": "https://pixabay.com/music/comedy-latin-salsa-music-349497/"
+ },
+ {
+  "id": "r70",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r70.mp3",
+  "nazov": "Salsa Girl (Background Restaurant Calm Music)",
+  "autor": "Diamond_Tunes",
+  "odkaz": "https://pixabay.com/music/island-salsa-girl-background-restaurant-calm-music-123389/"
+ },
+ {
+  "id": "r71",
+  "tanec": "bachata",
+  "subor": "/audio/rytmus/r71.mp3",
+  "nazov": "Cort_Bachata(5)_DM",
+  "autor": "DannyMurillo_Poduction",
+  "odkaz": "https://pixabay.com/music/electronic-cort-bachata5-dm-496761/"
+ },
+ {
+  "id": "r72",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r72.mp3",
+  "nazov": "Hot Salsa Latin Party Music Full",
+  "autor": "catch22music",
+  "odkaz": "https://pixabay.com/music/urban-latin-hot-salsa-latin-party-music-full-362192/"
+ },
+ {
+  "id": "r73",
+  "tanec": "salsa",
+  "subor": "/audio/rytmus/r73.mp3",
+  "nazov": "Salsa Music - Dancing Hearts",
+  "autor": "Tech_Oasis",
+  "odkaz": "https://pixabay.com/music/bossa-nova-salsa-music-dancing-hearts-218902/"
  }
 ]

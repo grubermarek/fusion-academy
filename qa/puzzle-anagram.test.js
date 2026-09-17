@@ -46,7 +46,7 @@ const DNES = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Bratislava' })
 
   // ── 1. samotná hra, bez servera ───────────────────────────────────────────
   console.log('Zadanie hry:');
-  const h = hraPre(DNES);
+  let h = hraPre(DNES);
   ok('má päť slov', h.slova.length === 5 && h._answers.length === 5, 'slov=' + h.slova.length);
   ok('idú od najkratšieho po najdlhšie',
     h._answers.every((s, i) => i === 0 || s.length > h._answers[i - 1].length), h._answers.join(' '));
@@ -125,6 +125,12 @@ const DNES = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Bratislava' })
     await j('/api/login', { method: 'POST', body: { email: 'qaagprva000001@qa-biz.local', password: 'Heslo123!' } }, jar1);
     const dnes = (await j('/api/puzzle/today', {}, jar1)).d;
     ok('hádanka je typu anagram', dnes && dnes.type === 'anagram', JSON.stringify(dnes && (dnes.type || dnes.error)));
+    // Od 17. 9. si server výber slov ukladá (slová sa medzi dňami neopakujú) — riešenie berieme odtiaľ.
+    const pickA = fs.readFileSync(path.join(DATA, 'settings.db'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l))
+      .filter(r => r.key === 'puzzle_pick_anagram_' + DNES);
+    ok('výber slov dňa je uložený práve raz', pickA.length === 1, String(pickA.length));
+    h = AG.build(mulberry32(seedFromString('fusion-anagram-' + DNES)), pickA[0].value.ids);
+    ok('zadanie od servera sedí s uloženým výberom', JSON.stringify(h.slova) === JSON.stringify(dnes.slova));
     ok('klient dostane rozhádzané písmená', Array.isArray(dnes.slova) && dnes.slova.length === 5);
     const cely = JSON.stringify(dnes);
     ok('RIEŠENIE SA NEPOSIELA', !/_answers/.test(cely) && !h._answers.some(s => cely.includes('"' + s + '"')),

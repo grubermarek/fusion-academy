@@ -1,6 +1,10 @@
 /**
  * „Poznáš rytmus?" — tretí typ denného hlavolamu.
- * Zaznie minútová ukážka skladby a hráčka háda, na ktorý tanec je. Päť kôl.
+ * Zaznie krátka ukážka skladby a hráčka háda, na ktorý tanec je. Päť kôl.
+ *
+ * Od 17. 9. 2026 je v katalógu 73 skladieb (Marek: „71 skladieb môžeš pripraviť";
+ * nové ukážky majú 20 s). Nové dni vyberá `vyberNove` — každá skladba zaznie raz,
+ * kým sa nevystriedajú všetky, takže sa nič neopakuje ~15 kôl rytmu.
  *
  * Prečo práve toto: obe doterajšie hry sú logické hádanky bez väzby na tanec.
  * Rozoznať, na čo sa dá tancovať čo, je zručnosť, s ktorou začiatočníčky reálne
@@ -28,8 +32,11 @@ const TANCE = [
   { key: 'chacha', name: 'Cha-cha-chá', tip: 'Stredné tempo a v ňom počuť tri rýchle kroky za sebou.' },
 ];
 
+// Dni pred 17. 9. sa hrali z pôvodných 11 skladieb pôvodným algoritmom (`build`).
+// Aby sa dalo presne dopočítať, čo vtedy zaznelo, `build` pracuje len s nimi.
+const POVODNE = new Set(['r01', 'r02', 'r03', 'r04', 'r05', 'r06', 'r07', 'r08', 'r09', 'r10', 'r11']);
 const podlaTanca = {};
-for (const s of KATALOG) (podlaTanca[s.tanec] = podlaTanca[s.tanec] || []).push(s);
+for (const s of KATALOG.filter(x => POVODNE.has(x.id))) (podlaTanca[s.tanec] = podlaTanca[s.tanec] || []).push(s);
 
 /**
  * Zostaví dennú hádanku. `rnd` je seedovaný generátor, takže rovnaký deň dá
@@ -75,10 +82,58 @@ function build(rnd, posledne) {
   };
 }
 
+/**
+ * Výber piatich skladieb na nový deň. `posledne` = Map id → dátum, kedy skladba
+ * naposledy zaznela; `n` = koľký deň rytmu to je.
+ *
+ * Sáls je v katalógu väčšina (50 zo 73). Keby sa bralo len podľa veku, ostatné
+ * tance by sa minuli v prvých dňoch a potom by išlo päť sáls za sebou. Preto má
+ * každý deň kvótu: striedavo 1 a 2 skladby z ostatných tancov (každá iný tanec),
+ * zvyšok salsa. Oba koše majú vlastné poradie „najdlhšie nehrané" — žiadna
+ * skladba sa nezopakuje, kým sa nevystriedajú ostatné (~14 dní rytmu).
+ */
+function vyberNove(rnd, posledne, n) {
+  const kedy = id => (posledne && posledne.get(id)) || '';
+  const pocty = KATALOG.reduce((m, s) => (m[s.tanec] = (m[s.tanec] || 0) + 1, m), {});
+  const hlavny = Object.keys(pocty).sort((a, b) => pocty[b] - pocty[a])[0];
+  const vybrane = [];
+  const vezmi = (zdroj, kolko, pestro) => {
+    for (let i = 0; i < kolko; i++) {
+      const zvysne = zdroj.filter(s => !vybrane.includes(s));
+      if (!zvysne.length) return;
+      const najstarsi = zvysne.reduce((m, s) => (m === null || kedy(s.id) < m ? kedy(s.id) : m), null);
+      let pool = zvysne.filter(s => kedy(s.id) === najstarsi);
+      if (pestro) {
+        const dnes = new Set(vybrane.map(s => s.tanec));
+        const iny = pool.filter(s => !dnes.has(s.tanec));
+        if (iny.length) pool = iny;
+        else {                                       // v najstaršom koši je už len rovnaký tanec — skús mladší kôš
+          const inyVsade = zvysne.filter(s => !dnes.has(s.tanec));
+          if (inyVsade.length) {
+            const n2 = inyVsade.reduce((m, s) => (m === null || kedy(s.id) < m ? kedy(s.id) : m), null);
+            pool = inyVsade.filter(s => kedy(s.id) === n2);
+          }
+        }
+      }
+      vybrane.push(pool[Math.floor(rnd() * pool.length) % pool.length]);
+    }
+  };
+  const ostatne = KATALOG.filter(s => s.tanec !== hlavny);
+  const kvota = ostatne.length ? ((+n || 0) % 2 === 0 ? 2 : 1) : 0;
+  vezmi(ostatne, kvota, true);
+  vezmi(KATALOG.filter(s => s.tanec === hlavny), KOL - vybrane.length, false);
+  vezmi(KATALOG, KOL - vybrane.length, false);           // poistka pri malom katalógu
+  for (let i = vybrane.length - 1; i > 0; i--) {             // poradie kôl zamiešame
+    const j = Math.floor(rnd() * (i + 1));
+    [vybrane[i], vybrane[j]] = [vybrane[j], vybrane[i]];
+  }
+  return vybrane.map(s => s.id);
+}
+
 /** Hádanka z uloženého výberu (settings puzzle_pick_rhythm_<dátum>). */
 function zIds(ids) {
   const kola = (ids || []).map(id => KATALOG.find(x => x.id === id)).filter(Boolean);
-  const dostupne = TANCE.filter(t => (podlaTanca[t.key] || []).length);
+  const dostupne = TANCE.filter(t => KATALOG.some(s => s.tanec === t.key));
   return {
     rounds: kola.map(s => ({ src: s.subor })),
     options: dostupne.map(t => ({ key: t.key, name: t.name })),
@@ -127,4 +182,4 @@ function kredity() {
   return KATALOG.map(s => ({ nazov: s.nazov, autor: s.autor, odkaz: s.odkaz }));
 }
 
-module.exports = { build, zIds, validate, score, reveal, kredity, TANCE, KOL, KATALOG };
+module.exports = { build, zIds, vyberNove, validate, score, reveal, kredity, TANCE, KOL, KATALOG, POVODNE };

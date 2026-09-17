@@ -5,7 +5,12 @@
  * Slová sú zámerne BEZ diakritiky — na mriežke sa Ľ/Š/Č zle čítajú a hráčka
  * by nevedela, či hľadá RADOST alebo RADOSŤ.
  */
-const WORDS = [
+// Od 17. 9. 2026 je zásoba v puzzle-slova.json (stovky slov: tanec, pohyb, zdravie,
+// výživa, naše mestá). Slová sa medzi dňami neopakujú — výber robí `vyberSlova`
+// podľa toho, kedy slovo naposledy bolo (settings puzzle_pick_words_<dátum>).
+// Pôvodný krátky zoznam ostáva len ako záloha, keby súbor chýbal.
+const ZASOBA = (() => { try { return require('./puzzle-slova.json').osemsmerovka || []; } catch (e) { return []; } })();
+const PODVODNE_SLOVA = [
   'SALSA', 'ZUMBA', 'BACHATA', 'MERENGUE', 'TANEC', 'RYTMUS', 'HUDBA', 'PARKET',
   'KROKY', 'POHYB', 'RADOST', 'ENERGIA', 'PARTNER', 'CHACHA', 'RUMBA', 'SAMBA',
   'TANGO', 'VALCIK', 'LATINO', 'FITNESS', 'TRENING', 'LEKCIA', 'OTOCKA', 'BOKY',
@@ -13,6 +18,7 @@ const WORDS = [
   'VIKEND', 'VECER', 'PIATOK', 'DETVA', 'ZVOLEN', 'BREZNO', 'FUSION', 'KONDICIA',
   'VYDRZ', 'TEMPO', 'SKUPINA', 'ZABAVA', 'DYCHANIE', 'ROZCVICKA', 'CHOREO',
 ];
+const WORDS = ZASOBA.length >= 50 ? ZASOBA : PODVODNE_SLOVA;
 const ABC = 'ABCDEFGHIJKLMNOPRSTUVZ';           // bez Q, W, X, Y — v SK slovách zriedkavé
 const SIZE = 11;
 const WORD_COUNT = 10;
@@ -20,7 +26,7 @@ const DIRS = [[0, 1], [1, 0], [1, 1], [-1, 1], [0, -1], [-1, 0], [-1, -1], [1, -
 
 // `slova` (voliteľné) — tematická sada na konkrétny deň, napr. v deň párty.
 // Vtedy sú v mriežke len slová z akcie, takže samotný zoznam nesie odkaz.
-function build(rnd, slova) {
+function build(rnd, slova, maxSlov) {
   // výber slov na daný deň — kratšie sa umiestňujú ľahšie, tak ich mixujeme
   const pool = (Array.isArray(slova) && slova.length ? slova : WORDS).slice();
   for (let i = pool.length - 1; i > 0; i--) {
@@ -44,7 +50,8 @@ function build(rnd, slova) {
 
   // Pri tematickej sade chceme do mriežky dostať všetky slová, nie len prvých 10 —
   // zoznam je vtedy odkaz sám o sebe a chýbajúce slovo by ho zmrzačilo.
-  const limit = (Array.isArray(slova) && slova.length) ? pool.length : WORD_COUNT;
+  // Pri uloženom výbere dňa (maxSlov) sa slová berú v poradí kandidátov až do 10.
+  const limit = maxSlov ? maxSlov : (Array.isArray(slova) && slova.length) ? pool.length : WORD_COUNT;
   for (const w of pool) {
     if (placed.length >= limit) break;
     if (w.length > SIZE) continue;
@@ -77,6 +84,18 @@ function build(rnd, slova) {
 }
 
 /**
+ * Kandidáti na nový deň: najprv slová, ktoré ešte neboli, potom najdlhšie nepoužité.
+ * Vracia viac než 10, lebo nie každé slovo sa do mriežky zmestí.
+ */
+function vyberSlova(rnd, pouzite) {
+  const kedy = w => (pouzite && pouzite.get(w)) || '';
+  const zvysne = WORDS.filter(w => w.length <= SIZE).slice();
+  for (let i = zvysne.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [zvysne[i], zvysne[j]] = [zvysne[j], zvysne[i]]; }
+  zvysne.sort((a, b) => kedy(a) < kedy(b) ? -1 : kedy(a) > kedy(b) ? 1 : 0);   // stabilné: v rámci „veku" ostane náhodne
+  return zvysne.slice(0, WORD_COUNT + 8);
+}
+
+/**
  * Overenie: klient pošle { word, cells } za každé nájdené slovo.
  * Uznáme aj opačný smer ťahu — hráčka nemusí trafiť, kde slovo „začína".
  */
@@ -96,4 +115,4 @@ function validate(puzzle, found) {
   return null;
 }
 
-module.exports = { build, validate, SIZE, WORD_COUNT };
+module.exports = { build, validate, vyberSlova, SIZE, WORD_COUNT, WORDS };

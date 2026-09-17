@@ -160,7 +160,11 @@ const mkid = () => Math.random().toString(36).slice(2, 10) + Math.random().toStr
     }));
     ok('umiestnenie slov sa klientovi NEposiela', !JSON.stringify(W).includes('_placed'));
 
-    const realW = G.puzzleFor(DNES, 'words');
+    // Od 17. 9. sa výber slov dňa ukladá (slová sa neopakujú) — mriežku skladáme z neho.
+    const pickW = fs.readFileSync(path.join(DATA, 'settings.db'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l))
+      .filter(r => r.key === 'puzzle_pick_words_' + DNES).pop();
+    ok('výber slov osemsmerovky je uložený', pickW && Array.isArray(pickW.value.ids) && pickW.value.ids.length > 10, JSON.stringify(pickW && pickW.value));
+    const realW = G.puzzleFor(DNES, 'words', pickW.value);
     ok('osemsmerovka je deterministická', JSON.stringify(realW.grid) === JSON.stringify(W.grid));
     const solution = realW._placed.map(p => ({ word: p.word, cells: p.cells }));
 
@@ -184,8 +188,7 @@ const mkid = () => Math.random().toString(36).slice(2, 10) + Math.random().toStr
     ok('admin vidí, čo pripadá na najbližšie dni', Array.isArray(stW.d.upcoming) && stW.d.upcoming.length === 7
       && stW.d.upcoming.every(u => ['zip', 'words', 'rhythm', 'anagram', 'quiz'].includes(u.type)), JSON.stringify(stW.d.upcoming && stW.d.upcoming.slice(0, 3)));
     ok('dnešok v prehľade rešpektuje výnimku', stW.d.upcoming[0].type === 'words', JSON.stringify(stW.d.upcoming[0]));
-    // Marek 17. 9.: rytmus vyradený zo striedania (málo skladieb, opakovali by sa)
-    ok('rytmus už nie je v rotácii', !stW.d.upcoming.some(u => u.type === 'rhythm'),
+    ok('v rotácii je aj tretia hra (rytmus)', stW.d.upcoming.some(u => u.type === 'rhythm'),
       JSON.stringify(stW.d.upcoming.map(u => u.type)));
 
     // typy sa striedajú a generujú sa rýchlo
