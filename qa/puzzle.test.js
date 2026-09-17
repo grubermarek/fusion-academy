@@ -184,7 +184,8 @@ const mkid = () => Math.random().toString(36).slice(2, 10) + Math.random().toStr
     ok('admin vidí, čo pripadá na najbližšie dni', Array.isArray(stW.d.upcoming) && stW.d.upcoming.length === 7
       && stW.d.upcoming.every(u => ['zip', 'words', 'rhythm', 'anagram', 'quiz'].includes(u.type)), JSON.stringify(stW.d.upcoming && stW.d.upcoming.slice(0, 3)));
     ok('dnešok v prehľade rešpektuje výnimku', stW.d.upcoming[0].type === 'words', JSON.stringify(stW.d.upcoming[0]));
-    ok('v rotácii je aj tretia hra (rytmus)', stW.d.upcoming.some(u => u.type === 'rhythm'),
+    // Marek 17. 9.: rytmus vyradený zo striedania (málo skladieb, opakovali by sa)
+    ok('rytmus už nie je v rotácii', !stW.d.upcoming.some(u => u.type === 'rhythm'),
       JSON.stringify(stW.d.upcoming.map(u => u.type)));
 
     // typy sa striedajú a generujú sa rýchlo

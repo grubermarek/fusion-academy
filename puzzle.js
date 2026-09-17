@@ -270,8 +270,10 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty }) => {
     const ulozene = await q.find(db.settings, { key: { $regex: /^kviz_nesedi_/ } });
     const zleIds = new Set(zle.map(x => x.id));
     for (const r of ulozene) if (!zleIds.has(String(r.key).slice(12))) await q.remove(db.settings, { _id: r._id });
-    const nove = zle.filter(x => !ulozene.some(r => r.key === 'kviz_nesedi_' + x.id));
-    for (const x of nove) await q.insert(db.settings, { key: 'kviz_nesedi_' + x.id, value: x.dovody, at: nowISO() });
+    const noveVsetky = zle.filter(x => !ulozene.some(r => r.key === 'kviz_nesedi_' + x.id));
+    for (const x of noveVsetky) await q.insert(db.settings, { key: 'kviz_nesedi_' + x.id, value: x.dovody, at: nowISO() });
+    // Otázka o hre, ktorá sa zámerne nehrá (napr. rytmus), sa len ticho nevyberá — to nie je chyba.
+    const nove = noveVsetky.filter(x => x.dovody.some(d => !d.startsWith(KVIZ.TICHO)));
     if (nove.length) {
       const text = nove.slice(0, 3).map(x => '„' + x.q + '“ — ' + x.dovody[0]).join(' · ')
         + (nove.length > 3 ? ' · a ďalšie (' + (nove.length - 3) + ')' : '');
@@ -328,10 +330,13 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty }) => {
   const DEFAULTS = { points: 2, fast_bonus: 0, fast_seconds: 90, monthly_cap: 40, enabled: true,
                      podium_bonus: [5, 3, 1],       // 1. / 2. / 3. najrýchlejší čas dňa
                      day_win_bonus: 5, day_win_min_players: 2,
-                     // Kvíz pribudol 16. 9. Poradie je zvolené tak, aby sa doterajšie
-                     // striedanie nezlomilo: 16. 9. zostáva „Spoj čísla", 17. 9. je kvíz,
-                     // 18. 9. osemsmerovka, 19. 9. rytmus, 20. 9. „Poskladaj slovo".
-                     schedule: ['rhythm', 'anagram', 'zip', 'quiz', 'words'], overrides: {},
+                     // Kvíz pribudol 16. 9. „Poznáš rytmus?" Marek 17. 9. vyradil: pod
+                     // podmienkou, že skladieb bude aspoň 100 („nech sa nám to neopakuje"),
+                     // no Pixabay má len 71 skutočných skladieb na tieto štyri tance
+                     // (merengue iba 2). Kód hry ostáva pre históriu, do striedania nejde.
+                     // Poradie drží dnešok (17. 9. kvíz); ďalej 18. 9. osemsmerovka,
+                     // 19. 9. „Poskladaj slovo", 20. 9. „Spoj čísla", 21. 9. kvíz.
+                     schedule: ['zip', 'quiz', 'words', 'anagram'], overrides: {},
                      // Rytmus sa boduje inak (Marek 30. 8.): jeden pokus, bod za každú
                      // správnu odpoveď a +5 pre najrýchlejšiu, ktorá má všetkých päť.
                      rhythm_per_answer: 1, rhythm_perfect_bonus: 5,

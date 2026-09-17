@@ -111,6 +111,7 @@ function vyplnOtazku(o, fakty) {
 
 // ── Kontroly proti kódu appky ────────────────────────────────────────────────
 const KOREN = __dirname;
+const TICHO = '(zámerne vypnuté) ';
 const suborCache = {};
 function citajSubor(rel) {
   if (!(rel in suborCache)) {
@@ -124,10 +125,13 @@ function preverOtazku(o, fakty) {
   fakty = fakty || FAKTY;
   const dovody = [];
   for (const k of o.kontrola || []) {
+    // „ticho": podmienka, ktorej nesplnenie je zámer (hra sa nehrá) — otázka sa nevyberie,
+    // ale admin kvôli tomu nedostane upozornenie.
+    const pre = k.ticho ? TICHO : '';
     if (k.f !== undefined) {
       const v = fakty[k.f];
-      if ('je' in k && v !== k.je) dovody.push(k.f + ' je ' + JSON.stringify(v) + ', otázka počíta s ' + JSON.stringify(k.je));
-      if ('viac' in k && !(typeof v === 'number' && v > k.viac)) dovody.push(k.f + ' je ' + JSON.stringify(v) + ', má byť viac ako ' + k.viac);
+      if ('je' in k && v !== k.je) dovody.push(pre + k.f + ' je ' + JSON.stringify(v) + ', otázka počíta s ' + JSON.stringify(k.je));
+      if ('viac' in k && !(typeof v === 'number' && v > k.viac)) dovody.push(pre + k.f + ' je ' + JSON.stringify(v) + ', má byť viac ako ' + k.viac);
     } else if (k.s) {
       const t = citajSubor(k.s);
       if (t === null) { dovody.push('chýba súbor ' + k.s); continue; }
@@ -246,4 +250,4 @@ function reveal(puzzle, answers) {
 }
 
 module.exports = { build, vyber, validate, score, reveal, sloty, SKUPINY, KOL, OTAZKY,
-  nastavFakty, vyplnOtazku, preverOtazku, pouzitelna, vypln };
+  nastavFakty, vyplnOtazku, preverOtazku, pouzitelna, vypln, TICHO };

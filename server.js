@@ -1024,6 +1024,27 @@ async function seedData() {
       console.log('🎓 Venček Klenovec: lekcia 26. 3. 2027 (Veľký piatok) zrušená');
     }catch(e){ console.error('vencek_klenovec_velkypiatok:', e.message); }
   }, 9000);
+  // Venček Podbrezová (Marek 17. 9. 2026): 60 € za žiaka, nácviky v Klásku, začiatok
+  // zatiaľ nie je dohodnutý — start_at ani večer preto nezadávame (stránka ukáže
+  // „Termín upresníme"). Počet lekcií Marek neuviedol → 10 ako Klenovec a Hnúšťa,
+  // dá sa zmeniť cez /api/vencek/service/set.
+  if(!(await q.one(db.settings,{key:'vencek_podbrezova_20260917'}))) setTimeout(async()=>{
+    try{
+      if(await q.one(db.settings,{key:'vencek_podbrezova_20260917'})) return;
+      let c=await q.one(db.venceky_classes,{code:'VEN-PODBREZOVA'});
+      if(!c){
+        const s=await q.insert(db.venceky_schools,{name:'Podbrezová', city:'Podbrezová', year:'2026/27', created_at:nowISO()});
+        c=await q.insert(db.venceky_classes,{school_id:s._id, name:'Venčeková skupina', year:'2026/27', code:'VEN-PODBREZOVA',
+          price:60, lessons_total:10, lessons_before:10, lessons_done:0, lecturer:'Marek Gruber',
+          event_date:'', event_venue:'', note:'',
+          schedule:'Nácviky v Klásku · začiatok upresníme',
+          roles:['student','parent','teacher'],
+          dances:VENCEK_DEFAULT_DANCES.map(n=>({name:n, level:0})), created_at:nowISO()});
+      }
+      await q.insert(db.settings,{key:'vencek_podbrezova_20260917', value:{class_id:c._id, code:c.code}, at:nowISO()});
+      console.log('🎓 Venček Podbrezová: '+APP_URL+'/v/'+c.code);
+    }catch(e){ console.error('vencek_podbrezova:', e.message); }
+  }, 5500);
   if(!(await q.one(db.settings,{key:'vencek_klenovec_20260915'}))) setTimeout(async()=>{
     try{
       if(await q.one(db.settings,{key:'vencek_klenovec_20260915'})) return;
@@ -24209,6 +24230,18 @@ app.post('/api/vencek/service/set', async(req,res)=>{
       const iso=casSKnaISO(req.body.start_at);
       if(!iso) return res.status(400).json({error:'Neplatný dátum prvej lekcie'});
       set.start_at=iso;
+    }
+    // cena a počet lekcií (Podbrezová 17. 9.: lekcie ešte nie sú dohodnuté)
+    if(req.body.price!=null){
+      const p=+req.body.price;
+      if(!(p>0 && p<1000)) return res.status(400).json({error:'Neplatná cena'});
+      set.price=Math.round(p*100)/100;
+    }
+    if(req.body.lessons_total!=null || req.body.lessons_before!=null){
+      const spolu=req.body.lessons_total!=null ? Math.round(+req.body.lessons_total) : (+c.lessons_total||13);
+      const pred=req.body.lessons_before!=null ? Math.round(+req.body.lessons_before) : Math.min(+c.lessons_before||10, spolu);
+      if(!(spolu>=1 && spolu<=40 && pred>=1 && pred<=spolu)) return res.status(400).json({error:'Neplatný počet lekcií'});
+      set.lessons_total=spolu; set.lessons_before=pred;
     }
     if(!Object.keys(set).length) return res.status(400).json({error:'Nič na uloženie'});
     await q.update(db.venceky_classes,{_id:c._id},{$set:{...set, updated_at:nowISO()}});
