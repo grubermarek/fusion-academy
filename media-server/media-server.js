@@ -381,6 +381,19 @@ async function reprocessOnce() {
   fs.writeFileSync(marker, nowISO());
 }
 
+// Diagnostika (PROBE_ONCE=1): po štarte skontroluj každý záznam v R2 — HEAD + ffprobe cez podpísaný odkaz
+async function r2Probe() {
+  if (!R2_ON || !process.env.PROBE_ONCE) return;
+  for (const r of await r2List()) {
+    try {
+      const h = await s3.send(new S3.HeadObjectCommand({ Bucket: R2_BUCKET, Key: r2Key(r.slug, r.file) }));
+      const url = await r2Presign(r.slug, r.file);
+      const out = await run(FFPROBE, ['-v', 'error', '-show_entries', 'format=format_name,duration,size:stream=codec_type,codec_name,width,height', '-of', 'compact=p=0:nk=0', url]);
+      log('🔍 R2 probe', r.slug + '/' + r.file, 'HEAD', h.ContentLength, h.ContentType, '|', String(out).replace(/\s+/g, ' ').slice(0, 300));
+    } catch (e) { log('🔍 R2 probe CHYBA', r.slug + '/' + r.file, e.message.slice(0, 300)); }
+  }
+}
+
 // Po štarte: lokálne hotové záznamy (z čias bez R2) sa presunú do R2
 async function r2Migrate() {
   if (!R2_ON) return;
@@ -532,7 +545,7 @@ async function retention() {
   } catch (e) { log('⚠️  retencia R2:', e.message); }
 }
 // Poradie po štarte: najprv zachrániť osirelé záznamy, až potom údržba a limit miesta
-setTimeout(async () => { await adoptOrphans(); await r2Migrate(); await reprocessOnce(); await retention(); await uvolniMiesto(); }, 8 * 1000);
+setTimeout(async () => { await adoptOrphans(); await r2Migrate(); await reprocessOnce(); await r2Probe(); await retention(); await uvolniMiesto(); }, 8 * 1000);
 setInterval(async () => { await retention(); await uvolniMiesto(); }, 6 * 3600 * 1000);
 
 app.listen(HTTP_PORT, () => {
