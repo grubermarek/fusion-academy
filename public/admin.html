@@ -735,6 +735,23 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
         </table>
       </div>
     </div>
+
+    <!-- Vlastný media server: stav + záznamy vysielaní -->
+    <div class="card border-0 rounded-3 mt-4" id="adminRecordingsCard" style="display:none">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+          <h6 class="fw-bold mb-0">📼 Záznamy vysielaní <span class="text-muted fw-normal small" id="recUsage"></span></h6>
+          <button class="btn btn-sm btn-outline-secondary" onclick="loadAdminRecordings()"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+        <div class="small text-muted mb-2" id="recRtmp"></div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>Dátum</th><th>Hodina</th><th>Dĺžka</th><th>Veľkosť</th><th>Pre klientky</th><th></th></tr></thead>
+            <tbody id="adminRecordingsTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- MEMBERSHIPS -->
@@ -7675,8 +7692,43 @@ async function updateRental(id,status){
 
 let adminClassesWholeWeek=false;
 function toggleAdminClassesWeek(){ adminClassesWholeWeek=!adminClassesWholeWeek; loadAdminClasses(); }
+// Záznamy z vlastného media servera — prehrať, skryť pred klientkami, zmazať
+async function loadAdminRecordings(){
+  const card=document.getElementById('adminRecordingsCard'); if(!card) return;
+  const d=await api('/api/admin/recordings');
+  if(!d||d.error||!d.media_base){ card.style.display='none'; return; }
+  card.style.display='block';
+  const mb=b=>b>=1e9?(b/1e9).toFixed(2)+' GB':Math.round(b/1048576)+' MB';
+  const u=d.usage;
+  document.getElementById('recUsage').textContent = u ? `· ${u.files} súborov, ${mb(u.bytes)} na serveri, retencia ${u.retention_days} dní${u.live&&u.live.length?' · 🔴 práve vysiela: '+u.live.length:''}` : '· media server neodpovedá';
+  document.getElementById('recRtmp').innerHTML = d.rtmp_url ? `RTMP pre trénerov: <code>${escHtml(d.rtmp_url)}/&lt;kľúč&gt;</code> — každý si adresu skopíruje vo svojom paneli.` : '<span class="text-warning">⚠️ RTMP_PUBLIC nie je nastavené — tréneri nevidia adresu na vysielanie.</span>';
+  const tb=document.getElementById('adminRecordingsTable');
+  const recs=d.recordings||[];
+  if(!recs.length){ tb.innerHTML='<tr><td colspan="6" class="text-center text-muted py-3">Zatiaľ žiadne záznamy — uložia sa automaticky po každom vysielaní.</td></tr>'; return; }
+  const dur=s=>s>=3600?Math.floor(s/3600)+' h '+Math.round(s%3600/60)+' min':Math.round(s/60)+' min';
+  tb.innerHTML=recs.map(r=>`<tr>
+    <td class="small">${escHtml(new Date(r.started_at||r.date).toLocaleString('sk-SK',{day:'numeric',month:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'}))}</td>
+    <td class="small">${escHtml(r.title||r.class_name)}</td>
+    <td class="small">${dur(r.duration_s||0)}</td>
+    <td class="small">${mb(r.size||0)}</td>
+    <td><div class="form-check form-switch m-0"><input class="form-check-input" type="checkbox" ${r.visible?'checked':''} onchange="setRecordingVisible('${r._id}',this.checked)"></div></td>
+    <td class="text-end text-nowrap">
+      ${r.src?`<a class="btn btn-sm btn-outline-secondary" href="${escHtml(r.src)}" target="_blank" rel="noopener" title="Prehrať"><i class="bi bi-play"></i></a>`:''}
+      <button class="btn btn-sm btn-outline-danger" title="Zmazať záznam aj súbor" onclick="deleteRecording('${r._id}','${escJs(r.class_name)}')"><i class="bi bi-trash3"></i></button>
+    </td></tr>`).join('');
+}
+async function setRecordingVisible(id,visible){
+  const r=await api('/api/admin/recordings/'+id,{method:'PUT',body:{visible}});
+  if(!r?.ok) showToast(r?.error||'Nepodarilo sa','error');
+}
+async function deleteRecording(id,name){
+  if(!confirm('Zmazať záznam „'+name+'"? Súbor sa odstráni aj z media servera, nedá sa to vrátiť.')) return;
+  const r=await api('/api/admin/recordings/'+id,{method:'DELETE'});
+  if(r?.ok){ showToast('Záznam zmazaný'); loadAdminRecordings(); } else showToast(r?.error||'Nepodarilo sa','error');
+}
 async function loadAdminClasses(){
   refreshFreeOnlineBtn();
+  loadAdminRecordings();
   // ?all=1 → aj vypnuté hodiny. Bez toho sa k vypnutej online hodine nedal
   // vložiť link (7. 9.: online z Banskej Bystrice v pondelok bola vypnutá).
   let rows=await api('/api/classes?all=1');if(!Array.isArray(rows))return;
@@ -7702,11 +7754,11 @@ async function loadAdminClasses(){
     <td class="small">${c.city||'—'}</td>
     <td class="small">${c.capacity||20}</td>
     <td>
-      <input type="text" class="form-control form-control-sm mb-1" id="stream_${c._id}" value="${c.stream_url||''}" placeholder="YouTube/Vimeo link (bez hudby)" style="min-width:200px">
-      <div class="input-group input-group-sm" style="min-width:200px">
-        <span class="input-group-text py-0" style="font-size:.72rem">🔴 key</span>
-        <input type="text" class="form-control form-control-sm" id="streamkey_${c._id}" value="${c.stream_key||''}" placeholder="vlastný RTMP server" style="font-size:.75rem">
-        <button class="btn btn-sm btn-outline-secondary" type="button" title="Vygenerovať kľúč" onclick="genStreamKey('${c._id}','${(c.name||'').replace(/'/g,'')}')"><i class="bi bi-magic"></i></button>
+      <input type="text" class="form-control form-control-sm mb-1" id="stream_${c._id}" value="${c.stream_url||''}" placeholder="záloha: YouTube/Vimeo link" style="min-width:200px">
+      <div class="input-group input-group-sm" style="min-width:200px" title="Vlastný media server — tajný vysielací kľúč (tréner ho vidí vo svojom paneli)">
+        <span class="input-group-text py-0" style="font-size:.72rem">📡 kľúč</span>
+        <input type="text" class="form-control form-control-sm" id="streamkey_${c._id}" value="${c.stream_key||''}" readonly placeholder="zatiaľ bez kľúča" style="font-size:.72rem;font-family:monospace">
+        <button class="btn btn-sm btn-outline-secondary" type="button" title="${c.stream_key?'Nový kľúč (starý prestane platiť)':'Vytvoriť vysielací kľúč'}" onclick="genStreamKey('${c._id}',${c.stream_key?'true':'false'})"><i class="bi bi-key"></i></button>
       </div>
     </td>
     <td>
@@ -7757,14 +7809,16 @@ async function toggleClassActive(classId, active){
   loadAdminClasses();
 }
 
-function genStreamKey(classId,name){
-  const inp=document.getElementById('streamkey_'+classId);
-  if(inp) inp.value = (slugify(name)||'hodina') + '-' + Math.random().toString(36).slice(2,6);
+// Vysielací kľúč generuje server (náhodný, hneď platný pre media server)
+async function genStreamKey(classId,hasKey){
+  if(hasKey && !confirm('Vygenerovať nový kľúč? Starý prestane fungovať a tréner si musí do vysielacej appky vložiť nový.')) return;
+  const r=await api('/api/trainer/online-stream/'+classId+'/key',{method:'POST',body:{}});
+  if(r?.ok){ const inp=document.getElementById('streamkey_'+classId); if(inp) inp.value=r.stream_key; showToast('Nový vysielací kľúč: '+r.stream_key); }
+  else showToast(r?.error||'Nepodarilo sa','error');
 }
 async function saveStreamUrl(classId){
   const url=document.getElementById('stream_'+classId)?.value||'';
-  const streamKey=document.getElementById('streamkey_'+classId)?.value||'';
-  const r=await api('/api/admin/classes/'+classId+'/stream',{method:'PUT',body:{stream_url:url,stream_key:streamKey}});
+  const r=await api('/api/admin/classes/'+classId+'/stream',{method:'PUT',body:{stream_url:url}});
   if(r?.ok){
     const btn=event.target;
     btn.textContent='✓';btn.classList.add('btn-success');btn.classList.remove('btn-brand');

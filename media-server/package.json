@@ -1,0 +1,13 @@
+{
+  "name": "fusion-media-server",
+  "version": "1.0.0",
+  "description": "Fusion Academy – vlastný media server: RTMP ingest → HLS live + nahrávanie záznamov (bez YouTube)",
+  "main": "media-server.js",
+  "private": true,
+  "engines": { "node": ">=18.0.0" },
+  "scripts": { "start": "node media-server.js" },
+  "dependencies": {
+    "express": "^4.19.2",
+    "node-media-server": "2.7.4"
+  }
+}

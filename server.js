@@ -265,6 +265,9 @@ const db = {
   // Karty v „Kampane" pokrývajú len tie, ktoré si Marek založil ručne — tu je celý účet.
   ad_campaigns:      new Datastore({ filename: path.join(DATA_DIR, 'ad_campaigns.db'), autoload: true }),
   ad_stats:          new Datastore({ filename: path.join(DATA_DIR, 'ad_stats.db'), autoload: true }),
+  // Záznamy online hodín z vlastného media servera (súbor leží na media serveri,
+  // tu je len evidencia: hodina, dátum, dĺžka, viditeľnosť pre klientky).
+  recordings:        new Datastore({ filename: path.join(DATA_DIR, 'recordings.db'), autoload: true }),
 };
 db.users.ensureIndex({ fieldName: 'email',         unique: true });
 db.users.ensureIndex({ fieldName: 'referral_code', unique: true, sparse: true });
@@ -7158,7 +7161,10 @@ app.get('/api/classes', async(req,res)=>{
       } catch(e){ console.error('classes enrich:', e.message); }
       // Zrušený najbližší termín — klient to MUSÍ vidieť na karte, nie až pri rezervácii
       const cancelRec = await q.one(db.class_cancellations,{class_id:c._id, date:bdate}).catch(()=>null);
-      result.push({...c, booking_count, next_date:bdate, booked:booking_count, booked_all:bookedAll,
+      // Tajný kľúč na vysielanie (vlastný media server) patrí len adminovi a trénerom —
+      // verejný rozvrh ho nesmie prezradiť, inak by hodinu mohol „vysielať" ktokoľvek.
+      const pub = (viewer?.is_admin || viewer?.user_type==='trainer') ? c : (({stream_key, ...rest})=>rest)(c);
+      result.push({...pub, booking_count, next_date:bdate, booked:booking_count, booked_all:bookedAll,
         instructor:si.instructor, instructor_id:si.instructor_id||c.instructor_id||null,
         attendees, attendee_count: attendees?attendees.length:booking_count,
         cancelled: !!cancelRec, cancel_reason: cancelRec?.reason||null,
@@ -16253,21 +16259,28 @@ app.get('/api/online/classes', auth, async(req,res)=>{
     : (maPass && !jeTechnika(c)) ? 'pass'
     : maVstup ? 'entry' : null;
   const hasAccess = hasFull || maPass || maVstup;
-  const result = await Promise.all(classes.map(async c=>({
-    ...c,
+  const liveKeys = await liveStreamKeys();
+  const result = await Promise.all(classes.map(async c=>{
+    const { stream_key, ...pub } = c;          // tajný kľúč na vysielanie klientka nikdy nedostane
+    const isLive = liveKeys.has(c._id);
+    return {
+    ...pub,
     instructor: await onlineInstructorFor(c, nextOccurrence(c.day_of_week)),
     // V entry režime sa stream NEprezradí vopred — vydá ho až /api/online/enter po odpočte
     stream_url: hasFull ? (c.stream_url||null) : null,
-    stream_key: hasFull ? (c.stream_key||null) : null,
-    has_stream: !!(c.stream_url||c.stream_key),
+    // Vlastný media server: hodina sa prehráva podľa svojho id + podpísaného tokenu
+    play_key: mediaBase() && stream_key ? c._id : null,
+    play_token: hasFull && mediaBase() && stream_key ? mediaToken(c._id, 6) : null,
+    is_live: isLive,
+    has_stream: !!(c.stream_url||stream_key),
     has_access: !!rezim(c),
     access_mode: rezim(c),
     locked: !rezim(c),
-  })));
+  };}));
   const passMode=maPass, entryMode=!hasFull && !maPass && maVstup;
   res.json({classes:result, has_access:hasAccess, online_free_today:freeDay, access_mode: hasFull?'full':(passMode?'pass':(entryMode?'entry':null)),
     entries: mu?.single_entries||0, online_passes: mu?.online_passes||0,
-    media_base:(process.env.MEDIA_BASE||'').replace(/\/$/,''), membership:m?{plan_id:m.plan_id,plan_name:m.plan_name,expires_at:m.expires_at}:null});
+    media_base:mediaBase(), recordings_enabled: hasFull && !!mediaBase(), membership:m?{plan_id:m.plan_id,plan_name:m.plan_name,expires_at:m.expires_at}:null});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -16313,7 +16326,11 @@ app.post('/api/online/enter', auth, async(req,res)=>{
     // Zrušený termín — nikto sa naň nepripája a hlavne sa zaň nič nestrháva.
     if(await terminZruseny(cls._id, today()))
       return res.status(410).json({error:'Táto hodina je dnes zrušená — vysielanie nebude. Nič sme ti nestrhli. 💛', cancelled:true});
-    const stream={stream_url:cls.stream_url||null, stream_key:cls.stream_key||null};
+    // Vlastný media server má prednosť: ak hodina práve vysiela, klientka dostane
+    // HLS token; YouTube/Vimeo odkaz ostáva ako záloha.
+    const mediaLive = mediaBase() && cls.stream_key && (await liveStreamKeys()).has(cls._id);
+    const stream={ stream_url:cls.stream_url||null,
+      play_key: mediaLive ? cls._id : null, play_token: mediaLive ? mediaToken(cls._id, 6) : null };
     if(await onlineFreeToday()){ await zapisOnlineUcast(u, cls, 'free_class');
       return res.json({ok:true, charged:false, mode:'full', free_day:true, stream}); }
     if(hasOnlineAccess(m,u)){ await zapisOnlineUcast(u, cls, 'membership');
@@ -16324,7 +16341,7 @@ app.post('/api/online/enter', auth, async(req,res)=>{
     // Odkaz z minulého týždňa je pre dnešok mŕtvy — platiť sa zaň nesmie.
     // (Nedeľná technika 6. 9. mala odkaz z predošlého vysielania, tak sa tvárila živá.)
     const staryOdkaz = !!cls.stream_url && !!cls.stream_url_at && cls.stream_url_at!==today();
-    if((!cls.stream_url && !cls.stream_key) || staryOdkaz)
+    if(!mediaLive && (!cls.stream_url || staryOdkaz))
       return res.status(409).json({error:'Vysielanie ešte nie je spustené — skús to o pár minút. Nič sme ti nestrhli. 💛', waiting:true});
     // 1) Výherný pass z kolesa — spotrebuje sa práve teraz, prístup platí do konca dňa.
     //    Na technický tréning neplatí: vyhráva sa na Online Zumbu a technika má vlastný cenník.
@@ -16488,9 +16505,29 @@ app.get('/api/notifications/count', auth, async(req,res)=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 // ONLINE HODINY — dashboard banner (blíži sa / LIVE) + notifikácie pri štarte
 // ═══════════════════════════════════════════════════════════════════════════════
+// Vlastný media server (media-server/): tréner vysiela RTMP, appka prehráva HLS,
+// každé vysielanie sa nahrá. Hodina sa na prehrávanie identifikuje svojím _id
+// (slug), tajný stream_key pozná len tréner/admin a nikdy sa neposiela klientkám.
+const MEDIA_SECRET = process.env.MEDIA_SECRET || '';
+const mediaBase = () => (process.env.MEDIA_BASE||'').replace(/\/$/,'');
+// Token na prehrávanie: <exp>.<hmac(slug|exp)> — media server ho overí bez volania appky
+function mediaToken(slug, hours=6){
+  const exp = Math.floor(Date.now()/1000 + hours*3600);
+  const sig = require('crypto').createHmac('sha256', MEDIA_SECRET).update(slug+'|'+exp).digest('hex').slice(0,32);
+  return exp+'.'+sig;
+}
+async function mediaApi(p, method='GET'){
+  const base=mediaBase(); if(!base) throw new Error('MEDIA_BASE nie je nastavený');
+  const r=await fetch(base+p,{method, headers:{'x-media-secret':MEDIA_SECRET}});
+  if(!r.ok) throw new Error('media server '+p+' → '+r.status);
+  return r.json();
+}
+const mediaService = (req,res,next) => (MEDIA_SECRET && req.get('x-media-secret')===MEDIA_SECRET) ? next() : res.status(401).json({error:'unauthorized'});
+const rtmpPublic = () => (process.env.RTMP_PUBLIC||'').replace(/\/$/,'');   // napr. rtmp://xxx.proxy.rlwy.net:12345/live
+
 let _liveKeysCache={at:0, keys:new Set()};
 async function liveStreamKeys(){
-  const base=(process.env.MEDIA_BASE||'').replace(/\/$/,'');
+  const base=mediaBase();
   if(!base) return new Set();
   if(Date.now()-_liveKeysCache.at<30000) return _liveKeysCache.keys;
   try{
@@ -16499,6 +16536,122 @@ async function liveStreamKeys(){
   }catch(e){ _liveKeysCache={at:Date.now(), keys:new Set()}; }
   return _liveKeysCache.keys;
 }
+
+// Media server si sťahuje platné kľúče: key → slug (id hodiny) + názov
+app.get('/api/media/keys', mediaService, async(req,res)=>{
+  try{
+    const cls=(await q.find(db.classes,{active:true})).filter(c=>c.stream_key);
+    res.json({keys: cls.map(c=>({key:c.stream_key, slug:c._id, name:c.name}))});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Udalosti z media servera: start / stop (so záznamom) / expired (retencia)
+app.post('/api/media/hook', mediaService, async(req,res)=>{
+  try{
+    const {event, slug, name, started_at, ended_at, file, url, size, duration_s} = req.body||{};
+    const cls = slug ? await q.one(db.classes,{_id:String(slug)}) : null;
+    if(event==='start'){
+      _liveKeysCache={at:Date.now(), keys:new Set([..._liveKeysCache.keys, String(slug)])};
+      io.emit('online_live',{slug:String(slug), name:cls?cls.name:name, live:true});
+      console.log('🔴 Media: vysielanie začalo — '+(cls?cls.name:slug));
+      if(cls && cls.category==='Online' && cls.day_of_week===new Date().getDay()){
+        const toMin=t=>{ const [h,m]=String(t||'0:0').split(':').map(Number); return h*60+m; };
+        const d=new Date(); const nowMin=d.getHours()*60+d.getMinutes();
+        if(nowMin>=toMin(cls.time_start)-30) spustiOnlineHodinu(cls).catch(e=>console.error('online start hook:', e.message));
+      }
+    } else if(event==='stop'){
+      const keys=new Set(_liveKeysCache.keys); keys.delete(String(slug));
+      _liveKeysCache={at:Date.now(), keys};
+      io.emit('online_live',{slug:String(slug), name:cls?cls.name:name, live:false});
+      if(file && url){
+        // Záznam kratší ako 3 minúty je skúška spojenia, nie hodina — do archívu nepatrí,
+        // ale súbor na media serveri sa nechá zmazať retencii.
+        const visible = (+duration_s||0) >= 180;
+        await q.insert(db.recordings,{ class_id:String(slug), class_name:cls?cls.name:(name||'Online hodina'),
+          date:String(started_at||nowISO()).slice(0,10), started_at, ended_at, file, url, size:+size||0,
+          duration_s:+duration_s||0, visible, created_at:nowISO() });
+        console.log('💾 Media: záznam '+(cls?cls.name:slug)+' '+Math.round((+duration_s||0)/60)+' min'+(visible?'':' (skryté — krátke)'));
+      }
+    } else if(event==='expired'){
+      await q.remove(db.recordings,{url:String(url||'')},{multi:true});
+    }
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Klientka: archív záznamov (len s plným online prístupom — Silver/Gold/Online, tréner, admin)
+app.get('/api/online/recordings', auth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.session.uid});
+    const m=await checkMembership(u._id);
+    if(!hasOnlineAccess(m,u)) return res.status(403).json({error:'Záznamy sú súčasťou online členstva', recordings:[]});
+    const recs=(await q.find(db.recordings,{visible:true})).sort((a,b)=>(b.started_at||'').localeCompare(a.started_at||''));
+    const base=mediaBase();
+    res.json({media_base:base, recordings: recs.map(r=>({ id:r._id, class_id:r.class_id, class_name:r.class_name, title:r.title||null,
+      date:r.date, started_at:r.started_at, duration_s:r.duration_s,
+      src: base ? base+r.url+'?t='+mediaToken(r.class_id, 6) : null }))});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Tréner: čo zadať do vysielacej appky (Larix / OBS) — RTMP adresa + tajný kľúč
+// (trainerAuth je definovaný nižšie v súbore → lenivý odkaz, inak TDZ chyba pri štarte)
+const trainerAuthLazy=(req,res,next)=>trainerAuth(req,res,next);
+app.get('/api/trainer/online-stream', trainerAuthLazy, async(req,res)=>{
+  try{
+    const cls=(await q.find(db.classes,{category:'Online', active:true}))
+      .sort((a,b)=>(a.day_of_week||0)-(b.day_of_week||0)||String(a.time_start).localeCompare(b.time_start));
+    const liveKeys=await liveStreamKeys();
+    res.json({ ok:true, enabled: !!mediaBase(), rtmp_url: rtmpPublic(), classes: cls.map(c=>({
+      id:c._id, name:c.name, day_of_week:c.day_of_week, time_start:c.time_start, stream_city:c.stream_city||'',
+      stream_key:c.stream_key||'', live: liveKeys.has(c._id) })) });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Tréner/admin: nový tajný kľúč pre hodinu (starý prestane platiť do 30 s)
+app.post('/api/trainer/online-stream/:id/key', trainerAuthLazy, async(req,res)=>{
+  try{
+    const cls=await q.one(db.classes,{_id:req.params.id});
+    if(!cls) return res.status(404).json({error:'Hodina nenájdená'});
+    const key='fa'+require('crypto').randomBytes(14).toString('hex');
+    await q.update(db.classes,{_id:cls._id},{$set:{stream_key:key}});
+    // Susedné online hodiny z toho istého mesta v ten istý deň = jeden prenos → rovnaký kľúč
+    // by dvakrát nešiel (jeden slug vysiela naraz), preto každá hodina má vlastný kľúč.
+    await auditLog(req,'stream_key_new',cls._id,{},{class:cls.name},'').catch(()=>{});
+    if(mediaBase()) mediaApi('/api/refresh','POST').catch(()=>{});   // nech kľúč platí hneď
+    res.json({ok:true, stream_key:key, rtmp_url:rtmpPublic()});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Admin: prehľad záznamov + miesto na media serveri
+app.get('/api/admin/recordings', adminAuth, async(req,res)=>{
+  try{
+    const recs=(await q.find(db.recordings,{})).sort((a,b)=>(b.started_at||'').localeCompare(a.started_at||''));
+    let usage=null; try{ usage=await mediaApi('/api/usage'); }catch(e){}
+    const base=mediaBase();
+    res.json({ media_base:base, rtmp_url:rtmpPublic(), usage, recordings: recs.map(r=>({ ...r,
+      src: base ? base+r.url+'?t='+mediaToken(r.class_id, 6) : null })) });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.put('/api/admin/recordings/:id', adminAuth, async(req,res)=>{
+  try{
+    const $set={};
+    if(req.body.visible!==undefined) $set.visible=!!req.body.visible;
+    if(req.body.title!==undefined) $set.title=String(req.body.title||'').slice(0,120);
+    await q.update(db.recordings,{_id:req.params.id},{$set});
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.delete('/api/admin/recordings/:id', adminAuth, async(req,res)=>{
+  try{
+    const r=await q.one(db.recordings,{_id:req.params.id});
+    if(!r) return res.status(404).json({error:'Záznam nenájdený'});
+    try{ await mediaApi('/api/recordings/'+encodeURIComponent(r.class_id)+'/'+encodeURIComponent(r.file),'DELETE'); }
+    catch(e){ console.warn('mazanie záznamu na media serveri:', e.message); }
+    await q.remove(db.recordings,{_id:r._id},{});
+    await auditLog(req,'recording_delete',r._id,{class:r.class_name,date:r.date},{},'').catch(()=>{});
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 // Najbližšia dnešná online hodina (90 min pred štartom až do konca) + stav pre používateľa
 // Admin: prepnúť „dnešná online zumba ZDARMA pre všetkých" (vyprší o polnoci)
 app.get('/api/admin/online-free-day', adminAuth, async(req,res)=>{
@@ -16536,8 +16689,10 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
     for(const c of vsetky) if(!(await terminZruseny(c._id, today()))) classes.push(c);
     // koniec hodiny: ak time_end chýba, počítaj 60 minút (nie 0 — banner mizol 5 min po štarte)
     const endMin=c=>{ const e=toMin(c.time_end); const s=toMin(c.time_start); return e>s?e:s+60; };
-    const inWin=c=> nowMin>=toMin(c.time_start)-90 && nowMin<endMin(c)+5;
-    const isRun=c=> nowMin>=toMin(c.time_start) && nowMin<endMin(c)+5;
+    // Vlastný media server: keď tréner naozaj vysiela, hodina je „v okne" aj mimo rozvrhu
+    const liveKeys=await liveStreamKeys();
+    const inWin=c=> liveKeys.has(c._id) || (nowMin>=toMin(c.time_start)-90 && nowMin<endMin(c)+5);
+    const isRun=c=> liveKeys.has(c._id) || (nowMin>=toMin(c.time_start) && nowMin<endMin(c)+5);
     // pri viacerých hodinách v okne má prednosť tá, ktorá PRÁVE beží (s najneskorším štartom),
     // inak najbližšia nadchádzajúca — predtým .find() vracal vždy prvú a 19:00 Zumba sa nedostala na rad
     const cands=classes.filter(inWin);
@@ -16551,9 +16706,9 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
     const passMode=!hasFull && (upcU?.online_passes||0)>0 && !jeTechnika(cls);   // výherná online hodina z kolesa (na techniku neplatí)
     const entryMode=!hasFull && !passMode && (upcU?.single_entries||0)>0; // permanentka: za 1 vstup
     const hasAccess=hasFull||passMode||entryMode;
-    const liveKeys=await liveStreamKeys();
-    const running = nowMin>=toMin(cls.time_start);
-    const live = (cls.stream_key && liveKeys.has(cls.stream_key)) || running; // bez media servera = podľa času
+    const mediaLive = liveKeys.has(cls._id);            // vlastný media server: vysiela sa naozaj
+    const running = mediaLive || nowMin>=toMin(cls.time_start);
+    const live = running;                               // bez media servera = podľa času
     const booked = !!(await q.one(db.bookings,{class_id:cls._id, user_id:req.session.uid, booking_date:today(), status:{$ne:'cancelled'}}));
     // Tréner pre dnešný termín — výmena (override) môže byť nastavená na online hodine
     // ALEBO na párovej fyzickej hodine (rovnaký deň/čas, mesto = stream_city), z ktorej
@@ -16565,29 +16720,23 @@ app.get('/api/online/upcoming', auth, async(req,res)=>{
       && c.time_start===cls.time_end);
     res.json({ok:true, upcoming:{ id:cls._id, name:cls.name, time_start:cls.time_start, time_end:cls.time_end,
       next_part: nxt?{name:nxt.name, time_start:nxt.time_start, time_end:nxt.time_end}:null,
-      src:cls.stream_city||'', starts_in_min:Math.max(0,toMin(cls.time_start)-nowMin), running, live,
+      src:cls.stream_city||'', starts_in_min:Math.max(0,toMin(cls.time_start)-nowMin), running, live, media_live:mediaLive,
       instructor:insName, free_today:freeDay,
       has_access:hasAccess, access_mode: hasFull?'full':(passMode?'pass':(entryMode?'entry':null)), entries:upcU?.single_entries||0,
       plan_id:m?m.plan_id:null, booked }});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
-// Ticker: keď online hodina začne, pošli notifikáciu všetkým s online prístupom (raz/deň/hodinu)
-setInterval(async()=>{
-  try{
-    // Okno 2 minúty (aktuálna + predchádzajúca): tick beží každých 60 s a pri
-    // oneskorení/preskočení (GC, reštart) by sa hodina s presne zhodnou minútou
-    // nespustila (audit E10). Guard online_live_<id>_<deň> nižšie ostáva → nebeží 2×.
-    const now=new Date(); const dow=now.getDay();
-    const nowHM=now.toTimeString().slice(0,5), prevHM=new Date(now.getTime()-60000).toTimeString().slice(0,5);
-    const classes=(await q.find(db.classes,{category:'Online', active:true, day_of_week:dow, time_start:{$in:[nowHM,prevHM]}}))
-      .filter(c=>classRunsOn(c, today()));
-    for(const cls of classes){
+// Štart online hodiny (auto-účasť prihlásených + LIVE notifikácie) — raz za deň a hodinu.
+// Volá ho minútový ticker podľa rozvrhu a od 18. 9. aj media server, keď tréner
+// naozaj spustí vysielanie (hook start) — ale len ≤30 min pred plánovaným štartom,
+// aby skúšobné vysielanie napoludnie nerozoslalo notifikácie a nezapísalo účasť.
+async function spustiOnlineHodinu(cls){
       // Zrušený termín sa nesmie „rozbehnúť" sám: žiadne LIVE notifikácie a hlavne
       // žiadna automatická dochádzka za hodinu, ktorá sa nekoná.
-      if(await terminZruseny(cls._id, today())) continue;
+      if(await terminZruseny(cls._id, today())) return false;
       const guardKey='online_live_'+cls._id+'_'+today();
-      if(await q.one(db.settings,{key:guardKey})) continue;
+      if(await q.one(db.settings,{key:guardKey})) return false;
       await q.insert(db.settings,{key:guardKey, value:true, at:nowISO()});
       // Auto-absolvovanie: prihlásené klientky dostanú účasť + body + odznaky hneď pri štarte
       // (majú zaplatené online členstvo). Trénerovi sa NIČ nepripisuje — online hodiny sa
@@ -16623,7 +16772,19 @@ setInterval(async()=>{
           link:'/online', read:false, created_at:nowISO()}).catch(()=>{});
       }
       console.log(`🔴 Online LIVE notifikácie: ${notified.size} členov (${cls.time_start} ${cls.stream_city||''})`);
-    }
+      return true;
+}
+// Ticker: podľa rozvrhu (bez media servera je to jediný spúšťač)
+setInterval(async()=>{
+  try{
+    // Okno 2 minúty (aktuálna + predchádzajúca): tick beží každých 60 s a pri
+    // oneskorení/preskočení (GC, reštart) by sa hodina s presne zhodnou minútou
+    // nespustila (audit E10). Guard online_live_<id>_<deň> nižšie ostáva → nebeží 2×.
+    const now=new Date(); const dow=now.getDay();
+    const nowHM=now.toTimeString().slice(0,5), prevHM=new Date(now.getTime()-60000).toTimeString().slice(0,5);
+    const classes=(await q.find(db.classes,{category:'Online', active:true, day_of_week:dow, time_start:{$in:[nowHM,prevHM]}}))
+      .filter(c=>classRunsOn(c, today()));
+    for(const cls of classes) await spustiOnlineHodinu(cls);
   }catch(e){}
 }, 60*1000);
 

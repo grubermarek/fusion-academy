@@ -56,6 +56,7 @@
 | `GOOGLE_REVIEW_URL` | ⏳ čaká | žiadosť o recenziu po 5. návšteve |
 | `CANCEL_DEADLINE_HOURS` | voliteľné (default 3) | storno deadline |
 | `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET` | ⏳ čaká | platby |
+| `MEDIA_BASE`, `MEDIA_SECRET`, `RTMP_PUBLIC` | od 18. 9. 2026 | vlastný media server (streamy a záznamy) — pozri `media-server/README.md` |
 
 ---
 
@@ -257,6 +258,16 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
   celoobrazovkový QR skener (použi existujúcu logiku z trainer.html
   `/api/attendance/qr-checkin`) + veľké potvrdenie "✅ Vitaj, Katka!".
 - Klientom sa tak netreba hlásiť u trénera — self-service ako Mindbody.
+
+### 7.8 Vlastné streamy a záznamy (bez YouTube) ✅ HOTOVO (2026-09-18, media-server/, qa/stream.test.js)
+- Samostatná služba `media-server/` (RTMP ingest cez node-media-server → ffmpeg → HLS live + MP4 záznam, bez prekódovania).
+- Hodina má tajný `stream_key` (tréner/admin generujú v paneli), na prehrávanie sa používa `_id` hodiny + HMAC token z appky (6 h).
+- Media server si kľúče sťahuje z `GET /api/media/keys`, udalosti posiela na `POST /api/media/hook` (start/stop/expired); appka drží evidenciu v `db.recordings`.
+- Klientka: `/online` → LIVE tlačidlo podľa `is_live`, sekcia Záznamy hodín (`/api/online/recordings`, len plný online prístup). YouTube/Vimeo odkaz ostáva ako záloha.
+- Reálny štart vysielania (hook) spúšťa `spustiOnlineHodinu` (auto-účasť + notifikácie) len ≤30 min pred rozvrhom — skúšobný stream napoludnie nič nerozošle.
+- Pasca: verejný `/api/classes` vracal celé dokumenty hodín aj so `stream_key` — od 18. 9. sa kľúč strihá pre každého okrem admina/trénera. Nikdy neposielať `stream_key` klientkám.
+- Pasca: migrácia `online_schedule_v2` na čistej DB vypne online hodiny mimo svojho zoznamu — QA testy si hodinu po štarte zapnú cez `PUT /api/admin/classes/:id {active:true}`.
+- Nasadenie a env: `media-server/README.md`.
 
 ### Zámerne vynechané (nepomer hodnota/prácnosť pre malú školu)
 - Consumer marketplace (Mindbody ClassPass štýl) — nemáme objem.
