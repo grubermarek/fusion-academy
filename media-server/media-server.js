@@ -352,20 +352,25 @@ function freeBytes() { try { const s = fs.statfsSync(MEDIA_ROOT); return s.bavai
 // pre záznamy uložené pred 18. 9. večer, alebo na požiadanie cez /api/reprocess.
 async function r2Reprocess(slug, file) {
   const dir = path.join(REC_DIR, slug); fs.mkdirSync(dir, { recursive: true });
-  const tmp = path.join(dir, file.replace(/\.mp4$/, '') + '.rework.part.mp4');
-  const src = await r2Presign(slug, file);
-  log('🎞️  Prerábam záznam z R2:', slug + '/' + file);
-  await run(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-y', '-i', src, '-map', '0:v:0', '-map', '0:a?', '-c', 'copy',
-    '-movflags', '+frag_keyframe+empty_moov+default_base_moof', '-min_frag_duration', '60000000', '-f', 'mp4', tmp]);
-  const final = path.join(dir, file);
-  try { fs.unlinkSync(final); } catch (_) {}
-  const st = fs.statSync(tmp);
-  if (freeBytes() > st.size + 300 * 1048576) {
-    try { await run(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-y', '-i', tmp, '-c', 'copy', '-movflags', '+faststart', final]); fs.unlinkSync(tmp); }
-    catch (e) { try { fs.unlinkSync(final); } catch (_) {} }
-  }
-  if (fs.existsSync(tmp)) fs.renameSync(tmp, final);
-  await r2Upload(slug, file, final);
+  const local = path.join(dir, file.replace(/\.mp4$/, '') + '.src.part.mp4');
+  const Key = r2Key(slug, file);
+  // 1) stiahnuť celý súbor na disk (čítanie fragmentovaného MP4 priamo z R2 cez ffmpeg
+  //    znamenalo tisíce malých požiadaviek a po 24 min stále nič — 18. 9.)
+  log('🎞️  Prerábam záznam z R2:', slug + '/' + file, '— sťahujem…');
+  const obj = await s3.send(new S3.GetObjectCommand({ Bucket: R2_BUCKET, Key }));
+  await require('stream/promises').pipeline(obj.Body, fs.createWriteStream(local));
+  const size = fs.statSync(local).size;
+  log('🎞️  Stiahnuté', Math.round(size / 1048576), 'MB, prerábam a nahrávam späť…');
+  // 2) ffmpeg číta lokálne, výstup (60 s fragmenty) ide rúrou rovno do R2 — bez druhej kópie na disku
+  const ff = spawn(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-i', local, '-map', '0:v:0', '-map', '0:a?', '-c', 'copy',
+    '-movflags', '+frag_keyframe+empty_moov+default_base_moof', '-min_frag_duration', '60000000', '-f', 'mp4', 'pipe:1'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let err = ''; ff.stderr.on('data', d => err += d);
+  const up = new Upload({ client: s3, params: { Bucket: R2_BUCKET, Key, Body: ff.stdout, ContentType: 'video/mp4' }, partSize: 64 * 1048576, queueSize: 2 });
+  await up.done();
+  const code = await new Promise(r => (ff.exitCode !== null ? r(ff.exitCode) : ff.on('exit', r)));
+  if (code) throw new Error('ffmpeg kód ' + code + ' ' + err.slice(0, 200));
+  fs.unlinkSync(local);
+  r2Cache.at = 0;
   log('🎞️  Záznam prerobený a nahratý späť:', slug + '/' + file);
 }
 async function reprocessOnce() {
