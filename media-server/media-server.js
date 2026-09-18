@@ -132,9 +132,10 @@ nms.on('prePublish', (id, StreamPath) => {
   sessions.set(id, { slug: info.slug, name: info.name });
 });
 
-nms.on('postPublish', (id, StreamPath) => {
+nms.on('postPublish', async (id, StreamPath) => {
   const s = sessions.get(id);
   if (!s) return;
+  try { await uvolniMiesto(true); } catch (e) { log('⚠️  uvoľnenie miesta:', e.message); }
   startPipeline(s.slug, keyFromPath(StreamPath), s.name);
 });
 
@@ -260,13 +261,17 @@ function recordingsList() {
   } catch (_) {}
   return out;
 }
-async function uvolniMiesto() {
+// Pred štartom vysielania musí ostať rezerva na celú hodinu (RESERVE_MB), inak by
+// nahrávka skončila v polovici na plnom disku — vtedy sa uvoľní aj najnovší záznam.
+const RESERVE_BYTES = +(process.env.RESERVE_MB || 3000) * 1048576;
+async function uvolniMiesto(predStartom = false) {
   let list = recordingsList().sort((a, b) => a.mtime - b.mtime);
   let total = list.reduce((s, f) => s + f.size, 0);
-  if (total > MAX_BYTES) log('⚠️  Záznamy zaberajú', Math.round(total / 1048576), 'MB, limit', Math.round(MAX_BYTES / 1048576), 'MB — mažem najstaršie');
-  // najnovší záznam sa nikdy nemaže sám od seba (aj keby bol sám nad limitom)
-  for (const f of list.slice(0, -1)) {
-    if (total <= MAX_BYTES) break;
+  const limit = predStartom ? Math.max(0, MAX_BYTES - RESERVE_BYTES) : MAX_BYTES;
+  if (total > limit) log('⚠️  Záznamy zaberajú', Math.round(total / 1048576), 'MB, limit', Math.round(limit / 1048576), 'MB' + (predStartom ? ' (rezerva pred hodinou)' : '') + ' — mažem najstaršie');
+  // najnovší záznam sa nikdy nemaže sám od seba (aj keby bol sám nad limitom) — okrem rezervy pred hodinou
+  for (const f of (predStartom ? list : list.slice(0, -1))) {
+    if (total <= limit) break;
     if (f.part && live.has(f.slug)) continue;
     fs.unlinkSync(f.path); total -= f.size;
     log('🗑️  Miesto: zmazaný najstarší záznam', f.slug + '/' + f.file, Math.round(f.size / 1048576) + ' MB');
