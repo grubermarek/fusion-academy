@@ -170,8 +170,10 @@ async function login(id) {
     const zlyTok = await req('/live/qaStOnline0001/index.m3u8?t=9999999999.deadbeef', { base: M });
     if (bezTok.status !== 403 || zlyTok.status !== 403) find('S3e', 'HLS hrá aj bez platného tokenu', bezTok.status + '/' + zlyTok.status);
     else pass('S3e: bez tokenu / s falošným tokenom → 403');
+    // Banner na dashboarde berie len dnešné hodiny — v nočnom režime (QA hodiny zajtra) sa kontrola preskočí
     const upc = await req('/api/online/upcoming', { cookie: silver });
-    if (!upc.body.upcoming || upc.body.upcoming.media_live !== true) find('S3f', 'Dashboard banner nevie, že sa naozaj vysiela', JSON.stringify(upc.body).slice(0, 200));
+    if (lateNight) pass('S3f: preskočené (QA hodiny sú zajtra, banner ukazuje len dnešok)');
+    else if (!upc.body.upcoming || upc.body.upcoming.media_live !== true) find('S3f', 'Dashboard banner nevie, že sa naozaj vysiela', JSON.stringify(upc.body).slice(0, 200));
     else pass('S3f: /api/online/upcoming media_live=true');
     // vstup cez /api/online/enter (Silver = full) vráti play token
     const en = await req('/api/online/enter', { method: 'POST', cookie: silver, body: { class_id: 'qaStOnline0001' } });
