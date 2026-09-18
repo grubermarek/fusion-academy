@@ -55,14 +55,21 @@ Bez `MEDIA_BASE` appka beží ako doteraz (YouTube/Vimeo odkaz pri hodine ostáv
 
 ## Nasadenie (Railway, ten istý projekt ako appka)
 
+Služba `media` existuje od 18. 9. 2026: doména `https://media-production-a0df.up.railway.app`
+(HTTP port 8000), TCP proxy `altaria.proxy.rlwy.net:38961` → 1935 (RTMP), volume `media-volume`
+na `/app/media` (5 GB).
+
+Priečinok `media-server/` je prepojený na službu `media` samostatne (`railway link -s media`
+spustený v tomto priečinku) — inak by `railway up` nahral celý repozitár a na službe by bežala
+kópia hlavnej appky (stalo sa 18. 9.). Nasadenie preto vždy z tohto priečinka:
+
 ```bash
 cd media-server
-railway up --service media --detach
+railway up --detach
 ```
 
-Prvýkrát: `railway add --service media`, `railway volume add --mount-path /app/media --service media`,
-`railway domain --service media`, `railway tcp-proxy create --service media` (port 1935),
-potom env premenné vyššie a redeploy appky (`railway up --detach` z koreňa).
+Pozor: Railway dosadí `PORT` podľa TCP proxy (1935), preto je na službe natvrdo `PORT=8000`
+a doména má cieľový port 8000 (`railway domain update <domena> -s media --port 8000`).
 
 ## Lokálny test
 

@@ -226,7 +226,11 @@ app.use(express.json());
 const service = (req, res, next) => (!SECRET || req.get('x-media-secret') === SECRET) ? next() : res.status(401).json({ error: 'unauthorized' });
 const playable = (req, res, next) => tokenOk(safeId(req.params.slug), req.query.t) ? next() : res.status(403).json({ error: 'Prístup vypršal — obnov stránku' });
 
-app.get('/health', (req, res) => res.json({ ok: true, live: [...live.keys()], keys: keys.size, keys_at: keysLoadedAt ? new Date(keysLoadedAt).toISOString() : null }));
+// Verzia ffmpeg v /health: bez neho sa nič nenahrá ani neprehrá (Railpack musí mať railpack.json s aptPackages)
+let ffmpegVersion = null;
+execFile(FFMPEG, ['-version'], (err, out) => { ffmpegVersion = err ? null : String(out).split('\n')[0].replace(/^ffmpeg version\s*/, '').slice(0, 40); if (err) log('⛔ ffmpeg sa nenašiel:', err.message); });
+app.get('/health', (req, res) => res.json({ ok: true, live: [...live.keys()], keys: keys.size, keys_at: keysLoadedAt ? new Date(keysLoadedAt).toISOString() : null,
+  ffmpeg: ffmpegVersion, secret: !!SECRET }));
 
 // Kto práve vysiela (slugy hodín — verejné id, nie kľúče)
 app.get('/api/streams', (req, res) => res.json({ live: [...live.keys()] }));
