@@ -59,7 +59,7 @@ const zoznam = d => Array.isArray(d) ? d : (d && (d.items || d.notifications || 
     S('qaPsS03', 'qaPsPodvod000001', 'Sona Rychla', DNES, 6, 40, '10', { perfect: true }),
     S('qaPsS04', 'qaPsPodvod000001', 'Sona Rychla', DNES, 9, 30, '11', { perfect: true }),
     S('qaPsS05', 'qaPsPodvod000001', 'Sona Rychla', MINULY, 9, 20, '10', { perfect: true }),
-    S('qaPsS06', 'qaPsFer000000001', 'Nina Ferova', DNES, 60, 40, '10'),
+    S('qaPsS06', 'qaPsFer000000001', 'Nina Ferova', DNES, 60, 40, '10', { perfect: true, correct: 5 }),
     S('qaPsS07', 'qaPsFer200000001', 'Sara Ferova', DNES, 70, 40, '10'),
     S('qaPsS08', 'qaPsFer200000001', 'Sara Ferova', DNES, 70, 9, '11', { verified: false }),
   ].join('\n') + '\n');
@@ -127,6 +127,22 @@ const zoznam = d => Array.isArray(d) ? d : (d && (d.items || d.notifications || 
     const n2 = await j('/api/notifications', {}, klientka);
     const pocet = zoznam(n2.d).filter(x => x.type === 'puzzle_podvod').length;
     ok('oznam je len jeden', pocet === 1, String(pocet));
+
+    // Vyradenie z poradia: história a rebríček ju nezobrazia, body ostanú.
+    const mp = await j('/api/admin/puzzle/mimo-poradia', { method: 'POST', headers: { 'x-import-token': TOKEN }, body: { user_id: 'qaPsPodvod000001', month: M } });
+    ok('vyradenie z poradia prebehlo', mp.status === 200 && mp.d.stav === true && mp.d.dni === 4 && mp.d.body === 40, JSON.stringify(mp.d));
+    const lb = await j('/api/puzzle/leaderboard', {}, klientka);
+    ok('v dnešnom rebríčku nie je', lb.status === 200 && !lb.d.rows.some(r => r.me) && lb.d.rows.length === 2, JSON.stringify(lb.d.rows));
+    const hi = await j('/api/puzzle/history?days=30', {}, klientka);
+    const dnes = (hi.d.days || []).find(x => x.date === DNES);
+    ok('v histórii dnes 2 hráčky, víťazka férová', dnes && dnes.players === 2 && dnes.winner && dnes.winner.name === 'Nina Ferova', JSON.stringify(dnes));
+    const st2 = await j('/api/puzzle/today', {}, klientka);
+    ok('body v mesiaci ostali 40', st2.d.month_points === 40, String(st2.d.month_points));
+    const mes = await j('/api/admin/puzzle/mesiac?month=' + M, {}, admin);
+    ok('prehľad mesiaca ju označí mimo poradia', mes.d.rows.find(r => r.user_id === 'qaPsPodvod000001').mimo_poradia === true);
+    const mp2 = await j('/api/admin/puzzle/mimo-poradia', { method: 'POST', body: { user_id: 'qaPsPodvod000001', month: M, stav: false } }, admin);
+    const lb2 = await j('/api/puzzle/leaderboard', {}, klientka);
+    ok('vrátenie do poradia funguje', mp2.status === 200 && lb2.d.rows.some(r => r.me), JSON.stringify(lb2.d.rows));
 
     ok('neznáma klientka = 404', (await j('/api/admin/puzzle/skrat', { method: 'POST', body: { user_id: 'nikto', cap: 40 } }, admin)).status === 404);
   } catch (e) {

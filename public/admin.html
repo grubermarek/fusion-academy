@@ -744,9 +744,14 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
           <button class="btn btn-sm btn-outline-secondary" onclick="loadAdminRecordings()"><i class="bi bi-arrow-clockwise"></i></button>
         </div>
         <div class="small text-muted mb-2" id="recRtmp"></div>
+        <div class="d-flex gap-2 flex-wrap mb-2">
+          <select class="form-select form-select-sm" id="recFilterCity" style="width:auto" onchange="renderAdminRecordings()"><option value="">Všetky mestá</option></select>
+          <select class="form-select form-select-sm" id="recFilterKind" style="width:auto" onchange="renderAdminRecordings()"><option value="">Všetky typy tréningu</option></select>
+          <span class="small text-muted align-self-center" id="recCount"></span>
+        </div>
         <div class="table-responsive">
           <table class="table table-sm table-hover mb-0">
-            <thead><tr><th>Dátum</th><th>Hodina</th><th>Dĺžka</th><th>Veľkosť</th><th>Pre klientky</th><th></th></tr></thead>
+            <thead><tr><th>Dátum</th><th>Typ</th><th>Mesto</th><th>Hodina</th><th>Dĺžka</th><th>Veľkosť</th><th>Pre klientky</th><th></th></tr></thead>
             <tbody id="adminRecordingsTable"></tbody>
           </table>
         </div>

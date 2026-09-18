@@ -395,7 +395,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
     if (all.some(r => r.day_win)) return null;                 // už vyhodnotené
     // kto má zákaz bodov (podvádzanie), bonus nedostane a nikoho neodsunie
     const zakazane = new Set((await q.find(db.users, { body_zakaz: true })).map(u => u._id));
-    let rows = all.filter(r => r.verified !== false && !r.body_zakaz && !zakazane.has(r.user_id));   // len serverom meraný čas
+    let rows = all.filter(r => r.verified !== false && !r.body_zakaz && !r.mimo_poradia && !zakazane.has(r.user_id));   // len serverom meraný čas
     if (rows.length < c.day_win_min_players) return null;      // sama proti sebe nesúťaží
     rows.sort((a, b) => (a.seconds || 0) - (b.seconds || 0)
       || String(a.created_at || '').localeCompare(String(b.created_at || '')));
@@ -636,7 +636,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
 
   // Kto má zákaz bodov (podvádzanie), v poradí hlavolamu nefiguruje.
   const zakazaneIds = async () => new Set((await q.find(db.users, { body_zakaz: true })).map(u => u._id));
-  const vPoradi = zak => r => r.verified !== false && !r.body_zakaz && !zak.has(r.user_id);
+  const vPoradi = zak => r => r.verified !== false && !r.body_zakaz && !r.mimo_poradia && !zak.has(r.user_id);
 
   // Pri rytme a kvíze rozhoduje najprv počet správnych, až potom čas — inak by
   // na prvom mieste svietila tá, čo klikala naslepo, hoci bonus dostane iná.
@@ -768,7 +768,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
       if (!String(r.date || '').startsWith(month) || r.verified === false) continue;
       const b = podla[r.user_id] = podla[r.user_id] || { user_id: r.user_id, name: r.user_name || '', points: 0, count: 0, seconds: 0, perfect: 0, wins: 0, body_zakaz: zak.has(r.user_id) };
       b.points += (+r.points || 0); b.count++; b.seconds += (+r.seconds || 0);
-      if (r.perfect) b.perfect++; if (r.day_win) b.wins++;
+      if (r.perfect) b.perfect++; if (r.day_win) b.wins++; if (r.mimo_poradia) b.mimo_poradia = true;
     }
     const rows = Object.values(podla).map(b => ({ ...b, avg_seconds: b.count ? Math.round(b.seconds / b.count) : null }))
       .sort((a, b) => b.points - a.points);
@@ -826,6 +826,26 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
       }).catch(() => {});
       console.log('🧩 Skrátenie bodov: ' + u.name + ' ' + m + ' ' + pred + ' → ' + cap + ' b (' + by + (dovod ? ', ' + dovod : '') + ')');
       res.json({ ok: true, zmena: true, month: m, pred, po: cap, cap, upravene });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Admin: vyradenie z poradia za mesiac (Marek 18. 9.) ──
+  // Podvodníčka nemá figurovať v histórii víťazov ani v rebríčku dňa, ale jej
+  // (skrátené) body do súťaže ostávajú. Záznamy sa nemažú — dostanú mimo_poradia,
+  // takže sa dá krok vrátiť (stav:false).
+  app.post('/api/admin/puzzle/mimo-poradia', adminAleboServis, async (req, res) => {
+    try {
+      const uid = String(req.body.user_id || '');
+      const m = /^d{4}-d{2}$/.test(String(req.body.month || '')) ? req.body.month : today().slice(0, 7);
+      const stav = req.body.stav !== false;
+      if (!uid) return res.status(400).json({ error: 'Chýba klientka.' });
+      const u = await q.one(db.users, { _id: uid });
+      if (!u) return res.status(404).json({ error: 'Klientka nenájdená.' });
+      const mine = (await q.find(db.puzzle_solves, { user_id: uid })).filter(r => String(r.date || '').startsWith(m));
+      for (const r of mine) await q.update(db.puzzle_solves, { _id: r._id },
+        stav ? { $set: { mimo_poradia: true, mimo_poradia_at: nowISO() } } : { $unset: { mimo_poradia: true, mimo_poradia_at: true } });
+      console.log('🧩 Mimo poradia: ' + u.name + ' ' + m + ' → ' + (stav ? 'vyradená' : 'vrátená') + ' (' + mine.length + ' dní)');
+      res.json({ ok: true, month: m, stav, dni: mine.length, body: mine.reduce((s, r) => s + (+r.points || 0), 0) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
