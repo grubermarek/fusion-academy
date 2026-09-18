@@ -75,7 +75,7 @@ a doména má cieľový port 8000 (`railway domain update <domena> -s media --po
 
 `node qa/stream.test.js` (potrebuje ffmpeg; `FFMPEG=cesta` ak nie je v PATH) — spustí
 izolovanú appku aj media server, odvysiela skúšobný obraz a overí kľúče, tokeny,
-HLS, záznam, viditeľnosť a mazanie (23 kontrol).
+HLS, záznam, viditeľnosť a mazanie (24 kontrol).
 
 ## Náklady (Railway, orientačne)
 
