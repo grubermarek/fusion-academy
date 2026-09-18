@@ -326,7 +326,13 @@ async function loadOnlineClasses(){
   // nech sa tlačidlo „Pripojiť sa naživo" objaví bez obnovenia.
   liveSet=new Set(data.classes.filter(c=>c.is_live).map(c=>c.play_key));
   if(!window._livePoll) window._livePoll=setInterval(()=>{ if(document.getElementById('streamOverlay').style.display!=='flex') loadOnlineClasses(); }, 60*1000);
+  // Skupiny podľa dňa (Dnes / Zajtra / názov dňa) — hodiny prichádzajú zoradené od dneška
+  const dnesDow=new Date().getDay();
+  const denLabel=c=>{ const d=((c.day_of_week-dnesDow)+7)%7; return d===0?'Dnes':d===1?'Zajtra':(c.day_name||''); };
+  let lastDay=null;
   container.innerHTML = data.classes.map(c=>{
+    const hdr = denLabel(c)!==lastDay ? `<div style="font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);font-weight:800;margin:14px 0 8px">${denLabel(c)}</div>` : '';
+    lastDay=denLabel(c);
     // Prístup rieši server pre každú hodinu zvlášť — výherná online hodina z kolesa
     // napr. neplatí na technický tréning, ten ide z permanentky.
     const mode = c.access_mode!==undefined ? c.access_mode : (data.has_access ? data.access_mode : null);
@@ -345,18 +351,19 @@ async function loadOnlineClasses(){
         : `<span style="font-size:.8rem;color:var(--text-muted)">${FA_T('onl.soon')}</span>`;
     } else {
       const parts=[];
-      if(mediaBase && key && c.play_token){
-        if(isLive) parts.push(`<button class="btn-stream" onclick="watchLive('${key}','${c.play_token}','${nm}')"><span class="live-dot"></span>${FA_T('onl.join_live')}</button>`);
-        else parts.push(`<button class="btn-arch" onclick="openRecordings('${key}')"><i class="bi bi-collection-play me-1"></i>${FA_T('onl.archive')}</button>`);
-      }
-      if(c.stream_url && !isLive) parts.push(`<button class="btn-stream" onclick="watchStream('${encodeURIComponent(c.stream_url)}','${nm}')"><i class="bi bi-play-circle me-1"></i>${FA_T('onl.watch')}</button>`);
-      action = parts.length ? parts.join(' ') : `<span style="font-size:.8rem;color:var(--text-muted)">Stream čoskoro</span>`;
+      if(isLive && mediaBase && key && c.play_token) parts.push(`<button class="btn-stream" onclick="watchLive('${key}','${c.play_token}','${nm}')"><span class="live-dot"></span>${FA_T('onl.join_live')}</button>`);
+      else if(c.stream_url) parts.push(`<button class="btn-stream" onclick="watchStream('${encodeURIComponent(c.stream_url)}','${nm}')"><i class="bi bi-play-circle me-1"></i>${FA_T('onl.watch')}</button>`);
+      // Archív sa ukáže až keď hodina nejaký záznam má (doplní loadRecordings)
+      if(!isLive && key) parts.push(`<button class="btn-arch" data-arch="${c._id}" style="display:none" onclick="openRecordings('${c._id}')"><i class="bi bi-collection-play me-1"></i>${FA_T('onl.archive')}</button>`);
+      if(!isLive) parts.push(`<span data-next="${c._id}" style="font-size:.78rem;color:var(--text-muted)">${denLabel(c).toLowerCase()} o ${c.time_start||''}</span>`);
+      action = parts.join(' ');
     }
-    return `<div class="class-card ${locked?'locked':''}">
+    const kind=(c.name||'').replace(/\s*[–-]?\s*ONLINE.*$/i,'').trim()||c.name;
+    return hdr+`<div class="class-card ${locked?'locked':''}">
       <div class="lock-icon">${locked?'🔒':(isLive?'🔴':c.emoji||'💃')}</div>
       <div class="class-info flex-grow-1">
-        <h4>${c.name}</h4>
-        <p>${c.instructor||''} · ${c.time_start||''} ${c.day_name||''}</p>
+        <h4>${kind}${c.city?' · '+c.city:''}${isLive?' <span style="color:#ff3b30;font-size:.75rem;font-weight:800">● NAŽIVO</span>':''}</h4>
+        <p>${c.day_name||''} ${c.time_start||''}${c.time_end?'–'+c.time_end:''}${c.instructor?' · '+c.instructor:''}</p>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${action}</div>
     </div>`;
@@ -420,6 +427,8 @@ async function loadRecordings(){
   const host=document.getElementById('recordingsSection'); if(!host) return;
   const d=await api('/api/online/recordings');
   _recordings=(d&&d.recordings)||[];
+  // Tlačidlo Archív len pri hodinách, ktoré majú záznam
+  document.querySelectorAll('[data-arch]').forEach(b=>{ const has=_recordings.some(r=>(r.class_ids||[r.class_id]).includes(b.dataset.arch)); b.style.display=has?'inline-block':'none'; const n=document.querySelector('[data-next="'+b.dataset.arch+'"]'); if(n&&has) n.style.display='none'; });
   if(!_recordings.length){ host.style.display='none'; return; }
   host.style.display='block';
   renderRecordings();

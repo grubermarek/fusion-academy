@@ -62,13 +62,18 @@ async function login(id) {
     { _id: 'qaStMemSilver1', user_id: 'qaStSilver0001', plan_id: 'silver', plan_name: 'Silver', status: 'active', price: 74.9, payment_method: 'cash', created_at: '2026-09-01', expires_at: plus(20) },
     { _id: 'qaStMemBronze1', user_id: 'qaStBezOnl0001', plan_id: 'bronze', plan_name: 'Bronze', status: 'active', price: 49.9, payment_method: 'cash', created_at: '2026-09-01', expires_at: plus(20) },
   ]);
-  const dow = new Date().getDay();
+  // Pred polnocou by sa hodiny orezali na 23:59 a server by vybral inú — vtedy sa QA hodiny presunú na zajtra 08:00
+  const lateNight = (new Date().getHours() * 60 + new Date().getMinutes()) + 125 > 23 * 60 + 59;
+  const dow = lateNight ? (new Date().getDay() + 1) % 7 : new Date().getDay();
+  // Časy hodín relatívne k teraz: prvá o 5 min (server ju vyberie ako najbližšiu/bežiacu), druhá o 65 min
+  const nowM = lateNight ? 8 * 60 : new Date().getHours() * 60 + new Date().getMinutes();
+  const hhmm = m => { m = Math.min(m, 23 * 60 + 59); return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
   w('classes.db', [
     { _id: 'qaStOnline0001', name: 'QA Stream ONLINE', emoji: '🎵', category: 'Online', location: 'Online', stream_city: 'QA Mesto', instructor: 'QA Trénerka',
-      day_of_week: dow, time_start: '23:58', time_end: '23:59', capacity: 100, active: true, price: 10 },
+      day_of_week: dow, time_start: hhmm(nowM + 5), time_end: hhmm(nowM + 60), capacity: 100, active: true, price: 10 },
     // druhá hodina z toho istého mesta v ten istý deň — zdieľa kľúč (jeden kľúč na mesto) a pri vysielaní je tiež „naživo"
     { _id: 'qaStOnline0002', name: 'QA Zumba ONLINE – LIVE', emoji: '🎵', category: 'Online', location: 'Online', stream_city: 'QA Mesto', instructor: 'QA Trénerka',
-      day_of_week: dow, time_start: '23:59', time_end: '23:59', capacity: 100, active: true, price: 10 },
+      day_of_week: dow, time_start: hhmm(nowM + 65), time_end: hhmm(nowM + 120), capacity: 100, active: true, price: 10 },
   ]);
   w('settings.db', [{ _id: 'qaStPrvy', key: 'prvy_tyzden', value: true }]);
 

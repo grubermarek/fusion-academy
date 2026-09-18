@@ -16270,8 +16270,10 @@ app.get('/api/online/classes', auth, async(req,res)=>{
     return {
     ...pub,
     instructor: await onlineInstructorFor(c, nextOccurrence(c.day_of_week)),
-    // V entry režime sa stream NEprezradí vopred — vydá ho až /api/online/enter po odpočte
-    stream_url: hasFull ? (c.stream_url||null) : null,
+    // V entry režime sa stream NEprezradí vopred — vydá ho až /api/online/enter po odpočte.
+    // YouTube/Vimeo odkaz je záloha a platí len v deň zadania — starý odkaz sa neponúka.
+    stream_url: hasFull && c.stream_url && c.stream_url_at===today() ? c.stream_url : null,
+    day_name: DAYS_SK[c.day_of_week]||'', city: c.stream_city||'',
     // Vlastný media server: hodina sa prehráva podľa svojho id + podpísaného tokenu
     play_key: mediaBase() && stream_key ? c._id : null,
     play_token: hasFull && mediaBase() && stream_key ? mediaToken(c._id, 6) : null,
@@ -16281,6 +16283,9 @@ app.get('/api/online/classes', auth, async(req,res)=>{
     access_mode: rezim(c),
     locked: !rezim(c),
   };}));
+  // Zoradenie od dneška: dnešné hodiny hore, potom ďalšie dni v poradí, v rámci dňa podľa času
+  const dnes=new Date().getDay();
+  result.sort((a,b)=>(((a.day_of_week-dnes)+7)%7)-(((b.day_of_week-dnes)+7)%7) || String(a.time_start||'').localeCompare(String(b.time_start||'')));
   const passMode=maPass, entryMode=!hasFull && !maPass && maVstup;
   res.json({classes:result, has_access:hasAccess, online_free_today:freeDay, access_mode: hasFull?'full':(passMode?'pass':(entryMode?'entry':null)),
     entries: mu?.single_entries||0, online_passes: mu?.online_passes||0,
