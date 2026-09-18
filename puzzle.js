@@ -820,7 +820,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
         user_id: uid, type: 'puzzle_podvod',
         title: '⚠️ Body z hlavolamu sme ti skrátili',
         body: 'Softvérovo sme vyhodnotili, že si v dennom hlavolame podvádzala — riešenia si odovzdávala nezvyčajne rýchlo a vždy správne. '
-          + 'Body z hlavolamu za tento mesiac sme ti preto skrátili na ' + cap + ' bodov, čo je priemer, ktorý majú ostatné dievčatá. '
+          + 'Body z hlavolamu za tento mesiac sme ti preto skrátili na ' + cap + ' bodov — na úroveň, ktorú majú ostatné aktívne dievčatá. '
           + 'Prosíme, hraj do budúcna férovo. Pri ďalšom podvádzaní ti prístup k tejto súťaži zakážeme.',
         read: false, created_at: at,
       }).catch(() => {});
