@@ -64,8 +64,11 @@ async function login(id) {
   ]);
   const dow = new Date().getDay();
   w('classes.db', [
-    { _id: 'qaStOnline0001', name: 'QA Stream ONLINE', emoji: '🎵', category: 'Online', location: 'Online', stream_city: 'Detva', instructor: 'QA Trénerka',
+    { _id: 'qaStOnline0001', name: 'QA Stream ONLINE', emoji: '🎵', category: 'Online', location: 'Online', stream_city: 'QA Mesto', instructor: 'QA Trénerka',
       day_of_week: dow, time_start: '23:58', time_end: '23:59', capacity: 100, active: true, price: 10 },
+    // druhá hodina z toho istého mesta v ten istý deň — zdieľa kľúč (jeden kľúč na mesto) a pri vysielaní je tiež „naživo"
+    { _id: 'qaStOnline0002', name: 'QA Zumba ONLINE – LIVE', emoji: '🎵', category: 'Online', location: 'Online', stream_city: 'QA Mesto', instructor: 'QA Trénerka',
+      day_of_week: dow, time_start: '23:59', time_end: '23:59', capacity: 100, active: true, price: 10 },
   ]);
   w('settings.db', [{ _id: 'qaStPrvy', key: 'prvy_tyzden', value: true }]);
 
@@ -101,6 +104,7 @@ async function login(id) {
     // Migrácia online_schedule_v2 na čistej DB vypne online hodiny mimo svojho zoznamu — QA hodinu znova zapni
     const act = await req('/api/admin/classes/qaStOnline0001', { method: 'PUT', cookie: admin, body: { active: true } });
     if (act.status !== 200) throw new Error('zapnutie QA hodiny: ' + act.status + ' ' + JSON.stringify(act.body));
+    await req('/api/admin/classes/qaStOnline0002', { method: 'PUT', cookie: admin, body: { active: true } });
 
     // ── S2a: cudzí kľúč sa odmietne ────────────────────────────────────────
     const zly = publish('cudzikluc123'); let zlyErr = ''; zly.stderr.on('data', d => zlyErr += d);
@@ -118,6 +122,8 @@ async function login(id) {
     if (!ts.body.enabled || ts.body.rtmp_url !== `rtmp://localhost:${RTMP}/live` || !(ts.body.classes || []).some(c => c.stream_key === KEY))
       find('S2c', 'Tréner nevidí RTMP adresu a kľúč', JSON.stringify(ts.body).slice(0, 300));
     else pass('S2c: tréner vidí RTMP adresu + kľúč');
+    const c2k = (ts.body.classes || []).find(c => c.id === 'qaStOnline0002') || {};
+    if (c2k.stream_key !== KEY) find('S2d', 'Druhá hodina z toho istého mesta nedostala rovnaký kľúč', JSON.stringify(c2k)); else pass('S2d: jeden kľúč na mesto — druhá hodina QA Mesta má ten istý');
     await spi(1500); // media server si kľúče obnoví hneď (POST /api/refresh)
 
     // ── S1: kľúč neunikne ──────────────────────────────────────────────────
@@ -144,6 +150,8 @@ async function login(id) {
     const c1 = (oc1.body.classes || []).find(c => c._id === 'qaStOnline0001') || {};
     if (!c1.is_live || !c1.play_token) find('S3b', 'Appka nehlási is_live po hooku start', JSON.stringify({ is_live: c1.is_live, tok: !!c1.play_token }));
     else pass('S3b: appka hlási is_live + token hneď po štarte (hook)');
+    const sib = (oc1.body.classes || []).find(c => c._id === 'qaStOnline0002') || {};
+    if (!sib.is_live) find('S3b2', 'Súrodenecká hodina (rovnaký kľúč, ten istý deň) nie je naživo', JSON.stringify({ is_live: sib.is_live })); else pass('S3b2: susedná hodina s rovnakým kľúčom je tiež naživo');
     let m3u = null; for (let i = 0; i < 40; i++) { await spi(500); const r = await req(`/live/qaStOnline0001/index.m3u8?t=${encodeURIComponent(c1.play_token || '')}`, { base: M }); if (r.status === 200 && /\.ts\?t=/.test(String(r.body))) { m3u = r; break; } }
     if (!m3u) find('S3c', 'HLS playlist s tokenom sa nenačítal', mlog.slice(-600));
     else {

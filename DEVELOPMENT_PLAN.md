@@ -261,7 +261,7 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
 
 ### 7.8 Vlastné streamy a záznamy (bez YouTube) ✅ HOTOVO (2026-09-18, media-server/, qa/stream.test.js)
 - Samostatná služba `media-server/` (RTMP ingest cez node-media-server → ffmpeg → HLS live + MP4 záznam, bez prekódovania).
-- Hodina má tajný `stream_key` (tréner/admin generujú v paneli), na prehrávanie sa používa `_id` hodiny + HMAC token z appky (6 h).
+- Jeden tajný `stream_key` na MESTO (od 18. 9. večer): nová online hodina ho dostane automaticky (`priradVysielaciKluc`), media server pri štarte vyberie hodinu podľa rozvrhu (čas Bratislava), susedné hodiny s rovnakým kľúčom sú tiež naživo (`liveOnlineIds`). Na prehrávanie sa používa `_id` hodiny + HMAC token z appky (6 h). Záznamy nesú `city` + `kind` (typ tréningu z názvu) → filtre v admine aj u klientky.
 - Media server si kľúče sťahuje z `GET /api/media/keys`, udalosti posiela na `POST /api/media/hook` (start/stop/expired); appka drží evidenciu v `db.recordings`.
 - Klientka: `/online` → LIVE tlačidlo podľa `is_live`, sekcia Záznamy hodín (`/api/online/recordings`, len plný online prístup). YouTube/Vimeo odkaz ostáva ako záloha.
 - Reálny štart vysielania (hook) spúšťa `spustiOnlineHodinu` (auto-účasť + notifikácie) len ≤30 min pred rozvrhom — skúšobný stream napoludnie nič nerozošle.

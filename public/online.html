@@ -149,7 +149,8 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
       <h2 class="fw-900 mb-0" style="color:var(--cream)">📼 Záznamy hodín</h2>
       <button id="recordingsAll" class="btn-arch" style="display:none" onclick="renderRecordings();this.style.display='none'">Všetky záznamy</button>
     </div>
-    <p style="color:var(--text-muted);font-size:.85rem;margin-bottom:1rem">Zmeškala si hodinu? Každé vysielanie sa nahráva automaticky a záznam tu nájdeš do pár minút po skončení.</p>
+    <p style="color:var(--text-muted);font-size:.85rem;margin-bottom:.6rem">Zmeškala si hodinu? Každé vysielanie sa nahráva automaticky a záznam tu nájdeš do pár minút po skončení.</p>
+    <div id="recordingsChips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.8rem"></div>
     <div id="recordingsList"></div>
   </div>
 
@@ -423,14 +424,23 @@ async function loadRecordings(){
   host.style.display='block';
   renderRecordings();
 }
+let _recFilter={kind:'',city:''};
+function setRecFilter(k,v){ _recFilter[k]=(_recFilter[k]===v?'':v); renderRecordings(); }
 function renderRecordings(filterClass){
   const list=document.getElementById('recordingsList'); if(!list) return;
-  const recs=_recordings.filter(r=>!filterClass||r.class_id===filterClass).slice(0,30);
+  // Filtre podľa typu tréningu a mesta (čipy nad zoznamom)
+  const chips=document.getElementById('recordingsChips');
+  if(chips){
+    const kinds=[...new Set(_recordings.map(r=>r.kind).filter(Boolean))], cities=[...new Set(_recordings.map(r=>r.city).filter(Boolean))];
+    const chip=(k,v)=>`<button class="btn-arch" style="padding:.25rem .7rem;font-size:.75rem;${_recFilter[k]===v?'background:rgba(231,200,120,.3);border-color:#E7C878':''}" onclick="setRecFilter('${k}','${v.replace(/'/g,'')}')">${v}</button>`;
+    chips.innerHTML = (kinds.length>1?kinds.map(v=>chip('kind',v)).join(' '):'') + (kinds.length>1&&cities.length>1?' <span style="opacity:.4">|</span> ':'') + (cities.length>1?cities.map(v=>chip('city',v)).join(' '):'');
+  }
+  const recs=_recordings.filter(r=>(!filterClass||r.class_id===filterClass)&&(!_recFilter.kind||r.kind===_recFilter.kind)&&(!_recFilter.city||r.city===_recFilter.city)).slice(0,30);
   const fmt=r=>{ const d=new Date(r.started_at||r.date); return d.toLocaleDateString('sk-SK',{weekday:'short',day:'numeric',month:'numeric'})+' '+d.toLocaleTimeString('sk-SK',{hour:'2-digit',minute:'2-digit'}); };
   const dur=s=>s>=3600?Math.floor(s/3600)+' h '+Math.round(s%3600/60)+' min':Math.round(s/60)+' min';
   list.innerHTML = recs.length ? recs.map(r=>`<div class="class-card" style="padding:.8rem 1rem">
       <div class="lock-icon" style="font-size:1.5rem;min-width:36px">📼</div>
-      <div class="class-info flex-grow-1"><h4>${r.title||r.class_name}</h4><p>${fmt(r)} · ${dur(r.duration_s||0)}</p></div>
+      <div class="class-info flex-grow-1"><h4>${r.title||r.kind||r.class_name}</h4><p>${fmt(r)} · ${dur(r.duration_s||0)}${r.city?' · '+r.city:''}</p></div>
       <button class="btn-stream" onclick="playRecording('${r.id}')"><i class="bi bi-play-circle me-1"></i>Prehrať</button>
     </div>`).join('')
     : '<p style="color:var(--text-muted);text-align:center;padding:1rem">Táto hodina zatiaľ nemá žiadny záznam.</p>';

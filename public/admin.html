@@ -744,9 +744,14 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
           <button class="btn btn-sm btn-outline-secondary" onclick="loadAdminRecordings()"><i class="bi bi-arrow-clockwise"></i></button>
         </div>
         <div class="small text-muted mb-2" id="recRtmp"></div>
+        <div class="d-flex gap-2 flex-wrap mb-2">
+          <select class="form-select form-select-sm" id="recFilterCity" style="width:auto" onchange="renderAdminRecordings()"><option value="">Všetky mestá</option></select>
+          <select class="form-select form-select-sm" id="recFilterKind" style="width:auto" onchange="renderAdminRecordings()"><option value="">Všetky typy tréningu</option></select>
+          <span class="small text-muted align-self-center" id="recCount"></span>
+        </div>
         <div class="table-responsive">
           <table class="table table-sm table-hover mb-0">
-            <thead><tr><th>Dátum</th><th>Hodina</th><th>Dĺžka</th><th>Veľkosť</th><th>Pre klientky</th><th></th></tr></thead>
+            <thead><tr><th>Dátum</th><th>Typ</th><th>Mesto</th><th>Hodina</th><th>Dĺžka</th><th>Veľkosť</th><th>Pre klientky</th><th></th></tr></thead>
             <tbody id="adminRecordingsTable"></tbody>
           </table>
         </div>
@@ -7702,12 +7707,25 @@ async function loadAdminRecordings(){
   const u=d.usage;
   document.getElementById('recUsage').textContent = u ? `· ${u.files} súborov, ${mb(u.bytes)} na serveri, retencia ${u.retention_days} dní${u.live&&u.live.length?' · 🔴 práve vysiela: '+u.live.length:''}` : '· media server neodpovedá';
   document.getElementById('recRtmp').innerHTML = d.rtmp_url ? `RTMP pre trénerov: <code>${escHtml(d.rtmp_url)}/&lt;kľúč&gt;</code> — každý si adresu skopíruje vo svojom paneli.` : '<span class="text-warning">⚠️ RTMP_PUBLIC nie je nastavené — tréneri nevidia adresu na vysielanie.</span>';
+  _adminRecs=d.recordings||[];
+  // Filtre podľa mesta a typu tréningu (hodnoty z evidencie záznamov)
+  const fill=(id,vals)=>{ const sel=document.getElementById(id); const cur=sel.value; sel.innerHTML=sel.options[0].outerHTML+(vals||[]).map(v=>`<option value="${escHtml(v)}">${escHtml(v)}</option>`).join(''); sel.value=cur; };
+  fill('recFilterCity', d.cities); fill('recFilterKind', d.kinds);
+  renderAdminRecordings();
+}
+let _adminRecs=[];
+function renderAdminRecordings(){
   const tb=document.getElementById('adminRecordingsTable');
-  const recs=d.recordings||[];
-  if(!recs.length){ tb.innerHTML='<tr><td colspan="6" class="text-center text-muted py-3">Zatiaľ žiadne záznamy — uložia sa automaticky po každom vysielaní.</td></tr>'; return; }
+  const city=document.getElementById('recFilterCity').value, kind=document.getElementById('recFilterKind').value;
+  const recs=_adminRecs.filter(r=>(!city||r.city===city)&&(!kind||r.kind===kind));
+  document.getElementById('recCount').textContent = _adminRecs.length ? `${recs.length} z ${_adminRecs.length}` : '';
+  if(!recs.length){ tb.innerHTML=`<tr><td colspan="8" class="text-center text-muted py-3">${_adminRecs.length?'Žiadny záznam nezodpovedá filtru.':'Zatiaľ žiadne záznamy — uložia sa automaticky po každom vysielaní.'}</td></tr>`; return; }
   const dur=s=>s>=3600?Math.floor(s/3600)+' h '+Math.round(s%3600/60)+' min':Math.round(s/60)+' min';
+  const mb=b=>b>=1e9?(b/1e9).toFixed(2)+' GB':Math.round(b/1048576)+' MB';
   tb.innerHTML=recs.map(r=>`<tr>
     <td class="small">${escHtml(new Date(r.started_at||r.date).toLocaleString('sk-SK',{day:'numeric',month:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'}))}</td>
+    <td class="small">${escHtml(r.kind||'')}</td>
+    <td class="small">${escHtml(r.city||'')}</td>
     <td class="small">${escHtml(r.title||r.class_name)}</td>
     <td class="small">${dur(r.duration_s||0)}</td>
     <td class="small">${mb(r.size||0)}</td>
@@ -7810,10 +7828,12 @@ async function toggleClassActive(classId, active){
 }
 
 // Vysielací kľúč generuje server (náhodný, hneď platný pre media server)
+// Kľúč je spoločný pre celé mesto (GoPro/Larix sa nastaví raz) — nový kľúč sa
+// zapíše všetkým aktívnym online hodinám z toho istého mesta.
 async function genStreamKey(classId,hasKey){
-  if(hasKey && !confirm('Vygenerovať nový kľúč? Starý prestane fungovať a tréner si musí do vysielacej appky vložiť nový.')) return;
+  if(hasKey && !confirm('Vygenerovať nový kľúč pre celé mesto? Starý prestane fungovať vo všetkých online hodinách tohto mesta a do GoPro/Larixu treba vložiť novú adresu.')) return;
   const r=await api('/api/trainer/online-stream/'+classId+'/key',{method:'POST',body:{}});
-  if(r?.ok){ const inp=document.getElementById('streamkey_'+classId); if(inp) inp.value=r.stream_key; showToast('Nový vysielací kľúč: '+r.stream_key); }
+  if(r?.ok){ showToast(`Nový kľúč pre ${r.city||'mesto'} (${r.classes} hodín): ${r.stream_key}`); loadAdminClasses(); }
   else showToast(r?.error||'Nepodarilo sa','error');
 }
 async function saveStreamUrl(classId){

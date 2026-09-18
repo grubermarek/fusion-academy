@@ -1078,19 +1078,24 @@ async function loadTrainerStream(){
   if(!d||!d.ok||!d.enabled){ box.innerHTML=''; return; }
   const rtmp=d.rtmp_url||'';
   const todayDow=new Date().getDay();
-  const rows=(d.classes||[]).map(c=>{
-    const key=c.stream_key||'';
+  // Jedna adresa na MESTO: rovnaký kľúč majú všetky online hodiny z toho mesta,
+  // GoPro/Larix sa nastaví raz a platí pre techniku aj Zumbu v ten istý večer.
+  const mesta={};
+  for(const c of (d.classes||[])){ const m=c.stream_city||'Online'; (mesta[m]=mesta[m]||[]).push(c); }
+  const rows=Object.keys(mesta).sort().map(m=>{
+    const cls=mesta[m]; const withKey=cls.find(c=>c.stream_key); const key=withKey?withKey.stream_key:'';
     const full = rtmp && key ? rtmp+'/'+key : '';
+    const live = cls.some(c=>c.live);
     return `<div style="border:1px solid #2a2a2a;border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#0f0f0f">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.84rem">
-        <b>${c.live?'🔴':'🎥'} ${DAYS_SHORT[c.day_of_week]||''} ${esc(c.time_start||'')}</b>
-        <span style="color:var(--muted)">${esc(c.name||'')}${c.stream_city?' · '+esc(c.stream_city):''}</span>
-        ${c.live?'<span style="background:#e53935;color:#fff;font-size:.62rem;font-weight:800;padding:1px 8px;border-radius:20px">VYSIELA</span>':''}
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.86rem">
+        <b>${live?'🔴':'📡'} ${esc(m)}</b>
+        ${live?'<span style="background:#e53935;color:#fff;font-size:.62rem;font-weight:800;padding:1px 8px;border-radius:20px">VYSIELA</span>':''}
         <span style="flex:1"></span>
-        ${key?`<button onclick="copyText('${escJs(full||key)}','Skopírované — vlož do vysielacej appky')" style="background:rgba(201,168,76,.15);border:1px solid rgba(201,168,76,.5);color:var(--gold);border-radius:8px;padding:4px 10px;font-size:.72rem;font-weight:700;cursor:pointer">📋 Kopírovať adresu</button>`:''}
-        <button onclick="newStreamKey('${c.id}',${key?'true':'false'})" style="background:none;border:1px solid #444;color:#bbb;border-radius:8px;padding:4px 10px;font-size:.72rem;cursor:pointer">${key?'🔁 Nový kľúč':'🔑 Vytvoriť kľúč'}</button>
+        ${key?`<button onclick="copyText('${escJs(full||key)}','Skopírované — vlož do GoPro / Larix / OBS')" style="background:rgba(201,168,76,.15);border:1px solid rgba(201,168,76,.5);color:var(--gold);border-radius:8px;padding:4px 10px;font-size:.72rem;font-weight:700;cursor:pointer">📋 Kopírovať adresu</button>`:''}
+        <button onclick="newStreamKey('${cls[0].id}',${key?'true':'false'})" style="background:none;border:1px solid #444;color:#bbb;border-radius:8px;padding:4px 10px;font-size:.72rem;cursor:pointer">${key?'🔁 Nový kľúč':'🔑 Vytvoriť kľúč'}</button>
       </div>
-      ${key?`<div style="font-family:monospace;font-size:.72rem;color:#9ad;word-break:break-all;margin-top:6px">${esc(full||('kľúč: '+key))}</div>`:'<div style="font-size:.74rem;color:var(--muted);margin-top:4px">Hodina ešte nemá vysielací kľúč.</div>'}
+      ${key?`<div style="font-family:monospace;font-size:.72rem;color:#9ad;word-break:break-all;margin:6px 0">${esc(full||('kľúč: '+key))}</div>`:'<div style="font-size:.74rem;color:var(--muted);margin:4px 0">Mesto ešte nemá vysielací kľúč.</div>'}
+      <div style="font-size:.76rem;color:var(--muted)">${cls.sort((a,b)=>(a.day_of_week||0)-(b.day_of_week||0)||String(a.time_start).localeCompare(b.time_start)).map(c=>`${c.day_of_week===todayDow?'<b style="color:var(--gold)">':''}${DAYS_SHORT[c.day_of_week]||''} ${esc(c.time_start||'')} ${esc(c.name||'')}${c.day_of_week===todayDow?'</b>':''}`).join(' · ')}</div>
     </div>`;
   }).join('');
   box.innerHTML=`<details style="border:1px solid rgba(201,168,76,.35);border-radius:12px;background:#111;margin-bottom:12px" ${(d.classes||[]).some(c=>c.day_of_week===todayDow)?'open':''}>
@@ -1098,7 +1103,7 @@ async function loadTrainerStream(){
     <div style="padding:0 12px 12px">
       <ol style="font-size:.78rem;color:var(--muted);padding-left:18px;margin:6px 0 10px;line-height:1.5">
         <li>Na mobile si nainštaluj <b>Larix Broadcaster</b> (zadarmo, iOS aj Android) alebo na počítači <b>OBS</b>.</li>
-        <li>Skopíruj adresu hodiny nižšie a vlož ju ako <b>Connection / Server URL</b> (Larix: Nastavenia → Connections → New connection → URL).</li>
+        <li>Skopíruj adresu svojho mesta nižšie a vlož ju ako <b>Connection / Server URL</b> (Larix: Nastavenia → Connections → New connection → URL; GoPro Quik: Live → Other → RTMP URL). Nastavuje sa raz — adresa platí pre všetky online hodiny z mesta, server sám pozná podľa rozvrhu, ktorá hodina práve ide.</li>
         <li>Odporúčané nastavenie: 720p, 30 fps, 2 000–2 500 kbps, orientácia na šírku, telefón na statíve.</li>
         <li>Stlač <b>štart</b> pár minút pred hodinou — klientky uvidia tlačidlo „Pripojiť sa naživo" a záznam sa uloží sám. Hudba sa nestlmí, je to náš server.</li>
       </ol>
@@ -1108,7 +1113,7 @@ async function loadTrainerStream(){
   </details>`;
 }
 async function newStreamKey(classId, hasKey){
-  if(hasKey && !confirm('Vygenerovať nový kľúč? Starý prestane fungovať a treba ho znova vložiť do vysielacej appky.')) return;
+  if(hasKey && !confirm('Vygenerovať nový kľúč pre celé mesto? Starý prestane fungovať a do GoPro/Larixu treba vložiť novú adresu.')) return;
   const r=await api('/api/trainer/online-stream/'+classId+'/key',{method:'POST',body:{}});
   if(r&&r.ok){ toast('Nový vysielací kľúč je pripravený'); loadTrainerStream(); } else toast(r?.error||'Nepodarilo sa', true);
 }

@@ -14,7 +14,8 @@ tréner (Larix / OBS)  ──RTMP──▶  media server  ──HLS (token)─�
 
 | Krok | Kto | Čo |
 |---|---|---|
-| kľúč | tréner v paneli (alebo admin v Hodiny & Stream) | `POST /api/trainer/online-stream/:id/key` → náhodný `stream_key` na hodine |
+| kľúč | automaticky (nová online hodina, štart appky) alebo tréner/admin | jeden `stream_key` na MESTO — zdieľajú ho všetky aktívne online hodiny mesta; `POST /api/trainer/online-stream/:id/key` vygeneruje nový pre celé mesto (`scope:'class'` len pre hodinu) |
+| výber hodiny | media server | pri štarte vysielania vyberie z hodín s daným kľúčom tú, ktorá podľa rozvrhu (čas Bratislava) práve beží alebo je dnes najbližšia; susedné hodiny s rovnakým kľúčom v ten istý deň appka tiež ukáže ako naživo |
 | vysielanie | tréner | `rtmp://<RTMP_PUBLIC>/<stream_key>` v Larix Broadcaster / OBS |
 | overenie | media server | kľúče si sťahuje z appky (`GET /api/media/keys`, hlavička `x-media-secret`), cudzí kľúč odmietne |
 | live | media server → appka | hook `start` → appka hlási `is_live`, vydá klientke token, dashboard banner svieti |
@@ -75,7 +76,7 @@ a doména má cieľový port 8000 (`railway domain update <domena> -s media --po
 
 `node qa/stream.test.js` (potrebuje ffmpeg; `FFMPEG=cesta` ak nie je v PATH) — spustí
 izolovanú appku aj media server, odvysiela skúšobný obraz a overí kľúče, tokeny,
-HLS, záznam, viditeľnosť a mazanie (24 kontrol).
+HLS, záznam, viditeľnosť a mazanie, kľúč na mesto a súrodenecké hodiny (26 kontrol).
 
 ## Náklady (Railway, orientačne)
 

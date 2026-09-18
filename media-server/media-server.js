@@ -60,15 +60,44 @@ async function hook(event, data) {
   catch (e) { log('⚠️  hook ' + event + ' zlyhal:', e.message); }
 }
 
-// ── Platné stream kľúče: key → {slug, name} (sťahuje sa z appky) ────────────
+// ── Platné stream kľúče: key → [hodiny] (sťahuje sa z appky) ─────────────────
+// Jeden kľúč môže patriť viacerým hodinám (jeden kľúč na mesto). Pri štarte
+// vysielania sa vyberie hodina, ktorá podľa rozvrhu práve beží alebo je dnes
+// najbližšia — podľa času v Bratislave, nie UTC servera.
 let keys = new Map();
 let keysLoadedAt = 0;
 async function refreshKeys() {
   try {
     const d = await appFetch('/api/media/keys');
-    keys = new Map((d.keys || []).map(k => [k.key, { slug: safeId(k.slug), name: k.name || '' }]));
+    const m = new Map();
+    for (const k of (d.keys || [])) {
+      const e = { slug: safeId(k.slug), name: k.name || '', city: k.city || '', day_of_week: k.day_of_week, time_start: k.time_start || '', time_end: k.time_end || '', only_date: k.only_date || null };
+      if (!m.has(k.key)) m.set(k.key, []);
+      m.get(k.key).push(e);
+    }
+    keys = m;
     keysLoadedAt = Date.now();
   } catch (e) { log('⚠️  kľúče z appky sa nepodarilo načítať:', e.message); }
+}
+function bratislavaNow() {
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Bratislava', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const g = t => (p.find(x => x.type === t) || {}).value;
+  const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(g('weekday'));
+  return { dow, min: (+g('hour') % 24) * 60 + +g('minute'), date: `${g('year')}-${g('month')}-${g('day')}` };
+}
+const toMin = t => { const [h, m] = String(t || '0:0').split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+function pickClassForKey(key) {
+  const list = (keys.get(key) || []).filter(e => e.slug && !live.has(e.slug));
+  if (!list.length) return null;
+  const now = bratislavaNow();
+  const today = list.filter(e => e.day_of_week === now.dow && (!e.only_date || e.only_date === now.date));
+  const endOf = e => { const en = toMin(e.time_end), st = toMin(e.time_start); return en > st ? en : st + 60; };
+  // 1) práve beží (od 40 min pred štartom do 10 min po konci), pri viacerých najneskorší štart
+  const running = today.filter(e => now.min >= toMin(e.time_start) - 40 && now.min < endOf(e) + 10).sort((a, b) => toMin(b.time_start) - toMin(a.time_start));
+  if (running.length) return running[0];
+  // 2) najbližšia dnešná, 3) prvá so správnym kľúčom (skúšobné vysielanie mimo rozvrhu)
+  const upcoming = today.filter(e => toMin(e.time_start) > now.min).sort((a, b) => toMin(a.time_start) - toMin(b.time_start));
+  return upcoming[0] || today[0] || list[0];
 }
 refreshKeys();
 setInterval(refreshKeys, 30 * 1000);
@@ -87,34 +116,32 @@ const sessions = new Map();
 
 nms.on('prePublish', (id, StreamPath) => {
   const key = keyFromPath(StreamPath);
-  const info = keys.get(key);
   const session = nms.getSession(id);
-  if (!info || !info.slug) {
+  if (!keys.has(key)) {
     log('⛔ Odmietnuté vysielanie – neznámy kľúč:', key.slice(0, 6) + '…');
     refreshKeys();                       // možno je kľúč nový — nabudúce prejde
     if (session) session.reject();
     return;
   }
-  if (live.has(info.slug)) {
-    log('⛔ Odmietnuté – hodina', info.slug, 'už vysiela');
+  const info = pickClassForKey(key);
+  if (!info) {
+    log('⛔ Odmietnuté – všetky hodiny s týmto kľúčom už vysielajú');
     if (session) session.reject();
     return;
   }
-  sessions.set(id, info.slug);
+  sessions.set(id, { slug: info.slug, name: info.name });
 });
 
 nms.on('postPublish', (id, StreamPath) => {
-  const slug = sessions.get(id);
-  if (!slug) return;
-  const key = keyFromPath(StreamPath);
-  const info = keys.get(key) || { name: '' };
-  startPipeline(slug, key, info.name);
+  const s = sessions.get(id);
+  if (!s) return;
+  startPipeline(s.slug, keyFromPath(StreamPath), s.name);
 });
 
 nms.on('donePublish', (id) => {
-  const slug = sessions.get(id);
+  const s = sessions.get(id);
   sessions.delete(id);
-  if (slug) stopPipeline(slug);
+  if (s) stopPipeline(s.slug);
 });
 
 nms.run();
