@@ -184,7 +184,9 @@ function startPipeline(slug, key, name) {
     path.join(liveDir, 'index.m3u8'),
     // 2) záznam: fragmentované MP4 (prežije aj pád spojenia), po skončení sa premuxuje
     '-map', '0:v:0', '-map', '0:a?', '-c', 'copy',
-    '-movflags', '+frag_keyframe+empty_moov+default_base_moof',
+    // fragmenty min. 60 s: prehliadač pri otvorení číta hlavičky všetkých fragmentov,
+    // pri 2-sekundových ich boli tisíce a 4 GB záznam z R2 sa nespustil (18. 9.)
+    '-movflags', '+frag_keyframe+empty_moov+default_base_moof', '-min_frag_duration', '60000000',
     '-f', 'mp4', partFile,
   ];
   const ff = spawn(FFMPEG, args, { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -231,9 +233,18 @@ async function finalizeFile(slug, partFile) {
     const finalFile = partFile.replace(/\.part\.mp4$/, '.mp4');
     try { fs.unlinkSync(finalFile); } catch (_) {}   // zvyšok neúspešného prepisu
     if (st.size > 100 * 1024) {
-      fs.renameSync(partFile, finalFile);
+      // Keď je na disku miesto na druhú kópiu, prepíš do klasického MP4 (moov na začiatku,
+      // okamžitý štart aj pretáčanie); inak ostane fragmentované (60 s fragmenty, tiež hrá).
+      if (freeBytes() > st.size + 300 * 1048576) {
+        try {
+          await run(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-y', '-i', partFile, '-c', 'copy', '-movflags', '+faststart', finalFile]);
+          fs.unlinkSync(partFile);
+          log('🎞️  Záznam prepísaný na klasické MP4:', slug);
+        } catch (e) { log('⚠️  prepis na MP4 zlyhal, ostáva fragmentovaný:', e.message.slice(0, 200)); try { fs.unlinkSync(finalFile); } catch (_) {} }
+      } else log('ℹ️  Málo miesta na prepis, záznam ostáva fragmentovaný (60 s fragmenty)');
+      if (fs.existsSync(partFile)) fs.renameSync(partFile, finalFile);
       file = path.basename(finalFile);
-      size = st.size;
+      size = fs.statSync(finalFile).size;
       duration_s = await probeDuration(finalFile);
       log('💾 Záznam uložený:', slug + '/' + file, Math.round(size / 1048576) + ' MB,', Math.round(duration_s / 60) + ' min');
     } else {
@@ -333,6 +344,38 @@ async function r2Delete(slug, file) {
 async function r2Presign(slug, file) {
   return getSignedUrl(s3, new S3.GetObjectCommand({ Bucket: R2_BUCKET, Key: r2Key(slug, file) }), { expiresIn: 3600 });
 }
+function freeBytes() { try { const s = fs.statfsSync(MEDIA_ROOT); return s.bavail * s.bsize; } catch (_) { return Infinity; } }
+
+// Prerobenie záznamu v R2 na prehrateľný tvar: ffmpeg číta priamo z R2 (podpísaný
+// odkaz), zapíše lokálne s 60 s fragmentmi (alebo klasické MP4, ak je miesto),
+// nahrá späť a lokálny súbor zmaže. Spúšťa sa raz po nasadení (REPROCESS_ONCE)
+// pre záznamy uložené pred 18. 9. večer, alebo na požiadanie cez /api/reprocess.
+async function r2Reprocess(slug, file) {
+  const dir = path.join(REC_DIR, slug); fs.mkdirSync(dir, { recursive: true });
+  const tmp = path.join(dir, file.replace(/\.mp4$/, '') + '.rework.part.mp4');
+  const src = await r2Presign(slug, file);
+  log('🎞️  Prerábam záznam z R2:', slug + '/' + file);
+  await run(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-y', '-i', src, '-map', '0:v:0', '-map', '0:a?', '-c', 'copy',
+    '-movflags', '+frag_keyframe+empty_moov+default_base_moof', '-min_frag_duration', '60000000', '-f', 'mp4', tmp]);
+  const final = path.join(dir, file);
+  try { fs.unlinkSync(final); } catch (_) {}
+  const st = fs.statSync(tmp);
+  if (freeBytes() > st.size + 300 * 1048576) {
+    try { await run(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-y', '-i', tmp, '-c', 'copy', '-movflags', '+faststart', final]); fs.unlinkSync(tmp); }
+    catch (e) { try { fs.unlinkSync(final); } catch (_) {} }
+  }
+  if (fs.existsSync(tmp)) fs.renameSync(tmp, final);
+  await r2Upload(slug, file, final);
+  log('🎞️  Záznam prerobený a nahratý späť:', slug + '/' + file);
+}
+async function reprocessOnce() {
+  const tag = process.env.REPROCESS_ONCE; if (!R2_ON || !tag) return;
+  const marker = path.join(MEDIA_ROOT, 'reprocessed-' + safeId(tag));
+  if (fs.existsSync(marker)) return;
+  for (const r of await r2List()) { try { await r2Reprocess(r.slug, r.file); } catch (e) { log('⚠️  prerobenie', r.slug + '/' + r.file, e.message.slice(0, 200)); } }
+  fs.writeFileSync(marker, nowISO());
+}
+
 // Po štarte: lokálne hotové záznamy (z čias bez R2) sa presunú do R2
 async function r2Migrate() {
   if (!R2_ON) return;
@@ -441,6 +484,13 @@ app.delete('/api/recordings/:slug/:file', service, async (req, res) => {
   try { await r2Delete(slug, file); } catch (e) { log('⚠️  R2 delete:', e.message); }
   res.json({ ok: true });
 });
+// Na požiadanie: prerob záznam v R2 (napr. keď sa v prehliadači nespúšťa)
+app.post('/api/reprocess/:slug/:file', service, async (req, res) => {
+  const slug = safeId(req.params.slug), file = String(req.params.file || '');
+  if (!R2_ON || !/^[\w-]+\.mp4$/.test(file)) return res.status(400).json({ error: 'bad request' });
+  res.json({ ok: true, started: true });
+  r2Reprocess(slug, file).catch(e => log('⚠️  prerobenie', slug + '/' + file, e.message.slice(0, 200)));
+});
 // Appka po vytvorení kľúča požiada o okamžité obnovenie (inak do 30 s)
 app.post('/api/refresh', service, async (req, res) => { await refreshKeys(); res.json({ ok: true, keys: keys.size }); });
 app.get('/api/usage', service, async (req, res) => {
@@ -477,7 +527,7 @@ async function retention() {
   } catch (e) { log('⚠️  retencia R2:', e.message); }
 }
 // Poradie po štarte: najprv zachrániť osirelé záznamy, až potom údržba a limit miesta
-setTimeout(async () => { await adoptOrphans(); await r2Migrate(); await retention(); await uvolniMiesto(); }, 8 * 1000);
+setTimeout(async () => { await adoptOrphans(); await r2Migrate(); await reprocessOnce(); await retention(); await uvolniMiesto(); }, 8 * 1000);
 setInterval(async () => { await retention(); await uvolniMiesto(); }, 6 * 3600 * 1000);
 
 app.listen(HTTP_PORT, () => {
