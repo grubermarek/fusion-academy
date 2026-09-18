@@ -23464,7 +23464,7 @@ async function faktyKvizu(){
     technika_klesa: T.ziadne > T.bronze && T.bronze > T.silver && T.silver > T.gold,
   };
 }
-const PUZZLE = require('./puzzle')({ app, db, q, auth, adminAuth, nowISO, today, fakty: faktyKvizu });
+const PUZZLE = require('./puzzle')({ app, db, q, auth, adminAuth, nowISO, today, fakty: faktyKvizu, servisToken });
 const EVENTS = require('./event-tickets')({
   app, db, q, auth, adminAuth, rlPublic, nowISO, today, APP_URL,
   sendMail, createInvoice, stripeApi, STRIPE_SECRET, isMemberActive, metaCapi

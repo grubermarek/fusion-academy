@@ -20,7 +20,9 @@ const RYTMUS = require('./puzzle-rhythm');
 const ANAGRAM = require('./puzzle-anagram');
 const KVIZ = require('./puzzle-quiz');
 
-module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty }) => {
+module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisToken }) => {
+  // Servisné volanie (x-import-token) alebo prihlásený admin — na jednorazové zásahy z konzoly.
+  const adminAleboServis = (req, res, next) => (servisToken && servisToken(req)) ? next() : adminAuth(req, res, next);
 
   const SIZE = 6;                 // mriežka 6×6
   const CELLS = SIZE * SIZE;
@@ -755,6 +757,75 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty }) => {
       if (row) await q.update(db.settings, { key: 'puzzle_config' }, { $set: { value: next, at: nowISO() } });
       else await q.insert(db.settings, { key: 'puzzle_config', value: next, at: nowISO() });
       res.json({ ok: true, config: next });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Admin: body hlavolamu za mesiac po hráčkach (na porovnanie, kto vytŕča) ──
+  async function mesiacPoHrackach(month) {
+    const zak = await zakazaneIds();
+    const podla = {};
+    for (const r of await q.find(db.puzzle_solves, {})) {
+      if (!String(r.date || '').startsWith(month) || r.verified === false) continue;
+      const b = podla[r.user_id] = podla[r.user_id] || { user_id: r.user_id, name: r.user_name || '', points: 0, count: 0, seconds: 0, perfect: 0, wins: 0, body_zakaz: zak.has(r.user_id) };
+      b.points += (+r.points || 0); b.count++; b.seconds += (+r.seconds || 0);
+      if (r.perfect) b.perfect++; if (r.day_win) b.wins++;
+    }
+    const rows = Object.values(podla).map(b => ({ ...b, avg_seconds: b.count ? Math.round(b.seconds / b.count) : null }))
+      .sort((a, b) => b.points - a.points);
+    const pts = rows.filter(r => !r.body_zakaz).map(r => r.points).sort((a, b) => a - b);
+    const avg = pts.length ? Math.round(pts.reduce((s, x) => s + x, 0) / pts.length) : 0;
+    const median = pts.length ? pts[Math.floor(pts.length / 2)] : 0;
+    return { month, players: rows.length, avg, median, rows };
+  }
+  app.get('/api/admin/puzzle/mesiac', adminAleboServis, async (req, res) => {
+    try {
+      const m = /^d{4}-d{2}$/.test(String(req.query.month || '')) ? req.query.month : today().slice(0, 7);
+      res.json({ ok: true, ...(await mesiacPoHrackach(m)) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Admin: skrátenie bodov za podvádzanie (Marek 18. 9.) ──
+  // Hráčka s podozrivo rýchlymi a vždy správnymi riešeniami príde o body nad
+  // zadaný strop za daný mesiac. Body sa jej nechajú v poradí, ako ich získala
+  // (od začiatku mesiaca), zvyšok sa vynuluje; pôvodná hodnota ostáva v
+  // points_povodne, aby sa dal zásah dohľadať alebo vrátiť. Klientka dostane oznam.
+  app.post('/api/admin/puzzle/skrat', adminAleboServis, async (req, res) => {
+    try {
+      const uid = String(req.body.user_id || '');
+      const cap = Math.max(0, parseInt(req.body.cap, 10) || 0);
+      const m = /^d{4}-d{2}$/.test(String(req.body.month || '')) ? req.body.month : today().slice(0, 7);
+      const dovod = String(req.body.dovod || '').trim().slice(0, 300);
+      if (!uid) return res.status(400).json({ error: 'Chýba klientka.' });
+      const u = await q.one(db.users, { _id: uid });
+      if (!u) return res.status(404).json({ error: 'Klientka nenájdená.' });
+      const mine = (await q.find(db.puzzle_solves, { user_id: uid }))
+        .filter(r => String(r.date || '').startsWith(m))
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.created_at || '').localeCompare(String(b.created_at || '')));
+      const pred = mine.reduce((s, r) => s + (+r.points || 0), 0);
+      if (pred <= cap) return res.json({ ok: true, zmena: false, month: m, pred, po: pred, cap });
+      let zostava = cap, upravene = 0;
+      const at = nowISO(), by = (req.user && req.user.name) || 'service';
+      for (const r of mine) {
+        const povodne = +r.points || 0;
+        const nove = Math.min(povodne, zostava);
+        zostava -= nove;
+        if (nove === povodne) continue;
+        upravene++;
+        await q.update(db.puzzle_solves, { _id: r._id }, { $set: {
+          points: nove, points_povodne: r.points_povodne !== undefined ? r.points_povodne : povodne,
+          korekcia: { at, by, cap, dovod } } });
+      }
+      await q.update(db.users, { _id: uid }, { $set: { puzzle_upozornenie: { at, month: m, cap, pred, dovod, by } } });
+      if (req.body.oznam !== false) await q.insert(db.notifications, {
+        user_id: uid, type: 'puzzle_podvod',
+        title: '⚠️ Body z hlavolamu sme ti skrátili',
+        body: 'Softvérovo sme vyhodnotili, že si v dennom hlavolame podvádzala — riešenia si odovzdávala nezvyčajne rýchlo a vždy správne. '
+          + 'Body z hlavolamu za tento mesiac sme ti preto skrátili na ' + cap + ' bodov, čo je priemer, ktorý majú ostatné dievčatá. '
+          + 'Prosíme, hraj do budúcna férovo. Pri ďalšom podvádzaní ti prístup k tejto súťaži zakážeme.',
+        read: false, created_at: at,
+      }).catch(() => {});
+      console.log('🧩 Skrátenie bodov: ' + u.name + ' ' + m + ' ' + pred + ' → ' + cap + ' b (' + by + (dovod ? ', ' + dovod : '') + ')');
+      res.json({ ok: true, zmena: true, month: m, pred, po: cap, cap, upravene });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
