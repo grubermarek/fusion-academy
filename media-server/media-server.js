@@ -182,8 +182,10 @@ function startPipeline(slug, key, name) {
     '-hls_flags', 'delete_segments+temp_file+independent_segments',
     '-hls_segment_filename', path.join(liveDir, 'seg_%05d.ts'),
     path.join(liveDir, 'index.m3u8'),
-    // 2) záznam: fragmentované MP4 (prežije aj pád spojenia), po skončení sa premuxuje
-    '-map', '0:v:0', '-map', '0:a?', '-c', 'copy',
+    // 2) záznam: fragmentované MP4 (prežije aj pád spojenia), po skončení sa premuxuje.
+    //    Zvuk sa prekóduje na AAC-LC: audio z GoPro skopírované 1:1 Chrome v MP4 odmietol
+    //    (PIPELINE_ERROR_DECODE, 19. 9.), video ostáva bez prekódovania.
+    '-map', '0:v:0', '-map', '0:a?', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2',
     // fragmenty min. 60 s: prehliadač pri otvorení číta hlavičky všetkých fragmentov,
     // pri 2-sekundových ich boli tisíce a 4 GB záznam z R2 sa nespustil (18. 9.)
     '-movflags', '+frag_keyframe+empty_moov+default_base_moof', '-min_frag_duration', '60000000',
@@ -362,7 +364,7 @@ async function r2Reprocess(slug, file) {
   const size = fs.statSync(local).size;
   log('🎞️  Stiahnuté', Math.round(size / 1048576), 'MB, prerábam a nahrávam späť…');
   // 2) ffmpeg číta lokálne, výstup (60 s fragmenty) ide rúrou rovno do R2 — bez druhej kópie na disku
-  const ff = spawn(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-i', local, '-map', '0:v:0', '-map', '0:a?', '-c', 'copy',
+  const ff = spawn(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-i', local, '-map', '0:v:0', '-map', '0:a?', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2',
     '-movflags', '+frag_keyframe+empty_moov+default_base_moof', '-min_frag_duration', '60000000', '-f', 'mp4', 'pipe:1'], { stdio: ['ignore', 'pipe', 'pipe'] });
   let err = ''; ff.stderr.on('data', d => err += d);
   const up = new Upload({ client: s3, params: { Bucket: R2_BUCKET, Key, Body: ff.stdout, ContentType: 'video/mp4' }, partSize: 64 * 1048576, queueSize: 2 });
