@@ -267,6 +267,7 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
 - Reálny štart vysielania (hook) spúšťa `spustiOnlineHodinu` (auto-účasť + notifikácie) len ≤30 min pred rozvrhom — skúšobný stream napoludnie nič nerozošle.
 - Pasca: verejný `/api/classes` vracal celé dokumenty hodín aj so `stream_key` — od 18. 9. sa kľúč strihá pre každého okrem admina/trénera. Nikdy neposielať `stream_key` klientkám.
 - Pasca: migrácia `online_schedule_v2` na čistej DB vypne online hodiny mimo svojho zoznamu — QA testy si hodinu po štarte zapnú cez `PUT /api/admin/classes/:id {active:true}`.
+- Záznamy: 18. 9. 2-hodinová technika (4,1 GB) zaplnila 5 GB volume → záznam sa ukladá bez druhej kópie (fmp4), osirelé .part sa po štarte dokončia, RECORDINGS_MAX_MB/RESERVE_MB; od 18. 9. večer voliteľné Cloudflare R2 (env R2_*) — po nahratí sa lokálny súbor zmaže, prehrávanie 302 na podpísaný odkaz. Záznam pokrývajúci viac hodín (technika + Zumba) má `class_ids` a názov „Technický tréning + Zumba“.
 - Nasadenie a env: `media-server/README.md`.
 
 ### Zámerne vynechané (nepomer hodnota/prácnosť pre malú školu)

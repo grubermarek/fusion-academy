@@ -37,6 +37,21 @@ const RETENTION_DAYS = +(process.env.RETENTION_DAYS || 90);
 
 if (!SECRET) console.warn('⚠️  MEDIA_SECRET nie je nastavený — prehrávanie aj servisné API sú OTVORENÉ (len na lokálny test)');
 
+// ── Cloudflare R2 (voliteľné): hotový záznam sa nahrá do R2 a lokálny súbor sa
+// zmaže — Railway volume (5 GB) tak slúži len na rozpracovanú nahrávku.
+// Env: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET.
+const R2_ON = !!(process.env.R2_BUCKET && process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY);
+let s3 = null, S3 = null, Upload = null, getSignedUrl = null;
+if (R2_ON) {
+  S3 = require('@aws-sdk/client-s3');
+  Upload = require('@aws-sdk/lib-storage').Upload;
+  getSignedUrl = require('@aws-sdk/s3-request-presigner').getSignedUrl;
+  s3 = new S3.S3Client({ region: 'auto', endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId: process.env.R2_ACCESS_KEY_ID, secretAccessKey: process.env.R2_SECRET_ACCESS_KEY } });
+}
+const R2_BUCKET = process.env.R2_BUCKET || '';
+const r2Key = (slug, file) => `rec/${slug}/${file}`;
+
 const LIVE_DIR = path.join(MEDIA_ROOT, 'live');
 const REC_DIR  = path.join(MEDIA_ROOT, 'rec');
 for (const d of [LIVE_DIR, REC_DIR]) fs.mkdirSync(d, { recursive: true });
@@ -200,6 +215,7 @@ async function finishRecording(slug, e) {
   fs.rmSync(e.liveDir, { recursive: true, force: true });
   const ended_at = nowISO();
   const r = await finalizeFile(slug, e.partFile);
+  if (r.file) { try { await r2Upload(slug, r.file, path.join(e.recDir, r.file)); } catch (err) { log('⚠️  R2 upload zlyhal, záznam ostáva lokálne:', err.message); } }
   hook('stop', { slug, name: e.name, started_at: e.started_at, ended_at, file: r.file, size: r.size, duration_s: r.duration_s,
     url: r.file ? `/rec/${slug}/${r.file}` : null });
   uvolniMiesto().catch(() => {});
@@ -242,6 +258,7 @@ async function adoptOrphans() {
         const ended_at = fs.statSync(path.join(dir, fn)).mtime.toISOString();
         log('♻️  Osirelý záznam:', s + '/' + fn);
         const r = await finalizeFile(s, path.join(dir, fn));
+        if (r.file) { try { await r2Upload(s, r.file, path.join(dir, r.file)); } catch (err) { log('⚠️  R2 upload zlyhal, záznam ostáva lokálne:', err.message); } }
         if (r.file) await hook('stop', { slug: s, name: '', started_at, ended_at, file: r.file, size: r.size, duration_s: r.duration_s, url: `/rec/${s}/${r.file}`, adopted: true });
       }
     }
@@ -276,6 +293,52 @@ async function uvolniMiesto(predStartom = false) {
     fs.unlinkSync(f.path); total -= f.size;
     log('🗑️  Miesto: zmazaný najstarší záznam', f.slug + '/' + f.file, Math.round(f.size / 1048576) + ' MB');
     if (!f.part) await hook('expired', { slug: f.slug, file: f.file, url: `/rec/${f.slug}/${f.file}` });
+  }
+}
+
+// ── R2 operácie (všetky bezpečné aj bez R2 — vrátia prázdno) ────────────────
+async function r2Upload(slug, file, localPath) {
+  if (!R2_ON) return false;
+  const size = fs.statSync(localPath).size;
+  log('☁️  R2 upload:', slug + '/' + file, Math.round(size / 1048576) + ' MB…');
+  const up = new Upload({ client: s3, params: { Bucket: R2_BUCKET, Key: r2Key(slug, file), Body: fs.createReadStream(localPath), ContentType: 'video/mp4' },
+    partSize: 64 * 1048576, queueSize: 2, leavePartsOnError: false });
+  await up.done();
+  fs.unlinkSync(localPath);
+  r2Cache.at = 0;
+  log('☁️  R2 hotovo:', slug + '/' + file);
+  return true;
+}
+let r2Cache = { at: 0, items: [] };
+async function r2List() {
+  if (!R2_ON) return [];
+  if (Date.now() - r2Cache.at < 5 * 60 * 1000) return r2Cache.items;
+  const items = []; let token;
+  do {
+    const r = await s3.send(new S3.ListObjectsV2Command({ Bucket: R2_BUCKET, Prefix: 'rec/', ContinuationToken: token }));
+    for (const o of (r.Contents || [])) {
+      const m = /^rec\/([\w-]+)\/([\w-]+\.mp4)$/.exec(o.Key || '');
+      if (m) items.push({ slug: m[1], file: m[2], url: `/rec/${m[1]}/${m[2]}`, size: o.Size || 0, created_at: (o.LastModified || new Date()).toISOString(), r2: true });
+    }
+    token = r.IsTruncated ? r.NextContinuationToken : undefined;
+  } while (token);
+  r2Cache = { at: Date.now(), items };
+  return items;
+}
+async function r2Delete(slug, file) {
+  if (!R2_ON) return;
+  await s3.send(new S3.DeleteObjectCommand({ Bucket: R2_BUCKET, Key: r2Key(slug, file) }));
+  r2Cache.at = 0;
+}
+async function r2Presign(slug, file) {
+  return getSignedUrl(s3, new S3.GetObjectCommand({ Bucket: R2_BUCKET, Key: r2Key(slug, file) }), { expiresIn: 3600 });
+}
+// Po štarte: lokálne hotové záznamy (z čias bez R2) sa presunú do R2
+async function r2Migrate() {
+  if (!R2_ON) return;
+  for (const f of recordingsList()) {
+    if (f.part) continue;
+    try { await r2Upload(f.slug, f.file, f.path); } catch (e) { log('⚠️  R2 migrácia', f.slug + '/' + f.file, e.message); }
   }
 }
 
@@ -317,7 +380,7 @@ const playable = (req, res, next) => tokenOk(safeId(req.params.slug), req.query.
 let ffmpegVersion = null;
 execFile(FFMPEG, ['-version'], (err, out) => { ffmpegVersion = err ? null : String(out).split('\n')[0].replace(/^ffmpeg version\s*/, '').slice(0, 40); if (err) log('⛔ ffmpeg sa nenašiel:', err.message); });
 app.get('/health', (req, res) => res.json({ ok: true, live: [...live.keys()], keys: keys.size, keys_at: keysLoadedAt ? new Date(keysLoadedAt).toISOString() : null,
-  ffmpeg: ffmpegVersion, secret: !!SECRET, used_mb: Math.round(recordingsList().reduce((s, f) => s + f.size, 0) / 1048576), max_mb: Math.round(MAX_BYTES / 1048576) }));
+  ffmpeg: ffmpegVersion, secret: !!SECRET, r2: R2_ON, used_mb: Math.round(recordingsList().reduce((s, f) => s + f.size, 0) / 1048576), max_mb: Math.round(MAX_BYTES / 1048576) }));
 
 // Kto práve vysiela (slugy hodín — verejné id, nie kľúče)
 app.get('/api/streams', (req, res) => res.json({ live: [...live.keys()] }));
@@ -351,46 +414,40 @@ app.get('/rec/:slug/:file', playable, (req, res) => {
   const file = String(req.params.file || '');
   if (!/^[\w-]+\.mp4$/.test(file)) return res.status(404).end();
   const f = path.join(REC_DIR, slug, file);
-  if (!fs.existsSync(f)) return res.status(404).json({ error: 'Záznam už nie je k dispozícii' });
-  res.set('Content-Type', 'video/mp4');
-  res.set('Cache-Control', 'private, max-age=3600');
-  res.sendFile(f);
+  if (fs.existsSync(f)) {
+    res.set('Content-Type', 'video/mp4');
+    res.set('Cache-Control', 'private, max-age=3600');
+    return res.sendFile(f);
+  }
+  if (!R2_ON) return res.status(404).json({ error: 'Záznam už nie je k dispozícii' });
+  // Záznam je v R2: presmeruj na podpísaný odkaz (1 h), Range/pretáčanie ide priamo z R2
+  r2Presign(slug, file).then(u => { res.set('Cache-Control', 'no-store'); res.redirect(302, u); })
+    .catch(e => res.status(404).json({ error: 'Záznam už nie je k dispozícii', detail: e.message }));
 });
 
 // Servisné API pre appku
-app.get('/api/recordings', service, (req, res) => {
+app.get('/api/recordings', service, async (req, res) => {
   const slug = safeId(req.query.slug);
-  const dirs = slug ? [slug] : (fs.existsSync(REC_DIR) ? fs.readdirSync(REC_DIR) : []);
-  const out = [];
-  for (const s of dirs) {
-    const dir = path.join(REC_DIR, s);
-    let files = []; try { files = fs.readdirSync(dir); } catch (_) { continue; }
-    for (const fn of files) {
-      if (!/^[\w-]+\.mp4$/.test(fn) || /\.part\.mp4$/.test(fn)) continue;
-      const st = fs.statSync(path.join(dir, fn));
-      out.push({ slug: s, file: fn, url: `/rec/${s}/${fn}`, size: st.size, created_at: st.mtime.toISOString() });
-    }
-  }
+  const out = recordingsList().filter(f => !f.part && (!slug || f.slug === slug))
+    .map(f => ({ slug: f.slug, file: f.file, url: `/rec/${f.slug}/${f.file}`, size: f.size, created_at: new Date(f.mtime).toISOString(), r2: false }));
+  try { for (const r of await r2List()) if (!slug || r.slug === slug) out.push(r); } catch (e) { log('⚠️  R2 list:', e.message); }
   out.sort((a, b) => b.created_at.localeCompare(a.created_at));
   res.json({ recordings: out });
 });
-app.delete('/api/recordings/:slug/:file', service, (req, res) => {
+app.delete('/api/recordings/:slug/:file', service, async (req, res) => {
   const slug = safeId(req.params.slug), file = String(req.params.file || '');
   if (!/^[\w-]+\.mp4$/.test(file)) return res.status(400).json({ error: 'bad file' });
-  const f = path.join(REC_DIR, slug, file);
-  try { fs.unlinkSync(f); } catch (_) {}
+  try { fs.unlinkSync(path.join(REC_DIR, slug, file)); } catch (_) {}
+  try { await r2Delete(slug, file); } catch (e) { log('⚠️  R2 delete:', e.message); }
   res.json({ ok: true });
 });
 // Appka po vytvorení kľúča požiada o okamžité obnovenie (inak do 30 s)
 app.post('/api/refresh', service, async (req, res) => { await refreshKeys(); res.json({ ok: true, keys: keys.size }); });
-app.get('/api/usage', service, (req, res) => {
-  let bytes = 0, files = 0;
-  try {
-    for (const s of fs.readdirSync(REC_DIR)) for (const fn of fs.readdirSync(path.join(REC_DIR, s))) {
-      bytes += fs.statSync(path.join(REC_DIR, s, fn)).size; files++;
-    }
-  } catch (_) {}
-  res.json({ bytes, files, retention_days: RETENTION_DAYS, live: [...live.keys()] });
+app.get('/api/usage', service, async (req, res) => {
+  const local = recordingsList();
+  let bytes = local.reduce((s, f) => s + f.size, 0), files = local.filter(f => !f.part).length, r2_bytes = 0, r2_files = 0;
+  try { for (const r of await r2List()) { r2_bytes += r.size; r2_files++; } } catch (_) {}
+  res.json({ bytes: bytes + r2_bytes, files: files + r2_files, local_bytes: bytes, r2_bytes, r2: R2_ON, retention_days: RETENTION_DAYS, live: [...live.keys()] });
 });
 
 // ── Retencia: staré záznamy sa mažú samy (appke sa to ohlási) ───────────────
@@ -410,9 +467,17 @@ async function retention() {
       }
     }
   } catch (e) { log('⚠️  retencia:', e.message); }
+  // to isté v R2
+  try {
+    for (const r of await r2List()) if (new Date(r.created_at).getTime() < limit) {
+      await r2Delete(r.slug, r.file);
+      log('🗑️  Retencia R2: zmazaný', r.slug + '/' + r.file);
+      await hook('expired', { slug: r.slug, file: r.file, url: r.url });
+    }
+  } catch (e) { log('⚠️  retencia R2:', e.message); }
 }
 // Poradie po štarte: najprv zachrániť osirelé záznamy, až potom údržba a limit miesta
-setTimeout(async () => { await adoptOrphans(); await retention(); await uvolniMiesto(); }, 8 * 1000);
+setTimeout(async () => { await adoptOrphans(); await r2Migrate(); await retention(); await uvolniMiesto(); }, 8 * 1000);
 setInterval(async () => { await retention(); await uvolniMiesto(); }, 6 * 3600 * 1000);
 
 app.listen(HTTP_PORT, () => {

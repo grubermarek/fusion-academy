@@ -43,6 +43,8 @@ vydáva ho appka len s online prístupom. Media server ho overí sám, bez volan
 | `APP_URL` | `https://app.fusionacademy.sk` |
 | `MEDIA_SECRET` | rovnaké ako v appke (dlhý náhodný reťazec) |
 | `RETENTION_DAYS` | 90 |
+| `RECORDINGS_MAX_MB`, `RESERVE_MB` | 4300 / 3000 — limit lokálnych záznamov a rezerva pred štartom hodiny (5 GB volume) |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | Cloudflare R2: hotový záznam sa nahrá do R2 a lokálny súbor sa zmaže; prehrávanie cez 302 na podpísaný odkaz (1 h); retencia aj v R2; pri štarte sa lokálne záznamy presunú do R2 |
 
 **appka** (`web`):
 
@@ -77,6 +79,14 @@ a doména má cieľový port 8000 (`railway domain update <domena> -s media --po
 `node qa/stream.test.js` (potrebuje ffmpeg; `FFMPEG=cesta` ak nie je v PATH) — spustí
 izolovanú appku aj media server, odvysiela skúšobný obraz a overí kľúče, tokeny,
 HLS, záznam, viditeľnosť a mazanie, kľúč na mesto a súrodenecké hodiny (26 kontrol).
+
+## Cloudflare R2 (záznamy)
+
+1. dash.cloudflare.com → R2 Object Storage → Create bucket (`fusion-zaznamy`, location EU). R2 vyžaduje platobnú kartu v účte aj pre bezplatných 10 GB.
+2. R2 → Manage R2 API Tokens → Create API Token: Object Read & Write, len tento bucket → skopírovať Access Key ID, Secret Access Key a Account ID (z endpointu `https://<account>.r2.cloudflarestorage.com`).
+3. Railway → služba media → Variables: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`. Po reštarte `/health` hlási `r2: true` a lokálne záznamy sa presunú do R2.
+
+Cena: 10 GB zadarmo, potom 0,015 $/GB/mesiac, sťahovanie zadarmo (Railway volume 0,15 $/GB).
 
 ## Náklady (Railway, orientačne)
 

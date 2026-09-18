@@ -435,7 +435,7 @@ function renderRecordings(filterClass){
     const chip=(k,v)=>`<button class="btn-arch" style="padding:.25rem .7rem;font-size:.75rem;${_recFilter[k]===v?'background:rgba(231,200,120,.3);border-color:#E7C878':''}" onclick="setRecFilter('${k}','${v.replace(/'/g,'')}')">${v}</button>`;
     chips.innerHTML = (kinds.length>1?kinds.map(v=>chip('kind',v)).join(' '):'') + (kinds.length>1&&cities.length>1?' <span style="opacity:.4">|</span> ':'') + (cities.length>1?cities.map(v=>chip('city',v)).join(' '):'');
   }
-  const recs=_recordings.filter(r=>(!filterClass||r.class_id===filterClass)&&(!_recFilter.kind||r.kind===_recFilter.kind)&&(!_recFilter.city||r.city===_recFilter.city)).slice(0,30);
+  const recs=_recordings.filter(r=>(!filterClass||(r.class_ids||[r.class_id]).includes(filterClass))&&(!_recFilter.kind||r.kind===_recFilter.kind)&&(!_recFilter.city||r.city===_recFilter.city)).slice(0,30);
   const fmt=r=>{ const d=new Date(r.started_at||r.date); return d.toLocaleDateString('sk-SK',{weekday:'short',day:'numeric',month:'numeric'})+' '+d.toLocaleTimeString('sk-SK',{hour:'2-digit',minute:'2-digit'}); };
   const dur=s=>s>=3600?Math.floor(s/3600)+' h '+Math.round(s%3600/60)+' min':Math.round(s/60)+' min';
   list.innerHTML = recs.length ? recs.map(r=>`<div class="class-card" style="padding:.8rem 1rem">

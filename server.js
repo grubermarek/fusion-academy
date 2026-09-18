@@ -16611,7 +16611,8 @@ app.post('/api/media/hook', mediaService, async(req,res)=>{
         // Záznam kratší ako 3 minúty je skúška spojenia, nie hodina — do archívu nepatrí,
         // ale súbor na media serveri sa nechá zmazať retencii.
         const visible = (+duration_s||0) >= 180;
-        await q.insert(db.recordings,{ class_id:String(slug), class_name:cls?cls.name:(name||'Online hodina'),
+        const pokr=await pokrytieZaznamu(cls, started_at, ended_at);
+        await q.insert(db.recordings,{ class_id:String(slug), class_ids:pokr.class_ids, title:pokr.title||undefined, class_name:cls?cls.name:(name||'Online hodina'),
           city: cls ? mestoHodiny(cls) : '', kind: typTreningu(cls?cls.name:name),
           date:String(started_at||nowISO()).slice(0,10), started_at, ended_at, file, url, size:+size||0,
           duration_s:+duration_s||0, visible, created_at:nowISO() });
@@ -16625,14 +16626,39 @@ app.post('/api/media/hook', mediaService, async(req,res)=>{
 });
 
 // Mesto a typ tréningu na zázname (staršie záznamy ich nemajú → z hodiny)
+// Jeden prenos cez kľúč mesta často pokryje viac hodín za sebou (18:00 technika +
+// 19:00 Zumba): záznam dostane názov podľa všetkých pokrytých hodín a ukáže sa
+// v archíve každej z nich (class_ids).
+function bratislavaMin(iso){
+  const p=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Bratislava',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(new Date(iso));
+  const g=t=>(p.find(x=>x.type===t)||{}).value;
+  return { dow:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(g('weekday')), min:(+g('hour')%24)*60+(+g('minute')) };
+}
+async function pokrytieZaznamu(cls, started_at, ended_at){
+  if(!cls || !cls.stream_key || !started_at || !ended_at) return {class_ids:[cls?cls._id:null].filter(Boolean), title:null};
+  const a=bratislavaMin(started_at), b=bratislavaMin(ended_at);
+  const toMin=t=>{ const [h,m]=String(t||'0:0').split(':').map(Number); return (h||0)*60+(m||0); };
+  const sibs=(await q.find(db.classes,{category:'Online', active:true}))
+    .filter(c=>c.stream_key===cls.stream_key && c.day_of_week===a.dow)
+    .filter(c=>{ const st=toMin(c.time_start), en=Math.max(toMin(c.time_end), st+60); return st < b.min+5 && en > a.min-5; })
+    .sort((x,y)=>toMin(x.time_start)-toMin(y.time_start));
+  const ids=[cls._id, ...sibs.map(c=>c._id).filter(id=>id!==cls._id)];
+  const kinds=[...new Set([cls, ...sibs.filter(c=>c._id!==cls._id)].sort((x,y)=>toMin(x.time_start)-toMin(y.time_start)).map(c=>typTreningu(c.name)))];
+  return { class_ids:ids, title: kinds.length>1 ? kinds.join(' + ') : null };
+}
 async function obohatZaznamy(recs){
   const cache={};
   for(const r of recs){
-    if(r.city!==undefined && r.kind) continue;
+    if(r.city!==undefined && r.kind && r.class_ids) continue;
     if(!(r.class_id in cache)) cache[r.class_id]=await q.one(db.classes,{_id:r.class_id});
     const c=cache[r.class_id];
     r.city = r.city!==undefined ? r.city : (c ? mestoHodiny(c) : '');
     r.kind = r.kind || typTreningu(c ? c.name : r.class_name);
+    if(!r.class_ids){
+      const p=await pokrytieZaznamu(c, r.started_at, r.ended_at);
+      r.class_ids=p.class_ids; if(!r.title && p.title) r.title=p.title;
+      await q.update(db.recordings,{_id:r._id},{$set:{class_ids:r.class_ids, city:r.city, kind:r.kind, ...(r.title?{title:r.title}:{})}}).catch(()=>{});
+    }
   }
   return recs;
 }
@@ -16644,7 +16670,7 @@ app.get('/api/online/recordings', auth, async(req,res)=>{
     if(!hasOnlineAccess(m,u)) return res.status(403).json({error:'Záznamy sú súčasťou online členstva', recordings:[]});
     const recs=await obohatZaznamy((await q.find(db.recordings,{visible:true})).sort((a,b)=>(b.started_at||'').localeCompare(a.started_at||'')));
     const base=mediaBase();
-    res.json({media_base:base, recordings: recs.map(r=>({ id:r._id, class_id:r.class_id, class_name:r.class_name, title:r.title||null,
+    res.json({media_base:base, recordings: recs.map(r=>({ id:r._id, class_id:r.class_id, class_ids:r.class_ids||[r.class_id], class_name:r.class_name, title:r.title||null,
       city:r.city||'', kind:r.kind||'', date:r.date, started_at:r.started_at, duration_s:r.duration_s,
       src: base ? base+r.url+'?t='+mediaToken(r.class_id, 6) : null }))});
   }catch(e){ res.status(500).json({error:e.message}); }
