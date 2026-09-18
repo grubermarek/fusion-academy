@@ -185,7 +185,7 @@ function startPipeline(slug, key, name) {
     // 2) záznam: fragmentované MP4 (prežije aj pád spojenia), po skončení sa premuxuje.
     //    Zvuk sa prekóduje na AAC-LC: audio z GoPro skopírované 1:1 Chrome v MP4 odmietol
     //    (PIPELINE_ERROR_DECODE, 19. 9.), video ostáva bez prekódovania.
-    '-map', '0:v:0', '-map', '0:a?', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2',
+    '-map', '0:v:0', '-map', '0:a?', '-c', 'copy',
     // fragmenty min. 60 s: prehliadač pri otvorení číta hlavičky všetkých fragmentov,
     // pri 2-sekundových ich boli tisíce a 4 GB záznam z R2 sa nespustil (18. 9.)
     '-movflags', '+frag_keyframe+empty_moov+default_base_moof', '-min_frag_duration', '60000000',
@@ -195,6 +195,9 @@ function startPipeline(slug, key, name) {
   ff.stderr.on('data', d => { const s = String(d).trim(); if (s) log('ffmpeg[' + slug + ']', s.slice(0, 300)); });
   const entry = { key, name, started_at, ffmpeg: ff, partFile, recDir, liveDir, finished: false };
   live.set(slug, entry);
+  // Diagnostika zdroja (19. 9.: Chrome odmietol zvuk z GoPro skopírovaný do MP4) — čo presne kamera posiela
+  setTimeout(() => run(FFPROBE, ['-v', 'error', '-show_entries', 'stream=codec_type,codec_name,profile,sample_rate,channels,width,height,r_frame_rate,extradata_size', '-of', 'compact=p=0:nk=0', `rtmp://127.0.0.1:${RTMP_PORT}/live/${key}`])
+    .then(o => log('🔬 vstup[' + slug + ']', String(o).replace(/\s+/g, ' ').slice(0, 400))).catch(e => log('🔬 vstup[' + slug + '] ffprobe:', e.message.slice(0, 200))), 6000);
   log('▶️  LIVE štart:', slug, name ? '(' + name + ')' : '');
   hook('start', { slug, name, started_at });
 
@@ -249,6 +252,17 @@ async function finalizeFile(slug, partFile) {
       size = fs.statSync(finalFile).size;
       duration_s = await probeDuration(finalFile);
       log('💾 Záznam uložený:', slug + '/' + file, Math.round(size / 1048576) + ' MB,', Math.round(duration_s / 60) + ' min');
+      // Zvuk pre prehliadač: AAC-LC prekódovanie do druhého súboru; originál sa nahradí len keď
+      // má výsledok správnu dĺžku a rozumnú veľkosť (18. 9. nekontrolovaný výsledok zmazal záznam)
+      if (freeBytes() > size + 300 * 1048576) {
+        const aacFile = finalFile.replace(/\.mp4$/, '.aac.part.mp4');
+        try {
+          const errTail = await runErr(FFMPEG, ['-hide_banner', '-loglevel', 'warning', '-y', '-i', finalFile, '-map', '0:v:0', '-map', '0:a?', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2', '-movflags', '+faststart', aacFile]);
+          const d2 = await probeDuration(aacFile), s2 = fs.statSync(aacFile).size;
+          if (d2 >= duration_s * 0.98 && s2 >= size * 0.5) { fs.renameSync(aacFile, finalFile); size = s2; duration_s = d2; log('🔊 Zvuk prekódovaný na AAC-LC:', slug + '/' + file, errTail ? '| ffmpeg: ' + errTail : ''); }
+          else { fs.unlinkSync(aacFile); log('⚠️  prekódovanie zvuku dalo zlý výsledok (' + Math.round(d2) + ' s, ' + Math.round(s2 / 1048576) + ' MB) — ostáva originál', errTail ? '| ffmpeg: ' + errTail : ''); }
+        } catch (e) { try { fs.unlinkSync(aacFile); } catch (_) {} log('⚠️  prekódovanie zvuku zlyhalo — ostáva originál:', e.message.slice(0, 300)); }
+      } else log('ℹ️  Málo miesta na prekódovanie zvuku — ostáva originál');
     } else {
       fs.unlinkSync(partFile); // pár sekúnd skúšobného spojenia — nezaujímavé
       log('🗑️  Príliš krátke vysielanie, záznam zahodený:', slug);
@@ -330,7 +344,7 @@ async function r2List() {
   do {
     const r = await s3.send(new S3.ListObjectsV2Command({ Bucket: R2_BUCKET, Prefix: 'rec/', ContinuationToken: token }));
     for (const o of (r.Contents || [])) {
-      const m = /^rec\/([\w-]+)\/([\w-]+\.mp4)$/.exec(o.Key || '');
+      const m = /^rec\/([\w-]+)\/([\w-]+\.mp4)$/.exec(o.Key || '');   // .tmp.mp4 (prerábanie) sa nezhoduje
       if (m) items.push({ slug: m[1], file: m[2], url: `/rec/${m[1]}/${m[2]}`, size: o.Size || 0, created_at: (o.LastModified || new Date()).toISOString(), r2: true });
     }
     token = r.IsTruncated ? r.NextContinuationToken : undefined;
@@ -363,14 +377,23 @@ async function r2Reprocess(slug, file) {
   await require('stream/promises').pipeline(obj.Body, fs.createWriteStream(local));
   const size = fs.statSync(local).size;
   log('🎞️  Stiahnuté', Math.round(size / 1048576), 'MB, prerábam a nahrávam späť…');
-  // 2) ffmpeg číta lokálne, výstup (60 s fragmenty) ide rúrou rovno do R2 — bez druhej kópie na disku
-  const ff = spawn(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-i', local, '-map', '0:v:0', '-map', '0:a?', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2',
+  const srcDur = await probeDuration(local);
+  // 2) ffmpeg číta lokálne, výstup ide rúrou do R2 pod DOČASNÝ kľúč; originál sa nahradí až po kontrole
+  //    (18. 9.: nekontrolovaný výsledok prepísal 4 GB záznam prázdnym súborom)
+  const TmpKey = Key + '.tmp.mp4';
+  const ff = spawn(FFMPEG, ['-hide_banner', '-loglevel', 'warning', '-i', local, '-map', '0:v:0', '-map', '0:a?', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2',
     '-movflags', '+frag_keyframe+empty_moov+default_base_moof', '-min_frag_duration', '60000000', '-f', 'mp4', 'pipe:1'], { stdio: ['ignore', 'pipe', 'pipe'] });
-  let err = ''; ff.stderr.on('data', d => err += d);
-  const up = new Upload({ client: s3, params: { Bucket: R2_BUCKET, Key, Body: ff.stdout, ContentType: 'video/mp4' }, partSize: 64 * 1048576, queueSize: 2 });
+  let err = ''; ff.stderr.on('data', d => { err += d; if (err.length > 4000) err = err.slice(-4000); });
+  const up = new Upload({ client: s3, params: { Bucket: R2_BUCKET, Key: TmpKey, Body: ff.stdout, ContentType: 'video/mp4' }, partSize: 64 * 1048576, queueSize: 2 });
   await up.done();
-  const code = await new Promise(r => (ff.exitCode !== null ? r(ff.exitCode) : ff.on('exit', r)));
-  if (code) throw new Error('ffmpeg kód ' + code + ' ' + err.slice(0, 200));
+  const [code, signal] = await new Promise(r => (ff.exitCode !== null ? r([ff.exitCode, ff.signalCode]) : ff.on('exit', (c, sg) => r([c, sg]))));
+  const head = await s3.send(new S3.HeadObjectCommand({ Bucket: R2_BUCKET, Key: TmpKey }));
+  const outDur = await probeDuration(await getSignedUrl(s3, new S3.GetObjectCommand({ Bucket: R2_BUCKET, Key: TmpKey }), { expiresIn: 3600 }));
+  log('🎞️  výsledok:', Math.round((head.ContentLength || 0) / 1048576) + ' MB,', Math.round(outDur) + ' s (zdroj ' + Math.round(srcDur) + ' s), ffmpeg kód', code, signal || '', err ? '| ' + err.trim().slice(-300) : '');
+  const ok = !code && !signal && outDur >= srcDur * 0.98 && (head.ContentLength || 0) >= size * 0.5;
+  if (!ok) { await s3.send(new S3.DeleteObjectCommand({ Bucket: R2_BUCKET, Key: TmpKey })); fs.unlinkSync(local); throw new Error('výsledok neprešiel kontrolou — originál ostáva nedotknutý'); }
+  await s3.send(new S3.CopyObjectCommand({ Bucket: R2_BUCKET, Key, CopySource: `/${R2_BUCKET}/${TmpKey}`, ContentType: 'video/mp4', MetadataDirective: 'REPLACE' }));
+  await s3.send(new S3.DeleteObjectCommand({ Bucket: R2_BUCKET, Key: TmpKey }));
   fs.unlinkSync(local);
   r2Cache.at = 0;
   log('🎞️  Záznam prerobený a nahratý späť:', slug + '/' + file);
@@ -405,6 +428,8 @@ async function r2Migrate() {
   }
 }
 
+const runErr = (cmd, args) => new Promise((res, rej) =>
+  execFile(cmd, args, { maxBuffer: 4 * 1048576 }, (err, out, errOut) => err ? rej(new Error((errOut || err.message).slice(-400))) : res(String(errOut || '').trim().slice(-300))));
 const run = (cmd, args) => new Promise((res, rej) =>
   execFile(cmd, args, { maxBuffer: 4 * 1048576 }, (err, out, errOut) => err ? rej(new Error(errOut || err.message)) : res(out)));
 
