@@ -198,25 +198,80 @@ async function finishRecording(slug, e) {
   live.delete(slug);
   fs.rmSync(e.liveDir, { recursive: true, force: true });
   const ended_at = nowISO();
+  const r = await finalizeFile(slug, e.partFile);
+  hook('stop', { slug, name: e.name, started_at: e.started_at, ended_at, file: r.file, size: r.size, duration_s: r.duration_s,
+    url: r.file ? `/rec/${slug}/${r.file}` : null });
+  uvolniMiesto().catch(() => {});
+}
+
+// Fragmentované MP4 (frag_keyframe + sidx) je priamo prehrateľné aj pretáčateľné,
+// preto sa už NEprepisuje do druhej kópie — 18. 9. pri 2-hodinovej hodine práve
+// tá kópia zaplnila 5 GB volume („No space left on device") a záznam skoro prepadol.
+async function finalizeFile(slug, partFile) {
   let file = null, size = 0, duration_s = 0;
   try {
-    const st = fs.statSync(e.partFile);
+    const st = fs.statSync(partFile);
+    const finalFile = partFile.replace(/\.part\.mp4$/, '.mp4');
+    try { fs.unlinkSync(finalFile); } catch (_) {}   // zvyšok neúspešného prepisu
     if (st.size > 100 * 1024) {
-      // moov na začiatok → rýchle pretáčanie v prehrávači
-      const finalFile = e.partFile.replace(/\.part\.mp4$/, '.mp4');
-      await run(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-y', '-i', e.partFile, '-c', 'copy', '-movflags', '+faststart', finalFile]);
-      fs.unlinkSync(e.partFile);
+      fs.renameSync(partFile, finalFile);
       file = path.basename(finalFile);
-      size = fs.statSync(finalFile).size;
+      size = st.size;
       duration_s = await probeDuration(finalFile);
       log('💾 Záznam uložený:', slug + '/' + file, Math.round(size / 1048576) + ' MB,', Math.round(duration_s / 60) + ' min');
     } else {
-      fs.unlinkSync(e.partFile); // pár sekúnd skúšobného spojenia — nezaujímavé
+      fs.unlinkSync(partFile); // pár sekúnd skúšobného spojenia — nezaujímavé
       log('🗑️  Príliš krátke vysielanie, záznam zahodený:', slug);
     }
   } catch (err) { log('⚠️  záznam', slug, err.message); }
-  hook('stop', { slug, name: e.name, started_at: e.started_at, ended_at, file, size, duration_s,
-    url: file ? `/rec/${slug}/${file}` : null });
+  return { file, size, duration_s };
+}
+
+// Po štarte: osirelé .part súbory (pád servera / reštart počas vysielania) sa
+// dokončia a ohlásia appke, nech sa nestratí ani záznam prerušenej hodiny.
+async function adoptOrphans() {
+  try {
+    for (const s of fs.readdirSync(REC_DIR)) {
+      if (live.has(s)) continue;
+      const dir = path.join(REC_DIR, s);
+      for (const fn of fs.readdirSync(dir)) {
+        if (!/\.part\.mp4$/.test(fn)) continue;
+        const stamp = fn.replace(/\.part\.mp4$/, '');                  // 2026-09-18T16-04-46
+        const started_at = stamp.replace(/T(\d\d)-(\d\d)-(\d\d)$/, 'T$1:$2:$3') + 'Z';
+        const ended_at = fs.statSync(path.join(dir, fn)).mtime.toISOString();
+        log('♻️  Osirelý záznam:', s + '/' + fn);
+        const r = await finalizeFile(s, path.join(dir, fn));
+        if (r.file) await hook('stop', { slug: s, name: '', started_at, ended_at, file: r.file, size: r.size, duration_s: r.duration_s, url: `/rec/${s}/${r.file}`, adopted: true });
+      }
+    }
+  } catch (e) { log('⚠️  osirelé záznamy:', e.message); }
+}
+
+// Volume má pevnú veľkosť: keď sa záznamy priblížia k limitu, najstaršie sa zmažú
+// (a appke sa to ohlási), nech nová hodina má vždy kam nahrávať.
+const MAX_BYTES = +(process.env.RECORDINGS_MAX_MB || 4300) * 1048576;
+function recordingsList() {
+  const out = [];
+  try {
+    for (const s of fs.readdirSync(REC_DIR)) for (const fn of fs.readdirSync(path.join(REC_DIR, s))) {
+      const f = path.join(REC_DIR, s, fn); const st = fs.statSync(f);
+      out.push({ slug: s, file: fn, path: f, size: st.size, mtime: st.mtimeMs, part: /\.part\.mp4$/.test(fn) });
+    }
+  } catch (_) {}
+  return out;
+}
+async function uvolniMiesto() {
+  let list = recordingsList().sort((a, b) => a.mtime - b.mtime);
+  let total = list.reduce((s, f) => s + f.size, 0);
+  if (total > MAX_BYTES) log('⚠️  Záznamy zaberajú', Math.round(total / 1048576), 'MB, limit', Math.round(MAX_BYTES / 1048576), 'MB — mažem najstaršie');
+  // najnovší záznam sa nikdy nemaže sám od seba (aj keby bol sám nad limitom)
+  for (const f of list.slice(0, -1)) {
+    if (total <= MAX_BYTES) break;
+    if (f.part && live.has(f.slug)) continue;
+    fs.unlinkSync(f.path); total -= f.size;
+    log('🗑️  Miesto: zmazaný najstarší záznam', f.slug + '/' + f.file, Math.round(f.size / 1048576) + ' MB');
+    if (!f.part) await hook('expired', { slug: f.slug, file: f.file, url: `/rec/${f.slug}/${f.file}` });
+  }
 }
 
 const run = (cmd, args) => new Promise((res, rej) =>
@@ -257,7 +312,7 @@ const playable = (req, res, next) => tokenOk(safeId(req.params.slug), req.query.
 let ffmpegVersion = null;
 execFile(FFMPEG, ['-version'], (err, out) => { ffmpegVersion = err ? null : String(out).split('\n')[0].replace(/^ffmpeg version\s*/, '').slice(0, 40); if (err) log('⛔ ffmpeg sa nenašiel:', err.message); });
 app.get('/health', (req, res) => res.json({ ok: true, live: [...live.keys()], keys: keys.size, keys_at: keysLoadedAt ? new Date(keysLoadedAt).toISOString() : null,
-  ffmpeg: ffmpegVersion, secret: !!SECRET }));
+  ffmpeg: ffmpegVersion, secret: !!SECRET, used_mb: Math.round(recordingsList().reduce((s, f) => s + f.size, 0) / 1048576), max_mb: Math.round(MAX_BYTES / 1048576) }));
 
 // Kto práve vysiela (slugy hodín — verejné id, nie kľúče)
 app.get('/api/streams', (req, res) => res.json({ live: [...live.keys()] }));
@@ -351,8 +406,9 @@ async function retention() {
     }
   } catch (e) { log('⚠️  retencia:', e.message); }
 }
-setTimeout(retention, 60 * 1000);
-setInterval(retention, 6 * 3600 * 1000);
+// Poradie po štarte: najprv zachrániť osirelé záznamy, až potom údržba a limit miesta
+setTimeout(async () => { await adoptOrphans(); await retention(); await uvolniMiesto(); }, 8 * 1000);
+setInterval(async () => { await retention(); await uvolniMiesto(); }, 6 * 3600 * 1000);
 
 app.listen(HTTP_PORT, () => {
   log('🎥 Fusion media server beží');
