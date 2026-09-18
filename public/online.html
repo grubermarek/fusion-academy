@@ -355,7 +355,6 @@ async function loadOnlineClasses(){
       else if(c.stream_url) parts.push(`<button class="btn-stream" onclick="watchStream('${encodeURIComponent(c.stream_url)}','${nm}')"><i class="bi bi-play-circle me-1"></i>${FA_T('onl.watch')}</button>`);
       // Archív sa ukáže až keď hodina nejaký záznam má (doplní loadRecordings)
       if(!isLive && key) parts.push(`<button class="btn-arch" data-arch="${c._id}" style="display:none" onclick="openRecordings('${c._id}')"><i class="bi bi-collection-play me-1"></i>${FA_T('onl.archive')}</button>`);
-      if(!isLive) parts.push(`<span data-next="${c._id}" style="font-size:.78rem;color:var(--text-muted)">${denLabel(c).toLowerCase()} o ${c.time_start||''}</span>`);
       action = parts.join(' ');
     }
     const kind=(c.name||'').replace(/\s*[–-]?\s*ONLINE.*$/i,'').trim()||c.name;
@@ -363,7 +362,7 @@ async function loadOnlineClasses(){
       <div class="lock-icon">${locked?'🔒':(isLive?'🔴':c.emoji||'💃')}</div>
       <div class="class-info flex-grow-1">
         <h4>${kind}${c.city?' · '+c.city:''}${isLive?' <span style="color:#ff3b30;font-size:.75rem;font-weight:800">● NAŽIVO</span>':''}</h4>
-        <p>${c.day_name||''} ${c.time_start||''}${c.time_end?'–'+c.time_end:''}${c.instructor?' · '+c.instructor:''}</p>
+        <p>${c.day_name||''}${c.date?' '+(+c.date.slice(8,10))+'. '+(+c.date.slice(5,7))+'.':''} · ${c.time_start||''}${c.time_end?'–'+c.time_end:''}${c.instructor?' · '+c.instructor:''}</p>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${action}</div>
     </div>`;
@@ -428,7 +427,7 @@ async function loadRecordings(){
   const d=await api('/api/online/recordings');
   _recordings=(d&&d.recordings)||[];
   // Tlačidlo Archív len pri hodinách, ktoré majú záznam
-  document.querySelectorAll('[data-arch]').forEach(b=>{ const has=_recordings.some(r=>(r.class_ids||[r.class_id]).includes(b.dataset.arch)); b.style.display=has?'inline-block':'none'; const n=document.querySelector('[data-next="'+b.dataset.arch+'"]'); if(n&&has) n.style.display='none'; });
+  document.querySelectorAll('[data-arch]').forEach(b=>{ const has=_recordings.some(r=>(r.class_ids||[r.class_id]).includes(b.dataset.arch)); b.style.display=has?'inline-block':'none'; });
   if(!_recordings.length){ host.style.display='none'; return; }
   host.style.display='block';
   renderRecordings();

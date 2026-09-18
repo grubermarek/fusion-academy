@@ -16273,7 +16273,7 @@ app.get('/api/online/classes', auth, async(req,res)=>{
     // V entry režime sa stream NEprezradí vopred — vydá ho až /api/online/enter po odpočte.
     // YouTube/Vimeo odkaz je záloha a platí len v deň zadania — starý odkaz sa neponúka.
     stream_url: hasFull && c.stream_url && c.stream_url_at===today() ? c.stream_url : null,
-    day_name: DAYS_SK[c.day_of_week]||'', city: c.stream_city||'',
+    day_name: DAYS_SK[c.day_of_week]||'', city: c.stream_city||'', date: nextOccurrence(c.day_of_week),
     // Vlastný media server: hodina sa prehráva podľa svojho id + podpísaného tokenu
     play_key: mediaBase() && stream_key ? c._id : null,
     play_token: hasFull && mediaBase() && stream_key ? mediaToken(c._id, 6) : null,
@@ -16617,8 +16617,9 @@ app.post('/api/media/hook', mediaService, async(req,res)=>{
         // ale súbor na media serveri sa nechá zmazať retencii.
         const visible = (+duration_s||0) >= 180;
         const pokr=await pokrytieZaznamu(cls, started_at, ended_at);
-        await q.insert(db.recordings,{ class_id:String(slug), class_ids:pokr.class_ids, title:pokr.title||undefined, class_name:cls?cls.name:(name||'Online hodina'),
-          city: cls ? mestoHodiny(cls) : '', kind: typTreningu(cls?cls.name:name),
+        const prim=pokr.primary||cls;
+        await q.insert(db.recordings,{ class_id:prim?prim._id:String(slug), class_ids:pokr.class_ids, title:pokr.title||undefined, class_name:prim?prim.name:(name||'Online hodina'),
+          city: prim ? mestoHodiny(prim) : '', kind: typTreningu(prim?prim.name:name),
           date:String(started_at||nowISO()).slice(0,10), started_at, ended_at, file, url, size:+size||0,
           duration_s:+duration_s||0, visible, created_at:nowISO() });
         console.log('💾 Media: záznam '+(cls?cls.name:slug)+' '+Math.round((+duration_s||0)/60)+' min'+(visible?'':' (skryté — krátke)'));
@@ -16640,17 +16641,37 @@ function bratislavaMin(iso){
   return { dow:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(g('weekday')), min:(+g('hour')%24)*60+(+g('minute')) };
 }
 async function pokrytieZaznamu(cls, started_at, ended_at){
-  if(!cls || !cls.stream_key || !started_at || !ended_at) return {class_ids:[cls?cls._id:null].filter(Boolean), title:null};
+  const fallback = {class_ids:[cls?cls._id:null].filter(Boolean), title:null, primary:cls||null};
+  if(!cls || !cls.stream_key || !started_at || !ended_at) return fallback;
   const a=bratislavaMin(started_at), b=bratislavaMin(ended_at);
   const toMin=t=>{ const [h,m]=String(t||'0:0').split(':').map(Number); return (h||0)*60+(m||0); };
+  // Hodiny s rovnakým kľúčom v DEŇ vysielania, ktoré sa časovo prekrývajú so záznamom.
+  // (18. 9.: kľúč vznikol na nedeľnej technike, vysielalo sa v piatok — záznam patrí piatku.)
   const sibs=(await q.find(db.classes,{category:'Online', active:true}))
     .filter(c=>c.stream_key===cls.stream_key && c.day_of_week===a.dow)
     .filter(c=>{ const st=toMin(c.time_start), en=Math.max(toMin(c.time_end), st+60); return st < b.min+5 && en > a.min-5; })
     .sort((x,y)=>toMin(x.time_start)-toMin(y.time_start));
-  const ids=[cls._id, ...sibs.map(c=>c._id).filter(id=>id!==cls._id)];
-  const kinds=[...new Set([cls, ...sibs.filter(c=>c._id!==cls._id)].sort((x,y)=>toMin(x.time_start)-toMin(y.time_start)).map(c=>typTreningu(c.name)))];
-  return { class_ids:ids, title: kinds.length>1 ? kinds.join(' + ') : null };
+  if(!sibs.length) return fallback;
+  const kinds=[...new Set(sibs.map(c=>typTreningu(c.name)))];
+  return { class_ids:sibs.map(c=>c._id), title: kinds.length>1 ? kinds.join(' + ') : null, primary:sibs[0] };
 }
+// Jednorazovo (19. 9.): záznamy priradiť podľa skutočného času vysielania
+setTimeout(async()=>{
+  try{
+    if(await q.one(db.settings,{key:'recordings_reattribute_20260919'})) return;
+    let n=0;
+    for(const r of await q.find(db.recordings,{})){
+      const c=await q.one(db.classes,{_id:r.class_id}); if(!c) continue;
+      const p=await pokrytieZaznamu(c, r.started_at, r.ended_at);
+      const auto = !r.title || r.title===r.kind || /\+/.test(String(r.title));
+      await q.update(db.recordings,{_id:r._id},{$set:{ class_id:p.primary._id, class_name:p.primary.name, class_ids:p.class_ids,
+        city:mestoHodiny(p.primary), kind:typTreningu(p.primary.name), ...(auto?{title:p.title||null}:{}) }});
+      n++;
+    }
+    await q.insert(db.settings,{key:'recordings_reattribute_20260919', value:true, at:nowISO()});
+    if(n) console.log('📼 Záznamy prepočítané podľa času vysielania: '+n);
+  }catch(e){ console.error('reattribute recordings:', e.message); }
+}, 30000);
 async function obohatZaznamy(recs){
   const cache={};
   for(const r of recs){
