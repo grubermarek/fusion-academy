@@ -53,19 +53,23 @@ const rd = f => { const p = path.join(DATA, f); if (!fs.existsSync(p)) return []
   ok('server: PayPal ostal len v odmietnutí nákupu a regexoch spôsobu platby', ppRiadky.length <= 4 && ppRiadky.every(l => /payment_method==='paypal'|PayPal už|\/stripe\|/.test(l)), ppRiadky.map(l => l.trim().slice(0, 60)).join(' | '));
   ok('server: ručný predaj ukladá payment_method', /payment_method:String\(req\.body\.payment_method\|\|'cash'\)/.test(srv));
   ok('server: migrácia Aleninho záznamu', /alena_tx_karta_v1/.test(srv));
-  ok('admin: Peniaze v menu + Výplaty trénerov v menu', /Peniaze<\/span>/.test(adm) && /onclick="show\('payouts'\)"><i class="bi bi-wallet2 me-2"><\/i>Výplaty trénerov/.test(adm));
+  // 19. 9.: Peniaze = jedna položka v menu; Výplaty trénerov a Provízie partnerov sú záložky hubu
+  ok('admin: Peniaze v menu, Výplaty trénerov a Výplaty provízií už nie sú samostatné položky', /Peniaze<\/span>/.test(adm) && !/<i class="bi bi-wallet2 me-2"><\/i>Výplaty trénerov<\/a>/.test(adm) && !/Výplaty provízií<\/a>/.test(adm));
   ok('admin: staré položky Financie/Účtovníctvo/Predaje&faktúry/Platby v menu preč', !/<i class="bi bi-graph-up me-2"><\/i><span style="color:#C9A24C;font-weight:700">Financie<\/span>/.test(adm) && !/onclick="show\('payments'\)"/.test(adm) && !/show\('predaje'\)"><i class="bi bi-cash-stack/.test(adm));
-  const listy = (adm.match(/class="adm-tabs pen-tabs"/g) || []).length;
-  ok('admin: lišta Peniaze v 7 sekciách (prehľad, účtovníctvo, predaje, faktúry, predaj, refundy, neúspešné)', listy === 7, String(listy));
-  ok('admin: lišta obsahuje tri záložky', /💶 Prehľad<\/button>.*🧮 Účtovníctvo a uzávierky<\/button>.*🧾 Faktúry a doklady<\/button>/.test(adm));
-  ok('admin: druhá lišta Faktúry a doklady 5×', (adm.match(/class="adm-tabs pen-sub"/g) || []).length === 5);
+  const huby = (adm.match(/class="pen-hub"/g) || []).length;
+  ok('admin: hub Peniaze v 10 sekciách (prehľad, predaje, faktúry, refundy, dlžníci, predaj, výplaty, provízie, účtovníctvo, pre účtovníčku)', huby === 10, String(huby));
+  ok('admin: žiadne duplicitné lišty pen-tabs/pen-sub', !/adm-tabs pen-tabs|adm-tabs pen-sub/.test(adm));
+  const penSecs = [...adm.matchAll(/\{sec:'([a-z]+)',\s+ic:/g)].map(m => m[1]);
+  ok('admin: PEN_TABS má všetkých 10 záložiek', ['finance','predaje','invoices','refunds','failed','sale','payouts','commissions','accounting','uctovnicka'].every(x => penSecs.includes(x)), penSecs.join(','));
+  ok('admin: hub sa kreslí zo show(); hotovosť u trénerov a kontrola predajov majú obrazovku', /if\(PEN_SECS\.has\(sec\)\) renderPenHub\(sec\)/.test(adm) && /async function loadCashAll\(/.test(adm) && /async function loadSalesHealth\(/.test(adm));
   ok('admin: mŕtve sekcie preč (payments, orders, bookings)', !/id="s-payments"/.test(adm) && !/id="s-orders"/.test(adm) && !/id="s-bookings"/.test(adm) && !/loadAdminBookings|function loadPayments/.test(adm));
   ok('admin: loadOverview preč', !/loadOverview/.test(adm));
   ok('admin: deleteUser raz, deletePartner pre partnerov', (adm.match(/async function deleteUser\(/g) || []).length === 1 && /async function deletePartner\(/.test(adm) && /onclick='deletePartner\(/.test(adm));
   ok('admin: druhý zoznam predajov vo Faktúrach preč', !/invTabSales|function loadAllTx|function invTab\(/.test(adm));
   ok('admin: alias transactions → predaje', /if\(sec==='transactions'\)\{ show\('predaje'\); return; \}/.test(adm));
-  const trenListy = (adm.match(/💵 Výplaty<\/button><button class="adm-tab[^"]*" onclick="show\('trainers'\)">🏅 Výkon<\/button><button class="adm-tab[^"]*" onclick="show\('classhistory'\)">🕘 História hodín<\/button><button class="adm-tab[^"]*" onclick="show\('tasktracker'\)">✅ Úlohy trénerov<\/button>/g) || []).length;
-  ok('admin: tréneri majú jednu lištu vo 4 sekciách', trenListy === 4, String(trenListy));
+  // 19. 9.: Výplaty sú v hube Peniaze; tréneri majú lištu Výkon · História · Úlohy (+ odkaz na Výplaty) v 3 sekciách
+  const trenListy = (adm.match(/💵 Výplaty ↗<\/button><button class="adm-tab[^"]*" onclick="show\('trainers'\)">🏅 Výkon<\/button><button class="adm-tab[^"]*" onclick="show\('classhistory'\)">🕘 História hodín<\/button><button class="adm-tab[^"]*" onclick="show\('tasktracker'\)">✅ Úlohy trénerov<\/button>/g) || []).length;
+  ok('admin: tréneri majú jednu lištu v 3 sekciách (výplaty sú v Peniazoch)', trenListy === 3, String(trenListy));
   ok('admin: duplicitné tlačidlá Výkon/Výplaty preč', !/btn btn-sm btn-warning" onclick="show\('payouts'\)">💵 Výplaty<\/button>/.test(adm));
   ok('admin: exporty pre účtovníčku', /title:'Príjmy'/.test(adm) && /title:'Faktúry'/.test(adm) && /title:'Dobropisy a refundy'/.test(adm) && /title:'Výplaty'/.test(adm) && /Pre účtovníčku/.test(adm));
   ok('admin: bez PayPal textov', !/PayPal/.test(adm));
@@ -133,7 +137,7 @@ const rd = f => { const p = path.join(DATA, f); if (!fs.existsSync(p)) return []
 
     // ── 5) stránky sa servírujú a majú nové časti ──
     const html = await (await fetch(BASE + '/admin.html')).text();
-    ok('admin.html sa servíruje s lištou Peniaze', /pen-tabs/.test(html));
+    ok('admin.html sa servíruje s hubom Peniaze', /class="pen-hub"/.test(html) && /const PEN_TABS=/.test(html));
     const fin = await j('/api/admin/finance/stats?from=' + mesiac + '-01&to=' + mesiac + '-31', {}, aj);
     ok('Financie (Prehľad) odpovedajú aj bez Stripe (STRIPE_FAKE)', fin.status === 200 && fin.d && fin.d.revenue && fin.d.naklady && fin.d.banka === null, JSON.stringify(fin.d && { r: fin.d.revenue.period, b: fin.d.banka }));
   } catch (e) { failed++; console.log('  ❌ výnimka: ' + e.stack); }

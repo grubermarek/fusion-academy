@@ -128,6 +128,27 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 .adm-tab{background:var(--dark-3);border:1px solid var(--gold-border);color:var(--text-muted);border-radius:10px;padding:8px 14px;font-size:.85rem;font-weight:600;cursor:pointer;transition:.15s}
 .adm-tab:hover{border-color:var(--gold);color:var(--cream)}
 .adm-tab.on{background:var(--adm-active);border-color:var(--gold);color:var(--gold)}
+/* ── Peniaze: jeden hub, jedna lišta pre všetky peňažné záložky ── */
+.pen-hub{margin:0 0 20px}
+.pen-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.pen-title{font-weight:800;font-size:1.4rem;letter-spacing:-.01em;display:flex;align-items:center;gap:12px;color:var(--cream)}
+.pen-ic{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:linear-gradient(135deg,rgba(201,162,76,.28),rgba(139,195,74,.16));border:1px solid var(--gold-border);font-size:1.25rem;box-shadow:var(--adm-shadow)}
+.pen-subt{font-size:.76rem;color:var(--text-muted);margin-top:2px}
+.pen-actions{display:flex;gap:8px;flex-wrap:wrap}
+.pen-btn{background:var(--dark-3);border:1px solid var(--gold-border);color:var(--cream)}
+.pen-btn:hover{border-color:var(--gold);color:var(--gold);background:var(--adm-hover)}
+.pen-nav{display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding:6px;border:1px solid var(--gold-border);border-radius:14px;background:var(--dark-3);box-shadow:var(--adm-shadow)}
+.pen-sep{width:1px;height:22px;background:var(--gold-border);margin:0 6px}
+.pen-lbl{font-size:.6rem;text-transform:uppercase;letter-spacing:.1em;color:var(--text-muted);padding:0 4px 0 8px;font-weight:800}
+.pen-tab{background:transparent;border:1px solid transparent;color:var(--text-muted);border-radius:10px;padding:7px 12px;font-size:.82rem;font-weight:600;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.pen-tab:hover{background:var(--adm-hover);color:var(--cream)}
+.pen-tab.on{background:var(--adm-active);border-color:var(--gold);color:var(--gold)}
+.pen-cnt{font-size:.62rem;font-weight:800;padding:1px 6px;border-radius:99px;background:#e05656;color:#fff;line-height:1.3}
+.pen-map{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:.74rem}
+.pen-map-lbl{color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:.6rem;margin:0 2px 0 4px}
+.pen-map a{color:var(--cream);text-decoration:none;border:1px solid var(--gold-border);background:var(--dark-3);border-radius:99px;padding:3px 10px;transition:.15s}
+.pen-map a:hover{border-color:var(--gold);color:var(--gold)}
+@media(max-width:768px){.pen-sep{display:none}.pen-lbl{width:100%;padding:6px 8px 2px}.pen-tab{padding:6px 10px;font-size:.78rem}}
 .card{box-shadow:var(--adm-shadow);border-radius:var(--adm-radius)!important;}
 .btn-outline-secondary{border-color:var(--gold-border)!important;color:var(--text-muted)!important;}
 .btn-outline-secondary:hover{background:var(--adm-hover)!important;color:var(--cream)!important;}
@@ -251,7 +272,6 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('bizrank')"><i class="bi bi-trophy me-2"></i><span style="background:linear-gradient(90deg,#C9A84C,#e8d18a);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:800">Business Rank</span></a>
       <div class="nav-group-label">Financie</div>
         <a class="nav-link" href="#" onclick="show('finance')"><i class="bi bi-cash-coin me-2"></i><span style="color:#8bc34a;font-weight:700">Peniaze</span> <span id="failedBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
-        <a class="nav-link" href="#" onclick="show('payouts')"><i class="bi bi-wallet2 me-2"></i>Výplaty trénerov</a>
       <div class="nav-group-label">Výkon</div>
       <a class="nav-link" href="#" onclick="show('funnel')"><i class="bi bi-funnel-fill me-2"></i>Funnel</a>
       <a class="nav-link" href="#" onclick="show('retention')"><i class="bi bi-people-fill me-2"></i>Klienti — výkon</a>
@@ -267,7 +287,6 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div class="group-links" data-group="partners">
       <a class="nav-link" href="#" onclick="show('partners')"><i class="bi bi-people me-2"></i>Partneri</a>
       <a class="nav-link" href="#" onclick="show('addpartner')"><i class="bi bi-person-plus me-2"></i>Vytvoriť účet klienta</a>
-      <a class="nav-link" href="#" onclick="show('commissions')"><i class="bi bi-cash-stack me-2"></i>Výplaty provízií</a>
     </div>
     </div>
 
@@ -328,8 +347,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- FINANCIE & ÚČTOVNÍCTVO — jedna obrazovka na peniaze -->
   <div class="section" id="s-predaje" style="max-width:1250px">
-    <div class="adm-tabs pen-tabs"><button class="adm-tab" onclick="show('finance')">💶 Prehľad</button><button class="adm-tab" onclick="show('accounting')">🧮 Účtovníctvo a uzávierky</button><button class="adm-tab on" onclick="show('predaje')">🧾 Faktúry a doklady</button></div>
-    <div class="adm-tabs pen-sub"><button class="adm-tab on" onclick="show('predaje')">💰 Predaje</button><button class="adm-tab" onclick="show('invoices')">🧾 Faktúry</button><button class="adm-tab" onclick="show('sale')">➕ Zaznamenať predaj</button><button class="adm-tab" onclick="show('refunds')">↩️ Refundácie</button><button class="adm-tab" onclick="show('failed')">⚠️ Neúspešné platby</button></div>
+    <div class="pen-hub"></div>
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
       <div><h4 class="fw-bold mb-0">💰 Predaje</h4>
         <p class="text-muted small mb-0">Všetky peniaze na jednom mieste — členstvá, vstupy, súkromné hodiny, vstupenky aj e-shop. Rovnaké číslo ako v Prehľade.</p></div>
@@ -396,8 +414,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   <!-- ORDERS -->
   <!-- SALE -->
   <div id="s-sale" class="section">
-    <div class="adm-tabs pen-tabs"><button class="adm-tab" onclick="show('finance')">💶 Prehľad</button><button class="adm-tab" onclick="show('accounting')">🧮 Účtovníctvo a uzávierky</button><button class="adm-tab on" onclick="show('predaje')">🧾 Faktúry a doklady</button></div>
-    <div class="adm-tabs pen-sub"><button class="adm-tab" onclick="show('predaje')">💰 Predaje</button><button class="adm-tab" onclick="show('invoices')">🧾 Faktúry</button><button class="adm-tab on" onclick="show('sale')">➕ Zaznamenať predaj</button><button class="adm-tab" onclick="show('refunds')">↩️ Refundácie</button><button class="adm-tab" onclick="show('failed')">⚠️ Neúspešné platby</button></div>
+    <div class="pen-hub"></div>
     <div id="manualPayQueue"></div>
     <h4 class="fw-bold mb-4">➕ Zaznamenať predaj (manuálne)</h4>
     <div class="row">
@@ -460,7 +477,9 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- COMMISSIONS -->
   <div id="s-commissions" class="section">
-    <h4 class="fw-bold mb-4">Výplaty provízií</h4>
+    <div class="pen-hub"></div>
+    <h4 class="fw-bold mb-1">🤝 Provízie partnerov (MLM)</h4>
+    <p class="text-muted small mb-3">Mesačné provízie partnerskej línie z predajov. „Vyplatiť“ označí províziu za mesiac ako vyplatenú a zapíše sa do auditu. Ambasádorské provízie klientok idú automaticky do kreditu — sekcia Ambasádori.</p>
     <div class="card border-0 rounded-3 p-4 mb-3">
       <div class="d-flex gap-3 align-items-end flex-wrap">
         <div><label class="form-label small fw-semibold">Mesiac</label>
@@ -1384,9 +1403,9 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- FINANCE -->
   <div class="section" id="s-finance">
-    <div class="adm-tabs pen-tabs"><button class="adm-tab on" onclick="show('finance')">💶 Prehľad</button><button class="adm-tab" onclick="show('accounting')">🧮 Účtovníctvo a uzávierky</button><button class="adm-tab" onclick="show('predaje')">🧾 Faktúry a doklady</button></div>
-    <h4 class="fw-bold mb-1">💶 Peniaze — prehľad</h4>
-    <p class="text-muted small mb-3">Tržby, náklady a výsledok, MRR/ARR a čo zo Stripe prišlo na účet. Vyber časový horizont a prepínaj šípkami.</p>
+    <div class="pen-hub"></div>
+    <h4 class="fw-bold mb-1">📊 Prehľad</h4>
+    <p class="text-muted small mb-3">Tržby, náklady a výsledok, MRR/ARR a čo zo Stripe prišlo na účet. Vyber časový horizont a prepínaj šípkami. Všetky čísla v Peniazoch vychádzajú z jedného zdroja tržieb.</p>
     <div class="card bg-dark border-secondary mb-3"><div class="card-body py-3">
       <!-- 1) granularita: v akom horizonte sa pozerám -->
       <div class="d-flex justify-content-center mb-3">
@@ -1418,6 +1437,20 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       </div>
     </div></div>
     <div class="row g-2 mb-3" id="finKpis"></div>
+    <!-- Odkiaľ peniaze tečú — ostatné sekcie, ktoré zapisujú do tržieb / nákladov -->
+    <div class="pen-map mb-3">
+      <span class="pen-map-lbl">Do tržieb sa zapisujú aj</span>
+      <a href="#" onclick="show('products');return false">🛒 Objednávky e-shopu</a>
+      <a href="#" onclick="show('eventy');return false">🎟️ Vstupenky na eventy</a>
+      <a href="#" onclick="show('venceky');return false">🎓 Venčeky</a>
+      <a href="#" onclick="show('kids');return false">🧒 Zumba Kids</a>
+      <a href="#" onclick="show('privatehours');return false">🎭 Súkromné hodiny</a>
+      <a href="#" onclick="show('kiosk');return false">🖥️ Kiosk (vstupy)</a>
+      <span class="pen-map-lbl">Náklady a odmeny</span>
+      <a href="#" onclick="show('campaigns');return false">📣 Reklama (kampane)</a>
+      <a href="#" onclick="show('ambasadori');return false">🔥 Ambasádori (kredit)</a>
+      <a href="#" onclick="show('promos');return false">🎟️ Promo kódy</a>
+    </div>
     <div class="card bg-dark border-secondary mb-3"><div class="card-body">
       <h6 class="fw-bold mb-3"><i class="bi bi-graph-up me-2 text-warning"></i>Príjmy za obdobie</h6>
       <canvas id="finChart" height="90"></canvas>
@@ -1448,8 +1481,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- INVOICES -->
   <div class="section" id="s-invoices">
-    <div class="adm-tabs pen-tabs"><button class="adm-tab" onclick="show('finance')">💶 Prehľad</button><button class="adm-tab" onclick="show('accounting')">🧮 Účtovníctvo a uzávierky</button><button class="adm-tab on" onclick="show('predaje')">🧾 Faktúry a doklady</button></div>
-    <div class="adm-tabs pen-sub"><button class="adm-tab" onclick="show('predaje')">💰 Predaje</button><button class="adm-tab on" onclick="show('invoices')">🧾 Faktúry</button><button class="adm-tab" onclick="show('sale')">➕ Zaznamenať predaj</button><button class="adm-tab" onclick="show('refunds')">↩️ Refundácie</button><button class="adm-tab" onclick="show('failed')">⚠️ Neúspešné platby</button></div>
+    <div class="pen-hub"></div>
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <h4 class="fw-bold mb-0">🧾 Faktúry</h4>
       <div class="d-flex gap-2">
@@ -1542,7 +1574,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   <div class="section" id="s-exports">
     <div class="adm-tabs"><button class="adm-tab on" onclick="show('exports')">⬇️ Exporty</button><button class="adm-tab" onclick="show('audit')">🛡️ Audit log</button></div>
     <h4 class="fw-bold mb-1">📤 Exporty jedným klikom</h4>
-    <p class="text-muted small mb-3">Štyri súbory pre účtovníčku sú hore (vyber mesiac). Ostatné exporty pre analýzu nižšie — CSV, alebo XLSX kde je.</p>
+    <p class="text-muted small mb-3">Exporty pre analýzu — CSV, alebo XLSX kde je. Mesačný balík pre účtovníčku je v Peniazoch.</p>
     <div id="exportGrid" class="row g-3"></div>
   </div>
 
@@ -1561,8 +1593,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- REFUNDÁCIE -->
   <div class="section" id="s-refunds">
-    <div class="adm-tabs pen-tabs"><button class="adm-tab" onclick="show('finance')">💶 Prehľad</button><button class="adm-tab" onclick="show('accounting')">🧮 Účtovníctvo a uzávierky</button><button class="adm-tab on" onclick="show('predaje')">🧾 Faktúry a doklady</button></div>
-    <div class="adm-tabs pen-sub"><button class="adm-tab" onclick="show('predaje')">💰 Predaje</button><button class="adm-tab" onclick="show('invoices')">🧾 Faktúry</button><button class="adm-tab" onclick="show('sale')">➕ Zaznamenať predaj</button><button class="adm-tab on" onclick="show('refunds')">↩️ Refundácie</button><button class="adm-tab" onclick="show('failed')">⚠️ Neúspešné platby</button></div>
+    <div class="pen-hub"></div>
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
       <h4 class="fw-bold mb-0">↩️ Refundácie</h4>
       <button class="btn btn-sm btn-warning" onclick="openRefund()"><i class="bi bi-plus-lg"></i> Nová refundácia</button>
@@ -1577,8 +1608,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   </div>
 
   <div class="section" id="s-failed">
-    <div class="adm-tabs pen-tabs"><button class="adm-tab" onclick="show('finance')">💶 Prehľad</button><button class="adm-tab" onclick="show('accounting')">🧮 Účtovníctvo a uzávierky</button><button class="adm-tab on" onclick="show('predaje')">🧾 Faktúry a doklady</button></div>
-    <div class="adm-tabs pen-sub"><button class="adm-tab" onclick="show('predaje')">💰 Predaje</button><button class="adm-tab" onclick="show('invoices')">🧾 Faktúry</button><button class="adm-tab" onclick="show('sale')">➕ Zaznamenať predaj</button><button class="adm-tab" onclick="show('refunds')">↩️ Refundácie</button><button class="adm-tab on" onclick="show('failed')">⚠️ Neúspešné platby</button></div>
+    <div class="pen-hub"></div>
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
       <h4 class="fw-bold mb-0">💳 Neúspešné platby / dlžníci</h4>
       <button class="btn btn-sm btn-outline-secondary" onclick="loadFailed()"><i class="bi bi-arrow-clockwise"></i></button>
@@ -1690,7 +1720,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- VÝPLATY TRÉNEROV -->
   <div class="section" id="s-payouts">
-    <div class="adm-tabs"><button class="adm-tab on" onclick="show('payouts')">💵 Výplaty</button><button class="adm-tab" onclick="show('trainers')">🏅 Výkon</button><button class="adm-tab" onclick="show('classhistory')">🕘 História hodín</button><button class="adm-tab" onclick="show('tasktracker')">✅ Úlohy trénerov</button></div>
+    <div class="pen-hub"></div>
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
       <h4 class="fw-bold mb-0">💵 Výplaty trénerov</h4>
       <div class="d-flex gap-2 align-items-center">
@@ -1702,6 +1732,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       </div>
     </div>
     <p class="text-muted small mb-3">Automatický výpočet z dochádzky podľa pravidiel odmien. Zrážky a stav uprav ručne — každá zmena sa loguje do auditu.</p>
+    <div id="poCashAll"></div>
     <div id="poRules" class="card bg-dark border-secondary mb-3 d-none"><div class="card-body">
       <div class="d-flex justify-content-between align-items-center mb-2">
         <h6 class="fw-bold mb-0">Pravidlá odmien (€)</h6>
@@ -1773,7 +1804,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- ÚLOHY TRÉNEROV -->
   <div class="section" id="s-tasktracker">
-    <div class="adm-tabs"><button class="adm-tab" onclick="show('payouts')">💵 Výplaty</button><button class="adm-tab" onclick="show('trainers')">🏅 Výkon</button><button class="adm-tab" onclick="show('classhistory')">🕘 História hodín</button><button class="adm-tab on" onclick="show('tasktracker')">✅ Úlohy trénerov</button></div>
+    <div class="adm-tabs"><button class="adm-tab" onclick="show('payouts')" title="Otvorí Peniaze → Výplaty trénerov">💵 Výplaty ↗</button><button class="adm-tab" onclick="show('trainers')">🏅 Výkon</button><button class="adm-tab" onclick="show('classhistory')">🕘 História hodín</button><button class="adm-tab on" onclick="show('tasktracker')">✅ Úlohy trénerov</button></div>
     <h4 class="fw-bold mb-1">🎯 Coach Growth — denný plán trénerov</h4>
     <p class="text-muted small mb-3">Povinné denné úlohy, kontakty leadov, streak a completion. Konfigurácia bodov a vlastné úlohy.</p>
     <div id="cgOverview" class="mb-3"><div class="text-muted small">Načítavam…</div></div>
@@ -1828,7 +1859,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   <!-- TIPY (DANK) -->
   <!-- HISTÓRIA HODÍN & ZÁROBKY -->
   <div class="section" id="s-classhistory">
-    <div class="adm-tabs"><button class="adm-tab" onclick="show('payouts')">💵 Výplaty</button><button class="adm-tab" onclick="show('trainers')">🏅 Výkon</button><button class="adm-tab on" onclick="show('classhistory')">🕘 História hodín</button><button class="adm-tab" onclick="show('tasktracker')">✅ Úlohy trénerov</button></div>
+    <div class="adm-tabs"><button class="adm-tab" onclick="show('payouts')" title="Otvorí Peniaze → Výplaty trénerov">💵 Výplaty ↗</button><button class="adm-tab" onclick="show('trainers')">🏅 Výkon</button><button class="adm-tab on" onclick="show('classhistory')">🕘 História hodín</button><button class="adm-tab" onclick="show('tasktracker')">✅ Úlohy trénerov</button></div>
     <h4 class="fw-bold mb-1">🕘 História hodín & zárobky</h4>
     <p class="text-muted small mb-3">Jednotlivé odučené hodiny — kto učil, kto bol na hodine, tržba a zárobok trénera. Klikni na riadok pre rozpis, na hlavičku pre zoradenie, na meno/trénera pre profil a zárobky.</p>
     <div class="d-flex gap-2 align-items-end flex-wrap mb-3">
@@ -1856,7 +1887,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- VÝKON TRÉNEROV -->
   <div class="section" id="s-trainers">
-    <div class="adm-tabs"><button class="adm-tab" onclick="show('payouts')">💵 Výplaty</button><button class="adm-tab on" onclick="show('trainers')">🏅 Výkon</button><button class="adm-tab" onclick="show('classhistory')">🕘 História hodín</button><button class="adm-tab" onclick="show('tasktracker')">✅ Úlohy trénerov</button></div>
+    <div class="adm-tabs"><button class="adm-tab" onclick="show('payouts')" title="Otvorí Peniaze → Výplaty trénerov">💵 Výplaty ↗</button><button class="adm-tab on" onclick="show('trainers')">🏅 Výkon</button><button class="adm-tab" onclick="show('classhistory')">🕘 História hodín</button><button class="adm-tab" onclick="show('tasktracker')">✅ Úlohy trénerov</button></div>
     <h4 class="fw-bold mb-1">🏅 Výkon trénerov</h4>
     <p class="text-muted small mb-3">Odučené hodiny, obsadenosť, klienti, tržby a porovnanie s predošlým obdobím.</p>
     <div class="d-flex gap-2 align-items-end flex-wrap mb-3">
@@ -1876,7 +1907,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- ÚČTOVNÍCTVO -->
   <div class="section" id="s-accounting">
-    <div class="adm-tabs pen-tabs"><button class="adm-tab" onclick="show('finance')">💶 Prehľad</button><button class="adm-tab on" onclick="show('accounting')">🧮 Účtovníctvo a uzávierky</button><button class="adm-tab" onclick="show('predaje')">🧾 Faktúry a doklady</button></div>
+    <div class="pen-hub"></div>
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
       <h4 class="fw-bold mb-0">🧮 Účtovníctvo & uzávierky</h4>
       <div class="d-flex gap-2 flex-wrap">
@@ -1904,7 +1935,26 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <div class="col-lg-6"><div class="card bg-dark border-secondary h-100"><div class="card-body"><h6 class="fw-bold mb-3">Podľa mesta / štúdia</h6><div id="accByCity"></div></div></div></div>
       <div class="col-lg-6"><div class="card bg-dark border-secondary h-100"><div class="card-body"><h6 class="fw-bold mb-3">Podľa inštruktora</h6><div id="accByInstructor"></div></div></div></div>
       <div class="col-12"><div class="card bg-dark border-secondary"><div class="card-body"><h6 class="fw-bold mb-3">Mesačná uzávierka</h6><div id="accByMonth"></div></div></div></div>
+      <div class="col-12"><div class="card bg-dark border-secondary"><div class="card-body">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+          <h6 class="fw-bold mb-0">🩺 Kontrola predajov a faktúr</h6>
+          <button class="btn btn-sm btn-outline-warning" onclick="loadSalesHealth()"><i class="bi bi-search"></i> Skontrolovať</button>
+        </div>
+        <p class="text-muted small mb-2">Nájde zaplatené členstvá bez spôsobu platby (nie sú v tržbách), predaje a objednávky bez faktúry a duplicitné faktúry. Nič nemení, kým neklikneš na opravu.</p>
+        <div id="shBody" class="small text-muted">Klikni na „Skontrolovať“.</div>
+      </div></div></div>
     </div>
+  </div>
+
+  <!-- PRE ÚČTOVNÍČKU — mesačný balík súborov (Peniaze) -->
+  <div class="section" id="s-uctovnicka">
+    <div class="pen-hub"></div>
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
+      <h4 class="fw-bold mb-0">📒 Pre účtovníčku</h4>
+      <div class="d-flex align-items-center gap-2"><span class="text-muted small">Mesiac</span><input type="month" id="uctMonth" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:150px;color-scheme:dark" onchange="_expMesiac=this.value;loadUctovnicka()"></div>
+    </div>
+    <p class="text-muted small mb-3">Mesačný balík pre účtovníčku jedným klikom: príjmy, faktúry, dobropisy, výplaty a pásky. Ostatné exporty (členovia, CRM, kampane) sú v Exporty &amp; audit.</p>
+    <div id="uctGrid" class="row g-3"></div>
   </div>
 
   <!-- BODY KLIENTOV (vlastná záložka) -->
@@ -2501,7 +2551,7 @@ const SECTION_GROUP={attendance:'manage',sale:'reports',
   leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',staff:'manage',classes:'manage',privatehours:'manage',kiosk:'manage',products:'manage',rentals:'manage',articles:'manage',
   marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
   dnes:'manage',predaje:'reports',  sutaze:'marketing',venceky:'manage',kids:'manage',eventy:'manage',fusionai:'reports',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',funnel:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
-  partners:'partners',addpartner:'partners',commissions:'partners'};
+  partners:'partners',addpartner:'partners',commissions:'reports',uctovnicka:'reports'};
 function selectGroup(g){
   // Nový sidebar: skupina aktívnej sekcie sa otvorí (zbalené ostatné nechávame tak)
   const grp=document.querySelector('.grp2[data-grp="'+g+'"]');
@@ -2538,7 +2588,8 @@ function cmdkSections(q){
       out.push({t, sec:m?m[1]:null, href:a.getAttribute('href')});
     }
   });
-  return out.slice(0, q?7:6);
+  if(q) PEN_TABS.forEach(g=>g.items.forEach(i=>{ const t='Peniaze › '+i.t; if((t+' '+i.d).toLowerCase().includes(q) && !out.some(o=>o.sec===i.sec)) out.push({t, sec:i.sec, href:'#'}); }));
+  return out.slice(0, q?9:6);
 }
 async function cmdkSearch(){
   const q=(document.getElementById('cmdkIn').value||'').trim().toLowerCase();
@@ -2900,7 +2951,9 @@ function show(sec){
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   document.getElementById('s-'+sec).classList.add('active');
   document.querySelectorAll('.nav-link').forEach(a=>a.classList.remove('active'));
-  document.querySelector(`.nav-link[onclick*="'${sec}'"]`)?.classList.add('active');
+  // Peniaze: všetky peňažné záložky svietia v menu ako jedna položka a majú spoločnú lištu
+  document.querySelector(`.nav-link[onclick*="'${PEN_SECS.has(sec)?'finance':sec}'"]`)?.classList.add('active');
+  if(PEN_SECS.has(sec)) renderPenHub(sec);
   if(SECTION_GROUP[sec]) selectGroup(SECTION_GROUP[sec]);
   if(sec==='urgent')loadUrgent();
   if(sec==='fusionai')loadFusionAI();
@@ -2945,6 +2998,7 @@ function show(sec){
   if(sec==='tasktracker')initTaskTracker();
   if(sec==='trainers')initTrainers();
   if(sec==='payouts'){ initPayouts(); loadAdminTips(); }
+  if(sec==='uctovnicka')loadUctovnicka();
   if(sec==='refunds')loadRefunds();
   if(sec==='failed')loadFailed();
   if(sec==='promos')loadPromos();
@@ -3007,7 +3061,8 @@ const EXPORTS=[
   {k:'campaigns', icon:'📣', title:'Kampane',         desc:'Náklady, tržby, ROAS'},
   {k:'payments',  icon:'💳', title:'Platby (brána)',  desc:'Všetky prijaté online platby'},
 ];
-const mesiacExportu=()=>document.getElementById('expMonth')?.value||new Date().toISOString().slice(0,7);
+let _expMesiac=new Date().toISOString().slice(0,7);
+const mesiacExportu=()=>_expMesiac;
 const rozsahMesiaca=m=>{ const d=new Date(+m.slice(0,4), +m.slice(5,7), 0); return {from:m+'-01', to:m+'-'+String(d.getDate()).padStart(2,'0')}; };
 const UCTOVNICKA=[
   {icon:'💶', title:'Príjmy', desc:'Predaje za mesiac — dátum, klient, za čo, suma, spôsob platby, číslo faktúry', csv:()=>{ const r=rozsahMesiaca(mesiacExportu()); return '/api/admin/predaje/export.csv?from='+r.from+'&to='+r.to; }},
@@ -3020,6 +3075,131 @@ const EXTRA_EXPORTS=[
   {icon:'🏆', title:'Body klientov', desc:'Súťaž Klientka mesiaca za mesiac', csv:()=>{ const r=rozsahMesiaca(mesiacExportu()); return '/api/admin/points-summary.csv?from='+r.from+'&to='+r.to; }},
   {icon:'📄', title:'Výplatné pásky', desc:'Pásky trénerov za mesiac', csv:()=>'/api/admin/payslips.csv?month='+mesiacExportu()},
 ];
+/* ─── PENIAZE — jeden hub, jedna lišta pre všetko o peniazoch (Marek 19. 9.) ───
+   Sekcie ostali s pôvodnými ID a loadermi (show('invoices') atď. funguje odvšadiaľ),
+   lišta sa kreslí z jedného zoznamu, takže nová peňažná záložka = jeden riadok tu. */
+const PEN_TABS=[
+  {grp:'Prehľad', items:[
+    {sec:'finance',     ic:'📊', t:'Prehľad',            d:'Tržby, náklady a výsledok, Stripe, mestá, aktívne členstvá'},
+    {sec:'predaje',     ic:'💰', t:'Predaje',            d:'Každý predaj — členstvá, vstupy, vstupenky, e-shop, venčeky'},
+  ]},
+  {grp:'Doklady', items:[
+    {sec:'invoices',    ic:'🧾', t:'Faktúry',            d:'Vydané faktúry, dobropisy, ISDOC a nová faktúra'},
+    {sec:'refunds',     ic:'↩️', t:'Refundácie',         d:'Vrátené platby, storná, dobropisy a kredit'},
+    {sec:'failed',      ic:'⚠️', t:'Dlžníci',            d:'Neúspešné platby členstiev a upomienky', badge:true},
+    {sec:'sale',        ic:'➕', t:'Zaznamenať predaj',  d:'Ručný predaj mimo appky (osobne, telefonicky)'},
+  ]},
+  {grp:'Výplaty', items:[
+    {sec:'payouts',     ic:'💵', t:'Výplaty trénerov',   d:'Odmeny z dochádzky, tipy, hotovosť u trénerov, pásky'},
+    {sec:'commissions', ic:'🤝', t:'Provízie partnerov', d:'MLM provízie partnerskej línie za mesiac'},
+  ]},
+  {grp:'Účtovníctvo', items:[
+    {sec:'accounting',  ic:'🧮', t:'Účtovníctvo',        d:'Rozpady príjmov, mesačná uzávierka, kontrola predajov'},
+    {sec:'uctovnicka',  ic:'📒', t:'Pre účtovníčku',     d:'Mesačný balík súborov jedným klikom'},
+  ]},
+];
+const PEN_SECS=new Set(PEN_TABS.flatMap(g=>g.items.map(i=>i.sec)));
+let _penFailed=null;
+function renderPenHub(sec){
+  const host=document.querySelector('#s-'+sec+' .pen-hub'); if(!host) return;
+  const cur=PEN_TABS.flatMap(g=>g.items).find(i=>i.sec===sec);
+  const cnt=_penFailed>0?`<span class="pen-cnt" id="penFailedCnt">${_penFailed}</span>`:'<span id="penFailedCnt"></span>';
+  host.innerHTML=`<div class="pen-head">
+      <div><div class="pen-title"><span class="pen-ic">💶</span>Peniaze</div>
+        <div class="pen-subt">${cur?escHtml(cur.d):'Všetko o peniazoch na jednom mieste'}</div></div>
+      <div class="pen-actions">
+        <button class="btn btn-sm btn-brand" onclick="show('sale')"><i class="bi bi-plus-lg me-1"></i>Zaznamenať predaj</button>
+        <button class="btn btn-sm pen-btn" onclick="show('invoices');setTimeout(openNewInvoice,60)"><i class="bi bi-receipt me-1"></i>Nová faktúra</button>
+        <button class="btn btn-sm pen-btn" onclick="show('refunds');setTimeout(openRefund,60)"><i class="bi bi-arrow-return-left me-1"></i>Refundácia</button>
+      </div></div>
+    <div class="pen-nav">${PEN_TABS.map((g,gi)=>(gi?'<span class="pen-sep"></span>':'')+'<span class="pen-lbl">'+g.grp+'</span>'
+      +g.items.map(i=>`<button class="pen-tab${i.sec===sec?' on':''}" onclick="show('${i.sec}')" title="${escHtml(i.d)}">${i.ic} ${i.t}${i.badge?cnt:''}</button>`).join('')).join('')}</div>`;
+  if(_penFailed===null) penFailedCount();
+}
+// Počet dlžníkov do lišty aj do menu (loadFailed ho aktualizuje, keď sa záložka otvorí)
+async function penFailedCount(){
+  const d=await api('/api/admin/failed-payments').catch(()=>null);
+  _penFailed=(d&&!d.error)?(+d.count||0):0;
+  const b=document.getElementById('failedBadge'); if(b){ if(_penFailed>0){ b.textContent=_penFailed; b.style.display='inline'; } else b.style.display='none'; }
+  const c=document.getElementById('penFailedCnt'); if(c){ c.className=_penFailed>0?'pen-cnt':''; c.textContent=_penFailed>0?_penFailed:''; }
+}
+// Pre účtovníčku — mesačný balík (rovnaké súbory, aké boli v Exportoch, plus pásky a uzávierka)
+function loadUctovnicka(){
+  const grid=document.getElementById('uctGrid'); if(!grid) return;
+  const inp=document.getElementById('uctMonth'); if(inp&&inp.value!==_expMesiac) inp.value=_expMesiac;
+  const m=_expMesiac, r=rozsahMesiaca(m);
+  const OPEN=["show('predaje')","show('invoices')","show('refunds')","show('payouts')"];
+  const L=[
+    ...UCTOVNICKA.map((e,i)=>({...e, open:OPEN[i]})),
+    {icon:'📄', title:'Výplatné pásky', desc:'Pásky trénerov za mesiac — tie isté, čo im chodia e-mailom', csv:()=>'/api/admin/payslips.csv?month='+m, open:"show('payouts')"},
+    {icon:'🧮', title:'Účtovníctvo za mesiac', desc:'Príjmy podľa členstva, mesta, inštruktora a spôsobu platby', csv:()=>'/api/admin/accounting/export.csv?from='+r.from+'&to='+r.to, open:"show('accounting')"},
+    {icon:'💳', title:'Platby cez bránu', desc:'Všetky online platby (Stripe) — na párovanie s výpisom z banky', csv:()=>'/api/admin/export/payments.csv'},
+  ];
+  const card=e=>`<div class="col-md-6 col-lg-4"><div class="card bg-dark border-secondary h-100"><div class="card-body d-flex flex-column">
+    <div style="font-size:1.7rem">${e.icon}</div><div class="fw-bold mt-1">${e.title}</div><div class="text-muted small mb-3 flex-fill">${e.desc}</div>
+    <div class="d-flex gap-2"><a class="btn btn-sm btn-warning" href="${e.csv()}" target="_blank"><i class="bi bi-download me-1"></i>CSV</a>${e.open?`<button class="btn btn-sm btn-outline-light" onclick="${e.open}">Pozrieť v appke</button>`:''}</div></div></div></div>`;
+  grid.innerHTML=`<div class="col-12 text-muted small">Príjmy, výplaty, pásky a účtovníctvo sú za <b style="color:#C9A24C">${fmtMonthSk(m)}</b>; faktúry, dobropisy a platby cez bránu za celé obdobie.</div>`+L.map(card).join('');
+}
+// Hotovosť vybraná od klientok — všetci tréneri naraz (predtým len v detaile trénera).
+// Majiteľ = pokladňa firmy (nezráža sa), ostatní = má u seba, kým neklikneš „Prevzal som".
+async function loadCashAll(){
+  const box=document.getElementById('poCashAll'); if(!box) return;
+  const month=document.getElementById('poMonth').value;
+  const d=await api('/api/admin/cash?month='+encodeURIComponent(month)).catch(()=>null);
+  const rows=(d&&d.ok&&d.rows)||[];
+  if(!rows.length){ box.innerHTML=''; return; }
+  const majitelia=new Set(_poRows.filter(r=>r.majitel).map(r=>r.trainer));
+  const held=rows.filter(r=>r.status==='held' && !majitelia.has(r.trainer_name));
+  const pokladna=rows.filter(r=>majitelia.has(r.trainer_name)).reduce((s,r)=>s+(+r.amount||0),0);
+  const odovzdane=rows.filter(r=>r.status!=='held' && !majitelia.has(r.trainer_name)).reduce((s,r)=>s+(+r.amount||0),0);
+  const sum=held.reduce((s,r)=>s+(+r.amount||0),0);
+  const byT={}; held.forEach(r=>{ byT[r.trainer_name]=(byT[r.trainer_name]||0)+(+r.amount||0); });
+  const eur=x=>(+x||0).toFixed(2)+' €';
+  box.innerHTML=`<div class="card bg-dark mb-3" style="border:1px solid ${held.length?'#7a3b3b':'var(--gold-border)'}"><div class="card-body py-2 px-3">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
+      <div class="fw-bold small" style="color:${held.length?'#ff8a8a':'#4ade80'}">💵 Hotovosť od klientok za ${fmtMonthSk(month)} — ${held.length?'<b>'+eur(sum)+'</b> je ešte u trénerov':'u trénerov nič nečaká'}</div>
+      <div class="d-flex gap-1 flex-wrap">
+        ${Object.entries(byT).map(([t,a])=>'<span class="badge bg-danger">'+escHtml(t)+' '+eur(a)+'</span>').join('')}
+        ${odovzdane>0?'<span class="badge bg-success">odovzdané '+eur(odovzdane)+'</span>':''}
+        ${pokladna>0?'<span class="badge bg-secondary" title="Hotovosť, ktorú vybral majiteľ — pokladňa firmy">💼 pokladňa '+eur(pokladna)+'</span>':''}
+      </div>
+    </div>
+    ${held.slice(0,25).map(r=>`<div class="d-flex justify-content-between align-items-center gap-2 py-1" style="border-top:1px solid #2a2a2a;font-size:.78rem">
+      <span><b>${escHtml(r.trainer_name||'—')}</b> <span class="text-muted">· ${fmtDate(r.date||r.created_at)}${r.note?' · '+escHtml(r.note):''}</span></span>
+      <span class="d-flex align-items-center gap-2"><b>${eur(r.amount)}</b><button class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:.7rem" onclick="cashHandoverAll('${r._id}')">Prevzal som</button></span></div>`).join('')}
+    <div class="text-muted mt-1" style="font-size:.66rem">„Prevzal som" = peniaze máš ty, zrážka z výplaty sa zruší. Inak sa hotovosť odpočíta pri uzavretí mesiaca. Detail po trénerovi: klik na meno v tabuľke.</div>
+  </div></div>`;
+}
+async function cashHandoverAll(id){
+  if(!confirm('Potvrdiť, že ti tréner túto hotovosť odovzdal? Zrážka z výplaty sa zruší.')) return;
+  const d=await api('/api/admin/cash/'+id+'/handover',{method:'POST'});
+  if(d?.ok){ showToast('✅ Hotovosť prevzatá','success'); loadPayouts(); } else showToast('Chyba: '+(d?.error||'?'),'error');
+}
+// Kontrola predajov a faktúr — /api/admin/sales-health (doteraz bez obrazovky)
+async function loadSalesHealth(apply){
+  const box=document.getElementById('shBody'); if(!box) return;
+  box.innerHTML='<div class="text-muted py-2">Kontrolujem…</div>';
+  const d=await api('/api/admin/sales-health'+(apply?'?apply=1'+(apply==='eshop'?'&filter=eshop':''):'')).catch(()=>null);
+  if(!d||!d.ok){ box.innerHTML='<div class="text-danger">Chyba: '+escHtml((d&&d.error)||'?')+'</div>'; return; }
+  const kinds={}; d.issues.forEach(i=>{ kinds[i.kind]=(kinds[i.kind]||0)+1; });
+  const eshop=d.issues.filter(i=>i.kind==='chýba faktúra'&&/^E-shop/.test(i.what)).length;
+  const dup=d.duplicate_invoices||[];
+  box.innerHTML=(d.applied?`<div class="alert alert-success py-1 small mb-2">Opravené: ${d.applied.memberships_fixed} členstvám doplnený spôsob platby, ${d.applied.invoices_added} faktúr dogenerovaných.</div>`:'')
+   +`<div class="d-flex gap-2 flex-wrap mb-2">
+      <span class="badge ${d.issues_count?'bg-warning text-dark':'bg-success'}">${d.issues_count} nálezov</span>
+      ${Object.entries(kinds).map(([k,n])=>'<span class="badge bg-secondary">'+escHtml(k)+': '+n+'</span>').join('')}
+      ${d.revenue_missing_from_accounting>0?'<span class="badge bg-danger">mimo tržieb '+(+d.revenue_missing_from_accounting).toFixed(2)+' €</span>':''}
+      ${dup.length?'<span class="badge bg-danger">duplicitné faktúry: '+dup.length+'</span>':''}
+    </div>`
+   +(d.issues.length?`<div class="table-responsive" style="max-height:320px;overflow:auto"><table class="table table-dark table-sm mb-2" style="font-size:.76rem"><thead><tr><th>Dátum</th><th>Klientka</th><th>Za čo</th><th class="text-end">Suma</th><th>Nález</th><th>Detail</th></tr></thead><tbody>
+      ${d.issues.map(i=>'<tr><td class="text-nowrap">'+fmtDate(i.date)+'</td><td>'+escHtml(i.name||'')+'</td><td>'+escHtml(i.what||'')+'</td><td class="text-end">'+(+i.amount).toFixed(2)+' €</td><td>'+escHtml(i.kind)+'</td><td class="text-muted">'+escHtml(i.detail||'')+'</td></tr>').join('')}</tbody></table></div>`
+     :'<div style="color:#4ade80">✓ Všetky predaje majú spôsob platby aj faktúru.</div>')
+   +(dup.length?'<div class="small mt-1" style="color:#e57373">Duplicitné faktúry: '+dup.map(x=>escHtml(x.number+' '+(x.name||'')+' '+(+x.total).toFixed(2)+' €')).join(' · ')+'</div>':'')
+   +(d.issues.length?`<div class="d-flex gap-2 flex-wrap mt-2">
+      ${eshop?`<button class="btn btn-sm btn-outline-warning" onclick="if(confirm('Dogenerovať ${eshop} chýbajúcich faktúr k zaplateným e-shop objednávkam? Vystavia sa ticho, bez e-mailu.')) loadSalesHealth('eshop')">Doplniť faktúry k e-shopu (${eshop})</button>`:''}
+      <button class="btn btn-sm btn-outline-danger" onclick="if(confirm('Opraviť VŠETKO: členstvám bez spôsobu platby doplní hotovosť a ku všetkým nálezom dogeneruje faktúry k pôvodným dátumom (ticho, bez e-mailu). Zapíše sa do auditu. Pokračovať?')) loadSalesHealth('all')">Opraviť všetko</button>
+    </div>`:'');
+}
 function loadExports(){
   const grid=document.getElementById('exportGrid');
   const mesiac=mesiacExportu();
@@ -3030,9 +3210,12 @@ function loadExports(){
   </div></div></div>`;
   const csvA=e=>`<a class="btn btn-sm btn-outline-light" href="${e.csv()}"><i class="bi bi-filetype-csv"></i> CSV</a>`;
   grid.innerHTML =
-    `<div class="col-12 d-flex align-items-center gap-2 flex-wrap"><h6 class="fw-bold mb-0">📒 Pre účtovníčku</h6><input type="month" id="expMonth" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:150px;color-scheme:dark" value="${mesiac}" onchange="loadExports()"><span class="text-muted small">Príjmy a Výplaty sú za zvolený mesiac.</span></div>`
-    + UCTOVNICKA.map(e=>card(e.icon,e.title,e.desc,csvA(e),null)).join('')
-    + `<div class="col-12 mt-3"><h6 class="fw-bold mb-0 text-muted">Ostatné exporty</h6></div>`
+    `<div class="col-12 d-flex align-items-center gap-2 flex-wrap"><h6 class="fw-bold mb-0">📅 Mesiac</h6><input type="month" id="expMonth" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:150px;color-scheme:dark" value="${mesiac}" onchange="_expMesiac=this.value;loadExports()"><span class="text-muted small">Body klientov a pásky sú za zvolený mesiac.</span></div>`
+    + `<div class="col-md-6 col-lg-3"><div class="card h-100" style="background:var(--dark-3);border:1px solid var(--gold)"><div class="card-body">
+        <div style="font-size:1.7rem">📒</div><div class="fw-bold mt-1">Mesačný balík pre účtovníčku</div>
+        <div class="text-muted small mb-3">Príjmy, faktúry, dobropisy, výplaty a pásky sú v Peniazoch na jednom mieste.</div>
+        <button class="btn btn-sm btn-warning" onclick="show('uctovnicka')"><i class="bi bi-cash-coin me-1"></i>Otvoriť Peniaze › Pre účtovníčku</button></div></div></div>`
+    + `<div class="col-12 mt-3"><h6 class="fw-bold mb-0 text-muted">Exporty pre analýzu</h6></div>`
     + EXPORTS.map(e=>card(e.icon,e.title,e.desc,`<a class="btn btn-sm btn-outline-light" href="/api/admin/export/${e.k}.csv"><i class="bi bi-filetype-csv"></i> CSV</a>`, e.k)).join('')
     + EXTRA_EXPORTS.map(e=>card(e.icon,e.title,e.desc,csvA(e),null)).join('');
 }
@@ -3305,11 +3488,13 @@ async function submitRefund(){
 const PO_STATUS={draft:'Návrh',approved:'Schválené',partial:'Čiastočne vyplatené',paid:'Vyplatené',held:'Pozdržané',cancelled:'Zrušené'};
 const PO_STATUS_C={draft:'secondary',approved:'info',partial:'warning',paid:'success',held:'warning',cancelled:'danger'};
 let _poInit=false;
+let _poRows=[];
 function initPayouts(){ if(!_poInit){ _poInit=true; document.getElementById('poMonth').value=new Date().toISOString().slice(0,7); } loadPayouts(); }
 async function loadPayouts(){
   const month=document.getElementById('poMonth').value;
   const d=await api('/api/admin/payouts?month='+month);
   if(!d||d.error){ document.getElementById('poBody').innerHTML='<tr><td colspan="15" class="text-danger py-3">Chyba.</td></tr>'; return; }
+  _poRows=d.rows||[]; loadCashAll();
   // rules editor
   const rb=document.getElementById('poRulesBody');
   const inp=(tr,f,v)=>`<input type="number" step="0.01" value="${v||0}" id="rule_${btoa(unescape(encodeURIComponent(tr))).replace(/=/g,'')}_${f}" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:82px">`;

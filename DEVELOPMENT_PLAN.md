@@ -374,6 +374,7 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
 - Ad platformy: db.campaigns.platform + budúce API importy plnia rovnaké polia
   (spend/clicks/…): Meta Ads API, Google Ads API len nahradia ručné zadávanie.
 - Faktúry NIKDY nemazať, len status (paid/cancelled/credited) + dobropisy.
+- **Peniaze = jeden hub (19. 9. 2026):** všetky peňažné obrazovky (Prehľad · Predaje · Faktúry · Refundácie · Dlžníci · Zaznamenať predaj · Výplaty trénerov · Provízie partnerov · Účtovníctvo · Pre účtovníčku) sú záložky jednej položky menu. Lišta sa kreslí z `PEN_TABS` v admin.html (`renderPenHub`), sekcie majú pôvodné ID a loadery. Nová peňažná obrazovka = sekcia s `<div class="pen-hub"></div>` + riadok v `PEN_TABS`, NIE nová položka menu. Hotovosť u trénerov (všetci naraz) je vo Výplatách, kontrola predajov (`/api/admin/sales-health`) v Účtovníctve. Test: qa/admin-peniaze.test.js.
 - Audit log je insert-only.
 
 ## Čo NEROBIŤ
