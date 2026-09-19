@@ -26223,7 +26223,20 @@ async function runAdminAlerts(){
   // a) Campaigns over budget or poor ROAS
   const campaigns = await q.find(db.campaigns,{});
   const revMap = await campaignRevenueMap();
+  // Marek 19. 9.: upozornenia len na kampane, ktoré ešte míňajú — vypnutá kampaň
+  // s nízkym ROAS sa už nedá zachrániť a hlásenie každý deň len spamuje zvonček.
+  // Bežiaca = podľa Mety ACTIVE a niečo minula za 7 dní; bez Meta syncu podľa dátumu konca.
+  const kampanBezi=c=> c.meta_status ? (c.meta_status==='ACTIVE' && (+c.spend_7d||0)>0) : (!c.date_to || c.date_to>=todayStr);
+  // Jednorazovo upratať staré neprečítané hlásenia o vypnutých kampaniach zo zvončeka
+  if(!(await q.one(db.settings,{key:'camp_alerts_upratane_20260919'}))){
+    const stare=(await q.find(db.notifications,{type:'admin_alert', read:false}))
+      .filter(n=>/^camp_(roas|budget)_/.test(n.alert_key||'') && !campaigns.some(c=>kampanBezi(c) && (n.alert_key||'').endsWith('_'+c._id)));
+    for(const n of stare) await q.remove(db.notifications,{_id:n._id});
+    await q.insert(db.settings,{key:'camp_alerts_upratane_20260919', value:true, at:nowISO(), zmazane:stare.length});
+    if(stare.length) console.log('🔕 Zmazané hlásenia o vypnutých kampaniach: '+stare.length);
+  }
   for(const c of campaigns){
+    if(!kampanBezi(c)) continue;
     const spend=+c.spend||0, budget=+c.budget||0;
     if(budget>0 && spend>budget) await raise('camp_budget_'+c._id,'warning',`💸 Prekročený rozpočet kampane`,`„${c.name}" — minuté ${spend.toFixed(2)} € z ${budget.toFixed(2)} €.`);
     const rev=revMap[(c.name||'').toLowerCase().trim()]?.revenue||0;
