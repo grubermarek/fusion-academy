@@ -128,9 +128,13 @@ async function load(){
   try{ d = await (await fetch('/api/ambassador/me',{credentials:'include'})).json(); }
   catch(e){ d = {error:'Nepodarilo sa načítať'}; }
   if(!d.ok){
+    let nxt=null;
+    try{ const t=await (await fetch('/api/public/ambassador-training')).json(); nxt=(t&&t.next)||null; }catch(e){}
     document.getElementById('app').innerHTML =
       '<div class="card"><h2>Táto časť je zamknutá</h2><p class="hint">'+esc(d.error||'Bez prístupu')+'</p>'
       +'<p class="hint">Ambasádorská sekcia sa odomkne po vstupnom školení. '
+      +(nxt ? 'Najbližší termín: <b style="color:#fff">'+esc(nxt.date_label)+'</b>'+(nxt.venue?' · '+esc(nxt.venue):'')+'. '
+            : 'Termín ďalšieho školenia oznámime — nechaj nám kontakt. ')
       +'<a href="/skolenie">Zisti viac →</a></p></div>';
     return;
   }
@@ -163,6 +167,16 @@ function render(){
      + '<div class="mesiac">Tento mesiac <b>'+ob(V.total)+'</b> '+bodov(V.total)
        + (RM.name ? '<span class="sep"></span>hodnosť <b>'+esc(RM.name)+'</b>' : '')
        + '<span class="sep"></span>provízia <b>'+Math.round((d.rate||0)*100)+' %</b></div>'
+     // Sadzba ide z uzávierky minulého mesiaca — body z tohto mesiaca určia tú
+     // ďalšiu. Ukážeme, kam smeruje, aby mala dôvod dotiahnuť mesiac do konca.
+     + (function(){
+         if(d.rate_next==null || d.rate_next===d.rate)
+           return '<p class="hint" style="margin:8px 0 0;font-size:.78rem">Sadzbu určuje uzávierka minulého mesiaca — body z tohto mesiaca ti zarábajú od ďalšieho.</p>';
+         if(d.rate_next>d.rate)
+           return '<p class="hint" style="margin:8px 0 0;font-size:.78rem">🚀 Ak mesiac skončí ako teraz, od ďalšieho mesiaca máš <b style="color:var(--gold)">'+Math.round(d.rate_next*100)+' %</b>.</p>';
+         var lad=(d.ladder||[]).filter(function(r){ return r.rate===d.rate; })[0];
+         return '<p class="hint" style="margin:8px 0 0;font-size:.78rem">Sadzbu '+Math.round((d.rate||0)*100)+' % ('+esc(d.rate_rank_name||'')+') ti dala uzávierka minulého mesiaca. Aby ostala aj ďalší mesiac, treba '+ob(lad?lad.need:0)+' bodov — teraz máš '+ob(V.total)+'.</p>';
+       })()
      + '</div>';
 
   // ── súťaž o Rím ─────────────────────────────────────────────────────────
@@ -221,8 +235,6 @@ function render(){
      + '<div id="lbBox"></div></div>';
 
   // ── provízie podľa hodnosti ──────────────────────────────────────────────
-  const teamFrom = d.team_from || 4;
-  const teamRow = (d.ladder||[]).find(function(r){ return r.rank===teamFrom; });
   h += '<div class="card"><h2>AKO SA POČÍTA PROVÍZIA</h2>'
 
      + '<p class="hint" style="margin-top:-4px"><b style="color:#fff">Jedna sadzba, päť úrovní hlboko</b><br>'
@@ -244,8 +256,9 @@ function render(){
      + '<p class="hint">Príklad: si Regional Leader (15 %) a pod tebou je Leader (13 %). '
      + 'Z jej skupiny dostaneš rozdiel <b style="color:#fff">2 %</b>, ona si nechá svojich 13 %. '
      + 'Spolu 15 % — nikdy viac.</p>'
-     + '<p class="hint">Tímové percento sa počíta od hodnosti <b style="color:#fff">'
-     +   esc(teamRow?teamRow.name:'Leader')+'</b>. Pod ňou zarábaš z vlastných klientok.</p>'
+     + '<p class="hint">Platí to na každej úrovni: kým má ambasádorka pod tebou rovnakú hodnosť ako ty, '
+     + 'z jej skupiny ti neostáva nič — preto sa oplatí rásť. Sadzbu na bežiaci mesiac určuje '
+     + 'uzávierka minulého mesiaca.</p>'
      + '</div>';
 
   // ── kalkulačka ───────────────────────────────────────────────────────────
@@ -301,21 +314,25 @@ function render(){
        + '<a class="btn" style="display:block;text-align:center;text-decoration:none;margin-top:12px" '
        +   'href="/trainer#earnings">Otvoriť moju výplatu →</a></div>';
   } else {
-  const credit=+(d.credit||0), pend=+(d.credit_pending||0), avail=credit+pend;
+  // Dostupné = pripísaný kredit. Čakajúce provízie (14-dňová lehota) sa ukážu
+  // zvlášť s dátumom, kedy sa prvá pripíše — nech je jasné, že nezmizli.
+  const credit=+(d.credit||0), pend=+(d.credit_pending||0), avail=credit, hold=d.hold_days||14;
   h += '<div class="card"><h2>MÔJ KREDIT A VÝPLATA</h2>'
      + '<div style="text-align:center;margin:2px 0 12px"><b class="big" style="display:block;font-weight:900">'
-     +   eur(avail)+'</b><span class="hint">dostupné</span></div>'
+     +   eur(avail)+'</b><span class="hint">dostupné hneď</span></div>'
      + '<div class="row"><span>Pripísaný kredit</span><b>'+eur(credit)+'</b></div>'
-     + (pend? '<div class="row"><span>Čakajúce provízie</span><b>'+eur(pend)+'</b></div>' : '')
-     + '<p class="hint" style="margin-top:12px">Kredit môžeš kedykoľvek použiť v appke — na členstvá, '
+     + (pend? '<div class="row"><span>Čaká na '+hold+'-dňovú lehotu'
+          +(d.pending_release?'<br><small style="color:var(--muted)">prvá sa pripíše '+esc(d.pending_release)+'</small>':'')
+          +'</span><b>'+eur(pend)+'</b></div>' : '')
+     + '<p class="hint" style="margin-top:12px">Provízia čaká '+hold+' dní (ochrana pred vrátením platby) '
+     + 'a potom sa sama pripíše do kreditu. Kredit môžeš kedykoľvek použiť v appke — na členstvá, '
      + 'permanentky, merch, vstupenky na eventy či súkromné hodiny. '
      + (avail>=100
         ? 'Alebo si ho nechaj vyplatiť na účet.'
         : 'Na výplatu na účet potrebuješ aspoň 100 € — teraz máš '+eur(avail)+'.')
      + '</p>'
      + (avail>=100
-        ? '<a class="btn" style="display:block;text-align:center;text-decoration:none;margin-top:12px" '
-          +'href="/client-dashboard#struktura">Požiadať o výplatu</a>'
+        ? '<button class="btn" style="width:100%;margin-top:12px" onclick="openPayout()">💸 Požiadať o výplatu</button>'
         : '')
      + '</div>';
   }
@@ -327,9 +344,11 @@ function render(){
   if(!E.length){
     h += '<p class="hint">Zatiaľ žiadne provízie. Prvá pribudne, keď niekto z tvojej línie zaplatí.</p>';
   } else {
-    const sum=E.reduce((s,x)=>s+x.earned,0), sumPaid=E.reduce((s,x)=>s+x.paid,0);
+    const sum=E.reduce((s,x)=>s+x.earned,0), sumCred=E.reduce((s,x)=>s+(x.credited||0),0);
+    const sumPaidOut=(d.payouts||[]).filter(function(p){ return p.status==='paid'; }).reduce(function(s,p){ return s+p.amount; },0);
     h += '<div class="row"><span>Spolu zarobené (12 mesiacov)</span><b>'+eur(sum)+'</b></div>'
-       + '<div class="row"><span>Z toho už vyplatené</span><b style="color:#8bc34a">'+eur(sumPaid)+'</b></div>'
+       + '<div class="row"><span>Z toho pripísané do kreditu</span><b style="color:#8bc34a">'+eur(sumCred)+'</b></div>'
+       + (sumPaidOut? '<div class="row"><span>Vyplatené na účet</span><b style="color:#8bc34a">'+eur(sumPaidOut)+'</b></div>' : '')
        + '<div style="margin-top:10px">'
        + E.map(function(m){
            return '<div class="row"><span>'+esc(m.month)+'</span><b>'+eur(m.earned)
@@ -466,7 +485,6 @@ function render(){
   h += '</div>';
 
 
-  h += '<p class="hint" style="text-align:center">Presné sumy provízií doladíme na školení.</p>';
   document.getElementById('app').innerHTML = h;
   calc();
   loadInvoices();
@@ -600,7 +618,7 @@ function calc(){
   const AVG=74.9;                                        // priemerné členstvo
   const mine=+el.value||0;
   const team=+document.getElementById('cTeam').value||0;
-  const groupVol=(mine+team)*AVG;
+  const groupVol=Math.round((mine+team)*AVG);   // body sú celé čísla aj v engine
 
   // hodnosť vyplýva z bodov
   const LADS=(D.ladder||[]).slice().sort((a,b)=>a.need-b.need);
@@ -665,7 +683,7 @@ function openCli(i){
     +   (tel ? '<a class="pri" href="tel:'+esc(tel)+'">📞 Zavolať</a>' : '')
     +   (tel ? '<a href="sms:'+esc(tel)+'">💬 SMS</a>' : '')
     +   (tel ? '<a href="https://wa.me/'+esc(wa)+'" target="_blank" rel="noopener">🟢 WhatsApp</a>' : '')
-    +   '<a href="/community?to='+encodeURIComponent(c.id)+'">✉️ Správa v appke</a>'
+    +   '<a href="/community?dm='+encodeURIComponent(c.id)+'">✉️ Správa v appke</a>'
     + '</div>'
     + '<a href="/u/'+encodeURIComponent(c.id)+'" style="display:block;text-align:center;text-decoration:none;'
     +   'margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:12px;color:var(--gold);font-weight:700">'
@@ -674,6 +692,37 @@ function openCli(i){
     + '<button class="btn ghost" style="width:100%;margin-top:14px" onclick="this.closest(\'.modal\').remove()">Zavrieť</button>'
     + '</div>';
   document.body.appendChild(m);
+}
+
+// ── výplata kreditu na účet — priamo tu. Dashboard ambasádorke sekciu s kreditom
+// skrýva (loadAmbEntry), takže odkaz tam viedol na stránku bez tlačidla.
+function openPayout(){
+  const avail=+((D&&D.credit)||0);
+  const m=document.createElement('div'); m.className='modal';
+  m.onclick=function(e){ if(e.target===m) m.remove(); };
+  m.innerHTML='<div class="sheet"><h3>💸 Vyplatiť kredit na účet</h3>'
+    +'<p class="hint" style="margin:0">Dostupné '+eur(avail)+' · minimum 100 € · zvyšok ostáva ako kredit. Peniaze do 3 dní.</p>'
+    +'<label>Suma (€)<input id="poAmount" type="number" min="100" max="'+avail.toFixed(2)+'" step="1" value="'+Math.floor(avail)+'"></label>'
+    +'<label>IBAN<input id="poIban" type="text" placeholder="SK00 0000 0000 0000 0000 0000" value="'+esc(D.bank_account||'')+'"></label>'
+    +'<label>Meno majiteľa účtu<input id="poName" type="text" value="'+esc(D.payout_name||D.name||'')+'"></label>'
+    +'<p class="hint" id="poMsg" style="min-height:1.2em"></p>'
+    +'<button class="btn" style="width:100%" onclick="submitPayout()">Odoslať žiadosť</button>'
+    +'<button class="btn ghost" style="width:100%;margin-top:10px" onclick="this.closest(\'.modal\').remove()">Zavrieť</button></div>';
+  document.body.appendChild(m);
+}
+async function submitPayout(){
+  const msg=document.getElementById('poMsg');
+  const body={ amount:+document.getElementById('poAmount').value,
+    iban:document.getElementById('poIban').value.trim(), name:document.getElementById('poName').value.trim() };
+  msg.textContent='Odosielam…';
+  try{
+    const r=await fetch('/api/client/referral-credit/payout',{method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const j=await r.json();
+    if(!r.ok||j.error) throw new Error(j.error||'Nepodarilo sa odoslať.');
+    msg.innerHTML='<b style="color:#8bc34a">✓ Žiadosť odoslaná — peniaze do 3 dní.</b>';
+    setTimeout(function(){ document.querySelectorAll('.modal').forEach(function(x){ x.remove(); }); load(); },1400);
+  }catch(e){ msg.innerHTML='<b style="color:#ff8a80">'+esc(e.message)+'</b>'; }
 }
 
 function copyLink(){

@@ -45,6 +45,11 @@
     `Co-Authored-By: Claude <noreply@anthropic.com>`.
 12. **Testovanie:** `node --check server.js` po každej zmene servera; potom spusti lokálne
     a otestuj endpointy fetch-om (prihlás sa ako admin). Testovacie dáta po sebe zmaž.
+13. **Provízie ambasádoriek (životný cyklus):** `pending` → po 14 dňoch `approved` = pripísané do
+    `referral_credit` (+ `credit_ledger`), `reversed` pri refundácii. Na výplatu na účet ide LEN pripísaný
+    kredit, čakajúce provízie nikdy. Sadzbu platí engine podľa `amb_rank` z uzávierky minulého mesiaca
+    (`closeVolumeMonth`), nie z bežiaceho; UI musí ukazovať tú istú. Ručný beh: `POST /api/admin/ambassadors/run-daily`.
+    Test: `qa/ambasador-motivacia.test.js`.
 
 ### Env premenné (Railway → Variables)
 

@@ -44,11 +44,9 @@ input:focus,textarea:focus{outline:none;border-color:var(--gold)}
   objaviť tanec, buduje komunitu vo svojom meste — a za svoju prácu dostáva podiel.
   Vstupné školenie vedieme spolu s Beátkou a je podmienkou, aby sa ti ambasádorská sekcia odomkla.</p>
 
-  <div class="meta">
-    📅 <b>28. augusta 2026 · 16:00</b><br>
-    📍 <b>Fusion Academy Detva</b>, Záhradná 7<br>
+  <div class="meta" id="meta">
     👥 Vedú <b>Marek Gruber</b> a <b>Beáta Gruber Buňová</b><br>
-    💶 <b>15 €</b> — v cene školenie, tréning, občerstvenie aj nápoje
+    <span id="metaTermin">📅 Najbližší termín pripravujeme — nechaj nám kontakt nižšie a dáme ti vedieť ako prvej.</span>
   </div>
 
   <div class="card">
@@ -64,18 +62,18 @@ input:focus,textarea:focus{outline:none;border-color:var(--gold)}
     </ul>
   </div>
 
-  <div class="card" style="border-color:rgba(201,168,76,.5)">
-    <h2>Prihlásiť sa — 15 €</h2>
+  <div class="card" id="buyCard" style="border-color:rgba(201,168,76,.5);display:none">
+    <h2 id="buyTitle">Prihlásiť sa</h2>
     <p class="hint" style="margin-top:0">Zaplať kartou v aplikácii a miesto máš isté.
     Príde ti vstupenka s QR kódom, ktorý ukážeš pri príchode.</p>
-    <a class="btn" style="display:block;text-align:center;text-decoration:none;line-height:1.2"
-       href="/event/skolenie-ambasador-2026?src=app">Kúpiť miesto na školení →</a>
+    <a class="btn" id="buyBtn" style="display:block;text-align:center;text-decoration:none;line-height:1.2"
+       href="/event">Kúpiť miesto na školení →</a>
     <p class="hint">Platiť môžeš aj <b>v hotovosti priamo nám</b> — vtedy nám daj vedieť
     na <a href="tel:+421904315151" style="color:var(--gold)">0904 31 51 51</a>, zapíšeme ťa ručne.</p>
   </div>
 
   <div class="card" id="form">
-    <h2>Chceš sa najprv opýtať?</h2>
+    <h2 id="formTitle">Chcem vedieť o ďalšom termíne</h2>
     <p class="hint">Nechaj kontakt a ozveme sa ti — bez záväzku.</p>
     <label>Meno a priezvisko *<input id="fName" autocomplete="name"></label>
     <label>Telefón *<input id="fPhone" type="tel" autocomplete="tel"></label>
@@ -88,6 +86,20 @@ input:focus,textarea:focus{outline:none;border-color:var(--gold)}
 </div>
 <script>
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+// Termín, miesto a cena sa berú z najbližšieho eventu školenia — nič natvrdo.
+(async function(){
+  try{
+    const t=await (await fetch('/api/public/ambassador-training')).json();
+    const n=t&&t.next; if(!n) return;
+    document.getElementById('metaTermin').innerHTML='📅 <b>'+esc(n.date_label)+'</b>'
+      +(n.venue?'<br>📍 <b>'+esc(n.venue)+'</b>'+(n.address?', '+esc(n.address):''):'')
+      +(n.price!=null?'<br>💶 <b>'+esc(String(n.price).replace('.',','))+' €</b> — v cene školenie, tréning, občerstvenie aj nápoje':'');
+    document.getElementById('buyTitle').textContent='Prihlásiť sa'+(n.price!=null?' — '+String(n.price).replace('.',',')+' €':'');
+    document.getElementById('buyBtn').href=n.url;
+    document.getElementById('buyCard').style.display='block';
+    document.getElementById('formTitle').textContent='Chceš sa najprv opýtať?';
+  }catch(e){}
+})();
 async function send(){
   const msg=document.getElementById('msg'), btn=document.getElementById('btn');
   msg.className='msg'; msg.textContent='';

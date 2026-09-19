@@ -293,7 +293,10 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
       <div><h4 class="fw-bold mb-0">🔥 Ambasádori</h4>
         <p class="text-muted small mb-0">Jedno miesto: kto má ambasádorský prístup, ich výkony, prihlášky na školenie a udeľovanie prístupu.</p></div>
-      <button class="btn btn-sm btn-outline-light" onclick="loadAmbasadori()"><i class="bi bi-arrow-clockwise me-1"></i>Obnoviť</button>
+      <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-outline-warning" onclick="ambRunDaily()" title="Provízie staršie než 14 dní sa pripíšu do kreditu (inak beží o 3:00)">💠 Pripísať dozreté provízie</button>
+        <button class="btn btn-sm btn-outline-light" onclick="loadAmbasadori()"><i class="bi bi-arrow-clockwise me-1"></i>Obnoviť</button>
+      </div>
     </div>
     <div class="card border-0 rounded-3 p-3 mb-3">
       <div class="fw-bold small mb-2">➕ Udeliť ambasádorský prístup</div>
@@ -8347,7 +8350,7 @@ async function loadAmbasadori(){
   const d=await api('/api/admin/ambassadors');
   const mt=document.getElementById('ambMembersTbl'), st=document.getElementById('ambSignupsTbl');
   if(!d?.ok){ mt.innerHTML='<tr><td class="text-danger p-2">Chyba: '+escHtml(d?.error||'?')+'</td></tr>'; return; }
-  mt.innerHTML='<thead><tr><th>Meno</th><th>Rola</th><th class="text-center">Kontakty</th><th class="text-center">Záujem</th><th class="text-center">Konverzie</th><th class="text-center">Línia</th><th class="text-center">Objem línie</th><th class="text-center">Body</th></tr></thead><tbody>'
+  mt.innerHTML='<thead><tr><th>Meno</th><th>Rola</th><th class="text-center">Kontakty</th><th class="text-center">Záujem</th><th class="text-center">Konverzie</th><th class="text-center">Línia</th><th class="text-center">Objem línie</th><th class="text-center">Body</th><th class="text-center">OB mesiac</th><th>Hodnosť · sadzba</th><th>Do ďalšej</th></tr></thead><tbody>'
     +d.members.map(m=>`<tr>
       <td><b>${escHtml(m.name||'—')}</b><div class="text-muted" style="font-size:.7rem">${escHtml(m.email||'')}</div></td>
       <td><span class="badge" style="background:${m.rola==='admin'?'#6a2a2a':m.rola==='trénerka'?'#2a4a6a':'#6a5a2a'}">${m.rola}</span>${m.since?`<div class="text-muted" style="font-size:.68rem">od ${m.since}</div>`:''}</td>
@@ -8357,6 +8360,9 @@ async function loadAmbasadori(){
       <td class="text-center">${m.linia}</td>
       <td class="text-center fw-bold">${m.objem_30d.toFixed(2)} €</td>
       <td class="text-center">${m.body_30d}</td>
+      <td class="text-center fw-bold">${m.ob_mesiac||0}</td>
+      <td class="small">${escHtml(m.hodnost||'—')} · ${m.sadzba||10} %</td>
+      <td class="small text-muted">${m.dalsia?escHtml((m.dalsia.star?'★'+m.dalsia.star+' ':'')+m.dalsia.name)+' · chýba '+m.dalsia.missing+' b':'—'}</td>
     </tr>`).join('')+'</tbody>';
   st.innerHTML='<thead><tr><th>Meno</th><th>Kontakt</th><th>Mesto</th><th>Prihlásená</th><th>Školenie</th><th>Účet v appke</th><th></th></tr></thead><tbody>'
     +((d.signups||[]).length?d.signups.map(s2=>`<tr>
@@ -8380,6 +8386,11 @@ async function ambGrant(){
 async function ambGrantId(query){
   const r=await api('/api/admin/ambassadors/grant',{method:'POST',body:JSON.stringify({query})});
   if(r?.ok) showToast(r.granted?('🔥 '+r.granted+' má prístup'):(r.note||'OK'),'success'); else showToast(r?.error||'Chyba','error');
+  loadAmbasadori();
+}
+async function ambRunDaily(){
+  const r=await api('/api/admin/ambassadors/run-daily',{method:'POST',body:JSON.stringify({})});
+  if(r?.ok) showToast('Pripísané provízie: '+r.approved,'success'); else showToast(r?.error||'Chyba','error');
   loadAmbasadori();
 }
 async function ambComplete(id){

@@ -599,8 +599,8 @@ async function notifyCommissionRecipients(txId, awarded){
     if(u.email && !u.email.includes('@internal.local')){
       sendMail(u.email, `💰 Nová provízia +${a.amount.toFixed(2)} € — Fusion Academy`,
         emailTemplate('Máš novú províziu! 🎉',
-          `<p>Ahoj <b>${u.name}</b>,</p><p>Práve ti pribudla <b>${kind.toLowerCase()}</b> <b style="color:#C9A84C">+${a.amount.toFixed(2)} €</b> z predaja <b>${product}</b>${client?` (klient ${client})`:''}.</p><p>Zostatok a výplatu si pozri vo svojom profile.</p>`,
-          '📊 Moje provízie', `${APP_URL}/dashboard`)).catch(()=>{});
+          `<p>Ahoj <b>${u.name}</b>,</p><p>Práve ti pribudla <b>${kind.toLowerCase()}</b> <b style="color:#C9A84C">+${a.amount.toFixed(2)} €</b> z predaja <b>${product}</b>${client?` (klient ${client})`:''}.</p><p>Do kreditu sa pripíše po ${COMMISSION_HOLD_DAYS} dňoch (ochrana pred vrátením platby). Kredit použiješ v appke, alebo si ho od 100 € necháš vyplatiť na účet.</p>`,
+          '📊 Moje provízie', `${APP_URL}${(u.is_admin||u.is_assistant||['ambassador','trainer'].includes(u.user_type))?'/ambasador':'/client-dashboard'}`)).catch(()=>{});
     }
   }
 }
@@ -7802,17 +7802,56 @@ async function activeDownlineCount(uid){
 // Vetvy: reversed (refundácia — cez korekciu, pôvodná sa NIKDY needituje).
 const COMMISSION_HOLD_DAYS = 14;
 
-// Denne: provízie staršie než refund lehota sa schvália.
+// Denne: provízie staršie než refund lehota sa schvália A PRIPÍŠU DO KREDITU.
+// Do 19. 9. sa len prepísal stav na 'approved' — a nič ho ďalej nečítalo:
+// dostupný kredit rátal len 'pending' + referral_credit, takže provízia po
+// 14 dňoch z appky ZMIZLA (ambasádorke klesol zostatok bez vysvetlenia).
+async function creditCommission(c, dovod){
+  const p = await q.one(db.users,{_id:c.partner_id});
+  const amt = +(+c.amount||0).toFixed(2);
+  if(!p || !(amt>0)) return 0;
+  await q.update(db.users,{_id:p._id},{$set:{referral_credit:+((+p.referral_credit||0)+amt).toFixed(2)}});
+  await logCredit(p._id, amt, dovod);
+  return amt;
+}
 async function approveMaturedCommissions(){
   const cutoff = new Date(Date.now() - COMMISSION_HOLD_DAYS*86400000).toISOString();
   const rows = (await q.find(db.commissions,{status:'pending'}))
     .filter(c=>String(c.created_at||'')<cutoff);
+  const podla = {};   // partner_id → pripísaná suma (jedno oznámenie na osobu)
+  let n=0;
   for(const c of rows){
-    await q.update(db.commissions,{_id:c._id, status:'pending'},{$set:{status:'approved', approved_at:nowISO()}});
+    const upd = await q.update(db.commissions,{_id:c._id, status:'pending'},
+      {$set:{status:'approved', approved_at:nowISO(), credited_at:nowISO()}});
+    if(!upd) continue;                                 // medzitým reverznutá
+    const amt = await creditCommission(c, 'Provízia z predaja — po '+COMMISSION_HOLD_DAYS+'-dňovej lehote');
+    if(amt>0){ podla[c.partner_id]=(podla[c.partner_id]||0)+amt; n++; }
   }
-  if(rows.length) console.log('💠 Provízie schválené po refund lehote:', rows.length);
-  return rows.length;
+  for(const [pid,sum] of Object.entries(podla)){
+    await q.insert(db.notifications,{user_id:pid, type:'commission',
+      title:'💠 Provízie pripísané do kreditu: +'+sum.toFixed(2)+' €',
+      body:'Prešla '+COMMISSION_HOLD_DAYS+'-dňová lehota. Kredit môžeš použiť v appke, alebo si ho od 100 € nechať vyplatiť na účet.',
+      read:false, created_at:nowISO()}).catch(()=>{});
+  }
+  if(n) console.log('💠 Provízie pripísané do kreditu po refund lehote:', n);
+  return n;
 }
+// Jednorazovo: provízie, ktoré už boli 'approved' pred touto opravou, sa pripíšu teraz.
+setTimeout(async()=>{
+  try{
+    const KEY='amb_approved_credit_backfill_v1';
+    if(await q.one(db.settings,{key:KEY})) return;
+    await q.insert(db.settings,{key:KEY, value:true, at:nowISO()});
+    const rows=(await q.find(db.commissions,{status:'approved'})).filter(c=>!c.credited_at);
+    let sum=0;
+    for(const c of rows){
+      const upd=await q.update(db.commissions,{_id:c._id, status:'approved', credited_at:{$exists:false}},{$set:{credited_at:nowISO()}});
+      if(!upd) continue;
+      sum+=await creditCommission(c, 'Provízia z predaja — dodatočné pripísanie (oprava 19. 9.)');
+    }
+    if(rows.length) console.log('💠 Backfill approved provízií: '+rows.length+' ks, '+sum.toFixed(2)+' €');
+  }catch(e){ console.error('amb backfill:', e.message); }
+}, 6000);
 
 // Refundácia → korekčná položka. Pôvodný záznam ostáva netknutý.
 async function reverseCommissionsForTx(transaction_id, reason){
@@ -7858,6 +7897,19 @@ async function closeVolumeMonth(month){
       closed_at:nowISO() });
     // hodnosť na účte — z nej sa počítajú provízie budúceho mesiaca
     await q.update(db.users,{_id:u._id},{$set:{amb_rank:R.rank||1}});
+    // Mesačná bilancia každej, kto niečo urobil — čo vyrobila, čo zarobila a
+    // s akou sadzbou ide do ďalšieho mesiaca. Bez toho sa uzávierka diala potichu.
+    const provM = (await q.find(db.commissions,{partner_id:u._id}))
+      .filter(c=>c.status!=='reversed' && (c.month||String(c.created_at||'').slice(0,7))===m)
+      .reduce((s,c)=>s+(+c.amount||0),0);
+    if(vol.total>0 || provM>0){
+      const chyba = R.next ? (' Do '+(R.next.rank===R.rank?('★ '+R.next.star+'. hviezdy'):('hodnosti '+R.next.name))+' chýbalo '+R.next.missing+' b.') : '';
+      await q.insert(db.notifications,{user_id:u._id, type:'ambassador',
+        title:'📕 Uzávierka '+m+': '+vol.total+' bodov',
+        body:'Vlastné '+vol.own+' b, línia '+vol.team+' b. Provízie za mesiac: '+provM.toFixed(2)+' €. '
+          +'Sadzba na ďalší mesiac: '+Math.round(ambRate(R.rank||1)*100)+' % ('+(R.name||'Starter')+').'+chyba,
+        read:false, created_at:nowISO()}).catch(()=>{});
+    }
     // história hodností: porovnaj s predchádzajúcim mesiacom
     const prev = (await q.find(db.amb_volume_months,{user_id:u._id}))
       .filter(x=>x.month<m).sort((a,b)=>b.month.localeCompare(a.month))[0];
@@ -8918,21 +8970,28 @@ app.get('/api/admin/ambassadors', adminAuth, async(req,res)=>{
     const podlaSponzora={};
     for(const u of users){ if(u.sponsor_id&&!u.is_admin&&!u.is_child) (podlaSponzora[u.sponsor_id]=podlaSponzora[u.sponsor_id]||[]).push(u); }
     const rola=u=>u.is_admin?'admin':u.user_type==='trainer'?'trénerka':u.user_type==='manager'?'manažérka':u.user_type==='ambassador'?'ambasádorka':'asistentka';
-    const members=clenovia.map(u=>{
+    const members=[];
+    for(const u of clenovia){
       const moje=kontakty.filter(c=>c.trainer_id===u._id);
       const linia=podlaSponzora[u._id]||[];
       const liniaIds=new Set(linia.map(x=>x._id));
       const objem30=txs.filter(t=>liniaIds.has(t.user_id)&&(+t.amount||0)>0&&!t.commission_only&&ts(t.created_at||t.date)>=od30)
         .reduce((s2,t)=>s2+(+t.amount||0),0);
-      return { id:u._id, name:u.name, email:u.email, rola:rola(u),
+      // Rebríčkové čísla — Marek má vidieť, kto je blízko ďalšej hodnosti, a ozvať sa jej.
+      const vol=await ambVolume(u._id);
+      const R=ambRank(await ambBestVolume(u._id, vol.total));
+      members.push({ id:u._id, name:u.name, email:u.email, rola:rola(u),
         since:(u.ambassador_since||'').slice(0,10)||null,
         kontakty_30d:moje.filter(c=>ts(c.created_at)>=od30).length,
         zaujem_30d:moje.filter(c=>ts(c.created_at)>=od30&&['interested','will_come','booked','replied'].includes(c.outcome)).length,
         konverzie:casy.filter(c=>c.trainer_id===u._id&&c.converted&&!c.conversion_revoked_at).length,
         linia:linia.length, objem_30d:+objem30.toFixed(2),
         body_30d:ulohy.filter(t=>t.trainer_id===u._id&&t.done&&ts(t.done_at||t.created_at)>=od30)
-          .reduce((s2,t)=>s2+(+t.points||0),0) };
-    }).sort((a,b)=>b.objem_30d-a.objem_30d||b.kontakty_30d-a.kontakty_30d);
+          .reduce((s2,t)=>s2+(+t.points||0),0),
+        ob_mesiac:vol.total, hodnost:R.name||null, sadzba:Math.round(ambRate(u.amb_rank||1)*100),
+        dalsia:R.next?{name:R.next.name, star:R.next.star||null, missing:R.next.missing}:null });
+    }
+    members.sort((a,b)=>b.objem_30d-a.objem_30d||b.kontakty_30d-a.kontakty_30d);
     // prihlášky na školenie + spárovanie s účtom podľa mailu/telefónu
     const p9=v=>{let x=String(v||'').replace(/[^\d]/g,'');if(x.startsWith('421'))x=x.slice(3);if(x.startsWith('0'))x=x.slice(1);return x.length===9?x:null;};
     const podlaMailu={}, podlaTel={};
@@ -8979,6 +9038,19 @@ app.post('/api/admin/ambassadors/grant', adminAuth, async(req,res)=>{
       read:false, created_at:nowISO()}).catch(()=>{});
     await auditLog(req,'ambassador_grant',u._id,{},{name:u.name},'');
     res.json({ok:true, granted:u.name});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Ručné spustenie dennej ambasádorskej úlohy: pripísať dozreté provízie a
+// (voliteľne) uzavrieť mesiac. Ticker beží o tretej ráno; toto je pre kontrolu
+// a pre QA — inak sa oprava provízií nedala overiť skôr než na druhý deň.
+app.post('/api/admin/ambassadors/run-daily', adminAuth, async(req,res)=>{
+  try{
+    const approved=await approveMaturedCommissions();
+    let closed=0; const m=String(req.body.month||'');
+    if(/^\d{4}-\d{2}$/.test(m) && m<today().slice(0,7)) closed=await closeVolumeMonth(m);
+    await auditLog(req,'amb_run_daily',null,{},{approved,closed,month:m||null},'');
+    res.json({ok:true, approved, closed});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -9049,9 +9121,19 @@ app.get('/api/ambassador/me', ambassadorAuth, async(req,res)=>{
       rank: R,
       rank_month: Rmesiac,        // hodnosť za bežiaci mesiac (z nej je provízia)
       best_ob: bestOb,            // životné maximum objemu
-      ladder: ambLadder(vol.total).map(r=>({...r, rate: ambRate(r.rank)})),
+      // Cesta hodností z rovnakého čísla ako medaila hore (životné maximum) —
+      // do 19. 9. išla z bežiaceho mesiaca, takže hore svietil Partner a dole
+      // „TU SI" pri Starterovi.
+      ladder: ambLadder(bestOb).map(r=>({...r, rate: ambRate(r.rank)})),
       volume: vol, volume_prev: {month:volPrev.month, total:volPrev.total},
-      rate: ambRate(Rmesiac.rank||1),
+      // Sadzba, ktorú provízny engine (saveCommissions) REÁLNE používa: hodnosť
+      // z uzávierky minulého mesiaca. Do 19. 9. sa tu ukazovala sadzba bežiaceho
+      // mesiaca — prvého bola vždy 10 %, hoci sa platilo podľa minulého mesiaca.
+      rate: ambRate(u.amb_rank||1),
+      rate_rank_name: (AMB_RANKS.find(r=>r.id===(u.amb_rank||1))||AMB_RANKS[0]).name,
+      rate_next: ambRate(Rmesiac.rank||1),   // ak by mesiac skončil ako teraz
+      hold_days: COMMISSION_HOLD_DAYS,
+      bank_account: u.bank_account||'', payout_name: u.payout_name||'',
       contest: await (async()=>{
         const c=AMB_CONTEST;
         if(today()>c.to) return null;
@@ -9072,15 +9154,18 @@ app.get('/api/ambassador/me', ambassadorAuth, async(req,res)=>{
         const comms = await q.find(db.commissions,{partner_id:u._id});
         const by = {};
         for(const c of comms){
+          if(c.status==='reversed') continue;
           const m = c.month || String(c.created_at||'').slice(0,7);
           if(!m) continue;
-          by[m] = by[m] || {month:m, earned:0, paid:0, pending:0};
+          by[m] = by[m] || {month:m, earned:0, paid:0, pending:0, credited:0};
           const a = +c.amount||0;
           by[m].earned += a;
-          if(c.status==='paid') by[m].paid += a; else by[m].pending += a;
+          // pending = čaká na 14-dňovú lehotu; approved/paid = už v kredite
+          if(c.status==='pending') by[m].pending += a; else by[m].credited += a;
+          if(c.status==='paid') by[m].paid += a;
         }
         return Object.values(by)
-          .map(x=>({month:x.month, earned:+x.earned.toFixed(2), paid:+x.paid.toFixed(2), pending:+x.pending.toFixed(2)}))
+          .map(x=>({month:x.month, earned:+x.earned.toFixed(2), paid:+x.paid.toFixed(2), pending:+x.pending.toFixed(2), credited:+x.credited.toFixed(2)}))
           .sort((a,b)=>b.month.localeCompare(a.month)).slice(0,12);
       })(),
       payouts: await (async()=>{
@@ -9099,8 +9184,14 @@ app.get('/api/ambassador/me', ambassadorAuth, async(req,res)=>{
             date:String(n.created_at||'').slice(0,10) }));
       })(),
       credit: +(u.referral_credit||0).toFixed(2),
-      credit_pending: +((await q.find(db.commissions,{partner_id:u._id,status:'pending'}))
-        .reduce((s,c)=>s+(c.amount||0),0)).toFixed(2),
+      ...(await (async()=>{
+        const pend=await q.find(db.commissions,{partner_id:u._id,status:'pending'});
+        const sum=pend.reduce((s,c)=>s+(c.amount||0),0);
+        const najstarsia=pend.map(c=>String(c.created_at||'')).filter(Boolean).sort()[0];
+        return { credit_pending:+sum.toFixed(2),
+          pending_release: najstarsia
+            ? new Date(new Date(najstarsia).getTime()+COMMISSION_HOLD_DAYS*86400000).toISOString().slice(0,10) : null };
+      })()),
       line_rates: LINE_RATES,
       team_from: AMB_TEAM_FROM,
       team_bonus: ambTeamBonus(Rmesiac.rank||1),
@@ -9130,7 +9221,10 @@ app.get('/api/ambassador/leaderboard', ambassadorAuth, async(req,res)=>{
     const all = await q.find(db.users,{});
     const rows=[];
     for(const u of all){
-      if(!(u.user_type==='ambassador'||u.user_type==='trainer'||u.is_admin)) continue;
+      // Admin v rebríčku nie je: pod Marekom je celá firma, takže by bol vždy
+      // prvý s objemom, ktorý žiadna ambasádorka nedobehne — presný opak motivácie.
+      if(u.is_admin) continue;
+      if(!(u.user_type==='ambassador'||u.user_type==='trainer')) continue;
       const vol = await ambVolume(u._id, m);
       if(!vol.total) continue;
       const R = ambRank(vol.total);
@@ -9206,17 +9300,20 @@ app.get('/api/ambassador/materials', ambassadorAuth, async(req,res)=>{
   try{
     const u=req.ambUser;
     const link=APP_URL.replace(/\/$/,'')+'/invite/'+u.referral_code;
+    // „Prvý týždeň zadarmo" len kým je skúška zapnutá — inak by ambasádorky
+    // sľubovali niečo, čo appka nedá.
+    const skuska = await skuskaZapnuta();
     // Pozvánka na párty patrí do materiálov len kým akcia ešte len bude —
     // po 5. 9. tu visela ďalej a ambasádorky mohli zdieľať predaj, ktorý skončil.
     const party=db.ev_events ? await q.one(db.ev_events,{slug:'latin-tropical-2026'}) : null;
     const partyBude=!!(party && party.active!==false && String(party.date||'').slice(0,10)>=today());
     res.json({ok:true, materials:[
-      { id:'story-prva', name:'Story — prvý týždeň zadarmo', kind:'text',
-        text:'Poď si so mnou zatancovať 💃 Prvý týždeň je úplne zadarmo — Zumba vo Zvolene, Detve, B. Bystrici aj Brezne. Registrácia za 30 sekúnd: '+link },
+      { id:'story-prva', name: skuska ? 'Story — prvý týždeň zadarmo' : 'Story — pozvánka na hodinu', kind:'text',
+        text:'Poď si so mnou zatancovať 💃 '+(skuska?'Prvý týždeň je úplne zadarmo — ':'')+'Zumba vo Zvolene, Detve, B. Bystrici aj Brezne. Registrácia za 30 sekúnd: '+link },
       { id:'sprava-kamoske', name:'Správa kamoške', kind:'text',
-        text:'Ahoj! Chodím na Zumbu do Fusion Academy a je to najlepšia časť môjho týždňa 🧡 Prvý týždeň máš zadarmo — poď to skúsiť so mnou: '+link },
+        text:'Ahoj! Chodím na Zumbu do Fusion Academy a je to najlepšia časť môjho týždňa 🧡 '+(skuska?'Prvý týždeň máš zadarmo — poď':'Poď')+' to skúsiť so mnou: '+link },
       { id:'post-fb', name:'Príspevok na Facebook', kind:'text',
-        text:'Hľadala som pohyb, pri ktorom nebudem pozerať na hodinky — a našla som Zumbu vo Fusion Academy. Super hudba, žiadny tlak, skvelá partia žien. Prvý týždeň je zadarmo, tak ak rozmýšľaš, toto je znamenie 😄 '+link },
+        text:'Hľadala som pohyb, pri ktorom nebudem pozerať na hodinky — a našla som Zumbu vo Fusion Academy. Super hudba, žiadny tlak, skvelá partia žien. '+(skuska?'Prvý týždeň je zadarmo, tak ak':'Ak')+' rozmýšľaš, toto je znamenie 😄 '+link },
       ...(partyBude ? [
       { id:'event-latin', name:'Latin Tropical Party — pozvánka', kind:'text',
         text:'5. septembra bude v Detve LATIN TROPICAL PARTY 🌴 Masterclass s Marekom Gruberom a Ivanom Ligártom, potom párty s welcome drinkom. Lístky: '+APP_URL.replace(/\/$/,'')+'/event/latin-tropical-2026' },
@@ -9233,7 +9330,7 @@ app.get('/api/ambassador/materials', ambassadorAuth, async(req,res)=>{
 // Leadrovské sa odomknú od hodnosti Leader.
 const AMB_COURSES = [
   { id:'zaklad-1', tier:'basic', name:'Ako funguje ambasádorský program',
-    body:'Tvoja odmena vzniká z objemových bodov — 1 bod za každé euro, ktoré tvoja skupina zaplatí (členstvá, vstupy, permanentky; eventy a venčeky polovicu, merch tretinu). Percento máš podľa hodnosti: Starter 10 %, President 20 %. Hodnosť sa počíta každý mesiac nanovo z bodov celej tvojej skupiny do piatej úrovne. Provízia čaká 14 dní (ochrana pred vrátením platby) a potom sa pripíše do kreditu.' },
+    body:'Tvoja odmena vzniká z objemových bodov — 1 bod za každé euro, ktoré tvoja skupina zaplatí (členstvá, vstupy, permanentky; eventy a venčeky polovicu, merch tretinu). Percento máš podľa hodnosti: Starter 10 %, President 20 %. Sadzbu na bežiaci mesiac určí uzávierka minulého mesiaca — čo urobíš teraz, zarába ti od prvého dňa ďalšieho mesiaca. Dosiahnutá hodnosť (medaila) sa už neznižuje. Provízia čaká 14 dní (ochrana pred vrátením platby), potom sa sama pripíše do kreditu a od 100 € si ju vieš dať vyplatiť na účet.' },
   { id:'zaklad-2', tier:'basic', name:'Ako pozvať prvú ženu',
     body:'Nepresviedčaj — pozvi. Najlepšie funguje úprimná veta: „Chodím na Zumbu, je to super, poď raz so mnou — prvý týždeň máš zadarmo." Pošli svoj odkaz zo sekcie Môj odkaz, alebo jej ukáž QR kód priamo z mobilu. Keď sa registruje cez tvoj odkaz, je navždy tvoja klientka.' },
   { id:'zaklad-3', tier:'basic', name:'Ako komunikovať bez spamovania',
@@ -17669,6 +17766,28 @@ app.get('/api/admin/trainer-applications/:id/video', adminAuth, async(req,res)=>
   res.sendFile(path.join(NABOR_VIDEO_DIR, path.basename(z.video_file)));
 });
 
+// Najbližšie ambasádorské školenie — z eventov (slug skolenie-*), len budúce.
+// Stránka /skolenie aj zamknutá ambasádorská sekcia si termín berú odtiaľto;
+// do 19. 9. mali natvrdo 28. august, ktorý dávno prešiel.
+app.get('/api/public/ambassador-training', async(req,res)=>{
+  try{
+    const dnes=today();
+    let next=null;
+    if(db.ev_events){
+      const evs=(await q.find(db.ev_events,{}))
+        .filter(e=>/^skolenie-/.test(String(e.slug||'')) && e.active!==false && String(e.date||'').slice(0,10)>=dnes)
+        .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+      if(evs.length){
+        const e=evs[0];
+        const t=(Array.isArray(e.types)?e.types:[])[0]||{};
+        next={ slug:e.slug, date:String(e.date).slice(0,10), date_label:e.date_label||String(e.date).slice(0,10),
+          venue:e.venue||'', address:e.address||'', price:(t.presale!=null?t.presale:(t.door!=null?t.door:null)),
+          url:'/event/'+encodeURIComponent(e.slug)+'?src=app' };
+      }
+    }
+    res.json({ok:true, next});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 // Prihláška na vstupné ambasádorské školenie (29. 8. 2026).
 app.options('/api/public/ambassador-training',(req,res)=>{
   res.setHeader('Access-Control-Allow-Origin','*');
@@ -21804,8 +21923,8 @@ app.get('/api/client/referral', auth, async(req,res)=>{
       earned_pending: +pendingEarned.toFixed(2),
       earned_paid: +paidEarned.toFixed(2),
       referral_credit: u.referral_credit||0,
-      // Jeden spoločný „dostupný kredit" = referral kredit + čakajúce provízie
-      available_credit: +((u.referral_credit||0) + pendingEarned).toFixed(2),
+      // Dostupný = pripísaný kredit. Čakajúce provízie (14 dní) sa pripíšu samy.
+      available_credit: +(u.referral_credit||0).toFixed(2),
       current_tier: currentTier,
       next_tier: nextTier,
       all_tiers: REFERRAL_REWARDS,
@@ -21855,24 +21974,26 @@ app.post('/api/client/referral-credit/payout', auth, async(req,res)=>{
     if(!isAmb) return res.status(403).json({
       error:'Kredit si môžeš hneď použiť v appke — na členstvá, permanentky, merch, vstupenky aj súkromné hodiny. Na výplatu na účet treba absolvovať vstupné ambasádorské školenie.',
       need_training:true, training_url:'/skolenie' });
-    // Dostupný kredit = referral kredit + čakajúce provízie (jeden pohár)
+    // Na účet ide len PRIPÍSANÝ kredit. Čakajúce provízie (14-dňová lehota) sa
+    // vyplatiť nedajú — pripíše ich approveMaturedCommissions. Do 19. 9. sa
+    // vyplácali hneď a obišli tak ochranu pred vrátením platby.
     const pendComms = await q.find(db.commissions,{partner_id:u._id,status:'pending'});
     const pendSum = +pendComms.reduce((s,c)=>s+(c.amount||0),0).toFixed(2);
-    const available = +((u.referral_credit||0) + pendSum).toFixed(2);
+    const available = +(u.referral_credit||0).toFixed(2);
+    const cakaTxt = pendSum>0 ? ` Ďalších ${pendSum.toFixed(2)} € čaká na ${COMMISSION_HOLD_DAYS}-dňovú lehotu a pripíše sa samo.` : '';
     const iban = String(req.body.iban||'').replace(/\s+/g,'').trim();
     const name = String(req.body.name||u.name||'').slice(0,100).trim();
     let amount = +parseFloat(req.body.amount);
     if(!(amount>0)) amount = available; // fallback: celý kredit
     amount = +amount.toFixed(2);
-    if(available < 100) return res.status(400).json({error:`Minimálna výplata je 100 €. Aktuálny dostupný kredit: ${available.toFixed(2)} €. Kredit môžeš použiť aj na členstvá, permanentky, merch, vstupenky na eventy či súkromné hodiny.`});
+    if(available < 100) return res.status(400).json({error:`Minimálna výplata je 100 €. Aktuálny dostupný kredit: ${available.toFixed(2)} €.${cakaTxt} Kredit môžeš použiť aj na členstvá, permanentky, merch, vstupenky na eventy či súkromné hodiny.`});
     if(amount < 100) return res.status(400).json({error:'Minimálna suma na výplatu je 100 €.'});
     if(amount > available) return res.status(400).json({error:`Zadaná suma (${amount.toFixed(2)} €) je vyššia ako dostupný kredit (${available.toFixed(2)} €).`});
     if(!iban || iban.length < 15) return res.status(400).json({error:'Zadaj platný IBAN.'});
     if(!name) return res.status(400).json({error:'Zadaj meno majiteľa účtu.'});
-    // Vyrovnaj čakajúce provízie do jedného pohára a odpočítaj vyplácanú sumu; zvyšok ostáva ako kredit
-    await q.update(db.commissions,{partner_id:u._id,status:'pending'},{$set:{status:'paid',paid_at:nowISO()}},{multi:true});
     const remaining = +(available - amount).toFixed(2);
     await q.update(db.users,{_id:u._id},{$set:{ referral_credit:remaining, referral_credit_pending:(u.referral_credit_pending||0)+amount, bank_account:iban, payout_name:name }});
+    await logCredit(u._id, -amount, 'Žiadosť o výplatu na účet');
     await q.insert(db.transactions,{
       type:'referral_payout_request', user_id:u._id, user_name:u.name,
       amount, payment_method:'payout', note:`Žiadosť o výplatu kreditu: ${amount.toFixed(2)} € · IBAN ${iban} · ${name}`,
