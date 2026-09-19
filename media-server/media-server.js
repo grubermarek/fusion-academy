@@ -375,36 +375,48 @@ function freeBytes() { try { const s = fs.statfsSync(MEDIA_ROOT); return s.bavai
 // nahrá späť a lokálny súbor zmaže. Spúšťa sa raz po nasadení (REPROCESS_ONCE)
 // pre záznamy uložené pred 18. 9. večer, alebo na požiadanie cez /api/reprocess.
 async function r2Reprocess(slug, file) {
+  // Veľký záznam (1080p, ~4 GB) sa na 5 GB disku nedá prekódovať do druhého lokálneho súboru.
+  // Dva prechody cez R2, na disku je vždy len JEDEN súbor:
+  //   A) originál z R2 → disk → ffmpeg (video copy, zvuk AAC-LC) → rúra → R2 dočasný kľúč (fmp4)
+  //   B) dočasný z R2 (http) → ffmpeg -c copy +faststart → disk (klasické MP4, správna dĺžka) → R2 finálny kľúč
+  // Originál sa nahradí až po kontrole dĺžky a veľkosti; každé zlyhanie = originál ostáva.
   const dir = path.join(REC_DIR, slug); fs.mkdirSync(dir, { recursive: true });
-  const local = path.join(dir, file.replace(/\.mp4$/, '') + '.src.part.mp4');
-  const Key = r2Key(slug, file);
-  // 1) stiahnuť celý súbor na disk (čítanie fragmentovaného MP4 priamo z R2 cez ffmpeg
-  //    znamenalo tisíce malých požiadaviek a po 24 min stále nič — 18. 9.)
-  log('🎞️  Prerábam záznam z R2:', slug + '/' + file, '— sťahujem…');
-  const obj = await s3.send(new S3.GetObjectCommand({ Bucket: R2_BUCKET, Key }));
-  await require('stream/promises').pipeline(obj.Body, fs.createWriteStream(local));
-  const size = fs.statSync(local).size;
-  log('🎞️  Stiahnuté', Math.round(size / 1048576), 'MB, prerábam a nahrávam späť…');
-  const srcDur = await probeDuration(local);
-  // 2) ffmpeg číta lokálne, výstup ide rúrou do R2 pod DOČASNÝ kľúč; originál sa nahradí až po kontrole
-  //    (18. 9.: nekontrolovaný výsledok prepísal 4 GB záznam prázdnym súborom)
-  const TmpKey = Key + '.tmp.mp4';
-  const ff = spawn(FFMPEG, ['-hide_banner', '-loglevel', 'warning', '-i', local, '-map', '0:v:0', '-map', '0:a?', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2',
-    '-movflags', '+frag_keyframe+empty_moov+default_base_moof', '-min_frag_duration', '60000000', '-f', 'mp4', 'pipe:1'], { stdio: ['ignore', 'pipe', 'pipe'] });
-  let err = ''; ff.stderr.on('data', d => { err += d; if (err.length > 4000) err = err.slice(-4000); });
-  const up = new Upload({ client: s3, params: { Bucket: R2_BUCKET, Key: TmpKey, Body: ff.stdout, ContentType: 'video/mp4' }, partSize: 64 * 1048576, queueSize: 2 });
-  await up.done();
-  const [code, signal] = await new Promise(r => (ff.exitCode !== null ? r([ff.exitCode, ff.signalCode]) : ff.on('exit', (c, sg) => r([c, sg]))));
-  const head = await s3.send(new S3.HeadObjectCommand({ Bucket: R2_BUCKET, Key: TmpKey }));
-  const outDur = await probeDuration(await getSignedUrl(s3, new S3.GetObjectCommand({ Bucket: R2_BUCKET, Key: TmpKey }), { expiresIn: 3600 }));
-  log('🎞️  výsledok:', Math.round((head.ContentLength || 0) / 1048576) + ' MB,', Math.round(outDur) + ' s (zdroj ' + Math.round(srcDur) + ' s), ffmpeg kód', code, signal || '', err ? '| ' + err.trim().slice(-300) : '');
-  const ok = !code && !signal && outDur >= srcDur * 0.98 && (head.ContentLength || 0) >= size * 0.5;
-  if (!ok) { await s3.send(new S3.DeleteObjectCommand({ Bucket: R2_BUCKET, Key: TmpKey })); fs.unlinkSync(local); throw new Error('výsledok neprešiel kontrolou — originál ostáva nedotknutý'); }
-  await s3.send(new S3.CopyObjectCommand({ Bucket: R2_BUCKET, Key, CopySource: `/${R2_BUCKET}/${TmpKey}`, ContentType: 'video/mp4', MetadataDirective: 'REPLACE' }));
-  await s3.send(new S3.DeleteObjectCommand({ Bucket: R2_BUCKET, Key: TmpKey }));
-  fs.unlinkSync(local);
-  r2Cache.at = 0;
-  log('🎞️  Záznam prerobený a nahratý späť:', slug + '/' + file);
+  const base = file.replace(/\.mp4$/, '');
+  const local = path.join(dir, base + '.src.part.mp4');
+  const out = path.join(dir, base + '.out.part.mp4');
+  const Key = r2Key(slug, file), TmpKey = Key + '.tmp.mp4';
+  const cleanup = async () => { for (const f of [local, out]) try { fs.unlinkSync(f); } catch (_) {} try { await s3.send(new S3.DeleteObjectCommand({ Bucket: R2_BUCKET, Key: TmpKey })); } catch (_) {} };
+  try {
+    log('🎞️  Prerábam záznam z R2:', slug + '/' + file, '— sťahujem…');
+    const obj = await s3.send(new S3.GetObjectCommand({ Bucket: R2_BUCKET, Key }));
+    await require('stream/promises').pipeline(obj.Body, fs.createWriteStream(local));
+    const srcSize = fs.statSync(local).size;
+    const srcDur = await probeDuration(local);
+    log('🎞️  Stiahnuté', Math.round(srcSize / 1048576), 'MB,', Math.round(srcDur), 's — A) zvuk → AAC, rúrou do R2…');
+    // A)
+    const ff = spawn(FFMPEG, ['-hide_banner', '-loglevel', 'warning', '-i', local, '-map', '0:v:0', '-map', '0:a?', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2',
+      '-movflags', '+frag_keyframe+empty_moov+default_base_moof', '-min_frag_duration', '60000000', '-f', 'mp4', 'pipe:1'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let err = ''; ff.stderr.on('data', d => { err += d; if (err.length > 4000) err = err.slice(-4000); });
+    const up = new Upload({ client: s3, params: { Bucket: R2_BUCKET, Key: TmpKey, Body: ff.stdout, ContentType: 'video/mp4' }, partSize: 64 * 1048576, queueSize: 2 });
+    await up.done();
+    const [code, signal] = await new Promise(r => (ff.exitCode !== null ? r([ff.exitCode, ff.signalCode]) : ff.on('exit', (c, sg) => r([c, sg]))));
+    const head = await s3.send(new S3.HeadObjectCommand({ Bucket: R2_BUCKET, Key: TmpKey }));
+    log('🎞️  A) výsledok:', Math.round((head.ContentLength || 0) / 1048576) + ' MB, ffmpeg kód', code, signal || '', err ? '| ' + err.trim().slice(-300) : '');
+    if (code || signal || (head.ContentLength || 0) < srcSize * 0.5) throw new Error('A) neprešlo kontrolou (kód ' + code + ' ' + (signal || '') + ', ' + Math.round((head.ContentLength || 0) / 1048576) + ' MB)');
+    fs.unlinkSync(local);
+    // B)
+    log('🎞️  B) klasické MP4 s moov na začiatku…');
+    const tmpUrl = await getSignedUrl(s3, new S3.GetObjectCommand({ Bucket: R2_BUCKET, Key: TmpKey }), { expiresIn: 3600 });
+    const errB = await runErr(FFMPEG, ['-hide_banner', '-loglevel', 'warning', '-y', '-i', tmpUrl, '-c', 'copy', '-movflags', '+faststart', out]);
+    const outSize = fs.statSync(out).size, outDur = await probeDuration(out);
+    log('🎞️  B) výsledok:', Math.round(outSize / 1048576) + ' MB,', Math.round(outDur) + ' s (zdroj ' + Math.round(srcDur) + ' s)', errB ? '| ' + errB : '');
+    if (outDur < srcDur * 0.98 || outSize < srcSize * 0.5) throw new Error('B) neprešlo kontrolou (' + Math.round(outDur) + ' s, ' + Math.round(outSize / 1048576) + ' MB)');
+    // výmena: až teraz sa originál prepíše
+    await r2Upload(slug, file, out);
+    await s3.send(new S3.DeleteObjectCommand({ Bucket: R2_BUCKET, Key: TmpKey }));
+    r2Cache.at = 0;
+    log('🎞️  Záznam prerobený a nahratý späť:', slug + '/' + file);
+  } catch (e) { await cleanup(); throw new Error(e.message + ' — originál ostáva nedotknutý'); }
 }
 async function reprocessOnce() {
   const tag = process.env.REPROCESS_ONCE; if (!R2_ON || !tag) return;
