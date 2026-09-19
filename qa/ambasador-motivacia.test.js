@@ -53,7 +53,7 @@ const plusDays = (iso, days) => new Date(new Date(iso).getTime() + days * 864000
 
 (async () => {
   const hash = bcrypt.hashSync('Heslo123!', 10);
-  const LEA = 'qaAmbLea0000001', KLI = 'qaAmbKli0000001', ADM = 'qaAmbAdm0000001';
+  const LEA = 'qaAmbLea0000001', KLI = 'qaAmbKli0000001', ADM = 'qaAmbAdm0000001', ZUZ = 'qaAmbZuz0000001', DVE = 'qaAmbDve0000001';
   fs.writeFileSync(path.join(DATA, 'users.db'), [
     JSON.stringify({ _id: ADM, name: 'Adam Admin', email: 'qa.amb2.admin@qa-biz.local',
       password: hash, is_admin: true, user_type: 'admin', active: true, created_at: '2026-01-01' }),
@@ -65,6 +65,16 @@ const plusDays = (iso, days) => new Date(new Date(iso).getTime() + days * 864000
     JSON.stringify({ _id: KLI, name: 'Klara Klientka', email: 'qa.amb2.klara@qa-biz.local',
       password: hash, user_type: 'client', active: true, referral_code: 'QAKLI2', sponsor_id: LEA,
       visit_count: 3, created_at: '2026-04-01', membership_expires: '2027-12-31T00:00:00.000Z', membership_plan: 'bronze' }),
+    // bežná klientka s 3 platiacimi kamoškami → má dostať ponuku školenia
+    JSON.stringify({ _id: ZUZ, name: 'Zuzana Aktivna', email: 'qa.amb2.zuzka@qa-biz.local',
+      password: hash, user_type: 'client', active: true, referral_code: 'QAZUZ2', visit_count: 20, created_at: '2026-03-01' }),
+    ...[1, 2, 3].map(i => JSON.stringify({ _id: 'qaAmbKam000000' + i, name: 'Kamoska Cislo' + i, email: 'qa.amb2.kam' + i + '@qa-biz.local',
+      password: hash, user_type: 'client', active: true, referral_code: 'QAKAM' + i, sponsor_id: ZUZ, visit_count: 2, created_at: '2026-08-1' + i })),
+    // klientka s 3 kamoškami, z ktorých platia len 2 → ponuka nie
+    JSON.stringify({ _id: DVE, name: 'Dana Dvojka', email: 'qa.amb2.dana@qa-biz.local',
+      password: hash, user_type: 'client', active: true, referral_code: 'QADVE2', visit_count: 5, created_at: '2026-03-01' }),
+    ...[1, 2, 3].map(i => JSON.stringify({ _id: 'qaAmbDka000000' + i, name: 'Danina Kamoska' + i, email: 'qa.amb2.dka' + i + '@qa-biz.local',
+      password: hash, user_type: 'client', active: true, referral_code: 'QADKA' + i, sponsor_id: DVE, visit_count: 1, created_at: '2026-08-1' + i })),
   ].join('\n') + '\n');
 
   const c1at = isoAgo(20), c2at = isoAgo(2);
@@ -83,6 +93,11 @@ const plusDays = (iso, days) => new Date(new Date(iso).getTime() + days * 864000
   fs.writeFileSync(path.join(DATA, 'transactions.db'), [
     JSON.stringify({ _id: 'qaAmbTx01', type: 'membership', user_id: KLI, user_name: 'Klara Klientka', amount: 1600,
       payment_method: 'stripe', date: MINULY + '-10', month: MINULY, created_at: MINULY + '-10T10:00:00.000Z' }),
+    // Zuzkine 3 kamošky platia, Danine len 2
+    ...[1, 2, 3].map(i => JSON.stringify({ _id: 'qaAmbTxK' + i, type: 'membership', user_id: 'qaAmbKam000000' + i, user_name: 'Kamoska Cislo' + i,
+      amount: 49.9, payment_method: 'stripe', date: MESIAC + '-02', month: MESIAC, created_at: MESIAC + '-02T10:00:00.000Z' })),
+    ...[1, 2].map(i => JSON.stringify({ _id: 'qaAmbTxD' + i, type: 'single_entry', user_id: 'qaAmbDka000000' + i, user_name: 'Danina Kamoska' + i,
+      amount: 10, payment_method: 'cash', date: MESIAC + '-02', month: MESIAC, created_at: MESIAC + '-02T10:00:00.000Z' })),
   ].join('\n') + '\n');
 
   // budúce školenie — stránka aj zámok si termín berú odtiaľto
@@ -174,9 +189,13 @@ const plusDays = (iso, days) => new Date(new Date(iso).getTime() + days * 864000
 
     console.log('\n5) Školenie — termín z eventu, nie natvrdo:');
     const tr = (await j('/api/public/ambassador-training')).d;
-    ok('verejný endpoint vráti najbližšie školenie', tr && tr.ok && tr.next && tr.next.slug === 'skolenie-qa-2027', JSON.stringify(tr));
-    ok('s termínom, miestom a cenou', tr.next.date_label === '15. január 2027 · 16:00' && tr.next.venue === 'Fusion Academy Detva' && tr.next.price === 15);
-    ok('s odkazom na kúpu miesta', tr.next.url === '/event/skolenie-qa-2027?src=app');
+    // seed appky má školenie 25. 9. 2026 (20:00); kým neprešlo, je najbližšie ono, potom QA event 2027
+    const skol26 = DNES <= '2026-09-25';
+    const expSlug = skol26 ? 'skolenie-ambasador-2026-09' : 'skolenie-qa-2027';
+    const expLabel = skol26 ? '25. september 2026 · 20:00' : '15. január 2027 · 16:00';
+    ok('verejný endpoint vráti najbližšie školenie', tr && tr.ok && tr.next && tr.next.slug === expSlug, JSON.stringify(tr));
+    ok('s termínom, miestom a cenou', tr.next.date_label === expLabel && tr.next.venue === 'Fusion Academy Detva' && tr.next.price === 15, JSON.stringify(tr.next));
+    ok('s odkazom na kúpu miesta', tr.next.url === '/event/' + expSlug + '?src=app');
     const kli = {};
     await j('/api/login', { method: 'POST', body: { email: 'qa.amb2.klara@qa-biz.local', password: 'Heslo123!' } }, kli);
     ok('klientka bez prístupu dostane 403 (zámok, nie chyba)', (await j('/api/ambassador/me', {}, kli)).status === 403);
@@ -200,6 +219,37 @@ const plusDays = (iso, days) => new Date(new Date(iso).getTime() + days * 864000
     const cd = fs.readFileSync(path.join(__dirname, '..', 'public', 'client-dashboard.html'), 'utf8');
     ok('školenie nemá natvrdo 28. august', !/28\. august/.test(sk) && /ambassador-training/.test(sk));
     ok('dashboard nemá natvrdo 28. august', !/28\. august/.test(cd));
+
+    console.log('\n8) Automatická ponuka školenia po 3 platiacich kamoškách:');
+    const run3 = (await j('/api/admin/ambassadors/run-daily', { method: 'POST', body: { offers: true } }, adm)).d;
+    ok('ponuka odišla presne jednej klientke (Zuzka)', run3 && run3.offers === 1, JSON.stringify(run3));
+    const zuz = {};
+    await j('/api/login', { method: 'POST', body: { email: 'qa.amb2.zuzka@qa-biz.local', password: 'Heslo123!' } }, zuz);
+    const zn = (await j('/api/notifications', {}, zuz)).d;
+    const zList = Array.isArray(zn) ? zn : (zn && (zn.notifications || zn.items)) || [];
+    const ponuka = zList.find(x => x.type === 'ambassador_offer');
+    ok('Zuzka má oznam s ponukou školenia', !!ponuka, JSON.stringify(zList.map(x => x.title)).slice(0, 300));
+    ok('oznam hovorí termín z eventu', ponuka && new RegExp(expLabel.replace(/[.·]/g, '.')).test(ponuka.body), ponuka && ponuka.body);
+    ok('oznam vedie na /skolenie', ponuka && ponuka.link === '/skolenie');
+    const dana = {};
+    await j('/api/login', { method: 'POST', body: { email: 'qa.amb2.dana@qa-biz.local', password: 'Heslo123!' } }, dana);
+    const dn = (await j('/api/notifications', {}, dana)).d;
+    const dList = Array.isArray(dn) ? dn : (dn && (dn.notifications || dn.items)) || [];
+    ok('Dana (len 2 platiace) ponuku nedostala', !dList.some(x => x.type === 'ambassador_offer'));
+    const an = (await j('/api/notifications', {}, adm)).d;
+    const aList = Array.isArray(an) ? an : (an && (an.notifications || an.items)) || [];
+    ok('admin dostal tip, komu zavolať', aList.some(x => x.type === 'ambassador_offer' && /Zuzana Aktivna/.test(x.title)));
+    const run4 = (await j('/api/admin/ambassadors/run-daily', { method: 'POST', body: { offers: true } }, adm)).d;
+    ok('druhý beh ponuku neposiela znova', run4 && run4.offers === 0, JSON.stringify(run4));
+
+    console.log('\n9) Týždenný súhrn ambasádorkám:');
+    const run5 = (await j('/api/admin/ambassadors/run-daily', { method: 'POST', body: { weekly: true } }, adm)).d;
+    ok('súhrn odišiel ambasádorke (nie adminovi)', run5 && run5.weekly === 1, JSON.stringify(run5));
+    me = (await j('/api/ambassador/me', {}, lea)).d;
+    const tyz = (me.notifications || []).find(n => /^📬 Týždenný súhrn/.test(n.title));
+    ok('Lea má oznam so súhrnom', !!tyz, JSON.stringify((me.notifications || []).map(n => n.title)));
+    ok('súhrn obsahuje sadzbu 12 % a hodnosť', tyz && /Sadzba: 12 %/.test(tyz.body) && /Senior Partner/.test(tyz.body), tyz && tyz.body);
+    ok('a stav kreditu s čakajúcou províziou', tyz && /Kredit: 10\.00 € \+ čaká 30\.00 €/.test(tyz.body), tyz && tyz.body);
 
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.message + '\n' + (e.stack || '').split('\n').slice(1, 3).join('\n'));

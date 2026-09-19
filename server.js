@@ -9049,8 +9049,10 @@ app.post('/api/admin/ambassadors/run-daily', adminAuth, async(req,res)=>{
     const approved=await approveMaturedCommissions();
     let closed=0; const m=String(req.body.month||'');
     if(/^\d{4}-\d{2}$/.test(m) && m<today().slice(0,7)) closed=await closeVolumeMonth(m);
-    await auditLog(req,'amb_run_daily',null,{},{approved,closed,month:m||null},'');
-    res.json({ok:true, approved, closed});
+    const offers = req.body.offers ? await ambassadorOfferCheck() : 0;
+    const weekly = req.body.weekly ? await sendAmbassadorWeeklyDigest(true) : 0;
+    await auditLog(req,'amb_run_daily',null,{},{approved,closed,offers,weekly,month:m||null},'');
+    res.json({ok:true, approved, closed, offers, weekly});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -17767,27 +17769,143 @@ app.get('/api/admin/trainer-applications/:id/video', adminAuth, async(req,res)=>
 });
 
 // Najbližšie ambasádorské školenie — z eventov (slug skolenie-*), len budúce.
-// Stránka /skolenie aj zamknutá ambasádorská sekcia si termín berú odtiaľto;
-// do 19. 9. mali natvrdo 28. august, ktorý dávno prešiel.
+// Stránka /skolenie, zamknutá ambasádorská sekcia aj automatická ponuka si
+// termín berú odtiaľto; do 19. 9. mali natvrdo 28. august, ktorý dávno prešiel.
+async function nextAmbassadorTraining(){
+  if(!db.ev_events) return null;
+  const dnes=today();
+  const evs=(await q.find(db.ev_events,{}))
+    .filter(e=>/^skolenie-/.test(String(e.slug||'')) && e.active!==false && String(e.date||'').slice(0,10)>=dnes)
+    .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  if(!evs.length) return null;
+  const e=evs[0];
+  const t=(Array.isArray(e.types)?e.types:[])[0]||{};
+  return { slug:e.slug, date:String(e.date).slice(0,10), date_label:e.date_label||String(e.date).slice(0,10),
+    venue:e.venue||'', address:e.address||'', price:(t.presale!=null?t.presale:(t.door!=null?t.door:null)),
+    url:'/event/'+encodeURIComponent(e.slug)+'?src=app' };
+}
 app.get('/api/public/ambassador-training', async(req,res)=>{
-  try{
-    const dnes=today();
-    let next=null;
-    if(db.ev_events){
-      const evs=(await q.find(db.ev_events,{}))
-        .filter(e=>/^skolenie-/.test(String(e.slug||'')) && e.active!==false && String(e.date||'').slice(0,10)>=dnes)
-        .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
-      if(evs.length){
-        const e=evs[0];
-        const t=(Array.isArray(e.types)?e.types:[])[0]||{};
-        next={ slug:e.slug, date:String(e.date).slice(0,10), date_label:e.date_label||String(e.date).slice(0,10),
-          venue:e.venue||'', address:e.address||'', price:(t.presale!=null?t.presale:(t.door!=null?t.door:null)),
-          url:'/event/'+encodeURIComponent(e.slug)+'?src=app' };
-      }
-    }
-    res.json({ok:true, next});
-  }catch(e){ res.status(500).json({error:e.message}); }
+  try{ res.json({ok:true, next:await nextAmbassadorTraining()}); }
+  catch(e){ res.status(500).json({error:e.message}); }
 });
+
+// ── AUTOMATICKÁ PONUKA ŠKOLENIA (Marek 19. 9.) ──────────────────────────────
+// Klientka, ktorá priviedla 3 platiace kamošky, už ambasádorkou v praxi je —
+// dostane ponuku školenia raz (amb_offer_sent_at) a Marek notifikáciu, aby jej
+// zavolal. Platiaca = rovnaké pravidlo ako referral výzva (referralGoalHasPaid).
+const AMB_OFFER_REFS = 3;
+// 🕵️ testovací účet admina na prode; QA sandboxy (@qa-biz.local) majú vlastnú DB, tie sa nevylučujú
+const jeTestUcet = u => /@test-fa-qa\.local$/i.test(String((u&&u.email)||'')) || !!(u&&u.is_test);
+async function ambassadorOfferCheck(){
+  const vsetci=await q.find(db.users,{});
+  const podla={};
+  for(const u of vsetci){ if(u.sponsor_id && !u.is_child && !u.anonymous && !jeTestUcet(u)) (podla[u.sponsor_id]=podla[u.sponsor_id]||[]).push(u); }
+  const skolenie=await nextAmbassadorTraining();
+  const admins=vsetci.filter(a=>a.is_admin);
+  let n=0;
+  for(const u of vsetci){
+    if(u.user_type!=='client' || u.is_admin || u.is_child || u.is_assistant || u.active===false) continue;
+    if(u.amb_offer_sent_at || jeTestUcet(u) || vencekMimoKonverzie(u)) continue;
+    const refs=podla[u._id]||[];
+    if(refs.length<AMB_OFFER_REFS) continue;
+    let platiace=0;
+    for(const r of refs){ if(await referralGoalHasPaid(r._id)) platiace++; if(platiace>=AMB_OFFER_REFS) break; }
+    if(platiace<AMB_OFFER_REFS) continue;
+    const fem=u.gender!=='male';
+    const meno=String(u.name||'').split(' ')[0];
+    const termin=skolenie
+      ? 'Najbližšie školenie je '+skolenie.date_label+(skolenie.venue?' v '+skolenie.venue:'')+(skolenie.price!=null?' ('+skolenie.price+' €)':'')+'.'
+      : 'Termín ďalšieho školenia oznámime — nechaj nám kontakt.';
+    await q.update(db.users,{_id:u._id},{$set:{amb_offer_sent_at:nowISO()}});
+    await q.insert(db.notifications,{user_id:u._id, type:'ambassador_offer',
+      title:'🔥 '+(fem?'Priviedla':'Priviedol')+' si už '+platiace+' platiace kamošky — poď na ambasádorské školenie',
+      body:'Robíš to už aj tak. Po školení sa ti odomkne ambasádorská sekcia: provízie z každého nákupu tvojej línie, hodnosti a výplata na účet. '+termin,
+      link:'/skolenie', read:false, created_at:nowISO()}).catch(()=>{});
+    if(u.email && /@/.test(u.email) && !/@internal\.local|@import\.local/i.test(u.email)){
+      await sendMail(u.email, '🔥 '+meno+', '+(fem?'priviedla':'priviedol')+' si už '+platiace+' kamošky — poď na ambasádorské školenie',
+        emailTemplate('Robíš to už aj tak 💛',
+          '<p>Ahoj '+meno+',</p>'
+          +'<p>cez tvoj odkaz sa pridali už <b>'+platiace+' kamošky, ktoré u nás platia</b>. To je presne to, čo robia naše ambasádorky — len ony za to dostávajú podiel.</p>'
+          +'<p>Po vstupnom školení sa ti v appke odomkne ambasádorská sekcia: <b>provízia z každého nákupu tvojej línie</b> (10 až 20 % podľa hodnosti), hodnosti s medailami, prehľad klientok a výplata na účet.</p>'
+          +'<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:14px 18px;color:#C9A84C;font-weight:700">'+termin+'</p>'
+          +'<p>Nič nemusíš. Ak ťa to láka, prihlás sa alebo nám nechaj kontakt a povieme ti viac.<br>Marek a Beátka</p>',
+          '🔥 Ambasádorské školenie', APP_URL+'/skolenie'),
+        {priority:2, template:'amb_offer'}).catch(()=>false);
+    }
+    for(const a of admins) await q.insert(db.notifications,{user_id:a._id, type:'ambassador_offer',
+      title:'🔥 '+u.name+' má '+platiace+' platiace kamošky',
+      body:'Ponuka školenia jej odišla automaticky (appka + mail). Zavolaj jej — takéto klientky sú najlepšie ambasádorky.',
+      link:'/u/'+u._id, read:false, created_at:nowISO()}).catch(()=>{});
+    n++;
+  }
+  if(n) console.log('🔥 Ponuka ambasádorského školenia odoslaná: '+n);
+  return n;
+}
+
+// ── TÝŽDENNÝ SÚHRN AMBASÁDORKÁM (pondelok) ──────────────────────────────────
+// Body mesiaca, sadzba, provízie, kredit, kto z klientok potrebuje pozornosť
+// a poradie v rebríčku. Mail + oznam v appke; admin ho nedostáva (má svoj report).
+async function sendAmbassadorWeeklyDigest(force){
+  const key='amb_weekly_'+today();
+  if(!force && await q.one(db.settings,{key})) return 0;
+  await q.insert(db.settings,{key, value:true, at:nowISO()}).catch(()=>{});
+  const m=today().slice(0,7);
+  const ambs=(await q.find(db.users,{})).filter(u=>!u.is_admin && !u.is_child && u.active!==false
+    && (u.user_type==='ambassador'||u.user_type==='trainer'||u.is_assistant) && !jeTestUcet(u));
+  const objemy={};
+  for(const u of ambs) objemy[u._id]=await ambVolume(u._id, m);
+  const poradie=ambs.filter(u=>objemy[u._id].total>0).sort((a,b)=>objemy[b._id].total-objemy[a._id].total).map(u=>u._id);
+  const todayS=today(), days=(a,b)=>Math.round((new Date(b)-new Date(a))/86400000);
+  let n=0;
+  for(const u of ambs){
+    const vol=objemy[u._id];
+    const R=ambRank(await ambBestVolume(u._id, vol.total));
+    const rate=ambRate(u.amb_rank||1), rateNext=ambRate(ambRank(vol.total).rank||1);
+    const comms=(await q.find(db.commissions,{partner_id:u._id})).filter(c=>c.status!=='reversed');
+    const provM=comms.filter(c=>(c.month||String(c.created_at||'').slice(0,7))===m).reduce((s,c)=>s+(+c.amount||0),0);
+    const pend=comms.filter(c=>c.status==='pending').reduce((s,c)=>s+(+c.amount||0),0);
+    let gone=0, konci=0, nove=0;
+    for(const id of await getAllDescendants(u._id)){
+      const d=await q.one(db.users,{_id:id}); if(!d) continue;
+      if(String(d.created_at||'')>=new Date(Date.now()-7*86400000).toISOString()) nove++;
+      if(d.membership_expires && new Date(d.membership_expires)>new Date() && days(todayS, String(d.membership_expires).slice(0,10))<=7) konci++;
+      const bk=(await q.find(db.bookings,{user_id:id})).filter(b=>b.status!=='cancelled'&&b.booking_date&&b.booking_date<=todayS).map(b=>b.booking_date).sort();
+      if(bk.length && days(bk[bk.length-1],todayS)>30) gone++;
+    }
+    const pos=poradie.indexOf(u._id)+1;
+    const meno=String(u.name||'').split(' ')[0];
+    const riadky=[
+      ['Body tento mesiac', vol.total+' b (vlastné '+vol.own+', línia '+vol.team+')'],
+      ['Hodnosť', (R.name||'Začínaš')+(R.next?' · do ďalšieho stupňa '+R.next.missing+' b':'')],
+      ['Sadzba', Math.round(rate*100)+' %'+(rateNext!==rate?' (ak mesiac skončí ako teraz: '+Math.round(rateNext*100)+' % od ďalšieho)':'')],
+      ['Provízie tento mesiac', provM.toFixed(2)+' €'],
+      ['Kredit', (+(u.referral_credit||0)).toFixed(2)+' €'+(pend?' + čaká '+pend.toFixed(2)+' €':'')],
+      ['Rebríček mesiaca', pos?pos+'. z '+poradie.length:'zatiaľ bez bodov'],
+      ['Klientky', nove+' nové za týždeň · '+konci+' končí členstvo do 7 dní · '+gone+' dlho neboli'],
+    ];
+    const tip = gone ? 'Ozvi sa tým, čo dlho neboli — jedna správa vráti viac než päť nových pozvánok.'
+      : konci ? 'Pripomeň končiace členstvá — obnova je najľahší bod.'
+      : vol.total===0 ? 'Pošli svoj odkaz jednej žene tento týždeň.' : 'Ide ti to. Drž tempo do konca mesiaca.';
+    await q.insert(db.notifications,{user_id:u._id, type:'ambassador',
+      title:'📬 Týždenný súhrn: '+vol.total+' b, '+provM.toFixed(2)+' €',
+      body:riadky.slice(1).map(r=>r[0]+': '+r[1]).join(' · ')+'. '+tip,
+      link:'/ambasador', read:false, created_at:nowISO()}).catch(()=>{});
+    if(u.email && /@/.test(u.email) && !/@internal\.local|@import\.local/i.test(u.email)){
+      await sendMail(u.email, '📬 '+meno+', tvoj týždeň: '+vol.total+' b, '+provM.toFixed(2)+' € provízií',
+        emailTemplate('Tvoj týždenný súhrn 💛',
+          '<p>Ahoj '+meno+', takto stojíš na začiatku týždňa:</p>'
+          +'<table width="100%" cellpadding="6" style="border-collapse:collapse">'
+          +riadky.map(r=>'<tr><td style="color:#aaa;border-bottom:1px solid #333">'+r[0]+'</td><td style="text-align:right;color:#fff;font-weight:700;border-bottom:1px solid #333">'+r[1]+'</td></tr>').join('')
+          +'</table>'
+          +'<p style="background:rgba(201,168,76,.12);border-radius:10px;padding:14px 18px;color:#C9A84C;font-weight:700">💡 '+tip+'</p>',
+          '🔥 Otvoriť ambasádorskú sekciu', APP_URL+'/ambasador'),
+        {priority:3, template:'amb_weekly'}).catch(()=>false);
+    }
+    n++;
+  }
+  if(n) console.log('📬 Týždenný súhrn ambasádorkám: '+n);
+  return n;
+}
 // Prihláška na vstupné ambasádorské školenie (29. 8. 2026).
 app.options('/api/public/ambassador-training',(req,res)=>{
   res.setHeader('Access-Control-Allow-Origin','*');
@@ -26244,6 +26362,13 @@ async function runDailyJobs(){
   if(new Date().getDay() === 1 && !(await q.one(db.settings,{key:'weekly_report_'+todayStr}))){
     try { await sendWeeklyAdminReport(); await q.insert(db.settings,{key:'weekly_report_'+todayStr, value:true, at:nowISO()}); }
     catch(e){ console.error('Weekly report error:', e.message); }
+  }
+
+  // ── 6a. Ambasádorky: ponuka školenia po 3 platiacich kamoškách (denne)
+  //        + týždenný súhrn v pondelok (Marek 19. 9.)
+  try { await ambassadorOfferCheck(); } catch(e){ console.error('amb offer:', e.message); }
+  if(new Date().getDay() === 1){
+    try { await sendAmbassadorWeeklyDigest(false); } catch(e){ console.error('amb weekly:', e.message); }
   }
 
   // ── 6b. Mesačné výplatné pásky (1. deň v mesiaci, za predošlý mesiac, raz) ──

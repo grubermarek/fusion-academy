@@ -108,7 +108,23 @@ module.exports = function mountEventTickets(ctx){
     ]
   };
 
-  const ALL_EVENTS = [LATIN, SKOLENIE];
+  // Druhé vstupné školenie (Marek 19. 9.): piatok 25. 9. 2026 o 20:00.
+  const SKOLENIE2 = {
+    ...SKOLENIE,
+    slug: 'skolenie-ambasador-2026-09',
+    date: '2026-09-25',
+    date_label: '25. september 2026 · 20:00',
+    program: [
+      {time:'20:00', what:'Začiatok — ambasádorský program a ako funguje odmena', ticket:'full'},
+      {time:'—',     what:'Práca s vlastným odkazom, QR kódom a aplikáciou',      ticket:'full'},
+      {time:'—',     what:'Ako hovoriť o Fusion Academy bez tlaku',               ticket:'full'},
+      {time:'—',     what:'Spoločný tréning',                                      ticket:'full'},
+      {time:'—',     what:'Občerstvenie a nápoje',                                 ticket:'full'}
+    ],
+    types: SKOLENIE.types.map(t => ({ ...t, presale_until: '2026-09-25T19:59:59+02:00' }))
+  };
+
+  const ALL_EVENTS = [LATIN, SKOLENIE, SKOLENIE2];
 
   async function ensureEvent(){
     for(const EV of ALL_EVENTS) await ensureOne(EV);
