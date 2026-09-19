@@ -16510,7 +16510,7 @@ app.get('/api/online/classes', auth, async(req,res)=>{
   const passMode=maPass, entryMode=!hasFull && !maPass && maVstup;
   res.json({classes:result, has_access:hasAccess, online_free_today:freeDay, access_mode: hasFull?'full':(passMode?'pass':(entryMode?'entry':null)),
     entries: mu?.single_entries||0, online_passes: mu?.online_passes||0,
-    media_base:mediaBase(), recordings_enabled: hasFull && !!mediaBase(), membership:m?{plan_id:m.plan_id,plan_name:m.plan_name,expires_at:m.expires_at}:null});
+    media_base:mediaBase(), recordings_enabled: !!mediaBase(), membership:m?{plan_id:m.plan_id,plan_name:m.plan_name,expires_at:m.expires_at}:null});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -16741,10 +16741,11 @@ app.get('/api/notifications/count', auth, async(req,res)=>{
 const MEDIA_SECRET = process.env.MEDIA_SECRET || '';
 const mediaBase = () => (process.env.MEDIA_BASE||'').replace(/\/$/,'');
 // Token na prehrávanie: <exp>.<hmac(slug|exp)> — media server ho overí bez volania appky
-function mediaToken(slug, hours=6){
+// scope 'full' = živý prenos + celý záznam; 'preview' = len 3-minútová ukážka (*.preview.mp4)
+function mediaToken(slug, hours=6, scope='full'){
   const exp = Math.floor(Date.now()/1000 + hours*3600);
-  const sig = require('crypto').createHmac('sha256', MEDIA_SECRET).update(slug+'|'+exp).digest('hex').slice(0,32);
-  return exp+'.'+sig;
+  const sig = require('crypto').createHmac('sha256', MEDIA_SECRET).update(slug+'|'+exp+(scope==='preview'?'|p':'')).digest('hex').slice(0,32);
+  return scope==='preview' ? exp+'.p.'+sig : exp+'.'+sig;
 }
 async function mediaApi(p, method='GET'){
   const base=mediaBase(); if(!base) throw new Error('MEDIA_BASE nie je nastavený');
@@ -16818,7 +16819,7 @@ app.get('/api/media/keys', mediaService, async(req,res)=>{
 // Udalosti z media servera: start / stop (so záznamom) / expired (retencia)
 app.post('/api/media/hook', mediaService, async(req,res)=>{
   try{
-    const {event, slug, name, started_at, ended_at, file, url, size, duration_s} = req.body||{};
+    const {event, slug, name, started_at, ended_at, file, url, size, duration_s, preview_url} = req.body||{};
     const cls = slug ? await q.one(db.classes,{_id:String(slug)}) : null;
     if(event==='start'){
       _liveKeysCache={at:Date.now(), keys:new Set([..._liveKeysCache.keys, String(slug)])};
@@ -16841,7 +16842,7 @@ app.post('/api/media/hook', mediaService, async(req,res)=>{
         const prim=pokr.primary||cls;
         await q.insert(db.recordings,{ class_id:prim?prim._id:String(slug), class_ids:pokr.class_ids, title:pokr.title||undefined, class_name:prim?prim.name:(name||'Online hodina'),
           city: prim ? mestoHodiny(prim) : '', kind: typTreningu(prim?prim.name:name),
-          date:String(started_at||nowISO()).slice(0,10), started_at, ended_at, file, url, size:+size||0,
+          date:String(started_at||nowISO()).slice(0,10), started_at, ended_at, file, url, preview_url: preview_url||null, size:+size||0,
           duration_s:+duration_s||0, visible, created_at:nowISO() });
         console.log('💾 Media: záznam '+(cls?cls.name:slug)+' '+Math.round((+duration_s||0)/60)+' min'+(visible?'':' (skryté — krátke)'));
       }
@@ -16914,12 +16915,13 @@ app.get('/api/online/recordings', auth, async(req,res)=>{
   try{
     const u=await q.one(db.users,{_id:req.session.uid});
     const m=await checkMembership(u._id);
-    if(!hasOnlineAccess(m,u)) return res.status(403).json({error:'Záznamy sú súčasťou online členstva', recordings:[]});
+    const full = hasOnlineAccess(m,u);
+    // Bez online členstva: 3-minútová ukážka každého záznamu (upsell na Silver/Gold), s ním celý záznam
     const recs=await obohatZaznamy((await q.find(db.recordings,{visible:true})).sort((a,b)=>(b.started_at||'').localeCompare(a.started_at||'')));
     const base=mediaBase();
-    res.json({media_base:base, recordings: recs.map(r=>({ id:r._id, class_id:r.class_id, class_ids:r.class_ids||[r.class_id], class_name:r.class_name, title:r.title||null,
-      city:r.city||'', kind:r.kind||'', date:r.date, started_at:r.started_at, duration_s:r.duration_s,
-      src: base ? base+r.url+'?t='+mediaToken(r.class_id, 6) : null }))});
+    res.json({media_base:base, has_access:full, recordings: recs.filter(r=>full||r.preview_url).map(r=>({ id:r._id, class_id:r.class_id, class_ids:r.class_ids||[r.class_id], class_name:r.class_name, title:r.title||null,
+      city:r.city||'', kind:r.kind||'', date:r.date, started_at:r.started_at, duration_s:r.duration_s, preview:!full,
+      src: !base ? null : full ? base+r.url+'?t='+mediaToken(r.class_id, 6) : base+r.preview_url+'?t='+mediaToken(r.class_id, 6, 'preview') }))});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 

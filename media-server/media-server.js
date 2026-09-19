@@ -222,9 +222,10 @@ async function finishRecording(slug, e) {
   fs.rmSync(e.liveDir, { recursive: true, force: true });
   const ended_at = nowISO();
   const r = await finalizeFile(slug, e.partFile);
+  const preview_url = r.file ? await makePreview(slug, path.join(e.recDir, r.file)) : null;
   if (r.file) { try { await r2Upload(slug, r.file, path.join(e.recDir, r.file)); } catch (err) { log('⚠️  R2 upload zlyhal, záznam ostáva lokálne:', err.message); } }
   await hook('stop', { slug, name: e.name, started_at: e.started_at, ended_at, file: r.file, size: r.size, duration_s: r.duration_s,
-    url: r.file ? `/rec/${slug}/${r.file}` : null });
+    url: r.file ? `/rec/${slug}/${r.file}` : null, preview_url });
   uvolniMiesto().catch(() => {});
   if (r.file && r.needsR2Transcode && !fs.existsSync(path.join(e.recDir, r.file))) await transcodeViaR2(slug, r.file);
 }
@@ -278,6 +279,21 @@ async function transcodeViaR2(slug, file) {
   try { await r2Reprocess(slug, file); } catch (e) { log('⚠️  prekódovanie zvuku cez R2 zlyhalo — ostáva originál:', e.message.slice(0, 300)); }
 }
 
+const previewName = f => String(f).replace(/\.mp4$/, '.preview.mp4');
+const PREVIEW_S = +(process.env.PREVIEW_SECONDS || 180);
+async function makePreview(slug, finalFile) {
+  const out = finalFile.replace(/\.mp4$/, '.preview.part.mp4');
+  const name = previewName(path.basename(finalFile));
+  try {
+    await run(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-y', '-t', String(PREVIEW_S), '-i', finalFile, '-map', '0:v:0', '-map', '0:a?', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2', '-movflags', '+faststart', out]);
+    const fin = path.join(path.dirname(finalFile), name);
+    fs.renameSync(out, fin);
+    try { await r2Upload(slug, name, fin); } catch (e) { log('⚠️  R2 upload ukážky zlyhal, ostáva lokálne:', e.message.slice(0, 200)); }
+    log('🎬 Ukážka (' + PREVIEW_S + ' s) hotová:', slug + '/' + name);
+    return `/rec/${slug}/${name}`;
+  } catch (e) { try { fs.unlinkSync(out); } catch (_) {} log('⚠️  ukážka zlyhala:', e.message.slice(0, 200)); return null; }
+}
+
 // Po štarte: osirelé .part súbory (pád servera / reštart počas vysielania) sa
 // dokončia a ohlásia appke, nech sa nestratí ani záznam prerušenej hodiny.
 async function adoptOrphans() {
@@ -286,14 +302,15 @@ async function adoptOrphans() {
       if (live.has(s)) continue;
       const dir = path.join(REC_DIR, s);
       for (const fn of fs.readdirSync(dir)) {
-        if (!/\.part\.mp4$/.test(fn)) continue;
+        if (!/\.part\.mp4$/.test(fn) || /\.(preview|src|out|aac)\.part\.mp4$/.test(fn)) continue;
         const stamp = fn.replace(/\.part\.mp4$/, '');                  // 2026-09-18T16-04-46
         const started_at = stamp.replace(/T(\d\d)-(\d\d)-(\d\d)$/, 'T$1:$2:$3') + 'Z';
         const ended_at = fs.statSync(path.join(dir, fn)).mtime.toISOString();
         log('♻️  Osirelý záznam:', s + '/' + fn);
         const r = await finalizeFile(s, path.join(dir, fn));
+        const preview_url = r.file ? await makePreview(s, path.join(dir, r.file)) : null;
         if (r.file) { try { await r2Upload(s, r.file, path.join(dir, r.file)); } catch (err) { log('⚠️  R2 upload zlyhal, záznam ostáva lokálne:', err.message); } }
-        if (r.file) await hook('stop', { slug: s, name: '', started_at, ended_at, file: r.file, size: r.size, duration_s: r.duration_s, url: `/rec/${s}/${r.file}`, adopted: true });
+        if (r.file) await hook('stop', { slug: s, name: '', started_at, ended_at, file: r.file, size: r.size, duration_s: r.duration_s, url: `/rec/${s}/${r.file}`, preview_url, adopted: true });
         if (r.file && r.needsR2Transcode && !fs.existsSync(path.join(dir, r.file))) await transcodeViaR2(s, r.file);
       }
     }
@@ -464,13 +481,17 @@ async function probeDuration(file) {
 
 // ── Tokeny na prehrávanie (vydáva appka, tu sa len overujú) ─────────────────
 // t = <exp>.<hmac_sha256(SECRET, slug|exp) prvých 32 hex>
-function tokenOk(slug, t) {
-  if (!SECRET) return true;
-  const [exp, sig] = String(t || '').split('.');
-  if (!exp || !sig || +exp < Date.now() / 1000) return false;
-  const want = crypto.createHmac('sha256', SECRET).update(slug + '|' + exp).digest('hex').slice(0, 32);
-  return sig.length === want.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want));
+// t = <exp>.<sig> (plný prístup) alebo <exp>.p.<sig> (len 3-minútová ukážka *.preview.mp4)
+function tokenScope(slug, t) {
+  if (!SECRET) return 'full';
+  const parts = String(t || '').split('.');
+  const exp = parts[0], scope = parts.length === 3 && parts[1] === 'p' ? 'preview' : 'full', sig = parts[parts.length - 1];
+  if (!exp || !sig || +exp < Date.now() / 1000) return null;
+  const want = crypto.createHmac('sha256', SECRET).update(slug + '|' + exp + (scope === 'preview' ? '|p' : '')).digest('hex').slice(0, 32);
+  return (sig.length === want.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want))) ? scope : null;
 }
+function tokenOk(slug, t) { return tokenScope(slug, t) === 'full'; }
+const isPreviewFile = f => /\.preview\.mp4$/.test(String(f || ''));
 
 // ── HTTP ─────────────────────────────────────────────────────────────────────
 const app = express();
@@ -519,10 +540,15 @@ app.get('/live/:slug/:seg', playable, (req, res) => {
 });
 
 // Záznamy (MP4 s podporou Range → pretáčanie)
-app.get('/rec/:slug/:file', playable, (req, res) => {
+app.get('/rec/:slug/:file', (req, res, next) => {
+  // ukážku pustí aj ukážkový token, celý záznam len plný
+  const sc = tokenScope(safeId(req.params.slug), req.query.t);
+  if (sc === 'full' || (sc === 'preview' && isPreviewFile(req.params.file))) return next();
+  res.status(403).json({ error: sc ? 'Celý záznam je súčasťou online členstva' : 'Prístup vypršal — obnov stránku' });
+}, (req, res) => {
   const slug = safeId(req.params.slug);
   const file = String(req.params.file || '');
-  if (!/^[\w-]+\.mp4$/.test(file)) return res.status(404).end();
+  if (!/^[\w-]+(\.preview)?\.mp4$/.test(file)) return res.status(404).end();
   const f = path.join(REC_DIR, slug, file);
   if (fs.existsSync(f)) {
     res.set('Content-Type', 'video/mp4');
@@ -538,7 +564,7 @@ app.get('/rec/:slug/:file', playable, (req, res) => {
 // Servisné API pre appku
 app.get('/api/recordings', service, async (req, res) => {
   const slug = safeId(req.query.slug);
-  const out = recordingsList().filter(f => !f.part && (!slug || f.slug === slug))
+  const out = recordingsList().filter(f => !f.part && !isPreviewFile(f.file) && (!slug || f.slug === slug))
     .map(f => ({ slug: f.slug, file: f.file, url: `/rec/${f.slug}/${f.file}`, size: f.size, created_at: new Date(f.mtime).toISOString(), r2: false }));
   try { for (const r of await r2List()) if (!slug || r.slug === slug) out.push(r); } catch (e) { log('⚠️  R2 list:', e.message); }
   out.sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -547,8 +573,10 @@ app.get('/api/recordings', service, async (req, res) => {
 app.delete('/api/recordings/:slug/:file', service, async (req, res) => {
   const slug = safeId(req.params.slug), file = String(req.params.file || '');
   if (!/^[\w-]+\.mp4$/.test(file)) return res.status(400).json({ error: 'bad file' });
-  try { fs.unlinkSync(path.join(REC_DIR, slug, file)); } catch (_) {}
-  try { await r2Delete(slug, file); } catch (e) { log('⚠️  R2 delete:', e.message); }
+  for (const f of [file, previewName(file)]) {
+    try { fs.unlinkSync(path.join(REC_DIR, slug, f)); } catch (_) {}
+    try { await r2Delete(slug, f); } catch (e) { log('⚠️  R2 delete:', e.message); }
+  }
   res.json({ ok: true });
 });
 // Na požiadanie: prerob záznam v R2 (napr. keď sa v prehliadači nespúšťa)
@@ -580,6 +608,8 @@ async function retention() {
         if (!stale) continue;
         fs.unlinkSync(f);
         log('🗑️  Retencia: zmazaný', s + '/' + fn);
+        if (isPreviewFile(fn)) continue;
+        try { fs.unlinkSync(path.join(dir, previewName(fn))); } catch (_) {}
         if (!/\.part\.mp4$/.test(fn)) await hook('expired', { slug: s, file: fn, url: `/rec/${s}/${fn}` });
       }
     }
@@ -588,6 +618,7 @@ async function retention() {
   try {
     for (const r of await r2List()) if (new Date(r.created_at).getTime() < limit) {
       await r2Delete(r.slug, r.file);
+      try { await r2Delete(r.slug, previewName(r.file)); } catch (_) {}
       log('🗑️  Retencia R2: zmazaný', r.slug + '/' + r.file);
       await hook('expired', { slug: r.slug, file: r.file, url: r.url });
     }

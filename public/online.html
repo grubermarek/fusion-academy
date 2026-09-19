@@ -77,64 +77,6 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
 
 <div class="container py-4">
 
-  <!-- Membership plans -->
-  <div id="plansSection">
-    <h2 class="text-center fw-900 mb-1" style="color:var(--cream)" data-i18n="onl.pick">Vyberte si plán</h2>
-    <p class="text-center mb-4" style="color:var(--text-muted)" data-i18n="onl.pick_sub">Prístup k online hodinám a živým prenosom</p>
-    <div class="row g-3 justify-content-center mb-5">
-      <div class="col-md-5 col-lg-4">
-        <div class="plan-card h-100">
-          <div class="text-center mb-3">
-            <div style="font-size:2.5rem">💻</div>
-            <h3 style="font-size:1.3rem;font-weight:800;color:var(--cream)">Online Basic</h3>
-            <div class="plan-price">€12,90</div>
-            <div class="plan-period">/ mesiac</div>
-          </div>
-          <ul class="feature-list">
-            <li data-i18n="onl.b1">Prístup k živým prenosom</li>
-            <li data-i18n="onl.b2">Komunita – všetky kanály</li>
-            <li class="locked" data-i18n="onl.b3">Offline hodiny nezahrnuté</li>
-          </ul>
-          <button class="btn-buy-outline" onclick="buyPlan('online_basic')">Kúpiť Online Basic</button>
-        </div>
-      </div>
-      <div class="col-md-5 col-lg-4">
-        <div class="plan-card featured h-100">
-          <div class="text-center mb-3">
-            <div style="font-size:2.5rem">🌟</div>
-            <h3 style="font-size:1.3rem;font-weight:800;color:var(--cream)">Online Premium</h3>
-            <div class="plan-price">€67,90</div>
-            <div class="plan-period">/ mesiac</div>
-          </div>
-          <ul class="feature-list">
-            <li data-i18n="onl.p1">Všetky živé prenosy</li>
-            <li data-i18n="onl.p2">Jedálniček na mieru na celý týždeň</li>
-            <li data-i18n="onl.p3">Komunita + Blog prístup</li>
-          </ul>
-          <button class="btn-buy" onclick="buyPlan('online_premium')">Kúpiť Online Premium</button>
-        </div>
-      </div>
-      <div class="col-md-5 col-lg-4">
-        <div class="plan-card h-100">
-          <div class="text-center mb-3">
-            <div style="font-size:2.5rem">🥈</div>
-            <h3 style="font-size:1.3rem;font-weight:800;color:var(--cream)" data-i18n="onl.s0">Silver+ (fyzické + online)</h3>
-            <div class="plan-price">€65</div>
-            <div class="plan-period">/ mesiac</div>
-          </div>
-          <ul class="feature-list">
-            <li data-i18n="onl.s1">Neobmedzené hodiny v štúdiu</li>
-            <li data-i18n="onl.s2">Online prístup zahrnutý</li>
-            <li data-i18n="onl.s3">Plný prístup do komunity</li>
-            <li data-i18n="onl.s4">Prednostné rezervácie</li>
-            <li>Jeden mestský klub</li>
-          </ul>
-          <button class="btn-buy-outline" onclick="buyPlan('silver')">Kúpiť Silver</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- Online classes (shown after login) -->
   <div id="onlineClasses" style="display:none">
     <h2 class="fw-900 mb-3" style="color:var(--cream)">Live hodiny</h2>
@@ -149,16 +91,17 @@ body{background:var(--dark-1);color:var(--cream);font-family:'Manrope',system-ui
       <h2 class="fw-900 mb-0" style="color:var(--cream)">📼 Záznamy hodín</h2>
       <button id="recordingsAll" class="btn-arch" style="display:none" onclick="renderRecordings();this.style.display='none'">Všetky záznamy</button>
     </div>
-    <p style="color:var(--text-muted);font-size:.85rem;margin-bottom:.6rem">Zmeškala si hodinu? Každé vysielanie sa nahráva automaticky a záznam tu nájdeš do pár minút po skončení.</p>
+    <p style="color:var(--text-muted);font-size:.85rem;margin-bottom:.6rem" id="recIntro">Zmeškala si hodinu? Každé vysielanie sa nahráva automaticky a záznam tu nájdeš do pár minút po skončení.</p>
     <div id="recordingsChips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.8rem"></div>
     <div id="recordingsList"></div>
   </div>
 
-  <!-- No access info -->
+  <!-- Bez online členstva: ukážky + cesta do obchodu (cenník je v /obchod, tu sa nepredáva) -->
   <div id="noAccess" class="access-section text-center" style="display:none">
-    <div style="font-size:3rem;margin-bottom:1rem">🔒</div>
-    <h3 style="color:var(--cream)">Prístup k online hodinám je chránený</h3>
-    <p style="color:var(--text-muted)">Pre zobrazenie živých prenosov si zakúp jeden z plánov vyššie.</p>
+    <div style="font-size:2.4rem;margin-bottom:.6rem">🔒</div>
+    <h3 style="color:var(--cream);font-weight:800">Živé prenosy a celé záznamy sú súčasťou Silver, Gold a Online členstva</h3>
+    <p style="color:var(--text-muted);margin-bottom:1rem">Z každého záznamu si môžeš pozrieť <b style="color:var(--cream)">3-minútovú ukážku</b> zadarmo. Celé hodiny a živé vysielanie odomkneš v obchode.</p>
+    <a href="/obchod" class="btn-stream" style="padding:.7rem 1.6rem;font-size:.95rem">🔓 Odomknúť v obchode</a>
   </div>
 </div>
 
@@ -256,6 +199,8 @@ async function init(){
       if(!hasOnline) buyPlan(b); }
   } else {
     const na=document.getElementById('noAccess'); if(na) na.style.display='block';
+    // Neprihlásená návštevníčka: ukážky a záznamy sú až po prihlásení
+    if(na && !na.querySelector('.anon-login')){ const b=document.createElement('div'); b.className='anon-login'; b.style.marginTop='12px'; b.innerHTML='<button class="btn-buy-outline" style="width:auto" onclick="openLogin()">Mám účet · Prihlásiť sa</button>'; na.appendChild(b); }
     showMembershipStatus(null);
     // Z reklamy a neprihlásená → hneď ponúkni bleskovú registráciu
     if(pendingBuy){ document.getElementById('authBuyNote').style.display=''; authTab('reg'); openLogin(); }
@@ -426,10 +371,13 @@ async function loadRecordings(){
   const host=document.getElementById('recordingsSection'); if(!host) return;
   const d=await api('/api/online/recordings');
   _recordings=(d&&d.recordings)||[];
+  window._recPreview = !!(d && d.has_access===false);
   // Tlačidlo Archív len pri hodinách, ktoré majú záznam
   document.querySelectorAll('[data-arch]').forEach(b=>{ const has=_recordings.some(r=>(r.class_ids||[r.class_id]).includes(b.dataset.arch)); b.style.display=has?'inline-block':'none'; });
   if(!_recordings.length){ host.style.display='none'; return; }
   host.style.display='block';
+  const intro=document.getElementById('recIntro');
+  if(intro && window._recPreview) intro.innerHTML='Z každej hodiny si môžeš pozrieť <b style="color:var(--cream)">3-minútovú ukážku</b>. Celé záznamy a živé prenosy sú súčasťou Silver, Gold a Online členstva — <a href="/obchod" style="color:#E7C878;font-weight:700">odomknúť v obchode</a>.';
   renderRecordings();
 }
 let _recFilter={kind:'',city:''};
@@ -449,7 +397,7 @@ function renderRecordings(filterClass){
   list.innerHTML = recs.length ? recs.map(r=>`<div class="class-card" style="padding:.8rem 1rem">
       <div class="lock-icon" style="font-size:1.5rem;min-width:36px">📼</div>
       <div class="class-info flex-grow-1"><h4>${r.title||r.kind||r.class_name}</h4><p>${fmt(r)} · ${dur(r.duration_s||0)}${r.city?' · '+r.city:''}</p></div>
-      <button class="btn-stream" onclick="playRecording('${r.id}')"><i class="bi bi-play-circle me-1"></i>Prehrať</button>
+      <button class="btn-stream" onclick="playRecording('${r.id}')"><i class="bi bi-play-circle me-1"></i>${r.preview?'Ukážka 3 min':'Prehrať'}</button>
     </div>`).join('')
     : '<p style="color:var(--text-muted);text-align:center;padding:1rem">Táto hodina zatiaľ nemá žiadny záznam.</p>';
 }
@@ -461,9 +409,12 @@ function openRecordings(classId){
 }
 function playRecording(id){
   const r=_recordings.find(x=>x.id===id); if(!r||!r.src){ toast('Záznam sa nepodarilo načítať','err'); return; }
-  const ov=showOverlay('📼 '+(r.title||r.class_name)+' · '+new Date(r.started_at||r.date).toLocaleDateString('sk-SK'));
-  ov.querySelector('.so-media').innerHTML='<video id="soVideo" controls autoplay playsinline style="width:100%;height:100%;background:#000"></video>';
-  document.getElementById('soVideo').src=r.src;
+  const ov=showOverlay((r.preview?'🎬 Ukážka 3 min · ':'📼 ')+(r.title||r.class_name)+' · '+new Date(r.started_at||r.date).toLocaleDateString('sk-SK'));
+  // Ukážka: pod videom je cesta do obchodu; po dohraní ukážky sa zvýrazní
+  ov.querySelector('.so-media').innerHTML='<div style="display:flex;flex-direction:column;height:100%;gap:6px"><video id="soVideo" controls autoplay playsinline style="flex:1;min-height:0;width:100%;background:#000"></video>'+
+    (r.preview?'<div id="soUpsell" style="text-align:center;padding:8px;background:rgba(201,162,76,.12);border:1px solid rgba(201,162,76,.4);border-radius:10px;font-size:.9rem;color:var(--cream)">Toto je 3-minútová ukážka. Celý záznam ('+Math.round((r.duration_s||0)/60)+' min) a živé prenosy máš so Silver alebo Gold členstvom. <a href="/obchod" style="color:#E7C878;font-weight:800">Odomknúť v obchode →</a></div>':'')+'</div>';
+  const v=document.getElementById('soVideo'); v.src=r.src;
+  if(r.preview) v.onended=()=>{ const u=document.getElementById('soUpsell'); if(u){ u.style.background='rgba(201,162,76,.28)'; u.innerHTML='<b>Ukážka skončila.</b> Chceš celú hodinu? <a href="/obchod" style="color:#E7C878;font-weight:800">Silver alebo Gold v obchode →</a>'; } };
 }
 // Prevedie stream URL na vložiteľný (embed) tvar pre prehrávanie priamo v appke
 function toEmbed(url){

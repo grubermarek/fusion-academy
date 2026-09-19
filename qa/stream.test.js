@@ -185,7 +185,7 @@ async function login(id) {
     const c2 = (oc2.body.classes || []).find(c => c._id === 'qaStOnline0001') || {};
     if (c2.play_token || c2.stream_key) find('S4a', 'Bronze klientka dostala token/kľúč', JSON.stringify(c2).slice(0, 200)); else pass('S4a: Bronze bez tokenu');
     const rec2 = await req('/api/online/recordings', { cookie: bez });
-    if (rec2.status !== 403) find('S4b', 'Bronze vidí záznamy', String(rec2.status)); else pass('S4b: Bronze záznamy nevidí (403)');
+    if (rec2.status !== 200 || rec2.body.has_access !== false || (rec2.body.recordings || []).some(r => !r.preview)) find('S4b', 'Bronze dostala celé záznamy / zlý stav', rec2.status + ' ' + JSON.stringify(rec2.body).slice(0, 200)); else pass('S4b: Bronze má has_access=false a len ukážky');
     const svc = await req('/api/recordings', { base: M });
     if (svc.status !== 401) find('S4c', 'Servisné API media servera je otvorené', String(svc.status)); else pass('S4c: servisné API bez tajomstva → 401');
 
@@ -215,6 +215,17 @@ async function login(id) {
         else pass('S5f: MP4 → 200 video/mp4, Range → 206');
         const bezT = await fetch(r1.src.split('?')[0]);
         if (bezT.status !== 403) find('S5g', 'Záznam sa dá stiahnuť bez tokenu', String(bezT.status)); else pass('S5g: záznam bez tokenu → 403');
+        // Ukážka pre Bronze: 3-minútový súbor hrá, celý záznam s ukážkovým tokenom nie
+        const rlB = await req('/api/online/recordings', { cookie: bez });
+        const pb = (rlB.body.recordings || [])[0];
+        if (!pb || !pb.preview || !/\.preview\.mp4\?t=\d+\.p\./.test(pb.src || '')) find('S5i', 'Bronze nedostala ukážku', JSON.stringify(rlB.body).slice(0, 250));
+        else {
+          const pv = await fetch(pb.src);
+          const mainWithPreviewToken = await fetch(r1.src.split('?')[0] + '?' + pb.src.split('?')[1]);
+          if (pv.status !== 200 || !/video\/mp4/.test(pv.headers.get('content-type') || '')) find('S5i', 'Ukážka sa neprehrá', pv.status + ' ' + pv.headers.get('content-type'));
+          else if (mainWithPreviewToken.status !== 403) find('S5j', 'Ukážkový token pustil celý záznam', String(mainWithPreviewToken.status));
+          else pass('S5i/S5j: ukážka hrá (200 video/mp4), celý záznam s ukážkovým tokenom → 403');
+        }
       }
       const del = await req('/api/admin/recordings/' + rec._id, { method: 'DELETE', cookie: admin });
       const files = fs.existsSync(path.join(MEDIA, 'rec', 'qaStOnline0001')) ? fs.readdirSync(path.join(MEDIA, 'rec', 'qaStOnline0001')) : [];
