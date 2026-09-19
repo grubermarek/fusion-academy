@@ -5195,7 +5195,7 @@ async function skontrolujMeranie(){
   if(b){ b.disabled=false; b.textContent='Skontrolovať teraz'; }
 }
 // Lievik stránok: unikátni návštevníci po krokoch, rozpad po kampaniach a variantoch skúšky
-const LIEVIK_NAZVY={lp_view:'Načítala stránku',lp_termin:'Vybrala termín',form_view:'Videla formulár',form_start:'Začala písať',form_submit:'Odoslala',register_ok:'Registrácia',booking_ok:'Rezervácia',trial_open:'Otvorila Stripe',trial_ok:'Skúška beží',trial_decline:'Odmietla skúšku'};
+const LIEVIK_NAZVY={video_start:'Spustenie videa',video_half:'Polovica videa',cta_click:'Klik na prihlášku',lp_view:'Načítala stránku',lp_termin:'Vybrala termín',form_view:'Videla formulár',form_start:'Začala písať',form_submit:'Odoslala',register_ok:'Registrácia',booking_ok:'Rezervácia',trial_open:'Otvorila Stripe',trial_ok:'Skúška beží',trial_decline:'Odmietla skúšku'};
 async function loadLievik(){
   const host=document.getElementById('lievikPanel'); if(!host) return;
   const dni=(document.getElementById('lievikDni')||{}).value||'7';
@@ -5212,7 +5212,7 @@ async function loadLievik(){
           +'<td><div style="height:8px;border-radius:4px;background:linear-gradient(90deg,#C9A84C,#E9B8FF);width:'+Math.max(2,Math.round(100*k.n/max))+'%"></div></td></tr>').join('')
         +'</tbody></table></div>';
     };
-    let h=tab('Landing /prva-hodina (reklamy)', d.stranky['/prva-hodina'])+tab('Úvod appky / (registrácia)', d.stranky['/']);
+    let h=tab('Landing /prva-hodina (reklamy)', d.stranky['/prva-hodina'])+tab('Úvod appky / (registrácia)', d.stranky['/'])+tab('Nábor trénerov — fusionacademy.sk/spolupraca', d.stranky['/nabor-trenerov']);
     if(d.kampane && d.kampane.length){
       h+='<div class="mb-1"><b>Podľa kampane</b></div><table class="table table-dark table-sm mb-2" style="max-width:720px"><thead><tr><th>Kampaň</th><th class="text-end">Návštevy</th><th class="text-end">Začali</th><th class="text-end">Odoslali</th><th class="text-end">Registrácie</th><th class="text-end">Skúšky</th></tr></thead><tbody>'
         +d.kampane.map(k=>'<tr><td>'+esc(k.kampan)+'</td><td class="text-end">'+k.navstevy+'</td><td class="text-end">'+k.zacali+'</td><td class="text-end">'+k.odoslali+'</td><td class="text-end">'+k.registracie+'</td><td class="text-end">'+k.skusky+'</td></tr>').join('')+'</tbody></table>';

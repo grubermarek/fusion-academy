@@ -105,7 +105,7 @@ async function landingVariant(req,res){
   }
   return v;
 }
-const FUNNEL_KROKY=new Set(['lp_view','lp_city','lp_termin','form_view','form_start','form_submit','register_ok','register_err','booking_ok','trial_open','trial_ok','trial_decline','trial_cancel']);
+const FUNNEL_KROKY=new Set(['lp_view','lp_city','lp_termin','form_view','form_start','form_submit','register_ok','register_err','booking_ok','trial_open','trial_ok','trial_decline','trial_cancel','video_start','video_half','cta_click']);
 const jeWebview=ua=>/FBAN|FBAV|FB_IAB|Instagram/i.test(String(ua||''));
 async function zapisKrok(req, krok, extra){
   try{
@@ -17815,6 +17815,26 @@ function naborCors(req,res){
 }
 app.options('/api/public/trainer-application',(req,res)=>{ naborCors(req,res); res.sendStatus(204); });
 app.options('/api/public/trainer-application/:id/video',(req,res)=>{ naborCors(req,res); res.sendStatus(204); });
+// Lievik náboru (19. 9. 2026): stránka na webe hlási kroky (načítanie, video, klik na prihlášku,
+// začatie formulára). Je na inej doméne, preto bez cookie — anonymné id si drží stránka
+// v sessionStorage. Kampaň/zdroj sa berú z parametrov adresy. Vidno v admin Kampane → Lievik stránok.
+const NABOR_STRANKA='/nabor-trenerov';
+const NABOR_KROKY=new Set(['lp_view','video_start','video_half','cta_click','form_start']);
+function naborZdroj(utm){
+  const p=new URLSearchParams(String(utm||'').replace(/^\?/,'')); const fbclid=(p.get('fbclid')||'').slice(0,200);
+  return { fbclid, kampan:(p.get('utm_campaign')||'').slice(0,80)||null,
+    zdroj:((p.get('utm_source')||(fbclid?'fbclid':(p.get('gclid')?'gclid':''))).slice(0,40))||null };
+}
+const naborVid=v=>/^[a-z0-9]{6,40}$/.test(String(v||''))?String(v):null;
+app.post('/api/public/nabor-krok', rlPublic, express.urlencoded({extended:false, limit:'4kb'}), async(req,res)=>{
+  naborCors(req,res);
+  try{
+    const b=req.body||{}; const krok=String(b.krok||'').slice(0,30);
+    if(NABOR_KROKY.has(krok)){ const z=naborZdroj(b.utm);
+      await zapisKrok(req, krok, {stranka:NABOR_STRANKA, vid:naborVid(b.vid), kampan:z.kampan, zdroj:z.zdroj}); }
+  }catch(e){}
+  res.status(204).end();
+});
 app.post('/api/public/trainer-application', rlPublic, async(req,res)=>{
   naborCors(req,res);
   try{
@@ -17860,6 +17880,12 @@ app.post('/api/public/trainer-application', rlPublic, async(req,res)=>{
         body:name+' · '+phone+' · '+city+(d.class_types.length?' · '+d.class_types.join(', '):'')+(d.call_time?' · zavolať '+d.call_time.toLowerCase():''),
         read:false, created_at:nowISO()}).catch(()=>{});
     }
+    const zdr=naborZdroj(b.utm);
+    zapisKrok(req,'form_submit',{stranka:NABOR_STRANKA, vid:naborVid(b.vid), kampan:zdr.kampan, zdroj:zdr.zdroj}).catch(()=>{});
+    const fbclid=zdr.fbclid || t(b.fbclid,200) || undefined;
+    metaCapi('Lead',{ email, fbclid, fbp:t(b.fbp,80)||undefined, event_id:t(b.event_id,80)||('nabor_'+z._id),
+      source_url:'https://fusionacademy.sk/programy/spolupracuj.html', ip:klientIp(req), ua:req.headers['user-agent'],
+      click_at:t(b.click_at,40)||undefined }).catch(()=>{});
     res.json({ok:true, id:z._id, upload_token:token});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -23564,7 +23590,8 @@ async function lievikStranok(days){
   const od=new Date(Date.now()-days*864e5).toISOString();
   const ev=await q.find(db.funnel_events,{at:{$gte:od}});
   const KROKY={ '/prva-hodina':['lp_view','lp_termin','form_view','form_start','form_submit','booking_ok','trial_open','trial_ok'],
-                '/':['lp_view','form_view','form_start','form_submit','register_ok','trial_open','trial_ok','trial_decline'] };
+                '/':['lp_view','form_view','form_start','form_submit','register_ok','trial_open','trial_ok','trial_decline'],
+                '/nabor-trenerov':['lp_view','video_start','video_half','cta_click','form_start','form_submit'] };
   const kl=e=>e.vid||e.uid||e._id;
   const unik=(list,krok)=>new Set(list.filter(e=>e.krok===krok).map(kl)).size;
   const lievik=(list,kroky)=>{ let prev=null; return kroky.map(k=>{ const n=unik(list,k);
