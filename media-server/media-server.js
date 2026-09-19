@@ -223,16 +223,17 @@ async function finishRecording(slug, e) {
   const ended_at = nowISO();
   const r = await finalizeFile(slug, e.partFile);
   if (r.file) { try { await r2Upload(slug, r.file, path.join(e.recDir, r.file)); } catch (err) { log('⚠️  R2 upload zlyhal, záznam ostáva lokálne:', err.message); } }
-  hook('stop', { slug, name: e.name, started_at: e.started_at, ended_at, file: r.file, size: r.size, duration_s: r.duration_s,
+  await hook('stop', { slug, name: e.name, started_at: e.started_at, ended_at, file: r.file, size: r.size, duration_s: r.duration_s,
     url: r.file ? `/rec/${slug}/${r.file}` : null });
   uvolniMiesto().catch(() => {});
+  if (r.file && r.needsR2Transcode && !fs.existsSync(path.join(e.recDir, r.file))) await transcodeViaR2(slug, r.file);
 }
 
 // Fragmentované MP4 (frag_keyframe + sidx) je priamo prehrateľné aj pretáčateľné,
 // preto sa už NEprepisuje do druhej kópie — 18. 9. pri 2-hodinovej hodine práve
 // tá kópia zaplnila 5 GB volume („No space left on device") a záznam skoro prepadol.
 async function finalizeFile(slug, partFile) {
-  let file = null, size = 0, duration_s = 0;
+  let file = null, size = 0, duration_s = 0, needsR2Transcode = false;
   try {
     const st = fs.statSync(partFile);
     const finalFile = partFile.replace(/\.part\.mp4$/, '.mp4');
@@ -254,7 +255,7 @@ async function finalizeFile(slug, partFile) {
       log('💾 Záznam uložený:', slug + '/' + file, Math.round(size / 1048576) + ' MB,', Math.round(duration_s / 60) + ' min');
       // Zvuk pre prehliadač: AAC-LC prekódovanie do druhého súboru; originál sa nahradí len keď
       // má výsledok správnu dĺžku a rozumnú veľkosť (18. 9. nekontrolovaný výsledok zmazal záznam)
-      if (freeBytes() > size + 300 * 1048576) {
+      if (freeBytes() > size + 300 * 1048576 && !process.env.FORCE_R2_REPROCESS) {
         const aacFile = finalFile.replace(/\.mp4$/, '.aac.part.mp4');
         try {
           const errTail = await runErr(FFMPEG, ['-hide_banner', '-loglevel', 'warning', '-y', '-i', finalFile, '-map', '0:v:0', '-map', '0:a?', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2', '-movflags', '+faststart', aacFile]);
@@ -262,13 +263,19 @@ async function finalizeFile(slug, partFile) {
           if (d2 >= duration_s * 0.98 && s2 >= size * 0.5) { fs.renameSync(aacFile, finalFile); size = s2; duration_s = d2; log('🔊 Zvuk prekódovaný na AAC-LC:', slug + '/' + file, errTail ? '| ffmpeg: ' + errTail : ''); }
           else { fs.unlinkSync(aacFile); log('⚠️  prekódovanie zvuku dalo zlý výsledok (' + Math.round(d2) + ' s, ' + Math.round(s2 / 1048576) + ' MB) — ostáva originál', errTail ? '| ffmpeg: ' + errTail : ''); }
         } catch (e) { try { fs.unlinkSync(aacFile); } catch (_) {} log('⚠️  prekódovanie zvuku zlyhalo — ostáva originál:', e.message.slice(0, 300)); }
-      } else log('ℹ️  Málo miesta na prekódovanie zvuku — ostáva originál');
+      } else { needsR2Transcode = true; log('ℹ️  Málo miesta na lokálne prekódovanie zvuku (1080p, ' + Math.round(size / 1048576) + ' MB) — originál ide do R2 a zvuk sa prekóduje odtiaľ'); }
     } else {
       fs.unlinkSync(partFile); // pár sekúnd skúšobného spojenia — nezaujímavé
       log('🗑️  Príliš krátke vysielanie, záznam zahodený:', slug);
     }
   } catch (err) { log('⚠️  záznam', slug, err.message); }
-  return { file, size, duration_s };
+  return { file, size, duration_s, needsR2Transcode };
+}
+// Veľký záznam (1080p, 2 h ≈ 4 GB): originál je už bezpečne v R2, prekódovanie zvuku ide
+// cez r2Reprocess (stiahnuť → rúra → dočasný kľúč → kontrola → výmena). Zlyhanie = originál ostáva.
+async function transcodeViaR2(slug, file) {
+  if (!R2_ON) return;
+  try { await r2Reprocess(slug, file); } catch (e) { log('⚠️  prekódovanie zvuku cez R2 zlyhalo — ostáva originál:', e.message.slice(0, 300)); }
 }
 
 // Po štarte: osirelé .part súbory (pád servera / reštart počas vysielania) sa
@@ -287,6 +294,7 @@ async function adoptOrphans() {
         const r = await finalizeFile(s, path.join(dir, fn));
         if (r.file) { try { await r2Upload(s, r.file, path.join(dir, r.file)); } catch (err) { log('⚠️  R2 upload zlyhal, záznam ostáva lokálne:', err.message); } }
         if (r.file) await hook('stop', { slug: s, name: '', started_at, ended_at, file: r.file, size: r.size, duration_s: r.duration_s, url: `/rec/${s}/${r.file}`, adopted: true });
+        if (r.file && r.needsR2Transcode && !fs.existsSync(path.join(dir, r.file))) await transcodeViaR2(s, r.file);
       }
     }
   } catch (e) { log('⚠️  osirelé záznamy:', e.message); }
