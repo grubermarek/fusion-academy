@@ -274,6 +274,7 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
 - Pasca: migrácia `online_schedule_v2` na čistej DB vypne online hodiny mimo svojho zoznamu — QA testy si hodinu po štarte zapnú cez `PUT /api/admin/classes/:id {active:true}`.
 - Záznamy: 18. 9. 2-hodinová technika (4,1 GB) zaplnila 5 GB volume → záznam sa ukladá bez druhej kópie (fmp4), osirelé .part sa po štarte dokončia, RECORDINGS_MAX_MB/RESERVE_MB; od 18. 9. večer voliteľné Cloudflare R2 (env R2_*) — po nahratí sa lokálny súbor zmaže, prehrávanie 302 na podpísaný odkaz. Záznam pokrývajúci viac hodín (technika + Zumba) má `class_ids` a názov „Technický tréning + Zumba“.
 - 19. 9.: Marek vysiela z GoPro v 1080p (kvalita na TV). Chrome neprehrá zvuk skopírovaný z GoPro do MP4 → zvuk sa po skončení prekóduje na AAC-LC; veľký záznam cez R2 dvojprechodovo (TS temp → faststart MP4), s kontrolou pred výmenou. Pasca: ffmpeg z R2 cez http číta fragmentované MP4 len po prvý fragment — používať TS. Záznam prvej hodiny 18. 9. bol stratený nekontrolovaným prepisom (feedback v pamäti).
+- 19. 9. popoludní: /online už nepredáva balíčky (duplicita /obchod); záznamy vidia všetky klientky — bez online členstva 3-min ukážka (`*.preview.mp4`, token `exp.p.sig`) + upsell, s ním celé záznamy s filtrami.
 - Nasadenie a env: `media-server/README.md`.
 
 ### Zámerne vynechané (nepomer hodnota/prácnosť pre malú školu)

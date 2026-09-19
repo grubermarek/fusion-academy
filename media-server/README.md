@@ -21,7 +21,7 @@ tréner (Larix / OBS)  ──RTMP──▶  media server  ──HLS (token)─�
 | live | media server → appka | hook `start` → appka hlási `is_live`, vydá klientke token, dashboard banner svieti |
 | prehrávanie | klientka | `GET <MEDIA_BASE>/live/<id hodiny>/index.m3u8?t=<token>` (hls.js / Safari natívne) |
 | záznam | media server → appka | po skončení hook `stop` s MP4 → `db.recordings`; kratšie ako 3 min sú skryté. Nahráva sa `-c copy`; zvuk sa potom prekóduje na AAC-LC (Chrome zvuk z GoPro skopírovaný do MP4 neprehrá): malý záznam lokálne (faststart MP4), veľký (1080p, ~4 GB) po nahratí do R2 dvojprechodovo cez `r2Reprocess` (A: zvuk → MPEG-TS do R2 temp, B: TS lineárne → faststart MP4 → výmena po kontrole dĺžky/veľkosti). Originál sa nikdy neprepisuje bez kontroly. |
-| archív | klientka so Silver/Gold/Online | `/online` → sekcia Záznamy hodín, `GET /rec/<id>/<súbor>.mp4?t=<token>` |
+| archív | každá prihlásená klientka | `/online` → Záznamy hodín: so Silver/Gold/Online celý záznam (`GET /rec/<id>/<súbor>.mp4?t=<exp>.<sig>`), bez neho 3-min ukážka (`<súbor>.preview.mp4?t=<exp>.p.<sig>`, `PREVIEW_SECONDS`) + upsell do /obchod. Cenník na /online nie je — predáva len obchod. |
 | správa | admin | Hodiny & Stream → Záznamy vysielaní: prehrať, skryť/odkryť, zmazať; miesto na serveri |
 | retencia | media server | `RETENTION_DAYS` (90) — starý súbor sa zmaže, hook `expired` vymaže evidenciu |
 
