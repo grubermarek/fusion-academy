@@ -33,6 +33,20 @@ window.faEventId = function(){
   return window.__faEid;
 };
 
+// Kroky lievika stránky (19. 9.): stránka hlási, kam sa návštevníčka dostala
+// (zobrazenie, začatie formulára, odoslanie…). Server pridá zdroj z cookie fa_zdroj
+// a anonymné id návštevníka (fa_vid). Každý krok max. raz za načítanie stránky.
+window.faKrok = function(krok, meta){
+  try {
+    window.__faKroky = window.__faKroky || {};
+    if(window.__faKroky[krok]) return; window.__faKroky[krok] = 1;
+    const body = JSON.stringify({krok, stranka: location.pathname, meta: meta||null});
+    let ok = false;
+    try { if(navigator.sendBeacon) ok = navigator.sendBeacon('/api/funnel', new Blob([body], {type:'application/json'})); } catch(e){}
+    if(!ok) fetch('/api/funnel', {method:'POST', headers:{'Content-Type':'application/json'}, body, credentials:'include', keepalive:true}).catch(()=>{});
+  } catch(e){}
+};
+
 window.faGetAttribution = function(){
   try {
     const a = JSON.parse(localStorage.getItem('fa_attr')||'{}');

@@ -71,6 +71,64 @@ app.use((req,res,next)=>{
     { maxAge:90*864e5, httpOnly:true, sameSite:'lax', secure:process.env.NODE_ENV==='production', path:'/' });
   next();
 });
+// ── Lievik stránky (19. 9.): každý návštevník dostane anonymné id (cookie fa_vid) a stránka
+// hlási kroky (načítanie, začatie formulára, odoslanie…). Bez toho sme nevideli, kde medzi
+// 3 382 načítaniami z HEJ BABY a 2 registráciami ľudia odchádzajú.
+const VID_COOKIE='fa_vid', AB_COOKIE='fa_ab';
+function citajCookie(req, meno){
+  const m=String(req.headers.cookie||'').match(new RegExp('(?:^|;\\s*)'+meno+'=([^;]+)'));
+  try{ return m ? decodeURIComponent(m[1]) : null; }catch(e){ return null; }
+}
+app.use((req,res,next)=>{
+  if(req.method!=='GET' || req.path.startsWith('/api/') || /\.[a-z0-9]{2,5}$/i.test(req.path)) return next();
+  if(!citajCookie(req,VID_COOKIE)){
+    const vid='v'+Date.now().toString(36)+Math.random().toString(36).slice(2,10);
+    req._novyVid=vid;
+    res.cookie(VID_COOKIE, vid, { maxAge:365*864e5, httpOnly:true, sameSite:'lax', secure:process.env.NODE_ENV==='production', path:'/' });
+  }
+  next();
+});
+// Skúška na landingu /prva-hodina: 'karta' (Stripe s kartou), 'bez_karty' (týždeň bez karty),
+// 'ab' (50:50 podľa cookie fa_ab). Prepína sa v admin Kampaniach → Lievik stránok.
+const LANDING_VARIANTY=['karta','bez_karty'];
+async function landingRezim(){
+  const s=await q.one(db.settings,{key:'landing_ab'}).catch(()=>null); const v=s&&s.value;
+  return (LANDING_VARIANTY.includes(v)||v==='ab') ? v : 'karta';
+}
+async function landingVariant(req,res){
+  const rezim=await landingRezim();
+  if(rezim!=='ab') return rezim;
+  let v=citajCookie(req,AB_COOKIE);
+  if(!LANDING_VARIANTY.includes(v)){
+    v=Math.random()<0.5?'karta':'bez_karty';
+    if(res) res.cookie(AB_COOKIE, v, { maxAge:90*864e5, httpOnly:true, sameSite:'lax', secure:process.env.NODE_ENV==='production', path:'/' });
+  }
+  return v;
+}
+const FUNNEL_KROKY=new Set(['lp_view','lp_city','lp_termin','form_view','form_start','form_submit','register_ok','register_err','booking_ok','trial_open','trial_ok','trial_decline','trial_cancel']);
+const jeWebview=ua=>/FBAN|FBAV|FB_IAB|Instagram/i.test(String(ua||''));
+async function zapisKrok(req, krok, extra){
+  try{
+    extra=extra||{}; if(!FUNNEL_KROKY.has(krok)) return;
+    const z=citajZdrojCookie(req)||{}; const ua=String(req.headers['user-agent']||'');
+    let ref=''; try{ ref=new URL(String(req.headers.referer||''),'http://x').pathname; }catch(e){}
+    const stranka=String(extra.stranka||ref||z.landing||'').split('?')[0].slice(0,80)||null;
+    await q.insert(db.funnel_events,{ krok, at:nowISO(), den:today(),
+      vid:extra.vid||citajCookie(req,VID_COOKIE)||req._novyVid||null, uid:extra.uid||(req.session&&req.session.uid)||null,
+      stranka, kampan:extra.kampan||z.utm_campaign||null, zdroj:extra.zdroj||z.utm_source||(z.fbclid?'fbclid':(z.gclid?'gclid':null)),
+      variant:extra.variant||citajCookie(req,AB_COOKIE)||null, webview:jeWebview(ua), mobil:/Mobi|Android|iPhone/i.test(ua),
+      meta:extra.meta||null });
+  }catch(e){}
+}
+async function zapisKrokPouzivatela(userId, krok, extra){
+  try{
+    const u=await q.one(db.users,{_id:userId}); if(!u) return;
+    await q.insert(db.funnel_events,{ krok, at:nowISO(), den:today(), vid:u.funnel_vid||null, uid:u._id,
+      stranka:(extra&&extra.stranka)||String(u.landing_page||'').split('?')[0].slice(0,80)||null,
+      kampan:u.utm_campaign||null, zdroj:u.utm_source||null, variant:u.landing_variant||null, webview:null, mobil:null,
+      meta:(extra&&extra.meta)||null });
+  }catch(e){}
+}
 // Zdroj z registrácie (stránka) + zo servera. Keď stránka neposlala nič, platí cookie;
 // keď poslala tú istú kampaň, cookie doplní chýbajúci fbclid/gclid.
 function spojZdroj(req, attr){
@@ -111,7 +169,8 @@ app.use(express.urlencoded({ extended: true, limit:'10mb' }));
 // neprečíta a kreatívu treba nahrávať ručne klikaním.
 app.use('/kreativy', express.static(path.join(__dirname, 'public', 'kreativy'),
   { setHeaders: res => res.setHeader('Access-Control-Allow-Origin', '*') }));
-app.use(express.static(path.join(__dirname, 'public')));
+// index:false — úvod „/" obsluhuje vlastná trasa (klik z reklamy ide na /prva-hodina), nie statický server
+app.use(express.static(path.join(__dirname, 'public'), { index:false }));
 
 // ─── Rate limiting (in-memory; appka beží ako jedna inštancia) ────────────────
 // Chráni prihlásenie pred hádaním hesla a verejné endpointy pred zneužitím/spamom.
@@ -254,6 +313,7 @@ const db = {
   deal_links:       new Datastore({ filename: path.join(DATA_DIR, 'deal_links.db'),       autoload: true }),
   credit_ledger:    new Datastore({ filename: path.join(DATA_DIR, 'credit_ledger.db'),    autoload: true }),
   shop_events:      new Datastore({ filename: path.join(DATA_DIR, 'shop_events.db'),      autoload: true }),
+  funnel_events:    new Datastore({ filename: path.join(DATA_DIR, 'funnel_events.db'),    autoload: true }),
   ev_events:         new Datastore({ filename: path.join(DATA_DIR, 'ev_events.db'), autoload: true }),
   ev_tickets:        new Datastore({ filename: path.join(DATA_DIR, 'ev_tickets.db'), autoload: true }),
   ev_orders:         new Datastore({ filename: path.join(DATA_DIR, 'ev_orders.db'), autoload: true }),
@@ -4284,6 +4344,13 @@ app.post('/api/login', rlLogin, async(req,res)=>{
     // sa 10. 9. nevedelo prihlásiť 41 žien, ktorým sme účty zlúčili — heslo
     // majú správne, len píšu e-mail, ktorý už neexistuje.
     if(!u && zadany) u=await q.one(db.users,{merged_emails:zadany});
+    // Landing (19. 9.): kto sa zaregistroval len telefónom, prihlási sa číslom + heslom z potvrdenia
+    if(!u && zadany && !zadany.includes('@')){
+      const cis=zadany.replace(/\D/g,'');
+      if(cis.length>=9){ const koniec=cis.slice(-9);
+        const kand=(await q.find(db.users,{password:{$ne:null}})).filter(x=>x.password && !x.is_child && String(x.phone||'').replace(/\D/g,'').endsWith(koniec));
+        if(kand.length===1) u=kand[0]; }
+    }
     if(u && !u.password && u.pw_reset) return res.status(401).json({error:'Vaše heslo bolo resetované správcom. Vytvorte si nové heslo nižšie.', pw_reset:true});
     if(!u||!u.password||!(await bcrypt.compare(password,u.password))) return res.status(401).json({error:'Nesprávny email alebo heslo'});
     if(u.active===false) return res.status(403).json({error:'Váš účet je zablokovaný. Kontaktujte správcu.'});
@@ -4359,13 +4426,22 @@ app.get('/api/first-class/schedule', rlPublic, async(req,res)=>{
 // Zrkadlí guest-invite flow: dedupe podľa kontaktu, kapacita, potvrdenie mailom.
 app.post('/api/first-class/book', rlPublic, async(req,res)=>{
   try{
-    if(await skuskaZapnuta()) return res.status(410).json({ error:'Prvá hodina zadarmo skončila — teraz dostaneš celý prvý týždeň zadarmo. Zaregistruj sa v appke a zapni si skúšku. 💛',
-      trial:true, register_url:APP_URL+'/' });
+    // Od 19. 9. landing beží aj s prvým týždňom zadarmo: rezervácia + účet + (podľa režimu) skúška.
+    const skuska=await skuskaZapnuta();
+    const variant=skuska ? await landingVariant(req,res) : null;
+    const vyrobHeslo=()=>'Zumba'+String(Math.floor(1000+Math.random()*9000));
     const name=String(req.body.name||'').trim().slice(0,80);
-    const email=String(req.body.email||'').trim().toLowerCase().slice(0,120);
-    const phone=String(req.body.phone||'').trim().slice(0,30);
+    let phone=String(req.body.phone||'').trim().slice(0,30);
+    // Jedno pole „e-mail alebo telefón" (Marek 19. 9.) — kto dá len číslo, dostane účet bez e-mailu
+    const kontakt=String(req.body.kontakt||req.body.email||'').trim().slice(0,120);
+    let email=kontakt.toLowerCase(), bezEmailu=false;
+    if(kontakt && !kontakt.includes('@')){
+      const cis=kontakt.replace(/\D/g,'');
+      if(cis.length<9 || cis.length>15) return res.status(400).json({error:'Zadaj e-mail alebo telefónne číslo, nech ti vieme poslať potvrdenie.'});
+      phone=phone||kontakt; email='t'+cis+'@bez-emailu.local'; bezEmailu=true;
+    }
     if(name.length<2) return res.status(400).json({error:'Napíš nám svoje meno 🙂'});
-    if(!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return res.status(400).json({error:'Zadaj platný e-mail — pošleme ti naň potvrdenie rezervácie.'});
+    if(!bezEmailu && !/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return res.status(400).json({error:'Zadaj platný e-mail alebo telefón — pošleme ti potvrdenie rezervácie.'});
     const cls=await q.one(db.classes,{_id:String(req.body.class_id||'')});
     if(!cls||!cls.active||cls.category==='Online') return res.status(404).json({error:'Hodina nenájdená'});
     const bdate=String(req.body.booking_date||displayNextDateForDay(cls.day_of_week));
@@ -4375,17 +4451,26 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
 
     const attr=spojZdroj(req, req.body.attribution); const clean=v=>String(v||'').slice(0,300);
     let u=await q.one(db.users,{email});
+    if(!u && bezEmailu){ const kon=email.slice(1).split('@')[0].slice(-9);
+      const kand=(await q.find(db.users,{})).filter(x=>!x.is_child && String(x.phone||'').replace(/\D/g,'').endsWith(kon));
+      if(kand.length===1) u=kand[0]; }
     const isNew=!u;
+    let heslo=null;
     if(u){
       if(await q.one(db.bookings,{user_id:u._id, class_id:cls._id, booking_date:bdate, status:{$ne:'cancelled'}}))
         return res.status(409).json({error:'Na tento termín už máš rezerváciu. 💛'});
-      if(u.free_class_used) return res.status(409).json({error:'Tento e-mail už u nás má účet a prvú hodinu zadarmo si už vyskúšal(a). Prihlás sa do appky a rezervuj si hodinu tam. 💛', existing:true});
+      if(skuska){
+        if(u.password) return res.status(409).json({error:'Tento kontakt už u nás má účet. Prihlás sa do appky a rezervuj si hodinu tam. 💛', existing:true, login:true});
+        if(u.trial_used) return res.status(409).json({error:'Skúšobný týždeň si už mala. Prihlás sa do appky a vyber si členstvo. 💛', existing:true, login:true});
+      } else if(u.free_class_used) return res.status(409).json({error:'Tento e-mail už u nás má účet a prvú hodinu zadarmo si už vyskúšal(a). Prihlás sa do appky a rezervuj si hodinu tam. 💛', existing:true});
     } else {
       let lead_source='landing';
       if(clean(attr.gclid)) lead_source='google'; else if(clean(attr.fbclid)) lead_source='meta';
       else if(clean(attr.utm_source)) lead_source=clean(attr.utm_source).toLowerCase();
       const code='FC'+Math.random().toString(36).slice(2,8).toUpperCase();
-      u=await q.insert(db.users,{ name, email, phone, password:null, referral_code:code, sponsor_id:null,
+      if(skuska) heslo=vyrobHeslo();
+      u=await q.insert(db.users,{ name, email, phone, password: heslo ? await bcrypt.hash(heslo,10) : null, referral_code:code, sponsor_id:null,
+        bez_emailu:bezEmailu||undefined, funnel_vid:citajCookie(req,VID_COOKIE)||null, landing_variant:variant||undefined,
         rank:1, is_admin:false, active:true, user_type:'lead', bank_account:'', notes:'', visit_count:0,
         referral_credit:0, lead_source, city:cls.location||'',
         utm_source:clean(attr.utm_source), utm_medium:clean(attr.utm_medium), utm_campaign:clean(attr.utm_campaign),
@@ -4396,6 +4481,12 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
       await doplnZdrojUctu(u, attr).catch(()=>{});
       announceNewMember(u._id).catch(()=>{});
       enqueueSequence(u._id,'welcome').then(()=>processEmailQueue()).catch(()=>{});
+    }
+    // Starý kontakt bez hesla (import, staršia rezervácia) sa pri skúške stáva plným účtom
+    if(skuska && !isNew && !u.password){
+      heslo=vyrobHeslo();
+      await q.update(db.users,{_id:u._id},{$set:{password:await bcrypt.hash(heslo,10), claimed:true, pw_reset:false, landing_variant:variant,
+        funnel_vid:u.funnel_vid||citajCookie(req,VID_COOKIE)||null, ...(bezEmailu&&!u.phone?{phone}:{})}});
     }
     if(!u.manage_token){ u.manage_token='MG'+Math.random().toString(36).slice(2,12).toUpperCase();
       await q.update(db.users,{_id:u._id},{$set:{manage_token:u.manage_token}}); }
@@ -4411,12 +4502,25 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
         day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
         user_id:u._id, user_name:u.name, user_email:u.email, user_phone:u.phone||phone||'',
         booked_by:u._id, booked_by_name:u.name, is_child_booking:false, child_name:null,
-        booking_date:bdate, status:'confirmed', notes:'', free_class:!u.free_class_used,
-        access_method:'free_class', source:'prva-hodina', created_at:nowISO() });
+        booking_date:bdate, status:'confirmed', notes:'', free_class: skuska ? false : !u.free_class_used,
+        access_method: skuska ? 'trial' : 'free_class', source:'prva-hodina', landing_variant:variant||undefined, created_at:nowISO() });
     });
     if(booking.plna) return res.status(400).json({error:'Hodina je už plná — vyber si prosím inú.'});
     if(booking.dup) return res.status(409).json({error:'Na tento termín už máš rezerváciu. 💛'});
-    await q.update(db.users,{_id:u._id},{$set:{free_class_used:true, winback_sent:false, ...(phone&&!u.phone?{phone}:{})}});
+    await q.update(db.users,{_id:u._id},{$set:{ ...(skuska?{}:{free_class_used:true}), winback_sent:false, ...(phone&&!u.phone?{phone}:{})}});
+    let dalej='done', skuskaStav=null;
+    if(skuska){
+      // Nový (alebo doteraz neprihlásiteľný) účet rovno prihlásime — ďalší krok je skúška
+      if(isNew || heslo){ req.session.uid=u._id; req.session.sv=u.sess_ver||0; }
+      if(variant==='bez_karty'){ skuskaStav=await aktivujSkusku(u._id, null, null).catch(e=>({ok:false,error:e.message})); dalej='done'; }
+      else dalej=(isNew||heslo)?'trial':'login';
+      zapisKrok(req,'booking_ok',{stranka:'/prva-hodina', uid:u._id, variant}).catch(()=>{});
+      if(isNew){
+        zapisKrok(req,'register_ok',{stranka:'/prva-hodina', uid:u._id, variant}).catch(()=>{});
+        metaCapi('CompleteRegistration',{email: bezEmailu?undefined:email, fbclid:clean(attr.fbclid), fbp:clean(attr.fbp), click_at:attr.click_at,
+          external_id:u._id, ip:klientIp(req), ua:req.headers['user-agent'], event_id:'reg_'+u._id, source_url:clean(attr.landing)||undefined}).catch(()=>{});
+      }
+    } else zapisKrok(req,'booking_ok',{stranka:'/prva-hodina', uid:u._id}).catch(()=>{});
     try{
       const admins=await q.find(db.users,{is_admin:true});
       for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'new_lead',
@@ -4428,7 +4532,19 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
       event_id:clean(attr.event_id_lead)||undefined, source_url:clean(attr.landing)||undefined}).catch(()=>{});
     metaCapi('Schedule',{email, fbclid:clean(attr.fbclid), external_id:u._id, ip:klientIp(req), ua:req.headers['user-agent'],
       event_id:clean(attr.event_id_schedule)||undefined, source_url:clean(attr.landing)||undefined}).catch(()=>{});
-    sendMail(email, 'Tešíme sa na teba! 💃 Prvá hodina zdarma je rezervovaná',
+    const hesloText = heslo ? '<p>Do appky sa prihlásiš '+(bezEmailu?'telefónom <b>'+phone+'</b>':'e-mailom <b>'+email+'</b>')+' a heslom <b>'+heslo+'</b>. Zmeniť si ho môžeš v nastaveniach.</p>' : '';
+    const dalsiKrok = variant==='bez_karty'
+      ? '<p><b>Tvoj prvý týždeň zadarmo beží</b> — na hodinu príď len so športovým oblečením. Po týždni sa rozhodneš, či pokračuješ.</p>'
+      : '<p><b>Ešte jeden krok:</b> aktivuj si prvý týždeň zadarmo v appke — karta sa len uloží, nič sa nestrhne a zrušíš kedykoľvek. Bez skúšky sa hodina platí na mieste.</p>';
+    if(skuska) sendMail(email, 'Tešíme sa na teba! 💃 Tvoja prvá hodina je rezervovaná',
+      emailTemplate('Máš to! 🎉',
+      '<p>Ahoj '+String(name).split(' ')[0]+', tvoje miesto je rezervované:</p>'
+      +'<p style="line-height:1.9">'+ (cls.emoji||'💃') +' <b>'+cls.name+'</b><br>📍 '+cls.location+' — '+(cls.address||'')+'<br>📅 '+DAYS_SK[cls.day_of_week]+' '+bdate.slice(8,10)+'. '+bdate.slice(5,7)+'.<br>⏰ '+cls.time_start+'–'+(cls.time_end||'')+'</p>'
+      +dalsiKrok+hesloText
+      +'<p>Priniesť si stačí: 💧 vodu · 👟 tenisky · 🧣 malý uterák · 👕 športové oblečenie. Nemusíš vedieť tancovať — trénerka ťa prevedie hodinou.</p>'
+      +'<p>📅 <a href="'+APP_URL+'/cal/booking/'+booking._id+'.ics" style="color:#C9A84C;font-weight:bold">Pridať do kalendára</a></p>',
+      variant==='bez_karty' ? '📍 Moje rezervácie' : '🎁 Aktivovať prvý týždeň zadarmo', APP_URL+'/client-dashboard'), {priority:2, template:'landing_confirm'}).catch(()=>{});
+    else sendMail(email, 'Tešíme sa na teba! 💃 Prvá hodina zdarma je rezervovaná',
       emailTemplate('Máš to! 🎉',
       '<p>Ahoj '+String(name).split(' ')[0]+', tvoje miesto je rezervované:</p>'
       +'<p style="line-height:1.9">'+ (cls.emoji||'💃') +' <b>'+cls.name+'</b><br>📍 '+cls.location+' — '+(cls.address||'')+'<br>📅 '+DAYS_SK[cls.day_of_week]+' '+bdate.slice(8,10)+'. '+bdate.slice(5,7)+'.<br>⏰ '+cls.time_start+'–'+(cls.time_end||'')+'</p>'
@@ -4438,6 +4554,8 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
       +'<p>Nemôžeš prísť? Termín zmeníš alebo zrušíš cez odkaz nižšie.</p>',
       '📍 Detaily / zmena rezervácie', APP_URL+'/invite/FUSION?manage='+u.manage_token), {priority:2, template:'first_class_confirm'}).catch(()=>{});
     res.json({ok:true, booking_id:booking._id, is_new:isNew, manage_token:u.manage_token,
+      next:dalej, variant, heslo:heslo||undefined, bez_emailu:bezEmailu, kontakt: bezEmailu?phone:email,
+      skuska: (skuskaStav&&skuskaStav.ok) ? {ends_at:skuskaStav.ends_at} : null,
       detail:{ name:cls.name, emoji:cls.emoji||'💃', city:cls.location, address:cls.address||'',
         date:bdate, day_name:DAYS_SK[cls.day_of_week], time_start:cls.time_start, time_end:cls.time_end||'' }});
   }catch(e){ res.status(500).json({error:e.message}); }
@@ -4960,7 +5078,7 @@ app.post('/api/register', rlSignup, async(req,res)=>{
       const povolene=(Array.isArray(vencekClass.roles)&&vencekClass.roles.length)?vencekClass.roles:['student','parent','teacher','director'];
       vencekRole=povolene.includes(req.body.vencek_role)?req.body.vencek_role:povolene[0];
     }
-    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',city:String(req.body.city||'').trim().slice(0,60),referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,referral_credit:0,lead_source,utm_source,utm_medium,utm_campaign,fbclid,gclid,landing_page:clean(attr.landing),referrer:clean(attr.referrer),consent_at: req.body.consent ? nowISO() : null,created_at:today(),account_creation_type:'self_registration',registration_at:nowISO(),registration_at_source:'actual',
+    const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',city:String(req.body.city||'').trim().slice(0,60),referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,referral_credit:0,lead_source,utm_source,utm_medium,utm_campaign,fbclid,gclid,landing_page:clean(attr.landing),referrer:clean(attr.referrer),consent_at: req.body.consent ? nowISO() : null,created_at:today(),account_creation_type:'self_registration',registration_at:nowISO(),registration_at_source:'actual',funnel_vid:citajCookie(req,VID_COOKIE)||null,
       ...(vencekClass? (['student','parent'].includes(vencekRole)
         ? {venceky_class_id:vencekClass._id, venceky_school_id:vencekClass.school_id, venceky_role:vencekRole,
            ...(vencekRole==='parent'?{vencek_child_name:String(req.body.vencek_child_name||'').slice(0,80)}:{})}
@@ -5014,6 +5132,7 @@ app.post('/api/register', rlSignup, async(req,res)=>{
     }catch(e){ console.error('vencek prepojenie pri registrácii:', e.message); }
     req.session.uid=u._id;
     req.session.sv=0;
+    zapisKrok(req,'register_ok',{uid:u._id}).catch(()=>{});
     // ── Referral: za SAMOTNÚ registráciu už NIE JE odmena (zneužívalo by sa) ───
     // Kredit sponzorovi ide až keď privedený človek reálne MINIE peniaze
     // (10 % z členstva / permanentky — rieši sa pri platbe, nie tu).
@@ -11932,6 +12051,7 @@ async function aktivujSkusku(userId, subId, s){
     }catch(e){ console.error('trial fingerprint:', e.message); }
   }
   console.log('🎁 Skúšobný týždeň: '+u.name+' do '+konci.slice(0,10));
+  zapisKrokPouzivatela(userId,'trial_ok').catch(()=>{});
   return {ok:true, trial:true, plan_name:plan.name, ends_at:konci};
 }
 // Dva dni pred koncom skúšky: pripomienka, že sa strhne prvá platba (denný tick + Stripe event).
@@ -15119,6 +15239,7 @@ app.post('/api/skuska/odmietnut', auth, async(req,res)=>{
     const n = await skuskaNarok(u);
     if(!n.ok) return res.json({ok:true, eligible:false, reason:n.reason});
     await q.update(db.users,{_id:u._id},{$set:{trial_declined_at:nowISO()}});
+    zapisKrok(req,'trial_decline',{uid:u._id}).catch(()=>{});
     res.json({ok:true});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -15138,7 +15259,8 @@ app.post('/api/stripe/trial', auth, async(req,res)=>{
     const plan = MEMBERSHIP_PLANS[SKUSKA.plan];
     const base = APP_URL;
     // z registrácie (landing) sa po skúške vracia rovno na výber prvej hodiny, z appky na nástenku
-    const navrat = req.body && req.body.navrat==='onboarding' ? '/' : '/client-dashboard';
+    const navrat = req.body && req.body.navrat==='onboarding' ? '/' : (req.body && req.body.navrat==='landing' ? '/prva-hodina' : '/client-dashboard');
+    zapisKrok(req,'trial_open',{uid:u._id, stranka:navrat}).catch(()=>{});
     const params = {
       'mode':'subscription',
       'line_items[0][quantity]':1,
@@ -20707,6 +20829,8 @@ async function sendMail(to, subject, html, opts){
   // @import.local = syntetické adresy klientov zo starého zoznamu (majú len telefón,
   // kontaktujú sa SMSkou) — nikdy na ne nič neposielaj.
   if(/@import\.local$/i.test(String(to||''))) return false;
+  // Landing (19. 9.): kto sa zaregistroval len telefónom, má syntetický e-mail — nikdy naň neposielať.
+  if(/@bez-emailu\.local$/i.test(String(to||''))) return false;
   // Detský profil má interný e-mail (child-…@internal.local) a nemá vlastný login —
   // pošta o jeho členstve ide rodičovi (13. 9.).
   if(/@internal\.local$/i.test(String(to||''))){
@@ -23410,6 +23534,65 @@ app.get('/api/service/ads-insights', async(req,res)=>{
     res.json({ok:true, campaign_id:id, preset, count:rows.length, rows});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
+// ── Lievik stránok (19. 9.) ─────────────────────────────────────────────────────
+const rlFunnel = rateLimit({max:300, windowMs:60*60*1000, message:'Priveľa požiadaviek.'});
+app.post('/api/funnel', rlFunnel, async(req,res)=>{
+  try{
+    const krok=String((req.body&&req.body.krok)||'').slice(0,30);
+    if(!FUNNEL_KROKY.has(krok)) return res.status(204).end();
+    const stranka=String((req.body&&req.body.stranka)||'').split('?')[0].slice(0,80);
+    const m=(req.body&&req.body.meta&&typeof req.body.meta==='object') ? req.body.meta : {};
+    const meta={}; for(const k of ['city','dovod','pole','termin']) if(m[k]!=null) meta[k]=String(m[k]).slice(0,80);
+    await zapisKrok(req, krok, {stranka:stranka||null, meta:Object.keys(meta).length?meta:null});
+  }catch(e){}
+  res.status(204).end();
+});
+// Stránka landingu si vypýta režim (skúška zapnutá? s kartou alebo bez?) — cookie A/B sa nastaví tu
+app.get('/api/landing/config', async(req,res)=>{
+  try{
+    const skuska=await skuskaZapnuta();
+    res.json({ ok:true, prvy_tyzden:skuska, trial_days:SKUSKA.dni, trial_price:MEMBERSHIP_PLANS[SKUSKA.plan].price,
+      variant: skuska ? await landingVariant(req,res) : null });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+async function lievikStranok(days){
+  days=Math.min(Math.max(+days||7,1),90);
+  const od=new Date(Date.now()-days*864e5).toISOString();
+  const ev=await q.find(db.funnel_events,{at:{$gte:od}});
+  const KROKY={ '/prva-hodina':['lp_view','lp_termin','form_view','form_start','form_submit','booking_ok','trial_open','trial_ok'],
+                '/':['lp_view','form_view','form_start','form_submit','register_ok','trial_open','trial_ok','trial_decline'] };
+  const kl=e=>e.vid||e.uid||e._id;
+  const unik=(list,krok)=>new Set(list.filter(e=>e.krok===krok).map(kl)).size;
+  const lievik=(list,kroky)=>{ let prev=null; return kroky.map(k=>{ const n=unik(list,k);
+    const r={krok:k, n, z_predch:(prev===null||!prev)?null:+(100*n/prev).toFixed(1)}; prev=n; return r; }); };
+  const stranky={};
+  for(const sk of Object.keys(KROKY)){
+    const list=ev.filter(e=>(e.stranka||'/')===sk);
+    stranky[sk]={ navstevy:unik(list,'lp_view')||unik(list,'form_view'), kroky:lievik(list,KROKY[sk]),
+      webview:new Set(list.filter(e=>e.webview&&(e.krok==='lp_view'||e.krok==='form_view')).map(kl)).size };
+  }
+  const kamp={}; for(const e of ev){ const k=e.kampan||(e.zdroj?('('+e.zdroj+')'):'(bez kampane)'); (kamp[k]=kamp[k]||[]).push(e); }
+  const kampane=Object.keys(kamp).map(k=>{ const list=kamp[k]; return { kampan:k,
+    navstevy:new Set(list.filter(e=>e.krok==='lp_view'||e.krok==='form_view').map(kl)).size, zacali:unik(list,'form_start'), odoslali:unik(list,'form_submit'),
+    registracie:new Set(list.filter(e=>e.krok==='register_ok'||e.krok==='booking_ok').map(kl)).size, skusky:unik(list,'trial_ok'), odmietli:unik(list,'trial_decline') }; })
+    .sort((a,b)=>b.navstevy-a.navstevy).slice(0,10);
+  const varianty=LANDING_VARIANTY.map(v=>{ const list=ev.filter(e=>e.variant===v); return { variant:v, navstevy:unik(list,'lp_view'), odoslali:unik(list,'form_submit'), rezervacie:unik(list,'booking_ok'), skusky:unik(list,'trial_ok') }; }).filter(x=>x.navstevy||x.odoslali);
+  const chyby={}; for(const e of ev.filter(e=>e.krok==='register_err')){ const d=(e.meta&&e.meta.dovod)||'?'; chyby[d]=(chyby[d]||0)+1; }
+  return { ok:true, days, od, spolu:ev.length, stranky, kampane, varianty, chyby, rezim:await landingRezim() };
+}
+app.get('/api/admin/funnel-stranky', adminAuth, async(req,res)=>{
+  try{ res.json(await lievikStranok(req.query.days)); }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/landing-ab', adminAuth, async(req,res)=>{
+  try{
+    const v=String((req.body&&req.body.rezim)||'');
+    if(!LANDING_VARIANTY.includes(v) && v!=='ab') return res.status(400).json({error:'rezim: karta | bez_karty | ab'});
+    const s=await q.one(db.settings,{key:'landing_ab'});
+    if(s) await q.update(db.settings,{_id:s._id},{$set:{value:v, at:nowISO()}}); else await q.insert(db.settings,{key:'landing_ab', value:v, at:nowISO()});
+    auditLog(req,'landing_ab',v,{pred:s?s.value:null},{rezim:v},'').catch(()=>{});
+    res.json({ok:true, rezim:v});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 app.get('/api/service/ads-overview', async(req,res)=>{
   const tok=process.env.IMPORT_TOKEN;
   if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
@@ -23430,7 +23613,19 @@ app.delete('/api/admin/campaigns/:id', adminAuth, async(req,res)=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 // PAGES
 // ═══════════════════════════════════════════════════════════════════════════════
-app.get('/',           (req,res)=>res.sendFile(path.join(__dirname,'public','index.html')));
+app.get('/', (req,res)=>{
+  // Klik z reklamy (utm/fbclid/gclid) bez prihlásenia ide na landing s mestom a termínmi —
+  // úvod appky hádzal ženu rovno do 7-poľového formulára (19. 9.: 3 382 načítaní → 2 registrácie).
+  const dotaz=req.query||{};
+  const zReklamy=['utm_source','fbclid','gclid'].some(k=>typeof dotaz[k]==='string' && dotaz[k]);
+  const vlastnyMail=/mail|brevo|newsletter|app|sms|notif/i.test(String(dotaz.utm_source||''));
+  const vynimka=['ref','vencek','src','stripe','home','session_id','buy','lang','invite'].some(k=>k in dotaz);
+  if(zReklamy && !vlastnyMail && !vynimka && !(req.session&&req.session.uid)){
+    const qs=req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+    return res.redirect(302,'/prva-hodina'+qs);
+  }
+  res.sendFile(path.join(__dirname,'public','index.html'));
+});
 app.get('/kiosk/:studio', (req,res)=>res.sendFile(path.join(__dirname,'public','kiosk.html')));
 // Jeden obchod (Marek 13. 9.): starý e-shop aj cenník vedú do /obchod
 app.get('/shop',       (req,res)=>res.redirect(302,'/obchod?tab=merch'));
@@ -23448,11 +23643,9 @@ app.get('/reset-heslo', (req,res)=>res.sendFile(path.join(__dirname,'public','re
 // Pri prvom týždni zadarmo vedie stará vstupná stránka na úvod appky. Parametre z reklamy
 // (utm_*, fbclid, city) musia ísť so sebou — do 16. 9. sa strácali a klik z kampane
 // HEJ BABY sa nedal priradiť ani appke, ani Mete.
+// Od 19. 9. landing beží aj s prvým týždňom zadarmo (mesto, termíny, krátky formulár, skúška).
 app.get('/prva-hodina', async(req,res)=>{
-  if(await skuskaZapnuta().catch(()=>false)){
-    const qs=req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')+1) : '';
-    return res.redirect(302,'/?src=prva-hodina'+(qs?'&'+qs:''));
-  }
+  try{ if(await skuskaZapnuta()) await landingVariant(req,res); }catch(e){}
   res.sendFile(path.join(__dirname,'public','prva-hodina.html'));
 });
 app.get('/vencek',     (req,res)=>res.sendFile(path.join(__dirname,'public','vencek.html')));
@@ -26448,6 +26641,9 @@ async function runDailyJobs(){
 
   // ── 7. Admin alerts (anomaly detection) ───────────────────────────────────
   try { await runAdminAlerts(); } catch(e){ console.error('Admin alerts error:', e.message); }
+  // Kroky lievika stránok držíme 90 dní
+  try { const hranica=new Date(Date.now()-90*864e5).toISOString();
+    for(const e of await q.find(db.funnel_events,{at:{$lt:hranica}})) await q.remove(db.funnel_events,{_id:e._id}); } catch(e){}
 }
 
 // Detect operational/financial anomalies → post admin_alert notifications (deduped per day)

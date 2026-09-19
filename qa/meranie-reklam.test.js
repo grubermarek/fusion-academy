@@ -120,11 +120,12 @@ const graf = http.createServer((req, res) => {
     console.log('1) Zdroj návštevy v cookie zo servera:');
     const A = prehliadac();
     const FX = fbclidReklama(REKLAMA_X);
-    const r1 = await A.ide('/prva-hodina?utm_source=fb&utm_medium=cpc&utm_campaign=fa-video-hej-baby&fbclid=' + FX);
-    ok('presmerovanie s parametrami', r1.status === 302 && r1.loc.includes('utm_campaign=fa-video-hej-baby') && r1.loc.includes('fbclid='), r1.loc);
+    // Od 19. 9. je smer opačný: klik z reklamy na úvod „/" ide na landing /prva-hodina (aj s parametrami)
+    const r1 = await A.ide('/?utm_source=fb&utm_medium=cpc&utm_campaign=fa-video-hej-baby&fbclid=' + FX);
+    ok('presmerovanie s parametrami', r1.status === 302 && r1.loc.startsWith('/prva-hodina?') && r1.loc.includes('utm_campaign=fa-video-hej-baby') && r1.loc.includes('fbclid='), r1.loc);
     ok('cookie fa_zdroj nastavená už pri presmerovaní', !!A.c.fa_zdroj, JSON.stringify(Object.keys(A.c)));
     const zdroj = JSON.parse(Buffer.from(decodeURIComponent(A.c.fa_zdroj || ''), 'base64url').toString() || '{}');
-    ok('nesie kampaň, fbclid, vstupnú adresu a čas', zdroj.utm_campaign === 'fa-video-hej-baby' && zdroj.fbclid === FX && /^\/prva-hodina\?/.test(zdroj.landing) && !!zdroj.at, JSON.stringify(zdroj).slice(0, 160));
+    ok('nesie kampaň, fbclid, vstupnú adresu a čas', zdroj.utm_campaign === 'fa-video-hej-baby' && zdroj.fbclid === FX && /^\/(prva-hodina)?\?/.test(zdroj.landing) && !!zdroj.at, JSON.stringify(zdroj).slice(0, 160));
     const pred = A.c.fa_zdroj;
     await A.ide('/?utm_source=google&utm_campaign=ina-kampan');
     ok('neskoršia návšteva prvý dotyk neprepíše', A.c.fa_zdroj === pred);

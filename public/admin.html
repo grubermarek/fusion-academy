@@ -1180,6 +1180,21 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       </div>
       <div id="meraniePanel" class="small text-muted">Načítavam…</div>
     </div></div>
+    <!-- Lievik stránok (19. 9.): kam sa návštevníčky z reklám dostanú — načítanie, formulár, odoslanie, skúška -->
+    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+        <h6 class="fw-bold mb-0">📶 Lievik stránok</h6>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <select class="form-select form-select-sm bg-dark text-light border-secondary" id="lievikDni" style="width:auto" onchange="loadLievik()">
+            <option value="7">posledných 7 dní</option><option value="30">posledných 30 dní</option><option value="90">posledných 90 dní</option>
+          </select>
+          <select class="form-select form-select-sm bg-dark text-light border-secondary" id="landingRezim" style="width:auto" onchange="nastavLandingRezim(this.value)" title="Čo sa stane po rezervácii na /prva-hodina">
+            <option value="karta">skúška s kartou</option><option value="bez_karty">skúška bez karty</option><option value="ab">A/B test 50:50</option>
+          </select>
+        </div>
+      </div>
+      <div id="lievikPanel" class="small text-muted">Načítavam…</div>
+    </div></div>
     <!-- META ADS prehľad -->
     <div class="card bg-dark border-secondary mb-3"><div class="card-body">
       <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
@@ -5179,8 +5194,44 @@ async function skontrolujMeranie(){
   try{ await api('/api/admin/meranie/skontroluj',{method:'POST',body:{}}); await loadMeranie(); }catch(e){}
   if(b){ b.disabled=false; b.textContent='Skontrolovať teraz'; }
 }
+// Lievik stránok: unikátni návštevníci po krokoch, rozpad po kampaniach a variantoch skúšky
+const LIEVIK_NAZVY={lp_view:'Načítala stránku',lp_termin:'Vybrala termín',form_view:'Videla formulár',form_start:'Začala písať',form_submit:'Odoslala',register_ok:'Registrácia',booking_ok:'Rezervácia',trial_open:'Otvorila Stripe',trial_ok:'Skúška beží',trial_decline:'Odmietla skúšku'};
+async function loadLievik(){
+  const host=document.getElementById('lievikPanel'); if(!host) return;
+  const dni=(document.getElementById('lievikDni')||{}).value||'7';
+  try{
+    const d=await api('/api/admin/funnel-stranky?days='+dni);
+    const sel=document.getElementById('landingRezim'); if(sel && d.rezim) sel.value=d.rezim;
+    const tab=(nazov,s)=>{
+      if(!s || !s.kroky.some(k=>k.n)) return '<div class="mb-2"><b>'+esc(nazov)+'</b> <span class="text-muted">— zatiaľ žiadne kroky</span></div>';
+      const max=Math.max(...s.kroky.map(k=>k.n),1);
+      return '<div class="mb-3"><b>'+esc(nazov)+'</b>'+(s.webview?' <span class="text-muted">· '+s.webview+' z FB/IG prehliadača</span>':'')
+        +'<table class="table table-dark table-sm mb-1 mt-1" style="max-width:560px"><tbody>'
+        +s.kroky.map(k=>'<tr><td style="width:150px">'+esc(LIEVIK_NAZVY[k.krok]||k.krok)+'</td><td style="width:60px;text-align:right"><b>'+k.n+'</b></td>'
+          +'<td style="width:70px;text-align:right;color:'+(k.z_predch===null?'#888':k.z_predch<20?'#ef9a9a':'#aed581')+'">'+(k.z_predch===null?'':k.z_predch+' %')+'</td>'
+          +'<td><div style="height:8px;border-radius:4px;background:linear-gradient(90deg,#C9A84C,#E9B8FF);width:'+Math.max(2,Math.round(100*k.n/max))+'%"></div></td></tr>').join('')
+        +'</tbody></table></div>';
+    };
+    let h=tab('Landing /prva-hodina (reklamy)', d.stranky['/prva-hodina'])+tab('Úvod appky / (registrácia)', d.stranky['/']);
+    if(d.kampane && d.kampane.length){
+      h+='<div class="mb-1"><b>Podľa kampane</b></div><table class="table table-dark table-sm mb-2" style="max-width:720px"><thead><tr><th>Kampaň</th><th class="text-end">Návštevy</th><th class="text-end">Začali</th><th class="text-end">Odoslali</th><th class="text-end">Registrácie</th><th class="text-end">Skúšky</th></tr></thead><tbody>'
+        +d.kampane.map(k=>'<tr><td>'+esc(k.kampan)+'</td><td class="text-end">'+k.navstevy+'</td><td class="text-end">'+k.zacali+'</td><td class="text-end">'+k.odoslali+'</td><td class="text-end">'+k.registracie+'</td><td class="text-end">'+k.skusky+'</td></tr>').join('')+'</tbody></table>';
+    }
+    if(d.varianty && d.varianty.length){
+      h+='<div class="mb-1"><b>A/B skúška na landingu</b></div><table class="table table-dark table-sm mb-2" style="max-width:560px"><thead><tr><th>Variant</th><th class="text-end">Návštevy</th><th class="text-end">Odoslali</th><th class="text-end">Rezervácie</th><th class="text-end">Skúšky</th></tr></thead><tbody>'
+        +d.varianty.map(v=>'<tr><td>'+(v.variant==='karta'?'S kartou':'Bez karty')+'</td><td class="text-end">'+v.navstevy+'</td><td class="text-end">'+v.odoslali+'</td><td class="text-end">'+v.rezervacie+'</td><td class="text-end">'+v.skusky+'</td></tr>').join('')+'</tbody></table>';
+    }
+    const ch=Object.entries(d.chyby||{}); if(ch.length) h+='<div class="text-muted">Chyby pri odoslaní: '+ch.map(([k,n])=>esc(k)+' × '+n).join(', ')+'</div>';
+    h+='<div class="text-muted mt-1">Počíta unikátnych návštevníkov (cookie fa_vid), '+d.days+' dní. Krok „Skúška beží“ prichádza zo servera po aktivácii.</div>';
+    host.innerHTML=h;
+  }catch(e){ host.innerHTML='<span class="text-danger">Lievik sa nepodarilo načítať.</span>'; }
+}
+async function nastavLandingRezim(v){
+  try{ await api('/api/admin/landing-ab',{method:'POST',body:{rezim:v}}); showToast&&showToast('Landing: '+(v==='ab'?'A/B test 50:50':v==='karta'?'skúška s kartou':'skúška bez karty')); }catch(e){ alert('Nepodarilo sa uložiť.'); }
+}
 async function loadCampaigns(){
   loadMeranie();
+  loadLievik();
   loadAds();
   loadMetaStats();
   loadLeadFunnel();

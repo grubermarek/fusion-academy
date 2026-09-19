@@ -1224,6 +1224,7 @@ if(_preview){
 (function(){
   const p=new URLSearchParams(location.search);
   const fromAd = p.get('fbclid') || p.get('utm_source') || p.get('gclid');
+  if(window.faKrok) window.faKrok('lp_view');
   if(!fromAd) return;
   const t=document.getElementById('s1Title'), s=document.getElementById('s1Sub');
   if(t) t.textContent='Tvoj prvý týždeň je zadarmo 🎁';
@@ -1255,6 +1256,9 @@ function goTo(n){
   const next=document.getElementById('s'+n);
   if(next) next.classList.add('active');
   _step=n;
+  // Lievik stránky (19. 9.): formulár zobrazený / začatý
+  if(n===1 && window.faKrok){ window.faKrok('form_view');
+    document.querySelectorAll('#s1 input').forEach(i=>i.addEventListener('input',()=>window.faKrok('form_start',{pole:i.id}),{once:true})); }
   updateStepBar(n);
   window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -1313,10 +1317,12 @@ async function doRegister(){
   const code=document.getElementById('rCode').value.trim().toUpperCase();
   const btn=document.getElementById('regBtn');
   showErr('regErr','');
-  if(!name||!email||!pass){showErr('regErr',FA_T('auth.err_fill'));return;}
-  if(pass.length<6){showErr('regErr',FA_T('auth.err_pass'));return;}
-  if(!/\S+@\S+\.\S+/.test(email)){showErr('regErr',FA_T('auth.err_email'));return;}
-  if(!document.getElementById('rConsent').checked){showErr('regErr',FA_T('auth.err_consent'));return;}
+  const chyba=(kod,txt)=>{ showErr('regErr',txt); if(window.faKrok) window.faKrok('register_err',{dovod:kod}); };
+  if(!name||!email||!pass){chyba('nevyplnene',FA_T('auth.err_fill'));return;}
+  if(pass.length<6){chyba('heslo',FA_T('auth.err_pass'));return;}
+  if(!/\S+@\S+\.\S+/.test(email)){chyba('email',FA_T('auth.err_email'));return;}
+  if(!document.getElementById('rConsent').checked){chyba('suhlas',FA_T('auth.err_consent'));return;}
+  if(window.faKrok) window.faKrok('form_submit');
   btn.disabled=true;btn.innerHTML='<i class="bi bi-arrow-repeat spin"></i>&nbsp; '+FA_T('auth.registering');
   if(_preview){ // náhľad: účet sa nevytvára, len pokračuj vo flow
     await loadClasses(); await poRegistracii();
@@ -1330,6 +1336,7 @@ async function doRegister(){
     const d=await r.json();
     if(!r.ok){
       showErr('regErr',d.error||FA_T('auth.err_reg'));
+      if(window.faKrok) window.faKrok('register_err',{dovod:String(d.error||'server').slice(0,60)});
       btn.disabled=false;btn.innerHTML='Pokračovať &nbsp;<i class="bi bi-arrow-right"></i>';
       return;
     }

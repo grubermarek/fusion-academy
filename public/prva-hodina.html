@@ -2,8 +2,11 @@
 <html lang="sk">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Prvá hodina Zumby zadarmo – Fusion Academy</title>
-<meta name="description" content="Vyskúšaj Zumbu vo Fusion Academy zadarmo. 60 minút hudby, pohybu a energie. Detva · Zvolen · Banská Bystrica · Brezno. Rezervácia za 30 sekúnd.">
+<title>Zumba – prvý týždeň zadarmo – Fusion Academy</title>
+<meta name="description" content="Vyskúšaj Zumbu vo Fusion Academy. Prvý týždeň zadarmo — všetky hodiny v tvojom meste. Detva · Zvolen · Banská Bystrica · Brezno. Rezervácia za 30 sekúnd.">
+<meta property="og:title" content="Zumba vo Fusion Academy – prvý týždeň zadarmo">
+<meta property="og:description" content="Vyber si hodinu vo svojom meste a príď. 7 dní všetky hodiny zadarmo, potom sa rozhodneš.">
+<meta property="og:image" content="https://app.fusionacademy.sk/img/landing-zumba.jpg">
 <link rel="icon" type="image/png" href="/logo-mark.png">
 <script src="/fa-track.js"></script>
 <style>
@@ -18,14 +21,20 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;ba
 .wrap{max-width:560px;margin:0 auto;padding:0 18px 60px}
 .top{display:flex;align-items:center;gap:10px;padding:14px 0}
 .top img{width:34px}.top b{color:var(--cream);letter-spacing:.04em}
-.hero{padding:26px 0 8px;text-align:center}
+.hero{padding:18px 0 8px;text-align:center}
 .hero h1{font-size:1.75rem;line-height:1.15;color:#fff;font-weight:900}
 .hero h1 span{background:linear-gradient(90deg,#E9B8FF,#FF9EB8);-webkit-background-clip:text;background-clip:text;color:transparent}
 .hero p.sub{color:var(--muted);margin:10px 0 14px;font-size:.95rem}
+.photo{margin:14px -18px 0;position:relative}
+.photo img{display:block;width:100%;height:auto;aspect-ratio:4/3;object-fit:cover}
+.photo::after{content:"";position:absolute;inset:auto 0 0 0;height:60%;background:linear-gradient(180deg,transparent,var(--bg))}
 .checks{display:flex;flex-direction:column;gap:6px;align-items:center;margin:14px 0;font-size:.9rem}
 .checks div{color:var(--cream)}.checks b{color:#7CFFB2}
 .cta{display:block;width:100%;background:linear-gradient(90deg,var(--cta1),var(--cta2));color:#fff;border:none;border-radius:16px;padding:16px;font-weight:900;font-size:1.05rem;cursor:pointer;text-align:center;text-decoration:none;box-shadow:0 10px 28px rgba(168,85,247,.35)}
+.cta:disabled{opacity:.6;cursor:default}
+.cta.ghost{background:transparent;box-shadow:none;border:1px solid rgba(255,255,255,.2);color:var(--muted);font-weight:600;font-size:.9rem;padding:12px}
 .hint{text-align:center;color:var(--muted);opacity:.8;font-size:.76rem;margin-top:8px}
+.hint a{color:var(--gold)}
 .cities{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:22px 0 4px}
 .cities button{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);color:var(--cream);border-radius:999px;padding:8px 15px;font-size:.85rem;cursor:pointer;font-weight:600}
 .cities button.on{background:linear-gradient(90deg,rgba(168,85,247,.45),rgba(236,72,153,.45));border-color:rgba(233,184,255,.5);color:#fff}
@@ -39,6 +48,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;ba
 .sess .d small{display:block;color:var(--muted);font-size:.78rem}
 .sess button{background:linear-gradient(90deg,var(--cta1),var(--cta2));border:none;color:#fff;font-weight:800;padding:10px 16px;border-radius:99px;cursor:pointer;white-space:nowrap}
 .sess button:disabled{opacity:.45;cursor:default}
+.viac{background:none;border:none;color:var(--gold);font-size:.85rem;cursor:pointer;padding:10px 0 0;font-weight:600}
 .steps{display:flex;flex-direction:column;gap:12px}
 .step{display:flex;gap:12px;align-items:flex-start}
 .step .n{width:30px;height:30px;border-radius:50%;background:rgba(168,85,247,.2);border:1px solid rgba(233,184,255,.5);color:var(--acc);font-weight:900;display:flex;align-items:center;justify-content:center;flex:none}
@@ -52,12 +62,17 @@ input{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,
 input:focus{outline:none;border-color:var(--acc)}
 .msg{margin-top:10px;font-size:.85rem;display:none;border-radius:10px;padding:10px 12px}
 .msg.err{display:block;background:rgba(229,115,115,.12);border:1px solid rgba(229,115,115,.4);color:#f0a9a9}
+.msg.err a{color:#fff}
 .ok-big{text-align:center;padding:8px 0}
 .ok-big .e{font-size:2.6rem}
 .ok-big h2{color:#fff;font-size:1.3rem;margin:6px 0}
 .bring{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin:12px 0;font-size:.86rem}
+.heslo{background:rgba(243,210,126,.1);border:1px dashed rgba(243,210,126,.5);border-radius:12px;padding:10px 12px;margin:12px 0;font-size:.86rem;color:var(--cream)}
+.heslo b{color:var(--gold);font-size:1.05rem;letter-spacing:.06em}
+.cena{font-size:.8rem;color:var(--muted);text-align:center;margin-top:8px}
 a.small{color:var(--gold);font-size:.8rem}
 footer{text-align:center;color:#6f6a5d;font-size:.72rem;margin-top:30px}
+footer a{color:#8f8a7d}
 </style>
 </head>
 <body>
@@ -65,21 +80,22 @@ footer{text-align:center;color:#6f6a5d;font-size:.72rem;margin-top:30px}
   <div class="top"><img src="/logo-mark.png" alt=""><b>FUSION ACADEMY</b></div>
 
   <div class="hero">
-    <h1>VYSKÚŠAJ ZUMBU <span id="cityLoc">V DETVE</span> <span>ZADARMO</span></h1>
+    <h1>ZUMBA <span id="cityLoc">V TVOJOM MESTE</span><br><span id="ponukaTitul">PRVÝ TÝŽDEŇ ZADARMO</span></h1>
     <p class="sub">60 minút hudby, pohybu a dobrej energie. Nemusíš vedieť tancovať.</p>
-    <div class="checks">
-      <div>✓ prvá hodina <b>zdarma</b></div>
-      <div>✓ bez záväzkov</div>
-      <div>✓ vhodné aj pre začiatočníčky</div>
+    <div class="photo"><img src="/img/landing-zumba.jpg" alt="Klientky Fusion Academy po hodine Zumby" fetchpriority="high"></div>
+    <div class="checks" id="checks">
+      <div>✓ <b>7 dní</b> všetky hodiny zadarmo</div>
+      <div>✓ potom <span id="cenaMes">49,90</span> €/mes., <b>zrušíš kedykoľvek</b></div>
+      <div>✓ vhodné aj pre úplné začiatočníčky</div>
     </div>
-    <a class="cta" href="#terminy">VYBRAŤ SI HODINU ↓</a>
-    <div class="hint">Rezervácia trvá približne 30 sekúnd.</div>
+    <a class="cta" href="#terminy" onclick="krok('lp_cta')">VYBRAŤ SI PRVÚ HODINU ↓</a>
+    <div class="hint">Rezervácia trvá 30 sekúnd — stačí meno a e-mail alebo telefón.</div>
   </div>
 
   <div class="cities" id="cityChips"></div>
 
   <div class="card" id="terminy">
-    <h2>🗓️ NAJBLIŽŠIE HODINY — <span id="cityName">Detva</span></h2>
+    <h2>🗓️ NAJBLIŽŠIE HODINY<span id="cityName"></span></h2>
     <div id="sessList"><div style="color:var(--muted);font-size:.86rem;padding:8px 0">Načítavam termíny…</div></div>
   </div>
 
@@ -88,33 +104,48 @@ footer{text-align:center;color:#6f6a5d;font-size:.72rem;margin-top:30px}
     <div id="formDetail" style="font-size:.88rem;color:var(--muted);margin-bottom:4px"></div>
     <label>Meno a priezvisko</label>
     <input id="fName" placeholder="Jana Nováková" autocomplete="name">
-    <label>E-mail</label>
-    <input id="fEmail" type="email" placeholder="jana@email.sk" autocomplete="email">
-    <label>Telefón <span style="opacity:.6">(nepovinné)</span></label>
-    <input id="fPhone" type="tel" placeholder="0900 123 456" autocomplete="tel">
-    <button class="cta" style="margin-top:14px" id="fBtn" onclick="submitBooking()">DOKONČIŤ REZERVÁCIU</button>
+    <label>E-mail alebo telefón</label>
+    <input id="fKontakt" placeholder="jana@email.sk alebo 0900 123 456" autocomplete="email" inputmode="email">
+    <button class="cta" style="margin-top:14px" id="fBtn" onclick="submitBooking()">REZERVOVAŤ MIESTO</button>
     <div class="msg" id="fMsg"></div>
-    <div class="hint">Potvrdenie ti príde e-mailom. Žiadna platba — prvá hodina je zdarma.</div>
+    <div class="hint" id="formHint">Odoslaním súhlasíš so <a href="/ochrana-sukromia" target="_blank" rel="noopener">spracovaním údajov</a>. Heslo do appky ti pošleme na kontakt.</div>
+  </div>
+
+  <!-- Krok 2 pri skúške s kartou: aktivácia prvého týždňa cez Stripe -->
+  <div class="card" id="trialCard" style="display:none">
+    <div class="ok-big">
+      <div class="e">🎉</div>
+      <h2>MIESTO JE TVOJE!</h2>
+      <p id="trialDetail" style="margin:10px 0;font-size:1rem;line-height:1.7"></p>
+    </div>
+    <h2 style="margin-top:6px">🎁 EŠTE JEDEN KROK: ZAPNI SI PRVÝ TÝŽDEŇ ZADARMO</h2>
+    <p style="font-size:.9rem;color:var(--muted)">Uložíš si kartu, <b style="color:#fff">teraz sa nestrhne nič</b>. Sedem dní chodíš na všetky hodiny zadarmo. Ak ti to nesadne, zrušíš jedným klikom v appke a neplatíš nič.</p>
+    <button class="cta" style="margin-top:14px" id="trialBtn" onclick="aktivujSkusku()">ZAPNÚŤ TÝŽDEŇ ZADARMO</button>
+    <div class="cena">Po skúške <span class="cenaMes">49,90</span> €/mes. · zrušenie kedykoľvek pred prvou platbou</div>
+    <div class="msg" id="tMsg"></div>
+    <button class="cta ghost" style="margin-top:10px" onclick="preskocSkusku()">Neskôr, teraz len rezervácia</button>
   </div>
 
   <div class="card" id="doneCard" style="display:none">
     <div class="ok-big">
       <div class="e">🎉</div>
-      <h2>MÁŠ TO!</h2>
-      <p style="color:var(--muted);font-size:.9rem">Tvoje miesto je rezervované.</p>
+      <h2 id="doneTitle">MÁŠ TO!</h2>
+      <p id="doneSub" style="color:var(--muted);font-size:.9rem">Tvoje miesto je rezervované.</p>
       <p id="doneDetail" style="margin:10px 0;font-size:1rem;line-height:1.7"></p>
+      <div class="heslo" id="hesloBox" style="display:none"></div>
       <div class="bring"><span>💧 voda</span><span>🧣 uterák</span><span>👟 tenisky</span><span>👕 športové oblečenie</span></div>
       <a class="cta" id="calBtn" download="fusion-academy-zumba.ics" href="#">📅 PRIDAŤ DO KALENDÁRA</a>
-      <div class="hint">Detaily a možnosť zmeny termínu ti prišli e-mailom.</div>
+      <a class="cta ghost" style="margin-top:10px" href="/client-dashboard">Otvoriť appku →</a>
+      <div class="hint" id="doneHint">Detaily ti prišli na kontakt, ktorý si zadala.</div>
     </div>
   </div>
 
   <div class="card">
     <h2>🤔 AKO TO FUNGUJE</h2>
-    <div class="steps">
-      <div class="step"><div class="n">1</div><div><b>Vyberieš si hodinu</b><small>Zaberie to pár sekúnd.</small></div></div>
+    <div class="steps" id="kroky">
+      <div class="step"><div class="n">1</div><div><b>Vyberieš si hodinu</b><small>Zaberie to pár sekúnd — meno a kontakt.</small></div></div>
       <div class="step"><div class="n">2</div><div><b>Prídeš si zatancovať</b><small>Stačí športové oblečenie, tenisky, voda a uterák.</small></div></div>
-      <div class="step"><div class="n">3</div><div><b>Rozhodneš sa až potom</b><small>Prvá návšteva je zdarma — bez záväzkov.</small></div></div>
+      <div class="step"><div class="n">3</div><div><b>Rozhodneš sa až po týždni</b><small id="krok3">Celý prvý týždeň chodíš zadarmo. Potom členstvo od 49,90 € mesačne, zrušíš kedykoľvek.</small></div></div>
     </div>
   </div>
 
@@ -124,39 +155,63 @@ footer{text-align:center;color:#6f6a5d;font-size:.72rem;margin-top:30px}
     <div class="testi"><p>„Prišla som prvýkrát bez skúseností a hneď som sa cítila vítaná. Teraz chodím 3× týždenne!"</p><span>Martina K. · Banská Bystrica</span></div>
     <div class="testi"><p>„Zumba hodiny sú absolútne najlepší spôsob ako sa odreagovať po práci. Odporúčam každej!"</p><span>Lucia H. · Zvolen</span></div>
     <div class="testi"><p>„Moja dcéra aj ja chodíme spolu — skvelý spôsob ako tráviť čas. Komunita je úžasná."</p><span>Zuzana M. · Brezno</span></div>
-    <a class="cta" style="margin-top:16px" href="#terminy">CHCEM PRVÚ HODINU ZADARMO</a>
+    <a class="cta" style="margin-top:16px" href="#terminy">CHCEM PRVÝ TÝŽDEŇ ZADARMO</a>
   </div>
 
-  <footer>Fusion Academy · Detva · Zvolen · Banská Bystrica · Brezno<br><a class="small" href="/">fusionacademy.sk</a></footer>
+  <footer>Fusion Academy · Detva · Zvolen · Banská Bystrica · Brezno<br><a href="/">Už máš účet? Prihlás sa</a> · <a href="https://fusionacademy.sk">fusionacademy.sk</a></footer>
 </div>
 
 <script>
 const SLUG2NAME={'detva':'Detva','zvolen':'Zvolen','banska-bystrica':'Banská Bystrica','bb':'Banská Bystrica','brezno':'Brezno'};
 const LOC={'Detva':'V DETVE','Zvolen':'VO ZVOLENE','Banská Bystrica':'V BANSKEJ BYSTRICI','Brezno':'V BREZNE'};
 const NAME2SLUG={'Detva':'detva','Zvolen':'zvolen','Banská Bystrica':'banska-bystrica','Brezno':'brezno'};
-let CITY=SLUG2NAME[(new URLSearchParams(location.search).get('city')||'detva').toLowerCase()]||'Detva';
-let ITEMS=[], PICK=null;
+const P0=new URLSearchParams(location.search);
+let CITY=SLUG2NAME[(P0.get('city')||'').toLowerCase()]||null;   // bez mesta = všetky mestá, najbližšie termíny
+let ITEMS=[], PICK=null, VSETKY=false, CFG={prvy_tyzden:true, variant:'karta', trial_price:49.9, trial_days:7}, VYSLEDOK=null;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const krok=(k,meta)=>{ try{ if(window.faKrok) window.faKrok(k,meta); }catch(e){} };
+const fmtCena=n=>(+n||0).toFixed(2).replace('.',',');
 
+async function loadCfg(){
+  try{ const c=await (await fetch('/api/landing/config',{credentials:'include'})).json(); if(c&&c.ok) CFG=c; }catch(e){}
+  document.querySelectorAll('#cenaMes,.cenaMes').forEach(el=>el.textContent=fmtCena(CFG.trial_price));
+  if(!CFG.prvy_tyzden){
+    // Starý režim: prvá hodina zdarma (keď je skúška vypnutá)
+    document.getElementById('ponukaTitul').textContent='PRVÁ HODINA ZADARMO';
+    document.getElementById('checks').innerHTML='<div>✓ prvá hodina <b>zdarma</b></div><div>✓ bez záväzkov</div><div>✓ vhodné aj pre začiatočníčky</div>';
+    document.getElementById('krok3').textContent='Prvá návšteva je zdarma — bez záväzkov.';
+    document.getElementById('formHint').innerHTML='Potvrdenie ti príde na kontakt. Žiadna platba — prvá hodina je zdarma.';
+  } else if(CFG.variant==='bez_karty'){
+    document.getElementById('formHint').innerHTML='Bez karty a bez záväzkov — po týždni sa rozhodneš. Odoslaním súhlasíš so <a href="/ochrana-sukromia" target="_blank" rel="noopener">spracovaním údajov</a>.';
+  } else {
+    document.getElementById('formHint').innerHTML='Skúšku zapneš v ďalšom kroku (uložíš kartu, teraz 0 €, zrušíš kedykoľvek). Odoslaním súhlasíš so <a href="/ochrana-sukromia" target="_blank" rel="noopener">spracovaním údajov</a>.';
+  }
+}
 async function load(){
-  document.getElementById('cityLoc').textContent=LOC[CITY]||('V '+CITY.toUpperCase());
-  document.getElementById('cityName').textContent=CITY;
-  const r=await fetch('/api/first-class/schedule?city='+encodeURIComponent(NAME2SLUG[CITY]||'detva'));
+  document.getElementById('cityLoc').textContent=CITY?(LOC[CITY]||('V '+CITY.toUpperCase())):'V TVOJOM MESTE';
+  document.getElementById('cityName').textContent=CITY?' — '+CITY:'';
+  const r=await fetch('/api/first-class/schedule'+(CITY?'?city='+encodeURIComponent(NAME2SLUG[CITY]||''):''));
   const d=await r.json();
   ITEMS=d.items||[];
   const chips=document.getElementById('cityChips');
-  chips.innerHTML=(d.cities||[]).map(c=>'<button class="'+(c===CITY?'on':'')+'" onclick="setCity(\''+esc(c)+'\')">'+esc(c)+'</button>').join('');
+  const mesta=(d.cities||[]).length?d.cities:Object.keys(NAME2SLUG);
+  chips.innerHTML='<button class="'+(CITY?'':'on')+'" onclick="setCity(null)">Všetky</button>'+mesta.map(c=>'<button class="'+(c===CITY?'on':'')+'" onclick="setCity(\''+esc(c)+'\')">'+esc(c)+'</button>').join('');
+  vykresliTerminy();
+}
+function vykresliTerminy(){
   const list=document.getElementById('sessList');
   if(!ITEMS.length){ list.innerHTML='<div style="color:var(--muted);font-size:.86rem;padding:8px 0">Momentálne tu nie sú vypísané termíny — vyber si iné mesto vyššie.</div>'; return; }
   const fmtD=s=>s.slice(8,10)+'. '+s.slice(5,7)+'.';
-  list.innerHTML=ITEMS.map((i,ix)=>'<div class="sess"><span style="font-size:1.35rem">'+esc(i.emoji)+'</span>'
+  const zobraz=VSETKY?ITEMS:ITEMS.slice(0,3);
+  list.innerHTML=zobraz.map((i)=>{ const ix=ITEMS.indexOf(i); return '<div class="sess"><span style="font-size:1.35rem">'+esc(i.emoji)+'</span>'
     +'<div class="d"><b>'+esc(i.day_name).toUpperCase()+' '+esc(i.time_start)+'</b> · '+esc(i.name)
-    +'<small>'+fmtD(i.date)+' · '+esc(i.address||i.city)+'</small></div>'
+    +'<small>'+fmtD(i.date)+' · '+(CITY?esc(i.address||i.city):'<b style="color:var(--acc)">'+esc(i.city)+'</b>'+(i.address?' · '+esc(i.address):''))+'</small></div>'
     +(i.full?'<button disabled>Plné</button>':'<button onclick="pick('+ix+')">REZERVOVAŤ</button>')
-    +'</div>').join('');
+    +'</div>'; }).join('')
+    +(ITEMS.length>3&&!VSETKY?'<button class="viac" onclick="VSETKY=true;vykresliTerminy()">Ukázať ďalšie termíny ('+(ITEMS.length-3)+') ↓</button>':'');
 }
-function setCity(c){ CITY=c; PICK=null; document.getElementById('formCard').style.display='none';
-  history.replaceState(null,'','?city='+(NAME2SLUG[c]||'')); load(); }
+function setCity(c){ CITY=c; PICK=null; VSETKY=false; document.getElementById('formCard').style.display='none';
+  history.replaceState(null,'',c?'?city='+(NAME2SLUG[c]||''):location.pathname); krok('lp_city',{city:c||'vsetky'}); load(); }
 function pick(ix){
   PICK=ITEMS[ix];
   const f=document.getElementById('formCard');
@@ -164,44 +219,94 @@ function pick(ix){
   f.style.display='block';
   f.scrollIntoView({behavior:'smooth',block:'center'});
   document.getElementById('fName').focus();
+  krok('lp_termin',{city:PICK.city, termin:PICK.name}); krok('form_view');
 }
+['fName','fKontakt'].forEach(id=>document.getElementById(id).addEventListener('input',()=>krok('form_start',{pole:id}),{once:true}));
+function detailHtml(dd){ return dd.emoji+' <b>'+esc(dd.name)+'</b><br>📍 '+esc(dd.city)+(dd.address?' — '+esc(dd.address):'')+'<br>📅 '+esc(dd.day_name)+' '+dd.date.slice(8,10)+'. '+dd.date.slice(5,7)+'. · ⏰ '+esc(dd.time_start)+(dd.time_end?'–'+esc(dd.time_end):''); }
+function ics(d){ const dd=d.detail; const dt=dd.date.replace(/-/g,''); const t1=(dd.time_start||'19:00').replace(':','')+'00'; const t2=(dd.time_end||dd.time_start||'20:00').replace(':','')+'00';
+  return 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Fusion Academy//SK\r\nBEGIN:VEVENT\r\nUID:'+d.booking_id+'@fusionacademy.sk\r\nDTSTART:'+dt+'T'+t1+'\r\nDTEND:'+dt+'T'+t2+'\r\nSUMMARY:'+dd.name+' – Fusion Academy\r\nLOCATION:'+(dd.address||dd.city)+'\r\nDESCRIPTION:Priniesť: voda, tenisky, uterák.\r\nEND:VEVENT\r\nEND:VCALENDAR'; }
 async function submitBooking(){
   const msg=document.getElementById('fMsg'); msg.className='msg'; msg.textContent='';
   const name=document.getElementById('fName').value.trim();
-  const email=document.getElementById('fEmail').value.trim();
-  const phone=document.getElementById('fPhone').value.trim();
+  const kontakt=document.getElementById('fKontakt').value.trim();
   if(!PICK){ msg.className='msg err'; msg.textContent='Najprv si hore vyber termín.'; return; }
-  if(name.length<2||!/@/.test(email)){ msg.className='msg err'; msg.textContent='Vyplň prosím meno a platný e-mail.'; return; }
+  const jeMail=/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(kontakt), jeTel=kontakt.replace(/\D/g,'').length>=9 && !kontakt.includes('@');
+  if(name.trim().split(/\s+/).length<2){ msg.className='msg err'; msg.textContent='Napíš prosím meno aj priezvisko.'; krok('register_err',{dovod:'meno'}); return; }
+  if(!jeMail&&!jeTel){ msg.className='msg err'; msg.textContent='Zadaj platný e-mail alebo telefónne číslo.'; krok('register_err',{dovod:'kontakt'}); return; }
   const btn=document.getElementById('fBtn'); btn.disabled=true; btn.textContent='Rezervujem…';
-  const p=new URLSearchParams(location.search); const cur={};
-  ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid'].forEach(k=>{ if(p.get(k)) cur[k]=p.get(k); });
+  krok('form_submit');
+  const cur={};
+  ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid'].forEach(k=>{ if(P0.get(k)) cur[k]=P0.get(k); });
   cur.landing=location.pathname+location.search; cur.referrer=document.referrer||'';
   const first=window.faGetAttribution?window.faGetAttribution():{};
-  // event_id pre Lead/Schedule — rovnaké ide serveru (CAPI) aj Pixelu (eventID) → Meta dedup
   const eidBase=(window.faEventId?window.faEventId():('e'+Math.random().toString(36).slice(2,14)));
   const attribution={...first, ...cur, event_id_lead:'lead_'+eidBase, event_id_schedule:'sch_'+eidBase};
   try{
-    const r=await fetch('/api/first-class/book',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name,email,phone,class_id:PICK.class_id,booking_date:PICK.date,attribution})});
+    const r=await fetch('/api/first-class/book',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',
+      body:JSON.stringify({name,kontakt,class_id:PICK.class_id,booking_date:PICK.date,attribution})});
     const d=await r.json();
-    if(!r.ok||d.error) throw new Error(d.error||'Rezervácia sa nepodarila');
-    try{ if(window.fbq){ fbq('track','Lead',{},{eventID:attribution.event_id_lead}); fbq('track','Schedule',{},{eventID:attribution.event_id_schedule}); } }catch(e){}
-    const dd=d.detail;
-    document.getElementById('doneDetail').innerHTML=dd.emoji+' <b>'+esc(dd.name)+'</b><br>📍 '+esc(dd.city)+(dd.address?' — '+esc(dd.address):'')+'<br>📅 '+esc(dd.day_name)+' '+dd.date.slice(8,10)+'. '+dd.date.slice(5,7)+'. · ⏰ '+esc(dd.time_start)+(dd.time_end?'–'+esc(dd.time_end):'');
-    const dt=dd.date.replace(/-/g,''); const t1=(dd.time_start||'19:00').replace(':','')+'00'; const t2=(dd.time_end||dd.time_start||'20:00').replace(':','')+'00';
-    const ics='BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Fusion Academy//SK\r\nBEGIN:VEVENT\r\nUID:'+d.booking_id+'@fusionacademy.sk\r\nDTSTART:'+dt+'T'+t1+'\r\nDTEND:'+dt+'T'+t2+'\r\nSUMMARY:'+dd.name+' – Fusion Academy\r\nLOCATION:'+(dd.address||dd.city)+'\r\nDESCRIPTION:Prvá hodina zadarmo. Priniesť: voda, tenisky, uterák.\r\nEND:VEVENT\r\nEND:VCALENDAR';
-    document.getElementById('calBtn').href='data:text/calendar;charset=utf-8,'+encodeURIComponent(ics);
+    if(!r.ok||d.error){ const e=new Error(d.error||'Rezervácia sa nepodarila'); e.login=!!d.login; throw e; }
+    VYSLEDOK=d;
+    try{ if(window.fbq){ fbq('track','Lead',{},{eventID:attribution.event_id_lead}); fbq('track','Schedule',{},{eventID:attribution.event_id_schedule}); if(d.is_new) fbq('track','CompleteRegistration',{},{eventID:'reg_'+eidBase}); } }catch(e){}
+    document.getElementById('calBtn').href='data:text/calendar;charset=utf-8,'+encodeURIComponent(ics(d));
     document.getElementById('formCard').style.display='none';
     document.getElementById('terminy').style.display='none';
-    const dc=document.getElementById('doneCard'); dc.style.display='block';
-    dc.scrollIntoView({behavior:'smooth',block:'center'});
+    document.getElementById('cityChips').style.display='none';
+    if(d.next==='trial'){ ukazTrial(d); } else { ukazHotovo(d); }
   }catch(e){
+    krok('register_err',{dovod:String(e.message||'').slice(0,60)});
     msg.className='msg err'; msg.textContent=e.message;
-    btn.disabled=false; btn.textContent='DOKONČIŤ REZERVOVANIE';
-    if(/už u nás má účet/.test(e.message)) msg.innerHTML=esc(e.message)+' <a class="small" href="/">Prihlásiť sa →</a>';
+    btn.disabled=false; btn.textContent='REZERVOVAŤ MIESTO';
+    if(e.login||/má účet|prihlás/i.test(e.message)) msg.innerHTML=esc(e.message)+' <a class="small" href="/?home=1">Prihlásiť sa →</a>';
   }
 }
-load();
+function ukazTrial(d){
+  document.getElementById('trialDetail').innerHTML=detailHtml(d.detail);
+  const c=document.getElementById('trialCard'); c.style.display='block'; c.scrollIntoView({behavior:'smooth',block:'start'});
+}
+async function aktivujSkusku(){
+  const btn=document.getElementById('trialBtn'), msg=document.getElementById('tMsg'); msg.className='msg'; msg.textContent='';
+  btn.disabled=true; btn.textContent='Otváram bezpečnú platobnú bránu…';
+  try{
+    const r=await fetch('/api/stripe/trial',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({navrat:'landing'})});
+    const d=await r.json();
+    if(d&&d.url){ location.href=d.url; return; }
+    throw new Error((d&&d.error)||'Skúšku sa nepodarilo spustiť');
+  }catch(e){ msg.className='msg err'; msg.textContent=e.message; btn.disabled=false; btn.textContent='ZAPNÚŤ TÝŽDEŇ ZADARMO'; }
+}
+function preskocSkusku(){
+  krok('trial_cancel',{dovod:'neskor'});
+  document.getElementById('trialCard').style.display='none';
+  if(VYSLEDOK) ukazHotovo(VYSLEDOK, true);
+}
+function ukazHotovo(d, bezSkusky){
+  const dd=d.detail;
+  document.getElementById('doneDetail').innerHTML=detailHtml(dd);
+  if(d.skuska&&d.skuska.ends_at){ document.getElementById('doneTitle').textContent='TVOJ TÝŽDEŇ ZADARMO BEŽÍ!'; document.getElementById('doneSub').textContent='Do '+new Date(d.skuska.ends_at).toLocaleDateString('sk-SK')+' chodíš na všetky hodiny zadarmo.'; }
+  else if(bezSkusky){ document.getElementById('doneSub').textContent='Miesto máš rezervované. Prvý týždeň zadarmo si vieš zapnúť kedykoľvek v appke.'; }
+  if(d.heslo){ const h=document.getElementById('hesloBox'); h.style.display='block';
+    h.innerHTML='Do appky sa prihlásiš cez <b style="font-size:.95rem">'+esc(d.kontakt)+'</b> a heslo <b>'+esc(d.heslo)+'</b>'+(d.bez_emailu?'':' (poslali sme ti ho aj e-mailom)')+'. Zmeniť si ho môžeš v nastaveniach.'; }
+  if(d.bez_emailu) document.getElementById('doneHint').textContent='Odfoť si prosím heslo — bez e-mailu ti ho nevieme poslať znova. Trénerka ťa pred hodinou kontaktuje telefonicky.';
+  const dc=document.getElementById('doneCard'); dc.style.display='block'; dc.scrollIntoView({behavior:'smooth',block:'start'});
+}
+// Návrat zo Stripe po aktivácii skúšky (?stripe=trial&session_id=…) alebo po zrušení (?stripe=trial_cancel)
+async function navratZoStripe(){
+  const st=P0.get('stripe'); if(st!=='trial'&&st!=='trial_cancel') return false;
+  history.replaceState(null,'',location.pathname);
+  let me=null; try{ me=await (await fetch('/api/me',{credentials:'include'})).json(); }catch(e){}
+  let aktivna=false;
+  if(st==='trial'&&P0.get('session_id')){
+    try{ const v=await (await fetch('/api/stripe/verify',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({session_id:P0.get('session_id')})})).json(); aktivna=!!(v&&v.ok); }catch(e){}
+    if(!aktivna && me&&me.trial&&me.trial.active) aktivna=true;
+  }
+  document.getElementById('terminy').style.display='none'; document.getElementById('cityChips').style.display='none';
+  const dc=document.getElementById('doneCard'); dc.style.display='block';
+  document.getElementById('calBtn').style.display='none';
+  if(aktivna){ document.getElementById('doneTitle').textContent='TVOJ TÝŽDEŇ ZADARMO BEŽÍ!'; document.getElementById('doneSub').textContent='Rezerváciu aj ďalšie hodiny nájdeš v appke.'; document.getElementById('doneDetail').textContent=''; krok('trial_ok_view'); }
+  else { document.getElementById('doneTitle').textContent='REZERVÁCIU MÁŠ'; document.getElementById('doneSub').textContent='Skúšku si nedokončila — zapnúť si ju vieš kedykoľvek v appke (Nástenka → Prvý týždeň zadarmo).'; document.getElementById('doneDetail').textContent=''; krok('trial_cancel',{dovod:'stripe'}); }
+  return true;
+}
+(async()=>{ await loadCfg(); if(!(await navratZoStripe())){ krok('lp_view',{city:CITY||'vsetky'}); load(); } })();
 </script>
 </body>
 </html>
