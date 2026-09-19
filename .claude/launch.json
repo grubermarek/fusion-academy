@@ -18,6 +18,15 @@
       ],
       "cwd": "C:/Fusion Academy/MLM/app",
       "port": 4190
+    },
+    {
+      "name": "fusion-web",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/user/AppData/Local/Temp/claude/C--Fusion-Academy-MLM-app/bed06f02-d101-4b62-8c1a-3166e51f1b60/scratchpad/static-web.js"
+      ],
+      "cwd": "C:/Fusion Academy/MLM/app",
+      "port": 8081
     }
   ]
 }

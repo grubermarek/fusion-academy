@@ -17831,9 +17831,10 @@ app.post('/api/public/trainer-application', rlPublic, async(req,res)=>{
     const d={ age:(vek>=10&&vek<=99)?vek:null, class_types:zoznam(b.class_types,8), class_other:t(b.class_other,200),
       experience:t(b.experience,80), qualification:t(b.qualification,80), experience_note:t(b.experience_note,600),
       hours_week:t(b.hours_week,40), availability:zoznam(b.availability,6), income:t(b.income,40),
-      motivation:t(b.motivation,1500), social:t(b.social,300) };
+      motivation:t(b.motivation,1500), social:t(b.social,300),
+      call_type:t(b.call_type,40), call_time:t(b.call_time,40) };
     const token=require('crypto').randomBytes(16).toString('hex');
-    const zhrnutie=[d.class_types.join(', '), d.income?'príjem: '+d.income.toLowerCase():'', d.motivation].filter(Boolean).join(' · ');
+    const zhrnutie=[[d.call_type,d.call_time].filter(Boolean).join(' ')?'call: '+[d.call_type,d.call_time].filter(Boolean).join(' '):'', d.class_types.join(', '), d.income?'príjem: '+d.income.toLowerCase():'', d.motivation].filter(Boolean).join(' · ');
     const z=await q.insert(db.rentals,{ _type:'trainer_application', event_type:'🎤 Nábor trénera',
       name, phone, email, city, ...d, message:zhrnutie.slice(0,400), status:'new', upload_token:token,
       video_expected:!!b.has_video, utm:t(b.utm,300), page:t(b.page,200), created_at:nowISO() });
@@ -17847,6 +17848,7 @@ app.post('/api/public/trainer-application', rlPublic, async(req,res)=>{
         ${riadok('Skúsenosti',[d.experience,d.experience_note].filter(Boolean).join(' · '))}
         ${riadok('Kvalifikácia',d.qualification)}${riadok('Hodín týždenne',d.hours_week)}
         ${riadok('Čas',d.availability.join(', '))}${riadok('Príjem',d.income)}
+        ${riadok('Úvodný rozhovor',[d.call_type,d.call_time].filter(Boolean).join(' · '))}
         ${riadok('Prečo',d.motivation.replace(/\n/g,'<br>'))}${riadok('Instagram/TikTok',d.social)}
         ${riadok('Video',b.has_video?'nahráva sa — príde ďalší mail s odkazom':'')}
       </table>
@@ -17855,7 +17857,7 @@ app.post('/api/public/trainer-application', rlPublic, async(req,res)=>{
     for(const a of await q.find(db.users,{is_admin:true})){
       await q.insert(db.notifications,{user_id:a._id, type:'trainer_application',
         title:'🎤 Prihláška do náboru trénerov',
-        body:name+' · '+phone+' · '+city+(d.class_types.length?' · '+d.class_types.join(', '):''),
+        body:name+' · '+phone+' · '+city+(d.class_types.length?' · '+d.class_types.join(', '):'')+(d.call_time?' · zavolať '+d.call_time.toLowerCase():''),
         read:false, created_at:nowISO()}).catch(()=>{});
     }
     res.json({ok:true, id:z._id, upload_token:token});
