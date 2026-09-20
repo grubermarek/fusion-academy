@@ -5380,7 +5380,7 @@ async function skontrolujMeranie(){
   if(b){ b.disabled=false; b.textContent='Skontrolovať teraz'; }
 }
 // Lievik stránok: unikátni návštevníci po krokoch, rozpad po kampaniach a variantoch skúšky
-const LIEVIK_NAZVY={video_start:'Spustenie videa',video_half:'Polovica videa',cta_click:'Klik na prihlášku',lp_view:'Načítala stránku',lp_termin:'Vybrala termín',form_view:'Videla formulár',form_start:'Začala písať',form_submit:'Odoslala',register_ok:'Registrácia',booking_ok:'Rezervácia',trial_open:'Otvorila Stripe',trial_ok:'Skúška beží',trial_decline:'Odmietla skúšku'};
+const LIEVIK_NAZVY={video_start:'Spustenie videa',video_half:'Polovica videa',cta_click:'Klik na prihlášku',lp_view:'Načítala stránku',lp_cta:'Klikla na tlačidlo',lp_termin:'Vybrala termín',form_view:'Videla formulár',form_start:'Začala písať',form_submit:'Odoslala',register_ok:'Registrácia',booking_ok:'Rezervácia',trial_open:'Otvorila Stripe',trial_ok:'Skúška beží',trial_decline:'Odmietla skúšku'};
 async function loadLievik(){
   const host=document.getElementById('lievikPanel'); if(!host) return;
   const dni=(document.getElementById('lievikDni')||{}).value||'7';

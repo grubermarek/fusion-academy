@@ -107,7 +107,9 @@ async function landingVariant(req,res){
 }
 const FUNNEL_KROKY=new Set(['lp_view','lp_city','lp_termin','form_view','form_start','form_submit','register_ok','register_err','booking_ok','trial_open','trial_ok','trial_decline','trial_cancel','video_start','video_half','cta_click',
   // 21. 9.: ako hlboko dočítala a ako dlho vydržala — rozlíši okamžitý odchod od nezáujmu
-  'scroll_25','scroll_50','scroll_75','scroll_100','odchod']);
+  'scroll_25','scroll_50','scroll_75','scroll_100','odchod',
+  // lp_cta sa do 21. 9. posielal zo stránky, ale tu chýbal — kliky na hlavné tlačidlo sa ticho zahadzovali
+  'lp_cta']);
 const jeWebview=ua=>/FBAN|FBAV|FB_IAB|Instagram/i.test(String(ua||''));
 async function zapisKrok(req, krok, extra){
   try{
@@ -11246,10 +11248,20 @@ app.delete('/api/admin/users/:id', adminAuth, async(req,res)=>{
   await q.remove(db.transactions,{partner_id:req.params.id},{multi:true});
   await q.remove(db.commissions, {partner_id:req.params.id},{multi:true});
   await q.remove(db.bookings,    {user_id:req.params.id},   {multi:true});
+  // Stopy po účte (21. 9.): bez nich ostávali po zmazanom teste notifikácie, čakajúce
+  // maily a kroky lievika, ktoré skresľovali štatistiky. Mažú sa len osobné záznamy.
+  const stopy={};
+  for(const [koll, pole] of [[db.notifications,'user_id'],[db.email_queue,'user_id'],[db.mail_log,'user_id'],
+      [db.funnel_events,'uid'],[db.coach_contacts,'user_id'],[db.lead_notes,'user_id'],[db.crm_tasks,'user_id'],
+      [db.memberships,'user_id'],[db.payments,'user_id'],[db.credit_ledger,'user_id'],[db.referral_events,'user_id']]){
+    if(!koll) continue;
+    try{ const n=await q.remove(koll,{[pole]:req.params.id},{multi:true}); if(n) stopy[pole+'@'+(koll.filename||'').split(/[\\/]/).pop()]=n; }catch(e){}
+  }
+  await auditLog(req,'user_delete',u.name,{email:u.email, typ:u.user_type},{stopy},'').catch(()=>{});
   // Re-assign their downline to their own sponsor
   const sponsorId = u.sponsor_id || null;
   await q.update(db.users,{sponsor_id:req.params.id},{$set:{sponsor_id:sponsorId}},{multi:true});
-  res.json({ok:true});
+  res.json({ok:true, stopy});
 });
 
 // ── ZLÚČENIE ÚČTOV ───────────────────────────────────────────────────────────
@@ -23790,7 +23802,7 @@ async function lievikStranok(days){
   days=Math.min(Math.max(+days||7,1),90);
   const od=new Date(Date.now()-days*864e5).toISOString();
   const ev=await q.find(db.funnel_events,{at:{$gte:od}});
-  const KROKY={ '/prva-hodina':['lp_view','lp_termin','form_view','form_start','form_submit','booking_ok','trial_open','trial_ok'],
+  const KROKY={ '/prva-hodina':['lp_view','lp_cta','lp_termin','form_view','form_start','form_submit','booking_ok','trial_open','trial_ok'],
                 '/':['lp_view','form_view','form_start','form_submit','register_ok','trial_open','trial_ok','trial_decline'],
                 '/nabor-trenerov':['lp_view','video_start','video_half','cta_click','form_start','form_submit'] };
   const kl=e=>e.vid||e.uid||e._id;
