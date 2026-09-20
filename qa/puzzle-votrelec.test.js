@@ -71,6 +71,28 @@ async function j(url, opts = {}, jar) {
   ok('druhý deň berie iné témy', !druhe.some(id => prve.includes(id)), prve + ' | ' + druhe);
   ok('výber dáva 5 rôznych tém', new Set(druhe).size === 5);
 
+  // ── 1b. prechod na šesť hier (20. 9. 2026) ──
+  // Šesťdňové poradie sa nesmie spätne vzťahovať na staršie dni — kto hru v ten
+  // deň už hral, nesmie po obnovení dostať inú. Modul zostavíme so zástupným app/db.
+  const noop = () => {};
+  const PUZZLE = require('../puzzle')({
+    app: { get: noop, post: noop, put: noop, delete: noop }, db: {},
+    q: { find: async () => [], one: async () => null, insert: async () => {}, update: async () => {}, count: async () => 0, remove: async () => {} },
+    auth: noop, adminAuth: noop, nowISO: () => '', today: () => '2026-09-20', fakty: async () => ({}), servisToken: () => false,
+  });
+  // prod má v nastaveniach vlastné výnimky — nesmú s prechodom nič spraviť
+  const CFG = { schedule: ['rhythm', 'anagram', 'zip', 'quiz', 'words', 'votrelec'], overrides: { '2026-09-01': 'anagram' } };
+  const den = d => PUZZLE.typeForSync(d, CFG);
+  ok('17.–19. 9. ostávajú pri pôvodnom poradí',
+    den('2026-09-17') === 'quiz' && den('2026-09-18') === 'words' && den('2026-09-19') === 'rhythm',
+    [den('2026-09-17'), den('2026-09-18'), den('2026-09-19')].join(','));
+  ok('20. 9. ostáva „Poskladaj slovo" aj po pridaní šiestej hry', den('2026-09-20') === 'anagram', den('2026-09-20'));
+  ok('21. 9. je prvý „Nájdi votrelca"', den('2026-09-21') === 'votrelec', den('2026-09-21'));
+  ok('od 21. 9. sa poradie opakuje po šiestich dňoch',
+    den('2026-09-27') === 'votrelec' && den('2026-10-03') === 'votrelec' && den('2026-09-22') === 'rhythm',
+    [den('2026-09-27'), den('2026-10-03'), den('2026-09-22')].join(','));
+  ok('výnimka v nastaveniach stále funguje', den('2026-09-01') === 'anagram', den('2026-09-01'));
+
   // ── 2. cez server ──
   const DNES = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Bratislava' }).format(new Date());
   const hash = bcrypt.hashSync('Heslo123!', 10);
