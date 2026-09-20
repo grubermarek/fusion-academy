@@ -149,6 +149,29 @@ html[data-theme="aurora"] .btn-main{background:linear-gradient(90deg,#A855F7,#EC
 .kq.zamknute .vys{display:block}
 .kq .vys b{color:var(--cream)}
 @media(min-width:480px){.kq .ko{grid-template-columns:1fr 1fr}}
+/* nájdi votrelca */
+.vt{display:flex;flex-direction:column;gap:12px;margin:4px 0 2px}
+.vq{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 14px}
+.vq .kh{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+.vq .cislo{width:24px;height:24px;border-radius:50%;background:var(--pz-fill);color:var(--gold);
+  font-size:.74rem;font-weight:800;display:grid;place-items:center;flex:none}
+.vq .kat{font-size:.66rem;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.vq .vo{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.vq .vo button{background:none;border:1px solid var(--line);border-radius:12px;color:var(--cream);font:inherit;
+  font-size:.92rem;font-weight:700;padding:14px 10px;line-height:1.3;text-wrap:balance;min-height:56px;cursor:pointer}
+.vq .vo button:hover{border-color:var(--gold)}
+.vq .vo button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.vq .vo button.vyb{background:var(--pz-fill);border-color:var(--gold);color:var(--gold)}
+.vq.hotovo{border-color:rgba(201,168,76,.45)}
+.vq.zamknute .vo button{cursor:default;opacity:.62}
+.vq.zamknute .vo button.spravne{border-color:#5fa86b;color:#8fd39a;opacity:1;background:rgba(95,168,107,.10)}
+.vq.zamknute .vo button.vyb.zlyTip{border-color:#a85f5f;color:#e08a8a;opacity:1;background:rgba(168,95,95,.10)}
+.vq.dobre{border-color:rgba(95,168,107,.5)}
+.vq.zle{border-color:rgba(168,95,95,.4)}
+.vq .vys{display:none;margin-top:10px;font-size:.82rem;line-height:1.5;color:var(--muted);
+  border-top:1px solid var(--line);padding-top:9px}
+.vq.zamknute .vys{display:block}
+.vq .vys b{color:var(--cream)}
 .hist{margin-top:14px;background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
 .hist>button{width:100%;background:none;border:0;color:var(--cream,#EAE3D5);font:inherit;font-size:.82rem;
   padding:13px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer}
@@ -205,9 +228,10 @@ const api=async(url,opts)=>{ const r=await fetch(url,{credentials:'include',head
 const fmtSec=s=>{ s=Math.max(0,Math.round(s)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); };
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const bodSlovo=n=>n===1?'bod':(n>=2&&n<=4?'body':'bodov');
-// Rytmus a kvíz: jeden pokus, bod za každú správnu, bonus len pre najrýchlejšiu bezchybnú.
-const jeBodovana=t=>t==='rhythm'||t==='quiz';
-const bonusBezchyby=()=>P.type==='quiz'?(P.quiz_perfect_bonus||5):(P.rhythm_perfect_bonus||5);
+// Rytmus, kvíz a „Nájdi votrelca": jeden pokus, bod za každú správnu, bonus len pre najrýchlejšiu bezchybnú.
+const jeBodovana=t=>t==='rhythm'||t==='quiz'||t==='votrelec';
+const bonusBezchyby=()=>P.type==='quiz'?(P.quiz_perfect_bonus||5)
+  :P.type==='votrelec'?(P.votrelec_perfect_bonus||5):(P.rhythm_perfect_bonus||5);
 
 async function init(){
   const d=await api('/api/puzzle/today').catch(()=>null);
@@ -240,7 +264,7 @@ function render(){
     </div>` : ''}
     <div class="bar">
       <div class="pill"><b id="clock">0:00</b><span>čas</span></div>
-      <div class="pill"><b id="filled">${P.type==='words'?'0/'+P.words.length:P.type==='rhythm'?'0/'+P.rounds.length:(P.type==='anagram'||P.type==='quiz')?'0/'+P.pocet:'0/'+(P.size*P.size)}</b><span>${P.type==='words'?'slov':P.type==='rhythm'?'rytmov':P.type==='anagram'?'slov':P.type==='quiz'?'otázok':'políčok'}</span></div>
+      <div class="pill"><b id="filled">${P.type==='words'?'0/'+P.words.length:P.type==='rhythm'?'0/'+P.rounds.length:(P.type==='anagram'||P.type==='quiz'||P.type==='votrelec')?'0/'+P.pocet:'0/'+(P.size*P.size)}</b><span>${P.type==='words'?'slov':P.type==='rhythm'?'rytmov':P.type==='anagram'?'slov':P.type==='quiz'?'otázok':P.type==='votrelec'?'kôl':'políčok'}</span></div>
       <div class="pill"><b id="mesBody">${P.month_points}${P.monthly_cap>0?'/'+P.monthly_cap:''}</b><span>bodov v mesiaci</span></div>
     </div>
     ${(P.monthly_cap>0 && P.month_points>=P.monthly_cap) ? `<div style="background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.4);
@@ -249,7 +273,7 @@ function render(){
       Ďalšie hlavolamy sa už do bodov nerátajú, séria aj rebríček ti bežia ďalej.
       Od 1. ${new Date(new Date().getFullYear(), new Date().getMonth()+1, 1)
         .toLocaleDateString('sk-SK',{month:'long'})} sa počítadlo nuluje. 💛</div>` : ''}
-    ${P.type==='rhythm' ? '<div class="rr" id="rr"></div>' : P.type==='quiz' ? '<div class="kv" id="kv"></div>' : P.type==='anagram' ? '<div class="ag" id="ag"></div>' : '<div class="board-wrap"><canvas id="board"></canvas></div>'}
+    ${P.type==='rhythm' ? '<div class="rr" id="rr"></div>' : P.type==='quiz' ? '<div class="kv" id="kv"></div>' : P.type==='votrelec' ? '<div class="vt" id="vt"></div>' : P.type==='anagram' ? '<div class="ag" id="ag"></div>' : '<div class="board-wrap"><canvas id="board"></canvas></div>'}
     ${P.type==='words' ? '<div class="wordlist" id="wordList"></div>' : ''}
     <div class="hint">${P.type==='words'
       ? 'Ťahaj prstom po písmenách a označ <b>všetkých '+P.words.length+' slov</b>. Slová sú vodorovne, zvisle aj šikmo — aj odzadu.'
@@ -263,6 +287,9 @@ function render(){
       : P.type==='quiz'
       ? 'Päť otázok o <b>výžive, pohybe, tanci, svete</b> aj o nás. Pri každej vyber jednu odpoveď — po odovzdaní uvidíš správne odpovede aj s vysvetlením.<br>'
         +'<b style="color:var(--gold)">Máš jeden pokus</b> · '+(P.quiz_per_answer||1)+' '+bodSlovo(P.quiz_per_answer||1)+' za každú správnu odpoveď · 🥇 +'+bonusBezchyby()+' pre najrýchlejšiu s plným počtom — čas beží od otvorenia, poradie sa uzatvára o polnoci.'
+      : P.type==='votrelec'
+      ? 'V každom kole sú štyri slová. Tri patria k sebe a <b>jedno tam nepatrí</b> — to klikni.<br>'
+        +'<b style="color:var(--gold)">Máš jeden pokus</b> · '+(P.votrelec_per_answer||1)+' '+bodSlovo(P.votrelec_per_answer||1)+' za každé trafené kolo · 🥇 +'+bonusBezchyby()+' pre najrýchlejšiu s plným počtom — po odovzdaní uvidíš, čo tie tri spájalo.'
       : 'Ťahaj prstom od <b>1</b> a spájaj čísla v poradí tak, aby si prešla <b>všetky políčka</b>.'}
 ${jeBodovana(P.type) ? '' : `<br><b style="color:var(--gold)">Za vyriešenie ${P.points} ${bodSlovo(P.points)}</b> · najrýchlejšie časy dňa navyše 🥇 +${(P.podium_bonus||[5,3,1])[0]} · 🥈 +${(P.podium_bonus||[5,3,1])[1]} · 🥉 +${(P.podium_bonus||[5,3,1])[2]} — čas beží od otvorenia, poradie sa uzatvára o polnoci.`}</div>
     <div class="fair">⚠️ <b>Hraj férovo.</b> Ak zistíme, že niekto podvádza, odoberieme mu možnosť získavať body.</div>
@@ -275,6 +302,7 @@ ${jeBodovana(P.type) ? '' : `<br><b style="color:var(--gold)">Za vyriešenie ${P
     <div class="hist" id="hist"></div>`;
   if(P.type==='rhythm'){ renderRytmus(); }
   else if(P.type==='quiz'){ renderKviz(); }
+  else if(P.type==='votrelec'){ renderVotrelec(); }
   else if(P.type==='anagram'){ renderAnagram(); }
   else {
     setupCanvas();
@@ -304,7 +332,7 @@ function setupCanvas(){
 let rzT=null;
 // Rytmus ani „Poskladaj slovo" nemajú mriežku — prepočítavať netreba a setupCanvas
 // by spadol na null canvase (na mobile to hodilo chybu pri každom otvorení klávesnice).
-window.addEventListener('resize',()=>{ if(!P||P.type==='rhythm'||P.type==='anagram'||P.type==='quiz') return; clearTimeout(rzT); rzT=setTimeout(()=>{ setupCanvas(); draw(); },150); });
+window.addEventListener('resize',()=>{ if(!P||P.type==='rhythm'||P.type==='anagram'||P.type==='quiz'||P.type==='votrelec') return; clearTimeout(rzT); rzT=setTimeout(()=>{ setupCanvas(); draw(); },150); });
 const cellOf=(x,y)=>{ const c=Math.floor(x/cell), r=Math.floor(y/cell);
   if(r<0||c<0||r>=P.size||c>=P.size) return -1; return r*P.size+c; };
 const centre=i=>({x:(i%P.size)*cell+cell/2, y:Math.floor(i/P.size)*cell+cell/2});
@@ -455,6 +483,10 @@ function resetPath(){
     if(solvedToday) return;
     odpovedeKv=[]; renderKviz(); const m=$('msg'); if(m){m.className='msg';m.textContent='';} return;
   }
+  if(P && P.type==='votrelec'){
+    if(solvedToday) return;
+    odpovedeVt=[]; renderVotrelec(); const m=$('msg'); if(m){m.className='msg';m.textContent='';} return;
+  }
   if(P && P.type==='anagram'){
     odpovedeAg=P.slova.map(()=> ''); overeneAg=[];
     renderAnagram(); const m=$('msg'); if(m){m.className='msg';m.textContent='';} return;
@@ -486,12 +518,23 @@ async function submit(){
     }
     if(!confirm('Odovzdať odpovede?\n\nMáš len jeden pokus — po odovzdaní sa už nedá nič zmeniť.\nZa každú správnu odpoveď dostaneš bod.')) return;
   }
+  if(P.type==='votrelec'){
+    const hotove=odpovedeVt.filter(x=>x!=null).length, ost=P.pocet-hotove;
+    if(ost>0){
+      flash(ost===1 ? 'V jednom kole ešte nemáš označeného votrelca.' : 'Ešte ti chýba '+ost+' z '+P.pocet+' kôl.');
+      const prva=odpovedeVt.findIndex((x,i)=>i<P.pocet&&x==null);
+      const k=$('vq'+(prva<0?0:prva)); if(k) k.scrollIntoView({behavior:'smooth',block:'center'});
+      return;
+    }
+    if(!confirm('Odovzdať odpovede?\n\nMáš len jeden pokus — po odovzdaní sa už nedá nič zmeniť.\nZa každé trafené kolo dostaneš bod.')) return;
+  }
   const btn=$('sendBtn'); btn.disabled=true; btn.textContent='Kontrolujem…';
   const seconds=startedAt?Math.round((Date.now()-startedAt)/1000):0;
   const payload=P.type==='words' ? {found, seconds, date:P.date}
     : P.type==='anagram' ? {answers:odpovedeAg.map(x=>normAg(x)), seconds, date:P.date}
     : P.type==='rhythm' ? {answers:odpovede, seconds, date:P.date}
     : P.type==='quiz' ? {answers:odpovedeKv.slice(0,P.pocet), seconds, date:P.date}
+    : P.type==='votrelec' ? {answers:odpovedeVt.slice(0,P.pocet), seconds, date:P.date}
     : {cells:path, seconds, date:P.date};
   const d=await api('/api/puzzle/solve',{method:'POST',body:JSON.stringify(payload)}).catch(()=>null);
   btn.disabled=false; btn.textContent='Odovzdať riešenie';
@@ -515,6 +558,16 @@ async function submit(){
           ? '<br>🥇 Ak budeš dnes najrýchlejšia zo všetkých, čo mali plný počet, ráno ti pribudne +'+d.perfect_bonus+' bodov.'
           : (!vsetko ? '<br><span style="opacity:.8">Bonus +'+(d.perfect_bonus||5)+' patrí najrýchlejšej, ktorá odpovie správne na všetkých päť. Nabudúce! 💛</span>' : ''));
   }
+  else if(P.type==='votrelec'){
+    const vsetko=d.correct===d.total;
+    m.className='msg '+(vsetko?'ok':'');
+    m.innerHTML=(vsetko?'🎉 ':'')+'Našla si <b>'+d.correct+' z '+d.total+'</b> votrelcov za <b>'+fmtSec(d.seconds)+'</b>'
+      +' — <b>'+d.points+' '+bod(d.points)+'</b>. Pri každom kole nájdeš, čo tie tri slová spájalo. 👇'
+      + (d.capped?'<br><span style="opacity:.8">Mesačný strop bodov z hlavolamu je vyčerpaný — hrať môžeš ďalej pre radosť. 💛</span>':'')
+      + (vsetko && d.perfect_bonus
+          ? '<br>🥇 Ak budeš dnes najrýchlejšia zo všetkých, čo mali plný počet, ráno ti pribudne +'+d.perfect_bonus+' bodov.'
+          : (!vsetko ? '<br><span style="opacity:.8">Bonus +'+(d.perfect_bonus||5)+' patrí najrýchlejšej, ktorá nájde všetkých piatich. Nabudúce! 💛</span>' : ''));
+  }
   else if(P.type==='rhythm'){
     // Pri rytme nehodnotíme „vyriešené/nevyriešené", ale koľko z piatich sedelo.
     const vsetko=d.correct===d.total;
@@ -536,6 +589,7 @@ async function submit(){
   const st=await api('/api/puzzle/today').catch(()=>null); if(st&&st.ok) P=st;
   if(P.type==='rhythm') ukazRiesenie();
   if(P.type==='quiz') zamkniKviz();
+  if(P.type==='votrelec') zamkniVotrelca();
   loadLb();
 }
 
@@ -764,6 +818,57 @@ function zamkniKviz(){
     const v=$('kvv'+i);
     if(v) v.innerHTML=(x.trafene===true?'✅ Správne! ':x.trafene===false?'❌ Správna odpoveď: <b>'+esc(x.spravna)+'</b><br>':'')
       +(x.vysvetlenie?'💡 '+esc(x.vysvetlenie):'');
+  });
+  const f=$('filled'); if(f && P.my_correct!=null) f.textContent=P.my_correct+'/'+(P.my_total||P.pocet);
+}
+
+// ── Nájdi votrelca ──────────────────────────────────────────────────────────
+// Klient dostane len štvorice slov. Ktoré je votrelec a aká bola kategória, vie
+// len server — dozvieme sa to až po odovzdaní (P.reveal).
+let odpovedeVt=[];
+function renderVotrelec(){
+  const el=$('vt'); if(!el||!P.kola) return;
+  if(odpovedeVt.length!==P.kola.length) odpovedeVt=new Array(P.kola.length).fill(null);
+  el.innerHTML=P.kola.map((k,i)=>
+    '<div class="vq" id="vq'+i+'">'
+    +'<div class="kh"><div class="cislo">'+(i+1)+'</div><span class="kat">Ktoré slovo sem nepatrí?</span></div>'
+    +'<div class="vo">'+k.slova.map((s,j)=>
+        '<button type="button" data-j="'+j+'" onclick="vyberVotrelca('+i+','+j+')">'+esc(s)+'</button>').join('')
+    +'</div><div class="vys" id="vvv'+i+'"></div></div>').join('');
+  if(solvedToday && P.reveal) zamkniVotrelca();
+  else spocitajVt();
+}
+function vyberVotrelca(i,j){
+  if(solvedToday) return;
+  odpovedeVt[i]=j;
+  const c=$('vq'+i); if(c){
+    c.classList.add('hotovo');
+    c.querySelectorAll('.vo button').forEach(b=>b.classList.toggle('vyb', +b.dataset.j===j));
+  }
+  const m=$('msg'); if(m && m.classList.contains('err')){ m.className='msg'; m.textContent=''; }
+  spocitajVt();
+}
+function spocitajVt(){
+  const f=$('filled'); if(f) f.textContent=odpovedeVt.filter(x=>x!=null).length+'/'+P.pocet;
+}
+function zamkniVotrelca(){
+  if(!P.reveal) return;
+  P.reveal.forEach((x,i)=>{
+    const c=$('vq'+i); if(!c) return;
+    c.classList.add('zamknute');
+    if(x.trafene!=null) c.classList.add(x.trafene?'dobre':'zle');
+    c.querySelectorAll('.vo button').forEach(b=>{
+      b.disabled=true;
+      const slovo=b.textContent;
+      b.classList.toggle('spravne', slovo===x.votrelec);
+      b.classList.toggle('vyb', x.moj_tip!=null && slovo===x.moj_tip);
+      b.classList.toggle('zlyTip', x.trafene===false && x.moj_tip!=null && slovo===x.moj_tip);
+    });
+    const v=$('vvv'+i);
+    if(v) v.innerHTML=(x.trafene===true ? '✅ Správne! <b>'+esc(x.votrelec)+'</b> '
+        : x.trafene===false ? '❌ Votrelec bol <b>'+esc(x.votrelec)+'</b> — '
+        : '<b>'+esc(x.votrelec)+'</b> ')
+      +esc(x.preco)+'. Ostatné tri patria k sebe: <b>'+esc(x.kategoria)+'</b>.';
   });
   const f=$('filled'); if(f && P.my_correct!=null) f.textContent=P.my_correct+'/'+(P.my_total||P.pocet);
 }

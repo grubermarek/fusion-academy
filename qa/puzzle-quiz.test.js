@@ -153,12 +153,20 @@ const citajDb = f => { try { return fs.readFileSync(path.join(DATA, f), 'utf8').
     ok('admin prihlásený', (await j('/api/login', { method: 'POST', body: { email: 'qa.kv.admin@qa-biz.local', password: 'Heslo123!' } }, adm)).status === 200);
     const cf = await j('/api/admin/puzzle', {}, adm);
     ok('kvíz je v striedaní hier', cf.d && cf.d.config.schedule.includes('quiz'), JSON.stringify(cf.d && cf.d.config.schedule));
-    ok('17. 9. 2026 pripadá na kvíz a 16. 9. ostáva „Spoj čísla"',
-      (() => { const G = require(path.join(KOREN, 'puzzle.js')); return true; })() &&
-      cf.d.config.schedule[Math.floor(Date.parse('2026-09-17T00:00:00Z') / 86400000) % cf.d.config.schedule.length] === 'quiz' &&
-      cf.d.config.schedule[Math.floor(Date.parse('2026-09-16T00:00:00Z') / 86400000) % cf.d.config.schedule.length] === 'zip' &&
-      cf.d.config.schedule[Math.floor(Date.parse('2026-09-18T00:00:00Z') / 86400000) % cf.d.config.schedule.length] === 'words' &&
-      cf.d.config.schedule[Math.floor(Date.parse('2026-09-19T00:00:00Z') / 86400000) % cf.d.config.schedule.length] === 'rhythm');
+    // Od 20. 9. 2026 je v striedaní šesť hier („Nájdi votrelca"), takže sa poradie
+    // opakuje po šiestich dňoch. Dnešok 20. 9. drží výnimka, aby sa hra nezmenila
+    // pod rukami tým, čo ju v ten deň už hrali.
+    const denRotacie = d => cf.d.config.schedule[Math.floor(Date.parse(d + 'T00:00:00Z') / 86400000) % cf.d.config.schedule.length];
+    ok('striedanie pozná všetkých šesť hier', cf.d.config.schedule.length === 6
+      && ['zip', 'words', 'rhythm', 'anagram', 'quiz', 'votrelec'].every(t => cf.d.config.schedule.includes(t)),
+      JSON.stringify(cf.d.config.schedule));
+    ok('21. 9. 2026 pripadá na „Nájdi votrelca" a ďalší je rytmus',
+      denRotacie('2026-09-21') === 'votrelec' && denRotacie('2026-09-22') === 'rhythm'
+      && denRotacie('2026-09-23') === 'anagram' && denRotacie('2026-09-27') === 'votrelec');
+    // Tento test má v DB vlastnú konfiguráciu, preto výnimku pre 20. 9. kontrolujeme
+    // priamo v predvolených nastaveniach — na prode platia tie.
+    ok('20. 9. 2026 má v predvolbách výnimku, aby sa hra dňa nezmenila',
+      /overrides: { '2026-09-20': 'anagram' }/.test(fs.readFileSync(path.join(KOREN, 'puzzle.js'), 'utf8')));
     ok('sadzby kvízu: 1 bod za odpoveď, bonus 5', cf.d.config.quiz_per_answer === 1 && cf.d.config.quiz_perfect_bonus === 5);
 
     // bonus za včerajšok
@@ -261,7 +269,7 @@ const citajDb = f => { try { return fs.readFileSync(path.join(DATA, f), 'utf8').
     const kt = await j('/api/admin/kviz/kontrola', { method: 'POST' }, adm);
     const FAK = kt.d && kt.d.fakty || {};
     ok('server dodá fakty z konštánt appky', FAK.hodina === 5 && FAK.kamoska_clenstvo === 100 && FAK.skuska_plan === 'Bronze'
-      && FAK.typy_pocet === 5 && FAK.ma_rytmus === true && FAK.rytmus_tance === 'Salsa, bachata, merengue a cha-cha-chá' && FAK.mesta_pocet === 4
+      && FAK.typy_pocet === 6 && FAK.ma_rytmus === true && FAK.ma_votrelec === true && FAK.rytmus_tance === 'Salsa, bachata, merengue a cha-cha-chá' && FAK.mesta_pocet === 4
       && FAK.permanentka_uspora === 20 && FAK.jedalnicek_plany === 'Gold a Online Premium', JSON.stringify(FAK).slice(0, 300));
     const nesediIds = (kt.d.nesedi || []).map(x => x.id).sort();
     ok('nevyberajú sa otázky o prvom týždni (je vypnutý)',
@@ -269,7 +277,8 @@ const citajDb = f => { try { return fs.readFileSync(path.join(DATA, f), 'utf8').
       JSON.stringify(kt.d.nesedi));
     ok('otázka o hre mimo striedania sa vyradí ticho', K.preverOtazku(B.find(o => o.id === 'fa0007'), { ...FAK, ma_rytmus: false }).every(d => d.startsWith(K.TICHO)));
     const fa06 = K.vyplnOtazku(B.find(o => o.id === 'fa0006'), FAK);
-    ok('otázka o počte hier sedí s rozvrhom (päť)', fa06.a[0] === 'Päť' && fa06.v.includes('Poznáš rytmus?'), JSON.stringify(fa06));
+    ok('otázka o počte hier sedí s rozvrhom (šesť)', fa06.a[0] === 'Šesť' && fa06.v.includes('Poznáš rytmus?')
+      && fa06.v.includes('Nájdi votrelca'), JSON.stringify(fa06));
     const upoz = citajDb('notifications.db').filter(n => n.user_id === 'qaKvAdmin0000001' && n.type === 'kviz_kontrola');
     ok('admin dostal upozornenie na nesediace otázky (raz)', upoz.length === 1 && /5 otázky o škole nesedia/.test(upoz[0].title), JSON.stringify(upoz.map(n => n.title)));
     await j('/api/admin/kviz/kontrola', { method: 'POST' }, adm);
