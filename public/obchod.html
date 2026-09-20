@@ -128,7 +128,7 @@ FA_I18N.mount('langSw');
 document.addEventListener('fa-lang-changed',()=>location.reload());
 function toast(t){ const x=document.createElement('div'); x.className='toast'; x.textContent=t; document.body.appendChild(x); setTimeout(()=>x.remove(),3800); }
 
-let CHILDREN=[], PRE_KOHO=null;
+let CHILDREN=[], PRE_KOHO=null, SKUPINY=[], SKUPINA=null, KIDSP=null; // KIDSP: cena Zumba Kids s odberom / bez (20. 9.)
 async function boot(){
   const [me,ov,plans,cfg,prods]=await Promise.all([
     api('/api/me'), api('/api/shop/overview'), api('/api/membership/plans'), api('/api/config'),
@@ -137,8 +137,7 @@ async function boot(){
   if(!me?.id){ const qs=new URLSearchParams(location.search);
     location.href='/?next='+encodeURIComponent(location.pathname+location.search)
       +(qs.get('buy')?'&buy='+encodeURIComponent(qs.get('buy')):''); return; }
-  try{ CHILDREN = await fetch('/api/family/children',{credentials:'include'}).then(r=>r.json()); }catch(e){ CHILDREN=[]; }
-  if(!Array.isArray(CHILDREN)) CHILDREN=[];
+  await nacitajRodinu();
   ME=me; OV=ov; PLANS=plans; STRIPE=!!cfg.stripe_enabled; PRODUCTS=Array.isArray(prods)?prods:[];
   renderMyf(); renderRecs(); renderTabs();
   api('/api/shop/event',{method:'POST',body:JSON.stringify({type:'shop_open'})});
@@ -149,10 +148,18 @@ async function boot(){
   const buyRaw=qsB.get('buy');
   const buy=buyRaw==='kids'?'bronze':buyRaw;
   if(buyRaw==='kids'||qsB.get('pre')==='dieta') PRE_KOHO=CHILDREN.length?CHILDREN[0].id:'new';
+  // Z profilu dieťaťa (/dieta/:id): konkrétne dieťa + vybraná skupina Zumba Kids (20. 9.)
+  if(qsB.get('child') && CHILDREN.some(c=>c.id===qsB.get('child'))) PRE_KOHO=qsB.get('child');
+  if(qsB.get('skupina')) SKUPINA=qsB.get('skupina');
   const want=qsB.get('tab')||location.hash.replace('#','');
   const jeVstup=buy&&PLANS[buy]&&(PLANS[buy].type==='bundle'||buy==='vstup1');
   showTab(jeVstup?'vstupy':(['clenstva','vstupy','sukromne','merch','eventy','nakupy'].includes(want)?want:'clenstva'));
   if(buy && PLANS[buy]) setTimeout(()=>openPlan(buy), 350);
+}
+async function nacitajRodinu(){
+  try{ const ov=await fetch('/api/family/overview',{credentials:'include'}).then(r=>r.json());
+    CHILDREN=Array.isArray(ov.children)?ov.children:[]; SKUPINY=Array.isArray(ov.skupiny)?ov.skupiny:[]; KIDSP=ov.plan||null; }
+  catch(e){ CHILDREN=[]; }
 }
 function renderMyf(){
   const m=OV.membership, e=OV.entries;
@@ -460,11 +467,25 @@ function preKohoBlok(){
       <input id="mDietaNar" type="date" max="${new Date().toISOString().slice(0,10)}" style="width:100%;padding:9px;border-radius:10px;background:#171410;color:#fff;border:1px solid #3a3020;color-scheme:dark;margin-bottom:8px">
       <button type="button" class="paybtn sec" style="margin:0" onclick="ulozNoveDieta()">Uložiť dieťa</button>
       <div class="err" id="mDietaErr"></div>
-    </div>`;
+    </div>
+    <div id="mSkupina"></div>`;
+}
+// Skupina Zumba Kids (Marek 20. 9.): rodič zaplatí a dieťa je hneď prihlásené na hodiny skupiny.
+function skupinaBlok(){
+  const el=document.getElementById('mSkupina'); if(!el) return;
+  const c=CHILDREN.find(x=>x.id===PRE_KOHO);
+  if(!c || !CUR || CUR.kind!=='plan' || PLANS[CUR.id]?.type==='bundle' || !SKUPINY.length){ el.innerHTML=''; return; }
+  if(!SKUPINA || !SKUPINY.some(s=>s.key===SKUPINA)) SKUPINA=c.skupina||c.age_group||SKUPINY[0].key;
+  el.innerHTML=`<div style="font-size:.8rem;color:var(--muted);margin:-2px 0 6px">Skupina · ${esc(c.name.split(' ')[0])}${c.age!=null?' ('+c.age+' r.)':''} — dieťa chodí na jej hodiny automaticky:</div>
+    <div style="display:grid;gap:6px;margin-bottom:12px">${SKUPINY.map(s=>`<label style="display:flex;gap:10px;align-items:center;padding:9px 12px;border:1px solid ${SKUPINA===s.key?'var(--gold)':'#3a3020'};border-radius:12px;cursor:pointer;background:#171410">
+      <input type="radio" name="mSk" value="${esc(s.key)}" ${SKUPINA===s.key?'checked':''} onchange="SKUPINA=this.value;skupinaBlok()" style="accent-color:var(--gold)">
+      <span style="flex:1;font-size:.88rem"><b>${esc(s.name)}</b> <span style="color:var(--muted)">(${esc(s.vek)} r.)</span><br><small style="color:var(--muted)">${esc(s.label)}</small></span>
+      ${c.age_group===s.key?'<span style="font-size:.66rem;background:var(--gold);color:#111;border-radius:20px;padding:2px 7px;font-weight:800">odporúčané</span>':''}</label>`).join('')}</div>`;
 }
 function nastavPreKoho(v){
   PRE_KOHO=v||null; if(CUR) CUR.child_id=(v&&v!=='new')?v:null;
   const f=document.getElementById('mNoveDieta'); if(f) f.style.display=v==='new'?'block':'none';
+  skupinaBlok(); recalc();
   // kým nie je dieťa uložené, nákup „pre nové dieťa" sa nedá odoslať (sadol by na rodiča)
   const st=document.getElementById('mStripe'), man=document.getElementById('mManual');
   if(st) st.disabled=v==='new'; if(man) man.disabled=v==='new';
@@ -476,8 +497,7 @@ async function ulozNoveDieta(){
   if(!nar){ err.textContent='Zadaj dátum narodenia — podľa veku dieťa zaradíme do skupiny'; return; }
   const r=await api('/api/family/children',{method:'POST',body:JSON.stringify({name:meno, birth_date:nar})});
   if(!r||!r.ok){ err.textContent=(r&&r.error)||'Nepodarilo sa uložiť'; return; }
-  try{ CHILDREN=await fetch('/api/family/children',{credentials:'include'}).then(x=>x.json()); }catch(e){}
-  if(!Array.isArray(CHILDREN)) CHILDREN=[];
+  await nacitajRodinu();
   PRE_KOHO=r.id; toast('🧒 '+meno+' má profil — členstvo kupuješ pre '+meno.split(' ')[0]);
   if(CUR&&CUR.kind==='plan') openPlan(CUR.id);
 }
@@ -486,12 +506,13 @@ function openPlan(id){
   const p=PLANS[id]; if(!p) return;
   CUR={kind:'plan', id, price:p.price, name:p.name, child_id:(PRE_KOHO&&PRE_KOHO!=='new')?PRE_KOHO:null}; PROMO=null;
   const monthly=p.type!=='bundle';
-  document.getElementById('mTitle').textContent=p.name;
+  document.getElementById('mTitle').textContent=(CUR.child_id&&monthly)?'Zumba Kids':p.name;
   document.getElementById('mBody').innerHTML=preKohoBlok()+`
     ${monthly&&STRIPE?`<label class="renew"><input type="checkbox" id="mRenew" checked onchange="recalc()" style="accent-color:#C9A84C;width:17px;height:17px">
       <span>${FA_T('shop.renew_toggle')}<br><small style="color:var(--muted)">${FA_T('shop.renew_hint')}</small></span></label>`:''}
     ${(OV.membership && OV.membership.plan_id!==id && monthly)?`<p class="note" style="margin:0 0 10px;color:var(--gold)">${FA_T('shop.upgrade_note',{old:esc(OV.membership.plan_name), d:dstr(OV.membership.expires_at), val:Math.max(0,Math.round((OV.membership.price||0)*Math.max(0,OV.membership.days_left)/30*100)/100).toFixed(2)+' €'})}</p>`:''}
-    <div class="mrow"><span class="mut">${FA_T('shop.price')}</span><span>${eur(p.price)}</span></div>
+    <div class="mrow"><span class="mut">${FA_T('shop.price')}</span><span id="mCena">${eur(p.price)}</span></div>
+    <p class="note" id="mKidsNote" style="display:none;color:#ffb74d;margin:0 0 10px"></p>
     ${OV.credit>0?`<label class="credit-row"><input type="checkbox" id="mCredit" checked onchange="recalc()" style="accent-color:#C9A84C">${FA_T('shop.use_credit',{c:eur(OV.credit)})}</label>`:''}
     <div class="promo-row"><input id="mPromo" placeholder="${FA_T('shop.promo_ph')}"><button onclick="applyPromo()">${FA_T('shop.apply')}</button></div>
     <div id="mPromoMsg" class="err" style="min-height:0"></div>
@@ -509,8 +530,17 @@ function openPlan(id){
 function recalc(){
   if(!CUR||CUR.kind!=='plan') return;
   const renew=document.getElementById('mRenew')?.checked;
-  const promoD=PROMO?Math.min(PROMO.discount,CUR.price):0;
-  const base=Math.max(0,CUR.price-promoD);
+  // Dieťa bez automatickej platby: o 10 % drahšie (Marek 20. 9.) — 49,90 → 54,90 €
+  const kid=CHILDREN.find(x=>x.id===CUR.child_id);
+  const kidsManual=!!(kid && KIDSP && PLANS[CUR.id]?.type!=='bundle' && !renew);
+  const cena=kidsManual?Math.round(CUR.price*(1+(KIDSP.prirazka||0.1))*10)/10:CUR.price;
+  const cEl=document.getElementById('mCena'); if(cEl) cEl.textContent=eur(cena);
+  const kn=document.getElementById('mKidsNote');
+  if(kn){ if(kid && KIDSP && PLANS[CUR.id]?.type!=='bundle'){ kn.style.display='block';
+      kn.textContent=kidsManual?'⚠️ Bez automatickej platby je Zumba Kids o '+Math.round((KIDSP.prirazka||0.1)*100)+' % drahšie ('+eur(cena)+' namiesto '+eur(CUR.price)+').':'🔄 Automatická platba každý mesiac, vypnúť ju vieš kedykoľvek v profile dieťaťa. Bez nej stojí Zumba Kids '+eur(Math.round(CUR.price*(1+(KIDSP.prirazka||0.1))*10)/10)+'.'; }
+    else kn.style.display='none'; }
+  const promoD=PROMO?Math.min(PROMO.discount,cena):0;
+  const base=Math.max(0,cena-promoD);
   const useCr=document.getElementById('mCredit')?.checked;
   const cr=useCr?Math.min(OV.credit,base):0;
   const total=Math.max(0,+(base-cr).toFixed(2));
@@ -528,7 +558,7 @@ function recalc(){
 }
 async function applyPromo(){
   const code=document.getElementById('mPromo').value.trim(); if(!code) return;
-  const r=await api('/api/promo/validate',{method:'POST',body:JSON.stringify({code,plan_id:CUR.id})});
+  const r=await api('/api/promo/validate',{method:'POST',body:JSON.stringify({code,plan_id:CUR.id, for_child_id:CUR.child_id||undefined, renew:!!document.getElementById('mRenew')?.checked})});
   const msg=document.getElementById('mPromoMsg');
   if(r.ok){ PROMO={code:r.code,discount:r.discount}; msg.style.color='#8bc34a'; msg.textContent='🎟️ '+r.code+' −'+eur(r.discount); }
   else { PROMO=null; msg.style.color='#ff8a80'; msg.textContent=r.reason||FA_T('shop.promo_bad'); }
@@ -538,7 +568,7 @@ async function payStripe(){
   const {renew}=recalc(); const err=document.getElementById('mErr'); err.textContent='';
   const b=document.getElementById('mStripe'); b.disabled=true; b.textContent=FA_T('shop.pay_redirect');
   const r=await api(renew?'/api/stripe/subscribe':'/api/stripe/checkout',{method:'POST',
-    body:JSON.stringify({plan_id:CUR.id, for_child_id:CUR.child_id||undefined, promo_code:PROMO?.code})});
+    body:JSON.stringify({plan_id:CUR.id, for_child_id:CUR.child_id||undefined, kids_group:CUR.child_id?SKUPINA:undefined, promo_code:PROMO?.code})});
   if(r.ok&&r.url){ location.href=r.url; return; }
   err.textContent=r.error||FA_T('shop.pay_fail'); b.disabled=false; b.textContent=FA_T('shop.pay_card');
 }
@@ -546,11 +576,12 @@ async function payManual(){
   const {useCr}=recalc(); const err=document.getElementById('mErr'); err.textContent='';
   const b=document.getElementById('mManual'); b.disabled=true; b.textContent=FA_T('shop.sending');
   const r=await api('/api/membership/buy',{method:'POST',
-    body:JSON.stringify({plan_id:CUR.id, payment_method:'manual', use_referral_credit:!!useCr, for_child_id:CUR.child_id||undefined, promo_code:PROMO?.code})});
+    body:JSON.stringify({plan_id:CUR.id, payment_method:'manual', use_referral_credit:!!useCr, for_child_id:CUR.child_id||undefined, kids_group:CUR.child_id?SKUPINA:undefined, promo_code:PROMO?.code})});
   b.disabled=false;
   if(!r.ok){ err.textContent=r.error||FA_T('shop.try_again'); b.textContent=FA_T('shop.pay_cash'); return; }
   closeM();
   toast(r.final_price===0?FA_T('shop.ok_credit'):FA_T('shop.ok_manual',{p:eur(r.final_price)}));
+  if(CUR.child_id){ setTimeout(()=>location.href='/dieta/'+CUR.child_id, 1500); return; }
   OV=await api('/api/shop/overview'); renderMyf(); renderRecs(); renderNakupy();
 }
 /* ── Merch/event nákup — existujúci objednávkový systém ── */

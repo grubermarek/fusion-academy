@@ -75,6 +75,18 @@
 > Frontend: sekcia "Moja rodina" v client-dashboard (pridať/zmazať/QR/rezervovať),
 > selektor "Pre koho" v schedule.html (`?child=<id>` predvýber). Overené naživo.
 > POZN: milestones (Fáza 7.1) už existovali v kóde (`LOYALTY_MILESTONES`).
+>
+> **Doplnené 20. 9. 2026 — profil dieťaťa a skupiny Zumba Kids:** stránka `/dieta/:id`
+> (`public/dieta.html`) = účet dieťaťa pre rodiča: členstvo, výber skupiny **Zumba Kids 1 (4–6)
+> / Kids 2 (7–14)** (vek len odporúča, rodič vyberá), najbližšie hodiny, dochádzka, QR,
+> nastavenia. Skupina = `users.kids_group` + `auto_classes` hodín skupiny
+> (`kidsHodinySkupin`, `zaradDietaDoSkupiny`); nákupné endpointy berú `kids_group`.
+> API: `GET /api/family/overview` (deti + skupiny + spoločný týždeň + ceny),
+> `GET /api/family/children/:id`, `PUT … {kids_group}`. Nástenka „Moja rodina" = riadok
+> na dieťa + „Tento týždeň". Obchod: `?child=<id>&skupina=Kids 1` predvyplní dieťa aj
+> skupinu, po platbe návrat do `/dieta/:id`. **Cena:** automatická platba (odber) 49,90 €;
+> bez odberu (jednorazovo kartou / hotovosť) +10 % = 54,90 € (`KIDS_MANUAL_PRIRAZKA`,
+> `kidsCenaManual`); vypnutie odberu dieťaťa upozorní rodiča. Test `qa/dieta-profil.test.js`.
 
 ### PÔVODNÁ ŠPECIFIKÁCIA (referencia)
 ## FÁZA 1 (pôvodne) — Rodinné účty (rodič + deti)

@@ -53,7 +53,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const nav = fs.readFileSync(path.join(ROOT, 'public', 'nav-bar.js'), 'utf8');
   ok('menu: jedna položka Obchod (/obchod), žiadne Členstvo (/pricing)', !/href:'\/pricing'/.test(nav) && !/href:'\/shop'/.test(nav) && /label:'Obchod', href:'\/obchod'/.test(nav));
   ok('appka neodkazuje na /pricing ani /shop', ['client-dashboard.html','schedule.html','index.html','unlock.html','jedalnicek.html','404.html','admin.html'].every(f => { const t = fs.readFileSync(path.join(ROOT, 'public', f), 'utf8'); return !/\/pricing/.test(t) && !/href="\/shop"/.test(t); }));
-  ok('dashboard: rodičovská karta má automatické hodiny a vypnutie odberu dieťaťa', /toggleAutoClass\(/.test(dash) && /cancelChildRenew\(/.test(dash) && /Chodí automaticky na/.test(dash) && /zapniOdporucane\(/.test(dash) && /doplnDatum\(/.test(dash));
+  // 20. 9.: automatické hodiny, skupina aj vypnutie odberu sa presunuli do profilu dieťaťa (/dieta/:id)
+  const dieta = fs.readFileSync(path.join(ROOT, 'public', 'dieta.html'), 'utf8');
+  ok('dashboard: rodičovská karta odkazuje do profilu dieťaťa a ponúka zaplatenie Zumba Kids', /\/api\/family\/overview/.test(dash) && /\/dieta\/\$\{c\.id\}/.test(dash) && /Zaplatiť Zumba Kids/.test(dash) && !/toggleAutoClass\(/.test(dash));
+  ok('profil dieťaťa: výber skupiny, automatická platba, vypnutie odberu s upozornením', /kids_group/.test(dieta) && /vypniOdber\(/.test(dieta) && /Automatická platba/.test(dieta) && /price_manual/.test(dieta));
 
   // ── fixtúry ──
   const DNES = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Bratislava' }).format(new Date());

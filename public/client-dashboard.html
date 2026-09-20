@@ -624,7 +624,7 @@
       <span>👨‍👩‍👧 Moja rodina</span>
       <a onclick="openChildModal()" style="font-size:.78rem;color:var(--gold);text-decoration:none;opacity:.9;cursor:pointer"><i class="bi bi-plus"></i> Pridať dieťa</a>
     </div>
-    <div id="familyList"><div class="empty-state" style="padding:12px"><i class="bi bi-people"></i>Zatiaľ žiadne detské profily. Pridaj dieťa a rezervuj zaň hodiny.</div></div>
+    <div id="familyList"><div class="empty-state" style="padding:12px"><i class="bi bi-people"></i>Zatiaľ žiadny detský profil. Pridaj dieťa — vyberieš skupinu Zumba Kids, zaplatíš a dieťa chodí automaticky.</div></div>
   </div>
 
   <!-- ═══════════════════════════════════════════════════════
@@ -896,7 +896,7 @@
 <div class="modal-overlay" id="childModal">
   <div class="modal-box">
     <h3>👧 Pridať dieťa</h3>
-    <p style="opacity:.7;font-size:.85rem;margin-bottom:14px">Dieťa nemá vlastné prihlásenie – rezervuješ a platíš zaň ty.</p>
+    <p style="opacity:.7;font-size:.85rem;margin-bottom:14px">Dieťa nemá vlastné prihlásenie – platíš a spravuješ ho ty. Po uložení vyberieš skupinu Zumba Kids a zaplatíš.</p>
     <input id="childName" placeholder="Meno dieťaťa" style="width:100%;padding:11px 14px;margin-bottom:10px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:.95rem">
     <label style="display:block;font-size:.78rem;color:var(--muted);margin-bottom:5px">Dátum narodenia <span style="opacity:.7">(nepovinné)</span></label>
     <input id="childBirthDate" type="date" min="1990-01-01" style="width:100%;padding:11px 14px;margin-bottom:4px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:.95rem;color-scheme:dark">
@@ -1369,69 +1369,48 @@ function renderBookings(bookings){
 }
 
 /* ─── Family (children) ─── */
+// Prehľad rodiča (20. 9.): každé dieťa = jeden riadok so stavom a odkazom do jeho profilu
+// (/dieta/:id — členstvo, skupina, hodiny, dochádzka). Bez členstva má riadok rovno
+// tlačidlo na zaplatenie Zumba Kids. Pod deťmi je spoločný týždeň — pri viacerých deťoch
+// rodič vidí na jednom mieste, kto kedy ide.
 let _children=[];
 async function loadFamily(){
-  _children=await api('/api/family/children');
-  if(!Array.isArray(_children)) _children=[];
+  const ov=await api('/api/family/overview');
+  _children=Array.isArray(ov?.children)?ov.children:[];
   const el=document.getElementById('familyList');
-  if(!_children.length){ el.innerHTML=`<div class="empty-state" style="padding:12px"><i class="bi bi-people"></i>Zatiaľ žiadne detské profily. Pridaj dieťa a rezervuj zaň hodiny.</div>`; return; }
-  const kids=await kidsClasses();
-  const DNI=['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
-  el.innerHTML=_children.map(c=>{
-    const mem=c.membership?`<span style="color:#4caf50">🏅 ${escHtml(c.membership.plan_name)}${c.auto_renew?' · 🔄 odber'+(c.odber&&c.odber.dalsia_platba?' (platba '+datumSk(c.odber.dalsia_platba)+(c.odber.suma!=null?' · '+(+c.odber.suma).toFixed(2).replace('.',',')+' €':'')+')':''):''}</span>${c.auto_renew?` <a onclick="cancelChildRenew('${c.id}','${escHtml(c.name).replace(/'/g,"&#39;")}')" style="font-size:.72rem;color:var(--muted);cursor:pointer;text-decoration:underline dotted">vypnúť</a>`:''}`:(c.free_class_used?'<span style="opacity:.6">bez členstva</span>':'<span style="color:var(--gold)">🎁 1. hodina zdarma</span>');
-    const auto=c.auto_classes||[];
-    // Automatická dochádzka (13. 9.): dieťa sa nemusí rezervovať — rodič vyberie hodiny, appka ho prihlási sama
-    const bezDatumu=!c.birth_date && !c.birth_year;
-    const odporuc = bezDatumu ? ` <a onclick="doplnDatum('${c.id}')" style="color:var(--gold);cursor:pointer;text-decoration:underline dotted">doplň dátum narodenia — zaradíme podľa veku</a>`
-      : (c.age_group && !auto.length && c.membership ? ` <a onclick="zapniOdporucane('${c.id}','${c.age_group}')" style="color:var(--gold);cursor:pointer;text-decoration:underline dotted">zapnúť odporúčané: Zumba ${c.age_group}</a>` : (c.age_group && !auto.length ? ` <span style="opacity:.7">(${c.age} r. → Zumba ${c.age_group})</span>` : ''));
-    const autoRows = kids.length ? `<div style="margin-top:8px;font-size:.78rem;color:var(--muted);line-height:1.5">🧒 Chodí automaticky na:${c.membership?'':' <span style="color:#ffb74d">(najprv členstvo pre dieťa v Obchode)</span>'}${odporuc}<br>
-      ${kids.map(k=>`<label style="display:inline-flex;align-items:center;gap:5px;margin:4px 12px 0 0;cursor:pointer;color:${auto.includes(k._id)?'var(--text)':'var(--muted)'}"><input type="checkbox" ${auto.includes(k._id)?'checked':''} ${c.membership?'':'disabled'} onchange="toggleAutoClass('${c.id}','${k._id}',this.checked)" style="accent-color:var(--gold)">${escHtml(k.name)} · ${DNI[k.day_of_week]} ${k.time_start}</label>`).join('')}</div>` : '';
-    return `<div class="booking-item" style="flex-wrap:wrap">
+  if(!_children.length){ el.innerHTML=`<div class="empty-state" style="padding:12px"><i class="bi bi-people"></i>Zatiaľ žiadny detský profil. Pridaj dieťa — vyberieš skupinu Zumba Kids, zaplatíš a dieťa chodí automaticky.</div>`; return; }
+  const DK=['ne','po','ut','st','št','pi','so'];
+  const dsk=d=>{ const m=String(d||'').match(/^(\d{4})-(\d{2})-(\d{2})/); if(!m) return ''; const dt=new Date(m[1],+m[2]-1,+m[3]); return DK[dt.getDay()]+' '+(+m[3])+'. '+(+m[2])+'.'; };
+  const dl=d=>{ const m=String(d||'').match(/^(\d{4})-(\d{2})-(\d{2})/); return m?(+m[3])+'. '+(+m[2])+'.':''; };
+  const rows=_children.map(c=>{
+    const akt=c.membership&&c.membership.active;
+    const sk=c.skupina_info;
+    const meno=escHtml(c.name.split(' ')[0]);
+    let stav, akcia='';
+    if(akt){
+      stav=`<span style="color:#4caf50">🏅 aktívne do ${dl(c.membership.expires_at)}</span>${c.auto_renew?' · 🔄':''}${sk?` · <b>${escHtml(sk.name)}</b> ${escHtml(sk.label)}`:' · <span style="color:#ffb74d">vyber skupinu</span>'}`;
+      if(!sk) akcia=`<a class="qa-btn" href="/dieta/${c.id}" style="padding:7px 12px;font-size:.78rem;text-decoration:none">Vybrať skupinu</a>`;
+    } else {
+      stav=`<span style="color:#ffb74d">⚠️ bez členstva</span>${c.age_group?` · odporúčané Zumba ${escHtml(c.age_group)}`:(c.birth_date||c.birth_year?'':' · doplň dátum narodenia')}`;
+      akcia=`<a class="qa-btn" href="/dieta/${c.id}" style="padding:7px 12px;font-size:.78rem;text-decoration:none;border-color:var(--gold);color:var(--gold)">💳 Zaplatiť Zumba Kids</a>`;
+    }
+    const dalsia=c.upcoming&&c.upcoming[0]?` • najbližšie ${dsk(c.upcoming[0].booking_date)} ${escHtml(c.upcoming[0].class_time_start||'')}`:'';
+    return `<div class="booking-item" style="flex-wrap:wrap;cursor:pointer" onclick="if(!event.target.closest('a,button'))location.href='/dieta/${c.id}'">
       <div class="booking-emoji">🧒</div>
       <div class="booking-info" style="min-width:0;flex:1">
-        <strong>${escHtml(c.name)}${c.birth_year?` <span style="opacity:.5;font-weight:400">• ${c.birth_year}${c.age!=null?' · '+c.age+' r.':''}</span>`:''}</strong>
-        <span>${c.visit_count} návštev • ${mem}${c.upcoming?.length?` • najbližšie ${fmtDMY(c.upcoming[0].booking_date)}`:''}</span>
-        ${autoRows}
+        <strong>${escHtml(c.name)}${c.age!=null?` <span style="opacity:.5;font-weight:400">• ${c.age} r.</span>`:''}</strong>
+        <span>${stav}</span>
+        <span style="opacity:.75">${c.attended||0} hodín${dalsia}</span>
       </div>
-      <div style="display:flex;gap:6px">
-        <button class="qa-btn" style="padding:7px 10px" title="QR kód" onclick="showChildQR('${c.id}','${escHtml(c.name).replace(/'/g,"&#39;")}')"><i class="bi bi-qr-code" style="margin:0"></i></button>
-        <button class="qa-btn" style="padding:7px 10px" title="Rezervovať" onclick="location.href='/schedule?child=${c.id}'"><i class="bi bi-calendar-plus" style="margin:0"></i></button>
-        <button class="qa-btn" style="padding:7px 10px" title="Zmazať" onclick="deleteChild('${c.id}','${escHtml(c.name).replace(/'/g,"&#39;")}')"><i class="bi bi-trash" style="margin:0;color:#e57373"></i></button>
-      </div>
-    </div>`;
+      <a class="qa-btn" href="/dieta/${c.id}" style="padding:7px 10px;text-decoration:none;align-self:center" title="Profil ${meno}"><i class="bi bi-chevron-right" style="margin:0"></i></a>
+      ${akcia?`<div style="flex-basis:100%;padding:6px 0 0 44px;display:flex">${akcia}</div>`:''}</div>`;
   }).join('');
-}
-let _kidsClasses=null;
-async function kidsClasses(){
-  if(_kidsClasses) return _kidsClasses;
-  try{ const all=await api('/api/classes'); _kidsClasses=(Array.isArray(all)?all:[]).filter(c=>c.category==='Deti' && c.active!==false).sort((a,b)=>(a.day_of_week-b.day_of_week)||String(a.time_start).localeCompare(String(b.time_start))); }
-  catch(e){ _kidsClasses=[]; }
-  return _kidsClasses;
-}
-async function zapniOdporucane(childId, skupina){
-  const kids=await kidsClasses(); const ids=kids.filter(k=>String(k.name).includes(skupina)).map(k=>k._id);
-  if(!ids.length){ showToast('Detské hodiny sa nenašli','error'); return; }
-  const d=await api('/api/family/children/'+childId,{method:'PUT',body:{auto_classes:ids}});
-  if(d?.ok){ showToast('✅ Zaradené do Zumba '+skupina+(d.auto_bookings?' · '+d.auto_bookings+'× najbližšie termíny':''),'success'); loadFamily(); loadMyBookings(); }
-  else showToast('Chyba: '+(d?.error||'?'),'error');
-}
-async function doplnDatum(childId){
-  const v=prompt('Dátum narodenia dieťaťa (RRRR-MM-DD):'); if(!v) return;
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(v.trim())){ showToast('Zadaj dátum v tvare RRRR-MM-DD','error'); return; }
-  const d=await api('/api/family/children/'+childId,{method:'PUT',body:{birth_date:v.trim()}});
-  if(d?.ok){ showToast('Dátum uložený','success'); loadFamily(); } else showToast('Chyba: '+(d?.error||'?'),'error');
-}
-async function toggleAutoClass(childId, classId, on){
-  const c=_children.find(x=>x.id===childId); if(!c) return;
-  const list=new Set(c.auto_classes||[]); if(on) list.add(classId); else list.delete(classId);
-  const d=await api('/api/family/children/'+childId,{method:'PUT',body:{auto_classes:[...list]}});
-  if(d?.ok){ showToast(on?('✅ Prihlásené automaticky'+(d.auto_bookings?' · '+d.auto_bookings+'× najbližšie termíny':'')):'Automatické prihlasovanie vypnuté','success'); loadFamily(); loadMyBookings(); }
-  else showToast('Chyba: '+(d?.error||'?'),'error');
-}
-async function cancelChildRenew(childId, name){
-  if(!confirm(`Vypnúť automatické obnovenie členstva pre ${name}? Členstvo platí do konca obdobia.`)) return;
-  const d=await api('/api/stripe/subscribe/cancel',{method:'POST',body:{member_id:childId, reason:'other', note:'rodič vypol odber dieťaťa'}});
-  if(d?.ok){ showToast('Odber vypnutý','success'); loadFamily(); } else showToast('Chyba: '+(d?.error||'?'),'error');
+  const t=Array.isArray(ov.tyzden)?ov.tyzden:[];
+  const tyzden=t.length?`<div style="margin-top:10px;padding:10px 12px;background:rgba(201,162,76,.07);border:1px solid rgba(201,162,76,.25);border-radius:12px;font-size:.82rem;line-height:1.7">
+      <div style="font-weight:800;color:var(--gold);font-size:.74rem;letter-spacing:.08em;text-transform:uppercase;margin-bottom:2px">📅 Tento týždeň</div>
+      ${t.map(x=>`<div><b>${dsk(x.date)}</b> ${escHtml(x.time)} · ${escHtml(x.child_name.split(' ')[0])} <span style="opacity:.65">· ${escHtml(x.name)}</span></div>`).join('')}</div>`
+    :(_children.some(c=>c.membership&&c.membership.active)?`<div style="margin-top:8px;font-size:.78rem;color:var(--muted)">📅 Tento týždeň zatiaľ žiadna hodina detí.</div>`:'');
+  el.innerHTML=rows+tyzden;
 }
 
 function openChildModal(){ document.getElementById('childName').value=''; document.getElementById('childBirthDate').value=''; document.getElementById('childBirthDate').max=new Date().toISOString().slice(0,10); document.getElementById('childModal').style.display='flex'; }
@@ -1442,7 +1421,8 @@ async function saveChild(){
   if(!name){ showToast('Zadaj meno dieťaťa','error'); return; }
   if(!birth_date){ showToast('Zadaj dátum narodenia — podľa veku dieťa zaradíme do skupiny Zumba Kids','error'); return; }
   const d=await api('/api/family/children',{method:'POST',body:{name,birth_date}});
-  if(d?.ok){ showToast('Dieťa pridané ✓','success'); closeChildModal(); loadFamily(); }
+  // Rovno do profilu dieťaťa — tam rodič vyberie skupinu Zumba Kids a zaplatí (20. 9.)
+  if(d?.ok){ showToast('Dieťa pridané ✓','success'); closeChildModal(); location.href='/dieta/'+d.id; }
   else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 async function deleteChild(id,name){

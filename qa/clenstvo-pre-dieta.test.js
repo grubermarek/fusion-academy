@@ -94,7 +94,8 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     const kup = await j('/api/membership/buy', { method: 'POST', body: {
       plan_id: 'bronze', payment_method: 'manual', for_child_id: dieta } }, rodic);
     ok('nákup prešiel', kup.status === 200 && kup.d && kup.d.ok, JSON.stringify(kup.d).slice(0, 160));
-    ok('pýta si 49,90 €', kup.d && Math.abs(kup.d.final_price - 49.9) < 0.01, kup.d && String(kup.d.final_price));
+    // Marek 20. 9.: dieťa bez automatickej platby (hotovosť/prevod) platí o 10 % viac — 49,90 → 54,90
+    ok('pýta si 54,90 € (bez automatickej platby o 10 % viac)', kup.d && Math.abs(kup.d.final_price - 54.9) < 0.01, kup.d && String(kup.d.final_price));
 
     await new Promise(r => setTimeout(r, 700));
     const pl = rd('payments.db').find(x => x._id === (kup.d && kup.d.payment_id));
@@ -103,7 +104,7 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     ok('za plán bronze', pl && pl.ref_id === 'bronze', pl && pl.ref_id);
 
     console.log('\n4) Vyššie balíky pre dieťa tiež:');
-    for (const [plan, cena] of [['silver', 74.9], ['gold', 124.9]]) {
+    for (const [plan, cena] of [['silver', 82.4], ['gold', 137.4]]) { // +10 % bez odberu (20. 9.)
       const r2 = await j('/api/membership/buy', { method: 'POST', body: {
         plan_id: plan, payment_method: 'manual', for_child_id: dieta } }, rodic);
       await new Promise(r => setTimeout(r, 400));
