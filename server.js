@@ -5274,6 +5274,24 @@ app.post('/api/admin/meta-pixel', adminAuth, async(req,res)=>{
     res.json({ok:true, pixel_id:id});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
+// Dataset vlastnený reklamným účtom (21. 9.) nedovolí vygenerovať vlastný CAPI token —
+// Meta na to pýta rolu správcu firemného portfólia, a tento dataset pod portfóliom nie je.
+// Token na čítanie reklám má na zápis udalostí oprávnenie (overené), takže ho sem skopírujeme.
+// Pozor: expiruje spolu s ads tokenom, po obnove ads tokenu treba spustiť znova.
+app.post('/api/service/capi-z-ads', async(req,res)=>{
+  const tok=process.env.IMPORT_TOKEN;
+  if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
+  try{
+    const ads=await getMetaAdsToken();
+    if(!ads) return res.status(400).json({error:'Chýba meta_ads_token'});
+    const existing=await q.one(db.settings,{key:'meta_capi_token'});
+    if(existing) await q.update(db.settings,{_id:existing._id},{$set:{value:ads, at:nowISO(), zdroj:'ads_token'}});
+    else await q.insert(db.settings,{key:'meta_capi_token', value:ads, at:nowISO(), zdroj:'ads_token'});
+    _metaTokenCache=ads;
+    console.log('📘 CAPI token prevzatý z ads tokenu');
+    res.json({ok:true, len:ads.length, pixel:await getMetaPixelId()});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 // CAPI token pre nový dataset — zapisuje sa prihlásený admin priamo z prehliadača
 // (token nikdy neprechádza cez chat ani git, rovnako ako meta_ads_token).
 app.post('/api/admin/meta-capi-token', adminAuth, async(req,res)=>{
