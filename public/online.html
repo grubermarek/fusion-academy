@@ -398,6 +398,7 @@ function renderRecordings(filterClass){
       <div class="lock-icon" style="font-size:1.5rem;min-width:36px">📼</div>
       <div class="class-info flex-grow-1"><h4>${r.title||r.kind||r.class_name}</h4><p>${fmt(r)} · ${dur(r.duration_s||0)}${r.city?' · '+r.city:''}</p></div>
       <button class="btn-stream" onclick="playRecording('${r.id}')"><i class="bi bi-play-circle me-1"></i>${r.preview?'Ukážka 3 min':'Prehrať'}</button>
+      ${!r.preview && r.src ? `<a class="btn-arch" style="margin-left:6px" href="${r.src}&dl=1&name=${encodeURIComponent((r.title||r.kind||r.class_name)+' '+new Date(r.started_at||r.date).toLocaleDateString('sk-SK'))}" title="Stiahnuť do zariadenia (odkaz platí 6 h)"><i class="bi bi-download"></i></a>` : ''}
     </div>`).join('')
     : '<p style="color:var(--text-muted);text-align:center;padding:1rem">Táto hodina zatiaľ nemá žiadny záznam.</p>';
 }

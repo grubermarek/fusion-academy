@@ -550,14 +550,20 @@ app.get('/rec/:slug/:file', (req, res, next) => {
   const file = String(req.params.file || '');
   if (!/^[\w-]+(\.preview)?\.mp4$/.test(file)) return res.status(404).end();
   const f = path.join(REC_DIR, slug, file);
+  // ?dl=1&name=… → stiahnutie ako súbor (len celý záznam, nie ukážka)
+  const dl = String(req.query.dl || '') === '1' && !isPreviewFile(file);
+  const dlName = (String(req.query.name || '').replace(/[^\w\u00C0-\u024F .()+-]/g, '').trim().slice(0, 80) || file.replace(/\.mp4$/, '')) + '.mp4';
   if (fs.existsSync(f)) {
     res.set('Content-Type', 'video/mp4');
     res.set('Cache-Control', 'private, max-age=3600');
+    if (dl) res.set('Content-Disposition', 'attachment; filename="' + dlName.replace(/[^\x20-\x7E]/g, '_') + '"; filename*=UTF-8\'\'' + encodeURIComponent(dlName));
     return res.sendFile(f);
   }
   if (!R2_ON) return res.status(404).json({ error: 'Záznam už nie je k dispozícii' });
   // Záznam je v R2: presmeruj na podpísaný odkaz (1 h), Range/pretáčanie ide priamo z R2
-  r2Presign(slug, file).then(u => { res.set('Cache-Control', 'no-store'); res.redirect(302, u); })
+  const cmd = new S3.GetObjectCommand({ Bucket: R2_BUCKET, Key: r2Key(slug, file),
+    ...(dl ? { ResponseContentDisposition: 'attachment; filename="' + dlName.replace(/[^\x20-\x7E]/g, '_') + '"; filename*=UTF-8\'\'' + encodeURIComponent(dlName) } : {}) });
+  getSignedUrl(s3, cmd, { expiresIn: 3600 }).then(u => { res.set('Cache-Control', 'no-store'); res.redirect(302, u); })
     .catch(e => res.status(404).json({ error: 'Záznam už nie je k dispozícii', detail: e.message }));
 });
 

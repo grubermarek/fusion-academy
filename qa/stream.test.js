@@ -215,6 +215,9 @@ async function login(id) {
         else pass('S5f: MP4 → 200 video/mp4, Range → 206');
         const bezT = await fetch(r1.src.split('?')[0]);
         if (bezT.status !== 403) find('S5g', 'Záznam sa dá stiahnuť bez tokenu', String(bezT.status)); else pass('S5g: záznam bez tokenu → 403');
+        const dl = await fetch(r1.src + '&dl=1&name=' + encodeURIComponent('QA záznam 1. 1.'));
+        const cd = dl.headers.get('content-disposition') || '';
+        if (dl.status !== 200 || !/attachment/.test(cd) || !/QA/.test(cd)) find('S5h2', 'Stiahnutie záznamu nedáva prílohu s názvom', dl.status + ' ' + cd); else pass('S5h2: stiahnutie (dl=1) → príloha s názvom');
         // Ukážka pre Bronze: 3-minútový súbor hrá, celý záznam s ukážkovým tokenom nie
         const rlB = await req('/api/online/recordings', { cookie: bez });
         const pb = (rlB.body.recordings || [])[0];
