@@ -46,7 +46,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const obchod = fs.readFileSync(path.join(ROOT, 'public', 'obchod.html'), 'utf8');
   const dash = fs.readFileSync(path.join(ROOT, 'public', 'client-dashboard.html'), 'utf8');
   const srv = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-  ok('profil dieťaťa: skupiny, platba, upozornenie pri vypnutí', /kids_group/.test(dieta) && /o \'\+pr\+\' % viac/.test(dieta) && /price_manual/.test(dieta) && /Automatická platba/.test(dieta));
+  ok('profil dieťaťa: skupiny, platba rovno do odberu (predvolene automatická obnova), upozornenie pri vypnutí', /\/api\/stripe\/subscribe/.test(dieta) && /inePlatby\(/.test(dieta) && /kids_group/.test(dieta) && /o \'\+pr\+\' % viac/.test(dieta) && /price_manual/.test(dieta) && /Automatická platba/.test(dieta));
   ok('obchod: dieťa + skupina z adresy, kids_group ide do platby, ručná cena vyššia', /qsB\.get\('child'\)/.test(obchod) && /kids_group:CUR\.child_id\?SKUPINA/.test(obchod) && /KIDSP\.prirazka/.test(obchod) && /\/api\/family\/overview/.test(obchod));
   ok('nástenka: riadok dieťaťa vedie do /dieta/:id a nové dieťa ide rovno tam', /\/dieta\/\$\{c\.id\}/.test(dash) && /location\.href='\/dieta\/'\+d\.id/.test(dash) && /Tento týždeň/.test(dash));
   ok('server: routa /dieta/:id, návrat zo Stripe do profilu dieťaťa, prirážka 10 %', /app\.get\('\/dieta\/:id'/.test(srv) && /'\/dieta\/'\+memberId/.test(srv) && /KIDS_MANUAL_PRIRAZKA = 0\.10/.test(srv));

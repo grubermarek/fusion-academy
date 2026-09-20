@@ -110,6 +110,7 @@ async function load(){
       ${skupinyHtml(skup)}
       <div class="row" style="border:0"><span>🔄 Automatická platba · mesačne</span><b style="color:var(--gold);font-size:1.1rem">${eur(D.plan.price)}</b></div>
       <a class="btn gold" id="payBtn" href="#" onclick="zaplat();return false">Zaplatiť a prihlásiť do skupiny</a>
+      <div style="text-align:center;margin-top:8px"><button class="link" onclick="inePlatby()">Iné možnosti platby (hotovosť, promo kód)</button></div>
       <p class="note">Platba kartou sa obnovuje každý mesiac sama, vypnúť ju vieš kedykoľvek. Bez automatickej platby (jednorazovo alebo v hotovosti) stojí Zumba Kids <b>${eur(D.plan.price_manual)}</b>, teda o ${Math.round((D.plan.prirazka||0.1)*100)} % viac. Faktúru dostaneš ty ako rodič.</p>`;
   }
 
@@ -154,9 +155,19 @@ async function ulozSkupinu(){
   const r=await api('/api/family/children/'+ID,{method:'PUT',body:{kids_group:VYBER}});
   if(r.ok){ toast('✅ Zaradené do Zumba '+VYBER+(r.auto_bookings?' · '+r.auto_bookings+'× najbližšie termíny':'')); load(); } else toast(r.error||'Chyba');
 }
-function zaplat(){
+// Predvolene automatická obnova (Marek 20. 9.): tlačidlo ide rovno do Stripe odberu,
+// obchod s ostatnými spôsobmi platby je až za odkazom „Iné možnosti platby".
+async function zaplat(){
   if(!VYBER){ toast('Najprv vyber skupinu'); return; }
-  location.href='/obchod?buy='+encodeURIComponent(D.plan.id)+'&child='+encodeURIComponent(D.id)+'&skupina='+encodeURIComponent(VYBER);
+  const b=document.getElementById('payBtn'); b.textContent='Presmerúvam na platbu…'; b.style.pointerEvents='none';
+  const r=await api('/api/stripe/subscribe',{method:'POST',body:{plan_id:D.plan.id, for_child_id:D.id, kids_group:VYBER}});
+  if(r.ok && r.url){ location.href=r.url; return; }
+  b.textContent='Zaplatiť a prihlásiť do skupiny'; b.style.pointerEvents='';
+  if(r.error) toast(r.error);
+  if(r.status===400 && /Stripe/.test(r.error||'')) inePlatby(); // Stripe nedostupný → obchod
+}
+function inePlatby(){
+  location.href='/obchod?buy='+encodeURIComponent(D.plan.id)+'&child='+encodeURIComponent(D.id)+'&skupina='+encodeURIComponent(VYBER||'');
 }
 function zaplatOdber(){
   location.href='/obchod?buy='+encodeURIComponent(D.plan.id)+'&child='+encodeURIComponent(D.id)+(D.skupina?'&skupina='+encodeURIComponent(D.skupina):'');
