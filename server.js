@@ -2191,6 +2191,21 @@ async function seedData() {
     console.log('🧒 Zumba Kids: 7–14 o 15:00, 4–6 o 16:00 ('+n+' hodín)');
   }
 
+  // Marek 20. 9.: „Lesanka a Jasnička majú jedinú výnimku (35 €), inak všetci 49,90."
+  // Výnimka sedí na riadku predbežného zoznamu; pri prepojení s profilom prejde na dieťa
+  // ako custom_prices.bronze (a na dohodnutú cenu sa neuplatní prirážka bez odberu).
+  if(!(await q.one(db.settings,{key:'kids_roster_vynimky_20260920'}))){
+    let n=0;
+    for(const r of await q.find(db.kids_roster,{})){
+      if(!/^(lesanka|jasni[cč]ka)$/i.test(String(r.name||'').trim())) continue;
+      await q.update(db.kids_roster,{_id:r._id},{$set:{custom_price:35}}); n++;
+      if(r.linked_user_id){ const d=await q.one(db.users,{_id:r.linked_user_id});
+        if(d) await q.update(db.users,{_id:d._id},{$set:{custom_prices:{...(d.custom_prices||{}), bronze:35}}}); }
+    }
+    await q.insert(db.settings,{key:'kids_roster_vynimky_20260920', value:true, at:nowISO()});
+    console.log('🧒 Zumba Kids: výnimka 35 € zapísaná ('+n+' detí)');
+  }
+
   // 24.8.: kampane bez utm_key sa nedali merať — platili sme za kliky, ktoré nemali
   // kam zapadnúť (Video HEJ BABY 141 klikov, Kreatívny test 423 klikov, obe 0 registrácií
   // na karte, hoci vo funneli boli registrácie s utm_campaign fa-test-*).
@@ -12454,7 +12469,7 @@ app.post('/api/promo/validate', auth, async(req,res)=>{
       let memberId=req.session.uid;
       if(b.for_child_id){ const child=await q.one(db.users,{_id:String(b.for_child_id)}); if(child && child.parent_id===req.session.uid) memberId=child._id; }
       price = await buyerPlanPrice(memberId, b.plan_id);
-      if(memberId!==req.session.uid && b.renew===false && MEMBERSHIP_PLANS[b.plan_id].type!=='bundle') price = kidsCenaManual(price);
+      if(memberId!==req.session.uid && b.renew===false && MEMBERSHIP_PLANS[b.plan_id].type!=='bundle') price = (await kidsCenyDietata(memberId, b.plan_id)).manual;
     } else {
       price = Number(b.amount);
     }
@@ -12609,7 +12624,7 @@ app.post('/api/membership/buy', auth, async(req,res)=>{
     let promoDiscount = 0, promoCode = null, promoObj = null;
     let listPrice = await buyerPlanPrice(memberId, plan_id);
     // Dieťa bez automatickej platby: o 10 % drahšie (Marek 20. 9.)
-    if(childName && plan.type!=='bundle') listPrice = kidsCenaManual(listPrice);
+    if(childName && plan.type!=='bundle') listPrice = (await kidsCenyDietata(memberId, plan_id)).manual;
     let basePrice = listPrice;
     if(promo_code){
       const v = await validatePromo(promo_code, listPrice, req.session.uid, 'membership', {plan_id});
@@ -15197,7 +15212,7 @@ app.post('/api/stripe/checkout', auth, async(req,res)=>{
     if(buyer?.custom_prices && buyer.custom_prices[plan_id]!=null) price = +buyer.custom_prices[plan_id];
     // Dieťa bez automatickej platby: o 10 % drahšie (Marek 20. 9.)
     const kidsManual = !!childName && plan.type!=='bundle';
-    if(kidsManual) price = kidsCenaManual(price);
+    if(kidsManual) price = (await kidsCenyDietata(memberId, plan_id)).manual;
     // Gold benefit: 10-vstupová permanentka za 70 € (ostatní 80 €)
     if(plan_id==='permanentka10'){
       const gm=await checkMembership(memberId);
@@ -15623,7 +15638,7 @@ app.post('/api/stripe/subscribe/cancel', auth, async(req,res)=>{
       read:false, created_at:nowISO()}).catch(()=>{});
     await recordMembershipCancel(u, req.body.reason, req.body.note, u===ja ? 'stripe_self' : 'stripe_parent');
     // Dieťa bez automatickej platby platí o 10 % viac (Marek 20. 9.) — rodič to má vedieť hneď v ozname
-    const kidsPozn = u.is_child ? ` Bez automatickej platby stojí Zumba Kids ${kidsCenaManual(await buyerPlanPrice(u._id, KIDS_PLAN)).toFixed(2).replace('.',',')} € mesačne a treba ho platiť ručne.` : '';
+    const kidsPozn = u.is_child ? ` Bez automatickej platby stojí Zumba Kids ${(await kidsCenyDietata(u._id, KIDS_PLAN)).manual.toFixed(2).replace('.',',')} € mesačne a treba ho platiť ručne.` : '';
     await q.insert(db.notifications,{user_id:ja._id,type:'membership',title:'Odber zrušený',body:(u===ja?'Automatické obnovenie bolo zrušené.':'Automatická platba pre '+u.name+' bola vypnutá.')+' Členstvo platí do konca obdobia.'+kidsPozn,read:false,created_at:nowISO()});
     res.json({ok:true});
   } catch(e){ res.status(500).json({error:e.message}); }
@@ -20610,6 +20625,9 @@ app.post('/api/admin/kids/roster/:id/link', adminAuth, async(req,res)=>{
       const hodiny = (await q.find(db.classes,{active:true, category:'Deti'})).filter(c=>String(c.name||'').includes(r.group));
       if(hodiny.length){ await q.update(db.users,{_id:dieta._id},{$set:{auto_classes:hodiny.map(c=>c._id)}}); await autoKidsBookingsFor({...dieta, auto_classes:hodiny.map(c=>c._id)}).catch(()=>{}); }
     }
+    // Dohodnutá cena zo zoznamu (výnimka Marek 20. 9.) → individuálna cena dieťaťa
+    if(r.custom_price>0) await q.update(db.users,{_id:dieta._id},{$set:{custom_prices:{...(dieta.custom_prices||{}), bronze:+r.custom_price}}});
+    if(r.group && KIDS_SKUPINY.includes(r.group) && !dieta.kids_group) await q.update(db.users,{_id:dieta._id},{$set:{kids_group:r.group}});
     await q.update(db.kids_roster,{_id:r._id},{$set:{linked_user_id:dieta._id, linked_at:nowISO()}});
     if(rodic) await q.insert(db.notifications,{user_id:rodic._id, type:'membership', title:`🧒 ${dieta.name} je v zozname Zumba Kids`,
       body:(vysl.membership?`Členstvo ${vysl.membership.plan} platí do ${vysl.membership.expires_at}. `:'')+`Zapísali sme ${vysl.bookings} odchodených hodín. Dieťa je prihlasované automaticky — upraviť to vieš v karte dieťaťa.`,
@@ -20707,6 +20725,14 @@ const KIDS_PLAN = 'bronze'; // detské členstvo = bežný Bronze na profile die
 // (jednorazovo kartou / hotovosť) je o 10 % drahšie: 49,90 → 54,90 €.
 const KIDS_MANUAL_PRIRAZKA = 0.10;
 function kidsCenaManual(p){ return Math.round(+p*(1+KIDS_MANUAL_PRIRAZKA)*10)/10; }
+// Ceny dieťaťa pre plán: s odberom = cenník alebo dohodnutá cena; bez odberu +10 %,
+// ale dohodnutá (individuálna) cena ostáva ako je — je to výnimka, nie cenník.
+async function kidsCenyDietata(childId, plan_id){
+  const auto = await buyerPlanPrice(childId, plan_id);
+  const d = childId ? await q.one(db.users,{_id:childId}) : null;
+  const dohodnuta = !!(d && d.custom_prices && d.custom_prices[plan_id]!=null && +d.custom_prices[plan_id]>0);
+  return { auto, manual: dohodnuta ? auto : kidsCenaManual(auto), dohodnuta };
+}
 function kidsSkupinaZNazvu(n){ const s=String(n||''); for(const k of KIDS_SKUPINY) if(s.includes(k)) return k; return null; }
 async function kidsHodinySkupin(){
   const DNI=['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
@@ -20759,6 +20785,7 @@ async function detiPrehlad(uid){
       auto_renew: !!c.stripe_subscription_id, odber: c.stripe_subscription_id ? await odberInfo(c) : null, auto_classes: Array.isArray(c.auto_classes)?c.auto_classes:[],
       age: vekDietata(c), age_group: skupinaKids(c),
       skupina, skupina_info: skupiny.find(s=>s.key===skupina)||null,
+      dohodnuta_cena: (c.custom_prices && +c.custom_prices[KIDS_PLAN]>0) ? +c.custom_prices[KIDS_PLAN] : null, // výnimka (Lesanka, Jasnička 35 €)
       upcoming: upcoming.slice(0,3),
       tyzden: upcoming.filter(b=>b.booking_date<=za7).map(b=>({date:b.booking_date, time:b.class_time_start||'', name:b.class_name||'', auto:!!b.auto_kids})),
       attended,
@@ -20801,8 +20828,8 @@ app.get('/api/family/children/:id', auth, async(req,res)=>{
       .sort((a,b)=>String(b.booking_date).localeCompare(String(a.booking_date)))
       .slice(0,60).map(b=>({date:b.booking_date, time:b.class_time_start||'', name:b.class_name||'', attended:b.status==='attended'}));
     // Cena detského členstva: individuálna cena dieťaťa (custom_prices), inak cenník.
-    const price = await buyerPlanPrice(child._id, KIDS_PLAN).catch(()=>MEMBERSHIP_PLANS[KIDS_PLAN].price);
-    res.json({ ...c, skupiny, upcoming, history, plan:{id:KIDS_PLAN, name:MEMBERSHIP_PLANS[KIDS_PLAN].name, price, price_manual:kidsCenaManual(price), prirazka:KIDS_MANUAL_PRIRAZKA},
+    const ceny = await kidsCenyDietata(child._id, KIDS_PLAN).catch(()=>({auto:MEMBERSHIP_PLANS[KIDS_PLAN].price, manual:kidsCenaManual(MEMBERSHIP_PLANS[KIDS_PLAN].price), dohodnuta:false}));
+    res.json({ ...c, skupiny, upcoming, history, plan:{id:KIDS_PLAN, name:MEMBERSHIP_PLANS[KIDS_PLAN].name, price:ceny.auto, price_manual:ceny.manual, dohodnuta:ceny.dohodnuta, prirazka:KIDS_MANUAL_PRIRAZKA},
       kids_group: child.kids_group||null, mesiac_navstev: history.filter(h=>h.attended && h.date>=new Date(Date.now()-30*86400000).toISOString().slice(0,10)).length });
   } catch(e){ res.status(500).json({error:e.message}); }
 });

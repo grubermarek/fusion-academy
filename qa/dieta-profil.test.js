@@ -83,6 +83,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   fs.writeFileSync(path.join(DATA, 'bookings.db'), riadky([
     { _id: 'qaDpAtt1', class_id: 'qaK2a', class_name: 'Zumba Kids 2 (7–14)', class_location: 'Detva', class_time_start: '15:00', user_id: D1, user_name: 'Dorotka Dvojmama', booking_date: den(-6), status: 'attended', attendance_status: 'attended', is_child_booking: true, child_name: 'Dorotka Dvojmama', booked_by: MAMA, auto_kids: true, created_at: den(-7) + 'T10:00:00.000Z' },
   ]));
+  // predbežný zoznam: Lesanka zaplatila 35 € pred 40 dňami (členstvo zo zoznamu už skončilo), Ninka bez platby
+  fs.writeFileSync(path.join(DATA, 'kids_roster.db'), riadky([
+    { _id: 'qaRosLes', name: 'Lesanka', group: 'Kids 2', note: '', attendance: {}, paid: { amount: 35, method: 'cash', date: den(-40), plan_id: 'bronze', tx_id: null }, linked_user_id: null, created_by: ADM, created_at: '2026-09-13T14:58:00.000Z' },
+    { _id: 'qaRosNin', name: 'Ninka', group: 'Kids 2', note: '', attendance: {}, paid: null, linked_user_id: null, created_by: ADM, created_at: '2026-09-13T14:58:00.000Z' },
+  ]));
   fs.writeFileSync(path.join(DATA, 'settings.db'), riadky([
     { _id: 'qaDpSet1', key: 'retro_confirm_v1', value: true, at: '2026-01-01T00:00:00.000Z' },
     { _id: 'qaDpSet2', key: 'noshow_revert_v1', value: true, at: '2026-01-01T00:00:00.000Z' },
@@ -162,6 +167,25 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok('vypnutie automatickej platby dieťaťa: oznam rodičovi spomína 54,90 € a ručnú platbu', canc.status === 200 && ozn.length === 1 && /54,90/.test(ozn[0].body) && /Dorotka/.test(ozn[0].body), JSON.stringify(ozn.map(n => n.body)));
     const ov3 = await j('/api/family/overview', {}, mj);
     ok('prehľad po vypnutí: dieťa 1 bez odberu, členstvo beží ďalej', !ov3.d.children.find(c => c.id === D1).auto_renew && ov3.d.children.find(c => c.id === D1).membership.active, JSON.stringify(ov3.d.children.find(c => c.id === D1).membership));
+
+    // ── 6) výnimka (Marek 20. 9.: „Lesanka a Jasnička majú jedinú výnimku 35 €, inak všetci 49,90") ──
+    const aj = {};
+    await j('/api/login', { method: 'POST', body: { email: 'qa.dp.admin@qa-biz.local', password: 'Heslo123!' } }, aj);
+    const ros = await j('/api/kids/roster', {}, aj);
+    const les = (ros.d.rows || []).find(r => r.name === 'Lesanka');
+    ok('migrácia: Lesanka v zozname má výnimku 35 €, Ninka nie', les && les.custom_price === 35 && !(ros.d.rows.find(r => r.name === 'Ninka') || {}).custom_price, JSON.stringify(ros.d.rows && ros.d.rows.map(r => [r.name, r.custom_price])));
+    // rodič založí profil Lesanky, admin ju prepojí → dohodnutá cena prejde na dieťa
+    const nova = await j('/api/family/children', { method: 'POST', body: { name: 'Lesanka Dvojmama', birth_date: '2016-02-02' } }, mj);
+    const link = await j('/api/admin/kids/roster/' + les._id + '/link', { method: 'POST', body: { user_id: nova.d.id } }, aj);
+    const uLes = rd('users.db').find(u => u._id === nova.d.id);
+    ok('prepojenie: dieťa má custom_prices.bronze 35 a skupinu zo zoznamu', link.status === 200 && uLes && uLes.custom_prices && uLes.custom_prices.bronze === 35 && uLes.kids_group === 'Kids 2', JSON.stringify(link.d) + ' ' + JSON.stringify(uLes && [uLes.custom_prices, uLes.kids_group]));
+    const detLes = await j('/api/family/children/' + nova.d.id, {}, mj);
+    ok('profil Lesanky: cena 35 s odberom aj bez (dohodnutá, bez prirážky)', detLes.d.plan.price === 35 && detLes.d.plan.price_manual === 35 && detLes.d.plan.dohodnuta === true, JSON.stringify(detLes.d.plan));
+    // hotovosť pre Lesanku = 35 (nie 38,50); členstvo zo zoznamu je 35 € od 1. 9. → skončilo, nákup prejde
+    const buyLes = await j('/api/membership/buy', { method: 'POST', body: { plan_id: 'bronze', payment_method: 'manual', for_child_id: nova.d.id } }, mj);
+    ok('hotovosť pre Lesanku: 35 € (dohodnutá cena, žiadna prirážka)', buyLes.status === 200 && Math.abs(buyLes.d.final_price - 35) < 0.001, 'HTTP ' + buyLes.status + ' ' + JSON.stringify(buyLes.d));
+    const ovL = await j('/api/family/overview', {}, mj);
+    ok('prehľad: Lesanka má dohodnuta_cena 35, ostatné deti nie', ovL.d.children.find(c => c.id === nova.d.id).dohodnuta_cena === 35 && ovL.d.children.filter(c => c.id !== nova.d.id).every(c => !c.dohodnuta_cena), JSON.stringify(ovL.d.children.map(c => [c.name, c.dohodnuta_cena])));
   } catch (e) { failed++; console.log('  ❌ výnimka: ' + (e.stack || e.message)); }
   finally {
     proc.kill();

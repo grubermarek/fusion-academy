@@ -111,7 +111,7 @@ async function load(){
       <div class="row" style="border:0"><span>🔄 Automatická platba · mesačne</span><b style="color:var(--gold);font-size:1.1rem">${eur(D.plan.price)}</b></div>
       <a class="btn gold" id="payBtn" href="#" onclick="zaplat();return false">Zaplatiť a prihlásiť do skupiny</a>
       <div style="text-align:center;margin-top:8px"><button class="link" onclick="inePlatby()">Iné možnosti platby (hotovosť, promo kód)</button></div>
-      <p class="note">Platba kartou sa obnovuje každý mesiac sama, vypnúť ju vieš kedykoľvek. Bez automatickej platby (jednorazovo alebo v hotovosti) stojí Zumba Kids <b>${eur(D.plan.price_manual)}</b>, teda o ${Math.round((D.plan.prirazka||0.1)*100)} % viac. Faktúru dostaneš ty ako rodič.</p>`;
+      <p class="note">Platba kartou sa obnovuje každý mesiac sama, vypnúť ju vieš kedykoľvek. ${D.plan.dohodnuta?`Máš dohodnutú cenu <b>${eur(D.plan.price)}</b> — platí aj pri platbe v hotovosti.`:`Bez automatickej platby (jednorazovo alebo v hotovosti) stojí Zumba Kids <b>${eur(D.plan.price_manual)}</b>, teda o ${Math.round((D.plan.prirazka||0.1)*100)} % viac.`} Faktúru dostaneš ty ako rodič.</p>`;
   }
 
   // ── najbližšie hodiny ──
@@ -175,7 +175,8 @@ function zaplatOdber(){
 async function vypniOdber(){
   // Marek 20. 9.: pri vypnutí upozorniť, že ručná platba je o 10 % drahšia
   const pr=Math.round((D.plan.prirazka||0.1)*100);
-  if(!confirm('Vypnúť automatickú platbu pre '+D.name+'?\n\nČlenstvo platí do konca zaplateného obdobia. Bez automatickej platby stojí Zumba Kids '+eur(D.plan.price_manual)+' mesačne namiesto '+eur(D.plan.price)+' (o '+pr+' % viac) a každý mesiac ho treba zaplatiť ručne.')) return;
+  const cenaTxt=D.plan.dohodnuta?'Dohodnutá cena '+eur(D.plan.price)+' ostáva, ale každý mesiac ho treba zaplatiť ručne.':'Bez automatickej platby stojí Zumba Kids '+eur(D.plan.price_manual)+' mesačne namiesto '+eur(D.plan.price)+' (o '+pr+' % viac) a každý mesiac ho treba zaplatiť ručne.';
+  if(!confirm('Vypnúť automatickú platbu pre '+D.name+'?\n\nČlenstvo platí do konca zaplateného obdobia. '+cenaTxt)) return;
   const r=await api('/api/stripe/subscribe/cancel',{method:'POST',body:{member_id:D.id, reason:'other', note:'rodič vypol odber dieťaťa'}});
   if(r.ok){ toast('Odber vypnutý'); load(); } else toast(r.error||'Chyba');
 }

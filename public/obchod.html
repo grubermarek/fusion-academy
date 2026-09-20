@@ -532,12 +532,14 @@ function recalc(){
   const renew=document.getElementById('mRenew')?.checked;
   // Dieťa bez automatickej platby: o 10 % drahšie (Marek 20. 9.) — 49,90 → 54,90 €
   const kid=CHILDREN.find(x=>x.id===CUR.child_id);
-  const kidsManual=!!(kid && KIDSP && PLANS[CUR.id]?.type!=='bundle' && !renew);
-  const cena=kidsManual?Math.round(CUR.price*(1+(KIDSP.prirazka||0.1))*10)/10:CUR.price;
+  // Dohodnutá cena dieťaťa (výnimka) platí s odberom aj bez neho — bez prirážky
+  const dohodnuta=!!(kid && kid.dohodnuta_cena>0 && CUR.id===KIDSP?.id);
+  const kidsManual=!!(kid && KIDSP && PLANS[CUR.id]?.type!=='bundle' && !renew && !dohodnuta);
+  const cena=dohodnuta?kid.dohodnuta_cena:(kidsManual?Math.round(CUR.price*(1+(KIDSP.prirazka||0.1))*10)/10:CUR.price);
   const cEl=document.getElementById('mCena'); if(cEl) cEl.textContent=eur(cena);
   const kn=document.getElementById('mKidsNote');
   if(kn){ if(kid && KIDSP && PLANS[CUR.id]?.type!=='bundle'){ kn.style.display='block';
-      kn.textContent=kidsManual?'⚠️ Bez automatickej platby je Zumba Kids o '+Math.round((KIDSP.prirazka||0.1)*100)+' % drahšie ('+eur(cena)+' namiesto '+eur(CUR.price)+').':'🔄 Automatická platba každý mesiac, vypnúť ju vieš kedykoľvek v profile dieťaťa. Bez nej stojí Zumba Kids '+eur(Math.round(CUR.price*(1+(KIDSP.prirazka||0.1))*10)/10)+'.'; }
+      kn.textContent=dohodnuta?'🤝 Dohodnutá cena '+eur(cena)+' — platí s automatickou platbou aj bez nej.':kidsManual?'⚠️ Bez automatickej platby je Zumba Kids o '+Math.round((KIDSP.prirazka||0.1)*100)+' % drahšie ('+eur(cena)+' namiesto '+eur(CUR.price)+').':'🔄 Automatická platba každý mesiac, vypnúť ju vieš kedykoľvek v profile dieťaťa. Bez nej stojí Zumba Kids '+eur(Math.round(CUR.price*(1+(KIDSP.prirazka||0.1))*10)/10)+'.'; }
     else kn.style.display='none'; }
   const promoD=PROMO?Math.min(PROMO.discount,cena):0;
   const base=Math.max(0,cena-promoD);
