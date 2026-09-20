@@ -1260,8 +1260,19 @@ const ACCESS_LABELS = {
 };
 function accessLabel(m){ return ACCESS_LABELS[m] || null; }
 
+// Počty v hlavičke („Prihlásení", „Voľné miesta") sa berú z práve načítaného zoznamu,
+// nie z rozvrhu načítaného pri otvorení. Marek 20. 9.: po ručnom dopísaní dvoch žien
+// mal zoznam 12 riadkov, ale hlavička stále ukazovala 10.
+function aktualizujHlavicku(pocet){
+  const stat=document.querySelectorAll('#attHeader .ah-stat .val');
+  if(stat.length<2) return;
+  const cls=_allClasses.find(c=>c._id===_currentClassId)||{};
+  stat[0].textContent=pocet;
+  stat[1].textContent=Math.max(0,(cls.capacity||0)-pocet);
+}
 function renderAttendees(list){
   const el = document.getElementById('attendeeItems');
+  aktualizujHlavicku(list.length);
   if(!list.length){
     el.innerHTML='<div class="empty">📋 Žiadni prihlásení účastníci.<br><small>Môžete pridať klienta manuálne nižšie.</small></div>';
     return;

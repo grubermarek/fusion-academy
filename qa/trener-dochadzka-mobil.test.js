@@ -83,6 +83,12 @@ const spi = ms => new Promise(r => setTimeout(r, ms));
         return { pretec, stav, vysky, stavVyska, scrollX, texty, n: rows.length, head: getComputedStyle(document.querySelector('.att-head')).display };
       });
       ok('6 klientok v zozname', m.n === 6, String(m.n));
+      // Marek 20. 9.: po ručnom dopísaní dvoch žien mal zoznam 12 riadkov, ale hlavička
+      // „Prihlásení" ostala na 10 (brala sa z rozvrhu načítaného pri otvorení). Teraz zo zoznamu.
+      const hl = await p.evaluate(() => [...document.querySelectorAll('#attHeader .ah-stat .val')].map(e => e.textContent.trim()));
+      ok('hlavička „Prihlásení" sedí so zoznamom (6) a voľné miesta 24', hl[0] === '6' && hl[1] === '24', JSON.stringify(hl));
+      const hl2 = await p.evaluate(() => { renderAttendees(_attendees.concat([_attendees[0]])); const v = [...document.querySelectorAll('#attHeader .ah-stat .val')].map(e => e.textContent.trim()); renderAttendees(_attendees); return v; });
+      ok('po pridaní riadku sa hlavička prepočíta (7 / 23)', hl2[0] === '7' && hl2[1] === '23', JSON.stringify(hl2));
       ok('nič nepreteká za okraj zoznamu', m.pretec.length === 0, m.pretec.slice(0, 6).join(' | '));
       ok('stránka sa neposúva do strany', !m.scrollX);
       if (vp.width < 900) {
