@@ -222,8 +222,16 @@ async function finishRecording(slug, e) {
   fs.rmSync(e.liveDir, { recursive: true, force: true });
   const ended_at = nowISO();
   const r = await finalizeFile(slug, e.partFile);
-  const preview_url = r.file ? await makePreview(slug, path.join(e.recDir, r.file)) : null;
-  if (r.file) { try { await r2Upload(slug, r.file, path.join(e.recDir, r.file)); } catch (err) { log('⚠️  R2 upload zlyhal, záznam ostáva lokálne:', err.message); } }
+  const finalPath = r.file ? path.join(e.recDir, r.file) : null;
+  if (finalPath) chranene.add(finalPath);
+  const preview_url = r.file ? await makePreview(slug, finalPath) : null;
+  let stratene = false;
+  if (r.file) {
+    try { await r2Upload(slug, r.file, finalPath); }
+    catch (err) { log('⚠️  R2 upload zlyhal, záznam ostáva lokálne:', err.message); if (!fs.existsSync(finalPath)) stratene = true; }
+    if (!fs.existsSync(finalPath)) chranene.delete(finalPath);   // po nahratí (lokálny súbor zmazaný) už ochrana netreba
+  }
+  if (stratene) { log('⛔ Záznam sa nepodarilo uložiť — súbor chýba:', slug + '/' + r.file); await hook('stop', { slug, name: e.name, started_at: e.started_at, ended_at, file: null, url: null, preview_url, lost: true }); return; }
   await hook('stop', { slug, name: e.name, started_at: e.started_at, ended_at, file: r.file, size: r.size, duration_s: r.duration_s,
     url: r.file ? `/rec/${slug}/${r.file}` : null, preview_url });
   uvolniMiesto().catch(() => {});
@@ -308,6 +316,7 @@ async function adoptOrphans() {
         const ended_at = fs.statSync(path.join(dir, fn)).mtime.toISOString();
         log('♻️  Osirelý záznam:', s + '/' + fn);
         const r = await finalizeFile(s, path.join(dir, fn));
+        if (r.file) chranene.add(path.join(dir, r.file));
         const preview_url = r.file ? await makePreview(s, path.join(dir, r.file)) : null;
         if (r.file) { try { await r2Upload(s, r.file, path.join(dir, r.file)); } catch (err) { log('⚠️  R2 upload zlyhal, záznam ostáva lokálne:', err.message); } }
         if (r.file) await hook('stop', { slug: s, name: '', started_at, ended_at, file: r.file, size: r.size, duration_s: r.duration_s, url: `/rec/${s}/${r.file}`, preview_url, adopted: true });
@@ -333,8 +342,11 @@ function recordingsList() {
 // Pred štartom vysielania musí ostať rezerva na celú hodinu (RESERVE_MB), inak by
 // nahrávka skončila v polovici na plnom disku — vtedy sa uvoľní aj najnovší záznam.
 const RESERVE_BYTES = +(process.env.RESERVE_MB || 3000) * 1048576;
+// Súbory, ktoré ešte čakajú na nahratie do R2 (20. 9.: technika 64 min zmazaná 3 s po
+// skončení, keď sa spustila Zumba a rezerva pred hodinou vzala „najstarší" súbor)
+const chranene = new Set();
 async function uvolniMiesto(predStartom = false) {
-  let list = recordingsList().sort((a, b) => a.mtime - b.mtime);
+  let list = recordingsList().filter(f => !chranene.has(f.path)).sort((a, b) => a.mtime - b.mtime);
   let total = list.reduce((s, f) => s + f.size, 0);
   const limit = predStartom ? Math.max(0, MAX_BYTES - RESERVE_BYTES) : MAX_BYTES;
   if (total > limit) log('⚠️  Záznamy zaberajú', Math.round(total / 1048576), 'MB, limit', Math.round(limit / 1048576), 'MB' + (predStartom ? ' (rezerva pred hodinou)' : '') + ' — mažem najstaršie');
@@ -357,6 +369,7 @@ async function r2Upload(slug, file, localPath) {
     partSize: 64 * 1048576, queueSize: 2, leavePartsOnError: false });
   await up.done();
   fs.unlinkSync(localPath);
+  chranene.delete(localPath);
   r2Cache.at = 0;
   log('☁️  R2 hotovo:', slug + '/' + file);
   return true;

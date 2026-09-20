@@ -16855,6 +16855,7 @@ app.post('/api/media/hook', mediaService, async(req,res)=>{
       const keys=new Set(_liveKeysCache.keys); keys.delete(String(slug));
       _liveKeysCache={at:Date.now(), keys};
       io.emit('online_live',{slug:String(slug), name:cls?cls.name:name, live:false});
+      if(req.body.lost) console.error('⛔ Media: záznam '+(cls?cls.name:slug)+' sa NEULOŽIL (súbor chýba) — v appke sa neeviduje');
       if(file && url){
         // Záznam kratší ako 3 minúty je skúška spojenia, nie hodina — do archívu nepatrí,
         // ale súbor na media serveri sa nechá zmazať retencii.
@@ -16892,7 +16893,8 @@ async function pokrytieZaznamu(cls, started_at, ended_at){
   // (18. 9.: kľúč vznikol na nedeľnej technike, vysielalo sa v piatok — záznam patrí piatku.)
   const sibs=(await q.find(db.classes,{category:'Online', active:true}))
     .filter(c=>c.stream_key===cls.stream_key && c.day_of_week===a.dow)
-    .filter(c=>{ const st=toMin(c.time_start), en=Math.max(toMin(c.time_end), st+60); return st < b.min+5 && en > a.min-5; })
+    // prekrytie aspoň 10 minút — 20. 9.: Zumba zapnutá o 19:03 sa 5-min toleranciou „dotkla" techniky (do 19:00)
+    .filter(c=>{ const st=toMin(c.time_start), en=Math.max(toMin(c.time_end), st+60); return Math.min(en, b.min) - Math.max(st, a.min) >= 10; })
     .sort((x,y)=>toMin(x.time_start)-toMin(y.time_start));
   if(!sibs.length) return fallback;
   const kinds=[...new Set(sibs.map(c=>typTreningu(c.name)))];
@@ -16901,7 +16903,7 @@ async function pokrytieZaznamu(cls, started_at, ended_at){
 // Jednorazovo (19. 9.): záznamy priradiť podľa skutočného času vysielania
 setTimeout(async()=>{
   try{
-    if(await q.one(db.settings,{key:'recordings_reattribute_20260919'})) return;
+    if(await q.one(db.settings,{key:'recordings_reattribute_20260920'})) return;
     let n=0;
     for(const r of await q.find(db.recordings,{})){
       const c=await q.one(db.classes,{_id:r.class_id}); if(!c) continue;
@@ -16911,7 +16913,7 @@ setTimeout(async()=>{
         city:mestoHodiny(p.primary), kind:typTreningu(p.primary.name), ...(auto?{title:p.title||null}:{}) }});
       n++;
     }
-    await q.insert(db.settings,{key:'recordings_reattribute_20260919', value:true, at:nowISO()});
+    await q.insert(db.settings,{key:'recordings_reattribute_20260920', value:true, at:nowISO()});
     if(n) console.log('📼 Záznamy prepočítané podľa času vysielania: '+n);
   }catch(e){ console.error('reattribute recordings:', e.message); }
 }, 30000);
