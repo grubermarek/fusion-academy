@@ -5274,6 +5274,21 @@ app.post('/api/admin/meta-pixel', adminAuth, async(req,res)=>{
     res.json({ok:true, pixel_id:id});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
+// CAPI token pre nový dataset — zapisuje sa prihlásený admin priamo z prehliadača
+// (token nikdy neprechádza cez chat ani git, rovnako ako meta_ads_token).
+app.post('/api/admin/meta-capi-token', adminAuth, async(req,res)=>{
+  try{
+    const t=String(req.body?.token||'').trim();
+    if(!/^EAA[0-9A-Za-z]{50,}$/.test(t)) return res.status(400).json({error:'Token nevyzerá platne (má začínať EAA...).'});
+    const existing=await q.one(db.settings,{key:'meta_capi_token'});
+    if(existing) await q.update(db.settings,{_id:existing._id},{$set:{value:t, at:nowISO()}});
+    else await q.insert(db.settings,{key:'meta_capi_token', value:t, at:nowISO()});
+    _metaTokenCache=t;
+    auditLog(req,'meta_capi_token','dataset',{dlzka:existing?String(existing.value||'').length:0},{dlzka:t.length},'').catch(()=>{});
+    console.log('📘 CAPI token aktualizovaný ('+t.length+' znakov)');
+    res.json({ok:true, len:t.length});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 app.get('/api/admin/meta-pixel', adminAuth, async(req,res)=>{
   try{ res.json({ok:true, pixel_id:await getMetaPixelId(), z_env:!!process.env.META_PIXEL_ID, capi:!!(await getMetaCapiToken())}); }
   catch(e){ res.status(500).json({error:e.message}); }
