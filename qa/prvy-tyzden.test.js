@@ -7,7 +7,8 @@
  *  - /api/me nesie stav skúšky (nárok / beží / využitá), /api/config prepínač
  *  - samoobslužná rezervácia bez krytia → 402 membership_required + trial_available, žiadna prvá hodina zadarmo
  *  - kiosk check-in bez krytia → otázka na hotovosť (prvá zdarma sa nedáva), krytie prva_zdarma=false
- *  - pozvánka pre hostí a landing bez účtu → 410 s odkazom na registráciu; /prva-hodina presmeruje
+ *  - pozvánka pre hostí bez účtu → 410 s odkazom na registráciu; landing /prva-hodina (od 19. 9.)
+ *    si účet založí sám (e-mail povinný) a ponúkne skúšku
  *  - /api/stripe/trial: nárok (nie admin/tréner/dieťa, nie po členstve, nie dvakrát), záznam platby 0 €
  *  - webhook checkout.session.completed (no_payment_required, trial) → Bronze na 7 dní, trial_used,
  *    odber na zázname, oznam + mail, nič v tržbách; opakovaný webhook nezdvojí
@@ -121,10 +122,12 @@ async function start(PORT, DATA, env) {
     const inv = await j('/api/invite/QAPTSP/book', { method: 'POST', body: { name: 'Hana Hosť', contact: 'hana.host@qa-biz.local', class_id: 'qaPtZumbaBud' } });
     ok('pozvánka pre hostí → 410 + registrácia s kódom', inv.status === 410 && inv.d.trial === true && /ref=QAPTSP/.test(inv.d.register_url || '') && /QAPTSP/.test(inv.d.error), JSON.stringify(inv.d));
     ok('hosť sa nevytvoril', !rd('users.db').some(u => u.email === 'hana.host@qa-biz.local'));
+    // Od 19. 9. landing beží aj so skúškou: účet vznikne na pozadí a ďalší krok je trial
     const land = await j('/api/first-class/book', { method: 'POST', body: { name: 'Lea Landing', email: 'lea.landing@qa-biz.local', class_id: 'qaPtZumbaBud' } });
-    ok('landing bez účtu → 410 + registrácia', land.status === 410 && land.d.trial === true, JSON.stringify(land.d));
+    ok('landing založí účet s heslom a ponúkne skúšku', land.status === 200 && land.d.ok && land.d.is_new === true && land.d.next === 'trial' && !!land.d.heslo, JSON.stringify(land.d));
+    ok('landing bez e-mailu (len telefón) neprejde', (await j('/api/first-class/book', { method: 'POST', body: { name: 'Tel Landing', kontakt: '0901 222 333', class_id: 'qaPtZumbaBud' } })).status === 400);
     const ph = await fetch(BASE + '/prva-hodina', { redirect: 'manual' });
-    ok('/prva-hodina presmeruje na registráciu', ph.status === 302 && /^\/\?src=prva-hodina/.test(ph.headers.get('location') || ''), ph.status + ' ' + ph.headers.get('location'));
+    ok('/prva-hodina je landing (200)', ph.status === 200, String(ph.status));
     // kiosk
     const kcfg = await j('/api/admin/kiosk', {}, adm); const detva = (kcfg.d.studios || []).find(x => /detva/i.test(x.slug + ' ' + x.city));
     await j('/api/admin/kiosk/' + detva.slug, { method: 'PUT', body: { enabled: true } }, adm);

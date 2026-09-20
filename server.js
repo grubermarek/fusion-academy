@@ -4447,16 +4447,13 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
     const vyrobHeslo=()=>'Zumba'+String(Math.floor(1000+Math.random()*9000));
     const name=String(req.body.name||'').trim().slice(0,80);
     let phone=String(req.body.phone||'').trim().slice(0,30);
-    // Jedno pole „e-mail alebo telefón" (Marek 19. 9.) — kto dá len číslo, dostane účet bez e-mailu
+    // E-mail je POVINNÝ (Marek 20. 9.). Do 20. 9. stačilo telefónne číslo (účet
+    // t<číslo>@bez-emailu.local), lenže na takú adresu sa mail neposiela — kto prešiel
+    // rovno do Stripe, sa svoje vygenerované heslo nemal ako dozvedieť.
     const kontakt=String(req.body.kontakt||req.body.email||'').trim().slice(0,120);
-    let email=kontakt.toLowerCase(), bezEmailu=false;
-    if(kontakt && !kontakt.includes('@')){
-      const cis=kontakt.replace(/\D/g,'');
-      if(cis.length<9 || cis.length>15) return res.status(400).json({error:'Zadaj e-mail alebo telefónne číslo, nech ti vieme poslať potvrdenie.'});
-      phone=phone||kontakt; email='t'+cis+'@bez-emailu.local'; bezEmailu=true;
-    }
+    const email=kontakt.toLowerCase();
     if(name.length<2) return res.status(400).json({error:'Napíš nám svoje meno 🙂'});
-    if(!bezEmailu && !/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return res.status(400).json({error:'Zadaj platný e-mail alebo telefón — pošleme ti potvrdenie rezervácie.'});
+    if(!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return res.status(400).json({error:'Zadaj platný e-mail — pošleme ti naň potvrdenie rezervácie aj prihlásenie do appky.'});
     const cls=await q.one(db.classes,{_id:String(req.body.class_id||'')});
     if(!cls||!cls.active||cls.category==='Online') return res.status(404).json({error:'Hodina nenájdená'});
     const bdate=String(req.body.booking_date||displayNextDateForDay(cls.day_of_week));
@@ -4466,9 +4463,6 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
 
     const attr=spojZdroj(req, req.body.attribution); const clean=v=>String(v||'').slice(0,300);
     let u=await q.one(db.users,{email});
-    if(!u && bezEmailu){ const kon=email.slice(1).split('@')[0].slice(-9);
-      const kand=(await q.find(db.users,{})).filter(x=>!x.is_child && String(x.phone||'').replace(/\D/g,'').endsWith(kon));
-      if(kand.length===1) u=kand[0]; }
     const isNew=!u;
     let heslo=null;
     if(u){
@@ -4485,7 +4479,7 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
       const code='FC'+Math.random().toString(36).slice(2,8).toUpperCase();
       if(skuska) heslo=vyrobHeslo();
       u=await q.insert(db.users,{ name, email, phone, password: heslo ? await bcrypt.hash(heslo,10) : null, referral_code:code, sponsor_id:null,
-        bez_emailu:bezEmailu||undefined, funnel_vid:citajCookie(req,VID_COOKIE)||null, landing_variant:variant||undefined,
+        funnel_vid:citajCookie(req,VID_COOKIE)||null, landing_variant:variant||undefined,
         rank:1, is_admin:false, active:true, user_type:'lead', bank_account:'', notes:'', visit_count:0,
         referral_credit:0, lead_source, city:cls.location||'',
         utm_source:clean(attr.utm_source), utm_medium:clean(attr.utm_medium), utm_campaign:clean(attr.utm_campaign),
@@ -4501,7 +4495,7 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
     if(skuska && !isNew && !u.password){
       heslo=vyrobHeslo();
       await q.update(db.users,{_id:u._id},{$set:{password:await bcrypt.hash(heslo,10), claimed:true, pw_reset:false, landing_variant:variant,
-        funnel_vid:u.funnel_vid||citajCookie(req,VID_COOKIE)||null, ...(bezEmailu&&!u.phone?{phone}:{})}});
+        funnel_vid:u.funnel_vid||citajCookie(req,VID_COOKIE)||null}});
     }
     if(!u.manage_token){ u.manage_token='MG'+Math.random().toString(36).slice(2,12).toUpperCase();
       await q.update(db.users,{_id:u._id},{$set:{manage_token:u.manage_token}}); }
@@ -4532,7 +4526,7 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
       zapisKrok(req,'booking_ok',{stranka:'/prva-hodina', uid:u._id, variant}).catch(()=>{});
       if(isNew){
         zapisKrok(req,'register_ok',{stranka:'/prva-hodina', uid:u._id, variant}).catch(()=>{});
-        metaCapi('CompleteRegistration',{email: bezEmailu?undefined:email, fbclid:clean(attr.fbclid), fbp:clean(attr.fbp), click_at:attr.click_at,
+        metaCapi('CompleteRegistration',{email, fbclid:clean(attr.fbclid), fbp:clean(attr.fbp), click_at:attr.click_at,
           external_id:u._id, ip:klientIp(req), ua:req.headers['user-agent'], event_id:'reg_'+u._id, source_url:clean(attr.landing)||undefined}).catch(()=>{});
       }
     } else zapisKrok(req,'booking_ok',{stranka:'/prva-hodina', uid:u._id}).catch(()=>{});
@@ -4547,7 +4541,7 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
       event_id:clean(attr.event_id_lead)||undefined, source_url:clean(attr.landing)||undefined}).catch(()=>{});
     metaCapi('Schedule',{email, fbclid:clean(attr.fbclid), external_id:u._id, ip:klientIp(req), ua:req.headers['user-agent'],
       event_id:clean(attr.event_id_schedule)||undefined, source_url:clean(attr.landing)||undefined}).catch(()=>{});
-    const hesloText = heslo ? '<p>Do appky sa prihlásiš '+(bezEmailu?'telefónom <b>'+phone+'</b>':'e-mailom <b>'+email+'</b>')+' a heslom <b>'+heslo+'</b>. Zmeniť si ho môžeš v nastaveniach.</p>' : '';
+    const hesloText = heslo ? '<p>Do appky sa prihlásiš e-mailom <b>'+email+'</b> a heslom <b>'+heslo+'</b>. Zmeniť si ho môžeš v nastaveniach.</p>' : '';
     const dalsiKrok = variant==='bez_karty'
       ? '<p><b>Tvoj prvý týždeň zadarmo beží</b> — na hodinu príď len so športovým oblečením. Po týždni sa rozhodneš, či pokračuješ.</p>'
       : '<p><b>Ešte jeden krok:</b> aktivuj si prvý týždeň zadarmo v appke — karta sa len uloží, nič sa nestrhne a zrušíš kedykoľvek. Bez skúšky sa hodina platí na mieste.</p>';
@@ -4569,7 +4563,7 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
       +'<p>Nemôžeš prísť? Termín zmeníš alebo zrušíš cez odkaz nižšie.</p>',
       '📍 Detaily / zmena rezervácie', APP_URL+'/invite/FUSION?manage='+u.manage_token), {priority:2, template:'first_class_confirm'}).catch(()=>{});
     res.json({ok:true, booking_id:booking._id, is_new:isNew, manage_token:u.manage_token,
-      next:dalej, variant, heslo:heslo||undefined, bez_emailu:bezEmailu, kontakt: bezEmailu?phone:email,
+      next:dalej, variant, heslo:heslo||undefined, kontakt: email,
       skuska: (skuskaStav&&skuskaStav.ok) ? {ends_at:skuskaStav.ends_at} : null,
       detail:{ name:cls.name, emoji:cls.emoji||'💃', city:cls.location, address:cls.address||'',
         date:bdate, day_name:DAYS_SK[cls.day_of_week], time_start:cls.time_start, time_end:cls.time_end||'' }});

@@ -89,7 +89,7 @@ footer a{color:#8f8a7d}
       <div>✓ vhodné aj pre úplné začiatočníčky</div>
     </div>
     <a class="cta" href="#terminy" onclick="krok('lp_cta')">VYBRAŤ SI PRVÚ HODINU ↓</a>
-    <div class="hint">Rezervácia trvá 30 sekúnd — stačí meno a e-mail alebo telefón.</div>
+    <div class="hint">Rezervácia trvá 30 sekúnd — stačí meno a e-mail.</div>
   </div>
 
   <div class="cities" id="cityChips"></div>
@@ -104,11 +104,11 @@ footer a{color:#8f8a7d}
     <div id="formDetail" style="font-size:.88rem;color:var(--muted);margin-bottom:4px"></div>
     <label>Meno a priezvisko</label>
     <input id="fName" placeholder="Jana Nováková" autocomplete="name">
-    <label>E-mail alebo telefón</label>
-    <input id="fKontakt" placeholder="jana@email.sk alebo 0900 123 456" autocomplete="email" inputmode="email">
+    <label>E-mail</label>
+    <input id="fKontakt" type="email" placeholder="jana@email.sk" autocomplete="email" inputmode="email">
     <button class="cta" style="margin-top:14px" id="fBtn" onclick="submitBooking()">REZERVOVAŤ MIESTO</button>
     <div class="msg" id="fMsg"></div>
-    <div class="hint" id="formHint">Odoslaním súhlasíš so <a href="/ochrana-sukromia" target="_blank" rel="noopener">spracovaním údajov</a>. Heslo do appky ti pošleme na kontakt.</div>
+    <div class="hint" id="formHint">Odoslaním súhlasíš so <a href="/ochrana-sukromia" target="_blank" rel="noopener">spracovaním údajov</a>. Prihlásenie do appky ti pošleme e-mailom.</div>
   </div>
 
   <!-- Krok 2 pri skúške s kartou: aktivácia prvého týždňa cez Stripe -->
@@ -122,6 +122,7 @@ footer a{color:#8f8a7d}
     <p style="font-size:.9rem;color:var(--muted)">Uložíš si kartu, <b style="color:#fff">teraz sa nestrhne nič</b>. Sedem dní chodíš na všetky hodiny zadarmo. Ak ti to nesadne, zrušíš jedným klikom v appke a neplatíš nič.</p>
     <button class="cta" style="margin-top:14px" id="trialBtn" onclick="aktivujSkusku()">ZAPNÚŤ TÝŽDEŇ ZADARMO</button>
     <div class="cena">Po skúške <span class="cenaMes">49,90</span> €/mes. · zrušenie kedykoľvek pred prvou platbou</div>
+    <div class="heslo" id="hesloBoxT" style="display:none"></div>
     <div class="msg" id="tMsg"></div>
     <button class="cta ghost" style="margin-top:10px" onclick="preskocSkusku()">Neskôr, teraz len rezervácia</button>
   </div>
@@ -136,14 +137,14 @@ footer a{color:#8f8a7d}
       <div class="bring"><span>💧 voda</span><span>🧣 uterák</span><span>👟 tenisky</span><span>👕 športové oblečenie</span></div>
       <a class="cta" id="calBtn" download="fusion-academy-zumba.ics" href="#">📅 PRIDAŤ DO KALENDÁRA</a>
       <a class="cta ghost" style="margin-top:10px" href="/client-dashboard">Otvoriť appku →</a>
-      <div class="hint" id="doneHint">Detaily ti prišli na kontakt, ktorý si zadala.</div>
+      <div class="hint" id="doneHint">Detaily aj prihlásenie do appky ti prišli e-mailom.</div>
     </div>
   </div>
 
   <div class="card">
     <h2>🤔 AKO TO FUNGUJE</h2>
     <div class="steps" id="kroky">
-      <div class="step"><div class="n">1</div><div><b>Vyberieš si hodinu</b><small>Zaberie to pár sekúnd — meno a kontakt.</small></div></div>
+      <div class="step"><div class="n">1</div><div><b>Vyberieš si hodinu</b><small>Zaberie to pár sekúnd — meno a e-mail.</small></div></div>
       <div class="step"><div class="n">2</div><div><b>Prídeš si zatancovať</b><small>Stačí športové oblečenie, tenisky, voda a uterák.</small></div></div>
       <div class="step"><div class="n">3</div><div><b>Rozhodneš sa až po týždni</b><small id="krok3">Celý prvý týždeň chodíš zadarmo. Potom členstvo od 49,90 € mesačne, zrušíš kedykoľvek.</small></div></div>
     </div>
@@ -180,7 +181,7 @@ async function loadCfg(){
     document.getElementById('ponukaTitul').textContent='PRVÁ HODINA ZADARMO';
     document.getElementById('checks').innerHTML='<div>✓ prvá hodina <b>zdarma</b></div><div>✓ bez záväzkov</div><div>✓ vhodné aj pre začiatočníčky</div>';
     document.getElementById('krok3').textContent='Prvá návšteva je zdarma — bez záväzkov.';
-    document.getElementById('formHint').innerHTML='Potvrdenie ti príde na kontakt. Žiadna platba — prvá hodina je zdarma.';
+    document.getElementById('formHint').innerHTML='Potvrdenie ti príde e-mailom. Žiadna platba — prvá hodina je zdarma.';
   } else if(CFG.variant==='bez_karty'){
     document.getElementById('formHint').innerHTML='Bez karty a bez záväzkov — po týždni sa rozhodneš. Odoslaním súhlasíš so <a href="/ochrana-sukromia" target="_blank" rel="noopener">spracovaním údajov</a>.';
   } else {
@@ -230,9 +231,9 @@ async function submitBooking(){
   const name=document.getElementById('fName').value.trim();
   const kontakt=document.getElementById('fKontakt').value.trim();
   if(!PICK){ msg.className='msg err'; msg.textContent='Najprv si hore vyber termín.'; return; }
-  const jeMail=/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(kontakt), jeTel=kontakt.replace(/\D/g,'').length>=9 && !kontakt.includes('@');
+  const jeMail=/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(kontakt);
   if(name.trim().split(/\s+/).length<2){ msg.className='msg err'; msg.textContent='Napíš prosím meno aj priezvisko.'; krok('register_err',{dovod:'meno'}); return; }
-  if(!jeMail&&!jeTel){ msg.className='msg err'; msg.textContent='Zadaj platný e-mail alebo telefónne číslo.'; krok('register_err',{dovod:'kontakt'}); return; }
+  if(!jeMail){ msg.className='msg err'; msg.textContent='Zadaj platný e-mail — pošleme ti naň potvrdenie aj prihlásenie do appky.'; krok('register_err',{dovod:'email'}); return; }
   const btn=document.getElementById('fBtn'); btn.disabled=true; btn.textContent='Rezervujem…';
   krok('form_submit');
   const cur={};
@@ -262,6 +263,8 @@ async function submitBooking(){
 }
 function ukazTrial(d){
   document.getElementById('trialDetail').innerHTML=detailHtml(d.detail);
+  if(d.heslo){ const h=document.getElementById('hesloBoxT'); h.style.display='block';
+    h.innerHTML='Účet už máš: prihlásiš sa e-mailom <b style="font-size:.95rem">'+esc(d.kontakt)+'</b> a heslom <b>'+esc(d.heslo)+'</b> (poslali sme ti ho aj e-mailom).'; }
   const c=document.getElementById('trialCard'); c.style.display='block'; c.scrollIntoView({behavior:'smooth',block:'start'});
 }
 async function aktivujSkusku(){
@@ -285,8 +288,7 @@ function ukazHotovo(d, bezSkusky){
   if(d.skuska&&d.skuska.ends_at){ document.getElementById('doneTitle').textContent='TVOJ TÝŽDEŇ ZADARMO BEŽÍ!'; document.getElementById('doneSub').textContent='Do '+new Date(d.skuska.ends_at).toLocaleDateString('sk-SK')+' chodíš na všetky hodiny zadarmo.'; }
   else if(bezSkusky){ document.getElementById('doneSub').textContent='Miesto máš rezervované. Prvý týždeň zadarmo si vieš zapnúť kedykoľvek v appke.'; }
   if(d.heslo){ const h=document.getElementById('hesloBox'); h.style.display='block';
-    h.innerHTML='Do appky sa prihlásiš cez <b style="font-size:.95rem">'+esc(d.kontakt)+'</b> a heslo <b>'+esc(d.heslo)+'</b>'+(d.bez_emailu?'':' (poslali sme ti ho aj e-mailom)')+'. Zmeniť si ho môžeš v nastaveniach.'; }
-  if(d.bez_emailu) document.getElementById('doneHint').textContent='Odfoť si prosím heslo — bez e-mailu ti ho nevieme poslať znova. Trénerka ťa pred hodinou kontaktuje telefonicky.';
+    h.innerHTML='Do appky sa prihlásiš e-mailom <b style="font-size:.95rem">'+esc(d.kontakt)+'</b> a heslom <b>'+esc(d.heslo)+'</b> (poslali sme ti ho aj e-mailom). Zmeniť si ho môžeš v nastaveniach.'; }
   const dc=document.getElementById('doneCard'); dc.style.display='block'; dc.scrollIntoView({behavior:'smooth',block:'start'});
 }
 // Návrat zo Stripe po aktivácii skúšky (?stripe=trial&session_id=…) alebo po zrušení (?stripe=trial_cancel)

@@ -2,8 +2,8 @@
  * Lievik stránok + landing /prva-hodina s prvým týždňom zadarmo (19. 9. 2026)
  * Testuje: kroky lievika (POST /api/funnel + serverové kroky), presmerovanie kliku z reklamy
  * z úvodu na landing, rezerváciu z landingu so skúškou (účet s heslom, session, next:'trial'),
- * kontakt telefónom (účet bez e-mailu), režim bez karty (skúška sa zapne hneď), A/B cookie,
- * prihlásenie telefónom, admin štatistiku.
+ * povinný e-mail (telefón účet nezaloží), režim bez karty (skúška sa zapne hneď), A/B cookie,
+ * admin štatistiku.
  *
  * Spustenie:  node qa/lievik-landing.test.js
  */
@@ -96,22 +96,18 @@ const dbLines = (file, needle) => fs.readFileSync(path.join(DATA, file), 'utf8')
     ok('prihlásenie heslom z potvrdenia', lg.d && lg.d.ok);
     await j('/api/logout', { method: 'POST' });
 
-    // 7) kontakt telefónom — účet bez e-mailu; prihlásenie číslom
+    // 7) e-mail je POVINNÝ (Marek 20. 9.) — samotné telefónne číslo účet nezaloží
     delete jar.fa_vid; delete jar.fa_zdroj; delete jar['connect.sid']; delete jar.sid; delete jar['fa.sid'];
     await j('/prva-hodina?utm_source=ig&utm_campaign=qa-tel');
     const other = sc.d.items.find(i => i.class_id !== sess.class_id) || sess;
     const bt = await j('/api/first-class/book', { method: 'POST', body: { name: 'Qa Telefonova', kontakt: '0900 555 666', class_id: other.class_id, booking_date: other.date } });
-    ok('rezervácia telefónom ok (bez e-mailu)', bt.d && bt.d.ok && bt.d.bez_emailu === true && bt.d.kontakt === '0900 555 666' && !!bt.d.heslo);
-    const ut = dbLines('users.db', '@bez-emailu.local').pop();
-    ok('účet má syntetický e-mail + telefón', ut && ut.email === 't0900555666@bez-emailu.local' && ut.phone === '0900 555 666' && ut.bez_emailu === true);
+    ok('rezervácia bez e-mailu odmietnutá (400)', bt.status === 400 && /e-mail/i.test(String(bt.d && bt.d.error)));
+    const bz = await j('/api/first-class/book', { method: 'POST', body: { name: 'Qa Telefonova', kontakt: 'nie-je-mail', class_id: other.class_id, booking_date: other.date } });
+    ok('nezmysel namiesto e-mailu odmietnutý (400)', bz.status === 400);
+    ok('účet bez e-mailu nevznikol', dbLines('users.db', 'Qa Telefonova').length === 0 && dbLines('users.db', '@bez-emailu.local').length === 0);
     const mailLog = fs.existsSync(path.join(DATA, 'mail_log.db')) ? fs.readFileSync(path.join(DATA, 'mail_log.db'), 'utf8') : '';
     ok('potvrdenie e-mailom sa zalogovalo (capture)', mailLog.includes('qa.lievik@qa-biz.local'));
     ok('na syntetický e-mail sa nič neposiela', !mailLog.includes('@bez-emailu.local'));
-    await j('/api/logout', { method: 'POST' });
-    const lgT = await j('/api/login', { method: 'POST', body: { email: '+421 900 555 666', password: bt.d.heslo } });
-    ok('prihlásenie telefónom + heslom', lgT.d && lgT.d.ok);
-    const lgBad = await j('/api/login', { method: 'POST', body: { email: '0900555666', password: 'zle' } });
-    ok('zlé heslo pri telefóne odmietnuté', lgBad.status === 401);
     await j('/api/logout', { method: 'POST' });
 
     // 8) režim bez karty: admin prepne, skúška sa zapne hneď pri rezervácii
