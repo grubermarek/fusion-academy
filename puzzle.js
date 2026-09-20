@@ -720,7 +720,9 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
   });
 
   // ── Admin: nastavenia + prehľad ──
-  app.get('/api/admin/puzzle', adminAuth, async (req, res) => {
+  // Čítanie nastavení pustíme aj servisnému tokenu — po nasadení sa tak dá overiť,
+  // čo appka naozaj beží (railway logy sú stratové). Zapisovať smie len admin.
+  app.get('/api/admin/puzzle', adminAleboServis, async (req, res) => {
     try {
       const c = await cfg();
       const all = await q.find(db.puzzle_solves, {});
