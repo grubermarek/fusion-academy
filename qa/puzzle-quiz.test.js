@@ -163,10 +163,6 @@ const citajDb = f => { try { return fs.readFileSync(path.join(DATA, f), 'utf8').
     ok('21. 9. 2026 pripadá na „Nájdi votrelca" a ďalší je rytmus',
       denRotacie('2026-09-21') === 'votrelec' && denRotacie('2026-09-22') === 'rhythm'
       && denRotacie('2026-09-23') === 'anagram' && denRotacie('2026-09-27') === 'votrelec');
-    // Tento test má v DB vlastnú konfiguráciu, preto výnimku pre 20. 9. kontrolujeme
-    // priamo v predvolených nastaveniach — na prode platia tie.
-    ok('20. 9. 2026 má v predvolbách výnimku, aby sa hra dňa nezmenila',
-      /overrides: { '2026-09-20': 'anagram' }/.test(fs.readFileSync(path.join(KOREN, 'puzzle.js'), 'utf8')));
     ok('sadzby kvízu: 1 bod za odpoveď, bonus 5', cf.d.config.quiz_per_answer === 1 && cf.d.config.quiz_perfect_bonus === 5);
 
     // bonus za včerajšok

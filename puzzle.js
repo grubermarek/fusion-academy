@@ -135,12 +135,20 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
   // Aký typ pripadá na daný deň. Striedame, aby to neomrzelo; admin vie poradie
   // zmeniť (schedule) alebo typ na konkrétny deň natvrdo určiť (overrides).
   const TYPES = ['zip', 'words', 'rhythm', 'anagram', 'quiz', 'votrelec'];
+  // „Nájdi votrelca" pribudol 20. 9. 2026 a rozšíril striedanie z piatich hier na
+  // šesť. Šesťdňové poradie ale posúva aj staršie dni — a to sa nesmie stať: kto
+  // už hru v ten deň hral, nesmie po obnovení stránky dostať inú. Dni pred
+  // ROTACIA_OD preto počítame z pôvodného pätdňového poradia. Na uloženú výnimku
+  // v nastaveniach sa spoľahnúť nedá: admin si tam mohol uložiť vlastné.
+  const ROTACIA_OD = '2026-09-21';
+  const STARE_PORADIE = ['rhythm', 'anagram', 'zip', 'quiz', 'words'];
   function typeForSync(dateStr, conf) {
     const th = themeFor(dateStr);
     if (th && TYPES.includes(th.type)) return th.type;   // tematický deň má prednosť
     const ov = conf && conf.overrides && conf.overrides[dateStr];
     if (ov && TYPES.includes(ov)) return ov;
-    const list = (conf && Array.isArray(conf.schedule) && conf.schedule.length) ? conf.schedule : TYPES;
+    const list = dateStr < ROTACIA_OD ? STARE_PORADIE
+      : (conf && Array.isArray(conf.schedule) && conf.schedule.length) ? conf.schedule : TYPES;
     const days = Math.floor(Date.parse(dateStr + 'T00:00:00Z') / 86400000);
     const t = list[((days % list.length) + list.length) % list.length];
     return t === 'quiz' && KVIZ.OTAZKY.length < KVIZ.KOL ? 'zip' : t;   // bez banky otázok kvíz nejde
@@ -364,10 +372,9 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
                      // s novým výberom sa skladba zopakuje až po ~15 kolách rytmu.
                      // Poradie drží dni: 17. 9. kvíz, 18. 9. osemsmerovka, 19. 9. rytmus,
                      // 20. 9. „Poskladaj slovo", 21. 9. „Spoj čísla", 22. 9. kvíz.
-                     // 20. 9. pribudol šiesty typ „Nájdi votrelca". Šesťdňové poradie posunie
-                     // aj dnešok, preto má 20. 9. výnimku — kto ho už hral, nesmie dostať inú hru.
-                     schedule: ['rhythm', 'anagram', 'zip', 'quiz', 'words', 'votrelec'],
-                     overrides: { '2026-09-20': 'anagram' },
+                     // 20. 9. pribudol šiesty typ „Nájdi votrelca"; staršie dni drží pri
+                     // pôvodnom poradí ROTACIA_OD v typeForSync, nie výnimka v nastaveniach.
+                     schedule: ['rhythm', 'anagram', 'zip', 'quiz', 'words', 'votrelec'], overrides: {},
                      // Rytmus sa boduje inak (Marek 30. 8.): jeden pokus, bod za každú
                      // správnu odpoveď a +5 pre najrýchlejšiu, ktorá má všetkých päť.
                      rhythm_per_answer: 1, rhythm_perfect_bonus: 5,
