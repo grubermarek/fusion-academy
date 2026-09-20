@@ -4418,12 +4418,18 @@ async function firstBookingEligible(u){
 }
 // FUNNEL-002: verejný rozvrh pre acquisition landing — najbližšie prezenčné
 // termíny podľa mesta (bez prihlásenia, bez osobných dát; len kapacita voľné/plné).
+// Landing pozýva dospelú ženu z reklamy na Zumbu — detské kurzy, technika pre pokročilé,
+// online a súkromky sem nepatria. Marek 21. 9.: v Detve boli prvé tri ponúknuté termíny
+// „Zumba Kids 2", „Zumba Kids 1" a „Technický tréning", takže Zumba jej pod tlačidlom
+// „ukázať ďalšie termíny" ostala skrytá. Platí pre zoznam aj pre samotnú rezerváciu.
+const MIMO_LANDING=['deti','online','súkromné','sukromne','technika'];
+const mimoLandingu=c=>MIMO_LANDING.includes(String(c.category||'').toLowerCase())
+  || /rezervácia|kids|deti|technick/i.test(String(c.name||''));
 app.get('/api/first-class/schedule', rlPublic, async(req,res)=>{
   try{
     const CITY_SLUGS={'detva':'Detva','zvolen':'Zvolen','banska-bystrica':'Banská Bystrica','bb':'Banská Bystrica','brezno':'Brezno'};
     const city=CITY_SLUGS[String(req.query.city||'').toLowerCase()]||null;
-    const classes=(await q.find(db.classes,{active:true}))
-      .filter(c=>c.category!=='Online' && !/rezervácia/i.test(String(c.name||'')));
+    const classes=(await q.find(db.classes,{active:true})).filter(c=>!mimoLandingu(c));
     const out=[];
     for(const c of classes){
       const date=displayNextDateForDay(c.day_of_week);
@@ -4460,6 +4466,10 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
     if(!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return res.status(400).json({error:'Zadaj platný e-mail — pošleme ti naň potvrdenie rezervácie aj prihlásenie do appky.'});
     const cls=await q.one(db.classes,{_id:String(req.body.class_id||'')});
     if(!cls||!cls.active||cls.category==='Online') return res.status(404).json({error:'Hodina nenájdená'});
+    // Rovnaké pravidlo ako v zozname — ani priamym odkazom sa nesmie dať rezervovať
+    // detský kurz ani technický tréning (Marek 21. 9.).
+    if(mimoLandingu(cls))
+      return res.status(400).json({error:'Táto hodina nie je určená pre začiatočníčky — vyber si prosím hodinu Zumby.'});
     const bdate=String(req.body.booking_date||displayNextDateForDay(cls.day_of_week));
     if(await q.one(db.class_cancellations,{class_id:cls._id, date:bdate})) return res.status(400).json({error:'Táto hodina je zrušená — vyber si prosím inú.'});
     const booked=(await q.find(db.bookings,{class_id:cls._id, booking_date:bdate})).filter(b=>b.status!=='cancelled').length;
