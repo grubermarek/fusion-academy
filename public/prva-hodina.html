@@ -308,7 +308,7 @@ async function navratZoStripe(){
   else { document.getElementById('doneTitle').textContent='REZERVÁCIU MÁŠ'; document.getElementById('doneSub').textContent='Skúšku si nedokončila — zapnúť si ju vieš kedykoľvek v appke (Nástenka → Prvý týždeň zadarmo).'; document.getElementById('doneDetail').textContent=''; krok('trial_cancel',{dovod:'stripe'}); }
   return true;
 }
-(async()=>{ await loadCfg(); if(!(await navratZoStripe())){ krok('lp_view',{city:CITY||'vsetky'}); load(); } })();
+(async()=>{ await loadCfg(); if(!(await navratZoStripe())){ krok('lp_view',{city:CITY||'vsetky'}); if(window.faScrollTrack) window.faScrollTrack(); load(); } })();
 </script>
 </body>
 </html>

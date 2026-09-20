@@ -105,7 +105,9 @@ async function landingVariant(req,res){
   }
   return v;
 }
-const FUNNEL_KROKY=new Set(['lp_view','lp_city','lp_termin','form_view','form_start','form_submit','register_ok','register_err','booking_ok','trial_open','trial_ok','trial_decline','trial_cancel','video_start','video_half','cta_click']);
+const FUNNEL_KROKY=new Set(['lp_view','lp_city','lp_termin','form_view','form_start','form_submit','register_ok','register_err','booking_ok','trial_open','trial_ok','trial_decline','trial_cancel','video_start','video_half','cta_click',
+  // 21. 9.: ako hlboko dočítala a ako dlho vydržala — rozlíši okamžitý odchod od nezáujmu
+  'scroll_25','scroll_50','scroll_75','scroll_100','odchod']);
 const jeWebview=ua=>/FBAN|FBAV|FB_IAB|Instagram/i.test(String(ua||''));
 async function zapisKrok(req, krok, extra){
   try{
@@ -5216,7 +5218,7 @@ app.get('/api/config', async(req,res)=>{
   const founder = await q.one(db.users,{email:'gruber.marek@gmail.com'});
   res.json({
     stripe_enabled: !!process.env.STRIPE_SECRET_KEY,
-    meta_pixel_id: process.env.META_PIXEL_ID||'',
+    meta_pixel_id: await getMetaPixelId(),
     google_ads_id: process.env.GOOGLE_ADS_ID||'',
     google_client_id: GOOGLE_CLIENT_ID,
     default_sponsor_code: founder?.referral_code || '',
@@ -5227,6 +5229,16 @@ app.get('/api/config', async(req,res)=>{
 // ─── Meta Conversions API (server-side events; needs META_PIXEL_ID + META_CAPI_TOKEN) ───
 // CAPI token sa uklada v DB (settings.meta_capi_token) — nastavuje sa zabezpecenym
 // endpointom /api/meta-token (token ide priamo z prehliadaca do servera, nie cez chat/git).
+// Dataset (pixel) sa dá prepnúť bez zásahu do Railway — 21. 9. 2026 sme museli založiť
+// nový dataset pod reklamným účtom, lebo ten starý patrí portfóliu, do ktorého Meta
+// odmieta presunúť účet. Settings má prednosť pred env.
+let _metaPixelCache;
+async function getMetaPixelId(){
+  if(_metaPixelCache!==undefined) return _metaPixelCache;
+  const s=await q.one(db.settings,{key:'meta_pixel_id'}).catch(()=>null);
+  _metaPixelCache = (s?.value && String(s.value).trim()) || process.env.META_PIXEL_ID || '';
+  return _metaPixelCache;
+}
 let _metaTokenCache;
 async function getMetaCapiToken(){
   if(process.env.META_CAPI_TOKEN) return process.env.META_CAPI_TOKEN;
@@ -5247,6 +5259,24 @@ app.post('/api/meta-token', async(req,res)=>{
     _metaTokenCache=t;
     res.json({ok:true, len:t.length});
   }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Prepnutie datasetu (pixelu) z adminu — ID je verejné číslo, nie tajomstvo.
+app.post('/api/admin/meta-pixel', adminAuth, async(req,res)=>{
+  try{
+    const id=String(req.body?.pixel_id||'').trim();
+    if(!/^\d{10,20}$/.test(id)) return res.status(400).json({error:'ID datasetu je 10 až 20 číslic.'});
+    const existing=await q.one(db.settings,{key:'meta_pixel_id'});
+    if(existing) await q.update(db.settings,{_id:existing._id},{$set:{value:id, at:nowISO()}});
+    else await q.insert(db.settings,{key:'meta_pixel_id', value:id, at:nowISO()});
+    _metaPixelCache=id;
+    auditLog(req,'meta_pixel',id,{pred:existing?existing.value:(process.env.META_PIXEL_ID||null)},{pixel_id:id},'').catch(()=>{});
+    console.log('📘 Dataset prepnutý na '+id);
+    res.json({ok:true, pixel_id:id});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.get('/api/admin/meta-pixel', adminAuth, async(req,res)=>{
+  try{ res.json({ok:true, pixel_id:await getMetaPixelId(), z_env:!!process.env.META_PIXEL_ID, capi:!!(await getMetaCapiToken())}); }
+  catch(e){ res.status(500).json({error:e.message}); }
 });
 // Samostatný token pre ČÍTANIE štatistík kampaní (ads_read) — iný účel než CAPI
 // token vyššie (ten len POSIELA konverzie, nemusí vedieť čítať štatistiky).
@@ -6638,7 +6668,7 @@ async function metaCapi(eventName, {email, value, currency='EUR', fbclid, fbp, e
       fbclid:!!fbclid, click_at:click_at||null, external_id:!!external_id, ip:!!ip, ua:!!ua})+'\n'); }catch(e){}
     return;
   }
-  const pixel=process.env.META_PIXEL_ID, token=await getMetaCapiToken();
+  const pixel=await getMetaPixelId(), token=await getMetaCapiToken();
   if(!pixel||!token) return;
   try {
     const crypto=require('crypto');
@@ -23001,7 +23031,7 @@ app.get('/api/admin/meta-stats', adminAuth, async(req,res)=>{
     const months=Object.entries(monthly).sort((a,b)=>a[0].localeCompare(b[0])).slice(-6);
     const attended=meta.filter(u=>(u.visit_count||0)>0).length;
     res.json({ ok:true, total:meta.length, attended, payers:payerIds.size, revenue,
-      months, pixel_configured:!!process.env.META_PIXEL_ID, capi_configured:!!(await getMetaCapiToken()),
+      months, pixel_configured:!!(await getMetaPixelId()), capi_configured:!!(await getMetaCapiToken()),
       ads_token_configured:!!((await getMetaAdsToken())||(await getMetaCapiToken())),
       sample: meta.slice(0,50).map(u=>({id:u._id,name:u.name,created_at:(u.created_at||'').slice(0,10),utm_campaign:u.utm_campaign||'',visits:u.visit_count||0,paying:payerIds.has(u._id)})) });
   }catch(e){ res.status(500).json({error:e.message}); }
@@ -23408,7 +23438,7 @@ async function strazcaMerania({upozornit=true}={}){
   const nalezy=[], ok=[];
   const pridaj=(kod, text, detail)=>nalezy.push({kod, text, detail:detail||''});
   const tok=await getMetaAdsToken();
-  const pixel=String(process.env.META_PIXEL_ID||'');
+  const pixel=String(await getMetaPixelId());
   if(!tok) pridaj('token','Chýba token na čítanie reklám — prehľad kampaní sa nesynchronizuje.');
   const karty=await q.find(db.campaigns,{});
   const vsetciUzivatelia=await q.find(db.users,{is_admin:{$ne:true}});
@@ -23710,7 +23740,7 @@ app.post('/api/funnel', rlFunnel, async(req,res)=>{
     if(!FUNNEL_KROKY.has(krok)) return res.status(204).end();
     const stranka=String((req.body&&req.body.stranka)||'').split('?')[0].slice(0,80);
     const m=(req.body&&req.body.meta&&typeof req.body.meta==='object') ? req.body.meta : {};
-    const meta={}; for(const k of ['city','dovod','pole','termin']) if(m[k]!=null) meta[k]=String(m[k]).slice(0,80);
+    const meta={}; for(const k of ['city','dovod','pole','termin','sekundy','hlbka']) if(m[k]!=null) meta[k]=String(m[k]).slice(0,80);
     await zapisKrok(req, krok, {stranka:stranka||null, meta:Object.keys(meta).length?meta:null});
   }catch(e){}
   res.status(204).end();
@@ -23747,7 +23777,22 @@ async function lievikStranok(days){
     .sort((a,b)=>b.navstevy-a.navstevy).slice(0,10);
   const varianty=LANDING_VARIANTY.map(v=>{ const list=ev.filter(e=>e.variant===v); return { variant:v, navstevy:unik(list,'lp_view'), odoslali:unik(list,'form_submit'), rezervacie:unik(list,'booking_ok'), skusky:unik(list,'trial_ok') }; }).filter(x=>x.navstevy||x.odoslali);
   const chyby={}; for(const e of ev.filter(e=>e.krok==='register_err')){ const d=(e.meta&&e.meta.dovod)||'?'; chyby[d]=(chyby[d]||0)+1; }
-  return { ok:true, days, od, spolu:ev.length, stranky, kampane, varianty, chyby, rezim:await landingRezim() };
+  // Pozornosť na landingu: ako hlboko dočítali a ako dlho vydržali (21. 9.)
+  const pozornost={};
+  for(const sk of Object.keys(KROKY)){
+    const list=ev.filter(e=>(e.stranka||'/')===sk);
+    const navstevy=unik(list,'lp_view')||1;
+    const odchody=list.filter(e=>e.krok==='odchod');
+    const sek=odchody.map(e=>+((e.meta&&e.meta.sekundy)||0)).filter(n=>n>=0).sort((a,b)=>a-b);
+    const median=sek.length?sek[Math.floor(sek.length/2)]:null;
+    pozornost[sk]={
+      odchodov:odchody.length, median_sekund:median,
+      do_3s: odchody.filter(e=>+((e.meta&&e.meta.sekundy)||0)<=3).length,
+      do_10s: odchody.filter(e=>+((e.meta&&e.meta.sekundy)||0)<=10).length,
+      scroll:[25,50,75,100].map(p=>({prah:p, n:unik(list,'scroll_'+p), podiel:+(100*unik(list,'scroll_'+p)/navstevy).toFixed(1)}))
+    };
+  }
+  return { ok:true, days, od, spolu:ev.length, stranky, kampane, varianty, chyby, pozornost, rezim:await landingRezim() };
 }
 app.get('/api/admin/funnel-stranky', adminAuth, async(req,res)=>{
   try{ res.json(await lievikStranok(req.query.days)); }catch(e){ res.status(500).json({error:e.message}); }

@@ -47,6 +47,37 @@ window.faKrok = function(krok, meta){
   } catch(e){}
 };
 
+// Ako ďaleko sa návštevníčka dostane a ako dlho vydrží (21. 9.): 224 návštev z reklamy
+// a 0 klikov na termín — bez tohto sa nedá rozlíšiť „odišla do troch sekúnd" od
+// „prečítala celú stránku a nezaujalo ju to". Hlási sa raz za načítanie stránky.
+window.faScrollTrack = function(){
+  try {
+    if(window.__faScroll) return; window.__faScroll = 1;
+    const zaciatok = Date.now();
+    const poslane = {};
+    const hlbka = () => {
+      const h = document.documentElement.scrollHeight - window.innerHeight;
+      return h > 0 ? Math.min(100, Math.round(100 * window.scrollY / h)) : 100;
+    };
+    const skontroluj = () => {
+      const p = hlbka();
+      for(const prah of [25, 50, 75, 100]){
+        if(p >= prah && !poslane[prah]){ poslane[prah] = 1; window.faKrok('scroll_' + prah); }
+      }
+    };
+    window.addEventListener('scroll', skontroluj, {passive:true});
+    setTimeout(skontroluj, 1500);
+    // Pri odchode pošli, koľko sekúnd tu bola a kam dočítala
+    const odchod = () => {
+      if(window.__faOdchod) return; window.__faOdchod = 1;
+      const s = Math.round((Date.now() - zaciatok) / 1000);
+      window.faKrok('odchod', {sekundy: String(Math.min(s, 3600)), hlbka: String(hlbka())});
+    };
+    document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'hidden') odchod(); });
+    window.addEventListener('pagehide', odchod);
+  } catch(e){}
+};
+
 window.faGetAttribution = function(){
   try {
     const a = JSON.parse(localStorage.getItem('fa_attr')||'{}');

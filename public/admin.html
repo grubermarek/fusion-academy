@@ -5406,6 +5406,18 @@ async function loadLievik(){
       h+='<div class="mb-1"><b>A/B skúška na landingu</b></div><table class="table table-dark table-sm mb-2" style="max-width:560px"><thead><tr><th>Variant</th><th class="text-end">Návštevy</th><th class="text-end">Odoslali</th><th class="text-end">Rezervácie</th><th class="text-end">Skúšky</th></tr></thead><tbody>'
         +d.varianty.map(v=>'<tr><td>'+(v.variant==='karta'?'S kartou':'Bez karty')+'</td><td class="text-end">'+v.navstevy+'</td><td class="text-end">'+v.odoslali+'</td><td class="text-end">'+v.rezervacie+'</td><td class="text-end">'+v.skusky+'</td></tr>').join('')+'</tbody></table>';
     }
+    // Pozornosť: dočítali? vydržali? (21. 9.)
+    const poz=(d.pozornost||{})['/prva-hodina'];
+    if(poz && poz.odchodov){
+      h+='<div class="mb-1"><b>Pozornosť na landingu</b> <span class="text-muted">— z '+poz.odchodov+' odchodov</span></div>'
+        +'<div class="mb-2 small"><span class="me-3">Medián času: <b>'+(poz.median_sekund==null?'—':poz.median_sekund+' s')+'</b></span>'
+        +'<span class="me-3">Odišlo do 3 s: <b style="color:'+(poz.do_3s/poz.odchodov>0.5?'#ef9a9a':'#aed581')+'">'+poz.do_3s+'</b></span>'
+        +'<span>do 10 s: <b>'+poz.do_10s+'</b></span></div>'
+        +'<table class="table table-dark table-sm mb-2" style="max-width:420px"><tbody>'
+        +poz.scroll.map(s=>'<tr><td style="width:120px">Dočítala '+s.prah+' %</td><td style="width:60px;text-align:right"><b>'+s.n+'</b></td><td style="width:70px;text-align:right">'+s.podiel+' %</td>'
+          +'<td><div style="height:8px;border-radius:4px;background:linear-gradient(90deg,#C9A84C,#E9B8FF);width:'+Math.max(2,Math.round(s.podiel))+'%"></div></td></tr>').join('')
+        +'</tbody></table>';
+    }
     const ch=Object.entries(d.chyby||{}); if(ch.length) h+='<div class="text-muted">Chyby pri odoslaní: '+ch.map(([k,n])=>esc(k)+' × '+n).join(', ')+'</div>';
     h+='<div class="text-muted mt-1">Počíta unikátnych návštevníkov (cookie fa_vid), '+d.days+' dní. Krok „Skúška beží“ prichádza zo servera po aktivácii.</div>';
     host.innerHTML=h;
