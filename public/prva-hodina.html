@@ -37,12 +37,10 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;ba
 .cta.ghost{background:transparent;box-shadow:none;border:1px solid rgba(255,255,255,.2);color:var(--muted);font-weight:600;font-size:.9rem;padding:12px}
 .hint{text-align:center;color:var(--muted);opacity:.8;font-size:.76rem;margin-top:8px}
 .hint a{color:var(--gold)}
-/* Mestá v jednom riadku (posúvateľné), aby termíny ostali na prvej obrazovke. Okrajové
-   auto-marginy centrujú, keď sa zmestia, a pri pretečení nechajú riadok posúvať od začiatku. */
-.cities{display:flex;gap:7px;flex-wrap:nowrap;overflow-x:auto;margin:12px -18px 0;padding:2px 18px 4px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
-.cities::-webkit-scrollbar{display:none}
-.cities button:first-child{margin-left:auto}.cities button:last-child{margin-right:auto}
-.cities button{flex:none;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);color:var(--cream);border-radius:999px;padding:9px 14px;min-height:40px;font-size:.84rem;cursor:pointer;font-weight:600}
+/* Mestá v dvoch riadkoch, aby boli vidieť všetky (v jednom posúvateľnom riadku Detva
+   ostala za okrajom). Aj tak termíny ostanú na prvej obrazovke. */
+.cities{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:12px 0 0}
+.cities button{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);color:var(--cream);border-radius:999px;padding:8px 13px;min-height:38px;font-size:.82rem;cursor:pointer;font-weight:600}
 .cities button.on{background:linear-gradient(90deg,rgba(168,85,247,.45),rgba(236,72,153,.45));border-color:rgba(233,184,255,.5);color:#fff}
 .card{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:20px;padding:18px;margin-top:18px;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
 @supports not (backdrop-filter:blur(14px)){.card{background:#171129}}
@@ -246,8 +244,9 @@ function vykresliTerminy(){
   const zobraz=VSETKY?ITEMS:ITEMS.slice(0,NA_PRVEJ);
   const bezMesta=a=>String(a||'').replace(/,\s*[^,]*$/,'');
   list.innerHTML=zobraz.map((i)=>{ const ix=ITEMS.indexOf(i); return '<div class="sess">'
-    +'<div class="d"><b>'+esc(i.day_name).toUpperCase()+' '+esc(i.time_start)+'</b> <span style="color:var(--muted);font-size:.85rem">· '+esc(i.name)+'</span>'
-    +'<small class="kde">'+fmtD(i.date)+' · <b>'+esc(i.city)+'</b>'+(i.address?' · '+esc(bezMesta(i.address)):'')+'</small></div>'
+    +'<div class="d"><b>'+esc(i.day_name).toUpperCase()+' '+esc(i.time_start)+'</b>'
+    +'<small class="kde">'+esc(i.name)+' · '+fmtD(i.date)+' · <b>'+esc(i.city)+'</b></small>'
+    +(i.address?'<small class="kde">'+esc(bezMesta(i.address))+'</small>':'')+'</div>'
     +(i.full?'<button disabled>Plné</button>':'<button onclick="pick('+ix+')">REZERVOVAŤ</button>')
     +'</div>'; }).join('')
     +(ITEMS.length>NA_PRVEJ&&!VSETKY?'<button class="viac" onclick="VSETKY=true;vykresliTerminy()">Ďalšie termíny ('+(ITEMS.length-NA_PRVEJ)+') ↓</button>':'');
