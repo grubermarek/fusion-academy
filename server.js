@@ -23882,14 +23882,20 @@ app.post('/api/service/zmaz-ucet', async(req,res)=>{
   const tok=process.env.IMPORT_TOKEN;
   if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
   try{
-    const id=String(req.body?.id||'').trim(), email=String(req.body?.email||'').trim().toLowerCase();
-    const u=await q.one(db.users,{_id:id});
+    const email=String(req.body?.email||'').trim().toLowerCase();
+    if(!email) return res.status(400).json({error:'Zadaj e-mail účtu'});
+    const zadaneId=String(req.body?.id||'').trim();
+    // E-mail je povinný vždy; id je nepovinná druhá poistka proti preklepu
+    const u = zadaneId ? await q.one(db.users,{_id:zadaneId}) : await q.one(db.users,{email});
     if(!u) return res.status(404).json({error:'Účet nenájdený'});
+    const id=u._id;
     if(String(u.email||'').toLowerCase()!==email) return res.status(400).json({error:'E-mail sa nezhoduje s účtom — poistka proti zmazaniu nesprávneho účtu.'});
     if(u.is_admin) return res.status(400).json({error:'Admin účet nemožno zmazať'});
+    // Blokujeme len účty, kde reálne tiekli peniaze. Skúšobné členstvo má cenu 0,
+    // takže QA účet po teste zmazať ide, platiaca klientka nie.
     const platby=(await q.find(db.payments,{user_id:id})).filter(p=>(+p.amount||0)>0 && ['completed','active','paid'].includes(String(p.status||'')));
-    const clenstva=(await q.find(db.memberships,{user_id:id})).filter(m=>!m._type && m.status==='active');
-    if(platby.length || clenstva.length) return res.status(409).json({error:'Účet má zaplatené platby alebo aktívne členstvo — nemažem.', platby:platby.length, clenstva:clenstva.length});
+    const clenstva=(await q.find(db.memberships,{user_id:id})).filter(m=>!m._type && m.status==='active' && !m.trial && (+m.price||0)>0);
+    if(platby.length || clenstva.length) return res.status(409).json({error:'Účet má zaplatené platby alebo platené členstvo — nemažem.', platby:platby.length, clenstva:clenstva.length});
     const stopy={};
     for(const [koll,pole,nazov] of [[db.bookings,'user_id','rezervácie'],[db.notifications,'user_id','notifikácie'],
         [db.email_queue,'user_id','maily v rade'],[db.mail_log,'user_id','mail log'],[db.funnel_events,'uid','kroky lievika'],
