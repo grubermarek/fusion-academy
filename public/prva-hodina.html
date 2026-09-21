@@ -21,31 +21,41 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;ba
 .wrap{max-width:560px;margin:0 auto;padding:0 18px 60px}
 .top{display:flex;align-items:center;gap:10px;padding:14px 0}
 .top img{width:34px}.top b{color:var(--cream);letter-spacing:.04em}
-.hero{padding:18px 0 8px;text-align:center}
-.hero h1{font-size:1.75rem;line-height:1.15;color:#fff;font-weight:900}
+.hero{padding:4px 0 0;text-align:center}
+.hero h1{font-size:1.6rem;line-height:1.12;color:#fff;font-weight:900}
 .hero h1 span{background:linear-gradient(90deg,#E9B8FF,#FF9EB8);-webkit-background-clip:text;background-clip:text;color:transparent}
 .hero p.sub{color:var(--muted);margin:10px 0 14px;font-size:.95rem}
-.photo{margin:14px -18px 0;position:relative}
+.foto-blok{margin-top:22px;text-align:center}
+.foto-blok .sub{margin:4px 0 0}
+.photo{margin:0 -18px 0;position:relative}
 .photo img{display:block;width:100%;height:auto;aspect-ratio:4/3;object-fit:cover}
 .photo::after{content:"";position:absolute;inset:auto 0 0 0;height:60%;background:linear-gradient(180deg,transparent,var(--bg))}
-.checks{display:flex;flex-direction:column;gap:6px;align-items:center;margin:14px 0;font-size:.9rem}
+.checks{display:flex;flex-wrap:wrap;justify-content:center;gap:3px 12px;margin:10px 0 0;font-size:.84rem;line-height:1.4}
 .checks div{color:var(--cream)}.checks b{color:#7CFFB2}
 .cta{display:block;width:100%;background:linear-gradient(90deg,var(--cta1),var(--cta2));color:#fff;border:none;border-radius:16px;padding:16px;font-weight:900;font-size:1.05rem;cursor:pointer;text-align:center;text-decoration:none;box-shadow:0 10px 28px rgba(168,85,247,.35)}
 .cta:disabled{opacity:.6;cursor:default}
 .cta.ghost{background:transparent;box-shadow:none;border:1px solid rgba(255,255,255,.2);color:var(--muted);font-weight:600;font-size:.9rem;padding:12px}
 .hint{text-align:center;color:var(--muted);opacity:.8;font-size:.76rem;margin-top:8px}
 .hint a{color:var(--gold)}
-.cities{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:22px 0 4px}
-.cities button{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);color:var(--cream);border-radius:999px;padding:8px 15px;font-size:.85rem;cursor:pointer;font-weight:600}
+/* Mestá v jednom riadku (posúvateľné), aby termíny ostali na prvej obrazovke. Okrajové
+   auto-marginy centrujú, keď sa zmestia, a pri pretečení nechajú riadok posúvať od začiatku. */
+.cities{display:flex;gap:7px;flex-wrap:nowrap;overflow-x:auto;margin:12px -18px 0;padding:2px 18px 4px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.cities::-webkit-scrollbar{display:none}
+.cities button:first-child{margin-left:auto}.cities button:last-child{margin-right:auto}
+.cities button{flex:none;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);color:var(--cream);border-radius:999px;padding:9px 14px;min-height:40px;font-size:.84rem;cursor:pointer;font-weight:600}
 .cities button.on{background:linear-gradient(90deg,rgba(168,85,247,.45),rgba(236,72,153,.45));border-color:rgba(233,184,255,.5);color:#fff}
 .card{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:20px;padding:18px;margin-top:18px;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
 @supports not (backdrop-filter:blur(14px)){.card{background:#171129}}
 .card h2{font-size:1.02rem;color:var(--acc);margin-bottom:10px;letter-spacing:.03em}
+#terminy{margin-top:10px;padding:14px 16px 10px}
+#terminy h2{margin-bottom:4px}
 .sess{display:flex;align-items:center;gap:10px;padding:12px 0;border-top:1px solid rgba(255,255,255,.08)}
 .sess:first-of-type{border-top:none}
 .sess .d{flex:1;min-width:0}
 .sess .d b{color:#fff}
 .sess .d small{display:block;color:var(--muted);font-size:.78rem}
+.sess .d .kde{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sess .d .kde b{color:var(--acc)}
 /* Tlačidlá termínov majú lákať na klik (Marek 21. 9.): jemne dýchajú a prebehne cez ne lesk */
 .sess button{background:linear-gradient(90deg,var(--cta1),var(--cta2));border:none;color:#fff;font-weight:800;padding:10px 15px;border-radius:99px;cursor:pointer;white-space:nowrap;flex:none;
   position:relative;overflow:hidden;isolation:isolate;animation:dychTl 2.6s ease-in-out infinite}
@@ -101,25 +111,25 @@ footer a{color:#8f8a7d}
 <div class="wrap">
   <div class="top"><img src="/logo-mark.png" alt=""><b>FUSION ACADEMY</b></div>
 
+  <!-- Marek 21. 9.: termíny na prvú obrazovku. Meranie ukázalo medián 20 s na stránke,
+       ale stránku aspoň o štvrtinu posunulo len 2,3 % žien — zoznam hodín pod fotkou
+       takmer nikto nevidel. Teraz: nadpis → ponuka → mestá → termíny, fotka až nižšie. -->
   <div class="hero">
     <h1>ZUMBA <span id="cityLoc">V TVOJOM MESTE</span><br><span id="ponukaTitul">PRVÝ TÝŽDEŇ ZADARMO</span></h1>
-    <p class="sub">60 minút hudby, pohybu a dobrej energie. Nemusíš vedieť tancovať.</p>
-    <div class="photo"><img src="/img/landing-zumba.jpg" alt="Klientky Fusion Academy po hodine Zumby" fetchpriority="high"></div>
     <div class="checks" id="checks">
       <div>✓ <b>7 dní</b> všetky hodiny zadarmo</div>
       <div>✓ potom <span id="cenaMes">49,90</span> €/mes., <b>zrušíš kedykoľvek</b></div>
-      <div>✓ vhodné aj pre úplné začiatočníčky</div>
+      <div>✓ aj pre úplné začiatočníčky</div>
     </div>
-    <a class="cta" href="#terminy" onclick="return naTerminy(event,'hore')">VYBRAŤ SI PRVÚ HODINU ↓</a>
-    <div class="hint">Rezervácia trvá 30 sekúnd — stačí meno a e-mail.</div>
   </div>
 
   <div class="cities" id="cityChips"></div>
 
   <div class="card" id="terminy">
-    <h2>🗓️ NAJBLIŽŠIE HODINY<span id="cityName"></span></h2>
+    <h2>🗓️ VYBER SI PRVÚ HODINU<span id="cityName"></span></h2>
     <div id="sessList"><div style="color:var(--muted);font-size:.86rem;padding:8px 0">Načítavam termíny…</div></div>
   </div>
+  <div class="hint">Rezervácia trvá 30 sekúnd — stačí meno a e-mail.</div>
 
   <div class="card" id="formCard" style="display:none">
     <h2>✍️ DOKONČI REZERVÁCIU</h2>
@@ -161,6 +171,11 @@ footer a{color:#8f8a7d}
       <a class="cta ghost" style="margin-top:10px" href="/client-dashboard">Otvoriť appku →</a>
       <div class="hint" id="doneHint">Detaily aj prihlásenie do appky ti prišli e-mailom.</div>
     </div>
+  </div>
+
+  <div class="foto-blok">
+    <div class="photo"><img src="/img/landing-zumba.jpg" alt="Klientky Fusion Academy po hodine Zumby" loading="lazy" width="1400" height="1050"></div>
+    <p class="sub">60 minút hudby, pohybu a dobrej energie. Nemusíš vedieť tancovať.</p>
   </div>
 
   <div class="card">
@@ -225,13 +240,17 @@ function vykresliTerminy(){
   const list=document.getElementById('sessList');
   if(!ITEMS.length){ list.innerHTML='<div style="color:var(--muted);font-size:.86rem;padding:8px 0">Momentálne tu nie sú vypísané termíny — vyber si iné mesto vyššie.</div>'; return; }
   const fmtD=s=>s.slice(8,10)+'. '+s.slice(5,7)+'.';
-  const zobraz=VSETKY?ITEMS:ITEMS.slice(0,3);
-  list.innerHTML=zobraz.map((i)=>{ const ix=ITEMS.indexOf(i); return '<div class="sess"><span style="font-size:1.35rem">'+esc(i.emoji)+'</span>'
-    +'<div class="d"><b>'+esc(i.day_name).toUpperCase()+' '+esc(i.time_start)+'</b> · '+esc(i.name)
-    +'<small>'+fmtD(i.date)+' · '+(CITY?esc(i.address||i.city):'<b style="color:var(--acc)">'+esc(i.city)+'</b>'+(i.address?' · '+esc(i.address):''))+'</small></div>'
+  // Prvá obrazovka (21. 9.): dva najbližšie termíny, každý na dvoch krátkych riadkoch —
+  // deň a čas, pod tým dátum · mesto · miesto (miesto sa pri nedostatku šírky skráti).
+  const NA_PRVEJ=2;
+  const zobraz=VSETKY?ITEMS:ITEMS.slice(0,NA_PRVEJ);
+  const bezMesta=a=>String(a||'').replace(/,\s*[^,]*$/,'');
+  list.innerHTML=zobraz.map((i)=>{ const ix=ITEMS.indexOf(i); return '<div class="sess">'
+    +'<div class="d"><b>'+esc(i.day_name).toUpperCase()+' '+esc(i.time_start)+'</b> <span style="color:var(--muted);font-size:.85rem">· '+esc(i.name)+'</span>'
+    +'<small class="kde">'+fmtD(i.date)+' · <b>'+esc(i.city)+'</b>'+(i.address?' · '+esc(bezMesta(i.address)):'')+'</small></div>'
     +(i.full?'<button disabled>Plné</button>':'<button onclick="pick('+ix+')">REZERVOVAŤ</button>')
     +'</div>'; }).join('')
-    +(ITEMS.length>3&&!VSETKY?'<button class="viac" onclick="VSETKY=true;vykresliTerminy()">Ukázať ďalšie termíny ('+(ITEMS.length-3)+') ↓</button>':'');
+    +(ITEMS.length>NA_PRVEJ&&!VSETKY?'<button class="viac" onclick="VSETKY=true;vykresliTerminy()">Ďalšie termíny ('+(ITEMS.length-NA_PRVEJ)+') ↓</button>':'');
 }
 // Marek 21. 9.: „dole keď kliknem chcem prvý týždeň zadarmo nič sa nestane." Kotva #terminy
 // stránku len potichu posunula, takže to vyzeralo ako mŕtve tlačidlo. Teraz posun vidno a
