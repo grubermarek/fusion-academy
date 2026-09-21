@@ -506,6 +506,13 @@ function setHeader({title, sub, chanEmoji, avatarId, avatarName, showOnline, sho
     ic.onclick=()=>location.href='/u/'+avatarId;
   }
   else ic.style.display='none';
+  // V súkromnej konverzácii otvorí profil aj meno v hlavičke, nielen fotka vedľa neho.
+  // Marek 21. 9.: „kliknem na meno človeka a neotvorí jeho profil" — meno nemalo žiadny klik.
+  const tb = document.querySelector('.ig-htitle');
+  if(tb){
+    if(avatarId && !chanEmoji){ tb.onclick=()=>location.href='/u/'+avatarId; tb.style.cursor='pointer'; tb.title='Zobraziť profil'; tb.setAttribute('role','link'); }
+    else { tb.onclick=null; tb.style.cursor=''; tb.removeAttribute('title'); tb.removeAttribute('role'); }
+  }
   document.getElementById('onlinePill').style.display = showOnline ? '' : 'none';
   document.getElementById('composeBtn').style.display = showCompose ? '' : 'none';
   document.getElementById('dmBtn').style.display = showDm ? '' : 'none';
