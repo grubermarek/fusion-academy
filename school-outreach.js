@@ -70,8 +70,9 @@ module.exports = function initSchoolOutreach(ctx) {
     <tr><td style="padding:7px 10px 7px 0;vertical-align:top;font-size:15px">💶</td>
         <td style="padding:7px 0;font-size:15px;line-height:1.6;color:#222">
         <b>3 € za každého prihláseného žiaka idú škole</b> ako účelový príspevok — pri 25
-        žiakoch 75 €, pri 50 žiakoch 150 €. Rodič platí 49,90 € kartou priamo v našej
-        aplikácii a dostane potvrdenie e-mailom aj fyzicky.
+        žiakoch 75 €, pri 50 žiakoch 150 €. Cenu kurzu pre rodiča určíme individuálne —
+        podľa počtu žiakov v skupine a oblasti, z ktorej škola je. Rodič ju zaplatí kartou
+        priamo v našej aplikácii a dostane potvrdenie e-mailom aj fyzicky.
         <b>Cez triedneho učiteľa neprejde ani euro v hotovosti.</b></td></tr>
     <tr><td style="padding:7px 10px 7px 0;vertical-align:top;font-size:15px">✨</td>
         <td style="padding:7px 0;font-size:15px;line-height:1.6;color:#222">

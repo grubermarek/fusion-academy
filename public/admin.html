@@ -4414,7 +4414,8 @@ async function vAddSchool(){
 }
 async function vAddClass(sid){
   const name=prompt('Názov skupiny (napr. 9.A, alebo „Venčeková skupina" keď je jedna spoločná):'); if(!name) return;
-  const price=prompt('Cena za žiaka (€):','49.90')||'49.90';
+  const price=prompt('Cena za žiaka (€) — individuálne podľa počtu žiakov a oblasti školy:','')||'';
+  if(!(+price>0)) return alert('Zadaj cenu za žiaka — každá škola ju má vlastnú.');
   const lecturer=prompt('Lektor:','Marek Gruber')||'';
   // Kto sa smie zaregistrovať. Pri jednej spoločnej skupine dáva zmysel len
   // žiak a učiteľ — rodič a riaditeľ by tam boli len na omyl.
