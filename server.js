@@ -23862,6 +23862,49 @@ app.post('/api/admin/landing-ab', adminAuth, async(req,res)=>{
     res.json({ok:true, rezim:v});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
+// Prepnutie režimu landingu bez admin session (21. 9.: v prehliadači bola prihlásená
+// testovacia klientka, nie admin). Rovnaké hodnoty ako /api/admin/landing-ab.
+app.post('/api/service/landing-ab', async(req,res)=>{
+  const tok=process.env.IMPORT_TOKEN;
+  if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
+  try{
+    const v=String((req.body&&req.body.rezim)||'');
+    if(!LANDING_VARIANTY.includes(v) && v!=='ab') return res.status(400).json({error:'rezim: karta | bez_karty | ab'});
+    const s=await q.one(db.settings,{key:'landing_ab'});
+    if(s) await q.update(db.settings,{_id:s._id},{$set:{value:v, at:nowISO()}}); else await q.insert(db.settings,{key:'landing_ab', value:v, at:nowISO()});
+    console.log('🔀 Landing režim: '+v);
+    res.json({ok:true, rezim:v});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Zmazanie testovacieho účtu aj so stopami. Zámerne úzke: musí sedieť id AJ e-mail,
+// účet nesmie byť admin a nesmie mať zaplatené peniaze ani aktívne členstvo.
+app.post('/api/service/zmaz-ucet', async(req,res)=>{
+  const tok=process.env.IMPORT_TOKEN;
+  if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
+  try{
+    const id=String(req.body?.id||'').trim(), email=String(req.body?.email||'').trim().toLowerCase();
+    const u=await q.one(db.users,{_id:id});
+    if(!u) return res.status(404).json({error:'Účet nenájdený'});
+    if(String(u.email||'').toLowerCase()!==email) return res.status(400).json({error:'E-mail sa nezhoduje s účtom — poistka proti zmazaniu nesprávneho účtu.'});
+    if(u.is_admin) return res.status(400).json({error:'Admin účet nemožno zmazať'});
+    const platby=(await q.find(db.payments,{user_id:id})).filter(p=>(+p.amount||0)>0 && ['completed','active','paid'].includes(String(p.status||'')));
+    const clenstva=(await q.find(db.memberships,{user_id:id})).filter(m=>!m._type && m.status==='active');
+    if(platby.length || clenstva.length) return res.status(409).json({error:'Účet má zaplatené platby alebo aktívne členstvo — nemažem.', platby:platby.length, clenstva:clenstva.length});
+    const stopy={};
+    for(const [koll,pole,nazov] of [[db.bookings,'user_id','rezervácie'],[db.notifications,'user_id','notifikácie'],
+        [db.email_queue,'user_id','maily v rade'],[db.mail_log,'user_id','mail log'],[db.funnel_events,'uid','kroky lievika'],
+        [db.coach_contacts,'user_id','kontakty'],[db.lead_notes,'user_id','poznámky'],[db.crm_tasks,'user_id','úlohy'],
+        [db.memberships,'user_id','členstvá'],[db.payments,'user_id','platby'],[db.commissions,'partner_id','provízie'],
+        [db.transactions,'partner_id','transakcie'],[db.credit_ledger,'user_id','kredit'],[db.referral_events,'user_id','referral']]){
+      if(!koll) continue;
+      try{ const n=await q.remove(koll,{[pole]:id},{multi:true}); if(n) stopy[nazov]=(stopy[nazov]||0)+n; }catch(e){}
+    }
+    await q.update(db.users,{sponsor_id:id},{$set:{sponsor_id:u.sponsor_id||null}},{multi:true});
+    await q.remove(db.users,{_id:id});
+    console.log('🗑️ Zmazaný účet '+u.name+' ('+u.email+') + stopy: '+JSON.stringify(stopy));
+    res.json({ok:true, zmazany:{meno:u.name, email:u.email, vytvoreny:u.created_at}, stopy});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 app.get('/api/service/ads-overview', async(req,res)=>{
   const tok=process.env.IMPORT_TOKEN;
   if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
