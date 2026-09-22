@@ -590,6 +590,22 @@ function sessionDateFor(c){
 // vidieť a netreba ju ručne vypínať; admin ju v zozname hodín vidí ďalej.
 function classRunsOn(c, date){ return !c || !c.only_date || c.only_date === (date || today()); }
 
+// Minimálny počet prihlásených, aby sa hodina konala (Marek 22. 9. 2026): v Brezne, vo Zvolene
+// a v Banskej Bystrici od 8 ľudí. Ak 3 hodiny pred začiatkom nie je dosť rezervácií, hodina sa ruší
+// (tréner/admin cez „Zrušiť hodinu" — vráti vstupy z permanentky a prihláseným predĺži členstvo).
+// Klientka to vidí pri hodine v rozvrhu, na nástenke aj pri rezervácii (public/min-ucast.js).
+// Mesto sa pridá alebo zmení len tu.
+const MIN_UCAST = { pocet:8, hodin:3,
+  mesta:{ 'brezno':'v Brezne', 'zvolen':'vo Zvolene', 'banská bystrica':'v Banskej Bystrici' } };
+function minUcastInfo(c, prihlasenych){
+  if(!c || c.category==='Online' || c.category==='Súkromné') return null;
+  const kde = MIN_UCAST.mesta[String(c.location||'').trim().toLowerCase()];
+  if(!kde) return null;
+  return { pocet:MIN_UCAST.pocet, hodin:MIN_UCAST.hodin, kde,
+    predlzenie: kompenzovatelna(c) ? KOMPENZACIA_DNI : 0,
+    prihlasenych: Number.isFinite(prihlasenych) ? prihlasenych : null };
+}
+
 // ─── MLM helpers ─────────────────────────────────────────────────────────────
 async function getAllDescendants(pid) {
   const seen=new Set([pid]); const queue=[pid]; const res=[];
@@ -7401,10 +7417,12 @@ app.get('/api/classes', async(req,res)=>{
       // Tajný kľúč na vysielanie (vlastný media server) patrí len adminovi a trénerom —
       // verejný rozvrh ho nesmie prezradiť, inak by hodinu mohol „vysielať" ktokoľvek.
       const pub = (viewer?.is_admin || viewer?.user_type==='trainer') ? c : (({stream_key, ...rest})=>rest)(c);
+      let min_ucast = minUcastInfo(c);
+      if(min_ucast) min_ucast.prihlasenych = await q.count(db.bookings,{class_id:c._id, booking_date:bdate, status:{$in:['confirmed','attended']}});
       result.push({...pub, booking_count, next_date:bdate, booked:booking_count, booked_all:bookedAll,
         instructor:si.instructor, instructor_id:si.instructor_id||c.instructor_id||null,
         attendees, attendee_count: attendees?attendees.length:booking_count,
-        cancelled: !!cancelRec, cancel_reason: cancelRec?.reason||null,
+        cancelled: !!cancelRec, cancel_reason: cancelRec?.reason||null, min_ucast,
         spotsLeft:Math.max(0,c.capacity-booking_count), dayName:DAYS_SK[c.day_of_week]});
     }
     result.sort((a,b)=>(a.day_of_week||0)-(b.day_of_week||0)||String(a.time_start||'').localeCompare(String(b.time_start||'')));
@@ -7525,6 +7543,8 @@ app.get('/api/my-bookings', auth, async(req,res)=>{
     }
     b.attendees = attCache[key];
     b.attendee_count = attCache[key].length;
+    const mu = minUcastInfo(cls, attCache[key].length);
+    if(mu) b.min_ucast = mu;
   }
   res.json(bookings);
 });

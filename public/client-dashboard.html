@@ -7,6 +7,7 @@
   <title>Môj profil – Fusion Academy</title>
 <script src="/i18n.js"></script>
 <script src="/i18n-pages.js"></script>
+<script src="/min-ucast.js"></script>
   <script>/* téma pred prvým renderom (bez bliknutia) */try{if(localStorage.getItem('fa_theme')==='aurora')document.documentElement.dataset.theme='aurora'}catch(e){}</script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link rel="stylesheet" href="/aurora.css">
@@ -1360,6 +1361,7 @@ function renderBookings(bookings){
         <span>${b.booking_date?skDate(b.booking_date):''} ${b.class_time_start?'• '+b.class_time_start:''} ${b.class_location?'• '+escHtml(b.class_location):''}</span>
         ${insHtml?`<span style="font-size:.78rem;color:var(--muted)">🎓 Učí: ${insHtml}</span>`:''}
       </div>
+      ${(window.FA_MIN&&b.min_ucast)?`<div style="flex-basis:100%;order:5">${FA_MIN.riadok(b.min_ucast)}</div>`:''}
       <button class="booking-cancel" onclick="cancelBooking('${b._id}','${escHtml(b.class_name).replace(/'/g,"&#39;")}')">
         <i class="bi bi-x"></i> Zrušiť
       </button>
@@ -1862,6 +1864,7 @@ function renderClassCards(){
           ${insLine}
         </div>
       </div>
+      ${window.FA_MIN?FA_MIN.riadok(cls.min_ucast):''}
       <div class="cc-bottom">
         <div class="cc-cap">
           ${filled}/${cap} miest
