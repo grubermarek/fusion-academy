@@ -32,6 +32,9 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;ba
 .photo::after{content:"";position:absolute;inset:auto 0 0 0;height:60%;background:linear-gradient(180deg,transparent,var(--bg))}
 .checks{display:flex;flex-wrap:wrap;justify-content:center;gap:3px 12px;margin:10px 0 0;font-size:.84rem;line-height:1.4}
 .checks div{color:var(--cream)}.checks b{color:#7CFFB2}
+/* Garancia (Marek 22. 9.): vlastný riadok cez celú šírku, nech je vidieť na prvý pohľad */
+.checks .garancia{flex-basis:100%;margin-top:2px;color:var(--gold);font-size:.82rem}
+.checks .garancia b{color:var(--gold)}
 .cta{display:block;width:100%;background:linear-gradient(90deg,var(--cta1),var(--cta2));color:#fff;border:none;border-radius:16px;padding:16px;font-weight:900;font-size:1.05rem;cursor:pointer;text-align:center;text-decoration:none;box-shadow:0 10px 28px rgba(168,85,247,.35)}
 .cta:disabled{opacity:.6;cursor:default}
 .cta.ghost{background:transparent;box-shadow:none;border:1px solid rgba(255,255,255,.2);color:var(--muted);font-weight:600;font-size:.9rem;padding:12px}
@@ -118,6 +121,7 @@ footer a{color:#8f8a7d}
       <div>✓ <b>7 dní</b> všetky hodiny zadarmo</div>
       <div>✓ potom <span id="cenaMes">49,90</span> €/mes., <b>zrušíš kedykoľvek</b></div>
       <div>✓ aj pre úplné začiatočníčky</div>
+      <div class="garancia">💛 Nesadne ti to? <b>Do 14 dní vrátime peniaze.</b></div>
     </div>
   </div>
 
@@ -152,6 +156,7 @@ footer a{color:#8f8a7d}
     <p style="font-size:.9rem;color:var(--muted)">Uložíš si kartu, <b style="color:#fff">teraz sa nestrhne nič</b>. Sedem dní chodíš na všetky hodiny zadarmo. Ak ti to nesadne, zrušíš jedným klikom v appke a neplatíš nič.</p>
     <button class="cta" style="margin-top:14px" id="trialBtn" onclick="aktivujSkusku()">ZAPNÚŤ TÝŽDEŇ ZADARMO</button>
     <div class="cena">Po skúške <span class="cenaMes">49,90</span> €/mes. · zrušenie kedykoľvek pred prvou platbou</div>
+    <div class="cena" style="color:var(--gold);margin-top:6px">💛 A keby ti ani potom nesadlo: napíš do 14 dní od prvej platby a peniaze vrátime.</div>
     <div class="heslo" id="hesloBoxT" style="display:none"></div>
     <div class="msg" id="tMsg"></div>
     <button class="cta ghost" style="margin-top:10px" onclick="preskocSkusku()">Neskôr, teraz len rezervácia</button>
@@ -214,7 +219,8 @@ async function loadCfg(){
   if(!CFG.prvy_tyzden){
     // Starý režim: prvá hodina zdarma (keď je skúška vypnutá)
     document.getElementById('ponukaTitul').textContent='PRVÁ HODINA ZADARMO';
-    document.getElementById('checks').innerHTML='<div>✓ prvá hodina <b>zdarma</b></div><div>✓ bez záväzkov</div><div>✓ vhodné aj pre začiatočníčky</div>';
+    document.getElementById('checks').innerHTML='<div>✓ prvá hodina <b>zdarma</b></div><div>✓ bez záväzkov</div><div>✓ vhodné aj pre začiatočníčky</div>'
+      +'<div class="garancia">💛 Nesadne ti to? <b>Do 14 dní vrátime peniaze.</b></div>';
     document.getElementById('krok3').textContent='Prvá návšteva je zdarma — bez záväzkov.';
     document.getElementById('formHint').innerHTML='Potvrdenie ti príde e-mailom. Žiadna platba — prvá hodina je zdarma.';
   } else if(CFG.variant==='bez_karty'){
