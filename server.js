@@ -19634,6 +19634,7 @@ app.get('/api/attendance/schedule', trainerAuth, async(req,res)=>{
       const waitlist  = await q.count(db.bookings,{class_id:c._id, booking_date:bdate, status:'waitlist'});
       const si = await sessionInstructor(c, bdate);
       result.push({...c, confirmed, waitlist, next_date:bdate, spotsLeft:Math.max(0,c.capacity-confirmed), dayName:DAYS_SK[c.day_of_week],
+        min_ucast: minUcastInfo(c, confirmed),
         session_instructor:si.instructor, session_instructor_id:si.instructor_id, instructor_overridden:si.overridden,
         cancelled_next: cxls.some(x=>x.class_id===c._id && x.date===bdate),
         viewer_id:u._id, viewer_is_admin:!!u.is_admin });
@@ -20398,6 +20399,65 @@ async function zosuladPopisTechniky(){
 }
 // režim prvého týždňa sa dá prepnúť v nastaveniach bez reštartu — skontroluj raz za hodinu
 setInterval(()=>{ zosuladPopisTechniky().catch(()=>{}); }, 60*60*1000);
+
+// ── Minimum prihlásených: upozornenie trénerovi 3 h pred hodinou (Marek 22. 9. 2026) ─────
+// Hodiny s MIN_UCAST (Brezno, Zvolen, BB): keď do začiatku ostáva MIN_UCAST.hodin a prihlásených
+// je menej ako MIN_UCAST.pocet, tréner termínu (sessionInstructor; bez neho admini) dostane oznam
+// v appke a mail s počtom a odkazom do trénerského panela. Appka hodinu sama NEZRUŠÍ — rozhodne
+// tréner tlačidlom „Zrušiť" (vráti vstupy, predĺži členstvá, upovedomí klientky).
+// Každý termín sa vyhodnotí raz, pri prvej kontrole v okne pred začiatkom (kľúč v settings) —
+// kto sa odhlási neskôr, na výsledku nič nemení. Hodiny po polnoci sa nekontrolujú deň vopred.
+async function minUcastKontrola(){
+  const t=today();
+  const dowSK=new Date(t+'T12:00:00Z').getUTCDay();
+  const vysledok=[];
+  for(const c of await q.find(db.classes,{active:true})){
+    const mu=minUcastInfo(c); if(!mu) continue;
+    if(c.day_of_week!==dowSK || !classRunsOn(c,t)) continue;
+    const m=String(c.time_start||'').match(/^(\d{1,2}):(\d{2})$/); if(!m) continue;
+    const zaciatok=Date.parse(casSKnaISO(t+'T'+m[1].padStart(2,'0')+':'+m[2]));
+    const doZaciatku=zaciatok-Date.now();
+    if(!(doZaciatku>0 && doZaciatku<=mu.hodin*3600000)) continue;
+    const kluc='min_ucast_upoz:'+c._id+':'+t;
+    if(await q.one(db.settings,{key:kluc})) continue;
+    if(await q.one(db.class_cancellations,{class_id:c._id, date:t})) continue;
+    const n=await q.count(db.bookings,{class_id:c._id, booking_date:t, status:{$in:['confirmed','attended']}});
+    const zaznam={class_id:c._id, date:t, prihlasenych:n, pocet:mu.pocet, upozornene:[]};
+    if(n<mu.pocet){
+      const si=await sessionInstructor(c,t);
+      let komu=[];
+      const tr=si.instructor_id ? await q.one(db.users,{_id:si.instructor_id}) : null;
+      if(tr && tr.active!==false) komu=[tr];
+      else komu=(await q.find(db.users,{is_admin:true})).filter(a=>a.active!==false);
+      const nazov=`${c.name} ${mu.kde} o ${c.time_start}`;
+      const chyba=mu.pocet-n;
+      const title=`⚠️ Málo prihlásených: ${nazov}`;
+      const body=`Na dnešnú hodinu ${nazov} je prihlásených ${n} z ${mu.pocet} (chýba ${chyba}). `
+        +`Podľa pravidla sa hodina ruší — ak ju rušíš, v trénerskom paneli pri hodine ťukni na „Zrušiť". `
+        +`Prihláseným sa vráti vstup${mu.predlzenie?`, členstvo sa predĺži o ${mu.predlzenie} ${mu.predlzenie<5?'dni':'dní'}`:''} a appka im pošle oznam aj mail.`;
+      for(const u of komu){
+        await q.insert(db.notifications,{user_id:u._id, type:'min_ucast', title, body, link:'/trainer', class_id:c._id, date:t, read:false, created_at:nowISO()});
+        if(u.email) sendMail(u.email, title,
+          emailTemplate('Málo prihlásených na dnešnú hodinu',
+            `<p>Na dnešnú hodinu <b>${String(nazov).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]))}</b> je prihlásených <b>${n} z ${mu.pocet}</b> (chýba ${chyba}).</p>`
+            +`<p>Podľa pravidla sa hodina v tomto meste koná od ${mu.pocet} prihlásených. Ak ju rušíš, otvor trénerský panel a pri hodine ťukni na <b>Zrušiť</b>. `
+            +`Prihláseným sa vráti vstup${mu.predlzenie?`, členstvo sa predĺži o ${mu.predlzenie} ${mu.predlzenie<5?'dni':'dní'}`:''} a appka im pošle oznam aj mail.</p>`,
+            'Otvoriť trénerský panel', APP_URL+'/trainer')).catch(()=>{});
+        zaznam.upozornene.push(u.name||u._id);
+      }
+    }
+    await q.insert(db.settings,{key:kluc, value:zaznam, at:nowISO()});
+    vysledok.push({nazov:`${c.name} ${c.location} ${c.time_start}`, ...zaznam});
+    if(zaznam.upozornene.length) console.log(`⚠️ Minimum: ${c.name} ${c.location} ${c.time_start} — ${n}/${mu.pocet}, upozornení: ${zaznam.upozornene.join(', ')}`);
+  }
+  return vysledok;
+}
+setTimeout(()=>{ minUcastKontrola().catch(e=>console.error('min účasť:',e.message)); }, 60*1000);
+setInterval(()=>{ minUcastKontrola().catch(e=>console.error('min účasť:',e.message)); }, 5*60*1000);
+// Ručné spustenie kontroly (admin) — na overenie bez čakania na ďalší tik.
+app.post('/api/admin/min-ucast/kontrola', adminAuth, async(req,res)=>{
+  try{ res.json({ok:true, vysledok:await minUcastKontrola()}); }catch(e){ res.status(500).json({error:e.message}); }
+});
 function technikaCenaZPlanu(plan, aktivne){
   const p = String(plan || '').toLowerCase();
   if(!aktivne) return TECHNIKA_CENNIK.ziadne;

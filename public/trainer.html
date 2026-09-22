@@ -960,6 +960,16 @@ async function trCancelOnline(classId, name, date){
   else alert('Chyba: '+(d?.error||'?'));
 }
 // ── SCHEDULE ─────────────────────────────────────────────────────────────────
+// Brezno, Zvolen, BB: hodina sa koná od minima prihlásených (server → min_ucast, MIN_UCAST).
+// Tréner pri hodine vidí, koľko do minima chýba; 3 h pred začiatkom dostane upozornenie (Marek 22. 9.).
+function minUcastBadge(c){
+  const m=c&&c.min_ucast; if(!m||!m.pocet) return '';
+  const n=c.confirmed||0;
+  const st='display:inline-block;margin-top:5px;border-radius:8px;padding:2px 8px;font-size:.72rem;font-weight:800;';
+  return n>=m.pocet
+    ? `<div><span class="min-ucast-badge ok" style="${st}background:rgba(74,222,128,.14);color:#4ade80;border:1px solid rgba(74,222,128,.4)">✅ Minimum ${m.pocet} splnené (${n})</span></div>`
+    : `<div><span class="min-ucast-badge" style="${st}background:rgba(255,183,77,.14);color:#ffb74d;border:1px solid rgba(255,183,77,.45)">⚠️ ${n}/${m.pocet} — do minima chýba ${m.pocet-n}</span></div>`;
+}
 async function loadSchedule(){
   try {
     const data = await api('/api/attendance/schedule');
@@ -987,6 +997,7 @@ async function loadSchedule(){
           <div class="tci-info">
             <div class="tci-name">${esc(c.name)}${c.cancelled_next?' <span style="background:rgba(224,86,86,.25);color:#ff8a8a;border:1px solid rgba(224,86,86,.6);border-radius:8px;padding:1px 8px;font-size:.68rem;font-weight:800">❌ ZRUŠENÁ</span>':''}</div>
             <div class="tci-meta">⏰ ${c.time_start}${c.time_end?'–'+c.time_end:''} · 📍 ${esc(c.location||'')}</div>
+            ${c.cancelled_next?'':minUcastBadge(c)}
           </div>
           <div class="tci-right">
             <div class="cap-bar-wrap">
@@ -1020,6 +1031,7 @@ async function loadSchedule(){
           ${c.location?`<div class="cc-detail"><i class="bi bi-geo-alt"></i>${esc(c.location)}</div>`:''}
           ${c.level?`<div class="cc-detail"><i class="bi bi-bar-chart"></i>${esc(c.level)}</div>`:''}
         </div>
+        ${c.cancelled_next?'':minUcastBadge(c)}
         <div class="cc-footer">
           <div class="cc-capacity">
             <div class="cc-cap-text">${c.confirmed} / ${c.capacity} prihlásených</div>
