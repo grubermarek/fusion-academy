@@ -7,6 +7,11 @@
 <meta name="theme-color" content="#0B0A07">
 <title>Venčekový večer — tím</title>
 <link rel="icon" type="image/png" href="/logo-mark.png">
+<link rel="apple-touch-icon" href="/logo-mark.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Venček">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
   /* Tímová obrazovka venčekového večera (22. 9. 2026). Beží v telefóne DJ-a,
      fotografa, moderátora aj báb s diplomami — tma v sále, hlučná hudba, jedna
@@ -197,6 +202,12 @@
   .toast{position:fixed;left:50%;bottom:calc(var(--nav) + env(safe-area-inset-bottom) + 18px);transform:translateX(-50%);z-index:70;
     background:#2B2619;border:1px solid var(--okraj2);color:var(--cream);padding:10px 16px;border-radius:12px;font-weight:700;max-width:90vw}
   .toast.chyba{border-color:var(--red);color:var(--red)}
+  .pary{margin:8px 0 0;padding-left:28px;font-size:1.02rem;line-height:1.75}
+  .pary li::marker{color:var(--gold);font-weight:800}
+  .pary-box{background:#100E0A;border:1px solid #2A261C;border-radius:12px;padding:12px 14px;margin-top:10px}
+  .karta summary{cursor:pointer;font-weight:800;list-style:none;min-height:28px;display:flex;align-items:center;justify-content:space-between}
+  .karta summary::-webkit-details-marker{display:none}
+  .ios-tip{background:var(--ja-bg);border:1px solid var(--ja);color:#CDEEFF;border-radius:12px;padding:10px 12px;font-size:.88rem;margin:0 0 16px;text-align:left}
   .stav-cely{min-height:70dvh;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--muted);padding:24px}
   .prazdne{color:var(--muted);text-align:center;padding:24px 8px}
 </style>
@@ -240,7 +251,8 @@
     <img src="/logo-mark.png" alt="Fusion Academy">
     <h1>Zapni si upozornenia</h1>
     <p>Pri každom ďalšom bode programu ti telefón zacinká a zavibruje. Nechaj túto stránku otvorenú — obrazovka ostane svietiť.</p>
-    <button class="btn-hl" onclick="odomkni(true)">🔔 Zapnúť zvuk a pokračovať</button>
+    <div class="ios-tip" id="iosTip" hidden>📱 <b>iPhone:</b> aby ti cinkalo aj pri zamknutom telefóne, pridaj si túto stránku na plochu (Zdieľať ⬆ → Pridať na plochu) a otváraj ju odtiaľ.</div>
+    <button class="btn-hl" onclick="odomkni(true)">🔔 Zapnúť zvuk a upozornenia</button>
     <button class="linka" onclick="odomkni(false)">Pokračovať bez zvuku</button>
   </div>
 </div>
@@ -304,8 +316,12 @@ async function drzObrazovku(){
   try{ if('wakeLock' in navigator && document.visibilityState === 'visible') zamokObrazovky = await navigator.wakeLock.request('screen'); }catch(e){}
 }
 async function odomkni(zvuk){
+  // Povolenie upozornení treba vypýtať hneď v ťuknutí — Safari ho po čakaní odmietne.
+  let povolenie = null;
+  if(zvuk && PUSH_OK && Notification.permission === 'default'){ try{ povolenie = Notification.requestPermission(); }catch(e){} }
   ZVUK = !!zvuk;
   document.getElementById('odomkni').hidden = true;
+  if(zvuk && PUSH_OK && Notification.permission !== 'denied') zapniPush(povolenie);
   if(ZVUK){
     try{ if(navigator.audioSession) navigator.audioSession.type = 'playback'; }catch(e){}
     // Prehratie v rámci ťuknutia odomkne každý prehrávač na neskôr.
@@ -373,6 +389,57 @@ function neplatny(t){
   document.getElementById('obsah').innerHTML = '<div class="stav-cely"><div><div style="font-size:2.4rem">🔒</div><p>' + esc(t) + '</p></div></div>';
   document.querySelector('.spodok').hidden = true;
 }
+
+// ── Upozornenia na zamknutý telefón (push) ─────────────────────────────────
+// Stránka cinká len kým svieti; zamknutý telefón zobudí iba push zo servera.
+// iPhone ho dovolí len stránke pridanej na plochu (manifest ju otvorí na tomto odkaze).
+const JE_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const NA_PLOCHE = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+const PUSH_OK = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+let PUSH_STAV = 'nezistene', swReg = null;
+(function(){
+  const l = document.createElement('link'); l.rel = 'manifest'; l.href = '/api/vecer/manifest?' + qs(); document.head.appendChild(l);
+  if(JE_IOS && !NA_PLOCHE) document.getElementById('iosTip').hidden = false;
+})();
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('/sw.js').then(r => { swReg = r; zistiPush(); }).catch(() => { PUSH_STAV = 'nepodporovane'; });
+} else PUSH_STAV = JE_IOS && !NA_PLOCHE ? 'ios-plocha' : 'nepodporovane';
+async function zistiPush(){
+  try{
+    if(!PUSH_OK){ PUSH_STAV = JE_IOS && !NA_PLOCHE ? 'ios-plocha' : 'nepodporovane'; return prekresliTim(); }
+    if(Notification.permission === 'denied'){ PUSH_STAV = 'zamietnute'; return prekresliTim(); }
+    const reg = swReg || await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    PUSH_STAV = sub && Notification.permission === 'granted' ? 'zapnute' : 'vypnute';
+    if(PUSH_STAV === 'zapnute') posliOdber(sub);   // server nech vie, že tento telefón patrí tomuto odkazu
+    prekresliTim();
+  }catch(e){}
+}
+function b64(s){ const p = '='.repeat((4 - s.length % 4) % 4); const r = atob((s + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from([...r].map(c => c.charCodeAt(0))); }
+async function posliOdber(sub){
+  const j = sub.toJSON();
+  await fetch('/api/vecer/push', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...MOD, sub: { endpoint: j.endpoint, keys: j.keys } }) }).catch(() => {});
+}
+async function zapniPush(povolenie){
+  if(!PUSH_OK){ PUSH_STAV = JE_IOS && !NA_PLOCHE ? 'ios-plocha' : 'nepodporovane'; prekresliTim(); return; }
+  try{
+    const perm = await (povolenie || Notification.requestPermission());
+    if(perm !== 'granted'){ PUSH_STAV = perm === 'denied' ? 'zamietnute' : 'vypnute'; prekresliTim(); return; }
+    const reg = swReg || await navigator.serviceWorker.ready;
+    const k = await fetch('/api/vecer/push-kluc').then(r => r.json());
+    if(!k.key) throw new Error(k.error || 'bez kľúča');
+    let sub = await reg.pushManager.getSubscription();
+    if(!sub){
+      try{ sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(k.key) }); }
+      catch(e){ const st = await reg.pushManager.getSubscription(); if(st) await st.unsubscribe(); sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(k.key) }); }
+    }
+    await posliOdber(sub);
+    PUSH_STAV = 'zapnute'; prekresliTim();
+    toast('Upozornenia zapnuté ✓');
+  }catch(e){ PUSH_STAV = 'vypnute'; prekresliTim(); toast('Upozornenia sa nepodarilo zapnúť', true); }
+}
+function prekresliTim(){ if(S && !ZRUSENE) renderTim(); }
 
 // Porovnanie so starým stavom rozhoduje, čo zacinká. Pri prvom načítaní
 // nič — inak by zvonilo pri každom otvorení stránky.
@@ -538,6 +605,7 @@ function renderTeraz(){
       + '<div class="kto">' + chipy(p.who) + '</div>'
       + (p.music ? '<div class="hudba">🎵 ' + esc(p.music) + '</div>' : '')
       + (p.script ? '<div class="scenar">' + esc(p.script) + '</div>' : '')
+      + (p.ukaz_pary && (S.pary || []).length ? '<div class="pary-box"><div class="stitok">Poradie párov (' + S.pary.length + ')</div>' + htmlParov() + '</div>' : '')
       + (p.note ? '<div class="pozn">📝 ' + esc(p.note) + '</div>' : '')
       + '</div>';
     const d = P[L.idx + 1];
@@ -580,7 +648,9 @@ function renderProgram(){
   const posl = P.length ? P[P.length - 1] : null;
   const koniecPlan = posl && posl.plan ? (() => { const [h, m] = posl.plan.split(':').map(Number); const n = h * 60 + m + (+posl.dur || 0); return dvoj(Math.floor(n / 60) % 24) + ':' + dvoj(n % 60); })() : '';
   let h = '<div class="suhrn"><span class="odznak">' + P.length + ' bodov</span><span class="odznak">⏱ ' + trvanie(spolu) + '</span>'
-    + (koniecPlan ? '<span class="odznak">koniec cca ' + koniecPlan + '</span>' : '') + '</div><ol class="prog">';
+    + (koniecPlan ? '<span class="odznak">koniec cca ' + koniecPlan + '</span>' : '') + '</div>'
+    + ((S.pary || []).length ? '<details class="karta" data-id="pary"' + (otvorene.has('pary') ? ' open' : '') + '><summary>💃 Poradie párov <span class="tlmene">' + S.pary.length + ' ▾</span></summary>' + htmlParov() + '</details>' : '')
+    + '<ol class="prog">';
   P.forEach((p, i) => {
     const stav = L.status === 'koniec' || (L.idx > i && L.status !== 'pred') ? 'hotovo' : (i === L.idx && (L.status === 'bezi' || L.status === 'pauza')) ? 'teraz' : '';
     const z = log[p.id];
@@ -659,10 +729,27 @@ function renderTim(){
       + (tel && !ja ? '<a class="tel" href="tel:' + esc(tel) + '" aria-label="Zavolať: ' + esc(m.name || m.role_label) + '">📞</a>' : '<span></span>')
       + '</div>';
   });
+  const PUSH_TXT = {
+    zapnute: '✅ Upozornenia na zamknutý telefón sú zapnuté.',
+    vypnute: 'Upozornenia na zamknutý telefón sú vypnuté — zapni si ich, nech ti príde „Si na rade" aj s telefónom vo vrecku.',
+    zamietnute: 'Upozornenia sú v prehliadači zablokované. Povoľ ich v nastaveniach stránky (ikona zámku pri adrese) a obnov stránku.',
+    'ios-plocha': 'iPhone pošle upozornenie na zamknutý telefón, len keď si túto stránku pridáš na plochu (Zdieľať ⬆ → Pridať na plochu) a otvoríš ju odtiaľ.',
+    nepodporovane: 'Tento prehliadač upozornenia na zamknutý telefón nevie. Nechaj stránku otvorenú, cinkať bude.',
+    nezistene: 'Zisťujem upozornenia…' };
   h += '<div class="karta" style="margin-top:14px"><div class="stitok">Upozornenia</div>'
-    + '<p class="tlmene" style="margin:8px 0 10px">Pri zmene bodu zacinká a zavibruje, 2 minúty pred koncom bodu jemne pípne. Nechaj stránku otvorenú, zamknutý telefón zvoniť nebude.</p>'
-    + '<button class="btn plna" onclick="skusZvuk()">🔔 Vyskúšať zvuk</button></div>';
+    + '<p class="tlmene" style="margin:8px 0 10px">Pri zmene bodu zacinká a zavibruje, pred koncom bodu jemne pípne, čo ide ďalej.</p>'
+    + '<p style="margin:0 0 10px;font-size:.92rem">' + PUSH_TXT[PUSH_STAV] + '</p>'
+    + (PUSH_STAV === 'vypnute' ? '<button class="btn-hl" style="min-height:52px;margin-bottom:8px" onclick="zapniPush()">🔔 Zapnúť upozornenia</button>' : '')
+    + '<button class="btn plna" onclick="skusZvuk()">🔊 Vyskúšať zvuk</button></div>';
+  const tlac = co => (MOD.t ? '/vecer/' + encodeURIComponent(MOD.t) : '/vecer/a/' + encodeURIComponent(MOD.id)) + '/tlac?co=' + co;
+  h += '<div class="karta"><div class="stitok">Na papier</div><p class="tlmene" style="margin:8px 0 10px">Záloha, keby telefón zlyhal.</p>'
+    + '<a class="btn plna" style="display:flex;align-items:center;justify-content:center;text-decoration:none" href="' + tlac('scenar') + '" target="_blank">🖨️ Scenár na tlač</a>'
+    + (S.vidi_mena ? '<a class="btn plna" style="display:flex;align-items:center;justify-content:center;text-decoration:none;margin-top:8px" href="' + tlac('diplomy') + '" target="_blank">📜 Diplomy s menami na tlač</a>' : '')
+    + '</div>';
   document.getElementById('pTim').innerHTML = h;
+}
+function htmlParov(){
+  return '<ol class="pary">' + (S.pary || []).map(p => '<li>' + esc(p.a || '—') + (p.b ? ' <span class="tlmene">a</span> ' + esc(p.b) : '') + '</li>').join('') + '</ol>';
 }
 function skusZvuk(){
   if(!ZVUK){ odomkni(true); return; }

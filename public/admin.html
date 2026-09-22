@@ -4964,9 +4964,9 @@ function vvRender(){
       +'<div class="vdet-stat"><b>'+(v.start_time||'—')+'</b><span>začiatok programu</span></div>'
       +'<div class="vdet-stat"><b style="font-size:.95rem">'+stavVeceru+'</b><span>večer</span></div>'
     +'</div>'
-    +'<div class="vdet-taby">'+[['priprava','📋 Príprava a nákup'],['tim','👥 Tím'],['program','🎬 Program a scenár'],['pult','📱 Riadenie večera']]
+    +'<div class="vdet-taby">'+[['priprava','📋 Príprava a nákup'],['tim','👥 Tím'],['program','🎬 Program a scenár'],['pary','💃 Páry a diplomy'],['pult','📱 Riadenie večera']]
       .map(([k,l])=>'<button class="vdet-tab'+(VV_TAB===k?' on':'')+'" onclick="vvTab(\''+k+'\')">'+l+'</button>').join('')+'</div>'
-    +'<div class="vdet-telo vv-telo" style="max-height:none">'+({priprava:vvPriprava,tim:vvTim,program:vvProgram,pult:vvPult}[VV_TAB]||vvPriprava)()+'</div>'
+    +'<div class="vdet-telo vv-telo" style="max-height:none">'+({priprava:vvPriprava,tim:vvTim,program:vvProgram,pary:vvPary,pult:vvPult}[VV_TAB]||vvPriprava)()+'</div>'
     +'</div>';
   if(sc) box.querySelector('.vv-telo').scrollTop=sc;
 }
@@ -4985,7 +4985,7 @@ function vvPriprava(){
     const vs=I.filter(i=>i.cat===k), zoz=vs.filter(i=>!VV_LEN_CHYBA||i.stav!=='ok');
     h+='<div class="vv-kat">'+nazov+' <span class="small text-muted">'+vs.filter(i=>i.stav==='ok').length+'/'+vs.length+'</span></div>';
     zoz.forEach(i=>{
-      const info=[i.qty?(i.have||0)+' / '+i.qty+' '+(i.unit||''):'', i.who?'👤 '+i.who:'', +i.price>0?vEur(i.price)+(i.cost_id?' ✓ v nákladoch':''):'', i.note, i.updated_by?'zmenil/a '+i.updated_by:'']
+      const info=[i.qty?(i.have||0)+' / '+i.qty+' '+(i.unit||'')+(i.na_ziaka?' (podľa počtu žiakov)':''):(i.na_ziaka?'počet podľa žiakov — zatiaľ nikto':''), i.who?'👤 '+i.who:'', +i.price>0?vEur(i.price)+(i.cost_id?' ✓ v nákladoch':''):'', i.note, i.updated_by?'zmenil/a '+i.updated_by:'']
         .filter(Boolean).map(escHtml).join(' · ');
       h+='<div class="vv-pol st-'+i.stav+'"><div class="vv-pol-nm"><b>'+escHtml(i.name)+'</b>'+(info?'<div class="small text-muted">'+info+'</div>':'')+'</div>'
         +'<div class="vv-seg">'+['nie','pol','ok'].map(s=>'<button class="s-'+s+(i.stav===s?' on':'')+'" onclick="vvOp(\'item.set\',{item:{id:\''+i.id+'\',stav:\''+s+'\'}})">'+VV_STAV[s]+'</button>').join('')+'</div>'
@@ -5033,22 +5033,29 @@ function vvPolozkaEdit(id){
   vvModal('✎ Položka',
     vvIn('vvpN','Čo treba',i.name,'maxlength="120"')
     +'<label for="vvpK">Kam patrí</label><select id="vvpK" class="form-select form-select-sm bg-dark text-light border-secondary">'+VV_KAT.map(([k,n])=>'<option value="'+k+'"'+(k===i.cat?' selected':'')+'>'+n+'</option>').join('')+'</select>'
-    +'<div class="d-flex gap-2"><div class="flex-fill">'+vvIn('vvpQ','Počet (prázdne = bez počtu)',i.qty,'type="number" min="1"')+'</div><div style="width:110px">'+vvIn('vvpU','Jednotka',i.unit,'maxlength="12" placeholder="ks"')+'</div></div>'
+    +'<label class="d-flex align-items-center gap-2 mt-3" style="color:#ddd;font-size:.85rem"><input type="checkbox" id="vvpZ" '+(i.na_ziaka?'checked':'')+' onchange="document.getElementById(\'vvpQ\').disabled=this.checked"> Počet = počet žiakov skupiny (mení sa sám, teraz '+(VV.students||0)+')</label>'
+    +'<div class="d-flex gap-2"><div class="flex-fill">'+vvIn('vvpQ','Počet (prázdne = bez počtu)',i.qty,'type="number" min="1"'+(i.na_ziaka?' disabled':''))+'</div><div style="width:110px">'+vvIn('vvpU','Jednotka',i.unit,'maxlength="12" placeholder="ks"')+'</div></div>'
     +vvIn('vvpW','Kto zabezpečí',i.who,'list="vvMena" maxlength="60"')+'<datalist id="vvMena">'+mena.map(n=>'<option value="'+escHtml(n)+'">').join('')+'</datalist>'
     +vvIn('vvpP','Cena spolu (€)',i.price,'inputmode="decimal" placeholder="napr. 42,50"')
     +vvIn('vvpO','Poznámka',i.note,'maxlength="300"'),
-    ()=>vvOp('item.set',{item:{id, name:vvVal('vvpN'), cat:vvVal('vvpK'), qty:vvVal('vvpQ')||null, unit:vvVal('vvpU'), who:vvVal('vvpW'), price:vvVal('vvpP'), note:vvVal('vvpO')}}));
+    ()=>vvOp('item.set',{item:{id, name:vvVal('vvpN'), cat:vvVal('vvpK'), unit:vvVal('vvpU'), who:vvVal('vvpW'), price:vvVal('vvpP'), note:vvVal('vvpO'),
+      ...(document.getElementById('vvpZ').checked?{na_ziaka:true}:{na_ziaka:false, qty:vvVal('vvpQ')||null})}}));
 }
 
 // ── Tím ─────────────────────────────────────────────────────────────────────
 function vvTim(){
   const T=VV.team||[];
-  let h='<div class="vdet-navod">Kto je v tíme a či je dohodnutý. Každý dostane <b>vlastný odkaz</b> (bez účtu) — v telefóne uvidí program, svoje úlohy a pri každom bode mu zacinká. Honoráre a odkazy vidíš len ty.</div>';
+  const naNaklad=T.filter(m=>!m.cost_id && m.dohoda==='dohodnute' && +m.price>0);
+  const honorare=T.filter(m=>m.dohoda==='dohodnute' && +m.price>0).reduce((x,m)=>x+(+m.price),0);
+  let h='<div class="vdet-navod">Kto je v tíme a či je dohodnutý. Každý dostane <b>vlastný odkaz</b> (bez účtu) — v telefóne uvidí program, svoje úlohy a pri každom bode mu zacinká. 📲 = koľko telefónov má zapnuté upozornenia aj na zamknutú obrazovku. Honoráre a odkazy vidíš len ty.</div>'
+    +'<div class="small mb-2">💶 Dohodnuté honoráre spolu: <b>'+vEur(honorare)+'</b>'
+    +(naNaklad.length?' · <button class="btn btn-sm btn-outline-warning py-0 ms-1" onclick="vvHonorare('+naNaklad.length+')">Zapísať '+naNaklad.length+' do nákladov skupiny</button>':'')+'</div>';
   T.forEach(m=>{
     h+='<div class="vv-clen"><div class="vv-clen-ic">'+m.ic+'</div><div>'
-      +'<div class="vv-rola">'+escHtml(m.role_label)+(m.can_control?' · riadi program':'')+'</div>'
+      +'<div class="vv-rola">'+escHtml(m.role_label)+(m.can_control?' · riadi program':'')
+        +' <span style="letter-spacing:0;text-transform:none;font-weight:600;color:'+(m.push?'#aed581':'#777')+'" title="Telefóny so zapnutými upozorneniami">📲 '+(m.push||0)+'</span></div>'
       +'<div><b>'+escHtml(m.name||'—')+'</b>'+(m.phone?' · <a href="tel:'+escHtml(m.phone.replace(/\s+/g,''))+'" style="color:#C9A24C">'+escHtml(m.phone)+'</a>':'')
-        +(+m.price>0?' · '+vEur(m.price)+(m.zaloha?' <span class="text-success small">(záloha zaplatená)</span>':''):'')+'</div>'
+        +(+m.price>0?' · '+vEur(m.price)+(m.zaloha?' <span class="text-success small">(záloha zaplatená)</span>':'')+(m.cost_id?' <span class="small text-muted">✓ v nákladoch</span>':''):'')+'</div>'
       +(m.note?'<div class="small text-muted">'+escHtml(m.note)+'</div>':'')
       +'<div class="vv-seg mt-2">'+['hladame','oslovene','dohodnute'].map(s=>'<button class="s-'+s+(m.dohoda===s?' on':'')+'" onclick="vvOp(\'team.set\',{member:{id:\''+m.id+'\',dohoda:\''+s+'\'}})">'+VV_DOH[s]+'</button>').join('')+'</div>'
       +'</div><div class="vv-ak flex-wrap justify-content-end" style="max-width:220px">'
@@ -5064,6 +5071,11 @@ function vvTim(){
   if(VV.view_link) h+='<div class="card bg-dark border-secondary mt-3"><div class="card-body py-2 small">👀 <b>Odkaz len na pozeranie</b> (napr. pre triednu učiteľku) — vidí program a tím, nič nemení: '
     +'<button class="btn btn-sm btn-outline-secondary py-0 ms-1" onclick="vvKopiruj(\''+escHtml(VV.view_link)+'\')">🔗 kopírovať</button> <button class="btn btn-sm btn-outline-secondary py-0" onclick="vvQR(\'view\')">QR</button></div></div>';
   return h;
+}
+async function vvHonorare(n){
+  if(!confirm('Zapísať '+n+' dohodnutých honorárov do nákladov skupiny?\n\nKaždý sa zapíše raz. Keď neskôr zmeníš sumu, náklad sa upraví s ňou.')) return;
+  const d=await vvOp('team.costs');
+  if(d?.costs) showToast('Zapísané do nákladov: '+d.costs.count+' × spolu '+vEur(d.costs.total),'success');
 }
 async function vvClenPridaj(){
   const role=vvVal('vvNovaRola');
@@ -5126,11 +5138,13 @@ function vvProgram(){
     +'<button class="btn btn-sm btn-brand" onclick="vvOp(\'meta.set\',{start_time:vvVal(\'vvStart\'),warn_min:vvVal(\'vvWarn\')}).then(d=>d&&showToast(\'Uložené ✅\',\'success\'))">💾 Uložiť</button>'
     +'<div class="small text-muted ms-auto">'+P.length+' bodov · '+vvTrv(spolu)+(koniec?' · koniec cca <b>'+koniec+'</b>':'')+(VV.start_time?'':' · <span class="text-warning">zadaj začiatok, dopočítajú sa časy</span>')+'</div>'
     +'</div>'
-    +'<div class="vdet-navod">Návrh programu — uprav ho podľa dohody so školou. Časy sa dopočítajú z trvania; bod s <b>pevným časom</b> (napr. večera o 19:30) začne vtedy. Scenár je text pre moderátora, hudba je pokyn pre DJ-a.</div>';
+    +'<div class="vdet-navod">Návrh programu — uprav ho podľa dohody so školou. Časy sa dopočítajú z trvania; bod s <b>pevným časom</b> (napr. večera o 19:30) začne vtedy. Scenár je text pre moderátora, hudba je pokyn pre DJ-a. '
+    +'<a class="btn btn-sm btn-outline-light py-0 ms-1" href="/vecer/a/'+encodeURIComponent(VV.id)+'/tlac?co=scenar" target="_blank">🖨️ Scenár na tlač</a></div>';
   P.forEach((p,i)=>{
     const stav=L.status==='koniec'||(L.idx>i&&L.status!=='pred')?' hotovo':(i===L.idx&&(L.status==='bezi'||L.status==='pauza'))?' teraz':'';
     h+='<div class="vv-bod'+stav+'"><div class="vv-bod-cas">'+(p.plan||'—')+'<small>'+vvTrv(p.dur)+'</small></div><div>'
       +'<b>'+(i+1)+'. '+escHtml(p.title)+'</b>'+(p.at?' <span class="badge bg-secondary" style="font-size:.62rem">pevne '+escHtml(p.at)+'</span>':'')
+      +(p.ukaz_pary?' <span class="badge" style="font-size:.62rem;background:#3a3020;color:#e8d18f">💃 ukáže poradie párov</span>':'')
       +'<div>'+(p.who||[]).map(id=>T[id]).filter(Boolean).map(t=>'<span class="vv-chip">'+t.ic+' '+escHtml(t.role_label)+'</span>').join('')+'</div>'
       +(p.music?'<div class="small" style="color:#e8d18f">🎵 '+escHtml(p.music)+'</div>':'')
       +(p.script?'<div class="vv-scen">'+escHtml(p.script)+'</div>':'')
@@ -5161,9 +5175,92 @@ function vvBodEdit(id, za){
       +(VV.team||[]).map(t=>'<label class="d-flex align-items-center gap-1 m-0" style="color:#ddd;font-size:.82rem;border:1px solid #3a3a3a;border-radius:99px;padding:4px 10px"><input type="checkbox" class="vvbW" value="'+t.id+'" '+((p.who||[]).includes(t.id)?'checked':'')+'> '+t.ic+' '+escHtml(t.role_label)+'</label>').join('')+'</div>'
     +vvIn('vvbM','Hudba — pokyn pre DJ-a',p.music,'maxlength="200" placeholder="napr. Polonéza — Kilar"')
     +'<label for="vvbS">Scenár — čo sa deje a čo hovorí moderátor</label><textarea id="vvbS" rows="6" maxlength="3000" class="form-control form-control-sm bg-dark text-light border-secondary">'+escHtml(p.script)+'</textarea>'
-    +vvIn('vvbN','Poznámka pre tím',p.note,'maxlength="300"'),
+    +vvIn('vvbN','Poznámka pre tím',p.note,'maxlength="300"')
+    +'<label class="d-flex align-items-center gap-2 mt-3" style="color:#ddd;font-size:.85rem"><input type="checkbox" id="vvbP" '+(p.ukaz_pary?'checked':'')+'> Pri tomto bode ukázať poradie párov (moderátor číta mená — nástup, diplomy)</label>',
     ()=>vvOp('prog.set',{point:{...(id?{id}:{}), ...(za?{after:za}:{}), title:vvVal('vvbT'), at:vvVal('vvbA'), dur:vvVal('vvbD'),
-      who:[...document.querySelectorAll('.vvbW:checked')].map(c=>c.value), music:vvVal('vvbM'), script:vvVal('vvbS'), note:vvVal('vvbN')}}));
+      who:[...document.querySelectorAll('.vvbW:checked')].map(c=>c.value), music:vvVal('vvbM'), script:vvVal('vvbS'), note:vvVal('vvbN'),
+      ukaz_pary:document.getElementById('vvbP').checked}}));
+}
+// ── Páry na nástup a diplomy ────────────────────────────────────────────────
+// Poradie sa upravuje lokálne a ukladá tlačidlom — kým nie je uložené, obnova
+// zo servera ho neprepíše.
+let VV_PARY=null, VV_PARY_ID=null, VV_PARY_ZMENA=false;
+function vvParyNacitaj(){
+  if(VV_PARY && VV_PARY_ID===VV.id && VV_PARY_ZMENA) return;
+  const o=(uid,name)=>uid?{uid}:(name?{name}:null);
+  VV_PARY=(VV.pary||[]).map(p=>({id:p.id, a:o(p.a_uid,p.a), b:o(p.b_uid,p.b)}));
+  VV_PARY_ID=VV.id; VV_PARY_ZMENA=false;
+}
+function vvMenoOsoby(o){ if(!o) return ''; if(o.uid) return ((VV.ziaci||[]).find(z=>z.id===o.uid)||{}).name||'?'; return o.name||''; }
+function vvPary(){
+  vvParyNacitaj();
+  const Z=VV.ziaci||[], P=VV_PARY;
+  const pouzite=new Set(P.flatMap(p=>[p.a,p.b]).filter(o=>o&&o.uid).map(o=>o.uid));
+  const vyber=(i,strana,o)=>'<select class="form-select form-select-sm bg-dark text-light border-secondary" style="min-width:180px" onchange="vvParZmena('+i+',\''+strana+'\',this.value)">'
+    +'<option value="">— vyber —</option>'
+    +Z.map(z=>'<option value="'+z.id+'"'+(o&&o.uid===z.id?' selected':'')+'>'+escHtml(z.name)+(pouzite.has(z.id)&&!(o&&o.uid===z.id)?' (už v páre)':'')+'</option>').join('')
+    +(o&&!o.uid&&o.name?'<option value="__meno" selected>✎ '+escHtml(o.name)+'</option>':'')
+    +'<option value="__ine">✎ iné meno (mimo skupiny)…</option></select>';
+  const bez=Z.filter(z=>!pouzite.has(z.id));
+  let h='<div class="vdet-navod">Poradie, v akom páry nastupujú — v tom poradí sa odovzdávajú aj diplomy. Moderátor ho uvidí v telefóne pri bodoch označených „💃 ukáže poradie párov“ (nástup, diplomy). '
+    +'Mená detí vidí len admin, moderátor, tanečný majster a tím pri diplomoch — DJ ani fotograf nie.</div>'
+    +'<div class="d-flex gap-2 flex-wrap mb-2">'
+      +'<button class="btn btn-sm btn-outline-light" onclick="vvParPridaj()">+ Pridať pár</button>'
+      +(!P.length&&Z.length?'<button class="btn btn-sm btn-outline-warning" onclick="vvParZoZiakov()">Vytvoriť zo zoznamu žiakov ('+Z.length+')</button>':'')
+      +'<button class="btn btn-sm '+(VV_PARY_ZMENA?'btn-brand':'btn-outline-secondary')+'" onclick="vvParUloz()"'+(VV_PARY_ZMENA?'':' disabled')+'>💾 Uložiť poradie'+(VV_PARY_ZMENA?' (neuložené zmeny)':'')+'</button>'
+    +'</div>';
+  if(!Z.length) h+='<div class="text-muted small mb-2">V skupine zatiaľ nie sú zaregistrovaní žiaci — páry sa dajú zadať aj menom.</div>';
+  P.forEach((p,i)=>{
+    h+='<div class="d-flex gap-2 align-items-center flex-wrap mb-2 p-2" style="background:#1d1d1d;border:1px solid #2c2c2c;border-radius:11px">'
+      +'<b style="width:28px;color:#e8d18f">'+(i+1)+'.</b>'+vyber(i,'a',p.a)+'<span class="text-muted">a</span>'+vyber(i,'b',p.b)
+      +'<div class="vv-ak ms-auto"><button onclick="vvParPosun('+i+',-1)"'+(i===0?' disabled':'')+'>↑</button><button onclick="vvParPosun('+i+',1)"'+(i===P.length-1?' disabled':'')+'>↓</button>'
+      +'<button onclick="vvParZmaz('+i+')" title="Odstrániť pár">🗑</button></div></div>';
+  });
+  if(bez.length&&P.length) h+='<div class="small mt-2">Ešte bez páru ('+bez.length+'): '+bez.map(z=>'<span class="vv-chip">'+escHtml(z.name)+'</span>').join('')+'</div>';
+  const d=VV.diplom||{};
+  h+='<h6 class="fw-bold mt-4">📜 Diplomy</h6>'
+    +'<div class="vdet-navod">Diplom pre každého žiaka skupiny, v poradí párov (zvyšok abecedne). Na tlačovej stránke sa dá meno opraviť kliknutím a pridať diplom navyše.</div>'
+    +'<div class="row g-2" style="max-width:760px">'
+      +'<div class="col-sm-4">'+vvIn('vvdN','Nadpis',d.nadpis??'Diplom','maxlength="40"')+'</div>'
+      +'<div class="col-sm-8">'+vvIn('vvdT','Text pod menom',d.text??'za úspešné absolvovanie tanečného kurzu','maxlength="160"')+'</div>'
+      +'<div class="col-sm-3">'+vvIn('vvdP1','Podpis vľavo — meno',d.podpis1??'','maxlength="60"')+'</div>'
+      +'<div class="col-sm-3">'+vvIn('vvdR1','— funkcia',d.podpis1_rola??'tanečný majster','maxlength="60"')+'</div>'
+      +'<div class="col-sm-3">'+vvIn('vvdP2','Podpis vpravo — meno',d.podpis2??'','maxlength="60"')+'</div>'
+      +'<div class="col-sm-3">'+vvIn('vvdR2','— funkcia',d.podpis2_rola??'riaditeľ/ka školy','maxlength="60"')+'</div>'
+    +'</div>'
+    +'<div class="d-flex gap-2 flex-wrap mt-3">'
+      +'<button class="btn btn-sm btn-brand" onclick="vvDiplomUloz()">💾 Uložiť texty diplomu</button>'
+      +'<a class="btn btn-sm btn-outline-warning" href="/vecer/a/'+encodeURIComponent(VV.id)+'/tlac?co=diplomy" target="_blank">📜 Diplomy na tlač ('+Z.length+')</a>'
+      +'<a class="btn btn-sm btn-outline-light" href="/vecer/a/'+encodeURIComponent(VV.id)+'/tlac?co=scenar" target="_blank">🖨️ Scenár na tlač</a>'
+    +'</div>';
+  return h;
+}
+function vvParZmena(i,strana,val){
+  if(val==='__meno') return;
+  if(val==='__ine'){
+    const m=prompt('Meno partnera/partnerky mimo skupiny (napr. z inej triedy):', (VV_PARY[i][strana]&&VV_PARY[i][strana].name)||'');
+    if(m&&m.trim()) VV_PARY[i][strana]={name:m.trim()};
+  } else VV_PARY[i][strana]=val?{uid:val}:null;
+  VV_PARY_ZMENA=true; vvRender();
+}
+function vvParPridaj(){ VV_PARY.push({id:'n'+Date.now().toString(36), a:null, b:null}); VV_PARY_ZMENA=true; vvRender(); }
+function vvParZoZiakov(){
+  const Z=VV.ziaci||[]; VV_PARY=[];
+  for(let i=0;i<Z.length;i+=2) VV_PARY.push({id:'n'+i+Date.now().toString(36), a:{uid:Z[i].id}, b:Z[i+1]?{uid:Z[i+1].id}:null});
+  VV_PARY_ZMENA=true; vvRender();
+  showToast('Páry sú zatiaľ podľa abecedy — uprav, kto s kým tancuje, a ulož.','success');
+}
+function vvParPosun(i,d){ const j=i+d; if(j<0||j>=VV_PARY.length) return; [VV_PARY[i],VV_PARY[j]]=[VV_PARY[j],VV_PARY[i]]; VV_PARY_ZMENA=true; vvRender(); }
+function vvParZmaz(i){ VV_PARY.splice(i,1); VV_PARY_ZMENA=true; vvRender(); }
+async function vvParUloz(){
+  const zoznam=VV_PARY.filter(p=>p.a||p.b);
+  VV_PARY_ZMENA=false;
+  const d=await vvOp('pary.set',{pary:zoznam});
+  if(d){ VV_PARY=null; vvRender(); showToast('Poradie párov uložené ✅','success'); } else VV_PARY_ZMENA=true;
+}
+async function vvDiplomUloz(){
+  const d=await vvOp('meta.set',{diplom:{nadpis:vvVal('vvdN'), text:vvVal('vvdT'), podpis1:vvVal('vvdP1'), podpis1_rola:vvVal('vvdR1'), podpis2:vvVal('vvdP2'), podpis2_rola:vvVal('vvdR2')}});
+  if(d) showToast('Texty diplomu uložené ✅','success');
 }
 function vvMeta(){
   vvModal('✎ Názov večera', vvIn('vvmT','Názov',VV.title,'maxlength="120"')

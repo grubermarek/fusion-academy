@@ -27260,6 +27260,7 @@ async function runDailyTick(hourOverride){
       try{ await rebuildFunnelStamps(); }catch(e){ console.error('Funnel stamps error:',e.message); }
       try{ await autoKidsBookings(); }catch(e){ console.error('Auto kids error:',e.message); }
       try{ await pripomienkySkusky(); }catch(e){ console.error('Trial reminder error:',e.message); }
+      try{ if(VENCEK_VECER) await VENCEK_VECER.pripomienky(); }catch(e){ console.error('Venček večer pripomienky:',e.message); }
     }
   }
   if(hSK>=20){
@@ -27376,9 +27377,12 @@ require('./coach')({ app, db, q, Datastore, DATA_DIR, trainerAuth, adminAuth, AP
 require('./school-outreach')({ app, db, q, Datastore, DATA_DIR, adminAuth, nowISO, APP_URL, sendMail, emailTemplate });
 require('./fusion-ai')({ app, db, q, adminAuth, isTestContact }); // po coach — používa db.coach_contacts
 // Venčekový večer — príprava + program naživo pre celý tím (22. 9. 2026)
-require('./vencek-vecer')({ app, io, db, q, Datastore, DATA_DIR, adminAuth, nowISO, APP_URL });
-app.get('/vecer/a/:id',  (req,res)=>res.sendFile(path.join(__dirname,'public','vecer.html')));
-app.get('/vecer/:token', (req,res)=>res.sendFile(path.join(__dirname,'public','vecer.html')));
+// var: runDailyTick je deklarovaný vyššie a volá pripomienky — nesmie naraziť na TDZ.
+var VENCEK_VECER = require('./vencek-vecer')({ app, io, db, q, Datastore, DATA_DIR, adminAuth, nowISO, today, APP_URL, sendMail, emailTemplate });
+app.get('/vecer/a/:id/tlac',  (req,res)=>res.sendFile(path.join(__dirname,'public','vecer-tlac.html')));
+app.get('/vecer/a/:id',       (req,res)=>res.sendFile(path.join(__dirname,'public','vecer.html')));
+app.get('/vecer/:token/tlac', (req,res)=>res.sendFile(path.join(__dirname,'public','vecer-tlac.html')));
+app.get('/vecer/:token',      (req,res)=>res.sendFile(path.join(__dirname,'public','vecer.html')));
 
 // ── 404 page ──────────────────────────────────────────────────────────────────
 app.use((req,res,next)=>{

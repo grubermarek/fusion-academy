@@ -14,12 +14,15 @@
  *   · riadenie: štart, ďalší, dvojklik z dvoch telefónov neskočí o dva body, pauza, späť, koniec, správa
  *   · súbežné ťukanie z viacerých telefónov sa nestratí (zámok)
  *   · kúpené veci → náklady skupiny raz
- *   · obrazovky: admin sekcia, tímová stránka na 375 px, moderátor klikne → DJ-ovi sa zmení bod naživo
+ *   · počty „na žiaka" podľa registrácií, poradie párov (mená detí len moderátor/diplomy), diplomy a scenár na tlač
+ *   · honoráre do nákladov a synchronizácia ceny s nákladom, pripomienky 14/7/2/0 dní pred večerom
+ *   · push na zamknutý telefón: kľúč, odber len z push služieb, „Si na rade", „O 2 min", pauza, cielená správa, koniec
+ *   · obrazovky: admin sekcia, tímová stránka na 375 px, moderátor klikne → DJ-ovi sa zmení bod naživo, tlač
  *
  * Spustenie:  node qa/vencek-vecer.test.js      (QA_SHOTS=priečinok uloží screenshoty)
  */
 const { spawn } = require('child_process');
-const path = require('path'), fs = require('fs'), os = require('os');
+const path = require('path'), fs = require('fs'), os = require('os'), crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 process.env.NODE_PATH = [process.env.NODE_PATH, 'C:/Fusion Academy/automatizacie/node_modules'].filter(Boolean).join(path.delimiter);
 require('module').Module._initPaths();
@@ -70,7 +73,8 @@ const TRIEDA = 'qaVcTrieda00001', SKOLA = 'qaVcSkola000001';
   const srv = spawn(process.execPath, ['server.js'], {
     cwd: path.join(__dirname, '..'),
     env: { ...process.env, TZ: 'UTC', PORT: String(PORT), DATA_DIR: DATA, APP_URL: BASE,
-      RATE_LIMIT_OFF: '1', MAIL_CAPTURE: '1', STRIPE_SECRET_KEY: 'sk_test_qa_fake', STRIPE_FAKE: '1', NODE_ENV: 'test' },
+      RATE_LIMIT_OFF: '1', MAIL_CAPTURE: '1', STRIPE_SECRET_KEY: 'sk_test_qa_fake', STRIPE_FAKE: '1', NODE_ENV: 'test',
+      PUSH_FAKE: '1', VECER_MINUTA_MS: '1000' },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   let chyba = ''; srv.stderr.on('data', d => { chyba += d; });
@@ -240,6 +244,126 @@ const TRIEDA = 'qaVcTrieda00001', SKOLA = 'qaVcSkola000001';
     const moja1 = z1.d.skupiny.find(s => s.class_id === TRIEDA);
     ok('zoznam: DJ dohodnutý, fotograf nie, príprava sa ráta', moja1.vecer.dj === 'dohodnute' && moja1.vecer.foto === 'hladame' && moja1.vecer.items_ok >= 8, JSON.stringify(moja1.vecer));
 
+    console.log('\n8b) Počty podľa žiakov:');
+    r = await j('/api/admin/venceky/assign-student', { method: 'POST', body: { class_id: TRIEDA, query: 'qa.vc.klient', role: 'student' } }, jar.adm);
+    ok('4. žiak priradený do skupiny', r.status === 200 && r.d.ok, JSON.stringify(r.d));
+    A = (await j('/api/vecer/stav?id=' + VID, {}, jar.adm)).d;
+    let kv = A.items.find(i => i.id === kvety.id);
+    ok('kvety: počet sa sám zvýšil na 4, 3 kusy → stav „časť"', A.students === 4 && kv.qty === 4 && kv.have === 3 && kv.stav === 'pol' && kv.na_ziaka, JSON.stringify(kv));
+    r = await opA('item.set', { item: { id: kvety.id, qty: 10 } });
+    kv = r.d.items.find(i => i.id === kvety.id);
+    ok('ručný počet vypne „podľa žiakov"', kv.qty === 10 && !kv.na_ziaka);
+    r = await opA('item.set', { item: { id: kvety.id, na_ziaka: true } });
+    ok('zapnutie „podľa žiakov" vráti 4', r.d.items.find(i => i.id === kvety.id).qty === 4);
+
+    console.log('\n8c) Poradie párov a diplomy:');
+    const Z = A.ziaci || [];
+    ok('admin má zoznam žiakov (4) bez učiteľky a rodiča', Z.length === 4 && !Z.some(z => /Učiteľka|Mama/.test(z.name)), Z.map(z => z.name).join(','));
+    const zid = n => (Z.find(z => z.name === n) || {}).id;
+    r = await opA('pary.set', { pary: [{ a: { uid: zid('Tomáš Druhý') }, b: { uid: zid('Ema Prvá') } },
+      { a: { uid: zid('Lea Tretia') }, b: { name: 'Partner <Zvonka>' } }, { a: { uid: 'neexistuje' }, b: null }] });
+    ok('páry uložené, neplatný vyradený, meno mimo skupiny bez HTML', r.d.pary.length === 2 && r.d.pary[0].a === 'Tomáš Druhý' && r.d.pary[0].b === 'Ema Prvá' && r.d.pary[1].b === 'Partner Zvonka', JSON.stringify(r.d.pary));
+    const DIP = rola('diplomy');
+    const sDJ = (await j('/api/vecer/stav?t=' + DJ.token)).d;
+    ok('DJ páry ani mená detí nevidí', !('pary' in sDJ) && !sDJ.vidi_mena && !/Tomáš|Ema Prvá/.test(JSON.stringify(sDJ)));
+    ok('moderátor páry vidí', ((await j('/api/vecer/stav?t=' + MOD.token)).d.pary || []).length === 2);
+    ok('tím pri diplomoch páry vidí', ((await j('/api/vecer/stav?t=' + DIP.token)).d.pary || []).length === 2);
+    ok('DJ poradie meniť nesmie', (await opT(DJ.token, 'pary.set', { pary: [] })).status === 403);
+    let t = await j('/api/vecer/tlac?id=' + VID + '&co=diplomy', {}, jar.adm);
+    ok('diplomy v poradí párov, zvyšok abecedne, partner mimo kurzu bez diplomu', JSON.stringify(t.d.mena) === JSON.stringify(['Tomáš Druhý', 'Ema Prvá', 'Lea Tretia', 'Klientka Zvedavá']), JSON.stringify(t.d.mena));
+    ok('podpis vľavo: tanečný majster', t.d.diplom.podpis1 === 'Marek Gruber' && t.d.diplom.podpis1_rola === 'tanečný majster');
+    ok('DJ diplomy s menami nedostane', (await j('/api/vecer/tlac?t=' + DJ.token + '&co=diplomy')).status === 403);
+    ok('tím pri diplomoch áno', ((await j('/api/vecer/tlac?t=' + DIP.token + '&co=diplomy')).d.mena || []).length === 4);
+    t = await j('/api/vecer/tlac?t=' + DJ.token + '&co=scenar');
+    ok('scenár pre DJ-a: program a tím, bez mien detí', t.d.program.length === A.program.length && t.d.team.length === 8 && !t.d.pary && !/Tomáš/.test(JSON.stringify(t.d)));
+    await opA('meta.set', { diplom: { nadpis: 'Pamätný list', podpis2: 'Mgr. Riaditeľka <b>' } });
+    t = await j('/api/vecer/tlac?id=' + VID + '&co=diplomy', {}, jar.adm);
+    ok('texty diplomu sa uložia (bez HTML)', t.d.diplom.nadpis === 'Pamätný list' && t.d.diplom.podpis2 === 'Mgr. Riaditeľka b' && t.d.diplom.text === 'za úspešné absolvovanie tanečného kurzu', JSON.stringify(t.d.diplom));
+    ok('stránky tlače sa načítajú', (await fetch(BASE + '/vecer/' + DJ.token + '/tlac')).status === 200 && (await fetch(BASE + '/vecer/a/' + VID + '/tlac')).status === 200);
+
+    console.log('\n8d) Honoráre a náklady:');
+    r = await opA('team.costs');
+    ok('dohodnutý honorár DJ-a do nákladov', r.d.costs.count === 1 && r.d.costs.total === 250.5, JSON.stringify(r.d.costs));
+    const djCost = () => rd('venceky_costs.db').find(k => k.vecer_id === VID && /DJ \/ ozvučenie/.test(k.label));
+    ok('náklad s rolou a menom', djCost() && djCost().label === 'Venčekový večer: DJ / ozvučenie — DJ Peter' && djCost().class_id === TRIEDA);
+    ok('druhý raz nič', (await opA('team.costs')).d.costs.count === 0);
+    await opA('team.set', { member: { id: DJ.id, price: '300' } });
+    ok('zmena honorára upraví náklad', djCost() && djCost().amount === 300);
+    r = await opA('team.set', { member: { id: DJ.id, price: '' } });
+    ok('zrušený honorár zmaže náklad', !djCost() && !r.d.team.find(m => m.id === DJ.id).cost_id);
+    await opA('team.set', { member: { id: DJ.id, price: '250,5' } });
+    await opA('item.set', { item: { id: kvety.id, price: '50' } });
+    ok('zmena ceny kvetov upraví ich náklad', (rd('venceky_costs.db').find(k => k.vecer_id === VID && /Kvety/.test(k.label)) || {}).amount === 50);
+
+    console.log('\n8e) Push na zamknutý telefón:');
+    const man = await (await fetch(BASE + '/api/vecer/manifest?t=' + DJ.token)).json();
+    ok('manifest otvorí stránku DJ-a (iPhone z plochy)', man.start_url === '/vecer/' + DJ.token && man.scope === '/vecer/' && man.display === 'standalone');
+    const kl = await j('/api/vecer/push-kluc');
+    ok('verejný kľúč pre push', kl.status === 200 && /^[A-Za-z0-9_-]{80,}$/.test(kl.d.key || ''), JSON.stringify(kl.d));
+    ok('kľúč je stály', (await j('/api/vecer/push-kluc')).d.key === kl.d.key);
+    ok('súkromný kľúč len v DB', rd('settings.db').some(s => s.key === 'vapid_keys' && s.value && s.value.privateKey) && !/private/i.test(JSON.stringify(kl.d)));
+    const ecdh = crypto.createECDH('prime256v1'); ecdh.generateKeys();
+    const sub = n => ({ endpoint: 'https://fcm.googleapis.com/fcm/send/qa-' + n, keys: { p256dh: ecdh.getPublicKey().toString('base64url'), auth: crypto.randomBytes(16).toString('base64url') } });
+    ok('cudzia adresa odberu → 400', (await j('/api/vecer/push', { method: 'POST', body: { t: DJ.token, sub: { ...sub('x'), endpoint: 'https://evil.example.com/push/x' } } })).status === 400);
+    ok('zlý odkaz → 404', (await j('/api/vecer/push', { method: 'POST', body: { t: 'zlyodkazzlyodkaz123', sub: sub('y') } })).status === 404);
+    const FOTO = rola('foto');
+    for (const [tk, n] of [[DJ.token, 'dj'], [MOD.token, 'mod'], [FOTO.token, 'foto'], [KV.token, 'kv']])
+      await j('/api/vecer/push', { method: 'POST', body: { t: tk, sub: sub(n) } });
+    await j('/api/vecer/push', { method: 'POST', body: { id: VID, sub: sub('admin') } }, jar.adm);
+    await j('/api/vecer/push', { method: 'POST', body: { t: DJ.token, sub: sub('dj') } });
+    ok('odbery uložené raz na telefón (5)', rd('vencek_vecer_push.db').length === 5, String(rd('vencek_vecer_push.db').length));
+    A = (await j('/api/vecer/stav?id=' + VID, {}, jar.adm)).d;
+    ok('admin vidí 📲 pri DJ-ovi', A.team.find(m => m.id === DJ.id).push === 1);
+    await opA('team.token', { member_id: KV.id });
+    ok('nový odkaz kvetov zruší ich starý odber', rd('vencek_vecer_push.db').length === 4 && !rd('vencek_vecer_push.db').some(s => s.endpoint.endsWith('qa-kv')));
+    const pushLog = () => { try { return fs.readFileSync(path.join(DATA, 'push-fake.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch (e) { return []; } };
+    await opA('meta.set', { warn_min: 2 });
+    await opT(MOD.token, 'live.start');
+    await sleep(400);
+    let L = pushLog();
+    ok('štart: push všetkým 4 telefónom', L.filter(x => x.druh === 'bod').length === 4, String(L.length));
+    const lDJ = L.find(x => x.member_id === DJ.id) || {};
+    ok('DJ: „Si na rade" (hrá hudbu v prvom bode)', /^👉 Si na rade: Príchod hostí/.test(lDJ.title || '') && lDJ.ja, JSON.stringify(lDJ));
+    ok('admin: „Teraz"', L.some(x => x.member_id === 'admin' && /^▶ Teraz: /.test(x.title)));
+    ok('v notifikácii je ďalší bod a odkaz na stránku DJ-a', /^Ďalej: Slávnostný nástup párov/.test(lDJ.body || '') && lDJ.url === '/vecer/' + DJ.token, JSON.stringify(lDJ));
+    const iT = A.program.findIndex(p => p.title === 'Tanec: Waltz');
+    await opA('live.goto', { idx: iT });
+    await sleep(5200);   // Waltz 4 „min" = 4 s v teste, varovanie 2 s pred koncom
+    L = pushLog();
+    ok('pred koncom bodu: „O 2 min" s ďalším bodom', L.some(x => x.druh === 'varuj' && /O 2 min/.test(x.title) && /Tanec: Cha-cha/.test(x.title)), JSON.stringify(L.filter(x => x.druh === 'varuj')));
+    ok('DJ: „O 2 min si na rade"', L.some(x => x.druh === 'varuj' && x.member_id === DJ.id && /si na rade: Tanec: Cha-cha/.test(x.title)));
+    ok('čas vypršal: len riadiaci (moderátor, admin)', L.filter(x => x.druh === 'vyprsal').map(x => x.member_id).sort().join() === [MOD.id, 'admin'].sort().join(), JSON.stringify(L.filter(x => x.druh === 'vyprsal').map(x => x.member_id)));
+    let p0 = pushLog().length;
+    await opA('live.goto', { idx: iT }); await opA('live.pause'); await sleep(4500);
+    ok('pauza zastaví „O 2 min" aj „vypršal"', !pushLog().slice(p0).some(x => x.druh === 'varuj' || x.druh === 'vyprsal'));
+    await opA('live.resume');
+    p0 = pushLog().length;
+    await opT(MOD.token, 'live.msg', { text: 'Fotograf k parketu', to: [FOTO.id] });
+    await sleep(400);
+    ok('cielená správa: fotograf a admin, DJ nie', pushLog().slice(p0).filter(x => x.druh === 'msg').map(x => x.member_id).sort().join() === [FOTO.id, 'admin'].sort().join());
+    await opA('live.goto', { idx: A.program.length - 1 });
+    p0 = pushLog().length;
+    await opA('live.next', { from: A.program.length - 1 });
+    await sleep(400);
+    ok('koniec večera: push všetkým', pushLog().slice(p0).filter(x => x.druh === 'koniec').length === 4);
+    await opA('live.reset');
+    await j('/api/vecer/push-zrus', { method: 'POST', body: { t: FOTO.token, endpoint: sub('foto').endpoint } });
+    ok('telefón si upozornenia vypne', !rd('vencek_vecer_push.db').some(s => s.endpoint.endsWith('qa-foto')));
+
+    console.log('\n8f) Pripomienky pred večerom:');
+    const prip = datum => j('/api/admin/vecer/pripomienky', { method: 'POST', body: { datum } }, jar.adm);
+    r = await prip('2026-11-28');
+    ok('14 dní pred: pripomienka', r.d.sent.length === 1 && r.d.sent[0].dni === 14 && !r.d.sent[0].hotovo, JSON.stringify(r.d));
+    const n14 = rd('notifications.db').find(x => x.key === (r.d.sent[0] || {}).key && x.user_id === 'qaVcAdmin000001') || {};
+    ok('adminovi: čo chýba (tím, nákup)', /o 14 dní/.test(n14.title || '') && /Tím ešte nie je dohodnutý: [^·]*Fotograf/.test(n14.body) && /Nakúpiť/.test(n14.body), JSON.stringify(n14));
+    ok('mail adminovi (v teste len zachytený)', rd('mail_log.db').some(m => m.to === 'qa.vc.admin@qa-biz.local' && /Venček Halíč QA o 14 dní/.test(m.subject)));
+    ok('druhý beh v ten istý deň nič', (await prip('2026-11-28')).d.sent.length === 0);
+    ok('13 dní pred nič', (await prip('2026-11-29')).d.sent.length === 0);
+    r = await prip('2026-12-12');
+    const n0 = rd('notifications.db').find(x => x.key === (r.d.sent[0] || {}).key) || {};
+    ok('v deň večera: „je dnes" + pošli tímu odkazy', r.d.sent.length === 1 && /je dnes/.test(n0.title) && /osobné odkazy/.test(n0.body), JSON.stringify(n0));
+    ok('klientka pripomienky nespustí', (await j('/api/admin/vecer/pripomienky', { method: 'POST', body: {} }, jar.kl)).status === 403);
+
     console.log('\n9) Obrazovky v prehliadači:');
     const { chromium } = require('playwright');
     browser = await chromium.launch();
@@ -285,6 +409,26 @@ const TRIEDA = 'qaVcTrieda00001', SKOLA = 'qaVcSkola000001';
     const tTim = await pDJ.evaluate(() => document.getElementById('pTim').innerText);
     ok('tím: fotograf „ešte nemáme", DJ dohodnutý', /Fotograf[\s\S]*ešte nemáme/i.test(tTim) && /DJ Peter/.test(tTim), tTim.slice(0, 200));
     ok('tímová stránka bez chýb v JS', pDJ._chyby.length === 0 && pMO._chyby.length === 0, [...pDJ._chyby, ...pMO._chyby].join(' | '));
+    await opA('live.goto', { idx: A.program.findIndex(p => p.title === 'Slávnostný nástup párov') });
+    await pMO.waitForFunction(() => !!document.querySelector('#pTeraz .pary-box'), null, { timeout: 8000 }).catch(() => {});
+    const tPary = await pMO.evaluate(() => (document.querySelector('#pTeraz .pary-box') || {}).innerText || '');
+    ok('moderátor: pri nástupe vidí poradie párov', /Tomáš Druhý/.test(tPary) && /Partner Zvonka/.test(tPary), tPary);
+    if (SHOTS) await pMO.screenshot({ path: path.join(SHOTS, 'vecer-moderator-pary.png'), fullPage: true });
+    ok('DJ: mená detí nevidí', await pDJ.evaluate(() => !document.querySelector('.pary') && !/Tomáš/.test(document.body.innerText)));
+
+    const pTl = await stranka('adm', '/vecer/a/' + VID + '/tlac?co=diplomy', 1200);
+    await pTl.waitForSelector('.diplom', { timeout: 15000 });
+    const dip = await pTl.evaluate(() => ({ n: document.querySelectorAll('.diplom').length, prvy: document.querySelector('.diplom .meno').textContent, nadpis: document.querySelector('.diplom .nadpis').textContent }));
+    ok('tlač: 4 diplomy, prvý Tomáš Druhý, nadpis Pamätný list', dip.n === 4 && dip.prvy === 'Tomáš Druhý' && dip.nadpis === 'Pamätný list', JSON.stringify(dip));
+    if (SHOTS) { await pTl.evaluate(() => document.fonts.ready); await pTl.screenshot({ path: path.join(SHOTS, 'vecer-diplom.png'), clip: { x: 0, y: 0, width: 1200, height: 900 } }); }
+    const pTs = await stranka(null, '/vecer/' + DJ.token + '/tlac?co=scenar', 900);
+    await pTs.waitForSelector('.scen', { timeout: 15000 });
+    ok('tlač scenára pre DJ-a (bez mien detí)', await pTs.evaluate(() => /Slávnostný nástup párov/.test(document.querySelector('.scen').innerText) && !/Tomáš/.test(document.body.innerText)));
+    if (SHOTS) await pTs.screenshot({ path: path.join(SHOTS, 'vecer-scenar.png'), fullPage: true });
+    const pTd = await stranka(null, '/vecer/' + DJ.token + '/tlac?co=diplomy', 900);
+    await pTd.waitForSelector('.chyba', { timeout: 15000 });
+    ok('DJ diplomy s menami neotvorí', await pTd.evaluate(() => /vidí admin/.test(document.body.innerText) && !document.querySelector('.diplom')));
+    ok('tlač bez chýb v JS', !pTl._chyby.length && !pTs._chyby.length && !pTd._chyby.length, [...pTl._chyby, ...pTs._chyby, ...pTd._chyby].join(' | '));
 
     const pA = await stranka('adm', '/admin', 1280);
     await pA.waitForFunction(() => typeof show === 'function', null, { timeout: 20000 });
@@ -293,7 +437,12 @@ const TRIEDA = 'qaVcTrieda00001', SKOLA = 'qaVcSkola000001';
     const tA = await pA.evaluate(() => ({ t: document.getElementById('s-vecer').innerText, hub: document.querySelectorAll('#s-vecer .pen-tab').length }));
     ok('admin: sekcia so záložkami Venčeky ↔ Venčekový večer', tA.hub === 2 && /Školy a skupiny/.test(tA.t));
     ok('admin: karta skupiny a upozornenie na nedohodnutého fotografa', /Halíč QA/.test(tA.t) && /Ešte nie je dohodnutý: [^\n]*Fotograf/.test(tA.t), tA.t.slice(0, 400));
-    for (const k of ['tim', 'program', 'pult', 'priprava']) {
+    await pA.evaluate(() => vvTab('pary')); await sleep(300);
+    ok('admin: záložka Páry — 2 páry s výberom žiakov', await pA.evaluate(() => document.querySelectorAll('#vvDetail .vv-telo select').length === 4));
+    if (SHOTS) await pA.screenshot({ path: path.join(SHOTS, 'vecer-admin-pary.png'), fullPage: false });
+    await pA.evaluate(() => vvTab('tim')); await sleep(300);
+    ok('admin: Tím ukazuje 📲 a honoráre', await pA.evaluate(() => /📲 1/.test(document.querySelector('#vvDetail .vv-telo').innerText) && /Dohodnuté honoráre spolu/.test(document.querySelector('#vvDetail .vv-telo').innerText)));
+    for (const k of ['tim', 'program', 'pary', 'pult', 'priprava']) {
       await pA.evaluate(k => vvTab(k), k);
       await sleep(300);
     }

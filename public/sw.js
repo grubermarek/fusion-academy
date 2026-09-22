@@ -1,4 +1,4 @@
-﻿const CACHE = 'fa-v700';
+﻿const CACHE = 'fa-v701';
 const STATIC = ['/fa-theme.css','/aurora.css','/logo-mark.png','/logo-wordmark.png'];
 
 self.addEventListener('install', e=>{
@@ -28,4 +28,27 @@ self.addEventListener('fetch', e=>{
       return cached || fresh;
     })
   );
+});
+
+// Push z venčekového večera (22. 9. 2026): zamknutý telefón tímu dostane
+// „Teraz: …" / „Si na rade" aj bez otvorenej stránky. Keď je stránka práve
+// na očiach, notifikácia je tichá — stránka si zacinká sama.
+self.addEventListener('push', e=>{
+  let d={};
+  try{ d=e.data ? e.data.json() : {}; }catch(x){ d={ title:'Fusion Academy', body: e.data ? e.data.text() : '' }; }
+  e.waitUntil((async()=>{
+    const okna = await clients.matchAll({ type:'window', includeUncontrolled:true });
+    const naOciach = okna.some(c=>c.visibilityState==='visible' && d.url && new URL(c.url).pathname===d.url);
+    await self.registration.showNotification(d.title||'Fusion Academy', {
+      body: d.body||'', tag: d.tag||undefined, renotify: !!d.tag, icon:'/logo-mark.png', badge:'/logo-mark.png',
+      vibrate: d.vibrate||[200,100,200], silent: naOciach, requireInteraction: !!d.ja, data:{ url: d.url||'/' } });
+  })());
+});
+self.addEventListener('notificationclick', e=>{
+  e.notification.close();
+  const url=(e.notification.data && e.notification.data.url) || '/';
+  e.waitUntil(clients.matchAll({ type:'window', includeUncontrolled:true }).then(ws=>{
+    for(const w of ws){ if(new URL(w.url).pathname===url && 'focus' in w) return w.focus(); }
+    return clients.openWindow(url);
+  }));
 });

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Venčekový večer — tlač</title>
+<link rel="icon" type="image/png" href="/logo-mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap" rel="stylesheet">
+<style>
+  /* Tlač k venčekovému večeru (22. 9. 2026): diplomy s menami žiakov a scenár
+     ako záloha na papieri. Na obrazovke je to náhľad strán, tlačí sa bez lišty. */
+  :root{--zlata:#A8842E;--zlata2:#C9A84C;--text:#231d12;--siva:#6b6252}
+  *{box-sizing:border-box}
+  body{margin:0;background:#3a3834;font-family:'Segoe UI',system-ui,sans-serif;color:var(--text)}
+  .lista{position:sticky;top:0;z-index:5;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 16px;
+    background:#0B0A07;color:#F2ECDC;border-bottom:1px solid rgba(201,168,76,.35)}
+  .lista b{color:var(--zlata2)}
+  .lista .tl{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+  .lista button,.lista a{min-height:42px;border-radius:10px;border:1px solid rgba(201,168,76,.5);background:#1F1C15;color:#F2ECDC;
+    padding:8px 14px;font:inherit;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center}
+  .lista .hl{background:var(--zlata2);color:#17130A;border-color:var(--zlata2)}
+  .lista small{color:#A99F86}
+  .strany{padding:20px 0 40px;display:flex;flex-direction:column;align-items:center;gap:18px}
+  .chyba{color:#F2ECDC;text-align:center;padding:60px 20px}
+
+  /* ── Diplom (A4 na šírku) ── */
+  .diplom{width:297mm;height:210mm;position:relative;background:#fffdf8;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.4);
+    font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif;text-align:center}
+  .diplom .ram{position:absolute;inset:9mm;border:1.1mm solid var(--zlata)}
+  .diplom .ram::after{content:'';position:absolute;inset:2.4mm;border:.3mm solid var(--zlata)}
+  .diplom .znak{position:absolute;left:50%;top:50%;width:150mm;height:150mm;transform:translate(-50%,-50%);opacity:.07;
+    background:url('/logo-mark.png') center/contain no-repeat}
+  .diplom .roh{position:absolute;width:30mm;height:30mm;background:url('/logo-mark.png') center/contain no-repeat;opacity:.9}
+  .diplom .roh.l{left:15mm;top:15mm;transform:rotate(-12deg)} .diplom .roh.p{right:15mm;top:15mm;transform:scaleX(-1) rotate(-12deg)}
+  .diplom .obsah{position:absolute;inset:18mm 26mm 20mm;display:flex;flex-direction:column;align-items:center}
+  .diplom .logo{width:112mm;height:25mm;object-fit:cover;margin-top:1mm}
+  .diplom .nadpis{font-size:40pt;letter-spacing:.32em;font-weight:700;color:var(--zlata);margin:5mm 0 0;padding-left:.32em;text-transform:uppercase}
+  .diplom .meno{font-size:40pt;font-style:italic;font-weight:600;margin:8mm 0 0;min-width:150mm;padding:0 6mm 2mm;
+    border-bottom:.4mm solid var(--zlata);outline:none;line-height:1.1}
+  .diplom .meno:focus{background:rgba(201,168,76,.12)}
+  .diplom .text{font-size:17pt;margin-top:6mm;font-weight:500}
+  .diplom .skola{font-size:14pt;color:var(--siva);margin-top:3mm;font-weight:500}
+  .diplom .podpisy{margin-top:auto;display:flex;justify-content:space-between;width:100%;padding:0 10mm}
+  .diplom .podpis{width:70mm;border-top:.3mm solid var(--text);padding-top:1.5mm;font-size:12.5pt;font-weight:600}
+  .diplom .podpis span{display:block;font-weight:500;font-style:italic;color:var(--siva);font-size:11pt}
+  .diplom .odstran{position:absolute;right:12mm;bottom:3mm;font:600 11px 'Segoe UI',sans-serif;background:#fff;border:1px solid #ccc;border-radius:6px;padding:3px 8px;cursor:pointer;color:#a33}
+
+  /* ── Scenár (A4 na výšku) ── */
+  .scen{width:210mm;min-height:297mm;background:#fff;padding:14mm 14mm 16mm;box-shadow:0 8px 30px rgba(0,0,0,.4);font-size:10.5pt;line-height:1.4}
+  .scen h1{font-family:'Cormorant Garamond',Georgia,serif;font-size:24pt;margin:0;color:#7d6220}
+  .scen .pod{color:var(--siva);margin:2px 0 10px}
+  .scen h2{font-size:11pt;text-transform:uppercase;letter-spacing:.08em;color:#7d6220;margin:14px 0 6px;border-bottom:.3mm solid #d9c89a;padding-bottom:2px}
+  .scen table{width:100%;border-collapse:collapse}
+  .scen td,.scen th{border-bottom:.2mm solid #ddd;padding:4px 5px;vertical-align:top;text-align:left}
+  .scen th{font-size:8.5pt;text-transform:uppercase;color:var(--siva);letter-spacing:.06em}
+  .scen .cas{white-space:nowrap;font-weight:700;width:16mm}
+  .scen .min{white-space:nowrap;color:var(--siva);width:12mm}
+  .scen .bod b{font-size:11pt}
+  .scen .kto{color:var(--siva);font-size:9pt}
+  .scen .hud{font-size:9.5pt}
+  .scen .scr{white-space:pre-wrap;font-size:9.5pt;margin-top:2px;background:#faf7ef;padding:3px 5px;border-radius:3px}
+  .scen tr{break-inside:avoid}
+  .scen ol{margin:4px 0 0;padding-left:22px;columns:2;column-gap:10mm}
+
+  @media print{
+    body{background:#fff}
+    .lista,.odstran{display:none!important}
+    .strany{padding:0;gap:0;display:block}
+    .diplom,.scen{box-shadow:none;margin:0;page-break-after:always;break-after:page}
+    .scen{width:auto;min-height:0;padding:0}
+    .diplom:last-child,.scen:last-child{page-break-after:auto;break-after:auto}
+  }
+</style>
+</head>
+<body>
+<div class="lista" id="lista"><b>Venčekový večer</b> <small>načítavam…</small></div>
+<div class="strany" id="strany"></div>
+<script>
+const CESTA = location.pathname.split('/').filter(Boolean);
+const MOD = CESTA[1] === 'a' ? { id: CESTA[2] || '' } : { t: CESTA[1] || '' };
+const CO = new URLSearchParams(location.search).get('co') === 'diplomy' ? 'diplomy' : 'scenar';
+// Diplom je na šírku bez okrajov, scenár na výšku s okrajmi (tečie cez viac strán).
+document.head.insertAdjacentHTML('beforeend', '<style>@page{size:A4 ' + (CO === 'diplomy' ? 'landscape;margin:0' : 'portrait;margin:12mm') + '}</style>');
+const spat = MOD.t ? '/vecer/' + encodeURIComponent(MOD.t) : '/vecer/a/' + encodeURIComponent(MOD.id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const DNI = ['nedeľa', 'pondelok', 'utorok', 'streda', 'štvrtok', 'piatok', 'sobota'];
+const datum = ymd => { if(!ymd) return ''; const d = new Date(ymd + 'T12:00:00'); return isNaN(d) ? ymd : d.getDate() + '. ' + (d.getMonth() + 1) + '. ' + d.getFullYear(); };
+const datumDen = ymd => { if(!ymd) return ''; const d = new Date(ymd + 'T12:00:00'); return isNaN(d) ? ymd : DNI[d.getDay()] + ' ' + datum(ymd); };
+let D = null;
+
+async function nacitaj(){
+  const qs = (MOD.t ? 't=' + encodeURIComponent(MOD.t) : 'id=' + encodeURIComponent(MOD.id)) + '&co=' + CO;
+  const r = await fetch('/api/vecer/tlac?' + qs, { cache: 'no-store' });
+  const d = await r.json().catch(() => ({}));
+  if(!r.ok){
+    document.getElementById('lista').innerHTML = '<b>Venčekový večer</b><div class="tl"><a href="' + spat + '">← Späť</a></div>';
+    document.getElementById('strany').innerHTML = '<div class="chyba">🔒 ' + esc(d.error || 'Tento odkaz neplatí.') + '</div>';
+    return;
+  }
+  D = d;
+  document.title = (CO === 'diplomy' ? 'Diplomy' : 'Scenár') + ' — ' + (d.school || d.title);
+  CO === 'diplomy' ? diplomy() : scenar();
+}
+
+// ── Diplomy ────────────────────────────────────────────────────────────────
+function diplom(meno, i){
+  const x = D.diplom || {};
+  const skola = [D.school, D.class_name && D.class_name !== 'Venčeková skupina' ? D.class_name : ''].filter(Boolean).join(' · ');
+  const vecer = ['Venčekový večer', datum(D.event_date), D.event_venue].filter(Boolean).join(' · ');
+  const podpis = (m, r) => '<div class="podpis">' + esc(m || ' ') + '<span>' + esc(r || '') + '</span></div>';
+  return '<section class="diplom" data-i="' + i + '"><div class="znak"></div><div class="ram"></div><div class="roh l"></div><div class="roh p"></div>'
+    + '<div class="obsah">'
+      + '<img class="logo" src="/logo-wordmark.png" alt="Fusion Academy">'
+      + '<div class="nadpis">' + esc(x.nadpis || 'Diplom') + '</div>'
+      + '<div class="meno" contenteditable="true" spellcheck="false" title="Klikni a oprav meno">' + esc(meno) + '</div>'
+      + (x.text ? '<div class="text">' + esc(x.text) + '</div>' : '')
+      + '<div class="skola">' + esc(skola) + (skola ? '<br>' : '') + esc(vecer) + '</div>'
+      + '<div class="podpisy">' + podpis(x.podpis1, x.podpis1_rola) + podpis(x.podpis2, x.podpis2_rola) + '</div>'
+    + '</div>'
+    + '<button class="odstran" onclick="odstran(' + i + ')">✕ odstrániť tento diplom</button></section>';
+}
+let MENA = [];
+function diplomy(){
+  if(!MENA.length) MENA = D.mena.slice();
+  document.getElementById('lista').innerHTML = '<b>📜 Diplomy</b> <small>' + esc(D.school) + ' · ' + MENA.length + ' ks · A4 na šírku · meno opravíš kliknutím</small>'
+    + '<div class="tl"><a href="' + spat + '">← Späť</a><button onclick="pridaj()">+ Pridať meno</button>'
+    + '<button class="hl" id="tlacit" onclick="tlac()">🖨️ Vytlačiť</button></div>';
+  document.getElementById('strany').innerHTML = MENA.length ? MENA.map(diplom).join('')
+    : '<div class="chyba">V skupine zatiaľ nie sú žiaci. Pridaj meno tlačidlom „+ Pridať meno".</div>';
+}
+function ulozMena(){ document.querySelectorAll('.diplom').forEach(el => { MENA[+el.dataset.i] = el.querySelector('.meno').textContent.trim(); }); }
+function pridaj(){
+  const m = prompt('Meno na diplom (napr. partner z inej triedy):'); if(!m || !m.trim()) return;
+  ulozMena(); MENA.push(m.trim()); diplomy();
+  window.scrollTo(0, document.body.scrollHeight);
+}
+function odstran(i){ ulozMena(); if(!confirm('Odstrániť diplom „' + MENA[i] + '" z tlače?')) return; MENA.splice(i, 1); diplomy(); }
+
+// ── Scenár ─────────────────────────────────────────────────────────────────
+function scenar(){
+  document.getElementById('lista').innerHTML = '<b>🖨️ Scenár</b> <small>' + esc(D.school) + ' · A4</small>'
+    + '<div class="tl"><a href="' + spat + '">← Späť</a><button class="hl" id="tlacit" onclick="tlac()">🖨️ Vytlačiť</button></div>';
+  const spolu = D.program.reduce((x, p) => x + (+p.dur || 0), 0);
+  const trv = m => { const h = Math.floor(m / 60), r = m % 60; return h ? h + ' h' + (r ? ' ' + r + ' min' : '') : r + ' min'; };
+  const DOH = { dohodnute: 'dohodnuté', oslovene: 'oslovený', hladame: 'ešte nemáme' };
+  const pary = (D.pary || []).length ? '<ol>' + D.pary.map(p => '<li>' + esc(p.a || '—') + (p.b ? ' a ' + esc(p.b) : '') + '</li>').join('') + '</ol>' : '';
+  document.getElementById('strany').innerHTML = '<section class="scen">'
+    + '<h1>' + esc(D.title) + '</h1>'
+    + '<div class="pod">' + esc([D.school, D.class_name].filter(Boolean).join(' · ')) + '<br>' + esc([datumDen(D.event_date), D.event_venue].filter(Boolean).join(' · '))
+      + (D.start_time ? ' · začiatok ' + esc(D.start_time) : '') + ' · ' + D.program.length + ' bodov · ' + trv(spolu) + '</div>'
+    + '<h2>Tím</h2><table><tbody>' + D.team.map(m => '<tr><td style="width:44mm">' + m.ic + ' ' + esc(m.role_label) + '</td><td><b>' + esc(m.name || '—') + '</b></td><td>' + esc(m.phone || '') + '</td><td class="kto">' + (DOH[m.dohoda] || '') + '</td></tr>').join('') + '</tbody></table>'
+    + '<h2>Program</h2><table><thead><tr><th>Čas</th><th>Min</th><th>Bod</th></tr></thead><tbody>'
+    + D.program.map((p, i) => '<tr><td class="cas">' + esc(p.plan || '—') + '</td><td class="min">' + (+p.dur || 0) + '</td><td class="bod"><b>' + (i + 1) + '. ' + esc(p.title) + '</b>'
+      + (p.who.length ? '<div class="kto">' + esc(p.who.join(', ')) + '</div>' : '')
+      + (p.music ? '<div class="hud">🎵 ' + esc(p.music) + '</div>' : '')
+      + (p.script ? '<div class="scr">' + esc(p.script) + '</div>' : '')
+      + (p.ukaz_pary && pary ? '<div class="kto" style="margin-top:3px">Poradie párov je na konci.</div>' : '')
+      + (p.note ? '<div class="kto">📝 ' + esc(p.note) + '</div>' : '') + '</td></tr>').join('')
+    + '</tbody></table>'
+    + (pary ? '<h2>Poradie párov</h2>' + pary : '')
+    + '</section>';
+}
+
+async function tlac(){
+  const b = document.getElementById('tlacit'); if(b){ b.disabled = true; b.textContent = 'Pripravujem…'; }
+  if(CO === 'diplomy') ulozMena();
+  try{ await document.fonts.ready; }catch(e){}
+  setTimeout(() => { window.print(); if(b){ b.disabled = false; b.textContent = '🖨️ Vytlačiť'; } }, 150);
+}
+nacitaj();
+</script>
+</body>
+</html>
