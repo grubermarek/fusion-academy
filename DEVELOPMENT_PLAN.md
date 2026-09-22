@@ -289,6 +289,13 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
 - 19. 9. popoludní: /online už nepredáva balíčky (duplicita /obchod); záznamy vidia všetky klientky — bez online členstva 3-min ukážka (`*.preview.mp4`, token `exp.p.sig`) + upsell, s ním celé záznamy s filtrami.
 - Nasadenie a env: `media-server/README.md`.
 
+### 7.9 Venčekový večer — príprava + program naživo ✅ HOTOVO (2026-09-22, vencek-vecer.js, public/vecer.html, qa/vencek-vecer.test.js)
+- Admin: Venčeky majú lištu „Školy a skupiny | Venčekový večer" (`renderVenHub`), sekcia `s-vecer`. Jeden večer = jedna skupina (`db.vencek_vecery`, `class_id`); dátum a miesto sa berú zo skupiny (`event_date`, `event_venue`), nekopírujú sa.
+- Príprava: `items` v kategóriách nakup / priprava / zbalit, stav nie / pol / ok ↔ počet (`have`/`qty`); kúpené s cenou → `venceky_costs` raz (`items.costs`, `cost_id`). Tím: `team` s rolami (DJ, fotograf, moderátor, kvety, diplomy…), `dohoda` hladame / oslovene / dohodnute, honorár vidí len admin.
+- Program: body s trvaním, voliteľným pevným časom (`at`), zodpovednými (`who` = id členov tímu), scenárom a hudbou; plánované časy počíta `planCasy` od `start_time`.
+- Naživo: každý člen tímu má tajný odkaz `/vecer/<token>` bez účtu, admin `/vecer/a/<id>`. Posúva admin alebo člen s `can_control`. Všetky zmeny idú cez `POST /api/vecer/op` (zámok na večer, `rev`), rozposielajú sa cez Socket.io menný priestor `/vecer` + záloha 15 s. `live.next/prev` nesú `from` — dvojklik z dvoch telefónov neposunie o dva body.
+- Pasca: zvuk v telefóne sa odomkne len ťuknutím (preto úvodná obrazovka „Zapnúť zvuk"); zamknutý telefón nezvoní — stránka drží obrazovku cez Wake Lock.
+
 ### Zámerne vynechané (nepomer hodnota/prácnosť pre malú školu)
 - Consumer marketplace (Mindbody ClassPass štýl) — nemáme objem.
 - Dynamic pricing — zbytočná komplexita pri cenách 9–10 €.

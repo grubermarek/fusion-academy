@@ -209,6 +209,62 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   .vl-cislo{width:100%}
   .vl-tance{max-width:none;width:100%}
 }
+/* ── Venčekový večer — príprava a program (22. 9. 2026) ───────────────────── */
+.vv-karty{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.vv-karta{background:#181818;border:1px solid #333;border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:6px}
+.vv-karta.on{border-color:#C9A24C;box-shadow:0 0 0 1px #C9A24C inset}
+.vv-karta .btn{margin-top:auto}
+.vv-bar{height:7px;background:#26221a;border-radius:99px;overflow:hidden}
+.vv-bar i{display:block;height:100%;background:#C9A84C}
+.vv-hlava{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;
+  background:#181818;border:1px solid #333;border-radius:16px 16px 0 0;padding:16px 20px}
+.vv-nazov{font-size:1.2rem;font-weight:800;color:#C9A24C}
+.vv-plocha{background:#181818;border:1px solid #333;border-top:none;border-radius:0 0 16px 16px}
+.vv-upoz{margin:14px 20px 0;padding:10px 14px;border-radius:12px;font-size:.88rem}
+.vv-upoz.zle{background:rgba(224,86,86,.12);border:1px solid rgba(224,86,86,.45);color:#ffb4b4}
+.vv-upoz.dobre{background:rgba(139,195,74,.1);border:1px solid rgba(139,195,74,.4);color:#c5e1a5}
+.vv-kat{display:flex;justify-content:space-between;align-items:center;margin:18px 0 8px;font-weight:800}
+.vv-pol{display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center;padding:9px 12px;
+  border:1px solid #2c2c2c;border-radius:11px;background:#1d1d1d;margin-bottom:6px}
+.vv-pol.st-ok{border-color:rgba(139,195,74,.4);background:rgba(139,195,74,.05)}
+.vv-pol.st-pol{border-color:rgba(255,193,7,.4);background:rgba(255,193,7,.05)}
+.vv-pol.st-ok .vv-pol-nm b{color:#aed581}
+.vv-seg{display:inline-flex;border:1px solid #3a3a3a;border-radius:10px;overflow:hidden}
+.vv-seg button{background:#141414;border:none;color:#9a9a9a;font-size:.78rem;font-weight:700;padding:7px 11px;min-height:36px;cursor:pointer;white-space:nowrap}
+.vv-seg button+button{border-left:1px solid #3a3a3a}
+.vv-seg button.on.s-nie,.vv-seg button.on.s-hladame{background:rgba(224,86,86,.18);color:#ff9b9b}
+.vv-seg button.on.s-pol,.vv-seg button.on.s-oslovene{background:rgba(255,193,7,.16);color:#ffd54f}
+.vv-seg button.on.s-ok,.vv-seg button.on.s-dohodnute{background:rgba(139,195,74,.18);color:#aed581}
+.vv-poc{display:inline-flex;align-items:center;gap:6px}
+.vv-poc button{width:32px;height:32px;border-radius:8px;border:1px solid #3a3a3a;background:#141414;color:#eee;font-weight:800;cursor:pointer}
+.vv-poc span{min-width:62px;text-align:center;font-variant-numeric:tabular-nums;font-size:.85rem}
+.vv-ak{display:inline-flex;gap:4px}
+.vv-ak button{background:none;border:1px solid #333;color:#aaa;border-radius:8px;min-width:32px;height:32px;cursor:pointer;font-size:.85rem}
+.vv-ak button:hover{color:#fff;border-color:#666}
+.vv-pridaj{display:flex;gap:6px;margin:4px 0 6px}
+.vv-clen{display:grid;grid-template-columns:40px 1fr auto;gap:12px;align-items:start;padding:12px 14px;
+  border:1px solid #2c2c2c;border-radius:12px;background:#1d1d1d;margin-bottom:8px}
+.vv-clen-ic{font-size:1.5rem;text-align:center}
+.vv-rola{font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:#C9A24C;font-weight:800}
+.vv-bod{display:grid;grid-template-columns:70px 1fr auto;gap:12px;align-items:start;padding:10px 12px;
+  border:1px solid #2c2c2c;border-radius:12px;background:#1d1d1d;margin-bottom:6px}
+.vv-bod.teraz{border-color:#C9A24C;background:#221d10}
+.vv-bod.hotovo{opacity:.55}
+.vv-bod-cas{font-variant-numeric:tabular-nums;font-weight:800;color:#e8d18f}
+.vv-bod-cas small{display:block;color:#8f8f8f;font-weight:600}
+.vv-chip{display:inline-block;background:#262626;border:1px solid #363636;border-radius:99px;padding:1px 8px;font-size:.72rem;margin:3px 3px 0 0}
+.vv-scen{color:#a9a9a9;font-size:.8rem;white-space:pre-wrap;margin-top:4px;max-height:3.6em;overflow:hidden}
+.vv-pult{display:grid;grid-template-columns:420px 1fr;gap:20px;align-items:start}
+.vv-pult iframe{width:100%;height:820px;border:1px solid #333;border-radius:22px;background:#0B0A07}
+.vv-modal{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9998;display:flex;align-items:flex-start;justify-content:center;padding:4vh 12px;overflow:auto}
+.vv-modal-box{background:#1b1b1b;border:1px solid #3a3428;border-radius:16px;padding:20px;width:min(560px,96vw)}
+.vv-modal-box label{display:block;font-size:.78rem;color:#9a9a9a;margin:10px 0 3px;font-weight:700}
+@media (max-width:900px){
+  .vv-pult{grid-template-columns:1fr}
+  .vv-pol{grid-template-columns:1fr;gap:6px}
+  .vv-clen,.vv-bod{grid-template-columns:40px 1fr}
+  .vv-clen>:last-child,.vv-bod>:last-child{grid-column:1/-1}
+}
 </style>
 </head>
 <body>
@@ -243,6 +299,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <a class="nav-link" href="#" onclick="show('privatehours')"><i class="bi bi-person-heart me-2"></i>Súkromné hodiny 🎭</a>
       <a class="nav-link" href="#" onclick="show('kiosk')"><i class="bi bi-display me-2"></i>Kiosk / Recepcia</a>
       <a class="nav-link" href="#" onclick="show('venceky')"><i class="bi bi-mortarboard me-2"></i><span style="color:#C9A84C;font-weight:700">Venčeky</span></a>
+      <a class="nav-link" href="#" onclick="show('vecer')" style="padding-left:2.1rem;font-size:.86rem"><i class="bi bi-stars me-2"></i>Venčekový večer</a>
       <a class="nav-link" href="#" onclick="show('kids')"><i class="bi bi-emoji-smile me-2"></i><span style="color:#FF6B9D;font-weight:700">Zumba Kids</span></a>
       <a class="nav-link" href="#" onclick="show('eventy')"><i class="bi bi-ticket-perforated me-2"></i><span style="color:#C9A84C;font-weight:700">Eventy &amp; vstupenky</span></a>
       <a class="nav-link" href="/jedalnicek" target="_blank"><i class="bi bi-egg-fried me-2"></i>Generátor jedálničkov <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;opacity:.6"></i></a>
@@ -1260,6 +1317,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   </div>
 
   <div class="section" id="s-venceky" style="max-width:1100px">
+    <div class="ven-hub mb-3"></div>
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <div><h4 class="fw-bold mb-0">🎓 Venčeky</h4>
         <p class="text-muted small mb-0">Školy, triedy, žiaci, platby, náklady a progress tancov. Registrácia žiakov cez QR/odkaz triedy.</p></div>
@@ -1306,6 +1364,18 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </div></div>
     <div id="vencekyTotals" class="mb-3"></div>
     <div id="vencekyList"><div class="text-muted py-4 text-center">Načítavam…</div></div>
+  </div>
+
+  <!-- VENČEKOVÝ VEČER — príprava + program naživo pre celý tím (Marek 22. 9. 2026) -->
+  <div class="section" id="s-vecer" style="max-width:1150px">
+    <div class="ven-hub mb-3"></div>
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <div><h4 class="fw-bold mb-0">✨ Venčekový večer</h4>
+        <p class="text-muted small mb-0">Príprava (nákup, úlohy, tím) a program večera so scenárom. Každý z tímu dostane vlastný odkaz — v telefóne vidí, čo práve beží a čo ide ďalej, a pri každom bode mu zacinká.</p></div>
+      <button class="btn btn-sm btn-outline-light" onclick="loadVecer()"><i class="bi bi-arrow-clockwise me-1"></i>Obnoviť</button>
+    </div>
+    <div id="vvZoznam"><div class="text-muted py-4 text-center">Načítavam…</div></div>
+    <div id="vvDetail" class="mt-3"></div>
   </div>
 
   <!-- SÚŤAŽE -->
@@ -2550,7 +2620,7 @@ function accessLabel(m){ return ACCESS_LABELS[m] || null; }
 const SECTION_GROUP={attendance:'manage',sale:'reports',
   leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',staff:'manage',classes:'manage',privatehours:'manage',kiosk:'manage',products:'manage',rentals:'manage',articles:'manage',
   marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
-  dnes:'manage',predaje:'reports',  sutaze:'marketing',venceky:'manage',kids:'manage',eventy:'manage',fusionai:'reports',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',funnel:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
+  dnes:'manage',predaje:'reports',  sutaze:'marketing',venceky:'manage',vecer:'manage',kids:'manage',eventy:'manage',fusionai:'reports',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',funnel:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
   partners:'partners',addpartner:'partners',commissions:'reports',uctovnicka:'reports'};
 function selectGroup(g){
   // Nový sidebar: skupina aktívnej sekcie sa otvorí (zbalené ostatné nechávame tak)
@@ -2963,6 +3033,8 @@ function show(sec){
   if(sec==='predaje')loadPredaje();
   if(sec==='sutaze')loadRefGoalReport();
   if(sec==='venceky')loadVenceky();
+  if(sec==='venceky'||sec==='vecer')renderVenHub(sec);
+  if(sec==='vecer')loadVecer();
   if(sec==='kids')loadKids();
   if(sec==='ambasadori')loadAmbasadori();
   if(sec==='eventy')loadEventy();
@@ -4780,6 +4852,351 @@ function vTerminKratky(iso){
   try{ const d=new Date(iso);
     return d.getDate()+'. '+(d.getMonth()+1)+'. '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
   }catch(e){ return ''; }
+}
+
+/* ═══ VENČEKOVÝ VEČER — príprava + program naživo (Marek 22. 9. 2026) ═══
+   Záložky Venčeky: „Školy a skupiny" | „Venčekový večer". Večer patrí jednej
+   skupine; tím má vlastné odkazy /vecer/<token>, admin riadi cez /vecer/a/<id>. */
+let VV=null, VV_TAB='priprava', VV_LEN_CHYBA=false, VV_POLL=null;
+const VV_KAT=[['nakup','🛒 Nakúpiť'],['priprava','📋 Prichystať a vybaviť'],['zbalit','🎒 Zbaliť na večer']];
+const VV_DOH={hladame:'🔴 ešte nemáme',oslovene:'🟡 oslovený, čakáme',dohodnute:'🟢 dohodnuté'};
+const VV_STAV={nie:'✗ Nemáme',pol:'◐ Časť',ok:'✓ Máme'};
+let VV_ROLY={};
+function renderVenHub(sec){
+  document.querySelectorAll('.ven-hub').forEach(h=>h.innerHTML='<div class="pen-nav">'
+    +[['venceky','🏫','Školy a skupiny'],['vecer','✨','Venčekový večer']]
+      .map(([s,ic,t])=>'<button class="pen-tab'+(s===sec?' on':'')+'" onclick="show(\''+s+'\')">'+ic+' '+t+'</button>').join('')+'</div>');
+}
+function vvDni(ymd){
+  if(!ymd) return '';
+  const d=new Date(ymd+'T12:00:00'), dnes=new Date(new Date().toDateString()+' 12:00');
+  const n=Math.round((d-dnes)/864e5);
+  return n>1?'o '+n+' dní':n===1?'zajtra':n===0?'dnes':'pred '+(-n)+' dňami';
+}
+function vvDatum(ymd){
+  if(!ymd) return 'termín zatiaľ nie je';
+  const d=new Date(ymd+'T12:00:00'); if(isNaN(d)) return ymd;
+  return ['Ne','Po','Ut','St','Št','Pi','So'][d.getDay()]+' '+d.getDate()+'. '+(d.getMonth()+1)+'. '+d.getFullYear();
+}
+function vvTrv(min){ min=Math.round(min); const h=Math.floor(min/60), m=min%60; return h?h+' h'+(m?' '+m+' min':''):m+' min'; }
+async function loadVecer(){
+  const box=document.getElementById('vvZoznam');
+  const d=await api('/api/admin/vecer/zoznam');
+  if(!d?.ok){ box.innerHTML='<div class="text-danger py-3">Nepodarilo sa načítať.</div>'; return; }
+  VV_ROLY=d.roly||{};
+  const skup=d.skupiny.filter(s=>!s.completed||s.vecer);
+  if(!skup.length){ box.innerHTML='<div class="text-muted py-4 text-center">Žiadna venčeková skupina. Najprv založ školu v záložke „Školy a skupiny".</div>'; return; }
+  const aktivne=VV?.id || (()=>{ try{ return localStorage.getItem('vv_id'); }catch(e){ return null; } })();
+  box.innerHTML='<div class="vv-karty">'+skup.map(s=>{
+    const v=s.vecer, pct=v&&v.items?Math.round((v.items_ok+v.items_pol/2)/v.items*100):0;
+    const doh=x=>x?VV_DOH[x].split(' ')[0]:'—';
+    return '<div class="vv-karta'+(v&&v.id===aktivne?' on':'')+'">'
+      +'<div><b>'+escHtml(s.school||s.class_name)+'</b> <span class="text-muted small">· '+escHtml(s.class_name)+'</span></div>'
+      +'<div class="small">✨ '+vvDatum(s.event_date)+(s.event_date?' <span class="text-muted">· '+vvDni(s.event_date)+'</span>':'')+'</div>'
+      +'<div class="small text-muted">📍 '+escHtml(s.event_venue||'miesto zatiaľ nie je')+' · 👥 '+s.students+' žiakov</div>'
+      +(v?'<div class="vv-bar mt-1"><i style="width:'+pct+'%"></i></div>'
+        +'<div class="small">Príprava '+v.items_ok+'/'+v.items+(v.items_pol?' (+'+v.items_pol+' čiastočne)':'')+' · tím '+v.team_ok+'/'+v.team+' dohodnutý</div>'
+        +'<div class="small">🎵 DJ '+doh(v.dj)+' · 📸 Fotograf '+doh(v.foto)+(v.status==='bezi'||v.status==='pauza'?' · <b style="color:#C9A84C">▶ práve beží</b>':v.status==='koniec'?' · ✓ skončil':'')+'</div>'
+        +'<button class="btn btn-sm btn-brand" onclick="vvOtvor(\''+v.id+'\')">Otvoriť</button>'
+      :'<div class="small text-muted">Príprava zatiaľ nie je založená.</div>'
+        +'<button class="btn btn-sm btn-outline-warning" onclick="vvZaloz(\''+s.class_id+'\')">✨ Založiť prípravu večera</button>')
+      +'</div>';
+  }).join('')+'</div>';
+  // Otvorí naposledy pozeraný večer, inak najbližší založený (zoznam je podľa dátumu).
+  const ciel=aktivne && skup.some(s=>s.vecer&&s.vecer.id===aktivne) ? aktivne : ((skup.find(s=>s.vecer)||{}).vecer||{}).id;
+  if(ciel) vvOtvor(ciel, true);
+  else { VV=null; document.getElementById('vvDetail').innerHTML=''; }
+}
+async function vvZaloz(cid){
+  if(!confirm('Založiť prípravu venčekového večera?\n\nVytvorí sa návrh nákupného zoznamu, úloh, tímu (DJ, fotograf, moderátor…) a programu so scenárom. Všetko potom upravíš podľa dohody so školou.')) return;
+  const d=await api('/api/admin/vecer/zaloz',{method:'POST',body:{class_id:cid}});
+  if(!d?.ok) return showToast('Chyba: '+(d?.error||'?'),'error');
+  showToast(d.existed?'Príprava už existuje — otváram ju':'Príprava založená ✨','success');
+  try{ localStorage.setItem('vv_id', d.id); }catch(e){}
+  VV={id:d.id}; await loadVecer();
+}
+async function vvOtvor(id, tichy){
+  const d=await api('/api/vecer/stav?id='+encodeURIComponent(id));
+  if(!d?.ok){ if(!tichy) showToast('Chyba: '+(d?.error||'?'),'error'); try{ localStorage.removeItem('vv_id'); }catch(e){} return; }
+  VV=d; try{ localStorage.setItem('vv_id', id); }catch(e){}
+  document.querySelectorAll('#vvZoznam .vv-karta').forEach(k=>k.classList.toggle('on', k.innerHTML.includes("vvOtvor('"+id+"')")));
+  vvRender();
+  // Tím odškrtáva nákup z telefónov — admin to má vidieť bez obnovovania.
+  clearInterval(VV_POLL);
+  VV_POLL=setInterval(async()=>{
+    if(!document.getElementById('s-vecer')?.classList.contains('active') || !VV) return;
+    if(document.querySelector('.vv-modal') || ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) return;
+    const n=await fetch('/api/vecer/stav?id='+encodeURIComponent(VV.id)).then(r=>r.json()).catch(()=>null);
+    if(n?.ok && n.rev!==VV.rev){ VV=n; vvRender(); }
+  },15000);
+}
+async function vvOp(op, data){
+  const d=await api('/api/vecer/op',{method:'POST',body:{id:VV.id, op, ...(data||{})}});
+  if(!d || d.error){ showToast('Chyba: '+((d&&d.error)||'?'),'error'); return null; }
+  VV=d; vvRender();
+  return d;
+}
+function vvTab(k){ VV_TAB=k; vvRender(); }
+function vvRender(){
+  const v=VV, box=document.getElementById('vvDetail'); if(!v||!box) return;
+  const I=v.items||[], T=v.team||[], P=v.program||[], L=v.live||{};
+  const ok=I.filter(i=>i.stav==='ok').length, pol=I.filter(i=>i.stav==='pol').length;
+  const tOk=T.filter(t=>t.dohoda==='dohodnute').length;
+  const spolu=P.reduce((x,p)=>x+(+p.dur||0),0);
+  const chyba=T.filter(t=>['dj','foto','moderator'].includes(t.role) && t.dohoda!=='dohodnute');
+  const stavVeceru={pred:'ešte nezačal',bezi:'▶ beží · bod '+(L.idx+1),pauza:'⏸ pauza · bod '+(L.idx+1),koniec:'✓ skončil'}[L.status||'pred'];
+  const sc=box.querySelector('.vv-telo')?.scrollTop;
+  box.innerHTML='<div class="vv-hlava">'
+      +'<div><div class="vv-nazov">✨ '+escHtml(v.title)+' <button class="btn btn-sm btn-outline-secondary py-0 ms-1" onclick="vvMeta()" title="Premenovať">✎</button></div>'
+        +'<div class="text-muted small">'+escHtml(v.school)+' · '+escHtml(v.class_name)+' · '+vvDatum(v.event_date)+(v.event_date?' ('+vvDni(v.event_date)+')':'')+' · 📍 '+escHtml(v.event_venue||'miesto zatiaľ nie je')+'</div>'
+        +'<div class="text-muted" style="font-size:.72rem">Dátum a miesto večera sa menia v detaile skupiny (Školy a skupiny → Detail → Ostatné).</div></div>'
+      +'<div class="d-flex gap-2 flex-wrap"><a class="btn btn-sm btn-brand" href="'+'/vecer/a/'+encodeURIComponent(v.id)+'" target="_blank">📱 Otvoriť riadiaci pult</a>'
+        +'<button class="btn btn-sm btn-outline-danger" onclick="vvZmaz()" title="Zmazať celú prípravu tohto večera">🗑</button></div>'
+    +'</div>'
+    +'<div class="vv-plocha">'
+    +(chyba.length
+      ?'<div class="vv-upoz zle">⚠️ Ešte nie je dohodnutý: <b>'+chyba.map(t=>escHtml(t.role_label)+(t.dohoda==='oslovene'?' (oslovený, čakáme)':'')).join(', ')+'</b></div>'
+      :'<div class="vv-upoz dobre">✅ DJ, fotograf aj moderátor sú dohodnutí.</div>')
+    +'<div class="vdet-staty">'
+      +'<div class="vdet-stat"><b>'+ok+'/'+I.length+'</b><span>príprava hotová'+(pol?' (+'+pol+' časť)':'')+'</span></div>'
+      +'<div class="vdet-stat"><b>'+tOk+'/'+T.length+'</b><span>tím dohodnutý</span></div>'
+      +'<div class="vdet-stat"><b>'+P.length+'</b><span>bodov · '+vvTrv(spolu)+'</span></div>'
+      +'<div class="vdet-stat"><b>'+(v.start_time||'—')+'</b><span>začiatok programu</span></div>'
+      +'<div class="vdet-stat"><b style="font-size:.95rem">'+stavVeceru+'</b><span>večer</span></div>'
+    +'</div>'
+    +'<div class="vdet-taby">'+[['priprava','📋 Príprava a nákup'],['tim','👥 Tím'],['program','🎬 Program a scenár'],['pult','📱 Riadenie večera']]
+      .map(([k,l])=>'<button class="vdet-tab'+(VV_TAB===k?' on':'')+'" onclick="vvTab(\''+k+'\')">'+l+'</button>').join('')+'</div>'
+    +'<div class="vdet-telo vv-telo" style="max-height:none">'+({priprava:vvPriprava,tim:vvTim,program:vvProgram,pult:vvPult}[VV_TAB]||vvPriprava)()+'</div>'
+    +'</div>';
+  if(sc) box.querySelector('.vv-telo').scrollTop=sc;
+}
+
+// ── Príprava ────────────────────────────────────────────────────────────────
+function vvPriprava(){
+  const I=VV.items||[];
+  const naNaklad=I.filter(i=>!i.cost_id && i.stav!=='nie' && +i.price>0);
+  const minute=I.filter(i=>i.stav!=='nie' && +i.price>0).reduce((x,i)=>x+(+i.price),0);
+  let h='<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">'
+    +'<div class="vdet-navod mb-0">Stav ťukneš priamo v riadku. Tím to isté vidí a mení vo svojom telefóne — kto zmenil naposledy, je pri položke.</div>'
+    +'<label class="small d-flex align-items-center gap-2"><input type="checkbox" '+(VV_LEN_CHYBA?'checked':'')+' onchange="VV_LEN_CHYBA=this.checked;vvRender()"> len čo chýba</label></div>'
+    +'<div class="small mt-2">💶 Kúpené s cenou spolu: <b>'+vEur(minute)+'</b>'
+    +(naNaklad.length?' · <button class="btn btn-sm btn-outline-warning py-0 ms-1" onclick="vvNaklady('+naNaklad.length+')">Zapísať '+naNaklad.length+' do nákladov skupiny</button>':'')+'</div>';
+  VV_KAT.forEach(([k,nazov])=>{
+    const vs=I.filter(i=>i.cat===k), zoz=vs.filter(i=>!VV_LEN_CHYBA||i.stav!=='ok');
+    h+='<div class="vv-kat">'+nazov+' <span class="small text-muted">'+vs.filter(i=>i.stav==='ok').length+'/'+vs.length+'</span></div>';
+    zoz.forEach(i=>{
+      const info=[i.qty?(i.have||0)+' / '+i.qty+' '+(i.unit||''):'', i.who?'👤 '+i.who:'', +i.price>0?vEur(i.price)+(i.cost_id?' ✓ v nákladoch':''):'', i.note, i.updated_by?'zmenil/a '+i.updated_by:'']
+        .filter(Boolean).map(escHtml).join(' · ');
+      h+='<div class="vv-pol st-'+i.stav+'"><div class="vv-pol-nm"><b>'+escHtml(i.name)+'</b>'+(info?'<div class="small text-muted">'+info+'</div>':'')+'</div>'
+        +'<div class="vv-seg">'+['nie','pol','ok'].map(s=>'<button class="s-'+s+(i.stav===s?' on':'')+'" onclick="vvOp(\'item.set\',{item:{id:\''+i.id+'\',stav:\''+s+'\'}})">'+VV_STAV[s]+'</button>').join('')+'</div>'
+        +(i.qty?'<div class="vv-poc"><button onclick="vvPocet(\''+i.id+'\',-1)" aria-label="Ubrať">−</button><span>'+(i.have||0)+' / '+i.qty+'</span><button onclick="vvPocet(\''+i.id+'\',1)" aria-label="Pridať">+</button></div>':'<span></span>')
+        +'<div class="vv-ak"><button onclick="vvPolozkaEdit(\''+i.id+'\')" title="Upraviť">✎</button><button onclick="vvPolozkaZmaz(\''+i.id+'\')" title="Zmazať">🗑</button></div></div>';
+    });
+    h+='<div class="vv-pridaj"><input id="vvNova_'+k+'" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="+ pridať položku…" onkeydown="if(event.key===\'Enter\')vvPridaj(\''+k+'\')">'
+      +'<input id="vvNovaQ_'+k+'" type="number" min="1" class="form-control form-control-sm bg-dark text-light border-secondary" style="max-width:90px" placeholder="počet">'
+      +'<button class="btn btn-sm btn-outline-light" onclick="vvPridaj(\''+k+'\')">Pridať</button></div>';
+  });
+  return h;
+}
+function vvPocet(id,d){ const i=(VV.items||[]).find(x=>x.id===id); if(i) vvOp('item.set',{item:{id, have:Math.max(0,(i.have||0)+d)}}); }
+async function vvPridaj(k){
+  const n=document.getElementById('vvNova_'+k), qv=document.getElementById('vvNovaQ_'+k);
+  if(!n.value.trim()) return n.focus();
+  await vvOp('item.set',{item:{name:n.value.trim(), cat:k, qty:qv.value||null, unit:qv.value?'ks':''}});
+}
+function vvPolozkaZmaz(id){
+  const i=(VV.items||[]).find(x=>x.id===id); if(!i) return;
+  if(confirm('Zmazať „'+i.name+'"?')) vvOp('item.del',{item_id:id});
+}
+async function vvNaklady(n){
+  if(!confirm('Zapísať '+n+' kúpených vecí s cenou do nákladov skupiny?\n\nKaždá sa zapíše raz, uvidíš ich v zisku skupiny.')) return;
+  const d=await vvOp('items.costs');
+  if(d?.costs) showToast('Zapísané do nákladov: '+d.costs.count+' × spolu '+vEur(d.costs.total),'success');
+}
+function vvModal(nadpis, telo, ulozit){
+  document.querySelector('.vv-modal')?.remove();
+  const m=document.createElement('div'); m.className='vv-modal';
+  m.onclick=e=>{ if(e.target===m) m.remove(); };
+  m.innerHTML='<div class="vv-modal-box"><div class="d-flex justify-content-between align-items-center mb-2"><h5 class="fw-bold mb-0" style="color:#C9A24C">'+nadpis+'</h5>'
+    +'<button class="vdet-x" onclick="this.closest(\'.vv-modal\').remove()">✕</button></div>'+telo
+    +'<div class="d-flex justify-content-end gap-2 mt-3"><button class="btn btn-sm btn-outline-secondary" onclick="this.closest(\'.vv-modal\').remove()">Zrušiť</button>'
+    +'<button class="btn btn-sm btn-brand" id="vvUloz">💾 Uložiť</button></div></div>';
+  document.body.appendChild(m);
+  m.querySelector('#vvUloz').onclick=async()=>{ const r=await ulozit(); if(r) m.remove(); };
+  setTimeout(()=>m.querySelector('input,textarea')?.focus(),30);
+}
+const vvIn=(id,lbl,val,extra)=>'<label for="'+id+'">'+lbl+'</label><input id="'+id+'" class="form-control form-control-sm bg-dark text-light border-secondary" value="'+escHtml(val==null?'':val)+'" '+(extra||'')+'>';
+const vvVal=id=>document.getElementById(id)?.value??'';
+function vvPolozkaEdit(id){
+  const i=(VV.items||[]).find(x=>x.id===id); if(!i) return;
+  const mena=[...new Set((VV.team||[]).map(t=>t.name).filter(Boolean))];
+  vvModal('✎ Položka',
+    vvIn('vvpN','Čo treba',i.name,'maxlength="120"')
+    +'<label for="vvpK">Kam patrí</label><select id="vvpK" class="form-select form-select-sm bg-dark text-light border-secondary">'+VV_KAT.map(([k,n])=>'<option value="'+k+'"'+(k===i.cat?' selected':'')+'>'+n+'</option>').join('')+'</select>'
+    +'<div class="d-flex gap-2"><div class="flex-fill">'+vvIn('vvpQ','Počet (prázdne = bez počtu)',i.qty,'type="number" min="1"')+'</div><div style="width:110px">'+vvIn('vvpU','Jednotka',i.unit,'maxlength="12" placeholder="ks"')+'</div></div>'
+    +vvIn('vvpW','Kto zabezpečí',i.who,'list="vvMena" maxlength="60"')+'<datalist id="vvMena">'+mena.map(n=>'<option value="'+escHtml(n)+'">').join('')+'</datalist>'
+    +vvIn('vvpP','Cena spolu (€)',i.price,'inputmode="decimal" placeholder="napr. 42,50"')
+    +vvIn('vvpO','Poznámka',i.note,'maxlength="300"'),
+    ()=>vvOp('item.set',{item:{id, name:vvVal('vvpN'), cat:vvVal('vvpK'), qty:vvVal('vvpQ')||null, unit:vvVal('vvpU'), who:vvVal('vvpW'), price:vvVal('vvpP'), note:vvVal('vvpO')}}));
+}
+
+// ── Tím ─────────────────────────────────────────────────────────────────────
+function vvTim(){
+  const T=VV.team||[];
+  let h='<div class="vdet-navod">Kto je v tíme a či je dohodnutý. Každý dostane <b>vlastný odkaz</b> (bez účtu) — v telefóne uvidí program, svoje úlohy a pri každom bode mu zacinká. Honoráre a odkazy vidíš len ty.</div>';
+  T.forEach(m=>{
+    h+='<div class="vv-clen"><div class="vv-clen-ic">'+m.ic+'</div><div>'
+      +'<div class="vv-rola">'+escHtml(m.role_label)+(m.can_control?' · riadi program':'')+'</div>'
+      +'<div><b>'+escHtml(m.name||'—')+'</b>'+(m.phone?' · <a href="tel:'+escHtml(m.phone.replace(/\s+/g,''))+'" style="color:#C9A24C">'+escHtml(m.phone)+'</a>':'')
+        +(+m.price>0?' · '+vEur(m.price)+(m.zaloha?' <span class="text-success small">(záloha zaplatená)</span>':''):'')+'</div>'
+      +(m.note?'<div class="small text-muted">'+escHtml(m.note)+'</div>':'')
+      +'<div class="vv-seg mt-2">'+['hladame','oslovene','dohodnute'].map(s=>'<button class="s-'+s+(m.dohoda===s?' on':'')+'" onclick="vvOp(\'team.set\',{member:{id:\''+m.id+'\',dohoda:\''+s+'\'}})">'+VV_DOH[s]+'</button>').join('')+'</div>'
+      +'</div><div class="vv-ak flex-wrap justify-content-end" style="max-width:220px">'
+        +'<button onclick="vvClenEdit(\''+m.id+'\')" title="Upraviť">✎</button>'
+        +'<button onclick="vvKopiruj(\''+escHtml(m.link)+'\')" title="Kopírovať osobný odkaz" style="padding:0 8px">🔗 odkaz</button>'
+        +'<button onclick="vvQR(\''+m.id+'\')" title="QR na naskenovanie" style="padding:0 8px">QR</button>'
+        +'<button onclick="vvClenZmaz(\''+m.id+'\')" title="Odobrať z tímu">🗑</button>'
+      +'</div></div>';
+  });
+  h+='<div class="d-flex gap-2 align-items-center mt-2 flex-wrap"><select id="vvNovaRola" class="form-select form-select-sm bg-dark text-light border-secondary" style="max-width:230px">'
+    +Object.entries(VV_ROLY).map(([k,r])=>'<option value="'+k+'"'+(k==='pomoc'?' selected':'')+'>'+r.ic+' '+escHtml(r.t)+'</option>').join('')+'</select>'
+    +'<button class="btn btn-sm btn-outline-light" onclick="vvClenPridaj()">+ Pridať do tímu</button></div>';
+  if(VV.view_link) h+='<div class="card bg-dark border-secondary mt-3"><div class="card-body py-2 small">👀 <b>Odkaz len na pozeranie</b> (napr. pre triednu učiteľku) — vidí program a tím, nič nemení: '
+    +'<button class="btn btn-sm btn-outline-secondary py-0 ms-1" onclick="vvKopiruj(\''+escHtml(VV.view_link)+'\')">🔗 kopírovať</button> <button class="btn btn-sm btn-outline-secondary py-0" onclick="vvQR(\'view\')">QR</button></div></div>';
+  return h;
+}
+async function vvClenPridaj(){
+  const role=vvVal('vvNovaRola');
+  const d=await vvOp('team.set',{member:{role}});
+  if(d){ const m=(d.team||[]).slice(-1)[0]; if(m) vvClenEdit(m.id); }
+}
+function vvClenZmaz(id){
+  const m=(VV.team||[]).find(x=>x.id===id); if(!m) return;
+  if(confirm('Odobrať z tímu: '+(m.name||m.role_label)+'?\n\nJeho osobný odkaz prestane fungovať.')) vvOp('team.del',{member_id:id});
+}
+function vvClenEdit(id){
+  const m=(VV.team||[]).find(x=>x.id===id); if(!m) return;
+  vvModal(m.ic+' '+escHtml(m.role_label),
+    '<label for="vvcR">Rola</label><select id="vvcR" class="form-select form-select-sm bg-dark text-light border-secondary">'+Object.entries(VV_ROLY).map(([k,r])=>'<option value="'+k+'"'+(k===m.role?' selected':'')+'>'+r.ic+' '+escHtml(r.t)+'</option>').join('')+'</select>'
+    +vvIn('vvcL','Názov roly (ako ju uvidí tím)',m.role_label,'maxlength="40"')
+    +vvIn('vvcN','Meno',m.name,'maxlength="80"')
+    +vvIn('vvcT','Telefón',m.phone,'type="tel" maxlength="30"')
+    +'<label for="vvcD">Dohoda</label><select id="vvcD" class="form-select form-select-sm bg-dark text-light border-secondary">'+Object.entries(VV_DOH).map(([k,t])=>'<option value="'+k+'"'+(k===m.dohoda?' selected':'')+'>'+t+'</option>').join('')+'</select>'
+    +'<div class="d-flex gap-2 align-items-end"><div class="flex-fill">'+vvIn('vvcP','Honorár / cena (€)',m.price,'inputmode="decimal"')+'</div>'
+    +'<label class="d-flex align-items-center gap-2 mb-2" style="color:#ddd"><input type="checkbox" id="vvcZ" '+(m.zaloha?'checked':'')+'> záloha zaplatená</label></div>'
+    +vvIn('vvcO','Poznámka (uvidí celý tím)',m.note,'maxlength="300"')
+    +'<label class="d-flex align-items-center gap-2 mt-3" style="color:#ddd;font-size:.85rem"><input type="checkbox" id="vvcC" '+(m.can_control?'checked':'')+'> Môže posúvať program (moderátor, tanečný majster)</label>'
+    +'<div class="small text-muted mt-3">Osobný odkaz: <span style="word-break:break-all">'+escHtml(m.link)+'</span><br>'
+    +'<button class="btn btn-sm btn-outline-secondary py-0 mt-1" onclick="vvNovyOdkaz(\''+m.id+'\')">Vydať nový odkaz (starý prestane platiť)</button></div>',
+    ()=>vvOp('team.set',{member:{id, role:vvVal('vvcR'), role_label:vvVal('vvcL'), name:vvVal('vvcN'), phone:vvVal('vvcT'), dohoda:vvVal('vvcD'),
+      price:vvVal('vvcP'), zaloha:document.getElementById('vvcZ').checked, note:vvVal('vvcO'), can_control:document.getElementById('vvcC').checked}}));
+}
+async function vvNovyOdkaz(id){
+  if(!confirm('Vydať nový odkaz? Starý odkaz tomuto človeku prestane fungovať.')) return;
+  document.querySelector('.vv-modal')?.remove();
+  const d=await vvOp('team.token',{member_id:id});
+  if(d){ showToast('Nový odkaz je pripravený','success'); vvClenEdit(id); }
+}
+function vvKopiruj(url){
+  navigator.clipboard?.writeText(url).then(()=>showToast('Odkaz skopírovaný — pošli ho cez WhatsApp alebo SMS','success'))
+    .catch(()=>prompt('Skopíruj odkaz:',url));
+}
+async function vvQR(mid){
+  const d=await api('/api/admin/vecer/qr?id='+encodeURIComponent(VV.id)+'&m='+encodeURIComponent(mid));
+  if(!d?.ok) return showToast('Chyba: '+(d?.error||'?'),'error');
+  const m=mid==='view'?{ic:'👀',role_label:'Len na pozeranie',name:''}:(VV.team||[]).find(x=>x.id===mid)||{};
+  document.querySelector('.vv-modal')?.remove();
+  const el=document.createElement('div'); el.className='vv-modal'; el.onclick=e=>{ if(e.target===el) el.remove(); };
+  el.innerHTML='<div class="vv-modal-box text-center"><div class="vv-rola">'+m.ic+' '+escHtml(m.role_label)+'</div><h5 class="fw-bold">'+escHtml(m.name||'')+'</h5>'
+    +'<img src="'+d.qr+'" alt="QR osobného odkazu" style="width:280px;height:280px;background:#fff;border-radius:12px;padding:8px">'
+    +'<div class="small text-muted mt-2" style="word-break:break-all">'+escHtml(d.url)+'</div>'
+    +'<button class="btn btn-sm btn-outline-secondary mt-3" onclick="this.closest(\'.vv-modal\').remove()">Zavrieť</button></div>';
+  document.body.appendChild(el);
+}
+
+// ── Program a scenár ────────────────────────────────────────────────────────
+function vvProgram(){
+  const P=VV.program||[], L=VV.live||{}, T=Object.fromEntries((VV.team||[]).map(t=>[t.id,t]));
+  const spolu=P.reduce((x,p)=>x+(+p.dur||0),0);
+  const posl=P[P.length-1];
+  const koniec=posl&&posl.plan?(()=>{ const [h,m]=posl.plan.split(':').map(Number), n=h*60+m+(+posl.dur||0); return String(Math.floor(n/60)%24).padStart(2,'0')+':'+String(n%60).padStart(2,'0'); })():'';
+  let h='<div class="d-flex gap-2 align-items-end flex-wrap mb-2">'
+    +'<div><label class="small text-muted d-block">Začiatok programu</label><input id="vvStart" type="time" value="'+escHtml(VV.start_time||'')+'" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:120px;color-scheme:dark"></div>'
+    +'<div><label class="small text-muted d-block">Pípnuť tímu pred koncom bodu</label><div class="d-flex align-items-center gap-1"><input id="vvWarn" type="number" min="0" max="30" value="'+(VV.warn_min??2)+'" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:70px"><span class="small text-muted">min</span></div></div>'
+    +'<button class="btn btn-sm btn-brand" onclick="vvOp(\'meta.set\',{start_time:vvVal(\'vvStart\'),warn_min:vvVal(\'vvWarn\')}).then(d=>d&&showToast(\'Uložené ✅\',\'success\'))">💾 Uložiť</button>'
+    +'<div class="small text-muted ms-auto">'+P.length+' bodov · '+vvTrv(spolu)+(koniec?' · koniec cca <b>'+koniec+'</b>':'')+(VV.start_time?'':' · <span class="text-warning">zadaj začiatok, dopočítajú sa časy</span>')+'</div>'
+    +'</div>'
+    +'<div class="vdet-navod">Návrh programu — uprav ho podľa dohody so školou. Časy sa dopočítajú z trvania; bod s <b>pevným časom</b> (napr. večera o 19:30) začne vtedy. Scenár je text pre moderátora, hudba je pokyn pre DJ-a.</div>';
+  P.forEach((p,i)=>{
+    const stav=L.status==='koniec'||(L.idx>i&&L.status!=='pred')?' hotovo':(i===L.idx&&(L.status==='bezi'||L.status==='pauza'))?' teraz':'';
+    h+='<div class="vv-bod'+stav+'"><div class="vv-bod-cas">'+(p.plan||'—')+'<small>'+vvTrv(p.dur)+'</small></div><div>'
+      +'<b>'+(i+1)+'. '+escHtml(p.title)+'</b>'+(p.at?' <span class="badge bg-secondary" style="font-size:.62rem">pevne '+escHtml(p.at)+'</span>':'')
+      +'<div>'+(p.who||[]).map(id=>T[id]).filter(Boolean).map(t=>'<span class="vv-chip">'+t.ic+' '+escHtml(t.role_label)+'</span>').join('')+'</div>'
+      +(p.music?'<div class="small" style="color:#e8d18f">🎵 '+escHtml(p.music)+'</div>':'')
+      +(p.script?'<div class="vv-scen">'+escHtml(p.script)+'</div>':'')
+      +(p.note?'<div class="small text-muted">📝 '+escHtml(p.note)+'</div>':'')
+      +'</div><div class="vv-ak">'
+        +'<button onclick="vvOp(\'prog.move\',{point_id:\''+p.id+'\',dir:-1})" title="Vyššie"'+(i===0?' disabled':'')+'>↑</button>'
+        +'<button onclick="vvOp(\'prog.move\',{point_id:\''+p.id+'\',dir:1})" title="Nižšie"'+(i===P.length-1?' disabled':'')+'>↓</button>'
+        +'<button onclick="vvBodEdit(\''+p.id+'\')" title="Upraviť">✎</button>'
+        +'<button onclick="vvBodEdit(null,\''+p.id+'\')" title="Vložiť bod za tento">＋</button>'
+        +'<button onclick="vvBodZmaz(\''+p.id+'\')" title="Zmazať">🗑</button>'
+      +'</div></div>';
+  });
+  h+='<button class="btn btn-sm btn-outline-light mt-2" onclick="vvBodEdit(null)">+ Pridať bod na koniec</button>';
+  return h;
+}
+function vvBodZmaz(id){
+  const p=(VV.program||[]).find(x=>x.id===id); if(!p) return;
+  if(confirm('Zmazať bod „'+p.title+'"?')) vvOp('prog.del',{point_id:id});
+}
+function vvBodEdit(id, za){
+  const p=id?(VV.program||[]).find(x=>x.id===id):{title:'',at:'',dur:10,who:[],script:'',music:'',note:''};
+  if(!p) return;
+  vvModal(id?'✎ Bod programu':'+ Nový bod programu',
+    vvIn('vvbT','Názov bodu',p.title,'maxlength="120" placeholder="napr. Odovzdanie diplomov"')
+    +'<div class="d-flex gap-2"><div class="flex-fill">'+vvIn('vvbA','Pevný čas (nepovinné)',p.at,'type="time" style="color-scheme:dark"')+'</div>'
+    +'<div class="flex-fill">'+vvIn('vvbD','Trvanie (min)',p.dur,'type="number" min="1" max="600"')+'</div></div>'
+    +'<label>Kto sa na tomto bode podieľa (tým zacinká „si na rade")</label><div class="d-flex flex-wrap gap-2">'
+      +(VV.team||[]).map(t=>'<label class="d-flex align-items-center gap-1 m-0" style="color:#ddd;font-size:.82rem;border:1px solid #3a3a3a;border-radius:99px;padding:4px 10px"><input type="checkbox" class="vvbW" value="'+t.id+'" '+((p.who||[]).includes(t.id)?'checked':'')+'> '+t.ic+' '+escHtml(t.role_label)+'</label>').join('')+'</div>'
+    +vvIn('vvbM','Hudba — pokyn pre DJ-a',p.music,'maxlength="200" placeholder="napr. Polonéza — Kilar"')
+    +'<label for="vvbS">Scenár — čo sa deje a čo hovorí moderátor</label><textarea id="vvbS" rows="6" maxlength="3000" class="form-control form-control-sm bg-dark text-light border-secondary">'+escHtml(p.script)+'</textarea>'
+    +vvIn('vvbN','Poznámka pre tím',p.note,'maxlength="300"'),
+    ()=>vvOp('prog.set',{point:{...(id?{id}:{}), ...(za?{after:za}:{}), title:vvVal('vvbT'), at:vvVal('vvbA'), dur:vvVal('vvbD'),
+      who:[...document.querySelectorAll('.vvbW:checked')].map(c=>c.value), music:vvVal('vvbM'), script:vvVal('vvbS'), note:vvVal('vvbN')}}));
+}
+function vvMeta(){
+  vvModal('✎ Názov večera', vvIn('vvmT','Názov',VV.title,'maxlength="120"')
+    +'<label for="vvmN">Poznámky k večeru (len pre teba)</label><textarea id="vvmN" rows="4" maxlength="2000" class="form-control form-control-sm bg-dark text-light border-secondary">'+escHtml(VV.notes||'')+'</textarea>',
+    ()=>vvOp('meta.set',{title:vvVal('vvmT'), notes:vvVal('vvmN')}));
+}
+async function vvZmaz(){
+  if(!confirm('Zmazať celú prípravu tohto večera (nákup, tím, program)?\n\nOsobné odkazy tímu prestanú fungovať. Skupiny, žiakov ani platby sa to nedotkne.')) return;
+  if(prompt('Pre potvrdenie napíš ZMAZAŤ')!=='ZMAZAŤ') return;
+  const d=await api('/api/admin/vecer/zmaz',{method:'POST',body:{id:VV.id}});
+  if(!d?.ok) return showToast('Chyba: '+(d?.error||'?'),'error');
+  try{ localStorage.removeItem('vv_id'); }catch(e){}
+  VV=null; clearInterval(VV_POLL); document.getElementById('vvDetail').innerHTML='';
+  showToast('Príprava zmazaná','success'); loadVecer();
+}
+
+// ── Riadenie večera ─────────────────────────────────────────────────────────
+function vvPult(){
+  const L=VV.live||{};
+  return '<div class="vv-pult"><iframe src="'+'/vecer/a/'+encodeURIComponent(VV.id)+'" title="Riadiaci pult večera" allow="screen-wake-lock; autoplay"></iframe>'
+    +'<div><h6 class="fw-bold">Ako to funguje na večere</h6>'
+    +'<ol class="small" style="line-height:1.7;color:#cfcfcf">'
+      +'<li>Každému z tímu pošli jeho <b>osobný odkaz</b> (záložka Tím → 🔗 odkaz alebo QR). Účet nepotrebuje.</li>'
+      +'<li>Na večere si ho otvorí, ťukne na <b>„Zapnúť zvuk“</b> a nechá stránku otvorenú — obrazovka ostane svietiť.</li>'
+      +'<li>Program posúvaš ty alebo ten, kto má v tíme zaškrtnuté <b>„môže posúvať program“</b> (moderátor). Tlačidlo <b>„Ďalší bod ▶“</b>.</li>'
+      +'<li>Pri každom ďalšom bode všetkým zacinká a zavibruje, kto je na rade, tomu svieti <b>„Si na rade“</b>. Pred koncom bodu jemne pípne, čo ide ďalej.</li>'
+      +'<li><b>📣 Správa</b> pošle tímu krátky odkaz (všetkým alebo len DJ-ovi, fotografovi…).</li>'
+    +'</ol>'
+    +'<div class="small text-muted mb-3">Zamknutý telefón zvoniť nebude — prehliadač vtedy stránku uspí. Preto stránka drží obrazovku rozsvietenú.</div>'
+    +'<a class="btn btn-sm btn-brand" href="'+'/vecer/a/'+encodeURIComponent(VV.id)+'" target="_blank">📱 Otvoriť pult na celú obrazovku</a>'
+    +(L.status&&L.status!=='pred'?'<div class="mt-4 pt-3 border-top border-secondary"><div class="small text-muted mb-2">Po generálke alebo skúške vráť večer na začiatok, nech je na ostrý štart čistý.</div>'
+      +'<button class="btn btn-sm btn-outline-warning" onclick="if(confirm(\'Vrátiť program na začiatok? Tím dostane upozornenie.\'))vvOp(\'live.reset\')">↺ Vrátiť program na začiatok</button></div>':'')
+    +'</div></div>';
 }
 
 async function loadRefFunnel(){

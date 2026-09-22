@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0B0A07">
+<title>Venčekový večer — tím</title>
+<link rel="icon" type="image/png" href="/logo-mark.png">
+<style>
+  /* Tímová obrazovka venčekového večera (22. 9. 2026). Beží v telefóne DJ-a,
+     fotografa, moderátora aj báb s diplomami — tma v sále, hlučná hudba, jedna
+     ruka. Preto veľké písmo, veľké tlačidlá, zvuk + vibrácia pri každej zmene. */
+  :root{
+    --bg:#0B0A07; --karta:#16140F; --karta2:#1F1C15; --okraj:rgba(201,168,76,.22); --okraj2:rgba(201,168,76,.45);
+    --gold:#C9A84C; --gold2:#EBD79A; --cream:#F2ECDC; --muted:#A99F86;
+    --red:#FF8A80; --red-bg:rgba(255,99,99,.14); --green:#8CDB97; --green-bg:rgba(120,210,130,.14);
+    --amber:#FFC96B; --amber-bg:rgba(255,190,80,.14); --ja:#5EC8FF; --ja-bg:rgba(94,200,255,.13);
+    --r:16px; --nav:68px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--cream)}
+  body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;font-size:16px;line-height:1.45;
+    min-height:100dvh;padding-bottom:calc(var(--nav) + env(safe-area-inset-bottom) + 16px)}
+  button{font-family:inherit;touch-action:manipulation;cursor:pointer}
+  button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid var(--gold2);outline-offset:2px}
+  a{color:var(--gold2)}
+  [hidden]{display:none!important}
+
+  /* hlavička */
+  .hl{position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;background:rgba(11,10,7,.94);
+    border-bottom:1px solid var(--okraj);backdrop-filter:blur(8px)}
+  .hl-znak{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);font-weight:800}
+  .hl-nazov{font-weight:800;font-size:1.02rem;line-height:1.2}
+  .hl-sub{color:var(--muted);font-size:.8rem}
+  .hl-r{text-align:right;flex:none}
+  .hodiny{font-size:1.5rem;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+  .spoj{display:inline-flex;align-items:center;gap:6px;font-size:.72rem;color:var(--muted)}
+  .spoj i{width:8px;height:8px;border-radius:50%;background:var(--red)}
+  .spoj.ok i{background:var(--green)}
+
+  .obal{max-width:640px;margin:0 auto;padding:12px 16px}
+  .ja{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.85rem;color:var(--muted);margin:2px 0 12px}
+  .ja b{color:var(--cream)}
+  .odznak{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--okraj);border-radius:99px;padding:3px 10px;font-size:.75rem}
+
+  /* banner zmeny */
+  .banner{position:fixed;left:12px;right:12px;top:calc(env(safe-area-inset-top) + 70px);z-index:40;max-width:620px;margin:0 auto;
+    background:var(--gold);color:#17130A;border-radius:14px;padding:14px 16px;font-weight:800;font-size:1.05rem;
+    box-shadow:0 12px 40px rgba(0,0,0,.6);display:flex;gap:10px;align-items:center}
+  .banner.ja{background:var(--ja);color:#04121B}
+  .banner.info{background:#2B2619;color:var(--cream);border:1px solid var(--okraj2)}
+  .banner span{flex:1}
+  .banner button{background:rgba(0,0,0,.18);border:none;border-radius:10px;color:inherit;font-weight:800;min-width:44px;min-height:44px;font-size:1.1rem}
+  body.blik::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:30;border:6px solid var(--gold);animation:blik .9s ease-out 2}
+  body.blik.ja-blik::after{border-color:var(--ja)}
+  @keyframes blik{0%{opacity:1}100%{opacity:0}}
+  @media (prefers-reduced-motion:reduce){body.blik::after{animation:none;opacity:.8}}
+
+  /* karty */
+  .karta{background:var(--karta);border:1px solid var(--okraj);border-radius:var(--r);padding:16px;margin-bottom:12px}
+  .karta.hlavna{border-color:var(--okraj2);background:linear-gradient(180deg,#1E1A10,#15130E)}
+  .karta.hlavna.moja{border-color:var(--ja);box-shadow:0 0 0 1px var(--ja) inset}
+  .karta.pauza{opacity:.92}
+  .stitok{font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);font-weight:800}
+  .stitok-rad{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+  .mesk{font-size:.78rem;font-weight:700;border-radius:99px;padding:2px 10px}
+  .mesk.neskoro{background:var(--amber-bg);color:var(--amber)}
+  .mesk.vcas{background:var(--green-bg);color:var(--green)}
+  .bod-nazov{font-size:1.6rem;line-height:1.15;margin:8px 0 4px;font-weight:800}
+  .cas-rad{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:6px}
+  .zostava{font-size:3.6rem;font-weight:800;font-variant-numeric:tabular-nums;line-height:1;letter-spacing:-.01em}
+  .zostava.prec{color:var(--red)}
+  .zostava-pod{color:var(--muted);font-size:.85rem}
+  .lista{height:8px;border-radius:99px;background:#2A261C;overflow:hidden;margin:12px 0}
+  .lista i{display:block;height:100%;width:0;background:var(--gold);border-radius:99px;transition:width .5s linear}
+  .lista.prec i{background:var(--red)}
+  .kto{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+  .chip{display:inline-flex;align-items:center;gap:5px;background:var(--karta2);border:1px solid var(--okraj);
+    border-radius:99px;padding:4px 10px;font-size:.8rem}
+  .chip.ja{background:var(--ja-bg);border-color:var(--ja);color:#CDEEFF;font-weight:700}
+  .uloha{display:flex;gap:8px;align-items:center;background:var(--ja-bg);border:1px solid var(--ja);color:#CDEEFF;
+    border-radius:12px;padding:10px 12px;font-weight:800;margin:10px 0}
+  .hudba{color:var(--gold2);font-size:.92rem;margin-top:6px}
+  .scenar{white-space:pre-wrap;background:#100E0A;border:1px solid #2A261C;border-radius:12px;padding:12px 14px;
+    margin-top:10px;font-size:1.02rem;line-height:1.55}
+  .pozn{color:var(--muted);font-size:.85rem;margin-top:8px;white-space:pre-wrap}
+  .dalej .bod-nazov{font-size:1.2rem}
+  .dalej.moja{border-color:var(--ja)}
+  .velky{font-size:2.4rem;font-weight:800;font-variant-numeric:tabular-nums;margin:6px 0}
+  .tlmene{color:var(--muted);font-size:.88rem}
+  .sprava-posl{border-color:var(--okraj2)}
+
+  /* ovládanie */
+  .ovl{position:sticky;bottom:calc(var(--nav) + env(safe-area-inset-bottom) + 8px);z-index:10;
+    background:rgba(11,10,7,.96);border:1px solid var(--okraj2);border-radius:18px;padding:10px;margin-top:6px;
+    box-shadow:0 -6px 30px rgba(0,0,0,.5)}
+  .btn-hl{width:100%;min-height:60px;border:none;border-radius:14px;background:var(--gold);color:#17130A;
+    font-size:1.12rem;font-weight:800;padding:10px 14px;display:flex;align-items:center;justify-content:center;gap:10px;line-height:1.2}
+  .btn-hl small{display:block;font-weight:600;font-size:.78rem;opacity:.8}
+  .btn-hl:active{transform:scale(.98)}
+  .btn-hl:disabled{opacity:.45}
+  .ovl-rad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+  .btn{min-height:48px;border-radius:12px;border:1px solid var(--okraj2);background:var(--karta2);color:var(--cream);
+    font-weight:700;font-size:.9rem;padding:8px 10px}
+  .btn:active{background:#2B2619}
+  .btn.cerv{border-color:rgba(255,120,120,.5);color:var(--red)}
+  .btn.plna{width:100%}
+
+  /* program */
+  .prog{list-style:none;margin:0;padding:0}
+  .prog li{margin-bottom:8px}
+  .prog details{background:var(--karta);border:1px solid var(--okraj);border-radius:14px}
+  .prog details.teraz{border-color:var(--gold);background:#1E1A10}
+  .prog details.hotovo{opacity:.55}
+  .prog details.moj{box-shadow:inset 3px 0 0 var(--ja)}
+  .prog summary{list-style:none;display:grid;grid-template-columns:58px 1fr auto;gap:10px;align-items:center;padding:12px 14px;min-height:56px}
+  .prog summary::-webkit-details-marker{display:none}
+  .p-cas{font-variant-numeric:tabular-nums;font-weight:800;color:var(--gold2)}
+  .p-cas small{display:block;color:var(--muted);font-weight:600;font-size:.72rem}
+  .p-nm{font-weight:700}
+  .p-st{font-size:.75rem;color:var(--muted);text-align:right}
+  .p-telo{padding:0 14px 14px}
+
+  /* príprava */
+  .suhrn{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .suhrn .odznak{font-size:.82rem;padding:5px 12px}
+  .kat-h{display:flex;justify-content:space-between;align-items:center;margin:18px 2px 8px;font-weight:800}
+  .kat-h span{color:var(--muted);font-weight:600;font-size:.85rem}
+  .pol{background:var(--karta);border:1px solid var(--okraj);border-radius:14px;padding:12px;margin-bottom:8px}
+  .pol.st-ok{border-color:rgba(140,219,151,.4)}
+  .pol.st-pol{border-color:rgba(255,201,107,.4)}
+  .pol-nm{font-weight:700}
+  .pol.st-ok .pol-nm{color:var(--green)}
+  .pol-info{color:var(--muted);font-size:.8rem;margin-top:2px}
+  .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
+  .seg button{min-height:46px;border-radius:10px;border:1px solid #37322A;background:#12100C;color:var(--muted);font-weight:700;font-size:.85rem}
+  .seg button[aria-pressed="true"].s-nie{background:var(--red-bg);border-color:var(--red);color:var(--red)}
+  .seg button[aria-pressed="true"].s-pol{background:var(--amber-bg);border-color:var(--amber);color:var(--amber)}
+  .seg button[aria-pressed="true"].s-ok{background:var(--green-bg);border-color:var(--green);color:var(--green)}
+  .poc{display:flex;align-items:center;gap:10px;margin-top:8px}
+  .poc button{min-width:48px;min-height:44px;border-radius:10px;border:1px solid var(--okraj2);background:var(--karta2);color:var(--cream);font-size:1.3rem;font-weight:800}
+  .poc span{font-variant-numeric:tabular-nums;font-weight:800;min-width:84px;text-align:center}
+  .stav-txt{font-size:.8rem;font-weight:700}
+  .stav-txt.s-ok{color:var(--green)} .stav-txt.s-pol{color:var(--amber)} .stav-txt.s-nie{color:var(--red)}
+  .prepinac{display:flex;align-items:center;gap:8px;font-size:.88rem;color:var(--muted)}
+  .prepinac input{width:20px;height:20px;accent-color:var(--gold)}
+
+  /* tím */
+  .clen{display:grid;grid-template-columns:44px 1fr auto;gap:10px;align-items:center;background:var(--karta);
+    border:1px solid var(--okraj);border-radius:14px;padding:12px;margin-bottom:8px}
+  .clen.ja{border-color:var(--ja)}
+  .clen-ic{font-size:1.6rem;text-align:center}
+  .clen-rola{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);font-weight:800}
+  .clen-meno{font-weight:700}
+  .clen-meno.nikto{color:var(--muted);font-weight:500;font-style:italic}
+  .dohoda{font-size:.72rem;font-weight:800;border-radius:99px;padding:2px 9px;display:inline-block;margin-top:3px}
+  .d-dohodnute{background:var(--green-bg);color:var(--green)}
+  .d-oslovene{background:var(--amber-bg);color:var(--amber)}
+  .d-hladame{background:var(--red-bg);color:var(--red)}
+  .tel{display:inline-flex;align-items:center;justify-content:center;min-width:48px;min-height:48px;border-radius:12px;
+    border:1px solid var(--okraj2);text-decoration:none;font-size:1.2rem}
+
+  /* spodná navigácia */
+  .spodok{position:fixed;left:0;right:0;bottom:0;z-index:25;display:grid;grid-template-columns:repeat(4,1fr);
+    background:rgba(14,12,9,.97);border-top:1px solid var(--okraj);padding-bottom:env(safe-area-inset-bottom);height:calc(var(--nav) + env(safe-area-inset-bottom))}
+  .spodok button{background:none;border:none;color:var(--muted);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:.72rem;font-weight:700}
+  .spodok button svg{width:24px;height:24px}
+  .spodok button[aria-current="page"]{color:var(--gold)}
+
+  /* odomknutie zvuku */
+  .odomkni{position:fixed;inset:0;z-index:60;background:rgba(11,10,7,.97);display:flex;align-items:center;justify-content:center;padding:24px}
+  .odomkni-box{max-width:380px;text-align:center}
+  .odomkni-box img{width:64px;height:64px}
+  .odomkni-box h1{font-size:1.4rem;margin:14px 0 6px}
+  .odomkni-box p{color:var(--muted);margin:0 0 20px}
+  .odomkni-box .btn-hl{margin-bottom:10px}
+  .linka{background:none;border:none;color:var(--muted);text-decoration:underline;min-height:44px;font-size:.9rem}
+
+  /* spodný panel (správa tímu, nová položka) */
+  .sheet-bg{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center}
+  .sheet{background:#17150F;border:1px solid var(--okraj2);border-radius:20px 20px 0 0;width:100%;max-width:640px;
+    padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-height:88dvh;overflow:auto}
+  .sheet h2{font-size:1.15rem;margin:0 0 12px}
+  .sheet label{display:block;font-size:.82rem;color:var(--muted);margin:10px 0 4px;font-weight:700}
+  .sheet input,.sheet textarea,.sheet select{width:100%;min-height:48px;border-radius:12px;border:1px solid #3A3429;background:#0F0D0A;
+    color:var(--cream);font-size:16px;padding:10px 12px;font-family:inherit}
+  .sheet textarea{min-height:90px}
+  .rychle{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .rychle button{min-height:40px;border-radius:99px;border:1px solid var(--okraj2);background:var(--karta2);color:var(--cream);font-size:.82rem;padding:6px 12px}
+  .komu{display:flex;flex-wrap:wrap;gap:6px}
+  .komu label{margin:0;display:inline-flex;align-items:center;gap:6px;border:1px solid #3A3429;border-radius:99px;padding:6px 12px;color:var(--cream);font-weight:600;min-height:40px}
+  .komu input{width:18px;height:18px;min-height:0;accent-color:var(--gold)}
+  .sheet-akcie{display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-top:16px}
+
+  .toast{position:fixed;left:50%;bottom:calc(var(--nav) + env(safe-area-inset-bottom) + 18px);transform:translateX(-50%);z-index:70;
+    background:#2B2619;border:1px solid var(--okraj2);color:var(--cream);padding:10px 16px;border-radius:12px;font-weight:700;max-width:90vw}
+  .toast.chyba{border-color:var(--red);color:var(--red)}
+  .stav-cely{min-height:70dvh;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--muted);padding:24px}
+  .prazdne{color:var(--muted);text-align:center;padding:24px 8px}
+</style>
+</head>
+<body>
+<header class="hl">
+  <div>
+    <div class="hl-znak">Venčekový večer</div>
+    <div class="hl-nazov" id="hNazov">Načítavam…</div>
+    <div class="hl-sub" id="hSub"></div>
+  </div>
+  <div class="hl-r">
+    <div class="hodiny" id="hodiny" aria-label="Aktuálny čas">--:--</div>
+    <div class="spoj" id="spoj"><i></i><span>pripájam</span></div>
+  </div>
+</header>
+
+<div id="banner" class="banner" role="alert" aria-live="assertive" hidden><span id="bannerTxt"></span><button onclick="skryBanner()" aria-label="Zavrieť">✕</button></div>
+
+<main class="obal" id="obsah">
+  <div class="ja" id="ja"></div>
+  <section id="pTeraz"><div class="stav-cely">Načítavam program…</div></section>
+  <section id="pProgram" hidden></section>
+  <section id="pPriprava" hidden></section>
+  <section id="pTim" hidden></section>
+</main>
+
+<nav class="spodok" aria-label="Sekcie">
+  <button data-tab="teraz" onclick="tab('teraz')" aria-current="page">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Teraz</button>
+  <button data-tab="program" onclick="tab('program')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Program</button>
+  <button data-tab="priprava" onclick="tab('priprava')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg>Príprava</button>
+  <button data-tab="tim" onclick="tab('tim')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Tím</button>
+</nav>
+
+<div class="odomkni" id="odomkni">
+  <div class="odomkni-box">
+    <img src="/logo-mark.png" alt="Fusion Academy">
+    <h1>Zapni si upozornenia</h1>
+    <p>Pri každom ďalšom bode programu ti telefón zacinká a zavibruje. Nechaj túto stránku otvorenú — obrazovka ostane svietiť.</p>
+    <button class="btn-hl" onclick="odomkni(true)">🔔 Zapnúť zvuk a pokračovať</button>
+    <button class="linka" onclick="odomkni(false)">Pokračovať bez zvuku</button>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+// ── Kto som ────────────────────────────────────────────────────────────────
+// /vecer/<token> = člen tímu bez účtu, /vecer/a/<id> = prihlásený admin.
+const CESTA = location.pathname.split('/').filter(Boolean);
+const MOD = CESTA[1] === 'a' ? { id: CESTA[2] || '' } : { t: CESTA[1] || '' };
+let S = null, OFFSET = 0, TAB = 'teraz', ZVUK = false, LEN_CHYBA = false;
+let varovanyBod = null, vyprsanyBod = null, bannerT = null, zamokDalej = 0, ZRUSENE = false;
+
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const teraz = () => Date.now() + OFFSET;
+const dvoj = n => String(n).padStart(2, '0');
+function mmss(ms){ const s = Math.max(0, Math.round(Math.abs(ms) / 1000)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + dvoj(m) : dvoj(m)) + ':' + dvoj(x); }
+function trvanie(min){ min = Math.round(min); const h = Math.floor(min / 60), m = min % 60; return h ? h + ' h' + (m ? ' ' + m + ' min' : '') : m + ' min'; }
+function odkedy(min){ min = Math.round(min); if(min < 60) return min + ' min'; const h = Math.floor(min / 60), m = min % 60; if(h < 48) return h + ' h' + (m ? ' ' + m + ' min' : ''); return Math.round(h / 24) + ' dní'; }
+function hhmmZ(iso){ const d = new Date(iso); return dvoj(d.getHours()) + ':' + dvoj(d.getMinutes()); }
+const DNI = ['nedeľa', 'pondelok', 'utorok', 'streda', 'štvrtok', 'piatok', 'sobota'];
+function datumTxt(ymd){ if(!ymd) return ''; const d = new Date(ymd + 'T12:00:00'); if(isNaN(d)) return ymd; return DNI[d.getDay()] + ' ' + d.getDate() + '. ' + (d.getMonth() + 1) + '. ' + d.getFullYear(); }
+
+// ── Zvuky ──────────────────────────────────────────────────────────────────
+// Syntetizované WAV-ky prehrávané cez <audio>: iPhone ich zahrá aj pri
+// stlmenom zvonení (Web Audio by bolo ticho) a netreba sťahovať súbory.
+function wav(tony, dlzka){
+  const sr = 22050, n = Math.floor(sr * dlzka), d = new Float32Array(n);
+  for(const [f, zac, trv, hl] of tony){
+    const a = Math.floor(zac * sr), b = Math.min(n, a + Math.floor(trv * sr));
+    for(let i = a; i < b; i++){
+      const t = (i - a) / sr, env = Math.exp(-t * 3.4) * Math.min(1, t * 250);
+      d[i] += (Math.sin(2 * Math.PI * f * t) + .35 * Math.sin(2 * Math.PI * f * 2.01 * t) + .12 * Math.sin(2 * Math.PI * f * 3.02 * t)) * env * hl;
+    }
+  }
+  const buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const s = (o, str) => { for(let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+  s(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); s(8, 'WAVE'); s(12, 'fmt '); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true); s(36, 'data'); v.setUint32(40, n * 2, true);
+  for(let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, d[i] * .5)) * 32767, true);
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+const ZVUKY = {
+  zmena:  wav([[988, 0, 1, .9], [784, .33, 1, .9], [988, .66, 1.5, .9]], 2.3),
+  varuj:  wav([[1175, 0, .5, .6], [1175, .26, .7, .6]], 1.1),
+  sprava: wav([[1319, 0, .35, .8], [1568, .16, .35, .8], [1976, .32, .8, .8]], 1.3),
+  koniec: wav([[784, 0, 1, .8], [988, .18, 1, .8], [1175, .36, 1, .8], [1568, .54, 1.6, .8]], 2.3),
+};
+const PREHRAVAC = {};
+for(const k in ZVUKY){ const a = new Audio(ZVUKY[k]); a.preload = 'auto'; PREHRAVAC[k] = a; }
+function zahraj(k){
+  if(!ZVUK) return;
+  const a = PREHRAVAC[k]; if(!a) return;
+  try{ a.currentTime = 0; const p = a.play(); if(p && p.catch) p.catch(() => {}); }catch(e){}
+}
+function vibruj(v){ try{ if(navigator.vibrate) navigator.vibrate(v); }catch(e){} }
+
+let zamokObrazovky = null;
+async function drzObrazovku(){
+  try{ if('wakeLock' in navigator && document.visibilityState === 'visible') zamokObrazovky = await navigator.wakeLock.request('screen'); }catch(e){}
+}
+async function odomkni(zvuk){
+  ZVUK = !!zvuk;
+  document.getElementById('odomkni').hidden = true;
+  if(ZVUK){
+    try{ if(navigator.audioSession) navigator.audioSession.type = 'playback'; }catch(e){}
+    // Prehratie v rámci ťuknutia odomkne každý prehrávač na neskôr.
+    for(const k in PREHRAVAC){
+      const a = PREHRAVAC[k]; a.muted = true;
+      try{ await a.play(); }catch(e){}
+      a.pause(); a.currentTime = 0; a.muted = false;
+    }
+    zahraj('varuj');
+  }
+  drzObrazovku();
+}
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible'){ drzObrazovku(); nacitaj(); }
+});
+
+// ── Banner a toast ─────────────────────────────────────────────────────────
+function banner(text, druh, sek){
+  const b = document.getElementById('banner');
+  document.getElementById('bannerTxt').textContent = text;
+  b.className = 'banner' + (druh ? ' ' + druh : '');
+  b.hidden = false;
+  clearTimeout(bannerT);
+  bannerT = setTimeout(skryBanner, (sek || 12) * 1000);
+}
+function skryBanner(){ document.getElementById('banner').hidden = true; }
+function blikni(moje){
+  document.body.classList.remove('blik', 'ja-blik'); void document.body.offsetWidth;
+  document.body.classList.add('blik'); if(moje) document.body.classList.add('ja-blik');
+  setTimeout(() => document.body.classList.remove('blik', 'ja-blik'), 2000);
+}
+let toastT = null;
+function toast(t, chyba){
+  let el = document.getElementById('toast');
+  if(!el){ el = document.createElement('div'); el.id = 'toast'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+  el.className = 'toast' + (chyba ? ' chyba' : ''); el.textContent = t; el.hidden = false;
+  clearTimeout(toastT); toastT = setTimeout(() => { el.hidden = true; }, 3500);
+}
+
+// ── Dáta ───────────────────────────────────────────────────────────────────
+const qs = () => MOD.t ? 't=' + encodeURIComponent(MOD.t) : 'id=' + encodeURIComponent(MOD.id);
+async function nacitaj(){
+  if(ZRUSENE) return;
+  try{
+    const r = await fetch('/api/vecer/stav?' + qs(), { cache: 'no-store' });
+    const d = await r.json().catch(() => ({}));
+    if(!r.ok){ neplatny(d.error || 'Tento odkaz neplatí.'); return; }
+    prijmi(d);
+  }catch(e){ nastavSpoj(false); }
+}
+async function op(o, data){
+  try{
+    const r = await fetch('/api/vecer/op', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...MOD, op: o, ...(data || {}) }) });
+    const d = await r.json().catch(() => ({}));
+    if(!r.ok){ toast(d.error || 'Nepodarilo sa uložiť', true); return null; }
+    prijmi(d);
+    return d;
+  }catch(e){ toast('Bez spojenia — skús znova', true); return null; }
+}
+function neplatny(t){
+  ZRUSENE = true;
+  document.getElementById('odomkni').hidden = true;
+  document.getElementById('hNazov').textContent = 'Venčekový večer';
+  document.getElementById('obsah').innerHTML = '<div class="stav-cely"><div><div style="font-size:2.4rem">🔒</div><p>' + esc(t) + '</p></div></div>';
+  document.querySelector('.spodok').hidden = true;
+}
+
+// Porovnanie so starým stavom rozhoduje, čo zacinká. Pri prvom načítaní
+// nič — inak by zvonilo pri každom otvorení stránky.
+function prijmi(s){
+  if(ZRUSENE) return;
+  const pred = S;
+  OFFSET = (s.server_now || Date.now()) - Date.now();
+  S = s;
+  // Kontrola raz za 15 s nemá prekresľovať stránku (zatvorila by rozkliknutý bod).
+  if(pred && s.rev === pred.rev) return;
+  if(pred){
+    const Lp = pred.live || {}, L = s.live || {};
+    const iny = L.idx !== Lp.idx || L.point_started_at !== Lp.point_started_at;
+    if(L.status === 'bezi' && (iny || Lp.status === 'pred' || Lp.status === 'koniec')) oznamZmenu();
+    else if(L.status === 'koniec' && Lp.status !== 'koniec'){ zahraj('koniec'); vibruj([300, 120, 300]); banner('🎉 Venček skončil. Ďakujeme celému tímu!', '', 20); blikni(false); }
+    else if(L.status === 'pauza' && Lp.status !== 'pauza'){ zahraj('varuj'); banner('⏸ Program je pozastavený', 'info', 8); }
+    else if(L.status === 'bezi' && Lp.status === 'pauza'){ zahraj('varuj'); banner('▶ Pokračujeme', 'info', 6); }
+    else if(L.status === 'pred' && Lp.status !== 'pred'){ banner('Program je vrátený na začiatok', 'info', 8); }
+    if(L.msg && L.msg.id !== (Lp.msg || {}).id) oznamSpravu(L.msg);
+  } else {
+    // Pri otvorení počas bodu už nevaruj za bod, ktorý je v závere.
+    const L = s.live || {};
+    varovanyBod = vyprsanyBod = null;
+    if(L.status === 'bezi' || L.status === 'pauza'){ const z = zostava(); if(z != null && z <= (s.warn_min || 0) * 60000) varovanyBod = L.idx; if(z != null && z <= 0) vyprsanyBod = L.idx; }
+  }
+  render();
+}
+const mojBod = p => !!(S && S.me && p && (p.who || []).includes(S.me.id));
+function oznamZmenu(){
+  const L = S.live, p = S.program[L.idx]; if(!p) return;
+  const moje = mojBod(p);
+  varovanyBod = vyprsanyBod = null;
+  zahraj('zmena');
+  vibruj(moje ? [450, 150, 450, 150, 450] : [250, 120, 250]);
+  banner((moje ? '👉 Si na rade: ' : '▶ Teraz: ') + p.title, moje ? 'ja' : '', 15);
+  blikni(moje);
+}
+function oznamSpravu(m){
+  const preMna = !m.to || !m.to.length || (S.me && m.to.includes(S.me.id));
+  if(!preMna && !S.can_control) return;
+  zahraj('sprava');
+  vibruj(preMna && m.to && m.to.length ? [500, 150, 500] : [200, 100, 200]);
+  banner('📣 ' + m.text + (m.from ? ' — ' + m.from : ''), preMna && m.to && m.to.length ? 'ja' : '', 30);
+}
+
+// ── Čas bodu ───────────────────────────────────────────────────────────────
+function zostava(){
+  const L = S && S.live; if(!L || !(L.status === 'bezi' || L.status === 'pauza')) return null;
+  const p = S.program[L.idx]; if(!p) return null;
+  let ubehlo = teraz() - Date.parse(L.point_started_at) - (+L.pause_ms || 0);
+  if(L.status === 'pauza' && L.paused_at) ubehlo -= teraz() - Date.parse(L.paused_at);
+  return (+p.dur || 0) * 60000 - ubehlo;
+}
+// Meškanie = skutočný začiatok bodu oproti plánovanému času (v minútach dňa).
+function meskanie(){
+  const L = S.live, p = S.program[L.idx];
+  if(!p || !p.plan || !L.point_started_at) return null;
+  const d = new Date(L.point_started_at), sk = d.getHours() * 60 + d.getMinutes();
+  // Generálka v iný deň nemá hlásiť „meškáme 490 min".
+  const den = d.getFullYear() + '-' + dvoj(d.getMonth() + 1) + '-' + dvoj(d.getDate());
+  if(S.event_date && den !== S.event_date) return null;
+  const [h, m] = p.plan.split(':').map(Number);
+  let r = sk - (h * 60 + m); if(r < -720) r += 1440; if(r > 720) r -= 1440;
+  return Math.abs(r) > 240 ? null : r;
+}
+
+function tik(){
+  const d = new Date(teraz());
+  document.getElementById('hodiny').textContent = dvoj(d.getHours()) + ':' + dvoj(d.getMinutes()) + ':' + dvoj(d.getSeconds());
+  if(!S) return;
+  const L = S.live || {};
+  if(L.status === 'pred'){
+    const el = document.getElementById('doStartu'); if(!el) return;
+    const zac = S.event_date && S.start_time ? new Date(S.event_date + 'T' + S.start_time + ':00').getTime() : null;
+    if(!zac) { el.textContent = S.start_time ? 'Začiatok o ' + S.start_time : 'Program ešte nezačal'; return; }
+    const r = zac - teraz();
+    el.textContent = r > 0 ? (r < 36e5 ? 'o ' + mmss(r) : 'o ' + odkedy(r / 60000)) : 'Program ešte nezačal';
+    return;
+  }
+  if(L.status !== 'bezi' && L.status !== 'pauza') return;
+  const z = zostava(); if(z == null) return;
+  const p = S.program[L.idx], celk = (+p.dur || 1) * 60000;
+  const el = document.getElementById('zostava');
+  if(el){
+    el.textContent = (z < 0 ? '+' : '') + mmss(z);
+    el.classList.toggle('prec', z < 0);
+    document.getElementById('zostavaPod').textContent = L.status === 'pauza' ? '⏸ pozastavené'
+      : z < 0 ? 'nad plán (' + trvanie(p.dur) + ')' : 'zostáva z ' + trvanie(p.dur);
+    const li = document.getElementById('lista');
+    li.classList.toggle('prec', z < 0);
+    li.firstElementChild.style.width = Math.min(100, Math.max(0, (1 - z / celk) * 100)) + '%';
+  }
+  const dal = document.getElementById('dalejO');
+  if(dal) dal.textContent = z > 0 ? 'o ' + mmss(z) : 'teraz';
+  if(L.status !== 'bezi') return;
+  // Upozornenie pred koncom bodu: čo ide ďalej (a kto je na rade).
+  const warn = (S.warn_min == null ? 2 : S.warn_min) * 60000;
+  const dalsi = S.program[L.idx + 1];
+  if(warn > 0 && dalsi && z <= warn && z > 0 && varovanyBod !== L.idx){
+    varovanyBod = L.idx;
+    const moje = mojBod(dalsi);
+    zahraj('varuj'); vibruj(moje ? [300, 100, 300] : 120);
+    banner((moje ? '👉 O ' + Math.ceil(z / 60000) + ' min si na rade: ' : '⏭ O ' + Math.ceil(z / 60000) + ' min: ') + dalsi.title, moje ? 'ja' : 'info', 20);
+  }
+  // Čas bodu vypršal — pripomenie to len tomu, kto program posúva.
+  if(z <= 0 && vyprsanyBod !== L.idx){
+    vyprsanyBod = L.idx;
+    if(S.can_control){ zahraj('varuj'); vibruj(200); banner('⏰ Čas bodu vypršal' + (dalsi ? ' — ďalej: ' + dalsi.title : ' — posledný bod'), 'info', 15); }
+  }
+}
+
+// ── Vykreslenie ────────────────────────────────────────────────────────────
+function tab(k){
+  TAB = k;
+  document.querySelectorAll('.spodok button').forEach(b => b.setAttribute('aria-current', b.dataset.tab === k ? 'page' : 'false'));
+  ['teraz', 'program', 'priprava', 'tim'].forEach(x => { document.getElementById('p' + x.charAt(0).toUpperCase() + x.slice(1)).hidden = x !== k; });
+  window.scrollTo(0, 0);
+}
+function chipy(ids){
+  const t = Object.fromEntries((S.team || []).map(m => [m.id, m]));
+  return (ids || []).map(id => t[id]).filter(Boolean).map(m =>
+    '<span class="chip' + (S.me && m.id === S.me.id ? ' ja' : '') + '">' + m.ic + ' ' + esc(m.role_label) + (m.name ? ' · ' + esc(m.name.length <= 14 ? m.name : m.name.split(' ')[0]) : '') + '</span>').join('');
+}
+function render(){
+  document.getElementById('hNazov').textContent = S.school ? S.school + (S.class_name && S.class_name !== 'Venčeková skupina' ? ' · ' + S.class_name : '') : S.title;
+  document.getElementById('hSub').textContent = [datumTxt(S.event_date), S.event_venue].filter(Boolean).join(' · ');
+  const m = S.me ? (S.team || []).find(x => x.id === S.me.id) : null;
+  document.getElementById('ja').innerHTML = S.admin
+    ? '<span class="odznak">👑 Admin</span><span>Riadiš program</span>'
+    : m ? '<span class="odznak">' + m.ic + ' ' + esc(m.role_label) + '</span><span>Si <b>' + esc(m.name || m.role_label) + '</b>' + (S.can_control ? ' · posúvaš program' : '') + '</span>'
+    : '<span class="odznak">👀 Len na pozeranie</span>';
+  renderTeraz(); renderProgram(); renderPriprava(); renderTim();
+  tik();
+}
+function renderTeraz(){
+  const L = S.live || { status: 'pred', idx: -1 }, P = S.program || [];
+  const el = document.getElementById('pTeraz');
+  const spolu = P.reduce((x, p) => x + (+p.dur || 0), 0);
+  let h = '';
+  const posl = L.msg && (teraz() - Date.parse(L.msg.at) < 15 * 60000) && (!L.msg.to || !L.msg.to.length || S.can_control || (S.me && L.msg.to.includes(S.me.id)));
+  if(!P.length){ el.innerHTML = '<div class="prazdne">Program zatiaľ nie je zostavený.</div>'; return; }
+  if(L.status === 'pred'){
+    h += '<div class="karta hlavna"><div class="stitok">Pred začiatkom</div><div class="velky" id="doStartu">—</div>'
+      + '<div class="tlmene">' + (S.start_time ? 'Začiatok programu ' + S.start_time + ' · ' : '') + P.length + ' bodov · ' + trvanie(spolu) + '</div></div>';
+    h += kartaDalej(P[0], 'Prvý bod', P[0].plan ? 'o ' + P[0].plan : '');
+    if(S.can_control) h += '<div class="ovl"><button class="btn-hl" onclick="dalej()">▶ Začať program<small>' + esc(P[0].title) + '</small></button></div>';
+  } else if(L.status === 'koniec'){
+    const zac = L.started_at ? Date.parse(L.started_at) : null, kon = L.ended_at ? Date.parse(L.ended_at) : null;
+    h += '<div class="karta hlavna"><div class="stitok">Koniec</div><div class="bod-nazov">🎉 Venček skončil</div>'
+      + '<div class="tlmene">Ďakujeme celému tímu!' + (zac && kon ? ' Program trval ' + trvanie((kon - zac) / 60000) + ' (plán ' + trvanie(spolu) + ').' : '') + '</div></div>';
+    if(S.can_control) h += '<div class="ovl"><button class="btn plna" onclick="op(\'live.prev\',{from:' + L.idx + '})">◀ Omyl — vrátiť posledný bod</button></div>';
+  } else {
+    const p = P[L.idx] || {}, moje = mojBod(p), mk = meskanie();
+    h += '<div class="karta hlavna' + (moje ? ' moja' : '') + (L.status === 'pauza' ? ' pauza' : '') + '">'
+      + '<div class="stitok-rad"><span class="stitok">Teraz · bod ' + (L.idx + 1) + ' z ' + P.length + '</span>'
+      + (mk != null && Math.abs(mk) >= 2 ? '<span class="mesk ' + (mk > 0 ? 'neskoro' : 'vcas') + '">' + (mk > 0 ? '⏱ meškáme ' + mk + ' min' : '⏱ predstih ' + (-mk) + ' min') + '</span>'
+        : mk != null ? '<span class="mesk vcas">✓ v čase</span>' : '')
+      + '</div>'
+      + '<h2 class="bod-nazov">' + esc(p.title) + '</h2>'
+      + '<div class="cas-rad"><div class="zostava" id="zostava" aria-live="off">--:--</div><div class="zostava-pod" id="zostavaPod"></div></div>'
+      + '<div class="lista" id="lista"><i></i></div>'
+      + (moje ? '<div class="uloha">👉 Tvoja úloha teraz</div>' : '')
+      + '<div class="kto">' + chipy(p.who) + '</div>'
+      + (p.music ? '<div class="hudba">🎵 ' + esc(p.music) + '</div>' : '')
+      + (p.script ? '<div class="scenar">' + esc(p.script) + '</div>' : '')
+      + (p.note ? '<div class="pozn">📝 ' + esc(p.note) + '</div>' : '')
+      + '</div>';
+    const d = P[L.idx + 1];
+    h += d ? kartaDalej(d, 'Ďalej', '<span id="dalejO"></span>' + (d.plan ? ' · plán ' + d.plan : '')) : '<div class="karta dalej"><div class="stitok">Ďalej</div><div class="tlmene">Toto je posledný bod programu.</div></div>';
+    if(S.can_control){
+      h += '<div class="ovl">'
+        + '<button class="btn-hl" id="bDalej" onclick="dalej()">' + (d ? 'Ďalší bod ▶<small>' + esc(d.title) + '</small>' : '✓ Ukončiť večer') + '</button>'
+        + '<div class="ovl-rad">'
+          + '<button class="btn" onclick="op(\'live.prev\',{from:' + L.idx + '})"' + (L.idx <= 0 ? ' disabled' : '') + '>◀ Späť</button>'
+          + (L.status === 'pauza' ? '<button class="btn" onclick="op(\'live.resume\')">▶ Pokračovať</button>' : '<button class="btn" onclick="op(\'live.pause\')">⏸ Pauza</button>')
+          + '<button class="btn" onclick="otvorSpravu()">📣 Správa</button>'
+        + '</div></div>';
+    }
+  }
+  if(posl) h += '<div class="karta sprava-posl"><div class="stitok">Posledná správa · ' + hhmmZ(L.msg.at) + '</div><div style="margin-top:6px;font-weight:700">📣 ' + esc(L.msg.text) + '</div>'
+    + '<div class="tlmene">' + esc(L.msg.from || '') + (L.msg.to && L.msg.to.length ? ' → ' + esc(L.msg.to.map(id => ((S.team || []).find(t => t.id === id) || {}).role_label).filter(Boolean).join(', ')) : ' → všetkým') + '</div></div>';
+  el.innerHTML = h;
+}
+function kartaDalej(p, stitok, kedy){
+  const moje = mojBod(p);
+  return '<div class="karta dalej' + (moje ? ' moja' : '') + '"><div class="stitok-rad"><span class="stitok">' + stitok + '</span><span class="tlmene">' + kedy + '</span></div>'
+    + '<div class="bod-nazov">' + esc(p.title) + '</div>'
+    + (moje ? '<div class="uloha">👉 Pripravuj sa — si na rade</div>' : '')
+    + '<div class="kto">' + chipy(p.who) + '</div>'
+    + (p.music ? '<div class="hudba">🎵 ' + esc(p.music) + '</div>' : '') + '</div>';
+}
+function dalej(){
+  // Dvojklik v tme nesmie preskočiť bod — tlačidlo sa na chvíľu zamkne
+  // a server navyše zahodí klik, ktorý neprišiel z aktuálneho bodu.
+  if(Date.now() - zamokDalej < 1500) return;
+  zamokDalej = Date.now();
+  const b = document.getElementById('bDalej'); if(b) b.disabled = true;
+  op((S.live || {}).status === 'pred' ? 'live.start' : 'live.next', { from: (S.live || {}).idx });
+}
+function renderProgram(){
+  const L = S.live || {}, P = S.program || [];
+  const log = {}; (L.log || []).forEach(z => { log[z.id] = z; });
+  const spolu = P.reduce((x, p) => x + (+p.dur || 0), 0);
+  const otvorene = new Set([...document.querySelectorAll('#pProgram details[open]')].map(d => d.dataset.id));
+  const posl = P.length ? P[P.length - 1] : null;
+  const koniecPlan = posl && posl.plan ? (() => { const [h, m] = posl.plan.split(':').map(Number); const n = h * 60 + m + (+posl.dur || 0); return dvoj(Math.floor(n / 60) % 24) + ':' + dvoj(n % 60); })() : '';
+  let h = '<div class="suhrn"><span class="odznak">' + P.length + ' bodov</span><span class="odznak">⏱ ' + trvanie(spolu) + '</span>'
+    + (koniecPlan ? '<span class="odznak">koniec cca ' + koniecPlan + '</span>' : '') + '</div><ol class="prog">';
+  P.forEach((p, i) => {
+    const stav = L.status === 'koniec' || (L.idx > i && L.status !== 'pred') ? 'hotovo' : (i === L.idx && (L.status === 'bezi' || L.status === 'pauza')) ? 'teraz' : '';
+    const z = log[p.id];
+    const st = stav === 'teraz' ? '▶ teraz' : stav === 'hotovo' ? '✓' + (z ? ' ' + hhmmZ(z.start) : '') : '';
+    h += '<li><details data-id="' + p.id + '" class="' + stav + (mojBod(p) ? ' moj' : '') + '"' + (stav === 'teraz' || otvorene.has(p.id) ? ' open' : '') + '><summary>'
+      + '<span class="p-cas">' + (p.plan || '—') + '<small>' + trvanie(p.dur) + '</small></span>'
+      + '<span class="p-nm">' + esc(p.title) + (mojBod(p) ? ' <span class="chip ja" style="padding:1px 8px;font-size:.7rem">ty</span>' : '') + '</span>'
+      + '<span class="p-st">' + st + '</span></summary><div class="p-telo">'
+      + '<div class="kto">' + chipy(p.who) + '</div>'
+      + (p.music ? '<div class="hudba">🎵 ' + esc(p.music) + '</div>' : '')
+      + (p.script ? '<div class="scenar">' + esc(p.script) + '</div>' : '')
+      + (p.note ? '<div class="pozn">📝 ' + esc(p.note) + '</div>' : '')
+      + (z && z.end ? '<div class="pozn">Skutočne: ' + hhmmZ(z.start) + '–' + hhmmZ(z.end) + ' (' + trvanie((Date.parse(z.end) - Date.parse(z.start)) / 60000) + ')</div>' : '')
+      + (S.can_control && stav !== 'teraz' ? '<button class="btn plna" style="margin-top:10px" onclick="skoc(' + i + ')">Skočiť na tento bod</button>' : '')
+      + '</div></details></li>';
+  });
+  document.getElementById('pProgram').innerHTML = h + '</ol>';
+}
+function skoc(i){
+  const p = S.program[i];
+  if(!confirm('Skočiť na bod „' + p.title + '"? Celý tím dostane upozornenie.')) return;
+  op('live.goto', { idx: i }).then(() => tab('teraz'));
+}
+
+const KAT = [['nakup', '🛒 Nakúpiť'], ['priprava', '📋 Prichystať a vybaviť'], ['zbalit', '🎒 Zbaliť na večer']];
+const STAV_TXT = { nie: 'Nemáme', pol: 'Časť', ok: 'Máme' };
+function renderPriprava(){
+  const I = S.items || [], edit = !S.read_only;
+  const ok = I.filter(i => i.stav === 'ok').length, pol = I.filter(i => i.stav === 'pol').length;
+  let h = '<div class="suhrn"><span class="odznak" style="color:var(--green)">✓ ' + ok + ' / ' + I.length + ' hotovo</span>'
+    + (pol ? '<span class="odznak" style="color:var(--amber)">◐ ' + pol + ' čiastočne</span>' : '')
+    + '<span class="odznak" style="color:var(--red)">✗ ' + (I.length - ok - pol) + ' chýba</span></div>'
+    + '<label class="prepinac"><input type="checkbox" ' + (LEN_CHYBA ? 'checked' : '') + ' onchange="LEN_CHYBA=this.checked;renderPriprava()"> Ukázať len to, čo ešte chýba</label>';
+  KAT.forEach(([k, nazov]) => {
+    const vsetky = I.filter(i => i.cat === k), zoz = vsetky.filter(i => !LEN_CHYBA || i.stav !== 'ok');
+    if(!vsetky.length) return;
+    h += '<div class="kat-h">' + nazov + '<span>' + vsetky.filter(i => i.stav === 'ok').length + '/' + vsetky.length + '</span></div>';
+    if(!zoz.length) h += '<div class="tlmene" style="padding:4px 2px 8px">Všetko hotové ✓</div>';
+    zoz.forEach(i => {
+      const info = [i.qty ? (i.have || 0) + ' / ' + i.qty + ' ' + (i.unit || '') : '', i.who ? '👤 ' + i.who : '', i.price ? i.price.toFixed(2).replace('.', ',') + ' €' : '', i.note]
+        .filter(Boolean).map(esc).join(' · ');
+      h += '<div class="pol st-' + i.stav + '"><div class="pol-nm">' + esc(i.name) + '</div>'
+        + (info ? '<div class="pol-info">' + info + '</div>' : '')
+        + (i.updated_by ? '<div class="pol-info">naposledy: ' + esc(i.updated_by) + '</div>' : '')
+        + (edit
+          ? '<div class="seg" role="group" aria-label="Stav: ' + esc(i.name) + '">'
+            + ['nie', 'pol', 'ok'].map(s => '<button class="s-' + s + '" aria-pressed="' + (i.stav === s) + '" onclick="stavPolozky(\'' + i.id + '\',\'' + s + '\')">' + { nie: '✗', pol: '◐', ok: '✓' }[s] + ' ' + STAV_TXT[s] + '</button>').join('')
+            + '</div>'
+            + (i.qty ? '<div class="poc"><button aria-label="Ubrať" onclick="pocet(\'' + i.id + '\',-1)">−</button><span>' + (i.have || 0) + ' / ' + i.qty + '</span><button aria-label="Pridať" onclick="pocet(\'' + i.id + '\',1)">+</button></div>' : '')
+          : '<div class="stav-txt s-' + i.stav + '" style="margin-top:6px">' + STAV_TXT[i.stav] + '</div>')
+        + '</div>';
+    });
+  });
+  if(edit) h += '<button class="btn plna" style="margin-top:14px" onclick="novaPolozka()">+ Pridať položku</button>';
+  document.getElementById('pPriprava').innerHTML = h;
+}
+function stavPolozky(id, s){ op('item.set', { item: { id, stav: s } }); }
+function pocet(id, d){
+  const i = (S.items || []).find(x => x.id === id); if(!i) return;
+  op('item.set', { item: { id, have: Math.max(0, (i.have || 0) + d) } });
+}
+
+const DOHODA_TXT = { dohodnute: '✓ dohodnuté', oslovene: '… oslovený, čakáme', hladame: '✗ ešte nemáme' };
+function renderTim(){
+  const T = S.team || [];
+  let h = '';
+  T.forEach(m => {
+    const ja = S.me && m.id === S.me.id;
+    const tel = (m.phone || '').replace(/\s+/g, '');
+    h += '<div class="clen' + (ja ? ' ja' : '') + '"><div class="clen-ic" aria-hidden="true">' + m.ic + '</div><div>'
+      + '<div class="clen-rola">' + esc(m.role_label) + (ja ? ' · ty' : '') + (m.can_control ? ' · riadi program' : '') + '</div>'
+      + '<div class="clen-meno' + (m.name ? '' : ' nikto') + '">' + esc(m.name || 'zatiaľ nikto') + '</div>'
+      + '<span class="dohoda d-' + m.dohoda + '">' + (DOHODA_TXT[m.dohoda] || '') + '</span>'
+      + (m.note ? '<div class="pol-info">' + esc(m.note) + '</div>' : '')
+      + '</div>'
+      + (tel && !ja ? '<a class="tel" href="tel:' + esc(tel) + '" aria-label="Zavolať: ' + esc(m.name || m.role_label) + '">📞</a>' : '<span></span>')
+      + '</div>';
+  });
+  h += '<div class="karta" style="margin-top:14px"><div class="stitok">Upozornenia</div>'
+    + '<p class="tlmene" style="margin:8px 0 10px">Pri zmene bodu zacinká a zavibruje, 2 minúty pred koncom bodu jemne pípne. Nechaj stránku otvorenú, zamknutý telefón zvoniť nebude.</p>'
+    + '<button class="btn plna" onclick="skusZvuk()">🔔 Vyskúšať zvuk</button></div>';
+  document.getElementById('pTim').innerHTML = h;
+}
+function skusZvuk(){
+  if(!ZVUK){ odomkni(true); return; }
+  zahraj('zmena'); vibruj([250, 120, 250]);
+}
+
+// ── Spodný panel: správa tímu, nová položka ────────────────────────────────
+function sheet(html){
+  zavriSheet();
+  const bg = document.createElement('div'); bg.className = 'sheet-bg'; bg.id = 'sheetBg';
+  bg.onclick = e => { if(e.target === bg) zavriSheet(); };
+  bg.innerHTML = '<div class="sheet" role="dialog" aria-modal="true">' + html + '</div>';
+  document.body.appendChild(bg);
+  const f = bg.querySelector('input,textarea'); if(f) setTimeout(() => f.focus(), 50);
+}
+function zavriSheet(){ const b = document.getElementById('sheetBg'); if(b) b.remove(); }
+document.addEventListener('keydown', e => { if(e.key === 'Escape') zavriSheet(); });
+function otvorSpravu(){
+  const T = S.team || [];
+  const rychle = ['Všetci na svoje miesta', 'Chvíľu počkáme', 'Fotograf k parketu', 'DJ, stíš hudbu', 'Diplomy pripraviť', 'Kvety pripraviť', 'Moderátor na pódium'];
+  sheet('<h2>📣 Správa tímu</h2>'
+    + '<label for="spTxt">Text</label><textarea id="spTxt" maxlength="160" placeholder="napr. Páry sa zoraďujú, o 2 min nástup"></textarea>'
+    + '<div class="rychle">' + rychle.map(t => '<button type="button" onclick="document.getElementById(\'spTxt\').value=this.textContent">' + esc(t) + '</button>').join('') + '</div>'
+    + '<label>Komu (nič = všetkým)</label><div class="komu">' + T.map(m => '<label><input type="checkbox" class="spKomu" value="' + m.id + '">' + m.ic + ' ' + esc(m.role_label) + '</label>').join('') + '</div>'
+    + '<div class="sheet-akcie"><button class="btn" onclick="zavriSheet()">Zrušiť</button><button class="btn-hl" style="min-height:48px" onclick="posliSpravu()">Poslať</button></div>');
+}
+async function posliSpravu(){
+  const text = document.getElementById('spTxt').value.trim();
+  if(!text){ toast('Napíš správu', true); return; }
+  const to = [...document.querySelectorAll('.spKomu:checked')].map(c => c.value);
+  const r = await op('live.msg', { text, to });
+  if(r){ zavriSheet(); toast('Odoslané ✓'); }
+}
+function novaPolozka(){
+  sheet('<h2>+ Nová položka</h2>'
+    + '<label for="npNazov">Čo treba</label><input id="npNazov" maxlength="120" placeholder="napr. lepiaca páska">'
+    + '<label for="npKat">Kam patrí</label><select id="npKat">' + KAT.map(([k, n]) => '<option value="' + k + '">' + n + '</option>').join('') + '</select>'
+    + '<label for="npQty">Počet (nepovinné)</label><input id="npQty" type="number" inputmode="numeric" min="1" max="9999">'
+    + '<div class="sheet-akcie"><button class="btn" onclick="zavriSheet()">Zrušiť</button><button class="btn-hl" style="min-height:48px" onclick="ulozPolozku()">Pridať</button></div>');
+}
+async function ulozPolozku(){
+  const name = document.getElementById('npNazov').value.trim();
+  if(!name){ toast('Napíš, čo treba', true); return; }
+  const qty = document.getElementById('npQty').value;
+  const r = await op('item.set', { item: { name, cat: document.getElementById('npKat').value, qty: qty || null, unit: qty ? 'ks' : '' } });
+  if(r){ zavriSheet(); toast('Pridané ✓'); }
+}
+
+// ── Spojenie ───────────────────────────────────────────────────────────────
+function nastavSpoj(ok){
+  const e = document.getElementById('spoj');
+  e.classList.toggle('ok', !!ok);
+  e.lastElementChild.textContent = ok ? 'naživo' : 'bez spojenia';
+}
+if(!MOD.t && !MOD.id) neplatny('Chýba odkaz na večer.');
+else {
+  try{
+    const sock = io('/vecer', { auth: MOD, transports: ['websocket', 'polling'] });
+    sock.on('connect', () => { nastavSpoj(true); nacitaj(); });
+    sock.on('disconnect', () => nastavSpoj(false));
+    sock.on('vecer', d => { if(!S || d.rev !== S.rev) nacitaj(); });
+    sock.on('vecer_chyba', m => neplatny(m));
+  }catch(e){ nastavSpoj(false); }
+  nacitaj();
+  // Záchrana, keby socket vypadol (slabý signál v sále): stav raz za 15 s.
+  setInterval(nacitaj, 15000);
+  setInterval(tik, 500);
+}
+</script>
+</body>
+</html>

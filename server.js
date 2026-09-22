@@ -27375,6 +27375,10 @@ seedData().then(backfillDefaultSponsor).then(shopInvoiceBackfill20260904).then(u
 require('./coach')({ app, db, q, Datastore, DATA_DIR, trainerAuth, adminAuth, APP_URL, isTestContact, vencekMimoKonverzie });
 require('./school-outreach')({ app, db, q, Datastore, DATA_DIR, adminAuth, nowISO, APP_URL, sendMail, emailTemplate });
 require('./fusion-ai')({ app, db, q, adminAuth, isTestContact }); // po coach — používa db.coach_contacts
+// Venčekový večer — príprava + program naživo pre celý tím (22. 9. 2026)
+require('./vencek-vecer')({ app, io, db, q, Datastore, DATA_DIR, adminAuth, nowISO, APP_URL });
+app.get('/vecer/a/:id',  (req,res)=>res.sendFile(path.join(__dirname,'public','vecer.html')));
+app.get('/vecer/:token', (req,res)=>res.sendFile(path.join(__dirname,'public','vecer.html')));
 
 // ── 404 page ──────────────────────────────────────────────────────────────────
 app.use((req,res,next)=>{
