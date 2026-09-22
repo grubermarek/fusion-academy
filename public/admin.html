@@ -314,6 +314,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div class="group-links" data-group="marketing">
       <a class="nav-link" href="#" onclick="show('marketing')"><i class="bi bi-graph-up-arrow me-2"></i><span style="color:#C9A84C;font-weight:700">Marketing (CAC/LTV)</span></a>
       <a class="nav-link" href="#" onclick="show('campaigns')"><i class="bi bi-megaphone me-2"></i>Kampane</a>
+      <a class="nav-link" href="#" onclick="show('planovac')"><i class="bi bi-calendar-event me-2"></i><span style="color:#C9A84C;font-weight:700">Plánovač akcií</span> <span id="planovacBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('sutaze')"><i class="bi bi-trophy me-2"></i>Súťaže</a>
       <a class="nav-link" href="#" onclick="show('outreach')"><i class="bi bi-send me-2"></i>Hromadné správy</a>
       <a class="nav-link" href="#" onclick="show('automation')"><i class="bi bi-envelope-check me-2"></i>Automatizácia</a>
@@ -1223,6 +1224,76 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- PLÁNOVAČ AKCIÍ A KAMPANÍ -->
+  <div class="section" id="s-planovac" style="max-width:1150px">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+      <div>
+        <h4 class="fw-bold mb-0">🗓️ Plánovač akcií a kampaní</h4>
+        <p class="text-muted small mb-0">Sviatky, prázdniny, predĺžené víkendy a sezónne okná — ku každej príležitosti hotová kampaň a checklist prípravy. Každé ráno príde upozornenie, čo treba spraviť dnes.</p>
+      </div>
+      <div class="d-flex gap-2 flex-wrap">
+        <button class="btn btn-sm btn-outline-light" onclick="planToggle('planNovaBox')"><i class="bi bi-plus-lg me-1"></i>Vlastná akcia</button>
+        <button class="btn btn-sm btn-outline-light" onclick="planToggle('planNastaveniaBox')"><i class="bi bi-gear me-1"></i>Nastavenia</button>
+        <button class="btn btn-sm btn-outline-light" onclick="loadPlanovac()" title="Obnoviť"><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
+    </div>
+
+    <!-- vlastná akcia -->
+    <div id="planNovaBox" style="display:none" class="card bg-dark border-secondary mb-3"><div class="card-body">
+      <h6 class="fw-bold mb-3">⭐ Vlastná akcia</h6>
+      <div class="row g-2">
+        <div class="col-md-3"><label class="small text-muted">Dátum *</label>
+          <input type="date" id="planNovaDatum" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+        <div class="col-md-5"><label class="small text-muted">Názov *</label>
+          <input id="planNovaNazov" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="napr. Otvorenie sály v Detve"></div>
+        <div class="col-md-2"><label class="small text-muted">Emoji</label>
+          <input id="planNovaEmoji" class="form-control form-control-sm bg-dark text-light border-secondary" value="⭐" maxlength="4"></div>
+        <div class="col-md-2"><label class="small text-muted">Dôležitosť</label>
+          <select id="planNovaDopad" class="form-select form-select-sm bg-dark text-light border-secondary">
+            <option value="vysoky">vysoká</option><option value="stredny" selected>stredná</option><option value="nizky">nízka</option></select></div>
+        <div class="col-12"><label class="small text-muted">Prečo / o čo ide</label>
+          <textarea id="planNovaPopis" rows="2" class="form-control form-control-sm bg-dark text-light border-secondary"></textarea></div>
+        <div class="col-12"><label class="small text-muted">Kroky prípravy — na každý riadok <code>dní vopred | čo spraviť</code></label>
+          <textarea id="planNovaKroky" rows="4" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="14 | Priprav kreatívy&#10;7 | Spusti reklamu&#10;1 | Posledná výzva"></textarea></div>
+      </div>
+      <div class="mt-3 d-flex gap-2">
+        <button class="btn btn-sm btn-brand" onclick="planUlozAkciu()"><i class="bi bi-check-lg me-1"></i>Pridať do plánovača</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="planToggle('planNovaBox')">Zrušiť</button>
+      </div>
+    </div></div>
+
+    <!-- nastavenia -->
+    <div id="planNastaveniaBox" style="display:none" class="card bg-dark border-secondary mb-3"><div class="card-body">
+      <h6 class="fw-bold mb-3">⚙️ Nastavenia plánovača</h6>
+      <div class="row g-2 align-items-end">
+        <div class="col-md-3"><label class="small text-muted">Upozornenie o (hodina)</label>
+          <input type="number" min="0" max="23" id="planCfgHodina" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+        <div class="col-md-3"><label class="small text-muted">Výhľad (dní dopredu)</label>
+          <input type="number" min="30" max="400" id="planCfgDni" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+        <div class="col-md-3"><div class="form-check mt-3">
+          <input class="form-check-input" type="checkbox" id="planCfgMail">
+          <label class="form-check-label small" for="planCfgMail">posielať aj e-mailom</label></div></div>
+      </div>
+      <hr class="border-secondary my-3">
+      <div class="row g-2">
+        <div class="col-md-3"><label class="small text-muted">Školský rok</label>
+          <input id="planCfgRok" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+        <div class="col-md-3"><label class="small text-muted">Kraj</label>
+          <input id="planCfgKraj" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+        <div class="col-12"><label class="small text-muted">Školské prázdniny — na každý riadok <code>názov | od | do</code> (RRRR-MM-DD)</label>
+          <textarea id="planCfgPrazdniny" rows="6" class="form-control form-control-sm bg-dark text-light border-secondary"></textarea>
+          <div class="text-muted" style="font-size:.75rem">Termíny sa každý rok menia a jarné prázdniny sú podľa kraja — pred novým školským rokom si ich over na minedu.sk a prepíš tu.</div></div>
+      </div>
+      <div class="mt-3 d-flex gap-2 flex-wrap">
+        <button class="btn btn-sm btn-brand" onclick="planUlozConfig()"><i class="bi bi-check-lg me-1"></i>Uložiť</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="planToggle('planNastaveniaBox')">Zavrieť</button>
+        <button class="btn btn-sm btn-outline-warning ms-auto" onclick="planRunDaily()" title="Pošle dnešné upozornenie hneď (notifikácia + mail adminom)"><i class="bi bi-send me-1"></i>Poslať dnešné upozornenie teraz</button>
+      </div>
+    </div></div>
+
+    <div id="planBody"><div class="text-muted py-4 text-center">Načítavam…</div></div>
   </div>
 
   <!-- CAMPAIGNS -->
@@ -2619,7 +2690,7 @@ function accessLabel(m){ return ACCESS_LABELS[m] || null; }
 
 const SECTION_GROUP={attendance:'manage',sale:'reports',
   leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',staff:'manage',classes:'manage',privatehours:'manage',kiosk:'manage',products:'manage',rentals:'manage',articles:'manage',
-  marketing:'marketing',campaigns:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
+  marketing:'marketing',campaigns:'marketing',planovac:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
   dnes:'manage',predaje:'reports',  sutaze:'marketing',venceky:'manage',vecer:'manage',kids:'manage',eventy:'manage',fusionai:'reports',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',funnel:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
   partners:'partners',addpartner:'partners',commissions:'reports',uctovnicka:'reports'};
 function selectGroup(g){
@@ -3062,6 +3133,7 @@ function show(sec){
   if(sec==='invoices')initInvoices();
   if(sec==='audit')loadAudit();
   if(sec==='campaigns')loadCampaigns();
+  if(sec==='planovac')loadPlanovac();
   if(sec==='funnel')loadFunnel();
   if(sec==='retention')loadRetention();
   if(sec==='accounting')initAccounting();
@@ -5344,11 +5416,12 @@ async function loadDnes(){
   if(dt) dt.textContent=dni[d.getDay()]+' '+d.getDate()+'. '+(d.getMonth()+1)+'. '+d.getFullYear();
   host.innerHTML='<div class="text-muted py-4 text-center">Načítavam…</div>';
   try{
-    const [fin, konc, doch, ulohy] = await Promise.all([
+    const [fin, konc, doch, ulohy, plan] = await Promise.all([
       api('/api/admin/finance/stats').catch(()=>null),
       api('/api/admin/dnes/nechodia?days=30').catch(()=>null),
       api('/api/admin/dnes/dochadzka').catch(()=>null),
       api('/api/admin/urgent-tasks').catch(()=>null),
+      api('/api/admin/planovac?dni=60').catch(()=>null),
     ]);
     const karta=(nadpis,telo,akcia)=>'<div class="col-12 col-xl-6"><div class="card bg-dark border-secondary h-100">'
       +'<div class="card-body"><div class="d-flex justify-content-between align-items-center mb-2">'
@@ -5407,11 +5480,31 @@ async function loadDnes(){
         +'</div>'
         +(zoznam.length>8?'<div class="text-muted small mt-2">…a ďalších '+(zoznam.length-8)+'</div>':'');
 
+    // 5) Na čo sa pripraviť — z plánovača akcií a kampaní
+    const pk=(plan&&plan.ok&&plan.dnes_kroky)||[];
+    const pn=(plan&&plan.ok&&plan.najblizsich_14)||[];
+    const priprava = (!pk.length && !pn.length)
+      ? '<div class="text-muted small">Na najbližšie dva týždne nič v kalendári. 👌</div>'
+      : (pk.length
+          ? '<div class="small fw-bold mb-1">Na dnes</div>'
+            +pk.slice(0,4).map(function(k){
+              return '<div class="small mb-1">'+(k.meska?'<span class="badge bg-danger me-1">mešká</span>':'')
+                +k.emoji+' '+escHtml(k.text)+'</div>'; }).join('')
+          : '')
+        +(pn.length
+          ? '<div class="small fw-bold mt-2 mb-1">Najbližšie</div>'
+            +pn.slice(0,4).map(function(u){
+              const kedy = u.do_udalosti===0 ? 'dnes' : u.do_udalosti===1 ? 'zajtra'
+                : 'o '+u.do_udalosti+' '+planPocet(u.do_udalosti,'deň','dni','dní');
+              return '<div class="small text-muted mb-1">'+u.emoji+' '+escHtml(u.nazov)+' — '+kedy+'</div>'; }).join('')
+          : '');
+
     host.innerHTML='<div class="row g-3">'
       +karta('💶 Peniaze', peniaze, '<button class="btn btn-sm btn-outline-warning" onclick="show(\'predaje\')">Všetky predaje</button>')
       +karta('📵 Prestali chodiť <span class="text-muted" style="font-size:.8rem">(mesiac a viac)</span>', konciace, '<button class="btn btn-sm btn-outline-warning" onclick="show(\'winback\')">Odídení klienti</button>')
       +karta('👟 Kto bol na hodine <span class="text-muted" style="font-size:.8rem">(včera a dnes)</span>', dochadzka, '<button class="btn btn-sm btn-outline-warning" onclick="show(\'attendance\')">Kalendár</button>')
       +karta('🔥 Čo treba dnes', uloha, '<button class="btn btn-sm btn-outline-warning" onclick="show(\'urgent\')">Všetky úlohy</button>')
+      +karta('🗓️ Na čo sa pripraviť', priprava, '<button class="btn btn-sm btn-outline-warning" onclick="show(\'planovac\')">Plánovač</button>')
       +'</div>';
   }catch(e){ host.innerHTML='<div class="text-danger">Chyba: '+e.message+'</div>'; }
 }
@@ -9203,6 +9296,218 @@ function doneUrgentContact(key,userId,name){
   openAdminContact(userId,name,async()=>{ await api('/api/admin/urgent-tasks/dismiss',{method:'POST',body:{key}}); loadUrgent(); });
   // zapíše kontakt cez zdieľaný modal — dismiss beží až po uložení (afterFn)
 }
+/* ═══ PLÁNOVAČ AKCIÍ A KAMPANÍ ═══════════════════════════════════════════════
+   Kalendár sviatkov, prázdnin a sezónnych okien s playbookom ku každej
+   príležitosti. Dáta počíta server (planovac.js), tu sa len kreslia a
+   odškrtávajú kroky. */
+let PLAN=null;
+const PLAN_MES=['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
+const PLAN_DNI=['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
+function planDen(iso){ return new Date(iso+'T12:00:00Z').getUTCDay(); }
+function planDatum(iso){ const p=String(iso).split('-'); return (+p[2])+'. '+(+p[1])+'.'; }
+function planDatumPlny(iso){ const p=String(iso).split('-'); return (+p[2])+'. '+(+p[1])+'. '+p[0]; }
+function planPocet(n,j,d,m){ return n===1?j:(n>=2&&n<=4?d:m); }
+function planToggle(id){ const e=document.getElementById(id); if(e) e.style.display = e.style.display==='none' ? '' : 'none'; }
+
+function planOdznakDopadu(d){
+  if(d==='vysoky') return '<span class="badge" style="background:#C9A84C;color:#111">vysoká priorita</span>';
+  if(d==='nizky')  return '<span class="badge bg-secondary">nízka</span>';
+  return '<span class="badge bg-secondary">stredná</span>';
+}
+
+async function loadPlanovac(){
+  const host=document.getElementById('planBody'); if(!host) return;
+  host.innerHTML='<div class="text-muted py-4 text-center">Načítavam…</div>';
+  const d=await api('/api/admin/planovac');
+  if(!d||!d.ok){ host.innerHTML='<div class="text-danger p-3">Nepodarilo sa načítať: '+escHtml(d&&d.error||'?')+'</div>'; return; }
+  PLAN=d;
+  planNastaveniaDoFormulara(d.config);
+  planBadge(d.dnes_kroky.length);
+  host.innerHTML = planNaDnes(d) + planPrebieha(d) + planCasovaOs(d);
+}
+
+function planBadge(n){
+  const b=document.getElementById('planovacBadge'); if(!b) return;
+  if(n>0){ b.textContent=n; b.style.display='inline'; } else b.style.display='none';
+}
+
+/* ── karta „Na dnes" ── */
+function planNaDnes(d){
+  const dnesDen=PLAN_DNI[planDen(d.dnes)];
+  if(!d.dnes_kroky.length) return '<div class="card bg-dark border-secondary mb-3"><div class="card-body">'
+    +'<h6 class="fw-bold mb-1">☀️ '+dnesDen+' '+planDatumPlny(d.dnes)+'</h6>'
+    +'<div class="text-muted small">Na dnes nič nehorí. Pozri sa nižšie, čo prichádza.</div></div></div>';
+  const riadky=d.dnes_kroky.map(function(k){
+    return '<div class="d-flex align-items-start gap-2 py-2 border-bottom border-secondary">'
+      +'<input class="form-check-input mt-1" type="checkbox" onchange="planKrok(this,\''+encodeURIComponent(k.kluc)+'\','+k.d+')">'
+      +'<div class="flex-fill"><div class="small">'+escHtml(k.text)+'</div>'
+      +'<div class="text-muted" style="font-size:.75rem">'+k.emoji+' '+escHtml(k.nazov)+' — '+planDatum(k.datum)+'</div></div>'
+      +(k.meska?'<span class="badge bg-danger">mešká</span>':'<span class="badge" style="background:#C9A84C;color:#111">dnes</span>')
+      +'</div>';
+  }).join('');
+  return '<div class="card bg-dark mb-3" style="border-color:#C9A84C"><div class="card-body">'
+    +'<h6 class="fw-bold mb-2">☀️ Na dnes — '+dnesDen+' '+planDatumPlny(d.dnes)+'</h6>'
+    +riadky+'</div></div>';
+}
+
+/* ── práve prebiehajúce okná ── */
+function planPrebieha(d){
+  if(!d.prebiehajuce||!d.prebiehajuce.length) return '';
+  const riadky=d.prebiehajuce.map(function(u){
+    return '<div class="d-flex justify-content-between align-items-center py-1">'
+      +'<div>'+u.emoji+' <b>'+escHtml(u.nazov)+'</b>'
+      +(u.kampan?'<div class="text-muted" style="font-size:.78rem">Kampaň: '+escHtml(u.kampan.nazov)+'</div>':'')
+      +'</div><span class="badge bg-success">beží do '+planDatum(u.obdobie.do)+'</span></div>';
+  }).join('');
+  return '<div class="card bg-dark border-secondary mb-3"><div class="card-body">'
+    +'<h6 class="fw-bold mb-2">🟢 Práve prebieha</h6>'+riadky+'</div></div>';
+}
+
+/* ── časová os ── */
+function planCasovaOs(d){
+  const mesiace={};
+  for(const u of d.polozky){
+    const m=u.datum.slice(0,7);
+    (mesiace[m]=mesiace[m]||[]).push(u);
+  }
+  const kluce=Object.keys(mesiace).sort();
+  if(!kluce.length) return '<div class="text-muted p-3">Žiadne príležitosti v tomto výhľade.</div>';
+  return kluce.map(function(m){
+    const p=m.split('-');
+    return '<div class="mb-2 mt-4 fw-bold" style="color:#C9A84C;text-transform:capitalize">'
+      +PLAN_MES[+p[1]-1]+' '+p[0]+'</div>'
+      +mesiace[m].map(planPolozka).join('');
+  }).join('');
+}
+
+function planPolozka(u){
+  const dni = u.do_udalosti;
+  const kedy = u.prebieha ? 'prebieha' : dni<0 ? 'bolo' : dni===0 ? 'DNES' : dni===1 ? 'zajtra'
+    : 'o '+dni+' '+planPocet(dni,'deň','dni','dní');
+  const meska = u.kroky.some(function(k){return k.meska;});
+  const hotovo = u.spolu>0 && u.hotovych===u.spolu;
+  return '<details class="card bg-dark border-secondary mb-2"'+(dni>=0&&dni<=14?' open':'')+'>'
+    +'<summary class="card-body py-2" style="cursor:pointer;list-style:none">'
+      +'<div class="d-flex align-items-center gap-2 flex-wrap">'
+        +'<span style="font-size:1.2rem">'+u.emoji+'</span>'
+        +'<div class="flex-fill" style="min-width:180px">'
+          +'<div class="fw-bold">'+escHtml(u.nazov)+'</div>'
+          +'<div class="text-muted" style="font-size:.78rem">'
+            +(PLAN_DNI[planDen(u.datum)])+' '+planDatumPlny(u.datum)
+            +(u.obdobie&&u.obdobie.do!==u.datum?' – '+planDatumPlny(u.obdobie.do):'')
+            +' · '+kedy+'</div>'
+        +'</div>'
+        +planOdznakDopadu(u.dopad)
+        +(u.spolu?'<span class="badge '+(hotovo?'bg-success':(meska?'bg-danger':'bg-secondary'))+'">'+u.hotovych+'/'+u.spolu+' krokov</span>':'')
+        +(u.kampan?'<span class="badge bg-info text-dark">kampaň</span>':'')
+      +'</div>'
+    +'</summary>'
+    +'<div class="card-body pt-0">'
+      +(u.preco?'<div class="small text-muted mb-2">'+escHtml(u.preco)+'</div>':'')
+      +(u.prevadzka?'<div class="alert alert-warning py-2 px-3 small mb-2">🏫 '+escHtml(u.prevadzka)+'</div>':'')
+      +planKampan(u)
+      +planKroky(u)
+      +'<div class="d-flex gap-2 mt-2 flex-wrap">'
+        +(u.typ==='vlastna'?'<button class="btn btn-sm btn-outline-danger" onclick="planZmazAkciu(\''+u.id+'\')">Zmazať akciu</button>':'')
+        +'<button class="btn btn-sm btn-outline-secondary" onclick="planSkry(\''+encodeURIComponent(u.kluc)+'\')" title="Túto položku už nechcem vidieť">Skryť</button>'
+      +'</div>'
+    +'</div></details>';
+}
+
+function planKampan(u){
+  if(!u.kampan) return '';
+  const k=u.kampan;
+  return '<div class="p-2 mb-2" style="background:rgba(201,168,76,.08);border-left:3px solid #C9A84C;border-radius:4px">'
+    +'<div class="fw-bold small mb-1" style="color:#C9A84C">📣 '+escHtml(k.nazov)+'</div>'
+    +(k.ponuka?'<div class="small mb-1"><b>Ponuka:</b> '+escHtml(k.ponuka)+'</div>':'')
+    +(k.publikum?'<div class="small mb-1"><b>Komu:</b> '+escHtml(k.publikum)+'</div>':'')
+    +(k.kanaly&&k.kanaly.length?'<div class="small"><b>Kadiaľ:</b> '+k.kanaly.map(function(x){return escHtml(x);}).join(' · ')+'</div>':'')
+    +'</div>';
+}
+
+function planKroky(u){
+  if(!u.kroky||!u.kroky.length) return '<div class="text-muted small">Bez krokov prípravy.</div>';
+  return '<div class="small fw-bold mb-1">Príprava</div>'
+    +u.kroky.map(function(k){
+      const stav = k.hotovo ? 'text-muted text-decoration-line-through'
+        : k.meska ? 'text-danger' : k.dnes ? 'fw-bold' : '';
+      return '<div class="d-flex align-items-start gap-2 py-1">'
+        +'<input class="form-check-input mt-1" type="checkbox" '+(k.hotovo?'checked':'')
+          +' onchange="planKrok(this,\''+encodeURIComponent(u.kluc)+'\','+k.d+')">'
+        +'<div class="flex-fill small '+stav+'">'+escHtml(k.text)+'</div>'
+        +'<div class="text-muted" style="font-size:.72rem;white-space:nowrap">'
+          +planDatum(k.termin)+' ('+(k.d===0?'v deň D':k.d+' '+planPocet(k.d,'deň','dni','dní')+' pred')+')</div>'
+        +'</div>';
+    }).join('');
+}
+
+/* ── akcie ── */
+async function planKrok(el, klucEnc, d){
+  const kluc=decodeURIComponent(klucEnc);
+  const r=await api('/api/admin/planovac/stav',{method:'POST',body:{key:kluc, krok:d, hotovo:el.checked}});
+  if(!r||!r.ok){ el.checked=!el.checked; showToast('Nepodarilo sa uložiť','error'); return; }
+  loadPlanovac();
+}
+async function planSkry(klucEnc){
+  if(!confirm('Skryť túto položku z plánovača?')) return;
+  const r=await api('/api/admin/planovac/stav',{method:'POST',body:{key:decodeURIComponent(klucEnc), stav:'skryte'}});
+  if(r&&r.ok) loadPlanovac(); else showToast('Nepodarilo sa skryť','error');
+}
+async function planUlozAkciu(){
+  const datum=document.getElementById('planNovaDatum').value;
+  const nazov=document.getElementById('planNovaNazov').value.trim();
+  if(!datum||!nazov){ showToast('Zadaj dátum a názov','error'); return; }
+  const kroky=document.getElementById('planNovaKroky').value.split('\n')
+    .map(function(r){ const i=r.indexOf('|'); if(i<0) return null;
+      return { d:parseInt(r.slice(0,i),10)||0, text:r.slice(i+1).trim() }; })
+    .filter(function(k){ return k&&k.text; });
+  const r=await api('/api/admin/planovac/akcia',{method:'POST',body:{
+    datum, nazov, emoji:document.getElementById('planNovaEmoji').value||'⭐',
+    dopad:document.getElementById('planNovaDopad').value,
+    popis:document.getElementById('planNovaPopis').value, kroky }});
+  if(r&&r.ok){ showToast('Akcia pridaná'); planToggle('planNovaBox');
+    ['planNovaNazov','planNovaPopis','planNovaKroky'].forEach(function(id){document.getElementById(id).value='';});
+    loadPlanovac();
+  } else showToast('Chyba: '+(r&&r.error||'?'),'error');
+}
+async function planZmazAkciu(id){
+  if(!confirm('Zmazať túto vlastnú akciu?')) return;
+  const r=await api('/api/admin/planovac/akcia/'+id,{method:'DELETE'});
+  if(r&&r.ok) loadPlanovac(); else showToast('Nepodarilo sa zmazať','error');
+}
+function planNastaveniaDoFormulara(c){
+  if(!c) return;
+  document.getElementById('planCfgHodina').value=c.hodina;
+  document.getElementById('planCfgDni').value=c.dni_dopredu;
+  document.getElementById('planCfgMail').checked=!!c.mail;
+  document.getElementById('planCfgRok').value=(c.prazdniny&&c.prazdniny.rok)||'';
+  document.getElementById('planCfgKraj').value=(c.prazdniny&&c.prazdniny.kraj)||'';
+  document.getElementById('planCfgPrazdniny').value=((c.prazdniny&&c.prazdniny.polozky)||[])
+    .map(function(p){ return p.nazov+' | '+p.od+' | '+p.do; }).join('\n');
+}
+async function planUlozConfig(){
+  const polozky=document.getElementById('planCfgPrazdniny').value.split('\n')
+    .map(function(r){ const c=r.split('|').map(function(x){return x.trim();});
+      return c.length>=2 ? { nazov:c[0], od:c[1], do:c[2]||c[1] } : null; })
+    .filter(Boolean);
+  const r=await api('/api/admin/planovac/config',{method:'POST',body:{
+    hodina:+document.getElementById('planCfgHodina').value,
+    dni_dopredu:+document.getElementById('planCfgDni').value,
+    mail:document.getElementById('planCfgMail').checked,
+    prazdniny:{ rok:document.getElementById('planCfgRok').value,
+      kraj:document.getElementById('planCfgKraj').value, polozky } }});
+  if(r&&r.ok){ showToast('Nastavenia uložené'); loadPlanovac(); }
+  else showToast('Chyba: '+(r&&r.error||'?'),'error');
+}
+async function planRunDaily(){
+  if(!confirm('Poslať dnešné upozornenie adminom teraz (notifikácia + e-mail)?')) return;
+  const r=await api('/api/admin/planovac/run-daily',{method:'POST'});
+  if(r&&r.ok) showToast(r.poslane ? ('Odoslané ('+r.poslane+' adminom, '+(r.krokov||0)+' krokov)') : 'Nebolo čo poslať');
+  else showToast('Chyba: '+(r&&r.error||'?'),'error');
+}
+/* badge pri štarte */
+(async()=>{ try{ const d=await api('/api/admin/planovac?dni=60'); if(d&&d.ok) planBadge(d.dnes_kroky.length); }catch(e){} })();
+
 // badge pri štarte + ak je v URL #urgent, otvor rovno sekciu
 (async()=>{ try{ const d=await api('/api/admin/urgent-tasks'); if(d?.ok) updateUrgentBadge(d.tasks.length); if(location.hash==='#urgent') show('urgent'); }catch(e){} })();
 

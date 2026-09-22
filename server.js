@@ -27456,6 +27456,8 @@ seedData().then(backfillDefaultSponsor).then(shopInvoiceBackfill20260904).then(u
 require('./coach')({ app, db, q, Datastore, DATA_DIR, trainerAuth, adminAuth, APP_URL, isTestContact, vencekMimoKonverzie });
 require('./school-outreach')({ app, db, q, Datastore, DATA_DIR, adminAuth, nowISO, APP_URL, sendMail, emailTemplate });
 require('./fusion-ai')({ app, db, q, adminAuth, isTestContact }); // po coach — používa db.coach_contacts
+// Denný plánovač akcií a kampaní — sviatky, víkendy, sezónne okná + upozornenia dopredu (22. 9. 2026)
+require('./planovac')({ app, db, q, Datastore, DATA_DIR, adminAuth, nowISO, APP_URL, sendMail, emailTemplate });
 // Venčekový večer — príprava + program naživo pre celý tím (22. 9. 2026)
 // var: runDailyTick je deklarovaný vyššie a volá pripomienky — nesmie naraziť na TDZ.
 var VENCEK_VECER = require('./vencek-vecer')({ app, io, db, q, Datastore, DATA_DIR, adminAuth, nowISO, today, APP_URL, sendMail, emailTemplate });
