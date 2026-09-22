@@ -60,6 +60,8 @@ const TRIEDA = 'qaVcTrieda00001', SKOLA = 'qaVcSkola000001';
     { _id: 'qaVcZiak0000001', name: 'Ema Prvá', email: 'qa.vc.z1@qa-biz.local', ...zakl, ...vT, venceky_role: 'student' },
     { _id: 'qaVcZiak0000002', name: 'Tomáš Druhý', email: 'qa.vc.z2@qa-biz.local', ...zakl, ...vT, venceky_role: 'student' },
     { _id: 'qaVcZiak0000003', name: 'Lea Tretia', email: 'qa.vc.z3@qa-biz.local', ...zakl, ...vT },
+    // to isté dieťa druhý raz (rodič sa zaregistroval ako žiak) — ráta sa raz
+    { _id: 'qaVcZiak0000009', name: 'Ema  Prvá', email: 'qa.vc.z1b@qa-biz.local', ...zakl, ...vT, venceky_role: 'student' },
     { _id: 'qaVcUcitel00001', name: 'Učiteľka Triedna', email: 'qa.vc.uc@qa-biz.local', ...zakl, ...vT, venceky_role: 'teacher' },
     { _id: 'qaVcRodic000001', name: 'Mama Prvá', email: 'qa.vc.ro@qa-biz.local', ...zakl, ...vT, venceky_role: 'parent' },
   ]);
@@ -258,6 +260,7 @@ const TRIEDA = 'qaVcTrieda00001', SKOLA = 'qaVcSkola000001';
 
     console.log('\n8c) Poradie párov a diplomy:');
     const Z = A.ziaci || [];
+    ok('dieťa s dvoma účtmi sa ráta raz a admin je upozornený', (A.duplicity || []).length === 1 && A.duplicity[0].name === 'Ema Prvá' && A.duplicity[0].ucty === 2, JSON.stringify(A.duplicity));
     ok('admin má zoznam žiakov (4) bez učiteľky a rodiča', Z.length === 4 && !Z.some(z => /Učiteľka|Mama/.test(z.name)), Z.map(z => z.name).join(','));
     const zid = n => (Z.find(z => z.name === n) || {}).id;
     r = await opA('pary.set', { pary: [{ a: { uid: zid('Tomáš Druhý') }, b: { uid: zid('Ema Prvá') } },

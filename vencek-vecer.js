@@ -188,8 +188,17 @@ module.exports = function mountVencekVecer(ctx){
   async function ziaciSkupiny(classId){
     return (await q.find(db.users, { venceky_class_id: classId }))
       .filter(u => (u.venceky_role || 'student') === 'student' && u.active !== false)
-      .map(u => ({ id: u._id, name: String(u.name || '').trim() }))
+      .map(u => ({ id: u._id, name: String(u.name || '').replace(/\s+/g, ' ').trim() }))
       .sort((a, b) => a.name.localeCompare(b.name, 'sk'));
+  }
+  // Jedno dieťa = jedno meno. V Halíči (22. 9.) mali traja žiaci po dvoch účtoch
+  // (rodič sa zaregistroval ako žiak s menom dieťaťa) — kvety a diplomy by sa
+  // inak kupovali a tlačili dvakrát.
+  const klucMena = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  function deti(ziaci){
+    const m = new Map();
+    for(const z of ziaci){ const k = klucMena(z.name); if(!k) continue; if(m.has(k)) m.get(k).ucty++; else m.set(k, { ...z, ucty: 1 }); }
+    return [...m.values()];
   }
   const vidiMena = acc => !!(acc.admin || acc.control || (acc.me && ['moderator', 'diplomy', 'lektor'].includes(acc.me.role)));
   function menaParov(v, ziaci){
@@ -208,7 +217,7 @@ module.exports = function mountVencekVecer(ctx){
   async function pohlad(acc){
     const v = acc.v, { c, s } = await skupina(v);
     const casy = planCasy(v);
-    const ziaci = await ziaciSkupiny(v.class_id);
+    const ucty = await ziaciSkupiny(v.class_id), ziaci = deti(ucty);
     const mena = vidiMena(acc);
     // Admin vidí, kto má zapnuté upozornenia na zamknutý telefón.
     const odbery = acc.admin ? await q.find(db.vencek_vecer_push, { vecer_id: v._id }) : [];
@@ -231,9 +240,9 @@ module.exports = function mountVencekVecer(ctx){
       me: acc.me ? { id: acc.me.id, role: acc.me.role, name: acc.me.name, role_label: acc.me.role_label } : null,
       admin: !!acc.admin, can_control: !!acc.control, read_only: !acc.admin && !acc.me,
       vidi_mena: mena,
-      ...(mena ? { pary: menaParov(v, ziaci) } : {}),
+      ...(mena ? { pary: menaParov(v, ucty) } : {}),
       ...(acc.admin ? { view_link: v.view_token ? odkaz(v.view_token) : '', admin_link: APP_URL + '/vecer/a/' + v._id,
-        ziaci, diplom: v.diplom || {} } : {}),
+        ziaci, diplom: v.diplom || {}, duplicity: ziaci.filter(z => z.ucty > 1).map(z => ({ name: z.name, ucty: z.ucty })) } : {}),
     };
   }
 
@@ -540,7 +549,7 @@ module.exports = function mountVencekVecer(ctx){
         case 'item.set': {
           const ziaci = await ziaciSkupiny(v.class_id);
           zapamatajCenu((v.items || []).find(x => x.id === (b.item || {}).id));
-          vysl.item = upravPolozku(v, b.item || {}, kto, ziaci.length); break;
+          vysl.item = upravPolozku(v, b.item || {}, kto, deti(ziaci).length); break;
         }
         case 'item.del': v.items = (v.items || []).filter(x => x.id !== String(b.item_id || '')); break;
         case 'team.set':
@@ -676,7 +685,7 @@ module.exports = function mountVencekVecer(ctx){
         const rola = r => { const m = tim.find(t => t.role === r); return m ? m.dohoda : null; };
         return { class_id: c._id, class_name: c.name, code: c.code, school: (skoly[c.school_id] || {}).name || '',
           event_date: c.event_date || '', event_venue: c.event_venue || '', completed: !!c.completed,
-          students: ziaci.filter(u => u.venceky_class_id === c._id).length,
+          students: deti(ziaci.filter(u => u.venceky_class_id === c._id)).length,
           vecer: v ? { id: v._id, title: v.title, status: (v.live || {}).status || 'pred',
             items_ok: items.filter(i => i.stav === 'ok').length, items_pol: items.filter(i => i.stav === 'pol').length, items: items.length,
             team_ok: tim.filter(t => t.dohoda === 'dohodnute').length, team: tim.length,
@@ -693,8 +702,7 @@ module.exports = function mountVencekVecer(ctx){
       const uz = await q.one(db.vencek_vecery, { class_id: c._id });
       if(uz) return res.json({ ok: true, id: uz._id, existed: true });
       const s = await q.one(db.venceky_schools, { _id: c.school_id });
-      const ziakov = (await q.find(db.users, { venceky_class_id: c._id }))
-        .filter(u => (u.venceky_role || 'student') === 'student' && u.active !== false).length;
+      const ziakov = deti(await ziaciSkupiny(c._id)).length;
       const { team, items, program, diplom } = sablona(c, ziakov);
       const v = await q.insert(db.vencek_vecery, { class_id: c._id,
         title: 'Venčekový večer — ' + ((s && s.name) || c.name), start_time: '', warn_min: 2, notes: '',
@@ -786,7 +794,7 @@ module.exports = function mountVencekVecer(ctx){
     try{
       const acc = await pristup({ t: req.query.t, id: req.query.id, uid: req.session && req.session.uid });
       if(!acc) return res.status(404).json({ error: 'Tento odkaz neplatí.' });
-      const v = acc.v, { c, s } = await skupina(v), ziaci = await ziaciSkupiny(v.class_id);
+      const v = acc.v, { c, s } = await skupina(v), ucty = await ziaciSkupiny(v.class_id), ziaci = deti(ucty);
       const zaklad = { ok: true, title: v.title, school: s ? s.name : '', class_name: c ? c.name : '',
         event_date: c ? c.event_date || '' : '', event_venue: c ? c.event_venue || '' : '', lecturer: c ? c.lecturer || '' : '' };
       if(req.query.co === 'diplomy'){
@@ -794,9 +802,9 @@ module.exports = function mountVencekVecer(ctx){
         // Poradie ako idú páry na parket (tak sa aj odovzdávajú), zvyšok abecedne.
         // Partner mimo kurzu (napísaný len menom) diplom nedostáva.
         const mena = [], uz = new Set();
-        for(const p of menaParov(v, ziaci)) for(const [uid, nm] of [[p.a_uid, p.a], [p.b_uid, p.b]])
-          if(uid && nm && !uz.has(uid)){ uz.add(uid); mena.push(nm); }
-        for(const z of ziaci) if(!uz.has(z.id)) mena.push(z.name);
+        for(const p of menaParov(v, ucty)) for(const [uid, nm] of [[p.a_uid, p.a], [p.b_uid, p.b]])
+          if(uid && nm && !uz.has(klucMena(nm))){ uz.add(klucMena(nm)); mena.push(nm); }
+        for(const z of ziaci) if(!uz.has(klucMena(z.name))){ uz.add(klucMena(z.name)); mena.push(z.name); }
         const d = v.diplom || {};
         return res.json({ ...zaklad, co: 'diplomy', mena, diplom: { nadpis: d.nadpis || 'Diplom',
           text: d.text != null ? d.text : 'za úspešné absolvovanie tanečného kurzu',
@@ -808,7 +816,7 @@ module.exports = function mountVencekVecer(ctx){
         team: (v.team || []).map(m => ({ role_label: m.role_label, ic: (ROLY[m.role] || ROLY.pomoc).ic, name: m.name, phone: m.phone, dohoda: m.dohoda })),
         program: (v.program || []).map((p, i) => ({ plan: casy[i], dur: p.dur, title: p.title, music: p.music, script: p.script, note: p.note,
           ukaz_pary: !!p.ukaz_pary, who: (p.who || []).map(id => tim[id]).filter(Boolean).map(m => m.role_label) })),
-        ...(vidiMena(acc) ? { pary: menaParov(v, ziaci) } : {}) });
+        ...(vidiMena(acc) ? { pary: menaParov(v, ucty) } : {}) });
     }catch(e){ res.status(500).json({ error: e.message }); }
   });
 
@@ -826,7 +834,7 @@ module.exports = function mountVencekVecer(ctx){
       if(!PRIPOMIENKY_DNI.includes(dni)) continue;
       const key = 'vencek_vecer_pripomienka:' + v._id + ':' + c.event_date + ':' + dni;
       if(await q.one(db.notifications, { key })) continue;
-      const ziaci = await ziaciSkupiny(v.class_id);
+      const ziaci = deti(await ziaciSkupiny(v.class_id));
       const items = (v.items || []).map(it => obnovPocet({ ...it }, ziaci.length));
       const chyba = k => items.filter(i => i.cat === k && i.stav !== 'ok');
       const zoznam = arr => arr.slice(0, 6).map(i => i.name + (i.qty ? ' (' + (i.have || 0) + '/' + i.qty + ')' : '')).join(', ') + (arr.length > 6 ? ' a ďalšie' : '');

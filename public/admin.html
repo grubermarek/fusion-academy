@@ -4979,6 +4979,7 @@ function vvPriprava(){
   let h='<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">'
     +'<div class="vdet-navod mb-0">Stav ťukneš priamo v riadku. Tím to isté vidí a mení vo svojom telefóne — kto zmenil naposledy, je pri položke.</div>'
     +'<label class="small d-flex align-items-center gap-2"><input type="checkbox" '+(VV_LEN_CHYBA?'checked':'')+' onchange="VV_LEN_CHYBA=this.checked;vvRender()"> len čo chýba</label></div>'
+    +'<div class="mt-2">'+vvDuplicity()+'</div>'
     +'<div class="small mt-2">💶 Kúpené s cenou spolu: <b>'+vEur(minute)+'</b>'
     +(naNaklad.length?' · <button class="btn btn-sm btn-outline-warning py-0 ms-1" onclick="vvNaklady('+naNaklad.length+')">Zapísať '+naNaklad.length+' do nákladov skupiny</button>':'')+'</div>';
   VV_KAT.forEach(([k,nazov])=>{
@@ -5210,6 +5211,7 @@ function vvPary(){
       +'<button class="btn btn-sm '+(VV_PARY_ZMENA?'btn-brand':'btn-outline-secondary')+'" onclick="vvParUloz()"'+(VV_PARY_ZMENA?'':' disabled')+'>💾 Uložiť poradie'+(VV_PARY_ZMENA?' (neuložené zmeny)':'')+'</button>'
     +'</div>';
   if(!Z.length) h+='<div class="text-muted small mb-2">V skupine zatiaľ nie sú zaregistrovaní žiaci — páry sa dajú zadať aj menom.</div>';
+  h+=vvDuplicity();
   P.forEach((p,i)=>{
     h+='<div class="d-flex gap-2 align-items-center flex-wrap mb-2 p-2" style="background:#1d1d1d;border:1px solid #2c2c2c;border-radius:11px">'
       +'<b style="width:28px;color:#e8d18f">'+(i+1)+'.</b>'+vyber(i,'a',p.a)+'<span class="text-muted">a</span>'+vyber(i,'b',p.b)
@@ -5234,6 +5236,14 @@ function vvPary(){
       +'<a class="btn btn-sm btn-outline-light" href="/vecer/a/'+encodeURIComponent(VV.id)+'/tlac?co=scenar" target="_blank">🖨️ Scenár na tlač</a>'
     +'</div>';
   return h;
+}
+// Dieťa s dvoma účtmi (napr. rodič sa zaregistroval ako žiak s jeho menom) sa v počtoch
+// a diplomoch ráta raz — ale v skupine to treba upratať, inak má jeden účet „nezaplatené".
+function vvDuplicity(){
+  const D=VV.duplicity||[];
+  if(!D.length) return '';
+  return '<div class="vv-upoz zle mx-0 mb-2">⚠️ V skupine sú žiaci s viacerými účtami: <b>'+D.map(x=>escHtml(x.name)+' ('+x.ucty+'×)').join(', ')+'</b>. '
+    +'Do počtov, párov a diplomov ich rátam raz. Často sa rodič zaregistroval ako žiak s menom dieťaťa — v detaile skupiny mu prepni typ konta na rodiča, alebo účty zlúč v Klientoch.</div>';
 }
 function vvParZmena(i,strana,val){
   if(val==='__meno') return;
