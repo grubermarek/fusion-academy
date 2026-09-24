@@ -235,6 +235,12 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     const lgStara = await j('/api/login', { method: 'POST',
       body: { email: 'qa.daniela.dupl@qa-biz.local', password: 'Heslo123!' } }, {});
     ok('prihlási sa aj pod starou adresou', lgStara.status === 200, JSON.stringify(lgStara.d));
+    // A keď si heslo pamätala len k tej starej adrese, musí si vedieť vypýtať reset —
+    // inak je z appky vonku, hoci účet má (24. 9.).
+    await j('/api/forgot-password', { method: 'POST', body: { email: 'qa.daniela.dupl@qa-biz.local' } }, {});
+    await new Promise(r => setTimeout(r, 600));
+    ok('reset hesla funguje aj na starú adresu',
+      !!(rd('users.db').find(u => u._id === CIEL) || {}).pw_reset_token_hash);
     const adm = {};
     const lgAdm = await fetch(BASE + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'qa.zluc.admin@qa-biz.local', password: 'Heslo123!' }) });

@@ -4971,7 +4971,9 @@ app.post('/api/forgot-password', rlForgot, async(req,res)=>{
     const email=String(req.body.email||'').toLowerCase().trim();
     res.json({ok:true, message:'Ak účet existuje, poslali sme naň e-mail s odkazom na reset hesla.'});
     if(!email || !/@/.test(email) || /@import\.local$|@guest\./i.test(email)) return;
-    const u=await q.one(db.users,{email});
+    // Prihlásiť sa starou adresou po zlúčení účtov sa dá od 10. 9., resetovať heslo
+    // nie — a kto si heslo pamätal len k tej zlúčenej adrese, ostal bez cesty späť.
+    const u=await q.one(db.users,{email}) || await q.one(db.users,{merged_emails:email});
     if(!u || u.active===false) return;
     if(!u.password && u.google_id){
       await sendMail(email,'Prihlásenie do Fusion Academy',
