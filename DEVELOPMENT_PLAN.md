@@ -305,6 +305,13 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
 - Upozornenie: denný job (každých 10 min, spúšťa sa od `config.hodina`, default 8:00) pošle adminom notifikáciu + e-mail so všetkým, čo má na dnešok termín; v pondelok pridá výhľad na 14 dní. Dedup `settings.planovac_sent_<dátum>`. Ručne `POST /api/admin/planovac/run-daily`.
 - Pasca: viacdňové položky (okná, prázdniny, víkendy) sa filtrujú podľa `obdobie`, nie podľa `datum` — inak by prebiehajúca vlna z prehľadu vypadla. Skloňovanie po číslovke rieši helper `pocet()` na serveri a `planPocet()` v admin.html.
 
+### 7.11 Influencer program (affiliate) ✅ HOTOVO (2026-09-24, influencer.js, public/influencer.html, public/admin-influenceri.js, qa/influencer.test.js)
+- Samoregistrácia na `/influencer`: účet cez `/api/register`, potom `POST /api/influencer/prihlaska` (siete, sledovatelia, mesto, téma) → `u.influencer` + `user_type:'ambassador'`. Provízie, 14-dňová lehota, kredit aj výplata = ambasádorský motor, nič vlastné sa nepočíta.
+- Odkaz `/i/<KÓD>` zapíše klik do `db.influencer_clicks` (unikátny návštevník = cookie `fa_ic`, 1× za deň, boty/náhľady sa nerátajú) a presmeruje na `/invite/<KÓD>`.
+- Dashboard `GET /api/influencer/me`: kliky, registrácie, predaje, obrat, straty (registrovaná 14+ dní bez nákupu / členstvo skončilo), čaká, kredit, graf 30 dní, lievik, privedení, provízie po mesiacoch, výplata od 100 €.
+- Admin → Správa → Influenceri: tabuľka s filtrami (sieť, stav, mesto, min. sledovateľov, len s predajom), triedenie, CSV, kontakt (mail, tel, WhatsApp, profil), detail so stavom spolupráce a internou poznámkou. `GET/PUT /api/admin/influencers[/:id]`.
+- Pasca: „platí“ sa číta z `db.memberships` (hotovostné členstvo nezapisuje `users.membership_expires`).
+
 ### Zámerne vynechané (nepomer hodnota/prácnosť pre malú školu)
 - Consumer marketplace (Mindbody ClassPass štýl) — nemáme objem.
 - Dynamic pricing — zbytočná komplexita pri cenách 9–10 €.

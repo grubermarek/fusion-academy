@@ -27551,6 +27551,8 @@ app.get('/vecer/a/:id/tlac',  (req,res)=>res.sendFile(path.join(__dirname,'publi
 app.get('/vecer/a/:id',       (req,res)=>res.sendFile(path.join(__dirname,'public','vecer.html')));
 app.get('/vecer/:token/tlac', (req,res)=>res.sendFile(path.join(__dirname,'public','vecer-tlac.html')));
 app.get('/vecer/:token',      (req,res)=>res.sendFile(path.join(__dirname,'public','vecer.html')));
+// Influencer program — samoregistrácia, odkaz /i/<kód> s klikmi, dashboard + admin prehľad (24. 9. 2026)
+require('./influencer')({ app, db, q, Datastore, DATA_DIR, auth, adminAuth, nowISO, today, APP_URL, isTestContact, ambRate, COMMISSION_HOLD_DAYS });
 
 // ── 404 page ──────────────────────────────────────────────────────────────────
 app.use((req,res,next)=>{

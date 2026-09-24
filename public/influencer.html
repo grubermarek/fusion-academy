@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Influencer program – Fusion Academy</title>
+<meta name="description" content="Odporúčaj tanec namiesto práškov. Vlastný odkaz, čísla v reálnom čase a provízia z každej platby klientok, ktoré privedieš.">
+<link rel="icon" type="image/png" href="/logo-mark.png">
+<style>
+:root{--gold:#C9A84C;--gold2:#E7C878;--cream:#EAE3D5;--muted:#a9a293;--bg:#12100a;--card:#1a1712;--line:#2e2a20;
+  --ok:#4ade80;--warn:#ffb057;--bad:#ff8a80;--r:16px}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--cream);font-family:'Inter',system-ui,sans-serif;margin:0;line-height:1.5;min-height:100dvh}
+a{color:var(--gold2)}
+.top{position:sticky;top:0;z-index:20;background:rgba(12,10,6,.95);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  height:52px;display:flex;align-items:center;gap:10px;padding:0 14px}
+.top b{color:var(--gold);letter-spacing:.08em;font-size:.88rem}
+.top a{margin-left:auto;font-size:.88rem;text-decoration:none;padding:10px 4px}
+.wrap{max-width:680px;margin:0 auto;padding:18px 16px 60px}
+h1{font-size:1.7rem;line-height:1.2;margin:10px 0 10px}
+h2{font-size:.82rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);margin:0 0 12px}
+.lead{color:var(--muted);font-size:1.02rem;margin:0 0 18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px;margin:14px 0}
+.gold{color:var(--gold2)}
+ul.why{list-style:none;padding:0;margin:0;display:grid;gap:12px}
+ul.why li{display:flex;gap:12px;align-items:flex-start}
+ul.why svg{flex:none;margin-top:2px;color:var(--gold)}
+ul.why b{color:#fff}
+label{display:block;font-size:.85rem;color:var(--muted);margin:0 0 6px}
+.req{color:var(--gold)}
+input,select,textarea{width:100%;background:#1d1a15;border:1px solid #3a3428;color:var(--cream);border-radius:12px;padding:13px 14px;
+  font-size:16px;font-family:inherit;min-height:48px}
+textarea{min-height:80px;resize:vertical}
+input:focus,select:focus,textarea:focus,button:focus-visible,a:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.f{margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:480px){.grid2{grid-template-columns:1fr}}
+.help{font-size:.78rem;color:var(--muted);margin-top:5px}
+.err{color:var(--bad);font-size:.9rem;min-height:1.2em;margin-top:8px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;background:linear-gradient(102deg,#B98F3E,#E7C878);
+  color:#231A08;border:none;border-radius:12px;padding:12px 18px;font-weight:800;font-size:1rem;cursor:pointer;font-family:inherit;
+  touch-action:manipulation;transition:transform .15s ease,opacity .15s}
+.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.full{width:100%}
+.btn.ghost{background:#221d14;color:var(--cream);border:1px solid var(--line)}
+.chk{display:flex;gap:10px;align-items:flex-start;font-size:.88rem;color:var(--muted);margin:6px 0 14px}
+.chk input{width:22px;min-height:22px;height:22px;flex:none;margin-top:1px;accent-color:var(--gold)}
+/* dashboard */
+.link{display:flex;gap:8px;align-items:stretch}
+.link code{flex:1;min-width:0;background:#0f0d08;border:1px solid var(--line);border-radius:12px;padding:12px;font-size:.9rem;
+  word-break:break-all;color:#ddd6c6;font-family:inherit}
+.kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media (max-width:520px){.kpi{grid-template-columns:repeat(2,1fr)}}
+.k{background:#15120d;border:1px solid var(--line);border-radius:14px;padding:14px 12px}
+.k span{display:block;font-size:.72rem;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+.k b{display:block;font-size:1.6rem;color:#fff;font-variant-numeric:tabular-nums;line-height:1.2;margin-top:4px}
+.k small{font-size:.76rem;color:var(--muted)}
+.k.hl{border-color:rgba(201,168,76,.5);background:linear-gradient(160deg,#241d10,#15120d)}
+.k.hl b{color:var(--gold2)}
+.funnel{display:grid;gap:8px}
+.fr{display:grid;grid-template-columns:110px 1fr 56px;gap:10px;align-items:center;font-size:.88rem}
+.fr .bar{height:12px;background:#221d14;border-radius:8px;overflow:hidden}
+.fr .bar i{display:block;height:100%;background:linear-gradient(90deg,#B98F3E,#E7C878)}
+.fr b{text-align:right;font-variant-numeric:tabular-nums}
+.chart{display:flex;align-items:flex-end;gap:3px;height:120px;border-bottom:1px solid var(--line);padding-top:6px}
+.chart div{flex:1;background:#3a3020;border-radius:3px 3px 0 0;min-height:2px;position:relative}
+.chart div.r{background:var(--gold)}
+.axis{display:flex;justify-content:space-between;font-size:.72rem;color:var(--muted);margin-top:4px}
+.legend{display:flex;gap:14px;font-size:.78rem;color:var(--muted);margin-top:8px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-top:1px solid rgba(255,255,255,.06);font-size:.92rem}
+.row:first-child{border-top:none}
+.row small{color:var(--muted)}
+.tag{font-size:.72rem;font-weight:700;border-radius:999px;padding:3px 10px;white-space:nowrap;border:1px solid}
+.t-plati{color:var(--ok);border-color:rgba(74,222,128,.4)}
+.t-skusa,.t-nova{color:var(--gold2);border-color:rgba(231,200,120,.4)}
+.t-bez,.t-odisla{color:var(--bad);border-color:rgba(255,138,128,.4)}
+.empty{color:var(--muted);font-size:.9rem;text-align:center;padding:14px 0}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#2a2418;border:1px solid var(--gold);color:#fff;
+  padding:10px 16px;border-radius:12px;font-size:.9rem;z-index:50}
+.muted{color:var(--muted)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header class="top"><b>FUSION ACADEMY · INFLUENCER</b><a id="topLink" href="/?home=1">Prihlásiť sa</a></header>
+<main class="wrap" id="app"><div class="empty" style="padding:60px 0">Načítavam…</div></main>
+
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const eur=n=>(+n||0).toLocaleString('sk-SK',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
+const cis=n=>(+n||0).toLocaleString('sk-SK');
+async function api(url,opts={}){
+  const r=await fetch(url,{credentials:'include',...opts,headers:{'Content-Type':'application/json'},
+    body: opts.body!==undefined ? JSON.stringify(opts.body) : undefined});
+  const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Chyba'),{data:d}); return d;
+}
+function toast(t){ const e=document.createElement('div'); e.className='toast'; e.setAttribute('role','status'); e.textContent=t;
+  document.body.appendChild(e); setTimeout(()=>e.remove(),3000); }
+const ico='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+let STAV=null;
+
+async function boot(){
+  try{ STAV=await api('/api/influencer/stav'); }catch(e){ STAV={prihlasena:false,sadzba:10,lehota_dni:14}; }
+  if(STAV.prihlasena){ $('#topLink').textContent='Do appky'; $('#topLink').href='/client-dashboard'; }
+  if(STAV.influencer) return dashboard();
+  uvod();
+}
+
+// ── Úvod + registrácia ──
+function uvod(){
+  const prihl=STAV.prihlasena;
+  $('#app').innerHTML=`
+  <h1>Zarábaj na tom, čo robí ženy <span class="gold">šťastnými</span>.</h1>
+  <p class="lead">Žiadne prášky ani zázračné koktaily. Odporúčaš reálnu službu — tanec, ktorý ženám vráti radosť, energiu aj sebavedomie. Za každú platbu klientky, ktorú privedieš, dostaneš províziu.</p>
+  <section class="card" aria-labelledby="coH"><h2 id="coH">Čo odporúčaš</h2>
+    <ul class="why">
+      <li>${ico}<div><b>Zumba online</b> — ženy tancujú s nami naživo z pohodlia domova.</div></li>
+      <li>${ico}<div><b>Technické tréningy online</b> — naučia sa naozaj tancovať, krok po kroku.</div></li>
+      <li>${ico}<div><b>Hodiny v štúdiu</b> — štyri pobočky: Brezno, Banská Bystrica, Zvolen a Detva.</div></li>
+    </ul>
+  </section>
+  <section class="card" aria-labelledby="akoH"><h2 id="akoH">Ako to funguje</h2>
+    <ul class="why">
+      <li>${ico}<div><b>Vlastný odkaz</b> — zdieľaš ho v storkách, v bio alebo v príspevku.</div></li>
+      <li>${ico}<div><b>Čísla v reálnom čase</b> — kliky, registrácie, predaje aj to, kto odpadol.</div></li>
+      <li>${ico}<div><b>${STAV.sadzba||10} % z každej platby</b> privedenej klientky, aj z obnov členstva. Provízia sa po ${STAV.lehota_dni||14} dňoch pripíše do kreditu.</div></li>
+      <li>${ico}<div><b>Výplata na účet</b> od 100 € kreditu, alebo ho minieš v appke.</div></li>
+    </ul>
+  </section>
+  <section class="card" aria-labelledby="regH"><h2 id="regH">${prihl?'Pridaj sa do programu':'Registrácia'}</h2>
+    <form id="f" novalidate>
+      ${prihl?`<p class="muted" style="margin-top:0">Si prihlásená ako <b>${esc(STAV.meno)}</b>. Doplň svoje siete a program sa ti hneď odomkne.</p>`:`
+      <div class="f"><label for="name">Meno a priezvisko <span class="req">*</span></label><input id="name" autocomplete="name" required></div>
+      <div class="grid2">
+        <div class="f"><label for="email">E-mail <span class="req">*</span></label><input id="email" type="email" autocomplete="email" required></div>
+        <div class="f"><label for="phone">Telefón</label><input id="phone" type="tel" autocomplete="tel"></div>
+      </div>
+      <div class="f"><label for="password">Heslo <span class="req">*</span></label><input id="password" type="password" autocomplete="new-password" minlength="6" required><div class="help">Aspoň 6 znakov. Prihlásiš sa ním aj do appky.</div></div>`}
+      <div class="grid2">
+        <div class="f"><label for="instagram">Instagram</label><input id="instagram" placeholder="@meno"></div>
+        <div class="f"><label for="tiktok">TikTok</label><input id="tiktok" placeholder="@meno"></div>
+        <div class="f"><label for="facebook">Facebook</label><input id="facebook" placeholder="odkaz alebo meno stránky"></div>
+        <div class="f"><label for="youtube">YouTube</label><input id="youtube" placeholder="@kanal"></div>
+      </div>
+      <div class="help" style="margin:-6px 0 14px">Vyplň aspoň jednu sieť.</div>
+      <div class="grid2">
+        <div class="f"><label for="hlavna">Hlavná sieť</label><select id="hlavna">
+          <option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="facebook">Facebook</option><option value="youtube">YouTube</option><option value="iny">Iná</option></select></div>
+        <div class="f"><label for="sledovatelia">Počet sledovateľov spolu</label><input id="sledovatelia" inputmode="numeric" placeholder="napr. 12000"></div>
+        <div class="f"><label for="mesto">Mesto</label><input id="mesto" autocomplete="address-level2"></div>
+        <div class="f"><label for="tema">O čom tvoríš</label><input id="tema" placeholder="fitness, mamičky, lifestyle…"></div>
+      </div>
+      ${prihl?'':`<label class="chk"><input type="checkbox" id="consent"> <span>Súhlasím s <a href="/terms" target="_blank" rel="noopener">podmienkami</a> a so <a href="/ochrana-sukromia" target="_blank" rel="noopener">spracovaním údajov</a>.</span></label>`}
+      <button class="btn full" id="go" type="submit">${prihl?'Pridať sa do programu':'Vytvoriť influencer účet'}</button>
+      <div class="err" id="err" role="alert" aria-live="polite"></div>
+      ${prihl?'':'<p class="help" style="text-align:center">Už máš účet vo Fusion Academy? <a href="/?home=1">Prihlás sa</a> a vráť sa sem.</p>'}
+    </form>
+  </section>`;
+  $('#f').addEventListener('submit',odosli);
+}
+async function odosli(ev){
+  ev.preventDefault();
+  const v=id=>($('#'+id)?.value||'').trim(), err=$('#err'), go=$('#go');
+  err.textContent='';
+  const profil={instagram:v('instagram'),tiktok:v('tiktok'),facebook:v('facebook'),youtube:v('youtube'),
+    hlavna:v('hlavna'),sledovatelia:v('sledovatelia'),mesto:v('mesto'),tema:v('tema')};
+  if(!['instagram','tiktok','facebook','youtube'].some(k=>profil[k])){ err.textContent='Doplň aspoň jednu sociálnu sieť.'; $('#instagram').focus(); return; }
+  if(!STAV.prihlasena){
+    if(!v('name')){ err.textContent='Zadaj meno a priezvisko.'; $('#name').focus(); return; }
+    if(!v('email')){ err.textContent='Zadaj e-mail.'; $('#email').focus(); return; }
+    if(v('password').length<6){ err.textContent='Heslo musí mať aspoň 6 znakov.'; $('#password').focus(); return; }
+    if(!$('#consent').checked){ err.textContent='Potvrď súhlas s podmienkami.'; return; }
+  }
+  go.disabled=true; go.textContent='Vytváram…';
+  try{
+    if(!STAV.prihlasena){
+      await api('/api/register',{method:'POST',body:{name:v('name'),email:v('email'),password:v('password'),phone:v('phone'),
+        city:profil.mesto,consent:true,lead_source:'influencer_program',
+        attribution:window.faGetAttribution?window.faGetAttribution():{}}});
+    }
+    await api('/api/influencer/prihlaska',{method:'POST',body:profil});
+    STAV.prihlasena=true; STAV.influencer=true;
+    $('#topLink').textContent='Do appky'; $('#topLink').href='/client-dashboard';
+    toast('Vitaj v programe! Tvoj odkaz je pripravený.');
+    dashboard();
+  }catch(e){
+    err.innerHTML=esc(e.message)+(/zaregistrovaný|prihlás/i.test(e.message)?' <a href="/?home=1">Prihlásiť sa →</a>':'');
+    go.disabled=false; go.textContent=STAV.prihlasena?'Pridať sa do programu':'Vytvoriť influencer účet';
+  }
+}
+
+// ── Dashboard ──
+const STAV_TAG={'platí':'t-plati','skúša':'t-skusa','nová':'t-nova','bez nákupu':'t-bez','odišla':'t-odisla'};
+async function dashboard(){
+  let d;
+  try{ d=await api('/api/influencer/me'); }
+  catch(e){ if(e.data?.prihlaska){ STAV.influencer=false; return uvod(); } $('#app').innerHTML='<div class="card err">'+esc(e.message)+'</div>'; return; }
+  const c=d.cisla, maxK=Math.max(1,...c.dni.map(x=>x.kliky));
+  const fun=[['Kliky',c.kliky],['Registrácie',c.registracie],['Na hodine',c.na_hodine],['Nakúpili',c.zakaznicky],['Platia teraz',c.platiace]];
+  const maxF=Math.max(1,c.kliky,c.registracie);
+  $('#app').innerHTML=`
+  <h1 style="font-size:1.45rem">Ahoj ${esc(String(d.meno||'').split(' ')[0])} 👋</h1>
+  <p class="lead" style="margin-bottom:6px">Provízia ${d.sadzba} % z každej platby tvojich klientok · do kreditu po ${d.lehota_dni} dňoch.</p>
+
+  <section class="card"><h2>Tvoj odkaz</h2>
+    <div class="link"><code id="odkaz">${esc(d.odkaz)}</code></div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn" id="kop" type="button">Kopírovať odkaz</button>
+      ${navigator.share?'<button class="btn ghost" id="zdiel" type="button">Zdieľať</button>':''}
+    </div>
+    <p class="help">Tip: pridaj ho do bio a do storky s nálepkou odkazu. Každý klik vidíš nižšie.</p>
+  </section>
+
+  <section class="card" aria-label="Prehľad čísel"><h2>Čísla</h2>
+    <div class="kpi">
+      <div class="k"><span>Kliky</span><b>${cis(c.kliky)}</b><small>${cis(c.kliky_30d)} za 30 dní</small></div>
+      <div class="k"><span>Registrácie</span><b>${cis(c.registracie)}</b><small>${c.konverzia_klik_reg} % z klikov</small></div>
+      <div class="k"><span>Predaje</span><b>${cis(c.predaje)}</b><small>obrat ${eur(c.obrat)}</small></div>
+      <div class="k"><span>Straty</span><b>${cis(c.straty)}</b><small>${c.straty_bez_nakupu} bez nákupu · ${c.straty_odisli} odišli</small></div>
+      <div class="k"><span>Čaká na pripísanie</span><b>${eur(c.caka)}</b><small>provízie spolu ${eur(c.provizie)}</small></div>
+      <div class="k hl"><span>Kredit na výplatu</span><b>${eur(c.kredit)}</b><small>výplata od 100 €</small></div>
+    </div>
+    ${c.kredit>=100?'<button class="btn full" style="margin-top:12px" id="vypBtn" type="button">Požiadať o výplatu</button>':''}
+    <div id="vyp"></div>
+  </section>
+
+  <section class="card"><h2>Posledných 30 dní</h2>
+    <div class="chart" role="img" aria-label="Za 30 dní ${c.kliky_30d} klikov a ${c.registracie_30d} registrácií">
+      ${c.dni.map(x=>`<div class="${x.registracie?'r':''}" style="height:${Math.round(x.kliky/maxK*100)}%" title="${x.den}: ${x.kliky} klikov, ${x.registracie} registrácií"></div>`).join('')}
+    </div>
+    <div class="axis"><span>${c.dni[0].den.slice(8,10)}.${c.dni[0].den.slice(5,7)}.</span><span>dnes</span></div>
+    <div class="legend"><span><i style="background:#3a3020"></i>kliky za deň</span><span><i style="background:var(--gold)"></i>deň s registráciou</span></div>
+  </section>
+
+  <section class="card"><h2>Lievik</h2>
+    <div class="funnel">${fun.map(([n,v])=>`<div class="fr"><span>${n}</span><div class="bar"><i style="width:${Math.round(v/maxF*100)}%"></i></div><b>${cis(v)}</b></div>`).join('')}</div>
+    <p class="help">Z registrácie na nákup: ${c.konverzia_reg_nakup} %.${c.zdroje.length?' Odkiaľ klikajú: '+c.zdroje.map(z=>esc(z.zdroj)+' '+z.pocet).join(', ')+'.':''}</p>
+  </section>
+
+  <section class="card"><h2>Ľudia, ktorých si priviedla</h2>
+    ${c.ludia.length?c.ludia.map(l=>`<div class="row"><div><b>${esc(l.meno.split(' ')[0])} ${esc((l.meno.split(' ')[1]||'').slice(0,1))}${l.meno.includes(' ')?'.':''}</b><br><small>od ${esc(l.od)}${l.nakupy?' · nakúpila za '+eur(l.nakupy):''}</small></div><span class="tag ${STAV_TAG[l.stav]||''}">${esc(l.stav)}</span></div>`).join('')
+      :'<div class="empty">Zatiaľ nikto. Zdieľaj odkaz — prvá registrácia sa tu objaví hneď.</div>'}
+    <p class="help">„Bez nákupu“ = registrovaná aspoň 14 dní a ešte nič nekúpila. „Odišla“ = nakúpila, ale členstvo jej skončilo.</p>
+  </section>
+
+  <section class="card"><h2>Provízie po mesiacoch</h2>
+    ${c.mesiace.length?c.mesiace.map(m=>`<div class="row"><span>${esc(m.mesiac)}</span><span><b>${eur(m.provizie)}</b>${m.caka?` <small>(${eur(m.caka)} čaká)</small>`:''}</span></div>`).join(''):'<div class="empty">Prvá provízia príde s prvou platbou tvojej klientky.</div>'}
+    ${c.vyplaty.length?'<h2 style="margin-top:16px">Výplaty</h2>'+c.vyplaty.map(v=>`<div class="row"><span>${esc(v.datum)}</span><span><b>${eur(v.suma)}</b> <small>${v.stav==='paid'?'vyplatené':'spracúva sa'}</small></span></div>`).join(''):''}
+  </section>
+
+  <p class="help" style="text-align:center">Materiály, rebríček a akadémiu nájdeš v <a href="/ambasador">ambasádorskej sekcii</a>.</p>`;
+  window.scrollTo(0,0);
+  $('#kop').onclick=async()=>{ try{ await navigator.clipboard.writeText(d.odkaz); toast('Odkaz skopírovaný'); }catch(e){ toast(d.odkaz); } };
+  if($('#zdiel')) $('#zdiel').onclick=()=>navigator.share({title:'Fusion Academy',text:'Poď so mnou tancovať — prvá hodina v appke Fusion Academy 💃',url:d.odkaz}).catch(()=>{});
+  if($('#vypBtn')) $('#vypBtn').onclick=()=>vyplata(d);
+}
+function vyplata(d){
+  $('#vypBtn').remove();
+  $('#vyp').innerHTML=`<div style="margin-top:14px">
+    <div class="f"><label for="iban">IBAN</label><input id="iban" value="${esc(d.iban)}" autocomplete="off"></div>
+    <div class="grid2"><div class="f"><label for="vmeno">Majiteľ účtu</label><input id="vmeno" value="${esc(d.meno)}"></div>
+    <div class="f"><label for="suma">Suma (€)</label><input id="suma" inputmode="decimal" value="${d.cisla.kredit.toFixed(2)}"></div></div>
+    <button class="btn full" id="vypGo" type="button">Odoslať žiadosť</button><div class="err" id="vypErr" role="alert"></div></div>`;
+  $('#vypGo').onclick=async()=>{
+    const b=$('#vypGo'); b.disabled=true;
+    try{ const r=await api('/api/client/referral-credit/payout',{method:'POST',body:{iban:$('#iban').value,name:$('#vmeno').value,amount:String($('#suma').value).replace(',','.')}});
+      toast(r.message||'Žiadosť odoslaná'); dashboard(); }
+    catch(e){ $('#vypErr').textContent=e.message; b.disabled=false; }
+  };
+}
+boot();
+</script>
+<script src="/fa-track.js" defer></script>
+</body>
+</html>
