@@ -5150,6 +5150,18 @@ app.post('/api/register', rlSignup, async(req,res)=>{
       // Kontroluje sa aj tu, nielen vo formulári — inak by stačilo poslať iné pole.
       const povolene=(Array.isArray(vencekClass.roles)&&vencekClass.roles.length)?vencekClass.roles:['student','parent','teacher','director'];
       vencekRole=povolene.includes(req.body.vencek_role)?req.body.vencek_role:povolene[0];
+      // Rodič, ktorý prihlasoval dieťa, si donedávna nemal ako vybrať rolu rodič a založil
+      // druhý „žiacky" účet s menom dieťaťa — dieťa bolo v skupine dvakrát, platba visela na
+      // jednom účte a pripomienky nezaplateného kurzu chodili na druhý (Halíč, 22. 9.).
+      // Rovnaké meno v tej istej skupine preto zastavíme a povieme, čo s tým.
+      if(vencekRole==='student' && !req.body.vencek_duplicita_ok){
+        const kluc=vencekKlucMena(name);
+        const uz=kluc && (await q.find(db.users,{venceky_class_id:vencekClass._id}))
+          .find(x=>x.active!==false && (x.venceky_role||'student')==='student' && vencekKlucMena(x.name)===kluc);
+        if(uz) return res.status(409).json({ error:'V skupine '+vencekClass.name+' už je zapísaný/á '+name+'.', vencek_duplicita:true,
+          hint:(povolene.includes('parent')?'Ak prihlasujete svoje dieťa, vyberte hore rolu rodič — dieťa si potom pripojíte kódom z jeho appky. ':'')
+            +'Ak je to váš vlastný účet, prihláste sa naň. Ak ste naozaj iný človek s rovnakým menom, potvrďte to nižšie.' });
+      }
     }
     const u=await q.insert(db.users,{name,email:email.toLowerCase().trim(),password:await bcrypt.hash(password,10),phone:phone||'',city:String(req.body.city||'').trim().slice(0,60),referral_code:code,sponsor_id,rank:1,is_admin:false,active:true,user_type:utype,bank_account:'',notes:'',visit_count:0,referral_credit:0,lead_source,utm_source,utm_medium,utm_campaign,fbclid,gclid,landing_page:clean(attr.landing),referrer:clean(attr.referrer),consent_at: req.body.consent ? nowISO() : null,created_at:today(),account_creation_type:'self_registration',registration_at:nowISO(),registration_at_source:'actual',funnel_vid:citajCookie(req,VID_COOKIE)||null,
       ...(vencekClass? (['student','parent'].includes(vencekRole)
@@ -25111,6 +25123,9 @@ const VENCEK_MAX_RODICOV=3;
 const VENCEK_KOD_ZNAKY='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const vencekNahodny=n=>Array.from({length:n},()=>VENCEK_KOD_ZNAKY[require('crypto').randomInt(VENCEK_KOD_ZNAKY.length)]).join('');
 const vencekCistyKod=k=>String(k||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,12);
+// Meno dieťaťa bez diakritiky a bez zdvojených medzier — „Félix Kokavec" a „Felix  Kokavec"
+// je ten istý človek. Rovnaký kľúč používa aj Venčekový večer, keď ráta žiakov.
+const vencekKlucMena=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
 async function vencekKodDietata(ziak){
   if(ziak.vencek_kod_rodica) return ziak.vencek_kod_rodica;
   let k; do{ k=vencekNahodny(6); } while(await q.one(db.users,{vencek_kod_rodica:k}));
@@ -26099,6 +26114,75 @@ app.post('/api/admin/venceky/member-role', adminAuth, async(req,res)=>{
       body:`V skupine ${c.name} si teraz vedený/á ako ${lbl}. Ak to nesedí, ozvi sa nám.`,
       read:false, created_at:nowISO()}).catch(()=>{});
     res.json({ok:true, name:u.name, role});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Admin: dvojitý účet dieťaťa → rodič + dieťa (Marek 24. 9.) ────────────────
+// Do 16. 9. sa v Halíči pri registrácii dala zvoliť len rola žiak — rodičia, čo
+// prihlasovali dieťa, teda založili druhý „žiacky" účet na svoj e-mail a z neho
+// aj zaplatili. Dieťa potom vyšlo ako neplatič, dostávalo pripomienky a v skupine
+// bolo dvakrát. Toto prerobí takú dvojicu na to, čím mala byť: rodičovský účet
+// dostane rolu rodič a väzbu na dieťa, platba aj dochádzka sa presunú na dieťa.
+// Faktúra ostáva na rodičovi — zaplatil on. Beží potichu, bez oznamov a mailov:
+// rodinám sa o poriadku v našej evidencii nič oznamovať nemá.
+app.post('/api/admin/venceky/rodic-z-uctu', adminAuth, async(req,res)=>{
+  try{
+    const rodic=await q.one(db.users,{_id:String(req.body.rodic_id||'')});
+    const ziak=await q.one(db.users,{_id:String(req.body.dieta_id||'')});
+    if(!rodic||!ziak) return res.status(404).json({error:'Účet nenájdený'});
+    if(rodic._id===ziak._id) return res.status(400).json({error:'Rodič a dieťa nemôžu byť ten istý účet'});
+    if((ziak.venceky_role||'student')!=='student' || !ziak.venceky_class_id)
+      return res.status(400).json({error:'Dieťa musí byť vedené ako žiak venčeka'});
+    const c=await q.one(db.venceky_classes,{_id:ziak.venceky_class_id});
+    if(!c) return res.status(404).json({error:'Skupina nenájdená'});
+    // Účet, z ktorého robíme rodiča, musí byť v tej istej skupine — inak by sa
+    // dal jedným zlým id pripojiť ktorýkoľvek účet v appke.
+    if(rodic.venceky_class_id!==c._id)
+      return res.status(400).json({error:'Rodičovský účet nie je v skupine '+c.name});
+    if(['teacher','director'].includes(rodic.venceky_role))
+      return res.status(400).json({error:'Tento účet je v skupine učiteľ/riaditeľ — najprv mu zmeň rolu'});
+    const rodicia=Array.isArray(ziak.vencek_rodicia)?ziak.vencek_rodicia:[];
+    if(!rodicia.includes(rodic._id) && rodicia.length>=VENCEK_MAX_RODICOV)
+      return res.status(400).json({error:'Dieťa už má '+VENCEK_MAX_RODICOV+' rodičov'});
+
+    // 1) Platba: zo žiackeho účtu rodiča na dieťa, spôsob aj dátum ostávajú.
+    //    Dve platby v jednej skupine sa nespájajú — to by bola tichá strata peňazí.
+    const platbaR=await q.one(db.venceky_payments,{class_id:c._id, user_id:rodic._id});
+    const platbaD=await q.one(db.venceky_payments,{class_id:c._id, user_id:ziak._id});
+    if(platbaR && platbaD) return res.status(400).json({error:'Zaplatené sú OBA účty — najprv rozhodni, čo s druhou platbou ('+(+platbaR.amount||0).toFixed(2)+' € a '+(+platbaD.amount||0).toFixed(2)+' €)'});
+    let platba=null;
+    if(platbaR){
+      await q.update(db.venceky_payments,{_id:platbaR._id},{$set:{user_id:ziak._id, user_name:ziak.name,
+        payer_id:rodic._id, payer_name:rodic.name, moved_at:nowISO()}});
+      platba={amount:+platbaR.amount||0, method:platbaR.method||'', paid_at:platbaR.paid_at||''};
+    }
+
+    // 2) Dochádzka: kde bol zapísaný rodičovský účet, patrí dieťa. Keď je v zozname
+    //    už aj dieťa, id rodiča sa len vyhodí — inak by bolo dvakrát.
+    let lekcie=0;
+    for(const a of await q.find(db.venceky_attendance,{class_id:c._id})){
+      const bol=(arr)=>Array.isArray(arr)&&arr.includes(rodic._id);
+      if(!bol(a.present) && !bol(a.absent)) continue;
+      const sw=arr=>Array.from(new Set((arr||[]).map(x=>x===rodic._id?ziak._id:x)));
+      await q.update(db.venceky_attendance,{_id:a._id},{$set:{present:sw(a.present), absent:sw(a.absent)}});
+      lekcie++;
+    }
+
+    // 3) Väzba a rola. Rodič ostáva v skupine (vidí dochádzku, progres aj chat),
+    //    ale z počtu žiakov aj z „zaplatilo X/Y" vypadne.
+    await q.update(db.users,{_id:ziak._id},{$addToSet:{vencek_rodicia:rodic._id}});
+    await q.update(db.users,{_id:rodic._id},{$set:{venceky_role:'parent',
+      venceky_school_id:c.school_id, venceky_class_id:c._id,
+      vencek_child_name:ziak.name, ...(rodic.lead_source?{}:{lead_source:'vencek'})},
+      $unset:{vencek_pending_role:true, vencek_pending_class_id:true, vencek_pending_school_id:true,
+        vencek_kod_rodica:true}});   // kód pre rodiča má zmysel len na účte dieťaťa
+
+    await auditLog(req,'vencek_rodic_z_uctu',rodic._id,
+      {rola:rodic.venceky_role||'student', platba:platbaR?(+platbaR.amount||0):null},
+      {dieta:ziak._id, dieta_meno:ziak.name, skupina:c.name, lekcie},
+      'Dvojitý účet dieťaťa — z druhého účtu je rodič');
+    res.json({ok:true, rodic:{id:rodic._id, name:rodic.name, email:rodic.email},
+      dieta:{id:ziak._id, name:ziak.name, email:ziak.email}, skupina:c.name, platba, lekcie});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
