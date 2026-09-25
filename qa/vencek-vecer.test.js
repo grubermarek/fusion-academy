@@ -116,6 +116,7 @@ const TRIEDA = 'qaVcTrieda00001', SKOLA = 'qaVcSkola000001';
     ok('moderátor môže posúvať program', rola('moderator').can_control);
     const kvety = A.items.find(i => /Kvety pre rodičov/.test(i.name));
     ok('kvety pre rodičov = počet žiakov (3)', kvety && kvety.qty === 3 && kvety.stav === 'nie' && kvety.cat === 'nakup', JSON.stringify(kvety));
+    ok('welcome drinky v nákupnom zozname (Marek 25. 9.)', A.items.some(i => /Welcome drinky/.test(i.name) && i.cat === 'nakup' && i.stav === 'nie'));
     ok('všetky tri kategórie prípravy', ['nakup', 'priprava', 'zbalit'].every(k => A.items.some(i => i.cat === k)));
     const tanceBody = A.program.filter(p => /^Tanec: /.test(p.title)).map(p => p.title);
     ok('program: bod za každý naučený tanec (Waltz, Cha-cha), nie za nenaučenú Polku', tanceBody.length === 2 && tanceBody.includes('Tanec: Waltz') && tanceBody.includes('Tanec: Cha-cha'), tanceBody.join(', '));

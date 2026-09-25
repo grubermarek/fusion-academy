@@ -88,6 +88,7 @@ module.exports = function mountVencekVecer(ctx){
       naZiaka('Obaly / dosky na diplomy'),
       polozka('nakup', 'Výzdoba sály (balóny, stuhy)', null, ''),
       polozka('nakup', 'Voda a občerstvenie pre žiakov a tím', null, ''),
+      polozka('nakup', 'Welcome drinky pre žiakov a hostí', null, '', 'Počet podľa žiakov a pozvaných hostí.'),
       polozka('nakup', 'Darček pre triednu učiteľku', 1, 'ks'),
       polozka('priprava', 'Potvrdiť sálu a čas, kedy môžeme chystať'),
       polozka('priprava', 'Dohodnúť DJ-a a ozvučenie (aj mikrofón)'),
@@ -867,6 +868,27 @@ module.exports = function mountVencekVecer(ctx){
     try{ res.json({ ok: true, sent: await pripomienky(req.body && req.body.datum) }); }
     catch(e){ res.status(500).json({ error: e.message }); }
   });
+
+  // ── Marek 25. 9. 2026: „na venčeky do zoznamu potrieb musíme kúpiť welcome
+  // drinky" — šablóna ich už má, tu sa doplnia do príprav, ktoré vznikli skôr.
+  const WELCOME_KEY = 'vencek_vecer_welcome_drink_20260925';
+  if(db.settings) setTimeout(async () => {
+    try{
+      if(await q.one(db.settings, { key: WELCOME_KEY })) return;
+      const vecery = await q.find(db.vencek_vecery, {});
+      let n = 0;
+      for(const v of vecery){
+        const items = Array.isArray(v.items) ? v.items : [];
+        if(items.some(i => /welcome/i.test(i.name || ''))) continue;
+        items.push({ id: nid(), cat: 'nakup', name: 'Welcome drinky pre žiakov a hostí', qty: null, have: 0, unit: '',
+          stav: 'nie', who: '', price: null, note: 'Počet podľa žiakov a pozvaných hostí.', updated_by: '', updated_at: '' });
+        await q.update(db.vencek_vecery, { _id: v._id }, { $set: { items, rev: (+v.rev || 0) + 1, updated_at: nowISO() } });
+        n++;
+      }
+      await q.insert(db.settings, { key: WELCOME_KEY, value: { vecery: n }, at: nowISO() });
+      console.log('✨ Venčekový večer: welcome drinky doplnené do ' + n + ' príprav');
+    }catch(e){ console.error('vencek_vecer_welcome_drink:', e.message); }
+  }, 6000);
 
   return { ROLY, sablona, planCasy, pripomienky };
 };
