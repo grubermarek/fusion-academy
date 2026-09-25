@@ -305,6 +305,11 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
 - Upozornenie: denný job (každých 10 min, spúšťa sa od `config.hodina`, default 8:00) pošle adminom notifikáciu + e-mail so všetkým, čo má na dnešok termín; v pondelok pridá výhľad na 14 dní. Dedup `settings.planovac_sent_<dátum>`. Ručne `POST /api/admin/planovac/run-daily`.
 - Pasca: viacdňové položky (okná, prázdniny, víkendy) sa filtrujú podľa `obdobie`, nie podľa `datum` — inak by prebiehajúca vlna z prehľadu vypadla. Skloňovanie po číslovke rieši helper `pocet()` na serveri a `planPocet()` v admin.html.
 
+### 7.10 Venček: trieda platí hromadne cez triedneho učiteľa ✅ HOTOVO (2026-09-24, qa/vencek-hromadna-platba.test.js)
+- Príznak na skupine `platba_hromadne` (+ `platba_hromadne_kto`, default „triedny učiteľ“), zapína sa v detaile skupiny → Ostatné, ide cez `/api/admin/venceky/progress`.
+- Keď je zapnutý: `/api/vencek/checkout` odmietne platbu (žiak aj rodič), stránka venčekára aj registrácia ukazujú „Kurz sa platí hromadne cez triedu (<kto>)“ namiesto tlačidla, a denný job preskočí týždennú pripomienku nezaplateného kurzu.
+- Keď peniaze prídu: `POST /api/admin/venceky/payment-bulk {class_id, method, amount}` zapíše platbu všetkým, čo ju ešte nemajú (tlačidlo „💶 Zapísať platbu celej triede“ v záložke Žiaci a platby). Ide cez `vencekZapisPlatbu`, takže každý žiak aj jeho rodičia dostanú potvrdenie e-mailom a vystaví sa doklad; záznam má `hromadne:true`. Druhý beh nezapíše nič.
+
 ### 7.11 Influencer program (affiliate) ✅ HOTOVO (2026-09-24, influencer.js, public/influencer.html, public/admin-influenceri.js, qa/influencer.test.js)
 - Samoregistrácia na `/influencer`: účet cez `/api/register`, potom `POST /api/influencer/prihlaska` (siete, sledovatelia, mesto, téma) → `u.influencer` + `user_type:'ambassador'`. Provízie, 14-dňová lehota, kredit aj výplata = ambasádorský motor, nič vlastné sa nepočíta.
 - Odkaz `/i/<KÓD>` zapíše klik do `db.influencer_clicks` (unikátny návštevník = cookie `fa_ic`, 1× za deň, boty/náhľady sa nerátajú) a presmeruje na `/invite/<KÓD>`.

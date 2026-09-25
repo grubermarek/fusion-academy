@@ -972,6 +972,18 @@ function renderAdmin(){
   const membHtml = M
     ? `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:1.05rem">${M.active?'✅':'⛔'}</span><b style="color:${M.active?'#9fd894':'#ef9a9a'}">${esc(M.plan_name)}</b>${M.gift?'<span class="set-hint" style="margin:0">🎁 darček/migrácia</span>':''}<span style="margin-left:auto;font-size:.85rem;color:${M.active?'var(--cream)':'#ef9a9a'}">${M.expires_at?(M.active?('platí do <b>'+M.expires_at+'</b>'):('vypršalo <b>'+M.expires_at+'</b>')):'bez dátumu'}</span></div>`
     : `<span class="set-hint" style="margin:0">Bez členstva</span>`;
+  // Dohodnuté (individuálne) ceny a deti — obe sa dali doteraz riešiť len cez kód
+  const cp=a.custom_prices||{};
+  const cpHtml=Object.keys(cp).length
+    ? Object.entries(cp).map(([k,v])=>`<b style="color:var(--gold)">${esc((_plans&&_plans[k]&&_plans[k].name)||k)}: ${(+v).toFixed(2).replace('.',',')} €</b>`).join(' · ')
+    : '<span class="set-hint" style="margin:0">Bez výnimky — platia bežné ceny.</span>';
+  const detiHtml=(a.children||[]).length
+    ? (a.children||[]).map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+        <a href="/u/${c.id}" style="color:var(--gold);font-weight:700;text-decoration:none">👧 ${esc(c.name)}</a>
+        ${c.birth_year?`<span class="set-hint" style="margin:0">nar. ${c.birth_year}</span>`:''}
+        ${c.custom_price_bronze!=null?`<span style="margin-left:auto;font-size:.8rem;color:#C9A84C">💛 ${(+c.custom_price_bronze).toFixed(2).replace('.',',')} €</span>`:''}
+      </div>`).join('')
+    : '<span class="set-hint" style="margin:0">Zatiaľ žiadne dieťa.</span>';
   const dsum = (icon,title,color) => `<summary style="list-style:none;display:flex;align-items:center;gap:8px;font-weight:800;color:${color||'#e0b84c'};cursor:pointer;padding:2px 0">${icon} ${title} <i class="bi bi-chevron-down" style="margin-left:auto;font-size:.8rem"></i></summary>`;
   const canManage = (!P.is_admin_profile && !P.is_self);
   box.innerHTML=`
@@ -1019,6 +1031,15 @@ function renderAdmin(){
         <span class="set-hint" style="margin-top:6px">🎁 Darček = bez platby (napr. migrácia z Glofoxu). 💵/💳 = zaráta sa do tržieb + provízií línie.</span>
 
         <div style="height:1px;background:var(--border);margin:14px 0"></div>
+        <div style="font-weight:700;color:var(--cream);font-size:.88rem;margin-bottom:6px">💛 Individuálna cena</div>
+        <div style="font-size:.85rem;margin-bottom:6px">${cpHtml}</div>
+        <div class="adm-hours" style="flex-wrap:wrap">
+          <button onclick="saveCustomPrice()">Uložiť dohodnutú cenu</button>
+          <button class="gseg" style="border:1px solid #8b3232;background:#3a1a1a;color:#ef9a9a;border-radius:10px;padding:9px 12px;cursor:pointer" onclick="saveCustomPrice(true)">Zrušiť výnimku</button>
+        </div>
+        <span class="set-hint" style="margin-top:6px">Použije plán a sumu vybraté vyššie. Platí len pre túto klientku — pri odbere kartou aj pri jednorazovej platbe (dohodnutá cena sa nezdražuje o 10 % za platbu bez odberu).</span>
+
+        <div style="height:1px;background:var(--border);margin:14px 0"></div>
         <div style="font-weight:700;color:var(--cream);font-size:.88rem;margin-bottom:6px">🎟️ Permanentka (platené vstupy)</div>
         <div style="font-size:.85rem;margin-bottom:6px">Aktuálne: <b style="color:var(--gold)">${a.single_entries||0}</b> vstupov</div>
         <div class="adm-hours" style="flex-wrap:wrap">
@@ -1037,6 +1058,20 @@ function renderAdmin(){
         </div>
       </div>
     </details>
+
+    ${a.is_child ? `<div class="set-row" style="font-size:.9rem">👧 Detský profil${a.parent_name?` — rodič: <a href="/u/${a.parent_id}" style="color:var(--gold);text-decoration:none"><b>${esc(a.parent_name)}</b></a>`:''}</div>`
+    : `<details class="set-row adm-sub">
+      ${dsum('👧','Deti','#f4a6c0')}
+      <div style="margin-top:12px">
+        ${detiHtml}
+        <div class="adm-hours" style="flex-wrap:wrap;margin-top:10px">
+          <input id="admChildName" placeholder="Meno a priezvisko" style="min-width:190px">
+          <input type="date" id="admChildBirth" style="background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:8px 10px">
+          <button onclick="addChild()">+ Pridať dieťa</button>
+        </div>
+        <span class="set-hint" style="margin-top:6px">Dátum narodenia je povinný — podľa veku ide dieťa do Zumba Kids 4–6 alebo 7–14. Členstvo aj dohodnutú cenu mu nastavíš na jeho profile.</span>
+      </div>
+    </details>`}
 
     <details class="set-row adm-sub">
       ${dsum('💳','Kredit klienta','#9fd894')}
@@ -1296,6 +1331,34 @@ async function saveEntries(){
   const se=parseInt(document.getElementById('admEntriesSet').value)||0;
   const fc=parseInt(document.getElementById('admFreeSet').value)||0;
   if(await putAwards({single_entries:se, free_credits:fc})){ _awards.single_entries=se; _awards.free_credits=fc; alert('Vstupy uložené ✓'); }
+}
+// Dohodnutá cena pre jednu klientku (napr. detská 30 € namiesto 49,90 €).
+// Berie plán a sumu z políčok „Predať / darovať členstvo" vyššie.
+async function saveCustomPrice(remove){
+  const sel=document.getElementById('admPlan'); const plan_id=sel.value;
+  if(!plan_id){ alert('Najprv vyber členstvo v zozname vyššie.'); return; }
+  const nazov=(sel.options[sel.selectedIndex].text||plan_id).split('—')[0].trim();
+  const price=parseFloat(document.getElementById('admPlanPrice').value);
+  if(!remove && !(price>0)){ alert('Zadaj sumu dohodnutej ceny.'); return; }
+  if(!confirm(remove ? ('Zrušiť individuálnu cenu za '+nazov+'? Klientka bude platiť bežnú cenu.')
+                     : ('Dohodnutá cena '+price.toFixed(2)+' € za '+nazov+' — platí len pre túto klientku. Uložiť?'))) return;
+  const r=await fetch('/api/admin/users/'+encodeURIComponent(uid)+'/custom-price',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',
+    body:JSON.stringify({plan_id, price: remove?null:price})});
+  const d=await r.json().catch(()=>({}));
+  if(r.ok&&d.ok){ _awards.custom_prices=d.custom_prices; alert(remove?'Individuálna cena zrušená ✓':'Individuálna cena uložená ✓'); renderAdmin(); admPlanChange(); }
+  else alert(d.error||'Chyba');
+}
+// Admin založí dieťa rodičovi (rodič to má vo svojom účte, pri pulte sa neprihlasuje)
+async function addChild(){
+  const name=(document.getElementById('admChildName').value||'').trim();
+  const birth_date=document.getElementById('admChildBirth').value||'';
+  if(!name){ alert('Zadaj meno dieťaťa.'); return; }
+  if(!birth_date){ alert('Zadaj dátum narodenia — podľa veku ide dieťa do správnej skupiny.'); return; }
+  const r=await fetch('/api/admin/users/'+encodeURIComponent(uid)+'/children',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',
+    body:JSON.stringify({name, birth_date})});
+  const d=await r.json().catch(()=>({}));
+  if(r.ok&&d.ok){ alert('✅ Dieťa pridané: '+d.name+'\nOtváram jeho profil — tam nastav cenu a predaj členstvo.'); location.href='/u/'+d.id; }
+  else alert(d.error||'Chyba');
 }
 async function saveFree(){
   const fc=parseInt(document.getElementById('admFree').value)||0;

@@ -1897,18 +1897,9 @@ async function seedData() {
     }catch(e){ console.error('custom price palocna:', e.message); }
   }
 
-  // 19.8.: Vivien Ferkovičová má ako dieťa dohodnutú individuálnu cenu Bronze 30 €.
-  // Platí len pre ňu — ostatným ostáva bežná cena.
-  if(!(await q.one(db.settings,{key:'custom_price_vivien_20260819'}))){
-    try{
-      const v=await q.one(db.users,{name:/Vivien.*Ferkovi/i});
-      if(v){
-        await q.update(db.users,{_id:v._id},{$set:{custom_prices:{...(v.custom_prices||{}), bronze:30}}});
-        console.log('✅  Individuálna cena nastavená: '+v.name+' — Bronze 30 €');
-      } else console.log('⚠️  Vivien Ferkovičová sa nenašla — individuálna cena nenastavená');
-      await q.insert(db.settings,{key:'custom_price_vivien_20260819', value:true, at:nowISO()});
-    }catch(e){ console.error('custom price vivien:', e.message); }
-  }
+  // (Pôvodná migrácia `custom_price_vivien_20260819` dávala 30 € Vivien Ferkovičovej —
+  // bola to zámena mien a oprava vyššie ju ruší. Zmazaná 25. 9., aby na čistej databáze
+  // nepridelila zľavu znova nesprávnej klientke.)
 
   // 19.8.: v stredu bežia fyzické hodiny vo Zvolene (17:00) a v B. Bystrici (19:00),
   // ale online dvojička k nim chýbala — appka preto hlásila, že dnes online nie je,
@@ -2258,6 +2249,33 @@ async function seedData() {
     }
     await q.insert(db.settings,{key:'kids_roster_vynimky_20260920', value:true, at:nowISO()});
     console.log('🧒 Zumba Kids: výnimka 35 € zapísaná ('+n+' detí)');
+  }
+
+  // Marek 25. 9.: „Nelka mi odovzdala 160 €." Uzavrie jej najstaršie nevyrovnané výbery
+  // hotovosti do súčtu 160 € (posledný sa v prípade potreby rozdelí). Trénerku hľadám
+  // medzi tými, ktoré naozaj majú u seba hotovosť — nie podľa zoznamu mien, aby zhoda
+  // nesadla na niekoho iného. Výsledok ostáva v settings, aby sa dal spätne prečítať.
+  if(!(await q.one(db.settings,{key:'nelka_hotovost_160_20260925'}))){
+    let vysledok={};
+    try{
+      const mena=[...new Set((await q.find(db.payouts,{_type:'cash_collected', status:'held'}))
+        .map(r=>r.trainer_name).filter(Boolean))];
+      const zhoda=mena.filter(n=>/nel/i.test(n));
+      if(zhoda.length===1){
+        const r=await settleCashAmount(zhoda[0], 160, 'Marek Gruber');
+        vysledok={trainer:zhoda[0], ...r};
+        const t=await q.one(db.users,{name:zhoda[0]});
+        if(t) await q.insert(db.notifications,{user_id:t._id, type:'cash_collected',
+          title:'✅ Hotovosť prevzatá', body:`Odovzdala si ${r.settled.toFixed(2)} € — o toľko sa ti už výplata neznižuje.`,
+          read:false, created_at:nowISO()}).catch(()=>{});
+        console.log('💵 Hotovosť od '+zhoda[0]+': uzavreté '+r.settled.toFixed(2)+' € ('+r.count+' záznamov)'
+          +(r.zvysok>0?', nepriradené '+r.zvysok.toFixed(2)+' €':''));
+      } else {
+        vysledok={error:zhoda.length?'viac zhôd':'žiadna zhoda', mena:zhoda};
+        console.log('⚠️  Hotovosť 160 €: trénerka „Nel…" sa medzi nevyrovnanou hotovosťou nenašla ('+(zhoda.join(', ')||'0 zhôd')+')');
+      }
+    }catch(e){ vysledok={error:e.message}; console.error('nelka hotovost:', e.message); }
+    await q.insert(db.settings,{key:'nelka_hotovost_160_20260925', value:vysledok, at:nowISO()});
   }
 
   // 24.8.: kampane bez utm_key sa nedali merať — platili sme za kliky, ktoré nemali
@@ -8853,7 +8871,13 @@ app.get('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
   const mm = activeMembs[0] || lastMemb || null;
   const membership = mm ? { plan_name:mm.plan_name||mm.plan_id||'Členstvo', expires_at:(mm.expires_at||'').slice(0,10)||null,
     active:(mm.expires_at||'')>nowIso, gift:!!mm.gift } : null;
+  // Deti rodiča — admin ich vie z profilu rovno založiť aj im predať členstvo
+  const deti = u.is_child ? [] : (await q.find(db.users,{parent_id:u._id, active:{$ne:false}}))
+    .map(c=>({ id:c._id, name:c.name, birth_year:c.birth_year||null,
+               custom_price_bronze:(c.custom_prices&&c.custom_prices.bronze!=null)?+c.custom_prices.bronze:null }));
+  const rodic = u.is_child && u.parent_id ? await q.one(db.users,{_id:u.parent_id}) : null;
   res.json({ membership, name:u.name, email:u.email||"", phone:u.phone||"", visit_count:u.visit_count||0, private_hours:u.private_hours||0,
+    is_child:!!u.is_child, parent_id:u.parent_id||null, parent_name:rodic?.name||null, children:deti,
     referral_credit:+(u.referral_credit||0), referral_credit_pending:+(u.referral_credit_pending||0),
     single_entries:+(u.single_entries||0), free_credits:+(u.free_credits||0),
     online_passes:+(u.online_passes||0),
@@ -9663,6 +9687,20 @@ app.post('/api/admin/users/:id/custom-price', adminAuth, async(req,res)=>{
     await q.update(db.users,{_id:u._id},{$set:{custom_prices:Object.keys(cp).length?cp:null}});
     await auditLog(req,'custom_price',u._id,{old:u.custom_prices||null},{new:cp},'');
     res.json({ok:true, custom_prices:Object.keys(cp).length?cp:null});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Admin: pridať dieťa rodičovi. Doteraz vedel detský profil založiť len rodič vo
+// svojom účte — pri pulte sa mu nikto prihlasovať nebude, tak to vie aj admin.
+app.post('/api/admin/users/:id/children', adminAuth, async(req,res)=>{
+  try{
+    const rodic=await q.one(db.users,{_id:req.params.id});
+    if(!rodic) return res.status(404).json({error:'Rodič nenájdený'});
+    if(rodic.is_child) return res.status(400).json({error:'Dieťa nemôže mať vlastné dieťa'});
+    const r=await vytvorDieta(rodic._id, req.body||{});
+    if(r.error) return res.status(400).json({error:r.error});
+    await auditLog(req,'child_create',`${rodic.name} → ${r.child.name}`,null,{name:r.child.name, birth_date:r.child.birth_date},'');
+    res.json({ok:true, id:r.child._id, name:r.child.name});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -19357,12 +19395,52 @@ app.get('/api/admin/cash', adminAuth, async(req,res)=>{
     res.json({ok:true, rows:rows.slice(0,200)});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
+// Tréner odovzdal peniaze v jednej sume (napr. „Nelka mi dala 160 €") — appka ju sama
+// rozpustí do jeho nevyrovnaných výberov od najstaršieho. Keď suma nevyjde presne na
+// záznam, posledný sa rozdelí: odovzdaná časť sa uzavrie, zvyšok ostáva u trénera.
+// Vracia aj `zvysok` — koľko sa nedalo priradiť, lebo toľko hotovosti u seba nemal.
+async function settleCashAmount(trainerName, amount, byName){
+  const rows=(await q.find(db.payouts,{_type:'cash_collected', trainer_name:trainerName, status:'held'}))
+    .sort((a,b)=>String(a.date||a.created_at||'').localeCompare(String(b.date||b.created_at||'')));
+  let zvysok=+(+amount).toFixed(2), settled=0, count=0;
+  for(const r of rows){
+    if(zvysok<=0.004) break;
+    const suma=+(+r.amount||0).toFixed(2);
+    if(suma<=zvysok+0.004){
+      await q.update(db.payouts,{_id:r._id},{$set:{status:'settled_handed', settled_at:nowISO(), settled_by:byName||'Admin'}});
+      zvysok=+(zvysok-suma).toFixed(2); settled=+(settled+suma).toFixed(2); count++;
+    } else {
+      const {_id, ...zvysne}=r;
+      await q.update(db.payouts,{_id},{$set:{amount:+(suma-zvysok).toFixed(2), note:`${r.note||'Hotovosť'} (zvyšok)`, updated_at:nowISO()}});
+      await q.insert(db.payouts,{...zvysne, amount:zvysok, status:'settled_handed',
+        note:`${r.note||'Hotovosť'} (časť)`, settled_at:nowISO(), settled_by:byName||'Admin'});
+      settled=+(settled+zvysok).toFixed(2); count++; zvysok=0;
+    }
+  }
+  return { settled, count, zvysok };
+}
+app.post('/api/admin/cash/handover', adminAuth, async(req,res)=>{
+  try{
+    const trainer=String(req.body.trainer||'').trim();
+    const amount=+req.body.amount;
+    if(!trainer) return res.status(400).json({error:'Chýba tréner'});
+    if(!Number.isFinite(amount)||amount<=0||amount>100000) return res.status(400).json({error:'Zadaj sumu, ktorú ti odovzdal/a'});
+    const r=await settleCashAmount(trainer, amount, req.user?.name||'Admin');
+    if(!r.count) return res.status(400).json({error:`${trainer} nemá u seba žiadnu nevyrovnanú hotovosť`});
+    const t=await q.one(db.users,{name:trainer});
+    if(t) await q.insert(db.notifications,{user_id:t._id, type:'cash_collected',
+      title:'✅ Hotovosť prevzatá', body:`Odovzdal/a si ${r.settled.toFixed(2)} € — o toľko sa ti už výplata neznižuje.`,
+      read:false, created_at:nowISO()}).catch(()=>{});
+    await auditLog(req,'cash_handover_sum',`${trainer} ${r.settled.toFixed(2)} €`,null,{zadane:amount, ...r},'');
+    res.json({ok:true, ...r});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 app.post('/api/admin/cash/:id/handover', adminAuth, async(req,res)=>{
   try{
     const r=await q.one(db.payouts,{_id:req.params.id, _type:'cash_collected'});
     if(!r) return res.status(404).json({error:'Nenájdené'});
     if(r.status!=='held') return res.status(400).json({error:'Už je zúčtované'});
-    await q.update(db.payouts,{_id:r._id},{$set:{status:'settled_handed', settled_at:nowISO(), settled_by:req.trainerUser?.name||'Admin'}});
+    await q.update(db.payouts,{_id:r._id},{$set:{status:'settled_handed', settled_at:nowISO(), settled_by:req.user?.name||'Admin'}});
     await q.insert(db.notifications,{user_id:r.trainer_id, type:'cash_collected',
       title:'✅ Hotovosť prevzatá', body:`Odovzdal/a si ${(+r.amount).toFixed(2)} € — zrážka z výplaty je zrušená.`,
       read:false, created_at:nowISO()}).catch(()=>{});
@@ -21076,39 +21154,46 @@ app.get('/api/family/children/:id', auth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Jedno miesto, kde vzniká detský profil — rodič vo svojom účte aj admin z profilu
+// rodiča (pri pulte sa rodič neprihlasuje). Vracia {error} alebo {child}.
+async function vytvorDieta(parentId, body){
+  const name = (body.name||'').trim();
+  if(!name) return {error:'Chýba meno dieťaťa'};
+  // Podľa veku dieťa zaradíme do skupiny Zumba Kids (13. 9.) — bez dátumu to nejde.
+  if(!body.birth_date && !body.birth_year) return {error:'Zadaj dátum narodenia dieťaťa — podľa veku ho zaradíme do správnej skupiny Zumba Kids.'};
+  // Full date of birth (YYYY-MM-DD); birth_year derived for display
+  let birth_date = null, birth_year = null;
+  if(body.birth_date){
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(body.birth_date)) return {error:'Neplatný dátum narodenia'};
+    const dt = new Date(body.birth_date);
+    const y = dt.getFullYear();
+    if(isNaN(dt.getTime()) || y < 1990 || dt > new Date()) return {error:'Neplatný dátum narodenia'};
+    birth_date = body.birth_date; birth_year = y;
+  } else if(body.birth_year){
+    const y = +body.birth_year;
+    if(y < 1990 || y > new Date().getFullYear()) return {error:'Neplatný rok narodenia'};
+    birth_year = y;
+  }
+  const count = await q.count(db.users,{parent_id:parentId, active:{$ne:false}});
+  if(count >= MAX_CHILDREN) return {error:`Maximálne ${MAX_CHILDREN} detí na účet`};
+  const token = Math.random().toString(36).slice(2,10);
+  const internalEmail = 'child-'+token+'@internal.local';
+  // Children get a unique (unused) referral_code to satisfy the unique index
+  let childCode = 'CHILD-'+token.toUpperCase();
+  while(await q.one(db.users,{referral_code:childCode})) childCode = 'CHILD-'+Math.random().toString(36).slice(2,10).toUpperCase();
+  const child = await q.insert(db.users,{ account_creation_type:'child',
+    name, email:internalEmail, referral_code:childCode, parent_id:parentId, is_child:true, birth_date, birth_year,
+    user_type:'client', is_admin:false, active:true,
+    visit_count:0, free_class_used:false, single_entries:0, free_credits:0, referral_credit:0,
+    created_at:today()
+  });
+  return {child};
+}
 app.post('/api/family/children', auth, async(req,res)=>{
   try {
-    const name = (req.body.name||'').trim();
-    if(!name) return res.status(400).json({error:'Chýba meno dieťaťa'});
-    // Podľa veku dieťa zaradíme do skupiny Zumba Kids (13. 9.) — bez dátumu to nejde.
-    if(!req.body.birth_date && !req.body.birth_year) return res.status(400).json({error:'Zadaj dátum narodenia dieťaťa — podľa veku ho zaradíme do správnej skupiny Zumba Kids.'});
-    // Full date of birth (YYYY-MM-DD); birth_year derived for display
-    let birth_date = null, birth_year = null;
-    if(req.body.birth_date){
-      if(!/^\d{4}-\d{2}-\d{2}$/.test(req.body.birth_date)) return res.status(400).json({error:'Neplatný dátum narodenia'});
-      const dt = new Date(req.body.birth_date);
-      const y = dt.getFullYear();
-      if(isNaN(dt.getTime()) || y < 1990 || dt > new Date()) return res.status(400).json({error:'Neplatný dátum narodenia'});
-      birth_date = req.body.birth_date; birth_year = y;
-    } else if(req.body.birth_year){
-      const y = +req.body.birth_year;
-      if(y < 1990 || y > new Date().getFullYear()) return res.status(400).json({error:'Neplatný rok narodenia'});
-      birth_year = y;
-    }
-    const count = await q.count(db.users,{parent_id:req.session.uid, active:{$ne:false}});
-    if(count >= MAX_CHILDREN) return res.status(400).json({error:`Maximálne ${MAX_CHILDREN} detí na účet`});
-    const token = Math.random().toString(36).slice(2,10);
-    const internalEmail = 'child-'+token+'@internal.local';
-    // Children get a unique (unused) referral_code to satisfy the unique index
-    let childCode = 'CHILD-'+token.toUpperCase();
-    while(await q.one(db.users,{referral_code:childCode})) childCode = 'CHILD-'+Math.random().toString(36).slice(2,10).toUpperCase();
-    const child = await q.insert(db.users,{ account_creation_type:'child',
-      name, email:internalEmail, referral_code:childCode, parent_id:req.session.uid, is_child:true, birth_date, birth_year,
-      user_type:'client', is_admin:false, active:true,
-      visit_count:0, free_class_used:false, single_entries:0, free_credits:0, referral_credit:0,
-      created_at:today()
-    });
-    res.json({ok:true, id:child._id, name:child.name});
+    const r = await vytvorDieta(req.session.uid, req.body||{});
+    if(r.error) return res.status(400).json({error:r.error});
+    res.json({ok:true, id:r.child._id, name:r.child.name});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -25228,7 +25313,7 @@ function jeLektorSkupiny(u, c){
 // Zápis platby za venček — karta (Stripe), hotovosť alebo prevod (admin, lektor). Platí sa za žiaka;
 // keď platil rodič, doklad a potvrdenie idú jemu. Zámok: návrat zo Stripe a webhook naraz
 // nesmú zapísať dve platby.
-async function vencekZapisPlatbu({c, ziak, amount, method, platca, recorded_by, stripe_session_id}){
+async function vencekZapisPlatbu({c, ziak, amount, method, platca, recorded_by, stripe_session_id, hromadne}){
   return await withBookingLock('vencek-platba:'+c._id+':'+ziak._id, async()=>{
     if(await q.one(db.venceky_payments,{class_id:c._id, user_id:ziak._id})) return {already:true};
     const amt=+amount>0 ? +(+amount).toFixed(2) : (+c.price||49.90);
@@ -25237,6 +25322,7 @@ async function vencekZapisPlatbu({c, ziak, amount, method, platca, recorded_by, 
       user_name:ziak.name, amount:amt, method, paid_at:nowISO(),
       ...(platiRodic?{payer_id:platca._id, payer_name:platca.name}:{}),
       ...(recorded_by?{recorded_by}:{}), ...(stripe_session_id?{stripe_session_id}:{}),
+      ...(hromadne?{hromadne:true}:{}),
       created_at:nowISO()});
     const sposob=method==='stripe'?'kartou':(method==='transfer'?'prevodom na účet':'v hotovosti');
     const eur=amt.toFixed(2).replace('.',',')+' €';
@@ -25448,6 +25534,30 @@ app.post('/api/admin/venceky/payment', adminAuth, async(req,res)=>{
     res.json({ok:true});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
+
+// ── Admin: hromadná platba celej triedy ─────────────────────────────────────
+// Marek 24. 9. (Podbrezová): „vyzbierali si peniaze a majú ich triedni učitelia,
+// potom im už len pošleme potvrdenie o zaplatení." Zapíše platbu každému žiakovi,
+// ktorý ju ešte nemá — potvrdenie aj doklad dostane každý ako pri bežnej platbe.
+app.post('/api/admin/venceky/payment-bulk', adminAuth, async(req,res)=>{
+  try{
+    const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});
+    if(!c) return res.status(404).json({error:'Skupina nenájdená'});
+    const method=req.body.method==='transfer'?'transfer':'cash';
+    const amount=+req.body.amount>0 ? +req.body.amount : (+c.price||49.90);
+    const ziaci=(await q.find(db.users,{venceky_class_id:c._id}))
+      .filter(u=>(u.venceky_role||'student')==='student' && u.active!==false);
+    const zaplatili=new Set((await q.find(db.venceky_payments,{class_id:c._id})).map(p=>p.user_id));
+    const novi=ziaci.filter(u=>!zaplatili.has(u._id));
+    let count=0, total=0;
+    for(const z of novi){
+      const r=await vencekZapisPlatbu({c, ziak:z, amount, method, recorded_by:req.session.uid, hromadne:true});
+      if(r&&r.ok){ count++; total+=r.amount; }
+    }
+    if(count) console.log('🎓 Hromadná platba '+c.code+': '+count+' × '+amount.toFixed(2)+' € ('+method+')');
+    res.json({ok:true, count, total:Math.round(total*100)/100, uz:ziaci.length-novi.length});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 // ── Žiak si venčekový kurz zaplatí kartou ───────────────────────────────────
 // Doteraz sa dal uhradiť len v hotovosti na hodine alebo prevodom, čo znamená
 // behanie za peniazmi po telocvični. Marek 2. 9.: „daj im tú možnosť platby
@@ -25471,6 +25581,9 @@ app.post('/api/vencek/checkout', auth, async(req,res)=>{
     if(!c) return res.status(404).json({error:'Skupina nenájdená'});
     if(await q.one(db.venceky_payments,{class_id:c._id, user_id:ziak._id}))
       return res.status(400).json({error: ziak._id===u._id ? 'Kurz už máš uhradený' : 'Kurz už je uhradený ('+ziak.name+')'});
+    // Trieda, ktorá si peniaze vyzbiera sama (Podbrezová 24. 9.) — v appke sa neplatí,
+    // inak by rodič zaplatil druhý raz.
+    if(c.platba_hromadne) return res.status(400).json({error:'Tento kurz sa platí hromadne cez triedu ('+(c.platba_hromadne_kto||'triedny učiteľ')+') — v appke sa neplatí.'});
     const suma=+c.price||49.90;
     if(!(suma>0)) return res.status(400).json({error:'Neplatná cena kurzu'});
     const s=await q.one(db.venceky_schools,{_id:c.school_id});
@@ -25631,6 +25744,10 @@ app.post('/api/admin/venceky/progress', trainerAuth, async(req,res)=>{
     // Kedy sa hodiny konajú. Termíny sa dohadujú so školou osobne (Marek 2. 9.),
     // takže je to voľný text — nie výber zo slotov, ktoré nikto nepoužíva.
     if(req.body.schedule!=null) set.schedule=String(req.body.schedule).slice(0,120);
+    // Trieda, ktorá si peniaze vyzbiera sama a odovzdá ich naraz (Podbrezová 24. 9.):
+    // v appke sa neplatí, nechodia pripomienky a platby sa zapíšu hromadne.
+    if(req.body.platba_hromadne!=null) set.platba_hromadne=!!req.body.platba_hromadne;
+    if(req.body.platba_hromadne_kto!=null) set.platba_hromadne_kto=String(req.body.platba_hromadne_kto).slice(0,60);
     // Dátum a čas PRVEJ lekcie; ďalšie sa dopočítajú po týždni.
     if(req.body.start_at!=null) set.start_at = casSKnaISO(req.body.start_at);
     await q.update(db.venceky_classes,{_id:c._id},{$set:set});
@@ -25966,6 +26083,7 @@ app.get('/api/vencek/info', rlPublic, async(req,res)=>{
       price:+c.price||49.90, lessons_total:c.lessons_total||13, lessons_before:c.lessons_before||10,
       ...(()=>{ const p=vencekPocty(c); return {pred_veckom:p.pred, bonusov:p.bonus}; })(),
       lecturer:c.lecturer||'', event_date:c.event_date||'', event_venue:c.event_venue||'', schedule:c.schedule||'',
+      platba_hromadne:!!c.platba_hromadne, platba_hromadne_kto:c.platba_hromadne_kto||'triedny učiteľ',
       registered:(await q.find(db.users,{venceky_class_id:c._id})).length,
       dances:(c.dances||[]).map(d=>d.name)});
   }catch(e){ res.status(500).json({error:e.message}); }
@@ -26336,6 +26454,7 @@ app.get('/api/vencek/mine', auth, async(req,res)=>{
         lessons_done:c.lessons_done||0, lessons_total:c.lessons_total||13, lessons_before:c.lessons_before||10,
         ...(()=>{ const p=vencekPocty(c); return {pred_veckom:p.pred, bonusov:p.bonus}; })(),
         event_date:c.event_date||null, event_venue:c.event_venue||'', schedule:c.schedule||'', note:c.note||'',
+        platba_hromadne:!!c.platba_hromadne, platba_hromadne_kto:c.platba_hromadne_kto||'triedny učiteľ',
         start_at:c.start_at||null, terminy:vencekTerminy(c), members:members.length,
         completed:!!c.completed,
         paid_count:new Set(pays.map(p=>p.user_id)).size,
@@ -26839,6 +26958,7 @@ async function runDailyJobs(){
     const tyzden=Math.floor(Date.now()/(7*864e5));
     for(const c of await q.find(db.venceky_classes,{})){
       if(c.completed || !((+c.lessons_done||0)>=1)) continue;
+      if(c.platba_hromadne) continue;   // peniaze vyberá trieda, žiakom netreba nič pripomínať
       const zaplatili=new Set((await q.find(db.venceky_payments,{class_id:c._id})).map(p=>p.user_id));
       const eur=(+c.price||49.9).toFixed(2).replace('.',',')+' €';
       for(const z of (await q.find(db.users,{venceky_class_id:c._id})).filter(x=>(x.venceky_role||'student')==='student' && x.active!==false)){

@@ -957,7 +957,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div class="card border-0 rounded-3">
       <div class="table-responsive">
         <table class="table table-hover mb-0">
-          <thead><tr><th class="ps-3">Žiadateľ</th><th>Mesto</th><th>Typ akcie</th><th>Dátum</th><th>Stav</th><th>Správa</th></tr></thead>
+          <thead><tr><th class="ps-3">Žiadateľ</th><th>Mesto</th><th>Typ akcie</th><th>Dátum</th><th>Stav</th><th>Správa</th><th></th></tr></thead>
           <tbody id="rentalsTable"></tbody>
         </table>
       </div>
@@ -3740,13 +3740,35 @@ async function loadPayoutCash(){
         <span class="d-flex align-items-center gap-2"><b>${(+r.amount).toFixed(2)} €</b> ${ST[r.status]||r.status}
           ${r.status==='held'?`<button class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:.7rem" onclick="cashHandover('${r._id}')" title="Tréner mi peniaze odovzdal — zrážka z výplaty sa zruší">Prevzal som</button>`:''}</span>
       </div>`).join('')}
-    <div class="text-muted mt-1" style="font-size:.66rem">„Prevzal som" = peniaze máš ty, zrážka sa zruší. Inak sa hotovosť odpočíta pri uzavretí mesiaca.</div>
+    ${pending.length?`<div class="d-flex align-items-center gap-2 flex-wrap mt-2 pt-2" style="border-top:1px solid #2a2a2a">
+      <span class="small">Odovzdal/a mi:</span>
+      <input type="number" id="poCashSum" step="0.01" min="0" value="${pending.reduce((s,r)=>s+(+r.amount||0),0).toFixed(2)}"
+        class="form-control form-control-sm bg-dark text-light border-secondary" style="width:100px">
+      <span class="small">€</span>
+      <button class="btn btn-sm btn-success py-0 px-2" style="font-size:.72rem" onclick="cashHandoverSum()">Prevzal som</button>
+    </div>` : ''}
+    <div class="text-muted mt-1" style="font-size:.66rem">„Prevzal som" = peniaze máš ty, zrážka sa zruší. Suma sa rozpustí do najstarších výberov; ak nevyjde presne, posledný sa rozdelí. Inak sa hotovosť odpočíta pri uzavretí mesiaca.</div>
   </div></div>`;
+}
+// Tréner odovzdal peniaze naraz (napr. 160 €) — nemusíme klikať záznam po zázname
+async function cashHandoverSum(){
+  const amount=+document.getElementById('poCashSum').value||0;
+  if(!(amount>0)) return showToast('Zadaj sumu','error');
+  if(!confirm(`Potvrdiť, že ti ${_poDetailTrainer.name} odovzdal/a ${amount.toFixed(2)} €? O túto sumu sa mu zrušia zrážky z výplaty.`)) return;
+  const d=await api('/api/admin/cash/handover',{method:'POST',body:JSON.stringify({trainer:_poDetailTrainer.name, amount})});
+  if(d?.ok){
+    showToast(`✅ Prevzaté ${d.settled.toFixed(2)} €`+(d.zvysok>0?` — ${d.zvysok.toFixed(2)} € nemal/a u seba`:''),'success');
+    const rd=await api('/api/trainer/earnings?trainer_id='+encodeURIComponent(_poDetailTrainer.id)); if(rd&&!rd.error) renderPayoutDetail(rd);
+    loadPayoutCash();
+    loadPayouts();
+  } else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 async function cashHandover(id){
   if(!confirm('Potvrdiť, že ti tréner túto hotovosť odovzdal? Zrážka z jeho výplaty sa zruší.')) return;
   const d=await api('/api/admin/cash/'+id+'/handover',{method:'POST'});
-  if(d?.ok){ showToast('✅ Hotovosť prevzatá','success'); loadPayoutCash(); const rd=await api('/api/trainer/earnings?trainer_id='+encodeURIComponent(_poDetailTrainer.id)); if(rd&&!rd.error) renderPayoutDetail(rd); loadPayouts(); }
+  // Poradie: najprv prekresli detail (prepíše obsah aj s prázdnym #poCashBox), až potom
+  // dopln hotovosť — inak karta hotovosti po kliknutí zmizla.
+  if(d?.ok){ showToast('✅ Hotovosť prevzatá','success'); const rd=await api('/api/trainer/earnings?trainer_id='+encodeURIComponent(_poDetailTrainer.id)); if(rd&&!rd.error) renderPayoutDetail(rd); loadPayoutCash(); loadPayouts(); }
   else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 function renderPayoutDetail(d){
@@ -4809,8 +4831,12 @@ async function vClassDetail(cid, tab){
    // ── ŽIACI A PLATBY ──
    +'<div class="vdet-panel" data-tab="ziaci">'
      +'<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">'
-       +'<div class="vdet-navod mb-0">Zaplatené vidíš len ty. Typ konta sa dá prepnúť, keď sa niekto pri registrácii pomýlil.</div>'
-       +'<button class="btn btn-sm btn-outline-warning" onclick="vAssignStudent(\''+c._id+'\')">+ Priradiť existujúci účet</button>'
+       +'<div class="vdet-navod mb-0">Zaplatené vidíš len ty. Typ konta sa dá prepnúť, keď sa niekto pri registrácii pomýlil.'
+         +(c.platba_hromadne?'<br>👛 Peniaze vyberá '+escHtml(c.platba_hromadne_kto||'triedny učiteľ')+' — keď ich dostaneš, zapíš ich jedným tlačidlom celej triede.':'')+'</div>'
+       +'<div class="d-flex gap-2 flex-wrap">'
+       +((d.members||[]).some(mm=>!mm.paid)
+         ? '<button class="btn btn-sm btn-brand" onclick="vHromadnaPlatba(\''+c._id+'\','+d.members.filter(mm=>!mm.paid).length+','+(+c.price||0)+')">💶 Zapísať platbu celej triede ('+d.members.filter(mm=>!mm.paid).length+')</button>' : '')
+       +'<button class="btn btn-sm btn-outline-warning" onclick="vAssignStudent(\''+c._id+'\')">+ Priradiť existujúci účet</button></div>'
      +'</div>'
      +'<table class="table table-dark table-sm"><tbody>'
        +(d.members.map(mm=>'<tr>'
@@ -4838,6 +4864,13 @@ async function vClassDetail(cid, tab){
        +'<input id="vNote" value="'+(c.note||'').replace(/"/g,'&quot;')+'" placeholder="odkaz pre skupinu (napr. dokončíme tango)" class="form-control form-control-sm bg-dark text-light" style="flex:1;min-width:200px">'
        +'<button class="btn btn-sm btn-brand" onclick="vSaveProgress(\''+c._id+'\')">💾 Uložiť</button>'
      +'</div>'
+     // Trieda, ktorá si peniaze vyzbiera sama a odovzdá ich naraz (Podbrezová 24. 9.).
+     +'<div class="card bg-dark border-secondary mb-3"><div class="card-body py-2">'
+       +'<label class="d-flex align-items-center gap-2 mb-1" style="font-size:.9rem"><input type="checkbox" id="vHromadne" '+(c.platba_hromadne?'checked':'')+' onchange="vSaveProgress(\''+c._id+'\')"> 👛 <b>Kurz sa platí hromadne cez triedu</b></label>'
+       +'<div class="d-flex gap-2 align-items-center flex-wrap">'
+         +'<input id="vHromadneKto" value="'+escHtml(c.platba_hromadne_kto||'triedny učiteľ')+'" class="form-control form-control-sm bg-dark text-light" style="max-width:220px" placeholder="kto vyberá (triedny učiteľ)" onchange="vSaveProgress(\''+c._id+'\')">'
+         +'<span class="text-muted" style="font-size:.75rem">Žiaci ani rodičia potom v appke neplatia a nechodia im pripomienky. Platby zapíšeš naraz v záložke „Žiaci a platby“.</span>'
+       +'</div></div></div>'
      +'<h6 class="fw-bold mt-3">📉 Náklady skupiny <button class="btn btn-sm btn-outline-secondary ms-2" onclick="vAddCost(\'\',\''+c._id+'\')">+ pridať</button></h6>'
      +'<div class="small mb-3">'+((d.costs||[]).map(k=>'<div class="d-flex justify-content-between vdet-osoba"><span>'+escHtml(k.label)+' <span class="text-muted">'+escHtml(k.date||'')+'</span></span><b>'+vEur(k.amount)+'</b></div>').join('')||'<span class="text-muted">Žiadne náklady.</span>')+'</div>'
      +'<div class="mt-4 pt-3 border-top border-secondary">'
@@ -4893,6 +4926,21 @@ async function vComplete(cid){
   if(r?.ok) alert(`Hotovo 🏅 — odznak a kupón dostalo ${r.students} žiakov.`);
   vClassDetail(cid); loadVenceky();
 }
+// Trieda si peniaze vyzbierala sama a odovzdala ich naraz (Podbrezová 24. 9.) —
+// platba sa zapíše všetkým naraz a každému odíde potvrdenie o zaplatení.
+async function vHromadnaPlatba(cid, pocet, cena){
+  const sposob=prompt('Ako prišli peniaze za celú triedu?\n\n1 = hotovosť\n2 = prevod na účet','1');
+  if(sposob===null) return;
+  const method=String(sposob).trim()==='2'?'transfer':'cash';
+  const suma=prompt('Suma za jedného žiaka (€):', String(cena||'').replace('.',','));
+  if(suma===null) return;
+  const s=+String(suma).replace(',','.');
+  if(!(s>0)) return showToast('Zadaj sumu za jedného žiaka','error');
+  if(!confirm('Zapísať platbu '+pocet+' žiakom po '+vEur(s)+' = '+vEur(pocet*s)+'?\n\nKaždému (aj jeho rodičom) odíde potvrdenie o zaplatení na e-mail.')) return;
+  const r=await vApi('payment-bulk',{class_id:cid, method, amount:s});
+  if(r?.ok) showToast(r.count?('Zapísané: '+r.count+' × '+vEur(s)+' = '+vEur(r.total)+' ✅'):'Všetci už mali zaplatené','success');
+  vClassDetail(cid); loadVenceky();
+}
 async function vMarkPaid(cid,uid,method){
   await vApi('payment',{class_id:cid,user_id:uid,method});
   vClassDetail(cid); loadVenceky();
@@ -4904,6 +4952,8 @@ async function vSaveProgress(cid){
     event_date:document.getElementById('vEvent').value,
     event_venue:(document.getElementById('vEventVenue')||{}).value||'',
     schedule:document.getElementById('vSchedule').value,
+    platba_hromadne:!!(document.getElementById('vHromadne')||{}).checked,
+    platba_hromadne_kto:(document.getElementById('vHromadneKto')||{}).value||'',
     note:document.getElementById('vNote').value});
   showToast('Uložené ✅','success');
   vClassDetail(cid); loadVenceky();
@@ -8561,6 +8611,11 @@ async function loadRentals(){
     <td><button class="btn btn-sm btn-outline-danger" title="Zmazať" onclick="deleteRental('${r._id}')"><i class="bi bi-trash"></i></button></td>
   </tr>`).join('');
 }
+async function deleteRental(id){
+  if(!confirm('Naozaj zmazať tento dopyt?')) return;
+  const r=await api(`/api/admin/rentals/${id}`,{method:'DELETE'});
+  if(r?.ok) loadRentals(); else alert(r?.error||'Chyba');
+}
 async function updateRental(id,status){
   await api(`/api/admin/rentals/${id}`,{method:'PUT',body:JSON.stringify({status})});
 }
@@ -8589,11 +8644,6 @@ function renderAdminRecordings(){
   const city=document.getElementById('recFilterCity').value, kind=document.getElementById('recFilterKind').value;
   const recs=_adminRecs.filter(r=>(!city||r.city===city)&&(!kind||r.kind===kind));
   document.getElementById('recCount').textContent = _adminRecs.length ? `${recs.length} z ${_adminRecs.length}` : '';
-async function deleteRental(id){
-  if(!confirm('Naozaj zmazať tento dopyt?')) return;
-  const r=await api(`/api/admin/rentals/${id}`,{method:'DELETE'});
-  if(r?.ok) loadRentals(); else alert(r?.error||'Chyba');
-}
   if(!recs.length){ tb.innerHTML=`<tr><td colspan="8" class="text-center text-muted py-3">${_adminRecs.length?'Žiadny záznam nezodpovedá filtru.':'Zatiaľ žiadne záznamy — uložia sa automaticky po každom vysielaní.'}</td></tr>`; return; }
   const dur=s=>s>=3600?Math.floor(s/3600)+' h '+Math.round(s%3600/60)+' min':Math.round(s/60)+' min';
   const mb=b=>b>=1e9?(b/1e9).toFixed(2)+' GB':Math.round(b/1048576)+' MB';

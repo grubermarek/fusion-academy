@@ -419,6 +419,11 @@ function rodicView(d, host){
   const p=x.payment;
   const platba = p
     ? `<div class="pay-ok">🧾 <b>Kurz je uhradený</b> — ${eurSK(p.amount)} (${SPOSOB(p.method)}, ${new Date(p.paid_at).toLocaleDateString('sk')})${p.payer_name?`, zaplatil/a ${esc(p.payer_name)}`:''}.</div>`
+    : d.class.platba_hromadne
+    // Trieda si peniaze vyzbiera sama (Podbrezová) — rodič nesmie zaplatiť druhý raz.
+    ? `<div class="pay-no">💳 <b>${esc(meno)}</b> · kurz <b>${eurSK(d.price)}</b>
+        <div class="muted" style="margin-top:8px">Kurz sa platí hromadne cez triedu (${esc(d.class.platba_hromadne_kto||'triedny učiteľ')}) — v appke sa neplatí. Keď peniaze odovzdáte, príde vám potvrdenie o zaplatení na e-mail.</div>
+      </div>`
     : `<div class="pay-no">💳 <b>${esc(meno)}</b> · kurz ešte nie je uhradený — <b>${eurSK(d.price)}</b>.
         <div style="margin-top:10px"><button class="btn-g" style="width:100%;max-width:280px" onclick="platitKartou(this,'${esc(x.id)}')">💳 Zaplatiť kurz kartou</button></div>
         <div class="muted" style="margin-top:8px">Karta, Apple Pay aj Google Pay. Doklad príde vám na e-mail. Dá sa zaplatiť aj v hotovosti u lektora.</div>
@@ -583,6 +588,10 @@ async function overPlatbu(){
     ? `<div class="hero" style="border-color:rgba(124,179,66,.6)"><span class="badge" style="color:#aed581;border-color:rgba(124,179,66,.5);background:rgba(124,179,66,.12)">🏅 ABSOLVENT</span><h1>Venček máte za sebou!</h1><div class="sub">Odznak absolventa svieti na tvojom profile. Kupón <b style="color:var(--gold)">VENCEKABS</b> = 1. mesiac členstva zdarma. 💛</div></div>` : '';
   const pay = d.my_payment
     ? `<div class="pay-ok">🧾 <b>Zaplatené</b> — ${eurSK(d.my_payment.amount)} (${SPOSOB(d.my_payment.method)}, ${new Date(d.my_payment.paid_at).toLocaleDateString('sk')}). Potvrdenie máš v notifikáciách a na emaili.</div>`
+    : d.class.platba_hromadne
+    ? `<div class="pay-no">💳 Kurz stojí <b>${eurSK(d.price)}</b>.
+        <div class="muted" style="margin-top:8px">Kurz sa platí hromadne cez triedu (${esc(d.class.platba_hromadne_kto||'triedny učiteľ')}) — v appke nič neplatíš. Keď peniaze odovzdáte, príde ti potvrdenie o zaplatení.</div>
+      </div>`
     : `<div class="pay-no">💳 Kurz ešte nie je uhradený — <b>${eurSK(d.price)}</b>.
         <div style="margin-top:10px">
           <button onclick="platitKartou(this)"${d.preview?' disabled title="V náhľade sa platiť nedá"':''}
