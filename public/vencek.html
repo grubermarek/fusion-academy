@@ -223,7 +223,8 @@ function classCard(c, extra=''){
       ${cakaju.length?`<div class="card"><h3>⏳ Ešte nás čaká <span style="color:var(--muted);font-weight:400">· ${cakaju.length}</span></h3>
         <div class="tance-cakaju">${cakaju.map(x=>`<span class="caka">${esc(x.name)}</span>`).join('')}</div></div>`:''}
       ${rozvrhKarta(c, window._LEKCIE)}
-      ${c.note?`<div class="card"><div class="muted">📝 ${esc(c.note)}</div></div>`:''}`;
+      ${c.note?`<div class="card"><div class="muted">📝 ${esc(c.note)}</div></div>`:''}
+      ${PARTNER_KOSELE}`;
   })()}
   <div class="grid">
     <div class="stat"><b>${c.members}</b><span>žiakov v skupine</span></div>
@@ -238,6 +239,12 @@ function classCard(c, extra=''){
       : 'Kurz má ' + (c.lessons_total||13) + ' lekcií: ' + doVencka + ' do venčekového večera a ' + bonusSpolu + ' navyše po ňom. Tie posledné sú náš darček — aby ste v tanci mohli pokračovať. 💛'}</div>
   </div>`:''}`;
 }
+// Partner pre chlapcov na venček (Marek 25. 9. 2026). Text je tu na jednom mieste —
+// karta sa ukazuje žiakom aj rodičom, lebo obe zobrazenia idú cez classCard().
+const PARTNER_KOSELE = `<div class="card" style="border-color:rgba(201,168,76,.4)">
+    <h3>👔 Partner pre chlapcov · TopKošele.sk</h3>
+    <div class="muted">Na venček patrí poriadna košeľa. Náš partner <a href="https://www.topkosele.sk" target="_blank" rel="noopener" style="color:var(--gold)">TopKošele.sk</a> dáva venčekárom Fusion Academy <b style="color:var(--gold)">zľavu 10 %</b> na pánsku módu — košele, polokošele aj doplnky. Predajňu majú v Detve a dá sa tam vopred rezervovať termín skúšania. Pri nákupe povedz, že tancuješ venček s Fusion Academy.</div>
+  </div>`;
 function attCard(d){
   if(d.my_attendance) return `<div class="card"><h3>🙋 Moja dochádzka</h3>
     <div class="row" style="display:flex;justify-content:space-between;font-size:.9rem"><span>Bol/a som na <b>${d.my_attendance.attended}</b> z ${d.my_attendance.recorded} zapísaných lekcií</span><span style="color:var(--gold);font-weight:900">${Math.round(d.my_attendance.attended/d.my_attendance.recorded*100)} %</span></div></div>`;
