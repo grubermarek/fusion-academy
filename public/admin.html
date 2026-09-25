@@ -8557,7 +8557,8 @@ async function loadRentals(){
         <option value="rejected" ${r.status==='rejected'?'selected':''}>Zamietnutý</option>
       </select>
     </td>
-    <td class="text-muted small">${r.message?.slice(0,60)||'—'}${r.video_file?` · <a href="/api/admin/trainer-applications/${r._id}/video" target="_blank">📹 video</a>`:''}</td>
+    <td class="text-muted small">${r.spam?'<span class="badge bg-danger me-1">🤖 spam</span>':''}${r.message?.slice(0,60)||'—'}${r.video_file?` · <a href="/api/admin/trainer-applications/${r._id}/video" target="_blank">📹 video</a>`:''}${r.ip?`<div class="text-muted" style="font-size:.7rem">IP ${r.ip}</div>`:''}</td>
+    <td><button class="btn btn-sm btn-outline-danger" title="Zmazať" onclick="deleteRental('${r._id}')"><i class="bi bi-trash"></i></button></td>
   </tr>`).join('');
 }
 async function updateRental(id,status){
@@ -8588,6 +8589,11 @@ function renderAdminRecordings(){
   const city=document.getElementById('recFilterCity').value, kind=document.getElementById('recFilterKind').value;
   const recs=_adminRecs.filter(r=>(!city||r.city===city)&&(!kind||r.kind===kind));
   document.getElementById('recCount').textContent = _adminRecs.length ? `${recs.length} z ${_adminRecs.length}` : '';
+async function deleteRental(id){
+  if(!confirm('Naozaj zmazať tento dopyt?')) return;
+  const r=await api(`/api/admin/rentals/${id}`,{method:'DELETE'});
+  if(r?.ok) loadRentals(); else alert(r?.error||'Chyba');
+}
   if(!recs.length){ tb.innerHTML=`<tr><td colspan="8" class="text-center text-muted py-3">${_adminRecs.length?'Žiadny záznam nezodpovedá filtru.':'Zatiaľ žiadne záznamy — uložia sa automaticky po každom vysielaní.'}</td></tr>`; return; }
   const dur=s=>s>=3600?Math.floor(s/3600)+' h '+Math.round(s%3600/60)+' min':Math.round(s/60)+' min';
   const mb=b=>b>=1e9?(b/1e9).toFixed(2)+' GB':Math.round(b/1048576)+' MB';

@@ -18002,6 +18002,32 @@ function naborZdroj(utm){
     zdroj:((p.get('utm_source')||(fbclid?'fbclid':(p.get('gclid')?'gclid':''))).slice(0,40))||null };
 }
 const naborVid=v=>/^[a-z0-9]{6,40}$/.test(String(v||''))?String(v):null;
+// Dôvody, prečo prihláška vyzerá ako od bota. Prázdne pole = v poriadku.
+// „Bc. Radka Bániková“, „Detva“, „0917 306 208“ prejdú; „XYyNfioJhXTVElWbwLvwNZ“, „Rfuofkm“, „3071089843“ nie.
+function naborSpamDovody(p){
+  const d=[]; const S=v=>String(v||'').trim();
+  const vnutorneVelke=v=>(S(v).match(/[a-záäčďéíĺľňóôŕšťúýž][A-ZÁÄČĎÉÍĹĽŇÓÔŔŠŤÚÝŽ]/g)||[]).length;
+  const samohlasky=v=>(S(v).match(/[aeiouyáäéíóôúýěě]/gi)||[]).length;
+  const nahodne=v=>{ const x=S(v); return x.length>=8 && !/\s/.test(x) && (vnutorneVelke(x)>=2 || samohlasky(x)/x.length<0.15); };
+  if(S(p.honeypot)) d.push('skryté pole');
+  if(nahodne(p.name) || (S(p.name).length>=14 && !/\s/.test(S(p.name)))) d.push('meno');
+  if(nahodne(p.city) || (S(p.city).length>=6 && samohlasky(p.city)<=1)) d.push('mesto');
+  const cisla=S(p.phone).replace(/\D/g,'');
+  if(cisla.length>=9 && !/^(0|421)/.test(cisla) && !/^\+/.test(S(p.phone))) d.push('telefón');
+  if(nahodne(p.motivation) && !/[.,!?]/.test(S(p.motivation))) d.push('motivácia');
+  if(nahodne(p.social) && !/[@.\/]/.test(S(p.social))) d.push('profil');
+  if(Number.isFinite(p.ms) && p.ms>0 && p.ms<4000) d.push('vyplnené za '+Math.round(p.ms/1000)+' s');
+  // jeden slabý signál (len telefón, len mesto) nestačí — človek z Česka má +420, mesto môže byť neznáme
+  if(d.length===1 && (d[0]==='telefón' || d[0]==='mesto')) return [];
+  return d;
+}
+app.delete('/api/admin/rentals/:id', adminAuth, async(req,res)=>{
+  try{
+    const z=await q.one(db.rentals,{_id:String(req.params.id)}); if(!z) return res.status(404).json({error:'Nenájdené.'});
+    if(z.video_file){ try{ fs.unlinkSync(path.join(NABOR_VIDEO_DIR, path.basename(z.video_file))); }catch(e){} }
+    await q.remove(db.rentals,{_id:z._id}); res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 app.post('/api/public/nabor-krok', rlPublic, express.urlencoded({extended:false, limit:'4kb'}), async(req,res)=>{
   naborCors(req,res);
   try{
@@ -18023,6 +18049,12 @@ app.post('/api/public/trainer-application', rlPublic, async(req,res)=>{
     if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({error:'Skontroluj e-mail.'});
     if(!city) return res.status(400).json({error:'Napíš mesto.'});
     if(b.consent!==true) return res.status(400).json({error:'Bez súhlasu so spracovaním údajov prihlášku neprijmeme.'});
+    // Spam boty (23. a 25. 9. 2026): náhodné reťazce vo všetkých poliach, Gmail s bodkami, žiadne UTM.
+    // Skryté pole „website“ vidí len bot; k tomu heuristika na náhodné reťazce a rýchlosť vyplnenia.
+    // Spam sa uloží so status 'rejected' + spam:true (nič sa nestratí), ale nejde mail, notifikácia ani Meta Lead.
+    const spamDovody=naborSpamDovody({ name, city, email, phone, motivation:t(b.motivation,1500), social:t(b.social,300),
+      honeypot:t(b.website,100), ms:parseInt(b.ms,10) });
+    const spam=spamDovody.length>0;
     const vek=parseInt(b.age,10);
     const d={ age:(vek>=10&&vek<=99)?vek:null, class_types:zoznam(b.class_types,8), class_other:t(b.class_other,200),
       experience:t(b.experience,80), qualification:t(b.qualification,80), experience_note:t(b.experience_note,600),
@@ -18032,7 +18064,8 @@ app.post('/api/public/trainer-application', rlPublic, async(req,res)=>{
     const token=require('crypto').randomBytes(16).toString('hex');
     const zhrnutie=[[d.call_type,d.call_time].filter(Boolean).join(' ')?'call: '+[d.call_type,d.call_time].filter(Boolean).join(' '):'', d.class_types.join(', '), d.income?'príjem: '+d.income.toLowerCase():'', d.motivation].filter(Boolean).join(' · ');
     const z=await q.insert(db.rentals,{ _type:'trainer_application', event_type:'🎤 Nábor trénera',
-      name, phone, email, city, ...d, message:zhrnutie.slice(0,400), status:'new', upload_token:token,
+      name, phone, email, city, ...d, message:(spam?'🤖 SPAM ('+spamDovody.join(', ')+') · ':'')+zhrnutie.slice(0,400), status:spam?'rejected':'new', upload_token:token,
+      spam:spam||undefined, spam_dovody:spam?spamDovody:undefined, ip:klientIp(req)||null, ua:String(req.headers['user-agent']||'').slice(0,300),
       video_expected:!!b.has_video, utm:t(b.utm,300), page:t(b.page,200), created_at:nowISO() });
     const riadok=(k,v)=>v?`<tr><td style="color:#999;padding:4px 12px 4px 0;vertical-align:top">${k}</td><td style="padding:4px 0">${v}</td></tr>`:'';
     const html=`<!doctype html><html><body style="font-family:Arial,sans-serif;background:#0a0a0a;color:#eee;padding:20px">
@@ -18049,17 +18082,17 @@ app.post('/api/public/trainer-application', rlPublic, async(req,res)=>{
         ${riadok('Video',b.has_video?'nahráva sa — príde ďalší mail s odkazom':'')}
       </table>
       <p style="color:#888;font-size:12px;margin-top:16px">V admine: Prenájmy → Dopyty (typ „Nábor trénera")${b.utm?' · '+t(b.utm,300):''}</p></body></html>`;
-    for(const to of NABOR_MAILS){ try{ await sendMail(to,'🎤 Nový tréner sa hlási: '+name+(city?' ('+city+')':''), html); }catch(e){} }
-    for(const a of await q.find(db.users,{is_admin:true})){
+    if(!spam) for(const to of NABOR_MAILS){ try{ await sendMail(to,'🎤 Nový tréner sa hlási: '+name+(city?' ('+city+')':''), html); }catch(e){} }
+    if(!spam) for(const a of await q.find(db.users,{is_admin:true})){
       await q.insert(db.notifications,{user_id:a._id, type:'trainer_application',
         title:'🎤 Prihláška do náboru trénerov',
         body:name+' · '+phone+' · '+city+(d.class_types.length?' · '+d.class_types.join(', '):'')+(d.call_time?' · zavolať '+d.call_time.toLowerCase():''),
         read:false, created_at:nowISO()}).catch(()=>{});
     }
     const zdr=naborZdroj(b.utm);
-    zapisKrok(req,'form_submit',{stranka:NABOR_STRANKA, vid:naborVid(b.vid), kampan:zdr.kampan, zdroj:zdr.zdroj}).catch(()=>{});
+    if(!spam) zapisKrok(req,'form_submit',{stranka:NABOR_STRANKA, vid:naborVid(b.vid), kampan:zdr.kampan, zdroj:zdr.zdroj}).catch(()=>{});
     const fbclid=zdr.fbclid || t(b.fbclid,200) || undefined;
-    metaCapi('Lead',{ email, fbclid, fbp:t(b.fbp,80)||undefined, event_id:t(b.event_id,80)||('nabor_'+z._id),
+    if(!spam) metaCapi('Lead',{ email, fbclid, fbp:t(b.fbp,80)||undefined, event_id:t(b.event_id,80)||('nabor_'+z._id),
       source_url:'https://fusionacademy.sk/programy/spolupracuj.html', ip:klientIp(req), ua:req.headers['user-agent'],
       click_at:t(b.click_at,40)||undefined }).catch(()=>{});
     res.json({ok:true, id:z._id, upload_token:token});
