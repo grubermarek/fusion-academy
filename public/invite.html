@@ -174,7 +174,15 @@ async function doBook(){
     body:JSON.stringify({class_id:c.id, booking_date:c.date, name, contact})});
   btn.disabled=false; btn.textContent=FA_T('inv.book');
   if(!d.ok){
-    if(d.status===410 && d.register_url){ err.innerHTML=esc(d.error||'')+'<br><a href="'+esc(d.register_url)+'" style="display:inline-block;margin-top:12px;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;border-radius:12px;padding:12px 18px;font-weight:900;text-decoration:none">🎁 Zaregistrovať sa a zapnúť prvý týždeň zadarmo →</a>'; return; }
+    // Toto nie je chyba, ale lepšia ponuka — preto zlatá karta, nie červený text (Marek 27. 9.).
+    if(d.status===410 && d.register_url){
+      err.style.color='#e8e2d4';
+      err.innerHTML='<div style="background:rgba(201,168,76,.10);border:1px solid rgba(201,168,76,.45);border-radius:14px;padding:14px 16px;text-align:center">'
+        +'<div style="font-weight:900;color:#E7C878;margin-bottom:6px">🎁 Celý prvý týždeň zadarmo</div>'
+        +'<div style="font-size:.9rem;line-height:1.5">'+esc(d.error||'')+'</div>'
+        +'<a href="'+esc(d.register_url)+'" style="display:inline-block;margin-top:12px;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;border-radius:12px;padding:12px 18px;font-weight:900;text-decoration:none">Chcem prvý týždeň zadarmo →</a></div>';
+      return;
+    }
     err.textContent=d.error||FA_T('inv.err_retry'); return;
   }
   finish({...d.detail, manage_token:d.manage_token});

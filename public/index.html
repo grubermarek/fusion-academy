@@ -1110,6 +1110,14 @@ async function poRegistracii(){
   if(!cfg.prvy_tyzden){ goTo(2); return; }
   if(!_preview){
     let me={}; try{ me=await fetch('/api/me',{credentials:'include'}).then(r=>r.json()); }catch(e){}
+    // Týždeň zadarmo sa zapína hneď pri registrácii (Marek 27. 9.) — klientka už nič nevolí
+    // ani nezadáva kartu, rovno si vyberie prvú hodinu.
+    if(me.trial && me.trial.active){
+      _skuskaZvolena=true; _bezSkusky=false; goTo(2);
+      ukazStav('🎁 <b>Prvý týždeň zadarmo máš zapnutý</b> — vyber si svoju prvú hodinu.');
+      if(window.faTrack) window.faTrack('StartTrial',{eventID:'trial_reg_'+Date.now()});
+      return;
+    }
     if(!(me.trial && me.trial.eligible)){ goTo(2); return; }
   }
   await ukazVyber(cfg);

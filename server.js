@@ -5300,7 +5300,16 @@ app.post('/api/register', rlSignup, async(req,res)=>{
       external_id:u._id, ip:klientIp(req), ua:req.headers['user-agent'],
       event_id:clean(attr.event_id)||undefined, source_url:clean(attr.landing)||undefined}).catch(()=>{});
     announceNewMember(u._id).catch(()=>{});
-    res.json({ok:true, userType:utype, redirect_to: dashUrlFor(u)});
+    // Prvý týždeň zadarmo dostane KAŽDÁ nová klientka hneď pri registrácii — bez karty a bez
+    // kódu (Marek 27. 9.: „proste všetkým daj prvý týždeň zdarma"). Nárok rieši skuskaNarok:
+    // venčekári, deti, tréneri a admini ho nemajú. Chyba tu nesmie zhodiť registráciu.
+    let skuska = null;
+    try{
+      const novy = await q.one(db.users,{_id:u._id});
+      if((await skuskaNarok(novy)).ok) skuska = await aktivujSkusku(u._id, null, null);
+    }catch(e){ console.error('skúška pri registrácii:', e.message); }
+    res.json({ok:true, userType:utype, redirect_to: dashUrlFor(u),
+      trial: (skuska && skuska.ok) ? {ends_at:skuska.ends_at, plan:skuska.plan_name} : null});
   } catch(e){
     if(e.message?.includes('unique')) return res.status(400).json({error:'Email je už zaregistrovaný'});
     res.status(500).json({error:e.message});
@@ -7231,7 +7240,10 @@ app.post('/api/invite/:code/book', rlPublic, async(req,res)=>{
   try{
     const sp=await inviterByCode(req.params.code);
     if(!sp) return res.status(404).json({error:'Pozvánka nie je platná'});
-    if(await skuskaZapnuta()) return res.status(410).json({ error:'Prvá hodina zadarmo skončila — teraz dostaneš celý prvý týždeň zadarmo. Zaregistruj sa v appke s kódom '+sp.referral_code+' a zapni si skúšku. 💛',
+    // Kým beží prvý týždeň zadarmo, hosťovská rezervácia sa nerobí — klientka sa zaregistruje
+    // a týždeň dostane hneď. Text nesmie znieť ako zlá správa a kód nikam nepíše (je v odkaze).
+    if(await skuskaZapnuta()) return res.status(410).json({
+      error:'Máme pre teba viac než jednu hodinu — celý prvý týždeň zadarmo. Zaregistruj sa a hneď si rezervuj hodinu, ktorá ti sadne. Pozvánku od '+String(sp.name||'').split(' ')[0]+' máme uloženú, nič prepisovať nemusíš. 💛',
       trial:true, register_url:APP_URL+'/?ref='+encodeURIComponent(sp.referral_code) });
     const name=String(req.body.name||'').trim().slice(0,80);
     const contact=String(req.body.contact||'').trim().slice(0,120);
@@ -12210,8 +12222,11 @@ async function skuskaNarok(u){
 async function skuskaInfo(u){
   const on = await skuskaZapnuta();
   const n = on ? await skuskaNarok(u) : {ok:false, reason:'vypnute'};
-  const active = !!(u && u.trial_ends_at && !u.trial_converted_at && u.trial_ends_at >= nowISO() && u.stripe_subscription_id);
-  return { on, eligible:n.ok, reason:n.ok?null:n.reason, active, ends_at:u?.trial_ends_at||null, used:!!u?.trial_used, declined:!!u?.trial_declined_at,
+  // Od 27. 9. dostáva týždeň každá nová klientka hneď pri registrácii, teda aj bez karty —
+  // beh skúšky sa preto neviaže na Stripe odber. `card` hovorí, či sa po týždni naozaj
+  // niečo strhne; bez karty appka nesmie sľubovať automatické pokračovanie.
+  const active = !!(u && u.trial_ends_at && !u.trial_converted_at && u.trial_ends_at >= nowISO());
+  return { on, eligible:n.ok, reason:n.ok?null:n.reason, active, card: !!(u && u.stripe_subscription_id), ends_at:u?.trial_ends_at||null, used:!!u?.trial_used, declined:!!u?.trial_declined_at,
     days:SKUSKA.dni, plan:SKUSKA.plan, price:MEMBERSHIP_PLANS[SKUSKA.plan].price };
 }
 function fmtDenSk(iso){ const d=new Date(iso); return d.getUTCDate()+'. '+(d.getUTCMonth()+1)+'.'; }
@@ -12225,15 +12240,20 @@ async function aktivujSkusku(userId, subId, s){
   if(mem) await q.update(db.memberships,{_id:mem._id},{$set:{trial:true, trial_ends_at:konci, price:0}});
   await q.update(db.users,{_id:userId},{$set:{ trial_used:true, trial_started_at:nowISO(), trial_ends_at:konci, free_class_used:true,
     stripe_subscription_id:subId||null, stripe_sub_plan:SKUSKA.plan, stripe_sub_member:userId }});
+  const skarta = !!subId;   // bez karty sa po týždni nič nestrhne — nesľubujme to
   await q.insert(db.notifications,{user_id:userId, type:'trial',
     title:'🎉 Prvý týždeň zadarmo beží — do '+fmtDenSk(konci),
-    body:'Choď na ktorúkoľvek hodinu vo svojom meste. Potom pokračuje Bronze za '+plan.price.toFixed(2).replace('.',',')+' € mesačne automaticky. Zrušiť môžeš kedykoľvek: Nástenka → Členstvo → Automatický odber.',
+    body:'Choď na ktorúkoľvek hodinu vo svojom meste. '+(skarta
+      ? 'Potom pokračuje Bronze za '+plan.price.toFixed(2).replace('.',',')+' € mesačne automaticky. Zrušiť môžeš kedykoľvek: Nástenka → Členstvo → Automatický odber.'
+      : 'Po týždni sa nič nestrhne — ak ti to sadne, členstvo Bronze za '+plan.price.toFixed(2).replace('.',',')+' € mesačne si zapneš sama na nástenke.'),
     read:false, created_at:nowISO()}).catch(()=>{});
   if(u.email && !/@test-fa-qa\.local$/i.test(u.email)) sendMail(u.email, '🎉 Tvoj prvý týždeň zadarmo beží — do '+fmtDenSk(konci),
     emailTemplate('Vitaj, tancujeme! 💃',
       `<p>Ahoj <b>${u.name}</b>,</p><p>tvoj <b>skúšobný týždeň</b> je zapnutý. Do <b>${fmtDenSk(konci)}</b> môžeš prísť na ktorúkoľvek hodinu vo svojom meste — stačí si ju rezervovať v appke.</p>
-       <p>Potom pokračuje členstvo <b>Bronze za ${plan.price.toFixed(2).replace('.',',')} € mesačne</b>, ktoré sa obnovuje automaticky. Dva dni pred prvou platbou ti pošleme pripomienku.</p>
-       <p>Ak by ti to nesadlo, odber zrušíš kedykoľvek v appke: <b>Nástenka → Členstvo → Automatický odber → Zrušiť</b>. Do konca skúšky môžeš chodiť ďalej a nič sa nestrhne.</p>`,
+       ${skarta
+         ? `<p>Potom pokračuje členstvo <b>Bronze za ${plan.price.toFixed(2).replace('.',',')} € mesačne</b>, ktoré sa obnovuje automaticky. Dva dni pred prvou platbou ti pošleme pripomienku.</p>
+       <p>Ak by ti to nesadlo, odber zrušíš kedykoľvek v appke: <b>Nástenka → Členstvo → Automatický odber → Zrušiť</b>. Do konca skúšky môžeš chodiť ďalej a nič sa nestrhne.</p>`
+         : `<p>Nič neplatíš a nič sa ti nestrhne — kartu sme od teba nepýtali. Po týždni sa len rozhodneš, či chceš pokračovať; členstvo <b>Bronze za ${plan.price.toFixed(2).replace('.',',')} € mesačne</b> si zapneš v appke sama.</p>`}`,
       '🗓️ Vybrať si hodinu', APP_URL+'/schedule'), {priority:2, template:'trial_start'}).catch(()=>{});
   // Rovnaká karta na dvoch účtoch = dvakrát zadarmo. Neblokujeme (mama a dcéra môžu mať
   // jednu kartu), len upozorníme admina.
