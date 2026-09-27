@@ -198,11 +198,19 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
 .form-group{margin-bottom:16px}
 .form-group label{display:block;font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
 .form-group .optional{font-size:.72rem;color:#555;text-transform:none;letter-spacing:0}
-.form-group input{
+.form-group input,.form-group select{
   width:100%;background:#1a1a1a;border:1px solid var(--border);
-  color:var(--text);padding:12px 14px;border-radius:10px;font-size:.95rem;
+  color:var(--text);padding:13px 14px;border-radius:10px;
+  /* 16 px je minimum, pri menšom Safari na iPhone pri kliknutí do poľa priblíži celú stránku */
+  font-size:16px;min-height:48px;
   transition:border-color .2s,box-shadow .2s;outline:none;
 }
+.form-group input.zle,.form-group select.zle{border-color:#e05656;box-shadow:0 0 0 3px rgba(224,86,86,.14)}
+.pole-chyba{margin-top:7px;color:#ff9a9a;font-size:.85rem;line-height:1.45;display:flex;gap:6px;align-items:flex-start}
+.pole-chyba::before{content:"!";flex:none;width:17px;height:17px;border-radius:50%;background:rgba(224,86,86,.2);color:#ff9a9a;font-weight:900;font-size:.72rem;display:flex;align-items:center;justify-content:center;margin-top:1px}
+.viac-toggle{width:100%;background:none;border:1px dashed rgba(201,168,76,.4);color:#c9a24c;border-radius:10px;padding:12px;font-size:.86rem;font-weight:600;cursor:pointer;margin-bottom:16px;min-height:48px}
+.viac-toggle:hover{background:rgba(201,168,76,.07)}
+.pozvanka-info{background:rgba(201,168,76,.10);border:1px solid rgba(201,168,76,.35);border-radius:10px;padding:11px 13px;font-size:.85rem;color:#e0d6bd;margin-bottom:16px}
 .form-group input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,168,76,.12)}
 .form-group input::placeholder{color:#444}
 .auth-error{
@@ -699,8 +707,11 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
         <div id="preRegBanner" style="display:none;background:rgba(129,199,132,.12);border:1px solid rgba(129,199,132,.4);border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:.86rem;color:#c7e8c9;line-height:1.5"></div>
         <div class="form-group">
           <label id="rPassLabel" data-i18n="auth.pass">Heslo</label>
-          <input type="password" id="rPass" placeholder="Minimálne 6 znakov" data-i18n-ph="auth.pass_ph">
+          <input type="password" id="rPass" placeholder="Minimálne 6 znakov" data-i18n-ph="auth.pass_ph" autocomplete="new-password">
         </div>
+        <div class="pozvanka-info" id="pozvankaInfo" style="display:none"></div>
+        <button type="button" class="viac-toggle" id="viacBtn" onclick="prepniViac()" data-i18n="auth.more_fields">➕ Doplniť telefón alebo kód pozvánky</button>
+        <div id="viacPolia" hidden>
         <div class="form-group">
           <label><span data-i18n="auth.phone">Telefón</span> <span class="optional" data-i18n="auth.optional">(nepovinné)</span></label>
           <input type="tel" id="rPhone" placeholder="+421 900 000 000" autocomplete="tel">
@@ -711,7 +722,7 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
         </div>
         <div class="form-group">
           <label><span data-i18n="auth.lead_q">Kde si sa o nás dozvedela?</span> <span class="optional" data-i18n="auth.optional2">(voliteľné)</span></label>
-          <select id="rLeadSource" style="width:100%;padding:.7rem .9rem;background:#1e1e1e;border:1px solid rgba(201,168,76,.3);border-radius:.6rem;color:#e8e8e8;font-size:.9rem">
+          <select id="rLeadSource">
             <option value="" data-i18n="auth.lead_pick">— Vyber možnosť —</option>
             <option value="instagram">Instagram</option>
             <option value="facebook">Facebook</option>
@@ -723,8 +734,9 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
             <option value="other" data-i18n="auth.lead_other">Iné</option>
           </select>
         </div>
-        <label style="display:flex;gap:9px;align-items:flex-start;margin:4px 0 14px;cursor:pointer;font-size:.82rem;color:#bdb6a6;line-height:1.5">
-          <input type="checkbox" id="rConsent" style="margin-top:3px;width:17px;height:17px;flex-shrink:0;accent-color:#C9A24C">
+        </div>
+        <label style="display:flex;gap:11px;align-items:flex-start;margin:4px 0 14px;padding:8px 0;cursor:pointer;font-size:.86rem;color:#bdb6a6;line-height:1.5;min-height:44px">
+          <input type="checkbox" id="rConsent" style="margin-top:2px;width:24px;height:24px;flex-shrink:0;accent-color:#C9A24C">
           <span data-i18n-html="auth.consent">Súhlasím so spracovaním osobných údajov.</span>
         </label>
         <button class="btn-primary" id="regBtn" onclick="doRegister()">
@@ -1065,7 +1077,8 @@ function fmtDMY(d){
   if(d===null||d===undefined||d==='') return '';
   const s=String(d);
   const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  return m ? `${m[3]}-${m[2]}-${m[1]}` : s;
+  // Slovenský tvar: „28. 9. 2026" (predtým „28-09-2026" — vyzeralo ako strojový výpis).
+  return m ? `${+m[3]}. ${+m[2]}. ${m[1]}` : s;
 }
 
 // ── PREVIEW REŽIM (admin): /?preview=1 — prejdi si celý onboarding bez zápisu dát.
@@ -1112,6 +1125,7 @@ async function poRegistracii(){
     let me={}; try{ me=await fetch('/api/me',{credentials:'include'}).then(r=>r.json()); }catch(e){}
     // Týždeň zadarmo sa zapína hneď pri registrácii (Marek 27. 9.) — klientka už nič nevolí
     // ani nezadáva kartu, rovno si vyberie prvú hodinu.
+    _me = me && me.id ? me : _me;
     if(me.trial && me.trial.active){
       _skuskaZvolena=true; _bezSkusky=false; goTo(2);
       ukazStav('🎁 <b>Prvý týždeň zadarmo máš zapnutý</b> — vyber si svoju prvú hodinu.');
@@ -1252,8 +1266,11 @@ if(_preview){
   const el=document.getElementById('rCode');
   const ref=new URLSearchParams(location.search).get('ref')||localStorage.getItem('fa_ref_code');
   if(ref){
-    document.getElementById('codeGroup').style.display='block';
+    // Kód z odkazu sa nepýta znova — klientke len potvrdíme, že pozvánku máme (Marek 27. 9.).
     if(el) el.value=ref.toUpperCase();
+    window._kodZOdkazu=true;
+    const info=document.getElementById('pozvankaInfo');
+    if(info){ info.textContent='💛 '+FA_T('auth.invite_ok').replace('{kod}', ref.toUpperCase()); info.style.display='block'; }
   } else {
     // Suggest the default sponsor code (founder) as the placeholder
     try{ const cfg=await fetch('/api/config').then(r=>r.json());
@@ -1327,12 +1344,15 @@ async function doRegister(){
   const phone=document.getElementById('rPhone').value.trim();
   const code=document.getElementById('rCode').value.trim().toUpperCase();
   const btn=document.getElementById('regBtn');
-  showErr('regErr','');
-  const chyba=(kod,txt)=>{ showErr('regErr',txt); if(window.faKrok) window.faKrok('register_err',{dovod:kod}); };
-  if(!name||!email||!pass){chyba('nevyplnene',FA_T('auth.err_fill'));return;}
-  if(pass.length<6){chyba('heslo',FA_T('auth.err_pass'));return;}
-  if(!/\S+@\S+\.\S+/.test(email)){chyba('email',FA_T('auth.err_email'));return;}
-  if(!document.getElementById('rConsent').checked){chyba('suhlas',FA_T('auth.err_consent'));return;}
+  showErr('regErr',''); vycistiChyby();
+  // Chyba sa vypíše pri poli, ktorého sa týka; súhrn hore ostáva len pre odpovede zo servera.
+  const chyba=(kod,txt,pole)=>{ if(!(pole && chybaPolia(pole,txt))) showErr('regErr',txt); if(window.faKrok) window.faKrok('register_err',{dovod:kod}); };
+  if(!name){chyba('meno',FA_T('auth.err_name'),'rName');return;}
+  if(!email){chyba('email_chyba',FA_T('auth.err_email_missing'),'rEmail');return;}
+  if(!pass){chyba('heslo_chyba',FA_T('auth.err_pass_missing'),'rPass');return;}
+  if(pass.length<6){chyba('heslo',FA_T('auth.err_pass'),'rPass');return;}
+  if(!/\S+@\S+\.\S+/.test(email)){chyba('email',FA_T('auth.err_email'),'rEmail');return;}
+  if(!document.getElementById('rConsent').checked){chyba('suhlas',FA_T('auth.err_consent'),'rConsent');return;}
   if(window.faKrok) window.faKrok('form_submit');
   btn.disabled=true;btn.innerHTML='<i class="bi bi-arrow-repeat spin"></i>&nbsp; '+FA_T('auth.registering');
   if(_preview){ // náhľad: účet sa nevytvára, len pokračuj vo flow
@@ -1346,7 +1366,25 @@ async function doRegister(){
       body:JSON.stringify({name,email,password:pass,phone,sponsorCode:code,user_type:'client',lead_source,consent:true,attribution:window.faGetAttribution?window.faGetAttribution():{}}),credentials:'include'});
     const d=await r.json();
     if(!r.ok){
-      showErr('regErr',d.error||FA_T('auth.err_reg'));
+      const sprava=d.error||FA_T('auth.err_reg');
+      // Neplatný kód z pozvánkového odkazu nie je chyba klientky — zahodíme ho a skúsime raz znova.
+      // Keď si ho napísala sama, ukážeme jej pole s chybou, nech ho vie opraviť.
+      if(/referral|kód|kod/i.test(sprava) && document.getElementById('rCode')?.value){
+        const info=document.getElementById('pozvankaInfo'); if(info) info.style.display='none';
+        document.getElementById('rCode').value='';
+        if(window._kodZOdkazu && !window._kodSkusenyZnova){
+          window._kodZOdkazu=false; window._kodSkusenyZnova=true;
+          btn.disabled=false; btn.innerHTML='Pokračovať &nbsp;<i class="bi bi-arrow-right"></i>';
+          return doRegister();
+        }
+        prepniViac(true); chybaPolia('rCode',sprava);
+        btn.disabled=false; btn.innerHTML='Pokračovať &nbsp;<i class="bi bi-arrow-right"></i>';
+        return;
+      }
+      if(/e-?mail/i.test(sprava)) chybaPolia('rEmail',sprava);
+      else if(/heslo|password/i.test(sprava)) chybaPolia('rPass',sprava);
+      else if(/meno|priezvisk/i.test(sprava)) chybaPolia('rName',sprava);
+      else showErr('regErr',sprava);
       if(window.faKrok) window.faKrok('register_err',{dovod:String(d.error||'server').slice(0,60)});
       btn.disabled=false;btn.innerHTML='Pokračovať &nbsp;<i class="bi bi-arrow-right"></i>';
       return;
@@ -1571,7 +1609,11 @@ function openBookConfirm(clsOrId, dateStr){
   // Show/hide free badge and adjust button label based on access status
   const freeBadge = document.getElementById('bcFreeBadge');
   const confirmBtn = document.getElementById('bcConfirmBtn');
-  if(_me && (_me.free_class_used || _me.visit_count > 0)){
+  // Počas týždňa zadarmo hodinu kryje skúška, nie „prvá hodina zadarmo" (27. 9.).
+  if(_me && _me.trial && _me.trial.active){
+    if(freeBadge){ freeBadge.style.display='flex'; freeBadge.innerHTML='<i class="bi bi-gift-fill"></i> '+FA_T('auth.badge_trial'); }
+    confirmBtn.innerHTML='<i class="bi bi-check2-circle"></i> Áno, rezervovať!';
+  } else if(_me && (_me.free_class_used || _me.visit_count > 0)){
     const hasMembership = _me.membership?.status === 'active';
     const credits = (_me.single_entries||0) + (_me.free_credits||0);
     if(freeBadge) freeBadge.style.display = 'none';
@@ -1873,7 +1915,32 @@ function launchConfetti(){
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
-function showErr(id,msg){const e=document.getElementById(id);if(!e)return;e.textContent=msg;e.style.display=msg?'block':'none';}
+function showErr(id,msg){const e=document.getElementById(id);if(!e)return;e.textContent=msg;e.style.display=msg?'block':'none';
+  // Hláška hore nad formulárom bola klientke mimo obrazovky — ťukla na Pokračovať a zdalo sa,
+  // že sa nestalo nič (audit 27. 9.). Preto ju vždy doroluj do zorného poľa.
+  if(msg){ const r=e.getBoundingClientRect(); if(r.top<0||r.bottom>innerHeight) e.scrollIntoView({block:'center',behavior:'smooth'}); }}
+// Chyba patrí k poľu, ktorého sa týka: vypíše sa pod ním, pole sa označí a kurzor doň skočí.
+function vycistiChyby(){
+  document.querySelectorAll('.pole-chyba').forEach(e=>e.remove());
+  document.querySelectorAll('.zle').forEach(e=>e.classList.remove('zle'));
+}
+function chybaPolia(poleId, sprava){
+  const pole=document.getElementById(poleId); if(!pole) return false;
+  const box=pole.closest('.form-group') || pole.closest('label') || pole.parentElement; if(!box) return false;
+  vycistiChyby();
+  const d=document.createElement('div'); d.className='pole-chyba'; d.setAttribute('role','alert'); d.textContent=sprava;
+  box.appendChild(d); pole.classList.add('zle');
+  try{ pole.focus({preventScroll:true}); }catch(e){ try{ pole.focus(); }catch(e2){} }
+  box.scrollIntoView({block:'center',behavior:'smooth'});
+  return true;
+}
+// „Doplniť telefón alebo kód pozvánky" — nepovinné polia sú schované, aby prvý krok mal tri polia.
+function prepniViac(otvor){
+  const box=document.getElementById('viacPolia'), btn=document.getElementById('viacBtn'); if(!box) return;
+  const nove = (otvor===undefined) ? box.hidden : !!otvor;
+  box.hidden=!nove;
+  if(btn) btn.style.display = nove ? 'none' : '';
+}
 function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function escJs(s){return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200);}
