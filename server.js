@@ -11594,6 +11594,32 @@ app.post('/api/service/collect', async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Presun vstupov z permanentky na iný účet (Marek 27. 9. 2026: Anna Zemanová → Michaela
+// Antálková). Stáva sa, že permanentku kúpi jedna a chodí druhá, prípadne si ju klientka
+// kúpi na zlý účet. Peniaze sa nikam nevracajú a v účtovníctve sa nemení nič — mení sa len
+// to, komu vstupy patria. Do auditu sa zapíše stav pred aj po.
+app.post('/api/service/entries-move', async(req,res)=>{
+  if(!servisToken(req)) return res.status(404).end();
+  try{
+    const z=await q.one(db.users,{_id:String(req.body.from||'')});
+    const na=await q.one(db.users,{_id:String(req.body.to||'')});
+    if(!z || !na) return res.status(404).json({error:'Účet nenájdený'});
+    if(z._id===na._id) return res.status(400).json({error:'Rovnaký účet'});
+    const pocet=parseInt(req.body.count,10)||0;
+    if(pocet<1) return res.status(400).json({error:'Počet vstupov musí byť aspoň 1'});
+    const mal=z.single_entries||0, malNa=na.single_entries||0;
+    if(mal<pocet) return res.status(400).json({error:z.name+' má len '+mal+' '+(mal===1?'vstup':(mal>=2&&mal<=4?'vstupy':'vstupov'))});
+    await q.update(db.users,{_id:z._id},{$set:{single_entries:mal-pocet}});
+    await q.update(db.users,{_id:na._id},{$set:{single_entries:malNa+pocet}});
+    await auditLog(req,'entries_move',z._id,
+      {od:{meno:z.name, vstupy:mal}, komu:{id:na._id, meno:na.name, vstupy:malNa}},
+      {pocet, od_po:mal-pocet, komu_po:malNa+pocet}, String(req.body.reason||'').slice(0,200));
+    console.log('🎫 Presun vstupov: '+z.name+' → '+na.name+' ('+pocet+')');
+    res.json({ok:true, pocet, od:{meno:z.name, vstupy_pred:mal, vstupy_po:mal-pocet},
+      komu:{meno:na.name, vstupy_pred:malNa, vstupy_po:malNa+pocet}});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Doplň rezerváciu na hodinu a rovno ju označ ako odchodenú (klientka na hodine bola).
 app.post('/api/service/book-attend', async(req,res)=>{
   if(!servisToken(req)) return res.status(404).end();
