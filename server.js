@@ -18360,6 +18360,64 @@ app.post('/api/public/ambassador-training', rlPublic, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ═══════════════════════════════════════════════════════════════════
+// DOPYT Z WEBU (27. 9. 2026)
+// Krátky formulár na fusionacademy.sk pre ľudí, ktorí ešte nechcú zakladať účet:
+// meno + telefón (alebo e-mail) a zavoláme im. Padá do admin Prenájmy → Dopyty.
+// Posiela sa z inej domény, preto urlencoded a CORS ako pri nábore.
+// ═══════════════════════════════════════════════════════════════════
+const WEB_LEAD_MAILS = ['gruber.marek@gmail.com', 'beatabunova22@gmail.com'];
+app.options('/api/public/web-lead', (req, res) => { naborCors(req, res); res.sendStatus(204); });
+app.post('/api/public/web-lead', rlPublic, express.urlencoded({ extended: false, limit: '8kb' }), async (req, res) => {
+  naborCors(req, res);
+  try {
+    const b = req.body || {};
+    const t = (v, n) => String(v == null ? '' : v).slice(0, n || 300).replace(/[<>]/g, '').trim();
+    const name = t(b.name, 120), phone = t(b.phone, 40), email = t(b.email, 160).toLowerCase();
+    const city = t(b.city, 80), note = t(b.note, 800);
+    if (!name) return res.status(400).json({ error: 'Napíšte svoje meno.' });
+    if (!phone && !email) return res.status(400).json({ error: 'Nechajte telefón alebo e-mail — inak sa vám nevieme ozvať.' });
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Skontrolujte e-mail.' });
+    if (!['1', 'true', 'on'].includes(String(b.consent || '').toLowerCase()) && b.consent !== true)
+      return res.status(400).json({ error: 'Bez súhlasu so spracovaním údajov dopyt neprijmeme.' });
+    // Spam boty: skryté pole + rovnaká heuristika ako pri nábore. Spam sa uloží (nič sa nestratí),
+    // ale nejde mail ani notifikácia.
+    const spamDovody = naborSpamDovody({ name, city, email, phone, motivation: note, honeypot: t(b.website, 100), ms: parseInt(b.ms, 10) });
+    const spam = spamDovody.length > 0;
+    const zhrnutie = [note, city ? 'mesto: ' + city : ''].filter(Boolean).join(' · ');
+    const z = await q.insert(db.rentals, {
+      _type: 'web_lead', event_type: '📞 Dopyt z webu',
+      name, phone, email, city,
+      message: ((spam ? '🤖 SPAM (' + spamDovody.join(', ') + ') · ' : '') + zhrnutie).slice(0, 500),
+      status: spam ? 'rejected' : 'new',
+      spam: spam || undefined, spam_dovody: spam ? spamDovody : undefined,
+      ip: klientIp(req) || null, ua: String(req.headers['user-agent'] || '').slice(0, 300),
+      utm: t(b.utm, 300), page: t(b.page, 200), created_at: nowISO()
+    });
+    const riadok = (k, v) => v ? `<tr><td style="color:#999;padding:4px 12px 4px 0;vertical-align:top">${k}</td><td style="padding:4px 0">${v}</td></tr>` : '';
+    const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;background:#0a0a0a;color:#eee;padding:20px">
+      <h2 style="color:#C9A84C;margin:0 0 12px">📞 Nový dopyt z webu</h2>
+      <table style="font-size:14px;border-collapse:collapse">
+        ${riadok('Meno', `<b>${name}</b>`)}
+        ${riadok('Telefón', phone ? `<a href="tel:${phone}" style="color:#C9A84C">${phone}</a>` : '')}
+        ${riadok('E-mail', email)}${riadok('Mesto', city)}
+        ${riadok('Správa', note.replace(/\n/g, '<br>'))}
+        ${riadok('Stránka', t(b.page, 200))}
+      </table>
+      <p style="color:#888;font-size:12px;margin-top:16px">V admine: Prenájmy → Dopyty (typ „Dopyt z webu")${b.utm ? ' · ' + t(b.utm, 300) : ''}</p>
+      </body></html>`;
+    if (!spam) for (const to of WEB_LEAD_MAILS) { try { await sendMail(to, '📞 Dopyt z webu: ' + name + (city ? ' (' + city + ')' : ''), html); } catch (e) { } }
+    if (!spam) for (const a of await q.find(db.users, { is_admin: true })) {
+      await q.insert(db.notifications, {
+        user_id: a._id, type: 'web_lead', title: '📞 Nový dopyt z webu',
+        body: name + ' · ' + (phone || email) + (city ? ' · ' + city : ''),
+        read: false, created_at: nowISO()
+      }).catch(() => { });
+    }
+    res.json({ ok: true, id: z._id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/public/school-lead', rlPublic, async(req,res)=>{
   schoolLeadCors(req,res);
   try{
