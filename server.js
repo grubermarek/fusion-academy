@@ -18401,6 +18401,10 @@ app.post('/api/public/web-lead', rlPublic, express.urlencoded({ extended: false,
     const t = (v, n) => String(v == null ? '' : v).slice(0, n || 300).replace(/[<>]/g, '').trim();
     const name = t(b.name, 120), phone = t(b.phone, 40), email = t(b.email, 160).toLowerCase();
     const city = t(b.city, 80), note = t(b.note, 800);
+    // Dopyt môže prísť z konkrétnej stránky programu — vtedy má vlastné polia a vlastný štítok.
+    const PROGRAMY_DOPYTU = { svadobny_tanec: '💍 Svadobný tanec', venček: '🎓 Venček' };
+    const program = t(b.program, 40);
+    const datum = t(b.datum, 20), miesto = t(b.miesto, 120), piesen = t(b.piesen, 160);
     if (!name) return res.status(400).json({ error: 'Napíšte svoje meno.' });
     if (!phone && !email) return res.status(400).json({ error: 'Nechajte telefón alebo e-mail — inak sa vám nevieme ozvať.' });
     if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Skontrolujte e-mail.' });
@@ -18410,10 +18414,15 @@ app.post('/api/public/web-lead', rlPublic, express.urlencoded({ extended: false,
     // ale nejde mail ani notifikácia.
     const spamDovody = naborSpamDovody({ name, city, email, phone, motivation: note, honeypot: t(b.website, 100), ms: parseInt(b.ms, 10) });
     const spam = spamDovody.length > 0;
-    const zhrnutie = [note, city ? 'mesto: ' + city : ''].filter(Boolean).join(' · ');
+    const zhrnutie = [
+      datum ? 'svadba: ' + datum : '', miesto ? 'miesto: ' + miesto : '', piesen ? 'pieseň: ' + piesen : '',
+      note, (city && !miesto) ? 'mesto: ' + city : ''
+    ].filter(Boolean).join(' · ');
     const z = await q.insert(db.rentals, {
-      _type: 'web_lead', event_type: '📞 Dopyt z webu',
+      _type: 'web_lead', event_type: PROGRAMY_DOPYTU[program] || '📞 Dopyt z webu',
       name, phone, email, city,
+      program: program || undefined, svadba_datum: datum || undefined,
+      svadba_miesto: miesto || undefined, svadba_piesen: piesen || undefined,
       message: ((spam ? '🤖 SPAM (' + spamDovody.join(', ') + ') · ' : '') + zhrnutie).slice(0, 500),
       status: spam ? 'rejected' : 'new',
       spam: spam || undefined, spam_dovody: spam ? spamDovody : undefined,
@@ -18422,21 +18431,22 @@ app.post('/api/public/web-lead', rlPublic, express.urlencoded({ extended: false,
     });
     const riadok = (k, v) => v ? `<tr><td style="color:#999;padding:4px 12px 4px 0;vertical-align:top">${k}</td><td style="padding:4px 0">${v}</td></tr>` : '';
     const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;background:#0a0a0a;color:#eee;padding:20px">
-      <h2 style="color:#C9A84C;margin:0 0 12px">📞 Nový dopyt z webu</h2>
+      <h2 style="color:#C9A84C;margin:0 0 12px">${PROGRAMY_DOPYTU[program] ? PROGRAMY_DOPYTU[program] + ' — nový dopyt' : '📞 Nový dopyt z webu'}</h2>
       <table style="font-size:14px;border-collapse:collapse">
         ${riadok('Meno', `<b>${name}</b>`)}
         ${riadok('Telefón', phone ? `<a href="tel:${phone}" style="color:#C9A84C">${phone}</a>` : '')}
         ${riadok('E-mail', email)}${riadok('Mesto', city)}
+        ${riadok('Dátum svadby', datum)}${riadok('Miesto svadby', miesto)}${riadok('Pieseň', piesen)}
         ${riadok('Správa', note.replace(/\n/g, '<br>'))}
         ${riadok('Stránka', t(b.page, 200))}
       </table>
       <p style="color:#888;font-size:12px;margin-top:16px">V admine: Prenájmy → Dopyty (typ „Dopyt z webu")${b.utm ? ' · ' + t(b.utm, 300) : ''}</p>
       </body></html>`;
-    if (!spam) for (const to of WEB_LEAD_MAILS) { try { await sendMail(to, '📞 Dopyt z webu: ' + name + (city ? ' (' + city + ')' : ''), html); } catch (e) { } }
+    if (!spam) for (const to of WEB_LEAD_MAILS) { try { await sendMail(to, (PROGRAMY_DOPYTU[program] || '📞 Dopyt z webu') + ': ' + name + (datum ? ' · svadba ' + datum : (city ? ' (' + city + ')' : '')), html); } catch (e) { } }
     if (!spam) for (const a of await q.find(db.users, { is_admin: true })) {
       await q.insert(db.notifications, {
-        user_id: a._id, type: 'web_lead', title: '📞 Nový dopyt z webu',
-        body: name + ' · ' + (phone || email) + (city ? ' · ' + city : ''),
+        user_id: a._id, type: 'web_lead', title: (PROGRAMY_DOPYTU[program] || '📞 Nový dopyt z webu'),
+        body: name + ' · ' + (phone || email) + (datum ? ' · svadba ' + datum : '') + (miesto || city ? ' · ' + (miesto || city) : ''),
         read: false, created_at: nowISO()
       }).catch(() => { });
     }
