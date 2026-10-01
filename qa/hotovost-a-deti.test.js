@@ -97,6 +97,11 @@ const suma = rows => +rows.reduce((s, r) => s + (+r.amount || 0), 0).toFixed(2);
     // rodička, ktorá platí mesačný paušál za dieťa — v zozname byť má, ale netreba vyberať
     { ...bk('qaChB5', 'Jana Rodička', 'attended', { pay_on_site: true, pay_amount: 10 }), booking_date: '2026-09-22' },
   ]));
+  // Paušál za dcéru zapísaný ako predaj — prehľad má upozorniť, že sa už platilo
+  fs.writeFileSync(path.join(DATA, 'transactions.db'), riadky([
+    { _id: 'qaChTx1', type: 'membership', user_id: MAMA, user_name: 'Jana Rodička', amount: 30, date: '2026-09-20',
+      payment_method: 'cash', method: 'cash', note: 'Členstvo Bronze — mesačný paušál', month: '2026-09', created_at: '2026-09-20T10:00:00.000Z' },
+  ]));
   fs.writeFileSync(path.join(DATA, 'memberships.db'), riadky([
     { _id: 'qaChMem1', user_id: MAMA, user_name: 'Jana Rodička', plan_id: 'bronze', plan_name: 'Bronze', status: 'active',
       started_at: '2026-09-01T00:00:00.000Z', expires_at: '2026-10-05T23:59:59.000Z', price: 30, payment_method: 'cash', created_at: '2026-09-01T10:00:00.000Z' },
@@ -194,6 +199,8 @@ const suma = rows => +rows.reduce((s, r) => s + (+r.amount || 0), 0).toFixed(2);
     const pausal = (nv3.d.rows || []).find(r => r.id === 'qaChB5');
     ok('v zozname je aj rezervácia rodiča, ktorý platí paušálom', !!pausal, JSON.stringify((nv3.d.rows || []).map(r => r.id)));
     ok('upozorní, že klientka mala v ten deň členstvo', pausal && pausal.clenstvo && /Bronze/i.test(pausal.clenstvo.plan), JSON.stringify(pausal && pausal.clenstvo));
+    ok('upozorní aj na platbu zapísanú inde v tých dňoch (aby neplatila dvakrát)',
+      pausal && pausal.zaplatene_inde && pausal.zaplatene_inde.amount === 30, JSON.stringify(pausal && pausal.zaplatene_inde));
     const bezDovodu = await j('/api/admin/bookings/qaChB5/waive', { method: 'POST', body: { reason: '' } }, aj);
     ok('bez dôvodu sa odpísať nedá (400)', bezDovodu.status === 400, 'HTTP ' + bezDovodu.status);
     const waive = await j('/api/admin/bookings/qaChB5/waive', { method: 'POST', body: { reason: 'platí 30 € mesačne za dcéru' } }, aj);

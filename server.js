@@ -2306,15 +2306,17 @@ async function seedData() {
 
   // Jednorazový výpis nevybratých platieb na mieste (Marek 1. 10.: „či tréner nezabudol
   // označiť, že vybral hotovosť"). Len do logu nasadenia, mená idú z databázy.
-  if(!(await q.one(db.settings,{key:'vypis_nevybrane_20261001b'}))){
+  if(!(await q.one(db.settings,{key:'vypis_nevybrane_20261001c'}))){
     try{
       const rows=await nevybranePlatby({});
       console.log('💶 Nevybraté platby na mieste: '+rows.length+' ks / '+rows.reduce((s,r)=>s+r.amount,0).toFixed(2)+' €');
       for(const r of rows.slice(0,60))
         console.log(`   · ${r.date} ${r.time} ${r.class_name} (${r.city}) — ${r.user_name} ${r.amount.toFixed(2)} €`
-          +` · učil/a ${r.trainer}`+(r.plan?` · plán ${r.plan}`:'')+(r.clenstvo?` · POZOR má členstvo ${r.clenstvo.plan} do ${r.clenstvo.do}`:''));
+          +` · učil/a ${r.trainer}`+(r.plan?` · plán ${r.plan}`:'')
+          +(r.zaplatene_inde?` · UŽ ZAPLATENÉ ${r.zaplatene_inde.date} ${r.zaplatene_inde.amount.toFixed(2)} € (${r.zaplatene_inde.note})`:'')
+          +(r.clenstvo?` · má členstvo ${r.clenstvo.plan} do ${r.clenstvo.do}`:''));
     }catch(e){ console.error('výpis nevybratých:', e.message); }
-    await q.insert(db.settings,{key:'vypis_nevybrane_20261001b', value:true, at:nowISO()});
+    await q.insert(db.settings,{key:'vypis_nevybrane_20261001c', value:true, at:nowISO()});
   }
 
   // Jednorazový výpis výplat do logu nasadenia (Marek 1. 10.: „prepočítaj mi výplatu").
@@ -16405,6 +16407,18 @@ async function nevybranePlatby({ month, trainer } = {}){
     const od=String(m.started_at||m.created_at||'').slice(0,10), dokedy=String(m.expires_at||'').slice(0,10);
     return od && dokedy && od<=d && d<=dokedy;
   });
+  // Zaplatila to inde? Vstup či členstvo kúpené v okolí dátumu hodiny (appka, kartou,
+  // ručný predaj) znamená, že na hodine sa už vyberať nemá — inak by platila dvakrát.
+  const txs={};
+  for(const t of await q.find(db.transactions,{})){
+    if(!t.user_id || !['single_entry','membership'].includes(t.type)) continue;
+    (txs[t.user_id]=txs[t.user_id]||[]).push(t);
+  }
+  const posun=(d,n)=>{ const x=new Date(d+'T12:00:00Z'); x.setUTCDate(x.getUTCDate()+n); return x.toISOString().slice(0,10); };
+  const zaplateneInde=(uid,d)=>(txs[uid]||[]).find(t=>{
+    const td=String(t.date||t.created_at||'').slice(0,10);
+    return td>=posun(d,-7) && td<=posun(d,7);
+  });
   const rows=[];
   for(const b of await q.find(db.bookings,{status:'attended'})){
     if(!b.pay_on_site || b.entry_collected) continue;
@@ -16414,10 +16428,13 @@ async function nevybranePlatby({ month, trainer } = {}){
     const kto=(insOverride[b.class_id+'|'+d]?.name) || cls.instructor || '—';
     if(trainer && kto!==trainer) continue;
     const kryte=b.user_id?kryteClenstvom(b.user_id,d):null;
+    const inde=b.user_id?zaplateneInde(b.user_id,d):null;
     rows.push({ id:b._id, date:d, class_name:cls.name||b.class_name||'—', time:cls.time_start||b.class_time_start||'',
       city:cls.location||b.class_location||'—', trainer:kto, user_id:b.user_id||null, user_name:b.user_name||'—',
       amount:+(b.pay_amount||cls.price||10), plan:b.pay_plan||null,
-      clenstvo: kryte ? { plan:kryte.plan_name||kryte.plan_id||'Členstvo', do:String(kryte.expires_at||'').slice(0,10) } : null });
+      clenstvo: kryte ? { plan:kryte.plan_name||kryte.plan_id||'Členstvo', do:String(kryte.expires_at||'').slice(0,10) } : null,
+      zaplatene_inde: inde ? { date:String(inde.date||inde.created_at||'').slice(0,10), amount:+(inde.amount||0),
+        note:String(inde.note||inde.product_name||'').slice(0,80) } : null });
   }
   return rows.sort((a,b)=>String(b.date).localeCompare(String(a.date)) || String(a.time).localeCompare(String(b.time)));
 }
