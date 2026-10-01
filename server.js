@@ -2278,6 +2278,50 @@ async function seedData() {
     await q.insert(db.settings,{key:'nelka_hotovost_160_20260925', value:vysledok, at:nowISO()});
   }
 
+  // 1. 10.: sumárne prevzatie hotovosti (25. 9.) rozpúšťalo odovzdanú sumu aj do
+  // súkromných hodín. Tie si tréner necháva — klient platí jemu a firme patrí len jej
+  // podiel, ktorý sa zúčtuje zrážkou z výplaty. Vráť ich medzi nevyrovnané a tú istú
+  // sumu presuň na bežné výbery (vstupné, členstvá, merch).
+  if(!(await q.one(db.settings,{key:'oprava_hotovost_sukromne_20261001'}))){
+    const vysledok={vratene:[], presunute:[]};
+    try{
+      const zle=(await q.find(db.payouts,{_type:'cash_collected', status:'settled_handed'}))
+        .filter(r=>jeSukromnaHotovost(r) && String(r.settled_at||'').slice(0,10)>='2026-09-25');
+      const sumy={};
+      for(const r of zle){
+        await q.update(db.payouts,{_id:r._id},{$set:{status:'held', settled_at:null, settled_by:null}});
+        sumy[r.trainer_name]=+((sumy[r.trainer_name]||0)+(+r.amount||0)).toFixed(2);
+      }
+      for(const [meno, suma] of Object.entries(sumy)){
+        const r=await settleCashAmount(meno, suma, 'Marek Gruber');
+        vysledok.vratene.push([meno, suma]);
+        vysledok.presunute.push([meno, r.settled, r.zvysok]);
+        console.log('🔁 Hotovosť '+meno+': súkromné hodiny vrátené medzi nevyrovnané ('+suma.toFixed(2)+' €), presunuté na bežné výbery '
+          +r.settled.toFixed(2)+' €'+(r.zvysok>0?', NEPRIRADENÉ '+r.zvysok.toFixed(2)+' € (toľko bežnej hotovosti už nemal/a)':''));
+      }
+      if(!zle.length) console.log('🔁 Hotovosť: žiadna súkromná hodina nebola omylom označená ako odovzdaná');
+    }catch(e){ vysledok.error=e.message; console.error('oprava hotovosti:', e.message); }
+    await q.insert(db.settings,{key:'oprava_hotovost_sukromne_20261001', value:vysledok, at:nowISO()});
+  }
+
+  // Jednorazový výpis výplat do logu nasadenia (Marek 1. 10.: „prepočítaj mi výplatu").
+  // V kóde žiadne mená — berú sa z databázy.
+  if(!(await q.one(db.settings,{key:'vypis_vyplat_20261001'}))){
+    try{
+      for(const m of [prevMonthStr(), currentMonth()]){
+        for(const r of await vyplatyPrehlad(m)){
+          if(!(r.zarobok || r.cash_deduct || r.sessions)) continue;
+          console.log(`📋 ${m} ${r.trainer}: hodín ${r.sessions} (${r.attendances} ľudí) · základ ${(+r.base).toFixed(2)}`
+            +` + bonusy ${(+r.bonuses).toFixed(2)} + provízie ${(+r.affiliate).toFixed(2)} + tipy ${(+r.tips).toFixed(2)}`
+            +` + súkromné ${(+r.private).toFixed(2)} − zrážky ${(+r.deductions).toFixed(2)} = zárobok ${(+r.zarobok).toFixed(2)} €`
+            +` · hotovosť u neho ${(+r.cash_deduct).toFixed(2)} € → VÝPLATA ${(+r.total).toFixed(2)} €`
+            +(r.cash_odovzdat>0?` (ešte odovzdať ${(+r.cash_odovzdat).toFixed(2)} €)`:''));
+        }
+      }
+    }catch(e){ console.error('výpis výplat:', e.message); }
+    await q.insert(db.settings,{key:'vypis_vyplat_20261001', value:true, at:nowISO()});
+  }
+
   // 24.8.: kampane bez utm_key sa nedali merať — platili sme za kliky, ktoré nemali
   // kam zapadnúť (Video HEJ BABY 141 klikov, Kreatívny test 423 klikov, obe 0 registrácií
   // na karte, hoci vo funneli boli registrácie s utm_campaign fa-test-*).
@@ -19509,12 +19553,17 @@ app.get('/api/admin/cash', adminAuth, async(req,res)=>{
     res.json({ok:true, rows:rows.slice(0,200)});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
+// Hotovosť zo súkromnej hodiny: klient platí priamo trénerovi a ten si ju necháva —
+// firme z nej patrí len jej podiel, ktorý sa zúčtuje zrážkou z výplaty. Takýto výber
+// teda NIE JE peniaze „na odovzdanie" a do sumárneho prevzatia sa nepočíta.
+const jeSukromnaHotovost = r => !!r.private_booking_id || /^Súkromná hodina/.test(String(r.note||''));
 // Tréner odovzdal peniaze v jednej sume (napr. „Nelka mi dala 160 €") — appka ju sama
 // rozpustí do jeho nevyrovnaných výberov od najstaršieho. Keď suma nevyjde presne na
 // záznam, posledný sa rozdelí: odovzdaná časť sa uzavrie, zvyšok ostáva u trénera.
 // Vracia aj `zvysok` — koľko sa nedalo priradiť, lebo toľko hotovosti u seba nemal.
-async function settleCashAmount(trainerName, amount, byName){
+async function settleCashAmount(trainerName, amount, byName, opts){
   const rows=(await q.find(db.payouts,{_type:'cash_collected', trainer_name:trainerName, status:'held'}))
+    .filter(r=>(opts&&opts.vratane_sukromnych) || !jeSukromnaHotovost(r))
     .sort((a,b)=>String(a.date||a.created_at||'').localeCompare(String(b.date||b.created_at||'')));
   let zvysok=+(+amount).toFixed(2), settled=0, count=0;
   for(const r of rows){
@@ -19539,8 +19588,8 @@ app.post('/api/admin/cash/handover', adminAuth, async(req,res)=>{
     const amount=+req.body.amount;
     if(!trainer) return res.status(400).json({error:'Chýba tréner'});
     if(!Number.isFinite(amount)||amount<=0||amount>100000) return res.status(400).json({error:'Zadaj sumu, ktorú ti odovzdal/a'});
-    const r=await settleCashAmount(trainer, amount, req.user?.name||'Admin');
-    if(!r.count) return res.status(400).json({error:`${trainer} nemá u seba žiadnu nevyrovnanú hotovosť`});
+    const r=await settleCashAmount(trainer, amount, req.user?.name||'Admin', {vratane_sukromnych:!!req.body.vratane_sukromnych});
+    if(!r.count) return res.status(400).json({error:`${trainer} nemá u seba žiadnu nevyrovnanú hotovosť na odovzdanie`});
     const t=await q.one(db.users,{name:trainer});
     if(t) await q.insert(db.notifications,{user_id:t._id, type:'cash_collected',
       title:'✅ Hotovosť prevzatá', body:`Odovzdal/a si ${r.settled.toFixed(2)} € — o toľko sa ti už výplata neznižuje.`,

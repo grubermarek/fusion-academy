@@ -3731,23 +3731,28 @@ async function loadPayoutCash(){
   const d=await api('/api/admin/cash?trainer='+encodeURIComponent(_poDetailTrainer.name));
   if(!d||!d.ok||!(d.rows||[]).length){ box.innerHTML=''; return; }
   const ST={held:'<span class="badge bg-danger">u trénera</span>', settled_handed:'<span class="badge bg-success">odovzdané</span>', settled_payout:'<span class="badge bg-secondary">zúčtované s výplatou</span>'};
+  // Súkromnú hodinu si tréner necháva (klient platí jemu) — nie je to hotovosť na
+  // odovzdanie, firme z nej patrí len podiel, ktorý sa zúčtuje zrážkou z výplaty.
+  const jeSukr=r=>!!r.private_booking_id || /^Súkromná hodina/.test(r.note||'');
   const pending=d.rows.filter(r=>r.status==='held');
+  const naOdovzdanie=pending.filter(r=>!jeSukr(r));
+  const sukrDrzi=pending.filter(jeSukr).reduce((s,r)=>s+(+r.amount||0),0);
   box.innerHTML=`<div class="card bg-dark border-danger mb-3"><div class="card-body py-2 px-3">
-    <div class="fw-bold small mb-1" style="color:#ff8a8a">💵 Hotovosť vybraná od klientov ${pending.length?`— <b>${pending.reduce((s,r)=>s+(+r.amount||0),0).toFixed(2)} €</b> má u seba`:''}</div>
+    <div class="fw-bold small mb-1" style="color:#ff8a8a">💵 Hotovosť vybraná od klientov ${naOdovzdanie.length?`— <b>${naOdovzdanie.reduce((s,r)=>s+(+r.amount||0),0).toFixed(2)} €</b> na odovzdanie`:''}${sukrDrzi>0?` <span class="text-muted">· ${sukrDrzi.toFixed(2)} € za súkromné hodiny si necháva</span>`:''}</div>
     ${d.rows.slice(0,15).map(r=>`
       <div class="d-flex justify-content-between align-items-center gap-2 py-1" style="border-top:1px solid #2a2a2a;font-size:.78rem">
         <span class="text-muted">${fmtDate(r.date)}${r.note?` · ${escHtml(r.note)}`:''}</span>
-        <span class="d-flex align-items-center gap-2"><b>${(+r.amount).toFixed(2)} €</b> ${ST[r.status]||r.status}
-          ${r.status==='held'?`<button class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:.7rem" onclick="cashHandover('${r._id}')" title="Tréner mi peniaze odovzdal — zrážka z výplaty sa zruší">Prevzal som</button>`:''}</span>
+        <span class="d-flex align-items-center gap-2"><b>${(+r.amount).toFixed(2)} €</b> ${r.status==='held'&&jeSukr(r)?'<span class="badge bg-dark border border-secondary text-muted" title="Klient platil trénerovi, ten si hotovosť necháva — firme sa jej podiel zúčtuje zrážkou z výplaty">necháva si</span>':(ST[r.status]||r.status)}
+          ${r.status==='held'?`<button class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:.7rem" onclick="cashHandover('${r._id}')" title="Tréner mi práve tieto peniaze odovzdal — zrážka z výplaty sa zruší">Prevzal som</button>`:''}</span>
       </div>`).join('')}
-    ${pending.length?`<div class="d-flex align-items-center gap-2 flex-wrap mt-2 pt-2" style="border-top:1px solid #2a2a2a">
+    ${naOdovzdanie.length?`<div class="d-flex align-items-center gap-2 flex-wrap mt-2 pt-2" style="border-top:1px solid #2a2a2a">
       <span class="small">Odovzdal/a mi:</span>
-      <input type="number" id="poCashSum" step="0.01" min="0" value="${pending.reduce((s,r)=>s+(+r.amount||0),0).toFixed(2)}"
+      <input type="number" id="poCashSum" step="0.01" min="0" value="${naOdovzdanie.reduce((s,r)=>s+(+r.amount||0),0).toFixed(2)}"
         class="form-control form-control-sm bg-dark text-light border-secondary" style="width:100px">
       <span class="small">€</span>
       <button class="btn btn-sm btn-success py-0 px-2" style="font-size:.72rem" onclick="cashHandoverSum()">Prevzal som</button>
     </div>` : ''}
-    <div class="text-muted mt-1" style="font-size:.66rem">„Prevzal som" = peniaze máš ty, zrážka sa zruší. Suma sa rozpustí do najstarších výberov; ak nevyjde presne, posledný sa rozdelí. Inak sa hotovosť odpočíta pri uzavretí mesiaca.</div>
+    <div class="text-muted mt-1" style="font-size:.66rem">„Prevzal som" = peniaze máš ty, zrážka sa zruší. Suma sa rozpustí do najstarších výberov okrem súkromných hodín; ak nevyjde presne, posledný sa rozdelí. Súkromnú hodinu označ tlačidlom v riadku, len ak ti ju naozaj odovzdal/a.</div>
   </div></div>`;
 }
 // Tréner odovzdal peniaze naraz (napr. 160 €) — nemusíme klikať záznam po zázname

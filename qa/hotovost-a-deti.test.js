@@ -54,24 +54,32 @@ const suma = rows => +rows.reduce((s, r) => s + (+r.amount || 0), 0).toFixed(2);
   // ── fixtúry ──
   const hash = bcrypt.hashSync('Heslo123!', 10);
   const zak = { rank: 1, is_admin: false, active: true, visit_count: 0, referral_credit: 0, city: 'Detva' };
-  const ADM = 'qaChAdmin00001', TRE = 'qaChTrener0001', TRE2 = 'qaChTrener0002', MAMA = 'qaChMama000001';
+  const ADM = 'qaChAdmin00001', TRE = 'qaChTrener0001', TRE2 = 'qaChTrener0002', TRE3 = 'qaChTrener0003', MAMA = 'qaChMama000001';
   const MES = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Bratislava' }).format(new Date()).slice(0, 7);
   fs.writeFileSync(path.join(DATA, 'users.db'), riadky([
     { _id: ADM, name: 'Admin Hotovosť', email: 'qa.ch.admin@qa-biz.local', password: hash, referral_code: 'QACHADM', ...zak, is_admin: true, user_type: 'admin', created_at: '2026-01-01' },
     { _id: TRE, name: 'Nela Trénerka', email: 'qa.ch.trener@qa-biz.local', password: hash, referral_code: 'QACHTRE', ...zak, user_type: 'trainer', created_at: '2026-02-01' },
     { _id: TRE2, name: 'Dana Trénerka', email: 'qa.ch.trener2@qa-biz.local', password: hash, referral_code: 'QACHTR2', ...zak, user_type: 'trainer', created_at: '2026-02-01' },
+    { _id: TRE3, name: 'Eva Trénerka', email: 'qa.ch.trener3@qa-biz.local', password: hash, referral_code: 'QACHTR3', ...zak, user_type: 'trainer', created_at: '2026-02-01' },
     { _id: MAMA, name: 'Jana Rodička', email: 'qa.ch.mama@qa-biz.local', password: hash, referral_code: 'QACHMAM', ...zak, user_type: 'client', created_at: '2026-06-01' },
   ]));
   // Obe trénerky majú u seba 50 + 70 + 60 = 180 € (od najstaršieho výberu).
   // „Nela" je tam kvôli migrácii 25. 9. (Marekových 160 €), „Dana" pre ručné prevzatie.
   const vyber = (id, tid, meno, amount, note, date) => ({ _id: id, _type: 'cash_collected', trainer_id: tid, trainer_name: meno, amount, note, month: MES, date, status: 'held', created_at: date + 'T18:00:00.000Z' });
+  // Súkromnú hodinu si tréner necháva — do odovzdanej sumy sa nesmie započítať.
+  const sukr = (id, tid, meno, amount, date, extra) => ({ ...vyber(id, tid, meno, amount, 'Súkromná hodina — Klientka', date), private_booking_id: 'qaChPb' + id, ...(extra || {}) });
   fs.writeFileSync(path.join(DATA, 'payouts.db'), riadky([
     vyber('qaChC1', TRE, 'Nela Trénerka', 50, 'Vstupné', '2026-09-02'),
     vyber('qaChC2', TRE, 'Nela Trénerka', 70, 'Členstvo Bronze', '2026-09-10'),
-    vyber('qaChC3', TRE, 'Nela Trénerka', 60, 'Súkromná hodina', '2026-09-20'),
+    vyber('qaChC3', TRE, 'Nela Trénerka', 60, 'Vstupné', '2026-09-20'),
+    sukr('qaChC4', TRE, 'Nela Trénerka', 45, '2026-09-05'),
     vyber('qaChD1', TRE2, 'Dana Trénerka', 50, 'Vstupné', '2026-09-02'),
     vyber('qaChD2', TRE2, 'Dana Trénerka', 70, 'Členstvo Bronze', '2026-09-10'),
-    vyber('qaChD3', TRE2, 'Dana Trénerka', 60, 'Súkromná hodina', '2026-09-20'),
+    vyber('qaChD3', TRE2, 'Dana Trénerka', 60, 'Vstupné', '2026-09-20'),
+    sukr('qaChD4', TRE2, 'Dana Trénerka', 25, '2026-09-12'),
+    // Eva = stav po chybnom prevzatí 25. 9.: súkromná hodina označená ako odovzdaná
+    vyber('qaChE1', TRE3, 'Eva Trénerka', 50, 'Vstupné', '2026-09-03'),
+    sukr('qaChE2', TRE3, 'Eva Trénerka', 30, '2026-09-04', { status: 'settled_handed', settled_at: '2026-09-25T10:00:00.000Z', settled_by: 'Marek Gruber' }),
   ]));
 
   console.log('\nSERVER');
@@ -90,11 +98,21 @@ const suma = rows => +rows.reduce((s, r) => s + (+r.amount || 0), 0).toFixed(2);
     const nela = cash().filter(r => r.trainer_name === 'Nela Trénerka');
     const nelaOd = nela.filter(r => r.status === 'settled_handed'), nelaDrz = nela.filter(r => r.status === 'held');
     ok('migrácia uzavrela Nelke presne 160 € (50 + 70 + 40 z rozdeleného)', suma(nelaOd) === 160, JSON.stringify(nelaOd.map(r => [r.amount, r.note])));
-    ok('zvyšných 20 € ostalo u nej', suma(nelaDrz) === 20 && nelaDrz.length === 1 && /zvyšok/.test(nelaDrz[0].note || ''), JSON.stringify(nelaDrz.map(r => [r.amount, r.note])));
+    const nelaDrzBezne = nelaDrz.filter(r => !r.private_booking_id);
+    ok('z bežnej hotovosti jej ostalo 20 € ako zvyšok rozdeleného výberu', suma(nelaDrzBezne) === 20 && nelaDrzBezne.length === 1 && /zvyšok/.test(nelaDrzBezne[0].note || ''), JSON.stringify(nelaDrz.map(r => [r.amount, r.note])));
     ok('rozdelený záznam si nechal trénerku, dátum aj mesiac', nelaOd.every(r => r.trainer_id === TRE && r.month === MES) && nelaOd.some(r => r.amount === 40 && r.date === '2026-09-20'), JSON.stringify(nelaOd.map(r => [r.amount, r.date, r.month])));
     ok('Nelke prišlo oznámenie o prevzatí', rd('notifications.db').some(n => n.user_id === TRE && /Hotovosť prevzatá/.test(n.title || '')));
     ok('výsledok migrácie sa dá spätne prečítať zo settings', (rd('settings.db').find(s => s.key === 'nelka_hotovost_160_20260925') || {}).value?.settled === 160,
       JSON.stringify((rd('settings.db').find(s => s.key === 'nelka_hotovost_160_20260925') || {}).value));
+    ok('súkromná hodina ostala u nej (necháva si ju, nie je na odovzdanie)',
+      nela.filter(r => r.private_booking_id).every(r => r.status === 'held'), JSON.stringify(nela.filter(r => r.private_booking_id).map(r => [r.amount, r.status])));
+
+    // ── 1c) oprava chybného prevzatia z 25. 9. (súkromná hodina označená ako odovzdaná) ──
+    const eva = cash().filter(r => r.trainer_name === 'Eva Trénerka');
+    ok('súkromná hodina sa vrátila medzi nevyrovnané', (eva.find(r => r.private_booking_id) || {}).status === 'held', JSON.stringify(eva.map(r => [r.amount, r.note, r.status])));
+    ok('tých istých 30 € sa presunulo na bežný výber (50 € sa rozdelilo)',
+      suma(eva.filter(r => r.status === 'settled_handed')) === 30 && eva.filter(r => r.status === 'settled_handed').every(r => !r.private_booking_id) && suma(eva.filter(r => r.status === 'held')) === 50,
+      JSON.stringify(eva.map(r => [r.amount, r.status, !!r.private_booking_id])));
 
     // ── 1b) to isté ručne z admina (iná trénerka) ──
     const cudzi = await j('/api/admin/cash/handover', { method: 'POST', body: { trainer: 'Dana Trénerka', amount: 160 } }, mj);
@@ -105,19 +123,24 @@ const suma = rows => +rows.reduce((s, r) => s + (+r.amount || 0), 0).toFixed(2);
     const h = await j('/api/admin/cash/handover', { method: 'POST', body: { trainer: 'Dana Trénerka', amount: 160 } }, aj);
     ok('160 € prevzatých, nič neostalo nepriradené', h.status === 200 && h.d.settled === 160 && h.d.zvysok === 0, JSON.stringify(h.d));
     const dana = cash().filter(r => r.trainer_name === 'Dana Trénerka');
-    ok('uzavreté presne 160 €, u trénerky ostalo 20 €', suma(dana.filter(r => r.status === 'settled_handed')) === 160 && suma(dana.filter(r => r.status === 'held')) === 20,
-      JSON.stringify(dana.map(r => [r.amount, r.status])));
+    ok('uzavreté presne 160 €, u trénerky ostalo 20 € + 25 € za súkromnú hodinu',
+      suma(dana.filter(r => r.status === 'settled_handed')) === 160 && suma(dana.filter(r => r.status === 'held')) === 45
+      && dana.filter(r => r.status === 'settled_handed').every(r => !r.private_booking_id),
+      JSON.stringify(dana.map(r => [r.amount, r.status, !!r.private_booking_id])));
     ok('zápis v audite', rd('audit.db').some(a => a.action === 'cash_handover_sum'), JSON.stringify(rd('audit.db').map(a => a.action)));
 
-    // výplata: zrážka je len zo zvyšných 20 €
+    // výplata: zrážka = zvyšných 20 € + 25 € za súkromnú hodinu, ktorú si necháva
     const vyp = await j('/api/admin/payouts?month=' + MES, {}, aj);
     const riadok = ((vyp.d && (vyp.d.rows || vyp.d)) || []).find(r => r.trainer === 'Dana Trénerka');
-    ok('vo výplatách sa zráža už len 20 €', riadok && Math.abs((+riadok.cash_deduct || 0) - 20) < 0.01, JSON.stringify(riadok && [riadok.trainer, riadok.cash_deduct]));
+    ok('vo výplatách sa zráža 45 € (20 € zvyšok + 25 € súkromná hodina u trénerky)', riadok && Math.abs((+riadok.cash_deduct || 0) - 45) < 0.01, JSON.stringify(riadok && [riadok.trainer, riadok.cash_deduct]));
 
     const viac = await j('/api/admin/cash/handover', { method: 'POST', body: { trainer: 'Dana Trénerka', amount: 500 } }, aj);
-    ok('keď odovzdá viac, než má u seba: uzavrie sa 20 € a 480 € ostane nepriradených', viac.d.settled === 20 && viac.d.zvysok === 480, JSON.stringify(viac.d));
+    ok('keď odovzdá viac, než má u seba: uzavrie sa 20 € a 480 € ostane nepriradených (súkromná sa nerátala)', viac.d.settled === 20 && viac.d.zvysok === 480, JSON.stringify(viac.d));
     const prazdno = await j('/api/admin/cash/handover', { method: 'POST', body: { trainer: 'Dana Trénerka', amount: 10 } }, aj);
-    ok('bez nevyrovnanej hotovosti vráti zrozumiteľnú chybu', prazdno.status === 400 && /nevyrovnan/i.test(prazdno.d.error || ''), JSON.stringify(prazdno.d));
+    ok('ostala len súkromná hodina → sumárne prevzatie vráti zrozumiteľnú chybu', prazdno.status === 400 && /na odovzdanie/i.test(prazdno.d.error || ''), JSON.stringify(prazdno.d));
+    const sukrRow = cash().find(r => r.trainer_name === 'Dana Trénerka' && r.private_booking_id && r.status === 'held');
+    const sukrH = await j('/api/admin/cash/' + sukrRow._id + '/handover', { method: 'POST' }, aj);
+    ok('súkromnú hodinu vie admin označiť ručne, keď mu ju tréner naozaj dá', sukrH.status === 200 && (cash().find(r => r._id === sukrRow._id) || {}).status === 'settled_handed', JSON.stringify(sukrH.d));
 
     // ── 2) admin založí dieťa rodičovi ──
     const bezDatumu = await j('/api/admin/users/' + MAMA + '/children', { method: 'POST', body: { name: 'Vivien Rodičková' } }, aj);
