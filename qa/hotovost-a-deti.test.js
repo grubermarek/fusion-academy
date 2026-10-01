@@ -138,6 +138,13 @@ const suma = rows => +rows.reduce((s, r) => s + (+r.amount || 0), 0).toFixed(2);
     ok('keď odovzdá viac, než má u seba: uzavrie sa 20 € a 480 € ostane nepriradených (súkromná sa nerátala)', viac.d.settled === 20 && viac.d.zvysok === 480, JSON.stringify(viac.d));
     const prazdno = await j('/api/admin/cash/handover', { method: 'POST', body: { trainer: 'Dana Trénerka', amount: 10 } }, aj);
     ok('ostala len súkromná hodina → sumárne prevzatie vráti zrozumiteľnú chybu', prazdno.status === 400 && /na odovzdanie/i.test(prazdno.d.error || ''), JSON.stringify(prazdno.d));
+    // doplatok zo súkromnej hodiny (keď časť z nej naozaj odovzdá) — so zaškrtnutím
+    const cast = await j('/api/admin/cash/handover', { method: 'POST', body: { trainer: 'Dana Trénerka', amount: 6, vratane_sukromnych: true } }, aj);
+    const danaS = cash().filter(r => r.trainer_name === 'Dana Trénerka' && r.private_booking_id);
+    ok('6 € zo súkromnej hodiny sa dá prevziať, zvyšok 19 € ostáva u nej', cast.d.settled === 6
+      && suma(danaS.filter(r => r.status === 'settled_handed')) === 6 && suma(danaS.filter(r => r.status === 'held')) === 19,
+      JSON.stringify(danaS.map(r => [r.amount, r.status])));
+
     const sukrRow = cash().find(r => r.trainer_name === 'Dana Trénerka' && r.private_booking_id && r.status === 'held');
     const sukrH = await j('/api/admin/cash/' + sukrRow._id + '/handover', { method: 'POST' }, aj);
     ok('súkromnú hodinu vie admin označiť ručne, keď mu ju tréner naozaj dá', sukrH.status === 200 && (cash().find(r => r._id === sukrRow._id) || {}).status === 'settled_handed', JSON.stringify(sukrH.d));

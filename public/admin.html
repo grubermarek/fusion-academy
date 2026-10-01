@@ -3751,6 +3751,8 @@ async function loadPayoutCash(){
         class="form-control form-control-sm bg-dark text-light border-secondary" style="width:100px">
       <span class="small">€</span>
       <button class="btn btn-sm btn-success py-0 px-2" style="font-size:.72rem" onclick="cashHandoverSum()">Prevzal som</button>
+      ${sukrDrzi>0?`<label class="text-muted d-flex align-items-center gap-1" style="font-size:.66rem;cursor:pointer" title="Zaškrtni, len ak ti odovzdal/a aj peniaze zo súkromnej hodiny">
+        <input type="checkbox" id="poCashSukr" style="margin:0"> aj zo súkromných hodín</label>` : ''}
     </div>` : ''}
     <div class="text-muted mt-1" style="font-size:.66rem">„Prevzal som" = peniaze máš ty, zrážka sa zruší. Suma sa rozpustí do najstarších výberov okrem súkromných hodín; ak nevyjde presne, posledný sa rozdelí. Súkromnú hodinu označ tlačidlom v riadku, len ak ti ju naozaj odovzdal/a.</div>
   </div></div>`;
@@ -3759,8 +3761,10 @@ async function loadPayoutCash(){
 async function cashHandoverSum(){
   const amount=+document.getElementById('poCashSum').value||0;
   if(!(amount>0)) return showToast('Zadaj sumu','error');
-  if(!confirm(`Potvrdiť, že ti ${_poDetailTrainer.name} odovzdal/a ${amount.toFixed(2)} €? O túto sumu sa mu zrušia zrážky z výplaty.`)) return;
-  const d=await api('/api/admin/cash/handover',{method:'POST',body:JSON.stringify({trainer:_poDetailTrainer.name, amount})});
+  const sukr=!!document.getElementById('poCashSukr')?.checked;
+  if(!confirm(`Potvrdiť, že ti ${_poDetailTrainer.name} odovzdal/a ${amount.toFixed(2)} €?`
+    +(sukr?' Započíta sa aj hotovosť zo súkromných hodín.':'')+' O túto sumu sa mu zrušia zrážky z výplaty.')) return;
+  const d=await api('/api/admin/cash/handover',{method:'POST',body:JSON.stringify({trainer:_poDetailTrainer.name, amount, vratane_sukromnych:sukr})});
   if(d?.ok){
     showToast(`✅ Prevzaté ${d.settled.toFixed(2)} €`+(d.zvysok>0?` — ${d.zvysok.toFixed(2)} € nemal/a u seba`:''),'success');
     const rd=await api('/api/trainer/earnings?trainer_id='+encodeURIComponent(_poDetailTrainer.id)); if(rd&&!rd.error) renderPayoutDetail(rd);
