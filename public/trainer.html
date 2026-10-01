@@ -891,6 +891,10 @@ let _allClasses = [];
 let _allStudents = [];
 let _baStudents = [];
 let _currentClassId = null;
+// Deň, ktorého dochádzku tréner práve vidí. Marek 1. 10.: „neviem sa vrátiť k včerajšiemu dňu,
+// aby som potvrdil hodinu a že som vybral hotovosť". Panel ukazoval vždy len najbližší termín.
+let _attDate = null;      // YYYY-MM-DD
+let _attNextDate = null;  // najbližší termín hodiny (odtiaľ sa začína)
 let _currentClassCategory = null;   // technika sa boduje inak než Zumba
 let _attendees = [];
 
@@ -1151,6 +1155,8 @@ async function openAttendance(classId){
 
   const cls = _allClasses.find(c=>c._id===classId)||{};
   _currentClassCategory = cls.category || null;
+  _attNextDate = cls.next_date || attDnesSK();
+  _attDate = _attNextDate;
   const pct = cls.capacity ? Math.round(cls.confirmed/cls.capacity*100) : 0;
 
   document.getElementById('attHeader').innerHTML = `
@@ -1171,19 +1177,21 @@ async function openAttendance(classId){
         <div class="ah-stat"><span class="val">${cls.waitlist||0}</span><span class="lbl">Čakačka</span></div>
       </div>
     </div>
+    <div id="attDenRow" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)"></div>
     <div id="attInsRow" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:.85rem;color:var(--muted)"></div>`;
 
   document.getElementById('attendeeItems').innerHTML = '<div class="loading"><i class="bi bi-arrow-repeat spin"></i>&nbsp; Načítavam...</div>';
   document.getElementById('addUserSearch').value='';
   document.getElementById('addUserResults').style.display='none';
 
+  attDenRiadok();
   loadTrainerInstructor(classId);
   await loadAttendees(classId);
 }
 let _trInsBy={}, _trTrainers=null;
 async function loadTrainerInstructor(classId){
   const el=document.getElementById('attInsRow'); if(!el) return;
-  const si=await api('/api/attendance/session-instructor?class_id='+classId);
+  const si=await api('/api/attendance/session-instructor?class_id='+classId+(_attDate?('&date='+encodeURIComponent(_attDate)):''));
   if(!si||si.error){ el.innerHTML=''; return; }
   _trInsBy[classId]=si;
   const teaches = si.instructor_id && si.viewer_id===si.instructor_id;
@@ -1206,7 +1214,7 @@ async function confirmTrainerSession(){
       ? `Neoznačil/a si nikoho ako prítomného.\n\n🚫 Všetkých ${nezaskrtnutych} prihlásených dostane NEPRIŠLA — nepripíše sa im návšteva ani body.\n\nKto sa zapísal QR kódom, návštevu už má.\n\nPotvrdiť takto?`
       : 'Potvrdiť túto hodinu ako odučenú?\n\nVšetci, čo tu boli, sa už zapísali QR kódom — nikomu ďalšiemu sa nič nepripíše.');
   if(!confirm(msg)) return;
-  const r=await api('/api/attendance/confirm-session',{method:'POST',body:{class_id:_currentClassId, present_ids:present}});
+  const r=await api('/api/attendance/confirm-session',{method:'POST',body:{class_id:_currentClassId, date:_attDate||undefined, present_ids:present}});
   if(r&&r.ok){
     if(r.already) toast(`ℹ️ Hodina už bola potvrdená (${r.attended} účastníkov) — nič sa nepripísalo znova.`);
     else toast(`✅ Hodina potvrdená · ${r.credited}× bola tu${r.no_shows?` · ${r.no_shows}× neprišla`:''} · zarobil/a si ${(r.session_earn||0).toFixed(2)} € 💰`);
@@ -1244,9 +1252,49 @@ async function setTrainerIns(classId, date, instructor_id){
   if(r&&r.ok){ toast('✅ Tréner hodiny nastavený'); loadTrainerInstructor(classId); } else toast(r?.error||'Chyba', true);
 }
 
+// ── Deň dochádzky ───────────────────────────────────────────────────────────
+// Hodiny sú týždenné, preto šípky skáču o 7 dní na predošlý/ďalší termín tej istej hodiny.
+// Späť sa dá najviac 12 týždňov, dopredu nanajvýš na najbližší termín.
+const DNI_SK_KR=['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
+function attPosunDatum(d, dni){ const x=new Date(d+'T12:00:00'); x.setDate(x.getDate()+dni); return x.toISOString().slice(0,10); }
+function attDnesSK(){ return new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Bratislava'}).format(new Date()); }
+function attPopisDna(d){
+  const dnes=attDnesSK();
+  if(d===dnes) return 'dnes';
+  if(d===attPosunDatum(dnes,-1)) return 'včera';
+  const rozdiel=Math.round((new Date(d+'T12:00:00')-new Date(dnes+'T12:00:00'))/864e5);
+  if(rozdiel<0) return 'pred '+(-rozdiel)+' dňami';
+  return 'o '+rozdiel+' dní';
+}
+function attDenRiadok(){
+  const el=document.getElementById('attDenRow'); if(!el||!_attDate) return;
+  const dt=new Date(_attDate+'T12:00:00');
+  const den=DNI_SK_KR[dt.getDay()], datum=dt.getDate()+'. '+(dt.getMonth()+1)+'.';
+  const minule=_attNextDate && _attDate<_attNextDate;
+  const sipka=(dni,sym,titulok)=>`<button onclick="attZmenDen(${dni})" title="${titulok}" style="background:rgba(255,255,255,.06);border:1px solid var(--border);color:var(--cream);border-radius:10px;min-width:44px;height:40px;font-size:1rem;cursor:pointer">${sym}</button>`;
+  el.innerHTML=`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      ${sipka(-7,'◀','Termín spred týždňa')}
+      <div style="flex:1;min-width:120px;text-align:center">
+        <div style="font-weight:800;color:var(--cream)">${den.charAt(0).toUpperCase()+den.slice(1)} ${datum}</div>
+        <div style="font-size:.74rem;color:var(--muted)">${attPopisDna(_attDate)}</div>
+      </div>
+      ${_attDate===_attNextDate ? '<span style="min-width:44px"></span>' : sipka(7,'▶','Novší termín')}
+      ${minule?`<button onclick="attNaNajblizsi()" style="background:rgba(201,168,76,.14);border:1px solid var(--gold-border,#332a18);color:var(--gold);border-radius:10px;padding:9px 12px;font-size:.78rem;font-weight:700;cursor:pointer;min-height:40px">Najbližší termín</button>`:''}
+    </div>
+    ${minule?`<div style="margin-top:8px;background:rgba(255,183,77,.12);border:1px solid rgba(255,183,77,.4);color:#ffd79a;border-radius:10px;padding:8px 11px;font-size:.8rem">⏪ Pozeráš staršiu hodinu. Dochádzku aj hotovosť môžeš doplniť spätne.</div>`:''}`;
+}
+function attZmenDen(dni){
+  if(!_attDate) return;
+  const novy=attPosunDatum(_attDate,dni);
+  if(dni>0 && _attNextDate && novy>_attNextDate) return;
+  if(dni<0 && novy < attPosunDatum(attDnesSK(),-84)) { toast('Ďalej dozadu už panel nejde — ozvi sa Marekovi.'); return; }
+  _attDate=novy; attDenRiadok(); loadTrainerInstructor(_currentClassId); loadAttendees(_currentClassId);
+}
+function attNaNajblizsi(){ if(!_attNextDate) return; _attDate=_attNextDate; attDenRiadok(); loadTrainerInstructor(_currentClassId); loadAttendees(_currentClassId); }
+
 async function loadAttendees(classId){
   try {
-    const data = await api('/api/attendance/class/'+classId);
+    const data = await api('/api/attendance/class/'+classId+(_attDate?('?date='+encodeURIComponent(_attDate)):''));
     _attendees = Array.isArray(data) ? data : [];
     renderAttendees(_attendees);
   } catch(e){
@@ -1415,7 +1463,7 @@ async function quickAddUser(userId, userName){
 async function bookCovered(userId, method, label, classId){
   const cid = classId || _currentClassId;
   const box=document.getElementById('addUserResults'); if(box) box.style.display='none';
-  const r = await api('/api/attendance/manual-booking',{method:'POST',body:{ user_id:userId, class_id:cid, method }});
+  const r = await api('/api/attendance/manual-booking',{method:'POST',body:{ user_id:userId, class_id:cid, method, booking_date:_attDate||undefined }});
   if(r?.ok){ toast(`✅ Zapísaný — ${label}`); if(cid===_currentClassId){ await loadAttendees(_currentClassId); } await loadSchedule(); }
   else toast(r?.error||'Chyba', true);
   return r;
@@ -1439,7 +1487,7 @@ function showTechnikaDialog(st){
 async function bookTechCash(userId, cena){
   const box=document.getElementById('addUserResults'); if(box) box.style.display='none';
   const r = await api('/api/attendance/manual-booking',{method:'POST',body:{
-    user_id:userId, class_id:_currentClassId, method:'pay_on_site', pay_amount:cena }});
+    user_id:userId, class_id:_currentClassId, method:'pay_on_site', pay_amount:cena, booking_date:_attDate||undefined }});
   if(r?.ok){ toast('✅ Zapísaná — vyber '+cena+' € na mieste'); await loadAttendees(_currentClassId); await loadSchedule(); }
   else toast(r?.error||'Chyba', true);
 }
@@ -1704,7 +1752,7 @@ async function doManualBook(){
   if(!userId){ toast('Vyberte klienta', true); return; }
   if(!_currentClassId){ toast('Žiadna hodina vybraná', true); return; }
   const r = await api('/api/attendance/manual-booking',{method:'POST',body:{
-    user_id:userId, class_id:_currentClassId, is_free:type==='free', note
+    user_id:userId, class_id:_currentClassId, is_free:type==='free', note, booking_date:_attDate||undefined
   }});
   const msg = document.getElementById('mb-msg');
   if(r?.ok){
