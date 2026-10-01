@@ -94,6 +94,12 @@ const suma = rows => +rows.reduce((s, r) => s + (+r.amount || 0), 0).toFixed(2);
     bk('qaChB2', 'Vybratá Klientka', 'attended', { pay_on_site: true, pay_amount: 10, entry_collected: { amount: 10, method: 'cash', at: '2026-09-15T19:00:00.000Z' } }),
     bk('qaChB3', 'Zrušená Klientka', 'cancelled', { pay_on_site: true, pay_amount: 10 }),
     bk('qaChB4', 'Členka Klientka', 'attended', {}),
+    // rodička, ktorá platí mesačný paušál za dieťa — v zozname byť má, ale netreba vyberať
+    { ...bk('qaChB5', 'Jana Rodička', 'attended', { pay_on_site: true, pay_amount: 10 }), booking_date: '2026-09-22' },
+  ]));
+  fs.writeFileSync(path.join(DATA, 'memberships.db'), riadky([
+    { _id: 'qaChMem1', user_id: MAMA, user_name: 'Jana Rodička', plan_id: 'bronze', plan_name: 'Bronze', status: 'active',
+      started_at: '2026-09-01T00:00:00.000Z', expires_at: '2026-10-05T23:59:59.000Z', price: 30, payment_method: 'cash', created_at: '2026-09-01T10:00:00.000Z' },
   ]));
   // V produkcii je pri hodinách v štúdiu ako inštruktor vedený majiteľ a kto naozaj
   // učil, hovorí override na dátum — zárobky aj tento prehľad čítajú jeho.
@@ -182,6 +188,20 @@ const suma = rows => +rows.reduce((s, r) => s + (+r.amount || 0), 0).toFixed(2);
       JSON.stringify(cash().filter(r => +r.amount === 10).map(r => [r.trainer_name, r.note, r.status])));
     const nv2 = await j('/api/admin/pay-on-site?trainer=' + encodeURIComponent('Dana Trénerka'), {}, aj);
     ok('po zapísaní zo zoznamu zmizla', nv2.d.rows.length === 0, JSON.stringify(nv2.d.rows));
+
+    // odpísanie platby, ktorú netreba vyberať (platí mesačným paušálom za dieťa)
+    const nv3 = await j('/api/admin/pay-on-site', {}, aj);
+    const pausal = (nv3.d.rows || []).find(r => r.id === 'qaChB5');
+    ok('v zozname je aj rezervácia rodiča, ktorý platí paušálom', !!pausal, JSON.stringify((nv3.d.rows || []).map(r => r.id)));
+    ok('upozorní, že klientka mala v ten deň členstvo', pausal && pausal.clenstvo && /Bronze/i.test(pausal.clenstvo.plan), JSON.stringify(pausal && pausal.clenstvo));
+    const bezDovodu = await j('/api/admin/bookings/qaChB5/waive', { method: 'POST', body: { reason: '' } }, aj);
+    ok('bez dôvodu sa odpísať nedá (400)', bezDovodu.status === 400, 'HTTP ' + bezDovodu.status);
+    const waive = await j('/api/admin/bookings/qaChB5/waive', { method: 'POST', body: { reason: 'platí 30 € mesačne za dcéru' } }, aj);
+    const bW = rd('bookings.db').find(b => b._id === 'qaChB5');
+    ok('odpísané: žiadna tržba ani hotovosť, len dôvod v zázname', waive.status === 200 && bW && bW.pay_on_site === false && /30 € mesačne/.test(bW.pay_waived?.reason || '')
+      && !rd('transactions.db').some(t => t.booking_id === 'qaChB5'), JSON.stringify(bW && bW.pay_waived));
+    ok('odpísaná platba zo zoznamu zmizla', !((await j('/api/admin/pay-on-site', {}, aj)).d.rows || []).some(r => r.id === 'qaChB5'));
+    ok('odpísanie je v audite', rd('audit.db').some(a => a.action === 'pay_waived'));
 
     // ── 2) admin založí dieťa rodičovi ──
     const bezDatumu = await j('/api/admin/users/' + MAMA + '/children', { method: 'POST', body: { name: 'Vivien Rodičková' } }, aj);
