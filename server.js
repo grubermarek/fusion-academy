@@ -2304,6 +2304,18 @@ async function seedData() {
     await q.insert(db.settings,{key:'oprava_hotovost_sukromne_20261001', value:vysledok, at:nowISO()});
   }
 
+  // Jednorazový výpis nevybratých platieb na mieste (Marek 1. 10.: „či tréner nezabudol
+  // označiť, že vybral hotovosť"). Len do logu nasadenia, mená idú z databázy.
+  if(!(await q.one(db.settings,{key:'vypis_nevybrane_20261001'}))){
+    try{
+      const rows=await nevybranePlatby({});
+      console.log('💶 Nevybraté platby na mieste: '+rows.length+' ks / '+rows.reduce((s,r)=>s+r.amount,0).toFixed(2)+' €');
+      for(const r of rows.slice(0,60))
+        console.log(`   · ${r.date} ${r.time} ${r.class_name} (${r.city}) — ${r.user_name} ${r.amount.toFixed(2)} € · učil/a ${r.trainer}`);
+    }catch(e){ console.error('výpis nevybratých:', e.message); }
+    await q.insert(db.settings,{key:'vypis_nevybrane_20261001', value:true, at:nowISO()});
+  }
+
   // Jednorazový výpis výplat do logu nasadenia (Marek 1. 10.: „prepočítaj mi výplatu").
   // V kóde žiadne mená — berú sa z databázy.
   if(!(await q.one(db.settings,{key:'vypis_vyplat_20261001'}))){
@@ -16374,6 +16386,33 @@ async function vyberVstupne(b, { amount, method, by, byName }) {
   return { plan: plan? plan.name : null, bundle: !!jeBalik };
 }
 
+// Kto bol na hodine, mal platiť na mieste a peniaze nikto nezapísal. Typicky tréner
+// zabudol kliknúť „VYBER" — v tržbách potom chýba vstupné a vo výplate zrážka.
+// Zrušené rezervácie a no-show sem nepatria, tie nikto neplatí.
+async function nevybranePlatby({ month, trainer } = {}){
+  const classes = await q.find(db.classes,{});
+  const clsMap = Object.fromEntries(classes.map(c=>[c._id,c]));
+  const insOverride = await sessionInstructorMap();  // class_id|date → kto naozaj učil
+  const rows=[];
+  for(const b of await q.find(db.bookings,{status:'attended'})){
+    if(!b.pay_on_site || b.entry_collected) continue;
+    const d=b.booking_date||(b.created_at||'').slice(0,10)||'';
+    if(month && !d.startsWith(month)) continue;
+    const cls=clsMap[b.class_id]||{};
+    const kto=(insOverride[b.class_id+'|'+d]?.name) || cls.instructor || '—';
+    if(trainer && kto!==trainer) continue;
+    rows.push({ id:b._id, date:d, class_name:cls.name||b.class_name||'—', time:cls.time_start||b.class_time_start||'',
+      city:cls.location||b.class_location||'—', trainer:kto, user_id:b.user_id||null, user_name:b.user_name||'—',
+      amount:+(b.pay_amount||cls.price||10), plan:b.pay_plan||null });
+  }
+  return rows.sort((a,b)=>String(b.date).localeCompare(String(a.date)) || String(a.time).localeCompare(String(b.time)));
+}
+app.get('/api/admin/pay-on-site', adminAuth, async(req,res)=>{
+  try{
+    const rows=await nevybranePlatby({ month:req.query.month||'', trainer:req.query.trainer||'' });
+    res.json({ ok:true, rows, total:+rows.reduce((s,r)=>s+r.amount,0).toFixed(2) });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 app.post('/api/admin/bookings/:id/collect', (req,res,next)=>trainerAuth(req,res,next), async(req,res)=>{
   try{
     const b=await q.one(db.bookings,{_id:req.params.id});
@@ -16381,8 +16420,14 @@ app.post('/api/admin/bookings/:id/collect', (req,res,next)=>trainerAuth(req,res,
     if(b.entry_collected) return res.status(400).json({error:'Vstup k tejto rezervácii je už vybraný'});
     const amount=+req.body.amount||10;
     const method=req.body.method==='card'?'card':(req.body.method==='transfer'?'transfer':'cash');
-    const vyberca=await q.one(db.users,{_id:req.session.uid});
-    const vysl=await vyberVstupne(b,{amount, method, by:req.session.uid, byName:(vyberca&&vyberca.name)||'—'});
+    let vyberca=await q.one(db.users,{_id:req.session.uid});
+    // Admin dopisuje platbu, na ktorú tréner zabudol — peniaze má tréner, nie admin,
+    // takže aj hotovosť musí pribudnúť jemu (inak by mu chýbala zrážka z výplaty).
+    if(req.trainerUser?.is_admin && req.body.by_trainer_id){
+      const t=await q.one(db.users,{_id:String(req.body.by_trainer_id)});
+      if(t) vyberca=t;
+    }
+    const vysl=await vyberVstupne(b,{amount, method, by:vyberca?._id||req.session.uid, byName:vyberca?.name||'—'});
     // Adminovi to hlásime len ak vyberal niekto iný — inak by si Marek posielal
     // notifikácie sám sebe pri každom vstupnom.
     if(method==='cash' && amount>0){

@@ -3724,7 +3724,7 @@ async function openPayoutDetail(trainer, trainerId){
   const d=await api('/api/trainer/earnings?trainer_id='+encodeURIComponent(trainerId));
   if(!d||d.error){ document.getElementById('poDetailContent').innerHTML='<div class="text-danger py-3">Chyba: '+(d?.error||'?')+'</div>'; return; }
   renderPayoutDetail(d);
-  loadPayoutCash();
+  loadPayoutCash(); loadPayoutPending();
 }
 async function loadPayoutCash(){
   const box=document.getElementById('poCashBox'); if(!box||!_poDetailTrainer) return;
@@ -3757,6 +3757,30 @@ async function loadPayoutCash(){
     <div class="text-muted mt-1" style="font-size:.66rem">„Prevzal som" = peniaze máš ty, zrážka sa zruší. Suma sa rozpustí do najstarších výberov okrem súkromných hodín; ak nevyjde presne, posledný sa rozdelí. Súkromnú hodinu označ tlačidlom v riadku, len ak ti ju naozaj odovzdal/a.</div>
   </div></div>`;
 }
+// Kto bol na hodine, mal platiť na mieste a nikto to nezapísal (tréner zabudol kliknúť VYBER)
+async function loadPayoutPending(){
+  const box=document.getElementById('poPendingBox'); if(!box||!_poDetailTrainer) return;
+  const d=await api('/api/admin/pay-on-site?trainer='+encodeURIComponent(_poDetailTrainer.name));
+  if(!d||!d.ok||!(d.rows||[]).length){ box.innerHTML=''; return; }
+  box.innerHTML=`<div class="card bg-dark border-warning mb-3"><div class="card-body py-2 px-3">
+    <div class="fw-bold small mb-1" style="color:#ffcc66">💶 Nevybraté platby na mieste — <b>${d.total.toFixed(2)} €</b> (${d.rows.length})</div>
+    ${d.rows.slice(0,20).map(r=>`
+      <div class="d-flex justify-content-between align-items-center gap-2 py-1" style="border-top:1px solid #2a2a2a;font-size:.78rem">
+        <span class="text-muted">${fmtDate(r.date)}${r.time?' '+r.time:''} · ${escHtml(r.class_name)} <span style="opacity:.7">(${escHtml(r.city)})</span> — <b class="text-light">${escHtml(r.user_name)}</b></span>
+        <span class="d-flex align-items-center gap-2"><b>${r.amount.toFixed(2)} €</b>
+          <button class="btn btn-sm btn-outline-warning py-0 px-2" style="font-size:.7rem" onclick="collectPending('${r.id}',${r.amount},'${escHtml(r.user_name).replace(/'/g,"\\'")}')">Vybrať hotovosť</button></span>
+      </div>`).join('')}
+    <div class="text-muted mt-1" style="font-size:.66rem">Boli na hodine, mali platiť na mieste a platba nie je zapísaná. „Vybrať hotovosť" zapíše predaj, pošle doklad klientke a sumu pridá trénerovi do hotovosti. Pri starších hodinách pôjde tržba do aktuálneho mesiaca.</div>
+  </div></div>`;
+}
+async function collectPending(id, amount, meno){
+  const a=prompt(`Koľko si vybral/a od ${meno}? (€)`, (+amount).toFixed(2));
+  if(a===null) return;
+  const suma=+String(a).replace(',','.'); if(!(suma>0)) return showToast('Neplatná suma','error');
+  const d=await api('/api/admin/bookings/'+id+'/collect',{method:'POST',body:JSON.stringify({amount:suma, method:'cash', by_trainer_id:_poDetailTrainer.id})});
+  if(d?.ok){ showToast('✅ Zapísané '+suma.toFixed(2)+' €','success'); const rd=await api('/api/trainer/earnings?trainer_id='+encodeURIComponent(_poDetailTrainer.id)); if(rd&&!rd.error) renderPayoutDetail(rd); loadPayoutCash(); loadPayoutPending(); loadPayouts(); }
+  else showToast('Chyba: '+(d?.error||'?'),'error');
+}
 // Tréner odovzdal peniaze naraz (napr. 160 €) — nemusíme klikať záznam po zázname
 async function cashHandoverSum(){
   const amount=+document.getElementById('poCashSum').value||0;
@@ -3768,7 +3792,7 @@ async function cashHandoverSum(){
   if(d?.ok){
     showToast(`✅ Prevzaté ${d.settled.toFixed(2)} €`+(d.zvysok>0?` — ${d.zvysok.toFixed(2)} € nemal/a u seba`:''),'success');
     const rd=await api('/api/trainer/earnings?trainer_id='+encodeURIComponent(_poDetailTrainer.id)); if(rd&&!rd.error) renderPayoutDetail(rd);
-    loadPayoutCash();
+    loadPayoutCash(); loadPayoutPending();
     loadPayouts();
   } else showToast('Chyba: '+(d?.error||'?'),'error');
 }
@@ -3777,14 +3801,14 @@ async function cashHandover(id){
   const d=await api('/api/admin/cash/'+id+'/handover',{method:'POST'});
   // Poradie: najprv prekresli detail (prepíše obsah aj s prázdnym #poCashBox), až potom
   // dopln hotovosť — inak karta hotovosti po kliknutí zmizla.
-  if(d?.ok){ showToast('✅ Hotovosť prevzatá','success'); const rd=await api('/api/trainer/earnings?trainer_id='+encodeURIComponent(_poDetailTrainer.id)); if(rd&&!rd.error) renderPayoutDetail(rd); loadPayoutCash(); loadPayouts(); }
+  if(d?.ok){ showToast('✅ Hotovosť prevzatá','success'); const rd=await api('/api/trainer/earnings?trainer_id='+encodeURIComponent(_poDetailTrainer.id)); if(rd&&!rd.error) renderPayoutDetail(rd); loadPayoutCash(); loadPayoutPending(); loadPayouts(); }
   else showToast('Chyba: '+(d?.error||'?'),'error');
 }
 function renderPayoutDetail(d){
   const el=document.getElementById('poDetailContent');
   const rows=(d.months||[]).filter(m=>m.total>0 || m.sessions>0 || m.paid || (m.cash_deduct||0)>0);
   if(!rows.length){ el.innerHTML='<div class="text-muted py-3">Zatiaľ žiadne zárobky.</div>'; return; }
-  el.innerHTML = `<div id="poCashBox"></div><div class="mb-3 p-2 rounded" style="background:#1a1a1a;border:1px solid #2a2a2a">
+  el.innerHTML = `<div id="poCashBox"></div><div id="poPendingBox"></div><div class="mb-3 p-2 rounded" style="background:#1a1a1a;border:1px solid #2a2a2a">
       <span class="text-muted small">Spolu za 12 mesiacov:</span> <span class="fw-bold" style="color:#C9A24C">${(d.grand_total||0).toFixed(2)} €</span>
     </div>` + rows.map(m=>{
     const paid=m.status==='paid';

@@ -47,6 +47,7 @@ const suma = rows => +rows.reduce((s, r) => s + (+r.amount || 0), 0).toFixed(2);
   ok('admin: po prevzatí sa najprv prekreslí detail, až potom karta hotovosti (inak zmizne)',
     /renderPayoutDetail\(rd\); loadPayoutCash\(\)/.test(adm));
   ok('profil: tlačidlá na individuálnu cenu a pridanie dieťaťa', /saveCustomPrice/.test(prof) && /function addChild/.test(prof) && /admChildBirth/.test(prof));
+  ok('admin: karta nevybratých platieb na mieste s tlačidlom Vybrať', /loadPayoutPending/.test(adm) && /collectPending/.test(adm) && /\/api\/admin\/pay-on-site/.test(adm));
   ok('server: detský profil vzniká na jednom mieste (vytvorDieta)', /async function vytvorDieta\(/.test(srv) && /\/api\/admin\/users\/:id\/children/.test(srv));
   ok('zmazaná migrácia, ktorá dávala 30 € nesprávnej Vivien', !/custom_price_vivien_20260819'\}\)\)\)\{/.test(srv));
   ok('prevzatie jedného záznamu zapisuje meno admina, nie „Admin" natvrdo', /settled_by:req\.user\?\.name\|\|'Admin'/.test(srv));
@@ -80,6 +81,24 @@ const suma = rows => +rows.reduce((s, r) => s + (+r.amount || 0), 0).toFixed(2);
     // Eva = stav po chybnom prevzatí 25. 9.: súkromná hodina označená ako odovzdaná
     vyber('qaChE1', TRE3, 'Eva Trénerka', 50, 'Vstupné', '2026-09-03'),
     sukr('qaChE2', TRE3, 'Eva Trénerka', 30, '2026-09-04', { status: 'settled_handed', settled_at: '2026-09-25T10:00:00.000Z', settled_by: 'Marek Gruber' }),
+  ]));
+
+  // Hodina Dany + rezervácie: jedna nevybratá platba na mieste, ostatné nemajú byť v zozname
+  fs.writeFileSync(path.join(DATA, 'classes.db'), riadky([
+    // instructor_id musí byť vyplnený — hodinu bez neho si pri štarte prevezme zakladateľ
+    { _id: 'qaChCls1', name: 'Zumba Detva', instructor: 'Dana Trénerka', instructor_id: TRE2, location: 'Detva', day_of_week: 2, time_start: '18:00', capacity: 30, price: 10, active: true, category: 'Zumba' },
+  ]));
+  const bk = (id, user, stav, extra) => ({ _id: id, class_id: 'qaChCls1', class_name: 'Zumba Detva', user_id: MAMA, user_name: user, booking_date: '2026-09-15', status: stav, created_at: '2026-09-15T17:00:00.000Z', ...extra });
+  fs.writeFileSync(path.join(DATA, 'bookings.db'), riadky([
+    bk('qaChB1', 'Jana Rodička', 'attended', { pay_on_site: true, pay_amount: 10 }),
+    bk('qaChB2', 'Vybratá Klientka', 'attended', { pay_on_site: true, pay_amount: 10, entry_collected: { amount: 10, method: 'cash', at: '2026-09-15T19:00:00.000Z' } }),
+    bk('qaChB3', 'Zrušená Klientka', 'cancelled', { pay_on_site: true, pay_amount: 10 }),
+    bk('qaChB4', 'Členka Klientka', 'attended', {}),
+  ]));
+  // V produkcii je pri hodinách v štúdiu ako inštruktor vedený majiteľ a kto naozaj
+  // učil, hovorí override na dátum — zárobky aj tento prehľad čítajú jeho.
+  fs.writeFileSync(path.join(DATA, 'session_instructors.db'), riadky([
+    { _id: 'qaChSi1', class_id: 'qaChCls1', date: '2026-09-15', instructor_id: TRE2, instructor_name: 'Dana Trénerka', created_at: '2026-09-15T10:00:00.000Z' },
   ]));
 
   console.log('\nSERVER');
@@ -148,6 +167,21 @@ const suma = rows => +rows.reduce((s, r) => s + (+r.amount || 0), 0).toFixed(2);
     const sukrRow = cash().find(r => r.trainer_name === 'Dana Trénerka' && r.private_booking_id && r.status === 'held');
     const sukrH = await j('/api/admin/cash/' + sukrRow._id + '/handover', { method: 'POST' }, aj);
     ok('súkromnú hodinu vie admin označiť ručne, keď mu ju tréner naozaj dá', sukrH.status === 200 && (cash().find(r => r._id === sukrRow._id) || {}).status === 'settled_handed', JSON.stringify(sukrH.d));
+
+    // ── 1d) nevybraté platby na mieste (tréner zabudol kliknúť VYBER) ──
+    const nv = await j('/api/admin/pay-on-site?trainer=' + encodeURIComponent('Dana Trénerka'), {}, aj);
+    ok('v zozname je len tá jedna nevybratá platba (nie vybratá, zrušená ani členka)',
+      nv.status === 200 && nv.d.rows.length === 1 && nv.d.rows[0].id === 'qaChB1' && nv.d.total === 10, JSON.stringify(nv.d));
+    ok('zoznam vie, kto hodinu učil a kto nezaplatil', nv.d.rows[0].trainer === 'Dana Trénerka' && nv.d.rows[0].user_name === 'Jana Rodička' && nv.d.rows[0].class_name === 'Zumba Detva', JSON.stringify(nv.d.rows[0]));
+    const nvCudzi = await j('/api/admin/pay-on-site', {}, mj);
+    ok('klientka zoznam nevidí (403)', nvCudzi.status === 403, 'HTTP ' + nvCudzi.status);
+    const vyber10 = await j('/api/admin/bookings/qaChB1/collect', { method: 'POST', body: { amount: 10, method: 'cash', by_trainer_id: TRE2 } }, aj);
+    ok('admin platbu dopíše', vyber10.status === 200, JSON.stringify(vyber10.d));
+    ok('hotovosť pribudla TRÉNERKE (má ju ona, nie admin)',
+      cash().some(r => r.trainer_name === 'Dana Trénerka' && +r.amount === 10 && r.status === 'held' && /vstup/i.test(r.note || '')),
+      JSON.stringify(cash().filter(r => +r.amount === 10).map(r => [r.trainer_name, r.note, r.status])));
+    const nv2 = await j('/api/admin/pay-on-site?trainer=' + encodeURIComponent('Dana Trénerka'), {}, aj);
+    ok('po zapísaní zo zoznamu zmizla', nv2.d.rows.length === 0, JSON.stringify(nv2.d.rows));
 
     // ── 2) admin založí dieťa rodičovi ──
     const bezDatumu = await j('/api/admin/users/' + MAMA + '/children', { method: 'POST', body: { name: 'Vivien Rodičková' } }, aj);
