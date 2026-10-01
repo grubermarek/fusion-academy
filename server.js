@@ -2306,7 +2306,7 @@ async function seedData() {
 
   // Jednorazový výpis nevybratých platieb na mieste (Marek 1. 10.: „či tréner nezabudol
   // označiť, že vybral hotovosť"). Len do logu nasadenia, mená idú z databázy.
-  if(!(await q.one(db.settings,{key:'vypis_nevybrane_20261001c'}))){
+  if(!(await q.one(db.settings,{key:'vypis_nevybrane_20261001d'}))){
     try{
       const rows=await nevybranePlatby({});
       console.log('💶 Nevybraté platby na mieste: '+rows.length+' ks / '+rows.reduce((s,r)=>s+r.amount,0).toFixed(2)+' €');
@@ -2316,7 +2316,7 @@ async function seedData() {
           +(r.zaplatene_inde?` · UŽ ZAPLATENÉ ${r.zaplatene_inde.date} ${r.zaplatene_inde.amount.toFixed(2)} € (${r.zaplatene_inde.note})`:'')
           +(r.clenstvo?` · má členstvo ${r.clenstvo.plan} do ${r.clenstvo.do}`:''));
     }catch(e){ console.error('výpis nevybratých:', e.message); }
-    await q.insert(db.settings,{key:'vypis_nevybrane_20261001c', value:true, at:nowISO()});
+    await q.insert(db.settings,{key:'vypis_nevybrane_20261001d', value:true, at:nowISO()});
   }
 
   // Jednorazový výpis výplat do logu nasadenia (Marek 1. 10.: „prepočítaj mi výplatu").
@@ -16415,7 +16415,10 @@ async function nevybranePlatby({ month, trainer } = {}){
     (txs[t.user_id]=txs[t.user_id]||[]).push(t);
   }
   const posun=(d,n)=>{ const x=new Date(d+'T12:00:00Z'); x.setUTCDate(x.getUTCDate()+n); return x.toISOString().slice(0,10); };
-  const zaplateneInde=(uid,d)=>(txs[uid]||[]).find(t=>{
+  // Platba viazaná na INÚ rezerváciu (má booking_id) túto hodinu nekryje — inak by
+  // vstupné vybraté minulý týždeň vyzeralo ako zaplatená dnešná hodina.
+  const zaplateneInde=(uid,d,bid)=>(txs[uid]||[]).find(t=>{
+    if(t.booking_id && t.booking_id!==bid) return false;
     const td=String(t.date||t.created_at||'').slice(0,10);
     return td>=posun(d,-7) && td<=posun(d,7);
   });
@@ -16428,7 +16431,7 @@ async function nevybranePlatby({ month, trainer } = {}){
     const kto=(insOverride[b.class_id+'|'+d]?.name) || cls.instructor || '—';
     if(trainer && kto!==trainer) continue;
     const kryte=b.user_id?kryteClenstvom(b.user_id,d):null;
-    const inde=b.user_id?zaplateneInde(b.user_id,d):null;
+    const inde=b.user_id?zaplateneInde(b.user_id,d,b._id):null;
     rows.push({ id:b._id, date:d, class_name:cls.name||b.class_name||'—', time:cls.time_start||b.class_time_start||'',
       city:cls.location||b.class_location||'—', trainer:kto, user_id:b.user_id||null, user_name:b.user_name||'—',
       amount:+(b.pay_amount||cls.price||10), plan:b.pay_plan||null,
