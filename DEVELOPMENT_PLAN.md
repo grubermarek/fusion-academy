@@ -317,6 +317,15 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
 - Admin → Správa → Influenceri: tabuľka s filtrami (sieť, stav, mesto, min. sledovateľov, len s predajom), triedenie, CSV, kontakt (mail, tel, WhatsApp, profil), detail so stavom spolupráce a internou poznámkou. `GET/PUT /api/admin/influencers[/:id]`.
 - Pasca: „platí“ sa číta z `db.memberships` (hotovostné členstvo nezapisuje `users.membership_expires`).
 
+### 7.12 Fusion X — partnerské zľavy pre členov ✅ HOTOVO (2026-10-02, fusion-x.js, public/fusion-x.html, public/admin-fusionx.js, qa/fusion-x.test.js)
+- Každé aktívne, **uhradené mesačné** členstvo (všetko z `MEMBERSHIP_PLANS` okrem `type:'bundle'`) otvára Fusion X = 10 % zľava u partnerov. Nárok počíta `FX.narok(uid)` naživo z `db.memberships` (`!m._type`, status active, neexpirované). Skúšobný týždeň zadarmo (`trial` bez `trial_from`) a nulová cena nárok nedávajú; Bronze→Silver skúška (`trial_from`) a Glofox áno.
+- Partneri **nemajú účet**: formulár na webe `fusion-x.html` → `POST /api/public/fusion-x/partner` (urlencoded, CORS `naborCors`, spam `naborSpamDovody`) → `db.fusionx_partneri` stav `novy`, mail + oznam adminom. Zverejní sa LEN stavom `schvaleny` v admin → Fusion X (profil: názov, mesto, kategória, popis, adresa, telefón, web, logo). Verejne `GET /api/public/fusion-x/partneri` (bez kontaktov zo žiadosti).
+- Karta `/fusion-x`: meno, stav, platnosť, QR platný 5 min (`POST /api/fusion-x/kod`). Token = AES-256-GCM (uid + exp), kľúč `settings.fusionx_kluc`, žiadne osobné údaje. Partner skenuje fotoaparátom → `/fx/<token>` bez prihlásenia: „Aktívne členstvo — nárok…" / „Nárok na zľavu nie je platný.", skrátené meno + živé hodiny (proti screenshotu).
+- `db.fusionx_overenia` = počet **overení členstva** (1 kód = 1 overenie), nie nákupov; nikde neukazovať čerpanie ani ušetrené €.
+- `/api/me` vracia `fusion_x`; nástenka má kartu „Fusion X — tvoje partnerské zľavy" + riadok v detaile členstva; obchod má benefit pri každom mesačnom pláne a vysvetlenie v pokladni.
+- Oznam „Fusion X máš otvorený!" (`FX.oznamAktivacie`) raz za obdobie nároku (`users.fusionx_do`); kým nie je zverejnený žiadny partner, čaká. Volá sa z `activateMembership` (s 5 s odstupom kvôli skúške) a z `/api/me` (hotovostné/ručné predaje).
+- Pasca: skúšobný týždeň kúpený v hotovosti počas skúšky predĺži skúšobný záznam (`trial:true, price:0`) — taká klientka nárok nemá, kým sa záznam neopraví.
+
 ### Zámerne vynechané (nepomer hodnota/prácnosť pre malú školu)
 - Consumer marketplace (Mindbody ClassPass štýl) — nemáme objem.
 - Dynamic pricing — zbytočná komplexita pri cenách 9–10 €.

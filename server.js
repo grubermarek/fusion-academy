@@ -12517,6 +12517,8 @@ async function activateMembership(userId, planId, durationDays, opts={}){
   await q.update(db.users,{_id:userId},{$set:memberSet});
   // Notification
   await q.insert(db.notifications,{user_id:userId,type:'membership',title:'Členstvo aktivované 🎉',body:`Váš plán ${plan.name} je aktívny do ${expiresAt.toLocaleDateString('sk-SK')}.`,read:false,created_at:nowISO()});
+  // s odstupom: skúšobný týždeň si cenu 0 / trial zapíše až po activateMembership — oznam by išiel aj jemu
+  if(FX) setTimeout(()=>FX.oznamAktivacie(userId), 5000);
   if(promoU && promoU.is_child) autoZapisDietata(promoU).catch(e=>console.error('auto kids:', e.message));
   // ── Email automation: cancel lead_nurture, enqueue membership_welcome ────────
   cancelSequence(userId,'lead_nurture').catch(()=>{});
@@ -22771,11 +22773,15 @@ async function odberInfo(u){
   return data;
 }
 
+let FX = null; // Fusion X modul (fusion-x.js) — nastaví sa pri štarte pod influencerom
 app.get('/api/me', async(req,res)=>{
   if(!req.session?.uid) return res.json({});
   const u = await q.one(db.users,{_id:req.session.uid});
   if(!u) return res.json({});
   const m = await checkMembership(req.session.uid);
+  const fx = FX ? await FX.stav(u).catch(()=>null) : null;
+  // Oznam „Fusion X máš otvorený" aj po hotovostnom/ručnom predaji, ktorý nejde cez activateMembership
+  if(fx && fx.aktivny && String(u.fusionx_do||'')!==String(fx.platne_do)) FX.oznamAktivacie(u._id);
   const notifCount = await q.count(db.notifications,{user_id:{$in:(await idsSDetmi(req.session.uid)).ids},read:false});
   const loyalty = getLoyaltyStatus(u.visit_count || 0);
   const role = USER_ROLES[u.user_type] || USER_ROLES.client;
@@ -22799,6 +22805,7 @@ app.get('/api/me', async(req,res)=>{
     birthday: u.birthday||'', anonymous: !!u.anonymous,
     stripe_subscription: !!u.stripe_subscription_id,
     odber: await odberInfo(u),
+    fusion_x: fx,
   });
 });
 
@@ -27964,6 +27971,9 @@ app.get('/vecer/:token/tlac', (req,res)=>res.sendFile(path.join(__dirname,'publi
 app.get('/vecer/:token',      (req,res)=>res.sendFile(path.join(__dirname,'public','vecer.html')));
 // Influencer program — samoregistrácia, odkaz /i/<kód> s klikmi, dashboard + admin prehľad (24. 9. 2026)
 require('./influencer')({ app, db, q, Datastore, DATA_DIR, auth, adminAuth, nowISO, today, APP_URL, isTestContact, ambRate, COMMISSION_HOLD_DAYS });
+// Fusion X — 10 % zľava u partnerov pre každé mesačné členstvo, karta s QR, overenie bez prihlásenia (2. 10. 2026)
+FX = require('./fusion-x')({ app, db, q, Datastore, DATA_DIR, auth, adminAuth, nowISO, today, APP_URL, sendMail, emailTemplate,
+  MEMBERSHIP_PLANS, naborCors, naborSpamDovody, klientIp, rlPublic, rateLimit, express, isTestContact });
 
 // ── 404 page ──────────────────────────────────────────────────────────────────
 app.use((req,res,next)=>{

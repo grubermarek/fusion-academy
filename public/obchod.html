@@ -56,6 +56,11 @@ h1 small{color:var(--muted);font-weight:400;font-size:.85rem;display:block;margi
 .buy.owned{background:rgba(139,195,74,.12);color:#8bc34a;border:1px solid rgba(139,195,74,.4);cursor:default}
 .buy:disabled{opacity:.5}
 select{background:#1d1a15;border:1px solid var(--line);color:var(--cream);border-radius:10px;padding:9px;font-size:.85rem;margin-right:6px}
+.fxline{display:flex;gap:8px;align-items:flex-start;background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.28);border-radius:10px;padding:8px 10px;margin:8px 0 2px;font-size:.8rem;line-height:1.45}
+.fxline b{color:var(--gold)}
+.fxline a{color:var(--gold);white-space:nowrap}
+html[data-theme="aurora"] .fxline{background:rgba(168,85,247,.12);border-color:rgba(233,184,255,.3)}
+html[data-theme="aurora"] .fxline b,html[data-theme="aurora"] .fxline a{color:#E9B8FF}
 .howto{background:none;border:none;color:var(--muted);font-size:.78rem;cursor:pointer;text-decoration:underline;padding:4px 0}
 
 /* Nákupy */
@@ -174,6 +179,8 @@ function renderMyf(){
     const dots=Array.from({length:Math.min(total,12)},(_,i)=>`<span class="dot ${i<e.left?'full':'used'}"></span>`).join('');
     rows+=`<div class="row"><span>${FA_T('shop.pass_entries')}</span><span style="text-align:right"><b>${e.left}</b> ${e.left===1?FA_T('shop.entry1'):FA_T('shop.entryN')}<div class="dots" style="margin-top:5px;justify-content:flex-end">${dots}</div>${e.expires_at?`<small style="color:var(--muted);font-size:.72rem">${FA_T('shop.pass_until',{d:dstr(e.expires_at)})}</small>`:''}</span></div>`;
   }
+  const fx=ME&&ME.fusion_x;
+  if(fx) rows+=`<div class="row"><span>Fusion X <small style="color:var(--muted);font-size:.72rem">10 % u partnerov</small></span><span>${fx.aktivny?'<a href="/fusion-x" class="badge on" style="text-decoration:none">aktívny do '+dstr(fx.platne_do)+'</a>':'<span class="badge off">neaktívny</span>'}</span></div>`;
   if(OV.free_credits>0) rows+=`<div class="row"><span>${FA_T('shop.free_hours')}</span><span><b>${OV.free_credits}</b></span></div>`;
   rows+=`<div class="row" style="cursor:pointer" onclick="creditHistory()"><span>${FA_T('shop.credit')} <small style="color:var(--muted);font-size:.72rem">${FA_T('shop.credit_hint')}</small></span><span><b class="big gold">${eur(OV.credit)}</b></span></div>`;
   document.getElementById('myf').innerHTML=`<div class="myf"><div style="font-size:.72rem;font-weight:800;letter-spacing:.12em;color:var(--gold);margin-bottom:4px">${FA_T('shop.myf')}</div>${rows}</div>`;
@@ -203,6 +210,8 @@ const PLAN_FEATURES={
   online_basic:['shop.f_ob1','shop.f_ob2'],
   online_premium:['shop.f_op1','shop.f_op2','shop.f_op3','shop.f_op4'],
 };
+// Fusion X je v každom mesačnom členstve (nie pri vstupoch a permanentkách)
+const FX_RIADOK='<div class="fxline"><span aria-hidden="true">🏷️</span><span><b>Fusion X v cene</b> — 10 % zľava u našich partnerov. <a href="/fusion-x">Pozrieť partnerov a výhody</a></span></div>';
 function renderPlans(){
   const my=OV.membership?.plan_id;
   // Nikdy neukazuj nižší plán, než klientka má — len jej plán + upsell.
@@ -241,6 +250,7 @@ function renderPlans(){
     return `<div class="pcard ${id==='silver'?'hl':''}">
       <div class="top"><h3>${owned?'✅ ':''}${esc(p.name)}</h3><span class="price">${eur(p.price)}<small> ${FA_T('shop.per_month')}</small></span></div>
       <ul>${(PLAN_FEATURES[id]||[]).map(f=>`<li>${FA_T(f)}</li>`).join('')}</ul>
+      ${p.type!=='bundle'?FX_RIADOK:''}
       ${owned
         ? `<button class="buy owned">${FA_T('shop.owned',{d:dstr(OV.membership.expires_at)})}</button>
            <button class="howto" onclick="openPlan('${id}')">${FA_T('shop.manage')}</button>`
@@ -511,6 +521,7 @@ function openPlan(id){
     ${monthly&&STRIPE?`<label class="renew"><input type="checkbox" id="mRenew" checked onchange="recalc()" style="accent-color:#C9A84C;width:17px;height:17px">
       <span>${FA_T('shop.renew_toggle')}<br><small style="color:var(--muted)">${FA_T('shop.renew_hint')}</small></span></label>`:''}
     ${(OV.membership && OV.membership.plan_id!==id && monthly)?`<p class="note" style="margin:0 0 10px;color:var(--gold)">${FA_T('shop.upgrade_note',{old:esc(OV.membership.plan_name), d:dstr(OV.membership.expires_at), val:Math.max(0,Math.round((OV.membership.price||0)*Math.max(0,OV.membership.days_left)/30*100)/100).toFixed(2)+' €'})}</p>`:''}
+    ${monthly?'<p class="note" style="margin:0 0 10px;color:var(--cream)"><b class="gold">Fusion X v cene.</b> S týmto členstvom získavaš prístup do Fusion X. Počas platnosti členstva môžeš využívať 10 % zľavu na produkty a služby našich partnerov. <a href="/fusion-x" style="color:var(--gold)">Pozrieť partnerov</a></p>':''}
     <div class="mrow"><span class="mut">${FA_T('shop.price')}</span><span id="mCena">${eur(p.price)}</span></div>
     <p class="note" id="mKidsNote" style="display:none;color:#ffb74d;margin:0 0 10px"></p>
     ${OV.credit>0?`<label class="credit-row"><input type="checkbox" id="mCredit" checked onchange="recalc()" style="accent-color:#C9A84C">${FA_T('shop.use_credit',{c:eur(OV.credit)})}</label>`:''}

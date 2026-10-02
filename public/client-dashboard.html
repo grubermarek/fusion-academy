@@ -552,6 +552,10 @@
         <label>Automatický odber</label>
         <span id="mcAutoRenew">—</span>
       </div>
+      <div class="mc-info-item">
+        <label>Fusion X</label>
+        <span id="mcFx">—</span>
+      </div>
     </div>
     <!-- Automatická obnova: či beží, kedy a koľko sa strhne, vypnutie (Marek 15. 9.) -->
     <div id="mcOdber" style="display:none"></div>
@@ -562,6 +566,9 @@
     </button>
     <a id="mcCancelSub" onclick="cancelStripeSub()" style="display:none;margin-top:10px;font-size:.78rem;color:var(--muted);text-decoration:underline;cursor:pointer;text-align:center"><span data-i18n="dash.mc_cancel_sub">Zrušiť automatický mesačný odber</span></a>
   </div>
+
+  <!-- Fusion X: partnerské zľavy 10 % pri každom mesačnom členstve (2. 10. 2026) -->
+  <div id="fxCard" class="anim anim-d2" style="display:none;margin-bottom:20px"></div>
 
   <!-- Community spotlight: klient mesiaca + narodeniny + meniny -->
   <div id="spotlight" class="spotlight anim anim-d2" style="display:none"></div>
@@ -1087,7 +1094,29 @@ async function toggleOffers(on){
 }
 
 /* ─── Membership ─── */
+// Fusion X — stav vždy zo servera (/api/me → fusion_x), nikdy odhadom z frontendu
+function renderFx(me){
+  const fx=me&&me.fusion_x, card=document.getElementById('fxCard'), it=document.getElementById('mcFx');
+  if(!card) return;
+  if(!fx){ card.style.display='none'; return; }
+  if(it){ it.innerHTML=fx.aktivny?'<span style="color:#81c784;font-weight:700">✓ aktívny</span> <span style="color:var(--muted);font-size:.8em">do '+datumSk(fx.platne_do)+'</span>':'<span style="color:#9e9e9e">neaktívny</span>'; }
+  const box='display:flex;gap:14px;align-items:center;text-decoration:none;color:var(--cream,#eee);border-radius:16px;padding:16px;';
+  card.innerHTML=fx.aktivny
+    ? '<a href="/fusion-x" style="'+box+'background:linear-gradient(150deg,#2a2111,#15110a);border:1px solid rgba(201,168,76,.5)">'
+      +'<div style="flex:none;width:52px;height:52px;border-radius:14px;background:rgba(201,168,76,.15);display:flex;align-items:center;justify-content:center;color:var(--gold,#C9A84C);font-weight:900;font-size:1.05rem">'+(fx.zlava||10)+' %</div>'
+      +'<div style="flex:1;min-width:0"><div style="font-weight:800">Fusion X — tvoje partnerské zľavy</div>'
+      +'<div style="font-size:.8rem;color:var(--muted,#999);margin-top:2px">'+(fx.zlava||10)+' % na všetky produkty a služby partnerov · aktívne do '+datumSk(fx.platne_do)+'</div>'
+      +'<span style="display:inline-flex;align-items:center;gap:6px;margin-top:10px;min-height:40px;padding:8px 16px;border-radius:12px;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;font-weight:900;font-size:.88rem">Pozrieť partnerov <i class="bi bi-arrow-right"></i></span></div></a>'
+    : '<div style="'+box+'background:#161616;border:1px solid var(--gold-border,#332a18)">'
+      +'<div style="flex:none;width:52px;height:52px;border-radius:14px;background:#222;display:flex;align-items:center;justify-content:center;color:#9e9e9e;font-weight:900;font-size:1.05rem">'+(fx.zlava||10)+' %</div>'
+      +'<div style="flex:1;min-width:0"><div style="font-weight:800">Fusion X</div>'
+      +'<div style="font-size:.84rem;color:var(--muted,#999);margin-top:2px;line-height:1.5">Fusion X je súčasťou každého mesačného členstva. Aktivuj si členstvo a získaj prístup k partnerským zľavám.</div>'
+      +'<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;align-items:center"><a href="/obchod?tab=clenstva" style="display:inline-flex;align-items:center;min-height:40px;padding:8px 16px;border-radius:12px;background:linear-gradient(102deg,#B98F3E,#E7C878);color:#231A08;font-weight:900;font-size:.88rem;text-decoration:none">Aktivovať členstvo</a>'
+      +'<a href="/fusion-x" style="color:var(--gold,#C9A84C);font-size:.84rem">Čo je Fusion X</a></div></div></div>';
+  card.style.display='block';
+}
 function renderMembership(me){
+  renderFx(me);
   renderUnlockCards(me);
   renderOffersPref(me);
   // Vstupy z permanentky + darované hodiny — ukáž vždy, keď nejaké sú (aj popri členstve)

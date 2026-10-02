@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fusion X – Fusion Academy</title>
+<link rel="icon" type="image/png" href="/logo-mark.png">
+<script>/* téma pred prvým renderom */try{if(localStorage.getItem('fa_theme')==='aurora')document.documentElement.dataset.theme='aurora'}catch(e){}</script>
+<link rel="stylesheet" href="/aurora.css">
+<style>
+:root{--gold:#C9A84C;--gold2:#E7C878;--cream:#EAE3D5;--muted:#a59d8a;--card:#1a1712;--line:#2e2a20;--ok:#4ade80;--off:#f87171;--grad:linear-gradient(102deg,#B98F3E,#E7C878);--on-grad:#231A08}
+*{box-sizing:border-box}
+body{background:#12100a;color:var(--cream);font-family:'Inter',system-ui,sans-serif;margin:0;min-height:100dvh;padding-bottom:110px;-webkit-tap-highlight-color:transparent}
+.wrap{max-width:560px;margin:0 auto;padding:18px 16px}
+h1{font-size:1.4rem;margin:6px 0 4px;display:flex;align-items:center;gap:10px}
+.sub{color:var(--muted);font-size:.9rem;margin:0 0 18px;line-height:1.5}
+.ic{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+a{color:var(--gold)}
+button{font:inherit;touch-action:manipulation}
+:focus-visible{outline:3px solid var(--gold2);outline-offset:2px}
+
+/* Karta člena */
+.kartax{position:relative;overflow:hidden;border-radius:22px;padding:20px 18px;background:linear-gradient(150deg,#2a2111 0%,#17130c 55%,#0f0c07 100%);border:1px solid rgba(201,168,76,.45);box-shadow:0 14px 40px rgba(0,0,0,.45)}
+.kartax::after{content:'';position:absolute;right:-70px;top:-70px;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,rgba(231,200,120,.18),transparent 70%);pointer-events:none}
+.kx-top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:16px}
+.kx-brand{display:flex;align-items:center;gap:8px;font-weight:900;letter-spacing:.16em;font-size:.78rem;color:var(--gold)}
+.kx-brand img{width:26px;height:26px}
+.stav{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 12px;font-size:.78rem;font-weight:800}
+.stav.on{background:rgba(74,222,128,.13);color:var(--ok);border:1px solid rgba(74,222,128,.45)}
+.stav.off{background:rgba(248,113,113,.1);color:var(--off);border:1px solid rgba(248,113,113,.4)}
+.stav .ic{width:15px;height:15px;stroke-width:2.6}
+.kx-meno{font-size:1.35rem;font-weight:800;margin:0 0 2px;word-break:break-word}
+.kx-riadky{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.kx-riadky div{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:9px 11px}
+.kx-riadky small{display:block;color:var(--muted);font-size:.72rem;margin-bottom:2px}
+.kx-riadky b{font-size:.95rem}
+.zlava{font-size:1.9rem;font-weight:900;color:var(--gold2);line-height:1}
+
+/* QR */
+.qrbox{margin-top:16px;background:#fff;border-radius:16px;padding:14px;display:flex;flex-direction:column;align-items:center;min-height:120px;justify-content:center}
+.qrbox img{width:100%;max-width:240px;aspect-ratio:1;display:block}
+.qrcas{color:#3b3423;font-size:.85rem;font-weight:700;margin-top:8px;font-variant-numeric:tabular-nums;text-align:center}
+.qrbox.vyprsal img{opacity:.12;filter:blur(2px)}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:48px;border:none;border-radius:12px;padding:12px 16px;font-weight:900;font-size:.95rem;cursor:pointer;text-decoration:none;transition:transform .15s ease-out,opacity .15s}
+.btn:active{transform:scale(.98)}
+.btn.prim{background:var(--grad);color:var(--on-grad)}
+.btn.sec{background:#221E19;color:var(--cream);border:1px solid rgba(201,168,76,.35);font-weight:700}
+.btn:disabled{opacity:.5;cursor:default}
+.pozn{font-size:.8rem;color:var(--muted);line-height:1.55;margin:10px 0 0}
+
+/* Ako to funguje */
+.sekcia{margin-top:26px}
+.sekcia h2{font-size:1.08rem;margin:0 0 12px}
+.kroky{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.kroky li{display:flex;gap:12px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;font-size:.9rem;line-height:1.5}
+.kroky .n{flex:none;width:26px;height:26px;border-radius:50%;background:rgba(201,168,76,.15);color:var(--gold);font-weight:900;display:flex;align-items:center;justify-content:center;font-size:.82rem}
+
+/* Partneri */
+.filtre{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.filtre[hidden]{display:none}
+.filtre label{flex:1;min-width:140px;font-size:.75rem;color:var(--muted)}
+.filtre select{display:block;width:100%;margin-top:4px;min-height:44px;background:#1d1a15;border:1px solid var(--line);color:var(--cream);border-radius:10px;padding:9px;font-size:16px}
+.partner{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:10px;display:flex;gap:12px}
+.plogo{flex:none;width:56px;height:56px;border-radius:12px;background:#0f0d09;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--gold);font-weight:900;font-size:1.2rem}
+.plogo img{width:100%;height:100%;object-fit:contain;background:#fff}
+.partner h3{margin:0;font-size:1rem}
+.pmeta{color:var(--muted);font-size:.78rem;margin:2px 0 6px}
+.partner p{margin:4px 0;font-size:.85rem;line-height:1.5;color:var(--cream);opacity:.9}
+.pz{display:inline-block;background:rgba(201,168,76,.14);color:var(--gold2);border-radius:999px;padding:2px 10px;font-size:.74rem;font-weight:800;margin-bottom:4px}
+.plinky{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;font-size:.84rem}
+.plinky a{display:inline-flex;align-items:center;gap:5px;min-height:32px;text-decoration:none}
+.prazdne{background:var(--card);border:1px dashed var(--line);border-radius:16px;padding:18px;text-align:center;color:var(--muted);font-size:.9rem;line-height:1.6}
+
+/* Neaktívny stav */
+.zamknute{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}
+.zamknute p{margin:0 0 14px;line-height:1.6;font-size:.95rem}
+
+.skel{background:linear-gradient(90deg,#1d1a14,#2a251b,#1d1a14);background-size:200% 100%;animation:sk 1.2s infinite;border-radius:22px;height:300px}
+@keyframes sk{to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.skel{animation:none}.btn{transition:none}}
+
+/* ── AURORA ── */
+html[data-theme="aurora"] body{background:#0B0714}
+html[data-theme="aurora"] .kartax{background:linear-gradient(150deg,rgba(168,85,247,.28),rgba(236,72,153,.14) 55%,rgba(255,255,255,.05));border-color:rgba(233,184,255,.4)}
+html[data-theme="aurora"] .kx-brand,html[data-theme="aurora"] .zlava{color:#F3D27E}
+html[data-theme="aurora"] .btn.prim{background:linear-gradient(90deg,#A855F7,#EC4899);color:#fff}
+html[data-theme="aurora"] .btn.sec{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.16)}
+html[data-theme="aurora"] .partner,html[data-theme="aurora"] .kroky li,html[data-theme="aurora"] .zamknute,html[data-theme="aurora"] .prazdne{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.14)}
+html[data-theme="aurora"] .filtre select{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.16)}
+html[data-theme="aurora"] .pz{background:rgba(168,85,247,.2);color:#E9B8FF}
+html[data-theme="aurora"] a{color:#E9B8FF}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></symbol>
+  <symbol id="i-web" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
+  <symbol id="i-tel" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></symbol>
+</svg>
+<main class="wrap">
+  <h1><svg class="ic" style="color:var(--gold);width:26px;height:26px"><use href="#i-tag"/></svg>Fusion X</h1>
+  <p class="sub">Partnerské zľavy pre členov Fusion Academy — <b>10 % na všetky produkty a služby</b> zapojených partnerov. Súčasť každého mesačného členstva, bez príplatku a bez ďalšej registrácie.</p>
+
+  <div id="karta"><div class="skel" aria-label="Načítavam kartu"></div></div>
+
+  <section class="sekcia" aria-labelledby="h-ako">
+    <h2 id="h-ako">Ako zľavu využiješ</h2>
+    <ol class="kroky">
+      <li><span class="n">1</span><span>Navštív alebo kontaktuj partnera bežným spôsobom — rezervuješ si u neho priamo, nie cez Fusion Academy.</span></li>
+      <li><span class="n">2</span><span>Pri platbe otvor túto kartu a ukáž QR kód. Partner ho naskenuje fotoaparátom telefónu a hneď vidí, či máš nárok.</span></li>
+      <li><span class="n">3</span><span>Partner ti dá 10 % zľavu vo svojom bežnom predaji. QR kód platí 5 minút, potom sa sám obnoví.</span></li>
+    </ol>
+  </section>
+
+  <section class="sekcia" aria-labelledby="h-partneri">
+    <h2 id="h-partneri">Partneri Fusion X</h2>
+    <div class="filtre" id="filtre" hidden>
+      <label>Mesto<select id="fMesto"><option value="">všetky mestá</option></select></label>
+      <label>Kategória<select id="fKat"><option value="">všetky kategórie</option></select></label>
+    </div>
+    <div id="partneri"><div class="prazdne">Načítavam partnerov…</div></div>
+  </section>
+</main>
+
+<script src="/nav-bar.js"></script>
+<script>
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const datum=d=>{ const x=new Date(d); return isNaN(x)?'':x.getDate()+'. '+(x.getMonth()+1)+'. '+x.getFullYear(); };
+const ico=(id,extra)=>`<svg class="ic"${extra?' style="'+extra+'"':''} aria-hidden="true"><use href="#${id}"/></svg>`;
+async function api(p,o){ const r=await fetch(p,{credentials:'include',...(o||{}),headers:{'Content-Type':'application/json'}}); const d=await r.json().catch(()=>({})); return {status:r.status,...d}; }
+
+let STAV=null, KOD=null, TIMER=null, PARTNERI=[];
+async function boot(){
+  const s=await api('/api/fusion-x/stav');
+  if(s.status===401||s.status===403){ location.href='/?next='+encodeURIComponent('/fusion-x'); return; }
+  STAV=s; kresliKartu();
+  if(s.aktivny) novyKod();
+  const p=await api('/api/fusion-x/partneri'); PARTNERI=Array.isArray(p.partneri)?p.partneri:[]; kresliFiltre(); kresliPartnerov();
+}
+function kresliKartu(){
+  const el=document.getElementById('karta'), s=STAV;
+  if(!s || s.error){ el.innerHTML=`<div class="zamknute"><p>Kartu sa nepodarilo načítať.</p><button class="btn sec" onclick="boot()">${ico('i-refresh')}Skúsiť znova</button></div>`; return; }
+  const stav=s.aktivny?`<span class="stav on">${ico('i-check')}Fusion X: aktívny</span>`:`<span class="stav off">${ico('i-x')}Nárok neplatný</span>`;
+  el.innerHTML=`<div class="kartax" role="group" aria-label="Digitálna karta Fusion X">
+    <div class="kx-top"><span class="kx-brand"><img src="/logo-mark.png" alt="">FUSION X</span>${stav}</div>
+    <p class="kx-meno">${esc(s.meno||'')}</p>
+    <div style="color:var(--muted);font-size:.85rem">Člen Fusion Academy</div>
+    <div class="kx-riadky">
+      <div><small>Zľava u partnerov</small><span class="zlava">${s.zlava||10} %</span></div>
+      <div><small>${s.aktivny?'Platnosť nároku do':'Členstvo'}</small><b>${s.aktivny?esc(datum(s.platne_do)):'neaktívne'}</b>${s.aktivny&&s.plan?`<small style="margin-top:2px">${esc(s.plan)}</small>`:''}</div>
+    </div>
+    ${s.aktivny?`<div class="qrbox" id="qrbox" aria-live="polite"><div class="qrcas">Pripravujem QR kód…</div></div>
+      <button class="btn sec" style="margin-top:10px" id="obnov" onclick="novyKod()">${ico('i-refresh')}Nový QR kód</button>
+      <p class="pozn">QR kód neobsahuje tvoje osobné údaje. Partnerovi ukáže len tvoje meno v skrátenom tvare a to, či máš nárok na zľavu.</p>`
+    :`<div style="margin-top:16px"><p style="margin:0 0 12px;line-height:1.6">Fusion X je súčasťou každého mesačného členstva. Aktivuj si členstvo a získaj prístup k partnerským zľavám.</p>
+      <a class="btn prim" href="/obchod?tab=clenstva">Aktivovať členstvo</a>
+      <p class="pozn">Benefit sa zapne automaticky hneď po zaplatení mesačného členstva. Jednorazové vstupy a permanentky Fusion X nezahŕňajú.</p></div>`}
+  </div>`;
+}
+async function novyKod(){
+  const b=document.getElementById('obnov'); if(b) b.disabled=true;
+  const d=await api('/api/fusion-x/kod',{method:'POST',body:'{}'});
+  if(b) b.disabled=false;
+  const box=document.getElementById('qrbox'); if(!box) return;
+  if(!d.ok){
+    if(d.aktivny===false){ STAV={...STAV,aktivny:false}; kresliKartu(); return; }
+    box.innerHTML=`<div class="qrcas">${esc(d.error||'QR kód sa nepodarilo pripraviť.')}</div>`; return;
+  }
+  KOD=d; box.classList.remove('vyprsal');
+  box.innerHTML=`<img src="${d.qr}" alt="QR kód na overenie členstva Fusion X" width="240" height="240"><div class="qrcas" id="qrcas"></div>`;
+  clearInterval(TIMER); tik(); TIMER=setInterval(tik,1000);
+}
+function tik(){
+  const el=document.getElementById('qrcas'); if(!el||!KOD) return;
+  const zost=Math.round((new Date(KOD.plati_do)-Date.now())/1000);
+  if(zost<=0){ clearInterval(TIMER); document.getElementById('qrbox')?.classList.add('vyprsal'); el.textContent='Kód vypršal — obnovujem…'; novyKod(); return; }
+  el.textContent='Platí ešte '+Math.floor(zost/60)+':'+String(zost%60).padStart(2,'0');
+}
+// Návrat do appky po čase (telefón v taške) — vypršaný kód hneď vymeň
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden && STAV?.aktivny && KOD && new Date(KOD.plati_do)-Date.now()<30000) novyKod(); });
+
+function kresliFiltre(){
+  const mesta=[...new Set(PARTNERI.map(p=>p.mesto).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'sk'));
+  const kat=[...new Set(PARTNERI.map(p=>p.kategoria).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'sk'));
+  if(PARTNERI.length<4) return;
+  document.getElementById('fMesto').innerHTML='<option value="">všetky mestá</option>'+mesta.map(m=>`<option>${esc(m)}</option>`).join('');
+  document.getElementById('fKat').innerHTML='<option value="">všetky kategórie</option>'+kat.map(m=>`<option>${esc(m)}</option>`).join('');
+  document.getElementById('filtre').hidden=false;
+  ['fMesto','fKat'].forEach(id=>document.getElementById(id).addEventListener('change',kresliPartnerov));
+}
+function kresliPartnerov(){
+  const el=document.getElementById('partneri');
+  if(!PARTNERI.length){ el.innerHTML='<div class="prazdne">Prvých partnerov práve pridávame. Hneď ako bude zľava u niekoho platiť, uvidíš ho tu — a dáme ti vedieť.</div>'; return; }
+  const m=document.getElementById('fMesto').value, k=document.getElementById('fKat').value;
+  const list=PARTNERI.filter(p=>(!m||p.mesto===m)&&(!k||p.kategoria===k));
+  if(!list.length){ el.innerHTML='<div class="prazdne">Pre tento výber zatiaľ nemáme partnera.</div>'; return; }
+  el.innerHTML=list.map(p=>{
+    const tel=String(p.telefon||'').replace(/[^\d+]/g,'');
+    return `<article class="partner">
+      <div class="plogo">${p.logo?`<img src="${esc(p.logo)}" alt="" loading="lazy">`:esc((p.nazov||'?').trim()[0]||'?')}</div>
+      <div style="min-width:0">
+        <h3>${esc(p.nazov)}</h3>
+        <div class="pmeta">${esc([p.kategoria,p.mesto].filter(Boolean).join(' · '))}</div>
+        <span class="pz">${p.zlava||10} % na všetko</span>
+        ${p.popis?`<p>${esc(p.popis)}</p>`:''}
+        ${p.uplatnenie?`<p style="color:var(--muted)">${esc(p.uplatnenie)}</p>`:''}
+        <div class="plinky">
+          ${p.adresa?`<a href="https://maps.google.com/?q=${encodeURIComponent(p.adresa+(p.mesto&&!p.adresa.includes(p.mesto)?', '+p.mesto:''))}" target="_blank" rel="noopener">${ico('i-pin','width:16px;height:16px')}${esc(p.adresa)}</a>`:''}
+          ${tel?`<a href="tel:${esc(tel)}">${ico('i-tel','width:16px;height:16px')}${esc(p.telefon)}</a>`:''}
+          ${p.web?`<a href="${esc(p.web)}" target="_blank" rel="noopener">${ico('i-web','width:16px;height:16px')}Web</a>`:''}
+        </div>
+      </div></article>`;
+  }).join('');
+}
+boot();
+</script>
+<script src="/dock.js"></script>
+</body>
+</html>
