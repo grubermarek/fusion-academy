@@ -11,33 +11,25 @@
  *   - správca po dohode žiadosť schváli, doplní verejný profil a tým ho zaradí,
  *   - verejný zoznam (GET /api/public/fusion-x/partneri) ukazuje len schválených.
  *
- * Uplatnenie: klientka ukáže v appke kartu (/fusion-x) s QR kódom platným 5 minút.
- * QR nesie len zašifrovaný token (AES-256-GCM, kľúč v settings `fusionx_kluc`),
- * žiadne osobné údaje. Partner ho naskenuje fotoaparátom → /fx/<token> = overovacia
- * stránka bez prihlásenia: „Aktívne členstvo — nárok…" alebo „Nárok… nie je platný."
- * Nárok sa vždy počíta naživo z db.memberships, nie z tokenu.
- *
- * Sken je LEN overenie členstva, nie nákup — nikde neukazujeme „čerpanie" ani
- * „ušetrené €". V admine je počet overení, výslovne označený ako overenia členstva.
+ * Uplatnenie (Marek 2. 10.): partner NIČ neskenuje. Klientka ukáže v appke kartu (/fusion-x) s menom,
+ * stavom „aktívne" a dátumom platnosti; majiteľ to vidí a dá 10 % vo svojom bežnom predaji. Proti
+ * screenshotu karta ukazuje bežiace hodiny a čas posledného overenia na serveri (obnova každú minútu).
+ * Nárok sa vždy počíta naživo z db.memberships. Nákupy ani „ušetrené €" neevidujeme.
  */
 'use strict';
 const path = require('path');
-const crypto = require('crypto');
 
 module.exports = function initFusionX(ctx){
   const { app, db, q, Datastore, DATA_DIR, auth, adminAuth, nowISO, today, APP_URL, sendMail, emailTemplate,
-    MEMBERSHIP_PLANS, naborCors, naborSpamDovody, klientIp, rlPublic, rateLimit, express, isTestContact } = ctx;
+    MEMBERSHIP_PLANS, naborCors, naborSpamDovody, klientIp, rlPublic, express, isTestContact } = ctx;
 
   db.fusionx_partneri = new Datastore({ filename: path.join(DATA_DIR, 'fusionx_partneri.db'), autoload: true });
-  db.fusionx_overenia = new Datastore({ filename: path.join(DATA_DIR, 'fusionx_overenia.db'), autoload: true });
-  db.fusionx_overenia.ensureIndex({ fieldName: 'kod' });
 
   const ZLAVA = 10;                       // % — rovnaká u všetkých partnerov
-  const KOD_SEKUND = 5 * 60;              // platnosť QR kódu
   const APP = String(APP_URL || '').replace(/\/$/, '');
   const MAILY = ['gruber.marek@gmail.com', 'beatabunova22@gmail.com'];
   const KATEGORIE = ['Krása a starostlivosť', 'Zdravie a pohyb', 'Móda a doplnky', 'Jedlo a kaviarne',
-    'Služby', 'Deti a rodina', 'Obchod', 'Iné'];
+    'Ubytovanie a wellness', 'Služby', 'Deti a rodina', 'Obchod', 'Iné'];
   const STAVY = { novy: 'Nová žiadosť', v_rieseni: 'V riešení', schvaleny: 'Schválený — zverejnený',
     pozastaveny: 'Pozastavený', zamietnuty: 'Zamietnutý' };
   // Mesačné plány = všetko okrem vstupov a permanentiek
@@ -96,58 +88,12 @@ module.exports = function initFusionX(ctx){
     } catch (e) { console.error('Fusion X oznam:', e.message); }
   }
 
-  // ── Token v QR (bez osobných údajov) ───────────────────────────────────────
-  let KLUC = null;
-  async function kluc(){
-    if (KLUC) return KLUC;
-    let s = await q.one(db.settings, { key: 'fusionx_kluc' });
-    if (!s || !/^[0-9a-f]{64}$/.test(String(s.value || ''))) {
-      const v = crypto.randomBytes(32).toString('hex');
-      if (s) await q.update(db.settings, { _id: s._id }, { $set: { value: v } });
-      else await q.insert(db.settings, { key: 'fusionx_kluc', value: v, created_at: nowISO() });
-      s = { value: v };
-    }
-    KLUC = Buffer.from(s.value, 'hex');
-    return KLUC;
-  }
-  async function zabal(uid, exp){
-    const iv = crypto.randomBytes(12);
-    const c = crypto.createCipheriv('aes-256-gcm', await kluc(), iv);
-    const t = Buffer.alloc(4); t.writeUInt32BE(exp >>> 0);
-    const ct = Buffer.concat([c.update(Buffer.concat([Buffer.from(String(uid), 'utf8'), t])), c.final()]);
-    return Buffer.concat([iv, ct, c.getAuthTag()]).toString('base64url');
-  }
-  async function rozbal(tok){
-    try {
-      const b = Buffer.from(String(tok || ''), 'base64url');
-      if (b.length < 12 + 5 + 16 || b.length > 120) return null;
-      const d = crypto.createDecipheriv('aes-256-gcm', await kluc(), b.subarray(0, 12));
-      d.setAuthTag(b.subarray(b.length - 16));
-      const pt = Buffer.concat([d.update(b.subarray(12, b.length - 16)), d.final()]);
-      return { uid: pt.subarray(0, pt.length - 4).toString('utf8'), exp: pt.readUInt32BE(pt.length - 4) };
-    } catch (e) { return null; }
-  }
-
   // ── Klientka: stav, karta, partneri ────────────────────────────────────────
   app.get('/api/fusion-x/stav', auth, async (req, res) => {
     try {
       const u = await q.one(db.users, { _id: req.session.uid });
       if (!u) return res.status(404).json({ error: 'Účet sa nenašiel.' });
-      res.json({ ...(await stav(u)), meno: u.name || '' });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-  });
-
-  // Nový krátkodobý QR. Bez nároku sa kód nevydá — karta ukáže, že nárok nie je platný.
-  app.post('/api/fusion-x/kod', auth, async (req, res) => {
-    try {
-      const u = await q.one(db.users, { _id: req.session.uid });
-      if (!u) return res.status(404).json({ error: 'Účet sa nenašiel.' });
-      const n = await narok(u._id);
-      if (!n.aktivny) return res.status(403).json({ error: 'Fusion X je súčasťou mesačného členstva. Aktivuj si členstvo a získaš prístup k partnerským zľavám.', aktivny: false });
-      const exp = Math.floor(Date.now() / 1000) + KOD_SEKUND;
-      const url = APP + '/fx/' + await zabal(u._id, exp);
-      const qr = await require('qrcode').toDataURL(url, { margin: 1, width: 360, errorCorrectionLevel: 'M', color: { dark: '#000000', light: '#ffffff' } });
-      res.json({ ok: true, url, qr, plati_do: new Date(exp * 1000).toISOString(), sekund: KOD_SEKUND, meno: u.name || '', ...n });
+      res.json({ ...(await stav(u)), meno: u.name || '', overene_at: nowISO() });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
@@ -169,61 +115,6 @@ module.exports = function initFusionX(ctx){
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'public, max-age=300');
     try { res.json({ partneri: await verejniPartneri(), zlava: ZLAVA, kategorie: KATEGORIE }); } catch (e) { res.status(500).json({ error: e.message }); }
-  });
-
-  // ── Overovacia stránka pre partnera (bez prihlásenia) ─────────────────────
-  const rlFx = rateLimit ? rateLimit({ max: 120, windowMs: 10 * 60 * 1000, message: 'Priveľa overení. Skúste o chvíľu.' }) : (req, res, next) => next();
-  function overStranka(ok, meno, dovod){
-    const farba = ok ? '#22c55e' : '#ef4444';
-    const ikona = ok
-      ? '<svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
-      : '<svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
-    return `<!doctype html><html lang="sk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>Overenie Fusion X</title>
-<style>
-*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center;background:#0d0b07;color:#f3ede0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;padding:20px}
-.k{width:100%;max-width:420px;background:#17140d;border:1px solid #3a3220;border-radius:22px;padding:28px 22px;text-align:center}
-.brand{display:flex;align-items:center;justify-content:center;gap:10px;font-weight:800;letter-spacing:.14em;font-size:.8rem;color:#C9A84C;margin-bottom:22px}
-.brand img{width:30px;height:30px}
-.kruh{width:108px;height:108px;border-radius:50%;background:${farba};display:flex;align-items:center;justify-content:center;margin:0 auto 18px;box-shadow:0 0 0 10px ${farba}22}
-h1{font-size:1.35rem;line-height:1.35;margin:0 0 10px}
-.meno{font-size:1.15rem;font-weight:700;color:#C9A84C;margin:6px 0 2px}
-.mut{color:#a59d8a;font-size:.9rem;line-height:1.5}
-.cas{margin-top:18px;padding-top:16px;border-top:1px solid #2e2818;font-variant-numeric:tabular-nums;color:#a59d8a;font-size:.85rem}
-.cas b{color:#f3ede0;font-size:1.05rem}
-</style></head><body><main class="k">
-<div class="brand"><img src="/logo-mark.png" alt="">FUSION X</div>
-<div class="kruh">${ikona}</div>
-${ok
-  ? `<h1>Aktívne členstvo — nárok na zľavu Fusion X ${ZLAVA} %.</h1><div class="meno">${escH(meno)}</div><p class="mut">Člen Fusion Academy. Zľavu poskytnite vo svojom bežnom predajnom procese.</p>`
-  : `<h1>Nárok na zľavu nie je platný.</h1><p class="mut">${escH(dovod || '')}</p>`}
-<div class="cas">Overené <b id="t"></b></div>
-</main><script>(function(){var t=document.getElementById('t');function f(){var d=new Date();t.textContent=d.getDate()+'. '+(d.getMonth()+1)+'. '+d.getFullYear()+' '+d.toLocaleTimeString('sk-SK');}f();setInterval(f,1000);})();</script>
-</body></html>`;
-  }
-  app.get('/fx/:kod', rlFx, async (req, res) => {
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-    const kod = String(req.params.kod || '').slice(0, 200);
-    const hash = crypto.createHash('sha256').update(kod).digest('hex').slice(0, 32);
-    let vysledok = 'neplatny', ok = false, meno = '', dovod = 'Kód sa nedá overiť. Požiadajte člena, aby v aplikácii otvoril kartu Fusion X znova.', uid = null;
-    try {
-      const t = await rozbal(kod);
-      if (t) {
-        uid = t.uid;
-        if (t.exp < Math.floor(Date.now() / 1000)) { vysledok = 'vyprsany'; dovod = 'Platnosť QR kódu vypršala. Požiadajte člena, aby v aplikácii otvoril kartu Fusion X znova.'; }
-        else {
-          const u = await q.one(db.users, { _id: t.uid });
-          const n = u ? await narok(u._id) : { aktivny: false };
-          if (u && n.aktivny) { ok = true; vysledok = 'platny'; meno = kratkeMeno(u.name); }
-          else { vysledok = 'bez_naroku'; dovod = 'Člen momentálne nemá aktívne mesačné členstvo.'; }
-        }
-      }
-      // Počítame overenia, nie nákupy. Jeden QR kód = jedno overenie (obnovenie stránky sa nepripočíta).
-      if (uid && !(await q.one(db.fusionx_overenia, { kod: hash })))
-        await q.insert(db.fusionx_overenia, { kod: hash, user_id: uid, vysledok, at: nowISO(), den: today() });
-    } catch (e) { console.error('Fusion X overenie:', e.message); }
-    res.type('html').send(overStranka(ok, meno, dovod));
   });
 
   // ── Žiadosť partnera z webu ────────────────────────────────────────────────
@@ -279,21 +170,10 @@ ${ok
   });
 
   // ── Admin ──────────────────────────────────────────────────────────────────
-  async function statistikaOvereni(){
-    const vsetky = await q.find(db.fusionx_overenia, {});
-    const od30 = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
-    const platne = vsetky.filter(o => o.vysledok === 'platny');
-    return {
-      spolu: vsetky.length, platne: platne.length, neplatne: vsetky.length - platne.length,
-      za_30_dni: vsetky.filter(o => (o.den || '') >= od30).length,
-      clenov: new Set(platne.map(o => o.user_id)).size,
-      posledne: vsetky.sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 1).map(o => o.at)[0] || null
-    };
-  }
   app.get('/api/admin/fusion-x', adminAuth, async (req, res) => {
     try {
       const vsetci = (await q.find(db.fusionx_partneri, {})).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
-      res.json({ partneri: vsetci, stavy: STAVY, kategorie: KATEGORIE, zlava: ZLAVA, overenia: await statistikaOvereni() });
+      res.json({ partneri: vsetci, stavy: STAVY, kategorie: KATEGORIE, zlava: ZLAVA });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
   function profilZBody(b, stary){
@@ -353,6 +233,31 @@ ${ok
   });
 
   app.get('/fusion-x', (req, res) => res.sendFile(path.join(__dirname, 'public', 'fusion-x.html')));
+
+  // Prví partneri (Marek 2. 10. 2026): TopKošele.sk a penzión Aurora Patince — dohodnutých 10 % už mali
+  // (sekcia Naši partneri na webe). Jednorazovo a len na produkcii; existujúci záznam sa nezdvojí.
+  const PRVI_PARTNERI = [
+    { hladaj: /top\s*ko[sš]ele/i, firma: 'TopKošele.sk', mesto: 'Detva', kategoria: 'Móda a doplnky', web: 'https://www.topkosele.sk/',
+      popis: 'Pánske košele, polokošele, tričká, neviditeľné tielka a doplnky. Predajňa v Detve, dá sa rezervovať aj súkromný termín skúšania.',
+      logo: 'https://fusionacademy.sk/assets/partneri/topkosele.svg', poradie: 1 },
+    { hladaj: /aurora\s*patince/i, firma: 'Aurora Patince', mesto: 'Patince', kategoria: 'Ubytovanie a wellness', web: 'https://www.aurorapatince.sk/',
+      popis: 'Penzión a wellness v Patinciach.', logo: 'https://fusionacademy.sk/assets/partneri/aurora.png', poradie: 2 },
+  ];
+  async function zalozPrvychPartnerov(){
+    const kluc = 'fusionx_prvi_partneri_v1';
+    if (await q.one(db.settings, { key: kluc })) return;
+    const vsetci = await q.find(db.fusionx_partneri, {});
+    for (const p of PRVI_PARTNERI) {
+      if (vsetci.some(x => p.hladaj.test(x.firma || '') || p.hladaj.test(x.profil?.nazov || ''))) continue;
+      await q.insert(db.fusionx_partneri, { firma: p.firma, mesto: p.mesto, kategoria: p.kategoria, kontakt_meno: '', email: '', telefon: '',
+        web: p.web, opis: '', suhlas_zlava: true, stav: 'schvaleny', zdroj: 'admin', schvaleny_at: nowISO(),
+        profil: { nazov: p.firma, mesto: p.mesto, kategoria: p.kategoria, popis: p.popis, uplatnenie: '', adresa: '', telefon: '', web: p.web, logo: p.logo, poradie: p.poradie },
+        created_at: nowISO() });
+      console.log('🏷️ Fusion X: zverejnený partner ' + p.firma);
+    }
+    await q.insert(db.settings, { key: kluc, value: true, created_at: nowISO() });
+  }
+  if (process.env.RAILWAY_ENVIRONMENT) setTimeout(() => zalozPrvychPartnerov().catch(e => console.error('Fusion X partneri:', e.message)), 4000);
 
   return { narok, stav, oznamAktivacie, ZLAVA };
 };

@@ -1,5 +1,5 @@
 // Admin → Fusion X (2. 10. 2026). Samostatný súbor: položka menu pod Influencermi/Ambasádormi,
-// žiadosti partnerov z webu, schválenie + verejný profil, ručné pridanie a počty overení členstva.
+// žiadosti partnerov z webu, schválenie + verejný profil a ručné pridanie partnera.
 // Dáta: /api/admin/fusion-x (fusion-x.js). Partner sa zverejní LEN stavom „schvaleny".
 (function(){
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -63,11 +63,10 @@
   };
   function render(){
     if(!DATA) return;
-    const o=DATA.overenia||{}, P=DATA.partneri;
-    const kpi=[['Nové žiadosti',P.filter(p=>p.stav==='novy').length],['Zverejnení partneri',P.filter(p=>p.stav==='schvaleny').length],
-      ['Overenia členstva (spolu)',cis(o.spolu)],['Overenia za 30 dní',cis(o.za_30_dni)],['Overených členov',cis(o.clenov)],['Neplatné/vypršané',cis(o.neplatne)]];
+    const P=DATA.partneri;
+    const kpi=[['Nové žiadosti',P.filter(p=>p.stav==='novy').length],['V riešení',P.filter(p=>p.stav==='v_rieseni').length],['Zverejnení partneri',P.filter(p=>p.stav==='schvaleny').length]];
     document.getElementById('fxKpi').innerHTML=kpi.map(([l,v])=>`<div class="card border-0 rounded-3 px-3 py-2"><div class="text-muted" style="font-size:.7rem">${l}</div><div class="fw-bold">${v}</div></div>`).join('')
-      +'<div class="text-muted align-self-center" style="font-size:.72rem;max-width:340px">Overenie = partner naskenoval QR kód člena. Nie je to potvrdený nákup ani využitá zľava.</div>';
+      +'<div class="text-muted align-self-center" style="font-size:.72rem;max-width:380px">Partner nič neskenuje — členka mu ukáže kartu Fusion X v appke (meno, aktívne členstvo, platnosť) a on dá 10 % zľavu.</div>';
     const st=document.getElementById('fxStav').value, q=document.getElementById('fxQ').value.trim().toLowerCase();
     const rows=P.filter(p=>(st?p.stav===st:p.stav!=='zamietnuty') && (!q || [p.firma,p.mesto,p.kontakt_meno,p.email,p.kategoria].join(' ').toLowerCase().includes(q)));
     document.getElementById('fxTbl').innerHTML='<thead><tr><th>Firma</th><th>Mesto · kategória</th><th>Kontakt</th><th>Stav</th><th>Prišla</th></tr></thead><tbody>'

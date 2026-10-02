@@ -35,11 +35,15 @@ button{font:inherit;touch-action:manipulation}
 .kx-riadky b{font-size:.95rem}
 .zlava{font-size:1.9rem;font-weight:900;color:var(--gold2);line-height:1}
 
-/* QR */
-.qrbox{margin-top:16px;background:#fff;border-radius:16px;padding:14px;display:flex;flex-direction:column;align-items:center;min-height:120px;justify-content:center}
-.qrbox img{width:100%;max-width:240px;aspect-ratio:1;display:block}
-.qrcas{color:#3b3423;font-size:.85rem;font-weight:700;margin-top:8px;font-variant-numeric:tabular-nums;text-align:center}
-.qrbox.vyprsal img{opacity:.12;filter:blur(2px)}
+/* Živý dôkaz (proti screenshotu) */
+.ziva{position:relative;overflow:hidden;margin-top:16px;border-radius:16px;padding:16px;text-align:center;background:linear-gradient(135deg,#14532d,#166534);border:1px solid rgba(74,222,128,.55)}
+.ziva::before{content:'';position:absolute;top:0;bottom:0;width:40%;left:-45%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.22),transparent);animation:lesk 2.4s ease-in-out infinite}
+@keyframes lesk{to{left:110%}}
+.ziva .t1{position:relative;font-weight:900;letter-spacing:.08em;font-size:1.05rem;color:#fff}
+.ziva .hod{position:relative;font-size:2.2rem;font-weight:900;font-variant-numeric:tabular-nums;color:#fff;line-height:1.1;margin:6px 0 2px}
+.ziva .t2{position:relative;font-size:.8rem;color:#d1fae5}
+.ziva .bod{display:inline-block;width:9px;height:9px;border-radius:50%;background:#4ade80;margin-right:6px;animation:pulz 1.2s ease-in-out infinite}
+@keyframes pulz{50%{opacity:.25}}
 .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:48px;border:none;border-radius:12px;padding:12px 16px;font-weight:900;font-size:.95rem;cursor:pointer;text-decoration:none;transition:transform .15s ease-out,opacity .15s}
 .btn:active{transform:scale(.98)}
 .btn.prim{background:var(--grad);color:var(--on-grad)}
@@ -76,7 +80,7 @@ button{font:inherit;touch-action:manipulation}
 
 .skel{background:linear-gradient(90deg,#1d1a14,#2a251b,#1d1a14);background-size:200% 100%;animation:sk 1.2s infinite;border-radius:22px;height:300px}
 @keyframes sk{to{background-position:-200% 0}}
-@media (prefers-reduced-motion:reduce){.skel{animation:none}.btn{transition:none}}
+@media (prefers-reduced-motion:reduce){.skel{animation:none}.btn{transition:none}.ziva::before{animation-duration:6s}}
 
 /* ── AURORA ── */
 html[data-theme="aurora"] body{background:#0B0714}
@@ -110,8 +114,8 @@ html[data-theme="aurora"] a{color:#E9B8FF}
     <h2 id="h-ako">Ako zľavu využiješ</h2>
     <ol class="kroky">
       <li><span class="n">1</span><span>Navštív alebo kontaktuj partnera bežným spôsobom — rezervuješ si u neho priamo, nie cez Fusion Academy.</span></li>
-      <li><span class="n">2</span><span>Pri platbe otvor túto kartu a ukáž QR kód. Partner ho naskenuje fotoaparátom telefónu a hneď vidí, či máš nárok.</span></li>
-      <li><span class="n">3</span><span>Partner ti dá 10 % zľavu vo svojom bežnom predaji. QR kód platí 5 minút, potom sa sám obnoví.</span></li>
+      <li><span class="n">2</span><span>Pri platbe otvor v appke túto kartu a ukáž ju partnerovi. Vidí na nej tvoje meno, aktívne členstvo a dátum platnosti.</span></li>
+      <li><span class="n">3</span><span>Partner ti dá 10 % zľavu vo svojom bežnom predaji. Kartu ukazuj priamo v appke — hodiny na nej bežia, takže je jasné, že nejde o fotku obrazovky.</span></li>
     </ol>
   </section>
 
@@ -132,12 +136,12 @@ const datum=d=>{ const x=new Date(d); return isNaN(x)?'':x.getDate()+'. '+(x.get
 const ico=(id,extra)=>`<svg class="ic"${extra?' style="'+extra+'"':''} aria-hidden="true"><use href="#${id}"/></svg>`;
 async function api(p,o){ const r=await fetch(p,{credentials:'include',...(o||{}),headers:{'Content-Type':'application/json'}}); const d=await r.json().catch(()=>({})); return {status:r.status,...d}; }
 
-let STAV=null, KOD=null, TIMER=null, PARTNERI=[];
+let STAV=null, PARTNERI=[];
 async function boot(){
   const s=await api('/api/fusion-x/stav');
   if(s.status===401||s.status===403){ location.href='/?next='+encodeURIComponent('/fusion-x'); return; }
   STAV=s; kresliKartu();
-  if(s.aktivny) novyKod();
+  setInterval(tik,1000); setInterval(obnovStav,60000);
   const p=await api('/api/fusion-x/partneri'); PARTNERI=Array.isArray(p.partneri)?p.partneri:[]; kresliFiltre(); kresliPartnerov();
 }
 function kresliKartu(){
@@ -152,35 +156,34 @@ function kresliKartu(){
       <div><small>Zľava u partnerov</small><span class="zlava">${s.zlava||10} %</span></div>
       <div><small>${s.aktivny?'Platnosť nároku do':'Členstvo'}</small><b>${s.aktivny?esc(datum(s.platne_do)):'neaktívne'}</b>${s.aktivny&&s.plan?`<small style="margin-top:2px">${esc(s.plan)}</small>`:''}</div>
     </div>
-    ${s.aktivny?`<div class="qrbox" id="qrbox" aria-live="polite"><div class="qrcas">Pripravujem QR kód…</div></div>
-      <button class="btn sec" style="margin-top:10px" id="obnov" onclick="novyKod()">${ico('i-refresh')}Nový QR kód</button>
-      <p class="pozn">QR kód neobsahuje tvoje osobné údaje. Partnerovi ukáže len tvoje meno v skrátenom tvare a to, či máš nárok na zľavu.</p>`
+    ${s.aktivny?`<div class="ziva" role="status" aria-label="Aktívne členstvo, overené naživo">
+        <div class="t1">AKTÍVNE ČLENSTVO</div>
+        <div class="hod" id="hodiny">--:--:--</div>
+        <div class="t2" id="overene"><span class="bod"></span>overené naživo</div>
+      </div>
+      <p class="pozn">Ukáž túto obrazovku partnerovi pri platbe. Stav sa každú minútu znova overí — ak by členstvo skončilo, karta to hneď ukáže.</p>`
     :`<div style="margin-top:16px"><p style="margin:0 0 12px;line-height:1.6">Fusion X je súčasťou každého mesačného členstva. Aktivuj si členstvo a získaj prístup k partnerským zľavám.</p>
       <a class="btn prim" href="/obchod?tab=clenstva">Aktivovať členstvo</a>
       <p class="pozn">Benefit sa zapne automaticky hneď po zaplatení mesačného členstva. Jednorazové vstupy a permanentky Fusion X nezahŕňajú.</p></div>`}
   </div>`;
-}
-async function novyKod(){
-  const b=document.getElementById('obnov'); if(b) b.disabled=true;
-  const d=await api('/api/fusion-x/kod',{method:'POST',body:'{}'});
-  if(b) b.disabled=false;
-  const box=document.getElementById('qrbox'); if(!box) return;
-  if(!d.ok){
-    if(d.aktivny===false){ STAV={...STAV,aktivny:false}; kresliKartu(); return; }
-    box.innerHTML=`<div class="qrcas">${esc(d.error||'QR kód sa nepodarilo pripraviť.')}</div>`; return;
-  }
-  KOD=d; box.classList.remove('vyprsal');
-  box.innerHTML=`<img src="${d.qr}" alt="QR kód na overenie členstva Fusion X" width="240" height="240"><div class="qrcas" id="qrcas"></div>`;
-  clearInterval(TIMER); tik(); TIMER=setInterval(tik,1000);
+  tik(); overene();
 }
 function tik(){
-  const el=document.getElementById('qrcas'); if(!el||!KOD) return;
-  const zost=Math.round((new Date(KOD.plati_do)-Date.now())/1000);
-  if(zost<=0){ clearInterval(TIMER); document.getElementById('qrbox')?.classList.add('vyprsal'); el.textContent='Kód vypršal — obnovujem…'; novyKod(); return; }
-  el.textContent='Platí ešte '+Math.floor(zost/60)+':'+String(zost%60).padStart(2,'0');
+  const el=document.getElementById('hodiny'); if(!el) return;
+  const d=new Date(); el.textContent=d.toLocaleTimeString('sk-SK',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
 }
-// Návrat do appky po čase (telefón v taške) — vypršaný kód hneď vymeň
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden && STAV?.aktivny && KOD && new Date(KOD.plati_do)-Date.now()<30000) novyKod(); });
+function overene(){
+  const el=document.getElementById('overene'); if(!el||!STAV?.overene_at) return;
+  const d=new Date(STAV.overene_at), dn=new Date();
+  el.innerHTML='<span class="bod"></span>'+dn.getDate()+'. '+(dn.getMonth()+1)+'. '+dn.getFullYear()+' · overené o '+d.toLocaleTimeString('sk-SK',{hour:'2-digit',minute:'2-digit'});
+}
+// Každú minútu znova zo servera — screenshot by mal starý čas overenia
+async function obnovStav(){
+  const s=await api('/api/fusion-x/stav'); if(s.status!==200||s.error) return;
+  const zmena=!!s.aktivny!==!!STAV?.aktivny; STAV=s;
+  if(zmena) kresliKartu(); else overene();
+}
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden && STAV) obnovStav(); });
 
 function kresliFiltre(){
   const mesta=[...new Set(PARTNERI.map(p=>p.mesto).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'sk'));

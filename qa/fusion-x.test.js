@@ -1,7 +1,7 @@
 /**
  * E2E: Fusion X — žiadosť partnera z webu (bez registrácie), schválenie v admine, verejný
- * zoznam, nárok len pri mesačnom členstve, krátkodobý QR bez osobných údajov, overovacia
- * stránka bez prihlásenia, počítanie overení a oznam po aktivácii.
+ * zoznam, nárok len pri mesačnom členstve, karta s overením zo servera (partner nič neskenuje)
+ * a oznam po aktivácii.
  *
  * Spustenie: izolovaný server na QA_PORT (default 3999) s vlastnou DATA_DIR a MAIL_OFF=1, potom
  *   node qa/fusion-x.test.js
@@ -70,8 +70,6 @@ const formPost = (o) => fetch(BASE + '/api/public/fusion-x/partner', { method: '
   const me0 = await g('kl', '/api/me');
   const uid = me0.data.id;
   ok('bez členstva je Fusion X neaktívny', me0.data.fusion_x && me0.data.fusion_x.aktivny === false, me0.data.fusion_x);
-  const kod0 = await post('kl', '/api/fusion-x/kod', {});
-  ok('bez členstva sa QR nevydá', kod0.status === 403 && kod0.data.aktivny === false, kod0.data);
 
   // permanentka nedáva nárok
   await post('admin', '/api/admin/membership/activate', { user_id: uid, plan_id: 'permanentka10' });
@@ -115,40 +113,12 @@ const formPost = (o) => fetch(BASE + '/api/public/fusion-x/partner', { method: '
   const n2 = await g('kl', '/api/notifications');
   ok('oznam sa neopakuje', listN(n2.data).filter(n => n.type === 'fusion_x').length === 1);
 
-  // ── 5) QR a overenie ──────────────────────────────────────────────────────
-  const pred = (await g('admin', '/api/admin/fusion-x')).data.overenia;
-  const kod = await post('kl', '/api/fusion-x/kod', {});
-  ok('aktívna klientka dostane QR', kod.data && kod.data.ok && /^data:image\/png;base64,/.test(kod.data.qr) && /\/fx\/[A-Za-z0-9_-]+$/.test(kod.data.url), kod.data && kod.data.url);
-  const token = kod.data.url.split('/fx/')[1];
-  ok('token neobsahuje meno, e-mail ani id v čitateľnej podobe', !token.includes(uid) && !Buffer.from(token, 'base64url').toString('latin1').includes(uid) && !/petra|test-fa-qa/i.test(token));
-  ok('QR platí 5 minút', Math.abs(new Date(kod.data.plati_do) - Date.now() - 300000) < 15000, kod.data.plati_do);
-  const strana = await fetch(BASE + '/fx/' + token);
-  const html = await strana.text();
-  ok('overovacia stránka sa otvorí bez prihlásenia', strana.status === 200);
-  ok('ukáže „Aktívne členstvo — nárok na zľavu Fusion X 10 %."', html.includes('Aktívne členstvo — nárok na zľavu Fusion X 10 %.'));
-  ok('ukáže len skrátené meno (Petra S.), nie e-mail', html.includes('Petra S.') && !html.includes('test-fa-qa') && !html.includes('Skúšobná'));
-  ok('stránka sa necacheuje a neindexuje', strana.headers.get('cache-control') === 'no-store' && /noindex/.test(html));
-  await fetch(BASE + '/fx/' + token);
-  const zly = await (await fetch(BASE + '/fx/' + token.slice(0, -3) + 'abc')).text();
-  ok('pozmenený kód = „Nárok na zľavu nie je platný."', zly.includes('Nárok na zľavu nie je platný.') && !zly.includes('Aktívne členstvo'));
-  const nahodny = await (await fetch(BASE + '/fx/nieco-uplne-ine')).text();
-  ok('nezmyselný kód = neplatný', nahodny.includes('Nárok na zľavu nie je platný.'));
-
-  const adm2 = await g('admin', '/api/admin/fusion-x');
-  const o = adm2.data.overenia;
-  ok('overenie sa započíta raz za kód (obnovenie stránky nie)', o && o.platne === pred.platne + 1 && o.clenov === pred.clenov + 1, { pred, o });
-  ok('admin vidí overenia, žiadne nákupy ani úspory', o && !('usetrene' in o) && !('nakupy' in o));
-
-  // ── 6) koniec nároku ──────────────────────────────────────────────────────
-  const kod2 = await post('kl', '/api/fusion-x/kod', {});
-  const token2 = kod2.data.url.split('/fx/')[1];
-  // členstvo skončí (zmrazenie/expirácia) → ten istý platný kód už nárok neukáže
-  await post('admin', '/api/admin/membership/freeze', { user_id: uid, days: 7 }).catch(() => {});
-  const frz = await g('kl', '/api/me');
-  if (frz.data.fusion_x && frz.data.fusion_x.aktivny === false) {
-    const po = await (await fetch(BASE + '/fx/' + token2)).text();
-    ok('po skončení členstva QR ukáže neplatný nárok (počíta sa naživo)', po.includes('Nárok na zľavu nie je platný.'));
-  } else console.log('  · zmrazenie nechá nárok aktívny — test skončenia preskočený');
+  // ── 5) karta bez skenovania ───────────────────────────────────────────────
+  const st2 = await g('kl', '/api/fusion-x/stav');
+  ok('karta má čas overenia zo servera (proti screenshotu)', st2.data && st2.data.overene_at && Math.abs(new Date(st2.data.overene_at) - Date.now()) < 60000, st2.data);
+  ok('QR kód sa už nevydáva (partner nič neskenuje)', (await post('kl', '/api/fusion-x/kod', {})).status === 404);
+  ok('overovacia stránka /fx/ neexistuje', (await fetch(BASE + '/fx/abc')).status === 404);
+  ok('admin nevracia žiadne „overenia" ani nákupy', !('overenia' in (await g('admin', '/api/admin/fusion-x')).data));
 
   // ── 7) pozastavenie a mazanie ─────────────────────────────────────────────
   const zmaz = await call('admin', 'DELETE', '/api/admin/fusion-x/partneri/' + z1.id);
