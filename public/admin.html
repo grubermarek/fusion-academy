@@ -148,6 +148,19 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 .pen-map-lbl{color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:.6rem;margin:0 2px 0 4px}
 .pen-map a{color:var(--cream);text-decoration:none;border:1px solid var(--gold-border);background:var(--dark-3);border-radius:99px;padding:3px 10px;transition:.15s}
 .pen-map a:hover{border-color:var(--gold);color:var(--gold)}
+/* Mestá — členstvá a odchody */
+.mc-row{cursor:pointer;transition:.12s}
+.mc-row:hover td{background:var(--adm-hover)}
+.mc-row.on td{background:var(--adm-active)}
+.mc-row.on td:first-child{box-shadow:inset 3px 0 0 var(--gold)}
+.mc-pill{display:inline-flex;align-items:center;gap:4px;border-radius:99px;padding:2px 9px;font-size:.72rem;font-weight:700;border:1px solid var(--gold-border);background:var(--dark-4);color:var(--cream)}
+.mc-bar{height:6px;border-radius:99px;background:var(--dark-5);overflow:hidden;display:flex}
+.mc-bar i{display:block;height:100%}
+.mc-tabs{display:flex;gap:4px;flex-wrap:wrap}
+.mc-tab{background:transparent;border:1px solid var(--gold-border);color:var(--text-muted);border-radius:9px;padding:5px 11px;font-size:.78rem;font-weight:600;cursor:pointer}
+.mc-tab.on{background:var(--adm-active);border-color:var(--gold);color:var(--gold)}
+.mc-name{color:#C9A84C;cursor:pointer;font-weight:600}
+.mc-name:hover{text-decoration:underline}
 @media(max-width:768px){.pen-sep{display:none}.pen-lbl{width:100%;padding:6px 8px 2px}.pen-tab{padding:6px 10px;font-size:.78rem}}
 .card{box-shadow:var(--adm-shadow);border-radius:var(--adm-radius)!important;}
 .btn-outline-secondary{border-color:var(--gold-border)!important;color:var(--text-muted)!important;}
@@ -1600,6 +1613,8 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div class="row g-3 mb-3" id="finVysledok"></div>
     <!-- Mestá — náklady a zisk (Marek 15. 9.) -->
     <div class="mb-3" id="finMesta"></div>
+    <!-- Mestá — členstvá, permanentky, automatické obnovy, odchody (Marek 4. 10.) -->
+    <div class="mb-3" id="finMestaClenstva"></div>
 
     <!-- Aktívne členstvá & permanentky -->
     <div class="card bg-dark border-secondary mb-3"><div class="card-body">
@@ -6395,6 +6410,85 @@ async function ulozMestaNaklady(){
   if(r&&r.ok){ showToast('Náklady miest uložené','success'); loadMestaZisk(d.from,d.to); } else showToast('Chyba: '+((r&&r.error)||'?'),'error');
 }
 const _mesSlovo=n=>n===1?'mesiac':(n>=2&&n<=4?'mesiace':'mesiacov');
+// ── Mestá — členstvá, permanentky, automatické obnovy a odchody (Marek 4. 10.: „ktoré mesto má koľko ľudí
+//    s členstvom, koľko permanentku, koľko automatickú obnovu a kto kde kedy zrušil / neobnovil") ──
+let _mcData=null, _mcDays=180, _mcMesto=null, _mcTab='clenstva', _mcQ='';
+async function loadMestaClenstva(){
+  const host=document.getElementById('finMestaClenstva'); if(!host) return;
+  if(!_mcData) host.innerHTML='<div class="card bg-dark border-secondary"><div class="card-body text-muted small">Načítavam členstvá po mestách…</div></div>';
+  const d=await api('/api/admin/mesta-clenstva?days='+_mcDays).catch(()=>null);
+  if(!d||!d.ok){ host.innerHTML='<div class="text-danger small">Členstvá po mestách: '+escHtml((d&&d.error)||'chyba')+'</div>'; return; }
+  _mcData=d; if(_mcMesto && !d.mesta.some(m=>m.mesto===_mcMesto)) _mcMesto=null;
+  renderMestaClenstva();
+}
+function mcDays(n){ _mcDays=n; loadMestaClenstva(); }
+function mcPick(m){ _mcMesto=(_mcMesto===m?null:m); _mcQ=''; renderMestaClenstva(); }
+function mcTab(t){ _mcTab=t; renderMestaClenstva(); }
+function renderMestaClenstva(){
+  const d=_mcData, host=document.getElementById('finMestaClenstva'); if(!d||!host) return;
+  const n=x=>+x||0, S=d.spolu||{};
+  const farba={clenstva:'#C9A24C',permanentky:'#4ade80',auto:'#7ec8e3',odchody:'#e57373'};
+  const bar=(a,b)=>{ const t=n(a)+n(b)||1; return '<div class="mc-bar" title="auto '+n(a)+' · ručne '+n(b)+'"><i style="width:'+(n(a)/t*100)+'%;background:#7ec8e3"></i><i style="width:'+(n(b)/t*100)+'%;background:#5a5a5a"></i></div>'; };
+  const riadok=r=>{ const s=r.suhrn; return '<tr class="mc-row'+(_mcMesto===r.mesto?' on':'')+'" onclick="mcPick(\''+escHtml(r.mesto).replace(/'/g,'&#39;')+'\')">'
+    +'<td class="fw-semibold">'+escHtml(r.mesto)+'</td>'
+    +'<td class="text-end" style="color:'+farba.clenstva+';font-weight:700">'+s.clenstva+'<div style="font-size:.64rem;opacity:.65">'+n(s.mrr).toFixed(0)+' € / mes.</div></td>'
+    +'<td class="text-end" style="color:'+farba.permanentky+';font-weight:700">'+s.permanentky+'</td>'
+    +'<td style="min-width:150px"><div class="d-flex justify-content-between" style="font-size:.74rem"><span style="color:'+farba.auto+'">auto '+s.auto+(s.auto_vypnute?' <span style="color:#e0a656" title="odber vypnutý, dobehne do konca obdobia">(+'+s.auto_vypnute+' dobieha)</span>':'')+'</span><span class="text-muted">ručne '+s.rucne+'</span></div>'+bar(s.auto+s.auto_vypnute,s.rucne)+'</td>'
+    +'<td class="text-end" style="color:'+(s.odchody?farba.odchody:'#777')+';font-weight:700">'+s.odchody+(s.odchody?'<div style="font-size:.64rem;opacity:.75">'+s.zrusili+' zrušili · '+s.neobnovili+' neobnovili</div>':'')+'</td></tr>'; };
+  const dni=[30,90,180,365].map(x=>'<button class="mc-tab'+(_mcDays===x?' on':'')+'" onclick="mcDays('+x+')">'+x+' d</button>').join('');
+  let detail='';
+  if(_mcMesto){
+    const r=d.mesta.find(m=>m.mesto===_mcMesto);
+    if(r){
+      const q=_mcQ.toLowerCase(); const f=rows=>rows.filter(x=>!q||String(x.name||'').toLowerCase().includes(q));
+      const meno=x=>'<span class="mc-name" onclick="event.stopPropagation();openClientDetail(\''+x.id+'\')">'+escHtml(x.name)+(x.dieta?' <span class="badge bg-secondary" style="font-size:.58rem">dieťa</span>':'')+'</span>';
+      const taby=[['clenstva','💳 Členstvá',r.suhrn.clenstva],['permanentky','🎟️ Permanentky',r.suhrn.permanentky],['odchody','💔 Odchody',r.suhrn.odchody]]
+        .map(t=>'<button class="mc-tab'+(_mcTab===t[0]?' on':'')+'" onclick="mcTab(\''+t[0]+'\')">'+t[1]+' <span class="badge bg-secondary" style="font-size:.6rem">'+t[2]+'</span></button>').join('');
+      let tbl='';
+      if(_mcTab==='clenstva'){
+        const rows=f(r.clenstva);
+        tbl=rows.length?'<table class="table table-dark table-sm table-hover align-middle mb-0" style="font-size:.78rem"><thead><tr style="font-size:.66rem;color:#999"><th>Klientka</th><th>Úroveň</th><th>Obnova</th><th>Platba</th><th class="text-end">Platí do</th></tr></thead><tbody>'
+          +rows.map(x=>'<tr><td>'+meno(x)+(x.trial?' <span class="badge bg-info text-dark" style="font-size:.58rem">skúška</span>':'')+'</td>'
+            +'<td><span class="badge" style="background:'+(MO_PLAN_COLOR[x.plan_id]||'#555')+';color:#111">'+escHtml(x.plan_name)+'</span></td>'
+            +'<td>'+(x.auto?(x.auto_vypnuty?'<span style="color:#e0a656">⏳ vypnutá, dobieha</span>':'<span style="color:#7ec8e3">🔁 automatická</span>'):'<span class="text-muted">✋ ručne'+(x.method?' · '+escHtml(x.method):'')+'</span>')+'</td>'
+            +'<td>'+x.price.toFixed(2).replace('.',',')+' €</td>'
+            +'<td class="text-end">'+fmtDate(x.expires_at)+' <span class="text-muted" style="font-size:.66rem">('+x.days_left+' d)</span></td></tr>').join('')+'</tbody></table>'
+          :'<div class="text-muted small py-2">Nikto s aktívnym členstvom.</div>';
+      } else if(_mcTab==='permanentky'){
+        const rows=f(r.permanentky);
+        tbl=rows.length?'<table class="table table-dark table-sm table-hover align-middle mb-0" style="font-size:.78rem"><thead><tr style="font-size:.66rem;color:#999"><th>Klientka</th><th class="text-end">Zostáva vstupov</th><th class="text-end">Posledná hodina</th></tr></thead><tbody>'
+          +rows.map(x=>'<tr><td>'+meno(x)+(x.clenstvo?' <span class="badge bg-secondary" style="font-size:.58rem">aj členstvo</span>':'')+'</td><td class="text-end"><span class="badge bg-success">🎟️ '+x.entries+'</span></td><td class="text-end text-muted">'+(x.last_visit?fmtDate(x.last_visit):'—')+'</td></tr>').join('')+'</tbody></table>'
+          :'<div class="text-muted small py-2">Nikto s nevyčerpanou permanentkou.</div>';
+      } else {
+        const rows=f(r.odchody);
+        tbl=rows.length?'<table class="table table-dark table-sm table-hover align-middle mb-0" style="font-size:.78rem"><thead><tr style="font-size:.66rem;color:#999"><th>Klientka</th><th>Čo sa stalo</th><th>Kedy</th><th>Členstvo</th><th>Dôvod / poznámka</th></tr></thead><tbody>'
+          +rows.map(x=>'<tr><td>'+meno(x)+'</td>'
+            +'<td>'+(x.typ==='zrusil'?'<span style="color:#e57373">✖ zrušila odber</span>'+(x.stale_aktivne&&x.plati_do?'<div style="font-size:.64rem;color:#e0a656">platí ešte do '+fmtDate(x.plati_do)+'</div>':''):'<span style="color:#e0a656">⌛ neobnovila</span>'+(x.method?'<div style="font-size:.64rem;opacity:.65">platila '+escHtml(x.method)+'</div>':''))+'</td>'
+            +'<td class="text-nowrap">'+fmtDate(x.at)+' <span class="text-muted" style="font-size:.66rem">(pred '+x.days+' d)</span></td>'
+            +'<td>'+escHtml(x.plan_name||'—')+'</td>'
+            +'<td class="text-muted" style="font-size:.74rem">'+escHtml(x.reason||'')+(x.note?'<div style="opacity:.8">„'+escHtml(x.note)+'"</div>':'')+(x.typ==='neobnovil'&&x.last_visit?'<div style="opacity:.65">posledná hodina '+fmtDate(x.last_visit)+'</div>':'')+'</td></tr>').join('')+'</tbody></table>'
+          :'<div class="text-muted small py-2">Za '+_mcDays+' dní tu nikto neodišiel. 👌</div>';
+      }
+      detail='<div class="mt-3 pt-3" style="border-top:1px solid var(--gold-border)"><div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">'
+        +'<div class="d-flex align-items-center gap-2 flex-wrap"><b style="color:#C9A24C">📍 '+escHtml(r.mesto)+'</b><div class="mc-tabs">'+taby+'</div></div>'
+        +'<input class="form-control form-control-sm bg-dark text-light border-secondary" style="width:200px" placeholder="🔍 meno…" value="'+escHtml(_mcQ)+'" oninput="_mcQ=this.value;renderMestaClenstva();this.focus();this.setSelectionRange(this.value.length,this.value.length)"></div>'
+        +'<div class="table-responsive" style="max-height:420px;overflow:auto">'+tbl+'</div></div>';
+    }
+  }
+  host.innerHTML='<div class="card bg-dark border-secondary"><div class="card-body">'
+    +'<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2"><div><h6 class="fw-bold mb-0"><i class="bi bi-geo-alt me-2 text-warning"></i>Mestá — členstvá, permanentky, obnovy a odchody</h6>'
+    +'<div class="text-muted" style="font-size:.7rem">Klikni na mesto pre mená. Odchody = zrušený odber alebo členstvo, ktoré vypršalo a neobnovilo sa — za posledných:</div></div><div class="mc-tabs">'+dni+'</div></div>'
+    +'<div class="d-flex gap-2 flex-wrap mb-2">'
+      +'<span class="mc-pill" style="color:'+farba.clenstva+'">💳 '+n(S.clenstva)+' členstiev</span>'
+      +'<span class="mc-pill" style="color:'+farba.permanentky+'">🎟️ '+n(S.permanentky)+' permanentiek</span>'
+      +'<span class="mc-pill" style="color:'+farba.auto+'">🔁 '+n(S.auto)+' s automatickou obnovou'+(n(S.auto_vypnute)?' <span style="color:#e0a656">(+'+n(S.auto_vypnute)+' dobieha)</span>':'')+'</span>'
+      +'<span class="mc-pill text-muted">✋ '+n(S.rucne)+' platí ručne</span>'
+      +'<span class="mc-pill" style="color:'+(n(S.odchody)?farba.odchody:'#777')+'">💔 '+n(S.odchody)+' odchodov za '+d.days+' d</span></div>'
+    +'<div class="table-responsive"><table class="table table-dark table-sm align-middle mb-0" style="font-size:.82rem"><thead><tr style="font-size:.68rem;color:#999"><th>Mesto</th><th class="text-end">Členstvá</th><th class="text-end">Permanentky</th><th>Obnova</th><th class="text-end">Odchody</th></tr></thead><tbody>'
+    +d.mesta.map(riadok).join('')+'</tbody></table></div>'+detail
+    +'<div class="text-muted mt-2" style="font-size:.68rem">Mesto = kde bola klientka za posledné 4 mesiace najčastejšie na hodine, inak posledná rezervácia, inak mesto v profile; online členstvá sú v „Online". „Ručne" = bez automatického odberu (hotovosť, prevod, karta jednorazovo). Odber vypnutý zo Stripe Dashboardu sa od 4. 10. tiež zapisuje ako odchod.</div>'
+    +'</div></div>';
+}
 // Náklady a výsledok + Banka (Stripe) — Marek 12. 9.: „prejdi financie, navrhni zjednodušenie".
 // Jeden pohľad: čo sme utŕžili, čo to stálo, čo ostalo — a či to zo Stripe naozaj prišlo na účet.
 function _renderFinVysledok(d){
@@ -6481,6 +6575,7 @@ async function loadFinance(){
   const dF=await api(`/api/admin/finance/stats?from=${_fmtD(focused.start)}&to=${_fmtD(focused.end)}`).catch(()=>null);
   _renderFinKpis(d, GRAN_LABEL[g], focused.v, deltaHtml, (dF&&!dF.error)?dF:d);
   loadMestaZisk(_fmtD(focused.start), _fmtD(focused.end));
+  loadMestaClenstva();
   _renderFinChart(buckets.map(b=>b.label), buckets.map(b=>b.v), focusIdx);
   loadMembOverview();
 }
@@ -6503,6 +6598,7 @@ async function loadFinanceCustom(){
   document.getElementById('finNextBtn').disabled=false;
   _renderFinKpis(d, 'Tržby (rozsah)', d.revenue.period, deltaHtml);
   loadMestaZisk(_finRange.from, _finRange.to);
+  loadMestaClenstva();
   _renderFinChart((d.series||[]).map(x=>fmtDate(x.d).slice(0,5)), (d.series||[]).map(x=>x.v), -1);
   loadMembOverview();
 }

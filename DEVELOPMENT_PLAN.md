@@ -425,6 +425,7 @@ Zoradené podľa pomeru hodnota / prácnosť. Implementuj v tomto poradí.
   (spend/clicks/…): Meta Ads API, Google Ads API len nahradia ručné zadávanie.
 - Faktúry NIKDY nemazať, len status (paid/cancelled/credited) + dobropisy.
 - **Peniaze = jeden hub (19. 9. 2026):** všetky peňažné obrazovky (Prehľad · Predaje · Faktúry · Refundácie · Dlžníci · Zaznamenať predaj · Výplaty trénerov · Provízie partnerov · Účtovníctvo · Pre účtovníčku) sú záložky jednej položky menu. Lišta sa kreslí z `PEN_TABS` v admin.html (`renderPenHub`), sekcie majú pôvodné ID a loadery. Nová peňažná obrazovka = sekcia s `<div class="pen-hub"></div>` + riadok v `PEN_TABS`, NIE nová položka menu. Hotovosť u trénerov (všetci naraz) je vo Výplatách, kontrola predajov (`/api/admin/sales-health`) v Účtovníctve. Test: qa/admin-peniaze.test.js.
+- **Mestá — členstvá, permanentky, obnovy a odchody (4. 10. 2026):** karta v Prehľade (`finMestaClenstva`, `loadMestaClenstva`), dáta z `/api/admin/mesta-clenstva?days=` (`mestaClenstva()` v server.js). Mesto klientky = najčastejšie navštevované za 120 dní → posledná rezervácia → `user.city`; online plány = Online. Odchody = `feedback` typu `membership_cancel` (zrušený odber) + vypršané neobnovené členstvo. Webhook `customer.subscription.deleted` odvtedy zapisuje zrušenie cez `recordMembershipCancel` (zdroj `stripe_webhook`).
 - Audit log je insert-only.
 
 ## Čo NEROBIŤ

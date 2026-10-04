@@ -13890,6 +13890,104 @@ app.put('/api/admin/mesta-naklady', adminAuth, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ── Mestá — kto má členstvo, permanentku, automatickú obnovu a kto odišiel (Marek 4. 10. 2026) ──
+// Mesto klientky = kde bola za posledné 4 mesiace najčastejšie na hodine (ako v mestaZisk),
+// inak posledná rezervácia, inak mesto v profile. Online členstvá idú do „Online".
+async function mestaClenstva(days){
+  days = Math.min(730, Math.max(7, +days||180));
+  const nowISOv = new Date().toISOString(), nowMs = Date.now();
+  const cutoff = new Date(nowMs - days*864e5).toISOString();
+  const users = await q.find(db.users,{});
+  const uMap = Object.fromEntries(users.map(u=>[u._id,u]));
+  const klient = u => u && !u.is_admin && u.user_type!=='trainer' && u.user_type!=='manager' && !u.is_assistant;
+  const classes = Object.fromEntries((await q.find(db.classes,{})).map(c=>[c._id,c]));
+  const zlucenyDo = {}; for(const x of users) for(const idz of (x.merged_accounts||[])) zlucenyDo[idz] = x._id;
+  // návštevy po mestách (120 dní) + posledná rezervácia (180 dní)
+  const navst = {}, posledna = {};
+  const od120 = new Date(nowMs - 120*864e5).toISOString().slice(0,10), od180 = new Date(nowMs - 180*864e5).toISOString().slice(0,10);
+  for(const b of await q.find(db.bookings,{})){
+    if(!b.user_id || b.status==='cancelled' || b.status==='waitlist') continue;
+    const d = String(b.booking_date||(b.created_at||'')).slice(0,10); if(!d || d>today()) continue;
+    const c = classes[b.class_id]; const m = mzMesto((c && c.location) || b.class_location); if(!m) continue;
+    const uid = zlucenyDo[b.user_id] || b.user_id;
+    if(b.status==='attended' && d>=od120){ navst[uid] = navst[uid]||{}; navst[uid][m] = (navst[uid][m]||0)+1; }
+    if(d>=od180 && (!posledna[uid] || d>posledna[uid].d)) posledna[uid] = {d, m};
+  }
+  const mestoPre = (u, planId) => {
+    if(/^online/.test(String(planId||''))) return 'Online';           // len online plány (Silver/Gold majú online navyše)
+    const n = navst[u._id]; if(n) return Object.entries(n).sort((a,b)=>b[1]-a[1])[0][0];
+    if(posledna[u._id]) return posledna[u._id].m;
+    return mzMesto(u.city) || 'Nepriradené';
+  };
+  const R = {}; const mesto = m => R[m] = R[m] || { mesto:m, clenstva:[], permanentky:[], odchody:[] };
+  for(const m of LOCATIONS) mesto(m);
+  // aktívne mesačné členstvá — najneskôr expirujúce na osobu (bez permanentiek/bundle)
+  const membs = await q.find(db.memberships,{});
+  const posledne = {};
+  for(const m of membs){
+    if(m._type) continue;
+    const p = MEMBERSHIP_PLANS[m.plan_id] || {}; if(p.type==='bundle' || m.status==='bundle') continue;
+    const cur = posledne[m.user_id]; if(!cur || (m.expires_at||'')>(cur.expires_at||'')) posledne[m.user_id] = m;
+  }
+  const aktivni = new Set();
+  const odbery = [];
+  for(const uid in posledne){
+    const m = posledne[uid], u = uMap[uid]; if(!klient(u)) continue;
+    const aktivne = m.status==='active' && (m.expires_at||'')>nowISOv; if(!aktivne) continue;
+    aktivni.add(uid);
+    const p = MEMBERSHIP_PLANS[m.plan_id] || {};
+    const row = { id:uid, name:u.name||'—', plan_id:m.plan_id, plan_name:p.name||m.plan_name||m.plan_id, price:+p.price||+m.price||0,
+      expires_at:(m.expires_at||'').slice(0,10), days_left:Math.max(0, Math.round((new Date(m.expires_at).getTime()-nowMs)/864e5)),
+      method:String(m.payment_method||m.method||'').toLowerCase(), trial:!!m.trial, auto:!!u.stripe_subscription_id, auto_vypnuty:false, dieta:!!u.is_child };
+    if(row.auto) odbery.push({row, u});
+    mesto(mestoPre(u, m.plan_id)).clenstva.push(row);
+  }
+  // odber zapnutý, ale vypnutý „ku koncu obdobia" (Stripe cancel_at_period_end) — dobehne a skončí
+  await Promise.all(odbery.map(async o => { try{ const i = await odberInfo(o.u); if(i && i.vypnuty) o.row.auto_vypnuty = true; }catch(e){} }));
+  // permanentky — nevyčerpané vstupy
+  for(const u of users){
+    if(!klient(u) || !((u.single_entries||0)>0)) continue;
+    mesto(mestoPre(u, null)).permanentky.push({ id:u._id, name:u.name||'—', entries:u.single_entries||0, last_visit:posledna[u._id]?posledna[u._id].d:null, clenstvo:aktivni.has(u._id) });
+  }
+  // odchody: 1) zrušený odber (feedback membership_cancel) 2) členstvo vypršalo a neobnovilo sa
+  const zrusili = {};
+  for(const f of await q.find(db.feedback,{type:'membership_cancel'})){
+    if(String(f.created_at||'')<cutoff || !f.user_id) continue;
+    if(!zrusili[f.user_id] || String(f.created_at)>String(zrusili[f.user_id].created_at)) zrusili[f.user_id] = f;
+  }
+  for(const uid in zrusili){
+    const f = zrusili[uid], u = uMap[uid]; if(!klient(u)) continue;
+    const p = MEMBERSHIP_PLANS[f.plan_id||''] || {};
+    const m = posledne[uid];
+    mesto(mestoPre(u, f.plan_id)).odchody.push({ id:uid, name:u.name||'—', typ:'zrusil', at:String(f.created_at).slice(0,10),
+      days:Math.round((nowMs-new Date(f.created_at).getTime())/864e5), plan_name:p.name||f.plan_id||'—', reason:f.reason_label||'', note:f.note||'',
+      stale_aktivne:aktivni.has(uid), plati_do:m?(m.expires_at||'').slice(0,10):null, zdroj:f.source||'' });
+  }
+  for(const uid in posledne){
+    const m = posledne[uid], u = uMap[uid]; if(!klient(u) || aktivni.has(uid) || zrusili[uid]) continue;
+    const exp = String(m.expires_at||''); if(!exp || exp<cutoff || exp>nowISOv) continue;
+    if((u.single_entries||0)>0) continue;                    // prešla na permanentku — nie je odchod
+    const p = MEMBERSHIP_PLANS[m.plan_id] || {};
+    mesto(mestoPre(u, m.plan_id)).odchody.push({ id:uid, name:u.name||'—', typ:'neobnovil', at:exp.slice(0,10),
+      days:Math.round((nowMs-new Date(exp).getTime())/864e5), plan_name:p.name||m.plan_name||m.plan_id, reason:'', note:'',
+      method:String(m.payment_method||m.method||'').toLowerCase(), last_visit:posledna[uid]?posledna[uid].d:null });
+  }
+  const byName = (a,b)=>(a.name||'').localeCompare(b.name||'','sk');
+  const poradie = [...LOCATIONS.filter(x=>x!=='Online'), 'Online', 'Nepriradené'];
+  const mesta = Object.values(R).sort((a,b)=>{ const ia=poradie.indexOf(a.mesto), ib=poradie.indexOf(b.mesto); return (ia<0?99:ia)-(ib<0?99:ib); })
+    .map(r=>{ r.clenstva.sort((a,b)=>a.days_left-b.days_left); r.permanentky.sort(byName); r.odchody.sort((a,b)=>b.at.localeCompare(a.at));
+      return { ...r, suhrn:{ clenstva:r.clenstva.length, permanentky:r.permanentky.length, auto:r.clenstva.filter(x=>x.auto&&!x.auto_vypnuty).length,
+        auto_vypnute:r.clenstva.filter(x=>x.auto_vypnuty).length, rucne:r.clenstva.filter(x=>!x.auto).length,
+        mrr:+r.clenstva.reduce((s,x)=>s+(x.trial?0:x.price),0).toFixed(2),
+        odchody:r.odchody.length, zrusili:r.odchody.filter(x=>x.typ==='zrusil').length, neobnovili:r.odchody.filter(x=>x.typ==='neobnovil').length } }; })
+    .filter(r=>r.mesto!=='Nepriradené' || r.suhrn.clenstva || r.suhrn.permanentky || r.suhrn.odchody);
+  const spolu = mesta.reduce((s,r)=>{ for(const k in r.suhrn) s[k]=+((s[k]||0)+r.suhrn[k]).toFixed(2); return s; },{});
+  return { ok:true, days, mesta, spolu };
+}
+app.get('/api/admin/mesta-clenstva', adminAuth, async(req,res)=>{
+  try{ res.json(await mestaClenstva(req.query.days)); }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/admin/finance/stats', adminAuth, async(req,res)=>{
   try {
     const {from, to} = req.query; // YYYY-MM-DD inclusive
@@ -16157,6 +16255,8 @@ app.post('/api/stripe/webhook', async(req,res)=>{
       const sub = event.data.object;
       const u = await q.one(db.users,{stripe_subscription_id:sub.id});
       if(u) await q.update(db.users,{_id:u._id},{$set:{stripe_subscription_id:null}});
+      // Zrušené mimo appky (Stripe Dashboard, zlyhané platby) — zapíš ako odchod, aby bol v prehľade miest
+      if(u && !(u.trial_ends_at && !u.trial_converted_at)) await recordMembershipCancel(u, 'ine', 'zrušené cez Stripe (' + (sub.cancellation_details?.reason || 'dashboard') + ')', 'stripe_webhook');
       if(u && u.trial_ends_at && !u.trial_converted_at) await q.insert(db.notifications,{user_id:u._id, type:'trial_cancel',
         title:'Skúšobný týždeň zrušený', body:'Nič sa ti nestrhne. Do '+fmtDenSk(u.trial_ends_at)+' môžeš chodiť ďalej — a keď budeš chcieť pokračovať, členstvo alebo vstup si kúpiš v Obchode.',
         read:false, created_at:nowISO()}).catch(()=>{});
