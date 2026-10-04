@@ -541,16 +541,24 @@ function openPlan(id){
 function recalc(){
   if(!CUR||CUR.kind!=='plan') return;
   const renew=document.getElementById('mRenew')?.checked;
-  // Dieťa bez automatickej platby: o 10 % drahšie (Marek 20. 9.) — 49,90 → 54,90 €
+  // Bez automatickej obnovy je mesačné členstvo o 10 % drahšie (Marek 4. 10.) — obe ceny
+  // počíta server (/api/membership/plans: price = s obnovou, price_manual = bez nej),
+  // vrátane klientok, ktoré si držia pôvodnú cenu, aj dohodnutých cien detí.
   const kid=CHILDREN.find(x=>x.id===CUR.child_id);
-  // Dohodnutá cena dieťaťa (výnimka) platí s odberom aj bez neho — bez prirážky
-  const dohodnuta=!!(kid && kid.dohodnuta_cena>0 && CUR.id===KIDSP?.id);
-  const kidsManual=!!(kid && KIDSP && PLANS[CUR.id]?.type!=='bundle' && !renew && !dohodnuta);
-  const cena=dohodnuta?kid.dohodnuta_cena:(kidsManual?Math.round(CUR.price*(1+(KIDSP.prirazka||0.1))*10)/10:CUR.price);
+  const pl=PLANS[CUR.id]||{};
+  const dohodnuta=!!(kid && kid.dohodnuta_cena>0 && CUR.id===KIDSP?.id) || !!pl.dohodnuta_cena;
+  const cenaAuto=(kid && kid.dohodnuta_cena>0 && CUR.id===KIDSP?.id) ? kid.dohodnuta_cena : CUR.price;
+  const cenaBez=(pl.price_manual!=null && !dohodnuta) ? pl.price_manual : cenaAuto;
+  const bezObnovy=!renew && cenaBez>cenaAuto;
+  const cena=renew?cenaAuto:cenaBez;
   const cEl=document.getElementById('mCena'); if(cEl) cEl.textContent=eur(cena);
   const kn=document.getElementById('mKidsNote');
-  if(kn){ if(kid && KIDSP && PLANS[CUR.id]?.type!=='bundle'){ kn.style.display='block';
-      kn.textContent=dohodnuta?'🤝 Dohodnutá cena '+eur(cena)+' — platí s automatickou platbou aj bez nej.':kidsManual?'⚠️ Bez automatickej platby je Zumba Kids o '+Math.round((KIDSP.prirazka||0.1)*100)+' % drahšie ('+eur(cena)+' namiesto '+eur(CUR.price)+').':'🔄 Automatická platba každý mesiac, vypnúť ju vieš kedykoľvek v profile dieťaťa. Bez nej stojí Zumba Kids '+eur(Math.round(CUR.price*(1+(KIDSP.prirazka||0.1))*10)/10)+'.'; }
+  if(kn){ if(pl.type!=='bundle' && (bezObnovy || dohodnuta || pl.stara_cena)){ kn.style.display='block';
+      kn.style.color = bezObnovy ? '#ffb74d' : '#8bc34a';
+      kn.textContent = dohodnuta ? '🤝 Dohodnutá cena '+eur(cena)+' — platí s automatickou obnovou aj bez nej.'
+        : pl.stara_cena ? '💛 Držíš si pôvodnú cenu '+eur(cenaAuto)+'. Platí, kým členstvo nepreruším.'
+        : '⚠️ Bez automatickej obnovy je členstvo o '+eur(+(cenaBez-cenaAuto).toFixed(2))+' drahšie. S obnovou platíš '+eur(cenaAuto)+' a zrušiť ju môžeš kedykoľvek.';
+    }
     else kn.style.display='none'; }
   const promoD=PROMO?Math.min(PROMO.discount,cena):0;
   const base=Math.max(0,cena-promoD);

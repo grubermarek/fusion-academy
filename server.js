@@ -4146,6 +4146,30 @@ async function seedData() {
     }
   }
 
+  // Jednorazovo (Marek 4. 10. 2026): kto má teraz bežiace mesačné členstvo, platí starú cenu
+  // ďalej — bez prirážky za chýbajúcu automatickú obnovu. Príznak drží do konca členstva
+  // plus tolerancia; pri každom predĺžení sa posúva (activateMembership). Keď členstvo
+  // preruší, príznak dobehne a ďalší nákup je už za nový cenník.
+  // Beží oneskorene: cenník a pomocníci sú v súbore nižšie, v čase seedData ešte neexistujú.
+  setTimeout(async()=>{
+    try{
+      if(await q.one(db.settings,{key:'stara_cena_pred_prirazkou_20261004'})) return;
+      const dnesD = today();
+      let n = 0;
+      for(const m of await q.find(db.memberships, {status:'active'})){
+        if(m._type) continue;                                   // analýzy a premeny nie sú členstvá
+        if(!jeMesacneClenstvo(MEMBERSHIP_PLANS[m.plan_id])) continue;
+        if(!m.expires_at || String(m.expires_at).slice(0,10) < dnesD) continue;
+        const u = await q.one(db.users,{_id:m.user_id});
+        if(!u || u.stara_cena_do) continue;
+        await q.update(db.users,{_id:u._id},{$set:{stara_cena_do: staraCenaDo(m.expires_at)}});
+        n++;
+      }
+      await q.insert(db.settings,{key:'stara_cena_pred_prirazkou_20261004', value:true, at:nowISO()});
+      if(n) console.log('💶 Stará cena členstva ponechaná '+n+' členkám (prirážka +10 % sa ich zatiaľ netýka)');
+    }catch(e){ console.error('stará cena migrácia:', e.message); }
+  }, 8000);
+
   // Jednorazovo: obnov rezervácie, ktoré predošlý (zrušený) no-show job omylom prepol na
   // 'no_show'. Bez tohto by prihlásené klientky ostali skryté a tréner by nevedel potvrdiť
   // hodinu. Vraciame len auto-generované no_show (majú no_show_at) za posledných 45 dní.
@@ -12513,6 +12537,10 @@ async function activateMembership(userId, planId, durationDays, opts={}){
   // Update user's membership_plan field (+ lead → klient automaticky)
   const promoU = await q.one(db.users,{_id:userId});
   const memberSet = {membership_plan:planId, membership_expires:expiresAt.toISOString()};
+  // Starú cenu si klientka drží, kým členstvo nepreruší (Marek 4. 10.): pri každom
+  // predĺžení sa príznak posunie na nový koniec členstva + tolerancia. Novým klientkam
+  // sa nenastavuje — tie už kupujú za nový cenník.
+  if(jeMesacneClenstvo(plan) && maStaruCenu(promoU)) memberSet.stara_cena_do = staraCenaDo(expiresAt);
   if(promoU && promoU.user_type==='lead') memberSet.user_type='client';
   await q.update(db.users,{_id:userId},{$set:memberSet});
   // Notification
@@ -12593,16 +12621,25 @@ app.get('/api/membership', auth, async(req,res)=>{
 });
 
 app.get('/api/membership/plans', async(req,res)=>{
-  // Gold benefit: permanentka10 za 70 € — cenu personalizuj podľa prihláseného člena
   try{
+    let plany = PLANY_NA_PREDAJ();
+    // Gold benefit: permanentka10 za 70 € — cenu personalizuj podľa prihláseného člena
     if(req.session?.uid){
       const gm=await checkMembership(req.session.uid);
-      if(gm && gm.status==='active' && /gold/.test(String((gm.plan_id||'')+' '+(gm.plan_name||'')).toLowerCase())){
-        return res.json({...PLANY_NA_PREDAJ(), permanentka10:{...MEMBERSHIP_PLANS.permanentka10, price:70, gold_price:true}});
-      }
+      if(gm && gm.status==='active' && /gold/.test(String((gm.plan_id||'')+' '+(gm.plan_name||'')).toLowerCase()))
+        plany = {...plany, permanentka10:{...MEMBERSHIP_PLANS.permanentka10, price:70, gold_price:true}};
     }
-  }catch(e){}
-  res.json(PLANY_NA_PREDAJ());
+    // Ku každému mesačnému členstvu pridaj cenu bez automatickej obnovy (+10 %).
+    // Pre prihlásenú klientku s nárokom na starú cenu sú obe ceny rovnaké (Marek 4. 10.).
+    const clenId = String(req.query.for_child_id||'') || req.session?.uid || null;
+    const out = {};
+    for(const [id,p] of Object.entries(plany)){
+      if(!jeMesacneClenstvo(p)){ out[id]=p; continue; }
+      const c = await cenyClenstva(clenId, id).catch(()=>({auto:p.price, manual:cenaBezObnovy(p.price), stara_cena:false, dohodnuta:false}));
+      out[id] = {...p, price:c.auto, price_manual:c.manual, bez_obnovy_prirazka:+(c.manual-c.auto).toFixed(2), stara_cena:c.stara_cena, dohodnuta_cena:c.dohodnuta};
+    }
+    res.json(out);
+  }catch(e){ res.json(PLANY_NA_PREDAJ()); }
 });
 
 // ── Promo / zľavové kódy ──────────────────────────────────────────────────────
@@ -12626,6 +12663,32 @@ async function buyerPlanPrice(memberId, plan_id){
   }
   return +price.toFixed(2);
 }
+// ── Cena bez automatickej obnovy (Marek 4. 10. 2026) ─────────────────────────
+// Mesačné členstvo kúpené BEZ automatického odberu stojí o 10 % viac: 49,90 → 54,90 €.
+// Kto už členstvo má, platí starú cenu ďalej — drží ho príznak `stara_cena_do`
+// (koniec členstva + tolerancia). Keď si členstvo zruší a po prestávke sa vráti,
+// príznak je preč a platí novú cenu. Dohodnutá (individuálna) cena prirážku nemá.
+const OBNOVA_PRIRAZKA = 0.10;
+const STARA_CENA_TOLERANCIA = 30;   // dní po konci členstva, kým ešte platí stará cena
+const jeMesacneClenstvo = p => !!p && p.type!=='bundle' && (+p.duration_days||0) >= 28;
+function cenaBezObnovy(cena){ return Math.round(+cena*(1+OBNOVA_PRIRAZKA)*10)/10; }
+function maStaruCenu(u){ return !!(u && u.stara_cena_do && String(u.stara_cena_do).slice(0,10) >= today()); }
+function staraCenaDo(expiresAt){
+  const d = new Date(expiresAt||Date.now()); d.setDate(d.getDate()+STARA_CENA_TOLERANCIA);
+  return d.toISOString().slice(0,10);
+}
+// Obe ceny plánu pre konkrétneho člena: `auto` = s automatickou obnovou, `manual` = bez nej.
+async function cenyClenstva(memberId, plan_id){
+  const plan = MEMBERSHIP_PLANS[plan_id];
+  const auto = await buyerPlanPrice(memberId, plan_id);
+  if(!jeMesacneClenstvo(plan)) return { auto, manual:auto, prirazka:0, stara_cena:false, dohodnuta:false };
+  const clen = memberId ? await q.one(db.users,{_id:memberId}) : null;
+  const dohodnuta = !!(clen?.custom_prices && clen.custom_prices[plan_id]!=null && +clen.custom_prices[plan_id]>0);
+  const stara = maStaruCenu(clen);
+  const manual = (dohodnuta || stara) ? auto : cenaBezObnovy(auto);
+  return { auto, manual, prirazka: +(manual-auto).toFixed(2), stara_cena: stara, dohodnuta };
+}
+
 // Čistá kontrola bez zápisu (náhľad aj nákup). price = suma, ktorú klientka naozaj
 // platí. opts: {plan_id, email (hosť v e-shope), reserve (rezervuj hneď — e-shop)}
 async function validatePromo(code, price, userId, context, opts){
@@ -12914,9 +12977,8 @@ app.post('/api/membership/buy', auth, async(req,res)=>{
     // Zľava sa počíta z ceny, ktorú klientka naozaj platí (individuálna cena z
     // profilu), nie z cenníka — kód nesmie vrátiť vyššiu cenu než bez kódu (audit E11/6).
     let promoDiscount = 0, promoCode = null, promoObj = null;
-    let listPrice = await buyerPlanPrice(memberId, plan_id);
-    // Dieťa bez automatickej platby: o 10 % drahšie (Marek 20. 9.)
-    if(childName && plan.type!=='bundle') listPrice = (await kidsCenyDietata(memberId, plan_id)).manual;
+    // Bez automatickej obnovy (prevod/hotovosť) je mesačné členstvo o 10 % drahšie (4. 10.)
+    let listPrice = (await cenyClenstva(memberId, plan_id)).manual;
     let basePrice = listPrice;
     if(promo_code){
       const v = await validatePromo(promo_code, listPrice, req.session.uid, 'membership', {plan_id});
@@ -15601,8 +15663,11 @@ app.post('/api/stripe/checkout', auth, async(req,res)=>{
     const buyer = await q.one(db.users,{_id:memberId});
     if(buyer?.custom_prices && buyer.custom_prices[plan_id]!=null) price = +buyer.custom_prices[plan_id];
     // Dieťa bez automatickej platby: o 10 % drahšie (Marek 20. 9.)
-    const kidsManual = !!childName && plan.type!=='bundle';
-    if(kidsManual) price = (await kidsCenyDietata(memberId, plan_id)).manual;
+    // Jednorazová platba = bez automatickej obnovy → mesačné členstvo o 10 % drahšie
+    // (deti takto fungujú od 20. 9., od 4. 10. to platí pre všetkých).
+    const ceny = await cenyClenstva(memberId, plan_id);
+    const kidsManual = jeMesacneClenstvo(plan) && ceny.manual > ceny.auto;
+    price = ceny.manual;
     // Gold benefit: 10-vstupová permanentka za 70 € (ostatní 80 €)
     if(plan_id==='permanentka10'){
       const gm=await checkMembership(memberId);
@@ -15678,7 +15743,7 @@ app.post('/api/stripe/trial', auth, async(req,res)=>{
       'mode':'subscription',
       'line_items[0][quantity]':1,
       'line_items[0][price_data][currency]':'eur',
-      'line_items[0][price_data][unit_amount]':Math.round(plan.price*100),
+      'line_items[0][price_data][unit_amount]':Math.round((await cenyClenstva(u._id, SKUSKA.plan)).auto*100),
       'line_items[0][price_data][recurring][interval]':'month',
       'line_items[0][price_data][product_data][name]':`Členstvo ${plan.name} (mesačne) — prvých ${SKUSKA.dni} dní zadarmo`,
       'subscription_data[trial_period_days]':SKUSKA.dni,
@@ -15964,7 +16029,7 @@ app.post('/api/stripe/subscribe', auth, async(req,res)=>{
       'mode':'subscription',
       'line_items[0][quantity]':1,
       'line_items[0][price_data][currency]':'eur',
-      'line_items[0][price_data][unit_amount]':Math.round(plan.price*100),
+      'line_items[0][price_data][unit_amount]':Math.round((await cenyClenstva(memberId, plan_id)).auto*100),
       'line_items[0][price_data][recurring][interval]':'month',
       'line_items[0][price_data][product_data][name]':childName?`Zumba Kids – ${childName} (mesačne, automatická platba)`:`Členstvo ${plan.name} (mesačne)`,
       'success_url':`${base}${childName?'/dieta/'+memberId:'/client-dashboard'}?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
@@ -19696,7 +19761,10 @@ app.post('/api/trainer/sell', trainerAuth, async(req,res)=>{
     if(kind==='plan'){
       const plan=planNaPredaj(req.body.plan_id);
       if(!plan) return res.status(400).json({error:'Neplatný plán'});
-      amount=+(+req.body.amount>0?+req.body.amount:plan.price).toFixed(2);
+      // Hotovosť na mieste = bez automatickej obnovy → mesačné členstvo o 10 % drahšie
+      // (Marek 4. 10.); klientka so starou cenou prirážku nemá. Ručne zadaná suma má prednosť.
+      const cennik = jeMesacneClenstvo(plan) ? (await cenyClenstva(u._id, req.body.plan_id)).manual : plan.price;
+      amount=+(+req.body.amount>0?+req.body.amount:cennik).toFixed(2);
       what=plan.type==='bundle'?`Permanentka ${plan.name}`:`Členstvo ${plan.name}`;
       await activateMembership(u._id, req.body.plan_id);
       // Platba cash. Pri ČLENSTVE nesie tržbu záznam členstva (payment_method), pri
@@ -19741,7 +19809,15 @@ app.post('/api/trainer/sell', trainerAuth, async(req,res)=>{
 });
 // Plány pre trénerský predaj (id, názov, cena)
 app.get('/api/trainer/sell-options', trainerAuth, async(req,res)=>{
-  const plans=Object.entries(PLANY_NA_PREDAJ()).map(([id,p])=>({id, name:p.name, price:p.price, bundle:p.type==='bundle'}));
+  // Predaj na mieste je hotovosť = bez automatickej obnovy, takže mesačné členstvo je
+  // o 10 % drahšie (Marek 4. 10.). Keď je zadaná klientka, rešpektuje sa jej stará cena.
+  const klientId = String(req.query.user_id||'') || null;
+  const plans=[];
+  for(const [id,p] of Object.entries(PLANY_NA_PREDAJ())){
+    if(!jeMesacneClenstvo(p)){ plans.push({id, name:p.name, price:p.price, bundle:p.type==='bundle'}); continue; }
+    const c = await cenyClenstva(klientId, id).catch(()=>({auto:p.price, manual:cenaBezObnovy(p.price), stara_cena:false}));
+    plans.push({id, name:p.name, price:c.manual, price_auto:c.auto, bez_obnovy:c.manual>c.auto, stara_cena:c.stara_cena, bundle:false});
+  }
   const products=(await q.find(db.products,{active:true})).map(p=>({id:p._id, name:p.name, price:p.price, cat:p.cat||''}));
   res.json({ok:true, plans, products});
 });
@@ -21415,10 +21491,9 @@ function kidsCenaManual(p){ return Math.round(+p*(1+KIDS_MANUAL_PRIRAZKA)*10)/10
 // Ceny dieťaťa pre plán: s odberom = cenník alebo dohodnutá cena; bez odberu +10 %,
 // ale dohodnutá (individuálna) cena ostáva ako je — je to výnimka, nie cenník.
 async function kidsCenyDietata(childId, plan_id){
-  const auto = await buyerPlanPrice(childId, plan_id);
-  const d = childId ? await q.one(db.users,{_id:childId}) : null;
-  const dohodnuta = !!(d && d.custom_prices && d.custom_prices[plan_id]!=null && +d.custom_prices[plan_id]>0);
-  return { auto, manual: dohodnuta ? auto : kidsCenaManual(auto), dohodnuta };
+  // Od 4. 10. je to isté pravidlo pre všetkých — jeden výpočet (vrátane starej ceny).
+  const c = await cenyClenstva(childId, plan_id);
+  return { auto:c.auto, manual:c.manual, dohodnuta:c.dohodnuta, stara_cena:c.stara_cena };
 }
 function kidsSkupinaZNazvu(n){ const s=String(n||''); for(const k of KIDS_SKUPINY) if(s.includes(k)) return k; return null; }
 async function kidsHodinySkupin(){
