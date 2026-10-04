@@ -8745,7 +8745,7 @@ async function loadRentals(){
         <option value="rejected" ${r.status==='rejected'?'selected':''}>Zamietnutý</option>
       </select>
     </td>
-    <td class="text-muted small">${r.spam?'<span class="badge bg-danger me-1">🤖 spam</span>':''}${r.message?.slice(0,60)||'—'}${r.video_file?` · <a href="/api/admin/trainer-applications/${r._id}/video" target="_blank">📹 video</a>`:''}${r.ip?`<div class="text-muted" style="font-size:.7rem">IP ${r.ip}</div>`:''}</td>
+    <td class="text-muted small">${r.spam?'<span class="badge bg-danger me-1">🤖 spam</span>':''}<span title="${String(r.message||'').replace(/"/g,'&quot;')}">${r.message?.slice(0,60)||'—'}${(r.message||'').length>60?'…':''}</span>${r.video_file?` · <a href="/api/admin/trainer-applications/${r._id}/video" target="_blank">📹 video</a>`:''}${r.ip?`<div class="text-muted" style="font-size:.7rem">IP ${r.ip}</div>`:''}</td>
     <td><button class="btn btn-sm btn-outline-danger" title="Zmazať" onclick="deleteRental('${r._id}')"><i class="bi bi-trash"></i></button></td>
   </tr>`).join('');
 }

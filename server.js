@@ -18643,9 +18643,12 @@ app.post('/api/public/web-lead', rlPublic, express.urlencoded({ extended: false,
     const name = t(b.name, 120), phone = t(b.phone, 40), email = t(b.email, 160).toLowerCase();
     const city = t(b.city, 80), note = t(b.note, 800);
     // Dopyt môže prísť z konkrétnej stránky programu — vtedy má vlastné polia a vlastný štítok.
-    const PROGRAMY_DOPYTU = { svadobny_tanec: '💍 Svadobný tanec', venček: '🎓 Venček' };
+    const PROGRAMY_DOPYTU = { svadobny_tanec: '💍 Svadobný tanec', venček: '🎓 Venček', prenajom_techniky: '🎛️ Prenájom techniky' };
     const program = t(b.program, 40);
     const datum = t(b.datum, 20), miesto = t(b.miesto, 120), piesen = t(b.piesen, 160);
+    // Prenájom techniky (4. 10. 2026): výber z kalkulačky na webe + predbežná cena a typ eventu.
+    const technika = program === 'prenajom_techniky';
+    const polozky = t(b.polozky, 600), cenaOdhad = t(b.cena, 20), typEventu = t(b.typ, 60);
     if (!name) return res.status(400).json({ error: 'Napíšte svoje meno.' });
     if (!phone && !email) return res.status(400).json({ error: 'Nechajte telefón alebo e-mail — inak sa vám nevieme ozvať.' });
     if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Skontrolujte e-mail.' });
@@ -18656,15 +18659,18 @@ app.post('/api/public/web-lead', rlPublic, express.urlencoded({ extended: false,
     const spamDovody = naborSpamDovody({ name, city, email, phone, motivation: note, honeypot: t(b.website, 100), ms: parseInt(b.ms, 10) });
     const spam = spamDovody.length > 0;
     const zhrnutie = [
-      datum ? 'svadba: ' + datum : '', miesto ? 'miesto: ' + miesto : '', piesen ? 'pieseň: ' + piesen : '',
+      datum ? (technika ? 'termín: ' : 'svadba: ') + datum : '', miesto ? 'miesto: ' + miesto : '', piesen ? 'pieseň: ' + piesen : '',
+      typEventu ? 'event: ' + typEventu : '', polozky ? 'výber: ' + polozky : '', cenaOdhad ? 'predbežne ' + cenaOdhad + ' €' : '',
       note, (city && !miesto) ? 'mesto: ' + city : ''
     ].filter(Boolean).join(' · ');
     const z = await q.insert(db.rentals, {
       _type: 'web_lead', event_type: PROGRAMY_DOPYTU[program] || '📞 Dopyt z webu',
       name, phone, email, city,
-      program: program || undefined, svadba_datum: datum || undefined,
-      svadba_miesto: miesto || undefined, svadba_piesen: piesen || undefined,
-      message: ((spam ? '🤖 SPAM (' + spamDovody.join(', ') + ') · ' : '') + zhrnutie).slice(0, 500),
+      program: program || undefined,
+      svadba_datum: (!technika && datum) || undefined, svadba_miesto: (!technika && miesto) || undefined, svadba_piesen: piesen || undefined,
+      date_from: (technika && datum) || undefined, event_miesto: (technika && miesto) || undefined,
+      typ_eventu: typEventu || undefined, polozky: polozky || undefined, cena_odhad: cenaOdhad || undefined,
+      message: ((spam ? '🤖 SPAM (' + spamDovody.join(', ') + ') · ' : '') + zhrnutie).slice(0, 1000),
       status: spam ? 'rejected' : 'new',
       spam: spam || undefined, spam_dovody: spam ? spamDovody : undefined,
       ip: klientIp(req) || null, ua: String(req.headers['user-agent'] || '').slice(0, 300),
@@ -18677,17 +18683,18 @@ app.post('/api/public/web-lead', rlPublic, express.urlencoded({ extended: false,
         ${riadok('Meno', `<b>${name}</b>`)}
         ${riadok('Telefón', phone ? `<a href="tel:${phone}" style="color:#C9A84C">${phone}</a>` : '')}
         ${riadok('E-mail', email)}${riadok('Mesto', city)}
-        ${riadok('Dátum svadby', datum)}${riadok('Miesto svadby', miesto)}${riadok('Pieseň', piesen)}
+        ${riadok(technika ? 'Termín eventu' : 'Dátum svadby', datum)}${riadok(technika ? 'Miesto eventu' : 'Miesto svadby', miesto)}${riadok('Pieseň', piesen)}
+        ${riadok('Typ eventu', typEventu)}${riadok('Výber', polozky.replace(/ | /g, '<br>'))}${riadok('Predbežná cena', cenaOdhad ? `<b>${cenaOdhad} €</b>` : '')}
         ${riadok('Správa', note.replace(/\n/g, '<br>'))}
         ${riadok('Stránka', t(b.page, 200))}
       </table>
       <p style="color:#888;font-size:12px;margin-top:16px">V admine: Prenájmy → Dopyty (typ „Dopyt z webu")${b.utm ? ' · ' + t(b.utm, 300) : ''}</p>
       </body></html>`;
-    if (!spam) for (const to of WEB_LEAD_MAILS) { try { await sendMail(to, (PROGRAMY_DOPYTU[program] || '📞 Dopyt z webu') + ': ' + name + (datum ? ' · svadba ' + datum : (city ? ' (' + city + ')' : '')), html); } catch (e) { } }
+    if (!spam) for (const to of WEB_LEAD_MAILS) { try { await sendMail(to, (PROGRAMY_DOPYTU[program] || '📞 Dopyt z webu') + ': ' + name + (datum ? (technika ? ' · ' : ' · svadba ') + datum : (city ? ' (' + city + ')' : '')) + (cenaOdhad ? ' · ~' + cenaOdhad + ' €' : ''), html); } catch (e) { } }
     if (!spam) for (const a of await q.find(db.users, { is_admin: true })) {
       await q.insert(db.notifications, {
         user_id: a._id, type: 'web_lead', title: (PROGRAMY_DOPYTU[program] || '📞 Nový dopyt z webu'),
-        body: name + ' · ' + (phone || email) + (datum ? ' · svadba ' + datum : '') + (miesto || city ? ' · ' + (miesto || city) : ''),
+        body: name + ' · ' + (phone || email) + (datum ? (technika ? ' · ' : ' · svadba ') + datum : '') + (cenaOdhad ? ' · ~' + cenaOdhad + ' €' : '') + (miesto || city ? ' · ' + (miesto || city) : ''),
         read: false, created_at: nowISO()
       }).catch(() => { });
     }
