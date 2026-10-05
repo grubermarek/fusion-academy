@@ -1367,7 +1367,11 @@ function privBookingHtml(b){
 function renderBookings(bookings){
   const el=document.getElementById('bookingsList');
   if(bookings) _lastBookings=bookings;
-  const active=(_lastBookings||[]).filter(b=>b.status==='confirmed');
+  // Medzi aktívnymi rezerváciami patria len dnešné a budúce hodiny. Hodina, ktorú tréner
+  // neoznačil (ostala 'confirmed' s dochádzkou no_show), tu predtým visela donekonečna —
+  // klientka 5. 10. písala, že jej to tam straší a pýtala sa, čo s tým (Marek 5. 10.).
+  const dnesSK=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Bratislava'}).format(new Date());
+  const active=(_lastBookings||[]).filter(b=>b.status==='confirmed' && (!b.booking_date || b.booking_date>=dnesSK));
   // Track which classes/dates are booked so the schedule button can light up
   _bookedMap={};
   active.forEach(b=>{ if(b.class_id&&b.booking_date) _bookedMap[b.class_id+'|'+b.booking_date]=b._id; });

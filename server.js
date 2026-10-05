@@ -11677,6 +11677,57 @@ app.post('/api/service/collect', async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Presun súkromnej hodiny na iný termín (Marek 5. 10. 2026: „Ailina neprišla na súkromku
+// Nelke, treba to anulovať, namiesto toho budú mať súkromku 25. 10."). Pôvodná rezervácia
+// sa anuluje bez poplatku, termín sa zavrie a klientka dostane rezerváciu na nový voľný
+// termín toho istého trénera. Cena sa prepočíta podľa aktuálnej zľavy z členstva.
+app.post('/api/service/private-move', async(req,res)=>{
+  if(!servisToken(req)) return res.status(404).end();
+  try{
+    const b=await q.one(db.private_bookings,{_id:String(req.body.booking_id||'')});
+    if(!b) return res.status(404).json({error:'Súkromná hodina nenájdená'});
+    if(b.status!=='booked') return res.status(400).json({error:'Hodina má stav '+b.status+' — presúvať sa dá len rezervovaná'});
+    const s=await q.one(db.private_slots,{_id:String(req.body.slot_id||'')});
+    if(!s) return res.status(404).json({error:'Nový termín nenájdený'});
+    if(s.status!=='open') return res.status(400).json({error:'Nový termín nie je voľný (stav '+s.status+')'});
+    if(s.trainer_id!==b.trainer_id && !req.body.iny_trener) return res.status(400).json({error:'Nový termín patrí inému trénerovi — pošli iny_trener:true, ak je to zámer'});
+    const dovod=String(req.body.reason||'Presun termínu').slice(0,200);
+
+    // Pôvodná: anuluj bez poplatku. Zaplatené kreditom/kartou sa prenáša na novú hodinu.
+    await q.update(db.private_bookings,{_id:b._id},{$set:{status:'moved', cancelled_at:nowISO(), cancel_reason:dovod, moved_to_slot:s._id}});
+    await q.update(db.private_slots,{_id:b.slot_id},{$set:{status:'cancelled'}});
+
+    const klient=await q.one(db.users,{_id:b.client_id});
+    const trener=await q.one(db.users,{_id:s.trainer_id});
+    const disc=b.client_id ? await privateDiscountFor(b.client_id) : {pct:b.discount_pct||0, plan:b.discount_plan||null};
+    const price=privDiscounted(s.price, disc.pct);
+    const nova=await q.insert(db.private_bookings,{
+      slot_id:s._id, trainer_id:s.trainer_id, trainer_name:s.trainer_name,
+      client_id:b.client_id, client_name:b.client_name, client_phone:b.client_phone||'', client_email:b.client_email||'',
+      date:s.date, time_start:s.time_start, duration_min:s.duration_min||60, city:s.city, location:s.location||'',
+      price, base_price:s.price, discount_pct:disc.pct, discount_plan:disc.plan||null,
+      split:privateSettings(trener||{}).split, pay_method:b.pay_method, paid:!!b.paid,
+      status:'booked', moved_from:b._id, created_at:nowISO() });
+    await q.update(db.private_slots,{_id:s._id},{$set:{status:'booked', booking_id:nova._id}});
+
+    const kedyStary=`${b.date.split('-').reverse().join('.')} o ${b.time_start}`;
+    const kedyNovy=`${s.date.split('-').reverse().join('.')} o ${s.time_start}`;
+    const telo=`Pôvodný termín ${kedyStary} je zrušený bez poplatku, nový je ${kedyNovy} · ${s.city}. Cena ${price.toFixed(2)} €.`;
+    if(b.client_id) await q.insert(db.notifications,{user_id:b.client_id, type:'private_booking',
+      title:'🎭 Súkromná hodina presunutá', body:telo, read:false, created_at:nowISO()}).catch(()=>{});
+    await q.insert(db.notifications,{user_id:s.trainer_id, type:'private_booking',
+      title:'🎭 Súkromná hodina presunutá — '+b.client_name, body:telo, read:false, created_at:nowISO()}).catch(()=>{});
+    if(klient?.email) sendMail(klient.email, '🎭 Súkromná hodina presunutá — Fusion Academy',
+      emailTemplate('Nový termín súkromnej hodiny',
+        `<p>Ahoj <b>${String(klient.name||'').split(' ')[0]}</b>,</p><p>${telo}</p><p>Tréner: <b>${s.trainer_name}</b></p>`,
+        '📱 Moje rezervácie', APP_URL+'/client-dashboard')).catch(()=>{});
+    await auditLog(req,'private_move',b._id,{datum:b.date, cas:b.time_start, cena:b.price},
+      {datum:s.date, cas:s.time_start, cena:price, nova:nova._id}, dovod);
+    console.log('🎭 Súkromná hodina presunutá: '+b.client_name+' '+kedyStary+' → '+kedyNovy);
+    res.json({ok:true, zrusena:{id:b._id, datum:b.date, cas:b.time_start}, nova:{id:nova._id, datum:s.date, cas:s.time_start, cena:price, trener:s.trainer_name}});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Presun vstupov z permanentky na iný účet (Marek 27. 9. 2026: Anna Zemanová → Michaela
 // Antálková). Stáva sa, že permanentku kúpi jedna a chodí druhá, prípadne si ju klientka
 // kúpi na zlý účet. Peniaze sa nikam nevracajú a v účtovníctve sa nemení nič — mení sa len
