@@ -79,7 +79,7 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     const prev = await j('/api/admin/schools/preview?name=ZS%20Test&city=Detva&director=pani%20riaditeľka', {}, adm);
     const H = prev.txt;
     ok('náhľad mailu sa vygeneruje', prev.status === 200 && H.length > 800);
-    for (const [co, txt] of [['13 lekcií', '13 lekcií (10 + 3 bonusové zadarmo)'], ['cena 49,90 €', '49,90 €'],
+    for (const [co, txt] of [['13 lekcií', '13 lekcií (10 + 3 bonusové zadarmo)'], ['cena individuálne', 'Cenu kurzu pre rodiča určíme individuálne'],
       ['3 € škole', '3 € za každého prihláseného žiaka'], ['25 = 75 €', '75 €'], ['50 = 150 €', '150 €'],
       ['telefón', '0904 31 51 51'], ['referencia Podbrezová', 'Podbrezovej'],
       ['žiadna hotovosť cez učiteľa', 'neprejde ani euro v hotovosti'],
@@ -89,6 +89,8 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('odkaz nesie kampaň aj mesto', H.includes('utm_campaign=posledny-tanec-skoly') && H.includes('utm_content=Detva'));
     ok('v maile je odhlasovací odkaz', H.includes('/skoly/odhlasit/'));
     ok('mail nesľubuje barbera v cene', !/barber[^.]{0,40}v cene/i.test(H));
+    // Cena venčeka sa dohaduje podľa počtu žiakov a oblasti — mail nesmie uvádzať pevnú sumu za žiaka.
+    ok('mail neuvádza pevnú cenu kurzu', !/\d{1,3},\d{2}\s?€/.test(H), (H.match(/\d{1,3},\d{2}\s?€/) || [])[0]);
 
     // ── rozposlanie po dávkach ──
     const s1 = await j('/api/admin/schools/send', { method: 'POST', body: { limit: 2 } }, adm);
