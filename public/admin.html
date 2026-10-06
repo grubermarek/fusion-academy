@@ -9615,7 +9615,7 @@ async function doGiveFree(){
 }
 
 // ── Neodkladné úlohy ──
-const URGENT_ICON={lead:'🆕',guest:'💃',expiring:'⏳',lapsed:'🔁',noshow:'🙈'};
+const URGENT_ICON={lead:'🆕',guest:'💃',expiring:'⏳',lapsed:'🔁',noshow:'🙈',skola:'🏫'};
 async function loadAmbasadori(){
   const d=await api('/api/admin/ambassadors');
   const mt=document.getElementById('ambMembersTbl'), st=document.getElementById('ambSignupsTbl');

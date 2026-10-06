@@ -5663,18 +5663,33 @@ async function computeUrgentTasks(){
   // K 6. 10. tak visí 36 škôl — to je najlacnejší zdroj nových venčekov (audit).
   try{
     if(db.schools){
-      const skoly=(await q.find(db.schools,{})).filter(x=>x.clicked_at && ['sent','new',''].includes(String(x.status||'')) && !x.last_call_at);
-      skoly.sort((a,b)=>String(b.clicked_at||'').localeCompare(String(a.clicked_at||'')));
-      for(const x of skoly.slice(0,3)){
-        tasks.push({ key:'skola_klik_'+x._id, prio:22, icon:'🏫',
-          text:x.name+(x.city?' ('+x.city+')':'')+' klikla na ponuku venčeka '+String(x.clicked_at||'').slice(0,10)+' a nikto jej nevolal.',
-          cta:{label:'Otvoriť navolávanie', href:'/admin#venceky'} });
+      // Klik sa pri škole neukladá — zisťuje sa z mailov podľa adresy príjemcu
+      // (rovnako ako withMail v school-outreach.js), preto sa úloha nikdy neobjavila.
+      const klikyPodlaMailu={};
+      for(const m of await q.find(db.mail_log,{})){
+        if(!m.clicked_at || !m.to) continue;
+        const e=String(m.to).toLowerCase();
+        if(!klikyPodlaMailu[e] || m.clicked_at<klikyPodlaMailu[e]) klikyPodlaMailu[e]=m.clicked_at;
       }
-      if(skoly.length>3) tasks.push({ key:'skoly_kliky_suhrn', prio:23, icon:'📈',
-        text:skoly.length+' škôl kliklo na ponuku venčeka a zatiaľ im nikto nevolal.',
-        cta:{label:'Otvoriť navolávanie', href:'/admin#venceky'} });
+      const skoly=(await q.find(db.schools,{}))
+        .map(x=>({...x, klik:klikyPodlaMailu[String(x.email||'').toLowerCase()]||null}))
+        .filter(x=>x.klik && !x.unsubscribed && !x.crm_volane_at
+          && !['won','lost'].includes(String(x.status||''))
+          && !['ziskane','nezaujem','dovolane','stretnutie'].includes(String(x.crm_stav||'')));
+      skoly.sort((a,b)=>String(b.klik).localeCompare(String(a.klik)));
+      for(const x of skoly.slice(0,3)){
+        tasks.push({ key:'skola_klik_'+x._id, type:'skola', prio:4,
+          title:'Škola klikla na ponuku venčeka',
+          name:(x.name||'Škola')+(x.city?' ('+x.city+')':''),
+          why:'Ponuka ich zaujala '+String(x.klik).slice(0,10)+', ale nikto im zatiaľ nevolal. Číslo aj zápis z hovoru nájdeš vo Venčekoch → Navolávanie škôl.',
+          phone:x.phone||'', email:x.email||'' });
+      }
+      if(skoly.length>3) tasks.push({ key:'skoly_kliky_suhrn:'+skoly.length, type:'skola', prio:5,
+        title:'Školy, ktoré klikli na ponuku venčeka',
+        name:skoly.length+' škôl čaká na telefón',
+        why:'Otvor Venčeky → Navolávanie škôl a prejdi ich — majú za sebou klik na ponuku, nič lacnejšie na získanie venčeka nemáme.' });
     }
-  }catch(e){}
+  }catch(e){ console.error('urgent skoly:', e.message); }
   return tasks.filter(t=>!doneKeys.has(t.key)).sort((a,b)=>a.prio-b.prio);
 }
 // ── Podklady pre rannú obrazovku „Dnes" ──────────────────────────────────────
