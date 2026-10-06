@@ -4522,8 +4522,8 @@ async function loadVenceky(){
     <div class="card mb-3" style="background:#2a2410;border:1px solid #C9A84C"><div class="card-body py-2">
       <h6 class="fw-bold mb-2" style="color:#C9A84C">⏳ Čakajú na schválenie (registrácia cez QR kód)</h6>
       ${VEN.pending.map(p=>`<div class="d-flex justify-content-between align-items-center border-bottom border-secondary py-2 small flex-wrap gap-2">
-        <span>${p.role==='director'?'🏫':'👩‍🏫'} <b>${p.name}</b> <span class="text-muted">${p.email}</span><br>
-          <small class="text-muted">${p.role==='director'?'riaditeľ':'učiteľ'} · ${p.school}${p.class?' · '+p.class:''}</small></span>
+        <span>${p.role==='director'?'🏫':'👩‍🏫'} <b>${escHtml(p.name)}</b> <span class="text-muted">${escHtml(p.email)}</span><br>
+          <small class="text-muted">${p.role==='director'?'riaditeľ':'učiteľ'} · ${escHtml(p.school)}${p.class?' · '+escHtml(p.class):''}</small></span>
         <span>
           <button class="btn btn-sm btn-success" onclick="vApprove('${p.id}',true)">✅ Schváliť</button>
           <button class="btn btn-sm btn-outline-danger" onclick="vApprove('${p.id}',false)">Zamietnuť</button>
@@ -4533,7 +4533,7 @@ async function loadVenceky(){
   list.innerHTML=pendingHtml+VEN.schools.map(s=>`
     <div class="card bg-dark border-secondary mb-3"><div class="card-body">
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-        <h6 class="fw-bold mb-0">🏫 ${s.name} <span class="text-muted small">· ${s.city||''} · ${s.year}</span></h6>
+        <h6 class="fw-bold mb-0">🏫 ${escHtml(s.name)} <span class="text-muted small">· ${escHtml(s.city||'')} · ${escHtml(s.year)}</span></h6>
         <div class="d-flex gap-2 align-items-center">
           <span class="small">💶 ${vEur(s.income)} · 📉 ${vEur(s.costs)} · <b style="color:${s.profit>=0?'#8bc34a':'#f87171'}">📈 ${vEur(s.profit)}</b></span>
           <button class="btn btn-sm btn-outline-light" onclick="vAddClass('${s.id}')" title="Väčšina škôl vystačí s jednou skupinou — pridaj len ak naozaj delíš na 9.A a 9.B">+ Ďalšia skupina</button>
@@ -4541,21 +4541,21 @@ async function loadVenceky(){
           <button class="btn btn-sm btn-outline-secondary" onclick="vAddCost('${s.id}','')">+ Náklad školy</button>
         </div>
       </div>
-      ${s.staff?.length?`<div class="small text-muted mb-2">Personál: ${s.staff.map(t=>`${t.role==='director'?'🏫':'👩‍🏫'} ${t.name}`).join(' · ')}</div>`:''}
+      ${s.staff?.length?`<div class="small text-muted mb-2">Personál: ${s.staff.map(t=>`${t.role==='director'?'🏫':'👩‍🏫'} ${escHtml(t.name)}`).join(' · ')}</div>`:''}
       <div class="small mb-2 text-muted" style="font-size:.75rem">
         📅 Termíny hodín a venčekového večera zadávaš v detaile skupiny — dohodneš sa so školou osobne.
         · Odkaz pre žiakov na registráciu nájdeš pri skupine pod „QR / odkaz“.</div>
       ${s.classes.length?`<table class="table table-dark table-sm small mb-0"><thead><tr>
         <th>Skupina</th><th>Progress</th><th>Lekcie</th><th class="text-center">Žiaci</th><th class="text-center">🧾 Zaplatené</th><th class="text-end">Príjem</th><th class="text-end">Zisk</th><th>Registrácia</th><th></th></tr></thead><tbody>
         ${s.classes.map(c=>`<tr>
-          <td><b>${c.name}</b>${c.event_date?`<br><small class="text-muted">✨ ${c.event_date}</small>`:''}</td>
+          <td><b>${escHtml(c.name)}</b>${c.event_date?`<br><small class="text-muted">✨ ${escHtml(c.event_date)}</small>`:''}</td>
           <td style="min-width:110px"><div style="height:8px;background:#26221a;border-radius:5px;overflow:hidden"><div style="height:100%;width:${c.progress}%;background:#C9A84C"></div></div><small class="text-muted">${c.progress} %</small></td>
           <td>${c.lessons_done}/${c.pred_veckom!=null?c.pred_veckom:(c.lessons_before||10)}${(c.bonusov||0)>0?`<br><small class="text-muted">+${c.bonusov} bonus</small>`:""}</td>
           <td class="text-center">${c.members}</td>
           <td class="text-center">${c.paid}/${c.members}${c.unpaid?` <span class="text-warning">(${c.unpaid} chýba)</span>`:' ✅'}</td>
           <td class="text-end">${vEur(c.income)}</td>
           <td class="text-end" style="color:${c.profit>=0?'#8bc34a':'#f87171'}">${vEur(c.profit)}</td>
-          <td><button class="btn btn-sm btn-outline-secondary" onclick="vShowQR('${c.code}','${c.name}')">QR / odkaz</button>
+          <td><button class="btn btn-sm btn-outline-secondary" onclick="vShowQR('${c.code}','${escHtml(String(c.name).replace(/'/g,"’"))}')">QR / odkaz</button>
             <button class="btn btn-sm btn-outline-warning mt-1" onclick="vKiosk('${c.code}')" title="Celá obrazovka s veľkým QR — na nábor v telocvični">🖥️ Kiosk</button></td>
           <td><button class="btn btn-sm btn-brand" onclick="vClassDetail('${c.id}')">Detail</button></td>
         </tr>`).join('')}

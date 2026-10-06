@@ -321,6 +321,7 @@ const RODIC_TOKEN=(QP.get('rodic')||'').replace(/[^A-Za-z0-9]/g,'').slice(0,20);
   };
 })();
 </script>
-<script src="/fa-track.js"></script>
+<!-- Zámerne bez /fa-track.js: túto stránku skenujú deti z QR kódu a nemá cookie lištu,
+     takže sa tu nesmie spustiť Meta Pixel ani Google tag (audit 6. 10. 2026). -->
 </body>
 </html>

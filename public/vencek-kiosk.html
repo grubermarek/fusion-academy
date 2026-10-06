@@ -93,7 +93,7 @@ function spat(){
   await vykresli();
   // Počet registrovaných rastie počas náboru — obnovuje sa sám, nech to na
   // premietanom kiosku nikto nemusí refreshovať.
-  setInterval(vykresli, 20000);
+  setInterval(vykresli, 120000);   // raz za 2 min — pri 20 s si kiosk sám vyčerpal limit a napísal „kód nepoznáme"
 })();
 </script>
 </body>

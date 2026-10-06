@@ -204,6 +204,9 @@ const rlLogin  = rateLimit({max:15, windowMs:10*60*1000, message:'Priveľa neús
 const rlSignup = rateLimit({max:30, windowMs:60*60*1000, message:'Priveľa registrácií z tohto zariadenia. Skús to o chvíľu znova.'});
 const rlLookup = rateLimit({max:60, windowMs:60*60*1000, message:'Priveľa požiadaviek. Skús to neskôr.'});
 const rlPublic = rateLimit({max:20, windowMs:60*60*1000, message:'Priveľa odoslaní. Skús to neskôr.'});
+// Čítanie údajov venčekovej skupiny (plagát s QR): celá trieda ide z jednej školskej
+// Wi-Fi a kiosk sa obnovuje sám — 20/hod zablokovalo nábor v polovici (audit 6. 10.).
+const rlVencekInfo = rateLimit({max:400, windowMs:60*60*1000, message:'Priveľa otvorení. Skús to o chvíľu.'});
 
 // Trust Railway / reverse-proxy HTTPS headers
 if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
@@ -7263,6 +7266,19 @@ const isTestContact = c => /@test-fa-qa\.local$/i.test(String(c||''));
 function jeVencekar(u){ return !!(u && (u.venceky_class_id || u.venceky_school_id || u.venceky_role
   || u.vencek_pending_role || u.lead_source==='vencek')); }
 function vencekMimoKonverzie(u){ return jeVencekar(u) && u.user_type!=='client'; }
+// Venčekár je deviatak, nie klientka. Do verejnej komunity (zoznam členov, hľadanie,
+// profil s fotkou, lajkami a komentármi) nepatrí — tam sú dospelé klientky, ktoré
+// dieťa nepozná (audit 6. 10.: všetkých 54 detí bolo v zozname 255 členov).
+// Len čo si venčekár kúpi členstvo (user_type 'client'), je to bežná klientka.
+function vencekDieta(u){ return !!(u && (u.venceky_role||'') === 'student' && u.user_type!=='client'); }
+// Profil dieťaťa smie vidieť ono samo, admin, tréner a ľudia z jeho venčekovej
+// skupiny (spolužiaci, učiteľ, pripojení rodičia) — nikto iný.
+function smieVidietDieta(dieta, kto){
+  if(!kto) return false;
+  if(kto._id===dieta._id || kto.is_admin || kto.user_type==='trainer' || kto.user_type==='manager' || kto.is_assistant) return true;
+  if(kto.venceky_class_id && kto.venceky_class_id===dieta.venceky_class_id) return true;
+  return Array.isArray(dieta.vencek_rodicia) && dieta.vencek_rodicia.includes(kto._id);
+}
 // …a nedostávajú ani predajné maily (Marek 11. 9.: „nemusia dostávať ani predajné
 // maily"). Predajné = uvítacia séria s „prvá hodina ZADARMO", starostlivosť o leada,
 // zľavy, upsell, winback. Servisné (platba, faktúra, heslo, venček) chodia ďalej.
@@ -7695,7 +7711,8 @@ app.get('/api/community/messages/:channel', auth, async(req,res)=>{
 });
 
 app.get('/api/community/members', auth, async(req,res)=>{
-  const users=await q.find(db.users,{is_admin:{$ne:true},active:true,is_child:{$ne:true},$or:[{imported:{$ne:true}},{claimed:true}]});
+  const users=(await q.find(db.users,{is_admin:{$ne:true},active:true,is_child:{$ne:true},$or:[{imported:{$ne:true}},{claimed:true}]}))
+    .filter(u=>!vencekDieta(u));   // deti z venčekov do verejného zoznamu nepatria
   const result=users.map(u=>({
     id:u._id, name:u.name,
     user_type:u.user_type||'partner',
@@ -7721,7 +7738,9 @@ app.get('/api/community/search', auth, async(req,res)=>{
     const s=(req.query.q||'').trim().toLowerCase();
     if(s.length<2) return res.json({people:[]});
     let users=await q.find(db.users,{is_admin:{$ne:true},active:true,is_child:{$ne:true},anonymous:{$ne:true},$or:[{imported:{$ne:true}},{claimed:true}]});
-    users=users.filter(u=>u._id!==me && ((u.nickname||'').toLowerCase().includes(s) || (u.name||'').toLowerCase().includes(s)));
+    const ja=await q.one(db.users,{_id:me});
+    users=users.filter(u=>u._id!==me && (!vencekDieta(u) || smieVidietDieta(u, ja))
+      && ((u.nickname||'').toLowerCase().includes(s) || (u.name||'').toLowerCase().includes(s)));
     users=users.slice(0,20);
     const people=await Promise.all(users.map(async u=>{
       const refCount=await downlineCountOf(u._id);
@@ -8772,6 +8791,10 @@ app.get('/api/profile/:id', auth, async(req,res)=>{
     if(!u) return res.status(404).json({error:'Profil nenájdený'});
     const me=req.session.uid;
     const isSelf = u._id===me;
+    // Profil venčekového dieťaťa nie je verejný (audit 6. 10.) — otvoriť ho vie
+    // ono samo, admin, tréner a jeho skupina (spolužiaci, učiteľ, pripojení rodičia).
+    if(vencekDieta(u) && !isSelf && !smieVidietDieta(u, await q.one(db.users,{_id:me})))
+      return res.status(403).json({error:'Tento profil je súkromný'});
     const directRefs=await referralCountOf(u._id);
     const refCount=await downlineCountOf(u._id); // whole structure drives rewards
     // Admin môže počet odčlenených mesiacov nastaviť ručne (override) — import
@@ -8877,6 +8900,9 @@ app.post('/api/profile/:id/like', auth, async(req,res)=>{
     const target=await q.one(db.users,{_id:req.params.id});
     if(!target) return res.status(404).json({error:'Profil nenájdený'});
     const me=req.session.uid;
+    // Dieťa z venčeka nie je verejný profil — lajkovať ani komentovať ho cudzí nemôže.
+    if(vencekDieta(target) && !smieVidietDieta(target, await q.one(db.users,{_id:req.session.uid})))
+      return res.status(403).json({error:'Tento profil je súkromný'});
     if(target._id===me) return res.status(400).json({error:'Vlastný profil nemôžeš lajknúť'});
     const existing=await q.one(db.profile_likes,{profile_id:target._id,liker_id:me});
     let liked;
@@ -8898,6 +8924,9 @@ app.post('/api/profile/:id/like', auth, async(req,res)=>{
 // List comments on a profile
 app.get('/api/profile/:id/comments', auth, async(req,res)=>{
   try {
+    const ciel=await q.one(db.users,{_id:req.params.id});
+    if(ciel && vencekDieta(ciel) && !smieVidietDieta(ciel, await q.one(db.users,{_id:req.session.uid})))
+      return res.status(403).json({error:'Tento profil je súkromný'});
     const rows=await q.find(db.profile_comments,{profile_id:req.params.id});
     rows.sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
     const me=req.session.uid;
@@ -8920,6 +8949,9 @@ app.post('/api/profile/:id/comments', auth, async(req,res)=>{
   try {
     const target=await q.one(db.users,{_id:req.params.id});
     if(!target) return res.status(404).json({error:'Profil nenájdený'});
+    // Dieťa z venčeka nie je verejný profil — lajkovať ani komentovať ho cudzí nemôže.
+    if(vencekDieta(target) && !smieVidietDieta(target, await q.one(db.users,{_id:req.session.uid})))
+      return res.status(403).json({error:'Tento profil je súkromný'});
     const text=(req.body.text||'').trim();
     if(!text) return res.status(400).json({error:'Prázdny komentár'});
     if(text.length>500) return res.status(400).json({error:'Komentár je príliš dlhý (max 500)'});
@@ -26570,7 +26602,7 @@ app.post('/unsubscribe', express.urlencoded({extended:false}), async(req,res)=>{
 // ── Verejné: čo je za venčekovým kódom (pre registračnú stránku) ────────────
 // Registrácia tak vie ukázať názov skupiny a ponúknuť len tie role, ktoré sú
 // pre ňu povolené. Vracia zámerne len to, čo je aj tak na plagáte s QR.
-app.get('/api/vencek/info', rlPublic, async(req,res)=>{
+app.get('/api/vencek/info', rlVencekInfo, async(req,res)=>{
   try{
     const code=String(req.query.code||'').toUpperCase().trim();
     const c=await q.one(db.venceky_classes,{code});
@@ -26964,9 +26996,14 @@ app.get('/api/vencek/mine', auth, async(req,res)=>{
     // Admin si môže pozrieť skupinu očami žiaka — aby vedel deťom na nábore
     // ukázať, čo v appke uvidia. Je to náhľad: platba ani dochádzka nie sú jeho,
     // preto sú prázdne. Tvar je rovnaký ako pre žiaka, nech stránka nepozná rozdiel.
-    if(u.is_admin && req.query.ako==='student' && req.query.class_id){
+    // Riaditeľ a učiteľ si tak pozrú svoju vlastnú skupinu — appka ich tam pri jedinej
+    // skupine rovno posiela a bez tohto sa zacyklili na presmerovaní (audit 6. 10.).
+    if(req.query.ako==='student' && req.query.class_id){
       const c=await q.one(db.venceky_classes,{_id:String(req.query.class_id)});
       if(!c) return res.status(404).json({error:'Skupina nenájdená'});
+      const smie = u.is_admin
+        || (['director','teacher'].includes(u.venceky_role||'') && (u.venceky_school_id===c.school_id || u.venceky_class_id===c._id));
+      if(!smie) return res.status(403).json({error:'Túto skupinu si pozrieť nemôžete'});
       const s=await q.one(db.venceky_schools,{_id:c.school_id});
       const clen=await q.find(db.users,{venceky_class_id:c._id});
       const recs=await q.find(db.venceky_attendance,{class_id:c._id});
