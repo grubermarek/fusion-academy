@@ -51,7 +51,11 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     skola('qaSkD04', 'ZŠ Volané', 'qa.skola.d@qa-biz.local', { crm_volane_at: '2026-10-01T09:00:00.000Z', crm_stav: 'dovolane' }),
     skola('qaSkE05', 'ZŠ Odhlásená', 'qa.skola.e@qa-biz.local', { unsubscribed: true }),
     skola('qaSkF06', 'ZŠ Len otvorila', 'qa.skola.f@qa-biz.local'),
+    { _id: 'qaSkG07', name: 'ZŠ Klokočova', city: 'Hnúšťa', email: 'qa.skola.g@qa-biz.local', phone: '0901 111 007',
+      status: 'sent', unsubscribed: false, sent_at: '2026-09-20', created_at: '2026-09-01' },
   ]);
+  // v Hnúšti už venček beží — taká škola nie je studený telefonát
+  w('venceky_schools.db', [{ _id: 'qaVsHnusta0001', name: 'Hnúšťa', city: 'Hnusta', year: '2026/27', created_at: '2026-09-01' }]);
   const mail = (id, to, extra) => ({ _id: id, to, subject: 'Venček pre deviatakov', created_at: '2026-09-20T08:00:00.000Z', ...(extra || {}) });
   w('mail_log.db', [
     mail('qaMlA1', 'qa.skola.a@qa-biz.local', { opened_at: '2026-09-21T08:00:00.000Z', clicked_at: '2026-09-21T08:05:00.000Z' }),
@@ -60,6 +64,7 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     mail('qaMlD1', 'qa.skola.d@qa-biz.local', { clicked_at: '2026-09-24T08:05:00.000Z' }),
     mail('qaMlE1', 'qa.skola.e@qa-biz.local', { clicked_at: '2026-09-25T08:05:00.000Z' }),
     mail('qaMlF1', 'qa.skola.f@qa-biz.local', { opened_at: '2026-09-26T08:00:00.000Z' }),
+    mail('qaMlG1', 'qa.skola.g@qa-biz.local', { clicked_at: '2026-09-27T08:05:00.000Z' }),
   ]);
 
   console.log('VENČEKY — ŠKOLY S KLIKOM V NEODKLADNÝCH\n');
@@ -87,6 +92,7 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     ok('nie je tam škola, ktorej už niekto volal', !skoly.some(t => /Volané/.test(t.name || '')));
     ok('nie je tam odhlásená škola', !skoly.some(t => /Odhlásená/.test(t.name || '')));
     ok('nie je tam škola, čo mail len otvorila', !skoly.some(t => /otvorila/.test(t.name || '')));
+    ok('nie je tam mesto, kde už venček beží', !skoly.some(t => /Hnúšťa/.test(t.name || '')), skoly.map(t => t.name).join(' | '));
 
     console.log('\n2) Tvar úlohy je rovnaký ako pri ostatných:');
     const t = skoly.find(x => /Kukučínova/.test(x.name || ''));

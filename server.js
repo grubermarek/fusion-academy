@@ -5671,9 +5671,14 @@ async function computeUrgentTasks(){
         const e=String(m.to).toLowerCase();
         if(!klikyPodlaMailu[e] || m.clicked_at<klikyPodlaMailu[e]) klikyPodlaMailu[e]=m.clicked_at;
       }
+      // Mesto, kde už venček beží, nie je studený telefonát — Hnúšťa sa inak hlásila
+      // ako „nikto im nevolal“, hoci tam práve tancujeme.
+      const bezDiakritiky=t=>String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
+      const nasesMesta=new Set((await q.find(db.venceky_schools,{})).map(s=>bezDiakritiky(s.city||s.name)).filter(Boolean));
       const skoly=(await q.find(db.schools,{}))
         .map(x=>({...x, klik:klikyPodlaMailu[String(x.email||'').toLowerCase()]||null}))
         .filter(x=>x.klik && !x.unsubscribed && !x.crm_volane_at
+          && !nasesMesta.has(bezDiakritiky(x.city))
           && !['won','lost'].includes(String(x.status||''))
           && !['ziskane','nezaujem','dovolane','stretnutie'].includes(String(x.crm_stav||'')));
       skoly.sort((a,b)=>String(b.klik).localeCompare(String(a.klik)));
