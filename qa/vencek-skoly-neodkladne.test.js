@@ -51,11 +51,13 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     skola('qaSkD04', 'ZŠ Volané', 'qa.skola.d@qa-biz.local', { crm_volane_at: '2026-10-01T09:00:00.000Z', crm_stav: 'dovolane' }),
     skola('qaSkE05', 'ZŠ Odhlásená', 'qa.skola.e@qa-biz.local', { unsubscribed: true }),
     skola('qaSkF06', 'ZŠ Len otvorila', 'qa.skola.f@qa-biz.local'),
+    // V Hnúšti máme venček v prvej ZŠ (stav „ziskane“) — druhá je stále lead a volať ju treba.
     { _id: 'qaSkG07', name: 'ZŠ Klokočova', city: 'Hnúšťa', email: 'qa.skola.g@qa-biz.local', phone: '0901 111 007',
+      status: 'won', crm_stav: 'ziskane', unsubscribed: false, sent_at: '2026-09-20', created_at: '2026-09-01' },
+    { _id: 'qaSkH08', name: 'ZŠ Nábrežie Rimavy', city: 'Hnúšťa', email: 'qa.skola.h@qa-biz.local', phone: '0901 111 008',
       status: 'sent', unsubscribed: false, sent_at: '2026-09-20', created_at: '2026-09-01' },
   ]);
-  // v Hnúšti už venček beží — taká škola nie je studený telefonát
-  w('venceky_schools.db', [{ _id: 'qaVsHnusta0001', name: 'Hnúšťa', city: 'Hnusta', year: '2026/27', created_at: '2026-09-01' }]);
+  w('venceky_schools.db', [{ _id: 'qaVsHnusta0001', name: 'Hnúšťa', city: 'Hnúšťa', year: '2026/27', created_at: '2026-09-01' }]);
   const mail = (id, to, extra) => ({ _id: id, to, subject: 'Venček pre deviatakov', created_at: '2026-09-20T08:00:00.000Z', ...(extra || {}) });
   w('mail_log.db', [
     mail('qaMlA1', 'qa.skola.a@qa-biz.local', { opened_at: '2026-09-21T08:00:00.000Z', clicked_at: '2026-09-21T08:05:00.000Z' }),
@@ -65,6 +67,7 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     mail('qaMlE1', 'qa.skola.e@qa-biz.local', { clicked_at: '2026-09-25T08:05:00.000Z' }),
     mail('qaMlF1', 'qa.skola.f@qa-biz.local', { opened_at: '2026-09-26T08:00:00.000Z' }),
     mail('qaMlG1', 'qa.skola.g@qa-biz.local', { clicked_at: '2026-09-27T08:05:00.000Z' }),
+    mail('qaMlH1', 'qa.skola.h@qa-biz.local', { clicked_at: '2026-09-16T08:05:00.000Z' }),
   ]);
 
   console.log('VENČEKY — ŠKOLY S KLIKOM V NEODKLADNÝCH\n');
@@ -89,10 +92,13 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     r = await j('/api/admin/urgent-tasks', {}, jar.adm);
     let skoly = (r.d.tasks || []).filter(t => String(t.key).startsWith('skola_klik_'));
     ok('školy s klikom sú medzi neodkladnými', skoly.length === 3, 'našiel ' + skoly.length + ' z ' + (r.d.tasks || []).length);
+    const suhrn1 = (r.d.tasks || []).find(t => String(t.key).startsWith('skoly_kliky_suhrn'));
     ok('nie je tam škola, ktorej už niekto volal', !skoly.some(t => /Volané/.test(t.name || '')));
     ok('nie je tam odhlásená škola', !skoly.some(t => /Odhlásená/.test(t.name || '')));
     ok('nie je tam škola, čo mail len otvorila', !skoly.some(t => /otvorila/.test(t.name || '')));
-    ok('nie je tam mesto, kde už venček beží', !skoly.some(t => /Hnúšťa/.test(t.name || '')), skoly.map(t => t.name).join(' | '));
+    ok('získaná škola sa už neozýva', !skoly.some(t => /Klokočova/.test(t.name || '')), skoly.map(t => t.name).join(' | '));
+    // Mesto sa nefiltruje — v Hnúšti sú dve ZŠ a venček máme len v jednej (6. 10.).
+    ok('druhá škola v tom istom meste sa počíta', !!suhrn1 && /4 škôl/.test(suhrn1.name || ''), suhrn1 && suhrn1.name);
 
     console.log('\n2) Tvar úlohy je rovnaký ako pri ostatných:');
     const t = skoly.find(x => /Kukučínova/.test(x.name || ''));
@@ -108,7 +114,7 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     ok('zápis z hovoru prešiel', r.status === 200, JSON.stringify(r.d));
     r = await j('/api/admin/urgent-tasks', {}, jar.adm);
     skoly = (r.d.tasks || []).filter(x => String(x.key).startsWith('skola_klik_'));
-    ok('dovolaná škola už neotravuje', skoly.length === 2 && !skoly.some(x => /Kukučínova/.test(x.name || '')), skoly.map(x => x.name).join(' | '));
+    ok('dovolaná škola už neotravuje', skoly.length === 3 && !skoly.some(x => /Kukučínova/.test(x.name || '')), skoly.map(x => x.name).join(' | '));
 
     console.log('\n4) Pri viac ako troch školách pribudne súhrn:');
     // doplníme štyri ďalšie kliky priamo do mail_log + schools (bez API, aby test nezávisel od importu)
@@ -141,7 +147,7 @@ const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.s
     const suhrn = (r.d.tasks || []).find(x => String(x.key).startsWith('skoly_kliky_suhrn'));
     ok('server po reštarte beží', zije2);
     ok('kariet ostávajú najviac tri', karty.length === 3, String(karty.length));
-    ok('súhrn hovorí, koľko škôl čaká', !!suhrn && /6 škôl/.test(suhrn.name || ''), suhrn && suhrn.name);
+    ok('súhrn hovorí, koľko škôl čaká', !!suhrn && /7 škôl/.test(suhrn.name || ''), suhrn && suhrn.name);
     ok('súhrn nasmeruje do navolávania', !!suhrn && /Navolávanie škôl/.test(suhrn.why || ''), suhrn && suhrn.why);
 
     console.log('\n5) Vybavenie úlohy:');
