@@ -174,7 +174,7 @@ function rozvrhKarta(c, lessons){
         <div class="rhl">
           <span class="rc">${x.cancelled?'✕':(bolo?'✓':(x.lesson||''))}</span>
           <span class="rd">${esc(termin(x.at))}</span>
-          ${x.cancelled?'<span class="rp">zrušená</span>':(x.moved?'<span class="rp zmena">presunutá</span>':(x.bonus?'<span class="rp bon">bonus</span>':''))}
+          ${x.cancelled?`<span class="rp">zrušená</span>${x.reason?`<span class="muted" style="font-size:.72rem"> · ${esc(x.reason)}</span>`:''}`:(x.moved?'<span class="rp zmena">presunutá</span>':(x.bonus?'<span class="rp bon">bonus</span>':''))}
           ${maDetail?'<span class="rsip">▾</span>':''}
         </div>${detail}
       </div>`;
@@ -200,18 +200,26 @@ function classCard(c, extra=''){
     <span class="badge">${esc(c.year)} · ${esc(c.name).toUpperCase()}</span>
     <h1>Naša cesta k venčeku</h1>
     <div class="sub">${vBonuse
-      ? `Venček máte za sebou · bonusová lekcia ${Math.min(poVencku||1,bonusSpolu)} z ${bonusSpolu}`
-      : `Lekcia ${c.lessons_done} z ${doVencka}`}${c.event_date?` · ✨ Venčekový večer: <b style="color:var(--gold)">${esc(fmtD(c.event_date))}</b>${c.event_venue?` · 📍 ${esc(c.event_venue)}`:''}`:''}</div>
+      ? (poVencku>0 ? `Venček máte za sebou · bonusová lekcia ${Math.min(poVencku,bonusSpolu)} z ${bonusSpolu}` : 'Venček máte za sebou · bonusové lekcie ešte len začnú')
+      : `Lekcia ${c.lessons_done} z ${doVencka}`}${c.event_date?` · ✨ Venčekový večer: <b style="color:var(--gold)">${esc(fmtD(c.event_date))}</b>${c.event_start?` o <b style="color:var(--gold)">${esc(c.event_start)}</b>`:''}${c.event_venue?` · 📍 <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.event_venue)}" target="_blank" rel="noopener" style="color:var(--cream)">${esc(c.event_venue)}</a>`:''}`:''}</div>
     <div class="bigbar"><i style="width:${c.progress}%"></i></div>
     <div style="font-weight:900;color:var(--gold)">${c.progress} %</div>
     ${(() => {
       // Najbližšia lekcia patrí navrch — je to prvá vec, na ktorú sa pozrú.
       const b=(c.terminy||[]).filter(t=>!t.cancelled && t.at && new Date(t.at)>=new Date())[0];
       if(!b) return c.schedule?`<div class="sub" style="margin-top:8px">📍 ${esc(c.schedule)}</div>`:'';
-      return `<div class="sub" style="margin-top:10px">⏭️ Najbližšia lekcia: <b style="color:var(--gold)">${esc(termin(b.at))}</b>${c.schedule?`<br>📍 ${esc(c.schedule)}`:''}</div>`;
+      return `<div class="sub" style="margin-top:10px">⏭️ Najbližšia lekcia: <b style="color:var(--gold)">${esc(termin(b.at))}</b>${c.schedule?`<br>📍 ${esc(c.schedule)}`:''}
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+          <a class="btn-o" style="text-decoration:none" href="/api/vencek/kalendar.ics">📅 Pridať termíny do kalendára</a>
+          <button class="btn-o" onclick="nepridem(this)">🙋 Nebudem na lekcii</button>
+        </div></div>`;
     })()}
   </div>
   ${extra}
+  ${(window._PAR||window._LEKTOR)?`<div class="card">
+    ${window._PAR?`<div style="font-size:1rem">💃 <b>Tvoj pár na venček:</b> <span style="color:var(--gold);font-weight:800">${esc(window._PAR)}</span></div>`:''}
+    ${window._LEKTOR?`<div class="muted" style="margin-top:${window._PAR?'8px':'0'}">🎓 Kurz vedie <b style="color:var(--cream)">${esc(window._LEKTOR.name)}</b>${window._LEKTOR.phone?` · <a href="tel:${esc(String(window._LEKTOR.phone).replace(/\s+/g,''))}">${esc(window._LEKTOR.phone)}</a>`:''}${window._LEKTOR.email?` · <a href="mailto:${esc(window._LEKTOR.email)}">${esc(window._LEKTOR.email)}</a>`:''}</div>`:''}
+  </div>`:''}
   ${(() => {
     // Marek označuje po hodine, čo už vieme — nech to žiaci vidia oddelene od
     // toho, čo ich ešte čaká. Jeden dlhý zoznam 14 tancov by to zahmlil.
@@ -224,7 +232,7 @@ function classCard(c, extra=''){
         <div class="tance-cakaju">${cakaju.map(x=>`<span class="caka">${esc(x.name)}</span>`).join('')}</div></div>`:''}
       ${rozvrhKarta(c, window._LEKCIE)}
       ${c.note?`<div class="card"><div class="muted">📝 ${esc(c.note)}</div></div>`:''}
-      ${PARTNER_KOSELE}`;
+      ${(window._ROLA==='student' && (window._POHLAVIE!=='female')) ? PARTNER_KOSELE : (window._ROLA==='parent' ? PARTNER_KOSELE_RODIC : '')}`;
   })()}
   <div class="grid">
     <div class="stat"><b>${c.members}</b><span>žiakov v skupine</span></div>
@@ -233,10 +241,10 @@ function classCard(c, extra=''){
       : `<div class="stat"><b>${zostava}</b><span>${zostava===1?'lekcia':(zostava>=2&&zostava<=4?'lekcie':'lekcií')} do venčeka</span></div>`}
   </div>
   ${bonusSpolu>0?`<div class="card" style="border-color:rgba(201,168,76,.4)">
-    <h3>🎁 ${vBonuse?'Bonusové lekcie bežia':`Po venčeku máte ${bonusSpolu} bonusové lekcie`}</h3>
+    <h3>🎁 ${vBonuse?'Bonusové lekcie bežia':`Po venčeku ${bonusSpolu===1?'máte bonusovú lekciu':`máte ${bonusSpolu} ${bonusSpolu>=2&&bonusSpolu<=4?'bonusové lekcie':'bonusových lekcií'}`}`}</h3>
     <div class="muted">${vBonuse
       ? 'Venček skončil, ale tancovať nemusíte prestať — tieto lekcie sú navyše a zadarmo. Ak vás to chytilo, ozvite sa nám a ukážeme vám, kam sa dá ísť ďalej. 💛'
-      : 'Kurz má ' + (c.lessons_total||13) + ' lekcií: ' + doVencka + ' do venčekového večera a ' + bonusSpolu + ' navyše po ňom. Tie posledné sú náš darček — aby ste v tanci mohli pokračovať. 💛'}</div>
+      : 'Kurz má ' + (doVencka+bonusSpolu) + ' lekcií: ' + doVencka + ' do venčekového večera a ' + bonusSpolu + ' navyše po ňom. Tie posledné sú náš darček — aby ste v tanci mohli pokračovať. 💛'}</div>
   </div>`:''}`;
 }
 // Partner pre chlapcov na venček (Marek 25. 9. 2026). Text je tu na jednom mieste —
@@ -245,9 +253,15 @@ const PARTNER_KOSELE = `<div class="card" style="border-color:rgba(201,168,76,.4
     <h3>👔 Partner pre chlapcov · TopKošele.sk</h3>
     <div class="muted">Na venček patrí poriadna košeľa. Náš partner <a href="https://www.topkosele.sk" target="_blank" rel="noopener" style="color:var(--gold)">TopKošele.sk</a> dáva venčekárom Fusion Academy <b style="color:var(--gold)">zľavu 10 %</b> na pánsku módu — košele, polokošele aj doplnky. Predajňu majú v Detve a dá sa tam vopred rezervovať termín skúšania. Pri nákupe povedz, že tancuješ venček s Fusion Academy.</div>
   </div>`;
+// Ten istý partner pre rodiča — vykaním a bez „tancuješ“ (audit 6. 10.).
+const PARTNER_KOSELE_RODIC = `<div class="card" style="border-color:rgba(201,168,76,.4)">
+    <h3>👔 Partner pre chlapcov · TopKošele.sk</h3>
+    <div class="muted">Na venček patrí poriadna košeľa. Náš partner <a href="https://www.topkosele.sk" target="_blank" rel="noopener" style="color:var(--gold)">TopKošele.sk</a> dáva venčekárom Fusion Academy <b style="color:var(--gold)">zľavu 10 %</b> na pánsku módu. Predajňu majú v Detve a dá sa tam vopred rezervovať termín skúšania. Pri nákupe stačí povedať, že vaše dieťa tancuje venček s Fusion Academy.</div>
+  </div>`;
 function attCard(d){
   if(d.my_attendance) return `<div class="card"><h3>🙋 Moja dochádzka</h3>
     <div class="row" style="display:flex;justify-content:space-between;font-size:.9rem"><span>Bol/a som na <b>${d.my_attendance.attended}</b> z ${d.my_attendance.recorded} zapísaných lekcií</span><span style="color:var(--gold);font-weight:900">${Math.round(d.my_attendance.attended/d.my_attendance.recorded*100)} %</span></div></div>`;
+  if(d.role==='student') return `<div class="card"><h3>🙋 Moja dochádzka</h3><div class="muted">Zatiaľ nie je zapísaná žiadna lekcia — objaví sa tu po prvej hodine.</div></div>`;
   if(d.class?.attendance) return `<div class="card"><h3>🙋 Dochádzka triedy</h3>
     <div class="muted">Priemerná účasť <b style="color:var(--gold)">${d.class.attendance.avg_pct} %</b> · zapísaných ${d.class.attendance.lessons_recorded} lekcií</div></div>`;
   return '';
@@ -276,7 +290,14 @@ function chatKarta(){
     </div>
   </div>`;
 }
-async function chatNacitaj(){
+// Chat sa doteraz načítal len raz — nová správa sa objavila až po obnovení stránky.
+let _CHAT_TIK=null;
+function chatAuto(){
+  clearInterval(_CHAT_TIK);
+  _CHAT_TIK=setInterval(()=>{ if(document.visibilityState==='visible' && document.getElementById('chatZoznam')) chatNacitaj(true); }, 20000);
+  document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') chatNacitaj(true); });
+}
+async function chatNacitaj(tiche){
   const el=document.getElementById('chatZoznam'); if(!el) return;
   try{
     const d=await (await fetch('/api/vencek/chat'+(_chatId?('?class_id='+encodeURIComponent(_chatId)):''),{credentials:'include'})).json();
@@ -318,7 +339,7 @@ async function chatPosli(){
 async function chatZmaz(id){
   if(!confirm('Zmazať túto správu?')) return;
   try{ await fetch('/api/vencek/chat/'+encodeURIComponent(id),{method:'DELETE',credentials:'include'}); }catch(e){}
-  chatNacitaj();
+  chatNacitaj(); chatAuto();
 }
 const postJ=(url,telo)=>fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(telo||{})});
 async function platitKartou(btn, dietaId){
@@ -375,6 +396,17 @@ async function pripojitKod(btn){
     ch.hidden=false; ch.textContent=j.error||'Pripojenie sa nepodarilo.';
   }catch(e){ ch.hidden=false; ch.textContent='Pripojenie sa nepodarilo. Skúste to znova.'; }
   btn.disabled=false;
+}
+// „Nebudem na lekcii" — lektor sa to doteraz dozvedel až na hodine (audit 6. 10.).
+async function nepridem(btn){
+  const dovod=prompt('Nebudeš na najbližšej lekcii? Napíš prečo (nepovinné) — lektor dostane správu:','');
+  if(dovod===null) return;
+  btn.disabled=true; const pov=btn.textContent; btn.textContent='Posielam…';
+  try{
+    const r=await (await postJ('/api/vencek/absencia',{reason:dovod, dieta_id:(new URLSearchParams(location.search)).get('dieta')||undefined})).json();
+    if(r&&r.ok){ btn.textContent = r.uz ? '✅ Už sme to poslali' : '✅ Lektor vie, že nebudeš'; }
+    else { btn.disabled=false; btn.textContent=pov; alert((r&&r.error)||'Nepodarilo sa odoslať'); }
+  }catch(e){ btn.disabled=false; btn.textContent=pov; alert('Nepodarilo sa odoslať — skús znova.'); }
 }
 async function dajSuhlas(btn, dietaId){
   btn.disabled=true;
@@ -529,6 +561,9 @@ async function overPlatbu(){
   // Detail lekcií (kto chýbal, čo sa učilo) číta rozvrh cez globál — classCard
   // dostáva len skupinu, nie celú odpoveď.
   window._LEKCIE = d.lessons || [];
+  window._PAR = (d.moj_par && d.moj_par.name) || '';
+  window._LEKTOR = (d.class && d.class.lektor) || null;
+  window._ROLA = d.role || '';
   if(d.preview){
     // V admin náhľade chat nepozná skupinu z účtu — musí ju dostať z adresy.
     _chatId=qp.get('class_id');

@@ -126,6 +126,9 @@ const fmtDatum=s=>{ const d=new Date(String(s).slice(0,10)+'T12:00:00'); return 
 const KOD=(new URLSearchParams(location.search).get('kod')
   || location.pathname.split('/').filter(Boolean).pop() || '').toUpperCase();
 const ROLE_LBL={student:'🧑‍🎓 Som žiak / žiačka', parent:'👨‍👩‍👧 Som rodič', teacher:'👩‍🏫 Som učiteľ / učiteľka', director:'🏫 Som riaditeľ / riaditeľka'};
+// Učiteľovi a riaditeľovi sa nesmie tykať a nemá zmysel mu sľubovať cenu kurzu
+// ani darček pre žiakov (audit 6. 10.). Texty sa prepnú podľa zvolenej roly.
+let PRE_SKOLU=false;
 // Odkaz od dieťaťa pre rodiča (?dieta=KÓD) alebo od rodiča pre dieťa (?rodic=TOKEN) — 16. 9.
 const QP=new URLSearchParams(location.search);
 const DIETA_KOD=(QP.get('dieta')||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,12);
@@ -155,6 +158,11 @@ const RODIC_TOKEN=(QP.get('rodic')||'').replace(/[^A-Za-z0-9]/g,'').slice(0,20);
   const prihlasenie = pozvanyRodic ? '/vencek?pripojit='+encodeURIComponent(DIETA_KOD)
     : pozvaneDieta ? '/vencek?rodic='+encodeURIComponent(RODIC_TOKEN) : '/?login=1';
 
+  // Celé vykreslenie je vo funkcii, aby sa stránka dala prekresliť, keď si návštevník
+  // prepne rolu (žiak ↔ učiteľ/riaditeľ) — texty sa menia s ňou (audit 6. 10.).
+  vykresli(role[0]||'student');
+  function vykresli(predvolena){
+  PRE_SKOLU = predvolena==='teacher' || predvolena==='director';
   host.innerHTML=`
     <div class="hero">
       <div class="znak">Fusion Academy</div>
@@ -166,10 +174,10 @@ const RODIC_TOKEN=(QP.get('rodic')||'').replace(/[^A-Za-z0-9]/g,'').slice(0,20);
     ${pozvaneDieta?`<div class="pozvanka">👨‍👩‍👧 <b>Pozvánka od tvojho rodiča.</b><br>Po registrácii sa k nemu tvoj účet pripojí sám. <a href="${esc(prihlasenie)}" style="color:var(--gold);font-weight:700">Už máš účet? Prihlás sa</a></div>`:''}
 
     <div class="karta">
-      <h2>💃 Čo ťa čaká</h2>
+      <h2>💃 ${PRE_SKOLU ? 'Čo čaká vašu triedu' : 'Čo ťa čaká'}</h2>
       <div class="kroky">
         <div class="krok"><div class="n">${doVencka}</div><div class="t"><b>lekcií do venčeka</b>
-          <span>Naučíme ťa tancovať od nuly. Netreba partnera ani skúsenosti.</span></div></div>
+          <span>${PRE_SKOLU ? 'Naučíme ich tancovať od nuly. Netreba partnera ani skúsenosti.' : 'Naučíme ťa tancovať od nuly. Netreba partnera ani skúsenosti.'}</span></div></div>
         ${d.schedule?`<div class="krok"><div class="n">🕐</div><div class="t"><b>Kedy sa učíme</b>
           <span>${esc(d.schedule)}</span></div></div>`:''}
         <div class="krok"><div class="n">✨</div><div class="t"><b>Venčekový večer</b>
@@ -177,37 +185,37 @@ const RODIC_TOKEN=(QP.get('rodic')||'').replace(/[^A-Za-z0-9]/g,'').slice(0,20);
         ${bonus?`<div class="krok"><div class="n">+${bonus}</div><div class="t"><b>bonusové lekcie po venčeku</b>
           <span>Náš darček, aby ste mohli pokračovať, keď vás to chytí.</span></div></div>`:''}
       </div>
-      ${tance.length?`<div style="margin-top:14px"><div style="font-size:.82rem;color:var(--muted);margin-bottom:8px">Tance, ktoré zvládneš:</div>
+      ${tance.length?`<div style="margin-top:14px"><div style="font-size:.82rem;color:var(--muted);margin-bottom:8px">${PRE_SKOLU ? 'Tance, ktoré sa naučia:' : 'Tance, ktoré zvládneš:'}</div>
         <div class="tance">${tance.map(t=>`<span class="tanec">${esc(t)}</span>`).join('')}</div></div>`:''}
       ${d.lecturer?`<div style="margin-top:14px;font-size:.86rem;color:var(--muted)">🎓 Učí <b style="color:var(--cream)">${esc(d.lecturer)}</b></div>`:''}
     </div>
 
-    <div class="karta darcek">
-      <h2>🎁 Čo dostaneš navyše</h2>
+    <div class="karta darcek" id="kartaDarcek">
+      <h2>🎁 ${PRE_SKOLU ? 'Čo dostanú žiaci navyše' : 'Čo dostaneš navyše'}</h2>
       <ul>
-        <li><b>Celý mesiac členstva Silver zadarmo</b> <span style="color:var(--muted)">(hodnota 74,90&nbsp;€)</span> — neobmedzene hodín v štúdiu, <b>online hodiny</b> aj <b>meranie tela na Tanite</b>. Pre teba <b>aj pre rodičov</b>, kupón dostaneš hneď po registrácii.</li>
-        <li><b>Appka</b>, kde vidíš progres v tancoch, dochádzku aj platbu</li>
+        <li><b>Celý mesiac členstva Silver zadarmo</b> <span style="color:var(--muted)">(hodnota 74,90&nbsp;€)</span> — neobmedzene hodín v štúdiu, <b>online hodiny</b> aj <b>meranie tela na Tanite</b>. ${PRE_SKOLU ? 'Kupón dostane každý žiak aj jeho rodičia hneď po registrácii.' : 'Pre teba <b>aj pre rodičov</b>, kupón dostaneš hneď po registrácii.'}</li>
+        <li><b>Appka</b>, kde ${PRE_SKOLU ? 'trieda vidí' : 'vidíš'} progres v tancoch, dochádzku aj platbu</li>
       </ul>
     </div>
 
-    <div class="karta">
+    <div class="karta" id="kartaCena">
       <h2>💳 Cena kurzu</h2>
       <div class="cena"><b>${(+d.price).toFixed(2).replace('.',',')} €</b><span>za prípravný kurz</span></div>
       <div style="text-align:center;color:var(--muted);font-size:.85rem;margin-top:6px">
         ${d.platba_hromadne
           ? `Kurz sa platí hromadne cez triedu (<b style="color:var(--cream)">${esc(d.platba_hromadne_kto||'triedny učiteľ')}</b>) — v appke nič neplatíš. Potvrdenie o zaplatení ti príde na e-mail.`
           : 'Platí sa až potom — kartou v appke (môže aj rodič za dieťa), alebo v hotovosti u lektora.'}
-        <br>Registrácia ťa teraz k ničomu nezaväzuje.
+        <br>${PRE_SKOLU ? 'Škola neplatí nič — kurz hradia rodičia žiakov.' : 'Registrácia ťa teraz k ničomu nezaväzuje.'}
       </div>
     </div>
 
     <div class="karta">
-      <h2>✍️ Zaregistruj sa</h2>
+      <h2>✍️ ${PRE_SKOLU ? 'Vytvorte si prístup' : 'Zaregistruj sa'}</h2>
       <div class="chyba" id="chyba"></div>
       <form id="f" autocomplete="on">
         ${role.length>1?`<div>
           <label for="rola">Kto sa registruje?</label>
-          <select id="rola">${role.map(r=>`<option value="${r}">${ROLE_LBL[r]}</option>`).join('')}</select>
+          <select id="rola">${role.map(r=>`<option value="${r}"${r===predvolena?' selected':''}>${ROLE_LBL[r]}</option>`).join('')}</select>
         </div>`:`<input type="hidden" id="rola" value="${role[0]||'student'}">`}
         <div id="dietaBox" class="info-rodic" style="display:${pozvanyRodic||role[0]==='parent'?'block':'none'}">
           ${pozvanyRodic
@@ -223,14 +231,14 @@ const RODIC_TOKEN=(QP.get('rodic')||'').replace(/[^A-Za-z0-9]/g,'').slice(0,20);
         <div><label for="heslo">Heslo <span style="font-weight:400">(aspoň 6 znakov)</span></label>
           <input id="heslo" type="password" required minlength="6" placeholder="••••••" autocomplete="new-password"></div>
         <label class="suhlas"><input type="checkbox" id="suhlas" required>
-          <span>Súhlasím so spracovaním údajov pre potreby venčekového kurzu a účtu v appke.</span></label>
+          <span>${PRE_SKOLU ? 'Súhlasím' : 'Súhlasím'} so spracovaním údajov pre potreby venčekového kurzu a účtu v appke. <a href="/terms" target="_blank" rel="noopener">Podmienky a ochrana údajov</a>${PRE_SKOLU ? '' : '<br><span style="font-size:.78rem">Ak máš menej ako 16 rokov, povedz o registrácii rodičom — v appke si ťa potom pripoja.</span>'}</span></label>
         <div id="dupBox" class="info-rodic" style="display:none">
           <div id="dupText"></div>
           <label class="suhlas" style="margin-top:10px"><input type="checkbox" id="dupOk">
             <span>Som naozaj iný človek s rovnakým menom — účet založte.</span></label>
         </div>
-        <button class="hlavne" type="submit" id="odoslat">Vytvoriť účet a pridať sa 💃</button>
-        <div class="pod">Už máš účet? <a href="${esc(prihlasenie)}">Prihlás sa</a></div>
+        <button class="hlavne" type="submit" id="odoslat">${PRE_SKOLU ? 'Vytvoriť účet' : 'Vytvoriť účet a pridať sa 💃'}</button>
+        <div class="pod">${PRE_SKOLU ? 'Už máte účet? <a href="'+esc(prihlasenie)+'">Prihláste sa</a>' : 'Už máš účet? <a href="'+esc(prihlasenie)+'">Prihlás sa</a>'}</div>
       </form>
     </div>
 
@@ -239,8 +247,18 @@ const RODIC_TOKEN=(QP.get('rodic')||'').replace(/[^A-Za-z0-9]/g,'').slice(0,20);
   const rola=document.getElementById('rola'), dietaBox=document.getElementById('dietaBox');
   const dupBox=document.getElementById('dupBox'), dupOk=document.getElementById('dupOk');
   // Keď si rodič po upozornení prepne rolu na seba, výzva „som iný človek" už nedáva zmysel.
-  if(rola && rola.tagName==='SELECT') rola.onchange=()=>{ dietaBox.style.display = rola.value==='parent' ? 'block' : 'none';
-    if(rola.value!=='student'){ dupBox.style.display='none'; dupOk.checked=false; } };
+  // Pri prepnutí roly sa prekreslí celá stránka — texty aj karty sa prispôsobia.
+  function prepniRolu(){
+    const nova = rola ? rola.value : 'student';
+    const skolska = nova==='teacher' || nova==='director';
+    if(skolska!==PRE_SKOLU){ PRE_SKOLU=skolska; vykresli(nova); return true; }
+    return false;
+  }
+  if(rola && rola.tagName==='SELECT') rola.onchange=()=>{
+    if(prepniRolu()) return;
+    dietaBox.style.display = rola.value==='parent' ? 'block' : 'none';
+    if(rola.value!=='student'){ dupBox.style.display='none'; dupOk.checked=false; }
+  };
 
   document.getElementById('f').onsubmit=async e=>{
     e.preventDefault();
@@ -307,7 +325,7 @@ const RODIC_TOKEN=(QP.get('rodic')||'').replace(/[^A-Za-z0-9]/g,'').slice(0,20);
         document.getElementById('dupText').innerHTML='<b>'+esc(dd.error||'')+'</b><br>'+esc(dd.hint||'');
         dupBox.style.display='block';
         dupBox.scrollIntoView({behavior:'smooth',block:'center'});
-        btn.disabled=false; btn.textContent='Vytvoriť účet a pridať sa 💃';
+        btn.disabled=false; btn.textContent = PRE_SKOLU ? 'Vytvoriť účet' : 'Vytvoriť účet a pridať sa 💃';
         return;
       }
       chyba.textContent = dd.error || 'Registráciu sa nepodarilo dokončiť. Skús to prosím znova.';
@@ -317,8 +335,9 @@ const RODIC_TOKEN=(QP.get('rodic')||'').replace(/[^A-Za-z0-9]/g,'').slice(0,20);
       chyba.textContent='Nepodarilo sa spojiť so serverom. Skontroluj internet a skús znova.';
       chyba.style.display='block';
     }
-    btn.disabled=false; btn.textContent='Vytvoriť účet a pridať sa 💃';
+    btn.disabled=false; btn.textContent = PRE_SKOLU ? 'Vytvoriť účet' : 'Vytvoriť účet a pridať sa 💃';
   };
+  }
 })();
 </script>
 <!-- Zámerne bez /fa-track.js: túto stránku skenujú deti z QR kódu a nemá cookie lištu,

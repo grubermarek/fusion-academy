@@ -26971,9 +26971,19 @@ app.post('/api/vencek/chat', auth, async(req,res)=>{
       const ukazka=text.length>90 ? text.slice(0,90)+'…' : text;
       for(const clen of await vencekPrijemcovia(c._id)){
         if(clen._id===u._id) continue;
-        await q.insert(db.notifications,{user_id:clen._id, type:'venceky',
-          title:'💬 '+kto+' píše v chate skupiny', body:ukazka,
-          read:false, created_at:nowISO()}).catch(()=>{});
+        // Živá debata v triede vedela vygenerovať stovky upozornení — preto sa
+        // neprečítané zlučujú do jedného (audit 6. 10.).
+        const kluc='vencek_chat:'+c._id;
+        const uz=await q.one(db.notifications,{user_id:clen._id, key:kluc, read:false});
+        if(uz){
+          const n=(uz.count||1)+1;
+          await q.update(db.notifications,{_id:uz._id},{$set:{
+            title:'💬 '+n+' nové správy v chate skupiny', body:kto+': '+ukazka, count:n, created_at:nowISO()}});
+        } else {
+          await q.insert(db.notifications,{user_id:clen._id, type:'venceky', key:kluc, count:1,
+            title:'💬 '+kto+' píše v chate skupiny', body:ukazka,
+            read:false, created_at:nowISO()}).catch(()=>{});
+        }
       }
     })().catch(e=>console.error('vencek chat notify:', e.message));
     res.json({ok:true, id:m._id});
@@ -27178,6 +27188,75 @@ app.post('/api/vencek/lektor/platba', auth, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ── Žiak/rodič: „nebudem na lekcii" ────────────────────────────────────────
+// Doteraz sa nedalo dať vopred vedieť — lektor sa to dozvedel až na hodine (audit 6. 10.).
+app.post('/api/vencek/absencia', auth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.session.uid});
+    if(!u) return res.status(401).json({error:'Nie ste prihlásený'});
+    let ziak=u;
+    if((u.venceky_role||'')==='parent'){
+      const deti=await vencekDetiRodica(u._id);
+      ziak=deti.find(x=>x._id===String(req.body.dieta_id||'')) || (deti.length===1?deti[0]:null);
+      if(!ziak) return res.status(400).json({error:'Vyberte, ktoré dieťa nepríde.'});
+    }
+    const c=ziak.venceky_class_id ? await q.one(db.venceky_classes,{_id:ziak.venceky_class_id}) : null;
+    if(!c) return res.status(400).json({error:'Nie si v žiadnej venčekovej skupine'});
+    const termin=(vencekTerminy(c)||[]).filter(t=>!t.cancelled && t.at && new Date(t.at)>=new Date())[0];
+    if(!termin) return res.status(400).json({error:'Najbližšia lekcia nie je známa'});
+    const dovod=String(req.body.reason||'').trim().slice(0,200);
+    const kluc='vencek_absencia:'+c._id+':'+ziak._id+':'+String(termin.at).slice(0,10);
+    if(await q.one(db.notifications,{key:kluc})) return res.json({ok:true, uz:true});
+    const kedy=new Date(termin.at).toLocaleString('sk-SK',{weekday:'long', day:'numeric', month:'numeric', hour:'2-digit', minute:'2-digit', timeZone:'Europe/Bratislava'});
+    const prijemcovia=(await q.find(db.users,{})).filter(x=>x.is_admin || jeLektorSkupiny(x,c));
+    for(const t of prijemcovia){
+      await q.insert(db.notifications,{user_id:t._id, type:'venceky', key:kluc+':'+t._id,
+        title:'🙋 '+ziak.name+' nepríde na lekciu',
+        body:c.name+' · '+kedy+(dovod?' — '+dovod:'')+(u._id!==ziak._id?' (napísal/a '+u.name+')':''),
+        read:false, created_at:nowISO()}).catch(()=>{});
+    }
+    await q.insert(db.notifications,{user_id:ziak._id, type:'venceky', key:kluc,
+      title:'✅ Ospravedlnenie odoslané', body:'Dali sme lektorovi vedieť, že '+kedy+' nebudeš na lekcii.',
+      read:false, created_at:nowISO()}).catch(()=>{});
+    res.json({ok:true, kedy});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Kalendár venčeka (.ics) — lekcie aj venčekový večer ─────────────────────
+// Rodič si vie dať termíny do telefónu namiesto prepisovania z appky.
+app.get('/api/vencek/kalendar.ics', auth, async(req,res)=>{
+  try{
+    const u=await q.one(db.users,{_id:req.session.uid});
+    let cid=u&&u.venceky_class_id;
+    if(u && (u.venceky_role||'')==='parent'){ const deti=await vencekDetiRodica(u._id); if(deti[0]) cid=deti[0].venceky_class_id; }
+    const c=cid? await q.one(db.venceky_classes,{_id:cid}) : null;
+    if(!c) return res.status(404).send('Nie si v žiadnej venčekovej skupine');
+    const sk=await q.one(db.venceky_schools,{_id:c.school_id});
+    const vecer=await q.one(db.vencek_vecery,{class_id:c._id});
+    const dt=d=>new Date(d).toISOString().replace(/[-:]/g,'').split('.')[0]+'Z';
+    const ri=[ 'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Fusion Academy//Vencek//SK','CALSCALE:GREGORIAN','METHOD:PUBLISH',
+      'X-WR-CALNAME:Venček '+((sk&&sk.name)||c.name) ];
+    const ud=(uid, zac, kon, nazov, miesto, popis)=>ri.push('BEGIN:VEVENT','UID:'+uid+'@fusionacademy.sk','DTSTAMP:'+dt(Date.now()),
+      'DTSTART:'+dt(zac),'DTEND:'+dt(kon),'SUMMARY:'+nazov,(miesto?'LOCATION:'+String(miesto).replace(/,/g,'\\,'):''),
+      (popis?'DESCRIPTION:'+String(popis).replace(/,/g,'\\,'):''),'END:VEVENT');
+    for(const t of vencekTerminy(c)){
+      if(t.cancelled || !t.at) continue;
+      const zac=new Date(t.at), kon=new Date(zac.getTime()+60*60000);
+      ud('lekcia-'+c._id+'-'+t.lesson, zac, kon, 'Venček — lekcia '+t.lesson+(t.bonus?' (bonus)':''), c.schedule||'', 'Tanečný kurz Fusion Academy');
+    }
+    if(c.event_date){
+      const cas=(vecer&&vecer.start_time)||'18:00';
+      // Čas je slovenský — bez prepočtu by sa na serveri v UTC posunul o hodinu.
+      const zacIso=casSKnaISO(c.event_date+'T'+cas);
+      const zac=new Date(zacIso||(c.event_date+'T18:00:00Z')), kon=new Date(zac.getTime()+4*60*60000);
+      ud('vecer-'+c._id, zac, kon, 'Venčekový večer — '+((sk&&sk.name)||c.name), c.event_venue||'', 'Slávnostný venčekový večer');
+    }
+    ri.push('END:VCALENDAR');
+    res.setHeader('Content-Type','text/calendar; charset=utf-8');
+    res.setHeader('Content-Disposition','attachment; filename="vencek.ics"');
+    res.send(ri.filter(Boolean).join('\r\n'));
+  }catch(e){ res.status(500).send('Chyba: '+e.message); }
+});
 // ── Člen/učiteľ/riaditeľ: môj venčekový prehľad (rovnaké dáta, iný rozsah) ──
 app.get('/api/vencek/mine', auth, async(req,res)=>{
   try{
@@ -27209,6 +27288,13 @@ app.get('/api/vencek/mine', auth, async(req,res)=>{
         ...(()=>{ const p=vencekPocty(c); return {pred_veckom:p.pred, bonusov:p.bonus}; })(),
         event_date:c.event_date||null, event_venue:c.event_venue||'', schedule:c.schedule||'', note:c.note||'',
         platba_hromadne:!!c.platba_hromadne, platba_hromadne_kto:c.platba_hromadne_kto||'triedny učiteľ',
+        // Čas začiatku večera žil len v module Venčekový večer — rodičia ho nemali kde zistiť (audit 6. 10.).
+        event_start: await (async()=>{ const v=await q.one(db.vencek_vecery,{class_id:c._id}); return (v&&v.start_time)||''; })(),
+        lektor: await (async()=>{
+          const t = c.lecturer_id ? await q.one(db.users,{_id:c.lecturer_id})
+            : (await q.find(db.users,{})).find(u=>(u.user_type==='trainer'||u.is_admin) && bezDiakritiky(u.name)===bezDiakritiky(c.lecturer||''));
+          return { name:c.lecturer||((t&&t.name)||''), phone:(t&&t.phone)||'', email:'fusionacademysk@gmail.com' };
+        })(),
         start_at:c.start_at||null, terminy:vencekTerminy(c), members:members.length,
         completed:!!c.completed,
         paid_count:new Set(pays.map(p=>p.user_id)).size,
@@ -27298,13 +27384,28 @@ app.get('/api/vencek/mine', auth, async(req,res)=>{
     res.json({ok:true, role, school:school?.name||'', class:view, lessons:lekcie,
       ...(ziaci?{students:ziaci}:{}),
       // Žiak dá kód rodičovi — rodič potom vidí jeho dochádzku, progres a môže zaplatiť (16. 9.)
+      // Páry na nástup existovali len v module večera — dieťa sa svoj pár dozvedelo až v sále.
+      moj_par: await (async()=>{
+        const kto = role==='parent' ? null : u;
+        const dietaId = role==='parent' ? null : u._id;
+        if(!dietaId) return null;
+        const v=await q.one(db.vencek_vecery,{class_id:c._id});
+        if(!v || !Array.isArray(v.pary)) return null;
+        const par=v.pary.find(x=>(x.a&&x.a.uid===dietaId)||(x.b&&x.b.uid===dietaId));
+        if(!par) return null;
+        const druhy = (par.a&&par.a.uid===dietaId) ? par.b : par.a;
+        if(!druhy) return null;
+        const d2 = druhy.uid ? await q.one(db.users,{_id:druhy.uid}) : null;
+        return { name: (d2&&d2.name) || druhy.name || '' };
+      })(),
       ...(role==='student' ? await (async()=>{
         const kod=await vencekKodDietata(u);
         return { rodicia:(await vencekRodicia(u)).map(r=>({name:r.name})), kod_rodica:kod,
           odkaz_rodica:APP_URL+'/v/'+c.code+'?dieta='+kod, suhlas_rodica:!!u.vencek_suhlas_rodica };
       })() : {}),
       my_payment: myPay?{amount:myPay.amount, paid_at:myPay.paid_at, method:myPay.method}:null,
-      my_attendance: (role!=='parent'&&myRecs.length)?{attended:myRecs.filter(r=>(r.present||[]).includes(u._id)).length, recorded:myRecs.length}:null,
+      // Len žiakovi — učiteľ v zozname prítomných nikdy nie je a appka mu hlásila „0 z 10 lekcií“ (audit 6. 10.).
+      my_attendance: (role==='student'&&myRecs.length)?{attended:myRecs.filter(r=>(r.present||[]).includes(u._id)).length, recorded:myRecs.length}:null,
       alumni: u.vencek_alumni||null,
       price:c.price||49.90 });
   }catch(e){ res.status(500).json({error:e.message}); }
@@ -27712,6 +27813,46 @@ async function runDailyJobs(){
     await strazcaMerania();
   }catch(e){ console.error('strazca merania:', e.message); }
 
+  // ── Venček: zajtra máš lekciu + lektorovi „zapíš dochádzku" ─────────────
+  // Appka doteraz reagovala až keď dieťa neprišlo; pripomienka pred lekciou chýbala,
+  // a zápis dochádzky zaostával (Halíč: 4 odučené lekcie, 1 zapísaná). Audit 6. 10.
+  try{
+    const zajtra=new Date(Date.now()+86400000).toISOString().slice(0,10);
+    const vcera=new Date(Date.now()-86400000).toISOString().slice(0,10);
+    for(const c of await q.find(db.venceky_classes,{})){
+      if(c.completed) continue;
+      const terminy=vencekTerminy(c).filter(t=>!t.cancelled && t.at);
+      const zajtrajsia=terminy.find(t=>String(t.at).slice(0,10)===zajtra);
+      if(zajtrajsia){
+        const cas=new Date(zajtrajsia.at).toLocaleTimeString('sk-SK',{hour:'2-digit', minute:'2-digit', timeZone:'Europe/Bratislava'});
+        const kluc='vencek_zajtra:'+c._id+':'+zajtra;
+        for(const r of await vencekPrijemcovia(c._id)){
+          if(await q.one(db.notifications,{user_id:r._id, key:kluc})) continue;
+          const jeZiak=(r.venceky_role||'student')==='student';
+          await q.insert(db.notifications,{user_id:r._id, type:'venceky', key:kluc,
+            title: jeZiak ? '💃 Zajtra máš venček o '+cas : '💃 Zajtra je venčeková lekcia o '+cas,
+            body:(c.schedule? c.schedule+' · ':'')+'lekcia '+(zajtrajsia.lesson||'')+(zajtrajsia.bonus?' (bonusová)':'')+'. Ak sa nedá prísť, daj vedieť v appke.',
+            read:false, created_at:nowISO()}).catch(()=>{});
+        }
+      }
+      // Včerajšia lekcia bez zapísanej dochádzky → pripomienka lektorovi a adminovi.
+      const vcerajsia=terminy.find(t=>String(t.at).slice(0,10)===vcera);
+      if(vcerajsia && vcerajsia.lesson){
+        const zapis=await q.one(db.venceky_attendance,{class_id:c._id, lesson_no:vcerajsia.lesson});
+        if(!zapis){
+          const kluc2='vencek_zapis_chyba:'+c._id+':'+vcera;
+          const komu=(await q.find(db.users,{})).filter(x=>x.is_admin || jeLektorSkupiny(x,c));
+          for(const t of komu){
+            if(await q.one(db.notifications,{user_id:t._id, key:kluc2})) continue;
+            await q.insert(db.notifications,{user_id:t._id, type:'venceky', key:kluc2,
+              title:'📝 Zapíš dochádzku — '+c.name,
+              body:'Včera bola lekcia '+vcerajsia.lesson+' a dochádzka ani zoznam tancov nie sú zapísané. Žiaci vidia starý progres.',
+              read:false, created_at:nowISO()}).catch(()=>{});
+          }
+        }
+      }
+    }
+  }catch(e){ console.error('vencek pripomienka lekcie:', e.message); }
   // ── Venček: nezaplatený kurz → raz za týždeň pripomienka žiakovi a jeho rodičom, len v appke (16. 9.) ──
   try{
     const tyzden=Math.floor(Date.now()/(7*864e5));
