@@ -80,15 +80,21 @@ function spat(){
     host.innerHTML='<div class="stav">Chýba kód skupiny.</div>'; return;
   }
   async function vykresli(){
-    let d; try{ d=await (await fetch('/api/vencek/info?code='+encodeURIComponent(KOD))).json(); }catch(e){}
+    let d, siet=true;
+    try{ const r=await fetch('/api/vencek/info?code='+encodeURIComponent(KOD)); d=await r.json(); if(!r.ok && r.status!==404) siet=false; }
+    catch(e){ siet=false; }
+    // Výpadok siete vyzeral rovnako ako zlý kód — a na plátne pred školou to bolo zlé (audit 6. 10.).
+    if(!siet){ if(!host.dataset.ok) host.innerHTML='<div class="stav">Chvíľu bez spojenia — skúšam znova…</div>'; return; }
     if(!d || !d.ok){ host.innerHTML='<div class="stav">Kód '+esc(KOD)+' nepoznáme.</div>'; return; }
+    host.dataset.ok='1';
     host.innerHTML=`
       <div class="znak">Fusion Academy</div>
       <h1>Venček</h1>
       <div class="skola">${esc(d.school||'')}</div>
       <div class="vyzva">Naskenuj telefónom a zaregistruj sa</div>
       <div class="qrbox"><img src="/api/qr.png?size=1000&path=${encodeURIComponent('/v/'+KOD)}" alt="QR kód na registráciu"></div>
-      ${d.registered>0?`<div class="pocet">Už zaregistrovaných: <b>${d.registered}</b></div>`:''}`;
+      <div class="pocet" style="opacity:.85">alebo napíš do prehliadača <b>${location.host}/v/${esc(KOD)}</b></div>
+      ${d.registered>0?`<div class="pocet">Už zaregistrovaných: <b>${d.registered}</b></div>`:'<div class="pocet">Buď prvý/prvá 💃</div>'}`;
   }
   await vykresli();
   // Počet registrovaných rastie počas náboru — obnovuje sa sám, nech to na

@@ -5659,6 +5659,22 @@ async function computeUrgentTasks(){
   // odfiltruj vybavené
   const done=await q.find(db.settings,{key:{$regex:/^utask_done_/}});
   const doneKeys=new Set(done.map(s=>s.key.slice('utask_done_'.length)));
+  // Venčeky: škola klikla na ponuku v maile, ale nikto sa jej neozval.
+  // K 6. 10. tak visí 36 škôl — to je najlacnejší zdroj nových venčekov (audit).
+  try{
+    if(db.schools){
+      const skoly=(await q.find(db.schools,{})).filter(x=>x.clicked_at && ['sent','new',''].includes(String(x.status||'')) && !x.last_call_at);
+      skoly.sort((a,b)=>String(b.clicked_at||'').localeCompare(String(a.clicked_at||'')));
+      for(const x of skoly.slice(0,3)){
+        tasks.push({ key:'skola_klik_'+x._id, prio:22, icon:'🏫',
+          text:x.name+(x.city?' ('+x.city+')':'')+' klikla na ponuku venčeka '+String(x.clicked_at||'').slice(0,10)+' a nikto jej nevolal.',
+          cta:{label:'Otvoriť navolávanie', href:'/admin#venceky'} });
+      }
+      if(skoly.length>3) tasks.push({ key:'skoly_kliky_suhrn', prio:23, icon:'📈',
+        text:skoly.length+' škôl kliklo na ponuku venčeka a zatiaľ im nikto nevolal.',
+        cta:{label:'Otvoriť navolávanie', href:'/admin#venceky'} });
+    }
+  }catch(e){}
   return tasks.filter(t=>!doneKeys.has(t.key)).sort((a,b)=>a.prio-b.prio);
 }
 // ── Podklady pre rannú obrazovku „Dnes" ──────────────────────────────────────
@@ -25224,7 +25240,6 @@ app.get('/v/:code',            (req,res)=>res.sendFile(path.join(__dirname,'publ
 // Kiosk na nábor: celá obrazovka s QR, ktorý vedie na registráciu tej skupiny.
 app.get('/vk/:code',           (req,res)=>res.sendFile(path.join(__dirname,'public','vencek-kiosk.html')));
 // Kiosk pre nábor: celá obrazovka s QR, ktorý vedie na registráciu skupiny.
-app.get('/vk/:code',           (req,res)=>res.sendFile(path.join(__dirname,'public','vencek-kiosk.html')));
 app.get('/event/:slug',        (req,res)=>res.sendFile(path.join(__dirname,'public','event.html')));
 app.get('/event/:slug/hotovo', (req,res)=>res.sendFile(path.join(__dirname,'public','event-hotovo.html')));
 app.get('/t/:code',            (req,res)=>res.sendFile(path.join(__dirname,'public','ticket.html')));
@@ -26159,6 +26174,7 @@ app.post('/api/admin/venceky/payment-bulk', adminAuth, async(req,res)=>{
     if(!c) return res.status(404).json({error:'Skupina nenájdená'});
     const method=req.body.method==='transfer'?'transfer':'cash';
     const amount=+req.body.amount>0 ? +req.body.amount : (+c.price||49.90);
+    // Rovnaké pravidlo ako v zozname žiakov, inak potvrdenie sľúbilo iný počet (audit 6. 10.).
     const ziaci=(await q.find(db.users,{venceky_class_id:c._id}))
       .filter(u=>(u.venceky_role||'student')==='student' && u.active!==false);
     const zaplatili=new Set((await q.find(db.venceky_payments,{class_id:c._id})).map(p=>p.user_id));
@@ -26297,6 +26313,11 @@ app.post('/api/admin/venceky/class-delete', adminAuth, async(req,res)=>{
     await q.remove(db.venceky_attendance,{class_id:c._id},{multi:true});
     await q.remove(db.venceky_costs,{class_id:c._id},{multi:true});
     await q.remove(db.venceky_chat,{class_id:c._id},{multi:true});
+    // Aj príprava venčekového večera, inak ostane visieť na neexistujúcej skupine (audit 6. 10.).
+    for(const v of await q.find(db.vencek_vecery,{class_id:c._id})){
+      await q.remove(db.vencek_vecer_push,{vecer_id:v._id},{multi:true});
+      await q.remove(db.vencek_vecery,{_id:v._id},{});
+    }
     await q.remove(db.venceky_classes,{_id:c._id},{});
     await auditLog(req,'vencek_class_delete',c._id,{name:c.name},{members:members.length},'');
     res.json({ok:true, unassigned:members.length});
@@ -26503,7 +26524,15 @@ app.post('/api/admin/venceky/progress', trainerAuth, async(req,res)=>{
     if(req.body.platba_hromadne!=null) set.platba_hromadne=!!req.body.platba_hromadne;
     if(req.body.platba_hromadne_kto!=null) set.platba_hromadne_kto=String(req.body.platba_hromadne_kto).slice(0,60);
     // Dátum a čas PRVEJ lekcie; ďalšie sa dopočítajú po týždni.
-    if(req.body.start_at!=null) set.start_at = casSKnaISO(req.body.start_at);
+    if(req.body.start_at!=null){
+      // Preklep v dátume doteraz ticho vymazal celý rozvrh a appka napísala „uložené ✅“ (audit 6. 10.).
+      if(String(req.body.start_at).trim()===''){ set.start_at=null; }
+      else {
+        const iso=casSKnaISO(req.body.start_at);
+        if(!iso) return res.status(400).json({error:'Neplatný dátum a čas prvej lekcie'});
+        set.start_at=iso;
+      }
+    }
     await q.update(db.venceky_classes,{_id:c._id},{$set:set});
     // Notifikácia triede pri novom zvládnutom tanci
     if(set.dances){
@@ -26866,7 +26895,10 @@ app.post('/api/admin/venceky/lesson-log', trainerAuth, async(req,res)=>{
     const naucene=new Set(log.flatMap(z=>z.dances||[]));
     const dances=(c.dances||[]).map(d=>({...d, level: naucene.has(d.name) ? 4 : 0}));
     // Odučené lekcie = najvyššie zapísané číslo, nech to nie je druhé počítadlo.
-    const hotovo=log.reduce((m,z)=>Math.max(m,+z.lesson||0),0);
+    // Zápis staršej lekcie doteraz znížil počítadlo odučených hodín (audit 6. 10.) —
+    // berieme najvyššie číslo z denníka aj z dochádzky.
+    const zDochadzky=(await q.find(db.venceky_attendance,{class_id:c._id})).reduce((m,r)=>Math.max(m,+r.lesson_no||0),0);
+    const hotovo=Math.max(log.reduce((m,z)=>Math.max(m,+z.lesson||0),0), zDochadzky);
     await q.update(db.venceky_classes,{_id:c._id},{$set:{lesson_log:log, dances, lessons_done:hotovo}});
     // Nový tanec je pre skupinu udalosť — nech o ňom vedia.
     const predtym=new Set((c.dances||[]).filter(d=>d.level>=4).map(d=>d.name));

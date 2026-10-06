@@ -253,6 +253,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 .vv-poc span{min-width:62px;text-align:center;font-variant-numeric:tabular-nums;font-size:.85rem}
 .vv-ak{display:inline-flex;gap:4px}
 .vv-ak button{background:none;border:1px solid #333;color:#aaa;border-radius:8px;min-width:32px;height:32px;cursor:pointer;font-size:.85rem}
+@media (max-width:768px){ .vv-ak button{min-width:44px;height:44px;font-size:1rem} .vv-seg button{min-height:44px} .vdet-x{min-width:44px;min-height:44px} }
 .vv-ak button:hover{color:#fff;border-color:#666}
 .vv-pridaj{display:flex;gap:6px;margin:4px 0 6px}
 .vv-clen{display:grid;grid-template-columns:40px 1fr auto;gap:12px;align-items:start;padding:12px 14px;
@@ -2435,8 +2436,10 @@ async function loadEventy(){
 // Jednoduchý modál — bez prompt() okienok.
 function evModal(title, inner, onOk){
   const wrap=document.createElement('div');
-  wrap.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  wrap.innerHTML='<div class="card bg-dark border-warning" style="max-width:440px;width:100%">'
+  // Na telefóne bolo okno vyššie než obrazovka a spodok s tlačidlom Uložiť sa nedal
+  // doscrollovať — preto overflow a strop výšky (audit 6. 10.).
+  wrap.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto';
+  wrap.innerHTML='<div class="card bg-dark border-warning" style="max-width:440px;width:100%;max-height:92vh;display:flex;flex-direction:column;margin:auto">'
     +'<div class="card-body">'
     +'<h5 class="fw-bold mb-3" style="color:#C9A84C">'+title+'</h5>'
     +'<div id="evmBody">'+inner+'</div>'
@@ -4533,8 +4536,10 @@ let VEN=null;
 const vEur=v=>(+v||0).toFixed(2)+' €';
 async function vApi(path, body){
   const r=await fetch('/api/admin/venceky/'+path, body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});
+  // Po vypršaní prihlásenia sa doteraz ukázalo len „Chyba“ (audit 6. 10.).
+  if(r.status===401){ window.location.href='/'; throw new Error('401'); }
   const d=await r.json().catch(()=>({}));
-  if(!r.ok){ alert(d.error||'Chyba'); throw new Error(d.error||'err'); }
+  if(!r.ok){ showToast(d.error||'Nepodarilo sa','error'); throw new Error(d.error||'err'); }
   return d;
 }
 async function loadVenceky(){
@@ -4581,23 +4586,23 @@ async function loadVenceky(){
       </div>
       ${s.staff?.length?`<div class="small text-muted mb-2">Personál: ${s.staff.map(t=>`${t.role==='director'?'🏫':'👩‍🏫'} ${escHtml(t.name)}`).join(' · ')}</div>`:''}
       <div class="small mb-2 text-muted" style="font-size:.75rem">
-        📅 Termíny hodín a venčekového večera zadávaš v detaile skupiny — dohodneš sa so školou osobne.
+        📅 Termíny hodín a venčekového večera zadávaš v detaile skupiny. Ak si ich má vybrať škola sama, pošli jej odkaz cez „📅 Termíny“ hore.
         · Odkaz pre žiakov na registráciu nájdeš pri skupine pod „QR / odkaz“.</div>
-      ${s.classes.length?`<table class="table table-dark table-sm small mb-0"><thead><tr>
+      ${s.classes.length?`<div class="table-responsive"><table class="table table-dark table-sm small mb-0"><thead><tr>
         <th>Skupina</th><th>Progress</th><th>Lekcie</th><th class="text-center">Žiaci</th><th class="text-center">🧾 Zaplatené</th><th class="text-end">Príjem</th><th class="text-end">Zisk</th><th>Registrácia</th><th></th></tr></thead><tbody>
         ${s.classes.map(c=>`<tr>
           <td><b>${escHtml(c.name)}</b>${c.event_date?`<br><small class="text-muted">✨ ${escHtml(c.event_date)}</small>`:''}</td>
           <td style="min-width:110px"><div style="height:8px;background:#26221a;border-radius:5px;overflow:hidden"><div style="height:100%;width:${c.progress}%;background:#C9A84C"></div></div><small class="text-muted">${c.progress} %</small></td>
           <td>${c.lessons_done}/${c.pred_veckom!=null?c.pred_veckom:(c.lessons_before||10)}${(c.bonusov||0)>0?`<br><small class="text-muted">+${c.bonusov} bonus</small>`:""}</td>
           <td class="text-center">${c.members}</td>
-          <td class="text-center">${c.paid}/${c.members}${c.unpaid?` <span class="text-warning">(${c.unpaid} chýba)</span>`:' ✅'}</td>
+          <td class="text-center">${c.members?`${c.paid}/${c.members}${c.unpaid?` <span class="text-warning">(${c.unpaid} chýba)</span>`:' ✅'}`:'<span class="text-muted">—</span>'}</td>
           <td class="text-end">${vEur(c.income)}</td>
           <td class="text-end" style="color:${c.profit>=0?'#8bc34a':'#f87171'}">${vEur(c.profit)}</td>
           <td><button class="btn btn-sm btn-outline-secondary" onclick="vShowQR('${c.code}','${escHtml(String(c.name).replace(/'/g,"’"))}')">QR / odkaz</button>
             <button class="btn btn-sm btn-outline-warning mt-1" onclick="vKiosk('${c.code}')" title="Celá obrazovka s veľkým QR — na nábor v telocvični">🖥️ Kiosk</button></td>
           <td><button class="btn btn-sm btn-brand" onclick="vClassDetail('${c.id}')">Detail</button></td>
         </tr>`).join('')}
-      </tbody></table>`:'<div class="text-warning small">⚠️ Škola nemá skupinu, takže sa do nej zatiaľ nedá registrovať. Doplní sa sama do minúty po nasadení — alebo klikni „+ Ďalšia skupina".</div>'}
+      </tbody></table></div>`:'<div class="text-warning small">⚠️ Škola nemá skupinu, takže sa do nej zatiaľ nedá registrovať. Doplní sa sama do minúty po nasadení — alebo klikni „+ Ďalšia skupina".</div>'}
     </div></div>`).join('');
 }
 async function vAssignStudent(cid){
@@ -4616,6 +4621,15 @@ async function vApprove(uid,ok){
   await vApi('approve',{user_id:uid,approve:ok});
   loadVenceky();
 }
+// Odkaz, cez ktorý si škola vyberie termín. Funkcia na serveri existovala, ale
+// v admine k nej nebolo tlačidlo — celé bookovanie bolo nedostupné (audit 6. 10.).
+async function vKopirujBooking(sid){
+  const d=await vApi('booking-link',{school_id:sid});
+  if(!d||!d.link) return;
+  navigator.clipboard?.writeText(d.link)
+    .then(()=>showToast('Odkaz skopírovaný — pošli ho riaditeľovi. Nie je to odkaz na registráciu žiakov.','success'))
+    .catch(()=>prompt('Odkaz pre školu (výber termínu):', d.link));
+}
 async function vBookingLink(sid){
   const d=await vApi('booking-link',{school_id:sid});
   // Marek si 2. 9. tieto dva odkazy pomýlil — preto je rozdiel napísaný rovno tu.
@@ -4630,14 +4644,20 @@ async function vSlots(){
   const row=sl=>`<div class="d-flex justify-content-between align-items-center border-bottom border-secondary py-2 small">
     <span>${sl.kind==='evening'?'✨':'🗓️'} <b>${sl.label}</b> <span class="text-muted">${sl.kind==='evening'?(sl.venue||''):(sl.city||'')}</span></span>
     <span>${sl.booked_by
-      ? `<span class="badge bg-warning text-dark">🏫 ${sl.school_name}</span> <button class="btn btn-sm btn-outline-danger py-0" onclick="vApi('slot-unbook',{slot_id:'${sl._id}'}).then(vSlots)">uvoľniť</button>`
-      : `<span class="badge bg-success">voľný</span> <button class="btn btn-sm btn-outline-secondary py-0" onclick="vApi('slot-delete',{slot_id:'${sl._id}'}).then(vSlots)">✕</button>`}</span></div>`;
+      ? `<span class="badge bg-warning text-dark">🏫 ${sl.school_name}</span> <button class="btn btn-sm btn-outline-danger py-0" onclick="if(confirm('Uvoľniť termín zabratý školou ${'${sl.school_name||""}'}?'))vApi('slot-unbook',{slot_id:'${sl._id}'}).then(vSlots)">uvoľniť</button>`
+      : `<span class="badge bg-success">voľný</span> <button class="btn btn-sm btn-outline-secondary py-0" onclick="if(confirm('Zmazať tento termín?'))vApi('slot-delete',{slot_id:'${sl._id}'}).then(vSlots)">✕</button>`}</span></div>`;
   m.innerHTML=`<div style="background:#1e1e1e;border:1px solid #333;border-radius:14px;padding:22px;width:min(680px,96vw)">
     <div class="d-flex justify-content-between align-items-center mb-2">
       <h5 class="fw-bold mb-0" style="color:#C9A24C">📅 Termíny pre školy (booking)</h5>
       <button onclick="document.getElementById('vSlotsModal').remove()" style="background:none;border:none;color:#888;font-size:1.3rem;cursor:pointer">✕</button>
     </div>
-    <div class="small text-muted mb-3">Školy si z týchto termínov vyberajú cez booking link „ako letenku". Zabookovaný slot sa zamkne.</div>
+    <div class="small text-muted mb-3">Škola si z týchto termínov vyberie sama cez svoj odkaz — zabraný termín sa zamkne. Ak sa dohadujete osobne, termíny zadávaš v detaile skupiny a toto okno nepotrebuješ.</div>
+    ${(d.schools||[]).length?`<div class="card bg-dark border-secondary mb-3"><div class="card-body py-2">
+      <div class="fw-bold small mb-2">🔗 Odkaz na výber termínu pre školu</div>
+      ${(d.schools||[]).map(x=>`<div class="d-flex justify-content-between align-items-center border-bottom border-secondary py-1 small">
+        <span>🏫 ${escHtml(x.name)}</span>
+        <span><button class="btn btn-sm btn-outline-secondary py-0" onclick="vKopirujBooking('${x.id}')">🔗 kopírovať</button></span></div>`).join('')}
+    </div></div>`:''}
     <div class="d-flex gap-2 mb-3">
       <button class="btn btn-sm btn-brand" onclick="vAddSlot('lesson')">+ Termín lekcií</button>
       <button class="btn btn-sm btn-outline-warning" onclick="vAddSlot('evening')">+ Venčekový večer</button>
@@ -4823,6 +4843,8 @@ async function vAddCost(sid,cid){
   if(document.getElementById('vClassModal')) vClassDetail(cid); else loadVenceky();
 }
 async function vClassDetail(cid, tab){
+  // Po uložení sa modal prekresľuje celý — bez tohto skočil scroll hore (audit 6. 10.).
+  const _scroll=document.querySelector('#vClassModal .vdet-telo')?.scrollTop||0;
   const d=await vApi('class/'+cid);
   document.getElementById('vClassModal')?.remove();
   const c=d.class;
@@ -4996,6 +5018,7 @@ async function vClassDetail(cid, tab){
    +'</div></div>';
   document.body.appendChild(m);
   vTab(V_TAB);
+  if(_scroll){ const t=m.querySelector('.vdet-telo'); if(t) t.scrollTop=_scroll; }
   vAttLoad(cid);
 }
 let V_TAB='dochadzka';
@@ -5277,7 +5300,13 @@ function vvRender(){
   const ok=I.filter(i=>i.stav==='ok').length, pol=I.filter(i=>i.stav==='pol').length;
   const tOk=T.filter(t=>t.dohoda==='dohodnute').length;
   const spolu=P.reduce((x,p)=>x+(+p.dur||0),0);
-  const chyba=T.filter(t=>['dj','foto','moderator'].includes(t.role) && t.dohoda!=='dohodnute');
+  // Keď sa rola z tímu zmaže, nesmie to vyzerať, že je dohodnutá (audit 6. 10.).
+  const POTREBNE={dj:'DJ / ozvučenie', foto:'Fotograf', moderator:'Moderátor'};
+  const chyba=Object.entries(POTREBNE).map(([role,label])=>{
+    const m=T.find(t=>t.role===role);
+    if(!m) return {role_label:label+' (v tíme nie je)', dohoda:'hladame'};
+    return m.dohoda!=='dohodnute' ? m : null;
+  }).filter(Boolean);
   const stavVeceru={pred:'ešte nezačal',bezi:'▶ beží · bod '+(L.idx+1),pauza:'⏸ pauza · bod '+(L.idx+1),koniec:'✓ skončil'}[L.status||'pred'];
   const sc=box.querySelector('.vv-telo')?.scrollTop;
   box.innerHTML='<div class="vv-hlava">'
@@ -5308,8 +5337,9 @@ function vvRender(){
 // ── Príprava ────────────────────────────────────────────────────────────────
 function vvPriprava(){
   const I=VV.items||[];
-  const naNaklad=I.filter(i=>!i.cost_id && i.stav!=='nie' && +i.price>0);
-  const minute=I.filter(i=>i.stav!=='nie' && +i.price>0).reduce((x,i)=>x+(+i.price),0);
+  // Do nákladov ide len to, čo je naozaj kúpené — „časť“ sa ešte dokupuje (audit 6. 10.).
+  const naNaklad=I.filter(i=>!i.cost_id && i.stav==='ok' && +i.price>0);
+  const minute=I.filter(i=>i.stav==='ok' && +i.price>0).reduce((x,i)=>x+(+i.price),0);
   let h='<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">'
     +'<div class="vdet-navod mb-0">Stav ťukneš priamo v riadku. Tím to isté vidí a mení vo svojom telefóne — kto zmenil naposledy, je pri položke.</div>'
     +'<label class="small d-flex align-items-center gap-2"><input type="checkbox" '+(VV_LEN_CHYBA?'checked':'')+' onchange="VV_LEN_CHYBA=this.checked;vvRender()"> len čo chýba</label></div>'
@@ -5841,9 +5871,33 @@ function renderSkolyCrm(){
         +'<td>'+(x.phone?'<a href="tel:'+x.phone.replace(/\s+/g,'')+'" style="color:#C9A84C;white-space:nowrap">'+x.phone+'</a>':'<span class="text-muted">—</span>')+'</td>'
         +'<td>'+skStavBadge(x)+(x.ozvat_sa?'<div class="text-muted" style="font-size:.7rem">'+(x.po_termine?'⚠ ':'')+'ozvať sa '+x.ozvat_sa+'</div>':'')+'</td>'
         +'<td class="text-muted" style="max-width:230px;font-size:.78rem">'+(x.posledna_poznamka||'—')+'</td>'
-        +'<td class="text-end"><button class="btn btn-sm btn-outline-warning py-0" onclick="skOpen(&quot;'+x.id+'&quot;)">Zápis</button></td></tr>'; }).join('')
+        +'<td class="text-end"><button class="btn btn-sm btn-outline-warning py-0" onclick="skOpen(&quot;'+x.id+'&quot;)">Zápis</button>'
+          +(x.stav==='ziskane' && !skMaVencek(x) ? ' <button class="btn btn-sm btn-brand py-0 mt-1" onclick="skZalozVencek(&quot;'+x.id+'&quot;)" title="Založiť venčekovú školu so skupinou a QR kódom">🎓 Venček</button>' : '')
+          +(skMaVencek(x) ? ' <span class="badge bg-success" style="font-size:.6rem">má venček</span>' : '')+'</td></tr>'; }).join('')
     +'</tbody></table></div>'
     +'<div class="text-muted mt-1" style="font-size:.78rem">Zobrazených '+r.length+' z '+(SK_CRM.rows||[]).length+' škôl.</div>';
+}
+// Škola, ktorá už má venčekovú skupinu — aby sa nezaložila druhýkrát.
+function skMaVencek(x){
+  const n=t=>String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  const skoly=(VEN&&VEN.schools)||[];
+  return skoly.some(s=>n(s.name).includes(n(String(x.city||'').trim())) || n(String(x.name||'').split(' – ')[0]).includes(n(s.name)));
+}
+// Z vyhranej školy rovno venčeková škola so skupinou a QR kódom — doteraz sa
+// názov aj mesto prepisovali ručne do promptov (audit 6. 10.).
+async function skZalozVencek(id){
+  const x=((SK_CRM&&SK_CRM.rows)||[]).find(r=>r.id===id); if(!x) return;
+  const nazov=prompt('Názov venčekovej školy:', String(x.name||'').split(' – ')[0]); if(!nazov) return;
+  const cena=prompt('Cena za žiaka (€) — individuálne podľa počtu žiakov a oblasti:', ''); if(cena===null) return;
+  if(!(+String(cena).replace(',','.')>0)) return showToast('Zadaj cenu za žiaka','error');
+  const lekcii=prompt('Koľko lekcií bude spolu?','10'); if(lekcii===null) return;
+  const d=await vApi('schools',{name:nazov, city:x.city||'', year:'2026/27', price:String(cena).replace(',','.'),
+    lessons_total:+lekcii||10, lessons_before:+lekcii||10, lecturer:'Marek Gruber'});
+  if(d&&d.ok){
+    showToast('Venčeková škola založená — QR odkaz: '+(d.join_link||''),'success');
+    show('venceky'); loadVenceky();
+    if(d.join_link) setTimeout(()=>prompt('Odkaz na registráciu žiakov (pošli škole):', d.join_link), 600);
+  }
 }
 // Okno zápisu z hovoru
 function skOpen(id){

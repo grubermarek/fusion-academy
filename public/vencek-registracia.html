@@ -139,8 +139,15 @@ const RODIC_TOKEN=(QP.get('rodic')||'').replace(/[^A-Za-z0-9]/g,'').slice(0,20);
   if(!/^VEN-[A-Z0-9]{3,}$/.test(KOD)){
     host.innerHTML='<div class="stav">🎓 Chýba kód skupiny.<br><br>Naskenuj QR kód od školy, alebo si over kód na papieri.</div>'; return;
   }
-  let d;
-  try{ d=await (await fetch('/api/vencek/info?code='+encodeURIComponent(KOD))).json(); }catch(e){}
+  let d, stav=0;
+  try{ const r=await fetch('/api/vencek/info?code='+encodeURIComponent(KOD)); stav=r.status; d=await r.json(); }catch(e){ stav=-1; }
+  // Výpadok siete, preťaženie aj naozaj zlý kód vyzerali rovnako (audit 6. 10.).
+  if(stav===-1 || stav>=500){
+    host.innerHTML='<div class="stav">📶 Nepodarilo sa spojiť so serverom.<br><br><button class="hlavne" onclick="location.reload()">Skúsiť znova</button></div>'; return;
+  }
+  if(stav===429){
+    host.innerHTML='<div class="stav">⏳ Priveľa otvorení naraz. Skús to o chvíľu znova.<br><br><button class="hlavne" onclick="location.reload()">Skúsiť znova</button></div>'; return;
+  }
   if(!d || !d.ok){
     host.innerHTML='<div class="stav">🎓 Kód <b>'+esc(KOD)+'</b> nepoznáme.<br><br>Skontroluj ho prosím na papieri od školy — alebo naskenuj QR znova.</div>'; return;
   }
