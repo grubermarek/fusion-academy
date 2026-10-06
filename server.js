@@ -26331,10 +26331,14 @@ app.post('/api/admin/venceky/school-delete', adminAuth, async(req,res)=>{
 app.post('/api/admin/venceky/cost', adminAuth, async(req,res)=>{
   try{
     const {school_id, class_id, label, amount}=req.body;
-    if(!(+amount)) return res.status(400).json({error:'Zadaj sumu'});
-    await q.insert(db.venceky_costs,{school_id:String(school_id||'')||null, class_id:String(class_id||'')||null,
-      label:String(label||'Náklad').slice(0,120), amount:+amount, date:today(), created_at:nowISO()});
-    res.json({ok:true});
+    // „12,50" s čiarkou sa doteraz ticho zahodilo a záporná suma nafúkla zisk (audit 6. 10.).
+    const suma=+String(amount==null?'':amount).replace(',','.');
+    if(!(suma>0)) return res.status(400).json({error:'Zadaj sumu väčšiu ako 0 (napr. 12,50)'});
+    if(suma>100000) return res.status(400).json({error:'Suma vyzerá na preklep'});
+    const datum=/^\d{4}-\d{2}-\d{2}$/.test(String(req.body.date||'')) ? String(req.body.date) : today();
+    const k=await q.insert(db.venceky_costs,{school_id:String(school_id||'')||null, class_id:String(class_id||'')||null,
+      label:String(label||'Náklad').slice(0,120), amount:Math.round(suma*100)/100, date:datum, created_at:nowISO()});
+    res.json({ok:true, id:k._id});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -26379,6 +26383,104 @@ app.post('/api/vencek/service/set', async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ── Admin: nastavenia skupiny (cena, lekcie, lektor, názov, kto sa smie registrovať) ──
+// Doteraz sa cena ani počet lekcií z admina zmeniť nedali — iba cez servisný token
+// z terminálu, takže každá nová škola ostala na 49,90 € (audit 6. 10.).
+app.post('/api/admin/venceky/class-update', adminAuth, async(req,res)=>{
+  try{
+    const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});
+    if(!c) return res.status(404).json({error:'Skupina nenájdená'});
+    const set={}, b=req.body;
+    if(b.name!=null){ const n=String(b.name).trim().slice(0,60); if(!n) return res.status(400).json({error:'Názov skupiny nemôže byť prázdny'}); set.name=n; }
+    if(b.price!=null && String(b.price)!==''){
+      const cena=+String(b.price).replace(',','.');
+      if(!(cena>0 && cena<1000)) return res.status(400).json({error:'Cena musí byť medzi 0 a 1000 €'});
+      set.price=Math.round(cena*100)/100;
+    }
+    if(b.lessons_total!=null || b.lessons_before!=null){
+      const spolu=b.lessons_total!=null ? Math.round(+b.lessons_total) : (+c.lessons_total||13);
+      const pred=b.lessons_before!=null ? Math.round(+b.lessons_before) : Math.min(+c.lessons_before||10, spolu);
+      if(!(spolu>=1 && spolu<=40 && pred>=1 && pred<=spolu)) return res.status(400).json({error:'Neplatný počet lekcií (1–40, pred venčekom nie viac ako spolu)'});
+      set.lessons_total=spolu; set.lessons_before=pred;
+    }
+    if(b.lecturer!=null){
+      const meno=String(b.lecturer).trim().slice(0,80);
+      set.lecturer=meno;
+      // Lektor sa doteraz porovnával len podľa mena — preklep ticho vzal trénerovi prístup.
+      const tren=(await q.find(db.users,{})).find(u=>(u.user_type==='trainer'||u.user_type==='manager'||u.is_admin||u.is_assistant)
+        && bezDiakritiky(u.name)===bezDiakritiky(meno));
+      set.lecturer_id = tren ? tren._id : null;
+    }
+    if(Array.isArray(b.roles)){
+      const r=b.roles.filter(x=>VENCEK_ROLES.includes(x));
+      if(!r.includes('student')) return res.status(400).json({error:'Žiak musí mať možnosť registrácie'});
+      set.roles=r;
+    }
+    if(!Object.keys(set).length) return res.status(400).json({error:'Nič na uloženie'});
+    await q.update(db.venceky_classes,{_id:c._id},{$set:{...set, updated_at:nowISO()}});
+    await auditLog(req,'vencek_skupina_upravena', c.code||c.name,
+      {name:c.name, price:c.price, lessons_total:c.lessons_total, lecturer:c.lecturer}, set, String(req.body.reason||''));
+    res.json({ok:true, set});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Premenovanie školy (preklep svieti v mailoch, na diplomoch aj na QR plagáte).
+app.post('/api/admin/venceky/school-update', adminAuth, async(req,res)=>{
+  try{
+    const sk=await q.one(db.venceky_schools,{_id:String(req.body.school_id||'')});
+    if(!sk) return res.status(404).json({error:'Škola nenájdená'});
+    const set={};
+    if(req.body.name!=null){ const n=String(req.body.name).trim().slice(0,120); if(!n) return res.status(400).json({error:'Názov školy nemôže byť prázdny'}); set.name=n; }
+    if(req.body.city!=null) set.city=String(req.body.city).trim().slice(0,60);
+    if(req.body.year!=null) set.year=String(req.body.year).trim().slice(0,20);
+    if(!Object.keys(set).length) return res.status(400).json({error:'Nič na uloženie'});
+    await q.update(db.venceky_schools,{_id:sk._id},{$set:{...set, updated_at:nowISO()}});
+    if(set.year) await q.update(db.venceky_classes,{school_id:sk._id},{$set:{year:set.year}},{multi:true});
+    await auditLog(req,'vencek_skola_upravena', sk.name, {name:sk.name, city:sk.city, year:sk.year}, set, '');
+    res.json({ok:true, set});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Vrátenie omylom ukončeného venčeka (doteraz sa flag dal zmeniť len priamo v DB).
+app.post('/api/admin/venceky/uncomplete', adminAuth, async(req,res)=>{
+  try{
+    const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});
+    if(!c) return res.status(404).json({error:'Skupina nenájdená'});
+    if(!c.completed) return res.status(400).json({error:'Tento venček nie je ukončený'});
+    await q.update(db.venceky_classes,{_id:c._id},{$set:{completed:false, completed_at:null, updated_at:nowISO()}});
+    await auditLog(req,'vencek_ukoncenie_vratene', c.code||c.name, {completed:true}, {completed:false}, String(req.body.reason||''));
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Presun žiaka do inej skupiny aj s jeho platbou — bez toho vyzeral v novej skupine
+// ako neplatič a v starej ostala platba bez žiaka (audit 6. 10.).
+app.post('/api/admin/venceky/presun-ziaka', adminAuth, async(req,res)=>{
+  try{
+    const z=await q.one(db.users,{_id:String(req.body.user_id||'')});
+    const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});
+    if(!z||!c) return res.status(404).json({error:'Žiak alebo skupina sa nenašli'});
+    if(z.venceky_class_id===c._id) return res.status(400).json({error:z.name+' už v tejto skupine je'});
+    const stara=z.venceky_class_id ? await q.one(db.venceky_classes,{_id:z.venceky_class_id}) : null;
+    const platba=stara ? await q.one(db.venceky_payments,{class_id:stara._id, user_id:z._id}) : null;
+    const sPlatbou=req.body.s_platbou!==false;
+    await q.update(db.users,{_id:z._id},{$set:{venceky_class_id:c._id, venceky_school_id:c.school_id, venceky_role:z.venceky_role||'student'}});
+    if(platba && sPlatbou) await q.update(db.venceky_payments,{_id:platba._id},{$set:{class_id:c._id, school_id:c.school_id, moved_at:nowISO()}});
+    await auditLog(req,'vencek_ziak_presunuty', z.name, {skupina:stara?stara.name:null, platba:platba?platba.amount:null},
+      {skupina:c.name, platba_presunuta:!!(platba&&sPlatbou)}, String(req.body.reason||''));
+    await q.insert(db.notifications,{user_id:z._id, type:'venceky',
+      title:'🎓 Si v skupine '+c.name, body:'Presunuli sme ťa do skupiny '+c.name+'. V appke už vidíš jej rozvrh aj tance.',
+      read:false, created_at:nowISO()}).catch(()=>{});
+    res.json({ok:true, platba_presunuta:!!(platba&&sPlatbou), bez_platby:!platba});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Náklad sa dal len pridať — preklep v sume ostal v zisku navždy (audit 6. 10.).
+app.post('/api/admin/venceky/cost-delete', adminAuth, async(req,res)=>{
+  try{
+    const k=await q.one(db.venceky_costs,{_id:String(req.body.cost_id||'')});
+    if(!k) return res.status(404).json({error:'Náklad sa nenašiel'});
+    await q.remove(db.venceky_costs,{_id:k._id},{});
+    await auditLog(req,'vencek_naklad_zmazany', k.label, {amount:k.amount, class_id:k.class_id}, null, String(req.body.reason||''));
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 app.post('/api/admin/venceky/progress', trainerAuth, async(req,res)=>{
   try{
     const c=await q.one(db.venceky_classes,{_id:String(req.body.class_id||'')});

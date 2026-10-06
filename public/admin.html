@@ -4538,6 +4538,7 @@ async function vApi(path, body){
   return d;
 }
 async function loadVenceky(){
+  vNacitajTrenerov();
   const list=document.getElementById('vencekyList');
   try{ VEN=await vApi('overview'); }catch(e){ list.innerHTML='<div class="text-danger py-3">Nepodarilo sa načítať.</div>'; return; }
   // Kanonická doména sa berie z odkazu, ktorý postavil server — admin môže byť
@@ -4574,6 +4575,8 @@ async function loadVenceky(){
           <button class="btn btn-sm btn-outline-light" onclick="vAddClass('${s.id}')" title="Väčšina škôl vystačí s jednou skupinou — pridaj len ak naozaj delíš na 9.A a 9.B">+ Ďalšia skupina</button>
           <button class="btn btn-sm btn-outline-secondary" onclick="vAssignRole('${s.id}')">👩‍🏫 Rola</button>
           <button class="btn btn-sm btn-outline-secondary" onclick="vAddCost('${s.id}','')">+ Náklad školy</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="vUpravSkolu('${s.id}')" title="Premenovať školu, zmeniť mesto alebo rok">✎</button>
+          <button class="btn btn-sm btn-outline-danger" onclick="vZmazSkolu('${s.id}','${escHtml(String(s.name).replace(/'/g,'\u2019'))}')" title="Zmazať školu aj so skupinami">🗑</button>
         </div>
       </div>
       ${s.staff?.length?`<div class="small text-muted mb-2">Personál: ${s.staff.map(t=>`${t.role==='director'?'🏫':'👩‍🏫'} ${escHtml(t.name)}`).join(' · ')}</div>`:''}
@@ -4930,9 +4933,12 @@ async function vClassDetail(cid, tab){
          ? '<button class="btn btn-sm btn-brand" onclick="vHromadnaPlatba(\''+c._id+'\','+d.members.filter(mm=>!mm.paid).length+','+(+c.price||0)+')">💶 Zapísať platbu celej triede ('+d.members.filter(mm=>!mm.paid).length+')</button>' : '')
        +'<button class="btn btn-sm btn-outline-warning" onclick="vAssignStudent(\''+c._id+'\')">+ Priradiť existujúci účet</button></div>'
      +'</div>'
+     +(()=>{ const po={}; (d.members||[]).forEach(x=>{ const k=vKlucMena(x.name); po[k]=(po[k]||0)+1; }); window._VDUP=po; return ''; })()
      +'<table class="table table-dark table-sm"><tbody>'
        +(d.members.map(mm=>'<tr>'
-         +'<td>'+(mm.paid?'✅':'⏳')+' <b>'+escHtml(mm.name)+'</b><br><small class="text-muted">'+escHtml(mm.email||'')+' '+escHtml(mm.phone||'')+'</small>'+((mm.rodicia||[]).length?'<br><small>👨‍👩‍👧 '+escHtml(mm.rodicia.join(', '))+'</small>':'')+vRolePicker(mm.id,c._id,'student')+'</td>'
+         +'<td>'+(mm.paid?'✅':'⏳')+' <b>'+escHtml(mm.name)+'</b><br><small class="text-muted">'+escHtml(mm.email||'')+' '+escHtml(mm.phone||'')+'</small>'+((mm.rodicia||[]).length?'<br><small>👨‍👩‍👧 '+escHtml(mm.rodicia.join(', '))+'</small>':'')+vRolePicker(mm.id,c._id,'student')+' <button class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.7rem" title="Presunúť do inej skupiny" onclick="vPresunZiaka(\''+c._id+'\',\''+mm.id+'\',\''+escHtml(String(mm.name).replace(/'/g,"\u2019"))+'\')">↔ presunúť</button>'
+         +((window._VDUP||{})[vKlucMena(mm.name)]>1
+           ? '<div class="small" style="color:#ffcc80;margin-top:3px">⚠️ dva účty s rovnakým menom — ak je jeden rodičov, <button class="btn btn-sm btn-outline-warning py-0 px-2" style="font-size:.7rem" onclick="vRozmotajDuplicitu(\''+c._id+'\',\''+mm.id+'\')">rozmotať</button></div>' : '')+'</td>'
          +'<td class="text-end">'+(mm.paid
            ? vEur(mm.amount)+' <small class="text-muted">('+V_SPOSOB(mm.method)+(mm.payer?', platil/a '+escHtml(mm.payer):'')+')</small><br><button class="btn btn-sm btn-outline-danger mt-1" onclick="vZrusitPlatbu(\''+c._id+'\',\''+mm.id+'\',\''+escHtml(String(mm.name).replace(/'/g,'’'))+'\','+(+mm.amount||0)+',\''+(mm.method||'')+'\')">zrušiť platbu</button>'
            : '<button class="btn btn-sm btn-brand" onclick="vMarkPaid(\''+c._id+'\',\''+mm.id+'\',\'cash\')">💶 hotovosť</button> '
@@ -4963,11 +4969,25 @@ async function vClassDetail(cid, tab){
          +'<input id="vHromadneKto" value="'+escHtml(c.platba_hromadne_kto||'triedny učiteľ')+'" class="form-control form-control-sm bg-dark text-light" style="max-width:220px" placeholder="kto vyberá (triedny učiteľ)" onchange="vSaveProgress(\''+c._id+'\')">'
          +'<span class="text-muted" style="font-size:.75rem">Žiaci ani rodičia potom v appke neplatia a nechodia im pripomienky. Platby zapíšeš naraz v záložke „Žiaci a platby“.</span>'
        +'</div></div></div>'
+     // Cena, lekcie a lektor sa doteraz dali meniť len cez terminál (audit 6. 10.).
+     +'<h6 class="fw-bold mt-3">⚙️ Nastavenia skupiny</h6>'
+     +'<div class="row g-2 mb-2" style="max-width:760px">'
+       +'<div class="col-6 col-md-3"><label class="small text-muted d-block" for="vsName">Názov skupiny</label><input id="vsName" value="'+escHtml(c.name||'')+'" class="form-control form-control-sm bg-dark text-light"></div>'
+       +'<div class="col-6 col-md-2"><label class="small text-muted d-block" for="vsPrice">Cena za žiaka (€)</label><input id="vsPrice" value="'+String(c.price==null?'':c.price).replace('.',',')+'" inputmode="decimal" class="form-control form-control-sm bg-dark text-light"></div>'
+       +'<div class="col-6 col-md-2"><label class="small text-muted d-block" for="vsTotal">Lekcií spolu</label><input id="vsTotal" type="number" min="1" max="40" value="'+(+c.lessons_total||13)+'" class="form-control form-control-sm bg-dark text-light"></div>'
+       +'<div class="col-6 col-md-2"><label class="small text-muted d-block" for="vsBefore">Z toho do venčeka</label><input id="vsBefore" type="number" min="1" max="40" value="'+(+c.lessons_before||10)+'" class="form-control form-control-sm bg-dark text-light"></div>'
+       +'<div class="col-12 col-md-3"><label class="small text-muted d-block" for="vsLektor">Lektor</label><input id="vsLektor" value="'+escHtml(c.lecturer||'')+'" list="vsTreneri" class="form-control form-control-sm bg-dark text-light"><datalist id="vsTreneri">'+(V_TRENERI||[]).map(t=>'<option value="'+escHtml(t)+'">').join('')+'</datalist></div>'
+     +'</div>'
+     +'<div class="d-flex gap-2 align-items-center flex-wrap mb-3">'
+       +'<button class="btn btn-sm btn-brand" onclick="vUlozNastavenia(\''+c._id+'\')">💾 Uložiť nastavenia</button>'
+       +'<span class="text-muted" style="font-size:.75rem">Cena platí pre nové platby. Lektor musí sedieť s menom trénera, inak mu appka nepustí zápis dochádzky.</span>'
+     +'</div>'
      +'<h6 class="fw-bold mt-3">📉 Náklady skupiny <button class="btn btn-sm btn-outline-secondary ms-2" onclick="vAddCost(\'\',\''+c._id+'\')">+ pridať</button></h6>'
-     +'<div class="small mb-3">'+((d.costs||[]).map(k=>'<div class="d-flex justify-content-between vdet-osoba"><span>'+escHtml(k.label)+' <span class="text-muted">'+escHtml(k.date||'')+'</span></span><b>'+vEur(k.amount)+'</b></div>').join('')||'<span class="text-muted">Žiadne náklady.</span>')+'</div>'
+     +'<div class="small mb-3">'+((d.costs||[]).map(k=>'<div class="d-flex justify-content-between align-items-center vdet-osoba"><span>'+escHtml(k.label)+' <span class="text-muted">'+escHtml(k.date||'')+'</span></span><span><b>'+vEur(k.amount)+'</b> <button class="btn btn-sm btn-outline-danger py-0 px-2 ms-2" title="Zmazať náklad" onclick="vZmazNaklad(\''+k._id+'\',\''+c._id+'\',\''+escHtml(String(k.label).replace(/'/g,"\u2019"))+'\')">🗑</button></span></div>').join('')||'<span class="text-muted">Žiadne náklady.</span>')+'</div>'
      +'<div class="mt-4 pt-3 border-top border-secondary">'
        +(c.completed
          ? '<span class="badge bg-success">🏅 Venček ukončený — žiaci majú odznak absolventa</span>'
+           +'<button class="btn btn-sm btn-outline-secondary ms-2" onclick="vVratitUkoncenie(\''+c._id+'\')">↩️ Vrátiť ukončenie</button>'
          : '<button class="btn btn-outline-warning" onclick="vComplete(\''+c._id+'\')">🏅 Ukončiť venček (odznaky + kupóny absolventom)</button>'
            +'<div class="text-muted small mt-2">Po ukončení im z nástenky zmizne venčekové okno a ostane bežná appka.</div>')
      +'</div>'
@@ -4987,8 +5007,13 @@ function vTab(k){
 let VATT={};
 // Venček je školská trieda — prídu všetci, zaškrtávajú sa len chýbajúci.
 async function vAttLoad(cid){
+  const ulozTl=document.querySelector('#vClassModal .vdet-panel[data-tab="dochadzka"] .btn-brand');
   try{
     const r=await fetch('/api/admin/venceky/attendance/'+cid); const d=await r.json();
+    // Keď sa dochádzka nenačíta, políčka ostanú prázdne a uloženie by zapísalo
+    // „prišli všetci“ — preto radšej zamkneme ukladanie (audit 6. 10.).
+    if(!r.ok || !d || d.error) throw new Error((d&&d.error)||('HTTP '+r.status));
+    if(ulozTl){ ulozTl.disabled=false; ulozTl.title=''; }
     VATT={};
     // Staršie záznamy majú len prítomných — chýbajúcich z nich dopočítame.
     const vsetci=[...document.querySelectorAll('.vAttCb')].map(cb=>cb.value);
@@ -5001,15 +5026,26 @@ async function vAttLoad(cid){
     document.querySelectorAll('.vAttCb').forEach(cb=>cb.checked=chyba.has(cb.value));
     document.getElementById('vAttInfo').textContent=Object.keys(VATT).length
       ? `zapísané lekcie: ${Object.keys(VATT).sort((a,b)=>a-b).join(', ')}` : 'zatiaľ žiadna dochádzka';
-  }catch(e){}
+  }catch(e){
+    const info=document.getElementById('vAttInfo');
+    if(info) info.innerHTML='<span class="text-danger">⚠️ Dochádzku sa nepodarilo načítať — ukladanie je zamknuté, aby sa neprepísala. Skús obnoviť stránku.</span>';
+    if(ulozTl){ ulozTl.disabled=true; ulozTl.title='Najprv sa musí načítať doterajšia dochádzka'; }
+  }
 }
 async function vAttSave(cid){
   const les=+document.getElementById('vAttLesson').value;
   const absent=[...document.querySelectorAll('.vAttCb:checked')].map(cb=>cb.value);
   const r=await vApi('attendance',{class_id:cid, lesson_no:les, absent});
-  if(r&&r.ok) showToast(absent.length
-    ? `Lekcia ${les}: prítomných ${r.present}, chýbalo ${r.absent} ✅`
-    : `Lekcia ${les}: prišli všetci ✅`, 'success');
+  if(r&&r.ok){
+    showToast(absent.length
+      ? `Lekcia ${les}: prítomných ${r.present}, chýbalo ${r.absent} ✅`
+      : `Lekcia ${les}: prišli všetci ✅`, 'success');
+    // Počty v hlavičke aj v zozname ostávali staré, kým si detail nezavrel (audit 6. 10.),
+    // a políčko lekcie sa neposunulo — hrozilo prepísanie tej istej hodiny.
+    const pole=document.getElementById('vAttLesson');
+    if(pole && +pole.value < +pole.max) pole.value = +pole.value + 1;
+    loadVenceky();
+  }
   vAttLoad(cid);
 }
 async function vComplete(cid){
@@ -5032,6 +5068,77 @@ async function vHromadnaPlatba(cid, pocet, cena){
   const r=await vApi('payment-bulk',{class_id:cid, method, amount:s});
   if(r?.ok) showToast(r.count?('Zapísané: '+r.count+' × '+vEur(s)+' = '+vEur(r.total)+' ✅'):'Všetci už mali zaplatené','success');
   vClassDetail(cid); loadVenceky();
+}
+// Zoznam trénerov pre výber lektora (naplní sa pri načítaní venčekov).
+let V_TRENERI=[];
+async function vNacitajTrenerov(){
+  if(V_TRENERI.length) return;
+  try{ const d=await api('/api/admin/staff'); V_TRENERI=(d&&(d.staff||d.rows||d)||[]).map(x=>x.name).filter(Boolean); }catch(e){}
+}
+async function vUlozNastavenia(cid){
+  const d=await vApi('class-update',{class_id:cid, name:vVal('vsName'), price:vVal('vsPrice'),
+    lessons_total:vVal('vsTotal'), lessons_before:vVal('vsBefore'), lecturer:vVal('vsLektor')});
+  if(d&&d.ok){ showToast('Nastavenia skupiny uložené ✅','success'); vClassDetail(cid,'ostatne'); loadVenceky(); }
+}
+const vVal=id=>{ const e=document.getElementById(id); return e?e.value:undefined; };
+async function vZmazNaklad(id, cid, popis){
+  if(!confirm('Zmazať náklad „'+popis+'“?')) return;
+  const d=await vApi('cost-delete',{cost_id:id});
+  if(d&&d.ok){ showToast('Náklad zmazaný','success'); vClassDetail(cid,'ostatne'); loadVenceky(); }
+}
+async function vVratitUkoncenie(cid){
+  if(!confirm('Vrátiť ukončenie venčeka?\n\nSkupina sa znova zobrazí žiakom ako prebiehajúca. Odznaky a kupóny, ktoré už dostali, ostávajú.')) return;
+  const d=await vApi('uncomplete',{class_id:cid});
+  if(d&&d.ok){ showToast('Venček je znova otvorený','success'); vClassDetail(cid,'ostatne'); loadVenceky(); }
+}
+async function vUpravSkolu(sid){
+  const sk=(VEN.schools||[]).find(x=>x.id===sid); if(!sk) return;
+  const nazov=prompt('Názov školy:', sk.name); if(nazov===null) return;
+  const mesto=prompt('Mesto:', sk.city||''); if(mesto===null) return;
+  const rok=prompt('Školský rok:', sk.year||''); if(rok===null) return;
+  const d=await vApi('school-update',{school_id:sid, name:nazov, city:mesto, year:rok});
+  if(d&&d.ok){ showToast('Škola upravená ✅','success'); loadVenceky(); }
+}
+async function vZmazSkolu(sid, nazov){
+  const sk=(VEN.schools||[]).find(x=>x.id===sid);
+  const ziakov=(sk&&sk.classes||[]).reduce((n,c)=>n+c.members,0);
+  if(!confirm('Zmazať školu „'+nazov+'“?\n\nZmažú sa aj jej skupiny, platby, dochádzka, náklady a chat.'
+    +(ziakov?'\n'+ziakov+' žiakov ostane v appke, len prídu o venček.':''))) return;
+  if(prompt('Pre potvrdenie napíš názov školy:')!==nazov) return showToast('Názov nesedí — nemažem','error');
+  const d=await vApi('school-delete',{school_id:sid, cascade:true});
+  if(d&&d.ok){ showToast('Škola zmazaná','success'); loadVenceky(); }
+}
+// Dvojitý účet dieťaťa: z účtu rodiča spraví rodiča a prenesie platbu na dieťa.
+async function vRodicZUctu(cid, rodicId, dietaId, meno){
+  if(!confirm('Z účtu „'+meno+'“ spraviť rodiča a pripojiť ho k dieťaťu?\n\nPlatba aj dochádzka sa prenesú na účet dieťaťa.')) return;
+  const d=await vApi('rodic-z-uctu',{rodic_id:rodicId, dieta_id:dietaId});
+  if(d&&d.ok){ showToast('Hotovo — účet je teraz rodič','success'); vClassDetail(cid,'ziaci'); loadVenceky(); }
+}
+// Meno bez diakritiky a bez dvojitých medzier — „Félix Kokavec“ a „Felix  Kokavec“ je ten istý.
+const vKlucMena = x => String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+// Dva účty s rovnakým menom: jeden je dieťa, druhý rodič, ktorý sa omylom zapísal ako žiak
+// a zaplatil. Server z neho spraví rodiča, pripojí ho k dieťaťu a prenesie naňho platbu.
+async function vRozmotajDuplicitu(cid, uid){
+  const d=await vApi('class/'+cid);
+  const ja=(d.members||[]).find(m=>m.id===uid); if(!ja) return;
+  const dvojice=(d.members||[]).filter(m=>vKlucMena(m.name)===vKlucMena(ja.name));
+  if(dvojice.length<2) return showToast('Druhý účet s týmto menom už v skupine nie je','error');
+  const popis=dvojice.map((m,i)=>(i+1)+' = '+m.name+' <'+(m.email||'bez e-mailu')+'>'+(m.paid?' · ZAPLATENÉ':'')).join('\n');
+  const kt=prompt('Ktorý z účtov patrí RODIČOVI?\n\n'+popis+'\n\nZadaj číslo (druhý ostane dieťaťu):');
+  const rodic=dvojice[(+kt||0)-1]; if(!rodic) return;
+  const dieta=dvojice.find(m=>m.id!==rodic.id); if(!dieta) return;
+  if(!confirm('Z účtu '+rodic.name+' <'+(rodic.email||'bez e-mailu')+'> spraviť RODIČA a pripojiť ho k dieťaťu '+dieta.name+' <'+(dieta.email||'bez e-mailu')+'>?\n\nPlatba aj dochádzka sa prenesú na dieťa.')) return;
+  const r=await vApi('rodic-z-uctu',{rodic_id:rodic.id, dieta_id:dieta.id});
+  if(r&&r.ok){ showToast('Hotovo — účty sú rozmotané','success'); vClassDetail(cid,'ziaci'); loadVenceky(); }
+}
+async function vPresunZiaka(cid, uid, meno){
+  const skupiny=(VEN.schools||[]).flatMap(s=>(s.classes||[]).map(c=>({id:c.id, label:s.name+' · '+c.name}))).filter(x=>x.id!==cid);
+  if(!skupiny.length) return showToast('Niet kam presunúť — je len jedna skupina','error');
+  const vyber=prompt('Kam presunúť '+meno+'?\n\n'+skupiny.map((x,i)=>(i+1)+' = '+x.label).join('\n')+'\n\nZadaj číslo:');
+  const ciel=skupiny[(+vyber||0)-1]; if(!ciel) return;
+  const sPlatbou=confirm('Presunúť aj zaplatenú sumu do novej skupiny?\n\nOK = áno (odporúčané) · Zrušiť = platba ostane v starej skupine');
+  const d=await vApi('presun-ziaka',{user_id:uid, class_id:ciel.id, s_platbou:sPlatbou});
+  if(d&&d.ok){ showToast(meno+' presunutý/á do '+ciel.label,'success'); vClassDetail(cid,'ziaci'); loadVenceky(); }
 }
 // Zrušenie platby je peňažná operácia — pýtame dôvod (ide do auditu), vystaví sa dobropis
 // a žiak s rodičmi dostanú oznam. Pri karte to appka nepustí, kým peniaze nevrátiš v Stripe.
