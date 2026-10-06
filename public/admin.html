@@ -1775,6 +1775,17 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <thead><tr><th>Zlyhalo</th><th>Klient</th><th>Za čo</th><th>Suma</th><th>Upomienok</th><th>Posl. upomienka</th><th>Akcie</th></tr></thead>
       <tbody id="failedBody"><tr><td colspan="7" class="text-muted text-center py-4">Načítavam…</td></tr></tbody>
     </table></div>
+    <!-- Venčekoví dlžníci — nezaplatené kurzy (audit 6. 10.) -->
+    <div class="card bg-dark border-secondary mt-4"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+        <h6 class="fw-bold mb-0">🎓 Venčeky — nezaplatené kurzy</h6>
+        <button class="btn btn-sm btn-outline-secondary py-0" onclick="loadVencekDlznici()"><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
+      <div id="vdlzStats" class="small mb-2 text-muted">Načítavam…</div>
+      <div class="table-responsive"><table class="table table-dark table-sm align-middle" style="font-size:.82rem">
+        <thead><tr><th>Žiak</th><th>Skupina</th><th>Rodičia</th><th class="text-end">Suma</th><th>Venček</th><th></th></tr></thead>
+        <tbody id="vdlzBody"></tbody></table></div>
+    </div></div>
   </div>
 
   <div class="section" id="s-promos">
@@ -3159,7 +3170,7 @@ function show(sec){
   if(sec==='payouts'){ initPayouts(); loadAdminTips(); }
   if(sec==='uctovnicka')loadUctovnicka();
   if(sec==='refunds')loadRefunds();
-  if(sec==='failed')loadFailed();
+  if(sec==='failed'){loadFailed();loadVencekDlznici();}
   if(sec==='promos')loadPromos();
   if(sec==='tasks')initTasks();
   if(sec==='outreach'){initOutreach();smsInit();}
@@ -3577,6 +3588,30 @@ async function loadFailed(){
       <button class="btn btn-sm btn-outline-success py-0 px-2" title="Označiť ako vybavené (napr. zaplatené hotovosťou)" onclick="resolveFailed('${r.id}')"><i class="bi bi-check2"></i></button>
     </td>
   </tr>`).join('');
+}
+// Venčekoví dlžníci: kto nemá zaplatený kurz, zoradení podľa toho, kedy má venček.
+async function loadVencekDlznici(){
+  const body=document.getElementById('vdlzBody'), stat=document.getElementById('vdlzStats');
+  if(!body) return;
+  const d=await api('/api/admin/vencek-dlznici');
+  if(!d||!d.ok){ stat.textContent='Nepodarilo sa načítať.'; return; }
+  stat.innerHTML = d.count
+    ? '<b style="color:#ff9800">'+d.count+'</b> nezaplatených · dlžná suma <b style="color:#ff9800">'+eur(d.owed)+'</b>'
+    : 'Všetci venčekári majú zaplatené 🎉';
+  body.innerHTML = d.rows.map(r=>'<tr>'
+    +'<td class="fw-semibold">'+escHtml(r.name)+'<div class="small text-muted">'+escHtml(r.email||r.phone||'')+'</div></td>'
+    +'<td class="small">'+escHtml(r.school)+'<div class="text-muted">'+escHtml(r.class_name)+'</div></td>'
+    +'<td class="small">'+(r.rodicia.length?r.rodicia.map(x=>escHtml(x.name)).join(', '):'<span class="text-warning">nikto pripojený</span>')+'</td>'
+    +'<td class="text-end fw-bold" style="color:#ff9800">'+eur(r.amount)+'</td>'
+    +'<td class="small text-nowrap">'+(r.event_date?fmtDate(r.event_date):'—')+(r.platba_hromadne?'<div class="text-muted">platí trieda</div>':'')+'</td>'
+    +`<td class="text-nowrap"><button class="btn btn-sm btn-outline-warning py-0 px-2" title="Poslať pripomienku žiakovi aj rodičom" onclick="vdlzRemind('${r.id}','${r.class_id}')"><i class="bi bi-envelope"></i></button> `
+      +`<button class="btn btn-sm btn-outline-light py-0 px-2" title="Otvoriť skupinu" onclick="show('venceky');setTimeout(()=>vClassDetail('${r.class_id}','ziaci'),500)">🎓</button></td>`
+    +'</tr>').join('') || '<tr><td colspan="6" class="text-center text-muted py-3">Nikto nedlhuje 🎉</td></tr>';
+}
+async function vdlzRemind(uid, cid){
+  const r=await api('/api/admin/vencek-dlznici/remind',{method:'POST',body:{user_id:uid, class_id:cid}});
+  if(r&&r.ok) showToast('Pripomienka odoslaná'+(r.mailov?' ('+r.mailov+' mail'+(r.mailov>1?'y':'')+')':' (len v appke — chýba e-mail)'),'success');
+  else showToast((r&&r.error)||'Nepodarilo sa','error');
 }
 async function remindFailed(id){
   const r=await api('/api/admin/failed-payments/'+id+'/remind',{method:'POST'});
@@ -4899,7 +4934,7 @@ async function vClassDetail(cid, tab){
        +(d.members.map(mm=>'<tr>'
          +'<td>'+(mm.paid?'✅':'⏳')+' <b>'+escHtml(mm.name)+'</b><br><small class="text-muted">'+escHtml(mm.email||'')+' '+escHtml(mm.phone||'')+'</small>'+((mm.rodicia||[]).length?'<br><small>👨‍👩‍👧 '+escHtml(mm.rodicia.join(', '))+'</small>':'')+vRolePicker(mm.id,c._id,'student')+'</td>'
          +'<td class="text-end">'+(mm.paid
-           ? vEur(mm.amount)+' <small class="text-muted">('+V_SPOSOB(mm.method)+(mm.payer?', platil/a '+escHtml(mm.payer):'')+')</small><br><button class="btn btn-sm btn-outline-danger mt-1" onclick="vApi(\'payment-delete\',{class_id:\''+c._id+'\',user_id:\''+mm.id+'\'}).then(()=>vClassDetail(\''+c._id+'\'))">zrušiť platbu</button>'
+           ? vEur(mm.amount)+' <small class="text-muted">('+V_SPOSOB(mm.method)+(mm.payer?', platil/a '+escHtml(mm.payer):'')+')</small><br><button class="btn btn-sm btn-outline-danger mt-1" onclick="vZrusitPlatbu(\''+c._id+'\',\''+mm.id+'\',\''+escHtml(String(mm.name).replace(/'/g,'’'))+'\','+(+mm.amount||0)+',\''+(mm.method||'')+'\')">zrušiť platbu</button>'
            : '<button class="btn btn-sm btn-brand" onclick="vMarkPaid(\''+c._id+'\',\''+mm.id+'\',\'cash\')">💶 hotovosť</button> '
              +'<button class="btn btn-sm btn-outline-light" onclick="vMarkPaid(\''+c._id+'\',\''+mm.id+'\',\'transfer\')">🏦 prevod</button>')
          +'</td></tr>').join('')
@@ -4996,6 +5031,19 @@ async function vHromadnaPlatba(cid, pocet, cena){
   if(!confirm('Zapísať platbu '+pocet+' žiakom po '+vEur(s)+' = '+vEur(pocet*s)+'?\n\nKaždému (aj jeho rodičom) odíde potvrdenie o zaplatení na e-mail.')) return;
   const r=await vApi('payment-bulk',{class_id:cid, method, amount:s});
   if(r?.ok) showToast(r.count?('Zapísané: '+r.count+' × '+vEur(s)+' = '+vEur(r.total)+' ✅'):'Všetci už mali zaplatené','success');
+  vClassDetail(cid); loadVenceky();
+}
+// Zrušenie platby je peňažná operácia — pýtame dôvod (ide do auditu), vystaví sa dobropis
+// a žiak s rodičmi dostanú oznam. Pri karte to appka nepustí, kým peniaze nevrátiš v Stripe.
+async function vZrusitPlatbu(cid, uid, meno, suma, sposob){
+  const kartou = sposob==='stripe';
+  if(!confirm('Zrušiť platbu '+vEur(suma)+' — '+meno+'?\n\n'+(kartou
+    ? 'POZOR: platila kartou. Najprv vráť peniaze v Stripe, až potom to zruš tu.'
+    : 'Vystaví sa dobropis a '+meno+' aj rodičia dostanú oznam, že kurz nie je uhradený.'))) return;
+  const duvod=prompt('Dôvod zrušenia (uvidíš ho v audite):','omylom zapísaná platba');
+  if(duvod===null || !duvod.trim()) return;
+  const d=await vApi('payment-delete',{class_id:cid, user_id:uid, reason:duvod.trim(), force:kartou});
+  if(d&&d.ok) showToast('Platba zrušená, dobropis vystavený','success');
   vClassDetail(cid); loadVenceky();
 }
 async function vMarkPaid(cid,uid,method){
@@ -6507,9 +6555,10 @@ function _renderFinVysledok(d){
       ${riadok('− Poplatky Stripe', '−'+eur(n.stripe_poplatky), n.stripe_poplatky>0?'#e57373':'#777', n.stripe_dostupne?'':'Stripe teraz nedostupný — poplatky sa nerátajú')}
       ${riadok('− Výplaty trénerov', '−'+eur(n.vyplaty), n.vyplaty>0?'#e57373':'#777', tren||(mes>1?'za '+mes+' '+_mesSlovo(mes):''))}
       ${riadok('− Reklama (Meta)', '−'+eur(n.reklama), n.reklama>0?'#e57373':'#777')}
+      ${riadok('− Venčeky (kvety, diplomy, DJ, doprava)', '−'+eur(n.venceky||0), (n.venceky||0)>0?'#e57373':'#777', (n.venceky||0)>0?'':'zatiaľ nič nezapísané — náklady pridáš v Venčeky → detail skupiny')}
       <tr style="border-top:2px solid #C9A24C"><td class="fw-bold">= Výsledok</td><td class="text-end fw-bold fs-5" style="color:${v.cisty>=0?'#4ade80':'#e57373'};white-space:nowrap">${eur(v.cisty)}</td></tr>
     </tbody></table>
-    <div class="text-muted" style="font-size:.7rem">Výplaty a reklama sa vedú po mesiacoch — rátajú sa za ${mes===1?'tento mesiac':mes+' '+_mesSlovo(mes)+', do ktorých obdobie zasahuje'}. Nájom a iné náklady appka nevedie.</div>
+    <div class="text-muted" style="font-size:.7rem">Výplaty a reklama sa vedú po mesiacoch — rátajú sa za ${mes===1?'tento mesiac':mes+' '+_mesSlovo(mes)+', do ktorých obdobie zasahuje'}. Venčekové náklady sa rátajú podľa dátumu zápisu. Nájom a iné náklady appka nevedie.</div>
   </div></div></div>`;
   let bankaHtml;
   if(b){

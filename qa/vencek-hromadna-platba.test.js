@@ -146,7 +146,7 @@ const ZIAK1 = 'qaHpZiak0000001', ZIAK2 = 'qaHpZiak0000002', ZIAK3 = 'qaHpZiak000
     if (SHOTS) await pReg.screenshot({ path: path.join(SHOTS, 'hromadna-registracia.png'), fullPage: true });
 
     // účet žiaka: platba je už zapísaná, tak sa pozrieme na skupinu bez platby
-    await j('/api/admin/venceky/payment-delete', { method: 'POST', body: { class_id: PODB, user_id: ZIAK2 } }, jar.adm);
+    await j('/api/admin/venceky/payment-delete', { method: 'POST', body: { class_id: PODB, user_id: ZIAK2, reason: 'test obrazovky' } }, jar.adm);
     await j('/api/login', { method: 'POST', body: { email: 'qa.hp.z2@qa-biz.local', password: 'Heslo123!' } }, (jar.z2 = {}));
     const pZ = await stranka('z2', '/vencek');
     await pZ.waitForSelector('.pay-no', { timeout: 20000 });
