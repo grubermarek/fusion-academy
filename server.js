@@ -11831,10 +11831,17 @@ app.post('/api/service/stripe-obnova-doplnit', async(req,res)=>{
       const fak = await stripeApiGet('invoices?limit=24&customer='+encodeURIComponent(c.id));
       for(const f of (fak.data||[])){
         if(f.status!=='paid' || !(+f.amount_paid>0)) continue;
-        if(!['subscription_cycle','subscription_create'].includes(f.billing_reason||'')) continue;
-        const uz = await q.one(db.webhook_events,{event_id:'obnova:'+f.id}) || await q.one(db.transactions,{stripe_invoice_id:f.id});
+        // Prvá platba odberu (subscription_create) sa zapisuje už pri nákupe — dopĺňame len OBNOVY,
+        // inak by sa tržba aj mesiac členstva zdvojili. Výslovne sa dá vyžiadať cez vratane_prvej.
+        const prva = f.billing_reason==='subscription_create';
+        if(f.billing_reason!=='subscription_cycle' && !(prva && req.body.vratane_prvej===true)) continue;
+        const datum = den(f.created), suma = eur(f.amount_paid);
+        const uz = await q.one(db.webhook_events,{event_id:'obnova:'+f.id})
+          || await q.one(db.transactions,{stripe_invoice_id:f.id})
+          // ten istý deň a tá istá suma už v tržbách = platba je zapísaná inou cestou (nákup odberu)
+          || (await q.find(db.transactions,{user_id:u._id})).find(x=>String(x.date||'').slice(0,10)===datum && +x.amount===suma);
         const koniecTs = ((f.lines&&f.lines.data)||[]).map(l=>l.period&&+l.period.end).filter(Boolean).sort((a,b)=>b-a)[0];
-        const zaznam={ faktura:f.id, datum:den(f.created), suma:eur(f.amount_paid), obdobie_do:den(koniecTs), dovod:f.billing_reason, v_appke:!!uz };
+        const zaznam={ faktura:f.id, datum, suma, obdobie_do:den(koniecTs), dovod:f.billing_reason, v_appke:!!uz };
         najdene.push(zaznam);
         if(uz || !apply) continue;
         // Zámok rovnako ako pri bežnej obnove — druhý beh už nič nepridá
@@ -11844,9 +11851,9 @@ app.post('/api/service/stripe-obnova-doplnit', async(req,res)=>{
         const beziDoteraz = !!(bezi && bezi.expires_at && new Date(bezi.expires_at) > new Date());
         const opts = (!beziDoteraz && koniecTs && koniecTs*1000 > Date.now()) ? { expiresAt:new Date(koniecTs*1000).toISOString() } : {};
         await activateMembership(u._id, planId, plan.duration_days||30, opts);
-        await q.insert(db.transactions,{ type:'subscription_renewal', user_id:u._id, user_name:u.name, amount:eur(f.amount_paid),
-          date:den(f.created), payment_method:'stripe', note:`Auto-obnova ${plan.name} (Stripe) — doplnené ${today()}`,
-          plan_id:planId, stripe_invoice_id:f.id, created_at:nowISO(), month:String(den(f.created)||'').slice(0,7) });
+        await q.insert(db.transactions,{ type:'subscription_renewal', user_id:u._id, user_name:u.name, amount:suma,
+          date:datum, payment_method:'stripe', note:`Auto-obnova ${plan.name} (Stripe) — doplnené ${today()}`,
+          plan_id:planId, stripe_invoice_id:f.id, created_at:nowISO(), month:String(datum||'').slice(0,7) });
         const po = await q.one(db.memberships,{user_id:u._id, status:'active'});
         zaznam.doplnene=true; zaznam.clenstvo_do = po ? String(po.expires_at).slice(0,10) : null;
         doplnene.push(zaznam);
