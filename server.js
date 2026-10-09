@@ -11829,8 +11829,9 @@ app.get('/api/service/stripe-klient', async(req,res)=>{
       zakaznici.push({ id:c.id, meno:c.name||null, vytvorený:den(c.created),
         odbery:(odbery.data||[]).map(s=>({ id:s.id, stav:s.status, suma:eur(s.items?.data?.[0]?.price?.unit_amount),
           obdobie_do:den(s.current_period_end), zrušiť_na_konci:!!s.cancel_at_period_end, zrušený:den(s.canceled_at) })),
-        faktury:(faktury.data||[]).map(f=>({ dátum:den(f.created), suma:eur(f.amount_paid||f.amount_due), stav:f.status,
-          zaplatená:!!f.paid, dôvod:f.billing_reason||null, odber:f.subscription||null })) });
+        faktury:(faktury.data||[]).map(f=>({ dátum:den(f.created), zaplatené:eur(f.amount_paid), predpis:eur(f.amount_due),
+          stav:f.status, zaplatená:!!f.paid, dôvod:f.billing_reason||null, odber:f.subscription||null,
+          obdobie:f.lines?.data?.[0]?.period ? den(f.lines.data[0].period.start)+' → '+den(f.lines.data[0].period.end) : null })) });
     }
     let appka=null;
     if(u){
