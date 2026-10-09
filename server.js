@@ -11806,6 +11806,45 @@ app.post('/api/service/collect', async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Čo o klientke vie Stripe (Marek 9. 10. 2026: „Barca má zaplatené členstvo, ale ukazuje
+// jej neaktívne"). Iba ČÍTA: nájde zákazníka podľa e-mailu, vypíše jeho odbery a posledné
+// faktúry a vedľa toho stav v appke. Nič nemení — slúži na rozhodnutie, či klientka naozaj
+// platí a či appke nejaká obnova neunikla.
+app.get('/api/service/stripe-klient', async(req,res)=>{
+  if(!servisToken(req)) return res.status(404).end();
+  try{
+    if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
+    const email=String(req.query.email||'').trim().toLowerCase();
+    const u = email ? await q.one(db.users,{email}) : (req.query.user_id ? await q.one(db.users,{_id:String(req.query.user_id)}) : null);
+    if(!email && !u) return res.status(400).json({error:'Zadaj email alebo user_id'});
+    const mail = email || u?.email;
+    const eur = c => +((c||0)/100).toFixed(2);
+    const den = s => s ? new Date(s*1000).toISOString().slice(0,10) : null;
+
+    const zak = await stripeApiGet('customers?limit=5&email='+encodeURIComponent(mail));
+    const zakaznici=[];
+    for(const c of (zak.data||[])){
+      const odbery = await stripeApiGet('subscriptions?limit=10&status=all&customer='+encodeURIComponent(c.id));
+      const faktury = await stripeApiGet('invoices?limit=12&customer='+encodeURIComponent(c.id));
+      zakaznici.push({ id:c.id, meno:c.name||null, vytvorený:den(c.created),
+        odbery:(odbery.data||[]).map(s=>({ id:s.id, stav:s.status, suma:eur(s.items?.data?.[0]?.price?.unit_amount),
+          obdobie_do:den(s.current_period_end), zrušiť_na_konci:!!s.cancel_at_period_end, zrušený:den(s.canceled_at) })),
+        faktury:(faktury.data||[]).map(f=>({ dátum:den(f.created), suma:eur(f.amount_paid||f.amount_due), stav:f.status,
+          zaplatená:!!f.paid, dôvod:f.billing_reason||null, odber:f.subscription||null })) });
+    }
+    let appka=null;
+    if(u){
+      const clen=(await q.find(db.memberships,{user_id:u._id})).filter(m=>!m._type)
+        .sort((a,b)=>String(b.expires_at||'').localeCompare(String(a.expires_at||'')))
+        .slice(0,4).map(m=>({plan:m.plan_id, stav:m.status, od:String(m.started_at||'').slice(0,10), do:String(m.expires_at||'').slice(0,10), cena:m.price, trial:!!m.trial}));
+      appka={ id:u._id, meno:u.name, clenstvo_do:u.membership_expires||null, plan:u.membership_plan||null,
+        stripe_subscription_id:u.stripe_subscription_id||null, stripe_sub_plan:u.stripe_sub_plan||null,
+        vstupy:u.single_entries||0, kupony:u.free_credits||0, clenstva:clen };
+    }
+    res.json({ok:true, email:mail, appka, stripe:zakaznici});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Presun súkromnej hodiny na iný termín (Marek 5. 10. 2026: „Ailina neprišla na súkromku
 // Nelke, treba to anulovať, namiesto toho budú mať súkromku 25. 10."). Pôvodná rezervácia
 // sa anuluje bez poplatku, termín sa zavrie a klientka dostane rezerváciu na nový voľný
