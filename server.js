@@ -4173,6 +4173,25 @@ async function seedData() {
     }catch(e){ console.error('stará cena migrácia:', e.message); }
   }, 8000);
 
+  // Jednorazovo: zarovnaj koniec členstva na účte s tým, čo je na členstve. Kompenzačné
+  // dni za zrušené hodiny sa pripisovali len na členstvo, takže účet ukazoval starší
+  // dátum a klientka by prišla o členskú cenu vstupeniek na event.
+  setTimeout(async()=>{
+    try{
+      if(await q.one(db.settings,{key:'clenstvo_na_ucte_zarovnanie_20261009'})) return;
+      const podlaKlientky = {};
+      for(const m of await q.find(db.memberships,{status:'active'})){
+        if(m._type) continue;                                   // analýzy a premeny nie sú členstvá
+        (podlaKlientky[m.user_id] = podlaKlientky[m.user_id] || []).push(m);
+      }
+      let n = 0;
+      for(const [uid, zoznam] of Object.entries(podlaKlientky))
+        if(await zarovnajClenstvoNaUcte(uid, zoznam)) n++;
+      await q.insert(db.settings,{key:'clenstvo_na_ucte_zarovnanie_20261009', value:true, at:nowISO()});
+      if(n) console.log('🗓️ Koniec členstva zarovnaný na účte '+n+' klientkam');
+    }catch(e){ console.error('zarovnanie členstva:', e.message); }
+  }, 9000);
+
   // Jednorazovo: obnov rezervácie, ktoré predošlý (zrušený) no-show job omylom prepol na
   // 'no_show'. Bez tohto by prihlásené klientky ostali skryté a tréner by nevedel potvrdiť
   // hodinu. Vraciame len auto-generované no_show (majú no_show_at) za posledných 45 dní.
@@ -12878,9 +12897,30 @@ async function activateMembership(userId, planId, durationDays, opts={}){
   await refreshMemberTier(userId); // odznak členstva v komunite
 }
 
+// Koniec členstva sa vedie na dvoch miestach: na členstve (db.memberships) a pre rýchle
+// výpisy aj na účte (users.membership_expires). Kompenzačné dni za zrušenú hodinu sa
+// pripisovali len na členstvo, takže účet ukazoval starší dátum — a podľa neho sa počítala
+// členská cena vstupeniek na eventy aj varovanie „členstvo sa končí". Toto ich zarovná.
+// Permanentky a vstupy (type 'bundle') dátum na účte nenastavujú, preto ho ani tu nemenia.
+async function zarovnajClenstvoNaUcte(userId, aktivne){
+  const plne=(aktivne||[]).filter(m=>m && !m._type && m.expires_at && !isNaN(new Date(m.expires_at))
+      && MEMBERSHIP_PLANS[m.plan_id]?.type!=='bundle')
+    .sort((a,b)=>String(b.expires_at).localeCompare(String(a.expires_at)));
+  if(!plne.length) return null;
+  const m=plne[0], u=await q.one(db.users,{_id:userId});
+  if(!u) return null;
+  // Dátum na účte iba dopĺňame a posúvame dopredu. Nikdy ho neskracujeme — niektoré staré
+  // predĺženia (napr. kompenzácia za Brezno) sú zapísané len na účte a klientka by o ne prišla.
+  const naUcte=u.membership_expires && !isNaN(new Date(u.membership_expires)) ? new Date(u.membership_expires) : null;
+  if(naUcte && naUcte >= new Date(m.expires_at)) return null;
+  await q.update(db.users,{_id:userId},{$set:{membership_plan:m.plan_id, membership_expires:new Date(m.expires_at).toISOString()}});
+  return m;
+}
+
 async function checkMembership(userId){
   if(!userId) return null;
-  const list = await q.find(db.memberships,{user_id:userId,status:'active'});
+  // `_type` záznamy (analýza tela, fit premena) žijú v tej istej kolekcii, ale členstvá to nie sú
+  const list = (await q.find(db.memberships,{user_id:userId,status:'active'})).filter(m=>!m._type);
   if(!list.length) return null;
   const now = new Date();
   const valid=[], stale=[];
@@ -12898,6 +12938,7 @@ async function checkMembership(userId){
     if(ab!==bb) return ab-bb;
     return String(b.expires_at||'').localeCompare(String(a.expires_at||''));
   });
+  await zarovnajClenstvoNaUcte(userId, valid).catch(()=>{});   // účet drží krok s členstvom
   return valid[0];
 }
 
@@ -20837,6 +20878,8 @@ async function kompenzujZrusenie({class_id, date, days, scope, by, tichoPre}){
         read:false, created_at:nowISO()}).catch(()=>{});
       extended.push({user_id:uid, name:u.name, plan:m.plan_id, plan_name:m.plan_name||m.plan_id, from:stare.slice(0,10), to:nove.slice(0,10), membership_id:m._id});
     }
+    // predĺžené členstvo musí byť vidieť aj na účte (členská cena vstupeniek, výpisy adminu)
+    await zarovnajClenstvoNaUcte(uid, (await q.find(db.memberships,{user_id:uid})).filter(m=>m.status==='active')).catch(()=>{});
   }
   return {class:cls.name, location:cls.location, date:den, days:dni, scope:rozsah, considered:okruh.size, extended};
 }
