@@ -11983,6 +11983,56 @@ app.post('/api/service/private-move', async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Dodatočný zápis zaplateného členstva (Marek 11. 10. 2026: „Michaela Nosalová — členstvo
+// bronze 49,90 €, nahoď to od minulého utorka"). Appka aktivuje členstvo vždy odo dneška,
+// takže keď sa platba zapíše s odstupom, klientka by prišla o dni, ktoré zaplatila. Nástroj
+// aktivuje členstvo od zadaného dňa a tržbu zapíše k tomu istému dňu (aj doklad).
+// Bez `apply:true` je to suchý náhľad. Keď členstvo beží, dátum sa nepretláča — nové
+// obdobie nadviaže na jeho koniec (inak by sa klientke členstvo skrátilo).
+app.post('/api/service/clenstvo-zapisat', async(req,res)=>{
+  if(!servisToken(req)) return res.status(404).end();
+  try{
+    const email=String(req.body.email||'').trim().toLowerCase();
+    const u = email ? await q.one(db.users,{email}) : await q.one(db.users,{_id:String(req.body.user_id||'')});
+    if(!u) return res.status(404).json({error:'Klientka nenájdená'});
+    const planId=String(req.body.plan_id||'');
+    const plan=MEMBERSHIP_PLANS[planId];
+    if(!plan) return res.status(400).json({error:'Neznámy plán — pošli plan_id'});
+    if(plan.type==='bundle') return res.status(400).json({error:'Permanentky a vstupy týmto nezapisuj (nesú tržbu inak)'});
+    const od=String(req.body.od||today()).slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(od) || isNaN(Date.parse(od))) return res.status(400).json({error:'Neplatný dátum od (YYYY-MM-DD)'});
+    if(od>today()) return res.status(400).json({error:'Dátum od je v budúcnosti'});
+    const metoda=['cash','transfer','card'].includes(req.body.metoda)?req.body.metoda:'cash';
+    const dni=+req.body.dni>0?Math.round(+req.body.dni):(plan.duration_days||30);
+    const suma=+(+req.body.suma>0?+req.body.suma:(await cenyClenstva(u._id, planId)).manual).toFixed(2);
+    const doD=new Date(od+'T12:00:00.000Z'); doD.setUTCDate(doD.getUTCDate()+dni);
+    const bezi=await q.one(db.memberships,{user_id:u._id, status:'active'});
+    const beziDoteraz=!!(bezi && bezi.expires_at && new Date(bezi.expires_at) > new Date());
+    const nahlad={ klientka:u.name, plan:plan.name, od, suma, metoda, dni,
+      bezi_clenstvo: beziDoteraz ? String(bezi.expires_at).slice(0,10) : null,
+      clenstvo_do: beziDoteraz ? 'nadviaže na bežiace členstvo' : doD.toISOString().slice(0,10) };
+    if(req.body.apply!==true) return res.json({ok:true, apply:false, nahlad});
+
+    await activateMembership(u._id, planId, dni, beziDoteraz ? {} : {expiresAt:doD.toISOString()});
+    const mem=await q.one(db.memberships,{user_id:u._id, status:'active'});
+    if(mem) await q.update(db.memberships,{_id:mem._id},{$set:{ payment_method:metoda, price:suma,
+      ...(beziDoteraz ? {} : {started_at:new Date(od+'T12:00:00.000Z').toISOString()}) }});
+    await q.insert(db.transactions,{ type:'membership', user_id:u._id, user_name:u.name, date:od, amount:suma,
+      payment_method:metoda, method:metoda, note:`Členstvo ${plan.name} (dodatočný zápis ${today()})`,
+      plan_id:planId, created_at:nowISO(), month:od.slice(0,7) });
+    const metodaText={cash:'Hotovosť', transfer:'Prevod', card:'Karta'}[metoda];
+    createInvoice({user_id:u._id, client_name:u.name, client_email:u.email, items:[{desc:`Členstvo ${plan.name}`, qty:1, total:suma}],
+      total:suma, method:metodaText, issued_at:od, paid_at:od}).catch(()=>{});
+    awardPurchaseCommission({buyer_id:u._id, amount:suma, product_name:`Členstvo ${plan.name}`}).catch?.(()=>{});
+    const po=await q.one(db.memberships,{user_id:u._id, status:'active'});
+    await auditLog(req,'membership_backfill',u._id,{clenstvo_do:bezi?String(bezi.expires_at).slice(0,10):null},
+      {plan:planId, od, do:po?String(po.expires_at).slice(0,10):null, suma, metoda}, String(req.body.reason||''));
+    console.log('🗓️ Dodatočný zápis členstva: '+u.name+' '+plan.name+' od '+od+' ('+suma.toFixed(2)+' € '+metoda+')');
+    res.json({ok:true, apply:true, klientka:u.name, plan:plan.name, od, suma, metoda,
+      clenstvo_do: po ? String(po.expires_at).slice(0,10) : null });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Presun vstupov z permanentky na iný účet (Marek 27. 9. 2026: Anna Zemanová → Michaela
 // Antálková). Stáva sa, že permanentku kúpi jedna a chodí druhá, prípadne si ju klientka
 // kúpi na zlý účet. Peniaze sa nikam nevracajú a v účtovníctve sa nemení nič — mení sa len

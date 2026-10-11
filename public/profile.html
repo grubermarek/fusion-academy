@@ -389,10 +389,31 @@ async function adminEditMonths(userId, current){
 }
 function showPreviewBar(txt){ const b=document.getElementById('bgPrevBar'); if(b){ document.getElementById('bgPrevTxt').textContent=txt; b.classList.add('on'); } }
 function endPreview(){ applyProfileBg(P.bg_tier); const b=document.getElementById('bgPrevBar'); if(b) b.classList.remove('on'); }
+// Profil „iba sa načítava" (Marek 13. 9., 15. 9., 16. 9., 21. 9. a 11. 10. 2026 — dlhodobý
+// problém): keď request zamrzol alebo padol (slabý signál v sále, hiccup Railway, prebudený
+// telefón), spinner tu ostal navždy a nebolo na čo kliknúť. Preto má načítanie časový limit,
+// jedno automatické zopakovanie a pri zlyhaní vždy hlášku s tlačidlom „Skúsiť znova".
+const PROFIL_LIMIT=12000;
+async function fetchProfil(){
+  const ctrl=new AbortController(), t=setTimeout(()=>ctrl.abort(), PROFIL_LIMIT);
+  try{ return await fetch('/api/profile/'+encodeURIComponent(uid),{credentials:'include', signal:ctrl.signal}); }
+  finally{ clearTimeout(t); }
+}
+function profilChyba(detail){
+  const h=document.getElementById('host'); if(!h) return;
+  h.innerHTML='<div class="empty">'+esc(T('profile.load_fail'))
+    +(detail?('<br><small style="opacity:.6">'+esc(detail)+'</small>'):'')
+    +'<br><br><button class="btn" id="profRetry">'+esc(T('profile.retry'))+'</button></div>';
+  const b=document.getElementById('profRetry');
+  if(b) b.onclick=()=>{ h.innerHTML='<div class="empty">'+esc(T('profile.loading'))+'</div>'; spustiLoad(); };
+}
+function spustiLoad(){ load().catch(e=>{ console.error('profil:', e); profilChyba(e&&e.name==='AbortError'?'Server neodpovedal.':(e&&e.message||'')); }); }
 async function load(){
-  const r=await fetch('/api/profile/'+encodeURIComponent(uid),{credentials:'include'});
+  let r;
+  try{ r=await fetchProfil(); }
+  catch(e){ await new Promise(s=>setTimeout(s,800)); r=await fetchProfil(); }   // jeden pokus navyše
   if(r.status===401){ location.href='/?next='+encodeURIComponent(location.pathname); return; }
-  if(!r.ok){ let em=''; try{ em=(await r.json()).error||''; }catch(e){} document.getElementById('host').innerHTML='<div class="empty">'+T('profile.load_fail')+(em?('<br><small style="opacity:.6">'+esc(em)+'</small>'):'')+' <br><small style="opacity:.5">('+r.status+')</small></div>'; return; }
+  if(!r.ok){ let em=''; try{ em=(await r.json()).error||''; }catch(e){} profilChyba((em?em+' ':'')+'('+r.status+')'); return; }
   P=await r.json();
   // Apply the logged-in viewer's saved language (server wins over localStorage)
   // Jazyk z účtu: obnoviť najviac raz. Keď sa nedá uložiť (localStorage blokovaný), stránka by sa obnovovala
@@ -403,7 +424,7 @@ async function load(){
     if(!uz){ location.reload(); return; }
   }
   render();
-  FA_I18N.mount('langMount'); // switcher lives inside the settings panel
+  try{ FA_I18N.mount('langMount'); }catch(e){}   // po vykreslení už profil nesmie nič zhodiť
   // Návrat z platby tipu
   const tp=new URLSearchParams(location.search).get('tip');
   if(tp==='success'){ alert('💛 Ďakujeme za tip! Platba prebehla, tip sa čoskoro zobrazí na profile.'); history.replaceState({},'',location.pathname); if(P.can_receive_tips) setTimeout(loadTips,1500); }
@@ -1447,7 +1468,7 @@ async function openFriendsList(){
 async function addFriend(){ const d=await post('/api/friends/request',{to:uid}); if(d.ok){P.friend_state=d.state;render();} }
 async function accept(){ const d=await post('/api/friends/accept',{from:uid}); if(d.ok){P.friend_state=d.state;render();} }
 async function rmFriend(){ const d=await post('/api/friends/remove',{user:uid}); if(d.ok){P.friend_state='none';render();} }
-load();
+spustiLoad();
 /* ── Predaj / dar vstupenky priamo z osobného profilu klientky ──────────────
    Rovnaká serverová cesta ako v admin karte: ceny ráta server, dar nuluje server. */
 let _evTypes=[], _evClient=null, _evMember=false;

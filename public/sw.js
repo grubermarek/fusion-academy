@@ -1,4 +1,4 @@
-﻿const CACHE = 'fa-v730';
+﻿const CACHE = 'fa-v731';
 const STATIC = ['/fa-theme.css','/aurora.css','/logo-mark.png','/logo-wordmark.png'];
 
 self.addEventListener('install', e=>{
@@ -16,10 +16,16 @@ self.addEventListener('fetch', e=>{
   const isCode = /\.(js|css)(\?|$)/.test(e.request.url);
   if(isHTML || isCode){
     // network-first for pages so deploys show up immediately
-    e.respondWith(
-      fetch(e.request).then(r=>{ if(r.ok){ const c=r.clone(); caches.open(CACHE).then(cache=>cache.put(e.request,c)); } return r; })
-        .catch(()=>caches.match(e.request))
-    );
+    // Zamrznutá sieť (mobil v sále, prebudený telefón) nesmie nechať stránku visieť —
+    // po 7 s vezmeme verziu z cache, ak ju máme. Profil „iba sa načítava" (Marek 11. 10. 2026).
+    e.respondWith((async()=>{
+      const siet = fetch(e.request).then(r=>{ if(r.ok){ const c=r.clone(); caches.open(CACHE).then(cache=>cache.put(e.request,c)); } return r; });
+      try{
+        const r = await Promise.race([siet, new Promise(res=>setTimeout(()=>res('__cakanie__'), 7000))]);
+        if(r!=='__cakanie__') return r;
+        return (await caches.match(e.request)) || siet;   // cache nemáme? nech sieť dobehne
+      }catch(err){ return (await caches.match(e.request)) || Response.error(); }
+    })());
     return;
   }
   e.respondWith(
