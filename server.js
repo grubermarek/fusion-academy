@@ -12033,6 +12033,54 @@ app.post('/api/service/clenstvo-zapisat', async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Preloženie už zapísanej platby na deň, kedy klientka naozaj zaplatila (Marek 11. 10. 2026:
+// Michaela Nosalová platila v utorok, zapísalo sa to až na hodine v nedeľu). Posunie dátum
+// tržby, začiatok členstva a záznam o hotovosti u trénera — koniec členstva NIE, ten už
+// klientka v appke vidí. Doklad sa nemení, číslovanie faktúr musí ísť po dátumoch.
+// Mesiac tržby sa dá preniesť len vedome (`aj_mesiac:true`) — inak by sa menili uzavreté
+// mesačné súčty. Bez `apply:true` je to suchý náhľad.
+app.post('/api/service/platba-prelozit', async(req,res)=>{
+  if(!servisToken(req)) return res.status(404).end();
+  try{
+    const email=String(req.body.email||'').trim().toLowerCase();
+    const u = email ? await q.one(db.users,{email}) : await q.one(db.users,{_id:String(req.body.user_id||'')});
+    if(!u) return res.status(404).json({error:'Klientka nenájdená'});
+    const tx=await q.one(db.transactions,{_id:String(req.body.transaction_id||'')});
+    if(!tx) return res.status(404).json({error:'Platba nenájdená'});
+    if(tx.user_id!==u._id) return res.status(400).json({error:'Platba patrí inej klientke'});
+    const na=String(req.body.na||'').slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(na) || isNaN(Date.parse(na))) return res.status(400).json({error:'Neplatný dátum na (YYYY-MM-DD)'});
+    if(na>today()) return res.status(400).json({error:'Dátum je v budúcnosti'});
+    const zD=String(tx.date||String(tx.created_at||'').slice(0,10)).slice(0,10);
+    if(na.slice(0,7)!==zD.slice(0,7) && req.body.aj_mesiac!==true)
+      return res.status(400).json({error:'Iný mesiac ('+zD.slice(0,7)+' → '+na.slice(0,7)+') — pošli aj_mesiac:true, ak to je zámer'});
+
+    // Členstvo, ktoré touto platbou vzniklo: aktívne a založené v ten istý deň
+    const clen=(await q.find(db.memberships,{user_id:u._id, status:'active'}))
+      .filter(m=>!m._type && String(m.created_at||'').slice(0,10)===zD)
+      .sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)))[0] || null;
+    // Hotovosť u trénera za tú istú platbu
+    const hot=(await q.find(db.payouts,{_type:'cash_collected'}))
+      .filter(p=>String(p.date||'').slice(0,10)===zD && Math.abs((+p.amount||0)-(+tx.amount||0))<0.01
+        && String(p.note||'').includes(String(u.name||'').split(' ').slice(-1)[0]))[0] || null;
+
+    const nahlad={ klientka:u.name, suma:tx.amount, z:zD, na,
+      clenstvo: clen ? {od:String(clen.started_at).slice(0,10)+' → '+na, do:String(clen.expires_at).slice(0,10)+' (nemenim)'} : 'nenašiel som členstvo z toho dňa',
+      hotovost: hot ? (String(hot.date)+' → '+na+' ('+hot.trainer_name+')') : 'nenašiel som záznam o hotovosti' };
+    if(req.body.apply!==true) return res.json({ok:true, apply:false, nahlad});
+
+    const poznamka=String(tx.note||'').replace(/ · platené [0-9.]+$/,'')+' · platené '+na.split('-').reverse().join('. ');
+    await q.update(db.transactions,{_id:tx._id},{$set:{date:na, month:na.slice(0,7), note:poznamka, date_moved_at:nowISO()}});
+    if(clen) await q.update(db.memberships,{_id:clen._id},{$set:{started_at:new Date(na+'T12:00:00.000Z').toISOString()}});
+    if(hot) await q.update(db.payouts,{_id:hot._id},{$set:{date:na, month:na.slice(0,7)}});
+    await auditLog(req,'payment_redate',tx._id,{datum:zD, clenstvo_od:clen?String(clen.started_at).slice(0,10):null},
+      {datum:na, clenstvo_od:clen?na:null, hotovost:!!hot}, String(req.body.reason||''));
+    console.log('🗓️ Platba preložená: '+u.name+' '+(+tx.amount).toFixed(2)+' € '+zD+' → '+na);
+    res.json({ok:true, apply:true, klientka:u.name, suma:tx.amount, z:zD, na,
+      clenstvo_od: clen?na:null, clenstvo_do: clen?String(clen.expires_at).slice(0,10):null, hotovost:!!hot });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Presun vstupov z permanentky na iný účet (Marek 27. 9. 2026: Anna Zemanová → Michaela
 // Antálková). Stáva sa, že permanentku kúpi jedna a chodí druhá, prípadne si ju klientka
 // kúpi na zlý účet. Peniaze sa nikam nevracajú a v účtovníctve sa nemení nič — mení sa len
