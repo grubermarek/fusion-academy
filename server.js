@@ -12033,6 +12033,61 @@ app.post('/api/service/clenstvo-zapisat', async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Spätné potvrdenie hodiny, na ktorú tréner zabudol (Marek 12. 10. 2026: „Brezno som asi
+// zabudol potvrdiť po hodine, tie ženy na hodinách boli"). Keď sa hodina nepotvrdí, hodinu
+// po jej konci označí automat VŠETKY rezervácie ako „neprišla" — klientky prídu o návštevu
+// aj body, narastie im no_show_count a v Odídených klientoch vyzerajú, že prestali chodiť.
+// Toto spraví to isté, čo tréner v paneli: pripíše návštevu a zruší neprávom pripísané
+// „neprišla". Bez `apply:true` je to suchý náhľad. Opakovanie nič nezdvojí (attended sa preskočí).
+app.post('/api/service/session-potvrdit', async(req,res)=>{
+  if(!servisToken(req)) return res.status(404).end();
+  try{
+    const date=String(req.body.date||'').slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(Date.parse(date))) return res.status(400).json({error:'Neplatný dátum (YYYY-MM-DD)'});
+    if(date>today()) return res.status(400).json({error:'Hodina ešte nebola'});
+    const cls=await q.one(db.classes,{_id:String(req.body.class_id||'')});
+    if(!cls) return res.status(404).json({error:'Hodina nenájdená — pošli class_id'});
+    const rows=(await q.find(db.bookings,{class_id:cls._id, booking_date:date}))
+      .filter(b=>b.status==='confirmed');          // zrušené a už potvrdené sa neberú
+    if(!rows.length) return res.status(400).json({error:'Na tento termín nie je čo potvrdiť'});
+    const vynechaj=new Set((req.body.neprisli||[]).map(String));   // kto naozaj nebola
+
+    const zoznam=[];
+    for(const b of rows){
+      const u=b.user_id ? await q.one(db.users,{_id:b.user_id}) : null;
+      zoznam.push({ booking_id:b._id, klientka:u?.name||b.user_name||'?', pristup:b.access_method||'-',
+        teraz:b.attendance_status||'-', auto_neprisla:!!b.no_show_at,
+        akcia: vynechaj.has(String(b._id)) ? 'nechávam' : (b.attendance_status==='attended' ? 'už je' : 'pripíšem návštevu') });
+    }
+    if(req.body.apply!==true) return res.json({ok:true, apply:false, hodina:cls.name+' · '+cls.location, date, zoznam});
+
+    let pripisane=0, opravene=0;
+    for(const b of rows){
+      if(vynechaj.has(String(b._id)) || b.attendance_status==='attended') continue;
+      const bolaNeprisla = b.attendance_status==='no_show';
+      await q.update(db.bookings,{_id:b._id},{$set:{ status:'attended', attendance_status:'attended',
+        attended_at:nowISO(), attended_by:'service', attendance_source:'trainer',
+        ...(bolaNeprisla?{no_show_corrected_at:nowISO(), no_show_corrected_by:'service'}:{}) }});
+      if(b.user_id){
+        const u=await q.one(db.users,{_id:b.user_id});
+        if(u){
+          await creditAttendance(u).catch(()=>{});
+          // neprávom pripísané „neprišla" sa klientke odráta zo skóre
+          if(bolaNeprisla && (u.no_show_count||0)>0){
+            await q.update(db.users,{_id:u._id},{$set:{no_show_count:Math.max(0,(u.no_show_count||0)-1)}});
+            opravene++;
+          }
+        }
+      }
+      pripisane++;
+    }
+    await auditLog(req,'session_confirm_backfill',cls._id,{date},{pripisane, opravene},String(req.body.reason||''));
+    console.log('📋 Spätne potvrdená hodina: '+cls.name+' '+cls.location+' '+date+' — '+pripisane+' návštev');
+    res.json({ok:true, apply:true, hodina:cls.name+' · '+cls.location, date, pripisane, opravene,
+      klientky:zoznam.filter(x=>x.akcia==='pripíšem návštevu').map(x=>x.klientka)});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Preloženie už zapísanej platby na deň, kedy klientka naozaj zaplatila (Marek 11. 10. 2026:
 // Michaela Nosalová platila v utorok, zapísalo sa to až na hodine v nedeľu). Posunie dátum
 // tržby, začiatok členstva a záznam o hotovosti u trénera — koniec členstva NIE, ten už
