@@ -326,8 +326,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <div class="grp2" data-grp="marketing">
     <div class="grp2-h" onclick="toggleGrp(this)">Marketing <i class="bi bi-chevron-down ms-auto"></i></div>
     <div class="group-links" data-group="marketing">
-      <a class="nav-link" href="#" onclick="show('marketing')"><i class="bi bi-graph-up-arrow me-2"></i><span style="color:#C9A84C;font-weight:700">Marketing (CAC/LTV)</span></a>
-      <a class="nav-link" href="#" onclick="show('campaigns')"><i class="bi bi-megaphone me-2"></i>Kampane</a>
+      <a class="nav-link" href="#" onclick="show('campaigns')"><i class="bi bi-megaphone me-2"></i><span style="color:#C9A84C;font-weight:700">Marketing</span></a>
       <a class="nav-link" href="#" onclick="show('planovac')"><i class="bi bi-calendar-event me-2"></i><span style="color:#C9A84C;font-weight:700">Plánovač akcií</span> <span id="planovacBadge" class="badge bg-danger ms-1" style="display:none"></span></a>
       <a class="nav-link" href="#" onclick="show('sutaze')"><i class="bi bi-trophy me-2"></i>Súťaže</a>
       <a class="nav-link" href="#" onclick="show('outreach')"><i class="bi bi-send me-2"></i>Hromadné správy</a>
@@ -1160,86 +1159,6 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   </div>
 
   <!-- MARKETING -->
-  <div class="section" id="s-marketing">
-    <h4 class="fw-bold mb-1">📈 Marketing — CAC &amp; LTV</h4>
-    <p class="text-muted small mb-3">Odkiaľ prichádzajú klienti, koľko stoja a koľko prinesú. Výdavky na reklamu zadávaj nižšie — CAC sa počíta automaticky.</p>
-
-    <!-- Obchod analytics -->
-    <div class="card bg-dark border-secondary mb-3"><div class="card-body py-3">
-      <h6 class="fw-bold mb-2" style="color:#C9A84C">🛍️ Obchod — tento mesiac</h6>
-      <div id="shopAnalytics" class="small text-muted">Načítavam…</div>
-    </div></div>
-
-    <!-- KPI cards -->
-    <div id="cacLtv2" style="margin-bottom:14px"></div><div class="row g-2 mb-3" id="mkKpis"></div>
-
-    <!-- Funnel -->
-    <div class="card bg-dark border-secondary mb-3">
-      <div class="card-body">
-        <h6 class="fw-bold mb-3"><i class="bi bi-funnel me-2 text-info"></i>Funnel klienta</h6>
-        <div id="mkFunnel" class="d-flex gap-2 flex-wrap"></div>
-      </div>
-    </div>
-
-    <!-- Sources table -->
-    <div class="card bg-dark border-secondary mb-3">
-      <div class="card-body p-0">
-        <div class="p-3 pb-0"><h6 class="fw-bold"><i class="bi bi-diagram-3 me-2 text-warning"></i>Výkon podľa zdroja</h6></div>
-        <div class="table-responsive"><table class="table table-dark table-hover mb-0 align-middle" style="font-size:.85rem">
-          <thead><tr>
-            <th>Zdroj</th><th>Klienti</th><th>Tržby</th><th>LTV</th><th>Výdavky</th><th>CAC</th><th>LTV:CAC</th><th>% 1. hodina</th><th>% členstvo</th>
-          </tr></thead>
-          <tbody id="mkSourcesBody"></tbody>
-        </table></div>
-      </div>
-    </div>
-
-    <!-- Occupancy -->
-    <div class="card bg-dark border-secondary mb-3">
-      <div class="card-body p-0">
-        <div class="p-3 pb-0 d-flex justify-content-between"><h6 class="fw-bold"><i class="bi bi-bar-chart-steps me-2 text-success"></i>Obsadenosť hodín (posledné 4 týždne)</h6></div>
-        <div class="table-responsive"><table class="table table-dark table-hover mb-0 align-middle" style="font-size:.83rem">
-          <thead><tr><th>Hodina</th><th>Tréner</th><th>Miesto</th><th>Kapacita</th><th>Ø rezervácií</th><th>Obsadenosť</th><th>No-shows</th></tr></thead>
-          <tbody id="mkOccBody"></tbody>
-        </table></div>
-      </div>
-    </div>
-
-    <div class="row g-3">
-      <!-- Ad spend form -->
-      <div class="col-md-5">
-        <div class="card bg-dark border-secondary h-100">
-          <div class="card-body">
-            <h6 class="fw-bold mb-3"><i class="bi bi-cash-coin me-2 text-success"></i>Výdavky na reklamu</h6>
-            <div class="row g-2 mb-2">
-              <div class="col-5"><input type="month" id="asMonth" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
-              <div class="col-4">
-                <select id="asSource" class="form-select form-select-sm bg-dark text-light border-secondary">
-                  <option value="meta">Meta</option><option value="google">Google</option><option value="tiktok">TikTok</option><option value="other">Iné</option>
-                </select>
-              </div>
-              <div class="col-3"><input type="number" id="asAmount" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="€" min="0" step="0.01"></div>
-            </div>
-            <button class="btn btn-sm btn-warning fw-bold" onclick="saveAdspend()">💾 Uložiť výdavok</button>
-            <div class="mt-3" id="asList"></div>
-          </div>
-        </div>
-      </div>
-      <!-- Monthly chart-ish table -->
-      <div class="col-md-7">
-        <div class="card bg-dark border-secondary h-100">
-          <div class="card-body">
-            <h6 class="fw-bold mb-3"><i class="bi bi-calendar3 me-2 text-info"></i>Mesačný vývoj (12 mes.)</h6>
-            <div class="table-responsive"><table class="table table-dark table-sm mb-0 align-middle" style="font-size:.8rem">
-              <thead><tr><th>Mesiac</th><th>Noví klienti</th><th>Zdroje</th><th>Tržby</th><th>Výdavky</th><th>CAC</th></tr></thead>
-              <tbody id="mkMonthlyBody"></tbody>
-            </table></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- PLÁNOVAČ AKCIÍ A KAMPANÍ -->
   <div class="section" id="s-planovac" style="max-width:1150px">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
@@ -1312,68 +1231,135 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
 
   <!-- CAMPAIGNS -->
   <!-- max-width: na ultrawide monitoroch sa riadky lievika neroztiahnu cez celú obrazovku -->
-  <div class="section" id="s-campaigns" style="max-width:1100px">
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-      <div><h4 class="fw-bold mb-0">📣 Marketingové kampane</h4>
-        <p class="text-muted small mb-0">Zadaj investíciu a čísla — metriky (CTR, CPC, ROAS, ROI, CAC…) sa počítajú automaticky. Tržby sa priradia podľa <code>utm_campaign</code>.</p></div>
-      <button class="btn btn-sm btn-outline-light me-2" onclick="syncCampaigns()" title="Stiahne z Meta Ads aktuálny výdaj a stav kampaní"><i class="bi bi-arrow-repeat me-1"></i>Obnoviť z Meta</button>
-      <button class="btn btn-sm btn-brand" onclick="openCampaign()"><i class="bi bi-plus-lg me-1"></i>Nová kampaň</button>
+  <!-- MARKETING — jedna sekcia (12. 10. 2026): prehľad · kampane · lievik · zdroje.
+       Predtým to boli dve položky v menu (Marketing CAC/LTV + Kampane), ktoré si
+       navzájom opakovali útratu, ROAS, CAC aj kohortovú tabuľku. -->
+  <div class="section" id="s-campaigns" style="max-width:1200px">
+    <div class="pen-head">
+      <div>
+        <div class="pen-title"><span class="pen-ic">📣</span>Marketing</div>
+        <div class="pen-subt" id="mkSubt">Koľko míňame na reklamu a čo z toho príde</div>
+      </div>
+      <div class="pen-actions">
+        <select class="form-select form-select-sm bg-dark text-light border-secondary" id="adMonth" style="width:auto" onchange="mkObdobie(this.value)" aria-label="Obdobie">
+          <option value="all">Celá história</option>
+        </select>
+        <button class="btn btn-sm pen-btn" onclick="mkSync()" title="Stiahne z Meta Ads útratu, stav kampaní a mesačné čísla"><i class="bi bi-arrow-repeat me-1"></i>Obnoviť z Meta</button>
+        <button class="btn btn-sm btn-brand" onclick="openCampaign()"><i class="bi bi-plus-lg me-1"></i>Nová kampaň</button>
+      </div>
     </div>
-    <!-- CELÝ REKLAMNÝ ÚČET — všetky kampane, nie len založené karty -->
-    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
-      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-        <div>
-          <h6 class="fw-bold mb-0">💸 Celý reklamný účet</h6>
-          <div class="text-muted" style="font-size:.75rem" id="adSyncedAt">—</div>
+    <div class="pen-nav mb-3" id="mkNav"></div>
+
+    <!-- ── PREHĽAD ─────────────────────────────────────────────────────────── -->
+    <div class="mk-pane" id="mkp-prehlad">
+      <div class="row g-2 mb-3" id="mkKpis"><div class="col-12 text-muted small py-3">Načítavam…</div></div>
+      <div id="mkAlerts"></div>
+      <div class="row g-3">
+        <div class="col-lg-5">
+          <div class="card bg-dark border-secondary h-100"><div class="card-body">
+            <h6 class="fw-bold mb-3"><i class="bi bi-funnel me-2 text-info"></i>Cesta klientky</h6>
+            <div id="mkFunnel" class="d-flex gap-2 flex-wrap"></div>
+            <div class="text-muted mt-2" style="font-size:.68rem">Celá appka, nielen reklama. Kadiaľ chodia ľudia z reklamy nájdeš v záložke <b>Lievik</b>.</div>
+          </div></div>
         </div>
-        <div class="d-flex gap-2 align-items-center flex-wrap">
-          <select class="form-select form-select-sm bg-dark text-light border-secondary" id="adMonth" style="width:auto" onchange="loadAds()"></select>
-          <button class="btn btn-sm btn-outline-light" onclick="adSync()" title="Stiahne z Meta Ads všetky kampane a ich mesačné čísla"><i class="bi bi-arrow-repeat me-1"></i>Stiahnuť z Meta</button>
-        </div>
-      </div>
-      <div id="adOverview" class="small text-muted">Načítavam…</div>
-    </div></div>
-    <!-- Strážca merania reklám (16. 9.) -->
-    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
-      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-        <h6 class="fw-bold mb-0">🩺 Meranie reklám</h6>
-        <button class="btn btn-sm btn-outline-warning" id="meranieBtn" onclick="skontrolujMeranie()">Skontrolovať teraz</button>
-      </div>
-      <div id="meraniePanel" class="small text-muted">Načítavam…</div>
-    </div></div>
-    <!-- Lievik stránok (19. 9.): kam sa návštevníčky z reklám dostanú — načítanie, formulár, odoslanie, skúška -->
-    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
-      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-        <h6 class="fw-bold mb-0">📶 Lievik stránok</h6>
-        <div class="d-flex align-items-center gap-2 flex-wrap">
-          <select class="form-select form-select-sm bg-dark text-light border-secondary" id="lievikDni" style="width:auto" onchange="loadLievik()">
-            <option value="7">posledných 7 dní</option><option value="30">posledných 30 dní</option><option value="90">posledných 90 dní</option>
-          </select>
-          <select class="form-select form-select-sm bg-dark text-light border-secondary" id="landingRezim" style="width:auto" onchange="nastavLandingRezim(this.value)" title="Čo sa stane po rezervácii na /prva-hodina">
-            <option value="karta">skúška s kartou</option><option value="bez_karty">skúška bez karty</option><option value="ab">A/B test 50:50</option>
-          </select>
+        <div class="col-lg-7">
+          <div class="card bg-dark border-secondary h-100"><div class="card-body">
+            <h6 class="fw-bold mb-3"><i class="bi bi-calendar3 me-2 text-info"></i>Mesačný vývoj</h6>
+            <div id="mkMonthly" class="small text-muted">Načítavam…</div>
+          </div></div>
         </div>
       </div>
-      <div id="lievikPanel" class="small text-muted">Načítavam…</div>
-    </div></div>
-    <!-- META ADS prehľad -->
-    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
-      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-        <h6 class="fw-bold mb-0">📘 Meta Ads (Facebook / Instagram)</h6>
-        <span id="metaSetupStatus" class="small"></span>
+      <details class="mt-3">
+        <summary style="cursor:pointer;color:#9d9788;font-size:.85rem">🔌 Napojenie na Metu a kontrola merania</summary>
+        <div class="card bg-dark border-secondary mt-2"><div class="card-body">
+          <h6 class="fw-bold mb-2">📘 Meta Ads (Facebook / Instagram)</h6>
+          <div id="metaAdsPanel" class="text-muted small mb-3">Načítavam…</div>
+          <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+            <h6 class="fw-bold mb-0">🩺 Meranie reklám</h6>
+            <button class="btn btn-sm btn-outline-warning" id="meranieBtn" onclick="skontrolujMeranie()">Skontrolovať teraz</button>
+          </div>
+          <div id="meraniePanel" class="small text-muted">Načítavam…</div>
+        </div></div>
+      </details>
+    </div>
+
+    <!-- ── KAMPANE ─────────────────────────────────────────────────────────── -->
+    <div class="mk-pane" id="mkp-kampane" hidden>
+      <div id="mkKampane"><div class="text-muted small py-3">Načítavam…</div></div>
+      <details class="mt-3">
+        <summary style="cursor:pointer;color:#9d9788;font-size:.85rem">📐 Kohorty CAC → LTV (detailná tabuľka)</summary>
+        <div id="cacLtv" class="mt-2"></div>
+      </details>
+    </div>
+
+    <!-- ── LIEVIK ──────────────────────────────────────────────────────────── -->
+    <div class="mk-pane" id="mkp-lievik" hidden>
+      <div class="card bg-dark border-secondary mb-3"><div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+          <h6 class="fw-bold mb-0">📶 Lievik stránok</h6>
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <select class="form-select form-select-sm bg-dark text-light border-secondary" id="lievikDni" style="width:auto" onchange="loadLievik()" aria-label="Obdobie lievika">
+              <option value="7">posledných 7 dní</option><option value="30">posledných 30 dní</option><option value="90">posledných 90 dní</option>
+            </select>
+            <select class="form-select form-select-sm bg-dark text-light border-secondary" id="landingRezim" style="width:auto" onchange="nastavLandingRezim(this.value)" title="Čo sa stane po rezervácii na /prva-hodina">
+              <option value="karta">skúška s kartou</option><option value="bez_karty">skúška bez karty</option><option value="ab">A/B test 50:50</option>
+            </select>
+          </div>
+        </div>
+        <div id="lievikPanel" class="small text-muted">Načítavam…</div>
+      </div></div>
+      <div class="card bg-dark border-secondary mb-3"><div class="card-body">
+        <h6 class="fw-bold mb-2">🪣 Lievik leadov (Zumba Leady jún 2026)</h6>
+        <div id="leadFunnelPanel" class="small text-muted">Načítavam…</div>
+      </div></div>
+      <div class="card bg-dark border-secondary"><div class="card-body">
+        <h6 class="fw-bold mb-2">🛍️ Obchod — tento mesiac</h6>
+        <div id="shopAnalytics" class="small text-muted">Načítavam…</div>
+      </div></div>
+    </div>
+
+    <!-- ── ZDROJE A VÝDAVKY ────────────────────────────────────────────────── -->
+    <div class="mk-pane" id="mkp-zdroje" hidden>
+      <div class="card bg-dark border-secondary mb-3"><div class="card-body p-0">
+        <div class="p-3 pb-0"><h6 class="fw-bold mb-1"><i class="bi bi-diagram-3 me-2 text-warning"></i>Výkon podľa zdroja</h6>
+          <div class="text-muted mb-2" style="font-size:.7rem">Odkiaľ klientka prišla (prvý dotyk). CAC = zadané výdavky ÷ klientky zo zdroja.</div></div>
+        <div class="table-responsive"><table class="table table-dark table-hover mb-0 align-middle" style="font-size:.85rem;font-variant-numeric:tabular-nums">
+          <thead><tr>
+            <th>Zdroj</th><th class="text-end">Klienti</th><th class="text-end">Tržby</th><th class="text-end">LTV</th><th class="text-end">Výdavky</th><th class="text-end">CAC</th><th class="text-end">LTV:CAC</th><th class="text-end">% 1. hodina</th><th class="text-end">% členstvo</th>
+          </tr></thead>
+          <tbody id="mkSourcesBody"></tbody>
+        </table></div>
+      </div></div>
+      <div class="row g-3">
+        <div class="col-md-5">
+          <div class="card bg-dark border-secondary h-100"><div class="card-body">
+            <h6 class="fw-bold mb-1"><i class="bi bi-cash-coin me-2 text-success"></i>Výdavky na reklamu</h6>
+            <div class="text-muted mb-3" style="font-size:.7rem">Meta sa dopĺňa sama pri sťahovaní. Ručne zadávaj Google, TikTok a ostatné.</div>
+            <div class="row g-2 mb-2">
+              <div class="col-5"><label class="small text-muted" for="asMonth">Mesiac</label><input type="month" id="asMonth" class="form-control form-control-sm bg-dark text-light border-secondary" style="color-scheme:dark"></div>
+              <div class="col-4"><label class="small text-muted" for="asSource">Zdroj</label>
+                <select id="asSource" class="form-select form-select-sm bg-dark text-light border-secondary">
+                  <option value="meta">Meta</option><option value="google">Google</option><option value="tiktok">TikTok</option><option value="other">Iné</option>
+                </select>
+              </div>
+              <div class="col-3"><label class="small text-muted" for="asAmount">Suma (€)</label><input type="number" id="asAmount" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="€" min="0" step="0.01"></div>
+            </div>
+            <button class="btn btn-sm btn-warning fw-bold" onclick="saveAdspend()">💾 Uložiť výdavok</button>
+            <div class="mt-3" id="asList"></div>
+          </div></div>
+        </div>
+        <div class="col-md-7">
+          <div class="card bg-dark border-secondary h-100"><div class="card-body p-0">
+            <div class="p-3 pb-0"><h6 class="fw-bold mb-1"><i class="bi bi-bar-chart-steps me-2 text-success"></i>Voľná kapacita hodín</h6>
+              <div class="text-muted mb-2" style="font-size:.7rem">Posledné 4 týždne — kam ešte vieme posielať ľudí z reklamy.</div></div>
+            <div class="table-responsive"><table class="table table-dark table-hover mb-0 align-middle" style="font-size:.83rem;font-variant-numeric:tabular-nums">
+              <thead><tr><th>Hodina</th><th>Tréner</th><th>Miesto</th><th class="text-end">Kapacita</th><th class="text-end">Ø rezervácií</th><th class="text-end">Obsadenosť</th><th class="text-end">No-shows</th></tr></thead>
+              <tbody id="mkOccBody"></tbody>
+            </table></div>
+          </div></div>
+        </div>
       </div>
-      <div id="metaAdsPanel" class="text-muted small">Načítavam…</div>
-    </div></div>
-    <!-- Živý lievik leadovej kampane — počíta sa z databázy pri každom otvorení -->
-    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
-      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-        <h6 class="fw-bold mb-0">🪣 Lievik leadov (Zumba Leady jún 2026)</h6>
-        <span class="small text-muted">aktualizuje sa naživo pri každom otvorení</span>
-      </div>
-      <div id="leadFunnelPanel" class="small text-muted">Načítavam…</div>
-    </div></div>
-    <div id="cacLtv" style="margin-bottom:18px"></div>
-    <div id="campaignsList"><div class="text-muted py-4 text-center">Načítavam…</div></div>
+    </div>
   </div>
 
   <!-- VENČEKY -->
@@ -3118,6 +3104,8 @@ async function loadFusionAI(force){
 function show(sec){
   // Staré meno „transactions" = zoznam predajov (Peniaze → Faktúry a doklady → Predaje)
   if(sec==='transactions'){ show('predaje'); return; }
+  // Marketing a Kampane boli dve položky s tými istými číslami — od 12. 10. je to jedna sekcia
+  if(sec==='marketing'){ show('campaigns'); return; }
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   document.getElementById('s-'+sec).classList.add('active');
   document.querySelectorAll('.nav-link').forEach(a=>a.classList.remove('active'));
@@ -3157,7 +3145,6 @@ function show(sec){
   if(sec==='churn')loadChurn();
   if(sec==='leaderboard')loadLeaderboard('alltime');
   if(sec==='automation')loadAutomation();
-  if(sec==='marketing')loadMarketing();
   if(sec==='finance')loadFinance();
   if(sec==='invoices')initInvoices();
   if(sec==='audit')loadAudit();
@@ -3231,7 +3218,7 @@ async function kidsDel(id,name){ if(!confirm(`Zmazať ${name} zo zoznamu?`)) ret
 const EXPORTS=[
   {k:'members',   icon:'👥', title:'Členovia',       desc:'Kontakty, členstvá, návštevy'},
   {k:'crm',       icon:'🧭', title:'CRM / LTV',       desc:'LTV, zdroj, kampaň per klient'},
-  {k:'campaigns', icon:'📣', title:'Kampane',         desc:'Náklady, tržby, ROAS'},
+  {k:'campaigns', icon:'📣', title:'Marketing',       desc:'Útrata, kampane, CAC a LTV'},
   {k:'payments',  icon:'💳', title:'Platby (brána)',  desc:'Všetky prijaté online platby'},
 ];
 let _expMesiac=new Date().toISOString().slice(0,7);
@@ -6184,148 +6171,288 @@ async function loadCacLtv(hostId){
   </div>`;
 }
 
-async function syncCampaigns(){
-  showToast('Sťahujem z Meta Ads…','success');
-  const r=await api('/api/admin/campaigns/sync',{method:'POST'});
-  if(r?.ok) showToast(r.cached?'Dáta sú čerstvé (sync beží max. raz za 6 h)':`Aktualizovaných ${r.updated||0} kampaní ✓`,'success');
-  else showToast('Sync zlyhal: '+((r&&r.error)||'?'),'error');
-  loadCampaigns();
-}
-// ── Celý reklamný účet ───────────────────────────────────────────────────────
-// Karty kampaní pokrývajú len to, čo si niekto založil. Tu je všetko, čo účet
-// minul — vrátane doboostovaných príspevkov, ktoré v appke nikdy neboli vidieť.
-let adMesiac='all';
-// Zoznam kampaní: filter (bežiace / ukončené), hľadanie a zoradenie podľa stĺpca.
-// Dáta sa znova nesťahujú — prekreslí sa len tabuľka.
-let adRiadky=[], adSkryte=[], adFilter='all', adSort='spend', adSmer=-1, adHladaj='';
+// ═══ MARKETING — jedna sekcia (12. 10. 2026) ═════════════════════════════════
+// Predtým boli dve položky v menu (Marketing CAC/LTV + Kampane) a opakovali si
+// útratu, ROAS, CAC, mesačný vývoj aj celú kohortovú tabuľku. Teraz má každé
+// číslo JEDEN zdroj:
+//   útrata a kampane  → /api/admin/ads/overview (Meta účet, filter podľa mesiaca)
+//   kohorty a CAC     → /api/admin/cac-ltv
+//   LTV, zdroje, mesiace → /api/admin/marketing/stats
+//   karty kampaní     → /api/admin/campaigns (tržby priradené cez utm_campaign)
+const MK_TABY = [
+  { k:'prehlad', ic:'📊', t:'Prehľad',           d:'Koľko míňame na reklamu a čo z toho príde' },
+  { k:'kampane', ic:'📣', t:'Kampane',           d:'Všetky kampane účtu — bežiace aj ukončené' },
+  { k:'lievik',  ic:'📶', t:'Lievik',            d:'Kde ľudia z reklamy odpadávajú' },
+  { k:'zdroje',  ic:'🧭', t:'Zdroje a výdavky',  d:'Odkiaľ chodia klientky a koľko stoja' },
+];
+const MK = { tab:'prehlad', mesiac:'all', ads:null, stats:null, cac:null, karty:null, nacitane:{} };
 function adEur(x){ return (Math.round((+x||0)*100)/100).toLocaleString('sk-SK',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'; }
 function adNum(x){ return (+x||0).toLocaleString('sk-SK'); }
-async function loadAds(){
-  const sel=document.getElementById('adMonth');
-  if(sel && sel.value) adMesiac=sel.value;
-  const box=document.getElementById('adOverview');
-  if(!box) return;
-  box.innerHTML='<div class="text-muted py-3">Načítavam…</div>';
-  const d=await api('/api/admin/ads/overview?month='+encodeURIComponent(adMesiac));
-  if(!d || !d.ok){ box.innerHTML='<div class="text-danger">Nepodarilo sa načítať: '+esc((d&&d.error)||'neznáma chyba')+'</div>'; return; }
+const mkPct=v=>v==null?'—':(+v).toFixed(0)+' %';
 
-  if(sel && !sel.dataset.filled){
-    sel.innerHTML='<option value="all">Celá história</option>'+
-      (d.mesiace_k_dispozicii||[]).map(m=>'<option value="'+m+'">'+m+'</option>').join('');
-    sel.value=adMesiac; sel.dataset.filled='1';
-  }
-  const sy=document.getElementById('adSyncedAt');
-  if(sy) sy.textContent = d.synced_at ? ('naposledy stiahnuté '+new Date(d.synced_at).toLocaleString('sk-SK')) : 'zatiaľ nestiahnuté';
+// ── dáta s jednoduchou cache (prepnutie záložky nesťahuje všetko odznova) ─────
+async function mkAds(){ if(!MK.ads) MK.ads=await api('/api/admin/ads/overview?month='+encodeURIComponent(MK.mesiac)); return MK.ads||{}; }
+async function mkStats(){ if(!MK.stats) MK.stats=await api('/api/admin/marketing/stats'); return MK.stats||{}; }
+async function mkCac(){ if(!MK.cac) MK.cac=await api('/api/admin/cac-ltv'); return MK.cac||{}; }
+async function mkKarty(){ if(!MK.karty) MK.karty=await api('/api/admin/campaigns'); return Array.isArray(MK.karty)?MK.karty:[]; }
 
-  const t=d.totals||{};
-  const kachlicka=(nazov,hodnota,pod)=>'<div class="col-6 col-md-3 col-lg-2"><div class="p-2 rounded" style="background:#1b1e21">'+
-    '<div class="text-muted" style="font-size:.7rem">'+nazov+'</div>'+
-    '<div class="fw-bold" style="font-size:1.05rem">'+hodnota+'</div>'+
-    (pod?'<div class="text-muted" style="font-size:.68rem">'+pod+'</div>':'')+'</div></div>';
-
-  let h='<div class="row g-2 mb-3">'
-    + kachlicka('Minuté', adEur(t.spend), t.kampani+' kampaní v zozname'+(t.zive!=null?' · '+t.zive+' živých':'')+((t.nemerane&&t.nemerane.kampani)?' · z toho '+adEur(t.nemerane.spend)+' nemerané':''))
-    + kachlicka('Tržba za obdobie', adEur(t.revenue), 'celá appka, nie len z reklamy')
-    + kachlicka('ROAS', t.roas!=null? t.roas+'×' : '—', 'tržba / reklama')
-    + kachlicka('Kliky', adNum(t.clicks), 'CPC '+(t.cpc!=null?adEur(t.cpc):'—'))
-    + kachlicka('Zobrazenia', adNum(t.impressions), 'CTR '+(t.ctr!=null?t.ctr+' %':'—'))
-    + kachlicka('Leady', adNum(t.leads), 'cena '+(t.cpl!=null?adEur(t.cpl):'—'))
-    + '</div>';
-
-  // ROAS je za celú tržbu appky — nech si to nikto nepomýli s tržbou z reklamy
-  h+='<div class="text-muted mb-3" style="font-size:.72rem">ROAS tu porovnáva <b>celú</b> tržbu appky s reklamou — nie je to tržba priradená kampaniam. Priradené tržby sú na kartách kampaní nižšie.</div>';
-  if(t.nemerane && t.nemerane.kampani) h+='<div class="text-muted mb-3" style="font-size:.72rem">📦 <b>'+t.nemerane.kampani+'</b> starých kampaní bez merania (bez utm aj karty) za <b>'+adEur(t.nemerane.spend)+'</b> je skrytých zo zoznamu a z klikov, CPC a leadov. V „Minuté“, v mesiacoch aj v nákladoch ostávajú započítané.</div>';
-
-  const di=d.diery||{};
-  if(di.bez_utm || di.bez_karty || di.karta_bez_utm){
-    h+='<div class="alert alert-warning py-2 px-3 small mb-3">';
-    if(di.karta_bez_utm) h+='<div>🚨 <b>'+di.karta_bez_utm+'</b> kampaní má v appke kartu, ktorá čaká tržby cez <code>utm_campaign</code>, ale reklama ho neposiela — čísla vyzerajú ako neúspech, hoci sa len nemerajú'+((di.karta_bez_utm_mena||[]).length?': <b>'+di.karta_bez_utm_mena.map(esc).join(', ')+'</b>':'')+'.</div>';
-    if(di.bez_utm) h+='<div>⚠️ <b>'+di.bez_utm+'</b> kampaní za <b>'+adEur(di.bez_utm_spend)+'</b> nemá v odkaze <code>utm_campaign</code> — ich registrácie sa nedajú priradiť, tržba pri nich vždy vyjde 0 €. (Leadové kampane sem nerátame, tie merajú cez formulár.)</div>';
-    if(di.bez_karty) h+='<div>📄 <b>'+di.bez_karty+'</b> kampaní za <b>'+adEur(di.bez_karty_spend)+'</b> nemá kartu v Kampaniach — čísla sa nesledujú.</div>';
-    h+='</div>';
-  }
-
-  const rad=(d.rad||[]).slice().reverse();
-  if(rad.length){
-    h+='<div class="fw-bold mb-1" style="font-size:.85rem">Po mesiacoch</div>'
-      +'<div class="table-responsive mb-3"><table class="table table-sm table-dark table-hover align-middle mb-0" style="font-size:.78rem">'
-      +'<thead><tr><th>Mesiac</th><th class="text-end">Reklama</th><th class="text-end">Tržba appky</th><th class="text-end">ROAS</th><th class="text-end">Kliky</th><th class="text-end">Leady</th></tr></thead><tbody>'
-      + rad.map(r=>'<tr'+(r.month===adMesiac?' class="table-active"':'')+'>'
-        +'<td><a href="#" onclick="adNaMesiac(&#39;'+r.month+'&#39;);return false" class="text-decoration-none">'+r.month+'</a></td>'
-        +'<td class="text-end">'+adEur(r.spend)+(r.nemerane?'<div class="text-muted" style="font-size:.66rem">z toho nemerané '+adEur(r.nemerane)+'</div>':'')+'</td>'
-        +'<td class="text-end">'+adEur(r.revenue)+'</td>'
-        +'<td class="text-end '+(r.roas!=null && r.roas<1?'text-danger':'')+'">'+(r.roas!=null?r.roas+'×':'—')+'</td>'
-        +'<td class="text-end">'+adNum(r.clicks)+'</td>'
-        +'<td class="text-end">'+adNum(r.leads)+'</td></tr>').join('')
-      +'</tbody></table></div>';
-  }
-
-  adRiadky=d.rows||[]; adSkryte=d.skryte_riadky||[];
-  h+='<div class="d-flex justify-content-between align-items-end flex-wrap gap-2 mb-1">'
-    +'<div><div class="fw-bold" style="font-size:.85rem">Kampane ('+adRiadky.length+') — '+(adMesiac==='all'?'celá história':adMesiac)+'</div>'
-    +'<div class="text-muted" style="font-size:.68rem">„Beží" = Meta ju hlási ako aktívnu a minula peniaze tento alebo minulý mesiac. Doboostovaný príspevok ostáva v Mete navždy „ACTIVE", preto sa podľa stavu z Mety triediť nedá.</div></div>'
-    +'<input class="form-control form-control-sm bg-dark text-light border-secondary" style="width:180px" placeholder="hľadať kampaň…" value="'+esc(adHladaj)+'" oninput="adHladaj=this.value;adRender()">'
-    +'</div><div id="adRowsBox"></div>';
-  box.innerHTML=h;
-  adRender();
+function mkNav(){
+  const host=document.getElementById('mkNav'); if(!host) return;
+  host.innerHTML=MK_TABY.map(t=>`<button class="pen-tab${t.k===MK.tab?' on':''}" onclick="mkTab('${t.k}')" title="${escHtml(t.d)}">${t.ic} ${t.t}</button>`).join('');
+  const s=document.getElementById('mkSubt'); const cur=MK_TABY.find(t=>t.k===MK.tab);
+  if(s&&cur) s.textContent=cur.d;
+  MK_TABY.forEach(t=>{ const p=document.getElementById('mkp-'+t.k); if(p) p.hidden = t.k!==MK.tab; });
 }
-function adFiltruj(k){ adFilter=k; adRender(); }
-function adZoradit(k){ if(adSort===k) adSmer=-adSmer; else { adSort=k; adSmer=(k==='name'?1:-1); } adRender(); }
-// Prekreslí len zoznam kampaní (filter + hľadanie + zoradenie) — bez ďalšieho sťahovania z Mety.
-function adRender(){
-  const box=document.getElementById('adRowsBox'); if(!box) return;
-  const hl=(adHladaj||'').trim().toLowerCase();
-  const hlada=r=>!hl||String(r.name||'').toLowerCase().includes(hl);
-  const vsetky=adRiadky.filter(hlada), nemerane=adSkryte.filter(hlada);
-  const zivych=vsetky.filter(r=>r.ziva).length;
-  const vybrane = adFilter==='nemerane' ? nemerane
-    : vsetky.filter(r=>adFilter==='all'||(adFilter==='ziva')===!!r.ziva);
-  const hod=(r,k)=> k==='name'?String(r.name||'').toLowerCase():(r[k]==null?null:+r[k]);
-  const zorad=arr=>arr.slice().sort((a,b)=>{ const x=hod(a,adSort), y=hod(b,adSort);
-    if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1;   // prázdne hodnoty vždy dole
-    return (x>y?1:x<y?-1:0)*adSmer; });
-  const tl=(k,t)=>'<button class="btn btn-sm '+(adFilter===k?'btn-brand':'btn-outline-secondary')+'" onclick="adFiltruj(&#39;'+k+'&#39;)">'+t+'</button>';
-  let h='<div class="btn-group btn-group-sm mb-2">'+tl('all','Všetky '+vsetky.length)+tl('ziva','🟢 Bežia '+zivych)+tl('stara','⏸️ Ukončené '+(vsetky.length-zivych))
-    +(adSkryte.length?tl('nemerane','📦 Nemerané '+nemerane.length):'')+'</div>';
-  if(adFilter==='nemerane') h+='<div class="text-muted mb-2" style="font-size:.7rem">Staré kampane bez <code>utm_campaign</code> aj bez karty. Ich peniaze sú započítané v „Minuté", ale do klikov, CPC a leadov nie — registráciu k nim nevieme priradiť.</div>';
-  if(!vybrane.length){ box.innerHTML=h+'<div class="text-muted">V tomto výbere nie je nič.</div>'; return; }
-  const sip=k=>adSort===k?(adSmer===1?' ▲':' ▼'):'';
-  const th=(k,t,end)=>'<th'+(end?' class="text-end"':'')+' style="cursor:pointer;white-space:nowrap" onclick="adZoradit(&#39;'+k+'&#39;)" title="Klikni — zoradí podľa tohto stĺpca">'+t+sip(k)+'</th>';
+function mkTab(k){ MK.tab=k; mkNav(); mkNacitaj(); }
+function mkObdobie(v){
+  MK.mesiac=v||'all'; MK.ads=null; MK.nacitane={};            // mesiac mení len čísla z Meta účtu
+  const s=document.getElementById('adMonth'); if(s&&s.value!==MK.mesiac) s.value=MK.mesiac;
+  mkNacitaj();
+}
+// Jedno tlačidlo namiesto dvoch: stiahne čísla kariet aj celého účtu
+async function mkSync(){
+  showToast('Sťahujem z Meta Ads…','success');
+  const [a,b]=await Promise.all([
+    api('/api/admin/ads/sync',{method:'POST'}).catch(()=>null),
+    api('/api/admin/campaigns/sync',{method:'POST'}).catch(()=>null),
+  ]);
+  if(a&&a.ok) showToast('Stiahnuté: '+(a.campaigns||0)+' kampaní, '+(a.months||0)+' mesiacov ✓','success');
+  else showToast('Sťahovanie zlyhalo: '+((a&&a.error)||(b&&b.error)||'neznáma chyba'),'error');
+  MK.ads=MK.cac=MK.karty=MK.stats=null; MK.nacitane={};
+  const s=document.getElementById('adMonth'); if(s) s.dataset.filled='';
+  mkNacitaj();
+}
+async function mkNacitaj(){
+  const t=MK.tab;
+  if(t==='prehlad') return mkPrehlad();
+  if(t==='kampane') return mkKampaneTab();
+  if(t==='lievik'){ loadLievik(); loadLeadFunnel(); loadShopAnalytics(); return; }
+  if(t==='zdroje') return mkZdroje();
+}
+// vstupný bod zo sidebaru (menu volá loadCampaigns)
+async function loadCampaigns(){ mkNav(); mkNacitaj(); }
+async function loadMarketing(){ show('campaigns'); }   // stará položka menu
+
+// ── PREHĽAD ──────────────────────────────────────────────────────────────────
+async function mkPrehlad(){
+  const [a,s,c]=await Promise.all([mkAds(),mkStats(),mkCac()]);
+  const sel=document.getElementById('adMonth');
+  if(sel && !sel.dataset.filled && a.mesiace_k_dispozicii){
+    sel.innerHTML='<option value="all">Celá história</option>'+a.mesiace_k_dispozicii.map(m=>`<option value="${m}">${m}</option>`).join('');
+    sel.value=MK.mesiac; sel.dataset.filled='1';
+  }
+  const t=a.totals||{}, ct=c.totals||{}, st=(s&&s.totals)||{};
+  const cacPlat = ct.payers ? ct.spend/ct.payers : null;
+  const pomer = (cacPlat && st.avgLtv) ? +(st.avgLtv/cacPlat).toFixed(1) : null;
+  const clenky = (c.rows||[]).reduce((x,r)=>x+(+r.members||0),0);
+  const kachla=(ic,label,hod,pod,farba,klik)=>`<div class="col-6 col-md-3">
+    <div class="card bg-dark border-secondary h-100"${klik?` onclick="${klik}" style="cursor:pointer"`:''}>
+      <div class="card-body py-2 px-3">
+        <div class="small text-muted">${ic} ${label}</div>
+        <div class="fs-5 fw-bold" style="color:${farba||'#C9A84C'};font-variant-numeric:tabular-nums">${hod}</div>
+        <div class="text-muted" style="font-size:.68rem">${pod||''}</div>
+      </div></div></div>`;
+  document.getElementById('mkKpis').innerHTML =
+      kachla('💸','Minuté na reklamu', adEur(t.spend), (t.kampani||0)+' kampaní'+(t.zive!=null?' · '+t.zive+' beží':''), '#e8e2d2', "mkTab('kampane')")
+    + kachla('🎯','Získané klientky', adNum(ct.acquired), adNum(ct.attended)+' prišlo na hodinu', '#e8e2d2')
+    + kachla('💳','Platiace klientky', adNum(ct.payers), clenky+' z nich má členstvo', '#9fd894')
+    + kachla('🧾','CAC platiacej', cacPlat==null?'—':adEur(cacPlat), 'z meraných kampaní', '#7ea6d9')
+    + kachla('💛','Priem. LTV', st.avgLtv==null?'—':adEur(st.avgLtv), (st.payingClients||0)+' platiacich spolu', '#C9A84C')
+    + kachla('⚖️','LTV : CAC', pomer==null?'—':pomer+'×', 'zdravé je 3× a viac', pomer==null?'#888':(pomer>=3?'#9fd894':pomer>=1?'#e0b84c':'#e57373'))
+    + kachla('📈','ROAS (90 dní)', ct.roas90==null?'—':ct.roas90+'×', 'tržba kohort ÷ útrata', ct.roas90==null?'#888':(ct.roas90>=1?'#9fd894':'#e57373'))
+    + kachla('🔁','Obnovenie členstva', (st.renewalRate!=null?st.renewalRate+' %':'—'), (st.activeMembers||0)+' aktívnych členiek', '#4caf50');
+
+  // ── výstrahy: všetko, čo kazí meranie, na jednom mieste ──
+  const di=a.diery||{}, ne=t.nemerane||{};
+  const stale=(c.rows||[]).filter(r=>r.spend_stale).length;
+  const vyst=[];
+  if(di.karta_bez_utm) vyst.push({ t:'danger', txt:`<b>${di.karta_bez_utm}</b> kampaní má kartu, ktorá čaká tržby cez <code>utm_campaign</code>, ale reklama ho neposiela — čísla vyzerajú ako neúspech, hoci sa len nemerajú${(di.karta_bez_utm_mena||[]).length?': <b>'+di.karta_bez_utm_mena.map(escHtml).join(', ')+'</b>':''}.`});
+  if(di.bez_utm) vyst.push({ t:'warning', txt:`<b>${di.bez_utm}</b> kampaní za <b>${adEur(di.bez_utm_spend)}</b> nemá v odkaze <code>utm_campaign</code> — ich registrácie sa nedajú priradiť.`});
+  if(di.bez_karty) vyst.push({ t:'muted', txt:`<b>${di.bez_karty}</b> kampaní za <b>${adEur(di.bez_karty_spend)}</b> nemá kartu v appke — tržby a ROAS sa pri nich nesledujú.`});
+  if(ne.kampani) vyst.push({ t:'muted', txt:`<b>${ne.kampani}</b> starých kampaní bez merania za <b>${adEur(ne.spend)}</b> je mimo štatistík (v „Minuté" sú započítané) — nájdeš ich v Kampaniach pod filtrom 📦 Nemerané.`});
+  if(stale) vyst.push({ t:'warning', txt:`<b>${stale}</b> kampaní má zastaraný spend (vyše 7 dní) — klikni „Obnoviť z Meta".`});
+  document.getElementById('mkAlerts').innerHTML = vyst.length
+    ? `<div class="card bg-dark border-secondary mb-3"><div class="card-body py-2 px-3">
+        <div class="fw-bold mb-1" style="font-size:.8rem">⚠️ Čo kazí meranie</div>
+        ${vyst.map(v=>`<div class="${v.t==='danger'?'text-danger':v.t==='warning'?'text-warning':'text-muted'}" style="font-size:.76rem;line-height:1.5">${v.txt}</div>`).join('')}
+      </div></div>` : '';
+
+  // ── cesta klientky: jeden lievik (celá appka) ──
+  const f=(s&&s.funnel)||{};
+  const krok=(label,n,base)=>`<div style="flex:1;min-width:92px;background:rgba(201,168,76,.07);border:1px solid rgba(201,168,76,.25);border-radius:10px;padding:10px 12px;text-align:center">
+    <div class="fs-5 fw-bold" style="color:#C9A84C;font-variant-numeric:tabular-nums">${adNum(n)}</div><div class="small text-muted">${label}</div>
+    ${base?`<div class="small" style="color:#4caf50">${mkPct(100*n/base)}</div>`:''}</div>`;
+  document.getElementById('mkFunnel').innerHTML =
+    krok('Registrácia',f.registered||0,0)
+    + '<div class="align-self-center text-muted">→</div>' + krok('Prvá hodina',f.firstBooking||0,f.registered)
+    + '<div class="align-self-center text-muted">→</div>' + krok('Členstvo',f.membership||0,f.registered);
+
+  // ── mesačný vývoj: JEDNA tabuľka (predtým dve, každá s inými číslami) ──
+  const rad={}; (a.rad||[]).forEach(r=>rad[r.month]=r);
+  const mes=(s&&s.monthly)||[];
+  const riadky=mes.slice().reverse().map(m=>{
+    const r=rad[m.month]||{};
+    const spend=+(m.spend||r.spend||0), trzba=+(r.revenue!=null?r.revenue:m.revenue)||0;
+    return { month:m.month, spend, trzba, novi:m.newClients||0,
+      cac: (spend>0&&m.newClients>0)?spend/m.newClients:null,
+      roas: spend>0?+(trzba/spend).toFixed(2):null, nemerane:+r.nemerane||0 };
+  });
+  const maxSpend=Math.max(1,...riadky.map(r=>r.spend));
+  document.getElementById('mkMonthly').innerHTML = riadky.length
+    ? `<div class="table-responsive"><table class="table table-dark table-sm table-hover mb-0 align-middle" style="font-size:.78rem;font-variant-numeric:tabular-nums;white-space:nowrap">
+      <thead><tr><th>Mesiac</th><th class="text-end">Reklama</th><th class="text-end">Noví klienti</th><th class="text-end">CAC</th><th class="text-end">Tržba appky</th><th class="text-end">ROAS</th></tr></thead>
+      <tbody>${riadky.map(r=>`<tr${r.month===MK.mesiac?' class="table-active"':''}>
+        <td style="white-space:nowrap"><a href="#" onclick="mkObdobie('${r.month}');return false" class="text-decoration-none" title="Zobrazí čísla len za tento mesiac">${r.month}</a></td>
+        <td class="text-end" style="white-space:nowrap">${adEur(r.spend)}<div style="height:3px;border-radius:2px;background:linear-gradient(90deg,#C9A84C ${Math.round(100*r.spend/maxSpend)}%,#2a2a2a ${Math.round(100*r.spend/maxSpend)}%)"></div></td>
+        <td class="text-end">${r.novi||'—'}</td>
+        <td class="text-end">${r.cac==null?'—':adEur(r.cac)}</td>
+        <td class="text-end">${adEur(r.trzba)}</td>
+        <td class="text-end ${r.roas!=null&&r.roas<1?'text-danger':''}">${r.roas==null?'—':r.roas+'×'}</td></tr>`).join('')}</tbody></table></div>
+      <div class="text-muted mt-2" style="font-size:.66rem">Reklama = všetky zdroje (Meta sa dopĺňa sama, ostatné zadávaš v Zdrojoch). Tržba appky = všetky tržby mesiaca, nie len z reklamy — preto ROAS tu nie je návratnosť kampane; tú nájdeš pri kampani.</div>`
+    : '<div class="text-muted">Zatiaľ žiadne mesiace.</div>';
+  loadMetaStats(); loadMeranie();
+}
+
+// ── KAMPANE: jeden zoznam (účet + karty appky), filter, zoradenie, detail ─────
+let mkFilter='all', mkSort='spend', mkSmer=-1, mkHladaj='', mkOtvorene=null;
+function kampanBezi(c){
+  const dnes=new Date().toISOString().slice(0,10);
+  if(c.date_to && c.date_to < dnes) return false;
+  if(c.meta_status) return c.meta_status==='ACTIVE' && !(c.meta_synced_at && c.spend_7d===0);
+  return !c.date_to;
+}
+function mkRiadky(a,karty){
+  const kartaPre={}; karty.forEach(c=>{ if(c.meta_campaign_id && !kartaPre[c.meta_campaign_id]) kartaPre[c.meta_campaign_id]=c; });
+  const zdroj = mkFilter==='nemerane' ? (a.skryte_riadky||[]) : (a.rows||[]);
+  const zoznam = zdroj.map(r=>({ ...r, karta:kartaPre[r.campaign_id]||null }));
+  if(mkFilter==='nemerane') return zoznam;
+  // kampane bez väzby na Metu (Google, e-mail…) — nech nie sú neviditeľné
+  const mimo = karty.filter(c=>!c.meta_campaign_id).map(c=>({
+    campaign_id:'k'+c._id, name:c.name, status:null, ziva:kampanBezi(c), objective:(PLAT_LABEL[c.platform]||c.platform||''),
+    first_month:(c.date_from||'').slice(0,7)||null, last_month:(c.date_to||'').slice(0,7)||null,
+    spend:+c.spend||0, clicks:+c.clicks||0, impressions:+c.impressions||0, leads:0,
+    cpc:(+c.clicks? +( (+c.spend)/(+c.clicks) ).toFixed(2):null),
+    ctr:(+c.impressions? +(100*(+c.clicks)/(+c.impressions)).toFixed(2):null),
+    ma_utm:null, karta:c, mimo_mety:true }));
+  return zoznam.concat(mimo);
+}
+function mkHodnota(r,k){
+  if(k==='name') return String(r.name||'').toLowerCase();
+  if(k==='revenue') return r.karta ? +r.karta.attributed_revenue||0 : null;
+  if(k==='roas'){ const m=r.karta&&r.karta.metrics; return m&&m.roas!=null?+m.roas:null; }
+  if(k==='ziva') return r.ziva?1:0;
+  return r[k]==null?null:+r[k];
+}
+function mkFiltruj(k){ mkFilter=k; if(k==='nemerane'){ mkOtvorene=null; } mkKampaneTab(); }
+function mkZoradit(k){ if(mkSort===k) mkSmer=-mkSmer; else { mkSort=k; mkSmer=(k==='name'?1:-1); } mkKampaneVykresli(); }
+function mkRozbal(id){ mkOtvorene = (mkOtvorene===id?null:id); mkKampaneVykresli(); }
+async function mkKampaneTab(){
+  const [a,k]=await Promise.all([mkAds(),mkKarty()]);
+  MK._riadky=mkRiadky(a,k);
+  MK._pocty={ vsetky:(a.rows||[]).length + k.filter(c=>!c.meta_campaign_id).length,
+    zive:((a.rows||[]).filter(r=>r.ziva).length)+k.filter(c=>!c.meta_campaign_id&&kampanBezi(c)).length,
+    nemerane:(a.skryte_riadky||[]).length };
+  mkKampaneVykresli();
+  if(document.getElementById('cacLtv') && !MK.nacitane.cac){ MK.nacitane.cac=1; loadCacLtv('cacLtv'); }
+}
+function mkKampaneVykresli(){
+  const host=document.getElementById('mkKampane'); if(!host) return;
+  const p=MK._pocty||{}, hl=(mkHladaj||'').trim().toLowerCase();
+  const vybrane=(MK._riadky||[]).filter(r=>{
+    if(hl && !String(r.name||'').toLowerCase().includes(hl)) return false;
+    if(mkFilter==='ziva') return !!r.ziva;
+    if(mkFilter==='stara') return !r.ziva;
+    return true;
+  });
+  const zorad=arr=>arr.slice().sort((x,y)=>{ const a=mkHodnota(x,mkSort), b=mkHodnota(y,mkSort);
+    if(a==null&&b==null) return 0; if(a==null) return 1; if(b==null) return -1;   // prázdne vždy dole
+    return (a>b?1:a<b?-1:0)*mkSmer; });
+  const tl=(k,t)=>`<button class="btn btn-sm ${mkFilter===k?'btn-brand':'btn-outline-secondary'}" onclick="mkFiltruj('${k}')">${t}</button>`;
+  let h=`<div class="d-flex justify-content-between align-items-end flex-wrap gap-2 mb-2">
+    <div><div class="btn-group btn-group-sm">${tl('all','Všetky '+(p.vsetky||0))}${tl('ziva','🟢 Bežia '+(p.zive||0))}${tl('stara','⏸️ Ukončené '+((p.vsetky||0)-(p.zive||0)))}${p.nemerane?tl('nemerane','📦 Nemerané '+p.nemerane):''}</div>
+      <div class="text-muted mt-1" style="font-size:.68rem">„Beží" = Meta ju hlási ako aktívnu a minula peniaze tento alebo minulý mesiac. Doboostovaný príspevok ostáva v Mete navždy „ACTIVE". Klikni na riadok pre detail kampane.</div></div>
+    <input class="form-control form-control-sm bg-dark text-light border-secondary" style="width:180px" placeholder="hľadať kampaň…" value="${escHtml(mkHladaj)}" oninput="mkHladaj=this.value;mkKampaneVykresli()" aria-label="Hľadať kampaň">
+  </div>`;
+  if(mkFilter==='nemerane') h+='<div class="text-muted mb-2" style="font-size:.7rem">Staré kampane bez <code>utm_campaign</code> aj bez karty. Ich peniaze sú v „Minuté", ale do klikov, CPC a tržieb nie — registráciu k nim nevieme priradiť.</div>';
+  if(!vybrane.length){ host.innerHTML=h+'<div class="text-muted py-3">V tomto výbere nie je žiadna kampaň.</div>'; return; }
+  const sip=k=>mkSort===k?(mkSmer===1?' ▲':' ▼'):'';
+  const ar=k=>mkSort===k?` aria-sort="${mkSmer===1?'ascending':'descending'}"`:'';
+  const th=(k,t,end)=>`<th${end?' class="text-end"':''}${ar(k)} style="cursor:pointer;white-space:nowrap" onclick="mkZoradit('${k}')" title="Zoradí podľa stĺpca">${t}${sip(k)}</th>`;
   const riadok=r=>{
-    const utmZnak = r.ma_utm===true ? '<span class="text-success" title="odkaz nesie utm_campaign">utm ✓</span>'
+    const otv=mkOtvorene===r.campaign_id;
+    const kar=r.karta, m=(kar&&kar.metrics)||{};
+    const znak = r.ma_utm===true ? '<span class="text-success" title="odkaz nesie utm_campaign">utm ✓</span>'
       : r.ma_utm===false ? '<span class="text-warning" title="bez utm_campaign sa registrácie nedajú priradiť">bez utm</span>'
       : '<span class="text-muted">—</span>';
-    return '<tr>'
-      +'<td style="max-width:320px"><div class="text-truncate" title="'+esc(r.name)+'">'+esc(r.name)+'</div>'
-      +'<div class="text-muted" style="font-size:.68rem">'+esc(r.objective||'')+(r.first_month?' · '+r.first_month+(r.last_month&&r.last_month!==r.first_month?'–'+r.last_month:''):'')+'</div></td>'
-      +'<td><span class="badge '+(r.ziva?'bg-success':'bg-secondary')+'" style="font-size:.62rem">'+(r.ziva?'beží':'ukončená')+'</span>'
-      +'<div class="text-muted" style="font-size:.64rem">'+esc(r.status||'—')+'</div></td>'
-      +'<td class="text-end fw-bold">'+adEur(r.spend)+'</td>'
-      +'<td class="text-end">'+adNum(r.clicks)+'</td>'
-      +'<td class="text-end">'+(r.cpc!=null?adEur(r.cpc):'—')+'</td>'
-      +'<td class="text-end">'+(r.ctr!=null?r.ctr+' %':'—')+'</td>'
-      +'<td class="text-end">'+(r.leads?adNum(r.leads):'—')+'</td>'
-      +'<td>'+utmZnak+(r.karta?'<div class="text-muted text-truncate" style="font-size:.66rem;max-width:180px" title="'+esc(r.karta)+'">karta: '+esc(r.karta)+'</div>':'<div class="text-muted" style="font-size:.66rem">bez karty</div>')+'</td>'
-      +'</tr>'; };
-  h+='<div class="table-responsive"><table class="table table-sm table-dark table-hover align-middle mb-0" style="font-size:.78rem"><thead><tr>'
-    +th('name','Kampaň')+th('ziva','Stav')+th('spend','Minuté',1)+th('clicks','Kliky',1)+th('cpc','CPC',1)+th('ctr','CTR',1)+th('leads','Leady',1)
-    +'<th>Priradenie</th></tr></thead><tbody>';
-  if(adFilter==='all'){
-    const nadpis=(t,n)=>'<tr><td colspan="8" class="fw-bold text-muted" style="font-size:.68rem;letter-spacing:.06em;background:#15181a">'+t+' ('+n+')</td></tr>';
+    return `<tr onclick="mkRozbal('${r.campaign_id}')" style="cursor:pointer"${otv?' class="table-active"':''}>
+      <td style="max-width:300px"><div class="text-truncate" title="${escHtml(r.name)}">${otv?'▾':'▸'} ${escHtml(r.name)}</div>
+        <div class="text-muted" style="font-size:.68rem">${escHtml(r.objective||'')}${r.first_month?' · '+r.first_month+(r.last_month&&r.last_month!==r.first_month?'–'+r.last_month:''):''}</div></td>
+      <td><span class="badge ${r.ziva?'bg-success':'bg-secondary'}" style="font-size:.62rem">${r.ziva?'beží':'ukončená'}</span>
+        <div class="text-muted" style="font-size:.64rem">${escHtml(r.mimo_mety?'mimo Mety':(r.status||'—'))}</div></td>
+      <td class="text-end fw-bold">${adEur(r.spend)}</td>
+      <td class="text-end">${adNum(r.clicks)}</td>
+      <td class="text-end">${r.cpc!=null?adEur(r.cpc):'—'}</td>
+      <td class="text-end">${r.ctr!=null?r.ctr+' %':'—'}</td>
+      <td class="text-end">${kar?adEur(kar.attributed_revenue):'<span class="text-muted">—</span>'}</td>
+      <td class="text-end">${m.roas!=null?`<b style="color:${m.roas>=1?'#9fd894':'#e57373'}">${m.roas}×</b>`:'—'}</td>
+      <td>${znak}<div class="text-muted text-truncate" style="font-size:.66rem;max-width:150px">${kar?'karta: '+escHtml(kar.name):'bez karty'}</div></td>
+    </tr>` + (otv?`<tr><td colspan="9" style="background:#101010">${mkDetail(r)}</td></tr>`:'');
+  };
+  h+=`<div class="table-responsive"><table class="table table-sm table-dark table-hover align-middle mb-0" style="font-size:.78rem;font-variant-numeric:tabular-nums;white-space:nowrap"><thead><tr>
+    ${th('name','Kampaň')}${th('ziva','Stav')}${th('spend','Minuté',1)}${th('clicks','Kliky',1)}${th('cpc','CPC',1)}${th('ctr','CTR',1)}${th('revenue','Tržby',1)}${th('roas','ROAS',1)}<th>Meranie</th></tr></thead><tbody>`;
+  if(mkFilter==='all'){
+    const nad=(t,n)=>`<tr><td colspan="9" class="fw-bold text-muted" style="font-size:.68rem;letter-spacing:.06em;background:#15181a">${t} (${n})</td></tr>`;
     const z=zorad(vybrane.filter(r=>r.ziva)), u=zorad(vybrane.filter(r=>!r.ziva));
-    if(z.length) h+=nadpis('🟢 BEŽIA TERAZ',z.length)+z.map(riadok).join('');
-    if(u.length) h+=nadpis('⏸️ UKONČENÉ',u.length)+u.map(riadok).join('');
+    if(z.length) h+=nad('🟢 BEŽIA TERAZ',z.length)+z.map(riadok).join('');
+    if(u.length) h+=nad('⏸️ UKONČENÉ',u.length)+u.map(riadok).join('');
   } else h+=zorad(vybrane).map(riadok).join('');
-  box.innerHTML=h+'</tbody></table></div>';
+  host.innerHTML=h+'</tbody></table></div>';
 }
-function adNaMesiac(m){ adMesiac=m; const s=document.getElementById('adMonth'); if(s) s.value=m; loadAds(); }
-async function adSync(){
-  showToast('Sťahujem z Meta Ads…','success');
-  const d=await api('/api/admin/ads/sync',{method:'POST'});
-  if(d && d.ok) showToast('Stiahnuté: '+(d.campaigns||0)+' kampaní, '+(d.months||0)+' mesiacov ✓','success');
-  else showToast('Nepodarilo sa: '+((d&&d.error)||'neznáma chyba'),'error');
-  const s=document.getElementById('adMonth'); if(s) s.dataset.filled='';
-  loadAds();
+// Detail kampane v rozbalenom riadku: čísla z karty (tržby, ROI, CAC, LTV…),
+// alebo vysvetlenie, prečo sa pri tejto kampani nedajú merať.
+function mkDetail(r){
+  const c=r.karta;
+  if(!c) return `<div class="p-3 small text-muted">Táto kampaň nemá v appke kartu, takže tržby ani ROAS sa pri nej nepočítajú.
+    Založ ju cez <b>Nová kampaň</b> (rovnaký názov) a reklama musí v odkaze niesť <code>utm_campaign</code>.</div>`;
+  const m=c.metrics||{};
+  const met=(l,v,suf='')=>`<div class="col-6 col-md-3 col-lg-2"><div onclick="event.stopPropagation();metricInfo('${l.replace(/'/g,'')}')" title="Klikni pre vysvetlenie" style="background:#151515;border:1px solid #2a2a2a;border-radius:8px;padding:8px 10px;cursor:pointer">
+    <div class="text-muted" style="font-size:.62rem;text-transform:uppercase;letter-spacing:.04em">${l} <i class="bi bi-info-circle" style="opacity:.45"></i></div>
+    <div class="fw-bold" style="font-size:.92rem;font-variant-numeric:tabular-nums">${v==null?'—':v}${suf}</div></div></div>`;
+  return `<div class="p-3">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+      <div class="text-muted" style="font-size:.74rem">${c.date_from||''}${c.date_to?' – '+c.date_to:''} · rozpočet ${(+c.budget||0).toFixed(2)} €${c.goal?' · cieľ: '+escHtml(c.goal):''}${c.note?'<br>'+escHtml(c.note):''}</div>
+      <button class="btn btn-sm btn-outline-secondary" onclick="event.stopPropagation();openCampaign(${JSON.stringify(c._id)})">✏️ Upraviť kartu</button>
+    </div>
+    <div class="row g-2">
+      ${met('Tržby', c.attributed_revenue!=null?(+c.attributed_revenue).toFixed(2):'—','€')}
+      ${met('ROI', m.roi, '%')}${met('CAC', m.cac, '€')}${met('Priem. LTV', m.avgLtv, '€')}
+      ${met('CPC', m.cpc, '€')}${met('CPR', m.cpr, '€')}${met('Cena/členstvo', m.cpm, '€')}
+      ${met('Konverzia', m.conversionRate, '%')}${met('Reg. rate', m.registrationRate, '%')}
+      ${met('Visit rate', m.visitRate, '%')}${met('Členstvo konv.', m.membershipConv, '%')}${met('CTR', m.ctr, '%')}
+    </div>
+    <div class="text-muted small mt-2">Reg: ${c.registrations||0} · Prvé návštevy: ${c.first_visits||0} · Členstvá: ${c.memberships||0} · Platiace klientky: ${c.attributed_payers||0}
+      ${c.meta_leads?` · 📘 ${c.meta_leads} leadov z formulára (${(+c.meta_cost_per_lead||0).toFixed(2)} €/lead)`:''}
+      ${c.spend_7d!=null?` · za 7 dní minula ${(+c.spend_7d).toFixed(2)} €`:''}</div>
+  </div>`;
+}
+
+// ── ZDROJE A VÝDAVKY ─────────────────────────────────────────────────────────
+async function mkZdroje(){
+  const s=await mkStats();
+  const tb=document.getElementById('mkSourcesBody'); if(!tb) return;
+  tb.innerHTML=(s.sources||[]).map(x=>`<tr>
+    <td class="fw-bold">${srcLabel(x.source)}</td>
+    <td class="text-end">${x.clients}</td>
+    <td class="text-end">${adEur(x.revenue)}</td>
+    <td class="text-end" style="color:#C9A84C;font-weight:700">${adEur(x.ltv)}</td>
+    <td class="text-end">${x.spend?adEur(x.spend):'—'}</td>
+    <td class="text-end">${x.cac!==null?adEur(x.cac):'—'}</td>
+    <td class="text-end">${x.ltv_cac!==null?`<span class="badge ${x.ltv_cac>=3?'bg-success':x.ltv_cac>=1?'bg-warning text-dark':'bg-danger'}">${x.ltv_cac}×</span>`:'—'}</td>
+    <td class="text-end">${x.conv_booking} %</td>
+    <td class="text-end">${x.conv_membership} %</td></tr>`).join('')
+    || '<tr><td colspan="9" class="text-muted text-center py-3">Zatiaľ žiadni klienti.</td></tr>';
+  const am=document.getElementById('asMonth'); if(am && !am.value) am.value=new Date().toISOString().slice(0,7);
+  loadAdspendList(); loadOccupancy();
 }
 // Strážca merania: či sa kliky z reklám dajú priradiť a Meta prijíma udalosti (16. 9.)
 function vykresliMeranie(stav, capi){
@@ -6393,109 +6520,6 @@ async function loadLievik(){
 }
 async function nastavLandingRezim(v){
   try{ await api('/api/admin/landing-ab',{method:'POST',body:{rezim:v}}); showToast&&showToast('Landing: '+(v==='ab'?'A/B test 50:50':v==='karta'?'skúška s kartou':'skúška bez karty')); }catch(e){ alert('Nepodarilo sa uložiť.'); }
-}
-async function loadCampaigns(){
-  loadMeranie();
-  loadLievik();
-  loadAds();
-  loadMetaStats();
-  loadLeadFunnel();
-  loadCacLtv();
-  KAMPANE=await api('/api/admin/campaigns');
-  vykresliKampane();
-}
-// Karty kampaní: rovnaké čísla ako doteraz, len roztriedené na bežiace a ukončené
-// a s možnosťou zoradiť ich podľa ktorejkoľvek metriky, ktorú už počítame.
-let KAMPANE=[], kampFilter='all', kampSort='date_from', kampSmer=-1;
-// Beží = Meta ju hlási ako aktívnu a za posledných 7 dní minula peniaze; kampaň bez
-// napojenia na Metu beží, kým nemá vyplnený dátum „do". Ručne zadaný koniec platí vždy.
-function kampanBezi(c){
-  const dnes=new Date().toISOString().slice(0,10);
-  if(c.date_to && c.date_to < dnes) return false;
-  if(c.meta_status) return c.meta_status==='ACTIVE' && !(c.meta_synced_at && c.spend_7d===0);
-  return !c.date_to;
-}
-const KAMP_SORT=[['date_from','Dátum od'],['spend','Minuté'],['attributed_revenue','Tržby'],['m.roi','ROI'],
-  ['m.cac','CAC'],['m.avgLtv','Priem. LTV'],['m.cpc','CPC'],['m.cpr','CPR'],['m.cpm','Cena/členstvo'],
-  ['m.conversionRate','Konverzia'],['m.registrationRate','Reg. rate'],['m.visitRate','Visit rate'],
-  ['m.membershipConv','Členstvo konv.'],['m.ctr','CTR'],['clicks','Kliky'],['registrations','Registrácie'],
-  ['memberships','Členstvá'],['attributed_payers','Platiaci klienti']];
-function kampHodnota(c,k){
-  if(k.indexOf('m.')===0){ const v=(c.metrics||{})[k.slice(2)]; return v==null?null:+v; }
-  if(k==='date_from') return c.date_from||'';
-  const v=c[k]; return v==null?null:+v;
-}
-function kampFiltruj(k){ kampFilter=k; vykresliKampane(); }
-function kampSmerPrepni(){ kampSmer=-kampSmer; vykresliKampane(); }
-function vykresliKampane(){
-  const host=document.getElementById('campaignsList'); if(!host) return;
-  const list=Array.isArray(KAMPANE)?KAMPANE:[];
-  if(!list.length){ host.innerHTML='<div class="text-muted text-center py-5">Zatiaľ žiadne kampane. Klikni „Nová kampaň" a začni merať návratnosť.</div>'; return; }
-  const zivych=list.filter(kampanBezi).length;
-  const vybrane=list.filter(c=>kampFilter==='all'||(kampFilter==='ziva')===kampanBezi(c));
-  const zorad=arr=>arr.slice().sort((a,b)=>{ const x=kampHodnota(a,kampSort), y=kampHodnota(b,kampSort);
-    if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1;   // prázdne hodnoty vždy dole
-    return (x>y?1:x<y?-1:0)*kampSmer; });
-  const tl=(k,t)=>'<button class="btn btn-sm '+(kampFilter===k?'btn-brand':'btn-outline-secondary')+'" onclick="kampFiltruj(&#39;'+k+'&#39;)">'+t+'</button>';
-  let h='<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">'
-    +'<div class="btn-group btn-group-sm">'+tl('all','Všetky '+list.length)+tl('ziva','🟢 Bežiace '+zivych)+tl('stara','⏸️ Ukončené '+(list.length-zivych))+'</div>'
-    +'<div class="d-flex align-items-center gap-2">'
-    +'<span class="text-muted small">Zoradiť podľa</span>'
-    +'<select class="form-select form-select-sm bg-dark text-light border-secondary" style="width:auto" onchange="kampSort=this.value;vykresliKampane()">'
-    +KAMP_SORT.map(k=>'<option value="'+k[0]+'"'+(kampSort===k[0]?' selected':'')+'>'+k[1]+'</option>').join('')
-    +'</select>'
-    +'<button class="btn btn-sm btn-outline-secondary" onclick="kampSmerPrepni()" title="Prepne poradie">'+(kampSmer===-1?'▼ od najväčšieho':'▲ od najmenšieho')+'</button>'
-    +'</div></div>';
-  const skupina=(nadpis,arr)=> arr.length
-    ? '<div class="text-muted fw-bold mb-2" style="font-size:.72rem;letter-spacing:.06em">'+nadpis+' ('+arr.length+')</div>'+zorad(arr).map(kartaKampane).join('')
-    : '';
-  if(kampFilter==='all') h+=skupina('🟢 BEŽIA TERAZ', vybrane.filter(kampanBezi))+skupina('⏸️ UKONČENÉ', vybrane.filter(c=>!kampanBezi(c)));
-  else h+=zorad(vybrane).map(kartaKampane).join('')||'<div class="text-muted text-center py-4">V tomto výbere nie je žiadna kampaň.</div>';
-  host.innerHTML=h;
-}
-function kartaKampane(c){
-    const m=c.metrics||{};
-    const roasBadge = m.roas!=null ? `<span class="badge ${m.roas>=3?'bg-success':m.roas>=1?'bg-warning text-dark':'bg-danger'}">ROAS ${m.roas}×</span>` : '';
-    const met=(l,v,suf='')=>`<div class="col-6 col-md-3 col-lg-2"><div onclick="metricInfo('${l.replace(/'/g,'')}')" title="Klikni pre vysvetlenie" style="background:#151515;border:1px solid #2a2a2a;border-radius:8px;padding:8px 10px;cursor:pointer" onmouseover="this.style.borderColor='#C9A24C55'" onmouseout="this.style.borderColor='#2a2a2a'"><div class="text-muted" style="font-size:.62rem;text-transform:uppercase;letter-spacing:.04em">${l} <i class="bi bi-info-circle" style="opacity:.45"></i></div><div class="fw-bold" style="font-size:.92rem">${v==null?'—':v}${suf}</div></div></div>`;
-    return `<div class="card bg-dark border-secondary mb-3"><div class="card-body">
-      <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
-        <div><span class="fw-bold" style="font-size:1.02rem">${escHtml(c.name)}</span>
-          <span class="badge ms-2" style="background:rgba(201,162,76,.15);color:#C9A24C">${PLAT_LABEL[c.platform]||c.platform}</span>
-          ${roasBadge}
-          <div class="text-muted small mt-1">${c.date_from||''}${c.date_to?' – '+c.date_to:''} · rozpočet ${(+c.budget).toFixed(2)} € · investované <b style="color:#ccc">${(+c.spend).toFixed(2)} €</b>${c.goal?' · cieľ: '+escHtml(c.goal):''}</div>
-        </div>
-        <button class="btn btn-sm btn-outline-secondary" onclick='openCampaign(${JSON.stringify(c._id)})'>✏️ Upraviť</button>
-      </div>
-      <div class="row g-2 mt-1">
-        ${met('Tržby', c.attributed_revenue!=null?c.attributed_revenue.toFixed(2):'—','€')}
-        ${met('ROI', m.roi, '%')}
-        ${met('CAC', m.cac, '€')}
-        ${met('Priem. LTV', m.avgLtv, '€')}
-        ${met('CPC', m.cpc, '€')}
-        ${met('CPR', m.cpr, '€')}
-        ${met('Cena/členstvo', m.cpm, '€')}
-        ${met('Konverzia', m.conversionRate, '%')}
-        ${met('Reg. rate', m.registrationRate, '%')}
-        ${met('Visit rate', m.visitRate, '%')}
-        ${met('Členstvo konv.', m.membershipConv, '%')}
-        ${met('CTR', m.ctr, '%')}
-        ${met('Kliky', c.clicks)}
-      </div>
-      <div class="text-muted small mt-2">Reg: ${c.registrations} · Prvé návštevy: ${c.first_visits} · Členstvá: ${c.memberships} · Platiaci klienti z kampane: ${c.attributed_payers||0}</div>
-      ${c.meta_leads?`<div class="small mt-1" style="color:#7ea6d9">📘 Meta Ads: ${c.meta_leads} leadov (formulár) · ${(+c.meta_cost_per_lead).toFixed(2)} €/lead · dosah ${(+c.meta_reach).toLocaleString('sk')} ľudí${c.meta_daily_budget?` · denný rozpočet ${(+c.meta_daily_budget).toFixed(0)} €`:''}</div>`:(c.meta_reach?`<div class="small mt-1" style="color:#7ea6d9">📘 Meta Ads: dosah ${(+c.meta_reach).toLocaleString('sk')} ľudí</div>`:'')}
-      ${c.meta_status?(()=>{
-        // Kumulatívne čísla vyzerajú rovnako pri živej aj vypnutej kampani —
-        // preto stav + výdaj za 7 dní priamo na karte.
-        const live=c.meta_status==='ACTIVE';
-        const label={ACTIVE:'beží',PAUSED:'pozastavená',CAMPAIGN_PAUSED:'kampaň pozastavená',
-          ADSET_PAUSED:'ad set pozastavený',ARCHIVED:'archivovaná',DELETED:'zmazaná',
-          IN_PROCESS:'spracováva sa',WITH_ISSUES:'má problém',PENDING_REVIEW:'čaká na schválenie',
-          DISAPPROVED:'zamietnutá'}[c.meta_status]||c.meta_status;
-        const col=live?'#4ade80':(/ISSUE|DISAPPROVED/.test(c.meta_status)?'#ff8a8a':'#9d9788');
-        return `<div class="small mt-1" style="color:${col}">${live?'🟢':'⏸️'} ${label}${c.spend_7d!=null?` · za 7 dní minula ${(+c.spend_7d).toFixed(2)} €`:''}</div>`;
-      })():''}
-      ${c.meta_synced_at?`<div class="small" style="color:#5a7d5a;font-size:.7rem">🔄 Automaticky synchronizované z Meta Ads · ${fmtDate(c.meta_synced_at)}</div>`:''}
-    </div></div>`;
 }
 // ── Vysvetlenia marketingových metrík (klik na dlaždicu v karte kampane) ─────
 const METRIC_INFO={
@@ -7153,47 +7177,6 @@ async function loadShopAnalytics(){
     <div class="d-flex gap-3 flex-wrap">${Object.entries(d.revenue.by_category).map(([k,v])=>`<span>${k}: <b>${eur(v.sum)}</b> <span class="text-muted">(${v.n}×)</span></span>`).join('')}</div>`;
   }catch(e){ el.textContent='Chyba.'; }
 }
-async function loadMarketing(){
-  loadShopAnalytics();
-  loadCacLtv('cacLtv2');
-  const d = await api('/api/admin/marketing/stats');
-  if(!d||d.error){ showToast('Chyba: '+(d?.error||'?'),'error'); return; }
-  const t=d.totals;
-  const kpi=(label,val,sub,color)=>`<div class="col-6 col-md-3"><div class="card bg-dark border-secondary"><div class="card-body py-2 px-3">
-    <div class="small text-muted">${label}</div><div class="fs-5 fw-bold" style="color:${color}">${val}</div><div class="small text-muted">${sub||''}</div></div></div></div>`;
-  document.getElementById('mkKpis').innerHTML =
-    kpi('Priem. LTV', t.avgLtv.toFixed(2)+' €', t.payingClients+' platiacich / '+t.clients+' klientov', '#C9A84C')
-    + kpi('CAC (celkovo)', t.cac!==null?t.cac.toFixed(2)+' €':'— zadaj výdavky', 'výdavky '+t.spend.toFixed(2)+' €', '#2196f3')
-    + kpi('Obnovenie členstva', t.renewalRate+' %', t.activeMembers+' aktívnych členov', '#4caf50')
-    + kpi('Celkové tržby', t.revenue.toFixed(2)+' €', 'od klientov (all-time)', '#9c27b0');
-  const f=d.funnel;
-  const step=(label,n,base)=>`<div style="flex:1;min-width:130px;background:rgba(201,168,76,.07);border:1px solid rgba(201,168,76,.25);border-radius:10px;padding:10px 14px;text-align:center">
-    <div class="fs-5 fw-bold" style="color:#C9A84C">${n}</div><div class="small text-muted">${label}</div>
-    ${base?`<div class="small" style="color:#4caf50">${(100*n/base).toFixed(0)} %</div>`:''}</div>`;
-  document.getElementById('mkFunnel').innerHTML =
-    step('Registrácia',f.registered,0)
-    + '<div class="align-self-center text-muted">→</div>' + step('Prvá hodina',f.firstBooking,f.registered)
-    + '<div class="align-self-center text-muted">→</div>' + step('Členstvo',f.membership,f.registered);
-  document.getElementById('mkSourcesBody').innerHTML = d.sources.map(s=>`<tr>
-    <td class="fw-bold">${srcLabel(s.source)}</td>
-    <td>${s.clients}</td>
-    <td>${s.revenue.toFixed(2)} €</td>
-    <td style="color:#C9A84C;font-weight:700">${s.ltv.toFixed(2)} €</td>
-    <td>${s.spend?s.spend.toFixed(2)+' €':'—'}</td>
-    <td>${s.cac!==null?s.cac.toFixed(2)+' €':'—'}</td>
-    <td>${s.ltv_cac!==null?`<span class="badge ${s.ltv_cac>=3?'bg-success':s.ltv_cac>=1?'bg-warning text-dark':'bg-danger'}">${s.ltv_cac}×</span>`:'—'}</td>
-    <td>${s.conv_booking} %</td>
-    <td>${s.conv_membership} %</td>
-  </tr>`).join('') || '<tr><td colspan="9" class="text-muted">Zatiaľ žiadni klienti.</td></tr>';
-  document.getElementById('mkMonthlyBody').innerHTML = d.monthly.map(m=>{
-    const srcs=Object.entries(m.bySource).map(([k,v])=>`${srcLabel(k).replace(/^\S+ /,'')}: ${v}`).join(', ');
-    const cac=m.spend>0&&m.newClients>0?(m.spend/m.newClients).toFixed(2)+' €':'—';
-    return `<tr><td>${m.month}</td><td>${m.newClients}</td><td class="text-muted">${srcs||'—'}</td><td>${m.revenue.toFixed(2)} €</td><td>${m.spend?m.spend.toFixed(2)+' €':'—'}</td><td>${cac}</td></tr>`;
-  }).join('');
-  loadAdspendList();
-  loadOccupancy();
-  if(!document.getElementById('asMonth').value) document.getElementById('asMonth').value=new Date().toISOString().slice(0,7);
-}
 const DOW=['Ne','Po','Ut','St','Št','Pi','So'];
 async function loadOccupancy(){
   const rows = await api('/api/admin/marketing/occupancy');
@@ -7225,7 +7208,7 @@ async function saveAdspend(){
   if(!month||!(amount>0)){ showToast('Zadaj mesiac a sumu','error'); return; }
   const d=await api('/api/admin/adspend',{method:'POST',body:{month,source,amount}});
   showToast(d?.ok?'Výdavok uložený ✓':'Chyba: '+(d?.error||'?'), d?.ok?'success':'error');
-  if(d?.ok){ document.getElementById('asAmount').value=''; loadMarketing(); }
+  if(d?.ok){ document.getElementById('asAmount').value=''; MK.stats=null; mkZdroje(); }
 }
 async function delAdspend(id){
   await api('/api/admin/adspend/'+id,{method:'DELETE'});
