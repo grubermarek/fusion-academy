@@ -24780,7 +24780,10 @@ async function adOverview(mesiac){
   const vsetkyRiadky=rows;
   const skryte=vsetkyRiadky.filter(r=>!merana(r) && !ziva(r));
   const skryteId=new Set(skryte.map(r=>r.campaign_id));
-  rows=vsetkyRiadky.filter(r=>!skryteId.has(r.campaign_id));
+  // Každý riadok nesie vlastný príznak `ziva` (rovnaké pravidlo ako súhrn „živých"),
+  // aby sa zoznam v admine dal roztriediť na bežiace a doběhnuté kampane. Podľa stavu
+  // z Mety to nejde — doboostovanému príspevku ostane „ACTIVE" navždy.
+  rows=vsetkyRiadky.filter(r=>!skryteId.has(r.campaign_id)).map(r=>({...r, ziva:ziva(r)}));
 
   // Mesačný rad: minuté vs. zarobené. Bez tržby vedľa spendu je spend len číslo.
   const mesiace={};
@@ -24829,7 +24832,10 @@ async function adOverview(mesiac){
     diery:{ bez_utm:bezUtm.length, bez_utm_spend:+bezUtm.reduce((s,r)=>s+r.spend,0).toFixed(2),
       bez_karty:bezKarty.length, bez_karty_spend:+bezKarty.reduce((s,r)=>s+r.spend,0).toFixed(2),
       karta_bez_utm:kartaBezUtm.length, karta_bez_utm_mena:kartaBezUtm.map(r=>r.karta) },
-    rows, rad, synced_at: sync ? sync.at : null };
+    rows, rad, synced_at: sync ? sync.at : null,
+    // Staré kampane bez merania sa do čísel nerátajú (Marek 16. 9.), ale nech sa dajú
+    // aspoň pozrieť — v admine sú pod vlastným filtrom „nemerané".
+    skryte_riadky: skryte.map(r=>({...r, ziva:ziva(r), nemerana:true})) };
 }
 
 app.get('/api/admin/ads/overview', adminAuth, async(req,res)=>{

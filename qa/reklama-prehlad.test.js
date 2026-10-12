@@ -42,6 +42,9 @@ async function j(url, opts) {
 const w = (f, rows) => fs.writeFileSync(path.join(DATA, f), rows.map(r => JSON.stringify(r)).join('\n') + '\n');
 
 const TERAZ = new Date().toISOString().slice(0, 7);
+// „Beží" sa posudzuje voči dnešku (útrata tento alebo minulý mesiac), takže kampaň,
+// ktorá má bežať, musí mať posledný mesiac relatívny — s fixným mesiacom test časom zhnije.
+const MINULY = (() => { const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - 1); return d.toISOString().slice(0, 7); })();
 (async () => {
   const hash = bcrypt.hashSync('Heslo123!', 10);
 
@@ -64,7 +67,7 @@ const TERAZ = new Date().toISOString().slice(0, 7);
       first_month: '2026-07', last_month: '2026-08', ma_utm: true },
     { _id: 'qaAdsC2', platform: 'meta', campaign_id: '222', name: 'FA — Zumba Leady',
       status: 'ACTIVE', objective: 'OUTCOME_LEADS', created: '2026-06-14',
-      first_month: '2026-08', last_month: '2026-08', ma_utm: true },
+      first_month: '2026-08', last_month: MINULY, ma_utm: true },
     { _id: 'qaAdsC3', platform: 'meta', campaign_id: '333', name: 'Príspevok: „Tancuj s nami"',
       status: 'ACTIVE', objective: 'OUTCOME_ENGAGEMENT', created: '2026-07-01',
       first_month: '2026-07', last_month: '2026-07', ma_utm: false },
@@ -137,6 +140,11 @@ const TERAZ = new Date().toISOString().slice(0, 7);
     ok('minuté = 450 € (vrátane skrytých a zmazanej)', all.totals.spend === 450, String(all.totals.spend));
     ok('nemerané: 4 kampane za 120 € (aj pozastavený príspevok a skončený nábor)', all.totals.nemerane && all.totals.nemerane.kampani === 4 && all.totals.nemerane.spend === 120, JSON.stringify(all.totals.nemerane));
     ok('bežia len aktívne kampane bez uplynutého konca (leady + nová), nie pozastavený príspevok ani skončený nábor', all.totals.zive === 2 && !all.rows.some(r => ['666', '777'].includes(r.campaign_id)), String(all.totals.zive));
+    // Zoznam v admine sa triedi na bežiace a ukončené podľa tohto príznaku — stav z Mety
+    // na to nestačí (doboostovaný príspevok ostane „ACTIVE" navždy).
+    ok('každý riadok nesie príznak, či beží', all.rows.every(r => 'ziva' in r) && all.rows.filter(r => r.ziva).length === all.totals.zive, all.rows.map(r => r.campaign_id + ':' + r.ziva).join(','));
+    ok('ACTIVE v Mete ešte neznamená, že beží', all.rows.concat(all.skryte_riadky || []).some(r => r.status === 'ACTIVE' && !r.ziva));
+    ok('nemerané kampane sa dajú pozrieť zvlášť', Array.isArray(all.skryte_riadky) && all.skryte_riadky.length === all.totals.nemerane.kampani && all.skryte_riadky.every(r => r.nemerana === true), String((all.skryte_riadky || []).length));
     ok('útrata kampaní v zozname 330 €', all.totals.spend_zoznam === 330, String(all.totals.spend_zoznam));
     ok('kliky len zo zoznamu = 2 550', all.totals.clicks === 2550, String(all.totals.clicks));
     ok('CPC sedí (330/2550)', all.totals.cpc === 0.13, String(all.totals.cpc));

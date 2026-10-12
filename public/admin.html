@@ -6195,6 +6195,9 @@ async function syncCampaigns(){
 // Karty kampaní pokrývajú len to, čo si niekto založil. Tu je všetko, čo účet
 // minul — vrátane doboostovaných príspevkov, ktoré v appke nikdy neboli vidieť.
 let adMesiac='all';
+// Zoznam kampaní: filter (bežiace / ukončené), hľadanie a zoradenie podľa stĺpca.
+// Dáta sa znova nesťahujú — prekreslí sa len tabuľka.
+let adRiadky=[], adSkryte=[], adFilter='all', adSort='spend', adSmer=-1, adHladaj='';
 function adEur(x){ return (Math.round((+x||0)*100)/100).toLocaleString('sk-SK',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'; }
 function adNum(x){ return (+x||0).toLocaleString('sk-SK'); }
 async function loadAds(){
@@ -6257,32 +6260,63 @@ async function loadAds(){
       +'</tbody></table></div>';
   }
 
-  const rows=d.rows||[];
-  h+='<div class="fw-bold mb-1" style="font-size:.85rem">Kampane ('+rows.length+') — '+(adMesiac==='all'?'celá história':adMesiac)+'</div>';
-  if(!rows.length){ h+='<div class="text-muted">V tomto období sa neminulo nič.</div>'; }
-  else {
-    h+='<div class="table-responsive"><table class="table table-sm table-dark table-hover align-middle mb-0" style="font-size:.78rem">'
-      +'<thead><tr><th>Kampaň</th><th>Stav</th><th class="text-end">Minuté</th><th class="text-end">Kliky</th><th class="text-end">CPC</th><th class="text-end">CTR</th><th class="text-end">Leady</th><th>Priradenie</th></tr></thead><tbody>';
-    for(const r of rows){
-      const bezi = r.status==='ACTIVE';
-      const utmZnak = r.ma_utm===true ? '<span class="text-success" title="odkaz nesie utm_campaign">utm ✓</span>'
-        : r.ma_utm===false ? '<span class="text-warning" title="bez utm_campaign sa registrácie nedajú priradiť">bez utm</span>'
-        : '<span class="text-muted">—</span>';
-      h+='<tr>'
-        +'<td style="max-width:320px"><div class="text-truncate" title="'+esc(r.name)+'">'+esc(r.name)+'</div>'
-        +'<div class="text-muted" style="font-size:.68rem">'+esc(r.objective||'')+(r.first_month?' · '+r.first_month+(r.last_month&&r.last_month!==r.first_month?'–'+r.last_month:''):'')+'</div></td>'
-        +'<td><span class="badge '+(bezi?'bg-success':'bg-secondary')+'" style="font-size:.62rem">'+esc(r.status||'—')+'</span></td>'
-        +'<td class="text-end fw-bold">'+adEur(r.spend)+'</td>'
-        +'<td class="text-end">'+adNum(r.clicks)+'</td>'
-        +'<td class="text-end">'+(r.cpc!=null?adEur(r.cpc):'—')+'</td>'
-        +'<td class="text-end">'+(r.ctr!=null?r.ctr+' %':'—')+'</td>'
-        +'<td class="text-end">'+(r.leads?adNum(r.leads):'—')+'</td>'
-        +'<td>'+utmZnak+(r.karta?'<div class="text-muted text-truncate" style="font-size:.66rem;max-width:180px" title="'+esc(r.karta)+'">karta: '+esc(r.karta)+'</div>':'<div class="text-muted" style="font-size:.66rem">bez karty</div>')+'</td>'
-        +'</tr>';
-    }
-    h+='</tbody></table></div>';
-  }
+  adRiadky=d.rows||[]; adSkryte=d.skryte_riadky||[];
+  h+='<div class="d-flex justify-content-between align-items-end flex-wrap gap-2 mb-1">'
+    +'<div><div class="fw-bold" style="font-size:.85rem">Kampane ('+adRiadky.length+') — '+(adMesiac==='all'?'celá história':adMesiac)+'</div>'
+    +'<div class="text-muted" style="font-size:.68rem">„Beží" = Meta ju hlási ako aktívnu a minula peniaze tento alebo minulý mesiac. Doboostovaný príspevok ostáva v Mete navždy „ACTIVE", preto sa podľa stavu z Mety triediť nedá.</div></div>'
+    +'<input class="form-control form-control-sm bg-dark text-light border-secondary" style="width:180px" placeholder="hľadať kampaň…" value="'+esc(adHladaj)+'" oninput="adHladaj=this.value;adRender()">'
+    +'</div><div id="adRowsBox"></div>';
   box.innerHTML=h;
+  adRender();
+}
+function adFiltruj(k){ adFilter=k; adRender(); }
+function adZoradit(k){ if(adSort===k) adSmer=-adSmer; else { adSort=k; adSmer=(k==='name'?1:-1); } adRender(); }
+// Prekreslí len zoznam kampaní (filter + hľadanie + zoradenie) — bez ďalšieho sťahovania z Mety.
+function adRender(){
+  const box=document.getElementById('adRowsBox'); if(!box) return;
+  const hl=(adHladaj||'').trim().toLowerCase();
+  const hlada=r=>!hl||String(r.name||'').toLowerCase().includes(hl);
+  const vsetky=adRiadky.filter(hlada), nemerane=adSkryte.filter(hlada);
+  const zivych=vsetky.filter(r=>r.ziva).length;
+  const vybrane = adFilter==='nemerane' ? nemerane
+    : vsetky.filter(r=>adFilter==='all'||(adFilter==='ziva')===!!r.ziva);
+  const hod=(r,k)=> k==='name'?String(r.name||'').toLowerCase():(r[k]==null?null:+r[k]);
+  const zorad=arr=>arr.slice().sort((a,b)=>{ const x=hod(a,adSort), y=hod(b,adSort);
+    if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1;   // prázdne hodnoty vždy dole
+    return (x>y?1:x<y?-1:0)*adSmer; });
+  const tl=(k,t)=>'<button class="btn btn-sm '+(adFilter===k?'btn-brand':'btn-outline-secondary')+'" onclick="adFiltruj(&#39;'+k+'&#39;)">'+t+'</button>';
+  let h='<div class="btn-group btn-group-sm mb-2">'+tl('all','Všetky '+vsetky.length)+tl('ziva','🟢 Bežia '+zivych)+tl('stara','⏸️ Ukončené '+(vsetky.length-zivych))
+    +(adSkryte.length?tl('nemerane','📦 Nemerané '+nemerane.length):'')+'</div>';
+  if(adFilter==='nemerane') h+='<div class="text-muted mb-2" style="font-size:.7rem">Staré kampane bez <code>utm_campaign</code> aj bez karty. Ich peniaze sú započítané v „Minuté", ale do klikov, CPC a leadov nie — registráciu k nim nevieme priradiť.</div>';
+  if(!vybrane.length){ box.innerHTML=h+'<div class="text-muted">V tomto výbere nie je nič.</div>'; return; }
+  const sip=k=>adSort===k?(adSmer===1?' ▲':' ▼'):'';
+  const th=(k,t,end)=>'<th'+(end?' class="text-end"':'')+' style="cursor:pointer;white-space:nowrap" onclick="adZoradit(&#39;'+k+'&#39;)" title="Klikni — zoradí podľa tohto stĺpca">'+t+sip(k)+'</th>';
+  const riadok=r=>{
+    const utmZnak = r.ma_utm===true ? '<span class="text-success" title="odkaz nesie utm_campaign">utm ✓</span>'
+      : r.ma_utm===false ? '<span class="text-warning" title="bez utm_campaign sa registrácie nedajú priradiť">bez utm</span>'
+      : '<span class="text-muted">—</span>';
+    return '<tr>'
+      +'<td style="max-width:320px"><div class="text-truncate" title="'+esc(r.name)+'">'+esc(r.name)+'</div>'
+      +'<div class="text-muted" style="font-size:.68rem">'+esc(r.objective||'')+(r.first_month?' · '+r.first_month+(r.last_month&&r.last_month!==r.first_month?'–'+r.last_month:''):'')+'</div></td>'
+      +'<td><span class="badge '+(r.ziva?'bg-success':'bg-secondary')+'" style="font-size:.62rem">'+(r.ziva?'beží':'ukončená')+'</span>'
+      +'<div class="text-muted" style="font-size:.64rem">'+esc(r.status||'—')+'</div></td>'
+      +'<td class="text-end fw-bold">'+adEur(r.spend)+'</td>'
+      +'<td class="text-end">'+adNum(r.clicks)+'</td>'
+      +'<td class="text-end">'+(r.cpc!=null?adEur(r.cpc):'—')+'</td>'
+      +'<td class="text-end">'+(r.ctr!=null?r.ctr+' %':'—')+'</td>'
+      +'<td class="text-end">'+(r.leads?adNum(r.leads):'—')+'</td>'
+      +'<td>'+utmZnak+(r.karta?'<div class="text-muted text-truncate" style="font-size:.66rem;max-width:180px" title="'+esc(r.karta)+'">karta: '+esc(r.karta)+'</div>':'<div class="text-muted" style="font-size:.66rem">bez karty</div>')+'</td>'
+      +'</tr>'; };
+  h+='<div class="table-responsive"><table class="table table-sm table-dark table-hover align-middle mb-0" style="font-size:.78rem"><thead><tr>'
+    +th('name','Kampaň')+th('ziva','Stav')+th('spend','Minuté',1)+th('clicks','Kliky',1)+th('cpc','CPC',1)+th('ctr','CTR',1)+th('leads','Leady',1)
+    +'<th>Priradenie</th></tr></thead><tbody>';
+  if(adFilter==='all'){
+    const nadpis=(t,n)=>'<tr><td colspan="8" class="fw-bold text-muted" style="font-size:.68rem;letter-spacing:.06em;background:#15181a">'+t+' ('+n+')</td></tr>';
+    const z=zorad(vybrane.filter(r=>r.ziva)), u=zorad(vybrane.filter(r=>!r.ziva));
+    if(z.length) h+=nadpis('🟢 BEŽIA TERAZ',z.length)+z.map(riadok).join('');
+    if(u.length) h+=nadpis('⏸️ UKONČENÉ',u.length)+u.map(riadok).join('');
+  } else h+=zorad(vybrane).map(riadok).join('');
+  box.innerHTML=h+'</tbody></table></div>';
 }
 function adNaMesiac(m){ adMesiac=m; const s=document.getElementById('adMonth'); if(s) s.value=m; loadAds(); }
 async function adSync(){
@@ -6367,10 +6401,59 @@ async function loadCampaigns(){
   loadMetaStats();
   loadLeadFunnel();
   loadCacLtv();
-  const list=await api('/api/admin/campaigns');
-  const host=document.getElementById('campaignsList');
-  if(!Array.isArray(list)||!list.length){ host.innerHTML='<div class="text-muted text-center py-5">Zatiaľ žiadne kampane. Klikni „Nová kampaň" a začni merať návratnosť.</div>'; return; }
-  host.innerHTML=list.map(c=>{
+  KAMPANE=await api('/api/admin/campaigns');
+  vykresliKampane();
+}
+// Karty kampaní: rovnaké čísla ako doteraz, len roztriedené na bežiace a ukončené
+// a s možnosťou zoradiť ich podľa ktorejkoľvek metriky, ktorú už počítame.
+let KAMPANE=[], kampFilter='all', kampSort='date_from', kampSmer=-1;
+// Beží = Meta ju hlási ako aktívnu a za posledných 7 dní minula peniaze; kampaň bez
+// napojenia na Metu beží, kým nemá vyplnený dátum „do". Ručne zadaný koniec platí vždy.
+function kampanBezi(c){
+  const dnes=new Date().toISOString().slice(0,10);
+  if(c.date_to && c.date_to < dnes) return false;
+  if(c.meta_status) return c.meta_status==='ACTIVE' && !(c.meta_synced_at && c.spend_7d===0);
+  return !c.date_to;
+}
+const KAMP_SORT=[['date_from','Dátum od'],['spend','Minuté'],['attributed_revenue','Tržby'],['m.roi','ROI'],
+  ['m.cac','CAC'],['m.avgLtv','Priem. LTV'],['m.cpc','CPC'],['m.cpr','CPR'],['m.cpm','Cena/členstvo'],
+  ['m.conversionRate','Konverzia'],['m.registrationRate','Reg. rate'],['m.visitRate','Visit rate'],
+  ['m.membershipConv','Členstvo konv.'],['m.ctr','CTR'],['clicks','Kliky'],['registrations','Registrácie'],
+  ['memberships','Členstvá'],['attributed_payers','Platiaci klienti']];
+function kampHodnota(c,k){
+  if(k.indexOf('m.')===0){ const v=(c.metrics||{})[k.slice(2)]; return v==null?null:+v; }
+  if(k==='date_from') return c.date_from||'';
+  const v=c[k]; return v==null?null:+v;
+}
+function kampFiltruj(k){ kampFilter=k; vykresliKampane(); }
+function kampSmerPrepni(){ kampSmer=-kampSmer; vykresliKampane(); }
+function vykresliKampane(){
+  const host=document.getElementById('campaignsList'); if(!host) return;
+  const list=Array.isArray(KAMPANE)?KAMPANE:[];
+  if(!list.length){ host.innerHTML='<div class="text-muted text-center py-5">Zatiaľ žiadne kampane. Klikni „Nová kampaň" a začni merať návratnosť.</div>'; return; }
+  const zivych=list.filter(kampanBezi).length;
+  const vybrane=list.filter(c=>kampFilter==='all'||(kampFilter==='ziva')===kampanBezi(c));
+  const zorad=arr=>arr.slice().sort((a,b)=>{ const x=kampHodnota(a,kampSort), y=kampHodnota(b,kampSort);
+    if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1;   // prázdne hodnoty vždy dole
+    return (x>y?1:x<y?-1:0)*kampSmer; });
+  const tl=(k,t)=>'<button class="btn btn-sm '+(kampFilter===k?'btn-brand':'btn-outline-secondary')+'" onclick="kampFiltruj(&#39;'+k+'&#39;)">'+t+'</button>';
+  let h='<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">'
+    +'<div class="btn-group btn-group-sm">'+tl('all','Všetky '+list.length)+tl('ziva','🟢 Bežiace '+zivych)+tl('stara','⏸️ Ukončené '+(list.length-zivych))+'</div>'
+    +'<div class="d-flex align-items-center gap-2">'
+    +'<span class="text-muted small">Zoradiť podľa</span>'
+    +'<select class="form-select form-select-sm bg-dark text-light border-secondary" style="width:auto" onchange="kampSort=this.value;vykresliKampane()">'
+    +KAMP_SORT.map(k=>'<option value="'+k[0]+'"'+(kampSort===k[0]?' selected':'')+'>'+k[1]+'</option>').join('')
+    +'</select>'
+    +'<button class="btn btn-sm btn-outline-secondary" onclick="kampSmerPrepni()" title="Prepne poradie">'+(kampSmer===-1?'▼ od najväčšieho':'▲ od najmenšieho')+'</button>'
+    +'</div></div>';
+  const skupina=(nadpis,arr)=> arr.length
+    ? '<div class="text-muted fw-bold mb-2" style="font-size:.72rem;letter-spacing:.06em">'+nadpis+' ('+arr.length+')</div>'+zorad(arr).map(kartaKampane).join('')
+    : '';
+  if(kampFilter==='all') h+=skupina('🟢 BEŽIA TERAZ', vybrane.filter(kampanBezi))+skupina('⏸️ UKONČENÉ', vybrane.filter(c=>!kampanBezi(c)));
+  else h+=zorad(vybrane).map(kartaKampane).join('')||'<div class="text-muted text-center py-4">V tomto výbere nie je žiadna kampaň.</div>';
+  host.innerHTML=h;
+}
+function kartaKampane(c){
     const m=c.metrics||{};
     const roasBadge = m.roas!=null ? `<span class="badge ${m.roas>=3?'bg-success':m.roas>=1?'bg-warning text-dark':'bg-danger'}">ROAS ${m.roas}×</span>` : '';
     const met=(l,v,suf='')=>`<div class="col-6 col-md-3 col-lg-2"><div onclick="metricInfo('${l.replace(/'/g,'')}')" title="Klikni pre vysvetlenie" style="background:#151515;border:1px solid #2a2a2a;border-radius:8px;padding:8px 10px;cursor:pointer" onmouseover="this.style.borderColor='#C9A24C55'" onmouseout="this.style.borderColor='#2a2a2a'"><div class="text-muted" style="font-size:.62rem;text-transform:uppercase;letter-spacing:.04em">${l} <i class="bi bi-info-circle" style="opacity:.45"></i></div><div class="fw-bold" style="font-size:.92rem">${v==null?'—':v}${suf}</div></div></div>`;
@@ -6413,7 +6496,6 @@ async function loadCampaigns(){
       })():''}
       ${c.meta_synced_at?`<div class="small" style="color:#5a7d5a;font-size:.7rem">🔄 Automaticky synchronizované z Meta Ads · ${fmtDate(c.meta_synced_at)}</div>`:''}
     </div></div>`;
-  }).join('');
 }
 // ── Vysvetlenia marketingových metrík (klik na dlaždicu v karte kampane) ─────
 const METRIC_INFO={
