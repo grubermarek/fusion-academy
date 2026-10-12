@@ -6241,10 +6241,17 @@ async function mkPrehlad(){
     sel.innerHTML='<option value="all">Celá história</option>'+a.mesiace_k_dispozicii.map(m=>`<option value="${m}">${m}</option>`).join('');
     sel.value=MK.mesiac; sel.dataset.filled='1';
   }
-  const t=a.totals||{}, ct=c.totals||{}, st=(s&&s.totals)||{};
-  const cacPlat = ct.payers ? ct.spend/ct.payers : null;
-  const pomer = (cacPlat && st.avgLtv) ? +(st.avgLtv/cacPlat).toFixed(1) : null;
-  const clenky = (c.rows||[]).reduce((x,r)=>x+(+r.members||0),0);
+  const t=a.totals||{}, st=(s&&s.totals)||{};
+  // Čisté čísla reklamy: kohorta = ľudia, ktorí v danom období prišli Z REKLAMY,
+  // a tržba, ktorú odvtedy nechali. NIE tržba celej appky (tá je v Peniazoch) —
+  // s ňou vychádzal ROAS 16×, lebo v nej boli členstvá stálych klientok.
+  const radVyber = MK.mesiac==='all' ? (a.rad||[]) : (a.rad||[]).filter(r=>r.month===MK.mesiac);
+  const koh = radVyber.reduce((x,r)=>({ acquired:x.acquired+(+r.acquired||0), payers:x.payers+(+r.payers||0),
+    revenue:x.revenue+(+r.cohort_revenue||0), mlada:x.mlada||!!r.mlada }), {acquired:0,payers:0,revenue:0,mlada:false});
+  const spend=+t.spend||0;
+  const roas = (spend && koh.acquired) ? +(koh.revenue/spend).toFixed(2) : null;
+  const cac  = koh.acquired ? spend/koh.acquired : null;
+  const cacPlat = koh.payers ? spend/koh.payers : null;
   const kachla=(ic,label,hod,pod,farba,klik)=>`<div class="col-6 col-md-3">
     <div class="card bg-dark border-secondary h-100"${klik?` onclick="${klik}" style="cursor:pointer"`:''}>
       <div class="card-body py-2 px-3">
@@ -6253,13 +6260,13 @@ async function mkPrehlad(){
         <div class="text-muted" style="font-size:.68rem">${pod||''}</div>
       </div></div></div>`;
   document.getElementById('mkKpis').innerHTML =
-      kachla('💸','Minuté na reklamu', adEur(t.spend), (t.kampani||0)+' kampaní'+(t.zive!=null?' · '+t.zive+' beží':''), '#e8e2d2', "mkTab('kampane')")
-    + kachla('🎯','Získané klientky', adNum(ct.acquired), adNum(ct.attended)+' prišlo na hodinu', '#e8e2d2')
-    + kachla('💳','Platiace klientky', adNum(ct.payers), clenky+' z nich má členstvo', '#9fd894')
-    + kachla('🧾','CAC platiacej', cacPlat==null?'—':adEur(cacPlat), 'z meraných kampaní', '#7ea6d9')
-    + kachla('💛','Priem. LTV', st.avgLtv==null?'—':adEur(st.avgLtv), (st.payingClients||0)+' platiacich spolu', '#C9A84C')
-    + kachla('⚖️','LTV : CAC', pomer==null?'—':pomer+'×', 'zdravé je 3× a viac', pomer==null?'#888':(pomer>=3?'#9fd894':pomer>=1?'#e0b84c':'#e57373'))
-    + kachla('📈','ROAS (90 dní)', ct.roas90==null?'—':ct.roas90+'×', 'tržba kohort ÷ útrata', ct.roas90==null?'#888':(ct.roas90>=1?'#9fd894':'#e57373'))
+      kachla('💸','Minuté na reklamu', adEur(spend), (t.kampani||0)+' kampaní'+(t.zive!=null?' · '+t.zive+' beží':''), '#e8e2d2', "mkTab('kampane')")
+    + kachla('🎯','Klientky z reklamy', adNum(koh.acquired), 'z nich '+adNum(koh.payers)+' niečo zaplatilo', '#e8e2d2')
+    + kachla('💶','Tržba od nich', adEur(koh.revenue), koh.mlada?'kohorta ešte rastie ⏳':'odkedy prišli, do dnes', '#9fd894')
+    + kachla('📈','ROAS z reklamy', roas==null?'—':roas+'×', roas==null&&spend?'nikoho sa nedá priradiť k reklame':'tržba od nich ÷ útrata', roas==null?'#888':(roas>=1?'#9fd894':'#e57373'))
+    + kachla('🧾','Cena za klientku', cac==null?'—':adEur(cac), 'útrata ÷ klientky z reklamy', '#7ea6d9')
+    + kachla('💳','Cena za platiacu', cacPlat==null?'—':adEur(cacPlat), 'útrata ÷ tie, čo zaplatili', '#7ea6d9')
+    + kachla('💛','Priem. LTV', st.avgLtv==null?'—':adEur(st.avgLtv), 'celá appka · '+(st.payingClients||0)+' platiacich', '#C9A84C')
     + kachla('🔁','Obnovenie členstva', (st.renewalRate!=null?st.renewalRate+' %':'—'), (st.activeMembers||0)+' aktívnych členiek', '#4caf50');
 
   // ── výstrahy: všetko, čo kazí meranie, na jednom mieste ──
@@ -6287,28 +6294,28 @@ async function mkPrehlad(){
     + '<div class="align-self-center text-muted">→</div>' + krok('Prvá hodina',f.firstBooking||0,f.registered)
     + '<div class="align-self-center text-muted">→</div>' + krok('Členstvo',f.membership||0,f.registered);
 
-  // ── mesačný vývoj: JEDNA tabuľka (predtým dve, každá s inými číslami) ──
-  const rad={}; (a.rad||[]).forEach(r=>rad[r.month]=r);
-  const mes=(s&&s.monthly)||[];
-  const riadky=mes.slice().reverse().map(m=>{
-    const r=rad[m.month]||{};
-    const spend=+(m.spend||r.spend||0), trzba=+(r.revenue!=null?r.revenue:m.revenue)||0;
-    return { month:m.month, spend, trzba, novi:m.newClients||0,
-      cac: (spend>0&&m.newClients>0)?spend/m.newClients:null,
-      roas: spend>0?+(trzba/spend).toFixed(2):null, nemerane:+r.nemerane||0 };
+  // ── mesačný vývoj: len čísla reklamy ──
+  // Stĺpec „Tržba appky" tu bol zavádzajúci (ROAS 16× z členstiev stálych klientok).
+  // Teraz: koľko ľudí v tom mesiaci prišlo z reklamy a koľko odvtedy zaplatili.
+  const mesSpend={}; ((s&&s.monthly)||[]).forEach(m=>{ mesSpend[m.month]=+m.spend||0; });
+  const riadky=(a.rad||[]).slice().reverse().map(r=>{
+    const spend=+(mesSpend[r.month]||r.spend||0);
+    return { month:r.month, spend, novi:+r.acquired||0, platiace:+r.payers||0, trzba:+r.cohort_revenue||0,
+      cac: (spend>0 && r.acquired>0) ? spend/r.acquired : null,
+      roas: (spend>0 && r.acquired>0) ? +((+r.cohort_revenue||0)/spend).toFixed(2) : null, mlada:!!r.mlada };
   });
   const maxSpend=Math.max(1,...riadky.map(r=>r.spend));
   document.getElementById('mkMonthly').innerHTML = riadky.length
     ? `<div class="table-responsive"><table class="table table-dark table-sm table-hover mb-0 align-middle" style="font-size:.78rem;font-variant-numeric:tabular-nums;white-space:nowrap">
-      <thead><tr><th>Mesiac</th><th class="text-end">Reklama</th><th class="text-end">Noví klienti</th><th class="text-end">CAC</th><th class="text-end">Tržba appky</th><th class="text-end">ROAS</th></tr></thead>
+      <thead><tr><th>Mesiac</th><th class="text-end">Reklama</th><th class="text-end" title="Kontá, ktoré v tom mesiaci vznikli z reklamy (utm, fbclid, gclid)">Klientky z reklamy</th><th class="text-end">Cena za klientku</th><th class="text-end" title="Čo tieto klientky zaplatili odvtedy do dnes">Tržba od nich</th><th class="text-end">ROAS</th></tr></thead>
       <tbody>${riadky.map(r=>`<tr${r.month===MK.mesiac?' class="table-active"':''}>
         <td style="white-space:nowrap"><a href="#" onclick="mkObdobie('${r.month}');return false" class="text-decoration-none" title="Zobrazí čísla len za tento mesiac">${r.month}</a></td>
         <td class="text-end" style="white-space:nowrap">${adEur(r.spend)}<div style="height:3px;border-radius:2px;background:linear-gradient(90deg,#C9A84C ${Math.round(100*r.spend/maxSpend)}%,#2a2a2a ${Math.round(100*r.spend/maxSpend)}%)"></div></td>
-        <td class="text-end">${r.novi||'—'}</td>
+        <td class="text-end">${r.novi||'—'}${r.platiace?`<span class="text-muted"> · ${r.platiace} platí</span>`:''}</td>
         <td class="text-end">${r.cac==null?'—':adEur(r.cac)}</td>
-        <td class="text-end">${adEur(r.trzba)}</td>
-        <td class="text-end ${r.roas!=null&&r.roas<1?'text-danger':''}">${r.roas==null?'—':r.roas+'×'}</td></tr>`).join('')}</tbody></table></div>
-      <div class="text-muted mt-2" style="font-size:.66rem">Reklama = všetky zdroje (Meta sa dopĺňa sama, ostatné zadávaš v Zdrojoch). Tržba appky = všetky tržby mesiaca, nie len z reklamy — preto ROAS tu nie je návratnosť kampane; tú nájdeš pri kampani.</div>`
+        <td class="text-end">${r.trzba?adEur(r.trzba):'—'}</td>
+        <td class="text-end ${r.roas!=null&&r.roas<1?'text-danger':(r.roas>=1?'text-success':'')}">${r.roas==null?'—':r.roas+'×'}${r.mlada?' <span class="text-muted" title="Kohorta ešte nemá 90 dní — číslo porastie">⏳</span>':''}</td></tr>`).join('')}</tbody></table></div>
+      <div class="text-muted mt-2" style="font-size:.66rem">Len reklama: klientky s <code>utm_campaign</code>, <code>fbclid</code> alebo <code>gclid</code>. Tržba = čo zaplatili odvtedy do dnes (členstvá, vstupy, permanentky, merch, vstupenky). Mail, SMS, pozvánky ani importy sa sem nerátajú. ⏳ = kohorta mladšia ako 90 dní, ROAS ešte porastie. Pomlčka znamená, že sa k tomu mesiacu nedalo priradiť nič — to nie je nula, vtedy sa to jednoducho nemeralo.</div>`
     : '<div class="text-muted">Zatiaľ žiadne mesiace.</div>';
   loadMetaStats(); loadMeranie();
 }

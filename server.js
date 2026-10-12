@@ -24793,11 +24793,55 @@ async function adOverview(mesiac){
     if(skryteId.has(x.campaign_id)){ y.nemerane+=+x.spend||0; continue; }
     y.clicks+=+x.clicks||0; y.impressions+=+x.impressions||0; y.leads+=+x.leads||0; }
   const ev=await revenueEvents({includeImported:true});
+  // ── KOHORTY: čo reálne priniesla reklama (Marek 12. 10.) ────────────────────
+  // Vedľa útraty sa doteraz ukazovala tržba CELEJ appky a ROAS z toho vychádzal
+  // 16× — boli v ňom členstvá stálych klientok, ktoré s reklamou nemajú nič
+  // spoločné. Tu je len tržba od ľudí, ktorí v tom mesiaci prišli Z REKLAMY:
+  // majú utm_campaign, fbclid alebo gclid, prípadne platený lead_source.
+  // Vlastné kanály (mail, SMS, notifikácie, pozvánky) sa nerátajú — tie nestoja
+  // peniaze z reklamného rozpočtu. Importy (Glofox) tiež nie (pravidlo 2 v
+  // docs/FUSION_CUSTOMER_JOURNEY_MASTER.md).
+  const vlastnyKanal=u=>/mail|brevo|newsletter|sms|notif|^app$|invite|ref$/i.test(String(u.utm_source||''))
+    || /mail|sms|notif|invite/i.test(String(u.utm_medium||''));
+  const PLATENY_ZDROJ=new Set(['meta','meta_leadform','facebook','instagram','fb','ig','google','google_ads','adwords','tiktok']);
+  const zReklamy=u=>{
+    if(!u || u.is_admin || u.is_child || ['trainer','manager','admin'].includes(u.user_type)) return false;
+    if(['import','admin','child'].includes(u.account_creation_type)) return false;
+    if(u.is_test || u.test_account || u.lead_source==='test') return false;
+    if(vlastnyKanal(u)) return false;
+    return !!(String(u.utm_campaign||'').trim() || String(u.fbclid||'').trim() || String(u.gclid||'').trim()
+      || PLATENY_ZDROJ.has(String(u.lead_source||'').toLowerCase()));
+  };
+  const addDni=(d,n)=>{ const t=Date.parse(String(d).slice(0,10)); return Number.isFinite(t)?new Date(t+n*864e5).toISOString().slice(0,10):'9999'; };
+  const kohortaUsera={};                                  // user_id → { m, den }
+  for(const u of await q.find(db.users,{})){
+    if(!zReklamy(u)) continue;
+    const den=String(u.registration_at||u.lead_at||u.created_at||'').slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(den)) continue;
+    kohortaUsera[u._id]={ m:den.slice(0,7), den };
+  }
+  const koh={};                                           // mesiac → čísla kohorty
+  const dajKoh=m=>(koh[m]=koh[m]||{acquired:0, payers:0, revenue:0, rev90:0, _platili:new Set()});
+  for(const id of Object.keys(kohortaUsera)) dajKoh(kohortaUsera[id].m).acquired++;
+  for(const e of ev){
+    const id=e.who&&e.who.id; const k=id&&kohortaUsera[id]; if(!k) continue;
+    const d=String(e.d||'').slice(0,10); if(d<k.den) continue;   // čo zaplatila pred príchodom z reklamy, nerátame
+    const x=dajKoh(k.m); x.revenue+=+e.a||0; if(d<=addDni(k.den,90)) x.rev90+=+e.a||0;
+    if((+e.a||0)>0) x._platili.add(id);
+  }
+  Object.values(koh).forEach(x=>{ x.payers=x._platili.size; delete x._platili;
+    x.revenue=+x.revenue.toFixed(2); x.rev90=+x.rev90.toFixed(2); });
+  const dnes90=addDni(today(),-90);
   const rad=Object.keys(mesiace).sort().map(m=>{
-    const y=mesiace[m]; const trzba=revSum(ev, m);
+    const y=mesiace[m]; const trzba=revSum(ev, m); const k=koh[m]||{acquired:0,payers:0,revenue:0,rev90:0};
     return { month:m, spend:+y.spend.toFixed(2), nemerane:+y.nemerane.toFixed(2), clicks:y.clicks, impressions:y.impressions,
       leads:y.leads, revenue:trzba,
-      roas: y.spend ? +(trzba/y.spend).toFixed(2) : null };
+      roas: y.spend ? +(trzba/y.spend).toFixed(2) : null,
+      // kohorta mesiaca = ľudia, ktorí vtedy prišli z reklamy
+      acquired:k.acquired, payers:k.payers, cohort_revenue:k.revenue, cohort_rev90:k.rev90,
+      cohort_roas: y.spend ? +(k.revenue/y.spend).toFixed(2) : null,
+      cohort_cac: k.acquired ? +(y.spend/k.acquired).toFixed(2) : null,
+      mlada: (m+'-01') > dnes90 };   // kohorta ešte nemá odžitých 90 dní, čísla porastú
   });
 
   const sc=(k)=>rows.reduce((s,r)=>s+(+r[k]||0),0);
