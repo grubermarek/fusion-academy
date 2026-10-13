@@ -586,6 +586,7 @@ body{background:var(--dark);color:var(--text);font-family:var(--sans);-webkit-fo
 <script src="/i18n.js"></script>
 <script src="/i18n-pages.js"></script>
 <script src="/min-ucast.js"></script>
+<script src="/skuska-preskocit.js"></script>
 <script async src="https://www.googletagmanager.com/gtag/js?id=AW-18386367227"></script>
 <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag("js",new Date());gtag("config","AW-18386367227");</script>
 <script>
@@ -916,6 +917,7 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
         <div class="city-chip"><i class="bi bi-geo-alt-fill"></i> Banská Bystrica</div>
         <div class="city-chip"><i class="bi bi-geo-alt-fill"></i> Brezno</div>
         <div class="city-chip"><i class="bi bi-geo-alt-fill"></i> Detva</div>
+        <div class="city-chip"><i class="bi bi-geo-alt-fill"></i> Korytárky</div>
         <div class="city-chip"><i class="bi bi-geo-alt-fill"></i> Zvolen</div>
       </div>
     </div>
@@ -980,6 +982,8 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
         <i class="bi bi-check2-circle"></i> Áno, rezervovať!
       </button>
     </div>
+    <!-- Korytárky: týždeň zadarmo mali ženy už pred appkou → môžu ho preskočiť a platiť hneď (13. 10.) -->
+    <button type="button" id="bcSkipBtn" onclick="preskocSkuskuARezervuj()" style="display:none;margin:12px auto 0;background:none;border:0;color:var(--gold);font-size:.86rem;text-decoration:underline;cursor:pointer;font-family:inherit">Prvý týždeň zadarmo som už mala — chcem zaplatiť</button>
   </div>
 </div>
 
@@ -1611,6 +1615,8 @@ function openBookConfirm(clsOrId, dateStr){
   const freeBadge = document.getElementById('bcFreeBadge');
   const confirmBtn = document.getElementById('bcConfirmBtn');
   // Počas týždňa zadarmo hodinu kryje skúška, nie „prvá hodina zadarmo" (27. 9.).
+  const skipBtn=document.getElementById('bcSkipBtn');
+  if(skipBtn) skipBtn.style.display = (!_preview && _me && _me.trial && _me.trial.active && !_me.trial.card && window.FA_SKIP && FA_SKIP.mesto(cls.location)) ? 'block' : 'none';
   if(_me && _me.trial && _me.trial.active){
     if(freeBadge){ freeBadge.style.display='flex'; freeBadge.innerHTML='<i class="bi bi-gift-fill"></i> '+FA_T('auth.badge_trial'); }
     confirmBtn.innerHTML='<i class="bi bi-check2-circle"></i> Áno, rezervovať!';
@@ -1630,6 +1636,19 @@ function openBookConfirm(clsOrId, dateStr){
     confirmBtn.innerHTML = '<i class="bi bi-check2-circle"></i> Áno, rezervovať!';
   }
   document.getElementById('bookConfirmModal').style.display='flex';
+}
+
+// Korytárky: vypni týždeň zadarmo a rezervuj — server potom ukáže stenu s platbou (vstup / členstvo / na mieste)
+async function preskocSkuskuARezervuj(){
+  if(!_pending || !window.FA_SKIP) return;
+  const p={..._pending};
+  document.getElementById('bookConfirmModal').style.display='none';
+  const ok=await FA_SKIP.potvrd();
+  if(!ok){ document.getElementById('bookConfirmModal').style.display='flex'; return; }
+  try{ const me=await fetch('/api/me',{credentials:'include'}).then(r=>r.json()); if(me && me.id) _me=me; }catch(e){}
+  _bezSkusky=true; _pending=p;
+  ukazStav && ukazStav('Týždeň zadarmo je vypnutý — vyber si, ako zaplatíš.');
+  doConfirmBook();
 }
 
 function closeBookConfirm(){

@@ -385,7 +385,7 @@ const RANKS = [
 const LEVEL_RATES = [0.08, 0.05, 0.04, 0.03, 0.02, 0.015, 0.01];
 // Referral commission — everyone earns from 5 lines (line 1 = direct referrals … line 5)
 const LINE_RATES = [0.10, 0.05, 0.03, 0.02, 0.01];
-const LOCATIONS   = ['Detva', 'Zvolen', 'Banská Bystrica', 'Brezno', 'Online'];
+const LOCATIONS   = ['Detva', 'Zvolen', 'Banská Bystrica', 'Brezno', 'Korytárky', 'Online'];
 
 // ─── User Role Hierarchy ──────────────────────────────────────────────────────
 // lead → client → (trainer | partner | manager) → admin
@@ -439,6 +439,7 @@ const CHANNELS    = [
   { id:'mesto_zvolen', name:'Zvolen',          emoji:'📍', city:true },
   { id:'mesto_bb',     name:'Banská Bystrica', emoji:'📍', city:true },
   { id:'mesto_brezno', name:'Brezno',          emoji:'📍', city:true },
+  { id:'mesto_korytarky', name:'Korytárky',    emoji:'📍', city:true },
   // VIP miestnosť len pre venčekárov (žiaci/učitelia/riaditelia + Fusion tím)
   { id:'venceky_vip', name:'Venčeky VIP', emoji:'🎓', vip:'venceky' },
 ];
@@ -599,7 +600,7 @@ function classRunsOn(c, date){ return !c || !c.only_date || c.only_date === (dat
 // Klientka to vidí pri hodine v rozvrhu, na nástenke aj pri rezervácii (public/min-ucast.js).
 // Mesto sa pridá alebo zmení len tu.
 const MIN_UCAST = { pocet:8, hodin:3,
-  mesta:{ 'brezno':'v Brezne', 'zvolen':'vo Zvolene', 'banská bystrica':'v Banskej Bystrici' } };
+  mesta:{ 'brezno':'v Brezne', 'zvolen':'vo Zvolene', 'banská bystrica':'v Banskej Bystrici', 'korytárky':'v Korytárkach' } };
 function minUcastInfo(c, prihlasenych){
   if(!c || c.category==='Online' || c.category==='Súkromné') return null;
   const kde = MIN_UCAST.mesta[String(c.location||'').trim().toLowerCase()];
@@ -1956,6 +1957,30 @@ async function seedData() {
       console.log('✅  Online hodina Brezno '+DATE+' '+START+' pridaná (jednorazovo)');
     }
     await q.insert(db.settings,{key:'online_brezno_20260813', value:true, at:nowISO()});
+  }
+
+  // Nová pobočka Korytárky (Marek 13. 10. 2026): Zumba každý utorok 19:00 v Kultúrnom dome,
+  // učí Beáta. Rezervovať sa dá hneď v deň nasadenia; kiosk pobočky sa zapne s vlastným kľúčom.
+  if(!(await q.one(db.settings,{key:'korytarky_hodina_20261013'}))){
+    try{
+      if(!(await q.one(db.classes,{location:'Korytárky', day_of_week:2, time_start:'19:00'}))){
+        const beata=await q.one(db.users,{email:'beatabunova22@gmail.com'}) || await q.one(db.users,{name:/Beáta Gruber/i}) || {};
+        await q.insert(db.classes,{ name:'Zumba', emoji:'🎵', category:'Zumba',
+          instructor:beata.name || 'Beáta Gruber Buňová', instructor_id:beata._id || '',
+          location:'Korytárky', address:'Kultúrny dom Korytárky',
+          day_of_week:2, time_start:'19:00', time_end:'20:00', capacity:25, level:'Všetky úrovne',
+          description:'Zumba v Korytárkach! Každý utorok v Kultúrnom dome — latinské rytmy, dobrá nálada a 400–600 kcal za hodinu.',
+          price:10, color:'#C9A84C', only_date:null, stream_city:null, active:true, created_at:nowISO() });
+        console.log('✅  Korytárky: Zumba utorok 19:00 pridaná (Beáta)');
+      }
+      await kioskConfig();
+      const ks=await q.one(db.settings,{key:'kiosk_config'});
+      if(ks && ks.value.studios.korytarky && !ks.value.studios.korytarky.enabled){
+        ks.value.studios.korytarky.enabled=true;
+        await q.update(db.settings,{_id:ks._id},{$set:{value:ks.value}});
+      }
+      await q.insert(db.settings,{key:'korytarky_hodina_20261013', value:true, at:nowISO()});
+    }catch(e){ console.error('korytarky hodina:', e.message); }
   }
 
   // 13.8.: rezervácia z 🕵️ test účtu ostala po odchode z testu visieť v zozname
@@ -4600,7 +4625,7 @@ const mimoLandingu=c=>MIMO_LANDING.includes(String(c.category||'').toLowerCase()
   || /rezervácia|kids|deti|technick/i.test(String(c.name||''));
 app.get('/api/first-class/schedule', rlPublic, async(req,res)=>{
   try{
-    const CITY_SLUGS={'detva':'Detva','zvolen':'Zvolen','banska-bystrica':'Banská Bystrica','bb':'Banská Bystrica','brezno':'Brezno'};
+    const CITY_SLUGS={'detva':'Detva','zvolen':'Zvolen','banska-bystrica':'Banská Bystrica','bb':'Banská Bystrica','brezno':'Brezno','korytarky':'Korytárky'};
     const city=CITY_SLUGS[String(req.query.city||'').toLowerCase()]||null;
     const classes=(await q.find(db.classes,{active:true})).filter(c=>!mimoLandingu(c));
     const out=[];
@@ -8135,6 +8160,7 @@ const ACHIEVEMENTS = [
   {id:'city_zvolen', cat:'city', city:'Zvolen',           icon:'🏰', name:'Zvolen',           desc:'Prvá hodina vo Zvolene'},
   {id:'city_bb',     cat:'city', city:'Banská Bystrica',  icon:'⛰️', name:'Banská Bystrica',  desc:'Prvá hodina v Banskej Bystrici'},
   {id:'city_brezno', cat:'city', city:'Brezno',           icon:'🏔️', name:'Brezno',           desc:'Prvá hodina v Brezne'},
+  {id:'city_korytarky', cat:'city', city:'Korytárky',     icon:'🌾', name:'Korytárky',        desc:'Prvá hodina v Korytárkach'},
   {id:'city_all',    cat:'city_all', icon:'🗺️', name:'Cestovateľka', name_m:'Cestovateľ', desc:'Odchodená hodina vo všetkých mestách'},
   // Privedení noví ľudia (referral)
   {id:'r1',   cat:'refs', need:1,   icon:'🤝', name:'Ambasádorka',         name_m:'Ambasádor', desc:'1 privedený člen'},
@@ -10785,7 +10811,7 @@ app.post('/api/import-meta-leads', async(req,res)=>{
     if(!tok || req.headers['x-import-token']!==tok) return res.status(404).end();
     const list=Array.isArray(req.body?.people)?req.body.people:[];
     if(!list.length) return res.status(400).json({error:'people[] required'});
-    const CITY={zvolen:'Zvolen', 'banská_bystrica':'Banská Bystrica', brezno:'Brezno', detva:'Detva'};
+    const CITY={zvolen:'Zvolen', 'banská_bystrica':'Banská Bystrica', brezno:'Brezno', detva:'Detva', korytarky:'Korytárky'};
     const users=await q.find(db.users,{});
     const p9=v=>{ let s=String(v||'').replace(/[^\d]/g,''); if(s.startsWith('421'))s=s.slice(3); if(s.startsWith('0'))s=s.slice(1); return s.length===9?s:null; };
     const byEmail={}, byPhone={};
@@ -12764,6 +12790,8 @@ const MEMBERSHIP_PLANS = {
 // režim zapnutý, prvá hodina zadarmo sa v samoobslužných cestách (appka, kiosk,
 // pozvánka, landing) nedáva — tréner ju môže darovať ručne ďalej.
 const SKUSKA = { dni:7, plan:'bronze' };
+// Mestá, kde klientky prvý týždeň zadarmo už mali mimo appky a môžu ho preskočiť (Marek 13. 10. 2026)
+const SKUSKA_PRESKOCIT_MESTA = ['Korytárky'];
 const SKUSKA_DOVODY = { rola:'Skúšobný týždeň je pre klientky.', vypnute:'Skúšobný týždeň momentálne nie je k dispozícii.',
   uz_mala:'Skúšobný týždeň si už využila.', odmietnuta:'Ponuku prvého týždňa zadarmo si už odmietla — dostáva sa len raz.', odber:'Už máš bežiaci mesačný odber.', clenstvo:'Už máš aktívne členstvo.',
   mala_clenstvo:'Skúšobný týždeň je pre nové klientky — členstvo si u nás už mala.',
@@ -12794,8 +12822,14 @@ async function skuskaInfo(u){
   // beh skúšky sa preto neviaže na Stripe odber. `card` hovorí, či sa po týždni naozaj
   // niečo strhne; bez karty appka nesmie sľubovať automatické pokračovanie.
   const active = !!(u && u.trial_ends_at && !u.trial_converted_at && u.trial_ends_at >= nowISO());
-  return { on, eligible:n.ok, reason:n.ok?null:n.reason, active, card: !!(u && u.stripe_subscription_id), ends_at:u?.trial_ends_at||null, used:!!u?.trial_used, declined:!!u?.trial_declined_at,
-    days:SKUSKA.dni, plan:SKUSKA.plan, price:MEMBERSHIP_PLANS[SKUSKA.plan].price };
+  // Korytárky (13. 10.): kto tam chodí, týždeň zadarmo mal ešte pred appkou → ponúkni preskočenie
+  let skip_offer = false;
+  if(active && u && !u.stripe_subscription_id && !u.trial_skipped_at){
+    skip_offer = SKUSKA_PRESKOCIT_MESTA.includes(mzMesto(u.city)) ||
+      (await q.find(db.bookings,{user_id:u._id})).some(b=>SKUSKA_PRESKOCIT_MESTA.includes(mzMesto(b.class_location)));
+  }
+  return { on, skip_offer, eligible:n.ok, reason:n.ok?null:n.reason, active, card: !!(u && u.stripe_subscription_id), ends_at:u?.trial_ends_at||null, used:!!u?.trial_used, declined:!!u?.trial_declined_at,
+    days:SKUSKA.dni, plan:SKUSKA.plan, price:MEMBERSHIP_PLANS[SKUSKA.plan].price, skipped:!!u?.trial_skipped_at };
 }
 function fmtDenSk(iso){ const d=new Date(iso); return d.getUTCDate()+'. '+(d.getUTCMonth()+1)+'.'; }
 // Po úspešnom Checkoute so skúškou: členstvo Bronze na 7 dní, odber na zázname, oznam + mail.
@@ -14290,7 +14324,7 @@ function mzMesto(loc){
 // chodia na ňom do jeho konca („dobehne, potom 10 €") — zoznam zapísala migrácia raz, obnova ani nový
 // nákup ho nepredĺžia. Vstup z appky / permanentky a darovaná hodina platia normálne.
 // Nastavenie: settings mesta_len_vstup = { Brezno:{ aktivne, cena, od, dobiehaju:{ user_id: koniec členstva } } }.
-const V_MESTE = { 'Brezno':'V Brezne', 'Zvolen':'Vo Zvolene', 'Detva':'V Detve', 'Banská Bystrica':'V Banskej Bystrici' };
+const V_MESTE = { 'Brezno':'V Brezne', 'Zvolen':'Vo Zvolene', 'Detva':'V Detve', 'Banská Bystrica':'V Banskej Bystrici', 'Korytárky':'V Korytárkach' };
 const vMeste = m => V_MESTE[m] || ('V meste '+m);
 async function lenVstupPravidlo(cls){
   if(!cls) return null;
@@ -16204,6 +16238,44 @@ app.post('/api/skuska/odmietnut', auth, async(req,res)=>{
     await q.update(db.users,{_id:u._id},{$set:{trial_declined_at:nowISO()}});
     zapisKrok(req,'trial_decline',{uid:u._id}).catch(()=>{});
     res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Preskočenie prvého týždňa zadarmo (Marek 13. 10. 2026): v Korytárkach ženy chodili už pred appkou
+// a týždeň zadarmo majú za sebou — v appke si ho môžu vypnúť a platiť hneď. Bežiaca skúška
+// (záznam trial:true) sa ukončí včerajškom, aby nové členstvo začalo dnes a nenadväzovalo na skúšku;
+// rezervácie, ktoré kryla skúška, sa prepnú na platbu na mieste. Skúška s kartou (Stripe odber)
+// sa tu nevypína — tú treba zrušiť ručne.
+app.post('/api/skuska/preskocit', auth, async(req,res)=>{
+  try{
+    const u = await q.one(db.users,{_id:req.session.uid});
+    if(!u) return res.status(401).json({error:'Nie ste prihlásený'});
+    if(u.trial_converted_at) return res.status(400).json({error:'Skúšobný týždeň už prešiel na zaplatené členstvo.'});
+    if(u.stripe_subscription_id && !String(u.stripe_subscription_id).startsWith('test_')) return res.status(400).json({error:'Týždeň zadarmo máš s kartou — napíš nám, vypneme ti ho ručne.'});
+    const bezi = !!(u.trial_ends_at && u.trial_ends_at >= nowISO());
+    const vcera = new Date(Date.now()-864e5).toISOString();
+    let prepnute = 0;
+    if(bezi){
+      const mems = (await q.find(db.memberships,{user_id:u._id, trial:true})).filter(m=>!m._type && m.status==='active');
+      for(const m of mems) await q.update(db.memberships,{_id:m._id},{$set:{status:'cancelled', expires_at:vcera, trial_skipped_at:nowISO(), updated_at:nowISO()}});
+      // Rezervácie od dnes, ktoré kryla skúška → platba na mieste (vstup podľa mesta, inak 10 €)
+      const od = (u.trial_started_at||'').slice(0,10) || today();
+      const bks = (await q.find(db.bookings,{user_id:u._id, status:'confirmed'}))
+        .filter(b=>(b.booking_date||'')>=today() && b.access_method==='membership' && (b.created_at||'').slice(0,10)>=od);
+      for(const b of bks){
+        const cls = await q.one(db.classes,{_id:b.class_id});
+        const lv = await lenVstupPravidlo(cls);
+        await q.update(db.bookings,{_id:b._id},{$set:{pay_on_site:true, access_method:'pay_on_site', pay_amount:(lv && lv.cena) || 10, pay_plan:null, pay_plan_name:null}});
+        prepnute++;
+      }
+    }
+    await q.update(db.users,{_id:u._id},{$set:{ trial_used:true, trial_skipped_at:nowISO(),
+      ...(bezi ? {trial_ends_at:vcera, membership_plan:null, membership_expires:vcera} : {}),
+      ...(u.trial_declined_at ? {} : {trial_declined_at:nowISO()}) }});
+    cancelSequence(u._id,'expiry_warning').catch(()=>{});
+    zapisKrok(req,'trial_skip',{uid:u._id}).catch(()=>{});
+    console.log('⏭️ Týždeň zadarmo preskočený: '+u.name+(bezi?' (bežal, rezervácií na mieste '+prepnute+')':''));
+    res.json({ok:true, bezal:bezi, prepnute});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -18180,7 +18252,7 @@ setInterval(async()=>{
 // ═══════════════════════════════════════════════════════════════════════════════
 // KIOSK MODE — digitálna recepcia (fullscreen tablet pri vstupe do štúdia)
 // ═══════════════════════════════════════════════════════════════════════════════
-const KIOSK_STUDIOS = { detva:'Detva', zvolen:'Zvolen', bb:'Banská Bystrica', brezno:'Brezno' };
+const KIOSK_STUDIOS = { detva:'Detva', zvolen:'Zvolen', bb:'Banská Bystrica', brezno:'Brezno', korytarky:'Korytárky' };
 const KIOSK_DEFAULT_WIDGETS = { program:true, stats:true, klient_mesiaca:true, birthdays:true, upsell:true, health:true, app_promo:true, referral:true, challenge:true, custom:true, events:true };
 async function kioskConfig(){
   let s = await q.one(db.settings,{key:'kiosk_config'});
@@ -18192,6 +18264,13 @@ async function kioskConfig(){
         widgets:{...KIOSK_DEFAULT_WIDGETS}, announcement:'', custom_slides:[] };
     }
     s = await q.insert(db.settings,{key:'kiosk_config', value:{studios}, at:nowISO()});
+  }
+  // Nová pobočka (Korytárky 13. 10. 2026) — uložený config ju ešte nemá, doplň ju vypnutú s vlastným kľúčom
+  const chyba = Object.keys(KIOSK_STUDIOS).filter(slug=>!s.value.studios[slug]);
+  if(chyba.length){
+    for(const slug of chyba) s.value.studios[slug]={ enabled:false, token:require('crypto').randomBytes(12).toString('hex'),
+      interval_s:12, idle_s:15, night_off:'21:30', night_on:'07:30', widgets:{...KIOSK_DEFAULT_WIDGETS}, announcement:'', custom_slides:[] };
+    await q.update(db.settings,{_id:s._id},{$set:{value:s.value}});
   }
   return s.value;
 }

@@ -203,9 +203,9 @@ footer a{color:#8f8a7d}
 </div>
 
 <script>
-const SLUG2NAME={'detva':'Detva','zvolen':'Zvolen','banska-bystrica':'Banská Bystrica','bb':'Banská Bystrica','brezno':'Brezno'};
-const LOC={'Detva':'V DETVE','Zvolen':'VO ZVOLENE','Banská Bystrica':'V BANSKEJ BYSTRICI','Brezno':'V BREZNE'};
-const NAME2SLUG={'Detva':'detva','Zvolen':'zvolen','Banská Bystrica':'banska-bystrica','Brezno':'brezno'};
+const SLUG2NAME={'detva':'Detva','zvolen':'Zvolen','banska-bystrica':'Banská Bystrica','bb':'Banská Bystrica','brezno':'Brezno','korytarky':'Korytárky'};
+const LOC={'Detva':'V DETVE','Zvolen':'VO ZVOLENE','Banská Bystrica':'V BANSKEJ BYSTRICI','Brezno':'V BREZNE','Korytárky':'V KORYTÁRKACH'};
+const NAME2SLUG={'Detva':'detva','Zvolen':'zvolen','Banská Bystrica':'banska-bystrica','Brezno':'brezno','Korytárky':'korytarky'};
 const P0=new URLSearchParams(location.search);
 let CITY=SLUG2NAME[(P0.get('city')||'').toLowerCase()]||null;   // bez mesta = všetky mestá, najbližšie termíny
 let ITEMS=[], PICK=null, VSETKY=false, CFG={prvy_tyzden:true, variant:'karta', trial_price:49.9, trial_days:7}, VYSLEDOK=null;

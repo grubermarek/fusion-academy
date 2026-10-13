@@ -8,6 +8,7 @@
 <script src="/i18n.js"></script>
 <script src="/i18n-pages.js"></script>
 <script src="/min-ucast.js"></script>
+<script src="/skuska-preskocit.js"></script>
   <script>/* téma pred prvým renderom (bez bliknutia) */try{if(localStorage.getItem('fa_theme')==='aurora')document.documentElement.dataset.theme='aurora'}catch(e){}</script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link rel="stylesheet" href="/aurora.css">
@@ -598,6 +599,7 @@
         <button class="chip" data-city="Zvolen">Zvolen</button>
         <button class="chip" data-city="Banská Bystrica">B. Bystrica</button>
         <button class="chip" data-city="Brezno">Brezno</button>
+        <button class="chip" data-city="Korytárky">Korytárky</button>
       </div>
     </div>
     <div id="typeChips" style="display:none"></div>
@@ -1278,6 +1280,11 @@ async function skuskaStart(){
   showToast(d?.error||'Skúšku sa nepodarilo spustiť, skús znova.','error');
   if(btn){ btn.disabled=false; btn.textContent='Vyskúšať za 0,00\u00a0€'; }
 }
+async function preskocSkusku(){
+  if(!window.FA_SKIP || !(await FA_SKIP.potvrd())) return;
+  showToast('Týždeň zadarmo je vypnutý. Rezervácie z neho zaplatíš na mieste alebo si kúp vstup či členstvo.');
+  setTimeout(()=>location.reload(), 1200);
+}
 function renderAccessBar(me){
   const bar=document.getElementById('accessBar');
   const icon=document.getElementById('accessBarIcon');
@@ -1289,7 +1296,9 @@ function renderAccessBar(me){
     // Bez uloženej karty sa po týždni nič nestrhne — nesmieme tvrdiť opak (Marek 27. 9.).
     text.innerHTML='<strong>🎁 Prvý týždeň zadarmo beží</strong> do '+fmtSk(me.trial.ends_at)+(me.trial.card
       ? " Potom Bronze "+(+me.trial.price).toFixed(2).replace('.',',')+" €/mes. — zrušiť môžeš v karte členstva."
-      : ' Nič sa ti nestrhne — po týždni sa rozhodneš, či pokračuješ.');
+      : ' Nič sa ti nestrhne — po týždni sa rozhodneš, či pokračuješ.')
+      // Korytárky (13. 10.): týždeň zadarmo mali ešte pred appkou → môžu ho vypnúť
+      +(me.trial.skip_offer ? ' <a href="#" onclick="preskocSkusku();return false" style="color:var(--gold);font-weight:700;white-space:nowrap">Týždeň som už mala →</a>' : '');
     bar.style.display='flex';
   } else if(hasMembership){
     // Card below already shows the full membership detail — avoid duplicating it here
