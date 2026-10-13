@@ -18289,14 +18289,44 @@ async function normalizeAttendance(){
   if(n) console.log(`📋 Dochádzka: doplnený attendance_status pri ${n} rezerváciách`);
   return n;
 }
+// Pripomienka trénerovi, že hodina nemá potvrdenú dochádzku — namiesto toho, aby appka
+// označila všetky prihlásené ako neprítomné (Marek 12. 10. 2026: „Brezno som asi zabudol
+// potvrdiť po hodine, tie ženy na hodinách boli"). Najviac dvakrát na termín a aspoň 12 h
+// po sebe, prvá ide aj mailom.
+async function pripomenPotvrdenie(cls, date, pocet){
+  const kluc='potvrd_pripomienka:'+cls._id+'@'+date;
+  const zaz=await q.one(db.settings,{key:kluc});
+  const kolko=+((zaz&&zaz.value&&zaz.value.n)||0), kedy=zaz&&zaz.value&&zaz.value.at;
+  if(kolko>=2) return;
+  if(kedy && Date.now()-new Date(kedy).getTime() < 12*3600000) return;
+  const si=await sessionInstructor(cls, date);
+  const kedyTxt=String(date).split('-').reverse().join('. ');
+  const komu=si.instructor_id ? [si.instructor_id] : (await q.find(db.users,{is_admin:true})).map(a=>a._id);
+  const telo=`${cls.name} · ${cls.location} ${kedyTxt} nemá potvrdenú dochádzku (${pocet} prihlásených). Kým ju nepotvrdíš, nikomu sa nepripíše návšteva — a nikoho neoznačujeme ako neprítomnú.`;
+  for(const uid of komu) await q.insert(db.notifications,{user_id:uid, type:'attendance',
+    title:'📋 Potvrď dochádzku — '+cls.name, body:telo, read:false, created_at:nowISO()}).catch(()=>{});
+  if(!kolko && si.instructor_id){
+    const tr=await q.one(db.users,{_id:si.instructor_id});
+    if(tr && tr.email) sendMail(tr.email, '📋 Potvrď dochádzku — '+cls.name+' '+kedyTxt,
+      emailTemplate('Hodina čaká na potvrdenie', `<p>Ahoj <b>${String(tr.name||'').split(' ')[0]}</b>,</p><p>${telo}</p>`,
+        '📋 Potvrdiť hodinu', APP_URL+'/trainer')).catch(()=>{});
+  }
+  const hodnota={n:kolko+1, at:nowISO()};
+  if(zaz) await q.update(db.settings,{key:kluc},{$set:{value:hodnota}});
+  else await q.insert(db.settings,{key:kluc, value:hodnota, at:nowISO()});
+  console.log('📋 Pripomienka potvrdenia: '+cls.name+' '+cls.location+' '+date+' ('+pocet+' prihlásených)');
+}
+
 // Označí neprítomné. Beží každú hodinu, takže reálne označí 60–120 min po hodine.
 async function markNoShows(){
   const from = await noShowFrom();
   await normalizeAttendance();
   const rows = (await q.find(db.bookings,{attendance_status:'pending', status:'confirmed'}))
-    .filter(b => String(b.booking_date||'') >= from);
+    .filter(b => String(b.booking_date||'') >= from)
+    // detské rezervácie najskôr — po ich spracovaní je na termíne niekto prítomný
+    .sort((a,b)=>(b.auto_kids?1:0)-(a.auto_kids?1:0));
   if(!rows.length) return 0;
-  const clsCache = {};
+  const clsCache = {}, potvrdene = {}, pripomenute = new Set();
   const now = Date.now();
   let n = 0;
   for(const b of rows){
@@ -18310,6 +18340,24 @@ async function markNoShows(){
       const dieta=b.user_id ? await q.one(db.users,{_id:b.user_id}) : null;
       if(dieta) await creditAttendance(dieta);
       continue;
+    }
+    // Nepotvrdená hodina sa nehádže na klientky (Marek 12. 10. 2026): keď na termíne nie je
+    // ani jedna označená prítomná, je to takmer vždy zabudnuté potvrdenie — vtedy nikoho
+    // neoznačíme a radšej to pripomenieme trénerovi. Online hodiny sa potvrdzujú samy
+    // pri štarte vysielania, tam pravidlo neplatí.
+    const cls = clsCache[b.class_id];
+    if(cls && cls.category!=='Online'){
+      const kl = b.class_id+'@'+b.booking_date;
+      if(!(kl in potvrdene))
+        potvrdene[kl] = (await q.count(db.bookings,{class_id:b.class_id, booking_date:b.booking_date, status:'attended'})) > 0;
+      if(!potvrdene[kl]){
+        if(!pripomenute.has(kl)){
+          pripomenute.add(kl);
+          const pocet = rows.filter(x=>x.class_id===b.class_id && x.booking_date===b.booking_date).length;
+          await pripomenPotvrdenie(cls, b.booking_date, pocet).catch(()=>{});
+        }
+        continue;
+      }
     }
     await q.update(db.bookings,{_id:b._id},{$set:{attendance_status:'no_show', attendance_source:'auto', no_show_at:nowISO()}});
     // počítadlo pre skórovanie leadov v trénerskom paneli
