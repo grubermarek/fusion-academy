@@ -12059,6 +12059,76 @@ app.post('/api/service/clenstvo-zapisat', async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Prvý týždeň zadarmo ručne (Marek 14. 10. 2026: „Zdenka dnes začala týždeň zadarmo",
+// „Katka má dnes ešte prvý týždeň zadarmo"). Klientka si ho v appke občas preklikne zle
+// (Zdenka ponuku omylom odmietla) a tréner jej ho na hodine sľúbi. Nástroj skúšku zapne
+// odo dneška a rezervácie v zadaných dňoch prestane účtovať ako vstup na mieste.
+// Bez `apply:true` je to suchý náhľad.
+app.post('/api/service/skuska-dat', async(req,res)=>{
+  if(!servisToken(req)) return res.status(404).end();
+  try{
+    const email=String(req.body.email||'').trim().toLowerCase();
+    const u = email ? await q.one(db.users,{email}) : await q.one(db.users,{_id:String(req.body.user_id||'')});
+    if(!u) return res.status(404).json({error:'Klientka nenájdená'});
+    const znova = req.body.znova===true;
+    if(u.trial_used && !znova) return res.status(400).json({error:'Skúšobný týždeň už mala (znova:true ho dá ešte raz)'});
+    const bezne = await q.one(db.memberships,{user_id:u._id, status:'active'});
+    if(bezne && !bezne.trial && bezne.expires_at && new Date(bezne.expires_at)>new Date() && !znova)
+      return res.status(400).json({error:'Má bežiace členstvo do '+String(bezne.expires_at).slice(0,10)+' — skúška netreba (znova:true ju vnúti)'});
+    const pokryDni = (Array.isArray(req.body.pokry_dni)?req.body.pokry_dni:[]).map(x=>String(x).slice(0,10));
+    const rezervacie = pokryDni.length
+      ? (await q.find(db.bookings,{user_id:u._id})).filter(b=>pokryDni.includes(String(b.booking_date||'').slice(0,10))
+          && b.pay_on_site && !b.entry_collected && !String(b.status||'').startsWith('cancelled'))
+      : [];
+    const doKedy=new Date(Date.now()+SKUSKA.dni*864e5).toISOString().slice(0,10);
+    const nahlad={ klientka:u.name, skuska_do:doKedy, uz_mala:!!u.trial_used,
+      odmietla: u.trial_declined_at ? String(u.trial_declined_at).slice(0,10) : null,
+      permanentka_vstupy: u.single_entries||0,
+      rezervacie: rezervacie.map(b=>({id:b._id, den:b.booking_date, hodina:b.class_name, suma:b.pay_amount||null})) };
+    if(req.body.apply!==true) return res.json({ok:true, apply:false, nahlad});
+
+    await aktivujSkusku(u._id, null, null);
+    // odmietnutie zahoď — inak appka klientku ďalej vedie ako „ponuku odmietla"
+    if(u.trial_declined_at) await q.update(db.users,{_id:u._id},{$unset:{trial_declined_at:true}});
+    for(const b of rezervacie)
+      await q.update(db.bookings,{_id:b._id},{$set:{ access_method:'trial', pay_on_site:false, pay_amount:null,
+        pay_waived_at:nowISO(), pay_waived_reason:'prvý týždeň zadarmo' }});
+    const po=await q.one(db.users,{_id:u._id});
+    await auditLog(req,'trial_grant',u._id,{trial_used:!!u.trial_used, odmietla:u.trial_declined_at||null},
+      {do:po?.trial_ends_at||null, rezervacie:rezervacie.length}, String(req.body.reason||''));
+    console.log('🎁 Týždeň zadarmo ručne: '+u.name+' do '+String(po?.trial_ends_at||'').slice(0,10));
+    res.json({ok:true, apply:true, klientka:u.name, skuska_do:String(po?.trial_ends_at||'').slice(0,10),
+      odpustene_vstupne:rezervacie.map(b=>b.booking_date+' '+(b.pay_amount||0)+' €')});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// Prepnutie mesta medzi „len za vstup" a bežným režimom (Marek 14. 10. 2026: „Breznu opäť
+// spustíme predaj permanentiek aj mesačných členstiev"). Brezno od 15. 9. členstvo nekrylo,
+// platilo sa 10 € za vstup — settings `mesta_len_vstup`. Tu sa to zapína a vypína.
+app.post('/api/service/mesto-len-vstup', async(req,res)=>{
+  if(!servisToken(req)) return res.status(404).end();
+  try{
+    const mesto=String(req.body.mesto||'').trim();
+    if(!mesto) return res.status(400).json({error:'Pošli mesto'});
+    const s=await q.one(db.settings,{key:'mesta_len_vstup'});
+    const v=(s && s.value) || {};
+    const p=v[mesto];
+    if(!p) return res.status(404).json({error:'Mesto '+mesto+' v nastavení nie je — mestá: '+(Object.keys(v).join(', ')||'žiadne')});
+    const aktivne = req.body.aktivne===true;
+    const nahlad={ mesto, teraz: p.aktivne===false ? 'bežný režim (členstvo platí)' : ('len vstup '+(p.cena||10)+' €'),
+      po_zmene: aktivne ? ('len vstup '+(+req.body.cena>0?+req.body.cena:(p.cena||10))+' €') : 'bežný režim (členstvo aj permanentka platia)',
+      dobiehajucich: Object.keys(p.dobiehaju||{}).length };
+    if(req.body.apply!==true) return res.json({ok:true, apply:false, nahlad});
+
+    v[mesto]={ ...p, aktivne, ...(+req.body.cena>0?{cena:+req.body.cena}:{}), zmenene_at:nowISO() };
+    if(s) await q.update(db.settings,{key:'mesta_len_vstup'},{$set:{value:v, at:nowISO()}});
+    else await q.insert(db.settings,{key:'mesta_len_vstup', value:v, at:nowISO()});
+    await auditLog(req,'mesto_len_vstup',mesto,{aktivne:p.aktivne!==false, cena:p.cena||10},{aktivne, cena:v[mesto].cena||10},String(req.body.reason||''));
+    console.log('🏙️ '+mesto+': '+(aktivne?'len vstup '+(v[mesto].cena||10)+' €':'bežný režim — členstvo a permanentka platia'));
+    res.json({ok:true, apply:true, mesto, aktivne, cena:v[mesto].cena||10});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Spätné potvrdenie hodiny, na ktorú tréner zabudol (Marek 12. 10. 2026: „Brezno som asi
 // zabudol potvrdiť po hodine, tie ženy na hodinách boli"). Keď sa hodina nepotvrdí, hodinu
 // po jej konci označí automat VŠETKY rezervácie ako „neprišla" — klientky prídu o návštevu
