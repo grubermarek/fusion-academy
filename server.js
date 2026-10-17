@@ -4729,6 +4729,12 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
     }
     if(!u.manage_token){ u.manage_token='MG'+Math.random().toString(36).slice(2,12).toUpperCase();
       await q.update(db.users,{_id:u._id},{$set:{manage_token:u.manage_token}}); }
+    // Odkaz na prihlásenie jedným klikom — bez neho sa žena z Facebookového prehliadača
+    // do appky druhýkrát nedostane bez vypisovania hesla z mailu.
+    const vstupToken='VS'+require('crypto').randomBytes(16).toString('hex');
+    await q.update(db.users,{_id:u._id},{$set:{login_token:vstupToken,
+      login_token_exp:new Date(Date.now()+14*864e5).toISOString()}});
+    const vstupUrl=APP_URL+'/vstup/'+vstupToken;
     // Pod zámkom hodina@termín znova over obsadenosť a duplicitu — medzi kontrolou
     // vyššie a zápisom mohla vojsť iná požiadavka (tá istá diera ako E11-B v /api/bookings).
     const booking=await withBookingLock(cls._id+'@'+bdate, async()=>{
@@ -4771,7 +4777,8 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
       event_id:clean(attr.event_id_lead)||undefined, source_url:clean(attr.landing)||undefined}).catch(()=>{});
     metaCapi('Schedule',{email, fbclid:clean(attr.fbclid), external_id:u._id, ip:klientIp(req), ua:req.headers['user-agent'],
       event_id:clean(attr.event_id_schedule)||undefined, source_url:clean(attr.landing)||undefined}).catch(()=>{});
-    const hesloText = heslo ? '<p>Do appky sa prihlásiš e-mailom <b>'+email+'</b> a heslom <b>'+heslo+'</b>. Zmeniť si ho môžeš v nastaveniach.</p>' : '';
+    const hesloText = (heslo ? '<p>Do appky sa prihlásiš e-mailom <b>'+email+'</b> a heslom <b>'+heslo+'</b>. Zmeniť si ho môžeš v nastaveniach.</p>' : '')
+      + '<p>Najrýchlejšie sa do nej dostaneš odtiaľto — <a href="'+vstupUrl+'" style="color:#C9A84C;font-weight:bold">otvoriť moju appku</a> (odkaz ťa prihlási sám, platí 14 dní).</p>';
     const dalsiKrok = variant==='bez_karty'
       ? '<p><b>Tvoj prvý týždeň zadarmo beží</b> — na hodinu príď len so športovým oblečením. Po týždni sa rozhodneš, či pokračuješ.</p>'
       : '<p><b>Ešte jeden krok:</b> aktivuj si prvý týždeň zadarmo v appke — karta sa len uloží, nič sa nestrhne a zrušíš kedykoľvek. Bez skúšky sa hodina platí na mieste.</p>';
@@ -4782,7 +4789,7 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
       +dalsiKrok+hesloText
       +'<p>Priniesť si stačí: 💧 vodu · 👟 tenisky · 🧣 malý uterák · 👕 športové oblečenie. Nemusíš vedieť tancovať — trénerka ťa prevedie hodinou.</p>'
       +'<p>📅 <a href="'+APP_URL+'/cal/booking/'+booking._id+'.ics" style="color:#C9A84C;font-weight:bold">Pridať do kalendára</a></p>',
-      variant==='bez_karty' ? '📍 Moje rezervácie' : '🎁 Aktivovať prvý týždeň zadarmo', APP_URL+'/client-dashboard'), {priority:2, template:'landing_confirm'}).catch(()=>{});
+      variant==='bez_karty' ? '📍 Moje rezervácie' : '🎁 Aktivovať prvý týždeň zadarmo', vstupUrl), {priority:2, template:'landing_confirm'}).catch(()=>{});
     else sendMail(email, 'Tešíme sa na teba! 💃 Prvá hodina zdarma je rezervovaná',
       emailTemplate('Máš to! 🎉',
       '<p>Ahoj '+String(name).split(' ')[0]+', tvoje miesto je rezervované:</p>'
@@ -4793,7 +4800,7 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
       +'<p>Nemôžeš prísť? Termín zmeníš alebo zrušíš cez odkaz nižšie.</p>',
       '📍 Detaily / zmena rezervácie', APP_URL+'/invite/FUSION?manage='+u.manage_token), {priority:2, template:'first_class_confirm'}).catch(()=>{});
     res.json({ok:true, booking_id:booking._id, is_new:isNew, manage_token:u.manage_token,
-      next:dalej, variant, heslo:heslo||undefined, kontakt: email,
+      next:dalej, variant, heslo:heslo||undefined, kontakt: email, vstup_url:vstupUrl,
       skuska: (skuskaStav&&skuskaStav.ok) ? {ends_at:skuskaStav.ends_at} : null,
       detail:{ name:cls.name, emoji:cls.emoji||'💃', city:cls.location, address:cls.address||'',
         date:bdate, day_name:DAYS_SK[cls.day_of_week], time_start:cls.time_start, time_end:cls.time_end||'' }});
@@ -25579,6 +25586,21 @@ const WEB_MAP = {
 };
 Object.entries(WEB_MAP).forEach(([from,to])=>{
   app.get(from,(req,res)=>res.redirect(301, WEB_URL+to));
+});
+// Prihlásenie jedným klikom z mailu (17. 10. 2026). 98 % návštev landingu príde vo
+// vstavanom prehliadači Facebooku — prihlásenie ostane v ňom a keď si žena appku otvorí
+// normálne (alebo na inom zariadení), je odhlásená a heslo ZumbaXXXX má zahrabané v maili.
+// Odkaz platí 14 dní; po prihlásení sa presmeruje, takže token zmizne z adresy.
+app.get('/vstup/:token', async(req,res)=>{
+  try{
+    const t=String(req.params.token||'');
+    const u=t.length>10 ? await q.one(db.users,{login_token:t}) : null;
+    if(!u || !u.login_token_exp || u.login_token_exp < nowISO())
+      return res.redirect('/?vstup=neplatny');
+    req.session.uid=u._id; req.session.sv=u.sess_ver||0;
+    auditLog(req,'vstup_token','user',null,{uid:u._id},'').catch(()=>{});
+    res.redirect(String(req.query.kam||'')==='rezervacie' ? '/client-dashboard#rezervacie' : '/client-dashboard');
+  }catch(e){ res.redirect('/'); }
 });
 app.get('/client-dashboard',(req,res)=>res.sendFile(path.join(__dirname,'public','client-dashboard.html')));
 app.get('/jedalnicek',(req,res)=>res.sendFile(path.join(__dirname,'public','jedalnicek.html')));

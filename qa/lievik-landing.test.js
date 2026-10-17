@@ -76,6 +76,18 @@ const dbLines = (file, needle) => fs.readFileSync(path.join(DATA, file), 'utf8')
     ok('rezervácia confirmed, access trial, nie free_class', b.status === 'confirmed' && b.access_method === 'trial' && b.free_class === false && b.source === 'prva-hodina');
     const me = await j('/api/me');
     ok('po rezervácii je návštevníčka prihlásená (session)', me.d && me.d.id === u._id);
+
+    // Prihlásenie jedným klikom (17. 10.): 98 % návštev príde v prehliadači Facebooku,
+    // kde session ostane uväznená. Odkaz z mailu musí prihlásiť aj v čistom prehliadači.
+    ok('odpoveď nesie prihlasovací odkaz /vstup/', /\/vstup\/VS[0-9a-f]{32}$/.test(bk.d.vstup_url || ''));
+    const vstupTok = String(bk.d.vstup_url || '').split('/vstup/')[1] || 'ziadny';
+    const rv = await fetch(BASE + '/vstup/' + vstupTok, { redirect: 'manual' });
+    ok('odkaz presmeruje na nástenku', rv.status === 302 && String(rv.headers.get('location')).startsWith('/client-dashboard'));
+    const cudziaCookie = (rv.headers.getSetCookie ? rv.headers.getSetCookie() : []).map(c => c.split(';')[0]).join('; ');
+    const me2 = await (await fetch(BASE + '/api/me', { headers: { Cookie: cudziaCookie } })).json().catch(() => null);
+    ok('po kliknutí je prihlásená aj v čistom prehliadači', me2 && me2.id === u._id);
+    const zly = await fetch(BASE + '/vstup/VS00000000000000000000000000000000', { redirect: 'manual' });
+    ok('neplatný odkaz nikoho neprihlási', zly.status === 302 && /vstup=neplatny/.test(String(zly.headers.get('location'))));
     ok('serverové kroky booking_ok + register_ok', dbLines('funnel_events.db', '"booking_ok"').length === 1 && dbLines('funnel_events.db', '"register_ok"').length === 1);
 
     // 4) skúška zo landingu → Stripe (fake) → návrat na /prva-hodina

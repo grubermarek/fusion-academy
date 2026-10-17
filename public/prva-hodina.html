@@ -187,8 +187,8 @@ footer a{color:#8f8a7d}
       <div class="heslo" id="hesloBox" style="display:none"></div>
       <div class="bring"><span>💧 voda</span><span>🧣 uterák</span><span>👟 tenisky</span><span>👕 športové oblečenie</span></div>
       <a class="cta" id="calBtn" download="fusion-academy-zumba.ics" href="#">📅 PRIDAŤ DO KALENDÁRA</a>
-      <a class="cta ghost" style="margin-top:10px" href="/client-dashboard">Otvoriť appku →</a>
-      <div class="hint" id="doneHint">Detaily aj prihlásenie do appky ti prišli e-mailom.</div>
+      <a class="cta ghost" style="margin-top:10px" id="openAppBtn" href="/client-dashboard">Otvoriť appku →</a>
+      <div class="hint" id="doneHint">Detaily aj prihlásenie do appky ti prišli e-mailom — v maili je odkaz, ktorý ťa prihlási jedným klikom.</div>
     </div>
   </div>
 
@@ -365,6 +365,9 @@ function ukazHotovo(d, bezSkusky){
   else if(bezSkusky){ document.getElementById('doneSub').textContent='Miesto máš rezervované. Prvý týždeň zadarmo si vieš zapnúť kedykoľvek v appke.'; }
   if(d.heslo){ const h=document.getElementById('hesloBox'); h.style.display='block';
     h.innerHTML='Do appky sa prihlásiš e-mailom <b style="font-size:.95rem">'+esc(d.kontakt)+'</b> a heslom <b>'+esc(d.heslo)+'</b> (poslali sme ti ho aj e-mailom). Zmeniť si ho môžeš v nastaveniach.'; }
+  // Odkaz, ktorý prihlási sám — v prehliadači Facebooku sa prihlásenie ďalej neprenesie,
+  // takže tlačidlo musí viesť na /vstup/<token>, nie na holý dashboard.
+  if(d.vstup_url){ const b=document.getElementById('openAppBtn'); if(b) b.href=d.vstup_url; }
   const dc=document.getElementById('doneCard'); dc.style.display='block'; dc.scrollIntoView({behavior:'smooth',block:'start'});
 }
 // Návrat zo Stripe po aktivácii skúšky (?stripe=trial&session_id=…) alebo po zrušení (?stripe=trial_cancel)
