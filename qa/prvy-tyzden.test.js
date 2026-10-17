@@ -9,13 +9,18 @@
  *  - kiosk check-in bez krytia → otázka na hotovosť (prvá zdarma sa nedáva), krytie prva_zdarma=false
  *  - pozvánka pre hostí bez účtu → 410 s odkazom na registráciu; landing /prva-hodina (od 19. 9.)
  *    si účet založí sám (e-mail povinný) a ponúkne skúšku
+ *  - skúška sa udelí AUTOMATICKY pri registrácii (od 27. 9., fa-v711): bez karty, bez kódu,
+ *    trial_used + trial_ends_at = +7 dní, Bronze za 0 € — a druhýkrát sa vziať nedá
+ *  - landing /prva-hodina v oboch režimoch (settings landing_ab): 'karta' = ďalší krok Stripe,
+ *    'bez_karty' = týždeň beží hneď
  *  - /api/stripe/trial: nárok (nie admin/tréner/dieťa, nie po členstve, nie dvakrát), záznam platby 0 €
  *  - webhook checkout.session.completed (no_payment_required, trial) → Bronze na 7 dní, trial_used,
  *    odber na zázname, oznam + mail, nič v tržbách; opakovaný webhook nezdvojí
  *  - so skúškou sa dá rezervovať (kryté členstvom) a kiosk pustí
  *  - pripomienka 2–3 dni pred koncom (denný tick aj Stripe trial_will_end) — raz
  *  - prvá platba po skúške (invoice.paid subscription_cycle) predĺži o 30 dní, označí konverziu, zapíše tržbu
- *  - zrušenie odberu počas skúšky: členstvo do konca skúšky ostáva, nič sa nestrhne
+ *  - zrušenie odberu počas skúšky s kartou: členstvo do konca skúšky ostáva, nič sa nestrhne;
+ *    bez karty nie je čo rušiť — hláška to povie a týždeň klientke ostane
  *  - režim vypnutý (bez env) → stará prvá hodina zadarmo funguje ďalej
  * Spustenie:  node qa/prvy-tyzden.test.js
  */
@@ -52,6 +57,7 @@ function fixtures(DATA, DOW, nowMin) {
     { _id: 'qaPtBola0000001', name: 'Bea Bývalá', email: 'qa.pt.bea@qa-biz.local', password: hash, referral_code: 'QAPTBE', user_type: 'client', free_class_used: true, ...zak, visit_count: 6 },
     { _id: 'qaPtStara000001', name: 'Sára Stará', email: 'qa.pt.sara@qa-biz.local', password: hash, referral_code: 'QAPTSA', user_type: 'client', free_class_used: true, ...zak, visit_count: 3 },
     { _id: 'qaPtSponzor0001', name: 'Sandra Sponzorka', email: 'qa.pt.sandra@qa-biz.local', password: hash, referral_code: 'QAPTSP', user_type: 'client', free_class_used: true, ...zak, visit_count: 9 },
+    { _id: 'qaPtKarta000001', name: 'Katka Kartová', email: 'qa.pt.katka@qa-biz.local', password: hash, referral_code: 'QAPTKA', user_type: 'lead', free_class_used: false, ...zak },
   ]));
   fs.writeFileSync(path.join(DATA, 'memberships.db'), riadky([
     { _id: 'qaPtMemBea', user_id: 'qaPtBola0000001', plan_id: 'bronze', plan_name: 'Bronze', status: 'expired', started_at: '2026-06-01T00:00:00.000Z', expires_at: '2026-07-01T00:00:00.000Z', price: 50, payment_method: 'cash', created_at: '2026-06-01T00:00:00.000Z' },
@@ -93,6 +99,7 @@ async function start(PORT, DATA, env) {
     await j('/api/login', { method: 'POST', body: { email: 'qa.pt.sara@qa-biz.local', password: 'Heslo123!' } }, sara);
     await j('/api/login', { method: 'POST', body: { email: 'qa.pt.admin@qa-biz.local', password: 'Heslo123!' } }, adm);
     await j('/api/login', { method: 'POST', body: { email: 'qa.pt.trener@qa-biz.local', password: 'Heslo123!' } }, tren);
+    const exp7 = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
     const meN = await j('/api/me', {}, nora);
     ok('/api/me: nová klientka má nárok na skúšku', meN.d.trial && meN.d.trial.on === true && meN.d.trial.eligible === true && meN.d.trial.active === false && meN.d.trial.days === 7, JSON.stringify(meN.d.trial));
     ok('/api/me: kto už mal členstvo, nárok nemá', (await j('/api/me', {}, bea)).d.trial.eligible === false && (await j('/api/me', {}, bea)).d.trial.reason === 'mala_clenstvo');
@@ -120,12 +127,27 @@ async function start(PORT, DATA, env) {
     ok('hero „vyber si prvú hodinu" sa nezobrazí', (await j('/api/first-class/suggestions', {}, nora)).d.eligible === false);
     // pozvánka + landing bez účtu
     const inv = await j('/api/invite/QAPTSP/book', { method: 'POST', body: { name: 'Hana Hosť', contact: 'hana.host@qa-biz.local', class_id: 'qaPtZumbaBud' } });
-    ok('pozvánka pre hostí → 410 + registrácia s kódom', inv.status === 410 && inv.d.trial === true && /ref=QAPTSP/.test(inv.d.register_url || '') && /QAPTSP/.test(inv.d.error), JSON.stringify(inv.d));
+    // Kód sa do textu nepíše — je v odkaze (server.js: „kód nikam nepíše (je v odkaze)")
+    ok('pozvánka pre hostí → 410 + odkaz na registráciu s kódom', inv.status === 410 && inv.d.trial === true && /ref=QAPTSP/.test(inv.d.register_url || '')
+      && /celý prvý týždeň zadarmo/i.test(inv.d.error || '') && /Sandra/.test(inv.d.error || ''), JSON.stringify(inv.d));
     ok('hosť sa nevytvoril', !rd('users.db').some(u => u.email === 'hana.host@qa-biz.local'));
-    // Od 19. 9. landing beží aj so skúškou: účet vznikne na pozadí a ďalší krok je trial
+    // Od 19. 9. landing beží aj so skúškou: účet vznikne na pozadí. Režim (settings landing_ab)
+    // rozhoduje, či sa skúška zapína cez Stripe s kartou, alebo beží hneď bez karty — test
+    // nastaví oba, aby nezávisel na tom, čo je práve prepnuté v admin Kampaniach.
+    const abKarta = await j('/api/admin/landing-ab', { method: 'POST', body: { rezim: 'karta' } }, adm);
+    ok('režim landingu „karta" sa dá nastaviť', abKarta.status === 200 && abKarta.d.rezim === 'karta', JSON.stringify(abKarta.d));
     const land = await j('/api/first-class/book', { method: 'POST', body: { name: 'Lea Landing', email: 'lea.landing@qa-biz.local', class_id: 'qaPtZumbaBud' } });
-    ok('landing založí účet s heslom a ponúkne skúšku', land.status === 200 && land.d.ok && land.d.is_new === true && land.d.next === 'trial' && !!land.d.heslo, JSON.stringify(land.d));
+    ok('landing (karta): účet s heslom, ďalší krok je skúška cez Stripe', land.status === 200 && land.d.ok && land.d.is_new === true && land.d.next === 'trial'
+      && land.d.variant === 'karta' && !!land.d.heslo && !land.d.skuska, JSON.stringify(land.d));
     ok('landing bez e-mailu (len telefón) neprejde', (await j('/api/first-class/book', { method: 'POST', body: { name: 'Tel Landing', kontakt: '0901 222 333', class_id: 'qaPtZumbaBud' } })).status === 400);
+    const abBez = await j('/api/admin/landing-ab', { method: 'POST', body: { rezim: 'bez_karty' } }, adm);
+    const land2 = await j('/api/first-class/book', { method: 'POST', body: { name: 'Bela Bezkarty', email: 'bela.bezkarty@qa-biz.local', class_id: 'qaPtZumbaBud' } });
+    await sleep(400);
+    const uBela = rd('users.db').find(u => u.email === 'bela.bezkarty@qa-biz.local');
+    ok('landing (bez_karty): týždeň beží hneď, bez karty a bez ďalšieho kroku', abBez.d.ok && land2.status === 200 && land2.d.next === 'done' && land2.d.variant === 'bez_karty'
+      && land2.d.skuska && String(land2.d.skuska.ends_at).slice(0, 10) === exp7 && uBela && uBela.trial_used === true && !uBela.stripe_subscription_id,
+      JSON.stringify({ l: land2.d, u: uBela && { t: uBela.trial_used, s: uBela.stripe_subscription_id } }));
+    await j('/api/admin/landing-ab', { method: 'POST', body: { rezim: 'karta' } }, adm);
     const ph = await fetch(BASE + '/prva-hodina', { redirect: 'manual' });
     ok('/prva-hodina je landing (200)', ph.status === 200, String(ph.status));
     // kiosk
@@ -153,7 +175,6 @@ async function start(PORT, DATA, env) {
     ok('webhook prijatý', wh.status === 200, JSON.stringify(wh.d));
     const uN = rd('users.db').find(u => u._id === 'qaPtNova0000001');
     const memN = rd('memberships.db').find(m => m.user_id === 'qaPtNova0000001');
-    const exp7 = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
     ok('Bronze aktívne na 7 dní, označené ako skúška, cena 0', memN && memN.status === 'active' && memN.plan_id === 'bronze' && memN.trial === true && memN.price === 0 && memN.expires_at.slice(0, 10) === exp7, JSON.stringify(memN && { e: memN.expires_at, t: memN.trial, p: memN.price }));
     ok('klientka: trial_used, odber na zázname, konci o 7 dní, prvá zdarma spotrebovaná', uN.trial_used === true && uN.stripe_subscription_id === 'sub_fake_trial_1' && uN.stripe_sub_plan === 'bronze' && String(uN.trial_ends_at).slice(0, 10) === exp7 && uN.free_class_used === true && uN.user_type === 'client', JSON.stringify({ tu: uN.trial_used, s: uN.stripe_subscription_id, e: uN.trial_ends_at, ut: uN.user_type }));
     ok('nič v tržbách (žiadna transakcia ani faktúra)', !rd('transactions.db').some(t => t.user_id === 'qaPtNova0000001') && !rd('invoices.db').some(i => i.user_id === 'qaPtNova0000001'));
@@ -188,24 +209,48 @@ async function start(PORT, DATA, env) {
     const uN4 = rd('users.db').find(u => u._id === 'qaPtNova0000001');
     ok('prvá platba po skúške: +30 dní od konca skúšky, konverzia, cena 50', inv1.status === 200 && memN2.trial === false && memN2.price === 50 && !!uN4.trial_converted_at && Math.round((Date.parse(memN2.expires_at) - Date.parse(expPred)) / 864e5) === 30, JSON.stringify({ t: memN2.trial, p: memN2.price, e: memN2.expires_at, pred: expPred }));
     ok('platba po skúške je v tržbách (obnova 50 €) + faktúra', rd('transactions.db').some(t => t.user_id === 'qaPtNova0000001' && t.type === 'subscription_renewal' && t.amount === 50) && rd('invoices.db').some(i => i.user_id === 'qaPtNova0000001' && i.total === 50));
-    // zrušenie počas skúšky (iná klientka)
-    // Zoja: nová klientka založená cez registráciu (NeDB drží dáta v pamäti — do súboru sa dopisovať nedá)
+    // ── skúška sa udelí AUTOMATICKY pri registrácii (od 27. 9., fa-v711) ──
+    // Zoja: nová klientka cez registráciu (NeDB drží dáta v pamäti — do súboru sa dopisovať nedá).
+    // Kartu od nej appka nepýta, takže týždeň beží bez Stripe odberu.
     const zoja = {};
     const reg = await j('/api/register', { method: 'POST', body: { name: 'Zoja Zrušená', email: 'qa.pt.zoja@qa-biz.local', password: 'Heslo123!', phone: '0900999888', user_type: 'client', consent: true } }, zoja);
-    ok('Zoja sa zaregistrovala', reg.status === 200 || reg.status === 201, JSON.stringify(reg.d).slice(0, 100));
+    await sleep(500);
+    ok('registrácia dá skúšku hneď (odpoveď nesie koniec týždňa)', (reg.status === 200 || reg.status === 201) && reg.d.trial && String(reg.d.trial.ends_at).slice(0, 10) === exp7, JSON.stringify(reg.d).slice(0, 160));
     await j('/api/login', { method: 'POST', body: { email: 'qa.pt.zoja@qa-biz.local', password: 'Heslo123!' } }, zoja);
     const zojaId = (await j('/api/me', {}, zoja)).d.id;
-    const tz = await j('/api/stripe/trial', { method: 'POST' }, zoja);
-    ok('Zoja dostane skúšku', tz.status === 200, JSON.stringify(tz.d));
-    await j('/api/stripe/webhook', { method: 'POST', body: { id: 'evt_trial_z', type: 'checkout.session.completed', data: { object: { id: 'fake_trial_'+zojaId, mode: 'subscription', status: 'complete', payment_status: 'no_payment_required', subscription: 'sub_fake_trial_z', metadata: { user_id: zojaId, member_id: zojaId, plan_id: 'bronze', type: 'subscription', trial: '1' } } } } });
-    await sleep(500);
-    const cz = await j('/api/stripe/subscribe/cancel', { method: 'POST', body: { reason: 'cas' } }, zoja);
+    const uZ0 = rd('users.db').find(u => u._id === zojaId), mZ0 = rd('memberships.db').find(m => m.user_id === zojaId);
+    ok('pri registrácii: trial_used, koniec o 7 dní, Bronze za 0 €, žiadny odber', uZ0 && uZ0.trial_used === true && String(uZ0.trial_ends_at).slice(0, 10) === exp7 && !uZ0.stripe_subscription_id
+      && mZ0 && mZ0.status === 'active' && mZ0.plan_id === 'bronze' && mZ0.trial === true && mZ0.price === 0,
+      JSON.stringify({ u: uZ0 && { t: uZ0.trial_used, e: uZ0.trial_ends_at, s: uZ0.stripe_subscription_id }, m: mZ0 && { s: mZ0.status, p: mZ0.price, t: mZ0.trial } }));
+    const meZ = await j('/api/me', {}, zoja);
+    ok('/api/me: skúška beží bez karty (card=false), nárok už nie', meZ.d.trial && meZ.d.trial.active === true && meZ.d.trial.card === false && meZ.d.trial.used === true
+      && meZ.d.trial.eligible === false && meZ.d.trial.reason === 'uz_mala', JSON.stringify(meZ.d.trial));
+    const tz2 = await j('/api/stripe/trial', { method: 'POST' }, zoja);
+    ok('druhýkrát skúšku vziať nejde (400, uz_mala)', tz2.status === 400 && tz2.d.reason === 'uz_mala', JSON.stringify(tz2.d));
+    // Bez karty nie je čo rušiť — appka to povie zrozumiteľne a týždeň klientke ostane.
+    const czBez = await j('/api/stripe/subscribe/cancel', { method: 'POST', body: { reason: 'cas' } }, zoja);
     await sleep(300);
-    const uZ = rd('users.db').find(u => u._id === zojaId); const mZ = rd('memberships.db').find(m => m.user_id === zojaId);
-    ok('zrušenie počas skúšky: odber preč, členstvo do konca skúšky ostáva', cz.status === 200 && cz.d.ok && !uZ.stripe_subscription_id && mZ && mZ.status === 'active' && mZ.expires_at.slice(0, 10) === exp7, JSON.stringify({ c: cz.d, s: uZ.stripe_subscription_id, e: mZ && mZ.expires_at }));
-    await j('/api/stripe/webhook', { method: 'POST', body: { id: 'evt_del_z', type: 'customer.subscription.deleted', data: { object: { id: 'sub_fake_trial_z' } } } });
+    const uZ1 = rd('users.db').find(u => u._id === zojaId), mZ1 = rd('memberships.db').find(m => m.user_id === zojaId);
+    ok('zrušenie bez odberu: zrozumiteľná hláška a nič sa nezoberie', czBez.status === 400 && /odber/i.test(czBez.d.error || '')
+      && mZ1 && mZ1.status === 'active' && mZ1.expires_at.slice(0, 10) === exp7 && String(uZ1.trial_ends_at).slice(0, 10) === exp7
+      && !rd('notifications.db').some(n => n.user_id === zojaId && /Skúšobný týždeň zrušený/.test(n.title)), JSON.stringify({ c: czBez.d, e: mZ1 && mZ1.expires_at }));
+    // ── zrušenie počas skúšky, ktorá naozaj beží s kartou (Stripe odber z Checkoutu) ──
+    const katka = {}, KID = 'qaPtKarta000001';
+    await j('/api/login', { method: 'POST', body: { email: 'qa.pt.katka@qa-biz.local', password: 'Heslo123!' } }, katka);
+    const tk = await j('/api/stripe/trial', { method: 'POST' }, katka);
+    ok('Katka si zapne skúšku s kartou (Stripe odkaz)', tk.status === 200 && tk.d.ok && /stripe=trial/.test(tk.d.url || ''), JSON.stringify(tk.d));
+    await j('/api/stripe/webhook', { method: 'POST', body: { id: 'evt_trial_k', type: 'checkout.session.completed', data: { object: { id: 'fake_trial_' + KID, mode: 'subscription', status: 'complete', payment_status: 'no_payment_required', subscription: 'sub_fake_trial_k', metadata: { user_id: KID, member_id: KID, plan_id: 'bronze', type: 'subscription', trial: '1' } } } } });
+    await sleep(600);
+    const meK = await j('/api/me', {}, katka);
+    ok('Katka má skúšku s kartou (card=true, odber na zázname)', meK.d.trial && meK.d.trial.active === true && meK.d.trial.card === true && meK.d.stripe_subscription === true, JSON.stringify(meK.d.trial));
+    const ck = await j('/api/stripe/subscribe/cancel', { method: 'POST', body: { reason: 'cas' } }, katka);
+    await sleep(400);
+    const uK = rd('users.db').find(u => u._id === KID), mK = rd('memberships.db').find(m => m.user_id === KID);
+    ok('zrušenie počas skúšky: odber preč, členstvo do konca skúšky ostáva', ck.status === 200 && ck.d.ok && !uK.stripe_subscription_id
+      && mK && mK.status === 'active' && mK.expires_at.slice(0, 10) === exp7, JSON.stringify({ c: ck.d, s: uK.stripe_subscription_id, e: mK && mK.expires_at }));
+    await j('/api/stripe/webhook', { method: 'POST', body: { id: 'evt_del_k', type: 'customer.subscription.deleted', data: { object: { id: 'sub_fake_trial_k' } } } });
     await sleep(300);
-    ok('po zrušení príde oznam „nič sa nestrhne"', rd('notifications.db').some(n => n.user_id === zojaId && /Skúšobný týždeň zrušený/.test(n.title)));
+    ok('po zrušení príde oznam „nič sa nestrhne" (raz, webhook ho nezdvojí)', rd('notifications.db').filter(n => n.user_id === KID && /Skúšobný týždeň zrušený/.test(n.title)).length === 1);
     ok('bez skúšky ide stále kúpiť vstup/členstvo (Sára: 402 s can_pay_on_site)', bkS.d.can_pay_on_site === true);
     // 🕵️ testovací účet adminov: reset vynuluje skúšku, skúška sa zapne bez Stripe (Marek 14. 9.)
     const adm2 = {};
