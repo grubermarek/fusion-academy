@@ -6277,6 +6277,7 @@ async function mkPrehlad(){
   if(di.bez_utm) vyst.push({ t:'warning', txt:`<b>${di.bez_utm}</b> kampaní za <b>${adEur(di.bez_utm_spend)}</b> nemá v odkaze <code>utm_campaign</code> — ich registrácie sa nedajú priradiť.`});
   if(di.bez_karty) vyst.push({ t:'muted', txt:`<b>${di.bez_karty}</b> kampaní za <b>${adEur(di.bez_karty_spend)}</b> nemá kartu v appke — tržby a ROAS sa pri nich nesledujú.`});
   if(ne.kampani) vyst.push({ t:'muted', txt:`<b>${ne.kampani}</b> starých kampaní bez merania za <b>${adEur(ne.spend)}</b> je mimo štatistík (v „Minuté" sú započítané) — nájdeš ich v Kampaniach pod filtrom 📦 Nemerané.`});
+  if(ne.ciastocne_kampani) vyst.push({ t:'muted', txt:`<b>${ne.ciastocne_kampani}</b> kampaní za <b>${adEur(ne.ciastocne_spend)}</b> má len čiastočné meranie (chýba utm alebo karta, prípadne bežali pred jeho zavedením) — v zozname sú, ale do CPC, CTR a ROAS nevstupujú.`});
   if(stale) vyst.push({ t:'warning', txt:`<b>${stale}</b> kampaní má zastaraný spend (vyše 7 dní) — klikni „Obnoviť z Meta".`});
   document.getElementById('mkAlerts').innerHTML = vyst.length
     ? `<div class="card bg-dark border-secondary mb-3"><div class="card-body py-2 px-3">
@@ -6388,9 +6389,12 @@ function mkKampaneVykresli(){
   const riadok=r=>{
     const otv=mkOtvorene===r.campaign_id;
     const kar=r.karta, m=(kar&&kar.metrics)||{};
-    const znak = r.ma_utm===true ? '<span class="text-success" title="odkaz nesie utm_campaign">utm ✓</span>'
-      : r.ma_utm===false ? '<span class="text-warning" title="bez utm_campaign sa registrácie nedajú priradiť">bez utm</span>'
-      : '<span class="text-muted">—</span>';
+    // Kvalita merania rozhoduje, či kampaň vstupuje do CPC, CTR a ROAS (server: kvalitaMerania).
+    const znak = r.meranie==='plne'
+        ? '<span class="text-success" title="utm + karta v appke + celé obdobie po zavedení merania — ráta sa do metrík">✅ úplné</span>'
+      : r.meranie==='ciastocne'
+        ? '<span class="text-warning" title="chýba utm alebo karta, alebo časť peňazí padla pred zavedením merania — do CPC, CTR a ROAS sa neráta">⚠️ čiastočné</span>'
+      : '<span class="text-muted" title="bez utm aj bez karty — výsledok sa nedá zistiť">📦 žiadne</span>';
     return `<tr onclick="mkRozbal('${r.campaign_id}')" style="cursor:pointer"${otv?' class="table-active"':''}>
       <td style="max-width:300px"><div class="text-truncate" title="${escHtml(r.name)}">${otv?'▾':'▸'} ${escHtml(r.name)}</div>
         <div class="text-muted" style="font-size:.68rem">${escHtml(r.objective||'')}${r.first_month?' · '+r.first_month+(r.last_month&&r.last_month!==r.first_month?'–'+r.last_month:''):''}</div></td>
@@ -6402,7 +6406,7 @@ function mkKampaneVykresli(){
       <td class="text-end">${r.ctr!=null?r.ctr+' %':'—'}</td>
       <td class="text-end">${kar?adEur(kar.attributed_revenue):'<span class="text-muted">—</span>'}</td>
       <td class="text-end">${m.roas!=null?`<b style="color:${m.roas>=1?'#9fd894':'#e57373'}">${m.roas}×</b>`:'—'}</td>
-      <td>${znak}<div class="text-muted text-truncate" style="font-size:.66rem;max-width:150px">${kar?'karta: '+escHtml(kar.name):'bez karty'}</div></td>
+      <td>${znak}<div class="text-muted text-truncate" style="font-size:.66rem;max-width:150px">${r.ma_utm===false?'bez utm · ':''}${kar?'karta: '+escHtml(kar.name):'bez karty'}</div></td>
     </tr>` + (otv?`<tr><td colspan="9" style="background:#101010">${mkDetail(r)}</td></tr>`:'');
   };
   h+=`<div class="table-responsive"><table class="table table-sm table-dark table-hover align-middle mb-0" style="font-size:.78rem;font-variant-numeric:tabular-nums;white-space:nowrap"><thead><tr>

@@ -2176,6 +2176,24 @@ async function seedData() {
     await q.insert(db.settings,{key:'kids_campaign_20260909', value:true, at:nowISO()});
   }
 
+  // 17. 10.: karta pre kampaň FA — Zumba Skúška 10/2026 (Meta 52557795528873).
+  // Zakladá sa spolu s kampaňou, aby prvá registrácia mala kam spadnúť a aby
+  // kampaň prešla kontrolou kvality merania (bez karty by bola „čiastočná"
+  // a nevstupovala by do CPC/CTR/ROAS).
+  if(!(await q.one(db.settings,{key:'zumba_skuska_campaign_20261017'}))){
+    if(!(await q.one(db.campaigns,{name:'FA — Zumba Skúška 10/2026'}))){
+      await q.insert(db.campaigns,{ name:'FA — Zumba Skúška 10/2026', platform:'facebook',
+        utm_key:'fa-zumba-skuska*', meta_campaign_id:'52557795528873',
+        date_from:today(), date_to:'', budget:16,
+        goal:'Registrácie a spustené skúšobné týždne — ženy 25–55, Detva/Zvolen/BB/Brezno (+Korytárky v okruhu Detvy)',
+        note:'Cieľ Predaj, optimalizácia na CompleteRegistration (dataset 4085746221555327). Odkaz nesie utm_campaign=fa-zumba-skuska-2610 a utm_content s kódom kreatívy (a-tyzden-zadarmo / b-nemusis-vediet / f-termin). Rozpočet 16 €/deň na úrovni kampane.',
+        spend:0, impressions:0, clicks:0, registrations:0, first_visits:0, memberships:0,
+        created_at:nowISO() });
+      console.log('💃 Karta kampane FA — Zumba Skúška 10/2026 pripravená (utm fa-zumba-skuska*)');
+    }
+    await q.insert(db.settings,{key:'zumba_skuska_campaign_20261017', value:true, at:nowISO()});
+  }
+
   // 9. 9. (Marek): „spoločenské tance pre deti zruš na webe aj v appke, bude len
   // Zumba Kids." Jeden detský program s dvoma vekovými skupinami — vek je priamo
   // v názve hodiny, aby rodič v rozvrhu videl, kam patrí jeho dieťa.
@@ -24987,6 +25005,24 @@ app.post('/api/admin/meranie/skontroluj', adminAuth, async(req,res)=>{
 });
 
 // Prehľad reklamy. mesiac = 'RRRR-MM' alebo 'all' (celá história).
+// Odkedy vieme kampaň zmerať celú, od kliku po platbu (Marek 17. 10. 2026):
+// 16. 9. pribudla cookie fa_zdroj a strážca merania, 21. 9. vlastný dataset
+// 4085746221555327 so zapnutými „Udalosťami webu". Čo bežalo predtým, má útratu,
+// ale výsledok sa už zistiť nedá — a priemer by skresľovalo.
+const MERANIE_OD='2026-09';
+// plne      = odkaz nesie utm_campaign (alebo je to leadová kampaň s vlastnou atribúciou
+//             cez formulár), kampaň má v appke kartu a prvá útrata padla po MERANIE_OD
+// ciastocne = niečo z toho chýba, alebo časť peňazí padla pred MERANIE_OD
+// ziadne    = ani utm, ani karta — nevieme priradiť ani jednu registráciu
+// Do klikov, CPC, CTR, CPM, CPL a ROAS vstupuje LEN „plne".
+function kvalitaMerania(r){
+  const maUtm = r.ma_utm===true || r.objective==='OUTCOME_LEADS';
+  if(!maUtm && !r.karta) return 'ziadne';
+  if(!maUtm || !r.karta) return 'ciastocne';
+  if(!r.first_month || r.first_month < MERANIE_OD) return 'ciastocne';
+  return 'plne';
+}
+
 async function adOverview(mesiac){
   const camps=await q.find(db.ad_campaigns,{});
   const stats=await q.find(db.ad_stats,{});
@@ -25025,7 +25061,8 @@ async function adOverview(mesiac){
   // mesačnom rade aj v nákladoch. Kampaň bez merania, ktorá ešte beží, sa neskrýva (je to chyba na opravu).
   const dnes10=today();
   const minuly=(()=>{ const d2=new Date(dnes10+'T12:00:00Z'); d2.setUTCMonth(d2.getUTCMonth()-1); return d2.toISOString().slice(0,7); })();
-  const merana=r=>r.ma_utm===true || !!r.karta;
+  const merana=r=>kvalitaMerania(r)!=='ziadne';
+  const plneMerana=r=>kvalitaMerania(r)==='plne';
   // Beží = aktívna v Mete, bez uplynutého konca a s útratou tento/minulý mesiac. Pozastavený príspevok
   // „DETVA, V SOBOTU…" (skončil 6. 9.) sa predtým ukazoval ako bežiaci len pre septembrovú útratu.
   const ziva=r=>!!(r.last_month && r.last_month>=minuly && r.status==='ACTIVE' && !(r.stop && Date.parse(r.stop)<Date.now()));
@@ -25035,14 +25072,23 @@ async function adOverview(mesiac){
   // Každý riadok nesie vlastný príznak `ziva` (rovnaké pravidlo ako súhrn „živých"),
   // aby sa zoznam v admine dal roztriediť na bežiace a doběhnuté kampane. Podľa stavu
   // z Mety to nejde — doboostovanému príspevku ostane „ACTIVE" navždy.
-  rows=vsetkyRiadky.filter(r=>!skryteId.has(r.campaign_id)).map(r=>({...r, ziva:ziva(r)}));
+  // Kampaň, ktorú sme nemerali celú, ostáva v zozname (nech je vidieť, že peniaze šli),
+  // ale jej odvodené čísla sa nezobrazujú — CPC z nepriradených klikov je výmysel.
+  rows=vsetkyRiadky.filter(r=>!skryteId.has(r.campaign_id)).map(r=>{
+    const meranie=kvalitaMerania(r);
+    return meranie==='plne' ? {...r, ziva:ziva(r), meranie}
+      : {...r, ziva:ziva(r), meranie, cpc:null, ctr:null, cpm:null, cpl:null};
+  });
+  const kvalitaPre={}; vsetkyRiadky.forEach(r=>{ kvalitaPre[r.campaign_id]=kvalitaMerania(r); });
 
   // Mesačný rad: minuté vs. zarobené. Bez tržby vedľa spendu je spend len číslo.
   const mesiace={};
   for(const x of stats){ const m=x.month; if(!/^\d{4}-\d{2}$/.test(m||'')) continue;
-    const y=mesiace[m]=mesiace[m]||{month:m, spend:0, nemerane:0, clicks:0, impressions:0, leads:0};
+    const y=mesiace[m]=mesiace[m]||{month:m, spend:0, spend_merany:0, nemerane:0, clicks:0, impressions:0, leads:0};
     y.spend+=+x.spend||0;
     if(skryteId.has(x.campaign_id)){ y.nemerane+=+x.spend||0; continue; }
+    if(kvalitaPre[x.campaign_id]!=='plne') continue;   // čiastočne meraná kampaň do výkonu nejde
+    y.spend_merany+=+x.spend||0;
     y.clicks+=+x.clicks||0; y.impressions+=+x.impressions||0; y.leads+=+x.leads||0; }
   const ev=await revenueEvents({includeImported:true});
   // ── KOHORTY: čo reálne priniesla reklama (Marek 12. 10.) ────────────────────
@@ -25086,21 +25132,29 @@ async function adOverview(mesiac){
   const dnes90=addDni(today(),-90);
   const rad=Object.keys(mesiace).sort().map(m=>{
     const y=mesiace[m]; const trzba=revSum(ev, m); const k=koh[m]||{acquired:0,payers:0,revenue:0,rev90:0};
-    return { month:m, spend:+y.spend.toFixed(2), nemerane:+y.nemerane.toFixed(2), clicks:y.clicks, impressions:y.impressions,
+    return { month:m, spend:+y.spend.toFixed(2), spend_merany:+y.spend_merany.toFixed(2),
+      nemerane:+y.nemerane.toFixed(2), clicks:y.clicks, impressions:y.impressions,
       leads:y.leads, revenue:trzba,
-      roas: y.spend ? +(trzba/y.spend).toFixed(2) : null,
+      // ROAS sa počíta z tržby ľudí, ktorí v tom mesiaci prišli z reklamy, delenej útratou
+      // kampaní s úplným meraním. Tržba celej appky delená celou útratou dávala 16× —
+      // boli v nej členstvá stálych klientok, ktoré s reklamou nemajú nič spoločné.
+      roas: y.spend_merany ? +(k.revenue/y.spend_merany).toFixed(2) : null,
       // kohorta mesiaca = ľudia, ktorí vtedy prišli z reklamy
       acquired:k.acquired, payers:k.payers, cohort_revenue:k.revenue, cohort_rev90:k.rev90,
-      cohort_roas: y.spend ? +(k.revenue/y.spend).toFixed(2) : null,
-      cohort_cac: k.acquired ? +(y.spend/k.acquired).toFixed(2) : null,
+      cohort_roas: y.spend_merany ? +(k.revenue/y.spend_merany).toFixed(2) : null,
+      cohort_cac: k.acquired ? +(y.spend_merany/k.acquired).toFixed(2) : null,
       mlada: (m+'-01') > dnes90 };   // kohorta ešte nemá odžitých 90 dní, čísla porastú
   });
 
-  const sc=(k)=>rows.reduce((s,r)=>s+(+r[k]||0),0);
-  // Minuté = všetko (aj nemerané); kliky, CPC, CTR, CPM, leady = len kampane v zozname
+  // Minuté = všetko (aj nemerané, nech peniaze sedia s účtovníctvom).
+  // Kliky, CPC, CTR, CPM, CPL a ROAS = LEN kampane s úplným meraním (Marek 17. 10.).
+  const merane=rows.filter(plneMerana);
+  const sc=(k)=>merane.reduce((s,r)=>s+(+r[k]||0),0);
   const spend=+vsetkyRiadky.reduce((s,r)=>s+r.spend,0).toFixed(2);
   const spendZoznam=+sc('spend').toFixed(2), clicks=sc('clicks'), impressions=sc('impressions'), leads=sc('leads');
-  const nemerane={ kampani:skryte.length, spend:+skryte.reduce((s,r)=>s+r.spend,0).toFixed(2) };
+  const ciastocne=rows.filter(r=>r.meranie==='ciastocne');
+  const nemerane={ kampani:skryte.length, spend:+skryte.reduce((s,r)=>s+r.spend,0).toFixed(2),
+    ciastocne_kampani:ciastocne.length, ciastocne_spend:+ciastocne.reduce((s,r)=>s+r.spend,0).toFixed(2) };
   const trzbaObd = vsetko ? revSum(ev) : revSum(ev, mesiac);
   // Leadové kampane majú atribúciu cez formulár (lead_source), utm pri nich netreba
   // — inak by hlásenie o dierach kričalo na kampaň, ktorá je v poriadku.
@@ -25113,17 +25167,23 @@ async function adOverview(mesiac){
   // „ACTIVE" pri doboostovanom príspevku ostáva navždy — reálne beží len to,
   // čo minulo peniaze tento alebo minulý mesiac.
   const zive=rows.filter(ziva);
+  // Tržba kohorty = koľko zaplatili ľudia, ktorí v danom období prišli z reklamy.
+  const kohRev=+(vsetko ? Object.values(koh).reduce((s,x)=>s+x.revenue,0) : ((koh[mesiac]||{}).revenue||0)).toFixed(2);
   const sync=await q.one(db.settings,{key:AD_SYNC_KEY});
   return { ok:true, mesiac: vsetko?'all':mesiac,
     mesiace_k_dispozicii: Object.keys(mesiace).sort().reverse(),
-    totals:{ spend, spend_zoznam:spendZoznam, nemerane, clicks, impressions, leads, kampani:rows.length,
+    totals:{ spend, spend_zoznam:spendZoznam, spend_merany:spendZoznam, nemerane,
+      clicks, impressions, leads, kampani:rows.length, kampani_merane:merane.length,
       cpc: clicks?+(spendZoznam/clicks).toFixed(2):null,
       ctr: impressions?+((clicks/impressions)*100).toFixed(2):null,
       cpm: impressions?+((spendZoznam/impressions)*1000).toFixed(2):null,
       // Cenu za lead delíme len výdajom kampaní, ktoré leady naozaj priniesli —
       // inak by ju nafúkli peniaze minuté na kampane s úplne iným cieľom.
-      cpl: leads?+(rows.filter(r=>r.leads>0).reduce((s,r)=>s+r.spend,0)/leads).toFixed(2):null,
-      revenue: trzbaObd, roas: spend?+(trzbaObd/spend).toFixed(2):null,
+      cpl: leads?+(merane.filter(r=>r.leads>0).reduce((s,r)=>s+r.spend,0)/leads).toFixed(2):null,
+      // ROAS z tržby ľudí, ktorí prišli z reklamy, delenej útratou meraných kampaní.
+      // Tržba celej appky sa tu zámerne nepoužíva — viď komentár pri mesačnom rade.
+      revenue: trzbaObd, revenue_kohorta: kohRev,
+      roas: spendZoznam?+(kohRev/spendZoznam).toFixed(2):null, roas_zaklad:'kohorta_reklamy',
       zive:zive.length },
     diery:{ bez_utm:bezUtm.length, bez_utm_spend:+bezUtm.reduce((s,r)=>s+r.spend,0).toFixed(2),
       bez_karty:bezKarty.length, bez_karty_spend:+bezKarty.reduce((s,r)=>s+r.spend,0).toFixed(2),
