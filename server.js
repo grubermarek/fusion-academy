@@ -5581,9 +5581,20 @@ app.post('/api/admin/meta-ads-token', adminAuth, async(req,res)=>{
     else await q.insert(db.settings,{key:'meta_ads_token', value:t, at:nowISO()});
     _metaAdsTokenCache=t;
     await auditLog(req,'meta_ads_token_set','settings',null,{len:t.length},'');
+    // Dataset 4085746221555327 patrí priamo reklamnému účtu, takže Meta preň nedovolí
+    // vygenerovať vlastný CAPI token — appka posiela udalosti tým istým tokenom.
+    // Keď sa ads token obnoví a toto by sa neurobilo, CAPI mlčí (stalo sa 13. 10. 2026).
+    let capi=null;
+    if(req.body?.aj_capi!==false){
+      const ex=await q.one(db.settings,{key:'meta_capi_token'});
+      if(ex) await q.update(db.settings,{_id:ex._id},{$set:{value:t, at:nowISO(), zdroj:'ads_token'}});
+      else await q.insert(db.settings,{key:'meta_capi_token', value:t, at:nowISO(), zdroj:'ads_token'});
+      _metaTokenCache=t; capi=true;
+      console.log('📘 CAPI token prevzatý z nového ads tokenu');
+    }
     // Overenie hneď na mieste + prvý sync, nech admin vidí výsledok ihneď
     const test=await syncMetaCampaignStats(true);
-    res.json({ok:true, len:t.length, sync:test});
+    res.json({ok:true, len:t.length, sync:test, capi});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 // ─── Záloha databázy (gzip JSON dump všetkých kolekcií) ─────────────────────
