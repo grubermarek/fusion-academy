@@ -5572,6 +5572,83 @@ async function getMetaAdsToken(){
   _metaAdsTokenCache = s?.value || null;
   return _metaAdsTokenCache;
 }
+// ── Token, ktorý sa obnovuje sám (17. 10. 2026) ──────────────────────────────
+// 60-dňový token vyprší a s ním stíchne aj CAPI — 13. 10. sa to stalo potichu a
+// prišli sme o štyri dni serverových udalostí. S app secretom si appka token
+// predĺži sama: raz pri vložení (krátkodobý z Graph Explorera → 60 dní) a potom
+// vždy, keď mu zostáva menej než 14 dní. Secret sa nikdy nevracia z API ani do logov.
+const META_APP_ID_DEFAULT='1360387812924006';   // Fusion Academy Sync (app id je verejné)
+async function getMetaAppSecret(){
+  if(process.env.META_APP_SECRET) return process.env.META_APP_SECRET.trim();
+  const s=await q.one(db.settings,{key:'meta_app_secret'}).catch(()=>null);
+  return s?.value || null;
+}
+async function getMetaAppId(){
+  if(process.env.META_APP_ID) return process.env.META_APP_ID.trim();
+  const s=await q.one(db.settings,{key:'meta_app_id'}).catch(()=>null);
+  return s?.value || META_APP_ID_DEFAULT;
+}
+/** Platnosť tokenu v dňoch (null = nevie sa zistiť, 0 = neplatný). */
+async function metaTokenDni(tok){
+  try{
+    const d=await metaGraph(tok,'debug_token?input_token='+encodeURIComponent(tok));
+    const info=d&&d.data; if(!info) return null;
+    if(info.is_valid===false) return 0;
+    if(!info.expires_at) return 9999;            // token bez expirácie (systémový používateľ)
+    return Math.round((info.expires_at*1000-Date.now())/864e5);
+  }catch(e){ return null; }
+}
+/** Vymení token za 60-dňový a uloží ho aj pre CAPI. Vracia {ok, dni} alebo {ok:false, dovod}. */
+async function predlzMetaToken({force}={}){
+  const tok=await getMetaAdsToken();
+  if(!tok) return {ok:false, dovod:'chýba token'};
+  const dni=await metaTokenDni(tok);
+  if(dni===0) return {ok:false, dovod:'token už neplatí — treba vygenerovať nový v Graph Exploreri'};
+  if(!force && dni!==null && dni>14) return {ok:true, dni, preskocene:true};
+  const secret=await getMetaAppSecret();
+  if(!secret) return {ok:false, dni, dovod:'chýba app secret — bez neho sa token predĺžiť nedá'};
+  try{
+    const u=META_GRAPH+'oauth/access_token?grant_type=fb_exchange_token&client_id='
+      +encodeURIComponent(await getMetaAppId())+'&client_secret='+encodeURIComponent(secret)
+      +'&fb_exchange_token='+encodeURIComponent(tok);
+    const d=await (await fetch(u)).json();
+    const novy=d&&d.access_token;
+    if(!novy) return {ok:false, dni, dovod:(d&&d.error&&d.error.message)||'Meta nevrátila token'};
+    for(const key of ['meta_ads_token','meta_capi_token']){
+      const ex=await q.one(db.settings,{key});
+      if(ex) await q.update(db.settings,{_id:ex._id},{$set:{value:novy, at:nowISO(), zdroj:'auto_predlzenie'}});
+      else await q.insert(db.settings,{key, value:novy, at:nowISO(), zdroj:'auto_predlzenie'});
+    }
+    _metaAdsTokenCache=novy; _metaTokenCache=novy;
+    const noveDni=await metaTokenDni(novy);
+    console.log('🔑 Meta token predĺžený (platí ~'+(noveDni==null?'?':noveDni)+' dní)');
+    return {ok:true, dni:noveDni, predlzene:true};
+  }catch(e){ return {ok:false, dni, dovod:e.message}; }
+}
+app.post('/api/admin/meta-app-secret', adminAuth, async(req,res)=>{
+  try{
+    const s=String(req.body?.secret||'').trim();
+    if(!/^[0-9a-f]{32}$/i.test(s)) return res.status(400).json({error:'Secret má byť 32 znakov (0-9, a-f) z nastavení Meta aplikácie.'});
+    const ex=await q.one(db.settings,{key:'meta_app_secret'});
+    if(ex) await q.update(db.settings,{_id:ex._id},{$set:{value:s, at:nowISO()}});
+    else await q.insert(db.settings,{key:'meta_app_secret', value:s, at:nowISO()});
+    if(req.body?.app_id){
+      const id=String(req.body.app_id).trim();
+      const exi=await q.one(db.settings,{key:'meta_app_id'});
+      if(exi) await q.update(db.settings,{_id:exi._id},{$set:{value:id, at:nowISO()}});
+      else await q.insert(db.settings,{key:'meta_app_id', value:id, at:nowISO()});
+    }
+    await auditLog(req,'meta_app_secret_set','settings',null,{len:s.length},'');
+    // Hneď skús token predĺžiť — admin tak vidí výsledok na mieste
+    const v=await predlzMetaToken({force:true});
+    res.json({ok:true, predlzenie:v});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/meta-token-predlzit', adminAuth, async(req,res)=>{
+  try{ res.json({ok:true, ...(await predlzMetaToken({force:true}))}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.post('/api/admin/meta-ads-token', adminAuth, async(req,res)=>{
   try{
     const t=String(req.body?.token||'').trim();
@@ -5592,9 +5669,12 @@ app.post('/api/admin/meta-ads-token', adminAuth, async(req,res)=>{
       _metaTokenCache=t; capi=true;
       console.log('📘 CAPI token prevzatý z nového ads tokenu');
     }
+    // Krátkodobý token z Graph Explorera (1–2 h) sa hneď vymení za 60-dňový,
+    // nech sa Marek nemusí trápiť s Access Token Debuggerom.
+    const predlzenie=await predlzMetaToken({force:true});
     // Overenie hneď na mieste + prvý sync, nech admin vidí výsledok ihneď
     const test=await syncMetaCampaignStats(true);
-    res.json({ok:true, len:t.length, sync:test, capi});
+    res.json({ok:true, len:t.length, sync:test, capi, predlzenie});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 // ─── Záloha databázy (gzip JSON dump všetkých kolekcií) ─────────────────────
@@ -28474,6 +28554,13 @@ async function runDailyJobs(){
             '⚙️ Otvoriť profil', APP_URL+'/client-dashboard'), {priority:2, template:'renewal_notice'}).catch(()=>{});
     }
   }catch(e){ console.error('renewal_notice:', e.message); }
+
+  // ── Meta token: predĺž skôr, než vyprší (17. 10.) ──
+  // Bez toho stíchne CAPI aj sync kampaní a zistíme to až pri audite.
+  try{
+    const v=await predlzMetaToken();
+    if(!v.ok && v.dovod) console.warn('🔑 Meta token sa nepodarilo predĺžiť: '+v.dovod);
+  }catch(e){ console.error('predlzMetaToken:', e.message); }
 
   // ── Meranie reklám: odvodené priradenia z fbclid + strážca (16. 9.) ──
   try{

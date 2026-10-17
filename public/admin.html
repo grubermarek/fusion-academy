@@ -4481,6 +4481,18 @@ async function loadMetaStats(){
         <input type="password" id="metaAdsTokenInput" class="form-control form-control-sm" placeholder="EAA...">
         <button class="btn btn-sm btn-brand" onclick="saveMetaAdsToken()">Uložiť a otestovať</button>
       </div>
+      <div class="mt-3 pt-2" style="border-top:1px solid rgba(255,255,255,.1)">
+        <div class="text-muted mb-2" style="font-size:.78rem">
+          <b>Aby sa token obnovoval sám</b> (stačí raz): v <a href="https://developers.facebook.com/apps/" target="_blank">Meta for Developers</a>
+          → appka <b>Fusion Academy Sync</b> → Nastavenia → Základné → <b>App secret</b> → Zobraziť → skopíruj sem.
+          Appka si potom token predĺži na 60 dní a bude ho sama obnovovať, kým mu zostáva menej než 14 dní.
+        </div>
+        <div class="d-flex gap-2">
+          <input type="password" id="metaAppSecretInput" class="form-control form-control-sm" placeholder="32 znakov (0-9, a-f)">
+          <button class="btn btn-sm btn-outline-light" onclick="saveMetaAppSecret()">Uložiť secret</button>
+        </div>
+        <div id="metaAppSecretMsg" class="small mt-1"></div>
+      </div>
       <div class="form-check mt-2">
         <input class="form-check-input" type="checkbox" id="metaAdsTokenCapi" checked>
         <label class="form-check-label text-muted" for="metaAdsTokenCapi" style="font-size:.74rem">
@@ -4493,6 +4505,20 @@ async function loadMetaStats(){
   </div>`;
   el.innerHTML=html;
 }
+async function saveMetaAppSecret(){
+  const input=document.getElementById('metaAppSecretInput'), msg=document.getElementById('metaAppSecretMsg');
+  const secret=(input.value||'').trim();
+  if(!secret){ msg.innerHTML='<span class="text-danger">Zadaj app secret.</span>'; return; }
+  msg.innerHTML='<span class="text-muted">Ukladám a skúšam predĺžiť token…</span>';
+  const r=await api('/api/admin/meta-app-secret',{method:'POST',body:JSON.stringify({secret})});
+  if(r&&r.ok){
+    input.value='';
+    const p=r.predlzenie||{};
+    msg.innerHTML = p.ok
+      ? `<span class="text-success">✅ Uložené. Token platí ešte ${p.dni==null?'?':p.dni} dní a odteraz sa obnovuje sám.</span>`
+      : `<span class="text-warning">Secret uložený, ale token sa predĺžiť nepodarilo: ${escHtml(p.dovod||'?')}</span>`;
+  } else msg.innerHTML=`<span class="text-danger">${escHtml((r&&r.error)||'Nepodarilo sa uložiť.')}</span>`;
+}
 async function saveMetaAdsToken(){
   const input=document.getElementById('metaAdsTokenInput'), msg=document.getElementById('metaAdsTokenMsg');
   const token=(input.value||'').trim();
@@ -4503,7 +4529,10 @@ async function saveMetaAdsToken(){
   if(r&&r.ok){
     input.value='';
     const s=r.sync||{};
-    const capiTxt = r.capi ? ' Udalosti do Mety sa posielajú tým istým tokenom.' : '';
+    const p=r.predlzenie||{};
+    const capiTxt = (r.capi ? ' Udalosti do Mety sa posielajú tým istým tokenom.' : '')
+      + (p.predlzene ? ` Token sme rovno predĺžili na ~${p.dni==null?'60':p.dni} dní.`
+         : (p.dovod ? ` ⚠️ Token sa nepodarilo predĺžiť (${p.dovod}) — vyprší čoskoro.` : ''));
     msg.innerHTML = s.ok
       ? `<span class="text-success">✅ Funguje! Kampane sa práve aktualizovali (${s.updated||0}× ). Odteraz sa to deje samo.${capiTxt}</span>`
       : `<span class="text-warning">Token uložený, ale test zlyhal (${s.error||'?'}) — skontroluj, či má oprávnenie ads_read na tento účet.</span>`;
