@@ -4665,6 +4665,20 @@ app.get('/api/first-class/schedule', rlPublic, async(req,res)=>{
 // FUNNEL-002: rezervácia prvej hodiny z landingu — konto vznikne na pozadí
 // (self_registration, registration_at=teraz, atribúcia first-touch + current UTM).
 // Zrkadlí guest-invite flow: dedupe podľa kontaktu, kapacita, potvrdenie mailom.
+// Odkaz, ktorý klientku prihlási jedným klikom (17. 10. 2026). Platný token sa znovu
+// použije, nový sa vyrobí až keď chýba alebo mu zostávajú menej než 2 dni. Patrí LEN
+// do mailov tej istej klientke — nikdy do oznamov, ktoré vidí niekto iný.
+async function dajVstupUrl(u, kam){
+  if(!u || !u._id) return APP_URL;
+  let t=u.login_token;
+  if(!t || !u.login_token_exp || u.login_token_exp < new Date(Date.now()+2*864e5).toISOString()){
+    t='VS'+require('crypto').randomBytes(16).toString('hex');
+    await q.update(db.users,{_id:u._id},{$set:{login_token:t,
+      login_token_exp:new Date(Date.now()+14*864e5).toISOString()}});
+  }
+  return APP_URL+'/vstup/'+t+(kam?('?kam='+encodeURIComponent(kam)):'');
+}
+
 app.post('/api/first-class/book', rlPublic, async(req,res)=>{
   try{
     // Od 19. 9. landing beží aj s prvým týždňom zadarmo: rezervácia + účet + (podľa režimu) skúška.
@@ -4731,10 +4745,7 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
       await q.update(db.users,{_id:u._id},{$set:{manage_token:u.manage_token}}); }
     // Odkaz na prihlásenie jedným klikom — bez neho sa žena z Facebookového prehliadača
     // do appky druhýkrát nedostane bez vypisovania hesla z mailu.
-    const vstupToken='VS'+require('crypto').randomBytes(16).toString('hex');
-    await q.update(db.users,{_id:u._id},{$set:{login_token:vstupToken,
-      login_token_exp:new Date(Date.now()+14*864e5).toISOString()}});
-    const vstupUrl=APP_URL+'/vstup/'+vstupToken;
+    const vstupUrl=await dajVstupUrl(u);
     // Pod zámkom hodina@termín znova over obsadenosť a duplicitu — medzi kontrolou
     // vyššie a zápisom mohla vojsť iná požiadavka (tá istá diera ako E11-B v /api/bookings).
     const booking=await withBookingLock(cls._id+'@'+bdate, async()=>{
@@ -25599,7 +25610,8 @@ app.get('/vstup/:token', async(req,res)=>{
       return res.redirect('/?vstup=neplatny');
     req.session.uid=u._id; req.session.sv=u.sess_ver||0;
     auditLog(req,'vstup_token','user',null,{uid:u._id},'').catch(()=>{});
-    res.redirect(String(req.query.kam||'')==='rezervacie' ? '/client-dashboard#rezervacie' : '/client-dashboard');
+    const KAM={ rozvrh:'/schedule', obchod:'/obchod', rezervacie:'/client-dashboard#rezervacie' };
+    res.redirect(KAM[String(req.query.kam||'')] || '/client-dashboard');
   }catch(e){ res.redirect('/'); }
 });
 app.get('/client-dashboard',(req,res)=>res.sendFile(path.join(__dirname,'public','client-dashboard.html')));
@@ -28772,7 +28784,7 @@ async function runDailyJobs(){
       await sendMail(u.email,`🗓️ Zajtra máš hodinu – ${cls.name}`,
         emailTemplate(`Zajtra: ${cls.name}`,
           `<p>Ahoj <b>${u.name}</b>,</p><p>Pripomíname, že zajtra máš hodinu:</p><ul style="color:#ccc"><li><b>${cls.name}</b></li><li>🕐 ${cls.time_start||''}–${cls.time_end||''}</li><li>📍 ${cls.location||''}</li></ul><p>📅 <a href="${APP_URL}/cal/booking/${bk._id}.ics" style="color:#C9A84C;font-weight:bold">Pridať do kalendára</a></p><p>Tešíme sa na teba! 💃</p>`,
-          '📍 Zobraziť rozvrh',`${APP_URL}/schedule`), {priority:3, template:'class_reminder'}).catch(()=>{});
+          '📍 Zobraziť rozvrh', await dajVstupUrl(u,'rozvrh')), {priority:3, template:'class_reminder'}).catch(()=>{});
       await q.insert(db.notifications,{user_id:u._id,type:'class_reminder',ref_id:cls._id,title:`🗓️ Zajtra: ${cls.name}`,body:`${cls.time_start} · ${cls.location}`,read:false,created_at:nowISO()});
     }
   }
@@ -29224,7 +29236,7 @@ async function runFirstClassFollowup(){
       await sendMail(u.email,'Ako sa ti páčila prvá hodina? 💛', emailTemplate(`Bola si skvelá, ${firstName}! 💃`,
         `<p>Dnes si absolvovala svoju prvú hodinu vo Fusion Academy — a my dúfame, že to bola jazda!</p>
          <p>Ak máš akúkoľvek otázku alebo spätnú väzbu, jednoducho odpíš na tento mail. A vidíme sa na ďalšej hodine!</p>`,
-        '📅 Rezervovať ďalšiu hodinu', `${APP_URL}/schedule`), {priority:5, template:'first_class_followup'}).catch(()=>{});
+        '📅 Rezervovať ďalšiu hodinu', await dajVstupUrl(u,'rozvrh')), {priority:5, template:'first_class_followup'}).catch(()=>{});
     } else {
       const code=('PRVA-'+Math.random().toString(36).slice(2,6)).toUpperCase();
       const expires=new Date(Date.now()+48*3600000).toISOString();
@@ -29236,7 +29248,7 @@ async function runFirstClassFollowup(){
          <p>Aby si nemusela dlho rozmýšľať, máme pre teba darček: <b>20 % zľavu na prvý mesiac členstva</b>.</p>
          <div style="text-align:center;margin:16px 0"><div style="display:inline-block;font-family:monospace;font-weight:800;letter-spacing:1px;background:#0d0d0d;border:1px dashed #C9A84C;color:#E7C878;border-radius:10px;padding:12px 22px;font-size:1.2rem">${code}</div></div>
          <p style="color:#b9b3a6">⏳ Kód platí len <b>48 hodín</b> a je len tvoj. Zadáš ho pri kúpe členstva v appke.</p>`,
-        '💛 Vybrať členstvo so zľavou', `${APP_URL}/obchod`), {priority:5, template:'first_class_followup'}).catch(()=>{});
+        '💛 Vybrať členstvo so zľavou', await dajVstupUrl(u,'obchod')), {priority:5, template:'first_class_followup'}).catch(()=>{});
       await q.insert(db.notifications,{user_id:u._id, type:'promo',
         title:'🎁 Darček po prvej hodine', body:`20 % zľava na prvý mesiac členstva — kód ${code}, platí 48 hodín. Nájdeš ho aj v maile.`,
         read:false, created_at:nowISO()}).catch(()=>{});
