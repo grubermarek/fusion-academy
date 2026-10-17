@@ -319,6 +319,9 @@ const db = {
   referral_events:  new Datastore({ filename: path.join(DATA_DIR, 'referral_events.db'),  autoload: true }),
   deal_links:       new Datastore({ filename: path.join(DATA_DIR, 'deal_links.db'),       autoload: true }),
   credit_ledger:    new Datastore({ filename: path.join(DATA_DIR, 'credit_ledger.db'),    autoload: true }),
+  // História konta: každá zmena vstupov, hodín zdarma a dní členstva (Marek 17. 10. 2026:
+  // „aby neboli hádky, či sa im vrátili vstupy alebo nie")
+  konto_historia:   new Datastore({ filename: path.join(DATA_DIR, 'konto_historia.db'),   autoload: true }),
   shop_events:      new Datastore({ filename: path.join(DATA_DIR, 'shop_events.db'),      autoload: true }),
   funnel_events:    new Datastore({ filename: path.join(DATA_DIR, 'funnel_events.db'),    autoload: true }),
   ev_events:         new Datastore({ filename: path.join(DATA_DIR, 'ev_events.db'), autoload: true }),
@@ -4235,6 +4238,61 @@ async function seedData() {
     }catch(e){ console.error('zarovnanie členstva:', e.message); }
   }, 9000);
 
+  // Jednorazovo: história konta za minulosť (Marek 17. 10. 2026 — „aby neboli hádky, či sa
+  // im vrátili vstupy"). Dovtedy sa pohyby vstupov nikde nezapisovali, takže ich dopočítame
+  // z toho, čo vieme: kúpené permanentky, prihlásenia na hodinu, vrátenia pri zrušení
+  // a predĺženia členstva. Na záver sa história dorovná so skutočným stavom na konte.
+  setTimeout(async()=>{
+    try{
+      if(await q.one(db.settings,{key:'konto_historia_backfill_20261017'})) return;
+      const udalosti = {};
+      const pridaj = (uid, o) => { if(uid) (udalosti[uid]=udalosti[uid]||[]).push(o); };
+      const cls = Object.fromEntries((await q.find(db.classes,{})).map(c=>[c._id,c]));
+      for(const m of await q.find(db.memberships,{})){
+        if(m._type) continue;
+        const plan = MEMBERSHIP_PLANS[m.plan_id];
+        const den = String(m.created_at||m.started_at||'').slice(0,10);
+        if(plan && plan.type==='bundle' && plan.entries)
+          pridaj(m.user_id,{den, typ:'vstupy', zmena:plan.entries, text:'Kúpená '+plan.name});
+        else if(plan)
+          pridaj(m.user_id,{den, typ:'clenstvo', zmena:0, text:'Členstvo '+(m.plan_name||m.plan_id)+(m.trial?' (týždeň zadarmo)':''),
+            do_kedy:String(m.expires_at||'').slice(0,10)});
+        for(const k of (m.kompenzacie||[]))
+          pridaj(m.user_id,{den:String(k.date||k.at||'').slice(0,10), typ:'clenstvo', zmena:+k.days||0,
+            text:'Zrušená hodina '+(k.class_name||'')+(k.location?' ('+k.location+')':'')+' — členstvo predĺžené',
+            do_kedy:String(k.to||'').slice(0,10)});
+      }
+      for(const b of await q.find(db.bookings,{})){
+        const typ = b.access_method==='single_entry' ? 'vstupy' : (b.access_method==='free_credit' ? 'hodiny_zdarma' : null);
+        if(!typ) continue;
+        const c = cls[b.class_id] || {};
+        const hodina = (b.class_name||c.name||'Hodina') + ((b.class_location||c.location) ? ' · '+(b.class_location||c.location) : '');
+        const den = String(b.booking_date||'').slice(0,10);
+        pridaj(b.user_id,{den, typ, zmena:-1, text:'Prihlásenie na hodinu', hodina});
+        if(String(b.status||'').startsWith('cancelled'))
+          pridaj(b.user_id,{den, typ, zmena:1, hodina,
+            text: b.status==='cancelled_studio' ? 'Hodinu zrušilo štúdio — vrátené' : 'Odhlásenie z hodiny — vrátené'});
+      }
+      let n = 0;
+      for(const [uid, zoznam] of Object.entries(udalosti)){
+        zoznam.sort((a,b)=>String(a.den||'').localeCompare(String(b.den||'')));
+        const zost = { vstupy:0, hodiny_zdarma:0 };
+        for(const o of zoznam){
+          if(o.typ!=='clenstvo') zost[o.typ] = Math.max(0, zost[o.typ] + o.zmena);
+          await q.insert(db.konto_historia,{ user_id:uid, typ:o.typ, zmena:o.zmena,
+            zostatok:o.typ==='clenstvo' ? null : zost[o.typ], dovod:o.text, hodina:o.hodina||null,
+            den:o.den||null, do_kedy:o.do_kedy||null, kto:null, spatne:true,
+            at:(o.den||today())+'T12:00:00.000Z' });
+          n++;
+        }
+      }
+      await q.insert(db.settings,{key:'konto_historia_backfill_20261017', value:{zapisov:n}, at:nowISO()});
+      console.log('🧾 História konta doplnená spätne: '+n+' záznamov');
+      await zosuladHistoriu();
+    }catch(e){ console.error('história konta backfill:', e.message); }
+  }, 12000);
+  setInterval(()=>zosuladHistoriu().catch(()=>{}), 24*3600*1000);
+
   // Jednorazovo: obnov rezervácie, ktoré predošlý (zrušený) no-show job omylom prepol na
   // 'no_show'. Bez tohto by prihlásené klientky ostali skryté a tréner by nevedel potvrdiť
   // hodinu. Vraciame len auto-generované no_show (majú no_show_at) za posledných 45 dní.
@@ -4745,7 +4803,9 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
       await q.update(db.users,{_id:u._id},{$set:{manage_token:u.manage_token}}); }
     // Odkaz na prihlásenie jedným klikom — bez neho sa žena z Facebookového prehliadača
     // do appky druhýkrát nedostane bez vypisovania hesla z mailu.
-    const vstupUrl=await dajVstupUrl(u);
+    const vstupToken='VS'+require('crypto').randomBytes(16).toString('hex');
+    await q.update(db.users,{_id:u._id},{$set:{login_token:vstupToken, login_token_exp:new Date(Date.now()+14*864e5).toISOString()}});
+    const vstupUrl=APP_URL+'/vstup/'+vstupToken;
     // Pod zámkom hodina@termín znova over obsadenosť a duplicitu — medzi kontrolou
     // vyššie a zápisom mohla vojsť iná požiadavka (tá istá diera ako E11-B v /api/bookings).
     const booking=await withBookingLock(cls._id+'@'+bdate, async()=>{
@@ -9226,6 +9286,27 @@ app.get('/api/admin/users/:id/awards', adminAuth, async(req,res)=>{
 // Klient si sám nastaví narodeniny (welcome guide + profil) — nech vieme kedy gratulovať
 // Moja história — odchodené hodiny (vrátane online), vstupenky na eventy, členstvá.
 // Klientka si ju otvorí na svojom profile tlačidlom „Moja história".
+// História konta klientky — „aby neboli hádky, či sa im vrátili vstupy" (Marek 17. 10. 2026).
+// Klientka vidí svoju, admin a tréner hociktorú; rodič aj svoje dieťa.
+app.get('/api/me/historia-konta', auth, async(req,res)=>{
+  try{ res.json(await historiaKonta(req.session.uid) || {error:'?'}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+app.get('/api/historia-konta/:id', auth, async(req,res)=>{
+  try{
+    const ja = await q.one(db.users,{_id:req.session.uid});
+    const cudzi = String(req.params.id)!==String(req.session.uid);
+    if(cudzi){
+      const kto = await q.one(db.users,{_id:String(req.params.id)});
+      const mozem = ja && (ja.is_admin || ja.user_type==='trainer' || (kto && kto.parent_id===ja._id));
+      if(!mozem) return res.status(403).json({error:'Toto nie je tvoja história'});
+    }
+    const h = await historiaKonta(String(req.params.id));
+    if(!h) return res.status(404).json({error:'Klientka nenájdená'});
+    res.json(h);
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/me/history', auth, async(req,res)=>{
   try{
     const uid=req.session.uid;
@@ -9575,6 +9656,7 @@ app.post('/api/admin/users/:id/entries', adminAuth, async(req,res)=>{
     let cur=parseInt(u.single_entries||0);
     let ne = op==='set' ? val : op==='add' ? cur+val : op==='sub' ? cur-val : cur;
     ne=Math.max(0,ne);
+    await zapisHistoriu(u._id,'vstupy', ne-cur, ne, 'Ručná úprava adminom', {kto:req.session?.uid||null});
     await q.update(db.users,{_id:u._id},{$set:{single_entries:ne}});
     await q.insert(db.notifications,{user_id:u._id,type:'entries',title:'🎟️ Úprava vstupov',body:`Aktuálny počet jednorázových vstupov: ${ne}`,read:false,created_at:nowISO()}).catch(()=>{});
     await auditLog(req,'entries_adjust',u._id,{old:cur},{op,val,new:ne},'');
@@ -12186,6 +12268,43 @@ app.post('/api/service/clenstvo-zapisat', async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Predĺženie členstva s dôvodom (Marek 17. 10. 2026 — Barbora: zrušené hodiny jej nikto
+// nepredĺžil a appka jej mesiac, ktorý zaplatila, nedala využiť). Predĺži posledné členstvo
+// o zadaný počet dní; keď už skončilo, naviaže sa na dnešok a znova ho zapne. Dôvod ide do
+// histórie konta, takže klientka aj admin vidia, prečo sa dátum zmenil.
+app.post('/api/service/clenstvo-predlzit', async(req,res)=>{
+  if(!servisToken(req)) return res.status(404).end();
+  try{
+    const email=String(req.body.email||'').trim().toLowerCase();
+    const u = email ? await q.one(db.users,{email}) : await q.one(db.users,{_id:String(req.body.user_id||'')});
+    if(!u) return res.status(404).json({error:'Klientka nenájdená'});
+    const dni = Math.round(+req.body.dni||0);
+    if(!(dni>0 && dni<=400)) return res.status(400).json({error:'Počet dní musí byť 1–400'});
+    const dovod = String(req.body.dovod||'').trim();
+    if(!dovod) return res.status(400).json({error:'Pošli dôvod — ide do histórie klientky'});
+    const clenstva = (await q.find(db.memberships,{user_id:u._id}))
+      .filter(m=>!m._type && m.status!=='bundle' && m.expires_at)
+      .sort((a,b)=>String(b.expires_at).localeCompare(String(a.expires_at)));
+    const m = clenstva[0];
+    if(!m) return res.status(404).json({error:'Klientka nemá žiadne členstvo — použi clenstvo-zapisat'});
+    const odkedy = new Date(m.expires_at) > new Date() ? new Date(m.expires_at) : new Date();
+    const nove = new Date(odkedy.getTime() + dni*864e5).toISOString();
+    const nahlad = { klientka:u.name, plan:m.plan_name||m.plan_id, teraz:String(m.expires_at).slice(0,10),
+      stav:m.status, po_zmene:nove.slice(0,10), dni, dovod };
+    if(req.body.apply!==true) return res.json({ok:true, apply:false, nahlad});
+
+    await q.update(db.memberships,{_id:m._id},{$set:{expires_at:nove, status:'active'}});
+    await zarovnajClenstvoNaUcte(u._id, (await q.find(db.memberships,{user_id:u._id, status:'active'})).filter(x=>!x._type)).catch(()=>{});
+    await zapisHistoriu(u._id,'clenstvo', dni, null, dovod, {do_kedy:nove.slice(0,10)});
+    await q.insert(db.notifications,{user_id:u._id, type:'membership',
+      title:'💛 Členstvo sme ti predĺžili', body:dovod+' Členstvo '+(m.plan_name||m.plan_id)+' ti teraz platí do '+fmtDenSk(nove)+'.',
+      read:false, created_at:nowISO()}).catch(()=>{});
+    await auditLog(req,'membership_extend',u._id,{do:String(m.expires_at).slice(0,10), stav:m.status},{do:nove.slice(0,10), dni},dovod);
+    console.log('💛 Členstvo predĺžené: '+u.name+' +'+dni+' dní → '+nove.slice(0,10)+' ('+dovod+')');
+    res.json({ok:true, apply:true, klientka:u.name, plan:m.plan_name||m.plan_id, clenstvo_do:nove.slice(0,10), dni});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Prvý týždeň zadarmo ručne (Marek 14. 10. 2026: „Zdenka dnes začala týždeň zadarmo",
 // „Katka má dnes ešte prvý týždeň zadarmo"). Klientka si ho v appke občas preklikne zle
 // (Zdenka ponuku omylom odmietla) a tréner jej ho na hodine sľúbi. Nástroj skúšku zapne
@@ -12374,6 +12493,8 @@ app.post('/api/service/entries-move', async(req,res)=>{
     if(pocet<1) return res.status(400).json({error:'Počet vstupov musí byť aspoň 1'});
     const mal=z.single_entries||0, malNa=na.single_entries||0;
     if(mal<pocet) return res.status(400).json({error:z.name+' má len '+mal+' '+(mal===1?'vstup':(mal>=2&&mal<=4?'vstupy':'vstupov'))});
+    await zapisHistoriu(z._id,'vstupy', -pocet, mal-pocet, 'Presun vstupov na účet '+na.name, {});
+    await zapisHistoriu(na._id,'vstupy', pocet, malNa+pocet, 'Presun vstupov z účtu '+z.name, {});
     await q.update(db.users,{_id:z._id},{$set:{single_entries:mal-pocet}});
     await q.update(db.users,{_id:na._id},{$set:{single_entries:malNa+pocet}});
     await auditLog(req,'entries_move',z._id,
@@ -13117,6 +13238,98 @@ async function logCredit(userId, delta, reason){
     await q.insert(db.credit_ledger,{user_id:userId, delta:+(+delta).toFixed(2), reason:String(reason).slice(0,160),
       balance:+(u?.referral_credit||0), created_at:nowISO()}); }catch(e){}
 }
+
+// ── História konta ────────────────────────────────────────────────────────────
+// Marek 17. 10. 2026: „aby neboli hádky, či sa im vrátili vstupy alebo nie". Každá zmena
+// vstupov z permanentky, hodín zdarma a dní členstva má svoj riadok: kedy, o koľko, prečo
+// a aký je zostatok po zmene. Klientka to vidí vo svojom profile, admin a tréner tiež.
+// Zápis nesmie zhodiť operáciu — keď zlyhá, len sa zaloguje.
+const HISTORIA_TYPY = { vstupy:'vstup z permanentky', hodiny_zdarma:'hodina zdarma', clenstvo:'členstvo' };
+async function zapisHistoriu(user_id, typ, zmena, zostatok, dovod, meta={}){
+  try{
+    if(!user_id || !HISTORIA_TYPY[typ]) return null;
+    return await q.insert(db.konto_historia,{ user_id, typ, zmena:+zmena||0,
+      zostatok: (zostatok===null||zostatok===undefined) ? null : +zostatok,
+      dovod:String(dovod||'').slice(0,200), kto:meta.kto||null, booking_id:meta.booking_id||null,
+      hodina:meta.hodina||null, den:meta.den||null, do_kedy:meta.do_kedy||null, at:nowISO() });
+  }catch(e){ console.error('história konta:', e.message); return null; }
+}
+// Poskladá históriu konta: zápisy o vstupoch a členstve + hodiny + platby, zoradené od
+// najnovšieho. To isté vidí klientka aj admin — aby sa nebolo o čom hádať.
+async function historiaKonta(userId, limit=250){
+  const u = await q.one(db.users,{_id:userId}); if(!u) return null;
+  const riadky = [];
+  for(const h of await q.find(db.konto_historia,{user_id:userId}))
+    riadky.push({ den:h.den || String(h.at||'').slice(0,10), kedy:h.at, typ:h.typ, zmena:h.zmena,
+      zostatok:h.zostatok, text:h.dovod, hodina:h.hodina||null, do_kedy:h.do_kedy||null });
+  const cls = Object.fromEntries((await q.find(db.classes,{})).map(c=>[c._id,c]));
+  for(const b of await q.find(db.bookings,{user_id:userId})){
+    const c = cls[b.class_id] || {};
+    const hodina = (b.class_name||c.name||'Hodina') + ((b.class_location||c.location) ? ' · '+(b.class_location||c.location) : '');
+    const den = String(b.booking_date||'').slice(0,10);
+    if(b.status==='attended' || b.attendance_status==='attended')
+      riadky.push({ den, kedy:b.attended_at||den, typ:'hodina', zmena:0, text:'Bola si na hodine', hodina });
+    else if(b.status==='cancelled_studio')
+      riadky.push({ den, kedy:b.cancelled_at||den, typ:'hodina', zmena:0, hodina,
+        text:'Hodinu zrušilo štúdio'+(b.cancelled_reason?' — '+b.cancelled_reason:'') });
+    else if(b.attendance_status==='no_show')
+      riadky.push({ den, kedy:b.no_show_at||den, typ:'hodina', zmena:0, text:'Neprišla si', hodina });
+    else if(String(b.status||'').startsWith('cancelled'))
+      riadky.push({ den, kedy:b.cancelled_at||den, typ:'hodina', zmena:0, text:'Odhlásila si sa', hodina });
+  }
+  for(const t of await q.find(db.transactions,{user_id:userId})){
+    if(!(+t.amount>0)) continue;
+    riadky.push({ den:String(t.date||t.created_at||'').slice(0,10), kedy:t.created_at||t.date, typ:'platba', zmena:0,
+      suma:+t.amount, text:t.note || ({membership:'Členstvo', single_entry:'Vstupy', subscription:'Mesačný odber',
+        subscription_renewal:'Obnova členstva'}[t.type] || 'Platba') });
+  }
+  for(const c of await q.find(db.credit_ledger,{user_id:userId}))
+    riadky.push({ den:String(c.created_at||'').slice(0,10), kedy:c.created_at, typ:'kredit', zmena:+c.delta||0,
+      zostatok:c.balance, text:c.reason||'Fusion kredit' });
+  riadky.sort((a,b)=>String(b.kedy||b.den||'').localeCompare(String(a.kedy||a.den||'')) || String(b.den||'').localeCompare(String(a.den||'')));
+  const m = await q.one(db.memberships,{user_id:userId, status:'active'});
+  return { klientka:u.name, user_id:userId,
+    vstupy:+u.single_entries||0, hodiny_zdarma:+u.free_credits||0, kredit:+(u.referral_credit||0),
+    clenstvo: m && !m._type ? { plan:m.plan_name||m.plan_id, do:String(m.expires_at||'').slice(0,10), trial:!!m.trial } : null,
+    riadky: riadky.slice(0, limit) };
+}
+
+// Dorovnanie histórie so skutočnosťou. Vstupy sa dajú zmeniť aj cestami, ktoré do histórie
+// nepíšu (staré migrácie, priamy zásah), a vtedy by si klientka prepočítala riadky a vyšlo
+// by jej iné číslo, než vidí na konte. Raz denne to porovnáme a rozdiel dopíšeme ako riadok,
+// aby história vždy vysvetľovala aktuálny zostatok.
+async function zosuladHistoriu(){
+  try{
+    const zapisy = await q.find(db.konto_historia,{});
+    const sucty = {};
+    for(const h of zapisy){
+      if(h.typ!=='vstupy' && h.typ!=='hodiny_zdarma') continue;
+      const k = h.user_id+'|'+h.typ;
+      sucty[k] = (sucty[k]||0) + (+h.zmena||0);
+    }
+    let opravene = 0;
+    for(const u of await q.find(db.users,{})){
+      for(const [typ, pole] of [['vstupy','single_entries'],['hodiny_zdarma','free_credits']]){
+        const skutocne = +u[pole] || 0, zHistorie = sucty[u._id+'|'+typ] || 0;
+        if(skutocne===zHistorie) continue;
+        if(!zapisy.some(h=>h.user_id===u._id) && !skutocne) continue;   // účet bez pohybu neriešime
+        await zapisHistoriu(u._id, typ, skutocne-zHistorie, skutocne, 'Dorovnanie podľa stavu na konte', {});
+        opravene++;
+      }
+    }
+    if(opravene) console.log('🧾 História konta dorovnaná v '+opravene+' prípadoch');
+    return opravene;
+  }catch(e){ console.error('dorovnanie histórie:', e.message); return 0; }
+}
+
+// Pripočítanie/odpočítanie vstupov alebo hodín zdarma so záznamom. Vracia nový zostatok.
+async function zmenKonto(userId, pole, delta, dovod, meta={}){
+  const u = await q.one(db.users,{_id:userId}); if(!u) return null;
+  const pred = +u[pole] || 0, po = Math.max(0, pred + (+delta||0));
+  if(po!==pred) await q.update(db.users,{_id:userId},{$set:{[pole]:po}});
+  await zapisHistoriu(userId, pole==='single_entries'?'vstupy':'hodiny_zdarma', po-pred, po, dovod, meta);
+  return po;
+}
 // Spoločná logika „existujúce členstvo → nové" pre platbu kartou (activateMembership)
 // aj ručný predaj / darček (grant-membership). Predtým mal ručný predaj vlastný výpočet
 // a pri zmene plánu nadväzoval od starej expirácie: Bronze so zvyškom 15 dní + Gold dalo
@@ -13197,6 +13410,7 @@ async function activateMembership(userId, planId, durationDays, opts={}){
     const u0 = await q.one(db.users,{_id:userId});
     const newEntries = (u0.single_entries||0) + entries;
     const expiresAt = new Date(now.getTime() + (plan.duration_days||90)*24*60*60*1000);
+    await zapisHistoriu(userId,'vstupy', entries, newEntries, 'Kúpená '+plan.name, {});
     await q.update(db.users,{_id:userId},{$set:{single_entries:newEntries}});
     await q.insert(db.memberships,{user_id:userId,plan_id:planId,plan_name:plan.name,price:plan.price,status:'bundle',started_at:now.toISOString(),expires_at:expiresAt.toISOString(),created_at:nowISO()});
     await q.insert(db.notifications,{user_id:userId,type:'membership',title:'Permanentka aktivovaná 🎟️',body:`Máš ${newEntries} vstupov na 90 dní.`,read:false,created_at:nowISO()});
@@ -13233,6 +13447,8 @@ async function activateMembership(userId, planId, durationDays, opts={}){
   if(jeMesacneClenstvo(plan) && maStaruCenu(promoU)) memberSet.stara_cena_do = staraCenaDo(expiresAt);
   if(promoU && promoU.user_type==='lead') memberSet.user_type='client';
   await q.update(db.users,{_id:userId},{$set:memberSet});
+  await zapisHistoriu(userId,'clenstvo', Math.round((expiresAt-(existing&&samePlanExtend?new Date(existing.expires_at):now))/864e5), null,
+    (samePlanExtend?'Predĺžené členstvo ':'Členstvo ')+plan.name, {do_kedy:expiresAt.toISOString().slice(0,10)});
   // Notification
   await q.insert(db.notifications,{user_id:userId,type:'membership',title:'Členstvo aktivované 🎉',body:`Váš plán ${plan.name} je aktívny do ${expiresAt.toLocaleDateString('sk-SK')}.`,read:false,created_at:nowISO()});
   // s odstupom: skúšobný týždeň si cenu 0 / trial zapíše až po activateMembership — oznam by išiel aj jemu
@@ -17274,7 +17490,7 @@ async function vyberVstupne(b, { amount, method, by, byName }) {
     await activateMembership(b.user_id, b.pay_plan, plan.duration_days||30);
     // Permanentka kúpená na hodine kryje aj TÚTO hodinu — inak by klientke
     // ostalo 10 vstupov a hodina, na ktorej stojí, by nebola zaplatená.
-    if(jeBalik) await odpocitajVstup(b.user_id, 'single_entries').catch(()=>{});
+    if(jeBalik) await odpocitajVstup(b.user_id, 'single_entries', {dovod:'Hodina '+(b.class_name||''), hodina:b.class_name||null, den:b.booking_date||null, booking_id:b._id}).catch(()=>{});
     await q.insert(db.transactions,{type:'membership', user_id:b.user_id, user_name:b.user_name,
       amount, payment_method:method, plan_id:b.pay_plan,
       note:`${plan.name} — predané na hodine ${b.class_name} ${b.booking_date} (${methodTxt})`,
@@ -21099,12 +21315,13 @@ const fmtDenMes = s => { const [y,m,d] = String(s).slice(0,10).split('-'); retur
 async function vratKrytieRezervacie(b){
   const u0 = await q.one(db.users,{_id:b.user_id});
   if(!u0) return {refunded:0, backTxt:''};
+  const kedy={dovod:'Zrušená hodina '+(b.class_name||'')+(b.booking_date?' '+b.booking_date:''), hodina:b.class_name||null, den:b.booking_date||null, booking_id:b._id};
   if(b.access_method==='single_entry'){
-    await q.update(db.users,{_id:u0._id},{$set:{single_entries:(u0.single_entries||0)+1}});
+    await zmenKonto(u0._id,'single_entries',1,kedy.dovod,kedy);
     return {refunded:1, backTxt:' Tvoj vstup z permanentky sme ti vrátili.'};
   }
   if(b.access_method==='free_credit'){
-    await q.update(db.users,{_id:u0._id},{$set:{free_credits:(u0.free_credits||0)+1}});
+    await zmenKonto(u0._id,'free_credits',1,kedy.dovod,kedy);
     return {refunded:1, backTxt:' Hodinu zdarma sme ti vrátili.'};
   }
   if(b.access_method==='free_class' || b.free_class){
@@ -21113,11 +21330,11 @@ async function vratKrytieRezervacie(b){
   }
   if(b.access_method==='parent_single_entry' && b.booked_by){
     const pu=await q.one(db.users,{_id:b.booked_by});
-    if(pu){ await q.update(db.users,{_id:pu._id},{$set:{single_entries:(pu.single_entries||0)+1}}); return {refunded:1, backTxt:' Vstup z rodičovskej permanentky sme vrátili.'}; }
+    if(pu){ await zmenKonto(pu._id,'single_entries',1,kedy.dovod+' (dieťa '+(b.user_name||'')+')',kedy); return {refunded:1, backTxt:' Vstup z rodičovskej permanentky sme vrátili.'}; }
   }
   if(b.access_method==='parent_free_credit' && b.booked_by){
     const pu=await q.one(db.users,{_id:b.booked_by});
-    if(pu){ await q.update(db.users,{_id:pu._id},{$set:{free_credits:(pu.free_credits||0)+1}}); return {refunded:1, backTxt:' Hodinu zdarma sme vrátili rodičovi.'}; }
+    if(pu){ await zmenKonto(pu._id,'free_credits',1,kedy.dovod+' (dieťa '+(b.user_name||'')+')',kedy); return {refunded:1, backTxt:' Hodinu zdarma sme vrátili rodičovi.'}; }
   }
   return {refunded:0, backTxt:''};
 }
@@ -21346,6 +21563,7 @@ async function kompenzujZrusenie({class_id, date, days, scope, by, tichoPre}){
       else { const d0=new Date(stare.slice(0,10)+'T12:00:00Z'); d0.setUTCDate(d0.getUTCDate()+dni); nove=d0.toISOString().slice(0,10); }
       const zaznam={key:kluc, class_name:cls.name, location:cls.location, date:den, days:dni, from:stare, to:nove, at:nowISO(), by:by||null};
       await q.update(db.memberships,{_id:m._id},{$set:{expires_at:nove, kompenzacie:[...(m.kompenzacie||[]), zaznam]}});
+      await zapisHistoriu(uid,'clenstvo', dni, null, 'Zrušená hodina '+cls.name+' ('+cls.location+') '+den+' — členstvo predĺžené', {hodina:cls.name+' · '+cls.location, den, do_kedy:String(nove).slice(0,10), kto:by||null});
       const doKedy=nove.slice(0,10).split('-').reverse().join('. ');
       if(!(tichoPre && tichoPre.has(uid))) await q.insert(db.notifications,{user_id:uid, type:'membership',
         title:'💛 Predĺžili sme ti členstvo',
@@ -21620,6 +21838,7 @@ app.post('/api/attendance/single-entry', trainerAuth, async(req,res)=>{
     const price = +(amount!=null ? amount : (count===10?80:count*10));
     const entries = (u.single_entries||0) + count;
     const label = count>1 ? `${count}-vstupová permanentka` : 'Jednorazový vstup';
+    await zapisHistoriu(user_id,'vstupy', count, entries, label+' (predané na mieste)', {kto:req.session?.uid||null});
     await q.update(db.users,{_id:user_id},{$set:{single_entries:entries}});
     await q.insert(db.transactions,{
       type:'single_entry', user_id, user_name:u.name, amount:price, date:today(),
@@ -21644,6 +21863,7 @@ app.post('/api/attendance/give-free', trainerAuth, async(req,res)=>{
     if(!u) return res.status(404).json({error:'Používateľ nenájdený'});
     // Give one free entry credit (separate from single_entries so it's visible)
     const freeCredits = (u.free_credits||0) + 1;
+    await zapisHistoriu(user_id,'hodiny_zdarma', 1, freeCredits, String(note||'Hodina zdarma od trénera').slice(0,120), {kto:req.trainerUser?._id||null});
     await q.update(db.users,{_id:user_id},{$set:{free_credits:freeCredits}});
     await q.insert(db.notifications,{user_id,type:'gift',title:'🎁 Dostali ste hodinu zadarmo!',body:note||'Admin vám pridal bezplatnú hodinu.',read:false,created_at:nowISO()});
     res.json({ok:true, free_credits:freeCredits});
@@ -22701,13 +22921,18 @@ function withBookingLock(key, fn){
 // Odpočet vstupu/kreditu s podmienkou „ešte ho má": update s query je v NeDB
 // atomický, takže 5 rezervácií naraz s 1 vstupom vezme permanentku len raz a nikdy
 // do mínusu (E11-C/E). Vracia true, keď sa naozaj odpočítalo.
-async function odpocitajVstup(uid, field){
+async function odpocitajVstup(uid, field, meta={}){
   let n = await q.update(db.users,{_id:uid, [field]:{$gte:1}},{$inc:{[field]:-1}});
   if(!n){
     // Staršie účty (import) môžu mať počet uložený ako text — $gte naň nesedí; znormalizuj a skús raz znova.
     const f = await q.one(db.users,{_id:uid});
     if(f && typeof f[field]!=='number' && (+f[field]||0)>=1)
       n = await q.update(db.users,{_id:uid, [field]:f[field]},{$set:{[field]:(+f[field])-1}});
+  }
+  if(n===1){   // jediné miesto, kde sa vstup/hodina zdarma strháva — tu teda aj zápis do histórie
+    const po = await q.one(db.users,{_id:uid});
+    await zapisHistoriu(uid, field==='single_entries'?'vstupy':'hodiny_zdarma', -1,
+      po ? (+po[field]||0) : null, meta.dovod || 'Použité na hodinu', meta);
   }
   return n===1;
 }
@@ -22899,7 +23124,7 @@ app.post('/api/bookings', auth, async(req,res)=>{
             }
           }
         } else if(deductPlan){
-          if(!(await odpocitajVstup(deductPlan.uid, deductPlan.field)))
+          if(!(await odpocitajVstup(deductPlan.uid, deductPlan.field, {dovod:'Prihlásenie na hodinu '+(cls.name||''), hodina:(cls.name||'')+(cls.location?' · '+cls.location:''), den:bdate})))
             return membershipRequired('Vstup sa práve minul — použila ho iná tvoja rezervácia. Na túto hodinu potrebuješ ďalší vstup alebo členstvo.');
           vratit=deductPlan;
         } else if(creditPay){
@@ -25554,6 +25779,9 @@ app.get('/hlavolam',   (req,res)=>res.sendFile(path.join(__dirname,'public','hla
 // Jeden obchod: cenník žije v /obchod (staré linky v mailoch/na webe presmerujeme)
 app.get('/pricing',    (req,res)=>res.redirect(302,'/obchod'+(req.originalUrl.includes('?')?'?'+req.originalUrl.split('?')[1]:'')));
 app.get('/u/:id',      (req,res)=>res.sendFile(path.join(__dirname,'public','profile.html')));
+// História konta — klientka svoju, admin/tréner hociktorú (/historia/:id)
+app.get('/historia',     (req,res)=>res.sendFile(path.join(__dirname,'public','historia.html')));
+app.get('/historia/:id', (req,res)=>res.sendFile(path.join(__dirname,'public','historia.html')));
 app.get('/reset-heslo', (req,res)=>res.sendFile(path.join(__dirname,'public','reset-heslo.html')));
 // Pri prvom týždni zadarmo vedie stará vstupná stránka na úvod appky. Parametre z reklamy
 // (utm_*, fbclid, city) musia ísť so sebou — do 16. 9. sa strácali a klik z kampane

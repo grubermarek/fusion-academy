@@ -1317,7 +1317,7 @@ function renderAccessBar(me){
     if(se>0) parts.push(`<strong>${se} ${se===1?'vstup':(se<5?'vstupy':'vstupov')}</strong>`);
     if(fc>0) parts.push(`<strong>${fc} ${fc===1?'hodina':(fc<5?'hodiny':'hodín')} zadarmo</strong>`);
     bar.className='access-bar ok anim anim-d2';icon.className='bi bi-ticket-perforated-fill';
-    text.innerHTML=`Máš ${parts.join(' + ')} k dispozícii. <a href="/obchod" style="color:var(--gold)">Kúpiť členstvo →</a>`;
+    text.innerHTML=`Máš ${parts.join(' + ')} k dispozícii. <a href="/historia" style="color:var(--gold)">História konta →</a> · <a href="/obchod" style="color:var(--gold)">Kúpiť členstvo →</a>`;
     bar.style.display='flex';
   } else {
     bar.className='access-bar warn anim anim-d2';icon.className='bi bi-exclamation-triangle-fill';

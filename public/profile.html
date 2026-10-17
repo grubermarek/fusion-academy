@@ -160,6 +160,8 @@
   .set-inline input[type=date]{background:var(--bg);border:1px solid var(--border);color:var(--cream);border-radius:10px;padding:9px 12px;font-family:'Manrope';font-size:.9rem}
   .set-check{display:flex;align-items:center;gap:10px;cursor:pointer}
   .set-check input{width:18px;height:18px;accent-color:var(--gold);cursor:pointer}
+  .hist-link{display:block;text-align:center;margin-top:14px;padding:11px;border:1px solid var(--border,#2e2a20);border-radius:12px;color:var(--gold,#C9A24C);text-decoration:none;font-size:.9rem;background:#1b1916}
+  .hist-link:hover{border-color:var(--gold,#C9A24C)}
   .admin-box{background:linear-gradient(160deg,#1c1712,#141210);border:1px solid #5a4a20;border-radius:14px;margin-top:16px;overflow:hidden}
   .admin-box summary{list-style:none;cursor:pointer;padding:14px 16px;font-weight:700;color:#e0b84c;display:flex;justify-content:space-between;align-items:center}
   .admin-box summary::-webkit-details-marker{display:none}
@@ -550,6 +552,7 @@ function render(){
         <button class="adm-save" id="saveAllBtn" style="margin-top:4px;justify-self:start" onclick="saveAllSettings()"><i class="bi bi-check-lg"></i> ${T('settings.save_all')}</button>
       </div>
     </details>` : ''}
+    ${(P.is_self || P.viewer_is_admin) ? `<a class="hist-link" href="/historia${P.is_self ? '' : '/' + P.id}">🧾 História konta — vstupy, hodiny zdarma a členstvo</a>` : ''}
     ${P.viewer_is_admin ? `<details class="admin-box" id="adminBox" ontoggle="if(this.open)loadAdminAwards()">
       <summary><span>🛠️ Admin – správa profilu</span><i class="bi bi-chevron-down"></i></summary>
       <div class="admin-body" id="adminBody"><div class="empty">Načítavam…</div></div>
