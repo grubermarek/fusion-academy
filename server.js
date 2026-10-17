@@ -21315,7 +21315,8 @@ const fmtDenMes = s => { const [y,m,d] = String(s).slice(0,10).split('-'); retur
 async function vratKrytieRezervacie(b){
   const u0 = await q.one(db.users,{_id:b.user_id});
   if(!u0) return {refunded:0, backTxt:''};
-  const kedy={dovod:'Zrušená hodina '+(b.class_name||'')+(b.booking_date?' '+b.booking_date:''), hodina:b.class_name||null, den:b.booking_date||null, booking_id:b._id};
+  const kedy={dovod:'Hodinu zrušilo štúdio — vrátené späť',
+    hodina:(b.class_name||'')+(b.class_location?' · '+b.class_location:''), den:b.booking_date||null, booking_id:b._id};
   if(b.access_method==='single_entry'){
     await zmenKonto(u0._id,'single_entries',1,kedy.dovod,kedy);
     return {refunded:1, backTxt:' Tvoj vstup z permanentky sme ti vrátili.'};
