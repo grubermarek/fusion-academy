@@ -13432,7 +13432,7 @@ async function activateMembership(userId, planId, durationDays, opts={}){
 
   // Zmena/predĺženie ide cez tú istú logiku ako ručný predaj (settleMembershipChange):
   // iný plán → zvyšok do kreditu a štart dnes, rovnaký plán → nadviazanie na expiráciu.
-  const { existing, expiresAt } = await settleMembershipChange(userId, planId, durationDays||plan.duration_days, opts);
+  const { existing, samePlanExtend, expiresAt } = await settleMembershipChange(userId, planId, durationDays||plan.duration_days, opts);
   if(existing){
     await q.update(db.memberships,{_id:existing._id},{$set:{plan_id:planId,plan_name:plan.name,expires_at:expiresAt.toISOString(),updated_at:nowISO()}});
   } else {
