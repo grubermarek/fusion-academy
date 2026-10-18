@@ -2179,6 +2179,28 @@ async function seedData() {
     await q.insert(db.settings,{key:'kids_campaign_20260909', value:true, at:nowISO()});
   }
 
+  // 18. 10.: karta pre kampaň FA — Zumba Kids 10/2026 (Meta 52557993287073), ktorá vedie
+  // na nový detský landing. Septembrovej karte zároveň zúžime utm_key na jej vlastný
+  // prefix — `fa-kids-detva*` by inak chytal aj registrácie z novej kampane a tržby by
+  // sa pripisovali dvom kartám naraz.
+  if(!(await q.one(db.settings,{key:'kids_campaign_20261018'}))){
+    const stara=await q.one(db.campaigns,{name:'FA — Zumba Kids Detva'});
+    if(stara && String(stara.utm_key||'')==='fa-kids-detva*')
+      await q.update(db.campaigns,{_id:stara._id},{$set:{utm_key:'fa-kids-detva-nabor*',
+        note:(stara.note||'')+' · 18. 10.: utm zúžené, nová kampaň má vlastnú kartu.'}});
+    if(!(await q.one(db.campaigns,{name:'FA — Zumba Kids 10/2026'}))){
+      await q.insert(db.campaigns,{ name:'FA — Zumba Kids 10/2026', platform:'facebook',
+        utm_key:'fa-kids-detva-2610*', meta_campaign_id:'52557993287073',
+        date_from:today(), date_to:'', budget:7,
+        goal:'Prihlásenia detí 4–14 na Zumba Kids v Detve cez /prva-hodina-kids',
+        note:'Cieľ Predaj, optimalizácia na CompleteRegistration (dataset 4085746221555327). Rodičia (ženy 27–50) v okruhu 20 km okolo Detvy. Odkaz nesie utm_campaign=fa-kids-detva-2610 a utm_content s kódom kreatívy (k-a-energia / k-b-necvicenie / k-c-4az14). Ponuka: prvá hodina zadarmo, potom Bronze 49,90 € (54,90 € bez odberu).',
+        spend:0, impressions:0, clicks:0, registrations:0, first_visits:0, memberships:0,
+        created_at:nowISO() });
+      console.log('🧒 Karta kampane FA — Zumba Kids 10/2026 pripravená (utm fa-kids-detva-2610*)');
+    }
+    await q.insert(db.settings,{key:'kids_campaign_20261018', value:true, at:nowISO()});
+  }
+
   // 17. 10.: karta pre kampaň FA — Zumba Skúška 10/2026 (Meta 52557795528873).
   // Zakladá sa spolu s kampaňou, aby prvá registrácia mala kam spadnúť a aby
   // kampaň prešla kontrolou kvality merania (bez karty by bola „čiastočná"
