@@ -50,6 +50,9 @@ input{width:100%;background:rgba(10,7,18,.8);border:1px solid rgba(233,184,255,.
   padding:13px 14px;color:#fff;font:inherit;font-size:16px}
 input:focus{outline:none;border-color:var(--acc)}
 .err{color:#ff9e9e;font-size:.84rem;margin-top:8px}
+/* Telefón na Beátku — rodičia sa radšej spýtajú, než aby formulár zavreli. */
+.tel{color:var(--acc);font-weight:800;text-decoration:none;white-space:nowrap}
+.pomocCard{text-align:center}
 .hint{text-align:center;color:var(--muted);opacity:.85;font-size:.76rem;margin-top:10px}
 .heslo{background:rgba(243,210,126,.1);border:1px dashed rgba(243,210,126,.5);border-radius:12px;
   padding:10px 12px;margin:12px 0;font-size:.86rem}
@@ -97,7 +100,8 @@ footer a{color:var(--acc)}
     <div style="height:14px"></div>
     <button class="cta" id="odoslat" onclick="odoslat()">REZERVOVAŤ PRVÚ HODINU</button>
     <div class="err" id="chyba" style="display:none"></div>
-    <div class="hint">Rezervácia trvá 30 sekúnd. Účet v appke vám založíme sami.</div>
+    <div class="hint">Rezervácia trvá 30 sekúnd. Účet v appke vám založíme sami.<br>
+      Neviete si rady? Zavolajte Beátke na <a href="tel:+421904315151" class="tel">0904 315 151</a>.</div>
   </div>
 
   <div class="card" id="doneCard" style="display:none">
@@ -123,6 +127,13 @@ footer a{color:var(--acc)}
       <b>Ako sa platí ďalej?</b><br><span id="cenaFaq">Členstvo 49,90 € mesačne s automatickou platbou, 54,90 € bez nej.</span>
       Zrušíte ho kedykoľvek v appke.
     </p>
+  </div>
+
+  <div class="card pomocCard">
+    <h2>☎️ NEVIETE SI RADY?</h2>
+    <p style="font-size:.88rem;line-height:1.7;margin:0">Zavolajte Beátke na
+      <a href="tel:+421904315151" class="tel">0904 315 151</a> — poradí vám s termínom,
+      vekom dieťaťa aj s prihlásením.</p>
   </div>
 
   <footer>Fusion Academy · Zumba Kids · Detva, Záhradná 7<br>
