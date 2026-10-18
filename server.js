@@ -4855,11 +4855,11 @@ app.post('/api/first-class/book-kids', rlPublic, async(req,res)=>{
     const email=String(req.body.email||'').trim().toLowerCase().slice(0,120);
     const phone=String(req.body.phone||'').trim().slice(0,30);
     const teraz=new Date().getFullYear();
-    if(childName.length<2) return res.status(400).json({error:'Napíš meno dieťaťa 🙂'});
-    if(!(rok>=teraz-18 && rok<=teraz)) return res.status(400).json({error:'Zadaj rok narodenia dieťaťa — podľa veku ho zaradíme do správnej skupiny.'});
-    if(parentName.length<2) return res.status(400).json({error:'Napíš svoje meno 🙂'});
+    if(childName.length<2) return res.status(400).json({error:'Napíšte meno dieťaťa 🙂'});
+    if(!(rok>=teraz-18 && rok<=teraz)) return res.status(400).json({error:'Zadajte rok narodenia dieťaťa — podľa veku ho zaradíme do správnej skupiny.'});
+    if(parentName.length<2) return res.status(400).json({error:'Napíšte svoje meno 🙂'});
     if(!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email))
-      return res.status(400).json({error:'Zadaj platný e-mail — pošleme ti naň potvrdenie aj prihlásenie do appky.'});
+      return res.status(400).json({error:'Zadajte platný e-mail — pošleme naň potvrdenie aj prihlásenie do appky.'});
     const cls=await q.one(db.classes,{_id:String(req.body.class_id||'')});
     if(!cls || !cls.active || cls.category!=='Deti') return res.status(404).json({error:'Hodina nenájdená'});
     const bdate=String(req.body.booking_date||displayNextDateForDay(cls.day_of_week));

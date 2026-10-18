@@ -28,27 +28,56 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;ba
 .checks b{color:#fff}.checks .z{color:#9fe8a4;font-weight:700}
 .card{background:rgba(22,16,33,.72);border:1px solid rgba(233,184,255,.18);border-radius:18px;padding:16px;margin-top:16px}
 .card h2{font-size:1rem;letter-spacing:.04em;color:var(--acc);margin-bottom:10px}
-.vekFilter{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:14px 0 2px}
+
+/* ── SPRIEVODCA ──────────────────────────────────────────────────────────────
+   Rovnaký vzor ako na dospelom landingu (18. 10.): jedna otázka na obrazovku.
+   Rodič otvára odkaz z reklamy na mobile, väčšinou vo vstavanom prehliadači
+   Facebooku — dlhá stránka s formulárom na konci sa nedočíta. Kroky sú dva:
+   termín a potom údaje o dieťati. */
+#wiz{margin-top:12px}
+.kroky{display:flex;align-items:center;gap:6px;justify-content:center}
+.kroky i{width:40px;height:4px;border-radius:2px;background:rgba(255,255,255,.16);transition:background .2s ease}
+.kroky i.on{background:linear-gradient(100deg,var(--cta1),var(--cta2))}
+.krokLbl{text-align:center;color:var(--muted);font-size:.7rem;font-weight:800;letter-spacing:.14em;margin:8px 0 2px}
+#wiz h2{text-align:center;font-size:1.12rem;color:#fff;margin:0 0 14px;letter-spacing:0}
+.vyber{display:flex;flex-direction:column;gap:8px}
+/* Celý riadok je klikateľný a vysoký aspoň 56 px — rodič často drží dieťa v druhej ruke. */
+.vyber button{display:flex;align-items:center;gap:12px;width:100%;min-height:56px;text-align:left;
+  background:rgba(255,255,255,.05);border:1px solid rgba(233,184,255,.22);border-radius:14px;
+  padding:10px 14px;color:var(--cream);font:inherit;cursor:pointer;transition:border-color .18s ease,background .18s ease}
+.vyber button:active{transform:scale(.985)}
+.vyber button .t{flex:1;min-width:0}
+.vyber button .t b{display:block;color:#fff;font-size:1rem;line-height:1.25}
+.vyber button .t small{display:block;color:var(--muted);font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vyber button .sip{color:var(--acc);font-weight:900;flex:none}
+.vyber button:hover{border-color:rgba(233,184,255,.5);background:rgba(255,255,255,.09)}
+.vyber button.prva{border-color:rgba(233,184,255,.45);animation:dychR 2.6s ease-in-out infinite}
+@keyframes dychR{0%,100%{box-shadow:0 0 0 0 rgba(236,72,153,.35)}50%{box-shadow:0 0 0 8px rgba(236,72,153,0)}}
+@media (prefers-reduced-motion:reduce){.vyber button.prva{animation:none}}
+.vek{display:inline-block;background:rgba(233,184,255,.14);border:1px solid rgba(233,184,255,.3);
+  border-radius:8px;padding:1px 7px;font-size:.72rem;color:var(--acc);margin-left:6px;vertical-align:middle}
+.spat{display:block;margin:14px auto 0;background:none;border:none;color:var(--muted);font:inherit;
+  font-size:.84rem;cursor:pointer;padding:10px 12px;min-height:44px}
+.spat:hover{color:var(--cream)}
+.nacitavam{color:var(--muted);font-size:.86rem;padding:10px 0;text-align:center}
+.vekFilter{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:0 0 12px}
 .vekFilter button{background:rgba(22,16,33,.8);color:var(--cream);border:1px solid rgba(233,184,255,.26);
-  border-radius:999px;padding:9px 16px;font:inherit;font-size:.86rem;font-weight:700;cursor:pointer}
+  border-radius:999px;padding:9px 16px;min-height:44px;font:inherit;font-size:.86rem;font-weight:700;cursor:pointer}
 .vekFilter button.on{background:linear-gradient(100deg,var(--cta1),var(--cta2));border-color:transparent;color:#fff}
-.sess{display:flex;flex-direction:column;gap:10px}
-.sess .row{display:flex;align-items:center;gap:10px;justify-content:space-between;
-  border-bottom:1px solid rgba(255,255,255,.07);padding-bottom:10px}
-.sess .row:last-child{border-bottom:0;padding-bottom:0}
-.sess .kedy{font-weight:800;font-size:1rem}
-.sess .kde{display:block;color:var(--muted);font-size:.78rem;font-weight:500;margin-top:2px}
-.sess .vek{display:inline-block;background:rgba(233,184,255,.14);border:1px solid rgba(233,184,255,.3);
-  border-radius:8px;padding:1px 7px;font-size:.72rem;color:var(--acc);margin-left:6px}
+
 .cta{display:block;width:100%;text-align:center;background:linear-gradient(100deg,var(--cta1),var(--cta2));
   color:#fff;border:0;border-radius:999px;padding:15px 18px;font:inherit;font-weight:900;font-size:1.02rem;
   letter-spacing:.02em;cursor:pointer;text-decoration:none}
-.cta.maly{padding:10px 16px;font-size:.86rem;width:auto;flex:none}
+.cta:disabled{opacity:.6;cursor:default}
 .cta.ghost{background:transparent;border:1px solid rgba(233,184,255,.4);color:var(--cream)}
 label{display:block;font-size:.82rem;color:var(--muted);margin:10px 0 4px}
 input{width:100%;background:rgba(10,7,18,.8);border:1px solid rgba(233,184,255,.25);border-radius:12px;
   padding:13px 14px;color:#fff;font:inherit;font-size:16px}
 input:focus{outline:none;border-color:var(--acc)}
+input.zle{border-color:rgba(255,158,158,.75)}
+/* Chyba patrí k poľu, ktoré ju spôsobilo — nie až dole pod tlačidlo. */
+.pole-err{display:none;color:#ff9e9e;font-size:.78rem;margin-top:5px}
+.pole-err.on{display:block}
 .err{color:#ff9e9e;font-size:.84rem;margin-top:8px}
 /* Telefón na Beátku — rodičia sa radšej spýtajú, než aby formulár zavreli. */
 .tel{color:var(--acc);font-weight:800;text-decoration:none;white-space:nowrap}
@@ -79,29 +108,38 @@ footer a{color:var(--acc)}
     </div>
   </div>
 
-  <div class="vekFilter" id="vekFilter"></div>
+  <div class="card" id="wiz">
+    <div class="kroky" aria-hidden="true"><i id="kb1" class="on"></i><i id="kb2"></i></div>
+    <div class="krokLbl" id="krokLbl">KROK 1 Z 2</div>
 
-  <div class="card" id="terminy">
-    <h2>🗓️ VYBERTE TERMÍN PRVEJ HODINY</h2>
-    <div id="sessList" class="sess"><div style="color:var(--muted);font-size:.86rem">Načítavam termíny…</div></div>
-  </div>
+    <div class="krok" id="k1">
+      <h2>Kedy prídete?</h2>
+      <div class="vekFilter" id="vekFilter" style="display:none"></div>
+      <div class="vyber" id="sessList"><div class="nacitavam">Načítavam termíny…</div></div>
+    </div>
 
-  <div class="card" id="formCard" style="display:none">
-    <h2>🧒 PRIHLÁSIŤ DIEŤA</h2>
-    <div id="formDetail" style="font-size:.9rem;margin-bottom:6px"></div>
-    <label for="fDieta">Meno dieťaťa</label>
-    <input id="fDieta" placeholder="Natálka" autocomplete="off">
-    <label for="fRok">Rok narodenia</label>
-    <input id="fRok" type="number" inputmode="numeric" placeholder="2018" min="2008" max="2026">
-    <label for="fRodic">Vaše meno</label>
-    <input id="fRodic" placeholder="Jana Nováková" autocomplete="name">
-    <label for="fMail">Váš e-mail</label>
-    <input id="fMail" type="email" placeholder="jana@email.sk" autocomplete="email" inputmode="email">
-    <div style="height:14px"></div>
-    <button class="cta" id="odoslat" onclick="odoslat()">REZERVOVAŤ PRVÚ HODINU</button>
-    <div class="err" id="chyba" style="display:none"></div>
-    <div class="hint">Rezervácia trvá 30 sekúnd. Účet v appke vám založíme sami.<br>
-      Neviete si rady? Zavolajte Beátke na <a href="tel:+421904315151" class="tel">0904 315 151</a>.</div>
+    <div class="krok" id="k2" style="display:none">
+      <h2>Ešte pár údajov</h2>
+      <div id="formDetail" style="font-size:.88rem;color:var(--muted);margin:-6px 0 4px;text-align:center"></div>
+      <label for="fDieta">Meno dieťaťa</label>
+      <input id="fDieta" placeholder="Natálka" autocomplete="off" enterkeyhint="next">
+      <div class="pole-err" id="errDieta"></div>
+      <label for="fRok">Rok narodenia</label>
+      <input id="fRok" type="number" inputmode="numeric" placeholder="2018" min="2008" max="2026" enterkeyhint="next">
+      <div class="pole-err" id="errRok"></div>
+      <label for="fRodic">Vaše meno</label>
+      <input id="fRodic" placeholder="Jana Nováková" autocomplete="name" enterkeyhint="next">
+      <div class="pole-err" id="errRodic"></div>
+      <label for="fMail">Váš e-mail</label>
+      <input id="fMail" type="email" placeholder="jana@email.sk" autocomplete="email" inputmode="email" enterkeyhint="done">
+      <div class="pole-err" id="errMail"></div>
+      <div style="height:14px"></div>
+      <button class="cta" id="odoslat" onclick="odoslat()">REZERVOVAŤ PRVÚ HODINU</button>
+      <div class="err" id="chyba" style="display:none"></div>
+      <div class="hint">Rezervácia trvá 30 sekúnd. Účet v appke vám založíme sami.<br>
+        Neviete si rady? Zavolajte Beátke na <a href="tel:+421904315151" class="tel">0904 315 151</a>.</div>
+      <button class="spat" onclick="naKrok(1)">← Vybrať iný termín</button>
+    </div>
   </div>
 
   <div class="card" id="doneCard" style="display:none">
@@ -145,11 +183,18 @@ footer a{color:var(--acc)}
 <script src="/fa-track.js"></script>
 <script>
 const P0=new URLSearchParams(location.search);
-let ITEMS=[], PICK=null, SKUPINA=null, CENA=null;
+let ITEMS=[], PICK=null, SKUPINA=null, CENA=null, KROK=1;
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const krok=(k,meta)=>{ try{ window.faKrok && window.faKrok(k,meta); }catch(e){} };
 const fmtD=d=>d.slice(8,10)+'. '+d.slice(5,7)+'.';
+const $=id=>document.getElementById(id);
 
+function naKrok(n){
+  KROK=n;
+  [1,2].forEach(i=>{ $('k'+i).style.display = i===n?'block':'none'; $('kb'+i).className = i<=n?'on':''; });
+  $('krokLbl').textContent='KROK '+n+' Z 2';
+  if(n===1) PICK=null;
+}
 async function load(){
   const r=await fetch('/api/first-class/kids-schedule');
   const d=await r.json();
@@ -157,51 +202,78 @@ async function load(){
   CENA=d.cena||null;
   if(CENA){
     const a=CENA.auto.toFixed(2).replace('.',','), m=CENA.manual.toFixed(2).replace('.',',');
-    document.getElementById('cenaRiadok').textContent=a+' €/mes.';
-    document.getElementById('cenaFaq').textContent='Členstvo '+a+' € mesačne s automatickou platbou, '+m+' € bez nej.';
+    $('cenaRiadok').textContent=a+' €/mes.';
+    $('cenaFaq').textContent='Členstvo '+a+' € mesačne s automatickou platbou, '+m+' € bez nej.';
   }
   const skupiny=[...new Set(ITEMS.map(i=>i.skupina).filter(Boolean))];
-  const f=document.getElementById('vekFilter');
+  const f=$('vekFilter');
   // Veky ber z rozvrhu, nech hlavička nesľubuje skupiny, ktoré práve nebežia.
   const veky=[...new Set(ITEMS.map(i=>i.vek).filter(Boolean))];
-  const vr=document.getElementById('vekRiadok');
+  const vr=$('vekRiadok');
   if(vr && veky.length===1) vr.innerHTML='✓ Pre deti <b>'+esc(veky[0].replace(/[–-]/,' až '))+' rokov</b>';
   else if(vr && veky.length>1) vr.innerHTML='✓ '+(veky.length===2?'Dve skupiny':veky.length+' skupiny')+': <b>'+veky.map(v=>esc(v)+' r.').join('</b> a <b>')+'</b>';
   // Keď beží jediná skupina (od 18. 10. jedna spoločná 4–14), filter nemá čo triediť.
   if(skupiny.length<2){ f.style.display='none'; f.innerHTML=''; SKUPINA=null; }
   else {
-    f.style.display='';
+    f.style.display='flex';
     f.innerHTML='<button class="'+(SKUPINA?'':'on')+'" onclick="setSkupina(null)">Všetky</button>'
       + skupiny.map(s=>{ const vek=(ITEMS.find(i=>i.skupina===s)||{}).vek||'';
           return '<button class="'+(s===SKUPINA?'on':'')+'" onclick="setSkupina(\''+esc(s)+'\')">'+esc(s)+(vek?' · '+esc(vek)+' r.':'')+'</button>'; }).join('');
   }
   vykresli();
 }
-function setSkupina(s){ SKUPINA=s; PICK=null; document.getElementById('formCard').style.display='none'; load(); }
+function setSkupina(s){ SKUPINA=s; naKrok(1); krok('lp_skupina',{skupina:s||'vsetky'}); load(); }
 function vykresli(){
-  const list=document.getElementById('sessList');
+  const list=$('sessList');
   const zoznam=SKUPINA?ITEMS.filter(i=>i.skupina===SKUPINA):ITEMS;
-  if(!zoznam.length){ list.innerHTML='<div style="color:var(--muted);font-size:.86rem">Momentálne tu nie sú vypísané termíny.</div>'; return; }
+  if(!zoznam.length){ list.innerHTML='<div class="nacitavam">Momentálne tu nie sú vypísané termíny.</div>'; return; }
+  // aria-label na každom riadku: text je vnorený v <span>, takže čítačka obrazovky
+  // by inak ohlásila len „tlačidlo".
   list.innerHTML=zoznam.map((i,n)=>
-    '<div class="row"><div><span class="kedy">'+esc(i.day_name.toUpperCase())+' '+esc(i.time_start)+'</span>'
-    +(i.vek?'<span class="vek">'+esc(i.vek)+' r.</span>':'')
-    +'<small class="kde">'+esc(i.name)+' · '+fmtD(i.date)+' · '+esc(i.city)+'</small></div>'
-    +'<button class="cta maly" onclick="vyber('+n+')">VYBRAŤ</button></div>').join('');
+    '<button class="'+(n===0?'prva':'')+'" onclick="vyber('+n+')"'
+    +' aria-label="'+esc('Vybrať '+i.day_name+' '+fmtD(i.date)+' o '+i.time_start+', '+i.name)+'">'
+    +'<span class="t"><b>'+esc(i.day_name.toUpperCase())+' '+esc(i.time_start)
+    +(i.vek?'<span class="vek">'+esc(i.vek)+' r.</span>':'')+'</b>'
+    +'<small>'+esc(i.name)+' · '+fmtD(i.date)+' · '+esc(i.city)+'</small></span>'
+    +'<span class="sip" aria-hidden="true">›</span></button>').join('');
   window.__zoznam=zoznam;
 }
 function vyber(n){
   PICK=(window.__zoznam||[])[n]; if(!PICK) return;
-  document.getElementById('formCard').style.display='block';
-  document.getElementById('formDetail').innerHTML='Prihlasujete na: <b style="color:#fff">'+esc(PICK.name)+'</b> · '
+  $('formDetail').innerHTML='<b style="color:#fff">'+esc(PICK.name)+'</b> · '
     +esc(PICK.day_name)+' '+fmtD(PICK.date)+' o '+esc(PICK.time_start)+' · '+esc(PICK.city);
+  naKrok(2);
   krok('lp_termin',{city:PICK.city, termin:PICK.name}); krok('form_view');
-  document.getElementById('formCard').scrollIntoView({behavior:'smooth',block:'start'});
-  document.getElementById('fDieta').focus();
+  $('fDieta').focus();
 }
 ['fDieta','fRok','fRodic','fMail'].forEach(id=>{
-  document.addEventListener('DOMContentLoaded',()=>{ const el=document.getElementById(id);
-    if(el) el.addEventListener('focus',()=>krok('form_start',{pole:id}),{once:true}); });
+  const el=$(id); if(!el) return;
+  el.addEventListener('focus',()=>krok('form_start',{pole:id}),{once:true});
 });
+function chyba1(pole,errId,text){
+  const i=$(pole), e=$(errId);
+  if(text){ i.classList.add('zle'); e.textContent=text; e.classList.add('on'); return false; }
+  i.classList.remove('zle'); e.textContent=''; e.classList.remove('on'); return true;
+}
+const TERAZ=new Date().getFullYear();
+function overDieta(){ return chyba1('fDieta','errDieta', $('fDieta').value.trim().length<2 ? 'Napíšte meno dieťaťa.' : ''); }
+function overRok(){
+  const v=+String($('fRok').value).trim();
+  return chyba1('fRok','errRok', (v>=TERAZ-18 && v<=TERAZ) ? '' : 'Zadajte rok narodenia dieťaťa (napríklad 2018) — podľa veku ho zaradíme do skupiny.');
+}
+function overRodic(){ return chyba1('fRodic','errRodic', $('fRodic').value.trim().length<2 ? 'Napíšte svoje meno.' : ''); }
+function overMail(){
+  return chyba1('fMail','errMail', /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test($('fMail').value.trim()) ? ''
+    : 'Zadajte platný e-mail — pošleme naň potvrdenie aj prihlásenie do appky.');
+}
+// Kontrola až keď pole opustí — vypisovať chybu po každom písmene je otravné.
+[['fDieta',overDieta],['fRok',overRok],['fRodic',overRodic],['fMail',overMail]].forEach(([id,fn])=>{
+  const el=$(id); if(el) el.addEventListener('blur',()=>{ if(String(el.value).trim()) fn(); });
+});
+const PORADIE=['fDieta','fRok','fRodic','fMail'];
+PORADIE.forEach((id,n)=>{ const el=$(id); if(!el) return;
+  el.addEventListener('keydown',e=>{ if(e.key!=='Enter') return; e.preventDefault();
+    if(n<PORADIE.length-1) $(PORADIE[n+1]).focus(); else odoslat(); }); });
 function ics(d,dd){
   const dt=d.date.replace(/-/g,''); const t1=(dd.time_start||'18:00').replace(':','')+'00';
   const t2=(dd.time_end||dd.time_start||'19:00').replace(':','')+'00';
@@ -210,38 +282,41 @@ function ics(d,dd){
     +' – Fusion Academy\r\nLOCATION:'+(dd.address||dd.city)+'\r\nDESCRIPTION:Priniesť: voda, tenisky, pohodlné oblečenie.\r\nEND:VEVENT\r\nEND:VCALENDAR';
 }
 async function odoslat(){
-  const chyba=document.getElementById('chyba'), btn=document.getElementById('odoslat');
+  const chyba=$('chyba'), btn=$('odoslat');
   chyba.style.display='none';
-  if(!PICK){ chyba.textContent='Vyberte najprv termín.'; chyba.style.display='block'; return; }
+  if(!PICK){ naKrok(1); return; }
+  // Prvé chybné pole dostane kurzor, nech rodič nehľadá, čo appka chce.
+  const kontroly=[['fDieta',overDieta],['fRok',overRok],['fRodic',overRodic],['fMail',overMail]];
+  let prveZle=null;
+  for(const [id,fn] of kontroly) if(!fn() && !prveZle) prveZle=id;
+  if(prveZle){ krok('register_err',{dovod:prveZle}); $(prveZle).focus(); return; }
   const attribution=(window.faGetAttribution?window.faGetAttribution():{})||{};
   ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid'].forEach(k=>{ if(P0.get(k)) attribution[k]=P0.get(k); });
   btn.disabled=true; btn.textContent='REZERVUJEM…';
   krok('form_submit');
   try{
     const r=await fetch('/api/first-class/book-kids',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',
-      body:JSON.stringify({ child_name:document.getElementById('fDieta').value,
-        birth_year:document.getElementById('fRok').value,
-        parent_name:document.getElementById('fRodic').value,
-        email:document.getElementById('fMail').value,
+      body:JSON.stringify({ child_name:$('fDieta').value,
+        birth_year:$('fRok').value,
+        parent_name:$('fRodic').value,
+        email:$('fMail').value,
         class_id:PICK.class_id, booking_date:PICK.date, attribution })});
     const d=await r.json();
     if(!r.ok||!d.ok){ chyba.textContent=d.error||'Nepodarilo sa rezervovať, skúste znova.'; chyba.style.display='block';
       btn.disabled=false; btn.textContent='REZERVOVAŤ PRVÚ HODINU'; return; }
     try{ if(window.fbq){ fbq('track','Schedule'); if(d.is_new) fbq('track','CompleteRegistration',{},{eventID:'reg_'+(d.dieta&&d.dieta.id||'')}); } }catch(e){}
-    document.getElementById('terminy').style.display='none';
-    document.getElementById('formCard').style.display='none';
-    document.getElementById('vekFilter').style.display='none';
+    $('wiz').style.display='none';
     const dd=d.detail;
-    document.getElementById('doneSub').textContent='Miesto pre '+(d.dieta&&d.dieta.name||'dieťa')+' je rezervované. Prvá hodina je zadarmo.';
-    document.getElementById('doneDetail').innerHTML=(dd.emoji||'🧒')+' <b>'+esc(dd.name)+'</b><br>📍 '+esc(dd.city)
+    $('doneSub').textContent='Miesto pre '+(d.dieta&&d.dieta.name||'dieťa')+' je rezervované. Prvá hodina je zadarmo.';
+    $('doneDetail').innerHTML=(dd.emoji||'🧒')+' <b>'+esc(dd.name)+'</b><br>📍 '+esc(dd.city)
       +(dd.address?' — '+esc(dd.address):'')+'<br>📅 '+esc(dd.day_name)+' '+fmtD(dd.date)+' · ⏰ '+esc(dd.time_start)
       +(dd.time_end?'–'+esc(dd.time_end):'');
-    if(d.heslo){ const h=document.getElementById('hesloBox'); h.style.display='block';
+    if(d.heslo){ const h=$('hesloBox'); h.style.display='block';
       h.innerHTML='Do appky sa prihlásite e-mailom <b>'+esc(d.kontakt)+'</b> a heslom <b>'+esc(d.heslo)+'</b> (poslali sme vám ho aj e-mailom).'; }
-    if(d.vstup_url){ const b=document.getElementById('openAppBtn'); if(b) b.href=d.vstup_url; }
-    const cal=document.getElementById('calBtn');
+    if(d.vstup_url){ const b=$('openAppBtn'); if(b) b.href=d.vstup_url; }
+    const cal=$('calBtn');
     cal.href=URL.createObjectURL(new Blob([ics(d,dd)],{type:'text/calendar'}));
-    const dc=document.getElementById('doneCard'); dc.style.display='block'; dc.scrollIntoView({behavior:'smooth',block:'start'});
+    const dc=$('doneCard'); dc.style.display='block'; dc.scrollIntoView({behavior:'smooth',block:'start'});
   }catch(e){
     chyba.textContent='Nepodarilo sa rezervovať, skúste znova.'; chyba.style.display='block';
     btn.disabled=false; btn.textContent='REZERVOVAŤ PRVÚ HODINU';

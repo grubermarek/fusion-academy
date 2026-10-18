@@ -678,77 +678,9 @@ document.addEventListener('fa-lang-changed',()=>location.reload());
     </div>
   </div>
 
-  <!-- ── SCREEN 1: REGISTER ── -->
-  <div class="screen" id="s1">
-    <div class="step-content">
-      <div class="step-icon">👋</div>
-      <h2 class="step-title" id="s1Title" data-i18n="auth.reg_title">Vitaj v Fusion Academy!</h2>
-      <p class="step-sub" id="s1Sub" data-i18n-html="auth.reg_sub">Prvý týždeň je <span class="gold">zadarmo</span>. Stačí sa zaregistrovať — trvá to 30 sekúnd.</p>
-      <!-- Výrazné prihlásenie pre existujúce klientky — po odhlásení nevideli malý
-           odkaz hore a vypisovali registráciu odznova -->
-      <button onclick="openLogin()" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;max-width:420px;margin:0 auto 16px;background:rgba(201,162,76,.10);border:1.5px solid rgba(201,162,76,.55);color:#E7C878;font-weight:700;font-size:.95rem;padding:12px 18px;border-radius:14px;cursor:pointer">
-        🔑 <span data-i18n="auth.have_acct_big">Už máš u nás účet? Prihlás sa tu</span>
-      </button>
-      <div class="form-card">
-        <div class="auth-error" id="regErr"></div>
-        <!-- Google-first: najrýchlejšia registrácia na 1 klik — maximalizuje dokončené registrácie -->
-        <div id="gsiRegTopWrap" style="display:none;margin-bottom:14px">
-          <div id="gsiReg" style="display:flex;justify-content:center;transform:scale(1.08);transform-origin:center"></div>
-          <p style="font-size:.72rem;color:#8d8676;text-align:center;margin-top:9px" data-i18n-html="auth.google_hint">Jedným klikom, bez hesla.</p>
-          <div style="display:flex;align-items:center;gap:10px;margin:12px 0 2px;color:#8d8676;font-size:.78rem"><span style="flex:1;height:1px;background:rgba(255,255,255,.12)"></span><span data-i18n="auth.or_manual">alebo vyplň údaje ručne</span><span style="flex:1;height:1px;background:rgba(255,255,255,.12)"></span></div>
-        </div>
-        <div class="form-group">
-          <label data-i18n="auth.name">Celé meno</label>
-          <input type="text" id="rName" placeholder="Jana Nováková" data-i18n-ph="auth.name_ph" autocomplete="name">
-        </div>
-        <div class="form-group">
-          <label data-i18n="auth.email">E-mail</label>
-          <input type="email" id="rEmail" placeholder="jana@email.sk" autocomplete="email" onblur="checkPreRegistered()">
-        </div>
-        <div id="preRegBanner" style="display:none;background:rgba(129,199,132,.12);border:1px solid rgba(129,199,132,.4);border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:.86rem;color:#c7e8c9;line-height:1.5"></div>
-        <div class="form-group">
-          <label id="rPassLabel" data-i18n="auth.pass">Heslo</label>
-          <input type="password" id="rPass" placeholder="Minimálne 6 znakov" data-i18n-ph="auth.pass_ph" autocomplete="new-password">
-        </div>
-        <div class="pozvanka-info" id="pozvankaInfo" style="display:none"></div>
-        <button type="button" class="viac-toggle" id="viacBtn" onclick="prepniViac()" data-i18n="auth.more_fields">➕ Doplniť telefón alebo kód pozvánky</button>
-        <div id="viacPolia" hidden>
-        <div class="form-group">
-          <label><span data-i18n="auth.phone">Telefón</span> <span class="optional" data-i18n="auth.optional">(nepovinné)</span></label>
-          <input type="tel" id="rPhone" placeholder="+421 900 000 000" autocomplete="tel">
-        </div>
-        <div class="form-group" id="codeGroup">
-          <label><span data-i18n="auth.sponsor">Kód sponzora</span> <span class="optional" data-i18n="auth.sponsor_opt">(ak ťa niekto pozval)</span></label>
-          <input type="text" id="rCode" placeholder="napr. MAREK21" data-i18n-ph="auth.sponsor_ph" style="text-transform:uppercase">
-        </div>
-        <div class="form-group">
-          <label><span data-i18n="auth.lead_q">Kde si sa o nás dozvedela?</span> <span class="optional" data-i18n="auth.optional2">(voliteľné)</span></label>
-          <select id="rLeadSource">
-            <option value="" data-i18n="auth.lead_pick">— Vyber možnosť —</option>
-            <option value="instagram">Instagram</option>
-            <option value="facebook">Facebook</option>
-            <option value="tiktok">TikTok</option>
-            <option value="google">Google</option>
-            <option value="friend" data-i18n="auth.lead_friend">Odporúčanie od priateľky</option>
-            <option value="event" data-i18n="auth.lead_event">Event / akcia</option>
-            <option value="flyer" data-i18n="auth.lead_flyer">Leták / billboard</option>
-            <option value="other" data-i18n="auth.lead_other">Iné</option>
-          </select>
-        </div>
-        </div>
-        <label style="display:flex;gap:11px;align-items:flex-start;margin:4px 0 14px;padding:8px 0;cursor:pointer;font-size:.86rem;color:#bdb6a6;line-height:1.5;min-height:44px">
-          <input type="checkbox" id="rConsent" style="margin-top:2px;width:24px;height:24px;flex-shrink:0;accent-color:#C9A24C">
-          <span data-i18n-html="auth.consent">Súhlasím so spracovaním osobných údajov.</span>
-        </label>
-        <button class="btn-primary" id="regBtn" onclick="doRegister()">
-          <span data-i18n="auth.continue">Pokračovať</span> &nbsp;<i class="bi bi-arrow-right"></i>
-        </button>
-        <p class="form-footer">
-          <span data-i18n="auth.have_acct">Už máš účet?</span> <a href="#" onclick="openLogin();return false" data-i18n="auth.login_link">Prihlásiť sa</a>
-        </p>
-      </div>
-    </div>
-  </div>
+  <!-- Obrazovka „Registrácia" (s1) odstránená 18. 10. 2026: registrácia sa zjednotila
+       do sprievodcu na /prva-hodina a startOnboarding() vedie rovno tam, takže sa sem
+       nedalo dostať. Obrazovky s výberom hodiny a potvrdením nižšie sa používajú ďalej. -->
 
   <!-- ── SCREEN 2: PICK A CLASS (step-by-step wizard) ── -->
   <!-- ── PONUKA hneď po registrácii: najprv len prvý týždeň zadarmo, bežná ponuka až po odmietnutí (Marek 14. 9.) ── -->
@@ -1247,22 +1179,14 @@ if(_preview){
   } catch(e){}
 })();
 
-// ── PRÍCHOD Z REKLAMY: rovno na registráciu, bez medzikroku a bez "predajného" tónu ──
-// Kto klikol na Facebook/Instagram reklamu, nemá čakať na druhý klik na hero tlačidlo —
-// ide rovno na krok „Vitaj", ale s textom, ktorý znie ako darček, nie ako ponuka.
+// ── PRÍCHOD Z REKLAMY ────────────────────────────────────────────────────────
+// Klik z reklamy preberá server a posiela ho rovno na /prva-hodina. Toto je už len
+// poistka pre prípad, že by sa sem niekto s utm/fbclid predsa dostal (cache, záložka).
 (function(){
   const p=new URLSearchParams(location.search);
-  const fromAd = p.get('fbclid') || p.get('utm_source') || p.get('gclid');
   if(window.faKrok) window.faKrok('lp_view');
   if(window.faScrollTrack) window.faScrollTrack();
-  if(!fromAd) return;
-  const t=document.getElementById('s1Title'), s=document.getElementById('s1Sub');
-  if(t) t.textContent='Tvoj prvý týždeň je zadarmo 🎁';
-  if(s) s.innerHTML='Vyplň pár údajov a rezervuj si termín — bez platby, bez záväzkov. Trvá to 30 sekúnd.';
-  const src=(p.get('utm_source')||'').toLowerCase();
-  const sel=document.getElementById('rLeadSource');
-  if(sel && /facebook|fb/.test(src)) sel.value='facebook';
-  else if(sel && /instagram|ig/.test(src)) sel.value='instagram';
+  if(!(p.get('fbclid') || p.get('utm_source') || p.get('gclid'))) return;
   setTimeout(()=>{ if(typeof startOnboarding==='function') startOnboarding(); }, 50);
 })();
 
@@ -1289,9 +1213,8 @@ function goTo(n){
   const next=document.getElementById('s'+n);
   if(next) next.classList.add('active');
   _step=n;
-  // Lievik stránky (19. 9.): formulár zobrazený / začatý
-  if(n===1 && window.faKrok){ window.faKrok('form_view');
-    document.querySelectorAll('#s1 input').forEach(i=>i.addEventListener('input',()=>window.faKrok('form_start',{pole:i.id}),{once:true})); }
+  // Kroky lievika pre registráciu (form_view / form_start) sa merajú v sprievodcovi
+  // na /prva-hodina — obrazovka s1 tu už nie je.
   updateStepBar(n);
   window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -1322,92 +1245,8 @@ function startOnboarding(){
 }
 
 // ── REGISTRATION ─────────────────────────────────────────────────────────────
-async function checkPreRegistered(){
-  const email=document.getElementById('rEmail').value.trim();
-  const banner=document.getElementById('preRegBanner');
-  if(!/\S+@\S+\.\S+/.test(email)){ banner.style.display='none'; return; }
-  try{
-    const r=await fetch('/api/check-registration?email='+encodeURIComponent(email));
-    const d=await r.json();
-    if(!d.pending){ banner.style.display='none'; return; }
-    const first=(d.name||'').split(' ')[0];
-    let waiting='';
-    if(d.membership){
-      const exp=fmtDMY(d.membership.expires_at);
-      waiting=`<br>Máš pripravené členstvo <b>${d.membership.plan_name}</b>${exp?' platné do '+exp:''}.`;
-    } else if(d.entries>0){
-      waiting=`<br>Máš pripravených <b>${d.entries} vstupov</b> 🎟️`;
-    }
-    waiting+=`<br>➕ a <b>1 hodinu zdarma</b> za vytvorenie účtu 🎁`;
-    banner.innerHTML=`<b>Ahoj${first?' '+first:''}! 👋 Už ťa u nás evidujeme.</b><br>Stačí si nižšie nastaviť heslo a máš všetko pripravené.${waiting}`;
-    banner.style.display='block';
-    if(first && !document.getElementById('rName').value.trim()) document.getElementById('rName').value=d.name;
-    const lbl=document.getElementById('rPassLabel'); if(lbl) lbl.textContent='Vytvor si heslo';
-    const btn=document.getElementById('regBtn'); if(btn) btn.innerHTML='Nastaviť heslo a pokračovať &nbsp;<i class="bi bi-arrow-right"></i>';
-  }catch{ banner.style.display='none'; }
-}
-async function doRegister(){
-  const name=document.getElementById('rName').value.trim();
-  const email=document.getElementById('rEmail').value.trim();
-  const pass=document.getElementById('rPass').value;
-  const phone=document.getElementById('rPhone').value.trim();
-  const code=document.getElementById('rCode').value.trim().toUpperCase();
-  const btn=document.getElementById('regBtn');
-  showErr('regErr',''); vycistiChyby();
-  // Chyba sa vypíše pri poli, ktorého sa týka; súhrn hore ostáva len pre odpovede zo servera.
-  const chyba=(kod,txt,pole)=>{ if(!(pole && chybaPolia(pole,txt))) showErr('regErr',txt); if(window.faKrok) window.faKrok('register_err',{dovod:kod}); };
-  if(!name){chyba('meno',FA_T('auth.err_name'),'rName');return;}
-  if(!email){chyba('email_chyba',FA_T('auth.err_email_missing'),'rEmail');return;}
-  if(!pass){chyba('heslo_chyba',FA_T('auth.err_pass_missing'),'rPass');return;}
-  if(pass.length<6){chyba('heslo',FA_T('auth.err_pass'),'rPass');return;}
-  if(!/\S+@\S+\.\S+/.test(email)){chyba('email',FA_T('auth.err_email'),'rEmail');return;}
-  if(!document.getElementById('rConsent').checked){chyba('suhlas',FA_T('auth.err_consent'),'rConsent');return;}
-  if(window.faKrok) window.faKrok('form_submit');
-  btn.disabled=true;btn.innerHTML='<i class="bi bi-arrow-repeat spin"></i>&nbsp; '+FA_T('auth.registering');
-  if(_preview){ // náhľad: účet sa nevytvára, len pokračuj vo flow
-    await loadClasses(); await poRegistracii();
-    btn.disabled=false;btn.innerHTML='Pokračovať &nbsp;<i class="bi bi-arrow-right"></i>';
-    return;
-  }
-  try{
-    const lead_source=document.getElementById('rLeadSource')?.value||'';
-    const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name,email,password:pass,phone,sponsorCode:code,user_type:'client',lead_source,consent:true,attribution:window.faGetAttribution?window.faGetAttribution():{}}),credentials:'include'});
-    const d=await r.json();
-    if(!r.ok){
-      const sprava=d.error||FA_T('auth.err_reg');
-      // Neplatný kód z pozvánkového odkazu nie je chyba klientky — zahodíme ho a skúsime raz znova.
-      // Keď si ho napísala sama, ukážeme jej pole s chybou, nech ho vie opraviť.
-      if(/referral|kód|kod/i.test(sprava) && document.getElementById('rCode')?.value){
-        const info=document.getElementById('pozvankaInfo'); if(info) info.style.display='none';
-        document.getElementById('rCode').value='';
-        if(window._kodZOdkazu && !window._kodSkusenyZnova){
-          window._kodZOdkazu=false; window._kodSkusenyZnova=true;
-          btn.disabled=false; btn.innerHTML='Pokračovať &nbsp;<i class="bi bi-arrow-right"></i>';
-          return doRegister();
-        }
-        prepniViac(true); chybaPolia('rCode',sprava);
-        btn.disabled=false; btn.innerHTML='Pokračovať &nbsp;<i class="bi bi-arrow-right"></i>';
-        return;
-      }
-      if(/e-?mail/i.test(sprava)) chybaPolia('rEmail',sprava);
-      else if(/heslo|password/i.test(sprava)) chybaPolia('rPass',sprava);
-      else if(/meno|priezvisk/i.test(sprava)) chybaPolia('rName',sprava);
-      else showErr('regErr',sprava);
-      if(window.faKrok) window.faKrok('register_err',{dovod:String(d.error||'server').slice(0,60)});
-      btn.disabled=false;btn.innerHTML='Pokračovať &nbsp;<i class="bi bi-arrow-right"></i>';
-      return;
-    }
-    if(window.faTrack) window.faTrack('CompleteRegistration');
-    // Najprv voľba (prvý týždeň zadarmo / bez skúšky), až potom výber hodiny
-    await loadClasses();
-    await poRegistracii();
-    btn.disabled=false;btn.innerHTML='Pokračovať &nbsp;<i class="bi bi-arrow-right"></i>';
-  }catch(e){
-    showErr('regErr','Chyba pripojenia. Skúste znova.');
-    btn.disabled=false;btn.innerHTML='Pokračovať &nbsp;<i class="bi bi-arrow-right"></i>';
-  }
-}
+// checkPreRegistered() a doRegister() odstránené 18. 10. 2026 spolu s obrazovkou s1 —
+// registrácia žije v sprievodcovi na /prva-hodina a volá /api/first-class/book.
 
 // ── CLASSES ──────────────────────────────────────────────────────────────────
 const DAYS=['Nedeľa','Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota'];
@@ -2001,7 +1840,6 @@ function closeMembershipWall(){document.getElementById('membershipWallModal').st
 // ── KEYBOARD SHORTCUTS ────────────────────────────────────────────────────────
 document.addEventListener('keydown',e=>{
   if(e.key==='Enter'){
-    if(_step===1) doRegister();
     if(document.getElementById('loginModal').style.display==='flex') doLogin();
   }
   if(e.key==='Escape'){closeLogin();closeBookConfirm();}
