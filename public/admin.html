@@ -1463,7 +1463,7 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     <p class="text-muted small mb-3">Deti, ktoré chodia skôr, než majú rodičia účet v appke. Klik v dátume: ✅ bola → ❌ chýbala → · zmazať. Platba sa hneď zapíše do Predajov. Keď rodič založí profil dieťaťa, klikni <b>Prepojiť</b> — prenesie sa členstvo od dátumu platby, dochádzka na hodiny skupiny aj faktúra rodičovi.</p>
     <div class="d-flex gap-2 flex-wrap mb-3">
       <input id="kidsNewName" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:220px" placeholder="Meno dieťaťa" onkeydown="if(event.key==='Enter')kidsAdd()">
-      <select id="kidsNewGroup" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:240px"><option value="Kids 2">Zumba Kids 2 (7–14) · 15:00</option><option value="Kids 1">Zumba Kids 1 (4–6) · 16:00</option><option value="">skupina neznáma</option></select>
+      <select id="kidsNewGroup" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:240px"><option value="">skupina neznáma</option></select>
       <button class="btn btn-sm btn-warning" onclick="kidsAdd()"><i class="bi bi-plus-lg"></i> Pridať dieťa</button>
     </div>
     <div id="kidsStats" class="small text-muted mb-2"></div>
@@ -3171,9 +3171,21 @@ function show(sec){
 /* ─── ZUMBA KIDS — predbežný zoznam ─── */
 let _kids=null;
 const kidsFd=x=>x.slice(8,10).replace(/^0/,'')+'. '+x.slice(5,7).replace(/^0/,'')+'.';
+// Skupiny ponúkame podľa toho, čo reálne beží (server ich posiela z aktívnych hodín).
+// Od 18. 10. je to jedna spoločná Kids (4–14); keby bola skupina priradená dieťaťu už
+// zrušená, necháme ju v zozname, nech sa ticho neprepíše.
+function kidsSkupinyOptions(vybrana){
+  const sk=(_kids&&_kids.skupiny)||[];
+  const zoznam=sk.map(s=>({v:s.key, t:s.key+(s.vek?' ('+s.vek+')':'')}));
+  if(vybrana && !zoznam.some(o=>o.v===vybrana)) zoznam.push({v:vybrana, t:vybrana+' — už nebeží'});
+  return zoznam.map(o=>`<option value="${escHtml(o.v)}"${o.v===vybrana?' selected':''}>${escHtml(o.t)}</option>`).join('')
+    +`<option value=""${!vybrana?' selected':''}>?</option>`;
+}
 async function loadKids(){
   const d=await api('/api/kids/roster'); if(!d||!d.ok){ document.getElementById('kidsBody').innerHTML='<tr><td class="text-danger">Nepodarilo sa načítať</td></tr>'; return; }
   _kids=d;
+  const nove=document.getElementById('kidsNewGroup');
+  if(nove) nove.innerHTML=kidsSkupinyOptions((d.skupiny&&d.skupiny[0]&&d.skupiny[0].key)||'');
   const denEl=document.getElementById('kidsDen'); if(denEl && !denEl.value) denEl.value=new Date().toISOString().slice(0,10);
   const dnes=denEl.value;
   const datumy=[...new Set([...d.datumy, dnes])].sort().slice(-8);
@@ -3190,7 +3202,7 @@ async function loadKids(){
     const ucet=r.linked_user_id?`<span style="color:#4ade80">🔗 ${escHtml(r.linked_name||'')}</span><br><small class="text-muted">rodič ${escHtml(r.parent_name||'—')}</small>`
       :`<button class="btn btn-sm btn-outline-light py-0" onclick="kidsLink('${r._id}','${esc1(r.name)}')">Prepojiť</button>`;
     return `<tr><td class="fw-semibold">${escHtml(r.name)}${r.custom_price>0?` <span class="badge" style="background:#5a3e1a;color:#ffd58a" title="dohodnutá cena — prenesie sa na profil dieťaťa pri prepojení">výnimka ${(+r.custom_price).toFixed(2).replace('.',',')} €</span>`:''}${r.note?`<br><small class="text-muted">${escHtml(r.note)}</small>`:''}</td>
-      <td><select class="form-select form-select-sm bg-dark text-light border-secondary" style="width:150px" onchange="kidsGroup('${r._id}',this.value)"><option value="Kids 2"${r.group==='Kids 2'?' selected':''}>Kids 2 (7–14)</option><option value="Kids 1"${r.group==='Kids 1'?' selected':''}>Kids 1 (4–6)</option><option value=""${!r.group?' selected':''}>?</option></select></td>
+      <td><select class="form-select form-select-sm bg-dark text-light border-secondary" style="width:150px" onchange="kidsGroup('${r._id}',this.value)">${kidsSkupinyOptions(r.group)}</select></td>
       <td>${paid}</td>${cells}<td>${ucet}</td>
       <td><button class="btn btn-sm btn-outline-danger py-0" onclick="kidsDel('${r._id}','${esc1(r.name)}')"><i class="bi bi-trash"></i></button></td></tr>`;
   }).join('')||'<tr><td colspan="12" class="text-muted text-center py-4">Zoznam je prázdny — pridaj deti hore.</td></tr>';

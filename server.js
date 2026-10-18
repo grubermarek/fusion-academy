@@ -2307,6 +2307,80 @@ async function seedData() {
     console.log('🧒 Zumba Kids: 7–14 o 15:00, 4–6 o 16:00 ('+n+' hodín)');
   }
 
+  // 18. 10. (Marek): „zatiaľ presmerujme všetky deti na Zumba Kids o 15:00 a keď ich
+  // bude veľa, rozdelím to na dve skupiny." Dve skupiny po dvoch-troch deťoch nedávali
+  // zmysel ani rodičom, ani reklame. Hodiny Kids 2 (15:00) sa teda menia na spoločnú
+  // „Zumba Kids (4–14)" a hodiny Kids 1 (16:00) sa vypínajú. Ich budúce rezervácie
+  // prenesieme na spoločnú hodinu v ten istý deň — rušiť ich a posielať rodiča hľadať
+  // inú hodinu by bolo zbytočné, keď hodina v ten deň aj tak je. Čo sa preniesť nedá,
+  // dorieši oznamZmenuHodiny (storno + vrátenie + oznam) ako pri každom vypnutí hodiny.
+  // Späť na dve skupiny: aktivovať hodiny Kids 1 a spoločné premenovať naspäť na Kids 2.
+  if(!(await q.one(db.settings,{key:'kids_jedna_skupina_20261018'}))){
+    const SPOLOCNA = 'Zumba Kids (4–14)';
+    const vsetky = await q.find(db.classes,{category:'Deti'});
+    const spolocne = vsetky.filter(c=>c.active!==false && kidsSkupinaZNazvu(c.name)==='Kids 2');
+    const rusene   = vsetky.filter(c=>c.active!==false && kidsSkupinaZNazvu(c.name)==='Kids 1');
+    if(spolocne.length){
+      let presunute=0, vypnute=0;
+      // 1) budúce rezervácie zo 16:00 na spoločnú hodinu v ten istý deň
+      for(const stara of rusene){
+        const nova = spolocne.find(c=>+c.day_of_week===+stara.day_of_week);
+        if(!nova) continue;
+        const bs = (await q.find(db.bookings,{class_id:stara._id, status:{$nin:['cancelled','cancelled_studio','attended']}}))
+          .filter(b=>String(b.booking_date||'')>=today() && b.attendance_status!=='attended');
+        for(const b of bs){
+          const uz = await q.one(db.bookings,{class_id:nova._id, booking_date:b.booking_date,
+            user_id:b.user_id, status:{$nin:['cancelled','cancelled_studio']}});
+          if(uz){ await q.update(db.bookings,{_id:b._id},{$set:{status:'cancelled_studio',
+            cancelled_reason:'Zlúčené do jednej detskej skupiny', cancelled_at:nowISO()}}); continue; }
+          await q.update(db.bookings,{_id:b._id},{$set:{ class_id:nova._id, class_name:SPOLOCNA,
+            class_time_start:nova.time_start||'', class_time_end:nova.time_end||'',
+            class_location:nova.location||'', presunute_z:stara._id, presunute_at:nowISO() }});
+          presunute++;
+          // oznam ide rodičovi, rezervácia je vedená na dieťa
+          const dieta = await q.one(db.users,{_id:b.user_id});
+          const komu = (dieta && dieta.is_child && dieta.parent_id) ? await q.one(db.users,{_id:dieta.parent_id}) : dieta;
+          if(komu){
+            const kedy = denADatum(b.booking_date);
+            await q.insert(db.notifications,{user_id:komu._id, type:'class_changed',
+              title:`🧒 ${dieta?.name||'Dieťa'}: hodina sa presúva na ${nova.time_start}`,
+              body:`Deti teraz cvičia spolu v jednej skupine (4–14 rokov). Rezervácia na ${kedy} platí ďalej, len o ${nova.time_start} namiesto ${stara.time_start}. Keď detí pribudne, rozdelíme ich späť podľa veku.`,
+              read:false, created_at:nowISO()}).catch(()=>{});
+            if(komu.email) sendMail(komu.email, `Zumba Kids: hodina ${b.booking_date} je o ${nova.time_start}`,
+              emailTemplate('Deti cvičia spolu v jednej skupine 🧒',
+                `<p>Ahoj <b>${komu.name}</b>,</p><p>Zumba Kids má teraz <b>jednu spoločnú skupinu pre deti od 4 do 14 rokov</b>. Rezervácia pre <b>${dieta?.name||'dieťa'}</b> na <b>${kedy}</b> platí ďalej — len začíname o <b>${nova.time_start}</b> namiesto ${stara.time_start}.</p><p>Keď detí pribudne, rozdelíme ich späť podľa veku a dáme ti vedieť.</p>`,
+                '🗓️ Pozrieť rozvrh', `${APP_URL}/schedule`)).catch(()=>{});
+          }
+        }
+      }
+      // 2) spoločné hodiny premenovať (aj v budúcich rezerváciách, nech sedí názov)
+      for(const c of spolocne){
+        if(c.name===SPOLOCNA) continue;
+        await q.update(db.classes,{_id:c._id},{$set:{name:SPOLOCNA}});
+        await q.update(db.bookings,{class_id:c._id, booking_date:{$gte:today()}},{$set:{class_name:SPOLOCNA}},{multi:true});
+      }
+      // 3) hodiny 16:00 vypnúť — zvyšok (ak sa niečo nedalo presunúť) dorieši oznam
+      for(const c of rusene){
+        await q.update(db.classes,{_id:c._id},{$set:{active:false}});
+        try{ await oznamZmenuHodiny(c, {...c, active:false}, null); }
+        catch(e){ console.error('kids zlúčenie — oznam:', e.message); }
+        vypnute++;
+      }
+      // 4) deti a zoznam Zumba Kids preradiť do spoločnej skupiny
+      const ids = spolocne.map(c=>c._id);
+      let deti=0;
+      for(const d of await q.find(db.users,{is_child:true, kids_group:{$in:['Kids 1','Kids 2']}})){
+        await q.update(db.users,{_id:d._id},{$set:{kids_group:'Kids', auto_classes:ids}});
+        deti++;
+      }
+      await q.update(db.kids_roster,{group:{$in:['Kids 1','Kids 2']}},{$set:{group:'Kids'}},{multi:true});
+      console.log(`🧒 Zumba Kids zlúčené do jednej skupiny: ${spolocne.length} hodín premenovaných, ${vypnute} vypnutých, ${presunute} rezervácií presunutých, ${deti} detí preradených`);
+    } else {
+      console.log('🧒 Zlúčenie Zumba Kids preskočené — nenašla sa aktívna hodina Kids 2');
+    }
+    await q.insert(db.settings,{key:'kids_jedna_skupina_20261018', value:true, at:nowISO()});
+  }
+
   // Marek 20. 9.: „Lesanka a Jasnička majú jedinú výnimku (35 €), inak všetci 49,90."
   // Výnimka sedí na riadku predbežného zoznamu; pri prepojení s profilom prejde na dieťa
   // ako custom_prices.bronze (a na dohodnutú cenu sa neuplatní prirážka bez odberu).
@@ -22454,10 +22528,20 @@ const MAX_CHILDREN = 6;
 // kto zaplatil (hneď v tržbách ako ručný predaj bez účtu) a dochádzku podľa dátumov.
 // Po založení účtu sa položka prepojí s detským profilom: členstvo od dátumu platby,
 // dochádzka ako odchodené hodiny skupiny, faktúra rodičovi, automatické hodiny.
-const KIDS_SKUPINY = ['Kids 1','Kids 2'];
+// Marek 18. 10. 2026: kým detí nie je dosť na dve skupiny, chodia všetky na jednu
+// hodinu o 15:00 — preto tretia, spoločná skupina „Kids" (4–14). Keď ich pribudne,
+// stačí znova aktivovať hodiny Kids 1 / Kids 2 a skupiny sa objavia samy.
+// Poradie je dôležité: 'Kids' je posledné, aby kidsSkupinaZNazvu najprv skúsilo
+// očíslované skupiny (názov „Zumba Kids 1" totiž obsahuje aj reťazec „Kids").
+const KIDS_SKUPINY = ['Kids 1','Kids 2','Kids'];
+const KIDS_VEK = {'Kids 1':'4–6', 'Kids 2':'7–14', 'Kids':'4–14'};
 async function kidsHodinaPre(skupina, datum){
   const dow = dowZDatumu(datum);
-  return (await q.find(db.classes,{active:true, category:'Deti', day_of_week:dow})).find(c=>String(c.name||'').includes(skupina)) || null;
+  const vTenDen = await q.find(db.classes,{active:true, category:'Deti', day_of_week:dow});
+  // Keď sa skupiny zlúčili (18. 10.), zoznam môže ešte niesť starý názov skupiny.
+  // Pokiaľ v ten deň beží jediná detská hodina, dochádzka patrí na ňu — inak by
+  // sa ticho nezapísala nikam.
+  return vTenDen.find(c=>kidsSkupinaZNazvu(c.name)===skupina) || (vTenDen.length===1 ? vTenDen[0] : null);
 }
 // Odchodená (alebo vymeškaná) hodina skupiny v daný deň pre prepojené dieťa.
 async function kidsZapisDochadzku(childId, skupina, datum, pritomne){
@@ -22489,7 +22573,10 @@ app.get('/api/kids/roster', trainerAuth, async(req,res)=>{
     const rodicia = Object.fromEntries((await q.find(db.users,{_id:{$in:[...new Set(deti.map(u=>u.parent_id).filter(Boolean))]}})).map(p=>[p._id,p]));
     const prepojene = new Set(rows.map(r=>r.linked_user_id).filter(Boolean));
     const datumy = [...new Set(rows.flatMap(r=>Object.keys(r.attendance||{})))].sort();
-    res.json({ ok:true, datumy, skupiny:KIDS_SKUPINY,
+    // Skupiny podľa toho, čo reálne beží — keď je aktívna len jedna hodina, nech
+    // trénerka nevyberá z troch možností (18. 10.).
+    const skupiny = (await kidsHodinySkupin()).map(s=>({key:s.key, name:s.name, vek:s.vek, label:s.label}));
+    res.json({ ok:true, datumy, skupiny,
       rows: rows.map(r=>{ const u = r.linked_user_id ? deti.find(x=>x._id===r.linked_user_id) : null;
         return {...r, linked_name:u?u.name:null, parent_name:(u&&rodicia[u.parent_id])?rodicia[u.parent_id].name:null}; }),
       deti: deti.filter(u=>!prepojene.has(u._id)).map(u=>({id:u._id, name:u.name, birth_year:u.birth_year||null, parent:rodicia[u.parent_id]?.name||'—'})) });
@@ -22586,7 +22673,7 @@ app.post('/api/admin/kids/roster/:id/link', adminAuth, async(req,res)=>{
     }
     if(r.group) for(const [d,pritomne] of Object.entries(r.attendance||{})) if(pritomne) vysl.bookings += await kidsZapisDochadzku(dieta._id, r.group, d, true);
     if(r.group && !(Array.isArray(dieta.auto_classes) && dieta.auto_classes.length)){
-      const hodiny = (await q.find(db.classes,{active:true, category:'Deti'})).filter(c=>String(c.name||'').includes(r.group));
+      const hodiny = (await q.find(db.classes,{active:true, category:'Deti'})).filter(c=>kidsSkupinaZNazvu(c.name)===r.group);
       if(hodiny.length){ await q.update(db.users,{_id:dieta._id},{$set:{auto_classes:hodiny.map(c=>c._id)}}); await autoKidsBookingsFor({...dieta, auto_classes:hodiny.map(c=>c._id)}).catch(()=>{}); }
     }
     // Dohodnutá cena zo zoznamu (výnimka Marek 20. 9.) → individuálna cena dieťaťa
@@ -22600,7 +22687,8 @@ app.post('/api/admin/kids/roster/:id/link', adminAuth, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
-// Veková skupina podľa dátumu narodenia: 4–6 = Zumba Kids 1, 7–14 = Zumba Kids 2.
+// Vek dieťaťa z dátumu (alebo roku) narodenia. Do ktorej skupiny padne, rozhodujú
+// rozpätia bežiacich hodín — viď skupinaKidsZoSkupin.
 function vekDietata(d){
   const b = d.birth_date || (d.birth_year ? d.birth_year+'-07-01' : null); if(!b) return null;
   const t = new Date(today()+'T00:00:00Z'), n = new Date(String(b).slice(0,10)+'T00:00:00Z'); if(isNaN(n)) return null;
@@ -22608,7 +22696,17 @@ function vekDietata(d){
   if(t.getUTCMonth()<n.getUTCMonth() || (t.getUTCMonth()===n.getUTCMonth() && t.getUTCDate()<n.getUTCDate())) v--;
   return v;
 }
-function skupinaKids(d){ const v = vekDietata(d); if(v==null) return null; if(v>=4 && v<=6) return 'Kids 1'; if(v>=7 && v<=14) return 'Kids 2'; return null; }
+// Skupina podľa veku. Rozpätia neberieme natvrdo — platia tie, ktoré majú aktívne
+// hodiny (od 18. 10. je to jedna spoločná „Kids" 4–14). Vracia kľúč skupiny alebo null,
+// keď vek dieťaťa nepadne do žiadnej z nich.
+function skupinaKidsZoSkupin(d, skupiny){
+  const v = vekDietata(d); if(v==null) return null;
+  for(const s of (skupiny||[])){
+    const m = String(s.vek||'').match(/(\d+)\s*[–-]\s*(\d+)/);
+    if(m && v>=+m[1] && v<=+m[2]) return s.key;
+  }
+  return null;
+}
 // Po kúpe členstva dieťaťu: ak rodič ešte nevybral hodiny, zaradíme dieťa podľa veku
 // (Marek 13. 9.: „dieťa sa nemusí bookovať, berie sa automaticky, že chodí") a dáme mu
 // rezervácie. Rodič to vie kedykoľvek zmeniť v karte dieťaťa.
@@ -22616,18 +22714,15 @@ async function autoZapisDietata(dieta){
   if(!dieta || !dieta.is_child) return 0;
   let d = dieta;
   if(!(Array.isArray(d.auto_classes) && d.auto_classes.length)){
-    const sk = skupinaKids(d);
-    if(sk){
-      const hodiny = (await q.find(db.classes,{active:true, category:'Deti'})).filter(c=>String(c.name||'').includes(sk));
-      if(hodiny.length){
-        await q.update(db.users,{_id:d._id},{$set:{auto_classes:hodiny.map(c=>c._id), kids_group:sk}});
-        d = {...d, auto_classes:hodiny.map(c=>c._id), kids_group:sk};
-        const DNI=['nedeľa','pondelok','utorok','streda','štvrtok','piatok','sobota'];
-        await q.insert(db.notifications,{user_id:d._id, type:'membership',
-          title:`🧒 ${d.name}: zaradené do Zumba ${sk}`,
-          body:`Podľa veku (${vekDietata(d)} r.) chodí automaticky na ${hodiny.map(c=>c.name+' — '+DNI[c.day_of_week]+' '+c.time_start).join(', ')}. Netreba rezervovať; upraviť to vieš v karte dieťaťa.`,
-          read:false, created_at:nowISO()}).catch(()=>{});
-      }
+    const skupiny = await kidsHodinySkupin();
+    const sk = skupiny.find(s=>s.key===skupinaKidsZoSkupin(d, skupiny));
+    if(sk && sk.class_ids.length){
+      await q.update(db.users,{_id:d._id},{$set:{auto_classes:sk.class_ids, kids_group:sk.key}});
+      d = {...d, auto_classes:sk.class_ids, kids_group:sk.key};
+      await q.insert(db.notifications,{user_id:d._id, type:'membership',
+        title:`🧒 ${d.name}: zaradené do ${sk.name}`,
+        body:`Podľa veku (${vekDietata(d)} r.) chodí automaticky na ${sk.classes.map(c=>c.name+' — '+c.day+' '+c.time_start).join(', ')}. Netreba rezervovať; upraviť to vieš v karte dieťaťa.`,
+        read:false, created_at:nowISO()}).catch(()=>{});
     }
   }
   return autoKidsBookingsFor(d);
@@ -22705,7 +22800,7 @@ async function kidsHodinySkupin(){
   for(const k of KIDS_SKUPINY){
     const hs=hodiny.filter(c=>kidsSkupinaZNazvu(c.name)===k);
     if(!hs.length) continue;
-    const vek=(hs[0].name.match(/\((\d+\s*[–-]\s*\d+)\)/)||[])[1]||(k==='Kids 1'?'4–6':'7–14');
+    const vek=(hs[0].name.match(/\((\d+\s*[–-]\s*\d+)\)/)||[])[1]||KIDS_VEK[k]||'';
     out.push({ key:k, name:'Zumba '+k, vek, class_ids:hs.map(c=>c._id),
       classes:hs.map(c=>({id:c._id, name:c.name, day_of_week:+c.day_of_week, day:DNI[+c.day_of_week], time_start:c.time_start, time_end:c.time_end||'', location:c.location||''})),
       label:hs.map(c=>DNI[+c.day_of_week].slice(0,2)+' '+c.time_start).join(' a ') });
@@ -22746,7 +22841,7 @@ async function detiPrehlad(uid){
       free_class_used:c.free_class_used||false,
       membership: m ? {plan_id:m.plan_id, plan_name:m.plan_name, expires_at:m.expires_at, status:m.status||'active', active:aktivne} : null,
       auto_renew: !!c.stripe_subscription_id, odber: c.stripe_subscription_id ? await odberInfo(c) : null, auto_classes: Array.isArray(c.auto_classes)?c.auto_classes:[],
-      age: vekDietata(c), age_group: skupinaKids(c),
+      age: vekDietata(c), age_group: skupinaKidsZoSkupin(c, skupiny),
       skupina, skupina_info: skupiny.find(s=>s.key===skupina)||null,
       dohodnuta_cena: (c.custom_prices && +c.custom_prices[KIDS_PLAN]>0) ? +c.custom_prices[KIDS_PLAN] : null, // výnimka (Lesanka, Jasnička 35 €)
       upcoming: upcoming.slice(0,3),

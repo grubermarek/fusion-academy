@@ -69,7 +69,7 @@ footer a{color:var(--acc)}
   <div class="hero">
     <h1>ZUMBA PRE DETI<br><span>PRVÁ HODINA ZADARMO</span></h1>
     <div class="checks">
-      <div>✓ Dve skupiny: <b>4–6 rokov</b> a <b>7–14 rokov</b></div>
+      <div id="vekRiadok">✓ Pre deti <b>od 4 do 14 rokov</b></div>
       <div>✓ Piatok a nedeľa popoludní v <b>Detve</b></div>
       <div>✓ Prvá hodina <span class="z">zadarmo</span>, potom <span id="cenaRiadok">49,90 €/mes.</span></div>
       <div>✓ Dieťa nemusí nič vedieť — učíme od základov</div>
@@ -151,9 +151,19 @@ async function load(){
   }
   const skupiny=[...new Set(ITEMS.map(i=>i.skupina).filter(Boolean))];
   const f=document.getElementById('vekFilter');
-  f.innerHTML='<button class="'+(SKUPINA?'':'on')+'" onclick="setSkupina(null)">Všetky</button>'
-    + skupiny.map(s=>{ const vek=(ITEMS.find(i=>i.skupina===s)||{}).vek||'';
-        return '<button class="'+(s===SKUPINA?'on':'')+'" onclick="setSkupina(\''+esc(s)+'\')">'+esc(s)+(vek?' · '+esc(vek)+' r.':'')+'</button>'; }).join('');
+  // Veky ber z rozvrhu, nech hlavička nesľubuje skupiny, ktoré práve nebežia.
+  const veky=[...new Set(ITEMS.map(i=>i.vek).filter(Boolean))];
+  const vr=document.getElementById('vekRiadok');
+  if(vr && veky.length===1) vr.innerHTML='✓ Pre deti <b>'+esc(veky[0].replace(/[–-]/,' až '))+' rokov</b>';
+  else if(vr && veky.length>1) vr.innerHTML='✓ '+(veky.length===2?'Dve skupiny':veky.length+' skupiny')+': <b>'+veky.map(v=>esc(v)+' r.').join('</b> a <b>')+'</b>';
+  // Keď beží jediná skupina (od 18. 10. jedna spoločná 4–14), filter nemá čo triediť.
+  if(skupiny.length<2){ f.style.display='none'; f.innerHTML=''; SKUPINA=null; }
+  else {
+    f.style.display='';
+    f.innerHTML='<button class="'+(SKUPINA?'':'on')+'" onclick="setSkupina(null)">Všetky</button>'
+      + skupiny.map(s=>{ const vek=(ITEMS.find(i=>i.skupina===s)||{}).vek||'';
+          return '<button class="'+(s===SKUPINA?'on':'')+'" onclick="setSkupina(\''+esc(s)+'\')">'+esc(s)+(vek?' · '+esc(vek)+' r.':'')+'</button>'; }).join('');
+  }
   vykresli();
 }
 function setSkupina(s){ SKUPINA=s; PICK=null; document.getElementById('formCard').style.display='none'; load(); }

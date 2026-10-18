@@ -106,6 +106,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     { _id: 'qaRodSet4', key: 'zumba_kids_hodiny_20260909', value: true, at: '2026-01-01T00:00:00.000Z' },
     { _id: 'qaRodSet5', key: 'zumba_kids_casy_20260909b', value: true, at: '2026-01-01T00:00:00.000Z' },
     { _id: 'qaRodSet6', key: 'zumba_kids_prehodenie_20260909c', value: true, at: '2026-01-01T00:00:00.000Z' },
+    // zlúčenie do jednej skupiny (18. 10.) by fixtúrne Kids 1 / Kids 2 zlúčilo — tu
+    // overujeme dve skupiny, teda stav, ku ktorému sa vrátime, keď detí pribudne
+    { _id: 'qaRodSet7', key: 'kids_jedna_skupina_20261018', value: true, at: '2026-01-01T00:00:00.000Z' },
   ]));
   fs.writeFileSync(path.join(DATA, 'monthly_winners.db'), riadky([{ _id: 'qaRodMW01', month: pm.getFullYear() + '-' + String(pm.getMonth() + 1).padStart(2, '0'), user_id: 'x', user_name: 'x', points: 1, type: 'month', created_at: '2026-01-01' }]));
 

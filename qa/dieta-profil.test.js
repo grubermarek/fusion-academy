@@ -95,6 +95,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     { _id: 'qaDpSet5', key: 'zumba_kids_casy_20260909b', value: true, at: '2026-01-01T00:00:00.000Z' },
     { _id: 'qaDpSet6', key: 'zumba_kids_prehodenie_20260909c', value: true, at: '2026-01-01T00:00:00.000Z' },
     { _id: 'qaDpSet7', key: 'zumba_kids_casy_20260913', value: true, at: '2026-01-01T00:00:00.000Z' },
+    // zlúčenie do jednej skupiny (18. 10.) by fixtúrne Kids 1 / Kids 2 zlúčilo — tu
+    // testujeme prepínanie medzi dvoma skupinami, teda stav po ich rozdelení
+    { _id: 'qaDpSet8', key: 'kids_jedna_skupina_20261018', value: true, at: '2026-01-01T00:00:00.000Z' },
   ]));
 
   console.log('\nSERVER — štart…');

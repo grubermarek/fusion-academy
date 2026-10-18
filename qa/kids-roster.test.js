@@ -65,7 +65,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   fs.writeFileSync(path.join(DATA, 'settings.db'), riadky([
     { _id: 'qaKidSet1', key: 'retro_confirm_v1', value: true, at: '2026-01-01T00:00:00.000Z' }, { _id: 'qaKidSet2', key: 'no_show_from', value: '2026-01-01', at: '2026-01-01T00:00:00.000Z' },
     { _id: 'qaKidSet3', key: 'zumba_kids_hodiny_20260909', value: true, at: '2026-01-01T00:00:00.000Z' }, { _id: 'qaKidSet4', key: 'zumba_kids_casy_20260909b', value: true, at: '2026-01-01T00:00:00.000Z' },
-    { _id: 'qaKidSet5', key: 'zumba_kids_prehodenie_20260909c', value: true, at: '2026-01-01T00:00:00.000Z' }, { _id: 'qaKidSet6', key: 'zumba_kids_casy_20260913', value: true, at: '2026-01-01T00:00:00.000Z' }]));
+    { _id: 'qaKidSet5', key: 'zumba_kids_prehodenie_20260909c', value: true, at: '2026-01-01T00:00:00.000Z' }, { _id: 'qaKidSet6', key: 'zumba_kids_casy_20260913', value: true, at: '2026-01-01T00:00:00.000Z' },
+    // zlúčenie do jednej skupiny (18. 10.) by fixtúrne Kids 1 / Kids 2 premenovalo —
+    // tu testujeme stav s dvoma skupinami, ku ktorému sa Marek vráti, keď detí pribudne
+    { _id: 'qaKidSet7', key: 'kids_jedna_skupina_20261018', value: true, at: '2026-01-01T00:00:00.000Z' }]));
 
   console.log('\nSERVER — štart…');
   const proc = spawn(process.execPath, ['server.js'], { cwd: ROOT, env: { ...process.env, PORT: String(PORT), DATA_DIR: DATA, APP_URL: BASE, RATE_LIMIT_OFF: '1', MAIL_OFF: '1', STRIPE_FAKE: '1' }, stdio: 'ignore' });

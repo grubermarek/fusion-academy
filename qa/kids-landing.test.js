@@ -63,6 +63,14 @@ const riadky = (file, needle) => { try { return fs.readFileSync(path.join(DATA, 
     ok('vek je pri termíne (4–6 / 7–14)', items.some(i => /\d+/.test(i.vek || '')), JSON.stringify(items.map(i => i.vek)));
     ok('cena je z cenníka appky (49,90 / 54,90)', sc.d.cena && sc.d.cena.auto === 49.9 && sc.d.cena.manual === 54.9,
       JSON.stringify(sc.d.cena));
+    // Marek 18. 10.: kým detí nie je dosť na dve skupiny, chodia všetky na jednu hodinu.
+    const skupiny = [...new Set(items.map(i => i.skupina))];
+    ok('beží jediná spoločná skupina', skupiny.length === 1 && skupiny[0] === 'Kids', JSON.stringify(skupiny));
+    ok('spoločná skupina je 4–14', items.every(i => i.vek === '4–14'), JSON.stringify([...new Set(items.map(i => i.vek))]));
+    ok('stará skupina 4–6 sa už neponúka', items.every(i => !/Kids 1|\(4–6\)/.test(i.name)),
+      JSON.stringify(items.map(i => i.name)));
+    ok('zostali oba dni (piatok aj nedeľa)', new Set(items.map(i => i.day_name)).size === 2,
+      JSON.stringify([...new Set(items.map(i => i.day_name))]));
     const dospely = await j('/api/first-class/schedule');
     ok('dospelý landing detské hodiny neponúka',
       ((dospely.d && dospely.d.items) || []).every(i => !/kids|deti/i.test(i.name)));
