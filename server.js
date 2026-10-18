@@ -25516,6 +25516,9 @@ async function strazcaMerania({upozornit=true}={}){
   const pridaj=(kod, text, detail)=>nalezy.push({kod, text, detail:detail||''});
   const tok=await getMetaAdsToken();
   const pixel=String(await getMetaPixelId());
+  // Beží teraz vôbec platená reklama? Bez nej je ticho v CAPI úplne normálne —
+  // s ňou je to strata dát, za ktorú sa platí.
+  let beziReklama=false;
   if(!tok) pridaj('token','Chýba token na čítanie reklám — prehľad kampaní sa nesynchronizuje.');
   const karty=await q.find(db.campaigns,{});
   const vsetciUzivatelia=await q.find(db.users,{is_admin:{$ne:true}});
@@ -25523,13 +25526,26 @@ async function strazcaMerania({upozornit=true}={}){
     try{
       const dbg=await metaGraph(tok,'debug_token?input_token='+encodeURIComponent(tok));
       const exp=dbg && dbg.data && dbg.data.expires_at ? dbg.data.expires_at*1000 : 0;
-      if(dbg && dbg.data && dbg.data.is_valid===false) pridaj('token','Token na čítanie reklám už neplatí.');
-      else if(exp && exp-Date.now() < 14*864e5) pridaj('token','Token na čítanie reklám expiruje '+new Date(exp).toLocaleDateString('sk-SK')+' — treba ho obnoviť.');
-      else if(exp) ok.push('Token platí do '+new Date(exp).toLocaleDateString('sk-SK'));
+      const dni=exp ? Math.round((exp-Date.now())/864e5) : null;
+      // Token drží aj čítanie kampaní, aj posielanie udalostí do Mety. Keď padne, stíchne
+      // oboje naraz — preto sa stupňuje: 14 dní vopred upozorni, 3 dni vopred súrne.
+      if(dbg && dbg.data && dbg.data.is_valid===false)
+        pridaj('token','Token pre Metu už NEPLATÍ — appka neposiela Mete udalosti a kampane sa neaktualizujú. Treba vložiť nový v Marketing → Meta.');
+      else if(dni!==null && dni<=3)
+        pridaj('token','Token pre Metu vyprší o '+(dni<=0?'chvíľu':(dni+' dni'))+' ('+new Date(exp).toLocaleDateString('sk-SK')+'). Potom stíchnu udalosti aj prehľad kampaní.');
+      else if(dni!==null && dni<14)
+        pridaj('token','Token pre Metu expiruje '+new Date(exp).toLocaleDateString('sk-SK')+' — treba ho obnoviť.');
+      else if(!exp) ok.push('Token pre Metu je bez expirácie (systémový používateľ) — obnovovať ho netreba');
+      else ok.push('Token platí do '+new Date(exp).toLocaleDateString('sk-SK')+' ('+dni+' dní)');
+      // Predĺžiť sa dá len s app secret. Bez neho denné predlžovanie ticho nerobí nič
+      // a token raz jednoducho padne — presne to sa stalo 13. 10. 2026.
+      if(exp && dni!==null && dni<30 && !(await getMetaAppSecret()))
+        pridaj('token','Token sa nevie predĺžiť sám — v nastaveniach chýba app secret. Buď ho doplň, alebo použi token systémového používateľa, ktorý nikdy nevyprší.');
     }catch(e){}
     try{
       const beziace=await metaAll(tok, META_ACT+'/insights?level=ad&fields=ad_id,ad_name,campaign_id,campaign_name,spend&date_preset=last_3d&limit=200', 5);
       const reklamy=beziace.filter(r=>+r.spend>0);
+      beziReklama=reklamy.length>0;
       if(!reklamy.length) ok.push('Za posledné 3 dni nebežala žiadna platená reklama');
       for(const r of reklamy){
         const meno='„'+(r.campaign_name||r.campaign_id)+'"';
@@ -25592,26 +25608,60 @@ async function strazcaMerania({upozornit=true}={}){
       }
     }catch(e){ pridaj('api','Kontrola reklám zlyhala: '+e.message); }
   }
-  // Prijíma Meta udalosti z appky?
+  // Prijíma Meta udalosti z appky? Do 18. 10. sa hlásila len chyba mladšia než 48 hodín
+  // a staré „posledná ok" sa ukazovalo ako zelená — CAPI tak mlčalo od 13. 10. päť dní
+  // a strážca pri tom tvrdil, že je všetko v poriadku. Teraz je ticho tiež nález.
   const capi=((await q.one(db.settings,{key:'meta_capi_stav'}))||{}).value||null;
-  if(capi && capi.posledna_chyba && (!capi.posledna_ok || capi.posledna_chyba>capi.posledna_ok) && Date.now()-Date.parse(capi.posledna_chyba)<48*3600e3)
-    pridaj('capi','Meta odmieta udalosti z appky (posledná chyba '+new Date(capi.posledna_chyba).toLocaleString('sk-SK',{timeZone:'Europe/Bratislava'})+').', capi.chyba);
-  else if(capi && capi.posledna_ok) ok.push('Meta prijala udalosť z appky '+new Date(capi.posledna_ok).toLocaleString('sk-SK',{timeZone:'Europe/Bratislava'}));
+  const capiTok=await getMetaCapiToken();
+  const dvaDni=48*3600e3;
+  const kedyOk=capi && capi.posledna_ok ? Date.parse(capi.posledna_ok) : 0;
+  const kedyChyba=capi && capi.posledna_chyba ? Date.parse(capi.posledna_chyba) : 0;
+  const skChas=t=>new Date(t).toLocaleString('sk-SK',{timeZone:'Europe/Bratislava'});
+  if(!capiTok){
+    pridaj('capi','Appka nemá token na posielanie udalostí Mete — Meta nevidí registrácie ani platby z appky.');
+  } else if(kedyChyba>kedyOk){
+    pridaj('capi','Meta odmieta udalosti z appky (posledná chyba '+skChas(kedyChyba)+').', capi.chyba);
+  } else if(!kedyOk){
+    if(beziReklama) pridaj('capi','Appka ešte Mete neposlala ani jednu udalosť, hoci reklama beží — Meta sa nemá z čoho učiť.');
+  } else if(Date.now()-kedyOk>dvaDni){
+    const dni=Math.floor((Date.now()-kedyOk)/864e5);
+    const text='Mete neprešla žiadna udalosť z appky už '+dni+' dní (posledná '+skChas(kedyOk)+')';
+    if(beziReklama) pridaj('capi', text+', a reklama pritom beží. Najčastejšia príčina je vypršaný token.');
+    else pridaj('capi', text+'. Reklama síce nebeží, ale po jej zapnutí by Meta merala naslepo.');
+  } else ok.push('Meta prijala udalosť z appky '+skChas(kedyOk));
   // Registrácie z reklamy bez priradenej kampane (fbclid s číslom reklamy, bez utm)
   const bezKampane=vsetciUzivatelia.filter(u=>u.meta_klik && !u.utm_campaign && String(u.registration_at||u.created_at||'')>=new Date(Date.now()-30*864e5).toISOString());
   if(bezKampane.length) pridaj('nepriradene', bezKampane.length+' registrácií z platenej reklamy za 30 dní sa nepodarilo priradiť kampani (chýba utm aj vzor z rovnakej reklamy).', bezKampane.map(u=>u.name).join(', '));
   const vysledok={at:nowISO(), nalezy, ok};
   const s=await q.one(db.settings,{key:'meranie_stav'});
   const upozornene=(s && s.value && s.value.upozornene) || {};
+  const NAZVY={token:'token',utm:'chýba utm',pixel:'reklama nesleduje web',stranka:'odkaz nefunguje',presmerovanie:'strácajú sa parametre',karta:'karta kampane',konverzie:'návštevy bez registrácií',capi:'Meta nedostáva udalosti',nepriradene:'nepriradené registrácie',odkaz:'reklama bez odkazu',api:'kontrola zlyhala'};
   if(upozornit && nalezy.length){
     const admini=await q.find(db.users,{is_admin:true});
+    const nove=[];
     for(const n of nalezy){
       const kluc=n.kod+'_'+require('crypto').createHash('sha1').update(n.text).digest('hex').slice(0,16);   // NeDB nedovolí bodky v kľúčoch
       if(upozornene[kluc] && Date.now()-Date.parse(upozornene[kluc]) < 3*864e5) continue;
       upozornene[kluc]=nowISO();
+      nove.push(n);
       for(const a of admini) await q.insert(db.notifications,{user_id:a._id, type:'meranie',
-        title:'🩺 Meranie reklám: '+({token:'token',utm:'chýba utm',pixel:'reklama nesleduje web',stranka:'odkaz nefunguje',presmerovanie:'strácajú sa parametre',karta:'karta kampane',konverzie:'návštevy bez registrácií',capi:'Meta odmieta udalosti',nepriradene:'nepriradené registrácie',odkaz:'reklama bez odkazu',api:'kontrola zlyhala'}[n.kod]||n.kod),
+        title:'🩺 Meranie reklám: '+(NAZVY[n.kod]||n.kod),
         body:n.text, read:false, created_at:nowISO()}).catch(()=>{});
+    }
+    // Oznam v appke sa dá prehliadnuť — token padol 13. 10. a všimli sme si to až o päť
+    // dní. Nálezy okolo tokenu a CAPI zastavujú meranie celej reklamy, takže idú mailom.
+    // Len majiteľovi: token ani app secret nikto iný vybaviť nevie, ostatným adminom
+    // by to bola len správa, s ktorou sa nedá nič robiť.
+    const surne=nove.filter(n=>n.kod==='token'||n.kod==='capi');
+    const majitel=admini.find(a=>a.email==='gruber.marek@gmail.com') || admini[0];
+    if(surne.length && majitel) for(const a of [majitel]){
+      if(!a.email || /@(import|internal)\.local$/i.test(a.email)) continue;
+      sendMail(a.email, '🩺 Meranie reklám: ' + (surne.length===1 ? (NAZVY[surne[0].kod]||surne[0].kod) : surne.length+' nálezy'),
+        emailTemplate('Meranie reklám si pýta zásah',
+          '<p>Denná kontrola našla toto:</p><ul>'
+          + surne.map(n=>'<li>'+String(n.text).replace(/[<>]/g,'')+'</li>').join('')
+          + '</ul><p>Kým to platí, Meta nevidí, čo sa v appke deje — optimalizuje naslepo a výsledky kampaní v admine budú neúplné.</p>',
+          '🩺 Otvoriť meranie', APP_URL+'/admin#marketing'), {priority:1, template:'meranie_alert'}).catch(()=>{});
     }
   }
   vysledok.upozornene=upozornene;
