@@ -4720,6 +4720,153 @@ app.get('/api/first-class/schedule', rlPublic, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ── Detský landing /prva-hodina-kids (18. 10. 2026) ──────────────────────────
+// Dospelý landing deti zámerne nepúšťa (MIMO_LANDING), takže Zumba Kids nemala kam
+// viesť reklamu. Tu je ten istý tok, len rezervuje DIEŤA: rodič zadá jeho meno a rok
+// narodenia, účet dostane rodič a dieťa vznikne pod ním. Skúšobný týždeň sa detí netýka
+// (skuskaNarok vylučuje is_child), ponuka je teda prvá hodina zadarmo.
+app.get('/api/first-class/kids-schedule', rlPublic, async(req,res)=>{
+  try{
+    const classes=await q.find(db.classes,{active:true, category:'Deti'});
+    const out=[];
+    for(const c of classes){
+      const date=displayNextDateForDay(c.day_of_week);
+      if(!date || !classRunsOn(c,date)) continue;
+      if(await q.one(db.class_cancellations,{class_id:c._id, date})) continue;
+      const booked=(await q.find(db.bookings,{class_id:c._id, booking_date:date})).filter(b=>b.status!=='cancelled').length;
+      out.push({ class_id:c._id, name:c.name, emoji:c.emoji||'🧒', city:c.location||'', address:c.address||'',
+        skupina:kidsSkupinaZNazvu(c.name), vek:(String(c.name).match(/\((\d+\s*[–-]\s*\d+)\)/)||[])[1]||'',
+        date, day_name:DAYS_SK[c.day_of_week]||'', time_start:c.time_start||'', time_end:c.time_end||'',
+        full: !!(c.capacity && booked>=c.capacity) });
+    }
+    out.sort((a,b)=>(a.date+a.time_start).localeCompare(b.date+b.time_start));
+    const p=MEMBERSHIP_PLANS[KIDS_PLAN];
+    res.json({ok:true, items:out, cities:[...new Set(out.map(i=>i.city))],
+      cena:{ auto:p.price, manual:kidsCenaManual(p.price) }});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.post('/api/first-class/book-kids', rlPublic, async(req,res)=>{
+  try{
+    const childName=String(req.body.child_name||'').trim().slice(0,80);
+    const rok=+String(req.body.birth_year||'').trim();
+    const parentName=String(req.body.parent_name||'').trim().slice(0,80);
+    const email=String(req.body.email||'').trim().toLowerCase().slice(0,120);
+    const phone=String(req.body.phone||'').trim().slice(0,30);
+    const teraz=new Date().getFullYear();
+    if(childName.length<2) return res.status(400).json({error:'Napíš meno dieťaťa 🙂'});
+    if(!(rok>=teraz-18 && rok<=teraz)) return res.status(400).json({error:'Zadaj rok narodenia dieťaťa — podľa veku ho zaradíme do správnej skupiny.'});
+    if(parentName.length<2) return res.status(400).json({error:'Napíš svoje meno 🙂'});
+    if(!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email))
+      return res.status(400).json({error:'Zadaj platný e-mail — pošleme ti naň potvrdenie aj prihlásenie do appky.'});
+    const cls=await q.one(db.classes,{_id:String(req.body.class_id||'')});
+    if(!cls || !cls.active || cls.category!=='Deti') return res.status(404).json({error:'Hodina nenájdená'});
+    const bdate=String(req.body.booking_date||displayNextDateForDay(cls.day_of_week));
+    if(await q.one(db.class_cancellations,{class_id:cls._id, date:bdate}))
+      return res.status(400).json({error:'Táto hodina je zrušená — vyber si prosím inú.'});
+    const obsadene=(await q.find(db.bookings,{class_id:cls._id, booking_date:bdate})).filter(b=>b.status!=='cancelled').length;
+    if(cls.capacity && obsadene>=cls.capacity) return res.status(400).json({error:'Hodina je plná — vyber si prosím iný termín.'});
+
+    // 1) rodič — buď už účet má, alebo mu vznikne (rovnaké pravidlá ako dospelý landing)
+    const attr=spojZdroj(req, req.body.attribution); const clean=v=>String(v||'').slice(0,300);
+    let rodic=await q.one(db.users,{email});
+    const novyRodic=!rodic; let heslo=null;
+    if(novyRodic){
+      let lead_source='landing-kids';
+      if(clean(attr.gclid)) lead_source='google'; else if(clean(attr.fbclid)) lead_source='meta';
+      else if(clean(attr.utm_source)) lead_source=clean(attr.utm_source).toLowerCase();
+      heslo='Zumba'+String(Math.floor(1000+Math.random()*9000));
+      rodic=await q.insert(db.users,{ name:parentName, email, phone, password:await bcrypt.hash(heslo,10),
+        referral_code:'FK'+Math.random().toString(36).slice(2,8).toUpperCase(), sponsor_id:null,
+        funnel_vid:citajCookie(req,VID_COOKIE)||null,
+        rank:1, is_admin:false, active:true, user_type:'lead', bank_account:'', notes:'', visit_count:0,
+        referral_credit:0, lead_source, city:cls.location||'',
+        utm_source:clean(attr.utm_source), utm_medium:clean(attr.utm_medium), utm_campaign:clean(attr.utm_campaign),
+        fbclid:clean(attr.fbclid), gclid:clean(attr.gclid), landing_page:clean(attr.landing), referrer:clean(attr.referrer),
+        consent_at:nowISO(), created_at:today(),
+        account_creation_type:'self_registration', registration_at:nowISO(), registration_at_source:'actual',
+        manage_token:'MG'+Math.random().toString(36).slice(2,12).toUpperCase() });
+      await doplnZdrojUctu(rodic, attr).catch(()=>{});
+      enqueueSequence(rodic._id,'welcome').then(()=>processEmailQueue()).catch(()=>{});
+    } else if(!rodic.password){
+      heslo='Zumba'+String(Math.floor(1000+Math.random()*9000));
+      await q.update(db.users,{_id:rodic._id},{$set:{password:await bcrypt.hash(heslo,10), claimed:true, pw_reset:false}});
+    }
+
+    // 2) dieťa — ak ho rodič už má (rovnaké meno aj ročník), použijeme existujúce,
+    //    nech dvojklik nezaloží dvojča.
+    const suroden=(await q.find(db.users,{parent_id:rodic._id, active:{$ne:false}}))
+      .find(d=>String(d.name||'').trim().toLowerCase()===childName.toLowerCase() && (+d.birth_year||0)===rok);
+    let dieta=suroden;
+    if(!dieta){
+      const r=await vytvorDieta(rodic._id,{name:childName, birth_year:rok});
+      if(r.error) return res.status(400).json({error:r.error});
+      dieta=r.child;
+    }
+    // Skupinu zapíšeme podľa vybranej hodiny, ale BEZ automatických rezervácií na celú
+    // skupinu — rodič si vybral jeden termín a nič iné sme mu nesľúbili.
+    const skupina=kidsSkupinaZNazvu(cls.name);
+    if(skupina && !dieta.kids_group) await q.update(db.users,{_id:dieta._id},{$set:{kids_group:skupina}});
+
+    // 3) rezervácia na dieťa, platí ju rodič
+    const booking=await withBookingLock(cls._id+'@'+bdate, async()=>{
+      const obs=await q.count(db.bookings,{class_id:cls._id, booking_date:bdate, status:{$ne:'cancelled'}});
+      if(cls.capacity && obs>=cls.capacity) return {plna:true};
+      if(await q.one(db.bookings,{user_id:dieta._id, class_id:cls._id, booking_date:bdate, status:{$ne:'cancelled'}})) return {dup:true};
+      return q.insert(db.bookings,{
+        class_id:cls._id, class_name:cls.name, class_emoji:cls.emoji||'🧒',
+        class_location:cls.location, class_time_start:cls.time_start, class_time_end:cls.time_end,
+        day_of_week:cls.day_of_week, day_name:DAYS_SK[cls.day_of_week],
+        user_id:dieta._id, user_name:dieta.name, user_email:rodic.email, user_phone:rodic.phone||phone||'',
+        booked_by:rodic._id, booked_by_name:rodic.name, is_child_booking:true, child_name:dieta.name,
+        booking_date:bdate, status:'confirmed', notes:'', free_class: !dieta.free_class_used,
+        access_method:'free_class', source:'prva-hodina-kids', created_at:nowISO() });
+    });
+    if(booking.plna) return res.status(400).json({error:'Hodina je plná — vyber si prosím iný termín.'});
+    if(booking.dup) return res.status(409).json({error:'Na tento termín už máš dieťa prihlásené. 💛'});
+    await q.update(db.users,{_id:dieta._id},{$set:{free_class_used:true}});
+    if(phone && !rodic.phone) await q.update(db.users,{_id:rodic._id},{$set:{phone}});
+
+    if(novyRodic || heslo){ req.session.uid=rodic._id; req.session.sv=rodic.sess_ver||0; }
+    zapisKrok(req,'booking_ok',{stranka:'/prva-hodina-kids', uid:rodic._id}).catch(()=>{});
+    if(novyRodic){
+      zapisKrok(req,'register_ok',{stranka:'/prva-hodina-kids', uid:rodic._id}).catch(()=>{});
+      metaCapi('CompleteRegistration',{email, fbclid:clean(attr.fbclid), fbp:clean(attr.fbp), click_at:attr.click_at,
+        external_id:rodic._id, ip:klientIp(req), ua:req.headers['user-agent'], event_id:'reg_'+rodic._id,
+        source_url:clean(attr.landing)||undefined}).catch(()=>{});
+    }
+    metaCapi('Schedule',{email, fbclid:clean(attr.fbclid), external_id:rodic._id, ip:klientIp(req),
+      ua:req.headers['user-agent'], event_id:clean(attr.event_id_schedule)||undefined}).catch(()=>{});
+    try{
+      for(const a of await q.find(db.users,{is_admin:true})) await q.insert(db.notifications,{user_id:a._id, type:'new_lead',
+        title:'🧒 Zumba Kids z landingu', body:`${dieta.name} (${rok}) · ${cls.name} ${cls.location} ${bdate} ${cls.time_start} · rodič ${rodic.name}`,
+        read:false, created_at:nowISO()});
+    }catch(e){}
+
+    const vstupUrl=await dajVstupUrl(rodic,'rezervacie');
+    const plan=MEMBERSHIP_PLANS[KIDS_PLAN];
+    const cenaAuto=plan.price.toFixed(2).replace('.',','), cenaManual=kidsCenaManual(plan.price).toFixed(2).replace('.',',');
+    sendMail(email, 'Tešíme sa na '+dieta.name+'! 🧒 Prvá hodina Zumba Kids je rezervovaná',
+      emailTemplate('Máte to! 🎉',
+        '<p>Ahoj '+String(parentName).split(' ')[0]+', miesto pre <b>'+dieta.name+'</b> je rezervované:</p>'
+        +'<p style="line-height:1.9">'+(cls.emoji||'🧒')+' <b>'+cls.name+'</b><br>📍 '+cls.location+(cls.address?' — '+cls.address:'')
+        +'<br>📅 '+DAYS_SK[cls.day_of_week]+' '+bdate.slice(8,10)+'. '+bdate.slice(5,7)+'.<br>⏰ '+cls.time_start+(cls.time_end?'–'+cls.time_end:'')+'</p>'
+        +'<p><b>Prvá hodina je zadarmo.</b> Ak sa dieťaťu bude páčiť, členstvo stojí <b>'+cenaAuto+' € mesačne</b> '
+        +'s automatickou platbou, alebo '+cenaManual+' € bez nej. Zrušiť sa dá kedykoľvek v appke.</p>'
+        +'<p>Priniesť stačí: 💧 vodu · 👟 tenisky · 👕 pohodlné oblečenie.</p>'
+        +(heslo ? '<p>Do appky sa prihlásiš e-mailom <b>'+email+'</b> a heslom <b>'+heslo+'</b>.</p>' : '')
+        +'<p>Najrýchlejšie sa do nej dostaneš odtiaľto — <a href="'+vstupUrl+'" style="color:#C9A84C;font-weight:bold">otvoriť moju appku</a> (odkaz ťa prihlási sám, platí 14 dní).</p>'
+        +'<p>📅 <a href="'+APP_URL+'/cal/booking/'+booking._id+'.ics" style="color:#C9A84C;font-weight:bold">Pridať do kalendára</a></p>',
+        '📍 Moje rezervácie', vstupUrl), {priority:2, template:'landing_kids_confirm'}).catch(()=>{});
+
+    res.json({ok:true, booking_id:booking._id, is_new:novyRodic, heslo:heslo||undefined, kontakt:email,
+      vstup_url:vstupUrl, dieta:{id:dieta._id, name:dieta.name, skupina:skupina||null},
+      cena:{auto:plan.price, manual:kidsCenaManual(plan.price)},
+      detail:{ name:cls.name, emoji:cls.emoji||'🧒', city:cls.location, address:cls.address||'',
+        date:bdate, day_name:DAYS_SK[cls.day_of_week], time_start:cls.time_start, time_end:cls.time_end||'' }});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // FUNNEL-002: rezervácia prvej hodiny z landingu — konto vznikne na pozadí
 // (self_registration, registration_at=teraz, atribúcia first-touch + current UTM).
 // Zrkadlí guest-invite flow: dedupe podľa kontaktu, kapacita, potvrdenie mailom.
@@ -25635,6 +25782,7 @@ async function lievikStranok(days){
   const od=new Date(Date.now()-days*864e5).toISOString();
   const ev=await q.find(db.funnel_events,{at:{$gte:od}});
   const KROKY={ '/prva-hodina':['lp_view','lp_cta','lp_termin','form_view','form_start','form_submit','booking_ok','trial_open','trial_ok'],
+                '/prva-hodina-kids':['lp_view','lp_termin','form_view','form_start','form_submit','booking_ok'],
                 '/':['lp_view','form_view','form_start','form_submit','register_ok','trial_open','trial_ok','trial_decline'],
                 '/nabor-trenerov':['lp_view','video_start','video_half','cta_click','form_start','form_submit'] };
   const kl=e=>e.vid||e.uid||e._id;
@@ -25792,6 +25940,8 @@ app.get('/prva-hodina', async(req,res)=>{
   try{ if(await skuskaZapnuta()) await landingVariant(req,res); }catch(e){}
   res.sendFile(path.join(__dirname,'public','prva-hodina.html'));
 });
+// Detský landing (18. 10.) — reklama na Zumba Kids nemala kam viesť, dospelý landing deti filtruje.
+app.get('/prva-hodina-kids', (req,res)=>res.sendFile(path.join(__dirname,'public','prva-hodina-kids.html')));
 app.get('/vencek',     (req,res)=>res.sendFile(path.join(__dirname,'public','vencek.html')));
 app.get('/vencek-booking', (req,res)=>res.sendFile(path.join(__dirname,'public','vencek-booking.html')));
 app.get('/invite', (req,res)=>{ const qs=req.url.includes('?')?req.url.slice(req.url.indexOf('?')):''; res.redirect('/invite/FUSION'+qs); });
