@@ -1310,11 +1310,15 @@ function updateStepBar(step){
 }
 
 // ── HERO → STEP 1 ────────────────────────────────────────────────────────────
+// Jeden vstup do appky (Marek 18. 10.): registrácia žije na /prva-hodina — krokový
+// sprievodca mesto → termín → meno. Úvod appky si necháva prihlásenie, registračné
+// obrazovky s1–s3 ostávajú len pre staré odkazy, ktoré mieria rovno na ne.
+// Značky z reklamy aj kód pozvánky (?ref=) musia ísť so sebou, inak sa klik stratí.
 function startOnboarding(){
-  const s0=document.getElementById('s0');
-  s0.style.transition='opacity .35s, transform .35s';
-  s0.style.opacity='0';s0.style.transform='translateY(-20px)';
-  setTimeout(()=>{ goTo(1); }, 380);
+  const p=new URLSearchParams(location.search);
+  ['home','buy','src','stripe','session_id','lang'].forEach(k=>p.delete(k));
+  const qs=p.toString();
+  location.href='/prva-hodina'+(qs?'?'+qs:'');
 }
 
 // ── REGISTRATION ─────────────────────────────────────────────────────────────

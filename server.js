@@ -4794,7 +4794,10 @@ async function firstBookingEligible(u){
 // „ukázať ďalšie termíny" ostala skrytá. Platí pre zoznam aj pre samotnú rezerváciu.
 const MIMO_LANDING=['deti','online','súkromné','sukromne','technika'];
 const mimoLandingu=c=>MIMO_LANDING.includes(String(c.category||'').toLowerCase())
-  || /rezervácia|kids|deti|technick/i.test(String(c.name||''));
+  || /rezervácia|kids|deti|technick/i.test(String(c.name||''))
+  // Hodina vedená ako „Online" nemá kam prísť — v sprievodcovi (18. 10.) sa inak
+  // ponúkala ako mesto a výber skončil prázdnym zoznamom termínov.
+  || /^online$/i.test(String(c.location||''));
 app.get('/api/first-class/schedule', rlPublic, async(req,res)=>{
   try{
     const CITY_SLUGS={'detva':'Detva','zvolen':'Zvolen','banska-bystrica':'Banská Bystrica','bb':'Banská Bystrica','brezno':'Brezno','korytarky':'Korytárky'};
@@ -4811,8 +4814,10 @@ app.get('/api/first-class/schedule', rlPublic, async(req,res)=>{
         full: !!(c.capacity && booked>=c.capacity) });
     }
     out.sort((a,b)=>(a.date+a.time_start).localeCompare(b.date+b.time_start));
+    // Mestá v poradí podľa toho, kde je najbližšia hodina — v sprievodcovi je to prvá
+    // otázka, takže hore patrí to, kam sa dá prísť najskôr, nie náhodné poradie z DB.
     res.json({ok:true, city, items: city? out.filter(i=>i.city===city) : out,
-      cities:[...new Set(out.map(i=>i.city))]});
+      cities:[...new Set(out.map(i=>i.city).filter(Boolean))]});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -5007,6 +5012,12 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
     if(cls.capacity && booked>=cls.capacity) return res.status(400).json({error:'Hodina je už plná — vyber si prosím inú.'});
 
     const attr=spojZdroj(req, req.body.attribution); const clean=v=>String(v||'').slice(0,300);
+    // Pozvánka od kamošky alebo ambasádorky (?ref=KÓD). Do 18. 10. landing kód vôbec
+    // nečítal — kto prišiel cez pozvánku, ostal bez sponzora a pozývajúcej nenabehli body.
+    // Preto pozvánky viedli na starý /invite; teraz je vstup jeden a kód ide sem.
+    const refKod=String(req.body.ref || (req.body.attribution&&req.body.attribution.ref) || '').trim().slice(0,32);
+    let pozvala=refKod ? await inviterByCode(refKod).catch(()=>null) : null;
+    if(pozvala && (pozvala.active===false || pozvala.email===email)) pozvala=null;
     let u=await q.one(db.users,{email});
     const isNew=!u;
     let heslo=null;
@@ -5023,7 +5034,15 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
       else if(clean(attr.utm_source)) lead_source=clean(attr.utm_source).toLowerCase();
       const code='FC'+Math.random().toString(36).slice(2,8).toUpperCase();
       if(skuska) heslo=vyrobHeslo();
-      u=await q.insert(db.users,{ name, email, phone, password: heslo ? await bcrypt.hash(heslo,10) : null, referral_code:code, sponsor_id:null,
+      if(pozvala) lead_source='referral';
+      // Bez pozvánky pripadá sponzorstvo zakladateľovi — rovnako ako v /api/register.
+      // Landing to doteraz nerobil, takže jeho klientky viseli úplne mimo štruktúry.
+      let sponsor_id = pozvala ? pozvala._id : null;
+      if(!sponsor_id){
+        const founder=await q.one(db.users,{email:'gruber.marek@gmail.com'});
+        if(founder && founder.email!==email) sponsor_id=founder._id;
+      }
+      u=await q.insert(db.users,{ name, email, phone, password: heslo ? await bcrypt.hash(heslo,10) : null, referral_code:code, sponsor_id,
         funnel_vid:citajCookie(req,VID_COOKIE)||null, landing_variant:variant||undefined,
         rank:1, is_admin:false, active:true, user_type:'lead', bank_account:'', notes:'', visit_count:0,
         referral_credit:0, lead_source, city:cls.location||'',
@@ -5080,10 +5099,19 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
           external_id:u._id, ip:klientIp(req), ua:req.headers['user-agent'], event_id:'reg_'+u._id, source_url:clean(attr.landing)||undefined}).catch(()=>{});
       }
     } else zapisKrok(req,'booking_ok',{stranka:'/prva-hodina', uid:u._id}).catch(()=>{});
+    // Pozývajúca sa musí dozvedieť, že to zabralo — a odporúčanie sa musí zapísať,
+    // inak by sa z neho nikdy nestali body ani provízia.
+    if(pozvala && pozvala._id && pozvala._id!=='house'){
+      refEvent(pozvala,'booked',{guest_id:u._id, class_id:cls._id, booking_id:booking._id, city:cls.location});
+      if(isNew) await q.insert(db.notifications,{user_id:pozvala._id, type:'referral',
+        title:'💛 Tvoja pozvánka zabrala!',
+        body:name+' si cez tvoju pozvánku rezervovala prvú hodinu ('+cls.name+', '+bdate+').',
+        read:false, created_at:nowISO()}).catch(()=>{});
+    }
     try{
       const admins=await q.find(db.users,{is_admin:true});
       for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'new_lead',
-        title:'🆕 Prvá hodina z landing page', body:`${name} · ${cls.name} ${cls.location} ${bdate} ${cls.time_start}`,
+        title:'🆕 Prvá hodina z landing page', body:`${name} · ${cls.name} ${cls.location} ${bdate} ${cls.time_start}`+(pozvala?` · pozvala ${pozvala.name}`:''),
         read:false, created_at:nowISO()});
     }catch(e){}
     metaCapi('Lead',{email, fbclid:clean(attr.fbclid), fbp:clean(attr.fbp), click_at:attr.click_at,
@@ -26061,16 +26089,28 @@ app.get('/prva-hodina', async(req,res)=>{
 app.get('/prva-hodina-kids', (req,res)=>res.sendFile(path.join(__dirname,'public','prva-hodina-kids.html')));
 app.get('/vencek',     (req,res)=>res.sendFile(path.join(__dirname,'public','vencek.html')));
 app.get('/vencek-booking', (req,res)=>res.sendFile(path.join(__dirname,'public','vencek-booking.html')));
-app.get('/invite', (req,res)=>{ const qs=req.url.includes('?')?req.url.slice(req.url.indexOf('?')):''; res.redirect('/invite/FUSION'+qs); });
-// Registračné aliasy — reklamy a staré odkazy mieria na rôzne varianty ("Sign Up",
-// /registracia, /vitaj). Bez nich padali na 404 a platený klik prišiel navnivoč.
+// ── Jeden vstup do appky (Marek 18. 10.) ─────────────────────────────────────
+// Dovtedy viedli do appky štyri rôzne registrácie v troch dizajnoch: /prva-hodina,
+// /invite/:code, úvod appky a sedem aliasov. Najhoršie na tom bolo, že kým beží prvý
+// týždeň zadarmo, /invite v poslednom kroku rezerváciu odmietol a klientku prehodil na
+// úvod appky — vybrané mesto aj termín sa stratili. Odteraz všetko vedie na /prva-hodina
+// a kód pozvánky ide so sebou ako ?ref=, aby pozývajúca o svoje body neprišla.
+function naVstup(req,res,ref){
+  const p=new URLSearchParams(req.url.includes('?')?req.url.slice(req.url.indexOf('?')+1):'');
+  if(ref && !p.get('ref')) p.set('ref',ref);
+  const qs=p.toString();
+  res.redirect(302,'/prva-hodina'+(qs?'?'+qs:''));
+}
+app.get('/invite', (req,res)=>naVstup(req,res,''));
 const SIGNUP_ALIASES = ['/registracia','/register','/signup','/sign-up','/vitaj','/zaciatok','/start'];
-SIGNUP_ALIASES.forEach(p=>app.get(p,(req,res)=>{
-  const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
-  res.redirect(302, '/invite/FUSION'+qs);
-}));
+SIGNUP_ALIASES.forEach(p=>app.get(p,(req,res)=>naVstup(req,res,'')));
 
-app.get('/invite/:code', (req,res)=>res.sendFile(path.join(__dirname,'public','invite.html')));
+// Odkaz na zmenu rezervácie z potvrdzovacieho mailu (/invite/KÓD?manage=…) musí ostať —
+// to nie je registrácia, ale správa existujúcej rezervácie.
+app.get('/invite/:code', (req,res)=>{
+  if(req.query.manage) return res.sendFile(path.join(__dirname,'public','invite.html'));
+  naVstup(req,res,String(req.params.code||'').replace(/[^a-zA-Z0-9]/g,'').slice(0,32));
+});
 app.get('/terms',      (req,res)=>res.sendFile(path.join(__dirname,'public','terms.html')));
 app.get('/dashboard',  (req,res)=>res.sendFile(path.join(__dirname,'public','dashboard.html')));
 app.get('/admin',      (req,res)=>res.sendFile(path.join(__dirname,'public','admin.html')));

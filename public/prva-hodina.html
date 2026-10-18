@@ -24,8 +24,8 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;ba
 /* Marek 17. 10.: záber z reálnej hodiny hneď na prvej obrazovke. Meranie ukázalo medián
    7 s na stránke a 37 % odchodov do troch sekúnd — kým človek čítal, už bol preč.
    Video beží POD textom, takže nadpis ani termíny neposúva nižšie. 576 kB, bez zvuku. */
-.hero{padding:26px 10px 16px;text-align:center;position:relative;overflow:hidden;border-radius:18px;margin:0 -8px;
-  min-height:216px;display:flex;flex-direction:column;justify-content:center}
+.hero{padding:22px 10px 14px;text-align:center;position:relative;overflow:hidden;border-radius:18px;margin:0 -8px;
+  min-height:196px;display:flex;flex-direction:column;justify-content:center}
 .heroVid{position:absolute;inset:0;z-index:0;background:#0B0714}
 .heroVid video,.heroVid img{width:100%;height:100%;object-fit:cover;display:block}
 .heroVid::after{content:"";position:absolute;inset:0;
@@ -52,42 +52,47 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;ba
 .hint a{color:var(--gold)}
 /* Telefón na Beátku — kto váha nad formulárom, radšej zavolá, než by odišiel. */
 .tel{color:var(--gold);font-weight:800;text-decoration:none;white-space:nowrap}
-/* Mestá v dvoch riadkoch, aby boli vidieť všetky (v jednom posúvateľnom riadku Detva
-   ostala za okrajom). Aj tak termíny ostanú na prvej obrazovke. */
-.cities{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:12px 0 0}
-.cities button{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);color:var(--cream);border-radius:999px;padding:8px 13px;min-height:38px;font-size:.82rem;cursor:pointer;font-weight:600}
-.cities button.on{background:linear-gradient(90deg,rgba(168,85,247,.45),rgba(236,72,153,.45));border-color:rgba(233,184,255,.5);color:#fff}
 .card{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:20px;padding:18px;margin-top:18px;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
 @supports not (backdrop-filter:blur(14px)){.card{background:#171129}}
 .card h2{font-size:1.02rem;color:var(--acc);margin-bottom:10px;letter-spacing:.03em}
-#terminy{margin-top:10px;padding:14px 16px 10px}
-#terminy h2{margin-bottom:4px}
-.sess{display:flex;align-items:center;gap:10px;padding:12px 0;border-top:1px solid rgba(255,255,255,.08)}
-.sess:first-of-type{border-top:none}
-.sess .d{flex:1;min-width:0}
-.sess .d b{color:#fff}
-.sess .d small{display:block;color:var(--muted);font-size:.78rem}
-.sess .d .kde{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sess .d .kde b{color:var(--acc)}
-/* Tlačidlá termínov majú lákať na klik (Marek 21. 9.): jemne dýchajú a prebehne cez ne lesk */
-.sess button{background:linear-gradient(90deg,var(--cta1),var(--cta2));border:none;color:#fff;font-weight:800;padding:10px 15px;border-radius:99px;cursor:pointer;white-space:nowrap;flex:none;
-  position:relative;overflow:hidden;isolation:isolate;animation:dychTl 2.6s ease-in-out infinite}
-.sess button::after{content:'';position:absolute;top:0;left:-70%;width:45%;height:100%;
-  background:linear-gradient(100deg,transparent,rgba(255,255,255,.5),transparent);transform:skewX(-18deg);
-  animation:leskTl 3.4s ease-in-out infinite}
-.sess:nth-of-type(2) button,.sess:nth-of-type(2) button::after{animation-delay:.45s}
-.sess:nth-of-type(3) button,.sess:nth-of-type(3) button::after{animation-delay:.9s}
-.sess button:active{transform:scale(.96)}
-.sess button:disabled{opacity:.45;cursor:default;animation:none}
-.sess button:disabled::after{display:none}
-@keyframes dychTl{
-  0%,100%{box-shadow:0 0 0 0 rgba(236,72,153,.5),0 4px 14px rgba(168,85,247,.3);transform:scale(1)}
-  50%{box-shadow:0 0 0 9px rgba(236,72,153,0),0 8px 22px rgba(168,85,247,.55);transform:scale(1.035)}}
-@keyframes leskTl{0%,58%{left:-70%}88%,100%{left:130%}}
-@media (prefers-reduced-motion:reduce){
-  .sess button{animation:none;box-shadow:0 4px 16px rgba(168,85,247,.45)}
-  .sess button::after{display:none}}
-.viac{background:none;border:none;color:var(--gold);font-size:.85rem;cursor:pointer;padding:10px 0 0;font-weight:600}
+
+/* ── SPRIEVODCA (Marek 18. 10.) ───────────────────────────────────────────────
+   Jedna otázka na obrazovku. 98 % návštev príde vo vstavanom prehliadači Facebooku,
+   kde je medián 8 s na stránke a 37 % odíde do troch sekúnd — dlhú stránku nikto
+   nedočíta, ale na jednu otázku odpovie. Kroky sú tri a z každého sa dá vrátiť. */
+#wiz{margin-top:12px;padding:16px}
+.kroky{display:flex;align-items:center;gap:6px;justify-content:center}
+.kroky i{width:34px;height:4px;border-radius:2px;background:rgba(255,255,255,.16);transition:background .2s ease}
+.kroky i.on{background:linear-gradient(90deg,var(--cta1),var(--cta2))}
+.krokLbl{text-align:center;color:var(--muted);font-size:.7rem;font-weight:800;letter-spacing:.14em;margin:8px 0 2px}
+#wiz h2{text-align:center;font-size:1.12rem;color:#fff;margin:0 0 14px}
+.vyber{display:flex;flex-direction:column;gap:8px}
+/* Riadky sú celé klikateľné a vysoké aspoň 56 px — palcom sa do nich trafí aj v aute. */
+.vyber button{display:flex;align-items:center;gap:12px;width:100%;min-height:56px;text-align:left;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.16);border-radius:14px;
+  padding:10px 14px;color:var(--cream);font:inherit;cursor:pointer;transition:border-color .18s ease,background .18s ease}
+.vyber button:active{transform:scale(.985)}
+.vyber button:disabled{opacity:.45;cursor:default}
+.vyber button .t{flex:1;min-width:0}
+.vyber button .t b{display:block;color:#fff;font-size:1rem;line-height:1.25}
+.vyber button .t small{display:block;color:var(--muted);font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vyber button .sip{color:var(--acc);font-weight:900;flex:none}
+.vyber button .plne{color:var(--muted);font-size:.78rem;font-weight:700;flex:none}
+.vyber button:not(:disabled):hover{border-color:rgba(233,184,255,.5);background:rgba(255,255,255,.1)}
+/* Prvá možnosť jemne dýcha, nech je jasné, kam ťuknúť (prevzaté z pôvodných termínov). */
+.vyber button.prva{border-color:rgba(233,184,255,.45);animation:dychR 2.6s ease-in-out infinite}
+@keyframes dychR{0%,100%{box-shadow:0 0 0 0 rgba(236,72,153,.35)}50%{box-shadow:0 0 0 8px rgba(236,72,153,0)}}
+@media (prefers-reduced-motion:reduce){.vyber button.prva{animation:none}}
+.spat{display:block;margin:14px auto 0;background:none;border:none;color:var(--muted);font:inherit;
+  font-size:.84rem;cursor:pointer;padding:10px 12px;min-height:44px}
+.spat:hover{color:var(--cream)}
+.viac{background:none;border:none;color:var(--gold);font-size:.85rem;cursor:pointer;padding:12px 0 0;font-weight:600;width:100%;min-height:44px}
+.nacitavam{color:var(--muted);font-size:.86rem;padding:10px 0;text-align:center}
+/* Pozvánka od kamošky — kto prišiel cez odkaz, musí hneď vidieť, že sme ju nestratili. */
+.pozvanka{display:none;margin-top:12px;background:rgba(243,210,126,.1);border:1px solid rgba(243,210,126,.42);
+  border-radius:14px;padding:11px 14px;font-size:.88rem;color:var(--cream);text-align:center}
+.pozvanka b{color:var(--gold)}
+
 .steps{display:flex;flex-direction:column;gap:12px}
 .step{display:flex;gap:12px;align-items:flex-start}
 .step .n{width:30px;height:30px;border-radius:50%;background:rgba(168,85,247,.2);border:1px solid rgba(233,184,255,.5);color:var(--acc);font-weight:900;display:flex;align-items:center;justify-content:center;flex:none}
@@ -97,8 +102,12 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;ba
 .testi span{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 .stars{color:var(--gold2);font-size:.8rem}
 label{display:block;font-size:.78rem;color:var(--muted);margin:10px 0 4px}
-input{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.16);border-radius:12px;color:var(--cream);padding:12px 13px;font-size:1rem}
+input{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.16);border-radius:12px;color:var(--cream);padding:13px;font-size:1rem}
 input:focus{outline:none;border-color:var(--acc)}
+input.zle{border-color:rgba(229,115,115,.75)}
+/* Chyba patrí k poľu, ktoré ju spôsobilo — nie až dole pod tlačidlo. */
+.pole-err{display:none;color:#f0a9a9;font-size:.78rem;margin-top:5px}
+.pole-err.on{display:block}
 .msg{margin-top:10px;font-size:.85rem;display:none;border-radius:10px;padding:10px 12px}
 .msg.err{display:block;background:rgba(229,115,115,.12);border:1px solid rgba(229,115,115,.4);color:#f0a9a9}
 .msg.err a{color:#fff}
@@ -110,12 +119,6 @@ input:focus{outline:none;border-color:var(--acc)}
 .heslo b{color:var(--gold);font-size:1.05rem;letter-spacing:.06em}
 .cena{font-size:.8rem;color:var(--muted);text-align:center;margin-top:8px}
 a.small{color:var(--gold);font-size:.8rem}
-/* Odozva na CTA: karta termínov sa krátko rozsvieti, prvé tlačidlo pulzne (21. 9.) */
-@keyframes pulzKarta{0%{box-shadow:0 0 0 0 rgba(233,184,255,.55)}70%{box-shadow:0 0 0 14px rgba(233,184,255,0)}100%{box-shadow:0 0 0 0 rgba(233,184,255,0)}}
-@keyframes pulzBtn{0%,100%{transform:scale(1)}35%{transform:scale(1.07)}}
-.pulz{animation:pulzKarta 1.1s ease-out 2;border-color:rgba(233,184,255,.6)!important}
-.pulz-btn{animation:pulzBtn .5s ease-in-out 2}
-@media (prefers-reduced-motion:reduce){.pulz,.pulz-btn{animation:none}.pulz{border-color:rgba(233,184,255,.7)!important}}
 footer{text-align:center;color:#6f6a5d;font-size:.72rem;margin-top:30px}
 footer a{color:#8f8a7d}
 </style>
@@ -124,9 +127,6 @@ footer a{color:#8f8a7d}
 <div class="wrap">
   <div class="top"><img src="/logo-mark.png" alt=""><b>FUSION ACADEMY</b></div>
 
-  <!-- Marek 21. 9.: termíny na prvú obrazovku. Meranie ukázalo medián 20 s na stránke,
-       ale stránku aspoň o štvrtinu posunulo len 2,3 % žien — zoznam hodín pod fotkou
-       takmer nikto nevidel. Teraz: nadpis → ponuka → mestá → termíny, fotka až nižšie. -->
   <div class="hero">
     <div class="heroVid" aria-hidden="true">
       <video autoplay muted loop playsinline preload="auto" poster="/media/hodina-hero.jpg">
@@ -143,25 +143,39 @@ footer a{color:#8f8a7d}
     </div>
   </div>
 
-  <div class="cities" id="cityChips"></div>
+  <div class="pozvanka" id="pozvanka"></div>
 
-  <div class="card" id="terminy">
-    <h2>🗓️ VYBER SI PRVÚ HODINU<span id="cityName"></span></h2>
-    <div id="sessList"><div style="color:var(--muted);font-size:.86rem;padding:8px 0">Načítavam termíny…</div></div>
-  </div>
-  <div class="hint">Rezervácia trvá 30 sekúnd — stačí meno a e-mail.</div>
+  <div class="card" id="wiz">
+    <div class="kroky" aria-hidden="true"><i id="kb1" class="on"></i><i id="kb2"></i><i id="kb3"></i></div>
+    <div class="krokLbl" id="krokLbl">KROK 1 Z 3</div>
 
-  <div class="card" id="formCard" style="display:none">
-    <h2>✍️ DOKONČI REZERVÁCIU</h2>
-    <div id="formDetail" style="font-size:.88rem;color:var(--muted);margin-bottom:4px"></div>
-    <label>Meno a priezvisko</label>
-    <input id="fName" placeholder="Jana Nováková" autocomplete="name">
-    <label>E-mail</label>
-    <input id="fKontakt" type="email" placeholder="jana@email.sk" autocomplete="email" inputmode="email">
-    <button class="cta" style="margin-top:14px" id="fBtn" onclick="submitBooking()">REZERVOVAŤ MIESTO</button>
-    <div class="msg" id="fMsg"></div>
-    <div class="hint" id="formHint">Odoslaním súhlasíš so <a href="/ochrana-sukromia" target="_blank" rel="noopener">spracovaním údajov</a>. Prihlásenie do appky ti pošleme e-mailom.<br>
-      Nevieš si rady? Zavolaj Beátke na <a href="tel:+421904315151" class="tel">0904 315 151</a>.</div>
+    <div class="krok" id="k1">
+      <h2>Kde ti to sedí?</h2>
+      <div class="vyber" id="cityList"><div class="nacitavam">Načítavam mestá…</div></div>
+    </div>
+
+    <div class="krok" id="k2" style="display:none">
+      <h2 id="k2h">Kedy prídeš?</h2>
+      <div class="vyber" id="sessList"></div>
+      <button class="viac" id="viacBtn" style="display:none" onclick="VSETKY=true;vykresliTerminy()"></button>
+      <button class="spat" onclick="naKrok(1)">← Vybrať iné mesto</button>
+    </div>
+
+    <div class="krok" id="k3" style="display:none">
+      <h2>Už len meno</h2>
+      <div id="formDetail" style="font-size:.88rem;color:var(--muted);margin:-6px 0 4px;text-align:center"></div>
+      <label for="fName">Meno a priezvisko</label>
+      <input id="fName" placeholder="Jana Nováková" autocomplete="name" enterkeyhint="next">
+      <div class="pole-err" id="errName"></div>
+      <label for="fKontakt">E-mail</label>
+      <input id="fKontakt" type="email" placeholder="jana@email.sk" autocomplete="email" inputmode="email" enterkeyhint="done">
+      <div class="pole-err" id="errMail"></div>
+      <button class="cta" style="margin-top:14px" id="fBtn" onclick="submitBooking()">REZERVOVAŤ MIESTO</button>
+      <div class="msg" id="fMsg"></div>
+      <div class="hint" id="formHint">Odoslaním súhlasíš so <a href="/ochrana-sukromia" target="_blank" rel="noopener">spracovaním údajov</a>. Prihlásenie do appky ti pošleme e-mailom.<br>
+        Nevieš si rady? Zavolaj Beátke na <a href="tel:+421904315151" class="tel">0904 315 151</a>.</div>
+      <button class="spat" onclick="naKrok(2)">← Vybrať iný termín</button>
+    </div>
   </div>
 
   <!-- Krok 2 pri skúške s kartou: aktivácia prvého týždňa cez Stripe -->
@@ -215,7 +229,7 @@ footer a{color:#8f8a7d}
     <div class="testi"><p>„Prišla som prvýkrát bez skúseností a hneď som sa cítila vítaná. Teraz chodím 3× týždenne!"</p><span>Martina K. · Banská Bystrica</span></div>
     <div class="testi"><p>„Zumba hodiny sú absolútne najlepší spôsob ako sa odreagovať po práci. Odporúčam každej!"</p><span>Lucia H. · Zvolen</span></div>
     <div class="testi"><p>„Moja dcéra aj ja chodíme spolu — skvelý spôsob ako tráviť čas. Komunita je úžasná."</p><span>Zuzana M. · Brezno</span></div>
-    <a class="cta" style="margin-top:16px" href="#terminy" onclick="return naTerminy(event,'dole')">CHCEM PRVÝ TÝŽDEŇ ZADARMO</a>
+    <a class="cta" style="margin-top:16px" href="#wiz" onclick="return naHore(event)">CHCEM PRVÝ TÝŽDEŇ ZADARMO</a>
   </div>
 
   <div class="card" style="text-align:center">
@@ -233,94 +247,144 @@ const SLUG2NAME={'detva':'Detva','zvolen':'Zvolen','banska-bystrica':'Banská By
 const LOC={'Detva':'V DETVE','Zvolen':'VO ZVOLENE','Banská Bystrica':'V BANSKEJ BYSTRICI','Brezno':'V BREZNE','Korytárky':'V KORYTÁRKACH'};
 const NAME2SLUG={'Detva':'detva','Zvolen':'zvolen','Banská Bystrica':'banska-bystrica','Brezno':'brezno','Korytárky':'korytarky'};
 const P0=new URLSearchParams(location.search);
+const REF=(P0.get('ref')||'').replace(/[^a-zA-Z0-9]/g,'').slice(0,32);
 let CITY=SLUG2NAME[(P0.get('city')||'').toLowerCase()]||null;   // bez mesta = všetky mestá, najbližšie termíny
-let ITEMS=[], PICK=null, VSETKY=false, CFG={prvy_tyzden:true, variant:'karta', trial_price:49.9, trial_days:7}, VYSLEDOK=null;
+let ITEMS=[], MESTA=[], PICK=null, VSETKY=false, KROK=1, VYSLEDOK=null;
+let CFG={prvy_tyzden:true, variant:'karta', trial_price:49.9, trial_days:7};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const krok=(k,meta)=>{ try{ if(window.faKrok) window.faKrok(k,meta); }catch(e){} };
 const fmtCena=n=>(+n||0).toFixed(2).replace('.',',');
+const $=id=>document.getElementById(id);
 
 async function loadCfg(){
   try{ const c=await (await fetch('/api/landing/config',{credentials:'include'})).json(); if(c&&c.ok) CFG=c; }catch(e){}
   document.querySelectorAll('#cenaMes,.cenaMes').forEach(el=>el.textContent=fmtCena(CFG.trial_price));
   if(!CFG.prvy_tyzden){
     // Starý režim: prvá hodina zdarma (keď je skúška vypnutá)
-    document.getElementById('ponukaTitul').textContent='PRVÁ HODINA ZADARMO';
-    document.getElementById('checks').innerHTML='<div>✓ prvá hodina <b>zdarma</b></div><div>✓ bez záväzkov</div><div>✓ vhodné aj pre začiatočníčky</div>'
+    $('ponukaTitul').textContent='PRVÁ HODINA ZADARMO';
+    $('checks').innerHTML='<div>✓ prvá hodina <b>zdarma</b></div><div>✓ bez záväzkov</div><div>✓ vhodné aj pre začiatočníčky</div>'
       +'<div class="garancia">💛 Nesadne ti to? <b>Do 14 dní vrátime peniaze.</b></div>';
-    document.getElementById('krok3').textContent='Prvá návšteva je zdarma — bez záväzkov.';
-    document.getElementById('formHint').innerHTML='Potvrdenie ti príde e-mailom. Žiadna platba — prvá hodina je zdarma.';
+    $('krok3').textContent='Prvá návšteva je zdarma — bez záväzkov.';
+    $('formHint').innerHTML='Potvrdenie ti príde e-mailom. Žiadna platba — prvá hodina je zdarma.';
   } else if(CFG.variant==='bez_karty'){
-    document.getElementById('formHint').innerHTML='Bez karty a bez záväzkov — po týždni sa rozhodneš. Odoslaním súhlasíš so <a href="/ochrana-sukromia" target="_blank" rel="noopener">spracovaním údajov</a>.';
+    $('formHint').innerHTML='Bez karty a bez záväzkov — po týždni sa rozhodneš. Odoslaním súhlasíš so <a href="/ochrana-sukromia" target="_blank" rel="noopener">spracovaním údajov</a>.';
   } else {
-    document.getElementById('formHint').innerHTML='Skúšku zapneš v ďalšom kroku (uložíš kartu, teraz 0 €, zrušíš kedykoľvek). Odoslaním súhlasíš so <a href="/ochrana-sukromia" target="_blank" rel="noopener">spracovaním údajov</a>.';
+    $('formHint').innerHTML='Skúšku zapneš v ďalšom kroku (uložíš kartu, teraz 0 €, zrušíš kedykoľvek). Odoslaním súhlasíš so <a href="/ochrana-sukromia" target="_blank" rel="noopener">spracovaním údajov</a>.';
   }
 }
+// Kto prišiel cez pozvánku, musí hneď vidieť, že sme ju nestratili — inak má pocit,
+// že odkaz od kamošky nefungoval, a kód by si aj tak nikam neprepisoval.
+async function loadPozvanka(){
+  if(!REF) return;
+  try{
+    const d=await (await fetch('/api/invite/'+encodeURIComponent(REF)+'/info?first=1')).json();
+    if(d&&d.ok&&d.inviter){
+      const p=$('pozvanka');
+      // „pozýva" je rovnaké pre ženu aj muža — pod kódom FUSION je Marek, inak kamošky.
+      p.innerHTML='💛 <b>'+esc(d.inviter)+'</b> ťa pozýva — stačí si vybrať termín, kód riešiť nemusíš.';
+      p.style.display='block';
+    }
+  }catch(e){}
+}
+
+/* ── Kroky sprievodcu ─────────────────────────────────────────────────────── */
+function naKrok(n){
+  KROK=n;
+  [1,2,3].forEach(i=>{ $('k'+i).style.display = i===n?'block':'none'; $('kb'+i).className = i<=n?'on':''; });
+  $('krokLbl').textContent='KROK '+n+' Z 3';
+  if(n===1){ PICK=null; }
+  if(n===2) $('k2h').textContent = CITY ? 'Kedy prídeš do '+kam(CITY)+'?' : 'Kedy prídeš?';
+}
+// „do Detvy", „do Zvolena" — bez toho by nadpis znel ako z prekladača.
+function kam(c){ return ({'Detva':'Detvy','Zvolen':'Zvolena','Banská Bystrica':'Banskej Bystrice','Brezno':'Brezna','Korytárky':'Korytárok'})[c] || c; }
+function naHore(e){
+  if(e) e.preventDefault();
+  krok('lp_cta',{pole:'dole'});
+  const w=$('wiz'); if(!w || w.style.display==='none') return false;
+  w.scrollIntoView({behavior:'smooth',block:'start'});
+  return false;
+}
+function vykresliMesta(){
+  const l=$('cityList');
+  if(!MESTA.length){ l.innerHTML='<div class="nacitavam">Momentálne nie sú vypísané žiadne termíny.</div>'; return; }
+  // aria-label na každom riadku: text je vnorený v <span>, takže čítačka obrazovky
+  // by inak ohlásila len „tlačidlo".
+  l.innerHTML=MESTA.map((c,i)=>'<button class="'+(i===0?'prva':'')+'" aria-label="Vybrať mesto '+esc(c)+'" onclick="setCity(\''+esc(c)+'\')">'
+    +'<span class="t"><b>'+esc(c)+'</b></span><span class="sip" aria-hidden="true">›</span></button>').join('')
+    +'<button aria-label="Ukázať najbližšie hodiny zo všetkých miest" onclick="setCity(null)"><span class="t"><b>Je mi to jedno</b>'
+    +'<small>ukáž najbližšie hodiny zo všetkých miest</small></span><span class="sip" aria-hidden="true">›</span></button>';
+}
+function vykresliTerminy(){
+  const list=$('sessList'), viac=$('viacBtn');
+  if(!ITEMS.length){ list.innerHTML='<div class="nacitavam">Tu teraz nie sú vypísané termíny — skús iné mesto.</div>'; viac.style.display='none'; return; }
+  const fmtD=s=>s.slice(8,10)+'. '+s.slice(5,7)+'.';
+  const bezMesta=a=>String(a||'').replace(/,\s*[^,]*$/,'');
+  const NA_PRVEJ=3;
+  const zobraz=VSETKY?ITEMS:ITEMS.slice(0,NA_PRVEJ);
+  list.innerHTML=zobraz.map(i=>{ const ix=ITEMS.indexOf(i);
+    const popis=i.day_name+' '+fmtD(i.date)+' o '+i.time_start+', '+i.name+', '+i.city;
+    return '<button '+(i.full?'disabled':'onclick="pick('+ix+')"')+' class="'+(ix===0&&!i.full?'prva':'')+'"'
+      +' aria-label="'+esc(i.full?('Plné: '+popis):('Rezervovať '+popis))+'">'
+      +'<span class="t"><b>'+esc(i.day_name).toUpperCase()+' '+esc(i.time_start)+'</b>'
+      +'<small>'+esc(i.name)+' · '+fmtD(i.date)+' · '+esc(i.city)+'</small>'
+      +(i.address?'<small>'+esc(bezMesta(i.address))+'</small>':'')+'</span>'
+      +(i.full?'<span class="plne">Plné</span>':'<span class="sip" aria-hidden="true">›</span>')+'</button>'; }).join('');
+  if(ITEMS.length>NA_PRVEJ&&!VSETKY){ viac.style.display='block'; viac.textContent='Ďalšie termíny ('+(ITEMS.length-NA_PRVEJ)+') ↓'; }
+  else viac.style.display='none';
+}
 async function load(){
-  document.getElementById('cityLoc').textContent=CITY?(LOC[CITY]||('V '+CITY.toUpperCase())):'V TVOJOM MESTE';
-  document.getElementById('cityName').textContent=CITY?' — '+CITY:'';
+  $('cityLoc').textContent=CITY?(LOC[CITY]||('V '+CITY.toUpperCase())):'V TVOJOM MESTE';
   const r=await fetch('/api/first-class/schedule'+(CITY?'?city='+encodeURIComponent(NAME2SLUG[CITY]||''):''));
   const d=await r.json();
   ITEMS=d.items||[];
-  const chips=document.getElementById('cityChips');
-  const mesta=(d.cities||[]).length?d.cities:Object.keys(NAME2SLUG);
-  chips.innerHTML='<button class="'+(CITY?'':'on')+'" onclick="setCity(null)">Všetky</button>'+mesta.map(c=>'<button class="'+(c===CITY?'on':'')+'" onclick="setCity(\''+esc(c)+'\')">'+esc(c)+'</button>').join('');
-  vykresliTerminy();
+  if(!MESTA.length) MESTA=(d.cities||[]).length?d.cities:Object.keys(NAME2SLUG);
+  vykresliMesta(); vykresliTerminy();
 }
-function vykresliTerminy(){
-  const list=document.getElementById('sessList');
-  if(!ITEMS.length){ list.innerHTML='<div style="color:var(--muted);font-size:.86rem;padding:8px 0">Momentálne tu nie sú vypísané termíny — vyber si iné mesto vyššie.</div>'; return; }
-  const fmtD=s=>s.slice(8,10)+'. '+s.slice(5,7)+'.';
-  // Prvá obrazovka (21. 9.): dva najbližšie termíny, každý na dvoch krátkych riadkoch —
-  // deň a čas, pod tým dátum · mesto · miesto (miesto sa pri nedostatku šírky skráti).
-  const NA_PRVEJ=2;
-  const zobraz=VSETKY?ITEMS:ITEMS.slice(0,NA_PRVEJ);
-  const bezMesta=a=>String(a||'').replace(/,\s*[^,]*$/,'');
-  list.innerHTML=zobraz.map((i)=>{ const ix=ITEMS.indexOf(i); return '<div class="sess">'
-    +'<div class="d"><b>'+esc(i.day_name).toUpperCase()+' '+esc(i.time_start)+'</b>'
-    +'<small class="kde">'+esc(i.name)+' · '+fmtD(i.date)+' · <b>'+esc(i.city)+'</b></small>'
-    +(i.address?'<small class="kde">'+esc(bezMesta(i.address))+'</small>':'')+'</div>'
-    +(i.full?'<button disabled>Plné</button>':'<button onclick="pick('+ix+')">REZERVOVAŤ</button>')
-    +'</div>'; }).join('')
-    +(ITEMS.length>NA_PRVEJ&&!VSETKY?'<button class="viac" onclick="VSETKY=true;vykresliTerminy()">Ďalšie termíny ('+(ITEMS.length-NA_PRVEJ)+') ↓</button>':'');
+async function setCity(c){
+  CITY=c; VSETKY=false;
+  history.replaceState(null,'',(c?'?city='+(NAME2SLUG[c]||''):location.pathname)+(REF?((c?'&':'?')+'ref='+encodeURIComponent(REF)):''));
+  krok('lp_cta',{pole:'mesto'}); krok('lp_city',{city:c||'vsetky'});
+  $('sessList').innerHTML='<div class="nacitavam">Hľadám najbližšie hodiny…</div>';
+  naKrok(2);
+  await load();
 }
-// Marek 21. 9.: „dole keď kliknem chcem prvý týždeň zadarmo nič sa nestane." Kotva #terminy
-// stránku len potichu posunula, takže to vyzeralo ako mŕtve tlačidlo. Teraz posun vidno a
-// zoznam hodín sa zvýrazní, nech je jasné, že ďalší krok je výber termínu.
-function naTerminy(e, odkial){
-  if(e) e.preventDefault();
-  krok('lp_cta',{pole:odkial||''});
-  const t=document.getElementById('terminy');
-  if(!t || t.style.display==='none') return false;
-  t.scrollIntoView({behavior:'smooth', block:'start'});
-  t.classList.remove('pulz'); void t.offsetWidth; t.classList.add('pulz');
-  const prve=document.querySelector('.sess button:not([disabled])');
-  if(prve){ prve.classList.remove('pulz-btn'); void prve.offsetWidth; prve.classList.add('pulz-btn'); }
-  return false;
-}
-function setCity(c){ CITY=c; PICK=null; VSETKY=false; document.getElementById('formCard').style.display='none';
-  history.replaceState(null,'',c?'?city='+(NAME2SLUG[c]||''):location.pathname); krok('lp_city',{city:c||'vsetky'}); load(); }
 function pick(ix){
   PICK=ITEMS[ix];
-  const f=document.getElementById('formCard');
-  document.getElementById('formDetail').innerHTML='Rezervuješ: <b style="color:#fff">'+esc(PICK.name)+'</b> · '+esc(PICK.day_name)+' '+PICK.date.slice(8,10)+'. '+PICK.date.slice(5,7)+'. o '+esc(PICK.time_start)+' · '+esc(PICK.city);
-  f.style.display='block';
-  f.scrollIntoView({behavior:'smooth',block:'center'});
-  document.getElementById('fName').focus();
+  $('formDetail').innerHTML='<b style="color:#fff">'+esc(PICK.name)+'</b> · '+esc(PICK.day_name)+' '+PICK.date.slice(8,10)+'. '+PICK.date.slice(5,7)+'. o '+esc(PICK.time_start)+' · '+esc(PICK.city);
+  naKrok(3);
   krok('lp_termin',{city:PICK.city, termin:PICK.name}); krok('form_view');
+  $('fName').focus();
 }
-['fName','fKontakt'].forEach(id=>document.getElementById(id).addEventListener('input',()=>krok('form_start',{pole:id}),{once:true}));
+['fName','fKontakt'].forEach(id=>$(id).addEventListener('input',()=>krok('form_start',{pole:id}),{once:true}));
+// Kontrola až keď pole opustí — vypisovať chybu po každom písmene je otravné.
+$('fName').addEventListener('blur',()=>{ if($('fName').value.trim()) overMeno(); });
+$('fKontakt').addEventListener('blur',()=>{ if($('fKontakt').value.trim()) overMail(); });
+$('fName').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $('fKontakt').focus(); } });
+$('fKontakt').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); submitBooking(); } });
+function chyba(pole,errId,text){
+  const i=$(pole), e=$(errId);
+  if(text){ i.classList.add('zle'); e.textContent=text; e.classList.add('on'); return false; }
+  i.classList.remove('zle'); e.textContent=''; e.classList.remove('on'); return true;
+}
+function overMeno(){
+  const v=$('fName').value.trim();
+  return chyba('fName','errName', v.split(/\s+/).length<2 ? 'Napíš prosím meno aj priezvisko.' : '');
+}
+function overMail(){
+  const v=$('fKontakt').value.trim();
+  return chyba('fKontakt','errMail', /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(v) ? '' : 'Zadaj platný e-mail — pošleme ti naň potvrdenie aj prihlásenie.');
+}
 function detailHtml(dd){ return dd.emoji+' <b>'+esc(dd.name)+'</b><br>📍 '+esc(dd.city)+(dd.address?' — '+esc(dd.address):'')+'<br>📅 '+esc(dd.day_name)+' '+dd.date.slice(8,10)+'. '+dd.date.slice(5,7)+'. · ⏰ '+esc(dd.time_start)+(dd.time_end?'–'+esc(dd.time_end):''); }
 function ics(d){ const dd=d.detail; const dt=dd.date.replace(/-/g,''); const t1=(dd.time_start||'19:00').replace(':','')+'00'; const t2=(dd.time_end||dd.time_start||'20:00').replace(':','')+'00';
   return 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Fusion Academy//SK\r\nBEGIN:VEVENT\r\nUID:'+d.booking_id+'@fusionacademy.sk\r\nDTSTART:'+dt+'T'+t1+'\r\nDTEND:'+dt+'T'+t2+'\r\nSUMMARY:'+dd.name+' – Fusion Academy\r\nLOCATION:'+(dd.address||dd.city)+'\r\nDESCRIPTION:Priniesť: voda, tenisky, uterák.\r\nEND:VEVENT\r\nEND:VCALENDAR'; }
 async function submitBooking(){
-  const msg=document.getElementById('fMsg'); msg.className='msg'; msg.textContent='';
-  const name=document.getElementById('fName').value.trim();
-  const kontakt=document.getElementById('fKontakt').value.trim();
-  if(!PICK){ msg.className='msg err'; msg.textContent='Najprv si hore vyber termín.'; return; }
-  const jeMail=/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(kontakt);
-  if(name.trim().split(/\s+/).length<2){ msg.className='msg err'; msg.textContent='Napíš prosím meno aj priezvisko.'; krok('register_err',{dovod:'meno'}); return; }
-  if(!jeMail){ msg.className='msg err'; msg.textContent='Zadaj platný e-mail — pošleme ti naň potvrdenie aj prihlásenie do appky.'; krok('register_err',{dovod:'email'}); return; }
-  const btn=document.getElementById('fBtn'); btn.disabled=true; btn.textContent='Rezervujem…';
+  const msg=$('fMsg'); msg.className='msg'; msg.textContent='';
+  if(!PICK){ naKrok(2); return; }
+  const okMeno=overMeno(), okMail=overMail();
+  if(!okMeno){ krok('register_err',{dovod:'meno'}); $('fName').focus(); return; }
+  if(!okMail){ krok('register_err',{dovod:'email'}); $('fKontakt').focus(); return; }
+  const name=$('fName').value.trim(), kontakt=$('fKontakt').value.trim();
+  const btn=$('fBtn'); btn.disabled=true; btn.textContent='Rezervujem…';
   krok('form_submit');
   const cur={};
   ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid'].forEach(k=>{ if(P0.get(k)) cur[k]=P0.get(k); });
@@ -330,15 +394,14 @@ async function submitBooking(){
   const attribution={...first, ...cur, event_id_lead:'lead_'+eidBase, event_id_schedule:'sch_'+eidBase};
   try{
     const r=await fetch('/api/first-class/book',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',
-      body:JSON.stringify({name,kontakt,class_id:PICK.class_id,booking_date:PICK.date,attribution})});
+      body:JSON.stringify({name,kontakt,ref:REF||undefined,class_id:PICK.class_id,booking_date:PICK.date,attribution})});
     const d=await r.json();
     if(!r.ok||d.error){ const e=new Error(d.error||'Rezervácia sa nepodarila'); e.login=!!d.login; throw e; }
     VYSLEDOK=d;
     try{ if(window.fbq){ fbq('track','Lead',{},{eventID:attribution.event_id_lead}); fbq('track','Schedule',{},{eventID:attribution.event_id_schedule}); if(d.is_new) fbq('track','CompleteRegistration',{},{eventID:'reg_'+eidBase}); } }catch(e){}
-    document.getElementById('calBtn').href='data:text/calendar;charset=utf-8,'+encodeURIComponent(ics(d));
-    document.getElementById('formCard').style.display='none';
-    document.getElementById('terminy').style.display='none';
-    document.getElementById('cityChips').style.display='none';
+    $('calBtn').href='data:text/calendar;charset=utf-8,'+encodeURIComponent(ics(d));
+    $('wiz').style.display='none';
+    $('pozvanka').style.display='none';
     if(d.next==='trial'){ ukazTrial(d); } else { ukazHotovo(d); }
   }catch(e){
     krok('register_err',{dovod:String(e.message||'').slice(0,60)});
@@ -348,13 +411,13 @@ async function submitBooking(){
   }
 }
 function ukazTrial(d){
-  document.getElementById('trialDetail').innerHTML=detailHtml(d.detail);
-  if(d.heslo){ const h=document.getElementById('hesloBoxT'); h.style.display='block';
+  $('trialDetail').innerHTML=detailHtml(d.detail);
+  if(d.heslo){ const h=$('hesloBoxT'); h.style.display='block';
     h.innerHTML='Účet už máš: prihlásiš sa e-mailom <b style="font-size:.95rem">'+esc(d.kontakt)+'</b> a heslom <b>'+esc(d.heslo)+'</b> (poslali sme ti ho aj e-mailom).'; }
-  const c=document.getElementById('trialCard'); c.style.display='block'; c.scrollIntoView({behavior:'smooth',block:'start'});
+  const c=$('trialCard'); c.style.display='block'; c.scrollIntoView({behavior:'smooth',block:'start'});
 }
 async function aktivujSkusku(){
-  const btn=document.getElementById('trialBtn'), msg=document.getElementById('tMsg'); msg.className='msg'; msg.textContent='';
+  const btn=$('trialBtn'), msg=$('tMsg'); msg.className='msg'; msg.textContent='';
   btn.disabled=true; btn.textContent='Otváram bezpečnú platobnú bránu…';
   try{
     const r=await fetch('/api/stripe/trial',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({navrat:'landing'})});
@@ -365,20 +428,20 @@ async function aktivujSkusku(){
 }
 function preskocSkusku(){
   krok('trial_cancel',{dovod:'neskor'});
-  document.getElementById('trialCard').style.display='none';
+  $('trialCard').style.display='none';
   if(VYSLEDOK) ukazHotovo(VYSLEDOK, true);
 }
 function ukazHotovo(d, bezSkusky){
   const dd=d.detail;
-  document.getElementById('doneDetail').innerHTML=detailHtml(dd);
-  if(d.skuska&&d.skuska.ends_at){ document.getElementById('doneTitle').textContent='TVOJ TÝŽDEŇ ZADARMO BEŽÍ!'; document.getElementById('doneSub').textContent='Do '+new Date(d.skuska.ends_at).toLocaleDateString('sk-SK')+' chodíš na všetky hodiny zadarmo.'; }
-  else if(bezSkusky){ document.getElementById('doneSub').textContent='Miesto máš rezervované. Prvý týždeň zadarmo si vieš zapnúť kedykoľvek v appke.'; }
-  if(d.heslo){ const h=document.getElementById('hesloBox'); h.style.display='block';
+  $('doneDetail').innerHTML=detailHtml(dd);
+  if(d.skuska&&d.skuska.ends_at){ $('doneTitle').textContent='TVOJ TÝŽDEŇ ZADARMO BEŽÍ!'; $('doneSub').textContent='Do '+new Date(d.skuska.ends_at).toLocaleDateString('sk-SK')+' chodíš na všetky hodiny zadarmo.'; }
+  else if(bezSkusky){ $('doneSub').textContent='Miesto máš rezervované. Prvý týždeň zadarmo si vieš zapnúť kedykoľvek v appke.'; }
+  if(d.heslo){ const h=$('hesloBox'); h.style.display='block';
     h.innerHTML='Do appky sa prihlásiš e-mailom <b style="font-size:.95rem">'+esc(d.kontakt)+'</b> a heslom <b>'+esc(d.heslo)+'</b> (poslali sme ti ho aj e-mailom). Zmeniť si ho môžeš v nastaveniach.'; }
   // Odkaz, ktorý prihlási sám — v prehliadači Facebooku sa prihlásenie ďalej neprenesie,
   // takže tlačidlo musí viesť na /vstup/<token>, nie na holý dashboard.
-  if(d.vstup_url){ const b=document.getElementById('openAppBtn'); if(b) b.href=d.vstup_url; }
-  const dc=document.getElementById('doneCard'); dc.style.display='block'; dc.scrollIntoView({behavior:'smooth',block:'start'});
+  if(d.vstup_url){ const b=$('openAppBtn'); if(b) b.href=d.vstup_url; }
+  const dc=$('doneCard'); dc.style.display='block'; dc.scrollIntoView({behavior:'smooth',block:'start'});
 }
 // Návrat zo Stripe po aktivácii skúšky (?stripe=trial&session_id=…) alebo po zrušení (?stripe=trial_cancel)
 async function navratZoStripe(){
@@ -390,14 +453,23 @@ async function navratZoStripe(){
     try{ const v=await (await fetch('/api/stripe/verify',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({session_id:P0.get('session_id')})})).json(); aktivna=!!(v&&v.ok); }catch(e){}
     if(!aktivna && me&&me.trial&&me.trial.active) aktivna=true;
   }
-  document.getElementById('terminy').style.display='none'; document.getElementById('cityChips').style.display='none';
-  const dc=document.getElementById('doneCard'); dc.style.display='block';
-  document.getElementById('calBtn').style.display='none';
-  if(aktivna){ document.getElementById('doneTitle').textContent='TVOJ TÝŽDEŇ ZADARMO BEŽÍ!'; document.getElementById('doneSub').textContent='Rezerváciu aj ďalšie hodiny nájdeš v appke.'; document.getElementById('doneDetail').textContent=''; krok('trial_ok_view'); }
-  else { document.getElementById('doneTitle').textContent='REZERVÁCIU MÁŠ'; document.getElementById('doneSub').textContent='Skúšku si nedokončila — zapnúť si ju vieš kedykoľvek v appke (Nástenka → Prvý týždeň zadarmo).'; document.getElementById('doneDetail').textContent=''; krok('trial_cancel',{dovod:'stripe'}); }
+  $('wiz').style.display='none';
+  const dc=$('doneCard'); dc.style.display='block';
+  $('calBtn').style.display='none';
+  if(aktivna){ $('doneTitle').textContent='TVOJ TÝŽDEŇ ZADARMO BEŽÍ!'; $('doneSub').textContent='Rezerváciu aj ďalšie hodiny nájdeš v appke.'; $('doneDetail').textContent=''; krok('trial_ok_view'); }
+  else { $('doneTitle').textContent='REZERVÁCIU MÁŠ'; $('doneSub').textContent='Skúšku si nedokončila — zapnúť si ju vieš kedykoľvek v appke (Nástenka → Prvý týždeň zadarmo).'; $('doneDetail').textContent=''; krok('trial_cancel',{dovod:'stripe'}); }
   return true;
 }
-(async()=>{ await loadCfg(); if(!(await navratZoStripe())){ krok('lp_view',{city:CITY||'vsetky'}); if(window.faScrollTrack) window.faScrollTrack(); load(); } })();
+(async()=>{
+  await loadCfg();
+  loadPozvanka();
+  if(await navratZoStripe()) return;
+  krok('lp_view',{city:CITY||'vsetky'});
+  if(window.faScrollTrack) window.faScrollTrack();
+  await load();
+  // Mesto z reklamy (?city=detva) je už rozhodnuté — nech sa neopytujeme naň znova.
+  if(CITY) naKrok(2);
+})();
 </script>
 </body>
 </html>
