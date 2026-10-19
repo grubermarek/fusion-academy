@@ -411,7 +411,7 @@ function renderClasses(classes) {
           <span class="class-emoji">${c.emoji}</span>
           <div>
             <div class="class-title">${c.name}${myBk?'<span class="idem-chip">✓ IDEM</span>':''}</div>
-            <span class="class-level">${c.level}</span>
+            ${c.level?`<span class="class-level">${c.level}</span>`:''}
           </div>
         </div>
         <div class="class-desc">${c.description||''}</div>

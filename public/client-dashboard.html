@@ -266,7 +266,10 @@
     .booking-info{flex:1;min-width:0}
     .booking-info strong{display:block;font-size:.9rem}
     .booking-info span{font-size:.8rem;color:var(--muted)}
-    .booking-cancel{background:none;border:1px solid var(--border);color:var(--muted);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.75rem;transition:all .2s;white-space:nowrap;flex-shrink:0}
+    .booking-kal{display:inline-flex;align-items:center;gap:5px;background:transparent;border:1px solid var(--border,#2e2a20);
+    color:var(--gold,#C9A24C);border-radius:10px;padding:6px 11px;font-size:.76rem;text-decoration:none;margin-right:8px;white-space:nowrap}
+  .booking-kal:hover{border-color:var(--gold,#C9A24C)}
+  .booking-cancel{background:none;border:1px solid var(--border);color:var(--muted);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.75rem;transition:all .2s;white-space:nowrap;flex-shrink:0}
     .booking-cancel:hover{border-color:var(--red);color:var(--red)}
     .empty-state{text-align:center;padding:24px;color:var(--muted);font-size:.9rem}
     .empty-state i{font-size:2rem;display:block;margin-bottom:8px;opacity:.4}
@@ -1409,6 +1412,10 @@ function renderBookings(bookings){
         ${insHtml?`<span style="font-size:.78rem;color:var(--muted)">🎓 Učí: ${insHtml}</span>`:''}
       </div>
       ${(window.FA_MIN&&b.min_ucast)?`<div style="flex-basis:100%;order:5">${FA_MIN.riadok(b.min_ucast)}</div>`:''}
+      <a class="booking-kal" href="/api/kalendar/hodina.ics?booking_id=${b._id}" data-ics
+         onclick="return doKalendara(this)" title="Pridať do kalendára v telefóne">
+        <i class="bi bi-calendar-plus"></i> Do kalendára
+      </a>
       <button class="booking-cancel" onclick="cancelBooking('${b._id}','${escHtml(b.class_name).replace(/'/g,"&#39;")}')">
         <i class="bi bi-x"></i> Zrušiť
       </button>
@@ -1418,6 +1425,14 @@ function renderBookings(bookings){
       </div>`:''}
     </div>`;
   }).join('');
+}
+
+/* ─── Hodina do kalendára telefónu ─── */
+// V appke (obal) otvoríme .ics natívne — iOS ponúkne „Pridať do kalendára".
+// V prehliadači je to obyčajný odkaz, takže sa súbor stiahne ako vždy.
+function doKalendara(a){
+  if(window.FA_NATIV && FA_NATIV.otvor){ FA_NATIV.otvor(a.href); FA_NATIV.vibruj && FA_NATIV.vibruj(); return false; }
+  return true;
 }
 
 /* ─── Family (children) ─── */
@@ -3845,7 +3860,10 @@ init();
 // vizuálny návod (Zdieľať → Pridať na plochu). Tlačidlo v hlavičke ostáva
 // vždy dostupné, aj keď niekto pôvodnú ponuku predtým zavrel.
 (function(){
-  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone===true;
+  // V natívnej appke (App Store) je ponuka „pridaj si ma na plochu" nezmysel —
+  // klientka ju už nainštalovanú má. Obal sa hlási v User-Agent.
+  const vObale = /FusionAcademyApp/i.test(navigator.userAgent) || !!(window.Capacitor && window.Capacitor.Plugins);
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone===true || vObale;
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
   let deferred=null;
   window._faInstallDeferred = null;

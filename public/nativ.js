@@ -59,6 +59,13 @@
     return false;
   };
 
+  // ── Otvorenie súboru/odkazu mimo appky (napr. .ics do kalendára) ──────────
+  window.FA_NATIV.otvor = async (url) => {
+    try{ if(P.Browser){ await P.Browser.open({ url, presentationStyle:'popover' }); return true; } }catch(e){}
+    try{ window.open(url, '_system'); return true; }catch(e){}
+    location.href = url; return true;
+  };
+
   // ── Vzhľad: stavový riadok a odznak ───────────────────────────────────────
   (async()=>{
     try{ if(P.StatusBar){ await P.StatusBar.setStyle({ style:'DARK' }); } }catch(e){}

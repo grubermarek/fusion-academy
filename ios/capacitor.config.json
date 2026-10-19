@@ -18,7 +18,8 @@
     "contentInset": "always",
     "backgroundColor": "#141210",
     "limitsNavigationsToAppBoundDomains": false,
-    "scrollEnabled": true
+    "scrollEnabled": true,
+    "appendUserAgent": "FusionAcademyApp/9.0"
   },
   "plugins": {
     "SplashScreen": {
@@ -27,7 +28,11 @@
       "showSpinner": false
     },
     "PushNotifications": {
-      "presentationOptions": ["badge", "sound", "alert"]
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
     }
   }
 }

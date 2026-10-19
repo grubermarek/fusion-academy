@@ -13819,6 +13819,12 @@ app.get('/api/membership', auth, async(req,res)=>{
   res.json({ membership:m, plan, has_online: plan?.online||false });
 });
 
+// Appka v App Store nesmie predávať digitálny obsah mimo Apple platieb (pravidlo 3.1.1).
+// Hodiny naživo sú fyzická služba a Stripe je pri nich v poriadku (3.1.3(e)), ale čisto
+// online členstvá by Apple chcel cez svoje platby s 30 % províziou — preto ich v iOS obale
+// neponúkame vôbec. Obal sa hlási v User-Agent (appendUserAgent v ios/capacitor.config.json).
+const IOS_SKRYTE_PLANY = ['online_basic','online_premium'];
+const jeIosApp = req => /FusionAcademyApp/i.test(String((req.headers&&req.headers['user-agent'])||''));
 app.get('/api/membership/plans', async(req,res)=>{
   try{
     let plany = PLANY_NA_PREDAJ();
@@ -13837,6 +13843,7 @@ app.get('/api/membership/plans', async(req,res)=>{
       const c = await cenyClenstva(clenId, id).catch(()=>({auto:p.price, manual:cenaBezObnovy(p.price), stara_cena:false, dohodnuta:false}));
       out[id] = {...p, price:c.auto, price_manual:c.manual, bez_obnovy_prirazka:+(c.manual-c.auto).toFixed(2), stara_cena:c.stara_cena, dohodnuta_cena:c.dohodnuta};
     }
+    if(jeIosApp(req)) for(const id of IOS_SKRYTE_PLANY) delete out[id];
     res.json(out);
   }catch(e){ res.json(PLANY_NA_PREDAJ()); }
 });
@@ -14156,6 +14163,8 @@ app.post('/api/membership/buy', auth, async(req,res)=>{
     const {plan_id, payment_method, use_referral_credit, for_child_id, promo_code} = req.body;
     const plan = planNaPredaj(plan_id);
     if(!plan) return res.status(400).json({error:'Neplatný plán'});
+    if(jeIosApp(req) && IOS_SKRYTE_PLANY.includes(String(plan_id)))
+      return res.status(400).json({error:'Online členstvo sa v appke kúpiť nedá — otvor si fusionacademy.sk v prehliadači.'});
     const u = await q.one(db.users,{_id:req.session.uid}); // parent = payer
     // ── Membership for a child? ────────────────────────────────────────────────
     let memberId = req.session.uid;
@@ -30006,6 +30015,8 @@ seedData().then(backfillDefaultSponsor).then(shopInvoiceBackfill20260904).then(u
 require('./coach')({ app, db, q, Datastore, DATA_DIR, trainerAuth, adminAuth, APP_URL, isTestContact, vencekMimoKonverzie });
 // Natívne push pre iOS obal (appka v App Store) — bez APNS kľúča potichu spí
 const PUSH_IOS = require('./push-ios')({ app, db, q, Datastore, DATA_DIR, auth, adminAuth, nowISO });
+// Hodina do kalendára telefónu (.ics) — pripomienka 2 h vopred aj bez otvorenej appky
+require('./kalendar')({ app, db, q, auth, APP_URL });
 require('./school-outreach')({ app, db, q, Datastore, DATA_DIR, adminAuth, nowISO, APP_URL, sendMail, emailTemplate });
 require('./fusion-ai')({ app, db, q, adminAuth, isTestContact }); // po coach — používa db.coach_contacts
 // Denný plánovač akcií a kampaní — sviatky, víkendy, sezónne okná + upozornenia dopredu (22. 9. 2026)

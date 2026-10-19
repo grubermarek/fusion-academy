@@ -32,6 +32,16 @@ const posledne = f => citaj(f).reduce((a, r) => (r.$$deleted ? delete a[r._id] :
   ]));
   fs.writeFileSync(path.join(DATA, 'settings.db'), riadky(['brezno_extend_20260820', 'online_brezno_20260813', 'brezno_predlzenie_0926', 'retro_confirm_v1', 'noshow_revert_v1', 'classes_default_marek_v1', 'clenstvo_na_ucte_zarovnanie_20261009', 'konto_historia_backfill_20261017']
     .map((x, i) => ({ _id: 'qaPuSet' + i, key: x, value: true, at: '2026-01-01T00:00:00.000Z' }))));
+  const ZAJTRA = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Bratislava' }).format(new Date(Date.now() + 864e5));
+  fs.writeFileSync(path.join(DATA, 'classes.db'), riadky([
+    { _id: 'qaPuHodina00001', name: 'Zumba', category: 'Zumba', location: 'Detva', day_of_week: new Date(ZAJTRA + 'T12:00:00Z').getUTCDay(),
+      time_start: '19:00', time_end: '20:00', capacity: 30, price: 10, emoji: '💃', active: true, instructor: 'Marek Gruber', created_at: '2026-01-01' },
+  ]));
+  fs.writeFileSync(path.join(DATA, 'bookings.db'), riadky([
+    { _id: 'qaPuBk000000001', class_id: 'qaPuHodina00001', class_name: 'Zumba', class_location: 'Detva', class_time_start: '19:00',
+      user_id: 'qaPuKlient00001', user_name: 'Klientka Mobilná', booking_date: ZAJTRA, status: 'confirmed', attendance_status: 'pending',
+      access_method: 'membership', created_at: '2026-10-18T10:00:00.000Z' },
+  ]));
 
   console.log('iOS PUSH — štart servera (bez APNS kľúča, ako na lokále)…');
   const srv = spawn(process.execPath, ['server.js'], { cwd: KOREN,
@@ -98,6 +108,32 @@ const posledne = f => citaj(f).reduce((a, r) => (r.$$deleted ? delete a[r._id] :
     const ff = fs.readFileSync(path.join(KOREN, 'ios', 'fastlane', 'Fastfile'), 'utf8');
     t('fastlane stavia správne bundle ID', ff.includes('ie.zappy.latindancefusion'), '');
     t('fastlane nahráva do TestFlightu', /upload_to_testflight/.test(ff), '');
+    // ── Online členstvo sa v iOS appke nesmie dať kúpiť (Apple chce zaň 30 %) ──
+    const UA = { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 FusionAcademyApp/9.0' };
+    const vPrehliadaci = await (await fetch(BASE + '/api/membership/plans', { headers: { Cookie: cKlient } })).json();
+    const vAppke = await (await fetch(BASE + '/api/membership/plans', { headers: { Cookie: cKlient, ...UA } })).json();
+    t('v prehliadači sa online členstvá ponúkajú', !!vPrehliadaci.online_basic && !!vPrehliadaci.online_premium, Object.keys(vPrehliadaci).join(','));
+    t('v appke online členstvá nie sú', !vAppke.online_basic && !vAppke.online_premium, Object.keys(vAppke).join(','));
+    t('v appke bežné členstvá ostávajú', !!vAppke.bronze && !!vAppke.silver && !!vAppke.gold && !!vAppke.permanentka10, Object.keys(vAppke).join(','));
+    const kupa = await fetch(BASE + '/api/membership/buy', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cKlient, ...UA }, body: JSON.stringify({ plan_id: 'online_basic', payment_method: 'manual' }) });
+    const kupaD = await kupa.json().catch(() => ({}));
+    t('kúpu online členstva z appky server odmietne', kupa.status === 400 && /appke kúpiť nedá/.test(kupaD.error || ''), JSON.stringify(kupaD).slice(0, 120));
+
+    // ── Hodina do kalendára telefónu ──
+    const ics = await fetch(BASE + '/api/kalendar/hodina.ics?booking_id=qaPuBk000000001', { headers: { Cookie: cKlient } });
+    const icsText = await ics.text();
+    t('kalendár sa servíruje ako .ics', ics.status === 200 && /text\/calendar/.test(ics.headers.get('content-type') || ''), String(ics.status) + ' ' + ics.headers.get('content-type'));
+    t('.ics má hlavičku aj udalosť', /BEGIN:VCALENDAR/.test(icsText) && /BEGIN:VEVENT/.test(icsText) && /END:VCALENDAR/.test(icsText), '');
+    t('.ics má správny názov, miesto a čas', /SUMMARY:Zumba — Fusion Academy/.test(icsText) && /LOCATION:Detva/.test(icsText) && /DTSTART;TZID=Europe\/Bratislava:\d{8}T190000/.test(icsText), icsText.split('\r\n').filter(r => /SUMMARY|DTSTART|LOCATION/.test(r)).join(' | '));
+    t('.ics nesie pásmo, inak by čas sedel vedľa', /BEGIN:VTIMEZONE[\s\S]*TZID:Europe\/Bratislava/.test(icsText), '');
+    t('.ics pripomenie hodinu 2 h vopred', /BEGIN:VALARM[\s\S]*TRIGGER:-PT2H/.test(icsText), '');
+    t('hodina trvá podľa rozvrhu (19:00–20:00)', /DTEND;TZID=Europe\/Bratislava:\d{8}T200000/.test(icsText), '');
+    const icsCudzi = await fetch(BASE + '/api/kalendar/hodina.ics?booking_id=qaPuBk000000001', { headers: { Cookie: cAdmin } });
+    t('cudziu rezerváciu do kalendára nepustí', icsCudzi.status === 403, String(icsCudzi.status));
+    t('neprihlásený .ics nedostane', (await fetch(BASE + '/api/kalendar/hodina.ics?booking_id=qaPuBk000000001')).status === 401, '');
+    const dash2 = await (await fetch(BASE + '/client-dashboard')).text();
+    t('nástenka má tlačidlo Do kalendára', /kalendar\/hodina\.ics/.test(dash2) && /Do kalendára/.test(dash2), '');
+
     const ikona = fs.readFileSync(path.join(KOREN, 'ios', 'icons', 'AppIcon-1024.png'));
     t('ikona má 1024×1024', ikona.readUInt32BE(16) === 1024 && ikona.readUInt32BE(20) === 1024, ikona.readUInt32BE(16) + '×' + ikona.readUInt32BE(20));
     t('ikona je bez priehľadnosti (inak ju Apple odmietne)', ikona[25] === 2, 'typ farby ' + ikona[25]);
