@@ -4484,10 +4484,15 @@ async function loadMetaStats(){
     </div>
     <div id="metaAdsTokenBox" class="${d.ads_token_configured?'d-none':''} mt-2">
       <div class="text-muted mb-2" style="font-size:.78rem">
-        Bez tohto tokenu ti čísla v kampaniach musím dopĺňať ručne. S ním sa sťahujú samé:<br>
-        ①&nbsp;<a href="https://business.facebook.com/settings/system-users" target="_blank">Meta Business Settings → Používatelia systému</a> → vyber (alebo vytvor) systémového používateľa priradeného k tomuto reklamnému účtu.<br>
-        ②&nbsp;<b>Vygenerovať token</b> → aplikácia: tvoja Marketing API app → oprávnenia: zaškrtni <b>ads_read</b> → Vygenerovať.<br>
-        ③&nbsp;Skopíruj token (začína <code>EAA...</code>) a vlož sem:
+        Bez tohto tokenu ti čísla v kampaniach musím dopĺňať ručne a Meta nevidí registrácie
+        z appky. Token systémového používateľa <b>nikdy nevyprší</b>, takže toto je raz a dosť:<br>
+        ①&nbsp;<a href="https://business.facebook.com/settings/system-users" target="_blank">Meta Business Settings → Používatelia systému</a> → vyber (alebo vytvor) systémového používateľa.<br>
+        ②&nbsp;<b>Priradiť aktíva</b> → reklamný účet <code>act_51759494</code> (Správa kampaní)
+        <i>aj</i> dataset <code>4085746221555327</code> (plná kontrola). Bez datasetu sa udalosti posielať nedajú.<br>
+        ③&nbsp;<b>Vygenerovať token</b> → aplikácia: <b>Fusion Academy Sync</b> → zaškrtni
+        <b>ads_read</b> aj <b>ads_management</b> → Vygenerovať.
+        Samotné <code>ads_read</code> stačí na čítanie kampaní, ale <b>nie</b> na posielanie udalostí.<br>
+        ④&nbsp;Skopíruj token (začína <code>EAA...</code>) a vlož sem:
       </div>
       <div class="d-flex gap-2">
         <input type="password" id="metaAdsTokenInput" class="form-control form-control-sm" placeholder="EAA...">
@@ -4495,9 +4500,11 @@ async function loadMetaStats(){
       </div>
       <div class="mt-3 pt-2" style="border-top:1px solid rgba(255,255,255,.1)">
         <div class="text-muted mb-2" style="font-size:.78rem">
-          <b>Aby sa token obnovoval sám</b> (stačí raz): v <a href="https://developers.facebook.com/apps/" target="_blank">Meta for Developers</a>
+          <b>Len ak si použil token z Graph Explorera</b> (ten platí 1–2 hodiny): v
+          <a href="https://developers.facebook.com/apps/" target="_blank">Meta for Developers</a>
           → appka <b>Fusion Academy Sync</b> → Nastavenia → Základné → <b>App secret</b> → Zobraziť → skopíruj sem.
-          Appka si potom token predĺži na 60 dní a bude ho sama obnovovať, kým mu zostáva menej než 14 dní.
+          Appka si token predĺži na 60 dní a bude ho obnovovať, kým mu zostáva menej než 14 dní.
+          Pri tokene systémového používateľa toto netreba — ten nevyprší.
         </div>
         <div class="d-flex gap-2">
           <input type="password" id="metaAppSecretInput" class="form-control form-control-sm" placeholder="32 znakov (0-9, a-f)">
