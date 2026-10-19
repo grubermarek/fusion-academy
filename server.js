@@ -25529,19 +25529,24 @@ async function strazcaMerania({upozornit=true}={}){
       const dni=exp ? Math.round((exp-Date.now())/864e5) : null;
       // Token drží aj čítanie kampaní, aj posielanie udalostí do Mety. Keď padne, stíchne
       // oboje naraz — preto sa stupňuje: 14 dní vopred upozorni, 3 dni vopred súrne.
-      if(dbg && dbg.data && dbg.data.is_valid===false)
+      // POZOR: metaGraph pri neplatnom tokene nehádže výnimku, len vráti {error:…}.
+      // Bez tejto vetvy ostalo exp = 0 a strážca z toho 18. 10. usúdil „token bez
+      // expirácie, netreba ho obnovovať" — presný opak pravdy.
+      if(dbg && dbg.error)
+        pridaj('token','Meta odmietla overiť token — appka neposiela udalosti a kampane sa neaktualizujú. Vlož nový token v Marketing → Meta (najlepšie token systémového používateľa, ten nevyprší).', dbg.error.message||'');
+      else if(dbg && dbg.data && dbg.data.is_valid===false)
         pridaj('token','Token pre Metu už NEPLATÍ — appka neposiela Mete udalosti a kampane sa neaktualizujú. Treba vložiť nový v Marketing → Meta.');
       else if(dni!==null && dni<=3)
         pridaj('token','Token pre Metu vyprší o '+(dni<=0?'chvíľu':(dni+' dni'))+' ('+new Date(exp).toLocaleDateString('sk-SK')+'). Potom stíchnu udalosti aj prehľad kampaní.');
       else if(dni!==null && dni<14)
         pridaj('token','Token pre Metu expiruje '+new Date(exp).toLocaleDateString('sk-SK')+' — treba ho obnoviť.');
-      else if(!exp) ok.push('Token pre Metu je bez expirácie (systémový používateľ) — obnovovať ho netreba');
-      else ok.push('Token platí do '+new Date(exp).toLocaleDateString('sk-SK')+' ('+dni+' dní)');
+      else if(dbg && dbg.data && !exp) ok.push('Token pre Metu je bez expirácie (systémový používateľ) — obnovovať ho netreba');
+      else if(exp) ok.push('Token platí do '+new Date(exp).toLocaleDateString('sk-SK')+' ('+dni+' dní)');
       // Predĺžiť sa dá len s app secret. Bez neho denné predlžovanie ticho nerobí nič
       // a token raz jednoducho padne — presne to sa stalo 13. 10. 2026.
       if(exp && dni!==null && dni<30 && !(await getMetaAppSecret()))
         pridaj('token','Token sa nevie predĺžiť sám — v nastaveniach chýba app secret. Buď ho doplň, alebo použi token systémového používateľa, ktorý nikdy nevyprší.');
-    }catch(e){}
+    }catch(e){ pridaj('token','Token sa nepodarilo overiť: '+e.message); }
     try{
       const beziace=await metaAll(tok, META_ACT+'/insights?level=ad&fields=ad_id,ad_name,campaign_id,campaign_name,spend&date_preset=last_3d&limit=200', 5);
       const reklamy=beziace.filter(r=>+r.spend>0);
@@ -25659,7 +25664,11 @@ async function strazcaMerania({upozornit=true}={}){
       sendMail(a.email, '🩺 Meranie reklám: ' + (surne.length===1 ? (NAZVY[surne[0].kod]||surne[0].kod) : surne.length+' nálezy'),
         emailTemplate('Meranie reklám si pýta zásah',
           '<p>Denná kontrola našla toto:</p><ul>'
-          + surne.map(n=>'<li>'+String(n.text).replace(/[<>]/g,'')+'</li>').join('')
+          // Podrobnosť je to najcennejšie na celom maile — Meta v nej doslova píše,
+          // čo jej vadí („Session has expired…"), takže netreba hádať.
+          + surne.map(n=>'<li>'+String(n.text).replace(/[<>]/g,'')
+              +(n.detail?'<br><span style="opacity:.75;font-size:.92em">'+String(n.detail).replace(/[<>]/g,'').slice(0,300)+'</span>':'')
+              +'</li>').join('')
           + '</ul><p>Kým to platí, Meta nevidí, čo sa v appke deje — optimalizuje naslepo a výsledky kampaní v admine budú neúplné.</p>',
           '🩺 Otvoriť meranie', APP_URL+'/admin#marketing'), {priority:1, template:'meranie_alert'}).catch(()=>{});
     }

@@ -33,12 +33,18 @@ const rd = f => { const p = path.join(DATA, f); if (!fs.existsSync(p)) return []
   fs.readFileSync(p, 'utf8').split('\n').filter(Boolean).forEach(l => { try { const o = JSON.parse(l); if (o._id) m.set(o._id, o); } catch (e) {} });
   return [...m.values()]; };
 
-// Falošný Graph API: token je platný, ale vyprší o dva dni, a jedna reklama míňa.
+// Falošný Graph API. Najprv je token platný, ale vyprší o dva dni; po prepnutí
+// TOKEN_MRTVY odpovedá tak, ako Meta odpovedá na vypršaný token — teda chybou,
+// nie výnimkou. Presne na tom sa 18. 10. strážca potkol.
+let TOKEN_MRTVY = false;
+const CHYBA_MRTVY = 'Error validating access token: Session has expired on Monday, 13-Oct-26 10:00:00 PDT.';
 const graf = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
   const J = o => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
   const p = u.pathname.replace(/^\/+/, '');
-  if (p === 'debug_token') return J({ data: { is_valid: true, expires_at: Math.floor(Date.now() / 1000) + 2 * 86400 } });
+  if (p === 'debug_token') return TOKEN_MRTVY
+    ? J({ error: { message: CHYBA_MRTVY, type: 'OAuthException', code: 190 } })
+    : J({ data: { is_valid: true, expires_at: Math.floor(Date.now() / 1000) + 2 * 86400 } });
   if (p === 'act_51759494/insights' && u.searchParams.get('level') === 'ad') return J({ data: [
     { ad_id: '777', ad_name: 'QA reklama', campaign_id: '9007', campaign_name: 'QA kampaň', spend: '4.20' } ] });
   if (p.startsWith('act_51759494/')) return J({ data: [] });
@@ -124,13 +130,28 @@ const graf = http.createServer((req, res) => {
     ok('…a práve majiteľovi', maily.length === 1 && maily[0].to === 'gruber.marek@gmail.com', JSON.stringify((maily[0] || {}).to));
     ok('predmet povie, koľko nálezov', maily.length === 1 && /3 nálezy/.test(maily[0].subject), JSON.stringify((maily[0] || {}).subject));
 
-    console.log('\n4) Neopakuje sa:');
+    console.log('\n4) Mŕtvy token (Meta vráti chybu, nie výnimku):');
+    TOKEN_MRTVY = true;
+    await fetch(BASE + '/api/service/ads-sync', { method: 'POST', headers: { 'x-import-token': TOKEN, 'Content-Type': 'application/json' }, body: '{}' });
+    await sleep(1500);
+    const m2 = await ide('/api/admin/meranie');
+    const nalezy2 = (m2.d && m2.d.stav && m2.d.stav.nalezy) || [];
+    const text2 = nalezy2.map(n => n.text).join(' | ');
+    const ok2 = ((m2.d && m2.d.stav && m2.d.stav.ok) || []).join(' | ');
+    ok('mŕtvy token je nález', /odmietla overiť token/.test(text2), text2);
+    ok('…a NEhlási sa ako „bez expirácie"', !/bez expirácie/.test(ok2), ok2);
+    ok('nález nesie, čo Meta povedala', nalezy2.some(n => n.kod === 'token' && /Session has expired/.test(n.detail || '')),
+      JSON.stringify(nalezy2.filter(n => n.kod === 'token').map(n => n.detail)));
+    const maily2 = rd('mail_log.db').filter(x => x.template === 'meranie_alert');
+    ok('o mŕtvom tokene prišiel mail', maily2.length === 2, JSON.stringify(maily2.map(x => x.subject)));
+
+    console.log('\n5) Neopakuje sa:');
     const oznamovPred = rd('notifications.db').filter(n => n.type === 'meranie').length;
     await fetch(BASE + '/api/service/ads-sync', { method: 'POST', headers: { 'x-import-token': TOKEN, 'Content-Type': 'application/json' }, body: '{}' });
     await sleep(1500);
-    ok('druhá kontrola v ten istý deň neupozorní znova',
+    ok('tretia kontrola v ten istý deň neupozorní znova',
       rd('notifications.db').filter(n => n.type === 'meranie').length === oznamovPred
-      && rd('mail_log.db').filter(x => x.template === 'meranie_alert').length === 1,
+      && rd('mail_log.db').filter(x => x.template === 'meranie_alert').length === 2,
       'oznamy ' + oznamovPred + ' → ' + rd('notifications.db').filter(n => n.type === 'meranie').length);
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.stack);
