@@ -57,10 +57,10 @@ const rd = f => { const p = path.join(DATA, f); if (!fs.existsSync(p)) return []
   ok('admin: Peniaze v menu, Výplaty trénerov a Výplaty provízií už nie sú samostatné položky', /Peniaze<\/span>/.test(adm) && !/<i class="bi bi-wallet2 me-2"><\/i>Výplaty trénerov<\/a>/.test(adm) && !/Výplaty provízií<\/a>/.test(adm));
   ok('admin: staré položky Financie/Účtovníctvo/Predaje&faktúry/Platby v menu preč', !/<i class="bi bi-graph-up me-2"><\/i><span style="color:#C9A24C;font-weight:700">Financie<\/span>/.test(adm) && !/onclick="show\('payments'\)"/.test(adm) && !/show\('predaje'\)"><i class="bi bi-cash-stack/.test(adm));
   const huby = (adm.match(/class="pen-hub"/g) || []).length;
-  ok('admin: hub Peniaze v 10 sekciách (prehľad, predaje, faktúry, refundy, dlžníci, predaj, výplaty, provízie, účtovníctvo, pre účtovníčku)', huby === 10, String(huby));
+  ok('admin: hub Peniaze v 11 sekciách (prehľad, predaje, zdravie firmy, faktúry, refundy, dlžníci, predaj, výplaty, provízie, účtovníctvo, pre účtovníčku)', huby === 11, String(huby));
   ok('admin: žiadne duplicitné lišty pen-tabs/pen-sub', !/adm-tabs pen-tabs|adm-tabs pen-sub/.test(adm));
   const penSecs = [...adm.matchAll(/\{sec:'([a-z]+)',\s+ic:/g)].map(m => m[1]);
-  ok('admin: PEN_TABS má všetkých 10 záložiek', ['finance','predaje','invoices','refunds','failed','sale','payouts','commissions','accounting','uctovnicka'].every(x => penSecs.includes(x)), penSecs.join(','));
+  ok('admin: PEN_TABS má všetkých 11 záložiek', ['finance','predaje','zdravie','invoices','refunds','failed','sale','payouts','commissions','accounting','uctovnicka'].every(x => penSecs.includes(x)), penSecs.join(','));
   ok('admin: hub sa kreslí zo show(); hotovosť u trénerov a kontrola predajov majú obrazovku', /if\(PEN_SECS\.has\(sec\)\) renderPenHub\(sec\)/.test(adm) && /async function loadCashAll\(/.test(adm) && /async function loadSalesHealth\(/.test(adm));
   ok('admin: mŕtve sekcie preč (payments, orders, bookings)', !/id="s-payments"/.test(adm) && !/id="s-orders"/.test(adm) && !/id="s-bookings"/.test(adm) && !/loadAdminBookings|function loadPayments/.test(adm));
   ok('admin: loadOverview preč', !/loadOverview/.test(adm));

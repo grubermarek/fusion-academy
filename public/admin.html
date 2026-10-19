@@ -2100,6 +2100,49 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
     </div>
   </div>
 
+  <!-- ZDRAVIE FIRMY — EBITDA, čistý výsledok, bod zvratu, fixné náklady (Marek 19. 10.) -->
+  <div class="section" id="s-zdravie">
+    <div class="pen-hub"></div>
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
+      <h4 class="fw-bold mb-0">🩺 Zdravie firmy</h4>
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <div class="btn-group btn-group-sm" id="zdGran">
+          <button class="btn btn-warning" data-g="month" onclick="zdSetGran('month')">Mesiac</button>
+          <button class="btn btn-outline-warning" data-g="quarter" onclick="zdSetGran('quarter')">Štvrťrok</button>
+          <button class="btn btn-outline-warning" data-g="year" onclick="zdSetGran('year')">Rok</button>
+        </div>
+        <button class="btn btn-sm btn-outline-warning" onclick="zdShift(-1)"><i class="bi bi-chevron-left"></i></button>
+        <div class="text-center" style="min-width:150px"><div class="fw-bold" id="zdPeriodLabel" style="color:#C9A24C">—</div><div class="text-muted" style="font-size:.68rem" id="zdPeriodSub"></div></div>
+        <button class="btn btn-sm btn-outline-warning" id="zdNext" onclick="zdShift(1)"><i class="bi bi-chevron-right"></i></button>
+      </div>
+    </div>
+    <p class="text-muted small mb-3">EBITDA = tržby − refundy − variabilné náklady − fixné prevádzkové náklady. Pod EBITDA idú odpisy, úroky a dane → čistý zisk. Čo appka nevie (nájom štúdia, auto, softvér…), dopíš dole do fixných nákladov — rozpočítajú sa do každého obdobia.</p>
+    <div class="row g-2 mb-3" id="zdKpis"></div>
+    <div class="row g-3 mb-3">
+      <div class="col-lg-7"><div class="card bg-dark border-secondary h-100"><div class="card-body">
+        <h6 class="fw-bold mb-2"><i class="bi bi-list-columns-reverse me-2 text-warning"></i>Výkaz za obdobie</h6>
+        <div id="zdVykaz" class="small text-muted">Načítavam…</div>
+      </div></div></div>
+      <div class="col-lg-5"><div class="card bg-dark border-secondary h-100"><div class="card-body">
+        <h6 class="fw-bold mb-2"><i class="bi bi-heart-pulse me-2 text-warning"></i>Semafor</h6>
+        <div id="zdSemafor" class="small text-muted">Načítavam…</div>
+      </div></div></div>
+    </div>
+    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2"><h6 class="fw-bold mb-0"><i class="bi bi-graph-up me-2 text-warning"></i>Posledných 12 mesiacov — čisté tržby, náklady, EBITDA</h6><span class="text-muted" style="font-size:.7rem" id="zdSeriaPozn"></span></div>
+      <canvas id="zdChart" height="90"></canvas>
+    </div></div>
+    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+        <div><h6 class="fw-bold mb-0"><i class="bi bi-building me-2 text-warning"></i>Fixné náklady firmy</h6>
+          <div class="text-muted" style="font-size:.7rem">Sumy, ktoré appka nemá odkiaľ vedieť. Mesačné alebo ročné; „od / do“ keď náklad vznikol alebo skončil. Odpisy, úroky a dane idú pod EBITDA.</div></div>
+        <div class="d-flex gap-2"><button class="btn btn-sm btn-outline-light" onclick="zdFixAdd()"><i class="bi bi-plus-lg"></i> Riadok</button><button class="btn btn-sm btn-warning" onclick="zdFixSave()"><i class="bi bi-check-lg"></i> Uložiť náklady</button></div>
+      </div>
+      <div class="table-responsive"><table class="table table-dark table-sm align-middle mb-1" style="font-size:.8rem"><thead><tr style="font-size:.66rem;color:#999"><th>Názov</th><th>Kategória</th><th class="text-end">Suma</th><th>Perióda</th><th>Od</th><th>Do</th><th class="text-end">V období</th><th></th></tr></thead><tbody id="zdFixBody"></tbody></table></div>
+      <div class="text-muted" style="font-size:.68rem">Palivo (km × spotreba × cena LPG) a hodinové nájmy miest sa rátajú samy z rozvrhu — nastavenie je v Prehľade pri „Mestá — náklady a zisk“. Výplaty trénerov, reklama, poplatky Stripe, refundy a náklady venčekov sa berú z appky.</div>
+    </div></div>
+  </div>
+
   <!-- PRE ÚČTOVNÍČKU — mesačný balík súborov (Peniaze) -->
   <div class="section" id="s-uctovnicka">
     <div class="pen-hub"></div>
@@ -2707,7 +2750,7 @@ const SECTION_GROUP={attendance:'manage',sale:'reports',
   leads:'manage',crm:'manage',tasks:'manage',winback:'manage',memberships:'manage',staff:'manage',classes:'manage',privatehours:'manage',kiosk:'manage',products:'manage',rentals:'manage',articles:'manage',
   marketing:'marketing',campaigns:'marketing',planovac:'marketing',outreach:'marketing',automation:'marketing',promos:'marketing',churn:'marketing',
   dnes:'manage',predaje:'reports',  sutaze:'marketing',venceky:'manage',vecer:'manage',kids:'manage',eventy:'manage',fusionai:'reports',bizrank:'reports',finance:'reports',accounting:'reports',invoices:'reports',refunds:'reports',failed:'reports',transactions:'reports',funnel:'reports',retention:'reports',points:'reports',leaderboard:'reports',classhistory:'reports',tips:'reports',tasktracker:'reports',trainers:'reports',payouts:'reports',alerts:'reports',exports:'reports',audit:'reports',
-  partners:'partners',addpartner:'partners',commissions:'reports',uctovnicka:'reports'};
+  partners:'partners',addpartner:'partners',commissions:'reports',uctovnicka:'reports',zdravie:'reports'};
 function selectGroup(g){
   // Nový sidebar: skupina aktívnej sekcie sa otvorí (zbalené ostatné nechávame tak)
   const grp=document.querySelector('.grp2[data-grp="'+g+'"]');
@@ -3159,6 +3202,7 @@ function show(sec){
   if(sec==='trainers')initTrainers();
   if(sec==='payouts'){ initPayouts(); loadAdminTips(); }
   if(sec==='uctovnicka')loadUctovnicka();
+  if(sec==='zdravie')initZdravie();
   if(sec==='refunds')loadRefunds();
   if(sec==='failed'){loadFailed();loadVencekDlznici();}
   if(sec==='promos')loadPromos();
@@ -3254,6 +3298,7 @@ const PEN_TABS=[
   {grp:'Prehľad', items:[
     {sec:'finance',     ic:'📊', t:'Prehľad',            d:'Tržby, náklady a výsledok, Stripe, mestá, aktívne členstvá'},
     {sec:'predaje',     ic:'💰', t:'Predaje',            d:'Každý predaj — členstvá, vstupy, vstupenky, e-shop, venčeky'},
+    {sec:'zdravie',     ic:'🩺', t:'Zdravie firmy',      d:'EBITDA, čistý výsledok, bod zvratu a fixné náklady'},
   ]},
   {grp:'Doklady', items:[
     {sec:'invoices',    ic:'🧾', t:'Faktúry',            d:'Vydané faktúry, dobropisy, ISDOC a nová faktúra'},
@@ -3294,6 +3339,114 @@ async function penFailedCount(){
   _penFailed=(d&&!d.error)?(+d.count||0):0;
   const b=document.getElementById('failedBadge'); if(b){ if(_penFailed>0){ b.textContent=_penFailed; b.style.display='inline'; } else b.style.display='none'; }
   const c=document.getElementById('penFailedCnt'); if(c){ c.className=_penFailed>0?'pen-cnt':''; c.textContent=_penFailed>0?_penFailed:''; }
+}
+// ── Zdravie firmy — EBITDA, čistý výsledok, bod zvratu, fixné náklady (Marek 19. 10.) ──
+let _zdGran='month', _zdAnchor=null, _zdData=null, _zdChart=null, _zdFix=null, _zdInit=false;
+function _zdRange(){
+  const a=_zdAnchor||new Date(); const y=a.getFullYear(), m=a.getMonth();
+  if(_zdGran==='year') return { from:y+'-01-01', to:y+'-12-31', label:String(y) };
+  if(_zdGran==='quarter'){ const q=Math.floor(m/3); const st=new Date(y,q*3,1), en=new Date(y,q*3+3,0); return { from:_fmtD(st), to:_fmtD(en), label:(q+1)+'. štvrťrok '+y }; }
+  const st=new Date(y,m,1), en=new Date(y,m+1,0); return { from:_fmtD(st), to:_fmtD(en), label:_periodTitle(st,'month') };
+}
+function zdSetGran(g){ _zdGran=g; document.querySelectorAll('#zdGran [data-g]').forEach(b=>{ const on=b.dataset.g===g; b.classList.toggle('btn-warning',on); b.classList.toggle('btn-outline-warning',!on); }); _zdAnchor=new Date(); loadZdravie(); }
+function zdShift(n){ const a=_zdAnchor||new Date(); const step=_zdGran==='year'?12:(_zdGran==='quarter'?3:1); const nx=new Date(a.getFullYear(), a.getMonth()+n*step, 1); if(nx>new Date()) return; _zdAnchor=nx; loadZdravie(); }
+function initZdravie(){ if(!_zdInit){ _zdInit=true; _zdAnchor=new Date(); } loadZdravie(); }
+const _zdE=x=>(+x||0).toFixed(2).replace('.',',')+' €';
+async function loadZdravie(){
+  const r=_zdRange();
+  document.getElementById('zdPeriodLabel').textContent=r.label;
+  document.getElementById('zdPeriodSub').textContent=fmtDate(r.from)+' – '+fmtDate(r.to);
+  const nx=document.getElementById('zdNext'); if(nx){ const a=_zdAnchor||new Date(); const step=_zdGran==='year'?12:(_zdGran==='quarter'?3:1); nx.disabled=new Date(a.getFullYear(),a.getMonth()+step,1)>new Date(); }
+  const d=await api('/api/admin/zdravie?from='+r.from+'&to='+r.to).catch(()=>null);
+  if(!d||!d.ok){ document.getElementById('zdVykaz').innerHTML='<div class="text-danger">Chyba: '+escHtml((d&&d.error)||'?')+'</div>'; return; }
+  _zdData=d; if(!_zdFix) _zdFix=d.fixne.riadky.map(x=>({id:x.id,nazov:x.nazov,kat:x.kat,suma:x.suma,perioda:x.perioda,od:x.od||'',do:x.do||'',pozn:x.pozn||''}));
+  renderZdravie(); renderZdFix();
+  // 12-mesačný trend osobitne (12 prepočtov na serveri)
+  const seriaPozn=document.getElementById('zdSeriaPozn'); if(seriaPozn) seriaPozn.textContent='počítam trend…';
+  const ds=await api('/api/admin/zdravie?from='+r.from+'&to='+r.to+'&series=1').catch(()=>null);
+  if(ds&&ds.ok&&ds.seria){ renderZdChart(ds.seria); if(seriaPozn) seriaPozn.textContent='náklady = refundy + variabilné + fixné prevádzkové'; }
+}
+function renderZdravie(){
+  const d=_zdData, v=d.vysledok, t=d.trzby, va=d.variabilne, f=d.fixne, z=d.zvrat;
+  const col=x=>x>0.004?'#4ade80':(x<-0.004?'#e57373':'#aaa');
+  const kpi=(l,val,sub,c)=>'<div class="col-6 col-md-4 col-xl-2"><div class="card bg-dark border-secondary h-100"><div class="card-body py-2 px-3"><div class="small text-muted">'+l+'</div><div class="fs-5 fw-bold" style="color:'+(c||'#EAE3D5')+'">'+val+'</div><div class="text-muted" style="font-size:.68rem">'+(sub||'')+'</div></div></div></div>';
+  document.getElementById('zdKpis').innerHTML=
+     kpi('Čisté tržby', _zdE(t.ciste), 'hrubo '+_zdE(t.hrubo)+(t.refundy?' · refundy −'+_zdE(t.refundy):''), '#C9A24C')
+    +kpi('EBITDA', _zdE(v.ebitda), (v.marza_ebitda!=null?'marža '+String(v.marza_ebitda).replace('.',',')+' %':'')+' · '+_zdE(v.ebitda_mesacne)+' / mes.', col(v.ebitda))
+    +kpi('Čistý výsledok', _zdE(v.cisty), 'po odpisoch, úrokoch a daniach', col(v.cisty))
+    +kpi('Hrubá marža', _zdE(v.hruba_marza), (v.marza_hruba!=null?String(v.marza_hruba).replace('.',',')+' % z tržieb':'')+' · po variabilných', col(v.hruba_marza))
+    +kpi('Fixné náklady / mes.', _zdE(z.fixne_mesacne), f.nevyplnene?'<span style="color:#e0a656">'+f.nevyplnene+' riadkov bez sumy</span>':'všetky riadky vyplnené', '#7ec8e3')
+    +kpi('Bod zvratu', z.trzba_potrebna_mesacne!=null?_zdE(z.trzba_potrebna_mesacne)+' / mes.':'—', 'tržba, pri ktorej je EBITDA 0 · variabilné '+String(z.podiel_variabilnych).replace('.',',')+' % z tržieb', '#e0a656');
+  const KAT={memberships:'Členstvá',passes:'Permanentky',entries:'Vstupy a permanentky',single_entry:'Jednorazové vstupy',private:'Súkromné hodiny',events:'Vstupenky na eventy',merch:'E-shop / merch',venceky:'Venčeky',kids:'Zumba Kids',other:'Ostatné'};
+  const pct=x=>t.ciste>0?'<span class="text-muted" style="font-size:.68rem">'+(x/t.ciste*100).toFixed(1).replace('.',',')+' %</span>':'';
+  const r=(l,x,opts)=>{ opts=opts||{}; const neg=opts.neg; const txt=(neg||x<0?'−':'')+_zdE(Math.abs(x)); const c=opts.c||(neg?(x>0?'#e57373':'#777'):'#EAE3D5');
+    return '<tr'+(opts.bold?' style="border-top:2px solid #C9A24C"':'')+'><td style="'+(opts.ind?'padding-left:'+(opts.ind*14+6)+'px;':'')+(opts.bold?'font-weight:700':'color:'+(opts.ind?'#aaa':'#EAE3D5'))+'">'+l+(opts.sub?'<div style="font-size:.66rem;opacity:.65;font-weight:400">'+opts.sub+'</div>':'')+'</td><td class="text-end'+(opts.bold?' fw-bold':'')+'" style="white-space:nowrap;color:'+c+'">'+txt+'</td><td class="text-end">'+pct(x)+'</td></tr>'; };
+  const kats=Object.entries(t.kategorie).sort((a,b)=>b[1]-a[1]).map(([k,x])=>r(KAT[k]||k, x, {ind:1})).join('');
+  const fixKat={}; for(const x of f.riadky) if(!x.pod_ebitda && x.suma_obdobie>0) fixKat[x.kat]=(fixKat[x.kat]||0)+x.suma_obdobie;
+  const fixRows=Object.entries(fixKat).sort((a,b)=>b[1]-a[1]).map(([k,x])=>r(f.kategorie[k]||k, x, {neg:true, ind:1})).join('');
+  const treneri=(va.vyplaty_treneri||[]).reduce((m,x)=>{ m[x.trainer]=(m[x.trainer]||0)+x.total; return m; },{});
+  const trenSub=Object.entries(treneri).map(([n,x])=>escHtml(n)+' '+_zdE(x)).join(' · ');
+  document.getElementById('zdVykaz').innerHTML='<table class="table table-dark table-sm mb-2" style="font-size:.82rem"><tbody>'
+    +r('Tržby (hrubo)', t.hrubo, {c:'#C9A24C'})+kats
+    +r('− Refundy', t.refundy, {neg:true})
+    +r('= Čisté tržby', t.ciste, {bold:true, c:'#C9A24C'})
+    +r('− Výplaty trénerov', va.vyplaty, {neg:true, ind:1, sub:trenSub})
+    +r('− Reklama (Meta)', va.reklama, {neg:true, ind:1})
+    +r('− Poplatky Stripe', va.stripe_poplatky, {neg:true, ind:1, sub:va.stripe_dostupne?'':'Stripe teraz nedostupný'})
+    +r('− Palivo (cesty do miest)', va.cesta, {neg:true, ind:1, sub:(va.km||0).toFixed(0)+' km'})
+    +r('− Nájmy sál po hodinách', va.najom_hodinovy, {neg:true, ind:1})
+    +r('− Náklady venčekov', va.venceky, {neg:true, ind:1, sub:'kvety, diplomy, DJ, fotograf'})
+    +r('= Hrubá marža', v.hruba_marza, {bold:true, c:col(v.hruba_marza)})
+    +(fixRows||r('− Fixné prevádzkové náklady', 0, {neg:true, ind:1, sub:'<span style="color:#e0a656">zatiaľ bez súm — doplň dole</span>'}))
+    +r('= EBITDA', v.ebitda, {bold:true, c:col(v.ebitda)})
+    +Object.entries(f.pod_ebitda).map(([k,x])=>r('− '+(f.kategorie[k]||k), x, {neg:true, ind:1})).join('')
+    +r('= Čistý výsledok', v.cisty, {bold:true, c:col(v.cisty)})
+    +'</tbody></table>'
+    +(d.banka?'<div class="text-muted" style="font-size:.7rem">Stripe za obdobie: čisté '+_zdE(d.banka.ciste)+' · na účte '+_zdE(d.banka.vyplatene)+' · čaká '+_zdE(d.banka.caka)+'.</div>':'');
+  // semafor
+  const sem=[]; const S=(stav,l,txt)=>sem.push({stav,l,txt});
+  const me=v.marza_ebitda;
+  if(me==null) S('grey','Marža EBITDA','bez tržieb v období');
+  else S(me>=20?'green':(me>=5?'amber':'red'),'Marža EBITDA '+String(me).replace('.',',')+' %', me>=20?'zdravá — firma si tvorí rezervu':(me>=5?'tenká — každý výpadok tržieb ju zmaže':'firma v období prerába'));
+  if(z.trzba_potrebna_mesacne!=null && z.fixne_mesacne>0){ const kr=v.trzba_mesacne/z.trzba_potrebna_mesacne*100; S(kr>=120?'green':(kr>=100?'amber':'red'),'Bod zvratu '+kr.toFixed(0)+' %','mesačná tržba '+_zdE(v.trzba_mesacne)+' vs. potrebná '+_zdE(z.trzba_potrebna_mesacne)); }
+  else S('grey','Bod zvratu', f.nevyplnene?'doplň fixné náklady, inak je bod zvratu nulový':'fixné náklady sú nulové');
+  const vyplP=t.ciste>0?va.vyplaty/t.ciste*100:0; S(vyplP<=35?'green':(vyplP<=50?'amber':'red'),'Výplaty trénerov '+vyplP.toFixed(0)+' % tržieb', vyplP<=35?'v norme':'vysoký podiel — hodiny s malou účasťou');
+  const rekP=t.ciste>0?va.reklama/t.ciste*100:0; S(rekP<=15?'green':(rekP<=25?'amber':'red'),'Reklama '+rekP.toFixed(0)+' % tržieb', rekP<=15?'udržateľné':'drahé získavanie — pozri CAC/LTV v Marketingu');
+  const refP=t.hrubo>0?t.refundy/t.hrubo*100:0; S(refP<=3?'green':(refP<=7?'amber':'red'),'Refundy '+refP.toFixed(1).replace('.',',')+' % tržieb', refP<=3?'v norme':'veľa vrátených platieb — pozri dôvody v Refundáciách');
+  if(f.nevyplnene) S('amber','Fixné náklady neúplné', f.nevyplnene+' riadkov bez sumy — EBITDA je zatiaľ nadhodnotená');
+  const C={green:'#4ade80',amber:'#e0a656',red:'#e57373',grey:'#777'};
+  document.getElementById('zdSemafor').innerHTML=sem.map(x=>'<div class="d-flex gap-2 py-1" style="border-bottom:1px solid #2a2a2a"><span style="width:10px;height:10px;border-radius:99px;background:'+C[x.stav]+';margin-top:5px;flex:none"></span><div><div class="fw-semibold" style="color:#EAE3D5">'+x.l+'</div><div class="text-muted" style="font-size:.72rem">'+x.txt+'</div></div></div>').join('')
+    +'<div class="text-muted mt-2" style="font-size:.66rem">Hranice: EBITDA marža 20 % / 5 %, výplaty 35 % / 50 %, reklama 15 % / 25 %, refundy 3 % / 7 %. Sú to orientačné pravidlá pre malú tanečnú školu, nie účtovný štandard.</div>';
+}
+function renderZdChart(seria){
+  const ctx=document.getElementById('zdChart'); if(!ctx) return;
+  if(_zdChart) _zdChart.destroy();
+  const lbl=seria.map(x=>{ const [y,m]=x.m.split('-'); return ['jan','feb','mar','apr','máj','jún','júl','aug','sep','okt','nov','dec'][+m-1]+' '+y.slice(2); });
+  _zdChart=new Chart(ctx,{data:{labels:lbl,datasets:[
+    {type:'bar',label:'Čisté tržby',data:seria.map(x=>x.trzby),backgroundColor:'rgba(201,162,76,.45)',borderColor:'#C9A24C',borderWidth:1,borderRadius:4},
+    {type:'bar',label:'Náklady',data:seria.map(x=>x.naklady),backgroundColor:'rgba(229,115,115,.35)',borderColor:'#e57373',borderWidth:1,borderRadius:4},
+    {type:'line',label:'EBITDA',data:seria.map(x=>x.ebitda),borderColor:'#4ade80',backgroundColor:'#4ade80',tension:.3,pointRadius:3}]},
+    options:{responsive:true,plugins:{legend:{labels:{color:'#8B8271'}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y.toFixed(2)+' €'}}},scales:{y:{ticks:{color:'#8B8271',callback:v=>v+' €'}},x:{ticks:{color:'#8B8271'}}}}});
+}
+function renderZdFix(){
+  const body=document.getElementById('zdFixBody'); if(!body||!_zdFix||!_zdData) return;
+  const kat=_zdData.fixne.kategorie; const obd=Object.fromEntries((_zdData.fixne.riadky||[]).map(x=>[x.id,x.suma_obdobie]));
+  const inp=(i,f,v,w,type)=>'<input type="'+(type||'text')+'" value="'+escHtml(v==null?'':String(v))+'" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:'+w+'px;color-scheme:dark" oninput="_zdFix['+i+'].'+f+'=this.value">';
+  body.innerHTML=_zdFix.map((r,i)=>'<tr'+(!(+String(r.suma).replace(',','.')>0)?' style="background:rgba(224,166,86,.06)"':'')+'>'
+    +'<td>'+inp(i,'nazov',r.nazov,230)+'</td>'
+    +'<td><select class="form-select form-select-sm bg-dark text-light border-secondary" style="width:170px" onchange="_zdFix['+i+'].kat=this.value">'+Object.entries(kat).map(([k,l])=>'<option value="'+k+'"'+(r.kat===k?' selected':'')+'>'+l+'</option>').join('')+'</select></td>'
+    +'<td class="text-end">'+inp(i,'suma',r.suma,95)+'</td>'
+    +'<td><select class="form-select form-select-sm bg-dark text-light border-secondary" style="width:100px" onchange="_zdFix['+i+'].perioda=this.value"><option value="mesiac"'+(r.perioda!=='rok'?' selected':'')+'>mesačne</option><option value="rok"'+(r.perioda==='rok'?' selected':'')+'>ročne</option></select></td>'
+    +'<td>'+inp(i,'od',r.od,135,'date')+'</td><td>'+inp(i,'do',r.do,135,'date')+'</td>'
+    +'<td class="text-end text-muted" style="white-space:nowrap">'+(obd[r.id]!=null?_zdE(obd[r.id]):'<span style="opacity:.5">po uložení</span>')+'</td>'
+    +'<td><button class="btn btn-sm btn-outline-danger py-0 px-2" onclick="_zdFix.splice('+i+',1);renderZdFix()" title="Zmazať riadok"><i class="bi bi-x"></i></button></td></tr>').join('')
+    ||'<tr><td colspan="8" class="text-muted text-center py-3">Žiadne fixné náklady — pridaj riadok.</td></tr>';
+}
+function zdFixAdd(){ if(!_zdFix) _zdFix=[]; _zdFix.push({id:'', nazov:'', kat:'ostatne', suma:0, perioda:'mesiac', od:'', do:'', pozn:''}); renderZdFix(); }
+async function zdFixSave(){
+  const riadky=(_zdFix||[]).filter(r=>String(r.nazov||'').trim());
+  const r=await api('/api/admin/naklady-fixne',{method:'PUT', body:{riadky}});
+  if(r&&r.ok){ showToast('Fixné náklady uložené','success'); _zdFix=null; loadZdravie(); } else showToast('Chyba: '+((r&&r.error)||'?'),'error');
 }
 // Pre účtovníčku — mesačný balík (rovnaké súbory, aké boli v Exportoch, plus pásky a uzávierka)
 function loadUctovnicka(){

@@ -15164,6 +15164,129 @@ app.put('/api/admin/mesta-naklady', adminAuth, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ═══ ZDRAVIE FIRMY — EBITDA a čistý výsledok (Marek 19. 10. 2026) ══════════════════════════
+// Tržby a variabilné náklady appka pozná (revenueEvents, refundy, Stripe poplatky, výplaty, reklama,
+// venčeky, palivo a hodinové nájmy z mestaZisk). Fixné náklady (nájom štúdia, auto, softvér, účtovníctvo…)
+// appka nemá odkiaľ vedieť — vedú sa v settings naklady_fixne a do obdobia sa rozpočítavajú po dňoch.
+// EBITDA = tržby − refundy − variabilné − fixné prevádzkové; pod EBITDA idú odpisy, úroky a dane → čistý zisk.
+const FIX_KATEGORIE = { priestory:'Priestory a energie', auto:'Auto', softver:'Softvér a služby', ludia:'Ľudia a mzdy',
+  marketing:'Marketing (ostatné)', sprava:'Správa firmy', ostatne:'Ostatné', odpisy:'Odpisy', uroky:'Úroky', dane:'Dane' };
+const FIX_POD_EBITDA = new Set(['odpisy','uroky','dane']);
+// Predvyplnené riadky s nulou — Marek doplní sumy v admine (čo appka nevie, neodhaduje)
+const FIX_DEFAULT = [
+  { id:'najom_detva',   nazov:'Nájom štúdia Detva',                      kat:'priestory', suma:0, perioda:'mesiac' },
+  { id:'energie',       nazov:'Energie a voda (štúdio)',                 kat:'priestory', suma:0, perioda:'mesiac' },
+  { id:'auto_poistenie',nazov:'Auto — PZP a havarijné poistenie',        kat:'auto',      suma:0, perioda:'rok' },
+  { id:'auto_servis',   nazov:'Auto — servis, pneumatiky, STK',          kat:'auto',      suma:0, perioda:'rok' },
+  { id:'auto_znamka',   nazov:'Auto — diaľničná známka',                 kat:'auto',      suma:0, perioda:'rok' },
+  { id:'sw_railway',    nazov:'Railway (hosting appky a media servera)', kat:'softver',   suma:0, perioda:'mesiac' },
+  { id:'sw_brevo',      nazov:'Brevo (e-maily)',                         kat:'softver',   suma:0, perioda:'mesiac' },
+  { id:'sw_apple',      nazov:'Apple Developer Program',                 kat:'softver',   suma:0, perioda:'rok' },
+  { id:'sw_ostatne',    nazov:'Ostatný softvér (Canva, Postiz, domény…)', kat:'softver',  suma:0, perioda:'mesiac' },
+  { id:'uctovnictvo',   nazov:'Účtovníctvo',                             kat:'sprava',    suma:0, perioda:'mesiac' },
+  { id:'telefon',       nazov:'Telefón a internet',                      kat:'sprava',    suma:0, perioda:'mesiac' },
+  { id:'odvody_majitel',nazov:'Odvody / odmena majiteľa',                kat:'ludia',     suma:0, perioda:'mesiac' },
+  { id:'odpisy_auto',   nazov:'Odpisy auta',                             kat:'odpisy',    suma:0, perioda:'rok' },
+  { id:'uroky',         nazov:'Úroky z úveru / lízingu',                 kat:'uroky',     suma:0, perioda:'mesiac' },
+  { id:'dan',           nazov:'Daň z príjmu (odhad)',                    kat:'dane',      suma:0, perioda:'rok' },
+];
+async function nakladyFixne(){
+  const s = await q.one(db.settings,{key:'naklady_fixne'});
+  const rows = (s && Array.isArray(s.value)) ? s.value : null;
+  return rows ? rows : FIX_DEFAULT.map(r=>({ ...r, od:null, do:null, pozn:'' }));
+}
+// Rozpočítanie fixného nákladu na obdobie od–do (vrátane): mesačná suma × dni / priemerný mesiac
+function fixnaSuma(r, from, to){
+  const mes = r.perioda==='rok' ? (+r.suma||0)/12 : (+r.suma||0);
+  const od = r.od && String(r.od)>from ? String(r.od).slice(0,10) : from;
+  const doo = r.do && String(r.do)<to ? String(r.do).slice(0,10) : to;
+  if(od>doo) return 0;
+  const dni = Math.round((Date.parse(doo+'T12:00:00Z')-Date.parse(od+'T12:00:00Z'))/864e5)+1;
+  return +(mes*dni/30.4375).toFixed(2);
+}
+const zdravieCache = new Map();
+async function zdravieFirmy(from, to){
+  const k = from+'|'+to; const c = zdravieCache.get(k);
+  if(c && Date.now()-c.at < 5*60*1000) return c.data;
+  const udalosti = (await revenueEvents()).filter(e=>{ const d=String(e.d).slice(0,10); return d>=from && d<=to; });
+  const trzba = +udalosti.reduce((s,e)=>s+(+e.a||0),0).toFixed(2);
+  const kat = {}; for(const e of udalosti) kat[e.cat||'other'] = +((kat[e.cat||'other']||0)+(+e.a||0)).toFixed(2);
+  const refundy = +(await q.find(db.refunds,{})).filter(r=>{ const d=String(r.created_at||'').slice(0,10); return d>=from && d<=to; }).reduce((s,r)=>s+(+r.amount||0),0).toFixed(2);
+  const nk = await nakladyObdobia(from, to, udalosti, refundy);
+  const mz = await mestaZisk(from, to).catch(()=>null);
+  const cesta = mz ? +mz.mesta.reduce((s,m)=>s+(+m.naklady.cestovne||0),0).toFixed(2) : 0;
+  const najomHod = mz ? +mz.mesta.reduce((s,m)=>s+(+m.naklady.najom||0),0).toFixed(2) : 0;
+  const km = mz ? +mz.mesta.reduce((s,m)=>s+(+m.naklady.km||0),0).toFixed(1) : 0;
+  const fix = await nakladyFixne();
+  const fixRows = fix.map(r=>({ ...r, suma_obdobie:fixnaSuma(r, from, to), pod_ebitda:FIX_POD_EBITDA.has(r.kat) }));
+  const fixPrev = +fixRows.filter(r=>!r.pod_ebitda).reduce((s,r)=>s+r.suma_obdobie,0).toFixed(2);
+  const podEbitda = {}; for(const r of fixRows.filter(r=>r.pod_ebitda)) podEbitda[r.kat] = +((podEbitda[r.kat]||0)+r.suma_obdobie).toFixed(2);
+  const fixPod = +Object.values(podEbitda).reduce((s,x)=>s+x,0).toFixed(2);
+  const variabilne = { stripe_poplatky:nk.naklady.stripe_poplatky, vyplaty:nk.naklady.vyplaty, reklama:nk.naklady.reklama, venceky:nk.naklady.venceky, cesta, najom_hodinovy:najomHod };
+  const varSpolu = +Object.values(variabilne).reduce((s,x)=>s+(+x||0),0).toFixed(2);
+  const ciste = +(trzba-refundy).toFixed(2);
+  const hruba = +(ciste-varSpolu).toFixed(2);
+  const ebitda = +(hruba-fixPrev).toFixed(2);
+  const cisty = +(ebitda-fixPod).toFixed(2);
+  const dni = Math.round((Date.parse(to+'T12:00:00Z')-Date.parse(from+'T12:00:00Z'))/864e5)+1;
+  const mesiacov = dni/30.4375;
+  const fixMesacne = +fixRows.filter(r=>!r.pod_ebitda && (!r.do || String(r.do)>=today())).reduce((s,r)=>s+(r.perioda==='rok'?(+r.suma||0)/12:(+r.suma||0)),0).toFixed(2);
+  // bod zvratu: fixné / (1 − podiel variabilných na čistej tržbe)
+  const varPodiel = ciste>0 ? varSpolu/ciste : 0;
+  const bodZvratu = varPodiel<1 ? +(fixMesacne/(1-varPodiel)).toFixed(2) : null;
+  const pct = x => ciste>0 ? +(x/ciste*100).toFixed(1) : null;
+  const data = { ok:true, from, to, dni, mesiacov:+mesiacov.toFixed(2),
+    trzby:{ hrubo:trzba, kategorie:kat, refundy, ciste },
+    variabilne:{ ...variabilne, spolu:varSpolu, km, stripe_dostupne:nk.naklady.stripe_dostupne, vyplaty_treneri:nk.naklady.vyplaty_treneri },
+    fixne:{ riadky:fixRows, prevadzkove:fixPrev, pod_ebitda:podEbitda, pod_ebitda_spolu:fixPod, mesacne:fixMesacne, nevyplnene:fixRows.filter(r=>!(+r.suma>0)).length, kategorie:FIX_KATEGORIE },
+    vysledok:{ hruba_marza:hruba, ebitda, cisty, marza_ebitda:pct(ebitda), marza_hruba:pct(hruba), marza_cista:pct(cisty),
+      ebitda_mesacne:+(ebitda/mesiacov).toFixed(2), trzba_mesacne:+(ciste/mesiacov).toFixed(2) },
+    zvrat:{ fixne_mesacne:fixMesacne, podiel_variabilnych:+(varPodiel*100).toFixed(1), trzba_potrebna_mesacne:bodZvratu },
+    banka: nk.banka ? { ciste:nk.banka.ciste, caka:nk.banka.caka, vyplatene:nk.banka.vyplatene } : null };
+  zdravieCache.set(k, {at:Date.now(), data});
+  return data;
+}
+app.get('/api/admin/zdravie', adminAuth, async(req,res)=>{
+  try{
+    const dnes = today();
+    let from = String(req.query.from||'').slice(0,10), to = String(req.query.to||'').slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(from)) from = dnes.slice(0,7)+'-01';
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(to) || to>dnes) to = dnes;
+    if(from>to) return res.status(400).json({error:'od > do'});
+    const d = await zdravieFirmy(from, to);
+    // 12-mesačný trend (len na požiadanie — 12 prepočtov)
+    if(req.query.series==='1'){
+      const seria = []; const y=+to.slice(0,4), mo=+to.slice(5,7);
+      for(let i=11;i>=0;i--){
+        const st=new Date(Date.UTC(y, mo-1-i, 1)), en=new Date(Date.UTC(y, mo-i, 0));
+        const f=st.toISOString().slice(0,10), t=en.toISOString().slice(0,10); if(t<'2024') continue;
+        const x = await zdravieFirmy(f, t>dnes?dnes:t);
+        seria.push({ m:f.slice(0,7), trzby:x.trzby.ciste, naklady:+(x.variabilne.spolu+x.fixne.prevadzkove+x.trzby.refundy).toFixed(2), ebitda:x.vysledok.ebitda, cisty:x.vysledok.cisty });
+      }
+      d.seria = seria;
+    }
+    res.json(d);
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.put('/api/admin/naklady-fixne', adminAuth, async(req,res)=>{
+  try{
+    const rows = Array.isArray(req.body.riadky) ? req.body.riadky : null;
+    if(!rows) return res.status(400).json({error:'riadky[]'});
+    const cislo = v => { const n = +String(v==null?'':v).replace(',','.').replace(/\s/g,''); return Number.isFinite(n) && n>=0 && n<1e7 ? +n.toFixed(2) : 0; };
+    const datum = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v||'')) ? String(v) : null;
+    const nove = rows.filter(r=>r && String(r.nazov||'').trim()).slice(0,80).map((r,i)=>({
+      id: /^[a-z0-9_]{2,40}$/.test(String(r.id||'')) ? String(r.id) : 'n'+Date.now().toString(36)+i,
+      nazov:String(r.nazov).trim().slice(0,80), kat: FIX_KATEGORIE[r.kat] ? r.kat : 'ostatne',
+      suma:cislo(r.suma), perioda: r.perioda==='rok' ? 'rok' : 'mesiac', od:datum(r.od), do:datum(r.do), pozn:String(r.pozn||'').slice(0,200) }));
+    const stare = await nakladyFixne();
+    if(await q.one(db.settings,{key:'naklady_fixne'})) await q.update(db.settings,{key:'naklady_fixne'},{$set:{value:nove, at:nowISO()}});
+    else await q.insert(db.settings,{key:'naklady_fixne', value:nove, at:nowISO()});
+    zdravieCache.clear();
+    try{ await auditLog(req,'naklady_fixne','Fixné náklady firmy',{n:stare.length},{n:nove.length},''); }catch(e){}
+    res.json({ ok:true, riadky:nove });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ── Mestá — kto má členstvo, permanentku, automatickú obnovu a kto odišiel (Marek 4. 10. 2026) ──
 // Mesto klientky = kde bola za posledné 4 mesiace najčastejšie na hodine (ako v mestaZisk),
 // inak posledná rezervácia, inak mesto v profile. Online členstvá idú do „Online".
