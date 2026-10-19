@@ -1,0 +1,2 @@
+app_identifier(ENV["APP_ID"] || "ie.zappy.latindancefusion")
+team_id(ENV["APPLE_TEAM_ID"])

@@ -1,0 +1,100 @@
+# Postaví iOS appku Fusion Academy v cloude (macOS runner) a pošle ju do TestFlightu.
+# Spúšťa sa RUČNE: Actions → „iOS → TestFlight" → Run workflow.
+#
+# Čo musí byť v Settings → Secrets and variables → Actions:
+#   ASC_KEY_ID      — Key ID App Store Connect API kľúča (10 znakov)
+#   ASC_ISSUER_ID   — Issuer ID (UUID, je nad zoznamom kľúčov)
+#   ASC_KEY_P8      — celý obsah .p8 kľúča aj s riadkami BEGIN/END PRIVATE KEY
+#   APPLE_TEAM_ID   — Team ID (10 znakov, vpravo hore v developer účte)
+#
+# Appka sa stavia nad `ios/capacitor.config.json`, teda s bundle ID
+# ie.zappy.latindancefusion — tým prepíše appku od Glofoxu v App Store.
+name: iOS → TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      verzia:
+        description: "Verzia appky (CFBundleShortVersionString)"
+        required: true
+        default: "9.0.0"
+      zmeny:
+        description: "Čo je nové (text pre testerov v TestFlighte)"
+        required: false
+        default: "Nová appka Fusion Academy — rozvrh, rezervácie, členstvo a upozornenia na hodiny."
+
+jobs:
+  build:
+    name: Build a nahratie
+    runs-on: macos-14
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: ios
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Xcode 15
+        run: sudo xcode-select -switch /Applications/Xcode_15.4.app
+
+      - name: Závislosti obalu
+        run: npm install
+
+      - name: Vyrob Xcode projekt
+        run: npx cap add ios
+
+      - name: Nastav appku (názov, verzia, push, kamera)
+        env:
+          VERZIA: ${{ github.event.inputs.verzia }}
+          BUILD: ${{ github.run_number }}
+        run: |
+          PLIST=App/App/Info.plist
+          pb() { /usr/libexec/PlistBuddy -c "$1" "$PLIST" 2>/dev/null; }
+          pb "Set :CFBundleDisplayName Fusion Academy" || pb "Add :CFBundleDisplayName string Fusion Academy"
+          pb "Set :CFBundleShortVersionString $VERZIA" || pb "Add :CFBundleShortVersionString string $VERZIA"
+          pb "Set :CFBundleVersion $BUILD"             || pb "Add :CFBundleVersion string $BUILD"
+          pb "Add :NSCameraUsageDescription string Fotku do profilu si môžeš odfotiť priamo v appke."
+          pb "Add :NSPhotoLibraryUsageDescription string Fotku do profilu si vyberieš z galérie."
+          pb "Add :UIBackgroundModes array"
+          pb "Add :UIBackgroundModes:0 string remote-notification"
+          # povolenia pre push a správanie appky
+          cp extras/App.entitlements App/App/App.entitlements
+          echo "— Info.plist po úprave —"
+          /usr/libexec/PlistBuddy -c "Print" "$PLIST" | head -40
+
+      - name: Ikona appky
+        run: |
+          SET=$(find App -type d -name "AppIcon.appiconset" | head -1)
+          echo "asset katalóg: $SET"
+          for f in "$SET"/*.png; do cp icons/AppIcon-1024.png "$f"; done
+          ls -la "$SET"
+
+      - name: Synchronizuj
+        run: npx cap sync ios
+
+      - name: Fastlane → TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ZMENY: ${{ github.event.inputs.zmeny }}
+          FASTLANE_SKIP_UPDATE_CHECK: "1"
+        run: |
+          gem install fastlane --no-document
+          fastlane testflight_build
+
+      - name: Odlož build (keby sa nahratie nepodarilo)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FusionAcademy-ipa
+          path: ios/build/*.ipa
+          if-no-files-found: ignore
+          retention-days: 14

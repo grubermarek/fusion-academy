@@ -1,0 +1,70 @@
+# Build iOS appky v cloude (GitHub Actions, macOS runner) a nahratie do TestFlightu.
+# Podpis si vybavíme cez App Store Connect API kľúč — certifikát aj profil si fastlane
+# vypýta (prípadne vytvorí) sám, takže netreba Mac ani ručné nosenie .p12 súborov.
+default_platform(:ios)
+
+APP_ID = ENV["APP_ID"] || "ie.zappy.latindancefusion"
+
+platform :ios do
+  desc "Postav appku a pošli ju do TestFlightu"
+  lane :testflight_build do
+    kluc = app_store_connect_api_key(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key_content: ENV.fetch("ASC_KEY_P8"),
+      is_key_content_base64: false,
+      duration: 1200,
+      in_house: false
+    )
+
+    # Dočasná kľúčenka na runneri — po skončení jobu zmizne aj s certifikátom.
+    heslo = ENV["KEYCHAIN_PASSWORD"] || SecureRandom.hex(16)
+    create_keychain(
+      name: "fusion.keychain",
+      password: heslo,
+      default_keychain: true,
+      unlock: true,
+      timeout: 3600,
+      lock_when_sleeps: false
+    )
+
+    # Certifikát na distribúciu a profil pre App Store. Keď ešte neexistujú, vyrobia sa.
+    get_certificates(
+      api_key: kluc,
+      development: false,
+      keychain_path: File.expand_path("~/Library/Keychains/fusion.keychain-db"),
+      keychain_password: heslo
+    )
+    get_provisioning_profile(
+      api_key: kluc,
+      app_identifier: APP_ID,
+      developer_id: false,
+      adhoc: false
+    )
+
+    build_app(
+      workspace: "App/App.xcworkspace",
+      scheme: "App",
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "build",
+      output_name: "FusionAcademy.ipa",
+      clean: true,
+      xcargs: "CODE_SIGN_ENTITLEMENTS=App/App.entitlements " \
+              "CODE_SIGN_STYLE=Manual " \
+              "DEVELOPMENT_TEAM=#{ENV['APPLE_TEAM_ID']} " \
+              "PRODUCT_BUNDLE_IDENTIFIER=#{APP_ID}",
+      export_options: {
+        signingStyle: "manual",
+        provisioningProfiles: { APP_ID => ENV["sigh_#{APP_ID}_appstore_profile-name"] }
+      }
+    )
+
+    upload_to_testflight(
+      api_key: kluc,
+      app_identifier: APP_ID,
+      skip_waiting_for_build_processing: true,
+      changelog: ENV["ZMENY"] || "Nová appka Fusion Academy — rozvrh, rezervácie, členstvo a upozornenia na hodiny."
+    )
+  end
+end

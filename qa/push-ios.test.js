@@ -85,6 +85,22 @@ const posledne = f => citaj(f).reduce((a, r) => (r.$$deleted ? delete a[r._id] :
     t('obal má bundle ID appky z App Store', cfg.appId === 'ie.zappy.latindancefusion', cfg.appId);
     t('obal načítava ostrú appku', cfg.server && cfg.server.url === 'https://app.fusionacademy.sk', JSON.stringify(cfg.server && cfg.server.url));
     t('verzia obalu je vyššia ako glofoxová 8.4.4', require(path.join(KOREN, 'ios', 'package.json')).version === '9.0.0', '');
+
+    // ── cloudový build (GitHub Actions) ──
+    const wf = fs.readFileSync(path.join(KOREN, '.github', 'workflows', 'ios-testflight.yml'), 'utf8');
+    t('workflow stavia na macOS runneri', /runs-on:\s*macos-/.test(wf), '');
+    t('workflow sa spúšťa ručne s voľbou verzie', /workflow_dispatch:/.test(wf) && /verzia:/.test(wf), '');
+    for (const s of ['ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_KEY_P8', 'APPLE_TEAM_ID'])
+      t('workflow berie tajomstvo ' + s, wf.includes('secrets.' + s), '');
+    t('workflow dopĺňa povolenie pre push', /App\.entitlements/.test(wf) && /remote-notification/.test(wf), '');
+    const ent = fs.readFileSync(path.join(KOREN, 'ios', 'extras', 'App.entitlements'), 'utf8');
+    t('povolenie pre push je nastavené na ostré APNs', /aps-environment<\/key>\s*<string>production/.test(ent), '');
+    const ff = fs.readFileSync(path.join(KOREN, 'ios', 'fastlane', 'Fastfile'), 'utf8');
+    t('fastlane stavia správne bundle ID', ff.includes('ie.zappy.latindancefusion'), '');
+    t('fastlane nahráva do TestFlightu', /upload_to_testflight/.test(ff), '');
+    const ikona = fs.readFileSync(path.join(KOREN, 'ios', 'icons', 'AppIcon-1024.png'));
+    t('ikona má 1024×1024', ikona.readUInt32BE(16) === 1024 && ikona.readUInt32BE(20) === 1024, ikona.readUInt32BE(16) + '×' + ikona.readUInt32BE(20));
+    t('ikona je bez priehľadnosti (inak ju Apple odmietne)', ikona[25] === 2, 'typ farby ' + ikona[25]);
   } catch (e) {
     zle++; console.log('  ❌ výnimka: ' + (e.stack || e.message));
   } finally {

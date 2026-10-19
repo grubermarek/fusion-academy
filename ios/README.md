@@ -40,10 +40,35 @@ Mostík je v `public/nativ.js` — v obyčajnom prehliadači sa neprejaví.
    - `APNS_PROD=1` (po zverejnení; pre TestFlight netreba — sandbox je default)
 3. **App Store Connect** → Users and Access → **odobrať prístup Glofoxu**, nech už
    nevedia nahrať svoju verziu.
-4. Pre build: buď Mac s Xcode, alebo mi povedz a pripravím build cez GitHub Actions
-   (vtedy treba App Store Connect API kľúč — Users and Access → Integrations → „+").
+4. **App Store Connect API kľúč** pre cloudový build — viď tabuľku nižšie.
 
-## Build (na Macu)
+## Build v cloude (GitHub Actions) — netreba Mac
+
+Workflow `.github/workflows/ios-testflight.yml` postaví appku na macOS runneri a pošle
+ju rovno do TestFlightu. Spúšťa sa ručne: **GitHub → Actions → „iOS → TestFlight" →
+Run workflow**, zadáš verziu a text pre testerov.
+
+Raz treba pridať štyri tajomstvá v **Settings → Secrets and variables → Actions**:
+
+| tajomstvo | kde ho vziať |
+|---|---|
+| `ASC_KEY_ID` | App Store Connect → Users and Access → **Integrations** → App Store Connect API → „+" → Key ID |
+| `ASC_ISSUER_ID` | na tej istej stránke hore (Issuer ID, UUID) |
+| `ASC_KEY_P8` | obsah stiahnutého `.p8` kľúča aj s riadkami BEGIN/END (sťahuje sa **len raz**) |
+| `APPLE_TEAM_ID` | developer.apple.com → Membership details → Team ID |
+
+Kľúč musí mať rolu **App Manager** alebo Admin, inak fastlane nevie vyrobiť certifikát.
+Certifikát na distribúciu aj provisioning profil si workflow vypýta sám — nič sa nenosí ručne.
+Číslo buildu = číslo behu workflowu, takže sa nikdy neopakuje.
+
+> V App ID `ie.zappy.latindancefusion` musí byť zapnutá schopnosť **Push Notifications**
+> (developer.apple.com → Identifiers). Glofoxová appka push posielala, takže tam zrejme už je;
+> keby nie, zapneš ju jedným klikom.
+
+Tento APNs kľúč (`.p8` pre push) a App Store Connect API kľúč sú **dva rôzne kľúče** —
+prvý ide na Railway, druhý do GitHub secrets.
+
+## Build na Macu (keď budeš chcieť ladiť)
 
 ```bash
 cd ios
