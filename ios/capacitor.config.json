@@ -1,0 +1,33 @@
+{
+  "appId": "ie.zappy.latindancefusion",
+  "appName": "Fusion Academy",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "https://app.fusionacademy.sk",
+    "cleartext": false,
+    "allowNavigation": [
+      "app.fusionacademy.sk",
+      "fusionacademy.sk",
+      "checkout.stripe.com",
+      "js.stripe.com",
+      "accounts.google.com"
+    ]
+  },
+  "ios": {
+    "contentInset": "always",
+    "backgroundColor": "#141210",
+    "limitsNavigationsToAppBoundDomains": false,
+    "scrollEnabled": true
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1200,
+      "backgroundColor": "#141210",
+      "showSpinner": false
+    },
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    }
+  }
+}

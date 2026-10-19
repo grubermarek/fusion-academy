@@ -1,0 +1,24 @@
+{
+  "name": "fusion-academy-ios",
+  "version": "9.0.0",
+  "private": true,
+  "description": "iOS obal appky Fusion Academy (Capacitor) — nahrádza appku od Glofoxu pod rovnakým bundle ID",
+  "scripts": {
+    "pridaj-ios": "cap add ios",
+    "sync": "cap sync ios",
+    "otvor": "cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/app": "6.0.2",
+    "@capacitor/core": "6.2.0",
+    "@capacitor/haptics": "6.0.2",
+    "@capacitor/ios": "6.2.0",
+    "@capacitor/push-notifications": "6.0.4",
+    "@capacitor/share": "6.0.3",
+    "@capacitor/splash-screen": "6.0.3",
+    "@capacitor/status-bar": "6.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "6.2.0"
+  }
+}

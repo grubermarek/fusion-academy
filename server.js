@@ -30004,6 +30004,8 @@ seedData().then(backfillDefaultSponsor).then(shopInvoiceBackfill20260904).then(u
 
 // ── Coach Growth System (Úlohy pre trénerov) ────────────────────────────────
 require('./coach')({ app, db, q, Datastore, DATA_DIR, trainerAuth, adminAuth, APP_URL, isTestContact, vencekMimoKonverzie });
+// Natívne push pre iOS obal (appka v App Store) — bez APNS kľúča potichu spí
+const PUSH_IOS = require('./push-ios')({ app, db, q, Datastore, DATA_DIR, auth, adminAuth, nowISO });
 require('./school-outreach')({ app, db, q, Datastore, DATA_DIR, adminAuth, nowISO, APP_URL, sendMail, emailTemplate });
 require('./fusion-ai')({ app, db, q, adminAuth, isTestContact }); // po coach — používa db.coach_contacts
 // Denný plánovač akcií a kampaní — sviatky, víkendy, sezónne okná + upozornenia dopredu (22. 9. 2026)
