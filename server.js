@@ -26169,6 +26169,12 @@ app.get('/api/landing/config', async(req,res)=>{
       variant: skuska ? await landingVariant(req,res) : null });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
+// Názvy reklám bežiacej kampane zo zápisu o jej nasadení (docs/KAMPAN_TEXTY_NAVRH.md).
+// Sync z Mety ich prepíše živými názvami, len čo bude platný Ads token — ten 20. 10.
+// vracia „session has been invalidated", takže mapa meta_ad_names je zatiaľ prázdna.
+const AD_MENA_ZNAME={
+  '52558359230473':'A — týždeň zadarmo', '52558359237873':'B — nemusíš vedieť tancovať', '52558359249073':'F — konkrétny termín',
+  '52557795661073':'A — týždeň zadarmo (stará)', '52557795674073':'B — nemusíš vedieť tancovať (stará)', '52557795724873':'F — konkrétny termín (stará)' };
 async function lievikStranok(days){
   days=Math.min(Math.max(+days||7,1),90);
   const od=new Date(Date.now()-days*864e5).toISOString();
@@ -26206,6 +26212,7 @@ async function lievikStranok(days){
     let mena={}; try{ const s=await q.one(db.settings,{key:'meta_ad_names'}); if(s && s.value && typeof s.value==='object') mena=s.value; }catch(e){}
     // Karta kampane s vlastnou reklamou je druhý zdroj názvu, keď sync z Mety ešte nebežal
     try{ for(const c of await q.find(db.campaigns,{})) if(c.meta_ad_id && !mena[String(c.meta_ad_id)]) mena[String(c.meta_ad_id)]=c.name||''; }catch(e){}
+    for(const id of Object.keys(AD_MENA_ZNAME)) if(!mena[id]) mena[id]=AD_MENA_ZNAME[id];
     return Object.keys(podla).map(id=>{ const list=podla[id];
       return { obsah:id, nazov:mena[id]||null,
         sada:(list.find(e=>e.sada)||{}).sada||null,
