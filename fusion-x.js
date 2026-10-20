@@ -243,11 +243,17 @@ module.exports = function initFusionX(ctx){
     { hladaj: /aurora\s*patince/i, firma: 'Aurora Patince', mesto: 'Patince', kategoria: 'Ubytovanie a wellness', web: 'https://www.aurorapatince.sk/',
       popis: 'Penzión a wellness v Patinciach.', logo: 'https://fusionacademy.sk/assets/partneri/aurora.png', poradie: 2 },
   ];
-  async function zalozPrvychPartnerov(){
-    const kluc = 'fusionx_prvi_partneri_v1';
+  // Ďalší partneri — každá dávka má vlastný kľúč, aby sa nevrátil partner, ktorého admin medzitým zmazal.
+  const DALSI_PARTNERI = [
+    // Marek 20. 10. 2026. Údaje z verejných zápisov (Facebook stránka, goslovakia.sk); adresu a telefón doplní admin.
+    { hladaj: /j[aáä]ger/i, firma: 'Penzión JÁGER na Tureckom vŕšku', mesto: 'Detva', kategoria: 'Ubytovanie a wellness',
+      web: 'https://www.facebook.com/profile.php?id=100036409283090',
+      popis: 'Penzión na Tureckom vŕšku v Detve — ubytovanie, reštaurácia a priestory na svadby a oslavy.', logo: '', poradie: 3 },
+  ];
+  async function zalozPartnerov(zoznam, kluc){
     if (await q.one(db.settings, { key: kluc })) return;
     const vsetci = await q.find(db.fusionx_partneri, {});
-    for (const p of PRVI_PARTNERI) {
+    for (const p of zoznam) {
       if (vsetci.some(x => p.hladaj.test(x.firma || '') || p.hladaj.test(x.profil?.nazov || ''))) continue;
       await q.insert(db.fusionx_partneri, { firma: p.firma, mesto: p.mesto, kategoria: p.kategoria, kontakt_meno: '', email: '', telefon: '',
         web: p.web, opis: '', suhlas_zlava: true, stav: 'schvaleny', zdroj: 'admin', schvaleny_at: nowISO(),
@@ -257,7 +263,10 @@ module.exports = function initFusionX(ctx){
     }
     await q.insert(db.settings, { key: kluc, value: true, created_at: nowISO() });
   }
-  if (process.env.RAILWAY_ENVIRONMENT) setTimeout(() => zalozPrvychPartnerov().catch(e => console.error('Fusion X partneri:', e.message)), 4000);
+  if (process.env.RAILWAY_ENVIRONMENT) setTimeout(async () => {
+    try { await zalozPartnerov(PRVI_PARTNERI, 'fusionx_prvi_partneri_v1'); await zalozPartnerov(DALSI_PARTNERI, 'fusionx_partneri_2026_10_20'); }
+    catch (e) { console.error('Fusion X partneri:', e.message); }
+  }, 4000);
 
   return { narok, stav, oznamAktivacie, ZLAVA };
 };
