@@ -48,6 +48,15 @@ app.use((req,res,next)=>{
 // Graph API — v testoch sa dá presmerovať na falošný server (na produkcii nenastavené)
 const META_GRAPH=(process.env.META_GRAPH_URL||'https://graph.facebook.com/v21.0/').replace(/\/?$/,'/');
 const ZDROJ_COOKIE='fa_zdroj';
+// Reklama tejto návštevy (20. 10.): fa_zdroj je zámerne prvý dotyk na 90 dní, takže tri
+// reklamy jednej kampane v ňom splynú. Kreatívu preto držíme aj v krátkej cookie, ktorú
+// každý ďalší klik prepíše — landing si po výbere mesta prepisuje adresu (?city=detva)
+// a utm_* z nej zmiznú, takže samotná adresa stránky na to nestačí.
+const AD_COOKIE='fa_ad';
+function citajAdCookie(req){
+  const v=citajCookie(req,AD_COOKIE); if(!v) return {};
+  const p=String(v).split('|'); return { obsah:p[0]||null, sada:p[1]||null };
+}
 const ZDROJ_KLUCE=['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid'];
 function citajZdrojCookie(req){
   try{
@@ -61,6 +70,10 @@ app.use((req,res,next)=>{
   if(req.method!=='GET' || req.path.startsWith('/api/')) return next();
   const qs=req.query||{};
   if(!ZDROJ_KLUCE.some(k=>typeof qs[k]==='string' && qs[k])) return next();
+  // Kreatíva tejto návštevy sa prepisuje pri každom kliku z reklamy — na rozdiel od prvého dotyku
+  if(typeof qs.utm_content==='string' && qs.utm_content)
+    res.cookie(AD_COOKIE, String(qs.utm_content).slice(0,120)+'|'+String(qs.utm_term||'').slice(0,120),
+      { maxAge:6*3600e3, httpOnly:true, sameSite:'lax', secure:process.env.NODE_ENV==='production', path:'/' });
   // Prvý dotyk ako vo fa-track: platený klik neprepíše skorší platený klik (90 dní)
   const stary=citajZdrojCookie(req);
   if(stary && (stary.fbclid || stary.gclid || stary.utm_campaign)) return next();
@@ -126,14 +139,15 @@ async function zapisKrok(req, krok, extra){
     let ref='', qs=null;
     try{ const u=new URL(String(req.headers.referer||''),'http://x'); ref=u.pathname; qs=u.searchParams; }catch(e){}
     const zAdresy=k=>{ const v=qs&&qs.get(k); return v?String(v).slice(0,300):null; };
+    const ad=citajAdCookie(req);
     const stranka=String(extra.stranka||ref||z.landing||'').split('?')[0].slice(0,80)||null;
     await q.insert(db.funnel_events,{ krok, at:nowISO(), den:today(),
       vid:extra.vid||citajCookie(req,VID_COOKIE)||req._novyVid||null, uid:extra.uid||(req.session&&req.session.uid)||null,
       stranka, kampan:extra.kampan||z.utm_campaign||null, zdroj:extra.zdroj||z.utm_source||(z.fbclid?'fbclid':(z.gclid?'gclid':null)),
       // obsah = reklama tejto návštevy (utm_content = číslo reklamy z Mety), obsah_prvy = prvý dotyk,
       // sada = súbor reklám (utm_term). Keď v adrese nie sú, platí cookie.
-      obsah:extra.obsah||zAdresy('utm_content')||z.utm_content||null, obsah_prvy:z.utm_content||null,
-      sada:extra.sada||zAdresy('utm_term')||z.utm_term||null,
+      obsah:extra.obsah||zAdresy('utm_content')||ad.obsah||z.utm_content||null, obsah_prvy:z.utm_content||null,
+      sada:extra.sada||zAdresy('utm_term')||ad.sada||z.utm_term||null,
       variant:extra.variant||citajCookie(req,AB_COOKIE)||null, webview:jeWebview(ua), mobil:/Mobi|Android|iPhone/i.test(ua),
       meta:extra.meta||null });
   }catch(e){}

@@ -179,7 +179,10 @@ const zdroj = f => fs.readFileSync(path.join(KOREN, f), 'utf8');
     await j(adresa, {}, ina);
     const posliZ = (krok, ref) => j('/api/funnel', { method: 'POST', headers: { Referer: BASE + ref }, body: { krok, stranka: '/prva-hodina' } }, ina);
     for (const k of ['lp_view', 'lp_terminy', 'lp_termin', 'form_start', 'form_submit']) await posliZ(k, adresa);
-    await posliZ('lp_view', '/prva-hodina'); // návrat priamo, bez utm v adrese
+    // Landing si po výbere mesta prepisuje adresu na ?city=detva — utm_* z nej zmiznú.
+    // Zachytené naživo na produkcii 20. 10.: bez krátkej cookie fa_ad by sa všetky ďalšie
+    // kroky pripísali prvému dotyku a rozpad po kreatívach by končil pri načítaní stránky.
+    await posliZ('lp_city', '/prva-hodina?city=detva');
     await new Promise(r => setTimeout(r, 600));
     const jejVid = (ina.jar || {}).fa_vid;
     const jej = udalosti().filter(e => e.vid === jejVid);
@@ -191,8 +194,17 @@ const zdroj = f => fs.readFileSync(path.join(KOREN, f), 'utf8');
     ok('celý lievik návštevy nesie tú istú kreatívu',
       ['lp_terminy', 'lp_termin', 'form_start', 'form_submit'].every(k => jej.some(e => e.krok === k && e.obsah === NOVA)),
       JSON.stringify(jej.map(e => [e.krok, e.obsah])));
-    ok('bez utm v adrese padne obsah na cookie',
-      jej.some(e => e.krok === 'lp_view' && e.obsah === '111111'), JSON.stringify(jej.filter(e => e.krok === 'lp_view').map(e => e.obsah)));
+    ok('po prepísaní adresy (?city=detva) drží kreatívu cookie fa_ad',
+      jej.some(e => e.krok === 'lp_city' && e.obsah === NOVA),
+      JSON.stringify(jej.filter(e => e.krok === 'lp_city').map(e => e.obsah)));
+    // Návrat o pár dní neskôr: krátka cookie fa_ad už vypršala, ostal prvý dotyk.
+    const davno = { jar: { fa_zdroj: (ina.jar || {}).fa_zdroj }, cookie: 'fa_zdroj=' + (ina.jar || {}).fa_zdroj };
+    await j('/prva-hodina', {}, davno);
+    await j('/api/funnel', { method: 'POST', headers: { Referer: BASE + '/prva-hodina' }, body: { krok: 'lp_view', stranka: '/prva-hodina' } }, davno);
+    await new Promise(r => setTimeout(r, 500));
+    const neskor = udalosti().filter(e => e.vid === (davno.jar || {}).fa_vid);
+    ok('bez adresy aj bez fa_ad padne obsah na prvý dotyk',
+      neskor.length && neskor.every(e => e.obsah === '111111'), JSON.stringify(neskor.map(e => [e.krok, e.obsah])));
 
     const d2 = (await j('/api/admin/funnel-stranky?days=7', {}, adm)).d || {};
     const kr = (d2.kreativy || []).find(x => x.obsah === NOVA);
