@@ -81,7 +81,7 @@ const zdroj = f => fs.readFileSync(path.join(KOREN, f), 'utf8');
     const posli = (krok, meta, stranka) => j('/api/funnel', { method: 'POST', body: { krok, stranka: stranka || '/prva-hodina', meta: meta || null } }, ona);
 
     console.log('\n1) Server nové kroky prijme:');
-    const NOVE = ['lp_mesta', 'lp_mesta_prazdno', 'lp_terminy', 'lp_prazdno', 'lp_plne', 'lp_viac', 'lp_spat', 'lp_skupina'];
+    const NOVE = ['lp_mesta', 'lp_mesta_prazdno', 'lp_terminy', 'lp_prazdno', 'lp_plne', 'lp_viac', 'lp_spat', 'lp_skupina', 'lp_chyba'];
     for (const k of NOVE) await posli(k, { pocet: '3' });
     await new Promise(r => setTimeout(r, 500));
     const zapisane = udalosti();
@@ -127,6 +127,7 @@ const zdroj = f => fs.readFileSync(path.join(KOREN, f), 'utf8');
     const prek = (lp.prekazky || []).map(p => p.krok);
     ok('prázdny zoznam termínov je medzi zádrhelmi', prek.includes('lp_prazdno'), JSON.stringify(prek));
     ok('návrat o krok späť je medzi zádrhelmi', prek.includes('lp_spat'), JSON.stringify(prek));
+    ok('nenačítaný rozvrh je medzi zádrhelmi', prek.includes('lp_chyba'), JSON.stringify(prek));
     ok('detský landing je v prehľade', !!(d.stranky || {})['/prva-hodina-kids']);
     const kidsKroky = (((d.stranky || {})['/prva-hodina-kids'] || {}).kroky || []).map(k => k.krok);
     ok('detský lievik má lp_terminy pred lp_termin',
@@ -145,10 +146,18 @@ const zdroj = f => fs.readFileSync(path.join(KOREN, f), 'utf8');
     ok('dospelý: „ďalšie termíny" je krok', /krok\('lp_viac'\)/.test(dosp));
     ok('dospelý: začatý formulár = písanie, nie zaostrenie',
       /addEventListener\('input',\(\)=>krok\('form_start'/.test(dosp));
+    // Zachytené naživo 20. 10.: server vrátil 502, rozvrh neprišiel a na stránke ticho
+    // visel starý zoznam — bez slova pre človeka a bez jediného kroku v lieviku.
+    ok('dospelý: nenačítaný rozvrh sa ohlási a povie to aj človeku',
+      /krok\('lp_chyba'/.test(dosp) && /Termíny sa teraz nenačítali/.test(dosp));
+    ok('dospelý: po neúspešnom rozvrhu sa termíny nehlásia ako videné',
+      /if\(await load\(\)\) hlasTerminy\(\);/.test(dosp) && /if\(rozvrhPrisiel\) hlasTerminy\(\);/.test(dosp));
 
     const deti = zdroj('public/prva-hodina-kids.html');
     ok('detský: hlási termíny aj prázdny zoznam', /krok\('lp_terminy'/.test(deti) && /krok\('lp_prazdno'/.test(deti));
     ok('detský: tlačidlo späť ide cez spat()', /onclick="spat\(1\)"/.test(deti));
+    ok('detský: nenačítaný rozvrh sa ohlási a povie to aj človeku',
+      /krok\('lp_chyba'/.test(deti) && /Termíny sa teraz nenačítali/.test(deti));
     // vyber() sám zaostrí prvé pole, takže krok na focus-e sa hlásil aj bez písmena —
     // číslo „začatých formulárov" bolo rovnaké ako „videla formulár".
     ok('detský: začatý formulár = písanie, nie zaostrenie',

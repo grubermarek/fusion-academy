@@ -196,8 +196,18 @@ function naKrok(n){
   if(n===1) PICK=null;
 }
 async function load(){
-  const r=await fetch('/api/first-class/kids-schedule');
-  const d=await r.json();
+  let d=null;
+  try{
+    const r=await fetch('/api/first-class/kids-schedule');
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    d=await r.json();
+  }catch(e){
+    // To isté ako na dospelom landingu: bez rozvrhu nech tam nevisí prázdno bez vysvetlenia.
+    ITEMS=[]; window.__zoznam=[];
+    $('sessList').innerHTML='<div class="nacitavam">Termíny sa teraz nenačítali. Skúste to prosím o chvíľu znova.</div>';
+    krok('lp_chyba',{dovod:String(e.message||'rozvrh').slice(0,40)});
+    return false;
+  }
   ITEMS=(d.items||[]).filter(i=>!i.full);
   CENA=d.cena||null;
   if(CENA){
@@ -222,6 +232,7 @@ async function load(){
   }
   vykresli();
   hlasTerminy();
+  return true;
 }
 function setSkupina(s){ SKUPINA=s; naKrok(1); krok('lp_skupina',{skupina:s||'vsetky'}); load(); }
 function vykresli(){

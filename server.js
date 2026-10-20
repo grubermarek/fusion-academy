@@ -113,7 +113,7 @@ const FUNNEL_KROKY=new Set(['lp_view','lp_city','lp_termin','form_view','form_st
   // 20. 10.: medzikroky medzi načítaním stránky a odoslaním formulára. Dovtedy sme
   // nevedeli rozlíšiť „pozrela a odišla" od „nemala si z čoho vybrať".
   // lp_skupina posielal detský landing už od 18. 10., ale tu chýbal.
-  'lp_mesta','lp_mesta_prazdno','lp_terminy','lp_prazdno','lp_plne','lp_viac','lp_spat','lp_skupina']);
+  'lp_mesta','lp_mesta_prazdno','lp_terminy','lp_prazdno','lp_plne','lp_viac','lp_spat','lp_skupina','lp_chyba']);
 const jeWebview=ua=>/FBAN|FBAV|FB_IAB|Instagram/i.test(String(ua||''));
 async function zapisKrok(req, krok, extra){
   try{
@@ -26145,7 +26145,7 @@ async function lievikStranok(days){
                 '/nabor-trenerov':['lp_view','video_start','video_half','cta_click','form_start','form_submit'] };
   // Zádrhely nie sú krokom lievika: nedeje sa ich „priechod", ale naopak zastavenie.
   // Do reťazca percent ich dať nejde, lebo by ho rozbili.
-  const PREKAZKY=['lp_mesta_prazdno','lp_prazdno','lp_plne','lp_viac','lp_spat','lp_skupina'];
+  const PREKAZKY=['lp_chyba','lp_mesta_prazdno','lp_prazdno','lp_plne','lp_viac','lp_spat','lp_skupina'];
   const kl=e=>e.vid||e.uid||e._id;
   const unik=(list,krok)=>new Set(list.filter(e=>e.krok===krok).map(kl)).size;
   const lievik=(list,kroky)=>{ let prev=null; return kroky.map(k=>{ const n=unik(list,k);

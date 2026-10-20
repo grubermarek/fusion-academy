@@ -6698,7 +6698,7 @@ async function skontrolujMeranie(){
 // Lievik stránok: unikátni návštevníci po krokoch, rozpad po kampaniach a variantoch skúšky
 const LIEVIK_NAZVY={video_start:'Spustenie videa',video_half:'Polovica videa',cta_click:'Klik na prihlášku',lp_view:'Načítala stránku',lp_mesta:'Videla výber miest',lp_cta:'Klikla na tlačidlo',lp_city:'Vybrala mesto',lp_terminy:'Videla termíny',lp_termin:'Vybrala termín',form_view:'Videla formulár',form_start:'Začala písať',form_submit:'Odoslala',register_ok:'Registrácia',booking_ok:'Rezervácia',trial_open:'Otvorila Stripe',trial_ok:'Skúška beží',trial_decline:'Odmietla skúšku'};
 // Zádrhely nie sú krokom vpred, ale miestom, kde sa cesta láme — preto pod lievikom, nie v ňom.
-const LIEVIK_PREKAZKY={lp_mesta_prazdno:'Žiadne mestá v ponuke',lp_prazdno:'Prázdny zoznam termínov',lp_plne:'Všetky termíny plné',lp_viac:'Rozklikla ďalšie termíny',lp_spat:'Vrátila sa o krok späť',lp_skupina:'Prepla vekovú skupinu'};
+const LIEVIK_PREKAZKY={lp_chyba:'Termíny sa nenačítali (chyba)',lp_mesta_prazdno:'Žiadne mestá v ponuke',lp_prazdno:'Prázdny zoznam termínov',lp_plne:'Všetky termíny plné',lp_viac:'Rozklikla ďalšie termíny',lp_spat:'Vrátila sa o krok späť',lp_skupina:'Prepla vekovú skupinu'};
 async function loadLievik(){
   const host=document.getElementById('lievikPanel'); if(!host) return;
   const dni=(document.getElementById('lievikDni')||{}).value||'7';

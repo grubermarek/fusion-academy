@@ -357,11 +357,22 @@ function hlasTerminy(){
 function spat(n){ krok('lp_spat',{z:String(KROK)}); naKrok(n); }
 async function load(){
   $('cityLoc').textContent=CITY?(LOC[CITY]||('V '+CITY.toUpperCase())):'V TVOJOM MESTE';
-  const r=await fetch('/api/first-class/schedule'+(CITY?'?city='+encodeURIComponent(NAME2SLUG[CITY]||''):''));
-  const d=await r.json();
+  let d=null;
+  try{
+    const r=await fetch('/api/first-class/schedule'+(CITY?'?city='+encodeURIComponent(NAME2SLUG[CITY]||''):''));
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    d=await r.json();
+  }catch(e){
+    ITEMS=[];
+    $('sessList').innerHTML='<div class="nacitavam">Termíny sa teraz nenačítali. Skús to prosím o chvíľu znova.</div>';
+    $('viacBtn').style.display='none';
+    krok('lp_chyba',{dovod:String(e.message||'rozvrh').slice(0,40)});
+    return false;
+  }
   ITEMS=d.items||[];
   if(!MESTA.length) MESTA=(d.cities||[]).length?d.cities:Object.keys(NAME2SLUG);
   vykresliMesta(); vykresliTerminy();
+  return true;
 }
 async function setCity(c){
   CITY=c; VSETKY=false;
@@ -369,8 +380,7 @@ async function setCity(c){
   krok('lp_cta',{pole:'mesto'}); krok('lp_city',{city:c||'vsetky'});
   $('sessList').innerHTML='<div class="nacitavam">Hľadám najbližšie hodiny…</div>';
   naKrok(2);
-  await load();
-  hlasTerminy();
+  if(await load()) hlasTerminy();
 }
 function pick(ix){
   PICK=ITEMS[ix];
@@ -494,9 +504,9 @@ async function navratZoStripe(){
   if(await navratZoStripe()) return;
   krok('lp_view',{city:CITY||'vsetky'});
   if(window.faScrollTrack) window.faScrollTrack();
-  await load();
+  const rozvrhPrisiel=await load();
   // Mesto z reklamy (?city=detva) je už rozhodnuté — nech sa neopytujeme naň znova.
-  if(CITY){ naKrok(2); hlasTerminy(); } else hlasMesta();
+  if(CITY){ naKrok(2); if(rozvrhPrisiel) hlasTerminy(); } else hlasMesta();
 })();
 </script>
 </body>
