@@ -267,6 +267,14 @@ async function loadCfg(){
     $('krok3').textContent='Prvá návšteva je zdarma — bez záväzkov.';
     $('formHint').innerHTML='Potvrdenie ti príde e-mailom. Žiadna platba — prvá hodina je zdarma.';
   } else if(CFG.variant==='bez_karty'){
+    // Bez karty sa po týždni nestrhne nič, takže „zrušíš kedykoľvek" by znelo, akoby
+    // jej už niečo bežalo. Reklamy sľubujú to isté — texty si musia sedieť (20. 10.).
+    $('checks').innerHTML='<div>✓ <b>'+(+CFG.trial_days||7)+' dní</b> všetky hodiny zadarmo</div>'
+      +'<div>✓ <b>bez platobnej karty</b> — nič sa ti nestrhne</div>'
+      +'<div>✓ po týždni sa rozhodneš sama, členstvo od <span class="cenaMes">'+fmtCena(CFG.trial_price)+'</span> €/mes.</div>'
+      +'<div>✓ aj pre úplné začiatočníčky</div>'
+      +'<div class="garancia">💛 A keď si neskôr zapneš členstvo? <b>Do 14 dní od prvej platby vrátime peniaze.</b></div>';
+    $('krok3').textContent='Celý prvý týždeň chodíš zadarmo a nič sa ti nestrhne — kartu od teba nepýtame. Po týždni sa rozhodneš sama; členstvo je od '+fmtCena(CFG.trial_price)+' € mesačne.';
     $('formHint').innerHTML='Bez karty a bez záväzkov — po týždni sa rozhodneš. Odoslaním súhlasíš so <a href="/ochrana-sukromia" target="_blank" rel="noopener">spracovaním údajov</a>.';
   } else {
     $('formHint').innerHTML='Skúšku zapneš v ďalšom kroku (uložíš kartu, teraz 0 €, zrušíš kedykoľvek). Odoslaním súhlasíš so <a href="/ochrana-sukromia" target="_blank" rel="noopener">spracovaním údajov</a>.';
