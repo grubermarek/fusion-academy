@@ -93,6 +93,11 @@ const riadky = (file, needle) => { try { return fs.readFileSync(path.join(DATA, 
     ok('dieťa vzniklo pod rodičom', !!dieta && dieta.is_child === true && dieta.birth_year === 2017,
       JSON.stringify({ n: (dieta || {}).name, r: (dieta || {}).birth_year }));
     ok('dieťa má skupinu podľa hodiny', !!dieta && /Kids/.test(dieta.kids_group || ''), (dieta || {}).kids_group);
+    // Rodič musí mať sponzora — inak visí mimo štruktúry (20. 10.).
+    const zakladatel = riadky('users.db','gruber.marek@gmail.com').pop();
+    ok('rodič má sponzora (zakladateľ, keď nie je pozvánka)',
+      !!rodic && !!zakladatel && rodic.sponsor_id === zakladatel._id,
+      JSON.stringify({ s: (rodic||{}).sponsor_id, z: (zakladatel||{})._id }));
     ok('dieťa NEMÁ automatické hodiny navyše', !dieta.auto_classes || dieta.auto_classes.length === 0,
       JSON.stringify((dieta || {}).auto_classes));
 

@@ -4877,8 +4877,20 @@ app.post('/api/first-class/book-kids', rlPublic, async(req,res)=>{
       if(clean(attr.gclid)) lead_source='google'; else if(clean(attr.fbclid)) lead_source='meta';
       else if(clean(attr.utm_source)) lead_source=clean(attr.utm_source).toLowerCase();
       heslo='Zumba'+String(Math.floor(1000+Math.random()*9000));
+      // Sponzor rovnako ako na dospelom landingu (20. 10.): pozvánka z ?ref=, inak
+      // zakladateľ. Dovtedy tu bolo natvrdo null, takže rodičia z detskej reklamy
+      // viseli mimo štruktúry a za pozvané dieťa sa nikomu nerátali body.
+      const refKod=String(req.body.ref || (req.body.attribution&&req.body.attribution.ref) || '').trim().slice(0,32);
+      let pozvala=refKod ? await inviterByCode(refKod).catch(()=>null) : null;
+      if(pozvala && (pozvala.active===false || pozvala.email===email)) pozvala=null;
+      if(pozvala) lead_source='referral';
+      let sponsor_id = pozvala ? pozvala._id : null;
+      if(!sponsor_id){
+        const founder=await q.one(db.users,{email:'gruber.marek@gmail.com'});
+        if(founder && founder.email!==email) sponsor_id=founder._id;
+      }
       rodic=await q.insert(db.users,{ name:parentName, email, phone, password:await bcrypt.hash(heslo,10),
-        referral_code:'FK'+Math.random().toString(36).slice(2,8).toUpperCase(), sponsor_id:null,
+        referral_code:'FK'+Math.random().toString(36).slice(2,8).toUpperCase(), sponsor_id,
         funnel_vid:citajCookie(req,VID_COOKIE)||null,
         rank:1, is_admin:false, active:true, user_type:'lead', bank_account:'', notes:'', visit_count:0,
         referral_credit:0, lead_source, city:cls.location||'',
