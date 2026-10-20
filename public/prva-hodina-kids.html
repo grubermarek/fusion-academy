@@ -292,6 +292,12 @@ async function odoslat(){
   if(prveZle){ krok('register_err',{dovod:prveZle}); $(prveZle).focus(); return; }
   const attribution=(window.faGetAttribution?window.faGetAttribution():{})||{};
   ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid'].forEach(k=>{ if(P0.get(k)) attribution[k]=P0.get(k); });
+  // Rovnaké event_id pre pixel aj server, inak Meta tú istú udalosť započíta dvakrát.
+  // Do 20. 10. detská stránka žiadne neposielala a pri registrácii použila id dieťaťa,
+  // kým server id rodiča — nespárovalo sa to.
+  const eidBase=(window.faEventId?window.faEventId():('e'+Math.random().toString(36).slice(2,14)));
+  attribution.event_id_registration='reg_'+eidBase;
+  attribution.event_id_schedule='sch_'+eidBase;
   btn.disabled=true; btn.textContent='REZERVUJEM…';
   krok('form_submit');
   try{
@@ -304,7 +310,8 @@ async function odoslat(){
     const d=await r.json();
     if(!r.ok||!d.ok){ chyba.textContent=d.error||'Nepodarilo sa rezervovať, skúste znova.'; chyba.style.display='block';
       btn.disabled=false; btn.textContent='REZERVOVAŤ PRVÚ HODINU'; return; }
-    try{ if(window.fbq){ fbq('track','Schedule'); if(d.is_new) fbq('track','CompleteRegistration',{},{eventID:'reg_'+(d.dieta&&d.dieta.id||'')}); } }catch(e){}
+    try{ if(window.fbq){ fbq('track','Schedule',{},{eventID:attribution.event_id_schedule});
+      if(d.is_new) fbq('track','CompleteRegistration',{},{eventID:attribution.event_id_registration}); } }catch(e){}
     $('wiz').style.display='none';
     const dd=d.detail;
     $('doneSub').textContent='Miesto pre '+(d.dieta&&d.dieta.name||'dieťa')+' je rezervované. Prvá hodina je zadarmo.';

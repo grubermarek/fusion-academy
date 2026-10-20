@@ -4932,8 +4932,11 @@ app.post('/api/first-class/book-kids', rlPublic, async(req,res)=>{
     zapisKrok(req,'booking_ok',{stranka:'/prva-hodina-kids', uid:rodic._id}).catch(()=>{});
     if(novyRodic){
       zapisKrok(req,'register_ok',{stranka:'/prva-hodina-kids', uid:rodic._id}).catch(()=>{});
+      // Pozor na deduplikáciu: prehliadač do 20. 10. posielal reg_<id dieťaťa>, server
+      // reg_<id rodiča> — dve rôzne čísla, takže Meta by registráciu rátala dvakrát.
       metaCapi('CompleteRegistration',{email, fbclid:clean(attr.fbclid), fbp:clean(attr.fbp), click_at:attr.click_at,
-        external_id:rodic._id, ip:klientIp(req), ua:req.headers['user-agent'], event_id:'reg_'+rodic._id,
+        external_id:rodic._id, ip:klientIp(req), ua:req.headers['user-agent'],
+        event_id:clean(attr.event_id_registration)||('reg_'+rodic._id),
         source_url:clean(attr.landing)||undefined}).catch(()=>{});
     }
     metaCapi('Schedule',{email, fbclid:clean(attr.fbclid), external_id:rodic._id, ip:klientIp(req),
@@ -5095,8 +5098,11 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
       zapisKrok(req,'booking_ok',{stranka:'/prva-hodina', uid:u._id, variant}).catch(()=>{});
       if(isNew){
         zapisKrok(req,'register_ok',{stranka:'/prva-hodina', uid:u._id, variant}).catch(()=>{});
+        // event_id musí sedieť s tým, čo poslal pixel v prehliadači, inak Meta tú istú
+        // registráciu započíta dvakrát a cena za registráciu vyjde polovičná (20. 10.).
         metaCapi('CompleteRegistration',{email, fbclid:clean(attr.fbclid), fbp:clean(attr.fbp), click_at:attr.click_at,
-          external_id:u._id, ip:klientIp(req), ua:req.headers['user-agent'], event_id:'reg_'+u._id, source_url:clean(attr.landing)||undefined}).catch(()=>{});
+          external_id:u._id, ip:klientIp(req), ua:req.headers['user-agent'],
+          event_id:clean(attr.event_id_registration)||('reg_'+u._id), source_url:clean(attr.landing)||undefined}).catch(()=>{});
       }
     } else zapisKrok(req,'booking_ok',{stranka:'/prva-hodina', uid:u._id}).catch(()=>{});
     // Pozývajúca sa musí dozvedieť, že to zabralo — a odporúčanie sa musí zapísať,

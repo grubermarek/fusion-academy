@@ -391,14 +391,18 @@ async function submitBooking(){
   cur.landing=location.pathname+location.search; cur.referrer=document.referrer||'';
   const first=window.faGetAttribution?window.faGetAttribution():{};
   const eidBase=(window.faEventId?window.faEventId():('e'+Math.random().toString(36).slice(2,14)));
-  const attribution={...first, ...cur, event_id_lead:'lead_'+eidBase, event_id_schedule:'sch_'+eidBase};
+  // Rovnaké event_id musí ísť do pixelu aj na server, inak Meta tú istú udalosť započíta
+  // dvakrát. Pri registrácii to tak do 20. 10. nebolo: prehliadač posielal reg_<event_id>,
+  // server reg_<id používateľa>, takže by sa nespárovali.
+  const attribution={...first, ...cur, event_id_lead:'lead_'+eidBase, event_id_schedule:'sch_'+eidBase,
+    event_id_registration:'reg_'+eidBase};
   try{
     const r=await fetch('/api/first-class/book',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',
       body:JSON.stringify({name,kontakt,ref:REF||undefined,class_id:PICK.class_id,booking_date:PICK.date,attribution})});
     const d=await r.json();
     if(!r.ok||d.error){ const e=new Error(d.error||'Rezervácia sa nepodarila'); e.login=!!d.login; throw e; }
     VYSLEDOK=d;
-    try{ if(window.fbq){ fbq('track','Lead',{},{eventID:attribution.event_id_lead}); fbq('track','Schedule',{},{eventID:attribution.event_id_schedule}); if(d.is_new) fbq('track','CompleteRegistration',{},{eventID:'reg_'+eidBase}); } }catch(e){}
+    try{ if(window.fbq){ fbq('track','Lead',{},{eventID:attribution.event_id_lead}); fbq('track','Schedule',{},{eventID:attribution.event_id_schedule}); if(d.is_new) fbq('track','CompleteRegistration',{},{eventID:attribution.event_id_registration}); } }catch(e){}
     $('calBtn').href='data:text/calendar;charset=utf-8,'+encodeURIComponent(ics(d));
     $('wiz').style.display='none';
     $('pozvanka').style.display='none';

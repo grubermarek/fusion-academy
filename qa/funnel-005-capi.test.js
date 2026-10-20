@@ -64,7 +64,7 @@ const past = n => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
     const bk = await j('/api/first-class/book', { method: 'POST', body: {
       name: 'Qa Landingova', email: 'qa.landing5@qa-biz.local', phone: '',
       class_id: slot.class_id, booking_date: slot.date,
-      attribution: { event_id_lead: 'lead_qax', event_id_schedule: 'sch_qax', landing: '/prva-hodina?city=detva&utm_source=fb', fbclid: 'fbtest1' },
+      attribution: { event_id_lead: 'lead_qax', event_id_schedule: 'sch_qax', event_id_registration: 'reg_qax', landing: '/prva-hodina?city=detva&utm_source=fb', fbclid: 'fbtest1' },
     } });
     ok('landing booking prešiel', bk.d && bk.d.ok, JSON.stringify(bk.d));
     await waitFor(ls => ls.some(l => l.event_name === 'Schedule'));
@@ -73,6 +73,27 @@ const past = n => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
     ok('Lead nesie event_id_lead', lead && lead.event_id === 'lead_qax', JSON.stringify(lead));
     ok('Schedule nesie event_id_schedule', schd && schd.event_id === 'sch_qax', JSON.stringify(schd));
     ok('Lead nesie event_source_url landing', lead && (lead.event_source_url || '').startsWith('/prva-hodina'), JSON.stringify(lead));
+    // Pozn.: dospelý landing posiela CompleteRegistration len pri zapnutom prvom týždni
+    // zadarmo, takže sa tu neoveruje behom — drží to statická kontrola v bode 4.
+
+    // ── 2b) Detský landing: tá istá dedupikácia ──
+    const scK = await j('/api/first-class/kids-schedule');
+    const slotK = ((scK.d && scK.d.items) || [])[0];
+    if (slotK) {
+      const bkK = await j('/api/first-class/book-kids', { method: 'POST', body: {
+        child_name: 'Qa Dietko', birth_year: 2017, parent_name: 'Qa Rodic Capi',
+        email: 'qa.kids5@qa-biz.local', class_id: slotK.class_id, booking_date: slotK.date,
+        attribution: { event_id_registration: 'reg_kidsqa', event_id_schedule: 'sch_kidsqa',
+          landing: '/prva-hodina-kids?utm_source=fb', fbclid: 'fbtest2' },
+      } });
+      ok('detská rezervácia prešla', bkK.d && bkK.d.ok, JSON.stringify(bkK.d).slice(0, 140));
+      await waitFor(ls => ls.some(l => l.event_id === 'reg_kidsqa'));
+      const crK = capiLines().find(l => l.event_id === 'reg_kidsqa');
+      const schK = capiLines().find(l => l.event_id === 'sch_kidsqa');
+      ok('detská registrácia nesie event_id z prehliadača', crK && crK.event_name === 'CompleteRegistration',
+        JSON.stringify(crK));
+      ok('detský Schedule nesie event_id z prehliadača', !!schK, JSON.stringify(schK));
+    }
 
     // ── 3) Prvá ODCHODENÁ hodina → FirstClassAttended s event_id fca_<uid> ──
     const _l = ((await j('/api/admin/leads?search=qa.landing5', {}, adm)).d.leads || [])[0] || {};
@@ -101,6 +122,18 @@ const past = n => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
     ok('fa-track: faEventId + event_id v atribúcii', ft.includes('window.faEventId') && ft.includes('a.event_id = window.faEventId()'));
     ok('fa-track: fbq dostáva eventID (dedup)', ft.includes('eid?{eventID:eid}:undefined'));
     ok('landing: event_id_lead/schedule v atribúcii + eventID na fbq', ph.includes("event_id_lead:'lead_'+eidBase") && ph.includes('eventID:attribution.event_id_lead'));
+    // Registrácia sa dedupikuje rovnako ako Lead/Schedule. Do 20. 10. nie: prehliadač
+    // posielal reg_<event_id>, server reg_<id používateľa> — Meta by ju rátala dvakrát
+    // a cena za registráciu by vyšla polovičná. To isté na detskej stránke s id dieťaťa.
+    const phk = app('public/prva-hodina-kids.html');
+    ok('landing: registrácia má event_id z prehliadača (klient aj server)',
+      ph.includes("event_id_registration:'reg_'+eidBase") && ph.includes('eventID:attribution.event_id_registration')
+      && srvSrc.includes("event_id:clean(attr.event_id_registration)||('reg_'+u._id)"));
+    ok('detský landing: registrácia aj Schedule majú event_id z prehliadača',
+      phk.includes("attribution.event_id_registration='reg_'+eidBase")
+      && phk.includes('eventID:attribution.event_id_schedule')
+      && phk.includes('eventID:attribution.event_id_registration')
+      && srvSrc.includes("event_id:clean(attr.event_id_registration)||('reg_'+rodic._id)"));
     ok('dashboard: Purchase pixel s pur_<session_id>', cd.includes("eventID:'pur_'+p.get('session_id')"));
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.message);
