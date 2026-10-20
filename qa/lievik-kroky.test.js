@@ -13,6 +13,8 @@
  *   · prehľad v admine ukáže kroky v poradí, zádrhely zvlášť a detský landing tiež
  *   · stránky tie kroky naozaj posielajú (kontrola zdrojákov)
  *   · „začatý formulár" znamená na OBOCH landingoch písanie, nie zaostrenie poľa
+ *   · kreatíva TEJTO návštevy (utm_content z adresy) sa nezlúči s prvým dotykom
+ *     v cookie fa_zdroj — bez toho tri reklamy jednej kampane splynú do jedného riadku
  *
  * Spustenie:  node qa/lievik-kroky.test.js
  */
@@ -164,6 +166,43 @@ const zdroj = f => fs.readFileSync(path.join(KOREN, f), 'utf8');
       /addEventListener\('input',\(\)=>krok\('form_start'/.test(deti) && !/addEventListener\('focus',\(\)=>krok\('form_start'/.test(deti));
     ok('detský: zoznam sa nedrží na starom filtri',
       deti.indexOf('window.__zoznam=zoznam;') < deti.indexOf("if(!zoznam.length){"));
+
+    // Cookie fa_zdroj je zámerne prvý dotyk na 90 dní, takže ďalší platený klik ju
+    // neprepíše. Keby sa kreatíva brala len z nej, tri reklamy jednej kampane by v lieviku
+    // splynuli a nebolo by vidieť, ktorá ľudí stráca — o tom je celá táto zmena.
+    console.log('\n6) Kreatíva tejto návštevy vs. prvý dotyk:');
+    const ina = {};
+    await j('/prva-hodina?utm_source=fb&utm_medium=cpc&utm_campaign=stara-kampan&utm_content=111111&utm_term=777777', {}, ina);
+    ok('prvý dotyk je v cookie fa_zdroj', /fa_zdroj=/.test(ina.cookie || ''), String(ina.cookie || '').slice(0, 60));
+    const NOVA = '52558359230473', SADA = '52557795589673';
+    const adresa = '/prva-hodina?utm_source=fb&utm_medium=cpc&utm_campaign=fa-zumba-skuska-2610&utm_content=' + NOVA + '&utm_term=' + SADA;
+    await j(adresa, {}, ina);
+    const posliZ = (krok, ref) => j('/api/funnel', { method: 'POST', headers: { Referer: BASE + ref }, body: { krok, stranka: '/prva-hodina' } }, ina);
+    for (const k of ['lp_view', 'lp_terminy', 'lp_termin', 'form_start', 'form_submit']) await posliZ(k, adresa);
+    await posliZ('lp_view', '/prva-hodina'); // návrat priamo, bez utm v adrese
+    await new Promise(r => setTimeout(r, 600));
+    const jejVid = (ina.jar || {}).fa_vid;
+    const jej = udalosti().filter(e => e.vid === jejVid);
+    const nova = jej.find(e => e.krok === 'lp_view' && e.obsah === NOVA);
+    ok('obsah sa vzal z adresy, nie zo staršej cookie', !!nova, JSON.stringify(jej.map(e => [e.krok, e.obsah])));
+    ok('prvý dotyk ostal zachovaný zvlášť', nova && nova.obsah_prvy === '111111', nova && String(nova.obsah_prvy));
+    ok('kampaň ostala prvý dotyk (cookie sa neprepisuje)', nova && nova.kampan === 'stara-kampan', nova && String(nova.kampan));
+    ok('súbor reklám (utm_term) sa uložil', nova && nova.sada === SADA, nova && String(nova.sada));
+    ok('celý lievik návštevy nesie tú istú kreatívu',
+      ['lp_terminy', 'lp_termin', 'form_start', 'form_submit'].every(k => jej.some(e => e.krok === k && e.obsah === NOVA)),
+      JSON.stringify(jej.map(e => [e.krok, e.obsah])));
+    ok('bez utm v adrese padne obsah na cookie',
+      jej.some(e => e.krok === 'lp_view' && e.obsah === '111111'), JSON.stringify(jej.filter(e => e.krok === 'lp_view').map(e => e.obsah)));
+
+    const d2 = (await j('/api/admin/funnel-stranky?days=7', {}, adm)).d || {};
+    const kr = (d2.kreativy || []).find(x => x.obsah === NOVA);
+    ok('admin ukáže rozpad po kreatívach', !!kr, JSON.stringify(d2.kreativy));
+    ok('kreatíva má čísla celého lievika',
+      kr && kr.navstevy === 1 && kr.videla_terminy === 1 && kr.vybrala_termin === 1 && kr.zacali === 1 && kr.odoslali === 1,
+      JSON.stringify(kr));
+    ok('súbor reklám je pri kreatíve', kr && kr.sada === SADA, JSON.stringify(kr && kr.sada));
+    ok('staršia kreatíva z cookie má vlastný riadok',
+      (d2.kreativy || []).some(x => x.obsah === '111111'), JSON.stringify((d2.kreativy || []).map(x => x.obsah)));
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.message);
   } finally {

@@ -119,11 +119,21 @@ async function zapisKrok(req, krok, extra){
   try{
     extra=extra||{}; if(!FUNNEL_KROKY.has(krok)) return;
     const z=citajZdrojCookie(req)||{}; const ua=String(req.headers['user-agent']||'');
-    let ref=''; try{ ref=new URL(String(req.headers.referer||''),'http://x').pathname; }catch(e){}
+    // 20. 10.: cookie fa_zdroj je zámerne PRVÝ dotyk na 90 dní, takže tri reklamy jednej
+    // kampane (A/B/F) v nej splynú — lievik potom nevie povedať, ktorá kreatíva ľudí stráca.
+    // Zdroj TEJTO návštevy preto čítame z adresy stránky (hlavička referer, ktorú už
+    // parsujeme kvôli ceste) a držíme ho vedľa prvého dotyku, nie namiesto neho.
+    let ref='', qs=null;
+    try{ const u=new URL(String(req.headers.referer||''),'http://x'); ref=u.pathname; qs=u.searchParams; }catch(e){}
+    const zAdresy=k=>{ const v=qs&&qs.get(k); return v?String(v).slice(0,300):null; };
     const stranka=String(extra.stranka||ref||z.landing||'').split('?')[0].slice(0,80)||null;
     await q.insert(db.funnel_events,{ krok, at:nowISO(), den:today(),
       vid:extra.vid||citajCookie(req,VID_COOKIE)||req._novyVid||null, uid:extra.uid||(req.session&&req.session.uid)||null,
       stranka, kampan:extra.kampan||z.utm_campaign||null, zdroj:extra.zdroj||z.utm_source||(z.fbclid?'fbclid':(z.gclid?'gclid':null)),
+      // obsah = reklama tejto návštevy (utm_content = číslo reklamy z Mety), obsah_prvy = prvý dotyk,
+      // sada = súbor reklám (utm_term). Keď v adrese nie sú, platí cookie.
+      obsah:extra.obsah||zAdresy('utm_content')||z.utm_content||null, obsah_prvy:z.utm_content||null,
+      sada:extra.sada||zAdresy('utm_term')||z.utm_term||null,
       variant:extra.variant||citajCookie(req,AB_COOKIE)||null, webview:jeWebview(ua), mobil:/Mobi|Android|iPhone/i.test(ua),
       meta:extra.meta||null });
   }catch(e){}
@@ -133,7 +143,9 @@ async function zapisKrokPouzivatela(userId, krok, extra){
     const u=await q.one(db.users,{_id:userId}); if(!u) return;
     await q.insert(db.funnel_events,{ krok, at:nowISO(), den:today(), vid:u.funnel_vid||null, uid:u._id,
       stranka:(extra&&extra.stranka)||String(u.landing_page||'').split('?')[0].slice(0,80)||null,
-      kampan:u.utm_campaign||null, zdroj:u.utm_source||null, variant:u.landing_variant||null, webview:null, mobil:null,
+      kampan:u.utm_campaign||null, zdroj:u.utm_source||null,
+      obsah:u.utm_content||null, obsah_prvy:u.utm_content||null, sada:u.utm_term||null,
+      variant:u.landing_variant||null, webview:null, mobil:null,
       meta:(extra&&extra.meta)||null });
   }catch(e){}
 }
@@ -25600,7 +25612,15 @@ async function syncAdStats(force){
     //    — to je jediný dôvod, prečo časť kampaní ukazuje tržbu 0 €.
     // Videoreklama má odkaz v tlačidle (video_data.call_to_action), nie v link_data —
     // HEJ BABY preto vyzerala „bez utm", hoci ho nesie (16. 9.).
-    let ads=[]; try{ ads=await metaAll(tok, META_ACT+'/ads?fields=id,campaign_id,effective_status,creative{url_tags,link_url,object_story_spec{link_data{link},video_data{call_to_action}}}&limit=300', 12); }catch(e){}
+    let ads=[]; try{ ads=await metaAll(tok, META_ACT+'/ads?fields=id,name,campaign_id,effective_status,creative{url_tags,link_url,object_story_spec{link_data{link},video_data{call_to_action}}}&limit=300', 12); }catch(e){}
+    // 20. 10.: utm_content nesie číslo reklamy, nie jej názov. Mapu id → názov si držíme
+    // tu (jediné miesto, kde zoznam reklám aj tak čítame), aby lievik po kreatívach
+    // ukazoval „A — týždeň zadarmo" a nie 52558359230473.
+    try{
+      const mena={}; for(const a of ads) if(a.id && a.name) mena[String(a.id)]=String(a.name).slice(0,120);
+      if(Object.keys(mena).length) await q.update(db.settings,{key:'meta_ad_names'},
+        {$set:{key:'meta_ad_names', value:mena, at:nowISO()}},{upsert:true});
+    }catch(e){}
     const utm={};
     for(const a of ads){
       const cr=a.creative||{};
@@ -26162,6 +26182,24 @@ async function lievikStranok(days){
     navstevy:new Set(list.filter(e=>e.krok==='lp_view'||e.krok==='form_view').map(kl)).size, zacali:unik(list,'form_start'), odoslali:unik(list,'form_submit'),
     registracie:new Set(list.filter(e=>e.krok==='register_ok'||e.krok==='booking_ok').map(kl)).size, skusky:unik(list,'trial_ok'), odmietli:unik(list,'trial_decline') }; })
     .sort((a,b)=>b.navstevy-a.navstevy).slice(0,10);
+  // Rozpad landingu po kreatívach (20. 10.): jedna kampaň má tri reklamy a líšia sa
+  // len v utm_content. Dovtedy sa všetky tri zliali do jedného riadku „Podľa kampane"
+  // a nebolo vidieť, ktorá z nich ľudí stráca a v ktorom kroku.
+  const kreativy=await (async()=>{
+    const lp=ev.filter(e=>(e.stranka||'/')==='/prva-hodina' && e.obsah);
+    if(!lp.length) return [];
+    const podla={}; for(const e of lp) (podla[e.obsah]=podla[e.obsah]||[]).push(e);
+    let mena={}; try{ const s=await q.one(db.settings,{key:'meta_ad_names'}); if(s && s.value && typeof s.value==='object') mena=s.value; }catch(e){}
+    // Karta kampane s vlastnou reklamou je druhý zdroj názvu, keď sync z Mety ešte nebežal
+    try{ for(const c of await q.find(db.campaigns,{})) if(c.meta_ad_id && !mena[String(c.meta_ad_id)]) mena[String(c.meta_ad_id)]=c.name||''; }catch(e){}
+    return Object.keys(podla).map(id=>{ const list=podla[id];
+      return { obsah:id, nazov:mena[id]||null,
+        sada:(list.find(e=>e.sada)||{}).sada||null,
+        navstevy:new Set(list.filter(e=>e.krok==='lp_view'||e.krok==='form_view').map(kl)).size,
+        videla_terminy:unik(list,'lp_terminy'), vybrala_termin:unik(list,'lp_termin'),
+        zacali:unik(list,'form_start'), odoslali:unik(list,'form_submit'), rezervacie:unik(list,'booking_ok') }; })
+      .sort((a,b)=>b.navstevy-a.navstevy || b.rezervacie-a.rezervacie).slice(0,20);
+  })();
   const varianty=LANDING_VARIANTY.map(v=>{ const list=ev.filter(e=>e.variant===v); return { variant:v, navstevy:unik(list,'lp_view'), odoslali:unik(list,'form_submit'), rezervacie:unik(list,'booking_ok'), skusky:unik(list,'trial_ok') }; }).filter(x=>x.navstevy||x.odoslali);
   const chyby={}; for(const e of ev.filter(e=>e.krok==='register_err')){ const d=(e.meta&&e.meta.dovod)||'?'; chyby[d]=(chyby[d]||0)+1; }
   // Pozornosť na landingu: ako hlboko dočítali a ako dlho vydržali (21. 9.)
@@ -26179,7 +26217,7 @@ async function lievikStranok(days){
       scroll:[25,50,75,100].map(p=>({prah:p, n:unik(list,'scroll_'+p), podiel:+(100*unik(list,'scroll_'+p)/navstevy).toFixed(1)}))
     };
   }
-  return { ok:true, days, od, spolu:ev.length, stranky, kampane, varianty, chyby, pozornost, rezim:await landingRezim() };
+  return { ok:true, days, od, spolu:ev.length, stranky, kampane, kreativy, varianty, chyby, pozornost, rezim:await landingRezim() };
 }
 app.get('/api/admin/funnel-stranky', adminAuth, async(req,res)=>{
   try{ res.json(await lievikStranok(req.query.days)); }catch(e){ res.status(500).json({error:e.message}); }
