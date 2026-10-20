@@ -109,7 +109,11 @@ const FUNNEL_KROKY=new Set(['lp_view','lp_city','lp_termin','form_view','form_st
   // 21. 9.: ako hlboko dočítala a ako dlho vydržala — rozlíši okamžitý odchod od nezáujmu
   'scroll_25','scroll_50','scroll_75','scroll_100','odchod',
   // lp_cta sa do 21. 9. posielal zo stránky, ale tu chýbal — kliky na hlavné tlačidlo sa ticho zahadzovali
-  'lp_cta']);
+  'lp_cta',
+  // 20. 10.: medzikroky medzi načítaním stránky a odoslaním formulára. Dovtedy sme
+  // nevedeli rozlíšiť „pozrela a odišla" od „nemala si z čoho vybrať".
+  // lp_skupina posielal detský landing už od 18. 10., ale tu chýbal.
+  'lp_mesta','lp_mesta_prazdno','lp_terminy','lp_prazdno','lp_plne','lp_viac','lp_spat','lp_skupina']);
 const jeWebview=ua=>/FBAN|FBAV|FB_IAB|Instagram/i.test(String(ua||''));
 async function zapisKrok(req, krok, extra){
   try{
@@ -26118,7 +26122,7 @@ app.post('/api/funnel', rlFunnel, async(req,res)=>{
     if(!FUNNEL_KROKY.has(krok)) return res.status(204).end();
     const stranka=String((req.body&&req.body.stranka)||'').split('?')[0].slice(0,80);
     const m=(req.body&&req.body.meta&&typeof req.body.meta==='object') ? req.body.meta : {};
-    const meta={}; for(const k of ['city','dovod','pole','termin','sekundy','hlbka']) if(m[k]!=null) meta[k]=String(m[k]).slice(0,80);
+    const meta={}; for(const k of ['city','dovod','pole','termin','sekundy','hlbka','pocet','volne','z','skupina']) if(m[k]!=null) meta[k]=String(m[k]).slice(0,80);
     await zapisKrok(req, krok, {stranka:stranka||null, meta:Object.keys(meta).length?meta:null});
   }catch(e){}
   res.status(204).end();
@@ -26135,10 +26139,13 @@ async function lievikStranok(days){
   days=Math.min(Math.max(+days||7,1),90);
   const od=new Date(Date.now()-days*864e5).toISOString();
   const ev=await q.find(db.funnel_events,{at:{$gte:od}});
-  const KROKY={ '/prva-hodina':['lp_view','lp_cta','lp_termin','form_view','form_start','form_submit','booking_ok','trial_open','trial_ok'],
-                '/prva-hodina-kids':['lp_view','lp_termin','form_view','form_start','form_submit','booking_ok'],
+  const KROKY={ '/prva-hodina':['lp_view','lp_mesta','lp_cta','lp_city','lp_terminy','lp_termin','form_view','form_start','form_submit','booking_ok','trial_open','trial_ok'],
+                '/prva-hodina-kids':['lp_view','lp_terminy','lp_termin','form_view','form_start','form_submit','booking_ok'],
                 '/':['lp_view','form_view','form_start','form_submit','register_ok','trial_open','trial_ok','trial_decline'],
                 '/nabor-trenerov':['lp_view','video_start','video_half','cta_click','form_start','form_submit'] };
+  // Zádrhely nie sú krokom lievika: nedeje sa ich „priechod", ale naopak zastavenie.
+  // Do reťazca percent ich dať nejde, lebo by ho rozbili.
+  const PREKAZKY=['lp_mesta_prazdno','lp_prazdno','lp_plne','lp_viac','lp_spat','lp_skupina'];
   const kl=e=>e.vid||e.uid||e._id;
   const unik=(list,krok)=>new Set(list.filter(e=>e.krok===krok).map(kl)).size;
   const lievik=(list,kroky)=>{ let prev=null; return kroky.map(k=>{ const n=unik(list,k);
@@ -26147,6 +26154,7 @@ async function lievikStranok(days){
   for(const sk of Object.keys(KROKY)){
     const list=ev.filter(e=>(e.stranka||'/')===sk);
     stranky[sk]={ navstevy:unik(list,'lp_view')||unik(list,'form_view'), kroky:lievik(list,KROKY[sk]),
+      prekazky:PREKAZKY.map(k=>({krok:k, n:unik(list,k)})).filter(x=>x.n),
       webview:new Set(list.filter(e=>e.webview&&(e.krok==='lp_view'||e.krok==='form_view')).map(kl)).size };
   }
   const kamp={}; for(const e of ev){ const k=e.kampan||(e.zdroj?('('+e.zdroj+')'):'(bez kampane)'); (kamp[k]=kamp[k]||[]).push(e); }

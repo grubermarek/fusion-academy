@@ -157,8 +157,8 @@ footer a{color:#8f8a7d}
     <div class="krok" id="k2" style="display:none">
       <h2 id="k2h">Kedy prídeš?</h2>
       <div class="vyber" id="sessList"></div>
-      <button class="viac" id="viacBtn" style="display:none" onclick="VSETKY=true;vykresliTerminy()"></button>
-      <button class="spat" onclick="naKrok(1)">← Vybrať iné mesto</button>
+      <button class="viac" id="viacBtn" style="display:none" onclick="VSETKY=true;krok('lp_viac');vykresliTerminy()"></button>
+      <button class="spat" onclick="spat(1)">← Vybrať iné mesto</button>
     </div>
 
     <div class="krok" id="k3" style="display:none">
@@ -174,7 +174,7 @@ footer a{color:#8f8a7d}
       <div class="msg" id="fMsg"></div>
       <div class="hint" id="formHint">Odoslaním súhlasíš so <a href="/ochrana-sukromia" target="_blank" rel="noopener">spracovaním údajov</a>. Prihlásenie do appky ti pošleme e-mailom.<br>
         Nevieš si rady? Zavolaj Beátke na <a href="tel:+421904315151" class="tel">0904 315 151</a>.</div>
-      <button class="spat" onclick="naKrok(2)">← Vybrať iný termín</button>
+      <button class="spat" onclick="spat(2)">← Vybrať iný termín</button>
     </div>
   </div>
 
@@ -340,6 +340,21 @@ function vykresliTerminy(){
   if(ITEMS.length>NA_PRVEJ&&!VSETKY){ viac.style.display='block'; viac.textContent='Ďalšie termíny ('+(ITEMS.length-NA_PRVEJ)+') ↓'; }
   else viac.style.display='none';
 }
+// Medzikroky lievika (20. 10.): medzi zobrazením stránky a odoslaním formulára sme
+// nevideli nič. Prázdny zoznam termínov pritom vyzeral v štatistike rovnako ako
+// „pozrela a odišla" — a to je úplne iná chyba.
+function hlasMesta(){
+  if(MESTA.length) krok('lp_mesta',{pocet:String(MESTA.length)});
+  else krok('lp_mesta_prazdno');
+}
+function hlasTerminy(){
+  const volne=ITEMS.filter(i=>!i.full).length;
+  const kde={city:CITY||'vsetky'};
+  if(!ITEMS.length) krok('lp_prazdno',kde);
+  else if(!volne) krok('lp_plne',Object.assign({pocet:String(ITEMS.length)},kde));
+  else krok('lp_terminy',Object.assign({pocet:String(ITEMS.length), volne:String(volne)},kde));
+}
+function spat(n){ krok('lp_spat',{z:String(KROK)}); naKrok(n); }
 async function load(){
   $('cityLoc').textContent=CITY?(LOC[CITY]||('V '+CITY.toUpperCase())):'V TVOJOM MESTE';
   const r=await fetch('/api/first-class/schedule'+(CITY?'?city='+encodeURIComponent(NAME2SLUG[CITY]||''):''));
@@ -355,6 +370,7 @@ async function setCity(c){
   $('sessList').innerHTML='<div class="nacitavam">Hľadám najbližšie hodiny…</div>';
   naKrok(2);
   await load();
+  hlasTerminy();
 }
 function pick(ix){
   PICK=ITEMS[ix];
@@ -480,7 +496,7 @@ async function navratZoStripe(){
   if(window.faScrollTrack) window.faScrollTrack();
   await load();
   // Mesto z reklamy (?city=detva) je už rozhodnuté — nech sa neopytujeme naň znova.
-  if(CITY) naKrok(2);
+  if(CITY){ naKrok(2); hlasTerminy(); } else hlasMesta();
 })();
 </script>
 </body>

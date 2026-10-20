@@ -138,7 +138,7 @@ footer a{color:var(--acc)}
       <div class="err" id="chyba" style="display:none"></div>
       <div class="hint">Rezervácia trvá 30 sekúnd. Účet v appke vám založíme sami.<br>
         Neviete si rady? Zavolajte Beátke na <a href="tel:+421904315151" class="tel">0904 315 151</a>.</div>
-      <button class="spat" onclick="naKrok(1)">← Vybrať iný termín</button>
+      <button class="spat" onclick="spat(1)">← Vybrať iný termín</button>
     </div>
   </div>
 
@@ -221,11 +221,13 @@ async function load(){
           return '<button class="'+(s===SKUPINA?'on':'')+'" onclick="setSkupina(\''+esc(s)+'\')">'+esc(s)+(vek?' · '+esc(vek)+' r.':'')+'</button>'; }).join('');
   }
   vykresli();
+  hlasTerminy();
 }
 function setSkupina(s){ SKUPINA=s; naKrok(1); krok('lp_skupina',{skupina:s||'vsetky'}); load(); }
 function vykresli(){
   const list=$('sessList');
   const zoznam=SKUPINA?ITEMS.filter(i=>i.skupina===SKUPINA):ITEMS;
+  window.__zoznam=zoznam;
   if(!zoznam.length){ list.innerHTML='<div class="nacitavam">Momentálne tu nie sú vypísané termíny.</div>'; return; }
   // aria-label na každom riadku: text je vnorený v <span>, takže čítačka obrazovky
   // by inak ohlásila len „tlačidlo".
@@ -236,8 +238,16 @@ function vykresli(){
     +(i.vek?'<span class="vek">'+esc(i.vek)+' r.</span>':'')+'</b>'
     +'<small>'+esc(i.name)+' · '+fmtD(i.date)+' · '+esc(i.city)+'</small></span>'
     +'<span class="sip" aria-hidden="true">›</span></button>').join('');
-  window.__zoznam=zoznam;
 }
+// Medzikroky lievika (20. 10.) — rovnaké názvy ako na dospelom landingu.
+// Plné hodiny sú odfiltrované už v load(), takže prázdny zoznam = nie je kam prísť.
+function hlasTerminy(){
+  const zoznam=SKUPINA?ITEMS.filter(i=>i.skupina===SKUPINA):ITEMS;
+  const kde={skupina:SKUPINA||'vsetky'};
+  if(zoznam.length) krok('lp_terminy',Object.assign({pocet:String(zoznam.length), volne:String(zoznam.length)},kde));
+  else krok('lp_prazdno',kde);
+}
+function spat(n){ krok('lp_spat',{z:String(KROK)}); naKrok(n); }
 function vyber(n){
   PICK=(window.__zoznam||[])[n]; if(!PICK) return;
   $('formDetail').innerHTML='<b style="color:#fff">'+esc(PICK.name)+'</b> · '
@@ -248,7 +258,7 @@ function vyber(n){
 }
 ['fDieta','fRok','fRodic','fMail'].forEach(id=>{
   const el=$(id); if(!el) return;
-  el.addEventListener('focus',()=>krok('form_start',{pole:id}),{once:true});
+  el.addEventListener('input',()=>krok('form_start',{pole:id}),{once:true});
 });
 function chyba1(pole,errId,text){
   const i=$(pole), e=$(errId);
