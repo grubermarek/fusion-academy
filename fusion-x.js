@@ -249,6 +249,11 @@ module.exports = function initFusionX(ctx){
     { hladaj: /j[aáä]ger/i, firma: 'Penzión JÁGER na Tureckom vŕšku', mesto: 'Detva', kategoria: 'Ubytovanie a wellness',
       web: 'https://www.facebook.com/profile.php?id=100036409283090',
       popis: 'Penzión na Tureckom vŕšku v Detve — ubytovanie, reštaurácia a priestory na svadby a oslavy.', logo: '', poradie: 3 },
+    // Marek 21. 10. 2026. Údaje z dreamtech.sk (adresu ani IČO web neuvádza).
+    { hladaj: /dream\s*tech/i, firma: 'DREAMTECH', mesto: 'Banskobystrický kraj', kategoria: 'Služby',
+      web: 'https://www.dreamtech.sk/',
+      popis: 'Elektroinštalácie, bleskozvody a revízie pre rodinné domy aj firmy — od projektu cez realizáciu po revíznu správu.',
+      logo: 'https://www.dreamtech.sk/wp-content/uploads/2026/02/dreamtech-icon-png.png', poradie: 4 },
   ];
   async function zalozPartnerov(zoznam, kluc){
     if (await q.one(db.settings, { key: kluc })) return;
