@@ -2132,6 +2132,15 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2"><h6 class="fw-bold mb-0"><i class="bi bi-graph-up me-2 text-warning"></i>Posledných 12 mesiacov — čisté tržby, náklady, EBITDA</h6><span class="text-muted" style="font-size:.7rem" id="zdSeriaPozn"></span></div>
       <canvas id="zdChart" height="90"></canvas>
     </div></div>
+    <!-- Mestá po mesiacoch — plus / mínus (Marek 21. 10.) -->
+    <div class="card bg-dark border-secondary mb-3"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+        <div><h6 class="fw-bold mb-0"><i class="bi bi-grid-3x3-gap-fill me-2 text-warning"></i>Mestá po mesiacoch — kedy bolo ktoré v pluse a kedy v mínuse</h6>
+          <div class="text-muted" style="font-size:.7rem">Zisk mesta = tržby mesta − cesta − nájom sály − zástupy trénerov (rovnako ako „Mestá — náklady a zisk“ v Prehľade). Čím sýtejšia farba, tým väčší plus alebo mínus. Prejdi myšou na bunku pre čísla.</div></div>
+        <div class="mc-tabs"><button class="mc-tab on" id="zdHm12" onclick="zdHeat(12)">12 mes.</button><button class="mc-tab" id="zdHm24" onclick="zdHeat(24)">24 mes.</button></div>
+      </div>
+      <div id="zdHeat" class="small text-muted">Načítavam…</div>
+    </div></div>
     <div class="card bg-dark border-secondary mb-3"><div class="card-body">
       <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
         <div><h6 class="fw-bold mb-0"><i class="bi bi-building me-2 text-warning"></i>Fixné náklady firmy</h6>
@@ -3350,7 +3359,7 @@ function _zdRange(){
 }
 function zdSetGran(g){ _zdGran=g; document.querySelectorAll('#zdGran [data-g]').forEach(b=>{ const on=b.dataset.g===g; b.classList.toggle('btn-warning',on); b.classList.toggle('btn-outline-warning',!on); }); _zdAnchor=new Date(); loadZdravie(); }
 function zdShift(n){ const a=_zdAnchor||new Date(); const step=_zdGran==='year'?12:(_zdGran==='quarter'?3:1); const nx=new Date(a.getFullYear(), a.getMonth()+n*step, 1); if(nx>new Date()) return; _zdAnchor=nx; loadZdravie(); }
-function initZdravie(){ if(!_zdInit){ _zdInit=true; _zdAnchor=new Date(); } loadZdravie(); }
+function initZdravie(){ if(!_zdInit){ _zdInit=true; _zdAnchor=new Date(); } loadZdravie(); zdHeat(); }
 const _zdE=x=>(+x||0).toFixed(2).replace('.',',')+' €';
 async function loadZdravie(){
   const r=_zdRange();
@@ -3417,6 +3426,34 @@ function renderZdravie(){
   const C={green:'#4ade80',amber:'#e0a656',red:'#e57373',grey:'#777'};
   document.getElementById('zdSemafor').innerHTML=sem.map(x=>'<div class="d-flex gap-2 py-1" style="border-bottom:1px solid #2a2a2a"><span style="width:10px;height:10px;border-radius:99px;background:'+C[x.stav]+';margin-top:5px;flex:none"></span><div><div class="fw-semibold" style="color:#EAE3D5">'+x.l+'</div><div class="text-muted" style="font-size:.72rem">'+x.txt+'</div></div></div>').join('')
     +'<div class="text-muted mt-2" style="font-size:.66rem">Hranice: EBITDA marža 20 % / 5 %, výplaty 35 % / 50 %, reklama 15 % / 25 %, refundy 3 % / 7 %. Sú to orientačné pravidlá pre malú tanečnú školu, nie účtovný štandard.</div>';
+}
+// Teplotná mapa mestá × mesiace: červená = mínus, zelená = plus, sýtosť podľa výšky (max v tabuľke)
+let _zdHeatN=12;
+async function zdHeat(n){
+  _zdHeatN=n||_zdHeatN;
+  ['12','24'].forEach(x=>document.getElementById('zdHm'+x)?.classList.toggle('on', +x===_zdHeatN));
+  const host=document.getElementById('zdHeat'); if(!host) return;
+  const d=await api('/api/admin/mesta-mesiace?months='+_zdHeatN).catch(()=>null);
+  if(!d||!d.ok){ host.innerHTML='<div class="text-danger">Chyba: '+escHtml((d&&d.error)||'?')+'</div>'; return; }
+  const E=x=>(+x||0).toFixed(0)+' €';
+  const vals=d.riadky.flatMap(r=>d.mesta.map(m=>Math.abs((r.mesta[m]||{}).zisk||0))).filter(x=>x>0);
+  const max=Math.max(1, ...vals);
+  const farba=z=>{ if(Math.abs(z)<0.5) return 'transparent'; const a=0.12+0.78*Math.pow(Math.min(1,Math.abs(z)/max),0.55); return z>0?'rgba(74,222,128,'+a.toFixed(2)+')':'rgba(229,115,115,'+a.toFixed(2)+')'; };
+  const txt=z=>Math.abs(z)/max>0.55?'#0a0a0a':'#EAE3D5';
+  const MES=['jan','feb','mar','apr','máj','jún','júl','aug','sep','okt','nov','dec'];
+  const lbl=m=>{ const [y,mo]=m.split('-'); return MES[+mo-1]+' '+y; };
+  const bunka=(x,sp)=>{ if(!x||(!x.konane&&!x.trzby&&!x.naklady)) return '<td class="text-center text-muted" style="opacity:.35">—</td>';
+    const t='tržby '+E(x.trzby)+' · náklady '+E(x.naklady)+(x.konane!=null?' · '+x.konane+' hodín':'')+(x.ludi?' · Ø '+String(x.ludi).replace('.',',')+' ľudí':'');
+    return '<td class="text-center fw-semibold" title="'+escHtml(t)+'" style="background:'+farba(x.zisk)+';color:'+txt(x.zisk)+';border-radius:6px;'+(sp?'font-weight:800;':'')+'">'+(x.zisk>0?'+':'')+E(x.zisk)+'</td>'; };
+  // súčet za mesto cez všetky mesiace
+  const sum={}; for(const m of d.mesta) sum[m]=d.riadky.reduce((a,r)=>{ const x=r.mesta[m]||{}; return {zisk:a.zisk+(x.zisk||0),trzby:a.trzby+(x.trzby||0),naklady:a.naklady+(x.naklady||0),konane:a.konane+(x.konane||0)}; },{zisk:0,trzby:0,naklady:0,konane:0});
+  const sumAll=d.riadky.reduce((a,r)=>({zisk:a.zisk+r.spolu.zisk,trzby:a.trzby+r.spolu.trzby,naklady:a.naklady+r.spolu.naklady,konane:a.konane+r.spolu.konane}),{zisk:0,trzby:0,naklady:0,konane:0});
+  const plus=m=>d.riadky.filter(r=>(r.mesta[m]||{}).zisk>0.5).length, minus=m=>d.riadky.filter(r=>(r.mesta[m]||{}).zisk<-0.5).length;
+  host.innerHTML='<div class="table-responsive"><table class="table table-dark table-sm align-middle mb-2" style="font-size:.8rem;border-collapse:separate;border-spacing:3px">'
+    +'<thead><tr style="font-size:.68rem;color:#999"><th>Mesiac</th>'+d.mesta.map(m=>'<th class="text-center">'+escHtml(m)+'<div style="font-weight:400;opacity:.7">'+plus(m)+'× plus · '+minus(m)+'× mínus</div></th>').join('')+'<th class="text-center" style="color:#C9A24C">Spolu</th></tr></thead><tbody>'
+    +d.riadky.map(r=>'<tr><td class="text-nowrap" style="color:#C9A24C">'+lbl(r.m)+(r.bezi?' <span class="text-muted" style="font-size:.62rem">beží</span>':'')+'</td>'+d.mesta.map(m=>bunka(r.mesta[m])).join('')+bunka(r.spolu,true)+'</tr>').join('')
+    +'</tbody><tfoot><tr style="border-top:2px solid #C9A24C"><td class="fw-bold">Spolu</td>'+d.mesta.map(m=>bunka(sum[m],true)).join('')+bunka(sumAll,true)+'</tr></tfoot></table></div>'
+    +'<div class="d-flex align-items-center gap-2 text-muted" style="font-size:.66rem"><span>mínus</span><span style="display:inline-block;width:120px;height:8px;border-radius:99px;background:linear-gradient(90deg,rgba(229,115,115,.9),rgba(229,115,115,.15),transparent,rgba(74,222,128,.15),rgba(74,222,128,.9))"></span><span>plus</span><span class="ms-2">Členstvo a permanentka sa počítajú mestu, kde klientka v tom mesiaci chodila najčastejšie; merch, eventy a venčeky sú mimo miest.</span></div>';
 }
 function renderZdChart(seria){
   const ctx=document.getElementById('zdChart'); if(!ctx) return;

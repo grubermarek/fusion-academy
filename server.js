@@ -15294,6 +15294,32 @@ async function zdravieFirmy(from, to){
   zdravieCache.set(k, {at:Date.now(), data});
   return data;
 }
+// Mestá po mesiacoch — kedy bolo ktoré mesto v pluse a kedy v mínuse (Marek 21. 10. 2026).
+// Ten istý výpočet ako karta „Mestá — náklady a zisk" (mestaZisk), len po jednom mesiaci.
+const mestaMesiaceCache = new Map();
+app.get('/api/admin/mesta-mesiace', adminAuth, async(req,res)=>{
+  try{
+    const n = Math.min(36, Math.max(3, +req.query.months||12));
+    const dnes = today(); const k = n+'|'+dnes;
+    const c = mestaMesiaceCache.get(k);
+    if(c && Date.now()-c.at < 10*60*1000) return res.json(c.data);
+    const y=+dnes.slice(0,4), mo=+dnes.slice(5,7);
+    const riadky = [];
+    for(let i=0;i<n;i++){
+      const st=new Date(Date.UTC(y, mo-1-i, 1)), en=new Date(Date.UTC(y, mo-i, 0));
+      const f=st.toISOString().slice(0,10), t=en.toISOString().slice(0,10); if(t<'2024-01-01') break;
+      const mz = await mestaZisk(f, t>dnes?dnes:t);
+      const mesta = {};
+      for(const m of mz.mesta) mesta[m.mesto] = { zisk:+(+m.zisk||0).toFixed(2), trzby:+(+m.trzby.spolu||0).toFixed(2), naklady:+(+m.naklady.spolu||0).toFixed(2), konane:m.konane||0, ludi:+(+m.priemer_ludi||0).toFixed(1) };
+      const spolu = Object.values(mesta).reduce((a,x)=>({ zisk:+(a.zisk+x.zisk).toFixed(2), trzby:+(a.trzby+x.trzby).toFixed(2), naklady:+(a.naklady+x.naklady).toFixed(2), konane:a.konane+x.konane }),{zisk:0,trzby:0,naklady:0,konane:0});
+      riadky.push({ m:f.slice(0,7), od:f, do:t, mesta, spolu, bezi: t>dnes });
+    }
+    const mestaPoradie = LOCATIONS.filter(x=>x!=='Online');
+    const data = { ok:true, months:n, mesta:mestaPoradie, riadky };
+    mestaMesiaceCache.set(k, {at:Date.now(), data});
+    res.json(data);
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 app.get('/api/admin/zdravie', adminAuth, async(req,res)=>{
   try{
     const dnes = today();
