@@ -938,7 +938,15 @@ async function api(url, opts={}){
     ...opts,
     body: opts.body ? JSON.stringify(opts.body) : undefined
   });
-  return res.json();
+  // Server vie odpovedať aj HTML (chybová stránka, prihlásenie po vypršaní session).
+  // res.json() na tom spadne a volajúcemu potom „nič nespraví" bez jediného slova —
+  // tak radšej vrátime zrozumiteľnú chybu, ktorú vie zobraziť toast.
+  const text = await res.text();
+  try { return JSON.parse(text); }
+  catch(e){
+    console.error('api('+url+') → HTTP '+res.status+', odpoveď nie je JSON:', text.slice(0,200));
+    return { error: res.status===401 ? 'Prihlásenie vypršalo — obnov stránku.' : ('Chyba servera (HTTP '+res.status+')') };
+  }
 }
 
 // ── TAB SWITCHING – defined later with QR support ────────────────────────────
@@ -2455,8 +2463,10 @@ async function sellConfirm(kind, id){
     amount=+String(a).replace(',','.')||item.price;
   }
   if(!confirm(`Predať: ${item.name}${qty>1?' ×'+qty:''}\nKlient: ${_sellClient.name}\nHotovosť: ${(+amount).toFixed(2)} €\n\nSuma sa zapíše do tvojej hotovostnej evidencie (odovzdáš ju, alebo sa zúčtuje s výplatou).`)) return;
+  // POZOR: api() si telo zabalí samo — JSON.stringify tu poslal dvojito zabalené telo,
+  // server vrátil 400 ako HTML a predaj sa nikdy nezapísal (Nelka 23. 10.: „klikla som a nič").
   const body=kind==='plan'?{user_id:_sellClient.id, kind, plan_id:id, amount}:{user_id:_sellClient.id, kind, product_id:id, qty};
-  const d=await api('/api/trainer/sell',{method:'POST',body:JSON.stringify(body)});
+  const d=await api('/api/trainer/sell',{method:'POST',body});
   if(d&&d.ok){ toast(`✅ ${d.what} — ${d.amount.toFixed(2)} € (zapísané v hotovosti)`); loadTrainerCash&&loadTrainerCash(); loadStudents&&loadStudents(); }
   else toast((d&&d.error)||'Chyba predaja', true);
 }
