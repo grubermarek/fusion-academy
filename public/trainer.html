@@ -818,6 +818,28 @@ select.form-control option{background:var(--dark3)}
 </div>
 
 <!-- Give Free Modal -->
+<!-- Potvrdenie predaja z panela Predaj (Marek 23. 10.: namiesto dvoch systémových okienok) -->
+<div class="modal-bg" id="modal-sellConfirm" onclick="if(event.target===this)closeModal()">
+  <div class="modal-card">
+    <button class="modal-close" onclick="closeModal()"><i class="bi bi-x-lg"></i></button>
+    <div class="modal-title" id="sc-title">💳 Predaj</div>
+    <div class="modal-sub" id="sc-sub"></div>
+    <div class="modal-row">
+      <div class="form-group" id="sc-qtyWrap" style="display:none">
+        <label class="form-label">Počet kusov</label>
+        <input type="number" class="form-control" id="sc-qty" value="1" min="1" step="1" inputmode="numeric" data-keep-value="1" oninput="scRecalc()">
+      </div>
+      <div class="form-group">
+        <label class="form-label" id="sc-amountLbl">Suma v hotovosti (€)</label>
+        <input type="number" class="form-control" id="sc-amount" step="0.10" min="0" inputmode="decimal" data-keep-value="1">
+      </div>
+    </div>
+    <div style="font-size:.78rem;color:var(--muted);margin:-4px 0 12px">Suma sa zapíše do tvojej hotovostnej evidencie — odovzdáš ju, alebo sa zúčtuje s výplatou.</div>
+    <button class="btn-block" id="sc-btn" onclick="sellSubmit()"><i class="bi bi-check2-circle"></i> Predať</button>
+    <div class="inline-msg" id="sc-msg"></div>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-giveFree" onclick="if(event.target===this)closeModal()">
   <div class="modal-card">
     <button class="modal-close" onclick="closeModal()"><i class="bi bi-x-lg"></i></button>
@@ -2449,26 +2471,38 @@ function renderSellCatalog(){
   document.getElementById('sellPlans').innerHTML=_sellOpts.plans.map(p=>tile(`sellConfirm('plan','${p.id}')`, p.bundle?'🎟️':'💳', p.name, p.price)).join('');
   document.getElementById('sellProducts').innerHTML=_sellOpts.products.length?_sellOpts.products.map(p=>tile(`sellConfirm('merch','${p.id}')`, '👕', p.name, p.price)).join(''):'<div style="color:var(--muted);font-size:.82rem">Žiadne produkty v e-shope.</div>';
 }
-async function sellConfirm(kind, id){
+// Potvrdenie predaja v okne appky (predtým prompt + confirm — na telefóne neohrabané a chyby
+// sa v nich strácali). Merch: počet kusov, suma sa dopočíta; plán: suma v hotovosti (predvyplnená bežná cena).
+let _sellPending=null;
+function sellConfirm(kind, id){
   if(!_sellClient) return toast('Najprv vyber klienta', true);
   const item=kind==='plan'?_sellOpts.plans.find(p=>p.id===id):_sellOpts.products.find(p=>p.id===id);
-  let qty=1, amount=item.price;
-  if(kind==='merch'){
-    qty=parseInt(prompt(`Počet kusov „${item.name}":`,'1'))||0;
-    if(qty<1) return;
-    amount=+(item.price*qty).toFixed(2);
-  } else {
-    const a=prompt(`Suma v hotovosti za „${item.name}" (predvyplnená bežná cena):`, (+item.price).toFixed(2));
-    if(a===null) return;
-    amount=+String(a).replace(',','.')||item.price;
-  }
-  if(!confirm(`Predať: ${item.name}${qty>1?' ×'+qty:''}\nKlient: ${_sellClient.name}\nHotovosť: ${(+amount).toFixed(2)} €\n\nSuma sa zapíše do tvojej hotovostnej evidencie (odovzdáš ju, alebo sa zúčtuje s výplatou).`)) return;
-  // POZOR: api() si telo zabalí samo — JSON.stringify tu poslal dvojito zabalené telo,
-  // server vrátil 400 ako HTML a predaj sa nikdy nezapísal (Nelka 23. 10.: „klikla som a nič").
-  const body=kind==='plan'?{user_id:_sellClient.id, kind, plan_id:id, amount}:{user_id:_sellClient.id, kind, product_id:id, qty};
+  if(!item) return;
+  _sellPending={kind, id, item};
+  document.getElementById('sc-title').textContent=(kind==='merch'?'👕 ':(item.bundle?'🎟️ ':'💳 '))+item.name;
+  document.getElementById('sc-sub').innerHTML='Klient: <b style="color:var(--gold)">'+esc(_sellClient.name)+'</b> · bežná cena '+(+item.price).toFixed(2)+' €';
+  document.getElementById('sc-qtyWrap').style.display=kind==='merch'?'':'none';
+  document.getElementById('sc-qty').value='1';
+  document.getElementById('sc-amountLbl').textContent=kind==='merch'?'Spolu v hotovosti (€)':'Suma v hotovosti (€)';
+  const amt=document.getElementById('sc-amount'); amt.value=(+item.price).toFixed(2); amt.readOnly=(kind==='merch');
+  document.getElementById('sc-msg').textContent=''; document.getElementById('sc-btn').disabled=false;
+  openModal('sellConfirm');
+  if(kind!=='merch') setTimeout(()=>{ amt.focus(); amt.select(); }, 80);
+}
+function scRecalc(){ if(!_sellPending||_sellPending.kind!=='merch') return; const q=Math.max(1,parseInt(document.getElementById('sc-qty').value,10)||1); document.getElementById('sc-amount').value=(+_sellPending.item.price*q).toFixed(2); }
+async function sellSubmit(){
+  const p=_sellPending; if(!p||!_sellClient) return;
+  const msg=document.getElementById('sc-msg'), btn=document.getElementById('sc-btn');
+  let qty=1, amount=+String(document.getElementById('sc-amount').value||'').replace(',','.');
+  if(p.kind==='merch'){ qty=parseInt(document.getElementById('sc-qty').value,10)||0; if(qty<1){ msg.textContent='Zadaj počet kusov.'; return; } amount=+(p.item.price*qty).toFixed(2); }
+  else if(!(amount>=0)){ msg.textContent='Zadaj sumu v eurách.'; return; }
+  // api() si telo zabalí samo — neposielať JSON.stringify (chyba z 23. 10.)
+  const body=p.kind==='plan'?{user_id:_sellClient.id, kind:p.kind, plan_id:p.id, amount}:{user_id:_sellClient.id, kind:p.kind, product_id:p.id, qty};
+  btn.disabled=true; msg.textContent='Zapisujem…';
   const d=await api('/api/trainer/sell',{method:'POST',body});
-  if(d&&d.ok){ toast(`✅ ${d.what} — ${d.amount.toFixed(2)} € (zapísané v hotovosti)`); loadTrainerCash&&loadTrainerCash(); loadStudents&&loadStudents(); }
-  else toast((d&&d.error)||'Chyba predaja', true);
+  btn.disabled=false;
+  if(d&&d.ok){ closeModal(); _sellPending=null; toast(`✅ ${d.what} — ${(+d.amount).toFixed(2)} € (zapísané v hotovosti)`); loadTrainerCash&&loadTrainerCash(); loadStudents&&loadStudents(); }
+  else { msg.textContent=(d&&d.error)||'Chyba predaja'; toast((d&&d.error)||'Chyba predaja', true); }
 }
 // Predklik z riadku klienta / z profilu
 function sellTo(id,name){ switchTab('sell', document.getElementById('tab-sell')); sellPick({id, name, email:'', visit_count:''}); }

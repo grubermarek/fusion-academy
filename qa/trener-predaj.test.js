@@ -121,9 +121,11 @@ const user = id => rd('users.db').find(u => u._id === id) || {};
 
     // ── 5) odmena za privedenie klientky ──
     const sponz = user(SPZ);
-    ok('sponzorka klientky dostala 10 % kredit (8 €)', Math.abs((+sponz.referral_credit || 0) - 8) < 0.01, 'kredit: ' + sponz.referral_credit);
+    // 23. 10.: odmena za privedenú klientku je JEDNA — 10 % ako ambasádorská provízia (po 14 dňoch do kreditu).
+    // Okamžitý 10 % kredit navyše (spolu 20 %) je preč.
+    ok('sponzorka klientky nedostala okamžitý kredit navyše (odmena ide raz, cez províziu)', Math.abs(+sponz.referral_credit || 0) < 0.01, 'kredit: ' + sponz.referral_credit);
     const kom = rd('commissions.db').filter(c => c.partner_id === SPZ);
-    ok('provízia do výplaty je zapísaná', kom.length >= 1 && kom[0].amount > 0, JSON.stringify(kom.map(c => [c.amount, c.status])));
+    ok('provízia 10 % (8 €) je zapísaná a čaká na 14-dňovú lehotu', kom.length === 1 && Math.abs(kom[0].amount - 8) < 0.01 && kom[0].status === 'pending', JSON.stringify(kom.map(c => [c.amount, c.status])));
     ok('oznámenie o odmene prišlo sponzorke', rd('notifications.db').some(n => n.user_id === SPZ && /kredit|provízia/i.test(n.title || '')),
       JSON.stringify(rd('notifications.db').filter(n => n.user_id === SPZ).map(n => n.title)));
 

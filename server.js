@@ -13762,20 +13762,12 @@ async function activateMembership(userId, planId, durationDays, opts={}){
     await zapisHistoriu(userId,'vstupy', entries, newEntries, 'Kúpená '+plan.name, {});
     await q.update(db.users,{_id:userId},{$set:{single_entries:newEntries}});
     await q.insert(db.memberships,{user_id:userId,plan_id:planId,plan_name:plan.name,price:plan.price,status:'bundle',started_at:now.toISOString(),expires_at:expiresAt.toISOString(),created_at:nowISO()});
-    await q.insert(db.notifications,{user_id:userId,type:'membership',title:'Permanentka aktivovaná 🎟️',body:`Máš ${newEntries} vstupov na 90 dní.`,read:false,created_at:nowISO()});
-    const u0b = await q.one(db.users,{_id:userId});
-    if(u0b?.sponsor_id){
-      const bonus = +(plan.price * 0.10).toFixed(2);
-      const sponsor = await q.one(db.users,{_id:u0b.sponsor_id});
-      // Tréner/manažér/admin dostáva affiliate províziu do VÝPLATY (db.commissions) —
-      // kredit by bol dvojitá odmena za ten istý nákup.
-      if(sponsor && !sponsor.is_admin && !['trainer','manager'].includes(sponsor.user_type)){
-        const newCredit = +((sponsor.referral_credit||0)+bonus).toFixed(2);
-        await q.update(db.users,{_id:u0b.sponsor_id},{$set:{referral_credit:newCredit}});
-        logCredit(u0b.sponsor_id, bonus, 'Referral odmena — '+u0b.name+' kúpil/a permanentku');
-        await q.insert(db.notifications,{user_id:u0b.sponsor_id,type:'referral_credit',title:`+${bonus} € referral kredit! 💰`,body:`${u0b.name} kúpil/a permanentku. Zostatok: ${newCredit} €`,read:false,created_at:nowISO()});
-      }
-    }
+    // Text podľa skutočnej platnosti plánu — jednorazový vstup má 30 dní, permanentka 90 (Marek 23. 10.)
+    const platnostDni = plan.duration_days||90;
+    await q.insert(db.notifications,{user_id:userId,type:'membership',title:(entries===1?'Vstup aktivovaný 🎟️':'Permanentka aktivovaná 🎟️'),body:`Máš ${newEntries} ${newEntries===1?'vstup':(newEntries<5?'vstupy':'vstupov')} — platnosť ${platnostDni} dní.`,read:false,created_at:nowISO()});
+    // Odmena za privedenú klientku ide RAZ a jednotne — 10 % (podľa hodnosti) cez ambasádorské
+    // provízie v awardPurchaseCommission, do kreditu po 14-dňovej lehote. Okamžitý 10 % kredit
+    // tu sa s províziou sčítaval na 20 % (Marek 23. 10.: „má byť 10 % — zjednoť to").
     return;
   }
 
@@ -13813,15 +13805,8 @@ async function activateMembership(userId, planId, durationDays, opts={}){
   // kredit sa mu nepripíše (dvojitá odmena za ten istý nákup).
   const u = await q.one(db.users,{_id:userId});
   if(u?.sponsor_id) referralGoalCheck(u.sponsor_id).catch(()=>{}); // platiaca kamoška → skontroluj odmenu
-  if(u?.sponsor_id){
-    const bonus = +(plan.price * 0.10).toFixed(2);
-    const sponsor = await q.one(db.users,{_id:u.sponsor_id});
-    if(sponsor && !sponsor.is_admin && !['trainer','manager'].includes(sponsor.user_type)){
-      const newCredit = +((sponsor.referral_credit||0) + bonus).toFixed(2);
-      await q.update(db.users,{_id:u.sponsor_id},{$set:{referral_credit:newCredit}});
-      await q.insert(db.notifications,{user_id:u.sponsor_id,type:'referral_credit',title:`+${bonus} € referral kredit! 💰`,body:`${u.name} zakúpil/a ${plan.name}. Zostatok: ${newCredit} €`,read:false,created_at:nowISO()});
-    }
-  }
+  // Odmena sponzorke: jednotne 10 % cez ambasádorské provízie (awardPurchaseCommission pri každom
+  // zaplatenom nákupe), nie okamžitý kredit navyše — ten sa sčítaval na 20 % a nemal riadok v histórii.
 
   // ── Bronze upsell: ak si zvolila „prvý mesiac Silver za cenu Bronze" ─────────
   if(planId==='bronze'){
@@ -14602,6 +14587,18 @@ app.get('/api/admin/audit', adminAuth, async(req,res)=>{
 
 // ── Finance stats with period filter ──────────────────────────────────────────
 // Prehľad aktívnych členstiev (po úrovniach) a aktívnych permanentiek — kto ich má.
+// Je aktuálne obdobie členstva výhra Klientky mesiaca? Nové výhry majú prize_until na zázname;
+// staršie spoznáme podľa korunovania: Gold, ktorý končí do 31 dní od korunovania tej istej klientky.
+async function vyhraMap(){
+  const wins=(await q.find(db.monthly_winners,{})).filter(w=>w.type!=='year');
+  const byUser={}; for(const w of wins){ (byUser[w.user_id]=byUser[w.user_id]||[]).push(String(w.created_at||'')); }
+  return m=>{
+    if(m.prize_until) return String(m.prize_until)>=String(m.expires_at||'') || String(m.expires_at||'')<=String(m.prize_until);
+    if(m.plan_id!=='gold') return false;
+    const exp=Date.parse(m.expires_at||''); if(!exp) return false;
+    return (byUser[m.user_id]||[]).some(c=>{ const t=Date.parse(c); return t && exp-t>0 && exp-t<=31*864e5; });
+  };
+}
 app.get('/api/admin/memberships-overview', adminAuth, async(req,res)=>{
   try {
     const nowISOv = new Date().toISOString();
@@ -14616,14 +14613,16 @@ app.get('/api/admin/memberships-overview', adminAuth, async(req,res)=>{
       const cur = bestByUser[m.user_id];
       if(!cur || (m.expires_at||'') > (cur.expires_at||'')) bestByUser[m.user_id]=m;
     }
+    const jeVyhra = await vyhraMap();
     const members = Object.values(bestByUser).map(m=>{
       const u = uMap[m.user_id] || {};
       const plan = MEMBERSHIP_PLANS[m.plan_id] || {};
+      const prize = jeVyhra(m);
       return {
         id: m.user_id, name: u.name||'—', email: u.email||'', phone: u.phone||'',
         plan_id: m.plan_id, plan_name: plan.name||m.plan_name||m.plan_id,
-        price: +plan.price||+m.price||0, expires_at: (m.expires_at||'').slice(0,10),
-        trial: !!m.trial, method: m.payment_method||m.method||'',
+        price: prize ? 0 : (+plan.price||+m.price||0), prize, expires_at: (m.expires_at||'').slice(0,10),
+        trial: !!m.trial, method: prize ? 'výhra' : (m.payment_method||m.method||''),
         active: u.active!==false,
       };
     });
@@ -15432,12 +15431,14 @@ async function mestaClenstva(days){
   }
   const aktivni = new Set();
   const odbery = [];
+  const jeVyhraMc = await vyhraMap();
   for(const uid in posledne){
     const m = posledne[uid], u = uMap[uid]; if(!klient(u)) continue;
     const aktivne = m.status==='active' && (m.expires_at||'')>nowISOv; if(!aktivne) continue;
     aktivni.add(uid);
     const p = MEMBERSHIP_PLANS[m.plan_id] || {};
-    const row = { id:uid, name:u.name||'—', plan_id:m.plan_id, plan_name:p.name||m.plan_name||m.plan_id, price:+p.price||+m.price||0,
+    const prize = jeVyhraMc(m);
+    const row = { id:uid, name:u.name||'—', plan_id:m.plan_id, plan_name:p.name||m.plan_name||m.plan_id, price: prize ? 0 : (+p.price||+m.price||0), prize,
       expires_at:(m.expires_at||'').slice(0,10), days_left:Math.max(0, Math.round((new Date(m.expires_at).getTime()-nowMs)/864e5)),
       method:String(m.payment_method||m.method||'').toLowerCase(), trial:!!m.trial, auto:!!u.stripe_subscription_id, auto_vypnuty:false, dieta:!!u.is_child };
     if(row.auto) odbery.push({row, u});
@@ -16329,6 +16330,8 @@ async function crownMonthlyWinner(){
     // 1) Mesiac Gold zdarma (nadviaže na existujúce členstvo, ak nejaké beží).
     // Do tržieb sa nepočíta, v predajoch je viditeľné ako 0 €.
     await activateMembership(winner._id, 'gold', 30).catch(e=>console.error('crown gold:',e.message));
+    // Výhra, nie nákup: prehľady členstiev ukážu 0 € a „výhra" namiesto ceny plánu (Marek 23. 10.)
+    try{ const vm=await q.one(db.memberships,{user_id:winner._id, status:'active'}); if(vm) await q.update(db.memberships,{_id:vm._id},{$set:{prize_until:vm.expires_at, prize:'klientka_mesiaca'}}); }catch(e){}
     await q.insert(db.transactions,{type:'membership', user_id:winner._id, user_name:winner.name, amount:0, date:today(),
       payment_method:'free', method:'free', note:'🏆 Klientka mesiaca — mesiac Gold zdarma (výhra)', plan_id:'gold',
       created_at:nowISO(), month:today().slice(0,7)}).catch(()=>{});
@@ -18005,6 +18008,7 @@ async function vyberVstupne(b, { amount, method, by, byName }) {
     createInvoice({user_id:b.user_id, client_name:b.user_name, client_email:buyer?.email,
       items:[{desc:`${plan.name} — predané na hodine (${b.booking_date})`, qty:1, total:amount}],
       total:amount, method:methodTxt});
+    awardPurchaseCommission({buyer_id:b.user_id, amount, product_name:plan.name}).catch?.(()=>{});
     await q.insert(db.notifications,{user_id:b.user_id,type:'payment',
       title:'🧾 Potvrdenie o platbe — '+plan.name,
       body:`Prijali sme ${amount.toFixed(2)} € (${methodTxt}) za ${plan.name}.`+

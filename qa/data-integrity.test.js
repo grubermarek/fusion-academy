@@ -204,7 +204,9 @@ const book = (cookie, class_id) => req('/api/bookings', { method: 'POST', cookie
     // ── T7: tréner ako sponzor nedostáva kredit (dvojitá affiliate) ──
     // Predaj na mieste (/api/trainer/sell) ide cez activateMembership, kde sa
     // sponzorke pripisuje 10 % z cenníkovej ceny. Kontrola: klientka-sponzorka ho dostať MÁ.
-    const kredit7 = +(silver * 0.10).toFixed(2);
+    // Predaj na mieste je bez automatickej obnovy → cena +10 % (Marek 4. 10.); provízia 10 % ide zo zaplatenej sumy
+    const silverManual = Math.round(silver * 1.1 * 10) / 10;
+    const kredit7 = +(silverManual * 0.10).toFixed(2);
     const role = await req('/api/admin/users/qaDiTrener0001/role', { method: 'PUT', cookie: A, body: { user_type: 'trainer' } });
     const sp = await req('/api/admin/users/qaDiRef0000001/sponsor', { method: 'PUT', cookie: A, body: { sponsor_id: 'qaDiTrener0001' } });
     const s7 = await req('/api/trainer/sell', { method: 'POST', cookie: A, body: { user_id: 'qaDiRef0000001', kind: 'plan', plan_id: 'silver' } });
@@ -213,12 +215,14 @@ const book = (cookie, class_id) => req('/api/bookings', { method: 'POST', cookie
     const tr = user('qaDiTrener0001'), sona = user('qaDiSponz00001');
     if (role.status !== 200 || sp.status !== 200 || s7.status !== 200 || s7k.status !== 200)
       find('T7', 'P1', 'financie', 'Príprava T7 zlyhala', `rola ${role.status}, sponzor ${sp.status}, predaj ${s7.status}/${s7k.status} ${JSON.stringify(s7.body)}`);
-    else if (s7.body?.amount !== silver) find('T7', 'P2', 'tržby', 'Predaj Silver na mieste nie je za cenníkovú cenu', `predané za ${s7.body?.amount} € (cenník ${silver} €)`);
-    else if (sona.referral_credit !== kredit7) find('T7', 'P2', 'financie', 'Kontrola: klientka-sponzorka nedostala 10 % kredit', `kredit=${sona.referral_credit} (očakávané ${kredit7}) — bez toho T7 nič neoverí`);
+    else if (Math.abs((s7.body?.amount || 0) - silverManual) > 0.01) find('T7', 'P2', 'tržby', 'Predaj Silver na mieste nie je za cenu bez automatickej obnovy', `predané za ${s7.body?.amount} € (cenník ${silver} €, bez obnovy ${silverManual} €)`);
+    // 23. 10.: odmena klientke-sponzorke je JEDNA — 10 % ako provízia (pending, do kreditu po 14 dňoch), nie okamžitý kredit navyše
+    else if (!rd('commissions.db').some(c => c.partner_id === 'qaDiSponz00001' && Math.abs(c.amount - kredit7) < 0.01 && c.status === 'pending')) find('T7', 'P2', 'financie', 'Kontrola: klientka-sponzorka nemá 10 % províziu (pending)', `provízie=${JSON.stringify(rd('commissions.db').filter(c => c.partner_id === 'qaDiSponz00001').map(c => [c.amount, c.status]))} (očakávané ${kredit7} pending)`);
+    else if ((sona.referral_credit || 0) > 0) find('T7', 'P1', 'financie', 'Klientka-sponzorka dostala okamžitý kredit navyše k provízii (20 % namiesto 10 %)', `kredit=${sona.referral_credit}`);
     else if ((tr.referral_credit || 0) > 0) find('T7', 'P1', 'financie', 'Tréner dostal referral kredit AJ do dashboardu (dvojitá affiliate)', `kredit=${tr.referral_credit}`);
-    else if (!rd('transactions.db').some(t => t.partner_id === 'qaDiTrener0001' && t.client_id === 'qaDiRef0000001' && t.commission_only && t.amount === silver))
-      find('T7', 'P2', 'výplaty', 'Trénerovi sa nezapísala affiliate provízia', `chýba transakcia commission_only ${silver} €`);
-    else pass(`T7: tréner nedostáva kredit (affiliate ${silver} € ide do výplaty), klientka-sponzorka ${kredit7} € áno`);
+    else if (!rd('transactions.db').some(t => t.partner_id === 'qaDiTrener0001' && t.client_id === 'qaDiRef0000001' && t.commission_only && Math.abs(t.amount - silverManual) < 0.01))
+      find('T7', 'P2', 'výplaty', 'Trénerovi sa nezapísala affiliate provízia', `chýba transakcia commission_only ${silverManual} €`);
+    else pass(`T7: tréner nedostáva kredit (affiliate ${silverManual} € ide do výplaty), klientka-sponzorka má 10 % províziu ${kredit7} € (bez kreditu navyše)`);
 
     // ── T8: samoodporúčanie ──
     const self = await req('/api/admin/users/qaDiRef0000001/sponsor', { method: 'PUT', cookie: A, body: { sponsor_id: 'qaDiRef0000001' } });
