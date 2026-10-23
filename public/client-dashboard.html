@@ -1469,6 +1469,7 @@ async function loadFamily(){
         <span>${stav}</span>
         <span style="opacity:.75">${c.attended||0} hodín${dalsia}</span>
       </div>
+      <button class="qa-btn" style="padding:7px 10px;align-self:center" title="QR kód ${meno} na kiosk" onclick="showChildQR('${c.id}','${escHtml(c.name).replace(/'/g,"&#39;")}')"><i class="bi bi-qr-code" style="margin:0"></i></button>
       <a class="qa-btn" href="/dieta/${c.id}" style="padding:7px 10px;text-decoration:none;align-self:center" title="Profil ${meno}"><i class="bi bi-chevron-right" style="margin:0"></i></a>
       ${akcia?`<div style="flex-basis:100%;padding:6px 0 0 44px;display:flex">${akcia}</div>`:''}</div>`;
   }).join('');
