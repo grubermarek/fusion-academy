@@ -13137,6 +13137,35 @@ app.get('/api/admin/commissions/summary', adminAuth, async(req,res)=>{
   res.json(result);
 });
 
+// Všetky provízie klientkam (ambasádorkám) za obdobie — kto, kedy, za koho a aký nákup, suma, stav.
+// Marek 24. 10.: „Pošli mi, ktoré klientky to sú a kedy to dostali" — doteraz bol detail len po partnerke
+// a mesiaci (commissions/detail), prehľad za obdobie chýbal. Personál (tréner/manažér/admin/asistent)
+// má provízie do výplaty, nie do kreditu — tu sa dá zobraziť aj on (?personal=1), predvolene len klientky.
+app.get('/api/admin/commissions/klientky', adminAuth, async(req,res)=>{
+  try{
+    const dnes=today();
+    const from=/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from||''))?String(req.query.from):new Date(Date.now()-90*864e5).toISOString().slice(0,10);
+    const to=/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.to||''))?String(req.query.to):dnes;
+    const uMap=Object.fromEntries((await q.find(db.users,{})).map(u=>[u._id,u]));
+    const personal=u=>!!(u&&(u.is_admin||['trainer','manager'].includes(u.user_type)||u.is_assistant));
+    const txMap=Object.fromEntries((await q.find(db.transactions,{})).map(t=>[t._id,t]));
+    const rows=(await q.find(db.commissions,{})).filter(c=>{ const d=String(c.created_at||'').slice(0,10); return d>=from && d<=to; })
+      .filter(c=>req.query.personal==='1' || !personal(uMap[c.partner_id]))
+      .map(c=>{ const p=uMap[c.partner_id]||{}, t=txMap[c.transaction_id]||{}, k=uMap[t.client_id]||{};
+        const dni=Math.round((Date.now()-new Date(c.created_at).getTime())/864e5);
+        const stav=c.status==='pending'?'caka':(c.status==='approved'?(c.credited_at?'kredit':'schvalene'):c.status==='paid'?'vyplatene':c.status==='reversed'?'stornovane':c.status);
+        return { id:c._id, at:String(c.created_at||'').slice(0,10), partner_id:c.partner_id, partner:p.name||'—', partner_personal:personal(p),
+          buyer_id:t.client_id||null, buyer:k.name||t.client_name||'—', product:t.product_name||'—', tx_amount:+(+t.amount||0).toFixed(2),
+          amount:+(+c.amount||0).toFixed(2), rate:+(+c.percentage||0).toFixed(4), level:c.level||0, status:c.status, stav,
+          credited_at:c.credited_at?String(c.credited_at).slice(0,10):null, do_kreditu_za:c.status==='pending'?Math.max(0,COMMISSION_HOLD_DAYS-dni):null,
+          month:c.month||'' }; })
+      .sort((a,b)=>b.at.localeCompare(a.at));
+    const sum=k=>+rows.filter(r=>r.stav===k).reduce((s,r)=>s+r.amount,0).toFixed(2);
+    res.json({ ok:true, from, to, hold_days:COMMISSION_HOLD_DAYS, rows, spolu:{ pocet:rows.length, suma:+rows.reduce((s,r)=>s+r.amount,0).toFixed(2),
+      caka:sum('caka'), kredit:sum('kredit'), schvalene:sum('schvalene'), vyplatene:sum('vyplatene'), stornovane:sum('stornovane') } });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.post('/api/admin/commissions/pay', adminAuth, async(req,res)=>{
   const{partner_id,month}=req.body;
   await q.update(db.commissions,{partner_id,month:month||currentMonth(),status:'pending'},{$set:{status:'paid',paid_at:nowISO()}},{multi:true});

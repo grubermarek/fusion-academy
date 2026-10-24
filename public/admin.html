@@ -567,6 +567,25 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
         </table>
       </div>
     </div>
+    <!-- Provízie klientkam (ambasádorky) za obdobie — Marek 24. 10.: „ktoré klientky to sú a kedy to dostali" -->
+    <div class="card bg-dark border-secondary mt-4"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+        <div><h6 class="fw-bold mb-0"><i class="bi bi-people me-2 text-warning"></i>Provízie klientkam za privedené kamošky</h6>
+          <div class="text-muted" style="font-size:.7rem">Každá provízia z ambasádorského motora: kto ju dostal, za koho a za aký nákup, suma a či už prešla 14-dňovou lehotou do kreditu. Personál (tréneri, manažéri) má provízie do výplaty — zapni prepínač, ak ho chceš vidieť tiež.</div></div>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <input type="date" id="ckFrom" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:150px;color-scheme:dark" onchange="loadCommKlientky()">
+          <span class="text-muted">–</span>
+          <input type="date" id="ckTo" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:150px;color-scheme:dark" onchange="loadCommKlientky()">
+          <div class="form-check mb-0"><input class="form-check-input" type="checkbox" id="ckPersonal" onchange="loadCommKlientky()"><label class="form-check-label small text-muted" for="ckPersonal">aj personál</label></div>
+          <button class="btn btn-sm btn-outline-light" onclick="loadCommKlientky()"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+      </div>
+      <div id="ckSuhrn" class="d-flex gap-2 flex-wrap mb-2"></div>
+      <div class="table-responsive"><table class="table table-dark table-sm table-hover align-middle mb-0" style="font-size:.8rem">
+        <thead><tr style="font-size:.66rem;color:#999"><th>Dátum</th><th>Dostala</th><th>Za koho</th><th>Nákup</th><th class="text-end">Z nákupu</th><th class="text-end">Sadzba</th><th class="text-end">Provízia</th><th>Stav</th></tr></thead>
+        <tbody id="ckBody"><tr><td colspan="8" class="text-muted text-center py-3">Načítavam…</td></tr></tbody>
+      </table></div>
+    </div></div>
     <div class="modal fade" id="commDetailModal" tabindex="-1">
       <div class="modal-dialog modal-lg"><div class="modal-content">
         <div class="modal-header"><h5 class="modal-title">Detail provízií</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -3179,7 +3198,7 @@ function show(sec){
   if(sec==='ambasadori')loadAmbasadori();
   if(sec==='eventy')loadEventy();
   if(sec==='partners')loadPartners();
-  if(sec==='commissions')loadCommissions();
+  if(sec==='commissions'){ loadCommissions(); loadCommKlientky(); }
   if(sec==='products')loadProducts();
   if(sec==='sale')loadSaleForm();
   if(sec==='addpartner')loadAddPartner();
@@ -8935,6 +8954,31 @@ async function loadCommissions(){
       ${r.pending>0?`<button class="btn btn-sm btn-success text-white" onclick="payComm('${r.id}','${month}','${r.name}',${r.pending})">Vyplatiť ${eur(r.pending)}</button>`:''}
     </td>
   </tr>`).join('')||'<tr><td colspan="6" class="text-center text-muted py-4">Žiadne čakajúce provízie</td></tr>';
+}
+let _ckInit=false;
+async function loadCommKlientky(){
+  const body=document.getElementById('ckBody'); if(!body) return;
+  const f=document.getElementById('ckFrom'), t=document.getElementById('ckTo');
+  if(!_ckInit){ _ckInit=true; t.value=new Date().toISOString().slice(0,10); f.value=new Date(Date.now()-90*864e5).toISOString().slice(0,10); }
+  const qs='from='+f.value+'&to='+t.value+(document.getElementById('ckPersonal').checked?'&personal=1':'');
+  const d=await api('/api/admin/commissions/klientky?'+qs).catch(()=>null);
+  if(!d||!d.ok){ body.innerHTML='<tr><td colspan="8" class="text-danger py-3">Chyba: '+escHtml((d&&d.error)||'?')+'</td></tr>'; return; }
+  const E=x=>(+x||0).toFixed(2).replace('.',',')+' €';
+  const S=d.spolu;
+  document.getElementById('ckSuhrn').innerHTML=
+     '<span class="mc-pill" style="color:#C9A24C">'+S.pocet+' provízií · '+E(S.suma)+'</span>'
+    +(S.caka?'<span class="mc-pill" style="color:#e0a656">⏳ čaká na lehotu '+E(S.caka)+'</span>':'')
+    +(S.kredit?'<span class="mc-pill" style="color:#4ade80">💠 už v kredite '+E(S.kredit)+'</span>':'')
+    +(S.schvalene?'<span class="mc-pill" style="color:#7ec8e3">schválené '+E(S.schvalene)+'</span>':'')
+    +(S.vyplatene?'<span class="mc-pill" style="color:#4ade80">vyplatené '+E(S.vyplatene)+'</span>':'')
+    +(S.stornovane?'<span class="mc-pill text-muted">stornované '+E(S.stornovane)+'</span>':'');
+  const STAV={caka:['⏳ čaká','#e0a656'],kredit:['💠 v kredite','#4ade80'],schvalene:['schválené','#7ec8e3'],vyplatene:['vyplatené','#4ade80'],stornovane:['stornované','#777']};
+  const meno=(id,n)=>id?'<span class="mc-name" onclick="openClientDetail(\''+id+'\')">'+escHtml(n)+'</span>':escHtml(n);
+  body.innerHTML=d.rows.length?d.rows.map(r=>{ const st=STAV[r.stav]||[r.stav,'#aaa'];
+    return '<tr><td class="text-nowrap">'+fmtDate(r.at)+'</td><td>'+meno(r.partner_id,r.partner)+(r.partner_personal?' <span class="badge bg-secondary" style="font-size:.58rem">personál</span>':'')+(r.level?' <span class="text-muted" style="font-size:.66rem">úroveň '+r.level+'</span>':'')+'</td>'
+      +'<td>'+meno(r.buyer_id,r.buyer)+'</td><td class="text-muted">'+escHtml(r.product)+'</td><td class="text-end">'+E(r.tx_amount)+'</td><td class="text-end text-muted">'+(r.rate*100).toFixed(0)+' %</td>'
+      +'<td class="text-end fw-bold" style="color:#C9A24C">'+E(r.amount)+'</td><td style="color:'+st[1]+'">'+st[0]+(r.stav==='caka'&&r.do_kreditu_za!=null?'<div style="font-size:.64rem;opacity:.75">do kreditu o '+r.do_kreditu_za+' d</div>':'')+(r.credited_at?'<div style="font-size:.64rem;opacity:.75">pripísané '+fmtDate(r.credited_at)+'</div>':'')+'</td></tr>'; }).join('')
+    :'<tr><td colspan="8" class="text-muted text-center py-3">V tomto období žiadne provízie klientkam.</td></tr>';
 }
 async function showCommDetail(pid,month){
   const rows=await api(`/api/admin/commissions/detail?partner_id=${pid}&month=${month}`);if(!rows)return;
