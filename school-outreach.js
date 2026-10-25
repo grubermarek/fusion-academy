@@ -69,10 +69,9 @@ module.exports = function initSchoolOutreach(ctx) {
         fotostena, výzdoba. Termíny lekcií aj večera si škola vyberie sama.</td></tr>
     <tr><td style="padding:7px 10px 7px 0;vertical-align:top;font-size:15px">💶</td>
         <td style="padding:7px 0;font-size:15px;line-height:1.6;color:#222">
-        <b>3 € za každého prihláseného žiaka idú škole</b> ako účelový príspevok — pri 25
-        žiakoch 75 €, pri 50 žiakoch 150 €. Cenu kurzu pre rodiča určíme individuálne —
-        podľa počtu žiakov v skupine a oblasti, z ktorej škola je. Rodič ju zaplatí kartou
-        priamo v našej aplikácii a dostane potvrdenie e-mailom aj fyzicky.
+        <b>Cenu kurzu pre rodiča určíme individuálne</b> — podľa počtu žiakov v skupine
+        a oblasti, z ktorej škola je. Rodič ju zaplatí kartou priamo v našej aplikácii
+        a dostane potvrdenie e-mailom aj fyzicky.
         <b>Cez triedneho učiteľa neprejde ani euro v hotovosti.</b></td></tr>
     <tr><td style="padding:7px 10px 7px 0;vertical-align:top;font-size:15px">✨</td>
         <td style="padding:7px 0;font-size:15px;line-height:1.6;color:#222">
@@ -130,8 +129,8 @@ module.exports = function initSchoolOutreach(ctx) {
   <p style="margin:0 0 14px">${oslovenie}</p>
   <p style="margin:0 0 14px">pred pár dňami som vám písal ohľadom venčeka pre deviatakov
   (program <b>Posledný tanec</b>). Viem, že začiatok školského roka je nápor — preto len krátko:</p>
-  <p style="margin:0 0 14px">škola pri tom <b>nerieši žiadnu organizáciu</b>, rodičia platia
-  v aplikácii a <b>3 € za každého prihláseného žiaka idú škole</b>. Počet škôl v sezóne je
+  <p style="margin:0 0 14px">škola pri tom <b>nerieši žiadnu organizáciu</b>, rodičia platia kartou
+  v aplikácii a <b>cez učiteľa neprejde žiadna hotovosť</b>. Počet škôl v sezóne je
   obmedzený a termíny sa priebežne obsadzujú.</p>
   <div style="text-align:center;margin:20px 0 22px">
     <a href="${cta}" style="display:inline-block;background:#C9A84C;color:#1b1405;
