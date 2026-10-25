@@ -128,8 +128,8 @@ module.exports = function mountEventTickets(ctx){
   // Halloweenska Zumba Party (Marek 25. 10. 2026, „daj ako je to napísané na plagáte"):
   // cena podľa úrovne členstva — Silver 5 €, Bronze 10 €, permanentka 15 €. Gold na plagáte
   // nie je, zaradený na najnižšiu členskú cenu (platí mesačne viac než Silver). Bez členstva
-  // cena NEEXISTUJE (nonmember:null) — nečlenka vidí len informáciu, že vstup je pre členky
-  // a držiteľky permanentky. Keby Marek rozhodol inak, cena sa doplní na JEDNOM mieste: nonmember.
+  // pôvodne cena nebola (nonmember:null = len členky); 25. 10. večer Marek otvoril párty pre
+  // každého za 15 € — cena je na JEDNOM mieste: nonmember (null by znova zavrel predaj nečlenkám).
   const HALLOWEEN = {
     slug: 'halloween-zumba-2026',
     name: 'HALLOWEENSKA ZUMBA PARTY',
@@ -154,8 +154,9 @@ module.exports = function mountEventTickets(ctx){
         member: null, presale: null, door: null,
         presale_until: '2026-10-30T20:59:59+01:00',
         capacity: null,
-        plan_prices: { silver:5, gold:5, bronze:10, bundle:15, nonmember:null },
-        members_only: true }
+        // Marek 25. 10. večer: „tak pre nečlenov 15 eur" — párty otvorená pre každého, nečlenka platí ako permanentka.
+        plan_prices: { silver:5, gold:5, bronze:10, bundle:15, nonmember:15 },
+        members_only: false }
     ]
   };
 
@@ -1117,7 +1118,12 @@ module.exports = function mountEventTickets(ctx){
       + 'o 19:00 nastupuje Zumba a tancuje sa dve hodiny v kuse.</p>'
       + '<p>Celý večer máš <b>welcome drink</b>, občerstvenie a otvorený bar.</p>'
       + '<p><b>Vstup je povolený len v maske.</b> Bez nej ťa dnu nepustíme, tak si ju priprav.</p>'
-      + '<p>Tvoje vstupné podľa členstva: <b style="color:#C9A84C">' + cena + ' €</b> (' + p.uroven + ').</p>'
+      // Nečlenke nemá zmysel písať „15 € (Bez členstva)" — to znie ako prirážka za to,
+      // že niekam nepatrí. Dostane rovnakú cenu a navyše vidí, čo by jej členstvo ušetrilo.
+      + (p.uroven === 'Bez členstva'
+          ? '<p>Vstupné je <b style="color:#C9A84C">' + cena + ' €</b>. S mesačným členstvom by si platila menej — '
+            + 'Bronze 10 €, Silver a Gold 5 €.</p>'
+          : '<p>Tvoje vstupné ako ' + p.uroven + ': <b style="color:#C9A84C">' + cena + ' €</b>.</p>')
       + '<p>Fusion Academy — Záhradná 7, Detva.</p>',
       '🎟️ KÚPIŤ LÍSTOK', HALLOWEEN_URL);
   }
