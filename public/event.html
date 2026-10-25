@@ -190,6 +190,7 @@ function render(){
   // (Marek 1. 9.).
   const zvyhodnenieBezi = (()=>{
     const t = EV.types.find(x=>x.key==='full') || EV.types[0] || {};
+    if(t.plan_prices || t.door==null || t.presale==null) return false;   // cenník podľa úrovne: žiadne zdraženie
     const do_ = t.presale_until ? new Date(t.presale_until).getTime() : 0;
     return !!do_ && do_ > Date.now();
   })();
@@ -235,6 +236,37 @@ function render(){
   EV.types.forEach(t=>{
     h += '<div class="card hl" id="c-'+t.key+'">';
     h += '<h3>'+esc(t.name)+'</h3>';
+    if(t.plan_prices){
+      // Cenník podľa úrovne členstva (Halloween 2026): každý vidí celý cenník, kúpiť môže len ten,
+      // kto má členstvo alebo permanentku — bez členstva cena nie je.
+      const pp=t.plan_prices, L=EV.plan_labels||{};
+      const riadky=[['silver','Silver s mesačným členstvom'],['gold','Gold s mesačným členstvom'],['bronze','Bronze s mesačným členstvom'],['bundle','S permanentkou'],['nonmember','Bez členstva']]
+        .filter(x=>pp[x[0]]!=null)
+        .map(x=>'<li style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)"><span>'+x[1]+'</span><b style="color:var(--gold)">'+eur(pp[x[0]])+'</b></li>').join('');
+      h += '<ul style="list-style:none;padding:0;margin:8px 0 10px">'+riadky+'</ul>';
+      if(t.eligible){
+        h += '<div class="price"><b>'+eur(t.price)+'</b><span class="tierlab">TVOJA CENA'+(t.tier_label?' — '+esc(t.tier_label.toUpperCase()):'')+'</span></div>';
+      } else {
+        h += '<div class="hint" style="background:rgba(201,168,76,.08);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0 10px;color:#ddd6c6">'
+           + '🎃 Vstup je pre členky s mesačným členstvom a držiteľky permanentky.'
+           + (EV.viewer&&EV.viewer.trial ? ' Skúšobný týždeň zadarmo sa do členskej ceny neráta.' : '')
+           + (!(ME&&ME.id) ? ' Zadaj nižšie e-mail, pod ktorým máš členstvo v appke — cena sa ti ukáže sama.' : '')
+           + ' Otázky: <a href="tel:+421904315151" style="font-weight:800">0904 31 51 51</a> (Beáta).</div>';
+      }
+      h += '<ul class="inc">'+t.includes.map(i=>'<li>'+esc(i)+'</li>').join('')+'</ul>';
+      h += leftLine(t);
+      if(t.eligible && !t.sold_out){
+        h += '<div class="step">'
+           +   '<button onclick="chg(\''+t.key+'\',-1)" aria-label="Ubrať">−</button>'
+           +   '<span class="n" id="n-'+t.key+'">0</span>'
+           +   '<button onclick="chg(\''+t.key+'\',1)" aria-label="Pridať">+</button>'
+           +   '<span class="sum" id="s-'+t.key+'"></span>'
+           + '</div>'
+           + '<div class="holders" id="h-'+t.key+'"></div>';
+      }
+      h += '</div>';
+      return;
+    }
     h += '<div class="price"><b>'+eur(t.price)+'</b>';
     if(t.tier==='member') h += '<s>'+eur(t.presale)+'</s><span class="tierlab">ČLENSKÁ CENA</span>';
     else if(t.tier==='aff') h += '<s>'+eur(t.presale)+'</s><span class="tierlab">ZĽAVA OD '+esc((EV.affiliate?EV.affiliate.name:'').toUpperCase())+'</span>';
@@ -302,8 +334,9 @@ function render(){
      + '<ul class="prog">'
      + e.program.map(function(p){
          const both = p.ticket==='both';
+         const dvaTypy = e.program.some(function(x){ return x.ticket==='both'; });
          return '<li class="'+(both?'p-both':'p-full')+'"><b>'+esc(p.time)+'</b><span>'+esc(p.what)+'</span>'
-              + '<span class="tag '+(both?'both':'full')+'">'+(both?'OBE VSTUPENKY':'LEN FULL')+'</span></li>';
+              + (dvaTypy ? '<span class="tag '+(both?'both':'full')+'">'+(both?'OBE VSTUPENKY':'LEN FULL')+'</span>' : '')+'</li>';
        }).join('')
      + '</ul></div>';
 
@@ -384,9 +417,10 @@ async function checkMember(){
     const r=await fetch('/api/events/'+SLUG+'/check-member',{method:'POST',
       headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
     const d=await r.json();
-    if(d.member){
+    const planTxt = d.plan_label ? ' ('+d.plan_label+')' : (d.bundle ? ' (permanentka)' : '');
+    if(d.member || d.bundle){
       MEMBER_EMAIL=email;
-      msg.innerHTML='<span style="color:#8bc34a;font-weight:700">✓ Členstvo overené — máš členskú cenu.</span>';
+      msg.innerHTML='<span style="color:#8bc34a;font-weight:700">✓ Členstvo overené'+planTxt+' — máš členskú cenu.</span>';
       const keep={...QTY};
       await load();                       // prepočítame ceny
       Object.keys(keep).forEach(k=>{ QTY[k]=keep[k];
@@ -395,9 +429,12 @@ async function checkMember(){
       recalc();
       const e2=document.getElementById('bEmail'); if(e2) e2.value=email;
       const m2=document.getElementById('memberMsg');
-      if(m2) m2.innerHTML='<span style="color:#8bc34a;font-weight:700">✓ Členstvo overené — máš členskú cenu.</span>';
+      if(m2) m2.innerHTML='<span style="color:#8bc34a;font-weight:700">✓ Členstvo overené'+planTxt+' — máš členskú cenu.</span>';
     } else {
-      msg.innerHTML='<span style="color:var(--muted)">Tento e-mail nemáme medzi aktívnymi členkami — platí bežná cena.</span>';
+      const lenClenky = EV.types.some(function(t){ return t.members_only; });
+      msg.innerHTML='<span style="color:var(--muted)">'+(lenClenky
+        ? 'Tento e-mail nemáme medzi aktívnymi členkami'+(d.trial?' (skúšobný týždeň zadarmo sa neráta)':'')+' — vstup je pre členky s mesačným členstvom a držiteľky permanentky.'
+        : 'Tento e-mail nemáme medzi aktívnymi členkami — platí bežná cena.')+'</span>';
     }
   }catch(e){}
 }
@@ -447,7 +484,7 @@ function toggleTable(){
 function recalc(){
   let total=0, cnt=0;
   EV.types.forEach(t=>{
-    const n=QTY[t.key]||0, sub=n*t.price;
+    const n=QTY[t.key]||0, sub=n*(t.price||0);
     total+=sub; cnt+=n;
     const el=document.getElementById('s-'+t.key);
     if(el) el.textContent = n ? eur(sub) : '';

@@ -1500,15 +1500,18 @@ async function evLoadTypes(){
   const host=document.getElementById('evTypes');
   const slug=document.getElementById('evSlug').value;
   let d=null;
-  try{ d=await (await fetch('/api/events/'+encodeURIComponent(slug),{credentials:'include'})).json(); }catch(e){}
+  // cenu ráta server podľa účtu klientky (úroveň členstva / permanentka), nie podľa prihláseného admina
+  try{ d=await (await fetch('/api/events/'+encodeURIComponent(slug)+'?email='+encodeURIComponent(_evClient.email||''),{credentials:'include'})).json(); }catch(e){}
   if(!d||!d.types){ host.innerHTML='<span class="set-hint">Vstupenky sa nepodarilo načítať.</span>'; return; }
   _evTypes=d.types;
   const now=new Date();
   let h='';
   d.types.forEach(t=>{
     const presale = !t.presale_until || now<=new Date(t.presale_until);
-    const price = (_evMember && t.member_price!=null && presale) ? t.member_price : (presale ? t.presale : t.door);
-    const tier  = (_evMember && t.member_price!=null && presale) ? 'členská' : (presale ? 'predpredaj' : 'na mieste');
+    const price = t.plan_prices ? (t.price!=null ? t.price : 0)
+                : ((_evMember && t.member_price!=null && presale) ? t.member_price : (presale ? t.presale : t.door));
+    const tier  = t.plan_prices ? (t.eligible ? (t.tier_label||'podľa úrovne') : 'bez členstva — cena nie je určená, zadaj ručne')
+                : ((_evMember && t.member_price!=null && presale) ? 'členská' : (presale ? 'predpredaj' : 'na mieste'));
     const left  = t.left==null ? '' : (t.left<=0 ? '<b style="color:#ef9a9a">vypredané</b>' : '<span class="set-hint" style="margin:0">ostáva '+t.left+'</span>');
     h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">'+
       '<input type="number" class="adm-input ev-qty" data-key="'+t.key+'" value="0" min="0" max="20" style="width:68px" oninput="evHolders(this)"'+(t.sold_out?' disabled':'')+'>'+

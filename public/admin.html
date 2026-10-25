@@ -2528,17 +2528,25 @@ async function evOnsiteOpen(){
   // Cena podľa typu a členstva. Členská cena platí aj po konci predpredaja, ak to
   // typ dovoľuje (párty: členka 5 €, cudzí 10 € aj pri dverách) — musí to sedieť
   // s priceFor na serveri, inak by sa ukázalo iné číslo, než sa naozaj zapíše.
+  // Cenník podľa úrovne členstva (Halloween 2026): tlačidlá Silver/Gold · Bronze · Permanentka
+  // (+ Bez členstva, len ak má cenu) namiesto Cudzí/Členka; server dostane plan.
+  const PLAN_EV = EV_PRICES.some(x=>x.plan_prices);
+  const PLAN_BTNS = PLAN_EV ? [['silver','Silver'],['gold','Gold'],['bronze','Bronze'],['bundle','Permanentka'],['nonmember','Bez členstva']]
+    .filter(x=>EV_PRICES.some(y=>y.plan_prices&&y.plan_prices[x[0]]!=null)) : [];
   const priceOf=(key,member,gift)=>{
     if(gift) return 0;
     const x=t(key); if(!x.key) return 0;
+    if(x.plan_prices){ const k=typeof member==='string'?member:(member?'silver':'nonmember'); return x.plan_prices[k]!=null ? x.plan_prices[k] : 0; }
     if(member && x.member_price!=null) return x.member_price;
     return x.door!=null ? x.door : x.price;
   };
 
   evModal('Predaj na mieste',
-    '<div class="d-flex gap-2 mb-2" id="evmKto">'
-   +'<button type="button" class="btn btn-outline-warning flex-fill py-2" data-m="0"><b>Cudzí</b><br><small class="evm-hint" data-t="cudzi"></small></button>'
-   +'<button type="button" class="btn btn-outline-warning flex-fill py-2" data-m="1"><b>Členka</b><br><small class="evm-hint" data-t="clen"></small></button>'
+    '<div class="d-flex gap-2 mb-2 flex-wrap" id="evmKto">'
+   +(PLAN_EV
+      ? PLAN_BTNS.map(function(p){ return '<button type="button" class="btn btn-outline-warning flex-fill py-2" data-m="'+p[0]+'"><b>'+p[1]+'</b><br><small class="evm-hint" data-t="'+p[0]+'"></small></button>'; }).join('')
+      : '<button type="button" class="btn btn-outline-warning flex-fill py-2" data-m="0"><b>Cudzí</b><br><small class="evm-hint" data-t="cudzi"></small></button>'
+       +'<button type="button" class="btn btn-outline-warning flex-fill py-2" data-m="1"><b>Členka</b><br><small class="evm-hint" data-t="clen"></small></button>')
    +'<button type="button" class="btn btn-outline-secondary flex-fill py-2" data-m="g"><b>Zadarmo</b><br><small>rozdaný lístok</small></button>'
    +'</div>'
    + TYPES.map(function(t,i){
@@ -2565,7 +2573,7 @@ async function evOnsiteOpen(){
     async (wrap, close)=>{
       const pay=wrap.querySelector('#evmPay .btn-warning')?.dataset.p||'cash';
       const kto=wrap.querySelector('#evmKto .btn-warning')?.dataset.m;
-      if(kto==null) throw new Error('Vyber, či je to členka, cudzí, alebo lístok zadarmo.');
+      if(kto==null) throw new Error(PLAN_EV ? 'Vyber úroveň členstva (alebo lístok zadarmo).' : 'Vyber, či je to členka, cudzí, alebo lístok zadarmo.');
       const p=(wrap.querySelector('#evmPrice')||{}).value?.trim()||'';
       const items=[];
       TYPES.forEach(function(t){
@@ -2576,7 +2584,7 @@ async function evOnsiteOpen(){
       const body={ items:items,
         name:(wrap.querySelector('#evmName')||{}).value?.trim()||'',
         email:(wrap.querySelector('#evmMail')||{}).value?.trim()||'',
-        member: kto==='1', gift: kto==='g', method:pay };
+        member: kto==='1' || (PLAN_EV && kto!=='g' && kto!=='nonmember'), plan: (PLAN_EV && kto!=='g') ? kto : undefined, gift: kto==='g', method:pay };
       const r=await fetch('/api/admin/events/'+EV_SLUG+'/onsite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       const j=await r.json(); if(!j.ok) throw new Error(j.error||'Nepodarilo sa uložiť');
       close();
@@ -2591,9 +2599,10 @@ async function evOnsiteOpen(){
   const refresh=()=>{
     const kto=ktoNow();
     const manual=(document.getElementById('evmPrice')||{}).value?.trim()||'';
-    const unitOf=k=> kto==='g' ? 0 : (manual? +manual.replace(',','.') : priceOf(k, kto==='1'));
+    const unitOf=k=> kto==='g' ? 0 : (manual? +manual.replace(',','.') : priceOf(k, PLAN_EV ? kto : kto==='1'));
     document.querySelectorAll('.evm-p').forEach(el=>{
-      el.textContent = kto==null ? 'vyber cudzí / členka / zadarmo' : eu(unitOf(el.dataset.t))+' / ks'; });
+      el.textContent = kto==null ? (PLAN_EV ? 'vyber úroveň členstva / zadarmo' : 'vyber cudzí / členka / zadarmo') : eu(unitOf(el.dataset.t))+' / ks'; });
+    PLAN_BTNS.forEach(function(p){ const hp=document.querySelector('.evm-hint[data-t="'+p[0]+'"]'); const first=TYPES[0]||{}; if(hp) hp.textContent=eu(priceOf(first.key, p[0])); });
     // nápoveda priamo na tlačidlách, nech Marek vidí ceny bez klikania
     const par=TYPES.find(x=>x.key==='party')||TYPES[0]||{};
     const hc=document.querySelector('.evm-hint[data-t="cudzi"]'), hm=document.querySelector('.evm-hint[data-t="clen"]');

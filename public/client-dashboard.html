@@ -2794,7 +2794,7 @@ setInterval(loadDmBadge, 60*1000);
 /* ─── Online hodina banner (blíži sa / LIVE) ─── */
 async function loadEventBanner(){
   try{
-    const r=await fetch('/api/events/latin-tropical-2026',{credentials:'include'});
+    const r=await fetch('/api/events/next',{credentials:'include'});   // najbližšia aktívna akcia
     const d=await r.json(); if(!d.ok) return;
     const host=document.getElementById('eventBanner'); if(!host) return;
     // Akcia je za nami — ponuku neukazujeme (7. 9., po Latin Tropical)
@@ -2804,14 +2804,20 @@ async function loadEventBanner(){
     const save=(full&&full.member_price!=null)?(full.door-full.member_price):null;
     // Po skončení predpredaja klientke neoznamujeme, že prišla neskoro —
     // žiadna úspora, žiadny odpočet, žiadna prečiarknutá cena (Marek 1. 9.).
-    const zvyhodnenieBezi = !!(full && full.presale_until && new Date(full.presale_until).getTime() > Date.now());
+    const zvyhodnenieBezi = !!(full && !full.plan_prices && full.door!=null && full.presale_until && new Date(full.presale_until).getTime() > Date.now());
     const kick = allSold ? 'VYPREDANÉ'
       : !zvyhodnenieBezi ? 'VSTUPENKY V PREDAJI'
       : (d.is_member && save ? 'MÁŠ ČLENSKÚ CENU — UŠETRÍŠ '+save+' €'
                              : (save ? 'ČLENKY FUSION ACADEMY UŠETRIA '+save+' €' : 'PREDPREDAJ BEŽÍ'));
     const left = full && full.left!=null && full.left>0 && full.left<=10
       ? '<span class="save">🔥 Posledných '+full.left+' miest na masterclass</span>' : '';
-    const priceBlock = (!allSold && full) ? (
+    const priceBlock = (!allSold && full && full.plan_prices) ? (
+        '<div class="ev-price">'
+      +   (full.eligible ? '<b>'+String(full.price).replace('.',',')+' €</b><span class="now">TVOJA CENA'+(full.tier_label?' · '+full.tier_label.toUpperCase():'')+'</span>'
+                         : '<span class="then">Vstup pre členky s mesačným členstvom a držiteľky permanentky</span>')
+      + '</div>'
+      + '<div style="color:#e2d3a6;font-size:.78rem">'+[['silver','Silver'],['gold','Gold'],['bronze','Bronze'],['bundle','permanentka'],['nonmember','bez členstva']].filter(x=>full.plan_prices[x[0]]!=null).map(x=>x[1]+' '+String(full.plan_prices[x[0]]).replace('.',',')+' €').join(' · ')+'</div>'
+      ) : (!allSold && full) ? (
         '<div class="ev-price">'
       +   '<b>'+String(full.price).replace('.',',')+' €</b>'
       +   (zvyhodnenieBezi ? '<span class="now">TERAZ</span>'

@@ -124,11 +124,46 @@ module.exports = function mountEventTickets(ctx){
     types: SKOLENIE.types.map(t => ({ ...t, presale_until: '2026-09-25T19:59:59+02:00' }))
   };
 
-  const ALL_EVENTS = [LATIN, SKOLENIE, SKOLENIE2];
+  // Halloweenska Zumba Party (Marek 25. 10. 2026, „daj ako je to napísané na plagáte"):
+  // cena podľa úrovne členstva — Silver 5 €, Bronze 10 €, permanentka 15 €. Gold na plagáte
+  // nie je, zaradený na najnižšiu členskú cenu (platí mesačne viac než Silver). Bez členstva
+  // cena NEEXISTUJE (nonmember:null) — nečlenka vidí len informáciu, že vstup je pre členky
+  // a držiteľky permanentky. Keby Marek rozhodol inak, cena sa doplní na JEDNOM mieste: nonmember.
+  const HALLOWEEN = {
+    slug: 'halloween-zumba-2026',
+    name: 'HALLOWEENSKA ZUMBA PARTY',
+    subtitle: 'Vstup povolený len v maske',
+    date: '2026-10-30',
+    date_label: 'piatok 30. október 2026 · od 18:00',
+    venue: 'Fusion Academy',
+    address: 'Záhradná 7, Detva',
+    poster: '/img/events/halloween-zumba-2026.webp',
+    active: true,
+    tables_public_max: 0,
+    tables_persons_max: 0,
+    affiliates: [],
+    program: [
+      {time:'18:00',         what:'Technický tréning',                 ticket:'full'},
+      {time:'19:00 – 21:00', what:'Zumba — dve hodiny tanca',          ticket:'full'},
+      {time:'celý večer',    what:'Welcome drink, občerstvenie, otvorený bar', ticket:'full'}
+    ],
+    types: [
+      { key:'full', name:'HALLOWEENSKA ZUMBA PARTY',
+        includes:['Technický tréning o 18:00','Zumba 19:00 – 21:00 — dve hodiny tanca','Welcome drink pre každého','Občerstvenie','Otvorený bar','Vstup povolený len v maske'],
+        member: null, presale: null, door: null,
+        presale_until: '2026-10-30T20:59:59+01:00',
+        capacity: null,
+        plan_prices: { silver:5, gold:5, bronze:10, bundle:15, nonmember:null },
+        members_only: true }
+    ]
+  };
+
+  const ALL_EVENTS = [LATIN, SKOLENIE, SKOLENIE2, HALLOWEEN];
 
   async function ensureEvent(){
     for(const EV of ALL_EVENTS) await ensureOne(EV);
     await patchPartyMemberPrice();
+    await patchPlanPrices();
     // Odznak dostanú aj tie, čo si masterclass kúpili predtým, než odznak existoval.
     try{ await grantMasterclassBadge(await q.find(db.ev_tickets,{type:'full'})); }
     catch(e){ console.error('masterclass backfill:', e.message); }
@@ -147,6 +182,23 @@ module.exports = function mountEventTickets(ctx){
       await q.update(db.ev_events,{_id:ev._id},{$set:{types}});
       console.log('🎟️  Párty: členská cena 5 € platí aj pri dverách');
     }catch(e){ console.error('patchPartyMemberPrice:', e.message); }
+  }
+
+  // Cenník podľa úrovne členstva sa drží podľa seedu (kapacity ostávajú z admina) — keď Marek
+  // dopíše cenu bez členstva alebo zmení sadzbu, prejaví sa to po nasadení bez ručného zásahu v DB.
+  async function patchPlanPrices(){
+    try{
+      for(const EV of ALL_EVENTS){
+        if(!EV.types.some(t=>t.plan_prices)) continue;
+        const ev = await q.one(db.ev_events,{slug:EV.slug});
+        if(!ev || !Array.isArray(ev.types)) continue;
+        let zmena=false;
+        const types = ev.types.map(x=>{ const seed=EV.types.find(t=>t.key===x.key); if(!seed||!seed.plan_prices) return x;
+          const n={...x, plan_prices:seed.plan_prices, members_only:!!seed.members_only, includes:seed.includes, presale_until:seed.presale_until};
+          if(JSON.stringify(n)!==JSON.stringify(x)) zmena=true; return n; });
+        if(zmena){ await q.update(db.ev_events,{_id:ev._id},{$set:{types}}); console.log('🎟️  '+EV.slug+': cenník podľa úrovne členstva zosúladený so seedom'); }
+      }
+    }catch(e){ console.error('patchPlanPrices:', e.message); }
   }
 
   async function ensureOne(LATIN){
@@ -202,7 +254,33 @@ module.exports = function mountEventTickets(ctx){
   // member_after_presale: členská cena platí aj po konci predpredaja. Pri párty to
   // Marek chce (členka 5 €, cudzí 10 €, aj o polnoci pri dverách), pri masterclasse
   // nie — tam sa 45 € viazalo na predpredaj a v mailoch sme napísali, že skončil.
-  function priceFor(type, isMember){
+  // ── Ceny podľa úrovne členstva ─────────────────────────────────────────────
+  // type.plan_prices = { silver, gold, bronze, bundle, nonmember }: bundle = permanentka (nevyčerpané
+  // vstupy, status 'bundle' — nie mesačné členstvo), nonmember = cena bez členstva (null = nedá sa kúpiť).
+  // SKÚŠOBNÝ TÝŽDEŇ ZADARMO je tiež membership (trial:true, 0 €) a od 27. 9. ho má každá nová
+  // registrácia — plagát hovorí „s mesačným členstvom", preto sa skúška do členskej ceny NERÁTA.
+  // Jedno miesto na prepnutie, keby Marek rozhodol inak:
+  const SKUSKA_MA_CLENSKU_CENU = false;
+  const PLAN_LABEL = { silver:'Silver', gold:'Gold', bronze:'Bronze', bundle:'Permanentka', nonmember:'Bez členstva' };
+  async function memberCtx(u){
+    if(!u) return { member:false, plan:null, bundle:false, trial:false };
+    const now=new Date();
+    const aktivne = isMemberActive(u);
+    let trial = !!(u.trial_ends_at && !u.trial_converted_at && new Date(u.trial_ends_at) > now);
+    if(aktivne && !trial){ const m = await q.one(db.memberships,{user_id:u._id, status:'active'}); if(m && m.trial && !(+m.price>0)) trial = true; }
+    const member = aktivne && (!trial || SKUSKA_MA_CLENSKU_CENU);
+    return { member, plan: member ? String(u.membership_plan||'').toLowerCase() : null, bundle:(+u.single_entries||0)>0, trial };
+  }
+  function planPrice(type, ctx){
+    const pp = type.plan_prices; if(!pp) return null;
+    ctx = ctx || {};
+    if(ctx.member && ctx.plan && pp[ctx.plan]!=null) return { price:+pp[ctx.plan], tier:'plan:'+ctx.plan, label:PLAN_LABEL[ctx.plan]||ctx.plan };
+    if(ctx.bundle && pp.bundle!=null) return { price:+pp.bundle, tier:'bundle', label:PLAN_LABEL.bundle };
+    if(pp.nonmember!=null) return { price:+pp.nonmember, tier:'door', label:PLAN_LABEL.nonmember };
+    return { price:null, tier:'none', label:null };
+  }
+  function priceFor(type, isMember, ctx){
+    if(type.plan_prices) return planPrice(type, ctx || { member:!!isMember, plan:null, bundle:false });
     const now = skNow();
     const presaleOpen = now <= new Date(type.presale_until).toISOString();
     if(isMember && type.member != null && (presaleOpen || type.member_after_presale))
@@ -215,7 +293,7 @@ module.exports = function mountEventTickets(ctx){
   // ktorú by človek dostal aj tak — nikdy nikomu nezdražie.
   function applyAffPrice(p, type, aff){
     const v = aff && aff.prices && aff.prices[type.key];
-    if(v==null || !(v < p.price)) return p;
+    if(v==null || p.price==null || !(v < p.price)) return p;
     return { price:v, tier:'aff' };
   }
 
@@ -245,12 +323,20 @@ module.exports = function mountEventTickets(ctx){
     return { taken:res.length, left:Math.max(0,(ev.tables_public_max||0)-res.length) };
   }
 
+  // Najbližšia aktívna verejná akcia (ambasádorské školenia sa nepropagujú na nástenke).
+  async function nextEvent(){
+    const evs = (await q.find(db.ev_events,{})).filter(e=>e.active!==false && !evSkoncil(e) && !/^skolenie-/.test(e.slug||''));
+    evs.sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+    return evs[0] || null;
+  }
+
   // ── Verejný detail eventu ──────────────────────────────────────────────────
   app.options('/api/events/:slug',(req,res)=>{ cors(res); res.sendStatus(204); });
   app.get('/api/events/:slug', async(req,res)=>{
     cors(res);
     try{
-      const ev = await q.one(db.ev_events,{slug:req.params.slug});
+      // „next" = najbližšia aktívna akcia (nástenka v appke nemusí poznať slug)
+      const ev = req.params.slug==='next' ? await nextEvent() : await q.one(db.ev_events,{slug:req.params.slug});
       if(!ev) return res.status(404).json({error:'Event nenájdený'});
       let isMember = false, me = null;
       if(req.session?.uid){
@@ -261,9 +347,11 @@ module.exports = function mountEventTickets(ctx){
       // Členská cena patrí len overenému členovi — buď je prihlásený,
       // alebo zadá e-mail, pod ktorým má v appke aktívne členstvo.
       let memberPrice = isMember;
+      let ctx = await memberCtx(me);
       if(!memberPrice && req.query.email){
         const u = await q.one(db.users,{email:String(req.query.email).toLowerCase().trim()});
         memberPrice = !!(u && isMemberActive(u));
+        if(u) ctx = await memberCtx(u);
       }
       const avail = await availability(ev);
       const tables = await tablesLeft(ev);
@@ -275,12 +363,16 @@ module.exports = function mountEventTickets(ctx){
         is_member: isMember,
         ended: evSkoncil(ev),          // appka aj web podľa toho skryjú ponuku
         member_price: memberPrice,
+        viewer: { member:ctx.member, plan:ctx.plan, plan_label: ctx.plan ? (PLAN_LABEL[ctx.plan]||ctx.plan) : null, bundle:ctx.bundle, trial:ctx.trial },
+        plan_labels: PLAN_LABEL,
         affiliate: affLink ? {code:affLink.code, name:affLink.name} : null,
         types: ev.types.map(t=>{
-          const p = applyAffPrice(priceFor(t, memberPrice), t, affLink);
+          const p = applyAffPrice(priceFor(t, memberPrice, ctx), t, affLink);
           const a = avail[t.key];
           return { key:t.key, name:t.name, includes:t.includes, tables:!!t.tables,
-                   price:p.price, tier:p.tier, member_price:t.member, presale:t.presale, door:t.door,
+                   price:p.price, tier:p.tier, tier_label:p.label||null, eligible:p.price!=null,
+                   plan_prices:t.plan_prices||null, members_only:!!t.members_only,
+                   member_price:t.member, presale:t.presale, door:t.door,
                    member_after_presale: !!t.member_after_presale,
                    presale_until:t.presale_until,
                    sold:a.sold, left:a.left, sold_out: a.left!=null && a.left<=0 };
@@ -298,7 +390,8 @@ module.exports = function mountEventTickets(ctx){
       const email = String(req.body.email||'').toLowerCase().trim();
       if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.json({ok:true, member:false});
       const u = await q.one(db.users,{email});
-      res.json({ok:true, member: !!(u && isMemberActive(u))});
+      const ctx = await memberCtx(u);
+      res.json({ok:true, member: ctx.member, plan: ctx.plan, plan_label: ctx.plan ? (PLAN_LABEL[ctx.plan]||ctx.plan) : null, bundle: ctx.bundle, trial: ctx.trial});
     }catch(e){ res.status(500).json({error:e.message}); }
   });
 
@@ -324,9 +417,11 @@ module.exports = function mountEventTickets(ctx){
 
       const aff = affFor(ev, req.body.aff);
       let memberPrice = isMember;
+      let ctx = await memberCtx(me);
       if(!memberPrice){
         const u = await q.one(db.users,{email:buyer_email});
         memberPrice = !!(u && isMemberActive(u));
+        if(u) ctx = await memberCtx(u);
       }
 
       // Položky: [{type:'full', qty:2, holders:[{name,email,phone}, …]}]
@@ -341,7 +436,10 @@ module.exports = function mountEventTickets(ctx){
         const a = avail[t.key];
         if(a.left!=null && qty > a.left)
           return res.status(400).json({error:`Pri „${t.name}" ostáva už len ${a.left} ${a.left===1?'miesto':'miest'}.`});
-        const p = applyAffPrice(priceFor(t, memberPrice), t, aff);
+        const p = applyAffPrice(priceFor(t, memberPrice, ctx), t, aff);
+        if(p.price==null) return res.status(400).json({error: t.members_only
+          ? 'Vstup na túto akciu je pre členky s mesačným členstvom a držiteľky permanentky. Zadaj e-mail, pod ktorým máš členstvo v appke'+(ctx.trial?' (skúšobný týždeň zadarmo sa neráta)':'')+', alebo napíš Beáte na 0904 31 51 51.'
+          : 'Pre túto vstupenku nie je určená cena.'});
         const subtotal = +(p.price*qty).toFixed(2);
         total += subtotal;
         const holders = (Array.isArray(w.holders)?w.holders:[]).slice(0,qty).map(h=>({
@@ -808,6 +906,12 @@ module.exports = function mountEventTickets(ctx){
         ? req.body.items
         : [{ type:req.body.type, qty:req.body.qty, price:req.body.price }];
       const avail = await availability(ev);
+      // Cenník podľa úrovne: admin pošle plan (silver/gold/bronze/bundle/nonmember), inak sa úroveň
+      // zistí z účtu podľa e-mailu; bez toho a bez ručnej ceny sa predaj odmietne.
+      const planSel = String(req.body.plan||'').toLowerCase();
+      const emailEarly = esc(req.body.email,120).toLowerCase();
+      const acctEarly = emailEarly ? await q.one(db.users,{email:emailEarly}) : null;
+      const ctxEarly = await memberCtx(acctEarly);
       const lines = [];
       for(const w of wanted){
         const t = ev.types.find(x=>x.key===w.type);
@@ -819,13 +923,21 @@ module.exports = function mountEventTickets(ctx){
         // Cena pri dverách: predpredaj je výhoda za nákup online, nie za to, že
         // človek príde na miesto. Preto tu platí jednoduché pravidlo (Marek 5. 9.):
         // členka členskú cenu, cudzí cenu na mieste. Ručne zadaná cena má prednosť.
-        const price = isGift ? 0 : ((w.price!=null && w.price!=='')
-          ? Math.max(0,+w.price)
-          : ((isMemberSale && t.member!=null) ? t.member : (t.door!=null ? t.door : priceFor(t, isMemberSale).price)));
+        let tierSel = null;
+        let price;
+        if(isGift) price = 0;
+        else if(w.price!=null && w.price!=='') price = Math.max(0,+w.price);
+        else if(t.plan_prices){
+          const pp=t.plan_prices;
+          const pr = (planSel && pp[planSel]!=null) ? { price:+pp[planSel], tier: planSel==='bundle'?'bundle':(planSel==='nonmember'?'door':'plan:'+planSel) } : planPrice(t, ctxEarly);
+          if(pr.price==null) return res.status(400).json({error:`Pri „${t.name}" vyber úroveň členstva (Silver/Gold, Bronze, permanentka) alebo zadaj cenu.`});
+          price = pr.price; tierSel = pr.tier;
+        }
+        else price = (isMemberSale && t.member!=null) ? t.member : (t.door!=null ? t.door : priceFor(t, isMemberSale).price);
         // Mená ďalších osôb — vstupenka môže znieť na kamarátku, nielen na kupujúcu.
         const holders=(Array.isArray(w.holders)?w.holders:[]).slice(0,qty).map(h=>({
           name:esc(h&&h.name,120), email:esc(h&&h.email,120).toLowerCase(), phone:esc(h&&h.phone,40) }));
-        lines.push({ t, qty, price, holders });
+        lines.push({ t, qty, price, holders, tier:tierSel });
       }
       if(!lines.length) return res.status(400).json({error:'Vyber aspoň jednu vstupenku.'});
       const total = +lines.reduce((s,l)=>s+l.price*l.qty,0).toFixed(2);
@@ -841,7 +953,7 @@ module.exports = function mountEventTickets(ctx){
         buyer_name:name, buyer_email:email, buyer_phone:esc(req.body.phone,40),
         user_id:acct?._id||null,
         items: lines.map(l=>({type:l.t.key, type_name:l.t.name, qty:l.qty, unit:l.price,
-          tier: isGift?'gift':(isMemberSale?'member':'door'), subtotal:+(l.price*l.qty).toFixed(2), holders:l.holders||[]})),
+          tier: isGift?'gift':(l.tier||(isMemberSale?'member':'door')), subtotal:+(l.price*l.qty).toFixed(2), holders:l.holders||[]})),
         total, table:null, source:'admin', status:'paid', gift:isGift, admin_note:mailNote||null,
         created_at:nowISO(), paid_at:nowISO(), payment_method:method
       });
@@ -850,7 +962,7 @@ module.exports = function mountEventTickets(ctx){
         for(let i=0;i<l.qty;i++){ const h=(l.holders||[])[i]||{}; made.push(await q.insert(db.ev_tickets,{
           code:newCode(), event_slug:ev.slug, type:l.t.key, type_name:l.t.name,
           order_id:order._id, order_number:order.order_number, price:l.price,
-          tier: isGift?'gift':(isMemberSale?'member':'door'),
+          tier: isGift?'gift':(l.tier||(isMemberSale?'member':'door')),
           holder_name: h.name||name, holder_email: h.email||order.buyer_email, holder_phone: h.phone||order.buyer_phone,
           user_id:acct?._id||null, source:'admin', status:'valid',
           aff_code: affO?.code||null, aff_commission: affO? +(l.price*affO.rate).toFixed(2) : 0,
