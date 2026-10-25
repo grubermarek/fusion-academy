@@ -9,7 +9,8 @@ const QR     = require('qrcode');
 
 module.exports = function mountEventTickets(ctx){
   const { app, db, q, auth, adminAuth, rlPublic, nowISO, today, APP_URL,
-          sendMail, createInvoice, stripeApi, STRIPE_SECRET, isMemberActive, metaCapi } = ctx;
+          sendMail, createInvoice, stripeApi, STRIPE_SECRET, isMemberActive, metaCapi,
+          emailTemplate, mailBudgetOk, vencekMimoKonverzie } = ctx;
 
   // ── Pomocné ────────────────────────────────────────────────────────────────
   const cors = res => {
@@ -1065,5 +1066,106 @@ module.exports = function mountEventTickets(ctx){
     }catch(e){ res.status(500).json({error:e.message}); }
   });
 
-  return { ensureEvent, fulfillEventOrder, LATIN };
+  // ── Mailová pozvánka na Halloweensku Zumba Party (25. 10. 2026) ────────────
+  // Komu: LEN tomu, kto si vstup reálne vie kúpiť. To nie je to isté ako „má
+  // členstvo": skúšobný týždeň zadarmo je tiež membership, ale členskú cenu
+  // nedáva (SKUSKA_MA_CLENSKU_CENU=false), takže žena na skúške by dostala
+  // pozvánku na niečo, čo si kúpiť nevie. memberCtx + planPrice to rozhodnú
+  // na jednom mieste, takže sa to nemôže rozísť s tým, čo ukazuje stránka eventu.
+  // Poistka ako pri EV_DOPREDAJ: deploy NIE JE schválenie — bez HALLOWEEN_GO=1
+  // v Railway env sa neodošle nič, aj keď je kód na produkcii.
+  const HALLOWEEN_SUBJ = '🎃 Halloweenska Zumba Party — tento piatok, vstup len v maske';
+  const HALLOWEEN_URL  = APP_URL.replace(/\/$/,'') + '/event/' + HALLOWEEN.slug;
+
+  async function halloweenAudience(){
+    const ev = await q.one(db.ev_events,{slug:HALLOWEEN.slug});
+    const type = ev && (ev.types||[]).find(t=>t.key==='full');
+    const vynechani = {}; const preco = d => { vynechani[d]=(vynechani[d]||0)+1; };
+    if(!type) return { prijemcovia:[], vynechani:{'event sa nenašiel':1} };
+    const users = await q.find(db.users,{});
+    const uzDostali = new Set((await q.find(db.mail_log,{}))
+      .filter(m=>m.subject===HALLOWEEN_SUBJ).map(m=>String(m.to||'').toLowerCase()));
+    const testMail = String(process.env.TEST_ACC_EMAIL||'').toLowerCase();
+    const prijemcovia = [];
+    for(const u of users){
+      const email = String(u.email||'').trim().toLowerCase();
+      if(!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) { preco('bez platného e-mailu'); continue; }
+      // @import.local sú syntetické adresy zo starého zoznamu — sendMail ich aj tak odmietne
+      if(/@import\.local$/i.test(email)) { preco('importovaná adresa bez mailu'); continue; }
+      if(/@test-fa-qa\.local$/i.test(email) || u.is_test || u.lead_source==='test'
+         || (testMail && email===testMail)) { preco('testovací účet'); continue; }
+      if(u.active===false) { preco('deaktivovaný účet'); continue; }
+      if(u.is_child) { preco('detský účet'); continue; }
+      if(vencekMimoKonverzie(u)) { preco('venčekár (nie je klientka)'); continue; }
+      if(u.offers_optout || u.do_not_contact) { preco('odhlásená z mailov'); continue; }
+      if(!(u.email_consent || u.consent_at)) { preco('bez súhlasu na e-mail'); continue; }
+      const mctx = await memberCtx(u);
+      const p = planPrice(type, mctx);
+      if(!p || p.price == null) { preco(mctx.trial ? 'má len týždeň zadarmo' : 'bez členstva aj permanentky'); continue; }
+      if(uzDostali.has(email)) { preco('pozvánku už dostala'); continue; }
+      prijemcovia.push({ user_id:u._id, email, cena:p.price, uroven:p.label,
+        meno:(String(u.name||'').trim().split(/\s+/)[0] || 'tanečníčka') });
+    }
+    return { prijemcovia, vynechani };
+  }
+
+  function halloweenHtml(p){
+    const cena = String(p.cena).replace('.',',');
+    return emailTemplate('Halloweenska Zumba Party — tento piatok 🎃',
+      '<p>Ahoj ' + p.meno + ',</p>'
+      + '<p>v piatok <b>30. októbra</b> u nás tancujeme v maskách. O 18:00 začíname technickým tréningom, '
+      + 'o 19:00 nastupuje Zumba a tancuje sa dve hodiny v kuse.</p>'
+      + '<p>Celý večer máš <b>welcome drink</b>, občerstvenie a otvorený bar.</p>'
+      + '<p><b>Vstup je povolený len v maske.</b> Bez nej ťa dnu nepustíme, tak si ju priprav.</p>'
+      + '<p>Tvoje vstupné podľa členstva: <b style="color:#C9A84C">' + cena + ' €</b> (' + p.uroven + ').</p>'
+      + '<p>Fusion Academy — Záhradná 7, Detva.</p>',
+      '🎟️ KÚPIŤ LÍSTOK', HALLOWEEN_URL);
+  }
+
+  // Náhľad: nič neodosiela, vráti počty, dôvody vynechania a ukážku mailu.
+  app.get('/api/admin/event/halloween/nahlad', adminAuth, async(req,res)=>{
+    try{
+      const { prijemcovia, vynechani } = await halloweenAudience();
+      const podlaUrovne = {};
+      for(const p of prijemcovia){
+        const k = p.uroven + ' · ' + String(p.cena).replace('.',',') + ' €';
+        podlaUrovne[k] = (podlaUrovne[k]||0) + 1;
+      }
+      res.json({ ok:true,
+        pocet: prijemcovia.length,
+        podla_urovne: podlaUrovne,
+        vynechani,
+        brevo_limit: 300,
+        nad_limit: prijemcovia.length > 300,
+        go_flag: process.env.HALLOWEEN_GO === '1',
+        predmet: HALLOWEEN_SUBJ,
+        odkaz: HALLOWEEN_URL,
+        ukazka_html: prijemcovia.length ? halloweenHtml(prijemcovia[0]) : null,
+        prvi: prijemcovia.slice(0,10).map(p=>({ meno:p.meno, uroven:p.uroven, cena:p.cena })) });
+    }catch(e){ res.status(500).json({error:e.message}); }
+  });
+
+  // Odoslanie: aj s admin právami to vyžaduje HALLOWEEN_GO=1 v Railway env.
+  app.post('/api/admin/event/halloween/odoslat', adminAuth, async(req,res)=>{
+    try{
+      if(process.env.HALLOWEEN_GO !== '1')
+        return res.status(409).json({error:'Vlna je zamknutá. Nastav HALLOWEEN_GO=1 v Railway env a skús znova — deploy sám o sebe nie je schválenie.'});
+      if(req.body && req.body.potvrdit !== true){
+        const { prijemcovia } = await halloweenAudience();
+        return res.json({ ok:true, dry_run:true, pocet:prijemcovia.length });
+      }
+      const { prijemcovia } = await halloweenAudience();
+      if(!prijemcovia.length) return res.json({ ok:true, poslane:0, poznamka:'Nikto nespĺňa podmienky.' });
+      let poslane=0, zlyhalo=0, stoplo=null;
+      for(const p of prijemcovia){
+        if(!(await mailBudgetOk(4))) { stoplo='denný strop mailov'; break; }
+        const ok = await sendMail(p.email, HALLOWEEN_SUBJ, halloweenHtml(p),
+          {priority:4, template:'event_halloween_2026'}).catch(()=>false);
+        ok ? poslane++ : zlyhalo++;
+      }
+      res.json({ ok:true, poslane, zlyhalo, stoplo, zo:prijemcovia.length });
+    }catch(e){ res.status(500).json({error:e.message}); }
+  });
+
+  return { ensureEvent, fulfillEventOrder, LATIN, halloweenAudience, halloweenHtml, HALLOWEEN_SUBJ };
 };

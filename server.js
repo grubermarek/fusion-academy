@@ -26981,7 +26981,8 @@ async function faktyKvizu(){
 const PUZZLE = require('./puzzle')({ app, db, q, auth, adminAuth, nowISO, today, fakty: faktyKvizu, servisToken });
 const EVENTS = require('./event-tickets')({
   app, db, q, auth, adminAuth, rlPublic, nowISO, today, APP_URL,
-  sendMail, createInvoice, stripeApi, STRIPE_SECRET, isMemberActive, metaCapi
+  sendMail, createInvoice, stripeApi, STRIPE_SECRET, isMemberActive, metaCapi,
+  emailTemplate, mailBudgetOk, vencekMimoKonverzie
 });
 EVENTS.ensureEvent().then(e=>console.log('🎟️  Event pripravený:', e?.name)).catch(e=>console.error('event seed:', e.message));
 
