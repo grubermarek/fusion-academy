@@ -558,15 +558,45 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // ── Štart merania času (beží na serveri, klientovi sa neverí) ──
+  // ── Meranie času (beží na serveri, klientovi sa neverí) ──
+  // Do 25. 10. 2026 bežali hodiny od prvého otvorenia hádanky a nezastavili sa
+  // ničím — ani keď hráčka appku zavrela. Nelke Kyseľovej tak za kvíz napočítalo
+  // hodinu (strop), hoci mala 5/5, a Bea hlásila, že ju appka vyhodila na úvodnú
+  // stránku (klik na upozornenie vedie na /client-dashboard). Teraz sa počíta len
+  // čas, keď má hráčka hádanku naozaj otvorenú: stránka sa každých 10 s ozve
+  // pingom a pripočíta sa iba medzera kratšia ako MAX_MEDZERA. Dlhá prestávka
+  // (zamknutý telefón, prepnutá appka, push na úvod) sa do času nerát.
+  // Prečo nie čas z prehliadača: ten by si hráčka mohla poslať aký chce.
+  // Ako často sa stránka ozýva a aká medzera sa ešte počíta ako „hrala". Prah musí
+  // byť väčší než interval pingov, inak by sa nezapočítal ani jeden a všetkým by
+  // vyšla 1 s. Preto sa predvolene odvodzuje z intervalu; env premenné sú pre test.
+  const PING_MS = Math.max(200, +process.env.PUZZLE_PING_MS || 10 * 1000);
+  const MAX_MEDZERA = +process.env.PUZZLE_MAX_GAP_MS || Math.max(25 * 1000, PING_MS * 2 + 5000);
+  function merajCas(s, teraz) {
+    const medzera = teraz - (s.ping || teraz);
+    if (medzera > 0 && medzera <= MAX_MEDZERA) s.aktiv = (s.aktiv || 0) + medzera;
+    s.ping = teraz;
+  }
+  const otvoreneSekundy = s => Math.min(3600, Math.round((s.aktiv || 0) / 1000));
+
   app.post('/api/puzzle/start', auth, async (req, res) => {
     const d = today();
-    // Čas beží od OTVORENIA hádanky. Opakované otvorenie ani obnovenie stránky
-    // ho nenuluje — inak by stačilo hádanku naštudovať a potom "zabehnúť".
-    if (!req.session.puzzle || req.session.puzzle.date !== d) {
-      req.session.puzzle = { date: d, at: Date.now() };
-    }
-    res.json({ ok: true, elapsed: Math.round((Date.now() - req.session.puzzle.at) / 1000) });
+    const teraz = Date.now();
+    const s = req.session.puzzle;
+    // Opakované otvorenie ani obnovenie stránky čas nenuluje — inak by stačilo
+    // hádanku naštudovať a potom „zabehnúť". Len sa pokračuje tam, kde sa skončilo.
+    if (!s || s.date !== d) req.session.puzzle = { date: d, at: teraz, aktiv: 0, ping: teraz, pingy: 0 };
+    else s.ping = teraz;                    // návrat po prestávke: medzera sa nepočíta
+    res.json({ ok: true, elapsed: otvoreneSekundy(req.session.puzzle), ping_ms: PING_MS });
+  });
+
+  // Stránka sa ozýva, kým je na očiach. Keď prestane, čas stojí.
+  app.post('/api/puzzle/ping', auth, async (req, res) => {
+    const s = req.session.puzzle;
+    if (!s || s.date !== today()) return res.json({ ok: false, restart: true });
+    merajCas(s, Date.now());
+    s.pingy = (s.pingy || 0) + 1;
+    res.json({ ok: true, elapsed: otvoreneSekundy(s), ping_ms: PING_MS });
   });
 
   // ── Odoslanie riešenia ──
@@ -599,8 +629,12 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
       // riešenie uznáme, ale nemôže vyhrať deň — inak by stačilo poslať "1 s".
       const st = req.session.puzzle;
       const verified = !!(st && st.date === d && st.at);
+      if (verified) merajCas(st, Date.now());
+      // Čas otvorenej hádanky. Stará stránka z cache ping nepozná — tej meriame
+      // po starom (od otvorenia), nech sa z chýbajúcich pingov nestane „1 s".
+      const odOtvorenia = verified ? Math.max(1, Math.min(3600, Math.round((Date.now() - st.at) / 1000))) : null;
       const seconds = verified
-        ? Math.max(1, Math.min(3600, Math.round((Date.now() - st.at) / 1000)))
+        ? (st.pingy > 0 ? Math.max(1, otvoreneSekundy(st)) : odOtvorenia)
         : Math.max(1, Math.min(3600, Math.round(+req.body.seconds || 0)));
 
       const capLeft = await zostatokDoStropu(c, req.session.uid, d.slice(0, 7));
@@ -622,6 +656,8 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
       await q.insert(db.puzzle_solves, {
         user_id: req.session.uid, user_name: u ? u.name : '', date: d, month: d.slice(0, 7),
         seconds, points, fast: seconds <= c.fast_seconds, verified, type: p.type, created_at: nowISO(),
+        // koľko času ubehlo od prvého otvorenia — na dohľadanie sťažností na čas
+        ...(odOtvorenia != null && odOtvorenia !== seconds ? { cas_otvorene: odOtvorenia } : {}),
         ...(bezBodov ? { body_zakaz: true } : {}),
         ...(vysledok ? { correct: vysledok.spravne, total: vysledok.celkom, perfect: vysledok.perfect,
                          answers: req.body.answers } : {}),
@@ -818,6 +854,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
         .map(r => ({ name: r.user_name || '', user_id: r.user_id, seconds: +r.seconds || 0,
           points: +r.points || 0, verified: r.verified !== false, type: r.type || null,
           correct: r.correct != null ? r.correct : null, perfect: !!r.perfect,
+          cas_otvorene: r.cas_otvorene != null ? r.cas_otvorene : null,
           day_win: !!r.day_win, bonus: +r.day_win_bonus || 0, created_at: r.created_at || null }));
       res.json({ ok: true, date: d, type: typeForSync(d, await cfg()), players: rows.length, rows });
     } catch (e) { res.status(500).json({ error: e.message }); }

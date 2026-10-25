@@ -245,7 +245,8 @@ async function init(){
   if(!solvedToday){
     const st=await api('/api/puzzle/start',{method:'POST'}).catch(()=>null);
     startedAt=Date.now()-((st&&st.elapsed||0)*1000);
-    tick(); timer=setInterval(tick,1000);
+    if(st&&st.ping_ms>0) pingMs=st.ping_ms;
+    tick(); timer=setInterval(tick,1000); spustiPingy();
   }
 }
 
@@ -473,6 +474,41 @@ function tick(){
   if(P && skToday()!==P.date){ if(timer) clearInterval(timer); location.reload(); }
 }
 function startClock(){ if(!timer&&startedAt) timer=setInterval(tick,1000); }
+
+// ── Čas beží len vtedy, keď máš hádanku na očiach ──────────────────────────
+// Kým je stránka otvorená, ozýva sa serveru. Keď ju zavrieš, prepneš appku
+// alebo ťa upozornenie hodí na úvod, pingy prestanú a čas stojí. Server si
+// pripočíta len medzery kratšie ako 25 s, takže prestávka sa do času nerát.
+let pingTimer=null, pingMs=10000;        // interval určuje server, nech sa nerozídu
+async function posliPing(){
+  if(solvedToday||!P) return;
+  const r=await api('/api/puzzle/ping',{method:'POST'}).catch(()=>null);
+  if(!r) return;
+  if(r.restart){ location.reload(); return; }          // medzitým nastala polnoc
+  if(r.ok && typeof r.elapsed==='number') startedAt=Date.now()-r.elapsed*1000;
+  if(r.ping_ms>0 && r.ping_ms!==pingMs){ pingMs=r.ping_ms; zastavPingy(); spustiPingy(); }
+}
+function spustiPingy(){ if(!pingTimer&&!solvedToday) pingTimer=setInterval(posliPing,pingMs); }
+function zastavPingy(){ if(pingTimer){ clearInterval(pingTimer); pingTimer=null; } }
+// Odchod zo stránky (upozornenie na úvod, zamknutý telefón, prepnutá appka):
+// pošli posledný ping, nech sa odohraný čas nestratí. sendBeacon prejde aj pri
+// zatváraní stránky, keď bežný fetch už nestihne odísť.
+function bankujCas(){
+  if(solvedToday||!P) return;
+  try{ if(navigator.sendBeacon && navigator.sendBeacon('/api/puzzle/ping')) return; }catch(e){}
+  try{ fetch('/api/puzzle/ping',{method:'POST',credentials:'include',keepalive:true}); }catch(e){}
+}
+window.addEventListener('pagehide', bankujCas);
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){ bankujCas(); zastavPingy(); if(timer){ clearInterval(timer); timer=null; } return; }
+  if(solvedToday||!P) return;
+  // späť po prestávke: najprv si vypýtaj skutočný čas zo servera, až potom tikaj
+  api('/api/puzzle/start',{method:'POST'}).then(r=>{
+    if(r&&typeof r.elapsed==='number') startedAt=Date.now()-r.elapsed*1000;
+    if(r&&r.ping_ms>0) pingMs=r.ping_ms;
+    tick(); if(!timer) timer=setInterval(tick,1000); spustiPingy();
+  }).catch(()=>{ if(!timer) timer=setInterval(tick,1000); spustiPingy(); });
+});
 function resetPath(){
   if(P && P.type==='rhythm'){
     prehravace.forEach(a=>{ if(a){ a.pause(); a.currentTime=0; } });
@@ -542,6 +578,7 @@ async function submit(){
   if(d.new_day){ flash('Práve nastala polnoc — načítavam novú hádanku…'); setTimeout(()=>location.reload(),1500); return; }
   if(d.error){ flash(d.error); if(P.type==='anagram') ofarbiAg(d.trafene); return; }
   if(timer){ clearInterval(timer); timer=null; }
+  zastavPingy();
   // Hotovo — tlačidlá už nič nerobia, tak ich schováme; body v mesiaci hneď obnovíme.
   const akcie=document.querySelector('.actions'); if(akcie) akcie.hidden=true;
   const mb=$('mesBody'); if(mb && d.month_points!=null) mb.textContent=d.month_points+(d.monthly_cap>0?'/'+d.monthly_cap:'');

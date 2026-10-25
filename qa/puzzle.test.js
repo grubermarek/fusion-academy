@@ -93,7 +93,9 @@ const mkid = () => Math.random().toString(36).slice(2, 10) + Math.random().toStr
     // ── čas beží od OTVORENIA a opakované otvorenie ho nenuluje ──
     const s1 = await j('/api/puzzle/start', { method: 'POST' }, jar);
     ok('prvé otvorenie začína na nule', s1.d.elapsed === 0, String(s1.d.elapsed));
-    await new Promise(r => setTimeout(r, 2100));
+    // Od 25. 10. 2026 sa počíta len čas s otvorenou hádankou: stránka sa ozýva pingom.
+    // Obnovenie stránky ani opakované otvorenie nasčítaný čas nezmaže.
+    for (let i = 0; i < 5; i++) { await new Promise(r => setTimeout(r, 420)); await j('/api/puzzle/ping', { method: 'POST' }, jar); }
     const s2 = await j('/api/puzzle/start', { method: 'POST' }, jar);
     ok('opakované otvorenie čas NEnuluje', s2.d.elapsed >= 2, 'elapsed=' + s2.d.elapsed);
 
