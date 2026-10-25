@@ -177,6 +177,131 @@ module.exports = function initSchoolOutreach(ctx) {
     return poslane;
   }
 
+  // ── Tretí dotyk: „sme vybookovaní, ostáva posledný voľný termín" ─────────────
+  // Marek 25. 10. 2026. Ide školám, ktoré dostali prvý mail a neozvali sa.
+  // Fotky sú z nášho venčeka (web assets/vencek/mail-*.jpg). Bez 3 € za žiaka —
+  // príspevok škole bol v ten deň zrušený.
+  const FOTO = 'https://fusionacademy.sk/assets/vencek/';
+  function scarcitySubject(s) {
+    return 'Venček pre deviatakov' + (s.city ? ' — ' + s.city : '') + ': ostáva posledný voľný termín';
+  }
+  function scarcityHtml(s) {
+    const oslovenie = s.director ? 'Dobrý deň, ' + esc(s.director) + ',' : 'Dobrý deň,';
+    const odhlasit = APP_URL + '/skoly/odhlasit/' + s._id;
+    const cta = lpUrl(s);
+    const img = (f, w, h, alt) => '<img src="' + FOTO + f + '" width="' + w + '" height="' + h + '" alt="' + alt + '"'
+      + ' style="display:block;width:' + w + 'px;height:' + h + 'px;border-radius:8px;border:0">';
+    const pair = (l, r) => '<tr><td width="261" style="padding:0 5px 10px 0;vertical-align:top">' + l + '</td>'
+      + '<td width="261" style="padding:0 0 10px 5px;vertical-align:top">' + r + '</td></tr>';
+    const full = i => '<tr><td colspan="2" style="padding:0 0 10px">' + i + '</td></tr>';
+    const fotky = '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 6px">'
+      + full(img('mail-skupina.jpg', 532, 355, 'Deviataci v šatách a oblekoch pred fotostenou na venčekovom večere'))
+      + pair(img('mail-nastup.jpg', 261, 196, 'Slávnostný nástup párov'), img('mail-kral.jpg', 261, 196, 'Chlapci v oblekoch s korunou pred fotostenou'))
+      + pair(img('mail-03.jpg', 261, 196, 'Chlapci v oblekoch s lektorom pred fotostenou'), img('mail-04.jpg', 261, 196, 'Dievčatá vo večerných šatách pred fotostenou'))
+      + full(img('mail-33.jpg', 532, 213, 'Slávnostná výzdoba stola na venčekovom večere'))
+      + '</table>';
+    return `<!DOCTYPE html><html lang="sk"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f2f1ee">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f1ee">
+<tr><td align="center" style="padding:26px 14px">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0"
+  style="max-width:600px;background:#ffffff;border-radius:10px;border:1px solid #e3e0d9">
+<tr><td style="padding:30px 34px 6px;font-family:Georgia,'Times New Roman',serif;font-size:16px;line-height:1.65;color:#222">
+  <p style="margin:0 0 16px">${oslovenie}</p>
+  <p style="margin:0 0 16px">v septembri som vám písal ohľadom venčeka pre deviatakov
+  (program <b>Posledný tanec</b>). Ozývam sa ešte raz, lebo sa situácia zmenila:
+  na tento školský rok sme už vybookovaní a <b>ostáva nám posledný voľný
+  termín</b>. Každej škole robíme vlastný večer, viac ich preto nezoberieme.</p>
+  <p style="margin:0 0 10px">Takto vyzeral náš venčekový večer:</p>
+  ${fotky}
+  <p style="margin:0 0 18px;font-size:13px;color:#777">Fotky z nášho venčeka: slávnostný nástup párov,
+  fotostena, galavečer s DJ-om a moderátorom, výzdoba sály.</p>
+  <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:6px 0 18px">
+    <tr><td style="padding:7px 10px 7px 0;vertical-align:top;font-size:15px">🎓</td>
+        <td style="padding:7px 0;font-size:15px;line-height:1.6;color:#222">
+        <b>Škola nerieši žiadnu organizáciu.</b> Lekcie, galavečer, DJ, moderátor, fotograf
+        aj výzdoba sú na nás. Termíny lekcií aj večera si škola vyberie sama.</td></tr>
+    <tr><td style="padding:7px 10px 7px 0;vertical-align:top;font-size:15px">💳</td>
+        <td style="padding:7px 0;font-size:15px;line-height:1.6;color:#222">
+        <b>Rodičia platia kartou v našej aplikácii</b> a dostanú potvrdenie.
+        Cez triedneho učiteľa neprejde ani euro v hotovosti.</td></tr>
+    <tr><td style="padding:7px 10px 7px 0;vertical-align:top;font-size:15px">📱</td>
+        <td style="padding:7px 0;font-size:15px;line-height:1.6;color:#222">
+        <b>Rodičia majú prehľad v aplikácii.</b> Vidia dochádzku, naučené tance aj termín
+        večera. Učitelia a vedenie školy majú lekcie zadarmo.</td></tr>
+  </table>
+  <p style="margin:0 0 18px">Ak chcete, aby posledný termín pripadol vašim deviatakom,
+  stačí kliknúť nižšie. Formulár je s vašimi údajmi už predvyplnený a ozvem sa vám
+  do dvoch pracovných dní.</p>
+  <div style="text-align:center;margin:22px 0 24px">
+    <a href="${cta}" style="display:inline-block;background:#C9A84C;color:#1b1405;padding:13px 28px;border-radius:8px;text-decoration:none;font-weight:700;font-family:Arial,sans-serif;font-size:15px">Chceme posledný termín</a>
+  </div>
+  <p style="margin:0 0 18px">Alebo mi zavolajte na <b>${TEL}</b>, poviem vám,
+  ktorý termín je ešte voľný.</p>
+  <p style="margin:0 0 4px">Pekný deň,</p>
+  <p style="margin:0 0 26px;line-height:1.5"><b>Marek Gruber</b><br>
+    <span style="font-size:14px;color:#555">majster Slovenska v plesových choreografiách · 18 rokov na parkete<br>
+    Fusion Academy · ${TEL} · fusionacademy.sk</span></p>
+</td></tr>
+<tr><td style="padding:14px 34px 22px;border-top:1px solid #eeece7;font-family:Arial,sans-serif;font-size:11px;line-height:1.6;color:#8d8a83;text-align:center">
+  Píšeme na verejne dostupný kontakt školy, pretože ide o ponuku pre 9. ročník.
+  Ak si neželáte ďalšie správy,
+  <a href="${odhlasit}" style="color:#8d8a83">odhláste sa jedným klikom</a> — už vás neoslovíme.<br>
+  Fusion Academy · IČO 56167563 · fusionacademy.sk
+</td></tr>
+</table></td></tr></table></body></html>`;
+  }
+  // Komu: oslovené školy bez odpovede, bez odhlásenia, s overeným kontaktom,
+  // ešte bez tohto mailu. Nie Hnúšťa (Marek 15. 9.: ďalšie maily neposielať)
+  // a nie mestá, kde venček už beží — tam by „posledný termín" nedával zmysel.
+  const normMesto = v => String(v || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+  async function scarcityKandidatky() {
+    const bezia = new Set(['hnusta']);
+    if (db.venceky_schools) for (const x of await q.find(db.venceky_schools, {})) if (x.city) bezia.add(normMesto(x.city));
+    return (await q.find(db.schools, {}))
+      .filter(s => s.sent_at && !s.unsubscribed && !s.scarcity_sent_at && !s.kontakt_neovereny
+        && !['replied', 'meeting', 'won', 'lost'].includes(s.status)
+        && /@/.test(s.email || '') && !bezia.has(normMesto(s.city)))
+      .sort((x, y) => (pasmoPre(x.city).id - pasmoPre(y.city).id)
+        || String(x.city || '').localeCompare(String(y.city || ''), 'sk'));
+  }
+  async function sendScarcityBatch(limit) {
+    const kandidatky = (await scarcityKandidatky()).slice(0, limit);
+    const capture = process.env.MAIL_CAPTURE === '1';
+    let poslane = 0; const zlyhali = [];
+    for (const s of kandidatky) {
+      const ok = await sendMail(s.email, scarcitySubject(s), scarcityHtml(s),
+        { priority: 3, template: 'skoly_posledny_termin' }) || capture;
+      if (!ok) { zlyhali.push(s.email); continue; }
+      await q.update(db.schools, { _id: s._id }, { $set: { scarcity_sent_at: nowISO(), updated_at: nowISO() } });
+      poslane++;
+      await new Promise(r => setTimeout(r, 350));
+    }
+    const zostava = (await scarcityKandidatky()).length;
+    return { poslane, zlyhali: zlyhali.length, adresy_zlyhani: zlyhali.slice(0, 10), zostava };
+  }
+  // dry:true = len zoznam, komu by to išlo; inak pošle (limit, predvolene všetkým)
+  async function scarcityHandler(req, res) {
+    try {
+      if (req.body && req.body.dry) {
+        const k = await scarcityKandidatky();
+        return res.json({ ok: true, pocet: k.length, skoly: k.map(s => ({ id: s._id, name: s.name, city: s.city, email: s.email, status: s.status })) });
+      }
+      const limit = Math.min(300, Math.max(1, +(req.body && req.body.limit) || 300));
+      const r = await sendScarcityBatch(limit);
+      console.log('🎓 Školy — posledný termín: odoslané ' + r.poslane + ', zlyhalo ' + r.zlyhali + ', čaká ešte ' + r.zostava);
+      res.json({ ok: true, ...r });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  }
+  app.post('/api/admin/schools/scarcity', adminAuth, scarcityHandler);
+  // servisný prístup bez admin session (rovnaká ochrana ako /api/vencek/service/set)
+  app.post('/api/schools/service/scarcity', (req, res) => {
+    const tok = process.env.IMPORT_TOKEN;
+    if (!tok || req.headers['x-import-token'] !== tok) return res.status(404).end();
+    return scarcityHandler(req, res);
+  });
+
   // ── Import zoznamu škôl ─────────────────────────────────────────────────────
   // Marek nalepí zoznam z tabuľky; oddeľovač môže byť bodkočiarka, tabulátor alebo
   // čiarka. E-mail spoznáme podľa zavináča, telefón podľa tvaru, zvyšok podľa poradia.
@@ -277,7 +402,8 @@ module.exports = function initSchoolOutreach(ctx) {
       city: req.query.city || 'Detva', director: req.query.director || 'pani riaditeľka' };
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send('<div style="font:13px Arial;background:#f2f1ee;padding:16px 0;text-align:center;color:#555">'
-      + '<b>Predmet:</b> ' + esc(subjectFor(vzor)) + '</div>' + htmlFor(vzor));
+      + '<b>Predmet:</b> ' + esc(req.query.typ === 'posledny-termin' ? scarcitySubject(vzor) : subjectFor(vzor)) + '</div>'
+      + (req.query.typ === 'posledny-termin' ? scarcityHtml(vzor) : htmlFor(vzor)));
   });
 
   // ── Rozposlanie po dávkach ──────────────────────────────────────────────────
@@ -486,6 +612,7 @@ module.exports = function initSchoolOutreach(ctx) {
       const vs = await q.find(db.schools, {});
       console.log('🎓 Školy stav: spolu ' + vs.length + ' | odoslané ' + vs.filter(x => x.sent_at).length
         + ' | follow-up ' + vs.filter(x => x.followup_sent_at).length
+        + ' | posledný termín ' + vs.filter(x => x.scarcity_sent_at).length
         + ' | čakajú ' + vs.filter(x => !x.sent_at && !x.unsubscribed).length
         + ' | odhlásené ' + vs.filter(x => x.unsubscribed).length);
     } catch (e) {}

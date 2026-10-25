@@ -157,6 +157,34 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     // drip guard: odpovedanú školu ďalšia dávka nesmie osloviť znova — sent_at už má,
     // preto ju filter v sendBatch preskočí (overené vyššie „nikomu sa neposlalo dvakrát")
 
+    // ── tretí dotyk: „posledný voľný termín" (Marek 25. 10. 2026) ──
+    {
+      const dry0 = (await j('/api/admin/schools/scarcity', { method: 'POST', body: { dry: true } }, adm)).d;
+      // po prvej dávke sú odoslané 2 školy (Detva + Zvolen podľa pásma), tretia čaká
+      ok('posledný termín: kandidátky = oslovené školy bez odpovede', dry0 && dry0.pocet === 2 && dry0.skoly.every(x => x.status === 'sent'), JSON.stringify(dry0));
+      ok('posledný termín: bez admin session je endpoint skrytý (404)', (await j('/api/schools/service/scarcity', { method: 'POST', body: { dry: true } })).status === 404);
+      const pv = await j('/api/admin/schools/preview?typ=posledny-termin&city=Detva&director=pani%20riaditeľka', {}, adm);
+      const S = pv.txt;
+      ok('posledný termín: náhľad sa vygeneruje', pv.status === 200 && S.includes('ostáva posledný voľný termín'));
+      ok('posledný termín: píše, že sme vybookovaní', S.includes('sme už vybookovaní') && S.includes('ostáva nám posledný voľný'));
+      ok('posledný termín: 6 fotiek z venčeka', (S.match(/assets\/vencek\/mail-[a-z0-9]+\.jpg/g) || []).length === 6);
+      ok('posledný termín: bez 3 € za žiaka', !/3 €/.test(S) && !/príspevok/i.test(S));
+      ok('posledný termín: bez pevnej ceny', !/\d{1,3},\d{2}\s?€/.test(S));
+      ok('posledný termín: odkaz na landing s kampaňou a odhlásenie', /posledny-tanec\.html\?utm_source=email/.test(S) && S.includes('/skoly/odhlasit/'));
+      ok('posledný termín: oslovenie a telefón', S.includes('pani riaditeľka') && S.includes('0904 31 51 51'));
+      const r3 = (await j('/api/admin/schools/scarcity', { method: 'POST', body: { limit: 1 } }, adm)).d;
+      ok('posledný termín: pošle po jednej a zvyšok čaká', r3 && r3.poslane === 1 && r3.zostava === 1, JSON.stringify(r3));
+      const po3 = (await j('/api/admin/schools', {}, adm)).d;
+      ok('posledný termín: odoslaná škola má scarcity_sent_at', po3.schools.filter(x => x.scarcity_sent_at).length === 1);
+      const dry1 = (await j('/api/admin/schools/scarcity', { method: 'POST', body: { dry: true } }, adm)).d;
+      ok('posledný termín: tej istej škole druhýkrát nejde', dry1 && dry1.pocet === 1, JSON.stringify(dry1));
+      const l3 = rd('mail_log.db').filter(m => m.template === 'skoly_posledny_termin');
+      ok('posledný termín: mail je zalogovaný', l3.length === 1, String(l3.length));
+      const src3 = fs.readFileSync(path.join(__dirname, '..', 'school-outreach.js'), 'utf8');
+      ok('posledný termín: vynecháva Hnúšťu a mestá s bežiacim venčekom', src3.includes("new Set(['hnusta'])") && src3.includes('db.venceky_schools'));
+      ok('posledný termín: rešpektuje odpovede, odhlásenie a neoverený kontakt', src3.includes('!s.scarcity_sent_at && !s.kontakt_neovereny'));
+    }
+
     // ── follow-up (2. dotyk po 5 dňoch) ──
     // pripravíme stavy priamo v DB súbore a server reštartneme? Nie — follow-up
     // dávku vieme zavolať cez drip logiku len na produkcii. Testujeme cez statiku
