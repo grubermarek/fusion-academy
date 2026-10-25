@@ -135,6 +135,11 @@ const sClenstvom = plan => ({ membership_plan: plan, membership_expires: O_ROK }
 
     console.log('\n4) Poistka proti odoslaniu:');
     ok('náhľad hlási, že vlna je zamknutá', n.go_flag === false, String(n.go_flag));
+    // Denný strop 300 padol 1. 9. 2026; náhľad musí ukazovať skutočný rozpočet, nie to číslo.
+    ok('rozpočet je skutočný, nie zrušených 300',
+      n.rozpocet && n.rozpocet.denny_strop > 300 && n.rozpocet.mesacny_strop >= 9000,
+      JSON.stringify(n.rozpocet));
+    ok('vlna sa zmestí naraz', n.prejde_naraz === true, JSON.stringify(n.rozpocet));
     const bezGo = await j('/api/admin/event/halloween/odoslat', { method: 'POST', body: { potvrdit: true } }, adm);
     ok('bez HALLOWEEN_GO sa neodošle nič (409)', bezGo.status === 409, JSON.stringify(bezGo.d));
     ok('chyba vysvetlí, že deploy nie je schválenie', /deploy/i.test(((bezGo.d || {}).error) || ''), JSON.stringify(bezGo.d));

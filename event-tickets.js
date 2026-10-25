@@ -10,7 +10,7 @@ const QR     = require('qrcode');
 module.exports = function mountEventTickets(ctx){
   const { app, db, q, auth, adminAuth, rlPublic, nowISO, today, APP_URL,
           sendMail, createInvoice, stripeApi, STRIPE_SECRET, isMemberActive, metaCapi,
-          emailTemplate, mailBudgetOk, vencekMimoKonverzie } = ctx;
+          emailTemplate, mailBudgetOk, mailBudgetStav, vencekMimoKonverzie } = ctx;
 
   // ── Pomocné ────────────────────────────────────────────────────────────────
   const cors = res => {
@@ -1132,6 +1132,7 @@ module.exports = function mountEventTickets(ctx){
   app.get('/api/admin/event/halloween/nahlad', adminAuth, async(req,res)=>{
     try{
       const { prijemcovia, vynechani } = await halloweenAudience();
+      const rozpocet = await mailBudgetStav(4);
       const podlaUrovne = {};
       for(const p of prijemcovia){
         const k = p.uroven + ' · ' + String(p.cena).replace('.',',') + ' €';
@@ -1141,8 +1142,12 @@ module.exports = function mountEventTickets(ctx){
         pocet: prijemcovia.length,
         podla_urovne: podlaUrovne,
         vynechani,
-        brevo_limit: 300,
-        nad_limit: prijemcovia.length > 300,
+        // Denný strop 300 padol 1. 9. 2026 — Brevo má 10 000/mesiac a naše stropy sú
+        // od vtedy len poistka proti runaway. Náhľad preto ukazuje skutočný stav,
+        // nie číslo z hlavy; inak by sa kampaň delila na dávky zbytočne.
+        rozpocet,
+        prejde_naraz: rozpocet.zostava_dnes >= prijemcovia.length
+                   && rozpocet.zostava_tento_mesiac >= prijemcovia.length,
         go_flag: process.env.HALLOWEEN_GO === '1',
         predmet: HALLOWEEN_SUBJ,
         odkaz: HALLOWEEN_URL,

@@ -23486,6 +23486,22 @@ const MAIL_TIER_MONTHLY_SHARE={1:1,2:1,3:0.97,4:0.94,5:0.9,6:0.86,7:0.86,8:0.8,9
 // pre marketing (p8–10) zdvihnúť env premennou MAIL_CAP_MARKETING. Mesačný strop
 // tým NEobchádza — ten platí vždy, inak by kampaň zjedla transakčné maily.
 const MAIL_CAP_MARKETING = Math.max(0, +process.env.MAIL_CAP_MARKETING || 0);
+// Koľko ešte dnes a tento mesiac prejde pri danej priorite — aby náhľad kampane
+// nemusel hádať a neopakoval sa omyl s „limitom 300/deň", ktorý padol 1. 9. 2026.
+async function mailBudgetStav(priority){
+  const p=Math.min(10,Math.max(1,Math.round(+priority||4)));
+  const denCap=(MAIL_CAP_MARKETING && p>=8) ? MAIL_CAP_MARKETING : MAIL_TIER_CAPS[p];
+  const mesCap=Math.round(MAIL_MONTHLY_QUOTA * MAIL_TIER_MONTHLY_SHARE[p]);
+  const den=today(), mes=den.slice(0,7);
+  let zaDen=0, zaMesiac=0;
+  for(const m of await q.find(db.mail_log,{})){
+    const d=m.created_at||''; if(!d.startsWith(mes)) continue;
+    zaMesiac++; if(d.startsWith(den)) zaDen++;
+  }
+  return { priorita:p, denny_strop:denCap, mesacny_strop:mesCap, odoslane_dnes:zaDen,
+           odoslane_tento_mesiac:zaMesiac, zostava_dnes:Math.max(0,denCap-zaDen),
+           zostava_tento_mesiac:Math.max(0,mesCap-zaMesiac) };
+}
 async function mailBudgetOk(priority, sentOverride){
   const p=Math.min(10,Math.max(1,Math.round(+priority||4)));
   const denCap=(MAIL_CAP_MARKETING && p>=8) ? MAIL_CAP_MARKETING : MAIL_TIER_CAPS[p];
@@ -26989,7 +27005,7 @@ const PUZZLE = require('./puzzle')({ app, db, q, auth, adminAuth, nowISO, today,
 const EVENTS = require('./event-tickets')({
   app, db, q, auth, adminAuth, rlPublic, nowISO, today, APP_URL,
   sendMail, createInvoice, stripeApi, STRIPE_SECRET, isMemberActive, metaCapi,
-  emailTemplate, mailBudgetOk, vencekMimoKonverzie
+  emailTemplate, mailBudgetOk, mailBudgetStav, vencekMimoKonverzie
 });
 EVENTS.ensureEvent().then(e=>console.log('🎟️  Event pripravený:', e?.name)).catch(e=>console.error('event seed:', e.message));
 
