@@ -21240,8 +21240,15 @@ const OUTREACH_SEGMENTS = {
 };
 async function outreachContext(){
   // vrátane trénerov a adminov (na interné správy tímu)
+  // Hromadné správy sú jediné miesto, ktoré osloví veľa ľudí naraz — a práve tu tieto
+  // ochrany chýbali (audit 25. 10. 2026). Venčekár nie je cieľ predaja, kým nie je
+  // klient, a kto sa odhlásil cez /unsubscribe, nesmie dostať ďalšiu ponuku; zvyšok
+  // appky to drží na desiatkach miest, tento nástroj ani na jednom. Filtruje sa už
+  // tu, nie až pri odoslaní, aby počty v náhľade sedeli s tým, čo reálne odíde.
   const users = (await q.find(db.users,{active:{$ne:false}, is_child:{$ne:true}, anonymous:{$ne:true}}))
-    .filter(u=>['client','lead','trainer','manager','partner'].includes(u.user_type||'') || u.is_admin);
+    .filter(u=>['client','lead','trainer','manager','partner'].includes(u.user_type||'') || u.is_admin)
+    .filter(u=>!vencekMimoKonverzie(u))
+    .filter(u=>!(u.offers_optout || u.do_not_contact));
   const membs = await q.find(db.memberships,{status:'active'});
   const td0=today();
   const memExp={}, memPlan={};
