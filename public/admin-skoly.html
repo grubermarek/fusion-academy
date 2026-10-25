@@ -62,6 +62,7 @@ tr:hover td{background:#1d1a15}
   </div>
 
   <div class="stats" id="stats"></div>
+  <p class="hint" id="stats3" style="margin-top:8px"></p>
 
   <div class="card">
     <h2>1. Nahraj zoznam škôl</h2>
@@ -105,6 +106,8 @@ Základná škola A. Sládkoviča; Zvolen; riaditel@zssladkovica.sk"></textarea>
         <option value="new">čaká na odoslanie</option>
         <option value="sent">odoslané</option>
         <option value="klik">kliklo na stránku</option>
+        <option value="pt">dostali 3. dotyk (posledný termín)</option>
+        <option value="pt-ozvali">ozvali sa po 3. dotyku</option>
         <option value="replied">odpovedali</option>
         <option value="meeting">dohodnuté stretnutie</option>
         <option value="won">venček dohodnutý</option>
@@ -134,6 +137,8 @@ async function load(){
     ['otvorene','otvorili'],['klikli','klikli na stránku'],['odpovedali','ozvali sa'],
     ['dohodnute','venček dohodnutý'],['odhlasene','odhlásené'],
   ].map(([k,l])=>`<div class="stat"><b>${TOT[k]??0}</b><span>${l}</span></div>`).join('');
+  const pt=TOT.posledny_termin||{};
+  $('stats3').innerHTML = pt.poslane ? `<b>3. dotyk „posledný voľný termín“:</b> odoslané ${pt.poslane} · otvorili ${pt.otvorili||0} · klikli ${pt.klikli||0} · <b>ozvali sa po ňom ${pt.ozvali||0}</b>` : '';
   $('zostava').textContent = TOT.cakaju ? ('čaká ešte '+TOT.cakaju+' škôl') : 'všetkým už bolo odoslané';
   render();
 }
@@ -142,10 +147,12 @@ function render(){
   const h=($('hladaj').value||'').toLowerCase(), f=$('filter').value;
   let rows=DATA.filter(s=>!h || [s.name,s.city,s.director,s.email].join(' ').toLowerCase().includes(h));
   if(f==='klik') rows=rows.filter(s=>s.clicked_at);
+  else if(f==='pt') rows=rows.filter(s=>s.scarcity_sent_at);
+  else if(f==='pt-ozvali') rows=rows.filter(s=>s.pt_ozvali);
   else if(f) rows=rows.filter(s=>s.status===f);
   if(!rows.length){ $('tbl').innerHTML='<tr><td class="empty">Zatiaľ nič — nahraj zoznam škôl vyššie.</td></tr>'; return; }
   $('tbl').innerHTML='<thead><tr><th>Škola</th><th>Riaditeľ</th><th>E-mail</th><th>Odoslané</th>'
-    +'<th>Otv.</th><th>Klik</th><th>Stav</th><th>Poznámka</th><th></th></tr></thead><tbody>'
+    +'<th>Otv.</th><th>Klik</th><th>3. dotyk</th><th>Stav</th><th>Poznámka</th><th></th></tr></thead><tbody>'
     + rows.map(s=>{
       const [lbl,cls]=STAV[s.status]||STAV.new;
       return `<tr>
@@ -155,6 +162,7 @@ function render(){
         <td class="sub">${den(s.sent_at)||'<span class="no">—</span>'}</td>
         <td>${s.opened_at?'<span class="tick">✓</span>':'<span class="no">·</span>'}</td>
         <td>${s.clicked_at?'<span class="tick">✓</span>':'<span class="no">·</span>'}</td>
+        <td class="sub">${s.scarcity_sent_at?den(s.scarcity_sent_at)+(s.pt_clicked_at?' <span class="tick">✓ klik</span>':'')+(s.pt_ozvali?' <span class="pill s-replied">ozvali sa</span>':''):'<span class="no">—</span>'}</td>
         <td><select onchange="zmen('${s._id}','status',this.value)" style="font-size:.74rem;padding:4px 6px">
           ${Object.entries(STAV).map(([k,v])=>`<option value="${k}"${s.status===k?' selected':''}>${v[0]}</option>`).join('')}
         </select><div><span class="pill ${cls}" style="margin-top:4px">${lbl}</span></div></td>

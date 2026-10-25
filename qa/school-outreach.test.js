@@ -180,6 +180,19 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
       ok('posledný termín: tej istej škole druhýkrát nejde', dry1 && dry1.pocet === 1, JSON.stringify(dry1));
       const l3 = rd('mail_log.db').filter(m => m.template === 'skoly_posledny_termin');
       ok('posledný termín: mail je zalogovaný', l3.length === 1, String(l3.length));
+      // prehľad vlny v admine: odoslané / otvorili / klikli / ozvali sa po nej
+      let tot3 = (await j('/api/admin/schools', {}, adm)).d.totals.posledny_termin;
+      ok('vlna: totals po odoslaní 1 / 0 / 0 / 0', tot3 && tot3.poslane === 1 && tot3.otvorili === 0 && tot3.klikli === 0 && tot3.ozvali === 0, JSON.stringify(tot3));
+      await fetch(BASE + '/api/mail/open/' + l3[0]._id + '.gif');
+      const poslana = po3.schools.find(x => x.scarcity_sent_at);
+      await j('/api/admin/schools/' + poslana._id, { method: 'POST', body: { status: 'replied' } }, adm);
+      const d3 = (await j('/api/admin/schools', {}, adm)).d; tot3 = d3.totals.posledny_termin;
+      const sk3 = d3.schools.find(x => x._id === poslana._id);
+      ok('vlna: otvorenie sa ráta k 3. dotyku', tot3.otvorili === 1 && sk3.pt_opened_at, JSON.stringify(tot3));
+      ok('vlna: zmena stavu po 3. dotyku = ozvali sa (replied_at)', tot3.ozvali === 1 && sk3.pt_ozvali && sk3.replied_at > sk3.scarcity_sent_at, JSON.stringify({ r: sk3.replied_at, s: sk3.scarcity_sent_at }));
+      ok('vlna: škola, čo odpovedala PRED 3. dotykom, sa neráta', !d3.schools.some(x => x.pt_ozvali && !x.scarcity_sent_at) && d3.schools.filter(x => x.pt_ozvali).length === 1);
+      const adminHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'admin-skoly.html'), 'utf8');
+      ok('vlna: admin Školy má prehľad, filter a stĺpec 3. dotyku', adminHtml.includes('posledny_termin') && adminHtml.includes('value="pt-ozvali"') && adminHtml.includes('<th>3. dotyk</th>'));
       const src3 = fs.readFileSync(path.join(__dirname, '..', 'school-outreach.js'), 'utf8');
       ok('posledný termín: vynecháva Hnúšťu a mestá s bežiacim venčekom', src3.includes("new Set(['hnusta'])") && src3.includes('db.venceky_schools'));
       ok('posledný termín: rešpektuje odpovede, odhlásenie a neoverený kontakt', src3.includes('!s.scarcity_sent_at && !s.kontakt_neovereny'));

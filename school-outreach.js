@@ -367,14 +367,19 @@ module.exports = function initSchoolOutreach(ctx) {
     for (const l of maily) {
       const e = String(l.to || '').toLowerCase();
       if (!e) continue;
-      const p = podlaAdresy[e] = podlaAdresy[e] || { opened_at: null, clicked_at: null, count: 0 };
+      const p = podlaAdresy[e] = podlaAdresy[e] || { opened_at: null, clicked_at: null, count: 0, pt_opened_at: null, pt_clicked_at: null };
       p.count++;
+      if (l.template === 'skoly_posledny_termin') {
+        if (l.opened_at && (!p.pt_opened_at || l.opened_at < p.pt_opened_at)) p.pt_opened_at = l.opened_at;
+        if (l.clicked_at && (!p.pt_clicked_at || l.clicked_at < p.pt_clicked_at)) p.pt_clicked_at = l.clicked_at;
+      }
       if (l.opened_at && (!p.opened_at || l.opened_at < p.opened_at)) p.opened_at = l.opened_at;
       if (l.clicked_at && (!p.clicked_at || l.clicked_at < p.clicked_at)) p.clicked_at = l.clicked_at;
     }
     return list.map(s => {
       const p = podlaAdresy[String(s.email || '').toLowerCase()] || {};
-      return { ...s, opened_at: p.opened_at || null, clicked_at: p.clicked_at || null, mail_count: p.count || 0 };
+      return { ...s, opened_at: p.opened_at || null, clicked_at: p.clicked_at || null, mail_count: p.count || 0,
+        pt_opened_at: p.pt_opened_at || null, pt_clicked_at: p.pt_clicked_at || null };
     });
   }
 
@@ -383,7 +388,14 @@ module.exports = function initSchoolOutreach(ctx) {
       const all = await withMail(await q.find(db.schools, {}));
       all.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
       const poslane = all.filter(s => s.sent_at);
+      // Vlna „posledný termín“ (25. 10. 2026): kto sa ozval AŽ PO nej — podľa replied_at,
+      // pri starších záznamoch podľa updated_at. Marek chce vidieť, čo tých 309 mailov prinieslo.
+      for (const s of all) s.pt_ozvali = !!s.scarcity_sent_at && ['replied', 'meeting', 'won'].includes(s.status)
+        && String(s.replied_at || s.updated_at || '') > String(s.scarcity_sent_at);
+      const pt = all.filter(s => s.scarcity_sent_at);
       res.json({ ok: true, schools: all, totals: {
+        posledny_termin: { poslane: pt.length, otvorili: pt.filter(s => s.pt_opened_at).length,
+          klikli: pt.filter(s => s.pt_clicked_at).length, ozvali: pt.filter(s => s.pt_ozvali).length },
         spolu: all.length,
         cakaju: all.filter(s => !s.sent_at && !s.unsubscribed).length,
         poslane: poslane.length,
@@ -750,6 +762,7 @@ module.exports = function initSchoolOutreach(ctx) {
         if (req.body[k] !== undefined) set[k] = String(req.body[k] || '').slice(0, 200);
       if (req.body.email !== undefined) set.email = String(req.body.email || '').toLowerCase().trim();
       if (req.body.status && STAVY.includes(req.body.status)) set.status = req.body.status;
+      if (set.status && ['replied', 'meeting', 'won'].includes(set.status) && !s.replied_at) set.replied_at = nowISO();
       await q.update(db.schools, { _id: s._id }, { $set: set });
       res.json({ ok: true, school: await q.one(db.schools, { _id: s._id }) });
     } catch (e) { res.status(500).json({ error: e.message }); }

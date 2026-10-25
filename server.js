@@ -20487,6 +20487,7 @@ app.post('/api/public/school-lead', rlPublic, async(req,res)=>{
         .filter(Boolean).join(' · ');
       await q.update(db.schools,{_id:zoznamSkola._id},{$set:{
         status: zoznamSkola.status==='meeting'||zoznamSkola.status==='won'?zoznamSkola.status:'replied',
+        replied_at: zoznamSkola.replied_at||nowISO(),
         note:('DOPYT Z WEBU '+today()+': '+kontakt+(zoznamSkola.note?' | '+zoznamSkola.note:'')).slice(0,600),
         updated_at:nowISO()}});
     }
