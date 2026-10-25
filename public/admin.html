@@ -582,8 +582,8 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       </div>
       <div id="ckSuhrn" class="d-flex gap-2 flex-wrap mb-2"></div>
       <div class="table-responsive"><table class="table table-dark table-sm table-hover align-middle mb-0" style="font-size:.8rem">
-        <thead><tr style="font-size:.66rem;color:#999"><th>Dátum</th><th>Dostala</th><th>Za koho</th><th>Nákup</th><th class="text-end">Z nákupu</th><th class="text-end">Sadzba</th><th class="text-end">Provízia</th><th>Stav</th></tr></thead>
-        <tbody id="ckBody"><tr><td colspan="8" class="text-muted text-center py-3">Načítavam…</td></tr></tbody>
+        <thead><tr style="font-size:.66rem;color:#999"><th>Dátum</th><th>Dostala</th><th>Za koho</th><th>Nákup</th><th class="text-end">Z nákupu</th><th class="text-end">Sadzba</th><th class="text-end">Provízia</th><th>Stav</th><th></th></tr></thead>
+        <tbody id="ckBody"><tr><td colspan="9" class="text-muted text-center py-3">Načítavam…</td></tr></tbody>
       </table></div>
     </div></div>
     <div class="modal fade" id="commDetailModal" tabindex="-1">
@@ -8962,7 +8962,7 @@ async function loadCommKlientky(){
   if(!_ckInit){ _ckInit=true; t.value=new Date().toISOString().slice(0,10); f.value=new Date(Date.now()-90*864e5).toISOString().slice(0,10); }
   const qs='from='+f.value+'&to='+t.value+(document.getElementById('ckPersonal').checked?'&personal=1':'');
   const d=await api('/api/admin/commissions/klientky?'+qs).catch(()=>null);
-  if(!d||!d.ok){ body.innerHTML='<tr><td colspan="8" class="text-danger py-3">Chyba: '+escHtml((d&&d.error)||'?')+'</td></tr>'; return; }
+  if(!d||!d.ok){ body.innerHTML='<tr><td colspan="9" class="text-danger py-3">Chyba: '+escHtml((d&&d.error)||'?')+'</td></tr>'; return; }
   const E=x=>(+x||0).toFixed(2).replace('.',',')+' €';
   const S=d.spolu;
   document.getElementById('ckSuhrn').innerHTML=
@@ -8971,14 +8971,23 @@ async function loadCommKlientky(){
     +(S.kredit?'<span class="mc-pill" style="color:#4ade80">💠 už v kredite '+E(S.kredit)+'</span>':'')
     +(S.schvalene?'<span class="mc-pill" style="color:#7ec8e3">schválené '+E(S.schvalene)+'</span>':'')
     +(S.vyplatene?'<span class="mc-pill" style="color:#4ade80">vyplatené '+E(S.vyplatene)+'</span>':'')
-    +(S.stornovane?'<span class="mc-pill text-muted">stornované '+E(S.stornovane)+'</span>':'');
+    +(S.stornovane?'<span class="mc-pill text-muted">stornované '+E(S.stornovane)+'</span>':'')
+    +(d.duplicity?'<span class="mc-pill" style="color:#e57373">⚠ možné duplicity: '+d.duplicity+'</span>':'');
   const STAV={caka:['⏳ čaká','#e0a656'],kredit:['💠 v kredite','#4ade80'],schvalene:['schválené','#7ec8e3'],vyplatene:['vyplatené','#4ade80'],stornovane:['stornované','#777']};
   const meno=(id,n)=>id?'<span class="mc-name" onclick="openClientDetail(\''+id+'\')">'+escHtml(n)+'</span>':escHtml(n);
   body.innerHTML=d.rows.length?d.rows.map(r=>{ const st=STAV[r.stav]||[r.stav,'#aaa'];
     return '<tr><td class="text-nowrap">'+fmtDate(r.at)+'</td><td>'+meno(r.partner_id,r.partner)+(r.partner_personal?' <span class="badge bg-secondary" style="font-size:.58rem">personál</span>':'')+(r.level?' <span class="text-muted" style="font-size:.66rem">úroveň '+r.level+'</span>':'')+'</td>'
       +'<td>'+meno(r.buyer_id,r.buyer)+'</td><td class="text-muted">'+escHtml(r.product)+'</td><td class="text-end">'+E(r.tx_amount)+'</td><td class="text-end text-muted">'+(r.rate*100).toFixed(0)+' %</td>'
-      +'<td class="text-end fw-bold" style="color:#C9A24C">'+E(r.amount)+'</td><td style="color:'+st[1]+'">'+st[0]+(r.stav==='caka'&&r.do_kreditu_za!=null?'<div style="font-size:.64rem;opacity:.75">do kreditu o '+r.do_kreditu_za+' d</div>':'')+(r.credited_at?'<div style="font-size:.64rem;opacity:.75">pripísané '+fmtDate(r.credited_at)+'</div>':'')+'</td></tr>'; }).join('')
-    :'<tr><td colspan="8" class="text-muted text-center py-3">V tomto období žiadne provízie klientkam.</td></tr>';
+      +'<td class="text-end fw-bold" style="color:#C9A24C">'+E(r.amount)+'</td><td style="color:'+st[1]+'">'+st[0]+(r.dup?' <span class="badge bg-danger" style="font-size:.58rem" title="Rovnaká partnerka, kupujúca, produkt, suma a deň — pravdepodobne dvojitý zápis toho istého nákupu">dup?</span>':'')+(r.stav==='caka'&&r.do_kreditu_za!=null?'<div style="font-size:.64rem;opacity:.75">do kreditu o '+r.do_kreditu_za+' d</div>':'')+(r.credited_at?'<div style="font-size:.64rem;opacity:.75">pripísané '+fmtDate(r.credited_at)+'</div>':'')+'</td>'
+      +'<td class="text-end">'+(['caka','kredit','schvalene'].includes(r.stav)?'<button class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:.7rem" title="Stornovať túto jednu províziu (ID '+escHtml(r.id)+')" onclick="ckStorno(\''+r.id+'\',\''+escHtml(r.partner).replace(/'/g,'')+'\','+r.amount+',\''+r.stav+'\')">Stornovať</button>':'')+'</td></tr>'; }).join('')
+    :'<tr><td colspan="9" class="text-muted text-center py-3">V tomto období žiadne provízie klientkam.</td></tr>';
+}
+async function ckStorno(id, meno, suma, stav){
+  const dovod=prompt('Stornovať províziu '+(+suma).toFixed(2)+' € pre '+meno+(stav==='kredit'?' — UŽ JE V KREDITE, suma sa jej z kreditu stiahne':' (ešte nie je v kredite, nič sa jej neodoberie)')+'.\n\nDôvod (zapíše sa do auditu a klientke do oznámenia):','duplicitný zápis toho istého nákupu');
+  if(dovod===null) return;
+  const r=await api('/api/admin/commissions/'+encodeURIComponent(id)+'/reverse',{method:'POST', body:{reason:dovod}});
+  if(r&&r.ok){ showToast('Provízia stornovaná'+(r.kredit_stiahnuty?' · z kreditu stiahnuté '+r.kredit_stiahnuty.toFixed(2)+' €':''),'success'); loadCommKlientky(); loadCommissions(); }
+  else showToast('Chyba: '+((r&&r.error)||'?'),'error');
 }
 async function showCommDetail(pid,month){
   const rows=await api(`/api/admin/commissions/detail?partner_id=${pid}&month=${month}`);if(!rows)return;

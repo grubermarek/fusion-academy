@@ -724,9 +724,19 @@ async function notifyCommissionRecipients(txId, awarded){
 
 // Auto-award MLM commission for an automatic purchase (Stripe/cash membership).
 // Recipient = the buyer's sponsor (who referred them). No-op if the buyer has no sponsor.
-async function awardPurchaseCommission({buyer_id, amount, product_name}){
+async function awardPurchaseCommission({buyer_id, amount, product_name, key}){
   try {
     if(!buyer_id || !(amount>0)) return;
+    // Deduplikácia (Marek 24. 10.: dve identické provízie z 11. 10.): ten istý nákup nesmie vytvoriť
+    // druhú províziu. Explicitný kľúč (Stripe session / faktúra), inak rovnaká kupujúca + suma + produkt
+    // do 10 minút = dvojité odoslanie formulára alebo opakované doručenie udalosti → preskočiť.
+    {
+      const amt0=+(+amount).toFixed(2), od=new Date(Date.now()-10*60*1000).toISOString();
+      const dup=(await q.find(db.transactions,{commission_only:true, client_id:buyer_id})).find(t=>
+        (key && t.award_key && t.award_key===String(key)) ||
+        (Math.abs((+t.amount||0)-amt0)<0.005 && String(t.product_name||'')===String(product_name||'Členstvo') && String(t.created_at||'')>=od));
+      if(dup){ console.log('↩️  Provízia preskočená — duplicita nákupu ('+(product_name||'')+' '+amt0+' €, buyer '+buyer_id+')'); return; }
+    }
     const buyer = await q.one(db.users,{_id:buyer_id});
     if(!buyer) return;
     // 🔔 Admin notifikácia o KAŽDOM predaji (okrem test účtov) — beží cez tento
@@ -753,6 +763,7 @@ async function awardPurchaseCommission({buyer_id, amount, product_name}){
       product_id:null, product_name: product_name||'Členstvo', amount: amt,
       date: today(), notes:'Automatická provízia z online predaja', auto:true,
       commission_only:true, // excluded from revenue totals (revenue counted via payment/membership record)
+      award_key: key ? String(key) : null,
       created_at:nowISO()
     });
     await saveCommissions(tx._id, buyer.sponsor_id, amt);
@@ -8870,6 +8881,42 @@ setTimeout(async()=>{
   }catch(e){ console.error('amb backfill:', e.message); }
 }, 6000);
 
+// Storno jednej konkrétnej provízie (Marek 24. 10.: „zruš jednu z tých dvoch z 11. 10."). Rovnaká
+// architektúra ako pri refundácii: pôvodný záznam ostáva, korekcia ide do commission_adjustments,
+// status 'reversed'. Ak už bola v kredite, kredit sa stiahne s riadkom v histórii kreditu.
+async function reverseSingleCommission(commission_id, reason, by){
+  const c = await q.one(db.commissions,{_id:String(commission_id||'')});
+  if(!c) return {ok:false, error:'Provízia nenájdená'};
+  if(c.status==='reversed') return {ok:false, error:'Provízia je už stornovaná'};
+  const prevStatus=c.status, amt=+(+c.amount||0).toFixed(2);
+  const upd = await q.update(db.commissions,{_id:c._id, status:prevStatus},{$set:{status:'reversed', reversed_at:nowISO(), reversed_by:by||'admin', reversed_reason:String(reason||'').slice(0,200)}});
+  if(!upd) return {ok:false, error:'Stav provízie sa medzitým zmenil — skús znova'};
+  await q.insert(db.commission_adjustments,{ commission_id:c._id, transaction_id:c.transaction_id, partner_id:c.partner_id,
+    amount:-amt, reason:String(reason||'storno jednej provízie').slice(0,200), prev_status:prevStatus, created_at:nowISO(), month:today().slice(0,7) });
+  let kreditStiahnuty=0;
+  const vKredite = prevStatus==='paid' || (prevStatus==='approved' && c.credited_at);
+  if(vKredite){
+    const p=await q.one(db.users,{_id:c.partner_id});
+    if(p){
+      const nb=Math.max(0, +((+p.referral_credit||0)-amt).toFixed(2));
+      kreditStiahnuty=+((+p.referral_credit||0)-nb).toFixed(2);
+      await q.update(db.users,{_id:p._id},{$set:{referral_credit:nb}});
+      await logCredit(p._id, -kreditStiahnuty, 'Storno provízie — '+String(reason||'').slice(0,100));
+    }
+  }
+  await q.insert(db.notifications,{user_id:c.partner_id,type:'commission', title:'↩️ Korekcia provízie',
+    body:'Provízia '+amt.toFixed(2)+' € bola stornovaná'+(vKredite?' a stiahnutá z kreditu':'')+(reason?' — '+String(reason).slice(0,120):'')+'.',
+    read:false, created_at:nowISO()}).catch(()=>{});
+  return {ok:true, commission_id:c._id, amount:amt, prev_status:prevStatus, kredit_stiahnuty:kreditStiahnuty};
+}
+app.post('/api/admin/commissions/:id/reverse', adminAuth, async(req,res)=>{
+  try{
+    const r = await reverseSingleCommission(req.params.id, req.body.reason, req.trainerUser?.name||'admin');
+    if(!r.ok) return res.status(400).json(r);
+    try{ await auditLog(req,'commission_reverse', r.commission_id, {status:r.prev_status}, {status:'reversed', amount:r.amount}, String(req.body.reason||'')); }catch(e){}
+    res.json(r);
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 // Refundácia → korekčná položka. Pôvodný záznam ostáva netknutý.
 async function reverseCommissionsForTx(transaction_id, reason){
   const comms = await q.find(db.commissions,{transaction_id});
@@ -13160,8 +13207,11 @@ app.get('/api/admin/commissions/klientky', adminAuth, async(req,res)=>{
           credited_at:c.credited_at?String(c.credited_at).slice(0,10):null, do_kreditu_za:c.status==='pending'?Math.max(0,COMMISSION_HOLD_DAYS-dni):null,
           month:c.month||'' }; })
       .sort((a,b)=>b.at.localeCompare(a.at));
+    const kluc=r=>[r.partner_id,r.buyer_id,r.product,r.amount,r.at].join('|');
+    const pocet={}; for(const r of rows) if(r.stav!=='stornovane') pocet[kluc(r)]=(pocet[kluc(r)]||0)+1;
+    for(const r of rows) r.dup = r.stav!=='stornovane' && pocet[kluc(r)]>1;
     const sum=k=>+rows.filter(r=>r.stav===k).reduce((s,r)=>s+r.amount,0).toFixed(2);
-    res.json({ ok:true, from, to, hold_days:COMMISSION_HOLD_DAYS, rows, spolu:{ pocet:rows.length, suma:+rows.reduce((s,r)=>s+r.amount,0).toFixed(2),
+    res.json({ ok:true, from, to, hold_days:COMMISSION_HOLD_DAYS, rows, duplicity:rows.filter(r=>r.dup).length, spolu:{ pocet:rows.length, suma:+rows.reduce((s,r)=>s+r.amount,0).toFixed(2),
       caka:sum('caka'), kredit:sum('kredit'), schvalene:sum('schvalene'), vyplatene:sum('vyplatene'), stornovane:sum('stornovane') } });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -17415,7 +17465,7 @@ async function fulfillStripeCheckout(s){
   createInvoice({user_id:meta.user_id, client_name:buyer?.name, client_email:buyer?.email,
     items:[{desc:`Členstvo ${plan.name}${meta.type==='subscription'?' (mesačný odber)':''}`, qty:1, total:plan.price}],
     total:plan.price, method:'Stripe (karta / Apple Pay / Google Pay)'});
-  awardPurchaseCommission({buyer_id:meta.user_id, amount:plan.price, product_name:`Členstvo ${plan.name}`});
+  awardPurchaseCommission({buyer_id:meta.user_id, amount:plan.price, product_name:`Členstvo ${plan.name}`, key:'cs_'+s.id});
   return {ok:true, plan_name:plan.name, subscription:meta.type==='subscription'};
 }
 
@@ -17768,7 +17818,7 @@ async function spracujObnovuStripe(inv, subId){
   createInvoice({user_id:platca._id, client_name:platca.name, client_email:platca.email,
     items:[{desc:`Členstvo ${plan.name}${platca._id!==u._id?' ('+u.name+')':''} — mesačná obnova`, qty:1, total:sumaObnovy}],
     total:sumaObnovy, method:'Stripe (automatický odber)'});
-  awardPurchaseCommission({buyer_id:platca._id, amount:sumaObnovy, product_name:`Členstvo ${plan.name} (obnova)`});
+  awardPurchaseCommission({buyer_id:platca._id, amount:sumaObnovy, product_name:`Členstvo ${plan.name} (obnova)`, key: inv.id ? 'inv_'+inv.id : undefined});
   console.log('🔄 Stripe obnova: '+u.name+' '+plan.name+' '+sumaObnovy+' €');
 }
 
