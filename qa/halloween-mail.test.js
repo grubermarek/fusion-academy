@@ -100,21 +100,26 @@ const sClenstvom = plan => ({ membership_plan: plan, membership_expires: O_ROK }
     console.log('\n1) Kto pozvánku dostane:');
     const n = (await j('/api/admin/event/halloween/nahlad', {}, adm)).d || {};
     ok('náhľad sa načítal', n.ok === true, JSON.stringify(n).slice(0, 200));
-    ok('adresátov je presne 4', n.pocet === 4, 'je ich ' + n.pocet + ' — ' + JSON.stringify(n.podla_urovne));
+    ok('adresátov je presne 6', n.pocet === 6, 'je ich ' + n.pocet + ' — ' + JSON.stringify(n.podla_urovne));
     const u = n.podla_urovne || {};
     ok('Bronze má cenu 10 €', u['Bronze · 10 €'] === 1, JSON.stringify(u));
     ok('Silver má cenu 5 €', u['Silver · 5 €'] === 1, JSON.stringify(u));
     ok('Gold má cenu 5 €', u['Gold · 5 €'] === 1, JSON.stringify(u));
     ok('Permanentka má cenu 15 €', u['Permanentka · 15 €'] === 1, JSON.stringify(u));
+    // 25. 10. večer Marek párty otvoril pre každého za 15 €. Tým pádom pozvánku dostane
+    // aj klientka bez členstva — a aj žena na týždni zadarmo, ktorá dovtedy vypadávala,
+    // lebo skúška členskú cenu nedáva. Obe teraz platia cenu pre nečlenov, takže si
+    // lístok kúpiť vedia a pozvánka im dáva zmysel.
+    ok('bez členstva aj skúška dostanú cenu 15 €', u['Bez členstva · 15 €'] === 2, JSON.stringify(u));
 
     console.log('\n2) Koho to má minúť a prečo:');
     const v = n.vynechani || {};
-    ok('žena na týždni zadarmo je vynechaná', v['má len týždeň zadarmo'] >= 1, JSON.stringify(v));
+    ok('nikto nevypadne pre chýbajúcu cenu',
+      !v['bez členstva aj permanentky'] && !v['má len týždeň zadarmo'], JSON.stringify(v));
     ok('venčekár je vynechaný', v['venčekár (nie je klientka)'] >= 1, JSON.stringify(v));
     ok('detský účet je vynechaný', v['detský účet'] >= 1, JSON.stringify(v));
     ok('odhlásená je vynechaná', v['odhlásená z mailov'] >= 1, JSON.stringify(v));
     ok('bez súhlasu je vynechaná', v['bez súhlasu na e-mail'] >= 1, JSON.stringify(v));
-    ok('bez členstva je vynechaná', v['bez členstva aj permanentky'] >= 1, JSON.stringify(v));
     ok('testovací účet je vynechaný', v['testovací účet'] >= 1, JSON.stringify(v));
     ok('importovaná adresa je vynechaná', v['importovaná adresa bez mailu'] >= 1, JSON.stringify(v));
 
@@ -126,6 +131,7 @@ const sClenstvom = plan => ({ membership_plan: plan, membership_expires: O_ROK }
     ok('píše, že vstup je len v maske', /len v maske/i.test(h));
     ok('nesie konkrétnu cenu', /\d+ €/.test(h));
     ok('predmet je jednoznačný', /Halloweenska Zumba Party/.test(n.predmet || ''));
+    ok('neobmedzuje vstup na členky', !/len pre členk|iba pre členk/i.test(h), 'mail stále tvrdí, že je to len pre členky');
 
     console.log('\n4) Poistka proti odoslaniu:');
     ok('náhľad hlási, že vlna je zamknutá', n.go_flag === false, String(n.go_flag));
@@ -137,7 +143,7 @@ const sClenstvom = plan => ({ membership_plan: plan, membership_expires: O_ROK }
     // mail_log sa plní aj pri MAIL_CAPTURE, takže druhý náhľad už adresátov nesmie mať
     process.env.HALLOWEEN_GO = '1';
     const stav = await j('/api/admin/event/halloween/nahlad', {}, adm);
-    ok('druhé načítanie náhľadu dá to isté', (stav.d || {}).pocet === 4, JSON.stringify((stav.d || {}).pocet));
+    ok('druhé načítanie náhľadu dá to isté', (stav.d || {}).pocet === 6, JSON.stringify((stav.d || {}).pocet));
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.message);
   } finally {
