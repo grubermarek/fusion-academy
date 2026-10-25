@@ -17,6 +17,7 @@ const PORT = 4518;
 const BASE = 'http://localhost:' + PORT;
 const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'fa-qa-cas-'));
 const MEDZERA = 1000;                       // v teste stačí sekunda, v prevádzke je 25 s
+const POKUTA = 2;                           // sekundy za každý odchod z hádanky (v prevádzke 30 s)
 
 let passed = 0, failed = 0;
 const ok = (name, cond, note) => { if (cond) { passed++; console.log('  ✅ ' + name); } else { failed++; console.log('  ❌ ' + name + (note ? ' — ' + note : '')); } };
@@ -45,7 +46,7 @@ async function j(url, opts = {}, jar) {
   ].join('\n') + '\n');
   // „Nájdi votrelca" prijme akúkoľvek päticu indexov, takže sa dá odovzdať bez znalosti riešenia
   fs.writeFileSync(path.join(DATA, 'settings.db'),
-    JSON.stringify({ _id: 'qaCasCfg', key: 'puzzle_config', value: { overrides: { [DNES]: 'votrelec' } }, at: DNES }) + '\n');
+    JSON.stringify({ _id: 'qaCasCfg', key: 'puzzle_config', value: { overrides: { [DNES]: 'votrelec' }, prestavka_pokuta: POKUTA }, at: DNES }) + '\n');
 
   console.log('MERANIE ČASU V HLAVOLAME QA — štart servera…');
   const srv = spawn(process.execPath, ['server.js'], {
@@ -72,10 +73,22 @@ async function j(url, opts = {}, jar) {
     const poHrani = (await j('/api/puzzle/ping', { method: 'POST' }, jar)).d.elapsed;
     ok('čas s otvorenou hádankou sa počíta', poHrani >= 1 && poHrani <= 3, String(poHrani));
 
-    // appku zavrela / vyhodilo ju na úvod — pauza dlhšia ako povolená medzera
+    // appku zavrela / vyhodilo ju na úvod — pauza dlhšia ako povolená medzera.
+    // Nepočíta sa celá (inak by mala hodinu), ale ani nie je zadarmo: za návrat
+    // je pevná pokuta, nech sa neoplatí odísť si vygoogliť odpovede (Marek 25. 10.).
     await spi(MEDZERA + 900);
-    const poPauze = (await j('/api/puzzle/ping', { method: 'POST' }, jar)).d.elapsed;
-    ok('prestávka so zavretou appkou sa NEpočíta', poPauze === poHrani, poHrani + ' → ' + poPauze);
+    const po = (await j('/api/puzzle/ping', { method: 'POST' }, jar)).d;
+    ok('prestávka sa nepočíta celá', po.elapsed < poHrani + POKUTA + 2, poHrani + ' → ' + po.elapsed);
+    ok('za odchod sa pripočíta pokuta', po.elapsed >= poHrani + POKUTA, poHrani + ' → ' + po.elapsed);
+    ok('odchod je zarátaný ako prestávka', po.prestavky === 1, JSON.stringify(po.prestavky));
+    const poPauze = po.elapsed;
+
+    // obnovenie stránky po prestávke nesmie byť spôsob, ako sa pokute vyhnúť
+    await spi(MEDZERA + 900);
+    const poStarte = (await j('/api/puzzle/start', { method: 'POST' }, jar)).d;
+    ok('druhý odchod stojí ďalšiu pokutu aj pri obnovení stránky',
+      poStarte.prestavky === 2 && poStarte.elapsed >= poPauze + POKUTA, JSON.stringify(poStarte));
+    ok('stránka vie, koľko pokuta je', poStarte.prestavka_pokuta === POKUTA, String(poStarte.prestavka_pokuta));
 
     // vrátila sa a ešte chvíľu hrá
     for (let i = 0; i < 2; i++) { await spi(400); await j('/api/puzzle/ping', { method: 'POST' }, jar); }
@@ -94,7 +107,7 @@ async function j(url, opts = {}, jar) {
       .map(l => JSON.parse(l)).filter(x => x.user_id === 'qaCasPinguje001').pop();
     ok('čas meral server', zaznam.verified === true);
     ok('celkový čas od otvorenia ostal zapísaný na dohľadanie',
-      zaznam.cas_otvorene > zaznam.seconds, JSON.stringify({ s: zaznam.seconds, otvorene: zaznam.cas_otvorene }));
+      zaznam.cas_otvorene >= zaznam.seconds, JSON.stringify({ s: zaznam.seconds, otvorene: zaznam.cas_otvorene }));
 
     // Stará stránka z cache pingy nepozná — tej meriame po starom, nech z chýbajúcich
     // pingov nevznikne nezaslúžená „1 s" a prvé miesto.

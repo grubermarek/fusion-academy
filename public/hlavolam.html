@@ -293,7 +293,8 @@ function render(){
         +'<b style="color:var(--gold)">Máš jeden pokus</b> · '+(P.votrelec_per_answer||1)+' '+bodSlovo(P.votrelec_per_answer||1)+' za každé trafené kolo · 🥇 +'+bonusBezchyby()+' pre najrýchlejšiu s plným počtom — po odovzdaní uvidíš, čo tie tri spájalo.'
       : 'Ťahaj prstom od <b>1</b> a spájaj čísla v poradí tak, aby si prešla <b>všetky políčka</b>.'}
 ${jeBodovana(P.type) ? '' : `<br><b style="color:var(--gold)">Za vyriešenie ${P.points} ${bodSlovo(P.points)}</b> · najrýchlejšie časy dňa navyše 🥇 +${(P.podium_bonus||[5,3,1])[0]} · 🥈 +${(P.podium_bonus||[5,3,1])[1]} · 🥉 +${(P.podium_bonus||[5,3,1])[2]} — čas beží od otvorenia, poradie sa uzatvára o polnoci.`}</div>
-    <div class="fair">⚠️ <b>Hraj férovo.</b> Ak zistíme, že niekto podvádza, odoberieme mu možnosť získavať body.</div>
+    <div class="fair">⚠️ <b>Hraj férovo.</b> Ak zistíme, že niekto podvádza, odoberieme mu možnosť získavať body.
+      ${P.prestavka_pokuta ? `<br>Keď hádanku opustíš, čas sa zastaví — za každý návrat ti ale pripočítame ${P.prestavka_pokuta} s, nech sa neoplatí odísť hľadať odpovede.` : ''}</div>
     <div class="actions"${solvedToday?' hidden':''}>
       <button class="btn-ghost" onclick="resetPath()">Vymazať</button>
       <button class="btn-main" id="sendBtn" onclick="submit()">${jeBodovana(P.type)?'Odovzdať odpovede':P.type==='anagram'?'Odovzdať slová':'Odovzdať riešenie'}</button>
@@ -486,7 +487,19 @@ async function posliPing(){
   if(!r) return;
   if(r.restart){ location.reload(); return; }          // medzitým nastala polnoc
   if(r.ok && typeof r.elapsed==='number') startedAt=Date.now()-r.elapsed*1000;
+  ukazPrestavky(r.prestavky);
   if(r.ping_ms>0 && r.ping_ms!==pingMs){ pingMs=r.ping_ms; zastavPingy(); spustiPingy(); }
+}
+// Koľkokrát odišla a čo ju to stálo — nech ju čas na konci neprekvapí.
+let prestavkyZobrazene=0;
+function ukazPrestavky(n){
+  if(!(n>0)||n===prestavkyZobrazene||solvedToday) return;
+  prestavkyZobrazene=n;
+  const m=$('msg'); if(!m||m.classList.contains('ok')) return;
+  const p=P.prestavka_pokuta||30;
+  m.className='msg';
+  m.innerHTML='⏸️ Hádanku si medzitým opustila'+(n>1?' '+n+'×':'')+' — čas stál, ale '
+    +(n>1?'za každý návrat sa pripočítalo ':'pripočítali sme ')+p+' s.';
 }
 function spustiPingy(){ if(!pingTimer&&!solvedToday) pingTimer=setInterval(posliPing,pingMs); }
 function zastavPingy(){ if(pingTimer){ clearInterval(pingTimer); pingTimer=null; } }
@@ -506,6 +519,7 @@ document.addEventListener('visibilitychange',()=>{
   api('/api/puzzle/start',{method:'POST'}).then(r=>{
     if(r&&typeof r.elapsed==='number') startedAt=Date.now()-r.elapsed*1000;
     if(r&&r.ping_ms>0) pingMs=r.ping_ms;
+    if(r) ukazPrestavky(r.prestavky);
     tick(); if(!timer) timer=setInterval(tick,1000); spustiPingy();
   }).catch(()=>{ if(!timer) timer=setInterval(tick,1000); spustiPingy(); });
 });

@@ -381,7 +381,9 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
                      // Kvíz rovnako (Marek 16. 9.): bod za správnu, +5 najrýchlejšej s 5/5.
                      quiz_per_answer: 1, quiz_perfect_bonus: 5,
                      // „Nájdi votrelca" (Marek 20. 9.) rovnako: bod za každé trafené kolo, +5 najrýchlejšej s 5/5.
-                     votrelec_per_answer: 1, votrelec_perfect_bonus: 5 };
+                     votrelec_per_answer: 1, votrelec_perfect_bonus: 5,
+                     // Koľko sekúnd sa pripočíta za každý odchod z hádanky (Marek 25. 10.).
+                     prestavka_pokuta: 30 };
   async function cfg() {
     const row = await q.one(db.settings, { key: 'puzzle_config' });
     return { ...DEFAULTS, ...(row && row.value || {}) };
@@ -550,6 +552,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
         rhythm_per_answer: +c.rhythm_per_answer || 1, rhythm_perfect_bonus: +c.rhythm_perfect_bonus || 0,
         quiz_per_answer: naOdpoved(c, 'quiz'), quiz_perfect_bonus: bonusBezchybnej(c, 'quiz'),
         votrelec_per_answer: naOdpoved(c, 'votrelec'), votrelec_perfect_bonus: bonusBezchybnej(c, 'votrelec'),
+        prestavka_pokuta: Math.max(0, +c.prestavka_pokuta || 0),
         my_day_win: mine ? !!mine.day_win : false,
         body_zakaz: !!(ja && ja.body_zakaz),
         solvers_today: solvers,
@@ -564,17 +567,29 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
   // hodinu (strop), hoci mala 5/5, a Bea hlásila, že ju appka vyhodila na úvodnú
   // stránku (klik na upozornenie vedie na /client-dashboard). Teraz sa počíta len
   // čas, keď má hráčka hádanku naozaj otvorenú: stránka sa každých 10 s ozve
-  // pingom a pripočíta sa iba medzera kratšia ako MAX_MEDZERA. Dlhá prestávka
-  // (zamknutý telefón, prepnutá appka, push na úvod) sa do času nerát.
+  // pingom a pripočíta sa iba medzera kratšia ako MAX_MEDZERA.
+  //
+  // Dlhá prestávka sa NEPOČÍTA celá, ale ani nie je zadarmo: za každý návrat sa
+  // pripočíta pevná pokuta (puzzle_config.prestavka_pokuta, predvolene 30 s).
+  // Marek 25. 10.: „to by spôsobilo, že si spravia screenshot a idú hľadať
+  // odpovede" — a má pravdu, čistá pauza by odmenila toho, kto odíde googliť.
+  // Pri časoch víťaziek pod minútu je 30 s za každý odchod dosť na to, aby sa
+  // hľadanie neoplatilo, a zároveň to nezruší deň tej, ktorej zazvonil telefón.
+  // Počet prestávok sa ukladá k výsledku, takže opakované odchody vidno v admine.
   // Prečo nie čas z prehliadača: ten by si hráčka mohla poslať aký chce.
   // Ako často sa stránka ozýva a aká medzera sa ešte počíta ako „hrala". Prah musí
   // byť väčší než interval pingov, inak by sa nezapočítal ani jeden a všetkým by
   // vyšla 1 s. Preto sa predvolene odvodzuje z intervalu; env premenné sú pre test.
   const PING_MS = Math.max(200, +process.env.PUZZLE_PING_MS || 10 * 1000);
   const MAX_MEDZERA = +process.env.PUZZLE_MAX_GAP_MS || Math.max(25 * 1000, PING_MS * 2 + 5000);
+  let pokutaMs = 30 * 1000;                 // obnoví sa pri každom čítaní nastavení
   function merajCas(s, teraz) {
     const medzera = teraz - (s.ping || teraz);
     if (medzera > 0 && medzera <= MAX_MEDZERA) s.aktiv = (s.aktiv || 0) + medzera;
+    else if (medzera > MAX_MEDZERA) {        // odišla z hádanky a vrátila sa
+      s.aktiv = (s.aktiv || 0) + pokutaMs;
+      s.prestavky = (s.prestavky || 0) + 1;
+    }
     s.ping = teraz;
   }
   const otvoreneSekundy = s => Math.min(3600, Math.round((s.aktiv || 0) / 1000));
@@ -585,9 +600,12 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
     const s = req.session.puzzle;
     // Opakované otvorenie ani obnovenie stránky čas nenuluje — inak by stačilo
     // hádanku naštudovať a potom „zabehnúť". Len sa pokračuje tam, kde sa skončilo.
-    if (!s || s.date !== d) req.session.puzzle = { date: d, at: teraz, aktiv: 0, ping: teraz, pingy: 0 };
-    else s.ping = teraz;                    // návrat po prestávke: medzera sa nepočíta
-    res.json({ ok: true, elapsed: otvoreneSekundy(req.session.puzzle), ping_ms: PING_MS });
+    pokutaMs = Math.max(0, (+(await cfg()).prestavka_pokuta || 0) * 1000);
+    if (!s || s.date !== d) req.session.puzzle = { date: d, at: teraz, aktiv: 0, ping: teraz, pingy: 0, prestavky: 0 };
+    else merajCas(s, teraz);                // návrat po prestávke stojí pokutu, aj keď stránku len obnoví
+    const s2 = req.session.puzzle;
+    res.json({ ok: true, elapsed: otvoreneSekundy(s2), ping_ms: PING_MS,
+      prestavky: s2.prestavky || 0, prestavka_pokuta: Math.round(pokutaMs / 1000) });
   });
 
   // Stránka sa ozýva, kým je na očiach. Keď prestane, čas stojí.
@@ -596,7 +614,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
     if (!s || s.date !== today()) return res.json({ ok: false, restart: true });
     merajCas(s, Date.now());
     s.pingy = (s.pingy || 0) + 1;
-    res.json({ ok: true, elapsed: otvoreneSekundy(s), ping_ms: PING_MS });
+    res.json({ ok: true, elapsed: otvoreneSekundy(s), ping_ms: PING_MS, prestavky: s.prestavky || 0 });
   });
 
   // ── Odoslanie riešenia ──
@@ -629,6 +647,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
       // riešenie uznáme, ale nemôže vyhrať deň — inak by stačilo poslať "1 s".
       const st = req.session.puzzle;
       const verified = !!(st && st.date === d && st.at);
+      pokutaMs = Math.max(0, (+c.prestavka_pokuta || 0) * 1000);
       if (verified) merajCas(st, Date.now());
       // Čas otvorenej hádanky. Stará stránka z cache ping nepozná — tej meriame
       // po starom (od otvorenia), nech sa z chýbajúcich pingov nestane „1 s".
@@ -657,7 +676,8 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
         user_id: req.session.uid, user_name: u ? u.name : '', date: d, month: d.slice(0, 7),
         seconds, points, fast: seconds <= c.fast_seconds, verified, type: p.type, created_at: nowISO(),
         // koľko času ubehlo od prvého otvorenia — na dohľadanie sťažností na čas
-        ...(odOtvorenia != null && odOtvorenia !== seconds ? { cas_otvorene: odOtvorenia } : {}),
+        ...(odOtvorenia != null ? { cas_otvorene: odOtvorenia } : {}),
+        ...(verified && st.prestavky ? { prestavky: st.prestavky } : {}),
         ...(bezBodov ? { body_zakaz: true } : {}),
         ...(vysledok ? { correct: vysledok.spravne, total: vysledok.celkom, perfect: vysledok.perfect,
                          answers: req.body.answers } : {}),
@@ -811,6 +831,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
         rhythm_perfect_bonus: num(req.body.rhythm_perfect_bonus, cur.rhythm_perfect_bonus, 0, 20),
         quiz_per_answer: num(req.body.quiz_per_answer, cur.quiz_per_answer, 0, 10),
         quiz_perfect_bonus: num(req.body.quiz_perfect_bonus, cur.quiz_perfect_bonus, 0, 20),
+        prestavka_pokuta: num(req.body.prestavka_pokuta, cur.prestavka_pokuta, 0, 600),
         votrelec_per_answer: num(req.body.votrelec_per_answer, cur.votrelec_per_answer, 0, 10),
         votrelec_perfect_bonus: num(req.body.votrelec_perfect_bonus, cur.votrelec_perfect_bonus, 0, 20),
         schedule: Array.isArray(req.body.schedule) && req.body.schedule.every(t => TYPES.includes(t)) && req.body.schedule.length
@@ -855,6 +876,7 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
           points: +r.points || 0, verified: r.verified !== false, type: r.type || null,
           correct: r.correct != null ? r.correct : null, perfect: !!r.perfect,
           cas_otvorene: r.cas_otvorene != null ? r.cas_otvorene : null,
+          prestavky: +r.prestavky || 0,
           day_win: !!r.day_win, bonus: +r.day_win_bonus || 0, created_at: r.created_at || null }));
       res.json({ ok: true, date: d, type: typeForSync(d, await cfg()), players: rows.length, rows });
     } catch (e) { res.status(500).json({ error: e.message }); }
