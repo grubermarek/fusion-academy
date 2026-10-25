@@ -808,6 +808,20 @@ module.exports = ({ app, db, q, auth, adminAuth, nowISO, today, fakty, servisTok
     const median = pts.length ? pts[Math.floor(pts.length / 2)] : 0;
     return { month, players: rows.length, avg, median, rows };
   }
+  // Jeden deň po hráčkach — na dohľadanie sťažností typu „napočítalo mi zlý čas".
+  // Ukazuje aj to, či čas meral server (verified), alebo prišiel od prehliadača.
+  app.get('/api/admin/puzzle/den', adminAleboServis, async (req, res) => {
+    try {
+      const d = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || '')) ? req.query.date : today();
+      const rows = (await q.find(db.puzzle_solves, { date: d }))
+        .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')))
+        .map(r => ({ name: r.user_name || '', user_id: r.user_id, seconds: +r.seconds || 0,
+          points: +r.points || 0, verified: r.verified !== false, type: r.type || null,
+          correct: r.correct != null ? r.correct : null, perfect: !!r.perfect,
+          day_win: !!r.day_win, bonus: +r.day_win_bonus || 0, created_at: r.created_at || null }));
+      res.json({ ok: true, date: d, type: typeForSync(d, await cfg()), players: rows.length, rows });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
   app.get('/api/admin/puzzle/mesiac', adminAleboServis, async (req, res) => {
     try {
       const m = /^d{4}-d{2}$/.test(String(req.query.month || '')) ? req.query.month : today().slice(0, 7);
