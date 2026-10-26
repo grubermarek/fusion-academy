@@ -160,7 +160,42 @@ module.exports = function mountEventTickets(ctx){
     ]
   };
 
-  const ALL_EVENTS = [LATIN, SKOLENIE, SKOLENIE2, HALLOWEEN];
+  // Kurz spoločenských tancov pre páry (Marek 26. 10. 2026: „daj mi do aplikácie možnosť
+  // zakúpiť si kurz spoločenských tancov pre páry… cena je 160 za pár"). Appka nemá modul
+  // kurzov (Fáza 2 nie je hotová), takže ide ako event s jedným typom lístka — jeden lístok
+  // = jeden PÁR, nie osoba. Cena je rovnaká pre členky aj nečlenov; Marek zľavu nestanovil.
+  const KURZ_PARY = {
+    slug: 'kurz-spolocenske-tance-2026',
+    name: 'KURZ SPOLOČENSKÝCH TANCOV PRE PÁRY',
+    subtitle: 'Päť týždňov · desať lekcií · cena za pár',
+    date: '2026-11-13',
+    date_label: 'od piatka 13. novembra 2026 · piatok a nedeľa o 20:00',
+    venue: 'Fusion Academy',
+    address: 'Záhradná 7, Detva',
+    poster: null,
+    active: true,
+    tables_public_max: 0,
+    tables_persons_max: 0,
+    affiliates: [],
+    program: [
+      {time:'13. a 15. 11.', what:'1. týždeň — piatok a nedeľa o 20:00', ticket:'full'},
+      {time:'20. a 22. 11.', what:'2. týždeň — piatok a nedeľa o 20:00', ticket:'full'},
+      {time:'27. a 29. 11.', what:'3. týždeň — piatok a nedeľa o 20:00', ticket:'full'},
+      {time:'4. a 6. 12.',   what:'4. týždeň — piatok a nedeľa o 20:00', ticket:'full'},
+      {time:'11. a 13. 12.', what:'5. týždeň — piatok a nedeľa o 20:00', ticket:'full'}
+    ],
+    types: [
+      { key:'full', name:'KURZ PRE PÁR — 10 lekcií',
+        includes:['Desať lekcií počas piatich týždňov','Každý piatok a nedeľu o 20:00','Cena platí za celý pár, nie za osobu','Fusion Academy, Záhradná 7, Detva','Od 13. novembra do 13. decembra 2026'],
+        member: null, presale: null, door: null,
+        presale_until: '2026-11-13T19:59:59+01:00',
+        capacity: null,
+        plan_prices: { silver:160, gold:160, bronze:160, bundle:160, nonmember:160 },
+        members_only: false }
+    ]
+  };
+
+  const ALL_EVENTS = [LATIN, SKOLENIE, SKOLENIE2, HALLOWEEN, KURZ_PARY];
 
   async function ensureEvent(){
     for(const EV of ALL_EVENTS) await ensureOne(EV);
