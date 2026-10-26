@@ -1113,6 +1113,24 @@ module.exports = function mountEventTickets(ctx){
   const HALLOWEEN_SUBJ = '🎃 Halloweenska Zumba Party — tento piatok, vstup len v maske';
   const HALLOWEEN_URL  = APP_URL.replace(/\/$/,'') + '/event/' + HALLOWEEN.slug;
 
+  // Komu sa NIKDY nesmie poslať kampaňový mail — jedno miesto pre všetky vlny, aby sa
+  // ochrany pri druhej a tretej kampani nerozišli. Vracia dôvod, alebo null keď smie.
+  // (Presne tu to zlyhalo v nástroji Hromadné správy: mal vlastnú, chudobnejšiu vetvu.)
+  function kampanovyMailZakazany(u, testMail){
+    const email = String(u.email||'').trim().toLowerCase();
+    if(!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return 'bez platného e-mailu';
+    // @import.local sú syntetické adresy zo starého zoznamu — sendMail ich aj tak odmietne
+    if(/@import\.local$/i.test(email)) return 'importovaná adresa bez mailu';
+    if(/@test-fa-qa\.local$/i.test(email) || u.is_test || u.lead_source==='test'
+       || (testMail && email===testMail)) return 'testovací účet';
+    if(u.active===false) return 'deaktivovaný účet';
+    if(u.is_child) return 'detský účet';
+    if(vencekMimoKonverzie(u)) return 'venčekár (nie je klientka)';
+    if(u.offers_optout || u.do_not_contact) return 'odhlásená z mailov';
+    if(!(u.email_consent || u.consent_at)) return 'bez súhlasu na e-mail';
+    return null;
+  }
+
   async function halloweenAudience(){
     const ev = await q.one(db.ev_events,{slug:HALLOWEEN.slug});
     const type = ev && (ev.types||[]).find(t=>t.key==='full');
@@ -1125,16 +1143,8 @@ module.exports = function mountEventTickets(ctx){
     const prijemcovia = [];
     for(const u of users){
       const email = String(u.email||'').trim().toLowerCase();
-      if(!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) { preco('bez platného e-mailu'); continue; }
-      // @import.local sú syntetické adresy zo starého zoznamu — sendMail ich aj tak odmietne
-      if(/@import\.local$/i.test(email)) { preco('importovaná adresa bez mailu'); continue; }
-      if(/@test-fa-qa\.local$/i.test(email) || u.is_test || u.lead_source==='test'
-         || (testMail && email===testMail)) { preco('testovací účet'); continue; }
-      if(u.active===false) { preco('deaktivovaný účet'); continue; }
-      if(u.is_child) { preco('detský účet'); continue; }
-      if(vencekMimoKonverzie(u)) { preco('venčekár (nie je klientka)'); continue; }
-      if(u.offers_optout || u.do_not_contact) { preco('odhlásená z mailov'); continue; }
-      if(!(u.email_consent || u.consent_at)) { preco('bez súhlasu na e-mail'); continue; }
+      const zakaz = kampanovyMailZakazany(u, testMail);
+      if(zakaz) { preco(zakaz); continue; }
       const mctx = await memberCtx(u);
       const p = planPrice(type, mctx);
       if(!p || p.price == null) { preco(mctx.trial ? 'má len týždeň zadarmo' : 'bez členstva aj permanentky'); continue; }
@@ -1213,5 +1223,92 @@ module.exports = function mountEventTickets(ctx){
     }catch(e){ res.status(500).json({error:e.message}); }
   });
 
-  return { ensureEvent, fulfillEventOrder, LATIN, halloweenAudience, halloweenHtml, HALLOWEEN_SUBJ };
+  // ── Pozvánka na kurz spoločenských tancov pre páry (26. 10. 2026) ──────────
+  // Iná akcia než párty: kurz za 160 € pre DVOCH, nie vstupenka pre jednotlivca.
+  // Cena je pre všetkých rovnaká, takže adresáta neurčuje planPrice ako pri Halloweene
+  // — rozhoduje len to, či je to klient. Marek povedal „rozpošli e-maily všetkým
+  // klientom"; leady sú preto mimo, ale dajú sa pribrať prepínačom, nech má na výber.
+  // Poistka rovnaká: bez KURZ_GO=1 v Railway env sa neodošle nič.
+  const KURZ_SUBJ = 'Kurz spoločenských tancov pre páry — od 13. novembra';
+  const KURZ_URL  = APP_URL.replace(/\/$/,'') + '/event/' + KURZ_PARY.slug;
+
+  async function kurzAudience(vsetci){
+    const vynechani = {}; const preco = d => { vynechani[d]=(vynechani[d]||0)+1; };
+    const users = await q.find(db.users,{});
+    const uzDostali = new Set((await q.find(db.mail_log,{}))
+      .filter(m=>m.subject===KURZ_SUBJ).map(m=>String(m.to||'').toLowerCase()));
+    const testMail = String(process.env.TEST_ACC_EMAIL||'').toLowerCase();
+    const prijemcovia = [];
+    for(const u of users){
+      const email = String(u.email||'').trim().toLowerCase();
+      // Admin pred spoločnou kontrolou — inak by spadol pod „bez súhlasu na e-mail"
+      // a v náhľade by to vyzeralo, akoby nám chýbal súhlas, nie že tam nepatrí.
+      if(u.is_admin) { preco('admin'); continue; }
+      const zakaz = kampanovyMailZakazany(u, testMail);
+      if(zakaz) { preco(zakaz); continue; }
+      const jeKlient = u.user_type==='client' || isMemberActive(u) || (+u.single_entries||0)>0;
+      const jeLead = u.user_type==='lead';
+      if(!jeKlient && !(vsetci && jeLead)) { preco(jeLead ? 'lead (mimo výberu)' : 'nie je klient'); continue; }
+      if(uzDostali.has(email)) { preco('pozvánku už dostal'); continue; }
+      prijemcovia.push({ user_id:u._id, email, klient:jeKlient,
+        meno:(String(u.name||'').trim().split(/\s+/)[0] || 'tanečníčka') });
+    }
+    return { prijemcovia, vynechani };
+  }
+
+  function kurzHtml(p){
+    return emailTemplate('Kurz spoločenských tancov pre páry',
+      '<p>Ahoj ' + p.meno + ',</p>'
+      + '<p>od piatka <b>13. novembra</b> otvárame kurz spoločenských tancov pre páry. '
+      + 'Desať lekcií počas piatich týždňov, vždy v <b>piatok a v nedeľu o 20:00</b>.</p>'
+      + '<p>Je to kurz pre dvoch — <b style="color:#C9A84C">160 € platí za celý pár</b>, nie za osobu. '
+      + 'Prihlasuje sa teda raz, za oboch.</p>'
+      + '<p>Skúsenosti netreba žiadne. Začíname od úplných základov: ako sa postaviť, '
+      + 'ako viesť a ako sa nechať viesť. Za päť týždňov sa naučíte toľko, že na svadbe '
+      + 'alebo na plese už nebudete hľadať výhovorku.</p>'
+      + '<p>Fusion Academy — Záhradná 7, Detva. Od 13. novembra do 13. decembra.</p>',
+      '💃 REZERVOVAŤ MIESTO PRE NÁS DVOCH', KURZ_URL);
+  }
+
+  app.get('/api/admin/event/kurz-pary/nahlad', adminAuth, async(req,res)=>{
+    try{
+      const vsetci = req.query.vsetci === '1';
+      const { prijemcovia, vynechani } = await kurzAudience(vsetci);
+      // Aj druhé číslo, nech Marek vidí, o koľko by sa to zväčšilo s leadmi.
+      const sLeadmi = vsetci ? null : (await kurzAudience(true)).prijemcovia.length;
+      res.json({ ok:true,
+        rozsah: vsetci ? 'klienti + leady' : 'len klienti',
+        pocet: prijemcovia.length,
+        pocet_keby_aj_leady: sLeadmi,
+        vynechani,
+        rozpocet: await mailBudgetStav(4),
+        go_flag: process.env.KURZ_GO === '1',
+        predmet: KURZ_SUBJ,
+        odkaz: KURZ_URL,
+        ukazka_html: prijemcovia.length ? kurzHtml(prijemcovia[0]) : null });
+    }catch(e){ res.status(500).json({error:e.message}); }
+  });
+
+  app.post('/api/admin/event/kurz-pary/odoslat', adminAuth, async(req,res)=>{
+    try{
+      if(process.env.KURZ_GO !== '1')
+        return res.status(409).json({error:'Vlna je zamknutá. Nastav KURZ_GO=1 v Railway env a skús znova — deploy sám o sebe nie je schválenie.'});
+      const vsetci = req.body && req.body.vsetci === true;
+      const { prijemcovia } = await kurzAudience(vsetci);
+      if(req.body && req.body.potvrdit !== true)
+        return res.json({ ok:true, dry_run:true, pocet:prijemcovia.length, rozsah: vsetci?'klienti + leady':'len klienti' });
+      if(!prijemcovia.length) return res.json({ ok:true, poslane:0, poznamka:'Nikto nespĺňa podmienky.' });
+      let poslane=0, zlyhalo=0, stoplo=null;
+      for(const p of prijemcovia){
+        if(!(await mailBudgetOk(4))) { stoplo='denný strop mailov'; break; }
+        const ok = await sendMail(p.email, KURZ_SUBJ, kurzHtml(p),
+          {priority:4, template:'event_kurz_pary_2026'}).catch(()=>false);
+        ok ? poslane++ : zlyhalo++;
+      }
+      res.json({ ok:true, poslane, zlyhalo, stoplo, zo:prijemcovia.length, rozsah: vsetci?'klienti + leady':'len klienti' });
+    }catch(e){ res.status(500).json({error:e.message}); }
+  });
+
+  return { ensureEvent, fulfillEventOrder, LATIN, halloweenAudience, halloweenHtml, HALLOWEEN_SUBJ,
+           kurzAudience, kurzHtml, KURZ_SUBJ };
 };
