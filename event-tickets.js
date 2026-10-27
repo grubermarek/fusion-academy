@@ -1266,6 +1266,7 @@ module.exports = function mountEventTickets(ctx){
       + '<p>Skúsenosti netreba žiadne. Začíname od úplných základov: ako sa postaviť, '
       + 'ako viesť a ako sa nechať viesť. Za päť týždňov sa naučíte toľko, že na svadbe '
       + 'alebo na plese už nebudete hľadať výhovorku.</p>'
+      + '<p>V jednej skupine tancuje desať párov, takže zostáva čas na každý z nich.</p>'
       + '<p>Fusion Academy — Záhradná 7, Detva. Od 13. novembra do 13. decembra.</p>',
       '💃 REZERVOVAŤ MIESTO PRE NÁS DVOCH', KURZ_URL);
   }

@@ -117,6 +117,10 @@ const O_ROK = new Date(Date.now() + 365 * 864e5).toISOString();
     ok('nesie termín a časy', /13\. novembra/.test(h) && /20:00/.test(h));
     ok('nesie odkaz na kurz', /\/event\/kurz-spolocenske-tance-2026/.test(h));
     ok('nesie odhlasovací odkaz', /\/unsubscribe/.test(h));
+    ok('hovorí o veľkosti skupiny', /desať párov/.test(h));
+    // Marek 27. 10.: ak bude záujem, otvorí sa ďalšia skupina — urgencia by bola nepravdivá.
+    ok('netlačí urgenciou', !/posledn|naposledy|už len|neváhaj|ponáhľaj|jediná (šanca|možnosť)/i.test(h), h.slice(0,200));
+    ok('nesľubuje zľavu členkám', !/zľav/i.test(h));
 
     console.log('\n4) Poistka:');
     ok('náhľad hlási zamknutú vlnu', n.go_flag === false, String(n.go_flag));
