@@ -167,7 +167,7 @@ module.exports = function mountEventTickets(ctx){
   const KURZ_PARY = {
     slug: 'kurz-spolocenske-tance-2026',
     name: 'KURZ SPOLOČENSKÝCH TANCOV PRE PÁRY',
-    subtitle: 'Päť týždňov · desať lekcií · cena za pár',
+    subtitle: 'Päť týždňov · desať lekcií · cena za pár · členky platia menej',
     date: '2026-11-13',
     date_label: 'od piatka 13. novembra 2026 · piatok a nedeľa o 20:00',
     venue: 'Fusion Academy',
@@ -186,11 +186,11 @@ module.exports = function mountEventTickets(ctx){
     ],
     types: [
       { key:'full', name:'KURZ PRE PÁR — 10 lekcií',
-        includes:['Desať lekcií počas piatich týždňov','Každý piatok a nedeľu o 20:00','Cena platí za celý pár, nie za osobu','Fusion Academy, Záhradná 7, Detva','Od 13. novembra do 13. decembra 2026','V skupine je najviac desať párov'],
+        includes:['Desať lekcií počas piatich týždňov','Každý piatok a nedeľu o 20:00','Cena platí za celý pár, nie za osobu','Fusion Academy, Záhradná 7, Detva','Od 13. novembra do 13. decembra 2026','V jednej skupine je najviac 10 párov — miesta sú obmedzené','Pri väčšom záujme otvoríme druhú skupinu a termín ti potvrdíme pred začiatkom'],
         member: null, presale: null, door: null,
         presale_until: '2026-11-13T19:59:59+01:00',
-        capacity: 10,
-        plan_prices: { silver:160, gold:160, bronze:160, bundle:160, nonmember:160 },
+        capacity: 20,
+        plan_prices: { silver:140, gold:130, bronze:150, bundle:160, nonmember:160 },
         members_only: false }
     ]
   };
