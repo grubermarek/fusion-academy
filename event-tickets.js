@@ -186,10 +186,10 @@ module.exports = function mountEventTickets(ctx){
     ],
     types: [
       { key:'full', name:'KURZ PRE PÁR — 10 lekcií',
-        includes:['Desať lekcií počas piatich týždňov','Každý piatok a nedeľu o 20:00','Cena platí za celý pár, nie za osobu','Fusion Academy, Záhradná 7, Detva','Od 13. novembra do 13. decembra 2026'],
+        includes:['Desať lekcií počas piatich týždňov','Každý piatok a nedeľu o 20:00','Cena platí za celý pár, nie za osobu','Fusion Academy, Záhradná 7, Detva','Od 13. novembra do 13. decembra 2026','V skupine je najviac desať párov'],
         member: null, presale: null, door: null,
         presale_until: '2026-11-13T19:59:59+01:00',
-        capacity: null,
+        capacity: 10,
         plan_prices: { silver:160, gold:160, bronze:160, bundle:160, nonmember:160 },
         members_only: false }
     ]
