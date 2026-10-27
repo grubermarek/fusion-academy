@@ -53,6 +53,15 @@ const O_ROK = new Date(Date.now() + 365 * 864e5).toISOString();
     { _id: 'qaKuPermanen01', name: 'Petra Permanentková', email: 'qa.ku.perm@qa-biz.local',
       user_type: 'member', active: true, email_consent: true, single_entries: 4, created_at: '2026-01-01' },
 
+    { _id: 'qaKuGold000001', name: 'Gabika Goldová', email: 'qa.ku.gold@qa-biz.local',
+      user_type: 'member', active: true, email_consent: true,
+      membership_plan: 'gold', membership_expires: O_ROK, created_at: '2026-01-01' },
+    // Skúšobný týždeň je tiež členstvo, ale členskú cenu nedáva — musí dostať 160 €.
+    { _id: 'qaKuSkuska0001', name: 'Simona Skúšajúca', email: 'qa.ku.skuska@qa-biz.local',
+      user_type: 'member', active: true, email_consent: true,
+      membership_plan: 'gold', membership_expires: O_ROK,
+      trial_ends_at: new Date(Date.now() + 5 * 864e5).toISOString(), created_at: '2026-01-01' },
+
     // Len keď sa priberú leady
     { _id: 'qaKuLead000001', name: 'Lucia Leadová', email: 'qa.ku.lead@qa-biz.local',
       user_type: 'lead', active: true, email_consent: true, created_at: '2026-01-01' },
@@ -91,10 +100,10 @@ const O_ROK = new Date(Date.now() + 365 * 864e5).toISOString();
     const n = (await j('/api/admin/event/kurz-pary/nahlad', {}, adm)).d || {};
     ok('náhľad sa načítal', n.ok === true, JSON.stringify(n).slice(0, 180));
     ok('rozsah je „len klienti"', n.rozsah === 'len klienti', n.rozsah);
-    // klient + členka + permanentka = 3; lead, venčekár, dieťa, odhlásená, bez súhlasu,
-    // import a admin sú von
-    ok('adresátov je 3', n.pocet === 3, 'je ' + n.pocet + ' — ' + JSON.stringify(n.vynechani));
-    ok('ukáže aj číslo s leadmi (4)', n.pocet_keby_aj_leady === 4, String(n.pocet_keby_aj_leady));
+    // klient + bronze + permanentka + gold + skúška = 5; lead, venčekár, dieťa, odhlásená,
+    // bez súhlasu, import a admin sú von
+    ok('adresátov je 5', n.pocet === 5, 'je ' + n.pocet + ' — ' + JSON.stringify(n.vynechani));
+    ok('ukáže aj číslo s leadmi (6)', n.pocet_keby_aj_leady === 6, String(n.pocet_keby_aj_leady));
 
     const v = n.vynechani || {};
     ok('lead je mimo výberu', v['lead (mimo výberu)'] >= 1, JSON.stringify(v));
@@ -108,19 +117,35 @@ const O_ROK = new Date(Date.now() + 365 * 864e5).toISOString();
     console.log('\n2) S leadmi:');
     const nv = (await j('/api/admin/event/kurz-pary/nahlad?vsetci=1', {}, adm)).d || {};
     ok('rozsah je „klienti + leady"', nv.rozsah === 'klienti + leady', nv.rozsah);
-    ok('adresátov je 4', nv.pocet === 4, 'je ' + nv.pocet + ' — ' + JSON.stringify(nv.vynechani));
+    ok('adresátov je 6', nv.pocet === 6, 'je ' + nv.pocet + ' — ' + JSON.stringify(nv.vynechani));
     ok('venčekár je von aj tu', (nv.vynechani || {})['venčekár (nie je klientka)'] >= 1, JSON.stringify(nv.vynechani));
 
     console.log('\n3) Mail samotný:');
     const h = n.ukazka_html || '';
-    ok('nesie cenu za pár, nie za osobu', /160 €/.test(h) && /za celý pár/i.test(h), h.slice(0, 120));
+    const hPlna = n.ukazka_plna_cena || '', hZlava = n.ukazka_so_zlavou || '';
+    ok('bez členstva je to 160 € za pár', /160 € za celý pár/.test(hPlna), hPlna.slice(-400));
+    ok('členka vidí svoju úroveň, svoju cenu aj pôvodnú',
+       /S členstvom (Gold|Silver|Bronze) je to <b[^>]*>1[345]0 € za celý pár<\/b> namiesto 160 €/.test(hZlava),
+       (hZlava.match(/Je to kurz pre dvoch[^<]*(<[^>]+>[^<]*)*/)||[''])[0].slice(0,220));
     ok('nesie termín a časy', /13\. novembra/.test(h) && /20:00/.test(h));
     ok('nesie odkaz na kurz', /\/event\/kurz-spolocenske-tance-2026/.test(h));
     ok('nesie odhlasovací odkaz', /\/unsubscribe/.test(h));
-    ok('hovorí o veľkosti skupiny', /desať párov/.test(h));
-    // Marek 27. 10.: ak bude záujem, otvorí sa ďalšia skupina — urgencia by bola nepravdivá.
-    ok('netlačí urgenciou', !/posledn|naposledy|už len|neváhaj|ponáhľaj|jediná (šanca|možnosť)/i.test(h), h.slice(0,200));
-    ok('nesľubuje zľavu členkám', !/zľav/i.test(h));
+    // Marek 27. 10.: scarcity je pravdivá (skupina má 10 párov), ale kým je predaných
+    // nula, nesmie tam byť „posledné miesta" ani počet voľných miest.
+    ok('scarcity hovorí veľkosťou skupiny', /10 párov/.test(h) && /miesta sú obmedzené/.test(h));
+    ok("nesľubuje posledné miesta ani počítadlo", !/posledn|naposledy|zostáva\s+\d|voľn\w*\s+miest/i.test(h), h.slice(0, 200));
+    ok('spomenie druhú skupinu', /druhú skupinu/.test(h));
+
+    console.log('\n3b) Cena podľa členstva:');
+    const pc = n.podla_ceny || {};
+    ok('Gold dostane 130 €', pc['Gold — 130 €'] === 1, JSON.stringify(pc));
+    ok('Bronze dostane 150 €', pc['Bronze — 150 €'] === 1, JSON.stringify(pc));
+    ok('permanentka ostáva na 160 €', pc['Permanentka — 160 €'] === 1, JSON.stringify(pc));
+    // Skúšobný týždeň je členstvo, ale členskú cenu nedáva (SKUSKA_MA_CLENSKU_CENU=false).
+    // Keby mail sľúbil 130 €, pokladňa by jej vypísala 160 € a cítila by sa oklamaná.
+    ok('skúšobný týždeň členskú cenu nedostane', pc['Bez členstva — 160 €'] === 2, JSON.stringify(pc));
+    ok('nečlenke ukáže, čím sa cena zníži', /Gold 130 €/.test(hPlna) && /Silver 140 €/.test(hPlna) && /Bronze 150 €/.test(hPlna));
+    ok('členke už zľavu neponúka druhýkrát', !/Silver 140 €/.test(hZlava), hZlava.slice(-400));
 
     console.log('\n4) Poistka:');
     ok('náhľad hlási zamknutú vlnu', n.go_flag === false, String(n.go_flag));

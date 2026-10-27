@@ -1235,6 +1235,12 @@ module.exports = function mountEventTickets(ctx){
   async function kurzAudience(vsetci){
     const vynechani = {}; const preco = d => { vynechani[d]=(vynechani[d]||0)+1; };
     const users = await q.find(db.users,{});
+    // Cenu do mailu počítame tou istou dvojicou funkcií ako pokladňa (memberCtx +
+    // planPrice) a z typu uloženého v DB, nie zo seedu — inak by mail sľúbil členskú
+    // cenu aj žene na skúšobnom týždni, ktorej pokladňa vypíše plných 160 €.
+    const evKurz = await q.one(db.ev_events,{slug:KURZ_PARY.slug});
+    const typKurz = ((evKurz && evKurz.types) || KURZ_PARY.types)[0];
+    const plnaCena = (typKurz.plan_prices || {}).nonmember;
     const uzDostali = new Set((await q.find(db.mail_log,{}))
       .filter(m=>m.subject===KURZ_SUBJ).map(m=>String(m.to||'').toLowerCase()));
     const testMail = String(process.env.TEST_ACC_EMAIL||'').toLowerCase();
@@ -1250,10 +1256,33 @@ module.exports = function mountEventTickets(ctx){
       const jeLead = u.user_type==='lead';
       if(!jeKlient && !(vsetci && jeLead)) { preco(jeLead ? 'lead (mimo výberu)' : 'nie je klient'); continue; }
       if(uzDostali.has(email)) { preco('pozvánku už dostal'); continue; }
+      const cp = planPrice(typKurz, await memberCtx(u)) || {};
       prijemcovia.push({ user_id:u._id, email, klient:jeKlient,
+        cena:cp.price, uroven:cp.label, plna_cena:plnaCena,
         meno:(String(u.name||'').trim().split(/\s+/)[0] || 'tanečníčka') });
     }
-    return { prijemcovia, vynechani };
+    // Koľko adresátok dostane ktorú cenu — nech je v náhľade vidieť, čo komu odíde.
+    const podlaCeny = {};
+    for(const p of prijemcovia){
+      const k = (p.uroven || 'bez úrovne') + ' — ' + (p.cena==null ? 'bez ceny' : p.cena + ' €');
+      podlaCeny[k] = (podlaCeny[k]||0) + 1;
+    }
+    return { prijemcovia, vynechani, podla_ceny:podlaCeny };
+  }
+
+  // Cena sa líši podľa členstva, preto ju každá dostane svoju. Zľavu spomíname len
+  // tej, ktorá ju naozaj dostane; ostatným ukážeme, čím sa dá znížiť — bez sľubu, že
+  // ju už majú. Permanentka členstvo nie je a skúšobný týždeň tiež nie (viď memberCtx).
+  function kurzCenaOdsek(p){
+    const plna = p.plna_cena!=null ? p.plna_cena : 160;
+    const cena = p.cena!=null ? p.cena : plna;
+    const zvyrazni = '<b style="color:#C9A84C">' + cena + ' € za celý pár</b>';
+    if(cena < plna)
+      return '<p>Je to kurz pre dvoch — cena platí za pár, nie za osobu. '
+        + 'S členstvom ' + p.uroven + ' je to ' + zvyrazni + ' namiesto ' + plna + ' €. '
+        + 'Prihlasuje sa raz, za oboch.</p>';
+    return '<p>Je to kurz pre dvoch — ' + zvyrazni + ', nie za osobu. Prihlasuje sa raz, za oboch. '
+      + 'S mesačným členstvom je kurz lacnejší: Gold 130 €, Silver 140 €, Bronze 150 €.</p>';
   }
 
   function kurzHtml(p){
@@ -1261,12 +1290,12 @@ module.exports = function mountEventTickets(ctx){
       '<p>Ahoj ' + p.meno + ',</p>'
       + '<p>od piatka <b>13. novembra</b> otvárame kurz spoločenských tancov pre páry. '
       + 'Desať lekcií počas piatich týždňov, vždy v <b>piatok a v nedeľu o 20:00</b>.</p>'
-      + '<p>Je to kurz pre dvoch — <b style="color:#C9A84C">160 € platí za celý pár</b>, nie za osobu. '
-      + 'Prihlasuje sa teda raz, za oboch.</p>'
+      + kurzCenaOdsek(p)
       + '<p>Skúsenosti netreba žiadne. Začíname od úplných základov: ako sa postaviť, '
       + 'ako viesť a ako sa nechať viesť. Za päť týždňov sa naučíte toľko, že na svadbe '
       + 'alebo na plese už nebudete hľadať výhovorku.</p>'
-      + '<p>V jednej skupine tancuje desať párov, takže zostáva čas na každý z nich.</p>'
+      + '<p>V jednej skupine je najviac <b>10 párov</b>, takže miesta sú obmedzené. '
+      + 'Pri väčšom záujme otvoríme druhú skupinu a termín ti potvrdíme pred začiatkom.</p>'
       + '<p>Fusion Academy — Záhradná 7, Detva. Od 13. novembra do 13. decembra.</p>',
       '💃 REZERVOVAŤ MIESTO PRE NÁS DVOCH', KURZ_URL);
   }
@@ -1274,7 +1303,7 @@ module.exports = function mountEventTickets(ctx){
   app.get('/api/admin/event/kurz-pary/nahlad', adminAuth, async(req,res)=>{
     try{
       const vsetci = req.query.vsetci === '1';
-      const { prijemcovia, vynechani } = await kurzAudience(vsetci);
+      const { prijemcovia, vynechani, podla_ceny } = await kurzAudience(vsetci);
       // Aj druhé číslo, nech Marek vidí, o koľko by sa to zväčšilo s leadmi.
       const sLeadmi = vsetci ? null : (await kurzAudience(true)).prijemcovia.length;
       res.json({ ok:true,
@@ -1282,11 +1311,15 @@ module.exports = function mountEventTickets(ctx){
         pocet: prijemcovia.length,
         pocet_keby_aj_leady: sLeadmi,
         vynechani,
+        podla_ceny,
         rozpocet: await mailBudgetStav(4),
         go_flag: process.env.KURZ_GO === '1',
         predmet: KURZ_SUBJ,
         odkaz: KURZ_URL,
-        ukazka_html: prijemcovia.length ? kurzHtml(prijemcovia[0]) : null });
+        // Dve vzorky, lebo mail nie je pre všetky rovnaký: plná cena a členská zľava.
+        ukazka_html: prijemcovia.length ? kurzHtml(prijemcovia[0]) : null,
+        ukazka_plna_cena: (p => p ? kurzHtml(p) : null)(prijemcovia.find(x=>!(x.cena < x.plna_cena))),
+        ukazka_so_zlavou: (p => p ? kurzHtml(p) : null)(prijemcovia.find(x=>x.cena < x.plna_cena)) });
     }catch(e){ res.status(500).json({error:e.message}); }
   });
 
