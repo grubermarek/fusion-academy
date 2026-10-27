@@ -1231,6 +1231,12 @@ module.exports = function mountEventTickets(ctx){
   // Poistka rovnaká: bez KURZ_GO=1 v Railway env sa neodošle nič.
   const KURZ_SUBJ = 'Kurz spoločenských tancov pre páry — od 13. novembra';
   const KURZ_URL  = APP_URL.replace(/\/$/,'') + '/event/' + KURZ_PARY.slug;
+  // Marek 27. 10.: „pošlite len Detve". Kurz je desať večerov v Detve, do Zvolena,
+  // Brezna ani Banskej Bystrice sa naň nedochádza. Mesto berieme z dochádzky, inak
+  // z profilu (mesto_spolu) — a kôš „neznáme" ide von tiež, lebo rez je tvrdý.
+  // Zámerne to nie je parameter požiadavky: odoslanie musí ísť úzko aj vtedy, keď
+  // endpoint zavolá niekto bez premýšľania.
+  const KURZ_MESTA = ['Detva'];
 
   async function kurzAudience(vsetci){
     const vynechani = {}; const preco = d => { vynechani[d]=(vynechani[d]||0)+1; };
@@ -1283,7 +1289,7 @@ module.exports = function mountEventTickets(ctx){
       }
       if(d>=od180 && (!poslednaRez[b.user_id] || d>poslednaRez[b.user_id].d)) poslednaRez[b.user_id] = {d, m};
     }
-    const podlaMesta = {}, podlaDochadzky = {}, mestoSpolu = {}, bezProfiluAleChodi = {};
+    const podlaMesta = {}, podlaDochadzky = {}, mestoSpolu = {}, bezProfiluAleChodi = {}, mestoPred = {};
     const zapis = (kam,k) => { kam[k] = (kam[k]||0) + 1; };
     for(const p of prijemcovia){
       const profil = mzMesto(p.mesto_profil_raw) || null;
@@ -1292,10 +1298,24 @@ module.exports = function mountEventTickets(ctx){
                        : (poslednaRez[p.user_id] ? poslednaRez[p.user_id].m : null);
       p.mesto_profil = profil; p.mesto_realne = realne; p.mesto = realne || profil || null;
       delete p.mesto_profil_raw;
-      zapis(podlaMesta, profil || 'bez mesta v profile');
-      zapis(podlaDochadzky, realne || 'bez hodiny za 180 dní');
+      zapis(mestoPred, p.mesto || 'neznáme');
+    }
+
+    // Rez podľa mesta. Robí sa až tu, keď je mesto známe, a vylúčení idú do tej istej
+    // tabuľky dôvodov ako ostatné výnimky — nech je v náhľade vidieť, koho a prečo
+    // sme nechali vonku, nielen koľkým to odíde.
+    const vonku = [];
+    for(let i=prijemcovia.length-1; i>=0; i--){
+      const p = prijemcovia[i];
+      if(KURZ_MESTA.includes(p.mesto)) continue;
+      preco(p.mesto ? ('mimo Detvy (' + p.mesto + ')') : 'bez známeho mesta');
+      vonku.push(p); prijemcovia.splice(i,1);
+    }
+    for(const p of prijemcovia){
+      zapis(podlaMesta, p.mesto_profil || 'bez mesta v profile');
+      zapis(podlaDochadzky, p.mesto_realne || 'bez hodiny za 180 dní');
       zapis(mestoSpolu, p.mesto || 'neznáme');
-      if(!profil && realne) zapis(bezProfiluAleChodi, realne);
+      if(!p.mesto_profil && p.mesto_realne) zapis(bezProfiluAleChodi, p.mesto_realne);
     }
 
     // Koľko adresátok dostane ktorú cenu — nech je v náhľade vidieť, čo komu odíde.
@@ -1306,7 +1326,9 @@ module.exports = function mountEventTickets(ctx){
     }
     return { prijemcovia, vynechani, podla_ceny:podlaCeny,
              podla_mesta:podlaMesta, podla_dochadzky:podlaDochadzky,
-             mesto_spolu:mestoSpolu, bez_profilu_ale_chodi:bezProfiluAleChodi };
+             mesto_spolu:mestoSpolu, bez_profilu_ale_chodi:bezProfiluAleChodi,
+             mesta_filter:KURZ_MESTA.slice(), mesto_spolu_pred_filtrom:mestoPred,
+             mimo_filtra:vonku.length };
   }
 
   // Cena sa líši podľa členstva, preto ju každá dostane svoju. Zľavu spomíname len
@@ -1343,7 +1365,8 @@ module.exports = function mountEventTickets(ctx){
     try{
       const vsetci = req.query.vsetci === '1';
       const { prijemcovia, vynechani, podla_ceny, podla_mesta, podla_dochadzky,
-              mesto_spolu, bez_profilu_ale_chodi } = await kurzAudience(vsetci);
+              mesto_spolu, bez_profilu_ale_chodi, mesta_filter,
+              mesto_spolu_pred_filtrom, mimo_filtra } = await kurzAudience(vsetci);
       // Aj druhé číslo, nech Marek vidí, o koľko by sa to zväčšilo s leadmi.
       const sLeadmi = vsetci ? null : (await kurzAudience(true)).prijemcovia.length;
       res.json({ ok:true,
@@ -1353,6 +1376,7 @@ module.exports = function mountEventTickets(ctx){
         vynechani,
         podla_ceny,
         podla_mesta, podla_dochadzky, mesto_spolu, bez_profilu_ale_chodi,
+        mesta_filter, mesto_spolu_pred_filtrom, mimo_filtra,
         rozpocet: await mailBudgetStav(4),
         go_flag: process.env.KURZ_GO === '1',
         predmet: KURZ_SUBJ,

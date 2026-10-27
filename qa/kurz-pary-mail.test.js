@@ -49,7 +49,7 @@ const O_ROK = new Date(Date.now() + 365 * 864e5).toISOString();
       user_type: 'client', active: true, email_consent: true, city: 'Detva', created_at: '2026-01-01' },
     { _id: 'qaKuClenstvo01', name: 'Eva Členka', email: 'qa.ku.clenstvo@qa-biz.local',
       user_type: 'member', active: true, email_consent: true,
-      membership_plan: 'bronze', membership_expires: O_ROK, city: 'Zvolen', created_at: '2026-01-01' },
+      membership_plan: 'bronze', membership_expires: O_ROK, city: 'Detva', created_at: '2026-01-01' },
     { _id: 'qaKuPermanen01', name: 'Petra Permanentková', email: 'qa.ku.perm@qa-biz.local',
       user_type: 'member', active: true, email_consent: true, single_entries: 4, created_at: '2026-01-01' },
 
@@ -61,11 +61,15 @@ const O_ROK = new Date(Date.now() + 365 * 864e5).toISOString();
     { _id: 'qaKuSkuska0001', name: 'Simona Skúšajúca', email: 'qa.ku.skuska@qa-biz.local',
       user_type: 'member', active: true, email_consent: true,
       membership_plan: 'gold', membership_expires: O_ROK,
-      trial_ends_at: new Date(Date.now() + 5 * 864e5).toISOString(), created_at: '2026-01-01' },
+      trial_ends_at: new Date(Date.now() + 5 * 864e5).toISOString(), city: 'Detva', created_at: '2026-01-01' },
+
+    // Kurz je v Detve — Zvolenčanka ide von, aj keď je inak bezchybná klientka.
+    { _id: 'qaKuZvolen0001', name: 'Zuzana Zvolenská', email: 'qa.ku.zvolen@qa-biz.local',
+      user_type: 'client', active: true, email_consent: true, city: 'Zvolen', created_at: '2026-01-01' },
 
     // Len keď sa priberú leady
     { _id: 'qaKuLead000001', name: 'Lucia Leadová', email: 'qa.ku.lead@qa-biz.local',
-      user_type: 'lead', active: true, email_consent: true, created_at: '2026-01-01' },
+      user_type: 'lead', active: true, email_consent: true, city: 'Detva', created_at: '2026-01-01' },
 
     // Nedostanú nikdy
     { _id: 'qaKuVencek0001', name: 'Vanda Venčeková', email: 'qa.ku.vencek@qa-biz.local',
@@ -156,15 +160,18 @@ const O_ROK = new Date(Date.now() + 365 * 864e5).toISOString();
     ok('nečlenke ukáže, čím sa cena zníži', /Gold 130 €/.test(hPlna) && /Silver 140 €/.test(hPlna) && /Bronze 150 €/.test(hPlna));
     ok('členke už zľavu neponúka druhýkrát', !/Silver 140 €/.test(hZlava), hZlava.slice(-400));
 
-    console.log('\n3c) Mestá:');
+    console.log('\n3c) Rez podľa mesta — kurz je v Detve:');
     const pm = n.podla_mesta || {}, pd = n.podla_dochadzky || {}, ms = n.mesto_spolu || {};
-    ok('profil: Detva 1, Zvolen 1, Brezno 1', pm['Detva'] === 1 && pm['Zvolen'] === 1 && pm['Brezno'] === 1, JSON.stringify(pm));
-    ok('dve adresátky nemajú mesto v profile', pm['bez mesta v profile'] === 2, JSON.stringify(pm));
-    ok('dochádzka: dve chodia do Detvy', pd['Detva'] === 2, JSON.stringify(pd));
-    // Gabika má v profile Brezno, ale chodí do Detvy — pri rozhodovaní o okruhu
-    // rozhoduje to, kam naozaj chodí, nie čo si kedysi vyplnila.
-    ok('dochádzka prebije mesto v profile', ms['Detva'] === 3 && !ms['Brezno'], JSON.stringify(ms));
-    ok('bez profilu, ale chodí do Detvy: 1', (n.bez_profilu_ale_chodi || {})['Detva'] === 1, JSON.stringify(n.bez_profilu_ale_chodi));
+    const pred = n.mesto_spolu_pred_filtrom || {}, v2 = n.vynechani || {};
+    ok('filter je len Detva', JSON.stringify(n.mesta_filter) === JSON.stringify(['Detva']), JSON.stringify(n.mesta_filter));
+    ok('v zozname nie je nikto okrem Detvy', Object.keys(ms).join('|') === 'Detva' && ms['Detva'] === 5, JSON.stringify(ms));
+    ok('Zvolenčanka je vylúčená menovite', v2['mimo Detvy (Zvolen)'] === 1, JSON.stringify(v2));
+    // Gabika má v profile Brezno, ale chodí do Detvy — rez ide podľa toho, kam
+    // naozaj chodí, inak by sme vyhodili práve tú, ktorej to sedí.
+    ok('dochádzka prebije mesto v profile', pm['Brezno'] === 1 && pd['Detva'] === 2, JSON.stringify({pm, pd}));
+    ok('bez mesta v profile, ale chodí do Detvy', (n.bez_profilu_ale_chodi || {})['Detva'] === 1, JSON.stringify(n.bez_profilu_ale_chodi));
+    ok('pred filtrom bolo Detva 5 a Zvolen 1', pred['Detva'] === 5 && pred['Zvolen'] === 1, JSON.stringify(pred));
+    ok('mimo filtra hlási 1', n.mimo_filtra === 1, String(n.mimo_filtra));
 
     console.log('\n4) Poistka:');
     ok('náhľad hlási zamknutú vlnu', n.go_flag === false, String(n.go_flag));
