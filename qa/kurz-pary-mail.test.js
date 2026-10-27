@@ -46,16 +46,17 @@ const O_ROK = new Date(Date.now() + 365 * 864e5).toISOString();
 
     // Dostanú
     { _id: 'qaKuKlient0001', name: 'Jana Klientka', email: 'qa.ku.klient@qa-biz.local',
-      user_type: 'client', active: true, email_consent: true, created_at: '2026-01-01' },
+      user_type: 'client', active: true, email_consent: true, city: 'Detva', created_at: '2026-01-01' },
     { _id: 'qaKuClenstvo01', name: 'Eva Členka', email: 'qa.ku.clenstvo@qa-biz.local',
       user_type: 'member', active: true, email_consent: true,
-      membership_plan: 'bronze', membership_expires: O_ROK, created_at: '2026-01-01' },
+      membership_plan: 'bronze', membership_expires: O_ROK, city: 'Zvolen', created_at: '2026-01-01' },
     { _id: 'qaKuPermanen01', name: 'Petra Permanentková', email: 'qa.ku.perm@qa-biz.local',
       user_type: 'member', active: true, email_consent: true, single_entries: 4, created_at: '2026-01-01' },
 
     { _id: 'qaKuGold000001', name: 'Gabika Goldová', email: 'qa.ku.gold@qa-biz.local',
       user_type: 'member', active: true, email_consent: true,
-      membership_plan: 'gold', membership_expires: O_ROK, created_at: '2026-01-01' },
+      // Mesto v profile má Brezno, ale chodí do Detvy — dochádzka musí profil prebiť.
+      membership_plan: 'gold', membership_expires: O_ROK, city: 'Brezno', created_at: '2026-01-01' },
     // Skúšobný týždeň je tiež členstvo, ale členskú cenu nedáva — musí dostať 160 €.
     { _id: 'qaKuSkuska0001', name: 'Simona Skúšajúca', email: 'qa.ku.skuska@qa-biz.local',
       user_type: 'member', active: true, email_consent: true,
@@ -77,6 +78,14 @@ const O_ROK = new Date(Date.now() + 365 * 864e5).toISOString();
       user_type: 'client', active: true, email_consent: false, created_at: '2026-01-01' },
     { _id: 'qaKuImport0001', name: 'Importovaná', email: 'qa.ku.import@import.local',
       user_type: 'client', active: true, email_consent: true, created_at: '2026-01-01' },
+  ]);
+
+  const PRED_14 = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10);
+  w('bookings.db', [
+    { _id: 'qaKuRez000001', user_id: 'qaKuPermanen01', class_id: 'qaKuTrieda001',
+      class_location: 'Detva', booking_date: PRED_14, status: 'attended' },
+    { _id: 'qaKuRez000002', user_id: 'qaKuGold000001', class_id: 'qaKuTrieda001',
+      class_location: 'Detva', booking_date: PRED_14, status: 'attended' },
   ]);
 
   console.log('KURZ PRE PÁRY — štart servera…');
@@ -146,6 +155,16 @@ const O_ROK = new Date(Date.now() + 365 * 864e5).toISOString();
     ok('skúšobný týždeň členskú cenu nedostane', pc['Bez členstva — 160 €'] === 2, JSON.stringify(pc));
     ok('nečlenke ukáže, čím sa cena zníži', /Gold 130 €/.test(hPlna) && /Silver 140 €/.test(hPlna) && /Bronze 150 €/.test(hPlna));
     ok('členke už zľavu neponúka druhýkrát', !/Silver 140 €/.test(hZlava), hZlava.slice(-400));
+
+    console.log('\n3c) Mestá:');
+    const pm = n.podla_mesta || {}, pd = n.podla_dochadzky || {}, ms = n.mesto_spolu || {};
+    ok('profil: Detva 1, Zvolen 1, Brezno 1', pm['Detva'] === 1 && pm['Zvolen'] === 1 && pm['Brezno'] === 1, JSON.stringify(pm));
+    ok('dve adresátky nemajú mesto v profile', pm['bez mesta v profile'] === 2, JSON.stringify(pm));
+    ok('dochádzka: dve chodia do Detvy', pd['Detva'] === 2, JSON.stringify(pd));
+    // Gabika má v profile Brezno, ale chodí do Detvy — pri rozhodovaní o okruhu
+    // rozhoduje to, kam naozaj chodí, nie čo si kedysi vyplnila.
+    ok('dochádzka prebije mesto v profile', ms['Detva'] === 3 && !ms['Brezno'], JSON.stringify(ms));
+    ok('bez profilu, ale chodí do Detvy: 1', (n.bez_profilu_ale_chodi || {})['Detva'] === 1, JSON.stringify(n.bez_profilu_ale_chodi));
 
     console.log('\n4) Poistka:');
     ok('náhľad hlási zamknutú vlnu', n.go_flag === false, String(n.go_flag));

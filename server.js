@@ -27005,7 +27005,7 @@ const PUZZLE = require('./puzzle')({ app, db, q, auth, adminAuth, nowISO, today,
 const EVENTS = require('./event-tickets')({
   app, db, q, auth, adminAuth, rlPublic, nowISO, today, APP_URL,
   sendMail, createInvoice, stripeApi, STRIPE_SECRET, isMemberActive, metaCapi,
-  emailTemplate, mailBudgetOk, mailBudgetStav, vencekMimoKonverzie
+  emailTemplate, mailBudgetOk, mailBudgetStav, vencekMimoKonverzie, mzMesto
 });
 EVENTS.ensureEvent().then(e=>console.log('🎟️  Event pripravený:', e?.name)).catch(e=>console.error('event seed:', e.message));
 

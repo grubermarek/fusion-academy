@@ -10,7 +10,7 @@ const QR     = require('qrcode');
 module.exports = function mountEventTickets(ctx){
   const { app, db, q, auth, adminAuth, rlPublic, nowISO, today, APP_URL,
           sendMail, createInvoice, stripeApi, STRIPE_SECRET, isMemberActive, metaCapi,
-          emailTemplate, mailBudgetOk, mailBudgetStav, vencekMimoKonverzie } = ctx;
+          emailTemplate, mailBudgetOk, mailBudgetStav, vencekMimoKonverzie, mzMesto } = ctx;
 
   // ── Pomocné ────────────────────────────────────────────────────────────────
   const cors = res => {
@@ -1258,16 +1258,55 @@ module.exports = function mountEventTickets(ctx){
       if(uzDostali.has(email)) { preco('pozvánku už dostal'); continue; }
       const cp = planPrice(typKurz, await memberCtx(u)) || {};
       prijemcovia.push({ user_id:u._id, email, klient:jeKlient,
-        cena:cp.price, uroven:cp.label, plna_cena:plnaCena,
+        cena:cp.price, uroven:cp.label, plna_cena:plnaCena, mesto_profil_raw:u.city||null,
         meno:(String(u.name||'').trim().split(/\s+/)[0] || 'tanečníčka') });
     }
+    // Kde klientka naozaj je. Berieme rovnakú prednosť ako sekcia Mestá: kde bola za
+    // 120 dní najčastejšie na hodine, inak posledná rezervácia (180 dní), inak mesto
+    // v profile. Profil sám o sebe nestačí — veľa žien ho nemá vyplnené vôbec.
+    const idcka = new Set(prijemcovia.map(p=>p.user_id));
+    const triedy = Object.fromEntries((await q.find(db.classes,{})).map(c=>[c._id,c]));
+    const navstevy = {}, poslednaRez = {};
+    const dnes = today();
+    const od120 = new Date(Date.now()-120*864e5).toISOString().slice(0,10);
+    const od180 = new Date(Date.now()-180*864e5).toISOString().slice(0,10);
+    for(const b of await q.find(db.bookings,{})){
+      if(!idcka.has(b.user_id) || b.status==='cancelled' || b.status==='waitlist') continue;
+      const d = String(b.booking_date || b.created_at || '').slice(0,10);
+      if(!d || d > dnes) continue;
+      const c = triedy[b.class_id];
+      const m = mzMesto((c && c.location) || b.class_location);
+      if(!m) continue;
+      if(b.status==='attended' && d>=od120){
+        navstevy[b.user_id] = navstevy[b.user_id] || {};
+        navstevy[b.user_id][m] = (navstevy[b.user_id][m]||0) + 1;
+      }
+      if(d>=od180 && (!poslednaRez[b.user_id] || d>poslednaRez[b.user_id].d)) poslednaRez[b.user_id] = {d, m};
+    }
+    const podlaMesta = {}, podlaDochadzky = {}, mestoSpolu = {}, bezProfiluAleChodi = {};
+    const zapis = (kam,k) => { kam[k] = (kam[k]||0) + 1; };
+    for(const p of prijemcovia){
+      const profil = mzMesto(p.mesto_profil_raw) || null;
+      const n = navstevy[p.user_id];
+      const realne = n ? Object.entries(n).sort((a,b)=>b[1]-a[1])[0][0]
+                       : (poslednaRez[p.user_id] ? poslednaRez[p.user_id].m : null);
+      p.mesto_profil = profil; p.mesto_realne = realne; p.mesto = realne || profil || null;
+      delete p.mesto_profil_raw;
+      zapis(podlaMesta, profil || 'bez mesta v profile');
+      zapis(podlaDochadzky, realne || 'bez hodiny za 180 dní');
+      zapis(mestoSpolu, p.mesto || 'neznáme');
+      if(!profil && realne) zapis(bezProfiluAleChodi, realne);
+    }
+
     // Koľko adresátok dostane ktorú cenu — nech je v náhľade vidieť, čo komu odíde.
     const podlaCeny = {};
     for(const p of prijemcovia){
       const k = (p.uroven || 'bez úrovne') + ' — ' + (p.cena==null ? 'bez ceny' : p.cena + ' €');
       podlaCeny[k] = (podlaCeny[k]||0) + 1;
     }
-    return { prijemcovia, vynechani, podla_ceny:podlaCeny };
+    return { prijemcovia, vynechani, podla_ceny:podlaCeny,
+             podla_mesta:podlaMesta, podla_dochadzky:podlaDochadzky,
+             mesto_spolu:mestoSpolu, bez_profilu_ale_chodi:bezProfiluAleChodi };
   }
 
   // Cena sa líši podľa členstva, preto ju každá dostane svoju. Zľavu spomíname len
@@ -1303,7 +1342,8 @@ module.exports = function mountEventTickets(ctx){
   app.get('/api/admin/event/kurz-pary/nahlad', adminAuth, async(req,res)=>{
     try{
       const vsetci = req.query.vsetci === '1';
-      const { prijemcovia, vynechani, podla_ceny } = await kurzAudience(vsetci);
+      const { prijemcovia, vynechani, podla_ceny, podla_mesta, podla_dochadzky,
+              mesto_spolu, bez_profilu_ale_chodi } = await kurzAudience(vsetci);
       // Aj druhé číslo, nech Marek vidí, o koľko by sa to zväčšilo s leadmi.
       const sLeadmi = vsetci ? null : (await kurzAudience(true)).prijemcovia.length;
       res.json({ ok:true,
@@ -1312,6 +1352,7 @@ module.exports = function mountEventTickets(ctx){
         pocet_keby_aj_leady: sLeadmi,
         vynechani,
         podla_ceny,
+        podla_mesta, podla_dochadzky, mesto_spolu, bez_profilu_ale_chodi,
         rozpocet: await mailBudgetStav(4),
         go_flag: process.env.KURZ_GO === '1',
         predmet: KURZ_SUBJ,
