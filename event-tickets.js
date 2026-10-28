@@ -710,7 +710,9 @@ module.exports = function mountEventTickets(ctx){
         for(const t of await q.find(db.ev_tickets,{holder_email:u.email, user_id:null}))
           await q.update(db.ev_tickets,{_id:t._id},{$set:{user_id:u._id}});
       }
-      const mine = await q.find(db.ev_tickets,{user_id:req.session.uid});
+      // Zrušená vstupenka (oprava zlého zápisu) sa klientke neukazuje — inak by jej
+      // v appke svietil QR kód, s ktorým by ju pri dverách otočili.
+      const mine = (await q.find(db.ev_tickets,{user_id:req.session.uid})).filter(t=>t.status!=='void');
       const bySlug = {};
       for(const t of mine){ (bySlug[t.event_slug] = bySlug[t.event_slug] || []).push(t); }
       const out = [];
@@ -748,6 +750,8 @@ module.exports = function mountEventTickets(ctx){
       if(!(await staffOk(req))) return res.status(403).json({error:'Bez oprávnenia'});
       const t = await q.one(db.ev_tickets,{code:String(req.params.code).toUpperCase()});
       if(!t) return res.json({ok:false, state:'invalid', message:'NEPLATNÝ QR KÓD'});
+      // Stav 'void' (oprava zlého zápisu) tu nikto nečítal — kód by prešiel ako platný.
+      if(t.status==='void') return res.json({ok:false, state:'invalid', message:'ZRUŠENÁ VSTUPENKA'});
       const ev = await q.one(db.ev_events,{slug:t.event_slug});
       const order = await q.one(db.ev_orders,{_id:t.order_id});
       const paid = !order || order.status==='paid';
@@ -789,6 +793,8 @@ module.exports = function mountEventTickets(ctx){
       const code = String(req.params.code).toUpperCase();
       const t = await q.one(db.ev_tickets,{code});
       if(!t) return res.json({ok:false, state:'invalid', message:'NEPLATNÝ QR KÓD'});
+      // Zrušená vstupenka má kód v obehu (klientke odišiel mailom), ale platná nie je.
+      if(t.status==='void') return res.json({ok:false, state:'invalid', message:'ZRUŠENÁ VSTUPENKA'});
       const ev = await q.one(db.ev_events,{slug:t.event_slug});
       const order = await q.one(db.ev_orders,{_id:t.order_id});
       if(order && order.status!=='paid')
