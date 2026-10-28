@@ -1041,7 +1041,14 @@ module.exports = function mountEventTickets(ctx){
     try{
       const ev = await q.one(db.ev_events,{slug:req.params.slug});
       if(!ev) return res.status(404).json({error:'Event nenájdený'});
-      const num = String(req.body.order_number||'').trim().toUpperCase();
+      // Admin má pred sebou kód vstupenky, nie číslo objednávky — to appka nikde neukazuje.
+      // Preto sa dá objednávka nájsť aj podľa ktorejkoľvek vstupenky z nej.
+      let num = String(req.body.order_number||'').trim().toUpperCase();
+      if(!num && req.body.code){
+        const tk = await q.one(db.ev_tickets,{code:String(req.body.code).trim().toUpperCase()});
+        if(!tk) return res.status(404).json({error:'Vstupenka s týmto kódom sa nenašla.'});
+        num = tk.order_number;
+      }
       const order = await q.one(db.ev_orders,{order_number:num, event_slug:ev.slug});
       if(!order) return res.status(404).json({error:'Objednávka sa nenašla.'});
       const wanted = Array.isArray(req.body.items) ? req.body.items : [];
