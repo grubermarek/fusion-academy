@@ -888,7 +888,9 @@ module.exports = function mountEventTickets(ctx){
 
   app.get('/api/admin/events/:slug/attendees', adminAuth, async(req,res)=>{
     try{
-      let list = await q.find(db.ev_tickets,{event_slug:req.params.slug});
+      // Zrušená vstupenka (oprava zlého zápisu) sa do zoznamu pri dverách nesmie dostať —
+      // inak by s ňou niekto prešiel check-inom. soldCount ju už tiež nepočíta.
+      let list = (await q.find(db.ev_tickets,{event_slug:req.params.slug})).filter(t=>t.status!=='void');
       const f = req.query.filter||'';
       if(f==='full'||f==='party') list = list.filter(t=>t.type===f);
       if(f.startsWith('aff:')) list = list.filter(t=>t.aff_code===f.slice(4));
@@ -1026,6 +1028,67 @@ module.exports = function mountEventTickets(ctx){
       if(email) await sendTicketMail(order, made, ev, {gift:isGift, note:mailNote, subject:mailSubject}).catch(()=>{});
       res.json({ok:true, tickets:made.map(x=>x.code), total, summary, gift:isGift,
         linked: !!acct, emailed: !!email});
+    }catch(e){ res.status(500).json({error:e.message}); }
+  });
+
+  // Oprava zle zapísaného ručného predaja. Doteraz sa vstupenka nedala vziať späť —
+  // jedinou cestou bola jednorazová migrácia v kóde (pozri purge z 19. 8.), takže omyl
+  // visel v štatistikách eventu aj klientke v appke. Objednávka ani faktúra sa NEMAŽE:
+  // číslovanie dokladov nesmie mať dieru. Prebytočné vstupenky sa označia 'void'
+  // (soldCount ani zoznam pri dverách ich už neberú), chýbajúce sa doplnia a cena sa
+  // prepíše na tú, ktorú klientka naozaj zaplatila.
+  app.post('/api/admin/events/:slug/order/opravit', adminAuth, async(req,res)=>{
+    try{
+      const ev = await q.one(db.ev_events,{slug:req.params.slug});
+      if(!ev) return res.status(404).json({error:'Event nenájdený'});
+      const num = String(req.body.order_number||'').trim().toUpperCase();
+      const order = await q.one(db.ev_orders,{order_number:num, event_slug:ev.slug});
+      if(!order) return res.status(404).json({error:'Objednávka sa nenašla.'});
+      const wanted = Array.isArray(req.body.items) ? req.body.items : [];
+      if(!wanted.length) return res.status(400).json({error:'Zadaj, ako má objednávka vyzerať.'});
+      const vsetky = await q.find(db.ev_tickets,{order_number:num});
+      // Kto už prešiel dverami, toho zápis sa nemení — stál tam a je to fakt.
+      if(vsetky.some(t=>t.checked_in_at))
+        return res.status(409).json({error:'Vstupenka z tejto objednávky už prešla check-inom — oprav to ručne.'});
+      const dovod = String(req.body.reason||'oprava zápisu').slice(0,200);
+      const lines = [], zmeny = { zrusene:0, pridane:0, precenene:0 };
+      for(const w of wanted){
+        const t = ev.types.find(x=>x.key===w.type);
+        if(!t) return res.status(400).json({error:'Neznámy typ vstupenky: '+w.type});
+        const qty  = Math.max(0, Math.min(20, parseInt(w.qty,10)||0));
+        const unit = Math.max(0, +w.price||0);
+        const tier = w.tier || 'manual';
+        const su = vsetky.filter(x=>x.type===t.key && x.status!=='void');
+        for(let i=qty;i<su.length;i++){
+          await q.update(db.ev_tickets,{_id:su[i]._id},
+            {$set:{status:'void', void_reason:dovod, void_at:nowISO()}});
+          zmeny.zrusene++;
+        }
+        for(const tk of su.slice(0,qty)){
+          if(+tk.price!==unit || tk.tier!==tier){
+            await q.update(db.ev_tickets,{_id:tk._id},{$set:{price:unit, tier}});
+            zmeny.precenene++;
+          }
+        }
+        for(let i=su.length;i<qty;i++){
+          await q.insert(db.ev_tickets,{ code:newCode(), event_slug:ev.slug, type:t.key, type_name:t.name,
+            order_id:order._id, order_number:order.order_number, price:unit, tier,
+            holder_name:order.buyer_name, holder_email:order.buyer_email, holder_phone:order.buyer_phone,
+            user_id:order.user_id||null, source:'admin', status:'valid',
+            aff_code:null, aff_commission:0, aff_paid_out:false, aff_paid_at:null,
+            checked_in_at:null, checked_in_by:null, checkin_place:null, created_at:nowISO() });
+          zmeny.pridane++;
+        }
+        lines.push({ type:t.key, type_name:t.name, qty, unit, tier,
+                     subtotal:+(unit*qty).toFixed(2), holders:[] });
+      }
+      const total = +lines.reduce((s,l)=>s+l.subtotal,0).toFixed(2);
+      await q.update(db.ev_orders,{_id:order._id},
+        {$set:{items:lines, total, opravene_at:nowISO(), oprava_dovod:dovod}});
+      res.json({ ok:true, order_number:num, total, povodny_total:+order.total, zmeny,
+        // Suma na faktúre sa opravuje dobropisom, nie prepísaním — preto o tom len povieme.
+        poznamka: total!==+order.total
+          ? 'Suma sa zmenila — faktúru a transakciu treba doriešiť zvlášť (dobropis).' : null });
     }catch(e){ res.status(500).json({error:e.message}); }
   });
 

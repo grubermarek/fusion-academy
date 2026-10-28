@@ -10515,6 +10515,28 @@ app.post('/api/admin/users/:id/children', adminAuth, async(req,res)=>{
 });
 
 // Admin: darovať / nastaviť členstvo s vlastnou platnosťou + prípadne vstupy (migrácia z Glofoxu)
+// Ukončenie bežiaceho členstva k dnešku. Výherné Gold za Klientku mesiaca sa predlžovalo
+// o kompenzačné dni za zrušené hodiny rovnako ako zaplatené členstvo, takže výhra „na
+// mesiac" bežala ďalej — 28. 10. 2026 takto jednej klientke bežal Gold z júlovej a
+// augustovej výhry až do 2. 11. Do kreditu sa nevracia nič: výhra nebola zaplatená,
+// nie je čo vracať. Na zaplatené členstvo sa to preto používa len vedome.
+app.post('/api/admin/users/:id/end-membership', adminAuth, async(req,res)=>{
+  try {
+    const u = await q.one(db.users,{_id:req.params.id});
+    if(!u) return res.status(404).json({error:'Nenájdený'});
+    // db.memberships drží aj _type:'body_analysis' / 'fit_premena' — to nie sú členstvá.
+    const m = (await q.find(db.memberships,{user_id:u._id, status:'active'})).filter(x=>!x._type)[0];
+    const dovod = String(req.body.reason||'').slice(0,200) || 'ukončené adminom';
+    if(m) await q.update(db.memberships,{_id:m._id},{$set:{ status:'expired', expires_at:nowISO(),
+      ended_reason:dovod, ended_by:req.session.uid||null, updated_at:nowISO() }});
+    // isMemberActive číta polia na users, nie kolekciu — bez tohto by členstvo „bežalo" ďalej.
+    await q.update(db.users,{_id:u._id},{$set:{membership_plan:null, membership_expires:null}});
+    await zapisHistoriu(u._id,'clenstvo',0,null,'Členstvo ukončené: '+dovod,{kto:'admin'});
+    res.json({ ok:true, meno:u.name,
+      ukoncene: m ? { plan:m.plan_name, povodne_do:m.expires_at, vyhra:m.prize||null } : null });
+  } catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.post('/api/admin/users/:id/grant-membership', adminAuth, async(req,res)=>{
   try {
     const u=await q.one(db.users,{_id:req.params.id}); if(!u) return res.status(404).json({error:'Nenájdený'});
