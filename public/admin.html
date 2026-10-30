@@ -1837,6 +1837,18 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
   <div class="section" id="s-outreach">
     <h4 class="fw-bold mb-1">📨 Hromadné správy</h4>
     <p class="text-muted small mb-3">Pošli email a/alebo notifikáciu vyfiltrovanej skupine (segmentu) — napr. na event, akciu, pripomienku. E-mail chodí len tým, čo dali súhlas; notifikácia všetkým v segmente.</p>
+    <!-- Jednorazová vlna: pozvánka na kurz pre páry. Audience, ochrany aj cenu podľa
+         členstva rieši kód; tu je len ľudská brána — kto vlnu pustí, vidí najprv čísla.
+         Zámok KURZ_GO v env zostáva v hre, toto ho neobchádza. -->
+    <div class="card bg-dark border-secondary mb-3" style="max-width:720px"><div class="card-body">
+      <div class="fw-semibold mb-1" style="color:#C9A24C">💃 Kurz pre páry — pozvánka <span id="kurzGoBadge" class="badge bg-secondary">…</span></div>
+      <p class="text-muted small mb-2">Jednorazová vlna pre klientky, ktoré tancujú <b>v Detve</b> (mesto podľa dochádzky, inak podľa profilu). Cena v maile sa počíta každej zvlášť podľa jej členstva. Kto pozvánku už dostal, preskočí sa.</p>
+      <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
+        <button class="btn btn-sm btn-outline-info" onclick="kurzNahlad()">🔍 Načítať náhľad</button>
+        <button class="btn btn-sm btn-warning fw-bold" id="kurzSendBtn" onclick="kurzOdoslat()" disabled>📤 Odoslať pozvánku</button>
+      </div>
+      <div id="kurzStav" class="small text-muted">Náhľad ešte nebol načítaný.</div>
+    </div></div>
     <div class="card bg-dark border-secondary mb-3" style="max-width:720px"><div class="card-body">
       <div class="fw-semibold mb-1" style="color:#7bd88f">📲 SMS brána <span id="smsCfgBadge" class="badge bg-secondary">…</span></div>
       <p class="text-muted small mb-2">Hromadná SMS na leady s telefónom (importy majú súhlas z formulára). <b>{meno}</b> = krstné meno. Do 160 znakov = 1 SMS (~0,045 €).</p>
@@ -3052,6 +3064,55 @@ async function smsTest(){
   const r=await api('/api/admin/sms/test',{method:'POST',body:JSON.stringify({text:document.getElementById('smsText').value})});
   document.getElementById('smsMsg').innerHTML=r?.ok?'<span class="text-success">✅ Test SMS odoslaná na tvoje číslo.</span>':'<span class="text-danger">'+escHtml(r?.error||'Chyba')+'</span>';
 }
+/* ── 💃 Kurz pre páry — jednorazová vlna ───────────────────────────────────
+   Náhľad je povinný krok: odosielacie tlačidlo sa odomkne až po ňom, aby vlnu
+   nikto nepustil bez toho, že videl, komu odíde a koľkým. Čísla aj texty počíta
+   server (event-tickets.js), tu sa len zobrazujú. */
+let kurzNahladData = null;
+
+async function kurzNahlad(){
+  const box = document.getElementById('kurzStav');
+  box.innerHTML = '<span class="text-muted">Načítavam…</span>';
+  const n = await api('/api/admin/event/kurz-pary/nahlad');
+  if(!n?.ok){ box.innerHTML = '<span class="text-danger">'+escHtml(n?.error||'Chyba')+'</span>'; return; }
+  kurzNahladData = n;
+
+  const badge = document.getElementById('kurzGoBadge');
+  badge.textContent = n.go_flag ? 'odomknuté' : 'zamknuté (KURZ_GO)';
+  badge.className = 'badge ' + (n.go_flag ? 'bg-success' : 'bg-secondary');
+
+  const riadky = o => Object.entries(o||{}).sort((a,b)=>b[1]-a[1])
+    .map(([k,v])=>escHtml(k)+': <b>'+v+'</b>').join(' · ') || '—';
+
+  box.innerHTML = '<div class="mb-1">Pozvánku dostane <b style="color:#C9A24C">'+n.pocet+'</b> '
+    + (n.pocet===1?'klientka':'klientok') + ' · rozsah ' + escHtml(n.rozsah)
+    + (n.pocet_keby_aj_leady!=null ? ' (s leadmi by to bolo '+n.pocet_keby_aj_leady+')' : '') + '</div>'
+    + '<div class="mb-1">Mestá: ' + riadky(n.mesto_spolu) + ' · filter ' + escHtml((n.mesta_filter||[]).join(', ')) + '</div>'
+    + '<div class="mb-1">Ceny: ' + riadky(n.podla_ceny) + '</div>'
+    + '<div class="mb-1 text-muted">Vynechaní: ' + riadky(n.vynechani) + '</div>'
+    + '<div class="text-muted">Mailov dnes: ' + (n.rozpocet?.odoslane_dnes ?? '?') + ' z ' + (n.rozpocet?.denny_strop ?? '?')
+    + ' · zostáva ' + (n.rozpocet?.zostava_dnes ?? '?') + '</div>'
+    + (n.go_flag ? '' : '<div class="mt-1 text-warning">Vlna je zamknutá — v Railway treba nastaviť <code>KURZ_GO=1</code>, inak odoslanie vráti 409.</div>');
+
+  document.getElementById('kurzSendBtn').disabled = !n.pocet;
+}
+
+async function kurzOdoslat(){
+  if(!kurzNahladData){ alert('Najprv načítaj náhľad.'); return; }
+  const box = document.getElementById('kurzStav');
+  const dry = await api('/api/admin/event/kurz-pary/odoslat',{method:'POST',body:{}});
+  if(!dry?.ok){ box.innerHTML = '<span class="text-danger">'+escHtml(dry?.error||'Chyba')+'</span>'; return; }
+  if(!confirm('Odoslať pozvánku na kurz '+dry.pocet+' klientkam ('+dry.rozsah+')? Odoslaný e-mail sa nedá vzať späť.')) return;
+  box.innerHTML = '<span class="text-muted">Odosielam… pri desiatkach adresátov to môže trvať minútu.</span>';
+  const r = await api('/api/admin/event/kurz-pary/odoslat',{method:'POST',body:{potvrdit:true}});
+  if(!r?.ok){ box.innerHTML = '<span class="text-danger">'+escHtml(r?.error||'Chyba')+'</span>'; return; }
+  box.innerHTML = '<span class="text-success">✅ Odoslané: <b>'+r.poslane+'</b> z '+r.zo
+    + (r.zlyhalo ? ' · zlyhalo '+r.zlyhalo : '')
+    + (r.stoplo ? ' · zastavené: '+escHtml(r.stoplo) : '') + '</span>';
+  document.getElementById('kurzSendBtn').disabled = true;
+}
+
+
 async function smsBlast(){
   const audience=document.getElementById('smsAud').value, text=document.getElementById('smsText').value;
   const dry=await api('/api/admin/sms/blast',{method:'POST',body:JSON.stringify({audience,text})});
