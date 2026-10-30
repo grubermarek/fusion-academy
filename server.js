@@ -6026,42 +6026,106 @@ async function getMetaAppId(){
   const s=await q.one(db.settings,{key:'meta_app_id'}).catch(()=>null);
   return s?.value || META_APP_ID_DEFAULT;
 }
-/** Platnosť tokenu v dňoch (null = nevie sa zistiť, 0 = neplatný). */
-async function metaTokenDni(tok){
+/** Čo Meta o tokene hovorí teraz. `chyba` = nevie sa zistiť (vrátane mŕtveho tokenu). */
+async function metaTokenInfo(tok){
   try{
     const d=await metaGraph(tok,'debug_token?input_token='+encodeURIComponent(tok));
-    const info=d&&d.data; if(!info) return null;
-    if(info.is_valid===false) return 0;
-    if(!info.expires_at) return 9999;            // token bez expirácie (systémový používateľ)
-    return Math.round((info.expires_at*1000-Date.now())/864e5);
-  }catch(e){ return null; }
+    if(!d || !d.data) return {chyba:(d&&d.error&&d.error.message)||'Meta neodpovedala'};
+    const i=d.data, dni = v => v ? Math.round((v*1000-Date.now())/864e5) : null;
+    return {
+      platny: i.is_valid!==false,
+      dni: dni(i.expires_at),              // null = nevyprší (systémový používateľ)
+      // Dátový prístup je druhá, tichšia lehota (90 dní): token zostane „platný",
+      // ale štatistiky prestanú chodiť. Preto sa pozeráme na obe.
+      data_dni: dni(i.data_access_expires_at),
+      systemovy: i.type==='SYSTEM_USER' || (i.is_valid!==false && !i.expires_at),
+    };
+  }catch(e){ return {chyba:e.message}; }
+}
+/** Platnosť tokenu v dňoch (null = nevie sa zistiť, 0 = neplatný, 9999 = bez expirácie). */
+async function metaTokenDni(tok){
+  const i=await metaTokenInfo(tok);
+  if(i.chyba) return null;
+  if(!i.platny) return 0;
+  return i.dni==null ? 9999 : i.dni;
+}
+/** Posledný výsledok obnovy — aby ho admin aj ranný prehľad čítali bez ďalšieho
+    dotazu do Mety a aby sa vedelo, kedy sa obnova naposledy podarila. */
+async function zapisTokenStav(v){
+  const stav={ at:nowISO(), ok:!!v.ok, dni:(v.dni===undefined?null:v.dni), dovod:v.dovod||null,
+    trvaly:!!v.trvaly, predlzene:!!v.predlzene, systemovy:!!(v.info&&v.info.systemovy),
+    data_dni:(v.info&&v.info.data_dni!=null)?v.info.data_dni:null };
+  try{
+    const ex=await q.one(db.settings,{key:'meta_token_stav'});
+    if(ex) await q.update(db.settings,{_id:ex._id},{$set:{value:stav, at:stav.at}});
+    else await q.insert(db.settings,{key:'meta_token_stav', value:stav, at:stav.at});
+  }catch(e){}
+  return {...v, stav};
+}
+/** Stav tokenu pre admin kartu: čo Meta hovorí teraz + či sa vie obnoviť sám. */
+async function metaTokenPrehlad(){
+  const tok=await getMetaAdsToken();
+  const posledna=(await q.one(db.settings,{key:'meta_token_stav'}).catch(()=>null))?.value || null;
+  const secret=!!(await getMetaAppSecret());
+  if(!tok) return {ma_token:false, secret, posledna};
+  const i=await metaTokenInfo(tok);
+  return {ma_token:true, secret, posledna, platny:i.chyba?null:i.platny,
+    dni:i.dni!=null?i.dni:null, data_dni:i.data_dni!=null?i.data_dni:null,
+    systemovy:!!i.systemovy, chyba:i.chyba||null};
+}
+/** Jedna výmena tokenu. `so_stropom` pridá parameter, ktorým Meta pri tokenoch
+    systémového používateľa vyžaduje výslovne nastaviť 60-dňovú lehotu. */
+async function metaVymenaTokenu(tok, secret, so_stropom){
+  const u=META_GRAPH+'oauth/access_token?grant_type=fb_exchange_token&client_id='
+    +encodeURIComponent(await getMetaAppId())+'&client_secret='+encodeURIComponent(secret)
+    +'&fb_exchange_token='+encodeURIComponent(tok)
+    +(so_stropom?'&set_token_expires_in_60_days=true':'');
+  const d=await (await fetch(u)).json();
+  return {token:(d&&d.access_token)||null, chyba:(d&&d.error&&d.error.message)||null};
 }
 /** Vymení token za 60-dňový a uloží ho aj pre CAPI. Vracia {ok, dni} alebo {ok:false, dovod}. */
 async function predlzMetaToken({force}={}){
   const tok=await getMetaAdsToken();
-  if(!tok) return {ok:false, dovod:'chýba token'};
-  const dni=await metaTokenDni(tok);
-  if(dni===0) return {ok:false, dovod:'token už neplatí — treba vygenerovať nový v Graph Exploreri'};
-  if(!force && dni!==null && dni>14) return {ok:true, dni, preskocene:true};
+  if(!tok) return await zapisTokenStav({ok:false, dovod:'chýba token'});
+  const info=await metaTokenInfo(tok);
+  if(info.chyba) return await zapisTokenStav({ok:false, dovod:'Meta odmietla overiť token: '+info.chyba});
+  if(!info.platny) return await zapisTokenStav({ok:false, dovod:'token už neplatí — treba vložiť nový v Marketing → Meta'});
+  const malo = x => x!=null && x<=30;
+  // Token systémového používateľa bez expirácie je presne to, čo chceme — nie je čo predlžovať.
+  if(info.dni==null && !malo(info.data_dni))
+    return await zapisTokenStav({ok:true, dni:null, info, trvaly:true});
+  // 30 dní rezervy (do 30. 10. to bolo 14): keď obnova zlyhá, zostáva ešte mesiac,
+  // než stíchnu udalosti. Starý token pritom beží do svojej pôvodnej lehoty, takže
+  // skorá obnova nič nerozbije — Meta rotuje mäkko.
+  if(!force && !malo(info.dni) && !malo(info.data_dni))
+    return await zapisTokenStav({ok:true, dni:info.dni, info, preskocene:true});
   const secret=await getMetaAppSecret();
-  if(!secret) return {ok:false, dni, dovod:'chýba app secret — bez neho sa token predĺžiť nedá'};
+  if(!secret) return await zapisTokenStav({ok:false, dni:info.dni, info,
+    dovod:'chýba app secret — bez neho sa token predĺžiť nedá'});
   try{
-    const u=META_GRAPH+'oauth/access_token?grant_type=fb_exchange_token&client_id='
-      +encodeURIComponent(await getMetaAppId())+'&client_secret='+encodeURIComponent(secret)
-      +'&fb_exchange_token='+encodeURIComponent(tok);
-    const d=await (await fetch(u)).json();
-    const novy=d&&d.access_token;
-    if(!novy) return {ok:false, dni, dovod:(d&&d.error&&d.error.message)||'Meta nevrátila token'};
+    let v=await metaVymenaTokenu(tok, secret, false);
+    let noveDni = v.token ? await metaTokenDni(v.token) : null;
+    // Výmena, ktorá nepohla lehotou, je zbytočná. Meta pre tokeny systémového
+    // používateľa dokumentuje parameter, ktorý 60 dní vyžiada výslovne — skúsime ho,
+    // ale až keď prvý pokus nepomohol (pri bežnom tokene Meta s ním vracia chybu).
+    if(!v.token || (info.dni!=null && noveDni!=null && noveDni<=info.dni+1)){
+      const v2=await metaVymenaTokenu(tok, secret, true);
+      if(v2.token){
+        const d2=await metaTokenDni(v2.token);
+        if(d2!=null && (noveDni==null || d2>noveDni)){ v=v2; noveDni=d2; }
+      } else if(!v.token) v.chyba = v.chyba || v2.chyba;
+    }
+    if(!v.token) return await zapisTokenStav({ok:false, dni:info.dni, info,
+      dovod:v.chyba||'Meta nevrátila token'});
     for(const key of ['meta_ads_token','meta_capi_token']){
       const ex=await q.one(db.settings,{key});
-      if(ex) await q.update(db.settings,{_id:ex._id},{$set:{value:novy, at:nowISO(), zdroj:'auto_predlzenie'}});
-      else await q.insert(db.settings,{key, value:novy, at:nowISO(), zdroj:'auto_predlzenie'});
+      if(ex) await q.update(db.settings,{_id:ex._id},{$set:{value:v.token, at:nowISO(), zdroj:'auto_predlzenie'}});
+      else await q.insert(db.settings,{key, value:v.token, at:nowISO(), zdroj:'auto_predlzenie'});
     }
-    _metaAdsTokenCache=novy; _metaTokenCache=novy;
-    const noveDni=await metaTokenDni(novy);
+    _metaAdsTokenCache=v.token; _metaTokenCache=v.token;
     console.log('🔑 Meta token predĺžený (platí ~'+(noveDni==null?'?':noveDni)+' dní)');
-    return {ok:true, dni:noveDni, predlzene:true};
-  }catch(e){ return {ok:false, dni, dovod:e.message}; }
+    return await zapisTokenStav({ok:true, dni:noveDni, info:await metaTokenInfo(v.token), predlzene:true});
+  }catch(e){ return await zapisTokenStav({ok:false, dni:info.dni, info, dovod:e.message}); }
 }
 app.post('/api/admin/meta-app-secret', adminAuth, async(req,res)=>{
   try{
@@ -25560,6 +25624,9 @@ app.get('/api/admin/meta-stats', adminAuth, async(req,res)=>{
     res.json({ ok:true, total:meta.length, attended, payers:payerIds.size, revenue,
       months, pixel_configured:!!(await getMetaPixelId()), capi_configured:!!(await getMetaCapiToken()),
       ads_token_configured:!!((await getMetaAdsToken())||(await getMetaCapiToken())),
+      // Samotná prítomnosť tokenu nie je dôkaz, že funguje — karta dovtedy svietila
+      // zeleno aj s mŕtvym tokenom a Marek to zistil až z ranného mailu (30. 10.).
+      token: await metaTokenPrehlad(),
       sample: meta.slice(0,50).map(u=>({id:u._id,name:u.name,created_at:(u.created_at||'').slice(0,10),utm_campaign:u.utm_campaign||'',visits:u.visit_count||0,paying:payerIds.has(u._id)})) });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -25996,8 +26063,11 @@ async function strazcaMerania({upozornit=true}={}){
         pridaj('token','Token pre Metu už NEPLATÍ — appka neposiela Mete udalosti a kampane sa neaktualizujú. Treba vložiť nový v Marketing → Meta.');
       else if(dni!==null && dni<=3)
         pridaj('token','Token pre Metu vyprší o '+(dni<=0?'chvíľu':(dni+' dni'))+' ('+new Date(exp).toLocaleDateString('sk-SK')+'). Potom stíchnu udalosti aj prehľad kampaní.');
+      // Appka obnovuje token pri 30 dňoch, takže sem sa dostane len vtedy, keď obnova
+      // zlyháva. Dôvod posledného pokusu priložíme — inak Marek vidí „expiruje" bez príčiny.
       else if(dni!==null && dni<14)
-        pridaj('token','Token pre Metu expiruje '+new Date(exp).toLocaleDateString('sk-SK')+' — treba ho obnoviť.');
+        pridaj('token','Token pre Metu expiruje '+new Date(exp).toLocaleDateString('sk-SK')+' a automatická obnova nepomohla — treba zasiahnuť.',
+          ((await q.one(db.settings,{key:'meta_token_stav'}).catch(()=>null))?.value||{}).dovod||'');
       else if(dbg && dbg.data && !exp) ok.push('Token pre Metu je bez expirácie (systémový používateľ) — obnovovať ho netreba');
       else if(exp) ok.push('Token platí do '+new Date(exp).toLocaleDateString('sk-SK')+' ('+dni+' dní)');
       // Predĺžiť sa dá len s app secret. Bez neho denné predlžovanie ticho nerobí nič
@@ -30487,6 +30557,11 @@ seedData().then(backfillDefaultSponsor).then(shopInvoiceBackfill20260904).then(u
     console.log(`🌐  Hlavná:      http://localhost:${PORT}`);
     console.log(`⚙️   Admin:       http://localhost:${PORT}/admin`);
     console.log('👤  Admin login: admin@fusionacademy.sk / admin123\n');
+    // Meta token: skontroluj po každom nasadení, nielen raz za noc. Keď mu zostáva
+    // menej než 30 dní, predĺž ho hneď — nech sa na to nikdy nemusí myslieť ručne.
+    setTimeout(()=>{ predlzMetaToken()
+      .then(v=>{ if(!v.ok && v.dovod) console.warn('🔑 Meta token: '+v.dovod); })
+      .catch(()=>{}); }, 20000);
   });
 }).catch(e=>{console.error('Chyba pri spustení:', e); process.exit(1);});
 

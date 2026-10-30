@@ -41,8 +41,15 @@ https://app.fusionacademy.sk/prva-hodina?utm_source=fb&utm_medium=cpc&utm_campai
 
 1. **Dataset a udalosti webu** — dataset `4085746221555327` (Fusion Academy App) zapnutý
    na úrovni reklamy. Bez toho Meta nevidí konverzie.
-2. **Platný token** — `meta_ads_token` v settings (platí 60 dní, slúži aj na CAPI zápis
-   cez `/api/service/capi-z-ads`). Po expirácii sa prestanú posielať serverové udalosti.
+2. **Platný token** — `meta_ads_token` v settings; ten istý token posiela aj udalosti
+   (náš dataset vlastný CAPI token mať nemôže). Stav je v Marketing → Meta: karta ukazuje,
+   čo o tokene hovorí Meta, nie len to, že nejaký token tam je.
+   Natrvalo to vyrieši **token systémového používateľa s platnosťou „Nikdy nevyprší"** —
+   podmienkou je, aby reklamný účet `51759494` vlastnilo portfólio `latin.dance.fusion`
+   (30. 10. 2026 ho nevlastnilo, účet je osobný). Dovtedy platí 60-dňový používateľský
+   token, ktorý si appka obnovuje sama pri 30 dňoch — **ale len keď je uložený app secret**.
+   Bez neho obnova ticho nerobí nič a token raz padne (13. 10. 2026 sme tak stratili štyri
+   dni serverových udalostí).
 3. **Karta kampane v appke** — Admin → Kampane, `utm_key` = prefix kódu kampane
    (napr. `fa-zumba-skuska*`) a `meta_campaign_id`. Bez karty kampaň **nevstúpi do metrík**
    (viď sekcia 5). Kartu zakladaj migráciou v `server.js` spolu s kampaňou.

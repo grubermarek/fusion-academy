@@ -4756,20 +4756,49 @@ async function loadMetaStats(){
     html+=`<div class="alert py-2 small mb-2" style="background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.3)">
       <b>Dokonči prepojenie (5 min):</b> ①&nbsp;V <a href="https://business.facebook.com/events_manager2" target="_blank">Meta Events Manageri</a> vytvor <b>Pixel</b> (Dátový zdroj → Web) a skopíruj jeho ID. ②&nbsp;V pixeli otvor <b>Nastavenia → Conversions API → Vygenerovať access token</b>. ③&nbsp;Pošli mi Pixel ID + token a zapnem meranie (appka už má všetko pripravené: pixel, PageView/Registration/Purchase eventy aj server-side CAPI).</div>`;
   }
-  html+=`<div class="alert py-2 small mb-0" style="background:${d.ads_token_configured?'rgba(74,222,128,.08)':'rgba(224,86,86,.08)'};border:1px solid ${d.ads_token_configured?'rgba(74,222,128,.3)':'rgba(224,86,86,.3)'}">
+  // Zelená len vtedy, keď token naozaj funguje a nevyprší skôr než o mesiac. Dovtedy
+  // karta svietila zeleno aj s mŕtvym tokenom — stačilo, že v nastaveniach nejaký bol.
+  const t=d.token||{};
+  const trvaly=!!(t.systemovy && t.platny);
+  const dost=x=>x==null||x>30;
+  const zdravy=!!(t.platny && (trvaly || (t.dni!=null && t.dni>30)) && dost(t.data_dni));
+  const zle=!t.ma_token || t.platny===false || !!t.chyba;
+  const ram=zle?'224,86,86':(zdravy?'74,222,128':'234,179,8');
+  let stav;
+  if(!t.ma_token) stav='<span class="text-danger">vypnutý — chýba token</span>';
+  else if(t.platny===false) stav='<span class="text-danger">token už NEPLATÍ — Meta nedostáva udalosti a štatistiky sa neaktualizujú</span>';
+  else if(t.chyba) stav=`<span class="text-danger">Meta token neoverila: ${escHtml(t.chyba)}</span>`;
+  else if(trvaly) stav='<span class="text-success">token systémového používateľa — <b>nevyprší</b>, starať sa netreba</span>';
+  else if(zdravy) stav=`<span class="text-success">platí ešte ${t.dni} dní${t.secret?', appka ho obnoví sama':''}</span>`;
+  else if(t.dni!=null && t.dni<=30) stav=`<span class="text-warning">vyprší o ${t.dni} dní — ${t.secret?'appka ho skúsi obnoviť sama (nočný beh)':'<b>sám sa neobnoví</b>, chýba app secret'}</span>`;
+  else stav=`<span class="text-warning">dátový prístup vyprší o ${t.data_dni} dní — potom prestanú chodiť štatistiky</span>`;
+  const p=t.posledna||{};
+  const poslednaTxt = p.at
+    ? `<div class="text-muted mt-1" style="font-size:.72rem">Posledná kontrola ${escHtml(new Date(p.at).toLocaleString('sk-SK'))}: ${p.ok?(p.predlzene?'token predĺžený':(p.trvaly?'netreba nič, nevyprší':'v poriadku')):('zlyhala — '+escHtml(p.dovod||'?'))}</div>`
+    : '';
+  html+=`<div class="alert py-2 small mb-0" style="background:rgba(${ram},.08);border:1px solid rgba(${ram},.3)">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-      <div><b>🔄 Automatický sync štatistík kampaní</b> — ${d.ads_token_configured?'<span class="text-success">zapnutý, beží samo (každých 6 h + denne)</span>':'<span class="text-danger">vypnutý — chýba token</span>'}</div>
-      <button class="btn btn-sm btn-outline-light" onclick="document.getElementById('metaAdsTokenBox').classList.toggle('d-none')">${d.ads_token_configured?'Zmeniť token':'Nastaviť token'}</button>
+      <div><b>🔄 Automatický sync štatistík kampaní</b> — ${stav}</div>
+      <div class="d-flex gap-2">
+        ${t.ma_token?'<button class="btn btn-sm btn-outline-light" onclick="metaTokenPredlzit(this)">Skontrolovať teraz</button>':''}
+        <button class="btn btn-sm btn-outline-light" onclick="document.getElementById('metaAdsTokenBox').classList.toggle('d-none')">${t.ma_token?'Zmeniť token':'Nastaviť token'}</button>
+      </div>
     </div>
-    <div id="metaAdsTokenBox" class="${d.ads_token_configured?'d-none':''} mt-2">
+    ${poslednaTxt}
+    <div id="metaTokenMsg" class="small mt-1"></div>
+    <div id="metaAdsTokenBox" class="${zdravy?'d-none':''} mt-2">
       <div class="text-muted mb-2" style="font-size:.78rem">
         Bez tohto tokenu ti čísla v kampaniach musím dopĺňať ručne a Meta nevidí registrácie
-        z appky. Token systémového používateľa <b>nikdy nevyprší</b>, takže toto je raz a dosť:<br>
-        ①&nbsp;<a href="https://business.facebook.com/settings/system-users" target="_blank">Meta Business Settings → Používatelia systému</a> → vyber (alebo vytvor) systémového používateľa.<br>
+        z appky. <b>Jediný token, ktorý nikdy nevyprší</b>, je token systémového používateľa —
+        ten sa dá vygenerovať len na aktíva, ktoré vlastní firemné portfólio:<br>
+        ⓪&nbsp;<a href="https://business.facebook.com/settings/ad-accounts" target="_blank">Business Settings → Reklamné účty</a>
+        → účet <code>51759494</code> musí byť <b>v portfóliu <i>latin.dance.fusion</i></b> (Pridať → Nárokovať si reklamný účet).
+        Dnes portfóliu nepatrí, a kým tam nie je, krok ② nepustí ďalej.<br>
+        ①&nbsp;<a href="https://business.facebook.com/settings/system-users" target="_blank">Business Settings → Používatelia systému</a> → vyber (alebo vytvor) systémového používateľa.<br>
         ②&nbsp;<b>Priradiť aktíva</b> → reklamný účet <code>act_51759494</code> (Správa kampaní)
         <i>aj</i> dataset <code>4085746221555327</code> (plná kontrola). Bez datasetu sa udalosti posielať nedajú.<br>
-        ③&nbsp;<b>Vygenerovať token</b> → aplikácia: <b>Fusion Academy Sync</b> → zaškrtni
-        <b>ads_read</b> aj <b>ads_management</b> → Vygenerovať.
+        ③&nbsp;<b>Vygenerovať token</b> → aplikácia: <b>Fusion Academy Sync</b> → platnosť
+        <b>Nikdy nevyprší</b> → zaškrtni <b>ads_read</b> aj <b>ads_management</b> → Vygenerovať.
         Samotné <code>ads_read</code> stačí na čítanie kampaní, ale <b>nie</b> na posielanie udalostí.<br>
         ④&nbsp;Skopíruj token (začína <code>EAA...</code>) a vlož sem:
       </div>
@@ -4782,7 +4811,9 @@ async function loadMetaStats(){
           <b>Len ak si použil token z Graph Explorera</b> (ten platí 1–2 hodiny): v
           <a href="https://developers.facebook.com/apps/" target="_blank">Meta for Developers</a>
           → appka <b>Fusion Academy Sync</b> → Nastavenia → Základné → <b>App secret</b> → Zobraziť → skopíruj sem.
-          Appka si token predĺži na 60 dní a bude ho obnovovať, kým mu zostáva menej než 14 dní.
+          Appka si token predĺži na 60 dní a bude ho obnovovať vždy, keď mu zostáva menej
+          než 30 dní — po každom nasadení aj raz za noc. <b>Bez secretu je to ručná práca
+          každé dva mesiace</b> (a keď token raz padne, Meta ho už predĺžiť nedovolí).
           Pri tokene systémového používateľa toto netreba — ten nevyprší.
         </div>
         <div class="d-flex gap-2">
@@ -4802,6 +4833,20 @@ async function loadMetaStats(){
     </div>
   </div>`;
   el.innerHTML=html;
+}
+// Ručná kontrola tokenu — to isté, čo appka robí po nasadení a každú noc.
+async function metaTokenPredlzit(btn){
+  const msg=document.getElementById('metaTokenMsg');
+  if(btn){ btn.disabled=true; btn.textContent='Kontrolujem…'; }
+  msg.innerHTML='<span class="text-muted">Pýtam sa Mety…</span>';
+  const r=await api('/api/admin/meta-token-predlzit',{method:'POST',body:'{}'});
+  if(btn){ btn.disabled=false; btn.textContent='Skontrolovať teraz'; }
+  if(!r||!r.ok){ msg.innerHTML=`<span class="text-danger">${escHtml((r&&(r.dovod||r.error))||'Nepodarilo sa.')}</span>`; return; }
+  msg.innerHTML = r.trvaly
+    ? '<span class="text-success">✅ Token nevyprší — nie je čo obnovovať.</span>'
+    : (r.predlzene ? `<span class="text-success">✅ Predĺžené, token platí ~${r.dni==null?'?':r.dni} dní.</span>`
+       : `<span class="text-success">✅ Token je v poriadku, platí ešte ${r.dni==null?'?':r.dni} dní.</span>`);
+  loadMetaStats();
 }
 async function saveMetaAppSecret(){
   const input=document.getElementById('metaAppSecretInput'), msg=document.getElementById('metaAppSecretMsg');
