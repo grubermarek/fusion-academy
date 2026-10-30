@@ -116,6 +116,31 @@ footer a{color:var(--acc)}
       <h2>Kedy prídete?</h2>
       <div class="vekFilter" id="vekFilter" style="display:none"></div>
       <div class="vyber" id="sessList"><div class="nacitavam">Načítavam termíny…</div></div>
+      <!-- Pre rodičov, ktorým vypísané termíny nesedia. Bez tohto je jediná alternatíva
+           zavrieť stránku; takto z nich aspoň vieme, o aký čas by mali záujem. -->
+      <button class="spat" id="dopytBtn" onclick="dopytOtvor()" style="margin-top:10px">Nevyhovuje ani jeden termín? →</button>
+      <div id="dopytBox" style="display:none;margin-top:10px">
+        <div style="font-size:.88rem;color:var(--muted);text-align:center;margin-bottom:8px">
+          Napíšte nám, kedy by sa vám hodilo — ozveme sa, keď otvoríme termín, ktorý vám sedí.
+        </div>
+        <label for="dMeno">Vaše meno</label>
+        <input id="dMeno" placeholder="Jana Nováková" autocomplete="name" enterkeyhint="next">
+        <div class="pole-err" id="errDMeno"></div>
+        <label for="dKontakt">Telefón alebo e-mail</label>
+        <input id="dKontakt" placeholder="0904 315 151" autocomplete="tel" enterkeyhint="next">
+        <div class="pole-err" id="errDKontakt"></div>
+        <label for="dKedy">Kedy by vám to vyhovovalo?</label>
+        <input id="dKedy" placeholder="napríklad v pondelok po 16:00" enterkeyhint="done">
+        <label style="display:flex;gap:8px;align-items:flex-start;font-size:.82rem;line-height:1.5;margin-top:10px;color:var(--muted)">
+          <input type="checkbox" id="dSuhlas" style="width:auto;margin:3px 0 0">
+          <span>Súhlasím, aby Fusion Academy spracovala moje údaje a ozvala sa mi.</span>
+        </label>
+        <div class="pole-err" id="errDSuhlas"></div>
+        <input id="dWeb" name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true">
+        <div style="height:10px"></div>
+        <button class="cta" id="dopytSend" onclick="dopytPosli()">DAJTE MI VEDIEŤ</button>
+        <div class="err" id="dopytChyba" style="display:none"></div>
+      </div>
     </div>
 
     <div class="krok" id="k2" style="display:none">
@@ -259,6 +284,56 @@ function hlasTerminy(){
   else krok('lp_prazdno',kde);
 }
 function spat(n){ krok('lp_spat',{z:String(KROK)}); naKrok(n); }
+
+// ── Dopyt na iný termín ──────────────────────────────────────────────────────
+// Ide do tých istých Dopytov ako formuláre z webu (/api/public/web-lead), aby to
+// nebol ďalší zoznam, ktorý nikto nečíta. Čas otvorenia stránky posielame v ms —
+// rovnaká spam heuristika ako pri nábore.
+const DOPYT_T0 = Date.now();
+function dopytOtvor(){
+  $('dopytBtn').style.display='none';
+  $('dopytBox').style.display='block';
+  $('dMeno').focus();
+  krok('lp_dopyt',{pocet:String((window.__zoznam||[]).length)});
+}
+function dopytChyba1(pole,errId,text){
+  const i=$(pole), e=$(errId);
+  if(text){ if(i) i.classList.add('zle'); e.textContent=text; e.classList.add('on'); return false; }
+  if(i) i.classList.remove('zle'); e.textContent=''; e.classList.remove('on'); return true;
+}
+async function dopytPosli(){
+  const meno=$('dMeno').value.trim(), kontakt=$('dKontakt').value.trim(), kedy=$('dKedy').value.trim();
+  let ok=dopytChyba1('dMeno','errDMeno', meno.length<2 ? 'Napíšte svoje meno.' : '');
+  const mail=/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(kontakt);
+  const tel=/^[+0-9()\s-]{9,}$/.test(kontakt);
+  if(!dopytChyba1('dKontakt','errDKontakt', (mail||tel) ? '' : 'Nechajte telefón alebo e-mail — inak sa vám nevieme ozvať.')) ok=false;
+  if(!dopytChyba1('dSuhlas','errDSuhlas', $('dSuhlas').checked ? '' : 'Bez súhlasu sa vám nemôžeme ozvať.')) ok=false;
+  if(!ok) return;
+
+  const btn=$('dopytSend'); btn.disabled=true; btn.textContent='POSIELAM…';
+  const telo=new URLSearchParams({
+    name:meno, program:'zumba_kids_termin', consent:'1',
+    note:(kedy?'vyhovovalo by: '+kedy:'nevyhovuje žiadny vypísaný termín')
+       + ' · vypísaných termínov: '+((window.__zoznam||[]).length),
+    city:'Detva', website:$('dWeb').value, ms:String(Date.now()-DOPYT_T0),
+  });
+  telo.set(mail?'email':'phone', kontakt);
+  try{
+    const r=await fetch('/api/public/web-lead',{method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:telo.toString()});
+    const d=await r.json().catch(()=>null);
+    if(!r.ok || !d || d.error) throw new Error((d&&d.error)||('HTTP '+r.status));
+    $('dopytBox').innerHTML='<div style="text-align:center;padding:10px 0">'
+      +'<div style="font-size:1.6rem">✅</div>'
+      +'<div style="font-size:.95rem;margin-top:6px">Máme to. Ozveme sa vám, len čo otvoríme vhodný termín.</div></div>';
+    krok('lp_dopyt_ok');
+  }catch(e){
+    btn.disabled=false; btn.textContent='DAJTE MI VEDIEŤ';
+    const ch=$('dopytChyba'); ch.style.display='block';
+    ch.textContent=String(e.message||'Nepodarilo sa odoslať. Skúste to prosím znova.');
+  }
+}
+
 function vyber(n){
   PICK=(window.__zoznam||[])[n]; if(!PICK) return;
   $('formDetail').innerHTML='<b style="color:#fff">'+esc(PICK.name)+'</b> · '

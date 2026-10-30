@@ -126,7 +126,7 @@ const FUNNEL_KROKY=new Set(['lp_view','lp_city','lp_termin','form_view','form_st
   // 20. 10.: medzikroky medzi načítaním stránky a odoslaním formulára. Dovtedy sme
   // nevedeli rozlíšiť „pozrela a odišla" od „nemala si z čoho vybrať".
   // lp_skupina posielal detský landing už od 18. 10., ale tu chýbal.
-  'lp_mesta','lp_mesta_prazdno','lp_terminy','lp_prazdno','lp_plne','lp_viac','lp_spat','lp_skupina','lp_chyba']);
+  'lp_mesta','lp_mesta_prazdno','lp_terminy','lp_prazdno','lp_plne','lp_viac','lp_spat','lp_skupina','lp_chyba','lp_dopyt','lp_dopyt_ok']);
 const jeWebview=ua=>/FBAN|FBAV|FB_IAB|Instagram/i.test(String(ua||''));
 async function zapisKrok(req, krok, extra){
   try{
@@ -20429,7 +20429,8 @@ app.post('/api/public/web-lead', rlPublic, express.urlencoded({ extended: false,
     const name = t(b.name, 120), phone = t(b.phone, 40), email = t(b.email, 160).toLowerCase();
     const city = t(b.city, 80), note = t(b.note, 800);
     // Dopyt môže prísť z konkrétnej stránky programu — vtedy má vlastné polia a vlastný štítok.
-    const PROGRAMY_DOPYTU = { svadobny_tanec: '💍 Svadobný tanec', venček: '🎓 Venček', prenajom_techniky: '🎛️ Prenájom techniky' };
+    const PROGRAMY_DOPYTU = { svadobny_tanec: '💍 Svadobný tanec', venček: '🎓 Venček', prenajom_techniky: '🎛️ Prenájom techniky',
+      zumba_kids_termin: '🧒 Zumba Kids — iný termín' };
     const program = t(b.program, 40);
     const datum = t(b.datum, 20), miesto = t(b.miesto, 120), piesen = t(b.piesen, 160);
     // Prenájom techniky (4. 10. 2026): výber z kalkulačky na webe + predbežná cena a typ eventu.
