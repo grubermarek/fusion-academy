@@ -4739,13 +4739,17 @@ async function loadMetaStats(){
   const el=document.getElementById('metaAdsPanel'); if(!el) return;
   const d=await api('/api/admin/meta-stats');
   if(!d||!d.ok){ el.innerHTML='<span class="text-danger">Chyba načítania.</span>'; return; }
-  const st=document.getElementById('metaSetupStatus');
-  st.innerHTML = (d.pixel_configured?'<span class="badge bg-success">Pixel ✓</span>':'<span class="badge bg-danger">Pixel ✗</span>')
-    + ' ' + (d.capi_configured?'<span class="badge bg-success">CAPI ✓</span>':'<span class="badge bg-danger">CAPI ✗</span>');
   const chip=(l,v,c)=>`<div class="col-6 col-md-3"><div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:10px 12px">
     <div class="text-muted" style="font-size:.62rem;text-transform:uppercase">${l}</div>
     <div class="fw-bold" style="font-size:1.2rem;color:${c||'#EAE3D5'}">${v}</div></div></div>`;
-  let html=`<div class="row g-2 mb-2">
+  // Odznaky Pixel/CAPI išli do #metaSetupStatus, ktorý zo stránky zmizol pri spájaní
+  // marketingových sekcií (ec67b1b) — a celá karta odvtedy padala na null, takže
+  // v Marketingu zostalo len „Načítavam…". Preto sú odznaky priamo v paneli.
+  let html=`<div class="mb-2">
+    ${d.pixel_configured?'<span class="badge bg-success">Pixel ✓</span>':'<span class="badge bg-danger">Pixel ✗</span>'}
+    ${d.capi_configured?'<span class="badge bg-success">CAPI ✓</span>':'<span class="badge bg-danger">CAPI ✗</span>'}
+  </div>
+  <div class="row g-2 mb-2">
     ${chip('Klientky z Meta Ads', d.total, '#60a5fa')}
     ${chip('Prišli na hodinu', d.attended, '#4ade80')}
     ${chip('Platiace', d.payers, '#C9A84C')}
