@@ -411,7 +411,65 @@
     .km-go:focus-visible,.km-how:focus-visible,.km-x:focus-visible{outline:2px solid #ffe9a8;outline-offset:2px}
     @media (prefers-reduced-motion:reduce){.km-banner{animation:none}}
     @media (max-width:340px){.km-stats{grid-template-columns:1fr}}
+
+    /* ── TVOJ KRUH ──────────────────────────────────────────────────────────
+       Nahrádza ružový pruh o kamoškách: nesie to isté (body +20/+100) plus
+       10 % do kreditu, ale ako trvalé miesto na nástenke, nie ako akcia na pár dní.
+       Prázdne miesto vedľa nej je viditeľné — a keď kamošku privedie, zaplní sa. */
+    .kr{position:relative;overflow:hidden;border-radius:18px;padding:17px 16px 15px;
+      background:radial-gradient(130% 90% at 50% -25%,rgba(247,231,184,.14),transparent 58%),
+        linear-gradient(162deg,#2A2219 0%,#201A14 46%,#17130F 100%);
+      border:1px solid rgba(201,162,76,.38);box-shadow:0 14px 34px -16px rgba(201,162,76,.32)}
+    .kr-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+    .kr-head h3{margin:0;font-size:1.3rem;background:var(--foil);-webkit-background-clip:text;
+      background-clip:text;color:transparent}
+    .kr-count{font-size:.7rem;color:var(--gold);font-weight:700;letter-spacing:.06em;
+      border:1px solid rgba(201,162,76,.35);border-radius:999px;padding:3px 9px;white-space:nowrap;
+      font-variant-numeric:tabular-nums}
+    .kr-lead{color:rgba(234,227,213,.76);font-size:.84rem;line-height:1.55;margin:7px 0 15px;max-width:42ch}
+    .kr-slots{display:flex;gap:12px;align-items:flex-start;margin-bottom:14px;padding:10px 4px 4px;
+      border-radius:14px;background-image:radial-gradient(rgba(201,162,76,.22) 1px,transparent 1px);
+      background-size:13px 13px;background-position:center;flex-wrap:wrap;
+      -webkit-mask-image:radial-gradient(ellipse 72% 80% at 36% 46%,#000 30%,transparent 78%);
+              mask-image:radial-gradient(ellipse 72% 80% at 36% 46%,#000 30%,transparent 78%)}
+    .kr-slot{background:none;border:0;padding:0;cursor:pointer;display:flex;flex-direction:column;
+      align-items:center;gap:7px;width:68px;font-family:inherit;-webkit-tap-highlight-color:transparent;
+      transition:transform .18s ease}
+    .kr-slot:active{transform:scale(.95)}
+    .kr-slot:focus-visible{outline:2px solid var(--gold);outline-offset:4px;border-radius:12px}
+    .kr-ring{width:60px;height:60px;border-radius:50%;display:grid;place-items:center;position:relative}
+    .kr-ring.e{background:radial-gradient(circle at 50% 120%,#2A2017 0%,#120E0A 72%) padding-box,
+        var(--foil) border-box;border:1.5px solid transparent;
+      box-shadow:inset 0 2px 10px rgba(0,0,0,.6)}
+    .kr-ring.f{background:var(--foil);color:#1a1510;font-weight:800;font-size:1.15rem;
+      box-shadow:0 5px 18px -4px rgba(201,162,76,.6),inset 0 1px 0 rgba(255,255,255,.45)}
+    .kr-ring.f::after{content:"";position:absolute;right:0;bottom:0;width:14px;height:14px;
+      border-radius:50%;background:#4caf50;border:2.5px solid #1F1812}
+    .kr-ring.f.off::after{background:#6b6257}
+    .kr-ring.add{background:var(--foil);color:#17120b;font-weight:800;font-size:1.8rem;line-height:1;
+      box-shadow:0 6px 20px -5px rgba(201,162,76,.75),inset 0 1px 0 rgba(255,255,255,.55)}
+    .kr-lab{font-size:.66rem;color:var(--muted);text-align:center;line-height:1.25}
+    .kr-lab.on{color:var(--gold-light);font-weight:600}
+    .kr-fill{height:4px;border-radius:999px;background:rgba(247,231,184,.1);overflow:hidden;margin-bottom:13px}
+    .kr-fill i{display:block;height:100%;border-radius:999px;background:var(--foil);
+      box-shadow:0 0 12px rgba(201,162,76,.6);transition:width .6s ease}
+    .kr-why{display:flex;gap:9px;align-items:flex-start;padding-top:12px;position:relative;
+      color:rgba(234,227,213,.72);font-size:.78rem;line-height:1.5}
+    .kr-why::before{content:"";position:absolute;top:0;left:0;right:0;height:1px;
+      background:linear-gradient(to right,rgba(201,162,76,.55),rgba(201,162,76,.12) 60%,transparent)}
+    .kr-why b{background:var(--foil);-webkit-background-clip:text;background-clip:text;
+      color:transparent;font-weight:800}
+    .kr-pts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:11px}
+    .kr-pt{background:rgba(247,231,184,.06);border:1px solid rgba(201,162,76,.3);border-radius:12px;
+      padding:9px 11px}
+    .kr-pt b{display:block;font-size:1.45rem;line-height:1;font-weight:800;font-variant-numeric:tabular-nums;
+      background:var(--foil);-webkit-background-clip:text;background-clip:text;color:transparent}
+    .kr-pt b small{font-size:.7rem}
+    .kr-pt span{display:block;margin-top:3px;font-size:.69rem;line-height:1.3;color:rgba(234,227,213,.72)}
+    .kr-note{grid-column:1/-1;font-size:.69rem;color:var(--gold);font-weight:700;text-align:center}
+    @media (max-width:340px){.kr-pts{grid-template-columns:1fr}}
   </style>
+  <!-- Tvoj kruh (nahradil ružový pruh o kamoškách) -->
   <div id="kamoskaBanner" style="display:none;margin-bottom:16px"></div>
   <div id="ambEntry" style="display:none;margin-bottom:16px"></div>
 
@@ -2594,7 +2652,7 @@ async function init(){
   loadPrivate();
   loadEventBanner();
   loadMyTickets();
-  loadKamoskaBanner(me);
+  loadKruh(me);
   getInviteMsg().catch(()=>{}); // pozvánka vopred — pri kliknutí sa musí kopírovať hneď
   loadAmbEntry();
   loadOnlineBanner();
@@ -3527,31 +3585,57 @@ async function loadRefGoal(){
 // (tie v rebríčku nie sú) ho neukazujeme. Admin v súťaži tiež nie je, ale oznam
 // vidí s označením náhľadu, nech vie, čo vidia klientky (Marek 11. 9.: „prečo to
 // nevidím na dashboarde?"). Krížik ho skryje na 3 dni.
-function loadKamoskaBanner(me){
+// Tvoj kruh — nahradil ružový pruh „NOVÉ ODMENY ZA KAMOŠKY". Nesie to isté (body
+// +20/+100) a k tomu 10 % do kreditu, ale je to trvalé miesto na nástenke, nie akcia
+// na pár dní. Preto sa ani nedá skryť: prázdne miesto vedľa nej má byť stále vidieť.
+const KR_SIL = `<svg width="34" height="34" viewBox="0 0 24 24" fill="#EEDCA0" aria-hidden="true"><circle cx="12" cy="7.4" r="3.9"/><path d="M12 12.8c4.3 0 7.5 2.6 7.5 6.3 0 .5-.4.9-.9.9H5.4c-.5 0-.9-.4-.9-.9 0-3.7 3.2-6.3 7.5-6.3z"/></svg>`;
+async function loadKruh(me){
   const host=document.getElementById('kamoskaBanner'); if(!host) return;
-  if(!me || ['trainer','manager'].includes(me.user_type) || me.anonymous){ host.style.display='none'; return; }
-  let skryte=0; try{ skryte=+localStorage.getItem('fa_kamoska_skryte')||0; }catch(e){}
-  if(skryte>Date.now()){ host.style.display='none'; return; }
-  host.innerHTML=`<div class="km-banner" role="region" aria-label="Nové odmeny za kamošky">
-    <button class="km-x" onclick="skryKamoskaBanner()" aria-label="Skryť na 3 dni" title="Skryť na 3 dni">✕</button>
-    <div class="km-kick">🔥 NOVÉ ODMENY ZA KAMOŠKY</div>
-    ${me.is_admin?'<div class="km-admin">👁 Náhľad pre admina — takto to vidia klientky</div>':''}
-    <h3>Priveď kamošku — body letia do súťaže! 💃</h3>
-    <div class="km-stats">
-      <div class="km-stat"><b>+20<small>b</small></b><span>keď kamoška príde na hodinu</span></div>
-      <div class="km-stat km-top"><b>+100<small>b</small></b><span>keď si kúpi členstvo</span></div>
-    </div>
-    <div class="km-cta">
-      <button class="km-go" onclick="inviteFriend()">❤️ POZVAŤ KAMOŠKU</button>
-      <button class="km-how" onclick="openRewardsInfo()">Ako sa zbierajú body</button>
+  host.style.display='none';
+  let d=null; try{ d=await api('/api/my/kruh'); }catch(e){ return; }
+  if(!d || !d.ok || (!d.zobrazit && !(me&&me.is_admin))) return;
+  const miest=d.miest||3, maju=(d.kamosky||[]).length, volne=Math.max(0, miest-maju);
+  const krstne=(d.kamosky||[]).filter(k=>k.chodi).map(k=>k.meno);
+  const nadpis = maju===0
+    ? `Vedľa teba sú ${miest} voľné miesta`
+    : (volne>0 ? `${krstne.length?krstne.slice(0,2).join(' a '):'Tvoje kamošky'} chodia vďaka tebe`
+               : 'Tvoj kruh je plný');
+  const lead = maju===0
+    ? 'Tancovať sa dá aj sama. Smiať sa nie.'
+    : (volne>0 ? `Ostáva ${volne===1?'jedno voľné miesto':volne+' voľné miesta'}.`
+               : 'Ďakujeme — a pokojne pozvi ďalšiu, miesta sa nerátajú zhora.');
+  const kruzky=(d.kamosky||[]).slice(0,miest).map(k=>`
+      <button class="kr-slot" onclick="inviteFriend()" aria-label="${escHtml(k.meno)} — ${k.chodi?'chodí':'zatiaľ neprišla'}">
+        <span class="kr-ring f${k.chodi?'':' off'}">${escHtml(k.iniciala)}</span>
+        <span class="kr-lab on">${escHtml(k.meno)}</span>
+      </button>`).join('')
+    + Array.from({length:volne}).map(()=>`
+      <button class="kr-slot" onclick="inviteFriend()" aria-label="Voľné miesto — pozvať kamošku">
+        <span class="kr-ring e">${KR_SIL}</span><span class="kr-lab">voľné<br>miesto</span>
+      </button>`).join('')
+    + `<button class="kr-slot" onclick="inviteFriend()" aria-label="Pozvať kamošku">
+        <span class="kr-ring add">+</span><span class="kr-lab on">pozvať</span></button>`;
+  const zisk = (d.zarobene>0 || d.body>0)
+    ? `Zatiaľ ti pribudlo <b>${(+d.zarobene).toFixed(2).replace('.',',')}&nbsp;€</b> do kreditu${d.body>0?` a <b>${d.body}</b> bodov do súťaže`:''}.`
+    : `Keď začne chodiť, máš z každého jej nákupu <b>${d.sadzba||10}&nbsp;% do kreditu</b> — a ona má prvý týždeň zadarmo.`;
+  host.innerHTML=`<div class="kr" role="region" aria-label="Tvoj kruh — pozvi kamošku">
+    <div class="kr-head"><h3>Tvoj kruh</h3>
+      <span class="kr-count">${Math.min(maju,miest)} z ${miest}</span></div>
+    <p class="kr-lead">${escHtml(nadpis)}. ${escHtml(lead)}</p>
+    <div class="kr-slots">${kruzky}</div>
+    <div class="kr-fill" role="img" aria-label="Obsadené ${Math.min(maju,miest)} z ${miest} miest">
+      <i style="width:${Math.max(3, Math.round(Math.min(maju,miest)/miest*100))}%"></i></div>
+    <div class="kr-why">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#C9A24C" stroke-width="1.6" style="margin-top:2px;flex:none" aria-hidden="true"><path d="M12 21s-7.5-4.7-7.5-10A4.5 4.5 0 0 1 12 8.6 4.5 4.5 0 0 1 19.5 11c0 5.3-7.5 10-7.5 10z"/></svg>
+      <span>${zisk}</span></div>
+    <div class="kr-pts">
+      <div class="kr-pt"><b>+${d.body_hodina||20}<small>b</small></b><span>keď kamoška príde na hodinu</span></div>
+      <div class="kr-pt"><b>+${d.body_clenstvo||100}<small>b</small></b><span>keď si kúpi členstvo</span></div>
+      <div class="kr-note">body letia do mesačnej súťaže</div>
     </div>
   </div>`;
   host.style.display='block';
 }
-window.skryKamoskaBanner=()=>{
-  try{ localStorage.setItem('fa_kamoska_skryte', String(Date.now()+3*86400000)); }catch(e){}
-  const h=document.getElementById('kamoskaBanner'); if(h) h.style.display='none';
-};
 // Jednotná pozvánka (celá appka používa ten istý /invite link + text)
 let _invCache=null;
 function pozvankaLokalne(){

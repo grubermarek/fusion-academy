@@ -8133,6 +8133,50 @@ app.post('/api/invite-manage/:token/cancel', rlPublic, async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 // Text pozvánky pre „Pozvať kamošku" (jednotný v celej appke)
+// ── Tvoj kruh ────────────────────────────────────────────────────────────────
+// Tri miesta na nástenke, ktoré pýtajú kamošku. Nič nové sa nezavádza: beží to na
+// tom istom referral_code, tej istej pozvánke a tej istej provízii, čo appka má.
+// Čísla sa rátajú z dát a nikde sa neukladajú (rovnako ako body v súťaži), ale
+// počíta sa LEN nad jej vlastnými kamoškami — nie nad celou databázou, lebo toto
+// beží pri každom otvorení nástenky.
+const KRUH_MIEST = 3;
+app.get('/api/my/kruh', auth, async(req,res)=>{
+  try{
+    const u = await q.one(db.users,{_id:req.session.uid});
+    if(!u) return res.status(404).json({error:'Nenájdená'});
+    // Venčekári nie sú cieľ predaja, deti a tréneri do súťaže nepatria — tým sa kruh neukáže.
+    const skry = !!(u.is_admin || u.is_child || u.anonymous
+      || ['trainer','manager'].includes(u.user_type) || vencekMimoKonverzie(u));
+    const friends = (await q.find(db.users,{sponsor_id:u._id})).filter(kamoskaPlatna);
+    const kamosky = []; let body = 0;
+    for(const f of friends){
+      const prvaHodina = (await q.find(db.bookings,{user_id:f._id}))
+        .filter(b=>hodinaSaRata(b)).map(b=>String(b.booking_date||b.created_at||'').slice(0,10))
+        .filter(Boolean).sort()[0] || null;
+      // Len naozaj zaplatené členstvo — darček, 100 % kupón ani permanentka sa nerátajú.
+      const clenOd = (await q.find(db.transactions,{user_id:f._id}))
+        .filter(t=>['membership','subscription','subscription_renewal'].includes(t.type)
+          && !['free','promo'].includes(t.payment_method)
+          && (MEMBERSHIP_PLANS[t.plan_id]||{}).type!=='bundle')
+        .map(t=>String(t.date||t.created_at||'').slice(0,10)).filter(Boolean).sort()[0] || null;
+      if(prvaHodina && prvaHodina>=KAMOSKA_OD) body += KAMOSKA_BODY.hodina;
+      if(clenOd    && clenOd   >=KAMOSKA_OD) body += KAMOSKA_BODY.clenstvo;
+      kamosky.push({ meno:(String(f.name||'').trim().split(/\s+/)[0] || 'Kamoška'),
+        iniciala:(String(f.name||'?').trim()[0] || '?').toUpperCase(),
+        chodi: !!prvaHodina, clenka: !!clenOd });
+    }
+    // Stornovaná provízia sa neráta — záznam ostáva, ale peniaze nie.
+    const zarobene = +(await q.find(db.commissions,{partner_id:u._id}))
+      .filter(c=>c.status!=='reversed').reduce((s,c)=>s+(+c.amount||0),0).toFixed(2);
+    res.json({ ok:true, zobrazit:!skry, miest:KRUH_MIEST,
+      kamosky, obsadene:kamosky.length, zarobene, body,
+      sadzba: Math.round(ambRate(u.amb_rank||1)*100),
+      body_hodina: KAMOSKA_BODY.hodina, body_clenstvo: KAMOSKA_BODY.clenstvo,
+      kod: u.referral_code, odkaz: APP_URL+'/invite/'+u.referral_code,
+      sprava: INVITE_MSG(u.referral_code) });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/invite-message', auth, async(req,res)=>{
   try{ const u=await q.one(db.users,{_id:req.session.uid});
     res.json({ok:true, code:u.referral_code, link:APP_URL+'/invite/'+u.referral_code, message:INVITE_MSG(u.referral_code)});
