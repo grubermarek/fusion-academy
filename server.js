@@ -8148,17 +8148,26 @@ app.get('/api/my/kruh', auth, async(req,res)=>{
     const skry = !!(u.is_admin || u.is_child || u.anonymous
       || ['trainer','manager'].includes(u.user_type) || vencekMimoKonverzie(u));
     const friends = (await q.find(db.users,{sponsor_id:u._id})).filter(kamoskaPlatna);
+    const ids = friends.map(f=>f._id);
+    // Dva dotazy na celú skupinu, nie dva na každú kamošku: Marek ich má 190, čo by
+    // pri každom otvorení nástenky znamenalo 380 dotazov a štvrť sekundy navyše.
+    const prvy = {};   // user_id → prvá odchodená hodina
+    for(const b of (ids.length ? await q.find(db.bookings,{user_id:{$in:ids}}) : [])){
+      if(!hodinaSaRata(b)) continue;
+      const d = String(b.booking_date||b.created_at||'').slice(0,10); if(!d) continue;
+      if(!prvy[b.user_id] || d < prvy[b.user_id]) prvy[b.user_id] = d;
+    }
+    const clen = {};   // user_id → prvé naozaj zaplatené členstvo (darček ani permanentka nie)
+    for(const t of (ids.length ? await q.find(db.transactions,{user_id:{$in:ids}}) : [])){
+      if(!['membership','subscription','subscription_renewal'].includes(t.type)) continue;
+      if(['free','promo'].includes(t.payment_method)) continue;
+      if((MEMBERSHIP_PLANS[t.plan_id]||{}).type==='bundle') continue;
+      const d = String(t.date||t.created_at||'').slice(0,10); if(!d) continue;
+      if(!clen[t.user_id] || d < clen[t.user_id]) clen[t.user_id] = d;
+    }
     const kamosky = []; let body = 0;
     for(const f of friends){
-      const prvaHodina = (await q.find(db.bookings,{user_id:f._id}))
-        .filter(b=>hodinaSaRata(b)).map(b=>String(b.booking_date||b.created_at||'').slice(0,10))
-        .filter(Boolean).sort()[0] || null;
-      // Len naozaj zaplatené členstvo — darček, 100 % kupón ani permanentka sa nerátajú.
-      const clenOd = (await q.find(db.transactions,{user_id:f._id}))
-        .filter(t=>['membership','subscription','subscription_renewal'].includes(t.type)
-          && !['free','promo'].includes(t.payment_method)
-          && (MEMBERSHIP_PLANS[t.plan_id]||{}).type!=='bundle')
-        .map(t=>String(t.date||t.created_at||'').slice(0,10)).filter(Boolean).sort()[0] || null;
+      const prvaHodina = prvy[f._id] || null, clenOd = clen[f._id] || null;
       if(prvaHodina && prvaHodina>=KAMOSKA_OD) body += KAMOSKA_BODY.hodina;
       if(clenOd    && clenOd   >=KAMOSKA_OD) body += KAMOSKA_BODY.clenstvo;
       kamosky.push({ meno:(String(f.name||'').trim().split(/\s+/)[0] || 'Kamoška'),

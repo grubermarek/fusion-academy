@@ -450,9 +450,10 @@
       box-shadow:0 6px 20px -5px rgba(201,162,76,.75),inset 0 1px 0 rgba(255,255,255,.55)}
     .kr-lab{font-size:.66rem;color:var(--muted);text-align:center;line-height:1.25}
     .kr-lab.on{color:var(--gold-light);font-weight:600}
-    .kr-fill{height:4px;border-radius:999px;background:rgba(247,231,184,.1);overflow:hidden;margin-bottom:13px}
-    .kr-fill i{display:block;height:100%;border-radius:999px;background:var(--foil);
-      box-shadow:0 0 12px rgba(201,162,76,.6);transition:width .6s ease}
+    /* Prúžok obsadenosti je informácia, nie ozdoba: pri plnom kruhu sa skryje,
+       lebo celoplošná zlatá linka cez kartu už nič nehovorí a pôsobí ako pás navyše. */
+    .kr-fill{height:3px;border-radius:999px;background:rgba(247,231,184,.09);overflow:hidden;margin-bottom:13px}
+    .kr-fill i{display:block;height:100%;border-radius:999px;background:var(--foil);transition:width .6s ease}
     .kr-why{display:flex;gap:9px;align-items:flex-start;padding-top:12px;position:relative;
       color:rgba(234,227,213,.72);font-size:.78rem;line-height:1.5}
     .kr-why::before{content:"";position:absolute;top:0;left:0;right:0;height:1px;
@@ -3623,8 +3624,8 @@ async function loadKruh(me){
       <span class="kr-count">${Math.min(maju,miest)} z ${miest}</span></div>
     <p class="kr-lead">${escHtml(nadpis)}. ${escHtml(lead)}</p>
     <div class="kr-slots">${kruzky}</div>
-    <div class="kr-fill" role="img" aria-label="Obsadené ${Math.min(maju,miest)} z ${miest} miest">
-      <i style="width:${Math.max(3, Math.round(Math.min(maju,miest)/miest*100))}%"></i></div>
+    ${volne>0 ? `<div class="kr-fill" role="img" aria-label="Obsadené ${Math.min(maju,miest)} z ${miest} miest">
+      <i style="width:${Math.max(3, Math.round(Math.min(maju,miest)/miest*100))}%"></i></div>` : ''}
     <div class="kr-why">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#C9A24C" stroke-width="1.6" style="margin-top:2px;flex:none" aria-hidden="true"><path d="M12 21s-7.5-4.7-7.5-10A4.5 4.5 0 0 1 12 8.6 4.5 4.5 0 0 1 19.5 11c0 5.3-7.5 10-7.5 10z"/></svg>
       <span>${zisk}</span></div>
