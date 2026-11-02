@@ -3604,7 +3604,7 @@ async function loadKruh(me){
   const lead = maju===0
     ? 'Tancovať sa dá aj sama. Smiať sa nie.'
     : (volne>0 ? `Ostáva ${volne===1?'jedno voľné miesto':volne+' voľné miesta'}.`
-               : 'Ďakujeme — a pokojne pozvi ďalšiu, miesta sa nerátajú zhora.');
+               : 'Ďakujeme. Pozvi pokojne ďalšiu — odmeny aj body dostaneš za každú, nielen za prvé tri.');
   const kruzky=(d.kamosky||[]).slice(0,miest).map(k=>`
       <button class="kr-slot" onclick="inviteFriend()" aria-label="${escHtml(k.meno)} — ${k.chodi?'chodí':'zatiaľ neprišla'}">
         <span class="kr-ring f${k.chodi?'':' off'}">${escHtml(k.iniciala)}</span>
