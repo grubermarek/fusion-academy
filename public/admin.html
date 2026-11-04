@@ -9903,20 +9903,29 @@ async function loadAttInstructor(classId){
   const el=document.getElementById('attInstructor'); if(!el) return;
   const si=await api(`/api/attendance/session-instructor?class_id=${classId}&date=${_attDateStr()}`);
   if(!si||si.error){ el.innerHTML=''; return; }
-  el.innerHTML=`🎓 Učí: <b>${esc(si.instructor||'—')}</b>${si.overridden?' <span style="color:#9a9a9a">(zmenené pre tento deň)</span>':''}
+  el.innerHTML=`🎓 Učí: <b>${esc(si.instructor||'—')}</b>${si.instructor2?' <span style="color:#9a9a9a">(dve trénerky)</span>':''}${si.overridden?' <span style="color:#9a9a9a">(zmenené pre tento deň)</span>':''}
     <button class="btn btn-sm py-0 px-2 ms-2" style="background:rgba(201,168,76,.15);color:#C9A84C;border:1px solid rgba(201,168,76,.35);font-size:.72rem" onclick="pickAttInstructor('${classId}')">✏️ zmeniť trénera</button>`;
 }
 async function pickAttInstructor(classId){
   if(!_attTrainers){ _attTrainers=await api('/api/attendance/trainers')||[]; }
   const cur=await api(`/api/attendance/session-instructor?class_id=${classId}&date=${_attDateStr()}`);
   const names=_attTrainers.map(t=>`${t.id===cur.instructor_id?'✓ ':''}${t.name}`).join('\n');
-  const pick=prompt(`Kto učí túto hodinu dňa ${_attDateStr()}?\n\n${_attTrainers.map((t,i)=>`${i+1}. ${t.name}`).join('\n')}\n\nZadaj číslo (alebo 0 = vrátiť pôvodného):`);
+  const zoznam=_attTrainers.map((t,i)=>`${i+1}. ${t.name}`).join('\n');
+  const pick=prompt(`Kto učí túto hodinu dňa ${_attDateStr()}?\n\n${zoznam}\n\nZadaj číslo (alebo 0 = vrátiť pôvodného):`);
   if(pick===null) return;
   const n=parseInt(pick);
   let instructor_id;
   if(n===0) instructor_id='';
   else { const t=_attTrainers[n-1]; if(!t){ showToast('Neplatná voľba','error'); return; } instructor_id=t.id; }
-  const r=await api('/api/attendance/session-instructor',{method:'POST',body:JSON.stringify({class_id:classId, date:_attDateStr(), instructor_id})});
+  // Hodinu môžu viesť dve naraz — druhá je dobrovoľná, Enter ju preskočí.
+  let instructor2_id='';
+  if(instructor_id){
+    const p2=prompt(`Učí s ňou ešte niekto?\n\n${zoznam}\n\nZadaj číslo (prázdne alebo 0 = učí sama):`);
+    if(p2===null) return;
+    const n2=parseInt(p2);
+    if(n2>0){ const t2=_attTrainers[n2-1]; if(!t2){ showToast('Neplatná voľba','error'); return; } instructor2_id=t2.id; }
+  }
+  const r=await api('/api/attendance/session-instructor',{method:'POST',body:JSON.stringify({class_id:classId, date:_attDateStr(), instructor_id, instructor2_id})});
   if(r&&r.ok){ showToast('Tréner hodiny nastavený ✓','success'); loadAttInstructor(classId); } else showToast('Chyba: '+(r?.error||'?'),'error');
 }
 

@@ -8371,7 +8371,7 @@ app.get('/api/public/schedule', async(req,res)=>{
       let instructor=c.instructor||'';
       try{
         if(c.category==='Online') instructor=await onlineInstructorFor(c, date);
-        else { const si=await sessionInstructor(c, date); if(si?.overridden) instructor=si.instructor; }
+        else { const si=await sessionInstructor(c, date); if(si?.overridden) instructor=si.label; }
       }catch(e){}
       out.push({ name:c.name, category:c.category||'', location:c.location||'', day_of_week:c.day_of_week,
         time_start:c.time_start||'', time_end:c.time_end||'', instructor,
@@ -8469,7 +8469,8 @@ app.get('/api/classes/:id/attendees', auth, async(req,res)=>{
       list.push({id:r.user_id, name:r.user_name||ru?.name||'Člen', av:!!(ru&&ru.avatar), friend_state:fst});
     }
     const si=await sessionInstructor(c, date);
-    res.json({ class_name:c.name, date, instructor:si.instructor, instructor_id:si.instructor_id||null,
+    res.json({ class_name:c.name, date, instructor:si.label, instructor_id:si.instructor_id||null,
+      instructor2:si.instructor2||null, instructor2_id:si.instructor2_id||null,
       instructor_av: !!(si.instructor_id && (await q.one(db.users,{_id:si.instructor_id}))?.avatar), attendees:list });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -8533,7 +8534,7 @@ app.get('/api/my-bookings', auth, async(req,res)=>{
     const cls = clsCache[b.class_id] || (clsCache[b.class_id]=await q.one(db.classes,{_id:b.class_id}));
     if(!cls) continue;
     const si = await sessionInstructor(cls, b.booking_date);
-    b.instructor = si.instructor; b.instructor_id = si.instructor_id||null;
+    b.instructor = si.label; b.instructor_id = si.instructor_id||null;
     b.class_emoji = b.class_emoji||cls.emoji||'💃';
     const key=b.class_id+'|'+b.booking_date;
     if(!attCache[key]){
@@ -10623,7 +10624,7 @@ app.get('/api/ambassador/tasks', ambassadorAuth, async(req,res)=>{
       ownActive = taught.some(b=>String(b.booking_date||'').slice(0,7)===mNow);
     }
     if(!ownActive){ // override inštruktorky na termíne, ktorý už prebehol
-      const si=await q.find(db.session_instructors,{instructor_id:u._id});
+      const si=await q.find(db.session_instructors,{$or:[{instructor_id:u._id},{instructor2_id:u._id}]});
       ownActive = si.some(s=>{ const d=String(s.date||''); return d.slice(0,7)===mNow && d<=todayS; });
     }
     if(!ownActive){ // kmeňová inštruktorka hodiny, ktorej termín tento mesiac už bol
@@ -13529,14 +13530,30 @@ async function resolveInstructor(instructor_id, fallbackName){
 // Inštruktor konkrétneho termínu hodiny (class_id + dátum). Ak je nastavený override
 // (admin ho zmenil alebo sa tréner prihlásil, že učí), platí až kým ho niekto nezmení.
 // Inak sa použije štandardný inštruktor hodiny.
+// Hodinu môžu viesť dve trénerky naraz (4. 11. 2026 — Beátka a Nelka). Druhá je
+// vždy voliteľná: `instructor` a `instructor_id` ostávajú hlavnou trénerkou, lebo
+// podľa mena sa párujú výplatné pravidlá a počítajú štatistiky — tam by spojené
+// meno narobilo škodu. Na zobrazenie klientkam je `label`.
 async function sessionInstructor(cls, date){
   if(cls && date){
     const ov = await q.one(db.session_instructors,{class_id:cls._id, date});
-    if(ov && ov.instructor_id) return { instructor_id:ov.instructor_id, instructor:ov.instructor_name||'—', overridden:true };
+    if(ov && ov.instructor_id) return {
+      instructor_id:ov.instructor_id, instructor:ov.instructor_name||'—',
+      instructor2_id:ov.instructor2_id||null, instructor2:ov.instructor2_name||null,
+      label: menaTrenerov(ov.instructor_name, ov.instructor2_name), overridden:true };
   }
-  return { instructor_id:cls?.instructor_id||'', instructor:cls?.instructor||'—', overridden:false };
+  return { instructor_id:cls?.instructor_id||'', instructor:cls?.instructor||'—',
+    instructor2_id:null, instructor2:null,
+    label: cls?.instructor||'—', overridden:false };
 }
-// Mapa všetkých override-ov (class_id|date → {id,name}) — pre hromadný výpočet zárobkov
+// „Beáta Gruber Buňová a Nelka Kyseľová“ — spojka, nie čiarka, lebo to čítajú klientky.
+function menaTrenerov(a, b){
+  const x=String(a||'').trim(), y=String(b||'').trim();
+  return (x && y && x!==y) ? (x+' a '+y) : (x || y || '—');
+}
+// Mapa všetkých override-ov (class_id|date → {id,name}) — pre hromadný výpočet zárobkov.
+// Druhá trénerka sem zámerne nevstupuje: tržba a návštevy termínu patria raz, inak
+// by sa dvojicou zdvojnásobili. V jej paneli sa hodina ukáže cez instructor2_id.
 async function sessionInstructorMap(){
   const rows=await q.find(db.session_instructors,{});
   const m={};
@@ -18823,7 +18840,7 @@ app.post('/api/client-error', rlPublic, async(req,res)=>{
 async function onlineInstructorFor(cls, date){
   try{
     const si=await sessionInstructor(cls, date).catch(()=>null);
-    if(si?.overridden) return si.instructor;
+    if(si?.overridden) return si.label;
     const sameSlot=(await q.find(db.classes,{active:true, day_of_week:cls.day_of_week}))
       .filter(p=>p.category!=='Online' && p.time_start===cls.time_start);
     // najprv presné párovanie podľa mesta streamu, inak hocijaká fyzická hodina v rovnakom čase
@@ -19644,7 +19661,9 @@ async function pripomenPotvrdenie(cls, date, pocet){
   if(kedy && Date.now()-new Date(kedy).getTime() < 12*3600000) return;
   const si=await sessionInstructor(cls, date);
   const kedyTxt=String(date).split('-').reverse().join('. ');
-  const komu=si.instructor_id ? [si.instructor_id] : (await q.find(db.users,{is_admin:true})).map(a=>a._id);
+  // Keď hodinu vedú dve, pripomienka ide obom — potvrdiť ju môže ktorákoľvek.
+  const komu=si.instructor_id ? [si.instructor_id, ...(si.instructor2_id?[si.instructor2_id]:[])]
+    : (await q.find(db.users,{is_admin:true})).map(a=>a._id);
   const telo=`${cls.name} · ${cls.location} ${kedyTxt} nemá potvrdenú dochádzku (${pocet} prihlásených). Kým ju nepotvrdíš, nikomu sa nepripíše návšteva — a nikoho neoznačujeme ako neprítomnú.`;
   for(const uid of komu) await q.insert(db.notifications,{user_id:uid, type:'attendance',
     title:'📋 Potvrď dochádzku — '+cls.name, body:telo, read:false, created_at:nowISO()}).catch(()=>{});
@@ -22222,7 +22241,21 @@ app.post('/api/attendance/session-instructor', trainerAuth, async(req,res)=>{
       return res.status(400).json({error:'Neplatný tréner'});
     const ex=await q.one(db.session_instructors,{class_id, date});
     const prevInsId = ex?.instructor_id || cls.instructor_id || null; // koho nahradil
-    const doc={ class_id, date, instructor_id:tgt._id, instructor_name:tgt.name, set_by:u._id, set_by_name:u.name, set_at:nowISO() };
+    // Druhá trénerka (voliteľná): keď kľúč v tele nie je vôbec, necháme ju tak, ako je;
+    // prázdna hodnota ju odoberie. Inak by „učím ja" z trénerského panelu ticho zmazalo
+    // druhú trénerku, o ktorej ten tréner ani nevie.
+    let druha = { instructor2_id:null, instructor2_name:null };
+    if(req.body.instructor2_id===undefined){
+      druha = { instructor2_id:ex?.instructor2_id||null, instructor2_name:ex?.instructor2_name||null };
+    } else if(String(req.body.instructor2_id||'')){
+      const t2=await q.one(db.users,{_id:String(req.body.instructor2_id)});
+      if(!t2 || !(t2.is_admin||t2.user_type==='trainer'||t2.user_type==='manager'))
+        return res.status(400).json({error:'Neplatná druhá trénerka'});
+      if(t2._id===tgt._id) return res.status(400).json({error:'Druhá trénerka musí byť niekto iný.'});
+      druha = { instructor2_id:t2._id, instructor2_name:t2.name };
+    }
+    if(druha.instructor2_id===tgt._id) druha={ instructor2_id:null, instructor2_name:null };
+    const doc={ class_id, date, instructor_id:tgt._id, instructor_name:tgt.name, ...druha, set_by:u._id, set_by_name:u.name, set_at:nowISO() };
     if(ex) await q.update(db.session_instructors,{_id:ex._id},{$set:doc});
     else await q.insert(db.session_instructors, doc);
     await auditLog(req,'set_session_instructor',class_id,{date},{instructor:tgt.name},'');
@@ -22235,14 +22268,25 @@ app.post('/api/attendance/session-instructor', trainerAuth, async(req,res)=>{
       if(cls.instructor_id) recips.add(cls.instructor_id); // štandardný tréner hodiny
       recips.delete(tgt._id); recips.delete(u._id);  // nie tomu, kto to spravil, ani novému
       const claim = u._id===tgt._id; // tréner sa prihlásil sám
+      const kto = menaTrenerov(tgt.name, druha.instructor2_name);
       for(const rid of recips){
         await q.insert(db.notifications,{ user_id:rid, type:'session_instructor', from_id:u._id,
           title: claim ? `🎓 ${tgt.name} preberá hodinu` : `🎓 Zmena trénera hodiny`,
-          body: `${cls.name} · ${cls.location} · ${dLbl} — teraz ju učí ${tgt.name}.`,
+          body: `${cls.name} · ${cls.location} · ${dLbl} — teraz ju učí ${kto}.`,
           read:false, created_at:nowISO() }).catch(()=>{});
       }
     }
-    res.json({ ok:true, instructor_id:tgt._id, instructor:tgt.name, overridden:true, date });
+    // Druhá trénerka sa to dozvie tiež — hodinu má odrazu v paneli a mala by o nej vedieť.
+    if(druha.instructor2_id && druha.instructor2_id!==ex?.instructor2_id && druha.instructor2_id!==u._id){
+      const dLbl2=(date||'').split('-').reverse().join('.');
+      await q.insert(db.notifications,{ user_id:druha.instructor2_id, type:'session_instructor', from_id:u._id,
+        title:'🎓 Učíš hodinu spolu s '+tgt.name,
+        body:`${cls.name} · ${cls.location} · ${dLbl2} — vediete ju dvaja.`,
+        read:false, created_at:nowISO() }).catch(()=>{});
+    }
+    res.json({ ok:true, instructor_id:tgt._id, instructor:tgt.name,
+      instructor2_id:druha.instructor2_id, instructor2:druha.instructor2_name,
+      label: menaTrenerov(tgt.name, druha.instructor2_name), overridden:true, date });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -22971,7 +23015,8 @@ async function minUcastKontrola(){
       const si=await sessionInstructor(c,t);
       let komu=[];
       const tr=si.instructor_id ? await q.one(db.users,{_id:si.instructor_id}) : null;
-      if(tr && tr.active!==false) komu=[tr];
+      const tr2=si.instructor2_id ? await q.one(db.users,{_id:si.instructor2_id}) : null;
+      if(tr && tr.active!==false) komu=[tr, ...(tr2 && tr2.active!==false ? [tr2] : [])];
       else komu=(await q.find(db.users,{is_admin:true})).filter(a=>a.active!==false);
       const nazov=`${c.name} ${mu.kde} o ${c.time_start}`;
       const chyba=mu.pocet-n;
@@ -29651,7 +29696,10 @@ async function businessRankData(fresh){
   // Tréneri: aktívni + vyťažení (učili za 30 dní podľa session_instructors/task logu/taught hodín)
   const trainerUsers=users.filter(u=>u.user_type==='trainer' && !u.deactivated);
   const si=await q.find(db.session_instructors,{});
-  const taught30=new Set(si.filter(s=>(s.date||'')>=d30.slice(0,10)).map(s=>s.trainer_id||s.user_id));
+  // Pole sa volá instructor_id — `trainer_id`/`user_id` tu nikdy neexistovali, takže
+  // množina ostávala prázdna a vyťažení tréneri sa rátali len z odučených hodín.
+  const taught30=new Set(si.filter(s=>(s.date||'')>=d30.slice(0,10))
+    .flatMap(s=>[s.instructor_id, s.instructor2_id].filter(Boolean)));
   const utilizedTrainers=trainerUsers.filter(t=>taught30.has(t._id)||((t.taught_group_hours||0)+(t.taught_private_hours||0))>0).length;
   const trainersAll=trainerUsers.length;
 

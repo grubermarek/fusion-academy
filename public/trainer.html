@@ -1224,13 +1224,14 @@ async function loadTrainerInstructor(classId){
   const si=await api('/api/attendance/session-instructor?class_id='+classId+(_attDate?('&date='+encodeURIComponent(_attDate)):''));
   if(!si||si.error){ el.innerHTML=''; return; }
   _trInsBy[classId]=si;
-  const teaches = si.instructor_id && si.viewer_id===si.instructor_id;
+  // Hodinu môžu viesť dve — druhá trénerka tiež vidí „učíš ty", nie tlačidlo „učím ja".
+  const teaches = si.viewer_id && (si.viewer_id===si.instructor_id || si.viewer_id===si.instructor2_id);
   const ctrl = si.viewer_is_admin
     ? `<button onclick="pickTrainerIns('${classId}','${si.date}')" style="background:rgba(201,168,76,.14);border:1px solid #C9A84C;color:#C9A84C;border-radius:8px;padding:4px 10px;font-size:.76rem;font-weight:700;cursor:pointer">✏️ zmeniť trénera</button>`
     : (teaches
         ? `<span style="color:#4ade80;font-weight:700">✓ učíš ty</span>`
         : `<button onclick="claimTrainerIns('${classId}','${si.date}')" style="background:rgba(74,222,128,.14);border:1px solid #4ade80;color:#4ade80;border-radius:8px;padding:4px 10px;font-size:.76rem;font-weight:700;cursor:pointer">✋ učím ja</button>`);
-  el.innerHTML=`<span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">🎓 Učí: <b style="color:var(--cream)">${esc(si.instructor||'—')}</b>${si.overridden?' <span style="color:#C9A84C;font-size:.72rem">(zmenené)</span>':''} ${ctrl}</span>`;
+  el.innerHTML=`<span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">🎓 Učí: <b style="color:var(--cream)">${esc(si.label||si.instructor||'—')}</b>${si.overridden?' <span style="color:#C9A84C;font-size:.72rem">(zmenené)</span>':''} ${ctrl}</span>`;
 }
 async function confirmTrainerSession(){
   if(!_currentClassId) return;

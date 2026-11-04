@@ -216,7 +216,7 @@ async function renderDay(){
         <div class="cls-info">
           <div class="cls-name">${esc(c.name)}</div>
           <div class="cls-meta"><span>⏰ ${c.time_start||''}${c.time_end?'–'+c.time_end:''}</span><span>📍 ${esc(c.location||'')}</span></div>
-          <div class="cls-meta" style="margin-top:4px"><span>🎓 <b style="color:var(--cream)">${esc(si.instructor||'—')}</b>${si.overridden?' <span style="color:#C9A24C;font-size:.68rem">(zmenené)</span>':''}</span> ${insCtrl}
+          <div class="cls-meta" style="margin-top:4px"><span>🎓 <b style="color:var(--cream)">${esc(si.label||si.instructor||'—')}</b>${si.overridden?' <span style="color:#C9A24C;font-size:.68rem">(zmenené)</span>':''}</span> ${insCtrl}
             ${isCanc?'':`<button onclick="event.stopPropagation();cancelDay('${c._id}','${dateStr}','${escJs(c.name)}')" title="Zrušiť tento termín hodiny" style="background:none;border:1px solid rgba(229,115,115,.5);color:#e57373;border-radius:8px;padding:3px 9px;font-size:.72rem;font-weight:700;cursor:pointer">✕ Zrušiť hodinu</button>`}
           </div>
         </div>
@@ -275,10 +275,27 @@ async function openInsPick(classId, dateStr){
   </div>`;
 }
 let _trainers=null;
+// Hodinu môžu viesť dve naraz, tak sa po výbere prvej pýtame na druhú. Vrátenie
+// pôvodného trénera druhý krok preskakuje — tam niet čo dopĺňať.
 async function setSessionIns(classId, dateStr, instructorId){
-  const r=await api('/api/attendance/session-instructor',{method:'POST',body:{class_id:classId, date:dateStr, instructor_id:instructorId}});
+  if(!instructorId) return ulozSessionIns(classId, dateStr, '', '');
+  const m=document.getElementById('insModal');
+  if(!m) return ulozSessionIns(classId, dateStr, instructorId, '');
+  const prva=(_trainers.find(t=>t.id===instructorId)||{}).name||'';
+  const cur=_insBy[classId]||{};
+  m.innerHTML=`<div style="background:#161512;border:1px solid rgba(201,168,76,.4);border-radius:16px;max-width:380px;width:100%;padding:18px;color:#EAE3D5">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="color:#C9A84C">🎓 Učí s ňou ešte niekto?</b><button onclick="document.getElementById('insModal').remove()" style="background:none;border:none;color:#999;font-size:1.3rem;cursor:pointer">✕</button></div>
+    <div style="font-size:.8rem;color:rgba(234,227,213,.6);margin-bottom:10px">Hodinu ${esc(fmtDMY(dateStr))} vedie <b>${esc(prva)}</b>. Ak ju vedú dve, vyber druhú.</div>
+    <div style="display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow-y:auto">
+      ${_trainers.filter(t=>t.id!==instructorId).map(t=>`<button onclick="ulozSessionIns('${classId}','${dateStr}','${instructorId}','${t.id}')" style="text-align:left;background:${cur.instructor2_id===t.id?'rgba(201,168,76,.18)':'rgba(255,255,255,.04)'};border:1px solid ${cur.instructor2_id===t.id?'#C9A84C':'var(--border,#333)'};color:#EAE3D5;border-radius:10px;padding:9px 12px;cursor:pointer">${cur.instructor2_id===t.id?'✓ ':''}${esc(t.name)}</button>`).join('')}
+    </div>
+    <button onclick="ulozSessionIns('${classId}','${dateStr}','${instructorId}','')" style="width:100%;margin-top:10px;background:rgba(201,168,76,.14);border:1px solid #C9A84C;color:#C9A84C;border-radius:10px;padding:9px;cursor:pointer;font-size:.86rem;font-weight:700">Učí sama</button>
+  </div>`;
+}
+async function ulozSessionIns(classId, dateStr, instructor_id, instructor2_id){
+  const r=await api('/api/attendance/session-instructor',{method:'POST',body:{class_id:classId, date:dateStr, instructor_id, instructor2_id}});
   document.getElementById('insModal')?.remove();
-  if(r&&r.ok){ toast('✅ Tréner hodiny nastavený'); renderDay(); } else toast(r?.error||'Chyba', true);
+  if(r&&r.ok){ toast(r.instructor2 ? '✅ Hodinu vedú dve trénerky' : '✅ Tréner hodiny nastavený'); renderDay(); } else toast(r?.error||'Chyba', true);
 }
 
 
