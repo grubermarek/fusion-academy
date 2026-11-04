@@ -8426,7 +8426,8 @@ app.get('/api/classes', async(req,res)=>{
       let min_ucast = minUcastInfo(c);
       if(min_ucast) min_ucast.prihlasenych = await q.count(db.bookings,{class_id:c._id, booking_date:bdate, status:{$in:['confirmed','attended']}});
       result.push({...pub, booking_count, next_date:bdate, booked:booking_count, booked_all:bookedAll,
-        instructor:si.instructor, instructor_id:si.instructor_id||c.instructor_id||null,
+        instructor:si.label||si.instructor, instructor_id:si.instructor_id||c.instructor_id||null,
+        instructor2:si.instructor2||null, instructor2_id:si.instructor2_id||null,
         attendees, attendee_count: attendees?attendees.length:booking_count,
         cancelled: !!cancelRec, cancel_reason: cancelRec?.reason||null, min_ucast,
         spotsLeft:Math.max(0,c.capacity-booking_count), dayName:DAYS_SK[c.day_of_week]});
@@ -18848,7 +18849,7 @@ async function onlineInstructorFor(cls, date){
     if(pair){
       const psi=await sessionInstructor(pair, date).catch(()=>null);
       // aktuálny tréner fyzickej hodiny má prednosť pred zastaraným menom na online zázname
-      return psi?.overridden ? psi.instructor : (pair.instructor||cls.instructor||'');
+      return psi?.overridden ? psi.label : (pair.instructor||cls.instructor||'');
     }
     return cls.instructor||'';
   }catch(e){ return cls.instructor||''; }
@@ -23175,7 +23176,7 @@ app.post('/api/attendance/confirm-session', trainerAuth, async(req,res)=>{
     // „already" znamená, že sa nič nezmenilo — nie že nikto neprišiel. Odkedy sa
     // účasť dokazuje, je credited===0 bežný a správny výsledok (hodinu potvrdil
     // tréner, ktorý nikoho neoznačil), a hlásiť ho ako „už potvrdené" by klamalo.
-    res.json({ ok:true, credited, no_shows:noShows, already:credited===0 && noShows===0, date, class_name:cls.name, instructor:si.instructor, attended:totalAttended, session_earn:sessionEarn });
+    res.json({ ok:true, credited, no_shows:noShows, already:credited===0 && noShows===0, date, class_name:cls.name, instructor:si.label, attended:totalAttended, session_earn:sessionEarn });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
