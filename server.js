@@ -4765,6 +4765,7 @@ app.post('/api/auth/google', rlLogin, async(req,res)=>{
         try{ const admins=await q.find(db.users,{is_admin:true});
           for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'new_lead',title:'🆕 Importovaný lead si vytvoril účet (Google)',body:`${u.name} · ${email}`,read:false,created_at:nowISO()}); }catch(e){}
         announceNewMember(u._id).catch(()=>{});
+        oznamRegistraciuMajitelovi(u._id,{cesta:'claim'}).catch(()=>{});
       }
       await q.update(db.users,{_id:u._id},{$set:set});
       req.session.uid=u._id; req.session.sv=u.sess_ver||0;
@@ -4798,6 +4799,7 @@ app.post('/api/auth/google', rlLogin, async(req,res)=>{
     try{ const admins=await q.find(db.users,{is_admin:true});
       for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'new_lead',title:'🆕 Nová registrácia cez Google',body:`${name} · ${email}`,read:false,created_at:nowISO()}); }catch(e){}
     announceNewMember(u._id).catch(()=>{});
+    oznamRegistraciuMajitelovi(u._id,{cesta:'google'}).catch(()=>{});
     res.json({ok:true, redirect_to:'/client-dashboard', new_account:true});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -5036,6 +5038,8 @@ app.post('/api/first-class/book-kids', rlPublic, async(req,res)=>{
         title:'🧒 Zumba Kids z landingu', body:`${dieta.name} (${rok}) · ${cls.name} ${cls.location} ${bdate} ${cls.time_start} · rodič ${rodic.name}`,
         read:false, created_at:nowISO()});
     }catch(e){}
+    // Len pri novom rodičovi — existujúci prihlasuje ďalšie dieťa a registrácia to nie je.
+    if(novyRodic) oznamRegistraciuMajitelovi(rodic._id,{cesta:'kids', dieta:dieta.name+' ('+rok+')'}).catch(()=>{});
 
     const vstupUrl=await dajVstupUrl(rodic,'rezervacie');
     const plan=MEMBERSHIP_PLANS[KIDS_PLAN];
@@ -5210,6 +5214,7 @@ app.post('/api/first-class/book', rlPublic, async(req,res)=>{
         title:'🆕 Prvá hodina z landing page', body:`${name} · ${cls.name} ${cls.location} ${bdate} ${cls.time_start}`+(pozvala?` · pozvala ${pozvala.name}`:''),
         read:false, created_at:nowISO()});
     }catch(e){}
+    if(isNew) oznamRegistraciuMajitelovi(u._id,{cesta:'landing'}).catch(()=>{});
     metaCapi('Lead',{email, fbclid:clean(attr.fbclid), fbp:clean(attr.fbp), click_at:attr.click_at,
       external_id:u._id, ip:klientIp(req), ua:req.headers['user-agent'],
       event_id:clean(attr.event_id_lead)||undefined, source_url:clean(attr.landing)||undefined}).catch(()=>{});
@@ -5681,6 +5686,109 @@ function validFullName(n){
   const words=t.split(' ').filter(w=>/^[A-Za-zÀ-ž\u0100-\u017F\u0400-\u04FF'-]{2,}$/.test(w));
   return words.length>=2;
 }
+// ── Oznam majiteľovi o každej novej žene v appke ─────────────────────────────
+// Do 4. 11. 2026 chodil mail len z /api/register a boli v ňom meno, e-mail a telefón.
+// Z landingu „Prvá hodina", z Googlu, z pozvánky ani z detskej kampane nechodilo nič —
+// teda práve z ciest, kam vedie reklama. Tu je to na jednom mieste a so všetkým, čo sa
+// o žene v tej chvíli vie: kto je, ako sa zaregistrovala, čo si hneď rezervovala a
+// odkiaľ prišla. Volá sa po registrácii, nikdy ju nesmie zhodiť — preto celé v try.
+const OWNER_EMAIL = 'gruber.marek@gmail.com';
+const REG_CESTA = {
+  register: 'registrácia v appke',
+  landing:  'landing „Prvá hodina"',
+  kids:     'Zumba Kids z landingu — rodič prihlásil dieťa',
+  google:   'prihlásenie cez Google',
+  invite:   'pozvánka od kamošky (hosť)',
+  claim:    'importovaný kontakt si založil účet',
+  vencek:   'venčeky — kód triedy'
+};
+async function oznamRegistraciuMajitelovi(userId, info){
+  try{
+    const i = info || {};
+    const u = await q.one(db.users,{_id:userId});
+    if(!u || !u.email) return false;
+    // Dieťa nemá vlastný účet, admina ani testovací účet netreba hlásiť a na syntetické
+    // adresy (import, bez e-mailu, QA) sa nikdy nič neposiela.
+    if(u.is_child || u.is_admin || ['trainer','manager','admin'].includes(u.user_type)) return false;
+    if(/@(test-fa-qa|internal|import|bez-emailu)\.local$/i.test(u.email)) return false;
+
+    const e = s => String(s==null?'':s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    const zl = 'style="color:#C9A84C;text-decoration:none"';
+    const riadky = [];
+    const pr = html => riadky.push('<li style="margin:5px 0">'+html+'</li>');
+
+    // ── Kontakt: v maili rovno klikateľný, nech sa dá zavolať z telefónu ──
+    // Hosť z pozvánky, ktorý nechal len telefón, má syntetický e-mail — ten do mailu nepatrí.
+    if(!/@guest\.fusionacademy\.sk$/i.test(u.email))
+      pr('✉️ <a href="mailto:'+e(u.email)+'" '+zl+'>'+e(u.email)+'</a>');
+    const tel = u.phone || (i.kontakt && !String(i.kontakt).includes('@') ? i.kontakt : '');
+    if(tel) pr('📞 <a href="tel:'+e(String(tel).replace(/[^\d+]/g,''))+'" '+zl+'>'+e(tel)+'</a>');
+    if(u.city) pr('📍 '+e(u.city));
+
+    // ── Ako sa zaregistrovala ──
+    let cesta = REG_CESTA[i.cesta] || REG_CESTA.register;
+    if(i.cesta==='kids' && i.dieta) cesta += ' — '+e(i.dieta);
+    if(i.cesta==='vencek' && i.trieda) cesta += ' '+e(i.trieda);
+    pr('🚪 Cesta: <b>'+cesta+'</b>');
+
+    // Sponzora dostane pri registrácii každá — bez pozvánky pripadne zakladateľovi.
+    // Za pozvanie sa teda smie označiť len sponzor, ktorý zakladateľom nie je.
+    const founder = await q.one(db.users,{email:OWNER_EMAIL}).catch(()=>null);
+    if(u.sponsor_id && (!founder || u.sponsor_id!==founder._id)){
+      const sp = await q.one(db.users,{_id:u.sponsor_id}).catch(()=>null);
+      if(sp) pr('💛 Pozvala ju: <b>'+e(sp.name)+'</b>'+(sp.influencer&&sp.influencer.at?' (influencerka)':'')
+        +' — za prvú hodinu jej ide +'+KAMOSKA_BODY.hodina+' bodov, za členstvo +'+KAMOSKA_BODY.clenstvo);
+    }
+
+    // ── Čo si hneď urobila ──
+    const rez = (await q.find(db.bookings,{user_id:u._id}).catch(()=>[]))
+      .filter(b=>b.status!=='cancelled')
+      .sort((a,b)=>String(a.booking_date||'').localeCompare(String(b.booking_date||'')))[0];
+    if(rez){
+      const d = String(rez.booking_date||'').split('-');
+      const kedy = d.length===3 ? (+d[2])+'. '+(+d[1])+'. '+d[0] : String(rez.booking_date||'');
+      pr('📅 Rezervovala si: <b>'+e(rez.class_name)+'</b> · '+e(rez.class_location||'')
+        +' · '+e((rez.day_name?rez.day_name+' ':'')+kedy)+' o '+e(rez.class_time_start||''));
+    }
+    if(u.trial_ends_at) pr('🎁 Prvý týždeň zadarmo beží do <b>'+fmtDenSk(u.trial_ends_at)+'</b>'
+      +(u.stripe_subscription_id ? ' — kartu zadala, potom nabieha Bronze' : ' — bez karty, po týždni sa nič nestrhne'));
+    // Počas skúšobného týždňa má každá plán Bronze — napísať sem „Členstvo: bronze"
+    // by vyzeralo, že platí, hoci nezaplatila nič.
+    if(u.membership_plan && !u.trial_ends_at) pr('💳 Členstvo: <b>'+e(u.membership_plan)+'</b>');
+
+    // ── Odkiaľ prišla ──
+    const ZDROJ_SK = { referral:'pozvánka od kamošky', meta:'Meta reklama', facebook:'Facebook',
+      instagram:'Instagram', google:'Google', 'landing-kids':'detský landing', web:'web' };
+    const surovy = u.utm_source || (u.lead_source && u.lead_source!=='google_signin' ? u.lead_source : '');
+    const zdroj = u.fbclid ? 'Meta reklama' : u.gclid ? 'Google reklama'
+      : (surovy ? (ZDROJ_SK[String(surovy).toLowerCase()] || surovy) : null);
+    if(zdroj) pr('📣 Zdroj: <b>'+e(zdroj)+'</b>'
+      +(u.utm_campaign?' · kampaň '+e(u.utm_campaign):'')
+      +(u.utm_content?' · kreatíva '+e(u.utm_content):''));
+    else if(u.referrer) pr('📣 Prišla z: '+e(u.referrer));
+    else pr('📣 Zdroj: priamo (bez reklamy a bez odkazu)');
+    if(u.landing_page) pr('🔗 Vstúpila cez: '+e(u.landing_page));
+    if(!u.consent_at) pr('⚠️ <b>Nedala súhlas s posielaním e-mailov</b> — marketingové vlny jej nechodia');
+
+    // ── Koľká je dnes a tento mesiac ──
+    const den = today(), mes = den.slice(0,7);
+    const vsetci = await q.find(db.users,{}).catch(()=>[]);
+    const poradie = v => vsetci.filter(x=>!x.is_child && !x.is_admin
+      && String(x.registration_at||x.created_at||'').startsWith(v)).length;
+    const dnes = poradie(den), mesiac = poradie(mes);
+
+    const zdrojKratko = zdroj ? ' · '+zdroj : '';
+    await sendMail(OWNER_EMAIL,
+      '🆕 Nová registrácia: '+u.name+(u.city?' · '+u.city:'')+zdrojKratko,
+      emailTemplate('Nová žena v appke 💃',
+        '<p style="font-size:1.15rem;margin:0 0 4px"><b>'+e(u.name)+'</b></p>'
+        +'<ul style="color:#ddd;padding-left:18px;margin:12px 0 18px;list-style:none">'+riadky.join('')+'</ul>'
+        +'<p style="opacity:.75;font-size:.92em">Dnes '+dnes+'. registrácia, tento mesiac '+mesiac+'.</p>',
+        '👤 Otvoriť profil', APP_URL+'/u/'+u._id, {interny:true}),
+      {priority:1, template:'nova_registracia'});
+    return true;
+  }catch(err){ console.error('oznamRegistraciuMajitelovi:', err.message); return false; }
+}
 app.post('/api/register', rlSignup, async(req,res)=>{
   try {
     const {name,email,password,phone,sponsorCode,user_type}=req.body;
@@ -5719,6 +5827,7 @@ app.post('/api/register', rlSignup, async(req,res)=>{
             title:'🆕 Importovaný lead si vytvoril účet',
             body:`${set.name} · ${emailNorm}`, read:false, created_at:nowISO()}); } catch(e){}
         announceNewMember(existing._id).catch(()=>{});
+        oznamRegistraciuMajitelovi(existing._id,{cesta:'claim'}).catch(()=>{});
         return res.json({ ok:true, id:existing._id, claimed:true, free_bonus:true, redirect_to:'/client-dashboard' });
       }
       return res.status(400).json({error:'Tento e-mail je už zaregistrovaný. Skús sa prihlásiť.'});
@@ -5866,7 +5975,9 @@ app.post('/api/register', rlSignup, async(req,res)=>{
           title:'🆕 Nová registrácia – lead',
           body:`${name} · ${email}${phone?' · '+phone:''}${sponsorName?' · sponzor: '+sponsorName:''}${src}`,
           read:false, created_at:nowISO()});
-        if(a.email && !a.email.includes('@internal.local'))
+        // Majiteľovi tento holý mail už nechodí — dostáva podrobný oznam nižšie
+        // (oznamRegistraciuMajitelovi), ktorý chodí zo všetkých ciest registrácie.
+        if(a.email && !a.email.includes('@internal.local') && a.email!==OWNER_EMAIL)
           sendMail(a.email, `🆕 Nový lead: ${name}`,
             emailTemplate('Nová registrácia – lead 📞',
               `<p>Práve sa zaregistroval nový lead:</p>
@@ -5901,6 +6012,9 @@ app.post('/api/register', rlSignup, async(req,res)=>{
       const novy = await q.one(db.users,{_id:u._id});
       if((await skuskaNarok(novy)).ok) skuska = await aktivujSkusku(u._id, null, null);
     }catch(e){ console.error('skúška pri registrácii:', e.message); }
+    // Až tu, keď je skúška vybavená — inak by mail tvrdil, že prvý týždeň nemá.
+    // Venčekár nie: o ňom chodí vlastný oznam a pri zápise triedy by to bolo 20 mailov za večer.
+    if(!vencekClass) oznamRegistraciuMajitelovi(u._id,{cesta:'register'}).catch(()=>{});
     res.json({ok:true, userType:utype, redirect_to: dashUrlFor(u),
       trial: (skuska && skuska.ok) ? {ends_at:skuska.ends_at, plan:skuska.plan_name} : null});
   } catch(e){
@@ -8103,6 +8217,7 @@ app.post('/api/invite/:code/book', rlPublic, async(req,res)=>{
         for(const a of admins) await q.insert(db.notifications,{user_id:a._id,type:'new_lead',
           title:'🆕 Guest booking cez pozvánku', body:name+' ('+contact+') → '+cls.name+' '+bdate+' · pozvala '+sp.name,
           read:false, created_at:nowISO()}); }catch(e){}
+      if(isNew) oznamRegistraciuMajitelovi(u._id,{cesta:'invite', kontakt:contact}).catch(()=>{});
       if(isEmail) sendMail(contact, 'Tešíme sa na teba! 💃 Prvá hodina zdarma je rezervovaná',
         emailTemplate('Tešíme sa na teba! 💃',
         '<p>Tvoja prvá Zumba hodina <b>zadarmo</b> je rezervovaná:</p>'+
@@ -27515,7 +27630,10 @@ function unsubUrl(email){
   return APP_URL.replace(/\/$/,'')+'/unsubscribe?e='+encodeURIComponent(String(email||'').toLowerCase().trim())
     +'&t='+unsubToken(email);
 }
-function emailTemplate(title, body, ctaText, ctaUrl){
+// opts.interny — prevádzkový oznam pre nás, nie pošta klientke: bez odkazu na
+// odhlásenie. Keby ho majiteľ omylom klikol, zapíše sa mu unsubscribed_at a prišiel
+// by o maily, ktoré potrebuje k práci.
+function emailTemplate(title, body, ctaText, ctaUrl, opts){
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#1a1a1a;font-family:'Segoe UI',Arial,sans-serif">
 <table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:30px 16px">
 <table width="600" cellpadding="0" cellspacing="0" style="background:#242424;border-radius:16px;overflow:hidden;max-width:600px">
@@ -27527,7 +27645,7 @@ function emailTemplate(title, body, ctaText, ctaUrl){
   ${ctaText?`<div style="text-align:center;margin:28px 0"><a href="${ctaUrl}" style="background:#C9A84C;color:#111;padding:14px 32px;border-radius:10px;text-decoration:none;font-weight:800;font-size:1rem">${ctaText}</a></div>`:''}
 </td></tr>
 <tr><td style="padding:20px 32px;border-top:1px solid #333;text-align:center">
-  <p style="color:#666;font-size:.8rem;margin:0">Fusion Academy · info@fusionacademy.sk · <a href="${APP_URL}/unsubscribe" style="color:#888">Odhlásiť</a></p>
+  <p style="color:#666;font-size:.8rem;margin:0">Fusion Academy · info@fusionacademy.sk${opts&&opts.interny?'':` · <a href="${APP_URL}/unsubscribe" style="color:#888">Odhlásiť</a>`}</p>
 </td></tr></table></td></tr></table></body></html>`;
 }
 
