@@ -10761,6 +10761,32 @@ app.post('/api/admin/users/:id/children', adminAuth, async(req,res)=>{
 // mesiac" bežala ďalej — 28. 10. 2026 takto jednej klientke bežal Gold z júlovej a
 // augustovej výhry až do 2. 11. Do kreditu sa nevracia nič: výhra nebola zaplatená,
 // nie je čo vracať. Na zaplatené členstvo sa to preto používa len vedome.
+// Zrušenie automatického odberu za klientku (Marek 9. 11. 2026 — Emma Malatincová).
+// Doteraz to vedela vypnúť len ona sama na svojej nástenke; admin nemal ako, a keď o to
+// klientka poprosí telefonicky, nikto s tým nevedel pohnúť. Členstvo dobehne do konca
+// zaplateného obdobia — ruší sa len ďalšia platba, nie prístup na hodiny.
+app.post('/api/admin/users/:id/odber-zrusit', adminAuth, async(req,res)=>{
+  try{
+    const u = await q.one(db.users,{_id:req.params.id});
+    if(!u) return res.status(404).json({error:'Klientka nenájdená'});
+    const sid = u.stripe_subscription_id || null;
+    if(!sid) return res.json({ ok:false, ziadny_odber:true,
+      message:`${u.name} nemá zapnutú automatickú platbu — členstvo sa jej samo neobnoví.`,
+      clenstvo_do: u.membership_expires || null });
+    if(!String(sid).startsWith('test_') && STRIPE_SECRET)
+      await stripeApi('subscriptions/'+encodeURIComponent(sid), null, 'DELETE');
+    await q.update(db.users,{_id:u._id},{$set:{stripe_subscription_id:null}});
+    await recordMembershipCancel(u, req.body.reason, req.body.note || 'Zrušené adminom', 'admin');
+    await auditLog(req,'odber_zrusit',u._id,{stripe_subscription_id:sid},{stripe_subscription_id:null},req.body.note||'');
+    // Oznam ide rodičovi, keď ide o dieťa — dieťa nemá vlastné prihlásenie.
+    const komu = u.is_child && u.parent_id ? await q.one(db.users,{_id:u.parent_id}) : u;
+    const kidsPozn = u.is_child ? ' Bez automatickej platby stojí členstvo o 10 % viac a treba ho platiť ručne.' : '';
+    if(komu) await q.insert(db.notifications,{user_id:komu._id, type:'membership', title:'Odber zrušený',
+      body:(u.is_child ? 'Automatická platba pre '+u.name+' bola vypnutá.' : 'Automatické obnovenie bolo zrušené.')
+        +' Členstvo platí do konca obdobia.'+kidsPozn, read:false, created_at:nowISO()}).catch(()=>{});
+    res.json({ ok:true, meno:u.name, zruseny_odber:sid, clenstvo_do:u.membership_expires||null });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 app.post('/api/admin/users/:id/end-membership', adminAuth, async(req,res)=>{
   try {
     const u = await q.one(db.users,{_id:req.params.id});
