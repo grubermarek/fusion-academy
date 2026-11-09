@@ -2311,6 +2311,12 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       <div class="col-6"><label class="text-muted small">Suma (€)</label><input id="refAmount" type="number" step="0.01" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
       <div class="col-12"><label class="text-muted small">Dôvod</label><select id="refReason" class="form-select form-select-sm bg-dark text-light border-secondary"></select></div>
       <div class="col-12"><label class="text-muted small">Poznámka</label><input id="refNote" class="form-control form-control-sm bg-dark text-light border-secondary"></div>
+      <div class="col-6"><label class="text-muted small">Deň, kedy peniaze odišli</label><input id="refDate" type="date" class="form-control form-control-sm bg-dark text-light border-secondary">
+        <div class="text-muted" style="font-size:.66rem">Prázdne = dnes. Refund sa počíta do mesiaca tohto dňa.</div></div>
+      <div class="col-6 d-flex align-items-center"><div class="form-check mt-3">
+        <input class="form-check-input" type="checkbox" id="refSilent"><label class="form-check-label text-muted small" for="refSilent">Neposielať e-mail ani notifikáciu</label>
+        <div class="text-muted" style="font-size:.66rem">Pri spätnom zápise (peniaze už klientka má).</div></div></div>
+      <div class="col-12"><div id="refHint" class="text-muted" style="font-size:.7rem"></div></div>
     </div>
     <div class="d-flex justify-content-end gap-2 mt-3">
       <button class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('refundModal').style.display='none'">Zrušiť</button>
@@ -3795,7 +3801,10 @@ async function runAlerts(){ const d=await api('/api/admin/alerts/run',{method:'P
 async function markAlertsRead(){ await api('/api/admin/alerts/read',{method:'POST',body:JSON.stringify({})}); loadAlerts(); }
 
 /* ─── REFUNDÁCIE ─────────────────────────────────────────── */
-const REF_TYPE_LABEL={full:'Plná',partial:'Čiastočná',storno:'Storno',credit_note:'Dobropis',app_credit:'Kredit do appky',transfer:'Prevod'};
+const REF_TYPE_LABEL={full:'Plná',partial:'Čiastočná',storno:'Storno',credit_note:'Dobropis',app_credit:'Kredit do appky',transfer:'Prevod',cash:'Hotovosť'};
+// Platba bez záznamu v bráne (obnova odberu, vstupenka, súkromná hodina) — appka
+// z nej peniaze poslať nevie, dá sa len zaznačiť, ako odišli.
+const REF_TYPY_BEZ_PLATBY=['cash','transfer','app_credit','credit_note','storno'];
 let _refMeta=null, _refSelPay=null;
 let _outSegs=null, _outCities=null, _outPlans=null;
 async function initOutreach(){
@@ -4017,6 +4026,7 @@ async function loadRefunds(){
 }
 async function openRefund(){
   _refSelPay=null; document.getElementById('refSelected').innerHTML=''; document.getElementById('refSearch').value=''; document.getElementById('refNote').value=''; document.getElementById('refAmount').value='';
+  document.getElementById('refDate').value=''; document.getElementById('refSilent').checked=false; document.getElementById('refHint').innerHTML='';
   if(!_refMeta) _refMeta=await api('/api/admin/refund-reasons');
   document.getElementById('refType').innerHTML=Object.entries(REF_TYPE_LABEL).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');
   document.getElementById('refReason').innerHTML=Object.entries(_refMeta.reasons).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');
@@ -4035,13 +4045,25 @@ function refPick(p){
   _refSelPay=p;
   document.getElementById('refAmount').value=p.amount.toFixed(2);
   document.getElementById('refSelected').innerHTML=`✔️ Vybraté: <b>${escHtml(p.client)}</b> — ${p.amount.toFixed(2)} € (${escHtml(p.gateway)})`;
+  // Pri platbe bez brány appka peniaze poslať nevie, len zaznačí, ako odišli.
+  const bezBrany=p.source==='transaction';
+  const t=document.getElementById('refType');
+  t.innerHTML=Object.entries(REF_TYPE_LABEL).filter(([k])=>!bezBrany||REF_TYPY_BEZ_PLATBY.includes(k))
+    .map(([k,v])=>`<option value="${k}">${v}</option>`).join('');
+  if(bezBrany) t.value='cash';
+  document.getElementById('refHint').innerHTML = bezBrany
+    ? '⚠️ Táto platba nemá záznam v platobnej bráne (obnova odberu, vstupenka, súkromná hodina) — appka z nej peniaze poslať nevie. Vráť ich v Stripe alebo v hotovosti a tu to zaznač.'
+    : (p.gateway==='stripe' ? '✅ Refund pôjde späť cez Stripe na kartu klientky.' : '✋ Manuálna platba — refund sa zaznamená a spraví dobropis, peniaze vraciaš ručne.');
 }
 async function submitRefund(){
   const type=document.getElementById('refType').value;
-  const needsPay=!['app_credit','transfer'].includes(type);
+  const needsPay=!['app_credit','transfer','cash'].includes(type);
   if(!_refSelPay && needsPay){ showToast('Vyber platbu na refundáciu','error'); return; }
-  const body={ payment_id:_refSelPay?.id||null, type, amount:+document.getElementById('refAmount').value||0,
-    reason:document.getElementById('refReason').value, note:document.getElementById('refNote').value };
+  const jeTx=_refSelPay?.source==='transaction';
+  const body={ payment_id:jeTx?null:(_refSelPay?.id||null), transaction_id:jeTx?_refSelPay.id:null,
+    type, amount:+document.getElementById('refAmount').value||0,
+    reason:document.getElementById('refReason').value, note:document.getElementById('refNote').value,
+    date:document.getElementById('refDate').value||null, silent:document.getElementById('refSilent').checked };
   if(!(body.amount>0)){ showToast('Zadaj sumu','error'); return; }
   if(!confirm(`Refundovať ${body.amount.toFixed(2)} €?`)) return;
   const d=await api('/api/admin/refunds',{method:'POST',body:JSON.stringify(body)});
@@ -8461,24 +8483,34 @@ async function cdRefund(paymentId){
   document.getElementById('cdRefAmount').value=p.amount.toFixed(2);
   document.getElementById('cdRefAmount').max=p.amount.toFixed(2);
   const gwManual = p.gateway==='manual';
-  document.getElementById('cdRefType').innerHTML=Object.entries(REF_TYPE_LABEL).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');
+  const bezBrany = p.source==='transaction';
+  document.getElementById('cdRefType').innerHTML=Object.entries(REF_TYPE_LABEL)
+    .filter(([k])=>!bezBrany||REF_TYPY_BEZ_PLATBY.includes(k)).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');
+  if(bezBrany) document.getElementById('cdRefType').value='cash';
   document.getElementById('cdRefReason').innerHTML=Object.entries(_refMeta.reasons).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');
   document.getElementById('cdRefNote').value='';
-  document.getElementById('cdRefHint').innerHTML = gwManual
-    ? '⚠️ Platba nemá online bránu (hotovosť/manuál) — refund sa <b>zaznamená</b> (a spraví dobropis), peniaze vraciaš ručne.'
-    : '✅ Refund pôjde späť cez Stripe na kartu klienta.';
+  document.getElementById('cdRefDate').value=''; document.getElementById('cdRefSilent').checked=false;
+  document.getElementById('cdRefHint').innerHTML = p.source==='transaction'
+    ? '⚠️ Táto platba nemá záznam v platobnej bráne (vstupenka, súkromná hodina, obnova odberu) — appka z nej peniaze poslať nevie. Vráť ich v Stripe alebo v hotovosti a tu to <b>zaznač</b>.'
+    : (gwManual
+      ? '⚠️ Platba nemá online bránu (hotovosť/manuál) — refund sa <b>zaznamená</b> (a spraví dobropis), peniaze vraciaš ručne.'
+      : '✅ Refund pôjde späť cez Stripe na kartu klienta.');
   new bootstrap.Modal(document.getElementById('cdRefundModal')).show();
 }
 async function cdRefundSubmit(){
-  const payment_id=document.getElementById('cdRefPayId').value;
+  const id=document.getElementById('cdRefPayId').value;
+  const jeTx=(_cdPayments.find(x=>x.id===id)||{}).source==='transaction';
   const amount=+document.getElementById('cdRefAmount').value||0;
   const type=document.getElementById('cdRefType').value;
   const reason=document.getElementById('cdRefReason').value;
   const note=document.getElementById('cdRefNote').value;
+  const date=document.getElementById('cdRefDate').value||null;
+  const silent=document.getElementById('cdRefSilent').checked;
   if(!(amount>0)){ showToast('Zadaj sumu','error'); return; }
-  if(!confirm(`Refundovať ${amount.toFixed(2)} €? Klientovi príde e-mail a notifikácia.`)) return;
+  if(!confirm(`Refundovať ${amount.toFixed(2)} €?`+(silent?'':' Klientovi príde e-mail a notifikácia.'))) return;
   const btn=document.getElementById('cdRefSubmitBtn'); btn.disabled=true; btn.textContent='Spracúvam…';
-  const d=await api('/api/admin/refunds',{method:'POST',body:JSON.stringify({payment_id,type,amount,reason,note})});
+  const d=await api('/api/admin/refunds',{method:'POST',body:JSON.stringify({
+    payment_id:jeTx?null:id, transaction_id:jeTx?id:null, type, amount, reason, note, date, silent })});
   btn.disabled=false; btn.innerHTML='<i class="bi bi-arrow-counterclockwise me-1"></i>Refundovať';
   if(d?.ok){
     showToast('Refundácia spracovaná ✓'+(d.credit_note?' · dobropis '+d.credit_note:''),'success');
@@ -10683,6 +10715,17 @@ document.addEventListener('click', e => {
           <div class="col-12">
             <label class="form-label small text-muted">Poznámka (nepovinné)</label>
             <input type="text" id="cdRefNote" class="form-control bg-dark text-light border-secondary" placeholder="Interná poznámka…">
+          </div>
+          <div class="col-6">
+            <label class="form-label small text-muted">Deň, kedy peniaze odišli</label>
+            <input type="date" id="cdRefDate" class="form-control bg-dark text-light border-secondary">
+            <div class="text-muted" style="font-size:.66rem">Prázdne = dnes</div>
+          </div>
+          <div class="col-6 d-flex align-items-center">
+            <div class="form-check mt-3">
+              <input class="form-check-input" type="checkbox" id="cdRefSilent">
+              <label class="form-check-label small text-muted" for="cdRefSilent">Neposielať e-mail ani notifikáciu</label>
+            </div>
           </div>
         </div>
         <div class="small mt-3" id="cdRefHint" style="color:#c9a24c"></div>

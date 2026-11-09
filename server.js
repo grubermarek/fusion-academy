@@ -16371,8 +16371,8 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
 
     // Refundácie k platbám tohto klienta (na zobrazenie stavu + zákaz dvojitého refundu)
     const refundsForUser = await q.find(db.refunds,{user_id:u._id});
-    const refundByPay = {};
-    for(const r of refundsForUser){ if(r.payment_id) refundByPay[r.payment_id]=r; }
+    const refundByPay = {}, refundByTx = {};
+    for(const r of refundsForUser){ if(r.payment_id) refundByPay[r.payment_id]=r; if(r.transaction_id) refundByTx[r.transaction_id]=r; }
 
     res.json({
       profile:{ id:u._id, name:u.name, email:u.email, phone:u.phone||'', created_at:u.created_at,
@@ -16397,12 +16397,16 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
           gateway: p.stripe_payment_intent ? 'stripe' : 'manual',
           refundable: !r && (+p.amount||0)>0,
           refunded: r ? {amount:+r.amount||0, type:r.type, date:(r.created_at||'').slice(0,10), credit_note:r.credit_note||null} : null };
-      }).concat(extraTx.map(t=>({
-        id:t._id, date:t.date||t.created_at, amount:+t.amount||0,
-        method:t.payment_method||t.method||'—', type:t.type,
-        note:t.note||(t.type==='event_ticket'?'Vstupenka na event':'Súkromná hodina'),
-        status:'completed', gateway:'manual', refundable:false, refunded:null
-      }))).sort((a,b)=>(b.date||'').localeCompare(a.date||'')),
+      }).concat(extraTx.map(t=>{
+        // Vrátenie peňazí za vstupenku či súkromnú hodinu sa doteraz nedalo zapísať
+        // (refundable:false) — refund si vyžadoval platbu z db.payments.
+        const r = refundByTx[t._id];
+        return {id:t._id, date:t.date||t.created_at, amount:+t.amount||0, source:'transaction',
+          method:t.payment_method||t.method||'—', type:t.type,
+          note:t.note||(t.type==='event_ticket'?'Vstupenka na event':'Súkromná hodina'),
+          status:'completed', gateway:'manual', refundable: !r && (+t.amount||0)>0,
+          refunded: r ? {amount:+r.amount||0, type:r.type, date:(r.created_at||'').slice(0,10), credit_note:r.credit_note||null} : null };
+      })).sort((a,b)=>(b.date||'').localeCompare(a.date||'')),
       memberships: membs.map(m=>({plan_name:m.plan_name, price:+m.price||0, status:m.status, started_at:m.started_at, expires_at:m.expires_at, method:m.payment_method||'—'}))
         .sort((a,b)=>(b.started_at||'').localeCompare(a.started_at||'')),
       bookings: attended.map(b=>({date:b.booking_date||b.created_at, class_name:b.class_name, location:b.class_location, status:b.status, access:b.access_method||(b.free_class?'free_class':null), attended_by:b.attended_by||null}))
@@ -17361,7 +17365,16 @@ app.get('/api/admin/payouts/export.csv', adminAuth, async(req,res)=>{
 
 // ─── PHASE K: Refundácie ────────────────────────────────────────────────────────
 const REFUND_REASONS={ requested:'Na žiadosť klienta', duplicate:'Duplicitná platba', service_issue:'Problém so službou', cancelled_class:'Zrušená hodina', goodwill:'Ústretovosť', error:'Chyba účtovania', other:'Iné' };
-const REFUND_TYPES=['full','partial','storno','credit_note','app_credit','transfer'];
+// 'cash' = peniaze išli nazad v hotovosti (Marek ich často vracia rovno na hodine).
+// Dovtedy sa to dalo zapísať len ako 'transfer', čo v doklade aj v exporte tvrdilo
+// prevod na účet — a cez bránu sa pri ňom nič neposiela, čiže sa to nedalo ani odlíšiť.
+const REFUND_TYPES=['full','partial','storno','credit_note','app_credit','transfer','cash'];
+// Typy, pri ktorých sa do platobnej brány neposiela nič — peniaze odišli inak.
+// ('storno' a 'credit_note' tu nie sú: tie Stripe platbu vracajú ako doteraz.)
+const REFUND_BEZ_BRANY=['app_credit','transfer','cash'];
+// Typy, ktoré sa dajú zapísať aj k platbe bez záznamu v bráne (obnova odberu,
+// vstupenka, súkromná hodina) — appka pri nich peniaze nikam neposiela.
+const REFUND_TYPY_BEZ_PLATBY=[...REFUND_BEZ_BRANY,'credit_note','storno'];
 
 app.get('/api/admin/refund-reasons', adminAuth, (req,res)=>res.json({reasons:REFUND_REASONS,types:REFUND_TYPES}));
 
@@ -17512,25 +17525,45 @@ app.post('/api/admin/reset-data', adminAuth, async(req,res)=>{
 
 app.post('/api/admin/refunds', adminAuth, async(req,res)=>{
   try {
-    const {payment_id, type, amount, reason, note}=req.body;
+    const {payment_id, transaction_id, type, amount, reason, note}=req.body;
     if(!REFUND_TYPES.includes(type)) return res.status(400).json({error:'Neplatný typ refundu'});
     const pay = payment_id ? await q.one(db.payments,{_id:payment_id}) : null;
-    const user = pay?.user_id ? await q.one(db.users,{_id:pay.user_id}) : null;
+    if(payment_id && !pay) return res.status(404).json({error:'Platba sa nenašla'});
+    // Obnova odberu (a tiež vstupenka či súkromná hodina) nemá riadok v db.payments —
+    // existuje len ako transakcia. Refund sa k nej preto nedal priradiť vôbec:
+    // Emmine vrátené 49,90 € z 26. 10. ostali nezapísané a október bol o tú sumu
+    // nadsadený, hoci peniaze boli u klientky (zistené 9. 11. 2026).
+    const tx = (!pay && transaction_id) ? await q.one(db.transactions,{_id:transaction_id}) : null;
+    if(transaction_id && !pay && !tx) return res.status(404).json({error:'Transakcia sa nenašla'});
+    const zdroj = pay || tx;
+    // Pri transakcii niet čo poslať do brány (nemá payment_intent). Keby sa „plná"
+    // refundácia ticho zapísala, admin by si myslel, že peniaze odišli — a ony by
+    // stále ležali na účte. Nech teda povie, ako ich vrátil.
+    if(tx && !REFUND_TYPY_BEZ_PLATBY.includes(type)) return res.status(400).json({
+      error:'Táto platba nemá záznam v platobnej bráne, takže appka peniaze poslať nevie. Vráť ich v Stripe alebo v hotovosti a zapíš sem typ Hotovosť, Prevod alebo Kredit do appky.' });
+    const user = zdroj?.user_id ? await q.one(db.users,{_id:zdroj.user_id}) : null;
+    // Peniaze mohli odísť skôr, než sa refund zapisuje (hotovosť na hodine). Bez
+    // dátumu by vrátenie spadlo do mesiaca zápisu a ani po oprave by mesačné
+    // čísla nesedeli — mesiac, v ktorom bola tržba, by ostal nadsadený.
+    const den = String(req.body.date||'').slice(0,10);
+    if(den && !/^\d{4}-\d{2}-\d{2}$/.test(den)) return res.status(400).json({error:'Neplatný dátum vrátenia'});
+    if(den && den > today()) return res.status(400).json({error:'Dátum vrátenia nemôže byť v budúcnosti'});
+    const kedy = (den && den !== today()) ? den+'T12:00:00.000Z' : nowISO();
     // Nula (alebo prázdne pole) doteraz znamenala „vráť celú platbu" — stačilo,
     // aby admin nechal sumu nevyplnenú, a odišlo všetko. Prázdne pole ostáva
     // skratkou pre celú sumu, ale výslovná nula je chyba (audit E6, 1. 9.).
     const zadanaSuma = amount !== undefined && amount !== null && String(amount).trim() !== '';
     if(zadanaSuma && !(+amount > 0)) return res.status(400).json({error:'Neplatná suma'});
-    const amt = zadanaSuma ? +amount : (pay ? +pay.amount : 0);
+    const amt = zadanaSuma ? +amount : (zdroj ? +zdroj.amount : 0);
     if(!(amt>0)) return res.status(400).json({error:'Neplatná suma'});
-    if(pay && amt> (+pay.amount||0)+0.001) return res.status(400).json({error:'Suma prevyšuje platbu'});
+    if(zdroj && amt> (+zdroj.amount||0)+0.001) return res.status(400).json({error:'Suma prevyšuje platbu'});
     // A hlavne: kontroluje sa SÚČET už vrátených súm, nie len jeden refund.
     // Bez toho sa dala tá istá platba vrátiť koľkokrát sa dalo — v teste
     // 3× 50 € z jednej päťdesiatky.
-    if(pay){
-      const uzVratene = (await q.find(db.refunds,{payment_id:pay._id}))
+    if(zdroj){
+      const uzVratene = (await q.find(db.refunds, pay?{payment_id:pay._id}:{transaction_id:tx._id}))
         .reduce((s,r)=>s+(+r.amount||0),0);
-      const zostava = +((+pay.amount||0) - uzVratene).toFixed(2);
+      const zostava = +((+zdroj.amount||0) - uzVratene).toFixed(2);
       if(amt > zostava + 0.001) return res.status(400).json({
         error: uzVratene>0
           ? 'Z tejto platby už bolo vrátené '+uzVratene.toFixed(2)+' € — vrátiť sa dá najviac '+zostava.toFixed(2)+' €.'
@@ -17538,8 +17571,8 @@ app.post('/api/admin/refunds', adminAuth, async(req,res)=>{
     }
 
     let gateway={method:'manual', ref:null, ok:true};
-    // Actual gateway refund (skip for app_credit / manual transfer)
-    if(type!=='app_credit' && type!=='transfer' && pay){
+    // Actual gateway refund (skip for app_credit / manual transfer / cash)
+    if(!REFUND_BEZ_BRANY.includes(type) && pay){
       if(pay.stripe_payment_intent && STRIPE_SECRET){
         const r=await stripeApi('refunds',{payment_intent:pay.stripe_payment_intent, amount:Math.round(amt*100)});
         gateway={method:'stripe', ref:r.body?.id||null, ok:r.status<300};
@@ -17555,17 +17588,27 @@ app.post('/api/admin/refunds', adminAuth, async(req,res)=>{
     }
     // Credit note for the original invoice, if we can find it
     let creditNote=null;
-    if(pay && user){
+    if(zdroj && user){
       // Doteraz sa hľadala len faktúra so status:'paid'. Faktúry, ktoré ten stav
       // nemajú vyplnený, tak ostali bez dobropisu — a nikto sa to nedozvedel,
       // lebo sa to nikde nehlásilo. Berieme každú faktúru okrem už dobropisovaných.
-      const inv=(await q.find(db.invoices,{user_id:user._id}))
-        .filter(i=>i.type!=='credit_note' && i.status!=='credited' && +i.total>0)
-        .sort((a,b)=>(b.issued_at||'').localeCompare(a.issued_at||''))[0];
+      const mozne=(await q.find(db.invoices,{user_id:user._id}))
+        .filter(i=>i.type!=='credit_note' && i.status!=='credited' && +i.total>0);
+      // Najprv doklad, ktorý k tejto platbe naozaj patrí (rovnaká suma a deň
+      // platby). Bez toho by dobropis sadol na najnovšiu faktúru klientky, čiže
+      // pri spätne zapisovanom refunde na úplne iný mesiac a inú službu.
+      const denPlatby = String(pay ? (pay.captured_at||pay.activated_at||pay.created_at||'')
+        : (tx.date||tx.created_at||'')).slice(0,10);
+      const inv = (denPlatby ? mozne.find(i=>Math.abs((+i.total||0)-(+zdroj.amount||0))<0.005
+          && [String(i.paid_at||'').slice(0,10), String(i.issued_at||'').slice(0,10)].includes(denPlatby)) : null)
+        || mozne.sort((a,b)=>(b.issued_at||'').localeCompare(a.issued_at||''))[0];
       if(inv){
         const cn=await createInvoice({user_id:user._id, client_name:inv.client_name, client_email:inv.client_email,
           items:[{desc:`Refundácia k faktúre ${inv.number}${reason?` — ${REFUND_REASONS[reason]||reason}`:''}`, qty:1, total:-amt}],
-          total:-amt, method:inv.payment_method, type:'credit_note', related_invoice:inv.number});
+          total:-amt, method:inv.payment_method, type:'credit_note', related_invoice:inv.number,
+          // Dobropis sa vystavuje dnešným dňom (číslovanie faktúr musí ísť po
+          // dátumoch), deň, kedy peniaze reálne odišli, nesie paid_at.
+          paid_at:den||today(), silent:req.body.silent===true});
         if(cn){ creditNote=cn.number; await q.update(db.invoices,{_id:inv._id},{$set:{status:'credited',credit_note:cn.number}}); }
         else console.error('Refund: dobropis k faktúre '+inv.number+' sa nevytvoril');
       } else {
@@ -17573,16 +17616,19 @@ app.post('/api/admin/refunds', adminAuth, async(req,res)=>{
       }
     }
     const refund=await q.insert(db.refunds,{
-      payment_id:payment_id||null, user_id:user?._id||null, client_name:user?.name||pay?.description||'—',
+      payment_id:payment_id||null, transaction_id:tx?._id||null,
+      user_id:user?._id||null, client_name:user?.name||zdroj?.description||'—',
       type, amount:amt, reason:reason||'other', note:note||'',
       gateway:gateway.method, gateway_ref:gateway.ref, credit_note:creditNote,
-      created_by:req.session?.uid||null, created_at:nowISO(), month:today().slice(0,7)
+      created_by:req.session?.uid||null, created_at:kedy, month:(den||today()).slice(0,7)
     });
-    await auditLog(req,'refund_create',payment_id||'—',{amount:pay?.amount},{type,amount:amt,gateway:gateway.method,credit_note:creditNote},reason||'');
-    if(user?.email){
+    await auditLog(req,'refund_create',payment_id||transaction_id||'—',{amount:zdroj?.amount},{type,amount:amt,gateway:gateway.method,credit_note:creditNote,date:den||today()},reason||'');
+    // Pri spätnom zápise (peniaze už klientka dostala do ruky) by e-mail „spracovali
+    // sme refundáciu" prišiel o pár dní neskôr a mýlil by — preto sa dá vypnúť.
+    if(user?.email && req.body.silent!==true){
       await sendMail(user.email,`Refundácia ${amt.toFixed(2)} € — Fusion Academy`,
         emailTemplate('Spracovali sme refundáciu',
-          `<p>Ahoj <b>${user.name}</b>,</p><p>Vrátili sme ti <b>${amt.toFixed(2)} €</b>${reason?` (${REFUND_REASONS[reason]||reason})`:''}${type==='app_credit'?' vo forme kreditu do aplikácie':''}.</p>${gateway.method!=='manual'?`<p>Suma sa zvyčajne pripíše do 5–10 dní podľa banky.</p>`:''}<p>Ak máš otázky, stačí odpovedať na tento email.</p>`,
+          `<p>Ahoj <b>${user.name}</b>,</p><p>Vrátili sme ti <b>${amt.toFixed(2)} €</b>${reason?` (${REFUND_REASONS[reason]||reason})`:''}${type==='app_credit'?' vo forme kreditu do aplikácie':(type==='cash'?' v hotovosti':'')}.</p>${gateway.method!=='manual'?`<p>Suma sa zvyčajne pripíše do 5–10 dní podľa banky.</p>`:''}<p>Ak máš otázky, stačí odpovedať na tento email.</p>`,
           creditNote?'🧾 Zobraziť dobropis':null, creditNote?`${APP_URL}/invoice/${creditNote}`:null)).catch(()=>{});
       await q.insert(db.notifications,{user_id:user._id,type:'refund',title:`Refundácia ${amt.toFixed(2)} €`,body:REFUND_REASONS[reason]||'Refundácia spracovaná',read:false,created_at:nowISO()});
     }
@@ -17593,12 +17639,26 @@ app.post('/api/admin/refunds', adminAuth, async(req,res)=>{
 app.get('/api/admin/refundable-payments', adminAuth, async(req,res)=>{
   const term=(req.query.q||'').toLowerCase();
   const users=Object.fromEntries((await q.find(db.users,{})).map(u=>[u._id,u]));
-  const refunded=new Set((await q.find(db.refunds,{})).map(r=>r.payment_id).filter(Boolean));
+  const vsetkyRef=await q.find(db.refunds,{});
+  const refunded=new Set(vsetkyRef.map(r=>r.payment_id).filter(Boolean));
+  const refundedTx=new Set(vsetkyRef.map(r=>r.transaction_id).filter(Boolean));
   let list=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status) && !refunded.has(p._id) && (+p.amount||0)>0);
-  list=list.map(p=>({ id:p._id, amount:+p.amount||0, description:p.description||p.ref_type||'Platba',
+  list=list.map(p=>({ id:p._id, source:'payment', amount:+p.amount||0, description:p.description||p.ref_type||'Platba',
     client:users[p.user_id]?.name||'—', email:users[p.user_id]?.email||'',
     date:(p.captured_at||p.activated_at||p.created_at||'').slice(0,10),
     gateway: p.stripe_payment_intent?'stripe':(p.provider||p.payment_method||'manual') }));
+  // Obnova odberu, vstupenka a súkromná hodina riadok v db.payments nemajú (sedia
+  // len v transakciách), takže sa v tomto zozname nikdy neukázali a vrátenie
+  // peňazí za ne sa nedalo zapísať. Appka pri nich do brány nič neposiela —
+  // vracia sa v Stripe alebo v hotovosti a sem sa to len zaznačí.
+  const BEZ_PLATBY={ subscription_renewal:'Obnova členstva (odber)', event_ticket:'Vstupenka na event', private_lesson:'Súkromná hodina' };
+  const txList=(await q.find(db.transactions,{})).filter(t=>BEZ_PLATBY[t.type]
+    && (+t.amount||0)>0 && !t.commission_only && !refundedTx.has(t._id));
+  list=list.concat(txList.map(t=>({ id:t._id, source:'transaction', amount:+t.amount||0,
+    description:BEZ_PLATBY[t.type]+(t.note?' — '+t.note:''),
+    client:users[t.user_id]?.name||t.user_name||'—', email:users[t.user_id]?.email||'',
+    date:String(t.date||t.created_at||'').slice(0,10),
+    gateway:'bez brány' })));
   if(term) list=list.filter(p=>p.client.toLowerCase().includes(term)||p.email.toLowerCase().includes(term)||p.description.toLowerCase().includes(term));
   res.json(list.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,100));
 });

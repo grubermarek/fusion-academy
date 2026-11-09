@@ -8,6 +8,11 @@
  *   · refund sa neurobí dvakrát za tú istú platbu
  *   · vrátená suma zmizne z tržieb
  *
+ * 9. 11. 2026 pridané: vrátenie peňazí za platbu BEZ záznamu v bráne (obnova
+ * odberu, vstupenka, súkromná hodina). Tie v db.payments riadok nemajú, takže
+ * refund sa k nim nedal priradiť vôbec — Emmine vrátené 49,90 € z 26. 10. ostali
+ * nezapísané a október bol o tú sumu nadsadený.
+ *
  * V produkcii je zatiaľ jediný refund (Ailina, 40 €), takže tu ide hlavne
  * o poistky do budúcna.
  *
@@ -52,11 +57,28 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
       status: 'completed', method: 'card', provider: 'stripe', plan_id: 'bronze',
       description: 'Členstvo Bronze', created_at: '2026-08-15T10:00:00.000Z', captured_at: '2026-08-15T10:00:00.000Z' }),
   ].join('\n') + '\n');
+  // Obnova odberu: existuje LEN ako transakcia, v db.payments riadok nemá.
+  fs.writeFileSync(path.join(DATA, 'transactions.db'), [
+    JSON.stringify({ _id: 'qaRefTx000000001', type: 'subscription_renewal', user_id: 'qaRefKlientka01',
+      user_name: 'Klara Vratena', amount: 50, date: '2026-08-20', payment_method: 'stripe',
+      plan_id: 'bronze', note: 'Auto-obnova Bronze (Stripe)', month: '2026-08',
+      created_at: '2026-08-20T09:00:00.000Z' }),
+  ].join('\n') + '\n');
   fs.writeFileSync(path.join(DATA, 'invoices.db'), [
     JSON.stringify({ _id: 'qaRefInv00000001', number: '20260500', user_id: 'qaRefKlientka01',
       client_name: 'Klara Vratena', client_email: 'qa.ref.klientka@qa-biz.local', type: 'invoice',
       items: [{ desc: 'Členstvo Bronze', qty: 1, total: 50 }], total: 50, method: 'Stripe',
       issued_at: '2026-08-15', created_at: '2026-08-15T10:00:00.000Z' }),
+    // doklad k obnove — dobropis musí sadnúť naň, nie na najnovšiu faktúru
+    JSON.stringify({ _id: 'qaRefInv00000002', number: '20260501', user_id: 'qaRefKlientka01',
+      client_name: 'Klara Vratena', client_email: 'qa.ref.klientka@qa-biz.local', type: 'invoice',
+      items: [{ desc: 'Členstvo Bronze — mesačná obnova', qty: 1, total: 50 }], total: 50, method: 'Stripe',
+      issued_at: '2026-08-20', paid_at: '2026-08-20', created_at: '2026-08-20T09:00:00.000Z' }),
+    // novšia a iná faktúra: keby sa dobropis robil „na najnovšiu", sadol by sem
+    JSON.stringify({ _id: 'qaRefInv00000003', number: '20260502', user_id: 'qaRefKlientka01',
+      client_name: 'Klara Vratena', client_email: 'qa.ref.klientka@qa-biz.local', type: 'invoice',
+      items: [{ desc: 'Členstvo Silver', qty: 1, total: 74.9 }], total: 74.9, method: 'Stripe',
+      issued_at: '2026-10-01', paid_at: '2026-10-01', created_at: '2026-10-01T09:00:00.000Z' }),
   ].join('\n') + '\n');
 
   console.log('REFUNDY QA — štart servera…');
@@ -124,6 +146,65 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     ok('druhý refund tej istej platby neprejde, alebo aspoň nezdvojí kredit',
       znova.status === 400 || poDruhom === predKredit + 50,
       'HTTP ' + znova.status + ' · kredit ' + poDruhom + ' €');
+
+    console.log('\nPlatba bez záznamu v bráne (obnova odberu):');
+    const zoznam = (await j('/api/admin/refundable-payments', {}, adm)).d || [];
+    const txRiadok = Array.isArray(zoznam) ? zoznam.find(p => p.id === 'qaRefTx000000001') : null;
+    ok('obnova odberu je v zozname refundovateľných platieb', !!txRiadok,
+      JSON.stringify((Array.isArray(zoznam) ? zoznam : []).map(p => p.source + ':' + p.amount)));
+    ok('a je označená ako platba bez brány', txRiadok && txRiadok.source === 'transaction',
+      JSON.stringify(txRiadok && txRiadok.source));
+
+    // Plný refund by si vyžadoval bránu — appka peniaze poslať nevie, takže to
+    // nesmie ticho zapísať (admin by si myslel, že peniaze odišli).
+    const plny = await j('/api/admin/refunds', { method: 'POST',
+      body: { transaction_id: 'qaRefTx000000001', type: 'full', amount: 50, reason: 'requested' } }, adm);
+    ok('„plný" refund k platbe bez brány sa odmietne', plny.status === 400, JSON.stringify(plny.d));
+
+    const vymysleny = await j('/api/admin/refunds', { method: 'POST',
+      body: { transaction_id: 'qaRefTxNeexistuje', type: 'cash', amount: 50, reason: 'requested' } }, adm);
+    ok('neexistujúca transakcia vráti 404', vymysleny.status === 404, JSON.stringify(vymysleny.d));
+
+    const buducnost = await j('/api/admin/refunds', { method: 'POST',
+      body: { transaction_id: 'qaRefTx000000001', type: 'cash', amount: 50, date: '2099-01-01', reason: 'requested' } }, adm);
+    ok('dátum vrátenia v budúcnosti sa odmietne', buducnost.status === 400, JSON.stringify(buducnost.d));
+
+    const velaTx = await j('/api/admin/refunds', { method: 'POST',
+      body: { transaction_id: 'qaRefTx000000001', type: 'cash', amount: 80, reason: 'requested' } }, adm);
+    ok('nedá sa vrátiť viac, než bola obnova', velaTx.status === 400, JSON.stringify(velaTx.d));
+
+    // Pri bežnom refunde mail o refundácii odchádza — tu sa musí dať vypnúť,
+    // lebo peniaze klientka dostala do ruky už dávno a mail by ju zmätol.
+    const mailovPred = rd('mail_log.db').filter(m => String(m.subject || '').includes('Refund')).length;
+    const hot = await j('/api/admin/refunds', { method: 'POST',
+      body: { transaction_id: 'qaRefTx000000001', type: 'cash', amount: 50, reason: 'requested',
+        note: 'vrátené v hotovosti', date: '2026-08-25', silent: true } }, adm);
+    ok('hotovostné vrátenie k obnove prejde', hot.status === 200 && hot.d && hot.d.ok, JSON.stringify(hot.d).slice(0, 160));
+    await new Promise(r2 => setTimeout(r2, 800));
+
+    const refTx = rd('refunds.db').find(r => r.transaction_id === 'qaRefTx000000001');
+    ok('refund je naviazaný na transakciu', !!refTx, JSON.stringify(rd('refunds.db').map(r => r.type + ':' + r.amount)));
+    if (refTx) {
+      ok('zapísal sa typ hotovosť', refTx.type === 'cash', String(refTx.type));
+      // Bez dátumu by vrátenie spadlo do mesiaca zápisu a august by ostal nadsadený.
+      ok('spadol do mesiaca, kedy peniaze odišli', refTx.month === '2026-08' && String(refTx.created_at).startsWith('2026-08-25'),
+        refTx.month + ' · ' + refTx.created_at);
+      ok('appka doň nepísala bránu', refTx.gateway === 'manual', String(refTx.gateway));
+      const cn = rd('invoices.db').find(i => i.number === refTx.credit_note);
+      ok('vznikol dobropis k obnove', !!cn && Math.abs(+cn.total + 50) < 0.005, JSON.stringify(cn && { n: cn.number, t: cn.total }));
+      // Najnovšia faktúra klientky je Silver za 74,90 € — dobropis musí ísť na obnovu.
+      ok('a viaže sa na doklad tej obnovy, nie na najnovšiu faktúru', cn && cn.related_invoice === '20260501',
+        String(cn && cn.related_invoice));
+      ok('dobropis má deň vrátenia v paid_at', cn && String(cn.paid_at).slice(0, 10) === '2026-08-25', String(cn && cn.paid_at));
+    }
+    const maily = rd('mail_log.db').filter(m => String(m.subject || '').includes('Refund'));
+    ok('pri tichom zápise nepribudol e-mail o refundácii', maily.length === mailovPred,
+      mailovPred + ' → ' + maily.length);
+    ok('(a inak sa mail o refundácii posiela)', mailovPred >= 1, 'pred tichým zápisom ' + mailovPred);
+
+    const znovaTx = await j('/api/admin/refunds', { method: 'POST',
+      body: { transaction_id: 'qaRefTx000000001', type: 'cash', amount: 50, reason: 'requested' } }, adm);
+    ok('tá istá obnova sa nedá vrátiť druhýkrát', znovaTx.status === 400, JSON.stringify(znovaTx.d));
 
     console.log('\nVplyv na tržby:');
     const fin = (await j('/api/admin/finance/stats', {}, adm)).d;
