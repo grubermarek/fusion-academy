@@ -12752,7 +12752,13 @@ app.post('/api/service/collect', async(req,res)=>{
 // Bez apply je to suchý náhľad. Opakované spustenie nič nezduplikuje — bráni tomu
 // rovnaký zámok v db.webhook_events ako pri bežnej obnove ('obnova:'+id faktúry).
 app.post('/api/service/stripe-obnova-doplnit', async(req,res)=>{
-  if(!servisToken(req)) return res.status(404).end();
+  // Aj prihlásený admin, nielen servisný token — chýbajúcu obnovu treba vedieť doplniť
+  // vtedy, keď sa na ňu príde (9. 11. 2026: Malatincovcom chýbala októbrová platba),
+  // nie čakať, kým bude po ruke token. Bez `apply:true` je to naďalej iba náhľad.
+  if(!servisToken(req)){
+    const ja = req.session?.uid ? await q.one(db.users,{_id:req.session.uid}).catch(()=>null) : null;
+    if(!ja || !ja.is_admin) return res.status(404).end();
+  }
   try{
     if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
     const email=String(req.body.email||'').trim().toLowerCase();
