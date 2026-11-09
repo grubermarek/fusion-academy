@@ -12885,6 +12885,19 @@ app.get('/api/service/stripe-klient', async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Kedy sa naštartoval proces, ktorý práve odpovedá. „Nasadené" a „beží" nie je to isté
+// (Railway počas restartu vracia 502 a chvíľu ešte odpovedá starý build) a doteraz sa to
+// dalo overiť len tak, že sa v novom builde objavila nová routa. Keď je čas štartu
+// novší ako okamih nasadenia, beží nový build — nič iné sa pýtať netreba.
+const PROCES_START = nowISO();
+app.get('/api/service/verzia', async(req,res)=>{
+  if(!servisToken(req)){
+    const ja = req.session?.uid ? await q.one(db.users,{_id:req.session.uid}).catch(()=>null) : null;
+    if(!ja || !ja.is_admin) return res.status(404).end();
+  }
+  res.json({ ok:true, start:PROCES_START, bezi_sekund:Math.round(process.uptime()), node:process.version });
+});
+
 // Koľkým klientkám chýba zaplatená obnova v tržbách (Marek 9. 11. 2026). Zámok proti
 // dvojitému spracovaniu sa v spracujObnovuStripe zapisuje PRED tržbou, takže keď sa
 // funkcia potom skončí skôr (neznámy odber, chýbajúci plán), appka si myslí, že faktúru
