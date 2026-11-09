@@ -27192,6 +27192,36 @@ app.post('/api/membership/unfreeze', auth, async(req,res)=>{
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Predĺženie platnosti už kúpenej permanentky alebo členstva (Marek 9. 11. 2026 — Soňa
+// Abrahámová nestihla vyčerpať vstupy). Doteraz sa to dalo len tak, že admin „daroval"
+// novú permanentku, čím klientka dostala aj ďalších desať vstupov zadarmo. Tu sa mení
+// LEN dátum platnosti; počet vstupov ani cena sa nedotýkajú.
+app.post('/api/admin/memberships/:id/platnost', adminAuth, async(req,res)=>{
+  try{
+    const m = await q.one(db.memberships,{_id:req.params.id});
+    if(!m) return res.status(404).json({error:'Záznam nenájdený'});
+    const den = String(req.body.expires_at||'');
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(den)) return res.status(400).json({error:'Zadaj dátum v tvare RRRR-MM-DD.'});
+    const nove = new Date(den+'T23:59:59').toISOString();
+    const stare = m.expires_at || null;
+    const dni = stare ? Math.round((new Date(nove)-new Date(stare))/864e5) : 0;
+    await q.update(db.memberships,{_id:m._id},{$set:{expires_at:nove, updated_at:nowISO(), platnost_zmenil:req.session.uid}});
+    // Členstvo (nie permanentka) drží dátum aj na klientke — bez toho by appka ďalej
+    // ukazovala starý dátum a hodiny by sa nedali rezervovať.
+    const u = await q.one(db.users,{_id:m.user_id});
+    if(m.status==='active' && u && u.membership_plan===m.plan_id)
+      await q.update(db.users,{_id:u._id},{$set:{membership_expires:nove}});
+    const dovod = String(req.body.dovod||'').slice(0,160)
+      || ((m.status==='bundle'?'Permanentka ':'Členstvo ')+m.plan_name+' — platnosť predĺžená adminom');
+    await zapisHistoriu(m.user_id,'clenstvo', dni, null, dovod, {do_kedy:den, kto:'admin'});
+    await auditLog(req,'membership_platnost',m._id,{expires_at:stare},{expires_at:nove},dovod);
+    if(u) await q.insert(db.notifications,{user_id:u._id, type:'membership',
+      title: dni>=0 ? '📅 Platnosť predĺžená' : '📅 Platnosť upravená',
+      body: (m.status==='bundle'?m.plan_name:('Členstvo '+m.plan_name))+' ti platí do '
+        +den.split('-').reverse().join('. ')+'.', read:false, created_at:nowISO()}).catch(()=>{});
+    res.json({ ok:true, plan_name:m.plan_name, od:stare, do:nove, dni });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
 app.post('/api/admin/membership/freeze', adminAuth, async(req,res)=>{
   try {
     const {user_id, action} = req.body;
