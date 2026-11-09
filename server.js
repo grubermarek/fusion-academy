@@ -27322,6 +27322,13 @@ const EVENTS = require('./event-tickets')({
   emailTemplate, mailBudgetOk, mailBudgetStav, vencekMimoKonverzie, mzMesto
 });
 EVENTS.ensureEvent().then(e=>console.log('🎟️  Event pripravený:', e?.name)).catch(e=>console.error('event seed:', e.message));
+// Zima v kruhu najbližších — akcia na vrátenie klientok (november 2026).
+// Ochrany mailov si berie z EVENTS, aby existovala jedna jediná kópia.
+const ZIMA_KRUH = require('./zima-kruh')({
+  app, db, q, adminAuth, nowISO, APP_URL, sendMail, emailTemplate,
+  mailBudgetOk, mailBudgetStav, kampanovyMailZakazany: EVENTS.kampanovyMailZakazany,
+  MEMBERSHIP_PLANS, prveZaplateneClenstva, kamoskaPlatna
+});
 
 app.get('/skolenie',           (req,res)=>res.sendFile(path.join(__dirname,'public','skolenie.html')));
 app.get('/ambasador',          (req,res)=>res.sendFile(path.join(__dirname,'public','ambasador.html')));

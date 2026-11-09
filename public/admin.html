@@ -1849,6 +1849,20 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
       </div>
       <div id="kurzStav" class="small text-muted">Náhľad ešte nebol načítaný.</div>
     </div></div>
+    <!-- Zima v kruhu najbližších: vlna na vrátenie klientok + zoznam tých, ktoré si
+         privedením kamošky zaslúžili december. Darovanie ide cez grant-membership,
+         tu je len potvrdenie — mesiac členstva sú peniaze. -->
+    <div class="card bg-dark border-secondary mb-3" style="max-width:720px"><div class="card-body">
+      <div class="fw-semibold mb-1" style="color:#8ecae6">❄️ Zima v kruhu najbližších <span id="zimaGoBadge" class="badge bg-secondary">…</span></div>
+      <p class="text-muted small mb-2">Pre klientky, ktoré u nás <b>ešte neboli</b> alebo <b>neboli na hodine 3 mesiace</b> — vrátane rodičov detí zo Zumba Kids (mail ide rodičovi). Kto si v novembri vezme členstvo a privedie kamošku, má december zadarmo.</p>
+      <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
+        <button class="btn btn-sm btn-outline-info" onclick="zimaNahlad()">🔍 Načítať náhľad</button>
+        <button class="btn btn-sm btn-warning fw-bold" id="zimaSendBtn" onclick="zimaOdoslat()" disabled>📤 Odoslať vlnu</button>
+        <button class="btn btn-sm btn-outline-light" onclick="zimaNaroky()">🎁 Kto si zaslúžil december</button>
+      </div>
+      <div id="zimaStav" class="small text-muted">Náhľad ešte nebol načítaný.</div>
+      <div id="zimaNarokyBox" class="small mt-2"></div>
+    </div></div>
     <div class="card bg-dark border-secondary mb-3" style="max-width:720px"><div class="card-body">
       <div class="fw-semibold mb-1" style="color:#7bd88f">📲 SMS brána <span id="smsCfgBadge" class="badge bg-secondary">…</span></div>
       <p class="text-muted small mb-2">Hromadná SMS na leady s telefónom (importy majú súhlas z formulára). <b>{meno}</b> = krstné meno. Do 160 znakov = 1 SMS (~0,045 €).</p>
@@ -3112,6 +3126,76 @@ async function kurzOdoslat(){
   document.getElementById('kurzSendBtn').disabled = true;
 }
 
+/* ── ❄️ Zima v kruhu najbližších ─────────────────────────────────────────────
+   Náhľad je povinný krok (rovnako ako pri kurze), odoslanie sa odomkne až po ňom.
+   December sa nepripisuje sám: zoznam ukáže, kto si ho zaslúžil, a darovanie ide
+   cez ten istý grant-membership, ktorým sa členstvá darujú aj inak. */
+let zimaNahladData = null;
+
+async function zimaNahlad(){
+  const box = document.getElementById('zimaStav');
+  box.innerHTML = '<span class="text-muted">Načítavam…</span>';
+  const n = await api('/api/admin/zima/nahlad');
+  if(!n?.ok){ box.innerHTML = '<span class="text-danger">'+escHtml(n?.error||'Chyba')+'</span>'; return; }
+  zimaNahladData = n;
+  const badge = document.getElementById('zimaGoBadge');
+  badge.textContent = n.go_flag ? 'odomknuté' : 'zamknuté (ZIMA_GO)';
+  badge.className = 'badge ' + (n.go_flag ? 'bg-success' : 'bg-secondary');
+  const riadky = o => Object.entries(o||{}).sort((a,b)=>b[1]-a[1])
+    .map(([k,v])=>escHtml(k)+': <b>'+v+'</b>').join(' · ') || '—';
+  box.innerHTML = '<div class="mb-1">Mail dostane <b style="color:#8ecae6">'+n.pocet+'</b> '
+    + (n.pocet===1?'adresátka':'adresátok') + ' · okno akcie '+escHtml(n.okno.od)+' – '+escHtml(n.okno.do)
+    + ' · darček '+n.dni_darcek+' dní'+(n.aj_kamoska?' (aj kamoške)':'')+'</div>'
+    + '<div class="mb-1">Z toho s deťmi v Kids: <b>'+n.s_detmi+'</b> · len kvôli dieťaťu: <b>'+n.len_kvoli_dietatu+'</b> · nikdy nebola na hodine: <b>'+n.nikdy_nebola+'</b></div>'
+    + '<div class="mb-1">'+riadky(n.podla_typu)+'</div>'
+    + '<div class="mb-1 text-muted">Vynechaní: '+riadky(n.vynechani)+'</div>'
+    + '<div class="text-muted">Mailov dnes: '+(n.rozpocet?.odoslane_dnes ?? '?')+' z '+(n.rozpocet?.denny_strop ?? '?')
+    + ' · zostáva '+(n.rozpocet?.zostava_dnes ?? '?')+'</div>'
+    + (n.go_flag ? '' : '<div class="mt-1 text-warning">Vlna je zamknutá — v Railway treba nastaviť <code>ZIMA_GO=1</code>, inak odoslanie vráti 409.</div>');
+  document.getElementById('zimaSendBtn').disabled = !n.pocet;
+}
+
+async function zimaOdoslat(){
+  if(!zimaNahladData){ alert('Najprv načítaj náhľad.'); return; }
+  const box = document.getElementById('zimaStav');
+  const dry = await api('/api/admin/zima/odoslat',{method:'POST',body:{}});
+  if(!dry?.ok){ box.innerHTML = '<span class="text-danger">'+escHtml(dry?.error||'Chyba')+'</span>'; return; }
+  if(!confirm('Odoslať akciu Zima v kruhu najbližších '+dry.pocet+' adresátkam? Odoslaný e-mail sa nedá vzať späť.')) return;
+  box.innerHTML = '<span class="text-muted">Odosielam… pri stovkách adresátov to môže trvať minúty.</span>';
+  const r = await api('/api/admin/zima/odoslat',{method:'POST',body:{potvrdit:true}});
+  if(!r?.ok){ box.innerHTML = '<span class="text-danger">'+escHtml(r?.error||'Chyba')+'</span>'; return; }
+  box.innerHTML = '<span class="text-success">✅ Odoslané: <b>'+r.poslane+'</b> z '+r.zo
+    + (r.zlyhalo ? ' · zlyhalo '+r.zlyhalo : '')
+    + (r.stoplo ? ' · zastavené: '+escHtml(r.stoplo) : '') + '</span>';
+  document.getElementById('zimaSendBtn').disabled = true;
+}
+
+async function zimaNaroky(){
+  const box = document.getElementById('zimaNarokyBox');
+  box.innerHTML = '<span class="text-muted">Počítam…</span>';
+  const r = await api('/api/admin/zima/naroky');
+  if(!r?.ok){ box.innerHTML = '<span class="text-danger">'+escHtml(r?.error||'Chyba')+'</span>'; return; }
+  if(!r.pocet){ box.innerHTML = '<span class="text-muted">Zatiaľ nikto — treba zaplatené členstvo v okne akcie aj privedenú kamošku s jej prvým zaplateným členstvom.</span>'; return; }
+  box.innerHTML = '<div class="mb-1">December si zaslúžilo <b>'+r.pocet+'</b> '+(r.pocet===1?'klientka':'klientok')+':</div>'
+    + r.naroky.map(z => '<div class="d-flex justify-content-between align-items-center gap-2 py-1 border-top border-secondary">'
+      + '<div>' + escHtml(z.inviter) + ' → <b>' + escHtml(z.prijemca) + '</b>'
+      + (z.komu==='dieťa' ? ' <span class="badge bg-info text-dark">dieťa</span>' : '')
+      + '<div class="text-muted" style="font-size:.72rem">priviedla: ' + escHtml(z.kamosky.map(k=>k.meno).join(', '))
+      + ' · plán ' + escHtml(z.plan||'—') + ' · členstvo do ' + dateStr((z.clenstvo_do||'').slice(0,10)) + '</div></div>'
+      + (z.uz_darovane
+          ? '<span class="badge bg-success">darované</span>'
+          : '<button class="btn btn-sm btn-outline-warning" onclick="zimaDarovat(\''+z.inviter_id+'\',\''+z.prijemca_id+'\',\''+escHtml(z.plan_id||'')+'\',\''+escHtml(z.prijemca)+'\')">🎁 Darovať '+r.dni_darcek+' dní</button>')
+      + '</div>').join('');
+}
+
+async function zimaDarovat(inviterId, prijemcaId, planId, meno){
+  if(!planId){ alert('Neviem, ktorý plán darovať — klientka nemá v okne akcie zaplatené členstvo.'); return; }
+  if(!confirm('Darovať '+meno+' 30 dní členstva navyše? Pripíše sa k súčasnej platnosti a v predajoch bude ako darček za 0 €.')) return;
+  const g = await api('/api/admin/users/'+prijemcaId+'/grant-membership',{method:'POST',body:{plan_id:planId, gift:true}});
+  if(!g?.ok){ alert('Darovanie neprešlo: '+((g&&g.error)||'neznáma chyba')); return; }
+  await api('/api/admin/zima/darcek-zapisat',{method:'POST',body:{inviter_id:inviterId, prijemca_id:prijemcaId, plan_id:planId}});
+  zimaNaroky();
+}
 
 async function smsBlast(){
   const audience=document.getElementById('smsAud').value, text=document.getElementById('smsText').value;

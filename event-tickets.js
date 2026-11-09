@@ -1485,5 +1485,8 @@ module.exports = function mountEventTickets(ctx){
   });
 
   return { ensureEvent, fulfillEventOrder, LATIN, halloweenAudience, halloweenHtml, HALLOWEEN_SUBJ,
-           kurzAudience, kurzHtml, KURZ_SUBJ };
+           kurzAudience, kurzHtml, KURZ_SUBJ,
+           // Ďalšie vlny (napr. zima-kruh.js) berú ochrany odtiaľto, nie z vlastnej kópie —
+           // presne na dvoch kópiách sa to už raz rozišlo.
+           kampanovyMailZakazany };
 };
