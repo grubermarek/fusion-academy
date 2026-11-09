@@ -12817,7 +12817,13 @@ app.post('/api/service/stripe-obnova-doplnit', async(req,res)=>{
 // faktúry a vedľa toho stav v appke. Nič nemení — slúži na rozhodnutie, či klientka naozaj
 // platí a či appke nejaká obnova neunikla.
 app.get('/api/service/stripe-klient', async(req,res)=>{
-  if(!servisToken(req)) return res.status(404).end();
+  // Pustíme sem aj prihláseného admina, nielen servisný token: keď klientka tvrdí, že jej
+  // chodia platby, treba vidieť, čo má Stripe, a nie len to, čo si appka zapísala — práve
+  // v tom rozdiele bola chyba z 15. 9. 2026, keď sa obnovy do appky nezapisovali vôbec.
+  if(!servisToken(req)){
+    const ja = req.session?.uid ? await q.one(db.users,{_id:req.session.uid}).catch(()=>null) : null;
+    if(!ja || !ja.is_admin) return res.status(404).end();
+  }
   try{
     if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
     const email=String(req.query.email||'').trim().toLowerCase();
