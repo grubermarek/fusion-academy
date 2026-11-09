@@ -12765,6 +12765,7 @@ app.post('/api/service/stripe-obnova-doplnit', async(req,res)=>{
     const u = email ? await q.one(db.users,{email}) : await q.one(db.users,{_id:String(req.body.user_id||'')});
     if(!u) return res.status(404).json({error:'Klientka nenájdená'});
     const apply = req.body.apply===true;
+    const lenTrzba = req.body.len_trzba===true;   // doúčtovať platbu, členstvo nechať na pokoji
     const planId = String(req.body.plan_id||u.stripe_sub_plan||u.membership_plan||'');
     const plan = MEMBERSHIP_PLANS[planId];
     if(!plan) return res.status(400).json({error:'Neviem, o aký plán ide — pošli plan_id'});
@@ -12792,20 +12793,37 @@ app.post('/api/service/stripe-obnova-doplnit', async(req,res)=>{
         // Zámok rovnako ako pri bežnej obnove — druhý beh už nič nepridá
         try{ await q.insert(db.webhook_events,{ event_id:'obnova:'+f.id, provider:'stripe', type:'renewal_backfill', at:nowISO() }); }
         catch(e){ zaznam.v_appke=true; continue; }
-        const bezi = await q.one(db.memberships,{user_id:u._id, status:'active'});
-        const beziDoteraz = !!(bezi && bezi.expires_at && new Date(bezi.expires_at) > new Date());
-        const opts = (!beziDoteraz && koniecTs && koniecTs*1000 > Date.now()) ? { expiresAt:new Date(koniecTs*1000).toISOString() } : {};
-        await activateMembership(u._id, planId, plan.duration_days||30, opts);
+        // `len_trzba:true` = platba sa doúčtuje, ale členstvo sa NEPREDLŽUJE. Potrebné
+        // pri starých obnovách (9. 11. 2026: dve z 26. 8.): predĺženie by klientke
+        // pridalo 30 dní odo dneška za mesiac, ktorý dávno uplynul. Doklad sa vystaví
+        // ku dňu platby a klientke nejde e-mail — nie je čo oznamovať, peniaze sedia.
+        if(!lenTrzba){
+          const bezi = await q.one(db.memberships,{user_id:u._id, status:'active'});
+          const beziDoteraz = !!(bezi && bezi.expires_at && new Date(bezi.expires_at) > new Date());
+          const opts = (!beziDoteraz && koniecTs && koniecTs*1000 > Date.now()) ? { expiresAt:new Date(koniecTs*1000).toISOString() } : {};
+          await activateMembership(u._id, planId, plan.duration_days||30, opts);
+        }
         await q.insert(db.transactions,{ type:'subscription_renewal', user_id:u._id, user_name:u.name, amount:suma,
           date:datum, payment_method:'stripe', note:`Auto-obnova ${plan.name} (Stripe) — doplnené ${today()}`,
           plan_id:planId, stripe_invoice_id:f.id, created_at:nowISO(), month:String(datum||'').slice(0,7) });
+        // Doklad k doúčtovanej platbe. Bez neho ostane obnova v audite „chýba faktúra"
+        // a účtovníčka nemá k príjmu papier. Provízia sa zámerne neudeľuje — spätné
+        // provízie sú samostatné rozhodnutie, nie vedľajší účinok doúčtovania.
+        if(lenTrzba){
+          const platca = u.stripe_sub_payer_id ? (await q.one(db.users,{_id:u.stripe_sub_payer_id}))||u : u;
+          const cudzie = platca._id!==u._id ? ' ('+u.name+')' : '';
+          const fkt = await createInvoice({ user_id:platca._id, client_name:platca.name, client_email:platca.email,
+            items:[{desc:`Členstvo ${plan.name}${cudzie} — mesačná obnova ${datum}`, qty:1, total:suma}],
+            total:suma, method:'Stripe (automatický odber)', issued_at:datum, paid_at:datum, silent:true });
+          zaznam.faktura_doklad = fkt ? fkt.number : null;
+        }
         const po = await q.one(db.memberships,{user_id:u._id, status:'active'});
         zaznam.doplnene=true; zaznam.clenstvo_do = po ? String(po.expires_at).slice(0,10) : null;
         doplnene.push(zaznam);
       }
     }
     if(doplnene.length){
-      await q.insert(db.notifications,{user_id:u._id, type:'membership',
+      if(!lenTrzba) await q.insert(db.notifications,{user_id:u._id, type:'membership',
         title:'✅ Členstvo je znovu aktívne', body:`Tvoju platbu sme dohľadali a členstvo ${plan.name} ti beží ďalej. Ospravedlňujeme sa za zdržanie.`,
         read:false, created_at:nowISO()}).catch(()=>{});
       await auditLog(req,'stripe_renewal_backfill',u._id,{clenstvo_do:u.membership_expires||null},
@@ -12813,8 +12831,8 @@ app.post('/api/service/stripe-obnova-doplnit', async(req,res)=>{
       console.log('💳 Doplnená obnova zo Stripe: '+u.name+' ('+doplnene.map(x=>x.suma+'€').join(', ')+')');
     }
     const uDoteraz = await q.one(db.users,{_id:u._id});
-    res.json({ ok:true, klientka:u.name, plan:planId, apply, faktury:najdene, doplnene:doplnene.length,
-      clenstvo_do: uDoteraz?.membership_expires || null });
+    res.json({ ok:true, klientka:u.name, plan:planId, apply, len_trzba:lenTrzba, faktury:najdene,
+      doplnene:doplnene.length, clenstvo_do: uDoteraz?.membership_expires || null });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
