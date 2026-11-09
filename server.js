@@ -12864,6 +12864,64 @@ app.get('/api/service/stripe-klient', async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// Koľkým klientkám chýba zaplatená obnova v tržbách (Marek 9. 11. 2026). Zámok proti
+// dvojitému spracovaniu sa v spracujObnovuStripe zapisuje PRED tržbou, takže keď sa
+// funkcia potom skončí skôr (neznámy odber, chýbajúci plán), appka si myslí, že faktúru
+// spracovala — a chýbajúcu tržbu už nič nenahlási. Presne to sa stalo Malatincovcom.
+// Tento nástroj to hľadá z druhej strany: zoberie zaplatené mesačné obnovy zo Stripe
+// a pozrie, ktoré z nich v tržbách nie sú. Iba ČÍTA, nič nedopĺňa — na doplnenie je
+// /api/service/stripe-obnova-doplnit (ten ale pri existujúcom zámku odmietne, preto
+// tu pri každom náleze vidno aj to, či zámok existuje).
+app.get('/api/service/obnovy-kontrola', async(req,res)=>{
+  if(!servisToken(req)){
+    const ja = req.session?.uid ? await q.one(db.users,{_id:req.session.uid}).catch(()=>null) : null;
+    if(!ja || !ja.is_admin) return res.status(404).end();
+  }
+  try{
+    if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
+    const mesiace = Math.min(24, Math.max(1, +req.query.mesiace || 6));
+    const od = new Date(Date.now() - mesiace*31*24*3600*1000);
+    const gte = Math.floor(od.getTime()/1000);
+    const eur = c => +((c||0)/100).toFixed(2);
+    const den = s => s ? new Date(s*1000).toISOString().slice(0,10) : null;
+
+    const faktury=[]; let after=null;
+    for(let i=0;i<20;i++){
+      const page = await stripeApiGet('invoices?limit=100&status=paid&created[gte]='+gte+(after?'&starting_after='+after:''));
+      faktury.push(...(page.data||[]));
+      if(!page.has_more || !(page.data||[]).length) break;
+      after = page.data[page.data.length-1].id;
+    }
+    const obnovy = faktury.filter(f=>f.billing_reason==='subscription_cycle' && +f.amount_paid>0);
+    const vsetkyTx = await q.find(db.transactions,{});
+    const podlaFaktury = new Set(vsetkyTx.map(t=>t.stripe_invoice_id).filter(Boolean));
+
+    const chybaju=[];
+    for(const f of obnovy){
+      if(podlaFaktury.has(f.id)) continue;
+      const subId = odberFaktury(f);
+      const mail = String(f.customer_email||'').trim().toLowerCase();
+      const u = (subId ? await q.one(db.users,{stripe_subscription_id:subId}) : null)
+        || (mail ? await q.one(db.users,{email:mail}) : null);
+      const datum = den(f.created), suma = eur(f.amount_paid);
+      // Tá istá suma v ten istý deň = platba je v tržbách zapísaná inou cestou (nákup odberu)
+      if(u && vsetkyTx.some(t=>t.user_id===u._id && String(t.date||'').slice(0,10)===datum && +t.amount===suma)) continue;
+      const zamok = await q.one(db.webhook_events,{event_id:'obnova:'+f.id});
+      chybaju.push({ faktura:f.id, datum, suma, email:mail||null, odber:subId||null,
+        klientka: u ? u.name : null, user_id: u ? u._id : null,
+        plan_v_appke: u ? (u.stripe_sub_plan||null) : null,
+        zamok: zamok ? (zamok.type||'renewal') : null,
+        dovod: !u ? 'klientka sa nenašla podľa odberu ani e-mailu'
+             : !u.stripe_sub_plan ? 'klientka nemá stripe_sub_plan — obnova sa ticho preskočila'
+             : zamok ? 'zámok existuje, tržba nie' : 'webhook vôbec nedobehol' });
+    }
+    chybaju.sort((a,b)=>String(a.datum).localeCompare(String(b.datum)));
+    res.json({ ok:true, od:od.toISOString().slice(0,10), faktur_celkom:faktury.length,
+      obnov:obnovy.length, chyba:chybaju.length,
+      suma_chybajucich:+chybaju.reduce((s,x)=>s+x.suma,0).toFixed(2), nalezy:chybaju });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Presun súkromnej hodiny na iný termín (Marek 5. 10. 2026: „Ailina neprišla na súkromku
 // Nelke, treba to anulovať, namiesto toho budú mať súkromku 25. 10."). Pôvodná rezervácia
 // sa anuluje bez poplatku, termín sa zavrie a klientka dostane rezerváciu na nový voľný
