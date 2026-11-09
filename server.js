@@ -12916,9 +12916,19 @@ app.get('/api/service/obnovy-kontrola', async(req,res)=>{
              : zamok ? 'zámok existuje, tržba nie' : 'webhook vôbec nedobehol' });
     }
     chybaju.sort((a,b)=>String(a.datum).localeCompare(String(b.datum)));
+    // Druhá strana tej istej otázky: obnova môže byť v transakciách zapísaná a aj tak
+    // v Predajoch nebyť — revenueEvents číta typy 'membership', 'single_entry',
+    // 'private_lesson', 'event_ticket' a 'product', ale 'subscription_renewal' nie.
+    const obnovyTx = vsetkyTx.filter(t=>t.type==='subscription_renewal' && +t.amount>0 && !t.commission_only);
+    const vTrzbach = new Set((await revenueEvents({})).map(e=>e.id));
+    const neviditelne = obnovyTx.filter(t=>!vTrzbach.has(t._id));
     res.json({ ok:true, od:od.toISOString().slice(0,10), faktur_celkom:faktury.length,
       obnov:obnovy.length, chyba:chybaju.length,
-      suma_chybajucich:+chybaju.reduce((s,x)=>s+x.suma,0).toFixed(2), nalezy:chybaju });
+      suma_chybajucich:+chybaju.reduce((s,x)=>s+x.suma,0).toFixed(2), nalezy:chybaju,
+      zapisane_obnovy:{ pocet:obnovyTx.length, suma:+obnovyTx.reduce((s,t)=>s+(+t.amount||0),0).toFixed(2),
+        mimo_trzieb:neviditelne.length, suma_mimo_trzieb:+neviditelne.reduce((s,t)=>s+(+t.amount||0),0).toFixed(2),
+        riadky:neviditelne.map(t=>({ datum:String(t.date||t.created_at||'').slice(0,10), klientka:t.user_name||null,
+          suma:+t.amount||0, plan:t.plan_id||null, faktura:t.stripe_invoice_id||null })) } });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
