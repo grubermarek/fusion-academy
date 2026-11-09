@@ -12809,12 +12809,15 @@ app.post('/api/service/stripe-obnova-doplnit', async(req,res)=>{
         // Doklad k doúčtovanej platbe. Bez neho ostane obnova v audite „chýba faktúra"
         // a účtovníčka nemá k príjmu papier. Provízia sa zámerne neudeľuje — spätné
         // provízie sú samostatné rozhodnutie, nie vedľajší účinok doúčtovania.
+        // Vystavenie je DNEŠNÝM dňom, nie dňom platby: číslovanie faktúr musí ísť
+        // po dátumoch, inak by augustový doklad dostal novembrové číslo. Deň platby
+        // je v `paid_at` a v texte položky, takže dohľadateľný ostáva.
         if(lenTrzba){
           const platca = u.stripe_sub_payer_id ? (await q.one(db.users,{_id:u.stripe_sub_payer_id}))||u : u;
           const cudzie = platca._id!==u._id ? ' ('+u.name+')' : '';
           const fkt = await createInvoice({ user_id:platca._id, client_name:platca.name, client_email:platca.email,
             items:[{desc:`Členstvo ${plan.name}${cudzie} — mesačná obnova ${datum}`, qty:1, total:suma}],
-            total:suma, method:'Stripe (automatický odber)', issued_at:datum, paid_at:datum, silent:true });
+            total:suma, method:'Stripe (automatický odber)', paid_at:datum, silent:true });
           zaznam.faktura_doklad = fkt ? fkt.number : null;
         }
         const po = await q.one(db.memberships,{user_id:u._id, status:'active'});
