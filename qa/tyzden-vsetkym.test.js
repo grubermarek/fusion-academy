@@ -34,7 +34,7 @@ const dnes = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Bratislava' })
 
   console.log('TÝŽDEŇ ZADARMO PRE VŠETKÝCH — štart servera…');
   const srv = spawn(process.execPath, ['server.js'], { cwd: KOREN,
-    env: { ...process.env, PORT: String(PORT), DATA_DIR: DATA, APP_URL: BASE, RATE_LIMIT_OFF: '1', MAIL_OFF: '1', PRVY_TYZDEN: '1' }, stdio: ['ignore', 'ignore', 'pipe'] });
+    env: { ...process.env, PORT: String(PORT), DATA_DIR: DATA, APP_URL: BASE, RATE_LIMIT_OFF: '1', MAIL_OFF: '1', PRVY_TYZDEN: '1', ZIMA_SKUSKA: '0' }, stdio: ['ignore', 'ignore', 'pipe'] });
   let stderr = ''; srv.stderr.on('data', d => { stderr += d; });
   const t0 = Date.now(); let zije = false;
   while (Date.now() - t0 < 180000) { try { await fetch(BASE + '/'); zije = true; break; } catch (e) { await sleep(1000); } }

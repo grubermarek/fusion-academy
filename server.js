@@ -13870,13 +13870,22 @@ async function skuskaNarok(u){
   // kým sa sami nestanú klientkami; majú vlastný darček VENCEKRODIC (Marek 15. 9.).
   if(vencekMimoKonverzie(u)) return {ok:false, reason:'vencek'};
   if(!(await skuskaZapnuta())) return {ok:false, reason:'vypnute'};
-  if(u.trial_used) return {ok:false, reason:'uz_mala'};
-  if(u.trial_declined_at) return {ok:false, reason:'odmietnuta'}; // ponuka je len raz (Marek 14. 9.)
+  // Zima v kruhu najbližších (Marek 9. 11. 2026): počas akcie si týždeň zadarmo môže
+  // zapnúť aj klientka, ktorá u nás už bola, ak nebola na hodine tri mesiace. Zisťuje
+  // sa to lenivo — nová klientka žiadnu z týchto prekážok nemá, takže za ňu nerobíme
+  // zbytočný dotaz do rezervácií. Aktívne členstvo ani bežiaci odber výnimka neruší.
+  let zimaCache;
+  const zima = async () => zimaCache === undefined
+    ? (zimaCache = await ZIMA_KRUH.skuskaVynimka(u).catch(()=>false)) : zimaCache;
+  if(u.trial_used && !(await zima())) return {ok:false, reason:'uz_mala'};
+  if(u.trial_declined_at && !(await zima())) return {ok:false, reason:'odmietnuta'}; // ponuka je len raz (Marek 14. 9.)
   if(u.stripe_subscription_id) return {ok:false, reason:'odber'};
   const m = await checkMembership(u._id);
   if(m && m.status==='active' && (!m.expires_at || m.expires_at>=today())) return {ok:false, reason:'clenstvo'};
-  if(await q.one(db.memberships,{user_id:u._id, plan_id:{$in:['bronze','silver','gold']}})) return {ok:false, reason:'mala_clenstvo'};
-  return {ok:true};
+  if(await q.one(db.memberships,{user_id:u._id, plan_id:{$in:['bronze','silver','gold']}}) && !(await zima())) return {ok:false, reason:'mala_clenstvo'};
+  // `zimaCache === true` len vtedy, keď sa výnimka naozaj zisťovala, teda keď jej
+  // nejaká prekážka stála v ceste. Nová klientka tu nemá čo prepisovať.
+  return {ok:true, zima: zimaCache === true};
 }
 async function skuskaInfo(u){
   const on = await skuskaZapnuta();
@@ -13891,7 +13900,7 @@ async function skuskaInfo(u){
     skip_offer = SKUSKA_PRESKOCIT_MESTA.includes(mzMesto(u.city)) ||
       (await q.find(db.bookings,{user_id:u._id})).some(b=>SKUSKA_PRESKOCIT_MESTA.includes(mzMesto(b.class_location)));
   }
-  return { on, skip_offer, eligible:n.ok, reason:n.ok?null:n.reason, active, card: !!(u && u.stripe_subscription_id), ends_at:u?.trial_ends_at||null, used:!!u?.trial_used, declined:!!u?.trial_declined_at,
+  return { on, skip_offer, eligible:n.ok, reason:n.ok?null:n.reason, zima:!!n.zima, active, card: !!(u && u.stripe_subscription_id), ends_at:u?.trial_ends_at||null, used:!!u?.trial_used, declined:!!u?.trial_declined_at,
     days:SKUSKA.dni, plan:SKUSKA.plan, price:MEMBERSHIP_PLANS[SKUSKA.plan].price, skipped:!!u?.trial_skipped_at };
 }
 function fmtDenSk(iso){ const d=new Date(iso); return d.getUTCDate()+'. '+(d.getUTCMonth()+1)+'.'; }
@@ -13899,21 +13908,30 @@ function fmtDenSk(iso){ const d=new Date(iso); return d.getUTCDate()+'. '+(d.get
 async function aktivujSkusku(userId, subId, s){
   const u = await q.one(db.users,{_id:userId}); if(!u) return {ok:false, error:'Používateľ nenájdený'};
   const plan = MEMBERSHIP_PLANS[SKUSKA.plan];
+  // Vracajúca sa klientka: týždeň zadarmo dostáva z akcie Zima v kruhu najbližších,
+  // nie ako nová. Zisťuje sa to PRED aktiváciou (potom by už členstvo existovalo)
+  // a zapisuje sa, aby ho z akcie nedostala druhýkrát. Pre ňu to nie je „prvý"
+  // týždeň, takže ani v ozname a maili tak nepíšeme.
+  const vratena = !!(u.trial_used || u.trial_declined_at
+    || await q.one(db.memberships,{user_id:userId, plan_id:{$in:['bronze','silver','gold']}}))
+    && await ZIMA_KRUH.skuskaVynimka(u).catch(()=>false);
+  const tyzden = vratena ? 'Týždeň zadarmo' : 'Prvý týždeň zadarmo';
   await activateMembership(userId, SKUSKA.plan, SKUSKA.dni);
   const mem = await q.one(db.memberships,{user_id:userId, status:'active'});
   const konci = mem ? mem.expires_at : new Date(Date.now()+SKUSKA.dni*864e5).toISOString();
   if(mem) await q.update(db.memberships,{_id:mem._id},{$set:{trial:true, trial_ends_at:konci, price:0}});
   await q.update(db.users,{_id:userId},{$set:{ trial_used:true, trial_started_at:nowISO(), trial_ends_at:konci, free_class_used:true,
+    ...(vratena ? {zima_skuska_at:nowISO()} : {}),
     stripe_subscription_id:subId||null, stripe_sub_plan:SKUSKA.plan, stripe_sub_member:userId }});
   const skarta = !!subId;   // bez karty sa po týždni nič nestrhne — nesľubujme to
   await q.insert(db.notifications,{user_id:userId, type:'trial',
-    title:'🎉 Prvý týždeň zadarmo beží — do '+fmtDenSk(konci),
+    title:'🎉 '+tyzden+' beží — do '+fmtDenSk(konci),
     body:'Choď na ktorúkoľvek hodinu vo svojom meste. '+(skarta
       ? 'Potom pokračuje Bronze za '+plan.price.toFixed(2).replace('.',',')+' € mesačne automaticky. Zrušiť môžeš kedykoľvek: Nástenka → Členstvo → Automatický odber.'
       : 'Po týždni sa nič nestrhne — ak ti to sadne, členstvo Bronze za '+plan.price.toFixed(2).replace('.',',')+' € mesačne si zapneš sama na nástenke.'),
     read:false, created_at:nowISO()}).catch(()=>{});
-  if(u.email && !/@test-fa-qa\.local$/i.test(u.email)) sendMail(u.email, '🎉 Tvoj prvý týždeň zadarmo beží — do '+fmtDenSk(konci),
-    emailTemplate('Vitaj, tancujeme! 💃',
+  if(u.email && !/@test-fa-qa\.local$/i.test(u.email)) sendMail(u.email, '🎉 '+tyzden+' beží — do '+fmtDenSk(konci),
+    emailTemplate(vratena ? 'Vitaj späť, tancujeme! 💃' : 'Vitaj, tancujeme! 💃',
       `<p>Ahoj <b>${u.name}</b>,</p><p>tvoj <b>skúšobný týždeň</b> je zapnutý. Do <b>${fmtDenSk(konci)}</b> môžeš prísť na ktorúkoľvek hodinu vo svojom meste — stačí si ju rezervovať v appke.</p>
        ${skarta
          ? `<p>Potom pokračuje členstvo <b>Bronze za ${plan.price.toFixed(2).replace('.',',')} € mesačne</b>, ktoré sa obnovuje automaticky. Dva dni pred prvou platbou ti pošleme pripomienku.</p>
@@ -27395,7 +27413,7 @@ EVENTS.ensureEvent().then(e=>console.log('🎟️  Event pripravený:', e?.name)
 const ZIMA_KRUH = require('./zima-kruh')({
   app, db, q, adminAuth, nowISO, APP_URL, sendMail, emailTemplate,
   mailBudgetOk, mailBudgetStav, kampanovyMailZakazany: EVENTS.kampanovyMailZakazany,
-  MEMBERSHIP_PLANS, prveZaplateneClenstva, kamoskaPlatna
+  MEMBERSHIP_PLANS, prveZaplateneClenstva, kamoskaPlatna, skuskaDni: SKUSKA.dni
 });
 
 app.get('/skolenie',           (req,res)=>res.sendFile(path.join(__dirname,'public','skolenie.html')));

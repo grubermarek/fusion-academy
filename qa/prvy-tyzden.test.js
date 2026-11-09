@@ -76,7 +76,7 @@ function fixtures(DATA, DOW, nowMin) {
 }
 async function start(PORT, DATA, env) {
   const BASE = 'http://localhost:' + PORT;
-  const proc = spawn(process.execPath, ['server.js'], { cwd: ROOT, env: { ...process.env, PORT: String(PORT), DATA_DIR: DATA, APP_URL: BASE, RATE_LIMIT_OFF: '1', MAIL_CAPTURE: '1', STRIPE_FAKE: '1', STRIPE_SECRET_KEY: 'sk_test_qa_fake', ...env }, stdio: 'ignore' });
+  const proc = spawn(process.execPath, ['server.js'], { cwd: ROOT, env: { ...process.env, PORT: String(PORT), DATA_DIR: DATA, APP_URL: BASE, RATE_LIMIT_OFF: '1', MAIL_CAPTURE: '1', ZIMA_SKUSKA: '0', STRIPE_FAKE: '1', STRIPE_SECRET_KEY: 'sk_test_qa_fake', ...env }, stdio: 'ignore' });
   const t0 = Date.now(); while (Date.now() - t0 < 90000) { try { await fetch(BASE + '/'); break; } catch (e) { await sleep(1000); } }
   await sleep(4000);
   return { proc, BASE };

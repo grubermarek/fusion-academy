@@ -43,10 +43,14 @@ const klient = (id, name, email, extra) => ({ _id: id, name, email, password: H,
   fs.writeFileSync(path.join(DATA, 'users.db'), riadky([
     { _id: 'qaZimAdmin000001', name: 'QA Admin', email: 'qa.zima.admin@qa-biz.local', password: H,
       is_admin: true, active: true, user_type: 'admin', referral_code: 'QAZIMA', created_at: pred(400) },
-    // Odišla pred pol rokom → patrí do vlny, mail jej pripomenie dátum.
-    klient('qaZimOdisla0001', 'Alena Odišlá', 'alena.odisla@qa-biz.local'),
+    // Odišla pred pol rokom → patrí do vlny, mail jej pripomenie dátum. Skúšobný
+    // týždeň už raz mala, takže bez výnimky z akcie by na zumbu zadarmo nedosiahla.
+    klient('qaZimOdisla0001', 'Alena Odišlá', 'alena.odisla@qa-biz.local', { trial_used: true }),
     // Chodila minulý týždeň → akcia nie je pre ňu.
-    klient('qaZimChodi00001', 'Barbora Chodí', 'barbora.chodi@qa-biz.local'),
+    klient('qaZimChodi00001', 'Barbora Chodí', 'barbora.chodi@qa-biz.local', { trial_used: true }),
+    // Zumbu zadarmo si z tejto akcie už zapnula → druhýkrát ju nedostane.
+    klient('qaZimNina000001', 'Nina Vyčerpaná', 'nina.vycerpana@qa-biz.local',
+      { trial_used: true, zima_skuska_at: '2026-11-10T09:00:00.000Z' }),
     // Registrovaná, nikdy netancovala.
     klient('qaZimNikdy00001', 'Cecília Nikdy', 'cecilia.nikdy@qa-biz.local', { user_type: 'lead' }),
     // Rodič chodí, ale dieťa prestalo → mail dostane rodič kvôli dieťaťu.
@@ -73,6 +77,10 @@ const klient = (id, name, email, extra) => ({ _id: id, name, email, password: H,
       email: 'zarka.dieta@internal.local', referral_code: 'QZDIE2',
       active: true, user_type: 'client', kids_group: 'Kids 2', created_at: pred(300) },
     klient('qaZimMisa000001', 'Miša Kamoška', 'misa.kamoska@qa-biz.local', { sponsor_id: 'qaZimJana000001' }),
+    // O nastúpila na týždeň zadarmo 28. 11., takže prvé členstvo jej Stripe strhol až
+    // v decembri. Nárok jej musí vzniknúť rovnako ako tej, ktorá platila v novembri.
+    klient('qaZimOlga000001', 'Oľga Na Konci', 'olga.nakonci@qa-biz.local'),
+    klient('qaZimPetra00001', 'Petra Kamoška', 'petra.kamoska@qa-biz.local', { sponsor_id: 'qaZimOlga000001' }),
   ]));
 
   const rez = (id, uid, dni, status) => ({ _id: id, user_id: uid, class_id: 'qaZimClass00001',
@@ -99,6 +107,9 @@ const klient = (id, name, email, extra) => ({ _id: id, name, email, password: H,
     // Jana zaplatila dieťaťu, Miša je jej nová kamoška.
     platba('qaZimTx00000004', 'qaZimJanaDieta1', 'Zarka Mamová', '2026-11-15'),
     platba('qaZimTx00000005', 'qaZimMisa000001', 'Miša Kamoška', '2026-11-22'),
+    // Chvost po okne: týždeň zadarmo z konca novembra sa platí až v decembri.
+    platba('qaZimTx00000006', 'qaZimOlga000001', 'Oľga Na Konci', '2026-12-03'),
+    platba('qaZimTx00000007', 'qaZimPetra00001', 'Petra Kamoška', '2026-12-05'),
   ]));
   fs.writeFileSync(path.join(DATA, 'memberships.db'), riadky([
     { _id: 'qaZimMem00000001', user_id: 'qaZimHost000001', plan_id: 'bronze', plan_name: 'Bronze',
@@ -109,7 +120,8 @@ const klient = (id, name, email, extra) => ({ _id: id, name, email, password: H,
   const srv = spawn(process.execPath, ['server.js'], {
     cwd: path.join(__dirname, '..'),
     env: { ...process.env, PORT: String(PORT), DATA_DIR: DATA, APP_URL: BASE, RATE_LIMIT_OFF: '1',
-      MAIL_CAPTURE: '1', ZIMA_GO: '' },
+      // Týždeň zadarmo musí byť zapnutý, inak sa výnimka z akcie nemá kde prejaviť.
+      MAIL_CAPTURE: '1', ZIMA_GO: '', PRVY_TYZDEN: '1' },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   let chyba = ''; srv.stderr.on('data', d => { chyba += d; });
@@ -159,6 +171,21 @@ const klient = (id, name, email, extra) => ({ _id: id, name, email, password: H,
     ok('ceny sú z MEMBERSHIP_PLANS', /49,90 €/.test(m) && /74,90 €/.test(m) && /124,90 €/.test(m));
     ok('má svoj vlastný odkaz na kamošku', /\/invite\//.test(m));
     ok('odkaz na nákup vedie do obchodu', /\/obchod/.test(m));
+    // Marek 9. 11.: prvý krok akcie je zumba zadarmo, až druhý je december za kamošku.
+    ok('mail ponúka zumbu zadarmo ako prvý krok',
+      /aktivuješ zadarmo/i.test(m) && /7 dní neobmedzených hodín/i.test(m));
+    ok('tej, čo u nás už bola, to mail povie', /aj vtedy, keď si u nás už bola/i.test(m));
+    ok('tá, čo nikdy nebola, nečíta, že u nás už bola',
+      /aktivuješ zadarmo/i.test(n.ukazka_nikdy || '') && !/už bola/i.test(n.ukazka_nikdy || ''));
+    ok('tlačidlo vedie na aktiváciu, nie do obchodu',
+      /client-dashboard/.test(m) && /AKTIVOVAŤ ZUMBU ZADARMO/i.test(m));
+    // Rodič je vo vlne len kvôli dieťaťu — deti skúšobný týždeň v appke nemajú,
+    // takže sa mu nesmie sľúbiť.
+    ok('rodičovi kvôli dieťaťu sa týždeň zadarmo nesľubuje',
+      !/aktivuješ zadarmo/i.test(n.ukazka_deti || ''));
+    ok('náhľad hlási nový krok aj chvost na platbu',
+      n.skuska_pre_vratene === true && n.skuska_dni === 7 && n.do_platba === '2026-12-07',
+      JSON.stringify({ s: n.skuska_pre_vratene, d: n.skuska_dni, p: n.do_platba }));
 
     console.log('\n③ Zámok vlny');
     const z = await ide('/api/admin/zima/odoslat', { method: 'POST', body: { potvrdit: true } });
@@ -188,6 +215,9 @@ const klient = (id, name, email, extra) => ({ _id: id, name, email, password: H,
       jana.komu === 'dieťa' && jana.prijemca_id === 'qaZimJanaDieta1' && jana.inviter === 'Jana Mama',
       JSON.stringify(jana));
     ok('aj Mišin vlastný nárok je v zozname', (podla['Miša Kamoška'] || {}).komu === 'kamoška', kto);
+    // Kto nastúpil na týždeň zadarmo na konci novembra, zaplatil až v decembri —
+    // bez chvosta by akcia tichom vynechala práve posledný týždeň.
+    ok('platba týždeň po okne sa ešte uznáva', !!podla['Oľga Na Konci'] && !!podla['Petra Kamoška'], kto);
     ok('darované ešte nikto nemá', (r.naroky || []).every(x => x.uz_darovane === false));
 
     console.log('\n⑤ Darovanie sa zapíše raz');
@@ -206,6 +236,22 @@ const klient = (id, name, email, extra) => ({ _id: id, name, email, password: H,
     const dvakrat = await ide('/api/admin/zima/darcek-zapisat', { method: 'POST',
       body: { inviter_id: 'qaZimHost000001', prijemca_id: 'qaZimHost000001' } });
     ok('druhý zápis sa nepridá', dvakrat.d && dvakrat.d.uz_zapisane === true, JSON.stringify(dvakrat.d));
+
+    // Prihlásenie klientky prepíše session admina, preto je táto časť až na konci.
+    console.log('\n⑥ Zumba zadarmo pre tie, čo nechodia');
+    const trial = async (email) => {
+      await ide('/api/login', { method: 'POST', body: { email, password: 'Heslo123!' } });
+      return ((await ide('/api/me')).d || {}).trial || {};
+    };
+    const tA = await trial('alena.odisla@qa-biz.local');
+    ok('tá, čo odišla, si zumbu zapne zadarmo, hoci týždeň už mala',
+      tA.eligible === true && tA.zima === true, JSON.stringify(tA));
+    const tB = await trial('barbora.chodi@qa-biz.local');
+    ok('tá, čo chodí, výnimku nedostane',
+      tB.eligible === false && tB.reason === 'uz_mala', JSON.stringify(tB));
+    const tN = await trial('nina.vycerpana@qa-biz.local');
+    ok('kto zumbu zadarmo z akcie už mal, druhýkrát ju nedostane',
+      tN.eligible === false && tN.reason === 'uz_mala', JSON.stringify(tN));
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.message);
   }

@@ -589,7 +589,9 @@ function ponukniSkusku(d, btn) {
   _skuskaD = d; _skuskaBtn = btn;
   const box = document.getElementById('bookError');
   box.className = 'py-2 small mb-3'; box.style.cssText = SKUSKA_BOX_CSS;
-  box.innerHTML = '<div style="font-weight:800;color:var(--gold,#C9A84C);font-size:1.05rem">🎁 Prvý týždeň zadarmo</div>'
+  // Bez slova „prvý": od akcie Zima v kruhu najbližších (9. 11. 2026) ho dostávajú
+  // aj klientky, ktoré u nás už boli, a pre tie by to bol týždeň druhý.
+  box.innerHTML = '<div style="font-weight:800;color:var(--gold,#C9A84C);font-size:1.05rem">🎁 Týždeň zadarmo</div>'
     + '<div style="margin:4px 0 12px">7&nbsp;dní chodíš na všetky hodiny zadarmo. Potom <span style="white-space:nowrap">49,90&nbsp;€/mes.</span> z karty, zrušíš kedykoľvek pred platbou.</div>'
     + '<button type="button" class="btn-confirm" onclick="skuskaZRozvrhu()">Vyskúšať zadarmo</button>'
     + '<button type="button" style="' + SKUSKA_NIE_CSS + '" onclick="skuskaNieRozvrh()">Nie, ďakujem</button>';
