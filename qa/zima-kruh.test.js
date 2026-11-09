@@ -48,6 +48,9 @@ const klient = (id, name, email, extra) => ({ _id: id, name, email, password: H,
     klient('qaZimOdisla0001', 'Alena Odišlá', 'alena.odisla@qa-biz.local', { trial_used: true }),
     // Chodila minulý týždeň → akcia nie je pre ňu.
     klient('qaZimChodi00001', 'Barbora Chodí', 'barbora.chodi@qa-biz.local', { trial_used: true }),
+    // Ponuku odmietla ešte pred akciou → akcia jej ju ukáže znova.
+    klient('qaZimRebeka00001', 'Rebeka Odmietla', 'rebeka.odmietla@qa-biz.local',
+      { trial_declined_at: '2026-10-01T10:00:00.000Z' }),
     // Zumbu zadarmo si z tejto akcie už zapnula → druhýkrát ju nedostane.
     klient('qaZimNina000001', 'Nina Vyčerpaná', 'nina.vycerpana@qa-biz.local',
       { trial_used: true, zima_skuska_at: '2026-11-10T09:00:00.000Z' }),
@@ -252,6 +255,15 @@ const klient = (id, name, email, extra) => ({ _id: id, name, email, password: H,
     const tN = await trial('nina.vycerpana@qa-biz.local');
     ok('kto zumbu zadarmo z akcie už mal, druhýkrát ju nedostane',
       tN.eligible === false && tN.reason === 'uz_mala', JSON.stringify(tN));
+    // Celoobrazovková ponuka na nástenke sa ukazuje každej, kto má nárok. Odmietnutie
+    // spred akcie sa ignoruje, ale to počas nej musí platiť — inak by jej ponuka
+    // vyskakovala pri každom načítaní nástenky.
+    const tR = await trial('rebeka.odmietla@qa-biz.local');
+    ok('kto odmietol pred akciou, ponuku dostane znova', tR.eligible === true && tR.zima === true,
+      JSON.stringify(tR));
+    await ide('/api/skuska/odmietnut', { method: 'POST', body: {} });
+    const tR2 = ((await ide('/api/me')).d || {}).trial || {};
+    ok('odmietnutie počas akcie už platí', tR2.eligible === false, JSON.stringify(tR2));
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.message);
   }

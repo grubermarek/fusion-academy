@@ -1376,7 +1376,7 @@ function renderAccessBar(me){
     bar.style.display='none';
   } else if(me.trial&&me.trial.eligible){
     bar.className='access-bar free anim anim-d2';icon.className='bi bi-gift-fill';
-    text.innerHTML='<strong>🎁 Prvý týždeň ZADARMO!</strong> 7&nbsp;dní neobmedzene, zruš kedykoľvek. <a href="#" onclick="skuskaUkaz(_me);return false" style="color:var(--gold);font-weight:700">Zapnúť skúšku →</a>';
+    text.innerHTML='<strong>🎁 '+(me.trial&&me.trial.zima?'Týždeň':'Prvý týždeň')+' ZADARMO!</strong> 7&nbsp;dní neobmedzene, zruš kedykoľvek. <a href="#" onclick="skuskaUkaz(_me);return false" style="color:var(--gold);font-weight:700">Zapnúť skúšku →</a>';
     bar.style.display='flex';
   } else if(!me.free_class_used && !(me.trial&&me.trial.on)){
     bar.className='access-bar free anim anim-d2';icon.className='bi bi-gift-fill';

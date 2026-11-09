@@ -17569,7 +17569,11 @@ app.post('/api/skuska/odmietnut', auth, async(req,res)=>{
   try{
     const u = await q.one(db.users,{_id:req.session.uid});
     if(!u) return res.status(401).json({error:'Nie ste prihlásený'});
-    if(u.trial_declined_at) return res.json({ok:true, already:true});
+    // Počas akcie Zima v kruhu najbližších sa odmietnutie spred nej ignoruje, takže
+    // klientka ponuku vidí znova — a ak ju odmietne teraz, musí sa to zapísať nanovo,
+    // inak by jej ponuka vyskakovala pri každom načítaní nástenky.
+    const znova = await ZIMA_KRUH.skuskaVynimka(u).catch(()=>false);
+    if(u.trial_declined_at && !znova) return res.json({ok:true, already:true});
     const n = await skuskaNarok(u);
     if(!n.ok) return res.json({ok:true, eligible:false, reason:n.reason});
     await q.update(db.users,{_id:u._id},{$set:{trial_declined_at:nowISO()}});

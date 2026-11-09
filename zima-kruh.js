@@ -87,6 +87,9 @@ module.exports = function mountZimaKruh(ctx){
     if(!u || u.is_child || u.zima_skuska_at) return false;
     const dnes = den(nowISO());
     if(dnes < ZIMA.od || dnes > ZIMA.do) return false;
+    // „Nie, ďakujem" povedané UŽ POČAS akcie platí. Ignorujeme len odmietnutie spred nej,
+    // inak by celoobrazovková ponuka na nástenke vyskakovala pri každom načítaní donekonečna.
+    if(u.trial_declined_at && den(u.trial_declined_at) >= ZIMA.od) return false;
     const hranica = den(new Date(Date.now() - ZIMA.dni_bez_hodiny*864e5).toISOString());
     const ids = [u._id, ...(u.merged_accounts||[])];
     for(const b of await q.find(db.bookings,{user_id:{$in:ids}})){
