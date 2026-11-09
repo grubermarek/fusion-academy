@@ -17541,7 +17541,13 @@ app.post('/api/admin/refunds', adminAuth, async(req,res)=>{
     // stále ležali na účte. Nech teda povie, ako ich vrátil.
     if(tx && !REFUND_TYPY_BEZ_PLATBY.includes(type)) return res.status(400).json({
       error:'Táto platba nemá záznam v platobnej bráne, takže appka peniaze poslať nevie. Vráť ich v Stripe alebo v hotovosti a zapíš sem typ Hotovosť, Prevod alebo Kredit do appky.' });
-    const user = zdroj?.user_id ? await q.one(db.users,{_id:zdroj.user_id}) : null;
+    const klient = zdroj?.user_id ? await q.one(db.users,{_id:zdroj.user_id}) : null;
+    // Odber dieťaťa sedí na detskom profile, ale platí ho rodič a faktúra je jeho —
+    // presne tak to vystupuje aj v tržbách. Refund preto patrí platiteľovi, inak by
+    // sa dobropis hľadal medzi faktúrami dieťaťa (žiadne nemá) a nevznikol by.
+    const user = (klient && klient.is_child && klient.parent_id)
+      ? ((await q.one(db.users,{_id:klient.parent_id})) || klient) : klient;
+    const zaKoho = (user && klient && user._id !== klient._id) ? klient : null;
     // Peniaze mohli odísť skôr, než sa refund zapisuje (hotovosť na hodine). Bez
     // dátumu by vrátenie spadlo do mesiaca zápisu a ani po oprave by mesačné
     // čísla nesedeli — mesiac, v ktorom bola tržba, by ostal nadsadený.
@@ -17604,7 +17610,7 @@ app.post('/api/admin/refunds', adminAuth, async(req,res)=>{
         || mozne.sort((a,b)=>(b.issued_at||'').localeCompare(a.issued_at||''))[0];
       if(inv){
         const cn=await createInvoice({user_id:user._id, client_name:inv.client_name, client_email:inv.client_email,
-          items:[{desc:`Refundácia k faktúre ${inv.number}${reason?` — ${REFUND_REASONS[reason]||reason}`:''}`, qty:1, total:-amt}],
+          items:[{desc:`Refundácia k faktúre ${inv.number}${zaKoho?` (${zaKoho.name})`:''}${reason?` — ${REFUND_REASONS[reason]||reason}`:''}`, qty:1, total:-amt}],
           total:-amt, method:inv.payment_method, type:'credit_note', related_invoice:inv.number,
           // Dobropis sa vystavuje dnešným dňom (číslovanie faktúr musí ísť po
           // dátumoch), deň, kedy peniaze reálne odišli, nesie paid_at.
@@ -17617,7 +17623,8 @@ app.post('/api/admin/refunds', adminAuth, async(req,res)=>{
     }
     const refund=await q.insert(db.refunds,{
       payment_id:payment_id||null, transaction_id:tx?._id||null,
-      user_id:user?._id||null, client_name:user?.name||zdroj?.description||'—',
+      user_id:user?._id||null, for_user_id:zaKoho?zaKoho._id:null,
+      client_name:(user?.name||zdroj?.description||'—')+(zaKoho?' (za '+zaKoho.name+')':''),
       type, amount:amt, reason:reason||'other', note:note||'',
       gateway:gateway.method, gateway_ref:gateway.ref, credit_note:creditNote,
       created_by:req.session?.uid||null, created_at:kedy, month:(den||today()).slice(0,7)

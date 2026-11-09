@@ -49,6 +49,11 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     JSON.stringify({ _id: 'qaRefKlientka01', name: 'Klara Vratena', email: 'qa.ref.klientka@qa-biz.local',
       password: hash, user_type: 'client', active: true, referral_code: 'QAREF1',
       visit_count: 2, created_at: '2026-06-01', city: 'Detva', referral_credit: 0 }),
+    // odber dieťaťa: sedí na detskom profile, ale platí ho rodič a faktúra je jeho
+    JSON.stringify({ _id: 'qaRefRodic000001', name: 'Rasto Rodic', email: 'qa.ref.rodic@qa-biz.local',
+      password: hash, user_type: 'client', active: true, created_at: '2026-06-01', city: 'Detva' }),
+    JSON.stringify({ _id: 'qaRefDieta000001', name: 'Dorka Dieta', email: 'qa.ref.dieta@internal.local',
+      user_type: 'client', active: true, is_child: true, parent_id: 'qaRefRodic000001', created_at: '2026-06-01' }),
   ].join('\n') + '\n');
 
   // zaplatené členstvo, ktoré budeme vracať
@@ -63,6 +68,10 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
       user_name: 'Klara Vratena', amount: 50, date: '2026-08-20', payment_method: 'stripe',
       plan_id: 'bronze', note: 'Auto-obnova Bronze (Stripe)', month: '2026-08',
       created_at: '2026-08-20T09:00:00.000Z' }),
+    JSON.stringify({ _id: 'qaRefTx000000002', type: 'subscription_renewal', user_id: 'qaRefDieta000001',
+      user_name: 'Dorka Dieta', amount: 30, date: '2026-09-10', payment_method: 'stripe',
+      plan_id: 'bronze', note: 'Auto-obnova (dieťa)', month: '2026-09',
+      created_at: '2026-09-10T09:00:00.000Z' }),
   ].join('\n') + '\n');
   fs.writeFileSync(path.join(DATA, 'invoices.db'), [
     JSON.stringify({ _id: 'qaRefInv00000001', number: '20260500', user_id: 'qaRefKlientka01',
@@ -79,6 +88,12 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
       client_name: 'Klara Vratena', client_email: 'qa.ref.klientka@qa-biz.local', type: 'invoice',
       items: [{ desc: 'Členstvo Silver', qty: 1, total: 74.9 }], total: 74.9, method: 'Stripe',
       issued_at: '2026-10-01', paid_at: '2026-10-01', created_at: '2026-10-01T09:00:00.000Z' }),
+    // doklad k detskému odberu je na RODIČA, nie na dieťa
+    JSON.stringify({ _id: 'qaRefInv00000004', number: '20260503', user_id: 'qaRefRodic000001',
+      client_name: 'Rasto Rodic', client_email: 'qa.ref.rodic@qa-biz.local', type: 'invoice',
+      items: [{ desc: 'Členstvo Bronze (Dorka Dieta) — mesačná obnova', qty: 1, total: 30 }],
+      total: 30, method: 'Stripe', issued_at: '2026-09-10', paid_at: '2026-09-10',
+      created_at: '2026-09-10T09:00:00.000Z' }),
   ].join('\n') + '\n');
 
   console.log('REFUNDY QA — štart servera…');
@@ -205,6 +220,23 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
     const znovaTx = await j('/api/admin/refunds', { method: 'POST',
       body: { transaction_id: 'qaRefTx000000001', type: 'cash', amount: 50, reason: 'requested' } }, adm);
     ok('tá istá obnova sa nedá vrátiť druhýkrát', znovaTx.status === 400, JSON.stringify(znovaTx.d));
+
+    console.log('\nObnova odberu dieťaťa (platí rodič):');
+    const dieta = await j('/api/admin/refunds', { method: 'POST',
+      body: { transaction_id: 'qaRefTx000000002', type: 'cash', amount: 30, reason: 'requested',
+        date: '2026-09-15', silent: true } }, adm);
+    ok('vrátenie za dieťa prejde', dieta.status === 200 && dieta.d && dieta.d.ok, JSON.stringify(dieta.d).slice(0, 160));
+    await new Promise(r2 => setTimeout(r2, 800));
+    const refD = rd('refunds.db').find(r => r.transaction_id === 'qaRefTx000000002');
+    if (refD) {
+      ok('refund je na platiteľa (rodiča)', refD.user_id === 'qaRefRodic000001', String(refD.user_id));
+      ok('a je v ňom vidieť, za koho sa platilo', refD.for_user_id === 'qaRefDieta000001' && /Dorka/.test(refD.client_name || ''),
+        refD.for_user_id + ' · ' + refD.client_name);
+      const cnD = rd('invoices.db').find(i => i.number === refD.credit_note);
+      // Dieťa žiadnu faktúru nemá — dobropis musí sadnúť na doklad rodiča.
+      ok('dobropis sadol na doklad rodiča', !!cnD && cnD.related_invoice === '20260503',
+        JSON.stringify(cnD && { n: cnD.number, rel: cnD.related_invoice, t: cnD.total }));
+    } else { ok('refund za dieťa je zapísaný', false, 'nenašiel sa'); }
 
     console.log('\nVplyv na tržby:');
     const fin = (await j('/api/admin/finance/stats', {}, adm)).d;
