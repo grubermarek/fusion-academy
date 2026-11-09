@@ -15329,6 +15329,18 @@ async function revenueEvents(opts){
       +'|'+String(i.issued_at||i.paid_at||i.created_at||'').slice(0,10);
     fPodlaKluca[k] = i;
   }
+  // Doklad k spätne doúčtovanej platbe je vystavený dneškom (číslovanie faktúr musí
+  // ísť po dátumoch), ale tržba sedí v dni platby — podľa dňa vystavenia sa teda
+  // nespárujú a predaj vyzerá ako bez faktúry, hoci faktúra existuje. Druhý kľúč
+  // podľa `paid_at` to spáruje. Dopĺňa sa až po prvom kole, aby nepretlačil faktúru
+  // nájdenú podľa dňa vystavenia.
+  for(const i of faktury){
+    if(i.status==='void' || i.type==='credit_note') continue;
+    const dPlat = String(i.paid_at||'').slice(0,10);
+    if(!dPlat || dPlat===String(i.issued_at||'').slice(0,10)) continue;
+    const k2 = String(i.user_id||i.client_email||'').toLowerCase()+'|'+(+i.total||0).toFixed(2)+'|'+dPlat;
+    if(!fPodlaKluca[k2]) fPodlaKluca[k2] = i;
+  }
   const najdiFakturu = (uid, email, suma, datum, orderKey) => {
     if(orderKey && fPodlaOrder[orderKey]) return fPodlaOrder[orderKey];
     const d10 = String(datum||'').slice(0,10);
