@@ -194,7 +194,9 @@ module.exports = function mountZimaKruh(ctx){
           ? ' — a to aj vtedy, keď si u nás už bola. Doteraz ho dostávali len nové klientky, '
             + 'teraz prvýkrát aj tie, ktoré sa k nám vracajú.'
           : ' vo všetkých našich mestách.')
-      + ' Zapneš si to sama v appke, zrušiť môžeš kedykoľvek pred prvou platbou.</p>';
+      + ' Zapneš si to sama v appke — kartu si uložíš cez Stripe, '
+      + ZIMA.skuska_dni + ' dní sa z nej nestrhne nič a zrušiť môžeš kedykoľvek '
+      + 'pred prvou platbou.</p>';
   }
 
   function zimaHtml(p){
