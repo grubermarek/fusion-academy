@@ -191,10 +191,10 @@ module.exports = function mountZimaKruh(ctx){
     return '<p><b>1. Zumbu si teraz aktivuješ zadarmo.</b> '
       + ZIMA.skuska_dni + ' dní neobmedzených hodín za <b>0 €</b>'
       + (p.posledna
-          ? ' — a to aj vtedy, keď si u nás už bola. Doteraz ho dostávali len nové klientky, '
+          ? ' — a to aj vtedy, keď si u nás už bola. Doteraz to dostávali len nové klientky, '
             + 'teraz prvýkrát aj tie, ktoré sa k nám vracajú.'
           : ' vo všetkých našich mestách.')
-      + ' Zapneš si to sama v appke — kartu si uložíš cez Stripe, '
+      + ' Zapneš si to sama v appke — kartu si uložíš cez Stripe, prvých '
       + ZIMA.skuska_dni + ' dní sa z nej nestrhne nič a zrušiť môžeš kedykoľvek '
       + 'pred prvou platbou.</p>';
   }
