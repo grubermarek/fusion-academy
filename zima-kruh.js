@@ -24,7 +24,9 @@ module.exports = function mountZimaKruh(ctx){
     do: '2026-11-30',
     dni_darcek: 30,
     dni_bez_hodiny: 90,        // „neboli na hodine posledné 3 mesiace"
-    aj_kamoska: false,         // true = december dostane aj privedená kamoška
+    // Marek 9. 11.: december dostanú OBE — tá, čo kamošku priviedla, aj kamoška.
+    // Prepínač riadi aj text mailu a postov, nech sa sľub nerozíde s tým, čo sa dáva.
+    aj_kamoska: true,
   };
   const ZIMA_SUBJ = '❄️ Zima v kruhu najbližších — december u nás zadarmo';
   const ZIMA_URL  = APP_URL.replace(/\/$/,'') + '/obchod';
@@ -131,9 +133,11 @@ module.exports = function mountZimaKruh(ctx){
       : mena.slice(0,-1).join(', ') + ' a ' + mena[mena.length-1];
     return '<p><b>Platí to aj pre Zumba Kids.</b> Keď ' + kto
       + (mena.length === 1 ? ' nastúpi' : ' nastúpia')
-      + ' do krúžku v novembri a privedie'
-      + (mena.length === 1 ? '' : 'te') + ' so sebou kamarátku, december '
-      + (mena.length === 1 ? 'má' : 'majú') + ' zadarmo rovnako ako ty.</p>';
+      + ' do krúžku v novembri a ' + (mena.length === 1 ? 'privedie' : 'privedú')
+      + ' so sebou kamarátku, december '
+      + (ZIMA.aj_kamoska
+          ? 'majú zadarmo obe — aj tá kamarátka.'
+          : (mena.length === 1 ? 'má' : 'majú') + ' zadarmo rovnako ako ty.') + '</p>';
   }
 
   function zimaHtml(p){
@@ -144,12 +148,16 @@ module.exports = function mountZimaKruh(ctx){
       + '<p>Chceme byť opäť spolu a užiť si krásnu zimu a sviatky v kruhu priateľov, '
       + 'a preto sme pripravili akciu, <b>akú sme tu ešte nikdy nemali</b>: keď si '
       + 'do <b>30. novembra</b> vezmeš alebo obnovíš mesačné členstvo a privedieš so '
-      + 'sebou kamošku, <b style="color:#C9A84C">december máš u nás zadarmo</b> — '
-      + 'pripíšeme ti 30 dní navyše, bez platenia.</p>'
+      + 'sebou kamošku, ' + (ZIMA.aj_kamoska
+          ? '<b style="color:#C9A84C">december máte u nás zadarmo obe</b> — tebe aj jej '
+            + 'pripíšeme ' + ZIMA.dni_darcek + ' dní navyše, bez platenia.'
+          : '<b style="color:#C9A84C">december máš u nás zadarmo</b> — pripíšeme ti '
+            + ZIMA.dni_darcek + ' dní navyše, bez platenia.') + '</p>'
       + zimaDetiOdsek(p)
       + '<p>Členstvo si vyberieš v appke: ' + CENY + ' na mesiac.</p>'
       + '<p>Kamoške pošli svoj vlastný odkaz <a href="' + odkazKamoska + '">' + odkazKamoska
-      + '</a>. Keď si cez neho vezme členstvo, december je tvoj.</p>'
+      + '</a>. Keď si cez neho vezme členstvo, december je '
+      + (ZIMA.aj_kamoska ? 'váš — tvoj aj jej.' : 'tvoj.') + '</p>'
       + '<p>Sviatky sú o ľuďoch. Nech ich máme s kým tancovať. 💛</p>',
       '❄️ VYBRAŤ SI ČLENSTVO', ZIMA_URL);
   }
@@ -234,7 +242,10 @@ module.exports = function mountZimaKruh(ctx){
     }
 
     const prve = await prveZaplateneClenstva();
-    const dane = new Set((await uzDarovane()).map(x => x.inviter_id));
+    // Darček sa eviduje podľa PRÍJEMCU, nie podľa toho, kto kamošku priviedol: odkedy
+    // december dostávajú obe, môže byť tá istá žena v zozname dvakrát (raz ako
+    // hostiteľka, raz ako privedená) a kľúč podľa hostiteľky by tie dva riadky zlial.
+    const dane = new Set((await uzDarovane()).map(x => x.prijemca_id));
     const podla = {};
     for(const f of users){
       if(!f.sponsor_id || !kamoskaPlatna(f)) continue;
@@ -247,17 +258,28 @@ module.exports = function mountZimaKruh(ctx){
         prijemca_id:prijemca.id, prijemca:prijemca.kto === 'ona' ? (inviter.name||'—') : prijemca.meno,
         komu:prijemca.kto, plan_id:prijemca.plan, plan:(MEMBERSHIP_PLANS[prijemca.plan]||{}).name || prijemca.plan,
         clenstvo_do: (uMap[prijemca.id]||{}).membership_expires || null,
-        uz_darovane: dane.has(inviter._id), kamosky:[] };
+        uz_darovane: dane.has(prijemca.id), kamosky:[] };
       z.kamosky.push({ id:f._id, meno:f.name || '—', prve_clenstvo:prve[f._id] });
     }
     const naroky = Object.values(podla);
-    if(ZIMA.aj_kamoska) for(const z of naroky) for(const k of z.kamosky)
-      if(!naroky.some(x => x.prijemca_id === k.id))
-        naroky.push({ inviter_id:k.id, inviter:k.meno, prijemca_id:k.id, prijemca:k.meno,
-          komu:'kamoška', plan_id:(zaplatila[k.id]||{}).plan_id || null,
-          plan:(MEMBERSHIP_PLANS[(zaplatila[k.id]||{}).plan_id]||{}).name || '—',
+    // Privedená kamoška dostane december tiež — svoje členstvo si práve zaplatila, takže
+    // mesiac ide na ten istý plán. Zbierame bokom a spájame až potom, nech sa zoznam
+    // nemení uprostred vlastného prechádzania.
+    if(ZIMA.aj_kamoska){
+      const uzVZozname = new Set(naroky.map(z => z.prijemca_id));
+      const navyse = [];
+      for(const z of naroky) for(const k of z.kamosky){
+        if(uzVZozname.has(k.id)) continue;
+        uzVZozname.add(k.id);
+        const plan = (zaplatila[k.id] || {}).plan_id || null;
+        navyse.push({ inviter_id:z.inviter_id, inviter:z.inviter, prijemca_id:k.id,
+          prijemca:k.meno, komu:'kamoška', plan_id:plan,
+          plan:(MEMBERSHIP_PLANS[plan]||{}).name || '—',
           clenstvo_do:(uMap[k.id]||{}).membership_expires || null,
-          uz_darovane: dane.has(k.id), kamosky:[{ id:z.inviter_id, meno:z.inviter, prve_clenstvo:null }] });
+          uz_darovane: dane.has(k.id), kamosky:[] });
+      }
+      naroky.push(...navyse);
+    }
     return naroky;
   }
 
@@ -277,7 +299,8 @@ module.exports = function mountZimaKruh(ctx){
       const prijemca_id = String((req.body && req.body.prijemca_id) || '');
       if(!inviter_id || !prijemca_id) return res.status(400).json({error:'Chýba inviter_id alebo prijemca_id'});
       const zoznam = await uzDarovane();
-      if(zoznam.some(x => x.inviter_id === inviter_id))
+      // Kľúčom je príjemca — tá istá hostiteľka môže mať v zozname aj svoju kamošku.
+      if(zoznam.some(x => x.prijemca_id === prijemca_id))
         return res.json({ ok:true, uz_zapisane:true, pocet:zoznam.length });
       zoznam.push({ inviter_id, prijemca_id, dni:ZIMA.dni_darcek,
         plan_id:(req.body && req.body.plan_id) || null, kym:req.session.uid || null, at:nowISO() });

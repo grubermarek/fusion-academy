@@ -151,7 +151,10 @@ const klient = (id, name, email, extra) => ({ _id: id, name, email, password: H,
     console.log('\n② Čo v maile stojí');
     const m = n.ukazka_odisla || '';
     ok('novinka je v texte („akú sme tu ešte nikdy nemali")', /ešte nikdy nemali/i.test(m));
-    ok('december zadarmo aj s počtom dní', /december máš u nás zadarmo/i.test(m) && /30 dní navyše/i.test(m));
+    // Marek 9. 11.: december dostávajú obe, takže to musí sľubovať aj mail.
+    ok('december zadarmo pre obe, aj s počtom dní',
+      /december máte u nás zadarmo obe/i.test(m) && /tebe aj jej/i.test(m) && /30 dní navyše/i.test(m), m.slice(0, 0));
+    ok('aj detský odsek hovorí o oboch', /december majú zadarmo obe/i.test(n.ukazka_deti || ''));
     ok('uzávierka 30. novembra', /30\.\s*novembra/i.test(m));
     ok('ceny sú z MEMBERSHIP_PLANS', /49,90 €/.test(m) && /74,90 €/.test(m) && /124,90 €/.test(m));
     ok('má svoj vlastný odkaz na kamošku', /\/invite\//.test(m));
@@ -164,16 +167,27 @@ const klient = (id, name, email, extra) => ({ _id: id, name, email, password: H,
 
     console.log('\n④ Kto si zaslúžil december');
     const r = (await ide('/api/admin/zima/naroky')).d || {};
-    const podla = Object.fromEntries((r.naroky || []).map(x => [x.inviter, x]));
-    ok('kto priviedol kamošku a sám si vzal členstvo, nárok má', !!podla['Hana Hostiteľka'],
-      JSON.stringify(Object.keys(podla)));
+    // Kľúčom je PRÍJEMCA, nie hostiteľka — odkedy december dostávajú obe, je pod jednou
+    // hostiteľkou viac riadkov a kľúč podľa nej by ich prekryl.
+    const podla = Object.fromEntries((r.naroky || []).map(x => [x.prijemca, x]));
+    const kto = JSON.stringify(Object.keys(podla));
+    ok('kto priviedol kamošku a sám si vzal členstvo, nárok má', !!podla['Hana Hostiteľka'], kto);
     ok('nárok nesie plán, ktorý si zaplatila', (podla['Hana Hostiteľka'] || {}).plan_id === 'bronze');
     ok('v zozname je aj menom privedená kamoška',
       /Katka/.test(JSON.stringify((podla['Hana Hostiteľka'] || {}).kamosky || [])));
-    ok('kto si sám členstvo nevzal, nárok nemá', !podla['Ivana Bez Členstva'], JSON.stringify(Object.keys(podla)));
-    const jana = podla['Jana Mama'] || {};
+    ok('privedená kamoška má vlastný nárok',
+      (podla['Katka Kamoška'] || {}).komu === 'kamoška' && (podla['Katka Kamoška'] || {}).plan_id === 'bronze',
+      JSON.stringify(podla['Katka Kamoška']));
+    ok('riadok kamošky vie, kto ju priviedol', (podla['Katka Kamoška'] || {}).inviter === 'Hana Hostiteľka');
+    ok('kto si sám členstvo nevzal, nárok nemá', !podla['Ivana Bez Členstva'], kto);
+    // Lucia zaplatila, ale Ivana si členstvo nevzala — dvojica sa nedokončila,
+    // takže nárok nevzniká ani jednej.
+    ok('kamoška bez zapojenej hostiteľky nárok nemá', !podla['Lucia Kamoška'], kto);
+    const jana = podla['Zarka Mamová'] || {};
     ok('rodičovi bez vlastného členstva ide mesiac dieťaťu',
-      jana.komu === 'dieťa' && jana.prijemca_id === 'qaZimJanaDieta1', JSON.stringify(jana));
+      jana.komu === 'dieťa' && jana.prijemca_id === 'qaZimJanaDieta1' && jana.inviter === 'Jana Mama',
+      JSON.stringify(jana));
+    ok('aj Mišin vlastný nárok je v zozname', (podla['Miša Kamoška'] || {}).komu === 'kamoška', kto);
     ok('darované ešte nikto nemá', (r.naroky || []).every(x => x.uz_darovane === false));
 
     console.log('\n⑤ Darovanie sa zapíše raz');
@@ -183,8 +197,10 @@ const klient = (id, name, email, extra) => ({ _id: id, name, email, password: H,
     await ide('/api/admin/zima/darcek-zapisat', { method: 'POST',
       body: { inviter_id: 'qaZimHost000001', prijemca_id: 'qaZimHost000001', plan_id: 'bronze' } });
     const r2 = (await ide('/api/admin/zima/naroky')).d || {};
-    const hana2 = (r2.naroky || []).find(x => x.inviter === 'Hana Hostiteľka') || {};
+    const hana2 = (r2.naroky || []).find(x => x.prijemca === 'Hana Hostiteľka') || {};
+    const katka2 = (r2.naroky || []).find(x => x.prijemca === 'Katka Kamoška') || {};
     ok('v zozname je označená ako darovaná', hana2.uz_darovane === true, JSON.stringify(hana2));
+    ok('kamoške sa darček NEoznačil spolu s ňou', katka2.uz_darovane === false, JSON.stringify(katka2));
     ok('členstvo jej predĺžilo platnosť', (hana2.clenstvo_do || '') > '2026-12-12',
       String(hana2.clenstvo_do));
     const dvakrat = await ide('/api/admin/zima/darcek-zapisat', { method: 'POST',
