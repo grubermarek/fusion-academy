@@ -3151,8 +3151,9 @@ async function zimaNahlad(){
     + '<div class="mb-1 text-muted">Vynechaní: '+riadky(n.vynechani)+'</div>'
     + '<div class="text-muted">Mailov dnes: '+(n.rozpocet?.odoslane_dnes ?? '?')+' z '+(n.rozpocet?.denny_strop ?? '?')
     + ' · zostáva '+(n.rozpocet?.zostava_dnes ?? '?')+'</div>'
-    + '<div class="mb-1">Zumba zadarmo pre vracajúce sa: <b>' + (n.skuska_pre_vratene ? 'zapnutá' : 'vypnutá (ZIMA_SKUSKA=0)')
-    + '</b> · ' + (n.skuska_dni || 7) + ' dní · platbu na nárok uznávame do <b>' + escHtml(n.do_platba || '—') + '</b></div>'
+    + '<div class="mb-1">Zumba zadarmo: <b>' + (n.skuska_pre_vratene ? 'zapnutá' : 'vypnutá (ZIMA_SKUSKA=0)')
+    + '</b> · kto ju zapne dnes, má <b>' + (n.kampanove_dni || 0) + ' dní</b> zadarmo bez karty'
+    + ' · platbu na nárok uznávame do <b>' + escHtml(n.do_platba || '—') + '</b></div>'
     + (n.go_flag ? '' : '<div class="mt-1 text-warning">Vlna je zamknutá — v Railway treba nastaviť <code>ZIMA_GO=1</code>, inak odoslanie vráti 409.</div>');
   document.getElementById('zimaSendBtn').disabled = !n.pocet;
 }

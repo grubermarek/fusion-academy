@@ -13951,9 +13951,10 @@ async function skuskaNarok(u){
   const m = await checkMembership(u._id);
   if(m && m.status==='active' && (!m.expires_at || m.expires_at>=today())) return {ok:false, reason:'clenstvo'};
   if(await q.one(db.memberships,{user_id:u._id, plan_id:{$in:['bronze','silver','gold']}}) && !(await zima())) return {ok:false, reason:'mala_clenstvo'};
-  // `zimaCache === true` len vtedy, keď sa výnimka naozaj zisťovala, teda keď jej
-  // nejaká prekážka stála v ceste. Nová klientka tu nemá čo prepisovať.
-  return {ok:true, zima: zimaCache === true};
+  // Tu sa výnimka zisťuje aj novej klientke: počas akcie dostáva zadarmo celý zvyšok
+  // mesiaca, nie týždeň, a appka jej to musí vedieť aj napísať. `bookings.user_id`
+  // je indexované, takže je to jeden lacný dotaz.
+  return {ok:true, zima: await zima()};
 }
 async function skuskaInfo(u){
   const on = await skuskaZapnuta();
@@ -13969,38 +13970,42 @@ async function skuskaInfo(u){
       (await q.find(db.bookings,{user_id:u._id})).some(b=>SKUSKA_PRESKOCIT_MESTA.includes(mzMesto(b.class_location)));
   }
   return { on, skip_offer, eligible:n.ok, reason:n.ok?null:n.reason, zima:!!n.zima, active, card: !!(u && u.stripe_subscription_id), ends_at:u?.trial_ends_at||null, used:!!u?.trial_used, declined:!!u?.trial_declined_at,
-    days:SKUSKA.dni, plan:SKUSKA.plan, price:MEMBERSHIP_PLANS[SKUSKA.plan].price, skipped:!!u?.trial_skipped_at };
+    // Počas akcie Zima v kruhu najbližších je zadarmo celý zvyšok mesiaca, nie týždeň.
+    days: n.zima ? ZIMA_KRUH.kampanoveDni() : SKUSKA.dni, zima_do: n.zima ? ZIMA_KRUH.ZIMA.do : null,
+    plan:SKUSKA.plan, price:MEMBERSHIP_PLANS[SKUSKA.plan].price, skipped:!!u?.trial_skipped_at };
 }
 function fmtDenSk(iso){ const d=new Date(iso); return d.getUTCDate()+'. '+(d.getUTCMonth()+1)+'.'; }
 // Po úspešnom Checkoute so skúškou: členstvo Bronze na 7 dní, odber na zázname, oznam + mail.
 async function aktivujSkusku(userId, subId, s){
   const u = await q.one(db.users,{_id:userId}); if(!u) return {ok:false, error:'Používateľ nenájdený'};
   const plan = MEMBERSHIP_PLANS[SKUSKA.plan];
-  // Vracajúca sa klientka: týždeň zadarmo dostáva z akcie Zima v kruhu najbližších,
-  // nie ako nová. Zisťuje sa to PRED aktiváciou (potom by už členstvo existovalo)
-  // a zapisuje sa, aby ho z akcie nedostala druhýkrát. Pre ňu to nie je „prvý"
-  // týždeň, takže ani v ozname a maili tak nepíšeme.
-  const vratena = !!(u.trial_used || u.trial_declined_at
-    || await q.one(db.memberships,{user_id:userId, plan_id:{$in:['bronze','silver','gold']}}))
-    && await ZIMA_KRUH.skuskaVynimka(u).catch(()=>false);
-  const tyzden = vratena ? 'Týždeň zadarmo' : 'Prvý týždeň zadarmo';
-  await activateMembership(userId, SKUSKA.plan, SKUSKA.dni);
+  // Akcia Zima v kruhu najbližších: počas nej nie je zadarmo týždeň, ale celý zvyšok
+  // mesiaca. Zisťuje sa to PRED aktiváciou (potom by už členstvo existovalo) a zapisuje
+  // sa `zima_skuska_at` — podľa neho sa jednak akcia nedá vziať druhýkrát, jednak
+  // z neho ráta nároky na december. Pre vracajúcu sa klientku to nie je „prvý" týždeň,
+  // takže to tak ani nepíšeme.
+  const kampan = await ZIMA_KRUH.skuskaVynimka(u).catch(()=>false);
+  const dni = kampan ? ZIMA_KRUH.kampanoveDni() : SKUSKA.dni;
+  const nova = !(u.trial_used || u.trial_declined_at
+    || await q.one(db.memberships,{user_id:userId, plan_id:{$in:['bronze','silver','gold']}}));
+  const tyzden = kampan ? 'Zumba zadarmo' : (nova ? 'Prvý týždeň zadarmo' : 'Týždeň zadarmo');
+  await activateMembership(userId, SKUSKA.plan, dni);
   const mem = await q.one(db.memberships,{user_id:userId, status:'active'});
-  const konci = mem ? mem.expires_at : new Date(Date.now()+SKUSKA.dni*864e5).toISOString();
+  const konci = mem ? mem.expires_at : new Date(Date.now()+dni*864e5).toISOString();
   if(mem) await q.update(db.memberships,{_id:mem._id},{$set:{trial:true, trial_ends_at:konci, price:0}});
   await q.update(db.users,{_id:userId},{$set:{ trial_used:true, trial_started_at:nowISO(), trial_ends_at:konci, free_class_used:true,
-    ...(vratena ? {zima_skuska_at:nowISO()} : {}),
+    ...(kampan ? {zima_skuska_at:nowISO()} : {}),
     stripe_subscription_id:subId||null, stripe_sub_plan:SKUSKA.plan, stripe_sub_member:userId }});
   const skarta = !!subId;   // bez karty sa po týždni nič nestrhne — nesľubujme to
   await q.insert(db.notifications,{user_id:userId, type:'trial',
     title:'🎉 '+tyzden+' beží — do '+fmtDenSk(konci),
     body:'Choď na ktorúkoľvek hodinu vo svojom meste. '+(skarta
       ? 'Potom pokračuje Bronze za '+plan.price.toFixed(2).replace('.',',')+' € mesačne automaticky. Zrušiť môžeš kedykoľvek: Nástenka → Členstvo → Automatický odber.'
-      : 'Po týždni sa nič nestrhne — ak ti to sadne, členstvo Bronze za '+plan.price.toFixed(2).replace('.',',')+' € mesačne si zapneš sama na nástenke.'),
+      : (kampan ? 'Nič neplatíš a kartu od teba nepýtame. Keď ti to sadne, členstvo Bronze za ' : 'Po týždni sa nič nestrhne — ak ti to sadne, členstvo Bronze za ')+plan.price.toFixed(2).replace('.',',')+' € mesačne si zapneš sama na nástenke.'),
     read:false, created_at:nowISO()}).catch(()=>{});
   if(u.email && !/@test-fa-qa\.local$/i.test(u.email)) sendMail(u.email, '🎉 '+tyzden+' beží — do '+fmtDenSk(konci),
-    emailTemplate(vratena ? 'Vitaj späť, tancujeme! 💃' : 'Vitaj, tancujeme! 💃',
-      `<p>Ahoj <b>${u.name}</b>,</p><p>tvoj <b>skúšobný týždeň</b> je zapnutý. Do <b>${fmtDenSk(konci)}</b> môžeš prísť na ktorúkoľvek hodinu vo svojom meste — stačí si ju rezervovať v appke.</p>
+    emailTemplate(nova ? 'Vitaj, tancujeme! 💃' : 'Vitaj späť, tancujeme! 💃',
+      `<p>Ahoj <b>${u.name}</b>,</p><p>${kampan?'<b>zumba zadarmo</b> ti beží':'tvoj <b>skúšobný týždeň</b> je zapnutý'}. Do <b>${fmtDenSk(konci)}</b> môžeš prísť na ktorúkoľvek hodinu vo svojom meste — stačí si ju rezervovať v appke.</p>
        ${skarta
          ? `<p>Potom pokračuje členstvo <b>Bronze za ${plan.price.toFixed(2).replace('.',',')} € mesačne</b>, ktoré sa obnovuje automaticky. Dva dni pred prvou platbou ti pošleme pripomienku.</p>
        <p>Ak by ti to nesadlo, odber zrušíš kedykoľvek v appke: <b>Nástenka → Členstvo → Automatický odber → Zrušiť</b>. Do konca skúšky môžeš chodiť ďalej a nič sa nestrhne.</p>`
@@ -17701,6 +17706,9 @@ app.post('/api/stripe/trial', auth, async(req,res)=>{
       return res.json({ok:true, test:true, url:'/client-dashboard?stripe=trial_test'});
     }
     const plan = MEMBERSHIP_PLANS[SKUSKA.plan];
+    // Počas akcie Zima v kruhu najbližších je zadarmo celý zvyšok mesiaca, nie týždeň —
+    // aj tu, nech Stripe strhne prvú platbu presne vtedy, čo appka sľubuje.
+    const skDni = n.zima ? ZIMA_KRUH.kampanoveDni() : SKUSKA.dni;
     const base = APP_URL;
     // z registrácie (landing) sa po skúške vracia rovno na výber prvej hodiny, z appky na nástenku
     const navrat = req.body && req.body.navrat==='onboarding' ? '/' : (req.body && req.body.navrat==='landing' ? '/prva-hodina' : '/client-dashboard');
@@ -17711,8 +17719,8 @@ app.post('/api/stripe/trial', auth, async(req,res)=>{
       'line_items[0][price_data][currency]':'eur',
       'line_items[0][price_data][unit_amount]':Math.round((await cenyClenstva(u._id, SKUSKA.plan)).auto*100),
       'line_items[0][price_data][recurring][interval]':'month',
-      'line_items[0][price_data][product_data][name]':`Členstvo ${plan.name} (mesačne) — prvých ${SKUSKA.dni} dní zadarmo`,
-      'subscription_data[trial_period_days]':SKUSKA.dni,
+      'line_items[0][price_data][product_data][name]':`Členstvo ${plan.name} (mesačne) — prvých ${skDni} dní zadarmo`,
+      'subscription_data[trial_period_days]':skDni,
       'payment_method_collection':'always',
       'success_url':`${base}${navrat}?stripe=trial&session_id={CHECKOUT_SESSION_ID}`,
       'cancel_url':`${base}${navrat}?stripe=trial_cancel`,
@@ -17733,7 +17741,7 @@ app.post('/api/stripe/trial', auth, async(req,res)=>{
       : await stripeApi('checkout/sessions', params, 'POST');
     if(r.status>=400 || !r.body?.url) return res.status(400).json({error:r.body?.error?.message||'Stripe chyba pri vytváraní skúšky'});
     await q.insert(db.payments,{stripe_session_id:r.body.id, user_id:req.session.uid, member_id:req.session.uid, amount:0, currency:'EUR',
-      description:`Skúšobný týždeň ${plan.name} (${SKUSKA.dni} dní zadarmo, potom ${plan.price.toFixed(2).replace('.',',')} €/mes.)`, ref_id:SKUSKA.plan, ref_type:'trial',
+      description:`Skúšobný týždeň ${plan.name} (${skDni} dní zadarmo, potom ${plan.price.toFixed(2).replace('.',',')} €/mes.)`, ref_id:SKUSKA.plan, ref_type:'trial',
       status:'pending', trial:true, accounting_skip:true, created_at:nowISO()});
     metaCapi('StartTrial',{email:u.email, fbclid:u.fbclid, event_id:'trial_'+r.body.id}).catch(()=>{});
     res.json({ok:true, url:r.body.url});
@@ -27485,7 +27493,8 @@ EVENTS.ensureEvent().then(e=>console.log('🎟️  Event pripravený:', e?.name)
 const ZIMA_KRUH = require('./zima-kruh')({
   app, db, q, adminAuth, nowISO, APP_URL, sendMail, emailTemplate,
   mailBudgetOk, mailBudgetStav, kampanovyMailZakazany: EVENTS.kampanovyMailZakazany,
-  MEMBERSHIP_PLANS, prveZaplateneClenstva, kamoskaPlatna, skuskaDni: SKUSKA.dni
+  MEMBERSHIP_PLANS, prveZaplateneClenstva, kamoskaPlatna, auth,
+  skuskaDni: SKUSKA.dni, skuskaPlan: SKUSKA.plan, skuskaNarok, aktivujSkusku
 });
 
 app.get('/skolenie',           (req,res)=>res.sendFile(path.join(__dirname,'public','skolenie.html')));

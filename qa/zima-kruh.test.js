@@ -84,6 +84,8 @@ const klient = (id, name, email, extra) => ({ _id: id, name, email, password: H,
     // v decembri. Nárok jej musí vzniknúť rovnako ako tej, ktorá platila v novembri.
     klient('qaZimOlga000001', 'Oľga Na Konci', 'olga.nakonci@qa-biz.local'),
     klient('qaZimPetra00001', 'Petra Kamoška', 'petra.kamoska@qa-biz.local', { sponsor_id: 'qaZimOlga000001' }),
+    // Dvojica, ktorá nezaplatí nič — obe si len zapnú mesiac zadarmo.
+    klient('qaZimSimona0001', 'Simona Kamoška', 'simona.kamoska@qa-biz.local', { sponsor_id: 'qaZimOdisla0001' }),
   ]));
 
   const rez = (id, uid, dni, status) => ({ _id: id, user_id: uid, class_id: 'qaZimClass00001',
@@ -174,21 +176,27 @@ const klient = (id, name, email, extra) => ({ _id: id, name, email, password: H,
     ok('ceny sú z MEMBERSHIP_PLANS', /49,90 €/.test(m) && /74,90 €/.test(m) && /124,90 €/.test(m));
     ok('má svoj vlastný odkaz na kamošku', /\/invite\//.test(m));
     ok('odkaz na nákup vedie do obchodu', /\/obchod/.test(m));
-    // Marek 9. 11.: prvý krok akcie je zumba zadarmo, až druhý je december za kamošku.
-    ok('mail ponúka zumbu zadarmo ako prvý krok',
-      /aktivuješ zadarmo/i.test(m) && /7 dní neobmedzených hodín/i.test(m));
+    // Marek 9. 11. (spresnenie): prvý krok nie je týždeň, ale celý zvyšok mesiaca —
+    // a bez karty. Mail nesmie sľubovať ani deň navyše, ani platbu, ktorá nebude.
+    ok('mail ponúka celý mesiac zadarmo, nie týždeň',
+      /do 30\. novembra zadarmo/i.test(m) && !/7 dní/i.test(m));
+    ok('mail hovorí, že kartu nepýtame', /kartu od teba nepýtame/i.test(m));
     ok('tej, čo u nás už bola, to mail povie', /aj vtedy, keď si u nás už bola/i.test(m));
     ok('tá, čo nikdy nebola, nečíta, že u nás už bola',
-      /aktivuješ zadarmo/i.test(n.ukazka_nikdy || '') && !/už bola/i.test(n.ukazka_nikdy || ''));
+      /zadarmo/i.test(n.ukazka_nikdy || '') && !/už bola/i.test(n.ukazka_nikdy || ''));
     ok('tlačidlo vedie na aktiváciu, nie do obchodu',
       /client-dashboard/.test(m) && /AKTIVOVAŤ ZUMBU ZADARMO/i.test(m));
-    // Rodič je vo vlne len kvôli dieťaťu — deti skúšobný týždeň v appke nemajú,
+    // Rodič je vo vlne len kvôli dieťaťu — deti bezplatný nástup v appke nemajú,
     // takže sa mu nesmie sľúbiť.
-    ok('rodičovi kvôli dieťaťu sa týždeň zadarmo nesľubuje',
-      !/aktivuješ zadarmo/i.test(n.ukazka_deti || ''));
-    ok('náhľad hlási nový krok aj chvost na platbu',
-      n.skuska_pre_vratene === true && n.skuska_dni === 7 && n.do_platba === '2026-12-07',
-      JSON.stringify({ s: n.skuska_pre_vratene, d: n.skuska_dni, p: n.do_platba }));
+    ok('rodičovi kvôli dieťaťu sa mesiac zadarmo nesľubuje',
+      !/Zumbu máš do/i.test(n.ukazka_deti || ''));
+    // Dĺžku rátame z dneška, nech test nespadne zajtra: do 30. 11. vrátane, min. týždeň.
+    const ocakDni = Math.max(7, Math.round(
+      (Date.parse('2026-11-30T00:00:00Z') - Date.parse(new Date().toISOString().slice(0, 10) + 'T00:00:00Z')) / 864e5) + 1);
+    ok('náhľad hlási dĺžku akcie aj chvost na platbu',
+      n.skuska_pre_vratene === true && n.mesiac_zadarmo === true
+      && n.kampanove_dni === ocakDni && n.do_platba === '2026-12-07',
+      JSON.stringify({ s: n.skuska_pre_vratene, d: n.kampanove_dni, ocak: ocakDni, p: n.do_platba }));
 
     console.log('\n③ Zámok vlny');
     const z = await ide('/api/admin/zima/odoslat', { method: 'POST', body: { potvrdit: true } });
@@ -252,6 +260,19 @@ const klient = (id, name, email, extra) => ({ _id: id, name, email, password: H,
     const tB = await trial('barbora.chodi@qa-biz.local');
     ok('tá, čo chodí, výnimku nedostane',
       tB.eligible === false && tB.reason === 'uz_mala', JSON.stringify(tB));
+    await trial('alena.odisla@qa-biz.local');   // späť na ňu, predchádzajúce kontroly sa prihlasovali inde
+    // Zapnutie ide cez vlastný endpoint bez karty — Stripe sa pri akcii vôbec nesmie
+    // otvárať, lebo mail sľubuje, že kartu nepýtame.
+    const zap = await ide('/api/zima/aktivovat', { method: 'POST', body: {} });
+    ok('zumbu zadarmo si zapne sama, bez karty', zap.d && zap.d.ok === true && zap.d.dni === ocakDni,
+      JSON.stringify(zap.d));
+    const poZap = ((await ide('/api/me')).d || {}).trial || {};
+    ok('po zapnutí beží a druhýkrát ju nedostane',
+      poZap.active === true && poZap.card === false && poZap.eligible === false, JSON.stringify(poZap));
+    ok('platnosť kryje celý zvyšok novembra', (poZap.ends_at || '') >= '2026-11-30', String(poZap.ends_at));
+    const znova = await ide('/api/zima/aktivovat', { method: 'POST', body: {} });
+    ok('druhé zapnutie server odmietne', znova.status === 400, znova.status + ' ' + JSON.stringify(znova.d));
+
     const tN = await trial('nina.vycerpana@qa-biz.local');
     ok('kto zumbu zadarmo z akcie už mal, druhýkrát ju nedostane',
       tN.eligible === false && tN.reason === 'uz_mala', JSON.stringify(tN));
@@ -264,6 +285,17 @@ const klient = (id, name, email, extra) => ({ _id: id, name, email, password: H,
     await ide('/api/skuska/odmietnut', { method: 'POST', body: {} });
     const tR2 = ((await ide('/api/me')).d || {}).trial || {};
     ok('odmietnutie počas akcie už platí', tR2.eligible === false, JSON.stringify(tR2));
+
+    // Dvojica, ktorá nezaplatila nič: obe si len zapli mesiac zadarmo. Od spresnenia
+    // 9. 11. nárok na december neviaže platba — práve preto ho potvrdzuje admin ručne.
+    await trial('simona.kamoska@qa-biz.local');
+    const zapS = await ide('/api/zima/aktivovat', { method: 'POST', body: {} });
+    ok('aj privedená kamoška si zapne mesiac zadarmo', zapS.d && zapS.d.ok === true, JSON.stringify(zapS.d));
+    await ide('/api/login', { method: 'POST', body: { email: 'qa.zima.admin@qa-biz.local', password: 'Heslo123!' } });
+    const r3 = (await ide('/api/admin/zima/naroky')).d || {};
+    const mena = (r3.naroky || []).map(x => x.prijemca);
+    ok('dvojica bez jediného eura má nárok na december obe',
+      mena.includes('Alena Odišlá') && mena.includes('Simona Kamoška'), JSON.stringify(mena));
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.message);
   }

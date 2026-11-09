@@ -15,9 +15,10 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 module.exports = function mountZimaKruh(ctx){
-  const { app, db, q, adminAuth, nowISO, APP_URL, sendMail, emailTemplate,
+  const { app, db, q, adminAuth, auth, nowISO, APP_URL, sendMail, emailTemplate,
           mailBudgetOk, mailBudgetStav, kampanovyMailZakazany, MEMBERSHIP_PLANS,
-          prveZaplateneClenstva, kamoskaPlatna, skuskaDni } = ctx;
+          prveZaplateneClenstva, kamoskaPlatna, skuskaDni, skuskaPlan,
+          skuskaNarok, aktivujSkusku } = ctx;
 
   const ZIMA = {
     od: '2026-11-09',
@@ -34,7 +35,11 @@ module.exports = function mountZimaKruh(ctx){
     // poistka, keby sa opakovaný týždeň zneužíval, a zároveň to, čím staršie QA testy
     // (prvy-tyzden, korytarky, tyzden-vsetkym) merajú pôvodné pravidlá.
     skuska_pre_vratene: process.env.ZIMA_SKUSKA !== '0',
-    skuska_dni: +skuskaDni || 7,      // dĺžka týždňa zadarmo zo servera (SKUSKA.dni)
+    skuska_dni: +skuskaDni || 7,      // bežný skúšobný týždeň zo servera (SKUSKA.dni)
+    // Marek 9. 11., spresnenie: nie týždeň, ale CELÝ zvyšok mesiaca zadarmo — a bez
+    // karty, takže sa po ňom nič nestrhne. Kto nastúpi v posledných dňoch, dostane
+    // aspoň bežný týždeň, nech na tom neprerobí.
+    mesiac_zadarmo: true,
     // Kto si týždeň zapne na konci novembra, zaplatí prvé členstvo až o sedem dní,
     // teda už v decembri. Platbu preto na nárok uznávame ešte týždeň po okne —
     // inak by akcia potichu vynechala práve tie, čo nastúpili v posledných dňoch.
@@ -51,7 +56,16 @@ module.exports = function mountZimaKruh(ctx){
   const den = v => String(v||'').slice(0,10);
   const poDni = (d, n) => new Date(Date.parse(d+'T00:00:00Z') + n*864e5).toISOString().slice(0,10);
   const DO_PLATBA = poDni(ZIMA.do, ZIMA.dni_platba_navyse);
+  const vOkne = d => !!d && d >= ZIMA.od && d <= ZIMA.do;
   const vOkneSPlatbou = d => !!d && d >= ZIMA.od && d <= DO_PLATBA;
+  // Koľko dní zadarmo dostane tá, čo nastupuje z akcie: do konca okna vrátane.
+  // Nikdy menej než bežný skúšobný týždeň.
+  function kampanoveDni(){
+    if(!ZIMA.mesiac_zadarmo) return ZIMA.skuska_dni;
+    const dnes = den(nowISO());
+    const dni = Math.round((Date.parse(ZIMA.do + 'T00:00:00Z') - Date.parse(dnes + 'T00:00:00Z')) / 864e5) + 1;
+    return Math.max(ZIMA.skuska_dni, dni);
+  }
   const krstne = u => (String((u&&u.name)||'').trim().split(/\s+/)[0] || 'tanečníčka');
   const datumSk = d => { const [r,m,x] = String(d).split('-'); return +x + '. ' + +m + '. ' + r; };
   // Uzávierka slovom, odvodená z okna — nech sa pri zmene dátumu nemusí prepisovať text.
@@ -99,6 +113,24 @@ module.exports = function mountZimaKruh(ctx){
     }
     return true;
   }
+
+  // Zapnutie mesiaca zadarmo z nástenky. Ide cez tú istú funkciu ako registračný
+  // týždeň zadarmo (`aktivujSkusku` bez odberu), takže nevzniká nová cesta k členstvu
+  // a hlavne — bez karty. Po akcii sa nič nestrhne; kto bude chcieť pokračovať,
+  // kúpi si členstvo sám. Dĺžku berie `kampanoveDni()`.
+  app.post('/api/zima/aktivovat', auth, async(req,res)=>{
+    try{
+      const u = await q.one(db.users,{_id:req.session.uid});
+      if(!u) return res.status(401).json({error:'Nie ste prihlásený'});
+      if(!(await skuskaVynimka(u)))
+        return res.status(400).json({error:'Táto akcia pre teba už neplatí.', reason:'mimo_akcie'});
+      const n = await skuskaNarok(u);
+      if(!n.ok) return res.status(400).json({error:'Zumbu zadarmo teraz zapnúť nejde.', reason:n.reason});
+      const r = await aktivujSkusku(u._id, null, null);
+      if(!r || r.ok === false) return res.status(400).json({error:(r && r.error) || 'Nepodarilo sa zapnúť'});
+      res.json({ ok:true, do: r.ends_at || null, dni: kampanoveDni() });
+    }catch(e){ res.status(500).json({error:e.message}); }
+  });
 
   // ── Komu mail patrí ────────────────────────────────────────────────────────
   // Jeden mail na jednu adresátku, aj keď má v appke seba aj dve deti. Dieťa samo
@@ -188,15 +220,13 @@ module.exports = function mountZimaKruh(ctx){
   // dieťaťu, ho nesmieme sľúbiť. Kto u nás ešte netancovala, nečíta „aj keď si už bola".
   function zimaSkuskaOdsek(p){
     if(!ZIMA.skuska_pre_vratene || !p.pre_seba) return '';
-    return '<p><b>1. Zumbu si teraz aktivuješ zadarmo.</b> '
-      + ZIMA.skuska_dni + ' dní neobmedzených hodín za <b>0 €</b>'
+    return '<p><b>1. Zumbu máš do ' + UZAVIERKA + ' zadarmo.</b> Neobmedzené hodiny za <b>0 €</b>'
       + (p.posledna
-          ? ' — a to aj vtedy, keď si u nás už bola. Doteraz to dostávali len nové klientky, '
-            + 'teraz prvýkrát aj tie, ktoré sa k nám vracajú.'
+          ? ' — a to aj vtedy, keď si u nás už bola. Doteraz niečo také dostávali len nové '
+            + 'klientky, teraz prvýkrát aj tie, ktoré sa k nám vracajú.'
           : ' vo všetkých našich mestách.')
-      + ' Zapneš si to sama v appke — kartu si uložíš cez Stripe, prvých '
-      + ZIMA.skuska_dni + ' dní sa z nej nestrhne nič a zrušiť môžeš kedykoľvek '
-      + 'pred prvou platbou.</p>';
+      + ' Zapneš si to sama v appke jedným klikom — <b>kartu od teba nepýtame</b> '
+      + 'a nič sa ti nestrhne.</p>';
   }
 
   function zimaHtml(p){
@@ -209,17 +239,18 @@ module.exports = function mountZimaKruh(ctx){
       + '<p>Chceme byť opäť spolu a užiť si krásnu zimu a sviatky v kruhu priateľov, '
       + 'a preto sme pripravili akciu, <b>akú sme tu ešte nikdy nemali</b>.</p>'
       + skuska
-      + '<p><b>' + c + 'A keď v tom budeš pokračovať členstvom — stačí do ' + UZAVIERKA
-      + ' — a privedieš so sebou kamošku, ' + (ZIMA.aj_kamoska
+      + '<p><b>' + c + 'A keď so sebou do ' + UZAVIERKA + ' privedieš kamošku, '
+      + (ZIMA.aj_kamoska
           ? '<span style="color:#C9A84C">december máte u nás zadarmo obe</span></b> — tebe aj jej '
-            + 'pripíšeme ' + ZIMA.dni_darcek + ' dní navyše, bez platenia.'
+            + 'pripíšeme ' + ZIMA.dni_darcek + ' dní navyše, opäť bez platenia.'
           : '<span style="color:#C9A84C">december máš u nás zadarmo</span></b> — pripíšeme ti '
-            + ZIMA.dni_darcek + ' dní navyše, bez platenia.') + '</p>'
+            + ZIMA.dni_darcek + ' dní navyše, opäť bez platenia.') + '</p>'
       + zimaDetiOdsek(p)
-      + '<p>Členstvo si vyberieš <a href="' + ZIMA_URL + '">v appke</a>: ' + CENY + ' na mesiac.</p>'
       + '<p>Kamoške pošli svoj vlastný odkaz <a href="' + odkazKamoska + '">' + odkazKamoska
-      + '</a>. Keď si cez neho vezme členstvo, december je '
+      + '</a>. Keď cez neho príde, december je '
       + (ZIMA.aj_kamoska ? 'váš — tvoj aj jej.' : 'tvoj.') + '</p>'
+      + '<p>Členstvo si <a href="' + ZIMA_URL + '">vyberieš v appke</a> až vtedy, keď budeš '
+      + 'chcieť pokračovať: ' + CENY + ' na mesiac. Teraz neplatíš nič.</p>'
       + '<p>Sviatky sú o ľuďoch. Nech ich máme s kým tancovať. 💛</p>',
       skuska ? '❄️ AKTIVOVAŤ ZUMBU ZADARMO' : '❄️ VYBRAŤ SI ČLENSTVO',
       skuska ? APP_URL.replace(/\/$/,'') + '/client-dashboard' : ZIMA_URL);
@@ -242,7 +273,8 @@ module.exports = function mountZimaKruh(ctx){
         s_detmi:sDetmi, len_kvoli_dietatu:lenDeti, nikdy_nebola:nikdyNebola,
         okno:{ od:ZIMA.od, do:ZIMA.do }, dni_darcek:ZIMA.dni_darcek,
         aj_kamoska:ZIMA.aj_kamoska, skuska_pre_vratene:ZIMA.skuska_pre_vratene,
-        skuska_dni:ZIMA.skuska_dni, do_platba:DO_PLATBA, predmet:ZIMA_SUBJ, odkaz:ZIMA_URL,
+        skuska_dni:ZIMA.skuska_dni, kampanove_dni:kampanoveDni(), mesiac_zadarmo:ZIMA.mesiac_zadarmo,
+        do_platba:DO_PLATBA, predmet:ZIMA_SUBJ, odkaz:ZIMA_URL,
         rozpocet: await mailBudgetStav(4),
         go_flag: process.env.ZIMA_GO === '1',
         ukazka_odisla: vzorka(p => p.pre_seba && p.posledna && !p.deti.length),
@@ -308,6 +340,15 @@ module.exports = function mountZimaKruh(ctx){
       if(!zaplatila[t.user_id] || d >= zaplatila[t.user_id].d) zaplatila[t.user_id] = { d, plan_id:t.plan_id };
     }
 
+    // …a kto do akcie nastúpil bezplatne. Od spresnenia 9. 11. je nástup zadarmo, takže
+    // nárok na december už neviaže platba — stačí, že do akcie naozaj nastúpila. Práve
+    // preto zostáva darovanie decembra ručné: appka ho spočíta, potvrdzuje ho admin.
+    for(const u of users){
+      const d = den(u.zima_skuska_at);
+      if(!d || !vOkne(d)) continue;
+      if(!zaplatila[u._id]) zaplatila[u._id] = { d, plan_id:skuskaPlan, zadarmo:true };
+    }
+
     const prve = await prveZaplateneClenstva();
     // Darček sa eviduje podľa PRÍJEMCU, nie podľa toho, kto kamošku priviedol: odkedy
     // december dostávajú obe, môže byť tá istá žena v zozname dvakrát (raz ako
@@ -316,7 +357,12 @@ module.exports = function mountZimaKruh(ctx){
     const podla = {};
     for(const f of users){
       if(!f.sponsor_id || !kamoskaPlatna(f)) continue;
-      if(!vOkneSPlatbou(prve[f._id])) continue;         // kamoška musí byť NOVÁ platiaca v okne
+      const nastup = zaplatila[f._id];
+      if(!nastup) continue;                             // kamoška do akcie vôbec nenastúpila
+      // Kto si členstvo zaplatila, musí byť NOVÁ platiaca — stará klientka, ktorá si
+      // raz za rok kúpi mesiac, kamoškou v zmysle akcie nie je. Bezplatný nástup túto
+      // podmienku nepotrebuje: ten dostane len tá, čo tri mesiace nebola na hodine.
+      if(!nastup.zadarmo && !vOkneSPlatbou(prve[f._id])) continue;
       const inviter = uMap[f.sponsor_id]; if(!inviter) continue;
       const prijemca = prijemcaDarceka(inviter, zaplatila, deti);
       if(!prijemca) continue;                           // sama si členstvo v okne nevzala
@@ -326,7 +372,8 @@ module.exports = function mountZimaKruh(ctx){
         komu:prijemca.kto, plan_id:prijemca.plan, plan:(MEMBERSHIP_PLANS[prijemca.plan]||{}).name || prijemca.plan,
         clenstvo_do: (uMap[prijemca.id]||{}).membership_expires || null,
         uz_darovane: dane.has(prijemca.id), kamosky:[] };
-      z.kamosky.push({ id:f._id, meno:f.name || '—', prve_clenstvo:prve[f._id] });
+      z.kamosky.push({ id:f._id, meno:f.name || '—', prve_clenstvo:prve[f._id] || null,
+        zadarmo:!!nastup.zadarmo, nastup:nastup.d });
     }
     const naroky = Object.values(podla);
     // Privedená kamoška dostane december tiež — svoje členstvo si práve zaplatila, takže
@@ -381,5 +428,5 @@ module.exports = function mountZimaKruh(ctx){
     }catch(e){ res.status(500).json({error:e.message}); }
   });
 
-  return { ZIMA, ZIMA_SUBJ, zimaAudience, zimaHtml, zimaNaroky, skuskaVynimka };
+  return { ZIMA, ZIMA_SUBJ, zimaAudience, zimaHtml, zimaNaroky, skuskaVynimka, kampanoveDni };
 };

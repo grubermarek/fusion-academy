@@ -575,6 +575,11 @@ let platbaSuma = 10;
 async function skuskaZRozvrhu() {
   try { if (selectedClass) localStorage.setItem('fa_pending_booking', JSON.stringify({ class_id: selectedClass._id, class_name: selectedClass.name, date: getNextDate(selectedClass.day_of_week) })); } catch (e) {}
   try {
+    // Akcia Zima v kruhu najbližších dáva mesiac zadarmo bez karty. Skúsime ju najprv;
+    // keď pre klientku neplatí, server odpovie `mimo_akcie` a ide bežná Stripe skúška.
+    const z = await fetch('/api/zima/aktivovat', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+      .then(x => x.json()).catch(() => null);
+    if (z && z.ok) { location.href = '/client-dashboard?zima=1'; return; }
     const r = await fetch('/api/stripe/trial', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
     const d = await r.json();
     if (d && d.url) { location.href = d.url; return; }
