@@ -15375,6 +15375,30 @@ async function revenueEvents(opts){
     ...trans('single_entry','entries', t=>t.note||'Jednorazový vstup'),
     ...trans('private_lesson','private', t=>t.note||'Súkromná hodina'),
     ...trans('event_ticket','events', t=>t.note||'Vstupenky'),
+    // Mesačná obnova odberu zo Stripe. Tento zoznam ju do 9. 11. 2026 nečítal, takže
+    // 611,80 € naozaj prijatých platieb nebolo ani v Predajoch, ani v zdraví firmy,
+    // ani v tržbe na klientku — pritom provízie a faktúry sa z nich počítali. Prvá
+    // platba odberu prichádza cez db.payments (Stripe billing_reason
+    // 'subscription_create'), obnovy existujú LEN ako transakcie, takže dvojité
+    // započítanie nehrozí. Obnova iba posunie expiráciu existujúceho členstva,
+    // takže sa nezapočíta ani cez clenstvaMimoBranu.
+    ...tr.filter(t=>t.type==='subscription_renewal' && +t.amount>0 && !t.commission_only && ok(t.user_id))
+      .map(t=>{
+        // Odber dieťaťa sedí na detskom profile, ale platí ho rodič a faktúra je jeho
+        // (13. 9.) — v tržbe preto vystupuje platiteľ a dieťa je v popise. Inak by
+        // účtovníčka videla meno dieťaťa s vnútornou adresou a bez faktúry.
+        const clen = uMap[t.user_id] || null;
+        const platca = (clen && clen.is_child && clen.parent_id && uMap[clen.parent_id]) ? uMap[clen.parent_id] : clen;
+        const uid = platca ? platca._id : t.user_id;
+        const u = kto(uid); const d = denTx(t);
+        if(!uid && t.user_name) u.name = t.user_name;
+        const nazov = (MEMBERSHIP_PLANS[t.plan_id]?.name) || 'Členstvo';
+        const zaKoho = (platca && clen && platca._id !== clen._id) ? ' ('+clen.name+')' : '';
+        return { id:t._id, d, a:+t.amount||0, cat:'memberships', src:'app', who:u,
+          what:'Obnova členstva '+nazov+zaKoho, method:t.payment_method||'karta',
+          kanal:'automatický odber', invoice: fak(najdiFakturu(uid,u.email,t.amount,d)) };
+      })
+      .filter(e=>ok(e.who.id)),
     // ručný predaj: staré záznamy nemajú typ, poznáme ich podľa názvu produktu
     ...tr.filter(t=>!t.commission_only && +t.amount>0
         && (t.type==='product' || (!t.type && (t.product_name||t.payment_method))) && ok(t.user_id||t.client_id))
