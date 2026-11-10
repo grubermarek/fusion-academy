@@ -13,6 +13,8 @@
  *   · tržba vznikne RAZ (transakcia), nie dvakrát (aj z členského záznamu)
  *   · faktúra je zaplatená v deň platby, aj pri spätnom zápise
  *   · poistky: nulová suma, dátum v budúcnosti, neznámy plán, neznámy človek
+ *   · cena na zázname sa dá opraviť (darovaný mesiac nechá nulu), ale nie tam,
+ *     kde je cena samotná tržba — a oprava tržbou nepohne
  *
  * Spustenie:  node qa/clenstvo-zapis-cash.test.js
  */
@@ -52,11 +54,24 @@ const den = d => new Date(Date.now() + d * 86400000).toISOString().slice(0, 10);
     // klientka bez členstva — bežný zápis
     JSON.stringify({ _id: 'qaSellNova000001', name: 'Nina Nova', email: 'qa.sell.nova@qa-biz.local',
       password: hash, user_type: 'lead', active: true, created_at: den(0), city: 'Detva' }),
+    // klientka so staršími záznamami — darovaný mesiac (nula) aj hotovosť od trénera
+    JSON.stringify({ _id: 'qaSellStary00001', name: 'Stela Stara', email: 'qa.sell.stara@qa-biz.local',
+      password: hash, user_type: 'client', active: true, created_at: den(-60), city: 'Zvolen' }),
   ].join('\n') + '\n');
-  fs.writeFileSync(path.join(DATA, 'memberships.db'),
+  fs.writeFileSync(path.join(DATA, 'memberships.db'), [
     JSON.stringify({ _id: 'qaSellMem0000001', user_id: 'qaSellZima000001', plan_id: 'bronze',
       plan_name: 'Bronze', price: 0, status: 'active', started_at: new Date().toISOString(),
-      expires_at: zadarmoDo, created_at: new Date().toISOString() }) + '\n');
+      expires_at: zadarmoDo, created_at: new Date().toISOString() }),
+    // darovaný mesiac: cena 0, žiadna platobná metóda — tu sa cena opravuje
+    JSON.stringify({ _id: 'qaSellMemDar0001', user_id: 'qaSellStary00001', plan_id: 'bronze',
+      plan_name: 'Bronze', price: 0, status: 'expired', started_at: den(-60) + 'T10:00:00.000Z',
+      expires_at: den(-30) + 'T23:59:59.000Z', created_at: den(-60) + 'T10:00:00.000Z' }),
+    // hotovosť zapísaná trénerom: cena JE tržba (revenueEvents ju číta zo záznamu)
+    JSON.stringify({ _id: 'qaSellMemCash001', user_id: 'qaSellStary00001', plan_id: 'bronze',
+      plan_name: 'Bronze', price: 54.9, status: 'expired', payment_method: 'cash',
+      started_at: den(-30) + 'T10:00:00.000Z', expires_at: den(-1) + 'T23:59:59.000Z',
+      created_at: den(-30) + 'T10:00:00.000Z' }),
+  ].join('\n') + '\n');
 
   const srv = spawn(process.execPath, ['server.js'], {
     cwd: path.join(__dirname, '..'),
@@ -159,6 +174,46 @@ const den = d => new Date(Date.now() + d * 86400000).toISOString().slice(0, 10);
     ok('a pripíše 10 vstupov', (u3b?.single_entries || 0) === 10, String(u3b?.single_entries));
     const txPerm = rd('transactions.db').find(t => t.user_id === 'qaSellNova000001' && t.type === 'single_entry');
     ok('tržba za permanentku má typ vstupu', !!txPerm && Math.abs(txPerm.amount - 80) < 0.005, JSON.stringify(txPerm && [txPerm.type, txPerm.amount]));
+
+    console.log('\nOprava ceny na členskom zázname:');
+    const predajePred = await j('/api/admin/predaje?limit=500', {}, adm);
+    const sumaPred = (predajePred.d?.rows || []).reduce((s2, r) => s2 + (+r.a || 0), 0);
+
+    const nieCislo = await j('/api/admin/memberships/qaSellMemDar0001/cena', { method: 'POST', body: { price: 'asi tak' } }, adm);
+    ok('nečíslo → 400', nieCislo.status === 400, JSON.stringify(nieCislo.d));
+    const privela = await j('/api/admin/memberships/qaSellMemDar0001/cena', { method: 'POST', body: { price: 99999 } }, adm);
+    ok('nezmyselná suma → 400', privela.status === 400, JSON.stringify(privela.d));
+    const nieto = await j('/api/admin/memberships/nieto00000000001/cena', { method: 'POST', body: { price: 10 } }, adm);
+    ok('neznámy záznam → 404', nieto.status === 404, JSON.stringify(nieto.d));
+    const jeTrzba = await j('/api/admin/memberships/qaSellMemCash001/cena', { method: 'POST', body: { price: 10 } }, adm);
+    ok('na zázname s platbou to server nepustí (cena je tam tržba)', jeTrzba.status === 400, JSON.stringify(jeTrzba.d));
+    const bezAdmina2 = await j('/api/admin/memberships/qaSellMemDar0001/cena', { method: 'POST', body: { price: 10 } });
+    ok('bez admina to nejde', bezAdmina2.status === 401 || bezAdmina2.status === 403, JSON.stringify(bezAdmina2.d));
+
+    const oprava = await j('/api/admin/memberships/qaSellMemDar0001/cena', { method: 'POST', body: { price: '49,90' } }, adm);
+    ok('cena sa opraví (aj zapísaná s desatinnou čiarkou)', oprava.status === 200 && Math.abs((oprava.d?.price || 0) - 49.9) < 0.005, JSON.stringify(oprava.d));
+    ok('a odpoveď povie, z čoho sa menila', Math.abs((oprava.d?.od ?? -1) - 0) < 0.005, JSON.stringify(oprava.d));
+    const darRow = rd('memberships.db').find(m => m._id === 'qaSellMemDar0001');
+    ok('záznam nesie novú cenu', Math.abs((+darRow?.price || 0) - 49.9) < 0.005, String(darRow?.price));
+    ok('a platobnú metódu mu to nepridalo', !darRow?.payment_method, JSON.stringify(darRow));
+
+    const predajePo = await j('/api/admin/predaje?limit=500', {}, adm);
+    const sumaPo = (predajePo.d?.rows || []).reduce((s2, r) => s2 + (+r.a || 0), 0);
+    ok('tržba sa opravou nepohla', Math.abs(sumaPo - sumaPred) < 0.005, sumaPred + ' → ' + sumaPo);
+
+    const kartaS = await j('/api/admin/crm/client/qaSellStary00001', {}, adm);
+    const riadokDar = (kartaS.d?.memberships || []).find(m => m.id === 'qaSellMemDar0001');
+    ok('tab Členstvá už nehlási 0 €', riadokDar && Math.abs(riadokDar.price - 49.9) < 0.005, JSON.stringify(riadokDar));
+    ok('a ponúka opravu len na tomto zázname', riadokDar?.fixable === true, JSON.stringify(riadokDar));
+    const riadokCash = (kartaS.d?.memberships || []).find(m => m.id === 'qaSellMemCash001');
+    ok('na zázname s hotovosťou opravu neponúka', riadokCash?.fixable === false, JSON.stringify(riadokCash));
+    ok('a karta ukazuje zaplatených len 54,90 € (nula sa do LTV nepridala)', Math.abs((kartaS.d?.kpis?.totalPaid || 0) - 54.9) < 0.005, String(kartaS.d?.kpis?.totalPaid));
+
+    const znova = await j('/api/admin/memberships/qaSellMemDar0001/cena', { method: 'POST', body: { price: 49.9 } }, adm);
+    ok('tá istá cena druhý raz nič nemení', znova.status === 200 && znova.d?.bez_zmeny === true, JSON.stringify(znova.d));
+    const audCena = rd('audit.db').filter(a => a.action === 'membership_cena');
+    ok('oprava má jeden riadok v audite', audCena.length === 1, String(audCena.length));
+    ok('a v ňom starú aj novú cenu', audCena[0]?.before?.price === 0 && Math.abs((audCena[0]?.after?.price || 0) - 49.9) < 0.005, JSON.stringify(audCena[0] && [audCena[0].before, audCena[0].after]));
 
     console.log('\nStopa v audite:');
     const aud = rd('audit.db').filter(a => a.action === 'membership_sell');

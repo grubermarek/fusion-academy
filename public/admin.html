@@ -8200,7 +8200,7 @@ async function openClientDetail(id){
       ${['Platby','Členstvá','Návštevy','Faktúry','✉️ E-maily','❤️ Starostlivosť'].map((t,i)=>`<li class="nav-item"><a class="nav-link${i===0?' active':''}" style="cursor:pointer;color:#ccc" onclick="cdTab(${i},this)">${t}</a></li>`).join('')}
     </ul>
     <div class="cd-tab" data-i="0">${cdPaymentsHtml(d.payments)}</div>
-    <div class="cd-tab" data-i="1" style="display:none">${list(d.memberships,['Členstvo','Cena','Stav','Od','Do'],r=>`<tr><td>${escHtml(r.plan_name||'')}</td><td>${r.price.toFixed(2)} €</td><td>${escHtml(r.status||'')}</td><td>${fmtDate(r.started_at)}</td><td>${fmtDate(r.expires_at)}</td></tr>`)}</div>
+    <div class="cd-tab" data-i="1" style="display:none">${list(d.memberships,['Členstvo','Cena','Stav','Od','Do'],r=>`<tr><td>${escHtml(r.plan_name||'')}</td><td>${r.price.toFixed(2)} €${r.fixable?` <span onclick="cdMemCena('${r.id}',${r.price})" title="opraviť cenu na zázname" style="cursor:pointer;color:#C9A84C">✎</span>`:''}</td><td>${escHtml(r.status||'')}</td><td>${fmtDate(r.started_at)}</td><td>${fmtDate(r.expires_at)}</td></tr>`)}</div>
     <div class="cd-tab" data-i="2" style="display:none">${list(d.bookings,['Dátum','Hodina','Miesto','Stav'],r=>`<tr><td>${fmtDate(r.date)}</td><td>${escHtml(r.class_name||'')}</td><td>${escHtml(r.location||'')}</td><td>${escHtml(r.status||'')}</td></tr>`)}</div>
     <div class="cd-tab" data-i="3" style="display:none">${list(d.invoices,['Číslo','Suma','Stav','Vystavená'],r=>`<tr><td><a href="/invoice/${r.number}" target="_blank" style="color:#C9A84C">${r.number}</a></td><td>${r.total.toFixed(2)} €</td><td>${escHtml(r.status||'')}</td><td>${fmtDate(r.issued_at)}</td></tr>`)}</div>
     <div class="cd-tab" data-i="4" style="display:none" id="cdEmailsTab"><div class="text-muted small py-2">Klikni na záložku pre načítanie…</div></div>
@@ -8313,6 +8313,21 @@ async function cdMemSell(){
   btn.disabled=false;
   if(!r?.ok){ msg.innerHTML='<span class="text-danger">'+escHtml(r?.error||'Chyba')+'</span>'; return; }
   showToast('Zapísané ✓ '+r.plan_name+' za '+(+r.amount).toFixed(2)+' €','success');
+  openClientDetail(_cdMemId);
+}
+// Oprava ceny na členskom zázname. Darovaný mesiac (akcia, prvý týždeň) má na
+// zázname nulu a tá tam zostane aj po tom, čo si klientka členstvo zaplatí — cena
+// je na zázname len údaj, peniaze nesie platba. Tu sa opraví, nech tab Členstvá
+// netvrdí 0 €. Tržbou je záznam s platobnou metódou, tam to server nepustí.
+async function cdMemCena(id, teraz){
+  const v=prompt('Akú cenu má byť na tomto členskom zázname? (v €)' + String.fromCharCode(10) + String.fromCharCode(10)
+    + 'Mení sa len údaj na zázname — peniaze nesie platba v tabe Platby, tržba sa nehýbe.', (+teraz||0).toFixed(2));
+  if(v===null) return;
+  const cena=parseFloat(String(v).replace(',','.'));
+  if(!Number.isFinite(cena) || cena<0){ showToast('Zadaj cenu číslom.','error'); return; }
+  const r=await api('/api/admin/memberships/'+id+'/cena',{method:'POST',body:JSON.stringify({price:cena})});
+  if(!r?.ok){ showToast(r?.error||'Cenu sa nepodarilo opraviť.','error'); return; }
+  showToast(r.bez_zmeny?'Cena je rovnaká, nič sa nemenilo.':('Cena opravená na '+(+r.price).toFixed(2)+' €'),'success');
   openClientDetail(_cdMemId);
 }
 // ── Predaj vstupenky priamo z profilu klientky (hotovosť/prevod) ─────────────

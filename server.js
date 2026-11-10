@@ -16429,7 +16429,8 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
           refundable: !r && (+t.amount||0)>0,
           refunded: r ? {amount:+r.amount||0, type:r.type, date:(r.created_at||'').slice(0,10), credit_note:r.credit_note||null} : null };
       })).sort((a,b)=>(b.date||'').localeCompare(a.date||'')),
-      memberships: membs.map(m=>({plan_name:m.plan_name, price:+m.price||0, status:m.status, started_at:m.started_at, expires_at:m.expires_at, method:m.payment_method||'—'}))
+      // fixable: cenu sa dá opraviť len na zázname, kde nie je tržbou (bez payment_method).
+      memberships: membs.map(m=>({id:m._id, plan_name:m.plan_name, price:+m.price||0, status:m.status, started_at:m.started_at, expires_at:m.expires_at, method:m.payment_method||'—', fixable:!m.payment_method}))
         .sort((a,b)=>(b.started_at||'').localeCompare(a.started_at||'')),
       bookings: attended.map(b=>({date:b.booking_date||b.created_at, class_name:b.class_name, location:b.class_location, status:b.status, access:b.access_method||(b.free_class?'free_class':null), attended_by:b.attended_by||null}))
         .sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,50),
@@ -27597,6 +27598,29 @@ app.post('/api/admin/memberships/:id/platnost', adminAuth, async(req,res)=>{
       body: (m.status==='bundle'?m.plan_name:('Členstvo '+m.plan_name))+' ti platí do '
         +den.split('-').reverse().join('. ')+'.', read:false, created_at:nowISO()}).catch(()=>{});
     res.json({ ok:true, plan_name:m.plan_name, od:stare, do:nove, dni });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+// Oprava ceny na členskom zázname (Marek 10. 11. 2026 — Hanke Ilčíkovej ostala na
+// riadku nula z darovaného mesiaca, hoci Bronze si v hotovosti zaplatila). Mení sa
+// LEN údaj na zázname; peniaze nesie transakcia, takže tržba sa tým nehýbe. Na
+// zázname S platobnou metódou je cena samotná tržba (revenueEvents ju číta cez
+// clenstvaMimoBranu a deduplikuje podľa sumy) — tam ju prepísať nedáme, lebo by sa
+// tá istá platba mohla zarátať dvakrát.
+app.post('/api/admin/memberships/:id/cena', adminAuth, async(req,res)=>{
+  try{
+    const m = await q.one(db.memberships,{_id:req.params.id});
+    if(!m || m._type) return res.status(404).json({error:'Záznam nenájdený'});
+    if(m.payment_method) return res.status(400).json({
+      error:'Na tomto zázname je cena samotná tržba (platba: '+m.payment_method+'). Opraviť ju treba refundáciou a novým zápisom, nie tu.'});
+    const raw = req.body.price;
+    const n = typeof raw==='number' ? raw : parseFloat(String(raw==null?'':raw).replace(',','.'));
+    if(!Number.isFinite(n) || n<0 || n>5000) return res.status(400).json({error:'Zadaj cenu od 0 do 5000 €.'});
+    const cena = Math.round(n*100)/100;
+    const stara = +m.price||0;
+    if(Math.abs(stara-cena)<0.005) return res.json({ok:true, plan_name:m.plan_name||m.plan_id, od:stara, price:cena, bez_zmeny:true});
+    await q.update(db.memberships,{_id:m._id},{$set:{price:cena, updated_at:nowISO(), cenu_opravil:req.session.uid}});
+    await auditLog(req,'membership_cena',m._id,{price:stara},{price:cena},String(req.body.dovod||'').slice(0,160));
+    res.json({ok:true, plan_name:m.plan_name||m.plan_id, od:stara, price:cena});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 app.post('/api/admin/membership/freeze', adminAuth, async(req,res)=>{
