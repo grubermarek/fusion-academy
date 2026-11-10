@@ -16332,8 +16332,13 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
     const invoices=(await q.find(db.invoices,{user_id:u._id})).filter(i=>i.type!=='credit_note');
     // Vstupenky na eventy a súkromné hodiny nemajú záznam v db.payments (sedia len
     // v transakciách) — bez nich by na profile chýbali aj v platbách, aj v LTV.
+    // Mesačná obnova odberu je na tom rovnako a do 10. 11. 2026 tu nebola: obnova
+    // nezaloží ani platbu, ani nové členstvo (len posunie expiráciu), takže karta
+    // klientky tvrdila, že zaplatila len prvý mesiac. Pri 14 obnovách to bolo
+    // 711,80 € chýbajúcich v LTV — ten istý slepý uhol ako v tržbách (`f48b1f1`).
     const extraTx=(await q.find(db.transactions,{user_id:u._id}))
-      .filter(t=>['event_ticket','private_lesson'].includes(t.type) && (+t.amount||0)>0);
+      .filter(t=>['event_ticket','private_lesson','subscription_renewal'].includes(t.type)
+        && (+t.amount||0)>0 && !t.commission_only);
 
     const totalPaid = +([
       ...payments.map(p=>+p.amount||0),
@@ -16370,7 +16375,9 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
       nextMail={sequence:cakajuce[0].sequence, scheduled_for:cakajuce[0].scheduled_for, subject:st?st.subject:''}; }
 
     // Refundácie k platbám tohto klienta (na zobrazenie stavu + zákaz dvojitého refundu)
-    const refundsForUser = await q.find(db.refunds,{user_id:u._id});
+    // Refund za odber dieťaťa je zapísaný na rodiča (ten platil), ale ukázať sa musí
+    // aj na karte dieťaťa — inak by tam tá obnova ešte raz ponúkala „Refundovať".
+    const refundsForUser = await q.find(db.refunds,{$or:[{user_id:u._id},{for_user_id:u._id}]});
     const refundByPay = {}, refundByTx = {};
     for(const r of refundsForUser){ if(r.payment_id) refundByPay[r.payment_id]=r; if(r.transaction_id) refundByTx[r.transaction_id]=r; }
 
@@ -16403,8 +16410,11 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
         const r = refundByTx[t._id];
         return {id:t._id, date:t.date||t.created_at, amount:+t.amount||0, source:'transaction',
           method:t.payment_method||t.method||'—', type:t.type,
-          note:t.note||(t.type==='event_ticket'?'Vstupenka na event':'Súkromná hodina'),
-          status:'completed', gateway:'manual', refundable: !r && (+t.amount||0)>0,
+          note:t.note||({event_ticket:'Vstupenka na event', private_lesson:'Súkromná hodina',
+            subscription_renewal:'Obnova členstva (automatický odber)'}[t.type]||'Platba'),
+          // Obnova odberu prišla z karty — „manuál" by na karte klientky klamal.
+          status:'completed', gateway: ['stripe','card','karta'].includes(String(t.payment_method||'').toLowerCase())?'stripe':'manual',
+          refundable: !r && (+t.amount||0)>0,
           refunded: r ? {amount:+r.amount||0, type:r.type, date:(r.created_at||'').slice(0,10), credit_note:r.credit_note||null} : null };
       })).sort((a,b)=>(b.date||'').localeCompare(a.date||'')),
       memberships: membs.map(m=>({plan_name:m.plan_name, price:+m.price||0, status:m.status, started_at:m.started_at, expires_at:m.expires_at, method:m.payment_method||'—'}))

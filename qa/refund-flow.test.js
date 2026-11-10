@@ -238,6 +238,27 @@ const rd = f => { const m = {}; try { fs.readFileSync(path.join(DATA, f), 'utf8'
         JSON.stringify(cnD && { n: cnD.number, rel: cnD.related_invoice, t: cnD.total }));
     } else { ok('refund za dieťa je zapísaný', false, 'nenašiel sa'); }
 
+    console.log('\nKarta klientky (LTV):');
+    const karta = (await j('/api/admin/crm/client/qaRefKlientka01', {}, adm)).d;
+    const riadky = (karta && karta.payments) || [];
+    const obn = riadky.find(p => p.id === 'qaRefTx000000001');
+    ok('obnova odberu je v platbách na karte', !!obn,
+      JSON.stringify(riadky.map(p => p.amount + ':' + (p.type || 'payment'))));
+    ok('a nehlási sa ako „manuál", keď prišla z karty', obn && obn.gateway === 'stripe', String(obn && obn.gateway));
+    // 50 € prvá platba + 50 € obnova; refundy sa z LTV neodratávajú (tak to bolo vždy)
+    ok('LTV klientky počíta aj obnovu', karta && karta.kpis && Math.abs(+karta.kpis.totalPaid - 100) < 0.005,
+      String(karta && karta.kpis && karta.kpis.totalPaid));
+    ok('a vrátenie peňazí je pri tej obnove vidieť', obn && obn.refunded && Math.abs(+obn.refunded.amount - 50) < 0.005,
+      JSON.stringify(obn && obn.refunded));
+
+    // Odber dieťaťa: refund je zapísaný na rodiča, ale na karte dieťaťa sa musí
+    // ukázať — inak by tam tá istá obnova ešte raz ponúkala „Refundovať".
+    const kartaD = (await j('/api/admin/crm/client/qaRefDieta000001', {}, adm)).d;
+    const obnD = ((kartaD && kartaD.payments) || []).find(p => p.id === 'qaRefTx000000002');
+    ok('obnova dieťaťa je na jeho karte', !!obnD, JSON.stringify((kartaD && kartaD.payments || []).map(p => p.amount)));
+    ok('a nedá sa z nej refundovať druhýkrát', obnD && obnD.refundable === false && !!obnD.refunded,
+      JSON.stringify(obnD && { refundable: obnD.refundable, refunded: !!obnD.refunded }));
+
     console.log('\nVplyv na tržby:');
     const fin = (await j('/api/admin/finance/stats', {}, adm)).d;
     ok('finančný prehľad odpovedá', fin && typeof fin === 'object', JSON.stringify(fin && Object.keys(fin)).slice(0, 100));
