@@ -17435,9 +17435,12 @@ async function exportDataset(name){
   }
   if(name==='crm'){
     const users=(await q.find(db.users,{is_admin:{$ne:true}})).filter(u=>!u.is_child);
-    const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status));
-    const membs=(await q.find(db.memberships,{})).filter(m=>m.payment_method);
-    const paid={}; payments.forEach(p=>paid[p.user_id]=(paid[p.user_id]||0)+(+p.amount||0)); membs.forEach(m=>paid[m.user_id]=(paid[m.user_id]||0)+(+m.price||0));
+    // LTV z revenueEvents — rovnaké číslo, aké ukazujú Predaje, karta klientky aj
+    // dashboardy. Vlastný súčet (platby z brány + hotovostné členstvá) tu nechával
+    // vonku obnovy odberu, jednotlivé vstupy, súkromné hodiny aj venčeky, takže
+    // export tvrdil nižšie LTV než appka (10. 11. 2026).
+    const paid={};
+    for(const e of await revenueEvents()) if(e.who.id) paid[e.who.id]=(paid[e.who.id]||0)+e.a;
     return {file:'crm.csv', csv:toCsv(['Meno','Email','Telefon','LTV','Navstevy','Zdroj','Kampan','Registracia'],
       users.map(u=>[u.name,u.email,u.phone||'',num(paid[u._id]||0),u.visit_count||0,u.utm_source||u.lead_source||'',u.utm_campaign||'',(u.created_at||'').slice(0,10)]))};
   }

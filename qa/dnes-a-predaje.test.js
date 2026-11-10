@@ -192,6 +192,14 @@ async function text(url, jar) {
     const retMesto = (ret?.ltvByCity || []).reduce((s2, r) => s2 + (+r.revenue || 0), 0);
     ok('LTV podľa plánu sedí s predajmi', Math.abs(retPlan - p.suma) < 0.005, 'podľa plánu=' + retPlan.toFixed(2) + ' predaje=' + p.suma);
     ok('a LTV podľa mesta tiež', Math.abs(retMesto - p.suma) < 0.005, 'podľa mesta=' + retMesto.toFixed(2) + ' predaje=' + p.suma);
+    // Export CRM si LTV skladal po svojom (platby z brány + hotovostné členstvá),
+    // takže v ňom chýbali obnovy, vstupy, súkromné hodiny aj venčeky.
+    const crmCsv = await text('/api/admin/export/crm.csv', adm);
+    ok('export CRM sa stiahne', crmCsv.status === 200 && /LTV/.test(crmCsv.body.split(/\r?\n/)[0] || ''), 'status=' + crmCsv.status);
+    const ltvSum = crmCsv.body.split(/\r?\n/).slice(1).filter(Boolean)
+      .map(r => +String(r.split(';')[3] || '').replace(/"/g, '').replace(',', '.') || 0)
+      .reduce((s2, v) => s2 + v, 0);
+    ok('a v stĺpci LTV dá po sčítaní to isté', Math.abs(ltvSum - p.suma) < 0.005, 'export=' + ltvSum.toFixed(2) + ' predaje=' + p.suma);
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.message);
   } finally {
