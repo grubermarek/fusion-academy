@@ -16336,9 +16336,19 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
     // nezaloží ani platbu, ani nové členstvo (len posunie expiráciu), takže karta
     // klientky tvrdila, že zaplatila len prvý mesiac. Pri 14 obnovách to bolo
     // 711,80 € chýbajúcich v LTV — ten istý slepý uhol ako v tržbách (`f48b1f1`).
+    // Členstvo zaplatené v hotovosti alebo prevodom, zapísané z karty klientky
+    // (10. 11. 2026), existuje tiež len ako transakcia — členský záznam z
+    // activateMembership payment_method nemá, aby sa tržba nerátala dvakrát.
+    // Preto sem patria aj typy 'membership' a 'single_entry', ale len keď tú istú
+    // sumu nedrží už členský záznam: tréner v paneli zapisuje oboje. Dedupka je
+    // rovnaká ako v revenueEvents (memTxKeys), aby karta a tržba dali to isté.
+    const memKeys = new Set(membs.filter(m=>m.payment_method).map(m=>(+m.price||0).toFixed(2)));
     const extraTx=(await q.find(db.transactions,{user_id:u._id}))
-      .filter(t=>['event_ticket','private_lesson','subscription_renewal'].includes(t.type)
-        && (+t.amount||0)>0 && !t.commission_only);
+      .filter(t=>(+t.amount||0)>0 && !t.commission_only
+        && (['event_ticket','private_lesson','subscription_renewal'].includes(t.type)
+          || (['membership','single_entry'].includes(t.type)
+            && !/stripe|paypal|free|referral_credit|demo/i.test(String(t.payment_method||t.method||''))
+            && !memKeys.has((+t.amount||0).toFixed(2)))));
 
     const totalPaid = +([
       ...payments.map(p=>+p.amount||0),
@@ -16411,7 +16421,8 @@ app.get('/api/admin/crm/client/:id', adminAuth, async(req,res)=>{
         return {id:t._id, date:t.date||t.created_at, amount:+t.amount||0, source:'transaction',
           method:t.payment_method||t.method||'—', type:t.type,
           note:t.note||({event_ticket:'Vstupenka na event', private_lesson:'Súkromná hodina',
-            subscription_renewal:'Obnova členstva (automatický odber)'}[t.type]||'Platba'),
+            subscription_renewal:'Obnova členstva (automatický odber)',
+            membership:'Členstvo', single_entry:'Vstupy'}[t.type]||'Platba'),
           // Obnova odberu prišla z karty — „manuál" by na karte klientky klamal.
           status:'completed', gateway: ['stripe','card','karta'].includes(String(t.payment_method||'').toLowerCase())?'stripe':'manual',
           refundable: !r && (+t.amount||0)>0,
@@ -18519,6 +18530,82 @@ app.post('/api/admin/membership/activate', adminAuth, async(req,res)=>{
     await activateMembership(user_id, plan_id, duration_days||30);
     res.json({ok:true});
   } catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ── Zápis zaplateného členstva priamo z karty klientky (Marek 10. 11. 2026) ──
+// Hanke Ilčíkovej sa cash Bronze nedal zapísať: v admin paneli viedla k predaju
+// členstva jediná cesta — Dochádzka → zapísať na hodinu — a tá ponuku „Predať
+// členstvo" dáva LEN klientke bez krytia. Hanka mala zapnutý zimný mesiac
+// zadarmo, takže ju panel zapísal ako krytú a zaplatiť nemala kde. Sekcia
+// Peniaze → Zaznamenať predaj zapíše iba transakciu (členstvo neaktivuje a
+// zoznam produktov je prázdny), takže hotovosť za členstvo nemala v appke cestu.
+const METODA_TXT = {cash:'Hotovosť', transfer:'Prevod na účet', card:'Karta na mieste'};
+app.get('/api/admin/membership/sell-options', adminAuth, async(req,res)=>{
+  try{
+    const u = req.query.user_id ? await q.one(db.users,{_id:String(req.query.user_id)}) : null;
+    if(!u) return res.status(404).json({error:'Klientka sa nenašla'});
+    const plany=[];
+    for(const [id,p] of Object.entries(PLANY_NA_PREDAJ())){
+      // Predvolená cena je tá BEZ automatickej obnovy (+10 %) — hotovosť ani prevod
+      // sa samy neobnovujú. Kto má starú alebo dohodnutú cenu, platí ju ďalej.
+      const c = await cenyClenstva(u._id, id).catch(()=>({auto:p.price, manual:p.price, stara_cena:false, dohodnuta:false}));
+      plany.push({id, name:p.name, price:c.manual, price_auto:c.auto,
+        bez_obnovy:c.manual>c.auto, stara_cena:c.stara_cena, dohodnuta:c.dohodnuta,
+        bundle:p.type==='bundle'});
+    }
+    const bezi = await q.one(db.memberships,{user_id:u._id, status:'active'});
+    const platne = bezi && bezi.expires_at && String(bezi.expires_at) > nowISO() ? bezi : null;
+    res.json({ok:true, plans:plany, dnes:today(),
+      current: platne ? {plan_id:platne.plan_id, plan_name:platne.plan_name,
+        expires_at:platne.expires_at, zadarmo:!(+platne.price>0)} : null});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/membership/sell', adminAuth, async(req,res)=>{
+  try{
+    const {user_id, plan_id} = req.body;
+    const u = user_id ? await q.one(db.users,{_id:user_id}) : null;
+    if(!u) return res.status(404).json({error:'Klientka sa nenašla'});
+    const plan = MEMBERSHIP_PLANS[plan_id];
+    if(!plan) return res.status(400).json({error:'Neznámy plán'});
+    const method = ['cash','transfer','card'].includes(req.body.payment_method) ? req.body.payment_method : 'cash';
+    const amt = +(+req.body.amount||0).toFixed(2);
+    if(!(amt>0)) return res.status(400).json({error:'Zadaj sumu, ktorú klientka naozaj zaplatila'});
+    const den = String(req.body.date||'').slice(0,10);
+    if(den && !/^\d{4}-\d{2}-\d{2}$/.test(den)) return res.status(400).json({error:'Neplatný dátum platby'});
+    if(den && den > today()) return res.status(400).json({error:'Dátum platby nemôže byť v budúcnosti'});
+    const kedy = den || today();
+    // Beží jej členstvo? Rovnaký plán activateMembership štandardne NADVÄZUJE na jeho
+    // koniec (aby skorá platba klientku neukrátila). Pri mesiaci zadarmo to ale nie je
+    // to, čo admin chce — zaplatené členstvo má platiť odo dnes. Preto sa štart vyberá.
+    const bezi = await q.one(db.memberships,{user_id:u._id, status:'active'});
+    const beziDo = bezi && bezi.expires_at && String(bezi.expires_at) > nowISO() ? bezi.expires_at : null;
+    const dni = +plan.duration_days||30;
+    const odDnes = String(req.body.start||'')==='today';
+    const opts = (odDnes && beziDo && plan.type!=='bundle')
+      ? {expiresAt:new Date(Date.now()+dni*86400000).toISOString()} : {};
+    await activateMembership(u._id, plan_id, dni, opts);
+    const mTxt = METODA_TXT[method];
+    const popis = plan.type==='bundle' ? plan.name : ('Členstvo '+plan.name);
+    // Tržbu nesie transakcia — presne ako pri potvrdení hotovostnej žiadosti.
+    // Členský záznam z activateMembership nemá payment_method, takže tá istá
+    // platba sa do tržieb nezapočíta dvakrát (revenueEvents: clenstvaMimoBranu).
+    await q.insert(db.transactions,{type: plan.type==='bundle'?'single_entry':'membership',
+      user_id:u._id, user_name:u.name, amount:amt, date:kedy, payment_method:method,
+      note:(String(req.body.note||'').slice(0,200) || `${plan.name} (${mTxt.toLowerCase()})`),
+      plan_id, recorded_by:req.session.uid, created_at:nowISO(), month:kedy.slice(0,7)});
+    trackPurchase(u._id, amt);
+    // Doklad je vystavený dneškom (číslovanie faktúr musí ísť po dátumoch) a
+    // zaplatený v deň platby — tak sa spáruje s tržbou aj pri spätnom zápise.
+    const inv = await createInvoice({user_id:u._id, client_name:u.name, client_email:u.email,
+      items:[{desc:popis, qty:1, total:amt}], total:amt, method:mTxt,
+      paid_at:kedy, silent:req.body.silent===true}).catch(e=>{ console.error('faktúra k členstvu:', e.message); return null; });
+    awardPurchaseCommission({buyer_id:u._id, amount:amt, product_name:popis});
+    await auditLog(req,'membership_sell',u._id,null,
+      {plan_id, amount:amt, method, date:kedy, start:(odDnes&&beziDo)?'today':'after', invoice:inv?inv.number:null},'');
+    const po = await q.one(db.memberships,{user_id:u._id, status:'active'});
+    res.json({ok:true, plan_name:plan.name, amount:amt, invoice:inv?inv.number:null,
+      expires_at: po?po.expires_at:null, bundle:plan.type==='bundle'});
+  }catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // Čakajúce manuálne platby (hotovosť/prevod z cenníka) — potvrdením sa aktivuje členstvo/permanentka

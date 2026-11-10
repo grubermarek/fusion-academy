@@ -8194,6 +8194,7 @@ async function openClientDetail(id){
       ${kpi('Aktívne členstvo', k.activeMembership?escHtml(k.activeMembership.plan_name)+'<br><small class="text-muted">do '+fmtDate(k.activeMembership.expires_at)+'</small>':'—')}
       ${kpi('Referral kredit', (p.referral_credit||0).toFixed(2)+' €')}
     </div>
+    <div id="cdMemSale" class="mb-3 pb-3" style="border-bottom:1px solid #2a2a2a"></div>
     <div id="cdEventSale" class="mb-3 pb-3" style="border-bottom:1px solid #2a2a2a"></div>
     <ul class="nav nav-tabs mb-2" style="border-color:#333">
       ${['Platby','Členstvá','Návštevy','Faktúry','✉️ E-maily','❤️ Starostlivosť'].map((t,i)=>`<li class="nav-item"><a class="nav-link${i===0?' active':''}" style="cursor:pointer;color:#ccc" onclick="cdTab(${i},this)">${t}</a></li>`).join('')}
@@ -8214,6 +8215,7 @@ async function openClientDetail(id){
     </div>
     <div id="cdAwards" class="mt-3 pt-3" style="border-top:1px solid #2a2a2a"><div class="text-muted small">Načítavam odznaky…</div></div>`;
   loadAwards(id);
+  loadCdMemSale(p);
   loadCdEventSale(p, !!k.activeMembership);
   loadCdTimeline(id);
 }
@@ -8241,6 +8243,77 @@ async function cdAddNote(id){
   const r=await api('/api/admin/leads/'+id+'/note',{method:'POST',body:JSON.stringify({text:t})});
   if(r?.ok){ showToast('Poznámka uložená ✓','success'); openClientDetail(id); }
   else showToast('Chyba: '+(r?.error||'?'),'error');
+}
+// ── Zápis zaplateného členstva z karty klientky (Marek 10. 11. 2026) ────────
+// Dovtedy sa dalo členstvo za hotovosť zapísať len cez Dochádzku → zapísať na
+// hodinu, a len klientke BEZ krytia. Kto mal mesiac zadarmo (zimná akcia) alebo
+// bežiace členstvo, nemal kde zaplatiť. Predvolená cena je bez automatickej
+// obnovy (+10 %) — hotovosť ani prevod sa samy neobnovujú.
+let _cdMemOpts=null, _cdMemId=null;
+async function loadCdMemSale(p){
+  const box=document.getElementById('cdMemSale'); if(!box) return;
+  _cdMemId=p.id;
+  const d=await api('/api/admin/membership/sell-options?user_id='+encodeURIComponent(p.id));
+  if(!d?.ok){ box.innerHTML='<div class="text-muted small"><i class="bi bi-gem"></i> Zápis členstva sa nenačítal.</div>'; return; }
+  _cdMemOpts=d;
+  const c=d.current;
+  const info = c
+    ? `<div class="small mb-2" style="color:#e0a34c">⚠️ Beží jej <b>${escHtml(c.plan_name||'')}</b> do <b>${fmtDate(c.expires_at)}</b>${c.zadarmo?' (zadarmo)':''} — vyber, odkedy má platiť zaplatené členstvo.</div>`
+    : '<div class="small text-muted mb-2">Aktívne členstvo nemá.</div>';
+  box.innerHTML=`
+    <div class="fw-bold mb-2" style="color:#C9A84C"><i class="bi bi-gem"></i> Zapísať zaplatené členstvo</div>
+    ${info}
+    <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+      <select id="cdMemPlan" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:auto" onchange="cdMemPlanPick()">
+        ${d.plans.map(pl=>`<option value="${pl.id}" data-price="${pl.price}">${escHtml(pl.name)} — ${(+pl.price).toFixed(2)} €${pl.dohodnuta?' (dohodnutá)':(pl.stara_cena?' (stará cena)':'')}</option>`).join('')}
+      </select>
+      <input id="cdMemAmt" type="number" min="0" step="0.1" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:100px" title="Suma, ktorú klientka naozaj zaplatila">
+      <span class="text-muted small">€</span>
+      <select id="cdMemPay" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:auto">
+        <option value="cash">💵 Hotovosť</option><option value="transfer">🏦 Prevod</option><option value="card">💳 Karta na mieste</option>
+      </select>
+      <input id="cdMemDate" type="date" class="form-control form-control-sm bg-dark text-light border-secondary" style="width:auto" max="${d.dnes}" value="${d.dnes}" title="Deň, kedy peniaze prišli">
+      ${c?`<select id="cdMemStart" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:auto">
+        <option value="today">platí od dnes</option>
+        <option value="after">nadviazať na ${fmtDate(c.expires_at)}</option>
+      </select>`:''}
+    </div>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <input id="cdMemNote" class="form-control form-control-sm bg-dark text-light border-secondary" style="max-width:280px" maxlength="200" placeholder="poznámka k predaju (voliteľné)">
+      <div class="form-check m-0"><input class="form-check-input" type="checkbox" id="cdMemSilent"><label class="form-check-label small text-muted" for="cdMemSilent">neposielať faktúru mailom</label></div>
+      <button class="btn btn-sm btn-warning" id="cdMemBtn" onclick="cdMemSell()"><i class="bi bi-check-lg"></i> Zapísať a aktivovať</button>
+    </div>
+    <div id="cdMemMsg" class="small mt-2"></div>`;
+  cdMemPlanPick();
+}
+function cdMemPlanPick(){
+  const sel=document.getElementById('cdMemPlan'); if(!sel) return;
+  const o=sel.options[sel.selectedIndex];
+  document.getElementById('cdMemAmt').value=(+o.dataset.price).toFixed(2);
+  const pl=(_cdMemOpts?.plans||[]).find(x=>x.id===sel.value);
+  const st=document.getElementById('cdMemStart');
+  if(st) st.disabled = !!(pl&&pl.bundle);   // permanentka sa štartom neriadi
+}
+async function cdMemSell(){
+  const plan_id=document.getElementById('cdMemPlan').value;
+  const amount=+document.getElementById('cdMemAmt').value;
+  const msg=document.getElementById('cdMemMsg');
+  if(!(amount>0)){ msg.innerHTML='<span class="text-danger">Zadaj sumu, ktorú klientka zaplatila.</span>'; return; }
+  const pl=(_cdMemOpts?.plans||[]).find(x=>x.id===plan_id);
+  const st=document.getElementById('cdMemStart');
+  const body={user_id:_cdMemId, plan_id, amount,
+    payment_method:document.getElementById('cdMemPay').value,
+    date:document.getElementById('cdMemDate').value,
+    start:(st&&!st.disabled)?st.value:'today',
+    note:document.getElementById('cdMemNote').value.trim(),
+    silent:document.getElementById('cdMemSilent').checked};
+  if(!confirm('Zapísať '+(pl?pl.name:plan_id)+' za '+amount.toFixed(2)+' €?\n\nČlenstvo sa aktivuje, predaj pôjde do Predajov a vystaví sa faktúra.')) return;
+  const btn=document.getElementById('cdMemBtn'); btn.disabled=true;
+  const r=await api('/api/admin/membership/sell',{method:'POST',body:JSON.stringify(body)});
+  btn.disabled=false;
+  if(!r?.ok){ msg.innerHTML='<span class="text-danger">'+escHtml(r?.error||'Chyba')+'</span>'; return; }
+  showToast('Zapísané ✓ '+r.plan_name+' za '+(+r.amount).toFixed(2)+' €','success');
+  openClientDetail(_cdMemId);
 }
 // ── Predaj vstupenky priamo z profilu klientky (hotovosť/prevod) ─────────────
 // Vstupenku aj QR dostane e-mailom a padne jej rovno do appky. Ceny sa rátajú

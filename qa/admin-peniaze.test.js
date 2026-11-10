@@ -48,9 +48,11 @@ const rd = f => { const p = path.join(DATA, f); if (!fs.existsSync(p)) return []
   console.log('STATICKÉ KONTROLY');
   ok('server: žiadne /api/paypal cesty', !/app\.post\('\/api\/paypal/.test(srv));
   ok('server: žiadny PAYPAL_CLIENT_ID / PAYPAL_BASE', !/PAYPAL_CLIENT_ID|PAYPAL_BASE|ppApi\(|ppCreateOrder|ppRefundCapture/.test(srv));
-  // ostáva: odmietnutie nákupu s payment_method paypal (komentár + hláška) a 2 regexy spôsobu platby
+  // ostáva: odmietnutie nákupu s payment_method paypal (komentár + hláška) a 3 regexy
+  // spôsobu platby (tretí pribudol 10. 11. 2026 na karte klientky — rozlišuje platbu
+  // z brány od ručne zapísanej hotovosti)
   const ppRiadky = srv.split('\n').filter(l => /paypal/i.test(l));
-  ok('server: PayPal ostal len v odmietnutí nákupu a regexoch spôsobu platby', ppRiadky.length <= 4 && ppRiadky.every(l => /payment_method==='paypal'|PayPal už|\/stripe\|/.test(l)), ppRiadky.map(l => l.trim().slice(0, 60)).join(' | '));
+  ok('server: PayPal ostal len v odmietnutí nákupu a regexoch spôsobu platby', ppRiadky.length <= 5 && ppRiadky.every(l => /payment_method==='paypal'|PayPal už|\/stripe\|/.test(l)), ppRiadky.map(l => l.trim().slice(0, 60)).join(' | '));
   ok('server: ručný predaj ukladá payment_method', /payment_method:String\(req\.body\.payment_method\|\|'cash'\)/.test(srv));
   ok('server: migrácia Aleninho záznamu', /alena_tx_karta_v1/.test(srv));
   // 19. 9.: Peniaze = jedna položka v menu; Výplaty trénerov a Provízie partnerov sú záložky hubu
