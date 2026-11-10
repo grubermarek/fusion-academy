@@ -16150,12 +16150,13 @@ app.get('/api/admin/analytics/retention', adminAuth, async(req,res)=>{
     const users=(await q.find(db.users,{is_admin:{$ne:true}})).filter(u=>u.user_type!=='trainer' && !u.is_child);
     const membs=(await q.find(db.memberships,{})).filter(m=>!m._type);
     const bookings=await q.find(db.bookings,{});
-    const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status));
-
-    // paid total per user (payments + cash memberships)
+    // Tržba na klientku ide z revenueEvents — rovnaké číslo ako v Predajoch,
+    // v účtovníctve, na karte klientky aj v CAC/LTV. Dovtedy si ju táto stránka
+    // skladala z db.payments a hotovostných členstiev, takže jej unikali obnovy
+    // odberu, vstupenky aj súkromné hodiny: LTV podľa plánu a mesta ukazovalo
+    // menej, než klientky zaplatili (len na obnovách 711,80 €, 10. 11. 2026).
     const paidByUser={};
-    for(const p of payments){ if(p.user_id) paidByUser[p.user_id]=(paidByUser[p.user_id]||0)+(+p.amount||0); }
-    for(const m of membs){ if(m.payment_method) paidByUser[m.user_id]=(paidByUser[m.user_id]||0)+(+m.price||0); }
+    for(const e of await revenueEvents()) if(e.who.id) paidByUser[e.who.id]=(paidByUser[e.who.id]||0)+e.a;
 
     // bookings grouped per user (with dates + primary city)
     const bookByUser={};
@@ -18584,6 +18585,15 @@ app.post('/api/admin/membership/sell', adminAuth, async(req,res)=>{
     const opts = (odDnes && beziDo && plan.type!=='bundle')
       ? {expiresAt:new Date(Date.now()+dni*86400000).toISOString()} : {};
     await activateMembership(u._id, plan_id, dni, opts);
+    // Zaplatenú sumu zapíš aj na členský záznam. Mesiac zadarmo tam má cenu 0 a
+    // activateMembership ju pri predĺžení nemení — karta klientky by potom v
+    // Členstvách tvrdila 0 €, hoci klientka zaplatila, a do CAC/LTV by nevstúpila
+    // ako platiaca členka. payment_method tu ZÁMERNE nie je: tržbu nesie
+    // transakcia nižšie a s ním by sa tá istá platba zarátala dvakrát.
+    if(plan.type!=='bundle'){
+      const mem = await q.one(db.memberships,{user_id:u._id, status:'active'});
+      if(mem) await q.update(db.memberships,{_id:mem._id},{$set:{price:amt}});
+    }
     const mTxt = METODA_TXT[method];
     const popis = plan.type==='bundle' ? plan.name : ('Členstvo '+plan.name);
     // Tržbu nesie transakcia — presne ako pri potvrdení hotovostnej žiadosti.
@@ -25835,19 +25845,18 @@ function acqSourceOf(u){
 app.get('/api/admin/marketing/stats', adminAuth, async(req,res)=>{
   try {
     const users=(await q.find(db.users,{is_admin:{$ne:true}})).filter(u=>u.user_type!=='trainer' && !u.is_child);
-    const payments=(await q.find(db.payments,{})).filter(p=>['completed','active'].includes(p.status)&&p.user_id);
-    const orders=(await q.find(db.orders,{})).filter(o=>o.status==='paid');
     const bookings=await q.find(db.bookings,{});
     const membs=(await q.find(db.memberships,{})).filter(m=>!m._type);
     const spend=await q.find(db.adspend,{});
 
-    // ── Revenue per client ──────────────────────────────────────────────────
+    // ── Tržba na klientku ───────────────────────────────────────────────────
+    // Z revenueEvents, nie z vlastného súčtu: ten bral len platby z brány,
+    // hotovostné členstvá a e-shop, takže obnovy odberu, vstupenky a súkromné
+    // hodiny v LTV/CAC podľa zdroja chýbali (10. 11. 2026). E-shop aj venčeky
+    // sú v revenueEvents tiež, takže sa nič nestratilo.
+    const udalosti = await revenueEvents();
     const rev={};
-    payments.forEach(p=>{ rev[p.user_id]=(rev[p.user_id]||0)+(+p.amount||0); });
-    // cash memberships recorded by trainer/admin (have payment_method)
-    membs.filter(m=>m.payment_method).forEach(m=>{ rev[m.user_id]=(rev[m.user_id]||0)+(+m.price||0); });
-    const emailToUid={}; users.forEach(u=>{ emailToUid[u.email]=u._id; });
-    orders.forEach(o=>{ const uid=emailToUid[(o.client_email||'').toLowerCase()]; if(uid) rev[uid]=(rev[uid]||0)+(+o.total||0); });
+    udalosti.forEach(e=>{ if(e.who.id) rev[e.who.id]=(rev[e.who.id]||0)+e.a; });
 
     const bookedUids=new Set(bookings.map(b=>b.user_id));
     const memberUids=new Set(membs.map(m=>m.user_id));
@@ -25892,9 +25901,7 @@ app.get('/api/admin/marketing/stats', adminAuth, async(req,res)=>{
       const news=users.filter(u=>(u.created_at||'').startsWith(m));
       const perSrc={};
       news.forEach(u=>{ const s=acqSourceOf(u); perSrc[s]=(perSrc[s]||0)+1; });
-      const mRev=payments.filter(p=>(p.captured_at||p.activated_at||p.created_at||'').startsWith(m)).reduce((s,p)=>s+(+p.amount||0),0)
-        + orders.filter(o=>(o.paid_at||o.created_at||'').startsWith(m)).reduce((s,o)=>s+(+o.total||0),0)
-        + membs.filter(mm=>mm.payment_method&&(mm.created_at||'').startsWith(m)).reduce((s,mm)=>s+(+mm.price||0),0);
+      const mRev=udalosti.filter(e=>String(e.d).startsWith(m)).reduce((s2,e)=>s2+e.a,0);
       const mSpend=spend.filter(s=>s.month===m).reduce((s2,v)=>s2+(+v.amount||0),0);
       return {month:m, newClients:news.length, bySource:perSrc, revenue:+mRev.toFixed(2), spend:+mSpend.toFixed(2)};
     });

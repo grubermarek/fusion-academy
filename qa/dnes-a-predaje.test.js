@@ -177,6 +177,21 @@ async function text(url, jar) {
     const uct = (await j('/api/admin/accounting/summary', {}, adm)).d;
     ok('účtovníctvo hlási rovnakú tržbu ako predaje', uct && uct.totals && uct.totals.revenue === p.suma,
       'účtovníctvo=' + (uct && uct.totals && uct.totals.revenue) + ' predaje=' + p.suma);
+
+    // Marketing aj Analytika si tržbu na klientku dovtedy skladali po svojom
+    // (platby z brány + hotovostné členstvá + e-shop), takže im unikali obnovy
+    // odberu, vstupenky a súkromné hodiny — appka ukazovala tri rôzne LTV.
+    console.log('\n6) LTV dashboardy čítajú to isté:');
+    const mk = (await j('/api/admin/marketing/stats', {}, adm)).d;
+    ok('LTV/CAC podľa zdroja hlási rovnakú tržbu', mk && mk.totals && Math.abs(mk.totals.revenue - p.suma) < 0.005,
+      'marketing=' + (mk && mk.totals && mk.totals.revenue) + ' predaje=' + p.suma);
+    const mkMes = (mk?.monthly || []).reduce((s2, m) => s2 + (+m.revenue || 0), 0);
+    ok('a mesačný graf dá po sčítaní to isté', Math.abs(mkMes - p.suma) < 0.005, 'graf=' + mkMes.toFixed(2) + ' predaje=' + p.suma);
+    const ret = (await j('/api/admin/analytics/retention', {}, adm)).d;
+    const retPlan = (ret?.ltvByPlan || []).reduce((s2, r) => s2 + (+r.revenue || 0), 0);
+    const retMesto = (ret?.ltvByCity || []).reduce((s2, r) => s2 + (+r.revenue || 0), 0);
+    ok('LTV podľa plánu sedí s predajmi', Math.abs(retPlan - p.suma) < 0.005, 'podľa plánu=' + retPlan.toFixed(2) + ' predaje=' + p.suma);
+    ok('a LTV podľa mesta tiež', Math.abs(retMesto - p.suma) < 0.005, 'podľa mesta=' + retMesto.toFixed(2) + ' predaje=' + p.suma);
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.message);
   } finally {

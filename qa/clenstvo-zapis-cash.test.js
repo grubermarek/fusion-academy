@@ -112,6 +112,7 @@ const den = d => new Date(Date.now() + d * 86400000).toISOString().slice(0, 10);
     const mems = rd('memberships.db').filter(m => m.user_id === 'qaSellZima000001');
     ok('členský záznam ostal jeden (nepribudol druhý bežiaci)', mems.length === 1, JSON.stringify(mems.map(m => [m.plan_id, m.status, m.expires_at])));
     ok('a nemá payment_method (inak by sa tržba rátala dvakrát)', !mems[0]?.payment_method, JSON.stringify(mems[0]));
+    ok('ale nesie zaplatenú cenu, nie nulu po mesiaci zadarmo', Math.abs((+mems[0]?.price || 0) - 54.9) < 0.005, String(mems[0]?.price));
 
     const predaje = await j('/api/admin/predaje?limit=500', {}, adm);
     const riadky = (predaje.d?.rows || []).filter(r => r.who?.id === 'qaSellZima000001');
