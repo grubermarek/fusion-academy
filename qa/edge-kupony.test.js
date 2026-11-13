@@ -213,7 +213,8 @@ async function login(email) { const jar = {}; const r = await j('/api/login', { 
     const c6g = await checkout(gita, { plan_id: 'gold', promo_code: 'LENSILVER' });
     ok('Stripe checkout Gold s kódom pre Silver: 400', c6g.status === 400 && /Silver/.test((c6g.d || {}).error || ''), 'HTTP ' + c6g.status + ' ' + JSON.stringify(c6g.d));
     const c6s = await checkout(gita, { plan_id: 'silver', promo_code: 'LENSILVER' });
-    ok('Stripe checkout Silver s kódom pre Silver: promo prejde (padne až falošný Stripe, nie kód)', c6s.status === 400 && !/Promo kód/.test((c6s.d || {}).error || '') && !/0 €/.test((c6s.d || {}).error || ''), 'HTTP ' + c6s.status + ' ' + JSON.stringify(c6s.d));
+    // od 13. 11. má checkout QA háčik STRIPE_FAKE (falošná session) — promo prejde až do platby (200)
+    ok('Stripe checkout Silver s kódom pre Silver: promo prejde až do platby', (c6s.status === 200 && c6s.d && c6s.d.ok) || (c6s.status === 400 && !/Promo kód/.test((c6s.d || {}).error || '') && !/0 €/.test((c6s.d || {}).error || '')), 'HTTP ' + c6s.status + ' ' + JSON.stringify(c6s.d));
     const v6n = await validate(anna, { code: 'LENSILVER', amount: 125, context: 'membership' });
     ok('náhľad bez plan_id (amount:125, context membership) neobíde obmedzenie na plány', v6n.d && v6n.d.ok === false, JSON.stringify(v6n.d));
 

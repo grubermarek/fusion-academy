@@ -567,16 +567,21 @@ function recalc(){
   const useCr=document.getElementById('mCredit')?.checked;
   const cr=useCr?Math.min(OV.credit,base):0;
   const total=Math.max(0,+(base-cr).toFixed(2));
-  document.getElementById('mTotal').textContent=eur(total);
+  // Pri automatickej obnove sa kredit neuplatní (odber strháva celú sumu) — „Zaplatíš" musí sedieť s kartou.
+  document.getElementById('mTotal').textContent=eur(renew&&STRIPE?base:total);
   const man=document.getElementById('mManual'), note=document.getElementById('mManualNote');
   if(man) man.style.display=renew?'none':'block';
   if(note) note.style.display=renew?'none':'block';
   if(man) man.textContent=total===0?FA_T('shop.pay_credit_only'):FA_T('shop.pay_cash');
-  // Kartou sa kredit minúť nedá — Stripe pýta plnú cenu. Nech to klientka vidí
-  // na tlačidle, nie až na výpise z účtu.
+  // Kredit platí aj pri jednorazovej platbe kartou (13. 11.) — karta zaplatí len rozdiel.
+  // Pri automatickej obnove (mesačný odber) sa kredit uplatniť nedá: odber strháva celú sumu.
+  // Kredit pokryje všetko → karta netreba, aktivuje sa tlačidlom „Aktivovať kreditom".
   const st=document.getElementById('mStripe'), stN=document.getElementById('mStripeNote');
-  if(st) st.textContent=FA_T('shop.pay_card')+(cr>0?' · '+eur(base):'');
-  if(stN){ stN.textContent=cr>0?FA_T('shop.card_no_credit',{p:eur(base)}):''; stN.style.display=cr>0?'block':'none'; }
+  const kartaSuma = renew ? base : (cr>0 && base-cr>0 && base-cr<0.5 ? 0.5 : total);
+  if(st){ st.style.display=(!renew && cr>0 && total===0)?'none':'block'; st.textContent=FA_T('shop.pay_card')+(cr>0?' · '+eur(kartaSuma):''); }
+  if(man && !renew && cr>0 && total===0){ man.style.display='block'; }
+  if(stN){ const t = renew&&cr>0 ? FA_T('shop.card_no_credit',{p:eur(base)}) : (!renew&&cr>0&&total>0 ? FA_T('shop.card_with_credit',{c:eur(+(base-kartaSuma).toFixed(2)),p:eur(kartaSuma)}) : '');
+    stN.textContent=t; stN.style.display=t?'block':'none'; }
   return {renew,total,useCr};
 }
 async function applyPromo(){
@@ -588,10 +593,11 @@ async function applyPromo(){
   recalc();
 }
 async function payStripe(){
-  const {renew}=recalc(); const err=document.getElementById('mErr'); err.textContent='';
+  const {renew,useCr}=recalc(); const err=document.getElementById('mErr'); err.textContent='';
   const b=document.getElementById('mStripe'); b.disabled=true; b.textContent=FA_T('shop.pay_redirect');
   const r=await api(renew?'/api/stripe/subscribe':'/api/stripe/checkout',{method:'POST',
-    body:JSON.stringify({plan_id:CUR.id, for_child_id:CUR.child_id||undefined, kids_group:CUR.child_id?SKUPINA:undefined, promo_code:PROMO?.code})});
+    body:JSON.stringify({plan_id:CUR.id, for_child_id:CUR.child_id||undefined, kids_group:CUR.child_id?SKUPINA:undefined, promo_code:PROMO?.code,
+      use_referral_credit: !renew && !!useCr})});
   if(r.ok&&r.url){ location.href=r.url; return; }
   err.textContent=r.error||FA_T('shop.pay_fail'); b.disabled=false; b.textContent=FA_T('shop.pay_card');
 }

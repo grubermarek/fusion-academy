@@ -17737,7 +17737,7 @@ async function stripeApi(path, params, method='POST'){
 app.post('/api/stripe/checkout', auth, async(req,res)=>{
   try {
     if(!STRIPE_SECRET) return res.status(400).json({error:'Stripe nie je nakonfigurovaný'});
-    const { plan_id, for_child_id, promo_code } = req.body;
+    const { plan_id, for_child_id, promo_code, use_referral_credit } = req.body;
     const plan = planNaPredaj(plan_id);
     if(!plan) return res.status(400).json({error:'Neplatný plán'});
     const u = await q.one(db.users,{_id:req.session.uid});
@@ -17774,13 +17774,25 @@ app.post('/api/stripe/checkout', auth, async(req,res)=>{
       price = v.final; promoCode = v.promo.code; promoDiscount = v.discount;
     }
     if(price <= 0) return res.status(400).json({error:'Cena po zľave je 0 € — použi tlačidlo „Aktivovať zľavou" bez karty'});
+    // Fusion kredit aj pri platbe kartou (Peťa zo Zvolena 13. 11.: chcela si kreditom zlacniť
+    // permanentku a karta pýtala plnú sumu). Kartou sa doplatí len rozdiel; kredit sa odpíše
+    // až po úspešnej platbe (fulfillStripeCheckout) — zrušená platba ho nespáli.
+    // Stripe neprijme menej než 0,50 €: keď by kredit nechal menej, použije sa o toľko menej kreditu.
+    let creditUsed = 0;
+    const cenaPredKreditom = price;
+    if(use_referral_credit && (+u.referral_credit||0) > 0){
+      creditUsed = +Math.min(+u.referral_credit, price).toFixed(2);
+      if(creditUsed >= price) return res.status(400).json({error:'Kredit pokryje celú sumu — použi tlačidlo „Aktivovať kreditom/zľavou", karta netreba.', credit_covers:true});
+      if(price - creditUsed < 0.5) creditUsed = +(price - 0.5).toFixed(2);
+      price = +(price - creditUsed).toFixed(2);
+    }
     const base = APP_URL;
     const params = {
       'mode':'payment',
       'line_items[0][quantity]':1,
       'line_items[0][price_data][currency]':'eur',
       'line_items[0][price_data][unit_amount]':Math.round(price*100),
-      'line_items[0][price_data][product_data][name]':kidsManual?`Zumba Kids – ${childName} (jednorazovo, bez automatickej platby)${promoCode?` (promo ${promoCode})`:''}`:`Členstvo ${plan.name}${childName?' – '+childName:''}${promoCode?` (promo ${promoCode})`:''}`,
+      'line_items[0][price_data][product_data][name]':(kidsManual?`Zumba Kids – ${childName} (jednorazovo, bez automatickej platby)${promoCode?` (promo ${promoCode})`:''}`:`Členstvo ${plan.name}${childName?' – '+childName:''}${promoCode?` (promo ${promoCode})`:''}`)+(creditUsed>0?` (Fusion kredit −${creditUsed.toFixed(2).replace('.',',')} €)`:''),
       'success_url':`${base}${childName?'/dieta/'+memberId:'/client-dashboard'}?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
       'cancel_url':`${base}/obchod?stripe=cancel`,
       'customer_email':u.email,
@@ -17790,12 +17802,16 @@ app.post('/api/stripe/checkout', auth, async(req,res)=>{
       'metadata[type]':'membership'
     };
     if(promoCode){ params['metadata[promo_code]']=promoCode; params['metadata[promo_discount]']=promoDiscount; }
-    const r = await stripeApi('checkout/sessions', params, 'POST');
+    if(creditUsed>0){ params['metadata[credit_used]']=creditUsed.toFixed(2); params['metadata[price_before_credit]']=cenaPredKreditom.toFixed(2); }
+    // QA hook (konvencia STRIPE_FAKE): falošná session bez siete, webhook test potom prežene fulfillment
+    const r = process.env.STRIPE_FAKE==='1'
+      ? { status:200, body:{ id:'fake_cs_'+req.session.uid+'_'+Date.now(), url:base+'/client-dashboard?stripe=success&fake=1' } }
+      : await stripeApi('checkout/sessions', params, 'POST');
     if(r.status>=400 || !r.body?.url) return res.status(400).json({error:r.body?.error?.message||'Stripe chyba pri vytváraní platby'});
-    await q.insert(db.payments,{stripe_session_id:r.body.id, user_id:req.session.uid, member_id:memberId, amount:price, currency:'EUR', description:`Členstvo ${plan.name}${childName?' – '+childName:''}${promoCode?` [promo ${promoCode} -${promoDiscount.toFixed(2)}€]`:''}`, ref_id:plan_id, ref_type:'membership', provider:'stripe', status:'pending', promo_code:promoCode, created_at:nowISO()});
+    await q.insert(db.payments,{stripe_session_id:r.body.id, user_id:req.session.uid, member_id:memberId, amount:price, currency:'EUR', description:`Členstvo ${plan.name}${childName?' – '+childName:''}${promoCode?` [promo ${promoCode} -${promoDiscount.toFixed(2)}€]`:''}`, ref_id:plan_id, ref_type:'membership', provider:'stripe', status:'pending', promo_code:promoCode, credit_used:creditUsed||0, created_at:nowISO()});
     { const cu=await q.one(db.users,{_id:req.session.uid});
       metaCapi('InitiateCheckout',{email:cu?.email, value:price, fbclid:cu?.fbclid, event_id:'ic_'+r.body.id}).catch(()=>{}); }
-    res.json({ok:true, url:r.body.url});
+    res.json({ok:true, url:r.body.url, credit_used:creditUsed, charge:price});
   } catch(e){ res.status(500).json({error:e.message}); }
 });
 
@@ -18038,12 +18054,35 @@ async function fulfillStripeCheckout(s){
       else { promoNote=` [promo ${pr.code}: ${r.reason} — zľava ${disc.toFixed(2)} € neevidovaná]`; await promoAdminWarn(buyer, pr.code, r.reason, disc, plan.name); }
     }
   }
-  await q.insert(db.transactions,{type:meta.type==='subscription'?'subscription':'membership',user_id:memberId,user_name:buyer?.name||'—',amount:plan.price,payment_method:'stripe',note:`${plan.name} (${via})${promoNote}`,promo_code:meta.promo_code?normPromoCode(meta.promo_code):null,plan_id:meta.plan_id,created_at:nowISO(),month:today().slice(0,7)});
-  trackPurchase(meta.user_id, plan.price, 'pur_'+s.id);
+  // Fusion kredit uplatnený pri platbe kartou — odpíše sa až teraz, po zaplatení (raz: claim vyššie).
+  const kreditKarta = +meta.credit_used || 0;
+  let kreditNote = '';
+  if(kreditKarta > 0 && meta.user_id){
+    try{
+      const pl = await q.one(db.users,{_id:meta.user_id});
+      const mal = +(pl && pl.referral_credit) || 0;
+      const odpis = +Math.min(mal, kreditKarta).toFixed(2);
+      if(odpis > 0){
+        await q.update(db.users,{_id:meta.user_id},{$set:{referral_credit:+(mal-odpis).toFixed(2)}});
+        await logCredit(meta.user_id, -odpis, 'Použitý pri platbe kartou — '+plan.name);
+        await q.insert(db.notifications,{user_id:meta.user_id,type:'credit',title:'Fusion kredit použitý 💳',
+          body:`${odpis.toFixed(2)} € kreditu išlo na ${plan.name}. Nový zostatok: ${(mal-odpis).toFixed(2)} €`,read:false,created_at:nowISO()}).catch(()=>{});
+      }
+      kreditNote = ` [kredit -${odpis.toFixed(2)}€]`;
+      // Medzičasom minutý kredit (iný nákup počas platby) — klientka zaplatila menej, admin to má vedieť
+      if(odpis < kreditKarta) for(const a of await q.find(db.users,{is_admin:true}))
+        await q.insert(db.notifications,{user_id:a._id,type:'credit_short',title:'⚠️ Kredit pri platbe kartou nestačil — '+(pl?.name||''),
+          body:`Pri platbe za ${plan.name} sa malo použiť ${kreditKarta.toFixed(2)} € kreditu, na účte bolo už len ${mal.toFixed(2)} €. Chýba ${(kreditKarta-odpis).toFixed(2)} €.`,read:false,created_at:nowISO()}).catch(()=>{});
+      await q.update(db.payments,{stripe_session_id:s.id},{$set:{credit_used:odpis}});
+    }catch(e){ console.error('kredit pri karte:', e.message); }
+  }
+  const zaplateneKartou = kreditKarta>0 && s.amount_total!=null ? +(s.amount_total/100).toFixed(2) : plan.price;
+  await q.insert(db.transactions,{type:meta.type==='subscription'?'subscription':'membership',user_id:memberId,user_name:buyer?.name||'—',amount:zaplateneKartou,payment_method:'stripe',note:`${plan.name} (${via})${promoNote}`,promo_code:meta.promo_code?normPromoCode(meta.promo_code):null,plan_id:meta.plan_id,created_at:nowISO(),month:today().slice(0,7)});
+  trackPurchase(meta.user_id, zaplateneKartou, 'pur_'+s.id);
   createInvoice({user_id:meta.user_id, client_name:buyer?.name, client_email:buyer?.email,
-    items:[{desc:`Členstvo ${plan.name}${meta.type==='subscription'?' (mesačný odber)':''}`, qty:1, total:plan.price}],
-    total:plan.price, method:'Stripe (karta / Apple Pay / Google Pay)'});
-  awardPurchaseCommission({buyer_id:meta.user_id, amount:plan.price, product_name:`Členstvo ${plan.name}`, key:'cs_'+s.id});
+    items:[{desc:`Členstvo ${plan.name}${meta.type==='subscription'?' (mesačný odber)':''}${kreditKarta>0?' — po odpočte Fusion kreditu '+kreditKarta.toFixed(2)+' €':''}`, qty:1, total:zaplateneKartou}],
+    total:zaplateneKartou, method:'Stripe (karta / Apple Pay / Google Pay)'});
+  awardPurchaseCommission({buyer_id:meta.user_id, amount:zaplateneKartou, product_name:`Členstvo ${plan.name}`, key:'cs_'+s.id});
   return {ok:true, plan_name:plan.name, subscription:meta.type==='subscription'};
 }
 
