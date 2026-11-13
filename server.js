@@ -26604,7 +26604,10 @@ async function syncAdStats(force){
     //    — to je jediný dôvod, prečo časť kampaní ukazuje tržbu 0 €.
     // Videoreklama má odkaz v tlačidle (video_data.call_to_action), nie v link_data —
     // HEJ BABY preto vyzerala „bez utm", hoci ho nesie (16. 9.).
-    let ads=[]; try{ ads=await metaAll(tok, META_ACT+'/ads?fields=id,name,campaign_id,effective_status,creative{url_tags,link_url,object_story_spec{link_data{link},video_data{call_to_action}}}&limit=300', 12); }catch(e){}
+    // 13. 11.: kreatíva s prispôsobením podľa umiestnenia (jedno video na feed, druhé
+    // na storky) drží odkaz v asset_feed_spec.link_urls a nikde inde — bez tohto poľa
+    // by videoreklama Zumba Kids vyzerala „bez utm" a kampaň by vypadla z metrík.
+    let ads=[]; try{ ads=await metaAll(tok, META_ACT+'/ads?fields=id,name,campaign_id,effective_status,creative{url_tags,link_url,asset_feed_spec{link_urls},object_story_spec{link_data{link},video_data{call_to_action}}}&limit=300', 12); }catch(e){}
     // 20. 10.: utm_content nesie číslo reklamy, nie jej názov. Mapu id → názov si držíme
     // tu (jediné miesto, kde zoznam reklám aj tak čítame), aby lievik po kreatívach
     // ukazoval „A — týždeň zadarmo" a nie 52558359230473.
@@ -26618,7 +26621,8 @@ async function syncAdStats(force){
       const cr=a.creative||{};
       const oss=cr.object_story_spec||{};
       const cta=(((oss.video_data||{}).call_to_action||{}).value||{}).link||'';
-      const t=[cr.url_tags, cr.link_url, (oss.link_data||{}).link, cta].map(x=>String(x||'')).join(' ');
+      const afs=(((cr.asset_feed_spec||{}).link_urls)||[]).map(x=>(x&&(x.website_url||x.link))||'');
+      const t=[cr.url_tags, cr.link_url, (oss.link_data||{}).link, cta, ...afs].map(x=>String(x||'')).join(' ');
       if(/utm_campaign=/i.test(t)) utm[a.campaign_id]=true;
       else if(utm[a.campaign_id]===undefined) utm[a.campaign_id]=false;
     }
