@@ -26632,10 +26632,9 @@ async function syncAdStats(force){
       if(Object.keys(mena).length) await q.update(db.settings,{key:'meta_ad_names'},
         {$set:{key:'meta_ad_names', value:mena, at:nowISO()}},{upsert:true});
     }catch(e){}
-    // 14. 11.: mapa reklama → kampaň. Toto je spojka, ktorá robí meranie dokázateľným:
-    // fbclid z PLATENÉHO kliku nesie číslo reklamy (metaKlikZFbclid → users.meta_klik),
-    // organický príspevok ani zdieľanie ho nemajú. Keď k číslu reklamy poznáme kampaň,
-    // vieme priradiť registráciu aj tržbu bez utm, bez karty a bez dohadov.
+    // 14. 11.: mapa reklama → kampaň. Vďaka nej sa dá priradiť registrácia aj tržba
+    // podľa čísla reklamy, ktoré nesie odkaz v utm_content={{ad.id}} — bez karty a
+    // bez dohadov. (Číslo vyčítané z fbclid do mapy nesedí, viď atribucia().)
     // Mapa sa DOPLŇUJE, nikdy neprepisuje: reklamu zmazanú v Mete už Graph nevráti,
     // ale klik na ňu z minulosti nesie jej číslo navždy. Prepisovaním by sme o to
     // priradenie prišli presne pri starých kampaniach, kde ho najviac treba.
@@ -27036,12 +27035,14 @@ async function adOverview(mesiac){
   // zdieľania či z odkazu v bio — taká tržba potom nafukuje ROAS reklamy.
   // Dokázateľné je len to, čo vieme priradiť ku KONKRÉTNEJ kampani, ktorej útratu
   // poznáme. Vedú k tomu dve cesty a obe sú tvrdé (14. 11.):
-  //   1) číslo reklamy z fbclid (users.meta_klik) → kampaň. Pole „adid" v fbclid
-  //      nesie LEN platený klik — organický príspevok, zdieľanie ani odkaz v bio ho
-  //      nemajú. Netreba k tomu utm ani kartu v appke; mapu reklama→kampaň ukladá
-  //      sync z Mety (settings.meta_ad_campaign). Preto sa priradenie už nerozbije
-  //      tým, že sa v novej reklame zabudne na utm.
+  //   1) číslo reklamy priamo v odkaze (utm_content={{ad.id}}) → kampaň podľa mapy
+  //      z Mety. Toto reálne funguje a je to tvrdý dôkaz.
   //   2) utm_campaign / lead_source / gclid zhodné s kartou kampane v appke.
+  //   3) číslo reklamy vyčítané z fbclid (users.meta_klik). POZOR: zmerané 14. 11. —
+  //      z 20 vyčítaných čísel sa so 176 reklamami v účte nezhodovalo ANI JEDNO,
+  //      takže táto cesta zatiaľ nepriradí nikoho. Ostáva zapojená pre prípad, že
+  //      niektorý starší formát fbclid sedí, ale NEDÁ sa na ňu spoliehať: klik bez
+  //      parametrov v odkaze je a zostáva nepriraditeľný.
   // Menovateľ = útrata mesiacov, v ktorých appka zdroj kliku naozaj ukladala (od
   // MERANIE_OD, cookie fa_zdroj zo 16. 9.). Čo sa minulo predtým, sa už k nikomu
   // priradiť nedá — tie peniaze idú do „nedokázateľné", nie do zlomku.
