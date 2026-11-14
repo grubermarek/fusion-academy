@@ -26939,7 +26939,7 @@ async function atribucia(){
     const cid=u && u.meta_klik && mapaRek[String(u.meta_klik)];
     return cid ? String(cid) : (u ? kampanZoZnacky(u) : null);
   };
-  return { mapaRek, kampanUsera, nazovKampane:cid=>nazov[cid]||('Kampaň '+cid) };
+  return { mapaRek, kampanUsera, kampanZoZnacky, nazovKampane:cid=>nazov[cid]||('Kampaň '+cid) };
 }
 // plne      = odkaz nesie utm_campaign (alebo je to leadová kampaň s vlastnou atribúciou
 //             cez formulár), kampaň má v appke kartu a prvá útrata padla po MERANIE_OD
@@ -27196,6 +27196,48 @@ app.get('/api/admin/ads/overview', adminAuth, async(req,res)=>{
 app.post('/api/admin/ads/sync', adminAuth, async(req,res)=>{
   try{ res.json(await syncAdStats(true)); }
   catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ─── POKRYTIE MERANIA (14. 11. 2026) ─────────────────────────────────────────
+// Odpovedá na „prečo zo septembra vieme priradiť len 3 klientky z 29". Pre každý
+// mesiac povie, koľko ľudí z reklamy prišlo, koľkých vieme priradiť ku kampani
+// a pri ostatných MENUJE dôvod. Bez tohto sa diera v meraní hľadá hádaním.
+app.get('/api/admin/meranie/pokrytie', adminAuth, async(req,res)=>{
+  try{
+    const { mapaRek, kampanUsera, kampanZoZnacky } = await atribucia();
+    const po={};
+    const daj=m=>(po[m]=po[m]||{mesiac:m, kohorta:0, priradeni:0, cez_cislo_reklamy:0, cez_znacku:0,
+      s_fbclid:0, s_cislom_reklamy:0, s_utm:0, nepriradeni:0, duvody:{} });
+    for(const u of await q.find(db.users,{})){
+      if(!zReklamy(u)) continue;
+      const den=String(u.registration_at||u.lead_at||u.created_at||'').slice(0,10);
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(den)) continue;
+      const x=daj(den.slice(0,7));
+      x.kohorta++;
+      if(u.fbclid) x.s_fbclid++;
+      if(u.meta_klik) x.s_cislom_reklamy++;
+      if(String(u.utm_campaign||'').trim()) x.s_utm++;
+      const cezKlik=u.meta_klik && mapaRek[String(u.meta_klik)];
+      const cid=kampanUsera(u);
+      if(cid){ x.priradeni++; if(cezKlik) x.cez_cislo_reklamy++; else x.cez_znacku++; continue; }
+      x.nepriradeni++;
+      // Dôvod, prečo sa klientka nedá priradiť — v poradí, v akom sa dá odstrániť.
+      let d;
+      if(u.meta_klik) d='cislo_reklamy_nie_je_v_ucte';        // reklama zmazaná v Mete
+      else if(u.fbclid) d='fbclid_bez_cisla_reklamy';          // klik nebol platený (príspevok, zdieľanie)
+      else if(String(u.utm_campaign||'').trim()) d='utm_bez_karty_kampane';
+      else if(u.gclid) d='gclid_bez_karty_kampane';
+      else d='iba_zdroj_bez_znacky';                           // lead_source facebook/meta a nič viac
+      x.duvody[d]=(x.duvody[d]||0)+1;
+    }
+    const mesiace=Object.keys(po).sort().reverse();
+    const sucet=mesiace.reduce((s,m)=>{ const x=po[m];
+      for(const k of ['kohorta','priradeni','cez_cislo_reklamy','cez_znacku','s_fbclid','s_cislom_reklamy','s_utm','nepriradeni']) s[k]=(s[k]||0)+x[k];
+      for(const [d,n] of Object.entries(x.duvody)) s.duvody[d]=(s.duvody[d]||0)+n;
+      return s; }, {duvody:{}});
+    res.json({ ok:true, merane_od:MERANIE_OD, reklam_v_mape:Object.keys(mapaRek).length,
+      sucet, mesiace:mesiace.map(m=>po[m]) });
+  }catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // ─── ODKIAĽ SÚ PENIAZE (Marek 14. 11. 2026) ──────────────────────────────────
