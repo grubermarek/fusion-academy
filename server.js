@@ -27230,12 +27230,14 @@ app.get('/api/admin/trzby-zdroj', adminAuth, async(req,res)=>{
       return !!s && !s.is_admin && !['trainer','manager','admin'].includes(s.user_type); };
     const zdrojKlientky=u=>{
       if(!u) return 'neurcene';
+      // Venčeky prvé: kurzové platby zo školskej skupiny nekúpila žiadna reklama,
+      // a keby padli medzi reklamné škatule, nafúkli by návratnosť reklamy.
+      if(jeVencekar(u)) return 'vencek';
       if(zReklamy(u) && kampanUsera(u)) return 'reklama_dokazana';
       if(odporucitelkaKlientka(u.sponsor_id) || String(u.lead_source||'')==='referral'
         || u.account_creation_type==='guest_invite') return 'affiliate';
       if(vlastnyKanal(u)) return 'vlastne_kanaly';
       if(zReklamy(u)) return 'reklama_mozna';
-      if(jeVencekar(u)) return 'vencek';
       if(u.account_creation_type==='import' || /glofox|oldlist/i.test(String(u.lead_source||''))) return 'import';
       if(u.account_creation_type==='self_registration') return 'priame';
       return 'neurcene';
