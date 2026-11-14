@@ -6880,7 +6880,7 @@ async function loadTrzbyZdroj(){
             <div style="height:3px;border-radius:2px;background:linear-gradient(90deg,${barva(s.key)} ${Math.round(100*s.suma/max)}%,#2a2a2a ${Math.round(100*s.suma/max)}%)"></div></td>
           <td class="text-end">${s.podiel_pct}%</td>
           <td class="text-end">${s.klientok||'—'}</td></tr>`).join('')}</tbody></table></div>
-        <div class="text-muted mt-2" style="font-size:.66rem">Súčet škatúľ = celá tržba za obdobie, každé euro je presne v jednej. Keď má klientka viac značiek naraz, rozhoduje poradie: <b>dokázaná reklama</b> (číslo reklamy nesie len platený klik) → <b>affiliate</b> → <b>vlastné kanály</b> → nepotvrdená reklama. <b>Neurčené</b> znamená, že k tým peniazom nemáme ani zdroj, ani kampaň — to je diera v meraní, nie nula.</div>`;
+        <div class="text-muted mt-2" style="font-size:.66rem">Súčet škatúľ = celá tržba za obdobie, každé euro je presne v jednej. Keď má klientka viac značiek naraz, rozhoduje poradie: <b>dokázaná reklama</b> (číslo reklamy nesie len platený klik) → <b>affiliate</b> → <b>vlastné kanály</b> → nepotvrdená reklama. <b>Neurčené</b> znamená, že k tým peniazom nemáme ani zdroj, ani kampaň — to je diera v meraní, nie nula. Škatuľa sa určuje podľa <b>prvého</b> dotyku, takže obnovy a ďalšie platby stálej klientky zostávajú tam, odkiaľ prišla — mail a SMS preto nemusia mať vlastnú tržbu, aj keď fungujú.</div>`;
   }catch(e){ body.innerHTML='<div class="text-danger">'+(e.message||'Chyba')+'</div>'; }
 }
 
