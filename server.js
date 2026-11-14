@@ -26513,8 +26513,24 @@ app.get('/api/admin/meta/inventory', adminAuth, async(req,res)=>{
 });
 
 // Pokus doplniť URL parametre (utm_*) priamo do reklamy. Bez nich sa registrácie
-// z reklamy nedajú priradiť ku kampani. Vyžaduje token s ads_management — s
-// ads_read Meta zápis odmietne a vráti to sem, nech je jasné, že to treba klikom.
+// z reklamy nedajú priradiť ku kampani.
+// Zmerané 14. 11. 2026 na bežiacej reklame: Meta zápis odmietne aj s plnými právami
+// — existujúcej kreatíve sa dá meniť LEN názov, stav a labely („Please specify name,
+// status or associated adlabels", subcode 1815573). Parametre sa teda doplniť dajú
+// len v Ads Manageri (Meta si pri uložení vyrobí novú verziu kreatívy sama), alebo
+// ich treba dať do odkazu hneď pri zakladaní reklamy. Nápoveda to musí povedať
+// presne, inak sa hľadá chyba v tokene, ktorá tam nie je.
+function hintKUrlTags(e){
+  if(!e) return null;
+  const t=String(e.error_user_msg||e.message||'');
+  if(/specify name, status or associated adlabels/i.test(t))
+    return 'Meta nedovolí prepísať parametre URL na existujúcej kreatíve (mení sa jej len názov, stav a labely). '
+      + 'Doplň ich v Ads Manageri: reklama → Parametre URL → Publikovať — Meta vtedy vytvorí novú verziu kreatívy sama. '
+      + 'Pri novej reklame ich dávaj priamo do odkazu.';
+  if(/permission|ads_management|OAuth/i.test(t))
+    return 'Token nemá ads_management — doplň parametre ručne v Ads Manageri (pole „Parametre URL").';
+  return 'Zápis Meta odmietla — doplň parametre ručne v Ads Manageri (pole „Parametre URL").';
+}
 app.post('/api/admin/meta/url-tags', adminAuth, async(req,res)=>{
   try{
     const tok=(await getMetaAdsToken()) || (await getMetaCapiToken());
@@ -26530,7 +26546,7 @@ app.post('/api/admin/meta/url-tags', adminAuth, async(req,res)=>{
     const body=new URLSearchParams({url_tags:tags, access_token:tok});
     const upd=await g(String(creativeId), {method:'POST', body});
     res.json({ ok:!upd.error, creative_id:creativeId, before:ad.creative?.url_tags||null,
-      result:upd, hint: upd.error ? 'Token zrejme nemá ads_management — doplň parametre ručne v Ads Manageri (pole „Parametre URL").' : null });
+      result:upd, hint: hintKUrlTags(upd.error) });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
