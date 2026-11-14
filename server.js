@@ -27038,7 +27038,9 @@ async function adOverview(mesiac){
   });
 
   // Minuté = všetko (aj nemerané, nech peniaze sedia s účtovníctvom).
-  // Kliky, CPC, CTR, CPM, CPL a ROAS = LEN kampane s úplným meraním (Marek 17. 10.).
+  // Kliky, CPC, CTR, CPM a CPL = LEN kampane s úplným meraním (Marek 17. 10.).
+  // ROAS nie: ten delí celou útratou, lebo tržbu nesú aj ľudia z nemeraných
+  // kampaní. Pomer len z meraných peňazí je roas_dokazany (14. 11.).
   const merane=rows.filter(plneMerana);
   const sc=(k)=>merane.reduce((s,r)=>s+(+r[k]||0),0);
   const spend=+vsetkyRiadky.reduce((s,r)=>s+r.spend,0).toFixed(2);
