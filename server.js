@@ -27206,14 +27206,17 @@ app.post('/api/admin/ads/sync', adminAuth, async(req,res)=>{
 // najtvrdší dôkaz (číslo reklamy nesie len platený klik), potom odporúčanie,
 // potom naše vlastné oslovenie. „Neurčené" je priznanie, že to nevieme — nie nula.
 const TRZBA_SKUPINY=[
-  ['reklama_dokazana','Reklama — dokázateľne','Klik na konkrétnu reklamu: číslo reklamy z fbclid alebo značka v odkaze'],
+  // Pozor na rozdiel oproti kachli ROAS v prehľade reklamy: tam ide len o tržbu
+  // klientok, ktoré prišli od MERANIE_OD (aby sedela s útratou, ktorú vieme merať),
+  // tu je celá história, teda aj tržba z kampaní spred merania. Preto iný názov.
+  ['reklama_dokazana','Reklama — priradená ku kampani','Klik na konkrétnu reklamu: číslo reklamy z fbclid alebo značka v odkaze. Celá história — ROAS vyššie počíta len obdobie, v ktorom sa dala merať aj útrata'],
   ['affiliate','Affiliate a odporúčania','Ambasádorky, influencerky, pozvané kamošky'],
   ['vlastne_kanaly','Vlastné kanály','Náš e-mail, SMS, notifikácia alebo pozvánka v appke'],
   ['reklama_mozna','Reklama — nepotvrdená','Značka z Facebooku bez čísla reklamy — mohol to byť aj bežný príspevok alebo zdieľanie'],
   ['vencek','Venčeky a školy','Venčekové skupiny — mimo predajného toku'],
   ['import','Prevzatí klienti','Import z Glofoxu a starého zoznamu'],
   ['priame','Prišli samy','Registrácia bez akejkoľvek značky — odporúčanie naživo, vizitka, Google'],
-  ['neurcene','Neurčené','Nevieme priradiť ani zdroj, ani kampaň'],
+  ['neurcene','Neurčené','Platba bez účtu (napr. objednávka v obchode na e-mail) alebo účet bez akejkoľvek značky'],
 ];
 app.get('/api/admin/trzby-zdroj', adminAuth, async(req,res)=>{
   try{
@@ -27255,7 +27258,8 @@ app.get('/api/admin/trzby-zdroj', adminAuth, async(req,res)=>{
       // Detail: pri reklame podľa kampane, pri affiliate podľa toho, kto priviedol,
       // inde podľa zdroja. Nech sa dá doklikať, z čoho presne tie peniaze sú.
       let dk='—';
-      if(k==='reklama_dokazana') dk=nazovKampane(kampanUsera(u));
+      if(!u) dk='platba bez účtu';
+      else if(k==='reklama_dokazana') dk=nazovKampane(kampanUsera(u));
       else if(k==='affiliate'){ const s=uMap[(u&&(u.sponsor_id||u.invited_by))||'']; dk=(s&&(s.name||s.email))||'Neznáma ambasádorka'; }
       else if(k==='reklama_mozna') dk=String((u&&(u.utm_source||u.lead_source))||'facebook');
       else dk=String((u&&(u.utm_source||u.lead_source||u.account_creation_type))||'—');
