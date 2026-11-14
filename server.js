@@ -26886,8 +26886,8 @@ async function adOverview(mesiac){
   const camps=await q.find(db.ad_campaigns,{});
   const stats=await q.find(db.ad_stats,{});
   const karty=await q.find(db.campaigns,{});
-  const kartaPre={};
-  karty.forEach(k=>{ if(k.meta_campaign_id && !kartaPre[k.meta_campaign_id]) kartaPre[k.meta_campaign_id]=k.name; });
+  const kartaPre={}, kartaObj={};
+  karty.forEach(k=>{ if(k.meta_campaign_id && !kartaPre[k.meta_campaign_id]){ kartaPre[k.meta_campaign_id]=k.name; kartaObj[k.meta_campaign_id]=k; } });
   const vsetko = !mesiac || mesiac==='all';
   const vyber = vsetko ? stats : stats.filter(x=>x.month===mesiac);
   const podla={};
@@ -26939,6 +26939,25 @@ async function adOverview(mesiac){
       : {...r, ziva:ziva(r), meranie, cpc:null, ctr:null, cpm:null, cpl:null};
   });
   const kvalitaPre={}; vsetkyRiadky.forEach(r=>{ kvalitaPre[r.campaign_id]=kvalitaMerania(r); });
+  // ── DOKÁZATEĽNÁ tržba (14. 11.) ────────────────────────────────────────────
+  // „Z reklamy" je nižšie každý, kto má utm, fbclid, gclid alebo zdroj typu
+  // facebook/instagram. Do toho ale padá aj klik z bežného príspevku, zo
+  // zdieľania či z odkazu v bio — taká tržba potom nafukuje ROAS reklamy.
+  // Dokázateľná je len tá od ľudí, ktorých vieme priradiť ku konkrétnej kampani
+  // s ÚPLNÝM meraním: nesú jej utm_campaign, jej lead_source alebo gclid.
+  // ROAS sa odteraz počíta dvakrát a obe strany zlomku kryjú to isté:
+  //   roas          = tržba celej reklamnej kohorty ÷ VŠETKY minuté peniaze
+  //   roas_dokazany = dokázateľná tržba ÷ útrata kampaní s úplným meraním
+  // (predtým: kohorta ÷ len meraná útrata — 1 885,50 € delené 435,79 € dávalo
+  //  4,33×, hoci reálne išlo cez účet 8 172,95 €.)
+  const kartyPlne=[...new Set(vsetkyRiadky.filter(plneMerana).map(r=>kartaObj[r.campaign_id]).filter(Boolean))];
+  const dokazatelny=u=>kartyPlne.some(k=>{
+    const key=String(k.utm_key||'').replace(/\*+$/,'').toLowerCase().trim();
+    if(key) return String(u.utm_campaign||'').toLowerCase().trim().startsWith(key);
+    if(k.lead_source_key) return String(u.lead_source||'').toLowerCase().trim()===String(k.lead_source_key).toLowerCase().trim();
+    if(k.gclid_attr) return !!u.gclid;
+    return false;
+  });
 
   // Mesačný rad: minuté vs. zarobené. Bez tržby vedľa spendu je spend len číslo.
   const mesiace={};
@@ -26975,33 +26994,46 @@ async function adOverview(mesiac){
     if(!zReklamy(u)) continue;
     const den=String(u.registration_at||u.lead_at||u.created_at||'').slice(0,10);
     if(!/^\d{4}-\d{2}-\d{2}$/.test(den)) continue;
-    kohortaUsera[u._id]={ m:den.slice(0,7), den };
+    kohortaUsera[u._id]={ m:den.slice(0,7), den, dok:dokazatelny(u) };
   }
   const koh={};                                           // mesiac → čísla kohorty
-  const dajKoh=m=>(koh[m]=koh[m]||{acquired:0, payers:0, revenue:0, rev90:0, _platili:new Set()});
-  for(const id of Object.keys(kohortaUsera)) dajKoh(kohortaUsera[id].m).acquired++;
+  const dajKoh=m=>(koh[m]=koh[m]||{acquired:0, acquired_dok:0, payers:0, payers_dok:0,
+    revenue:0, revenue_dok:0, rev90:0, _platili:new Set(), _platili_dok:new Set()});
+  for(const id of Object.keys(kohortaUsera)){ const k=kohortaUsera[id];
+    const x=dajKoh(k.m); x.acquired++; if(k.dok) x.acquired_dok++; }
   for(const e of ev){
     const id=e.who&&e.who.id; const k=id&&kohortaUsera[id]; if(!k) continue;
     const d=String(e.d||'').slice(0,10); if(d<k.den) continue;   // čo zaplatila pred príchodom z reklamy, nerátame
     const x=dajKoh(k.m); x.revenue+=+e.a||0; if(d<=addDni(k.den,90)) x.rev90+=+e.a||0;
-    if((+e.a||0)>0) x._platili.add(id);
+    if(k.dok) x.revenue_dok+=+e.a||0;
+    if((+e.a||0)>0){ x._platili.add(id); if(k.dok) x._platili_dok.add(id); }
   }
-  Object.values(koh).forEach(x=>{ x.payers=x._platili.size; delete x._platili;
-    x.revenue=+x.revenue.toFixed(2); x.rev90=+x.rev90.toFixed(2); });
+  Object.values(koh).forEach(x=>{ x.payers=x._platili.size; x.payers_dok=x._platili_dok.size;
+    delete x._platili; delete x._platili_dok;
+    x.revenue=+x.revenue.toFixed(2); x.revenue_dok=+x.revenue_dok.toFixed(2); x.rev90=+x.rev90.toFixed(2); });
   const dnes90=addDni(today(),-90);
   const rad=Object.keys(mesiace).sort().map(m=>{
-    const y=mesiace[m]; const trzba=revSum(ev, m); const k=koh[m]||{acquired:0,payers:0,revenue:0,rev90:0};
+    const y=mesiace[m]; const trzba=revSum(ev, m);
+    const k=koh[m]||{acquired:0,acquired_dok:0,payers:0,payers_dok:0,revenue:0,revenue_dok:0,rev90:0};
     return { month:m, spend:+y.spend.toFixed(2), spend_merany:+y.spend_merany.toFixed(2),
       nemerane:+y.nemerane.toFixed(2), clicks:y.clicks, impressions:y.impressions,
       leads:y.leads, revenue:trzba,
-      // ROAS sa počíta z tržby ľudí, ktorí v tom mesiaci prišli z reklamy, delenej útratou
-      // kampaní s úplným meraním. Tržba celej appky delená celou útratou dávala 16× —
-      // boli v nej členstvá stálych klientok, ktoré s reklamou nemajú nič spoločné.
-      roas: y.spend_merany ? +(k.revenue/y.spend_merany).toFixed(2) : null,
+      // ROAS = tržba ľudí, ktorí v tom mesiaci prišli z reklamy, delená VŠETKÝMI
+      // peniazmi minutými v tom mesiaci. Tržba celej appky delená celou útratou
+      // dávala 16× — boli v nej členstvá stálych klientok, ktoré s reklamou nemajú
+      // nič spoločné. Deliť len meranou útratou je druhá krajnosť: čitateľ by niesol
+      // aj tržbu od ľudí z kampaní, ktorých útrata v menovateli nie je (14. 11.).
+      roas: y.spend ? +(k.revenue/y.spend).toFixed(2) : null,
       // kohorta mesiaca = ľudia, ktorí vtedy prišli z reklamy
       acquired:k.acquired, payers:k.payers, cohort_revenue:k.revenue, cohort_rev90:k.rev90,
-      cohort_roas: y.spend_merany ? +(k.revenue/y.spend_merany).toFixed(2) : null,
-      cohort_cac: k.acquired ? +(y.spend_merany/k.acquired).toFixed(2) : null,
+      cohort_roas: y.spend ? +(k.revenue/y.spend).toFixed(2) : null,
+      cohort_cac: k.acquired ? +(y.spend/k.acquired).toFixed(2) : null,
+      // dokázateľná časť: len ľudia priradení ku kampani s úplným meraním,
+      // delené útratou práve tých kampaní — obe strany zlomku kryjú to isté
+      acquired_dokazane:k.acquired_dok, payers_dokazane:k.payers_dok,
+      cohort_revenue_dokazana:k.revenue_dok,
+      roas_dokazany: y.spend_merany ? +(k.revenue_dok/y.spend_merany).toFixed(2) : null,
+      cohort_cac_dokazany: k.acquired_dok ? +(y.spend_merany/k.acquired_dok).toFixed(2) : null,
       mlada: (m+'-01') > dnes90 };   // kohorta ešte nemá odžitých 90 dní, čísla porastú
   });
 
@@ -27028,6 +27060,9 @@ async function adOverview(mesiac){
   const zive=rows.filter(ziva);
   // Tržba kohorty = koľko zaplatili ľudia, ktorí v danom období prišli z reklamy.
   const kohRev=+(vsetko ? Object.values(koh).reduce((s,x)=>s+x.revenue,0) : ((koh[mesiac]||{}).revenue||0)).toFixed(2);
+  const kohRevDok=+(vsetko ? Object.values(koh).reduce((s,x)=>s+x.revenue_dok,0) : ((koh[mesiac]||{}).revenue_dok||0)).toFixed(2);
+  const kohAcqDok=vsetko ? Object.values(koh).reduce((s,x)=>s+x.acquired_dok,0) : ((koh[mesiac]||{}).acquired_dok||0);
+  const kohPayDok=vsetko ? Object.values(koh).reduce((s,x)=>s+x.payers_dok,0) : ((koh[mesiac]||{}).payers_dok||0);
   const sync=await q.one(db.settings,{key:AD_SYNC_KEY});
   return { ok:true, mesiac: vsetko?'all':mesiac,
     mesiace_k_dispozicii: Object.keys(mesiace).sort().reverse(),
@@ -27039,10 +27074,17 @@ async function adOverview(mesiac){
       // Cenu za lead delíme len výdajom kampaní, ktoré leady naozaj priniesli —
       // inak by ju nafúkli peniaze minuté na kampane s úplne iným cieľom.
       cpl: leads?+(merane.filter(r=>r.leads>0).reduce((s,r)=>s+r.spend,0)/leads).toFixed(2):null,
-      // ROAS z tržby ľudí, ktorí prišli z reklamy, delenej útratou meraných kampaní.
+      // ROAS z tržby ľudí, ktorí prišli z reklamy, delenej VŠETKÝMI minutými peniazmi.
       // Tržba celej appky sa tu zámerne nepoužíva — viď komentár pri mesačnom rade.
+      // Delenie len meranou útratou (do 14. 11.) dávalo 4,33×, hoci cez účet išlo
+      // 8 172,95 € — v čitateli boli aj ľudia z kampaní, ktorých peniaze chýbali dole.
       revenue: trzbaObd, revenue_kohorta: kohRev,
-      roas: spendZoznam?+(kohRev/spendZoznam).toFixed(2):null, roas_zaklad:'kohorta_reklamy',
+      roas: spend?+(kohRev/spend).toFixed(2):null, roas_zaklad:'kohorta_reklamy',
+      // Dokázateľná časť: ľudia priradení ku konkrétnej kampani s úplným meraním,
+      // delení útratou práve tých kampaní. Zvyšok kohorty (len fbclid alebo zdroj
+      // „facebook") môže byť aj klik z bežného príspevku — ten reklamu nestál nič.
+      revenue_kohorta_dokazana: kohRevDok, acquired_dokazane: kohAcqDok, platiace_dokazane: kohPayDok,
+      roas_dokazany: spendZoznam?+(kohRevDok/spendZoznam).toFixed(2):null,
       zive:zive.length },
     diery:{ bez_utm:bezUtm.length, bez_utm_spend:+bezUtm.reduce((s,r)=>s+r.spend,0).toFixed(2),
       bez_karty:bezKarty.length, bez_karty_spend:+bezKarty.reduce((s,r)=>s+r.spend,0).toFixed(2),

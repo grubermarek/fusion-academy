@@ -52,6 +52,22 @@ const stat = (id, name, month, spend, clicks) => ({ _id: 'qaMkS' + id + month.re
   w('users.db', [
     { _id: 'qaMkAdmin000001', name: 'Marek Gruber', email: 'qa.mk.admin@qa-biz.local',
       password: hash, is_admin: true, user_type: 'admin', active: true, created_at: '2026-01-01' },
+    // Dve klientky z reklamy v tom istom mesiaci. Prvá nesie utm_campaign plne
+    // meranej kampane — tá je DOKÁZATEĽNE z nej. Druhá má len fbclid, čiže mohla
+    // prísť aj z bežného príspevku; do dokázateľnej tržby nesmie vstúpiť.
+    { _id: 'qaMkKlient00001', name: 'QA Utm', email: 'qa.mk.utm@qa-biz.local', password: hash,
+      active: true, created_at: '2026-10-05', registration_at: '2026-10-05',
+      account_creation_type: 'self_registration', utm_source: 'fb', utm_campaign: 'qa-plne-1026' },
+    { _id: 'qaMkKlient00002', name: 'QA Fbclid', email: 'qa.mk.fbclid@qa-biz.local', password: hash,
+      active: true, created_at: '2026-10-06', registration_at: '2026-10-06',
+      account_creation_type: 'self_registration', fbclid: 'QA_fbclid_bez_kampane' },
+  ]);
+
+  w('payments.db', [
+    { _id: 'qaMkPlatba00001', user_id: 'qaMkKlient00001', amount: 60, status: 'completed',
+      description: 'Členstvo Bronze', provider: 'stripe', captured_at: '2026-10-20T10:00:00.000Z', created_at: '2026-10-20T10:00:00.000Z' },
+    { _id: 'qaMkPlatba00002', user_id: 'qaMkKlient00002', amount: 40, status: 'completed',
+      description: 'Členstvo Bronze', provider: 'stripe', captured_at: '2026-10-21T10:00:00.000Z', created_at: '2026-10-21T10:00:00.000Z' },
   ]);
 
   // 1) plne meraná — utm, karta, celé obdobie po zavedení merania
@@ -132,7 +148,20 @@ const stat = (id, name, month, spend, clicks) => ({ _id: 'qaMkS' + id + month.re
 
     console.log('\n4) ROAS nevychádza z tržby celej appky:');
     ok('základ ROAS je kohorta reklamy', t.roas_zaklad === 'kohorta_reklamy', String(t.roas_zaklad));
-    ok('bez klientok z reklamy je ROAS 0 alebo prázdny', t.roas === null || t.roas === 0, String(t.roas));
+    ok('tržba kohorty = 100 € (obe klientky z reklamy)',
+      Math.abs((t.revenue_kohorta || 0) - 100) < 0.01, String(t.revenue_kohorta));
+    // Obe strany zlomku kryjú to isté: celá kohorta ÷ všetky peniaze (100 / 220).
+    ok('ROAS delí VŠETKY minuté peniaze (0,45×)', t.roas === 0.45, String(t.roas));
+
+    console.log('\n4b) Dokázateľná tržba (14. 11.):');
+    ok('dokázateľná tržba = 60 € (len klientka s utm kampane)',
+      Math.abs((t.revenue_kohorta_dokazana || 0) - 60) < 0.01, String(t.revenue_kohorta_dokazana));
+    ok('dokázateľne priradená je 1 klientka', t.acquired_dokazane === 1, String(t.acquired_dokazane));
+    // 60 € od nej ÷ 100 € útraty tej istej kampane.
+    ok('dokázateľný ROAS = 0,6× (meraná útrata)', t.roas_dokazany === 0.6, String(t.roas_dokazany));
+    ok('klientka len s fbclid nie je dokázateľná',
+      Math.abs((t.revenue_kohorta || 0) - (t.revenue_kohorta_dokazana || 0) - 40) < 0.01,
+      String(t.revenue_kohorta) + ' / ' + String(t.revenue_kohorta_dokazana));
 
     console.log('\n5) Mesačný rad:');
     const okt = (a.rad || []).find(x => x.month === '2026-10') || {};
