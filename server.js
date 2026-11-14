@@ -1065,6 +1065,22 @@ async function seedData() {
       console.log('🔎 fbclid → reklama: '+n+' účtov, odvodené '+odv.length);
     }catch(e){ console.error('meta_klik:', e.message); }
   }, 15000);
+  // Dopočítanie čísla reklamy zo VŠETKÝCH uložených fbclid (14. 11.). Od tejto zmeny
+  // je `meta_klik` jediný spoľahlivý dôkaz, že klik bol platený a z ktorej kampane —
+  // tak nech ho má každý účet, ktorý fbclid nesie, nie len tí z migrácie zo 16. 9.
+  // (leadové formuláre a pozvánky chodia inou cestou než registrácia z landingu).
+  // Beží opakovane pri každom štarte: je to lacné čítanie a nové fbclid tak nikdy
+  // neostane bez priradenia, aj keby niektorá cesta zabudla doplnZdrojUctu zavolať.
+  setTimeout(async()=>{
+    try{
+      let n=0;
+      for(const u of await q.find(db.users,{fbclid:{$exists:true}})){
+        const k=metaKlikZFbclid(u.fbclid);
+        if(k && u.meta_klik!==k){ await q.update(db.users,{_id:u._id},{$set:{meta_klik:k}}); n++; }
+      }
+      if(n) console.log('🔎 fbclid → reklama: doplnené '+n+' účtov');
+    }catch(e){ console.error('meta_klik_dopln:', e.message); }
+  }, 20000);
   // Oznam venčekárom o rodičovských účtoch (Marek 16. 9. schválil text) — správa v appke každému žiakovi
   // a jedna správa lektora do chatu skupiny. Kto už zaplatil, nečíta vetu o platbe.
   if(!(await q.one(db.settings,{key:'vencek_rodicia_oznam_20260916'}))) setTimeout(async()=>{
@@ -26616,6 +26632,15 @@ async function syncAdStats(force){
       if(Object.keys(mena).length) await q.update(db.settings,{key:'meta_ad_names'},
         {$set:{key:'meta_ad_names', value:mena, at:nowISO()}},{upsert:true});
     }catch(e){}
+    // 14. 11.: mapa reklama → kampaň. Toto je spojka, ktorá robí meranie dokázateľným:
+    // fbclid z PLATENÉHO kliku nesie číslo reklamy (metaKlikZFbclid → users.meta_klik),
+    // organický príspevok ani zdieľanie ho nemajú. Keď k číslu reklamy poznáme kampaň,
+    // vieme priradiť registráciu aj tržbu bez utm, bez karty a bez dohadov.
+    try{
+      const mapa={}; for(const a of ads) if(a.id && a.campaign_id) mapa[String(a.id)]=String(a.campaign_id);
+      if(Object.keys(mapa).length) await q.update(db.settings,{key:'meta_ad_campaign'},
+        {$set:{key:'meta_ad_campaign', value:mapa, at:nowISO()}},{upsert:true});
+    }catch(e){}
     const utm={};
     for(const a of ads){
       const cr=a.creative||{};
@@ -26869,6 +26894,53 @@ app.post('/api/admin/meranie/skontroluj', adminAuth, async(req,res)=>{
 // 4085746221555327 so zapnutými „Udalosťami webu". Čo bežalo predtým, má útratu,
 // ale výsledok sa už zistiť nedá — a priemer by skresľovalo.
 const MERANIE_OD='2026-09';
+
+// ─── ODKIAĽ KLIENTKA PRIŠLA — jedno miesto pre celú appku (14. 11. 2026) ──────
+// Prehľad reklamy aj rozpad tržieb čítajú atribúciu odtiaľto. Keď to mala každá
+// tabuľka po svojom, tvrdili iné čísla a ani jedno sa nedalo obhájiť.
+const PLATENY_ZDROJ=new Set(['meta','meta_leadform','facebook','instagram','fb','ig','google','google_ads','adwords','tiktok']);
+// Vlastné kanály nestoja peniaze z reklamného rozpočtu — do reklamy nepatria.
+const vlastnyKanal=u=>/mail|brevo|newsletter|sms|notif|^app$|invite|ref$/i.test(String(u.utm_source||''))
+  || /mail|sms|notif|invite/i.test(String(u.utm_medium||''));
+// jeTestUcet (vyššie) pozná QA e-maily aj is_test; tu k nim patrí ešte ručné
+// označenie a starý príznak zdroja, aby test nikdy nespadol do tržieb.
+const jeTestKlient=u=>jeTestUcet(u) || !!(u && (u.test_account || u.lead_source==='test'));
+const jeKlientka=u=>!!u && !u.is_admin && !u.is_child
+  && !['trainer','manager','admin'].includes(u.user_type) && !jeTestKlient(u);
+// „Z reklamy" = niesla značku platenej návštevy. Pozor: sem padá aj klik z bežného
+// príspevku či zo zdieľania v Messengeri (Facebook k odkazu pridá fbclid aj tak),
+// preto je to kohorta, nie dôkaz. Dôkaz je kampanUsera() nižšie.
+const zReklamy=u=>{
+  if(!jeKlientka(u)) return false;
+  if(['import','admin','child'].includes(u.account_creation_type)) return false;
+  if(vlastnyKanal(u)) return false;
+  return !!(String(u.utm_campaign||'').trim() || String(u.fbclid||'').trim() || String(u.gclid||'').trim()
+    || PLATENY_ZDROJ.has(String(u.lead_source||'').toLowerCase()));
+};
+// Mapa reklama→kampaň z Mety + karty kampaní v appke. Z toho sa dá o každej klientke
+// povedať, Z KTOREJ kampane prišla — alebo priznať, že to nevieme.
+async function atribucia(){
+  const mapaRek=((await q.one(db.settings,{key:'meta_ad_campaign'}))||{}).value||{};
+  const nazov={};
+  for(const c of await q.find(db.ad_campaigns,{})) nazov[String(c.campaign_id)]=c.name||'';
+  const karty=(await q.find(db.campaigns,{})).filter(k=>k.meta_campaign_id)
+    .map(k=>[String(k.meta_campaign_id), k]);
+  const kampanZoZnacky=u=>{
+    for(const [cid,k] of karty){
+      const key=String(k.utm_key||'').replace(/\*+$/,'').toLowerCase().trim();
+      if(key){ if(String(u.utm_campaign||'').toLowerCase().trim().startsWith(key)) return cid; continue; }
+      if(k.lead_source_key){ if(String(u.lead_source||'').toLowerCase().trim()===String(k.lead_source_key).toLowerCase().trim()) return cid; continue; }
+      if(k.gclid_attr && u.gclid) return cid;
+    }
+    return null;
+  };
+  // Najprv číslo reklamy z kliku (to nesie len platený klik), potom značka v odkaze.
+  const kampanUsera=u=>{
+    const cid=u && u.meta_klik && mapaRek[String(u.meta_klik)];
+    return cid ? String(cid) : (u ? kampanZoZnacky(u) : null);
+  };
+  return { mapaRek, kampanUsera, nazovKampane:cid=>nazov[cid]||('Kampaň '+cid) };
+}
 // plne      = odkaz nesie utm_campaign (alebo je to leadová kampaň s vlastnou atribúciou
 //             cez formulár), kampaň má v appke kartu a prvá útrata padla po MERANIE_OD
 // ciastocne = niečo z toho chýba, alebo časť peňazí padla pred MERANIE_OD
@@ -26943,27 +27015,29 @@ async function adOverview(mesiac){
   // „Z reklamy" je nižšie každý, kto má utm, fbclid, gclid alebo zdroj typu
   // facebook/instagram. Do toho ale padá aj klik z bežného príspevku, zo
   // zdieľania či z odkazu v bio — taká tržba potom nafukuje ROAS reklamy.
-  // Dokázateľná je len tá od ľudí, ktorých vieme priradiť ku konkrétnej kampani
-  // s ÚPLNÝM meraním: nesú jej utm_campaign, jej lead_source alebo gclid.
-  // ROAS sa odteraz počíta dvakrát a obe strany zlomku kryjú to isté:
+  // Dokázateľné je len to, čo vieme priradiť ku KONKRÉTNEJ kampani, ktorej útratu
+  // poznáme. Vedú k tomu dve cesty a obe sú tvrdé (14. 11.):
+  //   1) číslo reklamy z fbclid (users.meta_klik) → kampaň. Pole „adid" v fbclid
+  //      nesie LEN platený klik — organický príspevok, zdieľanie ani odkaz v bio ho
+  //      nemajú. Netreba k tomu utm ani kartu v appke; mapu reklama→kampaň ukladá
+  //      sync z Mety (settings.meta_ad_campaign). Preto sa priradenie už nerozbije
+  //      tým, že sa v novej reklame zabudne na utm.
+  //   2) utm_campaign / lead_source / gclid zhodné s kartou kampane v appke.
+  // Menovateľ = útrata mesiacov, v ktorých appka zdroj kliku naozaj ukladala (od
+  // MERANIE_OD, cookie fa_zdroj zo 16. 9.). Čo sa minulo predtým, sa už k nikomu
+  // priradiť nedá — tie peniaze idú do „nedokázateľné", nie do zlomku.
   //   roas          = tržba celej reklamnej kohorty ÷ VŠETKY minuté peniaze
-  //   roas_dokazany = dokázateľná tržba ÷ útrata kampaní s úplným meraním
-  // (predtým: kohorta ÷ len meraná útrata — 1 885,50 € delené 435,79 € dávalo
-  //  4,33×, hoci reálne išlo cez účet 8 172,95 €.)
-  const kartyPlne=[...new Set(vsetkyRiadky.filter(plneMerana).map(r=>kartaObj[r.campaign_id]).filter(Boolean))];
-  const dokazatelny=u=>kartyPlne.some(k=>{
-    const key=String(k.utm_key||'').replace(/\*+$/,'').toLowerCase().trim();
-    if(key) return String(u.utm_campaign||'').toLowerCase().trim().startsWith(key);
-    if(k.lead_source_key) return String(u.lead_source||'').toLowerCase().trim()===String(k.lead_source_key).toLowerCase().trim();
-    if(k.gclid_attr) return !!u.gclid;
-    return false;
-  });
+  //   roas_dokazany = dokázateľná tržba ÷ útrata, ktorú sme vedeli merať
+  const { kampanUsera } = await atribucia();
 
   // Mesačný rad: minuté vs. zarobené. Bez tržby vedľa spendu je spend len číslo.
   const mesiace={};
   for(const x of stats){ const m=x.month; if(!/^\d{4}-\d{2}$/.test(m||'')) continue;
-    const y=mesiace[m]=mesiace[m]||{month:m, spend:0, spend_merany:0, nemerane:0, clicks:0, impressions:0, leads:0};
+    const y=mesiace[m]=mesiace[m]||{month:m, spend:0, spend_merany:0, spend_dok:0, nemerane:0, clicks:0, impressions:0, leads:0};
     y.spend+=+x.spend||0;
+    // Od MERANIE_OD ukladá appka zdroj kliku každému príchodu, takže každé euro
+    // z tých mesiacov sa dá priradiť — aj doboostovaný príspevok, aj kampaň bez utm.
+    if(m>=MERANIE_OD) y.spend_dok+=+x.spend||0;
     if(skryteId.has(x.campaign_id)){ y.nemerane+=+x.spend||0; continue; }
     if(kvalitaPre[x.campaign_id]!=='plne') continue;   // čiastočne meraná kampaň do výkonu nejde
     y.spend_merany+=+x.spend||0;
@@ -26977,40 +27051,49 @@ async function adOverview(mesiac){
   // Vlastné kanály (mail, SMS, notifikácie, pozvánky) sa nerátajú — tie nestoja
   // peniaze z reklamného rozpočtu. Importy (Glofox) tiež nie (pravidlo 2 v
   // docs/FUSION_CUSTOMER_JOURNEY_MASTER.md).
-  const vlastnyKanal=u=>/mail|brevo|newsletter|sms|notif|^app$|invite|ref$/i.test(String(u.utm_source||''))
-    || /mail|sms|notif|invite/i.test(String(u.utm_medium||''));
-  const PLATENY_ZDROJ=new Set(['meta','meta_leadform','facebook','instagram','fb','ig','google','google_ads','adwords','tiktok']);
-  const zReklamy=u=>{
-    if(!u || u.is_admin || u.is_child || ['trainer','manager','admin'].includes(u.user_type)) return false;
-    if(['import','admin','child'].includes(u.account_creation_type)) return false;
-    if(u.is_test || u.test_account || u.lead_source==='test') return false;
-    if(vlastnyKanal(u)) return false;
-    return !!(String(u.utm_campaign||'').trim() || String(u.fbclid||'').trim() || String(u.gclid||'').trim()
-      || PLATENY_ZDROJ.has(String(u.lead_source||'').toLowerCase()));
-  };
+  // zReklamy, vlastnyKanal aj PLATENY_ZDROJ sú teraz pri atribucia() — jedna definícia
+  // pre prehľad reklamy aj pre rozpad tržieb.
   const addDni=(d,n)=>{ const t=Date.parse(String(d).slice(0,10)); return Number.isFinite(t)?new Date(t+n*864e5).toISOString().slice(0,10):'9999'; };
-  const kohortaUsera={};                                  // user_id → { m, den }
+  const kohortaUsera={};                                  // user_id → { m, den, cid, dok }
   for(const u of await q.find(db.users,{})){
     if(!zReklamy(u)) continue;
     const den=String(u.registration_at||u.lead_at||u.created_at||'').slice(0,10);
     if(!/^\d{4}-\d{2}-\d{2}$/.test(den)) continue;
-    kohortaUsera[u._id]={ m:den.slice(0,7), den, dok:dokazatelny(u) };
+    const m=den.slice(0,7), cid=kampanUsera(u);
+    // Dokázateľná je klientka s konkrétnou kampaňou, ktorá prišla v čase, keď sme
+    // zdroj kliku už ukladali. Staršie príchody nemajú v menovateli žiadnu útratu.
+    kohortaUsera[u._id]={ m, den, cid, dok: !!cid && m>=MERANIE_OD };
   }
+  // Dokázateľné čísla po kampaniach — nech je pri každom riadku vidieť, koľko
+  // klientok a koľko eur z neho naozaj prišlo, nie len koľko stál.
+  const podlaKamp={};
+  const dajKamp=cid=>(podlaKamp[cid]=podlaKamp[cid]||{prisli:0, trzba:0, _platili:new Set()});
   const koh={};                                           // mesiac → čísla kohorty
   const dajKoh=m=>(koh[m]=koh[m]||{acquired:0, acquired_dok:0, payers:0, payers_dok:0,
     revenue:0, revenue_dok:0, rev90:0, _platili:new Set(), _platili_dok:new Set()});
+  // Riadok kampane musí sedieť s útratou, ktorú vedľa neho ukazujeme: pri výbere
+  // mesiaca sa preto do kampane rátajú len príchody z toho mesiaca.
+  const vKamp=k=>k.dok && (vsetko || k.m===mesiac);
   for(const id of Object.keys(kohortaUsera)){ const k=kohortaUsera[id];
-    const x=dajKoh(k.m); x.acquired++; if(k.dok) x.acquired_dok++; }
+    const x=dajKoh(k.m); x.acquired++; if(k.dok) x.acquired_dok++;
+    if(vKamp(k)) dajKamp(k.cid).prisli++; }
   for(const e of ev){
     const id=e.who&&e.who.id; const k=id&&kohortaUsera[id]; if(!k) continue;
     const d=String(e.d||'').slice(0,10); if(d<k.den) continue;   // čo zaplatila pred príchodom z reklamy, nerátame
     const x=dajKoh(k.m); x.revenue+=+e.a||0; if(d<=addDni(k.den,90)) x.rev90+=+e.a||0;
     if(k.dok) x.revenue_dok+=+e.a||0;
     if((+e.a||0)>0){ x._platili.add(id); if(k.dok) x._platili_dok.add(id); }
+    if(vKamp(k)){ const z=dajKamp(k.cid); z.trzba+=+e.a||0; if((+e.a||0)>0) z._platili.add(id); }
   }
   Object.values(koh).forEach(x=>{ x.payers=x._platili.size; x.payers_dok=x._platili_dok.size;
     delete x._platili; delete x._platili_dok;
     x.revenue=+x.revenue.toFixed(2); x.revenue_dok=+x.revenue_dok.toFixed(2); x.rev90=+x.rev90.toFixed(2); });
+  // Dokázateľné čísla ku každému riadku kampane. 0 nie je to isté ako „nevieme":
+  // keď kampaň bežala pred MERANIE_OD, riadok to povie cez `merane_obdobie:false`.
+  rows=rows.map(r=>{ const z=podlaKamp[r.campaign_id];
+    return {...r, prisli_dokazane:z?z.prisli:0, platiace_dokazane:z?z._platili.size:0,
+      trzba_dokazana:z?+z.trzba.toFixed(2):0,
+      merane_obdobie:(r.last_month||'')>=MERANIE_OD }; });
   const dnes90=addDni(today(),-90);
   const rad=Object.keys(mesiace).sort().map(m=>{
     const y=mesiace[m]; const trzba=revSum(ev, m);
@@ -27032,8 +27115,9 @@ async function adOverview(mesiac){
       // delené útratou práve tých kampaní — obe strany zlomku kryjú to isté
       acquired_dokazane:k.acquired_dok, payers_dokazane:k.payers_dok,
       cohort_revenue_dokazana:k.revenue_dok,
-      roas_dokazany: y.spend_merany ? +(k.revenue_dok/y.spend_merany).toFixed(2) : null,
-      cohort_cac_dokazany: k.acquired_dok ? +(y.spend_merany/k.acquired_dok).toFixed(2) : null,
+      spend_dokazatelny:+y.spend_dok.toFixed(2),
+      roas_dokazany: y.spend_dok ? +(k.revenue_dok/y.spend_dok).toFixed(2) : null,
+      cohort_cac_dokazany: k.acquired_dok ? +(y.spend_dok/k.acquired_dok).toFixed(2) : null,
       mlada: (m+'-01') > dnes90 };   // kohorta ešte nemá odžitých 90 dní, čísla porastú
   });
 
@@ -27045,6 +27129,10 @@ async function adOverview(mesiac){
   const sc=(k)=>merane.reduce((s,r)=>s+(+r[k]||0),0);
   const spend=+vsetkyRiadky.reduce((s,r)=>s+r.spend,0).toFixed(2);
   const spendZoznam=+sc('spend').toFixed(2), clicks=sc('clicks'), impressions=sc('impressions'), leads=sc('leads');
+  // Útrata, ktorú sme vedeli priradiť: mesiace od MERANIE_OD, vrátane doboostovaných
+  // príspevkov — klik na ne nesie číslo reklamy rovnako ako klik na kampaň.
+  const spendDok=+Object.values(mesiace).filter(y=>vsetko || y.month===mesiac)
+    .reduce((s,y)=>s+y.spend_dok,0).toFixed(2);
   const ciastocne=rows.filter(r=>r.meranie==='ciastocne');
   const nemerane={ kampani:skryte.length, spend:+skryte.reduce((s,r)=>s+r.spend,0).toFixed(2),
     ciastocne_kampani:ciastocne.length, ciastocne_spend:+ciastocne.reduce((s,r)=>s+r.spend,0).toFixed(2) };
@@ -27082,11 +27170,15 @@ async function adOverview(mesiac){
       // 8 172,95 € — v čitateli boli aj ľudia z kampaní, ktorých peniaze chýbali dole.
       revenue: trzbaObd, revenue_kohorta: kohRev,
       roas: spend?+(kohRev/spend).toFixed(2):null, roas_zaklad:'kohorta_reklamy',
-      // Dokázateľná časť: ľudia priradení ku konkrétnej kampani s úplným meraním,
-      // delení útratou práve tých kampaní. Zvyšok kohorty (len fbclid alebo zdroj
+      // Dokázateľná časť: ľudia priradení ku konkrétnej kampani (číslo reklamy z ich
+      // kliku alebo značka v odkaze), delení útratou mesiacov, v ktorých sme zdroj
+      // kliku ukladali. Zvyšok kohorty (len fbclid bez čísla reklamy alebo zdroj
       // „facebook") môže byť aj klik z bežného príspevku — ten reklamu nestál nič.
+      // spend_nedokazatelny = peniaze z času pred meraním; ich výsledok sa už nezistí.
       revenue_kohorta_dokazana: kohRevDok, acquired_dokazane: kohAcqDok, platiace_dokazane: kohPayDok,
-      roas_dokazany: spendZoznam?+(kohRevDok/spendZoznam).toFixed(2):null,
+      spend_dokazatelny: spendDok, spend_nedokazatelny: +(spend-spendDok).toFixed(2),
+      merane_od: MERANIE_OD,
+      roas_dokazany: spendDok?+(kohRevDok/spendDok).toFixed(2):null,
       zive:zive.length },
     diery:{ bez_utm:bezUtm.length, bez_utm_spend:+bezUtm.reduce((s,r)=>s+r.spend,0).toFixed(2),
       bez_karty:bezKarty.length, bez_karty_spend:+bezKarty.reduce((s,r)=>s+r.spend,0).toFixed(2),
@@ -27104,6 +27196,84 @@ app.get('/api/admin/ads/overview', adminAuth, async(req,res)=>{
 app.post('/api/admin/ads/sync', adminAuth, async(req,res)=>{
   try{ res.json(await syncAdStats(true)); }
   catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ─── ODKIAĽ SÚ PENIAZE (Marek 14. 11. 2026) ──────────────────────────────────
+// „Rozdeľ tržby aj na neurčené a na affiliate, nech viem, z čoho sú aké príjmy."
+// Každé euro dostane presne jednu škatuľu podľa toho, odkiaľ klientka prišla.
+// Súčet škatúľ = tržba za obdobie, nič sa nestratí ani nezdvojí.
+// Poradie rozhoduje, keď má klientka viac značiek naraz: dokázaná reklama je
+// najtvrdší dôkaz (číslo reklamy nesie len platený klik), potom odporúčanie,
+// potom naše vlastné oslovenie. „Neurčené" je priznanie, že to nevieme — nie nula.
+const TRZBA_SKUPINY=[
+  ['reklama_dokazana','Reklama — dokázateľne','Klik na konkrétnu reklamu: číslo reklamy z fbclid alebo značka v odkaze'],
+  ['affiliate','Affiliate a odporúčania','Ambasádorky, influencerky, pozvané kamošky'],
+  ['vlastne_kanaly','Vlastné kanály','Náš e-mail, SMS, notifikácia alebo pozvánka v appke'],
+  ['reklama_mozna','Reklama — nepotvrdená','Značka z Facebooku bez čísla reklamy — mohol to byť aj bežný príspevok alebo zdieľanie'],
+  ['vencek','Venčeky a školy','Venčekové skupiny — mimo predajného toku'],
+  ['import','Prevzatí klienti','Import z Glofoxu a starého zoznamu'],
+  ['priame','Prišli samy','Registrácia bez akejkoľvek značky — odporúčanie naživo, vizitka, Google'],
+  ['neurcene','Neurčené','Nevieme priradiť ani zdroj, ani kampaň'],
+];
+app.get('/api/admin/trzby-zdroj', adminAuth, async(req,res)=>{
+  try{
+    const mesiac=String(req.query.mesiac||'all');
+    const vsetko=!mesiac || mesiac==='all';
+    const filter=String(req.query.skupina||'');
+    const { kampanUsera, nazovKampane } = await atribucia();
+    const uMap={}; for(const u of await q.find(db.users,{})) uMap[u._id]=u;
+    // POZOR na sponsor_id: pri registrácii bez kódu sa sponzorom stáva zakladateľ
+    // (server.js, registrácia leadu) — takže samotné sponsor_id NIE je odporúčanie.
+    // Za affiliate ide len klientka, ktorú priviedla iná klientka (nie admin ani
+    // tréner), alebo ktorá prišla pozvánkou či s označením referral.
+    const odporucitelkaKlientka=id=>{ const s=id&&uMap[id];
+      return !!s && !s.is_admin && !['trainer','manager','admin'].includes(s.user_type); };
+    const zdrojKlientky=u=>{
+      if(!u) return 'neurcene';
+      if(zReklamy(u) && kampanUsera(u)) return 'reklama_dokazana';
+      if(odporucitelkaKlientka(u.sponsor_id) || String(u.lead_source||'')==='referral'
+        || u.account_creation_type==='guest_invite') return 'affiliate';
+      if(vlastnyKanal(u)) return 'vlastne_kanaly';
+      if(zReklamy(u)) return 'reklama_mozna';
+      if(jeVencekar(u)) return 'vencek';
+      if(u.account_creation_type==='import' || /glofox|oldlist/i.test(String(u.lead_source||''))) return 'import';
+      if(u.account_creation_type==='self_registration') return 'priame';
+      return 'neurcene';
+    };
+    const ev=(await revenueEvents({includeImported:true}))
+      .filter(e=>vsetko || String(e.d||'').slice(0,7)===mesiac);
+    const box={}; const daj=k=>(box[k]=box[k]||{suma:0, platieb:0, _klientky:new Set(), detail:{}});
+    let celkom=0;
+    for(const e of ev){
+      const u=e.who&&e.who.id ? uMap[e.who.id] : null;
+      const k=zdrojKlientky(u);
+      const x=daj(k); const a=+e.a||0;
+      x.suma+=a; x.platieb++; celkom+=a;
+      if(e.who&&e.who.id) x._klientky.add(e.who.id);
+      // Detail: pri reklame podľa kampane, pri affiliate podľa toho, kto priviedol,
+      // inde podľa zdroja. Nech sa dá doklikať, z čoho presne tie peniaze sú.
+      let dk='—';
+      if(k==='reklama_dokazana') dk=nazovKampane(kampanUsera(u));
+      else if(k==='affiliate'){ const s=uMap[(u&&(u.sponsor_id||u.invited_by))||'']; dk=(s&&(s.name||s.email))||'Neznáma ambasádorka'; }
+      else if(k==='reklama_mozna') dk=String((u&&(u.utm_source||u.lead_source))||'facebook');
+      else dk=String((u&&(u.utm_source||u.lead_source||u.account_creation_type))||'—');
+      const d=x.detail[dk]=x.detail[dk]||{suma:0, platieb:0};
+      d.suma+=a; d.platieb++;
+    }
+    const skupiny=TRZBA_SKUPINY.map(([key,nazov,popis])=>{
+      const x=box[key]||{suma:0, platieb:0, _klientky:new Set(), detail:{}};
+      return { key, nazov, popis, suma:+x.suma.toFixed(2), platieb:x.platieb,
+        klientok:x._klientky.size, podiel_pct: celkom ? +(100*x.suma/celkom).toFixed(1) : 0,
+        detail:Object.entries(x.detail).map(([n,d])=>({nazov:n, suma:+d.suma.toFixed(2), platieb:d.platieb}))
+          .sort((a,b)=>b.suma-a.suma).slice(0,12) };
+    }).filter(s=>!filter || s.key===filter);
+    // Mesiace do filtra — z tržby, nie z kalendára, nech sa nedá vybrať prázdny mesiac.
+    const mesiace=[...new Set((await revenueEvents({includeImported:true}))
+      .map(e=>String(e.d||'').slice(0,7)).filter(m=>/^\d{4}-\d{2}$/.test(m)))].sort().reverse();
+    res.json({ ok:true, mesiac, celkom:+celkom.toFixed(2), platieb:ev.length,
+      skupiny, mesiace_k_dispozicii:mesiace,
+      skupiny_vsetky:TRZBA_SKUPINY.map(([key,nazov])=>({key,nazov})) });
+  }catch(e){ res.status(500).json({error:e.message}); }
 });
 // Servisná cesta cez IMPORT_TOKEN — rovnaký vzor ako import a venček.
 app.post('/api/service/ads-sync', async(req,res)=>{

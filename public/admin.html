@@ -1288,6 +1288,18 @@ code{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid var(--gol
           </div></div>
         </div>
       </div>
+      <div class="card bg-dark border-secondary mt-3"><div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+          <h6 class="fw-bold mb-0"><i class="bi bi-pie-chart me-2 text-info"></i>Odkiaľ sú peniaze</h6>
+          <div class="d-flex gap-2 align-items-center">
+            <select id="tzMesiac" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:auto" onchange="loadTrzbyZdroj()"></select>
+            <select id="tzSkupina" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:auto" onchange="loadTrzbyZdroj()">
+              <option value="">Všetky zdroje</option>
+            </select>
+          </div>
+        </div>
+        <div id="tzBody" class="small text-muted">Načítavam…</div>
+      </div></div>
       <details class="mt-3">
         <summary style="cursor:pointer;color:#9d9788;font-size:.85rem">🔌 Napojenie na Metu a kontrola merania</summary>
         <div class="card bg-dark border-secondary mt-2"><div class="card-body">
@@ -6757,7 +6769,8 @@ async function mkPrehlad(){
         <div class="text-muted" style="font-size:.68rem">${pod||''}</div>
       </div></div></div>`;
   document.getElementById('mkKpis').innerHTML =
-      kachla('💸','Minuté na reklamu', adEur(spend), (t.kampani||0)+' kampaní'+(t.zive!=null?' · '+t.zive+' beží':''), '#e8e2d2', "mkTab('kampane')")
+      kachla('💸','Minuté na reklamu', adEur(spend), (t.spend_nedokazatelny>0?'z toho '+adEur(t.spend_nedokazatelny)+' pred meraním':'')||((t.kampani||0)+' kampaní'+(t.zive!=null?' · '+t.zive+' beží':'')), '#e8e2d2', "mkTab('kampane')")
+    + kachla('🔎','Vieme priradiť', adEur(t.spend_dokazatelny||0), 'útrata od '+String(t.merane_od||'2026-09').replace('-','/')+' · dokázateľne sa z nej vrátilo '+adEur(t.revenue_kohorta_dokazana||0), '#7ea6d9')
     + kachla('🎯','Klientky z reklamy', adNum(koh.acquired), 'z nich '+adNum(koh.payers)+' niečo zaplatilo', '#e8e2d2')
     + kachla('💶','Tržba od nich', adEur(koh.revenue), koh.mlada?'kohorta ešte rastie ⏳':'odkedy prišli, do dnes', '#9fd894')
     + kachla('📈','ROAS z reklamy', roas==null?'—':roas+'×', roas==null&&spend?'nikoho sa nedá priradiť k reklame'
@@ -6802,6 +6815,7 @@ async function mkPrehlad(){
     const spend=+r.spend||0;
     return { month:r.month, spend, novi:+r.acquired||0, platiace:+r.payers||0, trzba:+r.cohort_revenue||0,
       noviDok:+r.acquired_dokazane||0, trzbaDok:+r.cohort_revenue_dokazana||0, roasDok:r.roas_dokazany,
+      spendDok:+r.spend_dokazatelny||0,
       cac: (spend>0 && r.acquired>0) ? spend/r.acquired : null,
       roas: (spend>0 && r.acquired>0) ? +((+r.cohort_revenue||0)/spend).toFixed(2) : null, mlada:!!r.mlada };
   });
@@ -6811,17 +6825,63 @@ async function mkPrehlad(){
       <thead><tr><th>Mesiac</th><th class="text-end">Reklama</th><th class="text-end" title="Kontá, ktoré v tom mesiaci vznikli z reklamy (utm, fbclid, gclid)">Klientky z reklamy</th><th class="text-end">Cena za klientku</th><th class="text-end" title="Čo tieto klientky zaplatili odvtedy do dnes">Tržba od nich</th><th class="text-end">ROAS</th></tr></thead>
       <tbody>${riadky.map(r=>`<tr${r.month===MK.mesiac?' class="table-active"':''}>
         <td style="white-space:nowrap"><a href="#" onclick="mkObdobie('${r.month}');return false" class="text-decoration-none" title="Zobrazí čísla len za tento mesiac">${r.month}</a></td>
-        <td class="text-end" style="white-space:nowrap">${adEur(r.spend)}<div style="height:3px;border-radius:2px;background:linear-gradient(90deg,#C9A84C ${Math.round(100*r.spend/maxSpend)}%,#2a2a2a ${Math.round(100*r.spend/maxSpend)}%)"></div></td>
+        <td class="text-end" style="white-space:nowrap">${adEur(r.spend)}<div style="height:3px;border-radius:2px;background:linear-gradient(90deg,#C9A84C ${Math.round(100*r.spend/maxSpend)}%,#2a2a2a ${Math.round(100*r.spend/maxSpend)}%)"></div>
+          ${r.spend?`<div class="text-muted" style="font-size:.66rem" title="Útrata z mesiacov, v ktorých appka ukladala zdroj kliku — len tú vieme priradiť ku klientkam">${r.spendDok>=r.spend?'merateľné celé':(r.spendDok?'merateľné '+adEur(r.spendDok):'nemerateľné')}</div>`:''}</td>
         <td class="text-end">${r.novi||'—'}${r.platiace?`<span class="text-muted"> · ${r.platiace} platí</span>`:''}
-          ${r.novi?`<div class="text-muted" style="font-size:.66rem">${r.noviDok} so značkou kampane</div>`:''}</td>
+          ${r.novi?`<div class="text-muted" style="font-size:.66rem">${r.noviDok} priradených ku kampani</div>`:''}</td>
         <td class="text-end">${r.cac==null?'—':adEur(r.cac)}</td>
         <td class="text-end">${r.trzba?adEur(r.trzba):'—'}
           ${r.trzba?`<div class="text-muted" style="font-size:.66rem">dokázateľne ${adEur(r.trzbaDok)}</div>`:''}</td>
         <td class="text-end ${r.roas!=null&&r.roas<1?'text-danger':(r.roas>=1?'text-success':'')}">${r.roas==null?'—':r.roas+'×'}${r.mlada?' <span class="text-muted" title="Kohorta ešte nemá 90 dní — číslo porastie">⏳</span>':''}
-          ${r.roasDok!=null?`<div class="text-muted" style="font-size:.66rem" title="Dokázateľná tržba ÷ útrata kampaní s úplným meraním">dokázateľne ${r.roasDok}×</div>`:''}</td></tr>`).join('')}</tbody></table></div>
-      <div class="text-muted mt-2" style="font-size:.66rem">Len reklama: klientky s <code>utm_campaign</code>, <code>fbclid</code> alebo <code>gclid</code>. Tržba = čo zaplatili odvtedy do dnes (členstvá, vstupy, permanentky, merch, vstupenky). Mail, SMS, pozvánky ani importy sa sem nerátajú. <b>Dokázateľne</b> = len klientky priradené ku konkrétnej kampani s úplným meraním (nesú jej <code>utm_campaign</code>, jej lead alebo <code>gclid</code>), delené útratou práve tých kampaní. Zvyšok má iba <code>fbclid</code> alebo zdroj „facebook" — to býva aj klik z bežného príspevku, zdieľania či odkazu v bio, ktorý reklamu nestál nič. Veľké číslo delí celú mesačnú útratu. ⏳ = kohorta mladšia ako 90 dní, ROAS ešte porastie. Pomlčka znamená, že sa k tomu mesiacu nedalo priradiť nič — to nie je nula, vtedy sa to jednoducho nemeralo.</div>`
+          ${r.roasDok!=null?`<div class="text-muted" style="font-size:.66rem" title="Dokázateľná tržba ÷ útrata, ktorú sme vedeli priradiť">dokázateľne ${r.roasDok}×</div>`:''}</td></tr>`).join('')}</tbody></table></div>
+      <div class="text-muted mt-2" style="font-size:.66rem">Len reklama: klientky s <code>utm_campaign</code>, <code>fbclid</code> alebo <code>gclid</code>. Tržba = čo zaplatili odvtedy do dnes (členstvá, vstupy, permanentky, merch, vstupenky). Mail, SMS, pozvánky ani importy sa sem nerátajú. <b>Dokázateľne</b> = klientky priradené ku konkrétnej kampani — buď podľa čísla reklamy, ktoré Meta posiela v <code>fbclid</code> pri <b>platenom</b> kliku (organický príspevok ani zdieľanie ho nemajú), alebo podľa značky v odkaze. Delí sa útratou mesiacov, v ktorých appka zdroj kliku ukladala (od 9/2026). Zvyšok kohorty má iba <code>fbclid</code> bez čísla reklamy alebo zdroj „facebook" — to býva aj klik z bežného príspevku, zdieľania či odkazu v bio, ktorý reklamu nestál nič. Veľké číslo delí celú mesačnú útratu. ⏳ = kohorta mladšia ako 90 dní, ROAS ešte porastie. Pomlčka znamená, že sa k tomu mesiacu nedalo priradiť nič — to nie je nula, vtedy sa to jednoducho nemeralo.</div>`
     : '<div class="text-muted">Zatiaľ žiadne mesiace.</div>';
-  loadMetaStats(); loadMeranie();
+  loadMetaStats(); loadMeranie(); loadTrzbyZdroj();
+}
+
+// ── Odkiaľ sú peniaze (Marek 14. 11. 2026) ──────────────────────────────────
+// Každé euro tržby v jednej škatuli podľa toho, odkiaľ klientka prišla. Súčet
+// škatúľ = celá tržba za obdobie, takže „neurčené" je vidieť ako dieru, nie ako
+// nulu. Filter na mesiac aj na konkrétny zdroj.
+let TZ_FILTRE_NAPLNENE=false;
+async function loadTrzbyZdroj(){
+  const body=document.getElementById('tzBody'); if(!body) return;
+  const mesEl=document.getElementById('tzMesiac'), skEl=document.getElementById('tzSkupina');
+  const mesiac=(mesEl&&mesEl.value)||'all', skupina=(skEl&&skEl.value)||'';
+  body.innerHTML='<span class="text-muted">Načítavam…</span>';
+  try{
+    const d=await fetch('/api/admin/trzby-zdroj?mesiac='+encodeURIComponent(mesiac)
+      +(skupina?'&skupina='+encodeURIComponent(skupina):'')).then(r=>r.json());
+    if(!d.ok) throw new Error(d.error||'Nepodarilo sa načítať');
+    if(!TZ_FILTRE_NAPLNENE){
+      if(mesEl) mesEl.innerHTML='<option value="all">Celá história</option>'
+        +(d.mesiace_k_dispozicii||[]).map(m=>`<option value="${m}">${m}</option>`).join('');
+      if(skEl) skEl.innerHTML='<option value="">Všetky zdroje</option>'
+        +(d.skupiny_vsetky||[]).map(s=>`<option value="${s.key}">${s.nazov}</option>`).join('');
+      if(mesEl) mesEl.value=mesiac; if(skEl) skEl.value=skupina;
+      TZ_FILTRE_NAPLNENE=true;
+    }
+    const vidno=(d.skupiny||[]).filter(s=>s.suma>0 || s.key==='neurcene');
+    const max=Math.max(1,...vidno.map(s=>s.suma));
+    const barva=k=>k==='reklama_dokazana'?'#9fd894':k==='affiliate'?'#7fb8e5'
+      :k==='reklama_mozna'?'#C9A84C':k==='neurcene'?'#e57373':'#8a8a8a';
+    body.innerHTML = !vidno.length
+      ? '<div class="text-muted">Za toto obdobie nemáme žiadnu tržbu.</div>'
+      : `<div class="mb-2">Tržba za obdobie: <b>${adEur(d.celkom)}</b>
+          <span class="text-muted">· ${d.platieb} platieb</span></div>
+        <div class="table-responsive"><table class="table table-dark table-sm table-hover mb-0 align-middle" style="font-size:.78rem;font-variant-numeric:tabular-nums">
+        <thead><tr><th>Odkiaľ</th><th class="text-end">Tržba</th><th class="text-end">Podiel</th><th class="text-end">Klientok</th></tr></thead>
+        <tbody>${vidno.map(s=>`<tr>
+          <td><div>${s.nazov}</div>
+            <div class="text-muted" style="font-size:.66rem">${s.popis}</div>
+            ${s.detail&&s.detail.length?`<details class="mt-1"><summary style="cursor:pointer;font-size:.68rem;color:#9d9788">z čoho presne</summary>
+              <div class="mt-1">${s.detail.map(x=>`<div class="d-flex justify-content-between" style="font-size:.68rem"><span class="text-muted">${x.nazov}</span><span>${adEur(x.suma)}</span></div>`).join('')}</div></details>`:''}</td>
+          <td class="text-end" style="white-space:nowrap">${adEur(s.suma)}
+            <div style="height:3px;border-radius:2px;background:linear-gradient(90deg,${barva(s.key)} ${Math.round(100*s.suma/max)}%,#2a2a2a ${Math.round(100*s.suma/max)}%)"></div></td>
+          <td class="text-end">${s.podiel_pct}%</td>
+          <td class="text-end">${s.klientok||'—'}</td></tr>`).join('')}</tbody></table></div>
+        <div class="text-muted mt-2" style="font-size:.66rem">Súčet škatúľ = celá tržba za obdobie, každé euro je presne v jednej. Keď má klientka viac značiek naraz, rozhoduje poradie: <b>dokázaná reklama</b> (číslo reklamy nesie len platený klik) → <b>affiliate</b> → <b>vlastné kanály</b> → nepotvrdená reklama. <b>Neurčené</b> znamená, že k tým peniazom nemáme ani zdroj, ani kampaň — to je diera v meraní, nie nula.</div>`;
+  }catch(e){ body.innerHTML='<div class="text-danger">'+(e.message||'Chyba')+'</div>'; }
 }
 
 // ── KAMPANE: jeden zoznam (účet + karty appky), filter, zoradenie, detail ─────

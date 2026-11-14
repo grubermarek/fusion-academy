@@ -61,6 +61,20 @@ const stat = (id, name, month, spend, clicks) => ({ _id: 'qaMkS' + id + month.re
     { _id: 'qaMkKlient00002', name: 'QA Fbclid', email: 'qa.mk.fbclid@qa-biz.local', password: hash,
       active: true, created_at: '2026-10-06', registration_at: '2026-10-06',
       account_creation_type: 'self_registration', fbclid: 'QA_fbclid_bez_kampane' },
+    // Tretia klientka nemá ani utm, ani kartu kampane — má len číslo reklamy
+    // vyčítané z fbclid (meta_klik). To nesie LEN platený klik, takže je to dôkaz:
+    // reklama 910000000001 patrí kampani „QA — bez karty" (14. 11.).
+    { _id: 'qaMkKlient00003', name: 'QA Klik', email: 'qa.mk.klik@qa-biz.local', password: hash,
+      active: true, created_at: '2026-10-07', registration_at: '2026-10-07',
+      account_creation_type: 'self_registration', fbclid: 'QA_fbclid_s_reklamou',
+      meta_klik: '910000000001' },
+  ]);
+
+  // Mapa reklama → kampaň, akú ukladá sync z Mety. Bez nej by číslo reklamy
+  // nemalo k čomu priradiť a klientka #3 by ostala nedokázateľná.
+  w('settings.db', [
+    { _id: 'qaMkNastav00001', key: 'meta_ad_campaign',
+      value: { '910000000001': '900000000002' }, at: '2026-11-14T08:00:00.000Z' },
   ]);
 
   w('payments.db', [
@@ -68,6 +82,8 @@ const stat = (id, name, month, spend, clicks) => ({ _id: 'qaMkS' + id + month.re
       description: 'Členstvo Bronze', provider: 'stripe', captured_at: '2026-10-20T10:00:00.000Z', created_at: '2026-10-20T10:00:00.000Z' },
     { _id: 'qaMkPlatba00002', user_id: 'qaMkKlient00002', amount: 40, status: 'completed',
       description: 'Členstvo Bronze', provider: 'stripe', captured_at: '2026-10-21T10:00:00.000Z', created_at: '2026-10-21T10:00:00.000Z' },
+    { _id: 'qaMkPlatba00003', user_id: 'qaMkKlient00003', amount: 25, status: 'completed',
+      description: 'Vstup', provider: 'stripe', captured_at: '2026-10-22T10:00:00.000Z', created_at: '2026-10-22T10:00:00.000Z' },
   ]);
 
   // 1) plne meraná — utm, karta, celé obdobie po zavedení merania
@@ -148,17 +164,25 @@ const stat = (id, name, month, spend, clicks) => ({ _id: 'qaMkS' + id + month.re
 
     console.log('\n4) ROAS nevychádza z tržby celej appky:');
     ok('základ ROAS je kohorta reklamy', t.roas_zaklad === 'kohorta_reklamy', String(t.roas_zaklad));
-    ok('tržba kohorty = 100 € (obe klientky z reklamy)',
-      Math.abs((t.revenue_kohorta || 0) - 100) < 0.01, String(t.revenue_kohorta));
-    // Obe strany zlomku kryjú to isté: celá kohorta ÷ všetky peniaze (100 / 220).
-    ok('ROAS delí VŠETKY minuté peniaze (0,45×)', t.roas === 0.45, String(t.roas));
+    ok('tržba kohorty = 125 € (všetky tri klientky z reklamy)',
+      Math.abs((t.revenue_kohorta || 0) - 125) < 0.01, String(t.revenue_kohorta));
+    // Obe strany zlomku kryjú to isté: celá kohorta ÷ všetky peniaze (125 / 220).
+    ok('ROAS delí VŠETKY minuté peniaze (0,57×)', t.roas === 0.57, String(t.roas));
 
     console.log('\n4b) Dokázateľná tržba (14. 11.):');
-    ok('dokázateľná tržba = 60 € (len klientka s utm kampane)',
-      Math.abs((t.revenue_kohorta_dokazana || 0) - 60) < 0.01, String(t.revenue_kohorta_dokazana));
-    ok('dokázateľne priradená je 1 klientka', t.acquired_dokazane === 1, String(t.acquired_dokazane));
-    // 60 € od nej ÷ 100 € útraty tej istej kampane.
-    ok('dokázateľný ROAS = 0,6× (meraná útrata)', t.roas_dokazany === 0.6, String(t.roas_dokazany));
+    // 60 € podľa utm kampane + 25 € podľa čísla reklamy z fbclid. Druhá cesta je
+    // to podstatné: klientka #3 nemá utm ani kartu, a aj tak je priradená.
+    ok('dokázateľná tržba = 85 € (utm + číslo reklamy)',
+      Math.abs((t.revenue_kohorta_dokazana || 0) - 85) < 0.01, String(t.revenue_kohorta_dokazana));
+    ok('dokázateľne priradené sú 2 klientky', t.acquired_dokazane === 2, String(t.acquired_dokazane));
+    // 85 € od nich ÷ 170 € útraty októbra. Menovateľ je útrata mesiacov, v ktorých
+    // appka ukladala zdroj kliku (od MERANIE_OD) — vrátane kampaní bez utm, lebo
+    // klik na ne nesie číslo reklamy rovnako. Máj (30 €) je spred merania, von.
+    ok('dokázateľný ROAS = 0,5× (merateľná útrata)', t.roas_dokazany === 0.5, String(t.roas_dokazany));
+    ok('merateľná útrata = 170 € (len mesiace od 9/2026)',
+      Math.abs((t.spend_dokazatelny || 0) - 170) < 0.01, String(t.spend_dokazatelny));
+    ok('nemerateľná útrata = 50 € (máj, spred merania)',
+      Math.abs((t.spend_nedokazatelny || 0) - 50) < 0.01, String(t.spend_nedokazatelny));
     ok('klientka len s fbclid nie je dokázateľná',
       Math.abs((t.revenue_kohorta || 0) - (t.revenue_kohorta_dokazana || 0) - 40) < 0.01,
       String(t.revenue_kohorta) + ' / ' + String(t.revenue_kohorta_dokazana));
@@ -170,6 +194,32 @@ const stat = (id, name, month, spend, clicks) => ({ _id: 'qaMkS' + id + month.re
     ok('október: kliky len 200', okt.clicks === 200, String(okt.clicks));
     const maj = (a.rad || []).find(x => x.month === '2026-05') || {};
     ok('máj: 30 € je celé v nemeraných', Math.abs((maj.nemerane || 0) - 30) < 0.01, String(maj.nemerane));
+
+    // ── 6) Odkiaľ sú peniaze (Marek 14. 11.) ──────────────────────────────────
+    // Každé euro tržby musí byť presne v jednej škatuli — inak sa rozpad nedá
+    // čítať ako odpoveď na „z čoho sú aké príjmy".
+    console.log('\n6) Rozpad tržieb podľa zdroja:');
+    const tz = (await j('/api/admin/trzby-zdroj?mesiac=all', {}, adm)).d || {};
+    const sk = Object.fromEntries((tz.skupiny || []).map(s => [s.key, s]));
+    ok('rozpad sa načítal', tz.ok === true, JSON.stringify(tz).slice(0, 120));
+    ok('súčet škatúľ = celá tržba',
+      Math.abs((tz.skupiny || []).reduce((s, x) => s + x.suma, 0) - (tz.celkom || 0)) < 0.01,
+      String(tz.celkom));
+    ok('dokázaná reklama = 85 €',
+      Math.abs(((sk.reklama_dokazana || {}).suma || 0) - 85) < 0.01, String((sk.reklama_dokazana || {}).suma));
+    ok('nepotvrdená reklama = 40 € (len fbclid)',
+      Math.abs(((sk.reklama_mozna || {}).suma || 0) - 40) < 0.01, String((sk.reklama_mozna || {}).suma));
+    // Pasca: pri registrácii bez kódu sa sponzorom stane zakladateľ, takže každá
+    // klientka má sponsor_id. Keby sa to bralo ako odporúčanie, affiliate by
+    // zhltol skoro celú tržbu. Tu nikoho nepriviedla iná klientka → musí byť 0 €.
+    ok('sponzor od zakladateľa nie je affiliate (0 €)',
+      Math.abs(((sk.affiliate || {}).suma || 0)) < 0.01, String((sk.affiliate || {}).suma));
+    ok('detail dokázanej reklamy menuje kampane',
+      ((sk.reklama_dokazana || {}).detail || []).length === 2,
+      JSON.stringify((sk.reklama_dokazana || {}).detail || []));
+    const lenJedna = (await j('/api/admin/trzby-zdroj?mesiac=all&skupina=reklama_mozna', {}, adm)).d || {};
+    ok('filter vráti len vybraný zdroj', (lenJedna.skupiny || []).length === 1,
+      String((lenJedna.skupiny || []).length));
   } catch (e) {
     failed++; console.log('  ❌ výnimka: ' + e.message);
   } finally {
