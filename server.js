@@ -26636,9 +26636,16 @@ async function syncAdStats(force){
     // fbclid z PLATENÉHO kliku nesie číslo reklamy (metaKlikZFbclid → users.meta_klik),
     // organický príspevok ani zdieľanie ho nemajú. Keď k číslu reklamy poznáme kampaň,
     // vieme priradiť registráciu aj tržbu bez utm, bez karty a bez dohadov.
+    // Mapa sa DOPLŇUJE, nikdy neprepisuje: reklamu zmazanú v Mete už Graph nevráti,
+    // ale klik na ňu z minulosti nesie jej číslo navždy. Prepisovaním by sme o to
+    // priradenie prišli presne pri starých kampaniach, kde ho najviac treba.
     try{
-      const mapa={}; for(const a of ads) if(a.id && a.campaign_id) mapa[String(a.id)]=String(a.campaign_id);
-      if(Object.keys(mapa).length) await q.update(db.settings,{key:'meta_ad_campaign'},
+      const mapa=Object.assign({}, ((await q.one(db.settings,{key:'meta_ad_campaign'}))||{}).value||{});
+      let novych=0;
+      for(const a of ads) if(a.id && a.campaign_id){
+        const k=String(a.id); if(mapa[k]!==String(a.campaign_id)){ mapa[k]=String(a.campaign_id); novych++; }
+      }
+      if(novych) await q.update(db.settings,{key:'meta_ad_campaign'},
         {$set:{key:'meta_ad_campaign', value:mapa, at:nowISO()}},{upsert:true});
     }catch(e){}
     const utm={};
@@ -26934,12 +26941,24 @@ async function atribucia(){
     }
     return null;
   };
-  // Najprv číslo reklamy z kliku (to nesie len platený klik), potom značka v odkaze.
-  const kampanUsera=u=>{
-    const cid=u && u.meta_klik && mapaRek[String(u.meta_klik)];
-    return cid ? String(cid) : (u ? kampanZoZnacky(u) : null);
+  // Číslo reklamy priamo v odkaze: utm_content={{ad.id}} máme v značení kampaní
+  // od 20. 10. Je to to isté číslo ako v mape z Mety, len poslané rovno v URL —
+  // a na rozdiel od adid z fbclid sa dá naozaj spárovať (14. 11.).
+  const kampanZUtmContent=u=>{
+    const id=String((u&&u.utm_content)||'').trim();
+    if(!/^\d{10,20}$/.test(id)) return null;
+    return mapaRek[id] ? String(mapaRek[id]) : null;
   };
-  return { mapaRek, kampanUsera, kampanZoZnacky, nazovKampane:cid=>nazov[cid]||('Kampaň '+cid) };
+  // Poradie: číslo reklamy z odkazu, potom číslo reklamy z kliku, potom značka.
+  const kampanUsera=u=>{
+    if(!u) return null;
+    const zUrl=kampanZUtmContent(u);
+    if(zUrl) return zUrl;
+    const cid=u.meta_klik && mapaRek[String(u.meta_klik)];
+    return cid ? String(cid) : kampanZoZnacky(u);
+  };
+  return { mapaRek, kampanUsera, kampanZoZnacky, kampanZUtmContent,
+    nazovKampane:cid=>nazov[cid]||('Kampaň '+cid) };
 }
 // plne      = odkaz nesie utm_campaign (alebo je to leadová kampaň s vlastnou atribúciou
 //             cez formulár), kampaň má v appke kartu a prvá útrata padla po MERANIE_OD
@@ -27204,10 +27223,12 @@ app.post('/api/admin/ads/sync', adminAuth, async(req,res)=>{
 // a pri ostatných MENUJE dôvod. Bez tohto sa diera v meraní hľadá hádaním.
 app.get('/api/admin/meranie/pokrytie', adminAuth, async(req,res)=>{
   try{
-    const { mapaRek, kampanUsera, kampanZoZnacky } = await atribucia();
+    const { mapaRek, kampanUsera, kampanZUtmContent } = await atribucia();
     const po={};
-    const daj=m=>(po[m]=po[m]||{mesiac:m, kohorta:0, priradeni:0, cez_cislo_reklamy:0, cez_znacku:0,
-      s_fbclid:0, s_cislom_reklamy:0, s_utm:0, nepriradeni:0, duvody:{} });
+    const daj=m=>(po[m]=po[m]||{mesiac:m, kohorta:0, priradeni:0,
+      cez_cislo_v_odkaze:0, cez_cislo_z_kliku:0, cez_znacku:0,
+      s_fbclid:0, s_cislom_reklamy:0, cislo_z_kliku_v_ucte:0,
+      s_utm:0, s_utm_content:0, nepriradeni:0, duvody:{} });
     for(const u of await q.find(db.users,{})){
       if(!zReklamy(u)) continue;
       const den=String(u.registration_at||u.lead_at||u.created_at||'').slice(0,10);
@@ -27217,9 +27238,14 @@ app.get('/api/admin/meranie/pokrytie', adminAuth, async(req,res)=>{
       if(u.fbclid) x.s_fbclid++;
       if(u.meta_klik) x.s_cislom_reklamy++;
       if(String(u.utm_campaign||'').trim()) x.s_utm++;
+      if(String(u.utm_content||'').trim()) x.s_utm_content++;
       const cezKlik=u.meta_klik && mapaRek[String(u.meta_klik)];
+      if(cezKlik) x.cislo_z_kliku_v_ucte++;
+      const zUrl=kampanZUtmContent(u);
       const cid=kampanUsera(u);
-      if(cid){ x.priradeni++; if(cezKlik) x.cez_cislo_reklamy++; else x.cez_znacku++; continue; }
+      if(cid){ x.priradeni++;
+        if(zUrl) x.cez_cislo_v_odkaze++; else if(cezKlik) x.cez_cislo_z_kliku++; else x.cez_znacku++;
+        continue; }
       x.nepriradeni++;
       // Dôvod, prečo sa klientka nedá priradiť — v poradí, v akom sa dá odstrániť.
       let d;
@@ -27232,7 +27258,8 @@ app.get('/api/admin/meranie/pokrytie', adminAuth, async(req,res)=>{
     }
     const mesiace=Object.keys(po).sort().reverse();
     const sucet=mesiace.reduce((s,m)=>{ const x=po[m];
-      for(const k of ['kohorta','priradeni','cez_cislo_reklamy','cez_znacku','s_fbclid','s_cislom_reklamy','s_utm','nepriradeni']) s[k]=(s[k]||0)+x[k];
+      for(const k of ['kohorta','priradeni','cez_cislo_v_odkaze','cez_cislo_z_kliku','cez_znacku',
+        's_fbclid','s_cislom_reklamy','cislo_z_kliku_v_ucte','s_utm','s_utm_content','nepriradeni']) s[k]=(s[k]||0)+x[k];
       for(const [d,n] of Object.entries(x.duvody)) s.duvody[d]=(s.duvody[d]||0)+n;
       return s; }, {duvody:{}});
     res.json({ ok:true, merane_od:MERANIE_OD, reklam_v_mape:Object.keys(mapaRek).length,
