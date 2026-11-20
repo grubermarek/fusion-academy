@@ -13341,7 +13341,9 @@ app.post('/api/service/vstupne-oznacit', async(req,res)=>{
       await q.update(db.bookings,{_id:b._id},{$set:{ entry_collected:true, pay_on_site:false,
         entry_collected_at:nowISO(), entry_collected_by:'service', entry_collected_note:String(req.body.dovod||'Doplnené spätne') }});
       oznacene++;
-      if(x.uz_zaplatene) continue;                       // tržbu už máme — nezdvojuj
+      // `bez_trzby` je pre prípad, že platba prišla inou cestou mimo okna ±2 dni
+      // (klientka si členstvo dokúpila o týždeň) — rezervácia sa len odškrtne.
+      if(x.uz_zaplatene || req.body.bez_trzby===true) continue;
       const u = b.user_id ? await q.one(db.users,{_id:b.user_id}) : null;
       const popis = (b.pay_plan && MEMBERSHIP_PLANS[b.pay_plan]?.name) || ('Jednorazový vstup — '+(b.class_name||'hodina'));
       await q.insert(db.transactions,{ type: b.pay_plan && MEMBERSHIP_PLANS[b.pay_plan]?.type!=='bundle' ? 'membership' : 'single_entry',
