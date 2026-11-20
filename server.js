@@ -13297,6 +13297,35 @@ app.post('/api/service/platba-prelozit', async(req,res)=>{
 // Antálková). Stáva sa, že permanentku kúpi jedna a chodí druhá, prípadne si ju klientka
 // kúpi na zlý účet. Peniaze sa nikam nevracajú a v účtovníctve sa nemení nič — mení sa len
 // to, komu vstupy patria. Do auditu sa zapíše stav pred aj po.
+// Oprava e-mailu na účte (Marek 20. 11. 2026). E-mail je zároveň prihlasovacie meno, takže
+// zmena musí nechať stopu v audite a klientka o nej musí vedieť — inak sa raz nevie prihlásiť
+// a nikto netuší prečo. Bez `apply:true` je to suchý náhľad; starý e-mail ukazuje skrátene.
+app.post('/api/service/ucet-email', async(req,res)=>{
+  if(!servisToken(req)) return res.status(404).end();
+  try{
+    const u = req.body.user_id ? await q.one(db.users,{_id:String(req.body.user_id)})
+      : await q.one(db.users,{email:String(req.body.stary||'').trim().toLowerCase()});
+    if(!u) return res.status(404).json({error:'Účet nenájdený'});
+    const novy = String(req.body.email||'').trim().toLowerCase();
+    if(!/^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(novy)) return res.status(400).json({error:'Neplatný e-mail'});
+    const obsadeny = await q.one(db.users,{email:novy});
+    if(obsadeny && obsadeny._id!==u._id) return res.status(400).json({error:'Tento e-mail už patrí účtu '+obsadeny.name});
+    if(String(u.email||'').toLowerCase()===novy) return res.status(400).json({error:'Na účte už tento e-mail je'});
+    const skratene = s => { const [m,d]=String(s||'').split('@'); return m ? m.slice(0,2)+'…@'+(d||'') : '—'; };
+
+    if(req.body.apply!==true)
+      return res.json({ok:true, apply:false, nahlad:{ klientka:u.name, teraz:skratene(u.email), novy, clenstvo_do:String(u.membership_expires||'—').slice(0,10) }});
+
+    await q.update(db.users,{_id:u._id},{$set:{ email:novy, email_zmeneny_at:nowISO() }});
+    await q.insert(db.notifications,{ user_id:u._id, type:'account',
+      title:'✉️ Zmenili sme ti e-mail', body:'Na účte máš odteraz '+novy+'. Prihlasuj sa ním aj nabudúce — heslo ostáva rovnaké.',
+      read:false, created_at:nowISO() }).catch(()=>{});
+    await auditLog(req,'account_email_change',u._id,{email:u.email},{email:novy},String(req.body.reason||''));
+    console.log('✉️ Zmena e-mailu na účte: '+u.name);
+    res.json({ok:true, apply:true, klientka:u.name, email:novy});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Zrušenie rezervácie so vrátením toho, čím bola krytá (Marek 20. 11. 2026 — klientka sa
 // omylom prihlásila na hodinu v inom meste). Klientka si to vie zrušiť aj sama, ale keď je
 // už po termíne alebo si to všimne neskoro, treba to spraviť za ňu — a hlavne jej to vrátiť
