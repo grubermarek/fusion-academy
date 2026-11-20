@@ -23682,6 +23682,19 @@ app.post('/api/attendance/confirm-session', trainerAuth, async(req,res)=>{
         read:false, created_at:nowISO() }).catch(()=>{});
     }
     if(credited>0) await auditLog(req,'confirm_session',cls._id,{date},{credited, earn:sessionEarn},'');
+    // Hodina potvrdená bez jedinej označenej prítomnej znamená „neprišiel nikto" — a to je
+    // takmer vždy omyl (20. 11. 2026 takto v Korytárkach prišlo o hodinu všetkých 8 žien,
+    // hoci tam boli). Varovanie pred potvrdením v paneli nestačilo, tak nech sa to tréner
+    // dozvie hneď po hodine, kým si pamätá, kto tam bol.
+    if(credited===0 && noShows>0){
+      const komu = [...new Set([si.instructor_id, ...(await q.find(db.users,{is_admin:true})).map(a=>a._id)].filter(Boolean))];
+      const kedy = String(date).split('-').reverse().join('. ');
+      for(const uid of komu) await q.insert(db.notifications,{ user_id:uid, type:'attendance',
+        title:'⚠️ Nikto neoznačený — '+cls.name+' '+cls.location,
+        body:`Hodina ${kedy} sa potvrdila bez jedinej prítomnej, takže ${noShows} ${noShows===1?'žena dostala':'žien dostalo'} „neprišla" — bez návštevy a bez bodov. Ak tam boli, otvor hodinu v dochádzke, označ ich a potvrď znova.`,
+        read:false, created_at:nowISO() }).catch(()=>{});
+      console.log('⚠️ Potvrdená hodina bez prítomných: '+cls.name+' '+cls.location+' '+date+' ('+noShows+'×)');
+    }
     // „already" znamená, že sa nič nezmenilo — nie že nikto neprišiel. Odkedy sa
     // účasť dokazuje, je credited===0 bežný a správny výsledok (hodinu potvrdil
     // tréner, ktorý nikoho neoznačil), a hlásiť ho ako „už potvrdené" by klamalo.

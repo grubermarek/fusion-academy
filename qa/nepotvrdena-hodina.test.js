@@ -109,6 +109,20 @@ const vsetky = f => fs.readFileSync(path.join(DATA, f), 'utf8').split('\n').filt
     t('druhé spustenie pripomienku neopakuje', ozn2.length === 1, String(ozn2.length));
     t('druhé spustenie nikoho neoznačí', beh2.marked === 0 && poslednyStav('bookings.db')['qaNhBk00000001'].attendance_status === 'pending', JSON.stringify(beh2));
 
+    // ── potvrdenie hodiny bez jedinej označenej prítomnej = takmer vždy omyl
+    const rT = await fetch(BASE + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'qa.nh.trener@qa-biz.local', password: 'Heslo123!' }) });
+    const cookieT = String(rT.headers.get('set-cookie') || '').split(';')[0];
+    const bezNikoho = await fetch(BASE + '/api/attendance/confirm-session', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookieT },
+      body: JSON.stringify({ class_id: 'qaNhZabudnuta1', date: VCERA, present_ids: [] }) }).then(r => r.json()).catch(() => null);
+    t('hodina sa dá potvrdiť aj bez prítomných (keď naozaj nikto neprišiel)', bezNikoho && bezNikoho.ok === true && bezNikoho.credited === 0, JSON.stringify(bezNikoho));
+    await sleep(1200);
+    const varovanie = vsetky('notifications.db').filter(n => /Nikto neoznačený/.test(n.title || ''));
+    const komuVarovanie = varovanie.map(x => x.user_id);
+    t('varovanie dostane tréner hodiny', komuVarovanie.includes('qaNhTrener00001'), JSON.stringify(komuVarovanie));
+    t('varovanie dostanú aj admini', komuVarovanie.includes('qaNhAdmin000001') && varovanie.length > 1, JSON.stringify(komuVarovanie));
+    t('každý ho dostane iba raz', new Set(komuVarovanie).size === komuVarovanie.length, JSON.stringify(komuVarovanie));
+    t('varovanie hovorí, čo s tým', varovanie[0] && /otvor hodinu v dochádzke/.test(varovanie[0].body || ''), varovanie[0] && varovanie[0].body);
+
     // keď tréner hodinu potvrdí (hoci len jednu klientku), zvyšok sa po starom označí
     const src = fs.readFileSync(path.join(KOREN, 'server.js'), 'utf8');
     t('pravidlo sa nevzťahuje na online hodiny', /cls\.category!=='Online'[\s\S]{0,200}potvrdene\[kl\]/.test(src), 'podmienka v markNoShows');
